@@ -108,45 +108,22 @@ func (a *WFAlerts) Merge(results ...*WFAlerts) {
 // MergeAndWriteAlerts merges the provided Responses into a single prometheus Alerts data object,
 // and writes it to the provided ResponseWriter
 func MergeAndWriteAlerts(w http.ResponseWriter, r *http.Request, rgs merge.ResponseGates) {
-
 	var a *WFAlerts
-
-	responses := make([]int, len(rgs))
-	var bestResp *http.Response
-
-	for i, rg := range rgs {
-
-		if rg == nil {
-			continue
+	responses, bestResp := gatherResponses(r, rgs, func(rg *merge.ResponseGate) bool {
+		a1 := &WFAlerts{}
+		err := json.Unmarshal(rg.Body(), &a1)
+		if err != nil {
+			logger.Error("alerts unmarshaling error",
+				logging.Pairs{"provider": "prometheus", "detail": err.Error()})
+			return false
 		}
-		if rg.Resources != nil && rg.Resources.Response != nil {
-			resp := rg.Resources.Response
-			responses[i] = resp.StatusCode
-
-			if resp.Body != nil {
-				defer resp.Body.Close()
-			}
-
-			if resp.StatusCode < 400 {
-				a1 := &WFAlerts{}
-				err := json.Unmarshal(rg.Body(), &a1)
-				if err != nil {
-					logger.Error("alerts unmarshaling error",
-						logging.Pairs{"provider": "prometheus", "detail": err.Error()})
-					continue
-				}
-				if a == nil {
-					a = a1
-				} else {
-					a.Merge(a1)
-				}
-			}
-			if bestResp == nil || resp.StatusCode < bestResp.StatusCode {
-				bestResp = resp
-				resp.Body = io.NopCloser(bytes.NewReader(rg.Body()))
-			}
+		if a == nil {
+			a = a1
+		} else {
+			a.Merge(a1)
 		}
-	}
+		return true
+	})
 
 	if a == nil || len(responses) == 0 {
 		if bestResp != nil {
@@ -185,4 +162,36 @@ func MergeAndWriteAlerts(w http.ResponseWriter, r *http.Request, rgs merge.Respo
 		}
 	}
 	w.Write([]byte("]}}")) // complete the alert list and the envelope
+}
+
+// helper function to gather responses from a ResponseGate
+func gatherResponses(r *http.Request, rgs merge.ResponseGates, handler func(*merge.ResponseGate) bool) ([]int, *http.Response) {
+	responses := make([]int, len(rgs))
+	var bestResp *http.Response
+	for i, rg := range rgs {
+		if rg == nil {
+			continue
+		}
+		if rg.Resources != nil && rg.Resources.Response != nil {
+			resp := rg.Resources.Response
+			responses[i] = resp.StatusCode
+
+			if resp.Body != nil {
+				defer resp.Body.Close()
+			}
+
+			if resp.StatusCode < 400 {
+				ok := handler(rg)
+				if !ok {
+					continue
+				}
+			}
+			if bestResp == nil || resp.StatusCode < bestResp.StatusCode {
+				bestResp = resp
+				resp.Body = io.NopCloser(bytes.NewReader(rg.Body()))
+			}
+		}
+	}
+
+	return responses, bestResp
 }

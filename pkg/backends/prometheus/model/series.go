@@ -17,7 +17,6 @@
 package model
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -67,42 +66,21 @@ func (s *WFSeries) Merge(results ...*WFSeries) {
 // and writes it to the provided ResponseWriter
 func MergeAndWriteSeries(w http.ResponseWriter, r *http.Request, rgs merge.ResponseGates) {
 	var s *WFSeries
-
-	responses := make([]int, len(rgs))
-	var bestResp *http.Response
-
-	for i, rg := range rgs {
-		if rg == nil {
-			continue
+	responses, bestResp := gatherResponses(r, rgs, func(rg *merge.ResponseGate) bool {
+		s1 := &WFSeries{}
+		err := json.Unmarshal(rg.Body(), &s1)
+		if err != nil {
+			logger.Error("series unmarshaling error",
+				logging.Pairs{"provider": "prometheus", "detail": err.Error()})
+			return false
 		}
-		if rg.Resources != nil && rg.Resources.Response != nil {
-			resp := rg.Resources.Response
-			responses[i] = resp.StatusCode
-
-			if resp.Body != nil {
-				defer resp.Body.Close()
-			}
-
-			if resp.StatusCode < 400 {
-				s1 := &WFSeries{}
-				err := json.Unmarshal(rg.Body(), &s1)
-				if err != nil {
-					logger.Error("series unmarshaling error",
-						logging.Pairs{"provider": "prometheus", "detail": err.Error()})
-					continue
-				}
-				if s == nil {
-					s = s1
-				} else {
-					s.Merge(s1)
-				}
-			}
-			if bestResp == nil || resp.StatusCode < bestResp.StatusCode {
-				bestResp = resp
-				resp.Body = io.NopCloser(bytes.NewReader(rg.Body()))
-			}
+		if s == nil {
+			s = s1
+		} else {
+			s.Merge(s1)
 		}
-	}
+		return true
+	})
 
 	if s == nil || len(responses) == 0 {
 		if bestResp != nil {

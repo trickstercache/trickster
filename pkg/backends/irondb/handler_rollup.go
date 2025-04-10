@@ -17,7 +17,6 @@
 package irondb
 
 import (
-	"context"
 	"net/http"
 	"time"
 
@@ -25,7 +24,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/engines"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
@@ -42,24 +40,10 @@ func (c *Client) RollupHandler(w http.ResponseWriter, r *http.Request) {
 func (c *Client) rollupHandlerSetExtent(r *http.Request,
 	trq *timeseries.TimeRangeQuery,
 	extent *timeseries.Extent) {
-
-	if r == nil || extent == nil || (extent.Start.IsZero() && extent.End.IsZero()) {
+	ok, st, et := c.resolveTRQWithExtent(r, trq, extent)
+	if !ok {
 		return
 	}
-
-	var err error
-	if trq == nil {
-		if trq, _, _, err = c.ParseTimeRangeQuery(r); err != nil {
-			return
-		}
-	}
-
-	st := extent.Start.UnixNano() - (extent.Start.UnixNano() % int64(trq.Step))
-	et := extent.End.UnixNano() - (extent.End.UnixNano() % int64(trq.Step))
-	if st == et {
-		et += int64(trq.Step)
-	}
-
 	q := r.URL.Query()
 	q.Set(upStart, common.FormatTimestamp(time.Unix(0, st), true))
 	q.Set(upEnd, common.FormatTimestamp(time.Unix(0, et), true))
@@ -107,24 +91,10 @@ func (c *Client) rollupHandlerParseTimeRangeQuery(
 // based on a timerange URL.
 func (c *Client) rollupHandlerFastForwardRequest(
 	r *http.Request) (*http.Request, error) {
-
-	rsc := request.GetResources(r)
-	trq := rsc.TimeRangeQuery
-
-	nr := r.Clone(context.Background())
-	v, _, _ := params.GetRequestValues(nr)
-	var err error
-
-	if trq == nil {
-		trq, _, _, err = c.ParseTimeRangeQuery(r)
-		if err != nil {
-			return nil, err
-		}
+	nr, start, end, v, err := c.resolveTRQ(r)
+	if err != nil {
+		return nil, err
 	}
-
-	now := time.Now().Unix()
-	start := now - (now % int64(trq.Step.Seconds()))
-	end := start + int64(trq.Step.Seconds())
 	v.Set(upStart, common.FormatTimestamp(time.Unix(start, 0), true))
 	v.Set(upEnd, common.FormatTimestamp(time.Unix(end, 0), true))
 	params.SetRequestValues(nr, v)
