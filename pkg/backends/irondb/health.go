@@ -28,6 +28,6 @@ func (c *Client) DefaultHealthCheckConfig() *ho.Options {
 	o.Host = u.Host
 	o.Path = u.Path
 	// TODO: Provide health check query
-	//o.Query = url.Values{"query": {healthQuery}}.Encode()
+	// o.Query = url.Values{"query": {healthQuery}}.Encode()
 	return o
 }

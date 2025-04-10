@@ -158,7 +158,7 @@ func (t *target) isGoodBody(r io.ReadCloser) bool {
 		t.status.detail = "error reading response body from target"
 		return false
 	}
-	if !(string(x) == t.eb) {
+	if string(x) != t.eb {
 		t.status.detail = fmt.Sprintf("required response body mismatch expected [%s] got [%s]", t.eb, string(x))
 		return false
 	}
@@ -252,7 +252,7 @@ func (t *target) demandProbe(w http.ResponseWriter) {
 				h.Set(k, sh.Get(k))
 			}
 		}
-		w.WriteHeader(500)
+		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte("error performing health check: " + err.Error()))
 		return
 	}

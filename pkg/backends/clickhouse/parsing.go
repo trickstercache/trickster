@@ -586,12 +586,12 @@ func parseWhereTokens(results map[string]interface{},
 				}
 				_, j, _ := SolveMathExpression(fieldParts[i:], ts, withVars)
 				if atLowerBound {
-					//e.Start = time.Unix(v, 0)
+					// e.Start = time.Unix(v, 0)
 					e.Start, _, _ = lsql.TokenToTime(t)
 					tsr1 = t.Val
 					atLowerBound = false
 				} else {
-					//e.End = time.Unix(v, 0)
+					// e.End = time.Unix(v, 0)
 					e.End, _, _ = lsql.TokenToTime(t)
 					tsr2 = t.Val
 				}
@@ -643,16 +643,16 @@ func parseWhereTokens(results map[string]interface{},
 		r2 = trq.Statement[s2:e2]
 	}
 	if r1 != "" {
-		trq.Statement = strings.Replace(trq.Statement, r1, tkRange, -1)
+		trq.Statement = strings.ReplaceAll(trq.Statement, r1, tkRange)
 	}
 	if r2 != "" {
-		trq.Statement = strings.Replace(trq.Statement, r2, "", -1)
+		trq.Statement = strings.ReplaceAll(trq.Statement, r2, "")
 	}
 	if tsr1 != "" {
-		trq.Statement = strings.Replace(trq.Statement, tsr1, tkTS1, -1)
+		trq.Statement = strings.ReplaceAll(trq.Statement, tsr1, tkTS1)
 	}
 	if tsr2 != "" {
-		trq.Statement = strings.Replace(trq.Statement, tsr2, tkTS2, -1)
+		trq.Statement = strings.ReplaceAll(trq.Statement, tsr2, tkTS2)
 	}
 	return nil, nil
 }

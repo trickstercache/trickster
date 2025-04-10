@@ -178,7 +178,7 @@ func TestNewListenerTLS(t *testing.T) {
 func TestListenerConnectionLimitWorks(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	handler := func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(200)
+		w.WriteHeader(http.StatusOK)
 		fmt.Fprint(w, "hello!")
 	}
 	es := httptest.NewServer(http.HandlerFunc(handler))

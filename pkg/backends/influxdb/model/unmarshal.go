@@ -59,7 +59,7 @@ func decodeCSV(reader io.Reader) (*WFDocument, error) {
 		return nil, err
 	}
 	var columns []string
-	var rows int = len(records) - 1
+	rows := len(records) - 1
 	if len(records) == 0 {
 		rows = 0
 	}
@@ -112,14 +112,6 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 			return nil, err
 		}
 	}
-	//wfd := &WFDocument{}
-	//d := json.NewDecoder(reader)
-	//err := d.Decode(wfd)
-	/*
-		if err != nil {
-			return nil, err
-		}
-	*/
 	ds := &dataset.DataSet{
 		Error:          wfd.Err,
 		TimeRangeQuery: trq,

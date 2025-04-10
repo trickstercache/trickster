@@ -208,7 +208,10 @@ func (lg *ListenerGroup) StartListener(listenerName, address string, port int, c
 			logger.ErrorSynchronous(
 				"https listener stopping", logging.Pairs{"listenerName": listenerName, "detail": err})
 			if l.exitOnError {
-				os.Exit(1)
+				defer func() {
+					os.Exit(1) // exit via defer to allow prior defers to run
+				}()
+				return nil
 			}
 		}
 		return err
@@ -223,7 +226,9 @@ func (lg *ListenerGroup) StartListener(listenerName, address string, port int, c
 		logger.ErrorSynchronous("http listener stopping",
 			logging.Pairs{"listenerName": listenerName, "detail": err})
 		if l.exitOnError {
-			os.Exit(1)
+			defer func() {
+				os.Exit(1) // exit via defer to allow prior defers to run
+			}()
 		}
 	}
 	return err

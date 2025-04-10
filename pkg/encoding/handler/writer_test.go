@@ -17,6 +17,7 @@
 package handler
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"testing"
 
@@ -40,7 +41,7 @@ func TestWrite(t *testing.T) {
 	ew := &responseEncoder{ResponseWriter: w}
 	ew.writeFunc = ew.writeDirect
 
-	ew.WriteHeader(200)
+	ew.WriteHeader(http.StatusOK)
 	ew.prepared = false
 
 	i, err := ew.Write([]byte("trickster"))

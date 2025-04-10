@@ -143,8 +143,8 @@ func ParseDuration(s string) (time.Duration, error) {
 	if len(s) <= 1 {
 		return 0, ErrInvalidDurationFormat(0, "value of at least length 2", s)
 	}
-	var d time.Duration = 0
-	var currentMult int64 = 0
+	var d time.Duration
+	var currentMult int64
 	for i := 0; i < len(s); {
 		if currentMult == 0 {
 			v, is, inc := isIntAtPos(s, i)

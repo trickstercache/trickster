@@ -148,7 +148,6 @@ func MergeAndWriteAlerts(w http.ResponseWriter, r *http.Request, rgs merge.Respo
 		}
 	}
 
-	statusCode := 0
 	if a == nil || len(responses) == 0 {
 		if bestResp != nil {
 			h := w.Header()
@@ -163,23 +162,23 @@ func MergeAndWriteAlerts(w http.ResponseWriter, r *http.Request, rgs merge.Respo
 	}
 
 	sort.Ints(responses)
-	statusCode = responses[0]
+	statusCode := responses[0]
 	a.StartMarshal(w, statusCode)
 
 	var sep string
 	w.Write([]byte(`,"data":{"alerts":[`))
 	if a.Data != nil && len(a.Data.Alerts) > 0 {
 		for _, alert := range a.Data.Alerts {
-			w.Write([]byte(
-				fmt.Sprintf(`{"state":"%s","labels":%s,"annotations":%s`,
-					alert.State, dataset.Tags(alert.Labels).JSON(),
-					dataset.Tags(alert.Annotations).JSON()),
-			))
+			fmt.Fprintf(w,
+				`{"state":"%s","labels":%s,"annotations":%s`,
+				alert.State, dataset.Tags(alert.Labels).JSON(),
+				dataset.Tags(alert.Annotations).JSON(),
+			)
 			if alert.Value != "" {
-				w.Write([]byte(fmt.Sprintf(`,"value":"%s"`, alert.Value)))
+				fmt.Fprintf(w, `,"value":"%s"`, alert.Value)
 			}
 			if alert.ActiveAt != "" {
-				w.Write([]byte(fmt.Sprintf(`,"activeAt":"%s"`, alert.ActiveAt)))
+				fmt.Fprintf(w, `,"activeAt":"%s"`, alert.ActiveAt)
 			}
 			w.Write([]byte("}" + sep))
 			sep = ","

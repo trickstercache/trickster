@@ -123,7 +123,7 @@ func (d *HTTPDocument) GetByterangeChunk(chunkRange byterange.Range, chunkSize i
 			dd.Ranges[ddri] = r
 			ddri++
 		}
-		ddbi = ddbi - chunkRange.Start
+		ddbi -= chunkRange.Start
 		dd.Body = dd.Body[:ddbi]
 		dd.Ranges = dd.Ranges[:ddri]
 		sort.Sort(dd.Ranges)

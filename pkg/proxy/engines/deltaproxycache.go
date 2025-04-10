@@ -457,7 +457,7 @@ checkCache:
 		rts.Merge(false, ffts)
 	}
 	rts.SetExtents(nil) // so they are not included in the client response json
-	//rts.SetTimeRangeQuery(&timeseries.TimeRangeQuery{})
+	// rts.SetTimeRangeQuery(&timeseries.TimeRangeQuery{})
 	rh := doc.SafeHeaderClone()
 	sc := doc.StatusCode
 
@@ -628,7 +628,7 @@ func fetchExtents(el timeseries.ExtentList, rsc *request.Resources, h http.Heade
 				headers.Merge(h, resp.Header)
 				mts = append(mts, nts)
 				appendLock.Unlock()
-			} else if resp.StatusCode != 200 {
+			} else if resp.StatusCode != http.StatusOK {
 				err = tpe.ErrUnexpectedUpstreamResponse
 				var b []byte
 				var s string

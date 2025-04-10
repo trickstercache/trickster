@@ -46,8 +46,16 @@ import (
 	"github.com/trickstercache/mockster/pkg/testutil"
 )
 
-// Epoch2020 is the epoch value representing 1 January 2020 00:00:00 UTC
-const Epoch2020 int64 = 1577836800
+const (
+	// Epoch2020 is the epoch value representing 1 January 2020 00:00:00 UTC
+	Epoch2020 int64 = 1577836800
+
+	// Provider Names
+	PrometheusBackendProvider = "prometheus"
+	PromSimBackendProvider    = "promsim"
+	RangeSimBackendProvider   = "rangesim"
+	RPCBackendProvider        = "rpc"
+)
 
 // Time2020 is the Time.Time representing 1 January 2020 00:00:00 UTC
 var Time2020 = time.Unix(Epoch2020, 0)
@@ -98,13 +106,14 @@ func NewTestInstance(
 	isBasicTestServer := false
 
 	var ts *httptest.Server
-	if backendProvider == "promsim" {
+	switch backendProvider {
+	case PromSimBackendProvider:
 		ts = testutil.NewTestServer()
-		backendProvider = "prometheus"
-	} else if backendProvider == "rangesim" {
+		backendProvider = PrometheusBackendProvider
+	case RangeSimBackendProvider:
 		ts = testutil.NewTestServer()
-		backendProvider = "rpc"
-	} else {
+		backendProvider = RPCBackendProvider
+	default:
 		isBasicTestServer = true
 		ts = NewTestServer(respCode, respBody, respHeaders)
 	}
@@ -131,7 +140,7 @@ func NewTestInstance(
 	}
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", ts.URL+urlPath, nil)
+	r := httptest.NewRequest(http.MethodGet, ts.URL+urlPath, nil)
 
 	o := conf.Backends["default"]
 	p := NewTestPathConfig(o, defaultPathConfigs, urlPath)
@@ -203,7 +212,7 @@ func BasicHTTPHandler(w http.ResponseWriter, r *http.Request) {
 	h.Set("Test-Header", "Trickster")
 	h.Set(th.NameLastModified, "Wed, 01 Jan 2020 00:00:00 UTC")
 	h.Set(th.NameTricksterResult, "engine=none")
-	w.WriteHeader(200)
+	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("{}"))
 }
 

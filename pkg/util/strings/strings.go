@@ -55,7 +55,7 @@ func (m StringMap) String() string {
 	sb := &strings.Builder{}
 	sb.WriteString("{")
 	for k, v := range m {
-		sb.WriteString(fmt.Sprintf(`%s"%s":"%s"`, delimiter, k, v))
+		fmt.Fprintf(sb, `%s"%s":"%s"`, delimiter, k, v)
 		delimiter = ", "
 	}
 	sb.WriteString("}")

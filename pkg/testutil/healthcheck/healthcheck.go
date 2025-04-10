@@ -19,6 +19,6 @@ package healthcheck
 import "net/http"
 
 func DemandProbe(w http.ResponseWriter) {
-	w.WriteHeader(200)
+	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("{}"))
 }
