@@ -151,7 +151,7 @@ func (rs *RunState) Next() *token.Token {
 	rs.Peek()
 	rs.prev = rs.curr
 	rs.curr = rs.next
-	rs.pos += 1
+	rs.pos++
 	rs.next = nil
 	return rs.curr
 }

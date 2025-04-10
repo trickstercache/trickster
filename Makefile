@@ -145,6 +145,7 @@ style:
 .PHONY: lint
 lint:
 	@golangci-lint run
+	@staticcheck ./...
 
 GO_TEST_FLAGS ?= -coverprofile=.coverprofile
 .PHONY: test
@@ -223,6 +224,7 @@ serve-info:
 get-tools:
 	@echo "Installing tools..."
 	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.0.2
+	go install honnef.co/go/tools/cmd/staticcheck@2025.1.1
 
 .PHONY: start-developer
 start-developer:

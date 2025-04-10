@@ -22,12 +22,9 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
 
+	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
 )
-
-type testObj struct {
-	Options *Options
-}
 
 type testOptions1 struct {
 	Backends map[string]*testOptions2 `yaml:"backends,omitempty"`
@@ -72,9 +69,7 @@ func TestClone(t *testing.T) {
 	o.Pool = []string{"test"}
 	o.FGRStatusCodes = []int{200}
 	o.FgrCodesLookup = sets.New([]int{200})
-	if o == nil {
-		t.Error("expected non-nil")
-	}
+	require.NotNil(t, o)
 	co := o.Clone()
 
 	if len(co.Pool) != 1 || co.Pool[0] != "test" {

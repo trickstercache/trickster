@@ -34,7 +34,7 @@ import (
 	lo "github.com/trickstercache/trickster/v2/pkg/observability/logging/options"
 	mo "github.com/trickstercache/trickster/v2/pkg/observability/metrics/options"
 	tracing "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
-	rewriter "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
@@ -351,7 +351,7 @@ func (c *Config) IsStale() bool {
 	if t.IsZero() {
 		return false
 	}
-	return t != c.Main.configLastModified
+	return !t.Equal(c.Main.configLastModified)
 }
 
 func (c *Config) String() string {

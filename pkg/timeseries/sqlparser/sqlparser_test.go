@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"github.com/trickstercache/trickster/v2/pkg/parsing"
 	lsql "github.com/trickstercache/trickster/v2/pkg/parsing/lex/sql"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/token"
@@ -45,12 +46,8 @@ func TestRunContext(t *testing.T) {
 	}
 
 	t2, r2 := ArtifactsFromContext(rc)
-	if t2 == nil {
-		t.Errorf("expected non-nil trq")
-	}
-	if r2 == nil {
-		t.Errorf("expected non-nil ro")
-	}
+	require.NotNil(t, t2)
+	require.NotNil(t, r2)
 	if t2.Statement != "trickster" {
 		t.Errorf("run context persistence error")
 	}

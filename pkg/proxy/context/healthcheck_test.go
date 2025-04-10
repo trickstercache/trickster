@@ -23,7 +23,7 @@ import (
 
 func TestHealthcheck(t *testing.T) {
 
-	b := HealthCheckFlag(nil)
+	b := HealthCheckFlag(context.TODO())
 	if b {
 		t.Error("expected false")
 	}

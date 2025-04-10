@@ -24,6 +24,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
@@ -150,6 +151,7 @@ func TestQueryHandlerNotSelect(t *testing.T) {
 	}
 
 	ts, w, r, _, err := tu.NewTestInstance("", backendClient.DefaultPathConfigs, 200, "{}", nil, "influxdb", "/query", "debug")
+	require.NoError(t, err)
 	rsc := request.GetResources(r)
 
 	backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil, nil)

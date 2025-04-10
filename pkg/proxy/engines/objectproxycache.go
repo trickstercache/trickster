@@ -80,7 +80,9 @@ func handleCachePartialHit(pr *proxyRequest) error {
 
 	pr.prepareUpstreamRequests()
 
-	handleUpstreamTransactions(pr)
+	if err := handleUpstreamTransactions(pr); err != nil {
+		return err
+	}
 
 	d := pr.cacheDocument
 	resp := pr.upstreamResponse
@@ -122,7 +124,9 @@ func handleCachePartialHit(pr *proxyRequest) error {
 		d.headerLock.Unlock()
 	}
 
-	pr.store()
+	if err := pr.store(); err != nil {
+		return err
+	}
 
 	return handleResponse(pr)
 
@@ -197,7 +201,9 @@ func handleCacheRevalidation(pr *proxyRequest) error {
 
 	// all remaining cache statuses indicate there are no other upstream
 	// requests than this revalidation. so lets make the call
-	handleUpstreamTransactions(pr)
+	if err := handleUpstreamTransactions(pr); err != nil {
+		return err
+	}
 
 	return handleCacheRevalidationResponse(pr)
 
@@ -212,7 +218,9 @@ func handleCacheRevalidationResponse(pr *proxyRequest) error {
 		pr.cacheStatus = status.LookupStatusRevalidated
 		pr.upstreamResponse.StatusCode = pr.cacheDocument.StatusCode
 		pr.writeToCache = true
-		pr.store()
+		if err := pr.store(); err != nil {
+			return err
+		}
 		pr.upstreamReader = bytes.NewReader(pr.cacheDocument.Body)
 		return handleTrueCacheHit(pr)
 	}
@@ -273,12 +281,16 @@ func handleCacheKeyMiss(pr *proxyRequest) error {
 	}
 
 	pr.prepareUpstreamRequests()
-	handleUpstreamTransactions(pr)
+	if err := handleUpstreamTransactions(pr); err != nil {
+		return err
+	}
 	return handleAllWrites(pr)
 }
 
 func handleUpstreamTransactions(pr *proxyRequest) error {
-	pr.makeUpstreamRequests()
+	if err := pr.makeUpstreamRequests(); err != nil {
+		return err
+	}
 	pr.reconstituteResponses()
 	pr.determineCacheability()
 	return nil
@@ -301,8 +313,7 @@ func handlePCF(pr *proxyRequest) error {
 		pr.responseWriter = PrepareResponseWriter(pr.responseWriter, pr.upstreamResponse.StatusCode,
 			pr.upstreamResponse.Header)
 		pr.mapLock.Unlock()
-		pcf.AddClient(pr.responseWriter)
-		return nil
+		return pcf.AddClient(pr.responseWriter)
 	}
 
 	ctx, span := tspan.NewChildSpan(pr.upstreamRequest.Context(), rsc.Tracer, "FetchObject")
@@ -338,7 +349,9 @@ func handlePCF(pr *proxyRequest) error {
 			reqs.Delete(pr.key)
 		}()
 
-		pcf.AddClient(pr.responseWriter)
+		if err := pcf.AddClient(pr.responseWriter); err != nil {
+			return err
+		}
 
 		return handleAllWrites(pr)
 	}
@@ -346,7 +359,9 @@ func handlePCF(pr *proxyRequest) error {
 }
 
 func handleAllWrites(pr *proxyRequest) error {
-	handleResponse(pr)
+	if err := handleResponse(pr); err != nil {
+		return err
+	}
 	if pr.writeToCache {
 		if pr.cacheDocument == nil || !pr.cacheDocument.isLoaded {
 			d := DocumentFromHTTPResponse(pr.upstreamResponse, nil, pr.cachingPolicy)
@@ -357,7 +372,9 @@ func handleAllWrites(pr *proxyRequest) error {
 				d.Body = pr.cacheBuffer.Bytes()
 			}
 		}
-		pr.store()
+		if err := pr.store(); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -418,7 +435,9 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 		pr.mapLock.Lock()
 		writer := PrepareResponseWriter(w, pr.upstreamResponse.StatusCode, pr.upstreamResponse.Header)
 		pr.mapLock.Unlock()
-		pcf.AddClient(writer)
+		if err := pcf.AddClient(writer); err != nil {
+			return nil, status.LookupStatusError
+		}
 		return pr.upstreamResponse, status.LookupStatusProxyHit
 	}
 
@@ -433,19 +452,24 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 	pr.cacheDocument, pr.cacheStatus, pr.neededRanges, err =
 		QueryCache(pr.upstreamRequest.Context(), cc, pr.key, pr.wantedRanges, nil)
 	if err == nil || err == cache.ErrKNF {
-		if f, ok := cacheResponseHandlers[pr.cacheStatus]; ok {
-			f(pr)
-		} else {
+		f, ok := cacheResponseHandlers[pr.cacheStatus]
+		if !ok {
 			logger.Warn("unhandled cache lookup response",
 				logging.Pairs{"lookupStatus": pr.cacheStatus})
 			return nil, status.LookupStatusProxyOnly
 		}
+		if err := f(pr); err != nil {
+			return nil, status.LookupStatusError
+		}
+
 	} else {
 		logger.Error("cache lookup error",
 			logging.Pairs{"detail": err.Error()})
 		pr.cacheDocument = nil
 		pr.cacheStatus = status.LookupStatusKeyMiss
-		handleCacheKeyMiss(pr)
+		if err := handleCacheKeyMiss(pr); err != nil {
+			return nil, status.LookupStatusKeyMiss
+		}
 	}
 
 	if pr.hasWriteLock {

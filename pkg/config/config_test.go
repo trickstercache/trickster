@@ -167,21 +167,6 @@ func TestSetDefaults(t *testing.T) {
 	}
 }
 
-const testRule = `
-rules:
-  example:
-    input_source: path
-    input_type: string
-    operation: prefix
-    next_route: test
-    cases:
-      '1':
-        matches:
-          - trickster
-        next_route: test
-
-`
-
 const testRewriter = `
 request_rewriters:
   example:
