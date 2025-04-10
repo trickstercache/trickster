@@ -152,7 +152,6 @@ func TestLocksUpgradePileup(t *testing.T) {
 func TestLocksConcurrent(t *testing.T) {
 
 	const size = 10000
-	rand.Seed(time.Now().UnixNano())
 
 	lk := NewNamedLocker()
 	wg := &sync.WaitGroup{}

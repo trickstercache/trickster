@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/forwarding"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
@@ -29,10 +30,7 @@ import (
 func TestNew(t *testing.T) {
 
 	pc := New()
-
-	if pc == nil {
-		t.Errorf("expected non-nil value you for %s", "PathConfig")
-	}
+	require.NotNil(t, pc)
 
 	if pc.HandlerName != "proxy" {
 		t.Errorf("expected value %s, got %s", "proxy", pc.HandlerName)
@@ -44,10 +42,7 @@ func TestPathClone(t *testing.T) {
 
 	pc := New()
 	pc2 := pc.Clone()
-
-	if pc2 == nil {
-		t.Errorf("expected non-nil value you for %s", "PathConfig")
-	}
+	require.NotNil(t, pc2)
 
 	if pc2.HandlerName != "proxy" {
 		t.Errorf("expected value %s, got %s", "proxy", pc2.HandlerName)
