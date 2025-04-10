@@ -5,6 +5,7 @@ import (
 	"slices"
 )
 
+// Set is a collection of unique elements
 type Set[T comparable] map[T]struct{}
 
 // New creates a new Set from a slice of keys.
@@ -16,10 +17,12 @@ func New[T comparable](keys []T) Set[T] {
 	return s
 }
 
+// NewIntSet returns a new Set[int]
 func NewIntSet() Set[int] {
 	return make(Set[int])
 }
 
+// NewIntSet returns a new Set[string]
 func NewStringSet() Set[string] {
 	return make(Set[string])
 }
