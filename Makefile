@@ -145,6 +145,7 @@ style:
 .PHONY: lint
 lint:
 	@golangci-lint run
+	@staticcheck ./...
 
 GO_TEST_FLAGS ?= -coverprofile=.coverprofile
 .PHONY: test
