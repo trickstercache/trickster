@@ -36,6 +36,7 @@ linters:
       enable-all-rules: true
       rules:
         - name: unhandled-error
+          # disabled: false # TODO: come back to this
           arguments: # Allow skipping errors for the following functions
           - fmt.Print
           - fmt.Println
@@ -61,6 +62,8 @@ linters:
           - compress/flate.Writer.Write
           - compress/flate.Writer.Close
           - net/http.Request.ParseMultipartForm
+          - handler.ResponseEncoder.Close
+          - config.Config.setDefaults
         - name: exported
           arguments:
           - disableStutteringCheck
@@ -108,8 +111,6 @@ linters:
           disabled: true # not helpful
         - name: defer
           disabled: true # not helpful
-        - name: unhandled-error
-          disabled: true # TODO: come back to this
         - name: struct-tag
           disabled: true # not helpful
         - name: bare-return

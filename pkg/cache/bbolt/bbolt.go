@@ -218,7 +218,7 @@ func (c *Cache) SetTTL(cacheKey string, ttl time.Duration) {
 
 // Remove removes an object in cache, if present
 func (c *Cache) Remove(cacheKey string) {
-	c.remove(cacheKey, false)
+	c.remove(cacheKey, false) //revive:disable:unhandled-error
 }
 
 func (c *Cache) remove(cacheKey string, isBulk bool) error {
@@ -247,7 +247,7 @@ func (c *Cache) BulkRemove(cacheKeys []string) {
 	for _, cacheKey := range cacheKeys {
 		wg.Add(1)
 		go func(key string) {
-			c.remove(key, true)
+			c.remove(key, true) //revive:disable:unhandled-error
 			wg.Done()
 		}(cacheKey)
 	}

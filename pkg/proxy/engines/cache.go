@@ -572,7 +572,9 @@ func DocumentFromHTTPResponse(resp *http.Response, body []byte,
 
 	if d.StatusCode == http.StatusPartialContent && body != nil && len(body) > 0 {
 		d.ParsePartialContentBody(resp, body)
-		d.FulfillContentBody()
+		if err := d.FulfillContentBody(); err != nil {
+			return d
+		}
 	} else {
 		d.SetBody(body)
 	}
