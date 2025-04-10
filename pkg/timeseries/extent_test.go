@@ -43,13 +43,3 @@ func TestEndsAtOrBefore(t *testing.T) {
 	}
 
 }
-
-// // StartsAtOrAfter returns true if t is equal to or after the Extent's start time
-// func (e *Extent) StartsAtOrAfter(t time.Time) bool {
-// 	return t.Equal(e.Start) || e.Start.After(t)
-// }
-
-// // EndsAtOrBefore returns true if t is equal to or earlier than the Extent's end time
-// func (e *Extent) EndsAtOrBefore(t time.Time) bool {
-// 	return t.Equal(e.End) || e.End.Before(t)
-// }

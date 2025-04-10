@@ -25,7 +25,7 @@ import (
 
 type ServerInstance struct {
 	Config        *config.Config
-	Caches        cache.CacheLookup
+	Caches        cache.Lookup
 	HealthChecker healthcheck.HealthChecker
 	Backends      backends.Backends
 }

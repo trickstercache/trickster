@@ -188,13 +188,13 @@ func applyLoggingConfig(c, o *config.Config) {
 }
 
 func applyCachingConfig(si *instance.ServerInstance,
-	newConf *config.Config) cache.CacheLookup {
+	newConf *config.Config) cache.Lookup {
 
 	if si == nil || newConf == nil {
 		return nil
 	}
 
-	caches := make(map[string]cache.Cache)
+	caches := make(cache.Lookup)
 
 	if si.Config == nil || si.Caches == nil {
 		for k, v := range newConf.Caches {

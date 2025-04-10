@@ -66,7 +66,7 @@ func RegisterPprofRoutes(routerName string, r router.Router) {
 // RegisterProxyRoutes iterates the Trickster Configuration and
 // registers the routes for the configured backends
 func RegisterProxyRoutes(conf *config.Config, r router.Router,
-	metricsRouter router.Router, caches map[string]cache.Cache,
+	metricsRouter router.Router, caches cache.Lookup,
 	tracers tracing.Tracers, dryRun bool) (backends.Backends, error) {
 
 	// a fake "top-level" backend representing the main frontend, so rules can route
@@ -144,7 +144,8 @@ func RegisterProxyRoutes(conf *config.Config, r router.Router,
 	return clients, nil
 }
 
-var noCacheBackends = sets.New([]string{"alb", providers.ReverseProxyShort, providers.ReverseProxy, "proxy", "rule"})
+var noCacheBackends = sets.New([]string{providers.ReverseProxyShort,
+	providers.ReverseProxy, "alb", "proxy", "rule"})
 
 // RegisterHealthHandler registers the main health handler
 func RegisterHealthHandler(router router.Router, path string,
@@ -154,7 +155,7 @@ func RegisterHealthHandler(router router.Router, path string,
 
 func registerBackendRoutes(r router.Router, metricsRouter router.Router,
 	conf *config.Config, k string, o *bo.Options, clients backends.Backends,
-	caches map[string]cache.Cache, tracers tracing.Tracers, dryRun bool) error {
+	caches cache.Lookup, tracers tracing.Tracers, dryRun bool) error {
 
 	var client backends.Backend
 	var c cache.Cache
