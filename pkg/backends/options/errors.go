@@ -41,10 +41,9 @@ type ErrMissingProvider struct {
 
 // NewErrMissingProvider returns a new missing provider error
 func NewErrMissingProvider(backendName string) error {
-	var e *ErrMissingProvider = &ErrMissingProvider{
+	return &ErrMissingProvider{
 		error: fmt.Errorf(`missing provider for backend "%s"`, backendName),
 	}
-	return e
 }
 
 // ErrMissingOriginURL is an error type for missing origin URL
@@ -54,10 +53,9 @@ type ErrMissingOriginURL struct {
 
 // NewErrMissingOriginURL returns a new missing origin URL error
 func NewErrMissingOriginURL(backendName string) error {
-	var e *ErrMissingOriginURL = &ErrMissingOriginURL{
+	return &ErrMissingOriginURL{
 		error: fmt.Errorf(`missing origin-url for backend "%s"`, backendName),
 	}
-	return e
 }
 
 // ErrInvalidNegativeCacheName is an error type for invalid negative cache name
@@ -67,10 +65,9 @@ type ErrInvalidNegativeCacheName struct {
 
 // NewErrInvalidNegativeCacheName returns a new invalid negative cache name error
 func NewErrInvalidNegativeCacheName(cacheName string) error {
-	var e *ErrInvalidNegativeCacheName = &ErrInvalidNegativeCacheName{
+	return &ErrInvalidNegativeCacheName{
 		error: fmt.Errorf(`invalid negative cache name: %s`, cacheName),
 	}
-	return e
 }
 
 // ErrInvalidRuleName is an error type for invalid rule name
@@ -80,11 +77,10 @@ type ErrInvalidRuleName struct {
 
 // NewErrInvalidRuleName returns a new invalid rule name error
 func NewErrInvalidRuleName(ruleName, backendName string) error {
-	var e *ErrInvalidRuleName = &ErrInvalidRuleName{
+	return &ErrInvalidRuleName{
 		error: fmt.Errorf(`invalid rule name "%s" provided in backend options "%s"`,
 			ruleName, backendName),
 	}
-	return e
 }
 
 // ErrInvalidALBOptions is an error type for invalid ALB Options
@@ -94,11 +90,10 @@ type ErrInvalidALBOptions struct {
 
 // NewErrInvalidALBOptions returns a new invalid ALB Options error
 func NewErrInvalidALBOptions(albName, backendName string) error {
-	var e *ErrInvalidALBOptions = &ErrInvalidALBOptions{
+	return &ErrInvalidALBOptions{
 		error: fmt.Errorf("invalid backend name [%s] provided in pool for alb [%s]",
 			backendName, albName),
 	}
-	return e
 }
 
 // ErrInvalidCacheName is an error type for invalid cache name
@@ -108,11 +103,10 @@ type ErrInvalidCacheName struct {
 
 // NewErrInvalidCacheName returns a new invalid cache name error
 func NewErrInvalidCacheName(cacheName, backendName string) error {
-	var e *ErrInvalidCacheName = &ErrInvalidCacheName{
+	return &ErrInvalidCacheName{
 		error: fmt.Errorf(`invalid cache name "%s" provided in backend options "%s"`,
 			cacheName, backendName),
 	}
-	return e
 }
 
 // ErrInvalidBackendName is an error type for invalid backend name
@@ -122,10 +116,9 @@ type ErrInvalidBackendName struct {
 
 // NewErrInvalidBackendName returns a new invalid backend name error
 func NewErrInvalidBackendName(backendName string) error {
-	var e *ErrInvalidBackendName = &ErrInvalidBackendName{
+	return &ErrInvalidBackendName{
 		error: fmt.Errorf(`invalid backend name: %s`, backendName),
 	}
-	return e
 }
 
 // ErrInvalidRewriterName is an error type for invalid rewriter name
@@ -135,9 +128,8 @@ type ErrInvalidRewriterName struct {
 
 // NewErrInvalidRewriterName returns a new missing invalid rewriter name error
 func NewErrInvalidRewriterName(rewriterName, backendName string) error {
-	var e *ErrInvalidRewriterName = &ErrInvalidRewriterName{
+	return &ErrInvalidRewriterName{
 		error: fmt.Errorf(`invalid rewriter name "%s" provided in backend options "%s"`,
 			rewriterName, backendName),
 	}
-	return e
 }

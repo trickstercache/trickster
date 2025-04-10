@@ -192,7 +192,7 @@ func (rt *lmRouter) matchByHost(method, host, path string) http.Handler {
 			}
 			return r.Handler
 		}
-		if !(rt.matchScheme&router.MatchPathPrefix == router.MatchPathPrefix) {
+		if rt.matchScheme&router.MatchPathPrefix != router.MatchPathPrefix {
 			return nil
 		}
 		lp := len(path)
@@ -221,7 +221,7 @@ func MethodNotAllowed(w http.ResponseWriter, r *http.Request) {
 }
 
 var methodNotAllowedHandler = http.HandlerFunc(MethodNotAllowed)
-var notFoundHandler = http.HandlerFunc(http.NotFound)
+var notFoundHandler = http.NotFoundHandler()
 
 // prefixRouteSets allows the route.PrefixRouteSets to be sorted by path from
 // longest-to-shortest using sort.Interface

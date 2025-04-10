@@ -68,8 +68,10 @@ func interpolateTimeQuery(template string, tsFieldName string, timeFormat int, e
 	}
 
 	rangeCondition := fmt.Sprintf("%s BETWEEN %d AND %d", tsFieldName, start, end)
-	x := strings.Replace(strings.Replace(strings.Replace(strings.Replace(template,
-		tkRange, rangeCondition, -1), tkTS1, strconv.FormatInt(start, 10), -1), tkTS2,
-		strconv.FormatInt(end, 10), -1), "<$FORMAT$>", "TSVWithNamesAndTypes", -1)
-	return x
+	return strings.NewReplacer(
+		tkRange, rangeCondition,
+		tkTS1, strconv.FormatInt(start, 10),
+		tkTS2, strconv.FormatInt(end, 10),
+		tkFormat, "TSVWithNamesAndTypes",
+	).Replace(template)
 }

@@ -198,14 +198,14 @@ func registerBackendRoutes(r router.Router, metricsRouter router.Router,
 		// now we'll go ahead and register the health handler
 		if h, ok := client.Handlers()["health"]; ok && o.Name != "" && metricsRouter != nil && (o.HealthCheck == nil ||
 			o.HealthCheck.Verb != "x") {
-			hp := strings.Replace(conf.Main.HealthHandlerPath+"/"+o.Name, "//", "/", -1)
+			hp := strings.ReplaceAll(conf.Main.HealthHandlerPath+"/"+o.Name, "//", "/")
 			logger.Debug("registering health handler path",
 				logging.Pairs{"path": hp, "backendName": o.Name,
 					"upstreamPath": o.HealthCheck.Path,
 					"upstreamVerb": o.HealthCheck.Verb})
 			metricsRouter.RegisterRoute(hp, nil, nil, false,
-				http.Handler(middleware.WithResourcesContext(client, o, nil,
-					nil, nil, h)))
+				middleware.WithResourcesContext(client, o, nil,
+					nil, nil, h))
 		}
 	}
 	return nil

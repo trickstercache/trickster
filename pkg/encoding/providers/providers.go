@@ -17,10 +17,10 @@
 package providers
 
 import (
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 )
 
 const (
@@ -51,8 +51,6 @@ const (
 type Provider byte
 type Lookup map[string]Provider
 type ReverseLookup map[Provider]string
-
-var mtx sync.Mutex
 
 // Update whenever a new encoder provider is added
 var providerVals = []Provider{1, 2, 4, 8, 128}
@@ -91,7 +89,7 @@ func init() {
 			webProviders = append(webProviders, s)
 			webValLookup[p] = s
 			webProviderLookup[s] = p
-			AllSupportedWebProvidersBitmap = AllSupportedWebProvidersBitmap | p
+			AllSupportedWebProvidersBitmap |= p
 		}
 		providers = append(providers, s)
 		providerLookup[s] = p
@@ -112,15 +110,11 @@ func (p Provider) String() string {
 // This can be overlapped with the client's accepted encodings to determine which supported
 // encodings can be applied to the ResponseWriter
 func WebProviders() []string {
-	mtx.Lock()
-	defer mtx.Unlock()
 	return slices.Clone(webProviders)
 }
 
 // Providers returns the list of encodings that are known to be decodable in a web browser
 func Providers() []string {
-	mtx.Lock()
-	defer mtx.Unlock()
 	return slices.Clone(providers)
 }
 
@@ -137,7 +131,7 @@ func GetCompatibleWebProviders(acceptedEncodings string) (string, Provider) {
 	// this converts the acceptedEncodings string into a bitmap of Trickster-compatible encoders
 	for _, enc := range strings.Split(acceptedEncodings, ",") {
 		if v, ok := webProviderLookup[strings.Trim(enc, " ")]; ok {
-			b = b | v
+			b |= v
 		}
 	}
 	// if there were no compatible encoders accepted, exit asap
@@ -147,7 +141,7 @@ func GetCompatibleWebProviders(acceptedEncodings string) (string, Provider) {
 	comp := make([]string, len(providerValLookup))
 	var k int
 	// otherwise, this builds the list of compatible encoders from the bitmap
-	for i := Provider(1); i <= maxWebProvider; i = i << 1 {
+	for i := Provider(1); i <= maxWebProvider; i <<= 1 {
 		if b&i == i {
 			comp[k] = providerValLookup[i]
 			k++
@@ -156,13 +150,9 @@ func GetCompatibleWebProviders(acceptedEncodings string) (string, Provider) {
 	return strings.Join(comp[:k], ", "), b
 }
 
-// Clone returns a perfect copy of the
+// Clone returns a perfect copy of the lookup
 func (l Lookup) Clone() Lookup {
-	c := make(Lookup)
-	for k, v := range l {
-		c[k] = v
-	}
-	return c
+	return maps.Clone(l)
 }
 
 // ProviderID returns the byte value of the provided encoding provider name

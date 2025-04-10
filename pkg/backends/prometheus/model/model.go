@@ -48,19 +48,18 @@ func (e *Envelope) StartMarshal(w io.Writer, httpStatus int) {
 		h.Set(headers.NameContentType, headers.ValueApplicationJSON+"; charset=UTF-8")
 		rw.WriteHeader(httpStatus)
 	}
-	w.Write([]byte(fmt.Sprintf(`{"status":"%s"`, e.Status)))
+	fmt.Fprintf(w, `{"status":"%s"`, e.Status)
 
 	if e.Error != "" {
-		w.Write([]byte(fmt.Sprintf(`,"error":"%s"`, e.Error)))
+		fmt.Fprintf(w, `,"error":"%s"`, e.Error)
 	}
 
 	if e.ErrorType != "" {
-		w.Write([]byte(fmt.Sprintf(`,"errorType":"%s"`, e.ErrorType)))
+		fmt.Fprintf(w, `,"errorType":"%s"`, e.ErrorType)
 	}
 
 	if len(e.Warnings) > 0 {
-		w.Write([]byte(fmt.Sprintf(`,"warnings":["%s"]`, strings.Join(e.Warnings, `","`))))
-
+		fmt.Fprintf(w, `,"warnings":["%s"]`, strings.Join(e.Warnings, `","`))
 	}
 }
 

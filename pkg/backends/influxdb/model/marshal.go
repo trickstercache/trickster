@@ -104,7 +104,7 @@ func writeCSVValue(w io.Writer, v any, nilVal string) {
 	switch t := v.(type) {
 	case string:
 		if strings.Contains(t, `"`) {
-			t = `"` + strings.Replace(t, `"`, `\"`, -1) + `"`
+			t = `"` + strings.ReplaceAll(t, `"`, `\"`) + `"`
 		} else if strings.Contains(t, " ") || strings.Contains(t, ",") {
 			t = `"` + t + `"`
 		}

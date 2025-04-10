@@ -50,7 +50,7 @@ type SeriesLookupKey struct {
 
 // Size returns the memory utilization of the Series in bytes
 func (s Series) Size() int64 {
-	return int64(16 + s.PointSize + int64(s.Header.Size))
+	return 16 + s.PointSize + int64(s.Header.Size)
 }
 
 // Clone returns a perfect, new copy of the Series

@@ -106,7 +106,7 @@ func (trq *TimeRangeQuery) NormalizeExtent() {
 
 func (trq *TimeRangeQuery) String() string {
 	return fmt.Sprintf(`{ "statement": "%s", "step": "%s", "extent": "%s", "tsd": "%s", "td": %s, "vd": %s }`,
-		strings.Replace(trq.Statement, `"`, `\"`, -1), trq.Step.String(),
+		strings.ReplaceAll(trq.Statement, `"`, `\"`), trq.Step.String(),
 		trq.Extent.String(), trq.TimestampDefinition.String(),
 		FieldDefinitions(trq.TagFieldDefintions).String(), FieldDefinitions(trq.ValueFieldDefinitions))
 }

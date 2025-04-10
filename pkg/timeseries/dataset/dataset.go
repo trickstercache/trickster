@@ -249,28 +249,22 @@ func (ds *DataSet) DefaultMerger(sortSeries bool, collection ...timeseries.Times
 		if !ok {
 			continue
 		}
-		var rmtx sync.RWMutex
 		var rwg sync.WaitGroup
 		for _, r := range ds2.Results {
 			if r == nil {
 				continue
 			}
-			rmtx.RLock()
+
 			r1, ok := rl[r.StatementID]
-			rmtx.RUnlock()
 			if !ok {
-				rmtx.Lock()
-				if _, ok = rl[r.StatementID]; !ok {
-					rl[r.StatementID] = r
-					ds.Results = append(ds.Results, r)
-					for _, s := range r.SeriesList {
-						if s == nil {
-							continue
-						}
-						sl[SeriesLookupKey{StatementID: r.StatementID, Hash: s.Header.CalculateHash()}] = s
+				rl[r.StatementID] = r
+				ds.Results = append(ds.Results, r)
+				for _, s := range r.SeriesList {
+					if s == nil {
+						continue
 					}
+					sl[SeriesLookupKey{StatementID: r.StatementID, Hash: s.Header.CalculateHash()}] = s
 				}
-				rmtx.Unlock()
 				continue
 			}
 
@@ -502,7 +496,7 @@ func (ds *DataSet) Size() int64 {
 		(len(ds.ExtentList) * 72) +
 		len(ds.Error))
 	for i := range ds.Results {
-		c += int64(ds.Results[i].Size())
+		c += ds.Results[i].Size()
 	}
 	return c
 }

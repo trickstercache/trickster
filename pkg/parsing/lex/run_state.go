@@ -38,7 +38,7 @@ type RunState struct {
 
 // Next returns the next rune in the input.
 func (rs *RunState) Next() rune {
-	if int(rs.Pos) >= rs.InputWidth {
+	if rs.Pos >= rs.InputWidth {
 		rs.Width = 0
 		return EOF
 	}

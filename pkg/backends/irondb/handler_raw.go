@@ -53,7 +53,7 @@ func (c *Client) rawHandlerParseTimeRangeQuery(
 
 	qp := r.URL.Query()
 	var err error
-	p := ""
+	var p string
 	if p = qp.Get(upStart); p == "" {
 		return nil, errors.MissingURLParam(upStart)
 	}

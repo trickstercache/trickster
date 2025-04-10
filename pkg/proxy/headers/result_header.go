@@ -121,7 +121,7 @@ func parseResultHeaderVals(h string) ResultHeaderParts {
 					r.FastForwardStatus = val
 				}
 			case "fetched":
-				val = strings.ReplaceAll(strings.ReplaceAll(val, "[", ""), "]", "")
+				val = strings.NewReplacer("[", "", "]", "").Replace(val)
 				fparts := strings.Split(val, ";")
 				el := make(timeseries.ExtentList, len(fparts))
 				var k int

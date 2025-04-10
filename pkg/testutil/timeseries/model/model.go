@@ -172,18 +172,18 @@ func MarshalTimeseriesWriter(ts timeseries.Timeseries, rlo *timeseries.RequestOp
 		w.Write([]byte(seriesSep + `{"metric":{`))
 		sep := ""
 		for _, k := range s.Header.Tags.Keys() {
-			w.Write([]byte(fmt.Sprintf(`%s"%s":"%s"`, sep, k, s.Header.Tags[k])))
+			fmt.Fprintf(w, `%s"%s":"%s"`, sep, k, s.Header.Tags[k])
 			sep = ","
 		}
 		w.Write([]byte(`},"values":[`))
 		sep = ""
 		sort.Sort(s.Points)
 		for _, p := range s.Points {
-			w.Write([]byte(fmt.Sprintf(`%s[%s,"%s"]`,
+			fmt.Fprintf(w, `%s[%s,"%s"]`,
 				sep,
 				strconv.FormatFloat(float64(p.Epoch)/1000000000, 'f', -1, 64),
-				p.Values[0]),
-			))
+				p.Values[0],
+			)
 			sep = ","
 		}
 		w.Write([]byte("]}"))

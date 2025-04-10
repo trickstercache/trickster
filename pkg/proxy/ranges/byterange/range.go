@@ -292,7 +292,7 @@ func ParseRangeHeader(input string) Ranges {
 		input == byteRequestRangePrefix {
 		return nil
 	}
-	input = strings.Replace(input, " ", "", -1)[6:]
+	input = strings.ReplaceAll(input, " ", "")[6:]
 	parts := strings.Split(input, ",")
 	ranges := make(Ranges, len(parts))
 
