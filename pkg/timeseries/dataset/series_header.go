@@ -99,22 +99,22 @@ func (sh *SeriesHeader) CalculateSize() int {
 }
 
 func (sh *SeriesHeader) String() string {
-	sb := strings.Builder{}
+	sb := &strings.Builder{}
 	sb.WriteByte('{')
 	if sh.Name != "" {
-		sb.WriteString(fmt.Sprintf(`"name":"%s",`, sh.Name))
+		fmt.Fprintf(sb, `"name":"%s",`, sh.Name)
 	}
 	if sh.QueryStatement != "" {
-		sb.WriteString(fmt.Sprintf(`"query":"%s",`, sh.QueryStatement))
+		fmt.Fprintf(sb, `"query":"%s",`, sh.QueryStatement)
 	}
 	if len(sh.Tags) > 0 {
-		sb.WriteString(fmt.Sprintf(`"tags":"%s",`, sh.Tags.String()))
+		fmt.Fprintf(sb, `"tags":"%s",`, sh.Tags.String())
 	}
 	if len(sh.FieldsList) > 0 {
 		sb.WriteString(`"fields":[`)
 		l := len(sh.FieldsList)
 		for i, fd := range sh.FieldsList {
-			sb.WriteString(fmt.Sprintf(`"%s"`, fd.Name))
+			fmt.Fprintf(sb, `"%s"`, fd.Name)
 			if i < l-1 {
 				sb.WriteByte(',')
 			}

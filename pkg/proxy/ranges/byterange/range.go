@@ -112,11 +112,11 @@ func (brs Ranges) String() string {
 	if len(brs) == 0 {
 		return ""
 	}
-	sb := strings.Builder{}
+	sb := &strings.Builder{}
 	sb.WriteString(byteRequestRangePrefix)
 	var sep string
 	for _, r := range brs {
-		sb.WriteString(fmt.Sprintf("%s%s", sep, r.String()))
+		fmt.Fprintf(sb, "%s%s", sep, r.String())
 		sep = ", "
 	}
 	return sb.String()
