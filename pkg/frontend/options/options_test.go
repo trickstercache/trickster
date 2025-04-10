@@ -30,7 +30,7 @@ func TestFrontendOptions(t *testing.T) {
 
 	f1.ListenAddress = "trickster"
 	f2 = f1.Clone()
-	if !b {
+	if !f1.Equal(f2) {
 		t.Errorf("expected %t got %t", true, b)
 	}
 }
