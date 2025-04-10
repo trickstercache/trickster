@@ -77,12 +77,12 @@ func (r *Result) Clone() *Result {
 }
 
 func (r *Result) String() string {
-	sb := strings.Builder{}
+	sb := &strings.Builder{}
 	sb.WriteByte('{')
 	if r.Error != "" {
-		sb.WriteString(fmt.Sprintf(`"error":"%s",`, r.Error))
+		fmt.Fprintf(sb, `"error":"%s",`, r.Error)
 	}
-	sb.WriteString(fmt.Sprintf(`"statementID":%d,`, r.StatementID))
+	fmt.Fprintf(sb, `"statementID":%d,`, r.StatementID)
 	sb.WriteString("series:[")
 	l := len(r.SeriesList)
 	for i, s := range r.SeriesList {

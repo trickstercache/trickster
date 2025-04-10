@@ -63,16 +63,16 @@ func (s *Series) Clone() *Series {
 }
 
 func (s *Series) String() string {
-	sb := strings.Builder{}
+	sb := &strings.Builder{}
 	sb.WriteString(`{"header":`)
 	sb.WriteString(s.Header.String())
 	sb.WriteString(`,points:[`)
 	l := len(s.Points)
 	for i, p := range s.Points {
-		sb.WriteString(fmt.Sprintf(`{%d,`, p.Epoch))
+		fmt.Fprintf(sb, `{%d,`, p.Epoch)
 		m := len(p.Values)
 		for j, v := range p.Values {
-			sb.WriteString(fmt.Sprintf(`%v`, v))
+			fmt.Fprintf(sb, `%v`, v)
 			if j < m-1 {
 				sb.WriteByte(',')
 			}

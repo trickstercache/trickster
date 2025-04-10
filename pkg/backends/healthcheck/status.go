@@ -44,13 +44,13 @@ type Status struct {
 type StatusLookup map[string]*Status
 
 func (s *Status) String() string {
-	sb := strings.Builder{}
-	sb.WriteString(fmt.Sprintf("target: %s\nstatus: %d\n", s.name, s.status.Load()))
+	sb := &strings.Builder{}
+	fmt.Fprintf(sb, "target: %s\nstatus: %d\n", s.name, s.status.Load())
 	if s.status.Load() < 1 {
-		sb.WriteString(fmt.Sprintf("detail: %s\n", s.detail))
+		fmt.Fprintf(sb, "detail: %s\n", s.detail)
 	}
 	if s.status.Load() < 0 {
-		sb.WriteString(fmt.Sprintf("since: %d", s.failingSince.Unix()))
+		fmt.Fprintf(sb, "since: %d", s.failingSince.Unix())
 	}
 	return sb.String()
 }
