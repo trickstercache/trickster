@@ -109,13 +109,12 @@ func (pcf *progressiveCollapseForwarder) AddClient(w io.Writer) error {
 			if n > HTTPBlockSize {
 				remaining = n
 				for {
-					if remaining > HTTPBlockSize {
-						w.Write(buf[0:HTTPBlockSize])
-						remaining -= HTTPBlockSize
-					} else {
+					if remaining <= HTTPBlockSize {
 						w.Write(buf[0:remaining])
 						break
 					}
+					w.Write(buf[0:HTTPBlockSize])
+					remaining -= HTTPBlockSize
 				}
 			} else {
 				w.Write(buf[0:n])

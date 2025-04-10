@@ -80,9 +80,9 @@ type Registrar func(map[string]http.Handler)
 
 // New returns a new Backend
 func New(name string, o *bo.Options, registrar Registrar,
-	router http.Handler, cache cache.Cache) (Backend, error) {
+	router http.Handler, c cache.Cache) (Backend, error) {
 
-	c, err := proxy.NewHTTPClient(o)
+	client, err := proxy.NewHTTPClient(o)
 
 	// this section sets up the health check HTTP client with a reasonable timeout
 	hco := o
@@ -107,8 +107,8 @@ func New(name string, o *bo.Options, registrar Registrar,
 	if o != nil {
 		bur = urls.FromParts(o.Scheme, o.Host, o.PathPrefix, "", "")
 	}
-	return &backend{name: name, config: o, router: router, cache: cache,
-		webClient: c, healthCheckClient: hcc, baseUpstreamURL: bur, registrar: registrar}, err
+	return &backend{name: name, config: o, router: router, cache: c,
+		webClient: client, healthCheckClient: hcc, baseUpstreamURL: bur, registrar: registrar}, err
 
 }
 

@@ -80,15 +80,15 @@ var _ types.NewBackendClientFunc = NewClient
 
 // NewClient returns a new Client Instance
 func NewClient(name string, o *bo.Options, router http.Handler,
-	cache cache.Cache, _ backends.Backends,
+	c cache.Cache, _ backends.Backends,
 	_ types.Lookup) (backends.Backend, error) {
-	c := &Client{}
-	b, err := backends.NewTimeseriesBackend(name, o, c.RegisterHandlers,
-		router, cache, modeliron.NewModeler())
-	c.TimeseriesBackend = b
-	c.makeTrqParsers()
-	c.makeExtentSetters()
-	return c, err
+	cli := &Client{}
+	b, err := backends.NewTimeseriesBackend(name, o, cli.RegisterHandlers,
+		router, c, modeliron.NewModeler())
+	cli.TimeseriesBackend = b
+	cli.makeTrqParsers()
+	cli.makeExtentSetters()
+	return cli, err
 }
 
 func (c *Client) makeTrqParsers() {

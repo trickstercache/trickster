@@ -85,12 +85,12 @@ func RegisterAll(cfg *config.Config, isDryRun bool) (tracing.Tracers, error) {
 }
 
 // GetTracer returns a *Tracer based on the provided options
-func GetTracer(options *options.Options,
+func GetTracer(opts *options.Options,
 	isDryRun bool) (*tracing.Tracer, error) {
 
-	if options == nil {
+	if opts == nil {
 		logger.Info("nil tracing config, using noop tracer", nil)
-		return noop.New(options)
+		return noop.New(opts)
 	}
 
 	logTracerRegistration := func() {
@@ -99,26 +99,26 @@ func GetTracer(options *options.Options,
 		}
 		logger.Info("tracer registration",
 			logging.Pairs{
-				"name":        options.Name,
-				"provider":    options.Provider,
-				"serviceName": options.ServiceName,
-				"endpoint":    options.Endpoint,
-				"sampleRate":  options.SampleRate,
-				"tags":        strings.StringMap(options.Tags).String(),
+				"name":        opts.Name,
+				"provider":    opts.Provider,
+				"serviceName": opts.ServiceName,
+				"endpoint":    opts.Endpoint,
+				"sampleRate":  opts.SampleRate,
+				"tags":        strings.StringMap(opts.Tags).String(),
 			},
 		)
 	}
 
-	switch options.Provider {
+	switch opts.Provider {
 	case providers.Stdout.String():
 		logTracerRegistration()
-		return stdout.New(options)
+		return stdout.New(opts)
 	case providers.OTLP.String():
 		logTracerRegistration()
-		return otlp.New(options)
+		return otlp.New(opts)
 	case providers.Zipkin.String():
 		logTracerRegistration()
-		return zipkin.New(options)
+		return zipkin.New(opts)
 	}
 
 	return nil, nil

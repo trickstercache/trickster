@@ -33,21 +33,21 @@ type Backends map[string]Backend
 func (b Backends) StartHealthChecks() (healthcheck.HealthChecker, error) {
 	hc := healthcheck.New()
 	for k, c := range b {
-		bo := c.Configuration()
-		if IsVirtual(bo.Provider) || k == "frontend" {
+		opts := c.Configuration()
+		if IsVirtual(opts.Provider) || k == "frontend" {
 			continue
 		}
-		hco := bo.HealthCheck
+		hco := opts.HealthCheck
 		if hco == nil {
 			continue
 		}
-		bo.HealthCheck = c.DefaultHealthCheckConfig()
-		if bo.HealthCheck == nil {
-			bo.HealthCheck = hco
+		opts.HealthCheck = c.DefaultHealthCheckConfig()
+		if opts.HealthCheck == nil {
+			opts.HealthCheck = hco
 		} else {
-			bo.HealthCheck.Overlay(k, hco)
+			opts.HealthCheck.Overlay(k, hco)
 		}
-		st, err := hc.Register(k, bo.Provider, bo.HealthCheck, c.HealthCheckHTTPClient())
+		st, err := hc.Register(k, opts.Provider, opts.HealthCheck, c.HealthCheckHTTPClient())
 		if err != nil {
 			return nil, err
 		}

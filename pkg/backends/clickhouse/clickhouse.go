@@ -45,15 +45,15 @@ var _ types.NewBackendClientFunc = NewClient
 
 // NewClient returns a new Client Instance
 func NewClient(name string, o *bo.Options, router http.Handler,
-	cache cache.Cache, _ backends.Backends,
+	c cache.Cache, _ backends.Backends,
 	_ types.Lookup) (backends.Backend, error) {
 	if o != nil {
 		o.FastForwardDisable = true
 	}
-	c := &Client{}
-	b, err := backends.NewTimeseriesBackend(name, o, c.RegisterHandlers, router, cache, modelch.NewModeler())
-	c.TimeseriesBackend = b
-	return c, err
+	cli := &Client{}
+	b, err := backends.NewTimeseriesBackend(name, o, cli.RegisterHandlers, router, c, modelch.NewModeler())
+	cli.TimeseriesBackend = b
+	return cli, err
 }
 
 // ParseTimeRangeQuery parses the key parts of a TimeRangeQuery from the inbound HTTP Request
@@ -68,11 +68,11 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 		sqlQuery = string(originalBody)
 	} else {
 		qi = r.URL.Query()
-		if p, ok := qi[upQuery]; ok {
-			sqlQuery = p[0]
-		} else {
+		p, ok := qi[upQuery]
+		if !ok {
 			return nil, nil, false, errors.MissingURLParam(upQuery)
 		}
+		sqlQuery = p[0]
 	}
 
 	trq, ro, canOPC, err := parse(sqlQuery)

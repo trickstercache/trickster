@@ -55,9 +55,8 @@ func (p *Parser) ParseQuery() (*Query, bool, error) {
 		if err != nil {
 			if err == io.EOF {
 				break
-			} else {
-				return nil, false, err
 			}
+			return nil, false, err
 		}
 		switch {
 		case !hasRange && strings.Contains(line, "range"):

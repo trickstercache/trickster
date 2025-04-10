@@ -136,9 +136,8 @@ func (d *HTTPDocument) getByteRanges() byterange.Ranges {
 		return d.Ranges
 	} else if ranges := d.RangeParts.Ranges(); len(ranges) > 0 {
 		return ranges
-	} else {
-		return byterange.Ranges{byterange.Range{Start: 0, End: d.ContentLength}}
 	}
+	return byterange.Ranges{byterange.Range{Start: 0, End: d.ContentLength}}
 }
 
 // SafeHeaderClone returns a threadsafe copy of the Document Header

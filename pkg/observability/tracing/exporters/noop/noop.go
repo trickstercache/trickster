@@ -23,6 +23,6 @@ import (
 )
 
 // New returns a new Noop Tracer
-func New(options *options.Options) (*tracing.Tracer, error) {
+func New(opts *options.Options) (*tracing.Tracer, error) {
 	return nil, nil
 }

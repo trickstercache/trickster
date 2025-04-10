@@ -146,9 +146,9 @@ func RegisterProxyRoutes(conf *config.Config, r router.Router,
 var noCacheBackends = providers.NonCacheBackends()
 
 // RegisterHealthHandler registers the main health handler
-func RegisterHealthHandler(router router.Router, path string,
+func RegisterHealthHandler(r router.Router, path string,
 	hc healthcheck.HealthChecker) {
-	router.RegisterRoute(path, nil, nil, false, health.StatusHandler(hc))
+	r.RegisterRoute(path, nil, nil, false, health.StatusHandler(hc))
 }
 
 func registerBackendRoutes(r router.Router, metricsRouter router.Router,
@@ -320,26 +320,26 @@ func RegisterPathRoutes(r router.Router, handlers map[string]http.Handler,
 func RegisterDefaultBackendRoutes(r router.Router, bknds backends.Backends,
 	tracers tracing.Tracers) {
 
-	decorate := func(o *bo.Options, po *po.Options, tr *tracing.Tracer,
+	decorate := func(o *bo.Options, pathOpts *po.Options, tr *tracing.Tracer,
 		c cache.Cache, client backends.Backend) http.Handler {
 		// default base route is the path handler
-		h := po.Handler
+		h := pathOpts.Handler
 		// attach distributed tracer
 		if tr != nil {
 			h = middleware.Trace(tr, h)
 		}
 		// add Backend, Cache, and Path Configs to the HTTP Request's context
-		h = middleware.WithResourcesContext(client, o, c, po, tr, h)
+		h = middleware.WithResourcesContext(client, o, c, pathOpts, tr, h)
 		// attach any request rewriters
 		if len(o.ReqRewriter) > 0 {
 			h = rewriter.Rewrite(o.ReqRewriter, h)
 		}
-		if len(po.ReqRewriter) > 0 {
-			h = rewriter.Rewrite(po.ReqRewriter, h)
+		if len(pathOpts.ReqRewriter) > 0 {
+			h = rewriter.Rewrite(pathOpts.ReqRewriter, h)
 		}
 		// decorate frontend prometheus metrics
-		if !po.NoMetrics {
-			h = middleware.Decorate(o.Name, o.Provider, po.Path, h)
+		if !pathOpts.NoMetrics {
+			h = middleware.Decorate(o.Name, o.Provider, pathOpts.Path, h)
 		}
 		return h
 	}
