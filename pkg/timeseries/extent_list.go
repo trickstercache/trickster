@@ -23,6 +23,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
 // ExtentList is a type of []Extent used for sorting the slice
@@ -373,7 +375,7 @@ func (el ExtentList) Remove(r ExtentList, step time.Duration) ExtentList {
 		return r
 	}
 
-	splices := make(map[int]interface{})
+	splices := sets.NewIntSet()
 	spliceIns := make(map[int]Extent)
 	c := el.Clone()
 	for _, rem := range r {
@@ -387,7 +389,7 @@ func (el ExtentList) Remove(r ExtentList, step time.Duration) ExtentList {
 			if rem.StartsAtOrBefore(ex.Start) && rem.EndsAtOrAfter(ex.End) {
 				// removal range end is >= extent.End, and start is <= extent.Start
 				// so the entire range will be spliced out of the list
-				splices[i] = nil
+				splices.Add(i)
 				continue
 			}
 

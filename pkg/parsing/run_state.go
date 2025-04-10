@@ -20,6 +20,7 @@ import (
 	"context"
 
 	"github.com/trickstercache/trickster/v2/pkg/parsing/token"
+	ts "github.com/trickstercache/trickster/v2/pkg/util/strings"
 )
 
 // RunState maintains the state of a unique parsing run
@@ -29,7 +30,7 @@ type RunState struct {
 	err                      error
 	ctx                      context.Context
 	nextOverride             StateFn
-	results                  map[string]any
+	results                  ts.Lookup
 	pos                      int
 	cnt                      int
 }
@@ -39,7 +40,7 @@ func NewRunState(ctx context.Context, tokens token.Tokens) *RunState {
 	t := tokens.Compress()
 	rs := &RunState{
 		ctx:     ctx,
-		results: make(map[string]any),
+		results: make(ts.Lookup),
 		tokens:  t,
 		cnt:     len(t),
 		pos:     -1,
@@ -59,7 +60,7 @@ func (rs *RunState) GetResultsCollection(collectionName string) (any, bool) {
 }
 
 // Results returns the results objecxt from the RunState
-func (rs *RunState) Results() map[string]any {
+func (rs *RunState) Results() ts.Lookup {
 	return rs.results
 }
 

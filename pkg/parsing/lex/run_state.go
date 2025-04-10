@@ -22,6 +22,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/trickstercache/trickster/v2/pkg/parsing/token"
+	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
 // RunState contains all the information about a particular lexer run
@@ -145,17 +146,7 @@ func (rs *RunState) ScanNumber() bool {
 	return true
 }
 
-var terminators = map[rune]interface{}{
-	' ':  nil,
-	'\t': nil,
-	'\n': nil,
-	'\r': nil,
-	EOF:  nil,
-	',':  nil,
-	';':  nil,
-	')':  nil,
-	'(':  nil,
-}
+var terminators = sets.New([]rune{' ', '\t', '\n', '\r', EOF, ',', ';', ')', '('})
 
 // AtTerminator reports whether the input is at valid termination character to
 // appear after an identifier. Breaks .X.Y into two pieces. Also catches cases

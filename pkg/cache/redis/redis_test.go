@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	ro "github.com/trickstercache/trickster/v2/pkg/cache/redis/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
@@ -78,7 +79,8 @@ func TestClientSelectionSentinel(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	const expected1 = "ERR unknown command `sentinel`"
 	args := []string{"-config", "../../../testdata/test.redis-sentinel.conf",
-		"-origin-url", "http://0.0.0.0", "-provider", "rpc", "-log-level", "info"}
+		"-origin-url", "http://0.0.0.0", "-provider",
+		providers.ReverseProxyCacheShort, "-log-level", "info"}
 	conf, err := config.Load(args)
 	if err != nil {
 		t.Fatal(err)
@@ -157,7 +159,8 @@ func TestClientSelectionCluster(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	expected1 := "invalid endpoint"
 	args := []string{"-config", "../../../testdata/test.redis-cluster.conf",
-		"-origin-url", "http://0.0.0.0", "-provider", "rpc", "-log-level", "info"}
+		"-origin-url", "http://0.0.0.0", "-provider",
+		providers.ReverseProxyCacheShort, "-log-level", "info"}
 	conf, err := config.Load(args)
 	if err != nil {
 		t.Fatal(err)
@@ -181,7 +184,8 @@ func TestClientSelectionStandard(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	expected1 := "invalid endpoint"
 	args := []string{"-config", "../../../testdata/test.redis-standard.conf",
-		"-origin-url", "http://0.0.0.0", "-provider", "rpc", "-log-level", "info"}
+		"-origin-url", "http://0.0.0.0", "-provider",
+		providers.ReverseProxyCacheShort, "-log-level", "info"}
 	conf, err := config.Load(args)
 	if err != nil {
 		t.Fatal(err)

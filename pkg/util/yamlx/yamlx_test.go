@@ -18,6 +18,8 @@ package yamlx
 
 import (
 	"testing"
+
+	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
 const testYML = `
@@ -45,12 +47,15 @@ func TestGetKeyList(t *testing.T) {
 }
 
 func TestIsDefined(t *testing.T) {
-
-	k := KeyLookup{"test": nil}
+	s := sets.NewStringSet()
+	s.Add("test")
+	k := KeyLookup(s)
 	if k.IsDefined("testing") {
 		t.Error("expected false")
 	}
-
+	if !k.IsDefined("test") {
+		t.Error("expected true")
+	}
 }
 
 func TestGetIndentDepth(t *testing.T) {

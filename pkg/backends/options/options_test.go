@@ -31,6 +31,7 @@ import (
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
 	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
+	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
 
 	"gopkg.in/yaml.v2"
@@ -73,7 +74,7 @@ func TestClone(t *testing.T) {
 	o := New()
 	o.Hosts = []string{"test"}
 	o.CacheName = "test"
-	o.CompressibleTypes = map[string]any{"test": nil}
+	o.CompressibleTypes = sets.New([]string{"test"})
 	o.Paths = map[string]*po.Options{"test": p}
 	o.NegativeCache = map[int]time.Duration{1: 1}
 	o.HealthCheck = &ho.Options{}
@@ -340,12 +341,12 @@ func TestSetDefaults(t *testing.T) {
 
 	backends := Lookup{o.Name: o}
 
-	_, err = SetDefaults("test", o, md, nil, backends, map[string]any{})
+	_, err = SetDefaults("test", o, md, nil, backends, sets.NewStringSet())
 	if err != nil {
 		t.Error(err)
 	}
 
-	_, err = SetDefaults("test", o, nil, nil, backends, map[string]any{})
+	_, err = SetDefaults("test", o, nil, nil, backends, sets.NewStringSet())
 	if err != ErrInvalidMetadata {
 		t.Error("expected invalid metadata, got", err)
 	}
@@ -355,13 +356,13 @@ func TestSetDefaults(t *testing.T) {
 		t.Error(err)
 	}
 
-	_, err = SetDefaults("test", o2, md, nil, backends, map[string]any{})
+	_, err = SetDefaults("test", o2, md, nil, backends, sets.NewStringSet())
 	if err != nil {
 		t.Error(err)
 	}
 
 	o.Paths["series"].ReqRewriterName = "invalid"
-	_, err = SetDefaults("test", o, md, nil, backends, map[string]any{})
+	_, err = SetDefaults("test", o, md, nil, backends, sets.NewStringSet())
 	if err == nil {
 		t.Error("expected error for invalid rewriter name")
 	}
@@ -372,13 +373,13 @@ func TestSetDefaults(t *testing.T) {
 	}
 
 	_, err = SetDefaults("test", o2, md, map[string]rewriter.RewriteInstructions{"test": nil},
-		backends, map[string]any{})
+		backends, sets.NewStringSet())
 	if err != nil {
 		t.Error(err)
 	}
 
 	_, err = SetDefaults("test", o2, md, map[string]rewriter.RewriteInstructions{"not-test": nil},
-		backends, map[string]any{})
+		backends, sets.NewStringSet())
 	if err == nil {
 		t.Error("expected error for invalid rewriter name")
 	}
@@ -389,7 +390,7 @@ func TestSetDefaults(t *testing.T) {
 	}
 
 	_, err = SetDefaults("test", o2, md, nil,
-		backends, map[string]any{})
+		backends, sets.NewStringSet())
 	if err != nil {
 		t.Error(err)
 	}

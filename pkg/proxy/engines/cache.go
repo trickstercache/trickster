@@ -38,6 +38,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ranges/byterange"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 
 	"github.com/andybalholm/brotli"
 	"go.opentelemetry.io/otel/attribute"
@@ -391,7 +392,7 @@ func writeConcurrent(_ context.Context, c cache.Cache, key string, d *HTTPDocume
 
 // WriteCache writes an HTTPDocument to the cache
 func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
-	ttl time.Duration, compressTypes map[string]any, marshal timeseries.MarshalerFunc) error {
+	ttl time.Duration, compressTypes sets.Set[string], marshal timeseries.MarshalerFunc) error {
 
 	rsc := tc.Resources(ctx).(*request.Resources)
 

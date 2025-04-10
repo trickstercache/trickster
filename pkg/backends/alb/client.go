@@ -32,6 +32,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
+	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
 // Client Implements the Proxy Client Interface
@@ -41,7 +42,7 @@ type Client struct {
 	pool            pool.Pool
 	handler         http.Handler // this is the actual handler for all request to this backend
 	fgr             bool
-	fgrCodes        map[int]interface{}
+	fgrCodes        sets.Set[int]
 	mergePaths      []string     // paths handled by the alb client that are enabled for tsmerge
 	nonmergeHandler http.Handler // when methodology is tsmerge, this handler is for non-mergeable paths
 }

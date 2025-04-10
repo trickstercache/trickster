@@ -18,6 +18,8 @@ package encoding
 
 import (
 	"strings"
+
+	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
 // MergeCommaSeparated accepts two strings, both representing a comma-separated
@@ -39,7 +41,7 @@ func MergeCommaSeparated(s1, s2 string) string {
 // does not recognize escape sequences, etc. When pad is true, the merged list
 // will include a space following each delimiter instance.
 func MergeDelimeterSeparated(s1, s2, delimiter string, pad bool) string {
-	used := make(map[string]interface{})
+	used := sets.NewStringSet()
 	l1 := strings.Split(s1, delimiter)
 	l2 := strings.Split(s2, delimiter)
 	full := make([]string, len(l1)+len(l2))
@@ -49,7 +51,7 @@ func MergeDelimeterSeparated(s1, s2, delimiter string, pad bool) string {
 		if _, ok := used[v]; ok {
 			continue
 		}
-		used[v] = nil
+		used[v] = struct{}{}
 		full[k] = v
 		k++
 	}
@@ -58,7 +60,7 @@ func MergeDelimeterSeparated(s1, s2, delimiter string, pad bool) string {
 		if _, ok := used[v]; ok {
 			continue
 		}
-		used[v] = nil
+		used[v] = struct{}{}
 		full[k] = v
 		k++
 	}

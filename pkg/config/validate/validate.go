@@ -32,7 +32,7 @@ func Validate(c *config.Config) error {
 	for _, w := range c.LoaderWarnings {
 		fmt.Println(w)
 	}
-	var caches = make(map[string]cache.Cache)
+	var caches = make(cache.Lookup)
 	for k := range c.Caches {
 		caches[k] = nil
 	}

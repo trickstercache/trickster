@@ -20,6 +20,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/parsing"
 	lsql "github.com/trickstercache/trickster/v2/pkg/parsing/lex/sql"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/token"
+	ts "github.com/trickstercache/trickster/v2/pkg/util/strings"
 )
 
 // this file contains functions used while parsing select statements
@@ -285,7 +286,7 @@ func AtIntoOutfile(bp, ip parsing.Parser, rs *parsing.RunState) parsing.StateFn 
 }
 
 // HasLimitClause returns true if the limitTokens entry is not nil
-func HasLimitClause(results map[string]interface{}) bool {
+func HasLimitClause(results ts.Lookup) bool {
 	_, ok := results["limitTokens"]
 	return ok
 }

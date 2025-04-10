@@ -21,7 +21,7 @@ import (
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/cache/providers"
-	strutil "github.com/trickstercache/trickster/v2/pkg/util/strings"
+	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
 )
 
@@ -69,7 +69,7 @@ func TestSetDefaults(t *testing.T) {
 	o.ProviderID = providers.Redis
 	l = Lookup{"default": o}
 
-	ac := strutil.Lookup{"default": nil}
+	ac := sets.New([]string{"default"})
 	lw, err := l.SetDefaults(kl, ac)
 	if err != nil {
 		t.Error()
@@ -91,7 +91,7 @@ func TestSetDefaults(t *testing.T) {
 
 	l = Lookup{"default": o}
 	o.Redis.ClientType = "sentinel"
-	ac = strutil.Lookup{"default": nil}
+	ac = sets.New([]string{"default"})
 	lw, err = l.SetDefaults(kl, ac)
 	if err != nil {
 		t.Error()

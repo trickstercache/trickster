@@ -21,7 +21,7 @@ import (
 	"slices"
 
 	stdoutopts "github.com/trickstercache/trickster/v2/pkg/observability/tracing/exporters/stdout/options"
-	"github.com/trickstercache/trickster/v2/pkg/util/copiers"
+	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
 )
 
@@ -40,7 +40,7 @@ type Options struct {
 
 	StdOutOptions *stdoutopts.Options `yaml:"stdout,omitempty"`
 
-	OmitTags map[string]interface{} `yaml:"-"`
+	OmitTags sets.Set[string] `yaml:"-"`
 	// for tracers that don't support WithProcess (e.g., Zipkin)
 	attachTagsToSpan bool
 }
@@ -97,7 +97,7 @@ func ProcessTracingOptions(mo map[string]*Options, metadata yamlx.KeyLookup) {
 }
 
 func (o *Options) generateOmitTags() {
-	o.OmitTags = copiers.LookupFromStrings(o.OmitTagsList)
+	o.OmitTags = sets.New(o.OmitTagsList)
 }
 
 // AttachTagsToSpan indicates that Tags should be attached to the span

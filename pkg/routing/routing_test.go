@@ -27,6 +27,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/backends/reverseproxycache"
 	"github.com/trickstercache/trickster/v2/pkg/backends/rule"
 	"github.com/trickstercache/trickster/v2/pkg/cache/registration"
@@ -103,8 +104,8 @@ func TestRegisterProxyRoutes(t *testing.T) {
 	o1.IsDefault = true
 	o2.IsDefault = true
 
-	o1.Provider = "rpc"
-	o2.Provider = "rpc"
+	o1.Provider = providers.ReverseProxyCacheShort
+	o2.Provider = providers.ReverseProxyCacheShort
 
 	conf.Backends["2"] = o2
 
@@ -181,7 +182,8 @@ func TestRegisterProxyRoutesInflux(t *testing.T) {
 
 func TestRegisterProxyRoutesReverseProxy(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
-	conf, err := config.Load([]string{"-log-level", "debug", "-origin-url", "http://1", "-provider", "rp"})
+	conf, err := config.Load([]string{"-log-level", "debug",
+		"-origin-url", "http://1", "-provider", providers.ReverseProxyShort})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
@@ -435,7 +437,8 @@ func TestRegisterPathRoutes(t *testing.T) {
 	p := map[string]*po.Options{"test": {}}
 	RegisterPathRoutes(nil, nil, nil, nil, nil, p, nil, "")
 
-	conf, err := config.Load([]string{"-log-level", "debug", "-origin-url", "http://1", "-provider", "rpc"})
+	conf, err := config.Load([]string{"-log-level", "debug", "-origin-url",
+		"http://1", "-provider", providers.ReverseProxyCacheShort})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
@@ -471,7 +474,8 @@ func TestValidateRuleClients(t *testing.T) {
 	var cl = backends.Backends{"test": c}
 	rule.ValidateOptions(cl, nil)
 
-	conf, err := config.Load([]string{"-log-level", "debug", "-origin-url", "http://1", "-provider", "rpc"})
+	conf, err := config.Load([]string{"-log-level", "debug", "-origin-url",
+		"http://1", "-provider", providers.ReverseProxyCacheShort})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}

@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/cache/evictionmethods"
 	"github.com/trickstercache/trickster/v2/pkg/errors"
 	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
@@ -575,7 +576,8 @@ func TestLoadConfigurationBadUrl(t *testing.T) {
 
 func TestLoadConfigurationBadArg(t *testing.T) {
 	const url = "http://0.0.0.0"
-	a := []string{"-origin-url", url, "-provider", "rpc", "-unknown-flag"}
+	a := []string{"-origin-url", url, "-provider", providers.ReverseProxyCacheShort,
+		"-unknown-flag"}
 	_, err := Load(a)
 	if err == nil {
 		t.Error("expected error: flag provided but not defined: -unknown-flag")
