@@ -18,6 +18,8 @@ package providers
 
 import (
 	"strconv"
+
+	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
 // Provider enumerates the supported backend providers
@@ -109,4 +111,10 @@ func (t Provider) String() string {
 func IsValidProvider(t string) bool {
 	_, ok := Names[t]
 	return ok
+}
+
+// NonCacheBackends returns a set of backend Providers that do not use a cache
+func NonCacheBackends() sets.Set[string] {
+	return sets.New([]string{ReverseProxyShort,
+		ReverseProxy, "alb", "proxy", "rule"})
 }
