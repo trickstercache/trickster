@@ -18,11 +18,11 @@ package options
 
 import (
 	"errors"
-	"maps"
 	"slices"
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
 )
 
@@ -47,7 +47,7 @@ type Options struct {
 	FGRStatusCodes []int `yaml:"fgr_status_codes"`
 	//
 	// synthetic values
-	FgrCodesLookup map[int]interface{} `yaml:"-"`
+	FgrCodesLookup sets.Set[int] `yaml:"-"`
 }
 
 const defaultOutputFormat = "prometheus"
@@ -61,7 +61,7 @@ func New() *Options {
 func (o *Options) Clone() *Options {
 
 	var fsc []int
-	var fscm map[int]interface{}
+	var fscm sets.Set[int]
 
 	if o.FGRStatusCodes != nil {
 		fsc = make([]int, len(o.FGRStatusCodes))
@@ -69,7 +69,7 @@ func (o *Options) Clone() *Options {
 	}
 
 	if o.FgrCodesLookup != nil {
-		fscm = maps.Clone(o.FgrCodesLookup)
+		fscm = o.FgrCodesLookup.Clone()
 	}
 
 	c := &Options{
@@ -113,9 +113,9 @@ func SetDefaults(name string, options *Options, metadata yamlx.KeyLookup) (*Opti
 			o.FGRStatusCodes = options.FGRStatusCodes
 		}
 		if o.FGRStatusCodes != nil {
-			o.FgrCodesLookup = make(map[int]interface{})
+			o.FgrCodesLookup = sets.NewIntSet()
 			for _, i := range o.FGRStatusCodes {
-				o.FgrCodesLookup[i] = nil
+				o.FgrCodesLookup.Add(i)
 			}
 		}
 	}

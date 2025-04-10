@@ -23,6 +23,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/exporters/stdout"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/context"
+	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 
 	"go.opentelemetry.io/otel/attribute"
 )
@@ -101,7 +102,7 @@ func TestFilterAttributes(t *testing.T) {
 	_, sp := PrepareRequest(r, tr)
 	kvs := []attribute.KeyValue{attribute.String("testKey", "testValue")}
 	tr.Options.OmitTagsList = []string{"testKey2"}
-	tr.Options.OmitTags = map[string]interface{}{"testKey2": nil}
+	tr.Options.OmitTags = sets.New(tr.Options.OmitTagsList)
 	SetAttributes(tr, sp, kvs...)
 	kvs = filterAttributes(tr, kvs)
 

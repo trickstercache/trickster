@@ -37,12 +37,13 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
 	to "github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
 	"github.com/trickstercache/trickster/v2/pkg/router"
+	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
 
 	"gopkg.in/yaml.v2"
 )
 
-var restrictedOriginNames = map[string]interface{}{"": true, "frontend": true}
+var restrictedOriginNames = sets.New([]string{"", "frontend"})
 
 // Lookup is a map of Options
 type Lookup map[string]*Options
@@ -202,7 +203,7 @@ type Options struct {
 	// HTTPClient is the Client used by Trickster to communicate with the origin
 	HTTPClient *http.Client `yaml:"-"`
 	// CompressibleTypes is the map version of CompressibleTypeList for fast lookup
-	CompressibleTypes map[string]interface{} `yaml:"-"`
+	CompressibleTypes sets.Set[string] `yaml:"-"`
 	// RuleOptions is the reference to the Rule Options as indicated by RuleName
 	RuleOptions *ro.Options `yaml:"-"`
 	// ReqRewriter is the rewriter handler as indicated by RuleName
@@ -394,9 +395,9 @@ func (l Lookup) Validate(ncl negative.Lookups) error {
 		}
 
 		if o.CompressibleTypeList != nil {
-			o.CompressibleTypes = make(map[string]interface{})
+			o.CompressibleTypes = sets.NewStringSet()
 			for _, v := range o.CompressibleTypeList {
-				o.CompressibleTypes[v] = true
+				o.CompressibleTypes.Add(v)
 			}
 		}
 		if o.CacheKeyPrefix == "" {
@@ -429,7 +430,7 @@ func (l Lookup) Validate(ncl negative.Lookups) error {
 // ValidateBackendName ensures the backend name is permitted against the dictionary of
 // restricted words
 func ValidateBackendName(name string) error {
-	if _, ok := restrictedOriginNames[name]; ok {
+	if restrictedOriginNames.Contains(name) {
 		return NewErrInvalidBackendName(name)
 	}
 	return nil
@@ -493,7 +494,7 @@ func SetDefaults(
 	metadata yamlx.KeyLookup,
 	crw map[string]rewriter.RewriteInstructions,
 	backends Lookup,
-	activeCaches map[string]interface{},
+	activeCaches sets.Set[string],
 ) (*Options, error) {
 
 	if metadata == nil {
@@ -547,7 +548,7 @@ func SetDefaults(
 	if metadata.IsDefined("backends", name, "cache_name") {
 		no.CacheName = o.CacheName
 	}
-	activeCaches[no.CacheName] = true
+	activeCaches.Add(no.CacheName)
 
 	if metadata.IsDefined("backends", name, "cache_key_prefix") {
 		no.CacheKeyPrefix = o.CacheKeyPrefix

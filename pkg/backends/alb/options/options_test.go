@@ -19,6 +19,7 @@ package options
 import (
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
 
 	"gopkg.in/yaml.v2"
@@ -70,7 +71,7 @@ func TestClone(t *testing.T) {
 	o := New()
 	o.Pool = []string{"test"}
 	o.FGRStatusCodes = []int{200}
-	o.FgrCodesLookup = map[int]interface{}{200: "test"}
+	o.FgrCodesLookup = sets.New([]int{200})
 	if o == nil {
 		t.Error("expected non-nil")
 	}
@@ -82,7 +83,7 @@ func TestClone(t *testing.T) {
 	if len(co.FGRStatusCodes) != 1 || co.FGRStatusCodes[0] != 200 {
 		t.Error("status codes mismatch")
 	}
-	if len(co.FgrCodesLookup) != 1 || co.FgrCodesLookup[200] != "test" {
+	if len(co.FgrCodesLookup) != 1 || !co.FgrCodesLookup.Contains(200) {
 		t.Error("fgr lookup mismatch")
 	}
 }

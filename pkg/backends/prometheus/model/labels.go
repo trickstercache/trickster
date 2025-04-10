@@ -30,6 +30,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
+	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
 // WFLabelData is the Wire Format Document for the /labels and /label/<name>/values endpoints
@@ -41,15 +42,15 @@ type WFLabelData struct {
 
 // Merge merges the passed WFSeries into the subject WFSeries
 func (ld *WFLabelData) Merge(results ...*WFLabelData) {
-	m := map[string]interface{}{}
+	m := sets.NewStringSet()
 	for _, d := range ld.Data {
-		m[d] = nil
+		m[d] = struct{}{}
 	}
 	for _, ld2 := range results {
 		ld.Envelope.Merge(ld2.Envelope)
 		for _, d := range ld2.Data {
 			if _, ok := m[d]; !ok {
-				m[d] = nil
+				m[d] = struct{}{}
 				ld.Data = append(ld.Data, d)
 			}
 		}

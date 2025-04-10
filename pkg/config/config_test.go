@@ -28,6 +28,7 @@ import (
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	rwo "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 	to "github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
+	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
 const emptyFilePath = "../../testdata/test.empty.conf"
@@ -52,7 +53,7 @@ func TestClone(t *testing.T) {
 	const expected = "trickster"
 
 	o.CompressibleTypeList = []string{"text/plain"}
-	o.CompressibleTypes = map[string]interface{}{"text/plain": nil}
+	o.CompressibleTypes = sets.New(o.CompressibleTypeList)
 	o.NegativeCacheName = "default"
 	o.NegativeCache = map[int]time.Duration{404: time.Duration(10) * time.Second}
 	o.FastForwardPath = po.New()

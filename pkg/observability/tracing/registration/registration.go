@@ -31,6 +31,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/exporters/zipkin"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/providers"
+	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 	"github.com/trickstercache/trickster/v2/pkg/util/strings"
 )
 
@@ -49,7 +50,7 @@ func RegisterAll(cfg *config.Config, isDryRun bool) (tracing.Tracers, error) {
 
 	// remove any tracers that are configured but not used by a backend, we don't want
 	// to use resources to instantiate them
-	mappedTracers := make(map[string]interface{})
+	mappedTracers := sets.NewStringSet()
 
 	for k, v := range cfg.Backends {
 		if v != nil && v.TracingConfigName != "" {
@@ -57,13 +58,13 @@ func RegisterAll(cfg *config.Config, isDryRun bool) (tracing.Tracers, error) {
 				return nil, fmt.Errorf("backend %s provided invalid tracing config name %s",
 					k, v.TracingConfigName)
 			}
-			mappedTracers[v.TracingConfigName] = nil
+			mappedTracers.Add(v.TracingConfigName)
 		}
 	}
 
 	tracers := make(tracing.Tracers)
 	for k, tc := range cfg.TracingConfigs {
-		if _, ok := mappedTracers[k]; !ok {
+		if !mappedTracers.Contains(k) {
 			// tracer is configured, but not mapped by any backend,
 			// so we won't instantiate it
 			continue

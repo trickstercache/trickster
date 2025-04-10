@@ -22,6 +22,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
 type firstResponseGate struct {
@@ -30,7 +31,7 @@ type firstResponseGate struct {
 	fh       http.Header
 	c        *responderClaim
 	fgr      bool
-	fgrCodes map[int]interface{}
+	fgrCodes sets.Set[int]
 }
 
 func (c *Client) handleFirstResponse(w http.ResponseWriter, r *http.Request) {
@@ -58,7 +59,7 @@ func (c *Client) handleFirstResponse(w http.ResponseWriter, r *http.Request) {
 			if hl[j] == nil {
 				return
 			}
-			wm := newFirstResponseGate(w, wc, j, c.fgr, c.fgrCodes)
+			wm := newFirstResponseGate(w, wc, j, c.fgr)
 			r2 := r.Clone(wc.contexts[j])
 			hl[j].ServeHTTP(wm, r2)
 			wg.Done()
@@ -67,8 +68,8 @@ func (c *Client) handleFirstResponse(w http.ResponseWriter, r *http.Request) {
 	wg.Wait()
 }
 
-func newFirstResponseGate(w http.ResponseWriter, c *responderClaim, i int, fgr bool,
-	fgrCodes map[int]interface{}) *firstResponseGate {
+func newFirstResponseGate(w http.ResponseWriter, c *responderClaim, i int,
+	fgr bool) *firstResponseGate {
 	return &firstResponseGate{ResponseWriter: w, c: c, fh: http.Header{}, i: i, fgr: fgr}
 }
 

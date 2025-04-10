@@ -23,13 +23,13 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/encoding/profile"
 	"github.com/trickstercache/trickster/v2/pkg/encoding/providers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
-	strutil "github.com/trickstercache/trickster/v2/pkg/util/strings"
+	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
-// HandleCompression wraps an HTTP response in a compression writer
-// Compress types is a map[string]interface{} like: {"text/plain": nil, "application/json": nil}
+// HandleCompression wraps an HTTP response in a compression writer. Compress
+// types is a sets.Set[string] of mime types like: "text/plain", "application/json", etc.
 // Any matching ContentType handled by the compression handler will be compressed
-func HandleCompression(next http.Handler, compressTypes strutil.Lookup) http.Handler {
+func HandleCompression(next http.Handler, compressTypes sets.Set[string]) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
 		// if the client requested a No-Transform, then serve as-is

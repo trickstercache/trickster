@@ -36,6 +36,7 @@ import (
 	tracing "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
 	rewriter "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
+	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
 
 	"gopkg.in/yaml.v2"
@@ -72,7 +73,7 @@ type Config struct {
 	Resources *Resources `yaml:"-"`
 
 	CompiledRewriters map[string]rewriter.RewriteInstructions `yaml:"-"`
-	activeCaches      map[string]interface{}
+	activeCaches      sets.Set[string]
 	providedOriginURL string
 	providedProvider  string
 
@@ -213,7 +214,7 @@ func (c *Config) setDefaults(metadata yamlx.KeyLookup) error {
 		}
 	}
 
-	c.activeCaches = make(map[string]interface{})
+	c.activeCaches = sets.NewStringSet()
 	for k, v := range c.Backends {
 		w, err := bo.SetDefaults(k, v, metadata, c.CompiledRewriters, c.Backends, c.activeCaches)
 		if err != nil {

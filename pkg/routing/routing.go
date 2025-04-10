@@ -45,6 +45,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/router"
 	"github.com/trickstercache/trickster/v2/pkg/router/lm"
 	"github.com/trickstercache/trickster/v2/pkg/util/middleware"
+	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
 // RegisterPprofRoutes will register the Pprof Debugging endpoints to the provided router
@@ -143,13 +144,7 @@ func RegisterProxyRoutes(conf *config.Config, r router.Router,
 	return clients, nil
 }
 
-var noCacheBackends = map[string]interface{}{
-	"alb":          nil,
-	"rp":           nil,
-	"reverseproxy": nil,
-	"proxy":        nil,
-	"rule":         nil,
-}
+var noCacheBackends = sets.New([]string{"alb", "rp", "reverseproxy", "proxy", "rule"})
 
 // RegisterHealthHandler registers the main health handler
 func RegisterHealthHandler(router router.Router, path string,

@@ -20,7 +20,7 @@ import (
 	"strings"
 	"testing"
 
-	strutil "github.com/trickstercache/trickster/v2/pkg/util/strings"
+	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
 func TestClone(t *testing.T) {
@@ -38,7 +38,7 @@ func TestString(t *testing.T) {
 		SupportedHeaderVal:   "test-ae-header",
 		NoTransform:          true,
 		ContentEncoding:      "gzip",
-		CompressTypes:        strutil.Lookup{"text/plain": nil},
+		CompressTypes:        sets.New([]string{"text/plain"}),
 		ContentType:          "text/plain",
 	}
 	s := p.String()
@@ -88,7 +88,7 @@ func TestGetEncoderInitializer(t *testing.T) {
 		t.Error("expected empty string, got", s)
 	}
 
-	p.CompressTypes = map[string]interface{}{"text/plain": nil}
+	p.CompressTypes = sets.New([]string{"text/plain"})
 	f, s = p.GetEncoderInitializer()
 	if f == nil {
 		t.Error("expected non-nil")
