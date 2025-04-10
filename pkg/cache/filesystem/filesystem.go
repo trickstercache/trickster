@@ -18,6 +18,7 @@
 package filesystem
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -96,7 +97,7 @@ func (c *Cache) store(cacheKey string, data []byte, ttl time.Duration, updateInd
 	}
 
 	if cacheKey == "" {
-		return fmt.Errorf("cacheKey required")
+		return errors.New("cacheKey required")
 	}
 
 	metrics.ObserveCacheOperation(c.Name, c.Config.Provider, "set", "none", float64(len(data)))

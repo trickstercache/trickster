@@ -38,13 +38,13 @@ var _ types.NewBackendClientFunc = NewClient
 
 // NewClient returns a new Client Instance
 func NewClient(name string, o *bo.Options, router http.Handler,
-	cache cache.Cache, _ backends.Backends, _ types.Lookup) (backends.Backend, error) {
+	c cache.Cache, _ backends.Backends, _ types.Lookup) (backends.Backend, error) {
 	if o != nil {
 		o.FastForwardDisable = true
 	}
-	c := &Client{}
-	b, err := backends.NewTimeseriesBackend(name, o, c.RegisterHandlers,
-		router, cache, modelflux.NewModeler())
-	c.TimeseriesBackend = b
-	return c, err
+	cli := &Client{}
+	b, err := backends.NewTimeseriesBackend(name, o, cli.RegisterHandlers,
+		router, c, modelflux.NewModeler())
+	cli.TimeseriesBackend = b
+	return cli, err
 }

@@ -79,22 +79,22 @@ func MarshalTimeseriesWriter(ts timeseries.Timeseries,
 	return err
 }
 
-func formatRFC3339Time(epoch epoch.Epoch, m int64) any {
-	t := time.Unix(0, int64(epoch))
+func formatRFC3339Time(e epoch.Epoch, m int64) any {
+	t := time.Unix(0, int64(e))
 	return t.UTC().Format(time.RFC3339Nano)
 }
 
-func formatEpochTime(epoch epoch.Epoch, m int64) any {
-	return int64(epoch) / m
+func formatEpochTime(e epoch.Epoch, m int64) any {
+	return int64(e) / m
 }
 
-func writeRFC3339Time(w io.Writer, epoch epoch.Epoch, m int64) {
-	t := time.Unix(0, int64(epoch))
+func writeRFC3339Time(w io.Writer, e epoch.Epoch, m int64) {
+	t := time.Unix(0, int64(e))
 	w.Write([]byte(`"` + t.Format(time.RFC3339Nano) + `"`))
 }
 
-func writeEpochTime(w io.Writer, epoch epoch.Epoch, m int64) {
-	w.Write([]byte(strconv.FormatInt(int64(epoch)/m, 10)))
+func writeEpochTime(w io.Writer, e epoch.Epoch, m int64) {
+	w.Write([]byte(strconv.FormatInt(int64(e)/m, 10)))
 }
 
 func writeCSVValue(w io.Writer, v any, nilVal string) {

@@ -433,13 +433,14 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 	pr.cacheDocument, pr.cacheStatus, pr.neededRanges, err =
 		QueryCache(pr.upstreamRequest.Context(), cc, pr.key, pr.wantedRanges, nil)
 	if err == nil || err == cache.ErrKNF {
-		if f, ok := cacheResponseHandlers[pr.cacheStatus]; ok {
-			f(pr)
-		} else {
+		f, ok := cacheResponseHandlers[pr.cacheStatus]
+		if !ok {
 			logger.Warn("unhandled cache lookup response",
 				logging.Pairs{"lookupStatus": pr.cacheStatus})
 			return nil, status.LookupStatusProxyOnly
 		}
+		f(pr)
+
 	} else {
 		logger.Error("cache lookup error",
 			logging.Pairs{"detail": err.Error()})
