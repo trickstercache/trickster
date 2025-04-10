@@ -108,7 +108,9 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 						reader.Close()
 					}
 				}()
-				pcf.AddClient(writer)
+				if err := pcf.AddClient(writer); err != nil {
+					return nil
+				}
 			}
 		} else {
 			pcf, _ := result.(ProgressiveCollapseForwarder)
@@ -116,7 +118,9 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 			pr.mapLock.Lock()
 			writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)
 			pr.mapLock.Unlock()
-			pcf.AddClient(writer)
+			if err := pcf.AddClient(writer); err != nil {
+				return nil
+			}
 		}
 	}
 

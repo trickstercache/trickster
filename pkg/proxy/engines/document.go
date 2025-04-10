@@ -263,7 +263,9 @@ func (d *HTTPDocument) ParsePartialContentBody(resp *http.Response,
 	if d.ContentLength > 0 && len(d.RangeParts) == 1 &&
 		d.RangeParts[d.RangeParts.Ranges()[0]].Range.Start == 0 &&
 		d.RangeParts[d.RangeParts.Ranges()[0]].Range.End == d.ContentLength-1 {
-		d.FulfillContentBody()
+		if err := d.FulfillContentBody(); err != nil {
+			return
+		}
 	}
 
 	d.headerLock.Lock()
