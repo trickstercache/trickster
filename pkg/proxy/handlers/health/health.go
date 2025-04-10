@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
 
@@ -200,5 +201,6 @@ func statusToString(i int) string {
 }
 
 func cleanupDescription(in string) string {
-	return strings.ReplaceAll(in, "reverseproxycache", "rpc")
+	return strings.ReplaceAll(in, providers.ReverseProxyCache,
+		providers.ReverseProxyCacheShort)
 }

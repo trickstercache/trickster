@@ -144,7 +144,7 @@ func RegisterProxyRoutes(conf *config.Config, r router.Router,
 	return clients, nil
 }
 
-var noCacheBackends = sets.New([]string{"alb", "rp", "reverseproxy", "proxy", "rule"})
+var noCacheBackends = sets.New([]string{"alb", providers.ReverseProxyShort, providers.ReverseProxy, "proxy", "rule"})
 
 // RegisterHealthHandler registers the main health handler
 func RegisterHealthHandler(router router.Router, path string,

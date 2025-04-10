@@ -28,6 +28,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	cr "github.com/trickstercache/trickster/v2/pkg/cache/registration"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
@@ -54,7 +55,7 @@ const (
 	PrometheusBackendProvider = "prometheus"
 	PromSimBackendProvider    = "promsim"
 	RangeSimBackendProvider   = "rangesim"
-	RPCBackendProvider        = "rpc"
+	RPCBackendProvider        = providers.ReverseProxyCacheShort
 )
 
 // Time2020 is the Time.Time representing 1 January 2020 00:00:00 UTC

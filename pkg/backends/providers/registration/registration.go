@@ -22,6 +22,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb"
 	"github.com/trickstercache/trickster/v2/pkg/backends/irondb"
 	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registration/types"
 	"github.com/trickstercache/trickster/v2/pkg/backends/reverseproxy"
 	"github.com/trickstercache/trickster/v2/pkg/backends/reverseproxycache"
@@ -30,16 +31,16 @@ import (
 
 func SupportedProviders() types.Lookup {
 	return types.Lookup{
-		"alb":               alb.NewClient,
-		"clickhouse":        clickhouse.NewClient,
-		"influxdb":          influxdb.NewClient,
-		"irondb":            irondb.NewClient,
-		"prometheus":        prometheus.NewClient,
-		"rp":                reverseproxy.NewClient,
-		"proxy":             reverseproxy.NewClient,
-		"reverseproxy":      reverseproxy.NewClient,
-		"rpc":               reverseproxycache.NewClient,
-		"reverseproxycache": reverseproxycache.NewClient,
-		"rule":              rule.NewClient,
+		"alb":                            alb.NewClient,
+		"clickhouse":                     clickhouse.NewClient,
+		"influxdb":                       influxdb.NewClient,
+		"irondb":                         irondb.NewClient,
+		"prometheus":                     prometheus.NewClient,
+		"rule":                           rule.NewClient,
+		"proxy":                          reverseproxy.NewClient,
+		providers.ReverseProxyShort:      reverseproxy.NewClient,
+		providers.ReverseProxy:           reverseproxy.NewClient,
+		providers.ReverseProxyCacheShort: reverseproxycache.NewClient,
+		providers.ReverseProxyCache:      reverseproxycache.NewClient,
 	}
 }

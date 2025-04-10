@@ -21,12 +21,13 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 )
 
 func TestPingHandler(t *testing.T) {
 
-	conf, err := config.Load([]string{"-provider", "reverseproxycache",
+	conf, err := config.Load([]string{"-provider", providers.ReverseProxyCache,
 		"-origin-url", "http://0/"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())

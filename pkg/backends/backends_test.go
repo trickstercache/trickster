@@ -21,6 +21,7 @@ import (
 
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/router/lm"
 )
 
@@ -127,7 +128,7 @@ func (tb *testBackend) DefaultHealthCheckConfig() *ho.Options {
 }
 
 func TestUsesCache(t *testing.T) {
-	b := UsesCache("rp")
+	b := UsesCache(providers.ReverseProxyShort)
 	if b {
 		t.Error("expected false")
 	}
