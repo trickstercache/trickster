@@ -1,10 +1,51 @@
+version: "2"
 run:
   tests: false
-
-linters-settings:
-  lll:
-    line-length: 180
-
 linters:
+  enable:
+    - dupl
+    - staticcheck
+    - wastedassign
+    - unused
+    - usetesting
+    - usestdlibvars
+    - unconvert
+    - grouper
+    - gocritic
   disable:
     - errcheck
+  settings:
+    lll:
+      line-length: 180
+    staticcheck:
+     checks:
+       - all     # default
+       - -ST1000 # default
+       - -ST1003 # default
+       - -ST1016 # default
+       - -ST1020 # default
+       - -ST1021 # default
+       - -ST1022 # default
+       - -QF1008 # prefer referencing embedded field by full reference
+    gocritic:
+     disabled-checks:
+       - unslice # stylistic choice, ok with slice[:] references
+       - ifElseChain # false positives / prefers switch statements
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
