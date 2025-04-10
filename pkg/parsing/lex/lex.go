@@ -20,6 +20,7 @@ import (
 	"unicode"
 
 	"github.com/trickstercache/trickster/v2/pkg/parsing/token"
+	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
 // EOF represents EOF as a value of -1
@@ -40,12 +41,7 @@ type Options struct {
 type StateFn func(Lexer, *RunState) StateFn
 
 // SpaceCharLookup is a map of acceptable space characters
-var SpaceCharLookup = map[byte]interface{}{
-	9:  nil, // "\t"
-	10: nil, // "\n"
-	13: nil, // "\r"
-	32: nil, // " "
-}
+var SpaceCharLookup = sets.New([]byte{9, 10, 13, 32}) // \t \n \r and space
 
 // IsWhiteSpace reports whether r is a whitespace character.
 func IsWhiteSpace(r rune) bool {

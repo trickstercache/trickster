@@ -22,8 +22,7 @@ import (
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/encoding/providers"
-
-	strutil "github.com/trickstercache/trickster/v2/pkg/util/strings"
+	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
 type Profile struct {
@@ -42,7 +41,7 @@ type Profile struct {
 	// ContentType holds the Response's Content-Type header value, if any
 	ContentType string
 	// CompressTypes is a lookup map of any Content Types that should be compressed
-	CompressTypes strutil.Lookup
+	CompressTypes sets.Set[string]
 	// ContentEncodingNum is the numeric value for the ContentEncoding string
 	ContentEncodingNum providers.Provider
 

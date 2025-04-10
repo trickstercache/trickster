@@ -17,7 +17,6 @@
 package model
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -30,6 +29,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
+	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
 // WFLabelData is the Wire Format Document for the /labels and /label/<name>/values endpoints
@@ -41,15 +41,15 @@ type WFLabelData struct {
 
 // Merge merges the passed WFSeries into the subject WFSeries
 func (ld *WFLabelData) Merge(results ...*WFLabelData) {
-	m := map[string]interface{}{}
+	m := sets.NewStringSet()
 	for _, d := range ld.Data {
-		m[d] = nil
+		m[d] = struct{}{}
 	}
 	for _, ld2 := range results {
 		ld.Envelope.Merge(ld2.Envelope)
 		for _, d := range ld2.Data {
 			if _, ok := m[d]; !ok {
-				m[d] = nil
+				m[d] = struct{}{}
 				ld.Data = append(ld.Data, d)
 			}
 		}
@@ -60,41 +60,21 @@ func (ld *WFLabelData) Merge(results ...*WFLabelData) {
 // and writes it to the provided ResponseWriter
 func MergeAndWriteLabelData(w http.ResponseWriter, r *http.Request, rgs merge.ResponseGates) {
 	var ld *WFLabelData
-
-	responses := make([]int, len(rgs))
-	var bestResp *http.Response
-
-	for i, rg := range rgs {
-		if rg == nil {
-			continue
+	responses, bestResp := gatherResponses(r, rgs, func(rg *merge.ResponseGate) bool {
+		ld1 := &WFLabelData{}
+		err := json.Unmarshal(rg.Body(), &ld1)
+		if err != nil {
+			logger.Error("labels unmarshaling error",
+				logging.Pairs{"provider": "prometheus", "detail": err.Error()})
+			return false
 		}
-		if rg.Resources != nil && rg.Resources.Response != nil {
-			resp := rg.Resources.Response
-			responses[i] = resp.StatusCode
-			if resp.Body != nil {
-				defer resp.Body.Close()
-			}
-
-			if resp.StatusCode < 400 {
-				ld1 := &WFLabelData{}
-				err := json.Unmarshal(rg.Body(), &ld1)
-				if err != nil {
-					logger.Error("labels unmarshaling error",
-						logging.Pairs{"provider": "prometheus", "detail": err.Error()})
-					continue
-				}
-				if ld == nil {
-					ld = ld1
-				} else {
-					ld.Merge(ld1)
-				}
-			}
-			if bestResp == nil || resp.StatusCode < bestResp.StatusCode {
-				bestResp = resp
-				resp.Body = io.NopCloser(bytes.NewReader(rg.Body()))
-			}
+		if ld == nil {
+			ld = ld1
+		} else {
+			ld.Merge(ld1)
 		}
-	}
+		return true
+	})
 
 	if ld == nil || len(responses) == 0 {
 		if bestResp != nil {

@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
 
@@ -97,11 +98,11 @@ func udpateStatusText(hc healthcheck.HealthChecker, hd *healthDetail) {
 
 	ut := time.Now().Truncate(time.Second).UTC().String()[:20] + "UTC"
 
-	txt := strings.Builder{}
-	json := strings.Builder{}
+	txt := &strings.Builder{}
+	json := &strings.Builder{}
 
-	txt.WriteString(fmt.Sprintf("\n%s            last change: %s\n", title, ut))
-	json.WriteString(fmt.Sprintf(`{"title":"%s","udpateTime":"%s"`, title, ut))
+	fmt.Fprintf(txt, "\n%s            last change: %s\n", title, ut)
+	fmt.Fprintf(json, `{"title":"%s","udpateTime":"%s"`, title, ut)
 	txt.WriteString("-------------------------------------------------------------------------------\n\n")
 	st := hc.Statuses()
 	b := bytes.NewBuffer(nil)
@@ -139,7 +140,7 @@ func udpateStatusText(hc healthcheck.HealthChecker, hd *healthDetail) {
 			}
 			d := cleanupDescription(st[k].Description())
 			fmt.Fprintf(tw, "%s\t%s\t%s\n", k, d, statusToString(1))
-			json.WriteString(fmt.Sprintf(`{"name":"%s","provider":"%s"}`, k, d))
+			fmt.Fprintf(json, `{"name":"%s","provider":"%s"}`, k, d)
 		}
 		json.WriteString(`]`)
 		tw.Write([]byte("\t\t\t\n"))
@@ -156,8 +157,8 @@ func udpateStatusText(hc healthcheck.HealthChecker, hd *healthDetail) {
 			d := cleanupDescription(st[k].Description())
 			fs := v.FailingSince().Truncate(time.Second).UTC().String()[:20] + "UTC"
 			fmt.Fprintf(tw, "%s\t%s\t%s %s\n", k, d, statusToString(-1), fs)
-			json.WriteString(fmt.Sprintf(`{"name":"%s","provider":"%s","downSince":"%s","detail":"%s"}`,
-				k, d, fs, strings.ReplaceAll(v.Detail(), `"`, `'`)))
+			fmt.Fprintf(json, `{"name":"%s","provider":"%s","downSince":"%s","detail":"%s"}`,
+				k, d, fs, strings.ReplaceAll(v.Detail(), `"`, `'`))
 		}
 		json.WriteString(`]`)
 		tw.Write([]byte("\t\t\t\n"))
@@ -172,7 +173,7 @@ func udpateStatusText(hc healthcheck.HealthChecker, hd *healthDetail) {
 			}
 			d := cleanupDescription(st[k].Description())
 			fmt.Fprintf(tw, "%s\t%s\t%s\n", k, d, statusToString(0))
-			json.WriteString(fmt.Sprintf(`{"name":"%s","provider":"%s"}`, k, d))
+			fmt.Fprintf(json, `{"name":"%s","provider":"%s"}`, k, d)
 		}
 		json.WriteString(`]`)
 		tw.Write([]byte("\n"))
@@ -181,8 +182,8 @@ func udpateStatusText(hc healthcheck.HealthChecker, hd *healthDetail) {
 	tw.Flush()
 	txt.Write(b.Bytes())
 	txt.WriteString("-------------------------------------------------------------------------------\n")
-	txt.WriteString(fmt.Sprintf("You can also provide a '%s: %s' Header or query param ?json\n",
-		headers.NameAccept, headers.ValueApplicationJSON))
+	fmt.Fprintf(txt, "You can also provide a '%s: %s' Header or query param ?json\n",
+		headers.NameAccept, headers.ValueApplicationJSON)
 	json.WriteString("}")
 
 	hd.text = txt.String()
@@ -200,5 +201,6 @@ func statusToString(i int) string {
 }
 
 func cleanupDescription(in string) string {
-	return strings.ReplaceAll(in, "reverseproxycache", "rpc")
+	return strings.ReplaceAll(in, providers.ReverseProxyCache,
+		providers.ReverseProxyCacheShort)
 }

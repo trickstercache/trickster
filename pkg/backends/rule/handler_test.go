@@ -17,6 +17,7 @@
 package rule
 
 import (
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
 
 	"testing"
@@ -24,7 +25,7 @@ import (
 
 func TestHandler(t *testing.T) {
 	c, _ := newTestClient()
-	_, w, r, _, _ := tu.NewTestInstance("", c.DefaultPathConfigs, 200, "{}", nil, "rpc", "/health", "debug")
+	_, w, r, _, _ := tu.NewTestInstance("", c.DefaultPathConfigs, 200, "{}", nil, providers.ReverseProxyCacheShort, "/health", "debug")
 	c.Handler(w, r)
 	if r.Header.Get("Test") == "" {
 		t.Error("expected non-empty header")

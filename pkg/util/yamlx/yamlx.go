@@ -19,17 +19,18 @@ package yamlx
 import (
 	"errors"
 	"strings"
+
+	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
-// KeyLookup is a lookup of keys available in the parsed yaml
-type KeyLookup map[string]interface{}
+type KeyLookup sets.Set[string]
 
 // GetKeyList parses a YAML-formatted file and returns its list of fully-qualified key names.
 // This assumes the yml blob has already been linted and is strictly valid
 func GetKeyList(yml string) (KeyLookup, error) {
 
 	lines := strings.Split(yml, "\n")
-	keys := make(map[string]interface{})
+	keys := sets.NewStringSet()
 
 	var lk depthLookup
 	var depths []int
@@ -52,19 +53,19 @@ func GetKeyList(yml string) (KeyLookup, error) {
 		}
 		if j == baseDepth {
 			lk, depths = rootDepthData(j, key)
-			keys[key] = nil
+			keys.Add(key)
 		} else {
 			pd, err := getParentDepthData(j, depths, lk)
 			if err != nil {
 				return nil, err
 			}
 			key = pd.key + "." + key
-			keys[key] = nil
+			keys.Add(key)
 			lk[j] = depthData{key: key, idx: pd.idx + 1, depth: j}
 			depths = append(depths[:pd.idx+1], j)
 		}
 	}
-	return keys, nil
+	return KeyLookup(keys), nil
 }
 
 func (k KeyLookup) IsDefined(s ...string) bool {

@@ -28,6 +28,7 @@ import (
 	"testing"
 
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
@@ -174,7 +175,8 @@ func TestDeriveCacheKey(t *testing.T) {
 		t.Errorf("expected %s got %s", "4766201eee9ef1916f57309deae22f90", ck)
 	}
 
-	_, _, tr, _, _ = tu.NewTestInstance("", nil, 0, "", nil, "rpc", "http://127.0.0.1/", "INFO")
+	_, _, tr, _, _ = tu.NewTestInstance("", nil, 0, "", nil,
+		providers.ReverseProxyCacheShort, "http://127.0.0.1/", "INFO")
 	tr.Method = http.MethodPost
 	tr.Body = io.NopCloser(bytes.NewReader([]byte(testJSONDocument)))
 	tr = tr.WithContext(ct.WithResources(context.Background(), newResources()))
@@ -275,7 +277,7 @@ func TestDeriveCacheKeyNoPathConfig(t *testing.T) {
 
 func TestDeriveCacheKeyNilURL(t *testing.T) {
 
-	_, w, r, _, _ := tu.NewTestInstance("", nil, 0, "", nil, "rpc",
+	_, w, r, _, _ := tu.NewTestInstance("", nil, 0, "", nil, providers.ReverseProxyCacheShort,
 		"http://127.0.0.1/?query=12345&start=0&end=0&step=300&time=0", "INFO")
 
 	pr := newProxyRequest(r, w)

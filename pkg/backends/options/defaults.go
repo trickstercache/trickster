@@ -18,6 +18,7 @@ package options
 
 import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/evictionmethods"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
 
 const (
@@ -69,10 +70,10 @@ func DefaultCompressibleTypes() []string {
 		"text/html",
 		"text/javascript",
 		"text/css",
-		"text/plain",
+		headers.ValueTextPlain,
 		"text/xml",
 		"text/json",
-		"application/json",
+		headers.ValueApplicationJSON,
 		"application/javascript",
 		"application/xml",
 	}

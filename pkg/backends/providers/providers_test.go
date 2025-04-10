@@ -27,8 +27,8 @@ func TestProviderString(t *testing.T) {
 	t2 := Prometheus
 	var t3 Provider = 13
 
-	if t1.String() != "rpc" {
-		t.Errorf("expected %s got %s", "rpc", t1.String())
+	if t1.String() != ReverseProxyCacheShort {
+		t.Errorf("expected %s got %s", ReverseProxyCacheShort, t1.String())
 	}
 
 	if t2.String() != "prometheus" {
@@ -47,7 +47,7 @@ func TestIsValidProvider(t *testing.T) {
 		o        string
 		expected bool
 	}{
-		{"rpc", true},
+		{ReverseProxyCacheShort, true},
 		{"prometheus", true},
 		{"", false},
 		{"invalid", false},

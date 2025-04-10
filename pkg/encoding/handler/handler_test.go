@@ -22,7 +22,7 @@ import (
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
-	"github.com/trickstercache/trickster/v2/pkg/util/strings"
+	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
 func emptyHandler(w http.ResponseWriter, r *http.Request) {
@@ -30,7 +30,8 @@ func emptyHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func TestHandleCompression(t *testing.T) {
-	f := HandleCompression(http.HandlerFunc(emptyHandler), strings.Lookup{"text/plain": nil})
+	f := HandleCompression(http.HandlerFunc(emptyHandler),
+		sets.New([]string{headers.ValueTextPlain}))
 	r, _ := http.NewRequest(http.MethodGet, "http://trickstercache.org/", nil)
 	w := httptest.NewRecorder()
 	f.ServeHTTP(w, r)

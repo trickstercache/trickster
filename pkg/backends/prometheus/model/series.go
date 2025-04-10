@@ -17,7 +17,6 @@
 package model
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -29,6 +28,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
+	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
 // WFSeries is the Wire Format Document for the /series endpoint
@@ -46,9 +46,9 @@ type WFSeriesData struct {
 
 // Merge merges the passed WFSeries into the subject WFSeries
 func (s *WFSeries) Merge(results ...*WFSeries) {
-	m := map[WFSeriesData]interface{}{}
+	m := make(sets.Set[WFSeriesData])
 	for _, d := range s.Data {
-		m[d] = nil
+		m[d] = struct{}{}
 	}
 	for _, s2 := range results {
 
@@ -56,7 +56,7 @@ func (s *WFSeries) Merge(results ...*WFSeries) {
 
 		for _, d := range s2.Data {
 			if _, ok := m[d]; !ok {
-				m[d] = nil
+				m[d] = struct{}{}
 				s.Data = append(s.Data, d)
 			}
 		}
@@ -67,42 +67,21 @@ func (s *WFSeries) Merge(results ...*WFSeries) {
 // and writes it to the provided ResponseWriter
 func MergeAndWriteSeries(w http.ResponseWriter, r *http.Request, rgs merge.ResponseGates) {
 	var s *WFSeries
-
-	responses := make([]int, len(rgs))
-	var bestResp *http.Response
-
-	for i, rg := range rgs {
-		if rg == nil {
-			continue
+	responses, bestResp := gatherResponses(r, rgs, func(rg *merge.ResponseGate) bool {
+		s1 := &WFSeries{}
+		err := json.Unmarshal(rg.Body(), &s1)
+		if err != nil {
+			logger.Error("series unmarshaling error",
+				logging.Pairs{"provider": "prometheus", "detail": err.Error()})
+			return false
 		}
-		if rg.Resources != nil && rg.Resources.Response != nil {
-			resp := rg.Resources.Response
-			responses[i] = resp.StatusCode
-
-			if resp.Body != nil {
-				defer resp.Body.Close()
-			}
-
-			if resp.StatusCode < 400 {
-				s1 := &WFSeries{}
-				err := json.Unmarshal(rg.Body(), &s1)
-				if err != nil {
-					logger.Error("series unmarshaling error",
-						logging.Pairs{"provider": "prometheus", "detail": err.Error()})
-					continue
-				}
-				if s == nil {
-					s = s1
-				} else {
-					s.Merge(s1)
-				}
-			}
-			if bestResp == nil || resp.StatusCode < bestResp.StatusCode {
-				bestResp = resp
-				resp.Body = io.NopCloser(bytes.NewReader(rg.Body()))
-			}
+		if s == nil {
+			s = s1
+		} else {
+			s.Merge(s1)
 		}
-	}
+		return true
+	})
 
 	if s == nil || len(responses) == 0 {
 		if bestResp != nil {

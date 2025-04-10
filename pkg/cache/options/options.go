@@ -28,7 +28,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/options/defaults"
 	"github.com/trickstercache/trickster/v2/pkg/cache/providers"
 	redis "github.com/trickstercache/trickster/v2/pkg/cache/redis/options"
-	strutil "github.com/trickstercache/trickster/v2/pkg/util/strings"
+	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
 )
 
@@ -153,7 +153,7 @@ var errMaxSizeBackoffBytesTooBig = errors.New("MaxSizeBackoffBytes can't be larg
 var errMaxSizeBackoffObjectsTooBig = errors.New("MaxSizeBackoffObjects can't be larger than MaxSizeObjects")
 
 // SetDefaults iterates the provided Options, and overlays user-set values onto the default Options
-func (l Lookup) SetDefaults(metadata yamlx.KeyLookup, activeCaches strutil.Lookup) ([]string, error) {
+func (l Lookup) SetDefaults(metadata yamlx.KeyLookup, activeCaches sets.Set[string]) ([]string, error) {
 
 	// setCachingDefaults assumes that processBackendOptionss was just ran
 

@@ -22,6 +22,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 )
 
 // Backends represents a map of Backends keyed by Name
@@ -88,5 +89,6 @@ func IsVirtual(provider string) bool {
 // UsesCache returns true if the backend uses a cache
 // (anything except Virtuals and ReverseProxy)
 func UsesCache(provider string) bool {
-	return !IsVirtual(provider) && provider != "rp" && provider != "reverseproxy"
+	return !IsVirtual(provider) && provider != providers.ReverseProxyShort &&
+		provider != providers.ReverseProxy
 }

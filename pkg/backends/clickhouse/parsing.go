@@ -27,6 +27,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/parsing/token"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/sqlparser"
+	ts "github.com/trickstercache/trickster/v2/pkg/util/strings"
 )
 
 // chParser implements a basic sql parser for clickhouse.
@@ -265,7 +266,7 @@ func scanForCommentsUntilEOF(bp, ip parsing.Parser, rs *parsing.RunState) parsin
 	return nil
 }
 
-func parseSelectTokens(results map[string]interface{},
+func parseSelectTokens(results ts.Lookup,
 	trq *timeseries.TimeRangeQuery, ro *timeseries.RequestOptions) (*token.Token, error) {
 	if results == nil {
 		return nil, sqlparser.ErrMissingTimeseries
@@ -493,7 +494,7 @@ func SolveMathExpression(fieldParts token.Tokens, startValue int64,
 }
 
 // This parses the WhereTokens list for any Time Ranges pertaining to the detected Timestamp Field
-func parseWhereTokens(results map[string]interface{},
+func parseWhereTokens(results ts.Lookup,
 	trq *timeseries.TimeRangeQuery, ro *timeseries.RequestOptions) (*token.Token, error) {
 	if ro == nil {
 		return nil, nil
@@ -668,7 +669,7 @@ func parseTimeField(t *token.Token) (int64, error) {
 	return ts.Unix(), nil
 }
 
-func parseGroupByTokens(results map[string]interface{},
+func parseGroupByTokens(results ts.Lookup,
 	trq *timeseries.TimeRangeQuery, ro *timeseries.RequestOptions) (*token.Token, error) {
 	v, ok := results["groupByTokens"]
 	if !ok {

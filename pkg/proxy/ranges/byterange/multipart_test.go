@@ -164,7 +164,7 @@ func TestBody(t *testing.T) {
 
 	m1, _ := testArtifacts()
 	// test multiple range
-	h, b := m1.Body(1222, "text/plain")
+	h, b := m1.Body(1222, headers.ValueTextPlain)
 	if !strings.Contains(string(b), "m dolor sit") {
 		t.Errorf("expected %d, got %d", 240, len(b))
 	}
@@ -174,7 +174,7 @@ func TestBody(t *testing.T) {
 
 	delete(m1, m1.Ranges()[1])
 
-	h, b = m1.Body(1222, "text/plain")
+	h, b = m1.Body(1222, headers.ValueTextPlain)
 	if strings.Contains(string(b), "m dolor sit") {
 		t.Errorf("expected %d, got %d", 240, len(b))
 	}
@@ -183,8 +183,8 @@ func TestBody(t *testing.T) {
 		t.Errorf("expected %d, got %d", 240, len(b))
 	}
 
-	if !strings.HasPrefix(h.Get(headers.NameContentType), "text/plain") {
-		t.Errorf("expected %s, got %s", "text/plain", h.Get(headers.NameContentType))
+	if !strings.HasPrefix(h.Get(headers.NameContentType), headers.ValueTextPlain) {
+		t.Errorf("expected %s, got %s", headers.ValueTextPlain, h.Get(headers.NameContentType))
 	}
 
 	m2 := make(MultipartByteRanges)

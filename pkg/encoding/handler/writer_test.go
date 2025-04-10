@@ -25,7 +25,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/encoding/profile"
 	"github.com/trickstercache/trickster/v2/pkg/encoding/reader"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
-	"github.com/trickstercache/trickster/v2/pkg/util/strings"
+	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
 func TestNewEncoder(t *testing.T) {
@@ -194,10 +194,10 @@ func TestPrepareWriter(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	h := w.Header()
-	ep := &profile.Profile{Supported: 1, ContentType: "text/plain",
-		CompressTypes: strings.Lookup{"text/plain": nil}}
+	ep := &profile.Profile{Supported: 1, ContentType: headers.ValueTextPlain,
+		CompressTypes: sets.New([]string{headers.ValueTextPlain})}
 	ew := &responseEncoder{EncodingProfile: ep, ResponseWriter: w}
-	h.Set(headers.NameContentType, "text/plain")
+	h.Set(headers.NameContentType, headers.ValueTextPlain)
 	ew.prepareWriter()
 	if ew.encoder == nil {
 		t.Error("expected non-nil encoder")

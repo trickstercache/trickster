@@ -18,9 +18,11 @@ package headers
 
 import (
 	"net/http"
+
+	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
-var sensitiveCredentials = map[string]interface{}{NameAuthorization: nil}
+var sensitiveCredentials = sets.New([]string{NameAuthorization})
 
 // HideAuthorizationCredentials replaces any sensitive HTTP header values with 5
 // asterisks sensitive headers are defined in the sensitiveCredentials map

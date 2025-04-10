@@ -19,6 +19,7 @@ package irondb
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -43,24 +44,10 @@ func (c *Client) CAQLHandler(w http.ResponseWriter, r *http.Request) {
 func (c *Client) caqlHandlerSetExtent(r *http.Request,
 	trq *timeseries.TimeRangeQuery,
 	extent *timeseries.Extent) {
-
-	if r == nil || extent == nil || (extent.Start.IsZero() && extent.End.IsZero()) {
+	ok, st, et := c.resolveTRQWithExtent(r, trq, extent)
+	if !ok {
 		return
 	}
-
-	var err error
-	if trq == nil {
-		if trq, _, _, err = c.ParseTimeRangeQuery(r); err != nil {
-			return
-		}
-	}
-
-	st := extent.Start.UnixNano() - (extent.Start.UnixNano() % int64(trq.Step))
-	et := extent.End.UnixNano() - (extent.End.UnixNano() % int64(trq.Step))
-	if st == et {
-		et += int64(trq.Step)
-	}
-
 	q := r.URL.Query()
 	q.Set(upCAQLStart, common.FormatTimestamp(time.Unix(0, st), false))
 	q.Set(upCAQLEnd, common.FormatTimestamp(time.Unix(0, et), false))
@@ -121,27 +108,56 @@ func (c *Client) caqlHandlerParseTimeRangeQuery(
 // based on a timerange URL.
 func (c *Client) caqlHandlerFastForwardRequest(
 	r *http.Request) (*http.Request, error) {
+	nr, start, end, v, err := c.resolveTRQ(r)
+	if err != nil {
+		return nil, err
+	}
+	v.Set(upCAQLStart, common.FormatTimestamp(time.Unix(start, 0), false))
+	v.Set(upCAQLEnd, common.FormatTimestamp(time.Unix(end, 0), false))
+	params.SetRequestValues(nr, v)
+	return nr, nil
+}
 
+// resolve the start and end times for a timeseries query
+func (c *Client) resolveTRQ(r *http.Request) (nr *http.Request, st, et int64, v url.Values, err error) {
 	rsc := request.GetResources(r)
 	trq := rsc.TimeRangeQuery
 
-	nr := r.Clone(context.Background())
-	v, _, _ := params.GetRequestValues(nr)
-	var err error
-
+	nr = r.Clone(context.Background())
+	v, _, _ = params.GetRequestValues(nr)
 	if trq == nil {
 		trq, _, _, err = c.ParseTimeRangeQuery(r)
 		if err != nil {
-			return nil, err
+			return
 		}
 	}
 
 	now := time.Now().Unix()
-	start := now - (now % int64(trq.Step.Seconds()))
-	end := start + int64(trq.Step.Seconds())
-	v.Set(upCAQLStart, common.FormatTimestamp(time.Unix(start, 0), false))
-	v.Set(upCAQLEnd, common.FormatTimestamp(time.Unix(end, 0), false))
-	params.SetRequestValues(nr, v)
+	st = now - (now % int64(trq.Step.Seconds()))
+	et = st + int64(trq.Step.Seconds())
+	return
+}
 
-	return nr, nil
+// resolve the start and end times for a timeseries query (with an extent)
+func (c *Client) resolveTRQWithExtent(r *http.Request,
+	trq *timeseries.TimeRangeQuery,
+	extent *timeseries.Extent) (ok bool, st, et int64) {
+	if r == nil || extent == nil || (extent.Start.IsZero() && extent.End.IsZero()) {
+		return
+	}
+
+	var err error
+	if trq == nil {
+		if trq, _, _, err = c.ParseTimeRangeQuery(r); err != nil {
+			return
+		}
+	}
+
+	st = extent.Start.UnixNano() - (extent.Start.UnixNano() % int64(trq.Step))
+	et = extent.End.UnixNano() - (extent.End.UnixNano() % int64(trq.Step))
+	if st == et {
+		et += int64(trq.Step)
+	}
+	ok = true
+	return
 }

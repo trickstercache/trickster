@@ -18,6 +18,8 @@ package providers
 
 import (
 	"strconv"
+
+	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
 // Provider enumerates the supported backend providers
@@ -40,21 +42,26 @@ const (
 	IronDB
 	// ClickHouse represents the ClickHouse backend provider
 	ClickHouse
+
+	ReverseProxyShort      = "rp"
+	ReverseProxy           = "reverseproxy"
+	ReverseProxyCacheShort = "rpc"
+	ReverseProxyCache      = "reverseproxycache"
 )
 
 // Names is a map of Providers keyed by string name
 var Names = map[string]Provider{
-	"rule":              Rule,
-	"reverseproxycache": RPC,
-	"rpc":               RPC,
-	"alb":               ALB,
-	"prometheus":        Prometheus,
-	"influxdb":          InfluxDB,
-	"irondb":            IronDB,
-	"clickhouse":        ClickHouse,
-	"proxy":             RP,
-	"reverseproxy":      RP,
-	"rp":                RP,
+	"rule":                 Rule,
+	ReverseProxyCache:      RPC,
+	ReverseProxyCacheShort: RPC,
+	"alb":                  ALB,
+	"prometheus":           Prometheus,
+	"influxdb":             InfluxDB,
+	"irondb":               IronDB,
+	"clickhouse":           ClickHouse,
+	"proxy":                RP,
+	ReverseProxy:           RP,
+	ReverseProxyShort:      RP,
 }
 
 // Values is a map of Providers valued by string name
@@ -66,8 +73,8 @@ func init() {
 	}
 	// ensure consistent reverse mapping for reverseproxycache as rpc
 	// and "rp" for proxy
-	Values[RPC] = "rpc"
-	Values[RP] = "rp"
+	Values[RPC] = ReverseProxyCacheShort
+	Values[RP] = ReverseProxyShort
 }
 
 var supportedTimeSeries = map[string]Provider{
@@ -104,4 +111,10 @@ func (t Provider) String() string {
 func IsValidProvider(t string) bool {
 	_, ok := Names[t]
 	return ok
+}
+
+// NonCacheBackends returns a set of backend Providers that do not use a cache
+func NonCacheBackends() sets.Set[string] {
+	return sets.New([]string{ReverseProxyShort,
+		ReverseProxy, "alb", "proxy", "rule"})
 }
