@@ -9,6 +9,7 @@
 .coverprofile
 prometheus-data
 trickster-data
+trips_*.gz
 
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out

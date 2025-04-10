@@ -56,6 +56,8 @@ type TimeRangeQuery struct {
 	ValueFieldDefinitions []FieldDefinition `msg:"vfdefs"`
 	// ParsedQuery is a member for the vendor-specific query object
 	ParsedQuery any `msg:"-"`
+	// OriginalBody is the original inbound request body untransformed if POST
+	OriginalBody []byte `msg:"-"`
 }
 
 // Clone returns an exact copy of a TimeRangeQuery
@@ -81,6 +83,11 @@ func (trq *TimeRangeQuery) Clone() *TimeRangeQuery {
 
 	if trq.TemplateURL != nil {
 		t.TemplateURL = urls.Clone(trq.TemplateURL)
+	}
+
+	if len(trq.OriginalBody) > 0 {
+		t.OriginalBody = make([]byte, len(trq.OriginalBody))
+		copy(t.OriginalBody, trq.OriginalBody)
 	}
 
 	return t

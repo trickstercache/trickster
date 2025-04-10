@@ -79,29 +79,28 @@ func isQueryBody(r *http.Request) bool {
 
 // GetRequestValues returns the Query Parameters for the request
 // regardless of method
-func GetRequestValues(r *http.Request) (url.Values, string, bool) {
+func GetRequestValues(r *http.Request) (url.Values, []byte, bool) {
 	var v url.Values
-	var s string
+	var b []byte
 	var isBody bool
 	if !methods.HasBody(r.Method) {
 		v = r.URL.Query()
-		s = r.URL.RawQuery
+		b = []byte(r.URL.RawQuery)
 	} else if isMultipartOrForm(r) {
 		r.ParseForm()
 		v = r.PostForm
-		s = v.Encode()
+		b = []byte(v.Encode())
 		isBody = true
 	} else {
 		v = r.URL.Query()
-		b, _ := io.ReadAll(r.Body)
+		b, _ = io.ReadAll(r.Body)
 		r.Body.Close()
 		r.Body = io.NopCloser(bytes.NewReader(b))
-		s = string(b)
 		isBody = true
 		if strings.HasPrefix(strings.ToLower(r.Header.Get(headers.NameContentType)), headers.ValueApplicationJSON) {
-			return v, s, isBody
+			return v, b, isBody
 		}
-		if vs, err := url.ParseQuery(s); err == nil && isQueryBody(r) {
+		if vs, err := url.ParseQuery(string(b)); err == nil && isQueryBody(r) {
 			for vsk := range vs {
 				for _, vsv := range vs[vsk] {
 					if !v.Has(vsk) {
@@ -113,7 +112,7 @@ func GetRequestValues(r *http.Request) (url.Values, string, bool) {
 			}
 		}
 	}
-	return v, s, isBody
+	return v, b, isBody
 }
 
 // SetRequestValues Values sets the Query Parameters for the request

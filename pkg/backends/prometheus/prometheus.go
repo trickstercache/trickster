@@ -132,7 +132,10 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 
 	trq := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{}}
 	rlo := &timeseries.RequestOptions{}
-	qp, _, _ := params.GetRequestValues(r)
+	qp, b, isBody := params.GetRequestValues(r)
+	if isBody {
+		trq.OriginalBody = b
+	}
 
 	trq.Statement = qp.Get(upQuery)
 	if trq.Statement == "" {

@@ -88,7 +88,7 @@ services:
       # Mount for influxdb data directory and configuration
 
   # influxdb 2.0 cli, for seeding influxdb on startup
-  influxdb_cli:
+  influxdb_seed:
     links:
       - influxdb2
     image: influxdb:2.7
@@ -101,7 +101,7 @@ services:
       network: host
     restart: on-failure:10
     depends_on:
-      # Wait for the influxd service in the influxdb container has fully before
+      # Wait for the influxd service in the influxdb container to start before
       # trying to setup an influxdb instance with the influxdb_cli service. 
       - influxdb2
 
@@ -114,7 +114,23 @@ services:
     build:
       context: .
       network: host
+    volumes:
+      - ./docker-compose-data/clickhouse-config/users/default-user.xml:/etc/clickhouse-server/users.d/default-user.xml
     restart: always
+
+  # clickouse-client, for seeding clickhouse on startup
+  clickhouse_seed:
+    links:
+      - clickhouse
+    image: clickhouse/clickhouse-server:25.3
+    volumes:
+      - ./docker-compose-data/clickhouse-config/seeding:/seeding
+    entrypoint: /seeding/seed.sh
+    build:
+      context: .
+      network: host
+    depends_on:
+      - clickhouse
 
   # Mocks
 
