@@ -20,6 +20,8 @@ package dataset
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -101,14 +103,7 @@ func (t Tags) Keys() []string {
 	if len(t) == 0 {
 		return nil
 	}
-	keys := make(sort.StringSlice, len(t))
-	var i int
-	for k := range t {
-		keys[i] = k
-		i++
-	}
-	sort.Sort(keys)
-	return keys
+	return slices.Sorted(maps.Keys(t))
 }
 
 // Size returns the byte size of the Tags
@@ -122,16 +117,10 @@ func (t Tags) Size() int {
 
 // Clone returns an exact copy of the Tags
 func (t Tags) Clone() Tags {
-	clone := make(Tags)
-	for k := range t {
-		clone[k] = t[k]
-	}
-	return clone
+	return maps.Clone(t)
 }
 
 // Merge merges the provided tags into the subject tags, replacing any duplicate tag names
 func (t Tags) Merge(t2 Tags) {
-	for k := range t2 {
-		t[k] = t2[k]
-	}
+	maps.Copy(t, t2)
 }

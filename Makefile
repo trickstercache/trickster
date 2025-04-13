@@ -148,7 +148,7 @@ lint:
 
 GO_TEST_FLAGS ?= -coverprofile=.coverprofile
 .PHONY: test
-test:
+test: check-license-headers
 	go test -v ${GO_TEST_FLAGS} ./...
 
 .PHONY: data-race-test
@@ -191,6 +191,20 @@ insert-license-headers:
 		fi ; \
 	done
 
+.PHONY: check-license-headers
+check-license-headers:
+	@for file in $$(find ./pkg ./cmd -name '*.go') ; \
+	do \
+		output=$$(grep 'Licensed under the Apache License' $$file) ; \
+		if [[ "$$?" != "0" ]]; then \
+			echo "" ; \
+			echo "Some project code files do not have the Trickster / Apache 2.0 license header." ; \
+			echo "Run 'make insert-license-headers' and commit the changes." ; \
+			echo "" ; \
+			exit 1 ; \
+		fi ; \
+	done
+
 .PHONY: spelling
 spelling:
 	@which mdspell ; \
@@ -223,6 +237,7 @@ serve-info:
 get-tools:
 	@echo "Installing tools..."
 	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.0.2
+	go install github.com/tinylib/msgp@v1.2.5
 
 .PHONY: start-developer
 start-developer:

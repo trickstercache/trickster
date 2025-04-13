@@ -17,7 +17,6 @@
 package model
 
 import (
-	"bytes"
 	"io"
 	"net/http"
 
@@ -37,58 +36,31 @@ func MergeAndWriteVector(w http.ResponseWriter, r *http.Request, rgs merge.Respo
 	var ts *dataset.DataSet
 	var trq *timeseries.TimeRangeQuery
 
-	responses := make([]int, len(rgs))
-	var bestResp *http.Response
-
-	statusCode := 0
-
-	for i, rg := range rgs {
-		if rg == nil {
-			continue
+	responses, bestResp := gatherResponses(r, rgs, func(rg *merge.ResponseGate) bool {
+		if rg.Resources.TimeRangeQuery != nil {
+			trq = rg.Resources.TimeRangeQuery
 		}
-		if rg.Resources != nil && rg.Resources.Response != nil {
-			resp := rg.Resources.Response
-			responses[i] = resp.StatusCode
 
-			if resp.Body != nil {
-				defer resp.Body.Close()
-			}
-
-			if statusCode == 0 || resp.StatusCode < statusCode {
-				statusCode = resp.StatusCode
-			}
-
-			if resp.StatusCode < 400 {
-
-				if rg.Resources.TimeRangeQuery != nil {
-					trq = rg.Resources.TimeRangeQuery
-				}
-
-				t2, err := UnmarshalTimeseries(rg.Body(), trq)
-				if err != nil {
-					logger.Error("vector unmarshaling error",
-						logging.Pairs{"provider": "prometheus", "detail": err.Error()})
-					continue
-				}
-
-				if ts == nil {
-					ds, ok := t2.(*dataset.DataSet)
-					if !ok {
-						logger.Error("vector unmarshaling error",
-							logging.Pairs{"provider": "prometheus"})
-						continue
-					}
-					ts = ds
-				} else {
-					ts.Merge(false, t2)
-				}
-			}
-			if bestResp == nil || resp.StatusCode < bestResp.StatusCode {
-				bestResp = resp
-				resp.Body = io.NopCloser(bytes.NewReader(rg.Body()))
-			}
+		t2, err := UnmarshalTimeseries(rg.Body(), trq)
+		if err != nil {
+			logger.Error("vector unmarshaling error",
+				logging.Pairs{"provider": "prometheus", "detail": err.Error()})
+			return false
 		}
-	}
+
+		if ts == nil {
+			ds, ok := t2.(*dataset.DataSet)
+			if !ok {
+				logger.Error("vector unmarshaling error",
+					logging.Pairs{"provider": "prometheus"})
+				return false
+			}
+			ts = ds
+		} else {
+			ts.Merge(false, t2)
+		}
+		return true
+	})
 
 	if len(responses) == 0 {
 		handlers.HandleBadGateway(w, r)
@@ -108,6 +80,6 @@ func MergeAndWriteVector(w http.ResponseWriter, r *http.Request, rgs merge.Respo
 		return
 	}
 
-	MarshalTSOrVectorWriter(ts, nil, statusCode, w, true)
+	MarshalTSOrVectorWriter(ts, nil, bestResp.StatusCode, w, true)
 
 }

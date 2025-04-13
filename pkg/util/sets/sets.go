@@ -1,3 +1,19 @@
+/*
+ * Copyright 2018 The Trickster Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package sets
 
 import (
@@ -11,10 +27,13 @@ type Set[T comparable] map[T]struct{}
 // New creates a new Set from a slice of keys.
 func New[T comparable](keys []T) Set[T] {
 	s := make(Set[T], len(keys))
-	for _, key := range keys {
-		s[key] = struct{}{}
-	}
+	s.AddAll(keys)
 	return s
+}
+
+// NewInt64Set returns a new Set[int64]
+func NewInt64Set() Set[int64] {
+	return make(Set[int64])
 }
 
 // NewIntSet returns a new Set[int]
@@ -25,6 +44,12 @@ func NewIntSet() Set[int] {
 // NewIntSet returns a new Set[string]
 func NewStringSet() Set[string] {
 	return make(Set[string])
+}
+
+func (s Set[T]) AddAll(vals []T) {
+	for _, val := range vals {
+		s.Add(val)
+	}
 }
 
 // Add inserts a value into the set.

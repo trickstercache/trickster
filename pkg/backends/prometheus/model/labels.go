@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 
@@ -42,14 +43,12 @@ type WFLabelData struct {
 // Merge merges the passed WFSeries into the subject WFSeries
 func (ld *WFLabelData) Merge(results ...*WFLabelData) {
 	m := sets.NewStringSet()
-	for _, d := range ld.Data {
-		m[d] = struct{}{}
-	}
+	m.AddAll(ld.Data)
 	for _, ld2 := range results {
 		ld.Envelope.Merge(ld2.Envelope)
 		for _, d := range ld2.Data {
 			if _, ok := m[d]; !ok {
-				m[d] = struct{}{}
+				m.Add(d)
 				ld.Data = append(ld.Data, d)
 			}
 		}
@@ -89,7 +88,7 @@ func MergeAndWriteLabelData(w http.ResponseWriter, r *http.Request, rgs merge.Re
 		return
 	}
 
-	sort.Ints(responses)
+	slices.Sort(responses)
 	statusCode := responses[0]
 	ld.StartMarshal(w, statusCode)
 

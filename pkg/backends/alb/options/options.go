@@ -114,9 +114,7 @@ func SetDefaults(name string, options *Options, metadata yamlx.KeyLookup) (*Opti
 		}
 		if o.FGRStatusCodes != nil {
 			o.FgrCodesLookup = sets.NewIntSet()
-			for _, i := range o.FGRStatusCodes {
-				o.FgrCodesLookup.Add(i)
-			}
+			o.FgrCodesLookup.AddAll(o.FGRStatusCodes)
 		}
 	}
 
