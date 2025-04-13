@@ -25,15 +25,15 @@ import (
 
 // WithHops returns a copy of the provided context that also includes
 // rule-based Hop information about the request
-func WithHops(ctx context.Context, current, max int) context.Context {
-	return context.WithValue(ctx, hopsKey, []int{current, max})
+func WithHops(ctx context.Context, current, max int32) context.Context {
+	return context.WithValue(ctx, hopsKey, []int32{current, max})
 }
 
 // Hops returns the Hops data associated with the request
-func Hops(ctx context.Context) (current, max int) {
+func Hops(ctx context.Context) (current, max int32) {
 	v := ctx.Value(hopsKey)
 	if v != nil {
-		if i, ok := v.([]int); ok && len(i) == 2 {
+		if i, ok := v.([]int32); ok && len(i) == 2 {
 			return i[0], i[1]
 		}
 	}
@@ -41,7 +41,7 @@ func Hops(ctx context.Context) (current, max int) {
 }
 
 // IncrementedRewriterHops returns the current incremented hop count from the ctx
-func IncrementedRewriterHops(ctx context.Context, i int) int {
+func IncrementedRewriterHops(ctx context.Context, i int32) int32 {
 	v := ctx.Value(rewriterHopsKey)
 	var p *int32
 	if v != nil {
@@ -52,16 +52,16 @@ func IncrementedRewriterHops(ctx context.Context, i int) int {
 	if p == nil {
 		return 0
 	}
-	i = int(atomic.AddInt32(p, int32(i)))
+	i = atomic.AddInt32(p, i)
 	return i
 }
 
 // RewriterHops returns the RewriterHops data associated with the request
-func RewriterHops(ctx context.Context) int {
+func RewriterHops(ctx context.Context) int32 {
 	v := ctx.Value(rewriterHopsKey)
 	if v != nil {
 		if i, ok := v.(*int32); ok {
-			return int(atomic.LoadInt32(i))
+			return atomic.LoadInt32(i)
 		}
 	}
 	return 0
