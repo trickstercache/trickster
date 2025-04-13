@@ -396,9 +396,7 @@ func (l Lookup) Validate(ncl negative.Lookups) error {
 
 		if o.CompressibleTypeList != nil {
 			o.CompressibleTypes = sets.NewStringSet()
-			for _, v := range o.CompressibleTypeList {
-				o.CompressibleTypes.Add(v)
-			}
+			o.CompressibleTypes.AddAll(o.CompressibleTypeList)
 		}
 		if o.CacheKeyPrefix == "" {
 			o.CacheKeyPrefix = o.Host

@@ -30,6 +30,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/irondb/common"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
 // SeriesEnvelope values represent a time series data response from the
@@ -225,9 +226,9 @@ func (se *SeriesEnvelope) ValueCount() int64 {
 
 // TimestampCount returns the number of unique timestamps across the timeseries.
 func (se *SeriesEnvelope) TimestampCount() int64 {
-	ts := map[int64]struct{}{}
+	ts := sets.NewInt64Set()
 	for _, dp := range se.Data {
-		ts[dp.Time.Unix()] = struct{}{}
+		ts.Add(dp.Time.Unix())
 	}
 	return int64(len(ts))
 }
@@ -304,9 +305,10 @@ func (se *SeriesEnvelope) CropToSize(sz int, t time.Time,
 		se.CropToRange(timeseries.Extent{Start: se.ExtentList[0].Start, End: t})
 	}
 
-	ts := map[int64]struct{}{}
+	ts := sets.NewInt64Set()
+
 	for _, dp := range se.Data {
-		ts[dp.Time.Unix()] = struct{}{}
+		ts.Add(dp.Time.Unix())
 	}
 
 	if len(se.Data) == 0 || len(ts) <= sz {
@@ -321,9 +323,9 @@ func (se *SeriesEnvelope) CropToSize(sz int, t time.Time,
 
 	sort.Ints(tsl)
 	tsl = tsl[rc:]
-	tsm := map[int64]struct{}{}
+	tsm := sets.NewInt64Set()
 	for _, t := range tsl {
-		tsm[int64(t)] = struct{}{}
+		tsm.Add(int64(t))
 	}
 
 	min, max := time.Now().Unix(), int64(0)

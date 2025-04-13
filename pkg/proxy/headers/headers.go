@@ -20,8 +20,9 @@ package headers
 
 import (
 	"fmt"
+	"maps"
 	"net/http"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -237,14 +238,7 @@ func LogString(h http.Header) string {
 		return "{}"
 	}
 
-	names := make([]string, len(h))
-	i := 0
-	for k := range h {
-		names[i] = k
-		i++
-	}
-	sort.Strings(names)
-
+	names := slices.Sorted(maps.Keys(h))
 	sb := &strings.Builder{}
 	sb.WriteString("{")
 	sep := ""
