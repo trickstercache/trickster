@@ -355,7 +355,7 @@ func (z *Object) DecodeMsg(dc *msgp.Reader) (err error) {
 
 // EncodeMsg implements msgp.Encodable
 func (z *Object) EncodeMsg(en *msgp.Writer) (err error) {
-	// omitempty: check for empty values
+	// check for omitted fields
 	zb0001Len := uint32(6)
 	var zb0001Mask uint8 /* 6 bits */
 	_ = zb0001Mask
@@ -368,69 +368,70 @@ func (z *Object) EncodeMsg(en *msgp.Writer) (err error) {
 	if err != nil {
 		return
 	}
-	if zb0001Len == 0 {
-		return
-	}
-	// write "key"
-	err = en.Append(0xa3, 0x6b, 0x65, 0x79)
-	if err != nil {
-		return
-	}
-	err = en.WriteString(z.Key)
-	if err != nil {
-		err = msgp.WrapError(err, "Key")
-		return
-	}
-	// write "expiration"
-	err = en.Append(0xaa, 0x65, 0x78, 0x70, 0x69, 0x72, 0x61, 0x74, 0x69, 0x6f, 0x6e)
-	if err != nil {
-		return
-	}
-	err = en.WriteTime(z.Expiration)
-	if err != nil {
-		err = msgp.WrapError(err, "Expiration")
-		return
-	}
-	// write "lastwrite"
-	err = en.Append(0xa9, 0x6c, 0x61, 0x73, 0x74, 0x77, 0x72, 0x69, 0x74, 0x65)
-	if err != nil {
-		return
-	}
-	err = en.WriteTime(z.LastWrite)
-	if err != nil {
-		err = msgp.WrapError(err, "LastWrite")
-		return
-	}
-	// write "lastaccess"
-	err = en.Append(0xaa, 0x6c, 0x61, 0x73, 0x74, 0x61, 0x63, 0x63, 0x65, 0x73, 0x73)
-	if err != nil {
-		return
-	}
-	err = en.WriteTime(z.LastAccess)
-	if err != nil {
-		err = msgp.WrapError(err, "LastAccess")
-		return
-	}
-	// write "size"
-	err = en.Append(0xa4, 0x73, 0x69, 0x7a, 0x65)
-	if err != nil {
-		return
-	}
-	err = en.WriteInt64(z.Size)
-	if err != nil {
-		err = msgp.WrapError(err, "Size")
-		return
-	}
-	if (zb0001Mask & 0x20) == 0 { // if not empty
-		// write "value"
-		err = en.Append(0xa5, 0x76, 0x61, 0x6c, 0x75, 0x65)
+
+	// skip if no fields are to be emitted
+	if zb0001Len != 0 {
+		// write "key"
+		err = en.Append(0xa3, 0x6b, 0x65, 0x79)
 		if err != nil {
 			return
 		}
-		err = en.WriteBytes(z.Value)
+		err = en.WriteString(z.Key)
 		if err != nil {
-			err = msgp.WrapError(err, "Value")
+			err = msgp.WrapError(err, "Key")
 			return
+		}
+		// write "expiration"
+		err = en.Append(0xaa, 0x65, 0x78, 0x70, 0x69, 0x72, 0x61, 0x74, 0x69, 0x6f, 0x6e)
+		if err != nil {
+			return
+		}
+		err = en.WriteTime(z.Expiration)
+		if err != nil {
+			err = msgp.WrapError(err, "Expiration")
+			return
+		}
+		// write "lastwrite"
+		err = en.Append(0xa9, 0x6c, 0x61, 0x73, 0x74, 0x77, 0x72, 0x69, 0x74, 0x65)
+		if err != nil {
+			return
+		}
+		err = en.WriteTime(z.LastWrite)
+		if err != nil {
+			err = msgp.WrapError(err, "LastWrite")
+			return
+		}
+		// write "lastaccess"
+		err = en.Append(0xaa, 0x6c, 0x61, 0x73, 0x74, 0x61, 0x63, 0x63, 0x65, 0x73, 0x73)
+		if err != nil {
+			return
+		}
+		err = en.WriteTime(z.LastAccess)
+		if err != nil {
+			err = msgp.WrapError(err, "LastAccess")
+			return
+		}
+		// write "size"
+		err = en.Append(0xa4, 0x73, 0x69, 0x7a, 0x65)
+		if err != nil {
+			return
+		}
+		err = en.WriteInt64(z.Size)
+		if err != nil {
+			err = msgp.WrapError(err, "Size")
+			return
+		}
+		if (zb0001Mask & 0x20) == 0 { // if not omitted
+			// write "value"
+			err = en.Append(0xa5, 0x76, 0x61, 0x6c, 0x75, 0x65)
+			if err != nil {
+				return
+			}
+			err = en.WriteBytes(z.Value)
+			if err != nil {
+				err = msgp.WrapError(err, "Value")
+				return
+			}
 		}
 	}
 	return
@@ -439,7 +440,7 @@ func (z *Object) EncodeMsg(en *msgp.Writer) (err error) {
 // MarshalMsg implements msgp.Marshaler
 func (z *Object) MarshalMsg(b []byte) (o []byte, err error) {
 	o = msgp.Require(b, z.Msgsize())
-	// omitempty: check for empty values
+	// check for omitted fields
 	zb0001Len := uint32(6)
 	var zb0001Mask uint8 /* 6 bits */
 	_ = zb0001Mask
@@ -449,28 +450,29 @@ func (z *Object) MarshalMsg(b []byte) (o []byte, err error) {
 	}
 	// variable map header, size zb0001Len
 	o = append(o, 0x80|uint8(zb0001Len))
-	if zb0001Len == 0 {
-		return
-	}
-	// string "key"
-	o = append(o, 0xa3, 0x6b, 0x65, 0x79)
-	o = msgp.AppendString(o, z.Key)
-	// string "expiration"
-	o = append(o, 0xaa, 0x65, 0x78, 0x70, 0x69, 0x72, 0x61, 0x74, 0x69, 0x6f, 0x6e)
-	o = msgp.AppendTime(o, z.Expiration)
-	// string "lastwrite"
-	o = append(o, 0xa9, 0x6c, 0x61, 0x73, 0x74, 0x77, 0x72, 0x69, 0x74, 0x65)
-	o = msgp.AppendTime(o, z.LastWrite)
-	// string "lastaccess"
-	o = append(o, 0xaa, 0x6c, 0x61, 0x73, 0x74, 0x61, 0x63, 0x63, 0x65, 0x73, 0x73)
-	o = msgp.AppendTime(o, z.LastAccess)
-	// string "size"
-	o = append(o, 0xa4, 0x73, 0x69, 0x7a, 0x65)
-	o = msgp.AppendInt64(o, z.Size)
-	if (zb0001Mask & 0x20) == 0 { // if not empty
-		// string "value"
-		o = append(o, 0xa5, 0x76, 0x61, 0x6c, 0x75, 0x65)
-		o = msgp.AppendBytes(o, z.Value)
+
+	// skip if no fields are to be emitted
+	if zb0001Len != 0 {
+		// string "key"
+		o = append(o, 0xa3, 0x6b, 0x65, 0x79)
+		o = msgp.AppendString(o, z.Key)
+		// string "expiration"
+		o = append(o, 0xaa, 0x65, 0x78, 0x70, 0x69, 0x72, 0x61, 0x74, 0x69, 0x6f, 0x6e)
+		o = msgp.AppendTime(o, z.Expiration)
+		// string "lastwrite"
+		o = append(o, 0xa9, 0x6c, 0x61, 0x73, 0x74, 0x77, 0x72, 0x69, 0x74, 0x65)
+		o = msgp.AppendTime(o, z.LastWrite)
+		// string "lastaccess"
+		o = append(o, 0xaa, 0x6c, 0x61, 0x73, 0x74, 0x61, 0x63, 0x63, 0x65, 0x73, 0x73)
+		o = msgp.AppendTime(o, z.LastAccess)
+		// string "size"
+		o = append(o, 0xa4, 0x73, 0x69, 0x7a, 0x65)
+		o = msgp.AppendInt64(o, z.Size)
+		if (zb0001Mask & 0x20) == 0 { // if not omitted
+			// string "value"
+			o = append(o, 0xa5, 0x76, 0x61, 0x6c, 0x75, 0x65)
+			o = msgp.AppendBytes(o, z.Value)
+		}
 	}
 	return
 }

@@ -223,6 +223,7 @@ serve-info:
 get-tools:
 	@echo "Installing tools..."
 	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.0.2
+	go install github.com/tinylib/msgp@v1.2.5
 
 .PHONY: start-developer
 start-developer:
