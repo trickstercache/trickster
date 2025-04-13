@@ -148,7 +148,7 @@ lint:
 
 GO_TEST_FLAGS ?= -coverprofile=.coverprofile
 .PHONY: test
-test:
+test: check-license-headers
 	go test -v ${GO_TEST_FLAGS} ./...
 
 .PHONY: data-race-test
@@ -188,6 +188,20 @@ insert-license-headers:
 			cat $(BUMPER_FILE) > /tmp/trktmp.go ; \
 			cat $$file >> /tmp/trktmp.go ; \
 			mv /tmp/trktmp.go $$file ; \
+		fi ; \
+	done
+
+.PHONY: check-license-headers
+check-license-headers:
+	@for file in $$(find ./pkg ./cmd -name '*.go') ; \
+	do \
+		output=$$(grep 'Licensed under the Apache License' $$file) ; \
+		if [[ "$$?" != "0" ]]; then \
+			echo "" ; \
+			echo "Some project code files do not have the Trickster / Apache 2.0 license header." ; \
+			echo "Run 'make insert-license-headers' and commit the changes." ; \
+			echo "" ; \
+			exit 1 ; \
 		fi ; \
 	done
 
