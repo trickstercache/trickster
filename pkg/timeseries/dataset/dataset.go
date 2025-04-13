@@ -200,12 +200,15 @@ func (ds *DataSet) Clone() timeseries.Timeseries {
 		clone.VolatileExtentList = ds.VolatileExtentList.Clone()
 	}
 
-	for i := range ds.Results {
-		if ds.Results[i] == nil {
+	var k int
+	for _, r := range ds.Results {
+		if r == nil {
 			continue
 		}
-		clone.Results[i] = ds.Results[i].Clone()
+		clone.Results[k] = r.Clone()
+		k++
 	}
+	clone.Results = clone.Results[:k]
 	return clone
 }
 
