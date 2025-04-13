@@ -37,6 +37,8 @@ func (z *Tags) DecodeMsg(dc *msgp.Reader) (err error) {
 			delete((*z), key)
 		}
 	}
+	var field []byte
+	_ = field
 	for zb0003 > 0 {
 		zb0003--
 		var zb0001 string
@@ -104,6 +106,8 @@ func (z *Tags) UnmarshalMsg(bts []byte) (o []byte, err error) {
 			delete((*z), key)
 		}
 	}
+	var field []byte
+	_ = field
 	for zb0003 > 0 {
 		var zb0001 string
 		var zb0002 string
