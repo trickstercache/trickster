@@ -203,7 +203,8 @@ check-license-headers:
 			echo "" ; \
 			exit 1 ; \
 		fi ; \
-	done
+	done ; \
+	echo "" ; echo "✓ All code files have the required license header." ; echo ""
 
 .PHONY: spelling
 spelling:
