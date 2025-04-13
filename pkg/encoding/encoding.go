@@ -46,23 +46,16 @@ func MergeDelimeterSeparated(s1, s2, delimiter string, pad bool) string {
 	l2 := strings.Split(s2, delimiter)
 	full := make([]string, len(l1)+len(l2))
 	var k int
-	for _, v := range l1 {
-		v = strings.TrimSpace(v)
-		if _, ok := used[v]; ok {
-			continue
+	for _, l := range [][]string{l1, l2} {
+		for _, v := range l {
+			v = strings.TrimSpace(v)
+			if _, ok := used[v]; ok {
+				continue
+			}
+			used.Add(v)
+			full[k] = v
+			k++
 		}
-		used[v] = struct{}{}
-		full[k] = v
-		k++
-	}
-	for _, v := range l2 {
-		v = strings.TrimSpace(v)
-		if _, ok := used[v]; ok {
-			continue
-		}
-		used[v] = struct{}{}
-		full[k] = v
-		k++
 	}
 	if pad {
 		delimiter += " "

@@ -19,6 +19,8 @@ package dataset
 import (
 	"fmt"
 	"strings"
+
+	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
 // SeriesList is an ordered list of Series
@@ -55,14 +57,14 @@ func (sl SeriesList) merge(sl2 SeriesList) SeriesList {
 		m[h] = k
 		k++
 	}
-	seen := make(map[Hash]struct{}, len(sl2))
+	seen := make(sets.Set[Hash], len(sl2))
 	var pj int
 	for _, v := range sl2 {
 		h := v.Header.CalculateHash()
-		if _, ok := seen[h]; ok {
+		if seen.Contains(h) {
 			continue
 		}
-		seen[h] = struct{}{}
+		seen.Add(h)
 		j, ok := m[h]
 		if !ok {
 			out[k] = v

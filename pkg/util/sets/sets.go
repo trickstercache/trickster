@@ -11,10 +11,13 @@ type Set[T comparable] map[T]struct{}
 // New creates a new Set from a slice of keys.
 func New[T comparable](keys []T) Set[T] {
 	s := make(Set[T], len(keys))
-	for _, key := range keys {
-		s[key] = struct{}{}
-	}
+	s.AddAll(keys)
 	return s
+}
+
+// NewInt64Set returns a new Set[int64]
+func NewInt64Set() Set[int64] {
+	return make(Set[int64])
 }
 
 // NewIntSet returns a new Set[int]
@@ -25,6 +28,12 @@ func NewIntSet() Set[int] {
 // NewIntSet returns a new Set[string]
 func NewStringSet() Set[string] {
 	return make(Set[string])
+}
+
+func (s Set[T]) AddAll(vals []T) {
+	for _, val := range vals {
+		s.Add(val)
+	}
 }
 
 // Add inserts a value into the set.

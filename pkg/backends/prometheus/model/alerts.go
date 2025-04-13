@@ -21,7 +21,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
+	"slices"
 	"sort"
 
 	"github.com/trickstercache/trickster/v2/pkg/checksum/fnv"
@@ -88,16 +90,8 @@ func (a *WFAlerts) Merge(results ...*WFAlerts) {
 		}
 	}
 
-	var i int
-	keys := make(fnv.List, len(m))
-	for k := range m {
-		keys[i] = k
-		i++
-	}
-	sort.Sort(keys)
-
 	alerts := make([]WFAlert, len(m))
-	for j, k := range keys {
+	for j, k := range slices.Sorted(maps.Keys(m)) {
 		alerts[j] = m[k]
 	}
 
