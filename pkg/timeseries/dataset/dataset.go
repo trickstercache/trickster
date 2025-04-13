@@ -228,6 +228,7 @@ func (ds *DataSet) DefaultMerger(sortSeries bool, collection ...timeseries.Times
 
 	sl := make(SeriesLookup)
 	rl := make(ResultsLookup)
+	var slmtx sync.RWMutex
 	for _, r := range ds.Results {
 		if r == nil {
 			continue
@@ -269,7 +270,6 @@ func (ds *DataSet) DefaultMerger(sortSeries bool, collection ...timeseries.Times
 			}
 
 			rwg.Add(1)
-			var slmtx sync.RWMutex
 
 			// this iterates the new result and appends any new datapoints to pre-existing series
 			go func(gr1, gr *Result) {
