@@ -301,21 +301,11 @@ func (el ExtentList) Clone() ExtentList {
 // CloneRange returns a perfect copy of the ExtentList, cloning only the
 // Extents in the provided index range (upper-bound exclusive)
 func (el ExtentList) CloneRange(start, end int) ExtentList {
-	if end < start || start < 0 || end < 0 {
-		return nil
+	if end < start || start < 0 || end > len(el) {
+		return ExtentList{}
 	}
-	size := end - start
-	if size > len(el) {
-		return nil
-	}
-	c := make(ExtentList, size)
-	j := start
-	for i := 0; i < size; i++ {
-		c[i].Start = el[j].Start
-		c[i].End = el[j].End
-		c[i].LastUsed = el[j].LastUsed
-		j++
-	}
+	c := make(ExtentList, end-start)
+	copy(c, el[start:end])
 	return c
 }
 

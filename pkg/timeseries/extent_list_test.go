@@ -483,13 +483,24 @@ func TestCloneRange(t *testing.T) {
 	}
 
 	res := el.CloneRange(-1, -1)
-	if res != nil {
-		t.Error("expected nil result", res)
+	if len(res) != 0 {
+		t.Error("expected zero-length result", res)
 	}
 
 	res = el.CloneRange(0, 200)
-	if res != nil {
-		t.Error("expected nil result", res)
+	if len(res) != 0 {
+		t.Error("expected zero-length result", res)
+	}
+
+	el = ExtentList{
+		Extent{Start: t100, End: t200},
+		Extent{Start: t600, End: t900},
+		Extent{Start: t1100, End: t1300},
+	}
+
+	res = el.CloneRange(1, 3)
+	if len(res) != 2 {
+		t.Error("expected 2 got", len(res))
 	}
 
 }
