@@ -448,44 +448,52 @@ func (el ExtentList) TimestampCount(d time.Duration) int64 {
 // CalculateDeltas provides a list of extents that are not in a cached timeseries,
 // when provided a list of extents that are cached.
 func (el ExtentList) CalculateDeltas(want Extent, step time.Duration) ExtentList {
+	if step <= 0 || !want.End.After(want.Start) {
+		return nil
+	}
 	if len(el) == 0 {
 		return ExtentList{want}
 	}
-	misCap := want.End.Sub(want.Start) / step
-	if misCap < 0 {
-		misCap = 0
-	}
-	misses := make([]time.Time, 0, misCap)
-	for i := want.Start; !want.End.Before(i); i = i.Add(step) {
-		found := false
-		for j := range el {
-			if j == 0 && i.Before(el[j].Start) {
-				// our earliest datapoint in cache is after the first point the user wants
-				break
+	sort.Sort(el)
+	out := make(ExtentList, len(el)+1)
+	stepNS := step.Nanoseconds()
+	startNS := want.Start.UnixNano()
+	endNS := want.End.UnixNano()
+	var missStart int64 = -1
+	var j, k int
+	for ts := startNS; ts <= endNS; ts += stepNS {
+		// this advances to j to the point in el where ts would be if it were
+		// present in el (whether it currently is or not)
+		for j < len(el) && ts > el[j].End.UnixNano() {
+			j++
+		}
+		inExisting := false
+		if j < len(el) {
+			s := el[j].Start.UnixNano()
+			e := el[j].End.UnixNano()
+			inExisting = ts >= s && ts <= e
+		}
+		if !inExisting {
+			if missStart == -1 {
+				missStart = ts
 			}
-			if i.Equal(el[j].Start) || i.Equal(el[j].End) || (i.After(el[j].Start) && el[j].End.After(i)) {
-				found = true
-				break
+		} else if missStart != -1 {
+			out[k] = Extent{
+				Start: time.Unix(0, missStart),
+				End:   time.Unix(0, ts-stepNS),
 			}
-		}
-		if !found {
-			misses = append(misses, i)
-		}
-	}
-	// Find the fill and gap ranges
-	ins := ExtentList{}
-	var inStart = time.Time{}
-	l := len(misses)
-	for i := range misses {
-		if inStart.IsZero() {
-			inStart = misses[i]
-		}
-		if i+1 == l || !misses[i+1].Equal(misses[i].Add(step)) {
-			ins = append(ins, Extent{Start: inStart, End: misses[i]})
-			inStart = time.Time{}
+			k++
+			missStart = -1
 		}
 	}
-	return ins
+	if missStart != -1 {
+		out[k] = Extent{
+			Start: time.Unix(0, missStart),
+			End:   time.Unix(0, endNS),
+		}
+		k++
+	}
+	return out[:k]
 }
 
 // Size returns the approximate memory utilization in bytes of the timeseries
