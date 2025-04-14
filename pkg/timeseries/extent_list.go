@@ -161,60 +161,53 @@ func (el ExtentList) spliceByTimeAligned(step, maxRange, spliceStep time.Duratio
 	if step == 0 || maxRange == 0 || spliceStep == 0 {
 		return el.Clone()
 	}
-	// reserve enough capacity that 50% of extents could be spliced without having to re-allocate
-	out := make(ExtentList, 0, len(el)+(len(el)/2))
+	out := make(ExtentList, len(el)*4)
+	var k int
 	for _, e := range el {
-		// if the size of the extent is smaller than the max splice size, and
-		// the extent doesn't cross spliceSteps, pass through and continue
-		if e.End.Sub(e.Start) <= maxRange &&
-			e.End.Truncate(spliceStep).Equal(e.Start.Truncate(spliceStep)) {
-			out = append(out, e)
+		origStart := e.Start
+		origEnd := e.End
+		if origEnd.Sub(origStart) <= maxRange &&
+			origEnd.Truncate(spliceStep).Equal(origStart.Truncate(spliceStep)) {
+			out[k] = e
+			k++
 			continue
 		}
-		// otherwise the extent must be spliced.
-		t1 := e.Start.Truncate(spliceStep)
-		// if t1 == e.Start, then the extent falls perfectly on the spliceStep. If it does not,
-		// e will be spliced on the first spliceStep interval after e.Start
-		//
-		// this handles the left-side splice, when required
-		if t1.Before(e.Start) {
+		t1 := origStart.Truncate(spliceStep)
+		if t1.Before(origStart) {
 			t1 = t1.Add(spliceStep)
-			// this calculates the splice and adds it to the output
 			t2 := t1.Truncate(step)
-			// This ensures that if spliceStep is not a multiple of step, then the left-side
-			// splice's end time retreats to the step just prior to the start of the next splice
 			if !t2.Before(t1) {
 				t2 = t2.Add(-step)
 			}
-			out = append(out, Extent{Start: e.Start, End: t2})
-			// this advances e.Start to the first timeseries step on or after the new left boundary
-			e.Start = t2.Add(step)
+			end := t2
+			if end.Before(origStart) {
+				end = origStart
+			}
+			out[k] = Extent{Start: origStart, End: end, LastUsed: e.LastUsed}
+			k++
+			origStart = end.Add(step)
 		}
-		// now that left-side splicing is done, this splices the rest of e on the epoch.
-		//
-		// this re-checks if e is shallower than maxRange, since it might've just been reduced
-		if e.End.Sub(e.Start) <= maxRange &&
-			e.End.Truncate(spliceStep).Equal(e.Start.Truncate(spliceStep)) {
-			out = append(out, e)
+		if origEnd.Sub(origStart) <= maxRange &&
+			origEnd.Truncate(spliceStep).Equal(origStart.Truncate(spliceStep)) {
+			out[k] = Extent{Start: origStart, End: origEnd, LastUsed: e.LastUsed}
+			k++
 			continue
 		}
-		// otherwise, we still need to further splice e
-		for i := e.Start; !i.After(e.End); {
-			// this creates a new splice to add to the output
-			e2 := Extent{Start: i, End: i.Add(maxRange - step).Truncate(step)}
-			if e2.End.Before(e2.Start) {
-				e2.End = e2.Start
+		for i := origStart; !i.After(origEnd); {
+			end := i.Add(maxRange - step).Truncate(step)
+			if end.Before(i) {
+				end = i
 			}
-			// the final iteration may be partial/smaller than the splice size, so this clamps it
-			if e2.End.After(e.End) {
-				e2.End = e.End
+			if end.After(origEnd) {
+				end = origEnd
 			}
-			out = append(out, e2)
-			// this advances i forward a step beyond the current splice end, to start the next one
-			i = e2.End.Add(step)
+			out[k] = Extent{Start: i, End: end, LastUsed: e.LastUsed}
+			k++
+			i = end.Add(step)
 		}
 	}
-	return out
+
+	return out[:k]
 }
 
 // spliceByTime splices extents that are not aligned to any particular epoch cadence
@@ -222,31 +215,28 @@ func (el ExtentList) spliceByTime(step, maxRange time.Duration) ExtentList {
 	if step == 0 || maxRange == 0 {
 		return el.Clone()
 	}
-	// reserve enough capacity that 50% of extents could be spliced without having to re-allocate
-	out := make(ExtentList, 0, len(el)+(len(el)/2))
+	out := make(ExtentList, len(el)*4)
+	var k int
 	for _, e := range el {
-		// if the size of the extent is smaller than the max splice size, pass through and continue
 		if e.End.Sub(e.Start) <= maxRange {
-			out = append(out, e)
+			out[k] = e
+			k++
 			continue
 		}
-		// otherwise, we still need to further splice e
 		for i := e.Start; !i.After(e.End); {
-			// this creates a new splice to add to the output
-			e2 := Extent{Start: i, End: i.Add(maxRange - step).Truncate(step)}
-			// the final iteration may be partial/smaller than the splice size, so this clamps it
-			if e2.End.Before(e2.Start) {
-				e2.End = e2.Start
+			end := i.Add(maxRange - step).Truncate(step)
+			if end.Before(i) {
+				end = i
 			}
-			if e2.End.After(e.End) {
-				e2.End = e.End
+			if end.After(e.End) {
+				end = e.End
 			}
-			out = append(out, e2)
-			// this advances i forward a step beyond the current splice end, to start the next one
-			i = e2.End.Add(step)
+			out[k] = Extent{Start: i, End: end, LastUsed: e.LastUsed}
+			k++
+			i = end.Add(step)
 		}
 	}
-	return out
+	return out[:k]
 }
 
 // spliceByTime splices by a given number of contiguous timestamps (points) per splice
@@ -254,32 +244,35 @@ func (el ExtentList) spliceByPoints(step time.Duration, maxPoints int) ExtentLis
 	if maxPoints == 0 || step == 0 {
 		return el.Clone()
 	}
-	out := make(ExtentList, 0, len(el)+(len(el)/2))
+	out := make(ExtentList, len(el)*4)
+	var k int
+	spliceSpan := step * time.Duration(maxPoints-1)
 	for _, e := range el {
-		// this determines the number of timestamps in the extent
-		s := int(e.End.Sub(e.Start) / step)
-		// if the splice size is larger than the timestamp count, the extent can be passed through
-		if maxPoints > s || e.Start.IsZero() || e.End.IsZero() {
-			out = append(out, e)
+		if e.Start.IsZero() || e.End.IsZero() {
+			out[k] = e
+			k++
 			continue
 		}
-		// otherwise, this extent is larger than the splice size, so it needs to be spliced
+		numPoints := int(e.End.Sub(e.Start) / step)
+		if maxPoints > numPoints {
+			out[k] = e
+			k++
+			continue
+		}
 		for i := e.Start; !i.After(e.End); {
-			// this creates a new splice to add to the output
-			e2 := Extent{Start: i, End: i.Add(step * time.Duration(maxPoints-1))}
-			// the final iteration may be partial/smaller than the splice size, so this clamps it
-			if e2.End.Before(e2.Start) {
-				e2.End = e2.Start
+			end := i.Add(spliceSpan)
+			if end.Before(i) {
+				end = i
 			}
-			if e2.End.After(e.End) {
-				e2.End = e.End
+			if end.After(e.End) {
+				end = e.End
 			}
-			out = append(out, e2)
-			// this advances i forward a step beyond the current splice end, to start the next one
-			i = e2.End.Add(step)
+			out[k] = Extent{Start: i, End: end, LastUsed: e.LastUsed}
+			k++
+			i = end.Add(step)
 		}
 	}
-	return out
+	return out[:k]
 }
 
 // Len returns the length of a slice of type ExtentList
