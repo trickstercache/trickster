@@ -19,6 +19,7 @@ package timeseries
 import (
 	"fmt"
 	"reflect"
+	"slices"
 	"sort"
 	"strconv"
 	"testing"
@@ -395,7 +396,7 @@ func TestRemove(t *testing.T) {
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			v := test.el.Remove(test.removals, step)
-			if !v.Equal(test.expected) {
+			if !slices.Equal(v, test.expected) {
 				t.Errorf("expected %v got %v", test.expected, v)
 			}
 		})
@@ -758,37 +759,6 @@ func TestCrop(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestEqual(t *testing.T) {
-
-	el := ExtentList{
-		Extent{Start: t100, End: t200},
-		Extent{Start: t600, End: t900},
-		Extent{Start: t1100, End: t1300},
-	}
-
-	b := el.Equal(nil)
-	if b {
-		t.Error("expected false")
-	}
-
-	b = el.Equal(ExtentList{})
-	if b {
-		t.Error("expected false")
-	}
-
-	el2 := ExtentList{
-		Extent{Start: t101, End: t200},
-		Extent{Start: t600, End: t900},
-		Extent{Start: t1100, End: t1300},
-	}
-
-	b = el.Equal(el2)
-	if b {
-		t.Error("expected false")
-	}
-
 }
 
 func TestExtentListLRUSort(t *testing.T) {
@@ -1195,7 +1165,7 @@ func TestSplice(t *testing.T) {
 			}
 			if (test.expected == nil && out != nil) ||
 				(out == nil && test.expected != nil) ||
-				(!out.Equal(test.expected)) {
+				(!slices.Equal(out, test.expected)) {
 				t.Errorf("expected %s\ngot      %s", test.expected, out)
 			}
 		})

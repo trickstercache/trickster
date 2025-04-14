@@ -309,26 +309,6 @@ func (el ExtentList) CloneRange(start, end int) ExtentList {
 	return c
 }
 
-// Equal returns true if the provided extent list is identical to the subject list
-func (el ExtentList) Equal(el2 ExtentList) bool {
-	if el2 == nil {
-		return false
-	}
-
-	l := len(el)
-	l2 := len(el2)
-	if l != l2 {
-		return false
-	}
-
-	for i := range el {
-		if el2[i] != el[i] {
-			return false
-		}
-	}
-	return true
-}
-
 // Remove removes the provided extent list ranges from the subject extent list
 func (el ExtentList) Remove(r ExtentList, step time.Duration) ExtentList {
 	if len(r) == 0 {
