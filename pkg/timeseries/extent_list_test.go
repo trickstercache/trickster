@@ -385,11 +385,7 @@ func TestRemove(t *testing.T) {
 				Extent{Start: t600, End: t900},
 				Extent{Start: t1100, End: t1300},
 			},
-			ExtentList{
-				Extent{Start: t101, End: t200},
-				Extent{Start: t600, End: t900},
-				Extent{Start: t1100, End: t1300},
-			},
+			ExtentList{},
 		},
 	}
 

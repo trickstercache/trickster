@@ -23,8 +23,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
 // ExtentList is a type of []Extent used for sorting the slice
@@ -309,73 +307,53 @@ func (el ExtentList) CloneRange(start, end int) ExtentList {
 	return c
 }
 
-// Remove removes the provided extent list ranges from the subject extent list
+// Remove returns an Extentlist that is effectively the subject ExtentList minus
+// the provided ExtentList
 func (el ExtentList) Remove(r ExtentList, step time.Duration) ExtentList {
 	if len(r) == 0 {
 		return el
 	}
 	if len(el) == 0 {
-		return r
+		return ExtentList{}
 	}
-
-	splices := sets.NewIntSet()
-	spliceIns := make(map[int]Extent)
-	c := el.Clone()
-	for _, rem := range r {
-		for i, ex := range c {
-
-			if rem.End.Before(ex.Start) || rem.Start.After(ex.End) {
-				// removal range is not relevant to this extent
-				continue
-			}
-
-			if rem.StartsAtOrBefore(ex.Start) && rem.EndsAtOrAfter(ex.End) {
-				// removal range end is >= extent.End, and start is <= extent.Start
-				// so the entire range will be spliced out of the list
-				splices.Add(i)
-				continue
-			}
-
-			// the removal is fully inside of the extent, it must be split into two
-			if rem.Start.After(ex.Start) && rem.End.Before(ex.End) {
-				// the first piece will be inserted back in later
-				spliceIns[i] = Extent{Start: ex.Start, End: rem.Start.Add(-step)}
-				// the existing piece will be adjusted in place
-				c[i].Start = rem.End.Add(step)
-				continue
-			}
-
-			// The removal is attached to only one side of the extent, so the
-			// boundaries can be adjusted
-			if rem.Start.After(ex.Start) {
-				c[i].End = rem.Start.Add(-step)
-			} else if rem.End.Before(ex.End) {
-				c[i].Start = rem.End.Add(step)
-			}
-
-		}
-	}
-
-	// if the clone is final, return it now
-	if len(splices) == 0 && len(spliceIns) == 0 {
-		return c
-	}
-
-	// otherwise, make a version of the does not include the splice out indexes
-	// and includes any splice-in indexes
-	r = make(ExtentList, len(c)*2)
+	out := make(ExtentList, len(el)*2)
 	var k int
-	for i, ex := range c {
-		if ex2, ok := spliceIns[i]; ok {
-			r[k] = ex2
-			k++
+	for i := 0; i < len(el); i++ {
+		ex := el[i]
+		split := false
+		for _, rem := range r {
+			if rem.End.Before(ex.Start) || rem.Start.After(ex.End) {
+				continue
+			}
+			if rem.Start.Before(ex.Start) || rem.Start.Equal(ex.Start) {
+				if rem.End.After(ex.End) || rem.End.Equal(ex.End) {
+					ex = Extent{}
+					break
+				}
+				ex.Start = rem.End.Add(step)
+			} else if rem.End.After(ex.End) || rem.End.Equal(ex.End) {
+				ex.End = rem.Start.Add(-step)
+			} else {
+				out[k] = Extent{
+					Start:    ex.Start,
+					End:      rem.Start.Add(-step),
+					LastUsed: ex.LastUsed,
+				}
+				k++
+				ex.Start = rem.End.Add(step)
+				split = true
+			}
 		}
-		if _, ok := splices[i]; !ok {
-			r[k] = ex
-			k++
+		if ex.Start.IsZero() || ex.End.Before(ex.Start) {
+			continue
+		}
+		out[k] = ex
+		k++
+		if split {
+			continue
 		}
 	}
-	return r[:k]
+	return out[:k]
 }
 
 // TimestampCount returns the calculated number of timestamps based on the extents
