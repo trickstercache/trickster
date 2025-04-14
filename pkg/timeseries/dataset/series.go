@@ -21,10 +21,12 @@ package dataset
 import (
 	"fmt"
 	"strings"
+	"sync"
 )
 
 // Series represents a single timeseries in a Result
 type Series struct {
+	sync.Mutex
 	// Header is the Series Header describing the Series
 	Header SeriesHeader `msg:"header"`
 	// Points is the list of Points in the Series
@@ -42,23 +44,26 @@ type Hashes []Hash
 // SeriesLookup is a map of Series searchable by Series Header Hash
 type SeriesLookup map[SeriesLookupKey]*Series
 
-// SeriesLookupKey is the key for a SeriesLookup, consisting of a Result.StatementID and a Series.Hash
+// SeriesLookupKey is the key for a SeriesLookup, consisting of a
+// Result.StatementID and a Series.Hash
 type SeriesLookupKey struct {
 	StatementID int
 	Hash        Hash
 }
 
 // Size returns the memory utilization of the Series in bytes
-func (s Series) Size() int64 {
+func (s *Series) Size() int64 {
 	return 16 + s.PointSize + int64(s.Header.Size)
 }
 
 // Clone returns a perfect, new copy of the Series
 func (s *Series) Clone() *Series {
+	s.Lock()
 	clone := &Series{Header: s.Header.Clone()}
 	if s.Points != nil {
 		clone.Points = s.Points.Clone()
 	}
+	s.Unlock()
 	return clone
 }
 
