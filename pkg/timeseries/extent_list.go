@@ -462,40 +462,37 @@ func (el ExtentList) CalculateDeltas(need Extent, step time.Duration) ExtentList
 	}
 	sort.Sort(el)
 	out := make(ExtentList, len(el)+1)
-	stepNS := step.Nanoseconds()
-	startNS := need.Start.UnixNano()
-	endNS := need.End.UnixNano()
-	var missStart int64 = -1
+	var missStart time.Time
 	var j, k int
-	for ts := startNS; ts <= endNS; ts += stepNS {
+	for ts := need.Start; !ts.After(need.End); ts = ts.Add(step) {
 		// this advances to j to the point in el where ts would be if it were
 		// present in el (whether it currently is or not)
-		for j < len(el) && ts > el[j].End.UnixNano() {
+		for j < len(el) && ts.After(el[j].End) {
 			j++
 		}
 		inExisting := false
 		if j < len(el) {
-			s := el[j].Start.UnixNano()
-			e := el[j].End.UnixNano()
-			inExisting = ts >= s && ts <= e
+			s := el[j].Start
+			e := el[j].End
+			inExisting = !ts.Before(s) && !ts.After(e)
 		}
 		if !inExisting {
-			if missStart == -1 {
+			if missStart.IsZero() {
 				missStart = ts
 			}
-		} else if missStart != -1 {
+		} else if !missStart.IsZero() {
 			out[k] = Extent{
-				Start: time.Unix(0, missStart),
-				End:   time.Unix(0, ts-stepNS),
+				Start: missStart,
+				End:   ts.Add(-step),
 			}
 			k++
-			missStart = -1
+			missStart = time.Time{}
 		}
 	}
-	if missStart != -1 {
+	if !missStart.IsZero() {
 		out[k] = Extent{
-			Start: time.Unix(0, missStart),
-			End:   time.Unix(0, endNS),
+			Start: missStart,
+			End:   need.End,
 		}
 		k++
 	}
