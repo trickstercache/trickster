@@ -307,11 +307,8 @@ func (el ExtentList) Swap(i, j int) {
 // Clone returns a true copy of the ExtentList
 func (el ExtentList) Clone() ExtentList {
 	c := make(ExtentList, len(el))
-	for i := range el {
-		c[i].Start = el[i].Start
-		c[i].End = el[i].End
-		c[i].LastUsed = el[i].LastUsed
-	}
+	// this is safe because all fields in an Extent are by value
+	copy(c, el)
 	return c
 }
 
