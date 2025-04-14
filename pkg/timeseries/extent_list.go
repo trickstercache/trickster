@@ -23,8 +23,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
 // ExtentList is a type of []Extent used for sorting the slice
@@ -76,79 +74,62 @@ func (el ExtentList) OutsideOf(e Extent) bool {
 }
 
 // Crop reduces the ExtentList to the boundaries defined by the provided Extent
-func (el ExtentList) Crop(e Extent) ExtentList {
-	var startIndex = -1
-	var endIndex = -1
-	for i, f := range el {
-		if startIndex == -1 {
-			if f.Includes(e.Start) {
-				if !f.StartsAt(e.Start) {
-					el[i].Start = e.Start
-				}
-				startIndex = i
-			} else if f.After(e.Start) && !f.After(e.End) {
-				startIndex = i
-			} else if f.After(e.Start) && f.After(e.End) {
-				return make(ExtentList, 0)
-			}
-		}
-		if endIndex == -1 {
-			if f.Includes(e.End) {
-				if !f.EndsAt(e.End) {
-					el[i].End = e.End
-				}
-				endIndex = i
-			}
-		}
+func (el ExtentList) Crop(ex Extent) ExtentList {
+	if len(el) == 0 {
+		return ExtentList{}
 	}
-	if startIndex != -1 {
-		if endIndex == -1 {
-			endIndex = len(el) - 1
+	out := make(ExtentList, len(el))
+	var k int
+	for _, e := range el {
+		if e.End.Before(ex.Start) || e.Start.After(ex.End) {
+			continue
 		}
-		endIndex++
-		if endIndex >= startIndex {
-			return el.CloneRange(startIndex, endIndex)
+		start := e.Start
+		end := e.End
+		if ex.Start.After(start) && ex.Start.Before(end) {
+			start = ex.Start
+		} else if ex.Start.Equal(end) {
+			start = ex.Start
+			end = ex.Start
 		}
+		if ex.End.Before(end) && ex.End.After(start) {
+			end = ex.End
+		} else if ex.End.Equal(start) {
+			start = ex.End
+			end = ex.End
+		}
+		out[k] = Extent{Start: start, End: end, LastUsed: e.LastUsed}
+		k++
 	}
-	return make(ExtentList, 0)
+	return out[:k]
 }
 
-// Compress sorts an ExtentList and merges time-adjacent Extents so that the total extent of
-// data is accurately represented in as few Extents as possible
+// Compress sorts an ExtentList and merges time-adjacent Extents so that the
+// total extent of data is accurately represented in as few Extents as possible
 func (el ExtentList) Compress(step time.Duration) ExtentList {
-	exc := el.Clone()
 	if len(el) == 0 {
-		return exc
+		return ExtentList{}
 	}
-	l := len(el)
-	compressed := make(ExtentList, 0, l)
-	sort.Sort(exc)
-	e := Extent{}
-	extr := Extent{}
-	for i := range exc {
-		e.LastUsed = exc[i].LastUsed
-		if e.Start.IsZero() && !exc[i].Start.IsZero() {
-			e.Start = exc[i].Start
-			if extr.Start.IsZero() {
-				extr.Start = e.Start
+	sort.Sort(el)
+	out := make(ExtentList, len(el))
+	var k int
+	current := el[0]
+	for i := 1; i < len(el); i++ {
+		next := el[i]
+		if !next.Start.After(current.End.Add(step)) &&
+			current.LastUsed.Equal(next.LastUsed) {
+			if next.End.After(current.End) {
+				current.End = next.End
 			}
-		}
-		if exc[i].End.Before(extr.End) {
 			continue
 		}
-		if i+1 < l && ((exc[i].End.Add(step).Equal(exc[i+1].Start) ||
-			exc[i].End.Equal(exc[i+1].Start)) && exc[i].LastUsed.Equal(exc[i+1].LastUsed) ||
-			exc[i].End.Equal(exc[i+1].End) && exc[i].Start.Equal(exc[i+1].Start)) {
-			continue
-		}
-		e.End = exc[i].End
-		if e.End.After(extr.End) {
-			extr.End = e.End
-		}
-		compressed = append(compressed, e)
-		e = Extent{}
+		out[k] = current
+		k++
+		current = next
 	}
-	return compressed
+	out[k] = current
+	k++
+	return out[:k]
 }
 
 // Splice breaks apart extents in the list into smaller, contiguous extents, based on the provided
@@ -178,60 +159,53 @@ func (el ExtentList) spliceByTimeAligned(step, maxRange, spliceStep time.Duratio
 	if step == 0 || maxRange == 0 || spliceStep == 0 {
 		return el.Clone()
 	}
-	// reserve enough capacity that 50% of extents could be spliced without having to re-allocate
-	out := make(ExtentList, 0, len(el)+(len(el)/2))
+	out := make(ExtentList, len(el)*4)
+	var k int
 	for _, e := range el {
-		// if the size of the extent is smaller than the max splice size, and
-		// the extent doesn't cross spliceSteps, pass through and continue
-		if e.End.Sub(e.Start) <= maxRange &&
-			e.End.Truncate(spliceStep).Equal(e.Start.Truncate(spliceStep)) {
-			out = append(out, e)
+		origStart := e.Start
+		origEnd := e.End
+		if origEnd.Sub(origStart) <= maxRange &&
+			origEnd.Truncate(spliceStep).Equal(origStart.Truncate(spliceStep)) {
+			out[k] = e
+			k++
 			continue
 		}
-		// otherwise the extent must be spliced.
-		t1 := e.Start.Truncate(spliceStep)
-		// if t1 == e.Start, then the extent falls perfectly on the spliceStep. If it does not,
-		// e will be spliced on the first spliceStep interval after e.Start
-		//
-		// this handles the left-side splice, when required
-		if t1.Before(e.Start) {
+		t1 := origStart.Truncate(spliceStep)
+		if t1.Before(origStart) {
 			t1 = t1.Add(spliceStep)
-			// this calculates the splice and adds it to the output
 			t2 := t1.Truncate(step)
-			// This ensures that if spliceStep is not a multiple of step, then the left-side
-			// splice's end time retreats to the step just prior to the start of the next splice
 			if !t2.Before(t1) {
 				t2 = t2.Add(-step)
 			}
-			out = append(out, Extent{Start: e.Start, End: t2})
-			// this advances e.Start to the first timeseries step on or after the new left boundary
-			e.Start = t2.Add(step)
+			end := t2
+			if end.Before(origStart) {
+				end = origStart
+			}
+			out[k] = Extent{Start: origStart, End: end, LastUsed: e.LastUsed}
+			k++
+			origStart = end.Add(step)
 		}
-		// now that left-side splicing is done, this splices the rest of e on the epoch.
-		//
-		// this re-checks if e is shallower than maxRange, since it might've just been reduced
-		if e.End.Sub(e.Start) <= maxRange &&
-			e.End.Truncate(spliceStep).Equal(e.Start.Truncate(spliceStep)) {
-			out = append(out, e)
+		if origEnd.Sub(origStart) <= maxRange &&
+			origEnd.Truncate(spliceStep).Equal(origStart.Truncate(spliceStep)) {
+			out[k] = Extent{Start: origStart, End: origEnd, LastUsed: e.LastUsed}
+			k++
 			continue
 		}
-		// otherwise, we still need to further splice e
-		for i := e.Start; !i.After(e.End); {
-			// this creates a new splice to add to the output
-			e2 := Extent{Start: i, End: i.Add(maxRange - step).Truncate(step)}
-			if e2.End.Before(e2.Start) {
-				e2.End = e2.Start
+		for i := origStart; !i.After(origEnd); {
+			end := i.Add(maxRange - step).Truncate(step)
+			if end.Before(i) {
+				end = i
 			}
-			// the final iteration may be partial/smaller than the splice size, so this clamps it
-			if e2.End.After(e.End) {
-				e2.End = e.End
+			if end.After(origEnd) {
+				end = origEnd
 			}
-			out = append(out, e2)
-			// this advances i forward a step beyond the current splice end, to start the next one
-			i = e2.End.Add(step)
+			out[k] = Extent{Start: i, End: end, LastUsed: e.LastUsed}
+			k++
+			i = end.Add(step)
 		}
 	}
-	return out
+
+	return out[:k]
 }
 
 // spliceByTime splices extents that are not aligned to any particular epoch cadence
@@ -239,31 +213,28 @@ func (el ExtentList) spliceByTime(step, maxRange time.Duration) ExtentList {
 	if step == 0 || maxRange == 0 {
 		return el.Clone()
 	}
-	// reserve enough capacity that 50% of extents could be spliced without having to re-allocate
-	out := make(ExtentList, 0, len(el)+(len(el)/2))
+	out := make(ExtentList, len(el)*4)
+	var k int
 	for _, e := range el {
-		// if the size of the extent is smaller than the max splice size, pass through and continue
 		if e.End.Sub(e.Start) <= maxRange {
-			out = append(out, e)
+			out[k] = e
+			k++
 			continue
 		}
-		// otherwise, we still need to further splice e
 		for i := e.Start; !i.After(e.End); {
-			// this creates a new splice to add to the output
-			e2 := Extent{Start: i, End: i.Add(maxRange - step).Truncate(step)}
-			// the final iteration may be partial/smaller than the splice size, so this clamps it
-			if e2.End.Before(e2.Start) {
-				e2.End = e2.Start
+			end := i.Add(maxRange - step).Truncate(step)
+			if end.Before(i) {
+				end = i
 			}
-			if e2.End.After(e.End) {
-				e2.End = e.End
+			if end.After(e.End) {
+				end = e.End
 			}
-			out = append(out, e2)
-			// this advances i forward a step beyond the current splice end, to start the next one
-			i = e2.End.Add(step)
+			out[k] = Extent{Start: i, End: end, LastUsed: e.LastUsed}
+			k++
+			i = end.Add(step)
 		}
 	}
-	return out
+	return out[:k]
 }
 
 // spliceByTime splices by a given number of contiguous timestamps (points) per splice
@@ -271,32 +242,35 @@ func (el ExtentList) spliceByPoints(step time.Duration, maxPoints int) ExtentLis
 	if maxPoints == 0 || step == 0 {
 		return el.Clone()
 	}
-	out := make(ExtentList, 0, len(el)+(len(el)/2))
+	out := make(ExtentList, len(el)*4)
+	var k int
+	spliceSpan := step * time.Duration(maxPoints-1)
 	for _, e := range el {
-		// this determines the number of timestamps in the extent
-		s := int(e.End.Sub(e.Start) / step)
-		// if the splice size is larger than the timestamp count, the extent can be passed through
-		if maxPoints > s || e.Start.IsZero() || e.End.IsZero() {
-			out = append(out, e)
+		if e.Start.IsZero() || e.End.IsZero() {
+			out[k] = e
+			k++
 			continue
 		}
-		// otherwise, this extent is larger than the splice size, so it needs to be spliced
+		numPoints := int(e.End.Sub(e.Start) / step)
+		if maxPoints > numPoints {
+			out[k] = e
+			k++
+			continue
+		}
 		for i := e.Start; !i.After(e.End); {
-			// this creates a new splice to add to the output
-			e2 := Extent{Start: i, End: i.Add(step * time.Duration(maxPoints-1))}
-			// the final iteration may be partial/smaller than the splice size, so this clamps it
-			if e2.End.Before(e2.Start) {
-				e2.End = e2.Start
+			end := i.Add(spliceSpan)
+			if end.Before(i) {
+				end = i
 			}
-			if e2.End.After(e.End) {
-				e2.End = e.End
+			if end.After(e.End) {
+				end = e.End
 			}
-			out = append(out, e2)
-			// this advances i forward a step beyond the current splice end, to start the next one
-			i = e2.End.Add(step)
+			out[k] = Extent{Start: i, End: end, LastUsed: e.LastUsed}
+			k++
+			i = end.Add(step)
 		}
 	}
-	return out
+	return out[:k]
 }
 
 // Len returns the length of a slice of type ExtentList
@@ -317,119 +291,69 @@ func (el ExtentList) Swap(i, j int) {
 // Clone returns a true copy of the ExtentList
 func (el ExtentList) Clone() ExtentList {
 	c := make(ExtentList, len(el))
-	for i := range el {
-		c[i].Start = el[i].Start
-		c[i].End = el[i].End
-		c[i].LastUsed = el[i].LastUsed
-	}
+	// this is safe because all fields in an Extent are by value
+	copy(c, el)
 	return c
 }
 
 // CloneRange returns a perfect copy of the ExtentList, cloning only the
 // Extents in the provided index range (upper-bound exclusive)
 func (el ExtentList) CloneRange(start, end int) ExtentList {
-	if end < start || start < 0 || end < 0 {
-		return nil
+	if end < start || start < 0 || end > len(el) {
+		return ExtentList{}
 	}
-	size := end - start
-	if size > len(el) {
-		return nil
-	}
-	c := make(ExtentList, size)
-	j := start
-	for i := 0; i < size; i++ {
-		c[i].Start = el[j].Start
-		c[i].End = el[j].End
-		c[i].LastUsed = el[j].LastUsed
-		j++
-	}
+	c := make(ExtentList, end-start)
+	copy(c, el[start:end])
 	return c
 }
 
-// Equal returns true if the provided extent list is identical to the subject list
-func (el ExtentList) Equal(el2 ExtentList) bool {
-	if el2 == nil {
-		return false
-	}
-
-	l := len(el)
-	l2 := len(el2)
-	if l != l2 {
-		return false
-	}
-
-	for i := range el {
-		if el2[i] != el[i] {
-			return false
-		}
-	}
-	return true
-}
-
-// Remove removes the provided extent list ranges from the subject extent list
+// Remove returns an Extentlist that is effectively the subject ExtentList minus
+// the provided ExtentList
 func (el ExtentList) Remove(r ExtentList, step time.Duration) ExtentList {
 	if len(r) == 0 {
 		return el
 	}
 	if len(el) == 0 {
-		return r
+		return ExtentList{}
 	}
-
-	splices := sets.NewIntSet()
-	spliceIns := make(map[int]Extent)
-	c := el.Clone()
-	for _, rem := range r {
-		for i, ex := range c {
-
+	out := make(ExtentList, len(el)*2)
+	var k int
+	for i := 0; i < len(el); i++ {
+		ex := el[i]
+		split := false
+		for _, rem := range r {
 			if rem.End.Before(ex.Start) || rem.Start.After(ex.End) {
-				// removal range is not relevant to this extent
 				continue
 			}
-
-			if rem.StartsAtOrBefore(ex.Start) && rem.EndsAtOrAfter(ex.End) {
-				// removal range end is >= extent.End, and start is <= extent.Start
-				// so the entire range will be spliced out of the list
-				splices.Add(i)
-				continue
+			if rem.Start.Before(ex.Start) || rem.Start.Equal(ex.Start) {
+				if rem.End.After(ex.End) || rem.End.Equal(ex.End) {
+					ex = Extent{}
+					break
+				}
+				ex.Start = rem.End.Add(step)
+			} else if rem.End.After(ex.End) || rem.End.Equal(ex.End) {
+				ex.End = rem.Start.Add(-step)
+			} else {
+				out[k] = Extent{
+					Start:    ex.Start,
+					End:      rem.Start.Add(-step),
+					LastUsed: ex.LastUsed,
+				}
+				k++
+				ex.Start = rem.End.Add(step)
+				split = true
 			}
-
-			// the removal is fully inside of the extent, it must be split into two
-			if rem.Start.After(ex.Start) && rem.End.Before(ex.End) {
-				// the first piece will be inserted back in later
-				spliceIns[i] = Extent{Start: ex.Start, End: rem.Start.Add(-step)}
-				// the existing piece will be adjusted in place
-				c[i].Start = rem.End.Add(step)
-				continue
-			}
-
-			// The removal is attached to only one side of the extent, so the
-			// boundaries can be adjusted
-			if rem.Start.After(ex.Start) {
-				c[i].End = rem.Start.Add(-step)
-			} else if rem.End.Before(ex.End) {
-				c[i].Start = rem.End.Add(step)
-			}
-
+		}
+		if ex.Start.IsZero() || ex.End.Before(ex.Start) {
+			continue
+		}
+		out[k] = ex
+		k++
+		if split {
+			continue
 		}
 	}
-
-	// if the clone is final, return it now
-	if len(splices) == 0 && len(spliceIns) == 0 {
-		return c
-	}
-
-	// otherwise, make a version of the does not include the splice out indexes
-	// and includes any splice-in indexes
-	r = make(ExtentList, 0, len(r)+len(spliceIns))
-	for i, ex := range c {
-		if ex2, ok := spliceIns[i]; ok {
-			r = append(r, ex2)
-		}
-		if _, ok := splices[i]; !ok {
-			r = append(r, ex)
-		}
-	}
-	return r
+	return out[:k]
 }
 
 // TimestampCount returns the calculated number of timestamps based on the extents
@@ -445,47 +369,53 @@ func (el ExtentList) TimestampCount(d time.Duration) int64 {
 	return c
 }
 
-// CalculateDeltas provides a list of extents that are not in a cached timeseries,
-// when provided a list of extents that are cached.
-func (el ExtentList) CalculateDeltas(want Extent, step time.Duration) ExtentList {
+// CalculateDeltas provides a list of extents that are not in el based on the
+// needed extent. step is used to determine which absolute timestamps in need
+// will be checked in el.
+func (el ExtentList) CalculateDeltas(need Extent, step time.Duration) ExtentList {
+	if step <= 0 || !need.End.After(need.Start) {
+		return ExtentList{}
+	}
 	if len(el) == 0 {
-		return ExtentList{want}
+		return ExtentList{need}
 	}
-	misCap := want.End.Sub(want.Start) / step
-	if misCap < 0 {
-		misCap = 0
-	}
-	misses := make([]time.Time, 0, misCap)
-	for i := want.Start; !want.End.Before(i); i = i.Add(step) {
-		found := false
-		for j := range el {
-			if j == 0 && i.Before(el[j].Start) {
-				// our earliest datapoint in cache is after the first point the user wants
-				break
+	sort.Sort(el)
+	out := make(ExtentList, len(el)+1)
+	var missStart time.Time
+	var j, k int
+	for ts := need.Start; !ts.After(need.End); ts = ts.Add(step) {
+		// this advances j to the point in el where ts would be if it were
+		// present in el (whether it currently is or not)
+		for j < len(el) && ts.After(el[j].End) {
+			j++
+		}
+		inExisting := false
+		if j < len(el) {
+			s := el[j].Start
+			e := el[j].End
+			inExisting = !ts.Before(s) && !ts.After(e)
+		}
+		if !inExisting {
+			if missStart.IsZero() {
+				missStart = ts
 			}
-			if i.Equal(el[j].Start) || i.Equal(el[j].End) || (i.After(el[j].Start) && el[j].End.After(i)) {
-				found = true
-				break
+		} else if !missStart.IsZero() {
+			out[k] = Extent{
+				Start: missStart,
+				End:   ts.Add(-step),
 			}
-		}
-		if !found {
-			misses = append(misses, i)
-		}
-	}
-	// Find the fill and gap ranges
-	ins := ExtentList{}
-	var inStart = time.Time{}
-	l := len(misses)
-	for i := range misses {
-		if inStart.IsZero() {
-			inStart = misses[i]
-		}
-		if i+1 == l || !misses[i+1].Equal(misses[i].Add(step)) {
-			ins = append(ins, Extent{Start: inStart, End: misses[i]})
-			inStart = time.Time{}
+			k++
+			missStart = time.Time{}
 		}
 	}
-	return ins
+	if !missStart.IsZero() {
+		out[k] = Extent{
+			Start: missStart,
+			End:   need.End,
+		}
+		k++
+	}
+	return out[:k]
 }
 
 // Size returns the approximate memory utilization in bytes of the timeseries
@@ -514,11 +444,7 @@ func (el ExtentListLRU) Swap(i, j int) {
 // Clone returns a true copy of the ExtentListLRU
 func (el ExtentListLRU) Clone() ExtentListLRU {
 	c := make(ExtentListLRU, len(el))
-	for i := range el {
-		c[i].Start = el[i].Start
-		c[i].End = el[i].End
-		c[i].LastUsed = el[i].LastUsed
-	}
+	copy(c, el)
 	return c
 }
 

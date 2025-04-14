@@ -19,6 +19,7 @@ package timeseries
 import (
 	"fmt"
 	"reflect"
+	"slices"
 	"sort"
 	"strconv"
 	"testing"
@@ -384,18 +385,14 @@ func TestRemove(t *testing.T) {
 				Extent{Start: t600, End: t900},
 				Extent{Start: t1100, End: t1300},
 			},
-			ExtentList{
-				Extent{Start: t101, End: t200},
-				Extent{Start: t600, End: t900},
-				Extent{Start: t1100, End: t1300},
-			},
+			ExtentList{},
 		},
 	}
 
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			v := test.el.Remove(test.removals, step)
-			if !v.Equal(test.expected) {
+			if !slices.Equal(v, test.expected) {
 				t.Errorf("expected %v got %v", test.expected, v)
 			}
 		})
@@ -483,13 +480,24 @@ func TestCloneRange(t *testing.T) {
 	}
 
 	res := el.CloneRange(-1, -1)
-	if res != nil {
-		t.Error("expected nil result", res)
+	if len(res) != 0 {
+		t.Error("expected zero-length result", res)
 	}
 
 	res = el.CloneRange(0, 200)
-	if res != nil {
-		t.Error("expected nil result", res)
+	if len(res) != 0 {
+		t.Error("expected zero-length result", res)
+	}
+
+	el = ExtentList{
+		Extent{Start: t100, End: t200},
+		Extent{Start: t600, End: t900},
+		Extent{Start: t1100, End: t1300},
+	}
+
+	res = el.CloneRange(1, 3)
+	if len(res) != 2 {
+		t.Error("expected 2 got", len(res))
 	}
 
 }
@@ -747,37 +755,6 @@ func TestCrop(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestEqual(t *testing.T) {
-
-	el := ExtentList{
-		Extent{Start: t100, End: t200},
-		Extent{Start: t600, End: t900},
-		Extent{Start: t1100, End: t1300},
-	}
-
-	b := el.Equal(nil)
-	if b {
-		t.Error("expected false")
-	}
-
-	b = el.Equal(ExtentList{})
-	if b {
-		t.Error("expected false")
-	}
-
-	el2 := ExtentList{
-		Extent{Start: t101, End: t200},
-		Extent{Start: t600, End: t900},
-		Extent{Start: t1100, End: t1300},
-	}
-
-	b = el.Equal(el2)
-	if b {
-		t.Error("expected false")
-	}
-
 }
 
 func TestExtentListLRUSort(t *testing.T) {
@@ -1184,7 +1161,7 @@ func TestSplice(t *testing.T) {
 			}
 			if (test.expected == nil && out != nil) ||
 				(out == nil && test.expected != nil) ||
-				(!out.Equal(test.expected)) {
+				(!slices.Equal(out, test.expected)) {
 				t.Errorf("expected %s\ngot      %s", test.expected, out)
 			}
 		})
