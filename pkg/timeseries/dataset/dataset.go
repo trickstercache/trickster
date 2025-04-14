@@ -21,7 +21,6 @@
 package dataset
 
 import (
-	"sort"
 	"sync"
 	"time"
 
@@ -294,41 +293,27 @@ func (ds *DataSet) DefaultMerger(sortSeries bool, collection ...timeseries.Times
 						slmtx.RLock()
 						es, ok = sl[key]
 						slmtx.RUnlock()
-						if !ok && gs != nil {
-							slmtx.Lock()
-							sl[key] = gs
-							slmtx.Unlock()
-							return
-						}
-						if gs == nil {
-							return
-						}
-						// otherwise, we merge the points from the two slices
-						merged := make(Points, len(es.Points)+len(gs.Points))
-						copy(merged, es.Points)
-						copy(merged[len(es.Points):], gs.Points)
-						es.Points = merged
-						// This will sort and dupe kill the list of points, keeping the newest version
-						if sortSeries {
-							n := len(es.Points)
-							sort.Sort(es.Points)
-							if n <= 1 {
-								es.Points = es.Points.CloneRange(0, n)
-							} else {
-								// extra 10 capacity prevents an extra copy/expand of the whole
-								// slice for small incremental merges on the next load
-								points := make(Points, len(es.Points), len(es.Points)+10)
-								var k int
-								for l := range n {
-									if l+1 == n || es.Points[l].Epoch != es.Points[l+1].Epoch {
-										points[k] = es.Points[l]
-										k++
-									}
-								}
-								es.Points = points[:k]
+						if !ok || es == nil || len(es.Points) == 0 {
+							// if the key is not found, or the existing series
+							// has no points, this just assigns the new series
+							if gs != nil {
+								slmtx.Lock()
+								sl[key] = gs
+								slmtx.Unlock()
 							}
+							return
 						}
+						// if the new series has no points, there's nothing to do
+						if len(gs.Points) == 0 {
+							return
+						}
+						// otherwise, lock both series and merge their points
+						gs.Lock()
+						es.Lock()
+						es.Points = MergePoints(es.Points, gs.Points, sortSeries)
 						es.PointSize = es.Points.Size()
+						es.Unlock()
+						gs.Unlock()
 					}(s, gr1)
 				}
 				wg.Wait()
