@@ -444,11 +444,7 @@ func (el ExtentListLRU) Swap(i, j int) {
 // Clone returns a true copy of the ExtentListLRU
 func (el ExtentListLRU) Clone() ExtentListLRU {
 	c := make(ExtentListLRU, len(el))
-	for i := range el {
-		c[i].Start = el[i].Start
-		c[i].End = el[i].End
-		c[i].LastUsed = el[i].LastUsed
-	}
+	copy(c, el)
 	return c
 }
 
