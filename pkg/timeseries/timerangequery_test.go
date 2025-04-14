@@ -60,7 +60,7 @@ func TestNormalizeExtent(t *testing.T) {
 			trq := TimeRangeQuery{Statement: "up", Extent: Extent{Start: time.Unix(test.start, 0),
 				End: time.Unix(test.end, 0)}, Step: time.Duration(test.stepSecs) * time.Second}
 
-			trq.NormalizeExtent()
+			trq = *trq.NormalizeExtent()
 
 			if trq.Extent.Start.Unix() != test.rangeStart {
 				t.Errorf("Mismatch in rangeStart: expected=%d actual=%d", test.rangeStart, trq.Extent.Start.Unix())
