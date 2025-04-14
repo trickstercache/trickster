@@ -384,7 +384,7 @@ func (el ExtentList) CalculateDeltas(need Extent, step time.Duration) ExtentList
 	var missStart time.Time
 	var j, k int
 	for ts := need.Start; !ts.After(need.End); ts = ts.Add(step) {
-		// this advances to j to the point in el where ts would be if it were
+		// this advances j to the point in el where ts would be if it were
 		// present in el (whether it currently is or not)
 		for j < len(el) && ts.After(el[j].End) {
 			j++
