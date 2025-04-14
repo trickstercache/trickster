@@ -18,7 +18,7 @@ package options
 
 import "slices"
 
-const MaxRewriterChainExecutions int = 32
+const MaxRewriterChainExecutions int32 = 32
 
 // RewriteList is a list of Rewrite Instructions
 type RewriteList [][]string
