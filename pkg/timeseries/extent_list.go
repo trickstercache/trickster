@@ -455,7 +455,7 @@ func (el ExtentList) TimestampCount(d time.Duration) int64 {
 // will be checked in el.
 func (el ExtentList) CalculateDeltas(need Extent, step time.Duration) ExtentList {
 	if step <= 0 || !need.End.After(need.Start) {
-		return nil
+		return ExtentList{}
 	}
 	if len(el) == 0 {
 		return ExtentList{need}
