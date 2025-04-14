@@ -113,44 +113,32 @@ func (el ExtentList) Crop(e Extent) ExtentList {
 	return make(ExtentList, 0)
 }
 
-// Compress sorts an ExtentList and merges time-adjacent Extents so that the total extent of
-// data is accurately represented in as few Extents as possible
+// Compress sorts an ExtentList and merges time-adjacent Extents so that the
+// total extent of data is accurately represented in as few Extents as possible
 func (el ExtentList) Compress(step time.Duration) ExtentList {
-	exc := el.Clone()
 	if len(el) == 0 {
-		return exc
+		return ExtentList{}
 	}
-	l := len(el)
-	sort.Sort(exc)
-	e := Extent{}
-	extr := Extent{}
-	compressed := make(ExtentList, l)
+	sort.Sort(el)
+	out := make(ExtentList, len(el))
 	var k int
-	for i := range exc {
-		e.LastUsed = exc[i].LastUsed
-		if e.Start.IsZero() && !exc[i].Start.IsZero() {
-			e.Start = exc[i].Start
-			if extr.Start.IsZero() {
-				extr.Start = e.Start
+	current := el[0]
+	for i := 1; i < len(el); i++ {
+		next := el[i]
+		if !next.Start.After(current.End.Add(step)) &&
+			current.LastUsed.Equal(next.LastUsed) {
+			if next.End.After(current.End) {
+				current.End = next.End
 			}
-		}
-		if exc[i].End.Before(extr.End) {
 			continue
 		}
-		if i+1 < l && ((exc[i].End.Add(step).Equal(exc[i+1].Start) ||
-			exc[i].End.Equal(exc[i+1].Start)) && exc[i].LastUsed.Equal(exc[i+1].LastUsed) ||
-			exc[i].End.Equal(exc[i+1].End) && exc[i].Start.Equal(exc[i+1].Start)) {
-			continue
-		}
-		e.End = exc[i].End
-		if e.End.After(extr.End) {
-			extr.End = e.End
-		}
-		compressed[k] = e
+		out[k] = current
 		k++
-		e = Extent{}
+		current = next
 	}
-	return compressed[:k]
+	out[k] = current
+	k++
+	return out[:k]
 }
 
 // Splice breaks apart extents in the list into smaller, contiguous extents, based on the provided
