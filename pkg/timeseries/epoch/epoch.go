@@ -20,7 +20,7 @@ package epoch
 
 // Epoch represents an Epoch timestamp in Nanoseconds and has possible values
 // between 1970/1/1 and 2262/4/12
-type Epoch uint64
+type Epoch int64
 
 // Epochs is a slice of type Epoch
 type Epochs []Epoch
