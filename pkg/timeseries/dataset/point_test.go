@@ -17,6 +17,7 @@
 package dataset
 
 import (
+	"fmt"
 	"sort"
 	"strconv"
 	"testing"
@@ -28,7 +29,6 @@ import (
 )
 
 func testPoints() Points {
-
 	return Points{
 		Point{
 			Epoch:  epoch.Epoch(5 * timeseries.Second),
@@ -43,6 +43,26 @@ func testPoints() Points {
 	}
 }
 
+func testPoints2() Points {
+	return Points{
+		Point{
+			Epoch:  epoch.Epoch(5 * timeseries.Second),
+			Size:   27,
+			Values: []any{1, 37},
+		},
+		Point{
+			Epoch:  epoch.Epoch(10 * timeseries.Second),
+			Size:   27,
+			Values: []any{1, 25},
+		},
+		Point{
+			Epoch:  epoch.Epoch(15 * timeseries.Second),
+			Size:   27,
+			Values: []any{1, 34},
+		},
+	}
+}
+
 func genTestPoints(baseEpoch, n int) Points {
 	points := make(Points, n)
 	for i := 0; i < n; i++ {
@@ -53,6 +73,27 @@ func genTestPoints(baseEpoch, n int) Points {
 		}
 	}
 	return points
+}
+
+func TestPointEqual(t *testing.T) {
+	p := testPoints()
+	p1 := p[0]
+	p2 := p[1]
+	b := PointsAreEqual(p1, p2)
+	if b {
+		t.Error("expected false")
+	}
+	p2.Epoch = p1.Epoch
+	b = PointsAreEqual(p1, p2)
+	if b {
+		t.Error("expected false")
+	}
+	p2.Values = []any{1, 37}
+	p2.Epoch = p1.Epoch
+	b = PointsAreEqual(p1, p2)
+	if !b {
+		t.Error("expected true")
+	}
 }
 
 func TestPointClone(t *testing.T) {
@@ -201,4 +242,71 @@ func TestOnOrJustBefore(t *testing.T) {
 		t.Errorf("expected %d got %d", 1, i)
 	}
 
+}
+
+func TestMergePoints(t *testing.T) {
+	tests := []struct {
+		p1, p2, expected Points
+	}{
+		{
+			p1: testPoints(),
+			p2: testPoints2(),
+			expected: Points{
+				Point{
+					Epoch:  epoch.Epoch(5 * timeseries.Second),
+					Size:   27,
+					Values: []any{1, 37},
+				},
+				Point{
+					Epoch:  epoch.Epoch(10 * timeseries.Second),
+					Size:   27,
+					Values: []any{1, 25},
+				},
+				Point{
+					Epoch:  epoch.Epoch(15 * timeseries.Second),
+					Size:   27,
+					Values: []any{1, 34},
+				},
+			},
+		},
+		{
+			p1: testPoints2(),
+			p2: testPoints(),
+			expected: Points{
+				Point{
+					Epoch:  epoch.Epoch(5 * timeseries.Second),
+					Size:   27,
+					Values: []any{1, 37},
+				},
+				Point{
+					Epoch:  epoch.Epoch(10 * timeseries.Second),
+					Size:   27,
+					Values: []any{1, 24},
+				},
+				Point{
+					Epoch:  epoch.Epoch(15 * timeseries.Second),
+					Size:   27,
+					Values: []any{1, 34},
+				},
+			},
+		},
+		{
+			p1:       testPoints(),
+			p2:       nil,
+			expected: testPoints(),
+		},
+		{
+			p1:       nil,
+			p2:       testPoints(),
+			expected: testPoints(),
+		},
+	}
+	for i, test := range tests {
+		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+			out := MergePoints(test.p1, test.p2, true)
+			if !out.Equal(test.expected) {
+				t.Errorf("expected:\n%v\ngot:\n%v\n", test.expected, out)
+			}
+		})
+	}
 }

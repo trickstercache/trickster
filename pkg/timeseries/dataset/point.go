@@ -19,6 +19,9 @@
 package dataset
 
 import (
+	"slices"
+	"sort"
+
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 )
 
@@ -43,6 +46,61 @@ func (p *Point) Clone() Point {
 		copy(clone.Values, p.Values)
 	}
 	return clone
+}
+
+// Equal returns true if p and p2 are exactly equal
+func PointsAreEqual(p1, p2 Point) bool {
+	if p1.Epoch != p2.Epoch || p1.Size != p2.Size ||
+		len(p1.Values) != len(p2.Values) {
+		return false
+	}
+	for i, v := range p1.Values {
+		switch t := v.(type) {
+		case float64:
+			if f, ok := p2.Values[i].(float64); !ok || t != f {
+				return false
+			} else {
+				continue
+			}
+		case int64:
+			if i, ok := p2.Values[i].(int64); !ok || t != i {
+				return false
+			} else {
+				continue
+			}
+		case bool:
+			if t2, ok := p2.Values[i].(bool); !ok || t != t2 {
+				return false
+			} else {
+				continue
+			}
+		case float32:
+			if f, ok := p2.Values[i].(float32); !ok || t != f {
+				return false
+			} else {
+				continue
+			}
+		case int:
+			if i, ok := p2.Values[i].(int); !ok || t != i {
+				return false
+			} else {
+				continue
+			}
+		case string:
+			if s, ok := p2.Values[i].(string); !ok || t != s {
+				return false
+			} else {
+				continue
+			}
+		}
+	}
+
+	return true
+}
+
+// Equal returns true if both slices are exactly equal
+func (p Points) Equal(p2 Points) bool {
+	return slices.EqualFunc(p, p2, PointsAreEqual)
 }
 
 // Size returns the memory utilization of the Points in bytes
@@ -131,4 +189,53 @@ func (p Points) onOrJustBefore(ts epoch.Epoch, s, e int) int {
 		return p.onOrJustBefore(ts, mid+1, e)
 	}
 	return p.onOrJustBefore(ts, s, mid)
+}
+
+// Merge returns a new Points slice of p and p2 merged together. If sort is true
+// the new slice is sorted and dupe-killed before being returned
+func MergePoints(p, p2 Points, sortPoints bool) Points {
+	if p == nil && p2 == nil {
+		return nil
+	}
+	if len(p) == 0 && len(p2) == 0 {
+		return Points{}
+	}
+	sortDedupe := func(in Points) int {
+		n := len(in)
+		sort.Sort(in)
+		var k int
+		for l := range n {
+			if l+1 == n || in[l].Epoch != in[l+1].Epoch {
+				in[k] = in[l]
+				k++
+			}
+		}
+		return k
+	}
+
+	if len(p2) == 0 {
+		out := p.Clone()
+		if sortPoints && len(out) > 1 {
+			i := sortDedupe(out)
+			out = out[:i]
+		}
+		return out
+	} else if len(p) == 0 {
+		// if p has no items, clone p2 into p
+		out := p2.Clone()
+		if sortPoints && len(out) > 1 {
+			i := sortDedupe(out)
+			out = out[:i]
+		}
+		return out
+	}
+	// otherwise, we merge the points from the two slices
+	out := make(Points, len(p)+len(p2))
+	copy(out, p)
+	copy(out[len(p):], p2)
+	if sortPoints {
+		i := sortDedupe(out)
+		out = out[:i]
+	}
+	return out
 }
