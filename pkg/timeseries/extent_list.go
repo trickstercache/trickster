@@ -450,20 +450,21 @@ func (el ExtentList) TimestampCount(d time.Duration) int64 {
 	return c
 }
 
-// CalculateDeltas provides a list of extents that are not in a cached timeseries,
-// when provided a list of extents that are cached.
-func (el ExtentList) CalculateDeltas(want Extent, step time.Duration) ExtentList {
-	if step <= 0 || !want.End.After(want.Start) {
+// CalculateDeltas provides a list of extents that are not in el based on the
+// needed extent. step is used to determine which absolute timestamps in need
+// will be checked in el.
+func (el ExtentList) CalculateDeltas(need Extent, step time.Duration) ExtentList {
+	if step <= 0 || !need.End.After(need.Start) {
 		return nil
 	}
 	if len(el) == 0 {
-		return ExtentList{want}
+		return ExtentList{need}
 	}
 	sort.Sort(el)
 	out := make(ExtentList, len(el)+1)
 	stepNS := step.Nanoseconds()
-	startNS := want.Start.UnixNano()
-	endNS := want.End.UnixNano()
+	startNS := need.Start.UnixNano()
+	endNS := need.End.UnixNano()
 	var missStart int64 = -1
 	var j, k int
 	for ts := startNS; ts <= endNS; ts += stepNS {
