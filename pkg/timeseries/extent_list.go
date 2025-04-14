@@ -76,41 +76,34 @@ func (el ExtentList) OutsideOf(e Extent) bool {
 }
 
 // Crop reduces the ExtentList to the boundaries defined by the provided Extent
-func (el ExtentList) Crop(e Extent) ExtentList {
-	var startIndex = -1
-	var endIndex = -1
-	for i, f := range el {
-		if startIndex == -1 {
-			if f.Includes(e.Start) {
-				if !f.StartsAt(e.Start) {
-					el[i].Start = e.Start
-				}
-				startIndex = i
-			} else if f.After(e.Start) && !f.After(e.End) {
-				startIndex = i
-			} else if f.After(e.Start) && f.After(e.End) {
-				return make(ExtentList, 0)
-			}
-		}
-		if endIndex == -1 {
-			if f.Includes(e.End) {
-				if !f.EndsAt(e.End) {
-					el[i].End = e.End
-				}
-				endIndex = i
-			}
-		}
+func (el ExtentList) Crop(ex Extent) ExtentList {
+	if len(el) == 0 {
+		return ExtentList{}
 	}
-	if startIndex != -1 {
-		if endIndex == -1 {
-			endIndex = len(el) - 1
+	out := make(ExtentList, len(el))
+	var k int
+	for _, e := range el {
+		if e.End.Before(ex.Start) || e.Start.After(ex.End) {
+			continue
 		}
-		endIndex++
-		if endIndex >= startIndex {
-			return el.CloneRange(startIndex, endIndex)
+		start := e.Start
+		end := e.End
+		if ex.Start.After(start) && ex.Start.Before(end) {
+			start = ex.Start
+		} else if ex.Start.Equal(end) {
+			start = ex.Start
+			end = ex.Start
 		}
+		if ex.End.Before(end) && ex.End.After(start) {
+			end = ex.End
+		} else if ex.End.Equal(start) {
+			start = ex.End
+			end = ex.End
+		}
+		out[k] = Extent{Start: start, End: end, LastUsed: e.LastUsed}
+		k++
 	}
-	return make(ExtentList, 0)
+	return out[:k]
 }
 
 // Compress sorts an ExtentList and merges time-adjacent Extents so that the
