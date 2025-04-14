@@ -82,7 +82,7 @@ type Options struct {
 	RedirectURL string `yaml:"redirect_url,omitempty"`
 	// MaxRuleExecutions limits the maximum number of per-Request rule-based hops so as to avoid
 	// execution loops.
-	MaxRuleExecutions int `yaml:"max_rule_executions,omitempty"`
+	MaxRuleExecutions int32 `yaml:"max_rule_executions,omitempty"`
 }
 
 // CaseOptions defines the options for a given evaluation case

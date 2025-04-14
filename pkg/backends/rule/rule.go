@@ -44,7 +44,7 @@ type rule struct {
 	ingressReqRewriter rewriter.RewriteInstructions
 	egressReqRewriter  rewriter.RewriteInstructions
 
-	maxRuleExecutions int
+	maxRuleExecutions int32
 }
 
 type ruleCase struct {
