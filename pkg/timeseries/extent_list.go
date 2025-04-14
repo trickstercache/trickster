@@ -121,10 +121,11 @@ func (el ExtentList) Compress(step time.Duration) ExtentList {
 		return exc
 	}
 	l := len(el)
-	compressed := make(ExtentList, 0, l)
 	sort.Sort(exc)
 	e := Extent{}
 	extr := Extent{}
+	compressed := make(ExtentList, l)
+	var k int
 	for i := range exc {
 		e.LastUsed = exc[i].LastUsed
 		if e.Start.IsZero() && !exc[i].Start.IsZero() {
@@ -145,10 +146,11 @@ func (el ExtentList) Compress(step time.Duration) ExtentList {
 		if e.End.After(extr.End) {
 			extr.End = e.End
 		}
-		compressed = append(compressed, e)
+		compressed[k] = e
+		k++
 		e = Extent{}
 	}
-	return compressed
+	return compressed[:k]
 }
 
 // Splice breaks apart extents in the list into smaller, contiguous extents, based on the provided
@@ -420,16 +422,19 @@ func (el ExtentList) Remove(r ExtentList, step time.Duration) ExtentList {
 
 	// otherwise, make a version of the does not include the splice out indexes
 	// and includes any splice-in indexes
-	r = make(ExtentList, 0, len(r)+len(spliceIns))
+	r = make(ExtentList, (len(c)*len(r))+len(splices)+len(spliceIns)+1)
+	var k int
 	for i, ex := range c {
 		if ex2, ok := spliceIns[i]; ok {
-			r = append(r, ex2)
+			r[k] = ex2
+			k++
 		}
 		if _, ok := splices[i]; !ok {
-			r = append(r, ex)
+			r[k] = ex
+			k++
 		}
 	}
-	return r
+	return r[:k]
 }
 
 // TimestampCount returns the calculated number of timestamps based on the extents
