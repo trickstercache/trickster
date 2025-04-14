@@ -116,11 +116,12 @@ func (rs *RunState) ScanNumber() bool {
 	digits := "0123456789_"
 	if rs.Accept("0") {
 		// Note: Leading 0 does not mean octal in floats.
-		if rs.Accept("xX") {
+		switch {
+		case rs.Accept("xX"):
 			digits = "0123456789abcdefABCDEF_"
-		} else if rs.Accept("oO") {
+		case rs.Accept("oO"):
 			digits = "01234567_"
-		} else if rs.Accept("bB") {
+		case rs.Accept("bB"):
 			digits = "01_"
 		}
 	}

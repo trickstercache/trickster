@@ -83,10 +83,11 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 
 	// if TLS port is configured and at least one origin is mapped to a good tls config,
 	// then set up the tls server listener instance
-	if conf.Frontend.ServeTLS && conf.Frontend.TLSListenPort > 0 && (!hasOldFC ||
+	switch {
+	case conf.Frontend.ServeTLS && conf.Frontend.TLSListenPort > 0 && (!hasOldFC ||
 		!oldConf.Frontend.ServeTLS ||
 		(oldConf.Frontend.TLSListenAddress != conf.Frontend.TLSListenAddress ||
-			oldConf.Frontend.TLSListenPort != conf.Frontend.TLSListenPort)) {
+			oldConf.Frontend.TLSListenPort != conf.Frontend.TLSListenPort)):
 		lg.DrainAndClose("tlsListener", drainTimeout)
 		tlsConfig, err = conf.TLSCertConfig()
 		if err != nil {
@@ -99,11 +100,11 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 				conf.Frontend.ConnectionsLimit, tlsConfig, router, tracers, errorFunc,
 				time.Duration(conf.ReloadConfig.DrainTimeoutMS)*time.Millisecond)
 		}
-	} else if !conf.Frontend.ServeTLS && hasOldFC && oldConf.Frontend.ServeTLS {
+	case !conf.Frontend.ServeTLS && hasOldFC && oldConf.Frontend.ServeTLS:
 		// the TLS configs have been removed between the last config load and this one,
 		// the TLS listener port needs to be stopped
 		lg.DrainAndClose("tlsListener", drainTimeout)
-	} else if conf.Frontend.ServeTLS && ttls.OptionsChanged(conf, oldConf) {
+	case conf.Frontend.ServeTLS && ttls.OptionsChanged(conf, oldConf):
 		tlsConfig, err = conf.TLSCertConfig()
 		if err != nil {
 			logger.Error("unable to update tls config to certificate error",

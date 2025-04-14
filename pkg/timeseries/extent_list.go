@@ -81,14 +81,15 @@ func (el ExtentList) Crop(e Extent) ExtentList {
 	var endIndex = -1
 	for i, f := range el {
 		if startIndex == -1 {
-			if f.Includes(e.Start) {
+			switch {
+			case f.Includes(e.Start):
 				if !f.StartsAt(e.Start) {
 					el[i].Start = e.Start
 				}
 				startIndex = i
-			} else if f.After(e.Start) && !f.After(e.End) {
+			case f.After(e.Start) && !f.After(e.End):
 				startIndex = i
-			} else if f.After(e.Start) && f.After(e.End) {
+			case f.After(e.Start) && f.After(e.End):
 				return make(ExtentList, 0)
 			}
 		}

@@ -333,11 +333,12 @@ func marshalTimeseriesXSV(ds *dataset.DataSet, rlo *timeseries.RequestOptions,
 		tw.separator = ","
 	}
 	h[headers.NameContentType] = "text/" + ctPart + "-separated-values; charset=UTF-8"
-	if tw.writeTypes {
+	switch {
+	case tw.writeTypes:
 		h[formatHeader] = fmtPart + "WithNamesAndTypes"
-	} else if tw.writeNames {
+	case tw.writeNames:
 		h[formatHeader] = fmtPart + "WithNames"
-	} else {
+	default:
 		h[formatHeader] = fmtPart
 	}
 

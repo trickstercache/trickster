@@ -143,8 +143,8 @@ func (mbrs MultipartByteRanges) Compress() {
 				l := newPart.Range.End - newPart.Range.Start + 1
 				body := make([]byte, l)
 
-				copy(body[:len(prev.Content)], prev.Content[:])
-				copy(body[len(prev.Content):], curr.Content[:])
+				copy(body[:len(prev.Content)], prev.Content)
+				copy(body[len(prev.Content):], curr.Content)
 				newPart.Content = body
 				delete(mbrs, r)
 				delete(mbrs, prev.Range)
@@ -231,7 +231,7 @@ func (mbrs MultipartByteRanges) ExtractResponseRange(ranges Ranges, fullContentL
 		mbr := &MultipartByteRange{Range: r, Content: make([]byte, rcl)}
 
 		if useBody {
-			copy(mbr.Content[:], body[r.Start:r.End+1])
+			copy(mbr.Content, body[r.Start:r.End+1])
 		} else {
 			brs := mbrs.Ranges()
 			for _, r2 := range brs {

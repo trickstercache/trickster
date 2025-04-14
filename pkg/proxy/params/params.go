@@ -83,15 +83,16 @@ func GetRequestValues(r *http.Request) (url.Values, []byte, bool) {
 	var v url.Values
 	var b []byte
 	var isBody bool
-	if !methods.HasBody(r.Method) {
+	switch {
+	case !methods.HasBody(r.Method):
 		v = r.URL.Query()
 		b = []byte(r.URL.RawQuery)
-	} else if isMultipartOrForm(r) {
+	case isMultipartOrForm(r):
 		r.ParseForm()
 		v = r.PostForm
 		b = []byte(v.Encode())
 		isBody = true
-	} else {
+	default:
 		v = r.URL.Query()
 		b, _ = io.ReadAll(r.Body)
 		r.Body.Close()
