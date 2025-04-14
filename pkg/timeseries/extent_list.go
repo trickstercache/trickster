@@ -422,7 +422,7 @@ func (el ExtentList) Remove(r ExtentList, step time.Duration) ExtentList {
 
 	// otherwise, make a version of the does not include the splice out indexes
 	// and includes any splice-in indexes
-	r = make(ExtentList, (len(c)*len(r))+len(splices)+len(spliceIns)+1)
+	r = make(ExtentList, len(c)*2)
 	var k int
 	for i, ex := range c {
 		if ex2, ok := spliceIns[i]; ok {
