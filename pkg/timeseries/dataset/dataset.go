@@ -55,7 +55,7 @@ type DataSet struct {
 	// Sorter is the DataSet's Sort function, which defaults to DefaultSort
 	Sorter func() `msg:"-"`
 	// Merger is the DataSet's Merge function, which defaults to DefaultMerge
-	Merger func(sortSeries bool, ts ...timeseries.Timeseries) `msg:"-"`
+	Merger func(sortPoints bool, ts ...timeseries.Timeseries) `msg:"-"`
 	// SizeCropper is the DataSet's CropToSize function, which defaults to DefaultSizeCropper
 	SizeCropper func(int, time.Time, timeseries.Extent) `msg:"-"`
 	// RangeCropper is the DataSet's CropToRange function, which defaults to DefaultRangeCropper
@@ -214,16 +214,16 @@ func (ds *DataSet) Clone() timeseries.Timeseries {
 // Merge merges the provided Timeseries list into the base DataSet
 // (in the order provided) and optionally sorts the merged DataSet
 // This implementation ignores any Timeseries that are not of type *DataSet
-func (ds *DataSet) Merge(sortSeries bool, collection ...timeseries.Timeseries) {
+func (ds *DataSet) Merge(sortPoints bool, collection ...timeseries.Timeseries) {
 	if ds.Merger != nil {
-		ds.Merger(sortSeries, collection...)
+		ds.Merger(sortPoints, collection...)
 		return
 	}
-	ds.DefaultMerger(sortSeries, collection...)
+	ds.DefaultMerger(sortPoints, collection...)
 }
 
 // DefaultMerger is the default Merger function
-func (ds *DataSet) DefaultMerger(sortSeries bool, collection ...timeseries.Timeseries) {
+func (ds *DataSet) DefaultMerger(sortPoints bool, collection ...timeseries.Timeseries) {
 	ds.UpdateLock.Lock()
 	defer ds.UpdateLock.Unlock()
 
@@ -249,56 +249,24 @@ func (ds *DataSet) DefaultMerger(sortSeries bool, collection ...timeseries.Times
 		if !ok || ds2 == nil {
 			continue
 		}
-		for _, r := range ds2.Results {
-			if r == nil || len(r.SeriesList) == 0 {
+		ds.ExtentList = ds.ExtentList.Merge(ds2.ExtentList, ds.Step())
+		for _, r2 := range ds2.Results {
+			if r2 == nil || len(r2.SeriesList) == 0 {
 				continue
 			}
-			r1, ok := rl[r.StatementID]
+			r1, ok := rl[r2.StatementID]
 			if !ok {
-				rl[r.StatementID] = r
-				ds.Results = append(ds.Results, r)
-				for _, s := range r.SeriesList {
-					if s == nil {
-						continue
-					}
-					sl[SeriesLookupKey{StatementID: r.StatementID, Hash: s.Header.CalculateHash()}] = s
-				}
-				ds.ExtentList = append(ds.ExtentList, ds2.ExtentList...)
+				rl[r2.StatementID] = r2
+				ds.Results = append(ds.Results, r2)
 				continue
 			}
-			var wg sync.WaitGroup
-			for _, s := range r.SeriesList {
-				if s == nil || len(s.Points) == 0 {
-					continue
-				}
-				key := SeriesLookupKey{StatementID: r.StatementID, Hash: s.Header.CalculateHash()}
-				if existing, ok := sl[key]; ok && existing != nil && len(existing.Points) > 0 {
-					wg.Add(1)
-					go func(s2 *Series) {
-						s.Lock()
-						if s != s2 {
-							s2.Lock()
-						}
-						s2.Points = MergePoints(s2.Points, s.Points, sortSeries)
-						s2.PointSize = s2.Points.Size()
-						if s != s2 {
-							s2.Unlock()
-						}
-						s.Unlock()
-						wg.Done()
-					}(existing)
-				} else {
-					sl[key] = s
-				}
+			if len(r1.SeriesList) == 0 {
+				r1.SeriesList = r2.SeriesList.Clone()
+				continue
 			}
-			wg.Wait()
-			if len(r.SeriesList) > 0 {
-				r1.SeriesList = r1.SeriesList.merge(r.SeriesList)
-			}
-			ds.ExtentList = append(ds.ExtentList, ds2.ExtentList...)
+			r1.SeriesList.Merge(r2.SeriesList, sortPoints)
 		}
 	}
-	ds.ExtentList = ds.ExtentList.Compress(ds.Step())
 }
 
 // CropToSize reduces the number of elements in the Timeseries to the provided count, by evicting elements

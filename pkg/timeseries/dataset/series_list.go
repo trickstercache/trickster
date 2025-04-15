@@ -19,6 +19,7 @@ package dataset
 import (
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
@@ -26,26 +27,16 @@ import (
 // SeriesList is an ordered list of Series
 type SeriesList []*Series
 
-// merge merges sl2 into the subject SeriesList, using sl2's authoritative order
+// Merge merges sl2 into the subject SeriesList, using sl2's authoritative order
 // to adaptively reorder the existing+merged list such that it best emulates
 // the fully constituted series order as it would be served by the origin.
-// merge merges two []series, not individual series into a single series.
-// It assumes that a series in both lists, having the identical header hash,
-// are completely identical, including all data points, because they were already
-// merged just prior to merging the actual lists.
-func (sl SeriesList) merge(sl2 SeriesList) SeriesList {
-	if sl.Equal(sl2) || len(sl2) == 0 {
-		return sl
+// Merge assumes that a *Series in both lists, having the identical header hash,
+// are the same series and will merge sl2[i].Points into sl.Points
+func (sl SeriesList) Merge(sl2 SeriesList, sortPoints bool) SeriesList {
+	if len(sl2) == 0 {
+		return sl.Clone()
 	}
 	m := make(map[Hash]int)
-	updateLookup := func(sl3 SeriesList) {
-		for i, v := range sl3 {
-			h := v.Header.CalculateHash()
-			if _, ok := m[h]; !ok {
-				m[h] = i
-			}
-		}
-	}
 	out := make(SeriesList, len(sl)+len(sl2))
 	var k int
 	for _, s := range sl {
@@ -62,43 +53,63 @@ func (sl SeriesList) merge(sl2 SeriesList) SeriesList {
 	}
 	seen := make(sets.Set[Hash], len(sl2))
 	var pj int
-	for _, v := range sl2 {
-		if v == nil {
+	var wg sync.WaitGroup
+	for _, s := range sl2 {
+		if s == nil {
 			continue
 		}
-		h := v.Header.CalculateHash()
+		h := s.Header.CalculateHash()
 		if seen.Contains(h) {
 			continue
 		}
 		seen.Add(h)
 		j, ok := m[h]
-		if !ok {
-			out[k] = v
+		if !ok { // new Series from sl2 to add to out
+			out[k] = s
+			m[h] = k
 			pj = k
 			k++
-			updateLookup(out[:k])
 			continue
 		}
+		// series is in both sl and sl2, so this  merges their points
+		wg.Add(1)
+		go func(s2 *Series) {
+			s2.Points = MergePoints(s2.Points, s.Points, sortPoints)
+			s2.PointSize = s2.Points.Size()
+			wg.Done()
+		}(out[j])
+		// this double-checks the series ordering
 		if j < pj {
 			pj = k - 1
 			copy(out[j:], out[j+1:])
-			out[pj] = v
-			updateLookup(out[:k])
-			continue
+			out[pj] = s
+			m = make(map[Hash]int)
+			for i, v := range out[:k] {
+				h := v.Header.CalculateHash()
+				if _, ok := m[h]; !ok {
+					m[h] = i
+				}
+			}
+		} else {
+			pj = j
 		}
-		pj = j
 	}
+	wg.Wait()
 	return out[:k]
 }
 
-// Equal returns true if the slices contain identical values in the identical order
-func (sl SeriesList) Equal(sl2 SeriesList) bool {
+// EqualHeader returns true if the slice elements contain identical header
+// values in the identical order.
+func (sl SeriesList) EqualHeader(sl2 SeriesList) bool {
 	if sl2 == nil || len(sl) != len(sl2) {
 		return false
 	}
 	for i, v := range sl {
-		if v == nil {
+		if v == nil && sl2[i] == nil {
 			continue
+		}
+		if v == nil || sl2[i] == nil {
+			return false
 		}
 		if v.Header.CalculateHash() != sl2[i].Header.CalculateHash() {
 			return false
@@ -113,4 +124,17 @@ func (sl SeriesList) String() string {
 		hashes[i] = fmt.Sprintf("%d", v.Header.CalculateHash())
 	}
 	return "[" + strings.Join(hashes, ",") + "]"
+}
+
+func (sl SeriesList) Clone() SeriesList {
+	out := make(SeriesList, len(sl))
+	var k int
+	for _, s := range sl {
+		if s == nil {
+			continue
+		}
+		out[k] = s.Clone()
+		k++
+	}
+	return out[:k]
 }

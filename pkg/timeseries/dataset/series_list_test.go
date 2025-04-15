@@ -22,10 +22,10 @@ import (
 	"testing"
 )
 
-func TestEqual(t *testing.T) {
+func TestEqualHeader(t *testing.T) {
 
 	sl := SeriesList{testSeries()}
-	if sl.Equal(nil) {
+	if sl.EqualHeader(nil) {
 		t.Error("expected false")
 	}
 
@@ -34,7 +34,7 @@ func TestEqual(t *testing.T) {
 
 	sl2[0].Header.Name = "test2"
 
-	if sl.Equal(sl2) {
+	if sl.EqualHeader(sl2) {
 		t.Error("expected false")
 	}
 
@@ -73,10 +73,10 @@ func TestListMerge(t *testing.T) {
 
 	for i, test := range tests {
 		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
-			if test.sl1.Equal(nil) || test.sl2.Equal(nil) {
+			if test.sl1.EqualHeader(nil) || test.sl2.EqualHeader(nil) {
 				t.Error("expected false")
 			}
-			out := test.sl1.merge(test.sl2)
+			out := test.sl1.Merge(test.sl2, true)
 			if len(out) != len(test.expected) {
 				t.Errorf("expected %d got %d", len(test.expected), len(out))
 			} else {
