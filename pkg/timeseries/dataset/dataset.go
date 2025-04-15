@@ -227,19 +227,12 @@ func (ds *DataSet) DefaultMerger(sortPoints bool, collection ...timeseries.Times
 	ds.UpdateLock.Lock()
 	defer ds.UpdateLock.Unlock()
 
-	sl := make(SeriesLookup)
 	rl := make(ResultsLookup)
 	for _, r := range ds.Results {
 		if r == nil {
 			continue
 		}
 		rl[r.StatementID] = r
-		for _, s := range r.SeriesList {
-			if s == nil {
-				continue
-			}
-			sl[SeriesLookupKey{StatementID: r.StatementID, Hash: s.Header.CalculateHash()}] = s
-		}
 	}
 	for _, ts := range collection {
 		if ts == nil {
