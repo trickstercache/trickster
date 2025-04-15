@@ -36,7 +36,6 @@ linters:
       enable-all-rules: true
       rules:
         - name: unhandled-error
-          # disabled: false # TODO: come back to this
           arguments: # Allow skipping errors for the following functions
           - fmt.Print
           - fmt.Println
@@ -115,6 +114,8 @@ linters:
           disabled: true # not helpful
         - name: bare-return
           disabled: true # stylistic choice, ok with bare returns
+        - name: import-shadowing
+          disabled: true # not helpful; considering a stylistic choice
   exclusions:
     generated: lax
     presets:
