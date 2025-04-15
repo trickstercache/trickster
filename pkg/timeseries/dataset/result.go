@@ -34,7 +34,7 @@ type Result struct {
 	// Error represents a statement-level error
 	Error string `msg:"error"`
 	// SeriesList is an ordered list of the Series in this result
-	SeriesList []*Series `msg:"series"`
+	SeriesList SeriesList `msg:"series"`
 }
 
 // Size returns the size of the Result in bytes

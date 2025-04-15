@@ -49,6 +49,9 @@ func (sl SeriesList) merge(sl2 SeriesList) SeriesList {
 	out := make(SeriesList, len(sl)+len(sl2))
 	var k int
 	for _, s := range sl {
+		if s == nil {
+			continue
+		}
 		h := s.Header.CalculateHash()
 		if _, ok := m[h]; ok {
 			continue
@@ -60,6 +63,9 @@ func (sl SeriesList) merge(sl2 SeriesList) SeriesList {
 	seen := make(sets.Set[Hash], len(sl2))
 	var pj int
 	for _, v := range sl2 {
+		if v == nil {
+			continue
+		}
 		h := v.Header.CalculateHash()
 		if seen.Contains(h) {
 			continue
