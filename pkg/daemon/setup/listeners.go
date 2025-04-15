@@ -38,7 +38,7 @@ import (
 var lg = listener.NewListenerGroup()
 
 func applyListenerConfigs(conf, oldConf *config.Config,
-	frontendRouter, reloadHandler http.Handler, metricsRouter router.Router,
+	router, reloadHandler http.Handler, metricsRouter router.Router,
 	tracers tracing.Tracers, o backends.Backends, errorFunc func()) {
 
 	var err error
@@ -55,7 +55,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 	// No changes in frontend config
 	if oldConf != nil && oldConf.Frontend != nil &&
 		oldConf.Frontend.Equal(conf.Frontend) {
-		lg.UpdateFrontendRouters(frontendRouter, adminRouter)
+		lg.UpdateFrontendRouters(router, adminRouter)
 		if ttls.OptionsChanged(conf, oldConf) {
 			tlsConfig, _ = conf.TLSCertConfig()
 			l := lg.Get("tlsListener")
@@ -97,7 +97,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 			tracerFlusherSet = true
 			go lg.StartListener("tlsListener",
 				conf.Frontend.TLSListenAddress, conf.Frontend.TLSListenPort,
-				conf.Frontend.ConnectionsLimit, tlsConfig, frontendRouter, tracers, errorFunc,
+				conf.Frontend.ConnectionsLimit, tlsConfig, router, tracers, errorFunc,
 				time.Duration(conf.ReloadConfig.DrainTimeoutMS)*time.Millisecond)
 		}
 	case !conf.Frontend.ServeTLS && hasOldFC && oldConf.Frontend.ServeTLS:
@@ -131,7 +131,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		}
 		go lg.StartListener("httpListener",
 			conf.Frontend.ListenAddress, conf.Frontend.ListenPort,
-			conf.Frontend.ConnectionsLimit, nil, frontendRouter, t2, errorFunc, 0)
+			conf.Frontend.ConnectionsLimit, nil, router, t2, errorFunc, 0)
 	}
 
 	// if the Metrics HTTP port is configured, then set up the http listener instance

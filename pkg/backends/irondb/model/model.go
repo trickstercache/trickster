@@ -235,7 +235,7 @@ func (se *SeriesEnvelope) TimestampCount() int64 {
 
 // Merge merges the provided Timeseries list into the base Timeseries (in the
 // order provided) and optionally sorts the merged Timeseries.
-func (se *SeriesEnvelope) Merge(doSort bool,
+func (se *SeriesEnvelope) Merge(sort bool,
 	collection ...timeseries.Timeseries) {
 	for _, ts := range collection {
 		if ts != nil {
@@ -247,7 +247,7 @@ func (se *SeriesEnvelope) Merge(doSort bool,
 	}
 
 	se.ExtentList = se.ExtentList.Compress(se.StepDuration)
-	if doSort {
+	if sort {
 		se.Sort()
 	}
 }

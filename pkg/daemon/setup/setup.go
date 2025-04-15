@@ -263,15 +263,15 @@ func initLogger(c *config.Config) logging.Logger {
 	return logger.Logger()
 }
 
-func delayedLogCloser(log logging.Logger, delay time.Duration) {
+func delayedLogCloser(logger logging.Logger, delay time.Duration) {
 	// we can't immediately close the logger, because some outstanding
 	// http requests might still be on the old reference, so this will
 	// allow time for those connections to drain
-	if log == nil {
+	if logger == nil {
 		return
 	}
 	time.Sleep(delay)
-	log.Close()
+	logger.Close()
 }
 
 func handleStartupIssue(event string, detail logging.Pairs, errorFunc func()) {

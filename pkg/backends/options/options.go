@@ -363,15 +363,15 @@ func (l Lookup) Validate(ncl negative.Lookups) error {
 		if (o.Provider != "rule" && o.Provider != "alb") && o.OriginURL == "" {
 			return NewErrMissingOriginURL(k)
 		}
-		u, err := url.Parse(o.OriginURL)
+		url, err := url.Parse(o.OriginURL)
 		if err != nil {
 			return err
 		}
-		u.Path = strings.TrimSuffix(u.Path, "/")
+		url.Path = strings.TrimSuffix(url.Path, "/")
 		o.Name = k
-		o.Scheme = u.Scheme
-		o.Host = u.Host
-		o.PathPrefix = u.Path
+		o.Scheme = url.Scheme
+		o.Host = url.Host
+		o.PathPrefix = url.Path
 		o.Timeout = time.Duration(o.TimeoutMS) * time.Millisecond
 		o.BackfillTolerance = time.Duration(o.BackfillToleranceMS) * time.Millisecond
 		o.TimeseriesRetention = time.Duration(o.TimeseriesRetentionFactor)
@@ -452,8 +452,8 @@ func (l Lookup) ValidateConfigMappings(rules ro.Lookup, caches co.Lookup) error 
 			o.RuleOptions = r
 		case "alb":
 			// ALB Validations
-			if opts := o.ALBOptions; opts != nil {
-				for _, bn := range opts.Pool {
+			if ao := o.ALBOptions; ao != nil {
+				for _, bn := range ao.Pool {
 					if _, ok := l[bn]; !ok {
 						return NewErrInvalidALBOptions(bn, o.Name)
 					}
@@ -704,23 +704,23 @@ func SetDefaults(
 // exposing credentials (by masking known credential fields with "*****")
 func (o *Options) CloneYAMLSafe() *Options {
 
-	opts := o.Clone()
-	for _, w := range opts.Paths {
+	co := o.Clone()
+	for _, w := range co.Paths {
 		w.Handler = nil
 		w.KeyHasher = nil
 		headers.HideAuthorizationCredentials(w.RequestHeaders)
 		headers.HideAuthorizationCredentials(w.ResponseHeaders)
 	}
-	if opts.HealthCheck != nil {
+	if co.HealthCheck != nil {
 		// also strip out potentially sensitive headers
-		headers.HideAuthorizationCredentials(opts.HealthCheck.Headers)
+		headers.HideAuthorizationCredentials(co.HealthCheck.Headers)
 	}
-	return opts
+	return co
 }
 
 // ToYAML prints the Options as a YAML representation
 func (o *Options) ToYAML() string {
-	opts := o.CloneYAMLSafe()
-	b, _ := yaml.Marshal(opts)
+	co := o.CloneYAMLSafe()
+	b, _ := yaml.Marshal(co)
 	return string(b)
 }

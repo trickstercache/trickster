@@ -150,8 +150,8 @@ func NewTestInstance(
 
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	if o.TracingConfigName != "" {
-		if opts, ok := conf.TracingConfigs[o.TracingConfigName]; ok {
-			tracer, _ = tr.GetTracer(opts, true)
+		if tc, ok := conf.TracingConfigs[o.TracingConfigName]; ok {
+			tracer, _ = tr.GetTracer(tc, true)
 		}
 	} else {
 		tracer = NewTestTracer()
@@ -197,10 +197,10 @@ func NewTestPathConfig(
 // NewTestTracer returns a standard out tracer for testing purposes
 func NewTestTracer() *tracing.Tracer {
 	logger.SetLogger(logging.ConsoleLogger(level.Warn))
-	opts := to.New()
-	opts.Name = "test"
-	opts.Provider = "stdout"
-	tracer, _ := tr.GetTracer(opts, true)
+	tc := to.New()
+	tc.Name = "test"
+	tc.Provider = "stdout"
+	tracer, _ := tr.GetTracer(tc, true)
 	return tracer
 }
 

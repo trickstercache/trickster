@@ -581,11 +581,11 @@ func parseWhereTokens(results ts.Lookup,
 					t.Typ == token.GreaterThanOrEqual)
 				state++
 			case 2: // gets the first time and runs it through the evaluator
-				stamp, err := parseTimeField(t)
+				ts, err := parseTimeField(t)
 				if err != nil {
 					return t, err
 				}
-				_, j, _ := SolveMathExpression(fieldParts[i:], stamp, withVars)
+				_, j, _ := SolveMathExpression(fieldParts[i:], ts, withVars)
 				if atLowerBound {
 					// e.Start = time.Unix(v, 0)
 					e.Start, _, _ = lsql.TokenToTime(t)
@@ -612,11 +612,11 @@ func parseWhereTokens(results ts.Lookup,
 					break sw
 				}
 				// therefore, if we make it to here, it MUST be a BETWEEN
-				stamp, err := parseTimeField(t)
+				ts, err := parseTimeField(t)
 				if err != nil {
 					return t, err
 				}
-				v, j, _ := SolveMathExpression(fieldParts[i:], stamp, withVars)
+				v, j, _ := SolveMathExpression(fieldParts[i:], ts, withVars)
 				// since we must be in a BETWEEN to be here, this must be the upper bound
 				e.End = time.Unix(v, 0)
 				tsr2 = t.Val
@@ -659,14 +659,14 @@ func parseWhereTokens(results ts.Lookup,
 }
 
 func parseTimeField(t *token.Token) (int64, error) {
-	stamp, format, err := lsql.TokenToTime(t)
+	ts, format, err := lsql.TokenToTime(t)
 	if err != nil {
 		return -1, err
 	}
 	if format == 1 {
-		return stamp.UnixNano() / 1000000, nil
+		return ts.UnixNano() / 1000000, nil
 	}
-	return stamp.Unix(), nil
+	return ts.Unix(), nil
 }
 
 func parseGroupByTokens(results ts.Lookup,

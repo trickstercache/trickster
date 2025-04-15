@@ -60,7 +60,7 @@ func Load(args []string) (*Config, error) {
 	// set the default origin url from the flags
 	if d, ok := c.Backends["default"]; ok {
 		if c.providedOriginURL != "" {
-			u, err := url.Parse(c.providedOriginURL)
+			url, err := url.Parse(c.providedOriginURL)
 			if err != nil {
 				return nil, err
 			}
@@ -68,9 +68,9 @@ func Load(args []string) (*Config, error) {
 				d.Provider = c.providedProvider
 			}
 			d.OriginURL = c.providedOriginURL
-			d.Scheme = u.Scheme
-			d.Host = u.Host
-			d.PathPrefix = u.Path
+			d.Scheme = url.Scheme
+			d.Host = url.Host
+			d.PathPrefix = url.Path
 		}
 		// If the user has configured their own backends, and one of them is not "default"
 		// then Trickster will not use the auto-created default backend

@@ -78,13 +78,13 @@ var _ types.NewBackendClientFunc = NewClient
 
 // NewClient returns a new Client Instance
 func NewClient(name string, o *bo.Options, router http.Handler,
-	c cache.Cache, _ backends.Backends,
+	cache cache.Cache, _ backends.Backends,
 	_ types.Lookup) (backends.Backend, error) {
 
-	cli := &Client{}
-	b, err := backends.NewTimeseriesBackend(name, o, cli.RegisterHandlers, router,
-		c, modelprom.NewModeler())
-	cli.TimeseriesBackend = b
+	c := &Client{}
+	b, err := backends.NewTimeseriesBackend(name, o, c.RegisterHandlers, router,
+		cache, modelprom.NewModeler())
+	c.TimeseriesBackend = b
 
 	rounder := time.Duration(po.DefaultInstantRoundMS) * time.Millisecond
 	if o != nil {
@@ -92,13 +92,13 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 			o.Prometheus = &po.Options{InstantRoundMS: po.DefaultInstantRoundMS}
 		} else {
 			rounder = time.Duration(o.Prometheus.InstantRoundMS) * time.Millisecond
-			cli.injectLabels = o.Prometheus.Labels
-			cli.hasTransformations = len(cli.injectLabels) > 0
+			c.injectLabels = o.Prometheus.Labels
+			c.hasTransformations = len(c.injectLabels) > 0
 		}
 	}
-	cli.instantRounder = rounder
+	c.instantRounder = rounder
 
-	return cli, err
+	return c, err
 }
 
 // parseTime converts a query time URL parameter to time.Time.
@@ -142,36 +142,35 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 		return nil, nil, false, errors.MissingURLParam(upQuery)
 	}
 
-	p := qp.Get(upStart)
-	if p == "" {
+	if p := qp.Get(upStart); p != "" {
+		t, err := parseTime(p)
+		if err != nil {
+			return nil, nil, false, err
+		}
+		trq.Extent.Start = t
+	} else {
 		return nil, nil, false, errors.MissingURLParam(upStart)
 	}
-	t, err := parseTime(p)
-	if err != nil {
-		return nil, nil, false, err
-	}
-	trq.Extent.Start = t
 
-	p = qp.Get(upEnd)
-	if p == "" {
+	if p := qp.Get(upEnd); p != "" {
+		t, err := parseTime(p)
+		if err != nil {
+			return nil, nil, false, err
+		}
+		trq.Extent.End = t
+	} else {
 		return nil, nil, false, errors.MissingURLParam(upEnd)
 	}
-	t, err = parseTime(p)
-	if err != nil {
-		return nil, nil, false, err
-	}
-	trq.Extent.End = t
 
-	p = qp.Get(upStep)
-	if p == "" {
+	if p := qp.Get(upStep); p != "" {
+		step, err := parseDuration(p)
+		if err != nil {
+			return nil, nil, false, err
+		}
+		trq.Step = step
+	} else {
 		return nil, nil, false, errors.MissingURLParam(upStep)
-
 	}
-	step, err := parseDuration(p)
-	if err != nil {
-		return nil, nil, false, err
-	}
-	trq.Step = step
 
 	if strings.Contains(trq.Statement, " offset ") {
 		trq.IsOffset = true

@@ -37,10 +37,10 @@ var _ types.NewBackendClientFunc = NewClient
 
 // NewClient returns a new Client Instance
 func NewClient(name string, o *bo.Options, router http.Handler,
-	c cache.Cache, _ backends.Backends,
+	cache cache.Cache, _ backends.Backends,
 	_ types.Lookup) (backends.Backend, error) {
-	cli := &Client{}
-	b, err := backends.New(name, o, cli.RegisterHandlers, router, c)
-	cli.Backend = b
-	return cli, err
+	c := &Client{}
+	b, err := backends.New(name, o, c.RegisterHandlers, router, cache)
+	c.Backend = b
+	return c, err
 }
