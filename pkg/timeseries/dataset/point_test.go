@@ -63,6 +63,16 @@ func testPoints2() Points {
 	}
 }
 
+func testPoints3() Points {
+	return Points{
+		Point{
+			Epoch:  epoch.Epoch(10 * timeseries.Second),
+			Size:   27,
+			Values: []any{1, 24},
+		},
+	}
+}
+
 func genTestPoints(baseEpoch, n int) Points {
 	points := make(Points, n)
 	for i := 0; i < n; i++ {
@@ -299,6 +309,32 @@ func TestMergePoints(t *testing.T) {
 			p1:       nil,
 			p2:       testPoints(),
 			expected: testPoints(),
+		},
+		{
+			p1:       testPoints3(),
+			p2:       testPoints2(),
+			expected: testPoints2(),
+		},
+		{
+			p1: testPoints2(),
+			p2: testPoints3(),
+			expected: Points{
+				Point{
+					Epoch:  epoch.Epoch(5 * timeseries.Second),
+					Size:   27,
+					Values: []any{1, 37},
+				},
+				Point{
+					Epoch:  epoch.Epoch(10 * timeseries.Second),
+					Size:   27,
+					Values: []any{1, 24},
+				},
+				Point{
+					Epoch:  epoch.Epoch(15 * timeseries.Second),
+					Size:   27,
+					Values: []any{1, 34},
+				},
+			},
 		},
 	}
 	for i, test := range tests {
