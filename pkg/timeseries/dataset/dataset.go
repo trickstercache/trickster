@@ -224,13 +224,11 @@ func (ds *DataSet) Merge(sortSeries bool, collection ...timeseries.Timeseries) {
 
 // DefaultMerger is the default Merger function
 func (ds *DataSet) DefaultMerger(sortSeries bool, collection ...timeseries.Timeseries) {
-
 	ds.UpdateLock.Lock()
 	defer ds.UpdateLock.Unlock()
 
 	sl := make(SeriesLookup)
 	rl := make(ResultsLookup)
-	var slmtx sync.RWMutex
 	for _, r := range ds.Results {
 		if r == nil {
 			continue
@@ -243,21 +241,18 @@ func (ds *DataSet) DefaultMerger(sortSeries bool, collection ...timeseries.Times
 			sl[SeriesLookupKey{StatementID: r.StatementID, Hash: s.Header.CalculateHash()}] = s
 		}
 	}
-
 	for _, ts := range collection {
 		if ts == nil {
 			continue
 		}
 		ds2, ok := ts.(*DataSet)
-		if !ok {
+		if !ok || ds2 == nil {
 			continue
 		}
-		var rwg sync.WaitGroup
 		for _, r := range ds2.Results {
-			if r == nil {
+			if r == nil || len(r.SeriesList) == 0 {
 				continue
 			}
-
 			r1, ok := rl[r.StatementID]
 			if !ok {
 				rl[r.StatementID] = r
@@ -268,61 +263,37 @@ func (ds *DataSet) DefaultMerger(sortSeries bool, collection ...timeseries.Times
 					}
 					sl[SeriesLookupKey{StatementID: r.StatementID, Hash: s.Header.CalculateHash()}] = s
 				}
+				ds.ExtentList = append(ds.ExtentList, ds2.ExtentList...)
 				continue
 			}
-
-			rwg.Add(1)
-
-			// this iterates the new result and appends any new datapoints to pre-existing series
-			go func(gr1, gr *Result) {
-				var wg sync.WaitGroup
-
-				defer rwg.Done()
-
-				for _, s := range gr.SeriesList {
-					if s == nil || len(s.Points) == 0 {
-						continue
-					}
-					wg.Add(1)
-					// this checks each series for new entries, and adds them to the main lookup if non-existing
-					// or appends new points, if any, to the pre-existing series.
-					go func(gs *Series, ggr1 *Result) {
-						defer wg.Done()
-						var es *Series
-						key := SeriesLookupKey{StatementID: ggr1.StatementID, Hash: gs.Header.CalculateHash()}
-						slmtx.RLock()
-						es, ok = sl[key]
-						slmtx.RUnlock()
-						if !ok || es == nil || len(es.Points) == 0 {
-							// if the key is not found, or the existing series
-							// has no points, this just assigns the new series
-							if gs != nil {
-								slmtx.Lock()
-								sl[key] = gs
-								slmtx.Unlock()
-							}
-							return
-						}
-						// if the new series has no points, there's nothing to do
-						if len(gs.Points) == 0 {
-							return
-						}
-						// otherwise, lock both series and merge their points
-						gs.Lock()
-						es.Lock()
-						es.Points = MergePoints(es.Points, gs.Points, sortSeries)
-						es.PointSize = es.Points.Size()
-						es.Unlock()
-						gs.Unlock()
-					}(s, gr1)
+			var wg sync.WaitGroup
+			for _, s := range r.SeriesList {
+				if s == nil || len(s.Points) == 0 {
+					continue
 				}
-				wg.Wait()
-			}(r1, r)
-			rwg.Wait()
+				key := SeriesLookupKey{StatementID: r.StatementID, Hash: s.Header.CalculateHash()}
+				if existing, ok := sl[key]; ok && existing != nil && len(existing.Points) > 0 {
+					wg.Add(1)
+					go func(s2 *Series) {
+						s.Lock()
+						if s != s2 {
+							s2.Lock()
+						}
+						s2.Points = MergePoints(s2.Points, s.Points, sortSeries)
+						s2.PointSize = s2.Points.Size()
+						if s != s2 {
+							s2.Unlock()
+						}
+						s.Unlock()
+						wg.Done()
+					}(existing)
+				} else {
+					sl[key] = s
+				}
+			}
+			wg.Wait()
 			if len(r.SeriesList) > 0 {
-				// if we ended up having any new series, this will actually merge them into
-				// the existing result set in the best guess as to the correct location
-				r1.SeriesList = SeriesList(r1.SeriesList).merge(r.SeriesList)
+				r1.SeriesList = r1.SeriesList.merge(r.SeriesList)
 			}
 			ds.ExtentList = append(ds.ExtentList, ds2.ExtentList...)
 		}
