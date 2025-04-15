@@ -26,6 +26,8 @@ import (
 // ResultsLookup is a map of Results searchable by the Statement ID
 type ResultsLookup map[int]*Result
 
+type Results []*Result
+
 // Result represents the results of a single query statement in the DataSet
 type Result struct {
 	// StatementID represents the ID of the statement for this result. This field may not be

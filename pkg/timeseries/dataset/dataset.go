@@ -38,7 +38,7 @@ type DataSet struct {
 	ExtentList timeseries.ExtentList `msg:"extent_list"`
 	// Results is the list of type Result. Each Result represents information about a
 	// different statement in the source query for this DataSet
-	Results []*Result `msg:"results"`
+	Results Results `msg:"results"`
 	// UpdateLock is used to synchronize updates to the DataSet
 	UpdateLock sync.Mutex `msg:"-"`
 	// Error is a container for any DataSet-level Errors
@@ -61,6 +61,8 @@ type DataSet struct {
 	// RangeCropper is the DataSet's CropToRange function, which defaults to DefaultRangeCropper
 	RangeCropper func(timeseries.Extent) `msg:"-"`
 }
+
+type Datasets []*DataSet
 
 // Marshaler is a function that serializes the provided DataSet into a byte slice
 type Marshaler func(*DataSet, *timeseries.RequestOptions, int) ([]byte, error)
@@ -234,6 +236,9 @@ func (ds *DataSet) DefaultMerger(sortPoints bool, collection ...timeseries.Times
 		}
 		rl[r.StatementID] = r
 	}
+	dl := make(Datasets, 0, 32)
+	k := len(ds.Results)
+	rlen := k
 	for _, ts := range collection {
 		if ts == nil {
 			continue
@@ -242,6 +247,12 @@ func (ds *DataSet) DefaultMerger(sortPoints bool, collection ...timeseries.Times
 		if !ok || ds2 == nil {
 			continue
 		}
+		dl = append(dl, ds2)
+		rlen += len(ds2.Results)
+	}
+	rs := make(Results, rlen)
+	copy(rs, ds.Results)
+	for _, ds2 := range dl {
 		ds.ExtentList = ds.ExtentList.Merge(ds2.ExtentList, ds.Step())
 		for _, r2 := range ds2.Results {
 			if r2 == nil || len(r2.SeriesList) == 0 {
@@ -250,16 +261,18 @@ func (ds *DataSet) DefaultMerger(sortPoints bool, collection ...timeseries.Times
 			r1, ok := rl[r2.StatementID]
 			if !ok {
 				rl[r2.StatementID] = r2
-				ds.Results = append(ds.Results, r2)
+				rs[k] = r2
+				k++
 				continue
 			}
 			if len(r1.SeriesList) == 0 {
 				r1.SeriesList = r2.SeriesList.Clone()
 				continue
 			}
-			r1.SeriesList.Merge(r2.SeriesList, sortPoints)
+			r1.SeriesList = r1.SeriesList.Merge(r2.SeriesList, sortPoints)
 		}
 	}
+	ds.Results = rs[:k]
 }
 
 // CropToSize reduces the number of elements in the Timeseries to the provided count, by evicting elements

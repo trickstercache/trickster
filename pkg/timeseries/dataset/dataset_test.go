@@ -240,7 +240,7 @@ func TestMerge(t *testing.T) {
 
 	ds.Merge(false, ds2)
 
-	if ds.SeriesCount() != 5 {
+	if ds.SeriesCount() != 4 {
 		t.Errorf("expected %d got %d", 4, ds.SeriesCount())
 	}
 }

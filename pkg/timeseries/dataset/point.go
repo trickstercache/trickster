@@ -20,7 +20,6 @@ package dataset
 
 import (
 	"slices"
-	"sort"
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 )
@@ -191,6 +190,29 @@ func (p Points) onOrJustBefore(ts epoch.Epoch, s, e int) int {
 	return p.onOrJustBefore(ts, s, mid)
 }
 
+// sortAndDedupe sorts and deduplicates p in-place. Because deduplication can
+// shorten p, the version of p used to call sortAndDedupe is no longer valid.
+// Set p to the call's return value, as in:   p = sortAndDedupe(p)
+func sortAndDedupe(p Points) Points {
+	n := len(p)
+	slices.SortStableFunc(p, func(a, b Point) int {
+		if a.Epoch < b.Epoch {
+			return -1
+		} else if a.Epoch > b.Epoch {
+			return 1
+		}
+		return 0
+	})
+	var k int
+	for l := range n {
+		if l+1 == n || p[l].Epoch != p[l+1].Epoch {
+			p[k] = p[l]
+			k++
+		}
+	}
+	return p[:k]
+}
+
 // Merge returns a new Points slice of p and p2 merged together. If sort is true
 // the new slice is sorted and dupe-killed before being returned
 func MergePoints(p, p2 Points, sortPoints bool) Points {
@@ -200,42 +222,25 @@ func MergePoints(p, p2 Points, sortPoints bool) Points {
 	if len(p) == 0 && len(p2) == 0 {
 		return Points{}
 	}
-	sortDedupe := func(in Points) int {
-		n := len(in)
-		sort.Sort(in)
-		var k int
-		for l := range n {
-			if l+1 == n || in[l].Epoch != in[l+1].Epoch {
-				in[k] = in[l]
-				k++
-			}
+	// finalize will check if the output should be sorted+deduped, and if so
+	// do that before ultimately returning the output. From this point, all
+	// returns include calls to finalize
+	finalize := func(out Points) Points {
+		if sortPoints && len(out) > 1 {
+			out = sortAndDedupe(out)
 		}
-		return k
+		return out
 	}
-
 	if len(p2) == 0 {
-		out := p.Clone()
-		if sortPoints && len(out) > 1 {
-			i := sortDedupe(out)
-			out = out[:i]
-		}
-		return out
+		// if p2 has no items, return a clone of p
+		return finalize(p.Clone())
 	} else if len(p) == 0 {
-		// if p has no items, clone p2 into p
-		out := p2.Clone()
-		if sortPoints && len(out) > 1 {
-			i := sortDedupe(out)
-			out = out[:i]
-		}
-		return out
+		// if p has no items, return a clone of p2
+		return finalize(p2.Clone())
 	}
-	// otherwise, we merge the points from the two slices
+	// otherwise, merge the two Points slices
 	out := make(Points, len(p)+len(p2))
 	copy(out, p)
 	copy(out[len(p):], p2)
-	if sortPoints {
-		i := sortDedupe(out)
-		out = out[:i]
-	}
-	return out
+	return finalize(out)
 }

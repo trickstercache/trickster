@@ -36,6 +36,9 @@ func (sl SeriesList) Merge(sl2 SeriesList, sortPoints bool) SeriesList {
 	if len(sl2) == 0 {
 		return sl.Clone()
 	}
+	if len(sl) == 0 {
+		return sl2.Clone()
+	}
 	m := make(map[Hash]int)
 	out := make(SeriesList, len(sl)+len(sl2))
 	var k int
@@ -71,17 +74,17 @@ func (sl SeriesList) Merge(sl2 SeriesList, sortPoints bool) SeriesList {
 			k++
 			continue
 		}
-		// series is in both sl and sl2, so this  merges their points
+		// series is in both sl and sl2, so this merges their points
 		wg.Add(1)
-		go func(s2 *Series) {
-			s2.Points = MergePoints(s2.Points, s.Points, sortPoints)
-			s2.PointSize = s2.Points.Size()
+		go func(s1, s2 *Series) {
+			s1.Points = MergePoints(s1.Points, s2.Points, sortPoints)
+			s1.PointSize = s1.Points.Size()
 			wg.Done()
-		}(out[j])
+		}(out[j], s)
 		// this double-checks the series ordering
 		if j < pj {
 			pj = k - 1
-			copy(out[j:], out[j+1:])
+			copy(out[j:], out[j+1:k])
 			out[pj] = s
 			m = make(map[Hash]int)
 			for i, v := range out[:k] {
