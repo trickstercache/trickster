@@ -21,12 +21,10 @@ package dataset
 import (
 	"fmt"
 	"strings"
-	"sync"
 )
 
 // Series represents a single timeseries in a Result
 type Series struct {
-	sync.Mutex
 	// Header is the Series Header describing the Series
 	Header SeriesHeader `msg:"header"`
 	// Points is the list of Points in the Series
@@ -58,12 +56,10 @@ func (s *Series) Size() int64 {
 
 // Clone returns a perfect, new copy of the Series
 func (s *Series) Clone() *Series {
-	s.Lock()
 	clone := &Series{Header: s.Header.Clone()}
 	if s.Points != nil {
 		clone.Points = s.Points.Clone()
 	}
-	s.Unlock()
 	return clone
 }
 

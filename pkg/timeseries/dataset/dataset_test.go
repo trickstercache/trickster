@@ -19,7 +19,6 @@ package dataset
 import (
 	"fmt"
 	"math/rand"
-	"sync"
 	"testing"
 	"time"
 
@@ -124,7 +123,7 @@ func testDataSet2() *DataSet {
 	r1 := &Result{
 		StatementID: 0,
 		SeriesList: []*Series{
-			{sync.Mutex{}, sh1, newPoints(), s},
+			{sh1, newPoints(), s},
 			nil,
 		},
 	}
@@ -132,9 +131,9 @@ func testDataSet2() *DataSet {
 	r2 := &Result{
 		StatementID: 1,
 		SeriesList: []*Series{
-			{sync.Mutex{}, sh2, newPoints(), s},
-			{sync.Mutex{}, sh3, newPoints(), s},
-			{sync.Mutex{}, sh4, newPoints(), s},
+			{sh2, newPoints(), s},
+			{sh3, newPoints(), s},
+			{sh4, newPoints(), s},
 		},
 	}
 
