@@ -104,6 +104,21 @@ func (el ExtentList) Crop(ex Extent) ExtentList {
 	return out[:k]
 }
 
+// Merge returns an Extentlist of el2 appended to el, sorted, and compressed
+func (el ExtentList) Merge(el2 ExtentList, step time.Duration) ExtentList {
+	if len(el2) == 0 {
+		return el.Clone()
+	}
+	if len(el) == 0 {
+		return el2.Clone()
+	}
+	out := make(ExtentList, len(el)+len(el2))
+	copy(out, el)
+	copy(out[len(el):], el2)
+	sort.Sort(out)
+	return out.Compress(step)
+}
+
 // Compress sorts an ExtentList and merges time-adjacent Extents so that the
 // total extent of data is accurately represented in as few Extents as possible
 func (el ExtentList) Compress(step time.Duration) ExtentList {

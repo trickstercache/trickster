@@ -149,7 +149,7 @@ lint:
 GO_TEST_FLAGS ?= -coverprofile=.coverprofile
 .PHONY: test
 test: check-license-headers
-	go test -v ${GO_TEST_FLAGS} ./...
+	go test -timeout=5m -v ${GO_TEST_FLAGS} ./...
 
 .PHONY: data-race-test
 data-race-test:
@@ -203,7 +203,8 @@ check-license-headers:
 			echo "" ; \
 			exit 1 ; \
 		fi ; \
-	done
+	done ; \
+	echo "" ; echo "✓ All code files have the required license header." ; echo ""
 
 .PHONY: spelling
 spelling:

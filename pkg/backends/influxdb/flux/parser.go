@@ -59,7 +59,8 @@ func (p *Parser) ParseQuery() (*Query, bool, error) {
 				return nil, false, err
 			}
 		}
-		if !hasRange && strings.Contains(line, "range") {
+		switch {
+		case !hasRange && strings.Contains(line, "range"):
 			stmt, err = parseRangeFilter(line, 0)
 			if err != nil {
 				return nil, false, err
@@ -67,14 +68,14 @@ func (p *Parser) ParseQuery() (*Query, bool, error) {
 			q.Extent = stmt.(*RangeStatement).ext
 			q.stmts = append(q.stmts, stmt)
 			hasRange = true
-		} else if !hasWindow && strings.Contains(strings.ToLower(line), "window") {
+		case !hasWindow && strings.Contains(strings.ToLower(line), "window"):
 			q.Step, err = parseWindowFunction(line, 0)
 			if err != nil {
 				return nil, false, err
 			}
 			q.stmts = append(q.stmts, &ConstStatement{line})
 			hasWindow = true
-		} else {
+		default:
 			q.stmts = append(q.stmts, &ConstStatement{line})
 		}
 	}

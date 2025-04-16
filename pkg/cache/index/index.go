@@ -352,11 +352,12 @@ func (idx *Index) reap() {
 		len(remainders) > 0 {
 
 		var evictionType string
-		if idx.options.MaxSizeBytes > 0 && idx.CacheSize > idx.options.MaxSizeBytes {
+		switch {
+		case idx.options.MaxSizeBytes > 0 && idx.CacheSize > idx.options.MaxSizeBytes:
 			evictionType = "size_bytes"
-		} else if idx.options.MaxSizeObjects > 0 && idx.ObjectCount > idx.options.MaxSizeObjects {
+		case idx.options.MaxSizeObjects > 0 && idx.ObjectCount > idx.options.MaxSizeObjects:
 			evictionType = "size_objects"
-		} else {
+		default:
 			return
 		}
 

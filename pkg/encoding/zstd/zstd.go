@@ -48,11 +48,12 @@ func NewEncoder(w io.Writer, level int) io.WriteCloser {
 		level = 3
 	}
 	l := zstd.SpeedDefault
-	if level < 3 {
+	switch {
+	case level < 3:
 		l = zstd.SpeedFastest
-	} else if level > 3 && level < 8 {
+	case level > 3 && level < 8:
 		l = zstd.SpeedBetterCompression
-	} else if level > 7 {
+	case level > 7:
 		l = zstd.SpeedBestCompression
 	}
 	zw, _ := zstd.NewWriter(w, zstd.WithEncoderLevel(l))

@@ -87,17 +87,18 @@ func (c *Client) parseOptions(o *ro.Options, rwi map[string]rewriter.RewriteInst
 	badDefaultRoute := fmt.Errorf("invalid default rule route %s in rule %s",
 		o.NextRoute, o.Name)
 
-	if o.NextRoute != "" {
+	switch {
+	case o.NextRoute != "":
 		nc := c.clients.Get(o.NextRoute)
 		if nc == nil || nc.Router() == nil {
 			return badDefaultRoute
 		}
 		nr = nc.Router()
-	} else if o.RedirectURL != "" {
+	case o.RedirectURL != "":
 		r.defaultRedirectURL = o.RedirectURL
 		r.defaultRedirectCode = 302
 		nr = http.HandlerFunc(handlers.HandleRedirectResponse)
-	} else {
+	default:
 		return badDefaultRoute
 	}
 

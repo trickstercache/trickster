@@ -210,14 +210,15 @@ func (t *target) probe() {
 	resp, err := t.httpClient.Do(r)
 	var errCnt, successCnt int
 	var passed bool
-	if err != nil || resp == nil {
+	switch {
+	case err != nil, resp == nil:
 		t.status.detail = fmt.Sprintf("error probing target: %v", err)
 		errCnt = int(t.failConsecutiveCnt.Add(1))
 		t.successConsecutiveCnt.Store(0)
-	} else if !t.isGoodCode(resp.StatusCode) || !t.isGoodHeader(resp.Header) || !t.isGoodBody(resp.Body) {
+	case !t.isGoodCode(resp.StatusCode) || !t.isGoodHeader(resp.Header) || !t.isGoodBody(resp.Body):
 		errCnt = int(t.failConsecutiveCnt.Add(1))
 		t.successConsecutiveCnt.Store(0)
-	} else {
+	default:
 		resp.Body.Close()
 		successCnt = int(t.successConsecutiveCnt.Add(1))
 		t.failConsecutiveCnt.Store(0)

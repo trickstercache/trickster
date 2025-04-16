@@ -56,10 +56,11 @@ func TestGetSetRequestValues(t *testing.T) {
 
 	r, _ := http.NewRequest(http.MethodGet, "http://example.com/?"+params, nil)
 
-	v, s, hb := GetRequestValues(r)
+	v, b, hb := GetRequestValues(r)
 	if len(v) != 1 {
 		t.Errorf("expected %d got %d", 1, len(v))
 	}
+	s := string(b)
 	if s != params {
 		t.Errorf("expected %s got %s", params, s)
 	}
@@ -69,7 +70,8 @@ func TestGetSetRequestValues(t *testing.T) {
 
 	v.Set("param2", "value2")
 	SetRequestValues(r, v)
-	v, s, hb = GetRequestValues(r)
+	v, b, hb = GetRequestValues(r)
+	s = string(b)
 	if len(v) != 2 {
 		t.Errorf("expected %d got %d", 2, len(v))
 	}
@@ -82,7 +84,8 @@ func TestGetSetRequestValues(t *testing.T) {
 
 	r, _ = http.NewRequest(http.MethodPost, "http://example.com/", io.NopCloser(bytes.NewBufferString(params)))
 	r.Header.Set(headers.NameContentType, headers.ValueXFormURLEncoded)
-	v, s, hb = GetRequestValues(r)
+	v, b, hb = GetRequestValues(r)
+	s = string(b)
 	if len(v) != 1 {
 		t.Errorf("expected %d got %d", 1, len(v))
 	}
@@ -95,7 +98,8 @@ func TestGetSetRequestValues(t *testing.T) {
 
 	v.Set("param2", "value2")
 	SetRequestValues(r, v)
-	v, s, hb = GetRequestValues(r)
+	v, b, hb = GetRequestValues(r)
+	s = string(b)
 	if len(v) != 2 {
 		t.Errorf("expected %d got %d", 2, len(v))
 	}
@@ -108,7 +112,8 @@ func TestGetSetRequestValues(t *testing.T) {
 
 	r, _ = http.NewRequest(http.MethodPost, "http://example.com/", io.NopCloser(bytes.NewBufferString(params)))
 	r.Header.Set(headers.NameContentType, headers.ValueApplicationJSON)
-	v, s, hb = GetRequestValues(r)
+	v, b, hb = GetRequestValues(r)
+	s = string(b)
 	if len(v) != 0 {
 		t.Errorf("expected %d got %d", 1, len(v))
 	}
