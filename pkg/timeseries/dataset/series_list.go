@@ -18,6 +18,7 @@ package dataset
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 
@@ -39,7 +40,7 @@ func (sl SeriesList) Merge(sl2 SeriesList, sortPoints bool) SeriesList {
 	if len(sl) == 0 {
 		return sl2.Clone()
 	}
-	m := make(map[Hash]int)
+	m := make(map[Hash]*Series, len(sl)+len(sl2))
 	out := make(SeriesList, len(sl)+len(sl2))
 	var k int
 	for _, s := range sl {
@@ -51,11 +52,10 @@ func (sl SeriesList) Merge(sl2 SeriesList, sortPoints bool) SeriesList {
 			continue
 		}
 		out[k] = s
-		m[h] = k
+		m[h] = s
 		k++
 	}
 	seen := make(sets.Set[Hash], len(sl2))
-	var pj int
 	var wg sync.WaitGroup
 	for _, s := range sl2 {
 		if s == nil {
@@ -66,39 +66,25 @@ func (sl SeriesList) Merge(sl2 SeriesList, sortPoints bool) SeriesList {
 			continue
 		}
 		seen.Add(h)
-		j, ok := m[h]
-		if !ok { // new Series from sl2 to add to out
+		if cs, ok := m[h]; !ok {
+			// this series does not exist in sl1; add it into out
 			out[k] = s
-			m[h] = k
-			pj = k
+			m[h] = s
 			k++
-			continue
-		}
-		// series is in both sl and sl2, so this merges their points
-		wg.Add(1)
-		go func(s1, s2 *Series) {
-			s1.Points = MergePoints(s1.Points, s2.Points, sortPoints)
-			s1.PointSize = s1.Points.Size()
-			wg.Done()
-		}(out[j], s)
-		// this double-checks the series ordering
-		if j < pj {
-			pj = k - 1
-			copy(out[j:], out[j+1:k])
-			out[pj] = s
-			m = make(map[Hash]int)
-			for i, v := range out[:k] {
-				h := v.Header.CalculateHash()
-				if _, ok := m[h]; !ok {
-					m[h] = i
-				}
-			}
 		} else {
-			pj = j
+			// series is in both sl1 and sl2; merge their points
+			wg.Add(1)
+			func(s1, s2 *Series) {
+				s1.Points = MergePoints(s1.Points, s2.Points, sortPoints)
+				s1.PointSize = s1.Points.Size()
+				wg.Done()
+			}(cs, s)
 		}
 	}
 	wg.Wait()
-	return out[:k]
+	out = out[:k]
+	out.SortByTags()
+	return out
 }
 
 // EqualHeader returns true if the slice elements contain identical header
@@ -140,4 +126,24 @@ func (sl SeriesList) Clone() SeriesList {
 		k++
 	}
 	return out[:k]
+}
+
+func (sl SeriesList) SortByTags() {
+	lkp := make(map[string]*Series, len(sl))
+	keys := make([]string, len(sl))
+	var i int
+	for _, s := range sl {
+		if s == nil {
+			continue
+		}
+		key := fmt.Sprintf("%s.%s", s.Header.Tags, s.Header.Name)
+		lkp[key] = s
+		keys[i] = key
+		i++
+	}
+	keys = keys[:i]
+	slices.Sort(keys)
+	for i, key := range keys {
+		sl[i] = lkp[key]
+	}
 }

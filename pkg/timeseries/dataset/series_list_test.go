@@ -54,7 +54,7 @@ func TestListMerge(t *testing.T) {
 		{
 			sl1:      SeriesList{testSeries(), testSeries3()},
 			sl2:      SeriesList{testSeries(), testSeries2()},
-			expected: []string{"test", "test3", "test2"},
+			expected: []string{"test", "test2", "test3"},
 		},
 		{
 			sl1:      SeriesList{testSeries3(), testSeries2(), testSeries(), testSeries3()},
