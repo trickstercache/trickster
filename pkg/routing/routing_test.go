@@ -247,27 +247,6 @@ func TestRegisterProxyRoutesALB(t *testing.T) {
 
 }
 
-func TestRegisterProxyRoutesIRONdb(t *testing.T) {
-	logger.SetLogger(logging.ConsoleLogger(level.Error))
-	conf, err := config.Load([]string{"-origin-url", "http://example.com", "-provider", "irondb", "-log-level", "debug"})
-	if err != nil {
-		t.Fatalf("Could not load configuration: %s", err.Error())
-	}
-
-	caches := registration.LoadCachesFromConfig(conf)
-	defer registration.CloseCaches(caches)
-	logger.SetLogger(logging.ConsoleLogger(level.Info))
-	proxyClients, err := RegisterProxyRoutes(conf, lm.NewRouter(), lm.NewRouter(), caches,
-		nil, false)
-	if err != nil {
-		t.Error(err)
-	}
-
-	if len(proxyClients) == 0 {
-		t.Errorf("expected %d got %d", 1, 0)
-	}
-}
-
 func TestRegisterProxyRoutesWithReqRewriters(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	conf, err := config.Load([]string{"-config", "../../testdata/test.routing.req_rewriter.conf"})

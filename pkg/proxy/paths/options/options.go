@@ -79,13 +79,12 @@ type Options struct {
 	// CollapsedForwardingType is the typed representation of CollapsedForwardingName
 	CollapsedForwardingType forwarding.CollapsedForwardingType `yaml:"-"`
 	// KeyHasher points to an optional function that hashes the cacheKey with a custom algorithm
-	// NOTE: This is used by some backends like IronDB, but is not configurable by end users.
+	// NOTE: This can be used by backends, but is not configurable by end users.
 	KeyHasher key.HasherFunc `yaml:"-"`
 	// Custom is a compiled list of any custom settings for this path from the config file
 	Custom []string `yaml:"-"`
 	// ReqRewriter is the rewriter handler as indicated by RuleName
 	ReqRewriter rewriter.RewriteInstructions
-
 	// HasCustomResponseBody is a boolean indicating if the response body is custom
 	// this flag allows an empty string response to be configured as a return value
 	HasCustomResponseBody bool `yaml:"-"`

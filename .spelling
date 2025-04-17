@@ -180,8 +180,6 @@ lt
 bool
 auth
 v1
-circonus
-irondb
 CAQL
 frontend
 unparsable

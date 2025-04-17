@@ -38,8 +38,6 @@ const (
 	Prometheus
 	// InfluxDB represents the InfluxDB backend provider
 	InfluxDB
-	// IronDB represents the IRONdb backend provider
-	IronDB
 	// ClickHouse represents the ClickHouse backend provider
 	ClickHouse
 
@@ -57,7 +55,6 @@ var Names = map[string]Provider{
 	"alb":                  ALB,
 	"prometheus":           Prometheus,
 	"influxdb":             InfluxDB,
-	"irondb":               IronDB,
 	"clickhouse":           ClickHouse,
 	"proxy":                RP,
 	ReverseProxy:           RP,
@@ -81,7 +78,6 @@ var supportedTimeSeries = map[string]Provider{
 	"prometheus": Prometheus,
 	"influxdb":   InfluxDB,
 	"clickhouse": ClickHouse,
-	"irondb":     IronDB,
 }
 
 // IsSupportedTimeSeriesProvider returns true if the provided time series is supported by Trickster
