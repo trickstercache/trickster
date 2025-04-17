@@ -32,7 +32,7 @@ import (
 	gm "github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 )
 
-//go:generate msgp
+//go:generate go tool msgp
 
 // IndexKey is the key under which the index will write itself to its associated cache
 const IndexKey = "cache.index"

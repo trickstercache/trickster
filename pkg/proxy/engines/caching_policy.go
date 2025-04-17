@@ -27,7 +27,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
 
-//go:generate msgp
+//go:generate go tool msgp
 
 // CachingPolicy defines the attributes for determining the cachability of an HTTP object
 type CachingPolicy struct {

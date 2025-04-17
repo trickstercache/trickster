@@ -34,7 +34,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
-//go:generate msgp
+//go:generate go tool msgp
 
 // HTTPDocument represents a full HTTP Response/Cache Document with unbuffered body
 type HTTPDocument struct {
