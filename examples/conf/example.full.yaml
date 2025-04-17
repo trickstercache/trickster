@@ -231,7 +231,7 @@ backends:
   default:
 
     # provider identifies the backend provider.
-    # Valid options are: prometheus, influxdb, clickhouse, irondb, reverseproxycache (or just rpc)
+    # Valid options are: prometheus, influxdb, clickhouse, reverseproxycache (or just rpc)
     # provider is a required configuration value
     provider: prometheus
 
