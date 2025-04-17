@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-//go:generate msgp
+//go:generate go tool msgp
 
 // Package dataset defines the interface for managing time seres objects
 // and provides time range manipulation capabilities

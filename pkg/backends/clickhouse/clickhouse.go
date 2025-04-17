@@ -68,11 +68,11 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 		sqlQuery = string(originalBody)
 	} else {
 		qi = r.URL.Query()
-		if p, ok := qi[upQuery]; ok {
-			sqlQuery = p[0]
-		} else {
+		p, ok := qi[upQuery]
+		if !ok {
 			return nil, nil, false, errors.MissingURLParam(upQuery)
 		}
+		sqlQuery = p[0]
 	}
 
 	trq, ro, canOPC, err := parse(sqlQuery)

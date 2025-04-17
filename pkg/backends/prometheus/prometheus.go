@@ -141,36 +141,35 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	if trq.Statement == "" {
 		return nil, nil, false, errors.MissingURLParam(upQuery)
 	}
-
-	if p := qp.Get(upStart); p != "" {
-		t, err := parseTime(p)
-		if err != nil {
-			return nil, nil, false, err
-		}
-		trq.Extent.Start = t
-	} else {
+	p := qp.Get(upStart)
+	if p == "" {
 		return nil, nil, false, errors.MissingURLParam(upStart)
 	}
+	t, err := parseTime(p)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	trq.Extent.Start = t
 
-	if p := qp.Get(upEnd); p != "" {
-		t, err := parseTime(p)
-		if err != nil {
-			return nil, nil, false, err
-		}
-		trq.Extent.End = t
-	} else {
+	p = qp.Get(upEnd)
+	if p == "" {
 		return nil, nil, false, errors.MissingURLParam(upEnd)
 	}
+	t, err = parseTime(p)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	trq.Extent.End = t
 
-	if p := qp.Get(upStep); p != "" {
-		step, err := parseDuration(p)
-		if err != nil {
-			return nil, nil, false, err
-		}
-		trq.Step = step
-	} else {
+	p = qp.Get(upStep)
+	if p == "" {
 		return nil, nil, false, errors.MissingURLParam(upStep)
 	}
+	step, err := parseDuration(p)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	trq.Step = step
 
 	if strings.Contains(trq.Statement, " offset ") {
 		trq.IsOffset = true

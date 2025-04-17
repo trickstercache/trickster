@@ -34,7 +34,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
-//go:generate msgp
+//go:generate go tool msgp
 
 // HTTPDocument represents a full HTTP Response/Cache Document with unbuffered body
 type HTTPDocument struct {
@@ -136,9 +136,8 @@ func (d *HTTPDocument) getByteRanges() byterange.Ranges {
 		return d.Ranges
 	} else if ranges := d.RangeParts.Ranges(); len(ranges) > 0 {
 		return ranges
-	} else {
-		return byterange.Ranges{byterange.Range{Start: 0, End: d.ContentLength}}
 	}
+	return byterange.Ranges{byterange.Range{Start: 0, End: d.ContentLength}}
 }
 
 // SafeHeaderClone returns a threadsafe copy of the Document Header
@@ -264,7 +263,9 @@ func (d *HTTPDocument) ParsePartialContentBody(resp *http.Response,
 	if d.ContentLength > 0 && len(d.RangeParts) == 1 &&
 		d.RangeParts[d.RangeParts.Ranges()[0]].Range.Start == 0 &&
 		d.RangeParts[d.RangeParts.Ranges()[0]].Range.End == d.ContentLength-1 {
-		d.FulfillContentBody()
+		if err := d.FulfillContentBody(); err != nil {
+			return
+		}
 	}
 
 	d.headerLock.Lock()

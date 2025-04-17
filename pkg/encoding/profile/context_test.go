@@ -42,7 +42,7 @@ func TestContext(t *testing.T) {
 		t.Error("expected nil")
 	}
 
-	ctx2 = ToContext(nil, ep)
+	ctx2 = ToContext(nil, ep) //lint:ignore SA1012 - we want to test nil context
 	if ctx2 != nil {
 		t.Error("expected nil")
 	}

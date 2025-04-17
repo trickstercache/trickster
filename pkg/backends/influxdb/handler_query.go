@@ -42,12 +42,13 @@ func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 	qp, qb, fromBody := params.GetRequestValues(r)
 	q := strings.Trim(strings.ToLower(qp.Get(upQuery)), " \t\n")
 	if q == "" {
-		if len(qb) > 0 && fromBody {
-			q = string(qb)
-		} else {
+
+		if len(qb) == 0 || !fromBody {
 			c.ProxyHandler(w, r)
 			return
 		}
+		q = string(qb)
+
 	}
 
 	// if it's not a select statement, just proxy it instead

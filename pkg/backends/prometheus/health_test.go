@@ -20,6 +20,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 )
 
@@ -28,9 +29,7 @@ func TestDefaultHealthCheckConfig(t *testing.T) {
 	c, _ := NewClient("test", bo.New(), nil, nil, nil, nil)
 
 	dho := c.DefaultHealthCheckConfig()
-	if dho == nil {
-		t.Error("expected non-nil result")
-	}
+	require.NotNil(t, dho)
 
 	if !strings.HasSuffix(dho.Path, "/api/v1/query") {
 		t.Error("expected path to end with /api/v1/query", dho.Path)

@@ -24,11 +24,17 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: stable
+      - run: |
+          make check-codegen
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v7
         with:
           version: v2.0.2
           args: --timeout 5m
+      - uses: dominikh/staticcheck-action@v1
+        with:
+          install-go: false
+          version: "2025.1.1"
   docker:
     runs-on: ubuntu-latest
     steps:

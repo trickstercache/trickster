@@ -412,11 +412,11 @@ Loop:
 		case lex.EOF, '\n':
 			return rs.EmitToken(rs.Errorf("unterminated quoted string"))
 		case '\'':
-			if r = rs.Peek(); r == '\'' {
-				rs.Next()
-			} else {
+			if r = rs.Peek(); r != '\'' {
 				break Loop
 			}
+			rs.Next()
+
 		}
 	}
 	rs.Emit(token.String)

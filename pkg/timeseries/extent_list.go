@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-//go:generate msgp
+//go:generate go tool msgp
 
 package timeseries
 

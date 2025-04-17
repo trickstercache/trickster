@@ -12,6 +12,7 @@ linters:
     - unconvert
     - grouper
     - gocritic
+    - revive
   disable:
     - errcheck
   settings:
@@ -31,6 +32,90 @@ linters:
      disabled-checks:
        - unslice # stylistic choice, ok with slice[:] references
        - ifElseChain # false positives / prefers switch statements
+    revive:
+      enable-all-rules: true
+      rules:
+        - name: unhandled-error
+          arguments: # Allow skipping errors for the following functions
+          - fmt.Print
+          - fmt.Println
+          - fmt.Printf
+          - fmt.Fprintf
+          - fmt.Fprint
+          - strings.Builder.WriteString
+          - os.Remove
+          - encoding/pem.Encode
+          - strings.Builder.WriteByte
+          - strings.Builder.Write
+          - text/tabwriter.Writer.Write
+          - text/tabwriter.Writer.Flush
+          - io.Writer.Write
+          - io.Closer.Close
+          - io.Copy
+          - bytes.Buffer.Write
+          - net/http.ResponseWriter.Write
+          - mime/multipart.Writer.Close
+          - mime/multipart.Writer.SetBoundary
+          - net/http.Request.ParseForm
+          - compress/gzip.Writer.Close
+          - compress/flate.Writer.Write
+          - compress/flate.Writer.Close
+          - net/http.Request.ParseMultipartForm
+          - handler.ResponseEncoder.Close
+          - config.Config.setDefaults
+        - name: exported
+          arguments:
+          - disableStutteringCheck
+        - name: unused-parameter
+          disabled: true # very noisy, lots of code with unused parameters; revisit later
+        - name: line-length-limit
+          disabled: true # prefer lll linter instead
+        - name: add-constant
+          disabled: true # very noisy, revisit later
+        - name: empty-lines
+          disabled: true # stylistic choice, ok with empty lines
+        - name: cognitive-complexity
+          disabled: true # too noisy, revisit later
+        - name: time-naming
+          disabled: true # stylistic choice, warnings not helpful
+        - name: cyclomatic
+          disabled: true # not helpful, perhaps later
+        - name: max-public-structs
+          disabled: true # not useful
+        - name: function-result-limit
+          disabled: true # not useful
+        - name: confusing-results
+          disabled: true # not useful
+        - name: function-length
+          disabled: true # not useful
+        - name: unchecked-type-assertion
+          disabled: true # not helpful, we have many of these; revisit later
+        - name: unused-receiver
+          disabled: true # not helpful, revisit later
+        - name: flag-parameter
+          disabled: true # not helpful, revisit later
+        - name: unexported-naming
+          disabled: true # not helpful, false positives
+        - name: redefines-builtin-id
+          disabled: true # not helpful
+        - name: argument-limit
+          disabled: true # not helpful
+        - name: confusing-naming
+          disabled: true # not helpful, revisit later
+        - name: use-any
+          disabled: true # too many hits, revisit in standalone PR
+        - name: deep-exit
+          disabled: true # not helpful
+        - name: max-control-nesting
+          disabled: true # not helpful
+        - name: defer
+          disabled: true # not helpful
+        - name: struct-tag
+          disabled: true # not helpful
+        - name: bare-return
+          disabled: true # stylistic choice, ok with bare returns
+        - name: import-shadowing
+          disabled: true # not helpful; considering a stylistic choice
   exclusions:
     generated: lax
     presets:

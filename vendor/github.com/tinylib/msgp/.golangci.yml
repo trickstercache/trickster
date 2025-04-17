@@ -1,0 +1,9 @@
+linters:
+  disable:
+    - errcheck
+
+linters-settings:
+  staticcheck:
+    checks:
+      - all
+      - '-SA1019' # We use the ast package.

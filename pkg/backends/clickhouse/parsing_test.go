@@ -25,13 +25,10 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/parsing"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/lex/sql"
-	lsql "github.com/trickstercache/trickster/v2/pkg/parsing/lex/sql"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/token"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/sqlparser"
 )
-
-const tqNoFrom = `WITH some value SELECT toStartOfFiveMinute(datetime) AS t, count() as cnt`
 
 const tq00 = `/* this tests a multi-line comment at the front, where the query continues after` +
 	`, and on the same line as, the comment closing delimiter
@@ -170,7 +167,7 @@ func TestAtWith(t *testing.T) {
 		t.Error("expected nil StateFn")
 	}
 
-	tk = token.Tokens{&token.Token{Typ: lsql.TokenWith, Val: "with"}}
+	tk = token.Tokens{&token.Token{Typ: sql.TokenWith, Val: "with"}}
 	rs = parsing.NewRunState(context.Background(), tk)
 	rs.Next()
 	atWith(nil, nil, rs)
@@ -179,8 +176,8 @@ func TestAtWith(t *testing.T) {
 	}
 
 	tk = token.Tokens{
-		&token.Token{Typ: lsql.TokenWith, Val: "with"},
-		&token.Token{Typ: lsql.TokenSelect, Val: "select"},
+		&token.Token{Typ: sql.TokenWith, Val: "with"},
+		&token.Token{Typ: sql.TokenSelect, Val: "select"},
 	}
 
 	rs = parsing.NewRunState(context.Background(), tk)
@@ -191,7 +188,7 @@ func TestAtWith(t *testing.T) {
 	}
 
 	tk = token.Tokens{
-		&token.Token{Typ: lsql.TokenWith, Val: "with"},
+		&token.Token{Typ: sql.TokenWith, Val: "with"},
 		&token.Token{Typ: token.EOF},
 	}
 	rs = parsing.NewRunState(context.Background(), tk)
@@ -202,9 +199,9 @@ func TestAtWith(t *testing.T) {
 	}
 
 	tk = token.Tokens{
-		&token.Token{Typ: lsql.TokenWith, Val: "with"},
+		&token.Token{Typ: sql.TokenWith, Val: "with"},
 		&token.Token{Typ: token.Identifier, Val: "x"},
-		&token.Token{Typ: lsql.TokenSelect, Val: "select"},
+		&token.Token{Typ: sql.TokenSelect, Val: "select"},
 	}
 	rs = parsing.NewRunState(context.Background(), tk)
 	rs.Next()
@@ -231,7 +228,7 @@ func TestAtPreWhere(t *testing.T) {
 func TestAtFormat(t *testing.T) {
 
 	tk := token.Tokens{
-		&token.Token{Typ: lsql.TokenComment},
+		&token.Token{Typ: sql.TokenComment},
 		&token.Token{Typ: token.EOF},
 	}
 	rs := parsing.NewRunState(context.Background(), tk)
@@ -323,7 +320,7 @@ func TestParseSelectTokens(t *testing.T) {
 				&token.Token{Typ: token.Number, Val: "60"},
 				&token.Token{Typ: token.Multiply, Val: "*"},
 				&token.Token{Typ: token.Number, Val: "1000"},
-				&token.Token{Typ: lsql.TokenAs, Val: "as"},
+				&token.Token{Typ: sql.TokenAs, Val: "as"},
 				&token.Token{Typ: token.Identifier, Val: "y"},
 			},
 		},
@@ -344,7 +341,7 @@ func TestParseSelectTokens(t *testing.T) {
 				&token.Token{Typ: token.Number, Val: "not-a-number"},
 				&token.Token{Typ: token.Multiply, Val: "*"},
 				&token.Token{Typ: token.Number, Val: "1000"},
-				&token.Token{Typ: lsql.TokenAs, Val: "as"},
+				&token.Token{Typ: sql.TokenAs, Val: "as"},
 				&token.Token{Typ: token.Identifier, Val: "y"},
 			},
 		},
@@ -365,7 +362,7 @@ func TestParseSelectTokens(t *testing.T) {
 				&token.Token{Typ: token.Number, Val: "60"},
 				&token.Token{Typ: token.Multiply, Val: "*"},
 				&token.Token{Typ: token.Number, Val: "not-a-number"},
-				&token.Token{Typ: lsql.TokenAs, Val: "as"},
+				&token.Token{Typ: sql.TokenAs, Val: "as"},
 				&token.Token{Typ: token.Identifier, Val: "y"},
 			},
 		},
@@ -386,7 +383,7 @@ func TestParseSelectTokens(t *testing.T) {
 				&token.Token{Typ: token.Number, Val: "60"},
 				&token.Token{Typ: token.Multiply, Val: "*"},
 				&token.Token{Typ: token.Number, Val: "360"},
-				&token.Token{Typ: lsql.TokenAs, Val: "as"},
+				&token.Token{Typ: sql.TokenAs, Val: "as"},
 				&token.Token{Typ: token.Identifier, Val: "y"},
 			},
 		},
@@ -407,7 +404,7 @@ func TestParseSelectTokens(t *testing.T) {
 				&token.Token{Typ: token.Number, Val: "60"},
 				&token.Token{Typ: token.Multiply, Val: "*"},
 				&token.Token{Typ: token.Number, Val: "60"},
-				&token.Token{Typ: lsql.TokenAs, Val: "as"},
+				&token.Token{Typ: sql.TokenAs, Val: "as"},
 				&token.Token{Typ: token.Identifier, Val: "y"},
 			},
 		},
@@ -428,7 +425,7 @@ func TestParseSelectTokens(t *testing.T) {
 				&token.Token{Typ: token.Number, Val: "60"},
 				&token.Token{Typ: token.Multiply, Val: "*"},
 				&token.Token{Typ: token.Number, Val: "60"},
-				&token.Token{Typ: lsql.TokenAs, Val: "as"},
+				&token.Token{Typ: sql.TokenAs, Val: "as"},
 				&token.Token{Typ: token.Identifier, Val: "y"},
 			},
 		},
@@ -474,7 +471,7 @@ func TestParseGroupByTokens(t *testing.T) {
 	_, err := parseGroupByTokens(map[string]interface{}{
 		"groupByTokens": nil,
 	}, nil, nil)
-	if err != lsql.ErrInvalidGroupByClause {
+	if err != sql.ErrInvalidGroupByClause {
 		t.Error("expected ErrInvalidGroupByClause")
 	}
 }
@@ -514,7 +511,7 @@ func TestParseWhereTokens(t *testing.T) {
 				&token.Token{Typ: token.String, Val: "not-a-time"},
 			},
 		}, nil, nil, nil, &timeseries.RequestOptions{BaseTimestampFieldName: "x"},
-			lsql.ErrInvalidInputLength,
+			sql.ErrInvalidInputLength,
 		},
 		{[]token.Tokens{ // 6
 			{
@@ -526,7 +523,7 @@ func TestParseWhereTokens(t *testing.T) {
 			},
 		}, nil, nil, &timeseries.TimeRangeQuery{Step: 60 * time.Second},
 			&timeseries.RequestOptions{BaseTimestampFieldName: "x"},
-			lsql.ErrInvalidInputLength,
+			sql.ErrInvalidInputLength,
 		},
 	}
 	for i, test := range tests {

@@ -145,6 +145,7 @@ style:
 .PHONY: lint
 lint:
 	@golangci-lint run
+	@staticcheck ./...
 
 GO_TEST_FLAGS ?= -coverprofile=.coverprofile
 .PHONY: test
@@ -191,6 +192,12 @@ insert-license-headers:
 		fi ; \
 	done
 
+CODEGEN_PATHS ?= "'./pkg/**_gen.go' './cmd/**_gen.go'"
+.PHONY: check-codegen
+check-codegen:
+	@$(MAKE) generate > /dev/null
+	@git diff --name-only --exit-code ${CODEGEN_PATHS}
+
 .PHONY: check-license-headers
 check-license-headers:
 	@for file in $$(find ./pkg ./cmd -name '*.go') ; \
@@ -235,10 +242,15 @@ serve-info:
 	@cd cmd/trickster && go run . -config /etc/trickster/trickster.yaml --log-level info
 
 .PHONY: get-tools
-get-tools:
+get-tools: get-msgpack
 	@echo "Installing tools..."
 	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.0.2
-	go install github.com/tinylib/msgp@v1.2.5
+	go install honnef.co/go/tools/cmd/staticcheck@2025.1.1
+	go install github.com/securego/gosec/v2/cmd/gosec@v2.22.3
+
+.PHONY: get-msgpack
+get-msgpack:
+	$(GO) get -tool github.com/tinylib/msgp@v1.2.5
 
 .PHONY: developer-start
 start-developer:

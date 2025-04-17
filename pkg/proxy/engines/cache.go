@@ -72,10 +72,10 @@ func queryConcurrent(_ context.Context, c cache.Cache, key string, cr chan<- *qu
 		if ifc != nil {
 			qr.d, _ = ifc.(*HTTPDocument)
 		} else {
-			if cr != nil {
-				cr <- qr
+			if cr == nil {
+				return qr
 			}
-			return qr
+			cr <- qr
 		}
 
 	} else {
@@ -142,13 +142,12 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 	qr := queryConcurrent(ctx, c, key, nil, nil)
 	if qr.err != nil {
 		return qr.d, qr.lookupStatus, ranges, qr.err
-	} else {
-		if unmarshal != nil {
-			qr.d.timeseries, _ = unmarshal(qr.d.Body, nil)
-		}
-		d = qr.d
-		lookupStatus = qr.lookupStatus
 	}
+	if unmarshal != nil {
+		qr.d.timeseries, _ = unmarshal(qr.d.Body, nil)
+	}
+	d = qr.d
+	lookupStatus = qr.lookupStatus
 
 	// If we got a meta document and want to use cache chunking, do so
 	if c.Configuration().UseCacheChunking {
@@ -243,7 +242,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 			wg.Wait()
 			close(cr)
 			// Handle results
-			dbl_lock := &sync.Mutex{}
+			mtx := &sync.Mutex{}
 			var dbl int64
 			for qr := range cr {
 				// Return on error
@@ -263,11 +262,11 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 						for _, r := range qrc.d.Ranges {
 							content := qrc.d.Body[r.Start%size : r.End%size+1]
 							r.Copy(d.Body, content)
-							dbl_lock.Lock()
+							mtx.Lock()
 							if r.End+1 > dbl {
 								dbl = r.End + 1
 							}
-							dbl_lock.Unlock()
+							mtx.Unlock()
 						}
 					}
 				}(qr)
@@ -573,7 +572,9 @@ func DocumentFromHTTPResponse(resp *http.Response, body []byte,
 
 	if d.StatusCode == http.StatusPartialContent && body != nil && len(body) > 0 {
 		d.ParsePartialContentBody(resp, body)
-		d.FulfillContentBody()
+		if err := d.FulfillContentBody(); err != nil {
+			return d
+		}
 	} else {
 		d.SetBody(body)
 	}
