@@ -218,7 +218,10 @@ func (c *Cache) SetTTL(cacheKey string, ttl time.Duration) {
 
 // Remove removes an object in cache, if present
 func (c *Cache) Remove(cacheKey string) {
-	c.remove(cacheKey, false)
+	if err := c.remove(cacheKey, false); err != nil {
+		logger.Error("bbolt cache key delete failure",
+			logging.Pairs{"cacheKey": cacheKey, "reason": err.Error()})
+	}
 }
 
 func (c *Cache) remove(cacheKey string, isBulk bool) error {
@@ -229,8 +232,6 @@ func (c *Cache) remove(cacheKey string, isBulk bool) error {
 	})
 	nl.Release()
 	if err != nil {
-		logger.Error("bbolt cache key delete failure",
-			logging.Pairs{"cacheKey": cacheKey, "reason": err.Error()})
 		return err
 	}
 	if !isBulk {
@@ -244,12 +245,15 @@ func (c *Cache) remove(cacheKey string, isBulk bool) error {
 // BulkRemove removes a list of objects from the cache
 func (c *Cache) BulkRemove(cacheKeys []string) {
 	wg := &sync.WaitGroup{}
-	for _, cacheKey := range cacheKeys {
-		wg.Add(1)
-		go func(key string) {
-			c.remove(key, true)
+	wg.Add(len(cacheKeys))
+	for i, cacheKey := range cacheKeys {
+		go func(index int, key string) {
+			if err := c.remove(key, true); err != nil {
+				logger.Error("bbolt cache key delete failure",
+					logging.Pairs{"cacheKey": key, "reason": err.Error(), "index": index, "key-count": len(cacheKeys)})
+			}
 			wg.Done()
-		}(cacheKey)
+		}(i, cacheKey)
 	}
 	wg.Wait()
 }

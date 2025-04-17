@@ -14,25 +14,8 @@
  * limitations under the License.
  */
 
-package clickhouse
+package cmp
 
-import (
-	"strings"
-	"testing"
-
-	"github.com/stretchr/testify/require"
-	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
-)
-
-func TestDefaultHealthCheckConfig(t *testing.T) {
-
-	c, _ := NewClient("test", bo.New(), nil, nil, nil, nil)
-
-	dho := c.DefaultHealthCheckConfig()
-	require.NotNil(t, dho)
-
-	if !strings.HasPrefix(dho.Query, "query=SELECT") {
-		t.Error("expected SELECT-based query string")
-	}
-
+func Equal[T comparable](x, y T) bool {
+	return x == y
 }

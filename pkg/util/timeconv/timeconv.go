@@ -60,7 +60,7 @@ const (
 // PLEASE NOTE that when parsing durations, these units will be checked in this order--for example,
 // if minute "m" is before month "mo" or millisecond "ms", the parser will fail to recognize months and milliseconds
 // in duration literals.
-var Units []DurationUnit = []DurationUnit{
+var Units = []DurationUnit{
 	UnitMonth,
 	UnitMillisecond,
 	UnitMicrosecond,
@@ -78,7 +78,7 @@ var Units []DurationUnit = []DurationUnit{
 	UnitMicroBC,
 }
 
-var Durations map[DurationUnit]time.Duration = map[DurationUnit]time.Duration{
+var Durations = map[DurationUnit]time.Duration{
 	UnitYear:          Year,
 	UnitMonth:         Month,
 	UnitWeek:          Week,

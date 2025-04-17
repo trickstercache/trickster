@@ -108,7 +108,9 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 						reader.Close()
 					}
 				}()
-				pcf.AddClient(writer)
+				if err := pcf.AddClient(writer); err != nil {
+					return nil
+				}
 			}
 		} else {
 			pcf, _ := result.(ProgressiveCollapseForwarder)
@@ -116,7 +118,9 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 			pr.mapLock.Lock()
 			writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)
 			pr.mapLock.Unlock()
-			pcf.AddClient(writer)
+			if err := pcf.AddClient(writer); err != nil {
+				return nil
+			}
 		}
 	}
 
@@ -308,17 +312,15 @@ func recordResults(r *http.Request, engine string, cacheStatus status.LookupStat
 	rsc := request.GetResources(r)
 	pc := rsc.PathConfig
 	o := rsc.BackendOptions
-
-	status := cacheStatus.String()
+	s := cacheStatus.String()
 
 	if pc != nil && !pc.NoMetrics {
 		httpStatus := strconv.Itoa(statusCode)
-		metrics.ProxyRequestStatus.WithLabelValues(o.Name, o.Provider, r.Method, status,
-			httpStatus, path).Inc()
+		lvs := []string{o.Name, o.Provider, r.Method, s, httpStatus, path}
+		metrics.ProxyRequestStatus.WithLabelValues(lvs...).Inc()
 		if elapsed > 0 {
-			metrics.ProxyRequestDuration.WithLabelValues(o.Name, o.Provider,
-				r.Method, status, httpStatus, path).Observe(elapsed)
+			metrics.ProxyRequestDuration.WithLabelValues(lvs...).Observe(elapsed)
 		}
 	}
-	headers.SetResultsHeader(header, engine, status, ffStatus, extents)
+	headers.SetResultsHeader(header, engine, s, ffStatus, extents)
 }

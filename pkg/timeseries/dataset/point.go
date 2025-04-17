@@ -22,6 +22,7 @@ import (
 	"slices"
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
+	"github.com/trickstercache/trickster/v2/pkg/util/cmp"
 )
 
 // Point represents a timeseries data point
@@ -54,44 +55,10 @@ func PointsAreEqual(p1, p2 Point) bool {
 		return false
 	}
 	for i, v := range p1.Values {
-		switch t := v.(type) {
-		case float64:
-			if f, ok := p2.Values[i].(float64); !ok || t != f {
-				return false
-			} else {
-				continue
-			}
-		case int64:
-			if i, ok := p2.Values[i].(int64); !ok || t != i {
-				return false
-			} else {
-				continue
-			}
-		case bool:
-			if t2, ok := p2.Values[i].(bool); !ok || t != t2 {
-				return false
-			} else {
-				continue
-			}
-		case float32:
-			if f, ok := p2.Values[i].(float32); !ok || t != f {
-				return false
-			} else {
-				continue
-			}
-		case int:
-			if i, ok := p2.Values[i].(int); !ok || t != i {
-				return false
-			} else {
-				continue
-			}
-		case string:
-			if s, ok := p2.Values[i].(string); !ok || t != s {
-				return false
-			} else {
-				continue
-			}
+		if !cmp.Equal(p2.Values[i], v) {
+			return false
 		}
+		continue
 	}
 
 	return true

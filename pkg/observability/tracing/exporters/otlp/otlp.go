@@ -34,28 +34,28 @@ import (
 )
 
 // New returns a new OTLP Tracer based on the provided options
-func New(options *options.Options) (*tracing.Tracer, error) {
+func New(o *options.Options) (*tracing.Tracer, error) {
 	var tp trace.TracerProvider
 	var err error
 
-	if options == nil {
+	if o == nil {
 		return nil, errs.ErrNoTracerOptions
 	}
 
 	var sampler sdktrace.Sampler
-	switch options.SampleRate {
+	switch o.SampleRate {
 	case 0:
 		sampler = sdktrace.NeverSample()
 	case 1:
 		sampler = sdktrace.AlwaysSample()
 	default:
-		sampler = sdktrace.TraceIDRatioBased(options.SampleRate)
+		sampler = sdktrace.TraceIDRatioBased(o.SampleRate)
 	}
 
 	var tags []attribute.KeyValue
-	if len(options.Tags) > 0 {
-		tags = make([]attribute.KeyValue, len(options.Tags))
-		for k, v := range options.Tags {
+	if len(o.Tags) > 0 {
+		tags = make([]attribute.KeyValue, len(o.Tags))
+		for k, v := range o.Tags {
 			tags = append(tags, attribute.String(k, v))
 		}
 	}
@@ -64,28 +64,28 @@ func New(options *options.Options) (*tracing.Tracer, error) {
 	// this determines if the collector endpoint is a path, uri or url
 	// and calls the appropriate Options decorator
 	switch {
-	case strings.HasPrefix(options.Endpoint, "/"):
-		opts = append(opts, otlp.WithURLPath(options.Endpoint))
-	case strings.HasPrefix(options.Endpoint, "http"):
-		opts = append(opts, otlp.WithEndpointURL(options.Endpoint))
-		if !strings.HasPrefix(options.Endpoint, "https") {
+	case strings.HasPrefix(o.Endpoint, "/"):
+		opts = append(opts, otlp.WithURLPath(o.Endpoint))
+	case strings.HasPrefix(o.Endpoint, "http"):
+		opts = append(opts, otlp.WithEndpointURL(o.Endpoint))
+		if !strings.HasPrefix(o.Endpoint, "https") {
 			opts = append(opts, otlp.WithInsecure())
 		}
 	default:
-		otlp.WithEndpoint(options.Endpoint)
+		otlp.WithEndpoint(o.Endpoint)
 	}
 
-	if options.TimeoutMS > 0 {
+	if o.TimeoutMS > 0 {
 		opts = append(opts, otlp.WithTimeout(
-			time.Millisecond*time.Duration(int64(options.TimeoutMS))),
+			time.Millisecond*time.Duration(int64(o.TimeoutMS))),
 		)
 	}
 
-	if len(options.Headers) > 0 {
-		opts = append(opts, otlp.WithHeaders(options.Headers))
+	if len(o.Headers) > 0 {
+		opts = append(opts, otlp.WithHeaders(o.Headers))
 	}
 
-	if !options.DisableCompression {
+	if !o.DisableCompression {
 		opts = append(opts, otlp.WithCompression(otlp.GzipCompression))
 	}
 
@@ -102,12 +102,12 @@ func New(options *options.Options) (*tracing.Tracer, error) {
 	}
 	tracerOpts = append(tracerOpts, sdktrace.WithBatcher(exporter))
 	tp = sdktrace.NewTracerProvider(tracerOpts...)
-	tracer := tp.Tracer(options.Name)
+	tracer := tp.Tracer(o.Name)
 
 	return &tracing.Tracer{
-		Name:         options.Name,
+		Name:         o.Name,
 		Tracer:       tracer,
-		Options:      options,
+		Options:      o,
 		ShutdownFunc: exporter.Shutdown,
 	}, nil
 }

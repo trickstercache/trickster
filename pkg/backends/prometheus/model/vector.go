@@ -80,6 +80,5 @@ func MergeAndWriteVector(w http.ResponseWriter, r *http.Request, rgs merge.Respo
 		return
 	}
 
-	MarshalTSOrVectorWriter(ts, nil, bestResp.StatusCode, w, true)
-
+	MarshalTSOrVectorWriter(ts, nil, bestResp.StatusCode, w, true) //revive:disable:unhandled-error
 }

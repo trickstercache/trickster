@@ -44,7 +44,7 @@ func TestHops(t *testing.T) {
 
 	ctx = context.Background()
 	IncrementedRewriterHops(ctx, 5)
-	i = RewriterHops(ctx)
+	_ = RewriterHops(ctx)
 	ctx = StartRewriterHops(ctx)
 	IncrementedRewriterHops(ctx, 5)
 	i = RewriterHops(ctx)

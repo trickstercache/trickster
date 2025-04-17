@@ -36,7 +36,7 @@ func TestDecodeEncode(t *testing.T) {
 		t.Errorf("expected %s got %s", expected, string(b))
 	}
 
-	b, err = Decode([]byte(expected))
+	_, err = Decode([]byte(expected))
 	if err == nil {
 		t.Error("expected EOF error")
 	}
@@ -55,9 +55,7 @@ func TestNewDecoder(t *testing.T) {
 		t.Error("expected non-nil decoder")
 	}
 
-	r = bytes.NewReader([]byte(expected))
-	dec = NewDecoder(r)
-	b, err = Decode([]byte(expected))
+	_, err = Decode([]byte(expected))
 	if err == nil {
 		t.Error("expected EOF error")
 	}

@@ -106,6 +106,14 @@ func TestPointEqual(t *testing.T) {
 	}
 }
 
+func BenchmarkPointsAreEqual(b *testing.B) {
+	p1 := testPoints()[0]
+	p2 := testPoints()[1]
+	for i := 0; i < b.N; i++ {
+		PointsAreEqual(p1, p2)
+	}
+}
+
 func TestPointClone(t *testing.T) {
 	p := &Point{
 		Epoch:  epoch.Epoch(1),
