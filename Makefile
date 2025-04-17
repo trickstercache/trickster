@@ -192,6 +192,12 @@ insert-license-headers:
 		fi ; \
 	done
 
+CODEGEN_PATHS ?= "'./pkg/**_gen.go' './cmd/**_gen.go'"
+.PHONY: check-codegen
+check-codegen:
+	@$(MAKE) generate > /dev/null
+	@git diff --name-only --exit-code ${CODEGEN_PATHS}
+
 .PHONY: check-license-headers
 check-license-headers:
 	@for file in $$(find ./pkg ./cmd -name '*.go') ; \
@@ -241,6 +247,7 @@ get-tools:
 	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.0.2
 	go install github.com/tinylib/msgp@v1.2.5
 	go install honnef.co/go/tools/cmd/staticcheck@2025.1.1
+	go install github.com/securego/gosec/v2/cmd/gosec@v2.22.3
 
 .PHONY: start-developer
 start-developer:

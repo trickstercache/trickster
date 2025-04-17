@@ -25,6 +25,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
+//go:generate msgp
+
 // SeriesList is an ordered list of Series
 type SeriesList []*Series
 
