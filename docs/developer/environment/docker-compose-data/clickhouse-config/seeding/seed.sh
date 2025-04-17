@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 # 
 #  Copyright 2018 The Trickster Authors
@@ -47,7 +47,30 @@ FILE2="data/trips_2.gz"
 URL1="https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_1.gz"
 URL2="https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_2.gz"
 
+AGE_THRESHOLD=$((60 * 60 * 24 * 7))
 LC_CTYPE=C # allows sed to play nice with TSV files that have some binary data
+
+is_old_file() {
+  local file="$1"
+  if [ -f "$file" ]; then
+    local mtime
+    mtime=$(stat -c %Y "$file")
+    local now
+    now=$(date +%s)
+    local age=$((now - mtime))
+    [ "$age" -gt "$AGE_THRESHOLD" ]
+  else
+    return 1
+  fi
+}
+
+# pass the RESEED=1 env to wipe any cached seed data, that may have old dates.
+# if the seed data is older than 7 days, it will auto-wipe here as well.
+if [ "$RESEED" = "1" ] || is_old_file "$FILE1" || is_old_file "$FILE2"; then
+  echo "Deleting seed data cache."
+  rm -f "$FILE1"
+  rm -f "$FILE2"
+fi
 
 download_transform() {
     if [ ! -f "$1" ]; then

@@ -240,13 +240,17 @@ get-tools:
 	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.0.2
 	go install github.com/tinylib/msgp@v1.2.5
 
-.PHONY: start-developer
+.PHONY: developer-start
 start-developer:
 	@cd docs/developer/environment && docker compose up -d
 	
-.PHONY: delete-developer
+.PHONY: developer-delete
 delete-developer:
 	@cd docs/developer/environment && docker compose down
+
+.PHONY: developer-reseed
+developer-reseed:
+	@cd docs/developer/environment && docker compose run --rm -e RESEED=1 clickhouse_seed
 
 .PHONY: serve-dev
 serve-dev:
