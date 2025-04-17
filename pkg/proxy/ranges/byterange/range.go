@@ -27,7 +27,7 @@ import (
 	"strings"
 )
 
-//go:generate msgp
+//go:generate go tool msgp
 
 // Range represents the start and end for a byte range object
 type Range struct {

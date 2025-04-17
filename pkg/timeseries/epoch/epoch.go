@@ -16,7 +16,7 @@
 
 package epoch
 
-//go:generate msgp
+//go:generate go tool msgp
 
 // Epoch represents an Epoch timestamp in Nanoseconds and has possible values
 // between 1970/1/1 and 2262/4/12

@@ -24,6 +24,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: stable
+      - run: |
+          make check-codegen
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v7
         with:
