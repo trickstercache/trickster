@@ -106,7 +106,7 @@ func TestPointEqual(t *testing.T) {
 	}
 }
 
-func BenchmarkPointEqual(b *testing.B) {
+func BenchmarkPointsAreEqual(b *testing.B) {
 	p1 := testPoints()[0]
 	p2 := testPoints()[1]
 	for i := 0; i < b.N; i++ {
