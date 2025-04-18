@@ -39,7 +39,7 @@ type SeriesHeader struct {
 	FieldsList []timeseries.FieldDefinition `msg:"fields"`
 	// TimestampIndex is the index of the TimeStamp field in the output when
 	// it's time to serialize the DataSet for the wire
-	TimestampIndex uint32 `msg:"ti"`
+	TimestampIndex uint64 `msg:"ti"`
 	// QueryStatement is the original query to which this DataSet is associated
 	QueryStatement string `msg:"query"`
 	// Size is the memory utilization of the Header in bytes
@@ -64,8 +64,8 @@ func (sh *SeriesHeader) CalculateHash() Hash {
 		hash.Write([]byte(fd.Name))
 		hash.Write([]byte{byte(fd.DataType)})
 	}
-	b := make([]byte, 4)
-	binary.LittleEndian.PutUint32(b, sh.TimestampIndex)
+	b := make([]byte, 8)
+	binary.LittleEndian.PutUint64(b, sh.TimestampIndex)
 	hash.Write(b)
 	sh.hash = Hash(hash.Sum64())
 	return sh.hash
@@ -121,7 +121,7 @@ func (sh *SeriesHeader) String() string {
 		}
 		sb.WriteString("],")
 	}
-	sb.WriteString(`"timestampIndex":` + strconv.FormatUint(uint64(sh.TimestampIndex), 10))
+	sb.WriteString(`"timestampIndex":` + strconv.FormatUint(sh.TimestampIndex, 10))
 	sb.WriteByte('}')
 	return sb.String()
 }

@@ -73,7 +73,7 @@ func (z *SeriesHeader) DecodeMsg(dc *msgp.Reader) (err error) {
 				}
 			}
 		case "ti":
-			z.TimestampIndex, err = dc.ReadUint32()
+			z.TimestampIndex, err = dc.ReadUint64()
 			if err != nil {
 				err = msgp.WrapError(err, "TimestampIndex")
 				return
@@ -146,7 +146,7 @@ func (z *SeriesHeader) EncodeMsg(en *msgp.Writer) (err error) {
 	if err != nil {
 		return
 	}
-	err = en.WriteUint32(z.TimestampIndex)
+	err = en.WriteUint64(z.TimestampIndex)
 	if err != nil {
 		err = msgp.WrapError(err, "TimestampIndex")
 		return
@@ -200,7 +200,7 @@ func (z *SeriesHeader) MarshalMsg(b []byte) (o []byte, err error) {
 	}
 	// string "ti"
 	o = append(o, 0xa2, 0x74, 0x69)
-	o = msgp.AppendUint32(o, z.TimestampIndex)
+	o = msgp.AppendUint64(o, z.TimestampIndex)
 	// string "query"
 	o = append(o, 0xa5, 0x71, 0x75, 0x65, 0x72, 0x79)
 	o = msgp.AppendString(o, z.QueryStatement)
@@ -260,7 +260,7 @@ func (z *SeriesHeader) UnmarshalMsg(bts []byte) (o []byte, err error) {
 				}
 			}
 		case "ti":
-			z.TimestampIndex, bts, err = msgp.ReadUint32Bytes(bts)
+			z.TimestampIndex, bts, err = msgp.ReadUint64Bytes(bts)
 			if err != nil {
 				err = msgp.WrapError(err, "TimestampIndex")
 				return
@@ -295,6 +295,6 @@ func (z *SeriesHeader) Msgsize() (s int) {
 	for za0001 := range z.FieldsList {
 		s += z.FieldsList[za0001].Msgsize()
 	}
-	s += 3 + msgp.Uint32Size + 6 + msgp.StringPrefixSize + len(z.QueryStatement) + 5 + msgp.IntSize
+	s += 3 + msgp.Uint64Size + 6 + msgp.StringPrefixSize + len(z.QueryStatement) + 5 + msgp.IntSize
 	return
 }
