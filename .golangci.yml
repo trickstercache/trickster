@@ -13,6 +13,7 @@ linters:
     - grouper
     - gocritic
     - revive
+    - gosec
   disable:
     - errcheck
   settings:
@@ -32,6 +33,11 @@ linters:
      disabled-checks:
        - unslice # stylistic choice, ok with slice[:] references
        - ifElseChain # false positives / prefers switch statements
+    gosec:
+      excludes:
+      - G401 # MD5 & SHA1 adequate for non-cryptographic use cases
+      - G501 # MD5 & SHA1, again
+      - G505 # MD5 & SHA1, again
     revive:
       enable-all-rules: true
       rules:

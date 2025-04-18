@@ -199,8 +199,9 @@ func (lg *ListenerGroup) StartListener(listenerName, address string, port int, c
 
 	if tlsConfig != nil {
 		svr := &http.Server{
-			Handler:   l.routeSwapper,
-			TLSConfig: tlsConfig,
+			Handler:           l.routeSwapper,
+			TLSConfig:         tlsConfig,
+			ReadHeaderTimeout: time.Hour, // TODO: This needs to be configurable
 		}
 		l.server = svr
 		err = svr.Serve(l)
@@ -218,7 +219,8 @@ func (lg *ListenerGroup) StartListener(listenerName, address string, port int, c
 	}
 
 	svr := &http.Server{
-		Handler: l.routeSwapper,
+		Handler:           l.routeSwapper,
+		ReadHeaderTimeout: time.Hour, // TODO: This needs to be configurable
 	}
 	l.server = svr
 	err = svr.Serve(l)

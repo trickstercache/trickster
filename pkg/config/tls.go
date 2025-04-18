@@ -41,7 +41,11 @@ func (c *Config) TLSCertConfig() (*tls.Config, error) {
 		return nil, nil
 	}
 
-	tlsConfig := &tls.Config{Certificates: make([]tls.Certificate, l), NextProtos: []string{"h2"}}
+	tlsConfig := &tls.Config{
+		Certificates: make([]tls.Certificate, l),
+		NextProtos:   []string{"h2"},
+		MinVersion:   tls.VersionTLS12,
+	}
 
 	for i, tc := range to {
 		tlsConfig.Certificates[i], err = tls.LoadX509KeyPair(tc.TLS.FullChainCertPath, tc.TLS.PrivateKeyPath)
