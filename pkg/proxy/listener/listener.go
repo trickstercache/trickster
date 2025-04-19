@@ -166,7 +166,7 @@ func (lg *ListenerGroup) Get(name string) *Listener {
 // StartListener starts a new HTTP listener and adds it to the listener group
 func (lg *ListenerGroup) StartListener(listenerName, address string, port int, connectionsLimit int,
 	tlsConfig *tls.Config, router http.Handler, tracers tracing.Tracers,
-	f func(), drainTimeout time.Duration) error {
+	f func(), drainTimeout, readHeaderTimeout time.Duration) error {
 	l := &Listener{routeSwapper: ph.NewSwitchHandler(router), exitOnError: f != nil}
 	if tlsConfig != nil && len(tlsConfig.Certificates) > 0 {
 		l.tlsConfig = tlsConfig
@@ -201,7 +201,7 @@ func (lg *ListenerGroup) StartListener(listenerName, address string, port int, c
 		svr := &http.Server{
 			Handler:           l.routeSwapper,
 			TLSConfig:         tlsConfig,
-			ReadHeaderTimeout: time.Hour, // TODO: This needs to be configurable
+			ReadHeaderTimeout: readHeaderTimeout,
 		}
 		l.server = svr
 		err = svr.Serve(l)
@@ -220,7 +220,7 @@ func (lg *ListenerGroup) StartListener(listenerName, address string, port int, c
 
 	svr := &http.Server{
 		Handler:           l.routeSwapper,
-		ReadHeaderTimeout: time.Hour, // TODO: This needs to be configurable
+		ReadHeaderTimeout: readHeaderTimeout,
 	}
 	l.server = svr
 	err = svr.Serve(l)
@@ -252,11 +252,11 @@ func handleTracerShutdowns(tracers tracing.Tracers) {
 // StartListenerRouter starts a new HTTP listener with a new router, and adds it to the listener group
 func (lg *ListenerGroup) StartListenerRouter(listenerName, address string, port int, connectionsLimit int,
 	tlsConfig *tls.Config, path string, handler http.Handler,
-	tracers tracing.Tracers, f func(), drainTimeout time.Duration) error {
+	tracers tracing.Tracers, f func(), drainTimeout, readHeaderTimeout time.Duration) error {
 	router := http.NewServeMux()
 	router.Handle(path, handler)
 	return lg.StartListener(listenerName, address, port, connectionsLimit,
-		tlsConfig, router, tracers, f, drainTimeout)
+		tlsConfig, router, tracers, f, drainTimeout, readHeaderTimeout)
 }
 
 // DrainAndClose drains and closes the named listener
