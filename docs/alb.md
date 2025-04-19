@@ -282,13 +282,13 @@ backends:
     provider: prometheus
     origin_url: http://prom01.example.com:9090
     healthcheck:
-      interval_ms: 1000 # enables automatic health check polling for ALB pool reporting
+      interval: 1000ms # enables automatic health check polling for ALB pool reporting
 
   prom02:
     provider: prometheus
     origin_url: http://prom02.example.com:9090
     healthcheck:
-      interval_ms: 1000
+      interval: 1000ms
 
   prom-alb-tsm:
     provider: alb
@@ -317,13 +317,13 @@ backends:
     provider: prometheus
     origin_url: http://prom01.example.com:9090
     healthcheck:
-      interval_ms: 1000 # enables automatic health check polling every 1s
+      interval: 1000ms # enables automatic health check polling every 1s
 
   flux-01:
     provider: inflxudb
     origin_url: http://flux01.example.com:8086
     healthcheck:
-      interval_ms: 1000 # enables automatic health check polling every 1s
+      interval: 1000ms # enables automatic health check polling every 1s
 ```
 
 ```text
