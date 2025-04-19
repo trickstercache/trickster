@@ -46,8 +46,7 @@ func BenchmarkObjectProxyCache(b *testing.B) {
 	r.Header.Add(headers.NameRange, "bytes=0-10000")
 
 	o := rsc.BackendOptions
-	o.MaxTTLMS = 15000
-	o.MaxTTL = time.Duration(o.MaxTTLMS) * time.Millisecond
+	o.MaxTTL = time.Duration(15000) * time.Millisecond
 
 	w := httptest.NewRecorder()
 	for i := 0; i < b.N; i++ {
@@ -75,8 +74,7 @@ func BenchmarkObjectProxyCacheChunks(b *testing.B) {
 	r.Header.Add(headers.NameRange, "bytes=0-10000")
 
 	o := rsc.BackendOptions
-	o.MaxTTLMS = 15000
-	o.MaxTTL = time.Duration(o.MaxTTLMS) * time.Millisecond
+	o.MaxTTL = time.Duration(15000) * time.Millisecond
 
 	w := httptest.NewRecorder()
 	for i := 0; i < b.N; i++ {

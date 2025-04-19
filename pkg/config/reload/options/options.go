@@ -17,6 +17,8 @@
 // Package options provides options for configuration reload support
 package options
 
+import "time"
+
 // Options is a collection of configurations for in-process config reloading
 type Options struct {
 	// ListenAddress is IP address from which the Reload API is available at ReloadHandlerPath
@@ -25,23 +27,23 @@ type Options struct {
 	ListenPort int `yaml:"listen_port,omitempty"`
 	// ReloadHandlerPath provides the path to register the Config Reload Handler
 	HandlerPath string `yaml:"handler_path,omitempty"`
-	// DrainTimeoutMS provides the duration to wait for all sessions to drain before closing
+	// DrainTimeout provides the duration to wait for all sessions to drain before closing
 	// old resources following a reload
-	DrainTimeoutMS int `yaml:"drain_timeout_ms,omitempty"`
-	// RateLimitMS limits the # of handled config reload HTTP requests to 1 per CheckRateMS
+	DrainTimeout time.Duration `yaml:"drain_timeout,omitempty"`
+	// RateLimit limits the # of handled config reload HTTP requests to 1 per CheckRateMS
 	// if multiple HTTP requests are received in the rate limit window, only the first is handled
 	// This prevents a bad actor from stating the config file with millions of concurrent requests
 	// The rate limit does not apply to SIGHUP-based reload requests
-	RateLimitMS int `yaml:"rate_limit_ms,omitempty"`
+	RateLimit time.Duration `yaml:"rate_limit,omitempty"`
 }
 
 // New returns a new Options references with Default Values set
 func New() *Options {
 	return &Options{
-		ListenAddress:  DefaultReloadAddress,
-		ListenPort:     DefaultReloadPort,
-		HandlerPath:    DefaultReloadHandlerPath,
-		DrainTimeoutMS: DefaultDrainTimeoutMS,
-		RateLimitMS:    DefaultRateLimitMS,
+		ListenAddress: DefaultReloadAddress,
+		ListenPort:    DefaultReloadPort,
+		HandlerPath:   DefaultReloadHandlerPath,
+		DrainTimeout:  DefaultDrainTimeout,
+		RateLimit:     DefaultRateLimit,
 	}
 }

@@ -16,5 +16,7 @@
 
 package options
 
-// DefaultInstantRoundMS is the default Instant Rounding Value for Prometheus
-const DefaultInstantRoundMS = 15000
+import "time"
+
+// DefaultInstantRound is the default Instant Rounding Value for Prometheus
+const DefaultInstantRound = 15000 * time.Millisecond
