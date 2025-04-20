@@ -16,6 +16,8 @@
 
 package options
 
+import "time"
+
 const (
 	// DefaultProxyListenPort is the default port that the HTTP frontend will listen on
 	DefaultProxyListenPort = 8480
@@ -28,4 +30,7 @@ const (
 	DefaultTLSProxyListenPort = 8483
 	// DefaultTLSProxyListenAddress is the default address that the TLS frontend endpoint will listen on
 	DefaultTLSProxyListenAddress = ""
+
+	// DefaultReadHeaderTimeout is the default amount of time allowed to read request headers by the frontend proxy server
+	DefaultReadHeaderTimeout = 10 * time.Second
 )

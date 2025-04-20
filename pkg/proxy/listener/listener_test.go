@@ -61,7 +61,7 @@ func TestListeners(t *testing.T) {
 			Certificates: make([]tls.Certificate, 1),
 		}
 		errs <- testLG.StartListener("httpListener",
-			"", 0, 20, tc, http.NewServeMux(), trs, nil, 0)
+			"", 0, 20, tc, http.NewServeMux(), trs, nil, 0, 0)
 		close(errs)
 	}()
 
@@ -79,7 +79,7 @@ func TestListeners(t *testing.T) {
 	go func() {
 		errs2 <- testLG.StartListenerRouter("httpListener2",
 			"", 0, 20, nil, "/", http.HandlerFunc(ph.HandleLocalResponse),
-			nil, nil, 0)
+			nil, nil, 0, 0)
 		close(errs2)
 	}()
 	time.Sleep(time.Millisecond * 300)
@@ -94,7 +94,7 @@ func TestListeners(t *testing.T) {
 	}
 
 	err = testLG.StartListener("testBadPort",
-		"", -31, 20, nil, http.NewServeMux(), trs, nil, 0)
+		"", -31, 20, nil, http.NewServeMux(), trs, nil, 0, 0)
 	if err == nil {
 		t.Error("expected invalid port error")
 	}
@@ -126,7 +126,7 @@ func TestListenerAccept(t *testing.T) {
 	var err error
 	go func() {
 		err = testLG.StartListener("httpListener",
-			"", 0, 20, nil, http.NewServeMux(), nil, nil, 0)
+			"", 0, 20, nil, http.NewServeMux(), nil, nil, 0, 0)
 	}()
 	time.Sleep(time.Millisecond * 500)
 	if err != nil {

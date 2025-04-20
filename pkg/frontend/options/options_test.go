@@ -16,21 +16,22 @@
 
 package options
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
 
 func TestFrontendOptions(t *testing.T) {
 
+	// expect f1 and f2 to be equal
 	f1 := New()
 	f2 := New()
+	require.True(t, f1.Equal(f2))
 
-	b := f1.Equal(f2)
-	if !b {
-		t.Errorf("expected %t got %t", true, b)
-	}
-
-	f1.ListenAddress = "trickster"
+	// expect f1 and f2 to be equal, after modifying f1
 	f2 = f1.Clone()
-	if !f1.Equal(f2) {
-		t.Errorf("expected %t got %t", true, b)
-	}
+	f1.ListenAddress = "trickster"
+	require.NotEqual(t, f1.ListenAddress, f2.ListenAddress)
+	require.False(t, f1.Equal(f2))
 }

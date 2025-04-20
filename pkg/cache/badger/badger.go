@@ -76,7 +76,7 @@ func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
 	metrics.ObserveCacheOperation(c.Name, c.Config.Provider, "set", "none", float64(len(data)))
 	logger.Debug("badger cache store", logging.Pairs{"key": cacheKey, "ttl": ttl})
 	return c.dbh.Update(func(txn *badger.Txn) error {
-		return txn.SetEntry(&badger.Entry{Key: []byte(cacheKey), Value: data, ExpiresAt: uint64(time.Now().Add(ttl).Unix())})
+		return txn.SetEntry(&badger.Entry{Key: []byte(cacheKey), Value: data, ExpiresAt: uint64(time.Now().Add(ttl).Unix())}) // #nosec G115 - assume time values are positive
 	})
 }
 
@@ -150,7 +150,7 @@ func (c *Cache) SetTTL(cacheKey string, ttl time.Duration) {
 			return nil
 		}
 		data, _ = item.ValueCopy(nil)
-		return txn.SetEntry(&badger.Entry{Key: []byte(cacheKey), Value: data, ExpiresAt: uint64(time.Now().Add(ttl).Unix())})
+		return txn.SetEntry(&badger.Entry{Key: []byte(cacheKey), Value: data, ExpiresAt: uint64(time.Now().Add(ttl).Unix())}) // #nosec G115 - assume time values are positive
 	})
 	logger.Debug("badger cache update-ttl", logging.Pairs{"key": cacheKey, "ttl": ttl, "success": err == nil})
 	if err == nil {
@@ -158,14 +158,14 @@ func (c *Cache) SetTTL(cacheKey string, ttl time.Duration) {
 	}
 }
 
-func (c *Cache) GetExpires(cacheKey string) (int, error) {
-	var expires int
+func (c *Cache) GetExpires(cacheKey string) (uint64, error) {
+	var expires uint64
 	err := c.dbh.View(func(txn *badger.Txn) error {
 		item, err := txn.Get([]byte(cacheKey))
 		if err != nil {
 			return err
 		}
-		expires = int(item.ExpiresAt())
+		expires = item.ExpiresAt()
 		return nil
 	})
 	return expires, err

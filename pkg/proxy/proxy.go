@@ -41,7 +41,7 @@ func NewHTTPClient(o *bo.Options) (*http.Client, error) {
 	var TLSConfig *tls.Config
 
 	if o.TLS != nil {
-		TLSConfig = &tls.Config{InsecureSkipVerify: o.TLS.InsecureSkipVerify}
+		TLSConfig = &tls.Config{InsecureSkipVerify: o.TLS.InsecureSkipVerify} // #nosec G402 -- this is a user-configurable option, accept risk
 
 		if o.TLS.ClientCertPath != "" && o.TLS.ClientKeyPath != "" {
 			// load client cert

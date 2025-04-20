@@ -145,9 +145,10 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 			sh.FieldsList = make([]timeseries.FieldDefinition, fdl)
 			var fdi int
 			for ci, cn := range wfd.Results[i].SeriesList[j].Columns {
+				index := uint64(ci) // #nosec G115 -- ci is positive
 				if cn == "time" || cn == "_time" {
 					timeFound = true
-					sh.TimestampIndex = ci
+					sh.TimestampIndex = index
 					continue
 				}
 				sh.FieldsList[fdi] = timeseries.FieldDefinition{Name: cn}
@@ -232,7 +233,7 @@ func tryParseTimestamp(v any) int64 {
 	return -1
 }
 
-func pointFromValues(v []interface{}, tsIndex int) (dataset.Point,
+func pointFromValues(v []interface{}, tsIndex uint64) (dataset.Point,
 	[]timeseries.FieldDataType, error) {
 	p := dataset.Point{}
 	ns := tryParseTimestamp(v[tsIndex])

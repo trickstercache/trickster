@@ -33,7 +33,7 @@ func processSimulatedLatency(w http.ResponseWriter, minMS, maxMS int) {
 	if minMS >= maxMS {
 		ms = int64(minMS)
 	} else {
-		ms = (rand.Int63() % int64(maxMS-minMS)) + int64(minMS)
+		ms = (rand.Int63() % int64(maxMS-minMS)) + int64(minMS) // #nosec G404 -- we are OK with a weak random source, random-ish enough for our purposes, no security risk
 	}
 	if ms <= 0 {
 		return
