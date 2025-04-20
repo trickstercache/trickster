@@ -35,13 +35,13 @@ backends:
     provider: prometheus
     origin_url: "http://prom1:9090"
     healthcheck:
-      interval_ms: 1000
+      interval: 1000ms
       
   prom2:
     provider: prometheus
     origin_url: "http://prom2:9090"
     healthcheck:
-      interval_ms: 1000
+      interval: 1000ms
 
   ## 
 
@@ -50,12 +50,12 @@ backends:
     origin_url: "https://origin1/"
     healthcheck:
       path: /health
-      interval_ms: 1000
+      interval: 1000ms
 
   origin2:
     provider: rp # this one will not go through the cache
     origin_url: "http://origin2" # and will not use TLS
     healthcheck:
       path: /health
-      interval_ms: 1000
+      interval: 1000ms
   

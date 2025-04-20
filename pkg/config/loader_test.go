@@ -217,12 +217,12 @@ func TestFullLoadConfiguration(t *testing.T) {
 		t.Errorf("expected fast_forward_disable true, got %t", o.FastForwardDisable)
 	}
 
-	if o.BackfillToleranceMS != 301000 {
-		t.Errorf("expected 301000, got %d", o.BackfillToleranceMS)
+	if o.BackfillTolerance != 301000*time.Millisecond {
+		t.Errorf("expected 301000, got %d", o.BackfillTolerance)
 	}
 
-	if o.TimeoutMS != 37000 {
-		t.Errorf("expected 37000, got %d", o.TimeoutMS)
+	if o.Timeout != 37000*time.Millisecond {
+		t.Errorf("expected 37000, got %d", o.Timeout)
 	}
 
 	if o.IsDefault != true {
@@ -233,18 +233,18 @@ func TestFullLoadConfiguration(t *testing.T) {
 		t.Errorf("expected %d got %d", 23, o.MaxIdleConns)
 	}
 
-	if o.KeepAliveTimeoutMS != 7000 {
-		t.Errorf("expected %d got %d", 7, o.KeepAliveTimeoutMS)
+	if o.KeepAliveTimeout != 7000*time.Millisecond {
+		t.Errorf("expected %d got %d", 7, o.KeepAliveTimeout)
 	}
 
 	// MaxTTLMS is 300, thus should override TimeseriesTTLMS = 8666
-	if o.TimeseriesTTLMS != 300000 {
-		t.Errorf("expected 300000, got %d", o.TimeseriesTTLMS)
+	if o.TimeseriesTTL != 300000*time.Millisecond {
+		t.Errorf("expected 300000, got %d", o.TimeseriesTTL)
 	}
 
 	// MaxTTLMS is 300, thus should override FastForwardTTLMS = 382
-	if o.FastForwardTTLMS != 300000 {
-		t.Errorf("expected 300000, got %d", o.FastForwardTTLMS)
+	if o.FastForwardTTL != 300000*time.Millisecond {
+		t.Errorf("expected 300000, got %d", o.FastForwardTTL)
 	}
 
 	if o.TLS == nil {
@@ -283,12 +283,12 @@ func TestFullLoadConfiguration(t *testing.T) {
 		t.Errorf("expected redis, got %s", c.Provider)
 	}
 
-	if c.Index.ReapIntervalMS != 4000 {
-		t.Errorf("expected 4000, got %d", c.Index.ReapIntervalMS)
+	if c.Index.ReapInterval != 4000 {
+		t.Errorf("expected 4000, got %d", c.Index.ReapInterval)
 	}
 
-	if c.Index.FlushIntervalMS != 6000 {
-		t.Errorf("expected 6000, got %d", c.Index.FlushIntervalMS)
+	if c.Index.FlushInterval != 6000 {
+		t.Errorf("expected 6000, got %d", c.Index.FlushInterval)
 	}
 
 	if c.Index.MaxSizeBytes != 536870913 {
@@ -307,8 +307,8 @@ func TestFullLoadConfiguration(t *testing.T) {
 		t.Errorf("expected 20, got %d", c.Index.MaxSizeBackoffObjects)
 	}
 
-	if c.Index.ReapIntervalMS != 4000 {
-		t.Errorf("expected 4000, got %d", c.Index.ReapIntervalMS)
+	if c.Index.ReapInterval != 4000 {
+		t.Errorf("expected 4000, got %d", c.Index.ReapInterval)
 	}
 
 	if c.Redis.ClientType != "test_redis_type" {
@@ -339,24 +339,24 @@ func TestFullLoadConfiguration(t *testing.T) {
 		t.Errorf("expected 6, got %d", c.Redis.MaxRetries)
 	}
 
-	if c.Redis.MinRetryBackoffMS != 9 {
-		t.Errorf("expected 9, got %d", c.Redis.MinRetryBackoffMS)
+	if c.Redis.MinRetryBackoff != 9 {
+		t.Errorf("expected 9, got %d", c.Redis.MinRetryBackoff)
 	}
 
-	if c.Redis.MaxRetryBackoffMS != 513 {
-		t.Errorf("expected 513, got %d", c.Redis.MaxRetryBackoffMS)
+	if c.Redis.MaxRetryBackoff != 513 {
+		t.Errorf("expected 513, got %d", c.Redis.MaxRetryBackoff)
 	}
 
-	if c.Redis.DialTimeoutMS != 5001 {
-		t.Errorf("expected 5001, got %d", c.Redis.DialTimeoutMS)
+	if c.Redis.DialTimeout != 5001 {
+		t.Errorf("expected 5001, got %d", c.Redis.DialTimeout)
 	}
 
-	if c.Redis.ReadTimeoutMS != 3001 {
-		t.Errorf("expected 3001, got %d", c.Redis.ReadTimeoutMS)
+	if c.Redis.ReadTimeout != 3001 {
+		t.Errorf("expected 3001, got %d", c.Redis.ReadTimeout)
 	}
 
-	if c.Redis.WriteTimeoutMS != 3002 {
-		t.Errorf("expected 3002, got %d", c.Redis.WriteTimeoutMS)
+	if c.Redis.WriteTimeout != 3002 {
+		t.Errorf("expected 3002, got %d", c.Redis.WriteTimeout)
 	}
 
 	if c.Redis.PoolSize != 21 {
@@ -367,20 +367,20 @@ func TestFullLoadConfiguration(t *testing.T) {
 		t.Errorf("expected 5, got %d", c.Redis.PoolSize)
 	}
 
-	if c.Redis.MaxConnAgeMS != 2000 {
-		t.Errorf("expected 2000, got %d", c.Redis.MaxConnAgeMS)
+	if c.Redis.MaxConnAge != 2000 {
+		t.Errorf("expected 2000, got %d", c.Redis.MaxConnAge)
 	}
 
-	if c.Redis.PoolTimeoutMS != 4001 {
-		t.Errorf("expected 4001, got %d", c.Redis.PoolTimeoutMS)
+	if c.Redis.PoolTimeout != 4001 {
+		t.Errorf("expected 4001, got %d", c.Redis.PoolTimeout)
 	}
 
-	if c.Redis.IdleTimeoutMS != 300001 {
-		t.Errorf("expected 300001, got %d", c.Redis.IdleTimeoutMS)
+	if c.Redis.IdleTimeout != 300001 {
+		t.Errorf("expected 300001, got %d", c.Redis.IdleTimeout)
 	}
 
-	if c.Redis.IdleCheckFrequencyMS != 60001 {
-		t.Errorf("expected 60001, got %d", c.Redis.IdleCheckFrequencyMS)
+	if c.Redis.IdleCheckFrequency != 60001 {
+		t.Errorf("expected 60001, got %d", c.Redis.IdleCheckFrequency)
 	}
 
 	if c.Filesystem.CachePath != "test_cache_path" {
@@ -452,8 +452,8 @@ func TestEmptyLoadConfiguration(t *testing.T) {
 		return
 	}
 
-	if c.Index.ReapIntervalMS != 3000 {
-		t.Errorf("expected 3000, got %d", c.Index.ReapIntervalMS)
+	if c.Index.ReapInterval != 3000*time.Millisecond {
+		t.Errorf("expected 3000, got %d", c.Index.ReapInterval)
 	}
 
 	if c.Redis.Endpoint != "redis:6379" {
@@ -476,24 +476,24 @@ func TestEmptyLoadConfiguration(t *testing.T) {
 		t.Errorf("expected 0, got %d", c.Redis.MaxRetries)
 	}
 
-	if c.Redis.MinRetryBackoffMS != 0 {
-		t.Errorf("expected 0, got %d", c.Redis.MinRetryBackoffMS)
+	if c.Redis.MinRetryBackoff != 0 {
+		t.Errorf("expected 0, got %d", c.Redis.MinRetryBackoff)
 	}
 
-	if c.Redis.MaxRetryBackoffMS != 0 {
-		t.Errorf("expected 0, got %d", c.Redis.MaxRetryBackoffMS)
+	if c.Redis.MaxRetryBackoff != 0 {
+		t.Errorf("expected 0, got %d", c.Redis.MaxRetryBackoff)
 	}
 
-	if c.Redis.DialTimeoutMS != 0 {
-		t.Errorf("expected 0, got %d", c.Redis.DialTimeoutMS)
+	if c.Redis.DialTimeout != 0 {
+		t.Errorf("expected 0, got %d", c.Redis.DialTimeout)
 	}
 
-	if c.Redis.ReadTimeoutMS != 0 {
-		t.Errorf("expected 0, got %d", c.Redis.ReadTimeoutMS)
+	if c.Redis.ReadTimeout != 0 {
+		t.Errorf("expected 0, got %d", c.Redis.ReadTimeout)
 	}
 
-	if c.Redis.WriteTimeoutMS != 0 {
-		t.Errorf("expected 0, got %d", c.Redis.WriteTimeoutMS)
+	if c.Redis.WriteTimeout != 0 {
+		t.Errorf("expected 0, got %d", c.Redis.WriteTimeout)
 	}
 
 	if c.Redis.PoolSize != 0 {
@@ -504,20 +504,20 @@ func TestEmptyLoadConfiguration(t *testing.T) {
 		t.Errorf("expected 0, got %d", c.Redis.PoolSize)
 	}
 
-	if c.Redis.MaxConnAgeMS != 0 {
-		t.Errorf("expected 0, got %d", c.Redis.MaxConnAgeMS)
+	if c.Redis.MaxConnAge != 0 {
+		t.Errorf("expected 0, got %d", c.Redis.MaxConnAge)
 	}
 
-	if c.Redis.PoolTimeoutMS != 0 {
-		t.Errorf("expected 0, got %d", c.Redis.PoolTimeoutMS)
+	if c.Redis.PoolTimeout != 0 {
+		t.Errorf("expected 0, got %d", c.Redis.PoolTimeout)
 	}
 
-	if c.Redis.IdleTimeoutMS != 0 {
-		t.Errorf("expected 0, got %d", c.Redis.IdleTimeoutMS)
+	if c.Redis.IdleTimeout != 0 {
+		t.Errorf("expected 0, got %d", c.Redis.IdleTimeout)
 	}
 
-	if c.Redis.IdleCheckFrequencyMS != 0 {
-		t.Errorf("expected 0, got %d", c.Redis.IdleCheckFrequencyMS)
+	if c.Redis.IdleCheckFrequency != 0 {
+		t.Errorf("expected 0, got %d", c.Redis.IdleCheckFrequency)
 	}
 
 	if c.Filesystem.CachePath != "/tmp/trickster" {

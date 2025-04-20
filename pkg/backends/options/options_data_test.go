@@ -47,17 +47,17 @@ backends:
     origin_url: 'scheme://test_host/test_path_prefix'
     api_path: test_api_path
     max_idle_conns: 23
-    keep_alive_timeout_ms: 7000
+    keep_alive_timeout: 7000
     ignore_caching_headers: true
     timeseries_retention_factor: 666
     timeseries_eviction_method: lru
     fast_forward_disable: true
-    backfill_tolerance_ms: 301000
+    backfill_tolerance: 301000ms
     backfill_tolerance_points: 2
-    timeout_ms: 37000
-    timeseries_ttl_ms: 8666000
-    max_ttl_ms: 300000
-    fastforward_ttl_ms: 382000
+    timeout: 37000ms
+    timeseries_ttl: 8666000ms
+    max_ttl: 300000ms
+    fastforward_ttl: 382000ms
     require_tls: true
     max_object_size_bytes: 999
     cache_key_prefix: test-prefix
@@ -65,9 +65,9 @@ backends:
     forwarded_headers: x
     negative_cache_name: test
     rule_name: ''
-    shard_max_size_ms: 0
+    shard_max_size: 0ms
     shard_max_size_points: 0
-    shard_step_ms: 0
+    shard_step: 0ms
     healthcheck:
       headers:
         Authorization: Basic SomeHash

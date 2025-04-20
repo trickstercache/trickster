@@ -6,11 +6,11 @@ In `rule`, `alb` and other backend providers, where a request may transit multip
 
 ## Consistent Latency Duration
 
-In the Backend configuration, add a `latency_min_ms` value > 0, and the configured amount of latency will be introduced for each incoming request.
+In the Backend configuration, add a `latency_min` value > 0, and the configured amount of latency will be introduced for each incoming request.
 
 ## Random Latency
 
- To simulate random latency, set `latency_max_ms` to a value > `latency_min_ms`, which may be 0 for random latency. Trickster will introduce a random amount of latency between (inclusive) the provided min and max values.
+ To simulate random latency, set `latency_max` to a value > `latency_min`, which may be 0 for random latency. Trickster will introduce a random amount of latency between (inclusive) the provided min and max values.
 
 ## Response Header
 
@@ -40,13 +40,13 @@ backends:
     provider: reverseproxy
     #
     # introduce random latency between 50 and 150 milliseconds on each request
-    latency_min_ms: 50
-    latency_max_ms: 150
+    latency_min: 50ms
+    latency_max: 150ms
 
   backend2:
     origin_url: https://www.trickstercache.org
     provider: reverseproxy
     #
     # introduce latency of 300 milliseconds on each request
-    latency_min_ms: 300
+    latency_min: 300ms
 ```

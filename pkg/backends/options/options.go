@@ -60,10 +60,10 @@ type Options struct {
 	// OriginURL provides the base upstream URL for all proxied requests to this Backend.
 	// it can be as simple as http://example.com or as complex as https://example.com:8443/path/prefix
 	OriginURL string `yaml:"origin_url,omitempty"`
-	// TimeoutMS defines how long the HTTP request will wait for a response before timing out
-	TimeoutMS int64 `yaml:"timeout_ms,omitempty"`
-	// KeepAliveTimeoutMS defines how long an open keep-alive HTTP connection remains idle before closing
-	KeepAliveTimeoutMS int64 `yaml:"keep_alive_timeout_ms,omitempty"`
+	// Timeout defines how long the HTTP request will wait for a response before timing out
+	Timeout time.Duration `yaml:"timeout,omitempty"`
+	// KeepAliveTimeout defines how long an open keep-alive HTTP connection remains idle before closing
+	KeepAliveTimeout time.Duration `yaml:"keep_alive_timeout,omitempty"`
 	// MaxIdleConns defines maximum number of open keep-alive connections to maintain
 	MaxIdleConns int `yaml:"max_idle_conns,omitempty"`
 	// CacheName provides the name of the configured cache where the backend client will store it's cache data
@@ -79,10 +79,10 @@ type Options struct {
 	// TimeseriesEvictionMethodName specifies which methodology ("oldest", "lru") is used to identify
 	// timeseries to evict from a full cache object
 	TimeseriesEvictionMethodName string `yaml:"timeseries_eviction_method,omitempty"`
-	// BackfillToleranceMS prevents values with timestamps newer than the provided number of
+	// BackfillTolerance prevents values with timestamps newer than the provided number of
 	// milliseconds from being cached. this allows propagation of upstream backfill operations
 	// that modify recently-cached data
-	BackfillToleranceMS int64 `yaml:"backfill_tolerance_ms,omitempty"`
+	BackfillTolerance time.Duration `yaml:"backfill_tolerance,omitempty"`
 	// BackfillTolerancePoints is similar to the MS version, except that it's final value is dependent
 	// on the query step value to determine the relative duration of backfill tolerance per-query
 	// When both are set, the higher of the two values is used
@@ -91,12 +91,12 @@ type Options struct {
 	Paths map[string]*po.Options `yaml:"paths,omitempty"`
 	// NegativeCacheName provides the name of the Negative Cache Config to be used by this Backend
 	NegativeCacheName string `yaml:"negative_cache_name,omitempty"`
-	// TimeseriesTTLMS specifies the cache TTL of timeseries objects
-	TimeseriesTTLMS int `yaml:"timeseries_ttl_ms,omitempty"`
+	// TimeseriesTTL specifies the cache TTL of timeseries objects
+	TimeseriesTTL time.Duration `yaml:"timeseries_ttl,omitempty"`
 	// TimeseriesTTLMS specifies the cache TTL of fast forward data
-	FastForwardTTLMS int `yaml:"fastforward_ttl_ms,omitempty"`
-	// MaxTTLMS specifies the maximum allowed TTL for any cache object
-	MaxTTLMS int `yaml:"max_ttl_ms,omitempty"`
+	FastForwardTTL time.Duration `yaml:"fastforward_ttl,omitempty"`
+	// MaxTTL specifies the maximum allowed TTL for any cache object
+	MaxTTL time.Duration `yaml:"max_ttl,omitempty"`
 	// RevalidationFactor specifies how many times to multiply the object freshness lifetime
 	// by to calculate an absolute cache TTL
 	RevalidationFactor float64 `yaml:"revalidation_factor,omitempty"`
@@ -117,14 +117,14 @@ type Options struct {
 	// before sharding into multiple requests of this denomination and reconsitituting the results.
 	// If MaxShardSizePoints and MaxShardSizeMS are both > 0, the configuration is invalid
 	MaxShardSizePoints int `yaml:"shard_max_size_points,omitempty"`
-	// MaxShardSizeMS defines the max size of a timeseries request in milliseconds,
+	// MaxShardSize defines the max size of a timeseries request in milliseconds,
 	// before sharding into multiple requests of this denomination and reconsitituting the results.
-	// If MaxShardSizePoints and MaxShardSizeMS are both > 0, the configuration is invalid
-	MaxShardSizeMS int `yaml:"shard_max_size_ms,omitempty"`
-	// ShardStepMS defines the epoch-aligned cadence to use when creating shards. When set to 0,
+	// If MaxShardSizePoints and MaxShardSize are both > 0, the configuration is invalid
+	MaxShardSize time.Duration `yaml:"shard_max_size,omitempty"`
+	// ShardStep defines the epoch-aligned cadence to use when creating shards. When set to 0,
 	// shards are not aligned to the epoch at a specific step. MaxShardSizeMS must be perfectly
-	// divisible by ShardStepMS when both are > 0, or the configuration is invalid
-	ShardStepMS int `yaml:"shard_step_ms,omitempty"`
+	// divisible by ShardStep when both are > 0, or the configuration is invalid
+	ShardStep time.Duration `yaml:"shard_step,omitempty"`
 
 	// ALBOptions holds the options for ALBs
 	ALBOptions *ao.Options `yaml:"alb,omitempty"`
@@ -155,14 +155,14 @@ type Options struct {
 	DearticulateUpstreamRanges bool `yaml:"dearticulate_upstream_ranges,omitempty"`
 
 	// Simulated Latency
-	// When LatencyMinMS > 0 and LatencyMaxMS < LatencyMinMS (e.g., 0), then LatencyMinMS of latency
-	// are applied to the request. When LatencyMaxMS > LatencyMinMS, then a random amount of
+	// When LatencyMin > 0 and LatencyMaxMS < LatencyMin (e.g., 0), then LatencyMin of latency
+	// are applied to the request. When LatencyMaxMS > LatencyMin, then a random amount of
 	// latency between the two values will be applied to the request
 	//
 	// LatencyMin is the minimum amount of simulated latency to apply to each incoming request
-	LatencyMinMS int `yaml:"latency_min_ms"`
+	LatencyMin time.Duration `yaml:"latency_min"`
 	// LatencyMax is the maximum amount of simulated latency to apply to each incoming request
-	LatencyMaxMS int `yaml:"latency_max_ms"`
+	LatencyMax time.Duration `yaml:"latency_max"`
 
 	// Synthesized Configurations
 	// These configurations are parsed versions of those defined above, and are what Trickster uses internally
@@ -171,12 +171,6 @@ type Options struct {
 	Name string `yaml:"-"`
 	// Router is a router.Router containing this backend's Path Routes; it is set during route registration
 	Router router.Router `yaml:"-"`
-	// Timeout is the time.Duration representation of TimeoutMS
-	Timeout time.Duration `yaml:"-"`
-	// BackfillTolerance is the time.Duration representation of BackfillToleranceMS
-	BackfillTolerance time.Duration `yaml:"-"`
-	// ValueRetention is the time.Duration representation of ValueRetentionSecs
-	ValueRetention time.Duration `yaml:"-"`
 	// Scheme is the layer 7 protocol indicator (e.g. 'http'), derived from OriginURL
 	Scheme string `yaml:"-"`
 	// Host is the upstream hostname/IP[:port] the backend client will connect to when fetching uncached data,
@@ -192,14 +186,8 @@ type Options struct {
 	TimeseriesRetention time.Duration `yaml:"-"`
 	// TimeseriesEvictionMethod is the parsed value of TimeseriesEvictionMethodName
 	TimeseriesEvictionMethod evictionmethods.TimeseriesEvictionMethod `yaml:"-"`
-	// TimeseriesTTL is the parsed value of TimeseriesTTLMS
-	TimeseriesTTL time.Duration `yaml:"-"`
-	// FastForwardTTL is the parsed value of FastForwardTTL
-	FastForwardTTL time.Duration `yaml:"-"`
 	// FastForwardPath is the paths.Options to use for upstream Fast Forward Requests
 	FastForwardPath *po.Options `yaml:"-"`
-	// MaxTTL is the parsed value of MaxTTLMS
-	MaxTTL time.Duration `yaml:"-"`
 	// HTTPClient is the Client used by Trickster to communicate with the origin
 	HTTPClient *http.Client `yaml:"-"`
 	// CompressibleTypes is the map version of CompressibleTypeList for fast lookup
@@ -211,10 +199,6 @@ type Options struct {
 	// DoesShard is true when sharding will be used with this origin, based on how the
 	// sharding options have been configured
 	DoesShard bool `yaml:"-"`
-	// MaxShardSize is the parsed version of MaxShardSizeMS
-	MaxShardSize time.Duration `yaml:"-"`
-	// ShardStep is the parsed version of ShardStepMS
-	ShardStep time.Duration `yaml:"-"`
 	// SigV4
 	SigV4 *sigv4.SigV4Config `yaml:"sigv4,omitempty"`
 }
@@ -222,39 +206,32 @@ type Options struct {
 // New will return a pointer to a Backend Options with the default configuration settings
 func New() *Options {
 	return &Options{
-		BackfillTolerance:            time.Duration(DefaultBackfillToleranceMS) * time.Millisecond,
-		BackfillToleranceMS:          DefaultBackfillToleranceMS,
+		BackfillTolerance:            DefaultBackfillTolerance,
 		BackfillTolerancePoints:      DefaultBackfillTolerancePoints,
 		CacheKeyPrefix:               "",
 		CacheName:                    DefaultBackendCacheName,
 		CompressibleTypeList:         DefaultCompressibleTypes(),
-		FastForwardTTL:               DefaultFastForwardTTLMS * time.Millisecond,
-		FastForwardTTLMS:             DefaultFastForwardTTLMS,
+		FastForwardTTL:               DefaultFastForwardTTL,
 		ForwardedHeaders:             DefaultForwardedHeaders,
 		HealthCheck:                  ho.New(),
-		KeepAliveTimeoutMS:           DefaultKeepAliveTimeoutMS,
+		KeepAliveTimeout:             DefaultKeepAliveTimeout,
 		MaxIdleConns:                 DefaultMaxIdleConns,
 		MaxObjectSizeBytes:           DefaultMaxObjectSizeBytes,
-		MaxTTL:                       DefaultMaxTTLMS * time.Millisecond,
-		MaxTTLMS:                     DefaultMaxTTLMS,
+		MaxTTL:                       DefaultMaxTTL,
 		NegativeCache:                make(map[int]time.Duration),
 		NegativeCacheName:            DefaultBackendNegativeCacheName,
 		Paths:                        make(map[string]*po.Options),
 		RevalidationFactor:           DefaultRevalidationFactor,
 		MaxShardSizePoints:           DefaultTimeseriesShardSize,
-		MaxShardSizeMS:               DefaultTimeseriesShardSize,
-		MaxShardSize:                 time.Duration(DefaultTimeseriesShardSize) * time.Millisecond,
-		ShardStepMS:                  DefaultTimeseriesShardStep,
-		ShardStep:                    time.Duration(DefaultTimeseriesShardStep) * time.Millisecond,
+		MaxShardSize:                 DefaultTimeseriesShardSize,
+		ShardStep:                    DefaultTimeseriesShardStep,
 		TLS:                          &to.Options{},
-		Timeout:                      time.Millisecond * DefaultBackendTimeoutMS,
-		TimeoutMS:                    DefaultBackendTimeoutMS,
+		Timeout:                      DefaultBackendTimeout * time.Millisecond,
 		TimeseriesEvictionMethod:     DefaultBackendTEM,
 		TimeseriesEvictionMethodName: DefaultBackendTEMName,
 		TimeseriesRetention:          DefaultBackendTRF,
 		TimeseriesRetentionFactor:    DefaultBackendTRF,
-		TimeseriesTTL:                DefaultTimeseriesTTLMS * time.Millisecond,
-		TimeseriesTTLMS:              DefaultTimeseriesTTLMS,
+		TimeseriesTTL:                DefaultTimeseriesTTL,
 		TracingConfigName:            DefaultTracingConfigName,
 	}
 }
@@ -265,23 +242,21 @@ func (o *Options) Clone() *Options {
 	no := &Options{}
 	no.DearticulateUpstreamRanges = o.DearticulateUpstreamRanges
 	no.BackfillTolerance = o.BackfillTolerance
-	no.BackfillToleranceMS = o.BackfillToleranceMS
+	no.BackfillTolerance = o.BackfillTolerance
 	no.BackfillTolerancePoints = o.BackfillTolerancePoints
 	no.CacheName = o.CacheName
 	no.CacheKeyPrefix = o.CacheKeyPrefix
 	no.DoesShard = o.DoesShard
 	no.FastForwardDisable = o.FastForwardDisable
 	no.FastForwardTTL = o.FastForwardTTL
-	no.FastForwardTTLMS = o.FastForwardTTLMS
 	no.ForwardedHeaders = o.ForwardedHeaders
 	no.Host = o.Host
-	no.LatencyMinMS = o.LatencyMinMS
-	no.LatencyMaxMS = o.LatencyMaxMS
+	no.LatencyMin = o.LatencyMin
+	no.LatencyMax = o.LatencyMax
 	no.Name = o.Name
 	no.IsDefault = o.IsDefault
-	no.KeepAliveTimeoutMS = o.KeepAliveTimeoutMS
+	no.KeepAliveTimeout = o.KeepAliveTimeout
 	no.MaxIdleConns = o.MaxIdleConns
-	no.MaxTTLMS = o.MaxTTLMS
 	no.MaxTTL = o.MaxTTL
 	no.MaxObjectSizeBytes = o.MaxObjectSizeBytes
 	no.MultipartRangesDisabled = o.MultipartRangesDisabled
@@ -293,19 +268,14 @@ func (o *Options) Clone() *Options {
 	no.RuleName = o.RuleName
 	no.Scheme = o.Scheme
 	no.MaxShardSize = o.MaxShardSize
-	no.MaxShardSizeMS = o.MaxShardSizeMS
 	no.MaxShardSizePoints = o.MaxShardSizePoints
 	no.ShardStep = o.ShardStep
-	no.ShardStepMS = o.ShardStepMS
 	no.Timeout = o.Timeout
-	no.TimeoutMS = o.TimeoutMS
 	no.TimeseriesRetention = o.TimeseriesRetention
 	no.TimeseriesRetentionFactor = o.TimeseriesRetentionFactor
 	no.TimeseriesEvictionMethodName = o.TimeseriesEvictionMethodName
 	no.TimeseriesEvictionMethod = o.TimeseriesEvictionMethod
 	no.TimeseriesTTL = o.TimeseriesTTL
-	no.TimeseriesTTLMS = o.TimeseriesTTLMS
-	no.ValueRetention = o.ValueRetention
 
 	no.TracingConfigName = o.TracingConfigName
 
@@ -372,21 +342,14 @@ func (l Lookup) Validate(ncl negative.Lookups) error {
 		o.Scheme = url.Scheme
 		o.Host = url.Host
 		o.PathPrefix = url.Path
-		o.Timeout = time.Duration(o.TimeoutMS) * time.Millisecond
-		o.BackfillTolerance = time.Duration(o.BackfillToleranceMS) * time.Millisecond
 		o.TimeseriesRetention = time.Duration(o.TimeseriesRetentionFactor)
-		o.TimeseriesTTL = time.Duration(o.TimeseriesTTLMS) * time.Millisecond
-		o.FastForwardTTL = time.Duration(o.FastForwardTTLMS) * time.Millisecond
-		o.MaxTTL = time.Duration(o.MaxTTLMS) * time.Millisecond
-		o.DoesShard = o.MaxShardSizePoints > 0 || o.MaxShardSizeMS > 0 || o.ShardStepMS > 0
-		o.ShardStep = time.Duration(o.ShardStepMS) * time.Millisecond
-		o.MaxShardSize = time.Duration(o.MaxShardSizeMS) * time.Millisecond
+		o.DoesShard = o.MaxShardSizePoints > 0 || o.MaxShardSize > 0 || o.ShardStep > 0
 
-		if o.MaxShardSizeMS > 0 && o.MaxShardSizePoints > 0 {
+		if o.MaxShardSize > 0 && o.MaxShardSizePoints > 0 {
 			return ErrInvalidMaxShardSize
 		}
 
-		if o.ShardStepMS > 0 && o.MaxShardSizeMS == 0 {
+		if o.ShardStep > 0 && o.MaxShardSize == 0 {
 			o.MaxShardSize = o.ShardStep
 		}
 
@@ -411,14 +374,12 @@ func (l Lookup) Validate(ncl negative.Lookups) error {
 		}
 
 		// enforce MaxTTL
-		if o.TimeseriesTTLMS > o.MaxTTLMS {
-			o.TimeseriesTTLMS = o.MaxTTLMS
+		if o.TimeseriesTTL > o.MaxTTL {
 			o.TimeseriesTTL = o.MaxTTL
 		}
 
 		// unlikely but why not spend a few nanoseconds to check it at startup
-		if o.FastForwardTTLMS > o.MaxTTLMS {
-			o.FastForwardTTLMS = o.MaxTTLMS
+		if o.FastForwardTTL > o.MaxTTL {
 			o.FastForwardTTL = o.MaxTTL
 		}
 	}
@@ -560,28 +521,28 @@ func SetDefaults(
 		no.CompressibleTypeList = o.CompressibleTypeList
 	}
 
-	if metadata.IsDefined("backends", name, "timeout_ms") {
-		no.TimeoutMS = o.TimeoutMS
+	if metadata.IsDefined("backends", name, "timeout") {
+		no.Timeout = o.Timeout
 	}
 
 	if metadata.IsDefined("backends", name, "max_idle_conns") {
 		no.MaxIdleConns = o.MaxIdleConns
 	}
 
-	if metadata.IsDefined("backends", name, "keep_alive_timeout_ms") {
-		no.KeepAliveTimeoutMS = o.KeepAliveTimeoutMS
+	if metadata.IsDefined("backends", name, "keep_alive_timeout") {
+		no.KeepAliveTimeout = o.KeepAliveTimeout
 	}
 
 	if metadata.IsDefined("backends", name, "shard_max_size_points") {
 		no.MaxShardSizePoints = o.MaxShardSizePoints
 	}
 
-	if metadata.IsDefined("backends", name, "shard_max_size_ms") {
-		no.MaxShardSizeMS = o.MaxShardSizeMS
+	if metadata.IsDefined("backends", name, "shard_max_size") {
+		no.MaxShardSize = o.MaxShardSize
 	}
 
-	if metadata.IsDefined("backends", name, "shard_step_ms") {
-		no.ShardStepMS = o.ShardStepMS
+	if metadata.IsDefined("backends", name, "shard_step") {
+		no.ShardStep = o.ShardStep
 	}
 
 	if metadata.IsDefined("backends", name, "timeseries_retention_factor") {
@@ -595,24 +556,24 @@ func SetDefaults(
 		}
 	}
 
-	if metadata.IsDefined("backends", name, "timeseries_ttl_ms") {
-		no.TimeseriesTTLMS = o.TimeseriesTTLMS
+	if metadata.IsDefined("backends", name, "timeseries_ttl") {
+		no.TimeseriesTTL = o.TimeseriesTTL
 	}
 
-	if metadata.IsDefined("backends", name, "max_ttl_ms") {
-		no.MaxTTLMS = o.MaxTTLMS
+	if metadata.IsDefined("backends", name, "max_ttl") {
+		no.MaxTTL = o.MaxTTL
 	}
 
-	if metadata.IsDefined("backends", name, "fastforward_ttl_ms") {
-		no.FastForwardTTLMS = o.FastForwardTTLMS
+	if metadata.IsDefined("backends", name, "fastforward_ttl") {
+		no.FastForwardTTL = o.FastForwardTTL
 	}
 
 	if metadata.IsDefined("backends", name, "fast_forward_disable") {
 		no.FastForwardDisable = o.FastForwardDisable
 	}
 
-	if metadata.IsDefined("backends", name, "backfill_tolerance_ms") {
-		no.BackfillToleranceMS = o.BackfillToleranceMS
+	if metadata.IsDefined("backends", name, "backfill_tolerance") {
+		no.BackfillTolerance = o.BackfillTolerance
 	}
 
 	if metadata.IsDefined("backends", name, "backfill_tolerance_points") {
@@ -685,12 +646,12 @@ func SetDefaults(
 		no.Prometheus = o.Prometheus.Clone()
 	}
 
-	if metadata.IsDefined("backends", name, "latency_min_ms") {
-		no.LatencyMinMS = o.LatencyMinMS
+	if metadata.IsDefined("backends", name, "latency_min") {
+		no.LatencyMin = o.LatencyMin
 	}
 
-	if metadata.IsDefined("backends", name, "latency_max_ms") {
-		no.LatencyMaxMS = o.LatencyMaxMS
+	if metadata.IsDefined("backends", name, "latency_max") {
+		no.LatencyMax = o.LatencyMax
 	}
 
 	if metadata.IsDefined("backends", name, "sigv4") {

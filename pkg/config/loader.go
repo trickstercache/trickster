@@ -19,7 +19,6 @@ package config
 import (
 	"net/url"
 	"strings"
-	"time"
 
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/negative"
@@ -95,11 +94,6 @@ func Load(args []string) (*Config, error) {
 	err = bo.Lookup(c.Backends).Validate(ncl)
 	if err != nil {
 		return nil, err
-	}
-
-	for _, c := range c.Caches {
-		c.Index.FlushInterval = time.Duration(c.Index.FlushIntervalMS) * time.Millisecond
-		c.Index.ReapInterval = time.Duration(c.Index.ReapIntervalMS) * time.Millisecond
 	}
 
 	return c, nil

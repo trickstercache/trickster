@@ -205,30 +205,6 @@ func TestClientSelectionStandard(t *testing.T) {
 	}
 }
 
-func TestDurationFromMS(t *testing.T) {
-
-	tests := []struct {
-		input    int
-		expected time.Duration
-	}{
-		{0, time.Duration(0)},
-		{5000, time.Duration(5000) * time.Millisecond},
-		{60000, time.Duration(60000) * time.Millisecond},
-	}
-
-	for i, test := range tests {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
-
-			res := durationFromMS(test.input)
-
-			if res != test.expected {
-				t.Fatalf("Mismatch in durationFromMS: expected=%f actual=%f", test.expected.Seconds(), res.Seconds())
-			}
-		})
-	}
-
-}
-
 func TestRedisCache_SetTTL(t *testing.T) {
 
 	const expected = "data"

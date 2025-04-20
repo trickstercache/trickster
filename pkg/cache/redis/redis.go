@@ -149,7 +149,3 @@ func (c *Cache) Close() error {
 	logger.Info("closing redis connection", nil)
 	return c.closer()
 }
-
-func durationFromMS(input int) time.Duration {
-	return time.Duration(int64(input)) * time.Millisecond
-}

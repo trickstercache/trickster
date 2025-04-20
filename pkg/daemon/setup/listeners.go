@@ -78,7 +78,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 	hasOldFC := oldConf != nil && oldConf.Frontend != nil
 	hasOldMC := oldConf != nil && oldConf.Metrics != nil
 	hasOldRC := oldConf != nil && oldConf.ReloadConfig != nil
-	drainTimeout := time.Duration(conf.ReloadConfig.DrainTimeoutMS) * time.Millisecond
+	drainTimeout := conf.ReloadConfig.DrainTimeout
 	var tracerFlusherSet bool
 
 	// if TLS port is configured and at least one origin is mapped to a good tls config,
@@ -98,7 +98,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 			go lg.StartListener("tlsListener",
 				conf.Frontend.TLSListenAddress, conf.Frontend.TLSListenPort,
 				conf.Frontend.ConnectionsLimit, tlsConfig, router, tracers, errorFunc,
-				time.Duration(conf.ReloadConfig.DrainTimeoutMS)*time.Millisecond, conf.Frontend.ReadHeaderTimeout)
+				conf.ReloadConfig.DrainTimeout, conf.Frontend.ReadHeaderTimeout)
 		}
 	case !conf.Frontend.ServeTLS && hasOldFC && oldConf.Frontend.ServeTLS:
 		// the TLS configs have been removed between the last config load and this one,

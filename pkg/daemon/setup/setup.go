@@ -172,8 +172,7 @@ func applyLoggingConfig(c, o *config.Config) {
 			if o.Logging.LogFile != "" {
 				// if we're changing from file1 -> console or file1 -> file2, close file1 handle
 				// the extra 1s allows HTTP listeners to close first and finish their log writes
-				go delayedLogCloser(oldLogger,
-					time.Duration(c.ReloadConfig.DrainTimeoutMS+1000)*time.Millisecond)
+				go delayedLogCloser(oldLogger, c.ReloadConfig.DrainTimeout+(1*time.Millisecond))
 			}
 			initLogger(c)
 			return
@@ -233,7 +232,7 @@ func applyCachingConfig(si *instance.ServerInstance,
 
 			// if we got to this point, the cache won't be used, so lets close it
 			go func() {
-				time.Sleep(time.Millisecond * time.Duration(newConf.ReloadConfig.DrainTimeoutMS))
+				time.Sleep(newConf.ReloadConfig.DrainTimeout)
 				w.Close()
 			}()
 		}

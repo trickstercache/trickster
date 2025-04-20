@@ -94,7 +94,7 @@ func TestOverlay(t *testing.T) {
 
 	o := New()
 	o.Overlay("", nil)
-	if o.IntervalMS != 0 {
+	if o.Interval != 0 {
 		t.Error("expected 0")
 	}
 
@@ -112,8 +112,8 @@ func TestOverlay(t *testing.T) {
 	o2 := New()
 	o2.md = md
 	o.Overlay("test", o2)
-	if o.IntervalMS != 0 {
-		t.Error("expected 5000 got ", o.IntervalMS)
+	if o.Interval != 0 {
+		t.Error("expected 5000 got ", o.Interval)
 	}
 }
 
@@ -128,7 +128,7 @@ backends:
       expected_codes:
         - 200
       expected_body: expected body
-      interval_ms: 0
+      interval: 0
       headers:
         TestHeader: test-header-val
       expected_headers:
@@ -137,12 +137,12 @@ backends:
 
 func TestCalibrateTimeout(t *testing.T) {
 
-	const defaultTimeout = time.Duration(DefaultHealthCheckTimeoutMS) * time.Millisecond
-	const maxTimeout = time.Duration(MaxProbeWaitMS) * time.Millisecond
-	const minTimeout = time.Duration(MinProbeWaitMS) * time.Millisecond
+	const defaultTimeout = DefaultHealthCheckTimeout
+	const maxTimeout = MaxProbeWait
+	const minTimeout = MinProbeWait
 
 	tests := []struct {
-		input    int
+		input    time.Duration
 		expected time.Duration
 	}{
 		{
@@ -155,16 +155,16 @@ func TestCalibrateTimeout(t *testing.T) {
 			1, minTimeout,
 		},
 		{
-			MinProbeWaitMS, minTimeout,
+			MinProbeWait, minTimeout,
 		},
 		{
-			MinProbeWaitMS + 5, time.Duration(MinProbeWaitMS+5) * time.Millisecond,
+			MinProbeWait + 5, time.Duration(MinProbeWait + 5),
 		},
 		{
-			MaxProbeWaitMS, maxTimeout,
+			MaxProbeWait, maxTimeout,
 		},
 		{
-			MaxProbeWaitMS + 5, maxTimeout,
+			MaxProbeWait + 5, maxTimeout,
 		},
 	}
 

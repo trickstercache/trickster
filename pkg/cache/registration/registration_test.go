@@ -95,8 +95,8 @@ func newCacheConfig(t *testing.T, cacheProvider string) *co.Options {
 		BBolt:      &bbo.Options{Filename: "/tmp/test.db", Bucket: "trickster_test"},
 		Badger:     &bao.Options{Directory: bd, ValueDirectory: bd},
 		Index: &io.Options{
-			ReapIntervalMS:        3000,
-			FlushIntervalMS:       5000,
+			ReapInterval:          3000,
+			FlushInterval:         5000,
 			MaxSizeBytes:          536870912,
 			MaxSizeBackoffBytes:   16777216,
 			MaxSizeObjects:        0,

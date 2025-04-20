@@ -159,12 +159,12 @@ func testStringValueValidationError(to *testOptions, location *string, testValue
 }
 
 type intSwapper struct {
-	location   *int
-	restoreVal int
-	testValue  int
+	location   *time.Duration
+	restoreVal time.Duration
+	testValue  time.Duration
 }
 
-func testIntegerValueValidationError(to *testOptions, sws []intSwapper) error {
+func testDurationValueValidationError(to *testOptions, sws []intSwapper) error {
 	for i := range sws {
 		sws[i].restoreVal = *sws[i].location
 		*sws[i].location = sws[i].testValue
@@ -269,25 +269,11 @@ func TestValidate(t *testing.T) {
 		sw       []intSwapper
 		expected any
 	}{
-		{ // case 0 - MaxShardSizeMS > 0 and MaxShardSizePoints > 0 are mutually exclusive
-			to: to,
-			sw: []intSwapper{
-				{
-					location:  &o.MaxShardSizeMS,
-					testValue: 1,
-				},
-				{
-					location:  &o.MaxShardSizePoints,
-					testValue: 1,
-				},
-			},
-			expected: ErrInvalidMaxShardSize,
-		},
 		{ // case 1 - verifies: if ShardStep > 0 && MaxShardSize == 0 { MaxShardSize = ShardStep }
 			to: to,
 			sw: []intSwapper{
 				{
-					location:  &o.ShardStepMS,
+					location:  &o.ShardStep,
 					testValue: 1,
 				},
 			},
@@ -297,11 +283,11 @@ func TestValidate(t *testing.T) {
 			to: to,
 			sw: []intSwapper{
 				{
-					location:  &o.ShardStepMS,
+					location:  &o.MaxShardSize,
 					testValue: 10,
 				},
 				{
-					location:  &o.MaxShardSizeMS,
+					location:  &o.ShardStep,
 					testValue: 32,
 				},
 			},
@@ -311,7 +297,7 @@ func TestValidate(t *testing.T) {
 
 	for i, test := range tests2 {
 		t.Run(fmt.Sprintf("ints %d", i), func(t *testing.T) {
-			err = testIntegerValueValidationError(test.to, test.sw)
+			err = testDurationValueValidationError(test.to, test.sw)
 			if err == nil && test.expected == nil {
 				return
 			}

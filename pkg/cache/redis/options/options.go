@@ -16,7 +16,11 @@
 
 package options
 
-import "github.com/trickstercache/trickster/v2/pkg/config/types"
+import (
+	"time"
+
+	"github.com/trickstercache/trickster/v2/pkg/config/types"
+)
 
 // Options is a collection of Configurations for Connecting to Redis
 type Options struct {
@@ -36,32 +40,32 @@ type Options struct {
 	DB int `yaml:"db,omitempty"`
 	// MaxRetries is the maximum number of retries before giving up on the command
 	MaxRetries int `yaml:"max_retries,omitempty"`
-	// MinRetryBackoffMS is the minimum backoff between each retry.
-	MinRetryBackoffMS int `yaml:"min_retry_backoff_ms,omitempty"`
-	// MaxRetryBackoffMS is the Maximum backoff between each retry.
-	MaxRetryBackoffMS int `yaml:"max_retry_backoff_ms,omitempty"`
-	// DialTimeoutMS is the timeout for establishing new connections.
-	DialTimeoutMS int `yaml:"dial_timeout_ms,omitempty"`
-	// ReadTimeoutMS is the timeout for socket reads.
+	// MinRetryBackoff is the minimum backoff between each retry.
+	MinRetryBackoff time.Duration `yaml:"min_retry_backoff,omitempty"`
+	// MaxRetryBackoff is the Maximum backoff between each retry.
+	MaxRetryBackoff time.Duration `yaml:"max_retry_backoff,omitempty"`
+	// DialTimeout is the timeout for establishing new connections.
+	DialTimeout time.Duration `yaml:"dial_timeout,omitempty"`
+	// ReadTimeout is the timeout for socket reads.
 	// If reached, commands will fail with a timeout instead of blocking.
-	ReadTimeoutMS int `yaml:"read_timeout_ms,omitempty"`
-	// WriteTimeoutMS is the timeout for socket writes.
+	ReadTimeout time.Duration `yaml:"read_timeout,omitempty"`
+	// WriteTimeout is the timeout for socket writes.
 	// If reached, commands will fail with a timeout instead of blocking.
-	WriteTimeoutMS int `yaml:"write_timeout_ms,omitempty"`
+	WriteTimeout time.Duration `yaml:"write_timeout,omitempty"`
 	// PoolSize is the maximum number of socket connections.
 	PoolSize int `yaml:"pool_size,omitempty"`
 	// MinIdleConns is the minimum number of idle connections
 	// which is useful when establishing new connection is slow.
 	MinIdleConns int `yaml:"min_idle_conns,omitempty"`
-	// MaxConnAgeMS is the connection age at which client retires (closes) the connection.
-	MaxConnAgeMS int `yaml:"max_conn_age_ms,omitempty"`
-	// PoolTimeoutMS is the amount of time client waits for connection if all
+	// MaxConnAge is the connection age at which client retires (closes) the connection.
+	MaxConnAge time.Duration `yaml:"max_conn_age,omitempty"`
+	// PoolTimeout is the amount of time client waits for connection if all
 	// connections are busy before returning an error.
-	PoolTimeoutMS int `yaml:"pool_timeout_ms,omitempty"`
-	// IdleTimeoutMS is the amount of time after which client closes idle connections.
-	IdleTimeoutMS int `yaml:"idle_timeout_ms,omitempty"`
-	// IdleCheckFrequencyMS is the frequency of idle checks made by idle connections reaper.
-	IdleCheckFrequencyMS int `yaml:"idle_check_frequency_ms,omitempty"`
+	PoolTimeout time.Duration `yaml:"pool_timeout,omitempty"`
+	// IdleTimeout is the amount of time after which client closes idle connections.
+	IdleTimeout time.Duration `yaml:"idle_timeout,omitempty"`
+	// IdleCheckFrequency is the frequency of idle checks made by idle connections reaper.
+	IdleCheckFrequency time.Duration `yaml:"idle_check_frequency,omitempty"`
 }
 
 // New returns a new Redis Options Reference with default values set

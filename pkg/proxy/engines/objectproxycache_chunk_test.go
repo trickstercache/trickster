@@ -47,8 +47,7 @@ func TestObjectProxyCacheRequestChunks(t *testing.T) {
 	r.Header.Add(headers.NameRange, "bytes=0-3")
 
 	o := rsc.BackendOptions
-	o.MaxTTLMS = 15000
-	o.MaxTTL = time.Duration(o.MaxTTLMS) * time.Millisecond
+	o.MaxTTL = time.Duration(15000) * time.Millisecond
 
 	_, e := testFetchOPC(r, http.StatusPartialContent, "test", map[string]string{"status": "kmiss"})
 	for _, err = range e {
@@ -489,8 +488,7 @@ func TestObjectProxyCacheRequestWithPCFChunks(t *testing.T) {
 	defer ts.Close()
 
 	o := rsc.BackendOptions
-	o.MaxTTLMS = 15000
-	o.MaxTTL = time.Duration(o.MaxTTLMS) * time.Millisecond
+	o.MaxTTL = time.Duration(15000) * time.Millisecond
 
 	r.Header.Set("testHeaderName", "testHeaderValue")
 

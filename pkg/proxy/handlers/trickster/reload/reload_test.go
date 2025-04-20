@@ -50,7 +50,7 @@ func TestReloadHandleFunc(t *testing.T) {
 	}
 
 	cfg, _ := config.Load([]string{"-config", testFile})
-	cfg.ReloadConfig.RateLimitMS = 0
+	cfg.ReloadConfig.RateLimit = 0
 	w := httptest.NewRecorder()
 	r, _ := http.NewRequest("GET", "/", nil)
 

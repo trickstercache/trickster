@@ -20,7 +20,6 @@ package otlp
 import (
 	"context"
 	"strings"
-	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	errs "github.com/trickstercache/trickster/v2/pkg/observability/tracing/errors"
@@ -75,10 +74,8 @@ func New(o *options.Options) (*tracing.Tracer, error) {
 		otlp.WithEndpoint(o.Endpoint)
 	}
 
-	if o.TimeoutMS > 0 {
-		opts = append(opts, otlp.WithTimeout(
-			time.Millisecond*time.Duration(int64(o.TimeoutMS))),
-		)
+	if o.Timeout > 0 {
+		opts = append(opts, otlp.WithTimeout(o.Timeout))
 	}
 
 	if len(o.Headers) > 0 {

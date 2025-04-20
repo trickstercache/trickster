@@ -60,7 +60,7 @@ backends:
       ## customizing the expected response
       #
       # hc fails if a response takes longer than 1s
-      timeout_ms: 1000
+      timeout: 1000ms
       # hc fails if the response code is not in the list
       expected_codes: [ 200, 204, 206, 301, 302, 304 ]
       #
@@ -89,9 +89,9 @@ backends:
     origin_url: http://server1
     healthcheck:
       path: /health
-      timeout_ms: 1000      # timeout_ms should be <= interval_ms
+      timeout: 1000ms      # timeout should be <= interval
       # for ALB integration:
-      interval_ms: 1000     # auto-poll health every 1s
+      interval: 1000ms     # auto-poll health every 1s
       failure_threshold: 3  # backend is unhealthy after 3 consecutive failures
       recovery_threshold: 3 # backend is healthy after 3 consecutive successes
 ```

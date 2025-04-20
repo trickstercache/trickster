@@ -34,8 +34,8 @@ func WithResourcesContext(client backends.Backend, o *bo.Options,
 	next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
-		if o != nil && (o.LatencyMinMS > 0 || o.LatencyMaxMS > 0) {
-			processSimulatedLatency(w, o.LatencyMinMS, o.LatencyMaxMS)
+		if o != nil && (o.LatencyMin > 0 || o.LatencyMax > 0) {
+			processSimulatedLatency(w, o.LatencyMin, o.LatencyMax)
 		}
 
 		var resources *request.Resources

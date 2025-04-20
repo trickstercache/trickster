@@ -24,13 +24,13 @@ func TestClone(t *testing.T) {
 	const expectedLen = 1
 
 	o := &Options{
-		InstantRoundMS: expectedMS,
-		Labels:         map[string]string{"test": "trickster"},
+		InstantRound: expectedMS,
+		Labels:       map[string]string{"test": "trickster"},
 	}
 
 	o2 := o.Clone()
-	if o2.InstantRoundMS != expectedMS {
-		t.Errorf("expected %d got %d", expectedMS, o2.InstantRoundMS)
+	if o2.InstantRound != expectedMS {
+		t.Errorf("expected %d got %d", expectedMS, o2.InstantRound)
 	}
 	if len(o2.Labels) != expectedLen {
 		t.Errorf("expected %d got %d", expectedLen, len(o2.Labels))

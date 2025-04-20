@@ -91,13 +91,13 @@ func (cc *Options) Clone() *Options {
 	c.ProviderID = cc.ProviderID
 
 	c.Index.FlushInterval = cc.Index.FlushInterval
-	c.Index.FlushIntervalMS = cc.Index.FlushIntervalMS
+	c.Index.FlushInterval = cc.Index.FlushInterval
 	c.Index.MaxSizeBackoffBytes = cc.Index.MaxSizeBackoffBytes
 	c.Index.MaxSizeBackoffObjects = cc.Index.MaxSizeBackoffObjects
 	c.Index.MaxSizeBytes = cc.Index.MaxSizeBytes
 	c.Index.MaxSizeObjects = cc.Index.MaxSizeObjects
 	c.Index.ReapInterval = cc.Index.ReapInterval
-	c.Index.ReapIntervalMS = cc.Index.ReapIntervalMS
+	c.Index.ReapInterval = cc.Index.ReapInterval
 
 	c.Badger.Directory = cc.Badger.Directory
 	c.Badger.ValueDirectory = cc.Badger.ValueDirectory
@@ -109,23 +109,23 @@ func (cc *Options) Clone() *Options {
 
 	c.Redis.ClientType = cc.Redis.ClientType
 	c.Redis.DB = cc.Redis.DB
-	c.Redis.DialTimeoutMS = cc.Redis.DialTimeoutMS
+	c.Redis.DialTimeout = cc.Redis.DialTimeout
 	c.Redis.Endpoint = cc.Redis.Endpoint
 	c.Redis.Endpoints = cc.Redis.Endpoints
-	c.Redis.IdleCheckFrequencyMS = cc.Redis.IdleCheckFrequencyMS
-	c.Redis.IdleTimeoutMS = cc.Redis.IdleTimeoutMS
-	c.Redis.MaxConnAgeMS = cc.Redis.MaxConnAgeMS
+	c.Redis.IdleCheckFrequency = cc.Redis.IdleCheckFrequency
+	c.Redis.IdleTimeout = cc.Redis.IdleTimeout
+	c.Redis.MaxConnAge = cc.Redis.MaxConnAge
 	c.Redis.MaxRetries = cc.Redis.MaxRetries
-	c.Redis.MaxRetryBackoffMS = cc.Redis.MaxRetryBackoffMS
+	c.Redis.MaxRetryBackoff = cc.Redis.MaxRetryBackoff
 	c.Redis.MinIdleConns = cc.Redis.MinIdleConns
-	c.Redis.MinRetryBackoffMS = cc.Redis.MinRetryBackoffMS
+	c.Redis.MinRetryBackoff = cc.Redis.MinRetryBackoff
 	c.Redis.Password = cc.Redis.Password
 	c.Redis.PoolSize = cc.Redis.PoolSize
-	c.Redis.PoolTimeoutMS = cc.Redis.PoolTimeoutMS
+	c.Redis.PoolTimeout = cc.Redis.PoolTimeout
 	c.Redis.Protocol = cc.Redis.Protocol
-	c.Redis.ReadTimeoutMS = cc.Redis.ReadTimeoutMS
+	c.Redis.ReadTimeout = cc.Redis.ReadTimeout
 	c.Redis.SentinelMaster = cc.Redis.SentinelMaster
-	c.Redis.WriteTimeoutMS = cc.Redis.WriteTimeoutMS
+	c.Redis.WriteTimeout = cc.Redis.WriteTimeout
 
 	c.UseCacheChunking = cc.UseCacheChunking
 	c.TimeseriesChunkFactor = cc.TimeseriesChunkFactor
@@ -177,12 +177,12 @@ func (l Lookup) SetDefaults(metadata yamlx.KeyLookup, activeCaches sets.Set[stri
 			}
 		}
 
-		if metadata.IsDefined("caches", k, "index", "reap_interval_ms") {
-			cc.Index.ReapIntervalMS = v.Index.ReapIntervalMS
+		if metadata.IsDefined("caches", k, "index", "reap_interval") {
+			cc.Index.ReapInterval = v.Index.ReapInterval
 		}
 
-		if metadata.IsDefined("caches", k, "index", "flush_interval_ms") {
-			cc.Index.FlushIntervalMS = v.Index.FlushIntervalMS
+		if metadata.IsDefined("caches", k, "index", "flush_interval") {
+			cc.Index.FlushInterval = v.Index.FlushInterval
 		}
 
 		if metadata.IsDefined("caches", k, "index", "max_size_bytes") {
@@ -261,24 +261,24 @@ func (l Lookup) SetDefaults(metadata yamlx.KeyLookup, activeCaches sets.Set[stri
 				cc.Redis.MaxRetries = v.Redis.MaxRetries
 			}
 
-			if metadata.IsDefined("caches", k, "redis", "min_retry_backoff_ms") {
-				cc.Redis.MinRetryBackoffMS = v.Redis.MinRetryBackoffMS
+			if metadata.IsDefined("caches", k, "redis", "min_retry_backoff") {
+				cc.Redis.MinRetryBackoff = v.Redis.MinRetryBackoff
 			}
 
-			if metadata.IsDefined("caches", k, "redis", "max_retry_backoff_ms") {
-				cc.Redis.MaxRetryBackoffMS = v.Redis.MaxRetryBackoffMS
+			if metadata.IsDefined("caches", k, "redis", "max_retry_backoff") {
+				cc.Redis.MaxRetryBackoff = v.Redis.MaxRetryBackoff
 			}
 
-			if metadata.IsDefined("caches", k, "redis", "dial_timeout_ms") {
-				cc.Redis.DialTimeoutMS = v.Redis.DialTimeoutMS
+			if metadata.IsDefined("caches", k, "redis", "dial_timeout") {
+				cc.Redis.DialTimeout = v.Redis.DialTimeout
 			}
 
-			if metadata.IsDefined("caches", k, "redis", "read_timeout_ms") {
-				cc.Redis.ReadTimeoutMS = v.Redis.ReadTimeoutMS
+			if metadata.IsDefined("caches", k, "redis", "read_timeout") {
+				cc.Redis.ReadTimeout = v.Redis.ReadTimeout
 			}
 
-			if metadata.IsDefined("caches", k, "redis", "write_timeout_ms") {
-				cc.Redis.WriteTimeoutMS = v.Redis.WriteTimeoutMS
+			if metadata.IsDefined("caches", k, "redis", "write_timeout") {
+				cc.Redis.WriteTimeout = v.Redis.WriteTimeout
 			}
 
 			if metadata.IsDefined("caches", k, "redis", "pool_size") {
@@ -289,20 +289,20 @@ func (l Lookup) SetDefaults(metadata yamlx.KeyLookup, activeCaches sets.Set[stri
 				cc.Redis.MinIdleConns = v.Redis.MinIdleConns
 			}
 
-			if metadata.IsDefined("caches", k, "redis", "max_conn_age_ms") {
-				cc.Redis.MaxConnAgeMS = v.Redis.MaxConnAgeMS
+			if metadata.IsDefined("caches", k, "redis", "max_conn_age") {
+				cc.Redis.MaxConnAge = v.Redis.MaxConnAge
 			}
 
-			if metadata.IsDefined("caches", k, "redis", "pool_timeout_ms") {
-				cc.Redis.PoolTimeoutMS = v.Redis.PoolTimeoutMS
+			if metadata.IsDefined("caches", k, "redis", "pool_timeout") {
+				cc.Redis.PoolTimeout = v.Redis.PoolTimeout
 			}
 
-			if metadata.IsDefined("caches", k, "redis", "idle_timeout_ms") {
-				cc.Redis.IdleTimeoutMS = v.Redis.IdleTimeoutMS
+			if metadata.IsDefined("caches", k, "redis", "idle_timeout") {
+				cc.Redis.IdleTimeout = v.Redis.IdleTimeout
 			}
 
-			if metadata.IsDefined("caches", k, "redis", "idle_check_frequency_ms") {
-				cc.Redis.IdleCheckFrequencyMS = v.Redis.IdleCheckFrequencyMS
+			if metadata.IsDefined("caches", k, "redis", "idle_check_frequency") {
+				cc.Redis.IdleCheckFrequency = v.Redis.IdleCheckFrequency
 			}
 		}
 

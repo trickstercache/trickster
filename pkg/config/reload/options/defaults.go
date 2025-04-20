@@ -16,16 +16,18 @@
 
 package options
 
+import "time"
+
 const (
 	// DefaultReloadPort is the default port that the Reload endpoint will listen on
 	DefaultReloadPort = 8484
 	// DefaultReloadAddress is the default address that the Reload endpoint will listen on
 	DefaultReloadAddress = "127.0.0.1"
-	// DefaultDrainTimeoutMS is the default time that is allowed for an old configuration's requests to drain
+	// DefaultDrainTimeout is the default time that is allowed for an old configuration's requests to drain
 	// before its resources are closed
-	DefaultDrainTimeoutMS = 30000
-	// DefaultRateLimitMS is the default Rate Limit time for Config Reloads
-	DefaultRateLimitMS = 3000
+	DefaultDrainTimeout = 30000 * time.Millisecond
+	// DefaultRateLimit is the default Rate Limit time for Config Reloads
+	DefaultRateLimit = 3000 * time.Millisecond
 	// DefaultReloadHandlerPath defines the default path for the Reload Handler
 	DefaultReloadHandlerPath = "/trickster/config/reload"
 )
