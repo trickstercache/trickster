@@ -65,7 +65,7 @@ backends:
     forwarded_headers: x
     negative_cache_name: test
     rule_name: ''
-    shard_max_size: 0ms
+    shard_max_size_time: 0ms
     shard_max_size_points: 0
     shard_step: 0ms
     healthcheck:

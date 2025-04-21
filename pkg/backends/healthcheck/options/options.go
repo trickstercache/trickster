@@ -39,7 +39,7 @@ var ErrNoOptionsProvided = errors.New("no health check options provided")
 // Options defines Health Checking Options
 type Options struct {
 
-	// Interval defines the interval in milliseconds at which the target will be probed
+	// Interval defines the interval at which the target will be probed
 	Interval time.Duration `yaml:"interval,omitempty"`
 	// FailureThreshold indicates the number of consecutive failed probes required to
 	// mark an available target as unavailable

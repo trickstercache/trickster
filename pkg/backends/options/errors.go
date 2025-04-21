@@ -24,15 +24,15 @@ import (
 // ErrInvalidMetadata is an error for invalid metadata
 var ErrInvalidMetadata = errors.New("invalid options metadata")
 
-// ErrInvalidMaxShardSizeMS is an error for when 'shard_max_size' is not
+// ErrInvalidMaxShardSizeMS is an error for when 'shard_max_size_time' is not
 // a multiple 'shard_step'
 var ErrInvalidMaxShardSizeMS = errors.New(
-	"'shard_max_size' must be a multiple of 'shard_step' when both are non-zero")
+	"'shard_max_size_time' must be a multiple of 'shard_step' when both are non-zero")
 
-// ErrInvalidMaxShardSize is an error for when both 'shard_max_size' and
+// ErrInvalidMaxShardSize is an error for when both 'shard_max_size_time' and
 // 'shard_max_size_points' are used on the same backend
 var ErrInvalidMaxShardSize = errors.New(
-	"'shard_max_size' and 'shard_max_size_points' cannot both be non-zero")
+	"'shard_max_size_time' and 'shard_max_size_points' cannot both be non-zero")
 
 // ErrMissingProvider is an error type for missing provider
 type ErrMissingProvider struct {

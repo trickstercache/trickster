@@ -117,10 +117,10 @@ type Options struct {
 	// before sharding into multiple requests of this denomination and reconsitituting the results.
 	// If MaxShardSizePoints and MaxShardSizeMS are both > 0, the configuration is invalid
 	MaxShardSizePoints int `yaml:"shard_max_size_points,omitempty"`
-	// MaxShardSize defines the max size of a timeseries request in milliseconds,
+	// MaxShardSizeTime defines the max size of a timeseries request,
 	// before sharding into multiple requests of this denomination and reconsitituting the results.
-	// If MaxShardSizePoints and MaxShardSize are both > 0, the configuration is invalid
-	MaxShardSize time.Duration `yaml:"shard_max_size,omitempty"`
+	// If MaxShardSizePoints and MaxShardSizeTime are both > 0, the configuration is invalid
+	MaxShardSizeTime time.Duration `yaml:"shard_max_size_time,omitempty"`
 	// ShardStep defines the epoch-aligned cadence to use when creating shards. When set to 0,
 	// shards are not aligned to the epoch at a specific step. MaxShardSizeMS must be perfectly
 	// divisible by ShardStep when both are > 0, or the configuration is invalid
@@ -223,7 +223,7 @@ func New() *Options {
 		Paths:                        make(map[string]*po.Options),
 		RevalidationFactor:           DefaultRevalidationFactor,
 		MaxShardSizePoints:           DefaultTimeseriesShardSize,
-		MaxShardSize:                 DefaultTimeseriesShardSize,
+		MaxShardSizeTime:             DefaultTimeseriesShardSize,
 		ShardStep:                    DefaultTimeseriesShardStep,
 		TLS:                          &to.Options{},
 		Timeout:                      DefaultBackendTimeout * time.Millisecond,
@@ -267,7 +267,7 @@ func (o *Options) Clone() *Options {
 	no.RevalidationFactor = o.RevalidationFactor
 	no.RuleName = o.RuleName
 	no.Scheme = o.Scheme
-	no.MaxShardSize = o.MaxShardSize
+	no.MaxShardSizeTime = o.MaxShardSizeTime
 	no.MaxShardSizePoints = o.MaxShardSizePoints
 	no.ShardStep = o.ShardStep
 	no.Timeout = o.Timeout
@@ -343,17 +343,17 @@ func (l Lookup) Validate(ncl negative.Lookups) error {
 		o.Host = url.Host
 		o.PathPrefix = url.Path
 		o.TimeseriesRetention = time.Duration(o.TimeseriesRetentionFactor)
-		o.DoesShard = o.MaxShardSizePoints > 0 || o.MaxShardSize > 0 || o.ShardStep > 0
+		o.DoesShard = o.MaxShardSizePoints > 0 || o.MaxShardSizeTime > 0 || o.ShardStep > 0
 
-		if o.MaxShardSize > 0 && o.MaxShardSizePoints > 0 {
+		if o.MaxShardSizeTime > 0 && o.MaxShardSizePoints > 0 {
 			return ErrInvalidMaxShardSize
 		}
 
-		if o.ShardStep > 0 && o.MaxShardSize == 0 {
-			o.MaxShardSize = o.ShardStep
+		if o.ShardStep > 0 && o.MaxShardSizeTime == 0 {
+			o.MaxShardSizeTime = o.ShardStep
 		}
 
-		if o.ShardStep > 0 && o.MaxShardSize%o.ShardStep != 0 {
+		if o.ShardStep > 0 && o.MaxShardSizeTime%o.ShardStep != 0 {
 			return ErrInvalidMaxShardSizeMS
 		}
 
@@ -537,8 +537,8 @@ func SetDefaults(
 		no.MaxShardSizePoints = o.MaxShardSizePoints
 	}
 
-	if metadata.IsDefined("backends", name, "shard_max_size") {
-		no.MaxShardSize = o.MaxShardSize
+	if metadata.IsDefined("backends", name, "shard_max_size_time") {
+		no.MaxShardSizeTime = o.MaxShardSizeTime
 	}
 
 	if metadata.IsDefined("backends", name, "shard_step") {

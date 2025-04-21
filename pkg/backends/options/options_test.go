@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	ro "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/negative"
@@ -158,13 +159,13 @@ func testStringValueValidationError(to *testOptions, location *string, testValue
 	return err
 }
 
-type intSwapper struct {
+type durationSwapper struct {
 	location   *time.Duration
 	restoreVal time.Duration
 	testValue  time.Duration
 }
 
-func testDurationValueValidationError(to *testOptions, sws []intSwapper) error {
+func testDurationValueValidationError(to *testOptions, sws []durationSwapper) error {
 	for i := range sws {
 		sws[i].restoreVal = *sws[i].location
 		*sws[i].location = sws[i].testValue
@@ -263,15 +264,15 @@ func TestValidate(t *testing.T) {
 		})
 	}
 
-	// integer value tests
+	// duration value tests
 	tests2 := []struct {
 		to       *testOptions
-		sw       []intSwapper
+		sw       []durationSwapper
 		expected any
 	}{
-		{ // case 1 - verifies: if ShardStep > 0 && MaxShardSize == 0 { MaxShardSize = ShardStep }
+		{ // case 0 - verifies: if ShardStep > 0 && MaxShardSize == 0 { MaxShardSize = ShardStep }
 			to: to,
-			sw: []intSwapper{
+			sw: []durationSwapper{
 				{
 					location:  &o.ShardStep,
 					testValue: 1,
@@ -281,9 +282,9 @@ func TestValidate(t *testing.T) {
 		},
 		{ // case 2 - verifies: if MaxShardSize % ShardStep != 0 { return ErrInvalidMaxShardSizeMS }
 			to: to,
-			sw: []intSwapper{
+			sw: []durationSwapper{
 				{
-					location:  &o.MaxShardSize,
+					location:  &o.MaxShardSizeTime,
 					testValue: 10,
 				},
 				{
@@ -316,6 +317,14 @@ func TestValidate(t *testing.T) {
 		})
 	}
 
+	t.Run("maxShard edge cases", func(t *testing.T) {
+		opts := *o
+		opts.MaxShardSizeTime = 1 * time.Millisecond
+		opts.MaxShardSizePoints = 1
+		to := &testOptions{Backends: Lookup{o.Name: &opts}}
+		to.ncl = ncl
+		require.ErrorIs(t, Lookup(to.Backends).Validate(to.ncl), ErrInvalidMaxShardSize)
+	})
 }
 
 func TestSetDefaults(t *testing.T) {
