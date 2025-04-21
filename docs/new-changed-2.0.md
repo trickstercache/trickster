@@ -30,7 +30,7 @@
   - Also supported by standard Reverse Proxy Cache for chunking objects by Byte Range
   - Disabled by default
 - We now support [Time Series Backend Request Sharding](./timeseries_sharding.md)
-  - Allows requests proxied to Time Series Backends to be chunked into multiple concurrent based on a configurable chunk size in milliseconds or data points.
+  - Allows requests proxied to Time Series Backends to be chunked into multiple concurrent based on a configurable chunk size in arbitrary time units (milliseconds, seconds, etc) or by data points.
   - Backend Responses are merged into a single response before caching
   - Disabled by default
   - You can use Cache Chunking and TS Backend Request Sharding in any combination (on/on, on/off, off/on, off/0ff) as theywork together seamlessly. They can be configured with the same or different chunk sizes.

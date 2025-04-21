@@ -84,9 +84,9 @@ data:
     #     # Redis and BadgerDB handle those functions natively and does not use the Tricksters Cache Index
     #     index:
     #       # reap_interval defines how long the Cache Index reaper sleeps between reap cycles. Default is 3 (3s)
-    #       reap_interval: 3000ms
+    #       reap_interval: 3s
     #       # flush_interval sets how often the Cache Index saves its metadata to the cache from application memory. Default is 5 (5s)
-    #       flush_interval: 5000ms
+    #       flush_interval: 5s
     #       # max_size_bytes indicates how large the cache can grow in bytes before the Index evicts least-recently-accessed items. default is 512MB
     #       max_size_bytes: 536870912
     #       # max_size_backoff_bytes indicates how far below max_size_bytes the cache size must be to complete a byte-size-based eviction exercise. default is 16MB
@@ -140,11 +140,11 @@ data:
     #       # max_retry_backoff is the maximum backoff time between each retry
     #       max_retry_backoff: 512ms
     #       # dial_timeout is the timeout for establishing new connections
-    #       dial_timeout: 5000ms
+    #       dial_timeout: 5s
     #       # read_timeout is the timeout for socket reads. If reached, commands will fail with a timeout instead of blocking.
-    #       read_timeout: 3000ms
+    #       read_timeout: 3s
     #       # write_timeout is the timeout for socket writes. If reached, commands will fail with a timeout instead of blocking.
-    #       write_timeout: 3000ms
+    #       write_timeout: 3s
     #       # pool_size is the maximum number of socket connections.
     #       pool_size: 20
     #       # min_idle_conns is the minimum number of idle connections which is useful when establishing new connection is slow.
@@ -154,9 +154,9 @@ data:
     #       # pool_timeout is the amount of time client waits for connection if all connections are busy before returning an error.
     #       pool_timeout: 4000ms
     #       # idle_timeout is the amount of time after which client closes idle connections.
-    #       idle_timeout: 300000ms
+    #       idle_timeout: 5m
     #       # idle_check_frequency is the frequency of idle checks made by idle connections reaper.
-    #       idle_check_frequency: 60000ms
+    #       idle_check_frequency: 1m
 
     #     ## Configuration options when using a Filesystem Cache ###############
     #     filesystem:
@@ -191,8 +191,8 @@ data:
     #       bucket: trickster
 
     #     index:
-    #       reap_interval: 3000ms
-    #       flush_interval: 5000ms
+    #       reap_interval: 3s
+    #       flush_interval: 5s
     #       max_size_bytes: 536870912
     #       size_backoff_bytes: 16777216
 
@@ -294,18 +294,18 @@ data:
     #     - text/javascript, text/css, text/plain, text/xml, text/json, application/json, application/javascript, application/xml ]
 
     #     # timeout defines how long Trickster will wait before aborting and upstream http request. Default: 180s
-    #     timeout: 180000ms
+    #     timeout: 180s
 
     #     # keep_alive_timeout defines how long Trickster will wait before closing a keep-alive connection due to inactivity
-    #     # if the origins keep-alive timeout is shorter than Tricksters, the connect will be closed sooner. Default: 300
-    #     keep_alive_timeout: 300000ms
+    #     # if the origins keep-alive timeout is shorter than Tricksters, the connect will be closed sooner. Default: 5 minutes
+    #     keep_alive_timeout: 5m
 
     #     # max_idle_conns set the maximum concurrent keep-alive connections Trickster may have opened to this backend
     #     # additional requests will be queued. Default: 20
     #     max_idle_conns: 20
 
-    #     # max_ttl defines the maximum allowed TTL for any object cached for this backend. default is 86400
-    #     max_ttl: 86400000ms
+    #     # max_ttl defines the maximum allowed TTL for any object cached for this backend. default is 24 hours
+    #     max_ttl: 24h
 
     #     # revalidation_factor is the multiplier for object lifetime expiration to determine cache object TTL; default is 2
     #     # for example, if a revalidatable object has Cache-Control: max-age=300, we will cache for 10 minutes (300s * 2)
@@ -319,14 +319,14 @@ data:
 
     #     # backfill_tolerance prevents new datapoints that fall within the tolerance window (relative to time.Now) from being cached
     #     # Think of it as "never cache the newest N milliseconds of real-time data, because it may be preliminary and subject to updates"
-    #     # default is 0
+    #     # default is 0ms
     #     backfill_tolerance: 0ms
 
     #     # timeseries_retention_factor defines the maximum number of recent timestamps to cache for a given query. Default is 1024
     #     timeseries_retention_factor: 1024
 
     #     # timeseries_ttl defines the relative expiration of cached timeseries. default is 6 hours (21600 seconds)
-    #     timeseries_ttl: 21600000ms
+    #     timeseries_ttl: 6h
 
     #     # timeseries_eviction_method selects the metholodogy used to determine which timestamps are removed once
     #     # the timeseries_retention_factor limit is reached. options are oldest and lru. Default is oldest
@@ -336,24 +336,24 @@ data:
     #     fast_forward_disable: false
 
     #     # fastforward_ttl defines the relative expiration of cached fast forward data. default is 15s
-    #     fastforward_ttl: 15000ms
+    #     fastforward_ttl: 15s
 
     #     # shard_max_size_points defines the maximum size of a timeseries request in unique timestamps,
     #     # before sharding into multiple requests of this denomination and reconsitituting the results.
-    #     # If shard_max_size_points and shard_max_size are both > 0, the configuration is invalid.
+    #     # If shard_max_size_points and shard_max_size_time are both > 0, the configuration is invalid.
     #     # default is 0
     #     shard_max_size_points: 0
 
-    #     # shard_max_size defines the max size of a timeseries request in milliseconds,
+    #     # shard_max_size_time defines the max size of a timeseries request in arbitrary time units (ns, ms, s, h, d),
     #     # before sharding into multiple requests of this denomination and reconsitituting the results.
-    #     # If shard_max_size and shard_max_size_points are both > 0, the configuration is invalid.
-    #     # default is 0
-    #     shard_max_size: 0ms
+    #     # If shard_max_size_time and shard_max_size_points are both > 0, the configuration is invalid.
+    #     # default is 0ms
+    #     shard_max_size_time: 0ms
 
     #     # shard_step defines the epoch-aligned cadence to use when creating shards. When set to 0,
-    #     # shards are not aligned to the epoch at a specific step. shard_max_size must be perfectly
+    #     # shards are not aligned to the epoch at a specific step. shard_max_size_time must be perfectly
     #     # divisible by shard_step when both are > 0, or the configuration is invalid.
-    #     # default is 0
+    #     # default is 0ms
     #     shard_step: 0ms
 
     #     #
@@ -451,8 +451,8 @@ data:
     #     negative_cache_name: general
     #     timeseries_retention_factor: 1024
     #     timeseries_eviction_method: oldest
-    #     timeout: 180000ms
-    #     backfill_tolerance: 180000ms
+    #     timeout: 18s
+    #     backfill_tolerance: 18s
     #     tracing_name: example
 
     # # Configuration Options for Request Routing Rules - see /docs/rule.md for more information
@@ -519,7 +519,7 @@ data:
     #     # timeout is the amount of time in milliseconds for the tracing post
     #     # to wait for a response before timing out
     #     # default is no timeout set
-    #     timeout: 5000ms
+    #     timeout: 5s
 
     #     # headers is a list of http headers to include in the tracing post
     #     # default is none
@@ -597,12 +597,12 @@ data:
     #   handler_path: /trickster/config/reload
     #   # drain_timeout defines how long old HTTP listeners will live to allow
     #   # outstanding connection to close organically, before the listener is forcefully closed
-    #   # the default is 30
-    #   drain_timeout: 30000ms
+    #   # the default is 30s
+    #   drain_timeout: 30s
     #   # rate_limit specifies the rate limit timeout duration to apply to the HTTP reload interface.
     #   # The reload interface is disabled for this duration of time whenever a config reload request is
-    #   # made that fails because the underlying config file is unmodified. default is 3
-    #   rate_limit: 3000ms
+    #   # made that fails because the underlying config file is unmodified. default is 3s
+    #   rate_limit: 3s
 
     # # Configuration Options for Logging Instrumentation
     # logging:
