@@ -106,7 +106,7 @@ func (t Typ) String() string {
 	if s, ok := typLookup[t]; ok {
 		return s
 	}
-	return strconv.Itoa(int(t))
+	return strconv.FormatUint(uint64(t), 10)
 }
 
 // IsBreakable returns true if the Typ is EOF or Error

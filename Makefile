@@ -246,7 +246,6 @@ get-tools: get-msgpack
 	@echo "Installing tools..."
 	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.0.2
 	go install honnef.co/go/tools/cmd/staticcheck@2025.1.1
-	go install github.com/securego/gosec/v2/cmd/gosec@v2.22.3
 
 .PHONY: get-msgpack
 get-msgpack:

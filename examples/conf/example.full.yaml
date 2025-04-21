@@ -65,6 +65,9 @@ frontend:
 #   # 0 by default, unlimited.
 #   connections_limit: 0
 
+#  # reader_header_timeout defines is the amount of time allowed to read request headers by the frontend http proxy server
+#  # read_header_timeout: 10s
+
 # caches:
 #   default:
 #     # provider defines what kind of cache Trickster uses
@@ -231,7 +234,7 @@ backends:
   default:
 
     # provider identifies the backend provider.
-    # Valid options are: prometheus, influxdb, clickhouse, irondb, reverseproxycache (or just rpc)
+    # Valid options are: prometheus, influxdb, clickhouse, reverseproxycache (or just rpc)
     # provider is a required configuration value
     provider: prometheus
 

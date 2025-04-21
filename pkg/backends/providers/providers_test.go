@@ -52,7 +52,6 @@ func TestIsValidProvider(t *testing.T) {
 		{"", false},
 		{"invalid", false},
 		{"influxdb", true},
-		{"irondb", true},
 	}
 
 	for i, test := range tests {

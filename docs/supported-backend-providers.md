@@ -25,9 +25,3 @@ See the [InfluxDB Support Document](./influxdb.md) for more information.
 Trickster supports accelerating ClickHouse time series. Specify `'clickhouse'` as the Provider when configuring Trickster.
 
 See the [ClickHouse Support Document](./clickhouse.md) for more information.
-
-### <img src="./images/external/irondb_logo_60.png" width=16 /> Circonus IRONdb
-
-Support has been included for the Circonus IRONdb time-series database. If Grafana is used for visualizations, the Circonus IRONdb data source plug-in for Grafana can be configured to use Trickster as its data source. All IRONdb data retrieval operations, including CAQL queries, are supported.
-
-When configuring an IRONdb backend, specify `'irondb'` as the provider in the Trickster configuration. The `host` value can be set directly to the address and port of an IRONdb node, but it is recommended to use the Circonus API proxy service. When using the proxy service, set the `host` value to the address and port of the proxy service, and set the `api_path` value to `'irondb'`.

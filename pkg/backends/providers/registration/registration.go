@@ -20,7 +20,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb"
 	"github.com/trickstercache/trickster/v2/pkg/backends/clickhouse"
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb"
-	"github.com/trickstercache/trickster/v2/pkg/backends/irondb"
 	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registration/types"
@@ -34,7 +33,6 @@ func SupportedProviders() types.Lookup {
 		"alb":                            alb.NewClient,
 		"clickhouse":                     clickhouse.NewClient,
 		"influxdb":                       influxdb.NewClient,
-		"irondb":                         irondb.NewClient,
 		"prometheus":                     prometheus.NewClient,
 		"rule":                           rule.NewClient,
 		"proxy":                          reverseproxy.NewClient,

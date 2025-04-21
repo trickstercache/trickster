@@ -98,7 +98,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 			go lg.StartListener("tlsListener",
 				conf.Frontend.TLSListenAddress, conf.Frontend.TLSListenPort,
 				conf.Frontend.ConnectionsLimit, tlsConfig, router, tracers, errorFunc,
-				time.Duration(conf.ReloadConfig.DrainTimeoutMS)*time.Millisecond)
+				time.Duration(conf.ReloadConfig.DrainTimeoutMS)*time.Millisecond, conf.Frontend.ReadHeaderTimeout)
 		}
 	case !conf.Frontend.ServeTLS && hasOldFC && oldConf.Frontend.ServeTLS:
 		// the TLS configs have been removed between the last config load and this one,
@@ -131,7 +131,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		}
 		go lg.StartListener("httpListener",
 			conf.Frontend.ListenAddress, conf.Frontend.ListenPort,
-			conf.Frontend.ConnectionsLimit, nil, router, t2, errorFunc, 0)
+			conf.Frontend.ConnectionsLimit, nil, router, t2, errorFunc, 0, conf.Frontend.ReadHeaderTimeout)
 	}
 
 	// if the Metrics HTTP port is configured, then set up the http listener instance
@@ -148,7 +148,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		}
 		go lg.StartListener("metricsListener",
 			conf.Metrics.ListenAddress, conf.Metrics.ListenPort,
-			conf.Frontend.ConnectionsLimit, nil, metricsRouter, nil, errorFunc, 0)
+			conf.Frontend.ConnectionsLimit, nil, metricsRouter, nil, errorFunc, 0, conf.Frontend.ReadHeaderTimeout)
 	} else {
 		metricsRouter.RegisterRoute("/metrics", nil, nil,
 			false, metrics.Handler())
@@ -176,7 +176,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		}
 		go lg.StartListener("reloadListener",
 			conf.ReloadConfig.ListenAddress, conf.ReloadConfig.ListenPort,
-			conf.Frontend.ConnectionsLimit, nil, rr, nil, errorFunc, 0)
+			conf.Frontend.ConnectionsLimit, nil, rr, nil, errorFunc, 0, conf.Frontend.ReadHeaderTimeout)
 	} else {
 		rr.RegisterRoute(conf.Main.ConfigHandlerPath, nil, nil,
 			false, http.HandlerFunc(handlers.ConfigHandleFunc(conf)))

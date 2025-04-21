@@ -50,7 +50,7 @@ type Config struct {
 	Backends map[string]*bo.Options `yaml:"backends,omitempty"`
 	// Caches is a map of CacheConfigs
 	Caches map[string]*cache.Options `yaml:"caches,omitempty"`
-	// ProxyServer is provides configurations about the Proxy Front End
+	// Frontend provides configurations about the Proxy Front End
 	Frontend *fropt.Options `yaml:"frontend,omitempty"`
 	// Logging provides configurations that affect logging behavior
 	Logging *lo.Options `yaml:"logging,omitempty"`

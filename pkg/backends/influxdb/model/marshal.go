@@ -160,7 +160,8 @@ func toWireFormat(ds *dataset.DataSet,
 			row.Columns = make([]string, 0, len(s.Header.FieldsList)+1)
 			var tsColumnAdded bool
 			for i, header := range s.Header.FieldsList {
-				if i == s.Header.TimestampIndex {
+				index := uint64(i) // #nosec G115 -- i is positive, there should be no overflow
+				if index == s.Header.TimestampIndex {
 					row.Columns = append(row.Columns, timeColumnName)
 					tsColumnAdded = true
 				}
@@ -180,7 +181,8 @@ func toWireFormat(ds *dataset.DataSet,
 				vals := make([]any, 0, len(p.Values))
 				var tsValAdded bool
 				for n, v := range p.Values {
-					if n == s.Header.TimestampIndex {
+					index := uint64(n) // #nosec G115 -- i is positive
+					if index == s.Header.TimestampIndex {
 						vals = append(vals, df(p.Epoch, multiplier))
 						tsValAdded = true
 					}
@@ -231,7 +233,7 @@ func marshalTimeseriesCSV(ds *dataset.DataSet, rlo *timeseries.RequestOptions,
 		if !headerWritten {
 			l := len(s.Header.FieldsList) + 1
 			cols := make([]string, l)
-			var j int
+			var j uint64
 			for _, f := range s.Header.FieldsList {
 				if j == s.Header.TimestampIndex {
 					cols[j] = timeColumnName
@@ -247,7 +249,8 @@ func marshalTimeseriesCSV(ds *dataset.DataSet, rlo *timeseries.RequestOptions,
 			w.Write([]byte(s.Header.Name + ",\"" + s.Header.Tags.StringsWithSep("=", ",") + "\","))
 			lv := len(p.Values)
 			for n, v := range p.Values {
-				if n == s.Header.TimestampIndex {
+				index := uint64(n) // #nosec G115 -- i is positive
+				if index == s.Header.TimestampIndex {
 					dw(w, p.Epoch, multiplier)
 					if n < lv-1 {
 						w.Write([]byte(","))
