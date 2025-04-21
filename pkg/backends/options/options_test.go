@@ -292,7 +292,7 @@ func TestValidate(t *testing.T) {
 					testValue: 32,
 				},
 			},
-			expected: ErrInvalidMaxShardSizeMS,
+			expected: ErrInvalidMaxShardSizeTime,
 		},
 	}
 

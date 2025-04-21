@@ -24,9 +24,9 @@ import (
 // ErrInvalidMetadata is an error for invalid metadata
 var ErrInvalidMetadata = errors.New("invalid options metadata")
 
-// ErrInvalidMaxShardSizeMS is an error for when 'shard_max_size_time' is not
+// ErrInvalidMaxShardSizeTime is an error for when 'shard_max_size_time' is not
 // a multiple 'shard_step'
-var ErrInvalidMaxShardSizeMS = errors.New(
+var ErrInvalidMaxShardSizeTime = errors.New(
 	"'shard_max_size_time' must be a multiple of 'shard_step' when both are non-zero")
 
 // ErrInvalidMaxShardSize is an error for when both 'shard_max_size_time' and

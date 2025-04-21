@@ -354,7 +354,7 @@ func (l Lookup) Validate(ncl negative.Lookups) error {
 		}
 
 		if o.ShardStep > 0 && o.MaxShardSizeTime%o.ShardStep != 0 {
-			return ErrInvalidMaxShardSizeMS
+			return ErrInvalidMaxShardSizeTime
 		}
 
 		if o.CompressibleTypeList != nil {
