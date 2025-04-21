@@ -20,9 +20,9 @@ import "time"
 
 const (
 	// DefaultCacheIndexReap is the default Cache Index Reap interval
-	DefaultCacheIndexReap = 3000 * time.Millisecond
+	DefaultCacheIndexReap = 3 * time.Second
 	// DefaultCacheIndexFlush is the default Cache Index Flush interval
-	DefaultCacheIndexFlush = 5000 * time.Millisecond
+	DefaultCacheIndexFlush = 5 * time.Second
 	// DefaultCacheMaxSizeBytes is the default Max Cache Size in Bytes
 	DefaultCacheMaxSizeBytes = 536870912
 	// DefaultMaxSizeBackoffBytes is the default Max Cache Backoff Size in Bytes

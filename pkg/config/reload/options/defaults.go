@@ -25,9 +25,9 @@ const (
 	DefaultReloadAddress = "127.0.0.1"
 	// DefaultDrainTimeout is the default time that is allowed for an old configuration's requests to drain
 	// before its resources are closed
-	DefaultDrainTimeout = 30000 * time.Millisecond
+	DefaultDrainTimeout = 30 * time.Second
 	// DefaultRateLimit is the default Rate Limit time for Config Reloads
-	DefaultRateLimit = 3000 * time.Millisecond
+	DefaultRateLimit = 3 * time.Second
 	// DefaultReloadHandlerPath defines the default path for the Reload Handler
 	DefaultReloadHandlerPath = "/trickster/config/reload"
 )
