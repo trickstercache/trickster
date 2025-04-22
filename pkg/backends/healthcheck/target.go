@@ -279,7 +279,7 @@ func newHTTPClient(timeout time.Duration) *http.Client {
 			return http.ErrUseLastResponse
 		},
 		Transport: &http.Transport{
-			Dial:                (&net.Dialer{KeepAlive: time.Duration(5) * time.Second}).Dial,
+			Dial:                (&net.Dialer{KeepAlive: 5 * time.Second}).Dial,
 			MaxIdleConns:        32,
 			MaxIdleConnsPerHost: 32,
 		},
