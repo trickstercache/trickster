@@ -15,7 +15,7 @@
 - InfluxDB and ClickHouse now support additional output formats like CSV. More documentation will be provided over the course of the beta
 - Expanded Compression support now includes options for Broti and Zstd
 - The [Rules Engine](./rule.md) now supports `rmatch` operations to permit regular expression-based routing against any part of the HTTP request.
-- You can now chain a collection [request rewriters](./request_rewriters.md) for more robust possibilities.
+- You can now chain a collection of [request rewriters](./request_rewriters.md) for more robust possibilities.
 
 
 ## New in Beta 3
@@ -48,6 +48,7 @@
   - Supported via the following fields:
     - `caches[*].redis.password`, `backends[*].healthcheck.headers`, `backends[*].paths[*].request_headers`, `backends[*].paths[*].request_params`, `backends[*].paths[*].response_headers`
   - Usage: `password: ${MY_SECRET_VAR}`
+- Previous Trickster 2.0 Betas used millisecond config values like `timeout_ms: 1500`. These have changed to `timeout: 1500ms`. See more details in the Configuration section below.
 
 ## Still to Come
 
