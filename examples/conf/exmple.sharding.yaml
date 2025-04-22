@@ -18,7 +18,7 @@ backends:
     # update FQDN and Port to work in your environment
     origin_url: 'http://prometheus:9090'
     provider: 'prometheus'
-    shard_step: 7200000ms # this will make shards bounded by 0:00, 2:00, 4:00, 8:00, etc., (UTC)
+    shard_step: 2h # this will make shards bounded by 0:00, 2:00, 4:00, 8:00, etc., (UTC)
 
 metrics:
   listen_port: 8481   # available for scraping at http://<trickster>:<metrics.listen_port>/metrics
