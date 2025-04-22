@@ -16,17 +16,20 @@
 
 package options
 
-import "maps"
+import (
+	"maps"
+	"time"
+)
 
 // Options stores information about Prometheus Options
 type Options struct {
-	Labels         map[string]string `yaml:"labels,omitempty"`
-	InstantRoundMS int               `yaml:"instant_round_ms,omitempty"`
+	Labels       map[string]string `yaml:"labels,omitempty"`
+	InstantRound time.Duration     `yaml:"instant_round,omitempty"`
 }
 
 func (o *Options) Clone() *Options {
 	return &Options{
-		InstantRoundMS: o.InstantRoundMS,
-		Labels:         maps.Clone(o.Labels),
+		InstantRound: o.InstantRound,
+		Labels:       maps.Clone(o.Labels),
 	}
 }

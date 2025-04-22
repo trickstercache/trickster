@@ -16,11 +16,13 @@
 
 package options
 
+import "time"
+
 const (
-	// DefaultCacheIndexReap is the default Cache Index Reap interval (in milliseconds)
-	DefaultCacheIndexReap = 3000
-	// DefaultCacheIndexFlush is the default Cache Index Flush interval (in milliseconds)
-	DefaultCacheIndexFlush = 5000
+	// DefaultCacheIndexReap is the default Cache Index Reap interval
+	DefaultCacheIndexReap = 3 * time.Second
+	// DefaultCacheIndexFlush is the default Cache Index Flush interval
+	DefaultCacheIndexFlush = 5 * time.Second
 	// DefaultCacheMaxSizeBytes is the default Max Cache Size in Bytes
 	DefaultCacheMaxSizeBytes = 536870912
 	// DefaultMaxSizeBackoffBytes is the default Max Cache Backoff Size in Bytes

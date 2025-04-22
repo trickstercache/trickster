@@ -344,7 +344,7 @@ checkCache:
 	// this concurrently fetches all missing ranges from the origin
 	if len(missRanges) > 0 {
 		if o.DoesShard {
-			missRanges = missRanges.Splice(trq.Step, o.MaxShardSize, o.ShardStep, o.MaxShardSizePoints)
+			missRanges = missRanges.Splice(trq.Step, o.MaxShardSizeTime, o.ShardStep, o.MaxShardSizePoints)
 		}
 		dpStatus["extentsFetched"] = missRanges.String()
 		frsc := request.NewResources(o, pc, cc, cache, client, rsc.Tracer)
@@ -522,7 +522,7 @@ func fetchTimeseries(pr *proxyRequest, trq *timeseries.TimeRangeQuery,
 
 	start := time.Now()
 	mts, _, resp, err := fetchExtents(timeseries.ExtentList{trq.Extent}.Splice(trq.Step,
-		o.MaxShardSize, o.ShardStep, o.MaxShardSizePoints), rsc,
+		o.MaxShardSizeTime, o.ShardStep, o.MaxShardSizePoints), rsc,
 		http.Header{}, client, pr, modeler.WireUnmarshalerReader, nil)
 
 	// elaspsed measures only the time spent making origin requests

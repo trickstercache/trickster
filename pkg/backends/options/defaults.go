@@ -17,17 +17,19 @@
 package options
 
 import (
+	"time"
+
 	"github.com/trickstercache/trickster/v2/pkg/cache/evictionmethods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
 
 const (
-	// DefaultTimeseriesTTLMS is the default Cache TTL for Time Series Objects
-	DefaultTimeseriesTTLMS = 21600000
-	// DefaultFastForwardTTLMS is the default Cache TTL for Time Series Fast Forward Objects
-	DefaultFastForwardTTLMS = 15000
-	// DefaultMaxTTLMS is the default Maximum TTL of any cache object
-	DefaultMaxTTLMS = 86400000
+	// DefaultTimeseriesTTL is the default Cache TTL for Time Series Objects
+	DefaultTimeseriesTTL = 6 * time.Hour
+	// DefaultFastForwardTTL is the default Cache TTL for Time Series Fast Forward Objects
+	DefaultFastForwardTTL = 15 * time.Second
+	// DefaultMaxTTL is the default Maximum TTL of any cache object
+	DefaultMaxTTL = 25 * time.Hour
 	// DefaultRevalidationFactor is the default Cache Object Freshness Lifetime to TTL multiplier
 	DefaultRevalidationFactor = 2
 	// DefaultMaxObjectSizeBytes is the default Max Size of any Cache Object
@@ -38,20 +40,20 @@ const (
 	DefaultBackendTEM = evictionmethods.EvictionMethodOldest
 	// DefaultBackendTEMName is the default Timeseries Eviction Method name for Time Series-based Backends
 	DefaultBackendTEMName = "oldest"
-	// DefaultBackendTimeoutMS is the default Upstream Request Timeout for Backends
-	DefaultBackendTimeoutMS = 180000
+	// DefaultBackendTimeout is the default Upstream Request Timeout for Backends
+	DefaultBackendTimeout = 3 * time.Minute
 	// DefaultBackendCacheName is the default Cache Name for Backends
 	DefaultBackendCacheName = "default"
 	// DefaultBackendNegativeCacheName is the default Negative Cache Name for Backends
 	DefaultBackendNegativeCacheName = "default"
 	// DefaultTracingConfigName is the default Tracing Config Name for Backends
 	DefaultTracingConfigName = "default"
-	// DefaultBackfillToleranceMS is the default Backfill Tolerance setting for Backends
-	DefaultBackfillToleranceMS = 0
+	// DefaultBackfillTolerance is the default Backfill Tolerance setting for Backends
+	DefaultBackfillTolerance = 0 * time.Millisecond
 	// DefaultBackfillTolerancePoints is the default Backfill Tolerance setting for Backends
 	DefaultBackfillTolerancePoints = 0
-	// DefaultKeepAliveTimeoutMS is the default Keep Alive Timeout for Backends' upstream client pools
-	DefaultKeepAliveTimeoutMS = 300000
+	// DefaultKeepAliveTimeout is the default Keep Alive Timeout for Backends' upstream client pools
+	DefaultKeepAliveTimeout = 5 * time.Minute
 	// DefaultMaxIdleConns is the default number of Idle Connections in Backends' upstream client pools
 	DefaultMaxIdleConns = 20
 	// DefaultForwardedHeaders defines which class of 'Forwarded' headers are attached to upstream requests

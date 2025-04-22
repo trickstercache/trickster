@@ -84,7 +84,7 @@ backends:
         - lm1
         - lm2
   alb3:
-    latency_min_ms: 300
+    latency_min: 300ms
     provider: alb
     alb:
       mechanism: tsm
@@ -104,7 +104,7 @@ backends:
     provider: clickhouse
     origin_url: 'http://127.0.0.1:8123'
     cache_name: mem1
-    backfill_tolerance_ms: 60000
+    backfill_tolerance: 60000ms
     timeseries_retention_factor: 2048
   rp1:
     provider: proxy
@@ -113,8 +113,8 @@ backends:
     provider: rpc
     origin_url: 'http://127.0.0.1:9090'
   prom1:
-    latency_max_ms: 150
-    latency_min_ms: 50
+    latency_max: 150ms
+    latency_min: 50ms
     is_default: true
     provider: prometheus
     origin_url: 'http://127.0.0.1:9090'
@@ -127,13 +127,13 @@ backends:
     provider: influxdb
     origin_url: 'http://127.0.0.1:8186/'
     cache_name: mem1
-    backfill_tolerance_ms: 30000
+    backfill_tolerance: 30000ms
     timeseries_retention_factor: 5184000
   flux2:
     provider: influxdb
     origin_url: 'http://127.0.0.1:8086/'
     cache_name: mem1
-    backfill_tolerance_ms: 30000
+    backfill_tolerance: 30000ms
     timeseries_retention_factor: 5184000
   sim1:
     provider: prometheus
@@ -141,12 +141,12 @@ backends:
     cache_name: mem1
     max_idle_conns: 600
     timeseries_retention_factor: 5184000
-    timeseries_ttl_ms: 259200000
-    max_ttl_ms: 86400000
+    timeseries_ttl: 259200000ms
+    max_ttl: 86400000ms
     max_object_size_bytes: 67108864
     healthcheck:
-      interval_ms: 300
-      timeout_ms: 500
+      interval: 300ms
+      timeout: 500ms
     # uncomment and set certs to test TLS
     # tls:
     #   full_chain_cert_path: >-
@@ -164,8 +164,8 @@ backends:
     cache_name: mem1
     max_idle_conns: 600
     timeseries_retention_factor: 5184000
-    timeseries_ttl_ms: 259200000
-    max_ttl_ms: 86400000
+    timeseries_ttl: 259200000ms
+    max_ttl: 86400000ms
     max_object_size_bytes: 67108864
   lm1:
     provider: reverseproxycache

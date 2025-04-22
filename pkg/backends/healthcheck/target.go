@@ -81,9 +81,9 @@ func newTarget(ctx context.Context,
 	if len(o.Headers) > 0 {
 		r.Header = headers.Lookup(o.Headers).ToHeader()
 	}
-	interval := time.Duration(o.IntervalMS) * time.Millisecond
+	interval := o.Interval
 	if client == nil {
-		client = newHTTPClient(ho.CalibrateTimeout(o.TimeoutMS))
+		client = newHTTPClient(ho.CalibrateTimeout(o.Timeout))
 	}
 	if o.FailureThreshold < 1 {
 		o.FailureThreshold = 3 // default to 3

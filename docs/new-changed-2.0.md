@@ -30,7 +30,7 @@
   - Also supported by standard Reverse Proxy Cache for chunking objects by Byte Range
   - Disabled by default
 - We now support [Time Series Backend Request Sharding](./timeseries_sharding.md)
-  - Allows requests proxied to Time Series Backends to be chunked into multiple concurrent based on a configurable chunk size in milliseconds or data points.
+  - Allows requests proxied to Time Series Backends to be chunked into multiple concurrent based on a configurable chunk size in arbitrary time units (milliseconds, seconds, etc) or by data points.
   - Backend Responses are merged into a single response before caching
   - Disabled by default
   - You can use Cache Chunking and TS Backend Request Sharding in any combination (on/on, on/off, off/on, off/0ff) as theywork together seamlessly. They can be configured with the same or different chunk sizes.
@@ -80,7 +80,10 @@ Using [tricktool](http://github.com/trickstercache/tricktool) to migrate your co
 
 - <https://www.convertsimple.com/convert-toml-to-yaml/> is a good starting point
 - The `[origins]` section of the Trickster 1.x TOML config is named `backends:` in the 2.0 YAML config
-- All duration-based values are now represented in milliseconds. 1.x values ending in `_secs` are the same in 2.0 but end in `_ms`. Be sure to multiply by 1000
+- All duration-based values are now represented in nanoseconds or as 'duration strings'.
+  - A duration string is a possibly signed sequence of decimals, with one or more optional unit suffixes. Example: `1s500ms`
+    - Supported time units: `"ns", "us" (or "µs"), "ms", "s", "m", "h"`
+  - 1.x values ending in `_secs` are the same in 2.0 but have no unit suffix (`timeout_secs` -> `timeout`). Be sure to add a unit -- `10 -> 10s`.
 - `origin_type`, `cache_type` and `tracing_type` are now called `provider`.
 - Health checking configurations now reside in their own `healthcheck` subsection under `backends` and use simplified config names like `method`, `path`, etc.
 

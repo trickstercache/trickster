@@ -19,6 +19,7 @@ package backends
 import (
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
@@ -95,12 +96,12 @@ func New(name string, o *bo.Options, registrar Registrar,
 		err = err2
 	}
 
-	var tms int
+	var d time.Duration
 	if o != nil && o.HealthCheck != nil {
-		tms = o.HealthCheck.TimeoutMS
+		d = o.HealthCheck.Timeout
 	}
 	if hcc != nil {
-		hcc.Timeout = ho.CalibrateTimeout(tms)
+		hcc.Timeout = ho.CalibrateTimeout(d)
 	}
 
 	var bur *url.URL

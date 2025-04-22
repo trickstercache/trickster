@@ -19,6 +19,7 @@ package options
 import (
 	"maps"
 	"slices"
+	"time"
 
 	stdoutopts "github.com/trickstercache/trickster/v2/pkg/observability/tracing/exporters/stdout/options"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
@@ -31,7 +32,7 @@ type Options struct {
 	Provider           string            `yaml:"provider,omitempty"`
 	ServiceName        string            `yaml:"service_name,omitempty"`
 	Endpoint           string            `yaml:"endpoint,omitempty"`
-	TimeoutMS          int               `yaml:"timeout_ms,omitempty"`
+	Timeout            time.Duration     `yaml:"timeout,omitempty"`
 	Headers            map[string]string `yaml:"headers,omitempty"`
 	DisableCompression bool              `yaml:"disable_compression,omitempty"`
 	SampleRate         float64           `yaml:"sample_rate,omitempty"`

@@ -134,17 +134,17 @@ caches:
       password: '********'
       db: trickster
       max_retries: 3
-      min_retry_backoff_ms: 2000
-      max_retry_backoff_ms: 4000
-      dial_timeout_ms: 2000
-      read_timeout_ms: 1000
-      write_timeout_ms: 3000
+      min_retry_backoff: 2000ms
+      max_retry_backoff: 4000ms
+      dial_timeout: 2000ms
+      read_timeout: 1000ms
+      write_timeout: 3000ms
       pool_size: 16
       min_idle_conns: 16
-      max_conn_age_ms: 16
-      pool_timeout_ms: 16
-      idle_timeout_ms: 16
-      idle_check_frequency_ms: 16
+      max_conn_age: 16ms
+      pool_timeout: 16ms
+      idle_timeout: 16ms
+      idle_check_frequency: 16ms
     filesystem:
       cache_path: /tmp/trickster
     bbolt:
@@ -154,8 +154,8 @@ caches:
       directory: /tmp/trickster
       value_directory: /tmp/trickster
     index:
-      reap_interval_ms: 2000
-      flush_interval_ms: 2000
+      reap_interval: 2000ms
+      flush_interval: 2000ms
       max_size_bytes: 1
       max_size_backoff_bytes: 16384
       max_size_objects: 4096
