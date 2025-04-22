@@ -218,7 +218,7 @@ frontend:
 #   # is empty unless you populate it. Update it by adding entries here in the format of:
 #   # "code": ttl_in_ms
 
-# #  Heres a pre-populated negative cache config ready to be uncommented and used in an backend config
+# #  Heres a pre-populated negative cache config ready to be uncommented and used in a backend config
 # #  The general negative cache config will cache common failure response codes for 3 seconds
 #   general:
 #     "400": 3000
