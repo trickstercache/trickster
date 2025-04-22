@@ -58,10 +58,10 @@ frontend:
 
 negative_caches:
   default:
-    '400': 3
-    '404': 3
-    '500': 3
-    '502': 3
+    '400': 3s
+    '404': 3s
+    '500': 3s
+    '502': 3s
 
 caches:
   mem1:
@@ -137,7 +137,7 @@ backends:
     provider: influxdb
     origin_url: 'http://127.0.0.1:8086'
     cache_name: mem1
-    backfill_tolerance: 30000ms
+    backfill_tolerance: 30s
     timeseries_retention_factor: 5184000
 
 logging:

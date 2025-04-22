@@ -40,14 +40,14 @@ backends:
 
 ### Maximum Time Range Width Per Shard
 
-In the Trickster configuration, use the `shard_max_size` configuration to shard requests by limiting the maximum width of each sharded request's time range.
+In the Trickster configuration, use the `shard_max_size_time` configuration to shard requests by limiting the maximum width of each sharded request's time range.
 
 ```yaml
 backends:
   example:
     provider: 'prometheus'
     origin_url: http://prometheus:9090
-    shard_max_size: 7200000ms
+    shard_max_size_time: 2h
 ```
 
 ### Epoch-Aligned Maximum Time Range Width Per Shard
@@ -59,18 +59,18 @@ backends:
   example:
     provider: 'prometheus'
     origin_url: http://prometheus:9090
-    shard_step: 7200000ms
+    shard_step: 2h
 ```
 
-`shard_step` can be used in conjunction with `shard_max_size`, so long as `shard_max_size` is perfectly divisible by `shard_step`. This combination configuration will align shards against the configured shard step, while sizing each shard's time range to be multiple shard steps wide.
+`shard_step` can be used in conjunction with `shard_max_size_time`, so long as `shard_max_size_time` is perfectly divisible by `shard_step`. This combination configuration will align shards against the configured shard step, while sizing each shard's time range to be multiple shard steps wide.
 
 ```yaml
 backends:
   example:
     provider: 'prometheus'
     origin_url: http://prometheus:9090
-    shard_step: 7200000ms
-    shard_max_size: 14400000ms
+    shard_step: 2h
+    shard_max_size_time: 4h
 ```
 
-Neither `shard_step` or `shard_max_size` can be used in conjunction with `shard_max_size_points`.
+Neither `shard_step` or `shard_max_size_time` can be used in conjunction with `shard_max_size_points`.

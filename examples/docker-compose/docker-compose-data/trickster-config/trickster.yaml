@@ -2,10 +2,10 @@ frontend:
   listen_port: 8480
 negative_caches:
   default:
-    '400': 3000
-    '404': 3000
-    '500': 3000
-    '502': 3000
+    '400': 3s
+    '404': 3s
+    '500': 3s
+    '502': 3s
 caches:
   fs1:
     provider: filesystem
@@ -55,7 +55,7 @@ backends:
     origin_url: 'http://influxdb:8086'
     tracing_name: jc1
     cache_name: mem1
-    backfill_tolerance: 60000ms
+    backfill_tolerance: 60s
   sim1: # simulated prometheus cached with a memory cache, traces sent to jaeger agent
     provider: prometheus
     origin_url: 'http://mockster:8482/prometheus'

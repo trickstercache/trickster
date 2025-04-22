@@ -209,15 +209,15 @@ data:
     #   # default:
     #   # The default negative cache config, mapped by all backends by default,
     #   # is empty unless you populate it. Update it by adding entries here in the format of:
-    #   # "code": ttl_in_ms
+    #   # "code": ttl
 
-    # #  Heres a pre-populated negative cache config ready to be uncommented and used in an backend config
+    # #  Heres a pre-populated negative cache config ready to be uncommented and used in a backend config
     # #  The general negative cache config will cache common failure response codes for 3 seconds
     #   general:
-    #     "400": 3000
-    #     "404": 3000
-    #     "500": 3000
-    #     "502": 3000
+    #     "400": 3s
+    #     "404": 3s
+    #     "500": 3s
+    #     "502": 3s
 
     # Configuration options for mapping Origin(s)
     backends:
@@ -438,7 +438,7 @@ data:
     #         client_key_path: /path/to/my/client/key.pem
 
     #     # For multi-backend support, backends are named, and the name is the second word of the configuration section name.
-    #     # In this example, an backend is named "foo".
+    #     # In this example, a backend is named "foo".
     #     # Clients can indicate this backend in their path (http://trickster.example.com:8480/foo/api/v1/query_range?.....)
     #     # there are other ways for clients to indicate which backend to use in a multi-backend setup. See the documentation for more information
 

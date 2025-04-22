@@ -3,10 +3,10 @@ frontend:
 
 negative_caches:
   default:
-    '400': 3
-    '404': 3
-    '500': 3
-    '502': 3
+    '400': 3s
+    '404': 3s
+    '500': 3s
+    '502': 3s
 
 caches:
   mem1:
@@ -104,7 +104,7 @@ backends:
     provider: clickhouse
     origin_url: 'http://127.0.0.1:8123'
     cache_name: mem1
-    backfill_tolerance: 60000ms
+    backfill_tolerance: 60s
     timeseries_retention_factor: 2048
   rp1:
     provider: proxy
@@ -127,13 +127,13 @@ backends:
     provider: influxdb
     origin_url: 'http://127.0.0.1:8186/'
     cache_name: mem1
-    backfill_tolerance: 30000ms
+    backfill_tolerance: 30s
     timeseries_retention_factor: 5184000
   flux2:
     provider: influxdb
     origin_url: 'http://127.0.0.1:8086/'
     cache_name: mem1
-    backfill_tolerance: 30000ms
+    backfill_tolerance: 30s
     timeseries_retention_factor: 5184000
   sim1:
     provider: prometheus
@@ -141,8 +141,8 @@ backends:
     cache_name: mem1
     max_idle_conns: 600
     timeseries_retention_factor: 5184000
-    timeseries_ttl: 259200000ms
-    max_ttl: 86400000ms
+    timeseries_ttl: 72h
+    max_ttl: 24h
     max_object_size_bytes: 67108864
     healthcheck:
       interval: 300ms
@@ -164,8 +164,8 @@ backends:
     cache_name: mem1
     max_idle_conns: 600
     timeseries_retention_factor: 5184000
-    timeseries_ttl: 259200000ms
-    max_ttl: 86400000ms
+    timeseries_ttl: 72h
+    max_ttl: 24h
     max_object_size_bytes: 67108864
   lm1:
     provider: reverseproxycache

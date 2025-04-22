@@ -10,18 +10,18 @@ For any response code handled by the Negative Cache, the response object's effec
 
 Multiple negative cache configurations can be defined, and are referenced by name in the backend config. By default, a backend will use the 'default' Negative Cache config, which, by default is empty. The default can be easily populated in the config file, and additional configs can easily be added, as demonstrated below.
 
-The format of a negative cache map entry is `'status_code': ttl_in_ms`.
+The format of a negative cache map entry is `'status_code': ttl`.
 
 ## Example Negative Caching Config
 
 ```yaml
 negative_caches:
   default:
-    '404': 3000 # cache 404 responses for 3 seconds
+    '404': 3s # cache 404 responses for 3 seconds
   foo:
-    '404': 3000
-    '500': 5000
-    '502': 5000
+    '404': 3s
+    '500': 5s # caches 404 response for 3 seconds, and 500/502 for 5 seconds
+    '502': 5s
 
 backends:
   default:
