@@ -226,7 +226,7 @@ func New() *Options {
 		MaxShardSizeTime:             DefaultTimeseriesShardSize,
 		ShardStep:                    DefaultTimeseriesShardStep,
 		TLS:                          &to.Options{},
-		Timeout:                      DefaultBackendTimeout * time.Millisecond,
+		Timeout:                      DefaultBackendTimeout,
 		TimeseriesEvictionMethod:     DefaultBackendTEM,
 		TimeseriesEvictionMethodName: DefaultBackendTEMName,
 		TimeseriesRetention:          DefaultBackendTRF,

@@ -28,7 +28,7 @@ import (
 )
 
 // MaxProbeWait is the maximum time a health check will wait before timing out
-const MaxProbeWait = 30000 * time.Millisecond
+const MaxProbeWait = 30 * time.Second
 
 // MinProbeWait is the minimum time a health check will wait before timing out
 const MinProbeWait = 100 * time.Millisecond
