@@ -18,6 +18,7 @@ package registration
 
 import (
 	"testing"
+	"time"
 
 	bao "github.com/trickstercache/trickster/v2/pkg/cache/badger/options"
 	bbo "github.com/trickstercache/trickster/v2/pkg/cache/bbolt/options"
@@ -95,8 +96,8 @@ func newCacheConfig(t *testing.T, cacheProvider string) *co.Options {
 		BBolt:      &bbo.Options{Filename: "/tmp/test.db", Bucket: "trickster_test"},
 		Badger:     &bao.Options{Directory: bd, ValueDirectory: bd},
 		Index: &io.Options{
-			ReapInterval:          3000,
-			FlushInterval:         5000,
+			ReapInterval:          3 * time.Millisecond,
+			FlushInterval:         5 * time.Millisecond,
 			MaxSizeBytes:          536870912,
 			MaxSizeBackoffBytes:   16777216,
 			MaxSizeObjects:        0,

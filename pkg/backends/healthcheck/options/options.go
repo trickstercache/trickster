@@ -182,14 +182,14 @@ func (o *Options) SetExpectedBody(body string) {
 
 // CalibrateTimeout returns a time.Duration representing a calibrated
 // timeout value based on the milliseconds of duration provided
-func CalibrateTimeout(ms time.Duration) time.Duration {
+func CalibrateTimeout(d time.Duration) time.Duration {
 	switch {
-	case ms > MaxProbeWait:
-		ms = MaxProbeWait
-	case ms <= 0:
-		ms = DefaultHealthCheckTimeout
-	case ms < MinProbeWait:
-		ms = MinProbeWait
+	case d > MaxProbeWait:
+		d = MaxProbeWait
+	case d <= 0:
+		d = DefaultHealthCheckTimeout
+	case d < MinProbeWait:
+		d = MinProbeWait
 	}
-	return ms
+	return d
 }

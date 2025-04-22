@@ -96,12 +96,12 @@ func New(name string, o *bo.Options, registrar Registrar,
 		err = err2
 	}
 
-	var tms time.Duration
+	var d time.Duration
 	if o != nil && o.HealthCheck != nil {
-		tms = o.HealthCheck.Timeout
+		d = o.HealthCheck.Timeout
 	}
 	if hcc != nil {
-		hcc.Timeout = ho.CalibrateTimeout(tms)
+		hcc.Timeout = ho.CalibrateTimeout(d)
 	}
 
 	var bur *url.URL
