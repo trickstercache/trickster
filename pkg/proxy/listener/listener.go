@@ -41,7 +41,7 @@ import (
 type Listener struct {
 	net.Listener
 	tlsConfig    *tls.Config
-	tlsSwapper   *sw.CertSwapper
+	tlsSwapper   sw.CertSwapper
 	routeSwapper *ph.SwitchHandler
 	server       *http.Server
 	exitOnError  bool
@@ -81,7 +81,7 @@ func (l *Listener) Accept() (net.Conn, error) {
 }
 
 // CertSwapper returns the CertSwapper reference from the Listener
-func (l *Listener) CertSwapper() *sw.CertSwapper {
+func (l *Listener) CertSwapper() sw.CertSwapper {
 	return l.tlsSwapper
 }
 

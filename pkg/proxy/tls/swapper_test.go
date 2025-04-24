@@ -21,7 +21,7 @@ import (
 	"testing"
 )
 
-func getSwapper(t *testing.T) (*CertSwapper, *tls.Config, func()) {
+func getSwapper(t *testing.T) (*certSwapper, *tls.Config, func()) {
 
 	options, closer, err := tlsConfig("")
 	if closer != nil {
@@ -39,7 +39,8 @@ func getSwapper(t *testing.T) (*CertSwapper, *tls.Config, func()) {
 		t.Fatal(err)
 	}
 
-	return NewSwapper(tlscfg1.Certificates), tlscfg1, closer
+	sw := NewSwapper(tlscfg1.Certificates).(*certSwapper)
+	return sw, tlscfg1, closer
 
 }
 
