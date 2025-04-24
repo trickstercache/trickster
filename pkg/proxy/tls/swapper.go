@@ -65,8 +65,6 @@ func (c *CertSwapper) GetCert(clientHello *tls.ClientHelloInfo) (*tls.Certificat
 
 // SetCerts safely updates the certs list for the subject *CertSwapper
 func (c *CertSwapper) SetCerts(certs []tls.Certificate) {
-	var v atomic.Value
-	v.Store(certs)
-	c.Certificates = v
+	c.Certificates.Store(certs)
 	c.hasCerts = len(certs) > 0
 }
