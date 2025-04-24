@@ -70,7 +70,7 @@ func TestGetSetCert(t *testing.T) {
 
 	sw.SetCerts(nil)
 	_, err = sw.GetCert(chi)
-	if err == nil || err != errNoCertificates {
+	if err == nil || err != ErrNoCertificates {
 		t.Errorf("expected error for no certificates configured. got: %s", err)
 	}
 	sw.SetCerts(cfg.Certificates)

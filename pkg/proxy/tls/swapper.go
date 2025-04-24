@@ -22,10 +22,16 @@ import (
 	"sync/atomic"
 )
 
+// CertSwapper is used by a TLSConfig to dynamically update the running
+// Listener's Certificate list. This allows Trickster to load and unload TLS
+// certificate configs without restarting the process
 type CertSwapper interface {
 	GetCert(*tls.ClientHelloInfo) (*tls.Certificate, error)
 	SetCerts([]tls.Certificate)
 }
+
+// ErrNoCertificates is returned by GetCert() when no certs are configured
+var ErrNoCertificates = errors.New("tls: no certificates configured")
 
 // NewSwapper returns a new CertSwapper based on the provided certList
 func NewSwapper(certList []tls.Certificate) CertSwapper {
@@ -34,23 +40,20 @@ func NewSwapper(certList []tls.Certificate) CertSwapper {
 	return sw
 }
 
-// certSwapper is used by a TLSConfig to dynamically update the running Listener's Certificate list
-// This allows Trickster to load and unload TLS certificate configs without restarting the process
+// certSwapper implements the CertSwapper interface
 type certSwapper struct {
 	Certificates atomic.Value
 	hasCerts     bool
 }
 
-var errNoCertificates = errors.New("tls: no certificates configured")
-
 // GetCert returns the best-matching certificate for the provided clientHello
 func (c *certSwapper) GetCert(clientHello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	if !c.hasCerts {
-		return nil, errNoCertificates
+		return nil, ErrNoCertificates
 	}
 	certs, ok := c.Certificates.Load().([]tls.Certificate)
 	if !ok || len(certs) == 0 {
-		return nil, errNoCertificates
+		return nil, ErrNoCertificates
 	}
 
 	if len(certs) == 1 {
