@@ -59,13 +59,16 @@ func TestGetSetCert(t *testing.T) {
 	if closer2 != nil {
 		defer closer2()
 	}
-	sw.Certificates = append(sw.Certificates, cfg2.Certificates...)
+
+	certs := sw.Certificates.Load().([]tls.Certificate)
+	certs = append(certs, cfg2.Certificates...)
+	sw.Certificates.Store(certs)
 	_, err = sw.GetCert(chi)
 	if err != nil {
 		t.Error(err)
 	}
 
-	sw.Certificates = nil
+	sw.Certificates.Store([]tls.Certificate{})
 	_, err = sw.GetCert(chi)
 	if err == nil || err.Error() != "tls: no certificates configured" {
 		t.Errorf("expected error for no certificates configured. %s", err.Error())
