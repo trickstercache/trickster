@@ -50,8 +50,8 @@ func (c *Client) handleFirstResponse(w http.ResponseWriter, r *http.Request) {
 	// otherwise iterate the fanout
 	wc := newResponderClaim(l)
 	var wg sync.WaitGroup
+	wg.Add(l)
 	for i := 0; i < l; i++ {
-		wg.Add(1)
 		// only the one of these i fanouts to respond will be mapped back to the end user
 		// based on the methodology
 		// and the rest will have their contexts canceled

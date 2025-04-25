@@ -199,8 +199,8 @@ func (c *Cache) remove(cacheKey string, isBulk bool) {
 // BulkRemove removes a list of objects from the cache
 func (c *Cache) BulkRemove(cacheKeys []string) {
 	wg := &sync.WaitGroup{}
+	wg.Add(len(cacheKeys))
 	for _, cacheKey := range cacheKeys {
-		wg.Add(1)
 		go func(key string) {
 			c.remove(key, true)
 			wg.Done()

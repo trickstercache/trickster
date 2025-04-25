@@ -590,8 +590,8 @@ func fetchExtents(el timeseries.ExtentList, rsc *request.Resources, h http.Heade
 	mresp := &http.Response{Header: h}
 
 	// iterate each time range that the client needs and fetch from the upstream origin
+	wg.Add(el.Len())
 	for i := range el {
-		wg.Add(1)
 		// This concurrently fetches gaps from the origin and adds their datasets to the merge list
 		go func(e *timeseries.Extent, rq *proxyRequest) {
 			defer wg.Done()

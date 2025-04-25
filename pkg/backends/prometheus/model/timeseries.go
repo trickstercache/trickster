@@ -110,9 +110,9 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 		if wfd.Data.ResultType == "matrix" && l > 0 {
 			pts = make(dataset.Points, 0, l)
 			var wg sync.WaitGroup
+			wg.Add(len(pr.Values))
 			var mtx sync.Mutex
 			for _, v := range pr.Values {
-				wg.Add(1)
 				go func(vals []interface{}) {
 					pt, _ := pointFromValues(vals)
 					if pt.Epoch > 0 {

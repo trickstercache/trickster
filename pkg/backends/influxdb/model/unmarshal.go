@@ -163,8 +163,8 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 			var mtx sync.Mutex
 			var wg sync.WaitGroup
 			ume := make(chan error, len(wfd.Results[i].SeriesList[j].Values))
+			wg.Add(len(wfd.Results[i].SeriesList[j].Values))
 			for vi, v := range wfd.Results[i].SeriesList[j].Values {
-				wg.Add(1)
 				go func(vals []interface{}, idx int) {
 					pt, cols, err := pointFromValues(vals, sh.TimestampIndex)
 					if err != nil {
