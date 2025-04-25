@@ -22,6 +22,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"github.com/trickstercache/trickster/v2/pkg/errors"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
@@ -57,10 +58,20 @@ func TestUnmarshalTimeseriesReader(t *testing.T) {
 	}
 
 	r = bytes.NewReader([]byte(testMatrix))
-	_, err = UnmarshalTimeseriesReader(r, &timeseries.TimeRangeQuery{})
+	result, err := UnmarshalTimeseriesReader(r, &timeseries.TimeRangeQuery{})
 	if err != nil {
 		t.Error(err)
 	}
+
+	dataset, ok := result.(*dataset.DataSet)
+	require.True(t, ok)
+	require.Len(t, dataset.Results, 1)
+	// verify the first result series are in expected order
+	require.Len(t, dataset.Results[0].SeriesList, 2)
+	require.Len(t, dataset.Results[0].SeriesList[0].Points, 3)
+	require.Equal(t, epoch.Epoch(1435781430000000000), dataset.Results[0].SeriesList[0].Points[0].Epoch)
+	require.Equal(t, epoch.Epoch(1435781445000000000), dataset.Results[0].SeriesList[0].Points[1].Epoch)
+	require.Equal(t, epoch.Epoch(1435781460000000000), dataset.Results[0].SeriesList[0].Points[2].Epoch)
 
 }
 

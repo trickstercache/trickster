@@ -108,21 +108,21 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 		l := len(pr.Values)
 		var ps int64 = 16
 		if wfd.Data.ResultType == "matrix" && l > 0 {
-			pts = make(dataset.Points, 0, l)
+			pts = make(dataset.Points, l)
 			var wg sync.WaitGroup
 			wg.Add(len(pr.Values))
 			var mtx sync.Mutex
-			for _, v := range pr.Values {
-				go func(vals []interface{}) {
+			for i, v := range pr.Values {
+				go func(index int, vals []interface{}) {
 					pt, _ := pointFromValues(vals)
 					if pt.Epoch > 0 {
 						mtx.Lock()
 						ps += int64(pt.Size)
-						pts = append(pts, pt)
+						pts[index] = pt
 						mtx.Unlock()
 					}
 					wg.Done()
-				}(v)
+				}(i, v)
 			}
 			wg.Wait()
 		} else if wfd.Data.ResultType == "vector" && len(pr.Value) == 2 {
