@@ -34,7 +34,6 @@ type Tags map[string]string
 // in an insert-or-update fashion
 func (ds *DataSet) InjectTags(tags Tags) {
 	var wg sync.WaitGroup
-	var mtx sync.Mutex
 	for _, r := range ds.Results {
 		if r == nil {
 			continue
@@ -45,13 +44,11 @@ func (ds *DataSet) InjectTags(tags Tags) {
 			}
 			wg.Add(1)
 			go func(s1 *Series) {
-				mtx.Lock()
 				if s1.Header.Tags == nil {
 					s1.Header.Tags = tags.Clone()
 				} else {
 					s1.Header.Tags.Merge(tags.Clone())
 				}
-				mtx.Unlock()
 				wg.Done()
 			}(s)
 		}
