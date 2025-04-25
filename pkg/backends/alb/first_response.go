@@ -57,6 +57,7 @@ func (c *Client) handleFirstResponse(w http.ResponseWriter, r *http.Request) {
 		// and the rest will have their contexts canceled
 		go func(j int) {
 			if hl[j] == nil {
+				wg.Done()
 				return
 			}
 			wm := newFirstResponseGate(w, wc, j, c.fgr)
