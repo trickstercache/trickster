@@ -28,3 +28,9 @@ func TestGetLevelID(t *testing.T) {
 		t.Errorf("expected %d got %d", InfoID, id)
 	}
 }
+
+func BenchmarkGetLevelID(b *testing.B) {
+	for b.Loop() {
+		GetLevelID(Info)
+	}
+}
