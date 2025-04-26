@@ -17,6 +17,7 @@
 package logging
 
 import (
+	"cmp"
 	"fmt"
 	"io"
 	"os"
@@ -79,7 +80,9 @@ type Pairs map[string]any
 // returned Logger will write to files distinguished from other Loggers by the
 // instance string.
 func New(conf *config.Config) Logger {
-	l := &logger{}
+	l := &logger{
+		now: time.Now,
+	}
 	l.logFunc = l.logAsyncronous
 	if conf.Logging.LogFile == "" {
 		l.writer = os.Stdout
@@ -109,6 +112,7 @@ func NoopLogger() Logger {
 		logFunc: func(level.Level, string, Pairs) {},
 		levelID: level.InfoID,
 		level:   level.Info,
+		now:     time.Now,
 	}
 	return l
 }
@@ -116,6 +120,7 @@ func NoopLogger() Logger {
 func StreamLogger(w io.Writer, logLevel level.Level) Logger {
 	l := &logger{
 		writer: w,
+		now:    time.Now,
 	}
 	l.logFunc = l.logAsyncronous
 
@@ -129,6 +134,7 @@ func StreamLogger(w io.Writer, logLevel level.Level) Logger {
 func ConsoleLogger(logLevel level.Level) Logger {
 	l := &logger{
 		writer: os.Stdout,
+		now:    time.Now,
 	}
 	l.logFunc = l.logAsyncronous
 	l.SetLogLevel(logLevel)
@@ -143,6 +149,7 @@ type logger struct {
 	mtx            sync.Mutex
 	onceRanEntries sync.Map
 	logFunc        logFunc
+	now            func() time.Time
 }
 
 func (l *logger) Write(b []byte) (int, error) {
@@ -313,41 +320,69 @@ func (l *logger) logAsyncronous(logLevel level.Level, event string, detail Pairs
 	go l.log(logLevel, event, detail)
 }
 
-const defaultLogItemCount = 4
+type item struct {
+	key string
+	val string
+}
+
+func (i *item) Bytes() []byte {
+	return append([]byte(i.key), append([]byte(equal), []byte(i.val)...)...)
+}
+
+const (
+	space   = " "
+	equal   = "="
+	newline = "\n"
+)
 
 func (l *logger) log(logLevel level.Level, event string, detail Pairs) {
 	if l.writer == nil {
 		return
 	}
-	ts := time.Now()
+	ts := l.now()
 	ld := len(detail)
-	keys := make([]string, defaultLogItemCount, ld+defaultLogItemCount)
-	keys[0] = "time=" + ts.UTC().Format(time.RFC3339Nano)
-	keys[1] = "app=trickster"
-	keys[2] = "level=" + string(logLevel)
-	if strings.HasPrefix(event, " ") || strings.HasSuffix(event, " ") {
+	if strings.HasPrefix(event, space) || strings.HasSuffix(event, space) {
 		event = strings.TrimSpace(event)
 	}
-	keys[3] = "event=" + quoteAsNeeded(event)
-	var i int
+	logLine := []byte(
+		"time=" + ts.UTC().Format(time.RFC3339Nano) + space +
+			"app=trickster" + space +
+			"level=" + string(logLevel) + space +
+			"event=" + quoteAsNeeded(event),
+	)
 	if ld > 0 {
-		sortedKeys := make([]string, ld)
+		logLine = append(logLine, []byte(space)...)
+		keyPairs := make([]item, ld)
+		var i int
 		for k, v := range detail {
-			if s, ok := v.(string); ok {
-				v = quoteAsNeeded(s)
+			var s string
+			var ok bool
+			if s, ok = v.(string); ok {
+				s = quoteAsNeeded(s)
 			} else if stringer, ok := v.(fmt.Stringer); ok {
-				v = quoteAsNeeded(stringer.String())
+				s = quoteAsNeeded(stringer.String())
 			} else if err, ok := v.(error); ok {
-				v = quoteAsNeeded(err.Error())
+				s = quoteAsNeeded(err.Error())
+			} else {
+				s = fmt.Sprintf("%v", v)
 			}
-			sortedKeys[i] = fmt.Sprintf("%s=%v", k, v)
+			keyPairs[i] = item{k, s}
 			i++
 		}
-		slices.Sort(sortedKeys)
-		keys = append(keys, sortedKeys...)
+		slices.SortFunc(keyPairs, func(a, b item) int {
+			return cmp.Compare(a.key, b.key)
+		})
+		i = 0
+		for _, v := range keyPairs {
+			logLine = append(logLine, v.Bytes()...)
+			i++
+			if i < ld {
+				logLine = append(logLine, []byte(space)...)
+			}
+		}
 	}
 	l.mtx.Lock()
-	l.writer.Write([]byte(strings.Join(keys, " ") + "\n"))
+	l.writer.Write(append(logLine, []byte(newline)...))
 	l.mtx.Unlock()
 }
 
