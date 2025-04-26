@@ -79,9 +79,7 @@ type Pairs map[string]any
 // returned Logger will write to files distinguished from other Loggers by the
 // instance string.
 func New(conf *config.Config) Logger {
-	l := &logger{
-		onceRanEntries: make(map[string]*sync.Once),
-	}
+	l := &logger{}
 	l.logFunc = l.logAsyncronous
 	if conf.Logging.LogFile == "" {
 		l.writer = os.Stdout
@@ -108,18 +106,16 @@ func New(conf *config.Config) Logger {
 
 func NoopLogger() Logger {
 	l := &logger{
-		logFunc:        func(level.Level, string, Pairs) {},
-		onceRanEntries: make(map[string]*sync.Once),
-		levelID:        level.InfoID,
-		level:          level.Info,
+		logFunc: func(level.Level, string, Pairs) {},
+		levelID: level.InfoID,
+		level:   level.Info,
 	}
 	return l
 }
 
 func StreamLogger(w io.Writer, logLevel level.Level) Logger {
 	l := &logger{
-		writer:         w,
-		onceRanEntries: make(map[string]*sync.Once),
+		writer: w,
 	}
 	l.logFunc = l.logAsyncronous
 
@@ -132,8 +128,7 @@ func StreamLogger(w io.Writer, logLevel level.Level) Logger {
 
 func ConsoleLogger(logLevel level.Level) Logger {
 	l := &logger{
-		writer:         os.Stdout,
-		onceRanEntries: make(map[string]*sync.Once),
+		writer: os.Stdout,
 	}
 	l.logFunc = l.logAsyncronous
 	l.SetLogLevel(logLevel)
@@ -145,9 +140,8 @@ type logger struct {
 	levelID        level.LevelID
 	writer         io.Writer
 	closer         io.Closer
-	onceMutex      sync.Mutex
 	mtx            sync.Mutex
-	onceRanEntries map[string]*sync.Once
+	onceRanEntries sync.Map
 	logFunc        logFunc
 }
 
@@ -265,17 +259,16 @@ func (l *logger) logOnce(logLevel level.Level, lid level.LevelID,
 		return false
 	}
 	key = string(logLevel) + "." + key
-	l.onceMutex.Lock()
-	if l.onceRanEntries[key] == nil {
-		l.onceRanEntries[key] = &sync.Once{}
+	_, ok := l.onceRanEntries.Load(key)
+	if !ok {
+		// load or store is more expensive than load, so check via load first
+		// and use LoadOrStore to ensure that log is only called once
+		_, ok = l.onceRanEntries.LoadOrStore(key, true)
+		if !ok {
+			l.log(logLevel, event, detail)
+		}
 	}
-	var ok bool
-	l.onceRanEntries[key].Do(func() {
-		l.log(logLevel, event, detail)
-		ok = true
-	})
-	l.onceMutex.Unlock()
-	return ok
+	return !ok
 }
 
 func (l *logger) DebugOnce(key, event string, detail Pairs) bool {
@@ -312,9 +305,7 @@ func (l *logger) HasErroredOnce(key string) bool {
 
 func (l *logger) HasLoggedOnce(logLevel level.Level, key string) bool {
 	key = string(logLevel) + "." + key
-	l.onceMutex.Lock()
-	_, ok := l.onceRanEntries[key]
-	l.onceMutex.Unlock()
+	_, ok := l.onceRanEntries.Load(key)
 	return ok
 }
 

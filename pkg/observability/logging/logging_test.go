@@ -261,3 +261,17 @@ func TestStreamLogger(t *testing.T) {
 	}
 
 }
+
+func Benchmark_logOnce(b *testing.B) {
+	fileName := b.TempDir() + "/out.once.bench.log"
+	conf := config.NewConfig()
+	conf.Main = &config.MainConfig{InstanceID: 0}
+	conf.Logging = &options.Options{LogFile: fileName, LogLevel: "debug"}
+	logger := New(conf)
+	logger.SetLogAsynchronous(false)
+	b.ResetTimer()
+	for b.Loop() {
+		logger.InfoOnce("bench-test-key", "test entry", Pairs{"testKey": "testVal"})
+	}
+
+}
