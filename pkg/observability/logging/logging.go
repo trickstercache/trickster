@@ -187,32 +187,27 @@ func (l *logger) Log(logLevel level.Level, event string, detail Pairs) {
 	l.logFunc(logLevel, event, detail)
 }
 
-func (l *logger) Debug(event string, detail Pairs) {
-	if l.levelID > level.DebugID {
+func (l *logger) logFuncConditionally(level level.Level, levelID level.LevelID, event string, detail Pairs) {
+	if l.levelID > levelID {
 		return
 	}
-	l.logFunc(level.Debug, event, detail)
+	l.logFunc(level, event, detail)
+}
+
+func (l *logger) Debug(event string, detail Pairs) {
+	l.logFuncConditionally(level.Debug, level.DebugID, event, detail)
 }
 
 func (l *logger) Info(event string, detail Pairs) {
-	if l.levelID > level.InfoID {
-		return
-	}
-	l.logFunc(level.Info, event, detail)
+	l.logFuncConditionally(level.Info, level.InfoID, event, detail)
 }
 
 func (l *logger) Warn(event string, detail Pairs) {
-	if l.levelID > level.WarnID {
-		return
-	}
-	l.logFunc(level.Warn, event, detail)
+	l.logFuncConditionally(level.Warn, level.WarnID, event, detail)
 }
 
 func (l *logger) Error(event string, detail Pairs) {
-	if l.levelID > level.ErrorID {
-		return
-	}
-	l.logFunc(level.Error, event, detail)
+	l.logFuncConditionally(level.Error, level.ErrorID, event, detail)
 }
 
 func (l *logger) LogSynchronous(logLevel level.Level, event string, detail Pairs) {
@@ -224,32 +219,27 @@ func (l *logger) LogSynchronous(logLevel level.Level, event string, detail Pairs
 
 }
 
-func (l *logger) DebugSynchronous(event string, detail Pairs) {
-	if l.levelID > level.DebugID {
+func (l *logger) logConditionally(level level.Level, levelID level.LevelID, event string, detail Pairs) {
+	if l.levelID > levelID {
 		return
 	}
-	l.log(level.Debug, event, detail)
+	l.log(level, event, detail)
+}
+
+func (l *logger) DebugSynchronous(event string, detail Pairs) {
+	l.logConditionally(level.Debug, level.DebugID, event, detail)
 }
 
 func (l *logger) InfoSynchronous(event string, detail Pairs) {
-	if l.levelID > level.InfoID {
-		return
-	}
-	l.log(level.Info, event, detail)
+	l.logConditionally(level.Info, level.InfoID, event, detail)
 }
 
 func (l *logger) WarnSynchronous(event string, detail Pairs) {
-	if l.levelID > level.WarnID {
-		return
-	}
-	l.log(level.Warn, event, detail)
+	l.logConditionally(level.Warn, level.WarnID, event, detail)
 }
 
 func (l *logger) ErrorSynchronous(event string, detail Pairs) {
-	if l.levelID > level.ErrorID {
-		return
-	}
-	l.log(level.Error, event, detail)
+	l.logConditionally(level.Error, level.ErrorID, event, detail)
 }
 
 func (l *logger) Fatal(code int, event string, detail Pairs) {
