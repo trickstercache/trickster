@@ -19,6 +19,7 @@ package prometheus
 import (
 	"fmt"
 	"net/http"
+	"time"
 
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
@@ -68,7 +69,7 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) map[string]*po.Options {
 	var rhts map[string]string
 	if o != nil {
 		rhts = map[string]string{
-			headers.NameCacheControl: fmt.Sprintf("%s=%d", headers.ValueSharedMaxAge, o.TimeseriesTTLMS/1000)}
+			headers.NameCacheControl: fmt.Sprintf("%s=%d", headers.ValueSharedMaxAge, o.TimeseriesTTL/(1*time.Second))}
 	}
 	rhinst := map[string]string{
 		headers.NameCacheControl: fmt.Sprintf("%s=%d", headers.ValueSharedMaxAge, 30)}

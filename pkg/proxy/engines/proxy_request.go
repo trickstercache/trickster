@@ -297,8 +297,8 @@ func (pr *proxyRequest) makeUpstreamRequests() error {
 	if len(pr.originRequests) > 0 {
 		pr.originResponses = make([]*http.Response, len(pr.originRequests))
 		pr.originReaders = make([]io.ReadCloser, len(pr.originRequests))
+		wg.Add(len(pr.originRequests))
 		for i := range pr.originRequests {
-			wg.Add(1)
 			go func(j int) {
 				req := pr.originRequests[j]
 				_, span := tspan.NewChildSpan(req.Context(), rsc.Tracer, "Fetch")
@@ -670,8 +670,8 @@ func (pr *proxyRequest) reconstituteResponses() {
 			}
 		}
 
+		wg.Add(len(pr.originRequests))
 		for i := range pr.originRequests {
-			wg.Add(1)
 			go func(j int) {
 				r := pr.originRequests[j]
 				resp := pr.originResponses[j]

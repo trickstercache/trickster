@@ -81,9 +81,9 @@ func newTarget(ctx context.Context,
 	if len(o.Headers) > 0 {
 		r.Header = headers.Lookup(o.Headers).ToHeader()
 	}
-	interval := time.Duration(o.IntervalMS) * time.Millisecond
+	interval := o.Interval
 	if client == nil {
-		client = newHTTPClient(ho.CalibrateTimeout(o.TimeoutMS))
+		client = newHTTPClient(ho.CalibrateTimeout(o.Timeout))
 	}
 	if o.FailureThreshold < 1 {
 		o.FailureThreshold = 3 // default to 3
@@ -279,7 +279,7 @@ func newHTTPClient(timeout time.Duration) *http.Client {
 			return http.ErrUseLastResponse
 		},
 		Transport: &http.Transport{
-			Dial:                (&net.Dialer{KeepAlive: time.Duration(5) * time.Second}).Dial,
+			Dial:                (&net.Dialer{KeepAlive: 5 * time.Second}).Dial,
 			MaxIdleConns:        32,
 			MaxIdleConnsPerHost: 32,
 		},

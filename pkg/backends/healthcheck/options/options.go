@@ -27,11 +27,11 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
 )
 
-// MaxProbeWaitMS is the maximum time a health check will wait before timing out
-const MaxProbeWaitMS = 30000
+// MaxProbeWait is the maximum time a health check will wait before timing out
+const MaxProbeWait = 30 * time.Second
 
-// MinProbeWaitMS is the minimum time a health check will wait before timing out
-const MinProbeWaitMS = 100
+// MinProbeWait is the minimum time a health check will wait before timing out
+const MinProbeWait = 100 * time.Millisecond
 
 // ErrNoOptionsProvided returns an error for no health check options provided
 var ErrNoOptionsProvided = errors.New("no health check options provided")
@@ -39,8 +39,8 @@ var ErrNoOptionsProvided = errors.New("no health check options provided")
 // Options defines Health Checking Options
 type Options struct {
 
-	// IntervalMS defines the interval in milliseconds at which the target will be probed
-	IntervalMS int `yaml:"interval_ms,omitempty"`
+	// Interval defines the interval at which the target will be probed
+	Interval time.Duration `yaml:"interval,omitempty"`
 	// FailureThreshold indicates the number of consecutive failed probes required to
 	// mark an available target as unavailable
 	FailureThreshold int `yaml:"failure_threshold,omitempty"`
@@ -63,9 +63,9 @@ type Options struct {
 	Headers types.EnvStringMap `yaml:"headers,omitempty"`
 	// Body provides a body to apply when making an upstream health check request
 	Body string `yaml:"body,omitempty"`
-	// TimeoutMS is the amount of time a health check probe should wait for a response
+	// Timeout is the amount of time a health check probe should wait for a response
 	// before timing out
-	TimeoutMS int `yaml:"timeout_ms,omitempty"`
+	Timeout time.Duration `yaml:"timeout,omitempty"`
 	// Target Probe Response Options
 	// ExpectedCodes is the list of Status Codes that positively indicate a Healthy status
 	ExpectedCodes []int `yaml:"expected_codes,omitempty"`
@@ -107,7 +107,7 @@ func (o *Options) Clone() *Options {
 	c.Path = o.Path
 	c.Query = o.Query
 	c.Body = o.Body
-	c.IntervalMS = o.IntervalMS
+	c.Interval = o.Interval
 	c.ExpectedBody = o.ExpectedBody
 	if o.Headers != nil {
 		c.Headers = types.EnvStringMap(headers.Lookup(o.Headers).Clone())
@@ -153,8 +153,8 @@ func (o *Options) Overlay(name string, custom *Options) {
 	if custom.md.IsDefined("backends", name, "healthcheck", "expected_headers") {
 		o.ExpectedHeaders = custom.ExpectedHeaders
 	}
-	if custom.md.IsDefined("backends", name, "healthcheck", "interval_ms") {
-		o.IntervalMS = custom.IntervalMS
+	if custom.md.IsDefined("backends", name, "healthcheck", "interval") {
+		o.Interval = custom.Interval
 	}
 }
 
@@ -182,14 +182,14 @@ func (o *Options) SetExpectedBody(body string) {
 
 // CalibrateTimeout returns a time.Duration representing a calibrated
 // timeout value based on the milliseconds of duration provided
-func CalibrateTimeout(ms int) time.Duration {
+func CalibrateTimeout(d time.Duration) time.Duration {
 	switch {
-	case ms > MaxProbeWaitMS:
-		ms = MaxProbeWaitMS
-	case ms <= 0:
-		ms = DefaultHealthCheckTimeoutMS
-	case ms < MinProbeWaitMS:
-		ms = MinProbeWaitMS
+	case d > MaxProbeWait:
+		d = MaxProbeWait
+	case d <= 0:
+		d = DefaultHealthCheckTimeout
+	case d < MinProbeWait:
+		d = MinProbeWait
 	}
-	return time.Duration(ms) * time.Millisecond
+	return d
 }

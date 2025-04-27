@@ -22,10 +22,10 @@ import (
 
 // Options defines the operation of the Cache Indexer
 type Options struct {
-	// ReapIntervalMS defines how long the Cache Index reaper sleeps between reap cycles
-	ReapIntervalMS int `yaml:"reap_interval_ms,omitempty"`
-	// FlushIntervalMS sets how often the Cache Index saves its metadata to the cache from application memory
-	FlushIntervalMS int `yaml:"flush_interval_ms,omitempty"`
+	// ReapInterval defines how long the Cache Index reaper sleeps between reap cycles
+	ReapInterval time.Duration `yaml:"reap_interval,omitempty"`
+	// FlushInterval sets how often the Cache Index saves its metadata to the cache from application memory
+	FlushInterval time.Duration `yaml:"flush_interval,omitempty"`
 	// MaxSizeBytes indicates how large the cache can grow in bytes before the Index evicts
 	// least-recently-accessed items.
 	MaxSizeBytes int64 `yaml:"max_size_bytes,omitempty"`
@@ -38,18 +38,13 @@ type Options struct {
 	// MaxSizeBackoffObjects indicates how far under max_size_objects the cache size must
 	// be to complete object-size-based eviction exercise.
 	MaxSizeBackoffObjects int64 `yaml:"max_size_backoff_objects,omitempty"`
-
-	ReapInterval  time.Duration `yaml:"-"`
-	FlushInterval time.Duration `yaml:"-"`
 }
 
 // New returns a new Cache Index Options Reference with default values set
 func New() *Options {
 	return &Options{
-		ReapIntervalMS:        DefaultCacheIndexReap,
-		ReapInterval:          time.Duration(DefaultCacheIndexReap) * time.Millisecond,
-		FlushIntervalMS:       DefaultCacheIndexFlush,
-		FlushInterval:         time.Duration(DefaultCacheIndexFlush) * time.Millisecond,
+		ReapInterval:          DefaultCacheIndexReap,
+		FlushInterval:         DefaultCacheIndexFlush,
 		MaxSizeBytes:          DefaultCacheMaxSizeBytes,
 		MaxSizeBackoffBytes:   DefaultMaxSizeBackoffBytes,
 		MaxSizeObjects:        DefaultMaxSizeObjects,
@@ -65,8 +60,8 @@ func (o *Options) Equal(o2 *Options) bool {
 		return false
 	}
 
-	return o.ReapIntervalMS == o2.ReapIntervalMS &&
-		o.FlushIntervalMS == o2.FlushIntervalMS &&
+	return o.ReapInterval == o2.ReapInterval &&
+		o.FlushInterval == o2.FlushInterval &&
 		o.MaxSizeBytes == o2.MaxSizeBytes &&
 		o.MaxSizeBackoffBytes == o2.MaxSizeBackoffBytes &&
 		o.MaxSizeObjects == o2.MaxSizeObjects &&

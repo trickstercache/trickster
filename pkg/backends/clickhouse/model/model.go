@@ -650,8 +650,8 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 	}
 
 	var wg sync.WaitGroup
+	wg.Add(len(r.SeriesList))
 	for _, s = range r.SeriesList {
-		wg.Add(1)
 		go func(gs *dataset.Series) {
 			sort.Sort(gs.Points)
 			wg.Done()

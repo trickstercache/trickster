@@ -25,15 +25,19 @@ import (
 
 const latencyHeaderName = "x-simulated-latency"
 
-func processSimulatedLatency(w http.ResponseWriter, minMS, maxMS int) {
-	if (minMS == 0 && maxMS == 0) || (minMS < 0 || maxMS < 0) {
+func processSimulatedLatency(w http.ResponseWriter, min, max time.Duration) {
+	if (min == 0 && max == 0) || (min < 0 || max < 0) {
 		return
 	}
+
+	minMS := min.Milliseconds()
+	maxMS := max.Milliseconds()
+
 	var ms int64
 	if minMS >= maxMS {
-		ms = int64(minMS)
+		ms = minMS
 	} else {
-		ms = (rand.Int63() % int64(maxMS-minMS)) + int64(minMS) // #nosec G404 -- we are OK with a weak random source, random-ish enough for our purposes, no security risk
+		ms = (rand.Int63()%maxMS - minMS) + minMS // #nosec G404 -- we are OK with a weak random source, random-ish enough for our purposes, no security risk
 	}
 	if ms <= 0 {
 		return

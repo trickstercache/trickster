@@ -86,12 +86,12 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 		cache, modelprom.NewModeler())
 	c.TimeseriesBackend = b
 
-	rounder := time.Duration(po.DefaultInstantRoundMS) * time.Millisecond
+	rounder := po.DefaultInstantRound
 	if o != nil {
 		if o.Prometheus == nil {
-			o.Prometheus = &po.Options{InstantRoundMS: po.DefaultInstantRoundMS}
+			o.Prometheus = &po.Options{InstantRound: po.DefaultInstantRound}
 		} else {
-			rounder = time.Duration(o.Prometheus.InstantRoundMS) * time.Millisecond
+			rounder = o.Prometheus.InstantRound
 			c.injectLabels = o.Prometheus.Labels
 			c.hasTransformations = len(c.injectLabels) > 0
 		}

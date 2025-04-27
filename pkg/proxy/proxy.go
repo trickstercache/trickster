@@ -24,7 +24,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"time"
 
 	"github.com/prometheus/common/sigv4"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
@@ -84,7 +83,7 @@ func NewHTTPClient(o *bo.Options) (*http.Client, error) {
 			return http.ErrUseLastResponse
 		},
 		Transport: &http.Transport{
-			Dial:                (&net.Dialer{KeepAlive: time.Duration(o.KeepAliveTimeoutMS) * time.Millisecond}).Dial,
+			Dial:                (&net.Dialer{KeepAlive: o.KeepAliveTimeout}).Dial,
 			MaxIdleConns:        o.MaxIdleConns,
 			MaxIdleConnsPerHost: o.MaxIdleConns,
 			TLSClientConfig:     TLSConfig,

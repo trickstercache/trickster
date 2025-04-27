@@ -21,7 +21,7 @@ import (
 	"testing"
 )
 
-func getSwapper(t *testing.T) (*CertSwapper, *tls.Config, func()) {
+func getSwapper(t *testing.T) (*certSwapper, *tls.Config, func()) {
 
 	options, closer, err := tlsConfig("")
 	if closer != nil {
@@ -39,7 +39,8 @@ func getSwapper(t *testing.T) (*CertSwapper, *tls.Config, func()) {
 		t.Fatal(err)
 	}
 
-	return NewSwapper(tlscfg1.Certificates), tlscfg1, closer
+	sw := NewSwapper(tlscfg1.Certificates).(*certSwapper)
+	return sw, tlscfg1, closer
 
 }
 
@@ -59,16 +60,18 @@ func TestGetSetCert(t *testing.T) {
 	if closer2 != nil {
 		defer closer2()
 	}
-	sw.Certificates = append(sw.Certificates, cfg2.Certificates...)
+	certs := sw.Certificates.Load().([]tls.Certificate)
+	certs = append(certs, cfg2.Certificates...)
+	sw.SetCerts(certs)
 	_, err = sw.GetCert(chi)
 	if err != nil {
 		t.Error(err)
 	}
 
-	sw.Certificates = nil
+	sw.SetCerts(nil)
 	_, err = sw.GetCert(chi)
-	if err == nil || err.Error() != "tls: no certificates configured" {
-		t.Errorf("expected error for no certificates configured. %s", err.Error())
+	if err == nil || err != ErrNoCertificates {
+		t.Errorf("expected error for no certificates configured. got: %s", err)
 	}
 	sw.SetCerts(cfg.Certificates)
 	_, err = sw.GetCert(chi)

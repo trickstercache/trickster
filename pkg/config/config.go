@@ -346,7 +346,7 @@ func (c *Config) IsStale() bool {
 	}
 
 	c.Main.configRateLimitTime =
-		time.Now().Add(time.Millisecond * time.Duration(c.ReloadConfig.RateLimitMS))
+		time.Now().Add(c.ReloadConfig.RateLimit)
 	t := c.CheckFileLastModified()
 	if t.IsZero() {
 		return false

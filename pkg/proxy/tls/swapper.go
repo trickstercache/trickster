@@ -19,53 +19,63 @@ package tls
 import (
 	"crypto/tls"
 	"errors"
-	"sync"
+	"sync/atomic"
 )
 
-// CertSwapper is used by a TLSConfig to dynamically update the running Listener's Certificate list
-// This allows Trickster to load and unload TLS certificate configs without restarting the process
-type CertSwapper struct {
-	*sync.Mutex
-	Certificates []tls.Certificate
+// CertSwapper is used by a TLSConfig to dynamically update the running
+// Listener's Certificate list. This allows Trickster to load and unload TLS
+// certificate configs without restarting the process
+type CertSwapper interface {
+	GetCert(*tls.ClientHelloInfo) (*tls.Certificate, error)
+	SetCerts([]tls.Certificate)
 }
 
-var errNoCertificates = errors.New("tls: no certificates configured")
+// ErrNoCertificates is returned by GetCert() when no certs are configured
+var ErrNoCertificates = errors.New("tls: no certificates configured")
 
-// NewSwapper returns a new *CertSwapper based on the provided certList
-func NewSwapper(certList []tls.Certificate) *CertSwapper {
-	return &CertSwapper{
-		Mutex:        &sync.Mutex{},
-		Certificates: certList,
-	}
+// NewSwapper returns a new CertSwapper based on the provided certList
+func NewSwapper(certList []tls.Certificate) CertSwapper {
+	sw := &certSwapper{}
+	sw.SetCerts(certList)
+	return sw
+}
+
+// certSwapper implements the CertSwapper interface
+type certSwapper struct {
+	Certificates atomic.Value
+	hasCerts     bool
 }
 
 // GetCert returns the best-matching certificate for the provided clientHello
-func (c *CertSwapper) GetCert(clientHello *tls.ClientHelloInfo) (*tls.Certificate, error) {
-	c.Lock()
-	defer c.Unlock()
-
-	if len(c.Certificates) == 0 {
-		return nil, errNoCertificates
+func (c *certSwapper) GetCert(clientHello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+	if !c.hasCerts {
+		return nil, ErrNoCertificates
+	}
+	certs, ok := c.Certificates.Load().([]tls.Certificate)
+	if !ok || len(certs) == 0 {
+		return nil, ErrNoCertificates
 	}
 
-	if len(c.Certificates) == 1 {
+	if len(certs) == 1 {
 		// There's only one choice, so no point doing any work.
-		return &c.Certificates[0], nil
+		return &certs[0], nil
 	}
 
-	for _, cert := range c.Certificates {
+	for _, cert := range certs {
 		if err := clientHello.SupportsCertificate(&cert); err == nil {
 			return &cert, nil
 		}
 	}
 
 	// If nothing matches, return the first certificate.
-	return &c.Certificates[0], nil
+	return &certs[0], nil
 }
 
-// SetCerts safely updates the certs list for the subject *CertSwapper
-func (c *CertSwapper) SetCerts(certs []tls.Certificate) {
-	c.Lock()
-	defer c.Unlock()
-	c.Certificates = certs
+// SetCerts safely updates the certs list for the subject *certSwapper
+func (c *certSwapper) SetCerts(certs []tls.Certificate) {
+	if certs == nil {
+		certs = []tls.Certificate{}
+	}
+	c.Certificates.Store(certs)
+	c.hasCerts = len(certs) > 0
 }

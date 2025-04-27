@@ -40,37 +40,37 @@ backends:
 
 ### Maximum Time Range Width Per Shard
 
-In the Trickster configuration, use the `shard_max_size_ms` configuration to shard requests by limiting the maximum width of each sharded request's time range.
+In the Trickster configuration, use the `shard_max_size_time` configuration to shard requests by limiting the maximum width of each sharded request's time range.
 
 ```yaml
 backends:
   example:
     provider: 'prometheus'
     origin_url: http://prometheus:9090
-    shard_max_size_ms: 7200000
+    shard_max_size_time: 2h
 ```
 
 ### Epoch-Aligned Maximum Time Range Width Per Shard
 
-In the Trickster configuration, use the `shard_step_ms` configuration to shard requests by limiting the maximum width of each sharded request's time range, while ensuring shards align with the epoch on the configured cadence. This is useful for aligning shard boundaries with an upstream database's partition boundaries, ensuring that sharded requests have as little partition overlap as possible.
+In the Trickster configuration, use the `shard_step` configuration to shard requests by limiting the maximum width of each sharded request's time range, while ensuring shards align with the epoch on the configured cadence. This is useful for aligning shard boundaries with an upstream database's partition boundaries, ensuring that sharded requests have as little partition overlap as possible.
 
 ```yaml
 backends:
   example:
     provider: 'prometheus'
     origin_url: http://prometheus:9090
-    shard_step_ms: 7200000
+    shard_step: 2h
 ```
 
-`shard_step_ms` can be used in conjunction with `shard_max_size_ms`, so long as `shard_max_size_ms` is perfectly divisible by `shard_step_ms`. This combination configuration will align shards against the configured shard step, while sizing each shard's time range to be multiple shard steps wide.
+`shard_step` can be used in conjunction with `shard_max_size_time`, so long as `shard_max_size_time` is perfectly divisible by `shard_step`. This combination configuration will align shards against the configured shard step, while sizing each shard's time range to be multiple shard steps wide.
 
 ```yaml
 backends:
   example:
     provider: 'prometheus'
     origin_url: http://prometheus:9090
-    shard_step_ms: 7200000
-    shard_max_size_ms: 14400000
+    shard_step: 2h
+    shard_max_size_time: 4h
 ```
 
-Neither `shard_step_ms` or `shard_max_size_ms` can be used in conjunction with `shard_max_size_points`.
+Neither `shard_step` or `shard_max_size_time` can be used in conjunction with `shard_max_size_points`.

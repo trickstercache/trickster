@@ -1,7 +1,7 @@
 # Chunked Caching
 
 ## Overview
-In some caching setups, users may want to increase `timeseries_retention_factor` or `timeseries_ttl_ms` for a given backend to a very large size (e.g., a duration of days or weeks). This can cause issues if the cache provider is
+In some caching setups, users may want to increase `timeseries_retention_factor` or `timeseries_ttl` forms a given backend to a very large size (e.g., a duration of days or weeks). This can cause issues if the cache provider is
 `filesystem` or `redis`, because the entire time series is loaded to extract
 even just a few data points. Eventually, this could negate the effects of
 caching altogether.
@@ -58,10 +58,10 @@ frontend:
 
 negative_caches:
   default:
-    '400': 3
-    '404': 3
-    '500': 3
-    '502': 3
+    '400': 3s
+    '404': 3s
+    '500': 3s
+    '502': 3s
 
 caches:
   mem1:
@@ -122,8 +122,8 @@ tracing:
 
 backends:
   prom1:
-    latency_max_ms: 150
-    latency_min_ms: 50
+    latency_max: 150ms
+    latency_min: 50ms
     provider: prometheus
     origin_url: 'http://127.0.0.1:9090'
     cache_name: fs1
@@ -137,7 +137,7 @@ backends:
     provider: influxdb
     origin_url: 'http://127.0.0.1:8086'
     cache_name: mem1
-    backfill_tolerance_ms: 30000
+    backfill_tolerance: 30s
     timeseries_retention_factor: 5184000
 
 logging:
