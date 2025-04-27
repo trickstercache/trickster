@@ -86,7 +86,7 @@ func (c *Cache) storeNoIndex(cacheKey string, data []byte) {
 	if err != nil {
 		logger.Error("cache failed to write non-indexed object",
 			logging.Pairs{"cacheName": c.Name, "cacheProvider": "filesystem",
-				"cacheKey": cacheKey, "objectSize": len(data)})
+				"cacheKey": cacheKey, "objectSize": len(data), "error": err.Error()})
 	}
 }
 
@@ -106,7 +106,7 @@ func (c *Cache) store(cacheKey string, data []byte, ttl time.Duration, updateInd
 
 	nl, _ := c.locker.Acquire(c.lockPrefix + cacheKey)
 
-	o := &index.Object{Key: cacheKey, Value: data, Expiration: time.Now().Add(ttl)}
+	o := index.NewObject(cacheKey, time.Now().Add(ttl), data)
 	err := os.WriteFile(dataFile, o.ToBytes(), os.FileMode(0777))
 	if err != nil {
 		nl.Release()
@@ -155,8 +155,8 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 		return o.Value, status.LookupStatusHit, nil
 	}
 
-	o.Expiration = c.Index.GetExpiration(cacheKey)
-	if allowExpired || o.Expiration.IsZero() || o.Expiration.After(time.Now()) {
+	o.Expiration.StoreTime(c.Index.GetExpiration(cacheKey))
+	if exp := o.Expiration.LoadTime(); allowExpired || exp.IsZero() || exp.After(time.Now()) {
 		logger.Debug("filesystem cache retrieve",
 			logging.Pairs{"key": cacheKey, "dataFile": dataFile})
 		if atime {

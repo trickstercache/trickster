@@ -103,12 +103,12 @@ func (c *Cache) store(cacheKey string, byteData []byte, refData cache.ReferenceO
 	if byteData != nil {
 		l = len(byteData)
 		metrics.ObserveCacheOperation(c.Name, c.Config.Provider, "set", "none", float64(l))
-		o1 = &index.Object{Key: cacheKey, Value: byteData, Expiration: exp}
-		o2 = &index.Object{Key: cacheKey, Value: byteData, Expiration: exp}
+		o1 = index.NewObject(cacheKey, exp, byteData)
+		o2 = index.NewObject(cacheKey, exp, byteData)
 	} else if refData != nil {
 		metrics.ObserveCacheOperation(c.Name, c.Config.Provider, "setDirect", "none", 0)
-		o1 = &index.Object{Key: cacheKey, ReferenceValue: refData, Expiration: exp}
-		o2 = &index.Object{Key: cacheKey, ReferenceValue: refData, Expiration: exp}
+		o1 = index.NewObjectFromReference(cacheKey, exp, refData)
+		o2 = index.NewObjectFromReference(cacheKey, exp, refData)
 	}
 
 	if o1 != nil && o2 != nil {
@@ -159,9 +159,9 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) (*index
 
 	if ok {
 		o := record.(*index.Object)
-		o.Expiration = c.Index.GetExpiration(cacheKey)
+		o.Expiration.StoreTime(c.Index.GetExpiration(cacheKey))
 
-		if allowExpired || o.Expiration.IsZero() || o.Expiration.After(time.Now()) {
+		if exp := o.Expiration.LoadTime(); allowExpired || exp.IsZero() || exp.After(time.Now()) {
 			logger.Debug("memory cache retrieve", logging.Pairs{"cacheKey": cacheKey})
 			if atime {
 				go c.Index.UpdateObjectAccessTime(cacheKey)

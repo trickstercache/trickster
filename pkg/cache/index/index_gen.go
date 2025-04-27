@@ -20,6 +20,7 @@ package index
 
 import (
 	"github.com/tinylib/msgp/msgp"
+	"github.com/trickstercache/trickster/v2/pkg/util/atomicx"
 )
 
 // DecodeMsg implements msgp.Decodable
@@ -365,22 +366,58 @@ func (z *Object) DecodeMsg(dc *msgp.Reader) (err error) {
 				return
 			}
 		case "expiration":
-			z.Expiration, err = dc.ReadTime()
-			if err != nil {
-				err = msgp.WrapError(err, "Expiration")
-				return
+			if dc.IsNil() {
+				err = dc.ReadNil()
+				if err != nil {
+					err = msgp.WrapError(err, "Expiration")
+					return
+				}
+				z.Expiration = nil
+			} else {
+				if z.Expiration == nil {
+					z.Expiration = new(atomicx.AtomicTime)
+				}
+				err = z.Expiration.DecodeMsg(dc)
+				if err != nil {
+					err = msgp.WrapError(err, "Expiration")
+					return
+				}
 			}
 		case "lastwrite":
-			z.LastWrite, err = dc.ReadTime()
-			if err != nil {
-				err = msgp.WrapError(err, "LastWrite")
-				return
+			if dc.IsNil() {
+				err = dc.ReadNil()
+				if err != nil {
+					err = msgp.WrapError(err, "LastWrite")
+					return
+				}
+				z.LastWrite = nil
+			} else {
+				if z.LastWrite == nil {
+					z.LastWrite = new(atomicx.AtomicTime)
+				}
+				err = z.LastWrite.DecodeMsg(dc)
+				if err != nil {
+					err = msgp.WrapError(err, "LastWrite")
+					return
+				}
 			}
 		case "lastaccess":
-			z.LastAccess, err = dc.ReadTime()
-			if err != nil {
-				err = msgp.WrapError(err, "LastAccess")
-				return
+			if dc.IsNil() {
+				err = dc.ReadNil()
+				if err != nil {
+					err = msgp.WrapError(err, "LastAccess")
+					return
+				}
+				z.LastAccess = nil
+			} else {
+				if z.LastAccess == nil {
+					z.LastAccess = new(atomicx.AtomicTime)
+				}
+				err = z.LastAccess.DecodeMsg(dc)
+				if err != nil {
+					err = msgp.WrapError(err, "LastAccess")
+					return
+				}
 			}
 		case "size":
 			z.Size, err = dc.ReadInt64()
@@ -438,30 +475,51 @@ func (z *Object) EncodeMsg(en *msgp.Writer) (err error) {
 		if err != nil {
 			return
 		}
-		err = en.WriteTime(z.Expiration)
-		if err != nil {
-			err = msgp.WrapError(err, "Expiration")
-			return
+		if z.Expiration == nil {
+			err = en.WriteNil()
+			if err != nil {
+				return
+			}
+		} else {
+			err = z.Expiration.EncodeMsg(en)
+			if err != nil {
+				err = msgp.WrapError(err, "Expiration")
+				return
+			}
 		}
 		// write "lastwrite"
 		err = en.Append(0xa9, 0x6c, 0x61, 0x73, 0x74, 0x77, 0x72, 0x69, 0x74, 0x65)
 		if err != nil {
 			return
 		}
-		err = en.WriteTime(z.LastWrite)
-		if err != nil {
-			err = msgp.WrapError(err, "LastWrite")
-			return
+		if z.LastWrite == nil {
+			err = en.WriteNil()
+			if err != nil {
+				return
+			}
+		} else {
+			err = z.LastWrite.EncodeMsg(en)
+			if err != nil {
+				err = msgp.WrapError(err, "LastWrite")
+				return
+			}
 		}
 		// write "lastaccess"
 		err = en.Append(0xaa, 0x6c, 0x61, 0x73, 0x74, 0x61, 0x63, 0x63, 0x65, 0x73, 0x73)
 		if err != nil {
 			return
 		}
-		err = en.WriteTime(z.LastAccess)
-		if err != nil {
-			err = msgp.WrapError(err, "LastAccess")
-			return
+		if z.LastAccess == nil {
+			err = en.WriteNil()
+			if err != nil {
+				return
+			}
+		} else {
+			err = z.LastAccess.EncodeMsg(en)
+			if err != nil {
+				err = msgp.WrapError(err, "LastAccess")
+				return
+			}
 		}
 		// write "size"
 		err = en.Append(0xa4, 0x73, 0x69, 0x7a, 0x65)
@@ -510,13 +568,37 @@ func (z *Object) MarshalMsg(b []byte) (o []byte, err error) {
 		o = msgp.AppendString(o, z.Key)
 		// string "expiration"
 		o = append(o, 0xaa, 0x65, 0x78, 0x70, 0x69, 0x72, 0x61, 0x74, 0x69, 0x6f, 0x6e)
-		o = msgp.AppendTime(o, z.Expiration)
+		if z.Expiration == nil {
+			o = msgp.AppendNil(o)
+		} else {
+			o, err = z.Expiration.MarshalMsg(o)
+			if err != nil {
+				err = msgp.WrapError(err, "Expiration")
+				return
+			}
+		}
 		// string "lastwrite"
 		o = append(o, 0xa9, 0x6c, 0x61, 0x73, 0x74, 0x77, 0x72, 0x69, 0x74, 0x65)
-		o = msgp.AppendTime(o, z.LastWrite)
+		if z.LastWrite == nil {
+			o = msgp.AppendNil(o)
+		} else {
+			o, err = z.LastWrite.MarshalMsg(o)
+			if err != nil {
+				err = msgp.WrapError(err, "LastWrite")
+				return
+			}
+		}
 		// string "lastaccess"
 		o = append(o, 0xaa, 0x6c, 0x61, 0x73, 0x74, 0x61, 0x63, 0x63, 0x65, 0x73, 0x73)
-		o = msgp.AppendTime(o, z.LastAccess)
+		if z.LastAccess == nil {
+			o = msgp.AppendNil(o)
+		} else {
+			o, err = z.LastAccess.MarshalMsg(o)
+			if err != nil {
+				err = msgp.WrapError(err, "LastAccess")
+				return
+			}
+		}
 		// string "size"
 		o = append(o, 0xa4, 0x73, 0x69, 0x7a, 0x65)
 		o = msgp.AppendInt64(o, z.Size)
@@ -554,22 +636,55 @@ func (z *Object) UnmarshalMsg(bts []byte) (o []byte, err error) {
 				return
 			}
 		case "expiration":
-			z.Expiration, bts, err = msgp.ReadTimeBytes(bts)
-			if err != nil {
-				err = msgp.WrapError(err, "Expiration")
-				return
+			if msgp.IsNil(bts) {
+				bts, err = msgp.ReadNilBytes(bts)
+				if err != nil {
+					return
+				}
+				z.Expiration = nil
+			} else {
+				if z.Expiration == nil {
+					z.Expiration = new(atomicx.AtomicTime)
+				}
+				bts, err = z.Expiration.UnmarshalMsg(bts)
+				if err != nil {
+					err = msgp.WrapError(err, "Expiration")
+					return
+				}
 			}
 		case "lastwrite":
-			z.LastWrite, bts, err = msgp.ReadTimeBytes(bts)
-			if err != nil {
-				err = msgp.WrapError(err, "LastWrite")
-				return
+			if msgp.IsNil(bts) {
+				bts, err = msgp.ReadNilBytes(bts)
+				if err != nil {
+					return
+				}
+				z.LastWrite = nil
+			} else {
+				if z.LastWrite == nil {
+					z.LastWrite = new(atomicx.AtomicTime)
+				}
+				bts, err = z.LastWrite.UnmarshalMsg(bts)
+				if err != nil {
+					err = msgp.WrapError(err, "LastWrite")
+					return
+				}
 			}
 		case "lastaccess":
-			z.LastAccess, bts, err = msgp.ReadTimeBytes(bts)
-			if err != nil {
-				err = msgp.WrapError(err, "LastAccess")
-				return
+			if msgp.IsNil(bts) {
+				bts, err = msgp.ReadNilBytes(bts)
+				if err != nil {
+					return
+				}
+				z.LastAccess = nil
+			} else {
+				if z.LastAccess == nil {
+					z.LastAccess = new(atomicx.AtomicTime)
+				}
+				bts, err = z.LastAccess.UnmarshalMsg(bts)
+				if err != nil {
+					err = msgp.WrapError(err, "LastAccess")
+					return
+				}
 			}
 		case "size":
 			z.Size, bts, err = msgp.ReadInt64Bytes(bts)
@@ -597,6 +712,24 @@ func (z *Object) UnmarshalMsg(bts []byte) (o []byte, err error) {
 
 // Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
 func (z *Object) Msgsize() (s int) {
-	s = 1 + 4 + msgp.StringPrefixSize + len(z.Key) + 11 + msgp.TimeSize + 10 + msgp.TimeSize + 11 + msgp.TimeSize + 5 + msgp.Int64Size + 6 + msgp.BytesPrefixSize + len(z.Value)
+	s = 1 + 4 + msgp.StringPrefixSize + len(z.Key) + 11
+	if z.Expiration == nil {
+		s += msgp.NilSize
+	} else {
+		s += z.Expiration.Msgsize()
+	}
+	s += 10
+	if z.LastWrite == nil {
+		s += msgp.NilSize
+	} else {
+		s += z.LastWrite.Msgsize()
+	}
+	s += 11
+	if z.LastAccess == nil {
+		s += msgp.NilSize
+	} else {
+		s += z.LastAccess.Msgsize()
+	}
+	s += 5 + msgp.Int64Size + 6 + msgp.BytesPrefixSize + len(z.Value)
 	return
 }

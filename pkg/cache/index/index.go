@@ -31,6 +31,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	gm "github.com/trickstercache/trickster/v2/pkg/observability/metrics"
+	"github.com/trickstercache/trickster/v2/pkg/util/atomicx"
 )
 
 //go:generate go tool msgp
@@ -105,16 +106,6 @@ func (i *IndexCache) Msgsize() (s int) {
 	return i.ToIndexObjects().Msgsize()
 }
 
-type AtomicTime atomic.Int64
-
-func (t *AtomicTime) StoreTime(ts time.Time) {
-	(*atomic.Int64)(t).Store(ts.UnixNano())
-}
-
-func (t *AtomicTime) LoadTime() time.Time {
-	return time.Unix(0, (*atomic.Int64)(t).Load())
-}
-
 // Index maintains metadata about a Cache when Retention enforcement is managed internally,
 // like memory or bbolt. It is not used for independently managed caches like Redis.
 type Index struct {
@@ -130,7 +121,7 @@ type Index struct {
 	options        atomic.Value                       `msg:"-"`
 	bulkRemoveFunc func([]string)                     `msg:"-"`
 	flushFunc      func(cacheKey string, data []byte) `msg:"-"`
-	lastWrite      AtomicTime                         `msg:"-"`
+	lastWrite      atomicx.AtomicTime                 `msg:"-"`
 
 	isClosing     atomic.Bool
 	cancel        context.CancelFunc
@@ -150,17 +141,39 @@ func (idx *Index) ToBytes() []byte {
 	return bytes
 }
 
+func NewObject(key string, expiration time.Time, value []byte) *Object {
+	return &Object{
+		Key:        key,
+		Expiration: atomicx.NewAtomicTime(expiration),
+		LastWrite:  atomicx.NewAtomicTime(time.Unix(0, 0)),
+		LastAccess: atomicx.NewAtomicTime(time.Unix(0, 0)),
+		Value:      value,
+		Size:       int64(len(value)),
+	}
+}
+
+func NewObjectFromReference(key string, expiration time.Time, value cache.ReferenceObject) *Object {
+	return &Object{
+		Key:            key,
+		Expiration:     atomicx.NewAtomicTime(expiration),
+		LastWrite:      atomicx.NewAtomicTime(time.Unix(0, 0)),
+		LastAccess:     atomicx.NewAtomicTime(time.Unix(0, 0)),
+		ReferenceValue: value,
+		Size:           int64(value.Size()),
+	}
+}
+
 // Object contains metadata about an item in the Cache
 type Object struct {
 	// Key represents the name of the Object and is the
 	// accessor in a hashed collection of Cache Objects
 	Key string `msg:"key"`
 	// Expiration represents the time that the Object expires from Cache
-	Expiration time.Time `msg:"expiration"`
+	Expiration *atomicx.AtomicTime `msg:"expiration"`
 	// LastWrite is the time the object was last Written
-	LastWrite time.Time `msg:"lastwrite"`
+	LastWrite *atomicx.AtomicTime `msg:"lastwrite"`
 	// LastAccess is the time the object was last Accessed
-	LastAccess time.Time `msg:"lastaccess"`
+	LastAccess *atomicx.AtomicTime `msg:"lastaccess"`
 	// Size the size of the Object in bytes
 	Size int64 `msg:"size"`
 	// Value is the value of the Object stored in the Cache
@@ -232,32 +245,22 @@ func (idx *Index) UpdateOptions(o *options.Options) {
 
 // UpdateObjectAccessTime updates the LastAccess for the object with the provided key
 func (idx *Index) UpdateObjectAccessTime(key string) {
-	for {
-		v, ok := idx.Objects.Load(key)
-		if !ok {
-			break
-		}
-		updated := v.(*Object)
-		updated.LastAccess = time.Now()
-		if idx.Objects.CompareAndSwap(key, v, updated) {
-			break
-		}
+	v, ok := idx.Objects.Load(key)
+	if !ok {
+		return
 	}
+	updated := v.(*Object)
+	updated.LastAccess.StoreTime(time.Now())
 }
 
 // UpdateObjectTTL updates the Expiration for the object with the provided key
 func (idx *Index) UpdateObjectTTL(key string, ttl time.Duration) {
-	for {
-		v, ok := idx.Objects.Load(key)
-		if !ok {
-			break
-		}
-		updated := v.(*Object)
-		updated.Expiration = time.Now().Add(ttl)
-		if idx.Objects.CompareAndSwap(key, v, updated) {
-			break
-		}
+	v, ok := idx.Objects.Load(key)
+	if !ok {
+		return
 	}
+	updated := v.(*Object)
+	updated.Expiration.StoreTime(time.Now().Add(ttl))
 }
 
 // UpdateObject writes or updates the Index Metadata for the provided Object
@@ -274,8 +277,9 @@ func (idx *Index) UpdateObject(obj *Object) {
 		obj.Size = int64(len(obj.Value))
 	}
 	obj.Value = nil
-	obj.LastAccess = time.Now()
-	obj.LastWrite = obj.LastAccess
+	now := time.Now()
+	obj.LastAccess.StoreTime(now)
+	obj.LastWrite.StoreTime(now)
 
 	var size, count int64
 	if o, ok := idx.Objects.Load(key); ok {
@@ -326,7 +330,7 @@ func (idx *Index) RemoveObjects(keys []string, noLock bool) {
 func (idx *Index) GetExpiration(cacheKey string) time.Time {
 	if o, ok := idx.Objects.Load(cacheKey); ok {
 		obj := o.(*Object)
-		return obj.Expiration
+		return obj.Expiration.LoadTime()
 	}
 	return time.Time{}
 }
@@ -396,7 +400,7 @@ func (idx *Index) reap() {
 		if o.Key == IndexKey {
 			return true
 		}
-		if o.Expiration.Before(now) && !o.Expiration.IsZero() {
+		if e := o.Expiration.LoadTime(); e.Before(now) && !e.IsZero() {
 			removals = append(removals, o.Key)
 		} else {
 			remainders = append(remainders, o)
@@ -494,7 +498,7 @@ func (o objectsAtime) Len() int {
 
 // Less returns true if i comes before j
 func (o objectsAtime) Less(i, j int) bool {
-	return o[i].LastAccess.Before(o[j].LastAccess)
+	return o[i].LastAccess.LoadTime().Before(o[j].LastAccess.LoadTime())
 }
 
 // Swap modifies the subject slice by swapping the values in indexes i and j
