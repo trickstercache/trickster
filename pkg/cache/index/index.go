@@ -145,8 +145,8 @@ func NewObject(key string, expiration time.Time, value []byte) *Object {
 	return &Object{
 		Key:        key,
 		Expiration: atomicx.NewAtomicTime(expiration),
-		LastWrite:  atomicx.NewAtomicTime(time.Unix(0, 0)),
-		LastAccess: atomicx.NewAtomicTime(time.Unix(0, 0)),
+		LastWrite:  atomicx.NewAtomicTime(time.Time{}),
+		LastAccess: atomicx.NewAtomicTime(time.Time{}),
 		Value:      value,
 		Size:       int64(len(value)),
 	}
@@ -156,8 +156,8 @@ func NewObjectFromReference(key string, expiration time.Time, value cache.Refere
 	return &Object{
 		Key:            key,
 		Expiration:     atomicx.NewAtomicTime(expiration),
-		LastWrite:      atomicx.NewAtomicTime(time.Unix(0, 0)),
-		LastAccess:     atomicx.NewAtomicTime(time.Unix(0, 0)),
+		LastWrite:      atomicx.NewAtomicTime(time.Time{}),
+		LastAccess:     atomicx.NewAtomicTime(time.Time{}),
 		ReferenceValue: value,
 		Size:           int64(value.Size()),
 	}
@@ -261,6 +261,7 @@ func (idx *Index) UpdateObjectTTL(key string, ttl time.Duration) {
 	}
 	updated := v.(*Object)
 	updated.Expiration.StoreTime(time.Now().Add(ttl))
+
 }
 
 // UpdateObject writes or updates the Index Metadata for the provided Object
@@ -278,8 +279,11 @@ func (idx *Index) UpdateObject(obj *Object) {
 	}
 	obj.Value = nil
 	now := time.Now()
-	obj.LastAccess.StoreTime(now)
-	obj.LastWrite.StoreTime(now)
+	obj.LastAccess = atomicx.NewAtomicTime(now)
+	obj.LastWrite = atomicx.NewAtomicTime(now)
+	if obj.Expiration == nil {
+		obj.Expiration = atomicx.NewAtomicTime(time.Time{})
+	}
 
 	var size, count int64
 	if o, ok := idx.Objects.Load(key); ok {

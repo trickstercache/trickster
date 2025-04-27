@@ -34,16 +34,10 @@ type StandardLibTime struct {
 type AtomicTime atomic.Int64
 
 func (at *AtomicTime) StoreTime(ts time.Time) {
-	if at == nil {
-		at = &AtomicTime{}
-	}
 	(*atomic.Int64)(at).Store(ts.UnixNano())
 }
 
 func (at *AtomicTime) LoadTime() time.Time {
-	if at == nil {
-		at = &AtomicTime{}
-	}
 	return time.Unix(0, (*atomic.Int64)(at).Load())
 }
 
@@ -58,9 +52,6 @@ func (at *AtomicTime) ToTime() StandardLibTime {
 }
 
 func (at *AtomicTime) FromTime(in StandardLibTime) {
-	if at == nil {
-		at = &AtomicTime{}
-	}
 	(*atomic.Int64)(at).Store(in.UnixNano())
 }
 
