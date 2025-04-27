@@ -34,6 +34,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/locks"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/util/atomicx"
 )
 
 // Cache describes a Filesystem Cache
@@ -106,7 +107,7 @@ func (c *Cache) store(cacheKey string, data []byte, ttl time.Duration, updateInd
 
 	nl, _ := c.locker.Acquire(c.lockPrefix + cacheKey)
 
-	o := &index.Object{Key: cacheKey, Value: data, Expiration: time.Now().Add(ttl)}
+	o := &index.Object{Key: cacheKey, Value: data, Expiration: atomicx.NewTime(time.Now().Add(ttl))}
 	err := os.WriteFile(dataFile, o.ToBytes(), os.FileMode(0777))
 	if err != nil {
 		nl.Release()
@@ -155,8 +156,8 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 		return o.Value, status.LookupStatusHit, nil
 	}
 
-	o.Expiration = c.Index.GetExpiration(cacheKey)
-	if allowExpired || o.Expiration.IsZero() || o.Expiration.After(time.Now()) {
+	o.Expiration.Store(c.Index.GetExpiration(cacheKey))
+	if allowExpired || o.Expiration.IsZero() || o.Expiration.Load().After(time.Now()) {
 		logger.Debug("filesystem cache retrieve",
 			logging.Pairs{"key": cacheKey, "dataFile": dataFile})
 		if atime {

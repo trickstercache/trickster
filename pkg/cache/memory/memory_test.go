@@ -29,6 +29,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/util/atomicx"
 )
 
 const provider = "memory"
@@ -399,7 +400,7 @@ func TestMemoryCache_SetTTL(t *testing.T) {
 	defer mc.Close()
 
 	exp1 := mc.Index.GetExpiration(cacheKey)
-	if !exp1.IsZero() {
+	if !exp1.Equal(atomicx.ZeroTime) {
 		t.Errorf("expected Zero time, got %v", exp1)
 	}
 

@@ -31,6 +31,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/util/atomicx"
 )
 
 const cacheProvider = "bbolt"
@@ -160,7 +161,7 @@ func TestBboltCache_SetTTL(t *testing.T) {
 	defer bc.Close()
 
 	exp1 := bc.Index.GetExpiration(cacheKey)
-	if !exp1.IsZero() {
+	if !exp1.Equal(atomicx.ZeroTime) {
 		t.Errorf("expected Zero time, got %v", exp1)
 	}
 
@@ -171,7 +172,7 @@ func TestBboltCache_SetTTL(t *testing.T) {
 	}
 
 	exp1 = bc.Index.GetExpiration(cacheKey)
-	if exp1.IsZero() {
+	if exp1.Equal(atomicx.ZeroTime) {
 		t.Errorf("expected time %d, got zero", int(time.Now().Unix())+60)
 	}
 
@@ -182,7 +183,7 @@ func TestBboltCache_SetTTL(t *testing.T) {
 	time.Sleep(time.Millisecond * 10)
 
 	exp2 := bc.Index.GetExpiration(cacheKey)
-	if exp2.IsZero() {
+	if exp2.Equal(atomicx.ZeroTime) {
 		t.Errorf("expected time %d, got zero", int(time.Now().Unix())+3600)
 	}
 	e2 := int(exp2.Unix())
