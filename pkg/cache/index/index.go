@@ -24,6 +24,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/tinylib/msgp/msgp"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/index/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/metrics"
@@ -37,6 +38,83 @@ import (
 // IndexKey is the key under which the index will write itself to its associated cache
 const IndexKey = "cache.index"
 
+// IndexObjects are the set of objects held by an IndexCache, represented as a map for encoding and decoding purposes
+type IndexObjects map[string]*Object
+
+//msgp:ignore IndexCache
+
+// IndexCache is a cache of Index Objects, backed by a sync.Map, that supports msgp encoding and decoding
+type IndexCache struct {
+	sync.Map
+	keys atomic.Int64
+}
+
+func (i *IndexCache) Store(key, value any) {
+	i.Map.Store(key, value)
+	i.keys.Add(1)
+}
+
+func (i *IndexCache) Delete(key any) {
+	i.Map.Delete(key)
+	i.keys.Add(-1)
+}
+
+func (i *IndexCache) FromIndexObjects(in IndexObjects) {
+	for k, v := range in {
+		i.Store(k, v)
+	}
+}
+
+func (i *IndexCache) ToIndexObjects() IndexObjects {
+	out := make(IndexObjects, i.keys.Load())
+	i.Range(func(k, v any) bool {
+		out[k.(string)] = v.(*Object)
+		return true
+	})
+	return out
+}
+
+func (i *IndexCache) EncodeMsg(en *msgp.Writer) (err error) {
+	return i.ToIndexObjects().EncodeMsg(en)
+}
+
+func (i *IndexCache) DecodeMsg(dc *msgp.Reader) (err error) {
+	objects := &IndexObjects{}
+	if err := objects.DecodeMsg(dc); err != nil {
+		return err
+	}
+	i.FromIndexObjects(*objects)
+	return
+}
+
+func (i *IndexCache) MarshalMsg(b []byte) (o []byte, err error) {
+	return i.ToIndexObjects().MarshalMsg(b)
+}
+
+func (i *IndexCache) UnmarshalMsg(bts []byte) (o []byte, err error) {
+	objects := &IndexObjects{}
+	o, err = objects.UnmarshalMsg(bts)
+	if err != nil {
+		return o, err
+	}
+	i.FromIndexObjects(*objects)
+	return
+}
+
+func (i *IndexCache) Msgsize() (s int) {
+	return i.ToIndexObjects().Msgsize()
+}
+
+type AtomicTime atomic.Int64
+
+func (t *AtomicTime) StoreTime(ts time.Time) {
+	(*atomic.Int64)(t).Store(ts.UnixNano())
+}
+
+func (t *AtomicTime) LoadTime() time.Time {
+	return time.Unix(0, (*atomic.Int64)(t).Load())
+}
+
 // Index maintains metadata about a Cache when Retention enforcement is managed internally,
 // like memory or bbolt. It is not used for independently managed caches like Redis.
 type Index struct {
@@ -45,29 +123,25 @@ type Index struct {
 	// ObjectCount represents the count of objects in the Cache
 	ObjectCount int64 `msg:"object_count"`
 	// Objects is a map of Objects in the Cache
-	Objects map[string]*Object `msg:"objects"`
+	Objects IndexCache `msg:"objects"`
 
 	name           string                             `msg:"-"`
 	cacheProvider  string                             `msg:"-"`
-	options        *options.Options                   `msg:"-"`
+	options        atomic.Value                       `msg:"-"`
 	bulkRemoveFunc func([]string)                     `msg:"-"`
 	flushFunc      func(cacheKey string, data []byte) `msg:"-"`
-	lastWrite      time.Time                          `msg:"-"`
+	lastWrite      AtomicTime                         `msg:"-"`
 
-	isClosing     bool
+	isClosing     atomic.Bool
 	cancel        context.CancelFunc
-	flusherExited bool
-	reaperExited  bool
-
-	mtx sync.Mutex
+	flusherExited atomic.Bool
+	reaperExited  atomic.Bool
 }
 
 // Close is called to signal the index to shut down any subroutines
 func (idx *Index) Close() {
 	idx.cancel()
-	idx.mtx.Lock()
-	idx.isClosing = true
-	idx.mtx.Unlock()
+	idx.isClosing.Store(true)
 }
 
 // ToBytes returns a serialized byte slice representing the Index
@@ -119,14 +193,14 @@ func NewIndex(cacheName, cacheProvider string, indexData []byte,
 	if len(indexData) > 0 {
 		i.UnmarshalMsg(indexData)
 	} else {
-		i.Objects = make(map[string]*Object)
+		i.Objects = IndexCache{}
 	}
 
 	i.name = cacheName
 	i.cacheProvider = cacheProvider
 	i.flushFunc = flushFunc
 	i.bulkRemoveFunc = bulkRemoveFunc
-	i.options = o
+	i.options.Store(o)
 	ctx, cancel := context.WithCancel(context.Background())
 	i.cancel = cancel
 	if flushFunc != nil {
@@ -153,28 +227,37 @@ func NewIndex(cacheName, cacheProvider string, indexData []byte,
 
 // UpdateOptions updates the existing Index with a new Options reference
 func (idx *Index) UpdateOptions(o *options.Options) {
-	idx.mtx.Lock()
-	idx.options = o
-	idx.mtx.Unlock()
+	idx.options.Store(o)
 }
 
 // UpdateObjectAccessTime updates the LastAccess for the object with the provided key
 func (idx *Index) UpdateObjectAccessTime(key string) {
-	idx.mtx.Lock()
-	if _, ok := idx.Objects[key]; ok {
-		idx.Objects[key].LastAccess = time.Now()
+	for {
+		v, ok := idx.Objects.Load(key)
+		if !ok {
+			break
+		}
+		updated := v.(*Object)
+		updated.LastAccess = time.Now()
+		if idx.Objects.CompareAndSwap(key, v, updated) {
+			break
+		}
 	}
-	idx.mtx.Unlock()
-
 }
 
 // UpdateObjectTTL updates the Expiration for the object with the provided key
 func (idx *Index) UpdateObjectTTL(key string, ttl time.Duration) {
-	idx.mtx.Lock()
-	if _, ok := idx.Objects[key]; ok {
-		idx.Objects[key].Expiration = time.Now().Add(ttl)
+	for {
+		v, ok := idx.Objects.Load(key)
+		if !ok {
+			break
+		}
+		updated := v.(*Object)
+		updated.Expiration = time.Now().Add(ttl)
+		if idx.Objects.CompareAndSwap(key, v, updated) {
+			break
+		}
 	}
-	idx.mtx.Unlock()
 }
 
 // UpdateObject writes or updates the Index Metadata for the provided Object
@@ -185,10 +268,6 @@ func (idx *Index) UpdateObject(obj *Object) {
 		return
 	}
 
-	idx.mtx.Lock()
-
-	idx.lastWrite = time.Now()
-
 	if obj.ReferenceValue != nil {
 		obj.Size = int64(obj.ReferenceValue.Size())
 	} else {
@@ -198,63 +277,57 @@ func (idx *Index) UpdateObject(obj *Object) {
 	obj.LastAccess = time.Now()
 	obj.LastWrite = obj.LastAccess
 
-	if o, ok := idx.Objects[key]; ok {
-		atomic.AddInt64(&idx.CacheSize, obj.Size-o.Size)
+	var size, count int64
+	if o, ok := idx.Objects.Load(key); ok {
+		oldObj := o.(*Object)
+		size = atomic.AddInt64(&idx.CacheSize, obj.Size-oldObj.Size)
+		count = atomic.LoadInt64(&idx.ObjectCount)
 	} else {
-		atomic.AddInt64(&idx.CacheSize, obj.Size)
-		atomic.AddInt64(&idx.ObjectCount, 1)
+		size = atomic.AddInt64(&idx.CacheSize, obj.Size)
+		count = atomic.AddInt64(&idx.ObjectCount, 1)
 	}
 
-	metrics.ObserveCacheSizeChange(idx.name, idx.cacheProvider, idx.CacheSize, idx.ObjectCount)
-
-	idx.Objects[key] = obj
-	idx.mtx.Unlock()
+	metrics.ObserveCacheSizeChange(idx.name, idx.cacheProvider, size, count)
+	idx.lastWrite.StoreTime(time.Now())
+	idx.Objects.Store(key, obj)
 }
 
 // RemoveObject removes an Object's Metadata from the Index
 func (idx *Index) RemoveObject(key string) {
-	idx.mtx.Lock()
-	idx.lastWrite = time.Now()
-	if o, ok := idx.Objects[key]; ok {
-		atomic.AddInt64(&idx.CacheSize, -o.Size)
-		atomic.AddInt64(&idx.ObjectCount, -1)
+	if o, ok := idx.Objects.Load(key); ok {
+		obj := o.(*Object)
+		size := atomic.AddInt64(&idx.CacheSize, -obj.Size)
+		count := atomic.AddInt64(&idx.ObjectCount, -1)
 
-		metrics.ObserveCacheOperation(idx.name, idx.cacheProvider, "del", "none", float64(o.Size))
+		metrics.ObserveCacheOperation(idx.name, idx.cacheProvider, "del", "none", float64(obj.Size))
 
-		delete(idx.Objects, key)
-		metrics.ObserveCacheSizeChange(idx.name, idx.cacheProvider, idx.CacheSize, idx.ObjectCount)
+		idx.Objects.Delete(key)
+		metrics.ObserveCacheSizeChange(idx.name, idx.cacheProvider, size, count)
 	}
-	idx.mtx.Unlock()
+	idx.lastWrite.StoreTime(time.Now())
 }
 
 // RemoveObjects removes a list of Objects' Metadata from the Index
 func (idx *Index) RemoveObjects(keys []string, noLock bool) {
-	if !noLock {
-		idx.mtx.Lock()
-	}
 	for _, key := range keys {
-		if o, ok := idx.Objects[key]; ok {
-			atomic.AddInt64(&idx.CacheSize, -o.Size)
-			atomic.AddInt64(&idx.ObjectCount, -1)
-			metrics.ObserveCacheOperation(idx.name, idx.cacheProvider, "del", "none", float64(o.Size))
-			delete(idx.Objects, key)
-			metrics.ObserveCacheSizeChange(idx.name, idx.cacheProvider, idx.CacheSize, idx.ObjectCount)
+		if o, ok := idx.Objects.Load(key); ok {
+			obj := o.(*Object)
+			size := atomic.AddInt64(&idx.CacheSize, -obj.Size)
+			count := atomic.AddInt64(&idx.ObjectCount, -1)
+			metrics.ObserveCacheOperation(idx.name, idx.cacheProvider, "del", "none", float64(obj.Size))
+			idx.Objects.Delete(key)
+			metrics.ObserveCacheSizeChange(idx.name, idx.cacheProvider, size, count)
 		}
 	}
-	idx.lastWrite = time.Now()
-	if !noLock {
-		idx.mtx.Unlock()
-	}
+	idx.lastWrite.StoreTime(time.Now())
 }
 
 // GetExpiration returns the cache index's expiration for the object of the given key
 func (idx *Index) GetExpiration(cacheKey string) time.Time {
-	idx.mtx.Lock()
-	if o, ok := idx.Objects[cacheKey]; ok {
-		idx.mtx.Unlock()
-		return o.Expiration
+	if o, ok := idx.Objects.Load(cacheKey); ok {
+		obj := o.(*Object)
+		return obj.Expiration
 	}
-	idx.mtx.Unlock()
 	return time.Time{}
 }
 
@@ -263,29 +336,23 @@ func (idx *Index) flusher(ctx context.Context) {
 	var lastFlush time.Time
 FLUSHER:
 	for {
-		idx.mtx.Lock()
-		fi := idx.options.FlushInterval
-		idx.mtx.Unlock()
+		fi := idx.options.Load().(*options.Options).FlushInterval
 		select {
 		case <-ctx.Done():
 			break FLUSHER
 		case <-time.After(fi):
-			if idx.lastWrite.Before(lastFlush) {
+			if idx.lastWrite.LoadTime().Before(lastFlush) {
 				continue
 			}
 			idx.flushOnce()
 			lastFlush = time.Now()
 		}
 	}
-	idx.mtx.Lock()
-	idx.flusherExited = true
-	idx.mtx.Unlock()
+	idx.flusherExited.Store(true)
 }
 
 func (idx *Index) flushOnce() {
-	idx.mtx.Lock()
 	bytes, err := idx.MarshalMsg(nil)
-	idx.mtx.Unlock()
 	if err != nil {
 		logger.Warn("unable to serialize index for flushing",
 			logging.Pairs{"cacheName": idx.name, "detail": err.Error()})
@@ -298,9 +365,7 @@ func (idx *Index) flushOnce() {
 func (idx *Index) reaper(ctx context.Context) {
 REAPER:
 	for {
-		idx.mtx.Lock()
-		ri := idx.options.ReapInterval
-		idx.mtx.Unlock()
+		ri := idx.options.Load().(*options.Options).ReapInterval
 		select {
 		case <-ctx.Done():
 			break REAPER
@@ -308,9 +373,7 @@ REAPER:
 			idx.reap()
 		}
 	}
-	idx.mtx.Lock()
-	idx.reaperExited = true
-	idx.mtx.Unlock()
+	idx.reaperExited.Store(true)
 }
 
 type objectsAtime []*Object
@@ -319,26 +382,27 @@ type objectsAtime []*Object
 // and evict least-recently-accessed elements to maintain the Maximum allowed Cache Size
 func (idx *Index) reap() {
 
-	idx.mtx.Lock()
-	defer idx.mtx.Unlock()
-
+	cacheSize := atomic.LoadInt64(&idx.CacheSize)
+	objectCount := atomic.LoadInt64(&idx.ObjectCount)
 	removals := make([]string, 0)
-	remainders := make(objectsAtime, 0, idx.ObjectCount)
+	remainders := make(objectsAtime, 0, cacheSize)
 
 	var cacheChanged bool
 
 	now := time.Now()
 
-	for _, o := range idx.Objects {
+	idx.Objects.Range(func(key, value any) bool {
+		o := value.(*Object)
 		if o.Key == IndexKey {
-			continue
+			return true
 		}
 		if o.Expiration.Before(now) && !o.Expiration.IsZero() {
 			removals = append(removals, o.Key)
 		} else {
 			remainders = append(remainders, o)
 		}
-	}
+		return true
+	})
 
 	if len(removals) > 0 {
 		metrics.ObserveCacheEvent(idx.name, idx.cacheProvider, "eviction", "ttl")
@@ -347,15 +411,17 @@ func (idx *Index) reap() {
 		cacheChanged = true
 	}
 
-	if ((idx.options.MaxSizeBytes > 0 && idx.CacheSize > idx.options.MaxSizeBytes) ||
-		(idx.options.MaxSizeObjects > 0 && idx.ObjectCount > idx.options.MaxSizeObjects)) &&
+	opts := idx.options.Load().(*options.Options)
+
+	if ((opts.MaxSizeBytes > 0 && cacheSize > opts.MaxSizeBytes) ||
+		(opts.MaxSizeObjects > 0 && objectCount > opts.MaxSizeObjects)) &&
 		len(remainders) > 0 {
 
 		var evictionType string
 		switch {
-		case idx.options.MaxSizeBytes > 0 && idx.CacheSize > idx.options.MaxSizeBytes:
+		case opts.MaxSizeBytes > 0 && cacheSize > opts.MaxSizeBytes:
 			evictionType = "size_bytes"
-		case idx.options.MaxSizeObjects > 0 && idx.ObjectCount > idx.options.MaxSizeObjects:
+		case opts.MaxSizeObjects > 0 && objectCount > opts.MaxSizeObjects:
 			evictionType = "size_objects"
 		default:
 			return
@@ -365,8 +431,8 @@ func (idx *Index) reap() {
 			"max cache size reached. evicting least-recently-accessed records",
 			logging.Pairs{
 				"reason":         evictionType,
-				"cacheSizeBytes": idx.CacheSize, "maxSizeBytes": idx.options.MaxSizeBytes,
-				"cacheSizeObjects": idx.ObjectCount, "maxSizeObjects": idx.options.MaxSizeObjects,
+				"cacheSizeBytes": cacheSize, "maxSizeBytes": opts.MaxSizeBytes,
+				"cacheSizeObjects": objectCount, "maxSizeObjects": opts.MaxSizeObjects,
 			},
 		)
 
@@ -378,9 +444,9 @@ func (idx *Index) reap() {
 		j := len(remainders)
 
 		if evictionType == "size_bytes" {
-			bytesNeeded := (idx.CacheSize - idx.options.MaxSizeBytes)
-			if idx.options.MaxSizeBytes > idx.options.MaxSizeBackoffBytes {
-				bytesNeeded += idx.options.MaxSizeBackoffBytes
+			bytesNeeded := (cacheSize - opts.MaxSizeBytes)
+			if opts.MaxSizeBytes > opts.MaxSizeBackoffBytes {
+				bytesNeeded += opts.MaxSizeBackoffBytes
 			}
 			bytesSelected := int64(0)
 			for bytesSelected < bytesNeeded && i < j {
@@ -389,9 +455,9 @@ func (idx *Index) reap() {
 				i++
 			}
 		} else {
-			objectsNeeded := (idx.ObjectCount - idx.options.MaxSizeObjects)
-			if idx.options.MaxSizeObjects > idx.options.MaxSizeBackoffObjects {
-				objectsNeeded += idx.options.MaxSizeBackoffObjects
+			objectsNeeded := (objectCount - opts.MaxSizeObjects)
+			if opts.MaxSizeObjects > opts.MaxSizeBackoffObjects {
+				objectsNeeded += opts.MaxSizeBackoffObjects
 			}
 			objectsSelected := int64(0)
 			for objectsSelected < objectsNeeded && i < j {
@@ -411,13 +477,13 @@ func (idx *Index) reap() {
 		logger.Debug("size-based cache eviction exercise completed",
 			logging.Pairs{
 				"reason":         evictionType,
-				"cacheSizeBytes": idx.CacheSize, "maxSizeBytes": idx.options.MaxSizeBytes,
-				"cacheSizeObjects": idx.ObjectCount, "maxSizeObjects": idx.options.MaxSizeObjects,
+				"cacheSizeBytes": idx.CacheSize, "maxSizeBytes": opts.MaxSizeBytes,
+				"cacheSizeObjects": idx.ObjectCount, "maxSizeObjects": opts.MaxSizeObjects,
 			})
 
 	}
 	if cacheChanged {
-		idx.lastWrite = time.Now()
+		idx.lastWrite.StoreTime(time.Now())
 	}
 }
 
