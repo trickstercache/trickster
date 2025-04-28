@@ -21,6 +21,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/engines"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
@@ -51,9 +53,10 @@ func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 		r = request.SetBody(r, body)
 	}
 	sqlQuery = strings.ToLower(sqlQuery)
-	if !strings.HasPrefix(sqlQuery, "select ") &&
-		!strings.HasPrefix(sqlQuery, "select\n") &&
-		!strings.Contains(sqlQuery, " select ") {
+	if !strings.Contains(sqlQuery, "select ") &&
+		!strings.Contains(sqlQuery, "select\n") &&
+		!strings.Contains(sqlQuery, "select\t") {
+		logger.Debug("request is not a SELECT query, proxying.", logging.Pairs{"query": sqlQuery})
 		c.ProxyHandler(w, r)
 		return
 	}
