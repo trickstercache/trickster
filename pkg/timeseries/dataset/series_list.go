@@ -19,6 +19,7 @@ package dataset
 import (
 	"fmt"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 
@@ -148,4 +149,16 @@ func (sl SeriesList) SortByTags() {
 	for i, key := range keys {
 		sl[i] = lkp[key]
 	}
+}
+
+func (sl SeriesList) SortPoints() {
+	var wg sync.WaitGroup
+	wg.Add(len(sl))
+	for _, s := range sl {
+		go func(gs *Series) {
+			sort.Sort(gs.Points)
+			wg.Done()
+		}(s)
+	}
+	wg.Wait()
 }
