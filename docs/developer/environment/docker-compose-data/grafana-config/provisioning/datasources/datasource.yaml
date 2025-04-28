@@ -54,6 +54,7 @@ datasources:
   version: 1
   editable: true
 
+# Influx DB
 - name: influxdb-direct-influxql
   type: influxdb
   access: proxy
@@ -81,3 +82,14 @@ datasources:
     httpHeaderName1: 'Authorization'
   secureJsonData:
     httpHeaderValue1: 'Token trickster-demo-token'
+
+# ClickHouse
+- name: clickhouse-trickster-influxql
+  type: vertamedia-clickhouse-datasource
+  access: proxy
+  url: http://clickhouse:8123
+  isDefault: false
+  jsonData:
+    defaultDatabase: default
+    username: default
+    password: ""
