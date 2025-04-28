@@ -25,18 +25,17 @@ import (
 
 func TestAtomicTime(t *testing.T) {
 	ts := time.Unix(0, 0)
-	at := NewAtomicTime(ts)
-	require.True(t, ts.Equal(at.LoadTime()), "expected %v, got %v", ts, at.LoadTime())
+	at := NewTime(ts)
+	require.True(t, ts.Equal(at.Load()), "expected %v, got %v", ts, at.Load())
 	// update the time and make sure it updates
 	ts = time.Now()
-	at.StoreTime(ts)
-	require.True(t, ts.Equal(at.LoadTime()), "expected %v, got %v", ts, at.LoadTime())
-	t.Run("stdlib", func(t *testing.T) {
-		ts := time.Unix(1, 23)
-		at := AtomicTime{}
-		at.FromTime(StandardLibTime{ts})
-		require.True(t, ts.Equal(at.LoadTime()), "expected %v, got %v", ts, at.LoadTime())
-		ts2 := at.ToTime()
-		require.True(t, ts.Equal(ts2.Time), "expected %v, got %v", ts, ts2)
-	})
+	at.Store(ts)
+	require.True(t, ts.Equal(at.Load()), "expected %v, got %v", ts, at.Load())
+	// start from empty value
+	at = &Time{}
+	ts = time.Unix(1, 23)
+	at.Store(ts)
+	require.True(t, ts.Equal(at.Load()), "expected %v, got %v", ts, at.Load())
+	ts2 := at.Load()
+	require.True(t, ts.Equal(ts2), "expected %v, got %v", ts, ts2)
 }

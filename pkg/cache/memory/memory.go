@@ -159,9 +159,9 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) (*index
 
 	if ok {
 		o := record.(*index.Object)
-		o.Expiration.StoreTime(c.Index.GetExpiration(cacheKey))
+		o.Expiration.Store(c.Index.GetExpiration(cacheKey))
 
-		if exp := o.Expiration.LoadTime(); allowExpired || exp.IsZero() || exp.After(time.Now()) {
+		if exp := o.Expiration.Load(); allowExpired || exp.IsZero() || exp.After(time.Now()) {
 			logger.Debug("memory cache retrieve", logging.Pairs{"cacheKey": cacheKey})
 			if atime {
 				go c.Index.UpdateObjectAccessTime(cacheKey)

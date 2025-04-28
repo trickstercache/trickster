@@ -23,104 +23,53 @@ import (
 )
 
 // DecodeMsg implements msgp.Decodable
-func (z *StandardLibTime) DecodeMsg(dc *msgp.Reader) (err error) {
-	var field []byte
-	_ = field
-	var zb0001 uint32
-	zb0001, err = dc.ReadMapHeader()
-	if err != nil {
-		err = msgp.WrapError(err)
-		return
-	}
-	for zb0001 > 0 {
-		zb0001--
-		field, err = dc.ReadMapKeyPtr()
+func (z *StandardLibInt64) DecodeMsg(dc *msgp.Reader) (err error) {
+	{
+		var zb0001 int64
+		zb0001, err = dc.ReadInt64()
 		if err != nil {
 			err = msgp.WrapError(err)
 			return
 		}
-		switch msgp.UnsafeString(field) {
-		case "Time":
-			z.Time, err = dc.ReadTime()
-			if err != nil {
-				err = msgp.WrapError(err, "Time")
-				return
-			}
-		default:
-			err = dc.Skip()
-			if err != nil {
-				err = msgp.WrapError(err)
-				return
-			}
-		}
+		(*z) = StandardLibInt64(zb0001)
 	}
 	return
 }
 
 // EncodeMsg implements msgp.Encodable
-func (z StandardLibTime) EncodeMsg(en *msgp.Writer) (err error) {
-	// map header, size 1
-	// write "Time"
-	err = en.Append(0x81, 0xa4, 0x54, 0x69, 0x6d, 0x65)
+func (z StandardLibInt64) EncodeMsg(en *msgp.Writer) (err error) {
+	err = en.WriteInt64(int64(z))
 	if err != nil {
-		return
-	}
-	err = en.WriteTime(z.Time)
-	if err != nil {
-		err = msgp.WrapError(err, "Time")
+		err = msgp.WrapError(err)
 		return
 	}
 	return
 }
 
 // MarshalMsg implements msgp.Marshaler
-func (z StandardLibTime) MarshalMsg(b []byte) (o []byte, err error) {
+func (z StandardLibInt64) MarshalMsg(b []byte) (o []byte, err error) {
 	o = msgp.Require(b, z.Msgsize())
-	// map header, size 1
-	// string "Time"
-	o = append(o, 0x81, 0xa4, 0x54, 0x69, 0x6d, 0x65)
-	o = msgp.AppendTime(o, z.Time)
+	o = msgp.AppendInt64(o, int64(z))
 	return
 }
 
 // UnmarshalMsg implements msgp.Unmarshaler
-func (z *StandardLibTime) UnmarshalMsg(bts []byte) (o []byte, err error) {
-	var field []byte
-	_ = field
-	var zb0001 uint32
-	zb0001, bts, err = msgp.ReadMapHeaderBytes(bts)
-	if err != nil {
-		err = msgp.WrapError(err)
-		return
-	}
-	for zb0001 > 0 {
-		zb0001--
-		field, bts, err = msgp.ReadMapKeyZC(bts)
+func (z *StandardLibInt64) UnmarshalMsg(bts []byte) (o []byte, err error) {
+	{
+		var zb0001 int64
+		zb0001, bts, err = msgp.ReadInt64Bytes(bts)
 		if err != nil {
 			err = msgp.WrapError(err)
 			return
 		}
-		switch msgp.UnsafeString(field) {
-		case "Time":
-			z.Time, bts, err = msgp.ReadTimeBytes(bts)
-			if err != nil {
-				err = msgp.WrapError(err, "Time")
-				return
-			}
-		default:
-			bts, err = msgp.Skip(bts)
-			if err != nil {
-				err = msgp.WrapError(err)
-				return
-			}
-		}
+		(*z) = StandardLibInt64(zb0001)
 	}
 	o = bts
 	return
 }
 
 // Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
-func (z StandardLibTime) Msgsize() (s int) {
-	s = 1 + 5 + msgp.TimeSize
+func (z StandardLibInt64) Msgsize() (s int) {
+	s = msgp.Int64Size
 	return
 }

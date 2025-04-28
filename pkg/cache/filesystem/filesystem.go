@@ -140,7 +140,6 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 		metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.Provider)
 		return nil, status.LookupStatusKeyMiss, cache.ErrKNF
 	}
-
 	o, err := index.ObjectFromBytes(data)
 	if err != nil {
 
@@ -155,8 +154,8 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 		return o.Value, status.LookupStatusHit, nil
 	}
 
-	o.Expiration.StoreTime(c.Index.GetExpiration(cacheKey))
-	if exp := o.Expiration.LoadTime(); allowExpired || exp.IsZero() || exp.After(time.Now()) {
+	o.Expiration.Store(c.Index.GetExpiration(cacheKey))
+	if exp := o.Expiration.Load(); allowExpired || exp.IsZero() || exp.After(time.Now()) {
 		logger.Debug("filesystem cache retrieve",
 			logging.Pairs{"key": cacheKey, "dataFile": dataFile})
 		if atime {
@@ -165,6 +164,7 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 		metrics.ObserveCacheOperation(c.Name, c.Config.Provider, "get", "hit", float64(len(data)))
 		return o.Value, status.LookupStatusHit, nil
 	}
+
 	// Cache Object has been expired but not reaped, go ahead and delete it
 	go c.remove(cacheKey, false)
 	metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.Provider)

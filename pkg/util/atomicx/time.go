@@ -25,63 +25,54 @@ import (
 
 //go:generate go tool msgp
 
-// StandardLibTime is a time.Time wrapper that implements msgp.Encodable and msgp.Decodable
-type StandardLibTime struct {
-	time.Time
+func NewTime(in time.Time) *Time {
+	t := &Time{v: atomic.Int64{}}
+	t.Store(in)
+	return t
 }
 
-// AtomicTime is a msgpack compatible time.Time wrapper, backed by an atomic.Int64
-type AtomicTime atomic.Int64
+type StandardLibInt64 int64
 
-func (at *AtomicTime) StoreTime(ts time.Time) {
-	(*atomic.Int64)(at).Store(ts.UnixNano())
+//msgp:ignore Time
+type Time struct {
+	v atomic.Int64
 }
 
-func (at *AtomicTime) LoadTime() time.Time {
-	return time.Unix(0, (*atomic.Int64)(at).Load())
+func (d *Time) Load() time.Time {
+	return time.Unix(0, d.v.Load())
 }
 
-func NewAtomicTime(in time.Time) *AtomicTime {
-	at := AtomicTime{}
-	at.StoreTime(in)
-	return &at
+func (d *Time) Store(d2 time.Time) {
+	d.v.Store(d2.UnixNano())
 }
 
-func (at *AtomicTime) ToTime() StandardLibTime {
-	return StandardLibTime{at.LoadTime()}
+func (d *Time) EncodeMsg(en *msgp.Writer) (err error) {
+	ts := StandardLibInt64(d.v.Load())
+	return (&ts).EncodeMsg(en)
 }
 
-func (at *AtomicTime) FromTime(in StandardLibTime) {
-	(*atomic.Int64)(at).Store(in.UnixNano())
-}
-
-func (at *AtomicTime) EncodeMsg(en *msgp.Writer) (err error) {
-	return at.ToTime().EncodeMsg(en)
-}
-
-func (at *AtomicTime) MarshalMsg(b []byte) (o []byte, err error) {
-	return at.ToTime().MarshalMsg(b)
-}
-
-func (at *AtomicTime) DecodeMsg(dc *msgp.Reader) (err error) {
-	t := &StandardLibTime{}
-	if err = t.DecodeMsg(dc); err != nil {
+func (d *Time) DecodeMsg(dc *msgp.Reader) (err error) {
+	var ts StandardLibInt64
+	if err := ts.DecodeMsg(dc); err != nil {
 		return err
 	}
-	at.FromTime(*t)
+	d.Store(time.Unix(0, int64(ts)))
 	return
 }
 
-func (at *AtomicTime) UnmarshalMsg(bts []byte) (o []byte, err error) {
-	t := &StandardLibTime{}
-	o, err = t.UnmarshalMsg(bts)
+func (d *Time) MarshalMsg(b []byte) (o []byte, err error) {
+	return msgp.AppendInt64(b, d.v.Load()), nil
+}
+
+func (d *Time) UnmarshalMsg(b []byte) (o []byte, err error) {
+	i, _, err := msgp.ReadInt64Bytes(b)
 	if err != nil {
-		return o, err
+		return b, err
 	}
-	at.FromTime(*t)
-	return
+	d.v.Store(i)
+	return b, nil
 }
 
-func (at *AtomicTime) Msgsize() (s int) {
-	return at.ToTime().Msgsize()
+func (d *Time) Msgsize() int {
+	return msgp.Int64Size
 }

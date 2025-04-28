@@ -109,25 +109,25 @@ func TestReap(t *testing.T) {
 	idx.UpdateObject(&Object{Key: "cache.index", Value: []byte("test_value")})
 
 	// add expired key to cover the case that the reaper remove it
-	idx.UpdateObject(&Object{Key: "test.1", Value: []byte("test_value"), Expiration: atomicx.NewAtomicTime(time.Now().Add(-time.Minute))})
+	idx.UpdateObject(&Object{Key: "test.1", Value: []byte("test_value"), Expiration: atomicx.NewTime(time.Now().Add(-time.Minute))})
 
 	// add key with no expiration which should not be reaped
 	idx.UpdateObject(&Object{Key: "test.2", Value: []byte("test_value")})
 
 	// add key with future expiration which should not be reaped
-	idx.UpdateObject(&Object{Key: "test.3", Value: []byte("test_value"), Expiration: atomicx.NewAtomicTime(time.Now().Add(time.Minute))})
+	idx.UpdateObject(&Object{Key: "test.3", Value: []byte("test_value"), Expiration: atomicx.NewTime(time.Now().Add(time.Minute))})
 
 	// trigger a reap that will only remove expired elements but not size down the full cache
 	idx.reap()
 
 	// add key with future expiration which should not be reaped
-	idx.UpdateObject(&Object{Key: "test.4", Value: []byte("test_value"), Expiration: atomicx.NewAtomicTime(time.Now().Add(time.Minute))})
+	idx.UpdateObject(&Object{Key: "test.4", Value: []byte("test_value"), Expiration: atomicx.NewTime(time.Now().Add(time.Minute))})
 
 	// add key with future expiration which should not be reaped
-	idx.UpdateObject(&Object{Key: "test.5", Value: []byte("test_value"), Expiration: atomicx.NewAtomicTime(time.Now().Add(time.Minute))})
+	idx.UpdateObject(&Object{Key: "test.5", Value: []byte("test_value"), Expiration: atomicx.NewTime(time.Now().Add(time.Minute))})
 
 	// add key with future expiration which should not be reaped
-	idx.UpdateObject(&Object{Key: "test.6", Value: []byte("test_value"), Expiration: atomicx.NewAtomicTime(time.Now().Add(time.Minute))})
+	idx.UpdateObject(&Object{Key: "test.6", Value: []byte("test_value"), Expiration: atomicx.NewTime(time.Now().Add(time.Minute))})
 
 	// trigger size-based reap eviction of some elements
 	idx.reap()
@@ -159,7 +159,7 @@ func TestReap(t *testing.T) {
 	// add key with large body to reach byte size threshold
 	idx.UpdateObject(&Object{Key: "test.7",
 		Value:      []byte("test_value00000000000000000000000000000000000000000000000000000000000000000000000000000"),
-		Expiration: atomicx.NewAtomicTime(time.Now().Add(time.Minute))})
+		Expiration: atomicx.NewTime(time.Now().Add(time.Minute))})
 
 	// trigger a byte-based reap
 	idx.reap()
@@ -218,11 +218,11 @@ func TestUpdateObject(t *testing.T) {
 
 	v, _ := idx.Objects.Load("test")
 	o := v.(*Object)
-	o.LastAccess = atomicx.NewAtomicTime(time.Time{})
+	o.LastAccess = atomicx.NewTime(time.Time{})
 	idx.Objects.Store("test", o)
 	idx.UpdateObjectAccessTime("test")
 
-	if v, _ := idx.Objects.Load("test"); v.(*Object).LastAccess.LoadTime().IsZero() {
+	if v, _ := idx.Objects.Load("test"); v.(*Object).LastAccess.Load().IsZero() {
 		t.Errorf("test object last access time is wrong")
 	}
 
@@ -260,15 +260,15 @@ func TestSort(t *testing.T) {
 	o := objectsAtime{
 		&Object{
 			Key:        "3",
-			LastAccess: atomicx.NewAtomicTime(time.Unix(3, 0)),
+			LastAccess: atomicx.NewTime(time.Unix(3, 0)),
 		},
 		&Object{
 			Key:        "1",
-			LastAccess: atomicx.NewAtomicTime(time.Unix(1, 0)),
+			LastAccess: atomicx.NewTime(time.Unix(1, 0)),
 		},
 		&Object{
 			Key:        "2",
-			LastAccess: atomicx.NewAtomicTime(time.Unix(2, 0)),
+			LastAccess: atomicx.NewTime(time.Unix(2, 0)),
 		},
 	}
 	sort.Sort(o)
@@ -307,7 +307,7 @@ func TestUpdateObjectTTL(t *testing.T) {
 	now := time.Now().Add(ttl)
 	idx.UpdateObjectTTL(cacheKey, ttl)
 
-	if exp := obj.Expiration.LoadTime(); exp.IsZero() {
+	if exp := obj.Expiration.Load(); exp.IsZero() {
 		t.Errorf("expected non-zero time, got %v", exp)
 	} else if exp.After(now) {
 		t.Errorf("expected time after TTL, got %v", exp)

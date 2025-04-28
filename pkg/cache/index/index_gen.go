@@ -375,7 +375,7 @@ func (z *Object) DecodeMsg(dc *msgp.Reader) (err error) {
 				z.Expiration = nil
 			} else {
 				if z.Expiration == nil {
-					z.Expiration = new(atomicx.AtomicTime)
+					z.Expiration = new(atomicx.Time)
 				}
 				err = z.Expiration.DecodeMsg(dc)
 				if err != nil {
@@ -393,7 +393,7 @@ func (z *Object) DecodeMsg(dc *msgp.Reader) (err error) {
 				z.LastWrite = nil
 			} else {
 				if z.LastWrite == nil {
-					z.LastWrite = new(atomicx.AtomicTime)
+					z.LastWrite = new(atomicx.Time)
 				}
 				err = z.LastWrite.DecodeMsg(dc)
 				if err != nil {
@@ -411,7 +411,7 @@ func (z *Object) DecodeMsg(dc *msgp.Reader) (err error) {
 				z.LastAccess = nil
 			} else {
 				if z.LastAccess == nil {
-					z.LastAccess = new(atomicx.AtomicTime)
+					z.LastAccess = new(atomicx.Time)
 				}
 				err = z.LastAccess.DecodeMsg(dc)
 				if err != nil {
@@ -644,7 +644,7 @@ func (z *Object) UnmarshalMsg(bts []byte) (o []byte, err error) {
 				z.Expiration = nil
 			} else {
 				if z.Expiration == nil {
-					z.Expiration = new(atomicx.AtomicTime)
+					z.Expiration = new(atomicx.Time)
 				}
 				bts, err = z.Expiration.UnmarshalMsg(bts)
 				if err != nil {
@@ -661,7 +661,7 @@ func (z *Object) UnmarshalMsg(bts []byte) (o []byte, err error) {
 				z.LastWrite = nil
 			} else {
 				if z.LastWrite == nil {
-					z.LastWrite = new(atomicx.AtomicTime)
+					z.LastWrite = new(atomicx.Time)
 				}
 				bts, err = z.LastWrite.UnmarshalMsg(bts)
 				if err != nil {
@@ -678,7 +678,7 @@ func (z *Object) UnmarshalMsg(bts []byte) (o []byte, err error) {
 				z.LastAccess = nil
 			} else {
 				if z.LastAccess == nil {
-					z.LastAccess = new(atomicx.AtomicTime)
+					z.LastAccess = new(atomicx.Time)
 				}
 				bts, err = z.LastAccess.UnmarshalMsg(bts)
 				if err != nil {
