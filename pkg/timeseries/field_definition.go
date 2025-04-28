@@ -45,6 +45,7 @@ type FieldDefinition struct {
 	OutputPosition int           `msg:"pos"`
 	SDataType      string        `msg:"stype"`
 	ProviderData1  int           `msg:"provider1"`
+	ProviderData2  int           `msg:"provider2"`
 }
 
 // FieldDefinitions represents a list type FieldDefinition
