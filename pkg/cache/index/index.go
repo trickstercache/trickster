@@ -390,9 +390,10 @@ type objectsAtime []*Object
 // and evict least-recently-accessed elements to maintain the Maximum allowed Cache Size
 func (idx *Index) reap() {
 
-	cacheSize := atomic.LoadInt64(&idx.CacheSize)
+	objectCount := atomic.LoadInt64(&idx.ObjectCount)
+	opts := idx.options.Load().(*options.Options)
 	removals := make([]string, 0)
-	remainders := make(objectsAtime, 0, cacheSize)
+	remainders := make(objectsAtime, 0, objectCount)
 
 	var cacheChanged bool
 
@@ -403,7 +404,7 @@ func (idx *Index) reap() {
 		if o.Key == IndexKey {
 			return true
 		}
-		if e := o.Expiration.Load(); e.Before(now) && !e.IsZero() {
+		if e := o.Expiration.Load(); e.Before(now) && !e.Equal(atomicx.ZeroTime) {
 			removals = append(removals, o.Key)
 		} else {
 			remainders = append(remainders, o)
@@ -418,9 +419,8 @@ func (idx *Index) reap() {
 		cacheChanged = true
 	}
 
-	opts := idx.options.Load().(*options.Options)
-	cacheSize = atomic.LoadInt64(&idx.CacheSize)
-	objectCount := atomic.LoadInt64(&idx.ObjectCount)
+	objectCount = atomic.LoadInt64(&idx.ObjectCount)
+	cacheSize := atomic.LoadInt64(&idx.CacheSize)
 
 	if ((opts.MaxSizeBytes > 0 && cacheSize > opts.MaxSizeBytes) ||
 		(opts.MaxSizeObjects > 0 && objectCount > opts.MaxSizeObjects)) &&
@@ -444,7 +444,6 @@ func (idx *Index) reap() {
 				"cacheSizeObjects": objectCount, "maxSizeObjects": opts.MaxSizeObjects,
 			},
 		)
-
 		removals = make([]string, 0)
 
 		sort.Sort(remainders)

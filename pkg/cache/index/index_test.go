@@ -176,18 +176,37 @@ func TestReap(t *testing.T) {
 }
 
 func TestObjectFromBytes(t *testing.T) {
+	t.Run("empty object", func(t *testing.T) {
+		obj := &Object{}
+		b := obj.ToBytes()
+		obj2, err := ObjectFromBytes(b)
+		if err != nil {
+			t.Error(err)
+		}
 
-	obj := &Object{}
-	b := obj.ToBytes()
-	obj2, err := ObjectFromBytes(b)
-	if err != nil {
-		t.Error(err)
-	}
+		if obj2 == nil {
+			t.Errorf("nil cache index")
+		}
+	})
 
-	if obj2 == nil {
-		t.Errorf("nil cache index")
-	}
+	t.Run("basic object", func(t *testing.T) {
+		obj := &Object{
+			Key:        "test",
+			Value:      []byte("test_value"),
+			Expiration: atomicx.NewTime(time.Now().Add(time.Minute)),
+			LastWrite:  atomicx.NewTime(time.Now()),
+			LastAccess: atomicx.NewTime(time.Now()),
+		}
+		b := obj.ToBytes()
+		obj2, err := ObjectFromBytes(b)
+		if err != nil {
+			t.Error(err)
+		}
 
+		if obj2 == nil {
+			t.Errorf("nil cache index")
+		}
+	})
 }
 
 func TestUpdateObject(t *testing.T) {

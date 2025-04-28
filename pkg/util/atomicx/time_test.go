@@ -23,7 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestAtomicTime(t *testing.T) {
+func TestTime(t *testing.T) {
 	ts := time.Unix(0, 0)
 	at := NewTime(ts)
 	require.True(t, ts.Equal(at.Load()), "expected %v, got %v", ts, at.Load())
@@ -38,4 +38,33 @@ func TestAtomicTime(t *testing.T) {
 	require.True(t, ts.Equal(at.Load()), "expected %v, got %v", ts, at.Load())
 	ts2 := at.Load()
 	require.True(t, ts.Equal(ts2), "expected %v, got %v", ts, ts2)
+	// check zero value
+	at.Store(time.Time{})
+	require.True(t, at.Load().Equal(ZeroTime), "expected %v, got %v", time.Time{}, at.Load())
+
+	t.Run("msp", func(t *testing.T) {
+		// init with zero value and marshal
+		ts := time.Unix(0, 0)
+		at := NewTime(ts)
+		b, err := at.MarshalMsg(nil)
+		require.NoError(t, err)
+
+		// init with now and marshal
+		now := time.Now()
+		at2 := NewTime(now)
+		b2, err := at2.MarshalMsg(nil)
+		require.NoError(t, err)
+
+		// unmarshal, then compare against originals
+		at3 := &Time{}
+		_, err = at3.UnmarshalMsg(b)
+		require.NoError(t, err)
+		require.True(t, at3.Load().Equal(ts), "expected %v, got %v", ts, at3.Load())
+		require.True(t, at3.Load().Equal(at.Load()), "expected %v, got %v", ts, at3.Load())
+		at4 := &Time{}
+		_, err = at4.UnmarshalMsg(b2)
+		require.NoError(t, err)
+		require.True(t, at4.Load().Equal(now), "expected %v, got %v", now, at4.Load())
+		require.True(t, at4.Load().Equal(at2.Load()))
+	})
 }

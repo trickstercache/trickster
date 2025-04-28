@@ -23,7 +23,14 @@ import (
 	"github.com/tinylib/msgp/msgp"
 )
 
+var (
+	ZeroTime = time.Unix(0, time.Time{}.UnixNano())
+)
+
 //go:generate go tool msgp
+
+// StandardLibInt64 is a wrapper for int64 that implements msgp.Encodable and msgp.Decodable
+type StandardLibInt64 int64
 
 func NewTime(in time.Time) *Time {
 	t := &Time{v: atomic.Int64{}}
@@ -31,9 +38,9 @@ func NewTime(in time.Time) *Time {
 	return t
 }
 
-type StandardLibInt64 int64
-
 //msgp:ignore Time
+
+// Time is a wrapper for atomic.Int64 that implements msgp.Encodable and msgp.Decodable
 type Time struct {
 	v atomic.Int64
 }
@@ -61,15 +68,16 @@ func (d *Time) DecodeMsg(dc *msgp.Reader) (err error) {
 }
 
 func (d *Time) MarshalMsg(b []byte) (o []byte, err error) {
-	return msgp.AppendInt64(b, d.v.Load()), nil
+	return StandardLibInt64(d.v.Load()).MarshalMsg(b)
 }
 
 func (d *Time) UnmarshalMsg(b []byte) (o []byte, err error) {
-	i, _, err := msgp.ReadInt64Bytes(b)
+	var ts StandardLibInt64
+	o, err = ts.UnmarshalMsg(b)
 	if err != nil {
-		return b, err
+		return o, err
 	}
-	d.v.Store(i)
+	d.v.Store(int64(ts))
 	return b, nil
 }
 

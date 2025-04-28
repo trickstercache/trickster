@@ -34,6 +34,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/locks"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/util/atomicx"
 )
 
 // Cache describes a Filesystem Cache
@@ -142,7 +143,6 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 	}
 	o, err := index.ObjectFromBytes(data)
 	if err != nil {
-
 		_, err2 := metrics.CacheError(cacheKey, c.Name, c.Config.Provider,
 			"value for key [%s] could not be deserialized from cache")
 		return nil, status.LookupStatusError, err2
@@ -155,7 +155,7 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 	}
 
 	o.Expiration.Store(c.Index.GetExpiration(cacheKey))
-	if exp := o.Expiration.Load(); allowExpired || exp.IsZero() || exp.After(time.Now()) {
+	if exp := o.Expiration.Load(); allowExpired || exp.Equal(atomicx.ZeroTime) || exp.After(time.Now()) {
 		logger.Debug("filesystem cache retrieve",
 			logging.Pairs{"key": cacheKey, "dataFile": dataFile})
 		if atime {

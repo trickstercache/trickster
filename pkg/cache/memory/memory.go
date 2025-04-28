@@ -30,6 +30,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/locks"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/util/atomicx"
 )
 
 // Cache defines a a Memory Cache client that conforms to the Cache interface
@@ -161,7 +162,7 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) (*index
 		o := record.(*index.Object)
 		o.Expiration.Store(c.Index.GetExpiration(cacheKey))
 
-		if exp := o.Expiration.Load(); allowExpired || exp.IsZero() || exp.After(time.Now()) {
+		if exp := o.Expiration.Load(); allowExpired || exp.Equal(atomicx.ZeroTime) || exp.After(time.Now()) {
 			logger.Debug("memory cache retrieve", logging.Pairs{"cacheKey": cacheKey})
 			if atime {
 				go c.Index.UpdateObjectAccessTime(cacheKey)
