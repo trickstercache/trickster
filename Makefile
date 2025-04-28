@@ -252,16 +252,16 @@ get-msgpack:
 	$(GO) get -tool github.com/tinylib/msgp@v1.2.5
 
 .PHONY: developer-start
-start-developer:
+developer-start:
 	@cd docs/developer/environment && docker compose up -d
 	
 .PHONY: developer-delete
-delete-developer:
+developer-delete:
 	@cd docs/developer/environment && docker compose down
 
-.PHONY: developer-reseed
-developer-reseed:
-	@cd docs/developer/environment && docker compose run --rm -e RESEED=1 clickhouse_seed
+.PHONY: developer-seed-data
+developer-seed-data:
+	@cd docs/developer/environment && docker compose run --rm clickhouse_seed
 
 .PHONY: serve-dev
 serve-dev:

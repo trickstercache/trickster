@@ -19,12 +19,16 @@
 # seed.sh
 #
 # This downloads 2 large files of NYC taxi data from the ClickHouse S3 Bucket,
-# and loads them in to the local ClickHouse database. During download, the files
+# and loads them in to the local ClickHouse database. During loading, the rows
 # are transformed so that the dates in the file, which range from July 2015 to
-# October 2015, are adjusted to fall with days before and after the current date
-# at the time of seeding. This ensures that relevant data is available to show
-# on the dashboard and can take advantage of Trickster's caching protocols that
-# favor very recent data (not >10 years old).
+# October 2015, are adjusted to fall within 45 days of the current date at the
+# time of seeding. This ensures that relevant data is available to show on
+# dashboards and can take advantage of Trickster's caching protocols that favor
+# very recent data (not >10 years old).
+#
+# Every run of the script will truncate the trips table and re-seed.
+# So developers can run this once every 2 months to always have "real-time" data
+# in their local dev environment.
 
 cd seeding
 
@@ -47,40 +51,12 @@ FILE2="data/trips_2.gz"
 URL1="https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_1.gz"
 URL2="https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_2.gz"
 
-AGE_THRESHOLD=$((60 * 60 * 24 * 7))
 LC_CTYPE=C # allows sed to play nice with TSV files that have some binary data
 
-is_old_file() {
-  local file="$1"
-  if [ -f "$file" ]; then
-    local mtime
-    mtime=$(stat -c %Y "$file")
-    local now
-    now=$(date +%s)
-    local age=$((now - mtime))
-    [ "$age" -gt "$AGE_THRESHOLD" ]
-  else
-    return 1
-  fi
-}
-
-# pass the RESEED=1 env to wipe any cached seed data, that may have old dates.
-# if the seed data is older than 7 days, it will auto-wipe here as well.
-if [ "$RESEED" = "1" ] || is_old_file "$FILE1" || is_old_file "$FILE2"; then
-  echo "Deleting seed data cache."
-  rm -f "$FILE1"
-  rm -f "$FILE2"
-fi
-
-download_transform() {
+download_file_if_uncached() {
     if [ ! -f "$1" ]; then
         echo "$1 not found. Downloading from $2..."
-        wget -qO - "$2" | gunzip -c | \
-        sed -e "s/2015-07-/${MONTH_LAST}-/g" | \
-        sed -e "s/2015-08-/${MONTH_CURR}-/g" | \
-        sed -e "s/2015-09-/${MONTH_NEXT}-/g" | \
-        sed -e "s/2015-10-/${MONTH_2OUT}-/g" | \
-        gzip > "$1"
+        wget -q -O "$1" "$2"
     else
         echo "$1 already exists. Skipping download."
     fi
@@ -92,18 +68,22 @@ create_truncate_table_clickhouse() {
         --user default < create_truncate_trips_table.sql
 }
 
-load_file_to_clickhouse() {
-    echo "loading $1"
-    gunzip -c "$1" | clickhouse-client --host "${CH_SERVER_ADDR:-clickhouse}" \
+load_file_transform_to_clickhouse() {
+    echo "loading $1 w/ dates transformed to between ${MONTH_LAST} and ${MONTH_2OUT}"
+    gunzip -c "$1" | sed -e "s/2015-07-/${MONTH_LAST}-/g" | \
+      sed -e "s/2015-08-/${MONTH_CURR}-/g" | \
+      sed -e "s/2015-09-/${MONTH_NEXT}-/g" | \
+      sed -e "s/2015-10-/${MONTH_2OUT}-/g" | \
+      clickhouse-client --host "${CH_SERVER_ADDR:-clickhouse}" \
         --port 9000 --user default \
         --query="INSERT INTO trips FORMAT TabSeparatedWithNames"
 }
 
 mkdir -p data
-download_transform "$FILE1" "$URL1"
-download_transform "$FILE2" "$URL2"
+download_file_if_uncached "$FILE1" "$URL1"
+download_file_if_uncached "$FILE2" "$URL2"
 
 create_truncate_table_clickhouse
 
-load_file_to_clickhouse "$FILE1"
-load_file_to_clickhouse "$FILE2"
+load_file_transform_to_clickhouse "$FILE1"
+load_file_transform_to_clickhouse "$FILE2"
