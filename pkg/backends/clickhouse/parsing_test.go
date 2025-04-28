@@ -461,7 +461,7 @@ func TestParseSelectTokens(t *testing.T) {
 }
 
 func TestParseTimeField(t *testing.T) {
-	_, err := parseTimeField(&token.Token{Typ: token.Number, Val: "not-a-number"})
+	_, _, err := parseTimeField(&token.Token{Typ: token.Number, Val: "not-a-number"})
 	if err == nil {
 		t.Error("expected syntax error")
 	}

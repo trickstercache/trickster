@@ -581,10 +581,11 @@ func parseWhereTokens(results ts.Lookup,
 					t.Typ == token.GreaterThanOrEqual)
 				state++
 			case 2: // gets the first time and runs it through the evaluator
-				ts, err := parseTimeField(t)
+				ts, f, err := parseTimeField(t)
 				if err != nil {
 					return t, err
 				}
+				trq.TimestampDefinition.ProviderData2 = int(f)
 				_, j, _ := SolveMathExpression(fieldParts[i:], ts, withVars)
 				if atLowerBound {
 					// e.Start = time.Unix(v, 0)
@@ -612,7 +613,7 @@ func parseWhereTokens(results ts.Lookup,
 					break sw
 				}
 				// therefore, if we make it to here, it MUST be a BETWEEN
-				ts, err := parseTimeField(t)
+				ts, _, err := parseTimeField(t)
 				if err != nil {
 					return t, err
 				}
@@ -658,15 +659,15 @@ func parseWhereTokens(results ts.Lookup,
 	return nil, nil
 }
 
-func parseTimeField(t *token.Token) (int64, error) {
+func parseTimeField(t *token.Token) (int64, byte, error) {
 	ts, format, err := lsql.TokenToTime(t)
 	if err != nil {
-		return -1, err
+		return -1, 255, err
 	}
 	if format == 1 {
-		return ts.UnixNano() / 1000000, nil
+		return ts.UnixNano() / 1000000, format, nil
 	}
-	return ts.Unix(), nil
+	return ts.Unix(), format, nil
 }
 
 func parseGroupByTokens(results ts.Lookup,
