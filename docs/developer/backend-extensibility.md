@@ -20,7 +20,7 @@ While this might sound daunting, it is actually much easier than it appears on t
 
 ## Interfacing
 
-A Time Series Backend is used by Trickster to 1) manipulate HTTP requests and responses in order to accelerate the requests, 2) unmarshal data from origin databases into the [Common Time Series Format](https://github.com/trickstercache/trickster/blob/main/pkg/timeseries/dataset/dataset.go), and 3) marshal from the CTSF into a format supported by the Provider as requested by the downstream Client.
+A Time Series Backend is used by Trickster to 1) manipulate HTTP requests and responses in order to accelerate the requests, 2) unmarshal data from backend databases into the [Common Time Series Format](https://github.com/trickstercache/trickster/blob/main/pkg/timeseries/dataset/dataset.go), and 3) marshal from the CTSF into a format supported by the Provider as requested by the downstream Client.
 
 Trickster provides 1 required interfaces for enabling a new Provider: [Time Series Backend](https://github.com/trickstercache/trickster/blob/main/pkg/backends/timeseries_backend.go). Separately, you must implement `io.Writer`-based marshalers and unmarshalers that conform to Trickster's [Modeler specifications](https://github.com/trickstercache/trickster/blob/main/pkg/timeseries/modeler.go).
 
@@ -29,7 +29,7 @@ Once data is unmarshaled into the Common Time Series Format, Trickster's other p
 
 - What URL paths and methods must be supported, and which engine through which to route each path (Basic HTTP Proxy, Object Proxy Cache, or Time Series Delta Proxy Cache). The proxy engines will call your client implementation's interface exports in order to service user requests.
 
-- What data inputs the origin expects (Path, URL parameters, POST Data, HTTP Headers, cookies, etc.), and how to manipulate the query's time range when constructing those inputs to achieve a desired result.
+- What data inputs the backend expects (Path, URL parameters, POST Data, HTTP Headers, cookies, etc.), and how to manipulate the query's time range when constructing those inputs to achieve a desired result.
 
 - The Content Type, format and structure of the Provider's datasets when transmitted over the wire.
 
@@ -45,13 +45,13 @@ The Interface Methods you will need to implement are as follows:
 
 - `ParseTimeRangeQuery` inspects the client request and returns a corresponding timeseries.TimeRangeQuery
 
-- `FastForwardURL` (optional) returns the URL to the origin to collect Fast Forward data points based on the provided HTTP Request.
+- `FastForwardURL` (optional) returns the URL to the backend to collect Fast Forward data points based on the provided HTTP Request.
 
 ## Special Considerations
 
 ### Query Language Complexity
 
-One of the main areas of consideration is the complexity of parsing and manipulating an inbound query. You will need to (1) determine if it is indeed a request for a timeseries; and if so (2) extract the requested time range and step duration for the query; and in the event of a partial cache hit, (3) adjust the time range for the query to a provided range - all of which allows the DeltaProxyCache to fetch just the needed sections of data from the upstream origin. Requirements 1 and 2 are functionality in `ParseTimeRangeQuery` while requirement 3 is the functionality of `SetExtent`. The overall complexity of this process can significantly affect the level of effort required to implement a new Provider.
+One of the main areas of consideration is the complexity of parsing and manipulating an inbound query. You will need to (1) determine if it is indeed a request for a timeseries; and if so (2) extract the requested time range and step duration for the query; and in the event of a partial cache hit, (3) adjust the time range for the query to a provided range - all of which allows the DeltaProxyCache to fetch just the needed sections of data from the backend. Requirements 1 and 2 are functionality in `ParseTimeRangeQuery` while requirement 3 is the functionality of `SetExtent`. The overall complexity of this process can significantly affect the level of effort required to implement a new Provider.
 
 In the example of Prometheus, the process was extremely simple: since, in the Prometheus HTTP API, time range queries have a separate http endpoint path from instantaneous queries, and because the time range is provided as separate query parameters from the query itself, the range is easily modified without Trickster having any knowledge of the underlying query or having to even parse it at all.
 
