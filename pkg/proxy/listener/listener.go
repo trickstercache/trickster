@@ -90,15 +90,15 @@ func (l *Listener) RouteSwapper() *ph.SwitchHandler {
 	return l.routeSwapper
 }
 
-// ListenerGroup is a collection of listeners
-type ListenerGroup struct {
+// Group is a collection of listeners
+type Group struct {
 	members       map[string]*Listener
 	listenersLock sync.Mutex
 }
 
-// NewListenerGroup returns a new ListenerGroup
-func NewListenerGroup() *ListenerGroup {
-	return &ListenerGroup{
+// NewGroup returns a new Group
+func NewGroup() *Group {
+	return &Group{
 		members: make(map[string]*Listener),
 	}
 }
@@ -153,7 +153,7 @@ func NewListener(listenAddress string, listenPort, connectionsLimit int,
 }
 
 // Get returns the listener if it exists
-func (lg *ListenerGroup) Get(name string) *Listener {
+func (lg *Group) Get(name string) *Listener {
 	lg.listenersLock.Lock()
 	l, ok := lg.members[name]
 	lg.listenersLock.Unlock()
@@ -164,7 +164,7 @@ func (lg *ListenerGroup) Get(name string) *Listener {
 }
 
 // StartListener starts a new HTTP listener and adds it to the listener group
-func (lg *ListenerGroup) StartListener(listenerName, address string, port int, connectionsLimit int,
+func (lg *Group) StartListener(listenerName, address string, port int, connectionsLimit int,
 	tlsConfig *tls.Config, router http.Handler, tracers tracing.Tracers,
 	f func(), drainTimeout, readHeaderTimeout time.Duration) error {
 	l := &Listener{routeSwapper: ph.NewSwitchHandler(router), exitOnError: f != nil}
@@ -250,7 +250,7 @@ func handleTracerShutdowns(tracers tracing.Tracers) {
 }
 
 // StartListenerRouter starts a new HTTP listener with a new router, and adds it to the listener group
-func (lg *ListenerGroup) StartListenerRouter(listenerName, address string, port int, connectionsLimit int,
+func (lg *Group) StartListenerRouter(listenerName, address string, port int, connectionsLimit int,
 	tlsConfig *tls.Config, path string, handler http.Handler,
 	tracers tracing.Tracers, f func(), drainTimeout, readHeaderTimeout time.Duration) error {
 	router := http.NewServeMux()
@@ -260,7 +260,7 @@ func (lg *ListenerGroup) StartListenerRouter(listenerName, address string, port 
 }
 
 // DrainAndClose drains and closes the named listener
-func (lg *ListenerGroup) DrainAndClose(listenerName string, drainWait time.Duration) error {
+func (lg *Group) DrainAndClose(listenerName string, drainWait time.Duration) error {
 	lg.listenersLock.Lock()
 	if l, ok := lg.members[listenerName]; ok && l != nil {
 		l.exitOnError = false
@@ -284,7 +284,7 @@ func (lg *ListenerGroup) DrainAndClose(listenerName string, drainWait time.Durat
 }
 
 // UpdateFrontendRouters will swap out the routers across the named Listeners with the provided ones
-func (lg *ListenerGroup) UpdateFrontendRouters(mainRouter http.Handler, adminRouter http.Handler) {
+func (lg *Group) UpdateFrontendRouters(mainRouter http.Handler, adminRouter http.Handler) {
 	lg.listenersLock.Lock()
 	defer lg.listenersLock.Unlock()
 	if mainRouter != nil {
@@ -300,8 +300,8 @@ func (lg *ListenerGroup) UpdateFrontendRouters(mainRouter http.Handler, adminRou
 	}
 }
 
-// UpdateRouter will swap out the router for the ListenerGroup with the provided name
-func (lg *ListenerGroup) UpdateRouter(routerName string, router http.Handler) {
+// UpdateRouter will swap out the router for the Group with the provided name
+func (lg *Group) UpdateRouter(routerName string, router http.Handler) {
 	lg.listenersLock.Lock()
 	if r, ok := lg.members[routerName]; ok {
 		r.routeSwapper.Update(router)

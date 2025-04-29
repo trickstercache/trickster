@@ -52,7 +52,7 @@ func TestListeners(t *testing.T) {
 	tr, _ := stdout.New(nil)
 	tr.ShutdownFunc = func(_ context.Context) error { return nil }
 	trs := map[string]*tracing.Tracer{"default": tr}
-	testLG := NewListenerGroup()
+	testLG := NewGroup()
 
 	var err error
 	errs := make(chan error, 1)
@@ -101,7 +101,7 @@ func TestListeners(t *testing.T) {
 }
 
 func TestUpdateRouter(t *testing.T) {
-	testLG := NewListenerGroup()
+	testLG := NewGroup()
 	testLG.members["test"] = &Listener{routeSwapper: &ph.SwitchHandler{}}
 	r := http.NewServeMux()
 	testLG.UpdateRouter("test", r)
@@ -122,7 +122,7 @@ func TestNewListenerErr(t *testing.T) {
 
 func TestListenerAccept(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Info))
-	testLG := NewListenerGroup()
+	testLG := NewGroup()
 	var err error
 	go func() {
 		err = testLG.StartListener("httpListener",
@@ -277,7 +277,7 @@ func TestRouteSwapper(t *testing.T) {
 }
 
 func TestGet(t *testing.T) {
-	lg := NewListenerGroup()
+	lg := NewGroup()
 	lg.members["testing"] = &Listener{exitOnError: true}
 	l := lg.Get("testing")
 	if !l.exitOnError {
@@ -291,7 +291,7 @@ func TestGet(t *testing.T) {
 
 func TestDrainAndClose(t *testing.T) {
 	l := &Listener{Listener: testListener(), server: &http.Server{}}
-	lg := NewListenerGroup()
+	lg := NewGroup()
 	lg.members["testing"] = l
 	err := lg.DrainAndClose("testing", 0)
 	if err != nil {
@@ -314,7 +314,7 @@ func TestUpdateRouters(t *testing.T) {
 		Listener:     testListener(),
 		routeSwapper: ph.NewSwitchHandler(nil),
 	}
-	lg := NewListenerGroup()
+	lg := NewGroup()
 	lg.members["httpListener"] = l
 	lg.members["reloadListener"] = l
 	lg.UpdateFrontendRouters(testRouter, testRouter)

@@ -35,7 +35,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/routing"
 )
 
-var lg = listener.NewListenerGroup()
+var lg = listener.NewGroup()
 
 func applyListenerConfigs(conf, oldConf *config.Config,
 	router, reloadHandler http.Handler, metricsRouter router.Router,
