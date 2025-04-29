@@ -27,16 +27,15 @@ import (
 )
 
 func SetBody(r *http.Request, body []byte) *http.Request {
-
 	if len(body) == 0 {
 		r.Body = io.NopCloser(bytes.NewReader([]byte{}))
 		r.ContentLength = 0
 		r.Header.Del(headers.NameContentLength)
+	} else {
+		r.Body = io.NopCloser(bytes.NewReader(body))
+		r.Header.Set(headers.NameContentLength, strconv.Itoa(len(body)))
+		r.ContentLength = int64(len(body))
 	}
-
-	r.Body = io.NopCloser(bytes.NewReader(body))
-	r.Header.Set(headers.NameContentLength, strconv.Itoa(len(body)))
-	r.ContentLength = int64(len(body))
 	return r.WithContext(tctx.WithRequestBody(r.Context(), body))
 }
 
