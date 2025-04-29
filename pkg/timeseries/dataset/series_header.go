@@ -83,7 +83,7 @@ func (sh *SeriesHeader) Clone() SeriesHeader {
 		hash:           sh.hash,
 	}
 	for i, fd := range sh.FieldsList {
-		clone.FieldsList[i] = fd.Clone()
+		clone.FieldsList[i] = fd
 	}
 	return clone
 }

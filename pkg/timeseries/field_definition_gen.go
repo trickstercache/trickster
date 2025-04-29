@@ -126,6 +126,12 @@ func (z *FieldDefinition) DecodeMsg(dc *msgp.Reader) (err error) {
 				err = msgp.WrapError(err, "ProviderData1")
 				return
 			}
+		case "provider2":
+			z.ProviderData2, err = dc.ReadInt()
+			if err != nil {
+				err = msgp.WrapError(err, "ProviderData2")
+				return
+			}
 		default:
 			err = dc.Skip()
 			if err != nil {
@@ -139,9 +145,9 @@ func (z *FieldDefinition) DecodeMsg(dc *msgp.Reader) (err error) {
 
 // EncodeMsg implements msgp.Encodable
 func (z *FieldDefinition) EncodeMsg(en *msgp.Writer) (err error) {
-	// map header, size 5
+	// map header, size 6
 	// write "name"
-	err = en.Append(0x85, 0xa4, 0x6e, 0x61, 0x6d, 0x65)
+	err = en.Append(0x86, 0xa4, 0x6e, 0x61, 0x6d, 0x65)
 	if err != nil {
 		return
 	}
@@ -190,15 +196,25 @@ func (z *FieldDefinition) EncodeMsg(en *msgp.Writer) (err error) {
 		err = msgp.WrapError(err, "ProviderData1")
 		return
 	}
+	// write "provider2"
+	err = en.Append(0xa9, 0x70, 0x72, 0x6f, 0x76, 0x69, 0x64, 0x65, 0x72, 0x32)
+	if err != nil {
+		return
+	}
+	err = en.WriteInt(z.ProviderData2)
+	if err != nil {
+		err = msgp.WrapError(err, "ProviderData2")
+		return
+	}
 	return
 }
 
 // MarshalMsg implements msgp.Marshaler
 func (z *FieldDefinition) MarshalMsg(b []byte) (o []byte, err error) {
 	o = msgp.Require(b, z.Msgsize())
-	// map header, size 5
+	// map header, size 6
 	// string "name"
-	o = append(o, 0x85, 0xa4, 0x6e, 0x61, 0x6d, 0x65)
+	o = append(o, 0x86, 0xa4, 0x6e, 0x61, 0x6d, 0x65)
 	o = msgp.AppendString(o, z.Name)
 	// string "type"
 	o = append(o, 0xa4, 0x74, 0x79, 0x70, 0x65)
@@ -212,6 +228,9 @@ func (z *FieldDefinition) MarshalMsg(b []byte) (o []byte, err error) {
 	// string "provider1"
 	o = append(o, 0xa9, 0x70, 0x72, 0x6f, 0x76, 0x69, 0x64, 0x65, 0x72, 0x31)
 	o = msgp.AppendInt(o, z.ProviderData1)
+	// string "provider2"
+	o = append(o, 0xa9, 0x70, 0x72, 0x6f, 0x76, 0x69, 0x64, 0x65, 0x72, 0x32)
+	o = msgp.AppendInt(o, z.ProviderData2)
 	return
 }
 
@@ -267,6 +286,12 @@ func (z *FieldDefinition) UnmarshalMsg(bts []byte) (o []byte, err error) {
 				err = msgp.WrapError(err, "ProviderData1")
 				return
 			}
+		case "provider2":
+			z.ProviderData2, bts, err = msgp.ReadIntBytes(bts)
+			if err != nil {
+				err = msgp.WrapError(err, "ProviderData2")
+				return
+			}
 		default:
 			bts, err = msgp.Skip(bts)
 			if err != nil {
@@ -281,7 +306,7 @@ func (z *FieldDefinition) UnmarshalMsg(bts []byte) (o []byte, err error) {
 
 // Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
 func (z *FieldDefinition) Msgsize() (s int) {
-	s = 1 + 5 + msgp.StringPrefixSize + len(z.Name) + 5 + msgp.ByteSize + 4 + msgp.IntSize + 6 + msgp.StringPrefixSize + len(z.SDataType) + 10 + msgp.IntSize
+	s = 1 + 5 + msgp.StringPrefixSize + len(z.Name) + 5 + msgp.ByteSize + 4 + msgp.IntSize + 6 + msgp.StringPrefixSize + len(z.SDataType) + 10 + msgp.IntSize + 10 + msgp.IntSize
 	return
 }
 

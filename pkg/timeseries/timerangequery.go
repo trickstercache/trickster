@@ -68,7 +68,7 @@ func (trq *TimeRangeQuery) Clone() *TimeRangeQuery {
 		StepNS:              trq.StepNS,
 		Extent:              Extent{Start: trq.Extent.Start, End: trq.Extent.End},
 		IsOffset:            trq.IsOffset,
-		TimestampDefinition: trq.TimestampDefinition.Clone(),
+		TimestampDefinition: trq.TimestampDefinition,
 	}
 
 	if trq.TagFieldDefintions != nil {

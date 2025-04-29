@@ -25,8 +25,7 @@ func TestFieldDefinitionClone(t *testing.T) {
 		DataType: FieldDataType(1),
 	}
 
-	fd2 := fd.Clone()
-
+	fd2 := fd
 	if fd2 != fd {
 		t.Error("clone mismatch")
 	}
