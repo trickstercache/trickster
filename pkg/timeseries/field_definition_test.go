@@ -41,7 +41,7 @@ func TestFieldDefinitionString(t *testing.T) {
 		},
 	}
 
-	const expected = `[{"name":"test","type":1,"pos":0,"stype":"","provider1":0}]`
+	const expected = `[{"name":"test","type":1}]`
 
 	if fd.String() != expected {
 		t.Errorf("expected `%s` got `%s`", expected, fd.String())
