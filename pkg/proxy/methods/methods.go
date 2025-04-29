@@ -28,7 +28,7 @@ const (
 	post
 	put
 	patch
-	delete
+	del
 	options
 	connect
 	trace
@@ -38,7 +38,7 @@ const (
 const (
 	cacheableMethods   = get + head
 	bodyMethods        = post + put + patch
-	uncacheableMethods = bodyMethods + delete + options + connect + trace + purge
+	uncacheableMethods = bodyMethods + del + options + connect + trace + purge
 	allMethods         = cacheableMethods + uncacheableMethods
 )
 
@@ -64,7 +64,7 @@ func getMethodLogicalID(method string) uint16 {
 	case http.MethodPatch:
 		return patch
 	case http.MethodDelete:
-		return delete
+		return del
 	case http.MethodConnect:
 		return connect
 	case http.MethodTrace:
