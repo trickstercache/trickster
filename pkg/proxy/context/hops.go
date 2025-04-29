@@ -25,12 +25,12 @@ import (
 
 // WithHops returns a copy of the provided context that also includes
 // rule-based Hop information about the request
-func WithHops(ctx context.Context, current, max int32) context.Context {
-	return context.WithValue(ctx, hopsKey, []int32{current, max})
+func WithHops(ctx context.Context, current, maxHops int32) context.Context {
+	return context.WithValue(ctx, hopsKey, []int32{current, maxHops})
 }
 
 // Hops returns the Hops data associated with the request
-func Hops(ctx context.Context) (current, max int32) {
+func Hops(ctx context.Context) (int32, int32) {
 	v := ctx.Value(hopsKey)
 	if v != nil {
 		if i, ok := v.([]int32); ok && len(i) == 2 {
