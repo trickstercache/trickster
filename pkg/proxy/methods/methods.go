@@ -49,17 +49,30 @@ const (
 	MethodPurge = "PURGE"
 )
 
-var methodsMap = map[string]uint16{
-	http.MethodGet:     get,
-	http.MethodHead:    head,
-	http.MethodPost:    post,
-	http.MethodPut:     put,
-	http.MethodPatch:   patch,
-	http.MethodDelete:  delete,
-	http.MethodOptions: options,
-	http.MethodConnect: connect,
-	http.MethodTrace:   trace,
-	MethodPurge:        purge,
+func getMethodLogicalID(method string) uint16 {
+	switch strings.ToUpper(method) {
+	case http.MethodGet:
+		return get
+	case http.MethodHead:
+		return head
+	case http.MethodPost:
+		return post
+	case http.MethodPut:
+		return put
+	case http.MethodOptions:
+		return options
+	case http.MethodPatch:
+		return patch
+	case http.MethodDelete:
+		return delete
+	case http.MethodConnect:
+		return connect
+	case http.MethodTrace:
+		return trace
+	case MethodPurge:
+		return purge
+	}
+	return 0
 }
 
 // AllHTTPMethods returns a list of all known HTTP methods
@@ -86,7 +99,7 @@ func UncacheableHTTPMethods() []string {
 
 // IsCacheable returns true if the method is HEAD or GET
 func IsCacheable(method string) bool {
-	if m, ok := methodsMap[method]; ok {
+	if m := getMethodLogicalID(method); m > 0 {
 		return (cacheableMethods&m != 0)
 	}
 	return false
@@ -94,7 +107,7 @@ func IsCacheable(method string) bool {
 
 // HasBody returns true if the method is POST, PUT or PATCH
 func HasBody(method string) bool {
-	if m, ok := methodsMap[method]; ok {
+	if m := getMethodLogicalID(method); m > 0 {
 		return (bodyMethods&m != 0)
 	}
 	return false
@@ -105,7 +118,7 @@ func HasBody(method string) bool {
 func MethodMask(methods ...string) uint16 {
 	var i uint16
 	for _, ms := range methods {
-		if m, ok := methodsMap[ms]; ok {
+		if m := getMethodLogicalID(ms); m > 0 {
 			i ^= m
 		}
 	}
@@ -114,6 +127,5 @@ func MethodMask(methods ...string) uint16 {
 
 // IsValidMethod returns true if the provided method is recognized in methodsMap
 func IsValidMethod(method string) bool {
-	_, ok := methodsMap[strings.ToUpper(method)]
-	return ok
+	return getMethodLogicalID(method) > 0
 }
