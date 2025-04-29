@@ -103,3 +103,14 @@ datasources:
     defaultDatabase: default
     username: default
     password: ""
+
+- name: clickhouse-trickster-post
+  type: vertamedia-clickhouse-datasource
+  access: proxy
+  url: http://docker.for.mac.localhost:8480/click1/
+  isDefault: false
+  jsonData:
+    defaultDatabase: default
+    username: default
+    password: ""
+    usePOST: true
