@@ -64,7 +64,7 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	isBody := methods.HasBody(r.Method)
 	var originalBody []byte
 	if isBody {
-		originalBody = request.GetBody(r)
+		originalBody, _ = request.GetBody(r)
 		sqlQuery = string(originalBody)
 	} else {
 		qi = r.URL.Query()

@@ -17,7 +17,6 @@
 package clickhouse
 
 import (
-	"io"
 	"net/http"
 	"strings"
 
@@ -32,25 +31,16 @@ import (
 
 // QueryHandler handles timeseries requests for ClickHouse and processes them through the delta proxy cache
 func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
-
-	q := r.URL.Query()
-	sqlQuery := q.Get(upQuery)
+	var sqlQuery string
 	if methods.HasBody(r.Method) {
-		b, err := io.ReadAll(r.Body)
+		b, err := request.GetBody(r)
 		if err != nil {
 			handlers.HandleBadRequestResponse(w, r)
 			return
 		}
-		var body []byte
-		if sqlQuery != "" {
-			body = append([]byte(sqlQuery), b...)
-			q.Del(upQuery)
-			r.URL.RawQuery = q.Encode()
-		} else {
-			body = b
-		}
-		sqlQuery = string(body)
-		r = request.SetBody(r, body)
+		sqlQuery = string(b)
+	} else {
+		sqlQuery = r.URL.Query().Get(upQuery)
 	}
 	sqlQuery = strings.ToLower(sqlQuery)
 	if !strings.Contains(sqlQuery, "select ") &&

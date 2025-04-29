@@ -26,6 +26,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 )
 
 // UpdateParams updates the provided query parameters collection with the provided updates
@@ -94,9 +95,7 @@ func GetRequestValues(r *http.Request) (url.Values, []byte, bool) {
 		isBody = true
 	default:
 		v = r.URL.Query()
-		b, _ = io.ReadAll(r.Body)
-		r.Body.Close()
-		r.Body = io.NopCloser(bytes.NewReader(b))
+		b, _ := request.GetBody(r)
 		isBody = true
 		if strings.HasPrefix(strings.ToLower(r.Header.Get(headers.NameContentType)), headers.ValueApplicationJSON) {
 			return v, b, isBody
@@ -124,6 +123,9 @@ func SetRequestValues(r *http.Request, v url.Values) {
 		r.URL.RawQuery = s
 	} else {
 		// reset the body
+		if r.Body != nil {
+			r.Body.Close()
+		}
 		r.ContentLength = int64(len(s))
 		r.Body = io.NopCloser(bytes.NewReader([]byte(s)))
 	}

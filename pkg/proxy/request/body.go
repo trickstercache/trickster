@@ -39,15 +39,20 @@ func SetBody(r *http.Request, body []byte) *http.Request {
 	return r.WithContext(tctx.WithRequestBody(r.Context(), body))
 }
 
-func GetBody(r *http.Request) []byte {
+func GetBody(r *http.Request) ([]byte, error) {
 	body := tctx.RequestBody(r.Context())
 	if body != nil {
-		return body
+		return body, nil
 	}
 	if r.Body == nil {
-		return nil
+		return nil, nil
 	}
-	body, _ = io.ReadAll(r.Body)
+	var err error
+	body, err = io.ReadAll(r.Body)
+	if err != nil {
+		return nil, err
+	}
+	r.Body.Close()
 	r.Body = io.NopCloser(bytes.NewReader(body)) // allows body to be re-read from byte 0
-	return body
+	return body, nil
 }
