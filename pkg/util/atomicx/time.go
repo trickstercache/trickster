@@ -64,11 +64,11 @@ func (t *Time) Len() int {
 }
 
 func (t *Time) MarshalBinaryTo(b []byte) error {
-	encoder.PutUint64(b, uint64(atomic.LoadInt64(&t.v)))
+	encoder.PutUint64(b, uint64(atomic.LoadInt64(&t.v))) // #nosec G115 - assume time values safe to convert between int64 and uint64
 	return nil
 }
 func (t *Time) UnmarshalBinary(b []byte) error {
-	atomic.StoreInt64(&t.v, int64(encoder.Uint64(b)))
+	atomic.StoreInt64(&t.v, int64(encoder.Uint64(b))) // #nosec G115 - assume time values safe to convert between int64 and uint64
 	return nil
 }
 
