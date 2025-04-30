@@ -20,7 +20,9 @@ import (
 	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 
+	"github.com/stretchr/testify/require"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/options"
@@ -64,13 +66,25 @@ func TestNewLogger_LogFile(t *testing.T) {
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 1}
 	conf.Logging = &options.Options{LogFile: fileName, LogLevel: "info"}
-	logger := New(conf)
-	logger.SetLogAsynchronous(false)
-	logger.Info("testEntry ", Pairs{"testKey": "test Val", "testKey2": "testValue2"})
+	log := New(conf)
+	l := log.(*logger)
+	l.now = func() time.Time {
+		return time.Time{}
+	}
+	log.SetLogAsynchronous(false)
+	log.Info("testEntry ", Pairs{
+		"testKey":  "test Val",
+		"testKey2": "testValue2",
+		"testKey3": "testValue3",
+	})
 	if _, err := os.Stat(instanceFileName); err != nil {
 		t.Error(err)
 	}
-	logger.Close()
+	log.Close()
+	// now inspect the file for consistent output
+	b, err := os.ReadFile(instanceFileName)
+	require.NoError(t, err)
+	require.Equal(t, `time=0001-01-01T00:00:00Z app=trickster level=info event=testEntry testKey="test Val" testKey2=testValue2 testKey3=testValue3`+"\n", string(b))
 }
 
 func TestNewLoggerDebug_LogFile(t *testing.T) {
@@ -260,4 +274,30 @@ func TestStreamLogger(t *testing.T) {
 		t.Error("expected non-empty string")
 	}
 
+}
+
+func Benchmark_logOnce(b *testing.B) {
+	fileName := b.TempDir() + "/out.once.bench.log"
+	conf := config.NewConfig()
+	conf.Main = &config.MainConfig{InstanceID: 0}
+	conf.Logging = &options.Options{LogFile: fileName, LogLevel: "debug"}
+	logger := New(conf)
+	logger.SetLogAsynchronous(false)
+	b.ResetTimer()
+	for b.Loop() {
+		logger.InfoOnce("bench-test-key", "test entry", Pairs{"testKey": "testVal"})
+	}
+}
+
+func Benchmark_Info(b *testing.B) {
+	fileName := b.TempDir() + "/out.info.bench.log"
+	conf := config.NewConfig()
+	conf.Main = &config.MainConfig{InstanceID: 0}
+	conf.Logging = &options.Options{LogFile: fileName, LogLevel: "debug"}
+	logger := New(conf)
+	logger.SetLogAsynchronous(false)
+	b.ResetTimer()
+	for b.Loop() {
+		logger.Info("test entry", Pairs{"testKey": "testVal", "testkey2": "testVal2"})
+	}
 }

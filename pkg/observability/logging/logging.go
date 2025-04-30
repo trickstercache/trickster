@@ -17,6 +17,7 @@
 package logging
 
 import (
+	"cmp"
 	"fmt"
 	"io"
 	"os"
@@ -80,7 +81,7 @@ type Pairs map[string]any
 // instance string.
 func New(conf *config.Config) Logger {
 	l := &logger{
-		onceRanEntries: make(map[string]*sync.Once),
+		now: time.Now,
 	}
 	l.logFunc = l.logAsyncronous
 	if conf.Logging.LogFile == "" {
@@ -108,18 +109,18 @@ func New(conf *config.Config) Logger {
 
 func NoopLogger() Logger {
 	l := &logger{
-		logFunc:        func(level.Level, string, Pairs) {},
-		onceRanEntries: make(map[string]*sync.Once),
-		levelID:        level.InfoID,
-		level:          level.Info,
+		logFunc: func(level.Level, string, Pairs) {},
+		levelID: level.InfoID,
+		level:   level.Info,
+		now:     time.Now,
 	}
 	return l
 }
 
 func StreamLogger(w io.Writer, logLevel level.Level) Logger {
 	l := &logger{
-		writer:         w,
-		onceRanEntries: make(map[string]*sync.Once),
+		writer: w,
+		now:    time.Now,
 	}
 	l.logFunc = l.logAsyncronous
 
@@ -132,8 +133,8 @@ func StreamLogger(w io.Writer, logLevel level.Level) Logger {
 
 func ConsoleLogger(logLevel level.Level) Logger {
 	l := &logger{
-		writer:         os.Stdout,
-		onceRanEntries: make(map[string]*sync.Once),
+		writer: os.Stdout,
+		now:    time.Now,
 	}
 	l.logFunc = l.logAsyncronous
 	l.SetLogLevel(logLevel)
@@ -145,10 +146,10 @@ type logger struct {
 	levelID        level.LevelID
 	writer         io.Writer
 	closer         io.Closer
-	onceMutex      sync.Mutex
 	mtx            sync.Mutex
-	onceRanEntries map[string]*sync.Once
+	onceRanEntries sync.Map
 	logFunc        logFunc
+	now            func() time.Time
 }
 
 func (l *logger) Write(b []byte) (int, error) {
@@ -187,32 +188,27 @@ func (l *logger) Log(logLevel level.Level, event string, detail Pairs) {
 	l.logFunc(logLevel, event, detail)
 }
 
-func (l *logger) Debug(event string, detail Pairs) {
-	if l.levelID > level.DebugID {
+func (l *logger) logFuncConditionally(level level.Level, levelID level.LevelID, event string, detail Pairs) {
+	if l.levelID > levelID {
 		return
 	}
-	l.logFunc(level.Debug, event, detail)
+	l.logFunc(level, event, detail)
+}
+
+func (l *logger) Debug(event string, detail Pairs) {
+	l.logFuncConditionally(level.Debug, level.DebugID, event, detail)
 }
 
 func (l *logger) Info(event string, detail Pairs) {
-	if l.levelID > level.InfoID {
-		return
-	}
-	l.logFunc(level.Info, event, detail)
+	l.logFuncConditionally(level.Info, level.InfoID, event, detail)
 }
 
 func (l *logger) Warn(event string, detail Pairs) {
-	if l.levelID > level.WarnID {
-		return
-	}
-	l.logFunc(level.Warn, event, detail)
+	l.logFuncConditionally(level.Warn, level.WarnID, event, detail)
 }
 
 func (l *logger) Error(event string, detail Pairs) {
-	if l.levelID > level.ErrorID {
-		return
-	}
-	l.logFunc(level.Error, event, detail)
+	l.logFuncConditionally(level.Error, level.ErrorID, event, detail)
 }
 
 func (l *logger) LogSynchronous(logLevel level.Level, event string, detail Pairs) {
@@ -224,32 +220,27 @@ func (l *logger) LogSynchronous(logLevel level.Level, event string, detail Pairs
 
 }
 
-func (l *logger) DebugSynchronous(event string, detail Pairs) {
-	if l.levelID > level.DebugID {
+func (l *logger) logConditionally(level level.Level, levelID level.LevelID, event string, detail Pairs) {
+	if l.levelID > levelID {
 		return
 	}
-	l.log(level.Debug, event, detail)
+	l.log(level, event, detail)
+}
+
+func (l *logger) DebugSynchronous(event string, detail Pairs) {
+	l.logConditionally(level.Debug, level.DebugID, event, detail)
 }
 
 func (l *logger) InfoSynchronous(event string, detail Pairs) {
-	if l.levelID > level.InfoID {
-		return
-	}
-	l.log(level.Info, event, detail)
+	l.logConditionally(level.Info, level.InfoID, event, detail)
 }
 
 func (l *logger) WarnSynchronous(event string, detail Pairs) {
-	if l.levelID > level.WarnID {
-		return
-	}
-	l.log(level.Warn, event, detail)
+	l.logConditionally(level.Warn, level.WarnID, event, detail)
 }
 
 func (l *logger) ErrorSynchronous(event string, detail Pairs) {
-	if l.levelID > level.ErrorID {
-		return
-	}
-	l.log(level.Error, event, detail)
+	l.logConditionally(level.Error, level.ErrorID, event, detail)
 }
 
 func (l *logger) Fatal(code int, event string, detail Pairs) {
@@ -275,17 +266,16 @@ func (l *logger) logOnce(logLevel level.Level, lid level.LevelID,
 		return false
 	}
 	key = string(logLevel) + "." + key
-	l.onceMutex.Lock()
-	if l.onceRanEntries[key] == nil {
-		l.onceRanEntries[key] = &sync.Once{}
+	_, ok := l.onceRanEntries.Load(key)
+	if !ok {
+		// load or store is more expensive than load, so check via load first
+		// and use LoadOrStore to ensure that log is only called once
+		_, ok = l.onceRanEntries.LoadOrStore(key, true)
+		if !ok {
+			l.log(logLevel, event, detail)
+		}
 	}
-	var ok bool
-	l.onceRanEntries[key].Do(func() {
-		l.log(logLevel, event, detail)
-		ok = true
-	})
-	l.onceMutex.Unlock()
-	return ok
+	return !ok
 }
 
 func (l *logger) DebugOnce(key, event string, detail Pairs) bool {
@@ -322,9 +312,7 @@ func (l *logger) HasErroredOnce(key string) bool {
 
 func (l *logger) HasLoggedOnce(logLevel level.Level, key string) bool {
 	key = string(logLevel) + "." + key
-	l.onceMutex.Lock()
-	_, ok := l.onceRanEntries[key]
-	l.onceMutex.Unlock()
+	_, ok := l.onceRanEntries.Load(key)
 	return ok
 }
 
@@ -332,41 +320,69 @@ func (l *logger) logAsyncronous(logLevel level.Level, event string, detail Pairs
 	go l.log(logLevel, event, detail)
 }
 
-const defaultLogItemCount = 4
+type item struct {
+	key string
+	val string
+}
+
+func (i *item) Bytes() []byte {
+	return append([]byte(i.key), append([]byte(equal), []byte(i.val)...)...)
+}
+
+const (
+	space   = " "
+	equal   = "="
+	newline = "\n"
+)
 
 func (l *logger) log(logLevel level.Level, event string, detail Pairs) {
 	if l.writer == nil {
 		return
 	}
-	ts := time.Now()
+	ts := l.now()
 	ld := len(detail)
-	keys := make([]string, defaultLogItemCount, ld+defaultLogItemCount)
-	keys[0] = "time=" + ts.UTC().Format(time.RFC3339Nano)
-	keys[1] = "app=trickster"
-	keys[2] = "level=" + string(logLevel)
-	if strings.HasPrefix(event, " ") || strings.HasSuffix(event, " ") {
+	if strings.HasPrefix(event, space) || strings.HasSuffix(event, space) {
 		event = strings.TrimSpace(event)
 	}
-	keys[3] = "event=" + quoteAsNeeded(event)
-	var i int
+	logLine := []byte(
+		"time=" + ts.UTC().Format(time.RFC3339Nano) + space +
+			"app=trickster" + space +
+			"level=" + string(logLevel) + space +
+			"event=" + quoteAsNeeded(event),
+	)
 	if ld > 0 {
-		sortedKeys := make([]string, ld)
+		logLine = append(logLine, []byte(space)...)
+		keyPairs := make([]item, ld)
+		var i int
 		for k, v := range detail {
-			if s, ok := v.(string); ok {
-				v = quoteAsNeeded(s)
+			var s string
+			var ok bool
+			if s, ok = v.(string); ok {
+				s = quoteAsNeeded(s)
 			} else if stringer, ok := v.(fmt.Stringer); ok {
-				v = quoteAsNeeded(stringer.String())
+				s = quoteAsNeeded(stringer.String())
 			} else if err, ok := v.(error); ok {
-				v = quoteAsNeeded(err.Error())
+				s = quoteAsNeeded(err.Error())
+			} else {
+				s = fmt.Sprintf("%v", v)
 			}
-			sortedKeys[i] = fmt.Sprintf("%s=%v", k, v)
+			keyPairs[i] = item{k, s}
 			i++
 		}
-		slices.Sort(sortedKeys)
-		keys = append(keys, sortedKeys...)
+		slices.SortFunc(keyPairs, func(a, b item) int {
+			return cmp.Compare(a.key, b.key)
+		})
+		i = 0
+		for _, v := range keyPairs {
+			logLine = append(logLine, v.Bytes()...)
+			i++
+			if i < ld {
+				logLine = append(logLine, []byte(space)...)
+			}
+		}
 	}
 	l.mtx.Lock()
-	l.writer.Write([]byte(strings.Join(keys, " ") + "\n"))
+	l.writer.Write(append(logLine, []byte(newline)...))
 	l.mtx.Unlock()
 }
 
