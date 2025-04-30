@@ -173,6 +173,9 @@ func TestReap(t *testing.T) {
 		t.Errorf("expected key %s to be missing", "test.7")
 	}
 
+	objects := idx.Objects.ToObjects()
+	require.Len(t, objects, 1)
+	require.NotNil(t, objects["cache.index"])
 }
 
 func TestObjectFromBytes(t *testing.T) {
