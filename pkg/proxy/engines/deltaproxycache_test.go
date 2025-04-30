@@ -610,12 +610,8 @@ func TestDeltayProxyCacheRequestDeltaFetchError(t *testing.T) {
 	}
 
 	// test partial hit (needing an upper fragment)
-	//phitStart := extr.End.Add(step)
 	extr.End = extr.End.Add(time.Duration(1) * time.Hour) // Extend the top by 1 hour to generate partial hit
 	extn.End = extr.End.Truncate(step)
-
-	//expectedFetched := fmt.Sprintf("[%d:%d]", phitStart.Truncate(step).Unix(), extn.End.Unix())
-	mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
 	client.InstantCacheKey = "foo1"
 	client.RangeCacheKey = "foo2"
@@ -638,12 +634,6 @@ func TestDeltayProxyCacheRequestDeltaFetchError(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-
-	// err = testResultHeaderPartMatch(resp.Header, map[string]string{"fetched": expectedFetched})
-	// if err != nil {
-	// 	t.Error(err)
-	// }
-
 }
 
 func TestDeltaProxyCacheRequestRangeMiss(t *testing.T) {
