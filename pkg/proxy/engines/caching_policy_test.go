@@ -214,7 +214,7 @@ func TestResolveClientConditionalsIUS(t *testing.T) {
 }
 
 func TestGetResponseCachingPolicyNegativeCache(t *testing.T) {
-	p := GetResponseCachingPolicy(400, map[int]time.Duration{400: 300 * time.Second}, nil)
+	p := GetResponseCachingPolicy(400, map[int]time.Duration{400: 5 * time.Minute}, nil)
 	if p.FreshnessLifetime != 300 {
 		t.Errorf("expected ttl of %d got %d", 300, p.FreshnessLifetime)
 	}
