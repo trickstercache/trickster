@@ -46,7 +46,7 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) map[string]*po.Options {
 			Methods:        []string{http.MethodGet, http.MethodPost},
 			MatchType:      matching.PathMatchTypePrefix,
 			MatchTypeName:  "prefix",
-			CacheKeyParams: []string{"query", "database"},
+			CacheKeyParams: []string{"database"},
 		},
 	}
 	return paths

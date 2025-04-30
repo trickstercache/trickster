@@ -78,7 +78,7 @@ func parse(statement string) (*timeseries.TimeRangeQuery, *timeseries.RequestOpt
 	if sql.HasLimitClause(results) {
 		return nil, nil, canObjectCache, ErrLimitUnsupported
 	}
-	if t, err = parseGroupByTokens(results, trq, ro); err != nil {
+	if t, err = parseGroupByTokens(results, trq); err != nil {
 		return nil, nil, canObjectCache, parsing.ParserError(err, t)
 	}
 	if t, err = parseSelectTokens(results, trq, ro); err != nil {
@@ -86,6 +86,9 @@ func parse(statement string) (*timeseries.TimeRangeQuery, *timeseries.RequestOpt
 	}
 	if t, err = parseWhereTokens(results, trq, ro); err != nil {
 		return nil, nil, canObjectCache, parsing.ParserError(err, t)
+	}
+	trq.CacheKeyElements = map[string]string{
+		"query": trq.Statement,
 	}
 	return trq, ro, canObjectCache, nil
 }
@@ -164,8 +167,7 @@ func atWith(bp, ip parsing.Parser, rs *parsing.RunState) parsing.StateFn {
 		}
 		tl = append(tl, t)
 	}
-	trq, ro := sqlparser.ArtifactsFromContext(rs.Context())
-	err := sp.parseWithTokens(rs, trq, ro, tl)
+	err := sp.parseWithTokens(rs, tl)
 	if err != nil {
 		rs.WithError(err)
 		return nil
@@ -174,8 +176,7 @@ func atWith(bp, ip parsing.Parser, rs *parsing.RunState) parsing.StateFn {
 }
 
 // parseWithTokens parses the withTokens list into a key=value map
-func (p *chParser) parseWithTokens(rs *parsing.RunState, trq *timeseries.TimeRangeQuery,
-	ro *timeseries.RequestOptions, tl token.Tokens) error {
+func (p *chParser) parseWithTokens(rs *parsing.RunState, tl token.Tokens) error {
 	l := len(tl)
 	// this puts the tokens between with and select into a map[variableName]value
 	if l == 0 {
@@ -671,7 +672,7 @@ func parseTimeField(t *token.Token) (int64, byte, error) {
 }
 
 func parseGroupByTokens(results ts.Lookup,
-	trq *timeseries.TimeRangeQuery, ro *timeseries.RequestOptions) (*token.Token, error) {
+	trq *timeseries.TimeRangeQuery) (*token.Token, error) {
 	v, ok := results["groupByTokens"]
 	if !ok {
 		return nil, lsql.ErrInvalidGroupByClause
