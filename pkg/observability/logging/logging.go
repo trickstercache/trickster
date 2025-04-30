@@ -374,7 +374,7 @@ func quoteAsNeeded(input string) string {
 	if !strings.Contains(input, " ") {
 		return input
 	}
-	return `"` + input + `"`
+	return `"` + strings.ReplaceAll(input, `"`, `\"`) + `"`
 }
 
 func (l *logger) Level() level.Level {
