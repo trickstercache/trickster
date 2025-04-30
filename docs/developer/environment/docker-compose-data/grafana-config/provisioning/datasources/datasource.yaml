@@ -3,7 +3,7 @@ apiVersion: 1
 
 datasources:
 # Prometheus
-- name: prom-direct
+- name: "1: Prom | Direct | GET"
   type: prometheus
   access: proxy
   orgId: 1
@@ -11,22 +11,38 @@ datasources:
   url: http://prometheus:9090
   version: 1
   editable: true
-- name: prom-trickster-memory-stdout
+  jsonData:
+    httpMethod: GET
+- name: "2: Prom | Direct | POST"
   type: prometheus
   access: proxy
   orgId: 1
-  uid: ds_prom1_trickster
+  uid: ds_prom_direct_post
+  url: http://prometheus:9090
+  version: 1
+  editable: true
+  jsonData:
+    httpMethod: POST
+- name: "3: Trickster | MemoryCache | GET"
+  type: prometheus
+  access: proxy
+  orgId: 1
+  uid: ds_trickster_mc
   url: http://docker.for.mac.localhost:8480/prom1
   version: 1
   editable: true
-- name: prom-trickster-filesystem-jc
+  jsonData:
+    httpMethod: GET
+- name: "4: Trickster | MemoryCache | POST"
   type: prometheus
   access: proxy
   orgId: 1
-  uid: ds_prom2_trickster
-  url: http://docker.for.mac.localhost:8480/prom2
+  uid: ds_trickster_mc_post
+  url: http://docker.for.mac.localhost:8480/prom1
   version: 1
   editable: true
+  jsonData:
+    httpMethod: POST
 
 # Mockster (Prom API Simulator)
 - name: sim-direct
