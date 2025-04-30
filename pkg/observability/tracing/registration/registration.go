@@ -104,7 +104,7 @@ func GetTracer(options *options.Options,
 				"serviceName": options.ServiceName,
 				"endpoint":    options.Endpoint,
 				"sampleRate":  options.SampleRate,
-				"tags":        strings.StringMap(options.Tags).String(),
+				"tags":        strings.Map(options.Tags).String(),
 			},
 		)
 	}

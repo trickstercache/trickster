@@ -44,13 +44,13 @@ func Unique(in []string) []string {
 // ErrKeyNotInMap represents an error for key not found in map
 var ErrKeyNotInMap = errors.New("key not found in map")
 
-// StringMap represents a map[string]string
-type StringMap map[string]string
+// Map represents a map[string]string
+type Map map[string]string
 
 // Lookup represents a map[string]any with assumed nil values
 type Lookup map[string]any
 
-func (m StringMap) String() string {
+func (m Map) String() string {
 	delimiter := ""
 	sb := &strings.Builder{}
 	sb.WriteString("{")
@@ -64,7 +64,7 @@ func (m StringMap) String() string {
 
 // GetInt returns an integer value from the map, if convertible
 // If not, an error is returned with a value of 0
-func (m StringMap) GetInt(key string) (int, error) {
+func (m Map) GetInt(key string) (int, error) {
 	value, ok := m[key]
 	if !ok {
 		return 0, ErrKeyNotInMap
