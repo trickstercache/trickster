@@ -23,7 +23,7 @@ import (
 )
 
 // ObserveCacheMiss records a Cache Miss event
-func ObserveCacheMiss(cacheKey, cacheName, cacheProvider string) {
+func ObserveCacheMiss(cacheName, cacheProvider string) {
 	ObserveCacheOperation(cacheName, cacheProvider, "get", "miss", 0)
 }
 

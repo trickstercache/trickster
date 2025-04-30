@@ -62,13 +62,13 @@ func storeBenchmark(b *testing.B) *Cache {
 	return mc
 }
 
-func newCacheConfig(t *testing.T) co.Options {
+func newCacheConfig() co.Options {
 	return co.Options{Provider: provider, Index: &io.Options{ReapInterval: 0}}
 }
 
 func TestConfiguration(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
-	cacheConfig := newCacheConfig(t)
+	cacheConfig := newCacheConfig()
 	mc := Cache{Config: &cacheConfig}
 	cfg := mc.Configuration()
 	if cfg.Provider != provider {
@@ -78,7 +78,7 @@ func TestConfiguration(t *testing.T) {
 
 func TestCache_Connect(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
-	cacheConfig := newCacheConfig(t)
+	cacheConfig := newCacheConfig()
 	mc := Cache{Config: &cacheConfig}
 
 	// it should connect
@@ -90,7 +90,7 @@ func TestCache_Connect(t *testing.T) {
 
 func TestCache_StoreReferenceDirect(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
-	cacheConfig := newCacheConfig(t)
+	cacheConfig := newCacheConfig()
 	mc := Cache{Config: &cacheConfig, locker: testLocker}
 
 	err := mc.Connect()
@@ -114,7 +114,7 @@ func TestCache_StoreReferenceDirect(t *testing.T) {
 
 func TestCache_StoreReference(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
-	cacheConfig := newCacheConfig(t)
+	cacheConfig := newCacheConfig()
 	mc := Cache{Config: &cacheConfig, locker: testLocker}
 
 	err := mc.Connect()
@@ -130,7 +130,7 @@ func TestCache_StoreReference(t *testing.T) {
 
 func TestCache_Store(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
-	cacheConfig := newCacheConfig(t)
+	cacheConfig := newCacheConfig()
 	mc := Cache{Config: &cacheConfig, locker: testLocker}
 
 	err := mc.Connect()
@@ -150,7 +150,7 @@ func BenchmarkCache_Store(b *testing.B) {
 
 func TestCache_Retrieve(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
-	cacheConfig := newCacheConfig(t)
+	cacheConfig := newCacheConfig()
 	mc := Cache{Config: &cacheConfig, locker: testLocker}
 
 	err := mc.Connect()
@@ -239,14 +239,14 @@ func BenchmarkCache_Retrieve(b *testing.B) {
 
 func TestCache_Close(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
-	cacheConfig := newCacheConfig(t)
+	cacheConfig := newCacheConfig()
 	mc := Cache{Config: &cacheConfig}
 	mc.Close()
 }
 
 func TestCache_Remove(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
-	cacheConfig := newCacheConfig(t)
+	cacheConfig := newCacheConfig()
 	mc := Cache{Config: &cacheConfig, locker: testLocker}
 
 	err := mc.Connect()
@@ -325,7 +325,7 @@ func BenchmarkCache_Remove(b *testing.B) {
 
 func TestCache_BulkRemove(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
-	cacheConfig := newCacheConfig(t)
+	cacheConfig := newCacheConfig()
 	mc := Cache{Config: &cacheConfig, locker: testLocker}
 
 	err := mc.Connect()
@@ -389,7 +389,7 @@ func BenchmarkCache_BulkRemove(b *testing.B) {
 
 func TestMemoryCache_SetTTL(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
-	cacheConfig := newCacheConfig(t)
+	cacheConfig := newCacheConfig()
 	mc := Cache{Config: &cacheConfig, locker: testLocker}
 
 	err := mc.Connect()

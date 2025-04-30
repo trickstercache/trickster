@@ -137,7 +137,7 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 	if err != nil {
 		logger.Debug("filesystem cache miss",
 			logging.Pairs{"key": cacheKey, "dataFile": dataFile})
-		metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.Provider)
+		metrics.ObserveCacheMiss(c.Name, c.Config.Provider)
 		return nil, status.LookupStatusKeyMiss, cache.ErrKNF
 	}
 
@@ -167,7 +167,7 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 	}
 	// Cache Object has been expired but not reaped, go ahead and delete it
 	go c.remove(cacheKey, false)
-	metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.Provider)
+	metrics.ObserveCacheMiss(c.Name, c.Config.Provider)
 	return nil, status.LookupStatusKeyMiss, cache.ErrKNF
 }
 
