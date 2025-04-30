@@ -623,7 +623,7 @@ func (d WFDataItem) MarshalJSON() ([]byte, error) {
 		if sep {
 			buf.Write([]byte{','})
 		}
-		buf.WriteString(fmt.Sprintf(`"%s":"%s"`, e.Key, e.Value))
+		fmt.Fprintf(buf, `"%s":"%s"`, e.Key, e.Value)
 		sep = true
 	}
 	buf.Write([]byte{'}'})
