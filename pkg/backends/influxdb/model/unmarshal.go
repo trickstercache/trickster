@@ -25,6 +25,7 @@ import (
 	"sort"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/influxdata/influxdb/models"
@@ -158,9 +159,8 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 				return nil, timeseries.ErrInvalidBody
 			}
 			sh.CalculateSize()
-			pts := make(dataset.Points, 0, len(wfd.Results[i].SeriesList[j].Values))
+			pts := make(dataset.Points, len(wfd.Results[i].SeriesList[j].Values))
 			var sz int64
-			var mtx sync.Mutex
 			var wg sync.WaitGroup
 			ume := make(chan error, len(wfd.Results[i].SeriesList[j].Values))
 			wg.Add(len(wfd.Results[i].SeriesList[j].Values))
@@ -181,11 +181,9 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 							sh.FieldsList[x].DataType = cols[x]
 						}
 					}
-					mtx.Lock()
-					pts = append(pts, pt)
-					sz += int64(pt.Size)
+					pts[idx] = pt
+					atomic.AddInt64(&sz, int64(pt.Size))
 					wfd.Results[i].SeriesList[j].Values[idx] = nil
-					mtx.Unlock()
 					wg.Done()
 				}(v, vi)
 			}

@@ -24,6 +24,7 @@ import (
 	"sort"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/errors"
@@ -111,15 +112,12 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 			pts = make(dataset.Points, l)
 			var wg sync.WaitGroup
 			wg.Add(len(pr.Values))
-			var mtx sync.Mutex
 			for i, v := range pr.Values {
 				go func(index int, vals []any) {
 					pt, _ := pointFromValues(vals)
 					if pt.Epoch > 0 {
-						mtx.Lock()
-						ps += int64(pt.Size)
+						atomic.AddInt64(&ps, int64(pt.Size))
 						pts[index] = pt
-						mtx.Unlock()
 					}
 					wg.Done()
 				}(i, v)

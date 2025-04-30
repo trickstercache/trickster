@@ -16,8 +16,6 @@
 
 package level
 
-import "strings"
-
 type Level string
 type LevelID int
 
@@ -35,17 +33,18 @@ const (
 	TraceID LevelID = 5
 )
 
-var validLevels = map[Level]LevelID{
-	Debug: DebugID,
-	Info:  InfoID,
-	Warn:  WarnID,
-	Error: ErrorID,
-	Fatal: TraceID,
-}
-
 func GetLevelID(logLevel Level) LevelID {
-	if i, ok := validLevels[Level(strings.ToLower(string(logLevel)))]; ok {
-		return i
+	switch logLevel {
+	case Debug:
+		return DebugID
+	case Info:
+		return InfoID
+	case Warn:
+		return WarnID
+	case Error:
+		return ErrorID
+	case Fatal:
+		return TraceID
 	}
 	return 0
 }
