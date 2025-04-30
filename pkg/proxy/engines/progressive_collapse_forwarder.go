@@ -56,7 +56,7 @@ type progressiveCollapseForwarder struct {
 	readCond       *sync.Cond
 	serverReadDone atomic.Int32
 	clientCond     *sync.Cond
-	clientCount    int32
+	clientCount    atomic.Int32
 	serverWaitCond *sync.Cond
 }
 
@@ -95,9 +95,7 @@ func NewPCF(resp *http.Response, contentLength int64) ProgressiveCollapseForward
 // AddClient adds an io.Writer client to the ProgressiveCollapseForwarder
 // This client will read all the cached data and read from the live edge if caught up.
 func (pcf *progressiveCollapseForwarder) AddClient(w io.Writer) error {
-	pcf.clientCond.L.Lock()
-	pcf.clientCount++
-	pcf.clientCond.L.Unlock()
+	pcf.clientCount.Add(1)
 	var readIndex uint64
 	var err error
 	var n, remaining int
@@ -127,9 +125,7 @@ func (pcf *progressiveCollapseForwarder) AddClient(w io.Writer) error {
 			break
 		}
 	}
-	pcf.clientCond.L.Lock()
-	pcf.clientCount--
-	pcf.clientCond.L.Unlock()
+	pcf.clientCount.Add(-1)
 	pcf.clientCond.Broadcast()
 	return err
 }
@@ -149,7 +145,7 @@ func (pcf *progressiveCollapseForwarder) WaitServerComplete() {
 // Need to no abandon goroutines
 func (pcf *progressiveCollapseForwarder) WaitAllComplete() {
 	pcf.clientCond.L.Lock()
-	for pcf.clientCount > 0 {
+	for pcf.clientCount.Load() > 0 {
 		pcf.clientCond.Wait()
 	}
 	pcf.clientCond.L.Unlock()
