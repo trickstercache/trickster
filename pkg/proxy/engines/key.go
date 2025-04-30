@@ -62,9 +62,9 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 		ckeCnt = len(rsc.TimeRangeQuery.CacheKeyElements)
 		if rsc.TimeRangeQuery.TemplateURL != nil {
 			qp = rsc.TimeRangeQuery.TemplateURL.Query()
-		} else {
-			qp, b, _ = params.GetRequestValues(r)
 		}
+	} else {
+		qp, b, _ = params.GetRequestValues(r)
 	}
 
 	if pc.KeyHasher != nil {
