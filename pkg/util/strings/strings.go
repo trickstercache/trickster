@@ -18,12 +18,16 @@
 package strings
 
 import (
+	"encoding/json"
 	"errors"
-	"fmt"
 	"slices"
 	"strconv"
 	"strings"
 )
+
+func EscapeQuotes(s string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(s, `"`, `\"`), `\\"`, `\"`)
+}
 
 // Get s[i:i+length].
 // Returns an empty string if i+length > len(s)
@@ -51,15 +55,8 @@ type Map map[string]string
 type Lookup map[string]any
 
 func (m Map) String() string {
-	delimiter := ""
-	sb := &strings.Builder{}
-	sb.WriteString("{")
-	for k, v := range m {
-		fmt.Fprintf(sb, `%s"%s":"%s"`, delimiter, k, v)
-		delimiter = ", "
-	}
-	sb.WriteString("}")
-	return sb.String()
+	b, _ := json.Marshal(m)
+	return string(b)
 }
 
 // GetInt returns an integer value from the map, if convertible

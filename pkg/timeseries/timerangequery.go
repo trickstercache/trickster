@@ -19,7 +19,7 @@
 package timeseries
 
 import (
-	"fmt"
+	"encoding/json"
 	"maps"
 	"net/url"
 	"strconv"
@@ -112,10 +112,33 @@ func (trq *TimeRangeQuery) NormalizeExtent() {
 }
 
 func (trq *TimeRangeQuery) String() string {
-	return fmt.Sprintf(`{ "statement": "%s", "step": "%s", "extent": "%s", "tsd": "%s", "td": %s, "vd": %s }`,
-		strings.ReplaceAll(trq.Statement, `"`, `\"`), trq.Step.String(),
-		trq.Extent.String(), trq.TimestampDefinition.String(),
-		FieldDefinitions(trq.TagFieldDefintions).String(), FieldDefinitions(trq.ValueFieldDefinitions))
+	var td, vd FieldDefinitions
+	if len(trq.TagFieldDefintions) == 0 {
+		td = make(FieldDefinitions, 0)
+	} else {
+		td = FieldDefinitions(trq.TagFieldDefintions)
+	}
+	if len(trq.ValueFieldDefinitions) == 0 {
+		vd = make(FieldDefinitions, 0)
+	} else {
+		vd = FieldDefinitions(trq.ValueFieldDefinitions)
+	}
+	b, _ := json.Marshal(struct {
+		Statement string           `json:"statement"`
+		Step      string           `json:"step"`
+		Extent    string           `json:"extent"`
+		TSDef     FieldDefinition  `json:"tsd"`
+		TagDefs   FieldDefinitions `json:"td"`
+		ValDefs   FieldDefinitions `json:"vd"`
+	}{
+		Statement: trq.Statement,
+		Step:      trq.Step.String(),
+		Extent:    trq.Extent.String(),
+		TSDef:     trq.TimestampDefinition,
+		TagDefs:   td,
+		ValDefs:   vd,
+	})
+	return string(b)
 }
 
 // GetBackfillTolerance will return the backfill tolerance for the query based on the provided

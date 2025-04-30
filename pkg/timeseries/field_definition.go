@@ -20,8 +20,8 @@ package timeseries
 
 import (
 	"encoding/json"
-	"fmt"
-	"strings"
+
+	"github.com/trickstercache/trickster/v2/pkg/errors"
 )
 
 // Field Data Types
@@ -60,7 +60,7 @@ func (fd FieldDefinition) Size() int {
 func (fd FieldDefinition) String() string {
 	b, err := json.Marshal(fd)
 	if err != nil {
-		return fmt.Sprintf(`{"error": "%s"}`, err)
+		return errors.NewErrorBody(err)
 	}
 	return string(b)
 }
@@ -70,10 +70,9 @@ func (fds FieldDefinitions) String() string {
 	if l == 0 {
 		return "[]"
 	}
-	s := make([]string, l)
-	for i, fd := range fds {
-		s[i] = fd.String()
+	b, err := json.Marshal(fds)
+	if err != nil {
+		return errors.NewErrorBody(err)
 	}
-	return "[" + strings.Join(s, ", ") + "]"
-
+	return string(b)
 }

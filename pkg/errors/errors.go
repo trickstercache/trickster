@@ -16,7 +16,10 @@
 
 package errors
 
-import "errors"
+import (
+	"encoding/json"
+	"errors"
+)
 
 // ErrNilWriter is an error for a nil writer when a non-nil writer was expected
 var ErrNilWriter = errors.New("nil writer")
@@ -39,3 +42,18 @@ var ErrInvalidMethod = errors.New("invalid method value in config")
 
 // ErrNoValidBackends is an error for when not valid backends have been configured
 var ErrNoValidBackends = errors.New("no valid backends configured")
+
+type ErrorBody struct {
+	Error string `json:"error"`
+}
+
+func NewErrorBody(err error) string {
+	if err == nil {
+		return "{}"
+	}
+	eb := &ErrorBody{
+		Error: err.Error(),
+	}
+	b, _ := json.Marshal(eb)
+	return string(b)
+}
