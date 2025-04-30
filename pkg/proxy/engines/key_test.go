@@ -37,6 +37,7 @@ import (
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
 const testMultipartBoundary = `; boundary=------------------------d0509edbe55938c0`
@@ -210,8 +211,8 @@ func TestDeriveCacheKey(t *testing.T) {
 }
 
 func exampleKeyHasher(path string, params url.Values, headers http.Header,
-	body io.ReadCloser, extra string) (string, io.ReadCloser) {
-	return "test-key", nil
+	body []byte, trq *timeseries.TimeRangeQuery, extra string) string {
+	return "test-key"
 }
 
 func TestDeriveCacheKeyAuthHeader(t *testing.T) {

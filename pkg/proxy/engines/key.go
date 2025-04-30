@@ -57,82 +57,91 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 	}
 
 	var b []byte
-	if rsc.TimeRangeQuery != nil && rsc.TimeRangeQuery.TemplateURL != nil {
-		qp = rsc.TimeRangeQuery.TemplateURL.Query()
-	} else {
-		qp, b, _ = params.GetRequestValues(r)
+	var ckeCnt int
+	if rsc.TimeRangeQuery != nil {
+		ckeCnt = len(rsc.TimeRangeQuery.CacheKeyElements)
+		if rsc.TimeRangeQuery.TemplateURL != nil {
+			qp = rsc.TimeRangeQuery.TemplateURL.Query()
+		} else {
+			qp, b, _ = params.GetRequestValues(r)
+		}
 	}
 
 	if pc.KeyHasher != nil {
-		var k string
-		k, r.Body = pc.KeyHasher(r.URL.Path, qp, r.Header, r.Body, extra)
-		return k
+		return pc.KeyHasher(r.URL.Path, qp, r.Header, b, rsc.TimeRangeQuery, extra)
 	}
 
-	vals := make([]string, 0, (len(pc.CacheKeyParams) + len(pc.CacheKeyHeaders) + len(pc.CacheKeyFormFields)*2))
+	var k int
+	vals := make([]string, 2+len(qp)+len(r.Header)+len(pc.CacheKeyFormFields)+ckeCnt)
 
 	if v := r.Header.Get(headers.NameAuthorization); v != "" {
-		vals = append(vals, fmt.Sprintf("%s.%s.", headers.NameAuthorization, v))
+		vals[k] = fmt.Sprintf("%s.%s.", headers.NameAuthorization, v)
+		k++
 	}
-
 	// Append the http method to the slice for creating the derived cache key
-	vals = append(vals, fmt.Sprintf("%s.%s.", "method", r.Method))
+	vals[k] = fmt.Sprintf("%s.%s.", "method", r.Method)
+	k++
 
 	if len(pc.CacheKeyParams) == 1 && pc.CacheKeyParams[0] == "*" {
 		for p := range qp {
-			vals = append(vals, fmt.Sprintf("%s.%s.", p, qp.Get(p)))
+			vals[k] = fmt.Sprintf("%s.%s.", p, qp.Get(p))
+			k++
 		}
 	} else {
 		for _, p := range pc.CacheKeyParams {
 			if v := qp.Get(p); v != "" {
-				vals = append(vals, fmt.Sprintf("%s.%s.", p, v))
+				vals[k] = fmt.Sprintf("%s.%s.", p, v)
+				k++
 			}
 		}
 	}
 
 	for _, p := range pc.CacheKeyHeaders {
 		if v := r.Header.Get(p); v != "" {
-			vals = append(vals, fmt.Sprintf("%s.%s.", p, v))
+			vals[k] = fmt.Sprintf("%s.%s.", p, v)
+			k++
 		}
 	}
 
+	var bodyWasProcessed bool
 	if methods.HasBody(r.Method) && pc.CacheKeyFormFields != nil && len(pc.CacheKeyFormFields) > 0 {
 		ct := strings.ToLower(r.Header.Get(headers.NameContentType))
-		if ct == headers.ValueXFormURLEncoded ||
-			strings.HasPrefix(ct, headers.ValueMultipartFormData) || strings.HasPrefix(ct, headers.ValueApplicationJSON) {
-			if strings.HasPrefix(ct, headers.ValueMultipartFormData) {
-				pr.ParseMultipartForm(1024 * 1024)
-			} else if strings.HasPrefix(ct, headers.ValueApplicationJSON) {
-				var document map[string]interface{}
-				err := json.Unmarshal(b, &document)
-				if err == nil {
-					for _, f := range pc.CacheKeyFormFields {
-						v, err := deepSearch(document, f)
-						if err == nil {
-							if pr.Form == nil {
-								pr.Form = url.Values{}
-							}
-							pr.Form.Set(f, v)
+		if strings.HasPrefix(ct, headers.ValueMultipartFormData) {
+			pr.ParseMultipartForm(1024 * 1024)
+			bodyWasProcessed = true
+		} else if strings.HasPrefix(ct, headers.ValueApplicationJSON) {
+			var document map[string]interface{}
+			if err := json.Unmarshal(b, &document); err == nil {
+				for _, f := range pc.CacheKeyFormFields {
+					if v, err := deepSearch(document, f); err == nil {
+						if pr.Form == nil {
+							pr.Form = url.Values{}
 						}
+						pr.Form.Set(f, v)
+						bodyWasProcessed = true
 					}
 				}
 			}
-			r = request.SetBody(r, b)
-			if useUR {
-				pr.upstreamRequest = r
-			} else {
-				pr.Request = r
-			}
 		}
-		for _, f := range pc.CacheKeyFormFields {
-			if _, ok := pr.Form[f]; ok {
-				if v := pr.FormValue(f); v != "" {
-					vals = append(vals, fmt.Sprintf("%s.%s.", f, v))
+		if bodyWasProcessed {
+			for _, f := range pc.CacheKeyFormFields {
+				if _, ok := pr.Form[f]; ok {
+					if v := pr.FormValue(f); v != "" {
+						vals[k] = fmt.Sprintf("%s.%s.", f, v)
+						k++
+					}
 				}
 			}
 		}
 	}
 
+	if rsc.TimeRangeQuery != nil {
+		for key, val := range rsc.TimeRangeQuery.CacheKeyElements {
+			vals[k] = fmt.Sprintf("%s.%s.", key, val)
+			k++
+		}
+	}
+	vals = vals[:k]
 	sort.Strings(vals)
 	return md5.Checksum(pr.URL.Path + "." + strings.Join(vals, "") + extra)
 }

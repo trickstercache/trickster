@@ -17,11 +17,12 @@
 package key
 
 import (
-	"io"
 	"net/http"
 	"net/url"
+
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
 // HasherFunc is a custom function that returns a hashed key value string for cache objects
-type HasherFunc func(path string, params url.Values,
-	headers http.Header, body io.ReadCloser, extra string) (string, io.ReadCloser)
+type HasherFunc func(string, url.Values, http.Header, []byte,
+	*timeseries.TimeRangeQuery, string) string
