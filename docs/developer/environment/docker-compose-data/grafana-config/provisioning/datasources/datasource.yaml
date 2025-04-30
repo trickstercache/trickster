@@ -27,7 +27,7 @@ datasources:
   type: prometheus
   access: proxy
   orgId: 1
-  uid: ds_trickster_mc
+  uid: ds_prom_trickster_mc
   url: http://docker.for.mac.localhost:8480/prom1
   version: 1
   editable: true
@@ -37,7 +37,7 @@ datasources:
   type: prometheus
   access: proxy
   orgId: 1
-  uid: ds_trickster_mc_post
+  uid: ds_prom_trickster_mc_post
   url: http://docker.for.mac.localhost:8480/prom1
   version: 1
   editable: true
@@ -70,12 +70,12 @@ datasources:
   version: 1
   editable: true
 
-# Influx DB
-- name: influxdb-direct-influxql
+# InfluxDB
+- name: "1: InfluxDB | Direct | QL | GET"
   type: influxdb
   access: proxy
   orgId: 1
-  uid: ds_influxdb2_ql_direct
+  uid: ds_infl_direct_ql_get
   url: http://influxdb:8086
   editable: true
   database: trickster
@@ -85,16 +85,44 @@ datasources:
   secureJsonData:
     httpHeaderValue1: 'Token trickster-demo-token'
 
-- name: influxdb-trickster-influxql
+- name: "2: InfluxDB | Direct | QL | POST"
   type: influxdb
   access: proxy
   orgId: 1
-  uid: ds_influxdb2_ql_trk
-  url: http://docker.for.mac.localhost:8480/influx1
+  uid: ds_infl_direct_ql_post
+  url: http://influxdb:8086
+  editable: true
+  database: trickster
+  jsonData:
+    httpMode: POST
+    httpHeaderName1: 'Authorization'
+  secureJsonData:
+    httpHeaderValue1: 'Token trickster-demo-token'
+
+- name: "3: Trickster | MemoryCache | QL | GET"
+  type: influxdb
+  access: proxy
+  orgId: 1
+  uid: ds_infl_trk_ql_get
+  url: http://docker.for.mac.localhost:8480/flux1
   editable: true
   database: trickster
   jsonData:
     httpMode: GET
+    httpHeaderName1: 'Authorization'
+  secureJsonData:
+    httpHeaderValue1: 'Token trickster-demo-token'
+
+- name: "4: Trickster | MemoryCache | QL | POST"
+  type: influxdb
+  access: proxy
+  orgId: 1
+  uid: ds_infl_trk_ql_post
+  url: http://docker.for.mac.localhost:8480/flux1
+  editable: true
+  database: trickster
+  jsonData:
+    httpMode: POST
     httpHeaderName1: 'Authorization'
   secureJsonData:
     httpHeaderValue1: 'Token trickster-demo-token'
@@ -104,6 +132,7 @@ datasources:
   type: vertamedia-clickhouse-datasource
   access: proxy
   url: http://clickhouse:8123/
+  editable: true
   isDefault: false
   jsonData:
     defaultDatabase: default
@@ -114,6 +143,7 @@ datasources:
   type: vertamedia-clickhouse-datasource
   access: proxy
   url: http://docker.for.mac.localhost:8480/click1/
+  editable: true
   isDefault: false
   jsonData:
     defaultDatabase: default
@@ -124,6 +154,7 @@ datasources:
   type: vertamedia-clickhouse-datasource
   access: proxy
   url: http://docker.for.mac.localhost:8480/click1/
+  editable: true
   isDefault: false
   jsonData:
     defaultDatabase: default
