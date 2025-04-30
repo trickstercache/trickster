@@ -71,7 +71,7 @@ func isQueryBody(r *http.Request) bool {
 	}
 	ct := r.Header.Get(headers.NameContentType)
 	for _, nqb := range nqbs {
-		if ct == nqb {
+		if strings.HasPrefix(ct, nqb) {
 			return false
 		}
 	}
@@ -81,24 +81,20 @@ func isQueryBody(r *http.Request) bool {
 // GetRequestValues returns the Query Parameters for the request
 // regardless of method
 func GetRequestValues(r *http.Request) (url.Values, []byte, bool) {
-	var v url.Values
-	var b []byte
-	var isBody bool
 	switch {
 	case !methods.HasBody(r.Method):
-		v = r.URL.Query()
-		b = []byte(r.URL.RawQuery)
+		return r.URL.Query(), []byte(r.URL.RawQuery), false
 	case isMultipartOrForm(r):
 		r.ParseForm()
-		v = r.PostForm
-		b = []byte(v.Encode())
-		isBody = true
+		return r.PostForm, []byte(r.PostForm.Encode()), true
 	default:
-		v = r.URL.Query()
-		b, _ := request.GetBody(r)
-		isBody = true
-		if strings.HasPrefix(strings.ToLower(r.Header.Get(headers.NameContentType)), headers.ValueApplicationJSON) {
-			return v, b, isBody
+		v := r.URL.Query()
+		b, err := request.GetBody(r)
+		if err != nil {
+			return v, nil, false
+		}
+		if !isQueryBody(r) {
+			return v, b, true
 		}
 		if vs, err := url.ParseQuery(string(b)); err == nil && isQueryBody(r) {
 			for vsk := range vs {
@@ -111,8 +107,8 @@ func GetRequestValues(r *http.Request) (url.Values, []byte, bool) {
 				}
 			}
 		}
+		return v, b, true
 	}
-	return v, b, isBody
 }
 
 // SetRequestValues Values sets the Query Parameters for the request
