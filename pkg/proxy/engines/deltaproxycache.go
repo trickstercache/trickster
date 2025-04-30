@@ -555,10 +555,11 @@ func fetchTimeseries(pr *proxyRequest, trq *timeseries.TimeRangeQuery,
 	return ts, d, elapsed, nil
 }
 
-func recordDPCResult(r *http.Request, cacheStatus status.LookupStatus, httpStatus int, path,
-	ffStatus string, elapsed float64, needed timeseries.ExtentList, header http.Header) {
-	recordResults(r, "DeltaProxyCache", cacheStatus, httpStatus, path, ffStatus, elapsed,
-		timeseries.ExtentList(needed), header)
+func recordDPCResult(r *http.Request, cacheStatus status.LookupStatus,
+	httpStatus int, path, ffStatus string, elapsed float64,
+	needed timeseries.ExtentList, header http.Header) {
+	recordResults(r, "DeltaProxyCache", cacheStatus, httpStatus, path, ffStatus,
+		elapsed, needed, header)
 }
 
 func getDecoderReader(resp *http.Response) io.Reader {
