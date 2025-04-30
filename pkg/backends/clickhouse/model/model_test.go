@@ -121,15 +121,15 @@ var testDataset = &dataset.DataSet{
 					Points: []dataset.Point{
 						{
 							Epoch:  1577836800000000000,
-							Values: []interface{}{"1", "54"},
+							Values: []any{"1", "54"},
 						},
 						{
 							Epoch:  1577836860000000000,
-							Values: []interface{}{"1", "27"},
+							Values: []any{"1", "27"},
 						},
 						{
 							Epoch:  1577836920000000000,
-							Values: []interface{}{"1", "39"},
+							Values: []any{"1", "39"},
 						},
 					},
 				},

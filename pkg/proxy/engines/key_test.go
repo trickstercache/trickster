@@ -71,7 +71,7 @@ const testJSONDocument = `
 
 func TestDeepSearch(t *testing.T) {
 
-	var document map[string]interface{}
+	var document map[string]any
 	err := json.Unmarshal([]byte(testJSONDocument), &document)
 	if err != nil {
 		t.Error(err)

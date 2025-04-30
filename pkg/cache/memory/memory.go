@@ -126,7 +126,7 @@ func (c *Cache) store(cacheKey string, byteData []byte, refData cache.ReferenceO
 }
 
 // RetrieveReference looks for an object in cache and returns it (or an error if not found)
-func (c *Cache) RetrieveReference(cacheKey string, allowExpired bool) (interface{},
+func (c *Cache) RetrieveReference(cacheKey string, allowExpired bool) (any,
 	status.LookupStatus, error) {
 	o, s, err := c.retrieve(cacheKey, allowExpired, true)
 	if err != nil {

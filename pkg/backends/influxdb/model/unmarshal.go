@@ -78,7 +78,7 @@ func decodeCSV(reader io.Reader) (*WFDocument, error) {
 		row := &models.Row{
 			// Name, Tags deliberately left empty, they don't show up here
 			Columns: columns,
-			Values:  [][]interface{}{make([]interface{}, len(r))},
+			Values:  [][]any{make([]any, len(r))},
 		}
 		for ii, item := range r {
 			var val any
@@ -165,7 +165,7 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 			ume := make(chan error, len(wfd.Results[i].SeriesList[j].Values))
 			wg.Add(len(wfd.Results[i].SeriesList[j].Values))
 			for vi, v := range wfd.Results[i].SeriesList[j].Values {
-				go func(vals []interface{}, idx int) {
+				go func(vals []any, idx int) {
 					pt, cols, err := pointFromValues(vals, sh.TimestampIndex)
 					if err != nil {
 						ume <- err
@@ -233,14 +233,14 @@ func tryParseTimestamp(v any) int64 {
 	return -1
 }
 
-func pointFromValues(v []interface{}, tsIndex uint64) (dataset.Point,
+func pointFromValues(v []any, tsIndex uint64) (dataset.Point,
 	[]timeseries.FieldDataType, error) {
 	p := dataset.Point{}
 	ns := tryParseTimestamp(v[tsIndex])
 	if ns == -1 {
 		return p, nil, timeseries.ErrInvalidTimeFormat
 	}
-	p.Values = append(make([]interface{}, 0, len(v)-1), v[:tsIndex]...)
+	p.Values = append(make([]any, 0, len(v)-1), v[:tsIndex]...)
 	p.Values = append(p.Values, v[tsIndex+1:]...)
 	p.Epoch = epoch.Epoch(ns)
 	p.Size = 12

@@ -59,7 +59,7 @@ type MemoryCache interface {
 	Close() error
 	Configuration() *options.Options
 	StoreReference(cacheKey string, data ReferenceObject, ttl time.Duration) error
-	RetrieveReference(cacheKey string, allowExpired bool) (interface{}, status.LookupStatus, error)
+	RetrieveReference(cacheKey string, allowExpired bool) (any, status.LookupStatus, error)
 	Locker() locks.NamedLocker
 	SetLocker(locks.NamedLocker)
 }

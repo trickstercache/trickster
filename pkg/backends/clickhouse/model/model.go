@@ -457,7 +457,7 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 
 		// it's a data row. this sorts the fields into tags and values,
 		m = 0
-		p.Values = make([]interface{}, valueCount)
+		p.Values = make([]any, valueCount)
 		for j, val := range parts {
 			if tsi == j {
 				p.Epoch, c, _ = sqlparser.ParseEpoch(val)

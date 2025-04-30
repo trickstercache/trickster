@@ -161,6 +161,6 @@ func (rs *RunState) AtTerminator() bool {
 
 // Errorf returns an error token and terminates the scan by passing
 // back a nil pointer that will be the next state, terminating l.NextToken.
-func (rs *RunState) Errorf(format string, args ...interface{}) *token.Token {
+func (rs *RunState) Errorf(format string, args ...any) *token.Token {
 	return &token.Token{Typ: token.Error, Pos: rs.Start, Val: fmt.Sprintf(format, args...)}
 }

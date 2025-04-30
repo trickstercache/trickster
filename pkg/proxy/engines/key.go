@@ -110,7 +110,7 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 			pr.ParseMultipartForm(1024 * 1024)
 			bodyWasProcessed = true
 		} else if strings.HasPrefix(ct, headers.ValueApplicationJSON) {
-			var document map[string]interface{}
+			var document map[string]any
 			if err := json.Unmarshal(b, &document); err == nil {
 				for _, f := range pc.CacheKeyFormFields {
 					if v, err := deepSearch(document, f); err == nil {
@@ -146,7 +146,7 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 	return md5.Checksum(pr.URL.Path + "." + strings.Join(vals, "") + extra)
 }
 
-func deepSearch(document map[string]interface{}, key string) (string, error) {
+func deepSearch(document map[string]any, key string) (string, error) {
 
 	if key == "" {
 		return "", fmt.Errorf("invalid key name: %s", key)
@@ -160,7 +160,7 @@ func deepSearch(document map[string]interface{}, key string) (string, error) {
 			return "", errors.CouldNotFindKey(key)
 		}
 		if l != i {
-			m, ok = v.(map[string]interface{})
+			m, ok = v.(map[string]any)
 			if !ok {
 				return "", errors.CouldNotFindKey(key)
 			}

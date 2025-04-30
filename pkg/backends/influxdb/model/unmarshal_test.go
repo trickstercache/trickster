@@ -69,7 +69,7 @@ func TestUnmarshalTimeseries(t *testing.T) {
 
 func TestPointFromValues(t *testing.T) {
 
-	v := make([]interface{}, 6)
+	v := make([]any, 6)
 
 	v[0] = int64(1577836800000)
 	// v[1] will remain nil to cover the continuation case
