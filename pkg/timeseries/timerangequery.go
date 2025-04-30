@@ -20,6 +20,7 @@ package timeseries
 
 import (
 	"fmt"
+	"maps"
 	"net/url"
 	"strconv"
 	"strings"
@@ -58,6 +59,8 @@ type TimeRangeQuery struct {
 	ParsedQuery any `msg:"-"`
 	// OriginalBody is the original inbound request body untransformed if POST
 	OriginalBody []byte `msg:"-"`
+	// CacheKeyElements contains parts of the request that are used to derive a Cache Key
+	CacheKeyElements map[string]string `msg:"cke"`
 }
 
 // Clone returns an exact copy of a TimeRangeQuery
@@ -88,6 +91,10 @@ func (trq *TimeRangeQuery) Clone() *TimeRangeQuery {
 	if len(trq.OriginalBody) > 0 {
 		t.OriginalBody = make([]byte, len(trq.OriginalBody))
 		copy(t.OriginalBody, trq.OriginalBody)
+	}
+
+	if len(trq.CacheKeyElements) > 0 {
+		t.CacheKeyElements = maps.Clone(trq.CacheKeyElements)
 	}
 
 	return t
