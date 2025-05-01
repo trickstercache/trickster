@@ -31,6 +31,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
+	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
 // DeriveCacheKey calculates a query-specific keyname based on the user request
@@ -79,7 +80,7 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 	// overrides contains query data modified by the backend provider when
 	// parsing the time range (e.g., a tokenized version of the query statement)
 	var overrides map[string]string
-	used := make(map[string]struct{})
+	used := sets.NewStringSet()
 	if trq != nil && len(trq.CacheKeyElements) > 0 {
 		overrides = trq.CacheKeyElements
 	} else {
@@ -98,7 +99,7 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 		for p := range qp {
 			if v, ok := overrides[p]; ok {
 				vals[k] = fmt.Sprintf("%s.%s.", p, v)
-				used[p] = struct{}{}
+				used.Add(p)
 			} else {
 				vals[k] = fmt.Sprintf("%s.%s.", p, qp.Get(p))
 			}
@@ -108,7 +109,7 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 		for _, p := range pc.CacheKeyParams {
 			if v, ok := overrides[p]; ok {
 				vals[k] = fmt.Sprintf("%s.%s.", p, v)
-				used[p] = struct{}{}
+				used.Add(p)
 				k++
 				continue
 			}
@@ -149,7 +150,7 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 		if bodyWasProcessed {
 			for _, f := range pc.CacheKeyFormFields {
 				if v, ok := overrides[f]; ok {
-					used[f] = struct{}{}
+					used.Add(f)
 					vals[k] = fmt.Sprintf("%s.%s.", f, v)
 					k++
 					continue
