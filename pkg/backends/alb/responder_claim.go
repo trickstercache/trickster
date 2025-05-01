@@ -18,14 +18,13 @@ package alb
 
 import (
 	"context"
-	"sync"
+	"sync/atomic"
 )
 
-// responderClaim is a construct that allows the only first claimaint
+// responderClaim is a construct that allows only the first claimant
 // to the response to act as the downstream responder
 type responderClaim struct {
-	mtx      sync.Mutex
-	lockVal  int
+	lockVal  int64
 	contexts []context.Context
 }
 
@@ -37,23 +36,18 @@ func newResponderClaim(sz int) *responderClaim {
 	return &responderClaim{lockVal: -1, contexts: contexts}
 }
 
-func (rc *responderClaim) Claim(i int) bool {
-	rc.mtx.Lock()
-	if rc.lockVal == i {
-		rc.mtx.Unlock()
+func (rc *responderClaim) Claim(i int64) bool {
+	if atomic.LoadInt64(&rc.lockVal) == i {
 		return true
 	}
-	if rc.lockVal == -1 {
-		rc.lockVal = i
+	if atomic.CompareAndSwapInt64(&rc.lockVal, -1, i) {
 		for j, ctx := range rc.contexts {
-			if j != i {
+			if int64(j) != i {
 				go ctx.Done()
 			}
 		}
-		rc.mtx.Unlock()
 		return true
 	}
 	rc.contexts[i].Done()
-	rc.mtx.Unlock()
 	return false
 }

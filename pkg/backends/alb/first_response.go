@@ -84,7 +84,7 @@ func (frg *firstResponseGate) WriteHeader(i int) {
 	if custom {
 		_, isGood = frg.fgrCodes[i]
 	}
-	if (!frg.fgr || !custom && i < 400 || custom && isGood) && frg.c.Claim(frg.i) {
+	if (!frg.fgr || !custom && i < 400 || custom && isGood) && frg.c.Claim(int64(frg.i)) {
 		if len(frg.fh) > 0 {
 			headers.Merge(frg.ResponseWriter.Header(), frg.fh)
 			frg.fh = nil
@@ -95,7 +95,7 @@ func (frg *firstResponseGate) WriteHeader(i int) {
 }
 
 func (frg *firstResponseGate) Write(b []byte) (int, error) {
-	if frg.c.Claim(frg.i) {
+	if frg.c.Claim(int64(frg.i)) {
 		if len(frg.fh) > 0 {
 			headers.Merge(frg.ResponseWriter.Header(), frg.fh)
 			frg.fh = nil
