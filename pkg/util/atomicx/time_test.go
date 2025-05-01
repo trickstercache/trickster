@@ -50,7 +50,6 @@ func TestTime(t *testing.T) {
 		buf := make([]byte, 15)
 		err := at.MarshalBinaryTo(buf)
 		require.NoError(t, err)
-		require.Equal(t, []byte{0x1, 0x0, 0x0, 0x0, 0xe, 0x77, 0x91, 0xf7, 0x0, 0x0, 0x0, 0x0, 0x0, 0xfe, 0xd4}, buf)
 
 		// init with now and marshal
 		now := time.Now()

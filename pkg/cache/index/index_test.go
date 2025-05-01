@@ -316,9 +316,6 @@ func TestUpdateObjectTTL(t *testing.T) {
 	if exp.IsZero() {
 		t.Errorf("expected non-zero time, got %v", obj.Expiration.Load())
 	}
-
-	t.Log(exp)
-
 }
 
 func TestUpdateOptions(t *testing.T) {

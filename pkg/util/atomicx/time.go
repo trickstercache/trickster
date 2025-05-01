@@ -17,14 +17,19 @@
 package atomicx
 
 import (
-	"encoding/binary"
 	"sync/atomic"
 	"time"
 
 	"github.com/tinylib/msgp/msgp"
 )
 
-//go:generate go tool msgp
+const (
+	TimeExtensionType = 101
+)
+
+func init() {
+	msgp.RegisterExtension(TimeExtensionType, func() msgp.Extension { return new(Time) })
+}
 
 func NewTime(in time.Time) *Time {
 	t := Time{}
@@ -32,24 +37,10 @@ func NewTime(in time.Time) *Time {
 	return &t
 }
 
-//msgp:ignore Time
-
-func init() {
-	msgp.RegisterExtension(TimeExtensionType, func() msgp.Extension { return new(Time) })
-}
-
 // Time is a wrapper for safely accessing a timestamp that implements the msgp.Extension interface
 type Time struct {
 	atomic.Pointer[time.Time]
 }
-
-const (
-	TimeExtensionType = 101
-)
-
-var (
-	encoder = binary.LittleEndian
-)
 
 func (t *Time) ExtensionType() int8 {
 	return TimeExtensionType
