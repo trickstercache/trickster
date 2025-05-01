@@ -27,28 +27,32 @@ import (
 )
 
 func SetBody(r *http.Request, body []byte) *http.Request {
-
 	if len(body) == 0 {
 		r.Body = io.NopCloser(bytes.NewReader([]byte{}))
 		r.ContentLength = 0
 		r.Header.Del(headers.NameContentLength)
+	} else {
+		r.Body = io.NopCloser(bytes.NewReader(body))
+		r.Header.Set(headers.NameContentLength, strconv.Itoa(len(body)))
+		r.ContentLength = int64(len(body))
 	}
-
-	r.Body = io.NopCloser(bytes.NewReader(body))
-	r.Header.Set(headers.NameContentLength, strconv.Itoa(len(body)))
-	r.ContentLength = int64(len(body))
 	return r.WithContext(tctx.WithRequestBody(r.Context(), body))
 }
 
-func GetBody(r *http.Request) []byte {
+func GetBody(r *http.Request) ([]byte, error) {
 	body := tctx.RequestBody(r.Context())
 	if body != nil {
-		return body
+		return body, nil
 	}
 	if r.Body == nil {
-		return nil
+		return nil, nil
 	}
-	body, _ = io.ReadAll(r.Body)
+	var err error
+	body, err = io.ReadAll(r.Body)
+	if err != nil {
+		return nil, err
+	}
+	r.Body.Close()
 	r.Body = io.NopCloser(bytes.NewReader(body)) // allows body to be re-read from byte 0
-	return body
+	return body, nil
 }

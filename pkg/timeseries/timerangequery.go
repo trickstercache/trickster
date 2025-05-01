@@ -19,7 +19,8 @@
 package timeseries
 
 import (
-	"fmt"
+	"encoding/json"
+	"maps"
 	"net/url"
 	"strconv"
 	"strings"
@@ -58,6 +59,8 @@ type TimeRangeQuery struct {
 	ParsedQuery any `msg:"-"`
 	// OriginalBody is the original inbound request body untransformed if POST
 	OriginalBody []byte `msg:"-"`
+	// CacheKeyElements contains parts of the request that are used to derive a Cache Key
+	CacheKeyElements map[string]string `msg:"cke"`
 }
 
 // Clone returns an exact copy of a TimeRangeQuery
@@ -68,7 +71,7 @@ func (trq *TimeRangeQuery) Clone() *TimeRangeQuery {
 		StepNS:              trq.StepNS,
 		Extent:              Extent{Start: trq.Extent.Start, End: trq.Extent.End},
 		IsOffset:            trq.IsOffset,
-		TimestampDefinition: trq.TimestampDefinition.Clone(),
+		TimestampDefinition: trq.TimestampDefinition,
 	}
 
 	if trq.TagFieldDefintions != nil {
@@ -90,6 +93,10 @@ func (trq *TimeRangeQuery) Clone() *TimeRangeQuery {
 		copy(t.OriginalBody, trq.OriginalBody)
 	}
 
+	if len(trq.CacheKeyElements) > 0 {
+		t.CacheKeyElements = maps.Clone(trq.CacheKeyElements)
+	}
+
 	return t
 }
 
@@ -105,10 +112,33 @@ func (trq *TimeRangeQuery) NormalizeExtent() {
 }
 
 func (trq *TimeRangeQuery) String() string {
-	return fmt.Sprintf(`{ "statement": "%s", "step": "%s", "extent": "%s", "tsd": "%s", "td": %s, "vd": %s }`,
-		strings.ReplaceAll(trq.Statement, `"`, `\"`), trq.Step.String(),
-		trq.Extent.String(), trq.TimestampDefinition.String(),
-		FieldDefinitions(trq.TagFieldDefintions).String(), FieldDefinitions(trq.ValueFieldDefinitions))
+	var td, vd FieldDefinitions
+	if len(trq.TagFieldDefintions) == 0 {
+		td = make(FieldDefinitions, 0)
+	} else {
+		td = FieldDefinitions(trq.TagFieldDefintions)
+	}
+	if len(trq.ValueFieldDefinitions) == 0 {
+		vd = make(FieldDefinitions, 0)
+	} else {
+		vd = FieldDefinitions(trq.ValueFieldDefinitions)
+	}
+	b, _ := json.Marshal(struct {
+		Statement string           `json:"statement"`
+		Step      string           `json:"step"`
+		Extent    string           `json:"extent"`
+		TSDef     FieldDefinition  `json:"tsd"`
+		TagDefs   FieldDefinitions `json:"td"`
+		ValDefs   FieldDefinitions `json:"vd"`
+	}{
+		Statement: trq.Statement,
+		Step:      trq.Step.String(),
+		Extent:    trq.Extent.String(),
+		TSDef:     trq.TimestampDefinition,
+		TagDefs:   td,
+		ValDefs:   vd,
+	})
+	return string(b)
 }
 
 // GetBackfillTolerance will return the backfill tolerance for the query based on the provided

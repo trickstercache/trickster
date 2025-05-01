@@ -29,6 +29,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
+	tstr "github.com/trickstercache/trickster/v2/pkg/util/strings"
 
 	lumberjack "gopkg.in/natefinch/lumberjack.v2"
 )
@@ -390,7 +391,7 @@ func quoteAsNeeded(input string) string {
 	if !strings.Contains(input, " ") {
 		return input
 	}
-	return `"` + input + `"`
+	return `"` + tstr.EscapeQuotes(input) + `"`
 }
 
 func (l *logger) Level() level.Level {

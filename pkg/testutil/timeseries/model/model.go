@@ -46,9 +46,9 @@ type WFData struct {
 
 // WFResult is the Result section of the WFD
 type WFResult struct {
-	Metric dataset.Tags    `json:"metric"`
-	Values [][]interface{} `json:"values"`
-	Value  []interface{}   `json:"value"`
+	Metric dataset.Tags `json:"metric"`
+	Values [][]any      `json:"values"`
+	Value  []any        `json:"value"`
 }
 
 // Modeler returns a default Modeler
@@ -123,7 +123,7 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 	return ds, nil
 }
 
-func pointFromValues(v []interface{}) dataset.Point {
+func pointFromValues(v []any) dataset.Point {
 	if len(v) != 2 {
 		return dataset.Point{}
 	}
@@ -139,7 +139,7 @@ func pointFromValues(v []interface{}) dataset.Point {
 	return dataset.Point{
 		Epoch:  epoch.Epoch(f1) * 1000000000,
 		Size:   len(s) + 16,
-		Values: []interface{}{s},
+		Values: []any{s},
 	}
 }
 

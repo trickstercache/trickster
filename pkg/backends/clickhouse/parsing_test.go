@@ -257,31 +257,31 @@ func TestParseSelectTokens(t *testing.T) {
 		t.Error("expected ErrMissingTimeseries")
 	}
 
-	_, err = parseSelectTokens(map[string]interface{}{}, nil, nil)
+	_, err = parseSelectTokens(map[string]any{}, nil, nil)
 	if err != sqlparser.ErrMissingTimeseries {
 		t.Error("expected ErrMissingTimeseries")
 	}
 
-	_, err = parseSelectTokens(map[string]interface{}{"selectTokens": false}, nil, nil)
+	_, err = parseSelectTokens(map[string]any{"selectTokens": false}, nil, nil)
 	if err != sqlparser.ErrMissingTimeseries {
 		t.Error("expected ErrMissingTimeseries")
 	}
 
-	_, err = parseSelectTokens(map[string]interface{}{
+	_, err = parseSelectTokens(map[string]any{
 		"selectTokens": []token.Tokens{},
 	}, nil, nil)
 	if err != sqlparser.ErrMissingTimeseries {
 		t.Error("expected ErrMissingTimeseries")
 	}
 
-	_, err = parseSelectTokens(map[string]interface{}{
+	_, err = parseSelectTokens(map[string]any{
 		"selectTokens": []token.Tokens{{}},
 	}, nil, nil)
 	if err != sqlparser.ErrMissingTimeseries {
 		t.Error("expected ErrMissingTimeseries")
 	}
 
-	_, err = parseSelectTokens(map[string]interface{}{
+	_, err = parseSelectTokens(map[string]any{
 		"selectTokens": []token.Tokens{
 			{
 				&token.Token{Typ: tokenToStartOfInterval},
@@ -294,7 +294,7 @@ func TestParseSelectTokens(t *testing.T) {
 		t.Error("expected invalid syntax error", err)
 	}
 
-	_, err = parseSelectTokens(map[string]interface{}{
+	_, err = parseSelectTokens(map[string]any{
 		"selectTokens": []token.Tokens{
 			{
 				&token.Token{Typ: tokenToStartOfInterval},
@@ -308,7 +308,7 @@ func TestParseSelectTokens(t *testing.T) {
 		t.Error("expected step parser error", err)
 	}
 
-	_, err = parseSelectTokens(map[string]interface{}{
+	_, err = parseSelectTokens(map[string]any{
 		"selectTokens": []token.Tokens{
 			{
 				&token.Token{Typ: tokenIntDiv, Val: "intdiv"},
@@ -329,7 +329,7 @@ func TestParseSelectTokens(t *testing.T) {
 		t.Error(err)
 	}
 
-	_, err = parseSelectTokens(map[string]interface{}{
+	_, err = parseSelectTokens(map[string]any{
 		"selectTokens": []token.Tokens{
 			{
 				&token.Token{Typ: tokenIntDiv, Val: "intdiv"},
@@ -350,7 +350,7 @@ func TestParseSelectTokens(t *testing.T) {
 		t.Error("expected invalid syntax error", err)
 	}
 
-	_, err = parseSelectTokens(map[string]interface{}{
+	_, err = parseSelectTokens(map[string]any{
 		"selectTokens": []token.Tokens{
 			{
 				&token.Token{Typ: tokenIntDiv, Val: "intdiv"},
@@ -371,7 +371,7 @@ func TestParseSelectTokens(t *testing.T) {
 		t.Error("expected invalid syntax error", err)
 	}
 
-	_, err = parseSelectTokens(map[string]interface{}{
+	_, err = parseSelectTokens(map[string]any{
 		"selectTokens": []token.Tokens{
 			{
 				&token.Token{Typ: tokenIntDiv, Val: "intdiv"},
@@ -392,7 +392,7 @@ func TestParseSelectTokens(t *testing.T) {
 		t.Error("expected ErrUnsupportedOutputFormat")
 	}
 
-	_, err = parseSelectTokens(map[string]interface{}{
+	_, err = parseSelectTokens(map[string]any{
 		"selectTokens": []token.Tokens{
 			{
 				&token.Token{Typ: tokenIntDiv, Val: "intdiv"},
@@ -413,7 +413,7 @@ func TestParseSelectTokens(t *testing.T) {
 		t.Error("expected invalid syntax error", err)
 	}
 
-	_, err = parseSelectTokens(map[string]interface{}{
+	_, err = parseSelectTokens(map[string]any{
 		"selectTokens": []token.Tokens{
 			{
 				&token.Token{Typ: tokenIntDiv, Val: "intdiv"},
@@ -434,7 +434,7 @@ func TestParseSelectTokens(t *testing.T) {
 		t.Error("expected ErrStepParse")
 	}
 
-	_, err = parseSelectTokens(map[string]interface{}{
+	_, err = parseSelectTokens(map[string]any{
 		"selectTokens": []token.Tokens{
 			{
 				&token.Token{Typ: tokenToStartOf, Val: "invalid"},
@@ -445,7 +445,7 @@ func TestParseSelectTokens(t *testing.T) {
 		t.Error("expected ErrUnsupportedToStartOfFunc")
 	}
 
-	_, err = parseSelectTokens(map[string]interface{}{
+	_, err = parseSelectTokens(map[string]any{
 		"selectTokens": []token.Tokens{
 			{
 				&token.Token{Typ: tokenToStartOf, Val: "tostartoffiveminute"},
@@ -461,16 +461,14 @@ func TestParseSelectTokens(t *testing.T) {
 }
 
 func TestParseTimeField(t *testing.T) {
-	_, err := parseTimeField(&token.Token{Typ: token.Number, Val: "not-a-number"})
+	_, _, err := parseTimeField(&token.Token{Typ: token.Number, Val: "not-a-number"})
 	if err == nil {
 		t.Error("expected syntax error")
 	}
 }
 
 func TestParseGroupByTokens(t *testing.T) {
-	_, err := parseGroupByTokens(map[string]interface{}{
-		"groupByTokens": nil,
-	}, nil, nil)
+	_, err := parseGroupByTokens(map[string]any{"groupByTokens": nil}, nil)
 	if err != sql.ErrInvalidGroupByClause {
 		t.Error("expected ErrInvalidGroupByClause")
 	}
@@ -521,16 +519,16 @@ func TestParseWhereTokens(t *testing.T) {
 				&token.Token{Typ: token.LogicalAnd, Val: "and"},
 				&token.Token{Typ: token.String, Val: "not-a-time"},
 			},
-		}, nil, nil, &timeseries.TimeRangeQuery{Step: 60 * time.Second},
+		}, nil, nil, &timeseries.TimeRangeQuery{Step: time.Minute},
 			&timeseries.RequestOptions{BaseTimestampFieldName: "x"},
 			sql.ErrInvalidInputLength,
 		},
 	}
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			var m map[string]interface{}
+			var m map[string]any
 			if test.wt != nil || test.pwt != nil || test.wv != nil {
-				m = make(map[string]interface{})
+				m = make(map[string]any)
 				if len(test.wt) > 0 {
 					m["whereTokens"] = test.wt
 				}
@@ -549,14 +547,14 @@ func TestParseWhereTokens(t *testing.T) {
 	}
 
 	// cases the loop could not account for
-	_, err := parseWhereTokens(map[string]interface{}{
+	_, err := parseWhereTokens(map[string]any{
 		"whereTokens": false,
 	},
 		nil, &timeseries.RequestOptions{})
 	if err != sqlparser.ErrNotTimeRangeQuery {
 		t.Error("expected ErrNotTimeRangeQuery got", err)
 	}
-	_, err = parseWhereTokens(map[string]interface{}{
+	_, err = parseWhereTokens(map[string]any{
 		"whereTokens": []token.Tokens{},
 	},
 		nil, &timeseries.RequestOptions{})

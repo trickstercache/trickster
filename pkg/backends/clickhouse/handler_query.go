@@ -17,10 +17,11 @@
 package clickhouse
 
 import (
-	"io"
 	"net/http"
 	"strings"
 
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/engines"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
@@ -30,30 +31,22 @@ import (
 
 // QueryHandler handles timeseries requests for ClickHouse and processes them through the delta proxy cache
 func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
-
-	q := r.URL.Query()
-	sqlQuery := q.Get(upQuery)
+	var sqlQuery string
 	if methods.HasBody(r.Method) {
-		b, err := io.ReadAll(r.Body)
+		b, err := request.GetBody(r)
 		if err != nil {
 			handlers.HandleBadRequestResponse(w, r)
 			return
 		}
-		var body []byte
-		if sqlQuery != "" {
-			body = append([]byte(sqlQuery), b...)
-			q.Del(upQuery)
-			r.URL.RawQuery = q.Encode()
-		} else {
-			body = b
-		}
-		sqlQuery = string(body)
-		r = request.SetBody(r, body)
+		sqlQuery = string(b)
+	} else {
+		sqlQuery = r.URL.Query().Get(upQuery)
 	}
 	sqlQuery = strings.ToLower(sqlQuery)
-	if !strings.HasPrefix(sqlQuery, "select ") &&
-		!strings.HasPrefix(sqlQuery, "select\n") &&
-		!strings.Contains(sqlQuery, " select ") {
+	if !strings.Contains(sqlQuery, "select ") &&
+		!strings.Contains(sqlQuery, "select\n") &&
+		!strings.Contains(sqlQuery, "select\t") {
+		logger.Debug("request is not a SELECT query, proxying.", logging.Pairs{"query": sqlQuery})
 		c.ProxyHandler(w, r)
 		return
 	}

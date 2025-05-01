@@ -21,7 +21,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
@@ -34,7 +33,8 @@ const (
 )
 
 // SetExtent will change the upstream request query to use the provided Extent
-func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery, extent *timeseries.Extent) {
+func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
+	extent *timeseries.Extent) {
 
 	if extent == nil || r == nil || trq == nil {
 		return
@@ -43,7 +43,9 @@ func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery, exte
 	qi := r.URL.Query()
 	isBody := methods.HasBody(r.Method)
 
-	sqlQuery := interpolateTimeQuery(trq.Statement, trq.TimestampDefinition.Name, trq.TimestampDefinition.ProviderData1, extent, trq.Step)
+	sqlQuery := interpolateTimeQuery(trq.Statement, trq.TimestampDefinition.Name,
+		trq.TimestampDefinition.ProviderData1,
+		trq.TimestampDefinition.ProviderData2, extent)
 	if isBody {
 		// TODO: the return value (a new *http.Request) is not being used
 		request.SetBody(r, []byte(sqlQuery))
@@ -54,11 +56,22 @@ func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery, exte
 
 }
 
-func interpolateTimeQuery(template string, tsFieldName string, timeFormat int, extent *timeseries.Extent, step time.Duration) string {
+func interpolateTimeQuery(template string, tsFieldName string,
+	resultTimeFormat int, dbTimeFormat int,
+	extent *timeseries.Extent) string {
 
-	var start, end int64
+	var start, end, tStart, tEnd int64
 
-	switch timeFormat {
+	switch resultTimeFormat {
+	case 1:
+		tStart = extent.Start.UnixNano() / 1000000
+		tEnd = extent.End.UnixNano() / 1000000
+	default:
+		tStart = extent.Start.Unix()
+		tEnd = extent.End.Unix()
+	}
+
+	switch dbTimeFormat {
 	case 1:
 		start = extent.Start.UnixNano() / 1000000
 		end = extent.End.UnixNano() / 1000000
@@ -67,9 +80,9 @@ func interpolateTimeQuery(template string, tsFieldName string, timeFormat int, e
 		end = extent.End.Unix()
 	}
 
-	rangeCondition := fmt.Sprintf("%s BETWEEN %d AND %d", tsFieldName, start, end)
+	trange := fmt.Sprintf("%s BETWEEN %d AND %d", tsFieldName, tStart, tEnd)
 	return strings.NewReplacer(
-		tkRange, rangeCondition,
+		tkRange, trange,
 		tkTS1, strconv.FormatInt(start, 10),
 		tkTS2, strconv.FormatInt(end, 10),
 		tkFormat, "TSVWithNamesAndTypes",

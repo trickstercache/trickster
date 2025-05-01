@@ -75,7 +75,7 @@ func TestIsFromFieldDelimiterType(t *testing.T) {
 }
 
 func TestHasLimitClause(t *testing.T) {
-	if HasLimitClause(map[string]interface{}{}) {
+	if HasLimitClause(map[string]any{}) {
 		t.Error("expected false")
 	}
 }

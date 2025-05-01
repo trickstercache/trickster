@@ -184,7 +184,7 @@ insert-license-headers:
 	@for file in $$(find ./pkg ./cmd -name '*.go') ; \
 	do \
 		output=$$(grep 'Licensed under the Apache License' $$file) ; \
-		if [[ "$$?" != "0" ]]; then \
+		if [ "$$?" != "0" ]; then \
 			echo "adding License Header Block to $$file" ; \
 			cat $(BUMPER_FILE) > /tmp/trktmp.go ; \
 			cat $$file >> /tmp/trktmp.go ; \
@@ -203,7 +203,7 @@ check-license-headers:
 	@for file in $$(find ./pkg ./cmd -name '*.go') ; \
 	do \
 		output=$$(grep 'Licensed under the Apache License' $$file) ; \
-		if [[ "$$?" != "0" ]]; then \
+		if [ "$$?" != "0" ]; then \
 			echo "" ; \
 			echo "Some project code files do not have the Trickster / Apache 2.0 license header." ; \
 			echo "Run 'make insert-license-headers' and commit the changes." ; \
@@ -216,14 +216,14 @@ check-license-headers:
 .PHONY: spelling
 spelling:
 	@which mdspell ; \
-	if [[ "$$?" != "0" ]]; then \
+	if [ "$$?" != "0" ]; then \
 		echo "mdspell is not installed" ; \
 	else \
 		mdspell './README.md' './docs/**/*.md' ; \
 	fi
 
 	@which codespell ; \
-	if [[ "$$?" != "0" ]]; then \
+	if [ "$$?" != "0" ]; then \
 		echo "codespell is not installed" ; \
 	else \
 		codespell --skip='vendor,*.git,*.png,*.pdf,*.tiff,*.plist,*.pem,rangesim*.go,*.gz,go.sum,go.mod' --ignore-words='./testdata/ignore_words.txt' ; \
@@ -251,13 +251,17 @@ get-tools: get-msgpack
 get-msgpack:
 	$(GO) get -tool github.com/tinylib/msgp@v1.2.5
 
-.PHONY: start-developer
-start-developer:
+.PHONY: developer-start
+developer-start:
 	@cd docs/developer/environment && docker compose up -d
 	
-.PHONY: delete-developer
-delete-developer:
+.PHONY: developer-delete
+developer-delete:
 	@cd docs/developer/environment && docker compose down
+
+.PHONY: developer-seed-data
+developer-seed-data:
+	@cd docs/developer/environment && docker compose run --rm clickhouse_seed
 
 .PHONY: serve-dev
 serve-dev:

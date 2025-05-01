@@ -25,13 +25,13 @@ import (
 
 const latencyHeaderName = "x-simulated-latency"
 
-func processSimulatedLatency(w http.ResponseWriter, min, max time.Duration) {
-	if (min == 0 && max == 0) || (min < 0 || max < 0) {
+func processSimulatedLatency(w http.ResponseWriter, minLatency, maxLatency time.Duration) {
+	if (minLatency == 0 && maxLatency == 0) || (minLatency < 0 || maxLatency < 0) {
 		return
 	}
 
-	minMS := min.Milliseconds()
-	maxMS := max.Milliseconds()
+	minMS := minLatency.Milliseconds()
+	maxMS := maxLatency.Milliseconds()
 
 	var ms int64
 	if minMS >= maxMS {

@@ -24,42 +24,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 )
 
-func TestTestColString(t *testing.T) {
-	c := col{
-		name:  "test",
-		val:   "yes",
-		quote: "`",
-	}
-	expected := "			\"test\": `yes`"
-	got := c.String()
-
-	if expected != got {
-		t.Errorf("expected: %s\ngot:      %s", expected, got)
-	}
-}
-
-func TestTestColsString(t *testing.T) {
-	c := cols{
-		col{
-			name:  "test",
-			val:   "yes",
-			quote: "`",
-		},
-		col{
-			name:  "test2",
-			val:   "no",
-			quote: "|",
-		},
-	}
-
-	expected := "		{\n			\"test\": `yes`,\n			\"test2\": |no|\n		}"
-	got := c.String()
-
-	if expected != got {
-		t.Errorf("expected: %s\ngot:      %s", expected, got)
-	}
-}
-
 func TestNewModeler(t *testing.T) {
 	m := NewModeler()
 	if m == nil || m.CacheMarshaler == nil {
@@ -101,52 +65,7 @@ const testDataCSVWithNames = `t,hostname,avg_query,avg_global_thread
 1577836920000,localhost,1,39
 `
 
-const testDataJSON = `{
-	"meta":
-	[
-		{
-			"name": "t",
-			"type": "UInt64"
-		},
-		{
-			"name": "hostname",
-			"type": "String"
-		},
-		{
-			"name": "avg_query",
-			"type": "Float64"
-		},
-		{
-			"name": "avg_global_thread",
-			"type": "Float64"
-		}
-	],
-
-	"data":
-	[
-		{
-			"t": "1577836800000",
-			"hostname": "localhost",
-			"avg_query": 1,
-			"avg_global_thread": 54
-		},
-		{
-			"t": "1577836860000",
-			"hostname": "localhost",
-			"avg_query": 1,
-			"avg_global_thread": 27
-		},
-		{
-			"t": "1577836920000",
-			"hostname": "localhost",
-			"avg_query": 1,
-			"avg_global_thread": 39
-		}
-	],
-	
-	"rows": 3
-}
-`
+const testDataJSONMinified = `{"meta":[{"name":"t","type":"UInt64"},{"name":"hostname","type":"String"},{"name":"avg_query","type":"Float64"},{"name":"avg_global_thread","type":"Float64"}],"data":[{"t":"1577836800000","hostname":"localhost","avg_query":"1","avg_global_thread":"54"},{"t":"1577836860000","hostname":"localhost","avg_query":"1","avg_global_thread":"27"},{"t":"1577836920000","hostname":"localhost","avg_query":"1","avg_global_thread":"39"}],"rows":3}`
 
 var testTRQ = &timeseries.TimeRangeQuery{
 	Statement: testStatement,
@@ -202,15 +121,15 @@ var testDataset = &dataset.DataSet{
 					Points: []dataset.Point{
 						{
 							Epoch:  1577836800000000000,
-							Values: []interface{}{"1", "54"},
+							Values: []any{"1", "54"},
 						},
 						{
 							Epoch:  1577836860000000000,
-							Values: []interface{}{"1", "27"},
+							Values: []any{"1", "27"},
 						},
 						{
 							Epoch:  1577836920000000000,
-							Values: []interface{}{"1", "39"},
+							Values: []any{"1", "39"},
 						},
 					},
 				},
@@ -221,7 +140,7 @@ var testDataset = &dataset.DataSet{
 
 func TestMarshalJSON(t *testing.T) {
 	b, _ := marshalTimeseriesJSON(testDataset, &timeseries.RequestOptions{}, 200)
-	if string(b) != testDataJSON {
+	if string(b) != testDataJSONMinified {
 		t.Error()
 	}
 }

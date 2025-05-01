@@ -103,12 +103,12 @@ func (c *Cache) Retrieve(cacheKey string, allowExpired bool) ([]byte, status.Loo
 	if err == badger.ErrKeyNotFound {
 		err = cache.ErrKNF
 		logger.Debug("badger cache miss", logging.Pairs{"key": cacheKey})
-		metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.Provider)
+		metrics.ObserveCacheMiss(c.Name, c.Config.Provider)
 		return nil, status.LookupStatusKeyMiss, err
 	}
 
 	logger.Debug("badger cache retrieve failed", logging.Pairs{"key": cacheKey, "reason": err.Error()})
-	metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.Provider)
+	metrics.ObserveCacheMiss(c.Name, c.Config.Provider)
 	return data, status.LookupStatusError, err
 }
 

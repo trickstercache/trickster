@@ -78,7 +78,7 @@ func TestUnmarshalTimeseriesReader(t *testing.T) {
 func TestPointFromValues(t *testing.T) {
 
 	tests := []struct {
-		values []interface{}
+		values []any
 		expP   epoch.Epoch
 		expE   error
 	}{
@@ -88,12 +88,12 @@ func TestPointFromValues(t *testing.T) {
 			expE:   timeseries.ErrInvalidBody,
 		},
 		{
-			values: []interface{}{"abc", 85},
+			values: []any{"abc", 85},
 			expP:   0,
 			expE:   timeseries.ErrInvalidBody,
 		},
 		{
-			values: []interface{}{86.7, 85},
+			values: []any{86.7, 85},
 			expP:   0,
 			expE:   timeseries.ErrInvalidBody,
 		},
@@ -135,7 +135,7 @@ func TestMarshalTSOrVectorWriter(t *testing.T) {
 		Points: []dataset.Point{
 			{
 				Epoch:  1234567980,
-				Values: []interface{}{"12345"},
+				Values: []any{"12345"},
 			},
 		},
 	}

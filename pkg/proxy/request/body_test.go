@@ -27,25 +27,25 @@ func TestGetAndSetBody(t *testing.T) {
 
 	req, _ := http.NewRequest(http.MethodPost, "http://127.0.0.1/", nil)
 
-	body := GetBody(req)
+	body, _ := GetBody(req)
 	if string(body) != "" {
 		t.Errorf("expected `` got `%s`", string(body))
 	}
 
 	req.Body = io.NopCloser(bytes.NewReader([]byte("trickster")))
-	body = GetBody(req)
+	body, _ = GetBody(req)
 	if string(body) != "trickster" {
 		t.Errorf("expected `` got `%s`", string(body))
 	}
 
 	req = SetBody(req, nil)
-	body = GetBody(req)
+	body, _ = GetBody(req)
 	if string(body) != "" {
 		t.Errorf("expected `` got `%s`", string(body))
 	}
 
 	req = SetBody(req, []byte("trickster"))
-	body = GetBody(req)
+	body, _ = GetBody(req)
 	if string(body) != "trickster" {
 		t.Errorf("expected `trickster` got `%s`", string(body))
 	}

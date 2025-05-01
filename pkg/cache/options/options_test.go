@@ -50,7 +50,7 @@ func TestCloneAndEqual(t *testing.T) {
 func TestSetDefaults(t *testing.T) {
 
 	// SetDefaults(metadata yamlx.KeyLookup,
-	//activeCaches map[string]interface{})
+	//activeCaches map[string]any)
 	// ([]string, error) {
 
 	o := New()

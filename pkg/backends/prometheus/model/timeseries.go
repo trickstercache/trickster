@@ -47,9 +47,9 @@ type WFMatrixData struct {
 
 // WFResult is the Result section of the WFD
 type WFResult struct {
-	Metric dataset.Tags    `json:"metric"`
-	Values [][]interface{} `json:"values"`
-	Value  []interface{}   `json:"value"`
+	Metric dataset.Tags `json:"metric"`
+	Values [][]any      `json:"values"`
+	Value  []any        `json:"value"`
 }
 
 // NewModeler returns a collection of modeling functions for prometheus interoperability
@@ -113,7 +113,7 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 			var wg sync.WaitGroup
 			wg.Add(len(pr.Values))
 			for i, v := range pr.Values {
-				go func(index int, vals []interface{}) {
+				go func(index int, vals []any) {
 					pt, _ := pointFromValues(vals)
 					if pt.Epoch > 0 {
 						atomic.AddInt64(&ps, int64(pt.Size))
@@ -142,7 +142,7 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 	return ds, nil
 }
 
-func pointFromValues(v []interface{}) (dataset.Point, error) {
+func pointFromValues(v []any) (dataset.Point, error) {
 	if len(v) != 2 {
 		return dataset.Point{}, timeseries.ErrInvalidBody
 	}
@@ -158,7 +158,7 @@ func pointFromValues(v []interface{}) (dataset.Point, error) {
 	return dataset.Point{
 		Epoch:  epoch.Epoch(f1) * 1000000000,
 		Size:   len(s) + 32, // 8 bytes for epoch, 8 bytes for size, 16 bytes for s stringHeader
-		Values: []interface{}{s},
+		Values: []any{s},
 	}, nil
 }
 

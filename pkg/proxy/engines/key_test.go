@@ -37,6 +37,7 @@ import (
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
 const testMultipartBoundary = `; boundary=------------------------d0509edbe55938c0`
@@ -70,7 +71,7 @@ const testJSONDocument = `
 
 func TestDeepSearch(t *testing.T) {
 
-	var document map[string]interface{}
+	var document map[string]any
 	err := json.Unmarshal([]byte(testJSONDocument), &document)
 	if err != nil {
 		t.Error(err)
@@ -171,8 +172,8 @@ func TestDeriveCacheKey(t *testing.T) {
 	tr.Header.Set(headers.NameContentLength, strconv.Itoa(len(testMultipartBody)))
 	pr = newProxyRequest(tr, nil)
 	ck = pr.DeriveCacheKey("extra")
-	if ck != "4766201eee9ef1916f57309deae22f90" {
-		t.Errorf("expected %s got %s", "4766201eee9ef1916f57309deae22f90", ck)
+	if ck != "1caeb9fb60f5613ed89d68d5ab8bed99" {
+		t.Errorf("expected %s got %s", "1caeb9fb60f5613ed89d68d5ab8bed99", ck)
 	}
 
 	_, _, tr, _, _ = tu.NewTestInstance("", nil, 0, "", nil,
@@ -210,8 +211,8 @@ func TestDeriveCacheKey(t *testing.T) {
 }
 
 func exampleKeyHasher(path string, params url.Values, headers http.Header,
-	body io.ReadCloser, extra string) (string, io.ReadCloser) {
-	return "test-key", nil
+	body []byte, trq *timeseries.TimeRangeQuery, extra string) string {
+	return "test-key"
 }
 
 func TestDeriveCacheKeyAuthHeader(t *testing.T) {

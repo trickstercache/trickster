@@ -118,7 +118,7 @@ func TestPointClone(t *testing.T) {
 	p := &Point{
 		Epoch:  epoch.Epoch(1),
 		Size:   27,
-		Values: []interface{}{1},
+		Values: []any{1},
 	}
 	p2 := p.Clone()
 	if p2.Epoch != p.Epoch || p2.Values[0] != p.Values[0] || p2.Size != p.Size {
@@ -130,7 +130,7 @@ func BenchmarkPointClone(b *testing.B) {
 	p := &Point{
 		Epoch:  epoch.Epoch(1),
 		Size:   27,
-		Values: []interface{}{1},
+		Values: []any{1},
 	}
 	for i := 0; i < b.N; i++ {
 		p.Clone()

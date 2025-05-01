@@ -29,7 +29,7 @@ func init() {
 }
 
 func TestObserveCacheMiss(t *testing.T) {
-	ObserveCacheMiss(testCacheKey, testCacheName, testCacheProvider)
+	ObserveCacheMiss(testCacheName, testCacheProvider)
 }
 
 // ObserveCacheDel records a cache deletion event

@@ -172,7 +172,7 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool,
 		data = b.Get([]byte(cacheKey))
 		if data == nil {
 			logger.Debug("bbolt cache miss", logging.Pairs{"key": cacheKey})
-			metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.Provider)
+			metrics.ObserveCacheMiss(c.Name, c.Config.Provider)
 			return cache.ErrKNF
 		}
 		return nil
@@ -207,7 +207,7 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool,
 	}
 	// Cache Object has been expired but not reaped, go ahead and delete it
 	go c.remove(cacheKey, false)
-	metrics.ObserveCacheMiss(cacheKey, c.Name, c.Config.Provider)
+	metrics.ObserveCacheMiss(c.Name, c.Config.Provider)
 	return nil, status.LookupStatusKeyMiss, cache.ErrKNF
 }
 

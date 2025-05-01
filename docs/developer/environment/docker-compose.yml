@@ -17,6 +17,8 @@ services:
   grafana:
     image: grafana/grafana:11.6.0
     user: nobody
+    environment:
+      - GF_INSTALL_PLUGINS=vertamedia-clickhouse-datasource
     volumes:
       - ./docker-compose-data/grafana-config:/etc/grafana
       - ./docker-compose-data/dashboards:/var/lib/grafana/dashboards
@@ -27,16 +29,8 @@ services:
     ports:
      - 3000:3000
     depends_on:
-      - influxdb
-
-  chronograf:
-    image: chronograf:1.10
-    ports:
-     - 8888:8888
-    build:
-      context: .
-      network: host
-    restart: always
+      - influxdb2
+      - prometheus
 
   # TSDBs
 
@@ -56,25 +50,11 @@ services:
      - 9090:9090
     restart: always
 
-  # influxdb 1.8
-  influxdb:
-    image: influxdb:1.8
-    volumes:
-      - influxdbv1:/var/lib/influxdb
-      - ./docker-compose-data/influxdb-config:/etc/influxdb
-    build:
-      context: .
-      network: host
-    restart: always
-    ports:
-     - 8186:8086
-    environment:
-      - "INFLUXDB_DB=trickster"
-
-  # influxdb 2.0
+  # influxdb 2.x
   influxdb2:
     image: influxdb:2.7
     volumes:
+      # Mount for influxdb data directory and configuration
       - ./docker-compose-data/influxdb2-config/config.yml:/etc/influxdb2/config.yml
       - influxdbv2:/.influxdbv2
     build:
@@ -85,10 +65,9 @@ services:
      - 8086:8086
     command:
       - '--reporting-disabled'
-      # Mount for influxdb data directory and configuration
 
   # influxdb 2.0 cli, for seeding influxdb on startup
-  influxdb_seed:
+  influxdb2_seed:
     links:
       - influxdb2
     image: influxdb:2.7
@@ -167,9 +146,7 @@ services:
     volumes:
       - ./docker-compose-data/telegraf-config/telegraf.conf:/etc/telegraf/telegraf.conf
     depends_on:
-      - influxdb
       - influxdb2
 
 volumes:
-  influxdbv1:
   influxdbv2:

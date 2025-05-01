@@ -19,13 +19,14 @@ package model
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
-	"sort"
-	"strconv"
 	"strings"
-	"sync"
 
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
@@ -44,38 +45,32 @@ var marshalers = map[byte]dataset.Marshaler{
 	5: marshalTimeseriesTSVWithNamesAndTypes,
 }
 
+type WFDocument struct {
+	Meta WFMeta `json:"meta"`
+	Data WFData `json:"data"`
+	Rows *int   `json:"rows"`
+}
+
+type WFMeta []WFMetaItem
+type WFMetaItem struct {
+	Name string `json:"name,omitempty"`
+	Type string `json:"type,omitempty"`
+}
+
+type WFDataItemElement struct {
+	Key   string
+	Value string
+}
+
+type WFDataItem []WFDataItemElement
+
+type WFData []WFDataItem
+
 type tsvWriter struct {
 	io.Writer
 	writeNames bool
 	writeTypes bool
 	separator  string
-}
-
-type col struct {
-	name  string
-	val   string
-	quote string
-}
-
-func (c col) String() string {
-	return `			"` + c.name + `": ` + c.quote + c.val + c.quote
-}
-
-type cols []col
-
-func (cs cols) String() string {
-	var sb = strings.Builder{}
-	sb.WriteString("		{\n")
-	j := len(cs) - 1
-	for i, c := range cs {
-		sb.WriteString(c.String())
-		if i < j {
-			sb.WriteString(",")
-		}
-		sb.WriteString("\n")
-	}
-	sb.WriteString("		}")
-	return sb.String()
 }
 
 // NewModeler returns a collection of modeling functions for clickhouse interoperability
@@ -92,162 +87,18 @@ func NewModeler() *timeseries.Modeler {
 
 func marshalTimeseriesJSON(ds *dataset.DataSet, rlo *timeseries.RequestOptions,
 	status int) ([]byte, error) {
-	type md struct {
-		name  string
-		typ   string
-		quote bool
+	wf, err := toWireFormat(ds)
+	if err != nil {
+		logger.Error("failed to convert dataset to clickhouse wire format",
+			logging.Pairs{"error": err})
 	}
-	trq := ds.TimeRangeQuery
-	if trq == nil {
-		return nil, timeseries.ErrNoTimerangeQuery
-	}
-	var h map[string]string
 	if rlo != nil {
 		if rlo.VendorData == nil {
-			h = make(map[string]string)
-			rlo.VendorData = h
+			rlo.VendorData = make(map[string]string)
 		}
-	} else {
-		h = make(map[string]string)
+		rlo.VendorData[formatHeader] = "JSON"
 	}
-	h[formatHeader] = "JSON"
-	w := new(bytes.Buffer)
-	w.Write([]byte(`{
-	"meta":
-	[`,
-	))
-
-	fieldCount := len(trq.TagFieldDefintions) + len(trq.ValueFieldDefinitions)
-	mds := make([]md, fieldCount)
-
-	fd := trq.TimestampDefinition
-
-	mds[fd.OutputPosition] = md{
-		name:  fd.Name,
-		typ:   fd.SDataType,
-		quote: shouldQuote(fd.SDataType),
-	}
-
-	for _, fd = range trq.TagFieldDefintions {
-		if fd.Name == trq.TimestampDefinition.Name {
-			continue
-		}
-		if fd.OutputPosition > fieldCount {
-			continue
-		}
-		mds[fd.OutputPosition] = md{
-			name:  fd.Name,
-			typ:   fd.SDataType,
-			quote: shouldQuote(fd.SDataType),
-		}
-
-	}
-	for _, fd = range trq.ValueFieldDefinitions {
-		if fd.OutputPosition > fieldCount {
-			continue
-		}
-		mds[fd.OutputPosition] = md{
-			name:  fd.Name,
-			typ:   fd.SDataType,
-			quote: shouldQuote(fd.SDataType),
-		}
-	}
-	l := len(mds) - 1
-	for i, m := range mds {
-		w.Write([]byte(`
-		{
-			"name": "` + m.name + `",
-			"type": "` + m.typ + `"
-		}`),
-		)
-		if i < l {
-			w.Write([]byte(","))
-		}
-	}
-
-	w.Write([]byte(`
-	],
-
-	"data":
-	[
-`,
-	))
-
-	var j int64
-	var ending = ""
-	for _, s := range ds.Results[0].SeriesList {
-		for _, p := range s.Points {
-			c := make(cols, fieldCount)
-			fd := trq.TimestampDefinition
-			if fd.OutputPosition > fieldCount {
-				continue
-			}
-			c[fd.OutputPosition] = col{
-				name: mds[fd.OutputPosition].name,
-				val:  sqlparser.FormatOutputTime(p.Epoch, byte(fd.DataType)),
-			}
-			if mds[fd.OutputPosition].quote {
-				c[fd.OutputPosition].quote = `"`
-			}
-
-			var i int
-			for _, fd = range trq.TagFieldDefintions {
-				if fd.Name == trq.TimestampDefinition.Name {
-					continue
-				}
-				if fd.OutputPosition > fieldCount {
-					continue
-				}
-
-				c[fd.OutputPosition] = col{
-					name: mds[fd.OutputPosition].name,
-					val:  s.Header.Tags[fd.Name],
-				}
-				if mds[fd.OutputPosition].quote {
-					c[fd.OutputPosition].quote = `"`
-				}
-			}
-
-			for i, fd = range trq.ValueFieldDefinitions {
-				if fd.Name == trq.TimestampDefinition.Name {
-					continue
-				}
-				if fd.OutputPosition > fieldCount {
-					continue
-				}
-				if i >= len(p.Values) {
-					continue
-				}
-				c[fd.OutputPosition] = col{
-					name: mds[fd.OutputPosition].name,
-					val:  p.Values[i].(string),
-				}
-				if mds[fd.OutputPosition].quote {
-					c[fd.OutputPosition].quote = `"`
-				}
-			}
-
-			w.Write([]byte(ending))
-			w.Write([]byte(c.String()))
-			j++
-			ending = ",\n"
-		}
-	}
-	w.Write([]byte(
-		`
-	],
-	
-	"rows": `))
-	w.Write([]byte(strconv.FormatInt(j, 10)))
-	w.Write([]byte("\n}\n"))
-	return w.Bytes(), nil
-}
-
-func shouldQuote(in string) bool {
-	if in == "String" || in == "UInt64" || in == "FixedString" {
-		return true
-	}
-	return false
+	return json.Marshal(wf)
 }
 
 func marshalTimeseriesCSV(ds *dataset.DataSet, rlo *timeseries.RequestOptions,
@@ -515,17 +366,19 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 
 	br := bufio.NewReader(reader)
 
+	// ClickHouse returns a TSV, which gets converted directly into a DataSet
 	for {
+		// this iterates the TSV line-by-line until the end is reached
 		line, err := br.ReadString('\n')
 		if len(line) > 0 {
 			line = line[:len(line)-1]
 		}
-		if err != nil && (err != io.EOF || line == "") {
+		if err != nil && (err != io.EOF) {
 			break
 		}
 
+		// this splits the line into cells
 		parts := strings.Split(line, "\t")
-		lp := len(parts)
 
 		p := dataset.Point{}
 		var ps, m int
@@ -536,7 +389,7 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 		}
 
 		// ensure the correct number of fields are present on this line
-		if i != 0 && lp != fieldCount {
+		if i != 0 && len(parts) != fieldCount {
 			if i == 1 {
 				return nil, timeseries.ErrTableHeader
 			}
@@ -602,9 +455,9 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 			goto nextIteration
 		}
 
-		// it's a data row. this sort the fields into tags and values,
+		// it's a data row. this sorts the fields into tags and values,
 		m = 0
-		p.Values = make([]interface{}, valueCount)
+		p.Values = make([]any, valueCount)
 		for j, val := range parts {
 			if tsi == j {
 				p.Epoch, c, _ = sqlparser.ParseEpoch(val)
@@ -649,15 +502,130 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 		return nil, err
 	}
 
-	var wg sync.WaitGroup
-	wg.Add(len(r.SeriesList))
-	for _, s = range r.SeriesList {
-		go func(gs *dataset.Series) {
-			sort.Sort(gs.Points)
-			wg.Done()
-		}(s)
-	}
-	wg.Wait()
+	r.SeriesList.SortPoints()
 
 	return ds, nil
+}
+
+func toWireFormat(ds *dataset.DataSet) (*WFDocument, error) {
+
+	trq := ds.TimeRangeQuery
+	tsfd := trq.TimestampDefinition
+
+	d := &WFDocument{}
+
+	// metadata
+	fieldCount := len(trq.TagFieldDefintions) +
+		len(trq.ValueFieldDefinitions)
+	d.Meta = make(WFMeta, fieldCount)
+	d.Meta[tsfd.OutputPosition] = WFMetaItem{
+		Name: tsfd.Name,
+		Type: tsfd.SDataType,
+	}
+
+	for _, fd := range trq.TagFieldDefintions {
+		if fd.Name == trq.TimestampDefinition.Name {
+			continue
+		}
+		if fd.OutputPosition > fieldCount {
+			continue
+		}
+		d.Meta[fd.OutputPosition] = WFMetaItem{
+			Name: fd.Name,
+			Type: fd.SDataType,
+		}
+
+	}
+	for _, fd := range trq.ValueFieldDefinitions {
+		if fd.OutputPosition > fieldCount {
+			continue
+		}
+		d.Meta[fd.OutputPosition] = WFMetaItem{
+			Name: fd.Name,
+			Type: fd.SDataType,
+		}
+	}
+
+	// timeseries data
+	var maxRowCount, k int
+	if len(ds.Results) == 0 {
+		d.Rows = &k
+		return d, nil
+	}
+
+	for _, s := range ds.Results[0].SeriesList {
+		maxRowCount += len(s.Points)
+	}
+
+	data := make(WFData, maxRowCount)
+	for _, s := range ds.Results[0].SeriesList {
+		for _, p := range s.Points {
+			item := make(WFDataItem, fieldCount)
+			if tsfd.OutputPosition > fieldCount {
+				continue
+			}
+			item[tsfd.OutputPosition] = WFDataItemElement{
+				Key:   d.Meta[tsfd.OutputPosition].Name,
+				Value: sqlparser.FormatOutputTime(p.Epoch, byte(tsfd.DataType)),
+			}
+
+			for _, fd := range trq.TagFieldDefintions {
+				if fd.Name == trq.TimestampDefinition.Name {
+					continue
+				}
+				if fd.OutputPosition > fieldCount {
+					continue
+				}
+
+				item[fd.OutputPosition] = WFDataItemElement{
+					Key:   d.Meta[fd.OutputPosition].Name,
+					Value: s.Header.Tags[fd.Name],
+				}
+			}
+
+			for i, fd := range trq.ValueFieldDefinitions {
+				if fd.Name == trq.TimestampDefinition.Name {
+					continue
+				}
+				if fd.OutputPosition > fieldCount {
+					continue
+				}
+				if i >= len(p.Values) {
+					continue
+				}
+				item[fd.OutputPosition] = WFDataItemElement{
+					Key:   d.Meta[fd.OutputPosition].Name,
+					Value: p.Values[i].(string),
+				}
+			}
+			var j int
+			for i := range item {
+				if item[i].Key == "" {
+					continue
+				}
+				item[j] = item[i]
+				j++
+			}
+			data[k] = item[:j]
+			k++
+		}
+	}
+
+	d.Data = data[:k]
+	d.Rows = &k
+	return d, nil
+}
+
+func (d WFDataItem) MarshalJSON() ([]byte, error) {
+	buf := bytes.NewBuffer([]byte{'{'})
+	var sep bool
+	for _, e := range d {
+		if sep {
+			buf.Write([]byte{','})
+		}
+		fmt.Fprintf(buf, `"%s":"%s"`, e.Key, e.Value)
+		sep = true
+	}
+	buf.Write([]byte{'}'})
+	return buf.Bytes(), nil
 }

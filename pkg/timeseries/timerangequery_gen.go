@@ -114,6 +114,36 @@ func (z *TimeRangeQuery) DecodeMsg(dc *msgp.Reader) (err error) {
 					return
 				}
 			}
+		case "cke":
+			var zb0004 uint32
+			zb0004, err = dc.ReadMapHeader()
+			if err != nil {
+				err = msgp.WrapError(err, "CacheKeyElements")
+				return
+			}
+			if z.CacheKeyElements == nil {
+				z.CacheKeyElements = make(map[string]string, zb0004)
+			} else if len(z.CacheKeyElements) > 0 {
+				for key := range z.CacheKeyElements {
+					delete(z.CacheKeyElements, key)
+				}
+			}
+			for zb0004 > 0 {
+				zb0004--
+				var za0003 string
+				var za0004 string
+				za0003, err = dc.ReadString()
+				if err != nil {
+					err = msgp.WrapError(err, "CacheKeyElements")
+					return
+				}
+				za0004, err = dc.ReadString()
+				if err != nil {
+					err = msgp.WrapError(err, "CacheKeyElements", za0003)
+					return
+				}
+				z.CacheKeyElements[za0003] = za0004
+			}
 		default:
 			err = dc.Skip()
 			if err != nil {
@@ -127,9 +157,9 @@ func (z *TimeRangeQuery) DecodeMsg(dc *msgp.Reader) (err error) {
 
 // EncodeMsg implements msgp.Encodable
 func (z *TimeRangeQuery) EncodeMsg(en *msgp.Writer) (err error) {
-	// map header, size 8
+	// map header, size 9
 	// write "stmt"
-	err = en.Append(0x88, 0xa4, 0x73, 0x74, 0x6d, 0x74)
+	err = en.Append(0x89, 0xa4, 0x73, 0x74, 0x6d, 0x74)
 	if err != nil {
 		return
 	}
@@ -222,15 +252,37 @@ func (z *TimeRangeQuery) EncodeMsg(en *msgp.Writer) (err error) {
 			return
 		}
 	}
+	// write "cke"
+	err = en.Append(0xa3, 0x63, 0x6b, 0x65)
+	if err != nil {
+		return
+	}
+	err = en.WriteMapHeader(uint32(len(z.CacheKeyElements)))
+	if err != nil {
+		err = msgp.WrapError(err, "CacheKeyElements")
+		return
+	}
+	for za0003, za0004 := range z.CacheKeyElements {
+		err = en.WriteString(za0003)
+		if err != nil {
+			err = msgp.WrapError(err, "CacheKeyElements")
+			return
+		}
+		err = en.WriteString(za0004)
+		if err != nil {
+			err = msgp.WrapError(err, "CacheKeyElements", za0003)
+			return
+		}
+	}
 	return
 }
 
 // MarshalMsg implements msgp.Marshaler
 func (z *TimeRangeQuery) MarshalMsg(b []byte) (o []byte, err error) {
 	o = msgp.Require(b, z.Msgsize())
-	// map header, size 8
+	// map header, size 9
 	// string "stmt"
-	o = append(o, 0x88, 0xa4, 0x73, 0x74, 0x6d, 0x74)
+	o = append(o, 0x89, 0xa4, 0x73, 0x74, 0x6d, 0x74)
 	o = msgp.AppendString(o, z.Statement)
 	// string "ex"
 	o = append(o, 0xa2, 0x65, 0x78)
@@ -274,6 +326,13 @@ func (z *TimeRangeQuery) MarshalMsg(b []byte) (o []byte, err error) {
 			err = msgp.WrapError(err, "ValueFieldDefinitions", za0002)
 			return
 		}
+	}
+	// string "cke"
+	o = append(o, 0xa3, 0x63, 0x6b, 0x65)
+	o = msgp.AppendMapHeader(o, uint32(len(z.CacheKeyElements)))
+	for za0003, za0004 := range z.CacheKeyElements {
+		o = msgp.AppendString(o, za0003)
+		o = msgp.AppendString(o, za0004)
 	}
 	return
 }
@@ -370,6 +429,36 @@ func (z *TimeRangeQuery) UnmarshalMsg(bts []byte) (o []byte, err error) {
 					return
 				}
 			}
+		case "cke":
+			var zb0004 uint32
+			zb0004, bts, err = msgp.ReadMapHeaderBytes(bts)
+			if err != nil {
+				err = msgp.WrapError(err, "CacheKeyElements")
+				return
+			}
+			if z.CacheKeyElements == nil {
+				z.CacheKeyElements = make(map[string]string, zb0004)
+			} else if len(z.CacheKeyElements) > 0 {
+				for key := range z.CacheKeyElements {
+					delete(z.CacheKeyElements, key)
+				}
+			}
+			for zb0004 > 0 {
+				var za0003 string
+				var za0004 string
+				zb0004--
+				za0003, bts, err = msgp.ReadStringBytes(bts)
+				if err != nil {
+					err = msgp.WrapError(err, "CacheKeyElements")
+					return
+				}
+				za0004, bts, err = msgp.ReadStringBytes(bts)
+				if err != nil {
+					err = msgp.WrapError(err, "CacheKeyElements", za0003)
+					return
+				}
+				z.CacheKeyElements[za0003] = za0004
+			}
 		default:
 			bts, err = msgp.Skip(bts)
 			if err != nil {
@@ -391,6 +480,13 @@ func (z *TimeRangeQuery) Msgsize() (s int) {
 	s += 7 + msgp.ArrayHeaderSize
 	for za0002 := range z.ValueFieldDefinitions {
 		s += z.ValueFieldDefinitions[za0002].Msgsize()
+	}
+	s += 4 + msgp.MapHeaderSize
+	if z.CacheKeyElements != nil {
+		for za0003, za0004 := range z.CacheKeyElements {
+			_ = za0004
+			s += msgp.StringPrefixSize + len(za0003) + msgp.StringPrefixSize + len(za0004)
+		}
 	}
 	return
 }

@@ -82,9 +82,7 @@ func (sh *SeriesHeader) Clone() SeriesHeader {
 		Size:           sh.Size,
 		hash:           sh.hash,
 	}
-	for i, fd := range sh.FieldsList {
-		clone.FieldsList[i] = fd.Clone()
-	}
+	copy(clone.FieldsList, sh.FieldsList)
 	return clone
 }
 

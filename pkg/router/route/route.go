@@ -29,20 +29,20 @@ type Route struct {
 
 type Routes []*Route
 
-type RouteLookup map[string]*Route
-type RouteLookupLookup map[string]RouteLookup
+type Lookup map[string]*Route
+type LookupLookup map[string]Lookup
 
 type PrefixRouteSet struct {
 	Path           string
 	PathLen        int
-	RoutesByMethod RouteLookup
+	RoutesByMethod Lookup
 }
 
 type PrefixRouteSets []*PrefixRouteSet
 type PrefixRouteSetLookup map[string]*PrefixRouteSet
 
 type HostRouteSet struct {
-	ExactMatchRoutes     RouteLookupLookup
+	ExactMatchRoutes     LookupLookup
 	PrefixMatchRoutes    PrefixRouteSets
 	PrefixMatchRoutesLkp PrefixRouteSetLookup
 }

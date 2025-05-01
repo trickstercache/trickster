@@ -18,12 +18,16 @@
 package strings
 
 import (
+	"encoding/json"
 	"errors"
-	"fmt"
 	"slices"
 	"strconv"
 	"strings"
 )
+
+func EscapeQuotes(s string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(s, `"`, `\"`), `\\"`, `\"`)
+}
 
 // Get s[i:i+length].
 // Returns an empty string if i+length > len(s)
@@ -44,27 +48,20 @@ func Unique(in []string) []string {
 // ErrKeyNotInMap represents an error for key not found in map
 var ErrKeyNotInMap = errors.New("key not found in map")
 
-// StringMap represents a map[string]string
-type StringMap map[string]string
+// Map represents a map[string]string
+type Map map[string]string
 
 // Lookup represents a map[string]any with assumed nil values
 type Lookup map[string]any
 
-func (m StringMap) String() string {
-	delimiter := ""
-	sb := &strings.Builder{}
-	sb.WriteString("{")
-	for k, v := range m {
-		fmt.Fprintf(sb, `%s"%s":"%s"`, delimiter, k, v)
-		delimiter = ", "
-	}
-	sb.WriteString("}")
-	return sb.String()
+func (m Map) String() string {
+	b, _ := json.Marshal(m)
+	return string(b)
 }
 
 // GetInt returns an integer value from the map, if convertible
 // If not, an error is returned with a value of 0
-func (m StringMap) GetInt(key string) (int, error) {
+func (m Map) GetInt(key string) (int, error) {
 	value, ok := m[key]
 	if !ok {
 		return 0, ErrKeyNotInMap

@@ -80,7 +80,7 @@ func (rt *lmRouter) RegisterRoute(path string, hosts, methods []string,
 		hrc, ok := rt.routes[h]
 		if !ok || hrc == nil {
 			hrc = &route.HostRouteSet{
-				ExactMatchRoutes:     make(route.RouteLookupLookup),
+				ExactMatchRoutes:     make(route.LookupLookup),
 				PrefixMatchRoutes:    make(route.PrefixRouteSets, 0, 16),
 				PrefixMatchRoutesLkp: make(route.PrefixRouteSetLookup),
 			}
@@ -89,7 +89,7 @@ func (rt *lmRouter) RegisterRoute(path string, hosts, methods []string,
 		if !matchPrefix {
 			rl, ok := hrc.ExactMatchRoutes[path]
 			if rl == nil || !ok {
-				rl = make(route.RouteLookup)
+				rl = make(route.Lookup)
 				hrc.ExactMatchRoutes[path] = rl
 			}
 			for _, m := range methods {
@@ -119,7 +119,7 @@ func (rt *lmRouter) RegisterRoute(path string, hosts, methods []string,
 			prc = &route.PrefixRouteSet{
 				Path:           path,
 				PathLen:        pl,
-				RoutesByMethod: make(route.RouteLookup),
+				RoutesByMethod: make(route.Lookup),
 			}
 			hrc.PrefixMatchRoutesLkp[path] = prc
 			if len(hrc.PrefixMatchRoutes) == 0 {

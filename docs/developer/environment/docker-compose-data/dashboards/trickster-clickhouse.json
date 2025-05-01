@@ -1,0 +1,168 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": 5,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {
+        "type": "vertamedia-clickhouse-datasource",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 19,
+        "w": 16,
+        "x": 4,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.6.0",
+      "targets": [
+        {
+          "adHocFilters": [],
+          "adHocValuesQuery": "",
+          "add_metadata": true,
+          "contextWindowSize": "10",
+          "database": "default",
+          "datasource": {
+            "type": "vertamedia-clickhouse-datasource",
+            "uid": "${datasource}"
+          },
+          "dateColDataType": "pickup_date",
+          "dateTimeColDataType": "pickup_datetime",
+          "dateTimeType": "DATETIME",
+          "editorMode": "sql",
+          "extrapolate": true,
+          "format": "time_series",
+          "formattedQuery": "SELECT $timeSeries as t, count() FROM $table WHERE $timeFilter GROUP BY t ORDER BY t",
+          "interval": "",
+          "intervalFactor": 1,
+          "query": "SELECT $timeSeries as t, count() as Count FROM $table WHERE $timeFilter GROUP BY t ORDER BY t",
+          "rawQuery": "/* grafana dashboard=ClickHouse Testing - Trips, user=1 */\nSELECT (intDiv(toUInt32(pickup_datetime), 20) * 20) * 1000 as t, count() as Coun FROM default.trips WHERE pickup_date >= toDate(1745841685) AND pickup_date <= toDate(1745863285) AND pickup_datetime >= toDateTime(1745841685) AND pickup_datetime <= toDateTime(1745863285) GROUP BY t ORDER BY t",
+          "refId": "A",
+          "round": "0s",
+          "skip_comments": true,
+          "table": "trips",
+          "useWindowFuncForMacros": true
+        }
+      ],
+      "title": "# Trips Over Time",
+      "type": "timeseries"
+    }
+  ],
+  "preload": false,
+  "refresh": "5s",
+  "schemaVersion": 41,
+  "tags": [],
+  "templating": {
+    "list": [
+      {
+        "allowCustomValue": false,
+        "current": {
+          "text": "clickhouse-direct",
+          "value": "P788589A3A7614F2B"
+        },
+        "description": "",
+        "name": "datasource",
+        "options": [],
+        "query": "vertamedia-clickhouse-datasource",
+        "refresh": 1,
+        "regex": "",
+        "type": "datasource"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "ClickHouse",
+  "uid": "aekapw5xl2epsc",
+  "version": 2
+}

@@ -6,7 +6,7 @@ providers:
   # <int> org id. will default to orgId 1 if not specified
   orgId: 1
   # <string, required> name of the dashboard folder. Required
-  folder: 'trickster-demo'
+  folder: 'Trickster Developer'
   # <string> folder UID. will be automatically generated if not specified
   folderUid: ''
   # <string, required> provider type. Required
