@@ -19,7 +19,7 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": 2,
+  "id": 3,
   "links": [],
   "panels": [
     {
@@ -710,8 +710,8 @@
     "list": [
       {
         "current": {
-          "text": "1: InfluxDB | Direct | QL | GET",
-          "value": "ds_infl_direct_ql_get"
+          "text": "4: Trickster | MemoryCache | QL | POST",
+          "value": "ds_infl_trk_ql_post"
         },
         "includeAll": false,
         "label": "Datasource",
@@ -719,7 +719,7 @@
         "options": [],
         "query": "influxdb",
         "refresh": 1,
-        "regex": "",
+        "regex": "/ QL /",
         "type": "datasource"
       }
     ]
@@ -730,7 +730,7 @@
   },
   "timepicker": {},
   "timezone": "",
-  "title": "InfluxDB Status",
+  "title": "InfluxDB / InfluxQL",
   "uid": "tpSLo5dGz",
   "version": 2
 }

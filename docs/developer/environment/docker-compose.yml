@@ -73,7 +73,7 @@ services:
     environment:
       - "INFLUXDB_DB=trickster"
 
-  # influxdb 2.0
+  # influxdb 2.x
   influxdb2:
     image: influxdb:2.7
     volumes:

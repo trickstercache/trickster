@@ -82,6 +82,7 @@ datasources:
   jsonData:
     httpMode: GET
     httpHeaderName1: 'Authorization'
+    queryLanguage: influxql
   secureJsonData:
     httpHeaderValue1: 'Token trickster-demo-token'
 
@@ -96,6 +97,7 @@ datasources:
   jsonData:
     httpMode: POST
     httpHeaderName1: 'Authorization'
+    queryLanguage: influxql
   secureJsonData:
     httpHeaderValue1: 'Token trickster-demo-token'
 
@@ -110,6 +112,7 @@ datasources:
   jsonData:
     httpMode: GET
     httpHeaderName1: 'Authorization'
+    queryLanguage: influxql
   secureJsonData:
     httpHeaderValue1: 'Token trickster-demo-token'
 
@@ -124,6 +127,7 @@ datasources:
   jsonData:
     httpMode: POST
     httpHeaderName1: 'Authorization'
+    queryLanguage: influxql
   secureJsonData:
     httpHeaderValue1: 'Token trickster-demo-token'
 

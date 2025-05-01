@@ -12,7 +12,7 @@
       }
     ]
   },
-  "description": "Demonstration Dashboard for Trickster",
+  "description": "Trickster Developer Dashboard for Prometheus",
   "editable": true,
   "gnetId": 3681,
   "graphTooltip": 1,
@@ -1558,7 +1558,7 @@
     ]
   },
   "timezone": "browser",
-  "title": "Trickster Status",
+  "title": "Prometheus",
   "uid": "uAJ8w1wZz",
   "variables": {
     "list": []
