@@ -20,17 +20,19 @@ import (
 	"context"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/util/atomicx"
 )
 
 // newestResponseGate is a ResponseWriter that only writes when the muxer selects it based on the
 // newness of the response's LastModified header when compared to other responses in the Mux
 type newestResponseGate struct {
 	http.ResponseWriter
-	i, s  int
+	i, s  int64
 	ca    bool
 	h, wh http.Header
 	nrm   *newestResponseMux
@@ -38,16 +40,15 @@ type newestResponseGate struct {
 
 // newestResponseMux keeps track the index of the newest LastModified time registered
 type newestResponseMux struct {
-	i        int
-	t        time.Time
-	mtx      sync.RWMutex
+	i        int64
+	t        atomicx.Time
 	wg       sync.WaitGroup
 	contexts []context.Context
 }
 
 func newNewestResponseMux(sz int) *newestResponseMux {
 	contexts := make([]context.Context, sz)
-	for i := 0; i < sz; i++ {
+	for i := range sz {
 		contexts[i] = context.Background()
 	}
 	nrm := &newestResponseMux{i: -1, contexts: contexts}
@@ -60,18 +61,16 @@ func (nrm *newestResponseMux) registerLM(i int, t time.Time) bool {
 	if t.IsZero() {
 		return false
 	}
-	nrm.mtx.Lock()
-	if nrm.t.IsZero() || t.After(nrm.t) {
-		nrm.i = i
-		nrm.t = t
+	if nrm.t.Load().IsZero() || t.After(nrm.t.Load()) {
+		atomic.StoreInt64(&nrm.i, int64(i))
+		nrm.t.Store(t)
 		ok = true
 	}
-	nrm.mtx.Unlock()
 	return ok
 }
 
-func (nrm *newestResponseMux) getNewest() int {
-	return nrm.i
+func (nrm *newestResponseMux) getNewest() int64 {
+	return atomic.LoadInt64(&nrm.i)
 }
 
 func (c *Client) handleNewestResponse(w http.ResponseWriter, r *http.Request) {
@@ -108,7 +107,7 @@ func (c *Client) handleNewestResponse(w http.ResponseWriter, r *http.Request) {
 }
 
 func newNewestResponseGate(w http.ResponseWriter, i int, nrm *newestResponseMux) *newestResponseGate {
-	return &newestResponseGate{ResponseWriter: w, h: http.Header{}, i: i, nrm: nrm}
+	return &newestResponseGate{ResponseWriter: w, h: http.Header{}, i: int64(i), nrm: nrm}
 }
 
 func (nrg *newestResponseGate) Header() http.Header {
@@ -116,12 +115,12 @@ func (nrg *newestResponseGate) Header() http.Header {
 }
 
 func (nrg *newestResponseGate) WriteHeader(i int) {
-	nrg.s = i
+	nrg.s = int64(i)
 	nrg.wh = nrg.h
 	nrg.h = nil
 	lm, err := time.Parse(time.RFC1123, nrg.wh.Get(headers.NameLastModified))
 	if err == nil {
-		nrg.ca = !nrg.nrm.registerLM(nrg.i, lm)
+		nrg.ca = !nrg.nrm.registerLM(int(nrg.i), lm)
 	}
 	nrg.nrm.wg.Done()
 }
@@ -137,7 +136,7 @@ func (nrg *newestResponseGate) Write(b []byte) (int, error) {
 			headers.Merge(nrg.ResponseWriter.Header(), nrg.wh)
 			nrg.wh = nil
 		}
-		nrg.ResponseWriter.WriteHeader(nrg.s)
+		nrg.ResponseWriter.WriteHeader(int(nrg.s))
 		nrg.ResponseWriter.Write(b)
 	}
 	return l, nil

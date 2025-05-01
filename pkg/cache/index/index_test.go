@@ -108,25 +108,25 @@ func TestReap(t *testing.T) {
 	idx.UpdateObject(&Object{Key: "cache.index", Value: []byte("test_value")})
 
 	// add expired key to cover the case that the reaper remove it
-	idx.UpdateObject(&Object{Key: "test.1", Value: []byte("test_value"), Expiration: atomicx.NewTime(time.Now().Add(-time.Minute))})
+	idx.UpdateObject(&Object{Key: "test.1", Value: []byte("test_value"), Expiration: *atomicx.NewTime(time.Now().Add(-time.Minute))})
 
 	// add key with no expiration which should not be reaped
 	idx.UpdateObject(&Object{Key: "test.2", Value: []byte("test_value")})
 
 	// add key with future expiration which should not be reaped
-	idx.UpdateObject(&Object{Key: "test.3", Value: []byte("test_value"), Expiration: atomicx.NewTime(time.Now().Add(time.Minute))})
+	idx.UpdateObject(&Object{Key: "test.3", Value: []byte("test_value"), Expiration: *atomicx.NewTime(time.Now().Add(time.Minute))})
 
 	// trigger a reap that will only remove expired elements but not size down the full cache
 	idx.reap()
 
 	// add key with future expiration which should not be reaped
-	idx.UpdateObject(&Object{Key: "test.4", Value: []byte("test_value"), Expiration: atomicx.NewTime(time.Now().Add(time.Minute))})
+	idx.UpdateObject(&Object{Key: "test.4", Value: []byte("test_value"), Expiration: *atomicx.NewTime(time.Now().Add(time.Minute))})
 
 	// add key with future expiration which should not be reaped
-	idx.UpdateObject(&Object{Key: "test.5", Value: []byte("test_value"), Expiration: atomicx.NewTime(time.Now().Add(time.Minute))})
+	idx.UpdateObject(&Object{Key: "test.5", Value: []byte("test_value"), Expiration: *atomicx.NewTime(time.Now().Add(time.Minute))})
 
 	// add key with future expiration which should not be reaped
-	idx.UpdateObject(&Object{Key: "test.6", Value: []byte("test_value"), Expiration: atomicx.NewTime(time.Now().Add(time.Minute))})
+	idx.UpdateObject(&Object{Key: "test.6", Value: []byte("test_value"), Expiration: *atomicx.NewTime(time.Now().Add(time.Minute))})
 
 	// trigger size-based reap eviction of some elements
 	idx.reap()
@@ -139,15 +139,15 @@ func TestReap(t *testing.T) {
 		t.Errorf("expected key %s to be missing", "test.2")
 	}
 
-	if _, ok := idx.Objects.Load("test.3"); !ok {
+	if _, ok := idx.Objects.Load("test.3"); ok {
 		t.Errorf("expected key %s to be missing", "test.3")
 	}
 
-	if _, ok := idx.Objects.Load("test.4"); !ok {
+	if _, ok := idx.Objects.Load("test.4"); ok {
 		t.Errorf("expected key %s to be missing", "test.4")
 	}
 
-	if _, ok := idx.Objects.Load("test.5"); !ok {
+	if _, ok := idx.Objects.Load("test.5"); ok {
 		t.Errorf("expected key %s to be missing", "test.5")
 	}
 
@@ -158,7 +158,7 @@ func TestReap(t *testing.T) {
 	// add key with large body to reach byte size threshold
 	idx.UpdateObject(&Object{Key: "test.7",
 		Value:      []byte("test_value00000000000000000000000000000000000000000000000000000000000000000000000000000"),
-		Expiration: atomicx.NewTime(time.Now().Add(time.Minute))})
+		Expiration: *atomicx.NewTime(time.Now().Add(time.Minute))})
 
 	// trigger a byte-based reap
 	idx.reap()
@@ -225,7 +225,7 @@ func TestUpdateObject(t *testing.T) {
 	idx.Objects.Store("test", o)
 	idx.UpdateObjectAccessTime("test")
 
-	if v, _ := idx.Objects.Load("test"); v.(*Object).LastAccess.IsZero() {
+	if v, _ := idx.Objects.Load("test"); v.(*Object).LastAccess.Load().IsZero() {
 		t.Errorf("test object last access time is wrong")
 	}
 
@@ -263,15 +263,15 @@ func TestSort(t *testing.T) {
 	o := objectsAtime{
 		&Object{
 			Key:        "3",
-			LastAccess: atomicx.NewTime(time.Unix(3, 0)),
+			LastAccess: *atomicx.NewTime(time.Unix(3, 0)),
 		},
 		&Object{
 			Key:        "1",
-			LastAccess: atomicx.NewTime(time.Unix(1, 0)),
+			LastAccess: *atomicx.NewTime(time.Unix(1, 0)),
 		},
 		&Object{
 			Key:        "2",
-			LastAccess: atomicx.NewTime(time.Unix(2, 0)),
+			LastAccess: *atomicx.NewTime(time.Unix(2, 0)),
 		},
 	}
 	sort.Sort(o)
@@ -300,7 +300,7 @@ func TestUpdateObjectTTL(t *testing.T) {
 	idx := NewIndex("test", "test", nil, cacheConfig.Index, testBulkRemoveFunc, fakeFlusherFunc)
 
 	exp := idx.GetExpiration(cacheKey)
-	if !exp.Equal(atomicx.ZeroTime) {
+	if !exp.IsZero() {
 		t.Errorf("expected zero time, got %v", exp)
 	}
 
@@ -308,13 +308,13 @@ func TestUpdateObjectTTL(t *testing.T) {
 
 	idx.UpdateObjectTTL(cacheKey, time.Duration(3600)*time.Second)
 
-	if obj.Expiration.IsZero() {
-		t.Errorf("expected non-zero time, got %v", obj.Expiration)
+	if obj.Expiration.Load().IsZero() {
+		t.Errorf("expected non-zero time, got %v", obj.Expiration.Load())
 	}
 
 	exp = idx.GetExpiration(cacheKey)
 	if exp.IsZero() {
-		t.Errorf("expected non-zero time, got %v", obj.Expiration)
+		t.Errorf("expected non-zero time, got %v", obj.Expiration.Load())
 	}
 
 	t.Log(exp)

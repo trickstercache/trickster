@@ -107,7 +107,7 @@ func (c *Cache) store(cacheKey string, data []byte, ttl time.Duration, updateInd
 
 	nl, _ := c.locker.Acquire(c.lockPrefix + cacheKey)
 
-	o := &index.Object{Key: cacheKey, Value: data, Expiration: atomicx.NewTime(time.Now().Add(ttl))}
+	o := &index.Object{Key: cacheKey, Value: data, Expiration: *atomicx.NewTime(time.Now().Add(ttl))}
 	err := os.WriteFile(dataFile, o.ToBytes(), os.FileMode(0777))
 	if err != nil {
 		nl.Release()
@@ -157,7 +157,7 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte
 	}
 
 	o.Expiration.Store(c.Index.GetExpiration(cacheKey))
-	if allowExpired || o.Expiration.IsZero() || o.Expiration.Load().After(time.Now()) {
+	if allowExpired || o.Expiration.Load().IsZero() || o.Expiration.Load().After(time.Now()) {
 		logger.Debug("filesystem cache retrieve",
 			logging.Pairs{"key": cacheKey, "dataFile": dataFile})
 		if atime {

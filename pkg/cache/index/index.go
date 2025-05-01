@@ -96,9 +96,9 @@ type Object struct {
 
 func (o *Object) Equal(other *Object) bool {
 	return o.Key == other.Key &&
-		o.Expiration.Equal(other.Expiration.Load()) &&
-		o.LastWrite.Equal(other.LastWrite.Load()) &&
-		o.LastAccess.Equal(other.LastAccess.Load()) &&
+		o.Expiration.Load().Equal(other.Expiration.Load()) &&
+		o.LastWrite.Load().Equal(other.LastWrite.Load()) &&
+		o.LastAccess.Load().Equal(other.LastAccess.Load()) &&
 		o.Size == other.Size &&
 		((o.ReferenceValue != nil && o.ReferenceValue == other.ReferenceValue) || bytes.Equal(o.Value, other.Value))
 }
@@ -251,7 +251,7 @@ func (idx *Index) GetExpiration(cacheKey string) time.Time {
 		obj := o.(*Object)
 		return obj.Expiration.Load()
 	}
-	return atomicx.ZeroTime
+	return time.Time{}
 }
 
 // flusher periodically calls the cache's index flush func that writes the cache index to disk
@@ -318,7 +318,7 @@ func (idx *Index) reap() {
 		if o.Key == IndexKey {
 			return true
 		}
-		if o.Expiration.Load().Before(now) && !o.Expiration.IsZero() {
+		if o.Expiration.Load().Before(now) && !o.Expiration.Load().IsZero() {
 			removals = append(removals, o.Key)
 		} else {
 			remainders = append(remainders, o)

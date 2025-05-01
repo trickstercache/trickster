@@ -134,7 +134,7 @@ func (c *Cache) store(cacheKey string, data []byte, ttl time.Duration, updateInd
 
 	metrics.ObserveCacheOperation(c.Name, c.Config.Provider, "set", "none", float64(len(data)))
 
-	o := &index.Object{Key: cacheKey, Value: data, Expiration: atomicx.NewTime(exp)}
+	o := &index.Object{Key: cacheKey, Value: data, Expiration: *atomicx.NewTime(exp)}
 	nl, _ := c.locker.Acquire(c.lockPrefix + cacheKey)
 	err := writeToBBolt(c.dbh, c.Config.BBolt.Bucket, cacheKey, o.ToBytes())
 	nl.Release()
@@ -198,7 +198,7 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool,
 
 	o.Expiration.Store(c.Index.GetExpiration(cacheKey))
 
-	if allowExpired || o.Expiration.IsZero() || o.Expiration.Load().After(time.Now()) {
+	if allowExpired || o.Expiration.Load().IsZero() || o.Expiration.Load().After(time.Now()) {
 		logger.Debug("bbolt cache retrieve", logging.Pairs{"cacheKey": cacheKey})
 		if atime {
 			go c.Index.UpdateObjectAccessTime(cacheKey)

@@ -24,16 +24,12 @@ import (
 	"github.com/tinylib/msgp/msgp"
 )
 
-var (
-	ZeroTime = time.Unix(0, time.Time{}.UnixNano())
-)
-
 //go:generate go tool msgp
 
-func NewTime(in time.Time) Time {
+func NewTime(in time.Time) *Time {
 	t := Time{}
-	t.v = in.UnixNano()
-	return t
+	t.Pointer.Store(&in)
+	return &t
 }
 
 //msgp:ignore Time
@@ -44,7 +40,7 @@ func init() {
 
 // Time is a wrapper for safely accessing a timestamp that implements the msgp.Extension interface
 type Time struct {
-	v int64
+	atomic.Pointer[time.Time]
 }
 
 const (
@@ -60,30 +56,38 @@ func (t *Time) ExtensionType() int8 {
 }
 
 func (t *Time) Len() int {
-	return 8
+	return 15
 }
 
-func (t *Time) MarshalBinaryTo(b []byte) error {
-	encoder.PutUint64(b, uint64(atomic.LoadInt64(&t.v))) // #nosec G115 - assume time values safe to convert between int64 and uint64
-	return nil
-}
-func (t *Time) UnmarshalBinary(b []byte) error {
-	atomic.StoreInt64(&t.v, int64(encoder.Uint64(b))) // #nosec G115 - assume time values safe to convert between int64 and uint64
-	return nil
+func (t *Time) Store(in time.Time) {
+	t.Pointer.Store(&in)
 }
 
 func (t *Time) Load() time.Time {
-	return time.Unix(0, atomic.LoadInt64(&t.v))
+	var ts *time.Time
+	if ts = t.Pointer.Load(); ts == nil {
+		ts = &time.Time{}
+	}
+	return *ts
 }
 
-func (t *Time) IsZero() bool {
-	return t.Equal(ZeroTime)
+func (t *Time) MarshalBinaryTo(b []byte) error {
+	var ts *time.Time
+	if ts = t.Pointer.Load(); ts == nil {
+		ts = &time.Time{}
+	}
+	var err error
+	buf, err := ts.MarshalBinary()
+	copy(b, buf)
+	return err
 }
 
-func (t *Time) Equal(t2 time.Time) bool {
-	return t.Load().UnixNano() == t2.UnixNano()
-}
-
-func (t *Time) Store(t2 time.Time) {
-	atomic.StoreInt64(&t.v, t2.UnixNano())
+func (t *Time) UnmarshalBinary(b []byte) error {
+	var ts time.Time
+	err := ts.UnmarshalBinary(b)
+	if err != nil {
+		return err
+	}
+	t.Pointer.Store(&ts)
+	return nil
 }

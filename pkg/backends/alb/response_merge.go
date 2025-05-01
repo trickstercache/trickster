@@ -71,7 +71,6 @@ func (c *Client) handleResponseMerge(w http.ResponseWriter, r *http.Request) {
 // GetResponseGates make the client request to each fanout backend and returns a collection of responses
 func GetResponseGates(w http.ResponseWriter, r *http.Request, hl []http.Handler) merge.ResponseGates {
 	var wg sync.WaitGroup
-	var mtx sync.Mutex
 	l := len(hl)
 	mgs := make(merge.ResponseGates, l)
 	wg.Add(l)
@@ -82,9 +81,7 @@ func GetResponseGates(w http.ResponseWriter, r *http.Request, hl []http.Handler)
 			}
 			rsc := &request.Resources{IsMergeMember: true}
 			ctx := tctx.WithResources(context.Background(), rsc)
-			mtx.Lock()
 			r2 := r.Clone(ctx)
-			mtx.Unlock()
 			mgs[j] = merge.NewResponseGate(w, r2, rsc)
 			hl[j].ServeHTTP(mgs[j], r2)
 			wg.Done()
