@@ -18,7 +18,7 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": 4,
+  "id": 5,
   "links": [],
   "panels": [
     {
@@ -81,9 +81,9 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 17,
-        "w": 12,
-        "x": 0,
+        "h": 19,
+        "w": 16,
+        "x": 4,
         "y": 0
       },
       "id": 1,
@@ -135,6 +135,7 @@
     }
   ],
   "preload": false,
+  "refresh": "5s",
   "schemaVersion": 41,
   "tags": [],
   "templating": {
@@ -156,7 +157,7 @@
     ]
   },
   "time": {
-    "from": "now-7d",
+    "from": "now-24h",
     "to": "now"
   },
   "timepicker": {},

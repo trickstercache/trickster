@@ -76,30 +76,28 @@ datasources:
   access: proxy
   orgId: 1
   uid: ds_infl_direct_ql_get
-  url: http://influxdb:8086
+  url: http://influxdb2:8086
   editable: true
-  database: trickster
   jsonData:
     httpMode: GET
+    dbName: trickster
     httpHeaderName1: 'Authorization'
-    queryLanguage: influxql
   secureJsonData:
-    httpHeaderValue1: 'Token trickster-demo-token'
+    httpHeaderValue1: 'Token trickster-dev-token'
 
 - name: "2: InfluxDB | Direct | QL | POST"
   type: influxdb
   access: proxy
   orgId: 1
   uid: ds_infl_direct_ql_post
-  url: http://influxdb:8086
+  url: http://influxdb2:8086
   editable: true
-  database: trickster
   jsonData:
     httpMode: POST
+    dbName: trickster
     httpHeaderName1: 'Authorization'
-    queryLanguage: influxql
   secureJsonData:
-    httpHeaderValue1: 'Token trickster-demo-token'
+    httpHeaderValue1: 'Token trickster-dev-token'
 
 - name: "3: Trickster | MemoryCache | QL | GET"
   type: influxdb
@@ -108,13 +106,12 @@ datasources:
   uid: ds_infl_trk_ql_get
   url: http://docker.for.mac.localhost:8480/flux1
   editable: true
-  database: trickster
   jsonData:
     httpMode: GET
+    dbName: trickster
     httpHeaderName1: 'Authorization'
-    queryLanguage: influxql
   secureJsonData:
-    httpHeaderValue1: 'Token trickster-demo-token'
+    httpHeaderValue1: 'Token trickster-dev-token'
 
 - name: "4: Trickster | MemoryCache | QL | POST"
   type: influxdb
@@ -123,13 +120,42 @@ datasources:
   uid: ds_infl_trk_ql_post
   url: http://docker.for.mac.localhost:8480/flux1
   editable: true
-  database: trickster
   jsonData:
     httpMode: POST
+    dbName: trickster
     httpHeaderName1: 'Authorization'
-    queryLanguage: influxql
   secureJsonData:
-    httpHeaderValue1: 'Token trickster-demo-token'
+    httpHeaderValue1: 'Token trickster-dev-token'
+
+- name: "1: InfluxDB | Direct | Flux "
+  type: influxdb
+  access: proxy
+  orgId: 1
+  uid: ds_infl_direct_flux_get
+  url: http://influxdb2:8086
+  editable: true
+  database: trickster
+  jsonData:
+    version: Flux
+    organization: trickster-dev
+    defaultBucket: trickster
+  secureJsonData:
+    token: trickster-dev-token
+
+- name: "2: Trickster | MemoryCache | Flux "
+  type: influxdb
+  access: proxy
+  orgId: 1
+  uid: ds_infl_trk_flux_get
+  url: http://docker.for.mac.localhost:8480/flux1
+  editable: true
+  database: trickster
+  jsonData:
+    version: Flux
+    organization: trickster-dev
+    defaultBucket: trickster
+  secureJsonData:
+    token: trickster-dev-token
 
 # ClickHouse
 - name: clickhouse-direct

@@ -3,7 +3,7 @@
 sleep 10 > /dev/null 2>&1 # allows time for influxdb to be ready
 
 export IFLX_APP=trickster
-export IFLX_ORG=${IFLX_APP}-demo
+export IFLX_ORG=${IFLX_APP}-dev
 export IFLX_TOK=${IFLX_ORG}-token
 
 export IFLX_URL=http://influxdb2:8086
@@ -17,8 +17,8 @@ influx setup -f -r $IFLX_RET -b $IFLX_APP -u $IFLX_APP -p $IFLX_APP \
 # expected output:
 
 # Config default has been stored in /etc/influxdb2/influx-configs.
-# User		Organization	Bucket
-# trickster	trickster-demo	trickster
+# User       Organization   Bucket
+# trickster	 trickster-dev  trickster
 
 # this captures the bucket id for the new bucket, and prints it to the log:
 

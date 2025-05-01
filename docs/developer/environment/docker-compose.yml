@@ -29,16 +29,8 @@ services:
     ports:
      - 3000:3000
     depends_on:
-      - influxdb
-
-  chronograf:
-    image: chronograf:1.10
-    ports:
-     - 8888:8888
-    build:
-      context: .
-      network: host
-    restart: always
+      - influxdb2
+      - prometheus
 
   # TSDBs
 
@@ -58,21 +50,6 @@ services:
      - 9090:9090
     restart: always
 
-  # influxdb 1.8
-  influxdb:
-    image: influxdb:1.8
-    volumes:
-      - influxdbv1:/var/lib/influxdb
-      - ./docker-compose-data/influxdb-config:/etc/influxdb
-    build:
-      context: .
-      network: host
-    restart: always
-    ports:
-     - 8186:8086
-    environment:
-      - "INFLUXDB_DB=trickster"
-
   # influxdb 2.x
   influxdb2:
     image: influxdb:2.7
@@ -90,7 +67,7 @@ services:
       - '--reporting-disabled'
 
   # influxdb 2.0 cli, for seeding influxdb on startup
-  influxdb_seed:
+  influxdb2_seed:
     links:
       - influxdb2
     image: influxdb:2.7
@@ -169,9 +146,7 @@ services:
     volumes:
       - ./docker-compose-data/telegraf-config/telegraf.conf:/etc/telegraf/telegraf.conf
     depends_on:
-      - influxdb
       - influxdb2
 
 volumes:
-  influxdbv1:
   influxdbv2:
