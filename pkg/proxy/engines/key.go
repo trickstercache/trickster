@@ -58,10 +58,12 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 
 	var b []byte
 	var ckeCnt int
-	if rsc.TimeRangeQuery != nil {
-		ckeCnt = len(rsc.TimeRangeQuery.CacheKeyElements)
-		if rsc.TimeRangeQuery.TemplateURL != nil {
-			qp = rsc.TimeRangeQuery.TemplateURL.Query()
+
+	trq := rsc.TimeRangeQuery
+	if trq != nil {
+		ckeCnt = len(trq.CacheKeyElements)
+		if trq.TemplateURL != nil {
+			qp = trq.TemplateURL.Query()
 		}
 	}
 	if qp == nil {
@@ -69,11 +71,20 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 	}
 
 	if pc.KeyHasher != nil {
-		return pc.KeyHasher(r.URL.Path, qp, r.Header, b, rsc.TimeRangeQuery, extra)
+		return pc.KeyHasher(r.URL.Path, qp, r.Header, b, trq, extra)
 	}
 
 	var k int
 	vals := make([]string, 2+len(qp)+len(r.Header)+len(pc.CacheKeyFormFields)+ckeCnt)
+	// overrides contains query data modified by the backend provider when
+	// parsing the time range (e.g., a tokenized version of the query statement)
+	var overrides map[string]string
+	used := make(map[string]struct{})
+	if trq != nil && len(trq.CacheKeyElements) > 0 {
+		overrides = trq.CacheKeyElements
+	} else {
+		overrides = make(map[string]string)
+	}
 
 	if v := r.Header.Get(headers.NameAuthorization); v != "" {
 		vals[k] = fmt.Sprintf("%s.%s.", headers.NameAuthorization, v)
@@ -85,11 +96,22 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 
 	if len(pc.CacheKeyParams) == 1 && pc.CacheKeyParams[0] == "*" {
 		for p := range qp {
-			vals[k] = fmt.Sprintf("%s.%s.", p, qp.Get(p))
+			if v, ok := overrides[p]; ok {
+				vals[k] = fmt.Sprintf("%s.%s.", p, v)
+				used[p] = struct{}{}
+			} else {
+				vals[k] = fmt.Sprintf("%s.%s.", p, qp.Get(p))
+			}
 			k++
 		}
 	} else {
 		for _, p := range pc.CacheKeyParams {
+			if v, ok := overrides[p]; ok {
+				vals[k] = fmt.Sprintf("%s.%s.", p, v)
+				used[p] = struct{}{}
+				k++
+				continue
+			}
 			if v := qp.Get(p); v != "" {
 				vals[k] = fmt.Sprintf("%s.%s.", p, v)
 				k++
@@ -126,6 +148,12 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 		}
 		if bodyWasProcessed {
 			for _, f := range pc.CacheKeyFormFields {
+				if v, ok := overrides[f]; ok {
+					used[f] = struct{}{}
+					vals[k] = fmt.Sprintf("%s.%s.", f, v)
+					k++
+					continue
+				}
 				if _, ok := pr.Form[f]; ok {
 					if v := pr.FormValue(f); v != "" {
 						vals[k] = fmt.Sprintf("%s.%s.", f, v)
@@ -136,8 +164,11 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 		}
 	}
 
-	if rsc.TimeRangeQuery != nil {
-		for key, val := range rsc.TimeRangeQuery.CacheKeyElements {
+	if trq != nil {
+		for key, val := range overrides {
+			if _, ok := used[key]; ok {
+				continue
+			}
 			vals[k] = fmt.Sprintf("%s.%s.", key, val)
 			k++
 		}

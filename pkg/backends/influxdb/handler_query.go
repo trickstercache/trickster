@@ -17,8 +17,6 @@
 package influxdb
 
 import (
-	"bytes"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -30,6 +28,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 
@@ -85,12 +84,10 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	}
 	statement := values.Get(upQuery)
 	if methods.HasBody(r.Method) {
-		raw, err := io.ReadAll(r.Body)
+		raw, err := request.GetBody(r)
 		if err != nil {
 			return nil, nil, false, errors.ParseRequestBody(err)
 		}
-		r.Body.Close()
-		r.Body = io.NopCloser(bytes.NewReader(raw))
 		statement = string(raw)
 	}
 	if statement == "" {
@@ -200,6 +197,9 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	trq.Statement = strings.Join(statements, " ; ")
 	trq.ParsedQuery = q
 	trq.TemplateURL = urls.Clone(r.URL)
+	trq.CacheKeyElements = map[string]string{
+		"q": trq.Statement,
+	}
 	qt := url.Values(http.Header(values).Clone())
 	qt.Set(upQuery, trq.Statement)
 
