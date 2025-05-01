@@ -172,8 +172,8 @@ func TestDeriveCacheKey(t *testing.T) {
 	tr.Header.Set(headers.NameContentLength, strconv.Itoa(len(testMultipartBody)))
 	pr = newProxyRequest(tr, nil)
 	ck = pr.DeriveCacheKey("extra")
-	if ck != "4766201eee9ef1916f57309deae22f90" {
-		t.Errorf("expected %s got %s", "4766201eee9ef1916f57309deae22f90", ck)
+	if ck != "1caeb9fb60f5613ed89d68d5ab8bed99" {
+		t.Errorf("expected %s got %s", "1caeb9fb60f5613ed89d68d5ab8bed99", ck)
 	}
 
 	_, _, tr, _, _ = tu.NewTestInstance("", nil, 0, "", nil,
