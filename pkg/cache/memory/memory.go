@@ -30,6 +30,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/locks"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/util/atomicx"
 )
 
 // Cache defines a a Memory Cache client that conforms to the Cache interface
@@ -103,12 +104,12 @@ func (c *Cache) store(cacheKey string, byteData []byte, refData cache.ReferenceO
 	if byteData != nil {
 		l = len(byteData)
 		metrics.ObserveCacheOperation(c.Name, c.Config.Provider, "set", "none", float64(l))
-		o1 = &index.Object{Key: cacheKey, Value: byteData, Expiration: exp}
-		o2 = &index.Object{Key: cacheKey, Value: byteData, Expiration: exp}
+		o1 = &index.Object{Key: cacheKey, Value: byteData, Expiration: *atomicx.NewTime(exp)}
+		o2 = &index.Object{Key: cacheKey, Value: byteData, Expiration: *atomicx.NewTime(exp)}
 	} else if refData != nil {
 		metrics.ObserveCacheOperation(c.Name, c.Config.Provider, "setDirect", "none", 0)
-		o1 = &index.Object{Key: cacheKey, ReferenceValue: refData, Expiration: exp}
-		o2 = &index.Object{Key: cacheKey, ReferenceValue: refData, Expiration: exp}
+		o1 = &index.Object{Key: cacheKey, ReferenceValue: refData, Expiration: *atomicx.NewTime(exp)}
+		o2 = &index.Object{Key: cacheKey, ReferenceValue: refData, Expiration: *atomicx.NewTime(exp)}
 	}
 
 	if o1 != nil && o2 != nil {
@@ -159,9 +160,9 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) (*index
 
 	if ok {
 		o := record.(*index.Object)
-		o.Expiration = c.Index.GetExpiration(cacheKey)
+		o.Expiration.Store(c.Index.GetExpiration(cacheKey))
 
-		if allowExpired || o.Expiration.IsZero() || o.Expiration.After(time.Now()) {
+		if allowExpired || o.Expiration.Load().IsZero() || o.Expiration.Load().After(time.Now()) {
 			logger.Debug("memory cache retrieve", logging.Pairs{"cacheKey": cacheKey})
 			if atime {
 				go c.Index.UpdateObjectAccessTime(cacheKey)

@@ -53,46 +53,10 @@ func (z *Index) DecodeMsg(dc *msgp.Reader) (err error) {
 				return
 			}
 		case "objects":
-			var zb0002 uint32
-			zb0002, err = dc.ReadMapHeader()
+			err = z.Objects.DecodeMsg(dc)
 			if err != nil {
 				err = msgp.WrapError(err, "Objects")
 				return
-			}
-			if z.Objects == nil {
-				z.Objects = make(map[string]*Object, zb0002)
-			} else if len(z.Objects) > 0 {
-				for key := range z.Objects {
-					delete(z.Objects, key)
-				}
-			}
-			for zb0002 > 0 {
-				zb0002--
-				var za0001 string
-				var za0002 *Object
-				za0001, err = dc.ReadString()
-				if err != nil {
-					err = msgp.WrapError(err, "Objects")
-					return
-				}
-				if dc.IsNil() {
-					err = dc.ReadNil()
-					if err != nil {
-						err = msgp.WrapError(err, "Objects", za0001)
-						return
-					}
-					za0002 = nil
-				} else {
-					if za0002 == nil {
-						za0002 = new(Object)
-					}
-					err = za0002.DecodeMsg(dc)
-					if err != nil {
-						err = msgp.WrapError(err, "Objects", za0001)
-						return
-					}
-				}
-				z.Objects[za0001] = za0002
 			}
 		default:
 			err = dc.Skip()
@@ -133,29 +97,10 @@ func (z *Index) EncodeMsg(en *msgp.Writer) (err error) {
 	if err != nil {
 		return
 	}
-	err = en.WriteMapHeader(uint32(len(z.Objects)))
+	err = z.Objects.EncodeMsg(en)
 	if err != nil {
 		err = msgp.WrapError(err, "Objects")
 		return
-	}
-	for za0001, za0002 := range z.Objects {
-		err = en.WriteString(za0001)
-		if err != nil {
-			err = msgp.WrapError(err, "Objects")
-			return
-		}
-		if za0002 == nil {
-			err = en.WriteNil()
-			if err != nil {
-				return
-			}
-		} else {
-			err = za0002.EncodeMsg(en)
-			if err != nil {
-				err = msgp.WrapError(err, "Objects", za0001)
-				return
-			}
-		}
 	}
 	return
 }
@@ -172,18 +117,10 @@ func (z *Index) MarshalMsg(b []byte) (o []byte, err error) {
 	o = msgp.AppendInt64(o, z.ObjectCount)
 	// string "objects"
 	o = append(o, 0xa7, 0x6f, 0x62, 0x6a, 0x65, 0x63, 0x74, 0x73)
-	o = msgp.AppendMapHeader(o, uint32(len(z.Objects)))
-	for za0001, za0002 := range z.Objects {
-		o = msgp.AppendString(o, za0001)
-		if za0002 == nil {
-			o = msgp.AppendNil(o)
-		} else {
-			o, err = za0002.MarshalMsg(o)
-			if err != nil {
-				err = msgp.WrapError(err, "Objects", za0001)
-				return
-			}
-		}
+	o, err = z.Objects.MarshalMsg(o)
+	if err != nil {
+		err = msgp.WrapError(err, "Objects")
+		return
 	}
 	return
 }
@@ -219,45 +156,10 @@ func (z *Index) UnmarshalMsg(bts []byte) (o []byte, err error) {
 				return
 			}
 		case "objects":
-			var zb0002 uint32
-			zb0002, bts, err = msgp.ReadMapHeaderBytes(bts)
+			bts, err = z.Objects.UnmarshalMsg(bts)
 			if err != nil {
 				err = msgp.WrapError(err, "Objects")
 				return
-			}
-			if z.Objects == nil {
-				z.Objects = make(map[string]*Object, zb0002)
-			} else if len(z.Objects) > 0 {
-				for key := range z.Objects {
-					delete(z.Objects, key)
-				}
-			}
-			for zb0002 > 0 {
-				var za0001 string
-				var za0002 *Object
-				zb0002--
-				za0001, bts, err = msgp.ReadStringBytes(bts)
-				if err != nil {
-					err = msgp.WrapError(err, "Objects")
-					return
-				}
-				if msgp.IsNil(bts) {
-					bts, err = msgp.ReadNilBytes(bts)
-					if err != nil {
-						return
-					}
-					za0002 = nil
-				} else {
-					if za0002 == nil {
-						za0002 = new(Object)
-					}
-					bts, err = za0002.UnmarshalMsg(bts)
-					if err != nil {
-						err = msgp.WrapError(err, "Objects", za0001)
-						return
-					}
-				}
-				z.Objects[za0001] = za0002
 			}
 		default:
 			bts, err = msgp.Skip(bts)
@@ -273,18 +175,7 @@ func (z *Index) UnmarshalMsg(bts []byte) (o []byte, err error) {
 
 // Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
 func (z *Index) Msgsize() (s int) {
-	s = 1 + 11 + msgp.Int64Size + 13 + msgp.Int64Size + 8 + msgp.MapHeaderSize
-	if z.Objects != nil {
-		for za0001, za0002 := range z.Objects {
-			_ = za0002
-			s += msgp.StringPrefixSize + len(za0001)
-			if za0002 == nil {
-				s += msgp.NilSize
-			} else {
-				s += za0002.Msgsize()
-			}
-		}
-	}
+	s = 1 + 11 + msgp.Int64Size + 13 + msgp.Int64Size + 8 + z.Objects.Msgsize()
 	return
 }
 
@@ -313,19 +204,19 @@ func (z *Object) DecodeMsg(dc *msgp.Reader) (err error) {
 				return
 			}
 		case "expiration":
-			z.Expiration, err = dc.ReadTime()
+			err = dc.ReadExtension(&z.Expiration)
 			if err != nil {
 				err = msgp.WrapError(err, "Expiration")
 				return
 			}
 		case "lastwrite":
-			z.LastWrite, err = dc.ReadTime()
+			err = dc.ReadExtension(&z.LastWrite)
 			if err != nil {
 				err = msgp.WrapError(err, "LastWrite")
 				return
 			}
 		case "lastaccess":
-			z.LastAccess, err = dc.ReadTime()
+			err = dc.ReadExtension(&z.LastAccess)
 			if err != nil {
 				err = msgp.WrapError(err, "LastAccess")
 				return
@@ -386,7 +277,7 @@ func (z *Object) EncodeMsg(en *msgp.Writer) (err error) {
 		if err != nil {
 			return
 		}
-		err = en.WriteTime(z.Expiration)
+		err = en.WriteExtension(&z.Expiration)
 		if err != nil {
 			err = msgp.WrapError(err, "Expiration")
 			return
@@ -396,7 +287,7 @@ func (z *Object) EncodeMsg(en *msgp.Writer) (err error) {
 		if err != nil {
 			return
 		}
-		err = en.WriteTime(z.LastWrite)
+		err = en.WriteExtension(&z.LastWrite)
 		if err != nil {
 			err = msgp.WrapError(err, "LastWrite")
 			return
@@ -406,7 +297,7 @@ func (z *Object) EncodeMsg(en *msgp.Writer) (err error) {
 		if err != nil {
 			return
 		}
-		err = en.WriteTime(z.LastAccess)
+		err = en.WriteExtension(&z.LastAccess)
 		if err != nil {
 			err = msgp.WrapError(err, "LastAccess")
 			return
@@ -458,13 +349,25 @@ func (z *Object) MarshalMsg(b []byte) (o []byte, err error) {
 		o = msgp.AppendString(o, z.Key)
 		// string "expiration"
 		o = append(o, 0xaa, 0x65, 0x78, 0x70, 0x69, 0x72, 0x61, 0x74, 0x69, 0x6f, 0x6e)
-		o = msgp.AppendTime(o, z.Expiration)
+		o, err = msgp.AppendExtension(o, &z.Expiration)
+		if err != nil {
+			err = msgp.WrapError(err, "Expiration")
+			return
+		}
 		// string "lastwrite"
 		o = append(o, 0xa9, 0x6c, 0x61, 0x73, 0x74, 0x77, 0x72, 0x69, 0x74, 0x65)
-		o = msgp.AppendTime(o, z.LastWrite)
+		o, err = msgp.AppendExtension(o, &z.LastWrite)
+		if err != nil {
+			err = msgp.WrapError(err, "LastWrite")
+			return
+		}
 		// string "lastaccess"
 		o = append(o, 0xaa, 0x6c, 0x61, 0x73, 0x74, 0x61, 0x63, 0x63, 0x65, 0x73, 0x73)
-		o = msgp.AppendTime(o, z.LastAccess)
+		o, err = msgp.AppendExtension(o, &z.LastAccess)
+		if err != nil {
+			err = msgp.WrapError(err, "LastAccess")
+			return
+		}
 		// string "size"
 		o = append(o, 0xa4, 0x73, 0x69, 0x7a, 0x65)
 		o = msgp.AppendInt64(o, z.Size)
@@ -502,19 +405,19 @@ func (z *Object) UnmarshalMsg(bts []byte) (o []byte, err error) {
 				return
 			}
 		case "expiration":
-			z.Expiration, bts, err = msgp.ReadTimeBytes(bts)
+			bts, err = msgp.ReadExtensionBytes(bts, &z.Expiration)
 			if err != nil {
 				err = msgp.WrapError(err, "Expiration")
 				return
 			}
 		case "lastwrite":
-			z.LastWrite, bts, err = msgp.ReadTimeBytes(bts)
+			bts, err = msgp.ReadExtensionBytes(bts, &z.LastWrite)
 			if err != nil {
 				err = msgp.WrapError(err, "LastWrite")
 				return
 			}
 		case "lastaccess":
-			z.LastAccess, bts, err = msgp.ReadTimeBytes(bts)
+			bts, err = msgp.ReadExtensionBytes(bts, &z.LastAccess)
 			if err != nil {
 				err = msgp.WrapError(err, "LastAccess")
 				return
@@ -545,6 +448,6 @@ func (z *Object) UnmarshalMsg(bts []byte) (o []byte, err error) {
 
 // Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
 func (z *Object) Msgsize() (s int) {
-	s = 1 + 4 + msgp.StringPrefixSize + len(z.Key) + 11 + msgp.TimeSize + 10 + msgp.TimeSize + 11 + msgp.TimeSize + 5 + msgp.Int64Size + 6 + msgp.BytesPrefixSize + len(z.Value)
+	s = 1 + 4 + msgp.StringPrefixSize + len(z.Key) + 11 + msgp.ExtensionPrefixSize + z.Expiration.Len() + 10 + msgp.ExtensionPrefixSize + z.LastWrite.Len() + 11 + msgp.ExtensionPrefixSize + z.LastAccess.Len() + 5 + msgp.Int64Size + 6 + msgp.BytesPrefixSize + len(z.Value)
 	return
 }

@@ -199,6 +199,7 @@ check-codegen:
 	@git diff --name-only --exit-code ${CODEGEN_PATHS}
 
 .PHONY: check-license-headers
+check-license-headers: SHELL:=/bin/bash
 check-license-headers:
 	@for file in $$(find ./pkg ./cmd -name '*.go') ; \
 	do \

@@ -30,6 +30,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/locks"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/util/atomicx"
 
 	"go.etcd.io/bbolt"
 )
@@ -133,7 +134,7 @@ func (c *Cache) store(cacheKey string, data []byte, ttl time.Duration, updateInd
 
 	metrics.ObserveCacheOperation(c.Name, c.Config.Provider, "set", "none", float64(len(data)))
 
-	o := &index.Object{Key: cacheKey, Value: data, Expiration: exp}
+	o := &index.Object{Key: cacheKey, Value: data, Expiration: *atomicx.NewTime(exp)}
 	nl, _ := c.locker.Acquire(c.lockPrefix + cacheKey)
 	err := writeToBBolt(c.dbh, c.Config.BBolt.Bucket, cacheKey, o.ToBytes())
 	nl.Release()
@@ -195,9 +196,9 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool,
 		return o.Value, status.LookupStatusHit, nil
 	}
 
-	o.Expiration = c.Index.GetExpiration(cacheKey)
+	o.Expiration.Store(c.Index.GetExpiration(cacheKey))
 
-	if allowExpired || o.Expiration.IsZero() || o.Expiration.After(time.Now()) {
+	if allowExpired || o.Expiration.Load().IsZero() || o.Expiration.Load().After(time.Now()) {
 		logger.Debug("bbolt cache retrieve", logging.Pairs{"cacheKey": cacheKey})
 		if atime {
 			go c.Index.UpdateObjectAccessTime(cacheKey)
