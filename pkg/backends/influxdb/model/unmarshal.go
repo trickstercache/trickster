@@ -162,13 +162,13 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 			pts := make(dataset.Points, len(wfd.Results[i].SeriesList[j].Values))
 			var sz int64
 			var wg sync.WaitGroup
-			ume := make(chan error, len(wfd.Results[i].SeriesList[j].Values))
+			errs := make([]error, len(wfd.Results[i].SeriesList[j].Values))
 			wg.Add(len(wfd.Results[i].SeriesList[j].Values))
 			for vi, v := range wfd.Results[i].SeriesList[j].Values {
 				go func(vals []any, idx int) {
 					pt, cols, err := pointFromValues(vals, sh.TimestampIndex)
 					if err != nil {
-						ume <- err
+						errs[idx] = err
 						wg.Done()
 						return
 					}
@@ -188,15 +188,10 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 				}(v, vi)
 			}
 			wg.Wait()
-			close(ume)
+			if err := errors.Join(errs...); err != nil {
+				return nil, err
+			}
 			sort.Sort(pts)
-			var errs []error
-			for e := range ume {
-				errs = append(errs, e)
-			}
-			if len(errs) > 0 {
-				return nil, errors.Join(errs...)
-			}
 			s := &dataset.Series{
 				Header:    sh,
 				Points:    pts,
