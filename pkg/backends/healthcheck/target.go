@@ -47,7 +47,6 @@ type target struct {
 	failConsecutiveCnt    atomic.Int32
 	successConsecutiveCnt atomic.Int32
 	ks                    int // used internally and is not thread safe, do not expose
-	ctx                   context.Context
 	cancel                context.CancelFunc
 	wg                    sync.WaitGroup
 	ceb                   bool
