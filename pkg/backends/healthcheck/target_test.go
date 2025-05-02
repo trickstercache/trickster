@@ -221,7 +221,6 @@ func TestProbe(t *testing.T) {
 	r, _ := http.NewRequest("GET", ts.URL+"/", nil)
 	target := &target{
 		status:      &Status{},
-		ctx:         context.Background(),
 		baseRequest: r,
 		httpClient:  ts.Client(),
 		ec:          []int{200},
@@ -250,7 +249,6 @@ func TestDemandProbe(t *testing.T) {
 	r, _ := http.NewRequest("GET", ts.URL+"/", nil)
 	target := &target{
 		status:      &Status{},
-		ctx:         context.Background(),
 		baseRequest: r,
 		httpClient:  ts.Client(),
 		ec:          []int{200},
