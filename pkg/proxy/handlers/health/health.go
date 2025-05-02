@@ -25,7 +25,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
-	"sync"
+	"sync/atomic"
 	"text/tabwriter"
 	"time"
 
@@ -34,9 +34,12 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
 
-type healthDetail struct {
+type detail struct {
 	text, json string
-	mtx        sync.RWMutex
+}
+
+type healthDetail struct {
+	detail atomic.Pointer[detail]
 }
 
 // StatusHandler returns an http.Handler that prints
@@ -55,17 +58,15 @@ func StatusHandler(hc healthcheck.HealthChecker) http.Handler {
 	// which is being updated in real time by the builder.
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body, ct string
-		hd.mtx.RLock()
 		if r != nil &&
 			((r.Header != nil && r.Header.Get(headers.NameAccept) == headers.ValueApplicationJSON) ||
 				(r.URL != nil && strings.Contains(r.URL.RawQuery, "json"))) {
-			body = hd.json
+			body = hd.detail.Load().json
 			ct = headers.ValueApplicationJSON
 		} else {
-			body = hd.text
+			body = hd.detail.Load().text
 			ct = headers.ValueTextPlain
 		}
-		hd.mtx.RUnlock()
 		w.Header().Set(headers.NameContentType, ct)
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(body))
@@ -85,9 +86,7 @@ func builder(hc healthcheck.HealthChecker, hd *healthDetail) {
 		case <-closer: // a bool comes over closer when the Health Checker is closing down, so the builder should as well
 			return
 		case <-notifier: // a bool comes over notifier when the status text should be rebuilt
-			hd.mtx.Lock()
 			udpateStatusText(hc, hd)
-			hd.mtx.Unlock()
 		}
 	}
 }
@@ -186,8 +185,7 @@ func udpateStatusText(hc healthcheck.HealthChecker, hd *healthDetail) {
 		headers.NameAccept, headers.ValueApplicationJSON)
 	json.WriteString("}")
 
-	hd.text = txt.String()
-	hd.json = json.String()
+	hd.detail.Store(&detail{text: txt.String(), json: json.String()})
 }
 
 func statusToString(i int) string {
