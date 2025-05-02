@@ -19,6 +19,7 @@ package engines
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"sync"
@@ -583,10 +584,10 @@ func fetchExtents(el timeseries.ExtentList, rsc *request.Resources, h http.Heade
 	var uncachedValueCount atomic.Int64
 	var wg sync.WaitGroup
 	var appendLock, respLock sync.Mutex
-	var err error
+	errs := make([]error, len(el))
 
 	// the list of time series created from the responses
-	mts := make(timeseries.TimeseriesList, 0, len(el))
+	mts := make(timeseries.TimeseriesList, len(el))
 	// the meta-response aggregating all upstream responses
 	mresp := &http.Response{Header: h}
 
@@ -594,7 +595,7 @@ func fetchExtents(el timeseries.ExtentList, rsc *request.Resources, h http.Heade
 	wg.Add(el.Len())
 	for i := range el {
 		// This concurrently fetches gaps from the origin and adds their datasets to the merge list
-		go func(e *timeseries.Extent, rq *proxyRequest) {
+		go func(index int, e *timeseries.Extent, rq *proxyRequest) {
 			defer wg.Done()
 			mrsc := rsc.Clone()
 			rq.upstreamRequest = rq.upstreamRequest.WithContext(tctx.WithResources(
@@ -624,11 +625,7 @@ func fetchExtents(el timeseries.ExtentList, rsc *request.Resources, h http.Heade
 				if ferr != nil {
 					logger.Error("proxy object unmarshaling failed",
 						logging.Pairs{"detail": ferr.Error()})
-					appendLock.Lock()
-					if err == nil {
-						err = ferr
-					}
-					appendLock.Unlock()
+					errs[index] = ferr
 					return
 				}
 				uncachedValueCount.Add(nts.ValueCount())
@@ -636,10 +633,10 @@ func fetchExtents(el timeseries.ExtentList, rsc *request.Resources, h http.Heade
 				nts.SetExtents(timeseries.ExtentList{*e})
 				appendLock.Lock()
 				headers.Merge(h, resp.Header)
-				mts = append(mts, nts)
 				appendLock.Unlock()
+				mts[index] = nts
 			} else if resp.StatusCode != http.StatusOK {
-				err = tpe.ErrUnexpectedUpstreamResponse
+				errs[index] = tpe.ErrUnexpectedUpstreamResponse
 				var b []byte
 				var s string
 				if resp.Body != nil {
@@ -666,8 +663,8 @@ func fetchExtents(el timeseries.ExtentList, rsc *request.Resources, h http.Heade
 					},
 				)
 			}
-		}(&el[i], pr.Clone())
+		}(i, &el[i], pr.Clone())
 	}
 	wg.Wait()
-	return mts, uncachedValueCount.Load(), mresp, err
+	return mts, uncachedValueCount.Load(), mresp, errors.Join(errs...)
 }
