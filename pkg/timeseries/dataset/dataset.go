@@ -353,7 +353,6 @@ func (ds *DataSet) DefaultRangeCropper(e timeseries.Extent) {
 		if len(ds.Results[i].SeriesList) == 0 {
 			continue
 		}
-		var m sync.Mutex
 		sl := make([]*Series, len(ds.Results[i].SeriesList))
 		var j int
 		for _, s := range ds.Results[i].SeriesList {
@@ -378,9 +377,7 @@ func (ds *DataSet) DefaultRangeCropper(e timeseries.Extent) {
 					s2.Points = s2.Points.CloneRange(start, end)
 					s2.PointSize = s2.Points.Size()
 				}
-				m.Lock()
 				sl[index] = s2
-				m.Unlock()
 				wg.Done()
 			}(j, s)
 			j++
