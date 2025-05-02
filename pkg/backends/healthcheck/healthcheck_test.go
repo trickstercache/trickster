@@ -69,7 +69,7 @@ func TestRegister(t *testing.T) {
 		t.Error(err)
 	}
 	target := hc.targets["test"]
-	target.Start()
+	target.Start(context.Background())
 	target.Stop()
 	_, err = hc.Register("test", "test", o, http.DefaultClient)
 	if err != nil {
@@ -142,36 +142,5 @@ func TestStatuses(t *testing.T) {
 	s := hc.Statuses()
 	if len(s) != 1 {
 		t.Errorf("expected %d got %d", 1, len(s))
-	}
-}
-
-func TestHealthCheckerProbe(t *testing.T) {
-	logger.SetLogger(testLogger)
-	hc := New().(*healthChecker)
-	o := ho.New()
-
-	ts := newTestServer(200, "OK", map[string]string{})
-	r, _ := http.NewRequest("GET", ts.URL+"/", nil)
-
-	_, err := hc.Register("test", "test", o, http.DefaultClient)
-	if err != nil {
-		t.Error(err)
-	}
-
-	target := hc.targets["test"]
-	target.baseRequest = r
-	target.ctx = context.Background()
-
-	s := hc.Probe("")
-	if s != nil {
-		t.Error("expected nil got ", s)
-	}
-	s = hc.Probe("test-missing")
-	if s != nil {
-		t.Error("expected nil got ", s)
-	}
-	s = hc.Probe("test")
-	if s == nil {
-		t.Error("expected non-nil")
 	}
 }

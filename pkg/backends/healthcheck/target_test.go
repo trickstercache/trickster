@@ -221,17 +221,16 @@ func TestProbe(t *testing.T) {
 	r, _ := http.NewRequest("GET", ts.URL+"/", nil)
 	target := &target{
 		status:      &Status{},
-		ctx:         context.Background(),
 		baseRequest: r,
 		httpClient:  ts.Client(),
 		ec:          []int{200},
 	}
-	target.probe()
+	target.probe(context.Background())
 	if v := target.successConsecutiveCnt.Load(); v != 1 {
 		t.Error("expected 1 got ", v)
 	}
 	target.ec[0] = 404
-	target.probe()
+	target.probe(context.Background())
 	if v := target.successConsecutiveCnt.Load(); v != 0 {
 		t.Error("expected 0 got ", v)
 	}
@@ -250,7 +249,6 @@ func TestDemandProbe(t *testing.T) {
 	r, _ := http.NewRequest("GET", ts.URL+"/", nil)
 	target := &target{
 		status:      &Status{},
-		ctx:         context.Background(),
 		baseRequest: r,
 		httpClient:  ts.Client(),
 		ec:          []int{200},
