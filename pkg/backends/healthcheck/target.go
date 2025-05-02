@@ -54,8 +54,6 @@ type target struct {
 	eb                    string
 	eh                    http.Header
 	ec                    []int
-	isInLoop              bool
-	mtx                   sync.Mutex
 }
 
 // DemandProbe defines a health check probe that makes an HTTP Request to the backend and writes the
@@ -166,47 +164,44 @@ func (t *target) isGoodBody(r io.ReadCloser) bool {
 }
 
 // Start begins health checking the target
-func (t *target) Start() {
-	if t.ctx != nil {
+func (t *target) Start(ctx context.Context) {
+	if t.cancel != nil {
 		t.Stop()
 	}
-	t.ctx, t.cancel = context.WithCancel(tctx.WithHealthCheckFlag(context.Background(), true))
-	go t.probeLoop()
+	ctx, cancel := context.WithCancel(tctx.WithHealthCheckFlag(ctx, true))
+	t.cancel = cancel
+	t.probeLoop(ctx)
 }
 
 // Stop stops healthchecking the target
 func (t *target) Stop() {
-	if t.ctx == nil {
+	if t.cancel == nil {
 		return
 	}
-	t.wg.Add(1)
 	t.cancel()
 	t.wg.Wait()
 }
 
-func (t *target) probeLoop() {
-	for {
-		select {
-		case <-t.ctx.Done():
-			t.ctx = nil
-			t.mtx.Lock()
-			t.isInLoop = false
-			t.mtx.Unlock()
-			t.wg.Done()
-			time.Sleep(1 * time.Second)
-			return // avoid leaking of this goroutine when ctx is done.
-		default:
-			t.mtx.Lock()
-			t.isInLoop = true
-			t.mtx.Unlock()
-			t.probe()
-			time.Sleep(t.interval)
+func (t *target) probeLoop(ctx context.Context) {
+	t.wg.Add(1)
+	t.probe(ctx) // perform initial probe
+	ticker := time.NewTicker(t.interval)
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				t.wg.Done()
+				ticker.Stop()
+				return // probe complete, stop loop and prevent goroutine leak
+			case <-ticker.C:
+				t.probe(ctx)
+			}
 		}
-	}
+	}()
 }
 
-func (t *target) probe() {
-	r := t.baseRequest.Clone(t.ctx)
+func (t *target) probe(ctx context.Context) {
+	r := t.baseRequest.Clone(ctx)
 	resp, err := t.httpClient.Do(r)
 	var errCnt, successCnt int
 	var passed bool

@@ -19,7 +19,6 @@ package healthcheck
 import (
 	"context"
 	"net/http"
-	"time"
 
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 )
@@ -85,17 +84,7 @@ func (hc *healthChecker) Register(name, description string, o *ho.Options,
 	}
 	hc.targets[t.name] = t
 	if t.interval > 0 {
-		t.Start()
-		// wait for the health check to be fully registered
-		var isInLoop bool
-		var count time.Duration
-		for !isInLoop {
-			time.Sleep(count * 1 * time.Millisecond)
-			t.mtx.Lock()
-			isInLoop = t.isInLoop
-			t.mtx.Unlock()
-			count++
-		}
+		t.Start(context.Background())
 	}
 	hc.statuses[t.name] = t.status
 	return t.status, nil
@@ -117,17 +106,6 @@ func (hc *healthChecker) Status(name string) *Status {
 		return nil
 	}
 	if t, ok := hc.targets[name]; ok && t != nil {
-		return t.status
-	}
-	return nil
-}
-
-func (hc *healthChecker) Probe(name string) *Status {
-	if name == "" {
-		return nil
-	}
-	if t, ok := hc.targets[name]; ok && t != nil {
-		t.probe()
 		return t.status
 	}
 	return nil

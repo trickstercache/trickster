@@ -226,12 +226,12 @@ func TestProbe(t *testing.T) {
 		httpClient:  ts.Client(),
 		ec:          []int{200},
 	}
-	target.probe()
+	target.probe(context.Background())
 	if v := target.successConsecutiveCnt.Load(); v != 1 {
 		t.Error("expected 1 got ", v)
 	}
 	target.ec[0] = 404
-	target.probe()
+	target.probe(context.Background())
 	if v := target.successConsecutiveCnt.Load(); v != 0 {
 		t.Error("expected 0 got ", v)
 	}
