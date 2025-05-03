@@ -56,6 +56,7 @@ func New(name string, cfg *options.Options) *Cache {
 			return c.client.Del(cacheKey).Err()
 		},
 		SetTTL: c.setTTL,
+		Close:  c.closer,
 	})
 	c.SetLocker(locks.NewNamedLocker())
 	return c
@@ -93,6 +94,7 @@ func (c *Cache) connect() error {
 		c.closer = client.Close
 		c.client = client
 	}
+	c.Cache.Options.Close = c.closer
 	return c.client.Ping().Err()
 }
 

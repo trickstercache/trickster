@@ -71,7 +71,7 @@ func NewCache(cacheName string, cfg *options.Options) cache.Cache {
 	case ctBBolt:
 		c = &bbolt.Cache{Name: cacheName, Config: cfg}
 	case ctBadger:
-		c = &badger.Cache{Name: cacheName, Config: cfg}
+		c = badger.New(cacheName, cfg)
 	default:
 		// Default to MemoryCache
 		c = memory.New(cacheName, cfg)

@@ -37,8 +37,6 @@ const cacheKey = "cacheKey"
 type testReferenceObject struct {
 }
 
-var testLocker = locks.NewNamedLocker()
-
 func (r *testReferenceObject) Size() int {
 	return 1
 }

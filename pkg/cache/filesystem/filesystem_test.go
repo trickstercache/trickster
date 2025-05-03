@@ -193,7 +193,7 @@ func TestFilesystemCache_StoreNoIndex(t *testing.T) {
 	// test for error when bad key name
 	fc.storeNoIndex("", []byte("data"))
 
-	_, ls, err = fc.retrieve("", false, false)
+	_, _, err = fc.retrieve("", false, false)
 	if err == nil {
 		t.Errorf("expected error for %s", expected)
 		fc.Close()
