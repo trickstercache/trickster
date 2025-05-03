@@ -63,11 +63,10 @@ func queryConcurrent(_ context.Context, c cache.Cache, key string) *queryResult 
 			return qr
 		}
 
-		if ifc != nil {
-			qr.d, _ = ifc.(*HTTPDocument)
-		} else {
+		if ifc == nil {
 			return qr
 		}
+		qr.d, _ = ifc.(*HTTPDocument)
 
 	} else {
 		var b []byte
