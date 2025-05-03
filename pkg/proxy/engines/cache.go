@@ -26,6 +26,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/cache"
@@ -224,7 +225,6 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 			// Wait on queries to finish (result channel is buffered and doesn't hold for receive)
 			wg.Wait()
 			// Handle results
-			mtx := &sync.Mutex{}
 			var dbl int64
 			for _, qr := range cr {
 				if qr == nil {
@@ -247,11 +247,9 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 						for _, r := range qrc.d.Ranges {
 							content := qrc.d.Body[r.Start%size : r.End%size+1]
 							r.Copy(d.Body, content)
-							mtx.Lock()
-							if r.End+1 > dbl {
-								dbl = r.End + 1
+							if v := atomic.LoadInt64(&dbl); r.End+1 > v {
+								atomic.CompareAndSwapInt64(&dbl, v, r.End+1)
 							}
-							mtx.Unlock()
 						}
 					}
 				}(qr)
