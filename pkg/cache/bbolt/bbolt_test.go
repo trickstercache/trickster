@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	bo "github.com/trickstercache/trickster/v2/pkg/cache/bbolt/options"
 	io "github.com/trickstercache/trickster/v2/pkg/cache/index/options"
@@ -49,7 +50,7 @@ func storeBenchmark(b *testing.B) Cache {
 		BBolt:    &bo.Options{Filename: testDbPath, Bucket: "trickster_test"},
 		Index:    &io.Options{ReapInterval: time.Second},
 	}
-	bc := Cache{Config: &cacheConfig, locker: locks.NewNamedLocker()}
+	bc := New(b.Name(), "", "", &cacheConfig)
 
 	err := bc.Connect()
 	if err != nil {
@@ -63,14 +64,14 @@ func storeBenchmark(b *testing.B) Cache {
 			b.Error(err)
 		}
 	}
-	return bc
+	return *(bc.(*Cache))
 }
 
 func TestConfiguration(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	testDbPath := t.TempDir() + "/test.db"
 	cacheConfig := newCacheConfig(testDbPath)
-	bc := Cache{Config: &cacheConfig, locker: locks.NewNamedLocker()}
+	bc := New(t.Name(), "", "", &cacheConfig)
 	cfg := bc.Configuration()
 	if cfg.Provider != cacheProvider {
 		t.Errorf("expected %s got %s", cacheProvider, cfg.Provider)
@@ -81,7 +82,7 @@ func TestBboltCache_Connect(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	testDbPath := t.TempDir() + "/test.db"
 	cacheConfig := newCacheConfig(testDbPath)
-	bc := Cache{Config: &cacheConfig, locker: locks.NewNamedLocker()}
+	bc := New(t.Name(), "", "", &cacheConfig)
 	// it should connect
 	err := bc.Connect()
 	if err != nil {
@@ -94,7 +95,7 @@ func TestBboltCache_ConnectFailed(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	const expected = `open /root/noaccess.bbolt:`
 	cacheConfig := newCacheConfig("/root/noaccess.bbolt")
-	bc := Cache{Config: &cacheConfig, locker: locks.NewNamedLocker()}
+	bc := New(t.Name(), "", "", &cacheConfig)
 	// it should connect
 	err := bc.Connect()
 	if err == nil {
@@ -112,7 +113,7 @@ func TestBboltCache_ConnectBadBucketName(t *testing.T) {
 	testDbPath := t.TempDir() + "/test.db"
 	cacheConfig := newCacheConfig(testDbPath)
 	cacheConfig.BBolt.Bucket = ""
-	bc := Cache{Config: &cacheConfig, locker: locks.NewNamedLocker()}
+	bc := New(t.Name(), "", "", &cacheConfig)
 	// it should connect
 	err := bc.Connect()
 	if err == nil {
@@ -127,7 +128,7 @@ func TestBboltCache_Store(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	testDbPath := t.TempDir() + "/test.db"
 	cacheConfig := newCacheConfig(testDbPath)
-	bc := Cache{Config: &cacheConfig, locker: locks.NewNamedLocker()}
+	bc := New(t.Name(), "", "", &cacheConfig)
 
 	err := bc.Connect()
 	if err != nil {
@@ -151,7 +152,7 @@ func TestBboltCache_SetTTL(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	testDbPath := t.TempDir() + "/test.db"
 	cacheConfig := newCacheConfig(testDbPath)
-	bc := Cache{Config: &cacheConfig, locker: locks.NewNamedLocker()}
+	bc := New(t.Name(), "", "", &cacheConfig)
 
 	err := bc.Connect()
 	if err != nil {
@@ -159,7 +160,7 @@ func TestBboltCache_SetTTL(t *testing.T) {
 	}
 	defer bc.Close()
 
-	exp1 := bc.Index.GetExpiration(cacheKey)
+	exp1 := bc.(*Cache).Index.GetExpiration(cacheKey)
 	if !exp1.IsZero() {
 		t.Errorf("expected Zero time, got %v", exp1)
 	}
@@ -170,7 +171,7 @@ func TestBboltCache_SetTTL(t *testing.T) {
 		t.Error(err)
 	}
 
-	exp1 = bc.Index.GetExpiration(cacheKey)
+	exp1 = bc.(*Cache).Index.GetExpiration(cacheKey)
 	if exp1.IsZero() {
 		t.Errorf("expected time %d, got zero", int(time.Now().Unix())+60)
 	}
@@ -181,7 +182,7 @@ func TestBboltCache_SetTTL(t *testing.T) {
 
 	time.Sleep(time.Millisecond * 10)
 
-	exp2 := bc.Index.GetExpiration(cacheKey)
+	exp2 := bc.(*Cache).Index.GetExpiration(cacheKey)
 	if exp2.IsZero() {
 		t.Errorf("expected time %d, got zero", int(time.Now().Unix())+3600)
 	}
@@ -231,7 +232,7 @@ func TestBboltCache_StoreNoIndex(t *testing.T) {
 
 	testDbPath := t.TempDir() + "/test.db"
 	cacheConfig := newCacheConfig(testDbPath)
-	bc := Cache{Config: &cacheConfig, locker: locks.NewNamedLocker()}
+	bc := New(t.Name(), "", "", &cacheConfig)
 
 	err := bc.Connect()
 	if err != nil {
@@ -240,24 +241,24 @@ func TestBboltCache_StoreNoIndex(t *testing.T) {
 	defer bc.Close()
 
 	// it should store a value
-	bc.storeNoIndex(cacheKey, []byte("data"))
+	bc.(*Cache).storeNoIndex(cacheKey, []byte("data"))
 
 	// it should retrieve a value
-	data, ls, err := bc.retrieve(cacheKey, false, false)
+	data, ls, err := bc.(*Cache).retrieve(cacheKey, false, false)
 	if err != nil {
 		t.Error(err)
 	}
 	if ls != status.LookupStatusHit {
 		t.Errorf("expected %s got %s", status.LookupStatusHit, ls)
 	}
-	if string(data) != "data" {
-		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
+	if string(data.Value) != "data" {
+		t.Errorf("wanted \"%s\". got \"%s\".", "data", data.Value)
 	}
 
 	// test for error when bad key name
-	bc.storeNoIndex("", []byte("data"))
+	bc.(*Cache).storeNoIndex("", []byte("data"))
 
-	data, ls, err = bc.retrieve("", false, false)
+	data, ls, err = bc.(*Cache).retrieve("", false, false)
 	if err == nil {
 		t.Errorf("expected error for %s", expected)
 		bc.Close()
@@ -268,9 +269,7 @@ func TestBboltCache_StoreNoIndex(t *testing.T) {
 	if err != cache.ErrKNF {
 		t.Error("expected error for KNF")
 	}
-	if string(data) != "" {
-		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
-	}
+	require.Nil(t, data)
 }
 
 func BenchmarkCache_StoreNoIndex(b *testing.B) {
@@ -289,8 +288,8 @@ func BenchmarkCache_StoreNoIndex(b *testing.B) {
 		if ls != status.LookupStatusHit {
 			b.Errorf("expected %s got %s", status.LookupStatusHit, ls)
 		}
-		if string(data) != "data"+strconv.Itoa(n) {
-			b.Errorf("wanted \"%s\". got \"%s\".", "data", data)
+		if string(data.Value) != "data"+strconv.Itoa(n) {
+			b.Errorf("wanted \"%s\". got \"%s\".", "data", data.Value)
 		}
 
 		// test for error when bad key name
@@ -307,8 +306,8 @@ func BenchmarkCache_StoreNoIndex(b *testing.B) {
 		if err.Error() != expected {
 			b.Errorf("expected error '%s' got '%s'", expected, err.Error())
 		}
-		if string(data) != "" {
-			b.Errorf("wanted \"%s\". got \"%s\".", "data"+strconv.Itoa(n), data)
+		if string(data.Value) != "" {
+			b.Errorf("wanted \"%s\". got \"%s\".", "data"+strconv.Itoa(n), data.Value)
 		}
 	}
 }
@@ -317,7 +316,7 @@ func TestBboltCache_Remove(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	testDbPath := t.TempDir() + "/test.db"
 	cacheConfig := newCacheConfig(testDbPath)
-	bc := Cache{Config: &cacheConfig, locker: locks.NewNamedLocker()}
+	bc := New(t.Name(), "", "", &cacheConfig)
 
 	err := bc.Connect()
 	if err != nil {
@@ -342,7 +341,6 @@ func TestBboltCache_Remove(t *testing.T) {
 	if string(data) != "data" {
 		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
 	}
-
 	bc.Remove(cacheKey)
 
 	// it should be a cache miss
@@ -397,7 +395,7 @@ func TestBboltCache_BulkRemove(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	testDbPath := t.TempDir() + "/test.db"
 	cacheConfig := newCacheConfig(testDbPath)
-	bc := Cache{Config: &cacheConfig, locker: locks.NewNamedLocker()}
+	bc := New(t.Name(), "", "", &cacheConfig)
 
 	err := bc.Connect()
 	if err != nil {
@@ -466,7 +464,7 @@ func TestBboltCache_Retrieve(t *testing.T) {
 
 	testDbPath := t.TempDir() + "/test.db"
 	cacheConfig := newCacheConfig(testDbPath)
-	bc := Cache{Config: &cacheConfig, locker: locks.NewNamedLocker()}
+	bc := New(t.Name(), "", "", &cacheConfig)
 
 	err := bc.Connect()
 	if err != nil {
@@ -492,8 +490,8 @@ func TestBboltCache_Retrieve(t *testing.T) {
 	}
 
 	// it should still retrieve a value with nil index
-	idx := bc.Index
-	bc.Index = nil
+	idx := bc.(*Cache).Index
+	bc.(*Cache).Index = nil
 
 	data, ls, err = bc.Retrieve(cacheKey, false)
 	if err != nil {
@@ -507,7 +505,7 @@ func TestBboltCache_Retrieve(t *testing.T) {
 	}
 
 	// restore the index for further tests
-	bc.Index = idx
+	bc.(*Cache).Index = idx
 
 	// expire the object
 	bc.SetTTL(cacheKey, -1*time.Hour)
@@ -531,7 +529,7 @@ func TestBboltCache_Retrieve(t *testing.T) {
 	}
 
 	// create a corrupted cache entry and expect an error
-	writeToBBolt(bc.dbh, cacheConfig.BBolt.Bucket, cacheKey+"-invalid", []byte("asdasdfasf"))
+	writeToBBolt(bc.(*Cache).dbh, cacheConfig.BBolt.Bucket, cacheKey+"-invalid", []byte("asdasdfasf"))
 
 	// it should fail to retrieve a value
 	data, ls, err = bc.Retrieve(cacheKey+"-invalid", false)
@@ -606,7 +604,7 @@ func BenchmarkCache_Retrieve(b *testing.B) {
 }
 
 func TestLocker(t *testing.T) {
-	cache := Cache{locker: locks.NewNamedLocker()}
+	cache := New(t.Name(), "", "", nil)
 	l := cache.Locker()
 	cache.SetLocker(locks.NewNamedLocker())
 	m := cache.Locker()
@@ -619,8 +617,8 @@ func TestClose(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	testDbPath := t.TempDir() + "/test.db"
 	cacheConfig := newCacheConfig(testDbPath)
-	bc := Cache{Config: &cacheConfig, locker: locks.NewNamedLocker()}
-	bc.dbh = nil
+	bc := New(t.Name(), "", "", &cacheConfig)
+	bc.(*Cache).dbh = nil
 	err := bc.Close()
 	if err != nil {
 		t.Error(err)

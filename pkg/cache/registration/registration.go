@@ -69,7 +69,7 @@ func NewCache(cacheName string, cfg *options.Options) cache.Cache {
 	case ctRedis:
 		c = redis.New(cacheName, cfg)
 	case ctBBolt:
-		c = &bbolt.Cache{Name: cacheName, Config: cfg}
+		c = bbolt.New(cacheName, "", "", cfg)
 	case ctBadger:
 		c = badger.New(cacheName, cfg)
 	default:

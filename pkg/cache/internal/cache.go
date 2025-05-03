@@ -17,7 +17,6 @@
 package internal
 
 import (
-	"fmt"
 	"sync"
 	"time"
 
@@ -36,7 +35,7 @@ func NewCache(name, lockPrefix string, opts *CacheOptions) *Cache {
 	}
 	return &Cache{
 		Name:       name,
-		lockPrefix: lockPrefix,
+		LockPrefix: lockPrefix,
 		Config:     opts.Options,
 		Options:    opts,
 	}
@@ -59,7 +58,7 @@ type Cache struct {
 	Config     *options.Options
 	Index      *index.Index // TODO: ensure usage is optional
 	locker     locks.NamedLocker
-	lockPrefix string
+	LockPrefix string
 	Options    *CacheOptions
 }
 
@@ -133,8 +132,7 @@ func (c *Cache) StoreReference(cacheKey string, data cache.ReferenceObject, ttl 
 }
 
 func (c *Cache) remove(cacheKey string, isBulk bool) {
-	fmt.Println("remove called", cacheKey, c.lockPrefix)
-	nl, _ := c.locker.Acquire(c.lockPrefix + cacheKey)
+	nl, _ := c.locker.Acquire(c.LockPrefix + cacheKey)
 	err := c.Options.Delete(cacheKey)
 	nl.Release()
 	if !isBulk && err == nil && c.Index != nil {
