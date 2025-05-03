@@ -462,13 +462,12 @@ func (tc *testCache) Store(cacheKey string, data []byte, ttl time.Duration) erro
 	return errTest
 }
 
-func (tc *testCache) Retrieve(cacheKey string, allowExpired bool) ([]byte, status.LookupStatus, error) {
+func (tc *testCache) Retrieve(cacheKey string) ([]byte, status.LookupStatus, error) {
 	return nil, status.LookupStatusError, errTest
 }
 
 func (tc *testCache) SetTTL(cacheKey string, ttl time.Duration) {}
-func (tc *testCache) Remove(cacheKey string)                    {}
-func (tc *testCache) BulkRemove(cacheKeys []string)             {}
+func (tc *testCache) Remove(cacheKey ...string) error           { return nil }
 func (tc *testCache) Close() error                              { return errTest }
 func (tc *testCache) Configuration() *co.Options                { return tc.configuration }
 func (tc *testCache) Locker() locks.NamedLocker                 { return tc.locker }

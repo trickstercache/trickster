@@ -18,12 +18,14 @@ package engines
 
 import (
 	"context"
+	stderrors "errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"github.com/trickstercache/mockster/pkg/mocks/byterange"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/locks"
@@ -154,9 +156,8 @@ func TestFullArticuationChunks(t *testing.T) {
 
 	ts, _, r, rsc, err := setupTestHarnessOPCRange(nil)
 	rsc.CacheConfig.UseCacheChunking = true
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
+
 	defer ts.Close()
 
 	// Test Articulated Upstream
@@ -166,137 +167,106 @@ func TestFullArticuationChunks(t *testing.T) {
 	r.URL.Path = "/byterange/new/test/path"
 	r.URL.RawQuery = "max-age=1"
 	expectedBody, err := getExpectedRangeBody(r, "d5a5acd7eb4d3f622c62947a9904b89b")
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
+
 	_, e := testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "kmiss"})
-	for _, err = range e {
-		t.Error(err)
-	}
+	require.NoError(t, stderrors.Join(e...))
 
 	r.URL.RawQuery = "max-age=1&status=200"
 	r.URL.Path = "/byterange/new/test/path/2"
 	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "kmiss"})
-	for _, err = range e {
-		t.Error(err)
-	}
+	require.NoError(t, stderrors.Join(e...))
 
+	t.Log("t1")
 	r.URL.RawQuery = "max-age=1&ims=200"
 	r.URL.Path = "/byterange/new/test/path/3"
 	r.Header.Set(headers.NameRange, "bytes=10-20")
 	expectedBody, err = getExpectedRangeBody(r, "d5a5acd7eb4d3f622c62947a9904b89b")
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
+
 	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "kmiss"})
-	for _, err = range e {
-		t.Error(err)
-	}
+	require.NoError(t, stderrors.Join(e...))
 
 	r.Header.Set(headers.NameRange, "bytes=10-20, 25-30, 45-60")
 	expectedBody, err = getExpectedRangeBody(r, "a262725e1b8ae4967d369cff746e3924")
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
+
 	r.URL.RawQuery = "max-age=1&ims=206"
 	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "phit"})
-	for _, err = range e {
-		t.Error(err)
-	}
+	require.NoError(t, stderrors.Join(e...))
+	t.Log("t2")
 
 	r.Header.Set(headers.NameRange, "bytes=9-20, 25-31, 42-65, 70-80")
 	expectedBody, err = getExpectedRangeBody(r, "34b73ea5c4c1ab5b9e34c9888119c58f")
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
+
+	t.Log("t2a")
 	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "phit"})
-	for _, err = range e {
-		t.Error(err)
-	}
+	require.NoError(t, stderrors.Join(e...))
+	t.Log("t2b")
 
 	time.Sleep(time.Millisecond * 3000)
 
 	r.Header.Set(headers.NameRange, "bytes=9-20, 90-95, 100-105")
 	expectedBody, err = getExpectedRangeBody(r, "01760208a2d6589fc9620627d561640d")
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
+	t.Log("t2c")
+
 	r.URL.RawQuery = "max-age=1&ims=206"
 	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "kmiss"})
-	for _, err = range e {
-		t.Error(err)
-	}
+	require.NoError(t, stderrors.Join(e...))
 
 	r.Header.Set(headers.NameRange, "bytes=9-20, 90-95, 100-105")
 	expectedBody, err = getExpectedRangeBody(r, "01760208a2d6589fc9620627d561640d")
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 	r.URL.Path = "/byterange/new/test/path/20"
 	r.URL.RawQuery = "max-age=1"
 	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "kmiss"})
-	for _, err = range e {
-		t.Error(err)
-	}
+	require.NoError(t, stderrors.Join(e...))
+	t.Log("t3")
 
 	r.Header.Set(headers.NameRange, "bytes=9-20, 25-32, 41-65")
 	expectedBody, err = getExpectedRangeBody(r, "722af19813169c99d8bda37a2f244f39")
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
+
 	r.URL.RawQuery = "max-age=1&ims=206&non-ims=206"
 	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "phit"})
-	for _, err = range e {
-		t.Error(err)
-	}
+	require.NoError(t, stderrors.Join(e...))
 
 	time.Sleep(time.Millisecond * 1050)
 
 	r.Header.Del(headers.NameRange)
 	r.URL.RawQuery = "max-age=1"
 	_, e = testFetchOPC(r, http.StatusOK, byterange.Body, map[string]string{"status": "phit"})
-	for _, err = range e {
-		t.Error(err)
-	}
+	require.NoError(t, stderrors.Join(e...))
 
 	r.Header.Set(headers.NameRange, "bytes=9-20, 21-22")
 	r.URL.Path = "/byterange/new/test/path/21"
 	expectedBody, err = getExpectedRangeBody(r, "368b9fbcef800068a48e70fa6e040289")
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
+
 	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "kmiss"})
-	for _, err = range e {
-		t.Error(err)
-	}
+	require.NoError(t, stderrors.Join(e...))
 
 	r.Header.Set(headers.NameRange, "bytes=0-1223")
 	r.URL.Path = "/byterange/new/test/path/22"
 	r.URL.RawQuery = ""
 	expectedBody, err = getExpectedRangeBody(r, "722af19813169c99d8bda37a2f244f39")
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
+
 	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "kmiss"})
-	for _, err = range e {
-		t.Error(err)
-	}
+	require.NoError(t, stderrors.Join(e...))
 
 	r.Header.Set(headers.NameRange, "bytes=0-1220,1221-1223")
 	expectedBody, err = getExpectedRangeBody(r, "f8813b96e6b06ea1d826bb921690f87b")
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
+
 	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "hit"})
-	for _, err = range e {
-		t.Error(err)
-	}
+	require.NoError(t, stderrors.Join(e...))
 
 	r.Header.Del(headers.NameRange)
 	_, e = testFetchOPC(r, http.StatusOK, byterange.Body, map[string]string{"status": "hit"})
-	for _, err = range e {
-		t.Error(err)
-	}
+	require.NoError(t, stderrors.Join(e...))
 
 }
 

@@ -23,11 +23,11 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/badger"
 	"github.com/trickstercache/trickster/v2/pkg/cache/bbolt"
 	"github.com/trickstercache/trickster/v2/pkg/cache/filesystem"
+	"github.com/trickstercache/trickster/v2/pkg/cache/manager"
 	"github.com/trickstercache/trickster/v2/pkg/cache/memory"
 	"github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/redis"
 	"github.com/trickstercache/trickster/v2/pkg/config"
-	"github.com/trickstercache/trickster/v2/pkg/locks"
 )
 
 // Cache Interface Types
@@ -65,19 +65,23 @@ func NewCache(cacheName string, cfg *options.Options) cache.Cache {
 
 	switch cfg.Provider {
 	case ctFilesystem:
-		c = &filesystem.Cache{Name: cacheName, Config: cfg}
+		c = manager.NewCache(filesystem.NewCache(cacheName, cfg), manager.CacheOptions{
+			UseIndex: true,
+		}, cfg)
 	case ctRedis:
-		c = &redis.Cache{Name: cacheName, Config: cfg}
+		c = manager.NewCache(redis.New(cacheName, cfg), manager.CacheOptions{}, cfg)
 	case ctBBolt:
-		c = &bbolt.Cache{Name: cacheName, Config: cfg}
+		c = manager.NewCache(bbolt.New(cacheName, "", "", cfg), manager.CacheOptions{
+			UseIndex: true,
+		}, cfg)
 	case ctBadger:
-		c = &badger.Cache{Name: cacheName, Config: cfg}
+		c = manager.NewCache(badger.New(cacheName, cfg), manager.CacheOptions{}, cfg)
 	default:
 		// Default to MemoryCache
-		c = &memory.Cache{Name: cacheName, Config: cfg}
+		c = manager.NewCache(memory.New(cacheName, cfg), manager.CacheOptions{
+			UseIndex: true,
+		}, cfg)
 	}
-
-	c.SetLocker(locks.NewNamedLocker())
 	c.Connect()
 	return c
 }

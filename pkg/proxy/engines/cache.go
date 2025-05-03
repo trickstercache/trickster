@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/cache"
+	"github.com/trickstercache/trickster/v2/pkg/cache/manager"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
@@ -56,9 +57,9 @@ type queryResult struct {
 func queryConcurrent(_ context.Context, c cache.Cache, key string) *queryResult {
 	qr := &queryResult{queryKey: key, d: &HTTPDocument{}}
 	if c.Configuration().Provider == "memory" {
-		mc := c.(cache.MemoryCache)
+		mc := c.(*manager.Manager).Client.(cache.MemoryCache)
 		var ifc any
-		ifc, qr.lookupStatus, qr.err = mc.RetrieveReference(key, true)
+		ifc, qr.lookupStatus, qr.err = mc.RetrieveReference(key)
 
 		if qr.err != nil || (qr.lookupStatus != status.LookupStatusHit) {
 			return qr
@@ -71,7 +72,7 @@ func queryConcurrent(_ context.Context, c cache.Cache, key string) *queryResult 
 
 	} else {
 		var b []byte
-		b, qr.lookupStatus, qr.err = c.Retrieve(key, true)
+		b, qr.lookupStatus, qr.err = c.Retrieve(key)
 
 		if qr.err != nil || (qr.lookupStatus != status.LookupStatusHit) {
 			return qr
@@ -330,7 +331,7 @@ func writeConcurrent(_ context.Context, c cache.Cache, key string, d *HTTPDocume
 
 	// for memory cache, don't serialize the document, since we can retrieve it by reference.
 	if c.Configuration().Provider == "memory" {
-		mc := c.(cache.MemoryCache)
+		mc := c.(*manager.Manager).Client.(cache.MemoryCache)
 
 		if d != nil {
 			// during unmarshal, these would come back as false, so lets set them as such even for direct access

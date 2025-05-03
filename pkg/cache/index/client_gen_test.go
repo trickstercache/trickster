@@ -25,8 +25,8 @@ import (
 	"github.com/tinylib/msgp/msgp"
 )
 
-func TestMarshalUnmarshalObject(t *testing.T) {
-	v := Object{}
+func TestMarshalUnmarshalIndexedClient(t *testing.T) {
+	v := IndexedClient{}
 	bts, err := v.MarshalMsg(nil)
 	if err != nil {
 		t.Fatal(err)
@@ -48,8 +48,8 @@ func TestMarshalUnmarshalObject(t *testing.T) {
 	}
 }
 
-func BenchmarkMarshalMsgObject(b *testing.B) {
-	v := Object{}
+func BenchmarkMarshalMsgIndexedClient(b *testing.B) {
+	v := IndexedClient{}
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -57,8 +57,8 @@ func BenchmarkMarshalMsgObject(b *testing.B) {
 	}
 }
 
-func BenchmarkAppendMsgObject(b *testing.B) {
-	v := Object{}
+func BenchmarkAppendMsgIndexedClient(b *testing.B) {
+	v := IndexedClient{}
 	bts := make([]byte, 0, v.Msgsize())
 	bts, _ = v.MarshalMsg(bts[0:0])
 	b.SetBytes(int64(len(bts)))
@@ -69,8 +69,8 @@ func BenchmarkAppendMsgObject(b *testing.B) {
 	}
 }
 
-func BenchmarkUnmarshalObject(b *testing.B) {
-	v := Object{}
+func BenchmarkUnmarshalIndexedClient(b *testing.B) {
+	v := IndexedClient{}
 	bts, _ := v.MarshalMsg(nil)
 	b.ReportAllocs()
 	b.SetBytes(int64(len(bts)))
@@ -83,17 +83,17 @@ func BenchmarkUnmarshalObject(b *testing.B) {
 	}
 }
 
-func TestEncodeDecodeObject(t *testing.T) {
-	v := Object{}
+func TestEncodeDecodeIndexedClient(t *testing.T) {
+	v := IndexedClient{}
 	var buf bytes.Buffer
 	msgp.Encode(&buf, &v)
 
 	m := v.Msgsize()
 	if buf.Len() > m {
-		t.Log("WARNING: TestEncodeDecodeObject Msgsize() is inaccurate")
+		t.Log("WARNING: TestEncodeDecodeIndexedClient Msgsize() is inaccurate")
 	}
 
-	vn := Object{}
+	vn := IndexedClient{}
 	err := msgp.Decode(&buf, &vn)
 	if err != nil {
 		t.Error(err)
@@ -107,8 +107,8 @@ func TestEncodeDecodeObject(t *testing.T) {
 	}
 }
 
-func BenchmarkEncodeObject(b *testing.B) {
-	v := Object{}
+func BenchmarkEncodeIndexedClient(b *testing.B) {
+	v := IndexedClient{}
 	var buf bytes.Buffer
 	msgp.Encode(&buf, &v)
 	b.SetBytes(int64(buf.Len()))
@@ -121,8 +121,8 @@ func BenchmarkEncodeObject(b *testing.B) {
 	en.Flush()
 }
 
-func BenchmarkDecodeObject(b *testing.B) {
-	v := Object{}
+func BenchmarkDecodeIndexedClient(b *testing.B) {
+	v := IndexedClient{}
 	var buf bytes.Buffer
 	msgp.Encode(&buf, &v)
 	b.SetBytes(int64(buf.Len()))

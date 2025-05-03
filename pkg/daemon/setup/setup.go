@@ -29,7 +29,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/appinfo/usage"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
-	"github.com/trickstercache/trickster/v2/pkg/cache/memory"
+	"github.com/trickstercache/trickster/v2/pkg/cache/index"
+	"github.com/trickstercache/trickster/v2/pkg/cache/manager"
 	"github.com/trickstercache/trickster/v2/pkg/cache/providers"
 	"github.com/trickstercache/trickster/v2/pkg/cache/registration"
 	"github.com/trickstercache/trickster/v2/pkg/config"
@@ -223,8 +224,8 @@ func applyCachingConfig(si *instance.ServerInstance,
 				v.ProviderID == providers.Memory {
 				// Note: this is only necessary for the memory cache as all other providers will be closed and reopened with the newest config
 				if v.Index != nil {
-					mc := w.(*memory.Cache)
-					mc.Index.UpdateOptions(v.Index)
+					mc := w.(*manager.Manager).Client.(*index.IndexedClient)
+					mc.UpdateOptions(v.Index)
 				}
 				caches[k] = w
 				continue
