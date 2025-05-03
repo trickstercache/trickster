@@ -50,18 +50,9 @@ type Lookup map[string]Cache
 // MemoryCache is the interface for an in-memory cache
 // This offers an additional method for storing references to bypass serialization
 type MemoryCache interface {
-	Connect() error
-	Store(cacheKey string, data []byte, ttl time.Duration) error
-	Retrieve(cacheKey string, allowExpired bool) ([]byte, status.LookupStatus, error)
-	SetTTL(cacheKey string, ttl time.Duration)
-	Remove(cacheKey string)
-	BulkRemove(cacheKeys []string)
-	Close() error
-	Configuration() *options.Options
+	Cache
 	StoreReference(cacheKey string, data ReferenceObject, ttl time.Duration) error
 	RetrieveReference(cacheKey string, allowExpired bool) (any, status.LookupStatus, error)
-	Locker() locks.NamedLocker
-	SetLocker(locks.NamedLocker)
 }
 
 // ReferenceObject defines an interface for a cache object possessing the ability to report
