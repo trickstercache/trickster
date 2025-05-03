@@ -67,6 +67,9 @@ func New(cacheName, fileName, bucketName string, opts *options.Options) cache.Ca
 			return c.remove(cacheKey, false)
 		},
 		Close: func() error {
+			if c.dbh == nil {
+				return nil
+			}
 			return c.dbh.Close()
 		},
 	})
@@ -206,13 +209,11 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool,
 }
 
 func (c *Cache) remove(cacheKey string, isBulk bool) error {
-	nl, _ := c.Locker().Acquire(c.Cache.LockPrefix + cacheKey)
 	fmt.Println("acquired lock", cacheKey)
 	err := c.dbh.Update(func(tx *bbolt.Tx) error {
 		b := tx.Bucket([]byte(c.Config.BBolt.Bucket))
 		return b.Delete([]byte(cacheKey))
 	})
-	nl.Release()
 	if err != nil {
 		return err
 	}
