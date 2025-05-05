@@ -21,6 +21,8 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/cache"
+	"github.com/trickstercache/trickster/v2/pkg/cache/index"
+	"github.com/trickstercache/trickster/v2/pkg/cache/internal"
 	"github.com/trickstercache/trickster/v2/pkg/cache/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
@@ -33,30 +35,34 @@ import (
 
 // Cache describes a Badger Cache
 type Cache struct {
-	Name   string
-	Config *options.Options
-	locker locks.NamedLocker
+	internal.Cache
 
 	dbh *badger.DB
 }
 
-// Locker returns the cache's locker
-func (c *Cache) Locker() locks.NamedLocker {
-	return c.locker
-}
-
-// SetLocker sets the cache's locker
-func (c *Cache) SetLocker(l locks.NamedLocker) {
-	c.locker = l
-}
-
-// Configuration returns the Configuration for the Cache object
-func (c *Cache) Configuration() *options.Options {
-	return c.Config
+func New(name string, cfg *options.Options) *Cache {
+	c := &Cache{}
+	c.Cache = *internal.NewCache(name, "", &internal.CacheOptions{
+		Options:  cfg,
+		Connect:  c.connect,
+		Store:    c.store,
+		Retrieve: c.retrieve,
+		Delete: func(cacheKey string) error {
+			logger.Debug("badger cache remove", logging.Pairs{"key": cacheKey})
+			c.dbh.Update(func(txn *badger.Txn) error {
+				return txn.Delete([]byte(cacheKey))
+			})
+			metrics.ObserveCacheDel(c.Name, c.Config.Provider, 0)
+			return nil
+		},
+		SetTTL: c.setTTL,
+	})
+	c.SetLocker(locks.NewNamedLocker())
+	return c
 }
 
 // Connect opens the configured Badger key-value store
-func (c *Cache) Connect() error {
+func (c *Cache) connect() error {
 	logger.Info("badger cache setup", logging.Pairs{"cacheDir": c.Config.Badger.Directory})
 
 	opts := badger.DefaultOptions(c.Config.Badger.Directory)
@@ -67,12 +73,13 @@ func (c *Cache) Connect() error {
 	if err != nil {
 		return err
 	}
+	c.Cache.Options.Close = c.dbh.Close
 
 	return nil
 }
 
 // Store places the the data into the Badger Cache using the provided Key and TTL
-func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
+func (c *Cache) store(cacheKey string, data []byte, refData cache.ReferenceObject, ttl time.Duration, updateIndex bool) error {
 	metrics.ObserveCacheOperation(c.Name, c.Config.Provider, "set", "none", float64(len(data)))
 	logger.Debug("badger cache store", logging.Pairs{"key": cacheKey, "ttl": ttl})
 	return c.dbh.Update(func(txn *badger.Txn) error {
@@ -82,7 +89,7 @@ func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
 
 // Retrieve gets data from the Badger Cache using the provided Key
 // because Badger manages Object Expiration internally, allowExpired is not used.
-func (c *Cache) Retrieve(cacheKey string, allowExpired bool) ([]byte, status.LookupStatus, error) {
+func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) (*index.Object, status.LookupStatus, error) {
 	var data []byte
 	err := c.dbh.View(func(txn *badger.Txn) error {
 		item, err := txn.Get([]byte(cacheKey))
@@ -97,7 +104,7 @@ func (c *Cache) Retrieve(cacheKey string, allowExpired bool) ([]byte, status.Loo
 	if err == nil {
 		logger.Debug("badger cache retrieve", logging.Pairs{"key": cacheKey})
 		metrics.ObserveCacheOperation(c.Name, c.Config.Provider, "get", "hit", float64(len(data)))
-		return data, status.LookupStatusHit, nil
+		return &index.Object{Key: cacheKey, Value: data}, status.LookupStatusHit, nil
 	}
 
 	if err == badger.ErrKeyNotFound {
@@ -109,40 +116,11 @@ func (c *Cache) Retrieve(cacheKey string, allowExpired bool) ([]byte, status.Loo
 
 	logger.Debug("badger cache retrieve failed", logging.Pairs{"key": cacheKey, "reason": err.Error()})
 	metrics.ObserveCacheMiss(c.Name, c.Config.Provider)
-	return data, status.LookupStatusError, err
-}
-
-// Remove removes an object in cache, if present
-func (c *Cache) Remove(cacheKey string) {
-	logger.Debug("badger cache remove", logging.Pairs{"key": cacheKey})
-	c.dbh.Update(func(txn *badger.Txn) error {
-		return txn.Delete([]byte(cacheKey))
-	})
-	metrics.ObserveCacheDel(c.Name, c.Config.Provider, 0)
-}
-
-// BulkRemove removes a list of objects from the cache. noLock is not used for Badger
-func (c *Cache) BulkRemove(cacheKeys []string) {
-	logger.Debug("badger cache bulk remove", nil)
-
-	c.dbh.Update(func(txn *badger.Txn) error {
-		for _, key := range cacheKeys {
-			if err := txn.Delete([]byte(key)); err != nil {
-				return err
-			}
-			metrics.ObserveCacheDel(c.Name, c.Config.Provider, 0)
-		}
-		return nil
-	})
-}
-
-// Close closes the Badger Cache
-func (c *Cache) Close() error {
-	return c.dbh.Close()
+	return &index.Object{Key: cacheKey, Value: data}, status.LookupStatusError, err
 }
 
 // SetTTL updates the TTL for the provided cache object
-func (c *Cache) SetTTL(cacheKey string, ttl time.Duration) {
+func (c *Cache) setTTL(cacheKey string, ttl time.Duration) {
 	var data []byte
 	err := c.dbh.Update(func(txn *badger.Txn) error {
 		item, err := txn.Get([]byte(cacheKey))

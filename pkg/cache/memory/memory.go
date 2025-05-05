@@ -19,11 +19,13 @@
 package memory
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/index"
+	"github.com/trickstercache/trickster/v2/pkg/cache/internal"
 	"github.com/trickstercache/trickster/v2/pkg/cache/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
@@ -35,48 +37,41 @@ import (
 
 // Cache defines a a Memory Cache client that conforms to the Cache interface
 type Cache struct {
-	Name       string
+	internal.Cache
 	client     sync.Map
-	Config     *options.Options
 	Index      *index.Index
-	locker     locks.NamedLocker
 	lockPrefix string
 }
 
 // New returns a new memory cache as a Trickster Cache Interface type
-func New() (cache.Cache, error) {
+func New(name string, cfg *options.Options) cache.MemoryCache {
+	lp := fmt.Sprintf("%s.memory.", name)
 	c := &Cache{}
-	c.SetLocker(locks.NewNamedLocker())
-	c.Config = options.New()
-	err := c.Connect()
-	if err != nil {
-		return nil, err
+	if cfg == nil {
+		cfg = options.New()
 	}
-	return c, nil
-}
-
-// Locker returns the cache's locker
-func (c *Cache) Locker() locks.NamedLocker {
-	return c.locker
-}
-
-// SetLocker sets the cache's locker
-func (c *Cache) SetLocker(l locks.NamedLocker) {
-	c.locker = l
-}
-
-// Configuration returns the Configuration for the Cache object
-func (c *Cache) Configuration() *options.Options {
-	return c.Config
+	c.Cache = *internal.NewCache(name, lp, &internal.CacheOptions{
+		Options:  cfg,
+		Connect:  c.connect,
+		Store:    c.store,
+		Retrieve: c.retrieve,
+		Delete: func(key string) error {
+			c.client.Delete(key)
+			return nil
+		},
+	})
+	c.SetLocker(locks.NewNamedLocker())
+	return c
 }
 
 // Connect initializes the Cache
-func (c *Cache) Connect() error {
+func (c *Cache) connect() error {
 	logger.Info("memorycache setup", logging.Pairs{"name": c.Name,
 		"maxSizeBytes": c.Config.Index.MaxSizeBytes, "maxSizeObjects": c.Config.Index.MaxSizeObjects})
 	c.lockPrefix = c.Name + ".memory."
 	c.client = sync.Map{}
 	c.Index = index.NewIndex(c.Name, c.Config.Provider, nil, c.Config.Index, c.BulkRemove, nil)
+	c.Cache.Index = c.Index
 	return nil
 }
 
@@ -113,7 +108,7 @@ func (c *Cache) store(cacheKey string, byteData []byte, refData cache.ReferenceO
 	}
 
 	if o1 != nil && o2 != nil {
-		nl, _ := c.locker.Acquire(c.lockPrefix + cacheKey)
+		nl, _ := c.Locker().Acquire(c.lockPrefix + cacheKey)
 		logger.Debug("memorycache cache store",
 			logging.Pairs{"cacheName": c.Name, "cacheKey": cacheKey, "length": l, "ttl": ttl, "is_direct": isDirect})
 		c.client.Store(cacheKey, o1)
@@ -154,7 +149,7 @@ func (c *Cache) Retrieve(cacheKey string, allowExpired bool) ([]byte, status.Loo
 func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) (*index.Object,
 	status.LookupStatus, error) {
 
-	nl, _ := c.locker.RAcquire(c.lockPrefix + cacheKey)
+	nl, _ := c.Locker().RAcquire(c.lockPrefix + cacheKey)
 	record, ok := c.client.Load(cacheKey)
 	nl.RRelease()
 
@@ -171,49 +166,8 @@ func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) (*index
 			return o, status.LookupStatusHit, nil
 		}
 		// Cache Object has been expired but not reaped, go ahead and delete it
-		go c.remove(cacheKey, false)
+		go c.Remove(cacheKey)
 	}
 	metrics.ObserveCacheMiss(c.Name, c.Config.Provider)
 	return nil, status.LookupStatusKeyMiss, cache.ErrKNF
-}
-
-// SetTTL updates the TTL for the provided cache object
-func (c *Cache) SetTTL(cacheKey string, ttl time.Duration) {
-	go c.Index.UpdateObjectTTL(cacheKey, ttl)
-}
-
-// Remove removes an object from the cache
-func (c *Cache) Remove(cacheKey string) {
-	c.remove(cacheKey, false)
-}
-
-func (c *Cache) remove(cacheKey string, isBulk bool) {
-	nl, _ := c.locker.Acquire(c.lockPrefix + cacheKey)
-	c.client.Delete(cacheKey)
-	nl.Release()
-	if !isBulk {
-		go c.Index.RemoveObject(cacheKey)
-	}
-	metrics.ObserveCacheDel(c.Name, c.Config.Provider, 0)
-}
-
-// BulkRemove removes a list of objects from the cache
-func (c *Cache) BulkRemove(cacheKeys []string) {
-	wg := &sync.WaitGroup{}
-	wg.Add(len(cacheKeys))
-	for _, cacheKey := range cacheKeys {
-		go func(key string) {
-			c.remove(key, true)
-			wg.Done()
-		}(cacheKey)
-	}
-	wg.Wait()
-}
-
-// Close is not used for Cache, and is here to fully prototype the Cache Interface
-func (c *Cache) Close() error {
-	if c.Index != nil {
-		c.Index.Close()
-	}
-	return nil
 }
