@@ -66,7 +66,6 @@ type Query struct {
 	tokenized string
 	step      time.Duration
 	extent    timeseries.Extent
-	dialect   JSONRequestBodyDialect
 }
 
 type JSONRequestBody struct {
@@ -85,25 +84,25 @@ type JSONRequestBodyDialect struct {
 	DateTimeFormat string   `json:"dateTimeFormat,omitempty"`
 }
 
-type FluxJSONResponse struct {
-	Results []FluxResult `json:"results"`
+type Response struct {
+	Results []Result `json:"results"`
 }
 
-type FluxResult struct {
-	Tables []FluxTable `json:"tables"`
+type Result struct {
+	Tables []Table `json:"tables"`
 }
 
-type FluxTable struct {
-	Columns []FluxColumn `json:"columns"`
-	Records []FluxRecord `json:"records"`
+type Table struct {
+	Columns []Column `json:"columns"`
+	Records []Record `json:"records"`
 }
 
-type FluxColumn struct {
+type Column struct {
 	Name     string `json:"name"`
 	Datatype string `json:"datatype"`
 }
 
-type FluxRecord struct {
+type Record struct {
 	Values map[string]interface{} `json:"values"`
 }
 
@@ -223,16 +222,17 @@ func SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
 		return
 	}
 	var rb *JSONRequestBody
-	if headers.ProvidesContentType(r, headers.ValueApplicationFlux) {
+	switch {
+	case headers.ProvidesContentType(r, headers.ValueApplicationFlux):
 		rb = vndfluxToJSON(b)
 		r.Header.Set(headers.NameContentType, headers.ValueApplicationJSON)
-	} else if headers.ProvidesContentType(r, headers.ValueApplicationJSON) {
+	case headers.ProvidesContentType(r, headers.ValueApplicationJSON):
 		err = json.Unmarshal(b, &rb)
 		if err != nil || rb == nil {
 			logger.Error(setExtentErrorLogEvent, logging.Pairs{"error": err})
 			return
 		}
-	} else {
+	default:
 		rb = &JSONRequestBody{}
 		r.Header.Set(headers.NameContentType, headers.ValueApplicationJSON)
 	}
@@ -280,11 +280,12 @@ func parseStep(input string) (time.Duration, error) {
 	input = input[i:]
 	i = strings.Index(input, ",")
 	j := strings.Index(input, ")")
-	if i >= 0 && i < j {
+	switch {
+	case i >= 0 && i < j:
 		input = strings.TrimSpace(input[:i])
-	} else if j >= 0 {
+	case j >= 0:
 		input = strings.TrimSpace(input[:j])
-	} else {
+	default:
 		return 0, ErrTimeRangeParsingFailed
 	}
 	return time.ParseDuration(input)

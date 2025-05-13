@@ -82,7 +82,7 @@ func ParseComment(rs *parsing.RunState) {
 }
 
 // ParseFVComment will parse the comment and return FindVerb to be invoked
-func ParseFVComment(bp, ip parsing.Parser, rs *parsing.RunState) parsing.StateFn {
+func ParseFVComment(_, _ parsing.Parser, rs *parsing.RunState) parsing.StateFn {
 	ParseComment(rs)
 	return rs.GetReturnFunc(sql.FindVerb, nil, true)
 }

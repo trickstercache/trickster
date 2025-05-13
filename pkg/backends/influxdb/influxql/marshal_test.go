@@ -17,16 +17,12 @@
 package influxql
 
 import (
-	"io"
 	"net/http/httptest"
-	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
-	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 )
 
 func TestMarshalTimeseries(t *testing.T) {
@@ -71,24 +67,6 @@ func TestMarshalTimeseries(t *testing.T) {
 	}
 	if !strings.HasPrefix(w.Header().Get(headers.NameContentType), headers.ValueApplicationJSON) {
 		t.Error("expected JSON content type header; got", w.Header().Get(headers.NameContentType))
-	}
-
-}
-
-func TestWriteEpochTime(t *testing.T) {
-
-	now := time.Now()
-	w := httptest.NewRecorder()
-	writeEpochTime(w, epoch.Epoch(now.UnixNano()), 1000000)
-
-	b, err := io.ReadAll(w.Body)
-	if err != nil {
-		t.Error(err)
-	}
-
-	expected := strconv.FormatInt(now.UnixNano()/1000000, 10)
-	if string(b) != expected {
-		t.Errorf("expected %s got %s", expected, string(b))
 	}
 
 }

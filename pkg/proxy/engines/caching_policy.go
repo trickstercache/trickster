@@ -130,13 +130,13 @@ func (cp *CachingPolicy) Merge(src *CachingPolicy) {
 }
 
 // TTL returns a TTL based on the subject caching policy and the provided multiplier and max values
-func (cp *CachingPolicy) TTL(multiplier float64, max time.Duration) time.Duration {
+func (cp *CachingPolicy) TTL(multiplier float64, maxDur time.Duration) time.Duration {
 	ttl := time.Duration(cp.FreshnessLifetime) * time.Second
 	if cp.CanRevalidate {
 		ttl *= time.Duration(multiplier)
 	}
-	if ttl > max {
-		ttl = max
+	if ttl > maxDur {
+		ttl = maxDur
 	}
 	return ttl
 }

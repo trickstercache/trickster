@@ -60,8 +60,7 @@ type target struct {
 type DemandProbe func(w http.ResponseWriter)
 
 // newTarget returns a new target
-func newTarget(ctx context.Context,
-	name, description string, o *ho.Options,
+func newTarget(_ context.Context, name, description string, o *ho.Options,
 	client *http.Client) (*target, error) {
 
 	if o == nil {
@@ -269,7 +268,7 @@ func (t *target) demandProbe(w http.ResponseWriter) {
 func newHTTPClient(timeout time.Duration) *http.Client {
 	return &http.Client{
 		Timeout: timeout,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
 		Transport: &http.Transport{

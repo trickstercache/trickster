@@ -28,7 +28,7 @@ import (
 )
 
 func marshalTimeseriesXSV(w io.Writer, ds *dataset.DataSet,
-	rlo *timeseries.RequestOptions, writeNames bool, writeTypes bool,
+	_ *timeseries.RequestOptions, writeNames bool, writeTypes bool,
 	separator byte) error {
 	fds, tags, vals, tfd := ds.FieldDefinitions()
 

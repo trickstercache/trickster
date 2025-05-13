@@ -88,7 +88,7 @@ func (d *HTTPDocument) GetTimeseriesChunk(chunkExtent timeseries.Extent) *HTTPDo
 	return dd
 }
 
-func (d *HTTPDocument) GetByterangeChunk(chunkRange byterange.Range, chunkSize int64) *HTTPDocument {
+func (d *HTTPDocument) GetByterangeChunk(chunkRange byterange.Range, _ int64) *HTTPDocument {
 	dd := &HTTPDocument{
 		IsChunk: true,
 	}

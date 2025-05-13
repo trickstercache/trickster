@@ -187,7 +187,7 @@ func registerBackendRoutes(r router.Router, metricsRouter router.Router,
 		h := client.Handlers()
 
 		RegisterPathRoutes(r, h, client, o, c, defaultPaths,
-			tracers, conf.Main.HealthHandlerPath)
+			tracers)
 
 		// now we'll go ahead and register the health handler
 		if h, ok := client.Handlers()["health"]; ok && o.Name != "" && metricsRouter != nil && (o.HealthCheck == nil ||
@@ -210,9 +210,7 @@ func registerBackendRoutes(r router.Router, metricsRouter router.Router,
 // the path routes to the appropriate handler from the provided handlers map
 func RegisterPathRoutes(r router.Router, handlers map[string]http.Handler,
 	client backends.Backend, o *bo.Options, c cache.Cache,
-	paths map[string]*po.Options, tracers tracing.Tracers,
-	healthHandlerPath string) {
-
+	paths map[string]*po.Options, tracers tracing.Tracers) {
 	if o == nil {
 		return
 	}

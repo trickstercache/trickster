@@ -107,7 +107,7 @@ func (trq *TimeRangeQuery) String() string {
 	if len(trq.TagFieldDefintions) == 0 {
 		td = make(FieldDefinitions, 0)
 	} else {
-		td = FieldDefinitions(trq.TagFieldDefintions)
+		td = trq.TagFieldDefintions
 	}
 	b, _ := json.Marshal(struct {
 		Statement string           `json:"statement"`

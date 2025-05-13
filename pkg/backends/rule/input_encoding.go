@@ -27,7 +27,7 @@ var decodingFuncs = map[encoding]decodingFunc{
 	"base64": decodeBase64,
 }
 
-func decodeBase64(input, unusedS string, unusedI int) string {
+func decodeBase64(input, _ string, _ int) string {
 	if input == "" {
 		return ""
 	}

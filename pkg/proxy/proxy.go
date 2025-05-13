@@ -79,7 +79,7 @@ func NewHTTPClient(o *bo.Options) (*http.Client, error) {
 
 	client := &http.Client{
 		Timeout: o.Timeout,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
 		Transport: &http.Transport{

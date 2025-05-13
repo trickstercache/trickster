@@ -53,7 +53,7 @@ func (rg *ResponseGate) Header() http.Header {
 }
 
 // WriteHeader is not used with a ResponseGate
-func (rg *ResponseGate) WriteHeader(i int) {
+func (rg *ResponseGate) WriteHeader(_ int) {
 }
 
 // Body returns the stored body for merging

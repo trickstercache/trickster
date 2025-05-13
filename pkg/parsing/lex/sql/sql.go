@@ -206,37 +206,37 @@ func init() {
 	}
 }
 
-func emitEOF(li lex.Lexer, rs *lex.RunState) lex.StateFn {
+func emitEOF(_ lex.Lexer, rs *lex.RunState) lex.StateFn {
 	rs.Emit(token.EOF)
 	return nil
 }
 
-func emitComma(li lex.Lexer, rs *lex.RunState) lex.StateFn {
+func emitComma(_ lex.Lexer, rs *lex.RunState) lex.StateFn {
 	rs.Emit(token.Comma)
 	return lexText
 }
 
-func emitAsterisk(li lex.Lexer, rs *lex.RunState) lex.StateFn {
+func emitAsterisk(_ lex.Lexer, rs *lex.RunState) lex.StateFn {
 	rs.Emit(token.Multiply)
 	return lexText
 }
 
-func emitEqual(li lex.Lexer, rs *lex.RunState) lex.StateFn {
+func emitEqual(_ lex.Lexer, rs *lex.RunState) lex.StateFn {
 	rs.Emit(token.Equals)
 	return lexText
 }
 
-func emitPlus(li lex.Lexer, rs *lex.RunState) lex.StateFn {
+func emitPlus(_ lex.Lexer, rs *lex.RunState) lex.StateFn {
 	rs.Emit(token.Plus)
 	return lexText
 }
 
-func emitMinus(li lex.Lexer, rs *lex.RunState) lex.StateFn {
+func emitMinus(_ lex.Lexer, rs *lex.RunState) lex.StateFn {
 	rs.Emit(token.Minus)
 	return lexText
 }
 
-func handleGreaterThan(li lex.Lexer, rs *lex.RunState) lex.StateFn {
+func handleGreaterThan(_ lex.Lexer, rs *lex.RunState) lex.StateFn {
 	t := token.GreaterThan
 	if rs.Peek() == lex.RuneEqual {
 		rs.Next()
@@ -246,7 +246,7 @@ func handleGreaterThan(li lex.Lexer, rs *lex.RunState) lex.StateFn {
 	return lexText
 }
 
-func handleLessThan(li lex.Lexer, rs *lex.RunState) lex.StateFn {
+func handleLessThan(_ lex.Lexer, rs *lex.RunState) lex.StateFn {
 	t := token.LessThan
 	if rs.Peek() == lex.RuneEqual {
 		rs.Next()
@@ -268,7 +268,7 @@ func handleSlash(li lex.Lexer, rs *lex.RunState) lex.StateFn {
 	return lexText
 }
 
-func handleExclamation(li lex.Lexer, rs *lex.RunState) lex.StateFn {
+func handleExclamation(_ lex.Lexer, rs *lex.RunState) lex.StateFn {
 	if rs.Peek() == lex.RuneEqual {
 		rs.Next()
 	}
@@ -276,23 +276,23 @@ func handleExclamation(li lex.Lexer, rs *lex.RunState) lex.StateFn {
 	return lexText
 }
 
-func handleNumber(li lex.Lexer, rs *lex.RunState) lex.StateFn {
+func handleNumber(_ lex.Lexer, rs *lex.RunState) lex.StateFn {
 	rs.Backup()
 	return lexNumber
 }
 
-func handleIdentifier(li lex.Lexer, rs *lex.RunState) lex.StateFn {
+func handleIdentifier(_ lex.Lexer, rs *lex.RunState) lex.StateFn {
 	rs.Backup()
 	return lexIdentifier
 }
 
-func handleLeftParen(li lex.Lexer, rs *lex.RunState) lex.StateFn {
+func handleLeftParen(_ lex.Lexer, rs *lex.RunState) lex.StateFn {
 	rs.Emit(token.LeftParen)
 	rs.ParenDepth++
 	return lexText
 }
 
-func handleRightParen(li lex.Lexer, rs *lex.RunState) lex.StateFn {
+func handleRightParen(_ lex.Lexer, rs *lex.RunState) lex.StateFn {
 	rs.Emit(token.RightParen)
 	rs.ParenDepth--
 	if rs.ParenDepth < 0 {
@@ -320,7 +320,7 @@ func lexText(li lex.Lexer, rs *lex.RunState) lex.StateFn {
 // lexNewline scans a run of newline characters.
 // We have not consumed the first space, which is known to be present.
 // Take care if there is a trim-marked right delimiter, which starts with a space.
-func lexNewline(li lex.Lexer, rs *lex.RunState) lex.StateFn {
+func lexNewline(_ lex.Lexer, rs *lex.RunState) lex.StateFn {
 	var r rune
 	for {
 		r = rs.Peek()
@@ -336,7 +336,7 @@ func lexNewline(li lex.Lexer, rs *lex.RunState) lex.StateFn {
 // lexSpace scans a run of space characters.
 // We have not consumed the first space, which is known to be present.
 // Take care if there is a trim-marked right delimiter, which starts with a space.
-func lexSpace(li lex.Lexer, rs *lex.RunState) lex.StateFn {
+func lexSpace(_ lex.Lexer, rs *lex.RunState) lex.StateFn {
 	var r rune
 	for {
 		r = rs.Peek()
@@ -403,7 +403,7 @@ Loop:
 // isn't a perfect number scanner - for instance it accepts "." and "0x0.2"
 // and "089" - but when it's wrong the input is invalid and the parser (via
 // strconv) will notice.
-func lexNumber(li lex.Lexer, rs *lex.RunState) lex.StateFn {
+func lexNumber(_ lex.Lexer, rs *lex.RunState) lex.StateFn {
 	if !rs.ScanNumber() {
 		return rs.EmitToken(rs.Errorf("bad number syntax: %q", rs.InputLowered[rs.Start:rs.Pos]))
 	}
@@ -420,7 +420,7 @@ func lexNumber(li lex.Lexer, rs *lex.RunState) lex.StateFn {
 }
 
 // lexSingleQuote scans a quoted string.
-func lexSingleQuote(li lex.Lexer, rs *lex.RunState) lex.StateFn {
+func lexSingleQuote(_ lex.Lexer, rs *lex.RunState) lex.StateFn {
 	var r rune
 Loop:
 	for {

@@ -28,6 +28,6 @@ import (
 // InfluxDb Client (proxy.Client Interface) stub funcs
 
 // UnmarshalInstantaneous is not used for InfluxDB and is here to conform to the Proxy Client interface
-func (c *Client) UnmarshalInstantaneous(data []byte) (timeseries.Timeseries, error) {
+func (c *Client) UnmarshalInstantaneous(_ []byte) (timeseries.Timeseries, error) {
 	return nil, nil
 }

@@ -86,7 +86,7 @@ func TestParseTimeRangeQuery(t *testing.T) {
 	req, _ := http.NewRequest(http.MethodPost, "https://blah.com/",
 		bytes.NewReader(b))
 	req.Header.Set(headers.NameContentType, headers.ValueApplicationJSON)
-	trq, _, _, err := ParseTimeRangeQuery(req, iofmt.FluxJsonCsv)
+	trq, _, _, err := ParseTimeRangeQuery(req, iofmt.FluxJSONCsv)
 	if err != nil {
 		t.Error(err)
 	} else {

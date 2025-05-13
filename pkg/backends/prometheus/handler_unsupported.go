@@ -23,7 +23,7 @@ import (
 )
 
 // UnsupportedHandler responds to endpoints like /api/v1/admin
-func (c *Client) UnsupportedHandler(w http.ResponseWriter, r *http.Request) {
+func (c *Client) UnsupportedHandler(w http.ResponseWriter, _ *http.Request) {
 	e := &model.Envelope{
 		Status: "error",
 		Error:  "trickster does not support proxying this endpoint",

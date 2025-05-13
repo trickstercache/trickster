@@ -39,10 +39,10 @@ const (
 	InfluxqlGet  = isInfluxql
 	InfluxqlPost = isInfluxql + isInfluxqlPost
 
-	FluxJsonJson = isFlux + isFluxInputJSON + isFluxOutputJSON
-	FluxJsonCsv  = isFlux + isFluxInputJSON
+	FluxJSONJSON = isFlux + isFluxInputJSON + isFluxOutputJSON
+	FluxJSONCsv  = isFlux + isFluxInputJSON
 
-	FluxRawJson = isFlux + isFluxOutputJSON
+	FluxRawJSON = isFlux + isFluxOutputJSON
 	FluxRawCsv  = isFlux
 )
 
@@ -75,18 +75,18 @@ func Detect(r *http.Request) Format {
 	if r.Method != http.MethodPost {
 		return Unknown
 	}
-	isJsonOut := headers.AcceptsJSON(r)
+	jo := headers.AcceptsJSON(r)
 	switch {
 	case headers.ProvidesURLEncodedForm(r):
 		return InfluxqlPost
 	case headers.ProvidesJSON(r):
-		if isJsonOut {
-			return FluxJsonJson
+		if jo {
+			return FluxJSONJSON
 		}
-		return FluxJsonCsv
+		return FluxJSONCsv
 	case ProvidesFlux(r):
-		if isJsonOut {
-			return FluxRawJson
+		if jo {
+			return FluxRawJSON
 		}
 		return FluxRawCsv
 	}

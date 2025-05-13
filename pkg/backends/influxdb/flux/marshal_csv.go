@@ -173,11 +173,11 @@ func processCsvRowData(st *state, p dataset.Point) error {
 	row := make([]string, len(st.fds))
 	var o int
 	for _, fd := range st.fds {
-		b, usedVal := getCsvCellValue(st.s.Header, fd, p, o, st.k)
+		s, usedVal := getCsvCellValue(st.s.Header, fd, p, o, st.k)
 		if usedVal {
 			o++
 		}
-		row[fd.OutputPosition] = string(b)
+		row[fd.OutputPosition] = s
 	}
 	return st.w.Write(row)
 }
@@ -195,9 +195,8 @@ func getCsvCellValue(sh dataset.SeriesHeader, fd timeseries.FieldDefinition,
 				return fd.DefaultValue, true
 			} else if s, ok := c.Values[nextValue].(string); ok && s == "" {
 				return fd.DefaultValue, true
-			} else {
-				return fmt.Sprintf("%v", c.Values[nextValue]), true
 			}
+			return fmt.Sprintf("%v", c.Values[nextValue]), true
 		}
 	case timeseries.RoleUntracked:
 		switch fd.Name {

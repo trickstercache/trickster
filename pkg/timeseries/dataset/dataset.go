@@ -493,7 +493,8 @@ func UnmarshalDataSet(b []byte, trq *timeseries.TimeRangeQuery) (timeseries.Time
 }
 
 // MarshalDataSet marshals the dataset into a msgpack-formatted byte slice
-func MarshalDataSet(ts timeseries.Timeseries, rlo *timeseries.RequestOptions, status int) ([]byte, error) {
+func MarshalDataSet(ts timeseries.Timeseries, _ *timeseries.RequestOptions,
+	_ int) ([]byte, error) {
 	ds, ok := ts.(*DataSet)
 	if !ok || ds == nil {
 		return nil, timeseries.ErrUnknownFormat

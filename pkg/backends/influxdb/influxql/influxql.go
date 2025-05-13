@@ -190,13 +190,13 @@ func SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
 			sel.SetTimeRange(extent.Start, extent.End.Add(trq.Step))
 		}
 	}
-
 	var v url.Values
-	if r.Method == http.MethodGet {
+	switch r.Method {
+	case http.MethodGet:
 		// GET request, query param is in the url
 		v, _, _ = params.GetRequestValues(r)
 		v.Set(ParamQuery, q.String())
-	} else if r.Method == http.MethodPost {
+	case http.MethodPost:
 		// POST request; query param is in the body, others are in the url
 		rb := url.Values{ParamQuery: []string{q.String()}}.Encode()
 		request.SetBody(r, []byte(rb))
@@ -204,7 +204,7 @@ func SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
 		if v == nil {
 			v = make(url.Values)
 		}
-	} else {
+	default:
 		logger.Error("unuspported method in influxql.SetExtent",
 			logging.Pairs{"method": r.Method})
 		return

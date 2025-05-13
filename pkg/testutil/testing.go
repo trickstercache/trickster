@@ -72,7 +72,7 @@ func init() {
 
 // NewTestServer returns a new httptest.Server that responds with the provided code, body and headers
 func NewTestServer(responseCode int, responseBody string, headers map[string]string) *httptest.Server {
-	handler := func(w http.ResponseWriter, r *http.Request) {
+	handler := func(w http.ResponseWriter, _ *http.Request) {
 		th.UpdateHeaders(w.Header(), headers)
 		w.WriteHeader(responseCode)
 		fmt.Fprint(w, responseBody)
@@ -85,7 +85,7 @@ func NewTestServer(responseCode int, responseBody string, headers map[string]str
 func NewTestWebClient() *http.Client {
 	return &http.Client{
 		Timeout: 30 * time.Second,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
 		Transport: &http.Transport{
@@ -205,7 +205,7 @@ func NewTestTracer() *tracing.Tracer {
 }
 
 // BasicHTTPHandler is a basic HTTP Handler for use in unit e
-func BasicHTTPHandler(w http.ResponseWriter, r *http.Request) {
+func BasicHTTPHandler(w http.ResponseWriter, _ *http.Request) {
 	if w == nil {
 		return
 	}

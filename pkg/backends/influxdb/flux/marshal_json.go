@@ -34,7 +34,7 @@ type WFDocument struct {
 }
 
 func marshalTimeseriesJSONWriter(ds *dataset.DataSet,
-	frb *JSONRequestBody, status int, w io.Writer) error {
+	_ *JSONRequestBody, status int, w io.Writer) error {
 	if hw, ok := w.(http.ResponseWriter); ok {
 		hw.Header().Set(headers.NameContentType, headers.ValueApplicationJSON)
 		hw.WriteHeader(status)
@@ -136,10 +136,9 @@ func getCellValue(sh dataset.SeriesHeader, fd timeseries.FieldDefinition,
 			} else if s, ok := c.Values[nextValue].(string); ok && s == "" {
 				b, _ := json.Marshal(fd.DefaultValue)
 				return b, true
-			} else {
-				b, _ := json.Marshal(c.Values[nextValue])
-				return b, true
 			}
+			b, _ := json.Marshal(c.Values[nextValue])
+			return b, true
 		}
 	case timeseries.RoleUntracked:
 		switch fd.Name {

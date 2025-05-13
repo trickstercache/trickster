@@ -135,7 +135,7 @@ var supportedFormats = map[string]byte{
 	"tsvwithnamesandtypes":          5,
 }
 
-func atWith(bp, ip parsing.Parser, rs *parsing.RunState) parsing.StateFn {
+func atWith(bp, _ parsing.Parser, rs *parsing.RunState) parsing.StateFn {
 	if rs.Current().Typ != lsql.TokenWith {
 		rs.WithError(sql.ErrNotAtWith)
 		return nil
@@ -205,7 +205,7 @@ func (p *chParser) parseWithTokens(rs *parsing.RunState, tl token.Tokens) error 
 	return nil
 }
 
-func atPreWhere(bp, ip parsing.Parser, rs *parsing.RunState) parsing.StateFn {
+func atPreWhere(bp, _ parsing.Parser, rs *parsing.RunState) parsing.StateFn {
 	p, ok := bp.(*chParser)
 	if !ok {
 		rs.WithError(parsing.ErrUnsupportedParser)
@@ -218,7 +218,7 @@ func atPreWhere(bp, ip parsing.Parser, rs *parsing.RunState) parsing.StateFn {
 	return rs.GetReturnFunc(parsing.StateUnexpectedToken, p.SelectQueryKeywords(), false)
 }
 
-func atFormat(bp, ip parsing.Parser, rs *parsing.RunState) parsing.StateFn {
+func atFormat(_, _ parsing.Parser, rs *parsing.RunState) parsing.StateFn {
 	var t *token.Token
 	trq, ro := sqlparser.ArtifactsFromContext(rs.Context())
 	for {
@@ -246,7 +246,7 @@ func atFormat(bp, ip parsing.Parser, rs *parsing.RunState) parsing.StateFn {
 	return scanForCommentsUntilEOF
 }
 
-func scanForCommentsUntilEOF(bp, ip parsing.Parser, rs *parsing.RunState) parsing.StateFn {
+func scanForCommentsUntilEOF(_, _ parsing.Parser, rs *parsing.RunState) parsing.StateFn {
 	var t *token.Token
 	for {
 		t = rs.Next()

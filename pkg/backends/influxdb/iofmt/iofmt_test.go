@@ -24,7 +24,7 @@ import (
 )
 
 func TestIsInfluxQL(t *testing.T) {
-	if out := FluxJsonJson.IsInfluxQL(); out {
+	if out := FluxJSONJSON.IsInfluxQL(); out {
 		t.Error("expected false")
 	}
 	if out := InfluxqlPost.IsInfluxQL(); !out {
@@ -33,7 +33,7 @@ func TestIsInfluxQL(t *testing.T) {
 }
 
 func TestIsFlux(t *testing.T) {
-	if out := FluxJsonJson.IsFlux(); !out {
+	if out := FluxJSONJSON.IsFlux(); !out {
 		t.Error("expected true")
 	}
 	if out := InfluxqlPost.IsFlux(); out {
@@ -42,7 +42,7 @@ func TestIsFlux(t *testing.T) {
 }
 
 func TestIsFluxInputJSON(t *testing.T) {
-	if out := FluxJsonJson.IsFluxInputJSON(); !out {
+	if out := FluxJSONJSON.IsFluxInputJSON(); !out {
 		t.Error("expected true")
 	}
 	if out := InfluxqlPost.IsFluxInputJSON(); out {
@@ -51,10 +51,10 @@ func TestIsFluxInputJSON(t *testing.T) {
 }
 
 func TestIsFluxOutputJSON(t *testing.T) {
-	if out := FluxJsonJson.IsFluxOutputJSON(); !out {
+	if out := FluxJSONJSON.IsFluxOutputJSON(); !out {
 		t.Error("expected true")
 	}
-	if out := FluxRawJson.IsFluxOutputJSON(); !out {
+	if out := FluxRawJSON.IsFluxOutputJSON(); !out {
 		t.Error("expected true")
 	}
 	if out := FluxRawCsv.IsFluxOutputJSON(); out {
@@ -103,7 +103,7 @@ func TestDetect(t *testing.T) {
 			name:     "testFluxInRawOutJSON",
 			method:   http.MethodPost,
 			headers:  fluxHeaderAcceptJSON,
-			expected: FluxRawJson,
+			expected: FluxRawJSON,
 		},
 		{
 			name:     "testInfluxqlInGET",
@@ -121,13 +121,13 @@ func TestDetect(t *testing.T) {
 			name:     "testFluxInJSONOutJSON",
 			method:   http.MethodPost,
 			headers:  fluxHeaderProvideAcceptJSON,
-			expected: FluxJsonJson,
+			expected: FluxJSONJSON,
 		},
 		{
 			name:     "testFluxInJSONOutCSV",
 			method:   http.MethodPost,
 			headers:  fluxHeaderProvideJSON,
-			expected: FluxJsonCsv,
+			expected: FluxJSONCsv,
 		},
 		{
 			name:     "testUnknownPostFormat",

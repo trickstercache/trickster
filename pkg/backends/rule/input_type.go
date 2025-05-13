@@ -46,21 +46,21 @@ func isValidSourceName(source string) (extractionFunc, bool) {
 	return f, ok
 }
 
-func extractMethodFromSource(r *http.Request, unused string) string {
+func extractMethodFromSource(r *http.Request, _ string) string {
 	if r != nil {
 		return r.Method
 	}
 	return ""
 }
 
-func extractURLFromSource(r *http.Request, unused string) string {
+func extractURLFromSource(r *http.Request, _ string) string {
 	if r != nil && r.URL != nil {
 		return r.URL.String()
 	}
 	return ""
 }
 
-func extractURLNoParamsFromSource(r *http.Request, unused string) string {
+func extractURLNoParamsFromSource(r *http.Request, _ string) string {
 	if r != nil && r.URL != nil {
 		u := urls.Clone(r.URL)
 		u.RawQuery = ""
@@ -69,42 +69,42 @@ func extractURLNoParamsFromSource(r *http.Request, unused string) string {
 	return ""
 }
 
-func extractSchemeFromSource(r *http.Request, unused string) string {
+func extractSchemeFromSource(r *http.Request, _ string) string {
 	if r != nil && r.URL != nil {
 		return r.URL.Scheme
 	}
 	return ""
 }
 
-func extracHostFromSource(r *http.Request, unused string) string {
+func extracHostFromSource(r *http.Request, _ string) string {
 	if r != nil && r.URL != nil {
 		return r.URL.Host
 	}
 	return ""
 }
 
-func extractHostnameFromSource(r *http.Request, unused string) string {
+func extractHostnameFromSource(r *http.Request, _ string) string {
 	if r != nil && r.URL != nil {
 		return r.URL.Hostname()
 	}
 	return ""
 }
 
-func extractPortFromSource(r *http.Request, unused string) string {
+func extractPortFromSource(r *http.Request, _ string) string {
 	if r != nil && r.URL != nil {
 		return r.URL.Port()
 	}
 	return ""
 }
 
-func extractPathFromSource(r *http.Request, unused string) string {
+func extractPathFromSource(r *http.Request, _ string) string {
 	if r != nil && r.URL != nil {
 		return r.URL.Path
 	}
 	return ""
 }
 
-func extractParamsFromSource(r *http.Request, unused string) string {
+func extractParamsFromSource(r *http.Request, _ string) string {
 	if r != nil && r.URL != nil {
 		return r.URL.RawQuery
 	}

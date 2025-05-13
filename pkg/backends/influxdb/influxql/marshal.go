@@ -20,7 +20,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/influxdata/influxdb/models"
@@ -34,7 +33,7 @@ const timeColumnName = "time"
 
 // MarshalTimeseries converts a Timeseries into a JSON blob
 func MarshalTimeseries(ts timeseries.Timeseries,
-	rlo *timeseries.RequestOptions, status int) ([]byte, error) {
+	rlo *timeseries.RequestOptions, _ int) ([]byte, error) {
 	if ts == nil {
 		return nil, timeseries.ErrUnknownFormat
 	}
@@ -60,7 +59,7 @@ func MarshalTimeseries(ts timeseries.Timeseries,
 
 // MarshalTimeseriesWriter writes a Timeseries as a JSON blob to an io.Writer
 func MarshalTimeseriesWriter(ts timeseries.Timeseries,
-	rlo *timeseries.RequestOptions, status int, w io.Writer) error {
+	rlo *timeseries.RequestOptions, _ int, w io.Writer) error {
 	if ts == nil {
 		return timeseries.ErrUnknownFormat
 	}
@@ -82,17 +81,13 @@ func MarshalTimeseriesWriter(ts timeseries.Timeseries,
 	return enc.Encode(wfdoc)
 }
 
-func formatRFC3339Time(epoch epoch.Epoch, m int64) any {
+func formatRFC3339Time(epoch epoch.Epoch, _ int64) any {
 	t := time.Unix(0, int64(epoch))
 	return t.UTC().Format(time.RFC3339Nano)
 }
 
 func formatEpochTime(epoch epoch.Epoch, m int64) any {
 	return int64(epoch) / m
-}
-
-func writeEpochTime(w io.Writer, epoch epoch.Epoch, m int64) {
-	w.Write([]byte(strconv.FormatInt(int64(epoch)/m, 10)))
 }
 
 func toWireFormat(ds *dataset.DataSet,

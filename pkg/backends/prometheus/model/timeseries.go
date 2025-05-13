@@ -175,7 +175,7 @@ func MarshalTimeseriesWriter(ts timeseries.Timeseries, rlo *timeseries.RequestOp
 }
 
 // marshalTSOrVectorWriter writes matrix and vector outputs to the provided io.Writer
-func MarshalTSOrVectorWriter(ts timeseries.Timeseries, rlo *timeseries.RequestOptions,
+func MarshalTSOrVectorWriter(ts timeseries.Timeseries, _ *timeseries.RequestOptions,
 	status int, w io.Writer, isVector bool) error {
 
 	if w == nil {

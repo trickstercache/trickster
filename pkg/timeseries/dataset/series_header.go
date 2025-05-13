@@ -169,30 +169,30 @@ func (sh *SeriesHeader) String() string {
 
 // FieldDefinitions returns all FieldDefinitions in the series ordered by OutputPosition
 func (sh *SeriesHeader) FieldDefinitions() timeseries.FieldDefinitions {
-	max := len(sh.TagFieldsList) + len(sh.ValueFieldsList) +
+	maxFields := len(sh.TagFieldsList) + len(sh.ValueFieldsList) +
 		len(sh.UntrackedFieldsList) + 1 // +1 is for Timestamp field
-	out := make(timeseries.FieldDefinitions, max)
+	out := make(timeseries.FieldDefinitions, maxFields)
 	var k int
 
-	if sh.TimestampField.OutputPosition >= 0 && sh.TimestampField.OutputPosition < max {
+	if sh.TimestampField.OutputPosition >= 0 && sh.TimestampField.OutputPosition < maxFields {
 		out[k] = sh.TimestampField
 		k++
 	}
 
 	for _, fd := range sh.TagFieldsList {
-		if fd.OutputPosition >= 0 && fd.OutputPosition < max {
+		if fd.OutputPosition >= 0 && fd.OutputPosition < maxFields {
 			out[k] = fd
 			k++
 		}
 	}
 	for _, fd := range sh.ValueFieldsList {
-		if fd.OutputPosition >= 0 && fd.OutputPosition < max {
+		if fd.OutputPosition >= 0 && fd.OutputPosition < maxFields {
 			out[k] = fd
 			k++
 		}
 	}
 	for _, fd := range sh.UntrackedFieldsList {
-		if fd.OutputPosition >= 0 && fd.OutputPosition < max {
+		if fd.OutputPosition >= 0 && fd.OutputPosition < maxFields {
 			out[k] = fd
 			k++
 		}

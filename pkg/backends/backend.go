@@ -171,14 +171,14 @@ func (b *backend) SetHealthCheckProbe(p healthcheck.DemandProbe) {
 }
 
 // HealthHandler is the Health Check Handler for the backend
-func (b *backend) HealthHandler(w http.ResponseWriter, r *http.Request) {
+func (b *backend) HealthHandler(w http.ResponseWriter, _ *http.Request) {
 	if b.healthProbe != nil {
 		b.healthProbe(w)
 	}
 }
 
 // DefaultPathConfigs is a stub function and should be overridden by Backend implementations
-func (b *backend) DefaultPathConfigs(o *bo.Options) map[string]*po.Options {
+func (b *backend) DefaultPathConfigs(_ *bo.Options) map[string]*po.Options {
 	return nil
 }
 

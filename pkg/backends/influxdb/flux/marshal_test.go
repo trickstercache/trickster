@@ -37,31 +37,6 @@ func TestValidateMarshalerOptions(t *testing.T) {
 	}
 }
 
-func TestFieldTypeToFluxType(t *testing.T) {
-	tests := []struct {
-		input    timeseries.FieldDataType
-		expected string
-	}{
-		{input: timeseries.String, expected: TypeString},
-		{input: timeseries.Int64, expected: TypeLong},
-		{input: timeseries.Uint64, expected: TypeUnsignedLong},
-		{input: timeseries.Float64, expected: TypeDouble},
-		{input: timeseries.Bool, expected: TypeBool},
-		{input: timeseries.DateTimeRFC3339, expected: TypeRFC3339},
-		{input: timeseries.DateTimeRFC3339Nano, expected: TypeRFC3339Nano},
-		{input: timeseries.Null, expected: TypeNull},
-		{input: 240, expected: ""},
-	}
-	for _, test := range tests {
-		t.Run(test.expected, func(t *testing.T) {
-			out := fieldTypeToFluxType(test.input)
-			if out != test.expected {
-				t.Errorf("expected %s got %s", test.expected, out)
-			}
-		})
-	}
-}
-
 var testTRQ = &timeseries.TimeRangeQuery{
 	Statement: fqAbsoluteTimeTokenized,
 	Extent: timeseries.Extent{

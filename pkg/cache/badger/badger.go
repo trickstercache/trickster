@@ -82,7 +82,7 @@ func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
 
 // Retrieve gets data from the Badger Cache using the provided Key
 // because Badger manages Object Expiration internally, allowExpired is not used.
-func (c *Cache) Retrieve(cacheKey string, allowExpired bool) ([]byte, status.LookupStatus, error) {
+func (c *Cache) Retrieve(cacheKey string, _ bool) ([]byte, status.LookupStatus, error) {
 	var data []byte
 	err := c.dbh.View(func(txn *badger.Txn) error {
 		item, err := txn.Get([]byte(cacheKey))

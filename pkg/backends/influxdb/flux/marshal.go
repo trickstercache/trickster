@@ -108,29 +108,6 @@ func validateMarshalerOptions(ts timeseries.Timeseries,
 	return ds, frb, marshalTimeseriesCSVWriter, nil
 }
 
-// fieldTypeToFluxType converts a FieldDataType value to a Flux type string
-func fieldTypeToFluxType(input timeseries.FieldDataType) string {
-	switch input {
-	case timeseries.String:
-		return TypeString
-	case timeseries.Int64:
-		return TypeLong
-	case timeseries.Uint64:
-		return TypeUnsignedLong
-	case timeseries.Float64:
-		return TypeDouble
-	case timeseries.Bool:
-		return TypeBool
-	case timeseries.DateTimeRFC3339:
-		return TypeRFC3339
-	case timeseries.DateTimeRFC3339Nano:
-		return TypeRFC3339Nano
-	case timeseries.Null:
-		return TypeNull
-	}
-	return ""
-}
-
 func setStartStopTimes(fds timeseries.FieldDefinitions, e timeseries.Extent) {
 	// this sets some flux-implied defaults on the series
 	for i, fd := range fds {
