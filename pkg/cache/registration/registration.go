@@ -65,16 +65,16 @@ func NewCache(cacheName string, cfg *options.Options) cache.Cache {
 
 	switch cfg.Provider {
 	case ctFilesystem:
-		c = &filesystem.Cache{Name: cacheName, Config: cfg}
+		c = filesystem.NewCache(cacheName, cfg)
 	case ctRedis:
-		c = &redis.Cache{Name: cacheName, Config: cfg}
+		c = redis.New(cacheName, cfg)
 	case ctBBolt:
-		c = &bbolt.Cache{Name: cacheName, Config: cfg}
+		c = bbolt.New(cacheName, "", "", cfg)
 	case ctBadger:
-		c = &badger.Cache{Name: cacheName, Config: cfg}
+		c = badger.New(cacheName, cfg)
 	default:
 		// Default to MemoryCache
-		c = &memory.Cache{Name: cacheName, Config: cfg}
+		c = memory.New(cacheName, cfg)
 	}
 
 	c.SetLocker(locks.NewNamedLocker())

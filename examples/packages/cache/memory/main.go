@@ -16,7 +16,8 @@ func main() {
 	const myKey, myValue = "myKeyName", "myValue"
 
 	// create a new memory cache
-	c, err := memory.New()
+	c := memory.New("myMemoryCache", nil)
+	err := c.Connect()
 	// this starts some background goroutines for object lifecycle management, so
 	// be sure to Close() once ready for the cache to be garbage collected
 	if err != nil {

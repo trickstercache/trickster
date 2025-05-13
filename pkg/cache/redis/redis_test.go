@@ -72,7 +72,7 @@ func setupRedisCache(ct clientType) (*Cache, func()) {
 	cacheConfig := &co.Options{Provider: "redis", Redis: rcfg}
 	conf.Caches = map[string]*co.Options{"default": cacheConfig}
 
-	return &Cache{Config: cacheConfig}, close
+	return New("test", cacheConfig), close
 }
 
 func TestClientSelectionSentinel(t *testing.T) {
@@ -90,7 +90,7 @@ func TestClientSelectionSentinel(t *testing.T) {
 	if !ok {
 		t.Errorf("expected cache named %s", cacheName)
 	}
-	cache := Cache{Name: cacheName, Config: cfg}
+	cache := New(cacheName, cfg)
 	if err != nil {
 		t.Error(err)
 	}
@@ -170,7 +170,7 @@ func TestClientSelectionCluster(t *testing.T) {
 	if !ok {
 		t.Errorf("expected cache named %s", cacheName)
 	}
-	cache := Cache{Name: cacheName, Config: cfg}
+	cache := New(cacheName, cfg)
 	if err != nil {
 		t.Error(err)
 	}
@@ -195,7 +195,7 @@ func TestClientSelectionStandard(t *testing.T) {
 	if !ok {
 		t.Errorf("expected cache named %s", cacheName)
 	}
-	cache := Cache{Name: cacheName, Config: cfg}
+	cache := New(cacheName, cfg)
 	if err != nil {
 		t.Error(err)
 	}
@@ -504,7 +504,7 @@ func BenchmarkCache_BulkRemove(b *testing.B) {
 }
 
 func TestLocker(t *testing.T) {
-	cache := Cache{locker: locks.NewNamedLocker()}
+	cache := New("test", nil)
 	l := cache.Locker()
 	cache.SetLocker(locks.NewNamedLocker())
 	m := cache.Locker()
