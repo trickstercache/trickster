@@ -409,7 +409,7 @@ func CheckIfNoneMatch(etag string, headerValue string, ls status.LookupStatus) b
 
 	parts := strings.Split(headerValue, ",")
 	for _, p := range parts {
-		p = strings.Trim(p, " ")
+		p = strings.TrimSpace(p)
 		if len(p) > 3 && p[1:2] == "/" {
 			p = p[2:]
 		}

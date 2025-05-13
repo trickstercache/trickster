@@ -700,7 +700,7 @@ func (ri *rwiChainExecutor) String() string {
 
 func (ri *rwiChainExecutor) Parse(parts []string) error {
 	lp := len(parts)
-	if lp != 3 || strings.Trim(parts[2], " \t\n") == "" {
+	if lp != 3 || strings.TrimSpace(parts[2]) == "" {
 		return errBadParams
 	}
 	ri.rewriterName = parts[2]
