@@ -17,12 +17,12 @@
 package healthcheck
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -69,7 +69,7 @@ func newTarget(ctx context.Context,
 	}
 	var rd io.Reader
 	if o.Body != "" {
-		rd = bytes.NewReader([]byte(o.Body))
+		rd = strings.NewReader(o.Body)
 	}
 	r, err := http.NewRequest(o.Verb, o.URL().String(), rd)
 	if err != nil {
