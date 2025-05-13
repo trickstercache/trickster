@@ -59,14 +59,14 @@ func TestResultSize(t *testing.T) {
 
 func TestResultString(t *testing.T) {
 	const expected = `{"error":"test_error","statementID":42,` +
-		`series:[{"header":{"name":"test",` +
+		`"series":[{"header":{"name":"test",` +
 		`"query":"SELECT TRICKSTER!","tags":"test1=value1",` +
-		`"fields":["Field1"],"timestampIndex":37},` +
-		`points:[{5000000000,1,37},{10000000000,1,24}]},` +
+		`"valueFields":["Field1"],"timeStampField":""},` +
+		`"points":[{5000000000,1,37},{10000000000,1,24}]},` +
 		`{"header":{"name":"test2",` +
 		`"query":"SELECT TRICKSTER!","tags":"test1=value1",` +
-		`"fields":["Field1"],"timestampIndex":37}` +
-		`,points:[{5000000000,1,37},{10000000000,1,24}]}]}`
+		`"valueFields":["Field1"],"timeStampField":""}` +
+		`,"points":[{5000000000,1,37},{10000000000,1,24}]}]}`
 	r := testResult()
 	r.Error = "test_error"
 	r.SeriesList = append(r.SeriesList, testSeries())

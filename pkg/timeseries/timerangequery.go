@@ -41,20 +41,16 @@ type TimeRangeQuery struct {
 	TemplateURL *url.URL `msg:"-"`
 	// IsOffset is true if the query uses a relative offset modifier
 	IsOffset bool `msg:"-"`
-	// StepNS is the nanosecond representation for Step
+	// StepNS is the nanosecond representation for Step, required for MsgPack
 	StepNS int64 `msg:"step"`
 	// BackfillTolerance can be updated to override the overall backfill tolerance per query
 	BackfillTolerance time.Duration `msg:"-"`
-	// BackfillToleranceNS is the nanosecond representation for BackfillTolerance
-	BackfillToleranceNS int64 `msg:"bft"`
 	// RecordLimit is the LIMIT value of the query
 	RecordLimit int `msg:"rl"`
 	// TimestampDefinition sets the definition for the Timestamp column in the in the timeseries based on the query
-	TimestampDefinition FieldDefinition `msg:"tsdef"`
+	TimestampDefinition FieldDefinition `msg:"tfd"`
 	// TagFieldDefinitions contains the definitions for Tag columns in the timeseries, based on the query
-	TagFieldDefintions []FieldDefinition `msg:"tfdefs"`
-	// ValueFieldDefinitions contains the definitions for Value columns in the timeseries, based on the query
-	ValueFieldDefinitions []FieldDefinition `msg:"vfdefs"`
+	TagFieldDefintions FieldDefinitions `msg:"-"`
 	// ParsedQuery is a member for the vendor-specific query object
 	ParsedQuery any `msg:"-"`
 	// OriginalBody is the original inbound request body untransformed if POST
@@ -77,11 +73,6 @@ func (trq *TimeRangeQuery) Clone() *TimeRangeQuery {
 	if trq.TagFieldDefintions != nil {
 		t.TagFieldDefintions = make([]FieldDefinition, len(trq.TagFieldDefintions))
 		copy(t.TagFieldDefintions, trq.TagFieldDefintions)
-	}
-
-	if trq.ValueFieldDefinitions != nil {
-		t.ValueFieldDefinitions = make([]FieldDefinition, len(trq.ValueFieldDefinitions))
-		copy(t.ValueFieldDefinitions, trq.ValueFieldDefinitions)
 	}
 
 	if trq.TemplateURL != nil {
@@ -112,16 +103,11 @@ func (trq *TimeRangeQuery) NormalizeExtent() {
 }
 
 func (trq *TimeRangeQuery) String() string {
-	var td, vd FieldDefinitions
+	var td FieldDefinitions
 	if len(trq.TagFieldDefintions) == 0 {
 		td = make(FieldDefinitions, 0)
 	} else {
 		td = FieldDefinitions(trq.TagFieldDefintions)
-	}
-	if len(trq.ValueFieldDefinitions) == 0 {
-		vd = make(FieldDefinitions, 0)
-	} else {
-		vd = FieldDefinitions(trq.ValueFieldDefinitions)
 	}
 	b, _ := json.Marshal(struct {
 		Statement string           `json:"statement"`
@@ -136,7 +122,6 @@ func (trq *TimeRangeQuery) String() string {
 		Extent:    trq.Extent.String(),
 		TSDef:     trq.TimestampDefinition,
 		TagDefs:   td,
-		ValDefs:   vd,
 	})
 	return string(b)
 }

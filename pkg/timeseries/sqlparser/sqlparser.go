@@ -153,24 +153,3 @@ func isAllDigits(input string) bool {
 	}
 	return true
 }
-
-// FormatOutputTime returns a string representing the provided epoch
-// in the format indicated
-// Formats:
-// 0 - seconds since epoch
-// 1 - milliseconds since epoch
-// 2 - SQL DateTime
-// 3 - SQL Date
-func FormatOutputTime(ts epoch.Epoch, format byte) string {
-	switch format {
-	case 0:
-		return strconv.FormatInt(int64(ts/billion), 10)
-	case 1:
-		return strconv.FormatInt(int64(ts/million), 10)
-	case 2:
-		return time.Unix(0, int64(ts)).UTC().Format("2006-01-02 15:04:05")
-	case 3:
-		return time.Unix(0, int64(ts)).UTC().Format("2006-01-02")
-	}
-	return "0"
-}

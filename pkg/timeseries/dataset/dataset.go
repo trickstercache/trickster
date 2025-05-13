@@ -21,11 +21,15 @@
 package dataset
 
 import (
+	"io"
+	"slices"
 	"sync"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
+	"github.com/trickstercache/trickster/v2/pkg/util/numbers"
+	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
 // DataSet is the Common Time Series Format that Trickster uses to
@@ -66,6 +70,9 @@ type DataSets []*DataSet
 
 // Marshaler is a function that serializes the provided DataSet into a byte slice
 type Marshaler func(*DataSet, *timeseries.RequestOptions, int) ([]byte, error)
+
+// MarshalWriter is a function that serializes the DataSet via an io.Writer
+type MarshalWriter func(io.Writer, *DataSet, *timeseries.RequestOptions, int) error
 
 // CroppedClone returns a new, perfect copy of the DataSet, efficiently
 // cropped to the provided Extent. CroppedClone assumes the DataSet is sorted.
@@ -505,4 +512,67 @@ func (ds *DataSet) VolatileExtents() timeseries.ExtentList {
 // SetVolatileExtents sets the list of time Extents in the dataset that should be re-fetched
 func (ds *DataSet) SetVolatileExtents(e timeseries.ExtentList) {
 	ds.VolatileExtentList = e
+}
+
+// FieldDefinitions returns a de-duped slice of Field Definitions (FDs) from all
+// series in the DataSet. The return values are:
+// All FDs, Tag FDs, Value FDs, Timestamp FD
+func (ds *DataSet) FieldDefinitions() (timeseries.FieldDefinitions,
+	timeseries.FieldDefinitions, timeseries.FieldDefinitions,
+	timeseries.FieldDefinition) {
+	used := sets.NewStringSet()
+	all := make(timeseries.FieldDefinitions, 0, 32)
+	tags := make(timeseries.FieldDefinitions, 0, 32)
+	vals := make(timeseries.FieldDefinitions, 0, 32)
+	var tfd timeseries.FieldDefinition
+	for _, r := range ds.Results {
+		for _, s := range r.SeriesList {
+			if !used.Contains(s.Header.TimestampField.Name) {
+				all = append(all, s.Header.TimestampField)
+				tfd = s.Header.TimestampField
+				used.Add(s.Header.TimestampField.Name)
+			}
+			for _, fd := range s.Header.TagFieldsList {
+				if used.Contains(fd.Name) {
+					continue
+				}
+				all = append(all, fd)
+				tags = append(tags, fd)
+				used.Add(fd.Name)
+			}
+			for _, fd := range s.Header.ValueFieldsList {
+				if used.Contains(fd.Name) {
+					continue
+				}
+				all = append(all, fd)
+				vals = append(vals, fd)
+				used.Add(fd.Name)
+			}
+			for _, fd := range s.Header.UntrackedFieldsList {
+				if used.Contains(fd.Name) {
+					continue
+				}
+				all = append(all, fd)
+				vals = append(vals, fd)
+				used.Add(fd.Name)
+			}
+		}
+	}
+	slices.SortFunc(all, func(a, b timeseries.FieldDefinition) int {
+		return a.OutputPosition - b.OutputPosition
+	})
+	return all, tags, vals, tfd
+}
+
+// PointCount returns the total number of Points across all Results and Series
+func (ds *DataSet) PointCount() int {
+	var out int
+	for _, r := range ds.Results {
+		for _, s := range r.SeriesList {
+			if x, ok := numbers.SafeAdd(out, len(s.Points)); ok {
+				out = x
+			}
+		}
+	}
+	return out
 }

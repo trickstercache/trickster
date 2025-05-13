@@ -98,7 +98,7 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 			Name:     "value",
 			DataType: timeseries.String,
 		}
-		sh.FieldsList = []timeseries.FieldDefinition{fd}
+		sh.ValueFieldsList = []timeseries.FieldDefinition{fd}
 		sh.CalculateHash()
 		var pts dataset.Points
 		l := len(pr.Values)
@@ -162,7 +162,7 @@ func MarshalTimeseriesWriter(ts timeseries.Timeseries, rlo *timeseries.RequestOp
 		return timeseries.ErrUnknownFormat
 	}
 
-	w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[`)) // todo: always "success" ?
+	w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[`))
 
 	seriesSep := ""
 	for _, s := range ds.Results[0].SeriesList {

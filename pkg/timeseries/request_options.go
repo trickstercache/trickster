@@ -33,8 +33,8 @@ type RequestOptions struct {
 	// BaseTimestampFieldName holds the name of the Base Timestamp Field (in case it is aliased with AS) to help
 	// parse WHERE clauses during the initial parsing of a query
 	BaseTimestampFieldName string
-	// VendorData holds data specific to managing data in the underlying TSDB
-	VendorData map[string]string
+	// ProviderRequest holds the original provider request in the provider's structure
+	ProviderRequest any
 }
 
 // ExtractFastForwardDisabled will look for the FastForwardUserDisableFlag in the provided string

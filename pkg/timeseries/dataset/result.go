@@ -37,6 +37,9 @@ type Result struct {
 	Error string `msg:"error"`
 	// SeriesList is an ordered list of the Series in this result
 	SeriesList SeriesList `msg:"series"`
+	// Name is the name of the Result, used by some Providers that include
+	// multiple results in the same response, in lieu of a StatementID
+	Name string `msg:"name"`
 }
 
 // Size returns the size of the Result in bytes
@@ -85,7 +88,7 @@ func (r *Result) String() string {
 		fmt.Fprintf(sb, `"error":"%s",`, r.Error)
 	}
 	fmt.Fprintf(sb, `"statementID":%d,`, r.StatementID)
-	sb.WriteString("series:[")
+	sb.WriteString(`"series":[`)
 	l := len(r.SeriesList)
 	for i, s := range r.SeriesList {
 		sb.WriteString(s.String())

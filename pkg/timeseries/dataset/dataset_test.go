@@ -447,7 +447,7 @@ func genBenchmarkPoint(e epoch.Epoch, valuect int) Point {
 	return out
 }
 
-func genBenchmarkDataSet(pointct int) *DataSet {
+func genBenchmarkDataset(pointct int) *DataSet {
 	if pointct > 1000 {
 		pointct = 1000
 	}
@@ -471,8 +471,8 @@ func genBenchmarkDataSet(pointct int) *DataSet {
 func BenchmarkMerge(b *testing.B) {
 	dss := make([]*DataSet, b.N*2)
 	for i := 0; i < b.N; i++ {
-		dss[i] = genBenchmarkDataSet(10)
-		dss[i+1] = genBenchmarkDataSet(10)
+		dss[i] = genBenchmarkDataset(10)
+		dss[i+1] = genBenchmarkDataset(10)
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i += 2 {
@@ -483,7 +483,7 @@ func BenchmarkMerge(b *testing.B) {
 func BenchmarkCropToRange(b *testing.B) {
 	dss := make([]*DataSet, b.N)
 	for i := 0; i < b.N; i++ {
-		dss[i] = genBenchmarkDataSet(10)
+		dss[i] = genBenchmarkDataset(10)
 	}
 	bmExt := timeseries.Extent{
 		Start: time.Now().Add(time.Second * -750),
