@@ -36,17 +36,6 @@ const testStatement = `SELECT (intDiv(toUInt32(dt), 60) * 60) * 1000 AS t, ` +
 	`FROM trickster.metrics_history WHERE <$RANGE$> ` +
 	`GROUP BY t, hostname ORDER BY t, hostname FORMAT <$FORMAT$>`
 
-const testDataTSV = `1577836800000	localhost	1	54
-1577836860000	localhost	1	27
-1577836920000	localhost	1	39
-`
-
-const testDataTSVWithNames = `t	hostname	avg_query	avg_global_thread
-1577836800000	localhost	1	54
-1577836860000	localhost	1	27
-1577836920000	localhost	1	39
-`
-
 const testDataTSVWithNamesAndTypes = `t	hostname	avg_query	avg_global_thread
 UInt64	String	Float64	Float64
 1577836800000	localhost	1	54
@@ -55,12 +44,6 @@ UInt64	String	Float64	Float64
 `
 
 const testDataCSV = `1577836800000,localhost,1,54
-1577836860000,localhost,1,27
-1577836920000,localhost,1,39
-`
-
-const testDataCSVWithNames = `t,hostname,avg_query,avg_global_thread
-1577836800000,localhost,1,54
 1577836860000,localhost,1,27
 1577836920000,localhost,1,39
 `
