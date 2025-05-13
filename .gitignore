@@ -26,6 +26,7 @@ trips_*.gz
 # output path
 OPATH
 bin
+vendor
 
 # MacOS and other operating system artifacts
 .DS_Store
