@@ -25,6 +25,7 @@ import (
 	lsql "github.com/trickstercache/trickster/v2/pkg/parsing/lex/sql"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sql"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/token"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/contenttype"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/sqlparser"
 	ts "github.com/trickstercache/trickster/v2/pkg/util/strings"
@@ -61,7 +62,6 @@ func parse(statement string) (*timeseries.TimeRangeQuery, *timeseries.RequestOpt
 	trq := &timeseries.TimeRangeQuery{Statement: statement}
 	ro := &timeseries.RequestOptions{}
 	rs, err := parser.Run(sqlparser.NewRunContext(trq, ro), parser, trq.Statement)
-
 	results := rs.Results()
 	verb, ok := rs.GetResultsCollection("verb")
 	var canObjectCache bool // indicates the query, while not a time series can be cached by the Object Proxy Cache
@@ -124,22 +124,15 @@ var tokenDurations = map[token.Typ]time.Duration{
 }
 
 var supportedFormats = map[string]byte{
-	"json":                          0,
-	"csv":                           1,
+	contenttype.JSON:                0,
+	contenttype.CSV:                 1,
 	"csvwithnames":                  2,
 	"tabseparated":                  3,
-	"tsv":                           3,
+	contenttype.TSV:                 3,
 	"tabseparatedwithnames":         4,
 	"tsvwithnames":                  4,
 	"tabseparatedwithnamesandtypes": 5,
 	"tsvwithnamesandtypes":          5,
-}
-
-var timeFormats = map[int]byte{
-	0:          0, // expect epoch seconds from clickhouse, convey seconds to requester
-	1000:       1, // expect epoch milliseconds from clickhouse, convey milliseconds to requester
-	1000000:    2, // expect epoch microseconds (u) from clickhouse, convey microseconds to requester
-	1000000000: 3, // expect epoch nanoseconds from clickhouse, convey nanoseconds to requester
 }
 
 func atWith(bp, ip parsing.Parser, rs *parsing.RunState) parsing.StateFn {
@@ -352,12 +345,20 @@ func parseSelectTokens(results ts.Lookup,
 						if err != nil {
 							return t, err
 						}
-						b, ok := timeFormats[n]
-						if !ok {
+						var b timeseries.FieldDataType
+						switch n {
+						case 0:
+							b = timeseries.DateTimeUnixSecs
+						case 1000:
+							b = timeseries.DateTimeUnixMilli
+						case 1000000:
+							b = timeseries.DateTimeUnixMicro
+						case 1000000000:
+							b = timeseries.DateTimeUnixNano
+						default:
 							return t, ErrUnsupportedOutputFormat
 						}
-						ro.TimeFormat = b
-						trq.TimestampDefinition.ProviderData1 = int(b)
+						trq.TimestampDefinition.DataType = b
 						checkMultiplier = false
 					}
 				}
@@ -582,11 +583,11 @@ func parseWhereTokens(results ts.Lookup,
 					t.Typ == token.GreaterThanOrEqual)
 				state++
 			case 2: // gets the first time and runs it through the evaluator
-				ts, f, err := parseTimeField(t)
+				ts, f, err := lsql.ParseTimeField(t)
 				if err != nil {
 					return t, err
 				}
-				trq.TimestampDefinition.ProviderData2 = int(f)
+				trq.TimestampDefinition.ProviderData1 = byte(f)
 				_, j, _ := SolveMathExpression(fieldParts[i:], ts, withVars)
 				if atLowerBound {
 					// e.Start = time.Unix(v, 0)
@@ -614,7 +615,7 @@ func parseWhereTokens(results ts.Lookup,
 					break sw
 				}
 				// therefore, if we make it to here, it MUST be a BETWEEN
-				ts, _, err := parseTimeField(t)
+				ts, _, err := lsql.ParseTimeField(t)
 				if err != nil {
 					return t, err
 				}
@@ -658,17 +659,6 @@ func parseWhereTokens(results ts.Lookup,
 		trq.Statement = strings.ReplaceAll(trq.Statement, tsr2, tkTS2)
 	}
 	return nil, nil
-}
-
-func parseTimeField(t *token.Token) (int64, byte, error) {
-	ts, format, err := lsql.TokenToTime(t)
-	if err != nil {
-		return -1, 255, err
-	}
-	if format == 1 {
-		return ts.UnixNano() / 1000000, format, nil
-	}
-	return ts.Unix(), format, nil
 }
 
 func parseGroupByTokens(results ts.Lookup,

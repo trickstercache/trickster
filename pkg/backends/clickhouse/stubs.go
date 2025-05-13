@@ -17,20 +17,11 @@
 package clickhouse
 
 import (
-	"net/http"
-
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
 // This file holds funcs required by the Proxy Client or Timeseries interfaces,
 // but are (currently) unused by the ClickHouse implementation.
-
-// Series (timeseries.Timeseries Interface) stub funcs
-
-// FastForwardRequest is not used for ClickHouse and is here to conform to the Proxy Client interface
-func (c *Client) FastForwardRequest(r *http.Request) (*http.Request, error) {
-	return nil, nil
-}
 
 // ClickHouse Client (proxy.Client Interface) stub funcs
 
@@ -38,6 +29,3 @@ func (c *Client) FastForwardRequest(r *http.Request) (*http.Request, error) {
 func (c *Client) UnmarshalInstantaneous(data []byte) (timeseries.Timeseries, error) {
 	return nil, nil
 }
-
-// QueryRangeHandler is not used for ClickHouse and is here to conform to the Proxy Client interface
-func (c *Client) QueryRangeHandler(w http.ResponseWriter, r *http.Request) {}
