@@ -47,7 +47,6 @@ func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
 		trq.TimestampDefinition.ProviderData1,
 		trq.TimestampDefinition.ProviderData2, extent)
 	if isBody {
-		// TODO: the return value (a new *http.Request) is not being used
 		request.SetBody(r, []byte(sqlQuery))
 	} else {
 		qi.Set(upQuery, sqlQuery)

@@ -87,7 +87,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 		}
 		// err may simply mean incompatible query (e.g., non-select), so just proxy
 		if trq != nil && trq.OriginalBody != nil {
-			r = request.SetBody(r, trq.OriginalBody)
+			request.SetBody(r, trq.OriginalBody)
 		}
 		DoProxy(w, r, true)
 		return
@@ -109,7 +109,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 				logging.Pairs{"oldestRetainedTimestamp": OldestRetainedTimestamp,
 					"step": trq.Step, "retention": o.TimeseriesRetention})
 			if trq.OriginalBody != nil {
-				r = request.SetBody(r, trq.OriginalBody)
+				request.SetBody(r, trq.OriginalBody)
 			}
 			DoProxy(w, r, true)
 			return
@@ -191,7 +191,7 @@ checkCache:
 							logger.Debug("timerange end is too old to consider caching",
 								logging.Pairs{"step": trq.Step, "retention": o.TimeseriesRetention})
 							if trq.OriginalBody != nil {
-								r = request.SetBody(r, trq.OriginalBody)
+								request.SetBody(r, trq.OriginalBody)
 							}
 							DoProxy(w, r, true)
 							return
