@@ -105,7 +105,7 @@ var testTRQ = &timeseries.TimeRangeQuery{
 	},
 }
 
-var testDataset = &dataset.DataSet{
+var testDataSet = &dataset.DataSet{
 	TimeRangeQuery: testTRQ,
 	ExtentList:     timeseries.ExtentList{testTRQ.Extent},
 	Results: []*dataset.Result{
@@ -139,42 +139,42 @@ var testDataset = &dataset.DataSet{
 }
 
 func TestMarshalJSON(t *testing.T) {
-	b, _ := marshalTimeseriesJSON(testDataset, &timeseries.RequestOptions{}, 200)
+	b, _ := marshalTimeseriesJSON(testDataSet, &timeseries.RequestOptions{}, 200)
 	if string(b) != testDataJSONMinified {
 		t.Error()
 	}
 }
 
 func TestMarshalCSV(t *testing.T) {
-	b, _ := marshalTimeseriesCSV(testDataset, &timeseries.RequestOptions{OutputFormat: 1}, 200)
+	b, _ := marshalTimeseriesCSV(testDataSet, &timeseries.RequestOptions{OutputFormat: 1}, 200)
 	if string(b) != testDataCSV {
 		t.Error()
 	}
 }
 
 func TestMarshalCSVWithNames(t *testing.T) {
-	b, _ := marshalTimeseriesCSVWithNames(testDataset, &timeseries.RequestOptions{OutputFormat: 2}, 200)
+	b, _ := marshalTimeseriesCSVWithNames(testDataSet, &timeseries.RequestOptions{OutputFormat: 2}, 200)
 	if string(b) != testDataCSVWithNames {
 		t.Error()
 	}
 }
 
 func TestMarshalTSV(t *testing.T) {
-	b, _ := marshalTimeseriesTSV(testDataset, &timeseries.RequestOptions{OutputFormat: 3}, 200)
+	b, _ := marshalTimeseriesTSV(testDataSet, &timeseries.RequestOptions{OutputFormat: 3}, 200)
 	if string(b) != testDataTSV {
 		t.Error()
 	}
 }
 
 func TestMarshalTSVWithNames(t *testing.T) {
-	b, _ := marshalTimeseriesTSVWithNames(testDataset, &timeseries.RequestOptions{OutputFormat: 4}, 200)
+	b, _ := marshalTimeseriesTSVWithNames(testDataSet, &timeseries.RequestOptions{OutputFormat: 4}, 200)
 	if string(b) != testDataTSVWithNames {
 		t.Error()
 	}
 }
 
 func TestMarshalTSVWithNamesAndTypes(t *testing.T) {
-	b, _ := marshalTimeseriesTSVWithNamesAndTypes(testDataset, &timeseries.RequestOptions{OutputFormat: 5}, 200)
+	b, _ := marshalTimeseriesTSVWithNamesAndTypes(testDataSet, &timeseries.RequestOptions{OutputFormat: 5}, 200)
 	if string(b) != testDataTSVWithNamesAndTypes {
 		t.Error()
 	}
@@ -193,15 +193,15 @@ func TestUnmarshalTimeseries(t *testing.T) {
 		return
 	}
 
-	if len(ds.ExtentList) != 1 || !ds.ExtentList[0].Start.Equal(testDataset.ExtentList[0].Start) ||
-		!ds.ExtentList[0].End.Equal(testDataset.ExtentList[0].End) {
+	if len(ds.ExtentList) != 1 || !ds.ExtentList[0].Start.Equal(testDataSet.ExtentList[0].Start) ||
+		!ds.ExtentList[0].End.Equal(testDataSet.ExtentList[0].End) {
 		t.Error("unexpected extents: ", ds.ExtentList)
 	}
 
 }
 
 func TestMarshalTimeseries(t *testing.T) {
-	b, err := MarshalTimeseries(testDataset, &timeseries.RequestOptions{OutputFormat: 5}, 200)
+	b, err := MarshalTimeseries(testDataSet, &timeseries.RequestOptions{OutputFormat: 5}, 200)
 	if err != nil {
 		t.Error(err)
 	}

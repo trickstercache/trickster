@@ -157,7 +157,7 @@ func MarshalTimeseriesWriter(ts timeseries.Timeseries, rlo *timeseries.RequestOp
 	if !ok {
 		return timeseries.ErrUnknownFormat
 	}
-	// With Prometheus we presume only one Result per Dataset
+	// With Prometheus we presume only one Result per DataSet
 	if len(ds.Results) != 1 {
 		return timeseries.ErrUnknownFormat
 	}

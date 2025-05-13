@@ -138,8 +138,8 @@ func BenchmarkDecodeDataSet(b *testing.B) {
 	}
 }
 
-func TestMarshalUnmarshalDatasets(t *testing.T) {
-	v := Datasets{}
+func TestMarshalUnmarshalDataSets(t *testing.T) {
+	v := DataSets{}
 	bts, err := v.MarshalMsg(nil)
 	if err != nil {
 		t.Fatal(err)
@@ -161,8 +161,8 @@ func TestMarshalUnmarshalDatasets(t *testing.T) {
 	}
 }
 
-func BenchmarkMarshalMsgDatasets(b *testing.B) {
-	v := Datasets{}
+func BenchmarkMarshalMsgDataSets(b *testing.B) {
+	v := DataSets{}
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -170,8 +170,8 @@ func BenchmarkMarshalMsgDatasets(b *testing.B) {
 	}
 }
 
-func BenchmarkAppendMsgDatasets(b *testing.B) {
-	v := Datasets{}
+func BenchmarkAppendMsgDataSets(b *testing.B) {
+	v := DataSets{}
 	bts := make([]byte, 0, v.Msgsize())
 	bts, _ = v.MarshalMsg(bts[0:0])
 	b.SetBytes(int64(len(bts)))
@@ -182,8 +182,8 @@ func BenchmarkAppendMsgDatasets(b *testing.B) {
 	}
 }
 
-func BenchmarkUnmarshalDatasets(b *testing.B) {
-	v := Datasets{}
+func BenchmarkUnmarshalDataSets(b *testing.B) {
+	v := DataSets{}
 	bts, _ := v.MarshalMsg(nil)
 	b.ReportAllocs()
 	b.SetBytes(int64(len(bts)))
@@ -196,17 +196,17 @@ func BenchmarkUnmarshalDatasets(b *testing.B) {
 	}
 }
 
-func TestEncodeDecodeDatasets(t *testing.T) {
-	v := Datasets{}
+func TestEncodeDecodeDataSets(t *testing.T) {
+	v := DataSets{}
 	var buf bytes.Buffer
 	msgp.Encode(&buf, &v)
 
 	m := v.Msgsize()
 	if buf.Len() > m {
-		t.Log("WARNING: TestEncodeDecodeDatasets Msgsize() is inaccurate")
+		t.Log("WARNING: TestEncodeDecodeDataSets Msgsize() is inaccurate")
 	}
 
-	vn := Datasets{}
+	vn := DataSets{}
 	err := msgp.Decode(&buf, &vn)
 	if err != nil {
 		t.Error(err)
@@ -220,8 +220,8 @@ func TestEncodeDecodeDatasets(t *testing.T) {
 	}
 }
 
-func BenchmarkEncodeDatasets(b *testing.B) {
-	v := Datasets{}
+func BenchmarkEncodeDataSets(b *testing.B) {
+	v := DataSets{}
 	var buf bytes.Buffer
 	msgp.Encode(&buf, &v)
 	b.SetBytes(int64(buf.Len()))
@@ -234,8 +234,8 @@ func BenchmarkEncodeDatasets(b *testing.B) {
 	en.Flush()
 }
 
-func BenchmarkDecodeDatasets(b *testing.B) {
-	v := Datasets{}
+func BenchmarkDecodeDataSets(b *testing.B) {
+	v := DataSets{}
 	var buf bytes.Buffer
 	msgp.Encode(&buf, &v)
 	b.SetBytes(int64(buf.Len()))

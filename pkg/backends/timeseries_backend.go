@@ -60,7 +60,7 @@ type TimeseriesBackend interface {
 	Router() http.Handler
 	// BaseUpstreamURL returns the base URL for upstream requests
 	BaseUpstreamURL() *url.URL
-	// Modeler returns the Modeler for converting between Datasets and wire documents
+	// Modeler returns the Modeler for converting between DataSets and wire documents
 	Modeler() *timeseries.Modeler
 	// DefaultHealthCheckConfig returns the default HealthCHeck Config for the given Provider
 	DefaultHealthCheckConfig() *ho.Options

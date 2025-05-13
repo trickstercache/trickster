@@ -398,7 +398,7 @@ func (z *DataSet) Msgsize() (s int) {
 }
 
 // DecodeMsg implements msgp.Decodable
-func (z *Datasets) DecodeMsg(dc *msgp.Reader) (err error) {
+func (z *DataSets) DecodeMsg(dc *msgp.Reader) (err error) {
 	var zb0002 uint32
 	zb0002, err = dc.ReadArrayHeader()
 	if err != nil {
@@ -408,7 +408,7 @@ func (z *Datasets) DecodeMsg(dc *msgp.Reader) (err error) {
 	if cap((*z)) >= int(zb0002) {
 		(*z) = (*z)[:zb0002]
 	} else {
-		(*z) = make(Datasets, zb0002)
+		(*z) = make(DataSets, zb0002)
 	}
 	for zb0001 := range *z {
 		if dc.IsNil() {
@@ -433,7 +433,7 @@ func (z *Datasets) DecodeMsg(dc *msgp.Reader) (err error) {
 }
 
 // EncodeMsg implements msgp.Encodable
-func (z Datasets) EncodeMsg(en *msgp.Writer) (err error) {
+func (z DataSets) EncodeMsg(en *msgp.Writer) (err error) {
 	err = en.WriteArrayHeader(uint32(len(z)))
 	if err != nil {
 		err = msgp.WrapError(err)
@@ -457,7 +457,7 @@ func (z Datasets) EncodeMsg(en *msgp.Writer) (err error) {
 }
 
 // MarshalMsg implements msgp.Marshaler
-func (z Datasets) MarshalMsg(b []byte) (o []byte, err error) {
+func (z DataSets) MarshalMsg(b []byte) (o []byte, err error) {
 	o = msgp.Require(b, z.Msgsize())
 	o = msgp.AppendArrayHeader(o, uint32(len(z)))
 	for zb0003 := range z {
@@ -475,7 +475,7 @@ func (z Datasets) MarshalMsg(b []byte) (o []byte, err error) {
 }
 
 // UnmarshalMsg implements msgp.Unmarshaler
-func (z *Datasets) UnmarshalMsg(bts []byte) (o []byte, err error) {
+func (z *DataSets) UnmarshalMsg(bts []byte) (o []byte, err error) {
 	var zb0002 uint32
 	zb0002, bts, err = msgp.ReadArrayHeaderBytes(bts)
 	if err != nil {
@@ -485,7 +485,7 @@ func (z *Datasets) UnmarshalMsg(bts []byte) (o []byte, err error) {
 	if cap((*z)) >= int(zb0002) {
 		(*z) = (*z)[:zb0002]
 	} else {
-		(*z) = make(Datasets, zb0002)
+		(*z) = make(DataSets, zb0002)
 	}
 	for zb0001 := range *z {
 		if msgp.IsNil(bts) {
@@ -510,7 +510,7 @@ func (z *Datasets) UnmarshalMsg(bts []byte) (o []byte, err error) {
 }
 
 // Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
-func (z Datasets) Msgsize() (s int) {
+func (z DataSets) Msgsize() (s int) {
 	s = msgp.ArrayHeaderSize
 	for zb0003 := range z {
 		if z[zb0003] == nil {

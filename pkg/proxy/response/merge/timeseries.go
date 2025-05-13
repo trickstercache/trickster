@@ -26,7 +26,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
-// Timeseries merges the provided Responses into a single Timeseries Dataset
+// Timeseries merges the provided Responses into a single Timeseries DataSet
 // and writes it to the provided responsewriter
 func Timeseries(w http.ResponseWriter, r *http.Request, rgs ResponseGates) {
 

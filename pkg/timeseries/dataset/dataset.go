@@ -62,7 +62,7 @@ type DataSet struct {
 	RangeCropper func(timeseries.Extent) `msg:"-"`
 }
 
-type Datasets []*DataSet
+type DataSets []*DataSet
 
 // Marshaler is a function that serializes the provided DataSet into a byte slice
 type Marshaler func(*DataSet, *timeseries.RequestOptions, int) ([]byte, error)
@@ -236,7 +236,7 @@ func (ds *DataSet) DefaultMerger(sortPoints bool, collection ...timeseries.Times
 		}
 		rl[r.StatementID] = r
 	}
-	dl := make(Datasets, 0, 32)
+	dl := make(DataSets, 0, 32)
 	k := len(ds.Results)
 	rlen := k
 	for _, ts := range collection {
