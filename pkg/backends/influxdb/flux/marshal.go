@@ -114,10 +114,11 @@ func setStartStopTimes(fds timeseries.FieldDefinitions, e timeseries.Extent) {
 		if fd.Role != timeseries.RoleUntracked {
 			continue
 		}
-		if fd.Name == startColumnName {
+		switch fd.Name {
+		case startColumnName:
 			fds[i].DefaultValue =
 				epoch.FormatTime(e.Start, fd.DataType, false)
-		} else if fd.Name == stopColumnName {
+		case stopColumnName:
 			fds[i].DefaultValue =
 				epoch.FormatTime(e.End, fd.DataType, false)
 		}

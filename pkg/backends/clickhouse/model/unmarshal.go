@@ -109,10 +109,10 @@ func loadFieldDef(fieldName, dataType string, col int,
 		OutputPosition: col,
 		Role:           timeseries.RoleValue,
 	}
-	switch {
-	case fieldName == "":
+	switch fieldName {
+	case "":
 		return timeseries.FieldDefinition{OutputPosition: -1}
-	case fieldName == trq.TimestampDefinition.Name:
+	case trq.TimestampDefinition.Name:
 		fd.Role = timeseries.RoleTimestamp
 	default:
 		for l := range trq.TagFieldDefintions {
