@@ -239,7 +239,7 @@ check-fmtprints: # fails if there are any fmt.Print* calls outside of the 3 appr
 
 .PHONY: check-todos
 check-todos: SHELL:=/bin/sh
-check-todos: # fails if there are any fmt.Print* calls outside of the 3 approved files
+check-todos: # there are 11 known "TODO"s in the codebase. This check fails if more are added.
 	@cd pkg && \
 	todos=$$(git grep -in todo | grep -v 'context\.TODO'); \
 	count=0; \

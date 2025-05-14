@@ -172,7 +172,7 @@ func ParseTimeRangeQuery(r *http.Request,
 	} else {
 		qv := url.Values(http.Header(uv).Clone())
 		qv.Set(ParamQuery, trq.Statement)
-		// Swap in the Tokenzed Query in the Url Params
+		// Swap in the Tokenized Query in the Url Params
 		trq.TemplateURL.RawQuery = qv.Encode()
 	}
 	if cacheError != nil {
