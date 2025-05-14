@@ -221,7 +221,7 @@ check-license-headers:
 check-fmtprints: SHELL:=/bin/sh
 check-fmtprints: # fails if there are any fmt.Print* calls outside of the 3 approved files
 	@cd pkg && \
-	fmtprints=$$(git grep -n fmt.Print | grep -v 'appinfo/usage/usage.go' | grep -v 'config/validate/validate.go' | grep -v '^daemon/'); \
+	fmtprints=$$(git grep -n fmt.Print | grep -v 'appinfo/usage/usage.go' | grep -v '^daemon/'); \
 	count=0; \
 	if [ -n "$$fmtprints" ]; then \
 		count="$$(echo "$$fmtprints" | wc -l | tr -d '[:space:]')" ; \
