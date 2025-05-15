@@ -29,7 +29,8 @@ import (
 )
 
 // PurgeHandleFunc purges an object from a cache based on key.
-func PurgeKeyHandleFunc(conf *config.Config, from backends.Backends) func(http.ResponseWriter, *http.Request) {
+func PurgeKeyHandleFunc(conf *config.Config,
+	from backends.Backends) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, req *http.Request) {
 		vals := strings.Replace(req.URL.Path, conf.Main.PurgeKeyHandlerPath, "", 1)
 		parts := strings.Split(vals, "/")
@@ -63,7 +64,8 @@ func PurgeKeyHandleFunc(conf *config.Config, from backends.Backends) func(http.R
 	}
 }
 
-func PurgePathHandlerFunc(conf *config.Config, from *backends.Backends) func(http.ResponseWriter, *http.Request) {
+func PurgePathHandlerFunc(_ *config.Config,
+	from *backends.Backends) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, req *http.Request) {
 		purgeFrom := req.URL.Query().Get("backend")
 		purgePath := req.URL.Query().Get("path")

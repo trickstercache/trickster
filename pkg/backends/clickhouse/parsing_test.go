@@ -460,13 +460,6 @@ func TestParseSelectTokens(t *testing.T) {
 
 }
 
-func TestParseTimeField(t *testing.T) {
-	_, _, err := parseTimeField(&token.Token{Typ: token.Number, Val: "not-a-number"})
-	if err == nil {
-		t.Error("expected syntax error")
-	}
-}
-
 func TestParseGroupByTokens(t *testing.T) {
 	_, err := parseGroupByTokens(map[string]any{"groupByTokens": nil}, nil)
 	if err != sql.ErrInvalidGroupByClause {

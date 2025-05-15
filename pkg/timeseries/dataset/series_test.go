@@ -56,19 +56,17 @@ func TestSeriesSize(t *testing.T) {
 
 func TestString(t *testing.T) {
 	expected := `{"header":{"name":"test","query":"SELECT TRICKSTER!",` +
-		`"tags":"test1=value1","fields":["Field1"],"timestampIndex":37},` +
-		`points:[{5000000000,1,37},{10000000000,1,24}]}`
+		`"tags":"test1=value1","valueFields":["Field1"],"timeStampField":""},` +
+		`"points":[{5000000000,1,37},{10000000000,1,24}]}`
 	s := testSeries()
 	if s.String() != expected {
 		t.Errorf("expected %s got %s", expected, s.String())
 	}
-
-	expected = "[15360041599306893527]"
+	expected = "[16450490800955907542]"
 	sl := SeriesList{s}
 	if sl.String() != expected {
 		t.Errorf("expected %s got %s", expected, sl.String())
 	}
-
 }
 
 func testSeriesHeader() SeriesHeader {
@@ -76,14 +74,13 @@ func testSeriesHeader() SeriesHeader {
 		Name:           "test",
 		QueryStatement: "SELECT TRICKSTER!",
 		Tags:           Tags{"test1": "value1"},
-		FieldsList: []timeseries.FieldDefinition{
+		ValueFieldsList: []timeseries.FieldDefinition{
 			{
 				Name:     "Field1",
 				DataType: timeseries.FieldDataType(1),
 			},
 		},
-		TimestampIndex: 37,
-		Size:           56,
+		Size: 56,
 	}
 	return sh
 }
@@ -93,14 +90,13 @@ func testSeriesHeader2() SeriesHeader {
 		Name:           "test2",
 		QueryStatement: "SELECT TRICKSTER2!",
 		Tags:           Tags{"test2": "value2"},
-		FieldsList: []timeseries.FieldDefinition{
+		ValueFieldsList: []timeseries.FieldDefinition{
 			{
 				Name:     "Field1",
 				DataType: timeseries.FieldDataType(1),
 			},
 		},
-		TimestampIndex: 37,
-		Size:           56,
+		Size: 56,
 	}
 	return sh
 }
@@ -110,14 +106,13 @@ func testSeriesHeader3() SeriesHeader {
 		Name:           "test3",
 		QueryStatement: "SELECT TRICKSTER!",
 		Tags:           Tags{"test3": "value3"},
-		FieldsList: []timeseries.FieldDefinition{
+		ValueFieldsList: []timeseries.FieldDefinition{
 			{
 				Name:     "Field1",
 				DataType: timeseries.FieldDataType(1),
 			},
 		},
-		TimestampIndex: 37,
-		Size:           56,
+		Size: 56,
 	}
 	return sh
 }
@@ -133,8 +128,8 @@ func TestSeriesHeaderClone(t *testing.T) {
 	sh := testSeriesHeader()
 	sh2 := sh.Clone()
 	if sh2.Size != sh.Size ||
-		len(sh2.FieldsList) != 1 ||
-		sh2.FieldsList[0].Name != "Field1" {
+		len(sh2.ValueFieldsList) != 1 ||
+		sh2.ValueFieldsList[0].Name != "Field1" {
 		t.Error("series header clone mismatch")
 	}
 

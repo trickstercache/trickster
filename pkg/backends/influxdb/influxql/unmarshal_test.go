@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package model
+package influxql
 
 import (
 	"errors"

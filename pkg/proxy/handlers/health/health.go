@@ -31,6 +31,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/contenttype"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
 
@@ -58,9 +59,9 @@ func StatusHandler(hc healthcheck.HealthChecker) http.Handler {
 	// which is being updated in real time by the builder.
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body, ct string
-		if r != nil &&
-			((r.Header != nil && r.Header.Get(headers.NameAccept) == headers.ValueApplicationJSON) ||
-				(r.URL != nil && strings.Contains(r.URL.RawQuery, "json"))) {
+		if headers.AcceptsJSON(r) ||
+			(r != nil && r.URL != nil &&
+				strings.Contains(r.URL.RawQuery, contenttype.JSON)) {
 			body = hd.detail.Load().json
 			ct = headers.ValueApplicationJSON
 		} else {

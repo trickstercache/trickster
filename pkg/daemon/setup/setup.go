@@ -17,7 +17,6 @@
 package setup
 
 import (
-	"fmt"
 	"net/http"
 	"os"
 	goruntime "runtime"
@@ -57,7 +56,7 @@ func LoadAndValidate() (*config.Config, error) {
 	// Load Config
 	cfg, err := config.Load(os.Args[1:])
 	if err != nil {
-		fmt.Println("\nERROR: Could not load configuration:", err.Error())
+		logger.Error("Could not load configuration:", logging.Pairs{"error": err.Error()})
 		if cfg != nil && cfg.Flags != nil && cfg.Flags.ValidateConfig {
 			usage.PrintUsage()
 		}

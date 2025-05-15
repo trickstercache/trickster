@@ -131,7 +131,7 @@ func (p *Parser) GetFieldList(rs *parsing.RunState, allowedToken token.Typ, disA
 // AtSelect is the state where the current item is of type TokenSelect
 // it will parse the incoming items into a list of item lists that comprise
 // the fields in the clause
-func AtSelect(bp, ip parsing.Parser, rs *parsing.RunState) parsing.StateFn {
+func AtSelect(_, ip parsing.Parser, rs *parsing.RunState) parsing.StateFn {
 	rs.SetResultsCollection("verb", lsql.TokenValSelect)
 	p, ok := ip.(*Parser)
 	if !ok {
@@ -176,7 +176,7 @@ func IsFromFieldDelimiterType(t token.Typ) bool {
 }
 
 // AtFrom is the state where the current item is of type TokenFrom
-func AtFrom(bp, ip parsing.Parser, rs *parsing.RunState) parsing.StateFn {
+func AtFrom(_, ip parsing.Parser, rs *parsing.RunState) parsing.StateFn {
 	p, ok := ip.(*Parser)
 	if !ok {
 		rs.WithError(parsing.ErrUnsupportedParser)
@@ -188,7 +188,7 @@ func AtFrom(bp, ip parsing.Parser, rs *parsing.RunState) parsing.StateFn {
 }
 
 // AtWhere is the state where the current item is of type TokenWhere
-func AtWhere(bp, ip parsing.Parser, rs *parsing.RunState) parsing.StateFn {
+func AtWhere(_, ip parsing.Parser, rs *parsing.RunState) parsing.StateFn {
 	p, ok := ip.(*Parser)
 	if !ok {
 		rs.WithError(parsing.ErrUnsupportedParser)
@@ -219,7 +219,7 @@ func AtWhere(bp, ip parsing.Parser, rs *parsing.RunState) parsing.StateFn {
 }
 
 // AtGroupBy is the state where the current item is of type TokenGroupBy
-func AtGroupBy(bp, ip parsing.Parser, rs *parsing.RunState) parsing.StateFn {
+func AtGroupBy(_, ip parsing.Parser, rs *parsing.RunState) parsing.StateFn {
 	p, ok := ip.(*Parser)
 	if !ok {
 		rs.WithError(parsing.ErrUnsupportedParser)
@@ -235,7 +235,7 @@ func AtGroupBy(bp, ip parsing.Parser, rs *parsing.RunState) parsing.StateFn {
 }
 
 // AtHaving is the state where the current item is of type TokenHaving
-func AtHaving(bp, ip parsing.Parser, rs *parsing.RunState) parsing.StateFn {
+func AtHaving(_, ip parsing.Parser, rs *parsing.RunState) parsing.StateFn {
 	p, ok := ip.(*Parser)
 	if !ok {
 		rs.WithError(parsing.ErrUnsupportedParser)
@@ -247,7 +247,7 @@ func AtHaving(bp, ip parsing.Parser, rs *parsing.RunState) parsing.StateFn {
 }
 
 // AtOrderBy is the state where the current item is of type TokenOrderBy
-func AtOrderBy(bp, ip parsing.Parser, rs *parsing.RunState) parsing.StateFn {
+func AtOrderBy(_, ip parsing.Parser, rs *parsing.RunState) parsing.StateFn {
 	p, ok := ip.(*Parser)
 	if !ok {
 		rs.WithError(parsing.ErrUnsupportedParser)
@@ -262,13 +262,13 @@ func AtOrderBy(bp, ip parsing.Parser, rs *parsing.RunState) parsing.StateFn {
 // Trickster does not currently support queries with Union (we only need to look
 // at the first query to get the structure and time series info we need, but we
 // welcome all help in extending this support!)
-func AtUnion(bp, ip parsing.Parser, rs *parsing.RunState) parsing.StateFn {
+func AtUnion(_, _ parsing.Parser, rs *parsing.RunState) parsing.StateFn {
 	rs.WithError(parsing.ErrUnsupportedKeyword)
 	return nil
 }
 
 // AtLimit is the state where the current item is of type TokenLimit
-func AtLimit(bp, ip parsing.Parser, rs *parsing.RunState) parsing.StateFn {
+func AtLimit(_, ip parsing.Parser, rs *parsing.RunState) parsing.StateFn {
 	p, ok := ip.(*Parser)
 	if !ok {
 		rs.WithError(parsing.ErrUnsupportedParser)
@@ -280,7 +280,7 @@ func AtLimit(bp, ip parsing.Parser, rs *parsing.RunState) parsing.StateFn {
 }
 
 // AtIntoOutfile is the state where the current item is of type TokenIntoOutfile
-func AtIntoOutfile(bp, ip parsing.Parser, rs *parsing.RunState) parsing.StateFn {
+func AtIntoOutfile(_, _ parsing.Parser, rs *parsing.RunState) parsing.StateFn {
 	rs.WithError(parsing.ErrUnsupportedKeyword)
 	return nil
 }

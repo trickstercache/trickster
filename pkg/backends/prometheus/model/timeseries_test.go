@@ -17,9 +17,9 @@
 package model
 
 import (
-	"bytes"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -47,7 +47,7 @@ func TestUnmarshalTimeseriesReader(t *testing.T) {
 		t.Error(err)
 	}
 
-	r := bytes.NewReader([]byte("{sta"))
+	r := strings.NewReader("{sta")
 	ts, err = UnmarshalTimeseriesReader(r, &timeseries.TimeRangeQuery{})
 	if ts != nil {
 		t.Error("expedted nil timeseries")
@@ -57,7 +57,7 @@ func TestUnmarshalTimeseriesReader(t *testing.T) {
 		t.Error("expected error for invalid character, got", err)
 	}
 
-	r = bytes.NewReader([]byte(testMatrix))
+	r = strings.NewReader(testMatrix)
 	result, err := UnmarshalTimeseriesReader(r, &timeseries.TimeRangeQuery{})
 	if err != nil {
 		t.Error(err)

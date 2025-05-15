@@ -14,22 +14,10 @@
  * limitations under the License.
  */
 
-package context
+package contenttype
 
-import (
-	"context"
-	"testing"
+const (
+	JSON = "json"
+	CSV  = "csv"
+	TSV  = "tsv"
 )
-
-func TestRequestBody(t *testing.T) {
-	ctx := context.Background()
-	b := RequestBody(ctx)
-	if b != nil {
-		t.Error("mismatch", string(b))
-	}
-	ctx = WithRequestBody(ctx, []byte("trickster"))
-	b = RequestBody(ctx)
-	if string(b) != "trickster" {
-		t.Error("mismatch")
-	}
-}

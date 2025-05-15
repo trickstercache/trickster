@@ -231,7 +231,7 @@ func (idx *Index) RemoveObject(key string) {
 }
 
 // RemoveObjects removes a list of Objects' Metadata from the Index
-func (idx *Index) RemoveObjects(keys []string, noLock bool) {
+func (idx *Index) RemoveObjects(keys []string) {
 	for _, key := range keys {
 		if o, ok := idx.Objects.Load(key); ok {
 			obj := o.(*Object)
@@ -313,7 +313,7 @@ func (idx *Index) reap() {
 
 	now := time.Now()
 
-	idx.Objects.Range(func(key, value any) bool {
+	idx.Objects.Range(func(_, value any) bool {
 		o := value.(*Object)
 		if o.Key == IndexKey {
 			return true
@@ -329,7 +329,7 @@ func (idx *Index) reap() {
 	if len(removals) > 0 {
 		metrics.ObserveCacheEvent(idx.name, idx.cacheProvider, "eviction", "ttl")
 		go idx.bulkRemoveFunc(removals)
-		idx.RemoveObjects(removals, true)
+		idx.RemoveObjects(removals)
 		cacheChanged = true
 		cacheSize = atomic.LoadInt64(&idx.CacheSize)
 	}
@@ -393,7 +393,7 @@ func (idx *Index) reap() {
 		if len(removals) > 0 {
 			metrics.ObserveCacheEvent(idx.name, idx.cacheProvider, "eviction", evictionType)
 			go idx.bulkRemoveFunc(removals)
-			idx.RemoveObjects(removals, true)
+			idx.RemoveObjects(removals)
 			cacheChanged = true
 		}
 

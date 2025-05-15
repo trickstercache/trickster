@@ -45,7 +45,7 @@ func HandleLocalResponse(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleBadRequestResponse responds to an HTTP Request with 400 Bad Request
-func HandleBadRequestResponse(w http.ResponseWriter, r *http.Request) {
+func HandleBadRequestResponse(w http.ResponseWriter, _ *http.Request) {
 	if w == nil {
 		return
 	}
@@ -54,7 +54,7 @@ func HandleBadRequestResponse(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleInternalServerError responds to an HTTP Request with 500 Internal Server Error
-func HandleInternalServerError(w http.ResponseWriter, r *http.Request) {
+func HandleInternalServerError(w http.ResponseWriter, _ *http.Request) {
 	if w == nil {
 		return
 	}
@@ -63,7 +63,7 @@ func HandleInternalServerError(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleBadGateway responds to an HTTP Request with 502 Bad Gateway
-func HandleBadGateway(w http.ResponseWriter, r *http.Request) {
+func HandleBadGateway(w http.ResponseWriter, _ *http.Request) {
 	if w == nil {
 		return
 	}

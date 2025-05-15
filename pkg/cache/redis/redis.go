@@ -104,7 +104,7 @@ func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
 
 // Retrieve gets data from the Redis Cache using the provided Key
 // because Redis manages Object Expiration internally, allowExpired is not used.
-func (c *Cache) Retrieve(cacheKey string, allowExpired bool) ([]byte, status.LookupStatus, error) {
+func (c *Cache) Retrieve(cacheKey string, _ bool) ([]byte, status.LookupStatus, error) {
 	res, err := c.client.Get(cacheKey).Result()
 
 	if err == nil {

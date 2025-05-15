@@ -342,7 +342,7 @@ func TestRemoveObjects(t *testing.T) {
 	idx := NewIndex("test", "test", nil, cacheConfig.Index, testBulkRemoveFunc, fakeFlusherFunc)
 	obj := &Object{Key: "test", Value: []byte("test_value")}
 	idx.UpdateObject(obj)
-	idx.RemoveObjects([]string{"test"}, false)
+	idx.RemoveObjects([]string{"test"})
 	if _, ok := idx.Objects.Load("test"); ok {
 		t.Error("key should not be in map")
 	}

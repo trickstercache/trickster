@@ -14,21 +14,18 @@
  * limitations under the License.
  */
 
-package model
+package influxql
 
 import (
 	"bytes"
-	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"io"
 	"sort"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/influxdata/influxdb/models"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
@@ -43,75 +40,15 @@ func UnmarshalTimeseries(data []byte, trq *timeseries.TimeRangeQuery) (timeserie
 	return UnmarshalTimeseriesReader(buf, trq)
 }
 
-func decodeJSON(reader io.Reader) (*WFDocument, error) {
-	wfd := &WFDocument{}
-	err := json.NewDecoder(reader).Decode(wfd)
-	if err != nil {
-		return nil, err
-	}
-	return wfd, nil
-}
-
-func decodeCSV(reader io.Reader) (*WFDocument, error) {
-	b, _ := io.ReadAll(reader)
-	reader = bytes.NewReader(b)
-	records, err := csv.NewReader(reader).ReadAll()
-	if err != nil {
-		return nil, err
-	}
-	var columns []string
-	rows := len(records) - 1
-	if len(records) == 0 {
-		rows = 0
-	}
-	wfd := &WFDocument{
-		Results: []*WFResult{
-			{StatementID: 0, SeriesList: make([]*models.Row, rows)},
-		},
-	}
-	for ri, r := range records {
-		// Do headers at first row
-		if ri == 0 {
-			columns = r
-			continue
-		}
-		// Construct WFD row from record
-		row := &models.Row{
-			// Name, Tags deliberately left empty, they don't show up here
-			Columns: columns,
-			Values:  [][]any{make([]any, len(r))},
-		}
-		for ii, item := range r {
-			var val any
-			if f, err := strconv.ParseFloat(item, 64); err == nil {
-				val = f
-			} else if x, err := strconv.ParseInt(item, 10, 64); err == nil {
-				val = x
-			} else if b, err := strconv.ParseBool(item); err == nil {
-				val = b
-			} else {
-				val = item
-			}
-			row.Values[0][ii] = val
-		}
-		wfd.Results[0].SeriesList[ri-1] = row
-	}
-	return wfd, nil
-}
-
 // UnmarshalTimeseriesReader converts a JSON blob into a Timeseries via io.Reader
 func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery) (timeseries.Timeseries, error) {
 	if trq == nil {
 		return nil, timeseries.ErrNoTimerangeQuery
 	}
-	var bck bytes.Buffer
-	tr := io.TeeReader(reader, &bck)
-	wfd, err := decodeCSV(tr)
+	wfd := &WFDocument{}
+	err := json.NewDecoder(reader).Decode(wfd)
 	if err != nil {
-		wfd, err = decodeJSON(&bck)
-		if err != nil {
-			return nil, err
-		}
+		return nil, err
 	}
 	ds := &dataset.DataSet{
 		Error:          wfd.Err,
@@ -143,16 +80,15 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 			var timeFound bool
 			cl := len(wfd.Results[i].SeriesList[j].Columns)
 			fdl := cl - 1 // -1 excludes time column from list for DataSet format
-			sh.FieldsList = make([]timeseries.FieldDefinition, fdl)
+			sh.ValueFieldsList = make([]timeseries.FieldDefinition, fdl)
 			var fdi int
 			for ci, cn := range wfd.Results[i].SeriesList[j].Columns {
-				index := uint64(ci) // #nosec G115 -- ci is positive
 				if cn == "time" || cn == "_time" {
 					timeFound = true
-					sh.TimestampIndex = index
+					sh.TimestampField = timeseries.FieldDefinition{Name: cn, OutputPosition: ci}
 					continue
 				}
-				sh.FieldsList[fdi] = timeseries.FieldDefinition{Name: cn}
+				sh.ValueFieldsList[fdi] = timeseries.FieldDefinition{Name: cn}
 				fdi++
 			}
 			if !timeFound || wfd.Results[i].SeriesList[j].Values == nil {
@@ -166,7 +102,7 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 			wg.Add(len(wfd.Results[i].SeriesList[j].Values))
 			for vi, v := range wfd.Results[i].SeriesList[j].Values {
 				go func(vals []any, idx int) {
-					pt, cols, err := pointFromValues(vals, sh.TimestampIndex)
+					pt, cols, err := pointFromValues(vals, sh.TimestampField.OutputPosition)
 					if err != nil {
 						errs[idx] = err
 						wg.Done()
@@ -178,7 +114,7 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 					}
 					if idx == 0 {
 						for x := range cols {
-							sh.FieldsList[x].DataType = cols[x]
+							sh.ValueFieldsList[x].DataType = cols[x]
 						}
 					}
 					pts[idx] = pt
@@ -226,7 +162,7 @@ func tryParseTimestamp(v any) int64 {
 	return -1
 }
 
-func pointFromValues(v []any, tsIndex uint64) (dataset.Point,
+func pointFromValues(v []any, tsIndex int) (dataset.Point,
 	[]timeseries.FieldDataType, error) {
 	p := dataset.Point{}
 	ns := tryParseTimestamp(v[tsIndex])

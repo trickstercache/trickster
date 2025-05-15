@@ -98,7 +98,7 @@ func (rc Clients) validate(rwi map[string]rewriter.RewriteInstructions) error {
 }
 
 // DefaultPathConfigs returns the default PathConfigs for the given Provider
-func (c *Client) DefaultPathConfigs(o *bo.Options) map[string]*po.Options {
+func (c *Client) DefaultPathConfigs(_ *bo.Options) map[string]*po.Options {
 	m := methods.CacheableHTTPMethods()
 	paths := map[string]*po.Options{
 		"/" + strings.Join(m, "-"): {

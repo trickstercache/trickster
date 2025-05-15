@@ -20,87 +20,14 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strconv"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
+	"github.com/trickstercache/trickster/v2/pkg/errors"
+	pe "github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
-	"github.com/trickstercache/trickster/v2/pkg/util/timeconv"
 )
-
-var testVals = url.Values(map[string][]string{"q": {
-	`SELECT mean("value") FROM "monthly"."rollup.1min" WHERE ("application" = 'web') AND time >= now() - 6h ` +
-		`GROUP BY time(15s), "cluster" fill(null)`}, "epoch": {"ms"}})
-var testRawQuery = testVals.Encode()
-
-var testFluxVals = url.Values(map[string][]string{
-	"q": {`from("test-bucket")
-	|> range(start: -7d, stop: -6d)
-	|> aggregateWindow(every: 1m, func: mean)
-	`},
-	"epoch": {"ms"},
-})
-var testFluxQuery = testFluxVals.Encode()
-
-func TestParseTimeRangeQuery(t *testing.T) {
-
-	req := &http.Request{
-		Method: http.MethodGet,
-		URL: &url.URL{
-			Scheme:   "https",
-			Host:     "blah.com",
-			Path:     "/",
-			RawQuery: testRawQuery,
-		}}
-	client := &Client{}
-	res, _, _, err := client.ParseTimeRangeQuery(req)
-	if err != nil {
-		t.Error(err)
-	} else {
-		if res.Step.Seconds() != 15 {
-			t.Errorf("expected %d got %d", 15, int(res.Step.Seconds()))
-		}
-		if int(res.Extent.End.Sub(res.Extent.Start).Hours()) != 6 {
-			t.Errorf("expected %d got %d", 6, int(res.Extent.End.Sub(res.Extent.Start).Hours()))
-		}
-	}
-
-	body := testVals["q"][0]
-	req, _ = http.NewRequest(http.MethodPost, "http://blah.com/", io.NopCloser(strings.NewReader(body)))
-	req.Header.Set("Content-Length", strconv.Itoa(len(body)))
-
-	res, _, _, err = client.ParseTimeRangeQuery(req)
-	if err != nil {
-		t.Error(err)
-	} else {
-		if res.Step.Seconds() != 15 {
-			t.Errorf("expected %d got %d", 15, int(res.Step.Seconds()))
-		}
-		if int(res.Extent.End.Sub(res.Extent.Start).Hours()) != 6 {
-			t.Errorf("expected %d got %d", 6, int(res.Extent.End.Sub(res.Extent.Start).Hours()))
-		}
-	}
-
-	req = &http.Request{
-		Method: http.MethodGet,
-		URL: &url.URL{
-			Scheme:   "https",
-			Host:     "blah.com",
-			Path:     "/",
-			RawQuery: testFluxQuery,
-		}}
-	res, _, _, err = client.ParseTimeRangeQuery(req)
-	if err != nil {
-		t.Error(err)
-	} else {
-		if int(res.Extent.End.Sub(res.Extent.Start).Hours()) != int(timeconv.Day.Hours()) {
-			t.Errorf("expected %d got %d", int(timeconv.Day.Hours()), int(res.Extent.End.Sub(res.Extent.Start).Hours()))
-		}
-	}
-}
 
 func TestQueryHandlerWithSelect(t *testing.T) {
 
@@ -187,7 +114,7 @@ func TestQueryHandlerNotSelect(t *testing.T) {
 }
 
 func TestParseTimeRangeQueryMissingQuery(t *testing.T) {
-	expected := errors.MissingURLParam(upQuery).Error()
+	expected := errors.ErrBadRequest
 	req := &http.Request{URL: &url.URL{
 		Scheme: "https",
 		Host:   "blah.com",
@@ -204,14 +131,14 @@ func TestParseTimeRangeQueryMissingQuery(t *testing.T) {
 		t.Errorf(`Expected "%s", got NO ERROR`, expected)
 		return
 	}
-	if err.Error() != expected {
-		t.Errorf(`Expected "%s", got "%s"`, expected, err.Error())
+	if err != expected {
+		t.Errorf(`Expected "%s", got "%s"`, expected, err)
 	}
 }
 
 func TestParseTimeRangeQueryBadDuration(t *testing.T) {
 
-	expected := errors.ErrStepParse
+	expected := pe.ErrStepParse
 
 	req := &http.Request{
 		Method: http.MethodGet,

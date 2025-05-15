@@ -45,7 +45,7 @@ type Resources struct {
 	TimeRangeQuery    *timeseries.TimeRangeQuery
 	Tracer            *tracing.Tracer
 	IsMergeMember     bool
-	ResponseBytes     []byte
+	RequestBody       []byte
 	ResponseMergeFunc any
 	TSUnmarshaler     timeseries.UnmarshalerFunc
 	TSMarshaler       timeseries.MarshalWriterFunc
@@ -68,7 +68,7 @@ func (r *Resources) Clone() *Resources {
 		TimeRangeQuery:    r.TimeRangeQuery,
 		Tracer:            r.Tracer,
 		IsMergeMember:     r.IsMergeMember,
-		ResponseBytes:     r.ResponseBytes,
+		RequestBody:       r.RequestBody, // shallow copy of slice pointer
 		ResponseMergeFunc: r.ResponseMergeFunc,
 		TSUnmarshaler:     r.TSUnmarshaler,
 		TSMarshaler:       r.TSMarshaler,

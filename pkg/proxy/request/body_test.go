@@ -17,9 +17,9 @@
 package request
 
 import (
-	"bytes"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -32,19 +32,19 @@ func TestGetAndSetBody(t *testing.T) {
 		t.Errorf("expected `` got `%s`", string(body))
 	}
 
-	req.Body = io.NopCloser(bytes.NewReader([]byte("trickster")))
+	req.Body = io.NopCloser(strings.NewReader("trickster"))
 	body, _ = GetBody(req)
 	if string(body) != "trickster" {
 		t.Errorf("expected `` got `%s`", string(body))
 	}
 
-	req = SetBody(req, nil)
+	SetBody(req, nil)
 	body, _ = GetBody(req)
 	if string(body) != "" {
 		t.Errorf("expected `` got `%s`", string(body))
 	}
 
-	req = SetBody(req, []byte("trickster"))
+	SetBody(req, []byte("trickster"))
 	body, _ = GetBody(req)
 	if string(body) != "trickster" {
 		t.Errorf("expected `trickster` got `%s`", string(body))

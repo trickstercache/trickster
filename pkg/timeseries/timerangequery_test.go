@@ -76,10 +76,6 @@ func TestClone(t *testing.T) {
 	u, _ := url.Parse("http://127.0.0.1/")
 	trq := &TimeRangeQuery{Statement: "1234", Extent: Extent{Start: time.Unix(5, 0),
 		End: time.Unix(10, 0)}, Step: time.Duration(5) * time.Second, TemplateURL: u}
-
-	trq.TagFieldDefintions = []FieldDefinition{{}}
-	trq.ValueFieldDefinitions = []FieldDefinition{{}}
-
 	c := trq.Clone()
 	if !reflect.DeepEqual(trq, c) {
 		t.Errorf("expected %s got %s", trq.String(), c.String())
@@ -87,13 +83,10 @@ func TestClone(t *testing.T) {
 }
 
 func TestSizeTRQ(t *testing.T) {
-
 	u, _ := url.Parse("http://127.0.0.1/")
 	trq := &TimeRangeQuery{Statement: "1234", Extent: Extent{Start: time.Unix(5, 0),
 		End: time.Unix(10, 0)}, Step: time.Duration(5) * time.Second, TemplateURL: u}
-
 	size := trq.Size()
-
 	if size != 119 {
 		t.Errorf("expected %d got %d", 119, size)
 	}
@@ -111,7 +104,7 @@ func TestExtractBackfillTolerance(t *testing.T) {
 }
 
 func TestStringTRQ(t *testing.T) {
-	const expected = `{"statement":"1234","step":"5s","extent":"5000-10000","tsd":{"name":"","type":0},"td":[],"vd":[]}`
+	const expected = `{"statement":"1234","step":"5s","extent":"5000-10000","tsd":{"name":"","type":0},"td":[],"vd":null}`
 	trq := &TimeRangeQuery{Statement: "1234", Extent: Extent{Start: time.Unix(5, 0),
 		End: time.Unix(10, 0)}, Step: time.Duration(5) * time.Second}
 	s := trq.String()

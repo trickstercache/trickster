@@ -17,13 +17,13 @@
 package reader
 
 import (
-	"bytes"
 	"io"
+	"strings"
 	"testing"
 )
 
 func TestReadCloserResetter(t *testing.T) {
-	r := io.NopCloser(bytes.NewReader([]byte("trickster")))
+	r := io.NopCloser(strings.NewReader("trickster"))
 	rcr := NewReadCloserResetter(r)
 	if rcr == nil {
 		t.Error("expected non-nil")
@@ -67,7 +67,7 @@ func TestReadCloserResetterBytes(t *testing.T) {
 }
 
 func TestBaseReader(t *testing.T) {
-	r := bytes.NewReader([]byte("trickster"))
+	r := strings.NewReader("trickster")
 	rcr := &readCloserResetter{Reader: r}
 	if rcr.BaseReader() == nil {
 		t.Error("expected non-nil")

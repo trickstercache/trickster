@@ -104,7 +104,7 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 			Name:     "value",
 			DataType: timeseries.String,
 		}
-		sh.FieldsList = []timeseries.FieldDefinition{fd}
+		sh.ValueFieldsList = []timeseries.FieldDefinition{fd}
 		var pts dataset.Points
 		l := len(pr.Values)
 		var ps int64 = 16
@@ -175,7 +175,7 @@ func MarshalTimeseriesWriter(ts timeseries.Timeseries, rlo *timeseries.RequestOp
 }
 
 // marshalTSOrVectorWriter writes matrix and vector outputs to the provided io.Writer
-func MarshalTSOrVectorWriter(ts timeseries.Timeseries, rlo *timeseries.RequestOptions,
+func MarshalTSOrVectorWriter(ts timeseries.Timeseries, _ *timeseries.RequestOptions,
 	status int, w io.Writer, isVector bool) error {
 
 	if w == nil {
@@ -186,7 +186,7 @@ func MarshalTSOrVectorWriter(ts timeseries.Timeseries, rlo *timeseries.RequestOp
 	if !ok || ds == nil {
 		return timeseries.ErrUnknownFormat
 	}
-	// With Prometheus we presume only one Result per Dataset
+	// With Prometheus we presume only one Result per DataSet
 	if len(ds.Results) != 1 {
 		return timeseries.ErrUnknownFormat
 	}

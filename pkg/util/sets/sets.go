@@ -41,7 +41,7 @@ func NewIntSet() Set[int] {
 	return make(Set[int])
 }
 
-// NewIntSet returns a new Set[string]
+// NewStringSet returns a new Set[string]
 func NewStringSet() Set[string] {
 	return make(Set[string])
 }

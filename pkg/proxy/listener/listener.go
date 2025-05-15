@@ -118,7 +118,7 @@ func NewGroup() *Group {
 // connections (with operates with sampling through scrapes), and a set of
 // counter metrics for connections accepted, rejected and closed.
 func NewListener(listenAddress string, listenPort, connectionsLimit int,
-	tlsConfig *tls.Config, drainTimeout time.Duration) (net.Listener, error) {
+	tlsConfig *tls.Config, _ time.Duration) (net.Listener, error) {
 
 	var listener net.Listener
 	var err error

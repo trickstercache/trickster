@@ -21,7 +21,6 @@ import (
 	"net/http"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
-	modelflux "github.com/trickstercache/trickster/v2/pkg/backends/influxdb/model"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registration/types"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
@@ -44,7 +43,7 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 	}
 	c := &Client{}
 	b, err := backends.NewTimeseriesBackend(name, o, c.RegisterHandlers,
-		router, cache, modelflux.NewModeler())
+		router, cache, NewModeler())
 	c.TimeseriesBackend = b
 	return c, err
 }

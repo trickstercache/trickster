@@ -25,7 +25,7 @@ import (
 
 // ReloadHandleFunc will reload the running configuration if it has changed
 func ReloadHandleFunc(f reload.ReloadFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, _ *http.Request) {
 		didReload, _ := f("handler")
 		w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
 		w.Header().Set(headers.NameCacheControl, headers.ValueNoCache)

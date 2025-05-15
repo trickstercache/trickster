@@ -14,25 +14,30 @@
  * limitations under the License.
  */
 
-package context
+package numbers
 
 import (
-	"context"
+	"math"
+	"testing"
 )
 
-// WithRequestBody returns a copy of the provided context that also includes
-// the provided request body reference
-func WithRequestBody(ctx context.Context, body []byte) context.Context {
-	return context.WithValue(ctx, requestBodyKey, body)
-}
-
-// RequestBody returns the request body associated with the request
-func RequestBody(ctx context.Context) []byte {
-	v := ctx.Value(requestBodyKey)
-	if v != nil {
-		if b, ok := v.([]byte); ok {
-			return b
-		}
+func TestSafeAdd(t *testing.T) {
+	const i1 = math.MaxInt
+	const i2 = 500
+	const i3 = 1
+	i, ok := SafeAdd(i1, i3)
+	if i != math.MaxInt {
+		t.Errorf("expected %d got %d", 0, i)
 	}
-	return nil
+	if ok {
+		t.Error("expected false")
+	}
+
+	i, ok = SafeAdd(i2, i3)
+	if i != 501 {
+		t.Errorf("expected %d got %d", 501, i)
+	}
+	if !ok {
+		t.Error("expected true")
+	}
 }

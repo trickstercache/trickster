@@ -21,6 +21,9 @@ import (
 	"errors"
 )
 
+// ErrBadRequest is a general error for bad requests
+var ErrBadRequest = errors.New("bad request")
+
 // ErrNilWriter is an error for a nil writer when a non-nil writer was expected
 var ErrNilWriter = errors.New("nil writer")
 

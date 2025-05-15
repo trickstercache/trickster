@@ -27,7 +27,8 @@ import (
 )
 
 // SetExtent will change the upstream request query to use the provided Extent
-func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery, extent *timeseries.Extent) {
+func (c *Client) SetExtent(r *http.Request, _ *timeseries.TimeRangeQuery,
+	extent *timeseries.Extent) {
 	v, _, _ := params.GetRequestValues(r)
 	v.Set(upStart, strconv.FormatInt(extent.Start.Unix(), 10))
 	v.Set(upEnd, strconv.FormatInt(extent.End.Unix(), 10))

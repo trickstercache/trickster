@@ -149,7 +149,10 @@ lint:
 
 GO_TEST_FLAGS ?= -coverprofile=.coverprofile
 .PHONY: test
-test: check-license-headers
+test: check-license-headers check-codegen gotest check-fmtprints check-todos
+
+.PHONY: gotest
+gotest:
 	go test -timeout=5m -v ${GO_TEST_FLAGS} ./...
 
 .PHONY: data-race-test
@@ -192,14 +195,14 @@ insert-license-headers:
 		fi ; \
 	done
 
-CODEGEN_PATHS ?= "'./pkg/**_gen.go' './cmd/**_gen.go'"
+CODEGEN_PATHS ?= "'./pkg/**_gen.go'"
 .PHONY: check-codegen
 check-codegen:
 	@$(MAKE) generate > /dev/null
 	@git diff --name-only --exit-code ${CODEGEN_PATHS}
 
 .PHONY: check-license-headers
-check-license-headers: SHELL:=/bin/bash
+check-license-headers: SHELL:=/bin/sh
 check-license-headers:
 	@for file in $$(find ./pkg ./cmd -name '*.go') ; \
 	do \
@@ -212,7 +215,51 @@ check-license-headers:
 			exit 1 ; \
 		fi ; \
 	done ; \
-	echo "" ; echo "✓ All code files have the required license header." ; echo ""
+	echo "" ; echo "\033[1;32m✓\033[0m All code files have the required license header." ; echo ""
+
+.PHONY: check-fmtprints
+check-fmtprints: SHELL:=/bin/sh
+check-fmtprints: # fails if there are any fmt.Print* calls outside of the 3 approved files
+	@cd pkg && \
+	fmtprints=$$(git grep -n fmt.Print | grep -v 'appinfo/usage/usage.go' | grep -v '^daemon/'); \
+	count=0; \
+	if [ -n "$$fmtprints" ]; then \
+		count="$$(echo "$$fmtprints" | wc -l | tr -d '[:space:]')" ; \
+	fi; \
+	if [ "$$count" -ne 0 ]; then \
+		echo "" ; \
+		echo "\033[1;31m⨉\033[0m ($$count) unexpected fmt.Print*(s) must be removed from the codebase:"; \
+		echo "" ; \
+		echo "$$fmtprints" ; \
+		echo "" ; \
+		echo "" ; \
+		exit 1; \
+	fi ; \
+	echo "" ; echo "\033[1;32m✓\033[0m No unexpected fmt.Print* calls." ; echo ""
+
+.PHONY: check-todos
+check-todos: SHELL:=/bin/sh
+check-todos: # there are 11 known "TODO"s in the codebase. This check fails if more are added.
+	@cd pkg && \
+	todos=$$(git grep -in todo | grep -v 'context\.TODO'); \
+	count=0; \
+	if [ -n "$$todos" ]; then \
+		count="$$(echo "$$todos" | wc -l | tr -d '[:space:]')" ; \
+	fi; \
+	KNOWN_TODO_COUNT=11 ; \
+	if [ "$$count" -gt $$KNOWN_TODO_COUNT ]; then \
+		newtodos=$$(($$count - $$KNOWN_TODO_COUNT)) ; \
+		echo "" ; \
+		echo "\033[1;31m$$newtodos new TODOs found in the codebase.\033[0m Do not add any new TODOs to the codebase." ;\
+		echo "" ; \
+		echo "All TODOs:" ; \
+		echo "" ; \
+		echo "$$todos" | cut -b 1-100 ; \
+		echo "" ; \
+		echo "" ; \
+		exit 1; \
+	fi ; \
+	echo "" ; echo "\033[1;32m✓\033[0m No new TODOs found." ; echo ""
 
 .PHONY: spelling
 spelling:

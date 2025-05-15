@@ -98,13 +98,13 @@ var ErrInvalidKeywordOrder = errors.New("invalid keyword order")
 
 // Noop is a convenience state function that breaks the main loop by returning a nil function
 // Useful for assigning a nil-returning StateFn to a variable
-func Noop(bp, ip Parser, rs *RunState) StateFn {
+func Noop(_, _ Parser, _ *RunState) StateFn {
 	return nil
 }
 
 // StateUnexpectedToken is a convenience state function that breaks the main loop by returning a nil function
 // while attaching ErrUnexpectedToken to the RunState
-func StateUnexpectedToken(bp, ip Parser, rs *RunState) StateFn {
+func StateUnexpectedToken(_, _ Parser, rs *RunState) StateFn {
 	rs.WithError(ErrUnexpectedToken)
 	return nil
 }

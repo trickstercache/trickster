@@ -20,18 +20,6 @@ import (
 	"testing"
 )
 
-func TestFastForwardURL(t *testing.T) {
-
-	client := &Client{}
-	r, err := client.FastForwardRequest(nil)
-	if r != nil {
-		t.Errorf("Expected nil url, got %v", r)
-	}
-	if err != nil {
-		t.Errorf("Expected nil err, got %s", err)
-	}
-}
-
 func TestUnmarshalInstantaneous(t *testing.T) {
 
 	client := &Client{}
@@ -45,9 +33,4 @@ func TestUnmarshalInstantaneous(t *testing.T) {
 		t.Errorf("Expected nil err, got %s", err)
 	}
 
-}
-
-func TestQueryRangeHandler(t *testing.T) {
-	client := &Client{}
-	client.QueryRangeHandler(nil, nil)
 }

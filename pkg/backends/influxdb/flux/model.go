@@ -14,36 +14,12 @@
  * limitations under the License.
  */
 
-package model
+package flux
 
 import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
-
-	"github.com/influxdata/influxdb/models"
 )
-
-// WFDocument the Wire Format Document for the timeseries
-type WFDocument struct {
-	Results []*WFResult `json:"results"`
-	Err     string      `json:"error,omitempty"`
-}
-
-// WFResult is the Result section of the WFD
-type WFResult struct {
-	StatementID int           `json:"statement_id"`
-	SeriesList  []*models.Row `json:"series,omitempty"`
-	Err         string        `json:"error,omitempty"`
-}
-
-var epochMultipliers = map[byte]int64{
-	1: 1,             // nanoseconds
-	2: 1000,          // microseconds
-	3: 1000000,       // milliseconds
-	4: 1000000000,    // seconds
-	5: 60000000000,   // minutes
-	6: 3600000000000, // hours
-}
 
 // NewModeler returns a collection of modeling functions for influxdb interoperability
 func NewModeler() *timeseries.Modeler {
