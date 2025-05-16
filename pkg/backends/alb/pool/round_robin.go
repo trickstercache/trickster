@@ -21,12 +21,10 @@ import (
 )
 
 func nextRoundRobin(p *pool) []http.Handler {
-	p.mtx.RLock()
-	t := p.healthy
-	p.mtx.RUnlock()
-	if len(t) == 0 {
+	t := p.healthy.Load()
+	if t == nil {
 		return nil
 	}
-	i := p.pos.Add(1) % uint64(len(t))
-	return []http.Handler{t[i]}
+	i := p.pos.Add(1) % uint64(len(*t))
+	return []http.Handler{(*t)[i]}
 }

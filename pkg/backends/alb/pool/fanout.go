@@ -21,8 +21,9 @@ import (
 )
 
 func nextFanout(p *pool) []http.Handler {
-	p.mtx.RLock()
-	t := p.healthy
-	p.mtx.RUnlock()
-	return t
+	t := p.healthy.Load()
+	if t != nil {
+		return *t
+	}
+	return nil
 }

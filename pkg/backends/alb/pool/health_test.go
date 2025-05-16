@@ -43,11 +43,15 @@ func TestCheckHealth(t *testing.T) {
 	time.Sleep(150 * time.Millisecond)
 	cancel()
 	time.Sleep(10 * time.Millisecond)
-	p.mtx.Lock()
-	l := len(p.healthy)
-	p.mtx.Unlock()
+
+	h := p.healthy.Load()
+	if h == nil {
+		t.Error("expected non-nil healthy list")
+		return
+	}
+	l := len(*h)
 	if l != 1 {
-		t.Errorf("expected %d got %d", 0, l)
+		t.Errorf("expected %d got %d", 1, l)
 	}
 
 }

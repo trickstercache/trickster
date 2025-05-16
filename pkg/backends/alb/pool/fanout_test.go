@@ -23,7 +23,8 @@ import (
 
 func TestNextFanout(t *testing.T) {
 
-	p := &pool{healthy: []http.Handler{http.NotFoundHandler()}}
+	p := &pool{}
+	p.healthy.Store(&[]http.Handler{http.NotFoundHandler()})
 
 	p2 := nextFanout(p)
 	if len(p2) != 1 {

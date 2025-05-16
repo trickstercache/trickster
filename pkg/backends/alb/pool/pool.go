@@ -20,7 +20,6 @@ package pool
 import (
 	"context"
 	"net/http"
-	"sync"
 	"sync/atomic"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech"
@@ -79,10 +78,9 @@ type pool struct {
 	mechanism    mech.Mechanism
 	f            selectionFunc
 	targets      []*Target
-	healthy      []http.Handler
+	healthy      atomic.Pointer[[]http.Handler]
 	healthyFloor int
 	pos          atomic.Uint64
-	mtx          sync.RWMutex
 	ctx          context.Context
 	stopper      context.CancelFunc
 	ch           chan bool
