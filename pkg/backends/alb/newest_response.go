@@ -89,7 +89,7 @@ func (c *Client) handleNewestResponse(w http.ResponseWriter, r *http.Request) {
 	nrm := newNewestResponseMux(l)
 	var wg sync.WaitGroup
 	wg.Add(l)
-	for i := 0; i < l; i++ {
+	for i := range l {
 		// only the one of these i fanouts to respond will be mapped back to the end user
 		// based on the methodology
 		// and the rest will have their contexts canceled
@@ -126,9 +126,8 @@ func (nrg *newestResponseGate) WriteHeader(i int) {
 }
 
 func (nrg *newestResponseGate) Write(b []byte) (int, error) {
-	l := len(b)
 	if nrg.ca { // can abort without waiting, since this gate is already proven not to be newest
-		return l, nil
+		return len(b), nil
 	}
 	nrg.nrm.wg.Wait()
 	if nrg.nrm.getNewest() == nrg.i {
@@ -139,5 +138,5 @@ func (nrg *newestResponseGate) Write(b []byte) (int, error) {
 		nrg.ResponseWriter.WriteHeader(int(nrg.s))
 		nrg.ResponseWriter.Write(b)
 	}
-	return l, nil
+	return len(b), nil
 }
