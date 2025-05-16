@@ -25,13 +25,14 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/albpool"
 )
 
 func TestHandleFirstResponse(t *testing.T) {
 
 	r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
 
-	p, _, _ := testPool(mech.FirstResponse, 0, nil)
+	p, _, _ := albpool.New(mech.FirstResponse, 0, nil)
 	c := &Client{pool: p}
 	w := httptest.NewRecorder()
 	c.handleFirstResponse(w, r)
@@ -40,7 +41,7 @@ func TestHandleFirstResponse(t *testing.T) {
 	}
 
 	var st []*healthcheck.Status
-	c.pool, _, st = testPool(mech.FirstResponse, -1,
+	c.pool, _, st = albpool.New(mech.FirstResponse, -1,
 		[]http.Handler{http.HandlerFunc(tu.BasicHTTPHandler)})
 	st[0].Set(0)
 	time.Sleep(250 * time.Millisecond)
@@ -51,7 +52,7 @@ func TestHandleFirstResponse(t *testing.T) {
 		t.Error("expected 200 got", w.Code)
 	}
 
-	c.pool, _, st = testPool(mech.FirstResponse, -1,
+	c.pool, _, st = albpool.New(mech.FirstResponse, -1,
 		[]http.Handler{
 			http.HandlerFunc(tu.BasicHTTPHandler),
 			http.HandlerFunc(tu.BasicHTTPHandler),

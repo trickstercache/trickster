@@ -29,6 +29,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/albpool"
 )
 
 var testLogger = logging.NoopLogger()
@@ -45,7 +46,7 @@ func TestHandleResponseMerge(t *testing.T) {
 	rsc.IsMergeMember = true
 	r = request.SetResources(r, rsc)
 
-	p, _, _ := testPool(mech.TimeSeriesMerge, 0, nil)
+	p, _, _ := albpool.New(mech.TimeSeriesMerge, 0, nil)
 	c := &Client{pool: p, mergePaths: []string{"/"}}
 	w := httptest.NewRecorder()
 	c.handleResponseMerge(w, r)
@@ -54,7 +55,7 @@ func TestHandleResponseMerge(t *testing.T) {
 	}
 
 	var st []*healthcheck.Status
-	c.pool, _, st = testPool(mech.TimeSeriesMerge, -1,
+	c.pool, _, st = albpool.New(mech.TimeSeriesMerge, -1,
 		[]http.Handler{http.HandlerFunc(tu.BasicHTTPHandler)})
 	st[0].Set(0)
 	time.Sleep(250 * time.Millisecond)
@@ -65,7 +66,7 @@ func TestHandleResponseMerge(t *testing.T) {
 		t.Error("expected 200 got", w.Code)
 	}
 
-	c.pool, _, st = testPool(mech.TimeSeriesMerge, -1,
+	c.pool, _, st = albpool.New(mech.TimeSeriesMerge, -1,
 		[]http.Handler{
 			http.HandlerFunc(tu.BasicHTTPHandler),
 			http.HandlerFunc(tu.BasicHTTPHandler),
