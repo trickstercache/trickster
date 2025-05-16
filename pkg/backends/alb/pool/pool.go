@@ -23,6 +23,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 )
 
@@ -41,7 +42,7 @@ type Target struct {
 }
 
 // New returns a new pool
-func New(mechanism Mechanism, targets []*Target, healthyFloor int) Pool {
+func New(mechanism mech.Mechanism, targets []*Target, healthyFloor int) Pool {
 	f, ok := mechsToFuncs()[mechanism]
 	if !ok {
 		return nil
@@ -75,7 +76,7 @@ func NewTarget(handler http.Handler, hcStatus *healthcheck.Status) *Target {
 }
 
 type pool struct {
-	mechanism    Mechanism
+	mechanism    mech.Mechanism
 	f            selectionFunc
 	targets      []*Target
 	healthy      []http.Handler
@@ -95,12 +96,12 @@ func (p *pool) Stop() {
 	p.stopper()
 }
 
-func mechsToFuncs() map[Mechanism]selectionFunc {
-	return map[Mechanism]selectionFunc{
-		RoundRobin:         nextRoundRobin,
-		FirstResponse:      nextFanout,
-		FirstGoodResponse:  nextFanout,
-		NewestLastModified: nextFanout,
-		TimeSeriesMerge:    nextFanout,
+func mechsToFuncs() map[mech.Mechanism]selectionFunc {
+	return map[mech.Mechanism]selectionFunc{
+		mech.RoundRobin:         nextRoundRobin,
+		mech.FirstResponse:      nextFanout,
+		mech.FirstGoodResponse:  nextFanout,
+		mech.NewestLastModified: nextFanout,
+		mech.TimeSeriesMerge:    nextFanout,
 	}
 }

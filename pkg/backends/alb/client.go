@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
@@ -68,15 +69,15 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 
 	if o != nil && o.ALBOptions != nil {
 		switch o.ALBOptions.MechanismName {
-		case pool.FirstResponse.String():
+		case mech.FirstResponse.String():
 			c.handler = http.HandlerFunc(c.handleFirstResponse)
-		case pool.FirstGoodResponse.String():
+		case mech.FirstGoodResponse.String():
 			c.handler = http.HandlerFunc(c.handleFirstResponse)
 			c.fgr = true
 			c.fgrCodes = o.ALBOptions.FgrCodesLookup
-		case pool.NewestLastModified.String():
+		case mech.NewestLastModified.String():
 			c.handler = http.HandlerFunc(c.handleNewestResponse)
-		case pool.TimeSeriesMerge.String():
+		case mech.TimeSeriesMerge.String():
 			c.handler = http.HandlerFunc(c.handleResponseMerge)
 			c.nonmergeHandler = http.HandlerFunc(c.handleRoundRobin)
 			// this validates the merge configuration for the ALB client as it sets it up
@@ -152,7 +153,7 @@ func ValidatePools(clients backends.Backends) error {
 
 // ValidatePool confirms the provided list of backends to is valid
 func (c *Client) ValidatePool(clients backends.Backends) error {
-	_, ok := pool.GetMechanismByName(c.Configuration().ALBOptions.MechanismName)
+	_, ok := mech.GetMechanismByName(c.Configuration().ALBOptions.MechanismName)
 	if !ok {
 		return fmt.Errorf("invalid mechanism name [%s] in backend [%s]",
 			c.Configuration().ALBOptions.MechanismName, c.Name())
@@ -174,7 +175,7 @@ func (c *Client) ValidateAndStartPool(clients backends.Backends, hcs healthcheck
 
 	o := c.Configuration().ALBOptions
 
-	m, ok := pool.GetMechanismByName(o.MechanismName)
+	m, ok := mech.GetMechanismByName(o.MechanismName)
 	if !ok {
 		return fmt.Errorf("invalid mechanism name [%s] in backend [%s]", o.MechanismName, c.Name())
 	}

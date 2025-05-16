@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
 )
@@ -31,7 +31,7 @@ func TestHandleNewestResponse(t *testing.T) {
 
 	r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
 
-	p, _, _ := testPool(pool.NewestLastModified, 0, nil)
+	p, _, _ := testPool(mech.NewestLastModified, 0, nil)
 	c := &Client{pool: p}
 	w := httptest.NewRecorder()
 	c.handleNewestResponse(w, r)
@@ -40,7 +40,7 @@ func TestHandleNewestResponse(t *testing.T) {
 	}
 
 	var st []*healthcheck.Status
-	c.pool, _, st = testPool(pool.NewestLastModified, -1,
+	c.pool, _, st = testPool(mech.NewestLastModified, -1,
 		[]http.Handler{http.HandlerFunc(tu.BasicHTTPHandler)})
 	st[0].Set(0)
 	time.Sleep(250 * time.Millisecond)
@@ -51,7 +51,7 @@ func TestHandleNewestResponse(t *testing.T) {
 		t.Error("expected 200 got", w.Code)
 	}
 
-	c.pool, _, st = testPool(pool.NewestLastModified, -1,
+	c.pool, _, st = testPool(mech.NewestLastModified, -1,
 		[]http.Handler{
 			http.HandlerFunc(tu.BasicHTTPHandler),
 			http.HandlerFunc(tu.BasicHTTPHandler),

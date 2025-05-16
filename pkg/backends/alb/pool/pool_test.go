@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 )
 
@@ -30,7 +31,7 @@ func TestMechsToFuncs(t *testing.T) {
 		t.Errorf("expected %d got %d", 5, len(m))
 	}
 
-	if _, ok := m[RoundRobin]; !ok {
+	if _, ok := m[mech.RoundRobin]; !ok {
 		t.Error("expected true")
 	}
 
@@ -71,7 +72,7 @@ func TestNewPool(t *testing.T) {
 		t.Error("unexpected mismatch")
 	}
 
-	p = New(RoundRobin, []*Target{tgt}, 0)
+	p = New(mech.RoundRobin, []*Target{tgt}, 0)
 	if p == nil {
 		t.Error("expected non-nil")
 	}

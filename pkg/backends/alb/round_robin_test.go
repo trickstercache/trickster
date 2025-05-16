@@ -22,13 +22,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
 )
 
-func testPool(mech pool.Mechanism, healthyFloor int, hs []http.Handler) (pool.Pool,
+func testPool(m mech.Mechanism, healthyFloor int, hs []http.Handler) (pool.Pool,
 	[]*pool.Target, []*healthcheck.Status) {
 	var targets []*pool.Target
 	var statuses []*healthcheck.Status
@@ -41,7 +42,7 @@ func testPool(mech pool.Mechanism, healthyFloor int, hs []http.Handler) (pool.Po
 			targets = append(targets, pool.NewTarget(h, hst))
 		}
 	}
-	pool := pool.New(mech, targets, healthyFloor)
+	pool := pool.New(m, targets, healthyFloor)
 	return pool, targets, statuses
 }
 
@@ -54,7 +55,7 @@ func TestHandleRoundRobin(t *testing.T) {
 		t.Error("expected 502 got", w.Code)
 	}
 
-	p, _, hsts := testPool(pool.RoundRobin, 0,
+	p, _, hsts := testPool(mech.RoundRobin, 0,
 		[]http.Handler{http.HandlerFunc(tu.BasicHTTPHandler)})
 
 	c.pool = p
@@ -68,7 +69,7 @@ func TestHandleRoundRobin(t *testing.T) {
 		t.Error("expected 200 got", w.Code)
 	}
 
-	c.pool, _, hsts = testPool(pool.RoundRobin, 0,
+	c.pool, _, hsts = testPool(mech.RoundRobin, 0,
 		[]http.Handler{http.HandlerFunc(handlers.HandleBadGateway)})
 	hsts[0].Set(-1)
 	time.Sleep(250 * time.Millisecond)
