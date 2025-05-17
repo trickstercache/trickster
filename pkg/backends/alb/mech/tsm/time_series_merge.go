@@ -143,9 +143,10 @@ func GetResponseGates(w http.ResponseWriter, r *http.Request, hl []http.Handler)
 	l := len(hl)
 	mgs := make(merge.ResponseGates, l)
 	wg.Add(l)
-	for i := 0; i < l; i++ {
+	for i := range l {
 		go func(j int) {
 			if hl[j] == nil {
+				wg.Done()
 				return
 			}
 			rsc := &request.Resources{IsMergeMember: true}
@@ -165,6 +166,9 @@ func GetResponseGates(w http.ResponseWriter, r *http.Request, hl []http.Handler)
 func SetStatusHeader(w http.ResponseWriter, mgs merge.ResponseGates) {
 	statusHeader := ""
 	for _, mg := range mgs {
+		if mg == nil {
+			continue
+		}
 		if h := mg.Header(); h != nil {
 			headers.StripMergeHeaders(h)
 			statusHeader = headers.MergeResultHeaderVals(statusHeader,
