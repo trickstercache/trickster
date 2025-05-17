@@ -75,7 +75,7 @@ func (k KeyLookup) IsDefined(s ...string) bool {
 
 func getIndentDepth(line string) int {
 	var depth int
-	for i := 0; i < len(line); i++ {
+	for i := range len(line) {
 		switch line[i] {
 		case 32: // count the number of spaces at the front of the line
 			depth++

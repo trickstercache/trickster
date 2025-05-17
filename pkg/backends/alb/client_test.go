@@ -25,7 +25,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus"
-	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registration/types"
+	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 )
 
 func TestHandlers(t *testing.T) {

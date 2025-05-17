@@ -29,7 +29,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
-	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registration/types"
+	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"

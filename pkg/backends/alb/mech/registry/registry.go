@@ -24,7 +24,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/tsm"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
-	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registration/types"
+	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 )
 
 // this slice is the one and only place to aggregate all registered Mechanisms

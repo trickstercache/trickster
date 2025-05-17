@@ -21,7 +21,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
-	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registration/types"
+	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 )
 
 // ID defines the load balancing mechanism identifier type

@@ -24,7 +24,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	rpc "github.com/trickstercache/trickster/v2/pkg/backends/reverseproxycache"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
-	"github.com/trickstercache/trickster/v2/pkg/cache/registration"
+	"github.com/trickstercache/trickster/v2/pkg/cache/registry"
 	"github.com/trickstercache/trickster/v2/pkg/router/lm"
 	"github.com/trickstercache/trickster/v2/pkg/routing"
 )
@@ -44,7 +44,7 @@ func NewWithOptions(baseURL string, o *bo.Options, c *co.Options) (http.Handler,
 		c = co.New()
 		c.Name = "default"
 	}
-	cache := registration.NewCache(c.Name, c)
+	cache := registry.NewCache(c.Name, c)
 	err = cache.Connect()
 	if err != nil {
 		return nil, err

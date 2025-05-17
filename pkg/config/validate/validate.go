@@ -22,7 +22,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
-	tr "github.com/trickstercache/trickster/v2/pkg/observability/tracing/registration"
+	tr "github.com/trickstercache/trickster/v2/pkg/observability/tracing/registry"
 	"github.com/trickstercache/trickster/v2/pkg/router/lm"
 	"github.com/trickstercache/trickster/v2/pkg/routing"
 )

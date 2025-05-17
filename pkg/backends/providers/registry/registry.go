@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package registration
+package registry
 
 import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb"
@@ -22,7 +22,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb"
 	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
-	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registration/types"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 	"github.com/trickstercache/trickster/v2/pkg/backends/reverseproxy"
 	"github.com/trickstercache/trickster/v2/pkg/backends/reverseproxycache"
 	"github.com/trickstercache/trickster/v2/pkg/backends/rule"
