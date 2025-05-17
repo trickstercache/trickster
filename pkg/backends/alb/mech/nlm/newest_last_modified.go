@@ -83,7 +83,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var wg sync.WaitGroup
 	wg.Add(l)
 	for i := range l {
-		// only the one of these i fanouts to respond will be mapped back to
+		// only one of these i fanouts to respond will be mapped back to
 		// the end user based on the methodology and the rest will have their
 		// contexts canceled
 		go func(j int) {
