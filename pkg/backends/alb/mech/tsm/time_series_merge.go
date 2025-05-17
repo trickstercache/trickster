@@ -137,7 +137,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// GetResponseGates make the handler request to each fanout backend and returns a collection of responses
+// GetResponseGates makes the handler request to each fanout backend and returns a collection of responses
 func GetResponseGates(w http.ResponseWriter, r *http.Request, hl []http.Handler) merge.ResponseGates {
 	var wg sync.WaitGroup
 	l := len(hl)
