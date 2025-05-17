@@ -21,7 +21,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
-	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 )
 
 // ID defines the load balancing mechanism identifier type
@@ -32,7 +32,7 @@ type Name string
 
 // NewMechanismFunc defines a function that returns a new Mechanism from the
 // provided Options
-type NewMechanismFunc func(*options.Options, rt.Lookup) (Mechanism, error)
+type NewMechanismFunc func(*options.Options, types.Lookup) (Mechanism, error)
 
 // Mechanism represents a specific ALB Implmentation (e.g., a Round Robiner)
 type Mechanism interface {

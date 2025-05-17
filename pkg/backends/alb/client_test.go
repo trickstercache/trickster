@@ -25,7 +25,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus"
-	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 )
 
 func TestHandlers(t *testing.T) {
@@ -59,7 +59,7 @@ func TestHandlers(t *testing.T) {
 	}
 
 	a.MechanismName = "tsm"
-	_, err = NewClient("test", o, nil, nil, nil, rt.Lookup{"prometheus": prometheus.NewClient})
+	_, err = NewClient("test", o, nil, nil, nil, types.Lookup{"prometheus": prometheus.NewClient})
 	if err != nil {
 		t.Error(err)
 	}
