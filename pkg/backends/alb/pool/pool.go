@@ -76,6 +76,7 @@ type pool struct {
 	ctx          context.Context
 	stopper      context.CancelFunc
 	ch           chan bool
+	hcInProgress atomic.Bool
 }
 
 func (p *pool) Healthy() []http.Handler {

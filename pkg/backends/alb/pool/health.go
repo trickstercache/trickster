@@ -29,6 +29,12 @@ func (p *pool) checkHealth() {
 			logger.Debug("stopping ALB pool", nil)
 			return
 		case <-p.ch: // msg arrives whenever the healthy list must be rebuilt
+			if p.hcInProgress.Load() {
+				// this skips a health check cycle if one is already in progress
+				// to avoid pileups if a target is very slow to respond
+				return
+			}
+			p.hcInProgress.Store(true)
 			h := make([]http.Handler, len(p.targets))
 			var k int
 			for _, t := range p.targets {
@@ -39,6 +45,7 @@ func (p *pool) checkHealth() {
 			}
 			h = h[:k]
 			p.healthy.Store(&h)
+			p.hcInProgress.Store(false)
 		}
 	}
 }
