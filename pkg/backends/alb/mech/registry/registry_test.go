@@ -33,7 +33,7 @@ func TestNamesAndIDsAreUnique(t *testing.T) {
 				m.Name, m.ID)
 		}
 		if usedNames.Contains(m.Name) {
-			t.Errorf("mechanism Name %s has been re-used; Names must be unique.",
+			t.Errorf("mechanism Name %s has been reused; Names must be unique.",
 				m.Name)
 		}
 		if usedNames.Contains(m.ShortName) {
