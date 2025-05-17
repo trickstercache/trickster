@@ -31,33 +31,33 @@ const ID mech.ID = 0
 const ShortName mech.Name = "rr"
 const Name mech.Name = "round_robin"
 
-type client struct {
+type handler struct {
 	pool pool.Pool
 	pos  atomic.Uint64
 }
 
 func New(_ *options.Options, _ types.Lookup) (mech.Mechanism, error) {
-	return &client{}, nil
+	return &handler{}, nil
 }
 
-func (c *client) SetPool(p pool.Pool) {
-	c.pool = p
+func (h *handler) SetPool(p pool.Pool) {
+	h.pool = p
 }
 
-func (c *client) ID() mech.ID {
+func (h *handler) ID() mech.ID {
 	return ID
 }
 
-func (c *client) Name() mech.Name {
+func (h *handler) Name() mech.Name {
 	return ShortName
 }
 
-func (c *client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if c.pool == nil {
+func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if h.pool == nil {
 		handlers.HandleBadGateway(w, r)
 		return
 	}
-	t := c.nextTarget()
+	t := h.nextTarget()
 	if t != nil {
 		t.ServeHTTP(w, r)
 		return
@@ -65,17 +65,17 @@ func (c *client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	handlers.HandleBadGateway(w, r)
 }
 
-func (c *client) StopPool() {
-	if c.pool != nil {
-		c.pool.Stop()
+func (h *handler) StopPool() {
+	if h.pool != nil {
+		h.pool.Stop()
 	}
 }
 
-func (c *client) nextTarget() http.Handler {
-	healthy := c.pool.Healthy()
+func (h *handler) nextTarget() http.Handler {
+	healthy := h.pool.Healthy()
 	if len(healthy) == 0 {
 		return nil
 	}
-	i := c.pos.Add(1) % uint64(len(healthy))
+	i := h.pos.Add(1) % uint64(len(healthy))
 	return healthy[i]
 }

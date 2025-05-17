@@ -31,8 +31,8 @@ import (
 func TestHandleRoundRobin(t *testing.T) {
 
 	w := httptest.NewRecorder()
-	c := &client{}
-	c.ServeHTTP(w, nil)
+	h := &handler{}
+	h.ServeHTTP(w, nil)
 	if w.Code != http.StatusBadGateway {
 		t.Error("expected 502 got", w.Code)
 	}
@@ -40,23 +40,23 @@ func TestHandleRoundRobin(t *testing.T) {
 	p, _, hsts := albpool.New(0,
 		[]http.Handler{http.HandlerFunc(tu.BasicHTTPHandler)})
 
-	c.pool = p
+	h.pool = p
 
 	hsts[0].Set(0)
 	time.Sleep(250 * time.Millisecond)
 
 	w = httptest.NewRecorder()
-	c.ServeHTTP(w, nil)
+	h.ServeHTTP(w, nil)
 	if w.Code != http.StatusOK {
 		t.Error("expected 200 got", w.Code)
 	}
 
-	c.pool, _, hsts = albpool.New(0,
+	h.pool, _, hsts = albpool.New(0,
 		[]http.Handler{http.HandlerFunc(handlers.HandleBadGateway)})
 	hsts[0].Set(-1)
 	time.Sleep(250 * time.Millisecond)
 	w = httptest.NewRecorder()
-	c.ServeHTTP(w, nil)
+	h.ServeHTTP(w, nil)
 	if w.Code != http.StatusBadGateway {
 		t.Error("expected 502 got", w.Code)
 	}
@@ -64,13 +64,13 @@ func TestHandleRoundRobin(t *testing.T) {
 }
 
 func TestNextTarget(t *testing.T) {
-	c := &client{
+	h := &handler{
 		pool: pool.New(nil, -1),
 	}
-	c.StopPool()
-	c.pool.SetHealthy([]http.Handler{http.NotFoundHandler()})
-	h := c.nextTarget()
-	if h == nil {
+	h.StopPool()
+	h.pool.SetHealthy([]http.Handler{http.NotFoundHandler()})
+	n := h.nextTarget()
+	if n == nil {
 		t.Error("expected non-nil target")
 	}
 }

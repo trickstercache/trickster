@@ -36,34 +36,34 @@ const ID mech.ID = 3
 const ShortName mech.Name = "nlm"
 const Name mech.Name = "newest_last_modified"
 
-type client struct {
+type handler struct {
 	pool pool.Pool
 }
 
 func New(_ *options.Options, _ types.Lookup) (mech.Mechanism, error) {
-	return &client{}, nil
+	return &handler{}, nil
 }
 
-func (c *client) SetPool(p pool.Pool) {
-	c.pool = p
+func (h *handler) SetPool(p pool.Pool) {
+	h.pool = p
 }
 
-func (c *client) ID() mech.ID {
+func (h *handler) ID() mech.ID {
 	return ID
 }
 
-func (c *client) Name() mech.Name {
+func (h *handler) Name() mech.Name {
 	return ShortName
 }
 
-func (c *client) StopPool() {
-	if c.pool != nil {
-		c.pool.Stop()
+func (h *handler) StopPool() {
+	if h.pool != nil {
+		h.pool.Stop()
 	}
 }
 
-func (c *client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	hl := c.pool.Healthy() // should return a fanout list
+func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	hl := h.pool.Healthy() // should return a fanout list
 	l := len(hl)
 	if len(hl) == 0 {
 		handlers.HandleBadGateway(w, r)

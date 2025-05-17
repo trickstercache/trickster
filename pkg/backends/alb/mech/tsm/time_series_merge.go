@@ -41,7 +41,7 @@ const ID mech.ID = 4
 const ShortName mech.Name = "tsm"
 const Name mech.Name = "time_series_merge"
 
-type client struct {
+type handler struct {
 	pool            pool.Pool
 	mergePaths      []string       // paths handled by the alb client that are enabled for tsmerge
 	nonmergeHandler mech.Mechanism // when methodology is tsmerge, this handler is for non-mergeable paths
@@ -49,23 +49,23 @@ type client struct {
 
 func New(o *options.Options, factories types.Lookup) (mech.Mechanism, error) {
 	nmh, _ := rr.New(nil, nil)
-	out := &client{nonmergeHandler: nmh}
+	out := &handler{nonmergeHandler: nmh}
 	// this validates the merge configuration for the ALB client as it sets it up
 	// First, verify the output format is a support merge provider
 	if !providers.IsSupportedTimeSeriesMergeProvider(o.OutputFormat) {
 		return nil, errors.ErrInvalidTimeSeriesMergeProvider
 	}
-	// next, get the factory function required to create a backend client for the supplied format
+	// next, get the factory function required to create a backend handler for the supplied format
 	f, ok := factories[o.OutputFormat]
 	if !ok {
 		return nil, errors.ErrInvalidTimeSeriesMergeProvider
 	}
-	// now, create a client for the merge provider based on the supplied factory function
+	// now, create a handler for the merge provider based on the supplied factory function
 	mc1, err := f("alb", nil, nil, nil, nil, nil)
 	if err != nil {
 		return nil, err
 	}
-	// convert the new time series client to a mergeable timeseries client to get the merge paths
+	// convert the new time series handler to a mergeable timeseries handler to get the merge paths
 	mc2, ok := mc1.(backends.MergeableTimeseriesBackend)
 	if !ok {
 		return nil, errors.ErrInvalidTimeSeriesMergeProvider
@@ -75,28 +75,28 @@ func New(o *options.Options, factories types.Lookup) (mech.Mechanism, error) {
 	return out, nil
 }
 
-func (c *client) ID() mech.ID {
+func (h *handler) ID() mech.ID {
 	return ID
 }
 
-func (c *client) Name() mech.Name {
+func (h *handler) Name() mech.Name {
 	return ShortName
 }
 
-func (c *client) SetPool(p pool.Pool) {
-	c.pool = p
-	c.nonmergeHandler.SetPool(p)
+func (h *handler) SetPool(p pool.Pool) {
+	h.pool = p
+	h.nonmergeHandler.SetPool(p)
 }
 
-func (c *client) StopPool() {
-	if c.pool != nil {
-		c.pool.Stop()
+func (h *handler) StopPool() {
+	if h.pool != nil {
+		h.pool.Stop()
 	}
 }
 
-func (c *client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
-	hl := c.pool.Healthy() // should return a fanout list
+	hl := h.pool.Healthy() // should return a fanout list
 	l := len(hl)
 	if l == 0 {
 		handlers.HandleBadGateway(w, r)
@@ -109,7 +109,7 @@ func (c *client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var isMergeablePath bool
-	for _, v := range c.mergePaths {
+	for _, v := range h.mergePaths {
 		if strings.HasPrefix(r.URL.Path, v) {
 			isMergeablePath = true
 			break
@@ -133,7 +133,7 @@ func (c *client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// GetResponseGates make the client request to each fanout backend and returns a collection of responses
+// GetResponseGates make the handler request to each fanout backend and returns a collection of responses
 func GetResponseGates(w http.ResponseWriter, r *http.Request, hl []http.Handler) merge.ResponseGates {
 	var wg sync.WaitGroup
 	l := len(hl)

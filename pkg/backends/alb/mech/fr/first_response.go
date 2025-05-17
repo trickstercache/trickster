@@ -37,50 +37,50 @@ const FGRID mech.ID = 2
 const FGRShortName mech.Name = "fgr"
 const FGRName mech.Name = "first_good_response"
 
-type client struct {
+type handler struct {
 	pool     pool.Pool
 	fgr      bool
 	fgrCodes sets.Set[int]
 }
 
 func NewFGR(o *options.Options, _ types.Lookup) (mech.Mechanism, error) {
-	return &client{
+	return &handler{
 		fgr:      true,
 		fgrCodes: o.FgrCodesLookup,
 	}, nil
 }
 
 func New(_ *options.Options, _ types.Lookup) (mech.Mechanism, error) {
-	return &client{}, nil
+	return &handler{}, nil
 }
 
-func (c *client) SetPool(p pool.Pool) {
-	c.pool = p
+func (h *handler) SetPool(p pool.Pool) {
+	h.pool = p
 }
 
-func (c *client) ID() mech.ID {
-	if c.fgr {
+func (h *handler) ID() mech.ID {
+	if h.fgr {
 		return FGRID
 	}
 	return ID
 }
 
-func (c *client) Name() mech.Name {
-	if c.fgr {
+func (h *handler) Name() mech.Name {
+	if h.fgr {
 		return FGRShortName
 	}
 	return ShortName
 }
 
-func (c *client) StopPool() {
-	if c.pool != nil {
-		c.pool.Stop()
+func (h *handler) StopPool() {
+	if h.pool != nil {
+		h.pool.Stop()
 	}
 }
 
-func (c *client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
-	hl := c.pool.Healthy() // should return a fanout list
+	hl := h.pool.Healthy() // should return a fanout list
 	l := len(hl)
 	if l == 0 {
 		handlers.HandleBadGateway(w, r)
@@ -104,7 +104,7 @@ func (c *client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				wg.Done()
 				return
 			}
-			wm := newFirstResponseGate(w, wc, j, c.fgr)
+			wm := newFirstResponseGate(w, wc, j, h.fgr)
 			r2 := r.Clone(wc.contexts[j])
 			hl[j].ServeHTTP(wm, r2)
 			wg.Done()
