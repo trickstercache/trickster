@@ -18,35 +18,28 @@ package registry
 
 import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/errors"
-	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/fr"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/nlm"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/rr"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/tsm"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
-	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registration/types"
+	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registration/types"
 )
 
-type entry struct {
-	ID        mech.ID
-	Name      mech.Name
-	ShortName mech.Name
-	New       mech.NewMechanismFunc
-}
-
-// this slice is the one and only place to add registered Mechanisms
-var registry = []entry{
-	{rr.ID, rr.Name, rr.ShortName, rr.New},
-	{nlm.ID, nlm.Name, nlm.ShortName, nlm.New},
-	{fr.ID, fr.Name, fr.ShortName, fr.New},
-	{fr.FGRID, fr.FGRName, fr.FGRShortName, fr.NewFGR},
-	{tsm.ID, tsm.Name, tsm.ShortName, tsm.New},
+// this slice is the one and only place to define all registered Mechanisms
+var registry = []types.RegistryEntry{
+	{ID: rr.ID, Name: rr.Name, ShortName: rr.ShortName, New: rr.New},
+	{ID: nlm.ID, Name: nlm.Name, ShortName: nlm.ShortName, New: nlm.New},
+	{ID: fr.ID, Name: fr.Name, ShortName: fr.ShortName, New: fr.New},
+	{ID: fr.FGRID, Name: fr.FGRName, ShortName: fr.FGRShortName, New: fr.NewFGR},
+	{ID: tsm.ID, Name: tsm.Name, ShortName: tsm.ShortName, New: tsm.New},
 }
 
 var registryByName = compileSupportedByName()
 
-func compileSupportedByName() map[mech.Name]mech.NewMechanismFunc {
-	out := make(map[mech.Name]mech.NewMechanismFunc, len(registry)*2)
+func compileSupportedByName() map[types.Name]types.NewMechanismFunc {
+	out := make(map[types.Name]types.NewMechanismFunc, len(registry)*2)
 	for _, entry := range registry {
 		out[entry.ShortName] = entry.New
 		out[entry.Name] = entry.New
@@ -54,15 +47,15 @@ func compileSupportedByName() map[mech.Name]mech.NewMechanismFunc {
 	return out
 }
 
-func New(name mech.Name, opts *options.Options,
-	factories types.Lookup) (mech.Mechanism, error) {
+func New(name types.Name, opts *options.Options,
+	factories rt.Lookup) (types.Mechanism, error) {
 	if f, ok := registryByName[name]; ok && f != nil {
 		return f(opts, factories)
 	}
 	return nil, errors.ErrUnsupportedMechanism
 }
 
-func IsRegistered(name mech.Name) bool {
+func IsRegistered(name types.Name) bool {
 	_, ok := registryByName[name]
 	return ok
 }

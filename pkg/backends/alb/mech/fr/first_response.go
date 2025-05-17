@@ -20,22 +20,22 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
-	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registration/types"
+	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registration/types"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
-const ID mech.ID = 1
-const ShortName mech.Name = "fr"
-const Name mech.Name = "first_response"
+const ID types.ID = 1
+const ShortName types.Name = "fr"
+const Name types.Name = "first_response"
 
-const FGRID mech.ID = 2
-const FGRShortName mech.Name = "fgr"
-const FGRName mech.Name = "first_good_response"
+const FGRID types.ID = 2
+const FGRShortName types.Name = "fgr"
+const FGRName types.Name = "first_good_response"
 
 type handler struct {
 	pool     pool.Pool
@@ -43,14 +43,14 @@ type handler struct {
 	fgrCodes sets.Set[int]
 }
 
-func NewFGR(o *options.Options, _ types.Lookup) (mech.Mechanism, error) {
+func NewFGR(o *options.Options, _ rt.Lookup) (types.Mechanism, error) {
 	return &handler{
 		fgr:      true,
 		fgrCodes: o.FgrCodesLookup,
 	}, nil
 }
 
-func New(_ *options.Options, _ types.Lookup) (mech.Mechanism, error) {
+func New(_ *options.Options, _ rt.Lookup) (types.Mechanism, error) {
 	return &handler{}, nil
 }
 
@@ -58,14 +58,14 @@ func (h *handler) SetPool(p pool.Pool) {
 	h.pool = p
 }
 
-func (h *handler) ID() mech.ID {
+func (h *handler) ID() types.ID {
 	if h.fgr {
 		return FGRID
 	}
 	return ID
 }
 
-func (h *handler) Name() mech.Name {
+func (h *handler) Name() types.Name {
 	if h.fgr {
 		return FGRShortName
 	}

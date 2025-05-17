@@ -24,12 +24,12 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/errors"
-	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/rr"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
-	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registration/types"
+	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registration/types"
 	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
@@ -37,17 +37,17 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 )
 
-const ID mech.ID = 4
-const ShortName mech.Name = "tsm"
-const Name mech.Name = "time_series_merge"
+const ID types.ID = 4
+const ShortName types.Name = "tsm"
+const Name types.Name = "time_series_merge"
 
 type handler struct {
 	pool            pool.Pool
-	mergePaths      []string       // paths handled by the alb client that are enabled for tsmerge
-	nonmergeHandler mech.Mechanism // when methodology is tsmerge, this handler is for non-mergeable paths
+	mergePaths      []string        // paths handled by the alb client that are enabled for tsmerge
+	nonmergeHandler types.Mechanism // when methodology is tsmerge, this handler is for non-mergeable paths
 }
 
-func New(o *options.Options, factories types.Lookup) (mech.Mechanism, error) {
+func New(o *options.Options, factories rt.Lookup) (types.Mechanism, error) {
 	nmh, _ := rr.New(nil, nil)
 	out := &handler{nonmergeHandler: nmh}
 	// this validates the merge configuration for the ALB client as it sets it up
@@ -75,11 +75,11 @@ func New(o *options.Options, factories types.Lookup) (mech.Mechanism, error) {
 	return out, nil
 }
 
-func (h *handler) ID() mech.ID {
+func (h *handler) ID() types.ID {
 	return ID
 }
 
-func (h *handler) Name() mech.Name {
+func (h *handler) Name() types.Name {
 	return ShortName
 }
 

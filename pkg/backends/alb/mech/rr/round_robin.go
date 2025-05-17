@@ -20,23 +20,23 @@ import (
 	"net/http"
 	"sync/atomic"
 
-	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
-	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registration/types"
+	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registration/types"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 )
 
-const ID mech.ID = 0
-const ShortName mech.Name = "rr"
-const Name mech.Name = "round_robin"
+const ID types.ID = 0
+const ShortName types.Name = "rr"
+const Name types.Name = "round_robin"
 
 type handler struct {
 	pool pool.Pool
 	pos  atomic.Uint64
 }
 
-func New(_ *options.Options, _ types.Lookup) (mech.Mechanism, error) {
+func New(_ *options.Options, _ rt.Lookup) (types.Mechanism, error) {
 	return &handler{}, nil
 }
 
@@ -44,11 +44,11 @@ func (h *handler) SetPool(p pool.Pool) {
 	h.pool = p
 }
 
-func (h *handler) ID() mech.ID {
+func (h *handler) ID() types.ID {
 	return ID
 }
 
-func (h *handler) Name() mech.Name {
+func (h *handler) Name() types.Name {
 	return ShortName
 }
 

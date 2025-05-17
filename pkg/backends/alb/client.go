@@ -22,12 +22,12 @@ import (
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
-	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/registry"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
-	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registration/types"
+	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registration/types"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
@@ -38,7 +38,7 @@ import (
 // Client Implements the Proxy Client Interface
 type Client struct {
 	backends.Backend
-	handler mech.Mechanism // this is the actual handler for all request to this backend
+	handler types.Mechanism // this is the actual handler for all request to this backend
 }
 
 // Handlers returns a map of the HTTP Handlers the client has registered
@@ -46,11 +46,11 @@ func (c *Client) Handlers() map[string]http.Handler {
 	return map[string]http.Handler{"alb": c.handler}
 }
 
-var _ types.NewBackendClientFunc = NewClient
+var _ rt.NewBackendClientFunc = NewClient
 
 // NewClient returns a new ALB client reference
 func NewClient(name string, o *bo.Options, router http.Handler,
-	_ cache.Cache, _ backends.Backends, factories types.Lookup,
+	_ cache.Cache, _ backends.Backends, factories rt.Lookup,
 ) (backends.Backend, error) {
 	c := &Client{}
 	b, err := backends.New(name, o, nil, router, nil)
@@ -59,7 +59,7 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 	}
 	c.Backend = b
 	if o != nil && o.ALBOptions != nil {
-		m, err := registry.New(mech.Name(o.ALBOptions.MechanismName),
+		m, err := registry.New(types.Name(o.ALBOptions.MechanismName),
 			o.ALBOptions, factories)
 		if err != nil {
 			return nil, err
@@ -113,7 +113,7 @@ func ValidatePools(clients backends.Backends) error {
 
 // ValidatePool confirms the provided list of backends to is valid
 func (c *Client) ValidatePool(clients backends.Backends) error {
-	ok := registry.IsRegistered(mech.Name(c.Configuration().ALBOptions.MechanismName))
+	ok := registry.IsRegistered(types.Name(c.Configuration().ALBOptions.MechanismName))
 	if !ok {
 		return fmt.Errorf("invalid mechanism name [%s] in backend [%s]",
 			c.Configuration().ALBOptions.MechanismName, c.Name())

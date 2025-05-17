@@ -23,24 +23,24 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
-	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registration/types"
+	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registration/types"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/util/atomicx"
 )
 
-const ID mech.ID = 3
-const ShortName mech.Name = "nlm"
-const Name mech.Name = "newest_last_modified"
+const ID types.ID = 3
+const ShortName types.Name = "nlm"
+const Name types.Name = "newest_last_modified"
 
 type handler struct {
 	pool pool.Pool
 }
 
-func New(_ *options.Options, _ types.Lookup) (mech.Mechanism, error) {
+func New(_ *options.Options, _ rt.Lookup) (types.Mechanism, error) {
 	return &handler{}, nil
 }
 
@@ -48,11 +48,11 @@ func (h *handler) SetPool(p pool.Pool) {
 	h.pool = p
 }
 
-func (h *handler) ID() mech.ID {
+func (h *handler) ID() types.ID {
 	return ID
 }
 
-func (h *handler) Name() mech.Name {
+func (h *handler) Name() types.Name {
 	return ShortName
 }
 

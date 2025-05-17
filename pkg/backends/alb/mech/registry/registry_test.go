@@ -19,14 +19,14 @@ package registry
 import (
 	"testing"
 
-	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/rr"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
 func TestNamesAndIDsAreUnique(t *testing.T) {
-	usedIDs := sets.New([]mech.ID{})
-	usedNames := sets.New([]mech.Name{})
+	usedIDs := sets.New([]types.ID{})
+	usedNames := sets.New([]types.Name{})
 	for _, m := range registry {
 		if usedIDs.Contains(m.ID) {
 			t.Errorf("mechanism %s reuses ID %d; IDs must be unique.",
@@ -50,7 +50,7 @@ func TestIsRegistered(t *testing.T) {
 	if ok := IsRegistered(rr.ShortName); !ok {
 		t.Error("expected true")
 	}
-	if ok := IsRegistered(mech.Name("invalid")); ok {
+	if ok := IsRegistered(types.Name("invalid")); ok {
 		t.Error("expected false")
 	}
 }

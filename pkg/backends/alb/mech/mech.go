@@ -14,28 +14,5 @@
  * limitations under the License.
  */
 
+// Package mech provides the ALB Mechanisms functionality
 package mech
-
-import (
-	"net/http"
-
-	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
-	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
-	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registration/types"
-)
-
-// id defines the load balancing mechanism identifier type
-type ID byte
-
-// Name is a type alias for the load balancing mechanism common name
-type Name string
-
-type NewMechanismFunc func(*options.Options, types.Lookup) (Mechanism, error)
-
-type Mechanism interface {
-	http.Handler
-	SetPool(pool.Pool)
-	StopPool()
-	ID() ID
-	Name() Name
-}
