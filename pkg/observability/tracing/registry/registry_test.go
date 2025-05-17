@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package registration
+package registry
 
 import (
 	"testing"

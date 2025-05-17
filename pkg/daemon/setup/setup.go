@@ -41,7 +41,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
-	tr "github.com/trickstercache/trickster/v2/pkg/observability/tracing/registration"
+	tr "github.com/trickstercache/trickster/v2/pkg/observability/tracing/registry"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/reload"
 	"github.com/trickstercache/trickster/v2/pkg/router/lm"

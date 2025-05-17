@@ -36,7 +36,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	to "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
-	tr "github.com/trickstercache/trickster/v2/pkg/observability/tracing/registration"
+	tr "github.com/trickstercache/trickster/v2/pkg/observability/tracing/registry"
 	tc "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	th "github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
