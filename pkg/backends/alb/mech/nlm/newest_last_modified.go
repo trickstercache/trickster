@@ -110,8 +110,9 @@ type newestResponseGate struct {
 	nrm   *newestResponseMux
 }
 
-// newestResponseMux keeps track the index of the newest LastModified time
-// registered
+// newestResponseMux is used by the ResponseGate while collecting the fanout
+// Responses to track the response slice index representing the Response
+// with the newest LastModified header.
 type newestResponseMux struct {
 	i        int64
 	t        atomicx.Time
