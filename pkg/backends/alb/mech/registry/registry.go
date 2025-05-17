@@ -27,13 +27,13 @@ import (
 	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registration/types"
 )
 
-// this slice is the one and only place to define all registered Mechanisms
+// this slice is the one and only place to aggregate all registered Mechanisms
 var registry = []types.RegistryEntry{
-	{ID: rr.ID, Name: rr.Name, ShortName: rr.ShortName, New: rr.New},
-	{ID: nlm.ID, Name: nlm.Name, ShortName: nlm.ShortName, New: nlm.New},
-	{ID: fr.ID, Name: fr.Name, ShortName: fr.ShortName, New: fr.New},
-	{ID: fr.FGRID, Name: fr.FGRName, ShortName: fr.FGRShortName, New: fr.NewFGR},
-	{ID: tsm.ID, Name: tsm.Name, ShortName: tsm.ShortName, New: tsm.New},
+	rr.RegistryEntry(),
+	nlm.RegistryEntry(),
+	fr.RegistryEntry(),
+	fr.RegistryEntryFGR(),
+	tsm.RegistryEntry(),
 }
 
 var registryByName = compileSupportedByName()

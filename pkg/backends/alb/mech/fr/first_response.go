@@ -43,6 +43,14 @@ type handler struct {
 	fgrCodes sets.Set[int]
 }
 
+func RegistryEntry() types.RegistryEntry {
+	return types.RegistryEntry{ID: ID, Name: Name, ShortName: ShortName, New: New}
+}
+
+func RegistryEntryFGR() types.RegistryEntry {
+	return types.RegistryEntry{ID: FGRID, Name: FGRName, ShortName: FGRShortName, New: NewFGR}
+}
+
 func NewFGR(o *options.Options, _ rt.Lookup) (types.Mechanism, error) {
 	return &handler{
 		fgr:      true,

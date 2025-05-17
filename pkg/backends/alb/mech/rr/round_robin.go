@@ -36,6 +36,10 @@ type handler struct {
 	pos  atomic.Uint64
 }
 
+func RegistryEntry() types.RegistryEntry {
+	return types.RegistryEntry{ID: ID, Name: Name, ShortName: ShortName, New: New}
+}
+
 func New(_ *options.Options, _ rt.Lookup) (types.Mechanism, error) {
 	return &handler{}, nil
 }

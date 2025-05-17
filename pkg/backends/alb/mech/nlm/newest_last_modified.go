@@ -40,6 +40,10 @@ type handler struct {
 	pool pool.Pool
 }
 
+func RegistryEntry() types.RegistryEntry {
+	return types.RegistryEntry{ID: ID, Name: Name, ShortName: ShortName, New: New}
+}
+
 func New(_ *options.Options, _ rt.Lookup) (types.Mechanism, error) {
 	return &handler{}, nil
 }

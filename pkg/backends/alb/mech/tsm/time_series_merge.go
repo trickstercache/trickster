@@ -47,6 +47,10 @@ type handler struct {
 	nonmergeHandler types.Mechanism // when methodology is tsmerge, this handler is for non-mergeable paths
 }
 
+func RegistryEntry() types.RegistryEntry {
+	return types.RegistryEntry{ID: ID, Name: Name, ShortName: ShortName, New: New}
+}
+
 func New(o *options.Options, factories rt.Lookup) (types.Mechanism, error) {
 	nmh, _ := rr.New(nil, nil)
 	out := &handler{nonmergeHandler: nmh}
