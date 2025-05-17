@@ -34,7 +34,7 @@ type Name string
 // provided Options
 type NewMechanismFunc func(*options.Options, types.Lookup) (Mechanism, error)
 
-// Mechanism represents a specific ALB Implmentation (e.g., a Round Robiner)
+// Mechanism represents a specific ALB Implementation (e.g., a Round Robiner)
 type Mechanism interface {
 	http.Handler
 	SetPool(pool.Pool)
