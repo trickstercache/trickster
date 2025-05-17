@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package alb
+package rr
 
 import (
 	"net/http"
@@ -23,59 +23,54 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
-	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/albpool"
 )
-
-func testPool(mech pool.Mechanism, healthyFloor int, hs []http.Handler) (pool.Pool,
-	[]*pool.Target, []*healthcheck.Status) {
-	var targets []*pool.Target
-	var statuses []*healthcheck.Status
-	if len(hs) > 0 {
-		targets = make([]*pool.Target, 0, len(hs))
-		statuses = make([]*healthcheck.Status, 0, len(hs))
-		for _, h := range hs {
-			hst := &healthcheck.Status{}
-			statuses = append(statuses, hst)
-			targets = append(targets, pool.NewTarget(h, hst))
-		}
-	}
-	pool := pool.New(mech, targets, healthyFloor)
-	return pool, targets, statuses
-}
 
 func TestHandleRoundRobin(t *testing.T) {
 
 	w := httptest.NewRecorder()
-	c := &Client{}
-	c.handleRoundRobin(w, nil)
+	h := &handler{}
+	h.ServeHTTP(w, nil)
 	if w.Code != http.StatusBadGateway {
 		t.Error("expected 502 got", w.Code)
 	}
 
-	p, _, hsts := testPool(pool.RoundRobin, 0,
+	p, _, hsts := albpool.New(0,
 		[]http.Handler{http.HandlerFunc(tu.BasicHTTPHandler)})
 
-	c.pool = p
+	h.pool = p
 
 	hsts[0].Set(0)
 	time.Sleep(250 * time.Millisecond)
 
 	w = httptest.NewRecorder()
-	c.handleRoundRobin(w, nil)
+	h.ServeHTTP(w, nil)
 	if w.Code != http.StatusOK {
 		t.Error("expected 200 got", w.Code)
 	}
 
-	c.pool, _, hsts = testPool(pool.RoundRobin, 0,
+	h.pool, _, hsts = albpool.New(0,
 		[]http.Handler{http.HandlerFunc(handlers.HandleBadGateway)})
 	hsts[0].Set(-1)
 	time.Sleep(250 * time.Millisecond)
 	w = httptest.NewRecorder()
-	c.handleRoundRobin(w, nil)
+	h.ServeHTTP(w, nil)
 	if w.Code != http.StatusBadGateway {
 		t.Error("expected 502 got", w.Code)
 	}
 
+}
+
+func TestNextTarget(t *testing.T) {
+	h := &handler{
+		pool: pool.New(nil, -1),
+	}
+	h.StopPool()
+	h.pool.SetHealthy([]http.Handler{http.NotFoundHandler()})
+	n := h.nextTarget()
+	if n == nil {
+		t.Error("expected non-nil target")
+	}
 }

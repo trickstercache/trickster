@@ -14,29 +14,81 @@
  * limitations under the License.
  */
 
-package alb
+package fr
 
 import (
 	"net/http"
 	"sync"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
+	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
-type firstResponseGate struct {
-	http.ResponseWriter
-	i        int
-	fh       http.Header
-	c        *responderClaim
+const ID types.ID = 1
+const ShortName types.Name = "fr"
+const Name types.Name = "first_response"
+
+const FGRID types.ID = 2
+const FGRShortName types.Name = "fgr"
+const FGRName types.Name = "first_good_response"
+
+type handler struct {
+	pool     pool.Pool
 	fgr      bool
 	fgrCodes sets.Set[int]
 }
 
-func (c *Client) handleFirstResponse(w http.ResponseWriter, r *http.Request) {
+func RegistryEntry() types.RegistryEntry {
+	return types.RegistryEntry{ID: ID, Name: Name, ShortName: ShortName, New: New}
+}
 
-	hl := c.pool.Next() // should return a fanout list
+func RegistryEntryFGR() types.RegistryEntry {
+	return types.RegistryEntry{ID: FGRID, Name: FGRName, ShortName: FGRShortName, New: NewFGR}
+}
+
+func NewFGR(o *options.Options, _ rt.Lookup) (types.Mechanism, error) {
+	return &handler{
+		fgr:      true,
+		fgrCodes: o.FgrCodesLookup,
+	}, nil
+}
+
+func New(_ *options.Options, _ rt.Lookup) (types.Mechanism, error) {
+	return &handler{}, nil
+}
+
+func (h *handler) SetPool(p pool.Pool) {
+	h.pool = p
+}
+
+func (h *handler) ID() types.ID {
+	if h.fgr {
+		return FGRID
+	}
+	return ID
+}
+
+func (h *handler) Name() types.Name {
+	if h.fgr {
+		return FGRShortName
+	}
+	return ShortName
+}
+
+func (h *handler) StopPool() {
+	if h.pool != nil {
+		h.pool.Stop()
+	}
+}
+
+func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+
+	hl := h.pool.Healthy() // should return a fanout list
 	l := len(hl)
 	if l == 0 {
 		handlers.HandleBadGateway(w, r)
@@ -51,22 +103,31 @@ func (c *Client) handleFirstResponse(w http.ResponseWriter, r *http.Request) {
 	wc := newResponderClaim(l)
 	var wg sync.WaitGroup
 	wg.Add(l)
-	for i := 0; i < l; i++ {
-		// only the one of these i fanouts to respond will be mapped back to the end user
-		// based on the methodology
-		// and the rest will have their contexts canceled
+	for i := range l {
+		// only the one of these i fanouts to respond will be mapped back to the
+		// end user based on the methodology and the rest will have their
+		// contexts canceled
 		go func(j int) {
 			if hl[j] == nil {
 				wg.Done()
 				return
 			}
-			wm := newFirstResponseGate(w, wc, j, c.fgr)
+			wm := newFirstResponseGate(w, wc, j, h.fgr)
 			r2 := r.Clone(wc.contexts[j])
 			hl[j].ServeHTTP(wm, r2)
 			wg.Done()
 		}(i)
 	}
 	wg.Wait()
+}
+
+type firstResponseGate struct {
+	http.ResponseWriter
+	i        int
+	fh       http.Header
+	c        *responderClaim
+	fgr      bool
+	fgrCodes sets.Set[int]
 }
 
 func newFirstResponseGate(w http.ResponseWriter, c *responderClaim, i int,

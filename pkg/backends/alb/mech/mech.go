@@ -14,19 +14,5 @@
  * limitations under the License.
  */
 
-package pool
-
-import (
-	"net/http"
-)
-
-func nextRoundRobin(p *pool) []http.Handler {
-	p.mtx.RLock()
-	t := p.healthy
-	p.mtx.RUnlock()
-	if len(t) == 0 {
-		return nil
-	}
-	i := p.pos.Add(1) % uint64(len(t))
-	return []http.Handler{t[i]}
-}
+// Package mech provides the ALB Mechanisms functionality
+package mech

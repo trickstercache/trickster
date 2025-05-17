@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package alb
+package tsm
 
 import (
 	"net/http"
@@ -22,36 +22,50 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/albpool"
 )
 
-func TestHandleNewestResponse(t *testing.T) {
+var testLogger = logging.NoopLogger()
 
+func testMergeFunc(w http.ResponseWriter, r *http.Request, rgs merge.ResponseGates) {
+
+}
+
+func TestHandleResponseMerge(t *testing.T) {
+	logger.SetLogger(testLogger)
 	r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
+	rsc := request.NewResources(nil, nil, nil, nil, nil, nil)
+	rsc.ResponseMergeFunc = testMergeFunc
+	rsc.IsMergeMember = true
+	r = request.SetResources(r, rsc)
 
-	p, _, _ := testPool(pool.NewestLastModified, 0, nil)
-	c := &Client{pool: p}
+	p, _, _ := albpool.New(0, nil)
+	h := &handler{pool: p, mergePaths: []string{"/"}}
 	w := httptest.NewRecorder()
-	c.handleNewestResponse(w, r)
+	h.ServeHTTP(w, r)
 	if w.Code != http.StatusBadGateway {
 		t.Error("expected 502 got", w.Code)
 	}
 
 	var st []*healthcheck.Status
-	c.pool, _, st = testPool(pool.NewestLastModified, -1,
+	h.pool, _, st = albpool.New(-1,
 		[]http.Handler{http.HandlerFunc(tu.BasicHTTPHandler)})
 	st[0].Set(0)
 	time.Sleep(250 * time.Millisecond)
 
 	w = httptest.NewRecorder()
-	c.handleNewestResponse(w, r)
+	h.ServeHTTP(w, r)
 	if w.Code != http.StatusOK {
 		t.Error("expected 200 got", w.Code)
 	}
 
-	c.pool, _, st = testPool(pool.NewestLastModified, -1,
+	h.pool, _, st = albpool.New(-1,
 		[]http.Handler{
 			http.HandlerFunc(tu.BasicHTTPHandler),
 			http.HandlerFunc(tu.BasicHTTPHandler),
@@ -61,25 +75,15 @@ func TestHandleNewestResponse(t *testing.T) {
 	time.Sleep(250 * time.Millisecond)
 
 	w = httptest.NewRecorder()
-	c.handleNewestResponse(w, r)
+	h.ServeHTTP(w, r)
 	if w.Code != http.StatusOK {
 		t.Error("expected 200 got", w.Code)
 	}
 
-}
-
-func TestWriteHeader(t *testing.T) {
-	w := httptest.NewRecorder()
-	nrm := &newestResponseMux{}
-	nrm.wg.Add(1)
-	nrg := newNewestResponseGate(w, 0, nrm)
-	nrg.WriteHeader(200)
-}
-
-func TestRegisterLM(t *testing.T) {
-	nrm := &newestResponseMux{}
-	b := nrm.registerLM(0, time.Time{})
-	if b {
-		t.Error("expected false")
+	w = httptest.NewRecorder()
+	h.mergePaths = nil
+	h.ServeHTTP(w, r)
+	if w.Code != http.StatusOK {
+		t.Error("expected 200 got", w.Code)
 	}
 }

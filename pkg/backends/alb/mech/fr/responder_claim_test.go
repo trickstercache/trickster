@@ -14,20 +14,39 @@
  * limitations under the License.
  */
 
-package pool
+package fr
 
-import (
-	"net/http"
-	"testing"
-)
+import "testing"
 
-func TestNextFanout(t *testing.T) {
+func TestNewResponderClaim(t *testing.T) {
 
-	p := &pool{healthy: []http.Handler{http.NotFoundHandler()}}
+	rc := newResponderClaim(1)
+	if len(rc.contexts) != 1 {
+		t.Error("expected 1 got ", len(rc.contexts))
+	}
+	if rc.lockVal != -1 {
+		t.Error("expected -1 got ", rc.lockVal)
+	}
 
-	p2 := nextFanout(p)
-	if len(p2) != 1 {
-		t.Errorf("expected %d got %d", 1, len(p2))
+}
+
+func TestClaim(t *testing.T) {
+
+	rc := newResponderClaim(2)
+
+	b := rc.Claim(1)
+	if !b {
+		t.Error("expected true")
+	}
+
+	b = rc.Claim(1)
+	if !b {
+		t.Error("expected true")
+	}
+
+	b = rc.Claim(0)
+	if b {
+		t.Error("expected false")
 	}
 
 }

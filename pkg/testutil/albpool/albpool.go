@@ -14,44 +14,28 @@
  * limitations under the License.
  */
 
-package pool
+package albpool
 
 import (
-	"context"
-	"testing"
-	"time"
+	"net/http"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 )
 
-func TestCheckHealth(t *testing.T) {
-
-	ctx, cancel := context.WithCancel(context.Background())
-
-	tgt := &Target{
-		hcStatus: &healthcheck.Status{},
+func New(healthyFloor int, hs []http.Handler) (pool.Pool,
+	[]*pool.Target, []*healthcheck.Status) {
+	var targets []*pool.Target
+	var statuses []*healthcheck.Status
+	if len(hs) > 0 {
+		targets = make([]*pool.Target, 0, len(hs))
+		statuses = make([]*healthcheck.Status, 0, len(hs))
+		for _, h := range hs {
+			hst := &healthcheck.Status{}
+			statuses = append(statuses, hst)
+			targets = append(targets, pool.NewTarget(h, hst))
+		}
 	}
-
-	tgt.hcStatus.Set(1)
-
-	p := &pool{ch: make(chan bool), ctx: ctx, targets: []*Target{tgt}, healthyFloor: -1}
-	go func() {
-		p.checkHealth()
-	}()
-	time.Sleep(150 * time.Millisecond)
-	p.ch <- true
-	time.Sleep(150 * time.Millisecond)
-	cancel()
-	time.Sleep(10 * time.Millisecond)
-
-	h := p.healthy.Load()
-	if h == nil {
-		t.Error("expected non-nil healthy list")
-		return
-	}
-	l := len(*h)
-	if l != 1 {
-		t.Errorf("expected %d got %d", 1, l)
-	}
-
+	pool := pool.New(targets, healthyFloor)
+	return pool, targets, statuses
 }

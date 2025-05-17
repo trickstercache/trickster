@@ -14,39 +14,10 @@
  * limitations under the License.
  */
 
-package alb
+package errors
 
-import "testing"
+import "errors"
 
-func TestNewResponderClaim(t *testing.T) {
-
-	rc := newResponderClaim(1)
-	if len(rc.contexts) != 1 {
-		t.Error("expected 1 got ", len(rc.contexts))
-	}
-	if rc.lockVal != -1 {
-		t.Error("expected -1 got ", rc.lockVal)
-	}
-
-}
-
-func TestClaim(t *testing.T) {
-
-	rc := newResponderClaim(2)
-
-	b := rc.Claim(1)
-	if !b {
-		t.Error("expected true")
-	}
-
-	b = rc.Claim(1)
-	if !b {
-		t.Error("expected true")
-	}
-
-	b = rc.Claim(0)
-	if b {
-		t.Error("expected false")
-	}
-
-}
+var ErrInvalidTimeSeriesMergeProvider = errors.New("invalid time series merge provider")
+var ErrUnsupportedMechanism = errors.New("unsupported mechanism")
+var ErrInvalidOptionsMetadata = errors.New("invalid options metadata")
