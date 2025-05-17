@@ -333,7 +333,7 @@ func (el ExtentList) Remove(r ExtentList, step time.Duration) ExtentList {
 	}
 	out := make(ExtentList, len(el)*2)
 	var k int
-	for i := 0; i < len(el); i++ {
+	for i := range len(el) {
 		ex := el[i]
 		split := false
 		for _, rem := range r {

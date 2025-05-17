@@ -152,7 +152,7 @@ func (hop *Hop) String(expand ...bool) string {
 	}
 	l := len(hop.Hops)
 	parts = make([]string, l+1)
-	for i := 0; i < l; i++ {
+	for i := range l {
 		parts[i] = hop.Hops[i].String(false)
 	}
 	parts[l] = currentHop
