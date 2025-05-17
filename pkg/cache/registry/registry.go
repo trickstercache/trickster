@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-// Package registration handles the registration of cache implementations
+// Package registry handles the registration of cache implementations
 // to be used by proxy cache handlers
-package registration
+package registry
 
 import (
 	"github.com/trickstercache/trickster/v2/pkg/cache"

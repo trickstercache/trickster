@@ -29,7 +29,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
-	cr "github.com/trickstercache/trickster/v2/pkg/cache/registration"
+	cr "github.com/trickstercache/trickster/v2/pkg/cache/registry"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"

@@ -28,7 +28,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	po "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/options"
-	cr "github.com/trickstercache/trickster/v2/pkg/cache/registration"
+	cr "github.com/trickstercache/trickster/v2/pkg/cache/registry"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"

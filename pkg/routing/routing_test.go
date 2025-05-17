@@ -30,7 +30,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/backends/reverseproxycache"
 	"github.com/trickstercache/trickster/v2/pkg/backends/rule"
-	"github.com/trickstercache/trickster/v2/pkg/cache/registration"
+	"github.com/trickstercache/trickster/v2/pkg/cache/registry"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
@@ -72,8 +72,8 @@ func TestRegisterProxyRoutes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
-	caches := registration.LoadCachesFromConfig(conf)
-	defer registration.CloseCaches(caches)
+	caches := registry.LoadCachesFromConfig(conf)
+	defer registry.CloseCaches(caches)
 	proxyClients, err = RegisterProxyRoutes(conf, lm.NewRouter(), lm.NewRouter(), caches, nil, false)
 	if err != nil {
 		t.Error(err)
@@ -88,7 +88,7 @@ func TestRegisterProxyRoutes(t *testing.T) {
 
 	o.Hosts = []string{"test", "test2"}
 
-	registration.LoadCachesFromConfig(conf)
+	registry.LoadCachesFromConfig(conf)
 	RegisterProxyRoutes(conf, lm.NewRouter(), lm.NewRouter(), caches, tr, false)
 
 	if len(proxyClients) == 0 {
@@ -165,9 +165,9 @@ func TestRegisterProxyRoutesInflux(t *testing.T) {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	caches := registration.LoadCachesFromConfig(conf)
+	caches := registry.LoadCachesFromConfig(conf)
 	logger.SetLogger(logging.ConsoleLogger(level.Info))
-	defer registration.CloseCaches(caches)
+	defer registry.CloseCaches(caches)
 	proxyClients, err := RegisterProxyRoutes(conf, lm.NewRouter(), lm.NewRouter(), caches,
 		nil, false)
 	if err != nil {
@@ -188,8 +188,8 @@ func TestRegisterProxyRoutesReverseProxy(t *testing.T) {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	caches := registration.LoadCachesFromConfig(conf)
-	defer registration.CloseCaches(caches)
+	caches := registry.LoadCachesFromConfig(conf)
+	defer registry.CloseCaches(caches)
 	logger.SetLogger(logging.ConsoleLogger(level.Info))
 	proxyClients, err := RegisterProxyRoutes(conf, lm.NewRouter(), lm.NewRouter(), caches,
 		nil, false)
@@ -209,8 +209,8 @@ func TestRegisterProxyRoutesClickHouse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
-	caches := registration.LoadCachesFromConfig(conf)
-	defer registration.CloseCaches(caches)
+	caches := registry.LoadCachesFromConfig(conf)
+	defer registry.CloseCaches(caches)
 	logger.SetLogger(logging.ConsoleLogger(level.Info))
 	proxyClients, err := RegisterProxyRoutes(conf, lm.NewRouter(), lm.NewRouter(), caches,
 		nil, false)
@@ -232,8 +232,8 @@ func TestRegisterProxyRoutesALB(t *testing.T) {
 
 	conf.Backends["default"].ALBOptions = &options.Options{MechanismName: "tsm", OutputFormat: "prometheus"}
 
-	caches := registration.LoadCachesFromConfig(conf)
-	defer registration.CloseCaches(caches)
+	caches := registry.LoadCachesFromConfig(conf)
+	defer registry.CloseCaches(caches)
 	logger.SetLogger(logging.ConsoleLogger(level.Info))
 	proxyClients, err := RegisterProxyRoutes(conf, lm.NewRouter(), lm.NewRouter(), caches,
 		nil, false)
@@ -258,8 +258,8 @@ func TestRegisterProxyRoutesWithReqRewriters(t *testing.T) {
 	tpo.ReqRewriterName = "path"
 	conf.Backends["test"].Paths["test"] = tpo
 
-	caches := registration.LoadCachesFromConfig(conf)
-	defer registration.CloseCaches(caches)
+	caches := registry.LoadCachesFromConfig(conf)
+	defer registry.CloseCaches(caches)
 	logger.SetLogger(logging.ConsoleLogger(level.Info))
 	proxyClients, err := RegisterProxyRoutes(conf, lm.NewRouter(), lm.NewRouter(), caches,
 		nil, false)
@@ -282,8 +282,8 @@ func TestRegisterProxyRoutesMultipleDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
-	caches := registration.LoadCachesFromConfig(conf)
-	defer registration.CloseCaches(caches)
+	caches := registry.LoadCachesFromConfig(conf)
+	defer registry.CloseCaches(caches)
 	_, err = RegisterProxyRoutes(conf, lm.NewRouter(), lm.NewRouter(), caches,
 		nil, false)
 	if err == nil {
@@ -330,8 +330,8 @@ func TestRegisterProxyRoutesInvalidCert(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
-	caches := registration.LoadCachesFromConfig(conf)
-	defer registration.CloseCaches(caches)
+	caches := registry.LoadCachesFromConfig(conf)
+	defer registry.CloseCaches(caches)
 	logger.SetLogger(logging.ConsoleLogger(level.Info))
 	_, err = RegisterProxyRoutes(conf, lm.NewRouter(), lm.NewRouter(), caches,
 		nil, false)
@@ -362,8 +362,8 @@ func TestRegisterProxyRoutesBadProvider(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
-	caches := registration.LoadCachesFromConfig(conf)
-	defer registration.CloseCaches(caches)
+	caches := registry.LoadCachesFromConfig(conf)
+	defer registry.CloseCaches(caches)
 	logger.SetLogger(logging.ConsoleLogger(level.Info))
 	_, err = RegisterProxyRoutes(conf, lm.NewRouter(), lm.NewRouter(), caches,
 		nil, false)
@@ -381,8 +381,8 @@ func TestRegisterMultipleBackends(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
-	caches := registration.LoadCachesFromConfig(conf)
-	defer registration.CloseCaches(caches)
+	caches := registry.LoadCachesFromConfig(conf)
+	defer registry.CloseCaches(caches)
 	logger.SetLogger(logging.ConsoleLogger(level.Info))
 	_, err = RegisterProxyRoutes(conf, lm.NewRouter(), lm.NewRouter(), caches,
 		nil, false)
@@ -398,8 +398,8 @@ func TestRegisterMultipleBackendsPlusDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
-	caches := registration.LoadCachesFromConfig(conf)
-	defer registration.CloseCaches(caches)
+	caches := registry.LoadCachesFromConfig(conf)
+	defer registry.CloseCaches(caches)
 	logger.SetLogger(logging.ConsoleLogger(level.Info))
 	_, err = RegisterProxyRoutes(conf, lm.NewRouter(), lm.NewRouter(), caches,
 		nil, false)
@@ -459,8 +459,8 @@ func TestValidateRuleClients(t *testing.T) {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	caches := registration.LoadCachesFromConfig(conf)
-	defer registration.CloseCaches(caches)
+	caches := registry.LoadCachesFromConfig(conf)
+	defer registry.CloseCaches(caches)
 
 	o := conf.Backends["default"]
 	o.Provider = "rule"

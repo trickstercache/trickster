@@ -30,7 +30,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/memory"
 	"github.com/trickstercache/trickster/v2/pkg/cache/providers"
-	"github.com/trickstercache/trickster/v2/pkg/cache/registration"
+	"github.com/trickstercache/trickster/v2/pkg/cache/registry"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	dr "github.com/trickstercache/trickster/v2/pkg/config/reload"
 	ro "github.com/trickstercache/trickster/v2/pkg/config/reload/options"
@@ -196,7 +196,7 @@ func applyCachingConfig(si *instance.ServerInstance,
 
 	if si.Config == nil || si.Caches == nil {
 		for k, v := range newConf.Caches {
-			caches[k] = registration.NewCache(k, v)
+			caches[k] = registry.NewCache(k, v)
 		}
 		return caches
 	}
@@ -237,7 +237,7 @@ func applyCachingConfig(si *instance.ServerInstance,
 		}
 
 		// the newly-named cache is not in the old config or couldn't be reused, so make it anew
-		caches[k] = registration.NewCache(k, v)
+		caches[k] = registry.NewCache(k, v)
 	}
 	return caches
 }
