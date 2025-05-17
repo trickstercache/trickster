@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package alb
+package tsm
 
 import (
 	"context"
@@ -22,6 +22,14 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/errors"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/rr"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registration/types"
 	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
@@ -29,9 +37,66 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 )
 
-func (c *Client) handleResponseMerge(w http.ResponseWriter, r *http.Request) {
+const ID mech.ID = 4
+const ShortName mech.Name = "tsm"
+const Name mech.Name = "time_series_merge"
 
-	hl := c.pool.Next() // should return a fanout list
+type client struct {
+	pool            pool.Pool
+	mergePaths      []string       // paths handled by the alb client that are enabled for tsmerge
+	nonmergeHandler mech.Mechanism // when methodology is tsmerge, this handler is for non-mergeable paths
+}
+
+func New(o *options.Options, factories types.Lookup) (mech.Mechanism, error) {
+	nmh, _ := rr.New(nil, nil)
+	out := &client{nonmergeHandler: nmh}
+	// this validates the merge configuration for the ALB client as it sets it up
+	// First, verify the output format is a support merge provider
+	if !providers.IsSupportedTimeSeriesMergeProvider(o.OutputFormat) {
+		return nil, errors.ErrInvalidTimeSeriesMergeProvider
+	}
+	// next, get the factory function required to create a backend client for the supplied format
+	f, ok := factories[o.OutputFormat]
+	if !ok {
+		return nil, errors.ErrInvalidTimeSeriesMergeProvider
+	}
+	// now, create a client for the merge provider based on the supplied factory function
+	mc1, err := f("alb", nil, nil, nil, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	// convert the new time series client to a mergeable timeseries client to get the merge paths
+	mc2, ok := mc1.(backends.MergeableTimeseriesBackend)
+	if !ok {
+		return nil, errors.ErrInvalidTimeSeriesMergeProvider
+	}
+	// set the merge paths in the ALB client
+	out.mergePaths = mc2.MergeablePaths()
+	return out, nil
+}
+
+func (c *client) ID() mech.ID {
+	return ID
+}
+
+func (c *client) Name() mech.Name {
+	return ShortName
+}
+
+func (c *client) SetPool(p pool.Pool) {
+	c.pool = p
+	c.nonmergeHandler.SetPool(p)
+}
+
+func (c *client) StopPool() {
+	if c.pool != nil {
+		c.pool.Stop()
+	}
+}
+
+func (c *client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+
+	hl := c.pool.Healthy() // should return a fanout list
 	l := len(hl)
 	if l == 0 {
 		handlers.HandleBadGateway(w, r)

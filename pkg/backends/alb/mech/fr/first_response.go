@@ -14,29 +14,73 @@
  * limitations under the License.
  */
 
-package alb
+package fr
 
 import (
 	"net/http"
 	"sync"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registration/types"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
-type firstResponseGate struct {
-	http.ResponseWriter
-	i        int
-	fh       http.Header
-	c        *responderClaim
+const ID mech.ID = 1
+const ShortName mech.Name = "fr"
+const Name mech.Name = "first_response"
+
+const FGRID mech.ID = 2
+const FGRShortName mech.Name = "fgr"
+const FGRName mech.Name = "first_good_response"
+
+type client struct {
+	pool     pool.Pool
 	fgr      bool
 	fgrCodes sets.Set[int]
 }
 
-func (c *Client) handleFirstResponse(w http.ResponseWriter, r *http.Request) {
+func NewFGR(o *options.Options, _ types.Lookup) (mech.Mechanism, error) {
+	return &client{
+		fgr:      true,
+		fgrCodes: o.FgrCodesLookup,
+	}, nil
+}
 
-	hl := c.pool.Next() // should return a fanout list
+func New(_ *options.Options, _ types.Lookup) (mech.Mechanism, error) {
+	return &client{}, nil
+}
+
+func (c *client) SetPool(p pool.Pool) {
+	c.pool = p
+}
+
+func (c *client) ID() mech.ID {
+	if c.fgr {
+		return FGRID
+	}
+	return ID
+}
+
+func (c *client) Name() mech.Name {
+	if c.fgr {
+		return FGRShortName
+	}
+	return ShortName
+}
+
+func (c *client) StopPool() {
+	if c.pool != nil {
+		c.pool.Stop()
+	}
+}
+
+func (c *client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+
+	hl := c.pool.Healthy() // should return a fanout list
 	l := len(hl)
 	if l == 0 {
 		handlers.HandleBadGateway(w, r)
@@ -51,10 +95,10 @@ func (c *Client) handleFirstResponse(w http.ResponseWriter, r *http.Request) {
 	wc := newResponderClaim(l)
 	var wg sync.WaitGroup
 	wg.Add(l)
-	for i := 0; i < l; i++ {
-		// only the one of these i fanouts to respond will be mapped back to the end user
-		// based on the methodology
-		// and the rest will have their contexts canceled
+	for i := range l {
+		// only the one of these i fanouts to respond will be mapped back to the
+		// end user based on the methodology and the rest will have their
+		// contexts canceled
 		go func(j int) {
 			if hl[j] == nil {
 				wg.Done()
@@ -67,6 +111,15 @@ func (c *Client) handleFirstResponse(w http.ResponseWriter, r *http.Request) {
 		}(i)
 	}
 	wg.Wait()
+}
+
+type firstResponseGate struct {
+	http.ResponseWriter
+	i        int
+	fh       http.Header
+	c        *responderClaim
+	fgr      bool
+	fgrCodes sets.Set[int]
 }
 
 func newFirstResponseGate(w http.ResponseWriter, c *responderClaim, i int,

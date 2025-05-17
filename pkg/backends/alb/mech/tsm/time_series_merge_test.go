@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package alb
+package tsm
 
 import (
 	"net/http"
@@ -22,7 +22,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
@@ -46,27 +45,27 @@ func TestHandleResponseMerge(t *testing.T) {
 	rsc.IsMergeMember = true
 	r = request.SetResources(r, rsc)
 
-	p, _, _ := albpool.New(mech.TimeSeriesMerge, 0, nil)
-	c := &Client{pool: p, mergePaths: []string{"/"}}
+	p, _, _ := albpool.New(0, nil)
+	c := &client{pool: p, mergePaths: []string{"/"}}
 	w := httptest.NewRecorder()
-	c.handleResponseMerge(w, r)
+	c.ServeHTTP(w, r)
 	if w.Code != http.StatusBadGateway {
 		t.Error("expected 502 got", w.Code)
 	}
 
 	var st []*healthcheck.Status
-	c.pool, _, st = albpool.New(mech.TimeSeriesMerge, -1,
+	c.pool, _, st = albpool.New(-1,
 		[]http.Handler{http.HandlerFunc(tu.BasicHTTPHandler)})
 	st[0].Set(0)
 	time.Sleep(250 * time.Millisecond)
 
 	w = httptest.NewRecorder()
-	c.handleResponseMerge(w, r)
+	c.ServeHTTP(w, r)
 	if w.Code != http.StatusOK {
 		t.Error("expected 200 got", w.Code)
 	}
 
-	c.pool, _, st = albpool.New(mech.TimeSeriesMerge, -1,
+	c.pool, _, st = albpool.New(-1,
 		[]http.Handler{
 			http.HandlerFunc(tu.BasicHTTPHandler),
 			http.HandlerFunc(tu.BasicHTTPHandler),
@@ -76,14 +75,14 @@ func TestHandleResponseMerge(t *testing.T) {
 	time.Sleep(250 * time.Millisecond)
 
 	w = httptest.NewRecorder()
-	c.handleResponseMerge(w, r)
+	c.ServeHTTP(w, r)
 	if w.Code != http.StatusOK {
 		t.Error("expected 200 got", w.Code)
 	}
 
 	w = httptest.NewRecorder()
 	c.mergePaths = nil
-	c.handleResponseMerge(w, r)
+	c.ServeHTTP(w, r)
 	if w.Code != http.StatusOK {
 		t.Error("expected 200 got", w.Code)
 	}

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package alb
+package rr
 
 import (
 	"net/http"
@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/albpool"
@@ -31,13 +31,13 @@ import (
 func TestHandleRoundRobin(t *testing.T) {
 
 	w := httptest.NewRecorder()
-	c := &Client{}
-	c.handleRoundRobin(w, nil)
+	c := &client{}
+	c.ServeHTTP(w, nil)
 	if w.Code != http.StatusBadGateway {
 		t.Error("expected 502 got", w.Code)
 	}
 
-	p, _, hsts := albpool.New(mech.RoundRobin, 0,
+	p, _, hsts := albpool.New(0,
 		[]http.Handler{http.HandlerFunc(tu.BasicHTTPHandler)})
 
 	c.pool = p
@@ -46,19 +46,31 @@ func TestHandleRoundRobin(t *testing.T) {
 	time.Sleep(250 * time.Millisecond)
 
 	w = httptest.NewRecorder()
-	c.handleRoundRobin(w, nil)
+	c.ServeHTTP(w, nil)
 	if w.Code != http.StatusOK {
 		t.Error("expected 200 got", w.Code)
 	}
 
-	c.pool, _, hsts = albpool.New(mech.RoundRobin, 0,
+	c.pool, _, hsts = albpool.New(0,
 		[]http.Handler{http.HandlerFunc(handlers.HandleBadGateway)})
 	hsts[0].Set(-1)
 	time.Sleep(250 * time.Millisecond)
 	w = httptest.NewRecorder()
-	c.handleRoundRobin(w, nil)
+	c.ServeHTTP(w, nil)
 	if w.Code != http.StatusBadGateway {
 		t.Error("expected 502 got", w.Code)
 	}
 
+}
+
+func TestNextTarget(t *testing.T) {
+	c := &client{
+		pool: pool.New(nil, -1),
+	}
+	c.StopPool()
+	c.pool.SetHealthy([]http.Handler{http.NotFoundHandler()})
+	h := c.nextTarget()
+	if h == nil {
+		t.Error("expected non-nil target")
+	}
 }

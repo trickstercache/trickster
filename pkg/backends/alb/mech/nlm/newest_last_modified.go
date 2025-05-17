@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package alb
+package nlm
 
 import (
 	"context"
@@ -23,13 +23,81 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registration/types"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/util/atomicx"
 )
 
-// newestResponseGate is a ResponseWriter that only writes when the muxer selects it based on the
-// newness of the response's LastModified header when compared to other responses in the Mux
+const ID mech.ID = 3
+const ShortName mech.Name = "nlm"
+const Name mech.Name = "newest_last_modified"
+
+type client struct {
+	pool pool.Pool
+}
+
+func New(_ *options.Options, _ types.Lookup) (mech.Mechanism, error) {
+	return &client{}, nil
+}
+
+func (c *client) SetPool(p pool.Pool) {
+	c.pool = p
+}
+
+func (c *client) ID() mech.ID {
+	return ID
+}
+
+func (c *client) Name() mech.Name {
+	return ShortName
+}
+
+func (c *client) StopPool() {
+	if c.pool != nil {
+		c.pool.Stop()
+	}
+}
+
+func (c *client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	hl := c.pool.Healthy() // should return a fanout list
+	l := len(hl)
+	if len(hl) == 0 {
+		handlers.HandleBadGateway(w, r)
+		return
+	}
+	// just proxy 1:1 if no folds in the fan
+	if l == 1 {
+		hl[0].ServeHTTP(w, r)
+		return
+	}
+	// otherwise iterate the fanout
+	nrm := newNewestResponseMux(l)
+	var wg sync.WaitGroup
+	wg.Add(l)
+	for i := range l {
+		// only the one of these i fanouts to respond will be mapped back to
+		// the end user based on the methodology and the rest will have their
+		// contexts canceled
+		go func(j int) {
+			if hl[j] == nil {
+				return
+			}
+			nrg := newNewestResponseGate(w, j, nrm)
+			r2 := r.Clone(nrm.contexts[j])
+			hl[j].ServeHTTP(nrg, r2)
+			wg.Done()
+		}(i)
+	}
+	wg.Wait()
+}
+
+// newestResponseGate is a ResponseWriter that only writes when the muxer
+// selects it based on the newness of the response's LastModified header when
+// compared to other responses in the Mux
 type newestResponseGate struct {
 	http.ResponseWriter
 	i, s  int64
@@ -38,7 +106,8 @@ type newestResponseGate struct {
 	nrm   *newestResponseMux
 }
 
-// newestResponseMux keeps track the index of the newest LastModified time registered
+// newestResponseMux keeps track the index of the newest LastModified time
+// registered
 type newestResponseMux struct {
 	i        int64
 	t        atomicx.Time
@@ -73,41 +142,10 @@ func (nrm *newestResponseMux) getNewest() int64 {
 	return atomic.LoadInt64(&nrm.i)
 }
 
-func (c *Client) handleNewestResponse(w http.ResponseWriter, r *http.Request) {
-	hl := c.pool.Next() // should return a fanout list
-	l := len(hl)
-	if l == 0 {
-		handlers.HandleBadGateway(w, r)
-		return
-	}
-	// just proxy 1:1 if no folds in the fan
-	if l == 1 {
-		hl[0].ServeHTTP(w, r)
-		return
-	}
-	// otherwise iterate the fanout
-	nrm := newNewestResponseMux(l)
-	var wg sync.WaitGroup
-	wg.Add(l)
-	for i := range l {
-		// only the one of these i fanouts to respond will be mapped back to the end user
-		// based on the methodology
-		// and the rest will have their contexts canceled
-		go func(j int) {
-			if hl[j] == nil {
-				return
-			}
-			nrg := newNewestResponseGate(w, j, nrm)
-			r2 := r.Clone(nrm.contexts[j])
-			hl[j].ServeHTTP(nrg, r2)
-			wg.Done()
-		}(i)
-	}
-	wg.Wait()
-}
-
-func newNewestResponseGate(w http.ResponseWriter, i int, nrm *newestResponseMux) *newestResponseGate {
-	return &newestResponseGate{ResponseWriter: w, h: http.Header{}, i: int64(i), nrm: nrm}
+func newNewestResponseGate(w http.ResponseWriter, i int,
+	nrm *newestResponseMux) *newestResponseGate {
+	return &newestResponseGate{ResponseWriter: w, h: http.Header{},
+		i: int64(i), nrm: nrm}
 }
 
 func (nrg *newestResponseGate) Header() http.Header {
@@ -126,7 +164,8 @@ func (nrg *newestResponseGate) WriteHeader(i int) {
 }
 
 func (nrg *newestResponseGate) Write(b []byte) (int, error) {
-	if nrg.ca { // can abort without waiting, since this gate is already proven not to be newest
+	if nrg.ca { // can abort without waiting, since this gate is already proven
+		// not to be newest
 		return len(b), nil
 	}
 	nrg.nrm.wg.Wait()

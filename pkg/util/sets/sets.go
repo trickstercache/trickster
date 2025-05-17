@@ -46,6 +46,11 @@ func NewStringSet() Set[string] {
 	return make(Set[string])
 }
 
+// NewByteSet returns a new Set[byte]
+func NewByteSet() Set[byte] {
+	return make(Set[byte])
+}
+
 func (s Set[T]) AddAll(vals []T) {
 	for _, val := range vals {
 		s.Add(val)

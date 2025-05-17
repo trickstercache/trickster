@@ -1,62 +1,41 @@
+/*
+ * Copyright 2018 The Trickster Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package mech
 
-import "strconv"
+import (
+	"net/http"
 
-// Mechanism defines the load balancing mechanism identifier type
-type Mechanism byte
-
-const (
-	// RoundRobin defines the Basic Round Robin load balancing mechanism
-	RoundRobin Mechanism = iota
-	// FirstResponse defines the First Response load balancing mechanism
-	FirstResponse
-	// FirstGoodResponse defines the First Good Response load balancing mechanism
-	FirstGoodResponse
-	// NewestLastModified defines the Newest Last-Modified load balancing mechanism
-	NewestLastModified
-	// TimeSeriesMerge defines the Time Series Merge load balancing mechanism
-	TimeSeriesMerge
-	// UserRouter defines the User Router load balancing mechanism
-	UserRouter
-
-	RR  = "rr"
-	FR  = "fr"
-	FGR = "fgr"
-	NLM = "nlm"
-	TSM = "tsm"
-	UR  = "ur"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registration/types"
 )
 
-// Lookup provides for looking up Mechanisms by name
-var Lookup = map[string]Mechanism{
-	RR:  RoundRobin,
-	FR:  FirstResponse,
-	FGR: FirstGoodResponse,
-	NLM: NewestLastModified,
-	TSM: TimeSeriesMerge,
-	UR:  UserRouter,
-}
+// id defines the load balancing mechanism identifier type
+type ID byte
 
-// ValuesLookup provides for looking up Mechanism by names
-var ValuesLookup = vals()
+// Name is a type alias for the load balancing mechanism common name
+type Name string
 
-// GetMechanismByName returns the Mechanism value and True if the mechanism name is known
-func GetMechanismByName(name string) (Mechanism, bool) {
-	m, ok := Lookup[name]
-	return m, ok
-}
+type NewMechanismFunc func(*options.Options, types.Lookup) (Mechanism, error)
 
-func vals() map[Mechanism]string {
-	out := make(map[Mechanism]string, len(Lookup))
-	for k, v := range Lookup {
-		out[v] = k
-	}
-	return out
-}
-
-func (m Mechanism) String() string {
-	if v, ok := ValuesLookup[m]; ok {
-		return v
-	}
-	return strconv.Itoa(int(m))
+type Mechanism interface {
+	http.Handler
+	SetPool(pool.Pool)
+	StopPool()
+	ID() ID
+	Name() Name
 }

@@ -14,21 +14,10 @@
  * limitations under the License.
  */
 
-package pool
+package errors
 
-import (
-	"net/http"
-	"testing"
-)
+import "errors"
 
-func TestNextFanout(t *testing.T) {
-
-	p := &pool{}
-	p.healthy.Store(&[]http.Handler{http.NotFoundHandler()})
-
-	p2 := nextFanout(p)
-	if len(p2) != 1 {
-		t.Errorf("expected %d got %d", 1, len(p2))
-	}
-
-}
+var ErrInvalidTimeSeriesMergeProvider = errors.New("invalid time series merge provider")
+var ErrUnsupportedMechanism = errors.New("unsupported mechanism")
+var ErrInvalidOptionsMetadata = errors.New("invalid options metadata")

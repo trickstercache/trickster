@@ -19,6 +19,7 @@ package options
 import (
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/errors"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
 
@@ -85,7 +86,12 @@ func TestClone(t *testing.T) {
 
 func TestSetDefaults(t *testing.T) {
 
-	o2, err := SetDefaults("test", nil, nil)
+	_, err := SetDefaults("test", nil, nil)
+	if err != errors.ErrInvalidOptionsMetadata {
+		t.Error("expected error for invalid options metadata", err)
+	}
+
+	o2, err := SetDefaults("test", nil, yamlx.KeyLookup{})
 	if err != nil {
 		t.Error(err)
 	}

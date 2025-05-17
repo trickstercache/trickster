@@ -14,17 +14,39 @@
  * limitations under the License.
  */
 
-package pool
+package fr
 
-import (
-	"net/http"
-)
+import "testing"
 
-func nextRoundRobin(p *pool) []http.Handler {
-	t := p.healthy.Load()
-	if t == nil {
-		return nil
+func TestNewResponderClaim(t *testing.T) {
+
+	rc := newResponderClaim(1)
+	if len(rc.contexts) != 1 {
+		t.Error("expected 1 got ", len(rc.contexts))
 	}
-	i := p.pos.Add(1) % uint64(len(*t))
-	return []http.Handler{(*t)[i]}
+	if rc.lockVal != -1 {
+		t.Error("expected -1 got ", rc.lockVal)
+	}
+
+}
+
+func TestClaim(t *testing.T) {
+
+	rc := newResponderClaim(2)
+
+	b := rc.Claim(1)
+	if !b {
+		t.Error("expected true")
+	}
+
+	b = rc.Claim(1)
+	if !b {
+		t.Error("expected true")
+	}
+
+	b = rc.Claim(0)
+	if b {
+		t.Error("expected false")
+	}
+
 }
