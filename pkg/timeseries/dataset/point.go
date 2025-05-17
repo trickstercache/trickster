@@ -99,7 +99,7 @@ func (p Points) CloneRange(start, end int) Points {
 	}
 	clone := make(Points, size, size+10)
 	j := start
-	for i := 0; i < size; i++ {
+	for i := range size {
 		clone[i] = p[j].Clone()
 		j++
 	}
