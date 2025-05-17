@@ -25,7 +25,7 @@ import (
 	"testing"
 	"time"
 
-	cr "github.com/trickstercache/trickster/v2/pkg/cache/registration"
+	cr "github.com/trickstercache/trickster/v2/pkg/cache/registry"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	tc "github.com/trickstercache/trickster/v2/pkg/proxy/context"

@@ -28,7 +28,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
-	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registration"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registry"
 	"github.com/trickstercache/trickster/v2/pkg/backends/reverseproxycache"
 	"github.com/trickstercache/trickster/v2/pkg/backends/rule"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
@@ -171,7 +171,7 @@ func registerBackendRoutes(r router.Router, metricsRouter router.Router,
 			"backendProvider": o.Provider, "upstreamHost": o.Host})
 	}
 
-	cf := registration.SupportedProviders()
+	cf := registry.SupportedProviders()
 	if f, ok := cf[strings.ToLower(o.Provider)]; ok && f != nil {
 		client, err = f(k, o, lm.NewRouter(), c, clients, cf)
 	}

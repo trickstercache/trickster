@@ -25,7 +25,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	modelch "github.com/trickstercache/trickster/v2/pkg/backends/clickhouse/model"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
-	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registration/types"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"

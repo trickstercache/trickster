@@ -29,7 +29,7 @@ import (
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	modelprom "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/model"
 	po "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/options"
-	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registration/types"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"

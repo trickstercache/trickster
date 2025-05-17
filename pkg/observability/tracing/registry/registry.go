@@ -15,7 +15,7 @@
  */
 
 // Package registration registers configured tracers for use with handlers
-package registration
+package registry
 
 import (
 	"errors"
