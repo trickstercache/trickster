@@ -357,7 +357,9 @@ func (idx *IndexedClient) reap() {
 
 	if len(removals) > 0 {
 		metrics.ObserveCacheEvent(idx.name, idx.cacheProvider, "eviction", "ttl")
-		idx.Remove(removals...)
+		if err := idx.Remove(removals...); err != nil {
+			logger.Error("reap remove error", logging.Pairs{"cacheName": idx.name, "error": err})
+		}
 		cacheChanged = true
 		cacheSize = atomic.LoadInt64(&idx.CacheSize)
 	}
@@ -420,7 +422,9 @@ func (idx *IndexedClient) reap() {
 
 		if len(removals) > 0 {
 			metrics.ObserveCacheEvent(idx.name, idx.cacheProvider, "eviction", evictionType)
-			idx.Remove(removals...)
+			if err := idx.Remove(removals...); err != nil {
+				logger.Error("reap remove error", logging.Pairs{"cacheName": idx.name, "error": err})
+			}
 			cacheChanged = true
 		}
 

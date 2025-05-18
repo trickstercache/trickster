@@ -56,10 +56,7 @@ func (c *CacheClient) Close() error {
 
 // Connect instantiates the Cache mutex map and starts the Expired Entry Reaper goroutine
 func (c *CacheClient) Connect() error {
-	if err := makeDirectory(c.Config.Filesystem.CachePath); err != nil {
-		return err
-	}
-	return nil
+	return makeDirectory(c.Config.Filesystem.CachePath)
 }
 
 func (c *CacheClient) Remove(cacheKeys ...string) error {

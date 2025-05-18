@@ -59,7 +59,7 @@ func (cm *Manager) Connect() error {
 			cm.config.Index,
 			cm.originalCli,
 			func(ico *index.IndexedClientOptions) {
-				ico = &cm.opts.IndexCliOpts
+				*ico = cm.opts.IndexCliOpts
 			},
 		)
 	}

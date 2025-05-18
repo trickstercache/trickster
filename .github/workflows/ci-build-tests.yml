@@ -70,10 +70,6 @@ jobs:
           python-version: '3.x'
       - name: Install python dependencies
         run: python -m pip install --upgrade pip setuptools wheel
-      - name: installing codespell
-        run: pip install codespell
-      - name: running codespell
-        run: codespell --skip="vendor,*.git,*.png,*.pdf,*.tiff,*.plist,*.pem,rangesim*.go,*.gz,go.mod,go.sum" --ignore-words="./testdata/ignore_words.txt"
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod

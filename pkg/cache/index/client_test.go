@@ -23,7 +23,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/trickstercache/trickster/v2/pkg/cache/filesystem"
-	fo "github.com/trickstercache/trickster/v2/pkg/cache/filesystem/options"
+	fso "github.com/trickstercache/trickster/v2/pkg/cache/filesystem/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/index/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/memory"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
@@ -97,7 +97,7 @@ func TestIndexedClient(t *testing.T) {
 		// init memory cache client
 		cacheConfig := co.Options{
 			Provider: provider,
-			Filesystem: &fo.Options{
+			Filesystem: &fso.Options{
 				CachePath: t.TempDir(),
 			},
 		}
