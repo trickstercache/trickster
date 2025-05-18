@@ -143,8 +143,6 @@ func BenchmarkCache_Store(b *testing.B) {
 
 func TestFilesystemCache_Retrieve(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
-	const expected1 = `value for key [cacheKey] not in cache`
-	const expected2 = `value for key [cacheKey-invalid] could not be deserialized from cache`
 
 	cacheConfig := newCacheConfig(t)
 	cacheConfig.Filesystem.CachePath = t.TempDir() + "/cache"

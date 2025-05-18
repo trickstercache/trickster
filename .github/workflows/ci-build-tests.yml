@@ -31,10 +31,6 @@ jobs:
         with:
           version: v2.0.2
           args: --timeout 5m
-      - uses: dominikh/staticcheck-action@v1
-        with:
-          install-go: false
-          version: "2025.1.1"
   docker:
     runs-on: ubuntu-latest
     steps:

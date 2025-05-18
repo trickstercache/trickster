@@ -281,9 +281,6 @@ func BenchmarkCache_BulkRemove(b *testing.B) {
 func TestBboltCache_Retrieve(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 
-	const expected1 = `value for key [cacheKey] not in cache`
-	const expected2 = `value for key [cacheKey-invalid] could not be deserialized from cache`
-
 	testDbPath := t.TempDir() + "/test.db"
 	cacheConfig := newCacheConfig(testDbPath)
 	bc := New(t.Name(), "", "", &cacheConfig)

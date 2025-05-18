@@ -21,22 +21,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/util/atomicx"
 )
-
-var testLogger = logging.ConsoleLogger("error")
-
-func testBulkRemoveFunc(cacheKeys []string) {
-}
-func fakeFlusherFunc(string, []byte) {}
-
-type testReferenceObject struct {
-}
-
-func (r *testReferenceObject) Size() int {
-	return 1
-}
 
 func TestObjectFromBytes(t *testing.T) {
 
