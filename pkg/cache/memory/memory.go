@@ -19,7 +19,6 @@
 package memory
 
 import (
-	"fmt"
 	"sync"
 	"time"
 
@@ -55,7 +54,6 @@ func New(name string, cfg *options.Options) *Cache {
 }
 
 func (c *Cache) Remove(cacheKeys ...string) error {
-	fmt.Println("memory.Cache.Remove()", cacheKeys)
 	for _, k := range cacheKeys {
 		c.client.Delete(k)
 	}

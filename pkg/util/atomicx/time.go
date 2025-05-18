@@ -17,7 +17,6 @@
 package atomicx
 
 import (
-	"fmt"
 	"sync/atomic"
 	"time"
 
@@ -58,10 +57,8 @@ func (t *Time) Store(in time.Time) {
 func (t *Time) Load() time.Time {
 	var ts *time.Time
 	if ts = t.Pointer.Load(); ts == nil {
-		fmt.Println("nil time")
 		ts = &time.Time{}
 	}
-	fmt.Println("time", *ts)
 	return *ts
 }
 

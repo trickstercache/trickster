@@ -18,7 +18,7 @@ package index
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"sort"
 	"sync/atomic"
 	"time"
@@ -41,46 +41,68 @@ var (
 	_ cache.MemoryCache = &IndexedClient{}
 )
 
+var (
+	ErrIndexInvalidCacheKey = errors.New("cannot store index")
+)
+
+// IndexedClientOptions modify an IndexedClient's behavior.
+// Meant for configuring a client for a specific usage -- not meant
+// for general configuration.
+type IndexedClientOptions struct {
+	NeedsFlushInterval bool
+	NeedsReapInterval  bool
+}
+
 func NewIndexedClient(
 	cacheName, cacheProvider string,
 	indexData []byte,
 	o *options.Options,
-	bulkRemoveFunc func(...string) error,
-	flushFunc func(cacheKey string, data []byte),
 	client cache.Client,
+	opts ...func(*IndexedClientOptions),
 ) *IndexedClient {
 	ctx, cancel := context.WithCancel(context.Background())
 	idx := &IndexedClient{
 		Client:        client,
 		name:          cacheName,
 		cacheProvider: cacheProvider,
-		flushFunc:     flushFunc,
 		cancel:        cancel,
 	}
 	idx.options.Store(o)
 
-	if len(indexData) > 0 {
-		// idx.UnmarshalMsg(indexData)
-		idx.Objects = SyncObjects{}
-	} else {
-		idx.Objects = SyncObjects{}
+	options := &IndexedClientOptions{}
+	for _, opt := range opts {
+		opt(options)
 	}
 
-	if flushFunc != nil {
+	if options.NeedsFlushInterval {
+		// check to see if an index was cached already from a previous run
+		b, s, err := client.Retrieve(IndexKey)
+		if err != nil {
+			logger.Warn("cache index was not loaded",
+				logging.Pairs{"cacheName": cacheName, "error": err.Error()})
+		} else if len(b) > 0 && s == status.LookupStatusHit {
+			// if an index was cached, load it
+			idx.UnmarshalMsg(b)
+		}
 		if o.FlushInterval > 0 {
 			go idx.flusher(ctx)
 		} else {
-			logger.Warn("cache index flusher did not start",
+			// TODO: should this be fatal? or should we set a default?
+			logger.Warn("cache index flusher was not started",
 				logging.Pairs{"cacheName": idx.name, "flushInterval": o.FlushInterval})
 		}
 	}
 
+	// TODO: this triggers a failure in pkg/proxy/engines -- need to investigate
+	// if options.NeedsReapInterval {
 	if o.ReapInterval > 0 {
 		go idx.reaper(ctx)
 	} else {
-		logger.Warn("cache reaper did not start",
+		// TODO: should this be fatal? or should we set a default?
+		logger.Warn("cache reaper was not started",
 			logging.Pairs{"cacheName": idx.name, "reapInterval": o.ReapInterval})
 	}
+	// }
 
 	gm.CacheMaxObjects.WithLabelValues(cacheName, cacheProvider).Set(float64(o.MaxSizeObjects))
 	gm.CacheMaxBytes.WithLabelValues(cacheName, cacheProvider).Set(float64(o.MaxSizeBytes))
@@ -100,17 +122,18 @@ type IndexedClient struct {
 	Objects SyncObjects `msg:"objects"`
 
 	// internal index configuration
-	name          string                             `msg:"-"`
-	cacheProvider string                             `msg:"-"`
-	options       atomic.Value                       `msg:"-"`
-	flushFunc     func(cacheKey string, data []byte) `msg:"-"`
-	lastWrite     atomicx.Time                       `msg:"-"`
+	name          string               `msg:"-"`
+	cacheProvider string               `msg:"-"`
+	options       atomic.Value         `msg:"-"`
+	ico           IndexedClientOptions `msg:"-"`
+	lastWrite     atomicx.Time         `msg:"-"`
 	isClosing     atomic.Bool
 	cancel        context.CancelFunc
 	flusherExited atomic.Bool
 	reaperExited  atomic.Bool
 }
 
+// Clear the index from its currently tracked cache objects
 func (idx *IndexedClient) Clear() {
 	idx.Objects.Clear()
 	atomic.StoreInt64(&idx.CacheSize, 0)
@@ -122,6 +145,7 @@ func (idx *IndexedClient) UpdateOptions(o *options.Options) {
 	idx.options.Store(o)
 }
 
+// No-op -- implements the cache.Client interface
 func (idx *IndexedClient) Connect() error {
 	return nil
 }
@@ -154,15 +178,25 @@ func (idx *IndexedClient) updateIndex(cacheKey string, size int64, la, lw, e tim
 }
 
 func (idx *IndexedClient) StoreReference(cacheKey string, data cache.ReferenceObject, ttl time.Duration) error {
+	if cacheKey == IndexKey {
+		return ErrIndexInvalidCacheKey
+	}
 	if err := idx.Client.(cache.MemoryCache).StoreReference(cacheKey, data, ttl); err != nil {
 		return err
 	}
 	now := time.Now()
-	idx.updateIndex(cacheKey, int64(data.Size()), now, now, now.Add(ttl))
+	var expiry time.Time
+	if ttl > 0 {
+		expiry = now.Add(ttl)
+	}
+	idx.updateIndex(cacheKey, int64(data.Size()), now, now, expiry)
 	return nil
 }
 
 func (idx *IndexedClient) Store(cacheKey string, byteData []byte, ttl time.Duration) error {
+	if cacheKey == IndexKey {
+		return ErrIndexInvalidCacheKey
+	}
 	// wrap input value with Object + timing/size information
 	obj := &Object{
 		Key:   cacheKey,
@@ -176,7 +210,6 @@ func (idx *IndexedClient) Store(cacheKey string, byteData []byte, ttl time.Durat
 	var expiry time.Time
 	if ttl > 0 {
 		expiry = now.Add(ttl)
-		fmt.Println("expire", ttl)
 		obj.Expiration.Store(expiry)
 	}
 	// store the object in the cache
@@ -198,12 +231,18 @@ func (idx *IndexedClient) updateAccessTime(cacheKey string) {
 }
 
 func (idx *IndexedClient) RetrieveReference(cacheKey string) (any, status.LookupStatus, error) {
+	if cacheKey == IndexKey {
+		return nil, status.LookupStatusError, ErrIndexInvalidCacheKey
+	}
 	go idx.updateAccessTime(cacheKey)
 	return idx.Client.(cache.MemoryCache).RetrieveReference(cacheKey)
 }
 
-// StoreWithMetadata implements the cache.Client interface, looking up the object and updating the index last access time
+// Retrieve implements the cache.Client interface, looking up the object and updating the index last access time
 func (idx *IndexedClient) Retrieve(cacheKey string) ([]byte, status.LookupStatus, error) {
+	if cacheKey == IndexKey {
+		return nil, status.LookupStatusError, ErrIndexInvalidCacheKey
+	}
 	data, s, err := idx.Client.Retrieve(cacheKey)
 	if err != nil {
 		return nil, s, err
@@ -221,7 +260,6 @@ func (idx *IndexedClient) Retrieve(cacheKey string) ([]byte, status.LookupStatus
 
 // Remove implements the cache.Client interface and removes the object from the cache and index
 func (idx *IndexedClient) Remove(cacheKeys ...string) error {
-	fmt.Println("IndexedClient.remove", cacheKeys)
 	// remove the objects from the index
 	for _, key := range cacheKeys {
 		if o, ok := idx.Objects.Load(key); ok {
@@ -230,7 +268,6 @@ func (idx *IndexedClient) Remove(cacheKeys ...string) error {
 			count := atomic.AddInt64(&idx.ObjectCount, -1)
 			metrics.ObserveCacheOperation(idx.name, idx.cacheProvider, "del", "none", float64(obj.Size))
 			idx.Objects.Delete(key)
-			fmt.Println("del", key, "size", obj.Size, "count", count)
 			metrics.ObserveCacheSizeChange(idx.name, idx.cacheProvider, size, count)
 		}
 	}
@@ -238,10 +275,14 @@ func (idx *IndexedClient) Remove(cacheKeys ...string) error {
 	return idx.Client.Remove(cacheKeys...)
 }
 
+// Stop the indexed cache, flush its state, and close the underlying cache
 func (idx *IndexedClient) Close() error {
-	idx.Clear()
-	idx.cancel()
+	idx.cancel() // stop the reaper & flusher
 	idx.isClosing.Store(true)
+	if idx.ico.NeedsFlushInterval {
+		idx.flushOnce()
+	}
+	idx.Clear()
 	return idx.Client.Close()
 }
 
@@ -272,7 +313,7 @@ func (idx *IndexedClient) flushOnce() {
 			logging.Pairs{"cacheName": idx.name, "detail": err.Error()})
 		return
 	}
-	idx.flushFunc(IndexKey, bytes)
+	idx.Client.Store(IndexKey, bytes, 31536000*time.Second)
 }
 
 // reaper continually iterates through the cache to find expired elements and removes them
@@ -293,7 +334,6 @@ REAPER:
 // reap makes a single iteration through the cache index to to find and remove expired elements
 // and evict least-recently-accessed elements to maintain the Maximum allowed Cache Size
 func (idx *IndexedClient) reap() {
-	fmt.Println("reap")
 	cacheSize := atomic.LoadInt64(&idx.CacheSize)
 	if cacheSize < 0 {
 		cacheSize = 0
@@ -307,7 +347,6 @@ func (idx *IndexedClient) reap() {
 
 	idx.Objects.Range(func(key, value any) bool {
 		o := value.(*Object)
-		fmt.Println("reap scan", key, o.Expiration.Load(), now, value)
 		if o.Expiration.Load().Before(now) && !o.Expiration.Load().IsZero() {
 			removals = append(removals, o.Key)
 		} else {
@@ -317,7 +356,6 @@ func (idx *IndexedClient) reap() {
 	})
 
 	if len(removals) > 0 {
-		fmt.Println("removing1", len(removals), "expired objects", removals)
 		metrics.ObserveCacheEvent(idx.name, idx.cacheProvider, "eviction", "ttl")
 		idx.Remove(removals...)
 		cacheChanged = true
@@ -381,7 +419,6 @@ func (idx *IndexedClient) reap() {
 		}
 
 		if len(removals) > 0 {
-			fmt.Println("removing2", len(removals), "expired objects", removals)
 			metrics.ObserveCacheEvent(idx.name, idx.cacheProvider, "eviction", evictionType)
 			idx.Remove(removals...)
 			cacheChanged = true

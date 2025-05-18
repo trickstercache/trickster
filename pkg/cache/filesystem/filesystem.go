@@ -92,7 +92,6 @@ func (c *CacheClient) Retrieve(cacheKey string) ([]byte, status.LookupStatus, er
 	if err != nil {
 		return nil, status.LookupStatusKeyMiss, cache.ErrKNF
 	}
-	fmt.Println("no err", dataFile, len(data), string(data))
 	return data, status.LookupStatusHit, nil
 }
 

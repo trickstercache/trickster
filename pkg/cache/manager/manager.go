@@ -24,7 +24,8 @@ import (
 )
 
 type CacheOptions struct {
-	UseIndex bool
+	UseIndex     bool
+	IndexCliOpts index.IndexedClientOptions
 }
 
 func NewCache(cli cache.Client, cacheOpts CacheOptions, cacheConfig *options.Options) cache.Cache {
@@ -51,9 +52,16 @@ func (cm *Manager) Connect() error {
 		return err
 	}
 	if cm.opts.UseIndex {
-		cm.Client = index.NewIndexedClient(cm.config.Name, cm.config.Provider, nil, cm.config.Index, cm.Remove, func(cacheKey string, data []byte) {
-			cm.originalCli.Store(cacheKey, data, 0) // TODO: set TTL
-		}, cm.originalCli)
+		cm.Client = index.NewIndexedClient(
+			cm.config.Name,
+			cm.config.Provider,
+			nil,
+			cm.config.Index,
+			cm.originalCli,
+			func(ico *index.IndexedClientOptions) {
+				ico = &cm.opts.IndexCliOpts
+			},
+		)
 	}
 	return nil
 }

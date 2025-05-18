@@ -23,6 +23,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/badger"
 	"github.com/trickstercache/trickster/v2/pkg/cache/bbolt"
 	"github.com/trickstercache/trickster/v2/pkg/cache/filesystem"
+	"github.com/trickstercache/trickster/v2/pkg/cache/index"
 	"github.com/trickstercache/trickster/v2/pkg/cache/manager"
 	"github.com/trickstercache/trickster/v2/pkg/cache/memory"
 	"github.com/trickstercache/trickster/v2/pkg/cache/options"
@@ -67,12 +68,20 @@ func NewCache(cacheName string, cfg *options.Options) cache.Cache {
 	case ctFilesystem:
 		c = manager.NewCache(filesystem.NewCache(cacheName, cfg), manager.CacheOptions{
 			UseIndex: true,
+			IndexCliOpts: index.IndexedClientOptions{
+				NeedsFlushInterval: true,
+				NeedsReapInterval:  true,
+			},
 		}, cfg)
 	case ctRedis:
 		c = manager.NewCache(redis.New(cacheName, cfg), manager.CacheOptions{}, cfg)
 	case ctBBolt:
 		c = manager.NewCache(bbolt.New(cacheName, "", "", cfg), manager.CacheOptions{
 			UseIndex: true,
+			IndexCliOpts: index.IndexedClientOptions{
+				NeedsFlushInterval: true,
+				NeedsReapInterval:  true,
+			},
 		}, cfg)
 	case ctBadger:
 		c = manager.NewCache(badger.New(cacheName, cfg), manager.CacheOptions{}, cfg)
@@ -80,6 +89,9 @@ func NewCache(cacheName string, cfg *options.Options) cache.Cache {
 		// Default to MemoryCache
 		c = manager.NewCache(memory.New(cacheName, cfg), manager.CacheOptions{
 			UseIndex: true,
+			IndexCliOpts: index.IndexedClientOptions{
+				NeedsReapInterval: true,
+			},
 		}, cfg)
 	}
 	c.Connect()

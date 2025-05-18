@@ -177,7 +177,6 @@ func TestFullArticuationChunks(t *testing.T) {
 	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "kmiss"})
 	require.NoError(t, stderrors.Join(e...))
 
-	t.Log("t1")
 	r.URL.RawQuery = "max-age=1&ims=200"
 	r.URL.Path = "/byterange/new/test/path/3"
 	r.Header.Set(headers.NameRange, "bytes=10-20")
@@ -194,23 +193,19 @@ func TestFullArticuationChunks(t *testing.T) {
 	r.URL.RawQuery = "max-age=1&ims=206"
 	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "phit"})
 	require.NoError(t, stderrors.Join(e...))
-	t.Log("t2")
 
 	r.Header.Set(headers.NameRange, "bytes=9-20, 25-31, 42-65, 70-80")
 	expectedBody, err = getExpectedRangeBody(r, "34b73ea5c4c1ab5b9e34c9888119c58f")
 	require.NoError(t, err)
 
-	t.Log("t2a")
 	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "phit"})
 	require.NoError(t, stderrors.Join(e...))
-	t.Log("t2b")
 
 	time.Sleep(time.Millisecond * 3000)
 
 	r.Header.Set(headers.NameRange, "bytes=9-20, 90-95, 100-105")
 	expectedBody, err = getExpectedRangeBody(r, "01760208a2d6589fc9620627d561640d")
 	require.NoError(t, err)
-	t.Log("t2c")
 
 	r.URL.RawQuery = "max-age=1&ims=206"
 	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "kmiss"})
@@ -223,7 +218,6 @@ func TestFullArticuationChunks(t *testing.T) {
 	r.URL.RawQuery = "max-age=1"
 	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "kmiss"})
 	require.NoError(t, stderrors.Join(e...))
-	t.Log("t3")
 
 	r.Header.Set(headers.NameRange, "bytes=9-20, 25-32, 41-65")
 	expectedBody, err = getExpectedRangeBody(r, "722af19813169c99d8bda37a2f244f39")

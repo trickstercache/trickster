@@ -178,3 +178,131 @@ func (z *IndexedClient) Msgsize() (s int) {
 	s = 1 + 11 + msgp.Int64Size + 13 + msgp.Int64Size + 8 + z.Objects.Msgsize()
 	return
 }
+
+// DecodeMsg implements msgp.Decodable
+func (z *IndexedClientOptions) DecodeMsg(dc *msgp.Reader) (err error) {
+	var field []byte
+	_ = field
+	var zb0001 uint32
+	zb0001, err = dc.ReadMapHeader()
+	if err != nil {
+		err = msgp.WrapError(err)
+		return
+	}
+	for zb0001 > 0 {
+		zb0001--
+		field, err = dc.ReadMapKeyPtr()
+		if err != nil {
+			err = msgp.WrapError(err)
+			return
+		}
+		switch msgp.UnsafeString(field) {
+		case "NeedsFlushInterval":
+			z.NeedsFlushInterval, err = dc.ReadBool()
+			if err != nil {
+				err = msgp.WrapError(err, "NeedsFlushInterval")
+				return
+			}
+		case "NeedsReapInterval":
+			z.NeedsReapInterval, err = dc.ReadBool()
+			if err != nil {
+				err = msgp.WrapError(err, "NeedsReapInterval")
+				return
+			}
+		default:
+			err = dc.Skip()
+			if err != nil {
+				err = msgp.WrapError(err)
+				return
+			}
+		}
+	}
+	return
+}
+
+// EncodeMsg implements msgp.Encodable
+func (z IndexedClientOptions) EncodeMsg(en *msgp.Writer) (err error) {
+	// map header, size 2
+	// write "NeedsFlushInterval"
+	err = en.Append(0x82, 0xb2, 0x4e, 0x65, 0x65, 0x64, 0x73, 0x46, 0x6c, 0x75, 0x73, 0x68, 0x49, 0x6e, 0x74, 0x65, 0x72, 0x76, 0x61, 0x6c)
+	if err != nil {
+		return
+	}
+	err = en.WriteBool(z.NeedsFlushInterval)
+	if err != nil {
+		err = msgp.WrapError(err, "NeedsFlushInterval")
+		return
+	}
+	// write "NeedsReapInterval"
+	err = en.Append(0xb1, 0x4e, 0x65, 0x65, 0x64, 0x73, 0x52, 0x65, 0x61, 0x70, 0x49, 0x6e, 0x74, 0x65, 0x72, 0x76, 0x61, 0x6c)
+	if err != nil {
+		return
+	}
+	err = en.WriteBool(z.NeedsReapInterval)
+	if err != nil {
+		err = msgp.WrapError(err, "NeedsReapInterval")
+		return
+	}
+	return
+}
+
+// MarshalMsg implements msgp.Marshaler
+func (z IndexedClientOptions) MarshalMsg(b []byte) (o []byte, err error) {
+	o = msgp.Require(b, z.Msgsize())
+	// map header, size 2
+	// string "NeedsFlushInterval"
+	o = append(o, 0x82, 0xb2, 0x4e, 0x65, 0x65, 0x64, 0x73, 0x46, 0x6c, 0x75, 0x73, 0x68, 0x49, 0x6e, 0x74, 0x65, 0x72, 0x76, 0x61, 0x6c)
+	o = msgp.AppendBool(o, z.NeedsFlushInterval)
+	// string "NeedsReapInterval"
+	o = append(o, 0xb1, 0x4e, 0x65, 0x65, 0x64, 0x73, 0x52, 0x65, 0x61, 0x70, 0x49, 0x6e, 0x74, 0x65, 0x72, 0x76, 0x61, 0x6c)
+	o = msgp.AppendBool(o, z.NeedsReapInterval)
+	return
+}
+
+// UnmarshalMsg implements msgp.Unmarshaler
+func (z *IndexedClientOptions) UnmarshalMsg(bts []byte) (o []byte, err error) {
+	var field []byte
+	_ = field
+	var zb0001 uint32
+	zb0001, bts, err = msgp.ReadMapHeaderBytes(bts)
+	if err != nil {
+		err = msgp.WrapError(err)
+		return
+	}
+	for zb0001 > 0 {
+		zb0001--
+		field, bts, err = msgp.ReadMapKeyZC(bts)
+		if err != nil {
+			err = msgp.WrapError(err)
+			return
+		}
+		switch msgp.UnsafeString(field) {
+		case "NeedsFlushInterval":
+			z.NeedsFlushInterval, bts, err = msgp.ReadBoolBytes(bts)
+			if err != nil {
+				err = msgp.WrapError(err, "NeedsFlushInterval")
+				return
+			}
+		case "NeedsReapInterval":
+			z.NeedsReapInterval, bts, err = msgp.ReadBoolBytes(bts)
+			if err != nil {
+				err = msgp.WrapError(err, "NeedsReapInterval")
+				return
+			}
+		default:
+			bts, err = msgp.Skip(bts)
+			if err != nil {
+				err = msgp.WrapError(err)
+				return
+			}
+		}
+	}
+	o = bts
+	return
+}
+
+// Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
+func (z IndexedClientOptions) Msgsize() (s int) {
+	s = 1 + 19 + msgp.BoolSize + 18 + msgp.BoolSize
+	return
+}
