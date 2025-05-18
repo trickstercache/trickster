@@ -126,20 +126,20 @@ func (sp *Parser) Run(ctx context.Context, p parsing.Parser,
 }
 
 // UnsupportedVerb aborts the Parser with an Unsupported Verb error
-func UnsupportedVerb(bp, ip parsing.Parser, rs *parsing.RunState) parsing.StateFn {
+func UnsupportedVerb(_, _ parsing.Parser, rs *parsing.RunState) parsing.StateFn {
 	rs.WithError(ErrUnsupportedVerb)
 	return nil
 }
 
 // UnsupportedClause aborts the Parser with an Unsupported Clause error
-func UnsupportedClause(bp, ip parsing.Parser, rs *parsing.RunState) parsing.StateFn {
+func UnsupportedClause(_, _ parsing.Parser, rs *parsing.RunState) parsing.StateFn {
 	rs.WithError(ErrUnsupportedClause)
 	return nil
 }
 
 // FindVerb will find the SQL Verb (SELECT, INSERT, etc.), bypassing any
 // spaces or comments
-func FindVerb(bp, ip parsing.Parser, rs *parsing.RunState) parsing.StateFn {
+func FindVerb(_, ip parsing.Parser, rs *parsing.RunState) parsing.StateFn {
 	p, ok := ip.(*Parser)
 	if !ok {
 		rs.WithError(parsing.ErrUnsupportedParser)

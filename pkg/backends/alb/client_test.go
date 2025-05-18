@@ -20,11 +20,12 @@ import (
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/errors"
 	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus"
-	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registration/types"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 )
 
 func TestHandlers(t *testing.T) {
@@ -104,19 +105,23 @@ func TestValidatePools(t *testing.T) {
 
 	o.ALBOptions = a
 	o.Provider = "alb"
-	cl, _ := NewClient("test", o, nil, nil, nil, nil)
-	b := backends.Backends{"test": cl}
-	err = ValidatePools(b)
-	expected := `invalid mechanism name [rx] in backend [test]`
-	if err == nil || err.Error() != expected {
-		t.Errorf("expected %s got %s", expected, err.Error())
+	_, err = NewClient("test", o, nil, nil, nil, nil)
+	if err != errors.ErrUnsupportedMechanism {
+		t.Error("expected error for unsupported mechanism")
+		return
+	}
+	a.MechanismName = "rr"
+	cl, err := NewClient("test", o, nil, nil, nil, nil)
+	if err != nil {
+		t.Error(err)
+		return
 	}
 
-	a.MechanismName = "rr"
+	b := backends.Backends{"test": cl}
 	err = ValidatePools(b)
-	expected = `invalid pool member name [invalid] in backend [test]`
+	expected := `invalid pool member name [invalid] in backend [test]`
 	if err == nil || err.Error() != expected {
-		t.Errorf("expected %s got %s", expected, err.Error())
+		t.Errorf("expected %s got %s", expected, err)
 	}
 
 	a.Pool = []string{"test"}

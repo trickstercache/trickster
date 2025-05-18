@@ -33,24 +33,59 @@ const (
 	Bool
 	Byte
 	Int16
+	Uint64
+	DateTimeRFC3339
+	DateTimeRFC3339Nano
+	DateTimeUnixSecs
+	DateTimeUnixMilli
+	DateTimeUnixMicro
+	DateTimeUnixNano
+	DateSQL
+	TimeSQL
+	DateTimeSQL
+	Null
+)
+
+const (
+	RoleUnknown FieldRole = iota
+	RoleTimestamp
+	RoleTag
+	RoleValue
+	RoleUntracked
 )
 
 // FieldDataType is a byte representing the data type of a Field
 // when stored in a Point's Values list
 type FieldDataType byte
 
+// FieldDataType is a byte representing the role of a Field (Value, Tag, etc)
+type FieldRole byte
+
 // FieldDefinition describes a field by name and type
 type FieldDefinition struct {
-	Name           string        `msg:"name" json:"name"`
-	DataType       FieldDataType `msg:"type" json:"type"`
-	OutputPosition int           `msg:"pos" json:"pos,omitempty"`
-	SDataType      string        `msg:"stype" json:"stype,omitempty"`
-	ProviderData1  int           `msg:"provider1" json:"provider1,omitempty"`
-	ProviderData2  int           `msg:"provider2" json:"provider2,omitempty"`
+	Name           string        `msg:"n" json:"name"`
+	DataType       FieldDataType `msg:"t" json:"type"`
+	SDataType      string        `msg:"s" json:"stype,omitempty"`
+	OutputPosition int           `msg:"p" json:"pos,omitempty"`
+	DefaultValue   string        `msg:"v,omitempty" json:"dv,omitempty"`
+	Role           FieldRole     `msg:"r,omitempty" json:"role,omitempty"`
+	ProviderData1  byte          `msg:"d,omitempty" json:"providerData1,omitempty"`
 }
 
 // FieldDefinitions represents a list type FieldDefinition
 type FieldDefinitions []FieldDefinition
+
+// FieldDefinitionLookup represents a map of FieldDefinitions keyed by name
+type FieldDefinitionLookup map[string]FieldDefinition
+
+// SeriesFields groups together a Series's Timestamp, Tags and Value Fields
+type SeriesFields struct {
+	Timestamp     FieldDefinition
+	Tags          FieldDefinitions
+	Values        FieldDefinitions
+	Untracked     FieldDefinitions
+	ResultNameCol int
+}
 
 // Size returns the size of the FieldDefintions in bytes
 func (fd FieldDefinition) Size() int {
@@ -63,6 +98,20 @@ func (fd FieldDefinition) String() string {
 		return errors.NewErrorBody(err)
 	}
 	return string(b)
+}
+
+func (fds FieldDefinitions) Clone() FieldDefinitions {
+	out := make(FieldDefinitions, len(fds))
+	copy(out, fds)
+	return out
+}
+
+func (fds FieldDefinitions) ToLookup() FieldDefinitionLookup {
+	out := make(FieldDefinitionLookup, len(fds))
+	for _, fd := range fds {
+		out[fd.Name] = fd
+	}
+	return out
 }
 
 func (fds FieldDefinitions) String() string {

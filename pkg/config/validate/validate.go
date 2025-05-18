@@ -18,11 +18,11 @@ package validate
 
 import (
 	"errors"
-	"fmt"
 
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/config"
-	tr "github.com/trickstercache/trickster/v2/pkg/observability/tracing/registration"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	tr "github.com/trickstercache/trickster/v2/pkg/observability/tracing/registry"
 	"github.com/trickstercache/trickster/v2/pkg/router/lm"
 	"github.com/trickstercache/trickster/v2/pkg/routing"
 )
@@ -30,7 +30,7 @@ import (
 func Validate(c *config.Config) error {
 
 	for _, w := range c.LoaderWarnings {
-		fmt.Println(w)
+		logger.Warn(w, nil)
 	}
 	var caches = make(cache.Lookup)
 	for k := range c.Caches {

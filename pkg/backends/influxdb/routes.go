@@ -19,6 +19,7 @@ package influxdb
 import (
 	"net/http"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/influxql"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
@@ -38,14 +39,14 @@ func (c *Client) RegisterHandlers(map[string]http.Handler) {
 }
 
 // DefaultPathConfigs returns the default PathConfigs for the given Provider
-func (c *Client) DefaultPathConfigs(o *bo.Options) map[string]*po.Options {
+func (c *Client) DefaultPathConfigs(_ *bo.Options) map[string]*po.Options {
 
 	paths := map[string]*po.Options{
 		"/" + mnQuery: {
 			Path:            "/" + mnQuery,
 			HandlerName:     mnQuery,
 			Methods:         []string{http.MethodGet, http.MethodPost},
-			CacheKeyParams:  []string{upDB, upQuery, "u", "p"},
+			CacheKeyParams:  []string{influxql.ParamDB, influxql.ParamQuery, "u", "p"},
 			CacheKeyHeaders: []string{},
 			MatchTypeName:   "exact",
 			MatchType:       matching.PathMatchTypeExact,
@@ -54,7 +55,7 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) map[string]*po.Options {
 			Path:            "/" + apiv2Query,
 			HandlerName:     mnQuery,
 			Methods:         []string{http.MethodGet, http.MethodPost},
-			CacheKeyParams:  []string{upDB, upQuery, "u", "p"},
+			CacheKeyParams:  []string{influxql.ParamDB, influxql.ParamQuery, "u", "p"},
 			CacheKeyHeaders: []string{},
 			MatchTypeName:   "exact",
 			MatchType:       matching.PathMatchTypeExact,

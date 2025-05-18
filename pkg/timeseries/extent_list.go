@@ -333,22 +333,22 @@ func (el ExtentList) Remove(r ExtentList, step time.Duration) ExtentList {
 	}
 	out := make(ExtentList, len(el)*2)
 	var k int
-	for i := 0; i < len(el); i++ {
+	for i := range len(el) {
 		ex := el[i]
 		split := false
 		for _, rem := range r {
-			if rem.End.Before(ex.Start) || rem.Start.After(ex.End) {
+			switch {
+			case (rem.End.Before(ex.Start) || rem.Start.After(ex.End)):
 				continue
-			}
-			if rem.Start.Before(ex.Start) || rem.Start.Equal(ex.Start) {
+			case (rem.Start.Before(ex.Start) || rem.Start.Equal(ex.Start)):
 				if rem.End.After(ex.End) || rem.End.Equal(ex.End) {
 					ex = Extent{}
 					break
 				}
 				ex.Start = rem.End.Add(step)
-			} else if rem.End.After(ex.End) || rem.End.Equal(ex.End) {
+			case (rem.End.After(ex.End) || rem.End.Equal(ex.End)):
 				ex.End = rem.Start.Add(-step)
-			} else {
+			default:
 				out[k] = Extent{
 					Start:    ex.Start,
 					End:      rem.Start.Add(-step),

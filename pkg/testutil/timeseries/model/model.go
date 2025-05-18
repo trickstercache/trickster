@@ -98,7 +98,7 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 			Name:     "value",
 			DataType: timeseries.String,
 		}
-		sh.FieldsList = []timeseries.FieldDefinition{fd}
+		sh.ValueFieldsList = []timeseries.FieldDefinition{fd}
 		sh.CalculateHash()
 		var pts dataset.Points
 		l := len(pr.Values)
@@ -151,18 +151,19 @@ func MarshalTimeseries(ts timeseries.Timeseries, rlo *timeseries.RequestOptions,
 }
 
 // MarshalTimeseriesWriter converts a Timeseries into a JSON blob via an io.Writer
-func MarshalTimeseriesWriter(ts timeseries.Timeseries, rlo *timeseries.RequestOptions, status int, w io.Writer) error {
+func MarshalTimeseriesWriter(ts timeseries.Timeseries,
+	_ *timeseries.RequestOptions, _ int, w io.Writer) error {
 
 	ds, ok := ts.(*dataset.DataSet)
 	if !ok {
 		return timeseries.ErrUnknownFormat
 	}
-	// With Prometheus we presume only one Result per Dataset
+	// With Prometheus we presume only one Result per DataSet
 	if len(ds.Results) != 1 {
 		return timeseries.ErrUnknownFormat
 	}
 
-	w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[`)) // todo: always "success" ?
+	w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[`))
 
 	seriesSep := ""
 	for _, s := range ds.Results[0].SeriesList {

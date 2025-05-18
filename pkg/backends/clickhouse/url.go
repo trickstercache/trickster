@@ -22,6 +22,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/trickstercache/trickster/v2/pkg/parsing/lex/sql"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
@@ -35,56 +36,64 @@ const (
 // SetExtent will change the upstream request query to use the provided Extent
 func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
 	extent *timeseries.Extent) {
-
 	if extent == nil || r == nil || trq == nil {
 		return
 	}
-
 	qi := r.URL.Query()
 	isBody := methods.HasBody(r.Method)
-
-	sqlQuery := interpolateTimeQuery(trq.Statement, trq.TimestampDefinition.Name,
-		trq.TimestampDefinition.ProviderData1,
-		trq.TimestampDefinition.ProviderData2, extent)
+	q := interpolateTimeQuery(trq.Statement, trq.TimestampDefinition, extent)
 	if isBody {
-		// TODO: the return value (a new *http.Request) is not being used
-		request.SetBody(r, []byte(sqlQuery))
+		request.SetBody(r, []byte(q))
 	} else {
-		qi.Set(upQuery, sqlQuery)
+		qi.Set(upQuery, q)
 		r.URL.RawQuery = qi.Encode()
 	}
-
 }
 
-func interpolateTimeQuery(template string, tsFieldName string,
-	resultTimeFormat int, dbTimeFormat int,
+func interpolateTimeQuery(template string, tfd timeseries.FieldDefinition,
 	extent *timeseries.Extent) string {
 
-	var start, end, tStart, tEnd int64
+	var start, end, tStart, tEnd string
 
-	switch resultTimeFormat {
-	case 1:
-		tStart = extent.Start.UnixNano() / 1000000
-		tEnd = extent.End.UnixNano() / 1000000
-	default:
-		tStart = extent.Start.Unix()
-		tEnd = extent.End.Unix()
+	// tfd.DataType holds the database internal format for the timestamp used
+	// when setting extents
+	switch tfd.DataType {
+	case timeseries.DateTimeUnixMilli: // epoch millisecs
+		start = strconv.FormatInt(extent.Start.UnixMilli(), 10)
+		end = strconv.FormatInt(extent.End.UnixMilli(), 10)
+	case timeseries.DateTimeUnixNano: // epoch nanosecs
+		start = strconv.FormatInt(extent.Start.UnixNano(), 10)
+		end = strconv.FormatInt(extent.End.UnixNano(), 10)
+	case timeseries.DateTimeSQL: // '2025-05-01 11:39:18'
+		start = "'" + extent.Start.Format(sql.SQLDateTimeLayout) + "'"
+		end = "'" + extent.End.Format(sql.SQLDateTimeLayout) + "'"
+	default: // epoch secs
+		start = strconv.FormatInt(extent.Start.Unix(), 10)
+		end = strconv.FormatInt(extent.End.Unix(), 10)
 	}
 
-	switch dbTimeFormat {
-	case 1:
-		start = extent.Start.UnixNano() / 1000000
-		end = extent.End.UnixNano() / 1000000
-	default:
-		start = extent.Start.Unix()
-		end = extent.End.Unix()
-	}
+	// ProviderData1 holds the format of a secondary time field
+	switch timeseries.FieldDataType(tfd.ProviderData1) {
+	case timeseries.DateTimeUnixMilli: // epoch millisecs
+		tStart = strconv.FormatInt(extent.Start.UnixMilli(), 10)
+		tEnd = strconv.FormatInt(extent.End.UnixMilli(), 10)
+	case timeseries.DateTimeUnixNano: // epoch nanosecs
+		tStart = strconv.FormatInt(extent.Start.UnixNano(), 10)
+		tEnd = strconv.FormatInt(extent.End.UnixNano(), 10)
+	case timeseries.DateTimeSQL: // '2025-05-01 11:39:18'
+		tStart = "'" + extent.Start.Format(sql.SQLDateTimeLayout) + "'"
+		tEnd = "'" + extent.End.Format(sql.SQLDateTimeLayout) + "'"
+	default: // epoch secs
+		tStart = strconv.FormatInt(extent.Start.Unix(), 10)
+		tEnd = strconv.FormatInt(extent.End.Unix(), 10)
 
-	trange := fmt.Sprintf("%s BETWEEN %d AND %d", tsFieldName, tStart, tEnd)
-	return strings.NewReplacer(
+	}
+	trange := fmt.Sprintf("%s BETWEEN %s AND %s", tfd.Name, start, end)
+	out := strings.NewReplacer(
 		tkRange, trange,
-		tkTS1, strconv.FormatInt(start, 10),
-		tkTS2, strconv.FormatInt(end, 10),
+		tkTS1, tStart,
+		tkTS2, tEnd,
 		tkFormat, "TSVWithNamesAndTypes",
 	).Replace(template)
+	return out
 }

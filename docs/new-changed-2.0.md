@@ -22,6 +22,7 @@
 - We've switched to our all-new, made-for-proxies HTTP Request Router, which is up to 10X faster than the previous router
 - We now support Purging specific cache items by Key or URL operations, via the Administrative (FKA Config Reload) Port - TODO: UPDATE DOCS
 - We now support InfluxData's Flux query language for InfluxDB query acceleration
+  - We resolved tons of issues around POST requests for InfluxQL too!
 - THe Helm Charts repository is now updated for Trickster 2.0
 - We now support [Cache Object Chunking](./chunked_caching.md)
   - Allows a Time Series to be chunked into multiple cache entries based on a configurable chunk size.
@@ -38,17 +39,19 @@
 - We've updated our Docker automation:
   - The trickster-docker-images repo is now retired and image publishing is handled in the trickster repo.
   - All merges to main will now push an image to Docker Hub at `trickstercache/trickster:main` as well as to `trickstercache/trickster:<COMMIT_ID>`
+    - We no longer push images to the legacy `tricksterio` and `tricksterproxy` orgs on DockeHub. Everything is now `trickstercache`!
   - Images are now pushed to the GitHub Container Repository:
     - `ghcr.io/trickstercache/trickster`
 - We've eliminated over 70 race conditions and random panics
 - We've switched from Regular Expression matches for SQL-based Time Series Backends to an extensible lexer/parser solution
   - ClickHouse backend providers now use the new SQL Parser
-- We now support [Simiulated Latency](./simulated-latency.md) if you want to use Trickster for that purpose in a test harness.
+- We now support [Simulated Latency](./simulated-latency.md) if you want to use Trickster for that purpose in a test harness.
 - We now support Environment variable substitution in configuration files where sensitive information is expected.
   - Supported via the following fields:
     - `caches[*].redis.password`, `backends[*].healthcheck.headers`, `backends[*].paths[*].request_headers`, `backends[*].paths[*].request_params`, `backends[*].paths[*].response_headers`
   - Usage: `password: ${MY_SECRET_VAR}`
 - Previous Trickster 2.0 Betas used millisecond config values like `timeout_ms: 1500`. These have changed to `timeout: 1500ms`. See more details in the Configuration section below.
+- We no longer include the `vendor` directory in the project repository and `vendor` is now in `.gitignore`. `vendor` will continue to be included in Release source tarballs.
 
 ## Still to Come
 
@@ -57,7 +60,7 @@ Trickster 2.0 is not yet feature complete, and we anticipate including the follo
 - incorporate ALB examples into the docker-compose demo
 - support for Auto-Discovery of Backend Targets (e.g., Kubernetes Pod Annotations)
 - support MySQL as a Backend Time Series
-- Better InfluxDB support, including Flux query language
+- Support for InfluxDB 3.x
 
 ## Known Issues With the Latest Beta
 

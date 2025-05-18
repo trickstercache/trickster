@@ -127,6 +127,6 @@ func SetRequestValues(r *http.Request, v url.Values) {
 			r.Body.Close()
 		}
 		r.ContentLength = int64(len(s))
-		r.Body = io.NopCloser(bytes.NewReader([]byte(s)))
+		r.Body = io.NopCloser(strings.NewReader(s))
 	}
 }

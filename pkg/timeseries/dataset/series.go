@@ -67,7 +67,7 @@ func (s *Series) String() string {
 	sb := &strings.Builder{}
 	sb.WriteString(`{"header":`)
 	sb.WriteString(s.Header.String())
-	sb.WriteString(`,points:[`)
+	sb.WriteString(`,"points":[`)
 	l := len(s.Points)
 	for i, p := range s.Points {
 		fmt.Fprintf(sb, `{%d,`, p.Epoch)

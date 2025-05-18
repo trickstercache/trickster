@@ -135,24 +135,9 @@ func TestTokenToTime(t *testing.T) {
 	}
 }
 
-// // TokenToTime returns a time value derived from the token
-// func TokenToTime(i *token.Token) (time.Time, error) {
-// 	var t time.Time
-// 	var err error
-// 	switch i.Typ {
-// 	case token.String:
-// 		t, err = ParseBasicDateTime(UnQuote(i.Val))
-// 		if err != nil {
-// 			return t, err
-// 		}
-// 	case token.Number:
-// 		n, err := i.Int64()
-// 		if err != nil {
-// 			return t, err
-// 		}
-// 		t = time.Unix(n, 0)
-// 	default:
-// 		t = time.Now()
-// 	}
-// 	return t, err
-// }
+func TestParseTimeField(t *testing.T) {
+	_, _, err := ParseTimeField(&token.Token{Typ: token.Number, Val: "not-a-number"})
+	if err == nil {
+		t.Error("expected syntax error")
+	}
+}

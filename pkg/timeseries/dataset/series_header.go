@@ -19,9 +19,8 @@
 package dataset
 
 import (
-	"encoding/binary"
 	"fmt"
-	"strconv"
+	"slices"
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/checksum/fnv"
@@ -33,13 +32,20 @@ import (
 type SeriesHeader struct {
 	// Name is the name of the Series
 	Name string `msg:"name"`
-	// Tags is the map of tags associated with the Series
+	// Tags is the map of tags associated with the Series. Each key will map to
+	// a fd.Name in TagFieldsList, with values representing the specific tag
+	// values for this Series.
 	Tags Tags `msg:"tags"`
-	// FieldsList is the ordered list of fields in the Series
-	FieldsList []timeseries.FieldDefinition `msg:"fields"`
-	// TimestampIndex is the index of the TimeStamp field in the output when
-	// it's time to serialize the DataSet for the wire
-	TimestampIndex uint64 `msg:"ti"`
+	// TimestampField is the Field Definitions for the timestamp field.
+	// Optional and used by some providers.
+	TimestampField timeseries.FieldDefinition `msg:"timestampField"`
+	// TagFieldsList is the ordered list of tag-based Field Definitions in the
+	// Series. Optional and used by some providers.
+	TagFieldsList timeseries.FieldDefinitions `msg:"tagFields"`
+	// ValueFieldsList is the ordered list of value-based Field Definitions in the Series.
+	ValueFieldsList timeseries.FieldDefinitions `msg:"valueFields"`
+	// UntrackedFieldsList is alist of Field Definitions in the Series whose row values are ignored.
+	UntrackedFieldsList timeseries.FieldDefinitions `msg:"untrackedFields"`
 	// QueryStatement is the original query to which this DataSet is associated
 	QueryStatement string `msg:"query"`
 	// Size is the memory utilization of the Header in bytes
@@ -49,8 +55,8 @@ type SeriesHeader struct {
 }
 
 // CalculateHash sums the FNV64a hash for the Header and stores it to the Hash member
-func (sh *SeriesHeader) CalculateHash() Hash {
-	if sh.hash > 0 {
+func (sh *SeriesHeader) CalculateHash(rehash ...bool) Hash {
+	if (len(rehash) == 0 || !rehash[0]) && sh.hash > 0 {
 		return sh.hash
 	}
 	hash := fnv.NewInlineFNV64a()
@@ -60,13 +66,16 @@ func (sh *SeriesHeader) CalculateHash() Hash {
 		hash.Write([]byte(k))
 		hash.Write([]byte(sh.Tags[k]))
 	}
-	for _, fd := range sh.FieldsList {
+	for _, fd := range sh.ValueFieldsList {
 		hash.Write([]byte(fd.Name))
 		hash.Write([]byte{byte(fd.DataType)})
 	}
-	b := make([]byte, 8)
-	binary.LittleEndian.PutUint64(b, sh.TimestampIndex)
-	hash.Write(b)
+	for _, fd := range sh.UntrackedFieldsList {
+		hash.Write([]byte(fd.Name))
+		hash.Write([]byte{byte(fd.DataType)})
+	}
+	hash.Write([]byte(sh.TimestampField.Name))
+	hash.Write([]byte{byte(sh.TimestampField.DataType)})
 	sh.hash = Hash(hash.Sum64())
 	return sh.hash
 }
@@ -74,23 +83,35 @@ func (sh *SeriesHeader) CalculateHash() Hash {
 // Clone returns a perfect, new copy of the SeriesHeader
 func (sh *SeriesHeader) Clone() SeriesHeader {
 	clone := SeriesHeader{
-		Name:           sh.Name,
-		Tags:           sh.Tags.Clone(),
-		FieldsList:     make([]timeseries.FieldDefinition, len(sh.FieldsList)),
-		TimestampIndex: sh.TimestampIndex,
-		QueryStatement: sh.QueryStatement,
-		Size:           sh.Size,
-		hash:           sh.hash,
+		Name:                sh.Name,
+		Tags:                sh.Tags.Clone(),
+		ValueFieldsList:     make([]timeseries.FieldDefinition, len(sh.ValueFieldsList)),
+		TagFieldsList:       make([]timeseries.FieldDefinition, len(sh.TagFieldsList)),
+		UntrackedFieldsList: make([]timeseries.FieldDefinition, len(sh.UntrackedFieldsList)),
+		TimestampField:      sh.TimestampField,
+		QueryStatement:      sh.QueryStatement,
+		Size:                sh.Size,
+		hash:                sh.hash,
 	}
-	copy(clone.FieldsList, sh.FieldsList)
+	copy(clone.ValueFieldsList, sh.ValueFieldsList)
+	copy(clone.TagFieldsList, sh.TagFieldsList)
+	copy(clone.UntrackedFieldsList, sh.UntrackedFieldsList)
 	return clone
 }
 
 // CalculateSize sets and returns the header size
 func (sh *SeriesHeader) CalculateSize() int {
-	c := len(sh.Name) + sh.Tags.Size() + 8 + len(sh.QueryStatement) + 28
-	for i := range sh.FieldsList {
-		c += len(sh.FieldsList[i].Name) + 17
+	// 16 is the string header size on 64-bit arch, while 8 is for sh.Size
+	c := len(sh.Name) + 16 + sh.Tags.Size() + len(sh.QueryStatement) + 16 +
+		sh.TimestampField.Size() + 8
+	for i := range sh.ValueFieldsList {
+		c += sh.ValueFieldsList[i].Size()
+	}
+	for i := range sh.UntrackedFieldsList {
+		c += sh.UntrackedFieldsList[i].Size()
+	}
+	for i := range sh.TagFieldsList {
+		c += sh.TagFieldsList[i].Size()
 	}
 	sh.Size = c
 	return c
@@ -108,10 +129,10 @@ func (sh *SeriesHeader) String() string {
 	if len(sh.Tags) > 0 {
 		fmt.Fprintf(sb, `"tags":"%s",`, sh.Tags.String())
 	}
-	if len(sh.FieldsList) > 0 {
-		sb.WriteString(`"fields":[`)
-		l := len(sh.FieldsList)
-		for i, fd := range sh.FieldsList {
+	if len(sh.ValueFieldsList) > 0 {
+		sb.WriteString(`"valueFields":[`)
+		l := len(sh.ValueFieldsList)
+		for i, fd := range sh.ValueFieldsList {
 			fmt.Fprintf(sb, `"%s"`, fd.Name)
 			if i < l-1 {
 				sb.WriteByte(',')
@@ -119,7 +140,66 @@ func (sh *SeriesHeader) String() string {
 		}
 		sb.WriteString("],")
 	}
-	sb.WriteString(`"timestampIndex":` + strconv.FormatUint(sh.TimestampIndex, 10))
+	if len(sh.TagFieldsList) > 0 {
+		sb.WriteString(`"tagFields":[`)
+		l := len(sh.TagFieldsList)
+		for i, fd := range sh.TagFieldsList {
+			fmt.Fprintf(sb, `"%s"`, fd.Name)
+			if i < l-1 {
+				sb.WriteByte(',')
+			}
+		}
+		sb.WriteString("],")
+	}
+	if len(sh.UntrackedFieldsList) > 0 {
+		sb.WriteString(`"untrackedFields":[`)
+		l := len(sh.UntrackedFieldsList)
+		for i, fd := range sh.UntrackedFieldsList {
+			fmt.Fprintf(sb, `"%s"`, fd.Name)
+			if i < l-1 {
+				sb.WriteByte(',')
+			}
+		}
+		sb.WriteString("],")
+	}
+	fmt.Fprintf(sb, `"timeStampField":"%s"`, sh.TimestampField.Name)
 	sb.WriteByte('}')
 	return sb.String()
+}
+
+// FieldDefinitions returns all FieldDefinitions in the series ordered by OutputPosition
+func (sh *SeriesHeader) FieldDefinitions() timeseries.FieldDefinitions {
+	maxFields := len(sh.TagFieldsList) + len(sh.ValueFieldsList) +
+		len(sh.UntrackedFieldsList) + 1 // +1 is for Timestamp field
+	out := make(timeseries.FieldDefinitions, maxFields)
+	var k int
+
+	if sh.TimestampField.OutputPosition >= 0 && sh.TimestampField.OutputPosition < maxFields {
+		out[k] = sh.TimestampField
+		k++
+	}
+
+	for _, fd := range sh.TagFieldsList {
+		if fd.OutputPosition >= 0 && fd.OutputPosition < maxFields {
+			out[k] = fd
+			k++
+		}
+	}
+	for _, fd := range sh.ValueFieldsList {
+		if fd.OutputPosition >= 0 && fd.OutputPosition < maxFields {
+			out[k] = fd
+			k++
+		}
+	}
+	for _, fd := range sh.UntrackedFieldsList {
+		if fd.OutputPosition >= 0 && fd.OutputPosition < maxFields {
+			out[k] = fd
+			k++
+		}
+	}
+	out = out[:k]
+	slices.SortFunc(out, func(a, b timeseries.FieldDefinition) int {
+		return a.OutputPosition - b.OutputPosition
+	})
+	return out
 }

@@ -30,7 +30,7 @@ import (
 // Tags is a key/value pair associated with a Series to scope the cardinality of the DataSet
 type Tags map[string]string
 
-// InjectTags injects the provided tags into all series in all results in the Dataset
+// InjectTags injects the provided tags into all series in all results in the DataSet
 // in an insert-or-update fashion
 func (ds *DataSet) InjectTags(tags Tags) {
 	var wg sync.WaitGroup

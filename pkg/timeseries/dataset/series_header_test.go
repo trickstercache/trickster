@@ -26,7 +26,7 @@ func testHeader() *SeriesHeader {
 	return &SeriesHeader{
 		Name: "test",
 		Tags: Tags{"tag1": "value1", "tag2": "trickster"},
-		FieldsList: []timeseries.FieldDefinition{
+		ValueFieldsList: []timeseries.FieldDefinition{
 			{
 				Name:     "time",
 				DataType: timeseries.Int64,
@@ -42,7 +42,7 @@ func testHeader() *SeriesHeader {
 
 func TestCalculateSeriesHeaderSize(t *testing.T) {
 
-	const expected = 492
+	const expected = 633
 	sh := testHeader()
 	i := sh.CalculateSize()
 	if i != expected {
@@ -51,11 +51,8 @@ func TestCalculateSeriesHeaderSize(t *testing.T) {
 }
 
 func TestSeriesHeaderString(t *testing.T) {
-
-	const expected = `{"name":"test","query":"SELECT TRICKSTER!","tags":"tag1=value1;tag2=trickster","fields":["time","value1"],"timestampIndex":0}`
-
+	const expected = `{"name":"test","query":"SELECT TRICKSTER!","tags":"tag1=value1;tag2=trickster","valueFields":["time","value1"],"timeStampField":""}`
 	if s := testHeader().String(); s != expected {
 		t.Errorf("expected %s got %s", expected, s)
 	}
-
 }

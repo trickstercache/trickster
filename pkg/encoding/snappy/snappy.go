@@ -35,7 +35,7 @@ func Encode(in []byte) ([]byte, error) {
 	return b, nil
 }
 
-func NewEncoder(w io.Writer, unused int) io.WriteCloser {
+func NewEncoder(w io.Writer, _ int) io.WriteCloser {
 	return snappy.NewBufferedWriter(w)
 }
 

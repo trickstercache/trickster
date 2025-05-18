@@ -21,6 +21,7 @@ import (
 	"slices"
 	"strings"
 
+	te "github.com/trickstercache/trickster/v2/pkg/backends/alb/errors"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
@@ -87,7 +88,7 @@ func (o *Options) Clone() *Options {
 func SetDefaults(name string, options *Options, metadata yamlx.KeyLookup) (*Options, error) {
 
 	if metadata == nil {
-		return nil, nil // todo: add error
+		return nil, te.ErrInvalidOptionsMetadata
 	}
 
 	o := New()

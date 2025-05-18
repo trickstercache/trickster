@@ -25,7 +25,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	modelch "github.com/trickstercache/trickster/v2/pkg/backends/clickhouse/model"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
-	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registration/types"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
@@ -97,11 +97,9 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	if trq.BackfillTolerance == 0 {
 		trq.BackfillTolerance = bf
 	}
-	trq.BackfillToleranceNS = bf.Nanoseconds()
 	trq.TemplateURL = urls.Clone(r.URL)
 
 	if isBody {
-		// TODO: the return value (a new *http.Request) is not being used
 		request.SetBody(r, []byte(trq.Statement))
 	} else {
 		// Swap in the Tokenized Query in the Url Params

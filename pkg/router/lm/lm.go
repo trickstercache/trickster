@@ -216,7 +216,7 @@ func (rt *lmRouter) SetMatchingScheme(s router.MatchingScheme) {
 	rt.matchScheme = s
 }
 
-func MethodNotAllowed(w http.ResponseWriter, r *http.Request) {
+func MethodNotAllowed(w http.ResponseWriter, _ *http.Request) {
 	http.Error(w, "405 method not allowed", http.StatusMethodNotAllowed)
 }
 

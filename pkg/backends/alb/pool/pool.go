@@ -20,7 +20,6 @@ package pool
 import (
 	"context"
 	"net/http"
-	"sync"
 	"sync/atomic"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
@@ -28,11 +27,13 @@ import (
 
 // Pool defines the interface for a load balancer pool
 type Pool interface {
-	Next() []http.Handler
+	// Healthy returns the full list of Healthy Targets
+	Healthy() []http.Handler
+	// SetHealthy sets the Healthy Targets List
+	SetHealthy([]http.Handler)
+	// Stop stops the pool and its health checker goroutines
 	Stop()
 }
-
-type selectionFunc func(*pool) []http.Handler
 
 // Target defines an alb pool target
 type Target struct {
@@ -40,17 +41,11 @@ type Target struct {
 	handler  http.Handler
 }
 
-// New returns a new pool
-func New(mechanism Mechanism, targets []*Target, healthyFloor int) Pool {
-	f, ok := mechsToFuncs()[mechanism]
-	if !ok {
-		return nil
-	}
+// New returns a new Pool
+func New(targets []*Target, healthyFloor int) Pool {
 	ctx, cancel := context.WithCancel(context.Background())
 	p := &pool{
-		mechanism:    mechanism,
 		targets:      targets,
-		f:            f,
 		ctx:          ctx,
 		stopper:      cancel,
 		ch:           make(chan bool, 16),
@@ -61,7 +56,6 @@ func New(mechanism Mechanism, targets []*Target, healthyFloor int) Pool {
 	for _, t := range targets {
 		t.hcStatus.RegisterSubscriber(p.ch)
 	}
-
 	go p.checkHealth()
 	return p
 }
@@ -74,33 +68,31 @@ func NewTarget(handler http.Handler, hcStatus *healthcheck.Status) *Target {
 	}
 }
 
+// pool implements Pool
 type pool struct {
-	mechanism    Mechanism
-	f            selectionFunc
 	targets      []*Target
-	healthy      []http.Handler
+	healthy      atomic.Pointer[[]http.Handler]
 	healthyFloor int
-	pos          atomic.Uint64
-	mtx          sync.RWMutex
 	ctx          context.Context
 	stopper      context.CancelFunc
 	ch           chan bool
+	hcInProgress atomic.Bool
 }
 
-func (p *pool) Next() []http.Handler {
-	return p.f(p)
+func (p *pool) Healthy() []http.Handler {
+	t := p.healthy.Load()
+	if t != nil {
+		return *t
+	}
+	return nil
+}
+
+func (p *pool) SetHealthy(h []http.Handler) {
+	p.healthy.Store(&h)
 }
 
 func (p *pool) Stop() {
-	p.stopper()
-}
-
-func mechsToFuncs() map[Mechanism]selectionFunc {
-	return map[Mechanism]selectionFunc{
-		RoundRobin:         nextRoundRobin,
-		FirstResponse:      nextFanout,
-		FirstGoodResponse:  nextFanout,
-		NewestLastModified: nextFanout,
-		TimeSeriesMerge:    nextFanout,
+	if p.stopper != nil {
+		p.stopper()
 	}
 }

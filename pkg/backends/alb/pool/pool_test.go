@@ -23,33 +23,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 )
 
-func TestMechsToFuncs(t *testing.T) {
-
-	m := mechsToFuncs()
-	if len(m) != 5 {
-		t.Errorf("expected %d got %d", 5, len(m))
-	}
-
-	if _, ok := m[RoundRobin]; !ok {
-		t.Error("expected true")
-	}
-
-}
-
-func TestNext(t *testing.T) {
-
-	p := &pool{f: testNextFunc}
-	l := p.Next()
-	if len(l) != 1 {
-		t.Errorf("expected %d got %d", 1, len(l))
-	}
-
-}
-
-func testNextFunc(p *pool) []http.Handler {
-	return []http.Handler{http.NotFoundHandler()}
-}
-
 func TestNewTarget(t *testing.T) {
 	s := &healthcheck.Status{}
 	tgt := NewTarget(http.NotFoundHandler(), s)
@@ -60,20 +33,29 @@ func TestNewTarget(t *testing.T) {
 
 func TestNewPool(t *testing.T) {
 
-	p := New(83, nil, 0)
-	if p != nil {
-		t.Error("expected nil pool")
-	}
-
 	s := &healthcheck.Status{}
 	tgt := NewTarget(http.NotFoundHandler(), s)
 	if tgt.hcStatus != s {
 		t.Error("unexpected mismatch")
 	}
 
-	p = New(RoundRobin, []*Target{tgt}, 0)
+	p := New([]*Target{tgt}, 1)
 	if p == nil {
 		t.Error("expected non-nil")
+	}
+
+	if len(p.Healthy()) != 0 {
+		t.Error("expected 0 healthy target", len(p.Healthy()))
+	}
+
+	p.Stop()
+
+	p2 := p.(*pool)
+	hl := []http.Handler{http.NotFoundHandler()}
+	p2.healthy.Store(&hl)
+
+	if len(p.Healthy()) != 1 {
+		t.Error("expected 1 healthy target", len(p.Healthy()))
 	}
 
 }

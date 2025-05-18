@@ -24,8 +24,8 @@ import (
 )
 
 // PingHandleFunc responds to an HTTP Request with 200 OK and "pong"
-func PingHandleFunc(conf *config.Config) func(http.ResponseWriter, *http.Request) {
-	return func(w http.ResponseWriter, r *http.Request) {
+func PingHandleFunc(_ *config.Config) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
 		w.Header().Set(headers.NameCacheControl, headers.ValueNoCache)
 		w.WriteHeader(http.StatusOK)

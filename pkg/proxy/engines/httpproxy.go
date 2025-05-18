@@ -207,6 +207,10 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 	// clear the Host header before proxying or it will be forwarded upstream
 	r.Host = ""
 
+	if ep := profile.FromContext(r.Context()); ep != nil && ep.SupportedHeaderVal != "" {
+		r.Header.Set(headers.NameAcceptEncoding, ep.SupportedHeaderVal)
+	}
+
 	resp, err := o.HTTPClient.Do(r)
 	if err != nil {
 		logger.Error("error downloading url",
@@ -233,10 +237,6 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 			doSpan.SetStatus(tracing.HTTPToCode(resp.StatusCode), "")
 		}
 		return nil, resp, 0
-	}
-
-	if ep := profile.FromContext(r.Context()); ep != nil && ep.SupportedHeaderVal != "" {
-		r.Header.Set(headers.NameAcceptEncoding, ep.SupportedHeaderVal)
 	}
 
 	if ce := resp.Header.Get(headers.NameContentEncoding); ep != nil && ce != "" {

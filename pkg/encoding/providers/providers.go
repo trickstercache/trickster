@@ -130,7 +130,7 @@ func GetCompatibleWebProviders(acceptedEncodings string) (string, Provider) {
 	}
 	// this converts the acceptedEncodings string into a bitmap of Trickster-compatible encoders
 	for _, enc := range strings.Split(acceptedEncodings, ",") {
-		if v, ok := webProviderLookup[strings.Trim(enc, " ")]; ok {
+		if v, ok := webProviderLookup[strings.TrimSpace(enc)]; ok {
 			b |= v
 		}
 	}

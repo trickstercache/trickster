@@ -17,11 +17,11 @@
 package clickhouse
 
 import (
-	"bytes"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
@@ -128,7 +128,7 @@ func TestQueryHandlerBody(t *testing.T) {
 			defer ts.Close()
 		}
 		r.Method = http.MethodPost
-		r.Body = io.NopCloser(bytes.NewReader([]byte(testRawQuery())))
+		r.Body = io.NopCloser(strings.NewReader(testRawQuery()))
 
 		rsc := request.GetResources(r)
 		backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil, nil)
@@ -175,7 +175,7 @@ func TestQueryHandlerBody(t *testing.T) {
 			defer ts.Close()
 		}
 		r.Method = http.MethodPost
-		r.Body = io.NopCloser(bytes.NewReader([]byte(testRawQuery())))
+		r.Body = io.NopCloser(strings.NewReader(testRawQuery()))
 
 		rsc := request.GetResources(r)
 		backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil, nil)

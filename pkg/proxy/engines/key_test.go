@@ -17,7 +17,6 @@
 package engines
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -25,6 +24,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strconv"
+	"strings"
 	"testing"
 
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
@@ -157,7 +157,7 @@ func TestDeriveCacheKey(t *testing.T) {
 
 	const expected = "cb84ad010abb4d0f864470540a46f137"
 
-	tr = httptest.NewRequest(http.MethodPost, "http://127.0.0.1/", bytes.NewReader([]byte("field1=value1")))
+	tr = httptest.NewRequest(http.MethodPost, "http://127.0.0.1/", strings.NewReader("field1=value1"))
 	tr = tr.WithContext(ct.WithResources(context.Background(), newResources()))
 	tr.Header.Set(headers.NameContentType, headers.ValueXFormURLEncoded)
 	pr = newProxyRequest(tr, nil)
@@ -166,7 +166,7 @@ func TestDeriveCacheKey(t *testing.T) {
 		t.Errorf("expected %s got %s", expected, ck)
 	}
 
-	tr = httptest.NewRequest(http.MethodPut, "http://127.0.0.1/", bytes.NewReader([]byte(testMultipartBody)))
+	tr = httptest.NewRequest(http.MethodPut, "http://127.0.0.1/", strings.NewReader(testMultipartBody))
 	tr = tr.WithContext(ct.WithResources(context.Background(), newResources()))
 	tr.Header.Set(headers.NameContentType, headers.ValueMultipartFormData+testMultipartBoundary)
 	tr.Header.Set(headers.NameContentLength, strconv.Itoa(len(testMultipartBody)))
@@ -179,7 +179,7 @@ func TestDeriveCacheKey(t *testing.T) {
 	_, _, tr, _, _ = tu.NewTestInstance("", nil, 0, "", nil,
 		providers.ReverseProxyCacheShort, "http://127.0.0.1/", "INFO")
 	tr.Method = http.MethodPost
-	tr.Body = io.NopCloser(bytes.NewReader([]byte(testJSONDocument)))
+	tr.Body = io.NopCloser(strings.NewReader(testJSONDocument))
 	tr = tr.WithContext(ct.WithResources(context.Background(), newResources()))
 	tr.Header.Set(headers.NameContentType, headers.ValueApplicationJSON)
 	tr.Header.Set(headers.NameContentLength, strconv.Itoa(len(testJSONDocument)))
@@ -198,7 +198,7 @@ func TestDeriveCacheKey(t *testing.T) {
 	}
 
 	tr = httptest.NewRequest(http.MethodPost, "http://127.0.0.1/", nil)
-	tr.Body = io.NopCloser(bytes.NewReader([]byte(testJSONDocument)))
+	tr.Body = io.NopCloser(strings.NewReader(testJSONDocument))
 	tr = tr.WithContext(ct.WithResources(context.Background(), newResources()))
 	tr.Header.Set(headers.NameContentType, headers.ValueApplicationJSON)
 	tr.Header.Set(headers.NameContentLength, strconv.Itoa(len(testJSONDocument)))

@@ -67,7 +67,7 @@ func btos(t bool, negate bool) string {
 	return "false"
 }
 
-func opStringRMatch(input, arg string, negate bool) string {
+func opStringRMatch(input, arg string, _ bool) string {
 	re, ok := compiledRegexes[arg]
 	if !ok {
 		var err error
@@ -100,19 +100,19 @@ func opStringSuffix(input, arg string, negate bool) string {
 	return btos(strings.HasSuffix(input, arg), negate)
 }
 
-func opStringMD5(input, arg string, negate bool) string {
+func opStringMD5(input, _ string, _ bool) string {
 	return md5.Checksum(input)
 }
 
-func opStringSHA1(input, arg string, negate bool) string {
+func opStringSHA1(input, _ string, _ bool) string {
 	return sha1.Checksum(input)
 }
 
-func opStringBase64(input, arg string, negate bool) string {
+func opStringBase64(input, _ string, _ bool) string {
 	return base64.Encode(input)
 }
 
-func opStringModulo(input, arg string, negate bool) string {
+func opStringModulo(input, arg string, _ bool) string {
 	d, err := strconv.ParseInt(arg, 10, 64)
 	if err != nil {
 		return ""
@@ -195,7 +195,7 @@ func opNumBetween(input, arg string, negate bool) string {
 	return ""
 }
 
-func opNumModulo(input, arg string, unused bool) string {
+func opNumModulo(input, arg string, _ bool) string {
 	if i, a, ok := areNums(input, arg); ok {
 		return strconv.FormatInt(int64(i)%int64(a), 10)
 	}

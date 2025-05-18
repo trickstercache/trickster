@@ -60,7 +60,7 @@ type TimeseriesBackend interface {
 	Router() http.Handler
 	// BaseUpstreamURL returns the base URL for upstream requests
 	BaseUpstreamURL() *url.URL
-	// Modeler returns the Modeler for converting between Datasets and wire documents
+	// Modeler returns the Modeler for converting between DataSets and wire documents
 	Modeler() *timeseries.Modeler
 	// DefaultHealthCheckConfig returns the default HealthCHeck Config for the given Provider
 	DefaultHealthCheckConfig() *ho.Options
@@ -97,19 +97,19 @@ func NewTimeseriesBackend(name string, o *bo.Options, registrar Registrar, route
 }
 
 // FastForwardRequest is the default implementation for the Timeseries Backend interface
-func (b *timeseriesBackend) FastForwardRequest(r *http.Request) (*http.Request, error) {
+func (b *timeseriesBackend) FastForwardRequest(_ *http.Request) (*http.Request, error) {
 	return nil, nil
 }
 
 // ParseTimeRangeQuery is the default implementation for the Timeseries Backend interface
-func (b *timeseriesBackend) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery,
+func (b *timeseriesBackend) ParseTimeRangeQuery(_ *http.Request) (*timeseries.TimeRangeQuery,
 	*timeseries.RequestOptions, bool, error) {
 	return nil, nil, false, nil
 }
 
 // SetExtent is the default implementation for the Timeseries Backend interface
-func (b *timeseriesBackend) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
-	extent *timeseries.Extent) {
+func (b *timeseriesBackend) SetExtent(_ *http.Request, _ *timeseries.TimeRangeQuery,
+	_ *timeseries.Extent) {
 }
 
 // Modeler is the default implementation for the Timeseries Backend interface

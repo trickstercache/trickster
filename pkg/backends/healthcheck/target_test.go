@@ -17,13 +17,13 @@
 package healthcheck
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
@@ -198,7 +198,7 @@ func TestIsGoodBody(t *testing.T) {
 
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			res := test.target.isGoodBody(io.NopCloser(bytes.NewReader([]byte(test.body))))
+			res := test.target.isGoodBody(io.NopCloser(strings.NewReader(test.body)))
 			if res != test.expected {
 				t.Errorf("expected %t got %t", test.expected, res)
 			}

@@ -22,7 +22,7 @@ import (
 	"testing"
 
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
-	cr "github.com/trickstercache/trickster/v2/pkg/cache/registration"
+	cr "github.com/trickstercache/trickster/v2/pkg/cache/registry"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 )
 

@@ -17,7 +17,6 @@
 package setup
 
 import (
-	"fmt"
 	"net/http"
 	"os"
 	goruntime "runtime"
@@ -32,7 +31,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/index"
 	"github.com/trickstercache/trickster/v2/pkg/cache/manager"
 	"github.com/trickstercache/trickster/v2/pkg/cache/providers"
-	"github.com/trickstercache/trickster/v2/pkg/cache/registration"
+	"github.com/trickstercache/trickster/v2/pkg/cache/registry"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	dr "github.com/trickstercache/trickster/v2/pkg/config/reload"
 	ro "github.com/trickstercache/trickster/v2/pkg/config/reload/options"
@@ -43,7 +42,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
-	tr "github.com/trickstercache/trickster/v2/pkg/observability/tracing/registration"
+	tr "github.com/trickstercache/trickster/v2/pkg/observability/tracing/registry"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/reload"
 	"github.com/trickstercache/trickster/v2/pkg/router/lm"
@@ -58,7 +57,7 @@ func LoadAndValidate() (*config.Config, error) {
 	// Load Config
 	cfg, err := config.Load(os.Args[1:])
 	if err != nil {
-		fmt.Println("\nERROR: Could not load configuration:", err.Error())
+		logger.Error("Could not load configuration:", logging.Pairs{"error": err.Error()})
 		if cfg != nil && cfg.Flags != nil && cfg.Flags.ValidateConfig {
 			usage.PrintUsage()
 		}
@@ -198,7 +197,7 @@ func applyCachingConfig(si *instance.ServerInstance,
 
 	if si.Config == nil || si.Caches == nil {
 		for k, v := range newConf.Caches {
-			caches[k] = registration.NewCache(k, v)
+			caches[k] = registry.NewCache(k, v)
 		}
 		return caches
 	}
@@ -239,7 +238,7 @@ func applyCachingConfig(si *instance.ServerInstance,
 		}
 
 		// the newly-named cache is not in the old config or couldn't be reused, so make it anew
-		caches[k] = registration.NewCache(k, v)
+		caches[k] = registry.NewCache(k, v)
 	}
 	return caches
 }

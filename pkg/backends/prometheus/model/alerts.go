@@ -159,7 +159,7 @@ func MergeAndWriteAlerts(w http.ResponseWriter, r *http.Request, rgs merge.Respo
 }
 
 // helper function to gather responses from a ResponseGate
-func gatherResponses(r *http.Request, rgs merge.ResponseGates, handler func(*merge.ResponseGate) bool) ([]int, *http.Response) {
+func gatherResponses(_ *http.Request, rgs merge.ResponseGates, handler func(*merge.ResponseGate) bool) ([]int, *http.Response) {
 	responses := make([]int, len(rgs))
 	var bestResp *http.Response
 	for i, rg := range rgs {
