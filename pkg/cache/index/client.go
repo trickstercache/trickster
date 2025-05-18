@@ -87,18 +87,16 @@ func NewIndexedClient(
 		if o.FlushInterval > 0 {
 			go idx.flusher(ctx)
 		} else {
-			// TODO: should this be fatal? or should we set a default?
 			logger.Warn("cache index flusher was not started",
 				logging.Pairs{"cacheName": idx.name, "flushInterval": o.FlushInterval})
 		}
 	}
 
-	// TODO: this triggers a failure in pkg/proxy/engines -- need to investigate
+	// FIXME: this triggers a failure in pkg/proxy/engines -- need to investigate
 	// if options.NeedsReapInterval {
 	if o.ReapInterval > 0 {
 		go idx.reaper(ctx)
 	} else {
-		// TODO: should this be fatal? or should we set a default?
 		logger.Warn("cache reaper was not started",
 			logging.Pairs{"cacheName": idx.name, "reapInterval": o.ReapInterval})
 	}
@@ -204,7 +202,6 @@ func (idx *IndexedClient) Store(cacheKey string, byteData []byte, ttl time.Durat
 		Size:  int64(len(byteData)),
 	}
 	now := time.Now()
-	// TODO: do all usages need to be atomicx.Time?
 	obj.LastAccess.Store(now)
 	obj.LastWrite.Store(now)
 	var expiry time.Time

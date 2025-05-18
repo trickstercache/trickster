@@ -112,7 +112,6 @@ func (c *Cache) RetrieveReference(cacheKey string) (any,
 	return o, s, nil
 }
 
-// TODO: retrieve/store is not used for memory cache, omit implementation
 // Retrieve looks for an object in cache and returns it (or an error if not found)
 func (c *Cache) Retrieve(cacheKey string) ([]byte, status.LookupStatus, error) {
 	o, s, err := c.retrieve(cacheKey)

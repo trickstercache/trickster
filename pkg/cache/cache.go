@@ -61,7 +61,6 @@ type ReferenceObject interface {
 
 // Client is an interface that defines the methods required for a cache client
 // to be used by cache.Cache implementations
-// TODO: should this be internal, or merge into Cache?
 type Client interface {
 	Connect() error
 	Store(cacheKey string, data []byte, ttl time.Duration) error
