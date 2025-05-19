@@ -17,9 +17,13 @@
 package manager
 
 import (
+	"path/filepath"
+	"time"
+
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/index"
 	"github.com/trickstercache/trickster/v2/pkg/cache/options"
+	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/locks"
 )
 
@@ -45,6 +49,38 @@ type Manager struct {
 	config      *options.Options
 	locker      locks.NamedLocker
 	opts        CacheOptions
+}
+
+func (cm *Manager) StoreReference(cacheKey string, data cache.ReferenceObject, ttl time.Duration) error {
+	nl, _ := cm.locker.Acquire(filepath.Join(cm.config.Name, cm.config.Provider, cacheKey))
+	defer nl.Release()
+	return cm.Client.(cache.MemoryCache).StoreReference(cacheKey, data, ttl)
+}
+
+func (cm *Manager) Store(cacheKey string, byteData []byte, ttl time.Duration) error {
+	nl, _ := cm.locker.Acquire(filepath.Join(cm.config.Name, cm.config.Provider, cacheKey))
+	defer nl.Release()
+	return cm.Client.Store(cacheKey, byteData, ttl)
+}
+
+func (cm *Manager) RetrieveReference(cacheKey string) (any, status.LookupStatus, error) {
+	nl, _ := cm.locker.RAcquire(filepath.Join(cm.config.Name, cm.config.Provider, cacheKey))
+	defer nl.RRelease()
+	return cm.Client.(cache.MemoryCache).RetrieveReference(cacheKey)
+}
+
+func (cm *Manager) Retrieve(cacheKey string) ([]byte, status.LookupStatus, error) {
+	nl, _ := cm.locker.RAcquire(filepath.Join(cm.config.Name, cm.config.Provider, cacheKey))
+	defer nl.RRelease()
+	return cm.Client.Retrieve(cacheKey)
+}
+
+func (cm *Manager) Remove(cacheKeys ...string) error {
+	for _, k := range cacheKeys {
+		nl, _ := cm.locker.Acquire(filepath.Join(cm.config.Name, cm.config.Provider, k))
+		defer nl.Release()
+	}
+	return cm.Client.Remove(cacheKeys...)
 }
 
 func (cm *Manager) Connect() error {
