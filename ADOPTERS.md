@@ -7,4 +7,4 @@ As the Trickster community grows, we'd like to keep track of who is using it in 
 3. [swarmstack](https://github.com/swarmstack) [[@mh720](https://github.com/mh720)]
 4. [Hostinger](https://www.hostinger.com/) [[@ton31337](https://github.com/ton31337)]
 5. [The Remote Company (MailerLite, MailerSend, MailerCheck, YCode)](https://www.remotecompany.com) [[@aorfanos]](https://github.com/aorfanos)
-6. [Oracle](https://oracle.com) [[@tonychoe](https://github.com/tonychoe)]
+6. [Oracle](https://oracle.com) [[@tonychoe](https://github.com/tonychoe)] 
