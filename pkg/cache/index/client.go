@@ -43,6 +43,7 @@ var (
 
 var (
 	ErrIndexInvalidCacheKey = errors.New("cannot store index")
+	ErrInvalidCacheBackend  = errors.New("invalid cache backend for reference access")
 )
 
 // IndexedClientOptions modify an IndexedClient's behavior.
@@ -179,7 +180,11 @@ func (idx *IndexedClient) StoreReference(cacheKey string, data cache.ReferenceOb
 	if cacheKey == IndexKey {
 		return ErrIndexInvalidCacheKey
 	}
-	if err := idx.Client.(cache.MemoryCache).StoreReference(cacheKey, data, ttl); err != nil {
+	mc, ok := idx.Client.(cache.MemoryCache)
+	if !ok {
+		return ErrInvalidCacheBackend
+	}
+	if err := mc.StoreReference(cacheKey, data, ttl); err != nil {
 		return err
 	}
 	now := time.Now()
@@ -231,8 +236,12 @@ func (idx *IndexedClient) RetrieveReference(cacheKey string) (any, status.Lookup
 	if cacheKey == IndexKey {
 		return nil, status.LookupStatusError, ErrIndexInvalidCacheKey
 	}
+	mc, ok := idx.Client.(cache.MemoryCache)
+	if !ok {
+		return nil, status.LookupStatusError, ErrInvalidCacheBackend
+	}
 	go idx.updateAccessTime(cacheKey)
-	return idx.Client.(cache.MemoryCache).RetrieveReference(cacheKey)
+	return mc.RetrieveReference(cacheKey)
 }
 
 // Retrieve implements the cache.Client interface, looking up the object and updating the index last access time
