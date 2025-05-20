@@ -451,7 +451,7 @@ func SetDefaults(
 	name string,
 	o *Options,
 	metadata yamlx.KeyLookup,
-	crw map[string]rewriter.RewriteInstructions,
+	crw rewriter.InstructionsLookup,
 	backends Lookup,
 	activeCaches sets.Set[string],
 ) (*Options, error) {

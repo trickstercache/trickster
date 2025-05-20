@@ -367,13 +367,13 @@ func TestSetDefaults(t *testing.T) {
 		t.Error(err)
 	}
 
-	_, err = SetDefaults("test", o2, md, map[string]rewriter.RewriteInstructions{"test": nil},
+	_, err = SetDefaults("test", o2, md, rewriter.InstructionsLookup{"test": nil},
 		backends, sets.NewStringSet())
 	if err != nil {
 		t.Error(err)
 	}
 
-	_, err = SetDefaults("test", o2, md, map[string]rewriter.RewriteInstructions{"not-test": nil},
+	_, err = SetDefaults("test", o2, md, rewriter.InstructionsLookup{"not-test": nil},
 		backends, sets.NewStringSet())
 	if err == nil {
 		t.Error("expected error for invalid rewriter name")

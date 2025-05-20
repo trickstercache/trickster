@@ -66,7 +66,7 @@ type Clients []*Client
 // until all backends are processed, so the rule's destination origin names
 // can be mapped to their respective clients
 func ValidateOptions(clients backends.Backends,
-	rwi map[string]rewriter.RewriteInstructions) error {
+	rwi rewriter.InstructionsLookup) error {
 	ruleClients := make(Clients, 0, len(clients))
 	for _, c := range clients {
 		if rc, ok := c.(*Client); ok {
@@ -83,7 +83,7 @@ func ValidateOptions(clients backends.Backends,
 
 // Validate will fully load the Clients from their options and return an error if the options
 // could not be validated
-func (rc Clients) validate(rwi map[string]rewriter.RewriteInstructions) error {
+func (rc Clients) validate(rwi rewriter.InstructionsLookup) error {
 	for _, c := range rc {
 		if c == nil {
 			return errors.ErrInvalidRuleOptions
