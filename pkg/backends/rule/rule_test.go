@@ -90,7 +90,7 @@ func newTestRewriterOpts() rwo.Lookup {
 	}
 }
 
-func newTestRewriterInstructions() map[string]rewriter.RewriteInstructions {
+func newTestRewriterInstructions() rewriter.InstructionsLookup {
 	rwi, _ := rewriter.ProcessConfigs(newTestRewriterOpts())
 	return rwi
 }

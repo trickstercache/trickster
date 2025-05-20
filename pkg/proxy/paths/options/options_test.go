@@ -169,7 +169,7 @@ func TestSetDefaults(t *testing.T) {
 	o.ReqRewriterName = "path"
 	o.ResponseBody = "trickster"
 	o.Methods = nil
-	crw := map[string]rewriter.RewriteInstructions{"path": nil}
+	crw := rewriter.InstructionsLookup{"path": nil}
 
 	err = SetDefaults("test", kl, pl, crw)
 	if err != nil {

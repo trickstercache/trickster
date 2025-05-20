@@ -30,7 +30,7 @@ import (
 
 var ErrInvalidRegularExpression = errors.New("invalid regular expression")
 
-func (c *Client) parseOptions(o *ro.Options, rwi map[string]rewriter.RewriteInstructions) error {
+func (c *Client) parseOptions(o *ro.Options, rwi rewriter.InstructionsLookup) error {
 
 	name := c.Name()
 
