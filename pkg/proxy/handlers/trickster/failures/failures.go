@@ -14,35 +14,9 @@
  * limitations under the License.
  */
 
-package handlers
+package failures
 
-import (
-	"net/http"
-
-	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
-)
-
-// HandleLocalResponse responds to an HTTP Request based on the local configuration without making any upstream requests
-func HandleLocalResponse(w http.ResponseWriter, r *http.Request) {
-	rsc := request.GetResources(r)
-	if w == nil || rsc == nil {
-		return
-	}
-	p := rsc.PathConfig
-	if p == nil {
-		return
-	}
-	if len(p.ResponseHeaders) > 0 {
-		headers.UpdateHeaders(w.Header(), p.ResponseHeaders)
-	}
-	if p.ResponseCode > 0 {
-		w.WriteHeader(p.ResponseCode)
-	} else {
-		w.WriteHeader(http.StatusOK)
-	}
-	w.Write([]byte(p.ResponseBody))
-}
+import "net/http"
 
 // HandleBadRequestResponse responds to an HTTP Request with 400 Bad Request
 func HandleBadRequestResponse(w http.ResponseWriter, _ *http.Request) {

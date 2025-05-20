@@ -127,7 +127,7 @@ func TestDeriveCacheKey(t *testing.T) {
 	}
 
 	cfg := &bo.Options{
-		Paths: map[string]*po.Options{
+		Paths: po.Lookup{
 			"root": rpath,
 		},
 	}
@@ -218,7 +218,7 @@ func exampleKeyHasher(path string, params url.Values, headers http.Header,
 func TestDeriveCacheKeyAuthHeader(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	client, err := NewTestClient("test", &bo.Options{
-		Paths: map[string]*po.Options{
+		Paths: po.Lookup{
 			"root": {
 				Path:            "/",
 				CacheKeyParams:  []string{"query", "step", "time"},
@@ -251,7 +251,7 @@ func TestDeriveCacheKeyAuthHeader(t *testing.T) {
 func TestDeriveCacheKeyNoPathConfig(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	client, err := NewTestClient("test", &bo.Options{
-		Paths: map[string]*po.Options{
+		Paths: po.Lookup{
 			"root": {
 				Path:            "/",
 				CacheKeyParams:  []string{"query", "step", "time"},

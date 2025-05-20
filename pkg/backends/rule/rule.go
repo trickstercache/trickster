@@ -20,7 +20,8 @@ import (
 	"net/http"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/context"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/redirect"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
 )
 
@@ -60,7 +61,7 @@ type caseList []*ruleCase
 
 type evaluatorFunc func(*http.Request) (http.Handler, *http.Request, error)
 
-var badRequestHandler = http.HandlerFunc(handlers.HandleBadRequestResponse)
+var badRequestHandler = http.HandlerFunc(failures.HandleBadRequestResponse)
 
 func (r *rule) EvaluateOpArg(hr *http.Request) (http.Handler, *http.Request, error) {
 
@@ -94,7 +95,7 @@ func (r *rule) EvaluateOpArg(hr *http.Request) (http.Handler, *http.Request, err
 
 		// if it's a redirect response, set the appropriate context
 		if c.redirectCode > 0 {
-			hr = hr.WithContext(handlers.WithRedirects(hr.Context(),
+			hr = hr.WithContext(redirect.WithRedirects(hr.Context(),
 				c.redirectCode, c.redirectURL))
 		}
 	}
@@ -109,7 +110,7 @@ func (r *rule) EvaluateOpArg(hr *http.Request) (http.Handler, *http.Request, err
 	}
 
 	if !nonDefault && r.defaultRedirectCode > 0 {
-		hr = hr.WithContext(handlers.WithRedirects(hr.Context(),
+		hr = hr.WithContext(redirect.WithRedirects(hr.Context(),
 			r.defaultRedirectCode, r.defaultRedirectURL))
 	}
 
@@ -126,7 +127,7 @@ func (r *rule) EvaluateCaseArg(hr *http.Request) (http.Handler, *http.Request, e
 	}
 
 	if currentHops >= maxHops {
-		return http.HandlerFunc(handlers.HandleBadRequestResponse), hr, nil
+		return http.HandlerFunc(failures.HandleBadRequestResponse), hr, nil
 	}
 
 	// if this case includes ingress rewriter instructions, execute those now
@@ -155,7 +156,7 @@ func (r *rule) EvaluateCaseArg(hr *http.Request) (http.Handler, *http.Request, e
 
 			// if it's a redirect response, set the appropriate context
 			if c.redirectCode > 0 {
-				hr = hr.WithContext(handlers.WithRedirects(hr.Context(),
+				hr = hr.WithContext(redirect.WithRedirects(hr.Context(),
 					c.redirectCode, c.redirectURL))
 			}
 		}
@@ -171,7 +172,7 @@ func (r *rule) EvaluateCaseArg(hr *http.Request) (http.Handler, *http.Request, e
 	}
 
 	if !nonDefault && r.defaultRedirectCode > 0 {
-		hr = hr.WithContext(handlers.WithRedirects(hr.Context(),
+		hr = hr.WithContext(redirect.WithRedirects(hr.Context(),
 			r.defaultRedirectCode, r.defaultRedirectURL))
 	}
 

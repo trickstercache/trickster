@@ -24,6 +24,7 @@ import (
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
@@ -31,11 +32,11 @@ import (
 // TimeseriesBackend is the primary interface for interoperating with Trickster and upstream TSDB's
 type TimeseriesBackend interface {
 	// RegisterHandlers registers the provided Handlers into the Router
-	RegisterHandlers(map[string]http.Handler)
+	RegisterHandlers(handlers.Lookup)
 	// Handlers returns a map of the HTTP Handlers the Backend has registered
-	Handlers() map[string]http.Handler
+	Handlers() handlers.Lookup
 	// DefaultPathConfigs returns the default PathConfigs for the given Provider
-	DefaultPathConfigs(*bo.Options) map[string]*po.Options
+	DefaultPathConfigs(*bo.Options) po.Lookup
 	// ParseTimeRangeQuery returns a timeseries.TimeRangeQuery based on the provided HTTP Request
 	ParseTimeRangeQuery(*http.Request) (*timeseries.TimeRangeQuery, *timeseries.RequestOptions, bool, error)
 	// Configuration returns the configuration for the Backend

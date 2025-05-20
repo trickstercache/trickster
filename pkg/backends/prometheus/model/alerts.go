@@ -29,7 +29,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/checksum/fnv"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
@@ -127,7 +127,7 @@ func MergeAndWriteAlerts(w http.ResponseWriter, r *http.Request, rgs merge.Respo
 			io.Copy(w, bestResp.Body)
 
 		} else {
-			handlers.HandleBadGateway(w, r)
+			failures.HandleBadGateway(w, r)
 		}
 		return
 	}

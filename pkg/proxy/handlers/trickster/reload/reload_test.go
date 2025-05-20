@@ -54,7 +54,7 @@ func TestReloadHandleFunc(t *testing.T) {
 	w := httptest.NewRecorder()
 	r, _ := http.NewRequest("GET", "/", nil)
 
-	f := ReloadHandleFunc(emptyFunc)
+	f := HandlerFunc(emptyFunc)
 	f(w, r)
 	os.Remove(testFile)
 	time.Sleep(time.Millisecond * 500)

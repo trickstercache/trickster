@@ -38,6 +38,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/exporters/zipkin"
 	to "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
@@ -82,7 +83,7 @@ func TestRegisterProxyRoutes(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	tr := map[string]*tracing.Tracer{"test": z}
+	tr := tracing.Tracers{"test": z}
 	o := conf.Backends["default"]
 	o.TracingConfigName = "test"
 
@@ -413,7 +414,7 @@ func TestRegisterMultipleBackendsPlusDefault(t *testing.T) {
 
 func TestRegisterPathRoutes(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Info))
-	p := map[string]*po.Options{"test": {}}
+	p := po.Lookup{"test": {}}
 	RegisterPathRoutes(nil, nil, nil, nil, nil, p, nil)
 
 	conf, err := config.Load([]string{"-log-level", "debug", "-origin-url",
@@ -428,7 +429,7 @@ func TestRegisterPathRoutes(t *testing.T) {
 	dpc["/-GET-HEAD"].Methods = nil
 
 	testHandler := http.HandlerFunc(testutil.BasicHTTPHandler)
-	handlers := map[string]http.Handler{"testHandler": testHandler}
+	handlers := handlers.Lookup{"testHandler": testHandler}
 
 	RegisterPathRoutes(nil, handlers, rpc, oo, nil, dpc, nil)
 
@@ -492,7 +493,7 @@ func TestRegisterDefaultBackendRoutes(t *testing.T) {
 	po1.MatchType = matching.PathMatchTypePrefix
 
 	oo.TracingConfigName = "testTracer"
-	oo.Paths = map[string]*po.Options{"root": po1}
+	oo.Paths = po.Lookup{"root": po1}
 	oo.IsDefault = true
 	rpc, _ := reverseproxycache.NewClient("default", oo, lm.NewRouter(), nil, nil, nil)
 	b := backends.Backends{"default": rpc}

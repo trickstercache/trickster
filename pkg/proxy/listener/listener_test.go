@@ -36,7 +36,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/exporters/stdout"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
-	ph "github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/local"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/switcher"
 	"github.com/trickstercache/trickster/v2/pkg/router/lm"
 	testutil "github.com/trickstercache/trickster/v2/pkg/testutil"
 	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
@@ -51,7 +52,7 @@ func TestListeners(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Info))
 	tr, _ := stdout.New(nil)
 	tr.ShutdownFunc = func(_ context.Context) error { return nil }
-	trs := map[string]*tracing.Tracer{"default": tr}
+	trs := tracing.Tracers{"default": tr}
 	testLG := NewGroup()
 
 	var err error
@@ -78,7 +79,7 @@ func TestListeners(t *testing.T) {
 	errs2 := make(chan error, 1)
 	go func() {
 		errs2 <- testLG.StartListenerRouter("httpListener2",
-			"", 0, 20, nil, "/", http.HandlerFunc(ph.HandleLocalResponse),
+			"", 0, 20, nil, "/", http.HandlerFunc(local.HandleLocalResponse),
 			nil, nil, 0, 0)
 		close(errs2)
 	}()
@@ -102,7 +103,7 @@ func TestListeners(t *testing.T) {
 
 func TestUpdateRouter(t *testing.T) {
 	testLG := NewGroup()
-	testLG.members["test"] = &Listener{routeSwapper: &ph.SwitchHandler{}}
+	testLG.members["test"] = &Listener{routeSwapper: &switcher.SwitchHandler{}}
 	r := http.NewServeMux()
 	testLG.UpdateRouter("test", r)
 	if testLG.members["test"].routeSwapper.Handler() != r {
@@ -312,7 +313,7 @@ func TestUpdateRouters(t *testing.T) {
 	testRouter := http.NotFoundHandler()
 	l := &Listener{
 		Listener:     testListener(),
-		routeSwapper: ph.NewSwitchHandler(nil),
+		routeSwapper: switcher.NewSwitchHandler(nil),
 	}
 	lg := NewGroup()
 	lg.members["httpListener"] = l

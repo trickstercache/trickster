@@ -38,7 +38,7 @@ func TestProcessTracingConfigs(t *testing.T) {
 	o := New()
 	o.SampleRate = 0
 
-	mo := map[string]*Options{
+	mo := Lookup{
 		"test": o,
 	}
 

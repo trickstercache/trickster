@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package handlers
+package ping
 
 import (
 	"io"
@@ -32,7 +32,7 @@ func TestPingHandler(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
-	pingHandler := PingHandleFunc(conf)
+	pingHandler := HandlerFunc(conf)
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "http://0/trickster/ping", nil)

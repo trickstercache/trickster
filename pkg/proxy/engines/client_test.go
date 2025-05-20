@@ -31,6 +31,7 @@ import (
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
@@ -82,9 +83,9 @@ func NewTestClient(name string, o *bo.Options, router http.Handler,
 	return c, err
 }
 
-func (c *TestClient) RegisterHandlers(map[string]http.Handler) {
+func (c *TestClient) RegisterHandlers(handlers.Lookup) {
 	c.TimeseriesBackend.RegisterHandlers(
-		map[string]http.Handler{
+		handlers.Lookup{
 			"health":     http.HandlerFunc(c.HealthHandler),
 			mnQueryRange: http.HandlerFunc(c.QueryRangeHandler),
 			mnQuery:      http.HandlerFunc(c.QueryHandler),
@@ -96,9 +97,9 @@ func (c *TestClient) RegisterHandlers(map[string]http.Handler) {
 }
 
 // DefaultPathConfigs returns the default PathConfigs for the given Provider
-func (c *TestClient) DefaultPathConfigs(o *bo.Options) map[string]*po.Options {
+func (c *TestClient) DefaultPathConfigs(o *bo.Options) po.Lookup {
 
-	paths := map[string]*po.Options{
+	paths := po.Lookup{
 
 		APIPath + mnQueryRange: {
 			Path:            APIPath + mnQueryRange,

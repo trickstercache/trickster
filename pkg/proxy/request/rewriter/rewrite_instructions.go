@@ -37,6 +37,8 @@ type rewriteInstruction interface {
 // RewriteInstructions is a list of type []rewriteInstruction
 type RewriteInstructions []rewriteInstruction
 
+type InstructionsLookup map[string]RewriteInstructions
+
 var rewriters = map[string]func() rewriteInstruction{
 	"scheme-set":       func() rewriteInstruction { return &rwiBasicSetter{} },
 	"header-set":       func() rewriteInstruction { return &rwiKeyBasedSetter{} },

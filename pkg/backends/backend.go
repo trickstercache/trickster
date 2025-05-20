@@ -26,6 +26,7 @@ import (
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/proxy"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
 )
@@ -33,11 +34,11 @@ import (
 // Backend is the primary interface for interoperating with backends
 type Backend interface {
 	// RegisterHandlers registers the provided Handlers into the Router
-	RegisterHandlers(map[string]http.Handler)
+	RegisterHandlers(handlers.Lookup)
 	// Handlers returns a map of the HTTP Handlers the Backend has registered
-	Handlers() map[string]http.Handler
+	Handlers() handlers.Lookup
 	// DefaultPathConfigs returns the default PathConfigs for the given Provider
-	DefaultPathConfigs(*bo.Options) map[string]*po.Options
+	DefaultPathConfigs(*bo.Options) po.Lookup
 	// Configuration returns the configuration for the Backend
 	Configuration() *bo.Options
 	// Name returns the name of the Backend
@@ -68,16 +69,16 @@ type backend struct {
 	cache              cache.Cache
 	webClient          *http.Client
 	healthCheckClient  *http.Client
-	handlers           map[string]http.Handler
+	handlers           handlers.Lookup
 	handlersRegistered bool
 	healthProbe        healthcheck.DemandProbe
 	router             http.Handler
 	baseUpstreamURL    *url.URL
-	registrar          func(map[string]http.Handler)
+	registrar          func(handlers.Lookup)
 }
 
 // Registrar defines a function that registers http.Handlers with a router
-type Registrar func(map[string]http.Handler)
+type Registrar func(handlers.Lookup)
 
 // New returns a new Backend
 func New(name string, o *bo.Options, registrar Registrar,
@@ -143,7 +144,7 @@ func (b *backend) HTTPClient() *http.Client {
 }
 
 // Handlers returns the list of handlers used by this Backend
-func (b *backend) Handlers() map[string]http.Handler {
+func (b *backend) Handlers() handlers.Lookup {
 	if !b.handlersRegistered {
 		if b.registrar != nil {
 			b.registrar(nil)
@@ -158,7 +159,7 @@ func (b *backend) Router() http.Handler {
 }
 
 // RegisterHandlers registers the provided handlers with the backend
-func (b *backend) RegisterHandlers(h map[string]http.Handler) {
+func (b *backend) RegisterHandlers(h handlers.Lookup) {
 	if !b.handlersRegistered {
 		b.handlersRegistered = true
 		b.handlers = h
@@ -178,7 +179,7 @@ func (b *backend) HealthHandler(w http.ResponseWriter, _ *http.Request) {
 }
 
 // DefaultPathConfigs is a stub function and should be overridden by Backend implementations
-func (b *backend) DefaultPathConfigs(_ *bo.Options) map[string]*po.Options {
+func (b *backend) DefaultPathConfigs(_ *bo.Options) po.Lookup {
 	return nil
 }
 

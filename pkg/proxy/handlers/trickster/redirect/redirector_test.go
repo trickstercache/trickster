@@ -14,21 +14,28 @@
  * limitations under the License.
  */
 
-package handlers
+package redirect
 
 import (
-	"net/http"
-
-	"github.com/trickstercache/trickster/v2/pkg/config"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"context"
+	"net/http/httptest"
+	"testing"
 )
 
-// PingHandleFunc responds to an HTTP Request with 200 OK and "pong"
-func PingHandleFunc(_ *config.Config) func(http.ResponseWriter, *http.Request) {
-	return func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
-		w.Header().Set(headers.NameCacheControl, headers.ValueNoCache)
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("pong"))
+func TestRedirector(t *testing.T) {
+	ctx := context.Background()
+	ctx = WithRedirects(ctx, 302, "http://trickstercache.org")
+	r := httptest.NewRequest("GET", "http://0/trickster/", nil)
+	w := httptest.NewRecorder()
+	HandleRedirectResponse(w, r)
+	if w.Result().StatusCode != 400 {
+		t.Errorf("expected %d got %d", 400, w.Result().StatusCode)
+	}
+
+	r = r.WithContext(ctx)
+	w = httptest.NewRecorder()
+	HandleRedirectResponse(w, r)
+	if w.Result().StatusCode != 302 {
+		t.Errorf("expected %d got %d", 302, w.Result().StatusCode)
 	}
 }

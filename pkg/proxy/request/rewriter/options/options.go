@@ -28,6 +28,8 @@ type Options struct {
 	Instructions RewriteList `yaml:"instructions,omitempty"`
 }
 
+type Lookup map[string]*Options
+
 // Clone returns an exact copy of the subject *Options
 func (o *Options) Clone() *Options {
 	o2 := &Options{}

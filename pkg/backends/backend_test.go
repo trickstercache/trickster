@@ -24,6 +24,7 @@ import (
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	cr "github.com/trickstercache/trickster/v2/pkg/cache/registry"
 	"github.com/trickstercache/trickster/v2/pkg/config"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 )
 
 func TestConfiguration(t *testing.T) {
@@ -108,8 +109,8 @@ func TestBaseUpstreamURL(t *testing.T) {
 func TestHandlers(t *testing.T) {
 
 	b := &backend{name: "test"}
-	testRegistrar := func(map[string]http.Handler) {
-		b.RegisterHandlers(map[string]http.Handler{"test": nil})
+	testRegistrar := func(handlers.Lookup) {
+		b.RegisterHandlers(handlers.Lookup{"test": nil})
 	}
 
 	b.registrar = testRegistrar

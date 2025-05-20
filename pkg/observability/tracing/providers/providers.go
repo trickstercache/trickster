@@ -32,8 +32,11 @@ const (
 	Zipkin
 )
 
+type ProviderLookup map[string]Provider
+type ProviderReverseLookup map[Provider]string
+
 // Names is a map of tracing providers keyed by name
-var Names = map[string]Provider{
+var Names = ProviderLookup{
 	"none":   None,
 	"stdout": Stdout,
 	"otlp":   OTLP,
@@ -41,7 +44,7 @@ var Names = map[string]Provider{
 }
 
 // Values is a map of tracing providers keyed by internal id
-var Values = make(map[Provider]string)
+var Values = make(ProviderReverseLookup)
 
 func init() {
 	for k, v := range Names {

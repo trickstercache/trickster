@@ -27,7 +27,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
+	ch "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/config"
+	ph "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/purge"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
 	ttls "github.com/trickstercache/trickster/v2/pkg/proxy/tls"
 	"github.com/trickstercache/trickster/v2/pkg/router"
@@ -50,7 +51,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 
 	adminRouter := http.NewServeMux()
 	adminRouter.Handle(conf.ReloadConfig.HandlerPath, reloadHandler)
-	adminRouter.HandleFunc(conf.Main.PurgePathHandlerPath, handlers.PurgePathHandlerFunc(conf, &o))
+	adminRouter.HandleFunc(conf.Main.PurgePathHandlerPath, ph.HandlerFunc(conf, &o))
 
 	// No changes in frontend config
 	if oldConf != nil && oldConf.Frontend != nil &&
@@ -142,7 +143,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		metricsRouter.RegisterRoute("/metrics", nil, nil,
 			false, metrics.Handler())
 		metricsRouter.RegisterRoute(conf.Main.ConfigHandlerPath, nil, nil,
-			false, http.HandlerFunc(handlers.ConfigHandleFunc(conf)))
+			false, http.HandlerFunc(ch.HandlerFunc(conf)))
 		if conf.Main.PprofServer == "both" || conf.Main.PprofServer == "metrics" {
 			routing.RegisterPprofRoutes("metrics", metricsRouter)
 		}
@@ -153,7 +154,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		metricsRouter.RegisterRoute("/metrics", nil, nil,
 			false, metrics.Handler())
 		metricsRouter.RegisterRoute(conf.Main.ConfigHandlerPath, nil, nil,
-			false, http.HandlerFunc(handlers.ConfigHandleFunc(conf)))
+			false, http.HandlerFunc(ch.HandlerFunc(conf)))
 		lg.UpdateRouter("metricsListener", metricsRouter)
 	}
 
@@ -166,11 +167,11 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 			conf.ReloadConfig.ListenPort != oldConf.ReloadConfig.ListenPort)) {
 		lg.DrainAndClose("reloadListener", time.Millisecond*500)
 		rr.RegisterRoute(conf.Main.ConfigHandlerPath, nil, nil,
-			false, http.HandlerFunc(handlers.ConfigHandleFunc(conf)))
+			false, http.HandlerFunc(ch.HandlerFunc(conf)))
 		rr.RegisterRoute(conf.ReloadConfig.HandlerPath, nil, nil,
 			false, reloadHandler)
 		rr.RegisterRoute(conf.Main.PurgePathHandlerPath, nil, nil,
-			false, http.HandlerFunc(handlers.PurgePathHandlerFunc(conf, &o)))
+			false, http.HandlerFunc(ph.HandlerFunc(conf, &o)))
 		if conf.Main.PprofServer == "both" || conf.Main.PprofServer == "reload" {
 			routing.RegisterPprofRoutes("reload", rr)
 		}
@@ -179,11 +180,11 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 			conf.Frontend.ConnectionsLimit, nil, rr, nil, errorFunc, 0, conf.Frontend.ReadHeaderTimeout)
 	} else {
 		rr.RegisterRoute(conf.Main.ConfigHandlerPath, nil, nil,
-			false, http.HandlerFunc(handlers.ConfigHandleFunc(conf)))
+			false, http.HandlerFunc(ch.HandlerFunc(conf)))
 		rr.RegisterRoute(conf.ReloadConfig.HandlerPath, nil, nil,
 			false, reloadHandler)
 		rr.RegisterRoute(conf.Main.PurgePathHandlerPath, nil, nil,
-			false, http.HandlerFunc(handlers.PurgePathHandlerFunc(conf, &o)))
+			false, http.HandlerFunc(ph.HandlerFunc(conf, &o)))
 		lg.UpdateRouter("reloadListener", rr)
 	}
 }

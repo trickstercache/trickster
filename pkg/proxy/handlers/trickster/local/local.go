@@ -14,26 +14,32 @@
  * limitations under the License.
  */
 
-package reload
+package local
 
 import (
 	"net/http"
 
-	"github.com/trickstercache/trickster/v2/pkg/config/reload"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 )
 
-// HandlerFunc will reload the running configuration if it has changed
-func HandlerFunc(f reload.ReloadFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, _ *http.Request) {
-		didReload, _ := f("handler")
-		w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
-		w.Header().Set(headers.NameCacheControl, headers.ValueNoCache)
-		w.WriteHeader(http.StatusOK)
-		if didReload {
-			w.Write([]byte(reload.ConfigReloadedText))
-		} else {
-			w.Write([]byte(reload.ConfigNotReloadedText))
-		}
+// HandleLocalResponse responds to an HTTP Request based on the local configuration without making any upstream requests
+func HandleLocalResponse(w http.ResponseWriter, r *http.Request) {
+	rsc := request.GetResources(r)
+	if w == nil || rsc == nil {
+		return
 	}
+	p := rsc.PathConfig
+	if p == nil {
+		return
+	}
+	if len(p.ResponseHeaders) > 0 {
+		headers.UpdateHeaders(w.Header(), p.ResponseHeaders)
+	}
+	if p.ResponseCode > 0 {
+		w.WriteHeader(p.ResponseCode)
+	} else {
+		w.WriteHeader(http.StatusOK)
+	}
+	w.Write([]byte(p.ResponseBody))
 }

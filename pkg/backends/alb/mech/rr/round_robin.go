@@ -24,7 +24,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
 )
 
 const ID types.ID = 0
@@ -58,7 +58,7 @@ func (h *handler) Name() types.Name {
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h.pool == nil {
-		handlers.HandleBadGateway(w, r)
+		failures.HandleBadGateway(w, r)
 		return
 	}
 	t := h.nextTarget()
@@ -66,7 +66,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		t.ServeHTTP(w, r)
 		return
 	}
-	handlers.HandleBadGateway(w, r)
+	failures.HandleBadGateway(w, r)
 }
 
 func (h *handler) StopPool() {
