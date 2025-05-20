@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package handlers
+package config
 
 import (
 	"net/http"
@@ -23,8 +23,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
 
-// ConfigHandleFunc responds to the HTTP request with the running configuration
-func ConfigHandleFunc(conf *config.Config) func(http.ResponseWriter, *http.Request) {
+// HandlerFunc responds to the HTTP request with the running configuration
+func HandlerFunc(conf *config.Config) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
 		w.Header().Set(headers.NameCacheControl, headers.ValueNoCache)

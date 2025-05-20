@@ -23,7 +23,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/engines"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
@@ -35,7 +35,7 @@ func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 	if methods.HasBody(r.Method) {
 		b, err := request.GetBody(r)
 		if err != nil {
-			handlers.HandleBadRequestResponse(w, r)
+			failures.HandleBadRequestResponse(w, r)
 			return
 		}
 		sqlQuery = string(b)

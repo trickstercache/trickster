@@ -23,7 +23,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/albpool"
 )
@@ -52,7 +52,7 @@ func TestHandleRoundRobin(t *testing.T) {
 	}
 
 	h.pool, _, hsts = albpool.New(0,
-		[]http.Handler{http.HandlerFunc(handlers.HandleBadGateway)})
+		[]http.Handler{http.HandlerFunc(failures.HandleBadGateway)})
 	hsts[0].Set(-1)
 	time.Sleep(250 * time.Millisecond)
 	w = httptest.NewRecorder()

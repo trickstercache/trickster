@@ -721,7 +721,7 @@ func TestObjectProxyCacheRequestNegativeCacheChunks(t *testing.T) {
 
 	pc := po.New()
 	cfg := rsc.BackendOptions
-	cfg.Paths = map[string]*po.Options{
+	cfg.Paths = po.Lookup{
 		"/": pc,
 	}
 	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(cfg, pc, rsc.CacheConfig,

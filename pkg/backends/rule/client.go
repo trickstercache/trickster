@@ -25,6 +25,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
@@ -98,9 +99,9 @@ func (rc Clients) validate(rwi map[string]rewriter.RewriteInstructions) error {
 }
 
 // DefaultPathConfigs returns the default PathConfigs for the given Provider
-func (c *Client) DefaultPathConfigs(_ *bo.Options) map[string]*po.Options {
+func (c *Client) DefaultPathConfigs(_ *bo.Options) po.Lookup {
 	m := methods.CacheableHTTPMethods()
-	paths := map[string]*po.Options{
+	paths := po.Lookup{
 		"/" + strings.Join(m, "-"): {
 			Path:          "/",
 			HandlerName:   "rule",
@@ -112,10 +113,10 @@ func (c *Client) DefaultPathConfigs(_ *bo.Options) map[string]*po.Options {
 	return paths
 }
 
-func (c *Client) RegisterHandlers(map[string]http.Handler) {
+func (c *Client) RegisterHandlers(handlers.Lookup) {
 
 	c.Backend.RegisterHandlers(
-		map[string]http.Handler{
+		handlers.Lookup{
 			"rule": http.HandlerFunc(c.Handler),
 		},
 	)

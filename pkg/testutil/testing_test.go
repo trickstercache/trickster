@@ -79,8 +79,8 @@ func TestNewTestInstance(t *testing.T) {
 
 	// cover promsim conditional and path generation
 
-	f := func(*bo.Options) map[string]*po.Options {
-		return map[string]*po.Options{
+	f := func(*bo.Options) po.Lookup {
+		return po.Lookup{
 			"path1": {},
 			"path2": {},
 		}

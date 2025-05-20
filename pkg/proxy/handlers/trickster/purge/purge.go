@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package handlers
+package purge
 
 import (
 	"net/http"
@@ -28,8 +28,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
 
-// PurgeHandleFunc purges an object from a cache based on key.
-func PurgeKeyHandleFunc(conf *config.Config,
+// KeyHandlerFunc purges an object from a cache based on key.
+func KeyHandlerFunc(conf *config.Config,
 	from backends.Backends) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, req *http.Request) {
 		vals := strings.Replace(req.URL.Path, conf.Main.PurgeKeyHandlerPath, "", 1)
@@ -64,7 +64,7 @@ func PurgeKeyHandleFunc(conf *config.Config,
 	}
 }
 
-func PurgePathHandlerFunc(_ *config.Config,
+func HandlerFunc(_ *config.Config,
 	from *backends.Backends) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, req *http.Request) {
 		purgeFrom := req.URL.Query().Get("backend")

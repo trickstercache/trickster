@@ -22,15 +22,16 @@ import (
 	"time"
 
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 )
 
-func (c *Client) RegisterHandlers(map[string]http.Handler) {
+func (c *Client) RegisterHandlers(handlers.Lookup) {
 	c.TimeseriesBackend.RegisterHandlers(
-		map[string]http.Handler{
+		handlers.Lookup{
 			"health":      http.HandlerFunc(c.HealthHandler),
 			"query_range": http.HandlerFunc(c.QueryRangeHandler),
 			"query":       http.HandlerFunc(c.QueryHandler),
@@ -64,7 +65,7 @@ func (c *Client) MergeablePaths() []string {
 }
 
 // DefaultPathConfigs returns the default PathConfigs for the given Provider
-func (c *Client) DefaultPathConfigs(o *bo.Options) map[string]*po.Options {
+func (c *Client) DefaultPathConfigs(o *bo.Options) po.Lookup {
 
 	var rhts map[string]string
 	if o != nil {

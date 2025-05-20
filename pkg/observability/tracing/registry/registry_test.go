@@ -50,7 +50,7 @@ func TestRegisterAll(t *testing.T) {
 	cfg := config.NewConfig()
 	tc := options.New()
 
-	cfg.TracingConfigs = make(map[string]*options.Options)
+	cfg.TracingConfigs = make(options.Lookup)
 	cfg.TracingConfigs["test"] = tc
 	cfg.TracingConfigs["test3"] = tc
 	cfg.Backends["default"].TracingConfigName = "test"

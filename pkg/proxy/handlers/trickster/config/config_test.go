@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package handlers
+package config
 
 import (
 	"io"
@@ -32,7 +32,7 @@ func TestConfigHandler(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
-	configHandler := ConfigHandleFunc(conf)
+	configHandler := HandlerFunc(conf)
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "http://0/trickster/config", nil)

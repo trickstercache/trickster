@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package handlers
+package local
 
 import (
 	"io"
@@ -163,34 +163,4 @@ func TestHandleLocalResponseNoPathConfig(t *testing.T) {
 		t.Errorf("body should be empty")
 	}
 
-}
-
-func TestHandleBadRequestResponse(t *testing.T) {
-	HandleBadRequestResponse(nil, nil)
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "http://0/trickster/", nil)
-	HandleBadRequestResponse(w, r)
-	if w.Result().StatusCode != 400 {
-		t.Errorf("expected %d got %d", 400, w.Result().StatusCode)
-	}
-}
-
-func TestHandleInternalServerError(t *testing.T) {
-	HandleInternalServerError(nil, nil)
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "http://0/trickster/", nil)
-	HandleInternalServerError(w, r)
-	if w.Result().StatusCode != 500 {
-		t.Errorf("expected %d got %d", 500, w.Result().StatusCode)
-	}
-}
-
-func TestHandleBadGateway(t *testing.T) {
-	HandleBadGateway(nil, nil)
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "http://0/trickster/", nil)
-	HandleBadGateway(w, r)
-	if w.Result().StatusCode != 502 {
-		t.Errorf("expected %d got %d", 502, w.Result().StatusCode)
-	}
 }

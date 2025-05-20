@@ -17,3 +17,7 @@
 // Package handlers provides several non-proxy handlers for use internally
 // by other Trickster handlers
 package handlers
+
+import "net/http"
+
+type Lookup map[string]http.Handler

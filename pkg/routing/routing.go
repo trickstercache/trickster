@@ -37,6 +37,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/health"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
@@ -208,9 +209,9 @@ func registerBackendRoutes(r router.Router, metricsRouter router.Router,
 // RegisterPathRoutes will take the provided default paths map,
 // merge it with any path data in the provided backend options, and then register
 // the path routes to the appropriate handler from the provided handlers map
-func RegisterPathRoutes(r router.Router, handlers map[string]http.Handler,
+func RegisterPathRoutes(r router.Router, handlers handlers.Lookup,
 	client backends.Backend, o *bo.Options, c cache.Cache,
-	paths map[string]*po.Options, tracers tracing.Tracers) {
+	paths po.Lookup, tracers tracing.Tracers) {
 	if o == nil {
 		return
 	}

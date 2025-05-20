@@ -34,9 +34,9 @@ var testMux2 = http.NewServeMux()
 
 var testRuleHeader = "Test-Rule-Header"
 
-func newTestRewriterOpts() map[string]*rwo.Options {
+func newTestRewriterOpts() rwo.Lookup {
 
-	return map[string]*rwo.Options{
+	return rwo.Lookup{
 		"test-rewriter-1": {
 			Instructions: [][]string{
 				{
@@ -110,9 +110,9 @@ func newTestRuleOpts() *ro.Options {
 	}
 }
 
-func newTestCaseOpts() map[string]*ro.CaseOptions {
+func newTestCaseOpts() ro.CaseLookup {
 
-	return map[string]*ro.CaseOptions{
+	return ro.CaseLookup{
 		"1": {
 			Matches:   []string{"trickster"},
 			NextRoute: "test-backend-2",

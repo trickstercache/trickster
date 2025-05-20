@@ -30,6 +30,7 @@ import (
 	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/errors"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
@@ -42,8 +43,8 @@ type Client struct {
 }
 
 // Handlers returns a map of the HTTP Handlers the client has registered
-func (c *Client) Handlers() map[string]http.Handler {
-	return map[string]http.Handler{"alb": c.handler}
+func (c *Client) Handlers() handlers.Lookup {
+	return handlers.Lookup{"alb": c.handler}
 }
 
 var _ rt.NewBackendClientFunc = NewClient
@@ -160,9 +161,9 @@ func (c *Client) StopPool() {
 // Boilerplate Interface Functions (to EOF)
 
 // DefaultPathConfigs returns the default PathConfigs for the given Provider
-func (c *Client) DefaultPathConfigs(_ *bo.Options) map[string]*po.Options {
+func (c *Client) DefaultPathConfigs(_ *bo.Options) po.Lookup {
 	m := methods.CacheableHTTPMethods()
-	paths := map[string]*po.Options{
+	paths := po.Lookup{
 		"/" + strings.Join(m, "-"): {
 			Path:          "/",
 			HandlerName:   "alb",
