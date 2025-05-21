@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -93,8 +94,10 @@ func (c *CacheClient) Retrieve(cacheKey string) ([]byte, status.LookupStatus, er
 }
 
 func (c *CacheClient) getFileName(cacheKey string) string {
-	prefix := strings.Replace(c.Config.Filesystem.CachePath+"/"+cacheKey+".", "//", "/", 1)
-	return prefix + "data"
+	return filepath.Join(
+		c.Config.Filesystem.CachePath,
+		strings.NewReplacer("/", "~1", "\\", "~2", "..", "~3", ".", "~4").Replace(cacheKey),
+	) + "data"
 }
 
 // makeDirectory creates a directory on the filesystem and returns the error in the event of a failure.

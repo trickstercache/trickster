@@ -98,7 +98,7 @@ func TestFilesystemCache_ConnectFailed(t *testing.T) {
 func TestFilesystemCache_Store(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	const expected1 = "invalid ttl: -1"
-	const expected2 = "open /root/noaccess.trickster.filesystem.cache/cacheKey.data:"
+	const expected2 = "open /root/noaccess.trickster.filesystem.cache/cacheKeydata:"
 
 	cacheConfig := newCacheConfig(t)
 	cacheConfig.Filesystem.CachePath = t.TempDir() + "/cache"
