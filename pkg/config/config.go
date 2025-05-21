@@ -47,9 +47,9 @@ type Config struct {
 	// Main is the primary MainConfig section
 	Main *MainConfig `yaml:"main,omitempty"`
 	// Backends is a map of BackendOptionss
-	Backends map[string]*bo.Options `yaml:"backends,omitempty"`
+	Backends bo.Lookup `yaml:"backends,omitempty"`
 	// Caches is a map of CacheConfigs
-	Caches map[string]*cache.Options `yaml:"caches,omitempty"`
+	Caches cache.Lookup `yaml:"caches,omitempty"`
 	// Frontend provides configurations about the Proxy Front End
 	Frontend *fropt.Options `yaml:"frontend,omitempty"`
 	// Logging provides configurations that affect logging behavior
@@ -57,13 +57,13 @@ type Config struct {
 	// Metrics provides configurations for collecting Metrics about the application
 	Metrics *mo.Options `yaml:"metrics,omitempty"`
 	// TracingConfigs provides the distributed tracing configuration
-	TracingConfigs map[string]*tracing.Options `yaml:"tracing,omitempty"`
+	TracingConfigs tracing.Lookup `yaml:"tracing,omitempty"`
 	// NegativeCacheConfigs is a map of NegativeCacheConfigs
-	NegativeCacheConfigs map[string]negative.Config `yaml:"negative_caches,omitempty"`
+	NegativeCacheConfigs negative.ConfigLookup `yaml:"negative_caches,omitempty"`
 	// Rules is a map of the Rules
-	Rules map[string]*rule.Options `yaml:"rules,omitempty"`
+	Rules rule.Lookup `yaml:"rules,omitempty"`
 	// RequestRewriters is a map of the Rewriters
-	RequestRewriters map[string]*rwopts.Options `yaml:"request_rewriters,omitempty"`
+	RequestRewriters rwopts.Lookup `yaml:"request_rewriters,omitempty"`
 	// ReloadConfig provides configurations for in-process config reloading
 	ReloadConfig *reload.Options `yaml:"reloading,omitempty"`
 
@@ -72,7 +72,7 @@ type Config struct {
 	// Resources holds runtime resources uses by the Config
 	Resources *Resources `yaml:"-"`
 
-	CompiledRewriters map[string]rewriter.RewriteInstructions `yaml:"-"`
+	CompiledRewriters rewriter.InstructionsLookup `yaml:"-"`
 	activeCaches      sets.Set[string]
 	providedOriginURL string
 	providedProvider  string
@@ -125,7 +125,7 @@ type Resources struct {
 func NewConfig() *Config {
 	hn, _ := os.Hostname()
 	return &Config{
-		Caches: map[string]*cache.Options{
+		Caches: cache.Lookup{
 			"default": cache.New(),
 		},
 		Logging: lo.New(),
@@ -140,14 +140,14 @@ func NewConfig() *Config {
 			ServerName:           hn,
 		},
 		Metrics: mo.New(),
-		Backends: map[string]*bo.Options{
+		Backends: bo.Lookup{
 			"default": bo.New(),
 		},
 		Frontend: fropt.New(),
-		NegativeCacheConfigs: map[string]negative.Config{
+		NegativeCacheConfigs: negative.ConfigLookup{
 			"default": negative.New(),
 		},
-		TracingConfigs: map[string]*tracing.Options{
+		TracingConfigs: tracing.Lookup{
 			"default": tracing.New(),
 		},
 		ReloadConfig:   reload.New(),
@@ -226,7 +226,7 @@ func (c *Config) setDefaults(metadata yamlx.KeyLookup) error {
 	tracing.ProcessTracingOptions(c.TracingConfigs, metadata)
 
 	var lw []string
-	if lw, err = cache.Lookup(c.Caches).SetDefaults(metadata, c.activeCaches); err != nil {
+	if lw, err = c.Caches.SetDefaults(metadata, c.activeCaches); err != nil {
 		return err
 	}
 	c.LoaderWarnings = append(c.LoaderWarnings, lw...)
@@ -234,12 +234,11 @@ func (c *Config) setDefaults(metadata yamlx.KeyLookup) error {
 	// This ensures that in places where backend options reference other named config sections
 	// (like caches, rules, negative caches, tracing, etc) referenced by names, the names
 	// referenced in the configuration are valid and refer to a defined resource
-	ol := bo.Lookup(c.Backends)
-	if err = ol.ValidateConfigMappings(c.Rules, c.Caches); err != nil {
+	if err = c.Backends.ValidateConfigMappings(c.Rules, c.Caches); err != nil {
 		return err
 	}
 
-	serveTLS, err := ol.ValidateTLSConfigs()
+	serveTLS, err := c.Backends.ValidateTLSConfigs()
 	if err != nil {
 		return err
 	}
@@ -314,14 +313,14 @@ func (c *Config) Clone() *Config {
 	}
 
 	if len(c.Rules) > 0 {
-		nc.Rules = make(map[string]*rule.Options)
+		nc.Rules = make(rule.Lookup)
 		for k, v := range c.Rules {
 			nc.Rules[k] = v.Clone()
 		}
 	}
 
 	if len(c.RequestRewriters) > 0 {
-		nc.RequestRewriters = make(map[string]*rwopts.Options)
+		nc.RequestRewriters = make(rwopts.Lookup)
 		for k, v := range c.RequestRewriters {
 			nc.RequestRewriters[k] = v.Clone()
 		}

@@ -43,7 +43,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	tr "github.com/trickstercache/trickster/v2/pkg/observability/tracing/registry"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
+	pnh "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/ping"
+	ph "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/purge"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/reload"
 	"github.com/trickstercache/trickster/v2/pkg/router/lm"
 	"github.com/trickstercache/trickster/v2/pkg/routing"
@@ -111,10 +112,10 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 
 	r.RegisterRoute(newConf.Main.PingHandlerPath, nil,
 		[]string{http.MethodGet, http.MethodHead}, false,
-		http.HandlerFunc((handlers.PingHandleFunc(newConf))))
+		http.HandlerFunc((pnh.HandlerFunc(newConf))))
 
 	var caches = applyCachingConfig(si, newConf)
-	rh := reload.ReloadHandleFunc(hupFunc)
+	rh := reload.HandlerFunc(hupFunc)
 	backends, err := routing.RegisterProxyRoutes(newConf, r, mr, caches, tracers, false)
 	if err != nil {
 		handleStartupIssue("route registration failed",
@@ -127,7 +128,7 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	}
 	r.RegisterRoute(newConf.Main.PurgeKeyHandlerPath, nil,
 		[]string{http.MethodDelete}, true,
-		http.HandlerFunc(handlers.PurgeKeyHandleFunc(newConf, backends)))
+		http.HandlerFunc(ph.KeyHandlerFunc(newConf, backends)))
 
 	if si.Backends != nil {
 		alb.StopPools(si.Backends)

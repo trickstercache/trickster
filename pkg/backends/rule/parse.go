@@ -24,13 +24,13 @@ import (
 	"strings"
 
 	ro "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/redirect"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
 )
 
 var ErrInvalidRegularExpression = errors.New("invalid regular expression")
 
-func (c *Client) parseOptions(o *ro.Options, rwi map[string]rewriter.RewriteInstructions) error {
+func (c *Client) parseOptions(o *ro.Options, rwi rewriter.InstructionsLookup) error {
 
 	name := c.Name()
 
@@ -97,7 +97,7 @@ func (c *Client) parseOptions(o *ro.Options, rwi map[string]rewriter.RewriteInst
 	case o.RedirectURL != "":
 		r.defaultRedirectURL = o.RedirectURL
 		r.defaultRedirectCode = 302
-		nr = http.HandlerFunc(handlers.HandleRedirectResponse)
+		nr = http.HandlerFunc(redirect.HandleRedirectResponse)
 	default:
 		return badDefaultRoute
 	}
@@ -186,7 +186,7 @@ func (c *Client) parseOptions(o *ro.Options, rwi map[string]rewriter.RewriteInst
 			rc := 0
 			if v.RedirectURL != "" {
 				rc = 302
-				nr = http.HandlerFunc(handlers.HandleRedirectResponse)
+				nr = http.HandlerFunc(redirect.HandleRedirectResponse)
 			} else if v.NextRoute != "" {
 				no, ok := c.clients[v.NextRoute]
 				if !ok {

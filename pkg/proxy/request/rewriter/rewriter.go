@@ -27,12 +27,12 @@ var errInvalidRewriterOptions = errors.New("invalid rewriter options")
 
 // ProcessConfigs validates and compiles rewriter instructions from
 // the provided configuration map
-func ProcessConfigs(rwl map[string]*options.Options) (map[string]RewriteInstructions, error) {
+func ProcessConfigs(rwl options.Lookup) (InstructionsLookup, error) {
 	if rwl == nil {
 		return nil, errInvalidRewriterOptions
 	}
 
-	crw := make(map[string]RewriteInstructions)
+	crw := make(InstructionsLookup)
 	for k, v := range rwl {
 		ri, err := ParseRewriteList(v.Instructions)
 		if err != nil {

@@ -76,7 +76,7 @@ type Options struct {
 	// configured Operation, such as the demonimator when the operation is modulus
 	OperationArg string `yaml:"operation_arg,omitempty"`
 	// RuleCaseOptions is the map of cases to apply to evaluate against this rule
-	CaseOptions map[string]*CaseOptions `yaml:"cases,omitempty"`
+	CaseOptions CaseLookup `yaml:"cases,omitempty"`
 	// RedirectURL provides a URL to redirect the request in the default case, rather than
 	// handing off to the NextRoute
 	RedirectURL string `yaml:"redirect_url,omitempty"`
@@ -101,6 +101,8 @@ type CaseOptions struct {
 
 // Lookup is a map of Options
 type Lookup map[string]*Options
+
+type CaseLookup map[string]*CaseOptions
 
 // Clone returns a perfect copy of the subject *Options
 func (o *Options) Clone() *Options {

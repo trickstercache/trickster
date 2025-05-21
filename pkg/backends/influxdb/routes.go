@@ -21,14 +21,15 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/influxql"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 )
 
-func (c *Client) RegisterHandlers(map[string]http.Handler) {
+func (c *Client) RegisterHandlers(handlers.Lookup) {
 
 	c.TimeseriesBackend.RegisterHandlers(
-		map[string]http.Handler{
+		handlers.Lookup{
 			// This is the registry of handlers that Trickster supports for InfluxDB,
 			// and are able to be referenced by name (map key) in Config Files
 			"health": http.HandlerFunc(c.HealthHandler),
@@ -39,9 +40,9 @@ func (c *Client) RegisterHandlers(map[string]http.Handler) {
 }
 
 // DefaultPathConfigs returns the default PathConfigs for the given Provider
-func (c *Client) DefaultPathConfigs(_ *bo.Options) map[string]*po.Options {
+func (c *Client) DefaultPathConfigs(_ *bo.Options) po.Lookup {
 
-	paths := map[string]*po.Options{
+	paths := po.Lookup{
 		"/" + mnQuery: {
 			Path:            "/" + mnQuery,
 			HandlerName:     mnQuery,

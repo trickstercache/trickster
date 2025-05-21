@@ -39,7 +39,7 @@ import (
 )
 
 type testOptions struct {
-	Backends map[string]*Options `yaml:"backends,omitempty"`
+	Backends Lookup `yaml:"backends,omitempty"`
 	ncl      negative.Lookups
 }
 
@@ -76,7 +76,7 @@ func TestClone(t *testing.T) {
 	o.Hosts = []string{"test"}
 	o.CacheName = "test"
 	o.CompressibleTypes = sets.New([]string{"test"})
-	o.Paths = map[string]*po.Options{"test": p}
+	o.Paths = po.Lookup{"test": p}
 	o.NegativeCache = map[int]time.Duration{1: 1}
 	o.HealthCheck = &ho.Options{}
 	o.FastForwardPath = p
@@ -367,13 +367,13 @@ func TestSetDefaults(t *testing.T) {
 		t.Error(err)
 	}
 
-	_, err = SetDefaults("test", o2, md, map[string]rewriter.RewriteInstructions{"test": nil},
+	_, err = SetDefaults("test", o2, md, rewriter.InstructionsLookup{"test": nil},
 		backends, sets.NewStringSet())
 	if err != nil {
 		t.Error(err)
 	}
 
-	_, err = SetDefaults("test", o2, md, map[string]rewriter.RewriteInstructions{"not-test": nil},
+	_, err = SetDefaults("test", o2, md, rewriter.InstructionsLookup{"not-test": nil},
 		backends, sets.NewStringSet())
 	if err == nil {
 		t.Error("expected error for invalid rewriter name")

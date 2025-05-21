@@ -99,7 +99,7 @@ func NewTestWebClient() *http.Client {
 // NewTestInstance will start a trickster
 func NewTestInstance(
 	configFile string,
-	defaultPathConfigs func(*bo.Options) map[string]*po.Options,
+	defaultPathConfigs func(*bo.Options) po.Lookup,
 	respCode int, respBody string, respHeaders map[string]string,
 	backendProvider, urlPath, logLevel string,
 ) (*httptest.Server, *httptest.ResponseRecorder, *http.Request, *http.Client, error) {
@@ -172,10 +172,10 @@ func NewTestInstance(
 // NewTestPathConfig returns a path config based on the provided parameters
 func NewTestPathConfig(
 	o *bo.Options,
-	defaultPathConfigs func(*bo.Options) map[string]*po.Options,
+	defaultPathConfigs func(*bo.Options) po.Lookup,
 	urlPath string,
 ) *po.Options {
-	var paths map[string]*po.Options
+	var paths po.Lookup
 	if defaultPathConfigs != nil {
 		paths = defaultPathConfigs(o)
 	}

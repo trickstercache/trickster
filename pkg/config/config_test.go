@@ -60,7 +60,7 @@ func TestClone(t *testing.T) {
 	o.TLS = &to.Options{CertificateAuthorityPaths: []string{"foo"}}
 	o.HealthCheck.Headers = map[string]string{headers.NameAuthorization: expected}
 
-	c1.Rules = map[string]*rule.Options{
+	c1.Rules = rule.Lookup{
 		"test": {},
 	}
 
@@ -160,7 +160,7 @@ func TestSetDefaults(t *testing.T) {
 	}
 
 	c.Main.PprofServer = "both"
-	c.RequestRewriters = make(map[string]*rwo.Options)
+	c.RequestRewriters = make(rwo.Lookup)
 	err = c.setDefaults(nil)
 	if err == nil {
 		t.Error("expected error for invalid pprof server name")

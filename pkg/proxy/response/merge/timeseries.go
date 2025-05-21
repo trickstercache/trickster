@@ -21,7 +21,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
@@ -78,7 +78,7 @@ func Timeseries(w http.ResponseWriter, r *http.Request, rgs ResponseGates) {
 			w.WriteHeader(bestResp.StatusCode)
 			io.Copy(w, bestResp.Body)
 		} else {
-			handlers.HandleBadGateway(w, r)
+			failures.HandleBadGateway(w, r)
 		}
 		return
 	}

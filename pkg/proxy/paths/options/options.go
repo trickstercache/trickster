@@ -205,7 +205,7 @@ func SetDefaults(
 	backendName string,
 	metadata yamlx.KeyLookup,
 	paths Lookup,
-	crw map[string]rewriter.RewriteInstructions,
+	crw rewriter.InstructionsLookup,
 ) error {
 	if metadata == nil {
 		return errInvalidConfigMetadata

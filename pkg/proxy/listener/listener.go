@@ -31,7 +31,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
-	ph "github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/switcher"
 	sw "github.com/trickstercache/trickster/v2/pkg/proxy/tls"
 
 	"golang.org/x/net/netutil"
@@ -42,7 +42,7 @@ type Listener struct {
 	net.Listener
 	tlsConfig    *tls.Config
 	tlsSwapper   sw.CertSwapper
-	routeSwapper *ph.SwitchHandler
+	routeSwapper *switcher.SwitchHandler
 	server       *http.Server
 	exitOnError  bool
 }
@@ -86,7 +86,7 @@ func (l *Listener) CertSwapper() sw.CertSwapper {
 }
 
 // RouteSwapper returns the RouteSwapper reference from the Listener
-func (l *Listener) RouteSwapper() *ph.SwitchHandler {
+func (l *Listener) RouteSwapper() *switcher.SwitchHandler {
 	return l.routeSwapper
 }
 
@@ -167,7 +167,7 @@ func (lg *Group) Get(name string) *Listener {
 func (lg *Group) StartListener(listenerName, address string, port int, connectionsLimit int,
 	tlsConfig *tls.Config, router http.Handler, tracers tracing.Tracers,
 	f func(), drainTimeout, readHeaderTimeout time.Duration) error {
-	l := &Listener{routeSwapper: ph.NewSwitchHandler(router), exitOnError: f != nil}
+	l := &Listener{routeSwapper: switcher.NewSwitchHandler(router), exitOnError: f != nil}
 	if tlsConfig != nil && len(tlsConfig.Certificates) > 0 {
 		l.tlsConfig = tlsConfig
 		l.tlsSwapper = sw.NewSwapper(tlsConfig.Certificates)

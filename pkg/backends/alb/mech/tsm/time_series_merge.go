@@ -31,7 +31,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
@@ -103,7 +103,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	hl := h.pool.Healthy() // should return a fanout list
 	l := len(hl)
 	if l == 0 {
-		handlers.HandleBadGateway(w, r)
+		failures.HandleBadGateway(w, r)
 		return
 	}
 	// just proxy 1:1 if no folds in the fan

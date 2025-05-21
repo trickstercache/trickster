@@ -20,8 +20,6 @@ import (
 	"net/url"
 	"strings"
 
-	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
-	"github.com/trickstercache/trickster/v2/pkg/cache/negative"
 	"github.com/trickstercache/trickster/v2/pkg/errors"
 )
 
@@ -86,12 +84,12 @@ func Load(args []string) (*Config, error) {
 		return nil, errors.ErrNoValidBackends
 	}
 
-	ncl, err := negative.ConfigLookup(c.NegativeCacheConfigs).Validate()
+	ncl, err := c.NegativeCacheConfigs.Validate()
 	if err != nil {
 		return nil, err
 	}
 
-	err = bo.Lookup(c.Backends).Validate(ncl)
+	err = c.Backends.Validate(ncl)
 	if err != nil {
 		return nil, err
 	}

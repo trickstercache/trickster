@@ -22,29 +22,30 @@ import (
 
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/local"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 )
 
-func (c *Client) RegisterHandlers(map[string]http.Handler) {
+func (c *Client) RegisterHandlers(handlers.Lookup) {
 
 	c.Backend.RegisterHandlers(
-		map[string]http.Handler{
+		handlers.Lookup{
 			"health":        http.HandlerFunc(c.HealthHandler),
 			"proxy":         http.HandlerFunc(c.ProxyHandler),
-			"localresponse": http.HandlerFunc(handlers.HandleLocalResponse),
+			"localresponse": http.HandlerFunc(local.HandleLocalResponse),
 		},
 	)
 
 }
 
 // DefaultPathConfigs returns the default PathConfigs for the given Provider
-func (c *Client) DefaultPathConfigs(_ *bo.Options) map[string]*po.Options {
+func (c *Client) DefaultPathConfigs(_ *bo.Options) po.Lookup {
 
 	am := methods.AllHTTPMethods()
 
-	paths := map[string]*po.Options{
+	paths := po.Lookup{
 		"/-" + strings.Join(am, "-"): {
 			Path:          "/",
 			HandlerName:   "proxy",

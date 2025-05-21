@@ -46,6 +46,8 @@ type Options struct {
 	attachTagsToSpan bool
 }
 
+type Lookup map[string]*Options
+
 // New returns a new *Options with the default values
 func New() *Options {
 	return &Options{
@@ -76,7 +78,7 @@ func (o *Options) Clone() *Options {
 }
 
 // ProcessTracingOptions enriches the configuration data of the provided Tracing Options collection
-func ProcessTracingOptions(mo map[string]*Options, metadata yamlx.KeyLookup) {
+func ProcessTracingOptions(mo Lookup, metadata yamlx.KeyLookup) {
 	if len(mo) == 0 {
 		return
 	}

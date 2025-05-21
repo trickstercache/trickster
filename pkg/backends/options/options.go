@@ -88,7 +88,7 @@ type Options struct {
 	// When both are set, the higher of the two values is used
 	BackfillTolerancePoints int `yaml:"backfill_tolerance_points,omitempty"`
 	// PathList is a list of Path Options that control the behavior of the given paths when requested
-	Paths map[string]*po.Options `yaml:"paths,omitempty"`
+	Paths po.Lookup `yaml:"paths,omitempty"`
 	// NegativeCacheName provides the name of the Negative Cache Config to be used by this Backend
 	NegativeCacheName string `yaml:"negative_cache_name,omitempty"`
 	// TimeseriesTTL specifies the cache TTL of timeseries objects
@@ -167,7 +167,7 @@ type Options struct {
 	// Synthesized Configurations
 	// These configurations are parsed versions of those defined above, and are what Trickster uses internally
 	//
-	// Name is the Name of the backend, taken from the Key in the Backends map[string]*BackendOptions
+	// Name is the Name of the backend, taken from the Key in the Backends Lookup Map
 	Name string `yaml:"-"`
 	// Router is a router.Router containing this backend's Path Routes; it is set during route registration
 	Router router.Router `yaml:"-"`
@@ -220,7 +220,7 @@ func New() *Options {
 		MaxTTL:                       DefaultMaxTTL,
 		NegativeCache:                make(map[int]time.Duration),
 		NegativeCacheName:            DefaultBackendNegativeCacheName,
-		Paths:                        make(map[string]*po.Options),
+		Paths:                        make(po.Lookup),
 		RevalidationFactor:           DefaultRevalidationFactor,
 		MaxShardSizePoints:           DefaultTimeseriesShardSize,
 		MaxShardSizeTime:             DefaultTimeseriesShardSize,
@@ -290,7 +290,7 @@ func (o *Options) Clone() *Options {
 		no.CompressibleTypes = maps.Clone(o.CompressibleTypes)
 	}
 
-	no.Paths = make(map[string]*po.Options)
+	no.Paths = make(po.Lookup)
 	for l, p := range o.Paths {
 		no.Paths[l] = p.Clone()
 	}
@@ -451,7 +451,7 @@ func SetDefaults(
 	name string,
 	o *Options,
 	metadata yamlx.KeyLookup,
-	crw map[string]rewriter.RewriteInstructions,
+	crw rewriter.InstructionsLookup,
 	backends Lookup,
 	activeCaches sets.Set[string],
 ) (*Options, error) {
