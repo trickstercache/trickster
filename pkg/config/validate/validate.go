@@ -117,10 +117,7 @@ func Authenticators(c *config.Config) error {
 	if len(c.Authenticators) == 0 {
 		return nil
 	}
-	if err := c.Authenticators.Validate(ar.IsRegistered); err != nil {
-		return err
-	}
-	return nil
+	return c.Authenticators.Validate(ar.IsRegistered)
 }
 
 func Backends(c *config.Config) error {
