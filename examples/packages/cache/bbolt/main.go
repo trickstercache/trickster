@@ -16,7 +16,7 @@ func main() {
 	const myKey, myValue = "myKeyName", "myValue"
 
 	// create a new memory cache
-	c := bbolt.New("bbolt", "/Users/jranson/test.bbolt", "trickster", nil)
+	c := bbolt.New("bbolt", "./test.bbolt", "trickster", nil)
 	// this starts some background goroutines for object lifecycle management, so
 	// be sure to Close() once ready for the cache to be garbage collected
 	err := c.Connect()
