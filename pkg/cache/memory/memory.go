@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/cache"
-	"github.com/trickstercache/trickster/v2/pkg/cache/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 )
@@ -85,12 +84,9 @@ func (c *Cache) store(cacheKey string, byteData []byte, refData cache.ReferenceO
 
 	var o1, o2 any
 	if byteData != nil {
-		l := len(byteData)
-		metrics.ObserveCacheOperation(c.Name, c.Config.Provider, "set", "none", float64(l))
 		o1 = byteData
 		o2 = byteData
 	} else if refData != nil {
-		metrics.ObserveCacheOperation(c.Name, c.Config.Provider, "setDirect", "none", float64(refData.Size()))
 		o1 = refData
 		o2 = refData
 	}

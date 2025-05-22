@@ -22,6 +22,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/index"
+	"github.com/trickstercache/trickster/v2/pkg/cache/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/locks"
@@ -54,25 +55,44 @@ type Manager struct {
 func (cm *Manager) StoreReference(cacheKey string, data cache.ReferenceObject, ttl time.Duration) error {
 	nl, _ := cm.locker.Acquire(filepath.Join(cm.config.Name, cm.config.Provider, cacheKey))
 	defer nl.Release()
+	metrics.ObserveCacheOperation(cm.config.Name, cm.config.Provider, "setDirect", "none", float64(data.Size()))
 	return cm.Client.(cache.MemoryCache).StoreReference(cacheKey, data, ttl)
 }
 
 func (cm *Manager) Store(cacheKey string, byteData []byte, ttl time.Duration) error {
 	nl, _ := cm.locker.Acquire(filepath.Join(cm.config.Name, cm.config.Provider, cacheKey))
 	defer nl.Release()
+	metrics.ObserveCacheOperation(cm.config.Name, cm.config.Provider, "set", "none", float64(len(byteData)))
 	return cm.Client.Store(cacheKey, byteData, ttl)
 }
 
 func (cm *Manager) RetrieveReference(cacheKey string) (any, status.LookupStatus, error) {
 	nl, _ := cm.locker.RAcquire(filepath.Join(cm.config.Name, cm.config.Provider, cacheKey))
 	defer nl.RRelease()
-	return cm.Client.(cache.MemoryCache).RetrieveReference(cacheKey)
+	v, s, err := cm.Client.(cache.MemoryCache).RetrieveReference(cacheKey)
+	if ro, ok := v.(cache.ReferenceObject); ok {
+		cm.ObserveRetrieval(ro.Size(), s, err)
+	}
+	return v, s, err
+}
+
+func (cm *Manager) ObserveRetrieval(size int, s status.LookupStatus, err error) {
+	if err == cache.ErrKNF || s == status.LookupStatusKeyMiss {
+		metrics.ObserveCacheMiss(cm.config.Name, cm.config.Provider)
+	} else if err != nil {
+		metrics.ObserveCacheEvent(cm.config.Name, cm.config.Provider, "error", "failed to retrieve cache entry")
+	} else if s == status.LookupStatusHit {
+		metrics.ObserveCacheOperation(cm.config.Name, cm.config.Provider, "get", "hit", float64(size))
+	}
 }
 
 func (cm *Manager) Retrieve(cacheKey string) ([]byte, status.LookupStatus, error) {
 	nl, _ := cm.locker.RAcquire(filepath.Join(cm.config.Name, cm.config.Provider, cacheKey))
 	defer nl.RRelease()
-	return cm.Client.Retrieve(cacheKey)
+	b, s, err := cm.Client.Retrieve(cacheKey)
+	cm.ObserveRetrieval(len(b), s, err)
+	return b, s, err
+
 }
 
 func (cm *Manager) Remove(cacheKeys ...string) error {
@@ -80,6 +100,7 @@ func (cm *Manager) Remove(cacheKeys ...string) error {
 		nl, _ := cm.locker.Acquire(filepath.Join(cm.config.Name, cm.config.Provider, k))
 		defer nl.Release()
 	}
+	metrics.ObserveCacheDel(cm.config.Name, cm.config.Provider, float64(len(cacheKeys)-1))
 	return cm.Client.Remove(cacheKeys...)
 }
 
