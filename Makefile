@@ -268,6 +268,12 @@ spelling:
 	else \
 		mdspell './README.md' './docs/**/*.md' ; \
 	fi
+	@which codespell ; \
+	if [ "$$?" != "0" ]; then \
+		echo "codespell is not installed" ; \
+	else \
+		codespell --skip='vendor,*.git,*.png,*.pdf,*.tiff,*.plist,*.pem,rangesim*.go,*.gz,go.sum,go.mod' --ignore-words='./testdata/ignore_words.txt' ; \
+	fi
 
 .PHONY: serve
 serve:

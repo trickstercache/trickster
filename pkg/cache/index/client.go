@@ -47,8 +47,6 @@ var (
 )
 
 // IndexedClientOptions modify an IndexedClient's behavior.
-// Meant for configuring a client for a specific usage -- not meant
-// for general configuration.
 type IndexedClientOptions struct {
 	NeedsFlushInterval bool
 	NeedsReapInterval  bool
