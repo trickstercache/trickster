@@ -665,6 +665,34 @@ backends:
 #     endpoint: https://zipkin.example.com:9411/api/v2/spans
 #     sample_rate: 0.1
 
+# # Configuration Options for Authentication
+# authenticators:
+#   example_auth_1:
+#     # provider (required) is the type of Authenticator. Currently supported: basic (basic auth)
+#     provider: basic
+#     # proxy_preserve, when true, will pass the Authentication headers through on proxied requests.
+#     # The default value (false) will cause Authentication headers to be stripped from proxied requests
+#     # when an inbound request is permitted by this Authenticator.
+#     proxy_preserve: false
+#     # users_file is the optional users source file
+#     users_file: /path/to/user-manifest.csv
+#     # users_file_format is the source file format. Required when users_file is set. Valid options: csv, htpasswd
+#     users_file_format: csv
+#     # users is an optional embedded users list (format is: name: credential)
+#     users: 
+#       user1: red123
+#     # users_format provides the format of the passwords in both the users_file CSVs and the embedded users list.
+#     # Valid options are: plaintext (default), bcrypt.
+#     users_format: plaintext 
+#     # config holds optional provider-specific configs
+#     config:
+#       # basic auth optional configs:
+#       # showLoginForm (default: false) will cause the user's browser to show the Basic Auth Login modal when
+#       # required credentials are not provided or are invalid
+#       showLoginForm: true 
+#       # realm is the realm valid shown to on the Basic Auth Login modal. If not set, the realm will default
+#       # to the authenticator name (e.g., example_auth_1)
+#       realm: custom-realm-name
 
 # # Configuration Options for Metrics Instrumentation
 # metrics:

@@ -26,6 +26,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
+	auth "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/types"
 	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
@@ -53,6 +54,7 @@ type Resources struct {
 	TS                timeseries.Timeseries
 	TSReqestOptions   *timeseries.RequestOptions
 	Response          *http.Response
+	AuthResult        *auth.AuthResult
 }
 
 // Clone returns an exact copy of the subject Resources collection
@@ -75,6 +77,7 @@ func (r *Resources) Clone() *Resources {
 		TSTransformer:     r.TSTransformer,
 		TS:                r.TS,
 		TSReqestOptions:   r.TSReqestOptions,
+		AuthResult:        r.AuthResult, // shallow copy of the auth result
 	}
 }
 
@@ -126,4 +129,5 @@ func (r *Resources) Merge(r2 *Resources) {
 	r.AlternateCacheTTL = r2.AlternateCacheTTL
 	r.TimeRangeQuery = r2.TimeRangeQuery
 	r.Tracer = r2.Tracer
+	r.AuthResult = r2.AuthResult
 }

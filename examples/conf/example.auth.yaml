@@ -1,0 +1,43 @@
+backends:
+  backend01:
+    provider: reverseproxy
+    authenticator_name: example_auth_1 # <-- protects backend01 with example_auth_1 authenticator
+    origin_url: https://example.com/
+
+  backend02:
+    provider: reverseproxy
+    authenticator_name: example_auth_2 # <-- protects backend02 with example_auth_2 authenticator
+    origin_url: https://example.com/
+
+  backend03:
+    provider: reverseproxy
+    authenticator_name: example_auth_3 # <-- protects backend03 with example_auth_3 authenticator
+    origin_url: https://example.com/
+
+authenticators:
+  # loads users from a CSV and an embedded plaintext manifest, causes the browser to show the login form
+  example_auth_1:
+    provider: basic # http basic auth (required)
+    proxy_preserve: true # the authenticator will preserve auth headers instead of stripping them
+    users_file: /path/to/user-manifest.csv # optional users source file
+    users_file_format: csv
+    users: # optional embedded users list (name: credential)
+      user1: red123
+      user2: ${USER2_PASS} # password for user2 is sourced from the ENV
+    users_format: plaintext
+    config: # optional provider-specific configs
+      showLoginForm: true # show the login form on missing or invalid creds
+      realm: custom-realm-name # realm name defaults to the authenticator name
+
+  # loads users from an htpasswd file (assumed bcrypted passwords)
+  example_auth_2:
+    provider: basic # http basic auth (required)
+    users_file: /path/to/user-manifest.htpasswd # optional users source file
+    users_file_format: htpasswd
+
+  # loads users from the embedded users list only, passwords are pre-bcrypted
+  example_auth_3:
+    provider: basic # http basic auth (required)
+    users: # optional embedded users list (name: credential)
+      user1: asf;j2ihj0h8vabjkwdqbv29hq
+    users_format: bcrypt

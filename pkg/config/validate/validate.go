@@ -23,6 +23,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/errors"
 	tr "github.com/trickstercache/trickster/v2/pkg/observability/tracing/registry"
+	ar "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/registry"
 	"github.com/trickstercache/trickster/v2/pkg/router/lm"
 	"github.com/trickstercache/trickster/v2/pkg/routing"
 )
@@ -50,6 +51,9 @@ func Validate(c *config.Config) error {
 		return err
 	}
 	if err := Rules(c); err != nil {
+		return err
+	}
+	if err := Authenticators(c); err != nil {
 		return err
 	}
 	if err := Caches(c); err != nil {
@@ -109,12 +113,19 @@ func NegativeCaches(c *config.Config) error {
 	return nil
 }
 
+func Authenticators(c *config.Config) error {
+	if len(c.Authenticators) == 0 {
+		return nil
+	}
+	return c.Authenticators.Validate(ar.IsRegistered)
+}
+
 func Backends(c *config.Config) error {
 	if len(c.Backends) == 0 {
 		return errors.ErrNoValidBackends
 	}
 	if err := c.Backends.ValidateConfigMappings(c.Caches, c.CompiledNegativeCaches,
-		c.Rules, c.RequestRewriters, c.TracingConfigs); err != nil {
+		c.Rules, c.RequestRewriters, c.Authenticators, c.TracingConfigs); err != nil {
 		return err
 	}
 	serveTLS, err := c.Backends.ValidateTLSConfigs()
