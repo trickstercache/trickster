@@ -28,6 +28,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/locks"
 )
 
+// Provide initialization options to the Manager / cache.Cache creation
 type CacheOptions struct {
 	UseIndex     bool
 	IndexCliOpts index.IndexedClientOptions
@@ -44,6 +45,8 @@ func NewCache(cli cache.Client, cacheOpts CacheOptions, cacheConfig *options.Opt
 	return cm
 }
 
+// Manager implements the cache.Cache interface for Trickster, providing an abstracted
+// cache layer with metrics, locking, and optional index / LRU-key-reaper.
 type Manager struct {
 	cache.Client
 	originalCli cache.Client

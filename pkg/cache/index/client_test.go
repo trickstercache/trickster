@@ -243,8 +243,6 @@ func TestIndexedClient(t *testing.T) {
 	require.Equal(t, 6, keyCount)
 	ic.reap()
 
-	t.Log("keys", ic.Objects.Keys())
-
 	_, ok := ic.Objects.Load("test.1")
 	require.False(t, ok, "expected key %s to be missing", "test.1")
 
@@ -267,9 +265,10 @@ func TestIndexedClient(t *testing.T) {
 	ic.Store("test.7", []byte("test_value00000000000000000000000000000000000000000000000000000000000000000000000000000"), ttl)
 
 	// trigger a byte-based reap
-	t.Log("keys", ic.Objects.Keys())
+	keyCount = len(ic.Objects.Keys())
+	require.Equal(t, 3, keyCount)
 	ic.reap()
-	t.Log("keys", ic.Objects.Keys())
+	require.Len(t, ic.Objects.Keys(), 0)
 
 	// expect index to be empty
 	objects := ic.Objects.ToObjects()
