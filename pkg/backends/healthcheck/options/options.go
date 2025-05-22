@@ -75,7 +75,7 @@ type Options struct {
 	// ExpectedBody is the body expected in the response to be considered Healthy status
 	ExpectedBody string `yaml:"expected_body,omitempty"`
 
-	md              yamlx.KeyLookup
+	y               yamlx.KeyLookup
 	hasExpectedBody bool
 }
 
@@ -93,9 +93,9 @@ func New() *Options {
 	}
 }
 
-// SetMetaData sets the metadata for the health checker options
-func (o *Options) SetMetaData(md yamlx.KeyLookup) {
-	o.md = md
+// SetYAMLData sets the yamldata for the health checker options
+func (o *Options) SetYAMLData(y yamlx.KeyLookup) {
+	o.y = y
 }
 
 // Clone returns an exact copy of a *healthcheck.Options
@@ -119,41 +119,41 @@ func (o *Options) Clone() *Options {
 		c.ExpectedCodes = make([]int, len(o.ExpectedCodes))
 		copy(c.ExpectedCodes, o.ExpectedCodes)
 	}
-	c.md = o.md
+	c.y = o.y
 	c.hasExpectedBody = o.hasExpectedBody
 	return c
 }
 
 func (o *Options) Overlay(name string, custom *Options) {
-	if custom == nil || custom.md == nil {
+	if custom == nil || custom.y == nil {
 		return
 	}
-	if custom.md.IsDefined("backends", name, "healthcheck", "path") {
+	if custom.y.IsDefined("backends", name, "healthcheck", "path") {
 		o.Path = custom.Path
 	}
-	if custom.md.IsDefined("backends", name, "healthcheck", "verb") {
+	if custom.y.IsDefined("backends", name, "healthcheck", "verb") {
 		o.Verb = custom.Verb
 	}
-	if custom.md.IsDefined("backends", name, "healthcheck", "query") {
+	if custom.y.IsDefined("backends", name, "healthcheck", "query") {
 		o.Query = custom.Query
 	}
-	if custom.md.IsDefined("backends", name, "healthcheck", "headers") {
+	if custom.y.IsDefined("backends", name, "healthcheck", "headers") {
 		o.Headers = custom.Headers
 	}
-	if custom.md.IsDefined("backends", name, "healthcheck", "body") {
+	if custom.y.IsDefined("backends", name, "healthcheck", "body") {
 		o.Body = custom.Body
 	}
-	if custom.md.IsDefined("backends", name, "healthcheck", "expected_codes") {
+	if custom.y.IsDefined("backends", name, "healthcheck", "expected_codes") {
 		o.ExpectedCodes = custom.ExpectedCodes
 	}
-	if custom.md.IsDefined("backends", name, "healthcheck", "expected_body") {
+	if custom.y.IsDefined("backends", name, "healthcheck", "expected_body") {
 		o.ExpectedBody = custom.ExpectedBody
 		o.hasExpectedBody = true
 	}
-	if custom.md.IsDefined("backends", name, "healthcheck", "expected_headers") {
+	if custom.y.IsDefined("backends", name, "healthcheck", "expected_headers") {
 		o.ExpectedHeaders = custom.ExpectedHeaders
 	}
-	if custom.md.IsDefined("backends", name, "healthcheck", "interval") {
+	if custom.y.IsDefined("backends", name, "healthcheck", "interval") {
 		o.Interval = custom.Interval
 	}
 }

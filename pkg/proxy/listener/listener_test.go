@@ -29,6 +29,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
@@ -185,7 +186,7 @@ func TestListenerConnectionLimitWorks(t *testing.T) {
 	es := httptest.NewServer(http.HandlerFunc(handler))
 	defer es.Close()
 
-	_, err := config.Load([]string{"-origin-url", es.URL, "-provider", "prometheus"})
+	_, err := config.Load([]string{"-origin-url", es.URL, "-provider", providers.Prometheus})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}

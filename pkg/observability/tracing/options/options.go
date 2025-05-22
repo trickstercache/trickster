@@ -46,6 +46,7 @@ type Options struct {
 	attachTagsToSpan bool
 }
 
+// Lookup is a map of Options keyed by Options Name
 type Lookup map[string]*Options
 
 // New returns a new *Options with the default values
@@ -112,4 +113,19 @@ func (o *Options) setAttachTags() {
 	if o.Provider == "zipkin" && o.Tags != nil && len(o.Tags) > 0 {
 		o.attachTagsToSpan = true
 	}
+}
+
+func (o *Options) Valdiate() error {
+	// placeholder for future validations (currently there are none for tracing)
+	return nil
+}
+
+func (l Lookup) Validate() error {
+	for k, o := range l {
+		o.Name = k
+		if err := o.Valdiate(); err != nil {
+			return err
+		}
+	}
+	return nil
 }

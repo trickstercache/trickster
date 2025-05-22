@@ -21,9 +21,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/forwarding"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
 	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
 )
 
@@ -32,8 +32,8 @@ func TestNew(t *testing.T) {
 	pc := New()
 	require.NotNil(t, pc)
 
-	if pc.HandlerName != "proxy" {
-		t.Errorf("expected value %s, got %s", "proxy", pc.HandlerName)
+	if pc.HandlerName != providers.Proxy {
+		t.Errorf("expected value %s, got %s", providers.Proxy, pc.HandlerName)
 	}
 
 }
@@ -44,8 +44,8 @@ func TestPathClone(t *testing.T) {
 	pc2 := pc.Clone()
 	require.NotNil(t, pc2)
 
-	if pc2.HandlerName != "proxy" {
-		t.Errorf("expected value %s, got %s", "proxy", pc2.HandlerName)
+	if pc2.HandlerName != providers.Proxy {
+		t.Errorf("expected value %s, got %s", providers.Proxy, pc2.HandlerName)
 	}
 
 }
@@ -152,9 +152,9 @@ func TestMerge(t *testing.T) {
 
 }
 
-func TestSetDefaults(t *testing.T) {
+func TestOverlayYAMLData(t *testing.T) {
 
-	err := SetDefaults("default", nil, nil, nil)
+	_, err := OverlayYAMLData("default", nil, nil)
 	if err != errInvalidConfigMetadata {
 		t.Error("expected errInvalidConfigMetadata, got", err)
 	}
@@ -169,28 +169,21 @@ func TestSetDefaults(t *testing.T) {
 	o.ReqRewriterName = "path"
 	o.ResponseBody = "trickster"
 	o.Methods = nil
-	crw := rewriter.InstructionsLookup{"path": nil}
 
-	err = SetDefaults("test", kl, pl, crw)
+	_, err = OverlayYAMLData("test", pl, kl)
 	if err != nil {
 		t.Error(err)
 	}
 
-	o.ReqRewriterName = "invalid"
-	err = SetDefaults("test", kl, pl, crw)
-	if err == nil {
-		t.Error("expected error for invalid rewriter name")
-	}
-
 	o.ReqRewriterName = "path"
 	o.MatchTypeName = "invalid"
-	err = SetDefaults("test", kl, pl, crw)
+	_, err = OverlayYAMLData("test", pl, kl)
 	if err != nil {
 		t.Error(err)
 	}
 
 	o.CollapsedForwardingName = "invalid"
-	err = SetDefaults("test", kl, pl, crw)
+	_, err = OverlayYAMLData("test", pl, kl)
 	if err == nil {
 		t.Error("expected error for invalid collapsed_forwarding name")
 	}

@@ -31,6 +31,17 @@ func New[T comparable](keys []T) Set[T] {
 	return s
 }
 
+func MapKeysToStringSet[V any](m map[string]V) Set[string] {
+	if m == nil {
+		return nil
+	}
+	out := make(Set[string], len(m))
+	for k := range m {
+		out.Add(k)
+	}
+	return out
+}
+
 // NewInt64Set returns a new Set[int64]
 func NewInt64Set() Set[int64] {
 	return make(Set[int64])

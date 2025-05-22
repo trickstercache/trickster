@@ -18,6 +18,7 @@ package options
 
 import (
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 
@@ -51,7 +52,20 @@ type Options struct {
 	FgrCodesLookup sets.Set[int] `yaml:"-"`
 }
 
-const defaultOutputFormat = "prometheus"
+const defaultTSOutputFormat = providers.Prometheus
+
+// InvalidALBOptionsError is an error type for invalid ALB Options
+type InvalidALBOptionsError struct {
+	error
+}
+
+// NewErrInvalidALBOptions returns an invalid ALB Options error
+func NewErrInvalidALBOptions(backendName string) error {
+	return &InvalidALBOptionsError{
+		error: fmt.Errorf("invalid alb options for backend [%s]",
+			backendName),
+	}
+}
 
 // New returns a New Options object with the default values
 func New() *Options {
@@ -84,33 +98,35 @@ func (o *Options) Clone() *Options {
 	return c
 }
 
-// SetDefaults iterates the provided Options, and overlays user-set values onto the default Options
-func SetDefaults(name string, options *Options, metadata yamlx.KeyLookup) (*Options, error) {
+// OverlayYAMLData extracts supported ALB Options values from the yaml map,
+// and returns a new default Options overlaid with the extracted values
+func OverlayYAMLData(name string, options *Options,
+	y yamlx.KeyLookup) (*Options, error) {
 
-	if metadata == nil {
+	if y == nil {
 		return nil, te.ErrInvalidOptionsMetadata
 	}
 
 	o := New()
 
-	if !metadata.IsDefined("backends", name, "alb") {
+	if !y.IsDefined("backends", name, providers.ALB) {
 		return nil, nil
 	}
 
-	if metadata.IsDefined("backends", name, "alb", "pool") {
+	if y.IsDefined("backends", name, providers.ALB, "pool") {
 		o.Pool = options.Pool
 	}
 
-	if metadata.IsDefined("backends", name, "alb", "mechanism") && options.MechanismName != "" {
+	if y.IsDefined("backends", name, providers.ALB, "mechanism") && options.MechanismName != "" {
 		o.MechanismName = options.MechanismName
 	}
 
-	if metadata.IsDefined("backends", name, "alb", "healthy_floor") && options.HealthyFloor > 0 {
+	if y.IsDefined("backends", name, providers.ALB, "healthy_floor") && options.HealthyFloor > 0 {
 		o.HealthyFloor = options.HealthyFloor
 	}
 
 	if o.MechanismName == "fgr" {
-		if metadata.IsDefined("backends", name, "alb", "fgr_status_codes") && options.FGRStatusCodes != nil {
+		if y.IsDefined("backends", name, providers.ALB, "fgr_status_codes") && options.FGRStatusCodes != nil {
 			o.FGRStatusCodes = options.FGRStatusCodes
 		}
 		if o.FGRStatusCodes != nil {
@@ -119,7 +135,7 @@ func SetDefaults(name string, options *Options, metadata yamlx.KeyLookup) (*Opti
 		}
 	}
 
-	if metadata.IsDefined("backends", name, "alb", "output_format") && options.OutputFormat != "" {
+	if y.IsDefined("backends", name, providers.ALB, "output_format") && options.OutputFormat != "" {
 		if !strings.HasPrefix(o.MechanismName, "tsm") {
 			return nil, errors.New("'output_format' option is only valid for provider 'alb' and mechanism 'tsmerge'")
 		}
@@ -130,9 +146,16 @@ func SetDefaults(name string, options *Options, metadata yamlx.KeyLookup) (*Opti
 	}
 
 	if strings.HasPrefix(o.MechanismName, "tsm") && o.OutputFormat == "" {
-		o.OutputFormat = defaultOutputFormat
+		o.OutputFormat = defaultTSOutputFormat
 	}
-
 	return o, nil
+}
 
+func (o *Options) ValidatePool(backendName string, allBackends sets.Set[string]) error {
+	for _, bn := range o.Pool {
+		if _, ok := allBackends[bn]; !ok {
+			return te.NewErrInvalidPoolMemberName(backendName, bn)
+		}
+	}
+	return nil
 }

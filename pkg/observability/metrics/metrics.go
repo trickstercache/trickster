@@ -22,12 +22,13 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 )
 
 const (
 	metricNamespace   = "trickster"
 	cacheSubsystem    = "cache"
-	proxySubsystem    = "proxy"
+	proxySubsystem    = providers.Proxy
 	configSubsystem   = "config"
 	buildSubsystem    = "build"
 	frontendSubsystem = "frontend"

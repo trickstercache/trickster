@@ -25,12 +25,14 @@ import (
 
 	"github.com/stretchr/testify/require"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	ro "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/negative"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
+	tro "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
+	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
@@ -40,7 +42,6 @@ import (
 
 type testOptions struct {
 	Backends Lookup `yaml:"backends,omitempty"`
-	ncl      negative.Lookups
 }
 
 func fromYAML(conf string) (*Options, yamlx.KeyLookup, error) {
@@ -111,39 +112,49 @@ func TestValidateConfigMappings(t *testing.T) {
 	ol := Lookup{o.Name: o}
 	ol["frontend"] = o
 
-	err = ol.ValidateConfigMappings(ro.Lookup{}, co.Lookup{})
+	err = ol.ValidateConfigMappings(co.Lookup{}, negative.Lookups{},
+		ro.Lookup{}, rwopts.Lookup{}, tro.Lookup{})
 	if err == nil {
 		t.Error("expected error for invalid cache name")
 	}
 
-	// err = ol.ValidateConfigMappings(ro.Lookup{}, co.Lookup{"test": nil})
-	// if err == nil {
-	// 	t.Error("expected error for invalid backend name")
-	// }
-
 	delete(ol, "frontend")
-	o.Provider = "rule"
+	o.Provider = providers.Rule
 	o.RuleName = "test"
-	err = ol.ValidateConfigMappings(ro.Lookup{}, co.Lookup{"test": nil})
+	err = ol.ValidateConfigMappings(co.Lookup{"test": nil}, negative.Lookups{},
+		ro.Lookup{}, rwopts.Lookup{}, tro.Lookup{})
 	if err == nil {
 		t.Error("expected error for invalid rule name")
 	}
 
-	err = ol.ValidateConfigMappings(ro.Lookup{"test": new(ro.Options)}, co.Lookup{"test": nil})
-	if err != nil {
-		t.Error(err)
+	err = ol.ValidateConfigMappings(co.Lookup{"test": nil}, negative.Lookups{},
+		ro.Lookup{"test": new(ro.Options)}, rwopts.Lookup{}, tro.Lookup{})
+	if err == nil {
+		t.Error("expected error for invalid tracing name")
 	}
 
+	o.TracingConfigName = ""
+
 	o.Name = ""
-	err = ol.ValidateConfigMappings(ro.Lookup{"test": new(ro.Options)}, co.Lookup{"test": nil})
+	err = ol.ValidateConfigMappings(co.Lookup{"test": nil}, negative.Lookups{},
+		ro.Lookup{"test": new(ro.Options)}, rwopts.Lookup{}, tro.Lookup{})
 	if err == nil {
 		t.Error("expected error for invalid backend name")
 	}
 
 	o.Name = "test"
-	o.Provider = "alb"
+	o.Provider = providers.ALB
 	o.RuleName = ""
-	err = ol.ValidateConfigMappings(ro.Lookup{"test": new(ro.Options)}, co.Lookup{"test": nil})
+	err = ol.ValidateConfigMappings(co.Lookup{"test": nil}, negative.Lookups{},
+		ro.Lookup{"test": new(ro.Options)}, rwopts.Lookup{}, tro.Lookup{})
+	if err == nil {
+		t.Error("expected error for invalid negative cache name")
+	}
+
+	o.NegativeCacheName = ""
+
+	err = ol.ValidateConfigMappings(co.Lookup{"test": nil}, negative.Lookups{},
+		ro.Lookup{"test": new(ro.Options)}, rwopts.Lookup{}, tro.Lookup{})
 	if err != nil {
 		t.Error(err)
 	}
@@ -154,7 +165,7 @@ func testStringValueValidationError(to *testOptions, location *string, testValue
 	// Test Invalid String
 	s := *location
 	*location = testValue
-	err := Lookup(to.Backends).Validate(to.ncl)
+	err := to.Backends.Validate()
 	*location = s // restore original string
 	return err
 }
@@ -170,7 +181,7 @@ func testDurationValueValidationError(to *testOptions, sws []durationSwapper) er
 		sws[i].restoreVal = *sws[i].location
 		*sws[i].location = sws[i].testValue
 	}
-	err := Lookup(to.Backends).Validate(to.ncl)
+	err := Lookup(to.Backends).Validate()
 	for i := range sws {
 		*sws[i].location = sws[i].restoreVal
 	}
@@ -179,15 +190,12 @@ func testDurationValueValidationError(to *testOptions, sws []durationSwapper) er
 
 func TestValidate(t *testing.T) {
 
-	ncl := testNegativeCaches()
 	o, _, err := fromTestYAML()
 	if err != nil {
 		t.Error(err)
 	}
 	to := &testOptions{Backends: Lookup{o.Name: o}}
-	to.ncl = ncl
 
-	var errType01 = NewErrInvalidNegativeCacheName("invalid").(*ErrInvalidNegativeCacheName)
 	var errType02 = NewErrMissingOriginURL("test").(*ErrMissingOriginURL)
 	var errType03 = NewErrMissingProvider("test").(*ErrMissingProvider)
 
@@ -198,37 +206,31 @@ func TestValidate(t *testing.T) {
 		val      string
 		expected any
 	}{
-		{ // 0 - invalid negative cache name
-			to:       to,
-			loc:      &o.NegativeCacheName,
-			val:      "invalid",
-			expected: errType01,
-		},
-		{ // 1 - valid negative cache name
+		{ // 0 - valid negative cache name
 			to:       to,
 			loc:      &o.NegativeCacheName,
 			val:      "test",
 			expected: nil,
 		},
-		{ // 2 - invalid origin URL
+		{ // 1 - invalid origin URL
 			to:       to,
 			loc:      &o.OriginURL,
 			val:      "",
 			expected: errType02,
 		},
-		{ // 3 - valid origin URL + strip trailing slash
+		{ // 2 - valid origin URL + strip trailing slash
 			to:       to,
 			loc:      &o.OriginURL,
 			val:      "http://trickstercache.org/test/path/",
 			expected: nil,
 		},
-		{ // 4 - invalid cache key prefix
+		{ // 3 - invalid cache key prefix
 			to:       to,
 			loc:      &o.CacheKeyPrefix,
 			val:      "",
 			expected: nil,
 		},
-		{ // 5 - invalid provider
+		{ // 4 - invalid provider
 			to:       to,
 			loc:      &o.Provider,
 			val:      "",
@@ -322,12 +324,11 @@ func TestValidate(t *testing.T) {
 		opts.MaxShardSizeTime = 1 * time.Millisecond
 		opts.MaxShardSizePoints = 1
 		to := &testOptions{Backends: Lookup{o.Name: &opts}}
-		to.ncl = ncl
-		require.ErrorIs(t, Lookup(to.Backends).Validate(to.ncl), ErrInvalidMaxShardSize)
+		require.ErrorIs(t, Lookup(to.Backends).Validate(), ErrInvalidMaxShardSize)
 	})
 }
 
-func TestSetDefaults(t *testing.T) {
+func TestOverlayYAMLData(t *testing.T) {
 
 	o, md, err := fromTestYAML()
 	if err != nil {
@@ -336,12 +337,12 @@ func TestSetDefaults(t *testing.T) {
 
 	backends := Lookup{o.Name: o}
 
-	_, err = SetDefaults("test", o, md, nil, backends, sets.NewStringSet())
+	_, err = OverlayYAMLData("test", o, backends, sets.NewStringSet(), md)
 	if err != nil {
 		t.Error(err)
 	}
 
-	_, err = SetDefaults("test", o, nil, nil, backends, sets.NewStringSet())
+	_, err = OverlayYAMLData("test", o, backends, sets.NewStringSet(), nil)
 	if err != ErrInvalidMetadata {
 		t.Error("expected invalid metadata, got", err)
 	}
@@ -351,15 +352,9 @@ func TestSetDefaults(t *testing.T) {
 		t.Error(err)
 	}
 
-	_, err = SetDefaults("test", o2, md, nil, backends, sets.NewStringSet())
+	_, err = OverlayYAMLData("test", o2, backends, sets.NewStringSet(), md)
 	if err != nil {
 		t.Error(err)
-	}
-
-	o.Paths["series"].ReqRewriterName = "invalid"
-	_, err = SetDefaults("test", o, md, nil, backends, sets.NewStringSet())
-	if err == nil {
-		t.Error("expected error for invalid rewriter name")
 	}
 
 	o2, md, err = fromTestYAMLWithReqRewriter()
@@ -367,16 +362,9 @@ func TestSetDefaults(t *testing.T) {
 		t.Error(err)
 	}
 
-	_, err = SetDefaults("test", o2, md, rewriter.InstructionsLookup{"test": nil},
-		backends, sets.NewStringSet())
+	_, err = OverlayYAMLData("test", o2, backends, sets.NewStringSet(), md)
 	if err != nil {
 		t.Error(err)
-	}
-
-	_, err = SetDefaults("test", o2, md, rewriter.InstructionsLookup{"not-test": nil},
-		backends, sets.NewStringSet())
-	if err == nil {
-		t.Error("expected error for invalid rewriter name")
 	}
 
 	o2, md, err = fromTestYAMLWithALB()
@@ -384,8 +372,7 @@ func TestSetDefaults(t *testing.T) {
 		t.Error(err)
 	}
 
-	_, err = SetDefaults("test", o2, md, nil,
-		backends, sets.NewStringSet())
+	_, err = OverlayYAMLData("test", o2, backends, sets.NewStringSet(), md)
 	if err != nil {
 		t.Error(err)
 	}
@@ -451,8 +438,8 @@ func TestCloneYAMLSafe(t *testing.T) {
 	}
 	p.RequestHeaders = map[string]string{headers.NameAuthorization: "trickster"}
 
-	co := o.CloneYAMLSafe()
-	p, ok = co.Paths["series"]
+	o2 := o.CloneYAMLSafe()
+	p, ok = o2.Paths["series"]
 	if !ok {
 		t.Error("expected 'series' path")
 	}

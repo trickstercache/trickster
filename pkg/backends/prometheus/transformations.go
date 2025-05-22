@@ -20,6 +20,7 @@ import (
 	"net/http"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus/model"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
@@ -50,7 +51,7 @@ func (c *Client) processVectorTransformations(w http.ResponseWriter, rg *merge.R
 	t2, err := model.UnmarshalTimeseries(bytes, trq)
 	if err != nil || t2 == nil {
 		logger.Error("vector unmarshaling error",
-			logging.Pairs{"provider": "prometheus", "detail": err.Error()})
+			logging.Pairs{"provider": providers.Prometheus, "detail": err.Error()})
 		defaultWrite(rg.Response.StatusCode, w, bytes)
 		return
 	}

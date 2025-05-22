@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/local"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
@@ -32,7 +33,7 @@ func (c *Client) RegisterHandlers(handlers.Lookup) {
 	c.Backend.RegisterHandlers(
 		handlers.Lookup{
 			"health":        http.HandlerFunc(c.HealthHandler),
-			"proxy":         http.HandlerFunc(c.ProxyHandler),
+			providers.Proxy: http.HandlerFunc(c.ProxyHandler),
 			"proxycache":    http.HandlerFunc(c.ProxyCacheHandler),
 			"localresponse": http.HandlerFunc(local.HandleLocalResponse),
 		},
@@ -55,7 +56,7 @@ func (c *Client) DefaultPathConfigs(_ *bo.Options) po.Lookup {
 		},
 		"/-" + strings.Join(um, "-"): {
 			Path:          "/",
-			HandlerName:   "proxy",
+			HandlerName:   providers.Proxy,
 			Methods:       um,
 			MatchType:     matching.PathMatchTypePrefix,
 			MatchTypeName: "prefix",

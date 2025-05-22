@@ -63,11 +63,11 @@ func TestBackends(t *testing.T) {
 
 func TestIsVirtual(t *testing.T) {
 
-	if ok := IsVirtual("rule"); !ok {
+	if ok := IsVirtual(providers.Rule); !ok {
 		t.Error("expected true")
 	}
 
-	if ok := IsVirtual("prometheus"); ok {
+	if ok := IsVirtual(providers.Prometheus); ok {
 		t.Error("expected false")
 	}
 
@@ -77,7 +77,7 @@ func TestStartHealthChecks(t *testing.T) {
 
 	// 1: rule / Virtual provider
 	o1 := bo.New()
-	o1.Provider = "rule"
+	o1.Provider = providers.Rule
 	c1, _ := New("test1", o1, nil, lm.NewRouter(), nil)
 
 	// 2: non-virtual provider with no health check options

@@ -70,6 +70,10 @@ func LoadAndValidate() (*config.Config, error) {
 		return cfg, nil
 	}
 
+	for _, w := range cfg.LoaderWarnings {
+		logger.Warn(w, nil)
+	}
+
 	// Validate Config
 	if err = validate.Validate(cfg); err != nil {
 		logger.Error(err.Error(), nil)

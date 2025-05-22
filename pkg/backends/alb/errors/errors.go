@@ -16,8 +16,32 @@
 
 package errors
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 var ErrInvalidTimeSeriesMergeProvider = errors.New("invalid time series merge provider")
 var ErrUnsupportedMechanism = errors.New("unsupported mechanism")
 var ErrInvalidOptionsMetadata = errors.New("invalid options metadata")
+
+// InvalidALBOptionsError is an error type for invalid ALB Options
+type InvalidALBOptionsError struct {
+	error
+}
+
+// NewErrInvalidALBOptions returns an invalid ALB Options error
+func NewErrInvalidALBOptions(backendName string) error {
+	return &InvalidALBOptionsError{
+		error: fmt.Errorf("invalid alb options for backend [%s]",
+			backendName),
+	}
+}
+
+// NewErrInvalidPoolMemberName returns a new invalid ALB Options error
+func NewErrInvalidPoolMemberName(albName, poolMemberName string) error {
+	return &InvalidALBOptionsError{
+		error: fmt.Errorf("invalid pool member name [%s] provided for alb [%s]",
+			poolMemberName, albName),
+	}
+}

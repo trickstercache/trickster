@@ -25,6 +25,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
@@ -64,7 +65,7 @@ func MergeAndWriteLabelData(w http.ResponseWriter, r *http.Request, rgs merge.Re
 		err := json.Unmarshal(rg.Body(), &ld1)
 		if err != nil {
 			logger.Error("labels unmarshaling error",
-				logging.Pairs{"provider": "prometheus", "detail": err.Error()})
+				logging.Pairs{"provider": providers.Prometheus, "detail": err.Error()})
 			return false
 		}
 		if ld == nil {

@@ -17,9 +17,10 @@
 package options
 
 import (
+	"errors"
 	"testing"
 
-	"github.com/trickstercache/trickster/v2/pkg/backends/alb/errors"
+	ae "github.com/trickstercache/trickster/v2/pkg/backends/alb/errors"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
 
@@ -84,14 +85,14 @@ func TestClone(t *testing.T) {
 	}
 }
 
-func TestSetDefaults(t *testing.T) {
+func TestOverlayYAMLData(t *testing.T) {
 
-	_, err := SetDefaults("test", nil, nil)
-	if err != errors.ErrInvalidOptionsMetadata {
+	_, err := OverlayYAMLData("test", nil, nil)
+	if err != ae.ErrInvalidOptionsMetadata {
 		t.Error("expected error for invalid options metadata", err)
 	}
 
-	o2, err := SetDefaults("test", nil, yamlx.KeyLookup{})
+	o2, err := OverlayYAMLData("test", nil, yamlx.KeyLookup{})
 	if err != nil {
 		t.Error(err)
 	}
@@ -103,7 +104,7 @@ func TestSetDefaults(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	_, err = SetDefaults("test", o, md)
+	_, err = OverlayYAMLData("test", o, md)
 	if err != nil {
 		t.Error(err)
 	}
@@ -112,7 +113,7 @@ func TestSetDefaults(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	o2, err = SetDefaults("test", o, md)
+	o2, err = OverlayYAMLData("test", o, md)
 	if err != nil {
 		t.Error(err)
 	}
@@ -124,7 +125,7 @@ func TestSetDefaults(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	_, err = SetDefaults("test", o, md)
+	_, err = OverlayYAMLData("test", o, md)
 	if err == nil {
 		t.Error("expected output_format error")
 	}
@@ -133,7 +134,7 @@ func TestSetDefaults(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	_, err = SetDefaults("test", o, md)
+	_, err = OverlayYAMLData("test", o, md)
 	if err == nil {
 		t.Error("expected output_format error")
 	}
@@ -142,7 +143,7 @@ func TestSetDefaults(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	_, err = SetDefaults("test", o, md)
+	_, err = OverlayYAMLData("test", o, md)
 	if err != nil {
 		t.Error("failed to set defaults")
 	}
@@ -151,9 +152,18 @@ func TestSetDefaults(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	_, err = SetDefaults("test", o, md)
+	_, err = OverlayYAMLData("test", o, md)
 	if err != nil {
 		t.Error("failed to set defaults")
 	}
 
+}
+
+func TestErrInvalidALBOptions(t *testing.T) {
+	err := NewErrInvalidALBOptions("test")
+	var e *InvalidALBOptionsError
+	ok := errors.As(err, &e)
+	if !ok {
+		t.Error("invalid type assertion")
+	}
 }

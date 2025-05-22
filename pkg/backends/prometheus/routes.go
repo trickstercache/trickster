@@ -22,6 +22,7 @@ import (
 	"time"
 
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
@@ -208,7 +209,7 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) po.Lookup {
 
 		APIPath: {
 			Path:          APIPath,
-			HandlerName:   "proxy",
+			HandlerName:   providers.Proxy,
 			Methods:       methods.GetAndPost(),
 			MatchType:     matching.PathMatchTypePrefix,
 			MatchTypeName: "prefix",
@@ -216,7 +217,7 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) po.Lookup {
 
 		"/": {
 			Path:          "/",
-			HandlerName:   "proxy",
+			HandlerName:   providers.Proxy,
 			Methods:       methods.GetAndPost(),
 			MatchType:     matching.PathMatchTypePrefix,
 			MatchTypeName: "prefix",

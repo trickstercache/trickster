@@ -27,6 +27,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/errors"
@@ -34,9 +35,10 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
+	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
-// Client Implements the Proxy Client Interface
+// Client Implements the Backend Interface
 type Client struct {
 	backends.Backend
 	handler types.Mechanism // this is the actual handler for all request to this backend
@@ -44,7 +46,7 @@ type Client struct {
 
 // Handlers returns a map of the HTTP Handlers the client has registered
 func (c *Client) Handlers() handlers.Lookup {
-	return handlers.Lookup{"alb": c.handler}
+	return handlers.Lookup{providers.ALB: c.handler}
 }
 
 var _ rt.NewBackendClientFunc = NewClient
@@ -96,14 +98,15 @@ func StopPools(clients backends.Backends) error {
 	return nil
 }
 
-// ValidatePools iterates the backends and validates ALB backends
-func ValidatePools(clients backends.Backends) error {
+// ValidateClients iterates the backends and validates ALB backends
+func ValidateClients(clients backends.Backends) error {
+	backends := sets.MapKeysToStringSet(clients)
 	for _, v := range clients {
-		if v == nil || v.Configuration().Provider != "alb" {
+		if v == nil || v.Configuration().Provider != providers.ALB {
 			continue
 		}
-		if alb, ok := v.(*Client); ok {
-			err := alb.ValidatePool(clients)
+		if c, ok := v.(*Client); ok {
+			err := c.Validate(backends)
 			if err != nil {
 				return err
 			}
@@ -112,29 +115,39 @@ func ValidatePools(clients backends.Backends) error {
 	return nil
 }
 
-// ValidatePool confirms the provided list of backends to is valid
-func (c *Client) ValidatePool(clients backends.Backends) error {
-	ok := registry.IsRegistered(types.Name(c.Configuration().ALBOptions.MechanismName))
-	if !ok {
-		return fmt.Errorf("invalid mechanism name [%s] in backend [%s]",
-			c.Configuration().ALBOptions.MechanismName, c.Name())
+// ValidatePool confirms the provided list of backends is valid
+func (c *Client) Validate(backends sets.Set[string]) error {
+	o := c.Configuration()
+	if o.ALBOptions == nil {
+		return errors.ErrInvalidOptions
 	}
-	for _, n := range c.Configuration().ALBOptions.Pool {
-		if _, ok := clients[n]; !ok {
-			return fmt.Errorf("invalid pool member name [%s] in backend [%s]", n, c.Name())
-		}
+	if !registry.IsRegistered(types.Name(o.ALBOptions.MechanismName)) {
+		return fmt.Errorf("invalid mechanism name [%s] in backend [%s]",
+			o.ALBOptions.MechanismName, o.Name)
+	}
+	if err := c.ValidatePool(backends); err != nil {
+		return err
 	}
 	return nil
 }
 
-// ValidateAndStartPool starts this Client's pool up using the provided list of backends to
-// validate and map out the pool configuration
+// ValidatePool confirms the provided list of backends is valid
+func (c *Client) ValidatePool(backends sets.Set[string]) error {
+	o := c.Configuration().ALBOptions
+	if o == nil {
+		return errors.ErrInvalidOptions
+	}
+	return o.ValidatePool(c.Name(), backends)
+}
+
+// ValidateAndStartPool starts this Client's pool up using the provided list of
+// backends to validate and map out the pool configuration
 func (c *Client) ValidateAndStartPool(clients backends.Backends, hcs healthcheck.StatusLookup) error {
 	if c.Configuration() == nil || c.Configuration().ALBOptions == nil {
 		return errors.ErrInvalidOptions
 	}
 	o := c.Configuration().ALBOptions
-	err := c.ValidatePool(clients)
+	err := c.ValidatePool(sets.MapKeysToStringSet(clients))
 	if err != nil {
 		return err
 	}
@@ -166,7 +179,7 @@ func (c *Client) DefaultPathConfigs(_ *bo.Options) po.Lookup {
 	paths := po.Lookup{
 		"/" + strings.Join(m, "-"): {
 			Path:          "/",
-			HandlerName:   "alb",
+			HandlerName:   providers.ALB,
 			Methods:       m,
 			MatchType:     matching.PathMatchTypePrefix,
 			MatchTypeName: "prefix",

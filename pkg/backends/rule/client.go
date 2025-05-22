@@ -22,6 +22,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
@@ -104,7 +105,7 @@ func (c *Client) DefaultPathConfigs(_ *bo.Options) po.Lookup {
 	paths := po.Lookup{
 		"/" + strings.Join(m, "-"): {
 			Path:          "/",
-			HandlerName:   "rule",
+			HandlerName:   providers.Rule,
 			Methods:       m,
 			MatchType:     matching.PathMatchTypePrefix,
 			MatchTypeName: "prefix",
@@ -114,7 +115,6 @@ func (c *Client) DefaultPathConfigs(_ *bo.Options) po.Lookup {
 }
 
 func (c *Client) RegisterHandlers(handlers.Lookup) {
-
 	c.Backend.RegisterHandlers(
 		handlers.Lookup{
 			"rule": http.HandlerFunc(c.Handler),

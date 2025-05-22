@@ -24,13 +24,11 @@ import (
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
-	"github.com/trickstercache/trickster/v2/pkg/backends/alb"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registry"
 	"github.com/trickstercache/trickster/v2/pkg/backends/reverseproxycache"
-	"github.com/trickstercache/trickster/v2/pkg/backends/rule"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	encoding "github.com/trickstercache/trickster/v2/pkg/encoding/handler"
@@ -95,7 +93,9 @@ func RegisterProxyRoutes(conf *config.Config, r router.Router,
 					fmt.Errorf("only one backend can be marked as default. Found both %s and %s",
 						defaultBackend, k)
 			}
-			logger.Debug("default backend identified", logging.Pairs{"name": k})
+			if !dryRun {
+				logger.Debug("default backend identified", logging.Pairs{"name": k})
+			}
 			defaultBackend = k
 			cdo = o
 			continue
@@ -131,15 +131,6 @@ func RegisterProxyRoutes(conf *config.Config, r router.Router,
 		if err != nil {
 			return nil, err
 		}
-	}
-	err = rule.ValidateOptions(clients, conf.CompiledRewriters)
-	if err != nil {
-		return nil, err
-	}
-
-	err = alb.ValidatePools(clients)
-	if err != nil {
-		return nil, err
 	}
 	return clients, nil
 }
@@ -224,7 +215,7 @@ func RegisterPathRoutes(r router.Router, handlers handlers.Lookup,
 		}
 	}
 
-	decorate := func(po1 *po.Options) http.Handler {
+	applyMiddleware := func(po1 *po.Options) http.Handler {
 		// default base route is the path handler
 		h := po1.Handler
 		// attach distributed tracer
@@ -292,22 +283,20 @@ func RegisterPathRoutes(r router.Router, handlers handlers.Lookup,
 				"backendHost": o.Host, "handledPath": handledPath, "matchType": p.MatchType,
 				"frontendHosts": strings.Join(o.Hosts, ",")})
 		if p.Handler != nil && len(p.Methods) > 0 {
-
 			if p.Methods[0] == "*" {
 				p.Methods = methods.AllHTTPMethods()
 			}
 			if len(o.Hosts) > 0 {
 				r.RegisterRoute(p.Path, o.Hosts, p.Methods,
-					p.MatchType == matching.PathMatchTypePrefix, decorate(p))
+					p.MatchType == matching.PathMatchTypePrefix, applyMiddleware(p))
 			}
 			if !o.PathRoutingDisabled {
 				r.RegisterRoute(handledPath, nil, p.Methods,
 					p.MatchType == matching.PathMatchTypePrefix,
-					middleware.StripPathPrefix(pathPrefix, decorate(p)))
+					middleware.StripPathPrefix(pathPrefix, applyMiddleware(p)))
 			}
 			or.RegisterRoute(p.Path, nil, p.Methods,
-				p.MatchType == matching.PathMatchTypePrefix,
-				decorate(p))
+				p.MatchType == matching.PathMatchTypePrefix, applyMiddleware(p))
 		}
 	}
 
@@ -319,7 +308,7 @@ func RegisterPathRoutes(r router.Router, handlers handlers.Lookup,
 func RegisterDefaultBackendRoutes(r router.Router, bknds backends.Backends,
 	tracers tracing.Tracers) {
 
-	decorate := func(o *bo.Options, po *po.Options, tr *tracing.Tracer,
+	applyMiddleware := func(o *bo.Options, po *po.Options, tr *tracing.Tracer,
 		c cache.Cache, client backends.Backend) http.Handler {
 		// default base route is the path handler
 		h := po.Handler
@@ -363,10 +352,10 @@ func RegisterDefaultBackendRoutes(r router.Router, bknds backends.Backends,
 
 					if p.MatchType == matching.PathMatchTypePrefix {
 						r.RegisterRoute(p.Path, nil, p.Methods,
-							true, decorate(o, p, tr, b.Cache(), b))
+							true, applyMiddleware(o, p, tr, b.Cache(), b))
 					}
 					r.RegisterRoute(p.Path, nil, p.Methods,
-						false, decorate(o, p, tr, b.Cache(), b))
+						false, applyMiddleware(o, p, tr, b.Cache(), b))
 				}
 			}
 		}

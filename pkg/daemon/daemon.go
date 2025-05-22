@@ -27,6 +27,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 	"github.com/trickstercache/trickster/v2/pkg/appinfo/usage"
 	"github.com/trickstercache/trickster/v2/pkg/config/reload"
+	"github.com/trickstercache/trickster/v2/pkg/config/validate"
 	"github.com/trickstercache/trickster/v2/pkg/daemon/instance"
 	"github.com/trickstercache/trickster/v2/pkg/daemon/setup"
 	"github.com/trickstercache/trickster/v2/pkg/daemon/signaling"
@@ -40,7 +41,6 @@ var mtx sync.Mutex
 var wasStarted bool
 
 func Start() error {
-
 	var skipUnlock bool
 	unlock := func() {
 		if !skipUnlock {
@@ -49,11 +49,9 @@ func Start() error {
 	}
 	mtx.Lock()
 	defer unlock()
-
 	if wasStarted {
 		return errors.ErrServerAlreadyStarted
 	}
-
 	metrics.BuildInfo.WithLabelValues(goruntime.Version(),
 		appinfo.GitCommitID, appinfo.Version).Set(1)
 
@@ -76,13 +74,21 @@ func Start() error {
 			return nil
 		}
 	}
+	err = conf.Process()
+	if err != nil {
+		return err
+	}
+
+	// these can't be done until the config is processed
+	err = validate.ValidateRoutesRulesAndPools(conf)
+	if err != nil {
+		return err
+	}
 
 	si := &instance.ServerInstance{}
-
 	var hupFunc reload.ReloadFunc = func(source string) (bool, error) {
 		return Hup(si, source)
 	}
-
 	// Serve with Config
 	err = setup.ApplyConfig(si, conf, hupFunc, func() { os.Exit(1) })
 	if err != nil {
@@ -108,7 +114,15 @@ func Hup(si *instance.ServerInstance, source string) (bool, error) {
 		}
 		logger.Warn("configuration reload starting now",
 			logging.Pairs{"source": source})
-
+		err = conf.Process()
+		if err != nil {
+			return false, err
+		}
+		// these can't be done until the config is processed
+		err = validate.ValidateRoutesRulesAndPools(conf)
+		if err != nil {
+			return false, err
+		}
 		var hupFunc reload.ReloadFunc = func(source string) (bool, error) {
 			return Hup(si, source)
 		}

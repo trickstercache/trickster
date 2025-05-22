@@ -22,6 +22,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/clickhouse"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/registry"
 	"github.com/trickstercache/trickster/v2/pkg/router/lm"
@@ -52,7 +53,7 @@ func NewAcceleratorWithOptions(baseURL string, o *bo.Options, c *co.Options) (ht
 		o = bo.New()
 		o.Name = "default"
 	}
-	o.Provider = "clickhouse"
+	o.Provider = providers.ClickHouse
 	o.CacheName = c.Name
 	o.Scheme = u.Scheme
 	o.Host = u.Host

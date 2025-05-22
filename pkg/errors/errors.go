@@ -46,6 +46,9 @@ var ErrInvalidMethod = errors.New("invalid method value in config")
 // ErrNoValidBackends is an error for when not valid backends have been configured
 var ErrNoValidBackends = errors.New("no valid backends configured")
 
+// ErrInvalidListenPort is an error for when the configured listen port is invalid (e.g., negative)
+var ErrInvalidListenPort = errors.New("invalid listen port in config")
+
 type ErrorBody struct {
 	Error string `json:"error"`
 }

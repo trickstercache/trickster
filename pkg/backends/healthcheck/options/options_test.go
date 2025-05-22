@@ -27,17 +27,16 @@ import (
 )
 
 func TestNew(t *testing.T) {
-
 	o := New()
 	if o == nil {
 		t.Error("expected non-nil options")
 	}
 }
 
-func TestMetadata(t *testing.T) {
+func TestSetYAMLData(t *testing.T) {
 	o := New()
-	o.SetMetaData(nil)
-	if o.md != nil {
+	o.SetYAMLData(nil)
+	if o.y != nil {
 		t.Error("expected nil metadata")
 	}
 }
@@ -104,13 +103,13 @@ func TestOverlay(t *testing.T) {
 		t.Error(err)
 	}
 
-	md, err := yamlx.GetKeyList(hcTOML)
+	y, err := yamlx.GetKeyList(hcTOML)
 	if err != nil {
 		t.Error(err)
 	}
 
 	o2 := New()
-	o2.md = md
+	o2.y = y
 	o.Overlay("test", o2)
 	if o.Interval != 0 {
 		t.Error("expected 5000 got ", o.Interval)

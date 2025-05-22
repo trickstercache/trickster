@@ -58,34 +58,6 @@ func TestLoadConfigurationFileFailures(t *testing.T) {
 		expected string
 	}{
 		{ // Case 0
-			"../../testdata/test.missing-origin-url.conf",
-			`missing origin-url for backend "test"`,
-		},
-		{ // Case 1
-			"../../testdata/test.bad_origin_url.conf",
-			"first path segment in URL cannot contain colon",
-		},
-		{ // Case 2
-			"../../testdata/test.missing_backend_provider.conf",
-			`missing provider for backend "test"`,
-		},
-		{ // Case 3
-			"../../testdata/test.bad-cache-name.conf",
-			`invalid cache name "test_fail" provided in backend options "test"`,
-		},
-		{ // Case 4
-			"../../testdata/test.invalid-negative-cache-1.conf",
-			`invalid negative cache config in default: a is not a valid status code`,
-		},
-		{ // Case 5
-			"../../testdata/test.invalid-negative-cache-2.conf",
-			`invalid negative cache config in default: 1212 is not >= 400 and < 600`,
-		},
-		{ // Case 6
-			"../../testdata/test.invalid-negative-cache-3.conf",
-			`invalid negative cache name: foo`,
-		},
-		{ // Case 7
 			"../../testdata/test.invalid-pcf-name.conf",
 			`invalid collapsed_forwarding name: INVALID`,
 		},
@@ -235,16 +207,6 @@ func TestFullLoadConfiguration(t *testing.T) {
 
 	if o.KeepAliveTimeout != 7000*time.Millisecond {
 		t.Errorf("expected %d got %d", 7, o.KeepAliveTimeout)
-	}
-
-	// MaxTTLMS is 300, thus should override TimeseriesTTLMS = 8666
-	if o.TimeseriesTTL != 300000*time.Millisecond {
-		t.Errorf("expected 300000, got %d", o.TimeseriesTTL)
-	}
-
-	// MaxTTLMS is 300, thus should override FastForwardTTLMS = 382
-	if o.FastForwardTTL != 300000*time.Millisecond {
-		t.Errorf("expected 300000, got %d", o.FastForwardTTL)
 	}
 
 	if o.TLS == nil {

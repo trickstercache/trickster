@@ -24,6 +24,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/cache/key"
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/forwarding"
@@ -98,7 +99,7 @@ func New() *Options {
 	return &Options{
 		Path:                    "/",
 		Methods:                 methods.CacheableHTTPMethods(),
-		HandlerName:             "proxy",
+		HandlerName:             providers.Proxy,
 		MatchTypeName:           "exact",
 		MatchType:               matching.PathMatchTypeExact,
 		CollapsedForwardingName: "basic",
@@ -117,8 +118,7 @@ func New() *Options {
 // Clone returns an exact copy of the subject Options
 func (o *Options) Clone() *Options {
 	c := &Options{
-		Path: o.Path,
-		//		BackendOptions:            o.BackendOptions,
+		Path:                    o.Path,
 		MatchTypeName:           o.MatchTypeName,
 		MatchType:               o.MatchType,
 		HandlerName:             o.HandlerName,
@@ -199,43 +199,35 @@ var pathMembers = []string{"path", "match_type", "handler", "methods", "cache_ke
 	"req_rewriter_name",
 }
 
-var errInvalidConfigMetadata = errors.New("invalid config metadata")
+var errInvalidConfigMetadata = errors.New("invalid config y")
 
-func SetDefaults(
+func OverlayYAMLData(
 	backendName string,
-	metadata yamlx.KeyLookup,
 	paths Lookup,
-	crw rewriter.InstructionsLookup,
-) error {
-	if metadata == nil {
-		return errInvalidConfigMetadata
+	y yamlx.KeyLookup,
+) (Lookup, error) {
+	if y == nil {
+		return nil, errInvalidConfigMetadata
 	}
-	for k, p := range paths {
-		if metadata.IsDefined("backends", backendName, "paths", k, "req_rewriter_name") &&
-			p.ReqRewriterName != "" {
-			ri, ok := crw[p.ReqRewriterName]
-			if !ok {
-				return fmt.Errorf("invalid rewriter name %s in path %s of backend options %s",
-					p.ReqRewriterName, k, backendName)
-			}
-			p.ReqRewriter = ri
-		}
+	out := make(Lookup, len(paths))
+	for k, o := range paths {
+		p := o.Clone()
 		if len(p.Methods) == 0 {
 			p.Methods = []string{http.MethodGet}
 		}
 		p.Custom = make([]string, 0)
 		for _, pm := range pathMembers {
-			if metadata.IsDefined("backends", backendName, "paths", k, pm) {
+			if y.IsDefined("backends", backendName, "paths", k, pm) {
 				p.Custom = append(p.Custom, pm)
 			}
 		}
-		if metadata.IsDefined("backends", backendName, "paths", k, "response_body") {
+		if y.IsDefined("backends", backendName, "paths", k, "response_body") {
 			p.ResponseBodyBytes = []byte(p.ResponseBody)
 			p.HasCustomResponseBody = true
 		}
-		if metadata.IsDefined("backends", backendName, "paths", k, "collapsed_forwarding") {
+		if y.IsDefined("backends", backendName, "paths", k, "collapsed_forwarding") {
 			if _, ok := forwarding.CollapsedForwardingTypeNames[p.CollapsedForwardingName]; !ok {
-				return fmt.Errorf("invalid collapsed_forwarding name: %s", p.CollapsedForwardingName)
+				return nil, fmt.Errorf("invalid collapsed_forwarding name: %s", p.CollapsedForwardingName)
 			}
 			p.CollapsedForwardingType =
 				forwarding.GetCollapsedForwardingType(p.CollapsedForwardingName)
@@ -249,7 +241,21 @@ func SetDefaults(
 			p.MatchType = matching.PathMatchTypeExact
 			p.MatchTypeName = p.MatchType.String()
 		}
-		paths[p.Path] = p
+		out[p.Path] = p
+	}
+	return out, nil
+}
+
+func (o *Options) Validate() error {
+	// placeholder for future validations as needed (currently there are none)
+	return nil
+}
+
+func (l Lookup) Validate() error {
+	for _, o := range l {
+		if err := o.Validate(); err != nil {
+			return err
+		}
 	}
 	return nil
 }
