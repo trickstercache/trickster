@@ -26,6 +26,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/locks"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 )
 
 // Provide initialization options to the Manager / cache.Cache creation
@@ -59,6 +61,7 @@ func (cm *Manager) StoreReference(cacheKey string, data cache.ReferenceObject, t
 	nl, _ := cm.locker.Acquire(filepath.Join(cm.config.Name, cm.config.Provider, cacheKey))
 	defer nl.Release()
 	metrics.ObserveCacheOperation(cm.config.Name, cm.config.Provider, "setDirect", "none", float64(data.Size()))
+	logger.Debug("cache store", logging.Pairs{"key": cacheKey, "provider": cm.config.Provider})
 	return cm.Client.(cache.MemoryCache).StoreReference(cacheKey, data, ttl)
 }
 
@@ -66,6 +69,7 @@ func (cm *Manager) Store(cacheKey string, byteData []byte, ttl time.Duration) er
 	nl, _ := cm.locker.Acquire(filepath.Join(cm.config.Name, cm.config.Provider, cacheKey))
 	defer nl.Release()
 	metrics.ObserveCacheOperation(cm.config.Name, cm.config.Provider, "set", "none", float64(len(byteData)))
+	logger.Debug("cache store", logging.Pairs{"key": cacheKey, "provider": cm.config.Provider})
 	return cm.Client.Store(cacheKey, byteData, ttl)
 }
 
@@ -74,17 +78,20 @@ func (cm *Manager) RetrieveReference(cacheKey string) (any, status.LookupStatus,
 	defer nl.RRelease()
 	v, s, err := cm.Client.(cache.MemoryCache).RetrieveReference(cacheKey)
 	if ro, ok := v.(cache.ReferenceObject); ok {
-		cm.observeRetrieval(ro.Size(), s, err)
+		cm.observeRetrieval(cacheKey, ro.Size(), s, err)
 	}
 	return v, s, err
 }
 
-func (cm *Manager) observeRetrieval(size int, s status.LookupStatus, err error) {
+func (cm *Manager) observeRetrieval(cacheKey string, size int, s status.LookupStatus, err error) {
 	if err == cache.ErrKNF || s == status.LookupStatusKeyMiss {
+		logger.Debug("cache miss", logging.Pairs{"key": cacheKey, "provider": cm.config.Provider})
 		metrics.ObserveCacheMiss(cm.config.Name, cm.config.Provider)
 	} else if err != nil {
+		logger.Debug("cache retrieve failed", logging.Pairs{"key": cacheKey, "provider": cm.config.Provider})
 		metrics.ObserveCacheEvent(cm.config.Name, cm.config.Provider, "error", "failed to retrieve cache entry")
 	} else if s == status.LookupStatusHit {
+		logger.Debug("cache retrieve", logging.Pairs{"key": cacheKey, "provider": cm.config.Provider})
 		metrics.ObserveCacheOperation(cm.config.Name, cm.config.Provider, "get", "hit", float64(size))
 	}
 }
@@ -93,7 +100,7 @@ func (cm *Manager) Retrieve(cacheKey string) ([]byte, status.LookupStatus, error
 	nl, _ := cm.locker.RAcquire(filepath.Join(cm.config.Name, cm.config.Provider, cacheKey))
 	defer nl.RRelease()
 	b, s, err := cm.Client.Retrieve(cacheKey)
-	cm.observeRetrieval(len(b), s, err)
+	cm.observeRetrieval(cacheKey, len(b), s, err)
 	return b, s, err
 
 }
@@ -104,6 +111,7 @@ func (cm *Manager) Remove(cacheKeys ...string) error {
 		defer nl.Release()
 	}
 	metrics.ObserveCacheDel(cm.config.Name, cm.config.Provider, float64(len(cacheKeys)-1))
+	logger.Debug("cache remove", logging.Pairs{"keys": cacheKeys, "provider": cm.config.Provider})
 	return cm.Client.Remove(cacheKeys...)
 }
 
