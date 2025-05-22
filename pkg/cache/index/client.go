@@ -72,7 +72,7 @@ func NewIndexedClient(
 		opt(options)
 	}
 
-	if options.NeedsFlushInterval {
+	if options.NeedsFlushInterval || o.FlushInterval > 0 {
 		// check to see if an index was cached already from a previous run
 		b, s, err := client.Retrieve(IndexKey)
 		if err != nil {
@@ -85,20 +85,17 @@ func NewIndexedClient(
 		if o.FlushInterval > 0 {
 			go idx.flusher(ctx)
 		} else {
-			logger.Warn("cache index flusher was not started",
-				logging.Pairs{"cacheName": idx.name, "flushInterval": o.FlushInterval})
+			logger.Warn("cache index flusher was not started, recommended for provider",
+				logging.Pairs{"cacheName": idx.name, "cacheProvider": idx.cacheProvider, "flushInterval": o.FlushInterval})
 		}
 	}
 
-	// FIXME: this triggers a failure in pkg/proxy/engines -- need to investigate
-	// if options.NeedsReapInterval {
 	if o.ReapInterval > 0 {
 		go idx.reaper(ctx)
-	} else {
-		logger.Warn("cache reaper was not started",
-			logging.Pairs{"cacheName": idx.name, "reapInterval": o.ReapInterval})
+	} else if options.NeedsReapInterval {
+		logger.Warn("cache reaper was not started, recommended for provider",
+			logging.Pairs{"cacheName": idx.name, "cacheProvider": idx.cacheProvider, "reapInterval": o.ReapInterval})
 	}
-	// }
 
 	gm.CacheMaxObjects.WithLabelValues(cacheName, cacheProvider).Set(float64(o.MaxSizeObjects))
 	gm.CacheMaxBytes.WithLabelValues(cacheName, cacheProvider).Set(float64(o.MaxSizeBytes))
