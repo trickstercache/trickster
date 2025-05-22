@@ -25,14 +25,17 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 )
+
+const invalidPoolMemberCheck = "invalid pool member name [invalid] provided for alb [test]"
 
 func TestHandlers(t *testing.T) {
 
 	a := &ao.Options{
 		MechanismName: "fr",
-		OutputFormat:  "prometheus",
+		OutputFormat:  providers.Prometheus,
 	}
 	o := bo.New()
 	o.ALBOptions = a
@@ -42,7 +45,7 @@ func TestHandlers(t *testing.T) {
 		t.Error(err)
 	}
 
-	if _, ok := cl.Handlers()["alb"]; !ok {
+	if _, ok := cl.Handlers()[providers.ALB]; !ok {
 		t.Error("expected alb handler")
 	}
 
@@ -59,7 +62,7 @@ func TestHandlers(t *testing.T) {
 	}
 
 	a.MechanismName = "tsm"
-	_, err = NewClient("test", o, nil, nil, nil, types.Lookup{"prometheus": prometheus.NewClient})
+	_, err = NewClient("test", o, nil, nil, nil, types.Lookup{providers.Prometheus: prometheus.NewClient})
 	if err != nil {
 		t.Error(err)
 	}
@@ -93,8 +96,8 @@ func TestStartALBPools(t *testing.T) {
 	}
 }
 
-func TestValidatePools(t *testing.T) {
-	err := ValidatePools(nil)
+func TestValidateClients(t *testing.T) {
+	err := ValidateClients(nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -104,7 +107,7 @@ func TestValidatePools(t *testing.T) {
 	a.Pool = []string{"invalid"}
 
 	o.ALBOptions = a
-	o.Provider = "alb"
+	o.Provider = providers.ALB
 	_, err = NewClient("test", o, nil, nil, nil, nil)
 	if err != errors.ErrUnsupportedMechanism {
 		t.Error("expected error for unsupported mechanism")
@@ -118,20 +121,19 @@ func TestValidatePools(t *testing.T) {
 	}
 
 	b := backends.Backends{"test": cl}
-	err = ValidatePools(b)
-	expected := `invalid pool member name [invalid] in backend [test]`
-	if err == nil || err.Error() != expected {
-		t.Errorf("expected %s got %s", expected, err)
+	err = ValidateClients(b)
+	if err == nil || err.Error() != invalidPoolMemberCheck {
+		t.Errorf("expected %s got %s", invalidPoolMemberCheck, err)
 	}
 
 	a.Pool = []string{"test"}
-	err = ValidatePools(b)
+	err = ValidateClients(b)
 	if err != nil {
 		t.Error(err)
 	}
 
 	o.Provider = "invalid"
-	err = ValidatePools(b)
+	err = ValidateClients(b)
 	if err != nil {
 		t.Error(err)
 	}
@@ -151,21 +153,13 @@ func TestValidateAndStartPool(t *testing.T) {
 	}
 
 	a := ao.New()
-	a.MechanismName = "rx"
 	o.ALBOptions = a
-	err = cl.ValidateAndStartPool(nil, nil)
-	expected := "invalid mechanism name [rx] in backend [test]"
-	if err == nil || err.Error() != expected {
-		t.Error("expected error for invalid mechanism name, got", err)
-	}
-
 	b := backends.Backends{"test": cl}
 
 	a.MechanismName = "rr"
 	a.Pool = []string{"invalid"}
 	err = cl.ValidateAndStartPool(b, nil)
-	expected = "invalid pool member name [invalid] in backend [test]"
-	if err == nil || err.Error() != expected {
+	if err == nil || err.Error() != invalidPoolMemberCheck {
 		t.Error("expected error for invalid pool member name, got", err)
 	}
 
@@ -175,7 +169,6 @@ func TestValidateAndStartPool(t *testing.T) {
 
 	a.Pool = []string{"test"}
 	err = cl.ValidateAndStartPool(b, hcs)
-	expected = "invalid pool member name [invalid] in backend [test]"
 	if err != nil {
 		t.Error(err)
 	}

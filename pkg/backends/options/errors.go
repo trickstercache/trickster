@@ -66,7 +66,7 @@ type ErrInvalidNegativeCacheName struct {
 // NewErrInvalidNegativeCacheName returns a new invalid negative cache name error
 func NewErrInvalidNegativeCacheName(cacheName string) error {
 	return &ErrInvalidNegativeCacheName{
-		error: fmt.Errorf(`invalid negative cache name: %s`, cacheName),
+		error: fmt.Errorf(`invalid negative_cache name: %s`, cacheName),
 	}
 }
 
@@ -83,19 +83,6 @@ func NewErrInvalidRuleName(ruleName, backendName string) error {
 	}
 }
 
-// ErrInvalidALBOptions is an error type for invalid ALB Options
-type ErrInvalidALBOptions struct {
-	error
-}
-
-// NewErrInvalidALBOptions returns a new invalid ALB Options error
-func NewErrInvalidALBOptions(albName, backendName string) error {
-	return &ErrInvalidALBOptions{
-		error: fmt.Errorf("invalid backend name [%s] provided in pool for alb [%s]",
-			backendName, albName),
-	}
-}
-
 // ErrInvalidCacheName is an error type for invalid cache name
 type ErrInvalidCacheName struct {
 	error
@@ -104,8 +91,21 @@ type ErrInvalidCacheName struct {
 // NewErrInvalidCacheName returns a new invalid cache name error
 func NewErrInvalidCacheName(cacheName, backendName string) error {
 	return &ErrInvalidCacheName{
-		error: fmt.Errorf(`invalid cache name "%s" provided in backend options "%s"`,
+		error: fmt.Errorf(`invalid cache_name "%s" provided in backend options "%s"`,
 			cacheName, backendName),
+	}
+}
+
+// ErrInvalidTracingName is an error type for invalid tracing name
+type ErrInvalidTracingName struct {
+	error
+}
+
+// NewErrInvalidTracingName returns a new invalid tracing name error
+func NewErrInvalidTracingName(tracingName, backendName string) error {
+	return &ErrInvalidTracingName{
+		error: fmt.Errorf(`invalid tracing_name "%s" provided in backend options "%s"`,
+			tracingName, backendName),
 	}
 }
 

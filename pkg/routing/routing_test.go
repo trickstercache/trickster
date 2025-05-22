@@ -69,7 +69,7 @@ func TestRegisterProxyRoutes(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	var proxyClients backends.Backends
 
-	conf, err := config.Load([]string{"-log-level", "debug", "-origin-url", "http://1", "-provider", "prometheus"})
+	conf, err := config.Load([]string{"-log-level", "debug", "-origin-url", "http://1", "-provider", providers.Prometheus})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
@@ -161,7 +161,7 @@ func TestRegisterProxyRoutes(t *testing.T) {
 
 func TestRegisterProxyRoutesInflux(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
-	conf, err := config.Load([]string{"-log-level", "debug", "-origin-url", "http://1", "-provider", "influxdb"})
+	conf, err := config.Load([]string{"-log-level", "debug", "-origin-url", "http://1", "-provider", providers.InfluxDB})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
@@ -206,7 +206,7 @@ func TestRegisterProxyRoutesReverseProxy(t *testing.T) {
 
 func TestRegisterProxyRoutesClickHouse(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
-	conf, err := config.Load([]string{"-log-level", "debug", "-origin-url", "http://1", "-provider", "clickhouse"})
+	conf, err := config.Load([]string{"-log-level", "debug", "-origin-url", "http://1", "-provider", providers.ClickHouse})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
@@ -226,12 +226,12 @@ func TestRegisterProxyRoutesClickHouse(t *testing.T) {
 
 func TestRegisterProxyRoutesALB(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
-	conf, err := config.Load([]string{"-log-level", "debug", "-origin-url", "http://1", "-provider", "alb"})
+	conf, err := config.Load([]string{"-log-level", "debug", "-origin-url", "http://1", "-provider", providers.ALB})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	conf.Backends["default"].ALBOptions = &options.Options{MechanismName: "tsm", OutputFormat: "prometheus"}
+	conf.Backends["default"].ALBOptions = &options.Options{MechanismName: "tsm", OutputFormat: providers.Prometheus}
 
 	caches := registry.LoadCachesFromConfig(conf)
 	defer registry.CloseCaches(caches)
@@ -344,17 +344,6 @@ func TestRegisterProxyRoutesInvalidCert(t *testing.T) {
 	}
 }
 
-func TestRegisterProxyRoutesBadCacheName(t *testing.T) {
-	expected := `invalid cache name "test2" provided in backend options "test"`
-	a := []string{"-config", "../../testdata/test.bad_cache_name.conf"}
-	_, err := config.Load(a)
-	if err == nil {
-		t.Errorf("expected error `%s` got nothing", expected)
-	} else if err.Error() != expected {
-		t.Errorf("expected error `%s` got `%s`", expected, err.Error())
-	}
-}
-
 func TestRegisterProxyRoutesBadProvider(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	expected := "unknown backend provider in backend options. backendName: test, backendProvider: foo"
@@ -464,13 +453,13 @@ func TestValidateRuleClients(t *testing.T) {
 	defer registry.CloseCaches(caches)
 
 	o := conf.Backends["default"]
-	o.Provider = "rule"
+	o.Provider = providers.Rule
 
 	logger.SetLogger(logging.ConsoleLogger(level.Info))
 	_, err = RegisterProxyRoutes(conf, lm.NewRouter(), lm.NewRouter(), caches,
 		nil, false)
-	if err == nil {
-		t.Error("expected error")
+	if err != nil {
+		t.Error(err)
 	}
 
 }

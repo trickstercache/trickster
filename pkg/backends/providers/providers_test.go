@@ -23,16 +23,16 @@ import (
 
 func TestProviderString(t *testing.T) {
 
-	t1 := RPC
-	t2 := Prometheus
+	t1 := RPCID
+	t2 := PrometheusID
 	var t3 Provider = 13
 
 	if t1.String() != ReverseProxyCacheShort {
 		t.Errorf("expected %s got %s", ReverseProxyCacheShort, t1.String())
 	}
 
-	if t2.String() != "prometheus" {
-		t.Errorf("expected %s got %s", "prometheus", t2.String())
+	if t2.String() != Prometheus {
+		t.Errorf("expected %s got %s", Prometheus, t2.String())
 	}
 
 	if t3.String() != "13" {
@@ -48,10 +48,10 @@ func TestIsValidProvider(t *testing.T) {
 		expected bool
 	}{
 		{ReverseProxyCacheShort, true},
-		{"prometheus", true},
+		{Prometheus, true},
 		{"", false},
 		{"invalid", false},
-		{"influxdb", true},
+		{InfluxDB, true},
 	}
 
 	for i, test := range tests {
@@ -73,7 +73,7 @@ func TestIsSupportedTimeSeriesProvider(t *testing.T) {
 		t.Error("expected false")
 	}
 
-	name = "prometheus"
+	name = Prometheus
 	ok = IsSupportedTimeSeriesProvider(name)
 	if !ok {
 		t.Error("expected true")

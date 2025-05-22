@@ -32,22 +32,16 @@ func TestNew(t *testing.T) {
 }
 
 func TestProcessTracingConfigs(t *testing.T) {
-
 	ProcessTracingOptions(nil, nil)
-
 	o := New()
 	o.SampleRate = 0
-
 	mo := Lookup{
 		"test": o,
 	}
-
 	ProcessTracingOptions(mo, yamlx.KeyLookup{})
-
 	if int(o.SampleRate) != 1 {
 		t.Errorf("expected 1 got %d", int(o.SampleRate))
 	}
-
 }
 
 func TestGenerateOmitTags(t *testing.T) {

@@ -16,6 +16,12 @@
 
 package options
 
+import (
+	"errors"
+
+	"github.com/trickstercache/trickster/v2/pkg/util/sets"
+)
+
 // Options defines the options for a Rule
 type Options struct {
 	// Name provides the name of the Rule
@@ -104,6 +110,9 @@ type Lookup map[string]*Options
 
 type CaseLookup map[string]*CaseOptions
 
+var ErrInvalidName = errors.New("invalid rule name")
+var restrictedNames = sets.New([]string{"", "none"})
+
 // Clone returns a perfect copy of the subject *Options
 func (o *Options) Clone() *Options {
 	return &Options{
@@ -124,4 +133,21 @@ func (o *Options) Clone() *Options {
 		RedirectURL:            o.RedirectURL,
 		MaxRuleExecutions:      o.MaxRuleExecutions,
 	}
+}
+
+func (o *Options) Validate() error {
+	if restrictedNames.Contains(o.Name) {
+		return ErrInvalidName
+	}
+	return nil
+}
+
+func (l Lookup) Validate() error {
+	for l, o := range l {
+		o.Name = l
+		if err := o.Validate(); err != nil {
+			return err
+		}
+	}
+	return nil
 }

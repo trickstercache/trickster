@@ -23,13 +23,13 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 )
 
-var errInvalidRewriterOptions = errors.New("invalid rewriter options")
+var ErrInvalidRewriterOptions = errors.New("invalid rewriter options")
 
 // ProcessConfigs validates and compiles rewriter instructions from
 // the provided configuration map
 func ProcessConfigs(rwl options.Lookup) (InstructionsLookup, error) {
 	if rwl == nil {
-		return nil, errInvalidRewriterOptions
+		return nil, ErrInvalidRewriterOptions
 	}
 
 	crw := make(InstructionsLookup)
@@ -47,7 +47,7 @@ func ProcessConfigs(rwl options.Lookup) (InstructionsLookup, error) {
 			if ce, ok := instr.(*rwiChainExecutor); ok {
 				rwi, ok := crw[ce.rewriterName]
 				if !ok {
-					return nil, errInvalidRewriterOptions
+					return nil, ErrInvalidRewriterOptions
 				}
 				ce.rewriter = rwi
 			}

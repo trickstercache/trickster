@@ -19,17 +19,8 @@ package options
 import (
 	"strings"
 
-	"github.com/trickstercache/trickster/v2/pkg/cache/negative"
 	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
 )
-
-func testNegativeCaches() negative.Lookups {
-
-	m := make(negative.Lookups)
-	m["test"] = negative.Lookup{}
-
-	return m
-}
 
 const testYAML = `
 backends:
@@ -110,21 +101,21 @@ func fromTestYAML() (*Options, yamlx.KeyLookup, error) {
 }
 
 func fromTestYAMLWithDefault() (*Options, yamlx.KeyLookup, error) {
-	conf := strings.Replace(testYAML, "    rule_name: ''", "    rule_name: ''\n    is_default: false", -1)
+	conf := strings.ReplaceAll(testYAML, "    rule_name: ''", "    rule_name: ''\n    is_default: false")
 	return fromYAML(conf)
 }
 
 func fromTestYAMLWithReqRewriter() (*Options, yamlx.KeyLookup, error) {
-	conf := strings.Replace(testYAML, "    rule_name: ''", "    rule_name: ''\n    req_rewriter_name: test", -1)
+	conf := strings.ReplaceAll(testYAML, "    rule_name: ''", "    rule_name: ''\n    req_rewriter_name: test")
 	return fromYAML(conf)
 }
 
 func fromTestYAMLWithALB() (*Options, yamlx.KeyLookup, error) {
-	conf := strings.Replace(strings.Replace(testYAML, "    rule_name: ''", `
+	conf := strings.ReplaceAll(strings.ReplaceAll(testYAML, "    rule_name: ''", `
     rule_name: ''
     alb:
       output_format: prometheus
       mechanism: tsmerge
-        `, -1), "    provider: test_type", "    provider: 'alb'", -1)
+        `), "    provider: test_type", "    provider: 'alb'")
 	return fromYAML(conf)
 }

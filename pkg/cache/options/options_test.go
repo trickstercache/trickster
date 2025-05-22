@@ -47,15 +47,10 @@ func TestCloneAndEqual(t *testing.T) {
 
 }
 
-func TestSetDefaults(t *testing.T) {
-
-	// SetDefaults(metadata yamlx.KeyLookup,
-	//activeCaches map[string]any)
-	// ([]string, error) {
-
+func TestOverlayYAMLData(t *testing.T) {
 	o := New()
 	l := Lookup{"default": o}
-	_, err := l.SetDefaults(nil, nil)
+	_, err := l.OverlayYAMLData(nil, nil)
 	if err != nil {
 		t.Error()
 	}
@@ -70,7 +65,7 @@ func TestSetDefaults(t *testing.T) {
 	l = Lookup{"default": o}
 
 	ac := sets.New([]string{"default"})
-	lw, err := l.SetDefaults(kl, ac)
+	lw, err := l.OverlayYAMLData(kl, ac)
 	if err != nil {
 		t.Error()
 	}
@@ -92,7 +87,7 @@ func TestSetDefaults(t *testing.T) {
 	l = Lookup{"default": o}
 	o.Redis.ClientType = "sentinel"
 	ac = sets.New([]string{"default"})
-	lw, err = l.SetDefaults(kl, ac)
+	lw, err = l.OverlayYAMLData(kl, ac)
 	if err != nil {
 		t.Error()
 	}
@@ -103,7 +98,7 @@ func TestSetDefaults(t *testing.T) {
 	l = Lookup{"default": o}
 	o.Index.MaxSizeBackoffBytes = 16384
 	o.Index.MaxSizeBytes = 1
-	_, err = l.SetDefaults(kl, ac)
+	_, err = l.OverlayYAMLData(kl, ac)
 	if err != errMaxSizeBackoffBytesTooBig {
 		t.Error(err)
 	}
@@ -114,7 +109,7 @@ func TestSetDefaults(t *testing.T) {
 	o.Index.MaxSizeBackoffObjects = 32768
 	o.Index.MaxSizeObjects = 16384
 
-	_, err = l.SetDefaults(kl, ac)
+	_, err = l.OverlayYAMLData(kl, ac)
 	if err != errMaxSizeBackoffObjectsTooBig {
 		t.Error(err)
 	}

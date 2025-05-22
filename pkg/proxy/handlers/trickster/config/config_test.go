@@ -22,13 +22,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 )
 
 func TestConfigHandler(t *testing.T) {
 
 	conf, err := config.Load([]string{"-origin-url", "http://1.2.3.4",
-		"-provider", "prometheus"})
+		"-provider", providers.Prometheus})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}

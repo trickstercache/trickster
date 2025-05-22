@@ -29,6 +29,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
@@ -187,7 +188,7 @@ func (c *TestClient) DefaultPathConfigs(o *bo.Options) po.Lookup {
 
 		APIPath: {
 			Path:        APIPath,
-			HandlerName: "proxy",
+			HandlerName: providers.Proxy,
 			Methods:     []string{http.MethodGet, http.MethodPost},
 		},
 
@@ -199,7 +200,7 @@ func (c *TestClient) DefaultPathConfigs(o *bo.Options) po.Lookup {
 
 		"/": {
 			Path:        "/",
-			HandlerName: "proxy",
+			HandlerName: providers.Proxy,
 			Methods:     []string{http.MethodGet, http.MethodPost},
 		},
 	}

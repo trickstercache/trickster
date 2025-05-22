@@ -18,6 +18,8 @@ package config
 
 import (
 	"testing"
+
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 )
 
 func TestLoadFlags(t *testing.T) {
@@ -30,7 +32,7 @@ func TestLoadFlags(t *testing.T) {
 		"-metrics-port",
 		"9092",
 		"-provider",
-		"prometheus",
+		providers.Prometheus,
 		"-log-level",
 		"info",
 		"-instance-id",

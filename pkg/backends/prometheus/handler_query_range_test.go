@@ -20,6 +20,7 @@ import (
 	"io"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
 )
@@ -31,7 +32,7 @@ func TestQueryRangeHandler(t *testing.T) {
 		t.Error(err)
 	}
 	ts, w, r, _, err := tu.NewTestInstance("", backendClient.DefaultPathConfigs, 200, "{}",
-		nil, "prometheus", "/query_range?q=up&start=0&end=900&step=15", "debug")
+		nil, providers.Prometheus, "/query_range?q=up&start=0&end=900&step=15", "debug")
 	if err != nil {
 		t.Error(err)
 	} else {

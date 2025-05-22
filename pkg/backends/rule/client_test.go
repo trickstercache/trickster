@@ -21,6 +21,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
 )
 
@@ -48,8 +49,8 @@ func TestRegisterHandlers(t *testing.T) {
 		t.Error(err)
 	}
 	c.RegisterHandlers(nil)
-	if _, ok := c.Handlers()["rule"]; !ok {
-		t.Errorf("expected to find handler named: %s", "rule")
+	if _, ok := c.Handlers()[providers.Rule]; !ok {
+		t.Errorf("expected to find handler named: %s", providers.Rule)
 	}
 }
 

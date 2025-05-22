@@ -31,15 +31,6 @@ func TestErrMissingProvider(t *testing.T) {
 
 }
 
-func TestErrInvalidALBOptions(t *testing.T) {
-	err := NewErrInvalidALBOptions("test", "test2")
-	var e *ErrInvalidALBOptions
-	ok := errors.As(err, &e)
-	if !ok {
-		t.Error("invalid type assertion")
-	}
-}
-
 func TestNewErrMissingOriginURL(t *testing.T) {
 	err := NewErrMissingOriginURL("test")
 	var e *ErrMissingOriginURL

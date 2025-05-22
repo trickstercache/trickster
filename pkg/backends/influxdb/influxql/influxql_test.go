@@ -93,7 +93,7 @@ func TestSetExtent(t *testing.T) {
 	startToken := start.Format(time.RFC3339Nano)
 	endToken := end.Add(time.Second * 60).Format(time.RFC3339Nano)
 
-	expected := strings.Replace(strings.Replace(expectedTokenized, "$START_TIME$", startToken, -1), "$END_TIME$", endToken, -1)
+	expected := strings.ReplaceAll(strings.ReplaceAll(expectedTokenized, "$START_TIME$", startToken), "$END_TIME$", endToken)
 
 	qs := url.Values{"q": {untokenized}, "epoch": {"ms"}}.Encode()
 

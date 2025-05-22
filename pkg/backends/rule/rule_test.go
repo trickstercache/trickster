@@ -23,6 +23,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	ro "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
 	tc "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
@@ -118,7 +119,7 @@ func newTestCaseOpts() ro.CaseLookup {
 			NextRoute: "test-backend-2",
 		},
 		"2": {
-			Matches:         []string{"proxy"},
+			Matches:         []string{providers.Proxy},
 			ReqRewriterName: "test-rewriter-4",
 		},
 		"3": {
@@ -280,7 +281,7 @@ func TestEvaluateCaseArg(t *testing.T) {
 	r := rules[0]
 
 	hr, _ := http.NewRequest(http.MethodGet, "http://www.google.com/", nil)
-	hr.Header = http.Header{testRuleHeader: []string{"proxy"}}
+	hr.Header = http.Header{testRuleHeader: []string{providers.Proxy}}
 	ctx := tc.WithHops(context.Background(), 0, 20)
 	hr = hr.WithContext(ctx)
 

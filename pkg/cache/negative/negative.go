@@ -44,6 +44,20 @@ type Lookup map[int]time.Duration
 // Lookups is a collection of Lookup maps
 type Lookups map[string]Lookup
 
+// ErrInvalidConfig is an error type for invalid config
+type ErrInvalidConfig struct {
+	error
+}
+
+// NewErrInvalidConfig returns a new invalid config error
+func NewErrInvalidConfig(negativeCacheName, code string) error {
+	return &ErrInvalidConfig{
+		error: fmt.Errorf(`invalid negative_cache config in %s: `+
+			`%s is not a valid HTTP status code >= 400 and < 600`,
+			negativeCacheName, code),
+	}
+}
+
 // Clone returns an exact copy of a Config
 func (nc Config) Clone() Config {
 	return maps.Clone(nc)
@@ -58,7 +72,7 @@ func (l Lookups) Get(name string) Lookup {
 }
 
 // Validate verifies the Negative Cache Config
-func (l ConfigLookup) Validate() (Lookups, error) {
+func (l ConfigLookup) ValidateAndCompile() (Lookups, error) {
 	ml := make(Lookups)
 	if len(l) == 0 {
 		return ml, nil
@@ -67,11 +81,8 @@ func (l ConfigLookup) Validate() (Lookups, error) {
 		lk := make(Lookup)
 		for c, t := range n {
 			ci, err := strconv.Atoi(c)
-			if err != nil {
-				return nil, fmt.Errorf(`invalid negative cache config in %s: %s is not a valid status code`, k, c)
-			}
-			if ci < 400 || ci >= 600 {
-				return nil, fmt.Errorf(`invalid negative cache config in %s: %s is not >= 400 and < 600`, k, c)
+			if err != nil || ci < 400 || ci >= 600 {
+				return nil, NewErrInvalidConfig(k, c)
 			}
 			lk[ci] = t
 		}

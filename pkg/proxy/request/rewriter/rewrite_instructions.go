@@ -37,6 +37,7 @@ type rewriteInstruction interface {
 // RewriteInstructions is a list of type []rewriteInstruction
 type RewriteInstructions []rewriteInstruction
 
+// InstructionsLookup is a map of Options keyed by the RewriteInstructions Name
 type InstructionsLookup map[string]RewriteInstructions
 
 var rewriters = map[string]func() rewriteInstruction{

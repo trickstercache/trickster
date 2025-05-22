@@ -29,11 +29,11 @@ import (
 
 // this slice is the one and only place to aggregate all registered Mechanisms
 var registry = []types.RegistryEntry{
-	rr.RegistryEntry(),
-	nlm.RegistryEntry(),
-	fr.RegistryEntry(),
-	fr.RegistryEntryFGR(),
-	tsm.RegistryEntry(),
+	rr.RegistryEntry(),    // ID 0
+	fr.RegistryEntry(),    // ID 1
+	fr.RegistryEntryFGR(), // ID 2
+	nlm.RegistryEntry(),   // ID 3
+	tsm.RegistryEntry(),   // ID 4
 }
 
 var registryByName = compileSupportedByName()

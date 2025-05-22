@@ -27,13 +27,13 @@ import (
 func TestProcessConfig(t *testing.T) {
 
 	_, err := ProcessConfigs(nil)
-	if err != errInvalidRewriterOptions {
+	if err != ErrInvalidRewriterOptions {
 		return
 	}
 
 	o := &options.Options{Instructions: testRL0}
 	_, err = ProcessConfigs(options.Lookup{"test": o})
-	if err != errInvalidRewriterOptions {
+	if err != ErrInvalidRewriterOptions {
 		t.Error("expected error for invalid rewriter options", err)
 	}
 

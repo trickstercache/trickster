@@ -16,7 +16,11 @@
 
 package options
 
-import "time"
+import (
+	"crypto/tls"
+	"errors"
+	"time"
+)
 
 // FrontendConfig is a collection of configurations for the main http frontend for the application
 type Options struct {
@@ -36,6 +40,8 @@ type Options struct {
 	// at least one backend options has a valid certificate and key file configured.
 	ServeTLS bool `yaml:"-"`
 }
+
+type TLSConfigFunc func() (*tls.Config, error)
 
 // New returns a new Frontend Options with default values
 func New() *Options {
@@ -63,4 +69,15 @@ func (o *Options) Clone() *Options {
 		ConnectionsLimit: o.ConnectionsLimit,
 		ServeTLS:         o.ServeTLS,
 	}
+}
+
+func (o *Options) Validate(f TLSConfigFunc) error {
+	if o.TLSListenPort < 1 && o.ListenPort < 1 {
+		return errors.New("no http or https listeners configured")
+	}
+	if o.ServeTLS && o.TLSListenPort > 0 {
+		_, err := f()
+		return err
+	}
+	return nil
 }

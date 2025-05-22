@@ -24,7 +24,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config/reload"
 )
 
-func Wait(reloader reload.ReloadFunc) {
+func Wait(reloader reload.Reloader) {
 	// Serve with Config
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)

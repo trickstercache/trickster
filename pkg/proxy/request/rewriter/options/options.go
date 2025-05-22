@@ -16,7 +16,12 @@
 
 package options
 
-import "slices"
+import (
+	"errors"
+	"slices"
+
+	"github.com/trickstercache/trickster/v2/pkg/util/sets"
+)
 
 const MaxRewriterChainExecutions int32 = 32
 
@@ -25,10 +30,15 @@ type RewriteList [][]string
 
 // Options is a collection of Options pertaining to Request Rewriter Instructions
 type Options struct {
+	Name         string      `yaml:"-"` // populated from a Lookup key
 	Instructions RewriteList `yaml:"instructions,omitempty"`
 }
 
+// Lookup is a map of Options keyed by Rule Name
 type Lookup map[string]*Options
+
+var ErrInvalidName = errors.New("invalid rewriter name")
+var restrictedNames = sets.New([]string{"", "none"})
 
 // Clone returns an exact copy of the subject *Options
 func (o *Options) Clone() *Options {
@@ -37,6 +47,28 @@ func (o *Options) Clone() *Options {
 		o2.Instructions = o.Instructions.Clone()
 	}
 	return o2
+}
+
+// Validate returns an error if there are issues with the Rewriter options.
+func (o *Options) Validate() error {
+	if restrictedNames.Contains(o.Name) {
+		return ErrInvalidName
+	}
+	return nil
+}
+
+// Validate returns an error if there are issues with any of the Rewriters options.
+func (l Lookup) Validate() error {
+	for k, o := range l {
+		if o == nil {
+			continue
+		}
+		o.Name = k
+		if err := o.Validate(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Clone returns an exact copy of the subject RewriteList

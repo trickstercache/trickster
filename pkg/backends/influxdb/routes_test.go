@@ -19,6 +19,7 @@ package influxdb
 import (
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
 )
@@ -40,7 +41,7 @@ func TestDefaultPathConfigs(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	ts, _, r, _, err := tu.NewTestInstance("", backendClient.DefaultPathConfigs, 204, "", nil, "influxdb", "/", "debug")
+	ts, _, r, _, err := tu.NewTestInstance("", backendClient.DefaultPathConfigs, 204, "", nil, providers.InfluxDB, "/", "debug")
 	if err != nil {
 		t.Error(err)
 	} else {

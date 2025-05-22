@@ -21,6 +21,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	cr "github.com/trickstercache/trickster/v2/pkg/cache/registry"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 )
@@ -48,7 +49,7 @@ func TestInfluxDBClientInterfacing(t *testing.T) {
 }
 
 func TestNewClient(t *testing.T) {
-	conf, err := config.Load([]string{"-provider", "influxdb", "-origin-url", "http://1"})
+	conf, err := config.Load([]string{"-provider", providers.InfluxDB, "-origin-url", "http://1"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}

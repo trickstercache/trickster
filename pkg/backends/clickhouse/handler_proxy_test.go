@@ -20,6 +20,7 @@ import (
 	"io"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
 )
@@ -31,7 +32,7 @@ func TestProxyHandler(t *testing.T) {
 		t.Error(err)
 	}
 	ts, w, r, _, err := tu.NewTestInstance("",
-		backendClient.DefaultPathConfigs, 200, "test", nil, "clickhouse", "/health", "debug")
+		backendClient.DefaultPathConfigs, 200, "test", nil, providers.ClickHouse, "/health", "debug")
 	if err != nil {
 		t.Error(err)
 	} else {
