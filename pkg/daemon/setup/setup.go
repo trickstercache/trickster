@@ -83,7 +83,7 @@ func LoadAndValidate() (*config.Config, error) {
 }
 
 func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
-	hupFunc dr.ReloadFunc, errorFunc func()) error {
+	hupFunc dr.Reloader, errorFunc func()) error {
 	if si == nil || newConf == nil {
 		return nil
 	}

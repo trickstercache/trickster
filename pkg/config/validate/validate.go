@@ -73,41 +73,28 @@ func Rewriters(c *config.Config) error {
 	if len(c.RequestRewriters) == 0 {
 		return nil
 	}
-	if err := c.RequestRewriters.Validate(); err != nil {
-		return err
-	}
-
-	return nil
+	return c.RequestRewriters.Validate()
 }
 
 func Tracers(c *config.Config) error {
 	if len(c.TracingConfigs) == 0 {
 		return nil
 	}
-	if err := c.TracingConfigs.Validate(); err != nil {
-		return err
-	}
-	return nil
+	return c.TracingConfigs.Validate()
 }
 
 func Rules(c *config.Config) error {
 	if len(c.Rules) == 0 {
 		return nil
 	}
-	if err := c.Rules.Validate(); err != nil {
-		return err
-	}
-	return nil
+	return c.Rules.Validate()
 }
 
 func Caches(c *config.Config) error {
 	if len(c.Caches) == 0 {
 		return nil
 	}
-	if err := c.Caches.Validate(); err != nil {
-		return err
-	}
-	return nil
+	return c.Caches.Validate()
 }
 
 func NegativeCaches(c *config.Config) error {
@@ -137,10 +124,7 @@ func Backends(c *config.Config) error {
 	if serveTLS {
 		c.Frontend.ServeTLS = true
 	}
-	if err := c.Backends.Validate(); err != nil {
-		return err
-	}
-	return nil
+	return c.Backends.Validate()
 }
 
 func RoutesRulesAndPools(c *config.Config) error {
@@ -164,9 +148,5 @@ func RoutesRulesAndPools(c *config.Config) error {
 	if err != nil {
 		return err
 	}
-	err = alb.ValidateClients(clients)
-	if err != nil {
-		return err
-	}
-	return nil
+	return alb.ValidateClients(clients)
 }

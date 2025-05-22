@@ -86,7 +86,7 @@ func Start() error {
 	}
 
 	si := &instance.ServerInstance{}
-	var hupFunc reload.ReloadFunc = func(source string) (bool, error) {
+	var hupFunc reload.Reloader = func(source string) (bool, error) {
 		return Hup(si, source)
 	}
 	// Serve with Config
@@ -123,7 +123,7 @@ func Hup(si *instance.ServerInstance, source string) (bool, error) {
 		if err != nil {
 			return false, err
 		}
-		var hupFunc reload.ReloadFunc = func(source string) (bool, error) {
+		var hupFunc reload.Reloader = func(source string) (bool, error) {
 			return Hup(si, source)
 		}
 		err = setup.ApplyConfig(si, conf, hupFunc, nil)

@@ -38,7 +38,7 @@ func Timeseries(w http.ResponseWriter, r *http.Request, rgs ResponseGates) {
 	var bestResp *http.Response
 
 	h := w.Header()
-	tsm := make(timeseries.TimeseriesList, len(rgs))
+	tsm := make(timeseries.List, len(rgs))
 	var k int
 	for i, rg := range rgs {
 

@@ -336,7 +336,7 @@ checkCache:
 		"reqEnd":      trq.Extent.End.Unix(),
 	}
 
-	var mts timeseries.TimeseriesList
+	var mts timeseries.List
 	var uncachedValueCount int64
 	var mresp *http.Response
 
@@ -579,7 +579,7 @@ func getDecoderReader(resp *http.Response) io.Reader {
 // this will concurrently fetch provided requested extents
 func fetchExtents(el timeseries.ExtentList, rsc *request.Resources, h http.Header,
 	client backends.TimeseriesBackend, pr *proxyRequest, wur timeseries.UnmarshalerReaderFunc,
-	span trace.Span) (timeseries.TimeseriesList, int64, *http.Response, error) {
+	span trace.Span) (timeseries.List, int64, *http.Response, error) {
 
 	var uncachedValueCount atomic.Int64
 	var wg sync.WaitGroup
@@ -587,7 +587,7 @@ func fetchExtents(el timeseries.ExtentList, rsc *request.Resources, h http.Heade
 	errs := make([]error, len(el))
 
 	// the list of time series created from the responses
-	mts := make(timeseries.TimeseriesList, len(el))
+	mts := make(timeseries.List, len(el))
 	// the meta-response aggregating all upstream responses
 	mresp := &http.Response{Header: h}
 

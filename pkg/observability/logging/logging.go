@@ -144,7 +144,7 @@ func ConsoleLogger(logLevel level.Level) Logger {
 
 type logger struct {
 	level          level.Level
-	levelID        level.LevelID
+	levelID        level.ID
 	writer         io.Writer
 	closer         io.Closer
 	mtx            sync.Mutex
@@ -161,7 +161,7 @@ func (l *logger) Write(b []byte) (int, error) {
 }
 
 func (l *logger) SetLogLevel(logLevel level.Level) {
-	id := level.GetLevelID(logLevel)
+	id := level.GetID(logLevel)
 	if id == 0 {
 		l.WarnOnce("loglevel."+string(logLevel),
 			"unknown log level; using INFO",
@@ -182,14 +182,14 @@ func (l *logger) SetLogAsynchronous(asyncEnabled bool) {
 }
 
 func (l *logger) Log(logLevel level.Level, event string, detail Pairs) {
-	lid := level.GetLevelID(logLevel)
+	lid := level.GetID(logLevel)
 	if lid == 0 || lid < l.levelID {
 		return
 	}
 	l.logFunc(logLevel, event, detail)
 }
 
-func (l *logger) logFuncConditionally(level level.Level, levelID level.LevelID, event string, detail Pairs) {
+func (l *logger) logFuncConditionally(level level.Level, levelID level.ID, event string, detail Pairs) {
 	if l.levelID > levelID {
 		return
 	}
@@ -213,7 +213,7 @@ func (l *logger) Error(event string, detail Pairs) {
 }
 
 func (l *logger) LogSynchronous(logLevel level.Level, event string, detail Pairs) {
-	lid := level.GetLevelID(logLevel)
+	lid := level.GetID(logLevel)
 	if lid == 0 || lid < l.levelID {
 		return
 	}
@@ -221,7 +221,7 @@ func (l *logger) LogSynchronous(logLevel level.Level, event string, detail Pairs
 
 }
 
-func (l *logger) logConditionally(level level.Level, levelID level.LevelID, event string, detail Pairs) {
+func (l *logger) logConditionally(level level.Level, levelID level.ID, event string, detail Pairs) {
 	if l.levelID > levelID {
 		return
 	}
@@ -257,11 +257,11 @@ func (l *logger) Fatal(code int, event string, detail Pairs) {
 }
 
 func (l *logger) LogOnce(logLevel level.Level, key, event string, detail Pairs) bool {
-	lid := level.GetLevelID(logLevel)
+	lid := level.GetID(logLevel)
 	return l.logOnce(logLevel, lid, key, event, detail)
 }
 
-func (l *logger) logOnce(logLevel level.Level, lid level.LevelID,
+func (l *logger) logOnce(logLevel level.Level, lid level.ID,
 	key, event string, detail Pairs) bool {
 	if lid == 0 || lid < l.levelID || l.HasLoggedOnce(logLevel, key) {
 		return false

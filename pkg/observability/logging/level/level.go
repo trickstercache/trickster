@@ -17,7 +17,7 @@
 package level
 
 type Level string
-type LevelID int
+type ID int
 
 const (
 	Debug Level = "debug"
@@ -26,14 +26,14 @@ const (
 	Error Level = "error"
 	Fatal Level = "fatal"
 
-	DebugID LevelID = 1
-	InfoID  LevelID = 2
-	WarnID  LevelID = 3
-	ErrorID LevelID = 4
-	TraceID LevelID = 5
+	DebugID ID = 1
+	InfoID  ID = 2
+	WarnID  ID = 3
+	ErrorID ID = 4
+	TraceID ID = 5
 )
 
-func GetLevelID(logLevel Level) LevelID {
+func GetID(logLevel Level) ID {
 	switch logLevel {
 	case Debug:
 		return DebugID
