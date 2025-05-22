@@ -43,22 +43,22 @@ func Validate(c *config.Config) error {
 			return err
 		}
 	}
-	if err := ValidateTracers(c); err != nil {
+	if err := Tracers(c); err != nil {
 		return err
 	}
-	if err := ValidateRewriters(c); err != nil {
+	if err := Rewriters(c); err != nil {
 		return err
 	}
-	if err := ValidateRules(c); err != nil {
+	if err := Rules(c); err != nil {
 		return err
 	}
-	if err := ValidateCaches(c); err != nil {
+	if err := Caches(c); err != nil {
 		return err
 	}
-	if err := ValidateNegativeCaches(c); err != nil {
+	if err := NegativeCaches(c); err != nil {
 		return err
 	}
-	if err := ValidateBackends(c); err != nil {
+	if err := Backends(c); err != nil {
 		return err
 	}
 	if c.Frontend != nil {
@@ -69,7 +69,7 @@ func Validate(c *config.Config) error {
 	return nil
 }
 
-func ValidateRewriters(c *config.Config) error {
+func Rewriters(c *config.Config) error {
 	if len(c.RequestRewriters) == 0 {
 		return nil
 	}
@@ -80,7 +80,7 @@ func ValidateRewriters(c *config.Config) error {
 	return nil
 }
 
-func ValidateTracers(c *config.Config) error {
+func Tracers(c *config.Config) error {
 	if len(c.TracingConfigs) == 0 {
 		return nil
 	}
@@ -90,7 +90,7 @@ func ValidateTracers(c *config.Config) error {
 	return nil
 }
 
-func ValidateRules(c *config.Config) error {
+func Rules(c *config.Config) error {
 	if len(c.Rules) == 0 {
 		return nil
 	}
@@ -100,7 +100,7 @@ func ValidateRules(c *config.Config) error {
 	return nil
 }
 
-func ValidateCaches(c *config.Config) error {
+func Caches(c *config.Config) error {
 	if len(c.Caches) == 0 {
 		return nil
 	}
@@ -110,19 +110,19 @@ func ValidateCaches(c *config.Config) error {
 	return nil
 }
 
-func ValidateNegativeCaches(c *config.Config) error {
+func NegativeCaches(c *config.Config) error {
 	if len(c.NegativeCacheConfigs) == 0 {
 		return nil
 	}
-	if nc, err := c.NegativeCacheConfigs.ValidateAndCompile(); err != nil {
+	nc, err := c.NegativeCacheConfigs.ValidateAndCompile()
+	if err != nil {
 		return err
-	} else {
-		c.CompiledNegativeCaches = nc
 	}
+	c.CompiledNegativeCaches = nc
 	return nil
 }
 
-func ValidateBackends(c *config.Config) error {
+func Backends(c *config.Config) error {
 	if len(c.Backends) == 0 {
 		return errors.ErrNoValidBackends
 	}
@@ -143,7 +143,7 @@ func ValidateBackends(c *config.Config) error {
 	return nil
 }
 
-func ValidateRoutesRulesAndPools(c *config.Config) error {
+func RoutesRulesAndPools(c *config.Config) error {
 	var caches = make(cache.Lookup)
 	for k := range c.Caches {
 		caches[k] = nil

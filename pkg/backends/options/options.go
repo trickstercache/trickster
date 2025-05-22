@@ -439,15 +439,14 @@ func (l Lookup) ValidateConfigMappings(c co.Lookup, ncl negative.Lookups,
 		}
 		// ensure negative_cache_name values map to a defined Negative Cache
 		if o.NegativeCacheName != "" {
-			if len(ncl) > 0 {
-				if nc, ok := ncl[o.NegativeCacheName]; !ok || nc == nil {
-					return NewErrInvalidNegativeCacheName(o.NegativeCacheName)
-				} else {
-					o.NegativeCache = nc
-				}
-			} else {
+			if len(ncl) == 0 {
 				return NewErrInvalidNegativeCacheName(o.NegativeCacheName)
 			}
+			nc, ok := ncl[o.NegativeCacheName]
+			if !ok || nc == nil {
+				return NewErrInvalidNegativeCacheName(o.NegativeCacheName)
+			}
+			o.NegativeCache = nc
 		}
 		switch o.Provider {
 		case providers.Rule:

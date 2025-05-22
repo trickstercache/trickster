@@ -80,7 +80,7 @@ func Start() error {
 	}
 
 	// these can't be done until the config is processed
-	err = validate.ValidateRoutesRulesAndPools(conf)
+	err = validate.RoutesRulesAndPools(conf)
 	if err != nil {
 		return err
 	}
@@ -119,7 +119,7 @@ func Hup(si *instance.ServerInstance, source string) (bool, error) {
 			return false, err
 		}
 		// these can't be done until the config is processed
-		err = validate.ValidateRoutesRulesAndPools(conf)
+		err = validate.RoutesRulesAndPools(conf)
 		if err != nil {
 			return false, err
 		}

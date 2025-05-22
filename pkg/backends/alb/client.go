@@ -125,10 +125,7 @@ func (c *Client) Validate(backends sets.Set[string]) error {
 		return fmt.Errorf("invalid mechanism name [%s] in backend [%s]",
 			o.ALBOptions.MechanismName, o.Name)
 	}
-	if err := c.ValidatePool(backends); err != nil {
-		return err
-	}
-	return nil
+	return c.ValidatePool(backends)
 }
 
 // ValidatePool confirms the provided list of backends is valid
