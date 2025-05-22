@@ -19,8 +19,12 @@ package index
 
 import (
 	"bytes"
+	"sort"
 
 	"github.com/trickstercache/trickster/v2/pkg/cache"
+	"github.com/trickstercache/trickster/v2/pkg/cache/index/options"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/util/atomicx"
 )
 
@@ -70,4 +74,62 @@ func ObjectFromBytes(data []byte) (*Object, error) {
 	o := &Object{}
 	_, err := o.UnmarshalMsg(data)
 	return o, err
+}
+
+func reap(cacheSize int64, objectCount int64, remainders objectsAtime, opts options.Options) (evictionType string, removals []string) {
+	if len(remainders) == 0 ||
+		((opts.MaxSizeBytes == 0 || cacheSize <= opts.MaxSizeBytes) &&
+			(opts.MaxSizeObjects == 0 || objectCount <= opts.MaxSizeObjects)) {
+		return // nothing to do
+	}
+	switch {
+	case opts.MaxSizeBytes > 0 && cacheSize > opts.MaxSizeBytes:
+		evictionType = "size_bytes"
+	case opts.MaxSizeObjects > 0 && objectCount > opts.MaxSizeObjects:
+		evictionType = "size_objects"
+	default:
+		return
+	}
+
+	logger.Debug(
+		"max cache size reached. evicting least-recently-accessed records",
+		logging.Pairs{
+			"reason":         evictionType,
+			"cacheSizeBytes": cacheSize, "maxSizeBytes": opts.MaxSizeBytes,
+			"cacheSizeObjects": objectCount, "maxSizeObjects": opts.MaxSizeObjects,
+		},
+	)
+
+	removals = make([]string, 0)
+
+	sort.Sort(remainders)
+
+	i := 0
+	j := len(remainders)
+
+	if evictionType == "size_bytes" {
+		bytesNeeded := (cacheSize - opts.MaxSizeBytes)
+		if opts.MaxSizeBytes > opts.MaxSizeBackoffBytes {
+			bytesNeeded += opts.MaxSizeBackoffBytes
+		}
+		bytesSelected := int64(0)
+		for bytesSelected < bytesNeeded && i < j {
+			removals = append(removals, remainders[i].Key)
+			bytesSelected += remainders[i].Size
+			i++
+		}
+	} else {
+		objectsNeeded := (objectCount - opts.MaxSizeObjects)
+		if opts.MaxSizeObjects > opts.MaxSizeBackoffObjects {
+			objectsNeeded += opts.MaxSizeBackoffObjects
+		}
+		objectsSelected := int64(0)
+		for objectsSelected < objectsNeeded && i < j {
+			removals = append(removals, remainders[i].Key)
+			objectsSelected++
+			i++
+		}
+	}
+
+	return
 }
