@@ -19,7 +19,6 @@ package index
 import (
 	"context"
 	"errors"
-	"sort"
 	"sync/atomic"
 	"time"
 
@@ -370,67 +369,13 @@ func (idx *IndexedClient) reap() {
 	objectCount := atomic.LoadInt64(&idx.ObjectCount)
 	opts := idx.options.Load().(*options.Options)
 
-	if ((opts.MaxSizeBytes > 0 && cacheSize > opts.MaxSizeBytes) ||
-		(opts.MaxSizeObjects > 0 && objectCount > opts.MaxSizeObjects)) &&
-		len(remainders) > 0 {
-
-		var evictionType string
-		switch {
-		case opts.MaxSizeBytes > 0 && cacheSize > opts.MaxSizeBytes:
-			evictionType = "size_bytes"
-		case opts.MaxSizeObjects > 0 && objectCount > opts.MaxSizeObjects:
-			evictionType = "size_objects"
-		default:
-			return
+	evictionType, removals := reap(cacheSize, objectCount, remainders, *opts)
+	if len(removals) > 0 {
+		metrics.ObserveCacheEvent(idx.name, idx.cacheProvider, "eviction", evictionType)
+		if err := idx.Remove(removals...); err != nil {
+			logger.Error("reap remove error", logging.Pairs{"cacheName": idx.name, "error": err})
 		}
-
-		logger.Debug(
-			"max cache size reached. evicting least-recently-accessed records",
-			logging.Pairs{
-				"reason":         evictionType,
-				"cacheSizeBytes": cacheSize, "maxSizeBytes": opts.MaxSizeBytes,
-				"cacheSizeObjects": objectCount, "maxSizeObjects": opts.MaxSizeObjects,
-			},
-		)
-
-		removals = make([]string, 0)
-
-		sort.Sort(remainders)
-
-		i := 0
-		j := len(remainders)
-
-		if evictionType == "size_bytes" {
-			bytesNeeded := (cacheSize - opts.MaxSizeBytes)
-			if opts.MaxSizeBytes > opts.MaxSizeBackoffBytes {
-				bytesNeeded += opts.MaxSizeBackoffBytes
-			}
-			bytesSelected := int64(0)
-			for bytesSelected < bytesNeeded && i < j {
-				removals = append(removals, remainders[i].Key)
-				bytesSelected += remainders[i].Size
-				i++
-			}
-		} else {
-			objectsNeeded := (objectCount - opts.MaxSizeObjects)
-			if opts.MaxSizeObjects > opts.MaxSizeBackoffObjects {
-				objectsNeeded += opts.MaxSizeBackoffObjects
-			}
-			objectsSelected := int64(0)
-			for objectsSelected < objectsNeeded && i < j {
-				removals = append(removals, remainders[i].Key)
-				objectsSelected++
-				i++
-			}
-		}
-
-		if len(removals) > 0 {
-			metrics.ObserveCacheEvent(idx.name, idx.cacheProvider, "eviction", evictionType)
-			if err := idx.Remove(removals...); err != nil {
-				logger.Error("reap remove error", logging.Pairs{"cacheName": idx.name, "error": err})
-			}
-			cacheChanged = true
-		}
+		cacheChanged = true
 
 		logger.Debug("size-based cache eviction exercise completed",
 			logging.Pairs{
