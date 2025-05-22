@@ -34,6 +34,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/negative"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	tro "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
+	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
@@ -156,6 +157,10 @@ type Options struct {
 	// expects a multipart response	// this optimizes Trickster to request as few bytes as possible when
 	// fronting backends that only support single range requests
 	DearticulateUpstreamRanges bool `yaml:"dearticulate_upstream_ranges,omitempty"`
+	// Authentication
+	// AuthenticatorName specifies the name of the optional Authenticator to attach to this Backend, and
+	// can be overridden at the Path level.
+	AuthenticatorName string `yaml:"authenticator_name,omitempty"`
 	// AWS SigV4
 	SigV4 *sigv4.SigV4Config `yaml:"sigv4,omitempty"`
 
@@ -201,6 +206,8 @@ type Options struct {
 	RuleOptions *ro.Options `yaml:"-"`
 	// ReqRewriter is the rewriter handler as indicated by RuleName
 	ReqRewriter rewriter.RewriteInstructions
+	// AuthOptions is the authenticator as indicated by AuthenticatorName
+	AuthOptions *autho.Options `yaml:"-"`
 	// DoesShard is true when sharding will be used with this origin, based on how the
 	// sharding options have been configured
 	DoesShard bool `yaml:"-"`
@@ -324,6 +331,11 @@ func (o *Options) Clone() *Options {
 		no.Prometheus = o.Prometheus.Clone()
 	}
 
+	no.AuthenticatorName = o.AuthenticatorName
+	if o.AuthOptions != nil {
+		no.AuthOptions = o.AuthOptions.Clone()
+	}
+
 	return no
 }
 
@@ -413,12 +425,17 @@ func ValidateBackendName(name string) error {
 // ValidateConfigMappings ensures that named config mappings from within origin configs
 // (e.g., backends.cache_name) are valid
 func (l Lookup) ValidateConfigMappings(c co.Lookup, ncl negative.Lookups,
-	rul ro.Lookup, rwl rwopts.Lookup, tr tro.Lookup) error {
+	rul ro.Lookup, rwl rwopts.Lookup, a autho.Lookup, tr tro.Lookup) error {
 	for _, o := range l {
 		if err := ValidateBackendName(o.Name); err != nil {
 			return err
 		}
 		var ok bool
+		if o.AuthenticatorName != "" {
+			if o.AuthOptions, ok = a[o.AuthenticatorName]; !ok {
+				return NewErrInvalidAuthenticatorName(o.AuthenticatorName, o.Name)
+			}
+		}
 		if o.ReqRewriterName != "" {
 			if _, ok = rwl[o.ReqRewriterName]; !ok {
 				return NewErrInvalidRewriterName(o.ReqRewriterName, o.Name)
@@ -430,6 +447,12 @@ func (l Lookup) ValidateConfigMappings(c co.Lookup, ncl negative.Lookups,
 			}
 		}
 		for _, p := range o.Paths {
+			if p.AuthenticatorName != "none" && p.AuthenticatorName != "" {
+				if p.AuthOptions, ok = a[p.AuthenticatorName]; !ok {
+					return NewErrInvalidAuthenticatorName(p.AuthenticatorName,
+						o.Name+"/"+p.Path)
+				}
+			}
 			if p.ReqRewriterName != "" {
 				if _, ok = rwl[p.ReqRewriterName]; !ok {
 					return NewErrInvalidRewriterName(p.ReqRewriterName,
@@ -702,6 +725,10 @@ func OverlayYAMLData(
 
 	if y.IsDefined("backends", name, "sigv4") {
 		no.SigV4 = o.SigV4
+	}
+
+	if y.IsDefined("backends", name, "authenticator_name") {
+		no.AuthenticatorName = o.AuthenticatorName
 	}
 
 	return no, nil

@@ -43,6 +43,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	tr "github.com/trickstercache/trickster/v2/pkg/observability/tracing/registry"
+	ar "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/registry"
 	pnh "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/ping"
 	ph "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/purge"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/reload"
@@ -96,6 +97,10 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 
 	if newConf.ReloadConfig == nil {
 		newConf.ReloadConfig = ro.New()
+	}
+
+	if err := buildAuthenticators(newConf); err != nil {
+		return err
 	}
 
 	applyLoggingConfig(newConf, si.Config)
@@ -154,6 +159,20 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	si.Config = newConf
 	si.Caches = caches
 	si.Backends = backends
+	return nil
+}
+
+func buildAuthenticators(c *config.Config) error {
+	if c == nil || len(c.Authenticators) == 0 {
+		return nil
+	}
+	for _, ao := range c.Authenticators {
+		ac, err := ar.New(ao.Provider, map[string]any{"options": ao})
+		if err != nil {
+			return err
+		}
+		ao.Authenticator = ac
+	}
 	return nil
 }
 

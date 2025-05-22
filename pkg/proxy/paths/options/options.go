@@ -27,6 +27,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/cache/key"
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
+	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/forwarding"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
@@ -70,6 +71,8 @@ type Options struct {
 	ReqRewriterName string `yaml:"req_rewriter_name,omitempty"`
 	// NoMetrics, when set to true, disables metrics decoration for the path
 	NoMetrics bool `yaml:"no_metrics"`
+	// AuthenticatorName specifies the name of the optional Authenticator to attach to this Path
+	AuthenticatorName string `yaml:"authenticator_name,omitempty"`
 
 	// Handler is the HTTP Handler represented by the Path's HandlerName
 	Handler http.Handler `yaml:"-"`
@@ -86,6 +89,8 @@ type Options struct {
 	Custom []string `yaml:"-"`
 	// ReqRewriter is the rewriter handler as indicated by RuleName
 	ReqRewriter rewriter.RewriteInstructions
+	// AuthOptions is the authenticator as indicated by AuthenticatorName
+	AuthOptions *autho.Options `yaml:"-"`
 	// HasCustomResponseBody is a boolean indicating if the response body is custom
 	// this flag allows an empty string response to be configured as a return value
 	HasCustomResponseBody bool `yaml:"-"`
@@ -140,6 +145,10 @@ func (o *Options) Clone() *Options {
 		CacheKeyFormFields:      slices.Clone(o.CacheKeyFormFields),
 		Custom:                  slices.Clone(o.Custom),
 		KeyHasher:               o.KeyHasher,
+		AuthenticatorName:       o.AuthenticatorName,
+	}
+	if o.AuthOptions != nil {
+		c.AuthOptions = o.AuthOptions.Clone()
 	}
 	return c
 }
@@ -188,6 +197,11 @@ func (o *Options) Merge(o2 *Options) {
 		case "req_rewriter_name":
 			o.ReqRewriterName = o2.ReqRewriterName
 			o.ReqRewriter = o2.ReqRewriter
+		case "authenticator_name":
+			o.AuthenticatorName = o2.AuthenticatorName
+			if o2.AuthOptions != nil {
+				o.AuthOptions = o2.AuthOptions.Clone()
+			}
 		}
 	}
 	o.Custom = strutil.Unique(o.Custom)
@@ -196,7 +210,7 @@ func (o *Options) Merge(o2 *Options) {
 var pathMembers = []string{"path", "match_type", "handler", "methods", "cache_key_params",
 	"cache_key_headers", "default_ttl", "request_params", "request_headers", "response_headers",
 	"response_headers", "response_code", "response_body", "no_metrics", "collapsed_forwarding",
-	"req_rewriter_name",
+	"req_rewriter_name", "authenticator_name",
 }
 
 var errInvalidConfigMetadata = errors.New("invalid config y")

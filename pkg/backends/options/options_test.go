@@ -30,6 +30,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/negative"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	tro "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
+	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
@@ -113,7 +114,7 @@ func TestValidateConfigMappings(t *testing.T) {
 	ol["frontend"] = o
 
 	err = ol.ValidateConfigMappings(co.Lookup{}, negative.Lookups{},
-		ro.Lookup{}, rwopts.Lookup{}, tro.Lookup{})
+		ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{})
 	if err == nil {
 		t.Error("expected error for invalid cache name")
 	}
@@ -122,13 +123,13 @@ func TestValidateConfigMappings(t *testing.T) {
 	o.Provider = providers.Rule
 	o.RuleName = "test"
 	err = ol.ValidateConfigMappings(co.Lookup{"test": nil}, negative.Lookups{},
-		ro.Lookup{}, rwopts.Lookup{}, tro.Lookup{})
+		ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{})
 	if err == nil {
 		t.Error("expected error for invalid rule name")
 	}
 
 	err = ol.ValidateConfigMappings(co.Lookup{"test": nil}, negative.Lookups{},
-		ro.Lookup{"test": new(ro.Options)}, rwopts.Lookup{}, tro.Lookup{})
+		ro.Lookup{"test": new(ro.Options)}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{})
 	if err == nil {
 		t.Error("expected error for invalid tracing name")
 	}
@@ -137,7 +138,8 @@ func TestValidateConfigMappings(t *testing.T) {
 
 	o.Name = ""
 	err = ol.ValidateConfigMappings(co.Lookup{"test": nil}, negative.Lookups{},
-		ro.Lookup{"test": new(ro.Options)}, rwopts.Lookup{}, tro.Lookup{})
+		ro.Lookup{"test": new(ro.Options)}, rwopts.Lookup{}, autho.Lookup{},
+		tro.Lookup{})
 	if err == nil {
 		t.Error("expected error for invalid backend name")
 	}
@@ -146,7 +148,7 @@ func TestValidateConfigMappings(t *testing.T) {
 	o.Provider = providers.ALB
 	o.RuleName = ""
 	err = ol.ValidateConfigMappings(co.Lookup{"test": nil}, negative.Lookups{},
-		ro.Lookup{"test": new(ro.Options)}, rwopts.Lookup{}, tro.Lookup{})
+		ro.Lookup{"test": new(ro.Options)}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{})
 	if err == nil {
 		t.Error("expected error for invalid negative cache name")
 	}
@@ -154,7 +156,8 @@ func TestValidateConfigMappings(t *testing.T) {
 	o.NegativeCacheName = ""
 
 	err = ol.ValidateConfigMappings(co.Lookup{"test": nil}, negative.Lookups{},
-		ro.Lookup{"test": new(ro.Options)}, rwopts.Lookup{}, tro.Lookup{})
+		ro.Lookup{"test": new(ro.Options)}, rwopts.Lookup{}, autho.Lookup{},
+		tro.Lookup{})
 	if err != nil {
 		t.Error(err)
 	}

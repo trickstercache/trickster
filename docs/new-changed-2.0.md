@@ -46,9 +46,10 @@
 - We've switched from Regular Expression matches for SQL-based Time Series Backends to an extensible lexer/parser solution
   - ClickHouse backend providers now use the new SQL Parser
 - We now support [Simulated Latency](./simulated-latency.md) if you want to use Trickster for that purpose in a test harness.
+- We've added a new [Authenticator](authenticator.md) feature so you can guard backends with Basic Auth
 - We now support Environment variable substitution in configuration files where sensitive information is expected.
   - Supported via the following fields:
-    - `caches[*].redis.password`, `backends[*].healthcheck.headers`, `backends[*].paths[*].request_headers`, `backends[*].paths[*].request_params`, `backends[*].paths[*].response_headers`
+    - `caches[*].redis.password`, `backends[*].healthcheck.headers`, `backends[*].paths[*].request_headers`, `backends[*].paths[*].request_params`, `backends[*].paths[*].response_headers`, `authenticators[*].users`
   - Usage: `password: ${MY_SECRET_VAR}`
 - Previous Trickster 2.0 Betas used millisecond config values like `timeout_ms: 1500`. These have changed to `timeout: 1500ms`. See more details in the Configuration section below.
 - We no longer include the `vendor` directory in the project repository and `vendor` is now in `.gitignore`. `vendor` will continue to be included in Release source tarballs.

@@ -35,6 +35,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/handler"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/health"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
@@ -222,6 +223,13 @@ func RegisterPathRoutes(r router.Router, handlers handlers.Lookup,
 		if tr != nil {
 			h = middleware.Trace(tr, h)
 		}
+		// attach authenticator
+		if po1.AuthOptions != nil && po1.AuthOptions.Authenticator != nil {
+			h = handler.Middleware(po1.AuthOptions.Authenticator, (h))
+		} else if po1.AuthenticatorName != "none" && o.AuthOptions != nil &&
+			o.AuthOptions.Authenticator != nil {
+			h = handler.Middleware(o.AuthOptions.Authenticator, (h))
+		}
 		// attach compression handler
 		h = encoding.HandleCompression(h, o.CompressibleTypes)
 		// add Backend, Cache, and Path Configs to the HTTP Request's context
@@ -315,6 +323,13 @@ func RegisterDefaultBackendRoutes(r router.Router, bknds backends.Backends,
 		// attach distributed tracer
 		if tr != nil {
 			h = middleware.Trace(tr, h)
+		}
+		// attach authenticator
+		if po.AuthOptions != nil && po.AuthOptions.Authenticator != nil {
+			h = handler.Middleware(po.AuthOptions.Authenticator, (h))
+		} else if po.AuthenticatorName != "none" && o.AuthOptions != nil &&
+			o.AuthOptions.Authenticator != nil {
+			h = handler.Middleware(o.AuthOptions.Authenticator, (h))
 		}
 		// add Backend, Cache, and Path Configs to the HTTP Request's context
 		h = middleware.WithResourcesContext(client, o, c, po, tr, h)
