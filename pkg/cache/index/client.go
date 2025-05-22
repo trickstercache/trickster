@@ -238,7 +238,7 @@ func (idx *IndexedClient) RetrieveReference(cacheKey string) (any, status.Lookup
 	if !ok {
 		return nil, status.LookupStatusError, ErrInvalidCacheBackend
 	}
-	go idx.updateAccessTime(cacheKey)
+	idx.updateAccessTime(cacheKey)
 	return mc.RetrieveReference(cacheKey)
 }
 
@@ -258,7 +258,7 @@ func (idx *IndexedClient) Retrieve(cacheKey string) ([]byte, status.LookupStatus
 	if err != nil {
 		return nil, status.LookupStatusError, err
 	}
-	go idx.updateAccessTime(cacheKey)
+	idx.updateAccessTime(cacheKey)
 	return o.Value, s, nil
 }
 

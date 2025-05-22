@@ -91,6 +91,39 @@ func TestIndexedClient(t *testing.T) {
 		require.NoError(t, ic.Close())
 	})
 
+	t.Run("atime", func(t *testing.T) {
+
+		// init indexed client
+		ic := NewIndexedClient("test", provider, []byte{}, &options.Options{
+			ReapInterval:          time.Second * time.Duration(10),
+			FlushInterval:         time.Second * time.Duration(10),
+			MaxSizeObjects:        5,
+			MaxSizeBackoffObjects: 3,
+			MaxSizeBytes:          100,
+			MaxSizeBackoffBytes:   30,
+		}, mc)
+
+		// store & retrieve
+		val := []byte("bar")
+		require.NoError(t, ic.Store("foo", val, 0))
+		// expect atime to be set
+		o, ok := ic.Objects.Load("foo")
+		require.True(t, ok)
+		obj, ok := o.(*Object)
+		require.True(t, ok)
+		atime := obj.LastAccess.Load()
+		require.NotZero(t, atime)
+
+		// access the object and expect atime to be updated
+		b, s, err := ic.Retrieve("foo")
+		require.NoError(t, err)
+		require.Equal(t, status.LookupStatusHit, s)
+		require.Equal(t, val, b)
+		atime2 := obj.LastAccess.Load()
+		require.NotZero(t, atime2)
+		require.True(t, atime2.After(atime), "expected %s to be after %s", atime2, atime)
+	})
+
 	t.Run("flush", func(t *testing.T) {
 		const provider = "filesystem"
 
@@ -187,7 +220,9 @@ func TestIndexedClient(t *testing.T) {
 	ic.Store("test.3", []byte("test_value"), ttl)
 
 	// trigger a reap that will only remove expired elements but not size down the full cache
+	keyCount := len(ic.Objects.Keys())
 	ic.reap()
+	require.Equal(t, keyCount, len(ic.Objects.Keys()))
 
 	state := getIndexedClientState(ic)
 	require.Equal(t, int64(3), state.ObjectCount)
@@ -204,6 +239,8 @@ func TestIndexedClient(t *testing.T) {
 	ic.Store("test.6", []byte("test_value"), ttl)
 
 	// trigger size-based reap eviction of some elements
+	keyCount = len(ic.Objects.Keys())
+	require.Equal(t, 6, keyCount)
 	ic.reap()
 
 	t.Log("keys", ic.Objects.Keys())
@@ -220,30 +257,21 @@ func TestIndexedClient(t *testing.T) {
 	_, ok = ic.Objects.Load("test.4")
 	require.False(t, ok, "expected key test.4 to be missing")
 
-	t.Skip("wip -- seeing failures here, atime might be broken?")
-
 	_, ok = ic.Objects.Load("test.5")
-	require.False(t, ok, "expected key test.5 to be missing")
+	require.True(t, ok, "expected key test.5 to be present")
 
 	_, ok = ic.Objects.Load("test.6")
-	require.False(t, ok, "expected key test.6 to be missing")
+	require.True(t, ok, "expected key test.6 to be present")
 
 	// add key with large body to reach byte size threshold
 	ic.Store("test.7", []byte("test_value00000000000000000000000000000000000000000000000000000000000000000000000000000"), ttl)
 
 	// trigger a byte-based reap
+	t.Log("keys", ic.Objects.Keys())
 	ic.reap()
+	t.Log("keys", ic.Objects.Keys())
 
-	// only cache index should be left
-
-	if _, ok := ic.Objects.Load("test.6"); ok {
-		t.Errorf("expected key %s to be missing", "test.6")
-	}
-
-	if _, ok := ic.Objects.Load("test.7"); ok {
-		t.Errorf("expected key %s to be missing", "test.7")
-	}
-
+	// expect index to be empty
 	objects := ic.Objects.ToObjects()
 	require.Len(t, objects, 0)
 	state = getIndexedClientState(ic)
