@@ -96,6 +96,19 @@ func NewErrInvalidCacheName(cacheName, backendName string) error {
 	}
 }
 
+// ErrInvalidAuthenticatorName is an error type for invalid cache name
+type ErrInvalidAuthenticatorName struct {
+	error
+}
+
+// NewErrInvalidAuthenticatorName returns a new invalid authenticator name error
+func NewErrInvalidAuthenticatorName(authenticatorName, backendName string) error {
+	return &ErrInvalidAuthenticatorName{
+		error: fmt.Errorf(`invalid authenticator_name "%s" provided in backend options "%s"`,
+			authenticatorName, backendName),
+	}
+}
+
 // ErrInvalidTracingName is an error type for invalid tracing name
 type ErrInvalidTracingName struct {
 	error

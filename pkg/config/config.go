@@ -35,6 +35,7 @@ import (
 	lo "github.com/trickstercache/trickster/v2/pkg/observability/logging/options"
 	mo "github.com/trickstercache/trickster/v2/pkg/observability/metrics/options"
 	tracing "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
+	auth "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
@@ -67,6 +68,8 @@ type Config struct {
 	RequestRewriters rwopts.Lookup `yaml:"request_rewriters,omitempty"`
 	// ReloadConfig provides configurations for in-process config reloading
 	ReloadConfig *reload.Options `yaml:"reloading,omitempty"`
+	// Authenticators provides configurations for Authenticating users
+	Authenticators auth.Lookup `yaml:"authenticators,omitempty"`
 
 	// Flags contains a compiled version of the CLI flags
 	Flags *Flags `yaml:"-"`
@@ -333,6 +336,13 @@ func (c *Config) Clone() *Config {
 		nc.RequestRewriters = make(rwopts.Lookup, len(c.RequestRewriters))
 		for k, v := range c.RequestRewriters {
 			nc.RequestRewriters[k] = v.Clone()
+		}
+	}
+
+	if len(c.Authenticators) > 0 {
+		nc.Authenticators = make(auth.Lookup, len(c.Authenticators))
+		for k, v := range c.Authenticators {
+			nc.Authenticators[k] = v.Clone()
 		}
 	}
 
