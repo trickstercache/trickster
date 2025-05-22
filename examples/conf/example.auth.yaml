@@ -23,6 +23,7 @@ authenticators:
     users_file_format: csv
     users: # optional embedded users list (name: credential)
       user1: red123
+      user2: ${USER2_PASS} # password for user2 is sourced from the ENV
     users_format: plaintext
     config: # optional provider-specific configs
       showLoginForm: true # show the login form on missing or invalid creds
