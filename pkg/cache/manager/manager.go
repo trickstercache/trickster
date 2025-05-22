@@ -71,12 +71,12 @@ func (cm *Manager) RetrieveReference(cacheKey string) (any, status.LookupStatus,
 	defer nl.RRelease()
 	v, s, err := cm.Client.(cache.MemoryCache).RetrieveReference(cacheKey)
 	if ro, ok := v.(cache.ReferenceObject); ok {
-		cm.ObserveRetrieval(ro.Size(), s, err)
+		cm.observeRetrieval(ro.Size(), s, err)
 	}
 	return v, s, err
 }
 
-func (cm *Manager) ObserveRetrieval(size int, s status.LookupStatus, err error) {
+func (cm *Manager) observeRetrieval(size int, s status.LookupStatus, err error) {
 	if err == cache.ErrKNF || s == status.LookupStatusKeyMiss {
 		metrics.ObserveCacheMiss(cm.config.Name, cm.config.Provider)
 	} else if err != nil {
@@ -90,7 +90,7 @@ func (cm *Manager) Retrieve(cacheKey string) ([]byte, status.LookupStatus, error
 	nl, _ := cm.locker.RAcquire(filepath.Join(cm.config.Name, cm.config.Provider, cacheKey))
 	defer nl.RRelease()
 	b, s, err := cm.Client.Retrieve(cacheKey)
-	cm.ObserveRetrieval(len(b), s, err)
+	cm.observeRetrieval(len(b), s, err)
 	return b, s, err
 
 }
@@ -105,7 +105,7 @@ func (cm *Manager) Remove(cacheKeys ...string) error {
 }
 
 func (cm *Manager) Connect() error {
-	if err := cm.Client.Connect(); err != nil {
+	if err := cm.originalCli.Connect(); err != nil {
 		return err
 	}
 	if cm.opts.UseIndex {
