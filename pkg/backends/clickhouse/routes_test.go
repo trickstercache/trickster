@@ -19,6 +19,7 @@ package clickhouse
 import (
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
 )
@@ -41,7 +42,7 @@ func TestDefaultPathConfigs(t *testing.T) {
 		t.Error(err)
 	}
 	ts, _, r, _, err := tu.NewTestInstance("", backendClient.DefaultPathConfigs, 204, "",
-		nil, "clickhouse", "/", "debug")
+		nil, providers.ClickHouse, "/", "debug")
 	if err != nil {
 		t.Error(err)
 	} else {

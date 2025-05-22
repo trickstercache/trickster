@@ -81,14 +81,14 @@ type Timeseries interface {
 	SetTimeRangeQuery(*TimeRangeQuery)
 }
 
-type TimeseriesList []Timeseries
+type List []Timeseries
 
 // Compress removes nil entries from t
-func (t TimeseriesList) Compress() TimeseriesList {
+func (t List) Compress() List {
 	if len(t) == 0 {
-		return TimeseriesList{}
+		return List{}
 	}
-	out := make(TimeseriesList, len(t))
+	out := make(List, len(t))
 	var j int
 	for _, ts := range t {
 		if ts == nil {
@@ -101,7 +101,7 @@ func (t TimeseriesList) Compress() TimeseriesList {
 }
 
 // Merge combines all Timesseries in t into a single Timeseries
-func (t TimeseriesList) Merge() Timeseries {
+func (t List) Merge() Timeseries {
 	cts := t.Compress()
 	if len(cts) == 0 {
 		return nil

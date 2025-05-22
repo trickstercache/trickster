@@ -17,21 +17,117 @@
 package validate
 
 import (
-	"errors"
-
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb"
+	"github.com/trickstercache/trickster/v2/pkg/backends/rule"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/config"
-	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/errors"
 	tr "github.com/trickstercache/trickster/v2/pkg/observability/tracing/registry"
 	"github.com/trickstercache/trickster/v2/pkg/router/lm"
 	"github.com/trickstercache/trickster/v2/pkg/routing"
 )
 
 func Validate(c *config.Config) error {
-
-	for _, w := range c.LoaderWarnings {
-		logger.Warn(w, nil)
+	if c.ReloadConfig != nil {
+		if err := c.ReloadConfig.Validate(); err != nil {
+			return err
+		}
 	}
+	if c.Logging != nil {
+		if err := c.Logging.Validate(); err != nil {
+			return err
+		}
+	}
+	if c.Metrics != nil {
+		if err := c.Metrics.Validate(); err != nil {
+			return err
+		}
+	}
+	if err := Tracers(c); err != nil {
+		return err
+	}
+	if err := Rewriters(c); err != nil {
+		return err
+	}
+	if err := Rules(c); err != nil {
+		return err
+	}
+	if err := Caches(c); err != nil {
+		return err
+	}
+	if err := NegativeCaches(c); err != nil {
+		return err
+	}
+	if err := Backends(c); err != nil {
+		return err
+	}
+	if c.Frontend != nil {
+		if err := c.Frontend.Validate(c.TLSCertConfig); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func Rewriters(c *config.Config) error {
+	if len(c.RequestRewriters) == 0 {
+		return nil
+	}
+	return c.RequestRewriters.Validate()
+}
+
+func Tracers(c *config.Config) error {
+	if len(c.TracingConfigs) == 0 {
+		return nil
+	}
+	return c.TracingConfigs.Validate()
+}
+
+func Rules(c *config.Config) error {
+	if len(c.Rules) == 0 {
+		return nil
+	}
+	return c.Rules.Validate()
+}
+
+func Caches(c *config.Config) error {
+	if len(c.Caches) == 0 {
+		return nil
+	}
+	return c.Caches.Validate()
+}
+
+func NegativeCaches(c *config.Config) error {
+	if len(c.NegativeCacheConfigs) == 0 {
+		return nil
+	}
+	nc, err := c.NegativeCacheConfigs.ValidateAndCompile()
+	if err != nil {
+		return err
+	}
+	c.CompiledNegativeCaches = nc
+	return nil
+}
+
+func Backends(c *config.Config) error {
+	if len(c.Backends) == 0 {
+		return errors.ErrNoValidBackends
+	}
+	if err := c.Backends.ValidateConfigMappings(c.Caches, c.CompiledNegativeCaches,
+		c.Rules, c.RequestRewriters, c.TracingConfigs); err != nil {
+		return err
+	}
+	serveTLS, err := c.Backends.ValidateTLSConfigs()
+	if err != nil {
+		return err
+	}
+	if serveTLS {
+		c.Frontend.ServeTLS = true
+	}
+	return c.Backends.Validate()
+}
+
+func RoutesRulesAndPools(c *config.Config) error {
 	var caches = make(cache.Lookup)
 	for k := range c.Caches {
 		caches[k] = nil
@@ -39,25 +135,18 @@ func Validate(c *config.Config) error {
 	r := lm.NewRouter()
 	mr := lm.NewRouter()
 	mr.SetMatchingScheme(0) // metrics router is exact-match only
-
 	tracers, err := tr.RegisterAll(c, true)
 	if err != nil {
 		return err
 	}
-
-	_, err = routing.RegisterProxyRoutes(c, r, mr, caches, tracers, true)
+	clients, err := routing.RegisterProxyRoutes(c, r, mr, caches, tracers, true)
 	if err != nil {
 		return err
 	}
-	if c.Frontend.TLSListenPort < 1 && c.Frontend.ListenPort < 1 {
-		return errors.New("no http or https listeners configured")
+	// these validations can't be performed until the router tree is constructed
+	err = rule.ValidateOptions(clients, c.CompiledRewriters)
+	if err != nil {
+		return err
 	}
-
-	if c.Frontend.ServeTLS && c.Frontend.TLSListenPort > 0 {
-		_, err = c.TLSCertConfig()
-		if err != nil {
-			return err
-		}
-	}
-	return nil
+	return alb.ValidateClients(clients)
 }

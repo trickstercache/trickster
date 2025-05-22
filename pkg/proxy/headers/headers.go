@@ -137,6 +137,8 @@ const (
 	NameTrailer = "Trailer"
 	// NameUpgrade represents the HTTP Header Name of "Upgrade"
 	NameUpgrade = "Upgrade"
+	// NameWWWAuthenticate represents the HTTP Header Name of "WWW-Authenticate"
+	NameWWWAuthenticate = "WWW-Authenticate"
 
 	// NameTrkHCStatus represents the HTTP Header Name of "Trk-HC-Status"
 	NameTrkHCStatus = "Trk-HC-Status"

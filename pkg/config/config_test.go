@@ -26,7 +26,6 @@ import (
 	rule "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
-	rwo "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 	to "github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
@@ -149,21 +148,20 @@ func TestProcessPprofConfig(t *testing.T) {
 
 }
 
-func TestSetDefaults(t *testing.T) {
+func TestConfigProcess(t *testing.T) {
 
 	c, _ := emptyTestConfig()
 
 	c.Main.PprofServer = "x"
-	err := c.setDefaults(nil)
+	err := c.Process()
 	if err == nil {
 		t.Error("expected error for invalid pprof server name")
 	}
 
 	c.Main.PprofServer = "both"
-	c.RequestRewriters = make(rwo.Lookup)
-	err = c.setDefaults(nil)
-	if err == nil {
-		t.Error("expected error for invalid pprof server name")
+	err = c.Process()
+	if err != nil {
+		t.Error(err)
 	}
 }
 
@@ -199,53 +197,28 @@ backends:
 func TestProcessBackendOptions(t *testing.T) {
 
 	c, _ := emptyTestConfig()
-	c.Backends["test"].ReqRewriterName = "invalid"
 	yml := c.String() + testRewriter
-	err := c.loadYAMLConfig(yml, &Flags{})
-	if err == nil {
-		t.Error("expected error for invalid rewriter name")
-	}
-
 	yml = strings.Replace(strings.Replace(
 		yml,
 		`req_rewriter_name: invalid`,
 		`req_rewriter_name: example`,
 		-1), "- - path", "- - patha", -1,
 	)
-
-	err = c.loadYAMLConfig(yml, &Flags{})
-	if err == nil {
-		t.Error("expected error for rewriter compilation")
-	}
-
-	yml = strings.Replace(yml, "- - patha", "- - path", -1)
-	err = c.loadYAMLConfig(yml, &Flags{})
+	yml = strings.ReplaceAll(yml, "- - patha", "- - path")
+	err := c.loadYAMLConfig(yml)
 	if err != nil {
 		t.Error(err)
 	}
 
-	yml = strings.Replace(
+	yml = strings.ReplaceAll(
 		c.String(),
 		"backends:\n  test:\n",
 		testPaths,
-		-1,
 	)
 
-	err = c.loadYAMLConfig(yml, &Flags{})
+	err = c.loadYAMLConfig(yml)
 	if err != nil {
 		t.Error(err)
-	}
-
-	yml = strings.Replace(
-		yml,
-		` req_rewriter_name: example`,
-		` req_rewriter_name: invalid`,
-		-1,
-	)
-
-	err = c.loadYAMLConfig(yml, &Flags{})
-	if err == nil || !strings.Contains(err.Error(), "invalid rewriter name") {
-		t.Error("expected yaml parsing error", err)
 	}
 
 }
@@ -253,14 +226,14 @@ func TestProcessBackendOptions(t *testing.T) {
 func TestLoadYAMLConfig(t *testing.T) {
 
 	c := NewConfig()
-	err := c.loadYAMLConfig("[[", nil)
+	err := c.loadYAMLConfig("[[")
 
 	if err == nil || !strings.Contains(err.Error(), "did not find expected node content") {
 		t.Error("expected yaml parsing error")
 	}
 
-	c, tml := emptyTestConfig()
-	err = c.loadYAMLConfig(tml, &Flags{})
+	c, yml := emptyTestConfig()
+	err = c.loadYAMLConfig(yml)
 	if err != nil {
 		t.Error(err)
 	}
@@ -283,13 +256,11 @@ func TestIsStale(t *testing.T) {
 		t.Error("expected non-stale config")
 	}
 
-	temp := c.Main.configFilePath
 	c.Main.configFilePath = testFile + ".invalid"
 	if c.IsStale() {
 		t.Error("expected non-stale config")
 	}
-	c.Main.configFilePath = temp
-
+	c.Main.configFilePath = testFile
 	time.Sleep(time.Millisecond * 10)
 
 	err = os.WriteFile(testFile, []byte(tml), 0666)

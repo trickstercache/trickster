@@ -27,38 +27,46 @@ type Provider int
 
 const (
 	// RPC represents the Reverse Proxy Cache backend provider
-	RPC = Provider(iota)
+	RPCID = Provider(iota)
 	// ALB represents the Application Load Balancer backend provider
-	ALB
+	ALBID
 	// RP represents the Reverse Proxy (no caching) backend provider
-	RP
+	RPID
 	// Rule represents the Ruler backend provider
-	Rule
+	RuleID
 	// Prometheus represents the Prometheus backend provider
-	Prometheus
+	PrometheusID
 	// InfluxDB represents the InfluxDB backend provider
-	InfluxDB
+	InfluxDBID
 	// ClickHouse represents the ClickHouse backend provider
-	ClickHouse
+	ClickHouseID
 
 	ReverseProxyShort      = "rp"
 	ReverseProxy           = "reverseproxy"
 	ReverseProxyCacheShort = "rpc"
 	ReverseProxyCache      = "reverseproxycache"
+	Proxy                  = "proxy"
+
+	Rule = "rule"
+	ALB  = "alb"
+
+	Prometheus = "prometheus"
+	ClickHouse = "clickhouse"
+	InfluxDB   = "influxdb"
 )
 
 // Names is a map of Providers keyed by string name
 var Names = map[string]Provider{
-	"rule":                 Rule,
-	ReverseProxyCache:      RPC,
-	ReverseProxyCacheShort: RPC,
-	"alb":                  ALB,
-	"prometheus":           Prometheus,
-	"influxdb":             InfluxDB,
-	"clickhouse":           ClickHouse,
-	"proxy":                RP,
-	ReverseProxy:           RP,
-	ReverseProxyShort:      RP,
+	Rule:                   RuleID,
+	ReverseProxyCache:      RPCID,
+	ReverseProxyCacheShort: RPCID,
+	ALB:                    ALBID,
+	Prometheus:             PrometheusID,
+	InfluxDB:               InfluxDBID,
+	ClickHouse:             ClickHouseID,
+	Proxy:                  RPID,
+	ReverseProxy:           RPID,
+	ReverseProxyShort:      RPID,
 }
 
 // Values is a map of Providers valued by string name
@@ -70,14 +78,14 @@ func init() {
 	}
 	// ensure consistent reverse mapping for reverseproxycache as rpc
 	// and "rp" for proxy
-	Values[RPC] = ReverseProxyCacheShort
-	Values[RP] = ReverseProxyShort
+	Values[RPCID] = ReverseProxyCacheShort
+	Values[RPID] = ReverseProxyShort
 }
 
 var supportedTimeSeries = map[string]Provider{
-	"prometheus": Prometheus,
-	"influxdb":   InfluxDB,
-	"clickhouse": ClickHouse,
+	Prometheus: PrometheusID,
+	InfluxDB:   InfluxDBID,
+	ClickHouse: ClickHouseID,
 }
 
 // IsSupportedTimeSeriesProvider returns true if the provided time series is supported by Trickster
@@ -87,7 +95,7 @@ func IsSupportedTimeSeriesProvider(name string) bool {
 }
 
 var supportedTimeSeriesMerge = map[string]Provider{
-	"prometheus": Prometheus,
+	Prometheus: PrometheusID,
 }
 
 // IsSupportedTimeSeriesProvider returns true if the provided time series is supported by Trickster
@@ -112,5 +120,11 @@ func IsValidProvider(t string) bool {
 // NonCacheBackends returns a set of backend Providers that do not use a cache
 func NonCacheBackends() sets.Set[string] {
 	return sets.New([]string{ReverseProxyShort,
-		ReverseProxy, "alb", "proxy", "rule"})
+		ReverseProxy, ALB, Proxy, Rule})
+}
+
+// NonOriginBackends returns a set of backend Providers that never proxy to an
+// Origin URL, but instead pass requests off to other Providers that do.
+func NonOriginBackends() sets.Set[string] {
+	return sets.New([]string{ALB, Rule})
 }

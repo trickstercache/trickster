@@ -33,7 +33,6 @@ func Load(args []string) (*Config, error) {
 			sargs = append(sargs, v)
 		}
 	}
-
 	c := NewConfig()
 	flags, err := parseFlags(sargs) // Parse here to get config file path and version flags
 	if err != nil {
@@ -53,6 +52,8 @@ func Load(args []string) (*Config, error) {
 
 	c.loadEnvVars()
 	c.loadFlags(flags) // load parsed flags to override file and envs
+
+	c.parseURLs()
 
 	// set the default origin url from the flags
 	if d, ok := c.Backends["default"]; ok {
@@ -84,15 +85,17 @@ func Load(args []string) (*Config, error) {
 		return nil, errors.ErrNoValidBackends
 	}
 
-	ncl, err := c.NegativeCacheConfigs.Validate()
-	if err != nil {
-		return nil, err
-	}
-
-	err = c.Backends.Validate(ncl)
-	if err != nil {
-		return nil, err
-	}
-
 	return c, nil
+}
+
+func (c *Config) parseURLs() {
+	for _, o := range c.Backends {
+		u, err := url.Parse(o.OriginURL)
+		if err != nil || u == nil {
+			continue // errors are OK here for some backend providers
+		}
+		o.Scheme = u.Scheme
+		o.Host = u.Host
+		o.PathPrefix = u.Path
+	}
 }

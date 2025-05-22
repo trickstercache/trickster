@@ -1037,7 +1037,9 @@ func TestDeltaProxyCacheRequestWithUnmarshalAndUpstreamErrorsChunks(t *testing.T
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
+	o.Name = "default"
 	rsc.CacheConfig.Provider = "test" // disable direct-memory and force marshaling
+	o.CacheKeyPrefix = o.Host
 
 	client.RangeCacheKey = "testkey"
 

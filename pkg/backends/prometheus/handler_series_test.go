@@ -20,6 +20,7 @@ import (
 	"io"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
 )
@@ -31,8 +32,8 @@ func TestSeriesHandler(t *testing.T) {
 		t.Error(err)
 	}
 	ts, w, r, _, err := tu.NewTestInstance("", backendClient.DefaultPathConfigs, 200,
-		"{}", nil, "prometheus",
-		`/default/api/v1/series?match[]=up&match[]=process_start_time_seconds{job="prometheus"}&start=100&end=100`,
+		"{}", nil, providers.Prometheus,
+		`/default/api/v1/series?match[]=up&match[]=process_start_time_seconds{job=providers.Prometheus}&start=100&end=100`,
 		"debug")
 	if err != nil {
 		t.Error(err)

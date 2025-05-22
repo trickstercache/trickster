@@ -83,7 +83,7 @@ func (b Backends) GetRouter(backendName string) http.Handler {
 // IsVirtual returns true if the backend is a virtual type (e.g., ones that do not
 // make an outbound http request, but instead front to other backends)
 func IsVirtual(provider string) bool {
-	return provider == "alb" || provider == "rule"
+	return provider == providers.ALB || provider == providers.Rule
 }
 
 // UsesCache returns true if the backend uses a cache

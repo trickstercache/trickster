@@ -147,6 +147,7 @@ func TestClockOffsetWarning(t *testing.T) {
 		ResponseHeaders: map[string]string{},
 	}
 
+	o.Name = "default"
 	o.HTTPClient = http.DefaultClient
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", s.URL, nil)

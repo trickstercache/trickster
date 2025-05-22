@@ -20,6 +20,7 @@ import (
 	"net/http"
 
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
@@ -31,9 +32,9 @@ func (c *Client) RegisterHandlers(handlers.Lookup) {
 		handlers.Lookup{
 			// This is the registry of handlers that Trickster supports for ClickHouse,
 			// and are able to be referenced by name (map key) in Config Files
-			"health": http.HandlerFunc(c.HealthHandler),
-			"query":  http.HandlerFunc(c.QueryHandler),
-			"proxy":  http.HandlerFunc(c.ProxyHandler),
+			"health":        http.HandlerFunc(c.HealthHandler),
+			"query":         http.HandlerFunc(c.QueryHandler),
+			providers.Proxy: http.HandlerFunc(c.ProxyHandler),
 		},
 	)
 }

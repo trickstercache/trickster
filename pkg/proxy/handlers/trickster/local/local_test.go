@@ -21,6 +21,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
@@ -36,7 +37,7 @@ func TestHandleLocalResponse(t *testing.T) {
 	HandleLocalResponse(nil, nil)
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	_, err := config.Load([]string{"-origin-url", "http://1.2.3.4", "-provider",
-		"prometheus"})
+		providers.Prometheus})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
@@ -88,7 +89,7 @@ func TestHandleLocalResponse(t *testing.T) {
 func TestHandleLocalResponseBadResponseCode(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	_, err := config.Load([]string{"-origin-url", "http://1.2.3.4", "-provider",
-		"prometheus"})
+		providers.Prometheus})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
@@ -135,7 +136,7 @@ func TestHandleLocalResponseBadResponseCode(t *testing.T) {
 func TestHandleLocalResponseNoPathConfig(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	_, err := config.Load([]string{"-origin-url", "http://1.2.3.4", "-provider",
-		"prometheus"})
+		providers.Prometheus})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}

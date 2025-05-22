@@ -245,7 +245,7 @@ check-todos: # there are 11 known "TODO"s in the codebase. This check fails if m
 	if [ -n "$$todos" ]; then \
 		count="$$(echo "$$todos" | wc -l | tr -d '[:space:]')" ; \
 	fi; \
-	KNOWN_TODO_COUNT=11 ; \
+	KNOWN_TODO_COUNT=7 ; \
 	if [ "$$count" -gt $$KNOWN_TODO_COUNT ]; then \
 		newtodos=$$(($$count - $$KNOWN_TODO_COUNT)) ; \
 		echo "" ; \

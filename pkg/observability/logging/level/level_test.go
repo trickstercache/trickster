@@ -18,19 +18,19 @@ package level
 
 import "testing"
 
-func TestGetLevelID(t *testing.T) {
-	id := GetLevelID("invalid")
+func TestGetID(t *testing.T) {
+	id := GetID("invalid")
 	if id != 0 {
 		t.Errorf("expected %d got %d", 0, id)
 	}
-	id = GetLevelID(Info)
+	id = GetID(Info)
 	if id != InfoID {
 		t.Errorf("expected %d got %d", InfoID, id)
 	}
 }
 
-func BenchmarkGetLevelID(b *testing.B) {
+func BenchmarkGetID(b *testing.B) {
 	for b.Loop() {
-		GetLevelID(Info)
+		GetID(Info)
 	}
 }

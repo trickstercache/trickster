@@ -71,6 +71,10 @@ func LoadAndValidate() (*config.Config, error) {
 		return cfg, nil
 	}
 
+	for _, w := range cfg.LoaderWarnings {
+		logger.Warn(w, nil)
+	}
+
 	// Validate Config
 	if err = validate.Validate(cfg); err != nil {
 		logger.Error(err.Error(), nil)
@@ -80,7 +84,7 @@ func LoadAndValidate() (*config.Config, error) {
 }
 
 func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
-	hupFunc dr.ReloadFunc, errorFunc func()) error {
+	hupFunc dr.Reloader, errorFunc func()) error {
 	if si == nil || newConf == nil {
 		return nil
 	}

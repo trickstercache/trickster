@@ -28,13 +28,16 @@ import (
 	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	prop "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	ro "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/evictionmethods"
 	"github.com/trickstercache/trickster/v2/pkg/cache/negative"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
+	tro "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
+	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 	to "github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
 	"github.com/trickstercache/trickster/v2/pkg/router"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
@@ -153,6 +156,8 @@ type Options struct {
 	// expects a multipart response	// this optimizes Trickster to request as few bytes as possible when
 	// fronting backends that only support single range requests
 	DearticulateUpstreamRanges bool `yaml:"dearticulate_upstream_ranges,omitempty"`
+	// AWS SigV4
+	SigV4 *sigv4.SigV4Config `yaml:"sigv4,omitempty"`
 
 	// Simulated Latency
 	// When LatencyMin > 0 and LatencyMaxMS < LatencyMin (e.g., 0), then LatencyMin of latency
@@ -199,8 +204,6 @@ type Options struct {
 	// DoesShard is true when sharding will be used with this origin, based on how the
 	// sharding options have been configured
 	DoesShard bool `yaml:"-"`
-	// SigV4
-	SigV4 *sigv4.SigV4Config `yaml:"sigv4,omitempty"`
 }
 
 // New will return a pointer to a Backend Options with the default configuration settings
@@ -290,7 +293,7 @@ func (o *Options) Clone() *Options {
 		no.CompressibleTypes = maps.Clone(o.CompressibleTypes)
 	}
 
-	no.Paths = make(po.Lookup)
+	no.Paths = make(po.Lookup, len(o.Paths))
 	for l, p := range o.Paths {
 		no.Paths[l] = p.Clone()
 	}
@@ -324,70 +327,82 @@ func (o *Options) Clone() *Options {
 	return no
 }
 
-// Validate validates the Lookup collection of Backend Options
-func (l Lookup) Validate(ncl negative.Lookups) error {
-	for k, o := range l {
-		if o.Provider == "" {
-			return NewErrMissingProvider(k)
-		}
-		if (o.Provider != "rule" && o.Provider != "alb") && o.OriginURL == "" {
-			return NewErrMissingOriginURL(k)
-		}
-		url, err := url.Parse(o.OriginURL)
-		if err != nil {
+// Validate validates the Backend Options
+func (o *Options) Validate() error {
+	if err := ValidateBackendName(o.Name); err != nil {
+		return err
+	}
+	if o.Provider == "" {
+		return NewErrMissingProvider(o.Name)
+	}
+	if !providers.NonOriginBackends().Contains(o.Provider) && o.OriginURL == "" {
+		return NewErrMissingOriginURL(o.Name)
+	}
+	url, err := url.Parse(o.OriginURL)
+	if err != nil {
+		return err
+	}
+	url.Path = strings.TrimSuffix(url.Path, "/")
+	o.Scheme = url.Scheme
+	o.Host = url.Host
+	o.PathPrefix = url.Path
+	o.TimeseriesRetention = time.Duration(o.TimeseriesRetentionFactor)
+	o.DoesShard = o.MaxShardSizePoints > 0 || o.MaxShardSizeTime > 0 || o.ShardStep > 0
+
+	if o.MaxShardSizeTime > 0 && o.MaxShardSizePoints > 0 {
+		return ErrInvalidMaxShardSize
+	}
+
+	if o.ShardStep > 0 && o.MaxShardSizeTime == 0 {
+		o.MaxShardSizeTime = o.ShardStep
+	}
+
+	if o.ShardStep > 0 && o.MaxShardSizeTime%o.ShardStep != 0 {
+		return ErrInvalidMaxShardSizeTime
+	}
+
+	if len(o.Paths) > 0 {
+		if err := o.Paths.Validate(); err != nil {
 			return err
 		}
-		url.Path = strings.TrimSuffix(url.Path, "/")
+	}
+
+	if o.CompressibleTypeList != nil {
+		o.CompressibleTypes = sets.NewStringSet()
+		o.CompressibleTypes.AddAll(o.CompressibleTypeList)
+	}
+	if o.CacheKeyPrefix == "" {
+		o.CacheKeyPrefix = o.Host
+	}
+
+	// enforce MaxTTL
+	if o.TimeseriesTTL > o.MaxTTL {
+		o.TimeseriesTTL = o.MaxTTL
+	}
+
+	// unlikely but why not spend a few nanoseconds to check it at startup
+	if o.FastForwardTTL > o.MaxTTL {
+		o.FastForwardTTL = o.MaxTTL
+	}
+	return nil
+}
+
+// Validate validates the Lookup collection of Backend Options
+func (l Lookup) Validate() error {
+	for k, o := range l {
+		if o == nil {
+			continue
+		}
 		o.Name = k
-		o.Scheme = url.Scheme
-		o.Host = url.Host
-		o.PathPrefix = url.Path
-		o.TimeseriesRetention = time.Duration(o.TimeseriesRetentionFactor)
-		o.DoesShard = o.MaxShardSizePoints > 0 || o.MaxShardSizeTime > 0 || o.ShardStep > 0
-
-		if o.MaxShardSizeTime > 0 && o.MaxShardSizePoints > 0 {
-			return ErrInvalidMaxShardSize
-		}
-
-		if o.ShardStep > 0 && o.MaxShardSizeTime == 0 {
-			o.MaxShardSizeTime = o.ShardStep
-		}
-
-		if o.ShardStep > 0 && o.MaxShardSizeTime%o.ShardStep != 0 {
-			return ErrInvalidMaxShardSizeTime
-		}
-
-		if o.CompressibleTypeList != nil {
-			o.CompressibleTypes = sets.NewStringSet()
-			o.CompressibleTypes.AddAll(o.CompressibleTypeList)
-		}
-		if o.CacheKeyPrefix == "" {
-			o.CacheKeyPrefix = o.Host
-		}
-
-		if ncl != nil {
-			nc := ncl.Get(o.NegativeCacheName)
-			if nc == nil {
-				return NewErrInvalidNegativeCacheName(o.NegativeCacheName)
-			}
-			o.NegativeCache = nc
-		}
-
-		// enforce MaxTTL
-		if o.TimeseriesTTL > o.MaxTTL {
-			o.TimeseriesTTL = o.MaxTTL
-		}
-
-		// unlikely but why not spend a few nanoseconds to check it at startup
-		if o.FastForwardTTL > o.MaxTTL {
-			o.FastForwardTTL = o.MaxTTL
+		if err := o.Validate(); err != nil {
+			return err
 		}
 	}
 	return nil
 }
 
-// ValidateBackendName ensures the backend name is permitted against the dictionary of
-// restricted words
+// ValidateBackendName ensures the backend name is permitted against the
+// dictionary of restricted words
 func ValidateBackendName(name string) error {
 	if restrictedOriginNames.Contains(name) {
 		return NewErrInvalidBackendName(name)
@@ -397,31 +412,61 @@ func ValidateBackendName(name string) error {
 
 // ValidateConfigMappings ensures that named config mappings from within origin configs
 // (e.g., backends.cache_name) are valid
-func (l Lookup) ValidateConfigMappings(rules ro.Lookup, caches co.Lookup) error {
+func (l Lookup) ValidateConfigMappings(c co.Lookup, ncl negative.Lookups,
+	rul ro.Lookup, rwl rwopts.Lookup, tr tro.Lookup) error {
 	for _, o := range l {
 		if err := ValidateBackendName(o.Name); err != nil {
 			return err
 		}
+		var ok bool
+		if o.ReqRewriterName != "" {
+			if _, ok = rwl[o.ReqRewriterName]; !ok {
+				return NewErrInvalidRewriterName(o.ReqRewriterName, o.Name)
+			}
+		}
+		if o.TracingConfigName != "" {
+			if _, ok = tr[o.TracingConfigName]; !ok {
+				return NewErrInvalidTracingName(o.TracingConfigName, o.Name)
+			}
+		}
+		for _, p := range o.Paths {
+			if p.ReqRewriterName != "" {
+				if _, ok = rwl[p.ReqRewriterName]; !ok {
+					return NewErrInvalidRewriterName(p.ReqRewriterName,
+						o.Name+"/"+p.Path)
+				}
+			}
+		}
+		// ensure negative_cache_name values map to a defined Negative Cache
+		if o.NegativeCacheName != "" {
+			if len(ncl) == 0 {
+				return NewErrInvalidNegativeCacheName(o.NegativeCacheName)
+			}
+			nc, ok := ncl[o.NegativeCacheName]
+			if !ok || nc == nil {
+				return NewErrInvalidNegativeCacheName(o.NegativeCacheName)
+			}
+			o.NegativeCache = nc
+		}
 		switch o.Provider {
-		case "rule":
+		case providers.Rule:
 			// Rule Type Validations
-			r, ok := rules[o.RuleName]
+			r, ok := rul[o.RuleName]
 			if !ok {
 				return NewErrInvalidRuleName(o.RuleName, o.Name)
 			}
-			r.Name = o.RuleName
 			o.RuleOptions = r
-		case "alb":
-			// ALB Validations
-			if ao := o.ALBOptions; ao != nil {
-				for _, bn := range ao.Pool {
-					if _, ok := l[bn]; !ok {
-						return NewErrInvalidALBOptions(bn, o.Name)
-					}
-				}
+		case providers.ALB:
+			if o.ALBOptions == nil {
+				return ao.NewErrInvalidALBOptions(o.Name)
 			}
-		default:
-			if _, ok := caches[o.CacheName]; !ok {
+			if err := o.ALBOptions.ValidatePool(o.Name, l.Keys()); err != nil {
+				return err
+			}
+		}
+
+		if !providers.NonCacheBackends().Contains(o.Provider) {
+			if _, ok := c[o.CacheName]; !ok {
 				return NewErrInvalidCacheName(o.CacheName, o.Name)
 			}
 		}
@@ -446,192 +491,193 @@ func (l Lookup) ValidateTLSConfigs() (bool, error) {
 	return serveTLS, nil
 }
 
-// SetDefaults iterates a YAML Config
-func SetDefaults(
+func (l Lookup) Keys() sets.Set[string] {
+	out := sets.NewStringSet()
+	for k := range l {
+		out.Add(k)
+	}
+	return out
+}
+
+// OverlayYAMLData extracts supported backend Options values from the yaml map,
+// and returns a new default Options overlaid with the extracted values
+func OverlayYAMLData(
 	name string,
 	o *Options,
-	metadata yamlx.KeyLookup,
-	crw rewriter.InstructionsLookup,
 	backends Lookup,
 	activeCaches sets.Set[string],
+	y yamlx.KeyLookup,
 ) (*Options, error) {
 
-	if metadata == nil {
+	if y == nil {
 		return nil, ErrInvalidMetadata
 	}
 
 	no := New()
 	no.Name = name
 
-	if metadata.IsDefined("backends", name, "req_rewriter_name") && o.ReqRewriterName != "" {
+	if y.IsDefined("backends", name, "req_rewriter_name") && o.ReqRewriterName != "" {
 		no.ReqRewriterName = o.ReqRewriterName
-		ri, ok := crw[no.ReqRewriterName]
-		if !ok {
-			return nil, NewErrInvalidRewriterName(no.ReqRewriterName, name)
-		}
-		no.ReqRewriter = ri
 	}
 
-	if metadata.IsDefined("backends", name, "provider") {
+	if y.IsDefined("backends", name, "provider") {
 		no.Provider = o.Provider
 	}
 
-	if metadata.IsDefined("backends", name, "rule_name") {
+	if y.IsDefined("backends", name, "rule_name") {
 		no.RuleName = o.RuleName
 	}
 
-	if metadata.IsDefined("backends", name, "path_routing_disabled") {
+	if y.IsDefined("backends", name, "path_routing_disabled") {
 		no.PathRoutingDisabled = o.PathRoutingDisabled
 	}
 
-	if metadata.IsDefined("backends", name, "hosts") && o != nil {
+	if y.IsDefined("backends", name, "hosts") && o != nil {
 		no.Hosts = slices.Clone(o.Hosts)
 	}
 
-	if metadata.IsDefined("backends", name, "is_default") {
+	if y.IsDefined("backends", name, "is_default") {
 		no.IsDefault = o.IsDefault
 	}
 	// If there is only one backend and is_default is not explicitly false, make it true
-	if len(backends) == 1 && (!metadata.IsDefined("backends", name, "is_default")) {
+	if len(backends) == 1 && (!y.IsDefined("backends", name, "is_default")) {
 		no.IsDefault = true
 	}
 
-	if metadata.IsDefined("backends", name, "forwarded_headers") {
+	if y.IsDefined("backends", name, "forwarded_headers") {
 		no.ForwardedHeaders = o.ForwardedHeaders
 	}
 
-	if metadata.IsDefined("backends", name, "require_tls") {
+	if y.IsDefined("backends", name, "require_tls") {
 		no.RequireTLS = o.RequireTLS
 	}
 
-	if metadata.IsDefined("backends", name, "cache_name") {
+	if y.IsDefined("backends", name, "cache_name") {
 		no.CacheName = o.CacheName
 	}
 	activeCaches.Add(no.CacheName)
 
-	if metadata.IsDefined("backends", name, "cache_key_prefix") {
+	if y.IsDefined("backends", name, "cache_key_prefix") {
 		no.CacheKeyPrefix = o.CacheKeyPrefix
 	}
 
-	if metadata.IsDefined("backends", name, "origin_url") {
+	if y.IsDefined("backends", name, "origin_url") {
 		no.OriginURL = o.OriginURL
 	}
 
-	if metadata.IsDefined("backends", name, "compressible_types") {
+	if y.IsDefined("backends", name, "compressible_types") {
 		no.CompressibleTypeList = o.CompressibleTypeList
 	}
 
-	if metadata.IsDefined("backends", name, "timeout") {
+	if y.IsDefined("backends", name, "timeout") {
 		no.Timeout = o.Timeout
 	}
 
-	if metadata.IsDefined("backends", name, "max_idle_conns") {
+	if y.IsDefined("backends", name, "max_idle_conns") {
 		no.MaxIdleConns = o.MaxIdleConns
 	}
 
-	if metadata.IsDefined("backends", name, "keep_alive_timeout") {
+	if y.IsDefined("backends", name, "keep_alive_timeout") {
 		no.KeepAliveTimeout = o.KeepAliveTimeout
 	}
 
-	if metadata.IsDefined("backends", name, "shard_max_size_points") {
+	if y.IsDefined("backends", name, "shard_max_size_points") {
 		no.MaxShardSizePoints = o.MaxShardSizePoints
 	}
 
-	if metadata.IsDefined("backends", name, "shard_max_size_time") {
+	if y.IsDefined("backends", name, "shard_max_size_time") {
 		no.MaxShardSizeTime = o.MaxShardSizeTime
 	}
 
-	if metadata.IsDefined("backends", name, "shard_step") {
+	if y.IsDefined("backends", name, "shard_step") {
 		no.ShardStep = o.ShardStep
 	}
 
-	if metadata.IsDefined("backends", name, "timeseries_retention_factor") {
+	if y.IsDefined("backends", name, "timeseries_retention_factor") {
 		no.TimeseriesRetentionFactor = o.TimeseriesRetentionFactor
 	}
 
-	if metadata.IsDefined("backends", name, "timeseries_eviction_method") {
+	if y.IsDefined("backends", name, "timeseries_eviction_method") {
 		no.TimeseriesEvictionMethodName = strings.ToLower(o.TimeseriesEvictionMethodName)
 		if p, ok := evictionmethods.Names[no.TimeseriesEvictionMethodName]; ok {
 			no.TimeseriesEvictionMethod = p
 		}
 	}
 
-	if metadata.IsDefined("backends", name, "timeseries_ttl") {
+	if y.IsDefined("backends", name, "timeseries_ttl") {
 		no.TimeseriesTTL = o.TimeseriesTTL
 	}
 
-	if metadata.IsDefined("backends", name, "max_ttl") {
+	if y.IsDefined("backends", name, "max_ttl") {
 		no.MaxTTL = o.MaxTTL
 	}
 
-	if metadata.IsDefined("backends", name, "fastforward_ttl") {
+	if y.IsDefined("backends", name, "fastforward_ttl") {
 		no.FastForwardTTL = o.FastForwardTTL
 	}
 
-	if metadata.IsDefined("backends", name, "fast_forward_disable") {
+	if y.IsDefined("backends", name, "fast_forward_disable") {
 		no.FastForwardDisable = o.FastForwardDisable
 	}
 
-	if metadata.IsDefined("backends", name, "backfill_tolerance") {
+	if y.IsDefined("backends", name, "backfill_tolerance") {
 		no.BackfillTolerance = o.BackfillTolerance
 	}
 
-	if metadata.IsDefined("backends", name, "backfill_tolerance_points") {
+	if y.IsDefined("backends", name, "backfill_tolerance_points") {
 		no.BackfillTolerancePoints = o.BackfillTolerancePoints
 	}
 
-	if metadata.IsDefined("backends", name, "paths") {
-		err := po.SetDefaults(name, metadata, o.Paths, crw)
+	if y.IsDefined("backends", name, "paths") {
+		paths, err := po.OverlayYAMLData(name, o.Paths, y)
 		if err != nil {
 			return nil, err
 		}
-		for k, v := range o.Paths {
-			no.Paths[k] = v.Clone()
-		}
+		maps.Copy(no.Paths, paths)
 	}
 
-	if metadata.IsDefined("backends", name, "alb") {
-		opts, err := ao.SetDefaults(name, o.ALBOptions, metadata)
+	if y.IsDefined("backends", name, providers.ALB) {
+		opts, err := ao.OverlayYAMLData(name, o.ALBOptions, y)
 		if err != nil {
 			return nil, err
 		}
 		no.ALBOptions = opts
 	}
 
-	if metadata.IsDefined("backends", name, "negative_cache_name") {
+	if y.IsDefined("backends", name, "negative_cache_name") {
 		no.NegativeCacheName = o.NegativeCacheName
 	}
 
-	if metadata.IsDefined("backends", name, "tracing_name") {
+	if y.IsDefined("backends", name, "tracing_name") {
 		no.TracingConfigName = o.TracingConfigName
 	}
 
-	if metadata.IsDefined("backends", name, "healthcheck") {
+	if y.IsDefined("backends", name, "healthcheck") {
 		no.HealthCheck = o.HealthCheck
 		// because each backend provider has different default health check options, these
 		// provided options will be overlaid onto the defaults during registration
 		if no.HealthCheck != nil {
-			no.HealthCheck.SetMetaData(metadata)
+			no.HealthCheck.SetYAMLData(y)
 		}
 	}
 
-	if metadata.IsDefined("backends", name, "max_object_size_bytes") {
+	if y.IsDefined("backends", name, "max_object_size_bytes") {
 		no.MaxObjectSizeBytes = o.MaxObjectSizeBytes
 	}
 
-	if metadata.IsDefined("backends", name, "revalidation_factor") {
+	if y.IsDefined("backends", name, "revalidation_factor") {
 		no.RevalidationFactor = o.RevalidationFactor
 	}
 
-	if metadata.IsDefined("backends", name, "multipart_ranges_disabled") {
+	if y.IsDefined("backends", name, "multipart_ranges_disabled") {
 		no.MultipartRangesDisabled = o.MultipartRangesDisabled
 	}
 
-	if metadata.IsDefined("backends", name, "dearticulate_upstream_ranges") {
+	if y.IsDefined("backends", name, "dearticulate_upstream_ranges") {
 		no.DearticulateUpstreamRanges = o.DearticulateUpstreamRanges
 	}
 
-	if metadata.IsDefined("backends", name, "tls") {
+	if y.IsDefined("backends", name, "tls") {
 		no.TLS = &to.Options{
 			InsecureSkipVerify:        o.TLS.InsecureSkipVerify,
 			CertificateAuthorityPaths: o.TLS.CertificateAuthorityPaths,
@@ -642,19 +688,19 @@ func SetDefaults(
 		}
 	}
 
-	if metadata.IsDefined("backends", name, "prometheus") {
+	if y.IsDefined("backends", name, providers.Prometheus) {
 		no.Prometheus = o.Prometheus.Clone()
 	}
 
-	if metadata.IsDefined("backends", name, "latency_min") {
+	if y.IsDefined("backends", name, "latency_min") {
 		no.LatencyMin = o.LatencyMin
 	}
 
-	if metadata.IsDefined("backends", name, "latency_max") {
+	if y.IsDefined("backends", name, "latency_max") {
 		no.LatencyMax = o.LatencyMax
 	}
 
-	if metadata.IsDefined("backends", name, "sigv4") {
+	if y.IsDefined("backends", name, "sigv4") {
 		no.SigV4 = o.SigV4
 	}
 

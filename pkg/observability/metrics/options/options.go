@@ -16,6 +16,8 @@
 
 package options
 
+import "github.com/trickstercache/trickster/v2/pkg/errors"
+
 // Options is a collection of Metrics Collection configurations
 type Options struct {
 	// ListenAddress is IP address from which the Application Metrics are available for pulling at /metrics
@@ -38,4 +40,11 @@ func (o *Options) Clone() *Options {
 		ListenAddress: o.ListenAddress,
 		ListenPort:    o.ListenPort,
 	}
+}
+
+func (o *Options) Validate() error {
+	if o.ListenPort < 0 {
+		return errors.ErrInvalidListenPort
+	}
+	return nil
 }

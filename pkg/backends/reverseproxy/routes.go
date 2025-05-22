@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/local"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
@@ -48,7 +49,7 @@ func (c *Client) DefaultPathConfigs(_ *bo.Options) po.Lookup {
 	paths := po.Lookup{
 		"/-" + strings.Join(am, "-"): {
 			Path:          "/",
-			HandlerName:   "proxy",
+			HandlerName:   providers.Proxy,
 			Methods:       am,
 			MatchType:     matching.PathMatchTypePrefix,
 			MatchTypeName: "prefix",

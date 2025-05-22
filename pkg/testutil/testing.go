@@ -52,7 +52,7 @@ const (
 	Epoch2020 int64 = 1577836800
 
 	// Provider Names
-	PrometheusBackendProvider = "prometheus"
+	PrometheusBackendProvider = providers.Prometheus
 	PromSimBackendProvider    = "promsim"
 	RangeSimBackendProvider   = "rangesim"
 	RPCBackendProvider        = providers.ReverseProxyCacheShort

@@ -937,7 +937,7 @@ func TestRangesExhaustiveChunks(t *testing.T) {
 
 	r.URL.Path = "/byterange/test/3"
 	r.Header.Set(headers.NameRange, "bytes=0-6, 8-10")
-	expectedBody2 = strings.Replace(expectedBody2, "TestRangeServerBoundary", "1b4e59d25d723e317359c5e542d80f5c", -1)
+	expectedBody2 = strings.ReplaceAll(expectedBody2, "TestRangeServerBoundary", "1b4e59d25d723e317359c5e542d80f5c")
 	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody2, map[string]string{"status": "rhit"})
 	for _, err = range e {
 		t.Error(err)

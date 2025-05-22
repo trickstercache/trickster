@@ -65,7 +65,7 @@ func New(o *options.Options, factories rt.Lookup) (types.Mechanism, error) {
 		return nil, errors.ErrInvalidTimeSeriesMergeProvider
 	}
 	// now, create a handler for the merge provider based on the supplied factory function
-	mc1, err := f("alb", nil, nil, nil, nil, nil)
+	mc1, err := f(providers.ALB, nil, nil, nil, nil, nil)
 	if err != nil {
 		return nil, err
 	}

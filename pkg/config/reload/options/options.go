@@ -17,7 +17,9 @@
 // Package options provides options for configuration reload support
 package options
 
-import "time"
+import (
+	"time"
+)
 
 // Options is a collection of configurations for in-process config reloading
 type Options struct {
@@ -46,4 +48,9 @@ func New() *Options {
 		DrainTimeout:  DefaultDrainTimeout,
 		RateLimit:     DefaultRateLimit,
 	}
+}
+
+func (o *Options) Validate() error {
+	// placeholder for future validations (none currently)
+	return nil
 }

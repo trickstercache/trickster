@@ -17,7 +17,7 @@
 // Package reload helps with reloading the running Trickster configuration
 package reload
 
-type ReloadFunc func(string) (bool, error)
+type Reloader func(string) (bool, error)
 
 const ConfigNotReloadedText = "configuration NOT reloaded"
 const ConfigReloadedText = "configuration reloaded"

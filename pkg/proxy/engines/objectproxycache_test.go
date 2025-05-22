@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/mockster/pkg/mocks/byterange"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/locks"
 	tc "github.com/trickstercache/trickster/v2/pkg/proxy/context"
@@ -92,7 +93,7 @@ func setupTestHarnessOPCWithPCF(file, body string, code int, headers map[string]
 		return nil, nil, nil, nil, fmt.Errorf("Could not load configuration: %s", err.Error())
 	}
 	ts, w, r, _, err := tu.NewTestInstance(file, backendClient.DefaultPathConfigs, code, body, headers,
-		"prometheus", "/prometheus/api/v1/query", "debug")
+		providers.Prometheus, "/prometheus/api/v1/query", "debug")
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("Could not load configuration: %s", err.Error())
 	}
@@ -848,7 +849,7 @@ func getExpectedRangeBody(r *http.Request, boundary string) (string, error) {
 	expectedBody := string(b)
 
 	if boundary != "" {
-		expectedBody = strings.Replace(expectedBody, "TestRangeServerBoundary", boundary, -1)
+		expectedBody = strings.ReplaceAll(expectedBody, "TestRangeServerBoundary", boundary)
 	}
 
 	return expectedBody, nil
@@ -1057,7 +1058,7 @@ func TestRangesExhaustive(t *testing.T) {
 
 	r.URL.Path = "/byterange/test/3"
 	r.Header.Set(headers.NameRange, "bytes=0-6, 8-10")
-	expectedBody2 = strings.Replace(expectedBody2, "TestRangeServerBoundary", "1b4e59d25d723e317359c5e542d80f5c", -1)
+	expectedBody2 = strings.ReplaceAll(expectedBody2, "TestRangeServerBoundary", "1b4e59d25d723e317359c5e542d80f5c")
 	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody2, map[string]string{"status": "rhit"})
 	for _, err = range e {
 		t.Error(err)

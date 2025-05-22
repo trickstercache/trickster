@@ -21,6 +21,7 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"sync"
 	"time"
@@ -46,7 +47,7 @@ import (
 type Config struct {
 	// Main is the primary MainConfig section
 	Main *MainConfig `yaml:"main,omitempty"`
-	// Backends is a map of BackendOptionss
+	// Backends is a map of BackendOptions
 	Backends bo.Lookup `yaml:"backends,omitempty"`
 	// Caches is a map of CacheConfigs
 	Caches cache.Lookup `yaml:"caches,omitempty"`
@@ -72,10 +73,11 @@ type Config struct {
 	// Resources holds runtime resources uses by the Config
 	Resources *Resources `yaml:"-"`
 
-	CompiledRewriters rewriter.InstructionsLookup `yaml:"-"`
-	activeCaches      sets.Set[string]
-	providedOriginURL string
-	providedProvider  string
+	CompiledRewriters      rewriter.InstructionsLookup `yaml:"-"`
+	CompiledNegativeCaches negative.Lookups            `yaml:"-"`
+	activeCaches           sets.Set[string]
+	providedOriginURL      string
+	providedProvider       string
 
 	LoaderWarnings []string `yaml:"-"`
 }
@@ -160,30 +162,52 @@ func NewConfig() *Config {
 func (c *Config) loadFile(flags *Flags) error {
 	b, err := os.ReadFile(flags.ConfigPath)
 	if err != nil {
-		c.setDefaults(yamlx.KeyLookup{})
 		return err
 	}
-	return c.loadYAMLConfig(string(b), flags)
+	err = c.loadYAMLConfig(string(b))
+	if err != nil {
+		return err
+	}
+	c.Main.configFilePath = flags.ConfigPath
+	c.Main.configLastModified = c.CheckFileLastModified()
+	return nil
 }
 
 // loadYAMLConfig loads application configuration from a YAML-formatted byte slice.
-func (c *Config) loadYAMLConfig(yml string, flags *Flags) error {
-
+func (c *Config) loadYAMLConfig(yml string) error {
 	err := yaml.Unmarshal([]byte(yml), &c)
 	if err != nil {
 		return err
 	}
 	md, err := yamlx.GetKeyList(yml)
 	if err != nil {
-		c.setDefaults(yamlx.KeyLookup{})
 		return err
 	}
-	err = c.setDefaults(md)
-	if err == nil {
-		c.Main.configFilePath = flags.ConfigPath
-		c.Main.configLastModified = c.CheckFileLastModified()
+	if c.Resources == nil {
+		c.Resources = &Resources{}
 	}
-	return err
+	return c.OverlayYAMLData(md)
+}
+
+// OverlayYAMLData extracts supported Config values from the yaml map,
+// overlays the extracted values onto c.
+func (c *Config) OverlayYAMLData(md yamlx.KeyLookup) error {
+	c.Resources.metadata = md
+	c.activeCaches = sets.NewStringSet()
+	for k, v := range c.Backends {
+		w, err := bo.OverlayYAMLData(k, v, c.Backends, c.activeCaches, md)
+		if err != nil {
+			return err
+		}
+		c.Backends[k] = w
+	}
+	if lw, err := c.Caches.OverlayYAMLData(c.Resources.metadata,
+		c.activeCaches); err != nil {
+		return err
+	} else if len(lw) > 0 {
+		c.LoaderWarnings = append(c.LoaderWarnings, lw...)
+	}
+	return nil
 }
 
 // CheckFileLastModified returns the last modified date of the running config file, if present
@@ -198,53 +222,39 @@ func (c *Config) CheckFileLastModified() time.Time {
 	return file.ModTime()
 }
 
-func (c *Config) setDefaults(metadata yamlx.KeyLookup) error {
-
-	c.Resources.metadata = metadata
-
+// Process converts various raw config options into internal data structures
+// as needed
+func (c *Config) Process() error {
 	var err error
-
 	if err = c.processPprofConfig(); err != nil {
 		return err
 	}
-
 	if c.RequestRewriters != nil {
-		if c.CompiledRewriters, err = rewriter.ProcessConfigs(c.RequestRewriters); err != nil {
+		if c.CompiledRewriters,
+			err = rewriter.ProcessConfigs(c.RequestRewriters); err != nil {
 			return err
 		}
-	}
-
-	c.activeCaches = sets.NewStringSet()
-	for k, v := range c.Backends {
-		w, err := bo.SetDefaults(k, v, metadata, c.CompiledRewriters, c.Backends, c.activeCaches)
-		if err != nil {
-			return err
+		for _, b := range c.Backends {
+			if b.ReqRewriterName != "" {
+				ri, ok := c.CompiledRewriters[b.ReqRewriterName]
+				if !ok {
+					return bo.NewErrInvalidRewriterName(b.ReqRewriterName, b.Name)
+				}
+				b.ReqRewriter = ri
+			}
+			for k, p := range b.Paths {
+				if p.ReqRewriterName != "" {
+					ri, ok := c.CompiledRewriters[p.ReqRewriterName]
+					if !ok {
+						return fmt.Errorf("invalid rewriter name %s in path %s of backend options %s",
+							p.ReqRewriterName, k, b.Name)
+					}
+					p.ReqRewriter = ri
+				}
+			}
 		}
-		c.Backends[k] = w
 	}
-
-	tracing.ProcessTracingOptions(c.TracingConfigs, metadata)
-
-	var lw []string
-	if lw, err = c.Caches.SetDefaults(metadata, c.activeCaches); err != nil {
-		return err
-	}
-	c.LoaderWarnings = append(c.LoaderWarnings, lw...)
-
-	// This ensures that in places where backend options reference other named config sections
-	// (like caches, rules, negative caches, tracing, etc) referenced by names, the names
-	// referenced in the configuration are valid and refer to a defined resource
-	if err = c.Backends.ValidateConfigMappings(c.Rules, c.Caches); err != nil {
-		return err
-	}
-
-	serveTLS, err := c.Backends.ValidateTLSConfigs()
-	if err != nil {
-		return err
-	}
-	if serveTLS {
-		c.Frontend.ServeTLS = true
-	}
+	tracing.ProcessTracingOptions(c.TracingConfigs, c.Resources.metadata)
 	return nil
 }
 
@@ -313,14 +323,14 @@ func (c *Config) Clone() *Config {
 	}
 
 	if len(c.Rules) > 0 {
-		nc.Rules = make(rule.Lookup)
+		nc.Rules = make(rule.Lookup, len(c.Rules))
 		for k, v := range c.Rules {
 			nc.Rules[k] = v.Clone()
 		}
 	}
 
 	if len(c.RequestRewriters) > 0 {
-		nc.RequestRewriters = make(rwopts.Lookup)
+		nc.RequestRewriters = make(rwopts.Lookup, len(c.RequestRewriters))
 		for k, v := range c.RequestRewriters {
 			nc.RequestRewriters[k] = v.Clone()
 		}
@@ -329,7 +339,7 @@ func (c *Config) Clone() *Config {
 	return nc
 }
 
-// IsStale returns true if the running config is stale versus the
+// IsStale returns true if the running config is stale versus the config on disk
 func (c *Config) IsStale() bool {
 
 	c.Main.stalenessCheckLock.Lock()
