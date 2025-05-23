@@ -148,7 +148,7 @@ func (c *Client) parseOptions(o *ro.Options, rwi rewriter.InstructionsLookup) er
 		r.evaluatorFunc = r.EvaluateOpArg
 	}
 
-	if o.InputType == "rmatch" {
+	if o.Operation == "rmatch" {
 		if r.operationArg == "" {
 			return ErrInvalidRegularExpression
 		}
