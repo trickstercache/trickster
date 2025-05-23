@@ -28,6 +28,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/locks"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"golang.org/x/sync/singleflight"
 )
 
 // Provide initialization options to the Manager / cache.Cache creation
@@ -52,6 +53,7 @@ func NewCache(cli cache.Client, cacheOpts CacheOptions, cacheConfig *options.Opt
 type Manager struct {
 	cache.Client
 	originalCli cache.Client
+	sf          singleflight.Group
 	config      *options.Options
 	locker      locks.NamedLocker
 	opts        CacheOptions
@@ -73,16 +75,6 @@ func (cm *Manager) Store(cacheKey string, byteData []byte, ttl time.Duration) er
 	return cm.Client.Store(cacheKey, byteData, ttl)
 }
 
-func (cm *Manager) RetrieveReference(cacheKey string) (any, status.LookupStatus, error) {
-	nl, _ := cm.locker.RAcquire(filepath.Join(cm.config.Name, cm.config.Provider, cacheKey))
-	defer nl.RRelease()
-	v, s, err := cm.Client.(cache.MemoryCache).RetrieveReference(cacheKey)
-	if ro, ok := v.(cache.ReferenceObject); ok {
-		cm.observeRetrieval(cacheKey, ro.Size(), s, err)
-	}
-	return v, s, err
-}
-
 func (cm *Manager) observeRetrieval(cacheKey string, size int, s status.LookupStatus, err error) {
 	if err == cache.ErrKNF || s == status.LookupStatusKeyMiss {
 		logger.Debug("cache miss", logging.Pairs{"key": cacheKey, "provider": cm.config.Provider})
@@ -96,13 +88,34 @@ func (cm *Manager) observeRetrieval(cacheKey string, size int, s status.LookupSt
 	}
 }
 
-func (cm *Manager) Retrieve(cacheKey string) ([]byte, status.LookupStatus, error) {
+func (cm *Manager) RetrieveReference(cacheKey string) (any, status.LookupStatus, error) {
 	nl, _ := cm.locker.RAcquire(filepath.Join(cm.config.Name, cm.config.Provider, cacheKey))
 	defer nl.RRelease()
-	b, s, err := cm.Client.Retrieve(cacheKey)
-	cm.observeRetrieval(cacheKey, len(b), s, err)
-	return b, s, err
+	v, s, err := cm.Client.(cache.MemoryCache).RetrieveReference(cacheKey)
+	if ro, ok := v.(cache.ReferenceObject); ok {
+		cm.observeRetrieval(cacheKey, ro.Size(), s, err)
+	}
+	return v, s, err
+}
 
+type retrieveResult struct {
+	Data   any
+	Status status.LookupStatus
+}
+
+func (cm *Manager) Retrieve(cacheKey string) ([]byte, status.LookupStatus, error) {
+	val, err, _ := cm.sf.Do(cacheKey, func() (any, error) {
+		nl, _ := cm.locker.RAcquire(filepath.Join(cm.config.Name, cm.config.Provider, cacheKey))
+		defer nl.RRelease()
+		b, s, err := cm.Client.Retrieve(cacheKey)
+		cm.observeRetrieval(cacheKey, len(b), s, err)
+		return &retrieveResult{
+			Data:   b,
+			Status: s,
+		}, err
+	})
+	rr := val.(*retrieveResult)
+	return rr.Data.([]byte), rr.Status, err
 }
 
 func (cm *Manager) Remove(cacheKeys ...string) error {
