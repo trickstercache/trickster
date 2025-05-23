@@ -43,6 +43,26 @@ datasources:
   editable: true
   jsonData:
     httpMethod: POST
+- name: "5: Trickster | Filesystem | GET"
+  type: prometheus
+  access: proxy
+  orgId: 1
+  uid: ds_prom_trickster_fs
+  url: http://docker.for.mac.localhost:8480/prom2
+  version: 1
+  editable: true
+  jsonData:
+    httpMethod: GET
+- name: "6: Trickster | Filesystem | POST"
+  type: prometheus
+  access: proxy
+  orgId: 1
+  uid: ds_prom_trickster_fs_post
+  url: http://docker.for.mac.localhost:8480/prom2
+  version: 1
+  editable: true
+  jsonData:
+    httpMethod: POST
 
 # Mockster (Prom API Simulator)
 - name: sim-direct

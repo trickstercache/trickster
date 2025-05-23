@@ -305,6 +305,10 @@ developer-start:
 developer-delete:
 	@cd docs/developer/environment && docker compose down
 
+.PHONY: developer-restart
+developer-restart:
+	@cd docs/developer/environment && docker compose down && docker compose up -d
+
 .PHONY: developer-seed-data
 developer-seed-data:
 	@cd docs/developer/environment && docker compose run --rm clickhouse_seed

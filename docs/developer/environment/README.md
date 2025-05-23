@@ -12,12 +12,12 @@ A Docker Compose file is available that starts up and seeds the containers neede
 for your developer environment. This includes TSDBs like Prometheus, and Dashboard
 apps like Grafana.
 
-From the root of the repo, run `make start-developer` to start the environment.
+From the root of the repo, run `make developer-start` to start the environment.
 
 Next, you must run Trickster from your local repo, by running `make serve-dev`.
 This runs `cmd/trickster/main.go` with a config file from the developer environment.
 
-You can combine these make actions `make start-developer serve-dev` if you want.
+You can combine these make actions `make developer-start serve-dev` if you want.
 
 Once you have the Docker Compose running, and Trickster running locally, visit
 the Grafana Dashboard at <http://127.0.0.1:3000/d/uAJ8w1wZz/trickster-status>.
@@ -28,5 +28,5 @@ you can test out Trickster acceleration features. You can change the Data Source
 selector to go between various Trickster configs, or bypass Trickster altogether
 for verification purposes.
 
-You can stop the developer environment by running `make delete-developer`.
+You can stop the developer environment by running `make developer-delete`.
 This will run `docker compose down` which will destroy all data.
