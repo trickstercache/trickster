@@ -85,7 +85,7 @@ func NewIndexedClient(
 		} else if len(b) > 0 && s == status.LookupStatusHit {
 			// if an index was cached, load it
 			idx.UnmarshalMsg(b)
-			if time.Now().Sub(idx.LastFlush.Load()) > DefaultFlushInterval {
+			if time.Since(idx.LastFlush.Load()) > DefaultFlushInterval {
 				// if the index is stale, clear it
 				idx.Clear()
 			}
