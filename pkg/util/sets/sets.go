@@ -73,6 +73,16 @@ func (s Set[T]) Set(val T) {
 	s[val] = struct{}{}
 }
 
+// Add inserts a value into the Set if does not already exist. True is returned
+// only if the value was inserted.
+func (s Set[T]) Add(val T) bool {
+	if s.Contains(val) {
+		return false
+	}
+	s.Set(val)
+	return true
+}
+
 // Remove deletes a value from the set.
 func (s Set[T]) Remove(val T) {
 	delete(s, val)
