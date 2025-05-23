@@ -31,4 +31,6 @@ const (
 	DefaultMaxSizeObjects = 0
 	// DefaultMaxSizeBackoffObjects is the default Max Cache Backoff Object Count
 	DefaultMaxSizeBackoffObjects = 100
+	// DefaultIndexExpiry is the default Index Expiry
+	DefaultIndexExpiry = time.Hour * 24 * 365 // 1 year
 )

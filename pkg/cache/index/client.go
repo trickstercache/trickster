@@ -34,10 +34,6 @@ import (
 
 //go:generate go tool msgp
 
-const (
-	DefaultFlushInterval = time.Hour * 24 * 365 // 1 year
-)
-
 var (
 	// IndexedClient implements the cache.Client and cache.MemoryCache interfaces
 	_ cache.Client      = &IndexedClient{}
@@ -69,6 +65,7 @@ func NewIndexedClient(
 		cacheProvider: cacheProvider,
 		cancel:        cancel,
 	}
+	indexExpiry := o.IndexExpiry
 	idx.options.Store(o)
 
 	options := &IndexedClientOptions{}
@@ -85,7 +82,7 @@ func NewIndexedClient(
 		} else if len(b) > 0 && s == status.LookupStatusHit {
 			// if an index was cached, load it
 			idx.UnmarshalMsg(b)
-			if time.Since(idx.LastFlush.Load()) > DefaultFlushInterval {
+			if time.Since(idx.LastFlush.Load()) > indexExpiry {
 				// if the index is stale, clear it
 				idx.Clear()
 			}
@@ -322,7 +319,7 @@ func (idx *IndexedClient) flushOnce() {
 			logging.Pairs{"cacheName": idx.name, "detail": err.Error()})
 		return
 	}
-	idx.Client.Store(IndexKey, bytes, DefaultFlushInterval)
+	idx.Client.Store(IndexKey, bytes, idx.options.Load().(*options.Options).IndexExpiry)
 }
 
 // reaper continually iterates through the cache to find expired elements and removes them

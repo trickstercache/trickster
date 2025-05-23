@@ -46,6 +46,7 @@ func TestIndexedClient(t *testing.T) {
 			MaxSizeBackoffObjects: 3,
 			MaxSizeBytes:          100,
 			MaxSizeBackoffBytes:   30,
+			IndexExpiry:           1 * time.Hour,
 		}, mc)
 		t.Log("basic")
 		state := getIndexedClientState(ic)
@@ -101,6 +102,7 @@ func TestIndexedClient(t *testing.T) {
 			MaxSizeBackoffObjects: 3,
 			MaxSizeBytes:          100,
 			MaxSizeBackoffBytes:   30,
+			IndexExpiry:           1 * time.Hour,
 		}, mc)
 
 		// store & retrieve
@@ -142,6 +144,7 @@ func TestIndexedClient(t *testing.T) {
 			MaxSizeBackoffObjects: 3,
 			MaxSizeBytes:          100,
 			MaxSizeBackoffBytes:   30,
+			IndexExpiry:           1 * time.Hour,
 		}, fs, func(ico *IndexedClientOptions) {
 			ico.NeedsFlushInterval = true
 			ico.NeedsReapInterval = true
@@ -173,6 +176,7 @@ func TestIndexedClient(t *testing.T) {
 			MaxSizeBackoffObjects: 3,
 			MaxSizeBytes:          100,
 			MaxSizeBackoffBytes:   30,
+			IndexExpiry:           1 * time.Hour,
 		}, fs, func(ico *IndexedClientOptions) {
 			ico.NeedsFlushInterval = true
 			ico.NeedsReapInterval = true
@@ -203,6 +207,7 @@ func TestIndexedClient(t *testing.T) {
 		MaxSizeBackoffObjects: 3,
 		MaxSizeBytes:          100,
 		MaxSizeBackoffBytes:   30,
+		IndexExpiry:           1 * time.Hour,
 	}, mc, func(ico *IndexedClientOptions) {
 		ico.NeedsFlushInterval = true
 		ico.NeedsReapInterval = true
