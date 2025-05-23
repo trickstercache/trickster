@@ -36,6 +36,15 @@ type SyncObjects struct {
 	keys atomic.Int64
 }
 
+func (i *SyncObjects) Keys() []string {
+	out := []string{}
+	i.Range(func(k, v any) bool {
+		out = append(out, k.(string))
+		return true
+	})
+	return out
+}
+
 func (i *SyncObjects) Store(key, value any) {
 	i.Map.Store(key, value)
 	i.keys.Add(1)

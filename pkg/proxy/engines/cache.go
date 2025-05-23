@@ -58,7 +58,7 @@ func queryConcurrent(_ context.Context, c cache.Cache, key string) *queryResult 
 	if c.Configuration().Provider == "memory" {
 		mc := c.(cache.MemoryCache)
 		var ifc any
-		ifc, qr.lookupStatus, qr.err = mc.RetrieveReference(key, true)
+		ifc, qr.lookupStatus, qr.err = mc.RetrieveReference(key)
 
 		if qr.err != nil || (qr.lookupStatus != status.LookupStatusHit) {
 			return qr
@@ -71,7 +71,7 @@ func queryConcurrent(_ context.Context, c cache.Cache, key string) *queryResult 
 
 	} else {
 		var b []byte
-		b, qr.lookupStatus, qr.err = c.Retrieve(key, true)
+		b, qr.lookupStatus, qr.err = c.Retrieve(key)
 
 		if qr.err != nil || (qr.lookupStatus != status.LookupStatusHit) {
 			return qr

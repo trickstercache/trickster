@@ -35,10 +35,8 @@ var ErrKNF = errors.New("key not found in cache")
 type Cache interface {
 	Connect() error
 	Store(cacheKey string, data []byte, ttl time.Duration) error
-	Retrieve(cacheKey string, allowExpired bool) ([]byte, status.LookupStatus, error)
-	SetTTL(cacheKey string, ttl time.Duration)
-	Remove(cacheKey string)
-	BulkRemove(cacheKeys []string)
+	Retrieve(cacheKey string) ([]byte, status.LookupStatus, error)
+	Remove(cacheKeys ...string) error
 	Close() error
 	Configuration() *options.Options
 	Locker() locks.NamedLocker
@@ -50,13 +48,23 @@ type Lookup map[string]Cache
 // MemoryCache is the interface for an in-memory cache
 // This offers an additional method for storing references to bypass serialization
 type MemoryCache interface {
-	Cache
+	Client
 	StoreReference(cacheKey string, data ReferenceObject, ttl time.Duration) error
-	RetrieveReference(cacheKey string, allowExpired bool) (any, status.LookupStatus, error)
+	RetrieveReference(cacheKey string) (any, status.LookupStatus, error)
 }
 
 // ReferenceObject defines an interface for a cache object possessing the ability to report
 // the approximate comprehensive byte size of its members, to assist with cache size management
 type ReferenceObject interface {
 	Size() int
+}
+
+// Client is an interface that defines the methods required for a cache client
+// to be used by cache.Cache implementations
+type Client interface {
+	Connect() error
+	Store(cacheKey string, data []byte, ttl time.Duration) error
+	Retrieve(cacheKey string) ([]byte, status.LookupStatus, error)
+	Remove(cacheKeys ...string) error
+	Close() error
 }

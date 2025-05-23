@@ -23,7 +23,6 @@ import (
 	bo "github.com/trickstercache/trickster/v2/pkg/cache/badger/options"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
-	"github.com/trickstercache/trickster/v2/pkg/locks"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
@@ -37,23 +36,11 @@ func newCacheConfig(dbPath string) *co.Options {
 		Badger: &bo.Options{Directory: dbPath, ValueDirectory: dbPath}}
 }
 
-func TestConfiguration(t *testing.T) {
-	logger.SetLogger(logging.ConsoleLogger(level.Error))
-	testDbPath := t.TempDir() + "/test.db"
-	cacheConfig := newCacheConfig(testDbPath)
-	bc := Cache{Config: cacheConfig}
-
-	cfg := bc.Configuration()
-	if cfg.Provider != provider {
-		t.Fatalf("expected %s got %s", provider, cfg.Provider)
-	}
-}
-
 func TestBadgerCache_Connect(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	testDbPath := t.TempDir() + "/test.db"
 	cacheConfig := newCacheConfig(testDbPath)
-	bc := Cache{Config: cacheConfig}
+	bc := New(t.Name(), cacheConfig)
 
 	// it should connect
 	if err := bc.Connect(); err != nil {
@@ -65,7 +52,7 @@ func TestBadgerCache_Connect(t *testing.T) {
 func TestBadgerCache_ConnectFailed(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	cacheConfig := newCacheConfig("/root/trickster-test-noaccess")
-	bc := Cache{Config: cacheConfig}
+	bc := New(t.Name(), cacheConfig)
 
 	// it should connect
 	err := bc.Connect()
@@ -79,7 +66,7 @@ func TestBadgerCache_Store(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	testDbPath := t.TempDir() + "/test.db"
 	cacheConfig := newCacheConfig(testDbPath)
-	bc := Cache{Config: cacheConfig}
+	bc := New(t.Name(), cacheConfig)
 
 	if err := bc.Connect(); err != nil {
 		t.Error(err)
@@ -97,7 +84,7 @@ func TestBadgerCache_Remove(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	testDbPath := t.TempDir() + "/test.db"
 	cacheConfig := newCacheConfig(testDbPath)
-	bc := Cache{Config: cacheConfig}
+	bc := New(t.Name(), cacheConfig)
 
 	if err := bc.Connect(); err != nil {
 		t.Error(err)
@@ -111,7 +98,7 @@ func TestBadgerCache_Remove(t *testing.T) {
 	}
 
 	// it should retrieve a value
-	data, ls, err := bc.Retrieve(cacheKey, false)
+	data, ls, err := bc.Retrieve(cacheKey)
 	if err != nil {
 		t.Error(err)
 	}
@@ -125,7 +112,7 @@ func TestBadgerCache_Remove(t *testing.T) {
 	bc.Remove(cacheKey)
 
 	// it should be a cache miss
-	_, ls, err = bc.Retrieve(cacheKey, false)
+	_, ls, err = bc.Retrieve(cacheKey)
 	if err == nil {
 		t.Errorf("expected key not found error for %s", cacheKey)
 	}
@@ -138,7 +125,7 @@ func TestBadgerCache_BulkRemove(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	testDbPath := t.TempDir() + "/test.db"
 	cacheConfig := newCacheConfig(testDbPath)
-	bc := Cache{Config: cacheConfig}
+	bc := New(t.Name(), cacheConfig)
 
 	if err := bc.Connect(); err != nil {
 		t.Error(err)
@@ -152,7 +139,7 @@ func TestBadgerCache_BulkRemove(t *testing.T) {
 	}
 
 	// it should retrieve a value
-	data, ls, err := bc.Retrieve(cacheKey, false)
+	data, ls, err := bc.Retrieve(cacheKey)
 	if err != nil {
 		t.Error(err)
 	}
@@ -163,11 +150,10 @@ func TestBadgerCache_BulkRemove(t *testing.T) {
 		t.Errorf("expected %s got %s", status.LookupStatusHit, ls)
 	}
 
-	bc.BulkRemove([]string{""})
-	bc.BulkRemove([]string{cacheKey})
+	bc.Remove(cacheKey)
 
 	// it should be a cache miss
-	_, ls, err = bc.Retrieve(cacheKey, false)
+	_, ls, err = bc.Retrieve(cacheKey)
 	if err == nil {
 		t.Errorf("expected key not found error for %s", cacheKey)
 	}
@@ -182,7 +168,7 @@ func TestBadgerCache_Retrieve(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	testDbPath := t.TempDir() + "/test.db"
 	cacheConfig := newCacheConfig(testDbPath)
-	bc := Cache{Config: cacheConfig}
+	bc := New(t.Name(), cacheConfig)
 
 	if err := bc.Connect(); err != nil {
 		t.Error(err)
@@ -190,7 +176,7 @@ func TestBadgerCache_Retrieve(t *testing.T) {
 	defer bc.Close()
 
 	// it should be a cache miss
-	_, ls, err := bc.Retrieve(cacheKey, false)
+	_, ls, err := bc.Retrieve(cacheKey)
 	if err == nil {
 		t.Errorf("expected key not found error for %s", cacheKey)
 	}
@@ -204,7 +190,7 @@ func TestBadgerCache_Retrieve(t *testing.T) {
 	}
 
 	// it should retrieve a value
-	data, ls, err := bc.Retrieve(cacheKey, false)
+	data, ls, err := bc.Retrieve(cacheKey)
 	if err != nil {
 		t.Error(err)
 	}
@@ -214,54 +200,13 @@ func TestBadgerCache_Retrieve(t *testing.T) {
 	if string(data) != "data" {
 		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
 	}
-
-	exp1, err := bc.GetExpires(cacheKey)
-	if err != nil {
-		t.Error(err)
-	}
-
-	// the TTL is currently 1 second. update it to 1 hour then wait more than
-	// 1 second, to ensure it remained in cache with the correct value
-	bc.SetTTL(cacheKey, time.Duration(3600)*time.Second)
-
-	exp2, err := bc.GetExpires(cacheKey)
-	if err != nil {
-		t.Error(err)
-	}
-
-	// should be around 3595
-	diff := exp2 - exp1
-	const expected = 3590
-
-	if diff < 3590 {
-		t.Errorf("expected diff >= %d, got %d from: %d - %d", expected, diff, exp2, exp1)
-	}
-
-	// try a non-existent cacheKey
-	ck2 := cacheKey + "xxxx"
-	bc.SetTTL(ck2, time.Duration(3600)*time.Second)
-
-	// it should be a cache miss
-	_, ls, err = bc.Retrieve(ck2, false)
-	if err == nil {
-		t.Errorf("expected key not found error for %s", ck2)
-	}
-	if ls != status.LookupStatusKeyMiss {
-		t.Errorf("expected %s got %s", status.LookupStatusKeyMiss, ls)
-	}
-
-	// it should also not have an expires
-	_, err = bc.GetExpires(ck2)
-	if err == nil {
-		t.Errorf("expected key not found error for %s", ck2)
-	}
 }
 
 func TestBadgerCache_Close(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	testDbPath := t.TempDir() + "/test.db"
 	cacheConfig := &co.Options{Provider: provider, Badger: &bo.Options{Directory: testDbPath, ValueDirectory: testDbPath}}
-	bc := Cache{Config: cacheConfig}
+	bc := New(t.Name(), cacheConfig)
 
 	if err := bc.Connect(); err != nil {
 		t.Error(err)
@@ -270,15 +215,5 @@ func TestBadgerCache_Close(t *testing.T) {
 	// it should close
 	if err := bc.Close(); err != nil {
 		t.Error(err)
-	}
-}
-
-func TestLocker(t *testing.T) {
-	cache := Cache{locker: locks.NewNamedLocker()}
-	l := cache.Locker()
-	cache.SetLocker(locks.NewNamedLocker())
-	m := cache.Locker()
-	if l == m {
-		t.Errorf("error setting locker")
 	}
 }

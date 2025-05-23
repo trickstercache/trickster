@@ -83,6 +83,8 @@ frontend:
 #       reap_interval: 3s
 #       # flush_interval sets how often the Cache Index saves its metadata to the cache from application memory. Default is 5 (5s)
 #       flush_interval: 5s
+#       # index_expiry defines how long a Trickster instance will retain its cache index on startup. Default is 1 year (365 days * 24 hours = 8760 hours)
+#       index_expiry: 8760h
 #       # max_size_bytes indicates how large the cache can grow in bytes before the Index evicts least-recently-accessed items. default is 512MB
 #       max_size_bytes: 536870912
 #       # max_size_backoff_bytes indicates how far below max_size_bytes the cache size must be to complete a byte-size-based eviction exercise. default is 16MB

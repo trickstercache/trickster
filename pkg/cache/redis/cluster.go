@@ -20,7 +20,7 @@ import (
 	"github.com/go-redis/redis"
 )
 
-func (c *Cache) clusterOpts() (*redis.ClusterOptions, error) {
+func (c *CacheClient) clusterOpts() (*redis.ClusterOptions, error) {
 
 	if len(c.Config.Redis.Endpoints) == 0 {
 		return nil, ErrInvalidEndpointsConfig

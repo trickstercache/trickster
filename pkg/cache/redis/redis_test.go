@@ -26,7 +26,6 @@ import (
 	ro "github.com/trickstercache/trickster/v2/pkg/cache/redis/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/config"
-	"github.com/trickstercache/trickster/v2/pkg/locks"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
@@ -36,7 +35,7 @@ import (
 
 const cacheKey = `cacheKey`
 
-func storeBenchmark(b *testing.B) (*Cache, func()) {
+func storeBenchmark(b *testing.B) (*CacheClient, func()) {
 	rc, close := setupRedisCache(clientTypeStandard)
 	err := rc.Connect()
 	if err != nil {
@@ -51,7 +50,7 @@ func storeBenchmark(b *testing.B) (*Cache, func()) {
 	return rc, close
 }
 
-func setupRedisCache(ct clientType) (*Cache, func()) {
+func setupRedisCache(ct clientType) (*CacheClient, func()) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	s, err := miniredis.Run()
 	if err != nil {
@@ -72,7 +71,7 @@ func setupRedisCache(ct clientType) (*Cache, func()) {
 	cacheConfig := &co.Options{Provider: "redis", Redis: rcfg}
 	conf.Caches = co.Lookup{"default": cacheConfig}
 
-	return &Cache{Config: cacheConfig}, close
+	return New("test", cacheConfig), close
 }
 
 func TestClientSelectionSentinel(t *testing.T) {
@@ -90,7 +89,7 @@ func TestClientSelectionSentinel(t *testing.T) {
 	if !ok {
 		t.Errorf("expected cache named %s", cacheName)
 	}
-	cache := Cache{Name: cacheName, Config: cfg}
+	cache := New(cacheName, cfg)
 	if err != nil {
 		t.Error(err)
 	}
@@ -109,14 +108,14 @@ func TestSentinelOpts(t *testing.T) {
 	defer close()
 
 	// test empty endpoint
-	rc.Configuration().Redis.Endpoints = nil
+	rc.Config.Redis.Endpoints = nil
 	err := rc.Connect()
 	if err == nil || err.Error() != expected1 {
 		t.Errorf("expected error for %s", expected1)
 	}
 
-	rc.Configuration().Redis.Endpoints = []string{"test"}
-	rc.Configuration().Redis.SentinelMaster = ""
+	rc.Config.Redis.Endpoints = []string{"test"}
+	rc.Config.Redis.SentinelMaster = ""
 
 	// test empty SentinelMaster
 	err = rc.Connect()
@@ -133,7 +132,7 @@ func TestClusterOpts(t *testing.T) {
 	defer close()
 
 	// test empty endpoint
-	rc.Configuration().Redis.Endpoints = nil
+	rc.Config.Redis.Endpoints = nil
 	err := rc.Connect()
 	if err == nil || err.Error() != expected1 {
 		t.Errorf("expected error for %s", expected1)
@@ -148,7 +147,7 @@ func TestClientOpts(t *testing.T) {
 	defer close()
 
 	// test empty endpoint
-	rc.Configuration().Redis.Endpoint = ""
+	rc.Config.Redis.Endpoint = ""
 	err := rc.Connect()
 	if err == nil || err.Error() != expected1 {
 		t.Errorf("expected error for %s", expected1)
@@ -170,7 +169,7 @@ func TestClientSelectionCluster(t *testing.T) {
 	if !ok {
 		t.Errorf("expected cache named %s", cacheName)
 	}
-	cache := Cache{Name: cacheName, Config: cfg}
+	cache := New(cacheName, cfg)
 	if err != nil {
 		t.Error(err)
 	}
@@ -195,82 +194,13 @@ func TestClientSelectionStandard(t *testing.T) {
 	if !ok {
 		t.Errorf("expected cache named %s", cacheName)
 	}
-	cache := Cache{Name: cacheName, Config: cfg}
+	cache := New(cacheName, cfg)
 	if err != nil {
 		t.Error(err)
 	}
 	err = cache.Connect()
 	if err == nil {
 		t.Errorf("expected error for %s", expected1)
-	}
-}
-
-func TestRedisCache_SetTTL(t *testing.T) {
-
-	const expected = "data"
-
-	cache, closer := setupRedisCache(clientTypeStandard)
-	defer closer()
-
-	err := cache.Connect()
-	if err != nil {
-		t.Error(err)
-	}
-	defer cache.Close()
-
-	// it should store a value
-	err = cache.Store(cacheKey, []byte(expected), time.Duration(1)*time.Second)
-	if err != nil {
-		t.Error(err)
-	}
-	cache.SetTTL(cacheKey, time.Duration(3600)*time.Second)
-
-	// since the TTL is updated to 1 hour, waiting more than the original TTL of 1s
-	// should not matter
-	time.Sleep(1010 * time.Millisecond)
-
-	val, ls, err := cache.Retrieve(cacheKey, false)
-	if err != nil {
-		t.Error(err)
-	}
-	if ls != status.LookupStatusHit {
-		t.Errorf("expected %s got %s", status.LookupStatusHit, ls)
-	}
-
-	if string(val) != expected {
-		t.Errorf("expected %s got %s", expected, string(val))
-	}
-
-}
-
-func BenchmarkCache_SetTTL(b *testing.B) {
-	rc, close := storeBenchmark(b)
-	defer close()
-
-	for n := 0; n < b.N; n++ {
-		expected := "data" + strconv.Itoa(n)
-		rc.SetTTL(cacheKey+strconv.Itoa(n), time.Duration(3600)*time.Second)
-		//time.Sleep(1010 * time.Millisecond)
-		val, ls, err := rc.Retrieve(cacheKey+strconv.Itoa(n), false)
-		if err != nil {
-			b.Error(err)
-		}
-		if ls != status.LookupStatusHit {
-			b.Errorf("expected %s got %s", status.LookupStatusHit, ls)
-		}
-		if string(val) != expected {
-			b.Errorf("expected %s got %s", expected, string(val))
-		}
-	}
-}
-
-func TestConfiguration(t *testing.T) {
-	rc, close := setupRedisCache(clientTypeStandard)
-	defer close()
-
-	cfg := rc.Configuration()
-	if cfg.Redis.ClientType != clientTypeStandard.String() {
-		t.Fatalf("expected %s got %s", clientTypeStandard.String(), cfg.Redis.ClientType)
 	}
 }
 
@@ -323,7 +253,7 @@ func TestRedisCache_Retrieve(t *testing.T) {
 	}
 
 	// it should retrieve a value
-	data, ls, err := rc.Retrieve(cacheKey, false)
+	data, ls, err := rc.Retrieve(cacheKey)
 	if err != nil {
 		t.Error(err)
 	}
@@ -340,7 +270,7 @@ func BenchmarkCache_Retrieve(b *testing.B) {
 	defer close()
 
 	for n := 0; n < b.N; n++ {
-		data, ls, err := rc.Retrieve(cacheKey+strconv.Itoa(n), false)
+		data, ls, err := rc.Retrieve(cacheKey + strconv.Itoa(n))
 		if err != nil {
 			b.Error(err)
 		}
@@ -387,7 +317,7 @@ func TestCache_Remove(t *testing.T) {
 	}
 
 	// it should retrieve a value
-	data, ls, err := rc.Retrieve(cacheKey, false)
+	data, ls, err := rc.Retrieve(cacheKey)
 	if err != nil {
 		t.Error(err)
 	}
@@ -401,7 +331,7 @@ func TestCache_Remove(t *testing.T) {
 	rc.Remove(cacheKey)
 
 	// it should be a cache miss
-	_, ls, err = rc.Retrieve(cacheKey, false)
+	_, ls, err = rc.Retrieve(cacheKey)
 	if err == nil {
 		t.Errorf("expected key not found error for %s", cacheKey)
 	}
@@ -416,7 +346,7 @@ func BenchmarkCache_Remove(b *testing.B) {
 
 	for n := 0; n < b.N; n++ {
 		var data []byte
-		data, ls, err := rc.Retrieve(cacheKey+strconv.Itoa(n), false)
+		data, ls, err := rc.Retrieve(cacheKey + strconv.Itoa(n))
 		if err != nil {
 			b.Error(err)
 		}
@@ -429,7 +359,7 @@ func BenchmarkCache_Remove(b *testing.B) {
 
 		rc.Remove(cacheKey + strconv.Itoa(n))
 
-		_, ls, err = rc.Retrieve(cacheKey+strconv.Itoa(n), false)
+		_, ls, err = rc.Retrieve(cacheKey + strconv.Itoa(n))
 		if err == nil {
 			b.Errorf("expected key not found error for %s", cacheKey+strconv.Itoa(n))
 		}
@@ -457,7 +387,7 @@ func TestCache_BulkRemove(t *testing.T) {
 	}
 
 	// it should retrieve a value
-	data, ls, err := rc.Retrieve(cacheKey, false)
+	data, ls, err := rc.Retrieve(cacheKey)
 	if err != nil {
 		t.Error(err)
 	}
@@ -468,10 +398,10 @@ func TestCache_BulkRemove(t *testing.T) {
 		t.Errorf("expected %s got %s", status.LookupStatusHit, ls)
 	}
 
-	rc.BulkRemove([]string{cacheKey})
+	rc.Remove(cacheKey)
 
 	// it should be a cache miss
-	_, ls, err = rc.Retrieve(cacheKey, false)
+	_, ls, err = rc.Retrieve(cacheKey)
 	if err == nil {
 		t.Errorf("expected key not found error for %s", cacheKey)
 	}
@@ -489,26 +419,16 @@ func BenchmarkCache_BulkRemove(b *testing.B) {
 		keyArray = append(keyArray, cacheKey+strconv.Itoa(n))
 	}
 
-	rc.BulkRemove(keyArray)
+	rc.Remove(keyArray...)
 
 	// it should be a cache miss
 	for n := 0; n < b.N; n++ {
-		_, ls, err := rc.Retrieve(cacheKey+strconv.Itoa(n), false)
+		_, ls, err := rc.Retrieve(cacheKey + strconv.Itoa(n))
 		if err == nil {
 			b.Errorf("expected key not found error for %s", cacheKey)
 		}
 		if ls != status.LookupStatusKeyMiss {
 			b.Errorf("expected %s got %s", status.LookupStatusKeyMiss, ls)
 		}
-	}
-}
-
-func TestLocker(t *testing.T) {
-	cache := Cache{locker: locks.NewNamedLocker()}
-	l := cache.Locker()
-	cache.SetLocker(locks.NewNamedLocker())
-	m := cache.Locker()
-	if l == m {
-		t.Errorf("error setting locker")
 	}
 }

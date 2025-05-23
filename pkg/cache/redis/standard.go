@@ -22,7 +22,7 @@ import (
 	"github.com/go-redis/redis"
 )
 
-func (c *Cache) clientOpts() (*redis.Options, error) {
+func (c *CacheClient) clientOpts() (*redis.Options, error) {
 
 	if c.Config.Redis.Endpoint == "" {
 		return nil, fmt.Errorf("invalid endpoint: %s", c.Config.Redis.Endpoint)

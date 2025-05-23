@@ -1115,7 +1115,7 @@ func TestDeltaProxyCacheRequestWithUnmarshalAndUpstreamErrors(t *testing.T) {
 
 	cc := client.Cache()
 
-	_, _, err = cc.Retrieve(key, false)
+	_, _, err = cc.Retrieve(key)
 	if err != nil {
 		t.Error(err)
 	}

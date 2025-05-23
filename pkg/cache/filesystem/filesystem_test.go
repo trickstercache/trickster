@@ -23,12 +23,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trickstercache/trickster/v2/pkg/cache"
+	"github.com/stretchr/testify/require"
 	flo "github.com/trickstercache/trickster/v2/pkg/cache/filesystem/options"
 	io "github.com/trickstercache/trickster/v2/pkg/cache/index/options"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
-	"github.com/trickstercache/trickster/v2/pkg/locks"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
@@ -37,12 +36,12 @@ import (
 const cacheProvider = "filesystem"
 const cacheKey = "cacheKey"
 
-func storeBenchmark(b *testing.B) Cache {
+func storeBenchmark(b *testing.B) CacheClient {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	dir := b.TempDir() + "/cache/" + cacheProvider
 	cacheConfig := co.Options{Provider: cacheProvider,
 		Filesystem: &flo.Options{CachePath: dir}, Index: &io.Options{ReapInterval: time.Second}}
-	fc := Cache{Config: &cacheConfig, locker: locks.NewNamedLocker()}
+	fc := NewCache(b.Name(), &cacheConfig)
 
 	err := fc.Connect()
 	if err != nil {
@@ -57,7 +56,7 @@ func storeBenchmark(b *testing.B) Cache {
 			b.Error(err)
 		}
 	}
-	return fc
+	return *fc
 }
 
 func newCacheConfig(t *testing.T) co.Options {
@@ -66,22 +65,11 @@ func newCacheConfig(t *testing.T) co.Options {
 		Index: &io.Options{ReapInterval: time.Second}}
 }
 
-func TestConfiguration(t *testing.T) {
-	logger.SetLogger(logging.ConsoleLogger(level.Error))
-	cacheConfig := newCacheConfig(t)
-	cacheConfig.Filesystem.CachePath = t.TempDir() + "/cache"
-	fc := Cache{Config: &cacheConfig, locker: locks.NewNamedLocker()}
-	cfg := fc.Configuration()
-	if cfg.Provider != cacheProvider {
-		t.Fatalf("expected %s got %s", cacheProvider, cfg.Provider)
-	}
-}
-
 func TestFilesystemCache_Connect(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	cacheConfig := newCacheConfig(t)
 	cacheConfig.Filesystem.CachePath = t.TempDir() + "/cache"
-	fc := Cache{Config: &cacheConfig, locker: locks.NewNamedLocker()}
+	fc := NewCache(t.Name(), &cacheConfig)
 
 	// it should connect
 	err := fc.Connect()
@@ -95,7 +83,7 @@ func TestFilesystemCache_ConnectFailed(t *testing.T) {
 	const expected = `[/root/noaccess.trickster.filesystem.cache] directory is not writeable by trickster:`
 	cacheConfig := newCacheConfig(t)
 	cacheConfig.Filesystem.CachePath = "/root/noaccess.trickster.filesystem.cache"
-	fc := Cache{Config: &cacheConfig, locker: locks.NewNamedLocker()}
+	fc := NewCache(t.Name(), &cacheConfig)
 	// it should connect
 	err := fc.Connect()
 	if err == nil {
@@ -110,11 +98,11 @@ func TestFilesystemCache_ConnectFailed(t *testing.T) {
 func TestFilesystemCache_Store(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	const expected1 = "invalid ttl: -1"
-	const expected2 = "open /root/noaccess.trickster.filesystem.cache/cacheKey.data:"
+	const expected2 = "open /root/noaccess.trickster.filesystem.cache/cacheKeydata:"
 
 	cacheConfig := newCacheConfig(t)
 	cacheConfig.Filesystem.CachePath = t.TempDir() + "/cache"
-	fc := Cache{Config: &cacheConfig, locker: locks.NewNamedLocker()}
+	fc := NewCache(t.Name(), &cacheConfig)
 
 	err := fc.Connect()
 	if err != nil {
@@ -153,257 +141,35 @@ func BenchmarkCache_Store(b *testing.B) {
 	defer fc.Close()
 }
 
-func TestFilesystemCache_StoreNoIndex(t *testing.T) {
-	logger.SetLogger(logging.ConsoleLogger(level.Error))
-	const expected = "value for key [] not in cache"
-
-	cacheConfig := newCacheConfig(t)
-	cacheConfig.Filesystem.CachePath = t.TempDir() + "/cache"
-	fc := Cache{Config: &cacheConfig, locker: locks.NewNamedLocker()}
-
-	err := fc.Connect()
-	if err != nil {
-		t.Error(err)
-	}
-	defer fc.Close()
-
-	// it should store a value
-	fc.storeNoIndex(cacheKey, []byte("data"))
-
-	// it should retrieve a value
-	data, ls, err := fc.Retrieve(cacheKey, false)
-	if err != nil {
-		t.Error(err)
-	}
-	if string(data) != "data" {
-		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
-	}
-	if ls != status.LookupStatusHit {
-		t.Errorf("expected %s got %s", status.LookupStatusHit, ls)
-	}
-
-	// test for error when bad key name
-	fc.storeNoIndex("", []byte("data"))
-
-	data, ls, err = fc.retrieve("", false, false)
-	if err == nil {
-		t.Errorf("expected error for %s", expected)
-		fc.Close()
-	}
-	if err != cache.ErrKNF {
-		t.Error("expected error for KNF")
-	}
-	if string(data) != "" {
-		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
-	}
-	if ls != status.LookupStatusKeyMiss {
-		t.Errorf("expected %s got %s", status.LookupStatusKeyMiss, ls)
-	}
-}
-
-func BenchmarkCache_StoreNoIndex(b *testing.B) {
-	fc := storeBenchmark(b)
-	defer fc.Close()
-	for n := 0; n < b.N; n++ {
-		expected := `value for key [] not in cache`
-		// it should store a value
-		fc.storeNoIndex(cacheKey+strconv.Itoa(n), []byte("data"+strconv.Itoa(n)))
-
-		// it should retrieve a value
-		data, ls, err := fc.retrieve(cacheKey+strconv.Itoa(n), false, false)
-		if err != nil {
-			b.Error(err)
-		}
-		if string(data) != "data"+strconv.Itoa(n) {
-			b.Errorf("wanted \"%s\". got \"%s\".", "data", data)
-		}
-		if ls != status.LookupStatusHit {
-			b.Errorf("expected %s got %s", status.LookupStatusHit, ls)
-		}
-		// test for error when bad key name
-		fc.storeNoIndex("", []byte("data"+strconv.Itoa(n)))
-
-		data, ls, err = fc.retrieve("", false, false)
-		if err == nil {
-			b.Errorf("expected error for %s", expected)
-			fc.Close()
-		}
-		if err.Error() != expected {
-			b.Errorf("expected error '%s' got '%s'", expected, err.Error())
-		}
-		if string(data) != "" {
-			b.Errorf("wanted \"%s\". got \"%s\".", "data"+strconv.Itoa(n), data)
-		}
-		if ls != status.LookupStatusKeyMiss {
-			b.Errorf("expected %s got %s", status.LookupStatusKeyMiss, ls)
-		}
-	}
-}
-
-func TestFilesystemCache_SetTTL(t *testing.T) {
-	logger.SetLogger(logging.ConsoleLogger(level.Error))
-	cacheConfig := newCacheConfig(t)
-	cacheConfig.Filesystem.CachePath = t.TempDir() + "/cache"
-	fc := Cache{Config: &cacheConfig, locker: locks.NewNamedLocker()}
-
-	err := fc.Connect()
-	if err != nil {
-		t.Error(err)
-	}
-	defer fc.Close()
-
-	exp1 := fc.Index.GetExpiration(cacheKey)
-	if !exp1.IsZero() {
-		t.Errorf("expected Zero time, got %v", exp1)
-	}
-
-	// it should store a value
-	err = fc.Store(cacheKey, []byte("data"), time.Duration(60)*time.Second)
-	if err != nil {
-		t.Error(err)
-	}
-
-	exp1 = fc.Index.GetExpiration(cacheKey)
-	if exp1.IsZero() {
-		t.Errorf("expected time %d, got zero", int(time.Now().Unix())+60)
-	}
-
-	e1 := int(exp1.Unix())
-
-	fc.SetTTL(cacheKey, time.Duration(3600)*time.Second)
-
-	time.Sleep(time.Millisecond * 10)
-
-	exp2 := fc.Index.GetExpiration(cacheKey)
-	if exp2.IsZero() {
-		t.Errorf("expected time %d, got zero", int(time.Now().Unix())+3600)
-	}
-	e2 := int(exp2.Unix())
-
-	// should be around 3595
-	diff := e2 - e1
-	const expected = 3500
-
-	if diff < expected {
-		t.Errorf("expected diff >= %d, got %d from: %d - %d", expected, diff, e2, e1)
-	}
-
-}
-
-func BenchmarkCache_SetTTL(b *testing.B) {
-	fc := storeBenchmark(b)
-	defer fc.Close()
-	for n := 0; n < b.N; n++ {
-		exp1 := fc.Index.GetExpiration(cacheKey + strconv.Itoa(n))
-		if exp1.IsZero() {
-			b.Errorf("expected time %d, got zero", int(time.Now().Unix())+60)
-		}
-
-		e1 := int(exp1.Unix())
-
-		fc.SetTTL(cacheKey+strconv.Itoa(n), time.Duration(3600)*time.Second)
-
-		exp2 := fc.Index.GetExpiration(cacheKey + strconv.Itoa(n))
-		if exp2.IsZero() {
-			b.Errorf("expected time %d, got zero", int(time.Now().Unix())+3600)
-		}
-		e2 := int(exp2.Unix())
-
-		// should be around 3595
-		diff := e2 - e1
-		const expected = 3500
-
-		if diff < expected {
-			b.Errorf("expected diff >= %d, got %d from: %d - %d", expected, diff, e2, e1)
-		}
-	}
-}
-
 func TestFilesystemCache_Retrieve(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
-	const expected1 = `value for key [cacheKey] not in cache`
-	const expected2 = `value for key [cacheKey-invalid] could not be deserialized from cache`
 
 	cacheConfig := newCacheConfig(t)
 	cacheConfig.Filesystem.CachePath = t.TempDir() + "/cache"
-	fc := Cache{Config: &cacheConfig, locker: locks.NewNamedLocker()}
+	fc := NewCache(t.Name(), &cacheConfig)
 
 	err := fc.Connect()
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
+
 	err = fc.Store(cacheKey, []byte("data"), time.Duration(60)*time.Second)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 
 	// it should retrieve a value
-	data, ls, err := fc.Retrieve(cacheKey, false)
-	if err != nil {
-		t.Error(err)
+	data, ls, err := fc.Retrieve(cacheKey)
+	require.NoError(t, err)
+	if string(data) != "data" {
+		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
 	}
+	require.Equal(t, status.LookupStatusHit, ls)
+
+	data, ls, err = fc.Retrieve(cacheKey)
+	require.NoError(t, err)
+
 	if string(data) != "data" {
 		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
 	}
 	if ls != status.LookupStatusHit {
 		t.Errorf("expected %s got %s", status.LookupStatusHit, ls)
-	}
-
-	// it should still retrieve a value with nil index
-	idx := fc.Index
-	fc.Index = nil
-
-	data, ls, err = fc.Retrieve(cacheKey, false)
-	if err != nil {
-		t.Error(err)
-	}
-	if string(data) != "data" {
-		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
-	}
-	if ls != status.LookupStatusHit {
-		t.Errorf("expected %s got %s", status.LookupStatusHit, ls)
-	}
-
-	// restore the index for further tests
-	fc.Index = idx
-
-	// expire the object
-	fc.SetTTL(cacheKey, -1*time.Hour)
-
-	// add sleep to let TTL be set in a separate goroutine
-	time.Sleep(time.Millisecond * 10)
-
-	// this should now return error
-	data, ls, err = fc.Retrieve(cacheKey, false)
-	if err == nil {
-		t.Errorf("expected error for %s", expected1)
-		fc.Close()
-	}
-	if err != cache.ErrKNF {
-		t.Error("expected error for KNF")
-	}
-	if string(data) != "" {
-		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
-	}
-	if ls != status.LookupStatusKeyMiss {
-		t.Errorf("expected %s got %s", status.LookupStatusKeyMiss, ls)
-	}
-
-	// should fail
-	filename := fc.getFileName(cacheKey + "-invalid")
-	err = os.WriteFile(filename, []byte("junk"), os.FileMode(0777))
-	if err != nil {
-		t.Error(err)
-	}
-	_, ls, err = fc.Retrieve(cacheKey+"-invalid", false)
-	if err == nil {
-		t.Errorf("expected error for %s", expected2)
-	}
-	if err.Error() != expected2 {
-		t.Errorf("expected error '%s' got '%s'", expected2, err.Error())
-	}
-	if ls != status.LookupStatusError {
-		t.Errorf("expected %s got %s", status.LookupStatusError, ls)
 	}
 }
 
@@ -415,7 +181,7 @@ func BenchmarkCache_Retrieve(b *testing.B) {
 		expected1 := `value for key [` + cacheKey + strconv.Itoa(n) + `] not in cache`
 		expected2 := `value for key [` + cacheKey + strconv.Itoa(n) + `] could not be deserialized from cache`
 
-		data, ls, err := fc.Retrieve(cacheKey+strconv.Itoa(n), false)
+		data, ls, err := fc.Retrieve(cacheKey + strconv.Itoa(n))
 		if err != nil {
 			b.Error(err)
 		}
@@ -426,11 +192,8 @@ func BenchmarkCache_Retrieve(b *testing.B) {
 			b.Errorf("expected %s got %s", status.LookupStatusHit, ls)
 		}
 
-		// expire the object
-		fc.SetTTL(cacheKey+strconv.Itoa(n), -1*time.Hour)
-
 		// this should now return error
-		data, ls, err = fc.Retrieve(cacheKey+strconv.Itoa(n), false)
+		data, ls, err = fc.Retrieve(cacheKey + strconv.Itoa(n))
 		if err == nil {
 			b.Errorf("expected error for %s", expected1)
 			fc.Close()
@@ -450,7 +213,7 @@ func BenchmarkCache_Retrieve(b *testing.B) {
 		os.WriteFile(filename, []byte("junk"), os.FileMode(0777))
 
 		// it should fail to retrieve a value
-		data, ls, err = fc.Retrieve(cacheKey+strconv.Itoa(n), false)
+		data, ls, err = fc.Retrieve(cacheKey + strconv.Itoa(n))
 		if err == nil {
 			b.Errorf("expected error for %s", expected2)
 			fc.Close()
@@ -471,7 +234,7 @@ func TestFilesystemCache_Remove(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	cacheConfig := newCacheConfig(t)
 	cacheConfig.Filesystem.CachePath = t.TempDir() + "/cache"
-	fc := Cache{Config: &cacheConfig, locker: locks.NewNamedLocker()}
+	fc := NewCache(t.Name(), &cacheConfig)
 
 	err := fc.Connect()
 	if err != nil {
@@ -486,7 +249,7 @@ func TestFilesystemCache_Remove(t *testing.T) {
 	}
 
 	// it should retrieve a value
-	data, ls, err := fc.Retrieve(cacheKey, false)
+	data, ls, err := fc.Retrieve(cacheKey)
 	if err != nil {
 		t.Error(err)
 	}
@@ -500,7 +263,7 @@ func TestFilesystemCache_Remove(t *testing.T) {
 	fc.Remove(cacheKey)
 
 	// it should be a cache miss
-	_, ls, err = fc.Retrieve(cacheKey, false)
+	_, ls, err = fc.Retrieve(cacheKey)
 	if err == nil {
 		t.Errorf("expected key not found error for %s", cacheKey)
 	}
@@ -515,7 +278,7 @@ func BenchmarkCache_Remove(b *testing.B) {
 
 	for n := 0; n < b.N; n++ {
 		var data []byte
-		data, ls, err := fc.Retrieve(cacheKey+strconv.Itoa(n), false)
+		data, ls, err := fc.Retrieve(cacheKey + strconv.Itoa(n))
 		if err != nil {
 			b.Error(err)
 		}
@@ -529,7 +292,7 @@ func BenchmarkCache_Remove(b *testing.B) {
 		fc.Remove(cacheKey + strconv.Itoa(n))
 
 		// this should now return error
-		data, ls, err = fc.Retrieve(cacheKey+strconv.Itoa(n), false)
+		data, ls, err = fc.Retrieve(cacheKey + strconv.Itoa(n))
 		expectederr := `value for key [` + cacheKey + strconv.Itoa(n) + `] not in cache`
 		if err == nil {
 			b.Errorf("expected error for %s", expectederr)
@@ -552,7 +315,7 @@ func TestFilesystemCache_BulkRemove(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	cacheConfig := newCacheConfig(t)
 	cacheConfig.Filesystem.CachePath = t.TempDir() + "/cache"
-	fc := Cache{Config: &cacheConfig, locker: locks.NewNamedLocker()}
+	fc := NewCache(t.Name(), &cacheConfig)
 
 	err := fc.Connect()
 	if err != nil {
@@ -567,7 +330,7 @@ func TestFilesystemCache_BulkRemove(t *testing.T) {
 	}
 
 	// it should retrieve a value
-	data, ls, err := fc.Retrieve(cacheKey, false)
+	data, ls, err := fc.Retrieve(cacheKey)
 	if err != nil {
 		t.Error(err)
 	}
@@ -578,10 +341,10 @@ func TestFilesystemCache_BulkRemove(t *testing.T) {
 		t.Errorf("expected %s got %s", status.LookupStatusHit, ls)
 	}
 
-	fc.BulkRemove([]string{cacheKey})
+	fc.Remove(cacheKey)
 
 	// it should be a cache miss
-	_, ls, err = fc.Retrieve(cacheKey, false)
+	_, ls, err = fc.Retrieve(cacheKey)
 	if err == nil {
 		t.Errorf("expected key not found error for %s", cacheKey)
 	}
@@ -599,26 +362,16 @@ func BenchmarkCache_BulkRemove(b *testing.B) {
 		keyArray = append(keyArray, cacheKey+strconv.Itoa(n))
 	}
 
-	fc.BulkRemove(keyArray)
+	fc.Remove(keyArray...)
 
 	// it should be a cache miss
 	for n := 0; n < b.N; n++ {
-		_, ls, err := fc.Retrieve(cacheKey+strconv.Itoa(n), false)
+		_, ls, err := fc.Retrieve(cacheKey + strconv.Itoa(n))
 		if err == nil {
 			b.Errorf("expected key not found error for %s", cacheKey)
 		}
 		if ls != status.LookupStatusKeyMiss {
 			b.Errorf("expected %s got %s", status.LookupStatusKeyMiss, ls)
 		}
-	}
-}
-
-func TestLocker(t *testing.T) {
-	cache := Cache{locker: locks.NewNamedLocker()}
-	l := cache.Locker()
-	cache.SetLocker(locks.NewNamedLocker())
-	m := cache.Locker()
-	if l == m {
-		t.Errorf("error setting locker")
 	}
 }

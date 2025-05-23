@@ -16,24 +16,29 @@
 
 package status
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
 
 func TestLookupStatusString(t *testing.T) {
-
-	t1 := LookupStatusHit
-	t2 := LookupStatusKeyMiss
-
-	var t3 LookupStatus = 99
-
-	if t1.String() != "hit" {
-		t.Errorf("expected %s got %s", "hit", t1.String())
+	cases := []struct {
+		lookup LookupStatus
+		want   string
+	}{
+		{LookupStatusHit, "hit"},
+		{LookupStatusKeyMiss, "kmiss"},
+		{LookupStatus(99), "99"},
 	}
-
-	if t2.String() != "kmiss" {
-		t.Errorf("expected %s got %s", "kmiss", t2.String())
+	for _, c := range cases {
+		require.Equal(t, c.want, c.lookup.String())
 	}
+}
 
-	if t3.String() != "99" {
-		t.Errorf("expected %s got %s", "99", t3.String())
+func TestLookupStatus_cacheLookupStatusValues(t *testing.T) {
+	// test that the internal slice mapping is correct for all statuses
+	for status := range MaxLookupStatus() {
+		require.Equal(t, status, cacheLookupStatusValues[status].LookupStatus)
 	}
 }

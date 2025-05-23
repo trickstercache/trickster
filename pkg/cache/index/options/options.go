@@ -26,6 +26,8 @@ type Options struct {
 	ReapInterval time.Duration `yaml:"reap_interval,omitempty"`
 	// FlushInterval sets how often the Cache Index saves its metadata to the cache from application memory
 	FlushInterval time.Duration `yaml:"flush_interval,omitempty"`
+	// IndexExpiry defines the interval at which to consider a flushed index as expired
+	IndexExpiry time.Duration `yaml:"index_expiry,omitempty"`
 	// MaxSizeBytes indicates how large the cache can grow in bytes before the Index evicts
 	// least-recently-accessed items.
 	MaxSizeBytes int64 `yaml:"max_size_bytes,omitempty"`
@@ -45,6 +47,7 @@ func New() *Options {
 	return &Options{
 		ReapInterval:          DefaultCacheIndexReap,
 		FlushInterval:         DefaultCacheIndexFlush,
+		IndexExpiry:           DefaultIndexExpiry,
 		MaxSizeBytes:          DefaultCacheMaxSizeBytes,
 		MaxSizeBackoffBytes:   DefaultMaxSizeBackoffBytes,
 		MaxSizeObjects:        DefaultMaxSizeObjects,

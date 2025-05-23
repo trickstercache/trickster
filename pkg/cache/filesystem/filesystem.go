@@ -21,201 +21,83 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/cache"
-	"github.com/trickstercache/trickster/v2/pkg/cache/index"
-	"github.com/trickstercache/trickster/v2/pkg/cache/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
-	"github.com/trickstercache/trickster/v2/pkg/locks"
-	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
-	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
-	"github.com/trickstercache/trickster/v2/pkg/util/atomicx"
 )
 
-// Cache describes a Filesystem Cache
-type Cache struct {
-	Name       string
-	Config     *options.Options
-	Index      *index.Index
-	locker     locks.NamedLocker
-	lockPrefix string
+var (
+	// CacheClient implements the cache.Client interface
+	_ cache.Client = &CacheClient{}
+)
+
+func NewCache(name string, config *options.Options) *CacheClient {
+	c := &CacheClient{
+		Name:   name,
+		Config: config,
+	}
+
+	return c
 }
 
-// Locker returns the cache's locker
-func (c *Cache) Locker() locks.NamedLocker {
-	return c.locker
+// CacheClient describes a Filesystem CacheClient
+type CacheClient struct {
+	Name   string
+	Config *options.Options
 }
 
-// SetLocker sets the cache's locker
-func (c *Cache) SetLocker(l locks.NamedLocker) {
-	c.locker = l
-}
-
-// Configuration returns the Configuration for the Cache object
-func (c *Cache) Configuration() *options.Options {
-	return c.Config
+func (c *CacheClient) Close() error {
+	return nil
 }
 
 // Connect instantiates the Cache mutex map and starts the Expired Entry Reaper goroutine
-func (c *Cache) Connect() error {
-	logger.Info("filesystem cache setup", logging.Pairs{"name": c.Name,
-		"cachePath": c.Config.Filesystem.CachePath})
-	if err := makeDirectory(c.Config.Filesystem.CachePath); err != nil {
-		return err
-	}
-	c.lockPrefix = c.Name + ".file."
+func (c *CacheClient) Connect() error {
+	return makeDirectory(c.Config.Filesystem.CachePath)
+}
 
-	// Load Index here and pass bytes as param2
-	indexData, _, _ := c.retrieve(index.IndexKey, false, false)
-	c.Index = index.NewIndex(c.Name, c.Config.Provider, indexData,
-		c.Config.Index, c.BulkRemove, c.storeNoIndex)
+func (c *CacheClient) Remove(cacheKeys ...string) error {
+	for _, cacheKey := range cacheKeys {
+		if err := os.Remove(c.getFileName(cacheKey)); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
-// Store places an object in the cache using the specified key and ttl
-func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
-	return c.store(cacheKey, data, ttl, true)
-}
-
-func (c *Cache) storeNoIndex(cacheKey string, data []byte) {
-	err := c.store(cacheKey, data, 31536000*time.Second, false)
-	if err != nil {
-		logger.Error("cache failed to write non-indexed object",
-			logging.Pairs{"cacheName": c.Name, "cacheProvider": "filesystem",
-				"cacheKey": cacheKey, "objectSize": len(data)})
-	}
-}
-
-func (c *Cache) store(cacheKey string, data []byte, ttl time.Duration, updateIndex bool) error {
-
+func (c *CacheClient) Store(cacheKey string, data []byte, ttl time.Duration) error {
 	if ttl < 1 {
 		return fmt.Errorf("invalid ttl: %d", int64(ttl.Seconds()))
 	}
-
 	if cacheKey == "" {
 		return errors.New("cacheKey required")
 	}
-
-	metrics.ObserveCacheOperation(c.Name, c.Config.Provider, "set", "none", float64(len(data)))
-
 	dataFile := c.getFileName(cacheKey)
-
-	nl, _ := c.locker.Acquire(c.lockPrefix + cacheKey)
-
-	o := &index.Object{Key: cacheKey, Value: data, Expiration: *atomicx.NewTime(time.Now().Add(ttl))}
-	err := os.WriteFile(dataFile, o.ToBytes(), os.FileMode(0777))
+	err := os.WriteFile(dataFile, data, os.FileMode(0777))
 	if err != nil {
-		nl.Release()
 		return err
 	}
-	logger.Debug("filesystem cache store",
-		logging.Pairs{"key": cacheKey, "dataFile": dataFile, "indexed": updateIndex})
-	if updateIndex {
-		c.Index.UpdateObject(o)
-	}
-	nl.Release()
 	return nil
 }
 
-// Retrieve looks for an object in cache and returns it (or an error if not found)
-func (c *Cache) Retrieve(cacheKey string, allowExpired bool) ([]byte, status.LookupStatus, error) {
-	return c.retrieve(cacheKey, allowExpired, true)
-}
-
-func (c *Cache) retrieve(cacheKey string, allowExpired bool, atime bool) ([]byte, status.LookupStatus, error) {
-
+func (c *CacheClient) Retrieve(cacheKey string) ([]byte, status.LookupStatus, error) {
 	dataFile := c.getFileName(cacheKey)
-
-	nl, _ := c.locker.RAcquire(c.lockPrefix + cacheKey)
 	data, err := os.ReadFile(dataFile)
-	nl.RRelease()
-
 	if err != nil {
-		logger.Debug("filesystem cache miss",
-			logging.Pairs{"key": cacheKey, "dataFile": dataFile})
-		metrics.ObserveCacheMiss(c.Name, c.Config.Provider)
 		return nil, status.LookupStatusKeyMiss, cache.ErrKNF
 	}
-
-	o, err := index.ObjectFromBytes(data)
-	if err != nil {
-
-		_, err2 := metrics.CacheError(cacheKey, c.Name, c.Config.Provider,
-			"value for key [%s] could not be deserialized from cache")
-		return nil, status.LookupStatusError, err2
-	}
-
-	// if retrieve() is being called to load the index, the index will be nil, so just return the value
-	// so as to instantiate the index
-	if c.Index == nil {
-		return o.Value, status.LookupStatusHit, nil
-	}
-
-	o.Expiration.Store(c.Index.GetExpiration(cacheKey))
-	if allowExpired || o.Expiration.Load().IsZero() || o.Expiration.Load().After(time.Now()) {
-		logger.Debug("filesystem cache retrieve",
-			logging.Pairs{"key": cacheKey, "dataFile": dataFile})
-		if atime {
-			go c.Index.UpdateObjectAccessTime(cacheKey)
-		}
-		metrics.ObserveCacheOperation(c.Name, c.Config.Provider, "get", "hit", float64(len(data)))
-		return o.Value, status.LookupStatusHit, nil
-	}
-	// Cache Object has been expired but not reaped, go ahead and delete it
-	go c.remove(cacheKey, false)
-	metrics.ObserveCacheMiss(c.Name, c.Config.Provider)
-	return nil, status.LookupStatusKeyMiss, cache.ErrKNF
+	return data, status.LookupStatusHit, nil
 }
 
-// SetTTL updates the TTL for the provided cache object
-func (c *Cache) SetTTL(cacheKey string, ttl time.Duration) {
-	go c.Index.UpdateObjectTTL(cacheKey, ttl)
-}
-
-// Remove removes an object from the cache
-func (c *Cache) Remove(cacheKey string) {
-	c.remove(cacheKey, false)
-}
-
-func (c *Cache) remove(cacheKey string, isBulk bool) {
-	nl, _ := c.locker.Acquire(c.lockPrefix + cacheKey)
-	err := os.Remove(c.getFileName(cacheKey))
-	nl.Release()
-	if err == nil && !isBulk {
-		go c.Index.RemoveObject(cacheKey)
-	}
-	metrics.ObserveCacheDel(c.Name, c.Config.Provider, 0)
-}
-
-// BulkRemove removes a list of objects from the cache
-func (c *Cache) BulkRemove(cacheKeys []string) {
-	wg := &sync.WaitGroup{}
-	wg.Add(len(cacheKeys))
-	for _, cacheKey := range cacheKeys {
-		go func(key string) {
-			c.remove(key, true)
-			wg.Done()
-		}(cacheKey)
-	}
-	wg.Wait()
-}
-
-// Close is not used for Cache
-func (c *Cache) Close() error {
-	if c.Index != nil {
-		c.Index.Close()
-	}
-	return nil
-}
-
-func (c *Cache) getFileName(cacheKey string) string {
-	prefix := strings.Replace(c.Config.Filesystem.CachePath+"/"+cacheKey+".", "//", "/", 1)
-	return prefix + "data"
+func (c *CacheClient) getFileName(cacheKey string) string {
+	return filepath.Join(
+		c.Config.Filesystem.CachePath,
+		strings.NewReplacer("/", "~1", "\\", "~2", "..", "~3", ".", "~4").Replace(cacheKey),
+	) + "data"
 }
 
 // makeDirectory creates a directory on the filesystem and returns the error in the event of a failure.

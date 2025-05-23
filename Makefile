@@ -145,7 +145,6 @@ style:
 .PHONY: lint
 lint:
 	@golangci-lint run
-	@staticcheck ./...
 
 GO_TEST_FLAGS ?= -coverprofile=.coverprofile
 .PHONY: test
@@ -269,7 +268,6 @@ spelling:
 	else \
 		mdspell './README.md' './docs/**/*.md' ; \
 	fi
-
 	@which codespell ; \
 	if [ "$$?" != "0" ]; then \
 		echo "codespell is not installed" ; \

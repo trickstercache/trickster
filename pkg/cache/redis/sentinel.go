@@ -20,7 +20,7 @@ import (
 	"github.com/go-redis/redis"
 )
 
-func (c *Cache) sentinelOpts() (*redis.FailoverOptions, error) {
+func (c *CacheClient) sentinelOpts() (*redis.FailoverOptions, error) {
 
 	if len(c.Config.Redis.Endpoints) == 0 {
 		return nil, ErrInvalidEndpointsConfig

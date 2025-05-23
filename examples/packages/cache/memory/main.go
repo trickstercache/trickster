@@ -16,7 +16,8 @@ func main() {
 	const myKey, myValue = "myKeyName", "myValue"
 
 	// create a new memory cache
-	c, err := memory.New()
+	c := memory.New("myMemoryCache", nil)
+	err := c.Connect()
 	// this starts some background goroutines for object lifecycle management, so
 	// be sure to Close() once ready for the cache to be garbage collected
 	if err != nil {
@@ -24,7 +25,7 @@ func main() {
 	}
 
 	// Optional - Set the max cache size (default is 512MB):
-	cfg := c.Configuration()
+	cfg := c.Config
 	cfg.Index.MaxSizeBytes = 32 * 1024 * 1024 // 32MB
 	//
 
@@ -45,7 +46,7 @@ func main() {
 	}
 
 	// retrieve the object from cache
-	value, status, err := c.Retrieve(myKey, false)
+	value, status, err := c.Retrieve(myKey)
 	if err != nil {
 		panic(err)
 	}
@@ -53,7 +54,7 @@ func main() {
 		myKey, status.String(), string(value))
 
 	// retrieve the second object from cache
-	value, status, err = c.Retrieve(key2, false)
+	value, status, err = c.Retrieve(key2)
 	if err != nil {
 		panic(err)
 	}
@@ -65,7 +66,7 @@ func main() {
 	time.Sleep(ttl + (time.Millisecond * 250))
 
 	// retrieve the ttl'ed object from cache again, should be a cache miss
-	value, status, err = c.Retrieve(myKey, false)
+	value, status, err = c.Retrieve(myKey)
 	if err != nil && err != cache.ErrKNF {
 		panic(err)
 	}
@@ -73,7 +74,7 @@ func main() {
 		myKey, status.String(), string(value))
 
 	// retrieve the non-ttl'ed object from cache again, should still cache hit
-	value, status, err = c.Retrieve(key2, false)
+	value, status, err = c.Retrieve(key2)
 	if err != nil {
 		panic(err)
 	}

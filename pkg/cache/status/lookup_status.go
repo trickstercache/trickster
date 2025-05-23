@@ -49,25 +49,35 @@ const (
 	LookupStatusError
 	// LookupStatusProxyHit indicates that the request joined an existing proxy download of the same object
 	LookupStatusProxyHit
+	// maxLookupStatus is the maximum LookupStatus value
+	maxLookupStatus = LookupStatusProxyHit
 )
 
-var cacheLookupStatusValues = map[LookupStatus]string{
-	LookupStatusHit:              "hit",
-	LookupStatusPartialHit:       "phit",
-	LookupStatusRevalidated:      "rhit",
-	LookupStatusRangeMiss:        "rmiss",
-	LookupStatusKeyMiss:          "kmiss",
-	LookupStatusPurge:            "purge",
-	LookupStatusProxyError:       "proxy-error",
-	LookupStatusProxyOnly:        "proxy-only",
-	LookupStatusNegativeCacheHit: "nchit",
-	LookupStatusProxyHit:         "proxy-hit",
-	LookupStatusError:            "error",
+// Return the maximum LookupStatus value
+func MaxLookupStatus() LookupStatus {
+	return maxLookupStatus
+}
+
+var cacheLookupStatusValues = []struct {
+	LookupStatus LookupStatus
+	Value        string
+}{
+	{LookupStatusHit, "hit"},
+	{LookupStatusPartialHit, "phit"},
+	{LookupStatusRangeMiss, "rmiss"},
+	{LookupStatusKeyMiss, "kmiss"},
+	{LookupStatusRevalidated, "rhit"},
+	{LookupStatusPurge, "purge"},
+	{LookupStatusProxyError, "proxy-error"},
+	{LookupStatusProxyOnly, "proxy-only"},
+	{LookupStatusNegativeCacheHit, "nchit"},
+	{LookupStatusError, "error"},
+	{LookupStatusProxyHit, "proxy-hit"},
 }
 
 func (s LookupStatus) String() string {
-	if v, ok := cacheLookupStatusValues[s]; ok {
-		return v
+	if int(s) <= len(cacheLookupStatusValues) {
+		return cacheLookupStatusValues[s].Value
 	}
 	return strconv.Itoa(int(s))
 }
