@@ -16,7 +16,11 @@
 
 package failures
 
-import "net/http"
+import (
+	"net/http"
+
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+)
 
 // HandleBadRequestResponse responds to an HTTP Request with 400 Bad Request
 func HandleBadRequestResponse(w http.ResponseWriter, _ *http.Request) {
@@ -43,4 +47,11 @@ func HandleBadGateway(w http.ResponseWriter, _ *http.Request) {
 	}
 	w.WriteHeader(http.StatusBadGateway)
 	w.Write(nil)
+}
+
+// HandleUnauthorized responds to an HTTP Request with a 401 Unauthorized
+func HandleUnauthorized(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
+	w.WriteHeader(http.StatusUnauthorized)
+	w.Write([]byte("Unauthorized"))
 }

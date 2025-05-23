@@ -19,8 +19,9 @@ package handler
 import (
 	"net/http"
 
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/types"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/unauthorized"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 )
 
@@ -28,6 +29,22 @@ import (
 // the next handler on success, else responds with unauthorized and aborts
 func Middleware(a types.Authenticator, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if a == nil {
+			logger.WarnOnce("auth.middleware.nil.handle",
+				"auth middleware failed with a nil authenticator pointer.", nil)
+			failures.HandleInternalServerError(w, nil)
+			return
+		}
+		// if the request has already been authorized, use the existing result
+		if rsc := request.GetResources(r); rsc != nil && rsc.AuthResult != nil {
+			if rsc.AuthResult.Status != types.AuthSuccess {
+				failures.HandleUnauthorized(w, nil)
+				return
+			}
+			next.ServeHTTP(w, r)
+			return
+		}
+		// otherwise authenticate the request
 		res, err := a.Authenticate(r)
 		if err != nil || res == nil ||
 			res.Status != types.AuthSuccess {
@@ -36,7 +53,7 @@ func Middleware(a types.Authenticator, next http.Handler) http.Handler {
 					w.Header().Set(k, v)
 				}
 			}
-			unauthorized.ServeHTTP(w, r)
+			failures.HandleUnauthorized(w, nil)
 			return
 		}
 		rsc := request.GetResources(r)

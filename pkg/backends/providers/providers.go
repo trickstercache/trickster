@@ -41,6 +41,8 @@ const (
 	// ClickHouse represents the ClickHouse backend provider
 	ClickHouseID
 
+	Backends = "backends"
+
 	ReverseProxyShort      = "rp"
 	ReverseProxy           = "reverseproxy"
 	ReverseProxyCacheShort = "rpc"

@@ -42,7 +42,7 @@ type Authenticator interface {
 	Clone() Authenticator
 	// ProxyPreserve is true when the Authenticator will not strip Auth headers
 	ProxyPreserve() bool
-	// Sanitize must strip Auth headers from r only when ProxyPreserve is true
+	// Sanitize must strip Auth headers from r only when ProxyPreserve is false
 	Sanitize(*http.Request)
 }
 

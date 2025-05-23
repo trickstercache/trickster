@@ -82,7 +82,7 @@ func New(data map[string]any) (types.Authenticator, error) {
 		}
 	}
 	if len(opts.Users) > 0 {
-		a.AddUsersFromMap(opts.Users, opts.UsersFormat)
+		a.AddUsersFromMap(esLookup(opts.Users), opts.UsersFormat)
 	}
 	return a, nil
 }
@@ -223,7 +223,7 @@ func (a *Authenticator) LoadUsersFromMap(users esLookup,
 	a.users = loaders.LoadMap(users.ToCredentialsManifest(), cf)
 }
 
-type esLookup map[string]ct.EnvString
+type esLookup ct.EnvStringMap
 
 func (l esLookup) ToCredentialsManifest() types.CredentialsManifest {
 	out := make(types.CredentialsManifest, len(l))
