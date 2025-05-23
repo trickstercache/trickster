@@ -60,7 +60,7 @@ func TestStringSet(t *testing.T) {
 		t.Run(fmt.Sprintf("%d / %s", i, test.name), func(t *testing.T) {
 			s := New(test.input)
 			for _, val := range test.add {
-				s.Add(val)
+				s.Set(val)
 			}
 			for _, val := range test.remove {
 				s.Remove(val)
@@ -125,7 +125,7 @@ func TestIntSet(t *testing.T) {
 		t.Run(fmt.Sprintf("%d / %s", i, test.name), func(t *testing.T) {
 			s := New(test.input)
 			for _, val := range test.add {
-				s.Add(val)
+				s.Set(val)
 			}
 			for _, val := range test.remove {
 				s.Remove(val)

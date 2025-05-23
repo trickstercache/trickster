@@ -52,7 +52,7 @@ func MergeDelimeterSeparated(s1, s2, delimiter string, pad bool) string {
 			if _, ok := used[v]; ok {
 				continue
 			}
-			used.Add(v)
+			used.Set(v)
 			full[k] = v
 			k++
 		}

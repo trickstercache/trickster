@@ -27,7 +27,7 @@ type Set[T comparable] map[T]struct{}
 // New creates a new Set from a slice of keys.
 func New[T comparable](keys []T) Set[T] {
 	s := make(Set[T], len(keys))
-	s.AddAll(keys)
+	s.SetAll(keys)
 	return s
 }
 
@@ -37,7 +37,7 @@ func MapKeysToStringSet[V any](m map[string]V) Set[string] {
 	}
 	out := make(Set[string], len(m))
 	for k := range m {
-		out.Add(k)
+		out.Set(k)
 	}
 	return out
 }
@@ -62,14 +62,14 @@ func NewByteSet() Set[byte] {
 	return make(Set[byte])
 }
 
-func (s Set[T]) AddAll(vals []T) {
+func (s Set[T]) SetAll(vals []T) {
 	for _, val := range vals {
-		s.Add(val)
+		s.Set(val)
 	}
 }
 
-// Add inserts a value into the set.
-func (s Set[T]) Add(val T) {
+// Set inserts a value into the set.
+func (s Set[T]) Set(val T) {
 	s[val] = struct{}{}
 }
 

@@ -531,7 +531,7 @@ func (ds *DataSet) FieldDefinitions() (timeseries.FieldDefinitions,
 			if !used.Contains(s.Header.TimestampField.Name) {
 				all = append(all, s.Header.TimestampField)
 				tfd = s.Header.TimestampField
-				used.Add(s.Header.TimestampField.Name)
+				used.Set(s.Header.TimestampField.Name)
 			}
 			for _, fd := range s.Header.TagFieldsList {
 				if used.Contains(fd.Name) {
@@ -539,7 +539,7 @@ func (ds *DataSet) FieldDefinitions() (timeseries.FieldDefinitions,
 				}
 				all = append(all, fd)
 				tags = append(tags, fd)
-				used.Add(fd.Name)
+				used.Set(fd.Name)
 			}
 			for _, fd := range s.Header.ValueFieldsList {
 				if used.Contains(fd.Name) {
@@ -547,7 +547,7 @@ func (ds *DataSet) FieldDefinitions() (timeseries.FieldDefinitions,
 				}
 				all = append(all, fd)
 				vals = append(vals, fd)
-				used.Add(fd.Name)
+				used.Set(fd.Name)
 			}
 			for _, fd := range s.Header.UntrackedFieldsList {
 				if used.Contains(fd.Name) {
@@ -555,7 +555,7 @@ func (ds *DataSet) FieldDefinitions() (timeseries.FieldDefinitions,
 				}
 				all = append(all, fd)
 				vals = append(vals, fd)
-				used.Add(fd.Name)
+				used.Set(fd.Name)
 			}
 		}
 	}
