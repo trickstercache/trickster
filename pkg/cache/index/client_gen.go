@@ -58,6 +58,12 @@ func (z *IndexedClient) DecodeMsg(dc *msgp.Reader) (err error) {
 				err = msgp.WrapError(err, "Objects")
 				return
 			}
+		case "LastFlush":
+			err = dc.ReadExtension(&z.LastFlush)
+			if err != nil {
+				err = msgp.WrapError(err, "LastFlush")
+				return
+			}
 		default:
 			err = dc.Skip()
 			if err != nil {
@@ -71,9 +77,9 @@ func (z *IndexedClient) DecodeMsg(dc *msgp.Reader) (err error) {
 
 // EncodeMsg implements msgp.Encodable
 func (z *IndexedClient) EncodeMsg(en *msgp.Writer) (err error) {
-	// map header, size 3
+	// map header, size 4
 	// write "cache_size"
-	err = en.Append(0x83, 0xaa, 0x63, 0x61, 0x63, 0x68, 0x65, 0x5f, 0x73, 0x69, 0x7a, 0x65)
+	err = en.Append(0x84, 0xaa, 0x63, 0x61, 0x63, 0x68, 0x65, 0x5f, 0x73, 0x69, 0x7a, 0x65)
 	if err != nil {
 		return
 	}
@@ -102,15 +108,25 @@ func (z *IndexedClient) EncodeMsg(en *msgp.Writer) (err error) {
 		err = msgp.WrapError(err, "Objects")
 		return
 	}
+	// write "LastFlush"
+	err = en.Append(0xa9, 0x4c, 0x61, 0x73, 0x74, 0x46, 0x6c, 0x75, 0x73, 0x68)
+	if err != nil {
+		return
+	}
+	err = en.WriteExtension(&z.LastFlush)
+	if err != nil {
+		err = msgp.WrapError(err, "LastFlush")
+		return
+	}
 	return
 }
 
 // MarshalMsg implements msgp.Marshaler
 func (z *IndexedClient) MarshalMsg(b []byte) (o []byte, err error) {
 	o = msgp.Require(b, z.Msgsize())
-	// map header, size 3
+	// map header, size 4
 	// string "cache_size"
-	o = append(o, 0x83, 0xaa, 0x63, 0x61, 0x63, 0x68, 0x65, 0x5f, 0x73, 0x69, 0x7a, 0x65)
+	o = append(o, 0x84, 0xaa, 0x63, 0x61, 0x63, 0x68, 0x65, 0x5f, 0x73, 0x69, 0x7a, 0x65)
 	o = msgp.AppendInt64(o, z.CacheSize)
 	// string "object_count"
 	o = append(o, 0xac, 0x6f, 0x62, 0x6a, 0x65, 0x63, 0x74, 0x5f, 0x63, 0x6f, 0x75, 0x6e, 0x74)
@@ -120,6 +136,13 @@ func (z *IndexedClient) MarshalMsg(b []byte) (o []byte, err error) {
 	o, err = z.Objects.MarshalMsg(o)
 	if err != nil {
 		err = msgp.WrapError(err, "Objects")
+		return
+	}
+	// string "LastFlush"
+	o = append(o, 0xa9, 0x4c, 0x61, 0x73, 0x74, 0x46, 0x6c, 0x75, 0x73, 0x68)
+	o, err = msgp.AppendExtension(o, &z.LastFlush)
+	if err != nil {
+		err = msgp.WrapError(err, "LastFlush")
 		return
 	}
 	return
@@ -161,6 +184,12 @@ func (z *IndexedClient) UnmarshalMsg(bts []byte) (o []byte, err error) {
 				err = msgp.WrapError(err, "Objects")
 				return
 			}
+		case "LastFlush":
+			bts, err = msgp.ReadExtensionBytes(bts, &z.LastFlush)
+			if err != nil {
+				err = msgp.WrapError(err, "LastFlush")
+				return
+			}
 		default:
 			bts, err = msgp.Skip(bts)
 			if err != nil {
@@ -175,7 +204,7 @@ func (z *IndexedClient) UnmarshalMsg(bts []byte) (o []byte, err error) {
 
 // Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
 func (z *IndexedClient) Msgsize() (s int) {
-	s = 1 + 11 + msgp.Int64Size + 13 + msgp.Int64Size + 8 + z.Objects.Msgsize()
+	s = 1 + 11 + msgp.Int64Size + 13 + msgp.Int64Size + 8 + z.Objects.Msgsize() + 10 + msgp.ExtensionPrefixSize + z.LastFlush.Len()
 	return
 }
 

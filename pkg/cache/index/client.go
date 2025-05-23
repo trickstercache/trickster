@@ -34,6 +34,10 @@ import (
 
 //go:generate go tool msgp
 
+const (
+	DefaultFlushInterval = time.Hour * 24 * 365 // 1 year
+)
+
 var (
 	// IndexedClient implements the cache.Client and cache.MemoryCache interfaces
 	_ cache.Client      = &IndexedClient{}
@@ -81,6 +85,10 @@ func NewIndexedClient(
 		} else if len(b) > 0 && s == status.LookupStatusHit {
 			// if an index was cached, load it
 			idx.UnmarshalMsg(b)
+			if time.Now().Sub(idx.LastFlush.Load()) > DefaultFlushInterval {
+				// if the index is stale, clear it
+				idx.Clear()
+			}
 		}
 		if o.FlushInterval > 0 {
 			go idx.flusher(ctx)
@@ -113,6 +121,8 @@ type IndexedClient struct {
 	ObjectCount int64 `msg:"object_count"`
 	// Objects is a map of Objects in the Cache
 	Objects SyncObjects `msg:"objects"`
+	// Time the index was last flushed
+	LastFlush atomicx.Time `msg:"LastFlush,extension"`
 
 	// internal index configuration
 	name          string               `msg:"-"`
@@ -288,7 +298,6 @@ func (idx *IndexedClient) Close() error {
 
 // flusher periodically calls the cache's index flush func that writes the cache index to disk
 func (idx *IndexedClient) flusher(ctx context.Context) {
-	var lastFlush time.Time
 FLUSHER:
 	for {
 		fi := idx.options.Load().(*options.Options).FlushInterval
@@ -296,24 +305,24 @@ FLUSHER:
 		case <-ctx.Done():
 			break FLUSHER
 		case <-time.After(fi):
-			if idx.lastWrite.Load().Before(lastFlush) {
+			if idx.lastWrite.Load().Before(idx.LastFlush.Load()) {
 				continue
 			}
 			idx.flushOnce()
-			lastFlush = time.Now()
 		}
 	}
 	idx.flusherExited.Store(true)
 }
 
 func (idx *IndexedClient) flushOnce() {
+	idx.LastFlush.Store(time.Now()) // update flush time, so that it is marshalled / stored
 	bytes, err := idx.MarshalMsg(nil)
 	if err != nil {
 		logger.Warn("unable to serialize index for flushing",
 			logging.Pairs{"cacheName": idx.name, "detail": err.Error()})
 		return
 	}
-	idx.Client.Store(IndexKey, bytes, 31536000*time.Second)
+	idx.Client.Store(IndexKey, bytes, DefaultFlushInterval)
 }
 
 // reaper continually iterates through the cache to find expired elements and removes them
