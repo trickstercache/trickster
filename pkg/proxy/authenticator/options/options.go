@@ -31,13 +31,14 @@ var restrictedNames = sets.New([]string{"", "none"})
 type Options struct {
 	Name            string                      `yaml:"-"` // populated from the Lookup key
 	Provider        types.Provider              `yaml:"provider"`
+	ObserveOnly     bool                        `yaml:"observe_only"`
 	ProxyPreserve   bool                        `yaml:"proxy_preserve"`
 	UsersFile       string                      `yaml:"users_file"`
 	UsersFileFormat types.CredentialsFileFormat `yaml:"users_file_format"`
 	Users           ct.EnvStringMap             `yaml:"users,omitempty"`
 	UsersFormat     types.CredentialsFormat     `yaml:"users_format"`
 	ProviderData    map[string]any              `yaml:"config"`
-	Authenticator   types.Authenticator
+	Authenticator   types.Authenticator         `yaml:"-"`
 }
 
 // Lookup is a map of Options keyed by Options Name

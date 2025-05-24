@@ -30,6 +30,7 @@ import (
 	prop "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	ro "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/tree"
 	"github.com/trickstercache/trickster/v2/pkg/cache/evictionmethods"
 	"github.com/trickstercache/trickster/v2/pkg/cache/negative"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
@@ -381,7 +382,7 @@ func (o *Options) Validate() error {
 
 	if o.CompressibleTypeList != nil {
 		o.CompressibleTypes = sets.NewStringSet()
-		o.CompressibleTypes.AddAll(o.CompressibleTypeList)
+		o.CompressibleTypes.SetAll(o.CompressibleTypeList)
 	}
 	if o.CacheKeyPrefix == "" {
 		o.CacheKeyPrefix = o.Host
@@ -401,16 +402,60 @@ func (o *Options) Validate() error {
 
 // Validate validates the Lookup collection of Backend Options
 func (l Lookup) Validate() error {
-	for k, o := range l {
+	backendTree := make(tree.Entries, len(l))
+	var k int
+	for key, o := range l {
 		if o == nil {
 			continue
 		}
-		o.Name = k
+		o.Name = key
 		if err := o.Validate(); err != nil {
 			return err
 		}
+		entry := &tree.Entry{
+			Name: key,
+			Type: o.Provider,
+		}
+		if o.ALBOptions != nil {
+			if len(o.ALBOptions.Pool) > 0 {
+				entry.Pool = o.ALBOptions.Pool
+			} else if o.ALBOptions.UserRouter != nil {
+				used := sets.NewStringSet()
+				if o.ALBOptions.UserRouter.DefaultBackend != "" {
+					used.Set(o.ALBOptions.UserRouter.DefaultBackend)
+				}
+				for _, u := range o.ALBOptions.UserRouter.Users {
+					if u.ToBackend != "" && !used.Contains(u.ToBackend) {
+						used.Set(u.ToBackend)
+					}
+				}
+				if len(used) > 0 {
+					entry.UserRouterPool = used.Keys()
+				}
+			}
+		}
+		backendTree[k] = entry
+		k++
 	}
-	return nil
+	backendTree = backendTree[:k]
+	// this checks for infinite routing loops and other non-obvious config issues
+	if err := backendTree.Validate(); err != nil {
+		return err
+	}
+	// this checks the validator for any targetTypes which should be passed on
+	// to a userRouter
+	for _, e := range backendTree {
+		if e.TargetProvider == "" {
+			continue
+		}
+		o, ok := l[e.Name]
+		if !ok || o == nil || o.ALBOptions == nil || o.ALBOptions.UserRouter == nil {
+			continue
+		}
+		o.ALBOptions.UserRouter.TargetProvider = e.TargetProvider
+
+	}
+	return backendTree[:k].Validate()
 }
 
 // ValidateBackendName ensures the backend name is permitted against the
@@ -517,7 +562,7 @@ func (l Lookup) ValidateTLSConfigs() (bool, error) {
 func (l Lookup) Keys() sets.Set[string] {
 	out := sets.NewStringSet()
 	for k := range l {
-		out.Add(k)
+		out.Set(k)
 	}
 	return out
 }
@@ -578,7 +623,7 @@ func OverlayYAMLData(
 	if y.IsDefined("backends", name, "cache_name") {
 		no.CacheName = o.CacheName
 	}
-	activeCaches.Add(no.CacheName)
+	activeCaches.Set(no.CacheName)
 
 	if y.IsDefined("backends", name, "cache_key_prefix") {
 		no.CacheKeyPrefix = o.CacheKeyPrefix

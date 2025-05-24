@@ -41,9 +41,11 @@ const realmField = "realm"
 type Authenticator struct {
 	users            types.CredentialsManifest
 	extractCredsFunc types.ExtractCredsFunc
+	setCredsFunc     types.SetCredentialsFunc
 	showLoginForm    bool
 	realm            string
 	proxyPreserve    bool
+	observeOnly      bool
 }
 
 func RegistryEntry() types.RegistryEntry {
@@ -51,6 +53,10 @@ func RegistryEntry() types.RegistryEntry {
 }
 
 func New(data map[string]any) (types.Authenticator, error) {
+	return NewPtr(data)
+}
+
+func NewPtr(data map[string]any) (*Authenticator, error) {
 	var opts *options.Options
 	if data != nil {
 		if v, ok := data[optionsField]; ok && v != nil {
@@ -60,7 +66,7 @@ func New(data map[string]any) (types.Authenticator, error) {
 	if opts == nil {
 		return nil, errors.ErrInvalidOptions
 	}
-	a := &Authenticator{realm: opts.Name, proxyPreserve: opts.ProxyPreserve}
+	a := &Authenticator{realm: opts.Name, proxyPreserve: opts.ProxyPreserve, observeOnly: opts.ObserveOnly}
 	if len(opts.ProviderData) > 0 {
 		if v, ok := opts.ProviderData[showLoginFormField]; ok {
 			if t, ok := v.(bool); ok && t {
@@ -105,8 +111,11 @@ func failedResult(showLoginForm bool, realm string) *types.AuthResult {
 // Authenticate checks the BasicAuth credentials
 func (a *Authenticator) Authenticate(r *http.Request) (*types.AuthResult, error) {
 	u, p, f, err := a.ExtractCredentials(r)
-	if err != nil {
+	if err != nil && !a.observeOnly {
 		return failedResult(a.showLoginForm, a.realm), err
+	}
+	if a.observeOnly {
+		return &types.AuthResult{Username: u, Status: types.AuthObserved}, nil
 	}
 	if f != types.PlainText {
 		return failedResult(a.showLoginForm, a.realm), ae.ErrInvalidCredentialsFormat
@@ -166,6 +175,27 @@ func (a *Authenticator) ExtractCredentials(r *http.Request) (string, string,
 
 func (a *Authenticator) SetExtractCredentialsFunc(f types.ExtractCredsFunc) {
 	a.extractCredsFunc = f
+}
+
+func (a *Authenticator) SetCredentials(r *http.Request, user, credential string,
+	f types.CredentialsFormat) error {
+	if a.setCredsFunc != nil {
+		return a.setCredsFunc(r, user, credential, f)
+	}
+	r.SetBasicAuth(user, credential)
+	return nil
+}
+
+func (a *Authenticator) SetSetCredentialsFunc(f types.SetCredentialsFunc) {
+	a.setCredsFunc = f
+}
+
+func (a *Authenticator) SetObserveOnly(t bool) {
+	a.observeOnly = t
+}
+
+func (a *Authenticator) IsObserveOnly() bool {
+	return a.observeOnly
 }
 
 // LoadUsers resets the users list, then loads from the htpasswd-formatted file
@@ -228,7 +258,7 @@ type esLookup ct.EnvStringMap
 func (l esLookup) ToCredentialsManifest() types.CredentialsManifest {
 	out := make(types.CredentialsManifest, len(l))
 	for k, v := range l {
-		out[k] = string(v)
+		out[k] = v
 	}
 	return out
 }

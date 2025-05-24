@@ -45,3 +45,19 @@ func NewErrInvalidPoolMemberName(albName, poolMemberName string) error {
 			poolMemberName, albName),
 	}
 }
+
+// NewErrInvalidBackendName returns a new invalid ALB Options error
+func NewErrInvalidBackendName(albName, poolMemberName string) error {
+	return &InvalidALBOptionsError{
+		error: fmt.Errorf("invalid backend name [%s] provided in alb [%s]",
+			poolMemberName, albName),
+	}
+}
+
+// NewErrInvalidUserRouterCreds returns a new invalid User Router error
+func NewErrInvalidUserRouterCreds(albName string) error {
+	return &InvalidALBOptionsError{
+		error: fmt.Errorf("alb [%s] an authenticator_name is required to use to_credential",
+			albName),
+	}
+}
