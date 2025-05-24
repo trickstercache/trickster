@@ -48,8 +48,7 @@ func (el ExtentList) Encompasses(e Extent) bool {
 	if x == 0 {
 		return false
 	}
-	return (!e.Start.Before(el[0].Start)) &&
-		(!e.End.After(el[x-1].End))
+	return el[0].StartsAtOrBefore(e.StartIndex()) && el[x-1].EndsAtOrAfter(e.EndIndex())
 }
 
 // EncompassedBy returns true if the provided extent completely
@@ -59,8 +58,8 @@ func (el ExtentList) EncompassedBy(e Extent) bool {
 	if x == 0 {
 		return false
 	}
-	return (!el[0].Start.Before(e.Start)) &&
-		(!el[x-1].End.After(e.End))
+
+	return e.StartsAtOrBefore(el[0].StartIndex()) && e.EndsAtOrAfter(el[x-1].EndIndex())
 }
 
 // OutsideOf returns true if the provided extent falls completely
@@ -70,7 +69,7 @@ func (el ExtentList) OutsideOf(e Extent) bool {
 	if x == 0 {
 		return true
 	}
-	return e.After(el[x-1].End) || el[0].After(e.End)
+	return e.After(el[x-1].EndIndex()) || el[0].After(e.EndIndex())
 }
 
 // Crop reduces the ExtentList to the boundaries defined by the provided Extent
@@ -81,22 +80,22 @@ func (el ExtentList) Crop(ex Extent) ExtentList {
 	out := make(ExtentList, len(el))
 	var k int
 	for _, e := range el {
-		if e.End.Before(ex.Start) || e.Start.After(ex.End) {
+		if e.Before(ex.StartIndex()) || e.After(ex.EndIndex()) {
 			continue
 		}
-		start := e.Start
-		end := e.End
-		if ex.Start.After(start) && ex.Start.Before(end) {
-			start = ex.Start
-		} else if ex.Start.Equal(end) {
-			start = ex.Start
-			end = ex.Start
+		start := e.StartIndex()
+		end := e.EndIndex()
+		if ex.StartsAfter(start) && ex.StartsBefore(end) {
+			start = ex.StartIndex()
+		} else if ex.StartsAt(end) {
+			start = ex.StartIndex()
+			end = ex.StartIndex()
 		}
-		if ex.End.Before(end) && ex.End.After(start) {
-			end = ex.End
-		} else if ex.End.Equal(start) {
-			start = ex.End
-			end = ex.End
+		if ex.Before(end) && ex.EndsAfter(start) {
+			end = ex.EndIndex()
+		} else if ex.EndsAt(start) {
+			start = ex.EndIndex()
+			end = ex.EndIndex()
 		}
 		out[k] = Extent{Start: start, End: end, LastUsed: e.LastUsed}
 		k++
