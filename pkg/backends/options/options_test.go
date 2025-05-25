@@ -45,7 +45,7 @@ type testOptions struct {
 	Backends Lookup `yaml:"backends,omitempty"`
 }
 
-func fromYAML(conf string) (*Options, yamlx.KeyLookup, error) {
+func fromYAML(conf, name string) (*Options, yamlx.KeyLookup, error) {
 	to := &testOptions{}
 
 	err := yaml.Unmarshal([]byte(conf), to)
@@ -57,7 +57,10 @@ func fromYAML(conf string) (*Options, yamlx.KeyLookup, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	// always return the first one
+
+	if o, ok := to.Backends[name]; ok {
+		return o, md, err
+	}
 	for k, o := range to.Backends {
 		o.Name = k
 		return o, md, err
@@ -111,7 +114,8 @@ func TestValidateConfigMappings(t *testing.T) {
 		t.Error(err)
 	}
 	ol := Lookup{o.Name: o}
-	ol["frontend"] = o
+	ol["frontend"] = o.Clone()
+	o.Provider = "rpc"
 
 	err = ol.ValidateConfigMappings(co.Lookup{}, negative.Lookups{},
 		ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{})
@@ -154,6 +158,9 @@ func TestValidateConfigMappings(t *testing.T) {
 	}
 
 	o.NegativeCacheName = ""
+	tpm := o.Clone()
+	tpm.Name = "test_pool_member"
+	ol["test_pool_member"] = tpm
 
 	err = ol.ValidateConfigMappings(co.Lookup{"test": nil}, negative.Lookups{},
 		ro.Lookup{"test": new(ro.Options)}, rwopts.Lookup{}, autho.Lookup{},
@@ -197,7 +204,11 @@ func TestValidate(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	to := &testOptions{Backends: Lookup{o.Name: o}}
+	o.Name = "test"
+
+	o2, _, err := fromYAML(testYAML, "test_pool_member")
+	o2.Name = "test_pool_member"
+	to := &testOptions{Backends: Lookup{o.Name: o, o2.Name: o2}}
 
 	var errType02 = NewErrMissingOriginURL("test").(*ErrMissingOriginURL)
 	var errType03 = NewErrMissingProvider("test").(*ErrMissingProvider)

@@ -24,6 +24,9 @@ import (
 
 const testYAML = `
 backends:
+  test_pool_member:
+    provider: rp
+    origin_url: http://example.com
   test:
     tracing_name: test
     hosts:
@@ -84,7 +87,7 @@ backends:
         testlabel: trickster
     alb:
       methodology: rr
-      pool: [ test ]
+      pool: [ 'test_pool_member' ]
     tls:
       full_chain_cert_path: file.that.should.not.exist.ever.pem
       private_key_path: file.that.should.not.exist.ever.pem
@@ -97,17 +100,17 @@ backends:
 `
 
 func fromTestYAML() (*Options, yamlx.KeyLookup, error) {
-	return fromYAML(testYAML)
+	return fromYAML(testYAML, "test")
 }
 
 func fromTestYAMLWithDefault() (*Options, yamlx.KeyLookup, error) {
 	conf := strings.ReplaceAll(testYAML, "    rule_name: ''", "    rule_name: ''\n    is_default: false")
-	return fromYAML(conf)
+	return fromYAML(conf, "test")
 }
 
 func fromTestYAMLWithReqRewriter() (*Options, yamlx.KeyLookup, error) {
 	conf := strings.ReplaceAll(testYAML, "    rule_name: ''", "    rule_name: ''\n    req_rewriter_name: test")
-	return fromYAML(conf)
+	return fromYAML(conf, "test")
 }
 
 func fromTestYAMLWithALB() (*Options, yamlx.KeyLookup, error) {
@@ -117,5 +120,5 @@ func fromTestYAMLWithALB() (*Options, yamlx.KeyLookup, error) {
       output_format: prometheus
       mechanism: tsmerge
         `), "    provider: test_type", "    provider: 'alb'")
-	return fromYAML(conf)
+	return fromYAML(conf, "test")
 }
