@@ -9,6 +9,7 @@ Trickster 2.0 provides an all-new Application Load Balancer that is easy to conf
 | First Response | fr | Speed | fans a request out to multiple backends, and returns the first response received |
 | First Good Response | fgr | Speed | fans a request out to multiple backends, and returns the first response received with a status code < 400 |
 | Newest&nbsp;Last‑Modified | nlm | Freshness | fans a request out to multiple backends, and returns the response with the newest Last-Modified header |
+| User Router | ur | Control | Inspects the credentials in the Request and routes it based on the Username |
 
 ## Integration with Backends
 
@@ -16,7 +17,7 @@ The ALB works by applying a Mechanism to select one or more Backends from a list
 
 All settings and functions configured for a Backend are applicable to traffic routed via an ALB - caching, rewriters, rules, tracing, TLS, etc.
 
-In Trickster configuration files, each ALB itself is a Backend, just like the pool members to which it routes.
+In Trickster configuration files, each ALB itself is a Backend, just like the pool members to which it routes. This makes it possible to configure infinite loops (e.g., where ALB1 has ALB2 in its pool, and ALB2 has ALB1 in its pool). However, at startup Trickster will validate ALB configurations by following all ALBs' possible paths, and exit with a startup failure if any infinite loops are detected.
 
 ## Mechanisms Deep Dive
 
@@ -26,7 +27,7 @@ Each mechanism has its own use cases and pitfalls. Be sure to read about each on
 
 A basic **Round Robin** rotates through a pool of healthy backends used to service client requests. Each time a client request is made to Trickster, the round robiner will identify the next healthy backend in the rotation schedule and route the request to it.
 
-The Trickster ALB is intended to support stateless workloads, and does not support Sticky Sessions or other advanced ALB capabilities.
+The Trickster ALB is intended to support stateless workloads, and currently does not support Sticky Sessions or other advanced ALB capabilities.
 
 #### Weighted Round Robin
 
@@ -259,6 +260,103 @@ backends:
 Here is the visual representation of this configuration:
 
 <img src="./images/alb-nlm.png" width="800">
+
+### User Router
+
+The User Router mechanism is used to control a Request's destination Backend based on the username in the request. A default Backend (for no-user and users not in the manifest) can be configured, as well as a Backend per-user.
+
+When a User Router ALB is configured to use an [Authenticator](./authenticator.md), the ALB can also modify a Request's credentials before passing it off to the destination Backend. In the graphic below, user `casey` will be routed to the `readersBackend`, which proxies to a read-only database server with the `dbreader` credentials; while user `taylor` will be routed to the `writersBackend`, which proxies to a read-write database server with the `dbwriter` credentials. Here is the example configuration corresponding to the graphic:
+
+```yaml
+backends:
+  readersBackend:
+    provider: clickhouse
+    origin_url: http://read.prod.db.com:8123/
+
+  writersBackend:
+    provider: clickhouse
+    origin_url: http://write.prod.db.com:8123/
+
+  click-lb-01:
+    provider: alb
+    authenticator_name: dbUsers
+    alb:
+      mechanism: ur # User Router Mechanism
+      user_router: # User Router-specific configs
+        default_backend: readersBackend # optional - users not in the list will route here, origin will 401
+        users:
+          casey:
+            to_user: dbreader # replaces user casey with dbreader in the request's Authorization header
+            to_credential: ${DB_READER_PW} # replaces credential in the Authorization header with this env
+            # casey is sent to the default backend (readers) since to_backend is not set here
+          taylor:
+            to_user: dbwriter # replaces user taylor with dbwriter in the request's Authorization header
+            to_credential: ${DB_WRITER_PW} # replaces credential in the Authorization header with this env
+            to_backend: writersBackend # taylor is sent to the writers backend
+
+authenticators:
+  dbUsers:
+    provider: clickhouse # use the clickhouse authenticator
+    users_file: /path/to/user-manifest.csv # this file should include casey and taylor users
+    users_file_format: csv # required when users_file is set
+    users_format: bcrypt # passwords in the CSV are bcrypted
+```
+
+<img src="./images/alb-ur-01.png" width="800">
+
+#### Supported Backend Provider Types
+
+The User Router mechanism supports all Backend provider types for `default_backend` and `to_backend` values, including other User Router ALBs.
+
+**However, config validation will fail if**:
+
+* there are any possible infinite loops between backends configured
+* users could ultimately be routed to different non-virtual (ALB/Rule) backend types by the same User Router ALB. The final ultimate route for all users must be of the same type (regardless of how many additional hops through ALBs and Rules the request would take).
+  * In other words: user1 cannot be ultimately routed to a `clickhouse` backend and user2 be ultimately routed to a `prometheus` backend by the same User Router ALB.
+
+#### User Router without an Authenticator
+
+If a User Router ALB does not use an Authenticator, you can still configure user-specific Backend routes. In these cases Trickster will observe (but not authenticate) the username in the request and route based on the observed username. However, Trickster will exit with a validation failure on startup if a User Router ALB that does not utilize an Authenticator is configured to swap credentials. In short: users must be positively authenticated by a Trickster Authenticator for credential swapping to be permitted by the User Router ALB.
+
+When a User Router ALB doesn't use an Authenticator, Trickster uses the final destination Backend provider type to select a default Authenticator (operating in observe-only mode / no users manifest) for username observation. For `clickhouse`-destined User Routers, the observe only Authenticator provider is `clickhouse`. For all other backend provider types, the default the observe only Authenticator provider is `basic` (Basic Auth).
+
+#### to_user / to_credential vs Backend Path Header Injection
+
+It is still possible to insert credentials to a Backend proxy request using the `request_headers` Backend Path config. But any `request_headers` alterations configured for auth-related headers (e.g., `Authorization`) are performed by the Backend after being handled by a User Router; so they would overwrite any user-specific `to_user` and `to_credential` transformations performed by the User Router ALB.
+
+### Default Backend
+
+As shown in the example config above, you can provide a `default_backend` config to a User Router, and users who are not in the user router list will be routed to this backend.
+
+If you do not supply a `default_backend`, users who are not in the manifest will receive a default response of `502 Bad Gateway`. You can customize the default response code by setting `no_route_status_code` to a value between 400 and 599 as in this example:
+
+```yaml
+backends:
+  prod-01:
+    provider: reverseproxy
+    origin_url: https://example.com/
+
+  users-lb-01:
+    provider: alb
+    alb:
+      mechanism: ur
+      authenticator_name: all-users # not shown for brevity, see above examples
+      user_router:
+        no_route_status_code: 401 # unauthorized response for users not in allow list
+        users: # allowed users
+          casey:
+            to_backend: prod-01
+          taylor:
+            to_backend: prod-01
+          kris:
+            to_backend: prod-01
+```
+
+### User Router ALB Backend Pool and Health Checking
+
+The User Router does not rotate through or fanout to a Pool of Backends like the other ALB mechanisms. It also does not consider whether a destination backend is considered healthy or not. Users are blindy routed their configured (or default) backends regardless of health status.
+
+You can configure a User Router ALB's backend destinations to be other ALBs with mechanisms that utilize healthchecked pools.
 
 ## Maintaining Healthy Pools With Automated Health Check Integrations
 
