@@ -130,7 +130,7 @@ authenticators:
   # example_auth_4 loads users from the embedded manifest, credentials injected from env,
   # and supports ClickHouse query params (user/password) in addition to Basic Auth
   example_auth_4:
-    provider: clikchouse
+    provider: clickhouse
     users:
       user1: ${USER1_PASSWORD_ENV} # ${ENV_NAME} substitution is supported
 ```
