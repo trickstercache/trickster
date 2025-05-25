@@ -354,7 +354,7 @@ backends:
 
 ### User Router ALB Backend Pool and Health Checking
 
-The User Router does not rotate through or fanout to a Pool of Backends like the other ALB mechanisms. It also does not consider whether a destination backend is considered healthy or not. Users are blindy routed their configured (or default) backends regardless of health status.
+The User Router does not rotate through or fanout to a Pool of Backends like the other ALB mechanisms. It also does not consider whether a destination backend is considered healthy or not. Users are blindly routed their configured (or default) backends regardless of health status.
 
 You can configure a User Router ALB's backend destinations to be other ALBs with mechanisms that utilize healthchecked pools.
 
