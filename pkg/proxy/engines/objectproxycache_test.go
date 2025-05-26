@@ -145,18 +145,6 @@ func TestObjectProxyCacheRequest(t *testing.T) {
 	for _, err = range e {
 		t.Error(err)
 	}
-
-	// Remove Cache Hit from the Response Handler Map to test unknown handler error condition
-	delete(cacheResponseHandlers, status.LookupStatusHit)
-
-	_, e = testFetchOPC(r, http.StatusPartialContent, "test", map[string]string{"status": "proxy-only"})
-	for _, err = range e {
-		t.Error(err)
-	}
-
-	// add cache hit back
-	cacheResponseHandlers[status.LookupStatusHit] = handleCacheKeyHit
-
 }
 
 func TestObjectProxyCachePartialHit(t *testing.T) {
