@@ -16,31 +16,52 @@
 
 package failures
 
-import "net/http"
+import (
+	"net/http"
+
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+)
 
 // HandleBadRequestResponse responds to an HTTP Request with 400 Bad Request
 func HandleBadRequestResponse(w http.ResponseWriter, _ *http.Request) {
-	if w == nil {
-		return
-	}
-	w.WriteHeader(http.StatusBadRequest)
-	w.Write(nil)
+	HandleMiscFailure(http.StatusBadRequest, w)
 }
 
 // HandleInternalServerError responds to an HTTP Request with 500 Internal Server Error
 func HandleInternalServerError(w http.ResponseWriter, _ *http.Request) {
-	if w == nil {
-		return
-	}
-	w.WriteHeader(http.StatusInternalServerError)
-	w.Write(nil)
+	HandleMiscFailure(http.StatusInternalServerError, w)
 }
 
 // HandleBadGateway responds to an HTTP Request with 502 Bad Gateway
 func HandleBadGateway(w http.ResponseWriter, _ *http.Request) {
+	HandleMiscFailure(http.StatusBadGateway, w)
+}
+
+// HandleUnauthorized responds to an HTTP Request with a 401 Unauthorized
+func HandleUnauthorized(w http.ResponseWriter, _ *http.Request) {
 	if w == nil {
 		return
 	}
-	w.WriteHeader(http.StatusBadGateway)
+	w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
+	w.WriteHeader(http.StatusUnauthorized)
+	w.Write([]byte("Unauthorized"))
+}
+
+// HandleNotFound responds to an HTTP Request with a 404 Not Found
+func HandleNotFound(w http.ResponseWriter, _ *http.Request) {
+	if w == nil {
+		return
+	}
+	w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
+	w.WriteHeader(http.StatusNotFound)
+	w.Write([]byte("Resource Not Found"))
+}
+
+// HandleMiscFailure responds to an HTTP Request the provided status code
+func HandleMiscFailure(code int, w http.ResponseWriter) {
+	if w == nil {
+		return
+	}
+	w.WriteHeader(code)
 	w.Write(nil)
 }

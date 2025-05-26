@@ -48,12 +48,12 @@ type WFSeriesData struct {
 // Merge merges the passed WFSeries into the subject WFSeries
 func (s *WFSeries) Merge(results ...*WFSeries) {
 	m := make(sets.Set[WFSeriesData], len(s.Data))
-	m.AddAll(s.Data)
+	m.SetAll(s.Data)
 	for _, s2 := range results {
 		s.Envelope.Merge(s2.Envelope)
 		for _, d := range s2.Data {
 			if !m.Contains(d) {
-				m.Add(d)
+				m.Set(d)
 				s.Data = append(s.Data, d)
 			}
 		}

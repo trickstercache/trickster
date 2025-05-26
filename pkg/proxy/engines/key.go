@@ -99,7 +99,7 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 		for p := range qp {
 			if v, ok := overrides[p]; ok {
 				vals[k] = fmt.Sprintf("%s.%s.", p, v)
-				used.Add(p)
+				used.Set(p)
 			} else {
 				vals[k] = fmt.Sprintf("%s.%s.", p, qp.Get(p))
 			}
@@ -109,7 +109,7 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 		for _, p := range pc.CacheKeyParams {
 			if v, ok := overrides[p]; ok {
 				vals[k] = fmt.Sprintf("%s.%s.", p, v)
-				used.Add(p)
+				used.Set(p)
 				k++
 				continue
 			}
@@ -150,7 +150,7 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 		if bodyWasProcessed {
 			for _, f := range pc.CacheKeyFormFields {
 				if v, ok := overrides[f]; ok {
-					used.Add(f)
+					used.Set(f)
 					vals[k] = fmt.Sprintf("%s.%s.", f, v)
 					k++
 					continue

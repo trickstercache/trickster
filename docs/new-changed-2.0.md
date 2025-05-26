@@ -46,7 +46,8 @@
 - We've switched from Regular Expression matches for SQL-based Time Series Backends to an extensible lexer/parser solution
   - ClickHouse backend providers now use the new SQL Parser
 - We now support [Simulated Latency](./simulated-latency.md) if you want to use Trickster for that purpose in a test harness.
-- We've added a new [Authenticator](authenticator.md) feature so you can guard backends with Basic Auth
+- We've added a new [Authenticator](authenticator.md) feature so you can guard backends with Basic Auth or ClickHouse Auth
+- We've added a new [User Router Mechanism](alb.md) to the ALB.
 - We now support Environment variable substitution in configuration files where sensitive information is expected.
   - Supported via the following fields:
     - `caches[*].redis.password`, `backends[*].healthcheck.headers`, `backends[*].paths[*].request_headers`, `backends[*].paths[*].request_params`, `backends[*].paths[*].response_headers`, `authenticators[*].users`

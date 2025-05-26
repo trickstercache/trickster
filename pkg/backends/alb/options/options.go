@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	te "github.com/trickstercache/trickster/v2/pkg/backends/alb/errors"
+	ur "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/ur/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
@@ -47,6 +48,8 @@ type Options struct {
 	// FGRStatusCodes provides an explicit list of status codes considered "good" when using
 	// the First Good Response (fgr) methodology. By default, any code < 400 is good.
 	FGRStatusCodes []int `yaml:"fgr_status_codes"`
+	// UserRouter provides options for the User Router mechanism
+	UserRouter *ur.Options `yaml:"user_router,omitempty"`
 	//
 	// synthetic values
 	FgrCodesLookup sets.Set[int] `yaml:"-"`
@@ -94,6 +97,9 @@ func (o *Options) Clone() *Options {
 		FgrCodesLookup: fscm,
 		FGRStatusCodes: fsc,
 	}
+	if o.UserRouter != nil {
+		c.UserRouter = o.UserRouter.Clone()
+	}
 	c.Pool = slices.Clone(o.Pool)
 	return c
 }
@@ -131,7 +137,15 @@ func OverlayYAMLData(name string, options *Options,
 		}
 		if o.FGRStatusCodes != nil {
 			o.FgrCodesLookup = sets.NewIntSet()
-			o.FgrCodesLookup.AddAll(o.FGRStatusCodes)
+			o.FgrCodesLookup.SetAll(o.FGRStatusCodes)
+		}
+	}
+
+	if o.MechanismName == "ur" && options.UserRouter != nil {
+		var err error
+		o.UserRouter, err = ur.OverlayYAMLData(name, options.UserRouter, y)
+		if err != nil {
+			return nil, err
 		}
 	}
 

@@ -58,7 +58,7 @@ func RegisterAll(cfg *config.Config, isDryRun bool) (tracing.Tracers, error) {
 				return nil, fmt.Errorf("backend %s provided invalid tracing config name %s",
 					k, v.TracingConfigName)
 			}
-			mappedTracers.Add(v.TracingConfigName)
+			mappedTracers.Set(v.TracingConfigName)
 		}
 	}
 

@@ -68,7 +68,7 @@ func (sl SeriesList) Merge(sl2 SeriesList, sortPoints bool) SeriesList {
 		if seen.Contains(h) {
 			continue
 		}
-		seen.Add(h)
+		seen.Set(h)
 		if cs, ok := m[h]; !ok {
 			// this series does not exist in sl1; add it into out
 			out[k] = s

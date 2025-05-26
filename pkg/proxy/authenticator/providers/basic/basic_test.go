@@ -97,11 +97,11 @@ func TestRemoveUser(t *testing.T) {
 
 func TestAddUsersFromMapLoadUsersFromMap(t *testing.T) {
 	a := &Authenticator{}
-	users := map[string]ct.EnvString{
+	users := ct.EnvStringMap{
 		testUser1: testUser1p,
 		testUser2: testUser2p,
 	}
-	a.AddUsersFromMap(users, types.PlainText) // not encrypted
+	a.AddUsersFromMap(esLookup(users), types.PlainText) // not encrypted
 
 	// Should authenticate both
 	for user, pass := range users {
@@ -114,10 +114,10 @@ func TestAddUsersFromMapLoadUsersFromMap(t *testing.T) {
 	}
 
 	// Now replace with LoadUsersFromMap and test
-	newUsers := map[string]ct.EnvString{
+	newUsers := ct.EnvStringMap{
 		testUser3: testUser3p,
 	}
-	a.LoadUsersFromMap(newUsers, types.PlainText)
+	a.LoadUsersFromMap(esLookup(newUsers), types.PlainText)
 	// Only linus should work
 	req := httptest.NewRequest("GET", "/", nil)
 	req.SetBasicAuth(testUser3, testUser3p)
@@ -135,10 +135,10 @@ func TestAddUsersFromMapLoadUsersFromMap(t *testing.T) {
 func TestAddUsersFromMap_Encrypted(t *testing.T) {
 	a := &Authenticator{}
 	hash := bcryptHash(testUser1p)
-	users := map[string]ct.EnvString{
-		testUser1: ct.EnvString(hash),
+	users := ct.EnvStringMap{
+		testUser1: hash,
 	}
-	a.AddUsersFromMap(users, types.BCrypt) // already encrypted
+	a.AddUsersFromMap(esLookup(users), types.BCrypt) // already encrypted
 
 	req := httptest.NewRequest("GET", "/", nil)
 	req.SetBasicAuth(testUser1, testUser1p)

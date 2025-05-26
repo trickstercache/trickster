@@ -537,7 +537,8 @@ backends:
 #       # fgr - fanout and return the First Good Response based on status code
 #       # nlm - fanout and return the Response with the Newest Last-Modified header
 #       # tsm - fanount and perform a Time Series Merge of the results into a single time series
-#
+#       # ur - inspect the credentials in the Request and routes it based on the Username
+
 #       mechanism: rr # use a basic round robin
 
 #       # pool defines the pool of backends to which the alb routes
@@ -670,7 +671,7 @@ backends:
 # # Configuration Options for Authentication
 # authenticators:
 #   example_auth_1:
-#     # provider (required) is the type of Authenticator. Currently supported: basic (basic auth)
+#     # provider (required) is the type of Authenticator. Currently supported: basic (basic auth), clickhouse
 #     provider: basic
 #     # proxy_preserve, when true, will pass the Authentication headers through on proxied requests.
 #     # The default value (false) will cause Authentication headers to be stripped from proxied requests

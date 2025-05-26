@@ -23,6 +23,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/rr"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/tsm"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/ur"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 )
@@ -34,6 +35,7 @@ var registry = []types.RegistryEntry{
 	fr.RegistryEntryFGR(), // ID 2
 	nlm.RegistryEntry(),   // ID 3
 	tsm.RegistryEntry(),   // ID 4
+	ur.RegistryEntry(),    // ID 5
 }
 
 var registryByName = compileSupportedByName()

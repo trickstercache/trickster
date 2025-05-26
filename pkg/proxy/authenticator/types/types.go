@@ -31,6 +31,19 @@ type Authenticator interface {
 	// Backend-provider-specific) Credentials Extractor in lieu of the
 	// Authenticator implementation's built-in Extractor.
 	SetExtractCredentialsFunc(ExtractCredsFunc)
+	// SetCredentials will replace any credentials in the current request with
+	// the provided Credentials
+	SetCredentials(*http.Request, string, string, CredentialsFormat) error
+	// SetSetCredentialsFunc allows the Authenticator to use a custom (e.g,
+	// Backend-provider-specific) Credentials Setter in lieu of the
+	// Authenticator implementation's built-in Setter.
+	SetSetCredentialsFunc(SetCredentialsFunc)
+	// SetObserveOnly instructs the Authenticator whether or not to observe
+	// credentials without Challenging. This allows Trickster to do things like
+	// User Routing while relying on upstream backends to Challenge.
+	SetObserveOnly(bool)
+	// IsObserveOnly returns true when the Authenticator is in observe-only mode
+	IsObserveOnly() bool
 	// LoadUsers loads the provided users into the Authenticator. If the bool is
 	// true, the existing list will be replaced, otherwise appended.
 	LoadUsers(string, CredentialsFileFormat, CredentialsFormat, bool) error
@@ -42,7 +55,7 @@ type Authenticator interface {
 	Clone() Authenticator
 	// ProxyPreserve is true when the Authenticator will not strip Auth headers
 	ProxyPreserve() bool
-	// Sanitize must strip Auth headers from r only when ProxyPreserve is true
+	// Sanitize must strip Auth headers from r only when ProxyPreserve is false
 	Sanitize(*http.Request)
 }
 
@@ -52,6 +65,8 @@ type Lookup map[string]Authenticator
 type Provider string
 
 type ExtractCredsFunc func(*http.Request) (string, string, CredentialsFormat, error)
+
+type SetCredentialsFunc func(*http.Request, string, string, CredentialsFormat) error
 
 // NewAuthenticatorFunc defines a function that returns a new Authenticator
 type NewAuthenticatorFunc func(map[string]any) (Authenticator, error)

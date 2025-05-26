@@ -40,9 +40,9 @@ func TestNamesAndIDsAreUnique(t *testing.T) {
 			t.Errorf("mechanism %s reuses ShortName %s; ShortNames must be unique.",
 				m.Name, m.ShortName)
 		}
-		usedIDs.Add(m.ID)
-		usedNames.Add(m.Name)
-		usedNames.Add(m.ShortName)
+		usedIDs.Set(m.ID)
+		usedNames.Set(m.Name)
+		usedNames.Set(m.ShortName)
 	}
 }
 

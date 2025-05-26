@@ -1,6 +1,6 @@
 <yandex>
     <users>
-        <default>
+        <default> <!-- allow anonymous connections for dev -->
             <password></password>
             <networks>
                 <ip>::/0</ip>
@@ -8,5 +8,14 @@
             <profile>default</profile>
             <quota>default</quota>
         </default>
+
+        <testauth> <!-- user for testing auth-based features -->
+            <password>trickster</password>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </testauth>
     </users>
 </yandex>

@@ -53,14 +53,14 @@ func GetKeyList(yml string) (KeyLookup, error) {
 		}
 		if j == baseDepth {
 			lk, depths = rootDepthData(j, key)
-			keys.Add(key)
+			keys.Set(key)
 		} else {
 			pd, err := getParentDepthData(j, depths, lk)
 			if err != nil {
 				return nil, err
 			}
 			key = pd.key + "." + key
-			keys.Add(key)
+			keys.Set(key)
 			lk[j] = depthData{key: key, idx: pd.idx + 1, depth: j}
 			depths = append(depths[:pd.idx+1], j)
 		}

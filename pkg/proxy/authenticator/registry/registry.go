@@ -19,6 +19,8 @@ package registry
 import (
 	"errors"
 
+	clickhouse "github.com/trickstercache/trickster/v2/pkg/backends/clickhouse/authenticator"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/providers/basic"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/types"
 )
@@ -27,7 +29,8 @@ var ErrUnsupportedAuthenticator = errors.New("unsupported authenticator")
 
 // this slice is the one and only place to aggregate all registered Authenticators
 var registry = []types.RegistryEntry{
-	basic.RegistryEntry(), // ID 0, BasicAuth
+	basic.RegistryEntry(),      //  BasicAuth
+	clickhouse.RegistryEntry(), // ClickHouse Auth (Basic + url params)
 }
 
 var registryByName = compileSupportedByName()
@@ -50,4 +53,23 @@ func New(name types.Provider, data map[string]any) (types.Authenticator, error) 
 func IsRegistered(name types.Provider) bool {
 	_, ok := registryByName[name]
 	return ok
+}
+
+func NewObserverFromProviderName(backendProvider string, data map[string]any) (types.Authenticator, error) {
+	var a types.Authenticator
+	var err error
+	switch backendProvider {
+	case providers.Prometheus, providers.ReverseProxy, providers.Proxy,
+		providers.ReverseProxyCache, providers.ReverseProxyCacheShort,
+		providers.ReverseProxyShort:
+		a, err = basic.New(data)
+	case providers.ClickHouse:
+		a, err = clickhouse.New(data)
+	default:
+		return nil, ErrUnsupportedAuthenticator
+	}
+	if err != nil {
+		return nil, err
+	}
+	return a, nil
 }
