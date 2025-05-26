@@ -22,7 +22,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/trickstercache/trickster/v2/pkg/parsing/token"
-	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
 // RunState contains all the information about a particular lexer run
@@ -147,16 +146,27 @@ func (rs *RunState) ScanNumber() bool {
 	return true
 }
 
-var terminators = sets.New([]rune{' ', '\t', '\n', '\r', EOF, ',', ';', ')', '('})
-
 // AtTerminator reports whether the input is at valid termination character to
 // appear after an identifier. Breaks .X.Y into two pieces. Also catches cases
 // like "$x+2" not being acceptable without a space, in case we decide one
 // day to implement arithmetic.
 func (rs *RunState) AtTerminator() bool {
 	r := rs.Peek()
-	_, ok := terminators[r]
-	return ok
+	switch r {
+	case ' ', '\t', '\n', '\r', EOF, ',', ';', ')', '(':
+		return true
+	}
+	return false
+}
+
+// AtQuote reports whether the input is at a quoate character.
+func (rs *RunState) AtQuote() bool {
+	r := rs.Peek()
+	switch r {
+	case '"', '\'':
+		return true
+	}
+	return false
 }
 
 // Errorf returns an error token and terminates the scan by passing
