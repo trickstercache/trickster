@@ -121,7 +121,8 @@ func loadFieldDef(fieldName, dataType string, col int,
 		case "Date":
 			fd.DataType = timeseries.DateSQL
 		default:
-			if fd.DataType == 0 {
+			if trq.TimestampDefinition.DataType > timeseries.Uint64 &&
+				(fd.DataType == timeseries.Unknown || fd.DataType == timeseries.Uint64) {
 				fd.DataType = trq.TimestampDefinition.DataType
 			}
 		}
