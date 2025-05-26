@@ -172,7 +172,7 @@ func (c *Client) StopPool() {
 
 // DefaultPathConfigs returns the default PathConfigs for the given Provider
 func (c *Client) DefaultPathConfigs(_ *bo.Options) po.Lookup {
-	m := methods.CacheableHTTPMethods()
+	m := methods.AllHTTPMethods()
 	paths := po.Lookup{
 		"/" + strings.Join(m, "-"): {
 			Path:          "/",
