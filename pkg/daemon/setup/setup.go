@@ -137,7 +137,7 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	}
 	r.RegisterRoute(newConf.Main.PurgeKeyHandlerPath, nil,
 		[]string{http.MethodDelete}, true,
-		http.HandlerFunc(ph.KeyHandlerFunc(newConf, backends)))
+		http.HandlerFunc(ph.PurgeByKeyHandler(newConf, backends)))
 
 	if si.Backends != nil {
 		alb.StopPools(si.Backends)

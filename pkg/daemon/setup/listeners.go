@@ -51,7 +51,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 
 	adminRouter := http.NewServeMux()
 	adminRouter.Handle(conf.ReloadConfig.HandlerPath, reloadHandler)
-	adminRouter.HandleFunc(conf.Main.PurgePathHandlerPath, ph.HandlerFunc(conf, &o))
+	adminRouter.HandleFunc(conf.Main.PurgePathHandlerPath, ph.PurgeByPathHandler(conf, &o))
 
 	// No changes in frontend config
 	if oldConf != nil && oldConf.Frontend != nil &&
@@ -171,7 +171,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		rr.RegisterRoute(conf.ReloadConfig.HandlerPath, nil, nil,
 			false, reloadHandler)
 		rr.RegisterRoute(conf.Main.PurgePathHandlerPath, nil, nil,
-			false, http.HandlerFunc(ph.HandlerFunc(conf, &o)))
+			false, http.HandlerFunc(ph.PurgeByPathHandler(conf, &o)))
 		if conf.Main.PprofServer == "both" || conf.Main.PprofServer == "reload" {
 			routing.RegisterPprofRoutes("reload", rr)
 		}
@@ -184,7 +184,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		rr.RegisterRoute(conf.ReloadConfig.HandlerPath, nil, nil,
 			false, reloadHandler)
 		rr.RegisterRoute(conf.Main.PurgePathHandlerPath, nil, nil,
-			false, http.HandlerFunc(ph.HandlerFunc(conf, &o)))
+			false, http.HandlerFunc(ph.PurgeByPathHandler(conf, &o)))
 		lg.UpdateRouter("reloadListener", rr)
 	}
 }
