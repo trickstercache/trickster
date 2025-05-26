@@ -81,7 +81,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 		if canOPC {
 			logger.Debug("could not parse time range query, using object proxy cache",
 				logging.Pairs{"error": err.Error()})
-			rsc.AlternateCacheTTL = time.Second * o.FastForwardTTL
+			rsc.AlternateCacheTTL = o.FastForwardTTL
 			ObjectProxyCacheRequest(w, r)
 			return
 		}
