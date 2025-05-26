@@ -57,6 +57,7 @@ func Load(args []string) (*Config, error) {
 
 	// set the default origin url from the flags
 	if d, ok := c.Backends["default"]; ok {
+		d.Name = "default"
 		if c.providedOriginURL != "" {
 			url, err := url.Parse(c.providedOriginURL)
 			if err != nil {
