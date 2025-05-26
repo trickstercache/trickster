@@ -48,7 +48,7 @@ func TestGetKeyList(t *testing.T) {
 
 func TestIsDefined(t *testing.T) {
 	s := sets.NewStringSet()
-	s.Add("test")
+	s.Set("test")
 	k := KeyLookup(s)
 	if k.IsDefined("testing") {
 		t.Error("expected false")

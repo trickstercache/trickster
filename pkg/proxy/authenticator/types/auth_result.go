@@ -31,4 +31,7 @@ const (
 	AuthSuccess
 	AuthFailed
 	AuthMissing
+	// AuthObserved is for when the username was read by the Authenticator but
+	// credentials were not verified because the Authenticator is observe-only
+	AuthObserved
 )

@@ -27,15 +27,25 @@ When you map an Authenticator to a Backend, all Paths defined for that Backend a
 
 See the example Backend configs below for more details.
 
+## Authenticator Providers
+
+Trickster's Authenticator feature currently supports Basic Auth and ClickHouse-compatible authentication. It was designed with extensibility in mind should there be value in adding additional Authentication providers.
+
 ## Basic Auth Provider
 
-Currently, Trickster supports Basic Authorization, but was designed with extensibility in mind should there be value in adding additional Authentication providers.
+Basic Auth is supported by using `provider: basic` in the Authenticator config.
 
 By setting the `showLoginForm: true` config (see `example_auth_1` in the blob below), Trickster will return a `WWW-Authenticate: Basic realm="custom-realm-name"` header on any request that requires but fails authentication, causing the login form to pop up. When `showLoginForm` is not present or non-true, Trickster responds with a `401 Unauthorized` but does not ask the Basic Auth login form to show.
 
 The `realm` attribute value defaults to the Authenticator name (e.g., `example_auth_1`) but can be overridden with the `realm` config as in the example.
 
 If the user data changes (e.g. updated users_file contents or updated embedded users list), you must send a SIGHUP or other means to reload the Trickster config before the new user pool is processed.
+
+## ClickHouse Auth Provider
+
+ClickHouse Auth is supported by using `provider: clickhouse` in the Authenticator config.
+
+ClickHouse authentication is the same as Basic Auth, except you can also provide `user` and `password` URL params. 
 
 ## Example Authenticator Configs
 
@@ -117,9 +127,10 @@ authenticators:
       user1: asf;j2ihj0h8vabjkwdqbv29hq
     users_format: bcrypt # credentials are already bcrypted
 
-  # example_auth_4 loads users from the embedded manifest, credentials injected from Env Var
+  # example_auth_4 loads users from the embedded manifest, credentials injected from env,
+  # and supports ClickHouse query params (user/password) in addition to Basic Auth
   example_auth_4:
-    provider: basic
+    provider: clickhouse
     users:
       user1: ${USER1_PASSWORD_ENV} # ${ENV_NAME} substitution is supported
 ```

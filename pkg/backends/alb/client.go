@@ -22,8 +22,10 @@ import (
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
+	alberr "github.com/trickstercache/trickster/v2/pkg/backends/alb/errors"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/registry"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/ur"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
@@ -31,7 +33,10 @@ import (
 	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/errors"
+	authopt "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
+	authreg "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/registry"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
@@ -148,11 +153,14 @@ func (c *Client) ValidateAndStartPool(clients backends.Backends, hcs healthcheck
 	if err != nil {
 		return err
 	}
+	if o.MechanismName == string(ur.ShortName) && o.UserRouter != nil {
+		return c.validateAndStartUserRouter(clients)
+	}
 	targets := make([]*pool.Target, 0, len(o.Pool))
 	for _, n := range o.Pool {
 		tc, ok := clients[n]
 		if !ok {
-			return fmt.Errorf("invalid pool member name [%s] in backend [%s]", n, c.Name())
+			return alberr.NewErrInvalidPoolMemberName(c.Name(), n)
 		}
 		hc := hcs[n]
 		targets = append(targets, pool.NewTarget(tc.Router(), hc))
@@ -160,6 +168,78 @@ func (c *Client) ValidateAndStartPool(clients backends.Backends, hcs healthcheck
 	if c.handler != nil {
 		c.handler.SetPool(pool.New(targets, o.HealthyFloor))
 	}
+	return nil
+}
+
+func observeOnlyOpts() *authopt.Options {
+	return &authopt.Options{ObserveOnly: true}
+}
+
+func (c *Client) validateAndStartUserRouter(clients backends.Backends) error {
+	conf := c.Configuration()
+	var canReplaceCreds bool
+	o := conf.ALBOptions.UserRouter
+	h, ok := c.handler.(*ur.Handler)
+	if !ok {
+		return nil
+	}
+	if conf.AuthOptions != nil && conf.AuthOptions.Authenticator != nil {
+		// credential replacement is only allowed if users will be positively
+		// authenticated and not just observed.
+		canReplaceCreds = !(conf.AuthOptions.Authenticator.IsObserveOnly())
+		h.SetAuthenticator(conf.AuthOptions.Authenticator, canReplaceCreds)
+	} else {
+		a, err := authreg.NewObserverFromProviderName(o.TargetProvider,
+			map[string]any{"options": observeOnlyOpts()})
+		if err != nil {
+			return err
+		} else if a == nil {
+			return errors.ErrInvalidOptions
+		}
+		h.SetAuthenticator(a, false)
+	}
+	if o.DefaultBackend != "" {
+		bh, ok := clients[o.DefaultBackend]
+		if !ok || bh == nil {
+			return alberr.NewErrInvalidBackendName(c.Name(), o.DefaultBackend)
+		}
+		h.SetDefaultHandler(bh.Router())
+	} else {
+		if o.NoRouteStatusCode < http.StatusBadRequest || o.NoRouteStatusCode >= 600 {
+			o.NoRouteStatusCode = http.StatusBadGateway
+		}
+		switch o.NoRouteStatusCode {
+		case http.StatusUnauthorized:
+			h.SetDefaultHandler(http.HandlerFunc(failures.HandleUnauthorized))
+		case http.StatusBadGateway:
+			h.SetDefaultHandler(http.HandlerFunc(failures.HandleBadGateway))
+		case http.StatusBadRequest:
+			h.SetDefaultHandler(http.HandlerFunc(failures.HandleBadRequestResponse))
+		case http.StatusInternalServerError:
+			h.SetDefaultHandler(http.HandlerFunc(failures.HandleInternalServerError))
+		case http.StatusNotFound:
+			h.SetDefaultHandler(http.HandlerFunc(failures.HandleNotFound))
+		default:
+			h.SetDefaultHandler(http.HandlerFunc(func(w http.ResponseWriter,
+				_ *http.Request) {
+				failures.HandleMiscFailure(o.NoRouteStatusCode, w)
+			}))
+		}
+	}
+
+	for _, m := range o.Users {
+		if m.ToBackend != "" {
+			bh, ok := clients[m.ToBackend]
+			if !ok || bh == nil {
+				return alberr.NewErrInvalidBackendName(c.Name(), m.ToBackend)
+			}
+			m.ToHandler = bh.Router()
+		}
+		if !canReplaceCreds && m.ToCredential != "" {
+			return alberr.NewErrInvalidUserRouterCreds(c.Name())
+		}
+	}
+
 	return nil
 }
 
