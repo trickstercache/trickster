@@ -42,9 +42,22 @@ Ensure that your Redis instance is located close to your Trickster instance in o
 
 In addition to basic Redis, Trickster also supports Redis Cluster and Redis Sentinel. Refer to the sample configuration for customizing the Redis client type.
 
-## Purging the Cache
+## Purging an Item from the Cache
 
-Cache purges should not be necessary, but in the event that you wish to do so, the following steps should be followed based upon your selected Cache Type.
+You can purge an item from the cache by making a call to the purge endpoint, as follows:
+
+```http://${trickster-address}:${mgmt-port}/trickster/purge/path/${backendName}/${path/to/purge}```
+
+For example, if you want to purge `/api/v1/labels` from backend `prom1`, a curl might look like:
+
+```
+curl http://localhost:8484/trickster/purge/path/prom1/api/v1/labels
+```
+
+
+## Purging the Full Cache
+
+Full Cache purges should not be necessary, but in the event that you wish to do so, the following steps should be followed based upon your selected Cache Type.
 
 A future release will provide a mechanism to fully purge the cache (regardless of the underlying cache type) without stopping a running Trickster instance.
 

@@ -14,13 +14,29 @@
  * limitations under the License.
  */
 
-package options
+package mgmt
 
 import "testing"
 
-func TestNew(t *testing.T) {
-	o := New()
-	if o == nil {
-		t.Error("expected non-nil options")
+func TestValidate(t *testing.T) {
+
+	c := New()
+	c.PprofServer = ""
+
+	err := c.Validate()
+	if err != nil {
+		t.Error(err)
 	}
+
+	if c.PprofServer != DefaultPprofServerName {
+		t.Errorf("expected %s got %s", DefaultPprofServerName, c.PprofServer)
+	}
+
+	c.PprofServer = "x"
+
+	err = c.Validate()
+	if err == nil {
+		t.Error("expected error for invalid pprof server name")
+	}
+
 }

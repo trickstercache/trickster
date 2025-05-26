@@ -318,7 +318,7 @@ func TestUpdateRouters(t *testing.T) {
 	}
 	lg := NewGroup()
 	lg.members["httpListener"] = l
-	lg.members["reloadListener"] = l
+	lg.members["mgmtListener"] = l
 	lg.UpdateFrontendRouters(testRouter, testRouter)
 	if l.RouteSwapper() == nil {
 		t.Error("expected non-nil swapper")

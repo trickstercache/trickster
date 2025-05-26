@@ -29,8 +29,8 @@ import (
 )
 
 func Validate(c *config.Config) error {
-	if c.ReloadConfig != nil {
-		if err := c.ReloadConfig.Validate(); err != nil {
+	if c.MgmtConfig != nil {
+		if err := c.MgmtConfig.Validate(); err != nil {
 			return err
 		}
 	}
@@ -41,6 +41,11 @@ func Validate(c *config.Config) error {
 	}
 	if c.Metrics != nil {
 		if err := c.Metrics.Validate(); err != nil {
+			return err
+		}
+	}
+	if c.MgmtConfig != nil {
+		if err := c.MgmtConfig.Validate(); err != nil {
 			return err
 		}
 	}

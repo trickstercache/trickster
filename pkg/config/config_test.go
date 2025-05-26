@@ -125,41 +125,10 @@ func TestCheckFileLastModified(t *testing.T) {
 	}
 }
 
-func TestProcessPprofConfig(t *testing.T) {
-
-	c := NewConfig()
-	c.Main.PprofServer = ""
-
-	err := c.processPprofConfig()
-	if err != nil {
-		t.Error(err)
-	}
-
-	if c.Main.PprofServer != DefaultPprofServerName {
-		t.Errorf("expected %s got %s", DefaultPprofServerName, c.Main.PprofServer)
-	}
-
-	c.Main.PprofServer = "x"
-
-	err = c.processPprofConfig()
-	if err == nil {
-		t.Error("expected error for invalid pprof server name")
-	}
-
-}
-
 func TestConfigProcess(t *testing.T) {
 
 	c, _ := emptyTestConfig()
-
-	c.Main.PprofServer = "x"
 	err := c.Process()
-	if err == nil {
-		t.Error("expected error for invalid pprof server name")
-	}
-
-	c.Main.PprofServer = "both"
-	err = c.Process()
 	if err != nil {
 		t.Error(err)
 	}
@@ -250,7 +219,7 @@ func TestIsStale(t *testing.T) {
 	}
 
 	c, _ := Load([]string{"-config", testFile})
-	c.ReloadConfig.RateLimit = 0
+	c.MgmtConfig.ReloadRateLimit = 0
 
 	if c.IsStale() {
 		t.Error("expected non-stale config")
@@ -270,7 +239,7 @@ func TestIsStale(t *testing.T) {
 
 	time.Sleep(time.Millisecond * 10)
 
-	c.ReloadConfig = nil
+	c.MgmtConfig = nil
 	if !c.IsStale() {
 		t.Error("expected stale config")
 	}
