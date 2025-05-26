@@ -588,16 +588,17 @@ func parseWhereTokens(results ts.Lookup,
 					return t, err
 				}
 				trq.TimestampDefinition.ProviderData1 = byte(f)
-				_, j, _ := SolveMathExpression(fieldParts[i:], ts, withVars)
+				val, j, _ := SolveMathExpression(fieldParts[i:], ts, withVars)
+				t2 := t.Clone()
+				t2.Val = strconv.FormatInt(val, 10)
+				t2.Typ = token.Number
 				if atLowerBound {
-					// e.Start = time.Unix(v, 0)
-					e.Start, _, _ = lsql.TokenToTime(t)
-					tsr1 = t.Val
+					e.Start, _, _ = lsql.TokenToTime(t2)
+					tsr1 = t2.Val
 					atLowerBound = false
 				} else {
-					// e.End = time.Unix(v, 0)
-					e.End, _, _ = lsql.TokenToTime(t)
-					tsr2 = t.Val
+					e.End, _, _ = lsql.TokenToTime(t2)
+					tsr2 = t2.Val
 				}
 				if s1 == 0 {
 					s1 = fieldParts[0].Pos
