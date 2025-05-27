@@ -17,3 +17,4 @@ jobs:
       draft: true
       prerelease: true
       job-suffix: 'Beta Release'
+    secrets: inherit

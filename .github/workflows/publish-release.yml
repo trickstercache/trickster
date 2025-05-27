@@ -75,3 +75,4 @@ jobs:
       id-token: write
     with:
       tag: ${{ needs.release.outputs.tag }}
+    secrets: inherit
