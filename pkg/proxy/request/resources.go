@@ -55,6 +55,7 @@ type Resources struct {
 	TSReqestOptions   *timeseries.RequestOptions
 	Response          *http.Response
 	AuthResult        *auth.AuthResult
+	AlreadyEncoded    bool
 }
 
 // Clone returns an exact copy of the subject Resources collection

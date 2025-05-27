@@ -23,6 +23,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/encoding/profile"
 	"github.com/trickstercache/trickster/v2/pkg/encoding/providers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
@@ -31,11 +32,16 @@ import (
 // Any matching ContentType handled by the compression handler will be compressed
 func HandleCompression(next http.Handler, compressTypes sets.Set[string]) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rsc := request.GetResources(r)
+		t := rsc != nil && rsc.AlreadyEncoded
 
 		// if the client requested a No-Transform, then serve as-is
-		if strings.Contains(r.Header.Get(headers.NameCacheControl), headers.ValueNoTransform) {
+		if t || strings.Contains(r.Header.Get(headers.NameCacheControl), headers.ValueNoTransform) {
 			next.ServeHTTP(w, r)
 			return
+		}
+		if rsc != nil {
+			rsc.AlreadyEncoded = true
 		}
 
 		// setup the request's encoder profile to compress the provided content types
