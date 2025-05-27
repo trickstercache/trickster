@@ -80,7 +80,7 @@ func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
 }
 
 func (c *Cache) store(cacheKey string, byteData []byte, refData cache.ReferenceObject,
-	ttl time.Duration) error {
+	_ time.Duration) error {
 
 	var o1, o2 any
 	if byteData != nil {

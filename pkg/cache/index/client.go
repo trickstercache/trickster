@@ -53,7 +53,7 @@ type IndexedClientOptions struct {
 
 func NewIndexedClient(
 	cacheName, cacheProvider string,
-	indexData []byte,
+	_ []byte,
 	o *options.Options,
 	client cache.Client,
 	opts ...func(*IndexedClientOptions),
@@ -351,7 +351,7 @@ func (idx *IndexedClient) reap() {
 
 	now := time.Now()
 
-	idx.Objects.Range(func(key, value any) bool {
+	idx.Objects.Range(func(_, value any) bool {
 		o := value.(*Object)
 		if o.Expiration.Load().Before(now) && !o.Expiration.Load().IsZero() {
 			removals = append(removals, o.Key)
