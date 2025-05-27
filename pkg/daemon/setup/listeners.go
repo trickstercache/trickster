@@ -31,8 +31,8 @@ import (
 	ph "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/purge"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
 	ttls "github.com/trickstercache/trickster/v2/pkg/proxy/tls"
-	"github.com/trickstercache/trickster/v2/pkg/router"
-	"github.com/trickstercache/trickster/v2/pkg/router/lm"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 	"github.com/trickstercache/trickster/v2/pkg/routing"
 )
 

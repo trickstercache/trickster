@@ -47,7 +47,7 @@ import (
 	pnh "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/ping"
 	ph "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/purge"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/reload"
-	"github.com/trickstercache/trickster/v2/pkg/router/lm"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 	"github.com/trickstercache/trickster/v2/pkg/routing"
 )
 

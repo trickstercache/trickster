@@ -24,7 +24,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/errors"
 	tr "github.com/trickstercache/trickster/v2/pkg/observability/tracing/registry"
 	ar "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/registry"
-	"github.com/trickstercache/trickster/v2/pkg/router/lm"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 	"github.com/trickstercache/trickster/v2/pkg/routing"
 )
 

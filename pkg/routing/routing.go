@@ -42,8 +42,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
-	"github.com/trickstercache/trickster/v2/pkg/router"
-	"github.com/trickstercache/trickster/v2/pkg/router/lm"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 	"github.com/trickstercache/trickster/v2/pkg/util/middleware"
 )
 

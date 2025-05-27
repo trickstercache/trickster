@@ -25,7 +25,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/registry"
-	"github.com/trickstercache/trickster/v2/pkg/router/lm"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 	"github.com/trickstercache/trickster/v2/pkg/routing"
 )
 

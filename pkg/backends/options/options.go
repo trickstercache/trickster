@@ -41,7 +41,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 	to "github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
-	"github.com/trickstercache/trickster/v2/pkg/router"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
 

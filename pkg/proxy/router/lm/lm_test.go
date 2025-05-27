@@ -23,7 +23,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/trickstercache/trickster/v2/pkg/errors"
-	"github.com/trickstercache/trickster/v2/pkg/router/route"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/router/route"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/writer"
 )
 
