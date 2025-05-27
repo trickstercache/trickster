@@ -2,8 +2,7 @@
 
 [![License](https://img.shields.io/github/license/trickstercache/trickster)](/LICENSE)
 [![Coverage Status](https://coveralls.io/repos/github/trickstercache/trickster/badge.svg)](https://coveralls.io/github/trickstercache/trickster)
-[![build Status](https://github.com/trickstercache/trickster/workflows/build/badge.svg)](https://github.com/trickstercache/trickster/actions)
-[![Go Report Card](https://goreportcard.com/badge/github.com/trickstercache/trickster)](https://goreportcard.com/report/github.com/trickstercache/trickster)
+[![build status](https://github.com/trickstercache/trickster/actions/workflows/ci-build-tests.yml/badge.svg)](https://github.com/trickstercache/trickster/actions/workflows/ci-build-tests.yml)
 [![CII Best Practices](https://bestpractices.coreinfrastructure.org/projects/2518/badge)](https://bestpractices.coreinfrastructure.org/en/projects/2518)
 [![GoDoc](https://godoc.org/github.com/trickstercache/trickster?status.svg)](https://godoc.org/github.com/trickstercache/trickster)
 [![Docker Pulls](https://img.shields.io/docker/pulls/tricksterio/trickster.svg?maxAge=86400)](https://hub.docker.com/r/tricksterio/trickster)
