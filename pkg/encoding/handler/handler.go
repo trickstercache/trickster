@@ -33,10 +33,9 @@ import (
 func HandleCompression(next http.Handler, compressTypes sets.Set[string]) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rsc := request.GetResources(r)
-		t := rsc != nil && rsc.AlreadyEncoded
-
 		// if the client requested a No-Transform, then serve as-is
-		if t || strings.Contains(r.Header.Get(headers.NameCacheControl), headers.ValueNoTransform) {
+		if (rsc != nil && rsc.AlreadyEncoded) ||
+			strings.Contains(r.Header.Get(headers.NameCacheControl), headers.ValueNoTransform) {
 			next.ServeHTTP(w, r)
 			return
 		}
