@@ -74,7 +74,7 @@ The current Trickster 2.0 beta has the following known issues:
 
 - certain Path configs that should modify the client request or response (e.g., `response_headers`) are [not working reliably](https://github.com/trickstercache/trickster/issues/671). This will be fixed up in Beta 4.
 
-- You may see warnings like the following on appplication startup for memory caches and other cache types that are instantiating for the first time. These are fine and are just complaining that newly-created caches don't yet have an index record. We will address in Beta 4.
+- You may see warnings like the following on application startup for memory caches and other cache types that are instantiating for the first time. These are fine and are just complaining that newly-created caches don't yet have an index record. We will address in Beta 4.
 
 ```
 time=2025-05-20T00:00:00.000000Z app=trickster level=warn event="cache index was not loaded" cacheName=default error="key not found in cache"
