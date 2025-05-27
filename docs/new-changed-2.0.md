@@ -4,7 +4,7 @@
 
 2.0 continues to improve the Trickster project, with a ton of new features, bug fixes, and optimizations. Here's the quick rundown of what's new and improved:
 
-- we now use YAML for configuration, and provide [tooling](http://github.com/trickstercache/tricktool) to migrate a 1.x TOML configuration
+- Trickster 2.0 uses YAML for configuration instead of TOML.
 - example configurations are relocated to the [examples](../examples/conf) directory
 - the [Trickster docker-compose demo](../examples/docker-compose) has been relocated to the examples directory and updated to use latest version tags
 - we now use a common time series format internally for caching all supported TSDB's, rather than implementing each one separately
@@ -20,7 +20,6 @@
 
 ## New in Beta 3
 - We've switched to our all-new, made-for-proxies HTTP Request Router, which is up to 10X faster than the previous router
-- We now support Purging specific cache items by Key or URL operations, via the Administrative (FKA Config Reload) Port - TODO: UPDATE DOCS
 - We now support InfluxData's Flux query language for InfluxDB query acceleration
   - We resolved tons of issues around POST requests for InfluxQL too!
 - THe Helm Charts repository is now updated for Trickster 2.0
@@ -54,6 +53,9 @@
   - Usage: `password: ${MY_SECRET_VAR}`
 - Previous Trickster 2.0 Betas used millisecond config values like `timeout_ms: 1500`. These have changed to `timeout: 1500ms`. See more details in the Configuration section below.
 - We no longer include the `vendor` directory in the project repository and `vendor` is now in `.gitignore`. `vendor` will continue to be included in Release source tarballs.
+- The listener port formerly called `reload` is now called `mgmt` in documentation and the YAML config specification. Several management-specific configs from the `main` section have been relocated to `mgmt` (e.g., Ping and Pprof handler settings) while the pre-existing reload `handler_path`, `drain_timeout`, and `rate_limit` configs are now prefixed with `reload_` (e.g., `reload_rate_limit`) for clarity. See the Full Example YAML's for more information.
+- We now support Purging specific cache items by Key (on the public ports) or Path (on the mgmt port). Read more in the [cache documentation](./caches.md).
+- The [tricktool](https://github.com/trickstercache/tricktool) utility is deprecated and archived.
 
 ## Still to Come
 
@@ -70,6 +72,14 @@ The current Trickster 2.0 beta has the following known issues:
 
 - the `lru` Time Series Eviction Method currently does not function, but will be added back in a future beta. This feature has not yet been ported into the Common Time Series format. Comment out this setting in your configuration to use the default eviction method.
 
+- certain Path configs that should modify the client request or response (e.g., `response_headers`) are [not working reliably](https://github.com/trickstercache/trickster/issues/671). This will be fixed up in Beta 4.
+
+- You may see warnings like the following on application startup for memory caches and other cache types that are instantiating for the first time. These are fine and are just complaining that newly-created caches don't yet have an index record. We will address in Beta 4.
+
+```
+time=2025-05-20T00:00:00.000000Z app=trickster level=warn event="cache index was not loaded" cacheName=default error="key not found in cache"
+```
+
 ## Installing
 
 You can build the 2.0 binary from the `main` branch, download binaries from the [Releases](http://github.com/trickstercache/trickster/releases) page, or use the `trickstercache/trickster:2` Docker image tag in containerized environments.
@@ -79,18 +89,3 @@ You can build the 2.0 binary from the `main` branch, download binaries from the 
 ### Metrics
 
 - In metrics related to Trickster's operation, all label names of `origin_name` are changed to `backend_name`
-
-### Configuration
-
-Using [tricktool](http://github.com/trickstercache/tricktool) to migrate your configurations is the recommended approach. However, if you choose to convert your configuration by hand, here is what you need to know:
-
-- <https://www.convertsimple.com/convert-toml-to-yaml/> is a good starting point
-- The `[origins]` section of the Trickster 1.x TOML config is named `backends:` in the 2.0 YAML config
-- All duration-based values are now represented in nanoseconds or as 'duration strings'.
-  - A duration string is a possibly signed sequence of decimals, with one or more optional unit suffixes. Example: `1s500ms`
-    - Supported time units: `"ns", "us" (or "µs"), "ms", "s", "m", "h"`
-  - 1.x values ending in `_secs` are the same in 2.0 but have no unit suffix (`timeout_secs` -> `timeout`). Be sure to add a unit -- `10 -> 10s`.
-- `origin_type`, `cache_type` and `tracing_type` are now called `provider`.
-- Health checking configurations now reside in their own `healthcheck` subsection under `backends` and use simplified config names like `method`, `path`, etc.
-
-See the [example configuration](../examples/conf/example.full.yaml) for more information.

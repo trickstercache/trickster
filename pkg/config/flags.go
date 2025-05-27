@@ -99,9 +99,6 @@ func (c *Config) loadFlags(flags *Flags) {
 	if flags.MetricsListenPort > 0 {
 		c.Metrics.ListenPort = flags.MetricsListenPort
 	}
-	// if flags.ReloadListenPort > 0 {
-	// 	c.Main.Reload.ListenPort = flags.ReloadListenPort
-	// }
 	if flags.LogLevel != "" {
 		c.Logging.LogLevel = flags.LogLevel
 	}

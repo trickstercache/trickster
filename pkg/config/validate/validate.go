@@ -24,13 +24,13 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/errors"
 	tr "github.com/trickstercache/trickster/v2/pkg/observability/tracing/registry"
 	ar "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/registry"
-	"github.com/trickstercache/trickster/v2/pkg/router/lm"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 	"github.com/trickstercache/trickster/v2/pkg/routing"
 )
 
 func Validate(c *config.Config) error {
-	if c.ReloadConfig != nil {
-		if err := c.ReloadConfig.Validate(); err != nil {
+	if c.MgmtConfig != nil {
+		if err := c.MgmtConfig.Validate(); err != nil {
 			return err
 		}
 	}
@@ -41,6 +41,11 @@ func Validate(c *config.Config) error {
 	}
 	if c.Metrics != nil {
 		if err := c.Metrics.Validate(); err != nil {
+			return err
+		}
+	}
+	if c.MgmtConfig != nil {
+		if err := c.MgmtConfig.Validate(); err != nil {
 			return err
 		}
 	}

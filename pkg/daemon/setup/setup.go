@@ -33,8 +33,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/providers"
 	"github.com/trickstercache/trickster/v2/pkg/cache/registry"
 	"github.com/trickstercache/trickster/v2/pkg/config"
+	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
 	dr "github.com/trickstercache/trickster/v2/pkg/config/reload"
-	ro "github.com/trickstercache/trickster/v2/pkg/config/reload/options"
 	"github.com/trickstercache/trickster/v2/pkg/config/validate"
 	"github.com/trickstercache/trickster/v2/pkg/daemon/instance"
 	te "github.com/trickstercache/trickster/v2/pkg/errors"
@@ -47,7 +47,7 @@ import (
 	pnh "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/ping"
 	ph "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/purge"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/reload"
-	"github.com/trickstercache/trickster/v2/pkg/router/lm"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 	"github.com/trickstercache/trickster/v2/pkg/routing"
 )
 
@@ -95,8 +95,8 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	}
 	appinfo.SetServer(newConf.Main.ServerName)
 
-	if newConf.ReloadConfig == nil {
-		newConf.ReloadConfig = ro.New()
+	if newConf.MgmtConfig == nil {
+		newConf.MgmtConfig = mgmt.New()
 	}
 
 	if err := buildAuthenticators(newConf); err != nil {
@@ -119,7 +119,7 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	mr := lm.NewRouter()
 	mr.SetMatchingScheme(0) // metrics router is exact-match only
 
-	r.RegisterRoute(newConf.Main.PingHandlerPath, nil,
+	r.RegisterRoute(newConf.MgmtConfig.PingHandlerPath, nil,
 		[]string{http.MethodGet, http.MethodHead}, false,
 		http.HandlerFunc((pnh.HandlerFunc(newConf))))
 
@@ -132,12 +132,12 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 		return err
 	}
 
-	if !strings.HasSuffix(newConf.Main.PurgeKeyHandlerPath, "/") {
-		newConf.Main.PurgeKeyHandlerPath += "/"
+	if !strings.HasSuffix(newConf.MgmtConfig.PurgeByKeyHandlerPath, "/") {
+		newConf.MgmtConfig.PurgeByKeyHandlerPath += "/"
 	}
-	r.RegisterRoute(newConf.Main.PurgeKeyHandlerPath, nil,
+	r.RegisterRoute(newConf.MgmtConfig.PurgeByKeyHandlerPath, nil,
 		[]string{http.MethodDelete}, true,
-		http.HandlerFunc(ph.KeyHandlerFunc(newConf, backends)))
+		http.HandlerFunc(ph.KeyHandler(newConf.MgmtConfig.PurgeByKeyHandlerPath, backends)))
 
 	if si.Backends != nil {
 		alb.StopPools(si.Backends)
@@ -151,7 +151,7 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	}
 	alb.StartALBPools(backends, si.HealthChecker.Statuses())
 	routing.RegisterDefaultBackendRoutes(r, backends, tracers)
-	routing.RegisterHealthHandler(mr, newConf.Main.HealthHandlerPath, si.HealthChecker)
+	routing.RegisterHealthHandler(mr, newConf.MgmtConfig.HealthHandlerPath, si.HealthChecker)
 	applyListenerConfigs(newConf, si.Config, r, rh, mr, tracers, backends, errorFunc)
 
 	metrics.LastReloadSuccessfulTimestamp.Set(float64(time.Now().Unix()))
@@ -182,8 +182,8 @@ func applyLoggingConfig(c, o *config.Config) {
 		return
 	}
 	isReload := o != nil && c != o
-	if c.ReloadConfig == nil {
-		c.ReloadConfig = ro.New()
+	if c.MgmtConfig == nil {
+		c.MgmtConfig = mgmt.New()
 	}
 	if isReload {
 		if c.Logging.LogFile == o.Logging.LogFile &&
@@ -196,7 +196,7 @@ func applyLoggingConfig(c, o *config.Config) {
 			if o.Logging.LogFile != "" {
 				// if we're changing from file1 -> console or file1 -> file2, close file1 handle
 				// the extra 1s allows HTTP listeners to close first and finish their log writes
-				go delayedLogCloser(oldLogger, c.ReloadConfig.DrainTimeout+(1*time.Millisecond))
+				go delayedLogCloser(oldLogger, c.MgmtConfig.ReloadDrainTimeout+(1*time.Millisecond))
 			}
 			initLogger(c)
 			return
@@ -256,7 +256,7 @@ func applyCachingConfig(si *instance.ServerInstance,
 
 			// if we got to this point, the cache won't be used, so lets close it
 			go func() {
-				time.Sleep(newConf.ReloadConfig.DrainTimeout)
+				time.Sleep(newConf.MgmtConfig.ReloadDrainTimeout)
 				w.Close()
 			}()
 		}

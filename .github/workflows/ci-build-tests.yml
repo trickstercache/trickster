@@ -14,7 +14,7 @@ on:
       - v1.0.x
       - v1.1.x
 
-name: Continuous Integration and Build Tests
+name: CI Tests
 
 jobs:
   lint:

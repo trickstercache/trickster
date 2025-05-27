@@ -295,7 +295,7 @@ func (lg *Group) UpdateFrontendRouters(mainRouter http.Handler, adminRouter http
 			}
 		}
 	}
-	if v, ok := lg.members["reloadListener"]; ok && adminRouter != nil {
+	if v, ok := lg.members["mgmtListener"]; ok && adminRouter != nil {
 		v.routeSwapper.Update(adminRouter)
 	}
 }

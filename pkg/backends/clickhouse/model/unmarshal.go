@@ -29,6 +29,7 @@ import (
 	dcsv "github.com/trickstercache/trickster/v2/pkg/timeseries/dataset/csv"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 	"github.com/trickstercache/trickster/v2/pkg/util/numbers"
+	trstr "github.com/trickstercache/trickster/v2/pkg/util/strings"
 )
 
 // dataStartRow is the index in a ClickHouse TSV at which the header rows have
@@ -114,6 +115,17 @@ func loadFieldDef(fieldName, dataType string, col int,
 		return timeseries.FieldDefinition{OutputPosition: -1}
 	case trq.TimestampDefinition.Name:
 		fd.Role = timeseries.RoleTimestamp
+		switch fd.SDataType {
+		case "DateTime":
+			fd.DataType = timeseries.DateTimeSQL
+		case "Date":
+			fd.DataType = timeseries.DateSQL
+		default:
+			if trq.TimestampDefinition.DataType > timeseries.Uint64 &&
+				(fd.DataType == timeseries.Unknown || fd.DataType == timeseries.Uint64) {
+				fd.DataType = trq.TimestampDefinition.DataType
+			}
+		}
 	default:
 		for l := range trq.TagFieldDefintions {
 			if trq.TagFieldDefintions[l].Name == fieldName {
@@ -171,26 +183,30 @@ func parseTimeField(input string, tfd timeseries.FieldDefinition) (epoch.Epoch, 
 	case timeseries.DateTimeRFC3339Nano:
 		timeLayout = time.RFC3339Nano
 	default:
-		if !numbers.IsStringUint(input) {
+		if !trstr.IsApparentSQLDateFormat(input) {
+			if !numbers.IsStringUint(input) {
+				return 0, timeseries.ErrInvalidTimeFormat
+			}
+			i, err := strconv.ParseInt(input, 10, 64)
+			if err != nil {
+				return 0, err
+			}
+			if len(input) >= 19 { // assume nanoseconds
+				return epoch.Epoch(i), nil
+			}
+			if len(input) >= 16 { // assume microseconds
+				return epoch.Epoch(i * 1000), nil
+			}
+			if len(input) >= 13 { // assume milliseconds
+				return epoch.Epoch(i * 1000000), nil
+			}
+			if len(input) >= 10 { // assume seconds
+				return epoch.Epoch(i * 1000000000), nil
+			}
 			return 0, timeseries.ErrInvalidTimeFormat
 		}
-		i, err := strconv.ParseInt(input, 10, 64)
-		if err != nil {
-			return 0, err
-		}
-		if len(input) >= 19 { // assume nanoseconds
-			return epoch.Epoch(i), nil
-		}
-		if len(input) >= 16 { // assume microseconds
-			return epoch.Epoch(i * 1000), nil
-		}
-		if len(input) >= 13 { // assume milliseconds
-			return epoch.Epoch(i * 1000000), nil
-		}
-		if len(input) >= 10 { // assume seconds
-			return epoch.Epoch(i * 1000000000), nil
-		}
-		return 0, timeseries.ErrInvalidTimeFormat
+		timeLayout = lsql.SQLDateTimeLayout
+		parse = parseClickHouseTimestamp
 	}
 	t, err := parse(timeLayout, input)
 	if err != nil {
@@ -199,7 +215,7 @@ func parseTimeField(input string, tfd timeseries.FieldDefinition) (epoch.Epoch, 
 	return epoch.Epoch(t.UnixNano()), nil
 }
 
-func parseClickHouseTimestamp(input, _ string) (time.Time, error) {
+func parseClickHouseTimestamp(_, input string) (time.Time, error) {
 	if !strings.Contains(input, ".") {
 		return time.Parse(lsql.SQLDateTimeLayout, input)
 	}

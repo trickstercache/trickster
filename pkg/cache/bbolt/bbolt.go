@@ -89,7 +89,7 @@ func (c *CacheClient) Connect() error {
 	return nil
 }
 
-func (c *CacheClient) Store(cacheKey string, data []byte, ttl time.Duration) error {
+func (c *CacheClient) Store(cacheKey string, data []byte, _ time.Duration) error {
 	err := writeToBBolt(c.dbh, c.Config.BBolt.Bucket, cacheKey, data)
 	if err != nil {
 		return err

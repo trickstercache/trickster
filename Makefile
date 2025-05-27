@@ -287,6 +287,10 @@ serve-debug:
 serve-info:
 	@cd cmd/trickster && go run . -config /etc/trickster/trickster.yaml --log-level info
 
+.PHONY: serve-cli
+serve-cli:
+	@cd cmd/trickster && go run . -origin-url http://127.0.0.1:9090/ -provider prometheus
+
 .PHONY: get-tools
 get-tools: get-msgpack
 	@echo "Installing tools..."

@@ -38,7 +38,7 @@ type SyncObjects struct {
 
 func (i *SyncObjects) Keys() []string {
 	out := []string{}
-	i.Range(func(k, v any) bool {
+	i.Range(func(k, _ any) bool {
 		out = append(out, k.(string))
 		return true
 	})

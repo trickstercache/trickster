@@ -20,7 +20,6 @@
 package config
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"sync"
@@ -30,7 +29,7 @@ import (
 	rule "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/negative"
 	cache "github.com/trickstercache/trickster/v2/pkg/cache/options"
-	reload "github.com/trickstercache/trickster/v2/pkg/config/reload/options"
+	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
 	fropt "github.com/trickstercache/trickster/v2/pkg/frontend/options"
 	lo "github.com/trickstercache/trickster/v2/pkg/observability/logging/options"
 	mo "github.com/trickstercache/trickster/v2/pkg/observability/metrics/options"
@@ -66,8 +65,9 @@ type Config struct {
 	Rules rule.Lookup `yaml:"rules,omitempty"`
 	// RequestRewriters is a map of the Rewriters
 	RequestRewriters rwopts.Lookup `yaml:"request_rewriters,omitempty"`
-	// ReloadConfig provides configurations for in-process config reloading
-	ReloadConfig *reload.Options `yaml:"reloading,omitempty"`
+	// MgmtConfig provides configurations for managing the trickster process
+	// including reloading, purging cache entries, and health checks
+	MgmtConfig *mgmt.Options `yaml:"mgmt,omitempty"`
 	// Authenticators provides configurations for Authenticating users
 	Authenticators auth.Lookup `yaml:"authenticators,omitempty"`
 
@@ -89,20 +89,6 @@ type Config struct {
 type MainConfig struct {
 	// InstanceID represents a unique ID for the current instance, when multiple instances on the same host
 	InstanceID int `yaml:"instance_id,omitempty"`
-	// ConfigHandlerPath provides the path to register the Config Handler for outputting the running configuration
-	ConfigHandlerPath string `yaml:"config_handler_path,omitempty"`
-	// PingHandlerPath provides the path to register the Ping Handler for checking that Trickster is running
-	PingHandlerPath string `yaml:"ping_handler_path,omitempty"`
-	// ReloadHandlerPath provides the path to register the Config Reload Handler
-	ReloadHandlerPath string `yaml:"reload_handler_path,omitempty"`
-	// HealthHandlerPath provides the base Health Check Handler path
-	HealthHandlerPath string `yaml:"health_handler_path,omitempty"`
-	// PurgeKeyHandlerPath provides the base Cache Purge Key Handler path
-	PurgeKeyHandlerPath  string `yaml:"purge_key_handler_path,omitempty"`
-	PurgePathHandlerPath string `yaml:"purge_path_handler_path,omitempty"`
-	// PprofServer provides the name of the http listener that will host the pprof debugging routes
-	// Options are: "metrics", "reload", "both", or "off"; default is both
-	PprofServer string `yaml:"pprof_server,omitempty"`
 	// ServerName represents the server name that is conveyed in Via headers to upstream origins
 	// defaults to os.Hostname
 	ServerName string `yaml:"server_name,omitempty"`
@@ -135,16 +121,10 @@ func NewConfig() *Config {
 		},
 		Logging: lo.New(),
 		Main: &MainConfig{
-			ConfigHandlerPath:    DefaultConfigHandlerPath,
-			PingHandlerPath:      DefaultPingHandlerPath,
-			ReloadHandlerPath:    reload.DefaultReloadHandlerPath,
-			HealthHandlerPath:    DefaultHealthHandlerPath,
-			PurgeKeyHandlerPath:  DefaultPurgeKeyHandlerPath,
-			PurgePathHandlerPath: DefaultPurgePathHandlerPath,
-			PprofServer:          DefaultPprofServerName,
-			ServerName:           hn,
+			ServerName: hn,
 		},
-		Metrics: mo.New(),
+		MgmtConfig: mgmt.New(),
+		Metrics:    mo.New(),
 		Backends: bo.Lookup{
 			"default": bo.New(),
 		},
@@ -155,7 +135,6 @@ func NewConfig() *Config {
 		TracingConfigs: tracing.Lookup{
 			"default": tracing.New(),
 		},
-		ReloadConfig:   reload.New(),
 		LoaderWarnings: make([]string, 0),
 		Resources:      &Resources{},
 	}
@@ -229,9 +208,6 @@ func (c *Config) CheckFileLastModified() time.Time {
 // as needed
 func (c *Config) Process() error {
 	var err error
-	if err = c.processPprofConfig(); err != nil {
-		return err
-	}
 	if c.RequestRewriters != nil {
 		if c.CompiledRewriters,
 			err = rewriter.ProcessConfigs(c.RequestRewriters); err != nil {
@@ -261,20 +237,6 @@ func (c *Config) Process() error {
 	return nil
 }
 
-// ErrInvalidPprofServerName returns an error for invalid pprof server name
-var ErrInvalidPprofServerName = errors.New("invalid pprof server name")
-
-func (c *Config) processPprofConfig() error {
-	switch c.Main.PprofServer {
-	case "metrics", "reload", "off", "both":
-		return nil
-	case "":
-		c.Main.PprofServer = DefaultPprofServerName
-		return nil
-	}
-	return ErrInvalidPprofServerName
-}
-
 // Clone returns an exact copy of the subject *Config
 func (c *Config) Clone() *Config {
 
@@ -282,15 +244,10 @@ func (c *Config) Clone() *Config {
 	delete(nc.Caches, "default")
 	delete(nc.Backends, "default")
 
-	nc.Main.ConfigHandlerPath = c.Main.ConfigHandlerPath
 	nc.Main.InstanceID = c.Main.InstanceID
-	nc.Main.PingHandlerPath = c.Main.PingHandlerPath
-	nc.Main.ReloadHandlerPath = c.Main.ReloadHandlerPath
-	nc.Main.HealthHandlerPath = c.Main.HealthHandlerPath
-	nc.Main.PurgeKeyHandlerPath = c.Main.PurgeKeyHandlerPath
-	nc.Main.PurgePathHandlerPath = c.Main.PurgePathHandlerPath
-	nc.Main.PprofServer = c.Main.PprofServer
 	nc.Main.ServerName = c.Main.ServerName
+
+	nc.MgmtConfig = c.MgmtConfig.Clone()
 
 	nc.Main.configFilePath = c.Main.configFilePath
 	nc.Main.configLastModified = c.Main.configLastModified
@@ -360,12 +317,12 @@ func (c *Config) IsStale() bool {
 		return false
 	}
 
-	if c.ReloadConfig == nil {
-		c.ReloadConfig = reload.New()
+	if c.MgmtConfig == nil {
+		c.MgmtConfig = mgmt.New()
 	}
 
 	c.Main.configRateLimitTime =
-		time.Now().Add(c.ReloadConfig.RateLimit)
+		time.Now().Add(c.MgmtConfig.ReloadRateLimit)
 	t := c.CheckFileLastModified()
 	if t.IsZero() {
 		return false

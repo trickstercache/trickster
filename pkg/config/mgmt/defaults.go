@@ -14,15 +14,27 @@
  * limitations under the License.
  */
 
-package options
+package mgmt
 
 import "time"
 
 const (
 	// DefaultReloadPort is the default port that the Reload endpoint will listen on
-	DefaultReloadPort = 8484
+	DefaultPort = 8484
 	// DefaultReloadAddress is the default address that the Reload endpoint will listen on
-	DefaultReloadAddress = "127.0.0.1"
+	DefaultAddress = "127.0.0.1"
+	// DefaultConfigHandlerPath is the default value for the Trickster Config Printout Handler path
+	DefaultConfigHandlerPath = "/trickster/config"
+	// DefaultPingHandlerPath is the default value for the Trickster Config Ping Handler path
+	DefaultPingHandlerPath = "/trickster/ping"
+	// DefaultHealthHandlerPath defines the default path for the Health Handler
+	DefaultHealthHandlerPath = "/trickster/health"
+	// DefaultPurgeByKeyHandlerPath defines the default path for the Cache Purge (by Key) Handler
+	DefaultPurgeByKeyHandlerPath = "/trickster/purge/key/"
+	// DefaultPurgeByPathHandlerPath defines the default path for the Cache Purge (by Path) Handler
+	DefaultPurgeByPathHandlerPath = "/trickster/purge/path/"
+	// DefaultPprofServerName defines the default Pprof Server Name
+	DefaultPprofServerName = "both"
 	// DefaultDrainTimeout is the default time that is allowed for an old configuration's requests to drain
 	// before its resources are closed
 	DefaultDrainTimeout = 30 * time.Second

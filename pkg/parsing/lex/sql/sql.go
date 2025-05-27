@@ -370,7 +370,7 @@ Loop:
 		default:
 			rs.Backup()
 			word := rs.InputLowered[rs.Start:rs.Pos]
-			if !rs.AtTerminator() {
+			if !rs.AtTerminator() && !rs.AtQuote() {
 				return rs.EmitToken(rs.Errorf("bad character %#U", r))
 			}
 			// if we have a word like group, order, union, into, etc., where it

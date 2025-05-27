@@ -19,25 +19,6 @@
 #   # default is 0, which means ignored
 #   instance_id: 0
 
-#   # config_handler_path provides the HTTP path to view a read-only printout of the running configuration
-#   # which can be reached at http://your-trickster-endpoint:port/$config_handler_path
-#   # default is /trickster/config
-#   config_handler_path: /trickster/config
-
-#   # ping_handler_path provides the HTTP path you will use to perform an uptime health check against Trickster
-#   # which can be reached at http://your-trickster-endpoint:port/$ping_handler_path
-#   # default is /trickster/ping
-#   ping_handler_path: /trickster/ping
-
-#   # health_handler_path provides the HTTP path prefix you will use to perform an uptime health check against
-#   # configured Trickster backends via http://trickster/$health_handler_path/$backend_name
-#   # default is /trickster/health. Set to empty string to fully disable upstream health checking
-#   health_handler_path: /trickster/health
-
-#   # pprof_server provides the name of the http listener that will host the pprof debugging routes
-#   # Options are: "metrics", "reload", "both", or "off"; default is both
-#   pprof_server: both
-
 #   # server_name provides the name of this server instance, used to self-identfy in Via and other Forwarding headers
 #   # server_name defaults to os.Hostname() when left blank
 #   server_name: ''
@@ -706,25 +687,46 @@ backends:
 #   # empty by default, listening on all interfaces
 #   listen_address: ''
 
-# # Configuration Options for Config Reloading
-# reloading:
-#   # listen_port defines the port where Tricksters config reload server listens
+# # Configuration Options for Trickster Management
+# mgmt:
+#   # listen_port defines the port where Trickster's management server listens
 #   # 8484 is the default 
 #   listen_port: 8484
-#   # listen_address defines the ip where Tricksters config reload server listens
+#   # listen_address defines the ip where Trickster's management server listens
 #   # empty by default, listening on all interfaces
 #   listen_address: ''
-#   # handler_path defines the HTTP path where the Reload interface is available.
+
+#   # reload_handler_path defines the HTTP path where the Reload interface is available.
 #   # by default, this is /trickster/config/reload
-#   handler_path: /trickster/config/reload
-#   # drain_timeout defines how long old HTTP listeners will live to allow
+#   reload_handler_path: /trickster/config/reload
+#   # reload_drain_timeout defines how long old HTTP listeners will live to allow
 #   # outstanding connection to close organically, before the listener is forcefully closed
+#   # during a configuration reload
 #   # the default is 30s
-#   drain_timeout: 30s
-#   # rate_limit specifies the rate limit timeout duration to apply to the HTTP reload interface.
+#   reload_drain_timeout: 30s
+#   # reload_rate_limit specifies the rate limit timeout duration to apply to the HTTP reload interface.
 #   # The reload interface is disabled for this duration of time whenever a config reload request is
 #   # made that fails because the underlying config file is unmodified. default is 3
-#   rate_limit: 3s
+#   reload_rate_limit: 3s
+
+#   # config_handler_path provides the HTTP path to view a read-only printout of the running configuration
+#   # which can be reached at http://your-trickster-endpoint:port/$config_handler_path
+#   # default is /trickster/config
+#   config_handler_path: /trickster/config
+
+#   # ping_handler_path provides the HTTP path you will use to perform an uptime health check against Trickster
+#   # which can be reached at http://your-trickster-endpoint:port/$ping_handler_path
+#   # default is /trickster/ping
+#   ping_handler_path: /trickster/ping
+
+#   # health_handler_path provides the HTTP path prefix you will use to perform an uptime health check against
+#   # configured Trickster backends via http://trickster/$health_handler_path/$backend_name
+#   # default is /trickster/health. Set to empty string to fully disable upstream health checking
+#   health_handler_path: /trickster/health
+
+#   # pprof_server provides the name of the http listener that will host the pprof debugging routes
+#   # Options are: "metrics", "mgmt", "both", or "off"; default is both
+#   pprof_server: both
 
 # # Configuration Options for Logging Instrumentation
 # logging:

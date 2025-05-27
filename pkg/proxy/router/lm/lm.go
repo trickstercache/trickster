@@ -25,8 +25,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	meth "github.com/trickstercache/trickster/v2/pkg/proxy/methods"
-	"github.com/trickstercache/trickster/v2/pkg/router"
-	"github.com/trickstercache/trickster/v2/pkg/router/route"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/router/route"
 )
 
 var _ router.Router = &lmRouter{}

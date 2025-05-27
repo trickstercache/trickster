@@ -162,7 +162,10 @@ func (c *Client) ValidateAndStartPool(clients backends.Backends, hcs healthcheck
 		if !ok {
 			return alberr.NewErrInvalidPoolMemberName(c.Name(), n)
 		}
-		hc := hcs[n]
+		hc, ok := hcs[n]
+		if !ok {
+			continue // virtual backends (rule, alb) don't currently have health checks
+		}
 		targets = append(targets, pool.NewTarget(tc.Router(), hc))
 	}
 	if c.handler != nil {

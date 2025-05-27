@@ -31,8 +31,8 @@ import (
 	ph "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/purge"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
 	ttls "github.com/trickstercache/trickster/v2/pkg/proxy/tls"
-	"github.com/trickstercache/trickster/v2/pkg/router"
-	"github.com/trickstercache/trickster/v2/pkg/router/lm"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 	"github.com/trickstercache/trickster/v2/pkg/routing"
 )
 
@@ -49,14 +49,9 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		return
 	}
 
-	adminRouter := http.NewServeMux()
-	adminRouter.Handle(conf.ReloadConfig.HandlerPath, reloadHandler)
-	adminRouter.HandleFunc(conf.Main.PurgePathHandlerPath, ph.HandlerFunc(conf, &o))
-
 	// No changes in frontend config
 	if oldConf != nil && oldConf.Frontend != nil &&
 		oldConf.Frontend.Equal(conf.Frontend) {
-		lg.UpdateFrontendRouters(router, adminRouter)
 		if ttls.OptionsChanged(conf, oldConf) {
 			tlsConfig, _ = conf.TLSCertConfig()
 			l := lg.Get("tlsListener")
@@ -78,8 +73,8 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 
 	hasOldFC := oldConf != nil && oldConf.Frontend != nil
 	hasOldMC := oldConf != nil && oldConf.Metrics != nil
-	hasOldRC := oldConf != nil && oldConf.ReloadConfig != nil
-	drainTimeout := conf.ReloadConfig.DrainTimeout
+	hasOldRC := oldConf != nil && oldConf.MgmtConfig != nil
+	drainTimeout := conf.MgmtConfig.ReloadDrainTimeout
 	var tracerFlusherSet bool
 
 	// if TLS port is configured and at least one origin is mapped to a good tls config,
@@ -99,7 +94,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 			go lg.StartListener("tlsListener",
 				conf.Frontend.TLSListenAddress, conf.Frontend.TLSListenPort,
 				conf.Frontend.ConnectionsLimit, tlsConfig, router, tracers, errorFunc,
-				conf.ReloadConfig.DrainTimeout, conf.Frontend.ReadHeaderTimeout)
+				conf.MgmtConfig.ReloadDrainTimeout, conf.Frontend.ReadHeaderTimeout)
 		}
 	case !conf.Frontend.ServeTLS && hasOldFC && oldConf.Frontend.ServeTLS:
 		// the TLS configs have been removed between the last config load and this one,
@@ -142,9 +137,9 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		lg.DrainAndClose("metricsListener", 0)
 		metricsRouter.RegisterRoute("/metrics", nil, nil,
 			false, metrics.Handler())
-		metricsRouter.RegisterRoute(conf.Main.ConfigHandlerPath, nil, nil,
+		metricsRouter.RegisterRoute(conf.MgmtConfig.ConfigHandlerPath, nil, nil,
 			false, http.HandlerFunc(ch.HandlerFunc(conf)))
-		if conf.Main.PprofServer == "both" || conf.Main.PprofServer == "metrics" {
+		if conf.MgmtConfig.PprofServer == "both" || conf.MgmtConfig.PprofServer == "metrics" {
 			routing.RegisterPprofRoutes("metrics", metricsRouter)
 		}
 		go lg.StartListener("metricsListener",
@@ -153,38 +148,36 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 	} else {
 		metricsRouter.RegisterRoute("/metrics", nil, nil,
 			false, metrics.Handler())
-		metricsRouter.RegisterRoute(conf.Main.ConfigHandlerPath, nil, nil,
+		metricsRouter.RegisterRoute(conf.MgmtConfig.ConfigHandlerPath, nil, nil,
 			false, http.HandlerFunc(ch.HandlerFunc(conf)))
 		lg.UpdateRouter("metricsListener", metricsRouter)
 	}
 
-	rr := lm.NewRouter()    // router for the Reload port
-	rr.SetMatchingScheme(0) // reload router is exact-match only
-
-	// if the Reload HTTP port is configured, then set up the http listener instance
-	if conf.ReloadConfig != nil && conf.ReloadConfig.ListenPort > 0 &&
-		(!hasOldRC || (conf.ReloadConfig.ListenAddress != oldConf.ReloadConfig.ListenAddress ||
-			conf.ReloadConfig.ListenPort != oldConf.ReloadConfig.ListenPort)) {
-		lg.DrainAndClose("reloadListener", time.Millisecond*500)
-		rr.RegisterRoute(conf.Main.ConfigHandlerPath, nil, nil,
+	mr := lm.NewRouter() // management router
+	// if the Management HTTP port is configured, then set up the http listener instance
+	if conf.MgmtConfig != nil && conf.MgmtConfig.ListenPort > 0 &&
+		(!hasOldRC || (conf.MgmtConfig.ListenAddress != oldConf.MgmtConfig.ListenAddress ||
+			conf.MgmtConfig.ListenPort != oldConf.MgmtConfig.ListenPort)) {
+		lg.DrainAndClose("mgmtListener", time.Millisecond*500)
+		mr.RegisterRoute(conf.MgmtConfig.ConfigHandlerPath, nil, nil,
 			false, http.HandlerFunc(ch.HandlerFunc(conf)))
-		rr.RegisterRoute(conf.ReloadConfig.HandlerPath, nil, nil,
+		mr.RegisterRoute(conf.MgmtConfig.ReloadHandlerPath, nil, nil,
 			false, reloadHandler)
-		rr.RegisterRoute(conf.Main.PurgePathHandlerPath, nil, nil,
-			false, http.HandlerFunc(ph.HandlerFunc(conf, &o)))
-		if conf.Main.PprofServer == "both" || conf.Main.PprofServer == "reload" {
-			routing.RegisterPprofRoutes("reload", rr)
+		mr.RegisterRoute(conf.MgmtConfig.PurgeByPathHandlerPath, nil, nil,
+			true, http.HandlerFunc(ph.PathHandler(conf.MgmtConfig.PurgeByPathHandlerPath, &o)))
+		if conf.MgmtConfig.PprofServer == "both" || conf.MgmtConfig.PprofServer == "mgmt" {
+			routing.RegisterPprofRoutes("mgmt", mr)
 		}
-		go lg.StartListener("reloadListener",
-			conf.ReloadConfig.ListenAddress, conf.ReloadConfig.ListenPort,
-			conf.Frontend.ConnectionsLimit, nil, rr, nil, errorFunc, 0, conf.Frontend.ReadHeaderTimeout)
+		go lg.StartListener("mgmtListener",
+			conf.MgmtConfig.ListenAddress, conf.MgmtConfig.ListenPort,
+			conf.Frontend.ConnectionsLimit, nil, mr, nil, errorFunc, 0, conf.Frontend.ReadHeaderTimeout)
 	} else {
-		rr.RegisterRoute(conf.Main.ConfigHandlerPath, nil, nil,
+		mr.RegisterRoute(conf.MgmtConfig.ConfigHandlerPath, nil, nil,
 			false, http.HandlerFunc(ch.HandlerFunc(conf)))
-		rr.RegisterRoute(conf.ReloadConfig.HandlerPath, nil, nil,
+		mr.RegisterRoute(conf.MgmtConfig.ReloadHandlerPath, nil, nil,
 			false, reloadHandler)
-		rr.RegisterRoute(conf.Main.PurgePathHandlerPath, nil, nil,
-			false, http.HandlerFunc(ph.HandlerFunc(conf, &o)))
-		lg.UpdateRouter("reloadListener", rr)
+		mr.RegisterRoute(conf.MgmtConfig.PurgeByPathHandlerPath, nil, nil,
+			true, http.HandlerFunc(ph.PathHandler(conf.MgmtConfig.PurgeByPathHandlerPath, &o)))
+		lg.UpdateRouter("mgmtListener", mr)
 	}
 }

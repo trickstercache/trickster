@@ -389,16 +389,18 @@ func handleResponse(pr *proxyRequest) error {
 	return nil
 }
 
-var cacheResponseHandlers map[status.LookupStatus]func(*proxyRequest) error
-
-func init() {
-	// Cache Status Response Handler Mappings
-	cacheResponseHandlers = map[status.LookupStatus]func(*proxyRequest) error{
-		status.LookupStatusHit:        handleCacheKeyHit,
-		status.LookupStatusPartialHit: handleCachePartialHit,
-		status.LookupStatusKeyMiss:    handleCacheKeyMiss,
-		status.LookupStatusRangeMiss:  handleCacheRangeMiss,
+func cacheResponseHandler(s status.LookupStatus) func(*proxyRequest) error {
+	switch s {
+	case status.LookupStatusHit:
+		return handleCacheKeyHit
+	case status.LookupStatusPartialHit:
+		return handleCachePartialHit
+	case status.LookupStatusKeyMiss:
+		return handleCacheKeyMiss
+	case status.LookupStatusRangeMiss:
+		return handleCacheRangeMiss
 	}
+	return nil
 }
 
 func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, status.LookupStatus) {
@@ -452,8 +454,8 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 	pr.cacheDocument, pr.cacheStatus, pr.neededRanges, err =
 		QueryCache(pr.upstreamRequest.Context(), cc, pr.key, pr.wantedRanges, nil)
 	if err == nil || err == cache.ErrKNF {
-		f, ok := cacheResponseHandlers[pr.cacheStatus]
-		if !ok {
+		f := cacheResponseHandler(pr.cacheStatus)
+		if f == nil {
 			logger.Warn("unhandled cache lookup response",
 				logging.Pairs{"lookupStatus": pr.cacheStatus})
 			return nil, status.LookupStatusProxyOnly
@@ -461,7 +463,6 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 		if err := f(pr); err != nil {
 			return nil, status.LookupStatusError
 		}
-
 	} else {
 		logger.Error("cache lookup error",
 			logging.Pairs{"detail": err.Error()})

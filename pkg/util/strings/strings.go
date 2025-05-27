@@ -72,3 +72,34 @@ func (m Map) GetInt(key string) (int, error) {
 	}
 	return i, nil
 }
+
+// IsApparentSQLDateFormat is a rudimentary check that the input appears to be
+// in SQL Format by matching a '####-##-## ##:##:##' format. No actual dates
+// or times are parsed, so strings like '3928-31-28 88:73:95' would match.
+func IsApparentSQLDateFormat(s string) bool {
+	if len(s) != 19 {
+		return false
+	}
+	for i := range 19 {
+		c := s[i]
+		switch i {
+		case 4, 7:
+			if c != '-' {
+				return false
+			}
+		case 10:
+			if c != ' ' {
+				return false
+			}
+		case 13, 16:
+			if c != ':' {
+				return false
+			}
+		default:
+			if c < '0' || c > '9' {
+				return false
+			}
+		}
+	}
+	return true
+}

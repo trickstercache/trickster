@@ -39,7 +39,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/local"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/switcher"
-	"github.com/trickstercache/trickster/v2/pkg/router/lm"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 	testutil "github.com/trickstercache/trickster/v2/pkg/testutil"
 	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
 )
@@ -318,7 +318,7 @@ func TestUpdateRouters(t *testing.T) {
 	}
 	lg := NewGroup()
 	lg.members["httpListener"] = l
-	lg.members["reloadListener"] = l
+	lg.members["mgmtListener"] = l
 	lg.UpdateFrontendRouters(testRouter, testRouter)
 	if l.RouteSwapper() == nil {
 		t.Error("expected non-nil swapper")

@@ -28,6 +28,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/locks"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	tspan "github.com/trickstercache/trickster/v2/pkg/observability/tracing/span"
 	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
@@ -269,11 +270,36 @@ func (pr *proxyRequest) prepareUpstreamRequests() {
 	}
 }
 
+func (pr *proxyRequest) makeSimpleUpstreamRequests(req *http.Request,
+	tracer *tracing.Tracer) (io.ReadCloser, *http.Response) {
+	_, span := tspan.NewChildSpan(req.Context(), tracer, "Fetch")
+	if span != nil {
+		if req.Header != nil {
+			if _, ok := req.Header[headers.NameRange]; ok {
+				span.SetAttributes(attribute.Bool("isRange", true))
+			}
+		}
+		req = req.WithContext(trace.ContextWithSpan(req.Context(), span))
+		defer span.End()
+	}
+	reader, resp, _ := PrepareFetchReader(req)
+
+	return reader, resp
+}
+
 func (pr *proxyRequest) makeUpstreamRequests() error {
 
-	wg := sync.WaitGroup{}
-
+	// short circuit for when there is only 1 upstream request
 	rsc := request.GetResources(pr.Request)
+	if pr.revalidationRequest == nil && len(pr.originRequests) == 1 {
+		pr.originReaders = make([]io.ReadCloser, 1)
+		pr.originResponses = make([]*http.Response, 1)
+		pr.originReaders[0], pr.originResponses[0] =
+			pr.makeSimpleUpstreamRequests(pr.originRequests[0], rsc.Tracer)
+		return nil
+	}
+
+	wg := sync.WaitGroup{}
 
 	if pr.revalidationRequest != nil {
 		wg.Add(1)

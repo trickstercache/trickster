@@ -42,7 +42,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
-	"github.com/trickstercache/trickster/v2/pkg/router/lm"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 	testutil "github.com/trickstercache/trickster/v2/pkg/testutil"
 	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
 )

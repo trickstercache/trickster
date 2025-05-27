@@ -38,10 +38,6 @@ project:
       url: https://github.com/trickstercache/trickstercache.org
       comment: |
         Trickster website repository.
-    - name: tricktool
-      url: https://github.com/trickstercache/tricktool
-      comment: |
-        A companion utility app for Trickster.
     - name: mockster
       url: https://github.com/trickstercache/mockster
       comment: |

@@ -42,8 +42,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
-	"github.com/trickstercache/trickster/v2/pkg/router"
-	"github.com/trickstercache/trickster/v2/pkg/router/lm"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 	"github.com/trickstercache/trickster/v2/pkg/util/middleware"
 )
 
@@ -185,7 +185,7 @@ func registerBackendRoutes(r router.Router, metricsRouter router.Router,
 		// now we'll go ahead and register the health handler
 		if h, ok := client.Handlers()["health"]; ok && o.Name != "" && metricsRouter != nil && (o.HealthCheck == nil ||
 			o.HealthCheck.Verb != "x") {
-			hp := strings.ReplaceAll(conf.Main.HealthHandlerPath+"/"+o.Name, "//", "/")
+			hp := strings.ReplaceAll(conf.MgmtConfig.HealthHandlerPath+"/"+o.Name, "//", "/")
 			logger.Debug("registering health handler path",
 				logging.Pairs{"path": hp, "backendName": o.Name,
 					"upstreamPath": o.HealthCheck.Path,

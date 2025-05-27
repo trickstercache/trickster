@@ -156,7 +156,7 @@ func (p *parser) analyzeCSV(sf timeseries.SeriesFields,
 	}
 	// This analyzes each row to help determine overall slice sizing
 	for i, row := range matrix {
-		if i < 4 || len(row) != len(matrix[0]) { // skip header and mis-sized rows
+		if i < p.firstDataRow || len(row) != len(matrix[0]) { // skip header and mis-sized rows
 			continue
 		}
 		kd := getSeriesKeyData(row, sf)

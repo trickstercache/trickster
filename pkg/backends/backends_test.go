@@ -22,7 +22,7 @@ import (
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
-	"github.com/trickstercache/trickster/v2/pkg/router/lm"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 )
 
 func TestBackends(t *testing.T) {

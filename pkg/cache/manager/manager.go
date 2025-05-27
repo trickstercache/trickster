@@ -76,13 +76,14 @@ func (cm *Manager) Store(cacheKey string, byteData []byte, ttl time.Duration) er
 }
 
 func (cm *Manager) observeRetrieval(cacheKey string, size int, s status.LookupStatus, err error) {
-	if err == cache.ErrKNF || s == status.LookupStatusKeyMiss {
+	switch {
+	case err == cache.ErrKNF || s == status.LookupStatusKeyMiss:
 		logger.Debug("cache miss", logging.Pairs{"key": cacheKey, "provider": cm.config.Provider})
 		metrics.ObserveCacheMiss(cm.config.Name, cm.config.Provider)
-	} else if err != nil {
+	case err != nil:
 		logger.Debug("cache retrieve failed", logging.Pairs{"key": cacheKey, "provider": cm.config.Provider})
 		metrics.ObserveCacheEvent(cm.config.Name, cm.config.Provider, "error", "failed to retrieve cache entry")
-	} else if s == status.LookupStatusHit {
+	case s == status.LookupStatusHit:
 		logger.Debug("cache retrieve", logging.Pairs{"key": cacheKey, "provider": cm.config.Provider})
 		metrics.ObserveCacheOperation(cm.config.Name, cm.config.Provider, "get", "hit", float64(size))
 	}
