@@ -4,7 +4,7 @@
 
 2.0 continues to improve the Trickster project, with a ton of new features, bug fixes, and optimizations. Here's the quick rundown of what's new and improved:
 
-- we now use YAML for configuration, and provide [tooling](http://github.com/trickstercache/tricktool) to migrate a 1.x TOML configuration
+- Trickster 2.0 uses YAML for configuration instead of TOML.
 - example configurations are relocated to the [examples](../examples/conf) directory
 - the [Trickster docker-compose demo](../examples/docker-compose) has been relocated to the examples directory and updated to use latest version tags
 - we now use a common time series format internally for caching all supported TSDB's, rather than implementing each one separately
@@ -55,6 +55,7 @@
 - We no longer include the `vendor` directory in the project repository and `vendor` is now in `.gitignore`. `vendor` will continue to be included in Release source tarballs.
 - The listener port formerly called `reload` is now called `mgmt` in documentation and the YAML config specification. Several management-specific configs from the `main` section have been relocated to `mgmt` (e.g., Ping and Pprof handler settings) while the pre-existing reload `handler_path`, `drain_timeout`, and `rate_limit` configs are now prefixed with `reload_` (e.g., `reload_rate_limit`) for clarity. See the Full Example YAML's for more information.
 - We now support Purging specific cache items by Key (on the public ports) or Path (on the mgmt port). Read more in the [cache documentation](./caches.md).
+- The [tricktool](https://github.com/trickstercache/tricktool) utility is deprecated and archived.
 
 ## Still to Come
 
@@ -72,6 +73,12 @@ The current Trickster 2.0 beta has the following known issues:
 - the `lru` Time Series Eviction Method currently does not function, but will be added back in a future beta. This feature has not yet been ported into the Common Time Series format. Comment out this setting in your configuration to use the default eviction method.
 
 - certain Path configs that should modify the client request or response (e.g., `response_headers`) are [not working reliably](https://github.com/trickstercache/trickster/issues/671). This will be fixed up in Beta 4.
+
+- You may see warnings like the following on appplication startup for memory caches and other cache types that are instantiating for the first time. These are fine and are just complaining that newly-created caches don't yet have an index record. We will address in Beta 4.
+
+```
+time=2025-05-20T00:00:00.000000Z app=trickster level=warn event="cache index was not loaded" cacheName=default error="key not found in cache"
+```
 
 ## Installing
 
