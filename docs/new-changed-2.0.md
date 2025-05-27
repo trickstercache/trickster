@@ -22,7 +22,7 @@
 - We've switched to our all-new, made-for-proxies HTTP Request Router, which is up to 10X faster than the previous router
 - We now support InfluxData's Flux query language for InfluxDB query acceleration
   - We resolved tons of issues around POST requests for InfluxQL too!
-- THe Helm Charts repository is now updated for Trickster 2.0
+- The Helm Charts repository is now updated for Trickster 2.0
 - We now support [Cache Object Chunking](./chunked_caching.md)
   - Allows a Time Series to be chunked into multiple cache entries based on a configurable chunk size.
   - Only the chunk entries needed to span the request range are inspected, rather than the entire time series.
