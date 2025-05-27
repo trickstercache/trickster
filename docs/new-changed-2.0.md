@@ -33,7 +33,7 @@
   - Allows requests proxied to Time Series Backends to be chunked into multiple concurrent based on a configurable chunk size in arbitrary time units (milliseconds, seconds, etc) or by data points.
   - Backend Responses are merged into a single response before caching
   - Disabled by default
-  - You can use Cache Chunking and TS Backend Request Sharding in any combination (on/on, on/off, off/on, off/0ff) as theywork together seamlessly. They can be configured with the same or different chunk sizes.
+  - You can use Cache Chunking and TS Backend Request Sharding in any combination (on/on, on/off, off/on, off/off) as theywork together seamlessly. They can be configured with the same or different chunk sizes.
 - We have added new CI tools, including better linters and race condition checkers
 - We've updated our Docker automation:
   - The trickster-docker-images repo is now retired and image publishing is handled in the trickster repo.
