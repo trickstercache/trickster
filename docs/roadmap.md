@@ -26,6 +26,7 @@ The roadmap for Trickster in 2025 focuses on delivering Trickster versions 2.0 a
 ### June 2025
 
 - [ ] Trickster v2.0 Beta 4 Release
+  - [ ] Updated Grafana Dashboard for Trickster Metrics
   - [ ] More easily-importable Trickster packages by other projects
   - [ ] Support for MySQL as Time Series
   - [ ] Support for InfluxDB 3.0
