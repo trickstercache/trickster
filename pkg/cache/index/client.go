@@ -53,7 +53,6 @@ type IndexedClientOptions struct {
 
 func NewIndexedClient(
 	cacheName, cacheProvider string,
-	_ []byte,
 	o *options.Options,
 	client cache.Client,
 	opts ...func(*IndexedClientOptions),

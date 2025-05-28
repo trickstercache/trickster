@@ -39,7 +39,7 @@ func TestIndexedClient(t *testing.T) {
 
 	t.Run("basic", func(t *testing.T) {
 		// init indexed client
-		ic := NewIndexedClient("test", provider, []byte{}, &options.Options{
+		ic := NewIndexedClient("test", provider, &options.Options{
 			ReapInterval:          time.Second * time.Duration(10),
 			FlushInterval:         time.Second * time.Duration(10),
 			MaxSizeObjects:        5,
@@ -95,7 +95,7 @@ func TestIndexedClient(t *testing.T) {
 	t.Run("atime", func(t *testing.T) {
 
 		// init indexed client
-		ic := NewIndexedClient("test", provider, []byte{}, &options.Options{
+		ic := NewIndexedClient("test", provider, &options.Options{
 			ReapInterval:          time.Second * time.Duration(10),
 			FlushInterval:         time.Second * time.Duration(10),
 			MaxSizeObjects:        5,
@@ -137,7 +137,7 @@ func TestIndexedClient(t *testing.T) {
 			},
 		}
 		fs := filesystem.NewCache("test", &cacheConfig)
-		ic := NewIndexedClient("test", provider, []byte{}, &options.Options{
+		ic := NewIndexedClient("test", provider, &options.Options{
 			ReapInterval:          time.Second * time.Duration(10),
 			FlushInterval:         time.Second * time.Duration(10),
 			MaxSizeObjects:        5,
@@ -169,7 +169,7 @@ func TestIndexedClient(t *testing.T) {
 		ic.Close()
 
 		// start a new cache, verify it reuses the index
-		ic = NewIndexedClient("test", provider, []byte{}, &options.Options{
+		ic = NewIndexedClient("test", provider, &options.Options{
 			ReapInterval:          time.Second * time.Duration(10),
 			FlushInterval:         time.Second * time.Duration(10),
 			MaxSizeObjects:        5,
@@ -200,7 +200,7 @@ func TestIndexedClient(t *testing.T) {
 
 	/* converting */
 	// init indexed client
-	ic := NewIndexedClient("test", provider, []byte{}, &options.Options{
+	ic := NewIndexedClient("test", provider, &options.Options{
 		ReapInterval:          time.Second * time.Duration(10),
 		FlushInterval:         time.Second * time.Duration(10),
 		MaxSizeObjects:        5,
