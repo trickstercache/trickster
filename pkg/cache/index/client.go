@@ -75,7 +75,7 @@ func NewIndexedClient(
 	if options.NeedsFlushInterval || o.FlushInterval > 0 {
 		// check to see if an index was cached already from a previous run
 		b, s, err := client.Retrieve(IndexKey)
-		if err != nil {
+		if err != nil && options.NeedsFlushInterval {
 			logger.Warn("cache index was not loaded",
 				logging.Pairs{"cacheName": cacheName, "error": err.Error()})
 		} else if len(b) > 0 && s == status.LookupStatusHit {
@@ -88,7 +88,7 @@ func NewIndexedClient(
 		}
 		if o.FlushInterval > 0 {
 			go idx.flusher(ctx)
-		} else {
+		} else if options.NeedsFlushInterval {
 			logger.Warn("cache index flusher was not started, recommended for provider",
 				logging.Pairs{"cacheName": idx.name, "cacheProvider": idx.cacheProvider, "flushInterval": o.FlushInterval})
 		}
