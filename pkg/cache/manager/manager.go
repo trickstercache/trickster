@@ -137,7 +137,6 @@ func (cm *Manager) Connect() error {
 		cm.Client = index.NewIndexedClient(
 			cm.config.Name,
 			cm.config.Provider,
-			nil,
 			cm.config.Index,
 			cm.originalCli,
 			func(ico *index.IndexedClientOptions) {
