@@ -4,6 +4,7 @@ RUN apk update && apk add ca-certificates
 ARG BUILDPLATFORM=linux/amd64
 FROM --platform=${BUILDPLATFORM} golang:1.24 as builder
 ARG GIT_LATEST_COMMIT_ID
+ARG TAGVER
 
 COPY . /go/src/github.com/trickstercache/trickster
 WORKDIR /go/src/github.com/trickstercache/trickster
