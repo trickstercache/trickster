@@ -323,4 +323,4 @@ developer-seed-data:
 
 .PHONY: serve-dev
 serve-dev:
-	@go run cmd/trickster/main.go -config docs/developer/environment/trickster-config/trickster.yaml
+	@go run cmd/trickster/main.go -config $(if $(TRK_CONFIG),$(TRK_CONFIG),docs/developer/environment/trickster-config/trickster.yaml)
