@@ -28,5 +28,6 @@ you can test out Trickster acceleration features. You can change the Data Source
 selector to go between various Trickster configs, or bypass Trickster altogether
 for verification purposes.
 
-You can stop the developer environment by running `make developer-delete`.
-This will run `docker compose down` which will destroy all data.
+You can stop the developer environment by running `make developer-stop`. To
+delete the developer environment, run `make developer-stop` which will destroy
+all data.

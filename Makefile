@@ -305,6 +305,10 @@ get-msgpack:
 developer-start:
 	@cd docs/developer/environment && docker compose up -d
 	
+.PHONY: developer-stop
+developer-stop:
+	@cd docs/developer/environment && docker compose stop
+
 .PHONY: developer-delete
 developer-delete:
 	@cd docs/developer/environment && docker compose down
