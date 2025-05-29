@@ -50,7 +50,7 @@ func (sl SeriesList) Merge(sl2 SeriesList, sortPoints bool) SeriesList {
 		if s == nil {
 			continue
 		}
-		h := s.Header.CalculateHash()
+		h := s.Header.CalculateHash(true)
 		if _, ok := m[h]; ok {
 			continue
 		}
@@ -64,7 +64,7 @@ func (sl SeriesList) Merge(sl2 SeriesList, sortPoints bool) SeriesList {
 		if s == nil {
 			continue
 		}
-		h := s.Header.CalculateHash()
+		h := s.Header.CalculateHash(true)
 		if seen.Contains(h) {
 			continue
 		}
