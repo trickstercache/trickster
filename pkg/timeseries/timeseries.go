@@ -101,15 +101,19 @@ func (t List) Compress() List {
 }
 
 // Merge combines all Timesseries in t into a single Timeseries
-func (t List) Merge() Timeseries {
+func (t List) Merge(useClone bool) Timeseries {
 	cts := t.Compress()
 	if len(cts) == 0 {
 		return nil
 	}
-	if len(cts) == 1 {
-		return cts[0]
+	var out Timeseries
+	if useClone {
+		out = cts[0].Clone()
+	} else {
+		out = cts[0]
 	}
-	out := cts[0].Clone()
-	out.Merge(true, cts[1:]...)
+	if len(cts) > 1 {
+		out.Merge(true, cts[1:]...)
+	}
 	return out
 }
