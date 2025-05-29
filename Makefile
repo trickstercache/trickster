@@ -126,6 +126,7 @@ docker:
 		--build-arg GIT_LATEST_COMMIT_ID=$(GIT_LATEST_COMMIT_ID) \
 		--target $(DOCKER_TARGET) \
 		--build-arg GOARCH=$(GOARCH) \
+		--build-arg TAGVER=$(TAGVER) \
 		-f ./Dockerfile \
 		-t trickster:$(TAGVER) \
 		--platform linux/$(IMAGE_ARCH) \
