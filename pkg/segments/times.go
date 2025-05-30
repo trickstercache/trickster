@@ -14,4 +14,15 @@
  * limitations under the License.
  */
 
-package timeseries
+package segments
+
+import "time"
+
+// Time implements Deltaable for time.Time
+type Time struct{}
+
+func (Time) Add(a time.Time, step time.Duration) time.Time { return a.Add(step) }
+func (Time) Less(a, b time.Time) bool                      { return a.Before(b) }
+func (Time) Equal(a, b time.Time) bool                     { return a.Equal(b) }
+func (Time) Zero() time.Time                               { return time.Time{} }
+func (Time) Neg(step time.Duration) time.Duration          { return -step }

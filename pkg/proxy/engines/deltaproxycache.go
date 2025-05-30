@@ -209,7 +209,7 @@ checkCache:
 		vr = cts.VolatileExtents()
 	}
 	if cacheStatus == status.LookupStatusPartialHit {
-		missRanges = cts.Extents().CalculateDeltas(trq.Extent, trq.Step)
+		missRanges = cts.Extents().CalculateDeltas(timeseries.ExtentList{trq.Extent}, trq.Step)
 		// this is the backfill part of backfill tolerance. if there are any volatile
 		// ranges in the timeseries, this determines if any fall within the client's
 		// requested range and ensures they are re-requested. this only happens if

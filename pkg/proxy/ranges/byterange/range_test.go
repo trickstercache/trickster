@@ -26,110 +26,110 @@ import (
 func TestRanges_CalculateDelta(t *testing.T) {
 
 	tests := []struct {
-		want, have, expected Ranges
+		need, have, expected Ranges
 		cl                   int64
 	}{
 		{
-			// case 0  where we need both outer permiters of the wanted range
-			want:     Ranges{Range{Start: 5, End: 10}},
+			// case 0  where we need both outer permiters of the needed range
+			need:     Ranges{Range{Start: 5, End: 10}},
 			have:     Ranges{Range{Start: 6, End: 9}},
 			expected: Ranges{Range{Start: 5, End: 5}, Range{Start: 10, End: 10}},
 			cl:       62,
 		},
 		{
 			// case 1  where the needed range is out of known bounds
-			want:     Ranges{Range{Start: 100, End: 100}},
+			need:     Ranges{Range{Start: 100, End: 100}},
 			have:     Ranges{Range{Start: 6, End: 9}},
 			expected: Ranges{Range{Start: 100, End: 100}},
 			cl:       62,
 		},
 		{
 			// case 2  where the needed range is identical to have range
-			want:     Ranges{Range{Start: 6, End: 9}},
+			need:     Ranges{Range{Start: 6, End: 9}},
 			have:     Ranges{Range{Start: 6, End: 9}},
 			expected: Ranges{},
 			cl:       62,
 		},
 		{
-			// case 3  where we want a suffix range ("bytes=-50")
-			want:     Ranges{Range{Start: -1, End: 50}},
+			// case 3  where we need a suffix range ("bytes=-50")
+			need:     Ranges{Range{Start: -1, End: 50}},
 			have:     Ranges{Range{Start: 0, End: 30}},
 			expected: Ranges{Range{Start: 31, End: 69}},
 			cl:       70,
 		},
 		{
-			// case 4  where we want a prefix range ("bytes=50-")
-			want:     Ranges{Range{Start: 30, End: -1}},
+			// case 4  where we need a prefix range ("bytes=50-")
+			need:     Ranges{Range{Start: 30, End: -1}},
 			have:     Ranges{Range{Start: 0, End: 40}},
 			expected: Ranges{Range{Start: 41, End: 69}},
 			cl:       70,
 		},
 		{
 			// case 5  where we have a few absolute ranges #1
-			want:     Ranges{Range{Start: 0, End: 10}, Range{Start: 20, End: 29}},
+			need:     Ranges{Range{Start: 0, End: 10}, Range{Start: 20, End: 29}},
 			have:     Ranges{Range{Start: 0, End: 25}},
 			expected: Ranges{Range{Start: 26, End: 29}},
 			cl:       70,
 		},
 		{
 			// case 6  where we have a few absolute ranges #2
-			want:     Ranges{Range{Start: 0, End: 10}, Range{Start: 20, End: 29}},
+			need:     Ranges{Range{Start: 0, End: 10}, Range{Start: 20, End: 29}},
 			have:     Ranges{Range{Start: 0, End: 6}, Range{Start: 17, End: 32}},
 			expected: Ranges{Range{Start: 7, End: 10}},
 			cl:       70,
 		},
 		{
 			// case 7  where we have a few absolute ranges #3
-			want:     Ranges{Range{Start: 0, End: 10}, Range{Start: 20, End: 29}},
+			need:     Ranges{Range{Start: 0, End: 10}, Range{Start: 20, End: 29}},
 			have:     Ranges{Range{Start: 0, End: 6}, Range{Start: 25, End: 32}},
 			expected: Ranges{Range{Start: 7, End: 10}, Range{Start: 20, End: 24}},
 			cl:       70,
 		},
 		{
 			// case 8  where we have a few absolute ranges #4
-			want:     Ranges{Range{Start: 0, End: 10}, Range{Start: 20, End: 29}},
+			need:     Ranges{Range{Start: 0, End: 10}, Range{Start: 20, End: 29}},
 			have:     Ranges{Range{Start: 0, End: 6}, Range{Start: 20, End: 27}},
 			expected: Ranges{Range{Start: 7, End: 10}, Range{Start: 28, End: 29}},
 			cl:       70,
 		},
 		{
 			// case 9 where we have all empty ranges
-			want:     Ranges{},
+			need:     Ranges{},
 			have:     Ranges{},
 			expected: Ranges{},
 			cl:       1,
 		},
 		{
 			// case 10 where we have no saved ranges
-			want:     Ranges{Range{Start: 0, End: 10}, Range{Start: 20, End: 29}},
+			need:     Ranges{Range{Start: 0, End: 10}, Range{Start: 20, End: 29}},
 			have:     nil,
 			expected: Ranges{Range{Start: 0, End: 10}, Range{Start: 20, End: 29}},
 			cl:       1,
 		},
 		{
 			// case 11 partial hit between 2 ranges
-			want:     Ranges{Range{Start: 5, End: 20}},
+			need:     Ranges{Range{Start: 5, End: 20}},
 			have:     Ranges{Range{Start: 1, End: 9}},
 			expected: Ranges{Range{Start: 10, End: 20}},
 			cl:       21,
 		},
 		{
 			// case 12 full range miss
-			want:     Ranges{Range{Start: 15, End: 20}},
+			need:     Ranges{Range{Start: 15, End: 20}},
 			have:     Ranges{Range{Start: 1, End: 9}},
 			expected: Ranges{Range{Start: 15, End: 20}},
 			cl:       21,
 		},
 		{
 			// case 13 cache hit
-			want:     Ranges{Range{Start: 29, End: 29}},
+			need:     Ranges{Range{Start: 29, End: 29}},
 			have:     Ranges{Range{Start: 0, End: 10}, Range{Start: 20, End: 32}},
 			expected: Ranges{},
 			cl:       70,
 		},
 		// case 14 two separate partial hit areas in the same request
 		{
-			want:     Ranges{Range{Start: 9, End: 22}, Range{Start: 28, End: 60}},
+			need:     Ranges{Range{Start: 9, End: 22}, Range{Start: 28, End: 60}},
 			have:     Ranges{Range{Start: 0, End: 10}, Range{Start: 20, End: 32}},
 			expected: Ranges{Range{Start: 11, End: 19}, Range{Start: 33, End: 60}},
 			cl:       70,
@@ -138,8 +138,8 @@ func TestRanges_CalculateDelta(t *testing.T) {
 
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			res := test.want.CalculateDelta(test.have, test.cl)
-			if !res.Equal(test.expected) {
+			res := test.have.CalculateDeltas(test.need, test.cl)
+			if !Ranges(res).Equal(Ranges(test.expected)) {
 				t.Errorf("got     : %s\nexpected: %s", res, test.expected)
 			}
 		})
@@ -189,8 +189,8 @@ func TestParseContentRangeHeader(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	if er != r {
-		t.Errorf("expected %s, got %s", er.String(), r.String())
+	if Range(er) != r {
+		t.Errorf("expected %s, got %s", er, Range(r))
 	}
 	if cl != el {
 		t.Errorf("expected %d, got %d", el, cl)
@@ -208,8 +208,8 @@ func TestParseContentRangeHeader(t *testing.T) {
 	if err == nil || err.Error() != "invalid input format" {
 		t.Errorf("expected error: %s", "invalid input format")
 	}
-	if er != r {
-		t.Errorf("expected %s, got %s", er.String(), r.String())
+	if Range(er) != r {
+		t.Errorf("expected %s, got %s", er, Range(r))
 	}
 	if cl != el {
 		t.Errorf("expected %d, got %d", el, cl)
@@ -240,14 +240,14 @@ func TestRangesFilter(t *testing.T) {
 
 func TestRangesEqual(t *testing.T) {
 
-	want := Ranges{Range{Start: 0, End: 20}}
-	if want.Equal(nil) {
+	need := Ranges{Range{Start: 0, End: 20}}
+	if need.Equal(nil) {
 		t.Errorf("expected %t got %t", false, true)
 	}
 
 }
 
-func TestRangeSort(t *testing.T) {
+func TestRangesSort(t *testing.T) {
 	r := Ranges{Range{Start: 10, End: 20}, Range{Start: 0, End: 8}}
 	sort.Sort(r)
 	if r[0].Start != 0 || r[1].End != 20 {
@@ -255,7 +255,7 @@ func TestRangeSort(t *testing.T) {
 	}
 }
 
-func TestRangeLess(t *testing.T) {
+func TestRangesLess(t *testing.T) {
 	r1 := Range{Start: 10, End: 20}
 	r2 := Range{Start: 22, End: 30}
 	if !r1.Less(r2) {
@@ -263,7 +263,7 @@ func TestRangeLess(t *testing.T) {
 	}
 }
 
-func TestContentRangeHeader(t *testing.T) {
+func TestContentRangesHeader(t *testing.T) {
 
 	const expected = "bytes 0-20/100"
 
@@ -276,7 +276,7 @@ func TestContentRangeHeader(t *testing.T) {
 
 }
 
-func TestParseRangeHeader_EmptyString(t *testing.T) {
+func TestParseRangesHeader_EmptyString(t *testing.T) {
 	r := ParseRangeHeader("")
 	if r != nil {
 		t.Errorf("expected empty byte range")
@@ -314,7 +314,7 @@ func TestParseRangeHeader_InvalidRange(t *testing.T) {
 	}
 }
 
-func TestParseRangeHeader_SingleRange(t *testing.T) {
+func TestParseRangesHeader_SingleRange(t *testing.T) {
 	byteRange := "bytes=0-50"
 	res := ParseRangeHeader(byteRange)
 	if res == nil {
@@ -325,7 +325,7 @@ func TestParseRangeHeader_SingleRange(t *testing.T) {
 	}
 }
 
-func TestParseRangeHeader_Ends(t *testing.T) {
+func TestParseRangesHeader_Ends(t *testing.T) {
 	byteRange := "bytes=500-"
 	res := ParseRangeHeader(byteRange)
 	if res == nil {
@@ -358,7 +358,7 @@ func TestParseRangeHeader_Ends(t *testing.T) {
 
 }
 
-func TestParseRangeHeader_MultiRange(t *testing.T) {
+func TestParseRangesHeader_MultiRange(t *testing.T) {
 	byteRange := "bytes=0-50, 100-150"
 	res := ParseRangeHeader(byteRange)
 	if res == nil {
@@ -372,7 +372,7 @@ func TestParseRangeHeader_MultiRange(t *testing.T) {
 	}
 }
 
-func TestRangeCrop(t *testing.T) {
+func TestRangesCrop(t *testing.T) {
 	r1 := Range{0, 1}
 	r2 := Range{0, 3}
 	b := []byte{0, 1}
