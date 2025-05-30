@@ -3,6 +3,7 @@
 *.dll
 *.so
 *.dylib
+sha256sum.txt
 
 # Test binary, build with `go test -c`
 *.test
