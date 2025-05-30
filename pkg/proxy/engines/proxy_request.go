@@ -198,18 +198,17 @@ func (pr *proxyRequest) prepareRevalidationRequest() {
 		cl := d.ContentLength
 
 		rsc := request.GetResources(pr.Request)
-		// revalRanges are the ranges we have in cache that have expired, but the user needs
-		// so we revalidate these ranges in parallel with fetching of the uncached ranges
 
 		var wr byterange.Ranges
-
 		if len(pr.wantedRanges) > 0 {
 			wr = pr.wantedRanges
 		} else {
 			wr = byterange.Ranges{{Start: 0, End: cl}}
 		}
 
-		revalRanges := wr.CalculateDelta(pr.neededRanges, cl)
+		// revalRanges are the ranges we have in cache that have expired, but the user needs
+		// so we revalidate these ranges in parallel with fetching of the uncached ranges
+		revalRanges := pr.neededRanges.CalculateDeltas(wr, cl)
 		l := len(revalRanges)
 		if (l > 1 && rsc.BackendOptions.DearticulateUpstreamRanges) && len(pr.cacheDocument.Ranges) == 1 {
 			rh = pr.cacheDocument.Ranges.String()

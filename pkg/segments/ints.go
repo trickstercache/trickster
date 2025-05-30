@@ -14,4 +14,13 @@
  * limitations under the License.
  */
 
-package timeseries
+package segments
+
+// Int64 implements Diffable for int64 (bytes, IPv4s, etc.)
+type Int64 struct{}
+
+func (Int64) Add(a int64, step int64) int64 { return a + step }
+func (Int64) Less(a, b int64) bool          { return a < b }
+func (Int64) Equal(a, b int64) bool         { return a == b }
+func (Int64) Zero() int64                   { return 0 }
+func (Int64) Neg(step int64) int64          { return -step }

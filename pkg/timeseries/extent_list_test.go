@@ -883,11 +883,6 @@ func TestSize(t *testing.T) {
 
 func TestCalculateDeltas(t *testing.T) {
 
-	// test when start is after end
-	trq := TimeRangeQuery{Extent: Extent{Start: time.Unix(20, 0),
-		End: time.Unix(10, 0)}, Step: time.Duration(10) * time.Second}
-	ExtentList{Extent{}}.CalculateDeltas(trq.Extent, trq.Step)
-
 	tests := []struct {
 		have                 []Extent
 		expected             []Extent
@@ -918,17 +913,14 @@ func TestCalculateDeltas(t *testing.T) {
 
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-
-			trq := TimeRangeQuery{Statement: "up", Extent: Extent{Start: time.Unix(test.start, 0),
-				End: time.Unix(test.end, 0)}, Step: time.Duration(test.stepSecs) * time.Second}
-			trq.NormalizeExtent()
-			d := ExtentList(test.have).CalculateDeltas(trq.Extent, trq.Step)
-
+			d := ExtentList(test.have).CalculateDeltas(
+				ExtentList{{Start: time.Unix(test.start, 0), End: time.Unix(test.end, 0)}},
+				time.Duration(test.stepSecs)*time.Second,
+			)
 			if len(d) != len(test.expected) {
 				t.Errorf("expected %v got %v", test.expected, d)
 				return
 			}
-
 			for i := range d {
 				if d[i].Start != test.expected[i].Start {
 					t.Errorf("expected %d got %d", test.expected[i].Start.Unix(), d[i].Start.Unix())
@@ -1198,7 +1190,7 @@ func BenchmarkCalculateDeltas(b *testing.B) {
 	b.ResetTimer()
 	var r ExtentList
 	for i := 0; i < b.N; i++ {
-		r = haves[i].CalculateDeltas(wants[i], bmTimeStep)
+		r = haves[i].CalculateDeltas(ExtentList{wants[i]}, bmTimeStep)
 	}
 	res = r
 }
