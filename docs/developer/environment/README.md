@@ -29,5 +29,5 @@ selector to go between various Trickster configs, or bypass Trickster altogether
 for verification purposes.
 
 You can stop the developer environment by running `make developer-stop`. To
-delete the developer environment, run `make developer-stop` which will destroy
+delete the developer environment, run `make developer-delete` which will destroy
 all data.
