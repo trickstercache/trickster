@@ -16,7 +16,7 @@
 
 package segments
 
-// Int64 implements Deltaable for int64 (bytes, IPv4s, etc.)
+// Int64 implements Diffable for int64 (bytes, IPv4s, etc.)
 type Int64 struct{}
 
 func (Int64) Add(a int64, step int64) int64 { return a + step }
