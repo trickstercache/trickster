@@ -128,6 +128,9 @@ func printCsvHeaderRow(w *csv.Writer, fds timeseries.FieldDefinitions) error {
 }
 
 func processSeriesHeader(st *state) {
+	if st == nil || st.s == nil {
+		return
+	}
 	st.fds = st.s.Header.FieldDefinitions()
 	if st.prev == nil { // TODO: also if schema has changed between s and prev
 		if st.t {

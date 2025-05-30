@@ -182,7 +182,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 			}
 			// Wait on queries
 			wg.Wait()
-			d.timeseries = ress.Merge()
+			d.timeseries = ress.Merge(true)
 			if d.timeseries != nil {
 				d.timeseries.SetExtents(d.timeseries.Extents().Compress(trq.Step))
 			}

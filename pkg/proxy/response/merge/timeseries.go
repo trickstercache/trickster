@@ -30,7 +30,6 @@ import (
 // and writes it to the provided responsewriter
 func Timeseries(w http.ResponseWriter, r *http.Request, rgs ResponseGates) {
 
-	var ts timeseries.Timeseries
 	var f timeseries.MarshalWriterFunc
 	var rlo *timeseries.RequestOptions
 
@@ -58,10 +57,6 @@ func Timeseries(w http.ResponseWriter, r *http.Request, rgs ResponseGates) {
 			if rlo == nil {
 				rlo = rg.Resources.TSReqestOptions
 			}
-			if ts == nil {
-				ts = rg.Resources.TS
-				continue
-			}
 			tsm[k] = rg.Resources.TS
 			k++
 		}
@@ -71,7 +66,7 @@ func Timeseries(w http.ResponseWriter, r *http.Request, rgs ResponseGates) {
 		}
 	}
 
-	if ts == nil || f == nil {
+	if k == 0 || f == nil {
 		if bestResp != nil {
 			h := w.Header()
 			headers.Merge(h, bestResp.Header)
@@ -88,10 +83,6 @@ func Timeseries(w http.ResponseWriter, r *http.Request, rgs ResponseGates) {
 		statusCode = bestResp.StatusCode
 	}
 
-	if k > 0 {
-		ts.Merge(true, tsm[:k]...)
-	}
-
 	headers.StripMergeHeaders(h)
-	f(ts, rlo, statusCode, w)
+	f(tsm.Merge(false), rlo, statusCode, w)
 }
