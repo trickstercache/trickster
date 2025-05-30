@@ -18,7 +18,7 @@ package segments
 
 import "time"
 
-// Time implements Deltaable for time.Time
+// Time implements Diffable for time.Time
 type Time struct{}
 
 func (Time) Add(a time.Time, step time.Duration) time.Time { return a.Add(step) }
