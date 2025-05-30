@@ -20,11 +20,12 @@ package byterange
 
 import (
 	"errors"
-	"fmt"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/trickstercache/trickster/v2/pkg/segments"
 )
 
 //go:generate go tool msgp
@@ -50,29 +51,22 @@ func init() {
 	respRE = regexp.MustCompile(`^bytes ([0-9]+)-([0-9]+)\/([0-9]+)$`)
 }
 
-func (br Range) String() string {
-
-	var start string
-	var end string
-	if br.Start >= 0 {
-		start = strconv.FormatInt(br.Start, 10)
-	}
-	if br.End >= 0 {
-		end = strconv.FormatInt(br.End, 10)
-	}
-	return start + "-" + end
+func (r Range) StartVal() int64 { return r.Start }
+func (r Range) EndVal() int64   { return r.End }
+func (r Range) NewSegment(start, end int64) segments.Segment[int64] {
+	return Range{Start: start, End: end}
 }
 
 // ContentRangeHeader returns a 'Content-Range' header representing the extent of the subject range
-func (br Range) ContentRangeHeader(contentLength int64) string {
+func (r Range) ContentRangeHeader(contentLength int64) string {
 	var start string
 	var end string
 	cl := "*"
-	if br.Start >= 0 {
-		start = strconv.FormatInt(br.Start, 10)
+	if r.Start >= 0 {
+		start = strconv.FormatInt(r.Start, 10)
 	}
-	if br.End >= 0 {
-		end = strconv.FormatInt(br.End, 10)
+	if r.End >= 0 {
+		end = strconv.FormatInt(r.End, 10)
 	}
 	if contentLength > 0 {
 		cl = strconv.FormatInt(contentLength, 10)
@@ -80,189 +74,55 @@ func (br Range) ContentRangeHeader(contentLength int64) string {
 	return byteResponsRangePrefix + start + "-" + end + "/" + cl
 }
 
-func (br Range) Mod(i int64) Range {
+func (r Range) Mod(i int64) Range {
 	return Range{
-		Start: br.Start % i,
-		End:   br.End % i,
+		Start: r.Start % i,
+		End:   r.End % i,
 	}
 }
 
 // Crop a byte slice to this byterange.
-// Generally equal to b[br.Start-offset:br.End-offset+1], but will automatically adjust the end to avoid overflow.
+// Generally equal to b[r.Start-offset:r.End-offset+1], but will automatically adjust the end to avoid overflow.
 // Use offset if b is a part of a whole.
-func (br Range) CropByteSlice(b []byte) ([]byte, Range) {
-	over := (br.End + 1) - int64(len(b))
+func (r Range) CropByteSlice(b []byte) ([]byte, Range) {
+	over := (r.End + 1) - int64(len(b))
 	if over < 0 {
 		over = 0
 	}
-	return b[br.Start : br.End+1-over], Range{Start: br.Start, End: br.End - over}
+	return b[r.Start : r.End+1-over], Range{Start: r.Start, End: r.End - over}
 }
 
-// Copy a source byte slice, whose data range is represented by br, into dst in the range of br.
-// If src is smaller than br, Copy assumes that br.End should be reduced by the overage.
-func (br Range) Copy(dst []byte, src []byte) int {
-	over := br.End - br.Start + 1 - int64(len(src))
+// Copy a source byte slice, whose data range is represented by r, into dst in the range of r.
+// If src is smaller than r, Copy assumes that r.End should be reduced by the overage.
+func (r Range) Copy(dst []byte, src []byte) int {
+	over := r.End - r.Start + 1 - int64(len(src))
 	if over < 0 {
 		over = 0
 	}
-	return copy(dst[br.Start:br.End+1-over], src)
+	return copy(dst[r.Start:r.End+1-over], src)
 }
 
-func (brs Ranges) String() string {
-	if len(brs) == 0 {
-		return ""
-	}
-	sb := &strings.Builder{}
-	sb.WriteString(byteRequestRangePrefix)
-	var sep string
-	for _, r := range brs {
-		fmt.Fprintf(sb, "%s%s", sep, r.String())
-		sep = ", "
-	}
-	return sb.String()
+// CalculateDeltas calculates the delta between two Ranges
+func (rs Ranges) CalculateDeltas(need Ranges, fullContentLength int64) Ranges {
+	return segments.Diff(rs, need, int64(1), segments.Int64{})
 }
 
-// CalculateDelta calculates the delta between two Ranges
-func (brs Ranges) CalculateDelta(haves Ranges, fullContentLength int64) Ranges {
-
-	checkpoint := int64(-1)
-	if len(brs) == 0 {
-		return haves
-	}
-	if haves == nil || fullContentLength < 1 || len(haves) == 0 {
-		return brs
-	}
-	if brs.Equal(haves) {
-		return Ranges{}
-	}
-
-	sort.Sort(brs)
-	sort.Sort(haves)
-	need := make(Ranges, (len(brs)+len(haves))*2)
-	var k int
-
-	deltaRange := func() Range {
-		return Range{Start: -1, End: -1}
-	}
-	nr := deltaRange()
-
-	for i, want := range brs {
-
-		// adjust any prefix/suffix ranges to known start/ends
-		if want.Start == -1 || want.End == -1 {
-			if want.Start == -1 {
-				want.Start = fullContentLength - want.End
-			}
-			want.End = fullContentLength - 1
-			brs[i] = want
-		}
-		if want.End > fullContentLength {
-			// end is out of bounds, consider a full miss
-			return brs
-		}
-
-		checked := false
-		// now compare to any cached ranges to determine any ranges that are not in cache
-		for _, have := range haves {
-
-			if have.End < checkpoint {
-				continue
-			}
-
-			if have.Start > want.End {
-				if nr.Start > -1 && nr.End == -1 {
-					nr.End = want.End
-					checkpoint = nr.End
-					need[k] = nr
-					k++
-					checked = true
-					nr = deltaRange()
-				}
-				break
-			}
-			if want.Start > have.End {
-				if i < len(haves) {
-					nr.Start = want.Start
-				}
-				continue
-			}
-			if want.Start >= have.Start && want.Start <= have.End &&
-				want.End <= have.End && want.End >= have.Start {
-				checked = true
-				nr = deltaRange()
-				continue
-			}
-			if nr.Start == -1 {
-				// want and have share mutual start and/or ends
-				if want.Start >= have.Start {
-					// they are identical, break and move on
-					if want.End <= have.End {
-						break
-					}
-					nr.Start = have.End + 1
-					continue
-				}
-				nr.Start = want.Start
-			}
-			if want.End <= have.End {
-				if nr.Start > -1 && have.Start > 0 {
-					nr.End = have.Start - 1
-					need[k] = nr
-					k++
-				}
-				checked = true
-				nr = deltaRange()
-				continue
-			}
-			if want.Start < have.Start && want.End > have.End {
-				nr.End = have.Start - 1
-				checkpoint = nr.End
-				need[k] = nr
-				k++
-				checked = true
-				nr = deltaRange()
-				nr.Start = have.End + 1
-			}
-			if want.Start >= have.Start && want.Start <= have.End && want.End > have.End {
-				nr.Start = have.End + 1
-			}
-		}
-		if !checked {
-			if nr.Start > -1 {
-				want.Start = nr.Start
-			}
-			need[k] = want
-			k++
-			nr = deltaRange()
-		}
-	}
-
-	if nr.Start != -1 && nr.End == -1 {
-		nr.End = brs[len(brs)-1].End
-		need[k] = nr
-		k++
-	}
-	need = need[:k]
-	sort.Sort(need)
-	return need
-}
-
-func (brs Ranges) Clone() Ranges {
-	brs2 := make(Ranges, len(brs))
-	copy(brs2, brs)
-	return brs2
+func (rs Ranges) Clone() Ranges {
+	rs2 := make(Ranges, len(rs))
+	copy(rs2, rs)
+	return rs2
 }
 
 // Crop a byte slice to a series of ranges.
-// This results in a byte slice of a length equal to the maximum value within brs, where all values within brs are set
-// and all others are zero.
+// This results in a byte slice of a length equal to the maximum value within rs,
+// where all values within rs are set and all others are zero.
 // Use offset if b is part of a whole.
-func (brs Ranges) FilterByteSlice(b []byte) []byte {
-	sort.Sort(brs)
-	out := make([]byte, brs[len(brs)-1].End)
-	for _, br := range brs {
-		content, _ := br.CropByteSlice(b)
-		br.Copy(out, content)
+func (rs Ranges) FilterByteSlice(b []byte) []byte {
+	sort.Sort(rs)
+	out := make([]byte, rs[len(rs)-1].End)
+	for _, r := range rs {
+		content, _ := Range(r).CropByteSlice(b)
+		Range(r).Copy(out, content)
 	}
 	return out
 }
@@ -331,15 +191,15 @@ func ParseRangeHeader(input string) Ranges {
 
 // Equal returns true if the compared byte range slices are equal
 // and assumes that the Ranges are sorted
-func (brs Ranges) Equal(brs2 Ranges) bool {
-	if brs2 == nil {
+func (rs Ranges) Equal(rs2 Ranges) bool {
+	if rs2 == nil {
 		return false
 	}
-	if len(brs) != len(brs2) {
+	if len(rs) != len(rs2) {
 		return false
 	}
-	for i := range brs {
-		if brs[i] != brs2[i] {
+	for i := range rs {
+		if rs[i] != rs2[i] {
 			return false
 		}
 	}
@@ -349,21 +209,44 @@ func (brs Ranges) Equal(brs2 Ranges) bool {
 // sort.Interface required functions for Ranges
 
 // Len returns the length of an slice of type Ranges
-func (brs Ranges) Len() int {
-	return len(brs)
+func (rs Ranges) Len() int {
+	return len(rs)
 }
 
 // Less returns true if element i in the Ranges comes before j
-func (brs Ranges) Less(i, j int) bool {
-	return brs[i].Start < (brs[j].Start)
+func (rs Ranges) Less(i, j int) bool {
+	return rs[i].Start < (rs[j].Start)
 }
 
 // Swap modifies an Ranges by swapping the values in indexes i and j
-func (brs Ranges) Swap(i, j int) {
-	brs[i], brs[j] = brs[j], brs[i]
+func (rs Ranges) Swap(i, j int) {
+	rs[i], rs[j] = rs[j], rs[i]
 }
 
 // Less returns true if element i in the Ranges comes before j
-func (br Range) Less(br2 Range) bool {
-	return br.Start < br2.Start
+func (r Range) Less(r2 Range) bool {
+	return r.Start < r2.Start
+}
+
+func (r Range) String() string {
+	var start string
+	var end string
+	if r.Start >= 0 {
+		start = strconv.FormatInt(r.Start, 10)
+	}
+	if r.End >= 0 {
+		end = strconv.FormatInt(r.End, 10)
+	}
+	return start + "-" + end
+}
+
+func (rs Ranges) String() string {
+	if len(rs) == 0 {
+		return ""
+	}
+	s := make([]string, len(rs))
+	for i, v := range rs {
+		s[i] = v.String()
+	}
+	return strings.Join(s, ",")
 }

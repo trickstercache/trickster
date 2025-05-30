@@ -21,6 +21,8 @@ package timeseries
 import (
 	"fmt"
 	"time"
+
+	"github.com/trickstercache/trickster/v2/pkg/segments"
 )
 
 // Extent describes the start and end times for a given range of data
@@ -30,39 +32,11 @@ type Extent struct {
 	LastUsed time.Time `msg:"lu" json:"-"`
 }
 
-// Includes returns true if the Extent includes the provided Time
-func (e *Extent) Includes(t time.Time) bool {
-	return !t.Before(e.Start) && !t.After(e.End)
-}
-
-// StartsAt returns true if t is equal to the Extent's start time
-func (e *Extent) StartsAt(t time.Time) bool {
-	return t.Equal(e.Start)
-}
-
-// StartsAtOrBefore returns true if t is equal or before to the Extent's start time
-func (e *Extent) StartsAtOrBefore(t time.Time) bool {
-	return t.Equal(e.Start) || e.Start.Before(t)
-}
-
-// StartsAtOrAfter returns true if t is equal to or after the Extent's start time
-func (e *Extent) StartsAtOrAfter(t time.Time) bool {
-	return t.Equal(e.Start) || e.Start.After(t)
-}
-
-// EndsAt returns true if t is equal to the Extent's end time
-func (e *Extent) EndsAt(t time.Time) bool {
-	return t.Equal(e.End)
-}
-
-// EndsAtOrBefore returns true if t is equal to or earlier than the Extent's end time
-func (e *Extent) EndsAtOrBefore(t time.Time) bool {
-	return t.Equal(e.End) || e.End.Before(t)
-}
-
-// EndsAtOrAfter returns true if t is equal to or after the Extent's end time
-func (e *Extent) EndsAtOrAfter(t time.Time) bool {
-	return t.Equal(e.End) || e.End.After(t)
+// Implements segments.Segment[time.Time]
+func (e Extent) StartVal() time.Time { return e.Start }
+func (e Extent) EndVal() time.Time   { return e.End }
+func (e Extent) NewSegment(start, end time.Time) segments.Segment[time.Time] {
+	return Extent{Start: start, End: end}
 }
 
 // After returns true if the range of the Extent is completely after the provided time
