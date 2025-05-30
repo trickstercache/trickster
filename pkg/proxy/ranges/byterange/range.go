@@ -121,8 +121,8 @@ func (rs Ranges) FilterByteSlice(b []byte) []byte {
 	sort.Sort(rs)
 	out := make([]byte, rs[len(rs)-1].End)
 	for _, r := range rs {
-		content, _ := Range(r).CropByteSlice(b)
-		Range(r).Copy(out, content)
+		content, _ := r.CropByteSlice(b)
+		r.Copy(out, content)
 	}
 	return out
 }
