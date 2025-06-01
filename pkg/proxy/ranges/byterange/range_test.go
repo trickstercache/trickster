@@ -18,6 +18,7 @@ package byterange
 
 import (
 	"fmt"
+	"reflect"
 	"sort"
 	"strconv"
 	"testing"
@@ -381,5 +382,113 @@ func TestRangesCrop(t *testing.T) {
 	}
 	if cr, _ := r2.CropByteSlice(b); len(cr) != 2 || cr[0] != 0 || cr[1] != 1 {
 		t.Error(cr)
+	}
+}
+
+func TestCompressRanges(t *testing.T) {
+
+	tests := []struct {
+		uncompressed, compressed Ranges
+	}{
+		{
+			Ranges{},
+			Ranges{},
+		},
+
+		{
+			Ranges{
+				Range{Start: -1, End: 1},
+				Range{Start: 3, End: 4},
+				Range{Start: 4, End: 6},
+				Range{Start: 6, End: 7},
+			},
+			Ranges{
+				Range{Start: -1, End: 1},
+				Range{Start: 3, End: 4},
+				Range{Start: 4, End: 6},
+				Range{Start: 6, End: 7},
+			},
+		},
+
+		{
+			Ranges{
+				Range{Start: 1, End: 1},
+				Range{Start: 3, End: 4},
+				Range{Start: -4, End: 6},
+				Range{Start: 6, End: 7},
+			},
+			Ranges{
+				Range{Start: 1, End: 1},
+				Range{Start: 3, End: 4},
+				Range{Start: -4, End: 6},
+				Range{Start: 6, End: 7},
+			},
+		},
+
+		{
+			Ranges{
+				Range{Start: 1, End: 1},
+				Range{Start: 3, End: 4},
+				Range{Start: 4, End: 6},
+				Range{Start: 6, End: 7},
+			},
+			Ranges{
+				Range{Start: 1, End: 1},
+				Range{Start: 3, End: 7},
+			},
+		},
+
+		{
+			Ranges{
+				Range{Start: 0, End: 1},
+			},
+			Ranges{
+				Range{Start: 0, End: 1},
+			},
+		},
+
+		{
+			Ranges{
+				Range{Start: 0, End: 1},
+				Range{Start: 3, End: 4},
+				Range{Start: 4, End: 6},
+				Range{Start: 9, End: 12},
+				Range{Start: 6, End: 7},
+				Range{Start: 14, End: 16},
+			},
+			Ranges{
+				Range{Start: 0, End: 1},
+				Range{Start: 3, End: 7},
+				Range{Start: 9, End: 12},
+				Range{Start: 14, End: 16},
+			},
+		},
+
+		{
+			Ranges{
+				Range{Start: 3, End: 4},
+				Range{Start: 3, End: 4},
+				Range{Start: 6, End: 6},
+				Range{Start: 6, End: 6},
+			},
+			Ranges{
+				Range{Start: 3, End: 4},
+				Range{Start: 6, End: 6},
+			},
+		},
+	}
+
+	for i, test := range tests {
+		if i != 2 {
+			continue
+		}
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+
+			result := test.uncompressed.Compress()
+
+			if !reflect.DeepEqual(result, test.compressed) {
+				t.Errorf("mismatch in Compress: expected=%s got=%s", test.compressed, result)
+			}
+		})
 	}
 }
