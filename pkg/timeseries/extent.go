@@ -40,7 +40,7 @@ func (e Extent) NewSegment(start, end time.Time) segments.Segment[time.Time] {
 }
 
 // After returns true if the range of the Extent is completely after the provided time
-func (e *Extent) After(t time.Time) bool {
+func (e Extent) After(t time.Time) bool {
 	return t.Before(e.Start)
 }
 
