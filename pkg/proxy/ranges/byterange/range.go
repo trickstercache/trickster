@@ -104,6 +104,8 @@ func (r Range) Copy(dst []byte, src []byte) int {
 
 // CalculateDeltas calculates the delta between two Ranges
 func (rs Ranges) CalculateDeltas(need Ranges, fullContentLength int64) Ranges {
+	sort.Sort(rs)
+	sort.Sort(need)
 	return segments.Diff(rs, need, int64(1), segments.Int64{})
 }
 

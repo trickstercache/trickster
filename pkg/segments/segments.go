@@ -37,52 +37,50 @@ type Diffabble[P any, StepT any] interface {
 	Neg(step StepT) StepT
 }
 
+// Diff compares 'have' to 'need' and returns a slice of Segments missing from need
 func Diff[P any, S Segment[P], StepT comparable, D Diffabble[P, StepT]](
-	have []S,
-	need []S,
-	step StepT,
-	diff D,
-) []S {
+	haves []S, needs []S, step StepT, diff D) []S {
 	var zero StepT
-	if len(need) == 0 || step == zero {
+	if len(haves) == 0 {
+		return needs
+	}
+	if len(needs) == 0 || step == zero {
 		return nil
 	}
-	out := make([]S, (len(have)+1)*len(need))
+	out := make([]S, (len(haves)+1)*len(needs))
 	var k int
 
-	for _, n := range need {
+	for _, n := range needs {
 		if !diff.Less(n.StartVal(), n.EndVal()) {
 			continue
 		}
 		missStart := diff.Zero()
-		haveIdx := 0
+		j := 0
 		inMiss := false
 
 		for ts := n.StartVal(); !diff.Less(n.EndVal(), ts); ts = diff.Add(ts, step) {
-			for haveIdx < len(have) && diff.Less(have[haveIdx].EndVal(), ts) {
-				haveIdx++
+			for j < len(haves) && diff.Less(haves[j].EndVal(), ts) {
+				j++
 			}
-			inRange := false
-			if haveIdx < len(have) {
-				s := have[haveIdx].StartVal()
-				e := have[haveIdx].EndVal()
-				inRange = !diff.Less(ts, s) && !diff.Less(e, ts)
+			inHave := false
+			if j < len(haves) {
+				s := haves[j].StartVal()
+				e := haves[j].EndVal()
+				inHave = !diff.Less(ts, s) && !diff.Less(e, ts)
 			}
-			if !inRange {
+			if !inHave {
 				if !inMiss {
 					missStart = ts
 					inMiss = true
 				}
 			} else if inMiss {
-				seg := n.NewSegment(missStart, diff.Add(ts, diff.Neg(step)))
-				out[k] = seg.(S)
+				out[k] = n.NewSegment(missStart, diff.Add(ts, diff.Neg(step))).(S)
 				k++
 				inMiss = false
 			}
 		}
 		if inMiss {
-			seg := n.NewSegment(missStart, n.EndVal())
-			out[k] = seg.(S)
+			out[k] = n.NewSegment(missStart, n.EndVal()).(S)
 			k++
 		}
 	}

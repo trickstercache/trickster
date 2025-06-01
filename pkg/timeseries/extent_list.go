@@ -393,7 +393,11 @@ func (el ExtentList) CalculateDeltas(
 	need ExtentList,
 	step time.Duration,
 ) ExtentList {
-	return segments.Diff(el, need, step, segments.Time{})
+	sort.Sort(el)
+	sort.Sort(need)
+	out := ExtentList(segments.Diff(el, need, step, segments.Time{}))
+	out.Compress(step)
+	return out
 }
 
 // Size returns the approximate memory utilization in bytes of the timeseries
