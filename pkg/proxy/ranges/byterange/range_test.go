@@ -175,7 +175,7 @@ func TestRangesString(t *testing.T) {
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			if test.out != test.expected {
-				t.Errorf("expected: %s\ngot:      %s", test.out, test.expected)
+				t.Errorf("expected: %s\ngot:      %s", test.expected, test.out)
 			}
 		})
 	}
