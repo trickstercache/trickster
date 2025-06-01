@@ -248,7 +248,7 @@ func TestRangesEqual(t *testing.T) {
 
 }
 
-func TestRangesSort(t *testing.T) {
+func TestRangeSort(t *testing.T) {
 	r := Ranges{Range{Start: 10, End: 20}, Range{Start: 0, End: 8}}
 	sort.Sort(r)
 	if r[0].Start != 0 || r[1].End != 20 {
@@ -256,7 +256,7 @@ func TestRangesSort(t *testing.T) {
 	}
 }
 
-func TestRangesLess(t *testing.T) {
+func TestRangeLess(t *testing.T) {
 	r1 := Range{Start: 10, End: 20}
 	r2 := Range{Start: 22, End: 30}
 	if !r1.Less(r2) {
@@ -264,7 +264,7 @@ func TestRangesLess(t *testing.T) {
 	}
 }
 
-func TestContentRangesHeader(t *testing.T) {
+func TestContentRangeHeader(t *testing.T) {
 
 	const expected = "bytes 0-20/100"
 
@@ -277,7 +277,7 @@ func TestContentRangesHeader(t *testing.T) {
 
 }
 
-func TestParseRangesHeader_EmptyString(t *testing.T) {
+func TestParseRangeHeader_EmptyString(t *testing.T) {
 	r := ParseRangeHeader("")
 	if r != nil {
 		t.Errorf("expected empty byte range")
@@ -315,7 +315,7 @@ func TestParseRangeHeader_InvalidRange(t *testing.T) {
 	}
 }
 
-func TestParseRangesHeader_SingleRange(t *testing.T) {
+func TestParseRangeHeader_SingleRange(t *testing.T) {
 	byteRange := "bytes=0-50"
 	res := ParseRangeHeader(byteRange)
 	if res == nil {
@@ -326,7 +326,7 @@ func TestParseRangesHeader_SingleRange(t *testing.T) {
 	}
 }
 
-func TestParseRangesHeader_Ends(t *testing.T) {
+func TestParseRangeHeader_Ends(t *testing.T) {
 	byteRange := "bytes=500-"
 	res := ParseRangeHeader(byteRange)
 	if res == nil {
@@ -359,7 +359,7 @@ func TestParseRangesHeader_Ends(t *testing.T) {
 
 }
 
-func TestParseRangesHeader_MultiRange(t *testing.T) {
+func TestParseRangeHeader_MultiRange(t *testing.T) {
 	byteRange := "bytes=0-50, 100-150"
 	res := ParseRangeHeader(byteRange)
 	if res == nil {
@@ -373,7 +373,7 @@ func TestParseRangesHeader_MultiRange(t *testing.T) {
 	}
 }
 
-func TestRangesCrop(t *testing.T) {
+func TestRangeCrop(t *testing.T) {
 	r1 := Range{0, 1}
 	r2 := Range{0, 3}
 	b := []byte{0, 1}
