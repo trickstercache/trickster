@@ -20,7 +20,6 @@ package byterange
 
 import (
 	"errors"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -38,18 +37,12 @@ type Range struct {
 
 // Ranges represents a slice of type Range
 // The objects in the slice may not overlap value coverage,
-// meaning values are contained within <= 1 Range in the slice
+// meaning any given value can be covered no more than once by the slice
 // Good: [ 1-10, 21-30, 35-40 ]; Bad: [ 1-10, 10-20 ]; Bad: [ 1-10, 5-20 ]
 type Ranges []Range
 
 const byteRequestRangePrefix = "bytes="
 const byteResponsRangePrefix = "bytes "
-
-var respRE *regexp.Regexp
-
-func init() {
-	respRE = regexp.MustCompile(`^bytes ([0-9]+)-([0-9]+)\/([0-9]+)$`)
-}
 
 func (r Range) StartVal() int64 { return r.Start }
 func (r Range) EndVal() int64   { return r.End }
@@ -132,19 +125,42 @@ func (rs Ranges) FilterByteSlice(b []byte) []byte {
 // ParseContentRangeHeader returns a Ranges list from the provided input,
 // which must be a properly-formatted HTTP 'Content-Range' Response Header value
 func ParseContentRangeHeader(input string) (Range, int64, error) {
-	parts := respRE.FindAllStringSubmatch(input, -1)
-	if len(parts) == 1 && len(parts[0]) == 4 {
-
-		r := Range{}
-		r.Start, _ = strconv.ParseInt(parts[0][1], 10, 64)
-		r.End, _ = strconv.ParseInt(parts[0][2], 10, 64)
-		if parts[0][3] == "*" {
-			return r, -1, nil
-		}
-		cl, _ := strconv.ParseInt(parts[0][3], 10, 64)
-		return r, cl, nil
+	errorResponse := func() (Range, int64, error) {
+		return Range{}, -1, errors.New("invalid input format")
 	}
-	return Range{}, -1, errors.New("invalid input format")
+	if !strings.HasPrefix(input, byteResponsRangePrefix) {
+		return errorResponse()
+	}
+	input = strings.ReplaceAll(input[6:], " ", "")
+	var haveStart bool
+	var j int
+	r := Range{}
+	for i := range len(input) {
+		if input[i] < '0' || input[i] > '9' {
+			// closes out the 'start' section of the range string
+			if !haveStart && input[i] == '-' {
+				r.Start, _ = strconv.ParseInt(input[j:i], 10, 64)
+				j = i + 1
+				haveStart = true
+				continue
+			}
+			// closes out the 'end' section of the range string
+			if haveStart && input[i] == '/' {
+				r.End, _ = strconv.ParseInt(input[j:i], 10, 64)
+				j = i + 1
+				break
+			}
+			return errorResponse()
+		}
+	}
+	if input[j:] == "*" {
+		return errorResponse()
+	}
+	cl, err := strconv.ParseInt(input[j:], 10, 64)
+	if err != nil {
+		return errorResponse()
+	}
+	return r, cl, nil
 }
 
 // ParseRangeHeader returns a Ranges list from the provided input,
