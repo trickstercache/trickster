@@ -96,10 +96,24 @@ func (r Range) Copy(dst []byte, src []byte) int {
 }
 
 // CalculateDeltas calculates the delta between two Ranges
-func (rs Ranges) CalculateDeltas(need Ranges, fullContentLength int64) Ranges {
+func (rs Ranges) CalculateDeltas(needs Ranges, fullContentLength int64) Ranges {
+	if len(rs) == 0 || fullContentLength <= 0 {
+		return needs
+	}
+	needs = needs.Clone()
+	for i, n := range needs {
+		if n.Start >= 0 && n.End >= 0 {
+			continue
+		}
+		if n.Start < 0 {
+			needs[i].Start = fullContentLength - n.End
+		}
+		needs[i].End = fullContentLength - 1
+	}
 	sort.Sort(rs)
-	sort.Sort(need)
-	return segments.Diff(rs, need, int64(1), segments.Int64{})
+	sort.Sort(needs)
+	out := Ranges(segments.Diff(rs, needs, int64(1), segments.Int64{}))
+	return out.Compress()
 }
 
 func (rs Ranges) Clone() Ranges {
@@ -267,4 +281,38 @@ func (rs Ranges) String() string {
 		s[i] = v.String()
 	}
 	return byteRequestRangePrefix + strings.Join(s, ", ")
+}
+
+func (rs Ranges) Compress() Ranges {
+	if len(rs) == 0 {
+		return Ranges{}
+	}
+	rs2 := rs.Clone()
+	sort.Sort(rs2)
+	current := rs2[0]
+	if rs2[0].Start < 0 || rs2[0].End < 0 {
+		// don't compress Ranges that include suffix byte values
+		return rs
+	}
+	out := make(Ranges, len(rs))
+	var k int
+	for i := 1; i < len(rs); i++ {
+		next := rs2[i]
+		if next.Start < 0 || next.End < 0 {
+			// don't compress Ranges that include suffix byte values
+			return rs
+		}
+		if next.Start < current.End+1 {
+			if next.End > current.End {
+				current.End = next.End
+			}
+			continue
+		}
+		out[k] = current
+		k++
+		current = next
+	}
+	out[k] = current
+	k++
+	return out[:k]
 }

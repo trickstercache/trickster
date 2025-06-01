@@ -389,13 +389,11 @@ func (el ExtentList) TimestampCount(d time.Duration) int64 {
 // CalculateDeltas provides a list of extents that are not in el based on the
 // needed extent. step is used to determine which absolute timestamps in need
 // will be checked in el.
-func (el ExtentList) CalculateDeltas(
-	need ExtentList,
-	step time.Duration,
-) ExtentList {
+func (el ExtentList) CalculateDeltas(needs ExtentList,
+	step time.Duration) ExtentList {
 	sort.Sort(el)
-	sort.Sort(need)
-	out := ExtentList(segments.Diff(el, need, step, segments.Time{}))
+	sort.Sort(needs)
+	out := ExtentList(segments.Diff(el, needs, step, segments.Time{}))
 	out.Compress(step)
 	return out
 }
