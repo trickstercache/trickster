@@ -51,7 +51,8 @@ func Diff[P any, S Segment[P], StepT comparable, D Diffabble[P, StepT]](
 	var k int
 
 	for _, n := range needs {
-		if !diff.Less(n.StartVal(), n.EndVal()) {
+		if diff.Less(n.EndVal(), n.StartVal()) {
+			// skip ranges where end < start
 			continue
 		}
 		missStart := diff.Zero()
