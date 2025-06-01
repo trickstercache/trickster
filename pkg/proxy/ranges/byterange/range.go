@@ -266,5 +266,5 @@ func (rs Ranges) String() string {
 	for i, v := range rs {
 		s[i] = v.String()
 	}
-	return strings.Join(s, ",")
+	return byteRequestRangePrefix + strings.Join(s, ", ")
 }
