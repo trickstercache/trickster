@@ -23,6 +23,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/trickstercache/trickster/v2/pkg/segments"
 )
 
 // ExtentList is a type of []Extent used for sorting the slice
@@ -387,50 +389,13 @@ func (el ExtentList) TimestampCount(d time.Duration) int64 {
 // CalculateDeltas provides a list of extents that are not in el based on the
 // needed extent. step is used to determine which absolute timestamps in need
 // will be checked in el.
-func (el ExtentList) CalculateDeltas(need Extent, step time.Duration) ExtentList {
-	if step <= 0 || !need.End.After(need.Start) {
-		return ExtentList{}
-	}
-	if len(el) == 0 {
-		return ExtentList{need}
-	}
+func (el ExtentList) CalculateDeltas(needs ExtentList,
+	step time.Duration) ExtentList {
 	sort.Sort(el)
-	out := make(ExtentList, len(el)+1)
-	var missStart time.Time
-	var j, k int
-	for ts := need.Start; !ts.After(need.End); ts = ts.Add(step) {
-		// this advances j to the point in el where ts would be if it were
-		// present in el (whether it currently is or not)
-		for j < len(el) && ts.After(el[j].End) {
-			j++
-		}
-		inExisting := false
-		if j < len(el) {
-			s := el[j].Start
-			e := el[j].End
-			inExisting = !ts.Before(s) && !ts.After(e)
-		}
-		if !inExisting {
-			if missStart.IsZero() {
-				missStart = ts
-			}
-		} else if !missStart.IsZero() {
-			out[k] = Extent{
-				Start: missStart,
-				End:   ts.Add(-step),
-			}
-			k++
-			missStart = time.Time{}
-		}
-	}
-	if !missStart.IsZero() {
-		out[k] = Extent{
-			Start: missStart,
-			End:   need.End,
-		}
-		k++
-	}
-	return out[:k]
+	sort.Sort(needs)
+	out := ExtentList(segments.Diff(el, needs, step, segments.Time{}))
+	out.Compress(step)
+	return out
 }
 
 // Size returns the approximate memory utilization in bytes of the timeseries

@@ -284,7 +284,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 	}
 
 	if len(ranges) > 0 && len(d.Ranges) > 0 {
-		delta = ranges.CalculateDelta(d.Ranges, d.ContentLength)
+		delta = d.Ranges.CalculateDeltas(ranges, d.ContentLength)
 		if len(delta) > 0 {
 			if len(d.Body) > 0 {
 				// If there's delta, we need to treat this as a partial hit; move all of d's content to RangeParts
