@@ -14,32 +14,15 @@
  * limitations under the License.
  */
 
-package timeseries
+package segments
 
-import "testing"
+import "time"
 
-func TestStartsAtOrAfter(t *testing.T) {
+// Time implements Diffable for time.Time
+type Time struct{}
 
-	e := Extent{Start: t101, End: t200}
-	if !e.StartsAtOrAfter(t100) {
-		t.Error(("expected true"))
-	}
-
-	if e.StartsAtOrAfter(t200) {
-		t.Error(("expected false"))
-	}
-
-}
-
-func TestEndsAtOrBefore(t *testing.T) {
-
-	e := Extent{Start: t101, End: t200}
-	if e.EndsAtOrBefore(t100) {
-		t.Error(("expected false"))
-	}
-
-	if !e.EndsAtOrBefore(t201) {
-		t.Error(("expected true"))
-	}
-
-}
+func (Time) Add(a time.Time, step time.Duration) time.Time { return a.Add(step) }
+func (Time) Less(a, b time.Time) bool                      { return a.Before(b) }
+func (Time) Equal(a, b time.Time) bool                     { return a.Equal(b) }
+func (Time) Zero() time.Time                               { return time.Time{} }
+func (Time) Neg(step time.Duration) time.Duration          { return -step }
