@@ -191,7 +191,7 @@ func UpdateHeaders(headers http.Header, updates map[string]string) {
 		return
 	}
 	for k, v := range updates {
-		if len(k) == 0 {
+		if k == "" {
 			continue
 		}
 		if k[0:1] == "-" {
@@ -206,6 +206,29 @@ func UpdateHeaders(headers http.Header, updates map[string]string) {
 		}
 		headers.Set(k, v)
 	}
+}
+
+// UpdateRequestHeaders updates r's headers with the provided updates
+func UpdateRequestHeaders(r *http.Request, updates map[string]string) {
+	if r == nil || r.Header == nil || len(updates) == 0 {
+		return
+	}
+	hhName := NameHost
+	var hhVal string
+	if v, ok := updates[hhName]; ok && v != "" {
+		hhVal = v
+	} else { // account for lowercase host value / http2
+		hhName = strings.ToLower(hhName)
+		if v, ok := updates[strings.ToLower(hhName)]; ok && v != "" {
+			hhVal = v
+		}
+	}
+	// promote Host header from r.Header to r.Host if present
+	if hhVal != "" {
+		r.Host = hhVal
+		delete(updates, hhName)
+	}
+	UpdateHeaders(r.Header, updates)
 }
 
 // ExtractHeader returns the value for the provided header name, and a boolean indicating if the header was present
