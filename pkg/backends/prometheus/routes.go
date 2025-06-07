@@ -67,7 +67,6 @@ func (c *Client) MergeablePaths() []string {
 
 // DefaultPathConfigs returns the default PathConfigs for the given Provider
 func (c *Client) DefaultPathConfigs(o *bo.Options) po.Lookup {
-
 	var rhts map[string]string
 	if o != nil {
 		rhts = map[string]string{
@@ -75,10 +74,8 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) po.Lookup {
 	}
 	rhinst := map[string]string{
 		headers.NameCacheControl: fmt.Sprintf("%s=%d", headers.ValueSharedMaxAge, 30)}
-
-	paths := po.Lookup{
-
-		APIPath + mnQueryRange: {
+	paths := po.List{
+		{
 			Path:            APIPath + mnQueryRange,
 			HandlerName:     mnQueryRange,
 			Methods:         methods.GetAndPost(),
@@ -88,8 +85,7 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) po.Lookup {
 			MatchTypeName:   "exact",
 			MatchType:       matching.PathMatchTypeExact,
 		},
-
-		APIPath + mnQuery: {
+		{
 			Path:            APIPath + mnQuery,
 			HandlerName:     mnQuery,
 			Methods:         methods.GetAndPost(),
@@ -99,8 +95,7 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) po.Lookup {
 			MatchTypeName:   "exact",
 			MatchType:       matching.PathMatchTypeExact,
 		},
-
-		APIPath + mnSeries: {
+		{
 			Path:            APIPath + mnSeries,
 			HandlerName:     mnSeries,
 			Methods:         methods.GetAndPost(),
@@ -110,8 +105,7 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) po.Lookup {
 			MatchTypeName:   "exact",
 			MatchType:       matching.PathMatchTypeExact,
 		},
-
-		APIPath + mnLabels: {
+		{
 			Path:            APIPath + mnLabels,
 			HandlerName:     "labels",
 			Methods:         methods.GetAndPost(),
@@ -121,8 +115,7 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) po.Lookup {
 			MatchTypeName:   "exact",
 			MatchType:       matching.PathMatchTypeExact,
 		},
-
-		APIPath + mnLabel + "/": {
+		{
 			Path:            APIPath + mnLabel + "/",
 			HandlerName:     "labels",
 			Methods:         []string{http.MethodGet},
@@ -132,8 +125,7 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) po.Lookup {
 			MatchType:       matching.PathMatchTypePrefix,
 			ResponseHeaders: rhinst,
 		},
-
-		APIPath + mnTargets: {
+		{
 			Path:            APIPath + mnTargets,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet},
@@ -143,8 +135,7 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) po.Lookup {
 			MatchTypeName:   "exact",
 			MatchType:       matching.PathMatchTypeExact,
 		},
-
-		APIPath + mnTargetsMeta: {
+		{
 			Path:            APIPath + mnTargetsMeta,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet},
@@ -154,8 +145,7 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) po.Lookup {
 			MatchTypeName:   "exact",
 			MatchType:       matching.PathMatchTypeExact,
 		},
-
-		APIPath + mnRules: {
+		{
 			Path:            APIPath + mnRules,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet},
@@ -165,8 +155,7 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) po.Lookup {
 			MatchTypeName:   "exact",
 			MatchType:       matching.PathMatchTypeExact,
 		},
-
-		APIPath + mnAlerts: {
+		{
 			Path:            APIPath + mnAlerts,
 			HandlerName:     "alerts",
 			Methods:         []string{http.MethodGet},
@@ -176,8 +165,7 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) po.Lookup {
 			MatchTypeName:   "exact",
 			MatchType:       matching.PathMatchTypeExact,
 		},
-
-		APIPath + mnAlertManagers: {
+		{
 			Path:            APIPath + mnAlertManagers,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet},
@@ -187,8 +175,7 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) po.Lookup {
 			MatchTypeName:   "exact",
 			MatchType:       matching.PathMatchTypeExact,
 		},
-
-		APIPath + mnStatus: {
+		{
 			Path:            APIPath + mnStatus,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet},
@@ -198,24 +185,21 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) po.Lookup {
 			MatchType:       matching.PathMatchTypePrefix,
 			ResponseHeaders: rhinst,
 		},
-
-		APIPath + "admin": {
+		{
 			Path:          APIPath + "admin",
 			HandlerName:   "admin",
 			Methods:       methods.AllHTTPMethods(),
 			MatchType:     matching.PathMatchTypePrefix,
 			MatchTypeName: "prefix",
 		},
-
-		APIPath: {
+		{
 			Path:          APIPath,
 			HandlerName:   providers.Proxy,
 			Methods:       methods.GetAndPost(),
 			MatchType:     matching.PathMatchTypePrefix,
 			MatchTypeName: "prefix",
 		},
-
-		"/": {
+		{
 			Path:          "/",
 			HandlerName:   providers.Proxy,
 			Methods:       methods.GetAndPost(),
@@ -223,9 +207,6 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) po.Lookup {
 			MatchTypeName: "prefix",
 		},
 	}
-
-	o.FastForwardPath = paths[APIPath+mnQuery].Clone()
-
-	return paths
-
+	o.FastForwardPath = paths[1].Clone()
+	return paths.ToLookup()
 }

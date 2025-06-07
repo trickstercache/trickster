@@ -41,8 +41,8 @@ func (c *Client) RegisterHandlers(handlers.Lookup) {
 
 // DefaultPathConfigs returns the default PathConfigs for the given Provider
 func (c *Client) DefaultPathConfigs(_ *bo.Options) po.Lookup {
-	paths := po.Lookup{
-		"/": {
+	return po.List{
+		{
 			Path:           "/",
 			HandlerName:    "query",
 			Methods:        []string{http.MethodGet, http.MethodPost},
@@ -50,6 +50,5 @@ func (c *Client) DefaultPathConfigs(_ *bo.Options) po.Lookup {
 			MatchTypeName:  "prefix",
 			CacheKeyParams: []string{"database"},
 		},
-	}
-	return paths
+	}.ToLookup()
 }

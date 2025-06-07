@@ -18,7 +18,6 @@ package rule
 
 import (
 	"net/http"
-	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
@@ -101,17 +100,15 @@ func (rc Clients) validate(rwi rewriter.InstructionsLookup) error {
 
 // DefaultPathConfigs returns the default PathConfigs for the given Provider
 func (c *Client) DefaultPathConfigs(_ *bo.Options) po.Lookup {
-	m := methods.CacheableHTTPMethods()
-	paths := po.Lookup{
-		"/" + strings.Join(m, "-"): {
+	return po.List{
+		{
 			Path:          "/",
 			HandlerName:   providers.Rule,
-			Methods:       m,
+			Methods:       methods.AllHTTPMethods(),
 			MatchType:     matching.PathMatchTypePrefix,
 			MatchTypeName: "prefix",
 		},
-	}
-	return paths
+	}.ToLookup()
 }
 
 func (c *Client) RegisterHandlers(handlers.Lookup) {

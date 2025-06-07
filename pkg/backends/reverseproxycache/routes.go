@@ -18,7 +18,6 @@ package reverseproxycache
 
 import (
 	"net/http"
-	"strings"
 
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
@@ -42,25 +41,20 @@ func (c *Client) RegisterHandlers(handlers.Lookup) {
 
 // DefaultPathConfigs returns the default PathConfigs for the given Provider
 func (c *Client) DefaultPathConfigs(_ *bo.Options) po.Lookup {
-
-	cm := methods.CacheableHTTPMethods()
-	um := methods.UncacheableHTTPMethods()
-
-	paths := po.Lookup{
-		"/-" + strings.Join(cm, "-"): {
+	return po.List{
+		{
 			Path:          "/",
 			HandlerName:   "proxycache",
-			Methods:       cm,
+			Methods:       methods.CacheableHTTPMethods(),
 			MatchType:     matching.PathMatchTypePrefix,
 			MatchTypeName: "prefix",
 		},
-		"/-" + strings.Join(um, "-"): {
+		{
 			Path:          "/",
 			HandlerName:   providers.Proxy,
-			Methods:       um,
+			Methods:       methods.UncacheableHTTPMethods(),
 			MatchType:     matching.PathMatchTypePrefix,
 			MatchTypeName: "prefix",
 		},
-	}
-	return paths
+	}.ToLookup()
 }
