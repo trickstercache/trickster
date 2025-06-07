@@ -47,6 +47,7 @@ import (
 	pnh "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/ping"
 	ph "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/purge"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/reload"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 	"github.com/trickstercache/trickster/v2/pkg/routing"
 )
@@ -117,7 +118,7 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	// every config (re)load is a new router
 	r := lm.NewRouter()
 	mr := lm.NewRouter()
-	mr.SetMatchingScheme(0) // metrics router is exact-match only
+	mr.SetMatchingScheme(router.MatchExactPath)
 
 	r.RegisterRoute(newConf.MgmtConfig.PingHandlerPath, nil,
 		[]string{http.MethodGet, http.MethodHead}, false,
