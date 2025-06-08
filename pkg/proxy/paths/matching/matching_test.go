@@ -25,12 +25,12 @@ func TestPMTString(t *testing.T) {
 
 	var t3 PathMatchType = 3
 
-	if t1.String() != "exact" {
-		t.Errorf("expected %s got %s", "exact", t1.String())
+	if t1.String() != PathMatchNameExact {
+		t.Errorf("expected %s got %s", PathMatchNameExact, t1.String())
 	}
 
-	if t2.String() != "prefix" {
-		t.Errorf("expected %s got %s", "prefix", t2.String())
+	if t2.String() != PathMatchNamePrefix {
+		t.Errorf("expected %s got %s", PathMatchNamePrefix, t2.String())
 	}
 
 	if t3.String() != "3" {

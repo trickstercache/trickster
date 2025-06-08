@@ -26,12 +26,15 @@ const (
 	PathMatchTypeExact = PathMatchType(iota)
 	// PathMatchTypePrefix indicates the router will map the Path by prefix against incoming requests
 	PathMatchTypePrefix
+
+	PathMatchNameExact  = "exact"
+	PathMatchNamePrefix = "prefix"
 )
 
 // Names is a map of PathMatchTypes keyed by string name
 var Names = map[string]PathMatchType{
-	"exact":  PathMatchTypeExact,
-	"prefix": PathMatchTypePrefix,
+	PathMatchNameExact:  PathMatchTypeExact,
+	PathMatchNamePrefix: PathMatchTypePrefix,
 }
 
 // Values is a map of PathMatchTypes valued by string name
