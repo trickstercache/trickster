@@ -16,6 +16,14 @@
 
 package pointers
 
-func Pointer[T any](v T) *T {
+func New[T any](v T) *T {
+	return &v
+}
+
+func Clone[T any](p *T) *T {
+	if p == nil {
+		return nil
+	}
+	v := *p
 	return &v
 }
