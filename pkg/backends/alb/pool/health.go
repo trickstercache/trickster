@@ -40,8 +40,8 @@ func (p *pool) checkHealth() {
 			for _, t := range p.targets {
 				if t.hcStatus.Get() >= p.healthyFloor {
 					h[k] = t.handler
+					k++
 				}
-				k++
 			}
 			h = h[:k]
 			p.healthy.Store(&h)
