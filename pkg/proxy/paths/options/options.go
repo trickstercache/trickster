@@ -88,7 +88,7 @@ type Options struct {
 	// Custom is a compiled list of any custom settings for this path from the config file
 	Custom []string `yaml:"-"`
 	// ReqRewriter is the rewriter handler as indicated by RuleName
-	ReqRewriter rewriter.RewriteInstructions
+	ReqRewriter rewriter.RewriteInstructions `yaml:"-"`
 	// AuthOptions is the authenticator as indicated by AuthenticatorName
 	AuthOptions *autho.Options `yaml:"-"`
 	// HasCustomResponseBody is a boolean indicating if the response body is custom
