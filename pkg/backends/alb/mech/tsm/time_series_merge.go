@@ -126,6 +126,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	mgs := GetResponseGates(w, r, hl)
+	if len(mgs) == 0 {
+		failures.HandleBadGateway(w, r)
+		return
+	}
 	SetStatusHeader(w, mgs)
 
 	rsc := request.GetResources(mgs[0].Request)
@@ -158,7 +162,7 @@ func GetResponseGates(w http.ResponseWriter, r *http.Request, hl []http.Handler)
 		}(i)
 	}
 	wg.Wait()
-	return mgs
+	return mgs.Compress()
 }
 
 // SetStatusHeader inspects the X-Trickster-Result header value crafted for each mergeable response
