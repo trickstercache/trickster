@@ -28,7 +28,7 @@ datasources:
   access: proxy
   orgId: 1
   uid: ds_prom_trickster_mc
-  url: http://docker.for.mac.localhost:8480/prom1
+  url: http://host.docker.internal:8480/prom1
   version: 1
   editable: true
   jsonData:
@@ -38,7 +38,7 @@ datasources:
   access: proxy
   orgId: 1
   uid: ds_prom_trickster_mc_post
-  url: http://docker.for.mac.localhost:8480/prom1
+  url: http://host.docker.internal:8480/prom1
   version: 1
   editable: true
   jsonData:
@@ -48,7 +48,7 @@ datasources:
   access: proxy
   orgId: 1
   uid: ds_prom_trickster_fs
-  url: http://docker.for.mac.localhost:8480/prom2
+  url: http://host.docker.internal:8480/prom2
   version: 1
   editable: true
   jsonData:
@@ -58,7 +58,7 @@ datasources:
   access: proxy
   orgId: 1
   uid: ds_prom_trickster_fs_post
-  url: http://docker.for.mac.localhost:8480/prom2
+  url: http://host.docker.internal:8480/prom2
   version: 1
   editable: true
   jsonData:
@@ -78,7 +78,7 @@ datasources:
   access: proxy
   orgId: 1
   uid: ds_sim1_trickster
-  url: http://docker.for.mac.localhost:8480/sim1
+  url: http://host.docker.internal:8480/sim1
   version: 1
   editable: true
 - name: sim-trickster-redis-ja
@@ -86,7 +86,7 @@ datasources:
   access: proxy
   orgId: 1
   uid: ds_sim2_trickster
-  url: http://docker.for.mac.localhost:8480/sim2
+  url: http://host.docker.internal:8480/sim2
   version: 1
   editable: true
 
@@ -124,7 +124,7 @@ datasources:
   access: proxy
   orgId: 1
   uid: ds_infl_trk_ql_get
-  url: http://docker.for.mac.localhost:8480/flux1
+  url: http://host.docker.internal:8480/flux1
   editable: true
   jsonData:
     httpMode: GET
@@ -138,7 +138,7 @@ datasources:
   access: proxy
   orgId: 1
   uid: ds_infl_trk_ql_post
-  url: http://docker.for.mac.localhost:8480/flux1
+  url: http://host.docker.internal:8480/flux1
   editable: true
   jsonData:
     httpMode: POST
@@ -167,7 +167,7 @@ datasources:
   access: proxy
   orgId: 1
   uid: ds_infl_trk_flux_get
-  url: http://docker.for.mac.localhost:8480/flux1
+  url: http://host.docker.internal:8480/flux1
   editable: true
   database: trickster
   jsonData:
@@ -192,7 +192,7 @@ datasources:
 - name: clickhouse-trickster
   type: vertamedia-clickhouse-datasource
   access: proxy
-  url: http://docker.for.mac.localhost:8480/click1/
+  url: http://host.docker.internal:8480/click1/
   editable: true
   isDefault: false
   jsonData:
@@ -203,7 +203,7 @@ datasources:
 - name: clickhouse-trickster-post
   type: vertamedia-clickhouse-datasource
   access: proxy
-  url: http://docker.for.mac.localhost:8480/click1/
+  url: http://host.docker.internal:8480/click1/
   editable: true
   isDefault: false
   jsonData:
