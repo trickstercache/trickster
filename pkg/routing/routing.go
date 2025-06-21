@@ -32,7 +32,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	encoding "github.com/trickstercache/trickster/v2/pkg/encoding/handler"
-	fo "github.com/trickstercache/trickster/v2/pkg/frontend/options"
+	fopt "github.com/trickstercache/trickster/v2/pkg/frontend/options"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
@@ -218,7 +218,7 @@ func RegisterPathRoutes(r router.Router, conf *config.Config, handlers handlers.
 		}
 	}
 
-	maxBodySizeBytes := fo.DefaultMaxRequestBodySizeBytes
+	maxBodySizeBytes := fopt.DefaultMaxRequestBodySizeBytes
 	var truncateOnly bool
 	if conf.Frontend != nil && conf.Frontend.MaxRequestBodySizeBytes != nil {
 		maxBodySizeBytes = *conf.Frontend.MaxRequestBodySizeBytes
@@ -388,8 +388,8 @@ func RegisterDefaultBackendRoutes(r router.Router, conf *config.Config, bknds ba
 
 }
 
-func getSizeLimits(opt *fo.Options) (int64, bool) {
-	maxBodySizeBytes := fo.DefaultMaxRequestBodySizeBytes
+func getSizeLimits(opt *fopt.Options) (int64, bool) {
+	maxBodySizeBytes := fopt.DefaultMaxRequestBodySizeBytes
 	var truncateOnly bool
 	if opt != nil && opt.MaxRequestBodySizeBytes != nil {
 		maxBodySizeBytes = *opt.MaxRequestBodySizeBytes
