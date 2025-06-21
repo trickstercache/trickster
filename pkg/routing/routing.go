@@ -218,15 +218,9 @@ func RegisterPathRoutes(r router.Router, conf *config.Config, handlers handlers.
 		}
 	}
 
-	maxBodySizeBytes := fopt.DefaultMaxRequestBodySizeBytes
-	var truncateOnly bool
-	if conf.Frontend != nil && conf.Frontend.MaxRequestBodySizeBytes != nil {
-		maxBodySizeBytes = *conf.Frontend.MaxRequestBodySizeBytes
-		truncateOnly = conf.Frontend.TruncateRequestBodyTooLarge
-	}
-
 	applyMiddleware := func(po1 *po.Options) http.Handler {
 		// default base route is the path handler
+		maxBodySizeBytes, truncateOnly := getSizeLimits(conf.Frontend)
 		h := bodyfilter.Handler(maxBodySizeBytes, truncateOnly, po1.Handler)
 		// attach distributed tracer
 		if tr != nil {

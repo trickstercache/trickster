@@ -75,6 +75,7 @@ func (rg *ResponseGate) Write(b []byte) (int, error) {
 	return len(b), nil
 }
 
+// Compress removes nil ResponseGates from the slice
 func (rgs ResponseGates) Compress() ResponseGates {
 	out := make(ResponseGates, len(rgs))
 	var k int
