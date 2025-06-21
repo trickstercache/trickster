@@ -71,13 +71,14 @@ func (o *Options) Equal(o2 *Options) bool {
 // Clone returns a clone of the Options
 func (o *Options) Clone() *Options {
 	return &Options{
-		ListenAddress:           o.ListenAddress,
-		ListenPort:              o.ListenPort,
-		TLSListenAddress:        o.TLSListenAddress,
-		TLSListenPort:           o.TLSListenPort,
-		ConnectionsLimit:        o.ConnectionsLimit,
-		ServeTLS:                o.ServeTLS,
-		MaxRequestBodySizeBytes: o.MaxRequestBodySizeBytes,
+		ListenAddress:               o.ListenAddress,
+		ListenPort:                  o.ListenPort,
+		TLSListenAddress:            o.TLSListenAddress,
+		TLSListenPort:               o.TLSListenPort,
+		ConnectionsLimit:            o.ConnectionsLimit,
+		ServeTLS:                    o.ServeTLS,
+		MaxRequestBodySizeBytes:     o.MaxRequestBodySizeBytes,
+		TruncateRequestBodyTooLarge: o.TruncateRequestBodyTooLarge,
 	}
 }
 
