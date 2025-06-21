@@ -24,6 +24,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/util/numbers"
 )
 
 func SetBody(r *http.Request, body []byte) {
@@ -55,7 +56,7 @@ func GetBody(r *http.Request, maxSize ...int64) ([]byte, error) {
 	}
 	var stopAt int64 = -1
 	if len(maxSize) > 0 && maxSize[0] >= 0 {
-		stopAt = maxSize[0] + 1
+		stopAt, _ = numbers.SafeAdd64(maxSize[0], 1)
 	}
 	rdr := io.Reader(r.Body)
 	if stopAt > 0 {
