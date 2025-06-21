@@ -38,8 +38,3 @@ const (
 	DefaultMaxRequestBodySizeBytes int64 = 10 * 1024 * 1024 // 10 MB
 
 )
-
-func DefaultMaxRequestBodySizeBytesRef() *int64 {
-	i := DefaultMaxRequestBodySizeBytes
-	return &i
-}

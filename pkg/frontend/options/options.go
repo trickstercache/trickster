@@ -20,6 +20,8 @@ import (
 	"crypto/tls"
 	"errors"
 	"time"
+
+	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 )
 
 // FrontendConfig is a collection of configurations for the main http frontend for the application
@@ -59,7 +61,7 @@ func New() *Options {
 		TLSListenPort:           DefaultTLSProxyListenPort,
 		TLSListenAddress:        DefaultTLSProxyListenAddress,
 		ReadHeaderTimeout:       DefaultReadHeaderTimeout,
-		MaxRequestBodySizeBytes: DefaultMaxRequestBodySizeBytesRef(),
+		MaxRequestBodySizeBytes: pointers.New(DefaultMaxRequestBodySizeBytes),
 	}
 }
 
@@ -91,7 +93,7 @@ func (o *Options) Validate(f TLSConfigFunc) error {
 		return err
 	}
 	if o.MaxRequestBodySizeBytes == nil {
-		o.MaxRequestBodySizeBytes = DefaultMaxRequestBodySizeBytesRef()
+		o.MaxRequestBodySizeBytes = pointers.New(DefaultMaxRequestBodySizeBytes)
 	}
 	return nil
 }

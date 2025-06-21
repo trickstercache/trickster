@@ -66,7 +66,7 @@ func NewWithOptions(baseURL string, o *bo.Options, c *co.Options) (http.Handler,
 		return nil, err
 	}
 	o.HTTPClient = cl.HTTPClient()
-	barecfg := &config.Config{Frontend: &fopt.Options{MaxRequestBodySizeBytes: fopt.DefaultMaxRequestBodySizeBytesRef()}}
+	barecfg := &config.Config{Frontend: fopt.New()}
 	routing.RegisterPathRoutes(r, barecfg, cl.Handlers(), cl, o, cache,
 		cl.DefaultPathConfigs(o), nil)
 	return r, nil
