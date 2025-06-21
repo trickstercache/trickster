@@ -23,7 +23,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 )
 
-// Handler returns a handler for the BodyManager, which supports
+// Handler returns a handler for the BodyFilter, which supports
 func Handler(maxSize int64, truncateOnly bool, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPatch && r.Method != http.MethodPost &&
