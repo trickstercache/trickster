@@ -34,9 +34,14 @@ type Options struct {
 	TLSListenPort int `yaml:"tls_listen_port,omitempty"`
 	// ConnectionsLimit indicates how many concurrent front end connections trickster will handle at any time
 	ConnectionsLimit int `yaml:"connections_limit,omitempty"`
-	// MaxRequestBodySize indicates the maximum allowed size of the request body. If the body is too large,
-	// Trickster will return a 413 Payload Too Large response. Use 0 for no body allowed, and < 0 for no maximum.
+	// MaxRequestBodySize indicates the maximum allowed size of the request body.
+	// If the body is too large. Trickster will truncate the payload or return a
+	// 413 Payload Too Large response depending upon truncate_request_body_too_big.
+	// Use 0 for no body allowed, and < 0 for no maximum.
 	MaxRequestBodySizeBytes *int64 `yaml:"max_request_body_size_bytes"`
+	// TruncateRequestBodyTooLarge, when true, will truncate the request body to
+	// MaxRequestBodySizeBytes when larger, without returning a 413 Payload Too Large
+	TruncateRequestBodyTooLarge bool `yaml:"truncate_request_body_too_large"`
 	// ReadHeaderTimeout is the amount of time allowed to read request headers.
 	ReadHeaderTimeout time.Duration `yaml:"read_header_timeout,omitempty"`
 	// ServeTLS indicates whether to listen and serve on the TLS port, meaning
@@ -54,7 +59,7 @@ func New() *Options {
 		TLSListenPort:           DefaultTLSProxyListenPort,
 		TLSListenAddress:        DefaultTLSProxyListenAddress,
 		ReadHeaderTimeout:       DefaultReadHeaderTimeout,
-		MaxRequestBodySizeBytes: &defaultMaxRequestBodySizeBytes,
+		MaxRequestBodySizeBytes: DefaultMaxRequestBodySizeBytesRef(),
 	}
 }
 
@@ -85,7 +90,7 @@ func (o *Options) Validate(f TLSConfigFunc) error {
 		return err
 	}
 	if o.MaxRequestBodySizeBytes == nil {
-		o.MaxRequestBodySizeBytes = &defaultMaxRequestBodySizeBytes
+		o.MaxRequestBodySizeBytes = DefaultMaxRequestBodySizeBytesRef()
 	}
 	return nil
 }

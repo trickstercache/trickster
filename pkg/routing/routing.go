@@ -46,7 +46,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 	"github.com/trickstercache/trickster/v2/pkg/util/middleware"
-	"github.com/trickstercache/trickster/v2/pkg/util/middleware/bodymgr"
+	"github.com/trickstercache/trickster/v2/pkg/util/middleware/bodyfilter"
 )
 
 // RegisterPprofRoutes will register the Pprof Debugging endpoints to the provided router
@@ -181,12 +181,8 @@ func registerBackendRoutes(r router.Router, metricsRouter router.Router,
 
 		h := client.Handlers()
 
-		maxRequestBodySizeBytes := fo.DefaultMaxRequestBodySizeBytes
-		if conf.Frontend.MaxRequestBodySizeBytes != nil {
-			maxRequestBodySizeBytes = *conf.Frontend.MaxRequestBodySizeBytes
-		}
-		RegisterPathRoutes(r, h, client, o, c, defaultPaths,
-			tracers, maxRequestBodySizeBytes)
+		RegisterPathRoutes(r, conf, h, client, o, c, defaultPaths,
+			tracers)
 
 		// now we'll go ahead and register the health handler
 		if h, ok := client.Handlers()["health"]; ok && o.Name != "" && metricsRouter != nil && (o.HealthCheck == nil ||
@@ -207,9 +203,9 @@ func registerBackendRoutes(r router.Router, metricsRouter router.Router,
 // RegisterPathRoutes will take the provided default paths map,
 // merge it with any path data in the provided backend options, and then register
 // the path routes to the appropriate handler from the provided handlers map
-func RegisterPathRoutes(r router.Router, handlers handlers.Lookup,
+func RegisterPathRoutes(r router.Router, conf *config.Config, handlers handlers.Lookup,
 	client backends.Backend, o *bo.Options, c cache.Cache,
-	paths po.Lookup, tracers tracing.Tracers, maxBodySizeBytes int64) {
+	paths po.Lookup, tracers tracing.Tracers) {
 	if o == nil {
 		return
 	}
@@ -222,9 +218,16 @@ func RegisterPathRoutes(r router.Router, handlers handlers.Lookup,
 		}
 	}
 
+	maxBodySizeBytes := fo.DefaultMaxRequestBodySizeBytes
+	var truncateOnly bool
+	if conf.Frontend != nil && conf.Frontend.MaxRequestBodySizeBytes != nil {
+		maxBodySizeBytes = *conf.Frontend.MaxRequestBodySizeBytes
+		truncateOnly = conf.Frontend.TruncateRequestBodyTooLarge
+	}
+
 	applyMiddleware := func(po1 *po.Options) http.Handler {
 		// default base route is the path handler
-		h := bodymgr.Handle(maxBodySizeBytes, po1.Handler)
+		h := bodyfilter.Handler(maxBodySizeBytes, truncateOnly, po1.Handler)
 		// attach distributed tracer
 		if tr != nil {
 			h = middleware.Trace(tr, h)
@@ -319,13 +322,14 @@ func RegisterPathRoutes(r router.Router, handlers handlers.Lookup,
 }
 
 // RegisterDefaultBackendRoutes will iterate the Backends and register the default routes
-func RegisterDefaultBackendRoutes(r router.Router, bknds backends.Backends,
-	tracers tracing.Tracers, maxBodySizeBytes int64) {
+func RegisterDefaultBackendRoutes(r router.Router, conf *config.Config, bknds backends.Backends,
+	tracers tracing.Tracers) {
 
 	applyMiddleware := func(o *bo.Options, po *po.Options, tr *tracing.Tracer,
 		c cache.Cache, client backends.Backend) http.Handler {
 		// default base route is the path handler
-		h := bodymgr.Handle(maxBodySizeBytes, po.Handler)
+		maxBodySizeBytes, truncateOnly := getSizeLimits(conf.Frontend)
+		h := bodyfilter.Handler(maxBodySizeBytes, truncateOnly, po.Handler)
 		// attach distributed tracer
 		if tr != nil {
 			h = middleware.Trace(tr, h)
@@ -382,4 +386,14 @@ func RegisterDefaultBackendRoutes(r router.Router, bknds backends.Backends,
 		}
 	}
 
+}
+
+func getSizeLimits(opt *fo.Options) (int64, bool) {
+	maxBodySizeBytes := fo.DefaultMaxRequestBodySizeBytes
+	var truncateOnly bool
+	if opt != nil && opt.MaxRequestBodySizeBytes != nil {
+		maxBodySizeBytes = *opt.MaxRequestBodySizeBytes
+		truncateOnly = opt.TruncateRequestBodyTooLarge
+	}
+	return maxBodySizeBytes, truncateOnly
 }

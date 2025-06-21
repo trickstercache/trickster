@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
 
@@ -65,11 +66,17 @@ func GetBody(r *http.Request, maxSize ...int64) ([]byte, error) {
 		return nil, err
 	}
 	r.Body.Close()
+
+	var tooBigErr error
+	if stopAt > 0 && int64(len(body)) > maxSize[0] {
+		body = body[:len(body)-1]
+		tooBigErr = failures.ErrPayloadTooLarge
+	}
 	r.Body = io.NopCloser(bytes.NewReader(body)) // allows body to be re-read from byte 0
 	if rsc != nil {
 		rsc.RequestBody = body // cache to avoid future calls to io.ReadAll
 	}
-	return body, nil
+	return body, tooBigErr
 }
 
 func GetBodyReader(r *http.Request) (io.ReadCloser, error) {

@@ -39,4 +39,7 @@ const (
 
 )
 
-var defaultMaxRequestBodySizeBytes = DefaultMaxRequestBodySizeBytes
+func DefaultMaxRequestBodySizeBytesRef() *int64 {
+	i := DefaultMaxRequestBodySizeBytes
+	return &i
+}

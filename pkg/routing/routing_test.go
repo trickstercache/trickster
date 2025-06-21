@@ -404,13 +404,16 @@ func TestRegisterMultipleBackendsPlusDefault(t *testing.T) {
 func TestRegisterPathRoutes(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Info))
 	p := po.Lookup{"test": {}}
-	RegisterPathRoutes(nil, nil, nil, nil, nil, p, nil, 5000)
+	RegisterPathRoutes(nil, nil, nil, nil, nil, nil, p, nil)
 
 	conf, err := config.Load([]string{"-log-level", "debug", "-origin-url",
 		"http://1", "-provider", providers.ReverseProxyCacheShort})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
+
+	var i5000 int64 = 5000
+	conf.Frontend.MaxRequestBodySizeBytes = &i5000
 
 	oo := conf.Backends["default"]
 	rpc, _ := reverseproxycache.NewClient("test", oo, lm.NewRouter(), nil, nil, nil)
@@ -420,7 +423,7 @@ func TestRegisterPathRoutes(t *testing.T) {
 	testHandler := http.HandlerFunc(testutil.BasicHTTPHandler)
 	handlers := handlers.Lookup{"testHandler": testHandler}
 
-	RegisterPathRoutes(nil, handlers, rpc, oo, nil, dpc, nil, 5000)
+	RegisterPathRoutes(nil, conf, handlers, rpc, oo, nil, dpc, nil)
 
 	router := lm.NewRouter()
 	dpc = rpc.DefaultPathConfigs(oo)
@@ -428,7 +431,7 @@ func TestRegisterPathRoutes(t *testing.T) {
 	dpc["/-GET-HEAD"].Handler = testHandler
 	dpc["/-GET-HEAD"].HandlerName = "testHandler"
 	dpc["/-GET-HEAD"].ReqRewriter = testutil.NewTestRewriteInstructions()
-	RegisterPathRoutes(router, handlers, rpc, oo, nil, dpc, nil, 5000)
+	RegisterPathRoutes(router, conf, handlers, rpc, oo, nil, dpc, nil)
 
 }
 
@@ -492,11 +495,11 @@ func TestRegisterDefaultBackendRoutes(t *testing.T) {
 	ri := testutil.NewTestRewriteInstructions()
 	oo.ReqRewriter = ri
 	po1.ReqRewriter = ri
-	RegisterDefaultBackendRoutes(r, b, tr, 5000)
+	RegisterDefaultBackendRoutes(r, conf, b, tr)
 
 	r = lm.NewRouter()
 	po1.MatchType = matching.PathMatchTypeExact
-	RegisterDefaultBackendRoutes(r, b, tr, 5000)
+	RegisterDefaultBackendRoutes(r, conf, b, tr)
 
 	logger.SetLogger(logging.ConsoleLogger(level.Info))
 	l.Close()

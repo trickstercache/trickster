@@ -27,6 +27,8 @@ func TestFrontendOptions(t *testing.T) {
 	// expect f1 and f2 to be equal
 	f1 := New()
 	f2 := New()
+	f1.MaxRequestBodySizeBytes = nil
+	f2.MaxRequestBodySizeBytes = nil
 	require.True(t, f1.Equal(f2))
 
 	// expect f1 and f2 to be equal, after modifying f1
