@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package bodymgr
+package bodyfilter
 
 import (
 	"net/http"
@@ -23,7 +23,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 )
 
-func Handle(maxSize int64, next http.Handler) http.Handler {
+// Handler returns a handler for the BodyManager, which supports
+func Handler(maxSize int64, truncateOnly bool, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPatch && r.Method != http.MethodPost &&
 			r.Method != http.MethodPut {
@@ -31,11 +32,12 @@ func Handle(maxSize int64, next http.Handler) http.Handler {
 			return
 		}
 		b, err := request.GetBody(r, maxSize)
-		if err != nil {
+
+		if err != nil && (!truncateOnly || err != failures.ErrPayloadTooLarge) {
 			failures.HandleBadRequestResponse(w, nil)
 			return
 		}
-		if int64(len(b)) > maxSize {
+		if !truncateOnly && int64(len(b)) > maxSize {
 			failures.HandlePayloadTooLarge(w, nil)
 			return
 		}
