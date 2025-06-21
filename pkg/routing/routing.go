@@ -32,6 +32,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	encoding "github.com/trickstercache/trickster/v2/pkg/encoding/handler"
+	fo "github.com/trickstercache/trickster/v2/pkg/frontend/options"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
@@ -45,6 +46,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 	"github.com/trickstercache/trickster/v2/pkg/util/middleware"
+	"github.com/trickstercache/trickster/v2/pkg/util/middleware/bodymgr"
 )
 
 // RegisterPprofRoutes will register the Pprof Debugging endpoints to the provided router
@@ -179,8 +181,12 @@ func registerBackendRoutes(r router.Router, metricsRouter router.Router,
 
 		h := client.Handlers()
 
+		maxRequestBodySizeBytes := fo.DefaultMaxRequestBodySizeBytes
+		if conf.Frontend.MaxRequestBodySizeBytes != nil {
+			maxRequestBodySizeBytes = *conf.Frontend.MaxRequestBodySizeBytes
+		}
 		RegisterPathRoutes(r, h, client, o, c, defaultPaths,
-			tracers)
+			tracers, maxRequestBodySizeBytes)
 
 		// now we'll go ahead and register the health handler
 		if h, ok := client.Handlers()["health"]; ok && o.Name != "" && metricsRouter != nil && (o.HealthCheck == nil ||
@@ -203,7 +209,7 @@ func registerBackendRoutes(r router.Router, metricsRouter router.Router,
 // the path routes to the appropriate handler from the provided handlers map
 func RegisterPathRoutes(r router.Router, handlers handlers.Lookup,
 	client backends.Backend, o *bo.Options, c cache.Cache,
-	paths po.Lookup, tracers tracing.Tracers) {
+	paths po.Lookup, tracers tracing.Tracers, maxBodySizeBytes int64) {
 	if o == nil {
 		return
 	}
@@ -218,7 +224,7 @@ func RegisterPathRoutes(r router.Router, handlers handlers.Lookup,
 
 	applyMiddleware := func(po1 *po.Options) http.Handler {
 		// default base route is the path handler
-		h := po1.Handler
+		h := bodymgr.Handle(maxBodySizeBytes, po1.Handler)
 		// attach distributed tracer
 		if tr != nil {
 			h = middleware.Trace(tr, h)
@@ -314,12 +320,12 @@ func RegisterPathRoutes(r router.Router, handlers handlers.Lookup,
 
 // RegisterDefaultBackendRoutes will iterate the Backends and register the default routes
 func RegisterDefaultBackendRoutes(r router.Router, bknds backends.Backends,
-	tracers tracing.Tracers) {
+	tracers tracing.Tracers, maxBodySizeBytes int64) {
 
 	applyMiddleware := func(o *bo.Options, po *po.Options, tr *tracing.Tracer,
 		c cache.Cache, client backends.Backend) http.Handler {
 		// default base route is the path handler
-		h := po.Handler
+		h := bodymgr.Handle(maxBodySizeBytes, po.Handler)
 		// attach distributed tracer
 		if tr != nil {
 			h = middleware.Trace(tr, h)

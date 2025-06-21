@@ -33,4 +33,10 @@ const (
 
 	// DefaultReadHeaderTimeout is the default amount of time allowed to read request headers by the frontend proxy server
 	DefaultReadHeaderTimeout = 10 * time.Second
+
+	// DefaultMaxRequestBodySizeBytes is the default maximum body size permitted by clients in a POST, PUT or PATCH request
+	DefaultMaxRequestBodySizeBytes int64 = 10 * 1024 * 1024 // 10 MB
+
 )
+
+var defaultMaxRequestBodySizeBytes = DefaultMaxRequestBodySizeBytes

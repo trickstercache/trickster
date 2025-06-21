@@ -38,6 +38,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config/validate"
 	"github.com/trickstercache/trickster/v2/pkg/daemon/instance"
 	te "github.com/trickstercache/trickster/v2/pkg/errors"
+	"github.com/trickstercache/trickster/v2/pkg/frontend/options"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
@@ -150,7 +151,11 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 		return err
 	}
 	alb.StartALBPools(backends, si.HealthChecker.Statuses())
-	routing.RegisterDefaultBackendRoutes(r, backends, tracers)
+	maxRequestBodySizeBytes := options.DefaultMaxRequestBodySizeBytes
+	if newConf.Frontend.MaxRequestBodySizeBytes != nil {
+		maxRequestBodySizeBytes = *newConf.Frontend.MaxRequestBodySizeBytes
+	}
+	routing.RegisterDefaultBackendRoutes(r, backends, tracers, maxRequestBodySizeBytes)
 	routing.RegisterHealthHandler(mr, newConf.MgmtConfig.HealthHandlerPath, si.HealthChecker)
 	applyListenerConfigs(newConf, si.Config, r, rh, mr, tracers, backends, errorFunc)
 

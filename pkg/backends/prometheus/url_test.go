@@ -27,6 +27,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/config"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
@@ -99,6 +100,7 @@ func TestFastForwardURL(t *testing.T) {
 
 	u := &url.URL{Path: "/query_range", RawQuery: "q=up&start=1&end=1&step=1"}
 	r, _ := http.NewRequest(http.MethodGet, u.String(), nil)
+	r = request.SetResources(r, &request.Resources{})
 
 	r2, err := pc.FastForwardRequest(r)
 	if err != nil {
@@ -112,6 +114,7 @@ func TestFastForwardURL(t *testing.T) {
 	r2.URL.RawQuery = ""
 	b := bytes.NewBufferString(expected)
 	r, _ = http.NewRequest(http.MethodPost, r2.URL.String(), b)
+	r = request.SetResources(r, &request.Resources{})
 
 	_, err = pc.FastForwardRequest(r)
 	if err != nil {

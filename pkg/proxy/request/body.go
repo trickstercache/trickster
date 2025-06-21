@@ -40,7 +40,11 @@ func SetBody(r *http.Request, body []byte) {
 	}
 }
 
-func GetBody(r *http.Request) ([]byte, error) {
+func GetBody(r *http.Request, maxSize ...int64) ([]byte, error) {
+	if r.Method != http.MethodPost && r.Method != http.MethodPut &&
+		r.Method != http.MethodPatch {
+		return nil, nil
+	}
 	rsc := GetResources(r)
 	if rsc != nil && len(rsc.RequestBody) > 0 {
 		return rsc.RequestBody, nil // returns the cached body if exists
@@ -48,7 +52,15 @@ func GetBody(r *http.Request) ([]byte, error) {
 	if r.Body == nil {
 		return nil, nil
 	}
-	body, err := io.ReadAll(r.Body)
+	var stopAt int64 = -1
+	if len(maxSize) > 0 && maxSize[0] >= 0 {
+		stopAt = maxSize[0] + 1
+	}
+	rdr := io.Reader(r.Body)
+	if stopAt > 0 {
+		rdr = io.LimitReader(rdr, stopAt)
+	}
+	body, err := io.ReadAll(rdr)
 	if err != nil {
 		return nil, err
 	}
@@ -58,4 +70,12 @@ func GetBody(r *http.Request) ([]byte, error) {
 		rsc.RequestBody = body // cache to avoid future calls to io.ReadAll
 	}
 	return body, nil
+}
+
+func GetBodyReader(r *http.Request) (io.ReadCloser, error) {
+	b, err := GetBody(r)
+	if err != nil {
+		return nil, err
+	}
+	return io.NopCloser(bytes.NewReader(b)), nil
 }

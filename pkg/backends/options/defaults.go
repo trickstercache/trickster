@@ -58,8 +58,8 @@ const (
 	DefaultMaxIdleConns = 20
 	// DefaultForwardedHeaders defines which class of 'Forwarded' headers are attached to upstream requests
 	DefaultForwardedHeaders = "standard"
-	// DefaullALBMechansimName defines the default ALB Mechanism Name
-	DefaullALBMechansimName = "rr" // round robin
+	// DefaultALBMechansimName defines the default ALB Mechanism Name
+	DefaultALBMechansimName = "rr" // round robin
 	// DefaultTimeseriesShardSize defines the default shard size of 0 (no sharding)
 	DefaultTimeseriesShardSize = 0
 	// DefaultTimeseriesShardStep defines the default shard step of 0 (no sharding)

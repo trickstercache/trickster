@@ -25,6 +25,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/registry"
+	fo "github.com/trickstercache/trickster/v2/pkg/frontend/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 	"github.com/trickstercache/trickster/v2/pkg/routing"
 )
@@ -64,6 +65,7 @@ func NewAcceleratorWithOptions(baseURL string, o *bo.Options, c *co.Options) (ht
 		return nil, err
 	}
 	o.HTTPClient = cl.HTTPClient()
-	routing.RegisterPathRoutes(r, cl.Handlers(), cl, o, cache, cl.DefaultPathConfigs(o), nil)
+	routing.RegisterPathRoutes(r, cl.Handlers(), cl, o, cache,
+		cl.DefaultPathConfigs(o), nil, fo.DefaultMaxRequestBodySizeBytes)
 	return r, nil
 }

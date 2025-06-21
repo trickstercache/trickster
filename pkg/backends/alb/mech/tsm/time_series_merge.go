@@ -17,7 +17,6 @@
 package tsm
 
 import (
-	"context"
 	"net/http"
 	"strings"
 	"sync"
@@ -30,7 +29,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
-	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
@@ -141,8 +139,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// GetResponseGates makes the handler request to each fanout backend and returns a collection of responses
-func GetResponseGates(w http.ResponseWriter, r *http.Request, hl []http.Handler) merge.ResponseGates {
+// GetResponseGates makes the handler request to each fanout backend and
+// returns a collection of responses
+func GetResponseGates(w http.ResponseWriter, r *http.Request,
+	hl []http.Handler) merge.ResponseGates {
 	var wg sync.WaitGroup
 	l := len(hl)
 	mgs := make(merge.ResponseGates, l)
@@ -153,9 +153,9 @@ func GetResponseGates(w http.ResponseWriter, r *http.Request, hl []http.Handler)
 				wg.Done()
 				return
 			}
-			rsc := &request.Resources{IsMergeMember: true}
-			ctx := tctx.WithResources(context.Background(), rsc)
-			r2 := r.Clone(ctx)
+			r2, _ := request.Clone(r)
+			rsc := request.GetResources(r2)
+			rsc.IsMergeMember = true
 			mgs[j] = merge.NewResponseGate(w, r2, rsc)
 			hl[j].ServeHTTP(mgs[j], r2)
 			wg.Done()

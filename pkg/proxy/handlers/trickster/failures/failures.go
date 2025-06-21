@@ -57,6 +57,16 @@ func HandleNotFound(w http.ResponseWriter, _ *http.Request) {
 	w.Write([]byte("Resource Not Found"))
 }
 
+// HandlePayloadTooLarge responds to an HTTP Request with a 413 Payload Too Large
+func HandlePayloadTooLarge(w http.ResponseWriter, _ *http.Request) {
+	if w == nil {
+		return
+	}
+	w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
+	w.WriteHeader(http.StatusRequestEntityTooLarge)
+	w.Write([]byte("Request Body is too large"))
+}
+
 // HandleMiscFailure responds to an HTTP Request the provided status code
 func HandleMiscFailure(code int, w http.ResponseWriter) {
 	if w == nil {
