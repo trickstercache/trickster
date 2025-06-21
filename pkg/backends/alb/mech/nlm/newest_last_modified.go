@@ -29,6 +29,7 @@ import (
 	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/util/atomicx"
 )
 
@@ -91,7 +92,8 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			nrg := newNewestResponseGate(w, j, nrm)
-			r2 := r.Clone(nrm.contexts[j])
+			r2, _ := request.Clone(r)
+			r2 = r2.WithContext(nrm.contexts[j])
 			hl[j].ServeHTTP(nrg, r2)
 			wg.Done()
 		}(i)

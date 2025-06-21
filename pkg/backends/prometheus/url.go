@@ -17,12 +17,12 @@
 package prometheus
 
 import (
-	"context"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
@@ -38,7 +38,7 @@ func (c *Client) SetExtent(r *http.Request, _ *timeseries.TimeRangeQuery,
 // FastForwardRequest returns an *http.Request crafted to collect Fast Forward
 // data from the Origin, based on the provided HTTP Request
 func (c *Client) FastForwardRequest(r *http.Request) (*http.Request, error) {
-	nr := r.Clone(context.Background())
+	nr, _ := request.Clone(r)
 	if strings.HasSuffix(nr.URL.Path, "/query_range") {
 		nr.URL.Path = nr.URL.Path[0 : len(nr.URL.Path)-6]
 	}

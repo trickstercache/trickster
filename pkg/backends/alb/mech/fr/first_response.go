@@ -26,6 +26,7 @@ import (
 	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
@@ -113,7 +114,8 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			wm := newFirstResponseGate(w, wc, j, h.fgr)
-			r2 := r.Clone(wc.contexts[j])
+			r2, _ := request.Clone(r)
+			r2 = r2.WithContext(wc.contexts[j])
 			hl[j].ServeHTTP(wm, r2)
 			wg.Done()
 		}(i)

@@ -14,26 +14,29 @@
  * limitations under the License.
  */
 
-package options
+package pointers
 
-import (
-	"testing"
+import "testing"
 
-	"github.com/stretchr/testify/require"
-)
-
-func TestFrontendOptions(t *testing.T) {
-
-	// expect f1 and f2 to be equal
-	f1 := New()
-	f2 := New()
-	f1.MaxRequestBodySizeBytes = nil
-	f2.MaxRequestBodySizeBytes = nil
-	require.True(t, f1.Equal(f2))
-
-	// expect f1 and f2 to be equal, after modifying f1
-	f2 = f1.Clone()
-	f1.ListenAddress = "trickster"
-	require.NotEqual(t, f1.ListenAddress, f2.ListenAddress)
-	require.False(t, f1.Equal(f2))
+func TestNew(t *testing.T) {
+	const port = 8480
+	intPtr := New(port)
+	if intPtr == nil {
+		t.Fatal("expected non-nil")
+	}
+	if *intPtr != port {
+		t.Fatalf("expected %d got %d", port, *intPtr)
+	}
+	intPtr = Clone(intPtr)
+	if intPtr == nil {
+		t.Fatal("expected non-nil")
+	}
+	if *intPtr != port {
+		t.Fatalf("expected %d got %d", port, *intPtr)
+	}
+	intPtr = nil
+	intPtr = Clone(intPtr)
+	if intPtr != nil {
+		t.Fatal("expected nil")
+	}
 }

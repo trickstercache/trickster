@@ -22,7 +22,9 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/util/numbers"
 )
 
 func SetBody(r *http.Request, body []byte) {
@@ -40,7 +42,11 @@ func SetBody(r *http.Request, body []byte) {
 	}
 }
 
-func GetBody(r *http.Request) ([]byte, error) {
+func GetBody(r *http.Request, maxSize ...int64) ([]byte, error) {
+	if r.Method != http.MethodPost && r.Method != http.MethodPut &&
+		r.Method != http.MethodPatch {
+		return nil, nil
+	}
 	rsc := GetResources(r)
 	if rsc != nil && len(rsc.RequestBody) > 0 {
 		return rsc.RequestBody, nil // returns the cached body if exists
@@ -48,14 +54,36 @@ func GetBody(r *http.Request) ([]byte, error) {
 	if r.Body == nil {
 		return nil, nil
 	}
-	body, err := io.ReadAll(r.Body)
+	var stopAt int64 = -1
+	if len(maxSize) > 0 && maxSize[0] >= 0 {
+		stopAt, _ = numbers.SafeAdd64(maxSize[0], 1)
+	}
+	rdr := io.Reader(r.Body)
+	if stopAt > 0 {
+		rdr = io.LimitReader(rdr, stopAt)
+	}
+	body, err := io.ReadAll(rdr)
 	if err != nil {
 		return nil, err
 	}
 	r.Body.Close()
+
+	var tooBigErr error
+	if stopAt > 0 && int64(len(body)) > maxSize[0] {
+		body = body[:len(body)-1]
+		tooBigErr = failures.ErrPayloadTooLarge
+	}
 	r.Body = io.NopCloser(bytes.NewReader(body)) // allows body to be re-read from byte 0
 	if rsc != nil {
 		rsc.RequestBody = body // cache to avoid future calls to io.ReadAll
 	}
-	return body, nil
+	return body, tooBigErr
+}
+
+func GetBodyReader(r *http.Request) (io.ReadCloser, error) {
+	b, err := GetBody(r)
+	if err != nil {
+		return nil, err
+	}
+	return io.NopCloser(bytes.NewReader(b)), nil
 }
