@@ -23,7 +23,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 )
 
-// Handler returns a handler for the BodyFilter, which supports
+// Handler returns a handler for the BodyFilter, which supports limiting the
+// maximum size of a request body.
 func Handler(maxSize int64, truncateOnly bool, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPatch && r.Method != http.MethodPost &&
@@ -32,7 +33,6 @@ func Handler(maxSize int64, truncateOnly bool, next http.Handler) http.Handler {
 			return
 		}
 		b, err := request.GetBody(r, maxSize)
-
 		if err != nil && (!truncateOnly || err != failures.ErrPayloadTooLarge) {
 			failures.HandleBadRequestResponse(w, nil)
 			return
