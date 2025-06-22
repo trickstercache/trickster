@@ -39,7 +39,7 @@ func Clone(r *http.Request) (*http.Request, error) {
 	if rsc != nil {
 		ctx = tctx.WithResources(ctx, rsc.Clone())
 	}
-	out := r.Clone(context.Background()).WithContext(ctx)
+	out := r.Clone(ctx)
 	if r.Method == http.MethodPost || r.Method == http.MethodPut ||
 		r.Method == http.MethodPatch {
 		br, err := GetBodyReader(r)
