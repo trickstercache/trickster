@@ -46,8 +46,17 @@ frontend:
 #   # 0 by default, unlimited.
 #   connections_limit: 0
 
-#  # reader_header_timeout defines is the amount of time allowed to read request headers by the frontend http proxy server
+#  # reader_header_timeout defines the amount of time allowed to read request headers by the frontend http proxy server
 #  # read_header_timeout: 10s
+
+#  # max_request_body_size_bytes indicates the maximum allowed size of the request body. If the body is too large,
+#  # Trickster responds with 413 Payload Too Large. Use 0 for no body allowed, and < 0 for no maximum. Default: 10MB
+#  # max_request_body_size_bytes: 10485760
+
+#  # truncate_request_body_too_large, when true, will truncate the request body to
+#  # max_request_body_size_bytes when larger, without returning a 413 Payload Too Large
+#  # Default: false
+#  # truncate_request_body_too_large: false
 
 # caches:
 #   default:

@@ -20,6 +20,8 @@ import (
 	"crypto/tls"
 	"errors"
 	"time"
+
+	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 )
 
 // FrontendConfig is a collection of configurations for the main http frontend for the application
@@ -34,6 +36,14 @@ type Options struct {
 	TLSListenPort int `yaml:"tls_listen_port,omitempty"`
 	// ConnectionsLimit indicates how many concurrent front end connections trickster will handle at any time
 	ConnectionsLimit int `yaml:"connections_limit,omitempty"`
+	// MaxRequestBodySize indicates the maximum allowed size of the request body.
+	// If the body is too large. Trickster will truncate the payload or return a
+	// 413 Payload Too Large response depending upon truncate_request_body_too_big.
+	// Use 0 for no body allowed, and < 0 for no maximum.
+	MaxRequestBodySizeBytes *int64 `yaml:"max_request_body_size_bytes"`
+	// TruncateRequestBodyTooLarge, when true, will truncate the request body to
+	// MaxRequestBodySizeBytes when larger, without returning a 413 Payload Too Large
+	TruncateRequestBodyTooLarge bool `yaml:"truncate_request_body_too_large"`
 	// ReadHeaderTimeout is the amount of time allowed to read request headers.
 	ReadHeaderTimeout time.Duration `yaml:"read_header_timeout,omitempty"`
 	// ServeTLS indicates whether to listen and serve on the TLS port, meaning
@@ -46,11 +56,12 @@ type TLSConfigFunc func() (*tls.Config, error)
 // New returns a new Frontend Options with default values
 func New() *Options {
 	return &Options{
-		ListenPort:        DefaultProxyListenPort,
-		ListenAddress:     DefaultProxyListenAddress,
-		TLSListenPort:     DefaultTLSProxyListenPort,
-		TLSListenAddress:  DefaultTLSProxyListenAddress,
-		ReadHeaderTimeout: DefaultReadHeaderTimeout,
+		ListenPort:              DefaultProxyListenPort,
+		ListenAddress:           DefaultProxyListenAddress,
+		TLSListenPort:           DefaultTLSProxyListenPort,
+		TLSListenAddress:        DefaultTLSProxyListenAddress,
+		ReadHeaderTimeout:       DefaultReadHeaderTimeout,
+		MaxRequestBodySizeBytes: pointers.New(DefaultMaxRequestBodySizeBytes),
 	}
 }
 
@@ -62,12 +73,14 @@ func (o *Options) Equal(o2 *Options) bool {
 // Clone returns a clone of the Options
 func (o *Options) Clone() *Options {
 	return &Options{
-		ListenAddress:    o.ListenAddress,
-		ListenPort:       o.ListenPort,
-		TLSListenAddress: o.TLSListenAddress,
-		TLSListenPort:    o.TLSListenPort,
-		ConnectionsLimit: o.ConnectionsLimit,
-		ServeTLS:         o.ServeTLS,
+		ListenAddress:               o.ListenAddress,
+		ListenPort:                  o.ListenPort,
+		TLSListenAddress:            o.TLSListenAddress,
+		TLSListenPort:               o.TLSListenPort,
+		ConnectionsLimit:            o.ConnectionsLimit,
+		ServeTLS:                    o.ServeTLS,
+		MaxRequestBodySizeBytes:     o.MaxRequestBodySizeBytes,
+		TruncateRequestBodyTooLarge: o.TruncateRequestBodyTooLarge,
 	}
 }
 
@@ -78,6 +91,9 @@ func (o *Options) Validate(f TLSConfigFunc) error {
 	if o.ServeTLS && o.TLSListenPort > 0 {
 		_, err := f()
 		return err
+	}
+	if o.MaxRequestBodySizeBytes == nil {
+		o.MaxRequestBodySizeBytes = pointers.New(DefaultMaxRequestBodySizeBytes)
 	}
 	return nil
 }
