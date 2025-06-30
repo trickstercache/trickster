@@ -137,4 +137,5 @@ func (r *Resources) Merge(r2 *Resources) {
 	r.RequestBody = slices.Clone(r2.RequestBody)
 	r.IsMergeMember = r.IsMergeMember || r2.IsMergeMember
 	r.AlreadyEncoded = r.AlreadyEncoded || r2.AlreadyEncoded
+	r.ResponseMergeFunc = r2.ResponseMergeFunc
 }

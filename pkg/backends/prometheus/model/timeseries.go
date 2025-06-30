@@ -41,16 +41,19 @@ type WFMatrixDocument struct {
 
 // WFMatrixData is the data section of the WFD for timeseries responses
 type WFMatrixData struct {
-	ResultType string      `json:"resultType"`
-	Results    []*WFResult `json:"result"`
+	ResultType ResultType      `json:"resultType"`
+	Results    json.RawMessage `json:"result"`
 }
 
-// WFResult is the Result section of the WFD
+// WFResult is the Result section of the WFD (matrix and vector only)
 type WFResult struct {
 	Metric dataset.Tags `json:"metric"`
-	Values [][]any      `json:"values"`
-	Value  []any        `json:"value"`
+	Values [][]any      `json:"values,omitempty"`
+	Value  []any        `json:"value,omitempty"`
 }
+
+// WFResultScalar is the Result section of the WFD (scalar only)
+type WFResultScalar []any
 
 // NewModeler returns a collection of modeling functions for prometheus interoperability
 func NewModeler() *timeseries.Modeler {
@@ -83,61 +86,30 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 	}
 	ds := &dataset.DataSet{
 		Status:         wfd.Status,
-		Results:        []*dataset.Result{{}},
 		Error:          wfd.Error,
 		ErrorType:      wfd.ErrorType,
 		Warnings:       wfd.Warnings,
 		TimeRangeQuery: trq,
 		ExtentList:     timeseries.ExtentList{trq.Extent},
 	}
-	ds.Results[0].SeriesList = make([]*dataset.Series, len(wfd.Data.Results))
 
-	for i, pr := range wfd.Data.Results {
-		sh := dataset.SeriesHeader{
-			Tags:           pr.Metric,
-			QueryStatement: trq.Statement,
+	if len(wfd.Data.Results) == 0 {
+		return ds, nil
+	}
+	switch wfd.Data.ResultType {
+	case Matrix, Vector:
+		var wfr []*WFResult
+		if err := json.Unmarshal(wfd.Data.Results, &wfr); err != nil {
+			return nil, err
 		}
-		if n, ok := pr.Metric["__name__"]; ok {
-			sh.Name = n
+		populateSeries(ds, wfr, trq, wfd.Data.ResultType == Vector)
+	case Scalar:
+		var wfrs WFResultScalar
+		if err := json.Unmarshal(wfd.Data.Results, &wfrs); err != nil {
+			return nil, err
 		}
-		fd := timeseries.FieldDefinition{
-			Name:     "value",
-			DataType: timeseries.String,
-		}
-		sh.ValueFieldsList = []timeseries.FieldDefinition{fd}
-		var pts dataset.Points
-		l := len(pr.Values)
-		var ps int64 = 16
-		if wfd.Data.ResultType == "matrix" && l > 0 {
-			pts = make(dataset.Points, l)
-			var wg sync.WaitGroup
-			wg.Add(len(pr.Values))
-			for i, v := range pr.Values {
-				go func(index int, vals []any) {
-					pt, _ := pointFromValues(vals)
-					if pt.Epoch > 0 {
-						atomic.AddInt64(&ps, int64(pt.Size))
-						pts[index] = pt
-					}
-					wg.Done()
-				}(i, v)
-			}
-			wg.Wait()
-		} else if wfd.Data.ResultType == "vector" && len(pr.Value) == 2 {
-			pts = make(dataset.Points, 1)
-			pt, _ := pointFromValues(pr.Value)
-			ps = int64(pt.Size)
-			pts[0] = pt
-			t := time.Unix(0, int64(pt.Epoch))
-			ds.ExtentList = timeseries.ExtentList{timeseries.Extent{Start: t, End: t}}
-		}
-		sh.CalculateSize()
-		s := &dataset.Series{
-			Header:    sh,
-			Points:    pts,
-			PointSize: ps,
-		}
-		ds.Results[0].SeriesList[i] = s
+		wfr := &WFResult{Value: wfrs}
+		populateSeries(ds, []*WFResult{wfr}, trq, true)
 	}
 	return ds, nil
 }
@@ -197,9 +169,9 @@ func MarshalTSOrVectorWriter(ts timeseries.Timeseries, _ *timeseries.RequestOpti
 
 	(&Envelope{ds.Status, ds.Error, ds.ErrorType, ds.Warnings}).StartMarshal(w, status)
 
-	resultType := "matrix"
+	resultType := Matrix
 	if isVector {
-		resultType = "vector"
+		resultType = Vector
 	}
 
 	fmt.Fprintf(w, `,"data":{"resultType":"%s","result":[`, resultType)
@@ -242,4 +214,57 @@ func MarshalTSOrVectorWriter(ts timeseries.Timeseries, _ *timeseries.RequestOpti
 	}
 	w.Write([]byte("]}}"))
 	return nil
+}
+
+func populateSeries(ds *dataset.DataSet, result []*WFResult,
+	trq *timeseries.TimeRangeQuery, isVector bool) {
+	ds.Results = []*dataset.Result{{}}
+	ds.Results[0].SeriesList = make([]*dataset.Series, len(result))
+	for i, pr := range result {
+		sh := dataset.SeriesHeader{
+			Tags:           pr.Metric,
+			QueryStatement: trq.Statement,
+		}
+		if n, ok := pr.Metric["__name__"]; ok {
+			sh.Name = n
+		}
+		fd := timeseries.FieldDefinition{
+			Name:     "value",
+			DataType: timeseries.String,
+		}
+		sh.ValueFieldsList = []timeseries.FieldDefinition{fd}
+		var pts dataset.Points
+		l := len(pr.Values)
+		var ps int64 = 16
+		if !isVector && l > 0 {
+			pts = make(dataset.Points, l)
+			var wg sync.WaitGroup
+			wg.Add(len(pr.Values))
+			for i, v := range pr.Values {
+				go func(index int, vals []any) {
+					pt, _ := pointFromValues(vals)
+					if pt.Epoch > 0 {
+						atomic.AddInt64(&ps, int64(pt.Size))
+						pts[index] = pt
+					}
+					wg.Done()
+				}(i, v)
+			}
+			wg.Wait()
+		} else if isVector && len(pr.Value) == 2 {
+			pts = make(dataset.Points, 1)
+			pt, _ := pointFromValues(pr.Value)
+			ps = int64(pt.Size)
+			pts[0] = pt
+			t := time.Unix(0, int64(pt.Epoch))
+			ds.ExtentList = timeseries.ExtentList{timeseries.Extent{Start: t, End: t}}
+		}
+		sh.CalculateSize()
+		s := &dataset.Series{
+			Header:    sh,
+			Points:    pts,
+			PointSize: ps,
+		}
+		ds.Results[0].SeriesList[i] = s
+	}
 }

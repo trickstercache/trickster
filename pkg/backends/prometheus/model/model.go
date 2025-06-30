@@ -25,6 +25,14 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
 
+type ResultType string
+
+const (
+	Scalar ResultType = "scalar"
+	Vector ResultType = "vector"
+	Matrix ResultType = "matrix"
+)
+
 // Envelope represents a Proemtheus Response Envelope Root Type
 type Envelope struct {
 	Status    string   `json:"status"`
