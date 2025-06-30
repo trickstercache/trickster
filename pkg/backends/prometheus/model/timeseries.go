@@ -41,7 +41,7 @@ type WFMatrixDocument struct {
 
 // WFMatrixData is the data section of the WFD for timeseries responses
 type WFMatrixData struct {
-	ResultType string          `json:"resultType"`
+	ResultType ResultType      `json:"resultType"`
 	Results    json.RawMessage `json:"result"`
 }
 
@@ -97,13 +97,13 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 		return ds, nil
 	}
 	switch wfd.Data.ResultType {
-	case "matrix", "vector":
+	case Matrix, Vector:
 		var wfr []*WFResult
 		if err := json.Unmarshal(wfd.Data.Results, &wfr); err != nil {
 			return nil, err
 		}
-		populateSeries(ds, wfr, trq, wfd.Data.ResultType == "vector")
-	case "scalar":
+		populateSeries(ds, wfr, trq, wfd.Data.ResultType == Vector)
+	case Scalar:
 		var wfrs WFResultScalar
 		if err := json.Unmarshal(wfd.Data.Results, &wfrs); err != nil {
 			return nil, err
@@ -169,9 +169,9 @@ func MarshalTSOrVectorWriter(ts timeseries.Timeseries, _ *timeseries.RequestOpti
 
 	(&Envelope{ds.Status, ds.Error, ds.ErrorType, ds.Warnings}).StartMarshal(w, status)
 
-	resultType := "matrix"
+	resultType := Matrix
 	if isVector {
-		resultType = "vector"
+		resultType = Vector
 	}
 
 	fmt.Fprintf(w, `,"data":{"resultType":"%s","result":[`, resultType)
