@@ -26,14 +26,14 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
+	"github.com/trickstercache/trickster/v2/pkg/observability/pprof"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	ch "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/config"
 	ph "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/purge"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
-	ttls "github.com/trickstercache/trickster/v2/pkg/proxy/tls"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
-	"github.com/trickstercache/trickster/v2/pkg/routing"
+	ttls "github.com/trickstercache/trickster/v2/pkg/proxy/tls"
 )
 
 var lg = listener.NewGroup()
@@ -140,7 +140,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		metricsRouter.RegisterRoute(conf.MgmtConfig.ConfigHandlerPath, nil, nil,
 			false, http.HandlerFunc(ch.HandlerFunc(conf)))
 		if conf.MgmtConfig.PprofServer == "both" || conf.MgmtConfig.PprofServer == "metrics" {
-			routing.RegisterPprofRoutes("metrics", metricsRouter)
+			pprof.RegisterRoutes("metrics", metricsRouter)
 		}
 		go lg.StartListener("metricsListener",
 			conf.Metrics.ListenAddress, conf.Metrics.ListenPort,
@@ -166,7 +166,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		mr.RegisterRoute(conf.MgmtConfig.PurgeByPathHandlerPath, nil, nil,
 			true, http.HandlerFunc(ph.PathHandler(conf.MgmtConfig.PurgeByPathHandlerPath, &o)))
 		if conf.MgmtConfig.PprofServer == "both" || conf.MgmtConfig.PprofServer == "mgmt" {
-			routing.RegisterPprofRoutes("mgmt", mr)
+			pprof.RegisterRoutes("mgmt", mr)
 		}
 		go lg.StartListener("mgmtListener",
 			conf.MgmtConfig.ListenAddress, conf.MgmtConfig.ListenPort,

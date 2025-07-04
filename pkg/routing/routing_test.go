@@ -47,17 +47,6 @@ import (
 	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
 )
 
-func TestRegisterPprofRoutes(t *testing.T) {
-	logger.SetLogger(logging.ConsoleLogger(level.Info))
-	router := lm.NewRouter()
-	RegisterPprofRoutes("test", router)
-	r, _ := http.NewRequest("GET", "http://0/debug/pprof", nil)
-	h := router.Handler(r)
-	if h == nil {
-		t.Error("expected non-nil handler")
-	}
-}
-
 func TestRegisterHealthHandler(t *testing.T) {
 	router := lm.NewRouter()
 	path := "/test"
