@@ -22,6 +22,7 @@ import (
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 )
@@ -45,7 +46,7 @@ func (c *Client) DefaultPathConfigs(_ *bo.Options) po.Lookup {
 		{
 			Path:           "/",
 			HandlerName:    "query",
-			Methods:        []string{http.MethodGet, http.MethodPost},
+			Methods:        methods.GetAndPost(),
 			MatchType:      matching.PathMatchTypePrefix,
 			MatchTypeName:  "prefix",
 			CacheKeyParams: []string{"database"},

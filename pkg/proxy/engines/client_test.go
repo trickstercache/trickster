@@ -34,6 +34,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	tst "github.com/trickstercache/trickster/v2/pkg/testutil/timeseries/model"
@@ -105,7 +106,7 @@ func (c *TestClient) DefaultPathConfigs(o *bo.Options) po.Lookup {
 		APIPath + mnQueryRange: {
 			Path:            APIPath + mnQueryRange,
 			HandlerName:     mnQueryRange,
-			Methods:         []string{http.MethodGet, http.MethodPost},
+			Methods:         methods.GetAndPost(),
 			CacheKeyParams:  []string{upQuery, upStep},
 			CacheKeyHeaders: []string{headers.NameAuthorization},
 			ResponseHeaders: map[string]string{headers.NameCacheControl: fmt.Sprintf("%s=%d",
@@ -115,7 +116,7 @@ func (c *TestClient) DefaultPathConfigs(o *bo.Options) po.Lookup {
 		APIPath + mnQuery: {
 			Path:            APIPath + mnQuery,
 			HandlerName:     mnQuery,
-			Methods:         []string{http.MethodGet, http.MethodPost},
+			Methods:         methods.GetAndPost(),
 			CacheKeyParams:  []string{upQuery, upTime},
 			CacheKeyHeaders: []string{headers.NameAuthorization},
 			ResponseHeaders: map[string]string{headers.NameCacheControl: fmt.Sprintf("%s=%d",
@@ -125,7 +126,7 @@ func (c *TestClient) DefaultPathConfigs(o *bo.Options) po.Lookup {
 		APIPath + mnSeries: {
 			Path:            APIPath + mnSeries,
 			HandlerName:     mnSeries,
-			Methods:         []string{http.MethodGet, http.MethodPost},
+			Methods:         methods.GetAndPost(),
 			CacheKeyParams:  []string{upMatch, upStart, upEnd},
 			CacheKeyHeaders: []string{headers.NameAuthorization},
 		},
@@ -133,7 +134,7 @@ func (c *TestClient) DefaultPathConfigs(o *bo.Options) po.Lookup {
 		APIPath + mnLabels: {
 			Path:            APIPath + mnLabels,
 			HandlerName:     "proxycache",
-			Methods:         []string{http.MethodGet, http.MethodPost},
+			Methods:         methods.GetAndPost(),
 			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{headers.NameAuthorization},
 		},
@@ -189,7 +190,7 @@ func (c *TestClient) DefaultPathConfigs(o *bo.Options) po.Lookup {
 		APIPath: {
 			Path:        APIPath,
 			HandlerName: providers.Proxy,
-			Methods:     []string{http.MethodGet, http.MethodPost},
+			Methods:     methods.GetAndPost(),
 		},
 
 		"/opc": {
@@ -201,7 +202,7 @@ func (c *TestClient) DefaultPathConfigs(o *bo.Options) po.Lookup {
 		"/": {
 			Path:        "/",
 			HandlerName: providers.Proxy,
-			Methods:     []string{http.MethodGet, http.MethodPost},
+			Methods:     methods.GetAndPost(),
 		},
 	}
 

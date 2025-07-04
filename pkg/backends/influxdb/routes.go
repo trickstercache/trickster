@@ -23,6 +23,7 @@ import (
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 )
@@ -46,7 +47,7 @@ func (c *Client) DefaultPathConfigs(_ *bo.Options) po.Lookup {
 		{
 			Path:            "/" + mnQuery,
 			HandlerName:     mnQuery,
-			Methods:         []string{http.MethodGet, http.MethodPost},
+			Methods:         methods.GetAndPost(),
 			CacheKeyParams:  []string{influxql.ParamDB, influxql.ParamQuery, "u", "p"},
 			CacheKeyHeaders: []string{},
 			MatchTypeName:   "exact",
@@ -55,7 +56,7 @@ func (c *Client) DefaultPathConfigs(_ *bo.Options) po.Lookup {
 		{
 			Path:            "/" + apiv2Query,
 			HandlerName:     mnQuery,
-			Methods:         []string{http.MethodGet, http.MethodPost},
+			Methods:         methods.GetAndPost(),
 			CacheKeyParams:  []string{influxql.ParamDB, influxql.ParamQuery, "u", "p"},
 			CacheKeyHeaders: []string{},
 			MatchTypeName:   "exact",
@@ -64,7 +65,7 @@ func (c *Client) DefaultPathConfigs(_ *bo.Options) po.Lookup {
 		{
 			Path:          "/",
 			HandlerName:   providers.Proxy,
-			Methods:       []string{http.MethodGet, http.MethodPost},
+			Methods:       methods.GetAndPost(),
 			MatchType:     matching.PathMatchTypePrefix,
 			MatchTypeName: "prefix",
 		},
