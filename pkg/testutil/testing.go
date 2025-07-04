@@ -104,7 +104,7 @@ func NewTestInstance(
 	backendProvider, urlPath, logLevel string,
 ) (*httptest.Server, *httptest.ResponseRecorder, *http.Request, *http.Client, error) {
 
-	isBasicTestServer := false
+	var isBasicTestServer bool
 
 	var ts *httptest.Server
 	switch backendProvider {

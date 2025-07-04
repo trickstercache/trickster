@@ -88,7 +88,7 @@ type Options struct {
 	// Custom is a compiled list of any custom settings for this path from the config file
 	Custom []string `yaml:"-"`
 	// ReqRewriter is the rewriter handler as indicated by RuleName
-	ReqRewriter rewriter.RewriteInstructions
+	ReqRewriter rewriter.RewriteInstructions `yaml:"-"`
 	// AuthOptions is the authenticator as indicated by AuthenticatorName
 	AuthOptions *autho.Options `yaml:"-"`
 	// HasCustomResponseBody is a boolean indicating if the response body is custom
@@ -96,7 +96,10 @@ type Options struct {
 	HasCustomResponseBody bool `yaml:"-"`
 }
 
-// Lookup is a map of Options
+// List is a slice of *Options
+type List []*Options
+
+// Lookup is a map of *Options
 type Lookup map[string]*Options
 
 // New returns a newly-instantiated path *Options
@@ -272,4 +275,12 @@ func (l Lookup) Validate() error {
 		}
 	}
 	return nil
+}
+
+func (o List) ToLookup() Lookup {
+	out := make(Lookup, len(o))
+	for _, o2 := range o {
+		out[o2.Path+"-"+strings.Join(o2.Methods, "-")] = o2
+	}
+	return out
 }

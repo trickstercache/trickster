@@ -183,7 +183,7 @@ func (c *Client) parseOptions(o *ro.Options, rwi rewriter.InstructionsLookup) er
 				return fmt.Errorf("missing matches in rule %s case %s", o.Name, k)
 			}
 
-			rc := 0
+			var rc int
 			if v.RedirectURL != "" {
 				rc = 302
 				nr = http.HandlerFunc(redirect.HandleRedirectResponse)

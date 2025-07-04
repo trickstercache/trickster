@@ -14,26 +14,8 @@
  * limitations under the License.
  */
 
-package matching
+package options
 
-import "testing"
-
-func TestPMTString(t *testing.T) {
-
-	t1 := PathMatchTypeExact
-	t2 := PathMatchTypePrefix
-
-	var t3 PathMatchType = 3
-
-	if t1.String() != PathMatchNameExact {
-		t.Errorf("expected %s got %s", PathMatchNameExact, t1.String())
-	}
-
-	if t2.String() != PathMatchNamePrefix {
-		t.Errorf("expected %s got %s", PathMatchNamePrefix, t2.String())
-	}
-
-	if t3.String() != "3" {
-		t.Errorf("expected %s got %s", "3", t3.String())
-	}
-}
+const (
+	DefaultPath string = "/"
+)

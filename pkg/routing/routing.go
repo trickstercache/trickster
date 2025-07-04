@@ -20,7 +20,6 @@ package routing
 import (
 	"fmt"
 	"net/http"
-	"net/http/pprof"
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
@@ -49,21 +48,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/util/middleware/bodyfilter"
 )
 
-// RegisterPprofRoutes will register the Pprof Debugging endpoints to the provided router
-func RegisterPprofRoutes(routerName string, r router.Router) {
-	logger.Info("registering pprof /debug routes", logging.Pairs{"routerName": routerName})
-	r.RegisterRoute("/debug/pprof/", nil, nil,
-		false, http.HandlerFunc(pprof.Index))
-	r.RegisterRoute("/debug/pprof/cmdline", nil, nil,
-		false, http.HandlerFunc(pprof.Cmdline))
-	r.RegisterRoute("/debug/pprof/profile", nil, nil,
-		false, http.HandlerFunc(pprof.Profile))
-	r.RegisterRoute("/debug/pprof/symbol", nil, nil,
-		false, http.HandlerFunc(pprof.Symbol))
-	r.RegisterRoute("/debug/pprof/trace", nil, nil,
-		false, http.HandlerFunc(pprof.Trace))
-}
-
 // RegisterProxyRoutes iterates the Trickster Configuration and
 // registers the routes for the configured backends
 func RegisterProxyRoutes(conf *config.Config, r router.Router,
@@ -78,7 +62,7 @@ func RegisterProxyRoutes(conf *config.Config, r router.Router,
 	var clients = backends.Backends{"frontend": tlo}
 	var err error
 
-	defaultBackend := ""
+	var defaultBackend string
 	var ndo *bo.Options // points to the backend options named "default"
 	var cdo *bo.Options // points to the backend options with IsDefault set to true
 

@@ -18,7 +18,6 @@ package reverseproxy
 
 import (
 	"net/http"
-	"strings"
 
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
@@ -43,17 +42,13 @@ func (c *Client) RegisterHandlers(handlers.Lookup) {
 
 // DefaultPathConfigs returns the default PathConfigs for the given Provider
 func (c *Client) DefaultPathConfigs(_ *bo.Options) po.Lookup {
-
-	am := methods.AllHTTPMethods()
-
-	paths := po.Lookup{
-		"/-" + strings.Join(am, "-"): {
+	return po.List{
+		{
 			Path:          "/",
 			HandlerName:   providers.Proxy,
-			Methods:       am,
+			Methods:       methods.AllHTTPMethods(),
 			MatchType:     matching.PathMatchTypePrefix,
 			MatchTypeName: "prefix",
 		},
-	}
-	return paths
+	}.ToLookup()
 }

@@ -19,7 +19,6 @@ package alb
 import (
 	"fmt"
 	"net/http"
-	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	alberr "github.com/trickstercache/trickster/v2/pkg/backends/alb/errors"
@@ -255,15 +254,13 @@ func (c *Client) StopPool() {
 
 // DefaultPathConfigs returns the default PathConfigs for the given Provider
 func (c *Client) DefaultPathConfigs(_ *bo.Options) po.Lookup {
-	m := methods.AllHTTPMethods()
-	paths := po.Lookup{
-		"/" + strings.Join(m, "-"): {
+	return po.List{
+		{
 			Path:          "/",
 			HandlerName:   providers.ALB,
-			Methods:       m,
+			Methods:       methods.AllHTTPMethods(),
 			MatchType:     matching.PathMatchTypePrefix,
 			MatchTypeName: "prefix",
 		},
-	}
-	return paths
+	}.ToLookup()
 }
