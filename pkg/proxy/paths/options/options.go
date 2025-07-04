@@ -41,7 +41,7 @@ type Options struct {
 	// Path indicates the HTTP Request's URL PATH to which this configuration applies
 	Path string `yaml:"path,omitempty"`
 	// MatchTypeName indicates the type of path match the router will apply to the path ('exact' or 'prefix')
-	MatchTypeName string `yaml:"match_type,omitempty"`
+	MatchTypeName matching.PathMatchName `yaml:"match_type,omitempty"`
 	// HandlerName provides the name of the HTTP handler to use
 	HandlerName string `yaml:"handler,omitempty"`
 	// Methods provides the list of permitted HTTP request methods for this Path
@@ -108,7 +108,7 @@ func New() *Options {
 		Path:                    "/",
 		Methods:                 methods.CacheableHTTPMethods(),
 		HandlerName:             providers.Proxy,
-		MatchTypeName:           "exact",
+		MatchTypeName:           matching.PathMatchNameExact,
 		MatchType:               matching.PathMatchTypeExact,
 		CollapsedForwardingName: "basic",
 		CollapsedForwardingType: forwarding.CFTypeBasic,
@@ -251,12 +251,12 @@ func OverlayYAMLData(
 		} else {
 			p.CollapsedForwardingType = forwarding.CFTypeBasic
 		}
-		if mt, ok := matching.Names[strings.ToLower(p.MatchTypeName)]; ok {
+		p.MatchTypeName = matching.PathMatchName(strings.ToLower(string(p.MatchTypeName)))
+		if mt, ok := matching.Names[p.MatchTypeName]; ok {
 			p.MatchType = mt
-			p.MatchTypeName = p.MatchType.String()
 		} else {
 			p.MatchType = matching.PathMatchTypeExact
-			p.MatchTypeName = p.MatchType.String()
+			p.MatchTypeName = matching.PathMatchNameExact
 		}
 		out[p.Path] = p
 	}

@@ -47,14 +47,14 @@ func (c *Client) DefaultPathConfigs(_ *bo.Options) po.Lookup {
 			HandlerName:   "proxycache",
 			Methods:       methods.CacheableHTTPMethods(),
 			MatchType:     matching.PathMatchTypePrefix,
-			MatchTypeName: "prefix",
+			MatchTypeName: matching.PathMatchNamePrefix,
 		},
 		{
 			Path:          "/",
 			HandlerName:   providers.Proxy,
 			Methods:       methods.UncacheableHTTPMethods(),
 			MatchType:     matching.PathMatchTypePrefix,
-			MatchTypeName: "prefix",
+			MatchTypeName: matching.PathMatchNamePrefix,
 		},
 	}.ToLookup()
 }

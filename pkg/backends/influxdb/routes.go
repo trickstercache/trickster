@@ -50,7 +50,7 @@ func (c *Client) DefaultPathConfigs(_ *bo.Options) po.Lookup {
 			Methods:         methods.GetAndPost(),
 			CacheKeyParams:  []string{influxql.ParamDB, influxql.ParamQuery, "u", "p"},
 			CacheKeyHeaders: []string{},
-			MatchTypeName:   "exact",
+			MatchTypeName:   matching.PathMatchNameExact,
 			MatchType:       matching.PathMatchTypeExact,
 		},
 		{
@@ -59,7 +59,7 @@ func (c *Client) DefaultPathConfigs(_ *bo.Options) po.Lookup {
 			Methods:         methods.GetAndPost(),
 			CacheKeyParams:  []string{influxql.ParamDB, influxql.ParamQuery, "u", "p"},
 			CacheKeyHeaders: []string{},
-			MatchTypeName:   "exact",
+			MatchTypeName:   matching.PathMatchNameExact,
 			MatchType:       matching.PathMatchTypeExact,
 		},
 		{
@@ -67,7 +67,7 @@ func (c *Client) DefaultPathConfigs(_ *bo.Options) po.Lookup {
 			HandlerName:   providers.Proxy,
 			Methods:       methods.GetAndPost(),
 			MatchType:     matching.PathMatchTypePrefix,
-			MatchTypeName: "prefix",
+			MatchTypeName: matching.PathMatchNamePrefix,
 		},
 	}.ToLookup()
 }

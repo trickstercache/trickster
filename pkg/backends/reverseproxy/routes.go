@@ -48,7 +48,7 @@ func (c *Client) DefaultPathConfigs(_ *bo.Options) po.Lookup {
 			HandlerName:   providers.Proxy,
 			Methods:       methods.AllHTTPMethods(),
 			MatchType:     matching.PathMatchTypePrefix,
-			MatchTypeName: "prefix",
+			MatchTypeName: matching.PathMatchNamePrefix,
 		},
 	}.ToLookup()
 }

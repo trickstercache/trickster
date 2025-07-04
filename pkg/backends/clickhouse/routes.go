@@ -48,7 +48,7 @@ func (c *Client) DefaultPathConfigs(_ *bo.Options) po.Lookup {
 			HandlerName:    "query",
 			Methods:        methods.GetAndPost(),
 			MatchType:      matching.PathMatchTypePrefix,
-			MatchTypeName:  "prefix",
+			MatchTypeName:  matching.PathMatchNamePrefix,
 			CacheKeyParams: []string{"database"},
 		},
 	}.ToLookup()

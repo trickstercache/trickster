@@ -21,24 +21,26 @@ import "strconv"
 // PathMatchType enumerates the types of Path Matches used when registering Paths with the Router
 type PathMatchType int
 
+type PathMatchName string
+
 const (
 	// PathMatchTypeExact indicates the router will map the Path by exact match against incoming requests
 	PathMatchTypeExact = PathMatchType(iota)
 	// PathMatchTypePrefix indicates the router will map the Path by prefix against incoming requests
 	PathMatchTypePrefix
 
-	PathMatchNameExact  = "exact"
-	PathMatchNamePrefix = "prefix"
+	PathMatchNameExact  PathMatchName = "exact"
+	PathMatchNamePrefix PathMatchName = "prefix"
 )
 
 // Names is a map of PathMatchTypes keyed by string name
-var Names = map[string]PathMatchType{
+var Names = map[PathMatchName]PathMatchType{
 	PathMatchNameExact:  PathMatchTypeExact,
 	PathMatchNamePrefix: PathMatchTypePrefix,
 }
 
 // Values is a map of PathMatchTypes valued by string name
-var Values = make(map[PathMatchType]string)
+var Values = make(map[PathMatchType]PathMatchName)
 
 func init() {
 	for k, v := range Names {
@@ -48,7 +50,7 @@ func init() {
 
 func (t PathMatchType) String() string {
 	if v, ok := Values[t]; ok {
-		return v
+		return string(v)
 	}
 	return strconv.Itoa(int(t))
 }

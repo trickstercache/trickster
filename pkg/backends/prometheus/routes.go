@@ -82,7 +82,7 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) po.Lookup {
 			CacheKeyParams:  []string{upQuery, upStep},
 			CacheKeyHeaders: []string{},
 			ResponseHeaders: rhts,
-			MatchTypeName:   "exact",
+			MatchTypeName:   matching.PathMatchNameExact,
 			MatchType:       matching.PathMatchTypeExact,
 		},
 		{
@@ -92,7 +92,7 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) po.Lookup {
 			CacheKeyParams:  []string{upQuery, upTime},
 			CacheKeyHeaders: []string{},
 			ResponseHeaders: rhinst,
-			MatchTypeName:   "exact",
+			MatchTypeName:   matching.PathMatchNameExact,
 			MatchType:       matching.PathMatchTypeExact,
 		},
 		{
@@ -102,7 +102,7 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) po.Lookup {
 			CacheKeyParams:  []string{upMatch, upStart, upEnd},
 			CacheKeyHeaders: []string{},
 			ResponseHeaders: rhinst,
-			MatchTypeName:   "exact",
+			MatchTypeName:   matching.PathMatchNameExact,
 			MatchType:       matching.PathMatchTypeExact,
 		},
 		{
@@ -112,7 +112,7 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) po.Lookup {
 			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{},
 			ResponseHeaders: rhinst,
-			MatchTypeName:   "exact",
+			MatchTypeName:   matching.PathMatchNameExact,
 			MatchType:       matching.PathMatchTypeExact,
 		},
 		{
@@ -121,7 +121,7 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) po.Lookup {
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{},
-			MatchTypeName:   "prefix",
+			MatchTypeName:   matching.PathMatchNamePrefix,
 			MatchType:       matching.PathMatchTypePrefix,
 			ResponseHeaders: rhinst,
 		},
@@ -132,7 +132,7 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) po.Lookup {
 			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{},
 			ResponseHeaders: rhinst,
-			MatchTypeName:   "exact",
+			MatchTypeName:   matching.PathMatchNameExact,
 			MatchType:       matching.PathMatchTypeExact,
 		},
 		{
@@ -142,7 +142,7 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) po.Lookup {
 			CacheKeyParams:  []string{"match_target", "metric", "limit"},
 			CacheKeyHeaders: []string{},
 			ResponseHeaders: rhinst,
-			MatchTypeName:   "exact",
+			MatchTypeName:   matching.PathMatchNameExact,
 			MatchType:       matching.PathMatchTypeExact,
 		},
 		{
@@ -152,7 +152,7 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) po.Lookup {
 			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{},
 			ResponseHeaders: rhinst,
-			MatchTypeName:   "exact",
+			MatchTypeName:   matching.PathMatchNameExact,
 			MatchType:       matching.PathMatchTypeExact,
 		},
 		{
@@ -162,7 +162,7 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) po.Lookup {
 			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{},
 			ResponseHeaders: rhinst,
-			MatchTypeName:   "exact",
+			MatchTypeName:   matching.PathMatchNameExact,
 			MatchType:       matching.PathMatchTypeExact,
 		},
 		{
@@ -172,7 +172,7 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) po.Lookup {
 			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{},
 			ResponseHeaders: rhinst,
-			MatchTypeName:   "exact",
+			MatchTypeName:   matching.PathMatchNameExact,
 			MatchType:       matching.PathMatchTypeExact,
 		},
 		{
@@ -181,7 +181,7 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) po.Lookup {
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{},
-			MatchTypeName:   "prefix",
+			MatchTypeName:   matching.PathMatchNamePrefix,
 			MatchType:       matching.PathMatchTypePrefix,
 			ResponseHeaders: rhinst,
 		},
@@ -190,21 +190,21 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) po.Lookup {
 			HandlerName:   "admin",
 			Methods:       methods.AllHTTPMethods(),
 			MatchType:     matching.PathMatchTypePrefix,
-			MatchTypeName: "prefix",
+			MatchTypeName: matching.PathMatchNamePrefix,
 		},
 		{
 			Path:          APIPath,
 			HandlerName:   providers.Proxy,
 			Methods:       methods.GetAndPost(),
 			MatchType:     matching.PathMatchTypePrefix,
-			MatchTypeName: "prefix",
+			MatchTypeName: matching.PathMatchNamePrefix,
 		},
 		{
 			Path:          "/",
 			HandlerName:   providers.Proxy,
 			Methods:       methods.GetAndPost(),
 			MatchType:     matching.PathMatchTypePrefix,
-			MatchTypeName: "prefix",
+			MatchTypeName: matching.PathMatchNamePrefix,
 		},
 	}
 	o.FastForwardPath = paths[1].Clone()
