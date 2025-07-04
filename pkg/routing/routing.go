@@ -62,7 +62,7 @@ func RegisterProxyRoutes(conf *config.Config, r router.Router,
 	var clients = backends.Backends{"frontend": tlo}
 	var err error
 
-	defaultBackend := ""
+	var defaultBackend string
 	var ndo *bo.Options // points to the backend options named "default"
 	var cdo *bo.Options // points to the backend options with IsDefault set to true
 

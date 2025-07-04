@@ -726,7 +726,7 @@ func (pr *proxyRequest) reconstituteResponses() {
 
 		parts.Ranges = parts.RangeParts.Ranges()
 
-		bodyFromParts := false
+		var bodyFromParts bool
 		if len(parts.Ranges) > 0 {
 			resp.Header.Del(headers.NameContentRange)
 			pr.trueContentType = parts.ContentType

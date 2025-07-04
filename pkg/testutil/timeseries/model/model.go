@@ -165,13 +165,13 @@ func MarshalTimeseriesWriter(ts timeseries.Timeseries,
 
 	w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[`))
 
-	seriesSep := ""
+	var seriesSep string
 	for _, s := range ds.Results[0].SeriesList {
 		if s == nil {
 			continue
 		}
 		w.Write([]byte(seriesSep + `{"metric":{`))
-		sep := ""
+		var sep string
 		for _, k := range s.Header.Tags.Keys() {
 			fmt.Fprintf(w, `%s"%s":"%s"`, sep, k, s.Header.Tags[k])
 			sep = ","

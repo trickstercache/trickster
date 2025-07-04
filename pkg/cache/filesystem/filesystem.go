@@ -104,7 +104,7 @@ func (c *CacheClient) getFileName(cacheKey string) string {
 func makeDirectory(path string) error {
 	err := os.MkdirAll(path, 0755)
 	if err == nil {
-		s := ""
+		var s string
 		if !strings.HasSuffix(path, "/") {
 			s = "/"
 		}

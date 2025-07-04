@@ -337,7 +337,7 @@ func (el ExtentList) Remove(r ExtentList, step time.Duration) ExtentList {
 	var k int
 	for i := range len(el) {
 		ex := el[i]
-		split := false
+		var split bool
 		for _, rem := range r {
 			switch {
 			case (rem.End.Before(ex.Start) || rem.Start.After(ex.End)):

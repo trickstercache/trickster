@@ -268,7 +268,7 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 		}
 	}
 
-	hasCustomResponseBody := false
+	var hasCustomResponseBody bool
 	resp.Header.Del(headers.NameContentLength)
 
 	if pc != nil {

@@ -131,7 +131,7 @@ func (mbrs MultipartByteRanges) Compress() {
 		return
 	}
 
-	cnt := 0
+	var cnt int
 	for len(mbrs) != cnt {
 		cnt = len(mbrs)
 		var prev *MultipartByteRange
@@ -163,7 +163,7 @@ func ParseMultipartRangeResponseBody(body io.Reader,
 	parts := make(MultipartByteRanges)
 	ranges := make(Ranges, 0)
 	fullContentLength := int64(-1)
-	ct := ""
+	var ct string
 	if strings.HasPrefix(contentTypeHeader, headers.ValueMultipartByteRanges) {
 		separator := contentTypeHeader[len(headers.ValueMultipartByteRanges):]
 		if separator != "" {

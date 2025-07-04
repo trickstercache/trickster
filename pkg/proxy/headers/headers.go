@@ -266,7 +266,7 @@ func LogString(h http.Header) string {
 	names := slices.Sorted(maps.Keys(h))
 	sb := &strings.Builder{}
 	sb.WriteString("{")
-	sep := ""
+	var sep string
 	for _, k := range names {
 		v := h[k]
 		if len(v) > 0 {
