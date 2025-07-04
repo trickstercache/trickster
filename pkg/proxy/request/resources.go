@@ -18,6 +18,7 @@ package request
 
 import (
 	"net/http"
+	"slices"
 	"sync"
 	"time"
 
@@ -71,7 +72,7 @@ func (r *Resources) Clone() *Resources {
 		TimeRangeQuery:    r.TimeRangeQuery,
 		Tracer:            r.Tracer,
 		IsMergeMember:     r.IsMergeMember,
-		RequestBody:       r.RequestBody, // shallow copy of slice pointer
+		RequestBody:       slices.Clone(r.RequestBody),
 		ResponseMergeFunc: r.ResponseMergeFunc,
 		TSUnmarshaler:     r.TSUnmarshaler,
 		TSMarshaler:       r.TSMarshaler,
@@ -79,6 +80,7 @@ func (r *Resources) Clone() *Resources {
 		TS:                r.TS,
 		TSReqestOptions:   r.TSReqestOptions,
 		AuthResult:        r.AuthResult, // shallow copy of the auth result
+		AlreadyEncoded:    r.AlreadyEncoded,
 	}
 }
 
@@ -131,4 +133,9 @@ func (r *Resources) Merge(r2 *Resources) {
 	r.TimeRangeQuery = r2.TimeRangeQuery
 	r.Tracer = r2.Tracer
 	r.AuthResult = r2.AuthResult
+
+	r.RequestBody = slices.Clone(r2.RequestBody)
+	r.IsMergeMember = r.IsMergeMember || r2.IsMergeMember
+	r.AlreadyEncoded = r.AlreadyEncoded || r2.AlreadyEncoded
+	r.ResponseMergeFunc = r2.ResponseMergeFunc
 }

@@ -151,7 +151,7 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 		return err
 	}
 	alb.StartALBPools(backends, si.HealthChecker.Statuses())
-	routing.RegisterDefaultBackendRoutes(r, backends, tracers)
+	routing.RegisterDefaultBackendRoutes(r, newConf, backends, tracers)
 	routing.RegisterHealthHandler(mr, newConf.MgmtConfig.HealthHandlerPath, si.HealthChecker)
 	applyListenerConfigs(newConf, si.Config, r, rh, mr, tracers, backends, errorFunc)
 

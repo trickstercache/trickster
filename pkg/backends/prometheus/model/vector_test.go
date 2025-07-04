@@ -31,7 +31,7 @@ import (
 
 const testVector = `{"status":"success","data":{"resultType":"vector","result":[` +
 	`{"metric":{"__name__":"go_memstats_alloc_bytes","instance":` +
-	`"docker.for.mac.localhost:8481","job":"trickster"},` +
+	`"host.docker.internal:8481","job":"trickster"},` +
 	`"value":[1577836800,"1"]}]}}`
 
 const testVector2 = `{"status":"success","data":{"resultType":"vector","result":[` +

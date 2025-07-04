@@ -92,38 +92,37 @@ type proxyRequest struct {
 	wasReconstituted  bool
 }
 
+func cloneRequestWithSpan(r *http.Request) *http.Request {
+	if r == nil {
+		return nil
+	}
+	rsc := request.GetResources(r)
+	out, _ := request.Clone(r)
+	out = out.WithContext(tctx.WithResources(
+		trace.ContextWithSpan(context.Background(),
+			trace.SpanFromContext(r.Context())),
+		rsc))
+	return out
+}
+
 // newProxyRequest accepts the original inbound HTTP Request and Response
 // and returns a proxyRequest object
 func newProxyRequest(r *http.Request, w io.Writer) *proxyRequest {
-	rsc := request.GetResources(r)
 	pr := &proxyRequest{
-		Request: r,
-		upstreamRequest: r.Clone(
-			tctx.WithResources(
-				trace.ContextWithSpan(context.Background(),
-					trace.SpanFromContext(r.Context())),
-				rsc)),
-		contentLength:  -1,
-		responseWriter: w,
-		started:        time.Now(),
-		mapLock:        &sync.Mutex{},
+		Request:         r,
+		upstreamRequest: cloneRequestWithSpan(r),
+		contentLength:   -1,
+		responseWriter:  w,
+		started:         time.Now(),
+		mapLock:         &sync.Mutex{},
 	}
 	return pr
 }
 
 func (pr *proxyRequest) Clone() *proxyRequest {
-	rsc := request.GetResources(pr.Request)
 	return &proxyRequest{
-		Request: pr.Request.Clone(
-			tctx.WithResources(
-				trace.ContextWithSpan(context.Background(),
-					trace.SpanFromContext(pr.Request.Context())),
-				rsc)),
-		upstreamRequest: pr.upstreamRequest.Clone(
-			tctx.WithResources(
-				trace.ContextWithSpan(context.Background(),
-					trace.SpanFromContext(pr.upstreamRequest.Context())),
-				rsc)),
+		Request:            cloneRequestWithSpan(pr.Request),
+		upstreamRequest:    cloneRequestWithSpan(pr.upstreamRequest),
 		cacheDocument:      pr.cacheDocument,
 		key:                pr.key,
 		cacheStatus:        pr.cacheStatus,
@@ -182,9 +181,9 @@ func (pr *proxyRequest) prepareRevalidationRequest() {
 
 	rsc := request.GetResources(pr.upstreamRequest)
 	pr.revalidation = RevalStatusInProgress
-	pr.revalidationRequest = request.SetResources(pr.upstreamRequest.Clone(context.Background()),
+	pr.revalidationRequest, _ = request.Clone(pr.upstreamRequest)
+	pr.revalidationRequest = request.SetResources(pr.revalidationRequest,
 		request.GetResources(pr.Request))
-
 	_, span := tspan.NewChildSpan(pr.revalidationRequest.Context(), rsc.Tracer, "FetchRevlidation")
 	if span != nil {
 		pr.revalidationRequest =
@@ -260,7 +259,8 @@ func (pr *proxyRequest) prepareUpstreamRequests() {
 	// if we are articulating the origin range requests, break those out here
 	if len(pr.neededRanges) > 0 && rsc.BackendOptions.DearticulateUpstreamRanges {
 		for _, r := range pr.neededRanges {
-			req := request.SetResources(pr.upstreamRequest.Clone(context.Background()), rsc)
+			req, _ := request.Clone(pr.upstreamRequest)
+			req = request.SetResources(req, rsc.Clone())
 			req.Header.Set(headers.NameRange, "bytes="+r.String())
 			pr.originRequests = append(pr.originRequests, req)
 		}

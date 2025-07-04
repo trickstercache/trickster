@@ -17,10 +17,16 @@
 package failures
 
 import (
+	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
+
+const PayloadTooLargeText = "Request Payload is too large"
+
+var ErrPayloadTooLarge = errors.New(strings.ToLower(PayloadTooLargeText))
 
 // HandleBadRequestResponse responds to an HTTP Request with 400 Bad Request
 func HandleBadRequestResponse(w http.ResponseWriter, _ *http.Request) {
@@ -55,6 +61,16 @@ func HandleNotFound(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
 	w.WriteHeader(http.StatusNotFound)
 	w.Write([]byte("Resource Not Found"))
+}
+
+// HandlePayloadTooLarge responds to an HTTP Request with a 413 Payload Too Large
+func HandlePayloadTooLarge(w http.ResponseWriter, _ *http.Request) {
+	if w == nil {
+		return
+	}
+	w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
+	w.WriteHeader(http.StatusRequestEntityTooLarge)
+	w.Write([]byte(PayloadTooLargeText))
 }
 
 // HandleMiscFailure responds to an HTTP Request the provided status code
