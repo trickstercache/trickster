@@ -19,6 +19,7 @@
 package daemon
 
 import (
+	"context"
 	"fmt"
 	"os"
 	goruntime "runtime"
@@ -40,7 +41,7 @@ import (
 var mtx sync.Mutex
 var wasStarted bool
 
-func Start() error {
+func Start(ctx context.Context, args ...string) error {
 	var skipUnlock bool
 	unlock := func() {
 		if !skipUnlock {
@@ -49,13 +50,10 @@ func Start() error {
 	}
 	mtx.Lock()
 	defer unlock()
-	if wasStarted {
-		return errors.ErrServerAlreadyStarted
-	}
 	metrics.BuildInfo.WithLabelValues(goruntime.Version(),
 		appinfo.GitCommitID, appinfo.Version).Set(1)
 
-	conf, err := setup.LoadAndValidate()
+	conf, err := setup.LoadAndValidate(args...)
 	if err != nil {
 		return err
 	}
@@ -87,25 +85,24 @@ func Start() error {
 
 	si := &instance.ServerInstance{}
 	var hupFunc reload.Reloader = func(source string) (bool, error) {
-		return Hup(si, source)
+		return Hup(si, source, args...)
 	}
 	// Serve with Config
 	err = setup.ApplyConfig(si, conf, hupFunc, func() { os.Exit(1) })
 	if err != nil {
 		return err
 	}
-	wasStarted = true
 	skipUnlock = true
 	mtx.Unlock()
-	signaling.Wait(hupFunc)
+	signaling.Wait(ctx, hupFunc)
 	return nil
 }
 
-func Hup(si *instance.ServerInstance, source string) (bool, error) {
+func Hup(si *instance.ServerInstance, source string, args ...string) (bool, error) {
 	mtx.Lock()
 	defer mtx.Unlock()
 	if si.Config != nil && si.Config.IsStale() {
-		conf, err := setup.LoadAndValidate()
+		conf, err := setup.LoadAndValidate(args...)
 		if err != nil {
 			return false, err
 		}
@@ -124,7 +121,7 @@ func Hup(si *instance.ServerInstance, source string) (bool, error) {
 			return false, err
 		}
 		var hupFunc reload.Reloader = func(source string) (bool, error) {
-			return Hup(si, source)
+			return Hup(si, source, args...)
 		}
 		err = setup.ApplyConfig(si, conf, hupFunc, nil)
 		if err != nil {
