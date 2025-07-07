@@ -99,9 +99,19 @@ jobs:
           path-to-profile: .coverprofile
           flag-name: Go-${{ matrix.go }}
           parallel: true
+
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: make developer-start integration-test
   finish:
     needs:
       - build
+      - integration
     runs-on: ubuntu-latest
     steps:
       - uses: shogo82148/actions-goveralls@v1
