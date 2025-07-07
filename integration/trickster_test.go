@@ -18,9 +18,12 @@ package integration
 
 import (
 	"context"
+	"net/http"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 )
 
@@ -38,6 +41,7 @@ func TestTrickster(t *testing.T) {
 		// Simple test to ensure that Trickster can start and be stopped within a test.
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Cleanup(cancel)
+		defer cancel()
 		started := make(chan struct{})
 		go func() { // wait for trickster to start
 			time.Sleep(5 * time.Second) // TODO: remove sleep & return explicit start signal
@@ -50,4 +54,22 @@ func TestTrickster(t *testing.T) {
 		metrics := checkTricksterMetrics(t, "localhost:8480")
 		t.Log("Trickster metrics:", metrics)
 	})
+
+	t.Run("issues", func(t *testing.T) {
+		// Test for specific reported issues
+		t.Run("856: rule backend panics", func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			t.Cleanup(cancel)
+			defer cancel()
+			go startTrickster(t, ctx, expectedStartError{}, "-config", "testdata/issue-856.yaml")
+			var body string
+			var header http.Header
+			require.EventuallyWithT(t, func(collect *assert.CollectT) {
+				body, header = checkTrickster(t, "localhost:8500", "example/query", 200)
+			}, 5*time.Second, 1*time.Second)
+			t.Log("Response body:", body)
+			t.Log("Response header:", header)
+		})
+	})
+
 }

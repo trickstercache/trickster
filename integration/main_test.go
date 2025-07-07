@@ -71,3 +71,14 @@ func checkTricksterMetrics(t *testing.T, address string) []string {
 		return false
 	})
 }
+
+// query trickster at the provided address/path.
+func checkTrickster(t *testing.T, address string, path string, expectedStatus int) (string, http.Header) {
+	resp, err := http.Get("http://" + filepath.Join(address, path))
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, expectedStatus, resp.StatusCode, "Expected status code %d from Trickster at %s", expectedStatus, path)
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	return string(body), resp.Header.Clone()
+}

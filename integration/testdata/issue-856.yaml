@@ -1,0 +1,205 @@
+frontend:
+  listen_port: 8500
+
+negative_caches:
+  default:
+    '400': 3s
+    '404': 3s
+    '500': 3s
+    '502': 3s
+
+caches:
+  mem1:
+    cache_type: memory
+    provider: memory
+    index:
+      max_size_objects: 512
+      max_size_backoff_objects: 128
+  mem2:
+    cache_type: memory
+    provider: memory
+    index:
+      max_size_objects: 1024 
+      max_size_backoff_objects: 128
+  fs1:
+    cache_type: filesystem
+    provider: filesystem
+
+request_rewriters:
+
+  remove-accept-encoding:
+    instructions:
+      - [ header, delete, Accept-Encoding ]
+
+  range-to-instant:
+    instructions:
+      - [ path , set , /api/v1/query ]
+      - [ param , delete , start ]
+      - [ param , delete , end ]
+      - [ param , delete , step ]
+      - [ chain , exec , remove-accept-encoding ]
+
+rules:
+  example:
+    input_source: header
+    input_key: Authorization
+    input_type: string
+    input_encoding: base64
+    input_index: 1
+    input_delimiter: ' '
+    operation: prefix
+    next_route: rpc1
+    cases:
+      '1':
+        matches:
+          - 'trickster:'
+        next_route: sim1
+
+tracing:
+  jc1:
+    provider: otlp
+    endpoint: 'http://127.0.0.1:14268/api/traces'
+    tags:
+      testTag: testTagValue
+      testTag2: testTag2Value
+  ja1:
+    provider: otlp
+    endpoint: '127.0.0.1:6831'
+    omit_tags:
+      - http.url
+
+backends:
+  example:
+    provider: rule
+    rule_name: example
+  alb1:
+    provider: alb
+    alb:
+      mechanism: fgr
+      pool:
+        - prom1
+        - sim1
+  alb2:
+    provider: alb
+    alb:
+      mechanism: nlm
+      pool:
+        - lm1
+        - lm2
+  alb3:
+    latency_min: 300ms
+    provider: alb
+    alb:
+      mechanism: tsm
+      pool:
+        - prom1
+        - sim1
+  alb4:
+    provider: alb
+    alb:
+      mechanism: rr
+      pool:
+        - prom1
+        - prom1
+        - prom1
+        - sim1
+  click1:
+    provider: clickhouse
+    origin_url: 'http://127.0.0.1:8123'
+    cache_name: mem1
+    backfill_tolerance: 60s
+    timeseries_retention_factor: 2048
+  rp1:
+    provider: proxy
+    origin_url: 'http://127.0.0.1:9090'
+  rpc3:
+    provider: rpc
+    origin_url: 'http://127.0.0.1:9090'
+  prom1:
+    latency_max: 150ms
+    latency_min: 50ms
+    is_default: true
+    provider: prometheus
+    origin_url: 'http://127.0.0.1:9090'
+    cache_name: mem1
+  prom2:
+    provider: prometheus
+    origin_url: 'http://127.0.0.1:9090'
+    cache_name: fs1
+  flux1:
+    provider: influxdb
+    origin_url: 'http://127.0.0.1:8186/'
+    cache_name: mem1
+    backfill_tolerance: 30s
+    timeseries_retention_factor: 5184000
+  flux2:
+    provider: influxdb
+    origin_url: 'http://127.0.0.1:8086/'
+    cache_name: mem1
+    backfill_tolerance: 30s
+    timeseries_retention_factor: 5184000
+  sim1:
+    provider: prometheus
+    origin_url: 'http://127.0.0.1:8482/prometheus'
+    cache_name: mem1
+    max_idle_conns: 600
+    timeseries_retention_factor: 5184000
+    timeseries_ttl: 72h
+    max_ttl: 24h
+    max_object_size_bytes: 67108864
+    healthcheck:
+      interval: 300ms
+      timeout: 500ms
+    # uncomment and set certs to test TLS
+    # tls:
+    #   full_chain_cert_path: >-
+    #     /example/certs/127.0.0.1.pem
+    #   private_key_path: >-
+    #     /example/certs/127.0.0.1-key.pem
+    #   insecure_skip_verify: true
+  sim2:
+    provider: prometheus
+    origin_url: 'http://127.0.0.1:8482/prometheus'
+    cache_name: mem1
+  flux-sim-1:
+    provider: influxdb
+    origin_url: 'http://127.0.0.1:8482/influxdb'
+    cache_name: mem1
+    max_idle_conns: 600
+    timeseries_retention_factor: 5184000
+    timeseries_ttl: 72h
+    max_ttl: 24h
+    max_object_size_bytes: 67108864
+  lm1:
+    provider: reverseproxycache
+    origin_url: 'http://127.0.0.1:8482/static/testing/test1'
+  lm2:
+    provider: reverseproxycache
+    origin_url: 'http://127.0.0.1:8482/static/testing/test2'
+  rpc1:
+    provider: reverseproxycache
+    origin_url: 'http://127.0.0.1:8482/byterange'
+    cache_name: fs1
+    paths:
+      root:
+        path: /
+        match_type: prefix
+        handler: proxycache
+  rpc2:
+    provider: reverseproxycache
+    origin_url: 'http://127.0.0.1:8482/byterange'
+    cache_name: mem1
+    paths:
+      root:
+        path: /
+        match_type: prefix
+        handler: proxycache
+
+logging:
+  log_level: info
+
+metrics:
+  listen_port: 8501
+
+mgmt:
+  listen_port: 8502

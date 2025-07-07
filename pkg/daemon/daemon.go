@@ -50,9 +50,6 @@ func Start(ctx context.Context, args ...string) error {
 	}
 	mtx.Lock()
 	defer unlock()
-	if wasStarted {
-		return errors.ErrServerAlreadyStarted
-	}
 	metrics.BuildInfo.WithLabelValues(goruntime.Version(),
 		appinfo.GitCommitID, appinfo.Version).Set(1)
 
@@ -95,7 +92,6 @@ func Start(ctx context.Context, args ...string) error {
 	if err != nil {
 		return err
 	}
-	wasStarted = true
 	skipUnlock = true
 	mtx.Unlock()
 	signaling.Wait(ctx, hupFunc)
