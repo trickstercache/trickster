@@ -34,9 +34,10 @@ func Wait(ctx context.Context, reloader reload.Reloader) {
 		case <-ctx.Done():
 			return
 		case sig := <-sigs:
-			if sig == syscall.SIGHUP {
+			switch sig {
+			case syscall.SIGHUP:
 				reloader("sighup")
-			} else if sig == syscall.SIGINT || sig == syscall.SIGTERM {
+			case syscall.SIGINT, syscall.SIGTERM:
 				return
 			}
 		}

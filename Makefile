@@ -156,11 +156,11 @@ generate: perform-generate insert-license-headers
 
 .PHONY: perform-generate
 perform-generate:
-	$(GO) generate ./pkg/... ./cmd/...
+	$(GO) generate ./pkg/... ./cmd/... ./integration/...
 
 .PHONY: insert-license-headers
 insert-license-headers:
-	@for file in $$(find ./pkg ./cmd -name '*.go') ; \
+	@for file in $$(find ./pkg ./cmd ./integration -name '*.go') ; \
 	do \
 		output=$$(grep 'Licensed under the Apache License' $$file) ; \
 		if [ "$$?" != "0" ]; then \
