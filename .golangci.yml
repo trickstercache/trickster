@@ -1,4 +1,7 @@
 version: "2"
+issues:
+  new-from-rev: origin/main
+  fix: true
 run:
   tests: false
 linters:

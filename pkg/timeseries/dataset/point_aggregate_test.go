@@ -28,7 +28,8 @@ import (
 func makeStringPoints(vals ...struct {
 	epoch int64
 	value string
-}) Points {
+},
+) Points {
 	p := make(Points, len(vals))
 	for i, v := range vals {
 		p[i] = Point{

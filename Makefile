@@ -130,9 +130,10 @@ GO_TEST_FLAGS ?= -coverprofile=.coverprofile
 .PHONY: test
 test: check-license-headers check-codegen gotest check-fmtprints check-todos
 
+GO_TEST_PATH ?= $(shell $(GO) list ./... | grep -v v2/integration)
 .PHONY: gotest
 gotest:
-	go test -timeout=5m -v ${GO_TEST_FLAGS} ./...
+	$(GO) test -timeout=5m -v ${GO_TEST_FLAGS} $(GO_TEST_PATH)
 
 .PHONY: data-race-test
 data-race-test:
@@ -141,6 +142,10 @@ data-race-test:
 .PHONY: data-race-test-inspect
 data-race-test-inspect:
 	./hack/inspect-race-output.sh race-output.log
+
+.PHONY: integration-test
+integration-test:
+	$(MAKE) -C integration test
 
 .PHONY: bench
 bench:
@@ -159,11 +164,11 @@ generate: perform-generate insert-license-headers
 
 .PHONY: perform-generate
 perform-generate:
-	$(GO) generate ./pkg/... ./cmd/...
+	$(GO) generate ./pkg/... ./cmd/... ./integration/...
 
 .PHONY: insert-license-headers
 insert-license-headers:
-	@for file in $$(find ./pkg ./cmd -name '*.go') ; \
+	@for file in $$(find ./pkg ./cmd ./integration -name '*.go') ; \
 	do \
 		output=$$(grep 'Licensed under the Apache License' $$file) ; \
 		if [ "$$?" != "0" ]; then \
@@ -285,7 +290,7 @@ serve-info:
 serve-cli:
 	@cd cmd/trickster && go run . -origin-url http://127.0.0.1:9090/ -provider prometheus
 
-GOLANG_CI_LINT_VERSION ?= v2.10.1
+GOLANG_CI_LINT_VERSION ?= v2.11.4
 .PHONY: get-tools
 get-tools: get-msgpack
 	@echo "Installing tools..."

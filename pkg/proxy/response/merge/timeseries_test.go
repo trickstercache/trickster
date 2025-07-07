@@ -83,8 +83,8 @@ func TestTimeseriesMergeFuncWithStrategy_Sum(t *testing.T) {
 	require.Equal(t, 1, ds.SeriesCount())
 	pts := ds.Results[0].SeriesList[0].Points
 	require.Len(t, pts, 2)
-	require.Equal(t, "4", pts[0].Values[0])  // 1+3
-	require.Equal(t, "6", pts[1].Values[0])  // 2+4
+	require.Equal(t, "4", pts[0].Values[0]) // 1+3
+	require.Equal(t, "6", pts[1].Values[0]) // 2+4
 }
 
 func TestTimeseriesMergeFuncWithStrategy_Avg(t *testing.T) {

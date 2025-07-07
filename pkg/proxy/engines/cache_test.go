@@ -479,8 +479,11 @@ func newSpyCache() *spyCache {
 	}
 }
 
-func (sc *spyCache) Connect() error                                          { return nil }
-func (sc *spyCache) Store(key string, data []byte, _ time.Duration) error    { sc.stored[key] = data; return nil }
+func (sc *spyCache) Connect() error { return nil }
+func (sc *spyCache) Store(key string, data []byte, _ time.Duration) error {
+	sc.stored[key] = data
+	return nil
+}
 func (sc *spyCache) Retrieve(key string) ([]byte, status.LookupStatus, error) {
 	if b, ok := sc.stored[key]; ok {
 		return b, status.LookupStatusHit, nil
@@ -488,9 +491,9 @@ func (sc *spyCache) Retrieve(key string) ([]byte, status.LookupStatus, error) {
 	return nil, status.LookupStatusKeyMiss, nil
 }
 func (sc *spyCache) SetTTL(string, time.Duration) {}
-func (sc *spyCache) Remove(...string) error        { return nil }
-func (sc *spyCache) Close() error                  { return nil }
-func (sc *spyCache) Configuration() *co.Options    { return sc.config }
+func (sc *spyCache) Remove(...string) error       { return nil }
+func (sc *spyCache) Close() error                 { return nil }
+func (sc *spyCache) Configuration() *co.Options   { return sc.config }
 
 func TestWriteConcurrentCompressionThreshold(t *testing.T) {
 	t.Run("small payload not compressed", func(t *testing.T) {

@@ -66,8 +66,8 @@ var (
 // BootstrapConfig loads, validates, processes and prepares a configuration
 // along with its backend clients. This centralizes the common initialization
 // logic used by both startup and reload operations.
-func BootstrapConfig() (*config.Config, backends.Backends, error) {
-	conf, err := LoadAndValidate()
+func BootstrapConfig(args ...string) (*config.Config, backends.Backends, error) {
+	conf, err := LoadAndValidate(args...)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -95,11 +95,11 @@ func BootstrapConfig() (*config.Config, backends.Backends, error) {
 	return conf, clients, nil
 }
 
-func LoadAndValidate() (*config.Config, error) {
+func LoadAndValidate(args ...string) (*config.Config, error) {
 	mtx.Lock()
 	defer mtx.Unlock()
 	// Load Config
-	cfg, err := config.Load(os.Args[1:])
+	cfg, err := config.Load(args)
 	if err != nil {
 		logger.Error("Could not load configuration:", logging.Pairs{"error": err.Error()})
 		if cfg != nil && cfg.Flags != nil && cfg.Flags.ValidateConfig {
