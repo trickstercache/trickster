@@ -139,6 +139,7 @@ caches:
       max_conn_age: 16ms
       pool_timeout: 16ms
       idle_timeout: 16ms
+      use_tls: false
     filesystem:
       cache_path: /tmp/trickster
     bbolt:

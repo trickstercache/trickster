@@ -17,6 +17,8 @@
 package redis
 
 import (
+	"crypto/tls"
+
 	redis "github.com/redis/go-redis/v9"
 )
 
@@ -33,6 +35,10 @@ func (c *CacheClient) sentinelOpts() (*redis.FailoverOptions, error) {
 	o := &redis.FailoverOptions{
 		SentinelAddrs: c.Config.Redis.Endpoints,
 		MasterName:    c.Config.Redis.SentinelMaster,
+	}
+
+	if c.Config.Redis.UseTLS {
+		o.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
 	}
 
 	if c.Config.Redis.Password != "" {

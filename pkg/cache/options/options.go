@@ -307,6 +307,10 @@ func (l Lookup) OverlayYAMLData(y yamlx.KeyLookup,
 			if y.IsDefined("caches", k, "redis", "idle_timeout") {
 				c.Redis.ConnMaxIdleTime = v.Redis.ConnMaxIdleTime
 			}
+
+			if y.IsDefined("caches", k, "redis", "use_tls") {
+				c.Redis.UseTLS = v.Redis.UseTLS
+			}
 		}
 
 		if y.IsDefined("caches", k, "filesystem", "cache_path") {

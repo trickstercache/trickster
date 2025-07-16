@@ -155,6 +155,8 @@ data:
     #       pool_timeout: 4000ms
     #       # idle_timeout is the amount of time after which client closes idle connections.
     #       idle_timeout: 5m
+    #       # use_tls indicates if the Redis server uses TLS encryption. default is false
+    #       use_tls: false
 
     #     ## Configuration options when using a Filesystem Cache ###############
     #     filesystem:

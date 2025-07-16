@@ -64,6 +64,8 @@ type Options struct {
 	PoolTimeout time.Duration `yaml:"pool_timeout,omitempty"`
 	// ConnMaxIdleTime is the amount of time after which client closes idle connections.
 	ConnMaxIdleTime time.Duration `yaml:"idle_timeout,omitempty"`
+	// UseTLS indicates whether the server connection is TLS
+	UseTLS bool `yaml:"use_tls,omitempty"`
 }
 
 // New returns a new Redis Options Reference with default values set

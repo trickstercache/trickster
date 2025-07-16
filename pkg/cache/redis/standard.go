@@ -17,6 +17,7 @@
 package redis
 
 import (
+	"crypto/tls"
 	"fmt"
 
 	redis "github.com/redis/go-redis/v9"
@@ -30,6 +31,10 @@ func (c *CacheClient) clientOpts() (*redis.Options, error) {
 
 	o := &redis.Options{
 		Addr: c.Config.Redis.Endpoint,
+	}
+
+	if c.Config.Redis.UseTLS {
+		o.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
 	}
 
 	if c.Config.Redis.Protocol != "" {

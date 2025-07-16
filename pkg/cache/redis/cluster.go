@@ -17,6 +17,8 @@
 package redis
 
 import (
+	"crypto/tls"
+
 	redis "github.com/redis/go-redis/v9"
 )
 
@@ -28,6 +30,10 @@ func (c *CacheClient) clusterOpts() (*redis.ClusterOptions, error) {
 
 	o := &redis.ClusterOptions{
 		Addrs: c.Config.Redis.Endpoints,
+	}
+
+	if c.Config.Redis.UseTLS {
+		o.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
 	}
 
 	if c.Config.Redis.Password != "" {
