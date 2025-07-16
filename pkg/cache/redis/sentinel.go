@@ -41,6 +41,10 @@ func (c *CacheClient) sentinelOpts() (*redis.FailoverOptions, error) {
 		o.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
 	}
 
+	if c.Config.Redis.Username != "" {
+		o.Username = c.Config.Redis.Username
+	}
+
 	if c.Config.Redis.Password != "" {
 		o.Password = string(c.Config.Redis.Password)
 	}

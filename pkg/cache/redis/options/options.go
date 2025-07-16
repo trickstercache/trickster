@@ -32,7 +32,9 @@ type Options struct {
 	Endpoint string `yaml:"endpoint,omitempty"`
 	// Endpoints represents FQDN:port or IP:Port collection of a Redis Cluster or Sentinel Nodes
 	Endpoints []string `yaml:"endpoints,omitempty"`
-	// Password can be set when using password protected redis instance.
+	// Username can be set when using a password protected redis instance.
+	Username string `yaml:"username,omitempty"`
+	// Password can be set when using a password protected redis instance.
 	Password types.EnvString `yaml:"password,omitempty"`
 	// SentinelMaster should be set when using Redis Sentinel to indicate the Master Node
 	SentinelMaster string `yaml:"sentinel_master,omitempty"`

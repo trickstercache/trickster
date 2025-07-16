@@ -41,6 +41,10 @@ func (c *CacheClient) clientOpts() (*redis.Options, error) {
 		o.Network = c.Config.Redis.Protocol
 	}
 
+	if c.Config.Redis.Username != "" {
+		o.Username = c.Config.Redis.Username
+	}
+
 	if c.Config.Redis.Password != "" {
 		o.Password = string(c.Config.Redis.Password)
 	}

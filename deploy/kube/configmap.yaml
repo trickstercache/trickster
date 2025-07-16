@@ -129,6 +129,8 @@ data:
 
     #       # protocol defines the protocol for connecting to redis (unix or tcp). tcp is default
     #       protocol: tcp
+    #       # username provides the redis username. default is empty string ''
+    #       username: ''
     #       # password provides the redis password. default is empty string ''
     #       password: ''
     #       # db is the Database to be selected after connecting to the server. default is 0

@@ -256,6 +256,10 @@ func (l Lookup) OverlayYAMLData(y yamlx.KeyLookup,
 				c.Redis.SentinelMaster = v.Redis.SentinelMaster
 			}
 
+			if y.IsDefined("caches", k, "redis", "username") {
+				c.Redis.Username = v.Redis.Username
+			}
+
 			if y.IsDefined("caches", k, "redis", "password") {
 				c.Redis.Password = v.Redis.Password
 			}
