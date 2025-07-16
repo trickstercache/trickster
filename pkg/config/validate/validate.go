@@ -44,11 +44,6 @@ func Validate(c *config.Config) error {
 			return err
 		}
 	}
-	if c.MgmtConfig != nil {
-		if err := c.MgmtConfig.Validate(); err != nil {
-			return err
-		}
-	}
 	if err := Tracers(c); err != nil {
 		return err
 	}
