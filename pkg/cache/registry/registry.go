@@ -19,6 +19,8 @@
 package registry
 
 import (
+	"context"
+
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/badger"
 	"github.com/trickstercache/trickster/v2/pkg/cache/bbolt"
@@ -74,7 +76,7 @@ func NewCache(cacheName string, cfg *options.Options) cache.Cache {
 			},
 		}, cfg)
 	case ctRedis:
-		c = manager.NewCache(redis.New(cacheName, cfg), manager.CacheOptions{}, cfg)
+		c = manager.NewCache(redis.New(context.Background(), cacheName, cfg), manager.CacheOptions{}, cfg)
 	case ctBBolt:
 		c = manager.NewCache(bbolt.New(cacheName, "", "", cfg), manager.CacheOptions{
 			UseIndex: true,

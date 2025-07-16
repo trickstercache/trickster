@@ -329,20 +329,16 @@ func TestFullLoadConfiguration(t *testing.T) {
 		t.Errorf("expected 5, got %d", c.Redis.PoolSize)
 	}
 
-	if c.Redis.MaxConnAge != 2000 {
-		t.Errorf("expected 2000, got %d", c.Redis.MaxConnAge)
+	if c.Redis.ConnMaxLifetime != 2000 {
+		t.Errorf("expected 2000, got %d", c.Redis.ConnMaxLifetime)
 	}
 
 	if c.Redis.PoolTimeout != 4001 {
 		t.Errorf("expected 4001, got %d", c.Redis.PoolTimeout)
 	}
 
-	if c.Redis.IdleTimeout != 300001 {
-		t.Errorf("expected 300001, got %d", c.Redis.IdleTimeout)
-	}
-
-	if c.Redis.IdleCheckFrequency != 60001 {
-		t.Errorf("expected 60001, got %d", c.Redis.IdleCheckFrequency)
+	if c.Redis.ConnMaxIdleTime != 300001 {
+		t.Errorf("expected 300001, got %d", c.Redis.ConnMaxIdleTime)
 	}
 
 	if c.Filesystem.CachePath != "test_cache_path" {
@@ -466,20 +462,16 @@ func TestEmptyLoadConfiguration(t *testing.T) {
 		t.Errorf("expected 0, got %d", c.Redis.PoolSize)
 	}
 
-	if c.Redis.MaxConnAge != 0 {
-		t.Errorf("expected 0, got %d", c.Redis.MaxConnAge)
+	if c.Redis.ConnMaxLifetime != 0 {
+		t.Errorf("expected 0, got %d", c.Redis.ConnMaxLifetime)
 	}
 
 	if c.Redis.PoolTimeout != 0 {
 		t.Errorf("expected 0, got %d", c.Redis.PoolTimeout)
 	}
 
-	if c.Redis.IdleTimeout != 0 {
-		t.Errorf("expected 0, got %d", c.Redis.IdleTimeout)
-	}
-
-	if c.Redis.IdleCheckFrequency != 0 {
-		t.Errorf("expected 0, got %d", c.Redis.IdleCheckFrequency)
+	if c.Redis.ConnMaxIdleTime != 0 {
+		t.Errorf("expected 0, got %d", c.Redis.ConnMaxIdleTime)
 	}
 
 	if c.Filesystem.CachePath != "/tmp/trickster" {

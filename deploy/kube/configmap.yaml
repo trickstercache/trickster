@@ -155,8 +155,6 @@ data:
     #       pool_timeout: 4000ms
     #       # idle_timeout is the amount of time after which client closes idle connections.
     #       idle_timeout: 5m
-    #       # idle_check_frequency is the frequency of idle checks made by idle connections reaper.
-    #       idle_check_frequency: 1m
 
     #     ## Configuration options when using a Filesystem Cache ###############
     #     filesystem:

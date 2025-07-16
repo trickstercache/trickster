@@ -115,9 +115,8 @@ func (c *Options) Clone() *Options {
 	out.Redis.DialTimeout = c.Redis.DialTimeout
 	out.Redis.Endpoint = c.Redis.Endpoint
 	out.Redis.Endpoints = c.Redis.Endpoints
-	out.Redis.IdleCheckFrequency = c.Redis.IdleCheckFrequency
-	out.Redis.IdleTimeout = c.Redis.IdleTimeout
-	out.Redis.MaxConnAge = c.Redis.MaxConnAge
+	out.Redis.ConnMaxIdleTime = c.Redis.ConnMaxIdleTime
+	out.Redis.ConnMaxLifetime = c.Redis.ConnMaxLifetime
 	out.Redis.MaxRetries = c.Redis.MaxRetries
 	out.Redis.MaxRetryBackoff = c.Redis.MaxRetryBackoff
 	out.Redis.MinIdleConns = c.Redis.MinIdleConns
@@ -298,7 +297,7 @@ func (l Lookup) OverlayYAMLData(y yamlx.KeyLookup,
 			}
 
 			if y.IsDefined("caches", k, "redis", "max_conn_age") {
-				c.Redis.MaxConnAge = v.Redis.MaxConnAge
+				c.Redis.ConnMaxLifetime = v.Redis.ConnMaxLifetime
 			}
 
 			if y.IsDefined("caches", k, "redis", "pool_timeout") {
@@ -306,11 +305,7 @@ func (l Lookup) OverlayYAMLData(y yamlx.KeyLookup,
 			}
 
 			if y.IsDefined("caches", k, "redis", "idle_timeout") {
-				c.Redis.IdleTimeout = v.Redis.IdleTimeout
-			}
-
-			if y.IsDefined("caches", k, "redis", "idle_check_frequency") {
-				c.Redis.IdleCheckFrequency = v.Redis.IdleCheckFrequency
+				c.Redis.ConnMaxIdleTime = v.Redis.ConnMaxIdleTime
 			}
 		}
 

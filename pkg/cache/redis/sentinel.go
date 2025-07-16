@@ -17,7 +17,7 @@
 package redis
 
 import (
-	"github.com/go-redis/redis"
+	redis "github.com/redis/go-redis/v9"
 )
 
 func (c *CacheClient) sentinelOpts() (*redis.FailoverOptions, error) {
@@ -75,20 +75,16 @@ func (c *CacheClient) sentinelOpts() (*redis.FailoverOptions, error) {
 		o.MinIdleConns = c.Config.Redis.MinIdleConns
 	}
 
-	if c.Config.Redis.MaxConnAge != 0 {
-		o.MaxConnAge = c.Config.Redis.MaxConnAge
+	if c.Config.Redis.ConnMaxLifetime != 0 {
+		o.ConnMaxLifetime = c.Config.Redis.ConnMaxLifetime
 	}
 
 	if c.Config.Redis.PoolTimeout != 0 {
 		o.PoolTimeout = c.Config.Redis.PoolTimeout
 	}
 
-	if c.Config.Redis.IdleTimeout != 0 {
-		o.IdleTimeout = c.Config.Redis.IdleTimeout
-	}
-
-	if c.Config.Redis.IdleCheckFrequency != 0 {
-		o.IdleCheckFrequency = c.Config.Redis.IdleCheckFrequency
+	if c.Config.Redis.ConnMaxIdleTime != 0 {
+		o.ConnMaxIdleTime = c.Config.Redis.ConnMaxIdleTime
 	}
 
 	return o, nil
