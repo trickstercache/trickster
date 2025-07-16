@@ -124,7 +124,7 @@ data:
     #       sentinel_master: ''
         
     #       ## Supported by all Redis Client Types ###############################
-    #       ## See the go-redis documentation at https://github.com/go-redis/redis/blob/master/options.go
+    #       ## See the go-redis documentation at https://github.com/redis/go-redis/blob/master/options.go
     #       ## for more information on tuning these settings
 
     #       # protocol defines the protocol for connecting to redis (unix or tcp). tcp is default
