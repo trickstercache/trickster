@@ -32,7 +32,9 @@ type Options struct {
 	Endpoint string `yaml:"endpoint,omitempty"`
 	// Endpoints represents FQDN:port or IP:Port collection of a Redis Cluster or Sentinel Nodes
 	Endpoints []string `yaml:"endpoints,omitempty"`
-	// Password can be set when using password protected redis instance.
+	// Username can be set when using a password protected redis instance.
+	Username string `yaml:"username,omitempty"`
+	// Password can be set when using a password protected redis instance.
 	Password types.EnvString `yaml:"password,omitempty"`
 	// SentinelMaster should be set when using Redis Sentinel to indicate the Master Node
 	SentinelMaster string `yaml:"sentinel_master,omitempty"`
@@ -57,15 +59,15 @@ type Options struct {
 	// MinIdleConns is the minimum number of idle connections
 	// which is useful when establishing new connection is slow.
 	MinIdleConns int `yaml:"min_idle_conns,omitempty"`
-	// MaxConnAge is the connection age at which client retires (closes) the connection.
-	MaxConnAge time.Duration `yaml:"max_conn_age,omitempty"`
+	// ConnMaxLifetime is the connection age at which client retires (closes) the connection.
+	ConnMaxLifetime time.Duration `yaml:"max_conn_age,omitempty"`
 	// PoolTimeout is the amount of time client waits for connection if all
 	// connections are busy before returning an error.
 	PoolTimeout time.Duration `yaml:"pool_timeout,omitempty"`
-	// IdleTimeout is the amount of time after which client closes idle connections.
-	IdleTimeout time.Duration `yaml:"idle_timeout,omitempty"`
-	// IdleCheckFrequency is the frequency of idle checks made by idle connections reaper.
-	IdleCheckFrequency time.Duration `yaml:"idle_check_frequency,omitempty"`
+	// ConnMaxIdleTime is the amount of time after which client closes idle connections.
+	ConnMaxIdleTime time.Duration `yaml:"idle_timeout,omitempty"`
+	// UseTLS indicates whether the server connection is TLS
+	UseTLS bool `yaml:"use_tls,omitempty"`
 }
 
 // New returns a new Redis Options Reference with default values set
