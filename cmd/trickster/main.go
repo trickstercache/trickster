@@ -18,6 +18,9 @@
 package main
 
 import (
+	"context"
+	"os"
+
 	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 	"github.com/trickstercache/trickster/v2/pkg/daemon"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
@@ -38,7 +41,7 @@ const (
 func main() {
 	appinfo.SetAppInfo(applicationName, applicationVersion,
 		applicationBuildTime, applicationGitCommitID)
-	err := daemon.Start()
+	err := daemon.Start(context.Background(), os.Args[1:]...)
 	if err != nil {
 		logger.Fatal(1, "trickster daemon failed to start",
 			logging.Pairs{"error": err})
