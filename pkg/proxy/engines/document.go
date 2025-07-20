@@ -103,7 +103,7 @@ func (d *HTTPDocument) GetByterangeChunk(chunkRange byterange.Range, _ int64) *H
 		dd.Body = make([]byte, size)
 		var ddbi int64
 		dd.Ranges = make(byterange.Ranges, len(d.RangeParts))
-		ddri := 0
+		var ddri int
 		for r, rp := range d.RangeParts {
 			if r.Start > chunkRange.End || r.End < chunkRange.Start {
 				continue

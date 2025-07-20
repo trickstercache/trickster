@@ -56,14 +56,14 @@ func Diff[P any, S Segment[P], StepT comparable, D Diffabble[P, StepT]](
 			continue
 		}
 		missStart := diff.Zero()
-		j := 0
-		inMiss := false
+		var j int
+		var inMiss bool
 
 		for ts := n.StartVal(); !diff.Less(n.EndVal(), ts); ts = diff.Add(ts, step) {
 			for j < len(haves) && diff.Less(haves[j].EndVal(), ts) {
 				j++
 			}
-			inHave := false
+			var inHave bool
 			if j < len(haves) {
 				s := haves[j].StartVal()
 				e := haves[j].EndVal()

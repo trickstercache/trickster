@@ -39,6 +39,7 @@ type Router interface {
 type MatchingScheme int
 
 const (
+	MatchExactPath  MatchingScheme = 0
 	MatchHostname   MatchingScheme = 1
 	MatchPathPrefix MatchingScheme = 2
 

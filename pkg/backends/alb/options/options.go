@@ -47,7 +47,7 @@ type Options struct {
 	OutputFormat string `yaml:"output_format,omitempty"`
 	// FGRStatusCodes provides an explicit list of status codes considered "good" when using
 	// the First Good Response (fgr) methodology. By default, any code < 400 is good.
-	FGRStatusCodes []int `yaml:"fgr_status_codes"`
+	FGRStatusCodes []int `yaml:"fgr_status_codes,omitempty"`
 	// UserRouter provides options for the User Router mechanism
 	UserRouter *ur.Options `yaml:"user_router,omitempty"`
 	//

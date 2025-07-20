@@ -103,3 +103,20 @@ func IsApparentSQLDateFormat(s string) bool {
 	}
 	return true
 }
+
+// Pare returns a new version of s that excludes values present in exclude
+func Pare(s, exclude []string) []string {
+	out := make([]string, len(s))
+	var k int
+outer:
+	for _, sa := range s {
+		for _, sb := range exclude {
+			if sa == sb {
+				continue outer
+			}
+		}
+		out[k] = sa
+		k++
+	}
+	return out[:k]
+}
