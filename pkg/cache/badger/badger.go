@@ -24,7 +24,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 
-	"github.com/dgraph-io/badger"
+	"github.com/dgraph-io/badger/v4"
 )
 
 var (
