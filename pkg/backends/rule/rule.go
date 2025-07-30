@@ -32,8 +32,8 @@ type rule struct {
 	evaluatorFunc  evaluatorFunc
 	negateOpResult bool
 
-	cases    caseMap
 	caseList caseList
+	cases caseSlice
 
 	extractionArg string
 	operationArg  string
@@ -56,7 +56,7 @@ type ruleCase struct {
 	rewriter     rewriter.RewriteInstructions
 }
 
-type caseMap map[string]*ruleCase
+type caseSlice []*ruleCase
 type caseList []*ruleCase
 
 type evaluatorFunc func(*http.Request) (http.Handler, *http.Request, error)
@@ -84,21 +84,25 @@ func (r *rule) EvaluateOpArg(hr *http.Request) (http.Handler, *http.Request, err
 		r.operationArg, r.negateOpResult)
 	var nonDefault bool
 
-	if c, ok := r.cases[res]; ok {
-		nonDefault = true
-		h = c.router
+	for _, c := range r.cases {
+		if c.matchValue == res {
+			nonDefault = true
+			h = c.router
 
-		// if this case includes rewriter instructions, execute those now
-		if len(c.rewriter) > 0 {
-			c.rewriter.Execute(hr)
-		}
+			// if this case includes rewriter instructions, execute those now
+			if len(c.rewriter) > 0 {
+				c.rewriter.Execute(hr)
+			}
 
-		// if it's a redirect response, set the appropriate context
-		if c.redirectCode > 0 {
-			hr = hr.WithContext(redirect.WithRedirects(hr.Context(),
-				c.redirectCode, c.redirectURL))
+			// if it's a redirect response, set the appropriate context
+			if c.redirectCode > 0 {
+				hr = hr.WithContext(redirect.WithRedirects(hr.Context(),
+			                c.redirectCode, c.redirectURL))
+			}
+		
 		}
 	}
+
 
 	if !nonDefault && r.defaultRewriter != nil {
 		r.defaultRewriter.Execute(hr)
