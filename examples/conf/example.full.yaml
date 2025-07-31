@@ -574,8 +574,9 @@ backends:
 #     max_rule_executions: 16        # limits the max number of per-Request rule-based hops to avoid execution loops.
 
 #     cases:
-#       "1":
-#         matches: ['johndoe:', 'janedoe:']  # if the Authorization header has user johndoe or janedoe,
+#         - matches:     # if the Authorization header has user johndoe or janedoe
+#           - 'johndoe:'
+#           - 'janedoe:'  
 #         next_route: writer-cluster       # route the request to hypothetical writer-cluster backend
 #   #     Other available case configs that are not pertinent to this example:
 #         req_rewriter_name: '' # name of a rewriter to process the request if it matches this case
