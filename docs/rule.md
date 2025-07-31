@@ -124,8 +124,8 @@ rules:
     operation: rmatch      # perform regex match against the path to see if it matches 'writer
     operation_arg: '^.*\/writer.*$'
     cases:
-      rmatch-true:
-        matches: [ 'true' ] # rmatch returns true when the input matches the regex; update next_route
+      - matches: 
+          - 'true' # rmatch returns true when the input matches the regex; update next_route
         next_route: example-writer-cluster
 
 backends:
