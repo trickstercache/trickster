@@ -481,7 +481,7 @@ data:
     #     max_rule_executions: 16        # limits the max number of per-Request rule-based hops to avoid execution loops.
 
     #     cases:
-    #       - matches:       # if the Authorization header has user jhondoe or janedoe
+    #       - matches:       # if the Authorization header has user johndoe or janedoe
     #           - 'johndoe:'
     #           - 'janedoe:'  
     #         next_route: writer-cluster       # route the request to hypothetical writer-cluster backend
