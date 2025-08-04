@@ -32,8 +32,7 @@ type rule struct {
 	evaluatorFunc  evaluatorFunc
 	negateOpResult bool
 
-	caseList caseList
-	cases caseSlice
+	cases caseList
 
 	extractionArg string
 	operationArg  string
@@ -56,7 +55,6 @@ type ruleCase struct {
 	rewriter     rewriter.RewriteInstructions
 }
 
-type caseSlice []*ruleCase
 type caseList []*ruleCase
 
 type evaluatorFunc func(*http.Request) (http.Handler, *http.Request, error)
@@ -97,12 +95,10 @@ func (r *rule) EvaluateOpArg(hr *http.Request) (http.Handler, *http.Request, err
 			// if it's a redirect response, set the appropriate context
 			if c.redirectCode > 0 {
 				hr = hr.WithContext(redirect.WithRedirects(hr.Context(),
-			                c.redirectCode, c.redirectURL))
+					c.redirectCode, c.redirectURL))
 			}
-		
 		}
 	}
-
 
 	if !nonDefault && r.defaultRewriter != nil {
 		r.defaultRewriter.Execute(hr)
@@ -142,7 +138,7 @@ func (r *rule) EvaluateCaseArg(hr *http.Request) (http.Handler, *http.Request, e
 	h := r.defaultRouter
 	var nonDefault bool
 
-	for _, c := range r.caseList {
+	for _, c := range r.cases {
 
 		extraction := r.extractionFunc(hr, r.extractionArg)
 
