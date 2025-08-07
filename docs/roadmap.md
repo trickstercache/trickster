@@ -23,7 +23,7 @@ The roadmap for Trickster in 2025 focuses on delivering Trickster versions 2.0 a
   - [x] Extended support for ClickHouse
   - [x] Support for InfluxDB 2.0 and Flux query syntax / payloads
 
-### June 2025
+### August 2025
 
 - [ ] Trickster v2.0 Beta 4 Release
   - [ ] Updated Grafana Dashboard for Trickster Metrics
@@ -32,12 +32,12 @@ The roadmap for Trickster in 2025 focuses on delivering Trickster versions 2.0 a
   - [ ] Support for InfluxDB 3.0
   - [ ] Support for Autodiscovery (e.g., Kubernetes Pod Annotations)
 
-### July 2025
+### September 2025
 
 - [ ] Trickster v2.0 GA Release
   - [ ] Overhaul Documentation for Trickster 2.0
 
-### Late Q3/Early Q4 2025
+### Q4 2025
 
 - [ ] Trickster v2.1 Beta Release
   - [ ] Kube Gateway API support
