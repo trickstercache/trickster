@@ -54,11 +54,11 @@ import (
 
 var mtx sync.Mutex
 
-func LoadAndValidate() (*config.Config, error) {
+func LoadAndValidate(args ...string) (*config.Config, error) {
 	mtx.Lock()
 	defer mtx.Unlock()
 	// Load Config
-	cfg, err := config.Load(os.Args[1:])
+	cfg, err := config.Load(args)
 	if err != nil {
 		logger.Error("Could not load configuration:", logging.Pairs{"error": err.Error()})
 		if cfg != nil && cfg.Flags != nil && cfg.Flags.ValidateConfig {
