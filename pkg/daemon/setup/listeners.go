@@ -130,15 +130,17 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 			conf.Frontend.ConnectionsLimit, nil, router, t2, errorFunc, 0, conf.Frontend.ReadHeaderTimeout)
 	}
 
+
+	metricsRouter.RegisterRoute("/metrics", nil, nil,
+		false, metrics.Handler())
+	metricsRouter.RegisterRoute(conf.MgmtConfig.ConfigHandlerPath, nil, nil,
+		false, http.HandlerFunc(ch.HandlerFunc(conf)))
+
 	// if the Metrics HTTP port is configured, then set up the http listener instance
 	if conf.Metrics != nil && conf.Metrics.ListenPort > 0 &&
 		(!hasOldMC || (conf.Metrics.ListenAddress != oldConf.Metrics.ListenAddress ||
 			conf.Metrics.ListenPort != oldConf.Metrics.ListenPort)) {
 		lg.DrainAndClose("metricsListener", 0)
-		metricsRouter.RegisterRoute("/metrics", nil, nil,
-			false, metrics.Handler())
-		metricsRouter.RegisterRoute(conf.MgmtConfig.ConfigHandlerPath, nil, nil,
-			false, http.HandlerFunc(ch.HandlerFunc(conf)))
 		if conf.MgmtConfig.PprofServer == "both" || conf.MgmtConfig.PprofServer == "metrics" {
 			pprof.RegisterRoutes("metrics", metricsRouter)
 		}
@@ -146,25 +148,24 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 			conf.Metrics.ListenAddress, conf.Metrics.ListenPort,
 			conf.Frontend.ConnectionsLimit, nil, metricsRouter, nil, errorFunc, 0, conf.Frontend.ReadHeaderTimeout)
 	} else {
-		metricsRouter.RegisterRoute("/metrics", nil, nil,
-			false, metrics.Handler())
-		metricsRouter.RegisterRoute(conf.MgmtConfig.ConfigHandlerPath, nil, nil,
-			false, http.HandlerFunc(ch.HandlerFunc(conf)))
 		lg.UpdateRouter("metricsListener", metricsRouter)
 	}
 
 	mr := lm.NewRouter() // management router
+	mr.RegisterRoute(conf.MgmtConfig.ConfigHandlerPath, nil, nil,
+		false, http.HandlerFunc(ch.HandlerFunc(conf)))
+	mr.RegisterRoute(conf.MgmtConfig.ReloadHandlerPath, nil, nil,
+		false, reloadHandler)
+	mr.RegisterRoute(conf.MgmtConfig.PurgeByPathHandlerPath, nil, nil,
+		true, http.HandlerFunc(ph.PathHandler(conf.MgmtConfig.PurgeByPathHandlerPath, &o)))
+	
+
 	// if the Management HTTP port is configured, then set up the http listener instance
 	if conf.MgmtConfig != nil && conf.MgmtConfig.ListenPort > 0 &&
 		(!hasOldRC || (conf.MgmtConfig.ListenAddress != oldConf.MgmtConfig.ListenAddress ||
 			conf.MgmtConfig.ListenPort != oldConf.MgmtConfig.ListenPort)) {
+
 		lg.DrainAndClose("mgmtListener", time.Millisecond*500)
-		mr.RegisterRoute(conf.MgmtConfig.ConfigHandlerPath, nil, nil,
-			false, http.HandlerFunc(ch.HandlerFunc(conf)))
-		mr.RegisterRoute(conf.MgmtConfig.ReloadHandlerPath, nil, nil,
-			false, reloadHandler)
-		mr.RegisterRoute(conf.MgmtConfig.PurgeByPathHandlerPath, nil, nil,
-			true, http.HandlerFunc(ph.PathHandler(conf.MgmtConfig.PurgeByPathHandlerPath, &o)))
 		if conf.MgmtConfig.PprofServer == "both" || conf.MgmtConfig.PprofServer == "mgmt" {
 			pprof.RegisterRoutes("mgmt", mr)
 		}
@@ -172,12 +173,6 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 			conf.MgmtConfig.ListenAddress, conf.MgmtConfig.ListenPort,
 			conf.Frontend.ConnectionsLimit, nil, mr, nil, errorFunc, 0, conf.Frontend.ReadHeaderTimeout)
 	} else {
-		mr.RegisterRoute(conf.MgmtConfig.ConfigHandlerPath, nil, nil,
-			false, http.HandlerFunc(ch.HandlerFunc(conf)))
-		mr.RegisterRoute(conf.MgmtConfig.ReloadHandlerPath, nil, nil,
-			false, reloadHandler)
-		mr.RegisterRoute(conf.MgmtConfig.PurgeByPathHandlerPath, nil, nil,
-			true, http.HandlerFunc(ph.PathHandler(conf.MgmtConfig.PurgeByPathHandlerPath, &o)))
 		lg.UpdateRouter("mgmtListener", mr)
 	}
 }
