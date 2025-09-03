@@ -70,6 +70,8 @@ linters:
           - net/http.Request.ParseMultipartForm
           - handler.ResponseEncoder.Close
           - config.Config.setDefaults
+          - encoding/csv.Writer.Write
+          - os.File.Close
         - name: exported
           arguments:
           - disableStutteringCheck
@@ -123,6 +125,10 @@ linters:
           disabled: true # stylistic choice, ok with bare returns
         - name: import-shadowing
           disabled: true # not helpful; considering a stylistic choice
+        - name: enforce-switch-style
+          disabled: true # disable 'switch must have a default case clause (revive)' checks
+        - name: var-naming
+          disabled: true # disable 'meaningless package names' (e.g., types, util, etc.) checks
   exclusions:
     generated: lax
     presets:
