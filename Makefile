@@ -266,12 +266,12 @@ serve-cli:
 .PHONY: get-tools
 get-tools: get-msgpack
 	@echo "Installing tools..."
-	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.0.2
+	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.4.0
 	go install honnef.co/go/tools/cmd/staticcheck@2025.1.1
 
 .PHONY: get-msgpack
 get-msgpack:
-	$(GO) get -tool github.com/tinylib/msgp@v1.2.5
+	$(GO) get -tool github.com/tinylib/msgp@v1.4.0
 
 .PHONY: developer-start
 developer-start:
