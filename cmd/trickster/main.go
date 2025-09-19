@@ -36,7 +36,7 @@ const (
 )
 
 func main() {
-	appinfo.SetAppInfo(applicationName, applicationVersion,
+	appinfo.Set(applicationName, applicationVersion,
 		applicationBuildTime, applicationGitCommitID)
 	err := daemon.Start()
 	if err != nil {

@@ -35,7 +35,7 @@ var GitCommitID string
 // By default uses the hostname reported by the kernel
 var Server, _ = os.Hostname()
 
-func SetAppInfo(name, version, buildTime, gitCommitID string) {
+func Set(name, version, buildTime, gitCommitID string) {
 	Name = name
 	Version = version
 	BuildTime = buildTime

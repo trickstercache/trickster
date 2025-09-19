@@ -19,7 +19,6 @@ package alb
 import (
 	"fmt"
 	"net/http"
-	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	alberr "github.com/trickstercache/trickster/v2/pkg/backends/alb/errors"
@@ -153,7 +152,7 @@ func (c *Client) ValidateAndStartPool(clients backends.Backends, hcs healthcheck
 	if err != nil {
 		return err
 	}
-	if o.MechanismName == string(ur.ShortName) && o.UserRouter != nil {
+	if o.MechanismName == string(ur.URShortName) && o.UserRouter != nil {
 		return c.validateAndStartUserRouter(clients)
 	}
 	targets := make([]*pool.Target, 0, len(o.Pool))
@@ -254,16 +253,14 @@ func (c *Client) StopPool() {
 // Boilerplate Interface Functions (to EOF)
 
 // DefaultPathConfigs returns the default PathConfigs for the given Provider
-func (c *Client) DefaultPathConfigs(_ *bo.Options) po.Lookup {
-	m := methods.AllHTTPMethods()
-	paths := po.Lookup{
-		"/" + strings.Join(m, "-"): {
+func (c *Client) DefaultPathConfigs(_ *bo.Options) po.List {
+	return po.List{
+		{
 			Path:          "/",
 			HandlerName:   providers.ALB,
-			Methods:       m,
+			Methods:       methods.AllHTTPMethods(),
 			MatchType:     matching.PathMatchTypePrefix,
-			MatchTypeName: "prefix",
+			MatchTypeName: matching.PathMatchNamePrefix,
 		},
 	}
-	return paths
 }

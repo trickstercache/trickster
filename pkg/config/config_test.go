@@ -82,7 +82,7 @@ func TestBackendOptionsClone(t *testing.T) {
 func TestString(t *testing.T) {
 	c1 := NewConfig()
 
-	c1.Backends["default"].Paths["test"] = &po.Options{}
+	c1.Backends["default"].Paths = append(c1.Backends["default"].Paths, &po.Options{Path: "test"})
 
 	c1.Caches["default"].Redis.Password = "plaintext-password"
 
@@ -156,8 +156,7 @@ const testPaths = `
 backends:
   test:
     paths:
-      root:
-        path: /
+      - path: /
         match_type: prefix
         handler: proxycache
         req_rewriter_name: example

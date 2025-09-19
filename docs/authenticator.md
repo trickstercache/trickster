@@ -60,8 +60,7 @@ backends:
     authenticator_name: example_auth_1 # protects backend01 with example_auth_1 authenticator
     origin_url: https://example.com
     paths:
-      root:
-        path: / # all requests are protected by example_auth_1 
+      - path: / # all requests are protected by example_auth_1 
         match_type: prefix
         handler: proxy
 
@@ -69,16 +68,13 @@ backends:
     provider: reverseproxy # no backend-wide authenticator
     origin_url: https://example.com
     paths:
-      root:
-        path: / # requests will be allowed without auth except the 2 Paths below
+      - path: / # requests will be allowed without auth except the 2 Paths below
         match_type: prefix
         handler: proxy
-      protected_a:
-        path: /private/
+      - path: /private/
         authenticator_name: example_auth_2 # example_auth_2 protects this path only
         handler: proxy
-      protected_b:
-        path: /admin/
+      - path: /admin/
         authenticator_name: example_auth_3 # example_auth_3 protects this path only
         handler: proxy
 
@@ -87,15 +83,13 @@ backends:
     authenticator_name: example_auth_1 # protects backend03 with example_auth_1 authenticator
     origin_url: https://example.com
     paths:
-      path: / # requests will be challenged by example_auth_1 except the 2 Paths below
+      - path: / # requests will be challenged by example_auth_1 except the 2 Paths below
         match_type: prefix
         handler: proxy
-      unprotected:
-        path: /public/
+      - path: /public/
         authenticator_name: none # requests to /public will be allowed without auth
         handler: proxy
-      protected_a:
-        path: /app/admin/
+      - path: /app/admin/
         authenticator_name: example_auth_2 # example_auth_2 protects this path, not auth_1
         handler: proxy
 

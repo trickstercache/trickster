@@ -177,8 +177,7 @@ backends:
     origin_url: 'http://127.0.0.1:8482/byterange'
     cache_name: fs1
     paths:
-      root:
-        path: /
+      - path: /
         match_type: prefix
         handler: proxycache
   rpc2:
@@ -186,8 +185,7 @@ backends:
     origin_url: 'http://127.0.0.1:8482/byterange'
     cache_name: mem1
     paths:
-      root:
-        path: /
+      - path: /
         match_type: prefix
         handler: proxycache
 

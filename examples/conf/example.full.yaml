@@ -438,8 +438,7 @@ backends:
 
 #     # the paths section customizes the behavior of Trickster for specific paths for this Backend. See /docs/paths.md for more info.
 #     paths:
-#       example1:
-#         path: /api/v1/admin/
+#       - path: /api/v1/admin/
 #         methods: [ '*' ]                                 # HTTP methods to be routed with this path config. * for all methods.
 #         match_type: prefix                             # match $path* (using exact will match just $path)
 #         handler: localresponse                         # dont actually proxy this request, respond immediately
@@ -449,23 +448,22 @@ backends:
 #         response_headers:
 #           Cache-Control: no-cache                  # attach these headers to the response down to the client
 #           Content-Type: text/plain
-#         example2:
-#           path: /example/
-#           methods: [ GET, POST ]
-#           collapsed_forwarding: progressive    # see /docs/collapsed_forwarding.md
-#           match_type: prefix                   # this path is routed using prefix matching
-#           handler: proxycache                  # this path is routed through the cache
-#           req_rewriter_name: example-rewriter  # name of a rewriter to modify the request prior to handling
-#           cache_key_params: [ ex_param1, ex_param2 ]       # the cache key will be hashed with these query parameters (GET)
-#           cache_key_form_fields: [ ex_param1, ex_param2 ]  # or these form fields (POST)
-#           cache_key_headers: [ X-Example-Header ]            # and these request headers, when present in the incoming request
-#           request_headers:
-#             Authorization: custom proxy client auth header
-#             -Cookie: ''                                # attach these request headers when proxying. the + in the header name
-#             +Accept-Encoding: gzip                   # means append the value if the header exists, rather than replace
-#                                                                 # while the - will remove the header
-#           request_params:
-#             +authToken: SomeTokenHere                 # manipulate request query parameters in the same way
+#       - path: /example/
+#         methods: [ GET, POST ]
+#         collapsed_forwarding: progressive    # see /docs/collapsed_forwarding.md
+#         match_type: prefix                   # this path is routed using prefix matching
+#         handler: proxycache                  # this path is routed through the cache
+#         req_rewriter_name: example-rewriter  # name of a rewriter to modify the request prior to handling
+#         cache_key_params: [ ex_param1, ex_param2 ]       # the cache key will be hashed with these query parameters (GET)
+#         cache_key_form_fields: [ ex_param1, ex_param2 ]  # or these form fields (POST)
+#         cache_key_headers: [ X-Example-Header ]            # and these request headers, when present in the incoming request
+#         request_headers:
+#           Authorization: custom proxy client auth header
+#           -Cookie: ''                                # attach these request headers when proxying. the + in the header name
+#           +Accept-Encoding: gzip                   # means append the value if the header exists, rather than replace
+#                                                               # while the - will remove the header
+#         request_params:
+#           +authToken: SomeTokenHere                 # manipulate request query parameters in the same way
 
 #         # the tls section configures the frontend and backend TLS operation for the backend
 #     tls:

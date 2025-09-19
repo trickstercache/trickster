@@ -21,11 +21,8 @@ import (
 	"maps"
 	"net/http"
 
-	te "github.com/trickstercache/trickster/v2/pkg/backends/alb/errors"
-	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
-	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
 )
 
 // import ct "github.com/trickstercache/trickster/v2/pkg/config/types"
@@ -90,28 +87,24 @@ func (o *Options) Clone() *Options {
 	}
 }
 
-// OverlayYAMLData extracts supported User Router Options values from the yaml
-// map, and returns a new default Options overlaid with the extracted values
-func OverlayYAMLData(albName string, options *Options,
-	y yamlx.KeyLookup) (*Options, error) {
-	if y == nil {
-		return nil, te.ErrInvalidOptionsMetadata
+// New returns a new User Router Options with default values
+func New() *Options {
+	return &Options{
+		NoRouteStatusCode: http.StatusUnauthorized,
 	}
-	if !y.IsDefined(providers.Backends, albName, providers.ALB, UserRouterKey) {
-		return nil, nil
-	}
-	o := &Options{NoRouteStatusCode: http.StatusUnauthorized}
+}
+
+// Initialize sets up the User Router Options with default values and overlays
+// any values that were set during YAML unmarshaling
+func (o *Options) Initialize(albName string) error {
 	o.albName = albName
-	if y.IsDefined(providers.Backends, albName, providers.ALB, UserRouterKey, "default_backend") {
-		o.DefaultBackend = options.DefaultBackend
+
+	// Set default values if not already set
+	if o.NoRouteStatusCode == 0 {
+		o.NoRouteStatusCode = http.StatusUnauthorized
 	}
-	if y.IsDefined(providers.Backends, albName, providers.ALB, UserRouterKey, "no_route_status_code") {
-		o.NoRouteStatusCode = options.NoRouteStatusCode
-	}
-	if y.IsDefined(providers.Backends, albName, providers.ALB, UserRouterKey, "users") {
-		o.Users = maps.Clone(options.Users)
-	}
-	return o, nil
+
+	return nil
 }
 
 func (o *Options) Validate(backendTypes map[string]string) error {

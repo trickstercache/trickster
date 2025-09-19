@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/errors"
+	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
 // Load returns the Application Configuration, starting with a default config,
@@ -84,6 +85,27 @@ func Load(args []string) (*Config, error) {
 
 	if len(c.Backends) == 0 {
 		return nil, errors.ErrNoValidBackends
+	}
+
+	for k, o := range c.Backends {
+		err = o.Initialize(k)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if len(c.Caches) > 0 {
+		activeCaches := sets.NewStringSet()
+		for _, backend := range c.Backends {
+			if backend.CacheName != "" {
+				activeCaches.Set(backend.CacheName)
+			}
+		}
+		warnings, err := c.Caches.Initialize(activeCaches)
+		if err != nil {
+			return nil, err
+		}
+		c.LoaderWarnings = append(c.LoaderWarnings, warnings...)
 	}
 
 	return c, nil

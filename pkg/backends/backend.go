@@ -38,7 +38,7 @@ type Backend interface {
 	// Handlers returns a map of the HTTP Handlers the Backend has registered
 	Handlers() handlers.Lookup
 	// DefaultPathConfigs returns the default PathConfigs for the given Provider
-	DefaultPathConfigs(*bo.Options) po.Lookup
+	DefaultPathConfigs(*bo.Options) po.List
 	// Configuration returns the configuration for the Backend
 	Configuration() *bo.Options
 	// Name returns the name of the Backend
@@ -179,7 +179,7 @@ func (b *backend) HealthHandler(w http.ResponseWriter, _ *http.Request) {
 }
 
 // DefaultPathConfigs is a stub function and should be overridden by Backend implementations
-func (b *backend) DefaultPathConfigs(_ *bo.Options) po.Lookup {
+func (b *backend) DefaultPathConfigs(_ *bo.Options) po.List {
 	return nil
 }
 

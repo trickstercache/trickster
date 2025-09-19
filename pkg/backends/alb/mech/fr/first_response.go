@@ -30,13 +30,15 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
-const ID types.ID = 1
-const ShortName types.Name = "fr"
-const Name types.Name = "first_response"
+const (
+	FRID        types.ID   = 1
+	FRShortName types.Name = "fr"
+	FRName      types.Name = "first_response"
 
-const FGRID types.ID = 2
-const FGRShortName types.Name = "fgr"
-const FGRName types.Name = "first_good_response"
+	FGRID        types.ID   = 2
+	FGRShortName types.Name = "fgr"
+	FGRName      types.Name = "first_good_response"
+)
 
 type handler struct {
 	pool     pool.Pool
@@ -45,7 +47,7 @@ type handler struct {
 }
 
 func RegistryEntry() types.RegistryEntry {
-	return types.RegistryEntry{ID: ID, Name: Name, ShortName: ShortName, New: New}
+	return types.RegistryEntry{ID: FRID, Name: FRName, ShortName: FRShortName, New: New}
 }
 
 func RegistryEntryFGR() types.RegistryEntry {
@@ -71,14 +73,14 @@ func (h *handler) ID() types.ID {
 	if h.fgr {
 		return FGRID
 	}
-	return ID
+	return FRID
 }
 
 func (h *handler) Name() types.Name {
 	if h.fgr {
 		return FGRShortName
 	}
-	return ShortName
+	return FRShortName
 }
 
 func (h *handler) StopPool() {

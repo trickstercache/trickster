@@ -47,8 +47,15 @@ func TestObjectProxyCacheHandler(t *testing.T) {
 	rsc.BackendClient = client
 	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
 
-	_, ok := rsc.BackendOptions.Paths[APIPath+mnQuery]
-	if !ok {
+	// Find the path config with path "/api/v1/query"
+	found := false
+	for _, pathConfig := range rsc.BackendOptions.Paths {
+		if pathConfig.Path == APIPath+mnQuery {
+			found = true
+			break
+		}
+	}
+	if !found {
 		t.Errorf("could not find path config named %s", APIPath+mnQuery)
 	}
 

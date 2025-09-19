@@ -26,12 +26,15 @@ const (
 	CFTypeBasic = CollapsedForwardingType(iota)
 	// CFTypeProgressive indicates a progressive cache
 	CFTypeProgressive
+
+	CFNameBasic       = "basic"
+	CFNameProgressive = "progressive"
 )
 
 // CollapsedForwardingTypeNames is a map of forwarding types keyed by name
 var CollapsedForwardingTypeNames = map[string]CollapsedForwardingType{
-	"basic":       CFTypeBasic,
-	"progressive": CFTypeProgressive,
+	CFNameBasic:       CFTypeBasic,
+	CFNameProgressive: CFTypeProgressive,
 }
 
 // CollapsedForwardingTypeValues is a map of forwarding types keyed by internal id

@@ -26,7 +26,6 @@ import (
 	ur "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/ur/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
-	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
 )
 
 // Options defines options for ALBs
@@ -47,7 +46,7 @@ type Options struct {
 	OutputFormat string `yaml:"output_format,omitempty"`
 	// FGRStatusCodes provides an explicit list of status codes considered "good" when using
 	// the First Good Response (fgr) methodology. By default, any code < 400 is good.
-	FGRStatusCodes []int `yaml:"fgr_status_codes"`
+	FGRStatusCodes []int `yaml:"fgr_status_codes,omitempty"`
 	// UserRouter provides options for the User Router mechanism
 	UserRouter *ur.Options `yaml:"user_router,omitempty"`
 	//
@@ -61,6 +60,12 @@ const defaultTSOutputFormat = providers.Prometheus
 type InvalidALBOptionsError struct {
 	error
 }
+
+var (
+	ErrUserRouterRequired     = errors.New("'user_router' block is required")
+	ErrInvalidOutputFormat    = errors.New("value for 'output_format' is invalid")
+	ErrOutputFormatOnlyForTSM = errors.New("'output_format' option is only valid for provider 'alb' and mechanism 'tsmerge'")
+)
 
 // NewErrInvalidALBOptions returns an invalid ALB Options error
 func NewErrInvalidALBOptions(backendName string) error {
@@ -104,65 +109,42 @@ func (o *Options) Clone() *Options {
 	return c
 }
 
-// OverlayYAMLData extracts supported ALB Options values from the yaml map,
-// and returns a new default Options overlaid with the extracted values
-func OverlayYAMLData(name string, options *Options,
-	y yamlx.KeyLookup) (*Options, error) {
-
-	if y == nil {
-		return nil, te.ErrInvalidOptionsMetadata
+func (o *Options) Initialize() error {
+	if strings.HasPrefix(o.MechanismName, "tsm") && o.MechanismName != "tsm" {
+		// shorten from tsmerge to tsm
+		o.MechanismName = "tsm"
 	}
-
-	o := New()
-
-	if !y.IsDefined("backends", name, providers.ALB) {
-		return nil, nil
-	}
-
-	if y.IsDefined("backends", name, providers.ALB, "pool") {
-		o.Pool = options.Pool
-	}
-
-	if y.IsDefined("backends", name, providers.ALB, "mechanism") && options.MechanismName != "" {
-		o.MechanismName = options.MechanismName
-	}
-
-	if y.IsDefined("backends", name, providers.ALB, "healthy_floor") && options.HealthyFloor > 0 {
-		o.HealthyFloor = options.HealthyFloor
-	}
-
-	if o.MechanismName == "fgr" {
-		if y.IsDefined("backends", name, providers.ALB, "fgr_status_codes") && options.FGRStatusCodes != nil {
-			o.FGRStatusCodes = options.FGRStatusCodes
-		}
-		if o.FGRStatusCodes != nil {
+	switch o.MechanismName {
+	case "fgr":
+		if len(o.FGRStatusCodes) > 0 {
 			o.FgrCodesLookup = sets.NewIntSet()
 			o.FgrCodesLookup.SetAll(o.FGRStatusCodes)
 		}
-	}
-
-	if o.MechanismName == "ur" && options.UserRouter != nil {
-		var err error
-		o.UserRouter, err = ur.OverlayYAMLData(name, options.UserRouter, y)
-		if err != nil {
-			return nil, err
+	case "tsm":
+		if o.OutputFormat == "" {
+			o.OutputFormat = defaultTSOutputFormat
 		}
 	}
 
-	if y.IsDefined("backends", name, providers.ALB, "output_format") && options.OutputFormat != "" {
-		if !strings.HasPrefix(o.MechanismName, "tsm") {
-			return nil, errors.New("'output_format' option is only valid for provider 'alb' and mechanism 'tsmerge'")
-		}
-		o.OutputFormat = options.OutputFormat
-		if !providers.IsSupportedTimeSeriesMergeProvider(o.OutputFormat) {
-			return nil, errors.New("value for 'output_format' is invalid")
-		}
-	}
+	return nil
+}
 
-	if strings.HasPrefix(o.MechanismName, "tsm") && o.OutputFormat == "" {
-		o.OutputFormat = defaultTSOutputFormat
+func (o *Options) Validate() error {
+	switch o.MechanismName {
+	case "ur":
+		if o.UserRouter == nil {
+			return ErrUserRouterRequired
+		}
+	case "tsm":
+		if o.OutputFormat != "" && !providers.IsSupportedTimeSeriesMergeProvider(o.OutputFormat) {
+			return ErrInvalidOutputFormat
+		}
+	default:
+		if o.OutputFormat != "" {
+			return ErrOutputFormatOnlyForTSM
+		}
 	}
-	return o, nil
+	return nil
 }
 
 func (o *Options) ValidatePool(backendName string, allBackends sets.Set[string]) error {

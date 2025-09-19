@@ -34,6 +34,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	tst "github.com/trickstercache/trickster/v2/pkg/testutil/timeseries/model"
@@ -98,118 +99,101 @@ func (c *TestClient) RegisterHandlers(handlers.Lookup) {
 }
 
 // DefaultPathConfigs returns the default PathConfigs for the given Provider
-func (c *TestClient) DefaultPathConfigs(o *bo.Options) po.Lookup {
-
-	paths := po.Lookup{
-
-		APIPath + mnQueryRange: {
+func (c *TestClient) DefaultPathConfigs(o *bo.Options) po.List {
+	paths := po.List{
+		{
 			Path:            APIPath + mnQueryRange,
 			HandlerName:     mnQueryRange,
-			Methods:         []string{http.MethodGet, http.MethodPost},
+			Methods:         methods.GetAndPost(),
 			CacheKeyParams:  []string{upQuery, upStep},
 			CacheKeyHeaders: []string{headers.NameAuthorization},
 			ResponseHeaders: map[string]string{headers.NameCacheControl: fmt.Sprintf("%s=%d",
 				headers.ValueSharedMaxAge, 86400)},
 		},
-
-		APIPath + mnQuery: {
+		{
 			Path:            APIPath + mnQuery,
 			HandlerName:     mnQuery,
-			Methods:         []string{http.MethodGet, http.MethodPost},
+			Methods:         methods.GetAndPost(),
 			CacheKeyParams:  []string{upQuery, upTime},
 			CacheKeyHeaders: []string{headers.NameAuthorization},
 			ResponseHeaders: map[string]string{headers.NameCacheControl: fmt.Sprintf("%s=%d",
 				headers.ValueSharedMaxAge, 30)},
 		},
-
-		APIPath + mnSeries: {
+		{
 			Path:            APIPath + mnSeries,
 			HandlerName:     mnSeries,
-			Methods:         []string{http.MethodGet, http.MethodPost},
+			Methods:         methods.GetAndPost(),
 			CacheKeyParams:  []string{upMatch, upStart, upEnd},
 			CacheKeyHeaders: []string{headers.NameAuthorization},
 		},
-
-		APIPath + mnLabels: {
+		{
 			Path:            APIPath + mnLabels,
 			HandlerName:     "proxycache",
-			Methods:         []string{http.MethodGet, http.MethodPost},
+			Methods:         methods.GetAndPost(),
 			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{headers.NameAuthorization},
 		},
-
-		APIPath + mnLabel: {
+		{
 			Path:            APIPath + mnLabel,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{headers.NameAuthorization},
 		},
-
-		APIPath + mnTargets: {
+		{
 			Path:            APIPath + mnTargets,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{headers.NameAuthorization},
 		},
-
-		APIPath + mnRules: {
+		{
 			Path:            APIPath + mnRules,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{headers.NameAuthorization},
 		},
-
-		APIPath + mnAlerts: {
+		{
 			Path:            APIPath + mnAlerts,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{headers.NameAuthorization},
 		},
-
-		APIPath + mnAlertManagers: {
+		{
 			Path:            APIPath + mnAlertManagers,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{headers.NameAuthorization},
 		},
-
-		APIPath + mnStatus: {
+		{
 			Path:            APIPath + mnStatus,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{headers.NameAuthorization},
 		},
-
-		APIPath: {
+		{
 			Path:        APIPath,
 			HandlerName: providers.Proxy,
-			Methods:     []string{http.MethodGet, http.MethodPost},
+			Methods:     methods.GetAndPost(),
 		},
-
-		"/opc": {
+		{
 			Path:        "/opc",
 			HandlerName: "proxycache",
 			Methods:     []string{http.MethodGet},
 		},
-
-		"/": {
+		{
 			Path:        "/",
 			HandlerName: providers.Proxy,
-			Methods:     []string{http.MethodGet, http.MethodPost},
+			Methods:     methods.GetAndPost(),
 		},
 	}
-
 	o.Paths = paths
-	o.FastForwardPath = paths[APIPath+mnQuery]
-
+	o.FastForwardPath = paths[1]
 	return paths
-
 }
 
 // parseTime converts a query time URL parameter to time.Time.

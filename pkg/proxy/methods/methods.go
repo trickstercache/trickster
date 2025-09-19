@@ -129,3 +129,10 @@ func MethodMask(methods ...string) uint16 {
 func IsValidMethod(method string) bool {
 	return getMethodLogicalID(method) > 0
 }
+
+func AreEqual(l1, l2 []string) bool {
+	if len(l1) != len(l2) {
+		return false
+	}
+	return MethodMask(l1...) == MethodMask(l2...)
+}

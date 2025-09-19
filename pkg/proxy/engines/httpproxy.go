@@ -175,9 +175,11 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 	var rc io.ReadCloser
 
 	headers.AddForwardingHeaders(r, o.ForwardedHeaders)
+	// clear the Host header before proxying or it will be forwarded upstream
+	r.Host = ""
 
 	if pc != nil && len(pc.RequestHeaders) > 0 {
-		headers.UpdateHeaders(r.Header, pc.RequestHeaders)
+		headers.UpdateRequestHeaders(r, pc.RequestHeaders)
 	}
 	if pc != nil && len(pc.RequestParams) > 0 {
 		qp, _, _ := params.GetRequestValues(r)
@@ -203,9 +205,6 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 	if doSpan != nil {
 		defer doSpan.End()
 	}
-
-	// clear the Host header before proxying or it will be forwarded upstream
-	r.Host = ""
 
 	if ep := profile.FromContext(r.Context()); ep != nil && ep.SupportedHeaderVal != "" {
 		r.Header.Set(headers.NameAcceptEncoding, ep.SupportedHeaderVal)
@@ -269,12 +268,12 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 		}
 	}
 
-	hasCustomResponseBody := false
+	var hasCustomResponseBody bool
 	resp.Header.Del(headers.NameContentLength)
 
 	if pc != nil {
 		headers.UpdateHeaders(resp.Header, pc.ResponseHeaders)
-		hasCustomResponseBody = pc.HasCustomResponseBody
+		hasCustomResponseBody = pc.ResponseBodyBytes != nil
 	}
 
 	if hasCustomResponseBody {

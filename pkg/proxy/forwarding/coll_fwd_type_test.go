@@ -26,26 +26,26 @@ func TestCollapsedForwardingTypeString(t *testing.T) {
 	t2 := CFTypeProgressive
 	var t3 CollapsedForwardingType = 13
 
-	if t1.String() != "basic" {
-		t.Errorf("expected %s got %s", "basic", t1.String())
+	if t1.String() != CFNameBasic {
+		t.Errorf("expected %s got %s", CFNameBasic, t1.String())
 	}
 
-	if t2.String() != "progressive" {
-		t.Errorf("expected %s got %s", "progressive", t2.String())
+	if t2.String() != CFNameProgressive {
+		t.Errorf("expected %s got %s", CFNameProgressive, t2.String())
 	}
 
 	if t3.String() != "13" {
 		t.Errorf("expected %s got %s", "13", t3.String())
 	}
 
-	t3 = GetCollapsedForwardingType("basic")
+	t3 = GetCollapsedForwardingType(CFNameBasic)
 	if t3 != CFTypeBasic {
-		t.Errorf("expected %s got %s", "basic", t3.String())
+		t.Errorf("expected %s got %s", CFNameBasic, t3.String())
 	}
 
 	t3 = GetCollapsedForwardingType("13")
 	if t3 != CFTypeBasic {
-		t.Errorf("expected %s got %s", "basic", t3.String())
+		t.Errorf("expected %s got %s", CFNameBasic, t3.String())
 	}
 
 }

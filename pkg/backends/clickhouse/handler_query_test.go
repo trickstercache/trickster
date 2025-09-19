@@ -67,8 +67,15 @@ func TestQueryHandler(t *testing.T) {
 	rsc.BackendClient = client
 	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
 
-	_, ok := client.Configuration().Paths["/"]
-	if !ok {
+	// Find the path config with path "/"
+	found := false
+	for _, pathConfig := range client.Configuration().Paths {
+		if pathConfig.Path == "/" {
+			found = true
+			break
+		}
+	}
+	if !found {
 		t.Errorf("could not find path config named %s", "/")
 	}
 
@@ -140,8 +147,15 @@ func TestQueryHandlerBody(t *testing.T) {
 		rsc.BackendClient = client
 		rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
 
-		_, ok := client.Configuration().Paths["/"]
-		if !ok {
+		// Find the path config with path "/"
+		found := false
+		for _, pathConfig := range client.Configuration().Paths {
+			if pathConfig.Path == "/" {
+				found = true
+				break
+			}
+		}
+		if !found {
 			t.Errorf("could not find path config named %s", "/")
 		}
 
@@ -187,8 +201,15 @@ func TestQueryHandlerBody(t *testing.T) {
 		rsc.BackendClient = client
 		rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
 
-		_, ok := client.Configuration().Paths["/"]
-		if !ok {
+		// Find the path config with path "/"
+		found := false
+		for _, pathConfig := range client.Configuration().Paths {
+			if pathConfig.Path == "/" {
+				found = true
+				break
+			}
+		}
+		if !found {
 			t.Errorf("could not find path config named %s", "/")
 		}
 
@@ -234,8 +255,15 @@ func TestQueryHandlerBody(t *testing.T) {
 		rsc.BackendClient = client
 		rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
 
-		_, ok := client.Configuration().Paths["/"]
-		if !ok {
+		// Find the path config with path "/"
+		found := false
+		for _, pathConfig := range client.Configuration().Paths {
+			if pathConfig.Path == "/" {
+				found = true
+				break
+			}
+		}
+		if !found {
 			t.Errorf("could not find path config named %s", "/")
 		}
 

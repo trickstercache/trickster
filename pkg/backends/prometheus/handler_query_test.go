@@ -56,8 +56,15 @@ func TestQueryHandler(t *testing.T) {
 		Labels: map[string]string{"test": "trickster"},
 	}
 
-	_, ok := rsc.BackendOptions.Paths[APIPath+mnQuery]
-	if !ok {
+	// Find the path config with path "/api/v1/query"
+	found := false
+	for _, pathConfig := range rsc.BackendOptions.Paths {
+		if pathConfig.Path == APIPath+mnQuery {
+			found = true
+			break
+		}
+	}
+	if !found {
 		t.Errorf("could not find path config named %s", mnQuery)
 	}
 

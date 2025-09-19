@@ -45,7 +45,7 @@ func (b Backends) StartHealthChecks() (healthcheck.HealthChecker, error) {
 		if bo.HealthCheck == nil {
 			bo.HealthCheck = hco
 		} else {
-			bo.HealthCheck.Overlay(k, hco)
+			bo.HealthCheck.Overlay(hco)
 		}
 		st, err := hc.Register(k, bo.Provider, bo.HealthCheck, c.HealthCheckHTTPClient())
 		if err != nil {

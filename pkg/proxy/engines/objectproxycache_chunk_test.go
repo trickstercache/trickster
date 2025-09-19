@@ -196,7 +196,7 @@ func TestFullArticuationChunks(t *testing.T) {
 	require.NoError(t, err)
 
 	r.URL.RawQuery = "max-age=1&ims=206"
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "kmiss"})
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "phit"})
 	require.NoError(t, stderrors.Join(e...))
 
 	r.Header.Set(headers.NameRange, "bytes=9-20, 90-95, 100-105")
@@ -673,9 +673,7 @@ func TestObjectProxyCacheRequestNegativeCacheChunks(t *testing.T) {
 
 	pc := po.New()
 	cfg := rsc.BackendOptions
-	cfg.Paths = po.Lookup{
-		"/": pc,
-	}
+	cfg.Paths = po.List{pc}
 	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(cfg, pc, rsc.CacheConfig,
 		rsc.CacheClient, rsc.BackendClient, nil)))
 

@@ -48,6 +48,7 @@ import (
 	pnh "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/ping"
 	ph "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/purge"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/reload"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 	"github.com/trickstercache/trickster/v2/pkg/routing"
 )
@@ -66,15 +67,34 @@ func LoadAndValidate() (*config.Config, error) {
 		}
 		return nil, err
 	}
-	if cfg == nil {
+	if cfg == nil || len(cfg.Backends) == 0 {
 		return nil, te.ErrInvalidOptions
 	}
 	if cfg.Flags != nil && (cfg.Flags.PrintVersion) {
 		return cfg, nil
 	}
 
+	for k, o := range cfg.Backends {
+		err = o.Initialize(k)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	for _, w := range cfg.LoaderWarnings {
 		logger.Warn(w, nil)
+	}
+
+	err = cfg.Backends.Validate()
+	if err != nil {
+		return nil, err
+	}
+
+	if len(cfg.Caches) > 0 {
+		err = cfg.Caches.Validate()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Validate Config
@@ -118,7 +138,7 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	// every config (re)load is a new router
 	r := lm.NewRouter()
 	mr := lm.NewRouter()
-	mr.SetMatchingScheme(0) // metrics router is exact-match only
+	mr.SetMatchingScheme(router.MatchExactPath)
 
 	r.RegisterRoute(newConf.MgmtConfig.PingHandlerPath, nil,
 		[]string{http.MethodGet, http.MethodHead}, false,

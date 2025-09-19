@@ -128,7 +128,7 @@ func TestPCFReadWriteGetBody(t *testing.T) {
 }
 
 func TestPCFWaits(t *testing.T) {
-	testStringLong := ""
+	var testStringLong string
 	for i := 0; i < 32000; i++ {
 		testStringLong += "DEADBEEF"
 	}

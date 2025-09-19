@@ -27,27 +27,24 @@ import (
 )
 
 // New returns a new Zipkin Tracer
-func New(options *options.Options) (*tracing.Tracer, error) {
-
-	var tp *sdktrace.TracerProvider
-	var err error
-
-	if options == nil {
+func New(opts *options.Options) (*tracing.Tracer, error) {
+	if opts == nil {
 		return nil, errs.ErrNoTracerOptions
 	}
-
+	var tp *sdktrace.TracerProvider
+	var err error
 	var sampler sdktrace.Sampler
-	switch options.SampleRate {
+	opts.SanitizeSampleRate()
+	switch *opts.SampleRate {
 	case 0:
 		sampler = sdktrace.NeverSample()
 	case 1:
 		sampler = sdktrace.AlwaysSample()
 	default:
-		sampler = sdktrace.TraceIDRatioBased(options.SampleRate)
+		sampler = sdktrace.TraceIDRatioBased(*opts.SampleRate)
 	}
-
 	exporter, err := zipkin.New(
-		options.Endpoint,
+		opts.Endpoint,
 	)
 	if err != nil {
 		return nil, err
@@ -61,12 +58,12 @@ func New(options *options.Options) (*tracing.Tracer, error) {
 		sdktrace.WithSampler(sampler),
 	)
 
-	tracer := tp.Tracer(options.Name)
+	tracer := tp.Tracer(opts.Name)
 
 	return &tracing.Tracer{
-		Name:    options.Name,
+		Name:    opts.Name,
 		Tracer:  tracer,
-		Options: options,
+		Options: opts,
 	}, nil
 
 }

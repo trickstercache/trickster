@@ -113,7 +113,7 @@ func setupTestHarnessOPCWithPCF(file, body string, code int, headers map[string]
 		return nil, nil, nil, nil, fmt.Errorf("could not find path %s", "/prometheus/api/v1/query")
 	}
 
-	pc.CollapsedForwardingName = "progressive"
+	pc.CollapsedForwardingName = forwarding.CFNameProgressive
 	pc.CollapsedForwardingType = forwarding.CFTypeProgressive
 
 	pc.CacheKeyParams = []string{"rangeKey", "instantKey"}
@@ -294,7 +294,7 @@ func TestFullArticuation(t *testing.T) {
 		t.Error(err)
 	}
 	r.URL.RawQuery = "max-age=1&ims=206"
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "kmiss"})
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "phit"})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -779,9 +779,7 @@ func TestObjectProxyCacheRequestNegativeCache(t *testing.T) {
 
 	pc := po.New()
 	cfg := rsc.BackendOptions
-	cfg.Paths = po.Lookup{
-		"/": pc,
-	}
+	cfg.Paths = po.List{pc}
 	r = r.WithContext(tc.WithResources(r.Context(), request.NewResources(cfg, pc, rsc.CacheConfig,
 		rsc.CacheClient, rsc.BackendClient, nil)))
 

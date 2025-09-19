@@ -60,7 +60,15 @@ func TestDefaultPathConfigs(t *testing.T) {
 
 	dpc := client.DefaultPathConfigs(rsc.BackendOptions)
 
-	if _, ok := dpc["/-GET-HEAD-POST-PUT-DELETE-CONNECT-OPTIONS-TRACE-PATCH-PURGE"]; !ok {
+	// Find the path config with path "/"
+	found := false
+	for _, pathConfig := range dpc {
+		if pathConfig.Path == "/" {
+			found = true
+			break
+		}
+	}
+	if !found {
 		t.Errorf("expected to find path named: %s", "/")
 	}
 

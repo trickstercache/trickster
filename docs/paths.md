@@ -47,8 +47,7 @@ backends:
     provider: rpc
     origin_url: 'http://example.com'
     paths:
-      root:
-        path: /
+      - path: /
         req_rewriter_name: example
 
 ```
@@ -76,7 +75,7 @@ backends:
   default:
     # ...
     paths:
-      root:
+      - path: /
         # ...
         request_params:
           'token': '${REQUEST_PARAM_TOKEN}'
@@ -136,10 +135,8 @@ backends:
   default:
     provider: rpc
     paths:
-      # root path '/'. Paths must be uniquely named but the
-      # name is otherwise unimportant
-      root:
-        path: / # each path must be unique for the backend
+      # root path '/'
+      - path: / # each path must be unique for the backend
         methods: [ '*' ] # All HTTP methods applicable to this config
         match_type: prefix # matches any path under '/'
         handler: proxy # proxy only, no caching (this is the default)
@@ -155,8 +152,7 @@ backends:
         # before replying to the client
         response_headers:
           Expires: '-1'
-      images:
-        path: /images/
+      - path: /images/
         methods:
           - GET
           - HEAD
@@ -165,8 +161,7 @@ backends:
         response_headers:
           Cache-Control: max-age=2592000 # cache for 30 days
       # but only cache this rotating image for 30 seconds
-      images_rotating:
-        path: /images/rotating.jpg
+      - path: /images/rotating.jpg
         methods:
           - GET
         handler: proxycache
@@ -175,8 +170,7 @@ backends:
           Cache-Control: max-age=30
           '-Expires': ''
       # redirect this sunsetted feature to a discontinued message
-      redirect:
-        path: /blog
+      - path: /blog
         methods:
           - '*'
         handler: localresponse
@@ -185,8 +179,7 @@ backends:
         response_headers:
           Location: /discontinued
       # cache this API endpoint, keying on the query parameter
-      api:
-        path: /api/
+      - path: /api/
         methods:
           - GET
           - HEAD
@@ -195,8 +188,7 @@ backends:
         cache_key_params:
           - query
       # same API endpoint, different HTTP methods to route against, which are denied
-      api-deny:
-        path: /api/
+      - path: /api/
         methods:
           - POST
           - PUT
@@ -209,8 +201,7 @@ backends:
         response_code: 401
         response_body: this is a read-only api endpoint
       # cache the query endpoint, permitting GET, HEAD, POST
-      api-query:
-        path: /api/query/
+      - path: /api/query/
         methods:
           - GET
           - HEAD
@@ -242,15 +233,13 @@ backends:
     paths:
       # route /api/v1/label* (including /labels/*)
       # through Proxy instead of ProxyCache as pre-defined
-      label:
-        path: /api/v1/label
+      - path: /api/v1/label
         methods:
           - GET
         match_type: prefix
         handler: proxy
       # route fictional new /api/v1/coffee to ProxyCache
-      series_range:
-        path: /api/v1/coffee
+      - path: /api/v1/coffee
         methods:
           - GET
         match_type: prefix
@@ -258,8 +247,7 @@ backends:
         cache_key_params:
           - beans
       # block /api/v1/admin/ from being reachable via Trickster
-      admin:
-        path: /api/v1/admin/
+      - path: /api/v1/admin/
         methods:
           - GET
           - POST

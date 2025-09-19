@@ -30,9 +30,9 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 )
 
-const ID types.ID = 5
-const ShortName types.Name = "ur"
-const Name types.Name = "user_router"
+const URID types.ID = 5
+const URShortName types.Name = "ur"
+const URName types.Name = "user_router"
 
 type Handler struct {
 	authenticator      at.Authenticator
@@ -41,7 +41,8 @@ type Handler struct {
 }
 
 func RegistryEntry() types.RegistryEntry {
-	return types.RegistryEntry{ID: ID, Name: Name, ShortName: ShortName, New: New}
+	return types.RegistryEntry{ID: URID, Name: URName,
+		ShortName: URShortName, New: New}
 }
 
 func New(o *options.Options, _ rt.Lookup) (types.Mechanism, error) {
@@ -53,11 +54,11 @@ func New(o *options.Options, _ rt.Lookup) (types.Mechanism, error) {
 }
 
 func (h *Handler) ID() types.ID {
-	return ID
+	return URID
 }
 
 func (h *Handler) Name() types.Name {
-	return ShortName
+	return URShortName
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
