@@ -66,7 +66,7 @@ func (c *Client) MergeablePaths() []string {
 }
 
 // DefaultPathConfigs returns the default PathConfigs for the given Provider
-func (c *Client) DefaultPathConfigs(o *bo.Options) po.Lookup {
+func (c *Client) DefaultPathConfigs(o *bo.Options) po.List {
 	var rhts map[string]string
 	if o != nil {
 		rhts = map[string]string{
@@ -208,5 +208,5 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) po.Lookup {
 		},
 	}
 	o.FastForwardPath = paths[1].Clone()
-	return paths.ToLookup()
+	return paths
 }

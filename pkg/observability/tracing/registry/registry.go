@@ -44,7 +44,7 @@ func RegisterAll(cfg *config.Config, isDryRun bool) (tracing.Tracers, error) {
 	if cfg.Backends == nil {
 		return nil, errors.New("no backends provided")
 	}
-	if cfg.TracingConfigs == nil {
+	if cfg.TracingOptions == nil {
 		return nil, errors.New("no tracers provided")
 	}
 
@@ -54,7 +54,7 @@ func RegisterAll(cfg *config.Config, isDryRun bool) (tracing.Tracers, error) {
 
 	for k, v := range cfg.Backends {
 		if v != nil && v.TracingConfigName != "" {
-			if _, ok := cfg.TracingConfigs[v.TracingConfigName]; !ok {
+			if _, ok := cfg.TracingOptions[v.TracingConfigName]; !ok {
 				return nil, fmt.Errorf("backend %s provided invalid tracing config name %s",
 					k, v.TracingConfigName)
 			}
@@ -63,7 +63,7 @@ func RegisterAll(cfg *config.Config, isDryRun bool) (tracing.Tracers, error) {
 	}
 
 	tracers := make(tracing.Tracers)
-	for k, tc := range cfg.TracingConfigs {
+	for k, tc := range cfg.TracingOptions {
 		if !mappedTracers.Contains(k) {
 			// tracer is configured, but not mapped by any backend,
 			// so we won't instantiate it

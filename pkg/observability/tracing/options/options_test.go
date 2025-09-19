@@ -18,8 +18,6 @@ package options
 
 import (
 	"testing"
-
-	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
 )
 
 func TestNew(t *testing.T) {
@@ -31,16 +29,43 @@ func TestNew(t *testing.T) {
 	}
 }
 
-func TestProcessTracingConfigs(t *testing.T) {
-	ProcessTracingOptions(nil, nil)
+func TestProcessTracingOptions(t *testing.T) {
+	ProcessTracingOptions(nil)
 	o := New()
-	o.SampleRate = 0
 	mo := Lookup{
 		"test": o,
 	}
-	ProcessTracingOptions(mo, yamlx.KeyLookup{})
-	if int(o.SampleRate) != 1 {
-		t.Errorf("expected 1 got %d", int(o.SampleRate))
+	ProcessTracingOptions(mo)
+	if o.SampleRate == nil {
+		t.Error("expected SampleRate to be set")
+	} else if int(*o.SampleRate) != 1 {
+		t.Errorf("expected 1 got %d", int(*o.SampleRate))
+	}
+
+	o2 := New()
+	sampleRate := 2.0
+	o2.SampleRate = &sampleRate
+	mo2 := Lookup{
+		"test2": o2,
+	}
+	ProcessTracingOptions(mo2)
+	if o2.SampleRate == nil {
+		t.Error("expected SampleRate to be set")
+	} else if int(*o2.SampleRate) != 1 {
+		t.Errorf("expected 1 got %d", int(*o2.SampleRate))
+	}
+
+	o3 := New()
+	sampleRate3 := 0.0
+	o3.SampleRate = &sampleRate3
+	mo3 := Lookup{
+		"test3": o3,
+	}
+	ProcessTracingOptions(mo3)
+	if o3.SampleRate == nil {
+		t.Error("expected SampleRate to be set")
+	} else if int(*o3.SampleRate) != 0 {
+		t.Errorf("expected 0 got %d", int(*o3.SampleRate))
 	}
 }
 

@@ -379,8 +379,7 @@ data:
 
     #     # [backends.BACKEND_NAME.paths] section customizes the behavior of Trickster for specific paths. See /docs/paths.md for more info.
     #     paths:
-    #       example1:
-    #         path: /api/v1/admin/
+    #       - path: /api/v1/admin/
     #         methods: [ '*' ]                                 # HTTP methods to be routed with this path config. * for all methods.
     #         match_type: prefix                             # match $path* (using exact will match just $path)
     #         handler: localresponse                         # dont actually proxy this request, respond immediately

@@ -152,7 +152,7 @@ func (c *Client) ValidateAndStartPool(clients backends.Backends, hcs healthcheck
 	if err != nil {
 		return err
 	}
-	if o.MechanismName == string(ur.ShortName) && o.UserRouter != nil {
+	if o.MechanismName == string(ur.URShortName) && o.UserRouter != nil {
 		return c.validateAndStartUserRouter(clients)
 	}
 	targets := make([]*pool.Target, 0, len(o.Pool))
@@ -253,7 +253,7 @@ func (c *Client) StopPool() {
 // Boilerplate Interface Functions (to EOF)
 
 // DefaultPathConfigs returns the default PathConfigs for the given Provider
-func (c *Client) DefaultPathConfigs(_ *bo.Options) po.Lookup {
+func (c *Client) DefaultPathConfigs(_ *bo.Options) po.List {
 	return po.List{
 		{
 			Path:          "/",
@@ -262,5 +262,5 @@ func (c *Client) DefaultPathConfigs(_ *bo.Options) po.Lookup {
 			MatchType:     matching.PathMatchTypePrefix,
 			MatchTypeName: matching.PathMatchNamePrefix,
 		},
-	}.ToLookup()
+	}
 }

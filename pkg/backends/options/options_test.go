@@ -36,7 +36,6 @@ import (
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
-	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
 
 	"gopkg.in/yaml.v2"
 )
@@ -45,27 +44,22 @@ type testOptions struct {
 	Backends Lookup `yaml:"backends,omitempty"`
 }
 
-func fromYAML(conf, name string) (*Options, yamlx.KeyLookup, error) {
+func fromYAML(conf, name string) (*Options, error) {
 	to := &testOptions{}
 
 	err := yaml.Unmarshal([]byte(conf), to)
 	if err != nil {
-		return nil, nil, err
-	}
-
-	md, err := yamlx.GetKeyList(conf)
-	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	if o, ok := to.Backends[name]; ok {
-		return o, md, err
+		return o, err
 	}
 	for k, o := range to.Backends {
 		o.Name = k
-		return o, md, err
+		return o, err
 	}
-	return nil, nil, nil
+	return nil, nil
 }
 
 func TestNew(t *testing.T) {
@@ -81,7 +75,7 @@ func TestClone(t *testing.T) {
 	o.Hosts = []string{"test"}
 	o.CacheName = "test"
 	o.CompressibleTypes = sets.New([]string{"test"})
-	o.Paths = po.Lookup{"test": p}
+	o.Paths = po.List{p}
 	o.NegativeCache = map[int]time.Duration{1: 1}
 	o.HealthCheck = &ho.Options{}
 	o.FastForwardPath = p
@@ -109,7 +103,7 @@ func TestValidateBackendName(t *testing.T) {
 
 func TestValidateConfigMappings(t *testing.T) {
 
-	o, _, err := fromTestYAML()
+	o, err := fromTestYAML()
 	if err != nil {
 		t.Error(err)
 	}
@@ -200,13 +194,13 @@ func testDurationValueValidationError(to *testOptions, sws []durationSwapper) er
 
 func TestValidate(t *testing.T) {
 
-	o, _, err := fromTestYAML()
+	o, err := fromTestYAML()
 	if err != nil {
 		t.Error(err)
 	}
 	o.Name = "test"
 
-	o2, _, err := fromYAML(testYAML, "test_pool_member")
+	o2, err := fromYAML(testYAML, "test_pool_member")
 	o2.Name = "test_pool_member"
 	to := &testOptions{Backends: Lookup{o.Name: o, o2.Name: o2}}
 
@@ -342,51 +336,44 @@ func TestValidate(t *testing.T) {
 	})
 }
 
-func TestOverlayYAMLData(t *testing.T) {
+func TestInitialize(t *testing.T) {
 
-	o, md, err := fromTestYAML()
+	o, err := fromTestYAML()
 	if err != nil {
 		t.Error(err)
 	}
 
-	backends := Lookup{o.Name: o}
-
-	_, err = OverlayYAMLData("test", o, backends, sets.NewStringSet(), md)
+	err = o.Initialize("test")
 	if err != nil {
 		t.Error(err)
 	}
 
-	_, err = OverlayYAMLData("test", o, backends, sets.NewStringSet(), nil)
-	if err != ErrInvalidMetadata {
-		t.Error("expected invalid metadata, got", err)
-	}
-
-	o2, md, err := fromTestYAMLWithDefault()
+	o2, err := fromTestYAMLWithDefault()
 	if err != nil {
 		t.Error(err)
 	}
 
-	_, err = OverlayYAMLData("test", o2, backends, sets.NewStringSet(), md)
+	err = o2.Initialize("test")
 	if err != nil {
 		t.Error(err)
 	}
 
-	o2, md, err = fromTestYAMLWithReqRewriter()
+	o2, err = fromTestYAMLWithReqRewriter()
 	if err != nil {
 		t.Error(err)
 	}
 
-	_, err = OverlayYAMLData("test", o2, backends, sets.NewStringSet(), md)
+	err = o2.Initialize("test")
 	if err != nil {
 		t.Error(err)
 	}
 
-	o2, md, err = fromTestYAMLWithALB()
+	o2, err = fromTestYAMLWithALB()
 	if err != nil {
 		t.Error(err)
 	}
 
-	_, err = OverlayYAMLData("test", o2, backends, sets.NewStringSet(), md)
+	err = o2.Initialize("test")
 	if err != nil {
 		t.Error(err)
 	}
@@ -395,7 +382,7 @@ func TestOverlayYAMLData(t *testing.T) {
 
 func TestValidateTLSConfigs(t *testing.T) {
 
-	o, _, err := fromTestYAML()
+	o, err := fromTestYAML()
 	if err != nil {
 		t.Error(err)
 	}
@@ -441,33 +428,45 @@ func TestValidateTLSConfigs(t *testing.T) {
 
 func TestCloneYAMLSafe(t *testing.T) {
 
-	o, _, err := fromTestYAML()
+	o, err := fromTestYAML()
 	if err != nil {
 		t.Error(err)
 	}
 
-	p, ok := o.Paths["series"]
-	if !ok {
-		t.Error("expected 'series' path")
+	var p *po.Options
+	for _, path := range o.Paths {
+		if path.Path == "/series" {
+			p = path
+			break
+		}
+	}
+	if p == nil {
+		t.Error("expected '/series' path")
 	}
 	p.RequestHeaders = map[string]string{headers.NameAuthorization: "trickster"}
 
 	o2 := o.CloneYAMLSafe()
-	p, ok = o2.Paths["series"]
-	if !ok {
-		t.Error("expected 'series' path")
+	var p2 *po.Options
+	for _, path := range o2.Paths {
+		if path.Path == "/series" {
+			p2 = path
+			break
+		}
+	}
+	if p2 == nil {
+		t.Error("expected '/series' path")
 	}
 
-	if v, ok := p.RequestHeaders[headers.NameAuthorization]; !ok || v != "*****" {
+	if v, ok := p2.RequestHeaders[headers.NameAuthorization]; !ok || v != "*****" {
 		t.Error("expected *****")
 	}
 
-	p.RequestHeaders = map[string]string{headers.NameAuthorization: "trickster"}
+	p2.RequestHeaders = map[string]string{headers.NameAuthorization: "trickster"}
 
 }
 
 func TestToYAML(t *testing.T) {
-	o, _, err := fromTestYAML()
+	o, err := fromTestYAML()
 	if err != nil {
 		t.Error(err)
 	}

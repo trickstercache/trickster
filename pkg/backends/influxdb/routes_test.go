@@ -56,7 +56,15 @@ func TestDefaultPathConfigs(t *testing.T) {
 	rsc.BackendClient = client
 	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
 
-	if _, ok := rsc.BackendOptions.Paths["/"]; !ok {
+	// Find the path config with path "/"
+	found := false
+	for _, pathConfig := range rsc.BackendOptions.Paths {
+		if pathConfig.Path == "/" {
+			found = true
+			break
+		}
+	}
+	if !found {
 		t.Errorf("expected to find path named: %s", "/")
 	}
 

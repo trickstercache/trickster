@@ -99,7 +99,7 @@ func NewTestWebClient() *http.Client {
 // NewTestInstance will start a trickster
 func NewTestInstance(
 	configFile string,
-	defaultPathConfigs func(*bo.Options) po.Lookup,
+	defaultPathConfigs func(*bo.Options) po.List,
 	respCode int, respBody string, respHeaders map[string]string,
 	backendProvider, urlPath, logLevel string,
 ) (*httptest.Server, *httptest.ResponseRecorder, *http.Request, *http.Client, error) {
@@ -150,7 +150,7 @@ func NewTestInstance(
 
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	if o.TracingConfigName != "" {
-		if tc, ok := conf.TracingConfigs[o.TracingConfigName]; ok {
+		if tc, ok := conf.TracingOptions[o.TracingConfigName]; ok {
 			tracer, _ = tr.GetTracer(tc, true)
 		}
 	} else {
@@ -172,10 +172,10 @@ func NewTestInstance(
 // NewTestPathConfig returns a path config based on the provided parameters
 func NewTestPathConfig(
 	o *bo.Options,
-	defaultPathConfigs func(*bo.Options) po.Lookup,
+	defaultPathConfigs func(*bo.Options) po.List,
 	urlPath string,
 ) *po.Options {
-	var paths po.Lookup
+	var paths po.List
 	if defaultPathConfigs != nil {
 		paths = defaultPathConfigs(o)
 	}
@@ -184,10 +184,14 @@ func NewTestPathConfig(
 
 	p := &po.Options{}
 	if len(paths) > 0 {
-		if p2, ok := paths[urlPath]; ok {
-			p = p2
-		} else {
-			p = paths["/"]
+		for _, pathConfig := range paths {
+			if pathConfig.Path == urlPath {
+				p = pathConfig
+				break
+			}
+		}
+		if p.Path == "" && len(paths) > 0 {
+			p = paths[0]
 		}
 	}
 

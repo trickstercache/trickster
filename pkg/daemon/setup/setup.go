@@ -66,15 +66,34 @@ func LoadAndValidate() (*config.Config, error) {
 		}
 		return nil, err
 	}
-	if cfg == nil {
+	if cfg == nil || len(cfg.Backends) == 0 {
 		return nil, te.ErrInvalidOptions
 	}
 	if cfg.Flags != nil && (cfg.Flags.PrintVersion) {
 		return cfg, nil
 	}
 
+	for k, o := range cfg.Backends {
+		err = o.Initialize(k)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	for _, w := range cfg.LoaderWarnings {
 		logger.Warn(w, nil)
+	}
+
+	err = cfg.Backends.Validate()
+	if err != nil {
+		return nil, err
+	}
+
+	if len(cfg.Caches) > 0 {
+		err = cfg.Caches.Validate()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Validate Config

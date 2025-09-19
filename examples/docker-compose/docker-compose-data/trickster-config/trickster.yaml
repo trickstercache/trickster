@@ -72,8 +72,7 @@ backends:
     tracing_name: ja1
     cache_name: mem1
     paths:
-      root:
-        path: /
+      - path: /
         match_type: prefix
         handler: proxycache
         collapsed_forwarding: progressive

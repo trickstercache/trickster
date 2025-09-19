@@ -81,10 +81,10 @@ func Rewriters(c *config.Config) error {
 }
 
 func Tracers(c *config.Config) error {
-	if len(c.TracingConfigs) == 0 {
+	if len(c.TracingOptions) == 0 {
 		return nil
 	}
-	return c.TracingConfigs.Validate()
+	return c.TracingOptions.Validate()
 }
 
 func Rules(c *config.Config) error {
@@ -125,7 +125,7 @@ func Backends(c *config.Config) error {
 		return errors.ErrNoValidBackends
 	}
 	if err := c.Backends.ValidateConfigMappings(c.Caches, c.CompiledNegativeCaches,
-		c.Rules, c.RequestRewriters, c.Authenticators, c.TracingConfigs); err != nil {
+		c.Rules, c.RequestRewriters, c.Authenticators, c.TracingOptions); err != nil {
 		return err
 	}
 	serveTLS, err := c.Backends.ValidateTLSConfigs()

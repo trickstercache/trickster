@@ -273,7 +273,7 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 
 	if pc != nil {
 		headers.UpdateHeaders(resp.Header, pc.ResponseHeaders)
-		hasCustomResponseBody = pc.HasCustomResponseBody
+		hasCustomResponseBody = pc.ResponseBodyBytes != nil
 	}
 
 	if hasCustomResponseBody {

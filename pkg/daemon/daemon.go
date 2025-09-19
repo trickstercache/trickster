@@ -109,7 +109,7 @@ func Hup(si *instance.ServerInstance, source string) (bool, error) {
 		if err != nil {
 			return false, err
 		}
-		if conf == nil || conf.Resources == nil {
+		if conf == nil {
 			return false, errors.ErrInvalidOptions
 		}
 		logger.Warn("configuration reload starting now",

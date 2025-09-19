@@ -50,8 +50,15 @@ func TestSeriesHandler(t *testing.T) {
 	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
 	rsc.IsMergeMember = true
 
-	_, ok := rsc.BackendOptions.Paths[APIPath+mnSeries]
-	if !ok {
+	// Find the path config with path "/api/v1/series"
+	found := false
+	for _, pathConfig := range rsc.BackendOptions.Paths {
+		if pathConfig.Path == APIPath+mnSeries {
+			found = true
+			break
+		}
+	}
+	if !found {
 		t.Errorf("could not find path config named %s", mnSeries)
 	}
 

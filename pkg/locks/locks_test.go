@@ -218,9 +218,7 @@ func TestLocksConcurrent(t *testing.T) {
 func TestLockReadAndWrite(t *testing.T) {
 
 	lk := NewNamedLocker()
-
 	var i, j int
-
 	wg := &sync.WaitGroup{}
 
 	nl, _ := lk.Acquire("test")

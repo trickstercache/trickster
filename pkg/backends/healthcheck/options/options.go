@@ -24,7 +24,6 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
-	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
 )
 
 // MaxProbeWait is the maximum time a health check will wait before timing out
@@ -75,7 +74,6 @@ type Options struct {
 	// ExpectedBody is the body expected in the response to be considered Healthy status
 	ExpectedBody string `yaml:"expected_body,omitempty"`
 
-	y               yamlx.KeyLookup
 	hasExpectedBody bool
 }
 
@@ -93,9 +91,41 @@ func New() *Options {
 	}
 }
 
-// SetYAMLData sets the yamldata for the health checker options
-func (o *Options) SetYAMLData(y yamlx.KeyLookup) {
-	o.y = y
+// Initialize sets up the healthcheck Options with default values and overlays
+// any values that were set during YAML unmarshaling
+func (o *Options) Initialize() error {
+	// Set default values if not already set
+	if o.Verb == "" {
+		o.Verb = DefaultHealthCheckVerb
+	}
+	if o.Scheme == "" {
+		o.Scheme = "http"
+	}
+	if o.Path == "" {
+		o.Path = DefaultHealthCheckPath
+	}
+	if o.Query == "" {
+		o.Query = DefaultHealthCheckQuery
+	}
+	if len(o.ExpectedCodes) == 0 {
+		o.ExpectedCodes = []int{200}
+	}
+	if o.FailureThreshold == 0 {
+		o.FailureThreshold = DefaultHealthCheckFailureThreshold
+	}
+	if o.RecoveryThreshold == 0 {
+		o.RecoveryThreshold = DefaultHealthCheckRecoveryThreshold
+	}
+	if o.Headers == nil {
+		o.Headers = make(map[string]string)
+	}
+
+	// Set hasExpectedBody flag if ExpectedBody is set
+	if o.ExpectedBody != "" {
+		o.hasExpectedBody = true
+	}
+
+	return nil
 }
 
 // Clone returns an exact copy of a *healthcheck.Options
@@ -119,41 +149,41 @@ func (o *Options) Clone() *Options {
 		c.ExpectedCodes = make([]int, len(o.ExpectedCodes))
 		copy(c.ExpectedCodes, o.ExpectedCodes)
 	}
-	c.y = o.y
 	c.hasExpectedBody = o.hasExpectedBody
 	return c
 }
 
-func (o *Options) Overlay(name string, custom *Options) {
-	if custom == nil || custom.y == nil {
+// Overlay overlays the custom options onto the base options
+func (o *Options) Overlay(custom *Options) {
+	if custom == nil {
 		return
 	}
-	if custom.y.IsDefined("backends", name, "healthcheck", "path") {
+	if custom.Path != "" {
 		o.Path = custom.Path
 	}
-	if custom.y.IsDefined("backends", name, "healthcheck", "verb") {
+	if custom.Verb != "" {
 		o.Verb = custom.Verb
 	}
-	if custom.y.IsDefined("backends", name, "healthcheck", "query") {
+	if custom.Query != "" {
 		o.Query = custom.Query
 	}
-	if custom.y.IsDefined("backends", name, "healthcheck", "headers") {
+	if custom.Headers != nil {
 		o.Headers = custom.Headers
 	}
-	if custom.y.IsDefined("backends", name, "healthcheck", "body") {
+	if custom.Body != "" {
 		o.Body = custom.Body
 	}
-	if custom.y.IsDefined("backends", name, "healthcheck", "expected_codes") {
+	if len(custom.ExpectedCodes) > 0 {
 		o.ExpectedCodes = custom.ExpectedCodes
 	}
-	if custom.y.IsDefined("backends", name, "healthcheck", "expected_body") {
+	if custom.ExpectedBody != "" {
 		o.ExpectedBody = custom.ExpectedBody
 		o.hasExpectedBody = true
 	}
-	if custom.y.IsDefined("backends", name, "healthcheck", "expected_headers") {
+	if custom.ExpectedHeaders != nil {
 		o.ExpectedHeaders = custom.ExpectedHeaders
 	}
-	if custom.y.IsDefined("backends", name, "healthcheck", "interval") {
+	if custom.Interval > 0 {
 		o.Interval = custom.Interval
 	}
 }

@@ -20,6 +20,7 @@ package stdout
 import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
+	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 
 	"go.opentelemetry.io/otel/attribute"
 	stdout "go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
@@ -37,14 +38,13 @@ func New(opts *options.Options) (*tracing.Tracer, error) {
 
 	if opts == nil {
 		opts = &options.Options{
-			SampleRate:  1,
+			SampleRate:  pointers.New(1.0),
 			ServiceName: options.DefaultTracerServiceName,
 			Provider:    "stdout",
 		}
-	}
-
-	if opts != nil && opts.StdOutOptions != nil {
-		if opts.StdOutOptions.PrettyPrint {
+	} else {
+		opts.SanitizeSampleRate()
+		if opts.StdOutOptions != nil && opts.StdOutOptions.PrettyPrint {
 			o = append(o, stdout.WithPrettyPrint())
 		}
 	}
@@ -57,13 +57,13 @@ func New(opts *options.Options) (*tracing.Tracer, error) {
 
 	var sampler sdktrace.Sampler
 
-	switch opts.SampleRate {
+	switch *opts.SampleRate {
 	case 0:
 		sampler = sdktrace.NeverSample()
 	case 1:
 		sampler = sdktrace.AlwaysSample()
 	default:
-		sampler = sdktrace.TraceIDRatioBased(opts.SampleRate)
+		sampler = sdktrace.TraceIDRatioBased(*opts.SampleRate)
 	}
 
 	serviceKey := attribute.String("service.name", opts.ServiceName)

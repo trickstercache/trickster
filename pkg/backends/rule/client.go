@@ -99,7 +99,7 @@ func (rc Clients) validate(rwi rewriter.InstructionsLookup) error {
 }
 
 // DefaultPathConfigs returns the default PathConfigs for the given Provider
-func (c *Client) DefaultPathConfigs(_ *bo.Options) po.Lookup {
+func (c *Client) DefaultPathConfigs(_ *bo.Options) po.List {
 	return po.List{
 		{
 			Path:          "/",
@@ -108,7 +108,7 @@ func (c *Client) DefaultPathConfigs(_ *bo.Options) po.Lookup {
 			MatchType:     matching.PathMatchTypePrefix,
 			MatchTypeName: matching.PathMatchNamePrefix,
 		},
-	}.ToLookup()
+	}
 }
 
 func (c *Client) RegisterHandlers(handlers.Lookup) {

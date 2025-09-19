@@ -29,7 +29,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/providers"
 	redis "github.com/trickstercache/trickster/v2/pkg/cache/redis/options"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
-	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
 )
 
 // Lookup is a map of Options
@@ -152,191 +151,101 @@ func (c *Options) Validate() error {
 	if restrictedNames.Contains(c.Name) {
 		return ErrInvalidName
 	}
+	if c.Index.MaxSizeBytes > 0 && c.Index.MaxSizeBackoffBytes > c.Index.MaxSizeBytes {
+		return errMaxSizeBackoffBytesTooBig
+	}
+	if c.Index.MaxSizeObjects > 0 && c.Index.MaxSizeBackoffObjects > c.Index.MaxSizeObjects {
+		return errMaxSizeBackoffObjectsTooBig
+	}
+
 	return nil
 }
 
 var errMaxSizeBackoffBytesTooBig = errors.New("MaxSizeBackoffBytes can't be larger than MaxSizeBytes")
 var errMaxSizeBackoffObjectsTooBig = errors.New("MaxSizeBackoffObjects can't be larger than MaxSizeObjects")
 
-// OverlayYAMLData extracts supported cache Options values from the yaml map,
-// and overlays the extracted values into activeCaches
-func (l Lookup) OverlayYAMLData(y yamlx.KeyLookup,
-	activeCaches sets.Set[string]) ([]string, error) {
+// Initialize sets up the cache Options with default values and overlays
+// any values that were set during YAML unmarshaling
+func (c *Options) Initialize(name string) error {
+	c.Name = name
 
-	// setCachingDefaults assumes that processBackendOptions was just ran
+	if c.Provider != "" {
+		c.Provider = strings.ToLower(c.Provider)
+		if n, ok := providers.Names[c.Provider]; ok {
+			c.ProviderID = n
+		}
+	}
 
-	lw := make([]string, 0)
+	if c.Index == nil {
+		c.Index = index.New()
+	}
+	if c.Redis == nil {
+		c.Redis = redis.New()
+	}
+	if c.Filesystem == nil {
+		c.Filesystem = filesystem.New()
+	}
+	if c.BBolt == nil {
+		c.BBolt = bbolt.New()
+	}
+	if c.Badger == nil {
+		c.Badger = badger.New()
+	}
+
+	if !c.UseCacheChunking && c.TimeseriesChunkFactor == 0 {
+		c.UseCacheChunking = defaults.DefaultUseCacheChunking
+	}
+	if c.TimeseriesChunkFactor == 0 {
+		c.TimeseriesChunkFactor = defaults.DefaultTimeseriesChunkFactor
+	}
+	if c.ByterangeChunkSize == 0 {
+		c.ByterangeChunkSize = defaults.DefaultByterangeChunkSize
+	}
+
+	return nil
+}
+
+// Initialize initializes all cache options in the lookup with default values
+// and overlays any values that were set during YAML unmarshaling
+func (l Lookup) Initialize(activeCaches sets.Set[string]) ([]string, error) {
+	var warnings []string
+
+	for k := range l {
+		if _, ok := activeCaches[k]; !ok {
+			delete(l, k)
+		}
+	}
 
 	for k, v := range l {
-
-		if _, ok := activeCaches[k]; !ok {
-			// a configured cache was not used by any backend. don't even instantiate it
-			delete(l, k)
-			continue
+		if err := v.Initialize(k); err != nil {
+			return nil, err
 		}
 
-		c := New()
-		c.Name = k
-
-		if y.IsDefined("caches", k, "provider") {
-			c.Provider = strings.ToLower(v.Provider)
-			if n, ok := providers.Names[c.Provider]; ok {
-				c.ProviderID = n
-			}
-		}
-
-		if y.IsDefined("caches", k, "index", "reap_interval") {
-			c.Index.ReapInterval = v.Index.ReapInterval
-		}
-
-		if y.IsDefined("caches", k, "index", "flush_interval") {
-			c.Index.FlushInterval = v.Index.FlushInterval
-		}
-
-		if y.IsDefined("caches", k, "index", "max_size_bytes") {
-			c.Index.MaxSizeBytes = v.Index.MaxSizeBytes
-		}
-
-		if y.IsDefined("caches", k, "index", "max_size_backoff_bytes") {
-			c.Index.MaxSizeBackoffBytes = v.Index.MaxSizeBackoffBytes
-		}
-
-		if c.Index.MaxSizeBytes > 0 && c.Index.MaxSizeBackoffBytes > c.Index.MaxSizeBytes {
-			return nil, errMaxSizeBackoffBytesTooBig
-		}
-
-		if y.IsDefined("caches", k, "index", "max_size_objects") {
-			c.Index.MaxSizeObjects = v.Index.MaxSizeObjects
-		}
-
-		if y.IsDefined("caches", k, "index", "max_size_backoff_objects") {
-			c.Index.MaxSizeBackoffObjects = v.Index.MaxSizeBackoffObjects
-		}
-
-		if c.Index.MaxSizeObjects > 0 && c.Index.MaxSizeBackoffObjects > c.Index.MaxSizeObjects {
-			return nil, errMaxSizeBackoffObjectsTooBig
-		}
-
-		if c.ProviderID == providers.Redis {
-
+		if v.ProviderID == providers.Redis {
 			var hasEndpoint, hasEndpoints bool
 
-			ct := strings.ToLower(v.Redis.ClientType)
-			if y.IsDefined("caches", k, "redis", "client_type") {
-				c.Redis.ClientType = ct
-			}
-
-			if y.IsDefined("caches", k, "redis", "protocol") {
-				c.Redis.Protocol = v.Redis.Protocol
-			}
-
-			if y.IsDefined("caches", k, "redis", "endpoint") {
-				c.Redis.Endpoint = v.Redis.Endpoint
+			if v.Redis.Endpoint != "" {
 				hasEndpoint = true
 			}
-
-			if y.IsDefined("caches", k, "redis", "endpoints") {
-				c.Redis.Endpoints = v.Redis.Endpoints
+			if len(v.Redis.Endpoints) > 0 {
 				hasEndpoints = true
 			}
 
-			if c.Redis.ClientType == "standard" {
+			if v.Redis.ClientType == "standard" {
 				if hasEndpoints && !hasEndpoint {
-					lw = append(lw,
+					warnings = append(warnings,
 						"'standard' redis type configured, but 'endpoints' value is provided instead of 'endpoint'")
 				}
 			} else {
 				if hasEndpoint && !hasEndpoints {
-					lw = append(lw, fmt.Sprintf(
+					warnings = append(warnings, fmt.Sprintf(
 						"'%s' redis type configured, but 'endpoint' value is provided instead of 'endpoints'",
-						c.Redis.ClientType))
+						v.Redis.ClientType))
 				}
 			}
-
-			if y.IsDefined("caches", k, "redis", "sentinel_master") {
-				c.Redis.SentinelMaster = v.Redis.SentinelMaster
-			}
-
-			if y.IsDefined("caches", k, "redis", "password") {
-				c.Redis.Password = v.Redis.Password
-			}
-
-			if y.IsDefined("caches", k, "redis", "db") {
-				c.Redis.DB = v.Redis.DB
-			}
-
-			if y.IsDefined("caches", k, "redis", "max_retries") {
-				c.Redis.MaxRetries = v.Redis.MaxRetries
-			}
-
-			if y.IsDefined("caches", k, "redis", "min_retry_backoff") {
-				c.Redis.MinRetryBackoff = v.Redis.MinRetryBackoff
-			}
-
-			if y.IsDefined("caches", k, "redis", "max_retry_backoff") {
-				c.Redis.MaxRetryBackoff = v.Redis.MaxRetryBackoff
-			}
-
-			if y.IsDefined("caches", k, "redis", "dial_timeout") {
-				c.Redis.DialTimeout = v.Redis.DialTimeout
-			}
-
-			if y.IsDefined("caches", k, "redis", "read_timeout") {
-				c.Redis.ReadTimeout = v.Redis.ReadTimeout
-			}
-
-			if y.IsDefined("caches", k, "redis", "write_timeout") {
-				c.Redis.WriteTimeout = v.Redis.WriteTimeout
-			}
-
-			if y.IsDefined("caches", k, "redis", "pool_size") {
-				c.Redis.PoolSize = v.Redis.PoolSize
-			}
-
-			if y.IsDefined("caches", k, "redis", "min_idle_conns") {
-				c.Redis.MinIdleConns = v.Redis.MinIdleConns
-			}
-
-			if y.IsDefined("caches", k, "redis", "max_conn_age") {
-				c.Redis.MaxConnAge = v.Redis.MaxConnAge
-			}
-
-			if y.IsDefined("caches", k, "redis", "pool_timeout") {
-				c.Redis.PoolTimeout = v.Redis.PoolTimeout
-			}
-
-			if y.IsDefined("caches", k, "redis", "idle_timeout") {
-				c.Redis.IdleTimeout = v.Redis.IdleTimeout
-			}
-
-			if y.IsDefined("caches", k, "redis", "idle_check_frequency") {
-				c.Redis.IdleCheckFrequency = v.Redis.IdleCheckFrequency
-			}
 		}
-
-		if y.IsDefined("caches", k, "filesystem", "cache_path") {
-			c.Filesystem.CachePath = v.Filesystem.CachePath
-		}
-
-		if y.IsDefined("caches", k, "bbolt", "filename") {
-			c.BBolt.Filename = v.BBolt.Filename
-		}
-
-		if y.IsDefined("caches", k, "bbolt", "bucket") {
-			c.BBolt.Bucket = v.BBolt.Bucket
-		}
-
-		if y.IsDefined("caches", k, "badger", "directory") {
-			c.Badger.Directory = v.Badger.Directory
-		}
-
-		if y.IsDefined("caches", k, "badger", "value_directory") {
-			c.Badger.ValueDirectory = v.Badger.ValueDirectory
-		}
-
-		l[k] = c
 	}
-	return lw, nil
+	return warnings, nil
 }
 
 func (l Lookup) Validate() error {

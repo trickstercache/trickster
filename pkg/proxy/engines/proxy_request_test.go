@@ -298,7 +298,6 @@ func TestPrepareRevalidationRequestNoRange(t *testing.T) {
 	pr.prepareRevalidationRequest()
 
 	v := pr.revalidationRequest.Header.Get(headers.NameRange)
-
 	if v != "" {
 		t.Errorf("expected empty string got %s", v)
 	}

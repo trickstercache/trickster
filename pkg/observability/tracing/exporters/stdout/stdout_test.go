@@ -39,13 +39,15 @@ func TestNew(t *testing.T) {
 		t.Error(err)
 	}
 
-	opt.SampleRate = 1
+	sampleRate1 := 1.0
+	opt.SampleRate = &sampleRate1
 	_, err = New(opt)
 	if err != nil {
 		t.Error(err)
 	}
 
-	opt.SampleRate = 0.5
+	sampleRate2 := 0.5
+	opt.SampleRate = &sampleRate2
 	_, err = New(opt)
 	if err != nil {
 		t.Error(err)

@@ -22,8 +22,8 @@ import (
 	"time"
 
 	stdoutopts "github.com/trickstercache/trickster/v2/pkg/observability/tracing/exporters/stdout/options"
+	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
-	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
 )
 
 // Options is a Tracing Options collection
@@ -35,7 +35,7 @@ type Options struct {
 	Timeout            time.Duration     `yaml:"timeout,omitempty"`
 	Headers            map[string]string `yaml:"headers,omitempty"`
 	DisableCompression bool              `yaml:"disable_compression,omitempty"`
-	SampleRate         float64           `yaml:"sample_rate,omitempty"`
+	SampleRate         *float64          `yaml:"sample_rate,omitempty"`
 	Tags               map[string]string `yaml:"tags,omitempty"`
 	OmitTagsList       []string          `yaml:"omit_tags,omitempty"`
 
@@ -79,24 +79,29 @@ func (o *Options) Clone() *Options {
 }
 
 // ProcessTracingOptions enriches the configuration data of the provided Tracing Options collection
-func ProcessTracingOptions(mo Lookup, metadata yamlx.KeyLookup) {
+func ProcessTracingOptions(mo Lookup) {
 	if len(mo) == 0 {
 		return
 	}
-	for k, v := range mo {
-		if metadata != nil {
-			if !metadata.IsDefined("tracing", k, "sample_rate") {
-				v.SampleRate = 1
-			}
-			if !metadata.IsDefined("tracing", k, "service_name") {
-				v.ServiceName = DefaultTracerServiceName
-			}
-			if !metadata.IsDefined("tracing", k, "provider") {
-				v.Provider = DefaultTracerProvider
-			}
+	for _, v := range mo {
+		v.SanitizeSampleRate()
+		if v.ServiceName == "" {
+			v.ServiceName = DefaultTracerServiceName
+		}
+		if v.Provider == "" {
+			v.Provider = DefaultTracerProvider
 		}
 		v.generateOmitTags()
 		v.setAttachTags()
+	}
+}
+
+func (o *Options) SanitizeSampleRate() {
+	switch {
+	case o.SampleRate == nil || *o.SampleRate > 1:
+		o.SampleRate = pointers.New(1.0)
+	case *o.SampleRate < 0:
+		o.SampleRate = pointers.New(0.0)
 	}
 }
 

@@ -123,6 +123,10 @@ linters:
           disabled: true # stylistic choice, ok with bare returns
         - name: import-shadowing
           disabled: true # not helpful; considering a stylistic choice
+        - name: var-naming
+          disabled: true # not helpful 'avoid meaningless package names'
+        - name: enforce-switch-style
+          disabled: true # stylistic choice, ok with no default case
   exclusions:
     generated: lax
     presets:

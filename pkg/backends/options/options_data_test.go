@@ -18,8 +18,6 @@ package options
 
 import (
 	"strings"
-
-	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
 )
 
 const testYAML = `
@@ -69,12 +67,10 @@ backends:
       verb: test_verb
       query: query=1234
     paths:
-      series:
-        path: /series
+      - path: /series
         handler: proxy
         req_rewriter_name: ''
-      label:
-        path: /label
+      - path: /label
         handler: localresponse
         match_type: prefix
         response_code: 200
@@ -99,21 +95,21 @@ backends:
 
 `
 
-func fromTestYAML() (*Options, yamlx.KeyLookup, error) {
+func fromTestYAML() (*Options, error) {
 	return fromYAML(testYAML, "test")
 }
 
-func fromTestYAMLWithDefault() (*Options, yamlx.KeyLookup, error) {
+func fromTestYAMLWithDefault() (*Options, error) {
 	conf := strings.ReplaceAll(testYAML, "    rule_name: ''", "    rule_name: ''\n    is_default: false")
 	return fromYAML(conf, "test")
 }
 
-func fromTestYAMLWithReqRewriter() (*Options, yamlx.KeyLookup, error) {
+func fromTestYAMLWithReqRewriter() (*Options, error) {
 	conf := strings.ReplaceAll(testYAML, "    rule_name: ''", "    rule_name: ''\n    req_rewriter_name: test")
 	return fromYAML(conf, "test")
 }
 
-func fromTestYAMLWithALB() (*Options, yamlx.KeyLookup, error) {
+func fromTestYAMLWithALB() (*Options, error) {
 	conf := strings.ReplaceAll(strings.ReplaceAll(testYAML, "    rule_name: ''", `
     rule_name: ''
     alb:

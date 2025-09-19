@@ -126,11 +126,9 @@ func (mbrs MultipartByteRanges) Ranges() Ranges {
 
 // Compress will take a Multipart Byte Range Map and compress it such that adajecent ranges are merged
 func (mbrs MultipartByteRanges) Compress() {
-
 	if len(mbrs.Ranges()) < 2 {
 		return
 	}
-
 	var cnt int
 	for len(mbrs) != cnt {
 		cnt = len(mbrs)
@@ -138,11 +136,9 @@ func (mbrs MultipartByteRanges) Compress() {
 		for _, r := range mbrs.Ranges() {
 			curr := mbrs[r]
 			if prev != nil && r.Start == prev.Range.End+1 {
-
 				newPart := &MultipartByteRange{Range: Range{Start: prev.Range.Start, End: curr.Range.End}}
 				l := newPart.Range.End - newPart.Range.Start + 1
 				body := make([]byte, l)
-
 				copy(body[:len(prev.Content)], prev.Content)
 				copy(body[len(prev.Content):], curr.Content)
 				newPart.Content = body
@@ -154,7 +150,6 @@ func (mbrs MultipartByteRanges) Compress() {
 			prev = curr
 		}
 	}
-
 }
 
 // ParseMultipartRangeResponseBody returns a MultipartByteRanges from the provided body

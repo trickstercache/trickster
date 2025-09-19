@@ -24,6 +24,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/bbolt"
 	"github.com/trickstercache/trickster/v2/pkg/cache/filesystem"
 	"github.com/trickstercache/trickster/v2/pkg/cache/index"
+	indexopts "github.com/trickstercache/trickster/v2/pkg/cache/index/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/manager"
 	"github.com/trickstercache/trickster/v2/pkg/cache/memory"
 	"github.com/trickstercache/trickster/v2/pkg/cache/options"
@@ -61,6 +62,9 @@ func CloseCaches(caches cache.Lookup) error {
 
 // NewCache returns a Cache object based on the provided config.CachingConfig
 func NewCache(cacheName string, cfg *options.Options) cache.Cache {
+	if cfg.Index == nil {
+		cfg.Index = indexopts.New()
+	}
 
 	var c cache.Cache
 

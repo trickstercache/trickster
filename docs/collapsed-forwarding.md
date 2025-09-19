@@ -38,13 +38,11 @@ Example:
 origins:
   test:
     paths:
-      thing1:
-        path: /test_path1/
+      - path: /test_path1/
         match_type: prefix
         handler: proxycache
         progressive_collapsed_forwarding: true
-      thing2:
-        path: /test_path2/
+      - path: /test_path2/
         match_type: prefix
         handler: proxy
         progressive_collapsed_forwarding: true

@@ -37,11 +37,11 @@ import (
 	auth "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
-	"github.com/trickstercache/trickster/v2/pkg/util/sets"
-	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
 
 	"gopkg.in/yaml.v2"
 )
+
+const defaultResourceName = "default"
 
 // Config is the main configuration object
 type Config struct {
@@ -57,8 +57,8 @@ type Config struct {
 	Logging *lo.Options `yaml:"logging,omitempty"`
 	// Metrics provides configurations for collecting Metrics about the application
 	Metrics *mo.Options `yaml:"metrics,omitempty"`
-	// TracingConfigs provides the distributed tracing configuration
-	TracingConfigs tracing.Lookup `yaml:"tracing,omitempty"`
+	// TracingOptions provides the distributed tracing configuration
+	TracingOptions tracing.Lookup `yaml:"tracing,omitempty"`
 	// NegativeCacheConfigs is a map of NegativeCacheConfigs
 	NegativeCacheConfigs negative.ConfigLookup `yaml:"negative_caches,omitempty"`
 	// Rules is a map of the Rules
@@ -74,11 +74,10 @@ type Config struct {
 	// Flags contains a compiled version of the CLI flags
 	Flags *Flags `yaml:"-"`
 	// Resources holds runtime resources uses by the Config
-	Resources *Resources `yaml:"-"`
+	// Resources *Resources `yaml:"-"`
 
 	CompiledRewriters      rewriter.InstructionsLookup `yaml:"-"`
 	CompiledNegativeCaches negative.Lookups            `yaml:"-"`
-	activeCaches           sets.Set[string]
 	providedOriginURL      string
 	providedProvider       string
 
@@ -107,17 +106,12 @@ func (mc *MainConfig) SetStalenessInfo(fp string, lm, rlt time.Time) {
 	mc.stalenessCheckLock.Unlock()
 }
 
-// Resources is a collection of values used by configs at runtime that are not part of the config itself
-type Resources struct {
-	metadata yamlx.KeyLookup
-}
-
 // NewConfig returns a Config initialized with default values.
 func NewConfig() *Config {
 	hn, _ := os.Hostname()
 	return &Config{
 		Caches: cache.Lookup{
-			"default": cache.New(),
+			defaultResourceName: cache.New(),
 		},
 		Logging: lo.New(),
 		Main: &MainConfig{
@@ -126,17 +120,16 @@ func NewConfig() *Config {
 		MgmtConfig: mgmt.New(),
 		Metrics:    mo.New(),
 		Backends: bo.Lookup{
-			"default": bo.New(),
+			defaultResourceName: bo.New(),
 		},
 		Frontend: fropt.New(),
 		NegativeCacheConfigs: negative.ConfigLookup{
-			"default": negative.New(),
+			defaultResourceName: negative.New(),
 		},
-		TracingConfigs: tracing.Lookup{
-			"default": tracing.New(),
+		TracingOptions: tracing.Lookup{
+			defaultResourceName: tracing.New(),
 		},
 		LoaderWarnings: make([]string, 0),
-		Resources:      &Resources{},
 	}
 }
 
@@ -161,34 +154,14 @@ func (c *Config) loadYAMLConfig(yml string) error {
 	if err != nil {
 		return err
 	}
-	md, err := yamlx.GetKeyList(yml)
-	if err != nil {
-		return err
-	}
-	if c.Resources == nil {
-		c.Resources = &Resources{}
-	}
-	return c.OverlayYAMLData(md)
-}
 
-// OverlayYAMLData extracts supported Config values from the yaml map,
-// overlays the extracted values onto c.
-func (c *Config) OverlayYAMLData(md yamlx.KeyLookup) error {
-	c.Resources.metadata = md
-	c.activeCaches = sets.NewStringSet()
-	for k, v := range c.Backends {
-		w, err := bo.OverlayYAMLData(k, v, c.Backends, c.activeCaches, md)
+	if len(c.Backends) > 0 {
+		err = c.Backends.Load()
 		if err != nil {
 			return err
 		}
-		c.Backends[k] = w
 	}
-	if lw, err := c.Caches.OverlayYAMLData(c.Resources.metadata,
-		c.activeCaches); err != nil {
-		return err
-	} else if len(lw) > 0 {
-		c.LoaderWarnings = append(c.LoaderWarnings, lw...)
-	}
+
 	return nil
 }
 
@@ -221,19 +194,19 @@ func (c *Config) Process() error {
 				}
 				b.ReqRewriter = ri
 			}
-			for k, p := range b.Paths {
+			for _, p := range b.Paths {
 				if p.ReqRewriterName != "" {
 					ri, ok := c.CompiledRewriters[p.ReqRewriterName]
 					if !ok {
 						return fmt.Errorf("invalid rewriter name %s in path %s of backend options %s",
-							p.ReqRewriterName, k, b.Name)
+							p.ReqRewriterName, p.Path, b.Name)
 					}
 					p.ReqRewriter = ri
 				}
 			}
 		}
 	}
-	tracing.ProcessTracingOptions(c.TracingConfigs, c.Resources.metadata)
+	tracing.ProcessTracingOptions(c.TracingOptions)
 	return nil
 }
 
@@ -241,8 +214,8 @@ func (c *Config) Process() error {
 func (c *Config) Clone() *Config {
 
 	nc := NewConfig()
-	delete(nc.Caches, "default")
-	delete(nc.Backends, "default")
+	delete(nc.Caches, defaultResourceName)
+	delete(nc.Backends, defaultResourceName)
 
 	nc.Main.InstanceID = c.Main.InstanceID
 	nc.Main.ServerName = c.Main.ServerName
@@ -260,8 +233,6 @@ func (c *Config) Clone() *Config {
 		nc.Frontend = c.Frontend.Clone()
 	}
 
-	nc.Resources = &Resources{}
-
 	if c.Logging != nil {
 		nc.Logging = c.Logging.Clone()
 	}
@@ -278,8 +249,8 @@ func (c *Config) Clone() *Config {
 		nc.NegativeCacheConfigs[k] = v.Clone()
 	}
 
-	for k, v := range c.TracingConfigs {
-		nc.TracingConfigs[k] = v.Clone()
+	for k, v := range c.TracingOptions {
+		nc.TracingOptions[k] = v.Clone()
 	}
 
 	if len(c.Rules) > 0 {

@@ -169,7 +169,7 @@ func registerBackendRoutes(r router.Router, metricsRouter router.Router,
 			tracers)
 
 		// now we'll go ahead and register the health handler
-		if h, ok := client.Handlers()["health"]; ok && o.Name != "" && metricsRouter != nil && (o.HealthCheck == nil ||
+		if h, ok := client.Handlers()["health"]; ok && o.Name != "" && metricsRouter != nil && (o.HealthCheck != nil &&
 			o.HealthCheck.Verb != "x") {
 			hp := strings.ReplaceAll(conf.MgmtConfig.HealthHandlerPath+"/"+o.Name, "//", "/")
 			logger.Debug("registering health handler path",
@@ -189,7 +189,7 @@ func registerBackendRoutes(r router.Router, metricsRouter router.Router,
 // the path routes to the appropriate handler from the provided handlers map
 func RegisterPathRoutes(r router.Router, conf *config.Config, handlers handlers.Lookup,
 	client backends.Backend, o *bo.Options, c cache.Cache,
-	paths po.Lookup, tracers tracing.Tracers) {
+	paths po.List, tracers tracing.Tracers) {
 	if o == nil {
 		return
 	}
@@ -235,47 +235,18 @@ func RegisterPathRoutes(r router.Router, conf *config.Config, handlers handlers.
 		return h
 	}
 
-	// now we will iterate through the configured paths, and overlay them on
-	// those default paths. for rule & alb backend providers, only the default
-	// paths are used with no overlay or importable config
-	if !backends.IsVirtual(o.Provider) {
-		for k, p := range o.Paths {
-			if p2, ok := paths[k]; ok {
-				p2.Merge(p)
-				continue
-			}
-			p3 := po.New()
-			p3.Merge(p)
-			paths[k] = p3
-		}
-	}
-
-	plist := make([]string, 0, len(paths))
-	deletes := make([]string, 0, len(paths))
-	for k, p := range paths {
-		if h, ok := handlers[p.HandlerName]; ok && h != nil {
-			p.Handler = h
-			plist = append(plist, k)
-		} else {
-			logger.Info("invalid handler name for path",
-				logging.Pairs{"path": p.Path, "handlerName": p.HandlerName})
-			deletes = append(deletes, p.Path)
-		}
-	}
-	for _, p := range deletes {
-		delete(paths, p)
-	}
 	or := client.Router().(router.Router)
 
-	for _, v := range plist {
-		p := paths[v]
+	for _, p := range paths {
 
 		pathPrefix := "/" + o.Name
 		handledPath := pathPrefix + p.Path
 
 		logger.Debug("registering backend handler path",
-			logging.Pairs{"backendName": o.Name, "path": v, "handlerName": p.HandlerName,
-				"backendHost": o.Host, "handledPath": handledPath, "matchType": p.MatchType,
+			logging.Pairs{"backendName": o.Name, "path": p.Path,
+				"methods": p.Methods, "handlerName": p.HandlerName,
+				"backendHost": o.Host, "handledPath": handledPath,
+				"matchType":     p.MatchType,
 				"frontendHosts": strings.Join(o.Hosts, ",")})
 		if p.Handler != nil && len(p.Methods) > 0 {
 			if p.Methods[0] == "*" {

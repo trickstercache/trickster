@@ -139,7 +139,12 @@ func TestRegisterProxyRoutes(t *testing.T) {
 	conf.Backends["1"] = o1
 	delete(conf.Backends, "default")
 
-	o1.Paths["/-GET-HEAD"].Methods = nil
+	for _, pathConfig := range o1.Paths {
+		if pathConfig.Path == "/" && len(pathConfig.Methods) > 0 {
+			pathConfig.Methods = nil
+			break
+		}
+	}
 
 	_, err = RegisterProxyRoutes(conf, router, lm.NewRouter(), caches, tr, false)
 	if err != nil {
@@ -246,7 +251,7 @@ func TestRegisterProxyRoutesWithReqRewriters(t *testing.T) {
 
 	tpo := po.New()
 	tpo.ReqRewriterName = "path"
-	conf.Backends["test"].Paths["test"] = tpo
+	conf.Backends["test"].Paths = append(conf.Backends["test"].Paths, tpo)
 
 	caches := registry.LoadCachesFromConfig(conf)
 	defer registry.CloseCaches(caches)
@@ -392,7 +397,7 @@ func TestRegisterMultipleBackendsPlusDefault(t *testing.T) {
 
 func TestRegisterPathRoutes(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Info))
-	p := po.Lookup{"test": {}}
+	p := po.List{{}}
 	RegisterPathRoutes(nil, nil, nil, nil, nil, nil, p, nil)
 
 	conf, err := config.Load([]string{"-log-level", "debug", "-origin-url",
@@ -407,7 +412,12 @@ func TestRegisterPathRoutes(t *testing.T) {
 	oo := conf.Backends["default"]
 	rpc, _ := reverseproxycache.NewClient("test", oo, lm.NewRouter(), nil, nil, nil)
 	dpc := rpc.DefaultPathConfigs(oo)
-	dpc["/-GET-HEAD"].Methods = nil
+	for _, pathConfig := range dpc {
+		if pathConfig.Path == "/" && len(pathConfig.Methods) > 0 {
+			pathConfig.Methods = nil
+			break
+		}
+	}
 
 	testHandler := http.HandlerFunc(testutil.BasicHTTPHandler)
 	handlers := handlers.Lookup{"testHandler": testHandler}
@@ -416,10 +426,16 @@ func TestRegisterPathRoutes(t *testing.T) {
 
 	router := lm.NewRouter()
 	dpc = rpc.DefaultPathConfigs(oo)
-	dpc["/-GET-HEAD"].Methods = []string{"*"}
-	dpc["/-GET-HEAD"].Handler = testHandler
-	dpc["/-GET-HEAD"].HandlerName = "testHandler"
-	dpc["/-GET-HEAD"].ReqRewriter = testutil.NewTestRewriteInstructions()
+	// Find the path config with GET and HEAD methods and update it
+	for _, pathConfig := range dpc {
+		if pathConfig.Path == "/" && len(pathConfig.Methods) > 0 {
+			pathConfig.Methods = []string{"*"}
+			pathConfig.Handler = testHandler
+			pathConfig.HandlerName = "testHandler"
+			pathConfig.ReqRewriter = testutil.NewTestRewriteInstructions()
+			break
+		}
+	}
 	RegisterPathRoutes(router, conf, handlers, rpc, oo, nil, dpc, nil)
 
 }
@@ -474,7 +490,7 @@ func TestRegisterDefaultBackendRoutes(t *testing.T) {
 	po1.MatchType = matching.PathMatchTypePrefix
 
 	oo.TracingConfigName = "testTracer"
-	oo.Paths = po.Lookup{"root": po1}
+	oo.Paths = po.List{po1}
 	oo.IsDefault = true
 	rpc, _ := reverseproxycache.NewClient("default", oo, lm.NewRouter(), nil, nil, nil)
 	b := backends.Backends{"default": rpc}
