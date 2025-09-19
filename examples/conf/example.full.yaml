@@ -112,11 +112,14 @@ frontend:
 #       sentinel_master: ''
       
 #       ## Supported by all Redis Client Types ###############################
-#       ## See the go-redis documentation at https://github.com/go-redis/redis/blob/master/options.go
+#       ## See the go-redis documentation at https://github.com/redis/go-redis/blob/master/options.go
 #       ## for more information on tuning these settings
 
 #       # protocol defines the protocol for connecting to redis (unix or tcp). tcp is default
 #       protocol: tcp
+
+#       # username provides the redis username. default is empty string ''
+#       username: ''
 #       # password provides the redis password. default is empty string ''
 #       password: ''
 #       # db is the Database to be selected after connecting to the server. default is 0
@@ -143,8 +146,8 @@ frontend:
 #       pool_timeout: 4s
 #       # idle_timeout is the amount of time after which client closes idle connections.
 #       idle_timeout: 5m
-#       # idle_check_frequency is the frequency of idle checks made by idle connections reaper.
-#       idle_check_frequency: 1m
+#       # use_tls indicates if the Redis server uses TLS encryption. default is false
+#       use_tls: false
 
 #     ## Configuration options when using a Filesystem Cache ###############
 #     filesystem:
@@ -569,8 +572,9 @@ backends:
 #     max_rule_executions: 16        # limits the max number of per-Request rule-based hops to avoid execution loops.
 
 #     cases:
-#       "1":
-#         matches: ['johndoe:', 'janedoe:']  # if the Authorization header has user johndoe or janedoe,
+#         - matches:     # if the Authorization header has user johndoe or janedoe
+#           - 'johndoe:'
+#           - 'janedoe:'  
 #         next_route: writer-cluster       # route the request to hypothetical writer-cluster backend
 #   #     Other available case configs that are not pertinent to this example:
 #         req_rewriter_name: '' # name of a rewriter to process the request if it matches this case

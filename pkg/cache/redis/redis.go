@@ -19,13 +19,14 @@
 package redis
 
 import (
+	"context"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 
-	"github.com/go-redis/redis"
+	redis "github.com/redis/go-redis/v9"
 )
 
 var (
@@ -42,12 +43,14 @@ type CacheClient struct {
 	Config *options.Options
 	client redis.Cmdable
 	closer func() error
+	ctx    context.Context
 }
 
-func New(name string, cfg *options.Options) *CacheClient {
+func New(ctx context.Context, name string, cfg *options.Options) *CacheClient {
 	c := &CacheClient{
 		Name:   name,
 		Config: cfg,
+		ctx:    ctx,
 	}
 	return c
 }
@@ -80,22 +83,22 @@ func (c *CacheClient) Connect() error {
 		c.closer = client.Close
 		c.client = client
 	}
-	return c.client.Ping().Err()
+	return c.client.Ping(c.ctx).Err()
 }
 
 func (c *CacheClient) Remove(cacheKeys ...string) error {
-	return c.client.Del(cacheKeys...).Err()
+	return c.client.Del(c.ctx, cacheKeys...).Err()
 }
 
 // Store places the the data into the Redis Cache using the provided Key and TTL
 func (c *CacheClient) Store(cacheKey string, data []byte, ttl time.Duration) error {
-	return c.client.Set(cacheKey, data, ttl).Err()
+	return c.client.Set(c.ctx, cacheKey, data, ttl).Err()
 }
 
 // Retrieve gets data from the Redis Cache using the provided Key
 // because Redis manages Object Expiration internally, allowExpired is not used.
 func (c *CacheClient) Retrieve(cacheKey string) ([]byte, status.LookupStatus, error) {
-	res, err := c.client.Get(cacheKey).Result()
+	res, err := c.client.Get(c.ctx, cacheKey).Result()
 
 	if err == nil {
 		data := []byte(res)

@@ -26,6 +26,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 	"github.com/trickstercache/trickster/v2/pkg/appinfo/usage"
+	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/index"
@@ -105,7 +106,7 @@ func LoadAndValidate() (*config.Config, error) {
 }
 
 func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
-	hupFunc dr.Reloader, errorFunc func()) error {
+	clients backends.Backends, hupFunc dr.Reloader, errorFunc func()) error {
 	if si == nil || newConf == nil {
 		return nil
 	}
@@ -145,7 +146,7 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 
 	var caches = applyCachingConfig(si, newConf)
 	rh := reload.HandlerFunc(hupFunc)
-	backends, err := routing.RegisterProxyRoutes(newConf, r, mr, caches, tracers, false)
+	err = routing.RegisterProxyRoutes(newConf, clients, r, mr, caches, tracers, false)
 	if err != nil {
 		handleStartupIssue("route registration failed",
 			logging.Pairs{"detail": err.Error()}, errorFunc)
@@ -157,7 +158,7 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	}
 	r.RegisterRoute(newConf.MgmtConfig.PurgeByKeyHandlerPath, nil,
 		[]string{http.MethodDelete}, true,
-		http.HandlerFunc(ph.KeyHandler(newConf.MgmtConfig.PurgeByKeyHandlerPath, backends)))
+		http.HandlerFunc(ph.KeyHandler(newConf.MgmtConfig.PurgeByKeyHandlerPath, clients)))
 
 	if si.Backends != nil {
 		alb.StopPools(si.Backends)
@@ -165,20 +166,20 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	if si.HealthChecker != nil {
 		si.HealthChecker.Shutdown()
 	}
-	si.HealthChecker, err = backends.StartHealthChecks()
+	si.HealthChecker, err = clients.StartHealthChecks()
 	if err != nil {
 		return err
 	}
-	alb.StartALBPools(backends, si.HealthChecker.Statuses())
-	routing.RegisterDefaultBackendRoutes(r, newConf, backends, tracers)
+	alb.StartALBPools(clients, si.HealthChecker.Statuses())
+	routing.RegisterDefaultBackendRoutes(r, newConf, clients, tracers)
 	routing.RegisterHealthHandler(mr, newConf.MgmtConfig.HealthHandlerPath, si.HealthChecker)
-	applyListenerConfigs(newConf, si.Config, r, rh, mr, tracers, backends, errorFunc)
+	applyListenerConfigs(newConf, si.Config, r, rh, mr, tracers, clients, errorFunc)
 
 	metrics.LastReloadSuccessfulTimestamp.Set(float64(time.Now().Unix()))
 	metrics.LastReloadSuccessful.Set(1)
 	si.Config = newConf
 	si.Caches = caches
-	si.Backends = backends
+	si.Backends = clients
 	return nil
 }
 

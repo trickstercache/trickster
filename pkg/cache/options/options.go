@@ -114,9 +114,8 @@ func (c *Options) Clone() *Options {
 	out.Redis.DialTimeout = c.Redis.DialTimeout
 	out.Redis.Endpoint = c.Redis.Endpoint
 	out.Redis.Endpoints = c.Redis.Endpoints
-	out.Redis.IdleCheckFrequency = c.Redis.IdleCheckFrequency
-	out.Redis.IdleTimeout = c.Redis.IdleTimeout
-	out.Redis.MaxConnAge = c.Redis.MaxConnAge
+	out.Redis.ConnMaxIdleTime = c.Redis.ConnMaxIdleTime
+	out.Redis.ConnMaxLifetime = c.Redis.ConnMaxLifetime
 	out.Redis.MaxRetries = c.Redis.MaxRetries
 	out.Redis.MaxRetryBackoff = c.Redis.MaxRetryBackoff
 	out.Redis.MinIdleConns = c.Redis.MinIdleConns

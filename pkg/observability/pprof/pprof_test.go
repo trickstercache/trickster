@@ -26,7 +26,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 )
 
-func TestRegisterPprofRoutes(t *testing.T) {
+func TestRegisterRoutes(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Info))
 	router := lm.NewRouter()
 	RegisterRoutes("test", router)

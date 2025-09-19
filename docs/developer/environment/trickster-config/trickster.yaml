@@ -50,8 +50,7 @@ rules:
     operation: prefix
     next_route: rpc1
     cases:
-      '1':
-        matches:
+      - matches:
           - 'trickster:'
         next_route: sim1
 

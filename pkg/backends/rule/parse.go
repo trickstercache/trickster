@@ -160,9 +160,7 @@ func (c *Client) parseOptions(o *ro.Options, rwi rewriter.InstructionsLookup) er
 	}
 
 	if len(o.CaseOptions) > 0 {
-
-		r.cases = make(caseMap)
-		r.caseList = make(caseList, 0)
+		r.cases = make(caseList, 0)
 
 		for k, v := range o.CaseOptions {
 
@@ -204,8 +202,7 @@ func (c *Client) parseOptions(o *ro.Options, rwi rewriter.InstructionsLookup) er
 					redirectCode: rc,
 					rewriter:     ri,
 				}
-				r.caseList = append(r.caseList, rc)
-				r.cases[m] = rc
+				r.cases = append(r.cases, rc)
 			}
 		}
 	}

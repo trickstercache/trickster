@@ -17,6 +17,7 @@
 package redis
 
 import (
+	"context"
 	"strconv"
 	"testing"
 	"time"
@@ -30,7 +31,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 
-	"github.com/alicebob/miniredis"
+	"github.com/alicebob/miniredis/v2"
 )
 
 const cacheKey = `cacheKey`
@@ -71,7 +72,7 @@ func setupRedisCache(ct clientType) (*CacheClient, func()) {
 	cacheConfig := &co.Options{Provider: "redis", Redis: rcfg}
 	conf.Caches = co.Lookup{"default": cacheConfig}
 
-	return New("test", cacheConfig), close
+	return New(context.Background(), "test", cacheConfig), close
 }
 
 func TestClientSelectionSentinel(t *testing.T) {
@@ -89,7 +90,7 @@ func TestClientSelectionSentinel(t *testing.T) {
 	if !ok {
 		t.Errorf("expected cache named %s", cacheName)
 	}
-	cache := New(cacheName, cfg)
+	cache := New(context.Background(), cacheName, cfg)
 	if err != nil {
 		t.Error(err)
 	}
@@ -169,7 +170,7 @@ func TestClientSelectionCluster(t *testing.T) {
 	if !ok {
 		t.Errorf("expected cache named %s", cacheName)
 	}
-	cache := New(cacheName, cfg)
+	cache := New(context.Background(), cacheName, cfg)
 	if err != nil {
 		t.Error(err)
 	}
@@ -194,7 +195,7 @@ func TestClientSelectionStandard(t *testing.T) {
 	if !ok {
 		t.Errorf("expected cache named %s", cacheName)
 	}
-	cache := New(cacheName, cfg)
+	cache := New(context.Background(), cacheName, cfg)
 	if err != nil {
 		t.Error(err)
 	}

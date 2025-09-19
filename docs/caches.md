@@ -42,6 +42,8 @@ Ensure that your Redis instance is located close to your Trickster instance in o
 
 In addition to basic Redis, Trickster also supports Redis Cluster and Redis Sentinel. Refer to the sample configuration for customizing the Redis client type.
 
+Trickster supports Redis servers that use TLS encryption by setting `use_tls: true` in the config. Refer to the sample configuration for more info.
+
 ## Purging an Item from the Cache
 
 You can purge an item from the cache by making a call to the purge endpoint, as follows:

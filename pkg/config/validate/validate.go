@@ -17,6 +17,7 @@
 package validate
 
 import (
+	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb"
 	"github.com/trickstercache/trickster/v2/pkg/backends/rule"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
@@ -138,7 +139,7 @@ func Backends(c *config.Config) error {
 	return c.Backends.Validate()
 }
 
-func RoutesRulesAndPools(c *config.Config) error {
+func RoutesRulesAndPools(c *config.Config, clients backends.Backends) error {
 	var caches = make(cache.Lookup)
 	for k := range c.Caches {
 		caches[k] = nil
@@ -150,7 +151,7 @@ func RoutesRulesAndPools(c *config.Config) error {
 	if err != nil {
 		return err
 	}
-	clients, err := routing.RegisterProxyRoutes(c, r, mr, caches, tracers, true)
+	err = routing.RegisterProxyRoutes(c, clients, r, mr, caches, tracers, true)
 	if err != nil {
 		return err
 	}

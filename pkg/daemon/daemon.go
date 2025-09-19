@@ -26,6 +26,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 	"github.com/trickstercache/trickster/v2/pkg/appinfo/usage"
+	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/config/reload"
 	"github.com/trickstercache/trickster/v2/pkg/config/validate"
 	"github.com/trickstercache/trickster/v2/pkg/daemon/instance"
@@ -79,8 +80,9 @@ func Start() error {
 		return err
 	}
 
+	clients := make(backends.Backends, len(conf.Backends))
 	// these can't be done until the config is processed
-	err = validate.RoutesRulesAndPools(conf)
+	err = validate.RoutesRulesAndPools(conf, clients)
 	if err != nil {
 		return err
 	}
@@ -90,7 +92,7 @@ func Start() error {
 		return Hup(si, source)
 	}
 	// Serve with Config
-	err = setup.ApplyConfig(si, conf, hupFunc, func() { os.Exit(1) })
+	err = setup.ApplyConfig(si, conf, clients, hupFunc, func() { os.Exit(1) })
 	if err != nil {
 		return err
 	}
@@ -118,15 +120,16 @@ func Hup(si *instance.ServerInstance, source string) (bool, error) {
 		if err != nil {
 			return false, err
 		}
+		clients := make(backends.Backends, len(conf.Backends))
 		// these can't be done until the config is processed
-		err = validate.RoutesRulesAndPools(conf)
+		err = validate.RoutesRulesAndPools(conf, clients)
 		if err != nil {
 			return false, err
 		}
 		var hupFunc reload.Reloader = func(source string) (bool, error) {
 			return Hup(si, source)
 		}
-		err = setup.ApplyConfig(si, conf, hupFunc, nil)
+		err = setup.ApplyConfig(si, conf, clients, hupFunc, nil)
 		if err != nil {
 			logger.Warn(reload.ConfigNotReloadedText,
 				logging.Pairs{"error": err.Error(), "source": source})

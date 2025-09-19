@@ -48,19 +48,17 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/util/middleware/bodyfilter"
 )
 
+var noCacheBackends = providers.NonCacheBackends()
+
 // RegisterProxyRoutes iterates the Trickster Configuration and
 // registers the routes for the configured backends
-func RegisterProxyRoutes(conf *config.Config, r router.Router,
-	metricsRouter router.Router, caches cache.Lookup,
-	tracers tracing.Tracers, dryRun bool) (backends.Backends, error) {
+func RegisterProxyRoutes(conf *config.Config, clients backends.Backends,
+	r router.Router, metricsRouter router.Router, caches cache.Lookup,
+	tracers tracing.Tracers, dryRun bool) error {
 
 	// a fake "top-level" backend representing the main frontend, so rules can route
 	// to it via the clients map
-	tlo, _ := reverseproxycache.NewClient("frontend", &bo.Options{}, r, nil, nil, nil)
-
-	// proxyClients maintains a list of proxy clients configured for use by Trickster
-	var clients = backends.Backends{"frontend": tlo}
-	var err error
+	clients["frontend"], _ = reverseproxycache.NewClient("frontend", &bo.Options{}, r, nil, nil, nil)
 
 	var defaultBackend string
 	var ndo *bo.Options // points to the backend options named "default"
@@ -69,16 +67,14 @@ func RegisterProxyRoutes(conf *config.Config, r router.Router,
 	// This iteration will ensure default backends are handled properly
 	for k, o := range conf.Backends {
 		if !providers.IsValidProvider(o.Provider) {
-			return nil,
-				fmt.Errorf(`unknown backend provider in backend options. backendName: %s, backendProvider: %s`,
-					k, o.Provider)
+			return fmt.Errorf(`unknown backend provider in backend options. backendName: %s, backendProvider: %s`,
+				k, o.Provider)
 		}
 		// Ensure only one default backend exists
 		if o.IsDefault {
 			if cdo != nil {
-				return nil,
-					fmt.Errorf("only one backend can be marked as default. Found both %s and %s",
-						defaultBackend, k)
+				return fmt.Errorf("only one backend can be marked as default. Found both %s and %s",
+					defaultBackend, k)
 			}
 			if !dryRun {
 				logger.Debug("default backend identified", logging.Pairs{"name": k})
@@ -93,10 +89,9 @@ func RegisterProxyRoutes(conf *config.Config, r router.Router,
 			ndo = o
 			continue
 		}
-		err = registerBackendRoutes(r, metricsRouter, conf,
-			k, o, clients, caches, tracers, dryRun)
-		if err != nil {
-			return nil, err
+		if err := registerBackendRoutes(r, metricsRouter, conf,
+			k, o, clients, caches, tracers, dryRun); err != nil {
+			return err
 		}
 	}
 	if ndo != nil {
@@ -105,24 +100,20 @@ func RegisterProxyRoutes(conf *config.Config, r router.Router,
 			cdo = ndo
 			defaultBackend = "default"
 		} else {
-			err = registerBackendRoutes(r, nil, conf, "default", ndo, clients,
-				caches, tracers, dryRun)
-			if err != nil {
-				return nil, err
+			if err := registerBackendRoutes(r, nil, conf, "default", ndo, clients,
+				caches, tracers, dryRun); err != nil {
+				return err
 			}
 		}
 	}
 	if cdo != nil {
-		err = registerBackendRoutes(r, metricsRouter, conf,
-			defaultBackend, cdo, clients, caches, tracers, dryRun)
-		if err != nil {
-			return nil, err
+		if err := registerBackendRoutes(r, metricsRouter, conf,
+			defaultBackend, cdo, clients, caches, tracers, dryRun); err != nil {
+			return err
 		}
 	}
-	return clients, nil
+	return nil
 }
-
-var noCacheBackends = providers.NonCacheBackends()
 
 // RegisterHealthHandler registers the main health handler
 func RegisterHealthHandler(router router.Router, path string,
@@ -133,34 +124,35 @@ func RegisterHealthHandler(router router.Router, path string,
 func registerBackendRoutes(r router.Router, metricsRouter router.Router,
 	conf *config.Config, k string, o *bo.Options, clients backends.Backends,
 	caches cache.Lookup, tracers tracing.Tracers, dryRun bool) error {
-
-	var client backends.Backend
 	var c cache.Cache
-	var ok bool
-	var err error
 
-	if _, ok = noCacheBackends[o.Provider]; !ok {
+	if _, ok := noCacheBackends[o.Provider]; !ok {
 		if c, ok = caches[o.CacheName]; !ok {
 			return fmt.Errorf("could not find cache named [%s]", o.CacheName)
 		}
 	}
 
-	if !dryRun {
+	if dryRun {
+		cf := registry.SupportedProviders()
+		if f, ok := cf[strings.ToLower(o.Provider)]; ok && f != nil {
+			client, err := f(k, o, lm.NewRouter(), c, clients, cf)
+			if err != nil {
+				return err
+			}
+			clients[k] = client
+			o.HTTPClient = client.HTTPClient()
+		}
+	} else {
+		client, ok := clients[k]
+		if !ok || client == nil {
+			return fmt.Errorf("could not find backend client named [%s]", k)
+		}
+		if c != nil {
+			client.SetCache(c)
+		}
 		logger.Info("registering route paths", logging.Pairs{"backendName": k,
 			"backendProvider": o.Provider, "upstreamHost": o.Host})
-	}
 
-	cf := registry.SupportedProviders()
-	if f, ok := cf[strings.ToLower(o.Provider)]; ok && f != nil {
-		client, err = f(k, o, lm.NewRouter(), c, clients, cf)
-	}
-	if err != nil {
-		return err
-	}
-
-	if client != nil && !dryRun {
-		o.HTTPClient = client.HTTPClient()
-		clients[k] = client
 		defaultPaths := client.DefaultPathConfigs(o)
 
 		h := client.Handlers()
@@ -271,8 +263,8 @@ func RegisterPathRoutes(r router.Router, conf *config.Config, handlers handlers.
 }
 
 // RegisterDefaultBackendRoutes will iterate the Backends and register the default routes
-func RegisterDefaultBackendRoutes(r router.Router, conf *config.Config, bknds backends.Backends,
-	tracers tracing.Tracers) {
+func RegisterDefaultBackendRoutes(r router.Router, conf *config.Config,
+	bknds backends.Backends, tracers tracing.Tracers) {
 
 	applyMiddleware := func(o *bo.Options, po *po.Options, tr *tracing.Tracer,
 		c cache.Cache, client backends.Backend) http.Handler {
@@ -319,7 +311,7 @@ func RegisterDefaultBackendRoutes(r router.Router, conf *config.Config, bknds ba
 			for _, p := range o.Paths {
 				if p.Handler != nil && len(p.Methods) > 0 {
 					logger.Debug(
-						"registering default backend handler paths",
+						"registering default backend handler path",
 						logging.Pairs{"backendName": o.Name, "path": p.Path,
 							"handlerName": p.HandlerName,
 							"matchType":   p.MatchType})
