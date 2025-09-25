@@ -76,12 +76,14 @@ func (sl SeriesList) Merge(sl2 SeriesList, sortPoints bool) SeriesList {
 			k++
 		} else {
 			// series is in both sl1 and sl2; merge their points
-			wg.Add(1)
-			func(s1, s2 *Series) {
+			wg.Go(func() {
+				var (
+					s1 = cs
+					s2 = s
+				)
 				s1.Points = MergePoints(s1.Points, s2.Points, sortPoints)
 				s1.PointSize = s1.Points.Size()
-				wg.Done()
-			}(cs, s)
+			})
 		}
 	}
 	wg.Wait()
@@ -153,12 +155,10 @@ func (sl SeriesList) SortByTags() {
 
 func (sl SeriesList) SortPoints() {
 	var wg sync.WaitGroup
-	wg.Add(len(sl))
 	for _, s := range sl {
-		go func(gs *Series) {
-			sort.Sort(gs.Points)
-			wg.Done()
-		}(s)
+		wg.Go(func() {
+			sort.Sort(s.Points)
+		})
 	}
 	wg.Wait()
 }

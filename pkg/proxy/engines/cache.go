@@ -151,9 +151,9 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 				// Derive subkey
 				subkey := getSubKey(key, chunkExtent)
 				// Query
-				wg.Add(1)
-				go func(outIdx int) {
-					defer wg.Done()
+				var helper = resi
+				wg.Go(func() {
+					var outIdx = helper
 					qr := queryConcurrent(ctx, c, subkey)
 					if qr.lookupStatus != status.LookupStatusHit &&
 						(qr.err == nil || qr.err == cache.ErrKNF) {
@@ -177,7 +177,8 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 					if qr.d.timeseries != nil {
 						ress[outIdx] = qr.d.timeseries
 					}
-				}(resi)
+				})
+				
 				resi++
 			}
 			// Wait on queries
@@ -214,12 +215,13 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 				// Determine subkey
 				subkey := key + chunkRange.String()
 				// Query subdocument
-				wg.Add(1)
-				go func(index int) {
+				
+				var helper = i
+				wg.Go(func() {
+					var index = helper
 					qr := queryConcurrent(ctx, c, subkey)
 					cr[index] = qr
-					wg.Done()
-				}(i)
+				})
 				i++
 			}
 			// Wait on queries to finish (result channel is buffered and doesn't hold for receive)
@@ -237,22 +239,20 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 				// Merge with meta document on success
 				// We can do this concurrently since chunk ranges don't overlap
 
-				wg.Add(1)
-				go func(qrc *queryResult) {
-					defer wg.Done()
-					if qrc.d.IsMeta {
+				wg.Go(func() {
+					if qr.d.IsMeta {
 						return
 					}
-					if qrc.lookupStatus == status.LookupStatusHit {
-						for _, r := range qrc.d.Ranges {
-							content := qrc.d.Body[r.Start%size : r.End%size+1]
+					if qr.lookupStatus == status.LookupStatusHit {
+						for _, r := range qr.d.Ranges {
+							content := qr.d.Body[r.Start%size : r.End%size+1]
 							r.Copy(d.Body, content)
 							if v := atomic.LoadInt64(&dbl); r.End+1 > v {
 								atomic.CompareAndSwapInt64(&dbl, v, r.End+1)
 							}
 						}
 					}
-				}(qr)
+				})
 			}
 			wg.Wait()
 			if len(d.Ranges) > 1 {
@@ -425,24 +425,22 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 				}
 				// Derive subkey
 				subkey := getSubKey(key, chunkExtent)
-				// Query
-				wg.Add(1)
-				go func(index int) {
+				// Write
+				var helper = i
+				wg.Go(func() {
+					var index = helper
 					cd := d.GetTimeseriesChunk(chunkExtent)
 					if c.Configuration().Provider != "memory" {
 						cd.Body, _ = marshal(cd.timeseries, nil, 0)
 					}
 					cr[index] = writeConcurrent(ctx, c, subkey, cd, compress, ttl)
-					wg.Done()
-				}(i)
+				})
 				i++
 			}
 			// Store metadocument
-			wg.Add(1)
-			go func(index int) {
-				cr[index] = writeConcurrent(ctx, c, key, meta, compress, ttl)
-				wg.Done()
-			}(i)
+			wg.Go(func() {
+				cr[i] = writeConcurrent(ctx, c, key, meta, compress, ttl)
+			})
 			// Wait on writes to finish (result channel is buffered and doesn't hold for receive)
 			wg.Wait()
 			// Handle results
@@ -474,19 +472,17 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 				// Get chunk
 				cd := d.GetByterangeChunk(chunkRange, size)
 				// Store subdocument
-				wg.Add(1)
-				go func(index int) {
+				var helper = i
+				wg.Go(func() {
+					var index = helper
 					cr[index] = writeConcurrent(ctx, c, subkey, cd, compress, ttl)
-					wg.Done()
-				}(i)
+				})
 				i++
 			}
 			// Store metadocument
-			wg.Add(1)
-			go func(index int) {
-				cr[index] = writeConcurrent(ctx, c, key, meta, compress, ttl)
-				wg.Done()
-			}(i)
+			wg.Go(func() {
+				cr[i] = writeConcurrent(ctx, c, key, meta, compress, ttl)
+			})
 			// Wait on writes to finish (result channel is buffered and doesn't hold for receive)
 			wg.Wait()
 			err = errors.Join(cr...)

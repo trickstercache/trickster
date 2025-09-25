@@ -42,15 +42,13 @@ func (ds *DataSet) InjectTags(tags Tags) {
 			if s == nil {
 				continue
 			}
-			wg.Add(1)
-			go func(s1 *Series) {
-				if s1.Header.Tags == nil {
-					s1.Header.Tags = tags.Clone()
+			wg.Go(func() {
+				if s.Header.Tags == nil {
+					s.Header.Tags = tags.Clone()
 				} else {
-					s1.Header.Tags.Merge(tags.Clone())
+					s.Header.Tags.Merge(tags.Clone())
 				}
-				wg.Done()
-			}(s)
+			})
 		}
 	}
 	wg.Wait()

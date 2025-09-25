@@ -99,20 +99,21 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 			var sz int64
 			var wg sync.WaitGroup
 			errs := make([]error, len(wfd.Results[i].SeriesList[j].Values))
-			wg.Add(len(wfd.Results[i].SeriesList[j].Values))
 			for vi, v := range wfd.Results[i].SeriesList[j].Values {
-				go func(vals []any, idx int) {
+				wg.Go(func() {
+					var (
+						vals  = v
+						idx = vi
+					)
 					pt, cols, err := pointFromValues(vals, sh.TimestampField.OutputPosition)
 					if err != nil {
 						errs[idx] = err
-						wg.Done()
 						return
 					}
 					if pt.Epoch == 0 {
-						wg.Done()
 						return
 					}
-					if idx == 0 {
+					if vi == 0 {
 						for x := range cols {
 							sh.ValueFieldsList[x].DataType = cols[x]
 						}
@@ -120,8 +121,7 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 					pts[idx] = pt
 					atomic.AddInt64(&sz, int64(pt.Size))
 					wfd.Results[i].SeriesList[j].Values[idx] = nil
-					wg.Done()
-				}(v, vi)
+				})
 			}
 			wg.Wait()
 			if err := errors.Join(errs...); err != nil {

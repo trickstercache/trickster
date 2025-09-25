@@ -301,8 +301,7 @@ func (pr *proxyRequest) makeUpstreamRequests() error {
 	wg := sync.WaitGroup{}
 
 	if pr.revalidationRequest != nil {
-		wg.Add(1)
-		go func() {
+		wg.Go(func() {
 			req := pr.revalidationRequest
 			_, span := tspan.NewChildSpan(req.Context(), rsc.Tracer, "FetchRevalidation")
 			if span != nil {
@@ -315,16 +314,15 @@ func (pr *proxyRequest) makeUpstreamRequests() error {
 				defer span.End()
 			}
 			pr.revalidationReader, pr.revalidationResponse, _ = PrepareFetchReader(pr.revalidationRequest)
-			wg.Done()
-		}()
+		})
 	}
 
 	if len(pr.originRequests) > 0 {
 		pr.originResponses = make([]*http.Response, len(pr.originRequests))
 		pr.originReaders = make([]io.ReadCloser, len(pr.originRequests))
-		wg.Add(len(pr.originRequests))
 		for i := range pr.originRequests {
-			go func(j int) {
+			wg.Go(func() {
+				var j = i
 				req := pr.originRequests[j]
 				_, span := tspan.NewChildSpan(req.Context(), rsc.Tracer, "Fetch")
 				if span != nil {
@@ -337,8 +335,7 @@ func (pr *proxyRequest) makeUpstreamRequests() error {
 					defer span.End()
 				}
 				pr.originReaders[j], pr.originResponses[j], _ = PrepareFetchReader(req)
-				wg.Done()
-			}(i)
+			})
 		}
 	}
 
@@ -682,22 +679,20 @@ func (pr *proxyRequest) reconstituteResponses() {
 			// if it's a 304 Not Modified, just don't do anything, since the cached document is good as-is, and
 			// the new responses below will returned to be merged with the existing cache. so just check for 206 here.
 			if resp.StatusCode == http.StatusPartialContent {
-				wg.Add(1)
-				go func() {
+				wg.Go(func() {
 					// oh snap. so we have some partial content to merge in, but the original cache document
 					// is now invalid. lets go ahead and reset it.
 					b, _ := io.ReadAll(resp.Body)
 					appendLock.Lock()
 					parts.ParsePartialContentBody(resp, b)
 					appendLock.Unlock()
-					wg.Done()
-				}()
+				})
 			}
 		}
 
-		wg.Add(len(pr.originRequests))
 		for i := range pr.originRequests {
-			go func(j int) {
+			wg.Go(func() {
+				var j = i
 				r := pr.originRequests[j]
 				resp := pr.originResponses[j]
 
@@ -715,8 +710,7 @@ func (pr *proxyRequest) reconstituteResponses() {
 					parts.ParsePartialContentBody(resp, b)
 					appendLock.Unlock()
 				}
-				wg.Done()
-			}(i)
+			})
 		}
 
 		// all the response bodies are loading in parallel. Wait until they are done.
