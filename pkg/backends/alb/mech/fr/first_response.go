@@ -108,14 +108,13 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// end user based on the methodology and the rest will have their
 		// contexts canceled
 		wg.Go(func() {
-			var j = i
-			if hl[j] == nil {
+			if hl[i] == nil {
 				return
 			}
-			wm := newFirstResponseGate(w, wc, j, h.fgr)
+			wm := newFirstResponseGate(w, wc, i, h.fgr)
 			r2, _ := request.Clone(r)
-			r2 = r2.WithContext(wc.contexts[j])
-			hl[j].ServeHTTP(wm, r2)
+			r2 = r2.WithContext(wc.contexts[i])
+			hl[i].ServeHTTP(wm, r2)
 		})
 	}
 	wg.Wait()

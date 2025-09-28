@@ -322,8 +322,7 @@ func (pr *proxyRequest) makeUpstreamRequests() error {
 		pr.originReaders = make([]io.ReadCloser, len(pr.originRequests))
 		for i := range pr.originRequests {
 			wg.Go(func() {
-				var j = i
-				req := pr.originRequests[j]
+				req := pr.originRequests[i]
 				_, span := tspan.NewChildSpan(req.Context(), rsc.Tracer, "Fetch")
 				if span != nil {
 					if req.Header != nil {
@@ -334,7 +333,7 @@ func (pr *proxyRequest) makeUpstreamRequests() error {
 					req = req.WithContext(trace.ContextWithSpan(req.Context(), span))
 					defer span.End()
 				}
-				pr.originReaders[j], pr.originResponses[j], _ = PrepareFetchReader(req)
+				pr.originReaders[i], pr.originResponses[i], _ = PrepareFetchReader(req)
 			})
 		}
 	}
@@ -692,9 +691,8 @@ func (pr *proxyRequest) reconstituteResponses() {
 
 		for i := range pr.originRequests {
 			wg.Go(func() {
-				var j = i
-				r := pr.originRequests[j]
-				resp := pr.originResponses[j]
+				r := pr.originRequests[i]
+				resp := pr.originResponses[i]
 
 				// only set the upstream response
 				appendLock.Lock()

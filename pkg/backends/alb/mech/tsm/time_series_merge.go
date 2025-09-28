@@ -148,15 +148,14 @@ func GetResponseGates(w http.ResponseWriter, r *http.Request,
 	mgs := make(merge.ResponseGates, l)
 	for i := range l {
 		wg.Go(func() {
-			var j = i
-			if hl[j] == nil {
+			if hl[i] == nil {
 				return
 			}
 			r2, _ := request.Clone(r)
 			rsc := request.GetResources(r2)
 			rsc.IsMergeMember = true
-			mgs[j] = merge.NewResponseGate(w, r2, rsc)
-			hl[j].ServeHTTP(mgs[j], r2)
+			mgs[i] = merge.NewResponseGate(w, r2, rsc)
+			hl[i].ServeHTTP(mgs[i], r2)
 		})
 	}
 	wg.Wait()
