@@ -17,11 +17,13 @@
 package index
 
 import (
+	"fmt"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/filesystem"
 	fso "github.com/trickstercache/trickster/v2/pkg/cache/filesystem/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/index/options"
@@ -196,6 +198,35 @@ func TestIndexedClient(t *testing.T) {
 		_, s, err = ic.Retrieve("test.1")
 		require.NoError(t, err)
 		require.Equal(t, status.LookupStatusHit, s)
+
+		t.Run("flush loop", func(t *testing.T) {
+			// test the actual flush loop by forcing it to flush, this utilizes goroutines
+			// and should detect more potential race conditions vs the existing flush tests that use
+			// flush internal methods
+			ic1 := NewIndexedClient("flushTest", provider, &options.Options{
+				ReapInterval:          time.Second * 60 * 60 * 24,
+				FlushInterval:         time.Second * 60 * 60 * 24,
+				MaxSizeObjects:        5,
+				MaxSizeBackoffObjects: 3,
+				MaxSizeBytes:          100,
+				MaxSizeBackoffBytes:   30,
+				IndexExpiry:           1 * time.Hour,
+			}, mc)
+			defer ic1.Close()
+			for i := range 5 {
+				index := fmt.Sprintf("%d", i)
+				key := "key." + index
+				require.NoError(t, ic1.Store(key, []byte("value1."+index), 0))
+			}
+			_, s, err := ic1.Client.Retrieve(IndexKey)
+			require.Equal(t, cache.ErrKNF, err)
+			require.Equal(t, status.LookupStatusKeyMiss, s)
+			ic1.forceFlush <- true
+			<-ic1.hasFlushed
+			_, s, err = ic1.Client.Retrieve(IndexKey)
+			require.NoError(t, err)
+			require.Equal(t, status.LookupStatusHit, s)
+		})
 	})
 
 	/* converting */
