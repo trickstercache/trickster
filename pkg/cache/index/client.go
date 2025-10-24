@@ -298,15 +298,13 @@ func (idx *IndexedClient) Close() error {
 
 // flusher periodically calls the cache's index flush func that writes the cache index to disk
 func (idx *IndexedClient) flusher(ctx context.Context) {
-	fi := idx.options.Load().(*options.Options).FlushInterval
-	ticker := time.NewTicker(fi)
-	defer ticker.Stop()
 FLUSHER:
 	for {
+		fi := idx.options.Load().(*options.Options).FlushInterval
 		select {
 		case <-ctx.Done():
 			break FLUSHER
-		case <-ticker.C:
+		case <-time.After(fi):
 			if idx.lastWrite.Load().Before(idx.LastFlush.Load()) {
 				continue
 			}
