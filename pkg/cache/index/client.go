@@ -63,6 +63,8 @@ func NewIndexedClient(
 		name:          cacheName,
 		cacheProvider: cacheProvider,
 		cancel:        cancel,
+		forceFlush:    make(chan bool),
+		hasFlushed:    make(chan bool, 1),
 	}
 	indexExpiry := o.IndexExpiry
 	idx.options.Store(o)
@@ -128,6 +130,8 @@ type IndexedClient struct {
 	lastWrite     atomicx.Time         `msg:"-"`
 	isClosing     atomic.Bool
 	cancel        context.CancelFunc
+	forceFlush    chan bool
+	hasFlushed    chan bool
 	flusherExited atomic.Bool
 	reaperExited  atomic.Bool
 }
@@ -294,25 +298,50 @@ func (idx *IndexedClient) Close() error {
 
 // flusher periodically calls the cache's index flush func that writes the cache index to disk
 func (idx *IndexedClient) flusher(ctx context.Context) {
+	fi := idx.options.Load().(*options.Options).FlushInterval
+	ticker := time.NewTicker(fi)
+	defer ticker.Stop()
 FLUSHER:
 	for {
-		fi := idx.options.Load().(*options.Options).FlushInterval
 		select {
 		case <-ctx.Done():
 			break FLUSHER
-		case <-time.After(fi):
+		case <-ticker.C:
 			if idx.lastWrite.Load().Before(idx.LastFlush.Load()) {
 				continue
 			}
-			idx.flushOnce()
+		case <-idx.forceFlush:
+		}
+		idx.flushOnce()
+		select {
+		case idx.hasFlushed <- true:
+			// signal that a flush has occurred
+		default:
+			// drop message if no listener
 		}
 	}
 	idx.flusherExited.Store(true)
 }
 
+// clone the msgpack encoded fields of the IndexedClient structure
+// not meant to be a deep clone / usable client, just a snapshot of the index state
+func (idx *IndexedClient) clone() *IndexedClient {
+	clone := &IndexedClient{
+		CacheSize:   atomic.LoadInt64(&idx.CacheSize),
+		ObjectCount: atomic.LoadInt64(&idx.ObjectCount),
+	}
+	clone.LastFlush.Store(idx.LastFlush.Load())
+	idx.Objects.Range(func(key, value any) bool {
+		clone.Objects.Store(key, value)
+		return true
+	})
+	return clone
+}
+
 func (idx *IndexedClient) flushOnce() {
 	idx.LastFlush.Store(time.Now()) // update flush time, so that it is marshalled / stored
-	bytes, err := idx.MarshalMsg(nil)
+	clone := idx.clone()
+	bytes, err := clone.MarshalMsg(nil)
 	if err != nil {
 		logger.Warn("unable to serialize index for flushing",
 			logging.Pairs{"cacheName": idx.name, "detail": err.Error()})
