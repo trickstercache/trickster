@@ -227,6 +227,54 @@ func TestIndexedClient(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, status.LookupStatusHit, s)
 		})
+
+		t.Run("reap loop", func(t *testing.T) {
+			// test the actual reap loop by forcing it to reap, this utilizes goroutines
+			// and should detect more potential race conditions vs the existing reap tests that use
+			// reap internal methods
+			ic2 := NewIndexedClient("reapTest", provider, &options.Options{
+				ReapInterval:          time.Second * 60 * 60 * 24,
+				FlushInterval:         time.Second * 60 * 60 * 24,
+				MaxSizeObjects:        5,
+				MaxSizeBackoffObjects: 5,
+				MaxSizeBytes:          10000,
+				MaxSizeBackoffBytes:   300,
+				IndexExpiry:           1 * time.Hour,
+			}, mc)
+			defer ic2.Close()
+
+			// write 5 objects, expect 5 objects
+			for i := range 5 {
+				index := fmt.Sprintf("%d", i)
+				key := "key." + index
+				require.NoError(t, ic2.Store(key, []byte("value1."+index), 0))
+			}
+			state := getIndexedClientState(ic2)
+			require.Equal(t, int64(5), state.ObjectCount)
+			require.Len(t, state.Objects, 5)
+			// force reap, expect 5 objects still
+			ic2.forceReap <- true
+			<-ic2.hasReaped
+			state = getIndexedClientState(ic2)
+			require.Equal(t, int64(5), state.ObjectCount)
+			require.Len(t, state.Objects, 5)
+
+			// write more objects, then force reap to trigger (count based) eviction
+			for i := range 5 {
+				index := fmt.Sprintf("%d", i)
+				key := "another.key." + index
+				require.NoError(t, ic2.Store(key, []byte("value1."+index), 0))
+			}
+			state = getIndexedClientState(ic2)
+			require.Equal(t, int64(10), state.ObjectCount)
+			require.Equal(t, len(state.Objects), 10)
+			// force reap, expect some evictions (back to the MaxSizeObjects count)
+			ic2.forceReap <- true
+			<-ic2.hasReaped
+			state = getIndexedClientState(ic2)
+			require.Equal(t, int64(5), state.ObjectCount)
+			require.Equal(t, len(state.Objects), 5)
+		})
 	})
 
 	/* converting */

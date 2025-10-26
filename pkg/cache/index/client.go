@@ -65,6 +65,8 @@ func NewIndexedClient(
 		cancel:        cancel,
 		forceFlush:    make(chan bool),
 		hasFlushed:    make(chan bool, 1),
+		forceReap:     make(chan bool),
+		hasReaped:     make(chan bool, 1),
 	}
 	indexExpiry := o.IndexExpiry
 	idx.options.Store(o)
@@ -130,10 +132,14 @@ type IndexedClient struct {
 	lastWrite     atomicx.Time         `msg:"-"`
 	isClosing     atomic.Bool
 	cancel        context.CancelFunc
-	forceFlush    chan bool
-	hasFlushed    chan bool
 	flusherExited atomic.Bool
 	reaperExited  atomic.Bool
+
+	// used only in tests: fields to interact with client goroutines
+	forceFlush chan bool
+	hasFlushed chan bool
+	forceReap  chan bool
+	hasReaped  chan bool
 }
 
 // Clear the index from its currently tracked cache objects
@@ -357,7 +363,14 @@ REAPER:
 		case <-ctx.Done():
 			break REAPER
 		case <-time.After(ri):
-			idx.reap()
+		case <-idx.forceReap:
+		}
+		idx.reap()
+		select {
+		case idx.hasReaped <- true:
+			// signal that a reap has occurred
+		default:
+			// drop message if no listener
 		}
 	}
 	idx.reaperExited.Store(true)
