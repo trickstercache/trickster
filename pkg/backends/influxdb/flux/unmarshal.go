@@ -135,7 +135,7 @@ func loadFieldDef(n, d, g, v string, pos int) timeseries.FieldDefinition {
 // typeToFieldDataType is the DataTypeParserFunc passed to the Parser
 func typeToFieldDataType(input string) timeseries.FieldDataType {
 	switch input {
-	case TypeString:
+	case TypeString, TypeDuration:
 		return timeseries.String
 	case TypeLong:
 		return timeseries.Int64
@@ -145,8 +145,6 @@ func typeToFieldDataType(input string) timeseries.FieldDataType {
 		return timeseries.Float64
 	case TypeBool:
 		return timeseries.Bool
-	case TypeDuration:
-		return timeseries.String
 	case TypeRFC3339:
 		return timeseries.DateTimeRFC3339
 	case TypeRFC3339Nano, timeColumnName:

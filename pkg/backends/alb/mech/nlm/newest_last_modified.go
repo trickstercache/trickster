@@ -82,21 +82,19 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// otherwise iterate the fanout
 	nrm := newNewestResponseMux(l)
 	var wg sync.WaitGroup
-	wg.Add(l)
 	for i := range l {
 		// only one of these i fanouts to respond will be mapped back to
 		// the end user based on the methodology and the rest will have their
 		// contexts canceled
-		go func(j int) {
-			if hl[j] == nil {
+		wg.Go(func() {
+			if hl[i] == nil {
 				return
 			}
-			nrg := newNewestResponseGate(w, j, nrm)
+			nrg := newNewestResponseGate(w, i, nrm)
 			r2, _ := request.Clone(r)
-			r2 = r2.WithContext(nrm.contexts[j])
-			hl[j].ServeHTTP(nrg, r2)
-			wg.Done()
-		}(i)
+			r2 = r2.WithContext(nrm.contexts[i])
+			hl[i].ServeHTTP(nrg, r2)
+		})
 	}
 	wg.Wait()
 }

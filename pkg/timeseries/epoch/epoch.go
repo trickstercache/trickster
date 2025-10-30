@@ -70,9 +70,7 @@ func FormatTime(t time.Time, to timeseries.FieldDataType, quoteDateTimeSQL bool)
 		return q + t.UTC().Format(lsql.SQLDateLayout) + q
 	case timeseries.TimeSQL:
 		return q + t.UTC().Format(lsql.SQLTimeLayout) + q
-	case timeseries.DateTimeRFC3339:
-		return t.UTC().Format(time.RFC3339)
-	case timeseries.DateTimeRFC3339Nano:
+	case timeseries.DateTimeRFC3339, timeseries.DateTimeRFC3339Nano:
 		return t.UTC().Format(time.RFC3339)
 	}
 	return "0"
