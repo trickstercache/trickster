@@ -296,9 +296,7 @@ checkCache:
 	// Only fast forward if configured and the user request is for the absolute latest datapoint
 	if (!rlo.FastForwardDisable) &&
 		(trq.Extent.End.Equal(normalizedNow.Extent.End)) {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_, span := tspan.NewChildSpan(ctx, rsc.Tracer, "FetchFastForward")
 			if span != nil {
 				ffReq = ffReq.WithContext(trace.ContextWithSpan(ffReq.Context(), span))
@@ -324,7 +322,7 @@ checkCache:
 			} else {
 				ffStatus = "err"
 			}
-		}()
+		})
 	}
 
 	// while fast forward fetching is occurring in a goroutine, this section will
@@ -592,11 +590,11 @@ func fetchExtents(el timeseries.ExtentList, rsc *request.Resources, h http.Heade
 	mresp := &http.Response{Header: h}
 
 	// iterate each time range that the client needs and fetch from the upstream origin
-	wg.Add(el.Len())
 	for i := range el {
 		// This concurrently fetches gaps from the origin and adds their datasets to the merge list
-		go func(index int, e *timeseries.Extent, rq *proxyRequest) {
-			defer wg.Done()
+		wg.Go(func() {
+			e := &el[i]
+			rq := pr.Clone()
 			mrsc := rsc.Clone()
 			rq.upstreamRequest = rq.upstreamRequest.WithContext(tctx.WithResources(
 				trace.ContextWithSpan(context.Background(), span),
@@ -625,7 +623,7 @@ func fetchExtents(el timeseries.ExtentList, rsc *request.Resources, h http.Heade
 				if ferr != nil {
 					logger.Error("proxy object unmarshaling failed",
 						logging.Pairs{"detail": ferr.Error()})
-					errs[index] = ferr
+					errs[i] = ferr
 					return
 				}
 				uncachedValueCount.Add(nts.ValueCount())
@@ -634,9 +632,9 @@ func fetchExtents(el timeseries.ExtentList, rsc *request.Resources, h http.Heade
 				appendLock.Lock()
 				headers.Merge(h, resp.Header)
 				appendLock.Unlock()
-				mts[index] = nts
+				mts[i] = nts
 			} else if resp.StatusCode != http.StatusOK {
-				errs[index] = tpe.ErrUnexpectedUpstreamResponse
+				errs[i] = tpe.ErrUnexpectedUpstreamResponse
 				var b []byte
 				var s string
 				if resp.Body != nil {
@@ -663,7 +661,7 @@ func fetchExtents(el timeseries.ExtentList, rsc *request.Resources, h http.Heade
 					},
 				)
 			}
-		}(i, &el[i], pr.Clone())
+		})
 	}
 	wg.Wait()
 	return mts, uncachedValueCount.Load(), mresp, errors.Join(errs...)

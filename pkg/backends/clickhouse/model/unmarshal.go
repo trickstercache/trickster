@@ -156,12 +156,10 @@ func typeToFieldDataType(input string) timeseries.FieldDataType {
 		return timeseries.Uint64
 	case "Float32", "Float64", "Decimal", "Decimal32", "Decimal64", "Decimal128", "Decimal256":
 		return timeseries.Float64
-	case "DateTime":
+	case "DateTime", "DateTime64":
 		return timeseries.DateTimeSQL
 	case "Date":
 		return timeseries.DateSQL
-	case "DateTime64":
-		return timeseries.DateTimeSQL
 	case "Nothing":
 		return timeseries.Null
 	}
