@@ -151,9 +151,8 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 				// Derive subkey
 				subkey := getSubKey(key, chunkExtent)
 				// Query
-				var helper = resi
+				outIdx := resi
 				wg.Go(func() {
-					var outIdx = helper
 					qr := queryConcurrent(ctx, c, subkey)
 					if qr.lookupStatus != status.LookupStatusHit &&
 						(qr.err == nil || qr.err == cache.ErrKNF) {
@@ -216,9 +215,8 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 				subkey := key + chunkRange.String()
 				// Query subdocument
 				
-				var helper = i
+				index := i
 				wg.Go(func() {
-					var index = helper
 					qr := queryConcurrent(ctx, c, subkey)
 					cr[index] = qr
 				})
@@ -426,9 +424,8 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 				// Derive subkey
 				subkey := getSubKey(key, chunkExtent)
 				// Write
-				var helper = i
+				index := i
 				wg.Go(func() {
-					var index = helper
 					cd := d.GetTimeseriesChunk(chunkExtent)
 					if c.Configuration().Provider != "memory" {
 						cd.Body, _ = marshal(cd.timeseries, nil, 0)
@@ -472,9 +469,8 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 				// Get chunk
 				cd := d.GetByterangeChunk(chunkRange, size)
 				// Store subdocument
-				var helper = i
+				index := i
 				wg.Go(func() {
-					var index = helper
 					cr[index] = writeConcurrent(ctx, c, subkey, cd, compress, ttl)
 				})
 				i++

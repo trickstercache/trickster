@@ -77,12 +77,8 @@ func (sl SeriesList) Merge(sl2 SeriesList, sortPoints bool) SeriesList {
 		} else {
 			// series is in both sl1 and sl2; merge their points
 			wg.Go(func() {
-				var (
-					s1 = cs
-					s2 = s
-				)
-				s1.Points = MergePoints(s1.Points, s2.Points, sortPoints)
-				s1.PointSize = s1.Points.Size()
+				cs.Points = MergePoints(cs.Points, s.Points, sortPoints)
+				cs.PointSize = cs.Points.Size()
 			})
 		}
 	}

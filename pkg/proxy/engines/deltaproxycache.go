@@ -593,11 +593,8 @@ func fetchExtents(el timeseries.ExtentList, rsc *request.Resources, h http.Heade
 	for i := range el {
 		// This concurrently fetches gaps from the origin and adds their datasets to the merge list
 		wg.Go(func() {
-			var (
-				index = i
-				e = &el[i]
-				rq = pr.Clone()
-			)
+			e := &el[i]
+			rq := pr.Clone()
 			mrsc := rsc.Clone()
 			rq.upstreamRequest = rq.upstreamRequest.WithContext(tctx.WithResources(
 				trace.ContextWithSpan(context.Background(), span),
@@ -626,7 +623,7 @@ func fetchExtents(el timeseries.ExtentList, rsc *request.Resources, h http.Heade
 				if ferr != nil {
 					logger.Error("proxy object unmarshaling failed",
 						logging.Pairs{"detail": ferr.Error()})
-					errs[index] = ferr
+					errs[i] = ferr
 					return
 				}
 				uncachedValueCount.Add(nts.ValueCount())
@@ -635,9 +632,9 @@ func fetchExtents(el timeseries.ExtentList, rsc *request.Resources, h http.Heade
 				appendLock.Lock()
 				headers.Merge(h, resp.Header)
 				appendLock.Unlock()
-				mts[index] = nts
+				mts[i] = nts
 			} else if resp.StatusCode != http.StatusOK {
-				errs[index] = tpe.ErrUnexpectedUpstreamResponse
+				errs[i] = tpe.ErrUnexpectedUpstreamResponse
 				var b []byte
 				var s string
 				if resp.Body != nil {

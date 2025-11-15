@@ -101,13 +101,9 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 			errs := make([]error, len(wfd.Results[i].SeriesList[j].Values))
 			for vi, v := range wfd.Results[i].SeriesList[j].Values {
 				wg.Go(func() {
-					var (
-						vals  = v
-						idx = vi
-					)
-					pt, cols, err := pointFromValues(vals, sh.TimestampField.OutputPosition)
+					pt, cols, err := pointFromValues(v, sh.TimestampField.OutputPosition)
 					if err != nil {
-						errs[idx] = err
+						errs[vi] = err
 						return
 					}
 					if pt.Epoch == 0 {
@@ -118,9 +114,9 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 							sh.ValueFieldsList[x].DataType = cols[x]
 						}
 					}
-					pts[idx] = pt
+					pts[vi] = pt
 					atomic.AddInt64(&sz, int64(pt.Size))
-					wfd.Results[i].SeriesList[j].Values[idx] = nil
+					wfd.Results[i].SeriesList[j].Values[vi] = nil
 				})
 			}
 			wg.Wait()

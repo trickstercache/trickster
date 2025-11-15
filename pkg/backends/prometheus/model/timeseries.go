@@ -241,14 +241,10 @@ func populateSeries(ds *dataset.DataSet, result []*WFResult,
 			var wg sync.WaitGroup
 			for i, v := range pr.Values {
 				wg.Go(func() {
-					var (
-						index  = i
-						vals = v
-					)
-					pt, _ := pointFromValues(vals)
+					pt, _ := pointFromValues(v)
 					if pt.Epoch > 0 {
 						atomic.AddInt64(&ps, int64(pt.Size))
-						pts[index] = pt
+						pts[i] = pt
 					}
 				})
 			}
