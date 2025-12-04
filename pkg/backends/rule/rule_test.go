@@ -111,22 +111,22 @@ func newTestRuleOpts() *ro.Options {
 	}
 }
 
-func newTestCaseOpts() ro.CaseLookup {
+func newTestCaseOpts() ro.CaseOptionsList {
 
-	return ro.CaseLookup{
-		"1": {
+	return ro.CaseOptionsList{
+		{
 			Matches:   []string{"trickster"},
 			NextRoute: "test-backend-2",
 		},
-		"2": {
+		{
 			Matches:         []string{providers.Proxy},
 			ReqRewriterName: "test-rewriter-4",
 		},
-		"3": {
+		{
 			Matches:     []string{"trickstercache"},
 			RedirectURL: "http://trickstercache.org",
 		},
-		"4": {
+		{
 			Matches:         []string{"true"},
 			ReqRewriterName: "test-rewriter-5",
 			RedirectURL:     "http://trickstercache.org",
