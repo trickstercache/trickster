@@ -239,16 +239,14 @@ func populateSeries(ds *dataset.DataSet, result []*WFResult,
 		if !isVector && l > 0 {
 			pts = make(dataset.Points, l)
 			var wg sync.WaitGroup
-			wg.Add(len(pr.Values))
 			for i, v := range pr.Values {
-				go func(index int, vals []any) {
-					pt, _ := pointFromValues(vals)
+				wg.Go(func() {
+					pt, _ := pointFromValues(v)
 					if pt.Epoch > 0 {
 						atomic.AddInt64(&ps, int64(pt.Size))
-						pts[index] = pt
+						pts[i] = pt
 					}
-					wg.Done()
-				}(i, v)
+				})
 			}
 			wg.Wait()
 		} else if isVector && len(pr.Value) == 2 {

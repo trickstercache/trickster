@@ -181,21 +181,19 @@ func (t *target) Stop() {
 }
 
 func (t *target) probeLoop(ctx context.Context) {
-	t.wg.Add(1)
 	t.probe(ctx) // perform initial probe
 	ticker := time.NewTicker(t.interval)
-	go func() {
+	t.wg.Go(func() {
 		for {
 			select {
 			case <-ctx.Done():
-				t.wg.Done()
 				ticker.Stop()
 				return // probe complete, stop loop and prevent goroutine leak
 			case <-ticker.C:
 				t.probe(ctx)
 			}
 		}
-	}()
+	})
 }
 
 func (t *target) probe(ctx context.Context) {

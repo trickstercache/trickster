@@ -140,32 +140,31 @@ func (ds *DataSet) CroppedClone(e timeseries.Extent) timeseries.Timeseries {
 				skips = true
 				continue
 			}
-			wg.Add(1)
-			go func(s2 *Series, n, o int) {
+			n := i
+			wg.Go(func() {
 				sc := &Series{
-					Header: s2.Header.Clone(),
+					Header: s.Header.Clone(),
 				}
-				var start, end, l = 0, -1, len(s2.Points)
+				var start, end, l = 0, -1, len(s.Points)
 				var iwg sync.WaitGroup
 				iwg.Add(2)
 				go func() {
-					start = s2.Points.onOrJustAfter(startNS, 0, l-1)
+					start = s.Points.onOrJustAfter(startNS, 0, l-1)
 					iwg.Done()
 				}()
 				go func() {
-					end = s2.Points.onOrJustBefore(endNS, 0, l-1) + 1
+					end = s.Points.onOrJustBefore(endNS, 0, l-1) + 1
 					iwg.Done()
 				}()
 				iwg.Wait()
 				if start < l && end <= l && end > start {
-					sc.Points = s2.Points.CloneRange(start, end)
+					sc.Points = s.Points.CloneRange(start, end)
 					sc.PointSize = sc.Points.Size()
-					clone.Results[n].SeriesList[o] = sc
+					clone.Results[n].SeriesList[j] = sc
 				} else {
 					skips = true
 				}
-				wg.Done()
-			}(s, i, j)
+			})
 		}
 		wg.Wait()
 		if skips {
@@ -366,27 +365,29 @@ func (ds *DataSet) DefaultRangeCropper(e timeseries.Extent) {
 			if s == nil || len(s.Points) == 0 {
 				continue
 			}
-			wg.Add(1)
-			go func(index int, s2 *Series) {
-				var start, end, l = 0, -1, len(s2.Points)
-				var iwg sync.WaitGroup
+
+			index := j
+			wg.Go(func() {
+				var (
+				        start, end, l = 0, -1, len(s.Points)
+				        iwg sync.WaitGroup
+				)
 				iwg.Add(2)
 				go func() {
-					start = s2.Points.onOrJustAfter(startNS, 0, l-1)
+					start = s.Points.onOrJustAfter(startNS, 0, l-1)
 					iwg.Done()
 				}()
 				go func() {
-					end = s2.Points.onOrJustBefore(endNS, 0, l-1) + 1
+					end = s.Points.onOrJustBefore(endNS, 0, l-1) + 1
 					iwg.Done()
 				}()
 				iwg.Wait()
 				if start < l && end <= l && end > start {
-					s2.Points = s2.Points.CloneRange(start, end)
-					s2.PointSize = s2.Points.Size()
+					s.Points = s.Points.CloneRange(start, end)
+					s.PointSize = s.Points.Size()
 				}
-				sl[index] = s2
-				wg.Done()
-			}(j, s)
+				sl[index] = s
+			})
 			j++
 		}
 		wg.Wait()

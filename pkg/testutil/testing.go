@@ -15,7 +15,7 @@
  */
 
 // Package testing provides functionality for use when conducting tests
-package testing
+package testutil
 
 import (
 	"errors"
