@@ -87,8 +87,7 @@ rules:
     operation: prefix      # Basic Auth credentials are formatted as user:pass,
                            # so we can check if it is prefixed with $user:
     cases:
-      writers:
-        matches: # route johndoe and janedoe users to writer cluster
+      - matches: # writers
           - 'johndoe:'
           - 'janedoe:'
         next_route: example-writer-cluster

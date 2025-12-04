@@ -168,17 +168,17 @@ func (c *Client) parseOptions(o *ro.Options, rwi rewriter.InstructionsLookup) er
 			if v.ReqRewriterName != "" {
 				i, ok := rwi[v.ReqRewriterName]
 				if !ok {
-					return fmt.Errorf("invalid rewriter %s in rule %s case %s", k, o.Name, k)
+					return fmt.Errorf("invalid rewriter %d in rule %s", k, o.Name)
 				}
 				ri = i
 			}
 
 			if v.NextRoute == "" && v.RedirectURL == "" && v.ReqRewriterName == "" {
-				return fmt.Errorf("missing next_route in rule %s case %s", o.Name, k)
+				return fmt.Errorf("missing next_route in rule %s case %d", o.Name, k)
 			}
 
 			if len(v.Matches) == 0 {
-				return fmt.Errorf("missing matches in rule %s case %s", o.Name, k)
+				return fmt.Errorf("missing matches in rule %s case %d", o.Name, k)
 			}
 
 			var rc int
@@ -188,7 +188,7 @@ func (c *Client) parseOptions(o *ro.Options, rwi rewriter.InstructionsLookup) er
 			} else if v.NextRoute != "" {
 				no, ok := c.clients[v.NextRoute]
 				if !ok {
-					return fmt.Errorf("unknown next_route %s in rule %s case %s",
+					return fmt.Errorf("unknown next_route %s in rule %s case %d",
 						v.NextRoute, o.Name, k)
 				}
 				nr = no.Router()
