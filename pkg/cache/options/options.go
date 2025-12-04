@@ -85,75 +85,75 @@ func New() *Options {
 }
 
 // Clone returns an exact copy of a *CachingConfig
-func (c *Options) Clone() *Options {
+func (o *Options) Clone() *Options {
 
 	out := New()
-	out.Name = c.Name
-	out.Provider = c.Provider
-	out.ProviderID = c.ProviderID
+	out.Name = o.Name
+	out.Provider = o.Provider
+	out.ProviderID = o.ProviderID
 
-	out.Index.FlushInterval = c.Index.FlushInterval
-	out.Index.FlushInterval = c.Index.FlushInterval
-	out.Index.MaxSizeBackoffBytes = c.Index.MaxSizeBackoffBytes
-	out.Index.MaxSizeBackoffObjects = c.Index.MaxSizeBackoffObjects
-	out.Index.MaxSizeBytes = c.Index.MaxSizeBytes
-	out.Index.MaxSizeObjects = c.Index.MaxSizeObjects
-	out.Index.ReapInterval = c.Index.ReapInterval
-	out.Index.ReapInterval = c.Index.ReapInterval
+	out.Index.FlushInterval = o.Index.FlushInterval
+	out.Index.FlushInterval = o.Index.FlushInterval
+	out.Index.MaxSizeBackoffBytes = o.Index.MaxSizeBackoffBytes
+	out.Index.MaxSizeBackoffObjects = o.Index.MaxSizeBackoffObjects
+	out.Index.MaxSizeBytes = o.Index.MaxSizeBytes
+	out.Index.MaxSizeObjects = o.Index.MaxSizeObjects
+	out.Index.ReapInterval = o.Index.ReapInterval
+	out.Index.ReapInterval = o.Index.ReapInterval
 
-	out.Badger.Directory = c.Badger.Directory
-	out.Badger.ValueDirectory = c.Badger.ValueDirectory
+	out.Badger.Directory = o.Badger.Directory
+	out.Badger.ValueDirectory = o.Badger.ValueDirectory
 
-	out.Filesystem.CachePath = c.Filesystem.CachePath
+	out.Filesystem.CachePath = o.Filesystem.CachePath
 
-	out.BBolt.Bucket = c.BBolt.Bucket
-	out.BBolt.Filename = c.BBolt.Filename
+	out.BBolt.Bucket = o.BBolt.Bucket
+	out.BBolt.Filename = o.BBolt.Filename
 
-	out.Redis.ClientType = c.Redis.ClientType
-	out.Redis.DB = c.Redis.DB
-	out.Redis.DialTimeout = c.Redis.DialTimeout
-	out.Redis.Endpoint = c.Redis.Endpoint
-	out.Redis.Endpoints = c.Redis.Endpoints
-	out.Redis.ConnMaxIdleTime = c.Redis.ConnMaxIdleTime
-	out.Redis.ConnMaxLifetime = c.Redis.ConnMaxLifetime
-	out.Redis.MaxRetries = c.Redis.MaxRetries
-	out.Redis.MaxRetryBackoff = c.Redis.MaxRetryBackoff
-	out.Redis.MinIdleConns = c.Redis.MinIdleConns
-	out.Redis.MinRetryBackoff = c.Redis.MinRetryBackoff
-	out.Redis.Password = c.Redis.Password
-	out.Redis.PoolSize = c.Redis.PoolSize
-	out.Redis.PoolTimeout = c.Redis.PoolTimeout
-	out.Redis.Protocol = c.Redis.Protocol
-	out.Redis.ReadTimeout = c.Redis.ReadTimeout
-	out.Redis.SentinelMaster = c.Redis.SentinelMaster
-	out.Redis.WriteTimeout = c.Redis.WriteTimeout
+	out.Redis.ClientType = o.Redis.ClientType
+	out.Redis.DB = o.Redis.DB
+	out.Redis.DialTimeout = o.Redis.DialTimeout
+	out.Redis.Endpoint = o.Redis.Endpoint
+	out.Redis.Endpoints = o.Redis.Endpoints
+	out.Redis.ConnMaxIdleTime = o.Redis.ConnMaxIdleTime
+	out.Redis.ConnMaxLifetime = o.Redis.ConnMaxLifetime
+	out.Redis.MaxRetries = o.Redis.MaxRetries
+	out.Redis.MaxRetryBackoff = o.Redis.MaxRetryBackoff
+	out.Redis.MinIdleConns = o.Redis.MinIdleConns
+	out.Redis.MinRetryBackoff = o.Redis.MinRetryBackoff
+	out.Redis.Password = o.Redis.Password
+	out.Redis.PoolSize = o.Redis.PoolSize
+	out.Redis.PoolTimeout = o.Redis.PoolTimeout
+	out.Redis.Protocol = o.Redis.Protocol
+	out.Redis.ReadTimeout = o.Redis.ReadTimeout
+	out.Redis.SentinelMaster = o.Redis.SentinelMaster
+	out.Redis.WriteTimeout = o.Redis.WriteTimeout
 
-	out.UseCacheChunking = c.UseCacheChunking
-	out.TimeseriesChunkFactor = c.TimeseriesChunkFactor
-	out.ByterangeChunkSize = c.ByterangeChunkSize
+	out.UseCacheChunking = o.UseCacheChunking
+	out.TimeseriesChunkFactor = o.TimeseriesChunkFactor
+	out.ByterangeChunkSize = o.ByterangeChunkSize
 
-	return c
+	return out
 }
 
 // Equal returns true if all values in the Options references and their
 // their child Option references are completely identical
-func (c *Options) Equal(c2 *Options) bool {
-	if c2 == nil {
+func (o *Options) Equal(o2 *Options) bool {
+	if o2 == nil {
 		return false
 	}
-	return c.Name == c2.Name &&
-		c.Provider == c2.Provider &&
-		c.ProviderID == c2.ProviderID
+	return o.Name == o2.Name &&
+		o.Provider == o2.Provider &&
+		o.ProviderID == o2.ProviderID
 }
 
-func (c *Options) Validate() error {
-	if restrictedNames.Contains(c.Name) {
+func (o *Options) Validate() error {
+	if restrictedNames.Contains(o.Name) {
 		return ErrInvalidName
 	}
-	if c.Index.MaxSizeBytes > 0 && c.Index.MaxSizeBackoffBytes > c.Index.MaxSizeBytes {
+	if o.Index.MaxSizeBytes > 0 && o.Index.MaxSizeBackoffBytes > o.Index.MaxSizeBytes {
 		return errMaxSizeBackoffBytesTooBig
 	}
-	if c.Index.MaxSizeObjects > 0 && c.Index.MaxSizeBackoffObjects > c.Index.MaxSizeObjects {
+	if o.Index.MaxSizeObjects > 0 && o.Index.MaxSizeBackoffObjects > o.Index.MaxSizeObjects {
 		return errMaxSizeBackoffObjectsTooBig
 	}
 
@@ -165,40 +165,39 @@ var errMaxSizeBackoffObjectsTooBig = errors.New("MaxSizeBackoffObjects can't be 
 
 // Initialize sets up the cache Options with default values and overlays
 // any values that were set during YAML unmarshaling
-func (c *Options) Initialize(name string) error {
-	c.Name = name
+func (o *Options) Initialize(name string) error {
+	o.Name = name
 
-	if c.Provider != "" {
-		c.Provider = strings.ToLower(c.Provider)
-		if n, ok := providers.Names[c.Provider]; ok {
-			c.ProviderID = n
+	if o.Provider != "" {
+		o.Provider = strings.ToLower(o.Provider)
+		if n, ok := providers.Names[o.Provider]; ok {
+			o.ProviderID = n
 		}
 	}
 
-	if c.Index == nil {
-		c.Index = index.New()
+	if o.Index == nil {
+		o.Index = index.New()
 	}
-	if c.Redis == nil {
-		c.Redis = redis.New()
+	if o.Redis == nil {
+		o.Redis = redis.New()
 	}
-	if c.Filesystem == nil {
-		c.Filesystem = filesystem.New()
+	if o.Filesystem == nil {
+		o.Filesystem = filesystem.New()
 	}
-	if c.BBolt == nil {
-		c.BBolt = bbolt.New()
+	if o.BBolt == nil {
+		o.BBolt = bbolt.New()
 	}
-	if c.Badger == nil {
-		c.Badger = badger.New()
+	if o.Badger == nil {
+		o.Badger = badger.New()
 	}
 
-	if !c.UseCacheChunking && c.TimeseriesChunkFactor == 0 {
-		c.UseCacheChunking = defaults.DefaultUseCacheChunking
+	o.UseCacheChunking = defaults.DefaultUseCacheChunking
+
+	if o.TimeseriesChunkFactor == 0 {
+		o.TimeseriesChunkFactor = defaults.DefaultTimeseriesChunkFactor
 	}
-	if c.TimeseriesChunkFactor == 0 {
-		c.TimeseriesChunkFactor = defaults.DefaultTimeseriesChunkFactor
-	}
-	if c.ByterangeChunkSize == 0 {
-		c.ByterangeChunkSize = defaults.DefaultByterangeChunkSize
+	if o.ByterangeChunkSize == 0 {
+		o.ByterangeChunkSize = defaults.DefaultByterangeChunkSize
 	}
 
 	return nil
@@ -248,9 +247,9 @@ func (l Lookup) Initialize(activeCaches sets.Set[string]) ([]string, error) {
 }
 
 func (l Lookup) Validate() error {
-	for k, c := range l {
-		c.Name = k
-		if err := c.Validate(); err != nil {
+	for k, o := range l {
+		o.Name = k
+		if err := o.Validate(); err != nil {
 			return err
 		}
 	}
