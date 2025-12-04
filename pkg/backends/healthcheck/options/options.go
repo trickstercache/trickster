@@ -223,3 +223,75 @@ func CalibrateTimeout(d time.Duration) time.Duration {
 	}
 	return d
 }
+
+type loaderOptions struct {
+	Interval          *time.Duration     `yaml:"interval,omitempty"`
+	FailureThreshold  *int               `yaml:"failure_threshold,omitempty"`
+	RecoveryThreshold *int               `yaml:"recovery_threshold,omitempty"`
+	Verb              *string            `yaml:"verb,omitempty"`
+	Scheme            *string            `yaml:"scheme,omitempty"`
+	Host              *string            `yaml:"host,omitempty"`
+	Path              *string            `yaml:"path,omitempty"`
+	Query             *string            `yaml:"query,omitempty"`
+	Headers           types.EnvStringMap `yaml:"headers,omitempty"`
+	Body              *string            `yaml:"body,omitempty"`
+	Timeout           *time.Duration     `yaml:"timeout,omitempty"`
+	ExpectedCodes     []int              `yaml:"expected_codes,omitempty"`
+	ExpectedHeaders   map[string]string  `yaml:"expected_headers,omitempty"`
+	ExpectedBody      *string            `yaml:"expected_body,omitempty"`
+}
+
+func (o *Options) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*o = *(New())
+
+	var load loaderOptions
+	if err := unmarshal(&load); err != nil {
+		return err
+	}
+
+	if load.Interval != nil {
+		o.Interval = *load.Interval
+	}
+	if load.FailureThreshold != nil {
+		o.FailureThreshold = *load.FailureThreshold
+	}
+	if load.RecoveryThreshold != nil {
+		o.RecoveryThreshold = *load.RecoveryThreshold
+	}
+	if load.Verb != nil {
+		o.Verb = *load.Verb
+	}
+	if load.Scheme != nil {
+		o.Scheme = *load.Scheme
+	}
+	if load.Host != nil {
+		o.Host = *load.Host
+	}
+	if load.Path != nil {
+		o.Path = *load.Path
+	}
+	if load.Query != nil {
+		o.Query = *load.Query
+	}
+	if load.Headers != nil {
+		o.Headers = load.Headers
+	}
+	if load.Body != nil {
+		o.Body = *load.Body
+	}
+	if load.Timeout != nil {
+		o.Timeout = *load.Timeout
+	}
+	if load.ExpectedCodes != nil {
+		o.ExpectedCodes = load.ExpectedCodes
+	}
+	if load.ExpectedHeaders != nil {
+		o.ExpectedHeaders = load.ExpectedHeaders
+	}
+	if load.ExpectedBody != nil {
+		o.ExpectedBody = *load.ExpectedBody
+		o.hasExpectedBody = true
+	}
+
+	return nil
+}

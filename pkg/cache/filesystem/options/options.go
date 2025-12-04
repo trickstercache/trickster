@@ -30,3 +30,22 @@ type Options struct {
 func New() *Options {
 	return &Options{CachePath: d.DefaultCachePath}
 }
+
+type loaderOptions struct {
+	CachePath *string `yaml:"cache_path,omitempty"`
+}
+
+func (o *Options) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*o = *(New())
+
+	var load loaderOptions
+	if err := unmarshal(&load); err != nil {
+		return err
+	}
+
+	if load.CachePath != nil {
+		o.CachePath = *load.CachePath
+	}
+
+	return nil
+}

@@ -155,3 +155,42 @@ func (o *Options) ValidatePool(backendName string, allBackends sets.Set[string])
 	}
 	return nil
 }
+
+type loaderOptions struct {
+	MechanismName  *string     `yaml:"mechanism,omitempty"`
+	Pool           []string    `yaml:"pool,omitempty"`
+	HealthyFloor   *int        `yaml:"healthy_floor,omitempty"`
+	OutputFormat   *string     `yaml:"output_format,omitempty"`
+	FGRStatusCodes []int       `yaml:"fgr_status_codes,omitempty"`
+	UserRouter     *ur.Options `yaml:"user_router,omitempty"`
+}
+
+func (o *Options) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*o = *(New())
+
+	var load loaderOptions
+	if err := unmarshal(&load); err != nil {
+		return err
+	}
+
+	if load.MechanismName != nil {
+		o.MechanismName = *load.MechanismName
+	}
+	if load.Pool != nil {
+		o.Pool = load.Pool
+	}
+	if load.HealthyFloor != nil {
+		o.HealthyFloor = *load.HealthyFloor
+	}
+	if load.OutputFormat != nil {
+		o.OutputFormat = *load.OutputFormat
+	}
+	if load.FGRStatusCodes != nil {
+		o.FGRStatusCodes = load.FGRStatusCodes
+	}
+	if load.UserRouter != nil {
+		o.UserRouter = load.UserRouter
+	}
+
+	return nil
+}

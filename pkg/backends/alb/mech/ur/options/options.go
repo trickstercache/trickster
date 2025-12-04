@@ -128,3 +128,30 @@ func (o *Options) Validate(backendTypes map[string]string) error {
 
 	return nil
 }
+
+type loaderOptions struct {
+	DefaultBackend    *string                  `yaml:"default_backend"`
+	NoRouteStatusCode *int                     `yaml:"no_route_status_code,omitempty"`
+	Users             UserMappingOptionsByUser `yaml:"users,omitempty"`
+}
+
+func (o *Options) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*o = *(New())
+
+	var load loaderOptions
+	if err := unmarshal(&load); err != nil {
+		return err
+	}
+
+	if load.DefaultBackend != nil {
+		o.DefaultBackend = *load.DefaultBackend
+	}
+	if load.NoRouteStatusCode != nil {
+		o.NoRouteStatusCode = *load.NoRouteStatusCode
+	}
+	if load.Users != nil {
+		o.Users = load.Users
+	}
+
+	return nil
+}

@@ -134,3 +134,58 @@ func (l Lookup) Validate() error {
 	}
 	return nil
 }
+
+type loaderOptions struct {
+	Provider           *string             `yaml:"provider,omitempty"`
+	ServiceName        *string             `yaml:"service_name,omitempty"`
+	Endpoint           *string             `yaml:"endpoint,omitempty"`
+	Timeout            *time.Duration      `yaml:"timeout,omitempty"`
+	Headers            map[string]string   `yaml:"headers,omitempty"`
+	DisableCompression *bool               `yaml:"disable_compression,omitempty"`
+	SampleRate         *float64            `yaml:"sample_rate,omitempty"`
+	Tags               map[string]string   `yaml:"tags,omitempty"`
+	OmitTagsList       []string            `yaml:"omit_tags,omitempty"`
+	StdOutOptions      *stdoutopts.Options `yaml:"stdout,omitempty"`
+}
+
+func (o *Options) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*o = *(New())
+
+	var load loaderOptions
+	if err := unmarshal(&load); err != nil {
+		return err
+	}
+
+	if load.Provider != nil {
+		o.Provider = *load.Provider
+	}
+	if load.ServiceName != nil {
+		o.ServiceName = *load.ServiceName
+	}
+	if load.Endpoint != nil {
+		o.Endpoint = *load.Endpoint
+	}
+	if load.Timeout != nil {
+		o.Timeout = *load.Timeout
+	}
+	if load.Headers != nil {
+		o.Headers = load.Headers
+	}
+	if load.DisableCompression != nil {
+		o.DisableCompression = *load.DisableCompression
+	}
+	if load.SampleRate != nil {
+		o.SampleRate = load.SampleRate
+	}
+	if load.Tags != nil {
+		o.Tags = load.Tags
+	}
+	if load.OmitTagsList != nil {
+		o.OmitTagsList = load.OmitTagsList
+	}
+	if load.StdOutOptions != nil {
+		o.StdOutOptions = load.StdOutOptions
+	}
+
+	return nil
+}

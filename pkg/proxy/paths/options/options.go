@@ -313,3 +313,82 @@ outer:
 	}
 	return out[:k]
 }
+
+type loaderOptions struct {
+	Path                    *string                 `yaml:"path,omitempty"`
+	MatchTypeName           *matching.PathMatchName `yaml:"match_type,omitempty"`
+	HandlerName             *string                 `yaml:"handler,omitempty"`
+	Methods                 []string                `yaml:"methods,omitempty"`
+	CacheKeyParams          []string                `yaml:"cache_key_params,omitempty"`
+	CacheKeyHeaders         []string                `yaml:"cache_key_headers,omitempty"`
+	CacheKeyFormFields      []string                `yaml:"cache_key_form_fields,omitempty"`
+	RequestHeaders          types.EnvStringMap      `yaml:"request_headers,omitempty"`
+	RequestParams           types.EnvStringMap      `yaml:"request_params,omitempty"`
+	ResponseHeaders         types.EnvStringMap      `yaml:"response_headers,omitempty"`
+	ResponseCode            *int                    `yaml:"response_code,omitempty"`
+	ResponseBody            *string                 `yaml:"response_body,omitempty"`
+	CollapsedForwardingName *string                 `yaml:"collapsed_forwarding,omitempty"`
+	ReqRewriterName         *string                 `yaml:"req_rewriter_name,omitempty"`
+	NoMetrics               *bool                   `yaml:"no_metrics,omitempty"`
+	AuthenticatorName       *string                 `yaml:"authenticator_name,omitempty"`
+}
+
+func (o *Options) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*o = *(New())
+
+	var load loaderOptions
+	if err := unmarshal(&load); err != nil {
+		return err
+	}
+
+	if load.Path != nil {
+		o.Path = *load.Path
+	}
+	if load.MatchTypeName != nil {
+		o.MatchTypeName = *load.MatchTypeName
+	}
+	if load.HandlerName != nil {
+		o.HandlerName = *load.HandlerName
+	}
+	if load.Methods != nil {
+		o.Methods = load.Methods
+	}
+	if load.CacheKeyParams != nil {
+		o.CacheKeyParams = load.CacheKeyParams
+	}
+	if load.CacheKeyHeaders != nil {
+		o.CacheKeyHeaders = load.CacheKeyHeaders
+	}
+	if load.CacheKeyFormFields != nil {
+		o.CacheKeyFormFields = load.CacheKeyFormFields
+	}
+	if load.RequestHeaders != nil {
+		o.RequestHeaders = load.RequestHeaders
+	}
+	if load.RequestParams != nil {
+		o.RequestParams = load.RequestParams
+	}
+	if load.ResponseHeaders != nil {
+		o.ResponseHeaders = load.ResponseHeaders
+	}
+	if load.ResponseCode != nil {
+		o.ResponseCode = *load.ResponseCode
+	}
+	if load.ResponseBody != nil {
+		o.ResponseBody = load.ResponseBody
+	}
+	if load.CollapsedForwardingName != nil {
+		o.CollapsedForwardingName = *load.CollapsedForwardingName
+	}
+	if load.ReqRewriterName != nil {
+		o.ReqRewriterName = *load.ReqRewriterName
+	}
+	if load.NoMetrics != nil {
+		o.NoMetrics = *load.NoMetrics
+	}
+	if load.AuthenticatorName != nil {
+		o.AuthenticatorName = *load.AuthenticatorName
+	}
+
+	return nil
+}

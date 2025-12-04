@@ -40,6 +40,11 @@ type Lookup map[string]*Options
 var ErrInvalidName = errors.New("invalid rewriter name")
 var restrictedNames = sets.New([]string{"", "none"})
 
+// New returns a new Rewriter Options with default values
+func New() *Options {
+	return &Options{}
+}
+
 // Clone returns an exact copy of the subject *Options
 func (o *Options) Clone() *Options {
 	o2 := &Options{}
@@ -81,4 +86,20 @@ func (rl RewriteList) Clone() RewriteList {
 		}
 	}
 	return rl2
+}
+
+type loaderOptions struct {
+	Instructions RewriteList `yaml:"instructions,omitempty"`
+}
+
+func (o *Options) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*o = *(New())
+	var load loaderOptions
+	if err := unmarshal(&load); err != nil {
+		return err
+	}
+	if load.Instructions != nil {
+		o.Instructions = load.Instructions
+	}
+	return nil
 }

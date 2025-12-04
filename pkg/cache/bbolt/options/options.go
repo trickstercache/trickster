@@ -28,3 +28,26 @@ type Options struct {
 func New() *Options {
 	return &Options{Filename: DefaultBBoltFile, Bucket: DefaultBBoltBucket}
 }
+
+type loaderOptions struct {
+	Filename *string `yaml:"filename,omitempty"`
+	Bucket   *string `yaml:"bucket,omitempty"`
+}
+
+func (o *Options) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*o = *(New())
+
+	var load loaderOptions
+	if err := unmarshal(&load); err != nil {
+		return err
+	}
+
+	if load.Filename != nil {
+		o.Filename = *load.Filename
+	}
+	if load.Bucket != nil {
+		o.Bucket = *load.Bucket
+	}
+
+	return nil
+}

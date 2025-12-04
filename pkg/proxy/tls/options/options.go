@@ -105,3 +105,42 @@ func (o *Options) Validate() (bool, error) {
 
 	return true, nil
 }
+
+type loaderOptions struct {
+	FullChainCertPath         *string  `yaml:"full_chain_cert_path,omitempty"`
+	PrivateKeyPath            *string  `yaml:"private_key_path,omitempty"`
+	InsecureSkipVerify        *bool    `yaml:"insecure_skip_verify,omitempty"`
+	CertificateAuthorityPaths []string `yaml:"certificate_authority_paths,omitempty"`
+	ClientCertPath            *string  `yaml:"client_cert_path,omitempty"`
+	ClientKeyPath             *string  `yaml:"client_key_path,omitempty"`
+}
+
+func (o *Options) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*o = *(New())
+
+	var load loaderOptions
+	if err := unmarshal(&load); err != nil {
+		return err
+	}
+
+	if load.FullChainCertPath != nil {
+		o.FullChainCertPath = *load.FullChainCertPath
+	}
+	if load.PrivateKeyPath != nil {
+		o.PrivateKeyPath = *load.PrivateKeyPath
+	}
+	if load.InsecureSkipVerify != nil {
+		o.InsecureSkipVerify = *load.InsecureSkipVerify
+	}
+	if load.CertificateAuthorityPaths != nil {
+		o.CertificateAuthorityPaths = load.CertificateAuthorityPaths
+	}
+	if load.ClientCertPath != nil {
+		o.ClientCertPath = *load.ClientCertPath
+	}
+	if load.ClientKeyPath != nil {
+		o.ClientKeyPath = *load.ClientKeyPath
+	}
+
+	return nil
+}

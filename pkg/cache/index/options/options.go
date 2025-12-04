@@ -70,3 +70,46 @@ func (o *Options) Equal(o2 *Options) bool {
 		o.MaxSizeObjects == o2.MaxSizeObjects &&
 		o.MaxSizeBackoffObjects == o2.MaxSizeBackoffObjects
 }
+
+type loaderOptions struct {
+	ReapInterval          *time.Duration `yaml:"reap_interval,omitempty"`
+	FlushInterval         *time.Duration `yaml:"flush_interval,omitempty"`
+	IndexExpiry           *time.Duration `yaml:"index_expiry,omitempty"`
+	MaxSizeBytes          *int64         `yaml:"max_size_bytes,omitempty"`
+	MaxSizeBackoffBytes   *int64         `yaml:"max_size_backoff_bytes,omitempty"`
+	MaxSizeObjects        *int64         `yaml:"max_size_objects,omitempty"`
+	MaxSizeBackoffObjects *int64         `yaml:"max_size_backoff_objects,omitempty"`
+}
+
+func (o *Options) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*o = *(New())
+
+	var load loaderOptions
+	if err := unmarshal(&load); err != nil {
+		return err
+	}
+
+	if load.ReapInterval != nil {
+		o.ReapInterval = *load.ReapInterval
+	}
+	if load.FlushInterval != nil {
+		o.FlushInterval = *load.FlushInterval
+	}
+	if load.IndexExpiry != nil {
+		o.IndexExpiry = *load.IndexExpiry
+	}
+	if load.MaxSizeBytes != nil {
+		o.MaxSizeBytes = *load.MaxSizeBytes
+	}
+	if load.MaxSizeBackoffBytes != nil {
+		o.MaxSizeBackoffBytes = *load.MaxSizeBackoffBytes
+	}
+	if load.MaxSizeObjects != nil {
+		o.MaxSizeObjects = *load.MaxSizeObjects
+	}
+	if load.MaxSizeBackoffObjects != nil {
+		o.MaxSizeBackoffObjects = *load.MaxSizeBackoffObjects
+	}
+
+	return nil
+}
