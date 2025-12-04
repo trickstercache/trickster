@@ -1,13 +1,11 @@
 frontend:
   listen_port: 8480
-
 negative_caches:
   default:
     '400': 3s
     '404': 3s
     '500': 3s
     '502': 3s
-
 caches:
   mem1:
     cache_type: memory
@@ -19,26 +17,22 @@ caches:
     cache_type: memory
     provider: memory
     index:
-      max_size_objects: 1024 
+      max_size_objects: 1024
       max_size_backoff_objects: 128
   fs1:
     cache_type: filesystem
     provider: filesystem
-
 request_rewriters:
-
   remove-accept-encoding:
     instructions:
-      - [ header, delete, Accept-Encoding ]
-
+      - [header, delete, Accept-Encoding]
   range-to-instant:
     instructions:
-      - [ path , set , /api/v1/query ]
-      - [ param , delete , start ]
-      - [ param , delete , end ]
-      - [ param , delete , step ]
-      - [ chain , exec , remove-accept-encoding ]
-
+      - [path, set, /api/v1/query]
+      - [param, delete, start]
+      - [param, delete, end]
+      - [param, delete, step]
+      - [chain, exec, remove-accept-encoding]
 rules:
   example:
     input_source: header
@@ -53,7 +47,6 @@ rules:
       - matches:
           - 'trickster:'
         next_route: sim1
-
 tracing:
   jc1:
     provider: otlp
@@ -66,7 +59,6 @@ tracing:
     endpoint: '127.0.0.1:6831'
     omit_tags:
       - http.url
-
 backends:
   alb1:
     provider: alb
@@ -146,13 +138,13 @@ backends:
     healthcheck:
       interval: 300ms
       timeout: 500ms
-    # uncomment and set certs to test TLS
-    # tls:
-    #   full_chain_cert_path: >-
-    #     /example/certs/127.0.0.1.pem
-    #   private_key_path: >-
-    #     /example/certs/127.0.0.1-key.pem
-    #   insecure_skip_verify: true
+      # uncomment and set certs to test TLS
+      # tls:
+      #   full_chain_cert_path: >-
+      #     /example/certs/127.0.0.1.pem
+      #   private_key_path: >-
+      #     /example/certs/127.0.0.1-key.pem
+      #   insecure_skip_verify: true
   sim2:
     provider: prometheus
     origin_url: 'http://127.0.0.1:8482/prometheus'
@@ -188,9 +180,7 @@ backends:
       - path: /
         match_type: prefix
         handler: proxycache
-
 logging:
   log_level: info
-
 metrics:
   listen_port: 8481
