@@ -189,43 +189,43 @@ func TestParseOptions(t *testing.T) {
 	}
 
 	expected = "invalid rewriter"
-	temp = ropts.CaseOptions["1"].ReqRewriterName
-	ropts.CaseOptions["1"].ReqRewriterName = "invalid"
+	temp = ropts.CaseOptions[0].ReqRewriterName
+	ropts.CaseOptions[0].ReqRewriterName = "invalid"
 	err = c.parseOptions(ropts, rwi)
-	ropts.CaseOptions["1"].ReqRewriterName = temp
+	ropts.CaseOptions[0].ReqRewriterName = temp
 	if err == nil || !strings.Contains(err.Error(), expected) {
 		t.Errorf("expected error for %s", expected)
 	}
 
 	expected = "missing next_route"
-	temp = ropts.CaseOptions["1"].ReqRewriterName
-	temp2 = ropts.CaseOptions["1"].RedirectURL
-	temp4 := ropts.CaseOptions["1"].NextRoute
-	ropts.CaseOptions["1"].ReqRewriterName = ""
-	ropts.CaseOptions["1"].RedirectURL = ""
-	ropts.CaseOptions["1"].NextRoute = ""
+	temp = ropts.CaseOptions[0].ReqRewriterName
+	temp2 = ropts.CaseOptions[0].RedirectURL
+	temp4 := ropts.CaseOptions[0].NextRoute
+	ropts.CaseOptions[0].ReqRewriterName = ""
+	ropts.CaseOptions[0].RedirectURL = ""
+	ropts.CaseOptions[0].NextRoute = ""
 	err = c.parseOptions(ropts, rwi)
-	ropts.CaseOptions["1"].ReqRewriterName = temp
-	ropts.CaseOptions["1"].RedirectURL = temp2
-	ropts.CaseOptions["1"].NextRoute = temp4
+	ropts.CaseOptions[0].ReqRewriterName = temp
+	ropts.CaseOptions[0].RedirectURL = temp2
+	ropts.CaseOptions[0].NextRoute = temp4
 	if err == nil || !strings.Contains(err.Error(), expected) {
 		t.Errorf("expected error for %s", expected)
 	}
 
 	expected = "missing matches in rule"
-	temp5 := ropts.CaseOptions["1"].Matches
-	ropts.CaseOptions["1"].Matches = []string{}
+	temp5 := ropts.CaseOptions[0].Matches
+	ropts.CaseOptions[0].Matches = []string{}
 	err = c.parseOptions(ropts, rwi)
-	ropts.CaseOptions["1"].Matches = temp5
+	ropts.CaseOptions[0].Matches = temp5
 	if err == nil || !strings.Contains(err.Error(), expected) {
 		t.Errorf("expected error for %s", expected)
 	}
 
 	expected = "unknown next_route"
-	temp = ropts.CaseOptions["1"].NextRoute
-	ropts.CaseOptions["1"].NextRoute = "invalid"
+	temp = ropts.CaseOptions[0].NextRoute
+	ropts.CaseOptions[0].NextRoute = "invalid"
 	err = c.parseOptions(ropts, rwi)
-	ropts.CaseOptions["1"].NextRoute = temp
+	ropts.CaseOptions[0].NextRoute = temp
 	if err == nil || !strings.Contains(err.Error(), expected) {
 		t.Errorf("expected error for %s", expected)
 	}
