@@ -151,64 +151,6 @@ func (o *Options) Clone() *Options {
 	return out
 }
 
-// Merge merges the non-default values of the provided Options into the subject Options
-func (o *Options) Merge(o2 *Options) {
-	if o2.Path != "" {
-		o.Path = o2.Path
-	}
-	if o2.MatchTypeName != "" {
-		o.MatchTypeName = o2.MatchTypeName
-		o.MatchType = o2.MatchType
-	}
-	if o2.HandlerName != "" {
-		o.HandlerName = o2.HandlerName
-		o.Handler = o2.Handler
-	}
-	if len(o2.Methods) > 0 {
-		o.Methods = slices.Clone(o2.Methods)
-	}
-	if len(o2.CacheKeyParams) > 0 {
-		o.CacheKeyParams = slices.Clone(o2.CacheKeyParams)
-	}
-	if len(o2.CacheKeyHeaders) > 0 {
-		o.CacheKeyHeaders = slices.Clone(o2.CacheKeyHeaders)
-	}
-	if len(o2.CacheKeyFormFields) > 0 {
-		o.CacheKeyFormFields = slices.Clone(o2.CacheKeyFormFields)
-	}
-	if len(o2.RequestHeaders) > 0 {
-		o.RequestHeaders = maps.Clone(o2.RequestHeaders)
-	}
-	if len(o2.RequestParams) > 0 {
-		o.RequestParams = maps.Clone(o2.RequestParams)
-	}
-	if len(o2.ResponseHeaders) > 0 {
-		o.ResponseHeaders = maps.Clone(o2.ResponseHeaders)
-	}
-	if o2.ResponseCode > 0 {
-		o.ResponseCode = o2.ResponseCode
-	}
-	o.ResponseBody = pointers.Clone(o2.ResponseBody)
-	if o.ResponseBody != nil {
-		o.ResponseBodyBytes = []byte(*o.ResponseBody)
-	}
-	o.NoMetrics = o2.NoMetrics
-	if o2.CollapsedForwardingName != "" {
-		o.CollapsedForwardingName = o2.CollapsedForwardingName
-		o.CollapsedForwardingType = o2.CollapsedForwardingType
-	}
-	if o2.ReqRewriterName != "" {
-		o.ReqRewriterName = o2.ReqRewriterName
-		o.ReqRewriter = o2.ReqRewriter
-	}
-	if o2.AuthenticatorName != "" {
-		o.AuthenticatorName = o2.AuthenticatorName
-		if o2.AuthOptions != nil {
-			o.AuthOptions = o2.AuthOptions.Clone()
-		}
-	}
-}
-
 // Initialize sets up the path Options with default values and overlays
 // any values that were set during YAML unmarshaling
 func (o *Options) Initialize(_ string) error {

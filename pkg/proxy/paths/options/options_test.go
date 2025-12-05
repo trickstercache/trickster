@@ -17,14 +17,11 @@
 package options
 
 import (
-	"net/http"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/forwarding"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 )
 
 func TestNew(t *testing.T) {
@@ -46,104 +43,6 @@ func TestPathClone(t *testing.T) {
 
 	if pc2.HandlerName != providers.Proxy {
 		t.Errorf("expected value %s, got %s", providers.Proxy, pc2.HandlerName)
-	}
-
-}
-
-func TestPathMerge(t *testing.T) {
-
-	pc := New()
-	pc2 := pc.Clone()
-
-	expectedPath := "testPath"
-	expectedHandlerName := "testHandler"
-
-	pc2.Path = expectedPath
-	pc2.MatchType = matching.PathMatchTypePrefix
-	pc2.HandlerName = expectedHandlerName
-	pc2.Methods = []string{http.MethodPost}
-	pc2.CacheKeyParams = []string{"params"}
-	pc2.CacheKeyHeaders = []string{"headers"}
-	pc2.CacheKeyFormFields = []string{"fields"}
-	pc2.RequestHeaders = map[string]string{"header1": "1"}
-	pc2.RequestParams = map[string]string{"param1": "foo"}
-	pc2.ResponseHeaders = map[string]string{"header2": "2"}
-	pc2.ResponseCode = 404
-	responseBody := "trickster"
-	pc2.ResponseBody = &responseBody
-	pc2.NoMetrics = true
-	pc2.CollapsedForwardingName = forwarding.CFNameProgressive
-	pc2.CollapsedForwardingType = forwarding.CFTypeProgressive
-
-	pc.Merge(pc2)
-
-	if pc.Path != expectedPath {
-		t.Errorf("expected %s got %s", expectedPath, pc.Path)
-	}
-
-	if pc.MatchType != matching.PathMatchTypePrefix {
-		t.Errorf("expected %s got %s", matching.PathMatchTypePrefix, pc.MatchType)
-	}
-
-	if pc.HandlerName != expectedHandlerName {
-		t.Errorf("expected %s got %s", expectedHandlerName, pc.HandlerName)
-	}
-
-	if len(pc.CacheKeyParams) != 1 {
-		t.Errorf("expected %d got %d", 1, len(pc.CacheKeyParams))
-	}
-
-	if len(pc.CacheKeyHeaders) != 1 {
-		t.Errorf("expected %d got %d", 1, len(pc.CacheKeyHeaders))
-	}
-
-	if len(pc.CacheKeyFormFields) != 1 {
-		t.Errorf("expected %d got %d", 1, len(pc.CacheKeyFormFields))
-	}
-
-	if len(pc.RequestHeaders) != 1 {
-		t.Errorf("expected %d got %d", 1, len(pc.RequestHeaders))
-	}
-
-	if len(pc.RequestParams) != 1 {
-		t.Errorf("expected %d got %d", 1, len(pc.RequestParams))
-	}
-
-	if len(pc.ResponseHeaders) != 1 {
-		t.Errorf("expected %d got %d", 1, len(pc.ResponseHeaders))
-	}
-
-	if pc.ResponseCode != 404 {
-		t.Errorf("expected %d got %d", 404, pc.ResponseCode)
-	}
-
-	if pc.ResponseCode != 404 {
-		t.Errorf("expected %d got %d", 404, pc.ResponseCode)
-	}
-
-	if pc.ResponseBody == nil || *pc.ResponseBody != "trickster" {
-		t.Errorf("expected %s got %v", "trickster", pc.ResponseBody)
-	}
-
-	if !pc.NoMetrics {
-		t.Errorf("expected %t got %t", true, pc.NoMetrics)
-	}
-
-	if pc.CollapsedForwardingName != forwarding.CFNameProgressive ||
-		pc.CollapsedForwardingType != forwarding.CFTypeProgressive {
-		t.Errorf("expected %s got %s", forwarding.CFNameProgressive, pc.CollapsedForwardingName)
-	}
-
-}
-
-func TestMerge(t *testing.T) {
-
-	o := &Options{}
-	o2 := &Options{ReqRewriterName: "test_rewriter"}
-	o.Merge(o2)
-
-	if o.ReqRewriterName != "test_rewriter" {
-		t.Errorf("expected %s got %s", "test_rewriter", o.ReqRewriterName)
 	}
 
 }
