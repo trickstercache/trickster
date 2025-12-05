@@ -19,22 +19,38 @@ package listener
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
+	trerr "github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/switcher"
 	sw "github.com/trickstercache/trickster/v2/pkg/proxy/tls"
 
 	"golang.org/x/net/netutil"
+)
+
+// ListenerState represents the state of a listener
+type ListenerState int32
+
+const (
+	// StateStopped indicates the listener is not running
+	StateStopped ListenerState = iota
+	// StateStarting indicates the listener is starting up
+	StateStarting
+	// StateReady indicates the listener is ready to accept connections
+	StateReady
+	// StateStopping indicates the listener is shutting down
+	StateStopping
 )
 
 // Listener is the Trickster net.Listener implmementation
@@ -45,6 +61,9 @@ type Listener struct {
 	routeSwapper *switcher.SwitchHandler
 	server       *http.Server
 	exitOnError  bool
+	state        int32
+	readyCh      chan struct{}
+	readyOnce    sync.Once
 }
 
 type observedConnection struct {
@@ -92,15 +111,58 @@ func (l *Listener) RouteSwapper() *switcher.SwitchHandler {
 
 // Group is a collection of listeners
 type Group struct {
-	members       map[string]*Listener
-	listenersLock sync.Mutex
+	members        map[string]*Listener
+	listenersLock  sync.Mutex
+	shutdownCtx    context.Context
+	shutdownCancel context.CancelFunc
 }
 
 // NewGroup returns a new Group
 func NewGroup() *Group {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &Group{
-		members: make(map[string]*Listener),
+		members:        make(map[string]*Listener),
+		shutdownCtx:    ctx,
+		shutdownCancel: cancel,
 	}
+}
+
+// State returns the current state of the listener
+func (l *Listener) State() ListenerState {
+	return ListenerState(atomic.LoadInt32(&l.state))
+}
+
+// setState atomically sets the listener state
+func (l *Listener) setState(state ListenerState) {
+	atomic.StoreInt32(&l.state, int32(state))
+}
+
+// markReady signals that the listener is ready to accept connections
+func (l *Listener) markReady() {
+	l.readyOnce.Do(func() {
+		if l.readyCh != nil {
+			close(l.readyCh)
+		}
+	})
+}
+
+// WaitForReady waits for the listener to become ready, with optional timeout
+func (l *Listener) WaitForReady(timeout time.Duration) bool {
+	if l.readyCh == nil {
+		return l.State() == StateReady
+	}
+	if timeout > 0 {
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+		select {
+		case <-l.readyCh:
+			return true
+		case <-ctx.Done():
+			return false
+		}
+	}
+	<-l.readyCh
+	return true
 }
 
 // NewListener creates a new network listener which obeys to the configuration max
@@ -167,7 +229,13 @@ func (lg *Group) Get(name string) *Listener {
 func (lg *Group) StartListener(listenerName, address string, port int, connectionsLimit int,
 	tlsConfig *tls.Config, router http.Handler, tracers tracing.Tracers,
 	f func(), drainTimeout, readHeaderTimeout time.Duration) error {
-	l := &Listener{routeSwapper: switcher.NewSwitchHandler(router), exitOnError: f != nil}
+	l := &Listener{
+		routeSwapper: switcher.NewSwitchHandler(router),
+		exitOnError:  f != nil,
+		readyCh:      make(chan struct{}),
+	}
+	l.setState(StateStarting)
+
 	if tlsConfig != nil && len(tlsConfig.Certificates) > 0 {
 		l.tlsConfig = tlsConfig
 		l.tlsSwapper = sw.NewSwapper(tlsConfig.Certificates)
@@ -182,6 +250,7 @@ func (lg *Group) StartListener(listenerName, address string, port int, connectio
 	if err != nil {
 		logger.ErrorSynchronous(
 			"http listener startup failed", logging.Pairs{"listenerName": listenerName, "detail": err})
+		l.setState(StateStopped)
 		if f != nil {
 			f()
 		}
@@ -193,6 +262,10 @@ func (lg *Group) StartListener(listenerName, address string, port int, connectio
 	lg.listenersLock.Lock()
 	lg.members[listenerName] = l
 	lg.listenersLock.Unlock()
+
+	// Mark as ready once listener is created and added
+	l.setState(StateReady)
+	l.markReady()
 
 	// defer the tracer flush here where the listener connection ends
 	defer handleTracerShutdowns(tracers)
@@ -265,22 +338,88 @@ func (lg *Group) DrainAndClose(listenerName string, drainWait time.Duration) err
 	l, ok := lg.members[listenerName]
 	if !ok || l == nil {
 		lg.listenersLock.Unlock()
-		return errors.ErrNoSuchListener
+		return trerr.ErrNoSuchListener
 	}
 	l.exitOnError = false
+	l.setState(StateStopping)
 	delete(lg.members, listenerName)
 	lg.listenersLock.Unlock()
 
 	if l.Listener == nil {
-		return errors.ErrNilListener
+		l.setState(StateStopped)
+		return trerr.ErrNilListener
 	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), drainWait)
 	defer cancel()
 
 	if l.server != nil {
-		return l.server.Shutdown(ctx)
+		err := l.server.Shutdown(ctx)
+		if err != nil {
+			l.setState(StateStopped)
+			return err
+		}
 	}
+	l.setState(StateStopped)
 	return nil
+}
+
+// WaitForReady waits for all listeners in the group to become ready
+func (lg *Group) WaitForReady(timeout time.Duration) error {
+	lg.listenersLock.Lock()
+	listeners := make([]*Listener, 0, len(lg.members))
+	for _, l := range lg.members {
+		if l != nil {
+			listeners = append(listeners, l)
+		}
+	}
+	lg.listenersLock.Unlock()
+
+	if len(listeners) == 0 {
+		return nil
+	}
+
+	done := make(chan struct{})
+	go func() {
+		for _, l := range listeners {
+			l.WaitForReady(0)
+		}
+		close(done)
+	}()
+
+	if timeout > 0 {
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+		select {
+		case <-done:
+			return nil
+		case <-ctx.Done():
+			return errors.New("timeout waiting for listeners to become ready")
+		}
+	}
+
+	<-done
+	return nil
+}
+
+// Shutdown gracefully shuts down all listeners in the group
+func (lg *Group) Shutdown(drainWait time.Duration) error {
+	lg.listenersLock.Lock()
+	names := make([]string, 0, len(lg.members))
+	for name := range lg.members {
+		names = append(names, name)
+	}
+	lg.listenersLock.Unlock()
+
+	var firstErr error
+	for _, name := range names {
+		if err := lg.DrainAndClose(name, drainWait); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+
+	lg.shutdownCancel()
+	return firstErr
 }
 
 // UpdateFrontendRouters will swap out the routers across the named Listeners with the provided ones

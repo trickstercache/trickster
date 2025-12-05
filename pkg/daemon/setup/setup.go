@@ -51,9 +51,11 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 	"github.com/trickstercache/trickster/v2/pkg/routing"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
 )
 
 var mtx sync.Mutex
+var lg = listener.NewGroup()
 
 // BootstrapConfig loads, validates, processes and prepares a configuration
 // along with its backend clients. This centralizes the common initialization
@@ -198,13 +200,14 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	alb.StartALBPools(clients, si.HealthChecker.Statuses())
 	routing.RegisterDefaultBackendRoutes(r, newConf, clients, tracers)
 	routing.RegisterHealthHandler(mr, newConf.MgmtConfig.HealthHandlerPath, si.HealthChecker)
-	applyListenerConfigs(newConf, si.Config, r, rh, mr, tracers, clients, errorFunc)
+	applyListenerConfigs(newConf, si.Config, r, rh, mr, tracers, clients, errorFunc, lg)
 
 	metrics.LastReloadSuccessfulTimestamp.Set(float64(time.Now().Unix()))
 	metrics.LastReloadSuccessful.Set(1)
 	si.Config = newConf
 	si.Caches = caches
 	si.Backends = clients
+	si.Listeners = lg
 	return nil
 }
 

@@ -23,10 +23,12 @@ import (
 	"os"
 	goruntime "runtime"
 	"sync"
+	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 	"github.com/trickstercache/trickster/v2/pkg/appinfo/usage"
 	"github.com/trickstercache/trickster/v2/pkg/config/reload"
+	"github.com/trickstercache/trickster/v2/pkg/config/validate"
 	"github.com/trickstercache/trickster/v2/pkg/daemon/instance"
 	"github.com/trickstercache/trickster/v2/pkg/daemon/setup"
 	"github.com/trickstercache/trickster/v2/pkg/daemon/signaling"
@@ -83,6 +85,20 @@ func Start() error {
 	if err != nil {
 		return err
 	}
+
+	if si.Listeners != nil {
+		readinessTimeout := 30 * time.Second
+		if conf.MgmtConfig != nil && conf.MgmtConfig.ReloadDrainTimeout > 0 {
+			readinessTimeout = conf.MgmtConfig.ReloadDrainTimeout * 2
+		}
+		if err := si.Listeners.WaitForReady(readinessTimeout); err != nil {
+			logger.Warn("startup completed but some listeners not ready",
+				logging.Pairs{"error": err.Error()})
+		} else {
+			logger.Info("all listeners ready", nil)
+		}
+	}
+
 	wasStarted = true
 	skipUnlock = true
 	mtx.Unlock()
@@ -93,22 +109,43 @@ func Start() error {
 func Hup(si *instance.ServerInstance, source string) (bool, error) {
 	mtx.Lock()
 	defer mtx.Unlock()
+
+	startTime := time.Now()
+	metrics.ReloadAttemptsTotal.Inc()
+
 	if si.Config == nil {
 		logger.Warn(reload.ConfigNotReloadedText,
 			logging.Pairs{"source": source, "reason": "no existing config to reload"})
+		metrics.ReloadFailuresTotal.Inc()
+		metrics.LastReloadSuccessful.Set(0)
 		return false, nil
 	}
+
 	if !si.Config.CheckAndMarkReloadInProgress() {
 		logger.Debug("configuration not stale, skipping reload",
 			logging.Pairs{"source": source})
 		return false, nil
 	}
+
 	logger.Warn("configuration reload starting now",
 		logging.Pairs{"source": source})
+
 	newConf, newClients, err := setup.BootstrapConfig()
 	if err != nil {
 		logger.Error("reload failed: could not load new config",
 			logging.Pairs{"error": err.Error(), "source": source})
+		metrics.ReloadFailuresTotal.Inc()
+		metrics.LastReloadSuccessful.Set(0)
+		metrics.ReloadDurationSeconds.Observe(time.Since(startTime).Seconds())
+		return false, err
+	}
+
+	if err := validate.Validate(newConf); err != nil {
+		logger.Error("reload failed: new configuration is invalid",
+			logging.Pairs{"error": err.Error(), "source": source})
+		metrics.ReloadFailuresTotal.Inc()
+		metrics.LastReloadSuccessful.Set(0)
+		metrics.ReloadDurationSeconds.Observe(time.Since(startTime).Seconds())
 		return false, err
 	}
 
@@ -116,6 +153,7 @@ func Hup(si *instance.ServerInstance, source string) (bool, error) {
 	oldClients := si.Backends
 	oldCaches := si.Caches
 	oldHealthChecker := si.HealthChecker
+	oldListeners := si.Listeners
 
 	hupFunc := func(source string) (bool, error) {
 		return Hup(si, source)
@@ -123,15 +161,47 @@ func Hup(si *instance.ServerInstance, source string) (bool, error) {
 
 	err = setup.ApplyConfig(si, newConf, newClients, hupFunc, nil)
 	if err != nil {
-		// Rollback to old state
 		logger.Error("reload failed, rolling back to previous configuration",
 			logging.Pairs{"error": err.Error(), "source": source})
 		si.Config = oldConfig
 		si.Backends = oldClients
 		si.Caches = oldCaches
 		si.HealthChecker = oldHealthChecker
+		si.Listeners = oldListeners
+		metrics.ReloadFailuresTotal.Inc()
+		metrics.LastReloadSuccessful.Set(0)
+		metrics.ReloadDurationSeconds.Observe(time.Since(startTime).Seconds())
 		return false, err
 	}
+
+	if si.Listeners != nil {
+		readinessTimeout := 30 * time.Second
+		if newConf.MgmtConfig != nil && newConf.MgmtConfig.ReloadDrainTimeout > 0 {
+			readinessTimeout = newConf.MgmtConfig.ReloadDrainTimeout * 2
+		}
+		if err := si.Listeners.WaitForReady(readinessTimeout); err != nil {
+			logger.Warn("reload completed but some listeners not ready",
+				logging.Pairs{"error": err.Error(), "source": source})
+		}
+	}
+
+	if oldListeners != nil && oldListeners != si.Listeners {
+		drainTimeout := 30 * time.Second
+		if newConf.MgmtConfig != nil && newConf.MgmtConfig.ReloadDrainTimeout > 0 {
+			drainTimeout = newConf.MgmtConfig.ReloadDrainTimeout
+		}
+		go func() {
+			if err := oldListeners.Shutdown(drainTimeout); err != nil {
+				logger.Warn("error shutting down old listeners",
+					logging.Pairs{"error": err.Error(), "source": source})
+			}
+		}()
+	}
+
+	metrics.ReloadSuccessesTotal.Inc()
+	metrics.LastReloadSuccessful.Set(1)
+	metrics.LastReloadSuccessfulTimestamp.Set(float64(time.Now().Unix()))
+	metrics.ReloadDurationSeconds.Observe(time.Since(startTime).Seconds())
 
 	logger.Info(reload.ConfigReloadedText, logging.Pairs{"source": source})
 	return true, nil
