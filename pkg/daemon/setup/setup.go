@@ -55,6 +55,38 @@ import (
 
 var mtx sync.Mutex
 
+// BootstrapConfig loads, validates, processes and prepares a configuration
+// along with its backend clients. This centralizes the common initialization
+// logic used by both startup and reload operations.
+func BootstrapConfig() (*config.Config, backends.Backends, error) {
+	conf, err := LoadAndValidate()
+	if err != nil {
+		return nil, nil, err
+	}
+	if conf == nil {
+		return nil, nil, te.ErrInvalidOptions
+	}
+	if conf.Flags != nil {
+		if conf.Flags.PrintVersion {
+			return conf, nil, nil
+		}
+		if conf.Flags.ValidateConfig {
+			return conf, nil, nil
+		}
+	}
+	err = conf.Process()
+	if err != nil {
+		return nil, nil, err
+	}
+	clients := make(backends.Backends, len(conf.Backends))
+	// these can't be done until the config is processed
+	err = validate.RoutesRulesAndPools(conf, clients)
+	if err != nil {
+		return nil, nil, err
+	}
+	return conf, clients, nil
+}
+
 func LoadAndValidate() (*config.Config, error) {
 	mtx.Lock()
 	defer mtx.Unlock()

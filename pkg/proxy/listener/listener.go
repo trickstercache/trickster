@@ -262,25 +262,25 @@ func (lg *Group) StartListenerRouter(listenerName, address string, port int, con
 // DrainAndClose drains and closes the named listener
 func (lg *Group) DrainAndClose(listenerName string, drainWait time.Duration) error {
 	lg.listenersLock.Lock()
-	if l, ok := lg.members[listenerName]; ok && l != nil {
-		l.exitOnError = false
-		delete(lg.members, listenerName)
+	l, ok := lg.members[listenerName]
+	if !ok || l == nil {
 		lg.listenersLock.Unlock()
-		if l.Listener == nil {
-			return errors.ErrNilListener
-		}
-		ctx := context.Background()
-		go func() {
-			time.Sleep(drainWait)
-			ctx.Done()
-		}()
-		if l.server != nil {
-			go l.server.Shutdown(ctx)
-		}
-		return nil
+		return errors.ErrNoSuchListener
 	}
+	l.exitOnError = false
+	delete(lg.members, listenerName)
 	lg.listenersLock.Unlock()
-	return errors.ErrNoSuchListener
+
+	if l.Listener == nil {
+		return errors.ErrNilListener
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), drainWait)
+	defer cancel()
+
+	if l.server != nil {
+		return l.server.Shutdown(ctx)
+	}
+	return nil
 }
 
 // UpdateFrontendRouters will swap out the routers across the named Listeners with the provided ones

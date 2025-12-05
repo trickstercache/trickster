@@ -308,6 +308,30 @@ func (c *Config) IsStale() bool {
 	return !t.Equal(c.Main.configLastModified)
 }
 
+// CheckAndMarkReloadInProgress checks if the config is stale and
+// marks it as being reloaded to prevent duplicate reloads.
+func (c *Config) CheckAndMarkReloadInProgress() bool {
+	c.Main.stalenessCheckLock.Lock()
+	defer c.Main.stalenessCheckLock.Unlock()
+	if c.Main == nil || c.Main.configFilePath == "" ||
+		time.Now().Before(c.Main.configRateLimitTime) {
+		return false
+	}
+	if c.MgmtConfig == nil {
+		c.MgmtConfig = mgmt.New()
+	}
+	c.Main.configRateLimitTime = time.Now().Add(c.MgmtConfig.ReloadRateLimit)
+	t := c.CheckFileLastModified()
+	if t.IsZero() {
+		return false
+	}
+	isStale := !t.Equal(c.Main.configLastModified)
+	if isStale {
+		c.Main.configLastModified = t
+	}
+	return isStale
+}
+
 func (c *Config) String() string {
 	cp := c.Clone()
 

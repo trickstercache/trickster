@@ -26,9 +26,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 	"github.com/trickstercache/trickster/v2/pkg/appinfo/usage"
-	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/config/reload"
-	"github.com/trickstercache/trickster/v2/pkg/config/validate"
 	"github.com/trickstercache/trickster/v2/pkg/daemon/instance"
 	"github.com/trickstercache/trickster/v2/pkg/daemon/setup"
 	"github.com/trickstercache/trickster/v2/pkg/daemon/signaling"
@@ -56,7 +54,7 @@ func Start() error {
 	metrics.BuildInfo.WithLabelValues(goruntime.Version(),
 		appinfo.GitCommitID, appinfo.Version).Set(1)
 
-	conf, err := setup.LoadAndValidate()
+	conf, clients, err := setup.BootstrapConfig()
 	if err != nil {
 		return err
 	}
@@ -70,21 +68,10 @@ func Start() error {
 			return nil
 		}
 		// if it's a -validate command, print validation result
-		if conf.Flags != nil && conf.Flags.ValidateConfig {
+		if conf.Flags.ValidateConfig {
 			fmt.Println("Trickster configuration validation succeeded.")
 			return nil
 		}
-	}
-	err = conf.Process()
-	if err != nil {
-		return err
-	}
-
-	clients := make(backends.Backends, len(conf.Backends))
-	// these can't be done until the config is processed
-	err = validate.RoutesRulesAndPools(conf, clients)
-	if err != nil {
-		return err
 	}
 
 	si := &instance.ServerInstance{}
@@ -106,38 +93,46 @@ func Start() error {
 func Hup(si *instance.ServerInstance, source string) (bool, error) {
 	mtx.Lock()
 	defer mtx.Unlock()
-	if si.Config != nil && si.Config.IsStale() {
-		conf, err := setup.LoadAndValidate()
-		if err != nil {
-			return false, err
-		}
-		if conf == nil {
-			return false, errors.ErrInvalidOptions
-		}
-		logger.Warn("configuration reload starting now",
-			logging.Pairs{"source": source})
-		err = conf.Process()
-		if err != nil {
-			return false, err
-		}
-		clients := make(backends.Backends, len(conf.Backends))
-		// these can't be done until the config is processed
-		err = validate.RoutesRulesAndPools(conf, clients)
-		if err != nil {
-			return false, err
-		}
-		var hupFunc reload.Reloader = func(source string) (bool, error) {
-			return Hup(si, source)
-		}
-		err = setup.ApplyConfig(si, conf, clients, hupFunc, nil)
-		if err != nil {
-			logger.Warn(reload.ConfigNotReloadedText,
-				logging.Pairs{"error": err.Error(), "source": source})
-			return false, err
-		}
-		logger.Info(reload.ConfigReloadedText, logging.Pairs{"source": source})
-		return true, nil
+	if si.Config == nil {
+		logger.Warn(reload.ConfigNotReloadedText,
+			logging.Pairs{"source": source, "reason": "no existing config to reload"})
+		return false, nil
 	}
-	logger.Warn(reload.ConfigNotReloadedText, logging.Pairs{"source": source})
-	return false, nil
+	if !si.Config.CheckAndMarkReloadInProgress() {
+		logger.Debug("configuration not stale, skipping reload",
+			logging.Pairs{"source": source})
+		return false, nil
+	}
+	logger.Warn("configuration reload starting now",
+		logging.Pairs{"source": source})
+	newConf, newClients, err := setup.BootstrapConfig()
+	if err != nil {
+		logger.Error("reload failed: could not load new config",
+			logging.Pairs{"error": err.Error(), "source": source})
+		return false, err
+	}
+
+	oldConfig := si.Config
+	oldClients := si.Backends
+	oldCaches := si.Caches
+	oldHealthChecker := si.HealthChecker
+
+	hupFunc := func(source string) (bool, error) {
+		return Hup(si, source)
+	}
+
+	err = setup.ApplyConfig(si, newConf, newClients, hupFunc, nil)
+	if err != nil {
+		// Rollback to old state
+		logger.Error("reload failed, rolling back to previous configuration",
+			logging.Pairs{"error": err.Error(), "source": source})
+		si.Config = oldConfig
+		si.Backends = oldClients
+		si.Caches = oldCaches
+		si.HealthChecker = oldHealthChecker
+		return false, err
+	}
+
+	logger.Info(reload.ConfigReloadedText, logging.Pairs{"source": source})
+	return true, nil
 }
