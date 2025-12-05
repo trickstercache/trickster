@@ -230,6 +230,11 @@ func RegisterPathRoutes(r router.Router, conf *config.Config, handlers handlers.
 	or := client.Router().(router.Router)
 
 	for _, p := range paths {
+		if p.Handler == nil && p.HandlerName != "" {
+			if h, ok := handlers[p.HandlerName]; ok && h != nil {
+				p.Handler = h
+			}
+		}
 
 		pathPrefix := "/" + o.Name
 		handledPath := pathPrefix + p.Path
