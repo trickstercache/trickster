@@ -17,8 +17,8 @@
 package options
 
 import (
-	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -193,7 +193,7 @@ func TestInitialize(t *testing.T) {
 				o.CollapsedForwardingName = "invalid"
 				return o
 			}(),
-			expectedError: fmt.Errorf("invalid collapsed_forwarding name: invalid"),
+			expectedError: nil,
 		},
 		{
 			name: "options with response body",
@@ -256,7 +256,7 @@ func TestLookupInitialize(t *testing.T) {
 					return o
 				}(),
 			},
-			expectedError: fmt.Errorf("invalid collapsed_forwarding name: invalid"),
+			expectedError: nil,
 		},
 	}
 
@@ -271,6 +271,81 @@ func TestLookupInitialize(t *testing.T) {
 				}
 				if err.Error() != test.expectedError.Error() {
 					t.Errorf("expected error %v, got %v", test.expectedError, err)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestValidate(t *testing.T) {
+	tests := []struct {
+		name          string
+		options       *Options
+		expectedError string
+	}{
+		{
+			name:          "valid options",
+			options:       New(),
+			expectedError: "",
+		},
+		{
+			name: "invalid collapsed forwarding",
+			options: func() *Options {
+				o := New()
+				o.CollapsedForwardingName = "invalid"
+				_ = o.Initialize()
+				return o
+			}(),
+			expectedError: "invalid collapsed_forwarding name: invalid",
+		},
+		{
+			name: "invalid HTTP method",
+			options: func() *Options {
+				o := New()
+				o.Methods = []string{"GET", "INVALID_METHOD"}
+				_ = o.Initialize()
+				return o
+			}(),
+			expectedError: "invalid HTTP method: INVALID_METHOD",
+		},
+		{
+			name: "invalid response code",
+			options: func() *Options {
+				o := New()
+				o.ResponseCode = 999
+				_ = o.Initialize()
+				return o
+			}(),
+			expectedError: "invalid response_code: 999 (must be between 100 and 599)",
+		},
+		{
+			name: "valid response code",
+			options: func() *Options {
+				o := New()
+				o.ResponseCode = 404
+				_ = o.Initialize()
+				return o
+			}(),
+			expectedError: "",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := test.options.Validate()
+
+			if test.expectedError != "" {
+				if err == nil {
+					t.Errorf("expected '%s', got nil", test.expectedError)
+					return
+				}
+				if !strings.Contains(err.Error(), test.expectedError) {
+					t.Errorf("expected '%s', got '%v'", test.expectedError, err)
 				}
 				return
 			}

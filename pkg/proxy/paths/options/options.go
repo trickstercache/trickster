@@ -230,9 +230,6 @@ func (o *Options) Initialize() error {
 	if o.CollapsedForwardingName == "" {
 		o.CollapsedForwardingType = forwarding.CFTypeBasic
 	} else {
-		if _, ok := forwarding.CollapsedForwardingTypeNames[o.CollapsedForwardingName]; !ok {
-			return fmt.Errorf("invalid collapsed_forwarding name: %s", o.CollapsedForwardingName)
-		}
 		o.CollapsedForwardingType = forwarding.GetCollapsedForwardingType(o.CollapsedForwardingName)
 	}
 
@@ -254,7 +251,23 @@ func (l Lookup) Initialize() error {
 }
 
 func (o *Options) Validate() error {
-	// placeholder for future validations as needed (currently there are none)
+	normalized := matching.PathMatchName(strings.ToLower(string(o.MatchTypeName)))
+	if _, ok := matching.Names[normalized]; !ok && o.MatchTypeName != "" {
+		return fmt.Errorf("invalid match_type: %s", o.MatchTypeName)
+	}
+	for _, method := range o.Methods {
+		if !methods.IsValidMethod(method) {
+			return fmt.Errorf("invalid HTTP method: %s", method)
+		}
+	}
+	if o.CollapsedForwardingName != "" {
+		if _, ok := forwarding.CollapsedForwardingTypeNames[o.CollapsedForwardingName]; !ok {
+			return fmt.Errorf("invalid collapsed_forwarding name: %s", o.CollapsedForwardingName)
+		}
+	}
+	if o.ResponseCode != 0 && (o.ResponseCode < 100 || o.ResponseCode >= 600) {
+		return fmt.Errorf("invalid response_code: %d (must be between 100 and 599)", o.ResponseCode)
+	}
 	return nil
 }
 

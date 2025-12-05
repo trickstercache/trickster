@@ -65,10 +65,17 @@ func TestLoadConfigurationFileFailures(t *testing.T) {
 
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			_, err := Load([]string{"-config", test.filename})
+			c, err := Load([]string{"-config", test.filename})
+			if err != nil {
+				if !strings.Contains(err.Error(), test.expected) {
+					t.Errorf("expected `%s` got `%s`", test.expected, err.Error())
+				}
+				return
+			}
+			err = c.Backends.Validate()
 			if err == nil {
 				t.Errorf("expected error `%s` got nothing", test.expected)
-			} else if !strings.HasSuffix(err.Error(), test.expected) {
+			} else if !strings.Contains(err.Error(), test.expected) {
 				t.Errorf("expected error `%s` got `%s`", test.expected, err.Error())
 			}
 
