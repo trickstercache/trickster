@@ -30,8 +30,8 @@ func Decorate(backendName, backendProvider, path string, next http.Handler) http
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		observer := &responseObserver{
 			w,
-			"unknown",
-			0,
+			"2xx",
+			200,
 		}
 
 		n := time.Now()
