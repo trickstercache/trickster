@@ -17,6 +17,7 @@
 package options
 
 import (
+	"fmt"
 	"maps"
 	"net/http"
 	"net/url"
@@ -341,26 +342,16 @@ func (o *Options) Validate() error {
 	if !providers.NonOriginBackends().Contains(o.Provider) && o.OriginURL == "" {
 		return NewErrMissingOriginURL(o.Name)
 	}
-	url, err := url.Parse(o.OriginURL)
-	if err != nil {
-		return err
+	if o.OriginURL != "" {
+		if _, err := url.Parse(o.OriginURL); err != nil {
+			return fmt.Errorf("invalid origin_url for backend %s: %w", o.Name, err)
+		}
 	}
-	url.Path = strings.TrimSuffix(url.Path, "/")
-	o.Scheme = url.Scheme
-	o.Host = url.Host
-	o.PathPrefix = url.Path
-	o.TimeseriesRetention = time.Duration(o.TimeseriesRetentionFactor)
-	o.DoesShard = o.MaxShardSizePoints > 0 || o.MaxShardSizeTime > 0 || o.ShardStep > 0
-
 	if o.MaxShardSizeTime > 0 && o.MaxShardSizePoints > 0 {
 		return ErrInvalidMaxShardSize
 	}
 
-	if o.ShardStep > 0 && o.MaxShardSizeTime == 0 {
-		o.MaxShardSizeTime = o.ShardStep
-	}
-
-	if o.ShardStep > 0 && o.MaxShardSizeTime%o.ShardStep != 0 {
+	if o.ShardStep > 0 && o.MaxShardSizeTime > 0 && o.MaxShardSizeTime%o.ShardStep != 0 {
 		return ErrInvalidMaxShardSizeTime
 	}
 
@@ -370,23 +361,6 @@ func (o *Options) Validate() error {
 		}
 	}
 
-	if o.CompressibleTypeList != nil {
-		o.CompressibleTypes = sets.NewStringSet()
-		o.CompressibleTypes.SetAll(o.CompressibleTypeList)
-	}
-	if o.CacheKeyPrefix == "" {
-		o.CacheKeyPrefix = o.Host
-	}
-
-	// enforce MaxTTL
-	if o.TimeseriesTTL > o.MaxTTL {
-		o.TimeseriesTTL = o.MaxTTL
-	}
-
-	// unlikely but why not spend a few nanoseconds to check it at startup
-	if o.FastForwardTTL > o.MaxTTL {
-		o.FastForwardTTL = o.MaxTTL
-	}
 	return nil
 }
 
@@ -588,6 +562,35 @@ func (o *Options) Initialize(name string) error {
 	// }
 	// activeCaches.Set(out.CacheName)
 
+	if o.OriginURL != "" {
+		parsedURL, err := url.Parse(o.OriginURL)
+		if err != nil {
+			return err
+		}
+		parsedURL.Path = strings.TrimSuffix(parsedURL.Path, "/")
+		o.Scheme = parsedURL.Scheme
+		o.Host = parsedURL.Host
+		o.PathPrefix = parsedURL.Path
+	}
+	if o.CacheKeyPrefix == "" {
+		o.CacheKeyPrefix = o.Host
+	}
+	o.TimeseriesRetention = time.Duration(o.TimeseriesRetentionFactor)
+	o.DoesShard = o.MaxShardSizePoints > 0 || o.MaxShardSizeTime > 0 || o.ShardStep > 0
+	if o.ShardStep > 0 && o.MaxShardSizeTime == 0 {
+		o.MaxShardSizeTime = o.ShardStep
+	}
+	if o.CompressibleTypeList != nil {
+		o.CompressibleTypes = sets.NewStringSet()
+		o.CompressibleTypes.SetAll(o.CompressibleTypeList)
+	}
+	// enforce MaxTTL
+	if o.TimeseriesTTL > o.MaxTTL {
+		o.TimeseriesTTL = o.MaxTTL
+	}
+	if o.FastForwardTTL > o.MaxTTL {
+		o.FastForwardTTL = o.MaxTTL
+	}
 	if o.TimeseriesEvictionMethodName != "" {
 		o.TimeseriesEvictionMethodName = strings.ToLower(o.TimeseriesEvictionMethodName)
 		if p, ok := evictionmethods.Names[o.TimeseriesEvictionMethodName]; ok {
@@ -596,16 +599,14 @@ func (o *Options) Initialize(name string) error {
 	}
 	if o.Provider == providers.ALB {
 		if o.ALBOptions != nil {
-			err := o.ALBOptions.Initialize()
-			if err != nil {
+			if err := o.ALBOptions.Initialize(); err != nil {
 				return err
 			}
 		}
 	}
 
 	if o.HealthCheck != nil {
-		err := o.HealthCheck.Initialize()
-		if err != nil {
+		if err := o.HealthCheck.Initialize(); err != nil {
 			return err
 		}
 	}

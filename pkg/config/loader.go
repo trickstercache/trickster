@@ -54,8 +54,6 @@ func Load(args []string) (*Config, error) {
 	c.loadEnvVars()
 	c.loadFlags(flags) // load parsed flags to override file and envs
 
-	c.parseURLs()
-
 	// set the default origin url from the flags
 	if d, ok := c.Backends["default"]; ok {
 		d.Name = "default"
@@ -109,16 +107,4 @@ func Load(args []string) (*Config, error) {
 	}
 
 	return c, nil
-}
-
-func (c *Config) parseURLs() {
-	for _, o := range c.Backends {
-		u, err := url.Parse(o.OriginURL)
-		if err != nil || u == nil {
-			continue // errors are OK here for some backend providers
-		}
-		o.Scheme = u.Scheme
-		o.Host = u.Host
-		o.PathPrefix = u.Path
-	}
 }

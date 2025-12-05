@@ -74,13 +74,6 @@ func LoadAndValidate() (*config.Config, error) {
 		return cfg, nil
 	}
 
-	for k, o := range cfg.Backends {
-		err = o.Initialize(k)
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	for _, w := range cfg.LoaderWarnings {
 		logger.Warn(w, nil)
 	}
