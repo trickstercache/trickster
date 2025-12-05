@@ -255,3 +255,272 @@ func TestValidate(t *testing.T) {
 		})
 	}
 }
+
+func TestOverlay(t *testing.T) {
+	tests := []struct {
+		name     string
+		l1       List
+		l2       List
+		expected func(t *testing.T, result List)
+	}{
+		{
+			name: "empty lists",
+			l1:   List{},
+			l2:   List{},
+			expected: func(t *testing.T, result List) {
+				require.Len(t, result, 0)
+			},
+		},
+		{
+			name: "l1 empty, l2 has options",
+			l1:   List{},
+			l2: List{
+				{Path: "/path1", Methods: []string{"GET"}},
+			},
+			expected: func(t *testing.T, result List) {
+				require.Len(t, result, 1)
+				require.Equal(t, "/path1", result[0].Path)
+				require.Equal(t, []string{"GET"}, result[0].Methods)
+			},
+		},
+		{
+			name: "l1 has options, l2 empty",
+			l1: List{
+				{Path: "/path1", Methods: []string{"GET"}},
+			},
+			l2: List{},
+			expected: func(t *testing.T, result List) {
+				require.Len(t, result, 1)
+				require.Equal(t, "/path1", result[0].Path)
+				require.Equal(t, []string{"GET"}, result[0].Methods)
+			},
+		},
+		{
+			name: "paths not in other slice - both directions",
+			l1: List{
+				{Path: "/path1", Methods: []string{"GET"}},
+			},
+			l2: List{
+				{Path: "/path2", Methods: []string{"POST"}},
+			},
+			expected: func(t *testing.T, result List) {
+				require.Len(t, result, 2)
+				paths := []string{result[0].Path, result[1].Path}
+				require.Contains(t, paths, "/path1")
+				require.Contains(t, paths, "/path2")
+			},
+		},
+		{
+			name: "same path, o2 has all of o's methods - replace",
+			l1: List{
+				{Path: "/path1", Methods: []string{"GET", "POST"}},
+			},
+			l2: List{
+				{Path: "/path1", Methods: []string{"GET", "POST", "PUT"}},
+			},
+			expected: func(t *testing.T, result List) {
+				require.Len(t, result, 1)
+				require.Equal(t, "/path1", result[0].Path)
+				require.Equal(t, []string{"GET", "POST", "PUT"}, result[0].Methods)
+			},
+		},
+		{
+			name: "same path, o2 has all of o's methods - exact match",
+			l1: List{
+				{Path: "/path1", Methods: []string{"GET", "POST"}},
+			},
+			l2: List{
+				{Path: "/path1", Methods: []string{"GET", "POST"}},
+			},
+			expected: func(t *testing.T, result List) {
+				require.Len(t, result, 1)
+				require.Equal(t, "/path1", result[0].Path)
+				require.Equal(t, []string{"GET", "POST"}, result[0].Methods)
+			},
+		},
+		{
+			name: "same path, o2 has none of o's methods - both added",
+			l1: List{
+				{Path: "/path1", Methods: []string{"GET", "POST"}},
+			},
+			l2: List{
+				{Path: "/path1", Methods: []string{"PUT", "DELETE"}},
+			},
+			expected: func(t *testing.T, result List) {
+				require.Len(t, result, 2)
+				methods1 := result[0].Methods
+				methods2 := result[1].Methods
+				if len(methods1) == 2 && len(methods2) == 2 {
+					if methods1[0] == "GET" || methods1[0] == "POST" {
+						require.Equal(t, []string{"GET", "POST"}, methods1)
+						require.Equal(t, []string{"PUT", "DELETE"}, methods2)
+					} else {
+						require.Equal(t, []string{"PUT", "DELETE"}, methods1)
+						require.Equal(t, []string{"GET", "POST"}, methods2)
+					}
+				} else {
+					t.Errorf("unexpected method counts: %v, %v", methods1, methods2)
+				}
+			},
+		},
+		{
+			name: "same path, o2 has some of o's methods - partial overlap",
+			l1: List{
+				{Path: "/path1", Methods: []string{"GET", "POST", "PUT"}},
+			},
+			l2: List{
+				{Path: "/path1", Methods: []string{"POST", "DELETE"}},
+			},
+			expected: func(t *testing.T, result List) {
+				require.Len(t, result, 2)
+				foundClone := false
+				foundO2 := false
+				for _, opt := range result {
+					if len(opt.Methods) == 2 {
+						if (opt.Methods[0] == "GET" && opt.Methods[1] == "PUT") ||
+							(opt.Methods[0] == "PUT" && opt.Methods[1] == "GET") {
+							foundClone = true
+						} else if (opt.Methods[0] == "POST" && opt.Methods[1] == "DELETE") ||
+							(opt.Methods[0] == "DELETE" && opt.Methods[1] == "POST") {
+							foundO2 = true
+						}
+					}
+				}
+				require.True(t, foundClone, "expected clone with GET and PUT")
+				require.True(t, foundO2, "expected o2 with POST and DELETE")
+			},
+		},
+		{
+			name: "same path, o has empty methods, o2 has methods",
+			l1: List{
+				{Path: "/path1", Methods: []string{}},
+			},
+			l2: List{
+				{Path: "/path1", Methods: []string{"GET", "POST"}},
+			},
+			expected: func(t *testing.T, result List) {
+				require.Len(t, result, 1)
+				require.Equal(t, "/path1", result[0].Path)
+				require.Equal(t, []string{"GET", "POST"}, result[0].Methods)
+			},
+		},
+		{
+			name: "same path, o has methods, o2 has empty methods",
+			l1: List{
+				{Path: "/path1", Methods: []string{"GET", "POST"}},
+			},
+			l2: List{
+				{Path: "/path1", Methods: []string{}},
+			},
+			expected: func(t *testing.T, result List) {
+				require.Len(t, result, 2)
+				hasEmpty := false
+				hasMethods := false
+				for _, opt := range result {
+					if len(opt.Methods) == 0 {
+						hasEmpty = true
+					} else if len(opt.Methods) == 2 {
+						hasMethods = true
+					}
+				}
+				require.True(t, hasEmpty, "expected option with empty methods")
+				require.True(t, hasMethods, "expected option with GET and POST")
+			},
+		},
+		{
+			name: "multiple paths with various overlaps",
+			l1: List{
+				{Path: "/path1", Methods: []string{"GET", "POST"}},
+				{Path: "/path2", Methods: []string{"PUT"}},
+				{Path: "/path3", Methods: []string{"GET", "POST", "DELETE"}},
+			},
+			l2: List{
+				{Path: "/path1", Methods: []string{"GET", "POST", "PUT"}},
+				{Path: "/path3", Methods: []string{"POST"}},
+				{Path: "/path4", Methods: []string{"GET"}},
+			},
+			expected: func(t *testing.T, result List) {
+				require.Len(t, result, 5)
+				pathCounts := make(map[string]int)
+				for _, opt := range result {
+					pathCounts[opt.Path]++
+				}
+				require.Equal(t, 1, pathCounts["/path1"])
+				require.Equal(t, 1, pathCounts["/path2"])
+				require.Equal(t, 2, pathCounts["/path3"])
+				require.Equal(t, 1, pathCounts["/path4"])
+			},
+		},
+		{
+			name: "multiple options with same path in l2",
+			l1: List{
+				{Path: "/path1", Methods: []string{"GET", "POST"}},
+			},
+			l2: List{
+				{Path: "/path1", Methods: []string{"PUT"}},
+				{Path: "/path1", Methods: []string{"DELETE"}},
+			},
+			expected: func(t *testing.T, result List) {
+				require.Len(t, result, 4)
+			},
+		},
+		{
+			name: "nil options are skipped",
+			l1: List{
+				{Path: "/path1", Methods: []string{"GET"}},
+				nil,
+				{Path: "/path2", Methods: []string{"POST"}},
+			},
+			l2: List{
+				{Path: "/path3", Methods: []string{"PUT"}},
+				nil,
+			},
+			expected: func(t *testing.T, result List) {
+				require.Len(t, result, 3)
+				paths := make(map[string]bool)
+				for _, opt := range result {
+					if opt != nil {
+						paths[opt.Path] = true
+					}
+				}
+				require.True(t, paths["/path1"])
+				require.True(t, paths["/path2"])
+				require.True(t, paths["/path3"])
+			},
+		},
+		{
+			name: "complex overlap scenario",
+			l1: List{
+				{Path: "/api/v1", Methods: []string{"GET", "POST", "PUT", "DELETE"}},
+			},
+			l2: List{
+				{Path: "/api/v1", Methods: []string{"GET", "POST"}},
+			},
+			expected: func(t *testing.T, result List) {
+				require.Len(t, result, 2)
+				foundClone := false
+				foundO2 := false
+				for _, opt := range result {
+					if len(opt.Methods) == 2 {
+						if (opt.Methods[0] == "PUT" && opt.Methods[1] == "DELETE") ||
+							(opt.Methods[0] == "DELETE" && opt.Methods[1] == "PUT") {
+							foundClone = true
+						} else if (opt.Methods[0] == "GET" && opt.Methods[1] == "POST") ||
+							(opt.Methods[0] == "POST" && opt.Methods[1] == "GET") {
+							foundO2 = true
+						}
+					}
+				}
+				require.True(t, foundClone, "expected clone with PUT and DELETE")
+				require.True(t, foundO2, "expected o2 with GET and POST")
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result := test.l1.Overlay(test.l2)
+			test.expected(t, result)
+		})
+	}
+}

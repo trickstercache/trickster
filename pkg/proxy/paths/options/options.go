@@ -243,33 +243,75 @@ func (l List) Initialize() error {
 }
 
 func (l List) Overlay(l2 List) List {
-	out := make(List, (len(l)*len(methods.AllHTTPMethods()))+len(l2))
-	var k int
-outer:
-	for _, o := range l {
-		if len(o.Methods) == 0 {
-			continue outer
-		}
-	inner:
-		for _, o2 := range l2 {
-			if o2.Path != o.Path || len(o2.Methods) == 0 {
-				continue inner
-			}
-			if methods.AreEqual(o.Methods, o2.Methods) {
-				out[k] = o2
-				k++
-				continue outer
-			}
-			o.Methods = strutil.Pare(o.Methods, o2.Methods)
-			if len(o.Methods) > 0 {
-				out[k] = o
-				k++
-			}
-			out[k] = o2
-			k++
+	l2ByPath := make(map[string][]*Options)
+	for _, o2 := range l2 {
+		if o2 != nil {
+			l2ByPath[o2.Path] = append(l2ByPath[o2.Path], o2)
 		}
 	}
-	return out[:k]
+	l2Processed := make(map[string]bool)
+	out := make(List, 0, len(l)+len(l2))
+	for _, o := range l {
+		if o == nil {
+			continue
+		}
+		l2Matches, hasMatch := l2ByPath[o.Path]
+		if !hasMatch {
+			out = append(out, o)
+			continue
+		}
+		replacedMethods := make(map[string]bool)
+		for _, o2 := range l2Matches {
+			if o2 == nil {
+				continue
+			}
+			l2Processed[o.Path] = true
+			remainingMethods := make([]string, 0, len(o.Methods))
+			for _, m := range o.Methods {
+				if !replacedMethods[m] {
+					remainingMethods = append(remainingMethods, m)
+				}
+			}
+			if methods.HasAll(remainingMethods, o2.Methods) {
+				out = append(out, o2)
+				for _, m := range remainingMethods {
+					replacedMethods[m] = true
+				}
+			} else if !methods.HasAny(remainingMethods, o2.Methods) {
+				if len(remainingMethods) > 0 {
+					oClone := o.Clone()
+					oClone.Methods = remainingMethods
+					out = append(out, oClone)
+				} else {
+					out = append(out, o)
+				}
+				out = append(out, o2)
+			} else {
+				overlappingMethods := make([]string, 0)
+				for _, m := range remainingMethods {
+					for _, m2 := range o2.Methods {
+						if m == m2 {
+							overlappingMethods = append(overlappingMethods, m)
+							replacedMethods[m] = true
+							break
+						}
+					}
+				}
+				oClone := o.Clone()
+				oClone.Methods = strutil.Pare(remainingMethods, overlappingMethods)
+				if len(oClone.Methods) > 0 {
+					out = append(out, oClone)
+				}
+				out = append(out, o2)
+			}
+		}
+	}
+	for _, o2 := range l2 {
+		if o2 != nil && !l2Processed[o2.Path] {
+			out = append(out, o2)
+		}
+	}
+	return out
 }
 
 type loaderOptions struct {
