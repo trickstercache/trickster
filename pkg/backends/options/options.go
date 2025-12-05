@@ -290,7 +290,7 @@ func (o *Options) Clone() *Options {
 		out.HealthCheck = o.HealthCheck.Clone()
 	}
 	out.Hosts = slices.Clone(o.Hosts)
-	out.CompressibleTypeList = slices.Clone(out.CompressibleTypeList)
+	out.CompressibleTypeList = slices.Clone(o.CompressibleTypeList)
 	if o.CompressibleTypes != nil {
 		out.CompressibleTypes = maps.Clone(o.CompressibleTypes)
 	}
