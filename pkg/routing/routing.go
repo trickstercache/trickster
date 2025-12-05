@@ -153,12 +153,11 @@ func registerBackendRoutes(r router.Router, metricsRouter router.Router,
 		logger.Info("registering route paths", logging.Pairs{"backendName": k,
 			"backendProvider": o.Provider, "upstreamHost": o.Host})
 
-		defaultPaths := client.DefaultPathConfigs(o)
+		o.Paths = client.DefaultPathConfigs(o).Overlay(o.Paths)
 
 		h := client.Handlers()
 
-		RegisterPathRoutes(r, conf, h, client, o, c, defaultPaths,
-			tracers)
+		RegisterPathRoutes(r, conf, h, client, o, c, tracers)
 
 		// now we'll go ahead and register the health handler
 		if h, ok := client.Handlers()["health"]; ok && o.Name != "" && metricsRouter != nil && (o.HealthCheck != nil &&
@@ -180,8 +179,7 @@ func registerBackendRoutes(r router.Router, metricsRouter router.Router,
 // merge it with any path data in the provided backend options, and then register
 // the path routes to the appropriate handler from the provided handlers map
 func RegisterPathRoutes(r router.Router, conf *config.Config, handlers handlers.Lookup,
-	client backends.Backend, o *bo.Options, c cache.Cache,
-	paths po.List, tracers tracing.Tracers) {
+	client backends.Backend, o *bo.Options, c cache.Cache, tracers tracing.Tracers) {
 	if o == nil {
 		return
 	}
@@ -229,7 +227,7 @@ func RegisterPathRoutes(r router.Router, conf *config.Config, handlers handlers.
 
 	or := client.Router().(router.Router)
 
-	for _, p := range paths {
+	for _, p := range o.Paths {
 		if p.Handler == nil && p.HandlerName != "" {
 			if h, ok := handlers[p.HandlerName]; ok && h != nil {
 				p.Handler = h
@@ -264,7 +262,6 @@ func RegisterPathRoutes(r router.Router, conf *config.Config, handlers handlers.
 	}
 
 	o.Router = or
-	o.Paths = paths
 }
 
 // RegisterDefaultBackendRoutes will iterate the Backends and register the default routes

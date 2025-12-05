@@ -372,8 +372,7 @@ func TestRegisterMultipleBackendsPlusDefault(t *testing.T) {
 
 func TestRegisterPathRoutes(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Info))
-	p := po.List{{}}
-	RegisterPathRoutes(nil, nil, nil, nil, nil, nil, p, nil)
+	RegisterPathRoutes(nil, nil, nil, nil, nil, nil, nil)
 
 	conf, err := config.Load([]string{"-log-level", "debug", "-origin-url",
 		"http://1", "-provider", providers.ReverseProxyCacheShort})
@@ -397,10 +396,12 @@ func TestRegisterPathRoutes(t *testing.T) {
 	testHandler := http.HandlerFunc(testutil.BasicHTTPHandler)
 	handlers := handlers.Lookup{"testHandler": testHandler}
 
-	RegisterPathRoutes(nil, conf, handlers, rpc, oo, nil, dpc, nil)
+	oo.Paths = dpc
+	RegisterPathRoutes(nil, conf, handlers, rpc, oo, nil, nil)
 
 	router := lm.NewRouter()
 	dpc = rpc.DefaultPathConfigs(oo)
+	oo.Paths = dpc
 	// Find the path config with GET and HEAD methods and update it
 	for _, pathConfig := range dpc {
 		if pathConfig.Path == "/" && len(pathConfig.Methods) > 0 {
@@ -411,7 +412,7 @@ func TestRegisterPathRoutes(t *testing.T) {
 			break
 		}
 	}
-	RegisterPathRoutes(router, conf, handlers, rpc, oo, nil, dpc, nil)
+	RegisterPathRoutes(router, conf, handlers, rpc, oo, nil, nil)
 
 }
 
