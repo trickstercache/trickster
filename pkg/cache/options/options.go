@@ -28,6 +28,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/options/defaults"
 	"github.com/trickstercache/trickster/v2/pkg/cache/providers"
 	redis "github.com/trickstercache/trickster/v2/pkg/cache/redis/options"
+	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
@@ -76,6 +77,8 @@ type loadOptions struct {
 	TimeseriesChunkFactor *int64              `yaml:"timeseries_chunk_factor"`
 	ByterangeChunkSize    *int64              `yaml:"byterange_chunk_size"`
 }
+
+var _ types.ConfigOptions[Options] = &Options{}
 
 var restrictedNames = sets.New([]string{"", "none"})
 var ErrInvalidName = errors.New("invalid cache name")
@@ -158,18 +161,18 @@ func (o *Options) Equal(o2 *Options) bool {
 		o.ProviderID == o2.ProviderID
 }
 
-func (o *Options) Validate() error {
+func (o *Options) Validate() (bool, error) {
 	if restrictedNames.Contains(o.Name) {
-		return ErrInvalidName
+		return false, ErrInvalidName
 	}
 	if o.Index.MaxSizeBytes > 0 && o.Index.MaxSizeBackoffBytes > o.Index.MaxSizeBytes {
-		return errMaxSizeBackoffBytesTooBig
+		return false, errMaxSizeBackoffBytesTooBig
 	}
 	if o.Index.MaxSizeObjects > 0 && o.Index.MaxSizeBackoffObjects > o.Index.MaxSizeObjects {
-		return errMaxSizeBackoffObjectsTooBig
+		return false, errMaxSizeBackoffObjectsTooBig
 	}
 
-	return nil
+	return true, nil
 }
 
 var errMaxSizeBackoffBytesTooBig = errors.New("MaxSizeBackoffBytes can't be larger than MaxSizeBytes")
@@ -261,7 +264,8 @@ func (l Lookup) Initialize(activeCaches sets.Set[string]) ([]string, error) {
 func (l Lookup) Validate() error {
 	for k, o := range l {
 		o.Name = k
-		if err := o.Validate(); err != nil {
+		_, err := o.Validate()
+		if err != nil {
 			return err
 		}
 	}

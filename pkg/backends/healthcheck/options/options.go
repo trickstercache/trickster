@@ -18,12 +18,14 @@ package options
 
 import (
 	"errors"
+	"fmt"
 	"net/url"
 	"strings"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 )
 
 // MaxProbeWait is the maximum time a health check will wait before timing out
@@ -77,6 +79,8 @@ type Options struct {
 	hasExpectedBody bool
 }
 
+var _ types.ConfigOptions[Options] = &Options{}
+
 // New returns a new Options reference with default values
 func New() *Options {
 	return &Options{
@@ -91,9 +95,8 @@ func New() *Options {
 	}
 }
 
-// Initialize sets up the healthcheck Options with default values and overlays
-// any values that were set during YAML unmarshaling
-func (o *Options) Initialize() error {
+// Initialize sets up the healthcheck Options with default values where needed
+func (o *Options) Initialize(_ string) error {
 	// Set default values if not already set
 	if o.Verb == "" {
 		o.Verb = DefaultHealthCheckVerb
@@ -126,6 +129,44 @@ func (o *Options) Initialize() error {
 	}
 
 	return nil
+}
+
+func (o *Options) Validate() (bool, error) {
+	if o.Verb != "" && !methods.IsValidMethod(o.Verb) {
+		return false, fmt.Errorf("invalid health check verb: %s", o.Verb)
+	}
+	if o.Scheme != "" && o.Scheme != "http" && o.Scheme != "https" {
+		return false, fmt.Errorf("invalid health check scheme: %s (must be http or https)", o.Scheme)
+	}
+	if o.Timeout > 0 {
+		if o.Timeout < MinProbeWait {
+			return false, fmt.Errorf("health check timeout %v is less than minimum %v", o.Timeout, MinProbeWait)
+		}
+		if o.Timeout > MaxProbeWait {
+			return false, fmt.Errorf("health check timeout %v is greater than maximum %v", o.Timeout, MaxProbeWait)
+		}
+	}
+	for _, code := range o.ExpectedCodes {
+		if code < 100 || code >= 600 {
+			return false, fmt.Errorf("invalid expected_code: %d (must be between 100 and 599)", code)
+		}
+	}
+	if o.Host != "" {
+		u := o.URL()
+		if u.Scheme == "" {
+			return false, errors.New("health check scheme is required when host is set")
+		}
+		if u.Host == "" {
+			return false, fmt.Errorf("invalid health check host: %s", o.Host)
+		}
+	}
+	if o.FailureThreshold < 0 {
+		return false, fmt.Errorf("health check failure_threshold must be non-negative, got %d", o.FailureThreshold)
+	}
+	if o.RecoveryThreshold < 0 {
+		return false, fmt.Errorf("health check recovery_threshold must be non-negative, got %d", o.RecoveryThreshold)
+	}
+	return true, nil
 }
 
 // Clone returns an exact copy of a *healthcheck.Options

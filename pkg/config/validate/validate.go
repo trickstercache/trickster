@@ -39,12 +39,12 @@ func Validate(c *config.Config) error {
 		}
 	}
 	if c.Logging != nil {
-		if err := c.Logging.Validate(); err != nil {
+		if _, err := c.Logging.Validate(); err != nil {
 			return err
 		}
 	}
 	if c.Metrics != nil {
-		if err := c.Metrics.Validate(); err != nil {
+		if _, err := c.Metrics.Validate(); err != nil {
 			return err
 		}
 	}

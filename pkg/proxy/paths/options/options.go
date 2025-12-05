@@ -96,6 +96,8 @@ type List []*Options
 // Lookup is a map of *Options
 type Lookup map[string]*Options
 
+var _ types.ConfigOptions[Options] = &Options{}
+
 // New returns a newly-instantiated path *Options
 func New() *Options {
 	return &Options{
@@ -209,7 +211,7 @@ func (o *Options) Merge(o2 *Options) {
 
 // Initialize sets up the path Options with default values and overlays
 // any values that were set during YAML unmarshaling
-func (o *Options) Initialize() error {
+func (o *Options) Initialize(_ string) error {
 	if len(o.Methods) == 0 {
 		o.Methods = []string{http.MethodGet}
 	}
@@ -243,37 +245,38 @@ func (o *Options) Initialize() error {
 // Initialize initializes all path options in the lookup
 func (l Lookup) Initialize() error {
 	for _, o := range l {
-		if err := o.Initialize(); err != nil {
+		if err := o.Initialize(""); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (o *Options) Validate() error {
+func (o *Options) Validate() (bool, error) {
 	normalized := matching.PathMatchName(strings.ToLower(string(o.MatchTypeName)))
 	if _, ok := matching.Names[normalized]; !ok && o.MatchTypeName != "" {
-		return fmt.Errorf("invalid match_type: %s", o.MatchTypeName)
+		return false, fmt.Errorf("invalid match_type: %s", o.MatchTypeName)
 	}
 	for _, method := range o.Methods {
 		if !methods.IsValidMethod(method) {
-			return fmt.Errorf("invalid HTTP method: %s", method)
+			return false, fmt.Errorf("invalid HTTP method: %s", method)
 		}
 	}
 	if o.CollapsedForwardingName != "" {
 		if _, ok := forwarding.CollapsedForwardingTypeNames[o.CollapsedForwardingName]; !ok {
-			return fmt.Errorf("invalid collapsed_forwarding name: %s", o.CollapsedForwardingName)
+			return false, fmt.Errorf("invalid collapsed_forwarding name: %s", o.CollapsedForwardingName)
 		}
 	}
 	if o.ResponseCode != 0 && (o.ResponseCode < 100 || o.ResponseCode >= 600) {
-		return fmt.Errorf("invalid response_code: %d (must be between 100 and 599)", o.ResponseCode)
+		return false, fmt.Errorf("invalid response_code: %d (must be between 100 and 599)", o.ResponseCode)
 	}
-	return nil
+	return true, nil
 }
 
 func (l List) Validate() error {
 	for _, o := range l {
-		if err := o.Validate(); err != nil {
+		_, err := o.Validate()
+		if err != nil {
 			return err
 		}
 	}
@@ -288,9 +291,9 @@ func (l List) Clone() List {
 	return out
 }
 
-func (l List) Load() error {
+func (l List) Initialize() error {
 	for _, o := range l {
-		if err := o.Initialize(); err != nil {
+		if err := o.Initialize(""); err != nil {
 			return err
 		}
 	}

@@ -20,7 +20,7 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
+	"github.com/trickstercache/trickster/v2/pkg/config/types"
 )
 
 // Options is a collection of Logging options
@@ -30,6 +30,8 @@ type Options struct {
 	// LogLevel provides the most granular level (e.g., DEBUG, INFO, ERROR) to log
 	LogLevel string `yaml:"log_level,omitempty"`
 }
+
+var _ types.ConfigOptions[Options] = &Options{}
 
 var ErrInvalidLogLevel = errors.New("invalid log level")
 
@@ -43,13 +45,17 @@ func (o *Options) Clone() *Options {
 	return &Options{LogLevel: o.LogLevel, LogFile: o.LogFile}
 }
 
-func (o *Options) Validate() error {
-	switch strings.ToLower(o.LogLevel) {
-	case "":
-		o.LogLevel = string(level.Info)
-		return nil
-	case "error", "warn", "fatal", "info", "debug":
-		return nil
+func (o *Options) Initialize(_ string) error {
+	if o.LogLevel == "" {
+		o.LogLevel = DefaultLogLevel
 	}
-	return ErrInvalidLogLevel
+	return nil
+}
+
+func (o *Options) Validate() (bool, error) {
+	switch strings.ToLower(o.LogLevel) {
+	case "error", "warn", "fatal", "info", "debug":
+		return true, nil
+	}
+	return false, ErrInvalidLogLevel
 }

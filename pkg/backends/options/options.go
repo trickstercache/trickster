@@ -34,6 +34,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/evictionmethods"
 	"github.com/trickstercache/trickster/v2/pkg/cache/negative"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
+	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	tro "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
@@ -214,6 +215,8 @@ type Options struct {
 	DoesShard bool `yaml:"-"`
 }
 
+var _ types.ConfigOptions[Options] = &Options{}
+
 // New will return a pointer to a Backend Options with the default configuration settings
 func New() *Options {
 	return &Options{
@@ -332,36 +335,42 @@ func (o *Options) Clone() *Options {
 }
 
 // Validate validates the Backend Options
-func (o *Options) Validate() error {
+func (o *Options) Validate() (bool, error) {
 	if err := ValidateBackendName(o.Name); err != nil {
-		return err
+		return false, err
 	}
 	if o.Provider == "" {
-		return NewErrMissingProvider(o.Name)
+		return false, NewErrMissingProvider(o.Name)
 	}
 	if !providers.NonOriginBackends().Contains(o.Provider) && o.OriginURL == "" {
-		return NewErrMissingOriginURL(o.Name)
+		return false, NewErrMissingOriginURL(o.Name)
 	}
 	if o.OriginURL != "" {
 		if _, err := url.Parse(o.OriginURL); err != nil {
-			return fmt.Errorf("invalid origin_url for backend %s: %w", o.Name, err)
+			return false, fmt.Errorf("invalid origin_url for backend %s: %w", o.Name, err)
 		}
 	}
 	if o.MaxShardSizeTime > 0 && o.MaxShardSizePoints > 0 {
-		return ErrInvalidMaxShardSize
+		return false, ErrInvalidMaxShardSize
 	}
 
 	if o.ShardStep > 0 && o.MaxShardSizeTime > 0 && o.MaxShardSizeTime%o.ShardStep != 0 {
-		return ErrInvalidMaxShardSizeTime
+		return false, ErrInvalidMaxShardSizeTime
 	}
 
 	if len(o.Paths) > 0 {
 		if err := o.Paths.Validate(); err != nil {
-			return err
+			return false, err
 		}
 	}
 
-	return nil
+	if o.HealthCheck != nil {
+		_, err := o.HealthCheck.Validate()
+		if err != nil {
+			return false, err
+		}
+	}
+	return true, nil
 }
 
 // Validate validates the Lookup collection of Backend Options
@@ -373,7 +382,8 @@ func (l Lookup) Validate() error {
 			continue
 		}
 		o.Name = key
-		if err := o.Validate(); err != nil {
+		_, err := o.Validate()
+		if err != nil {
 			return err
 		}
 		entry := &tree.Entry{
@@ -513,6 +523,9 @@ func (l Lookup) ValidateTLSConfigs() (bool, error) {
 	var serveTLS bool
 	for _, o := range l {
 		if o.TLS != nil {
+			if err := o.TLS.Initialize(""); err != nil {
+				return false, err
+			}
 			b, err := o.TLS.Validate()
 			if err != nil {
 				return false, err
@@ -541,7 +554,7 @@ func (l Lookup) Load() error {
 			v.CacheName = DefaultBackendCacheName
 		}
 		if len(v.Paths) > 0 {
-			err := v.Paths.Load()
+			err := v.Paths.Initialize()
 			if err != nil {
 				return err
 			}
@@ -599,14 +612,19 @@ func (o *Options) Initialize(name string) error {
 	}
 	if o.Provider == providers.ALB {
 		if o.ALBOptions != nil {
-			if err := o.ALBOptions.Initialize(); err != nil {
+			if err := o.ALBOptions.Initialize(""); err != nil {
 				return err
 			}
 		}
 	}
 
 	if o.HealthCheck != nil {
-		if err := o.HealthCheck.Initialize(); err != nil {
+		if err := o.HealthCheck.Initialize(""); err != nil {
+			return err
+		}
+	}
+	if o.TLS != nil {
+		if err := o.TLS.Initialize(""); err != nil {
 			return err
 		}
 	}

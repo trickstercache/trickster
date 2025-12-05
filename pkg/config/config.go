@@ -162,6 +162,13 @@ func (c *Config) loadYAMLConfig(yml string) error {
 		}
 	}
 
+	if len(c.Rules) > 0 {
+		err = c.Rules.Load()
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 

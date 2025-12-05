@@ -64,7 +64,7 @@ backends:
       headers:
         Authorization: Basic SomeHash
       path: /test/upstream/endpoint
-      verb: test_verb
+      verb: GET
       query: query=1234
     paths:
       - path: /series

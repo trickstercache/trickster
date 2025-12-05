@@ -199,9 +199,15 @@ func TestValidate(t *testing.T) {
 		t.Error(err)
 	}
 	o.Name = "test"
+	if err := o.Initialize("test"); err != nil {
+		t.Error(err)
+	}
 
 	o2, err := fromYAML(testYAML, "test_pool_member")
 	o2.Name = "test_pool_member"
+	if err := o2.Initialize("test_pool_member"); err != nil {
+		t.Error(err)
+	}
 	to := &testOptions{Backends: Lookup{o.Name: o, o2.Name: o2}}
 
 	var errType02 = NewErrMissingOriginURL("test").(*ErrMissingOriginURL)

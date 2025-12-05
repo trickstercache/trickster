@@ -33,7 +33,7 @@ func TestNew(t *testing.T) {
 
 func TestInitialize(t *testing.T) {
 	o := New()
-	err := o.Initialize()
+	err := o.Initialize("")
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}

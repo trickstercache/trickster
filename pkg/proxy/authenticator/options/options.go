@@ -64,6 +64,13 @@ func (o *Options) Clone() *Options {
 	return out
 }
 
+func (o *Options) Initialize() error {
+	if len(o.Users) > 0 && o.UsersFormat == "" {
+		o.UsersFormat = types.Unknown
+	}
+	return nil
+}
+
 func (o *Options) Validate(f types.IsRegisteredFunc) error {
 	if restrictedNames.Contains(o.Name) {
 		return ae.ErrInvalidName
@@ -75,9 +82,6 @@ func (o *Options) Validate(f types.IsRegisteredFunc) error {
 		if !files.FileExistsAndReadable(o.UsersFile) {
 			return ae.ErrInvalidUsersFile
 		}
-	}
-	if len(o.Users) > 0 && o.UsersFormat == "" {
-		o.UsersFormat = types.Unknown
 	}
 	return nil
 }

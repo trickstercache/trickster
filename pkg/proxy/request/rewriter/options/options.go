@@ -20,6 +20,7 @@ import (
 	"errors"
 	"slices"
 
+	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
@@ -36,6 +37,8 @@ type Options struct {
 
 // Lookup is a map of Options keyed by Rule Name
 type Lookup map[string]*Options
+
+var _ types.ConfigOptions[Options] = &Options{}
 
 var ErrInvalidName = errors.New("invalid rewriter name")
 var restrictedNames = sets.New([]string{"", "none"})
@@ -54,12 +57,17 @@ func (o *Options) Clone() *Options {
 	return o2
 }
 
-// Validate returns an error if there are issues with the Rewriter options.
-func (o *Options) Validate() error {
-	if restrictedNames.Contains(o.Name) {
-		return ErrInvalidName
-	}
+func (o *Options) Initialize(_ string) error {
+	// stub function required for ConfigOptions interface
 	return nil
+}
+
+// Validate returns an error if there are issues with the Rewriter options.
+func (o *Options) Validate() (bool, error) {
+	if restrictedNames.Contains(o.Name) {
+		return false, ErrInvalidName
+	}
+	return true, nil
 }
 
 // Validate returns an error if there are issues with any of the Rewriters options.
@@ -69,7 +77,8 @@ func (l Lookup) Validate() error {
 			continue
 		}
 		o.Name = k
-		if err := o.Validate(); err != nil {
+		_, err := o.Validate()
+		if err != nil {
 			return err
 		}
 	}

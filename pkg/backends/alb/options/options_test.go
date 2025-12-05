@@ -86,7 +86,7 @@ func TestInitialize(t *testing.T) {
 
 	// Test with empty options
 	o := New()
-	err := o.Initialize()
+	err := o.Initialize("")
 	if err != nil {
 		t.Error(err)
 	}
@@ -96,7 +96,7 @@ func TestInitialize(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	err = o.Initialize()
+	err = o.Initialize("")
 	if err != nil {
 		t.Error(err)
 	}
@@ -109,7 +109,7 @@ func TestInitialize(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	err = o.Initialize()
+	err = o.Initialize("")
 	if err != nil {
 		t.Error("failed to set defaults")
 	}
@@ -121,7 +121,7 @@ func TestInitialize(t *testing.T) {
 	o = New()
 	o.MechanismName = "tsmerge"
 	o.OutputFormat = "prometheus"
-	err = o.Initialize()
+	err = o.Initialize("")
 	if err != nil {
 		t.Error(err)
 	}

@@ -92,6 +92,32 @@ func Load(args []string) (*Config, error) {
 		}
 	}
 
+	if c.Frontend != nil {
+		if err := c.Frontend.Initialize(); err != nil {
+			return nil, err
+		}
+	}
+
+	if c.Logging != nil {
+		if err := c.Logging.Initialize(""); err != nil {
+			return nil, err
+		}
+	}
+
+	if c.Metrics != nil {
+		if err := c.Metrics.Initialize(""); err != nil {
+			return nil, err
+		}
+	}
+
+	if len(c.Authenticators) > 0 {
+		for _, ao := range c.Authenticators {
+			if err := ao.Initialize(); err != nil {
+				return nil, err
+			}
+		}
+	}
+
 	if len(c.Caches) > 0 {
 		activeCaches := sets.NewStringSet()
 		for _, backend := range c.Backends {

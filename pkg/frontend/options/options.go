@@ -84,6 +84,13 @@ func (o *Options) Clone() *Options {
 	}
 }
 
+func (o *Options) Initialize() error {
+	if o.MaxRequestBodySizeBytes == nil {
+		o.MaxRequestBodySizeBytes = pointers.New(DefaultMaxRequestBodySizeBytes)
+	}
+	return nil
+}
+
 func (o *Options) Validate(f TLSConfigFunc) error {
 	if o.TLSListenPort < 1 && o.ListenPort < 1 {
 		return errors.New("no http or https listeners configured")
@@ -91,9 +98,6 @@ func (o *Options) Validate(f TLSConfigFunc) error {
 	if o.ServeTLS && o.TLSListenPort > 0 {
 		_, err := f()
 		return err
-	}
-	if o.MaxRequestBodySizeBytes == nil {
-		o.MaxRequestBodySizeBytes = pointers.New(DefaultMaxRequestBodySizeBytes)
 	}
 	return nil
 }

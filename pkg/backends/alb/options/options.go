@@ -25,6 +25,7 @@ import (
 	te "github.com/trickstercache/trickster/v2/pkg/backends/alb/errors"
 	ur "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/ur/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
@@ -54,12 +55,14 @@ type Options struct {
 	FgrCodesLookup sets.Set[int] `yaml:"-"`
 }
 
-const defaultTSOutputFormat = providers.Prometheus
-
 // InvalidALBOptionsError is an error type for invalid ALB Options
 type InvalidALBOptionsError struct {
 	error
 }
+
+var _ types.ConfigOptions[Options] = &Options{}
+
+const defaultTSOutputFormat = providers.Prometheus
 
 var (
 	ErrUserRouterRequired     = errors.New("'user_router' block is required")
@@ -109,7 +112,7 @@ func (o *Options) Clone() *Options {
 	return c
 }
 
-func (o *Options) Initialize() error {
+func (o *Options) Initialize(_ string) error {
 	if strings.HasPrefix(o.MechanismName, "tsm") && o.MechanismName != "tsm" {
 		// shorten from tsmerge to tsm
 		o.MechanismName = "tsm"
@@ -129,22 +132,22 @@ func (o *Options) Initialize() error {
 	return nil
 }
 
-func (o *Options) Validate() error {
+func (o *Options) Validate() (bool, error) {
 	switch o.MechanismName {
 	case "ur":
 		if o.UserRouter == nil {
-			return ErrUserRouterRequired
+			return false, ErrUserRouterRequired
 		}
 	case "tsm":
 		if o.OutputFormat != "" && !providers.IsSupportedTimeSeriesMergeProvider(o.OutputFormat) {
-			return ErrInvalidOutputFormat
+			return false, ErrInvalidOutputFormat
 		}
 	default:
 		if o.OutputFormat != "" {
-			return ErrOutputFormatOnlyForTSM
+			return false, ErrOutputFormatOnlyForTSM
 		}
 	}
-	return nil
+	return true, nil
 }
 
 func (o *Options) ValidatePool(backendName string, allBackends sets.Set[string]) error {

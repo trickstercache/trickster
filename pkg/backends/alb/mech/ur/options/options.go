@@ -108,6 +108,9 @@ func (o *Options) Initialize(albName string) error {
 }
 
 func (o *Options) Validate(backendTypes map[string]string) error {
+	if o.NoRouteStatusCode != 0 && (o.NoRouteStatusCode < 100 || o.NoRouteStatusCode >= 600) {
+		return fmt.Errorf("invalid no_route_status_code: %d (must be between 100 and 599)", o.NoRouteStatusCode)
+	}
 	found := sets.NewStringSet()
 	if o.DefaultBackend != "" {
 		t, ok := backendTypes[o.DefaultBackend]
@@ -125,7 +128,6 @@ func (o *Options) Validate(backendTypes map[string]string) error {
 			found.Set(t)
 		}
 	}
-
 	return nil
 }
 

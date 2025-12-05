@@ -19,6 +19,8 @@ package options
 import (
 	"os"
 	"slices"
+
+	"github.com/trickstercache/trickster/v2/pkg/config/types"
 )
 
 // Options is a collection of TLS-related client and server configurations
@@ -42,6 +44,8 @@ type Options struct {
 	// ClientKeyPath provides the path to the Client Key when using Mutual Authorization
 	ClientKeyPath string `yaml:"client_key_path,omitempty"`
 }
+
+var _ types.ConfigOptions[Options] = &Options{}
 
 // New will return a *Options with the default settings
 func New() *Options {
@@ -74,14 +78,20 @@ func (o *Options) Equal(o2 *Options) bool {
 		o.ClientKeyPath == o2.ClientKeyPath
 }
 
+func (o *Options) Initialize(_ string) error {
+	if (o.FullChainCertPath != "" && o.PrivateKeyPath != "") ||
+		len(o.CertificateAuthorityPaths) > 0 {
+		o.ServeTLS = true
+	}
+	return nil
+}
+
 // Validate returns true if the TLS Options are validated
 func (o *Options) Validate() (bool, error) {
-
 	if (o.FullChainCertPath == "" || o.PrivateKeyPath == "") &&
 		len(o.CertificateAuthorityPaths) == 0 {
 		return false, nil
 	}
-
 	_, err := os.ReadFile(o.FullChainCertPath)
 	if err != nil {
 		return false, err
@@ -90,7 +100,6 @@ func (o *Options) Validate() (bool, error) {
 	if err != nil {
 		return false, err
 	}
-
 	// Verify CA Paths
 	if len(o.CertificateAuthorityPaths) > 0 {
 		for _, path := range o.CertificateAuthorityPaths {
@@ -100,9 +109,6 @@ func (o *Options) Validate() (bool, error) {
 			}
 		}
 	}
-
-	o.ServeTLS = true
-
 	return true, nil
 }
 

@@ -18,7 +18,9 @@ package options
 
 import (
 	"errors"
+	"strings"
 
+	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
@@ -110,12 +112,38 @@ type Lookup map[string]*Options
 
 type CaseOptionsList []*CaseOptions
 
+var _ types.ConfigOptions[Options] = &Options{}
+
 var ErrInvalidName = errors.New("invalid rule name")
 var restrictedNames = sets.New([]string{"", "none"})
 
 // New returns a new Rule Options with default values
 func New() *Options {
-	return &Options{}
+	return &Options{
+		InputDelimiter:    " ",
+		InputIndex:        -1,
+		MaxRuleExecutions: DefaultMaxRuleExecutions,
+		InputType:         "string",
+	}
+}
+
+func (o *Options) Initialize(_ string) error {
+	if o.MaxRuleExecutions == 0 {
+		o.MaxRuleExecutions = DefaultMaxRuleExecutions
+	}
+	if o.InputDelimiter == "" {
+		o.InputDelimiter = " "
+	}
+	if o.InputType != "" {
+		o.InputType = strings.ToLower(o.InputType)
+	}
+	if o.InputEncoding != "" {
+		o.InputEncoding = strings.ToLower(o.InputEncoding)
+	}
+	if o.Operation != "" {
+		o.Operation = strings.ToLower(o.Operation)
+	}
+	return nil
 }
 
 // Clone returns a perfect copy of the subject *Options
@@ -140,17 +168,28 @@ func (o *Options) Clone() *Options {
 	}
 }
 
-func (o *Options) Validate() error {
+func (o *Options) Validate() (bool, error) {
 	if restrictedNames.Contains(o.Name) {
-		return ErrInvalidName
+		return false, ErrInvalidName
+	}
+	return true, nil
+}
+
+func (l Lookup) Load() error {
+	for k, o := range l {
+		o.Name = k
+		if err := o.Initialize(""); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
 func (l Lookup) Validate() error {
-	for l, o := range l {
-		o.Name = l
-		if err := o.Validate(); err != nil {
+	for k, o := range l {
+		o.Name = k
+		_, err := o.Validate()
+		if err != nil {
 			return err
 		}
 	}

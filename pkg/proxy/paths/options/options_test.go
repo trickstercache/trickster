@@ -209,7 +209,7 @@ func TestInitialize(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			err := test.options.Initialize()
+			err := test.options.Initialize("")
 
 			if test.expectedError != nil {
 				if err == nil {
@@ -298,7 +298,7 @@ func TestValidate(t *testing.T) {
 			options: func() *Options {
 				o := New()
 				o.CollapsedForwardingName = "invalid"
-				_ = o.Initialize()
+				_ = o.Initialize("")
 				return o
 			}(),
 			expectedError: "invalid collapsed_forwarding name: invalid",
@@ -308,7 +308,7 @@ func TestValidate(t *testing.T) {
 			options: func() *Options {
 				o := New()
 				o.Methods = []string{"GET", "INVALID_METHOD"}
-				_ = o.Initialize()
+				_ = o.Initialize("")
 				return o
 			}(),
 			expectedError: "invalid HTTP method: INVALID_METHOD",
@@ -318,7 +318,7 @@ func TestValidate(t *testing.T) {
 			options: func() *Options {
 				o := New()
 				o.ResponseCode = 999
-				_ = o.Initialize()
+				_ = o.Initialize("")
 				return o
 			}(),
 			expectedError: "invalid response_code: 999 (must be between 100 and 599)",
@@ -328,7 +328,7 @@ func TestValidate(t *testing.T) {
 			options: func() *Options {
 				o := New()
 				o.ResponseCode = 404
-				_ = o.Initialize()
+				_ = o.Initialize("")
 				return o
 			}(),
 			expectedError: "",
@@ -337,7 +337,7 @@ func TestValidate(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			err := test.options.Validate()
+			_, err := test.options.Validate()
 
 			if test.expectedError != "" {
 				if err == nil {
