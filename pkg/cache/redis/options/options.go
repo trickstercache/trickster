@@ -123,6 +123,11 @@ func (o *Options) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if load.Endpoints != nil {
 		o.Endpoints = load.Endpoints
 	}
+	if load.Endpoints != nil && load.Endpoint == nil {
+		o.Endpoint = ""
+	} else if load.Endpoint != nil && load.Endpoints == nil {
+		o.Endpoints = nil
+	}
 	if load.Username != nil {
 		o.Username = *load.Username
 	}
