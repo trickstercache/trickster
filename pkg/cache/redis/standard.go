@@ -21,6 +21,7 @@ import (
 	"fmt"
 
 	redis "github.com/redis/go-redis/v9"
+	"github.com/redis/go-redis/v9/maintnotifications"
 )
 
 func (c *CacheClient) clientOpts() (*redis.Options, error) {
@@ -95,6 +96,11 @@ func (c *CacheClient) clientOpts() (*redis.Options, error) {
 
 	if c.Config.Redis.ConnMaxIdleTime != 0 {
 		o.ConnMaxIdleTime = c.Config.Redis.ConnMaxIdleTime
+	}
+
+	// Disable maint_notifications to avoid warnings with Redis servers that don't support it
+	o.MaintNotificationsConfig = &maintnotifications.Config{
+		Mode: maintnotifications.ModeDisabled,
 	}
 
 	return o, nil
