@@ -156,14 +156,14 @@ func (c *Config) loadYAMLConfig(yml string) error {
 	}
 
 	if len(c.Backends) > 0 {
-		err = c.Backends.Load()
+		err = c.Backends.Initialize()
 		if err != nil {
 			return err
 		}
 	}
 
 	if len(c.Rules) > 0 {
-		err = c.Rules.Load()
+		err = c.Rules.Initialize()
 		if err != nil {
 			return err
 		}

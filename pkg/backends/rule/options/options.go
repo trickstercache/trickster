@@ -175,7 +175,7 @@ func (o *Options) Validate() (bool, error) {
 	return true, nil
 }
 
-func (l Lookup) Load() error {
+func (l Lookup) Initialize() error {
 	for k, o := range l {
 		o.Name = k
 		if err := o.Initialize(""); err != nil {
