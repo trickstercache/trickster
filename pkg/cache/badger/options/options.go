@@ -33,25 +33,12 @@ func New() *Options {
 	return &Options{Directory: d.DefaultCachePath, ValueDirectory: d.DefaultCachePath}
 }
 
-type loaderOptions struct {
-	Directory      *string `yaml:"directory,omitempty"`
-	ValueDirectory *string `yaml:"value_directory,omitempty"`
-}
-
 func (o *Options) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	*o = *(New())
-
-	var load loaderOptions
-	if err := unmarshal(&load); err != nil {
+	type loadOptions Options
+	lo := loadOptions(*(New()))
+	if err := unmarshal(&lo); err != nil {
 		return err
 	}
-
-	if load.Directory != nil {
-		o.Directory = *load.Directory
-	}
-	if load.ValueDirectory != nil {
-		o.ValueDirectory = *load.ValueDirectory
-	}
-
+	*o = Options(lo)
 	return nil
 }

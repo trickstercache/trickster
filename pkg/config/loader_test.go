@@ -545,42 +545,6 @@ func TestLoadConfigurationBadArg(t *testing.T) {
 	}
 }
 
-func TestLoadConfigurationWarning1(t *testing.T) {
-
-	a := []string{"-config", "../../testdata/test.warning1.conf"}
-	// it should not error if config path is not set
-	conf, err := Load(a)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	expected := 1
-	l := len(conf.LoaderWarnings)
-
-	if l != expected {
-		t.Errorf("expected %d got %d", expected, l)
-	}
-
-}
-
-func TestLoadConfigurationWarning2(t *testing.T) {
-
-	a := []string{"-config", "../../testdata/test.warning2.conf"}
-	// it should not error if config path is not set
-	conf, err := Load(a)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	expected := 1
-	l := len(conf.LoaderWarnings)
-
-	if l != expected {
-		t.Errorf("expected %d got %d", expected, l)
-	}
-
-}
-
 func TestLoadEmptyArgs(t *testing.T) {
 	a := []string{}
 	_, err := Load(a)

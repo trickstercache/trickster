@@ -196,108 +196,22 @@ func (l Lookup) Validate() error {
 	return nil
 }
 
-type loaderOptions struct {
-	NextRoute              *string         `yaml:"next_route,omitempty"`
-	IngressReqRewriterName *string         `yaml:"ingress_req_rewriter_name,omitempty"`
-	EgressReqRewriterName  *string         `yaml:"egress_req_rewriter_name,omitempty"`
-	NoMatchReqRewriterName *string         `yaml:"nomatch_req_rewriter_name,omitempty"`
-	InputSource            *string         `yaml:"input_source,omitempty"`
-	InputKey               *string         `yaml:"input_key,omitempty"`
-	InputType              *string         `yaml:"input_type,omitempty"`
-	InputEncoding          *string         `yaml:"input_encoding,omitempty"`
-	InputIndex             *int            `yaml:"input_index,omitempty"`
-	InputDelimiter         *string         `yaml:"input_delimiter,omitempty"`
-	Operation              *string         `yaml:"operation,omitempty"`
-	OperationArg           *string         `yaml:"operation_arg,omitempty"`
-	CaseOptions            CaseOptionsList `yaml:"cases,omitempty"`
-	RedirectURL            *string         `yaml:"redirect_url,omitempty"`
-	MaxRuleExecutions      *int32          `yaml:"max_rule_executions,omitempty"`
-}
-
 func (o *Options) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	*o = *(New())
-
-	var load loaderOptions
-	if err := unmarshal(&load); err != nil {
+	type loadOptions Options
+	lo := loadOptions(*(New()))
+	if err := unmarshal(&lo); err != nil {
 		return err
 	}
-
-	if load.NextRoute != nil {
-		o.NextRoute = *load.NextRoute
-	}
-	if load.IngressReqRewriterName != nil {
-		o.IngressReqRewriterName = *load.IngressReqRewriterName
-	}
-	if load.EgressReqRewriterName != nil {
-		o.EgressReqRewriterName = *load.EgressReqRewriterName
-	}
-	if load.NoMatchReqRewriterName != nil {
-		o.NoMatchReqRewriterName = *load.NoMatchReqRewriterName
-	}
-	if load.InputSource != nil {
-		o.InputSource = *load.InputSource
-	}
-	if load.InputKey != nil {
-		o.InputKey = *load.InputKey
-	}
-	if load.InputType != nil {
-		o.InputType = *load.InputType
-	}
-	if load.InputEncoding != nil {
-		o.InputEncoding = *load.InputEncoding
-	}
-	if load.InputIndex != nil {
-		o.InputIndex = *load.InputIndex
-	}
-	if load.InputDelimiter != nil {
-		o.InputDelimiter = *load.InputDelimiter
-	}
-	if load.Operation != nil {
-		o.Operation = *load.Operation
-	}
-	if load.OperationArg != nil {
-		o.OperationArg = *load.OperationArg
-	}
-	if load.CaseOptions != nil {
-		o.CaseOptions = load.CaseOptions
-	}
-	if load.RedirectURL != nil {
-		o.RedirectURL = *load.RedirectURL
-	}
-	if load.MaxRuleExecutions != nil {
-		o.MaxRuleExecutions = *load.MaxRuleExecutions
-	}
-
+	*o = Options(lo)
 	return nil
 }
 
-type loaderCaseOptions struct {
-	Matches         []string `yaml:"matches,omitempty"`
-	ReqRewriterName *string  `yaml:"req_rewriter_name,omitempty"`
-	NextRoute       *string  `yaml:"next_route,omitempty"`
-	RedirectURL     *string  `yaml:"redirect_url,omitempty"`
-}
-
 func (o *CaseOptions) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	*o = CaseOptions{}
-
-	var load loaderCaseOptions
-	if err := unmarshal(&load); err != nil {
+	type loadOptions CaseOptions
+	lo := loadOptions(CaseOptions{})
+	if err := unmarshal(&lo); err != nil {
 		return err
 	}
-
-	if load.Matches != nil {
-		o.Matches = load.Matches
-	}
-	if load.ReqRewriterName != nil {
-		o.ReqRewriterName = *load.ReqRewriterName
-	}
-	if load.NextRoute != nil {
-		o.NextRoute = *load.NextRoute
-	}
-	if load.RedirectURL != nil {
-		o.RedirectURL = *load.RedirectURL
-	}
-
+	*o = CaseOptions(lo)
 	return nil
 }
