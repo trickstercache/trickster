@@ -18,6 +18,7 @@
 - You can now chain a collection of [request rewriters](./request_rewriters.md) for more robust possibilities.
 
 ## New in Beta 4
+- The configuration format for custom Backend [paths](./paths.md) been updated to use a YAML Sequence for enumerating paths, rather than named paths via a YAML Map. 
 - The configuration format for the [Rule Backend Provider](./rule.md) has been updated to use a YAML Sequence for enumerating rules, rather than named rules via a YAML Map. See the [Full Example Configuration](../examples/conf/example.full.yaml) for more info.
 - A configurable Request Body Size limit has been added for `POST`, `PUT` and `PATCH` requests, with a default of 10MB. Requests with a body size exceeding the limit will receive a `413 Content Too Large` response. See [Request Body Handling Customizations](./body.md) for more info.
 - We now support TLS-based Redis Endpoints. See the [Full Example Configuration](../examples/conf/example.full.yaml) for more info.
