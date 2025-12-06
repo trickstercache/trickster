@@ -18,10 +18,12 @@ package config
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	rule "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
@@ -278,4 +280,48 @@ func TestSetStalenessInfo(t *testing.T) {
 		!t2.Equal(mc.configRateLimitTime) {
 		t.Error("mismatch")
 	}
+}
+
+func TestConfig_defaulting(t *testing.T) {
+	// test the overall defaulting logic for the entire trickster config, using
+	// existing documentation examples as input
+
+	entries, err := os.ReadDir("../../examples/conf")
+	require.NoError(t, err)
+
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {
+			continue
+		}
+
+		// load file
+		file := filepath.Join("../../examples/conf", entry.Name())
+		c := NewConfig()
+		b, err := os.ReadFile(file)
+		if err != nil {
+			t.Errorf("unable to read input file: %v", err)
+			continue
+		}
+		// decode & clean file
+		require.NoError(t, c.loadYAMLConfig(string(b)))
+		clean(c)
+
+		// compare output to golden file
+		generatedOutput := c.String()
+		goldenFile := filepath.Join("testdata", filepath.Base(file))
+		// trigger update of golden file
+		if os.Getenv("UPDATE_GOLDENS") == "true" {
+			require.NoError(t, os.WriteFile(goldenFile, []byte(generatedOutput), 0666))
+			continue
+		}
+		b, err = os.ReadFile(goldenFile)
+		require.NoError(t, err)
+		expected := string(b)
+		require.Equal(t, expected, generatedOutput)
+	}
+}
+
+// remove any values that are non-deterministic
+func clean(c *Config) {
+	c.Main.ServerName = "trickster-test"
 }
