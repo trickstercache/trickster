@@ -113,6 +113,11 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 				cs.SetCerts(tlsConfig.Certificates)
 			}
 		}
+		// Update the router for existing TLS listener when only certs changed
+		lg.UpdateRouter("tlsListener", router)
+	case conf.Frontend.ServeTLS && conf.Frontend.TLSListenPort > 0 && hasOldFC && oldConf.Frontend.ServeTLS:
+		// TLS is still enabled and address/port haven't changed, update the router
+		lg.UpdateRouter("tlsListener", router)
 	}
 
 	// if the plaintext HTTP port is configured, then set up the http listener instance
@@ -127,6 +132,9 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		go lg.StartListener("httpListener",
 			conf.Frontend.ListenAddress, conf.Frontend.ListenPort,
 			conf.Frontend.ConnectionsLimit, nil, router, t2, errorFunc, 0, conf.Frontend.ReadHeaderTimeout)
+	} else if conf.Frontend.ListenPort > 0 {
+		// Update the router for existing HTTP listener when address/port haven't changed
+		lg.UpdateRouter("httpListener", router)
 	}
 
 	metricsRouter.RegisterRoute("/metrics", nil, nil,
