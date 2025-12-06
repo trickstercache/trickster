@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
@@ -34,7 +35,6 @@ import (
 )
 
 const ID types.ID = 3
-const ShortName types.Name = "nlm"
 const Name types.Name = "newest_last_modified"
 
 type handler struct {
@@ -42,7 +42,7 @@ type handler struct {
 }
 
 func RegistryEntry() types.RegistryEntry {
-	return types.RegistryEntry{ID: ID, Name: Name, ShortName: ShortName, New: New}
+	return types.RegistryEntry{ID: ID, Name: Name, ShortName: names.MechanismNLM, New: New}
 }
 
 func New(_ *options.Options, _ rt.Lookup) (types.Mechanism, error) {
@@ -58,7 +58,7 @@ func (h *handler) ID() types.ID {
 }
 
 func (h *handler) Name() types.Name {
-	return ShortName
+	return names.MechanismNLM
 }
 
 func (h *handler) StopPool() {

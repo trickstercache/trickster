@@ -20,6 +20,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 
 	"github.com/stretchr/testify/require"
@@ -125,7 +126,7 @@ func TestInitialize(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	if o.MechanismName != "tsm" {
+	if o.MechanismName != names.MechanismTSM {
 		t.Error("expected mechanism name to be shortened to tsm")
 	}
 

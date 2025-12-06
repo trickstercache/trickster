@@ -24,6 +24,7 @@ import (
 
 	te "github.com/trickstercache/trickster/v2/pkg/backends/alb/errors"
 	ur "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/ur/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
@@ -113,17 +114,17 @@ func (o *Options) Clone() *Options {
 }
 
 func (o *Options) Initialize(_ string) error {
-	if strings.HasPrefix(o.MechanismName, "tsm") && o.MechanismName != "tsm" {
+	if strings.HasPrefix(o.MechanismName, names.MechanismTSM) && o.MechanismName != names.MechanismTSM {
 		// shorten from tsmerge to tsm
-		o.MechanismName = "tsm"
+		o.MechanismName = names.MechanismTSM
 	}
 	switch o.MechanismName {
-	case "fgr":
+	case names.MechanismFGR:
 		if len(o.FGRStatusCodes) > 0 {
 			o.FgrCodesLookup = sets.NewIntSet()
 			o.FgrCodesLookup.SetAll(o.FGRStatusCodes)
 		}
-	case "tsm":
+	case names.MechanismTSM:
 		if o.OutputFormat == "" {
 			o.OutputFormat = defaultTSOutputFormat
 		}
@@ -134,11 +135,11 @@ func (o *Options) Initialize(_ string) error {
 
 func (o *Options) Validate() (bool, error) {
 	switch o.MechanismName {
-	case "ur":
+	case names.MechanismUR:
 		if o.UserRouter == nil {
 			return false, ErrUserRouterRequired
 		}
-	case "tsm":
+	case names.MechanismTSM:
 		if o.OutputFormat != "" && !providers.IsSupportedTimeSeriesMergeProvider(o.OutputFormat) {
 			return false, ErrInvalidOutputFormat
 		}

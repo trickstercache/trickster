@@ -25,6 +25,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/errors"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/rr"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
@@ -36,7 +37,7 @@ import (
 )
 
 const ID types.ID = 4
-const ShortName types.Name = "tsm"
+const ShortName = names.MechanismTSM
 const Name types.Name = "time_series_merge"
 
 type handler struct {

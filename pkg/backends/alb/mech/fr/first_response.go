@@ -21,6 +21,7 @@ import (
 	"sync"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
@@ -31,13 +32,11 @@ import (
 )
 
 const (
-	FRID        types.ID   = 1
-	FRShortName types.Name = "fr"
-	FRName      types.Name = "first_response"
+	FRID   types.ID   = 1
+	FRName types.Name = "first_response"
 
-	FGRID        types.ID   = 2
-	FGRShortName types.Name = "fgr"
-	FGRName      types.Name = "first_good_response"
+	FGRID   types.ID   = 2
+	FGRName types.Name = "first_good_response"
 )
 
 type handler struct {
@@ -47,11 +46,11 @@ type handler struct {
 }
 
 func RegistryEntry() types.RegistryEntry {
-	return types.RegistryEntry{ID: FRID, Name: FRName, ShortName: FRShortName, New: New}
+	return types.RegistryEntry{ID: FRID, Name: FRName, ShortName: names.MechanismFR, New: New}
 }
 
 func RegistryEntryFGR() types.RegistryEntry {
-	return types.RegistryEntry{ID: FGRID, Name: FGRName, ShortName: FGRShortName, New: NewFGR}
+	return types.RegistryEntry{ID: FGRID, Name: FGRName, ShortName: names.MechanismFGR, New: NewFGR}
 }
 
 func NewFGR(o *options.Options, _ rt.Lookup) (types.Mechanism, error) {
@@ -78,9 +77,9 @@ func (h *handler) ID() types.ID {
 
 func (h *handler) Name() types.Name {
 	if h.fgr {
-		return FGRShortName
+		return names.MechanismFGR
 	}
-	return FRShortName
+	return names.MechanismFR
 }
 
 func (h *handler) StopPool() {

@@ -21,6 +21,7 @@ import (
 	"sync/atomic"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
@@ -28,7 +29,6 @@ import (
 )
 
 const ID types.ID = 0
-const ShortName types.Name = "rr"
 const Name types.Name = "round_robin"
 
 type handler struct {
@@ -37,7 +37,7 @@ type handler struct {
 }
 
 func RegistryEntry() types.RegistryEntry {
-	return types.RegistryEntry{ID: ID, Name: Name, ShortName: ShortName, New: New}
+	return types.RegistryEntry{ID: ID, Name: Name, ShortName: names.MechanismRR, New: New}
 }
 
 func New(_ *options.Options, _ rt.Lookup) (types.Mechanism, error) {
@@ -53,7 +53,7 @@ func (h *handler) ID() types.ID {
 }
 
 func (h *handler) Name() types.Name {
-	return ShortName
+	return names.MechanismRR
 }
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {

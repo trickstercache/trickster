@@ -21,6 +21,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	uropt "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/ur/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
@@ -31,7 +32,6 @@ import (
 )
 
 const URID types.ID = 5
-const URShortName types.Name = "ur"
 const URName types.Name = "user_router"
 
 type Handler struct {
@@ -42,7 +42,7 @@ type Handler struct {
 
 func RegistryEntry() types.RegistryEntry {
 	return types.RegistryEntry{ID: URID, Name: URName,
-		ShortName: URShortName, New: New}
+		ShortName: names.MechanismUR, New: New}
 }
 
 func New(o *options.Options, _ rt.Lookup) (types.Mechanism, error) {
@@ -58,7 +58,7 @@ func (h *Handler) ID() types.ID {
 }
 
 func (h *Handler) Name() types.Name {
-	return URShortName
+	return names.MechanismUR
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
