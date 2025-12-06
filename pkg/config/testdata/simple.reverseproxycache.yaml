@@ -1,0 +1,90 @@
+main:
+  server_name: trickster-test
+backends:
+  default:
+    provider: reverseproxycache
+    origin_url: https://www.example.com
+    timeout: 3m0s
+    keep_alive_timeout: 5m0s
+    max_idle_conns: 20
+    cache_name: default
+    healthcheck:
+      verb: GET
+      scheme: http
+      path: /
+      expected_codes:
+      - 200
+    timeseries_retention_factor: 1024
+    timeseries_eviction_method: oldest
+    negative_cache_name: default
+    timeseries_ttl: 6h0m0s
+    fastforward_ttl: 15s
+    max_ttl: 25h0m0s
+    revalidation_factor: 2
+    max_object_size_bytes: 524288
+    compressible_types:
+    - text/html
+    - text/javascript
+    - text/css
+    - text/plain
+    - text/xml
+    - text/json
+    - application/json
+    - application/javascript
+    - application/xml
+    tracing_name: default
+    tls: {}
+    forwarded_headers: standard
+    latency_min: 0s
+    latency_max: 0s
+caches:
+  default:
+    provider: memory
+    index:
+      reap_interval: 3s
+      flush_interval: 5s
+      index_expiry: 8760h0m0s
+      max_size_bytes: 536870912
+      max_size_backoff_bytes: 16777216
+      max_size_backoff_objects: 100
+    redis:
+      client_type: standard
+      protocol: tcp
+      endpoint: redis:6379
+      endpoints:
+      - redis:6379
+    filesystem:
+      cache_path: /tmp/trickster
+    bbolt:
+      filename: trickster.db
+      bucket: trickster
+    badger:
+      directory: /tmp/trickster
+      value_directory: /tmp/trickster
+    timeseries_chunk_factor: 420
+    byterange_chunk_size: 4096
+frontend:
+  listen_port: 8480
+  tls_listen_port: 8483
+  max_request_body_size_bytes: 10485760
+  truncate_request_body_too_large: false
+logging:
+  log_level: info
+metrics:
+  listen_port: 8481
+tracing:
+  default:
+    provider: none
+    service_name: trickster
+    stdout: {}
+negative_caches:
+  default: {}
+mgmt:
+  listen_address: 127.0.0.1
+  listen_port: 8484
+  config_handler_path: /trickster/config
+  ping_handler_path: /trickster/ping
+  health_handler_path: /trickster/health
+  purge_by_key_path: /trickster/purge/key/
+  purge_by_path_path: /trickster/purge/path/
+  pprof_server: both
