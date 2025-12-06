@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/errors"
+	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
 // Load returns the Application Configuration, starting with a default config,
@@ -53,8 +54,6 @@ func Load(args []string) (*Config, error) {
 	c.loadEnvVars()
 	c.loadFlags(flags) // load parsed flags to override file and envs
 
-	c.parseURLs()
-
 	// set the default origin url from the flags
 	if d, ok := c.Backends["default"]; ok {
 		d.Name = "default"
@@ -86,17 +85,52 @@ func Load(args []string) (*Config, error) {
 		return nil, errors.ErrNoValidBackends
 	}
 
-	return c, nil
-}
-
-func (c *Config) parseURLs() {
-	for _, o := range c.Backends {
-		u, err := url.Parse(o.OriginURL)
-		if err != nil || u == nil {
-			continue // errors are OK here for some backend providers
+	for k, o := range c.Backends {
+		err = o.Initialize(k)
+		if err != nil {
+			return nil, err
 		}
-		o.Scheme = u.Scheme
-		o.Host = u.Host
-		o.PathPrefix = u.Path
 	}
+
+	if c.Frontend != nil {
+		if err := c.Frontend.Initialize(); err != nil {
+			return nil, err
+		}
+	}
+
+	if c.Logging != nil {
+		if err := c.Logging.Initialize(""); err != nil {
+			return nil, err
+		}
+	}
+
+	if c.Metrics != nil {
+		if err := c.Metrics.Initialize(""); err != nil {
+			return nil, err
+		}
+	}
+
+	if len(c.Authenticators) > 0 {
+		for _, ao := range c.Authenticators {
+			if err := ao.Initialize(); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	if len(c.Caches) > 0 {
+		activeCaches := sets.NewStringSet()
+		for _, backend := range c.Backends {
+			if backend.CacheName != "" {
+				activeCaches.Set(backend.CacheName)
+			}
+		}
+		warnings, err := c.Caches.Initialize(activeCaches)
+		if err != nil {
+			return nil, err
+		}
+		c.LoaderWarnings = append(c.LoaderWarnings, warnings...)
+	}
+
+	return c, nil
 }

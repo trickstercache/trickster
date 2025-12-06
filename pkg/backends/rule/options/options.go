@@ -18,7 +18,9 @@ package options
 
 import (
 	"errors"
+	"strings"
 
+	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
@@ -110,8 +112,39 @@ type Lookup map[string]*Options
 
 type CaseOptionsList []*CaseOptions
 
+var _ types.ConfigOptions[Options] = &Options{}
+
 var ErrInvalidName = errors.New("invalid rule name")
 var restrictedNames = sets.New([]string{"", "none"})
+
+// New returns a new Rule Options with default values
+func New() *Options {
+	return &Options{
+		InputDelimiter:    " ",
+		InputIndex:        -1,
+		MaxRuleExecutions: DefaultMaxRuleExecutions,
+		InputType:         "string",
+	}
+}
+
+func (o *Options) Initialize(_ string) error {
+	if o.MaxRuleExecutions == 0 {
+		o.MaxRuleExecutions = DefaultMaxRuleExecutions
+	}
+	if o.InputDelimiter == "" {
+		o.InputDelimiter = " "
+	}
+	if o.InputType != "" {
+		o.InputType = strings.ToLower(o.InputType)
+	}
+	if o.InputEncoding != "" {
+		o.InputEncoding = strings.ToLower(o.InputEncoding)
+	}
+	if o.Operation != "" {
+		o.Operation = strings.ToLower(o.Operation)
+	}
+	return nil
+}
 
 // Clone returns a perfect copy of the subject *Options
 func (o *Options) Clone() *Options {
@@ -135,19 +168,136 @@ func (o *Options) Clone() *Options {
 	}
 }
 
-func (o *Options) Validate() error {
+func (o *Options) Validate() (bool, error) {
 	if restrictedNames.Contains(o.Name) {
-		return ErrInvalidName
+		return false, ErrInvalidName
+	}
+	return true, nil
+}
+
+func (l Lookup) Load() error {
+	for k, o := range l {
+		o.Name = k
+		if err := o.Initialize(""); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
 func (l Lookup) Validate() error {
-	for l, o := range l {
-		o.Name = l
-		if err := o.Validate(); err != nil {
+	for k, o := range l {
+		o.Name = k
+		_, err := o.Validate()
+		if err != nil {
 			return err
 		}
 	}
+	return nil
+}
+
+type loaderOptions struct {
+	NextRoute              *string         `yaml:"next_route,omitempty"`
+	IngressReqRewriterName *string         `yaml:"ingress_req_rewriter_name,omitempty"`
+	EgressReqRewriterName  *string         `yaml:"egress_req_rewriter_name,omitempty"`
+	NoMatchReqRewriterName *string         `yaml:"nomatch_req_rewriter_name,omitempty"`
+	InputSource            *string         `yaml:"input_source,omitempty"`
+	InputKey               *string         `yaml:"input_key,omitempty"`
+	InputType              *string         `yaml:"input_type,omitempty"`
+	InputEncoding          *string         `yaml:"input_encoding,omitempty"`
+	InputIndex             *int            `yaml:"input_index,omitempty"`
+	InputDelimiter         *string         `yaml:"input_delimiter,omitempty"`
+	Operation              *string         `yaml:"operation,omitempty"`
+	OperationArg           *string         `yaml:"operation_arg,omitempty"`
+	CaseOptions            CaseOptionsList `yaml:"cases,omitempty"`
+	RedirectURL            *string         `yaml:"redirect_url,omitempty"`
+	MaxRuleExecutions      *int32          `yaml:"max_rule_executions,omitempty"`
+}
+
+func (o *Options) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*o = *(New())
+
+	var load loaderOptions
+	if err := unmarshal(&load); err != nil {
+		return err
+	}
+
+	if load.NextRoute != nil {
+		o.NextRoute = *load.NextRoute
+	}
+	if load.IngressReqRewriterName != nil {
+		o.IngressReqRewriterName = *load.IngressReqRewriterName
+	}
+	if load.EgressReqRewriterName != nil {
+		o.EgressReqRewriterName = *load.EgressReqRewriterName
+	}
+	if load.NoMatchReqRewriterName != nil {
+		o.NoMatchReqRewriterName = *load.NoMatchReqRewriterName
+	}
+	if load.InputSource != nil {
+		o.InputSource = *load.InputSource
+	}
+	if load.InputKey != nil {
+		o.InputKey = *load.InputKey
+	}
+	if load.InputType != nil {
+		o.InputType = *load.InputType
+	}
+	if load.InputEncoding != nil {
+		o.InputEncoding = *load.InputEncoding
+	}
+	if load.InputIndex != nil {
+		o.InputIndex = *load.InputIndex
+	}
+	if load.InputDelimiter != nil {
+		o.InputDelimiter = *load.InputDelimiter
+	}
+	if load.Operation != nil {
+		o.Operation = *load.Operation
+	}
+	if load.OperationArg != nil {
+		o.OperationArg = *load.OperationArg
+	}
+	if load.CaseOptions != nil {
+		o.CaseOptions = load.CaseOptions
+	}
+	if load.RedirectURL != nil {
+		o.RedirectURL = *load.RedirectURL
+	}
+	if load.MaxRuleExecutions != nil {
+		o.MaxRuleExecutions = *load.MaxRuleExecutions
+	}
+
+	return nil
+}
+
+type loaderCaseOptions struct {
+	Matches         []string `yaml:"matches,omitempty"`
+	ReqRewriterName *string  `yaml:"req_rewriter_name,omitempty"`
+	NextRoute       *string  `yaml:"next_route,omitempty"`
+	RedirectURL     *string  `yaml:"redirect_url,omitempty"`
+}
+
+func (o *CaseOptions) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*o = CaseOptions{}
+
+	var load loaderCaseOptions
+	if err := unmarshal(&load); err != nil {
+		return err
+	}
+
+	if load.Matches != nil {
+		o.Matches = load.Matches
+	}
+	if load.ReqRewriterName != nil {
+		o.ReqRewriterName = *load.ReqRewriterName
+	}
+	if load.NextRoute != nil {
+		o.NextRoute = *load.NextRoute
+	}
+	if load.RedirectURL != nil {
+		o.RedirectURL = *load.RedirectURL
+	}
+
 	return nil
 }

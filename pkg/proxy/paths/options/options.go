@@ -17,7 +17,6 @@
 package options
 
 import (
-	"errors"
 	"fmt"
 	"maps"
 	"net/http"
@@ -32,8 +31,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
+	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 	strutil "github.com/trickstercache/trickster/v2/pkg/util/strings"
-	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
 )
 
 // Options defines a URL Path that is associated with an HTTP Handler
@@ -41,7 +40,7 @@ type Options struct {
 	// Path indicates the HTTP Request's URL PATH to which this configuration applies
 	Path string `yaml:"path,omitempty"`
 	// MatchTypeName indicates the type of path match the router will apply to the path ('exact' or 'prefix')
-	MatchTypeName string `yaml:"match_type,omitempty"`
+	MatchTypeName matching.PathMatchName `yaml:"match_type,omitempty"`
 	// HandlerName provides the name of the HTTP handler to use
 	HandlerName string `yaml:"handler,omitempty"`
 	// Methods provides the list of permitted HTTP request methods for this Path
@@ -63,14 +62,14 @@ type Options struct {
 	// ResponseCode sets a custom response code to be sent to downstream clients for this path.
 	ResponseCode int `yaml:"response_code,omitempty"`
 	// ResponseBody sets a custom response body to be sent to the donstream client for this path.
-	ResponseBody string `yaml:"response_body,omitempty"`
+	ResponseBody *string `yaml:"response_body,omitempty"`
 	// CollapsedForwardingName indicates 'basic' or 'progressive' Collapsed Forwarding to be used by this path.
 	CollapsedForwardingName string `yaml:"collapsed_forwarding,omitempty"`
 	// ReqRewriterName is the name of a configured Rewriter that will modify the request prior to
 	// processing by the backend client
 	ReqRewriterName string `yaml:"req_rewriter_name,omitempty"`
 	// NoMetrics, when set to true, disables metrics decoration for the path
-	NoMetrics bool `yaml:"no_metrics"`
+	NoMetrics bool `yaml:"no_metrics,omitempty"`
 	// AuthenticatorName specifies the name of the optional Authenticator to attach to this Path
 	AuthenticatorName string `yaml:"authenticator_name,omitempty"`
 
@@ -85,34 +84,33 @@ type Options struct {
 	// KeyHasher points to an optional function that hashes the cacheKey with a custom algorithm
 	// NOTE: This can be used by backends, but is not configurable by end users.
 	KeyHasher key.HasherFunc `yaml:"-"`
-	// Custom is a compiled list of any custom settings for this path from the config file
-	Custom []string `yaml:"-"`
 	// ReqRewriter is the rewriter handler as indicated by RuleName
-	ReqRewriter rewriter.RewriteInstructions
+	ReqRewriter rewriter.RewriteInstructions `yaml:"-"`
 	// AuthOptions is the authenticator as indicated by AuthenticatorName
 	AuthOptions *autho.Options `yaml:"-"`
-	// HasCustomResponseBody is a boolean indicating if the response body is custom
-	// this flag allows an empty string response to be configured as a return value
-	HasCustomResponseBody bool `yaml:"-"`
 }
 
-// Lookup is a map of Options
+// List is a slice of *Options
+type List []*Options
+
+// Lookup is a map of *Options
 type Lookup map[string]*Options
+
+var _ types.ConfigOptions[Options] = &Options{}
 
 // New returns a newly-instantiated path *Options
 func New() *Options {
 	return &Options{
-		Path:                    "/",
+		Path:                    DefaultPath,
 		Methods:                 methods.CacheableHTTPMethods(),
 		HandlerName:             providers.Proxy,
-		MatchTypeName:           "exact",
+		MatchTypeName:           matching.PathMatchNameExact,
 		MatchType:               matching.PathMatchTypeExact,
-		CollapsedForwardingName: "basic",
+		CollapsedForwardingName: forwarding.CFNameBasic,
 		CollapsedForwardingType: forwarding.CFTypeBasic,
 		CacheKeyParams:          make([]string, 0),
 		CacheKeyHeaders:         make([]string, 0),
 		CacheKeyFormFields:      make([]string, 0),
-		Custom:                  make([]string, 0),
 		RequestHeaders:          make(map[string]string),
 		RequestParams:           make(map[string]string),
 		ResponseHeaders:         make(map[string]string),
@@ -122,7 +120,7 @@ func New() *Options {
 
 // Clone returns an exact copy of the subject Options
 func (o *Options) Clone() *Options {
-	c := &Options{
+	out := &Options{
 		Path:                    o.Path,
 		MatchTypeName:           o.MatchTypeName,
 		MatchType:               o.MatchType,
@@ -133,143 +131,264 @@ func (o *Options) Clone() *Options {
 		ReqRewriter:             o.ReqRewriter,
 		ReqRewriterName:         o.ReqRewriterName,
 		ResponseHeaders:         maps.Clone(o.ResponseHeaders),
-		ResponseBody:            o.ResponseBody,
-		ResponseBodyBytes:       o.ResponseBodyBytes,
 		CollapsedForwardingName: o.CollapsedForwardingName,
 		CollapsedForwardingType: o.CollapsedForwardingType,
 		NoMetrics:               o.NoMetrics,
-		HasCustomResponseBody:   o.HasCustomResponseBody,
 		Methods:                 slices.Clone(o.Methods),
 		CacheKeyParams:          slices.Clone(o.CacheKeyParams),
 		CacheKeyHeaders:         slices.Clone(o.CacheKeyHeaders),
 		CacheKeyFormFields:      slices.Clone(o.CacheKeyFormFields),
-		Custom:                  slices.Clone(o.Custom),
 		KeyHasher:               o.KeyHasher,
 		AuthenticatorName:       o.AuthenticatorName,
 	}
+	out.ResponseBody = pointers.Clone(o.ResponseBody)
+	if out.ResponseBody != nil {
+		out.ResponseBodyBytes = []byte(*out.ResponseBody)
+	}
 	if o.AuthOptions != nil {
-		c.AuthOptions = o.AuthOptions.Clone()
+		out.AuthOptions = o.AuthOptions.Clone()
 	}
-	return c
+	return out
 }
 
-// Merge merges the non-default values of the provided Options into the subject Options
-func (o *Options) Merge(o2 *Options) {
-	if o.Custom == nil {
-		o.Custom = make([]string, 0, len(o2.Custom))
+// Initialize sets up the path Options with default values and overlays
+// any values that were set during YAML unmarshaling
+func (o *Options) Initialize(_ string) error {
+	if len(o.Methods) == 0 {
+		o.Methods = []string{http.MethodGet}
 	}
-	for _, c := range o2.Custom {
-		o.Custom = append(o.Custom, c)
-		switch c {
-		case "path":
-			o.Path = o2.Path
-		case "match_type":
-			o.MatchType = o2.MatchType
-			o.MatchTypeName = o2.MatchTypeName
-		case "handler":
-			o.HandlerName = o2.HandlerName
-			o.Handler = o2.Handler
-		case "methods":
-			o.Methods = o2.Methods
-		case "cache_key_params":
-			o.CacheKeyParams = o2.CacheKeyParams
-		case "cache_key_headers":
-			o.CacheKeyHeaders = o2.CacheKeyHeaders
-		case "cache_key_form_fields":
-			o.CacheKeyFormFields = o2.CacheKeyFormFields
-		case "request_headers":
-			o.RequestHeaders = o2.RequestHeaders
-		case "request_params":
-			o.RequestParams = o2.RequestParams
-		case "response_headers":
-			o.ResponseHeaders = o2.ResponseHeaders
-		case "response_code":
-			o.ResponseCode = o2.ResponseCode
-		case "response_body":
-			o.ResponseBody = o2.ResponseBody
-			o.HasCustomResponseBody = true
-			o.ResponseBodyBytes = o2.ResponseBodyBytes
-		case "no_metrics":
-			o.NoMetrics = o2.NoMetrics
-		case "collapsed_forwarding":
-			o.CollapsedForwardingName = o2.CollapsedForwardingName
-			o.CollapsedForwardingType = o2.CollapsedForwardingType
-		case "req_rewriter_name":
-			o.ReqRewriterName = o2.ReqRewriterName
-			o.ReqRewriter = o2.ReqRewriter
-		case "authenticator_name":
-			o.AuthenticatorName = o2.AuthenticatorName
-			if o2.AuthOptions != nil {
-				o.AuthOptions = o2.AuthOptions.Clone()
-			}
-		}
-	}
-	o.Custom = strutil.Unique(o.Custom)
-}
 
-var pathMembers = []string{"path", "match_type", "handler", "methods", "cache_key_params",
-	"cache_key_headers", "default_ttl", "request_params", "request_headers", "response_headers",
-	"response_headers", "response_code", "response_body", "no_metrics", "collapsed_forwarding",
-	"req_rewriter_name", "authenticator_name",
-}
-
-var errInvalidConfigMetadata = errors.New("invalid config y")
-
-func OverlayYAMLData(
-	backendName string,
-	paths Lookup,
-	y yamlx.KeyLookup,
-) (Lookup, error) {
-	if y == nil {
-		return nil, errInvalidConfigMetadata
-	}
-	out := make(Lookup, len(paths))
-	for k, o := range paths {
-		p := o.Clone()
-		if len(p.Methods) == 0 {
-			p.Methods = []string{http.MethodGet}
-		}
-		p.Custom = make([]string, 0)
-		for _, pm := range pathMembers {
-			if y.IsDefined("backends", backendName, "paths", k, pm) {
-				p.Custom = append(p.Custom, pm)
-			}
-		}
-		if y.IsDefined("backends", backendName, "paths", k, "response_body") {
-			p.ResponseBodyBytes = []byte(p.ResponseBody)
-			p.HasCustomResponseBody = true
-		}
-		if y.IsDefined("backends", backendName, "paths", k, "collapsed_forwarding") {
-			if _, ok := forwarding.CollapsedForwardingTypeNames[p.CollapsedForwardingName]; !ok {
-				return nil, fmt.Errorf("invalid collapsed_forwarding name: %s", p.CollapsedForwardingName)
-			}
-			p.CollapsedForwardingType =
-				forwarding.GetCollapsedForwardingType(p.CollapsedForwardingName)
+	if o.MatchTypeName == "" {
+		o.MatchTypeName = matching.PathMatchNameExact
+		o.MatchType = matching.PathMatchTypeExact
+	} else {
+		o.MatchTypeName = matching.PathMatchName(strings.ToLower(string(o.MatchTypeName)))
+		if mt, ok := matching.Names[o.MatchTypeName]; ok {
+			o.MatchType = mt
 		} else {
-			p.CollapsedForwardingType = forwarding.CFTypeBasic
+			o.MatchType = matching.PathMatchTypeExact
+			o.MatchTypeName = matching.PathMatchNameExact
 		}
-		if mt, ok := matching.Names[strings.ToLower(p.MatchTypeName)]; ok {
-			p.MatchType = mt
-			p.MatchTypeName = p.MatchType.String()
-		} else {
-			p.MatchType = matching.PathMatchTypeExact
-			p.MatchTypeName = p.MatchType.String()
-		}
-		out[p.Path] = p
 	}
-	return out, nil
-}
 
-func (o *Options) Validate() error {
-	// placeholder for future validations as needed (currently there are none)
+	if o.CollapsedForwardingName == "" {
+		o.CollapsedForwardingType = forwarding.CFTypeBasic
+	} else {
+		o.CollapsedForwardingType = forwarding.GetCollapsedForwardingType(o.CollapsedForwardingName)
+	}
+
+	if o.ResponseBody != nil && *o.ResponseBody != "" {
+		o.ResponseBodyBytes = []byte(*o.ResponseBody)
+	}
+
 	return nil
 }
 
-func (l Lookup) Validate() error {
+// Initialize initializes all path options in the lookup
+func (l Lookup) Initialize() error {
 	for _, o := range l {
-		if err := o.Validate(); err != nil {
+		if err := o.Initialize(""); err != nil {
 			return err
 		}
 	}
+	return nil
+}
+
+func (o *Options) Validate() (bool, error) {
+	normalized := matching.PathMatchName(strings.ToLower(string(o.MatchTypeName)))
+	if _, ok := matching.Names[normalized]; !ok && o.MatchTypeName != "" {
+		return false, fmt.Errorf("invalid match_type: %s", o.MatchTypeName)
+	}
+	for _, method := range o.Methods {
+		if !methods.IsValidMethod(method) {
+			return false, fmt.Errorf("invalid HTTP method: %s", method)
+		}
+	}
+	if o.CollapsedForwardingName != "" {
+		if _, ok := forwarding.CollapsedForwardingTypeNames[o.CollapsedForwardingName]; !ok {
+			return false, fmt.Errorf("invalid collapsed_forwarding name: %s", o.CollapsedForwardingName)
+		}
+	}
+	if o.ResponseCode != 0 && (o.ResponseCode < 100 || o.ResponseCode >= 600) {
+		return false, fmt.Errorf("invalid response_code: %d (must be between 100 and 599)", o.ResponseCode)
+	}
+	return true, nil
+}
+
+func (l List) Validate() error {
+	for _, o := range l {
+		_, err := o.Validate()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (l List) Clone() List {
+	out := make(List, len(l))
+	for i, o := range l {
+		out[i] = o.Clone()
+	}
+	return out
+}
+
+func (l List) Initialize() error {
+	for _, o := range l {
+		if err := o.Initialize(""); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (l List) Overlay(l2 List) List {
+	l2ByPath := make(map[string][]*Options)
+	for _, o2 := range l2 {
+		if o2 != nil {
+			l2ByPath[o2.Path] = append(l2ByPath[o2.Path], o2)
+		}
+	}
+	l2Processed := make(map[string]bool)
+	out := make(List, 0, len(l)+len(l2))
+	for _, o := range l {
+		if o == nil {
+			continue
+		}
+		l2Matches, hasMatch := l2ByPath[o.Path]
+		if !hasMatch {
+			out = append(out, o)
+			continue
+		}
+		replacedMethods := make(map[string]bool)
+		for _, o2 := range l2Matches {
+			if o2 == nil {
+				continue
+			}
+			l2Processed[o.Path] = true
+			remainingMethods := make([]string, 0, len(o.Methods))
+			for _, m := range o.Methods {
+				if !replacedMethods[m] {
+					remainingMethods = append(remainingMethods, m)
+				}
+			}
+			if methods.HasAll(remainingMethods, o2.Methods) {
+				out = append(out, o2)
+				for _, m := range remainingMethods {
+					replacedMethods[m] = true
+				}
+			} else if !methods.HasAny(remainingMethods, o2.Methods) {
+				if len(remainingMethods) > 0 {
+					oClone := o.Clone()
+					oClone.Methods = remainingMethods
+					out = append(out, oClone)
+				} else {
+					out = append(out, o)
+				}
+				out = append(out, o2)
+			} else {
+				overlappingMethods := make([]string, 0)
+				for _, m := range remainingMethods {
+					for _, m2 := range o2.Methods {
+						if m == m2 {
+							overlappingMethods = append(overlappingMethods, m)
+							replacedMethods[m] = true
+							break
+						}
+					}
+				}
+				oClone := o.Clone()
+				oClone.Methods = strutil.Pare(remainingMethods, overlappingMethods)
+				if len(oClone.Methods) > 0 {
+					out = append(out, oClone)
+				}
+				out = append(out, o2)
+			}
+		}
+	}
+	for _, o2 := range l2 {
+		if o2 != nil && !l2Processed[o2.Path] {
+			out = append(out, o2)
+		}
+	}
+	return out
+}
+
+type loaderOptions struct {
+	Path                    *string                 `yaml:"path,omitempty"`
+	MatchTypeName           *matching.PathMatchName `yaml:"match_type,omitempty"`
+	HandlerName             *string                 `yaml:"handler,omitempty"`
+	Methods                 []string                `yaml:"methods,omitempty"`
+	CacheKeyParams          []string                `yaml:"cache_key_params,omitempty"`
+	CacheKeyHeaders         []string                `yaml:"cache_key_headers,omitempty"`
+	CacheKeyFormFields      []string                `yaml:"cache_key_form_fields,omitempty"`
+	RequestHeaders          types.EnvStringMap      `yaml:"request_headers,omitempty"`
+	RequestParams           types.EnvStringMap      `yaml:"request_params,omitempty"`
+	ResponseHeaders         types.EnvStringMap      `yaml:"response_headers,omitempty"`
+	ResponseCode            *int                    `yaml:"response_code,omitempty"`
+	ResponseBody            *string                 `yaml:"response_body,omitempty"`
+	CollapsedForwardingName *string                 `yaml:"collapsed_forwarding,omitempty"`
+	ReqRewriterName         *string                 `yaml:"req_rewriter_name,omitempty"`
+	NoMetrics               *bool                   `yaml:"no_metrics,omitempty"`
+	AuthenticatorName       *string                 `yaml:"authenticator_name,omitempty"`
+}
+
+func (o *Options) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*o = *(New())
+
+	var load loaderOptions
+	if err := unmarshal(&load); err != nil {
+		return err
+	}
+
+	if load.Path != nil {
+		o.Path = *load.Path
+	}
+	if load.MatchTypeName != nil {
+		o.MatchTypeName = *load.MatchTypeName
+	}
+	if load.HandlerName != nil {
+		o.HandlerName = *load.HandlerName
+	}
+	if load.Methods != nil {
+		o.Methods = load.Methods
+	}
+	if load.CacheKeyParams != nil {
+		o.CacheKeyParams = load.CacheKeyParams
+	}
+	if load.CacheKeyHeaders != nil {
+		o.CacheKeyHeaders = load.CacheKeyHeaders
+	}
+	if load.CacheKeyFormFields != nil {
+		o.CacheKeyFormFields = load.CacheKeyFormFields
+	}
+	if load.RequestHeaders != nil {
+		o.RequestHeaders = load.RequestHeaders
+	}
+	if load.RequestParams != nil {
+		o.RequestParams = load.RequestParams
+	}
+	if load.ResponseHeaders != nil {
+		o.ResponseHeaders = load.ResponseHeaders
+	}
+	if load.ResponseCode != nil {
+		o.ResponseCode = *load.ResponseCode
+	}
+	if load.ResponseBody != nil {
+		o.ResponseBody = load.ResponseBody
+	}
+	if load.CollapsedForwardingName != nil {
+		o.CollapsedForwardingName = *load.CollapsedForwardingName
+	}
+	if load.ReqRewriterName != nil {
+		o.ReqRewriterName = *load.ReqRewriterName
+	}
+	if load.NoMetrics != nil {
+		o.NoMetrics = *load.NoMetrics
+	}
+	if load.AuthenticatorName != nil {
+		o.AuthenticatorName = *load.AuthenticatorName
+	}
+
 	return nil
 }

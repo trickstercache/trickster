@@ -104,7 +104,7 @@ func reap(cacheSize int64, objectCount int64, remainders objectsAtime, opts opti
 
 	sort.Sort(remainders)
 
-	i := 0
+	var i int
 	j := len(remainders)
 
 	if evictionType == "size_bytes" {

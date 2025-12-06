@@ -22,8 +22,8 @@ import (
 	"time"
 
 	stdoutopts "github.com/trickstercache/trickster/v2/pkg/observability/tracing/exporters/stdout/options"
+	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
-	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
 )
 
 // Options is a Tracing Options collection
@@ -35,7 +35,7 @@ type Options struct {
 	Timeout            time.Duration     `yaml:"timeout,omitempty"`
 	Headers            map[string]string `yaml:"headers,omitempty"`
 	DisableCompression bool              `yaml:"disable_compression,omitempty"`
-	SampleRate         float64           `yaml:"sample_rate,omitempty"`
+	SampleRate         *float64          `yaml:"sample_rate,omitempty"`
 	Tags               map[string]string `yaml:"tags,omitempty"`
 	OmitTagsList       []string          `yaml:"omit_tags,omitempty"`
 
@@ -79,24 +79,29 @@ func (o *Options) Clone() *Options {
 }
 
 // ProcessTracingOptions enriches the configuration data of the provided Tracing Options collection
-func ProcessTracingOptions(mo Lookup, metadata yamlx.KeyLookup) {
+func ProcessTracingOptions(mo Lookup) {
 	if len(mo) == 0 {
 		return
 	}
-	for k, v := range mo {
-		if metadata != nil {
-			if !metadata.IsDefined("tracing", k, "sample_rate") {
-				v.SampleRate = 1
-			}
-			if !metadata.IsDefined("tracing", k, "service_name") {
-				v.ServiceName = DefaultTracerServiceName
-			}
-			if !metadata.IsDefined("tracing", k, "provider") {
-				v.Provider = DefaultTracerProvider
-			}
+	for _, v := range mo {
+		v.SanitizeSampleRate()
+		if v.ServiceName == "" {
+			v.ServiceName = DefaultTracerServiceName
+		}
+		if v.Provider == "" {
+			v.Provider = DefaultTracerProvider
 		}
 		v.generateOmitTags()
 		v.setAttachTags()
+	}
+}
+
+func (o *Options) SanitizeSampleRate() {
+	switch {
+	case o.SampleRate == nil || *o.SampleRate > 1:
+		o.SampleRate = pointers.New(1.0)
+	case *o.SampleRate < 0:
+		o.SampleRate = pointers.New(0.0)
 	}
 }
 
@@ -127,5 +132,60 @@ func (l Lookup) Validate() error {
 			return err
 		}
 	}
+	return nil
+}
+
+type loaderOptions struct {
+	Provider           *string             `yaml:"provider,omitempty"`
+	ServiceName        *string             `yaml:"service_name,omitempty"`
+	Endpoint           *string             `yaml:"endpoint,omitempty"`
+	Timeout            *time.Duration      `yaml:"timeout,omitempty"`
+	Headers            map[string]string   `yaml:"headers,omitempty"`
+	DisableCompression *bool               `yaml:"disable_compression,omitempty"`
+	SampleRate         *float64            `yaml:"sample_rate,omitempty"`
+	Tags               map[string]string   `yaml:"tags,omitempty"`
+	OmitTagsList       []string            `yaml:"omit_tags,omitempty"`
+	StdOutOptions      *stdoutopts.Options `yaml:"stdout,omitempty"`
+}
+
+func (o *Options) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*o = *(New())
+
+	var load loaderOptions
+	if err := unmarshal(&load); err != nil {
+		return err
+	}
+
+	if load.Provider != nil {
+		o.Provider = *load.Provider
+	}
+	if load.ServiceName != nil {
+		o.ServiceName = *load.ServiceName
+	}
+	if load.Endpoint != nil {
+		o.Endpoint = *load.Endpoint
+	}
+	if load.Timeout != nil {
+		o.Timeout = *load.Timeout
+	}
+	if load.Headers != nil {
+		o.Headers = load.Headers
+	}
+	if load.DisableCompression != nil {
+		o.DisableCompression = *load.DisableCompression
+	}
+	if load.SampleRate != nil {
+		o.SampleRate = load.SampleRate
+	}
+	if load.Tags != nil {
+		o.Tags = load.Tags
+	}
+	if load.OmitTagsList != nil {
+		o.OmitTagsList = load.OmitTagsList
+	}
+	if load.StdOutOptions != nil {
+		o.StdOutOptions = load.StdOutOptions
+	}
+
 	return nil
 }

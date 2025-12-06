@@ -36,19 +36,18 @@ import (
 func New(o *options.Options) (*tracing.Tracer, error) {
 	var tp trace.TracerProvider
 	var err error
-
 	if o == nil {
 		return nil, errs.ErrNoTracerOptions
 	}
-
 	var sampler sdktrace.Sampler
-	switch o.SampleRate {
+	o.SanitizeSampleRate()
+	switch *o.SampleRate {
 	case 0:
 		sampler = sdktrace.NeverSample()
 	case 1:
 		sampler = sdktrace.AlwaysSample()
 	default:
-		sampler = sdktrace.TraceIDRatioBased(o.SampleRate)
+		sampler = sdktrace.TraceIDRatioBased(*o.SampleRate)
 	}
 
 	var tags []attribute.KeyValue

@@ -46,10 +46,11 @@ func TestHandleLocalResponse(t *testing.T) {
 	r := httptest.NewRequest("GET", "http://0/trickster/", nil)
 
 	const expected = "trickster"
+	expectedPtr := expected
 
 	pc := &po.Options{
 		ResponseCode:      418,
-		ResponseBody:      expected,
+		ResponseBody:      &expectedPtr,
 		ResponseBodyBytes: []byte(expected),
 		ResponseHeaders:   map[string]string{headers.NameTricksterResult: "1234"},
 	}
@@ -98,10 +99,11 @@ func TestHandleLocalResponseBadResponseCode(t *testing.T) {
 	r := httptest.NewRequest("GET", "http://0/trickster/", nil)
 
 	const expected = "trickster"
+	expectedPtr := expected
 
 	pc := &po.Options{
 		ResponseCode:      0,
-		ResponseBody:      expected,
+		ResponseBody:      &expectedPtr,
 		ResponseBodyBytes: []byte(expected),
 		ResponseHeaders:   map[string]string{headers.NameTricksterResult: "1234"},
 	}

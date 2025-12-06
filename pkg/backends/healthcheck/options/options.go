@@ -18,13 +18,14 @@ package options
 
 import (
 	"errors"
+	"fmt"
 	"net/url"
 	"strings"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
-	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 )
 
 // MaxProbeWait is the maximum time a health check will wait before timing out
@@ -75,9 +76,10 @@ type Options struct {
 	// ExpectedBody is the body expected in the response to be considered Healthy status
 	ExpectedBody string `yaml:"expected_body,omitempty"`
 
-	y               yamlx.KeyLookup
 	hasExpectedBody bool
 }
+
+var _ types.ConfigOptions[Options] = &Options{}
 
 // New returns a new Options reference with default values
 func New() *Options {
@@ -93,9 +95,78 @@ func New() *Options {
 	}
 }
 
-// SetYAMLData sets the yamldata for the health checker options
-func (o *Options) SetYAMLData(y yamlx.KeyLookup) {
-	o.y = y
+// Initialize sets up the healthcheck Options with default values where needed
+func (o *Options) Initialize(_ string) error {
+	// Set default values if not already set
+	if o.Verb == "" {
+		o.Verb = DefaultHealthCheckVerb
+	}
+	if o.Scheme == "" {
+		o.Scheme = "http"
+	}
+	if o.Path == "" {
+		o.Path = DefaultHealthCheckPath
+	}
+	if o.Query == "" {
+		o.Query = DefaultHealthCheckQuery
+	}
+	if len(o.ExpectedCodes) == 0 {
+		o.ExpectedCodes = []int{200}
+	}
+	if o.FailureThreshold == 0 {
+		o.FailureThreshold = DefaultHealthCheckFailureThreshold
+	}
+	if o.RecoveryThreshold == 0 {
+		o.RecoveryThreshold = DefaultHealthCheckRecoveryThreshold
+	}
+	if o.Headers == nil {
+		o.Headers = make(map[string]string)
+	}
+
+	// Set hasExpectedBody flag if ExpectedBody is set
+	if o.ExpectedBody != "" {
+		o.hasExpectedBody = true
+	}
+
+	return nil
+}
+
+func (o *Options) Validate() (bool, error) {
+	if o.Verb != "" && !methods.IsValidMethod(o.Verb) {
+		return false, fmt.Errorf("invalid health check verb: %s", o.Verb)
+	}
+	if o.Scheme != "" && o.Scheme != "http" && o.Scheme != "https" {
+		return false, fmt.Errorf("invalid health check scheme: %s (must be http or https)", o.Scheme)
+	}
+	if o.Timeout > 0 {
+		if o.Timeout < MinProbeWait {
+			return false, fmt.Errorf("health check timeout %v is less than minimum %v", o.Timeout, MinProbeWait)
+		}
+		if o.Timeout > MaxProbeWait {
+			return false, fmt.Errorf("health check timeout %v is greater than maximum %v", o.Timeout, MaxProbeWait)
+		}
+	}
+	for _, code := range o.ExpectedCodes {
+		if code < 100 || code >= 600 {
+			return false, fmt.Errorf("invalid expected_code: %d (must be between 100 and 599)", code)
+		}
+	}
+	if o.Host != "" {
+		u := o.URL()
+		if u.Scheme == "" {
+			return false, errors.New("health check scheme is required when host is set")
+		}
+		if u.Host == "" {
+			return false, fmt.Errorf("invalid health check host: %s", o.Host)
+		}
+	}
+	if o.FailureThreshold < 0 {
+		return false, fmt.Errorf("health check failure_threshold must be non-negative, got %d", o.FailureThreshold)
+	}
+	if o.RecoveryThreshold < 0 {
+		return false, fmt.Errorf("health check recovery_threshold must be non-negative, got %d", o.RecoveryThreshold)
+	}
+	return true, nil
 }
 
 // Clone returns an exact copy of a *healthcheck.Options
@@ -119,41 +190,41 @@ func (o *Options) Clone() *Options {
 		c.ExpectedCodes = make([]int, len(o.ExpectedCodes))
 		copy(c.ExpectedCodes, o.ExpectedCodes)
 	}
-	c.y = o.y
 	c.hasExpectedBody = o.hasExpectedBody
 	return c
 }
 
-func (o *Options) Overlay(name string, custom *Options) {
-	if custom == nil || custom.y == nil {
+// Overlay overlays the custom options onto the base options
+func (o *Options) Overlay(custom *Options) {
+	if custom == nil {
 		return
 	}
-	if custom.y.IsDefined("backends", name, "healthcheck", "path") {
+	if custom.Path != "" {
 		o.Path = custom.Path
 	}
-	if custom.y.IsDefined("backends", name, "healthcheck", "verb") {
+	if custom.Verb != "" {
 		o.Verb = custom.Verb
 	}
-	if custom.y.IsDefined("backends", name, "healthcheck", "query") {
+	if custom.Query != "" {
 		o.Query = custom.Query
 	}
-	if custom.y.IsDefined("backends", name, "healthcheck", "headers") {
+	if custom.Headers != nil {
 		o.Headers = custom.Headers
 	}
-	if custom.y.IsDefined("backends", name, "healthcheck", "body") {
+	if custom.Body != "" {
 		o.Body = custom.Body
 	}
-	if custom.y.IsDefined("backends", name, "healthcheck", "expected_codes") {
+	if len(custom.ExpectedCodes) > 0 {
 		o.ExpectedCodes = custom.ExpectedCodes
 	}
-	if custom.y.IsDefined("backends", name, "healthcheck", "expected_body") {
+	if custom.ExpectedBody != "" {
 		o.ExpectedBody = custom.ExpectedBody
 		o.hasExpectedBody = true
 	}
-	if custom.y.IsDefined("backends", name, "healthcheck", "expected_headers") {
+	if custom.ExpectedHeaders != nil {
 		o.ExpectedHeaders = custom.ExpectedHeaders
 	}
-	if custom.y.IsDefined("backends", name, "healthcheck", "interval") {
+	if custom.Interval > 0 {
 		o.Interval = custom.Interval
 	}
 }
@@ -192,4 +263,76 @@ func CalibrateTimeout(d time.Duration) time.Duration {
 		d = MinProbeWait
 	}
 	return d
+}
+
+type loaderOptions struct {
+	Interval          *time.Duration     `yaml:"interval,omitempty"`
+	FailureThreshold  *int               `yaml:"failure_threshold,omitempty"`
+	RecoveryThreshold *int               `yaml:"recovery_threshold,omitempty"`
+	Verb              *string            `yaml:"verb,omitempty"`
+	Scheme            *string            `yaml:"scheme,omitempty"`
+	Host              *string            `yaml:"host,omitempty"`
+	Path              *string            `yaml:"path,omitempty"`
+	Query             *string            `yaml:"query,omitempty"`
+	Headers           types.EnvStringMap `yaml:"headers,omitempty"`
+	Body              *string            `yaml:"body,omitempty"`
+	Timeout           *time.Duration     `yaml:"timeout,omitempty"`
+	ExpectedCodes     []int              `yaml:"expected_codes,omitempty"`
+	ExpectedHeaders   map[string]string  `yaml:"expected_headers,omitempty"`
+	ExpectedBody      *string            `yaml:"expected_body,omitempty"`
+}
+
+func (o *Options) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*o = *(New())
+
+	var load loaderOptions
+	if err := unmarshal(&load); err != nil {
+		return err
+	}
+
+	if load.Interval != nil {
+		o.Interval = *load.Interval
+	}
+	if load.FailureThreshold != nil {
+		o.FailureThreshold = *load.FailureThreshold
+	}
+	if load.RecoveryThreshold != nil {
+		o.RecoveryThreshold = *load.RecoveryThreshold
+	}
+	if load.Verb != nil {
+		o.Verb = *load.Verb
+	}
+	if load.Scheme != nil {
+		o.Scheme = *load.Scheme
+	}
+	if load.Host != nil {
+		o.Host = *load.Host
+	}
+	if load.Path != nil {
+		o.Path = *load.Path
+	}
+	if load.Query != nil {
+		o.Query = *load.Query
+	}
+	if load.Headers != nil {
+		o.Headers = load.Headers
+	}
+	if load.Body != nil {
+		o.Body = *load.Body
+	}
+	if load.Timeout != nil {
+		o.Timeout = *load.Timeout
+	}
+	if load.ExpectedCodes != nil {
+		o.ExpectedCodes = load.ExpectedCodes
+	}
+	if load.ExpectedHeaders != nil {
+		o.ExpectedHeaders = load.ExpectedHeaders
+	}
+	if load.ExpectedBody != nil {
+		o.ExpectedBody = *load.ExpectedBody
+		o.hasExpectedBody = true
+	}
+
+	return nil
 }

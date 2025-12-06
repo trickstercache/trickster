@@ -66,8 +66,8 @@ func NewWithOptions(baseURL string, o *bo.Options, c *co.Options) (http.Handler,
 		return nil, err
 	}
 	o.HTTPClient = cl.HTTPClient()
+	o.Paths = cl.DefaultPathConfigs(o)
 	barecfg := &config.Config{Frontend: fopt.New()}
-	routing.RegisterPathRoutes(r, barecfg, cl.Handlers(), cl, o, cache,
-		cl.DefaultPathConfigs(o), nil)
+	routing.RegisterPathRoutes(r, barecfg, cl.Handlers(), cl, o, cache, nil)
 	return r, nil
 }

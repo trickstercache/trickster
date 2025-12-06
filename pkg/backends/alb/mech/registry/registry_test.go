@@ -19,8 +19,8 @@ package registry
 import (
 	"testing"
 
-	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/rr"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
@@ -47,7 +47,7 @@ func TestNamesAndIDsAreUnique(t *testing.T) {
 }
 
 func TestIsRegistered(t *testing.T) {
-	if ok := IsRegistered(rr.ShortName); !ok {
+	if ok := IsRegistered(names.MechanismRR); !ok {
 		t.Error("expected true")
 	}
 	if ok := IsRegistered(types.Name("invalid")); ok {

@@ -21,8 +21,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
-
 	"gopkg.in/yaml.v2"
 )
 
@@ -33,11 +31,11 @@ func TestNew(t *testing.T) {
 	}
 }
 
-func TestSetYAMLData(t *testing.T) {
+func TestInitialize(t *testing.T) {
 	o := New()
-	o.SetYAMLData(nil)
-	if o.y != nil {
-		t.Error("expected nil metadata")
+	err := o.Initialize("")
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
 	}
 }
 
@@ -92,7 +90,7 @@ func TestSetExpectedBody(t *testing.T) {
 func TestOverlay(t *testing.T) {
 
 	o := New()
-	o.Overlay("", nil)
+	o.Overlay(nil)
 	if o.Interval != 0 {
 		t.Error("expected 0")
 	}
@@ -103,16 +101,11 @@ func TestOverlay(t *testing.T) {
 		t.Error(err)
 	}
 
-	y, err := yamlx.GetKeyList(hcTOML)
-	if err != nil {
-		t.Error(err)
-	}
-
 	o2 := New()
-	o2.y = y
-	o.Overlay("test", o2)
-	if o.Interval != 0 {
-		t.Error("expected 5000 got ", o.Interval)
+	o2.Interval = 5000 * time.Millisecond
+	o.Overlay(o2)
+	if o.Interval != 5000*time.Millisecond {
+		t.Error("expected 5000ms got ", o.Interval)
 	}
 }
 

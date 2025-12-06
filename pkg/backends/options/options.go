@@ -17,6 +17,7 @@
 package options
 
 import (
+	"fmt"
 	"maps"
 	"net/http"
 	"net/url"
@@ -33,6 +34,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/evictionmethods"
 	"github.com/trickstercache/trickster/v2/pkg/cache/negative"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
+	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	tro "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
@@ -42,7 +44,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
 	to "github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
-	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
 
 	"github.com/prometheus/common/sigv4"
 	"gopkg.in/yaml.v2"
@@ -92,8 +93,8 @@ type Options struct {
 	// on the query step value to determine the relative duration of backfill tolerance per-query
 	// When both are set, the higher of the two values is used
 	BackfillTolerancePoints int `yaml:"backfill_tolerance_points,omitempty"`
-	// PathList is a list of Path Options that control the behavior of the given paths when requested
-	Paths po.Lookup `yaml:"paths,omitempty"`
+	// Paths is a list of Path Options that control the behavior of the given paths when requested
+	Paths po.List `yaml:"paths,omitempty"`
 	// NegativeCacheName provides the name of the Negative Cache Config to be used by this Backend
 	NegativeCacheName string `yaml:"negative_cache_name,omitempty"`
 	// TimeseriesTTL specifies the cache TTL of timeseries objects
@@ -206,13 +207,15 @@ type Options struct {
 	// RuleOptions is the reference to the Rule Options as indicated by RuleName
 	RuleOptions *ro.Options `yaml:"-"`
 	// ReqRewriter is the rewriter handler as indicated by RuleName
-	ReqRewriter rewriter.RewriteInstructions
+	ReqRewriter rewriter.RewriteInstructions `yaml:"-"`
 	// AuthOptions is the authenticator as indicated by AuthenticatorName
 	AuthOptions *autho.Options `yaml:"-"`
 	// DoesShard is true when sharding will be used with this origin, based on how the
 	// sharding options have been configured
 	DoesShard bool `yaml:"-"`
 }
+
+var _ types.ConfigOptions[Options] = &Options{}
 
 // New will return a pointer to a Backend Options with the default configuration settings
 func New() *Options {
@@ -231,7 +234,7 @@ func New() *Options {
 		MaxTTL:                       DefaultMaxTTL,
 		NegativeCache:                make(map[int]time.Duration),
 		NegativeCacheName:            DefaultBackendNegativeCacheName,
-		Paths:                        make(po.Lookup),
+		Paths:                        make(po.List, 0, 10),
 		RevalidationFactor:           DefaultRevalidationFactor,
 		MaxShardSizePoints:           DefaultTimeseriesShardSize,
 		MaxShardSizeTime:             DefaultTimeseriesShardSize,
@@ -249,155 +252,125 @@ func New() *Options {
 
 // Clone returns an exact copy of an *backends.Options
 func (o *Options) Clone() *Options {
-
-	no := &Options{}
-	no.DearticulateUpstreamRanges = o.DearticulateUpstreamRanges
-	no.BackfillTolerance = o.BackfillTolerance
-	no.BackfillTolerance = o.BackfillTolerance
-	no.BackfillTolerancePoints = o.BackfillTolerancePoints
-	no.CacheName = o.CacheName
-	no.CacheKeyPrefix = o.CacheKeyPrefix
-	no.DoesShard = o.DoesShard
-	no.FastForwardDisable = o.FastForwardDisable
-	no.FastForwardTTL = o.FastForwardTTL
-	no.ForwardedHeaders = o.ForwardedHeaders
-	no.Host = o.Host
-	no.LatencyMin = o.LatencyMin
-	no.LatencyMax = o.LatencyMax
-	no.Name = o.Name
-	no.IsDefault = o.IsDefault
-	no.KeepAliveTimeout = o.KeepAliveTimeout
-	no.MaxIdleConns = o.MaxIdleConns
-	no.MaxTTL = o.MaxTTL
-	no.MaxObjectSizeBytes = o.MaxObjectSizeBytes
-	no.MultipartRangesDisabled = o.MultipartRangesDisabled
-	no.Provider = o.Provider
-	no.OriginURL = o.OriginURL
-	no.PathPrefix = o.PathPrefix
-	no.ReqRewriterName = o.ReqRewriterName
-	no.RevalidationFactor = o.RevalidationFactor
-	no.RuleName = o.RuleName
-	no.Scheme = o.Scheme
-	no.MaxShardSizeTime = o.MaxShardSizeTime
-	no.MaxShardSizePoints = o.MaxShardSizePoints
-	no.ShardStep = o.ShardStep
-	no.Timeout = o.Timeout
-	no.TimeseriesRetention = o.TimeseriesRetention
-	no.TimeseriesRetentionFactor = o.TimeseriesRetentionFactor
-	no.TimeseriesEvictionMethodName = o.TimeseriesEvictionMethodName
-	no.TimeseriesEvictionMethod = o.TimeseriesEvictionMethod
-	no.TimeseriesTTL = o.TimeseriesTTL
-
-	no.TracingConfigName = o.TracingConfigName
-
+	out := &Options{}
+	out.DearticulateUpstreamRanges = o.DearticulateUpstreamRanges
+	out.BackfillTolerance = o.BackfillTolerance
+	out.BackfillTolerance = o.BackfillTolerance
+	out.BackfillTolerancePoints = o.BackfillTolerancePoints
+	out.CacheName = o.CacheName
+	out.CacheKeyPrefix = o.CacheKeyPrefix
+	out.DoesShard = o.DoesShard
+	out.FastForwardDisable = o.FastForwardDisable
+	out.FastForwardTTL = o.FastForwardTTL
+	out.ForwardedHeaders = o.ForwardedHeaders
+	out.Host = o.Host
+	out.LatencyMin = o.LatencyMin
+	out.LatencyMax = o.LatencyMax
+	out.Name = o.Name
+	out.IsDefault = o.IsDefault
+	out.KeepAliveTimeout = o.KeepAliveTimeout
+	out.MaxIdleConns = o.MaxIdleConns
+	out.MaxTTL = o.MaxTTL
+	out.MaxObjectSizeBytes = o.MaxObjectSizeBytes
+	out.MultipartRangesDisabled = o.MultipartRangesDisabled
+	out.Provider = o.Provider
+	out.OriginURL = o.OriginURL
+	out.PathPrefix = o.PathPrefix
+	out.ReqRewriterName = o.ReqRewriterName
+	out.RevalidationFactor = o.RevalidationFactor
+	out.RuleName = o.RuleName
+	out.Scheme = o.Scheme
+	out.MaxShardSizeTime = o.MaxShardSizeTime
+	out.MaxShardSizePoints = o.MaxShardSizePoints
+	out.ShardStep = o.ShardStep
+	out.Timeout = o.Timeout
+	out.TimeseriesRetention = o.TimeseriesRetention
+	out.TimeseriesRetentionFactor = o.TimeseriesRetentionFactor
+	out.TimeseriesEvictionMethodName = o.TimeseriesEvictionMethodName
+	out.TimeseriesEvictionMethod = o.TimeseriesEvictionMethod
+	out.TimeseriesTTL = o.TimeseriesTTL
+	out.TracingConfigName = o.TracingConfigName
 	if o.HealthCheck != nil {
-		no.HealthCheck = o.HealthCheck.Clone()
+		out.HealthCheck = o.HealthCheck.Clone()
 	}
-
-	no.Hosts = slices.Clone(o.Hosts)
-	no.CompressibleTypeList = slices.Clone(no.CompressibleTypeList)
-
+	out.Hosts = slices.Clone(o.Hosts)
+	out.CompressibleTypeList = slices.Clone(o.CompressibleTypeList)
 	if o.CompressibleTypes != nil {
-		no.CompressibleTypes = maps.Clone(o.CompressibleTypes)
+		out.CompressibleTypes = maps.Clone(o.CompressibleTypes)
 	}
-
-	no.Paths = make(po.Lookup, len(o.Paths))
-	for l, p := range o.Paths {
-		no.Paths[l] = p.Clone()
+	if o.Paths != nil {
+		out.Paths = o.Paths.Clone()
 	}
-
-	no.NegativeCacheName = o.NegativeCacheName
+	out.NegativeCacheName = o.NegativeCacheName
 	if o.NegativeCache != nil {
-		no.NegativeCache = maps.Clone(o.NegativeCache)
+		out.NegativeCache = maps.Clone(o.NegativeCache)
 	}
-
 	if o.TLS != nil {
-		no.TLS = o.TLS.Clone()
+		out.TLS = o.TLS.Clone()
 	}
-	no.RequireTLS = o.RequireTLS
+	out.RequireTLS = o.RequireTLS
 
 	if o.FastForwardPath != nil {
-		no.FastForwardPath = o.FastForwardPath.Clone()
+		out.FastForwardPath = o.FastForwardPath.Clone()
 	}
 
 	if o.RuleOptions != nil {
-		no.RuleOptions = o.RuleOptions.Clone()
+		out.RuleOptions = o.RuleOptions.Clone()
 	}
 
 	if o.ALBOptions != nil {
-		no.ALBOptions = o.ALBOptions.Clone()
+		out.ALBOptions = o.ALBOptions.Clone()
 	}
 
 	if o.Prometheus != nil {
-		no.Prometheus = o.Prometheus.Clone()
+		out.Prometheus = o.Prometheus.Clone()
 	}
 
-	no.AuthenticatorName = o.AuthenticatorName
+	out.AuthenticatorName = o.AuthenticatorName
 	if o.AuthOptions != nil {
-		no.AuthOptions = o.AuthOptions.Clone()
+		out.AuthOptions = o.AuthOptions.Clone()
 	}
 
-	return no
+	return out
 }
 
 // Validate validates the Backend Options
-func (o *Options) Validate() error {
+func (o *Options) Validate() (bool, error) {
 	if err := ValidateBackendName(o.Name); err != nil {
-		return err
+		return false, err
 	}
 	if o.Provider == "" {
-		return NewErrMissingProvider(o.Name)
+		return false, NewErrMissingProvider(o.Name)
 	}
 	if !providers.NonOriginBackends().Contains(o.Provider) && o.OriginURL == "" {
-		return NewErrMissingOriginURL(o.Name)
+		return false, NewErrMissingOriginURL(o.Name)
 	}
-	url, err := url.Parse(o.OriginURL)
-	if err != nil {
-		return err
+	if o.OriginURL != "" {
+		if _, err := url.Parse(o.OriginURL); err != nil {
+			return false, fmt.Errorf("invalid origin_url for backend %s: %w", o.Name, err)
+		}
 	}
-	url.Path = strings.TrimSuffix(url.Path, "/")
-	o.Scheme = url.Scheme
-	o.Host = url.Host
-	o.PathPrefix = url.Path
-	o.TimeseriesRetention = time.Duration(o.TimeseriesRetentionFactor)
-	o.DoesShard = o.MaxShardSizePoints > 0 || o.MaxShardSizeTime > 0 || o.ShardStep > 0
-
 	if o.MaxShardSizeTime > 0 && o.MaxShardSizePoints > 0 {
-		return ErrInvalidMaxShardSize
+		return false, ErrInvalidMaxShardSize
 	}
 
-	if o.ShardStep > 0 && o.MaxShardSizeTime == 0 {
-		o.MaxShardSizeTime = o.ShardStep
-	}
-
-	if o.ShardStep > 0 && o.MaxShardSizeTime%o.ShardStep != 0 {
-		return ErrInvalidMaxShardSizeTime
+	if o.ShardStep > 0 && o.MaxShardSizeTime > 0 && o.MaxShardSizeTime%o.ShardStep != 0 {
+		return false, ErrInvalidMaxShardSizeTime
 	}
 
 	if len(o.Paths) > 0 {
 		if err := o.Paths.Validate(); err != nil {
-			return err
+			return false, err
 		}
 	}
 
-	if o.CompressibleTypeList != nil {
-		o.CompressibleTypes = sets.NewStringSet()
-		o.CompressibleTypes.SetAll(o.CompressibleTypeList)
+	if o.HealthCheck != nil {
+		_, err := o.HealthCheck.Validate()
+		if err != nil {
+			return false, err
+		}
 	}
-	if o.CacheKeyPrefix == "" {
-		o.CacheKeyPrefix = o.Host
-	}
-
-	// enforce MaxTTL
-	if o.TimeseriesTTL > o.MaxTTL {
-		o.TimeseriesTTL = o.MaxTTL
-	}
-
-	// unlikely but why not spend a few nanoseconds to check it at startup
-	if o.FastForwardTTL > o.MaxTTL {
-		o.FastForwardTTL = o.MaxTTL
-	}
-	return nil
+	return true, nil
 }
 
 // Validate validates the Lookup collection of Backend Options
@@ -409,7 +382,8 @@ func (l Lookup) Validate() error {
 			continue
 		}
 		o.Name = key
-		if err := o.Validate(); err != nil {
+		_, err := o.Validate()
+		if err != nil {
 			return err
 		}
 		entry := &tree.Entry{
@@ -531,6 +505,8 @@ func (l Lookup) ValidateConfigMappings(c co.Lookup, ncl negative.Lookups,
 			if err := o.ALBOptions.ValidatePool(o.Name, l.Keys()); err != nil {
 				return err
 			}
+		default:
+			// No specific validation needed for other provider types
 		}
 
 		if !providers.NonCacheBackends().Contains(o.Provider) {
@@ -547,6 +523,9 @@ func (l Lookup) ValidateTLSConfigs() (bool, error) {
 	var serveTLS bool
 	for _, o := range l {
 		if o.TLS != nil {
+			if err := o.TLS.Initialize(""); err != nil {
+				return false, err
+			}
 			b, err := o.TLS.Validate()
 			if err != nil {
 				return false, err
@@ -567,216 +546,89 @@ func (l Lookup) Keys() sets.Set[string] {
 	return out
 }
 
-// OverlayYAMLData extracts supported backend Options values from the yaml map,
-// and returns a new default Options overlaid with the extracted values
-func OverlayYAMLData(
-	name string,
-	o *Options,
-	backends Lookup,
-	activeCaches sets.Set[string],
-	y yamlx.KeyLookup,
-) (*Options, error) {
-
-	if y == nil {
-		return nil, ErrInvalidMetadata
-	}
-
-	no := New()
-	no.Name = name
-
-	if y.IsDefined("backends", name, "req_rewriter_name") && o.ReqRewriterName != "" {
-		no.ReqRewriterName = o.ReqRewriterName
-	}
-
-	if y.IsDefined("backends", name, "provider") {
-		no.Provider = o.Provider
-	}
-
-	if y.IsDefined("backends", name, "rule_name") {
-		no.RuleName = o.RuleName
-	}
-
-	if y.IsDefined("backends", name, "path_routing_disabled") {
-		no.PathRoutingDisabled = o.PathRoutingDisabled
-	}
-
-	if y.IsDefined("backends", name, "hosts") && o != nil {
-		no.Hosts = slices.Clone(o.Hosts)
-	}
-
-	if y.IsDefined("backends", name, "is_default") {
-		no.IsDefault = o.IsDefault
-	}
-	// If there is only one backend and is_default is not explicitly false, make it true
-	if len(backends) == 1 && (!y.IsDefined("backends", name, "is_default")) {
-		no.IsDefault = true
-	}
-
-	if y.IsDefined("backends", name, "forwarded_headers") {
-		no.ForwardedHeaders = o.ForwardedHeaders
-	}
-
-	if y.IsDefined("backends", name, "require_tls") {
-		no.RequireTLS = o.RequireTLS
-	}
-
-	if y.IsDefined("backends", name, "cache_name") {
-		no.CacheName = o.CacheName
-	}
-	activeCaches.Set(no.CacheName)
-
-	if y.IsDefined("backends", name, "cache_key_prefix") {
-		no.CacheKeyPrefix = o.CacheKeyPrefix
-	}
-
-	if y.IsDefined("backends", name, "origin_url") {
-		no.OriginURL = o.OriginURL
-	}
-
-	if y.IsDefined("backends", name, "compressible_types") {
-		no.CompressibleTypeList = o.CompressibleTypeList
-	}
-
-	if y.IsDefined("backends", name, "timeout") {
-		no.Timeout = o.Timeout
-	}
-
-	if y.IsDefined("backends", name, "max_idle_conns") {
-		no.MaxIdleConns = o.MaxIdleConns
-	}
-
-	if y.IsDefined("backends", name, "keep_alive_timeout") {
-		no.KeepAliveTimeout = o.KeepAliveTimeout
-	}
-
-	if y.IsDefined("backends", name, "shard_max_size_points") {
-		no.MaxShardSizePoints = o.MaxShardSizePoints
-	}
-
-	if y.IsDefined("backends", name, "shard_max_size_time") {
-		no.MaxShardSizeTime = o.MaxShardSizeTime
-	}
-
-	if y.IsDefined("backends", name, "shard_step") {
-		no.ShardStep = o.ShardStep
-	}
-
-	if y.IsDefined("backends", name, "timeseries_retention_factor") {
-		no.TimeseriesRetentionFactor = o.TimeseriesRetentionFactor
-	}
-
-	if y.IsDefined("backends", name, "timeseries_eviction_method") {
-		no.TimeseriesEvictionMethodName = strings.ToLower(o.TimeseriesEvictionMethodName)
-		if p, ok := evictionmethods.Names[no.TimeseriesEvictionMethodName]; ok {
-			no.TimeseriesEvictionMethod = p
+func (l Lookup) Load() error {
+	ncb := providers.NonCacheBackends()
+	for k, v := range l {
+		v.Name = k
+		if !ncb.Contains(v.Provider) && v.CacheName == "" {
+			v.CacheName = DefaultBackendCacheName
+		}
+		if len(v.Paths) > 0 {
+			err := v.Paths.Initialize()
+			if err != nil {
+				return err
+			}
 		}
 	}
+	return nil
+}
 
-	if y.IsDefined("backends", name, "timeseries_ttl") {
-		no.TimeseriesTTL = o.TimeseriesTTL
-	}
+// Initialize sets up the backend Options with default values and overlays
+// any values that were set during YAML unmarshaling
+func (o *Options) Initialize(name string) error {
+	// activeCaches sets.Set[string],
+	o.Name = name
 
-	if y.IsDefined("backends", name, "max_ttl") {
-		no.MaxTTL = o.MaxTTL
-	}
+	// // If there is only one backend and is_default is not explicitly false, make it true
+	// if len(backends) == 1 && (!y.IsDefined("backends", name, "is_default")) {
+	// 	out.IsDefault = true
+	// }
+	// activeCaches.Set(out.CacheName)
 
-	if y.IsDefined("backends", name, "fastforward_ttl") {
-		no.FastForwardTTL = o.FastForwardTTL
-	}
-
-	if y.IsDefined("backends", name, "fast_forward_disable") {
-		no.FastForwardDisable = o.FastForwardDisable
-	}
-
-	if y.IsDefined("backends", name, "backfill_tolerance") {
-		no.BackfillTolerance = o.BackfillTolerance
-	}
-
-	if y.IsDefined("backends", name, "backfill_tolerance_points") {
-		no.BackfillTolerancePoints = o.BackfillTolerancePoints
-	}
-
-	if y.IsDefined("backends", name, "paths") {
-		paths, err := po.OverlayYAMLData(name, o.Paths, y)
+	if o.OriginURL != "" {
+		parsedURL, err := url.Parse(o.OriginURL)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		maps.Copy(no.Paths, paths)
+		parsedURL.Path = strings.TrimSuffix(parsedURL.Path, "/")
+		o.Scheme = parsedURL.Scheme
+		o.Host = parsedURL.Host
+		o.PathPrefix = parsedURL.Path
 	}
-
-	if y.IsDefined("backends", name, providers.ALB) {
-		opts, err := ao.OverlayYAMLData(name, o.ALBOptions, y)
-		if err != nil {
-			return nil, err
+	if o.CacheKeyPrefix == "" {
+		o.CacheKeyPrefix = o.Host
+	}
+	o.TimeseriesRetention = time.Duration(o.TimeseriesRetentionFactor)
+	o.DoesShard = o.MaxShardSizePoints > 0 || o.MaxShardSizeTime > 0 || o.ShardStep > 0
+	if o.ShardStep > 0 && o.MaxShardSizeTime == 0 {
+		o.MaxShardSizeTime = o.ShardStep
+	}
+	if o.CompressibleTypeList != nil {
+		o.CompressibleTypes = sets.NewStringSet()
+		o.CompressibleTypes.SetAll(o.CompressibleTypeList)
+	}
+	// enforce MaxTTL
+	if o.TimeseriesTTL > o.MaxTTL {
+		o.TimeseriesTTL = o.MaxTTL
+	}
+	if o.FastForwardTTL > o.MaxTTL {
+		o.FastForwardTTL = o.MaxTTL
+	}
+	if o.TimeseriesEvictionMethodName != "" {
+		o.TimeseriesEvictionMethodName = strings.ToLower(o.TimeseriesEvictionMethodName)
+		if p, ok := evictionmethods.Names[o.TimeseriesEvictionMethodName]; ok {
+			o.TimeseriesEvictionMethod = p
 		}
-		no.ALBOptions = opts
 	}
-
-	if y.IsDefined("backends", name, "negative_cache_name") {
-		no.NegativeCacheName = o.NegativeCacheName
-	}
-
-	if y.IsDefined("backends", name, "tracing_name") {
-		no.TracingConfigName = o.TracingConfigName
-	}
-
-	if y.IsDefined("backends", name, "healthcheck") {
-		no.HealthCheck = o.HealthCheck
-		// because each backend provider has different default health check options, these
-		// provided options will be overlaid onto the defaults during registration
-		if no.HealthCheck != nil {
-			no.HealthCheck.SetYAMLData(y)
-		}
-	}
-
-	if y.IsDefined("backends", name, "max_object_size_bytes") {
-		no.MaxObjectSizeBytes = o.MaxObjectSizeBytes
-	}
-
-	if y.IsDefined("backends", name, "revalidation_factor") {
-		no.RevalidationFactor = o.RevalidationFactor
-	}
-
-	if y.IsDefined("backends", name, "multipart_ranges_disabled") {
-		no.MultipartRangesDisabled = o.MultipartRangesDisabled
-	}
-
-	if y.IsDefined("backends", name, "dearticulate_upstream_ranges") {
-		no.DearticulateUpstreamRanges = o.DearticulateUpstreamRanges
-	}
-
-	if y.IsDefined("backends", name, "tls") {
-		no.TLS = &to.Options{
-			InsecureSkipVerify:        o.TLS.InsecureSkipVerify,
-			CertificateAuthorityPaths: o.TLS.CertificateAuthorityPaths,
-			PrivateKeyPath:            o.TLS.PrivateKeyPath,
-			FullChainCertPath:         o.TLS.FullChainCertPath,
-			ClientCertPath:            o.TLS.ClientCertPath,
-			ClientKeyPath:             o.TLS.ClientKeyPath,
+	if o.Provider == providers.ALB {
+		if o.ALBOptions != nil {
+			if err := o.ALBOptions.Initialize(""); err != nil {
+				return err
+			}
 		}
 	}
 
-	if y.IsDefined("backends", name, providers.Prometheus) {
-		no.Prometheus = o.Prometheus.Clone()
+	if o.HealthCheck != nil {
+		if err := o.HealthCheck.Initialize(""); err != nil {
+			return err
+		}
 	}
-
-	if y.IsDefined("backends", name, "latency_min") {
-		no.LatencyMin = o.LatencyMin
+	if o.TLS != nil {
+		if err := o.TLS.Initialize(""); err != nil {
+			return err
+		}
 	}
-
-	if y.IsDefined("backends", name, "latency_max") {
-		no.LatencyMax = o.LatencyMax
-	}
-
-	if y.IsDefined("backends", name, "sigv4") {
-		no.SigV4 = o.SigV4
-	}
-
-	if y.IsDefined("backends", name, "authenticator_name") {
-		no.AuthenticatorName = o.AuthenticatorName
-	}
-
-	return no, nil
+	return nil
 }
 
 // CloneYAMLSafe returns a copy of the Options that is safe to export to YAML without
@@ -802,4 +654,183 @@ func (o *Options) ToYAML() string {
 	co := o.CloneYAMLSafe()
 	b, _ := yaml.Marshal(co)
 	return string(b)
+}
+
+type loaderOptions struct {
+	Hosts                        []string           `yaml:"hosts,omitempty"`
+	Provider                     *string            `yaml:"provider,omitempty"`
+	OriginURL                    *string            `yaml:"origin_url,omitempty"`
+	Timeout                      *time.Duration     `yaml:"timeout,omitempty"`
+	KeepAliveTimeout             *time.Duration     `yaml:"keep_alive_timeout,omitempty"`
+	MaxIdleConns                 *int               `yaml:"max_idle_conns,omitempty"`
+	CacheName                    *string            `yaml:"cache_name,omitempty"`
+	CacheKeyPrefix               *string            `yaml:"cache_key_prefix,omitempty"`
+	HealthCheck                  *ho.Options        `yaml:"healthcheck,omitempty"`
+	TimeseriesRetentionFactor    *int               `yaml:"timeseries_retention_factor,omitempty"`
+	TimeseriesEvictionMethodName *string            `yaml:"timeseries_eviction_method,omitempty"`
+	BackfillTolerance            *time.Duration     `yaml:"backfill_tolerance,omitempty"`
+	BackfillTolerancePoints      *int               `yaml:"backfill_tolerance_points,omitempty"`
+	Paths                        po.List            `yaml:"paths,omitempty"`
+	NegativeCacheName            *string            `yaml:"negative_cache_name,omitempty"`
+	TimeseriesTTL                *time.Duration     `yaml:"timeseries_ttl,omitempty"`
+	FastForwardTTL               *time.Duration     `yaml:"fastforward_ttl,omitempty"`
+	MaxTTL                       *time.Duration     `yaml:"max_ttl,omitempty"`
+	RevalidationFactor           *float64           `yaml:"revalidation_factor,omitempty"`
+	MaxObjectSizeBytes           *int               `yaml:"max_object_size_bytes,omitempty"`
+	CompressibleTypeList         []string           `yaml:"compressible_types,omitempty"`
+	TracingConfigName            *string            `yaml:"tracing_name,omitempty"`
+	RuleName                     *string            `yaml:"rule_name,omitempty"`
+	ReqRewriterName              *string            `yaml:"req_rewriter_name,omitempty"`
+	MaxShardSizePoints           *int               `yaml:"shard_max_size_points,omitempty"`
+	MaxShardSizeTime             *time.Duration     `yaml:"shard_max_size_time,omitempty"`
+	ShardStep                    *time.Duration     `yaml:"shard_step,omitempty"`
+	ALBOptions                   *ao.Options        `yaml:"alb,omitempty"`
+	Prometheus                   *prop.Options      `yaml:"prometheus,omitempty"`
+	TLS                          *to.Options        `yaml:"tls,omitempty"`
+	ForwardedHeaders             *string            `yaml:"forwarded_headers,omitempty"`
+	IsDefault                    *bool              `yaml:"is_default,omitempty"`
+	FastForwardDisable           *bool              `yaml:"fast_forward_disable,omitempty"`
+	PathRoutingDisabled          *bool              `yaml:"path_routing_disabled,omitempty"`
+	RequireTLS                   *bool              `yaml:"require_tls,omitempty"`
+	MultipartRangesDisabled      *bool              `yaml:"multipart_ranges_disabled,omitempty"`
+	DearticulateUpstreamRanges   *bool              `yaml:"dearticulate_upstream_ranges,omitempty"`
+	AuthenticatorName            *string            `yaml:"authenticator_name,omitempty"`
+	SigV4                        *sigv4.SigV4Config `yaml:"sigv4,omitempty"`
+	LatencyMin                   *time.Duration     `yaml:"latency_min"`
+	LatencyMax                   *time.Duration     `yaml:"latency_max"`
+}
+
+func (o *Options) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*o = *(New())
+
+	var load loaderOptions
+	if err := unmarshal(&load); err != nil {
+		return err
+	}
+
+	if load.Hosts != nil {
+		o.Hosts = load.Hosts
+	}
+	if load.Provider != nil {
+		o.Provider = *load.Provider
+	}
+	if load.OriginURL != nil {
+		o.OriginURL = *load.OriginURL
+	}
+	if load.Timeout != nil {
+		o.Timeout = *load.Timeout
+	}
+	if load.KeepAliveTimeout != nil {
+		o.KeepAliveTimeout = *load.KeepAliveTimeout
+	}
+	if load.MaxIdleConns != nil {
+		o.MaxIdleConns = *load.MaxIdleConns
+	}
+	if load.CacheName != nil {
+		o.CacheName = *load.CacheName
+	}
+	if load.CacheKeyPrefix != nil {
+		o.CacheKeyPrefix = *load.CacheKeyPrefix
+	}
+	if load.HealthCheck != nil {
+		o.HealthCheck = load.HealthCheck
+	}
+	if load.TimeseriesRetentionFactor != nil {
+		o.TimeseriesRetentionFactor = *load.TimeseriesRetentionFactor
+	}
+	if load.TimeseriesEvictionMethodName != nil {
+		o.TimeseriesEvictionMethodName = *load.TimeseriesEvictionMethodName
+	}
+	if load.BackfillTolerance != nil {
+		o.BackfillTolerance = *load.BackfillTolerance
+	}
+	if load.BackfillTolerancePoints != nil {
+		o.BackfillTolerancePoints = *load.BackfillTolerancePoints
+	}
+	if load.Paths != nil {
+		o.Paths = load.Paths
+	}
+	if load.NegativeCacheName != nil {
+		o.NegativeCacheName = *load.NegativeCacheName
+	}
+	if load.TimeseriesTTL != nil {
+		o.TimeseriesTTL = *load.TimeseriesTTL
+	}
+	if load.FastForwardTTL != nil {
+		o.FastForwardTTL = *load.FastForwardTTL
+	}
+	if load.MaxTTL != nil {
+		o.MaxTTL = *load.MaxTTL
+	}
+	if load.RevalidationFactor != nil {
+		o.RevalidationFactor = *load.RevalidationFactor
+	}
+	if load.MaxObjectSizeBytes != nil {
+		o.MaxObjectSizeBytes = *load.MaxObjectSizeBytes
+	}
+	if load.CompressibleTypeList != nil {
+		o.CompressibleTypeList = load.CompressibleTypeList
+	}
+	if load.TracingConfigName != nil {
+		o.TracingConfigName = *load.TracingConfigName
+	}
+	if load.RuleName != nil {
+		o.RuleName = *load.RuleName
+	}
+	if load.ReqRewriterName != nil {
+		o.ReqRewriterName = *load.ReqRewriterName
+	}
+	if load.MaxShardSizePoints != nil {
+		o.MaxShardSizePoints = *load.MaxShardSizePoints
+	}
+	if load.MaxShardSizeTime != nil {
+		o.MaxShardSizeTime = *load.MaxShardSizeTime
+	}
+	if load.ShardStep != nil {
+		o.ShardStep = *load.ShardStep
+	}
+	if load.ALBOptions != nil {
+		o.ALBOptions = load.ALBOptions
+	}
+	if load.Prometheus != nil {
+		o.Prometheus = load.Prometheus
+	}
+	if load.TLS != nil {
+		o.TLS = load.TLS
+	}
+	if load.ForwardedHeaders != nil {
+		o.ForwardedHeaders = *load.ForwardedHeaders
+	}
+	if load.IsDefault != nil {
+		o.IsDefault = *load.IsDefault
+	}
+	if load.FastForwardDisable != nil {
+		o.FastForwardDisable = *load.FastForwardDisable
+	}
+	if load.PathRoutingDisabled != nil {
+		o.PathRoutingDisabled = *load.PathRoutingDisabled
+	}
+	if load.RequireTLS != nil {
+		o.RequireTLS = *load.RequireTLS
+	}
+	if load.MultipartRangesDisabled != nil {
+		o.MultipartRangesDisabled = *load.MultipartRangesDisabled
+	}
+	if load.DearticulateUpstreamRanges != nil {
+		o.DearticulateUpstreamRanges = *load.DearticulateUpstreamRanges
+	}
+	if load.AuthenticatorName != nil {
+		o.AuthenticatorName = *load.AuthenticatorName
+	}
+	if load.SigV4 != nil {
+		o.SigV4 = load.SigV4
+	}
+	if load.LatencyMin != nil {
+		o.LatencyMin = *load.LatencyMin
+	}
+	if load.LatencyMax != nil {
+		o.LatencyMax = *load.LatencyMax
+	}
+
+	return nil
 }

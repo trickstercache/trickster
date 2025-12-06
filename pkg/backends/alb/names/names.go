@@ -14,43 +14,14 @@
  * limitations under the License.
  */
 
-package stdout
+package names
 
-import (
-	"testing"
-
-	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
+// Mechanism short name constants
+const (
+	MechanismRR  = "rr"
+	MechanismFR  = "fr"
+	MechanismFGR = "fgr"
+	MechanismNLM = "nlm"
+	MechanismTSM = "tsm"
+	MechanismUR  = "ur"
 )
-
-func TestNew(t *testing.T) {
-
-	_, err := New(nil)
-	if err != nil {
-		t.Error(err)
-	}
-
-	opt := options.New()
-	opt.Tags = map[string]string{"test": "test"}
-	opt.Endpoint = "1.2.3.4:8000"
-	opt.StdOutOptions.PrettyPrint = true
-
-	_, err = New(opt)
-	if err != nil {
-		t.Error(err)
-	}
-
-	sampleRate1 := 1.0
-	opt.SampleRate = &sampleRate1
-	_, err = New(opt)
-	if err != nil {
-		t.Error(err)
-	}
-
-	sampleRate2 := 0.5
-	opt.SampleRate = &sampleRate2
-	_, err = New(opt)
-	if err != nil {
-		t.Error(err)
-	}
-
-}

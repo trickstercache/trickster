@@ -21,6 +21,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/config"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
 )
 
 type ServerInstance struct {
@@ -28,4 +29,5 @@ type ServerInstance struct {
 	Caches        cache.Lookup
 	HealthChecker healthcheck.HealthChecker
 	Backends      backends.Backends
+	Listeners     *listener.Group
 }

@@ -78,7 +78,7 @@ func (t Tags) MergeAttr(attr []attribute.KeyValue) {
 // ToAttr returns the Tags map as an Attributes List
 func (t Tags) ToAttr() []attribute.KeyValue {
 	attr := make([]attribute.KeyValue, len(t))
-	i := 0
+	var i int
 	for k, v := range t {
 		attr[i] = attribute.String(k, v)
 		i++

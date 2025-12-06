@@ -45,7 +45,7 @@ func TestNewChildSpan(t *testing.T) {
 
 	// force coverage of tags attachment
 	tr.Options.Provider = "zipkin"
-	options.ProcessTracingOptions(options.Lookup{"default": tr.Options}, nil)
+	options.ProcessTracingOptions(options.Lookup{"default": tr.Options})
 
 	ctx, span := NewChildSpan(stdcontext.Background(), tr, "test")
 	if ctx == nil {
@@ -88,7 +88,7 @@ func TestPrepareRequest(t *testing.T) {
 	}
 
 	tr.Options.Provider = "zipkin"
-	options.ProcessTracingOptions(options.Lookup{"default": tr.Options}, nil)
+	options.ProcessTracingOptions(options.Lookup{"default": tr.Options})
 
 	_, sp = PrepareRequest(r, tr)
 	if sp == nil {

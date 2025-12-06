@@ -36,11 +36,10 @@ import (
 	ttls "github.com/trickstercache/trickster/v2/pkg/proxy/tls"
 )
 
-var lg = listener.NewGroup()
-
 func applyListenerConfigs(conf, oldConf *config.Config,
 	router, reloadHandler http.Handler, metricsRouter router.Router,
-	tracers tracing.Tracers, o backends.Backends, errorFunc func()) {
+	tracers tracing.Tracers, o backends.Backends, errorFunc func(),
+	lg *listener.Group) {
 
 	var err error
 	var tlsConfig *tls.Config

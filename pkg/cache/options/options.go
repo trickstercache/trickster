@@ -28,8 +28,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/options/defaults"
 	"github.com/trickstercache/trickster/v2/pkg/cache/providers"
 	redis "github.com/trickstercache/trickster/v2/pkg/cache/redis/options"
+	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
-	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
 )
 
 // Lookup is a map of Options
@@ -66,6 +66,20 @@ type Options struct {
 	ProviderID providers.Provider `yaml:"-"`
 }
 
+type loadOptions struct {
+	Provider              *string             `yaml:"provider,omitempty"`
+	Index                 *index.Options      `yaml:"index,omitempty"`
+	Redis                 *redis.Options      `yaml:"redis,omitempty"`
+	Filesystem            *filesystem.Options `yaml:"filesystem,omitempty"`
+	BBolt                 *bbolt.Options      `yaml:"bbolt,omitempty"`
+	Badger                *badger.Options     `yaml:"badger,omitempty"`
+	UseCacheChunking      *bool               `yaml:"use_cache_chunking,omitempty"`
+	TimeseriesChunkFactor *int64              `yaml:"timeseries_chunk_factor"`
+	ByterangeChunkSize    *int64              `yaml:"byterange_chunk_size"`
+}
+
+var _ types.ConfigOptions[Options] = &Options{}
+
 var restrictedNames = sets.New([]string{"", "none"})
 var ErrInvalidName = errors.New("invalid cache name")
 
@@ -86,268 +100,210 @@ func New() *Options {
 }
 
 // Clone returns an exact copy of a *CachingConfig
-func (c *Options) Clone() *Options {
+func (o *Options) Clone() *Options {
 
 	out := New()
-	out.Name = c.Name
-	out.Provider = c.Provider
-	out.ProviderID = c.ProviderID
+	out.Name = o.Name
+	out.Provider = o.Provider
+	out.ProviderID = o.ProviderID
 
-	out.Index.FlushInterval = c.Index.FlushInterval
-	out.Index.FlushInterval = c.Index.FlushInterval
-	out.Index.MaxSizeBackoffBytes = c.Index.MaxSizeBackoffBytes
-	out.Index.MaxSizeBackoffObjects = c.Index.MaxSizeBackoffObjects
-	out.Index.MaxSizeBytes = c.Index.MaxSizeBytes
-	out.Index.MaxSizeObjects = c.Index.MaxSizeObjects
-	out.Index.ReapInterval = c.Index.ReapInterval
-	out.Index.ReapInterval = c.Index.ReapInterval
+	out.Index.FlushInterval = o.Index.FlushInterval
+	out.Index.FlushInterval = o.Index.FlushInterval
+	out.Index.MaxSizeBackoffBytes = o.Index.MaxSizeBackoffBytes
+	out.Index.MaxSizeBackoffObjects = o.Index.MaxSizeBackoffObjects
+	out.Index.MaxSizeBytes = o.Index.MaxSizeBytes
+	out.Index.MaxSizeObjects = o.Index.MaxSizeObjects
+	out.Index.ReapInterval = o.Index.ReapInterval
+	out.Index.ReapInterval = o.Index.ReapInterval
 
-	out.Badger.Directory = c.Badger.Directory
-	out.Badger.ValueDirectory = c.Badger.ValueDirectory
+	out.Badger.Directory = o.Badger.Directory
+	out.Badger.ValueDirectory = o.Badger.ValueDirectory
 
-	out.Filesystem.CachePath = c.Filesystem.CachePath
+	out.Filesystem.CachePath = o.Filesystem.CachePath
 
-	out.BBolt.Bucket = c.BBolt.Bucket
-	out.BBolt.Filename = c.BBolt.Filename
+	out.BBolt.Bucket = o.BBolt.Bucket
+	out.BBolt.Filename = o.BBolt.Filename
 
-	out.Redis.ClientType = c.Redis.ClientType
-	out.Redis.DB = c.Redis.DB
-	out.Redis.DialTimeout = c.Redis.DialTimeout
-	out.Redis.Endpoint = c.Redis.Endpoint
-	out.Redis.Endpoints = c.Redis.Endpoints
-	out.Redis.ConnMaxIdleTime = c.Redis.ConnMaxIdleTime
-	out.Redis.ConnMaxLifetime = c.Redis.ConnMaxLifetime
-	out.Redis.MaxRetries = c.Redis.MaxRetries
-	out.Redis.MaxRetryBackoff = c.Redis.MaxRetryBackoff
-	out.Redis.MinIdleConns = c.Redis.MinIdleConns
-	out.Redis.MinRetryBackoff = c.Redis.MinRetryBackoff
-	out.Redis.Password = c.Redis.Password
-	out.Redis.PoolSize = c.Redis.PoolSize
-	out.Redis.PoolTimeout = c.Redis.PoolTimeout
-	out.Redis.Protocol = c.Redis.Protocol
-	out.Redis.ReadTimeout = c.Redis.ReadTimeout
-	out.Redis.SentinelMaster = c.Redis.SentinelMaster
-	out.Redis.WriteTimeout = c.Redis.WriteTimeout
+	out.Redis.ClientType = o.Redis.ClientType
+	out.Redis.DB = o.Redis.DB
+	out.Redis.DialTimeout = o.Redis.DialTimeout
+	out.Redis.Endpoint = o.Redis.Endpoint
+	out.Redis.Endpoints = o.Redis.Endpoints
+	out.Redis.ConnMaxIdleTime = o.Redis.ConnMaxIdleTime
+	out.Redis.ConnMaxLifetime = o.Redis.ConnMaxLifetime
+	out.Redis.MaxRetries = o.Redis.MaxRetries
+	out.Redis.MaxRetryBackoff = o.Redis.MaxRetryBackoff
+	out.Redis.MinIdleConns = o.Redis.MinIdleConns
+	out.Redis.MinRetryBackoff = o.Redis.MinRetryBackoff
+	out.Redis.Password = o.Redis.Password
+	out.Redis.PoolSize = o.Redis.PoolSize
+	out.Redis.PoolTimeout = o.Redis.PoolTimeout
+	out.Redis.Protocol = o.Redis.Protocol
+	out.Redis.ReadTimeout = o.Redis.ReadTimeout
+	out.Redis.SentinelMaster = o.Redis.SentinelMaster
+	out.Redis.WriteTimeout = o.Redis.WriteTimeout
 
-	out.UseCacheChunking = c.UseCacheChunking
-	out.TimeseriesChunkFactor = c.TimeseriesChunkFactor
-	out.ByterangeChunkSize = c.ByterangeChunkSize
+	out.UseCacheChunking = o.UseCacheChunking
+	out.TimeseriesChunkFactor = o.TimeseriesChunkFactor
+	out.ByterangeChunkSize = o.ByterangeChunkSize
 
-	return c
+	return out
 }
 
 // Equal returns true if all values in the Options references and their
 // their child Option references are completely identical
-func (c *Options) Equal(c2 *Options) bool {
-	if c2 == nil {
+func (o *Options) Equal(o2 *Options) bool {
+	if o2 == nil {
 		return false
 	}
-	return c.Name == c2.Name &&
-		c.Provider == c2.Provider &&
-		c.ProviderID == c2.ProviderID
+	return o.Name == o2.Name &&
+		o.Provider == o2.Provider &&
+		o.ProviderID == o2.ProviderID
 }
 
-func (c *Options) Validate() error {
-	if restrictedNames.Contains(c.Name) {
-		return ErrInvalidName
+func (o *Options) Validate() (bool, error) {
+	if restrictedNames.Contains(o.Name) {
+		return false, ErrInvalidName
 	}
-	return nil
+	if o.Index.MaxSizeBytes > 0 && o.Index.MaxSizeBackoffBytes > o.Index.MaxSizeBytes {
+		return false, errMaxSizeBackoffBytesTooBig
+	}
+	if o.Index.MaxSizeObjects > 0 && o.Index.MaxSizeBackoffObjects > o.Index.MaxSizeObjects {
+		return false, errMaxSizeBackoffObjectsTooBig
+	}
+
+	return true, nil
 }
 
 var errMaxSizeBackoffBytesTooBig = errors.New("MaxSizeBackoffBytes can't be larger than MaxSizeBytes")
 var errMaxSizeBackoffObjectsTooBig = errors.New("MaxSizeBackoffObjects can't be larger than MaxSizeObjects")
 
-// OverlayYAMLData extracts supported cache Options values from the yaml map,
-// and overlays the extracted values into activeCaches
-func (l Lookup) OverlayYAMLData(y yamlx.KeyLookup,
-	activeCaches sets.Set[string]) ([]string, error) {
+// Initialize sets up the cache Options with default values and overlays
+// any values that were set during YAML unmarshaling
+func (o *Options) Initialize(name string) error {
+	o.Name = name
 
-	// setCachingDefaults assumes that processBackendOptions was just ran
+	if o.Provider != "" {
+		o.Provider = strings.ToLower(o.Provider)
+		if n, ok := providers.Names[o.Provider]; ok {
+			o.ProviderID = n
+		}
+	}
 
-	lw := make([]string, 0)
+	if o.Index == nil {
+		o.Index = index.New()
+	}
+	if o.Redis == nil {
+		o.Redis = redis.New()
+	}
+	if o.Filesystem == nil {
+		o.Filesystem = filesystem.New()
+	}
+	if o.BBolt == nil {
+		o.BBolt = bbolt.New()
+	}
+	if o.Badger == nil {
+		o.Badger = badger.New()
+	}
+
+	o.UseCacheChunking = defaults.DefaultUseCacheChunking
+
+	if o.TimeseriesChunkFactor == 0 {
+		o.TimeseriesChunkFactor = defaults.DefaultTimeseriesChunkFactor
+	}
+	if o.ByterangeChunkSize == 0 {
+		o.ByterangeChunkSize = defaults.DefaultByterangeChunkSize
+	}
+
+	return nil
+}
+
+// Initialize initializes all cache options in the lookup with default values
+// and overlays any values that were set during YAML unmarshaling
+func (l Lookup) Initialize(activeCaches sets.Set[string]) ([]string, error) {
+	var warnings []string
+
+	for k := range l {
+		if _, ok := activeCaches[k]; !ok {
+			delete(l, k)
+		}
+	}
 
 	for k, v := range l {
-
-		if _, ok := activeCaches[k]; !ok {
-			// a configured cache was not used by any backend. don't even instantiate it
-			delete(l, k)
-			continue
+		if err := v.Initialize(k); err != nil {
+			return nil, err
 		}
 
-		c := New()
-		c.Name = k
-
-		if y.IsDefined("caches", k, "provider") {
-			c.Provider = strings.ToLower(v.Provider)
-			if n, ok := providers.Names[c.Provider]; ok {
-				c.ProviderID = n
-			}
-		}
-
-		if y.IsDefined("caches", k, "index", "reap_interval") {
-			c.Index.ReapInterval = v.Index.ReapInterval
-		}
-
-		if y.IsDefined("caches", k, "index", "flush_interval") {
-			c.Index.FlushInterval = v.Index.FlushInterval
-		}
-
-		if y.IsDefined("caches", k, "index", "max_size_bytes") {
-			c.Index.MaxSizeBytes = v.Index.MaxSizeBytes
-		}
-
-		if y.IsDefined("caches", k, "index", "max_size_backoff_bytes") {
-			c.Index.MaxSizeBackoffBytes = v.Index.MaxSizeBackoffBytes
-		}
-
-		if c.Index.MaxSizeBytes > 0 && c.Index.MaxSizeBackoffBytes > c.Index.MaxSizeBytes {
-			return nil, errMaxSizeBackoffBytesTooBig
-		}
-
-		if y.IsDefined("caches", k, "index", "max_size_objects") {
-			c.Index.MaxSizeObjects = v.Index.MaxSizeObjects
-		}
-
-		if y.IsDefined("caches", k, "index", "max_size_backoff_objects") {
-			c.Index.MaxSizeBackoffObjects = v.Index.MaxSizeBackoffObjects
-		}
-
-		if c.Index.MaxSizeObjects > 0 && c.Index.MaxSizeBackoffObjects > c.Index.MaxSizeObjects {
-			return nil, errMaxSizeBackoffObjectsTooBig
-		}
-
-		if c.ProviderID == providers.Redis {
-
+		if v.ProviderID == providers.Redis {
 			var hasEndpoint, hasEndpoints bool
 
-			ct := strings.ToLower(v.Redis.ClientType)
-			if y.IsDefined("caches", k, "redis", "client_type") {
-				c.Redis.ClientType = ct
-			}
-
-			if y.IsDefined("caches", k, "redis", "protocol") {
-				c.Redis.Protocol = v.Redis.Protocol
-			}
-
-			if y.IsDefined("caches", k, "redis", "endpoint") {
-				c.Redis.Endpoint = v.Redis.Endpoint
+			if v.Redis.Endpoint != "" {
 				hasEndpoint = true
 			}
-
-			if y.IsDefined("caches", k, "redis", "endpoints") {
-				c.Redis.Endpoints = v.Redis.Endpoints
+			if len(v.Redis.Endpoints) > 0 {
 				hasEndpoints = true
 			}
 
-			if c.Redis.ClientType == "standard" {
+			if v.Redis.ClientType == "standard" {
 				if hasEndpoints && !hasEndpoint {
-					lw = append(lw,
+					warnings = append(warnings,
 						"'standard' redis type configured, but 'endpoints' value is provided instead of 'endpoint'")
 				}
 			} else {
 				if hasEndpoint && !hasEndpoints {
-					lw = append(lw, fmt.Sprintf(
+					warnings = append(warnings, fmt.Sprintf(
 						"'%s' redis type configured, but 'endpoint' value is provided instead of 'endpoints'",
-						c.Redis.ClientType))
+						v.Redis.ClientType))
 				}
 			}
-
-			if y.IsDefined("caches", k, "redis", "sentinel_master") {
-				c.Redis.SentinelMaster = v.Redis.SentinelMaster
-			}
-
-			if y.IsDefined("caches", k, "redis", "username") {
-				c.Redis.Username = v.Redis.Username
-			}
-
-			if y.IsDefined("caches", k, "redis", "password") {
-				c.Redis.Password = v.Redis.Password
-			}
-
-			if y.IsDefined("caches", k, "redis", "db") {
-				c.Redis.DB = v.Redis.DB
-			}
-
-			if y.IsDefined("caches", k, "redis", "max_retries") {
-				c.Redis.MaxRetries = v.Redis.MaxRetries
-			}
-
-			if y.IsDefined("caches", k, "redis", "min_retry_backoff") {
-				c.Redis.MinRetryBackoff = v.Redis.MinRetryBackoff
-			}
-
-			if y.IsDefined("caches", k, "redis", "max_retry_backoff") {
-				c.Redis.MaxRetryBackoff = v.Redis.MaxRetryBackoff
-			}
-
-			if y.IsDefined("caches", k, "redis", "dial_timeout") {
-				c.Redis.DialTimeout = v.Redis.DialTimeout
-			}
-
-			if y.IsDefined("caches", k, "redis", "read_timeout") {
-				c.Redis.ReadTimeout = v.Redis.ReadTimeout
-			}
-
-			if y.IsDefined("caches", k, "redis", "write_timeout") {
-				c.Redis.WriteTimeout = v.Redis.WriteTimeout
-			}
-
-			if y.IsDefined("caches", k, "redis", "pool_size") {
-				c.Redis.PoolSize = v.Redis.PoolSize
-			}
-
-			if y.IsDefined("caches", k, "redis", "min_idle_conns") {
-				c.Redis.MinIdleConns = v.Redis.MinIdleConns
-			}
-
-			if y.IsDefined("caches", k, "redis", "max_conn_age") {
-				c.Redis.ConnMaxLifetime = v.Redis.ConnMaxLifetime
-			}
-
-			if y.IsDefined("caches", k, "redis", "pool_timeout") {
-				c.Redis.PoolTimeout = v.Redis.PoolTimeout
-			}
-
-			if y.IsDefined("caches", k, "redis", "idle_timeout") {
-				c.Redis.ConnMaxIdleTime = v.Redis.ConnMaxIdleTime
-			}
-
-			if y.IsDefined("caches", k, "redis", "use_tls") {
-				c.Redis.UseTLS = v.Redis.UseTLS
-			}
 		}
-
-		if y.IsDefined("caches", k, "filesystem", "cache_path") {
-			c.Filesystem.CachePath = v.Filesystem.CachePath
-		}
-
-		if y.IsDefined("caches", k, "bbolt", "filename") {
-			c.BBolt.Filename = v.BBolt.Filename
-		}
-
-		if y.IsDefined("caches", k, "bbolt", "bucket") {
-			c.BBolt.Bucket = v.BBolt.Bucket
-		}
-
-		if y.IsDefined("caches", k, "badger", "directory") {
-			c.Badger.Directory = v.Badger.Directory
-		}
-
-		if y.IsDefined("caches", k, "badger", "value_directory") {
-			c.Badger.ValueDirectory = v.Badger.ValueDirectory
-		}
-
-		l[k] = c
 	}
-	return lw, nil
+	return warnings, nil
 }
 
 func (l Lookup) Validate() error {
-	for k, c := range l {
-		c.Name = k
-		if err := c.Validate(); err != nil {
+	for k, o := range l {
+		o.Name = k
+		_, err := o.Validate()
+		if err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func (o *Options) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*o = *(New())
+	var load loadOptions
+	if err := unmarshal(&load); err != nil {
+		return err
+	}
+	if load.Provider != nil {
+		o.Provider = *load.Provider
+	}
+	if load.Index != nil {
+		o.Index = load.Index
+	}
+	if load.Redis != nil {
+		o.Redis = load.Redis
+	}
+	if load.Filesystem != nil {
+		o.Filesystem = load.Filesystem
+	}
+	if load.BBolt != nil {
+		o.BBolt = load.BBolt
+	}
+	if load.Badger != nil {
+		o.Badger = load.Badger
+	}
+	if load.UseCacheChunking != nil {
+		o.UseCacheChunking = *load.UseCacheChunking
+	}
+	if load.TimeseriesChunkFactor != nil {
+		o.TimeseriesChunkFactor = *load.TimeseriesChunkFactor
+	}
+	if load.ByterangeChunkSize != nil {
+		o.ByterangeChunkSize = *load.ByterangeChunkSize
 	}
 	return nil
 }

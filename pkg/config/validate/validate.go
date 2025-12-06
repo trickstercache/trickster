@@ -30,23 +30,21 @@ import (
 )
 
 func Validate(c *config.Config) error {
+	if c == nil {
+		return errors.ErrInvalidOptions
+	}
 	if c.MgmtConfig != nil {
 		if err := c.MgmtConfig.Validate(); err != nil {
 			return err
 		}
 	}
 	if c.Logging != nil {
-		if err := c.Logging.Validate(); err != nil {
+		if _, err := c.Logging.Validate(); err != nil {
 			return err
 		}
 	}
 	if c.Metrics != nil {
-		if err := c.Metrics.Validate(); err != nil {
-			return err
-		}
-	}
-	if c.MgmtConfig != nil {
-		if err := c.MgmtConfig.Validate(); err != nil {
+		if _, err := c.Metrics.Validate(); err != nil {
 			return err
 		}
 	}
@@ -80,35 +78,35 @@ func Validate(c *config.Config) error {
 }
 
 func Rewriters(c *config.Config) error {
-	if len(c.RequestRewriters) == 0 {
+	if c == nil || len(c.RequestRewriters) == 0 {
 		return nil
 	}
 	return c.RequestRewriters.Validate()
 }
 
 func Tracers(c *config.Config) error {
-	if len(c.TracingConfigs) == 0 {
+	if c == nil || len(c.TracingOptions) == 0 {
 		return nil
 	}
-	return c.TracingConfigs.Validate()
+	return c.TracingOptions.Validate()
 }
 
 func Rules(c *config.Config) error {
-	if len(c.Rules) == 0 {
+	if c == nil || len(c.Rules) == 0 {
 		return nil
 	}
 	return c.Rules.Validate()
 }
 
 func Caches(c *config.Config) error {
-	if len(c.Caches) == 0 {
+	if c == nil || len(c.Caches) == 0 {
 		return nil
 	}
 	return c.Caches.Validate()
 }
 
 func NegativeCaches(c *config.Config) error {
-	if len(c.NegativeCacheConfigs) == 0 {
+	if c == nil || len(c.NegativeCacheConfigs) == 0 {
 		return nil
 	}
 	nc, err := c.NegativeCacheConfigs.ValidateAndCompile()
@@ -120,25 +118,28 @@ func NegativeCaches(c *config.Config) error {
 }
 
 func Authenticators(c *config.Config) error {
-	if len(c.Authenticators) == 0 {
+	if c == nil || len(c.Authenticators) == 0 {
 		return nil
 	}
 	return c.Authenticators.Validate(ar.IsRegistered)
 }
 
 func Backends(c *config.Config) error {
+	if c == nil {
+		return errors.ErrNoValidBackends
+	}
 	if len(c.Backends) == 0 {
 		return errors.ErrNoValidBackends
 	}
 	if err := c.Backends.ValidateConfigMappings(c.Caches, c.CompiledNegativeCaches,
-		c.Rules, c.RequestRewriters, c.Authenticators, c.TracingConfigs); err != nil {
+		c.Rules, c.RequestRewriters, c.Authenticators, c.TracingOptions); err != nil {
 		return err
 	}
 	serveTLS, err := c.Backends.ValidateTLSConfigs()
 	if err != nil {
 		return err
 	}
-	if serveTLS {
+	if serveTLS && c.Frontend != nil {
 		c.Frontend.ServeTLS = true
 	}
 	return c.Backends.Validate()

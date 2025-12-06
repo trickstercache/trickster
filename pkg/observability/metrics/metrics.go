@@ -48,6 +48,18 @@ var LastReloadSuccessful prometheus.Gauge
 // LastReloadSuccessfulTimestamp gauge is the epoch time of the most recent successful config load
 var LastReloadSuccessfulTimestamp prometheus.Gauge
 
+// ReloadAttemptsTotal is a Counter of total configuration reload attempts
+var ReloadAttemptsTotal prometheus.Counter
+
+// ReloadSuccessesTotal is a Counter of successful configuration reloads
+var ReloadSuccessesTotal prometheus.Counter
+
+// ReloadFailuresTotal is a Counter of failed configuration reloads
+var ReloadFailuresTotal prometheus.Counter
+
+// ReloadDurationSeconds is a Histogram of configuration reload duration in seconds
+var ReloadDurationSeconds prometheus.Histogram
+
 // FrontendRequestStatus is a Counter of front end requests that have been processed with their status
 var FrontendRequestStatus *prometheus.CounterVec
 
@@ -133,6 +145,43 @@ func init() {
 			Subsystem: configSubsystem,
 			Name:      "last_reload_successful",
 			Help:      "Whether the last configuration reload attempt was successful.",
+		},
+	)
+
+	ReloadAttemptsTotal = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: configSubsystem,
+			Name:      "reload_attempts_total",
+			Help:      "Total number of configuration reload attempts.",
+		},
+	)
+
+	ReloadSuccessesTotal = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: configSubsystem,
+			Name:      "reload_successes_total",
+			Help:      "Total number of successful configuration reloads.",
+		},
+	)
+
+	ReloadFailuresTotal = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: configSubsystem,
+			Name:      "reload_failures_total",
+			Help:      "Total number of failed configuration reloads.",
+		},
+	)
+
+	ReloadDurationSeconds = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Namespace: metricNamespace,
+			Subsystem: configSubsystem,
+			Name:      "reload_duration_seconds",
+			Help:      "Duration of configuration reload operations in seconds.",
+			Buckets:   defaultBuckets,
 		},
 	)
 
@@ -343,6 +392,10 @@ func init() {
 	prometheus.MustRegister(BuildInfo)
 	prometheus.MustRegister(LastReloadSuccessful)
 	prometheus.MustRegister(LastReloadSuccessfulTimestamp)
+	prometheus.MustRegister(ReloadAttemptsTotal)
+	prometheus.MustRegister(ReloadSuccessesTotal)
+	prometheus.MustRegister(ReloadFailuresTotal)
+	prometheus.MustRegister(ReloadDurationSeconds)
 }
 
 // Handler returns the http handler for the listener

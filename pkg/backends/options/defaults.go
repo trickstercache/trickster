@@ -19,6 +19,7 @@ package options
 import (
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	"github.com/trickstercache/trickster/v2/pkg/cache/evictionmethods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
@@ -59,7 +60,7 @@ const (
 	// DefaultForwardedHeaders defines which class of 'Forwarded' headers are attached to upstream requests
 	DefaultForwardedHeaders = "standard"
 	// DefaultALBMechanismName defines the default ALB Mechanism Name
-	DefaultALBMechanismName = "rr" // round robin
+	DefaultALBMechanismName = names.MechanismRR // round robin
 	// DefaultTimeseriesShardSize defines the default shard size of 0 (no sharding)
 	DefaultTimeseriesShardSize = 0
 	// DefaultTimeseriesShardStep defines the default shard step of 0 (no sharding)

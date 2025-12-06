@@ -44,6 +44,11 @@ type Options struct {
 // Lookup is a map of Options keyed by Options Name
 type Lookup map[string]*Options
 
+// New returns a new Authenticator Options with default values
+func New() *Options {
+	return &Options{}
+}
+
 func (o *Options) Clone() *Options {
 	out := &Options{
 		Name:            o.Name,
@@ -59,6 +64,13 @@ func (o *Options) Clone() *Options {
 	return out
 }
 
+func (o *Options) Initialize() error {
+	if len(o.Users) > 0 && o.UsersFormat == "" {
+		o.UsersFormat = types.Unknown
+	}
+	return nil
+}
+
 func (o *Options) Validate(f types.IsRegisteredFunc) error {
 	if restrictedNames.Contains(o.Name) {
 		return ae.ErrInvalidName
@@ -71,9 +83,6 @@ func (o *Options) Validate(f types.IsRegisteredFunc) error {
 			return ae.ErrInvalidUsersFile
 		}
 	}
-	if len(o.Users) > 0 && o.UsersFormat == "" {
-		o.UsersFormat = types.Unknown
-	}
 	return nil
 }
 
@@ -84,5 +93,52 @@ func (l Lookup) Validate(f types.IsRegisteredFunc) error {
 			return err
 		}
 	}
+	return nil
+}
+
+type loaderOptions struct {
+	Provider        *types.Provider              `yaml:"provider"`
+	ObserveOnly     *bool                        `yaml:"observe_only"`
+	ProxyPreserve   *bool                        `yaml:"proxy_preserve"`
+	UsersFile       *string                      `yaml:"users_file"`
+	UsersFileFormat *types.CredentialsFileFormat `yaml:"users_file_format"`
+	Users           ct.EnvStringMap              `yaml:"users,omitempty"`
+	UsersFormat     *types.CredentialsFormat     `yaml:"users_format"`
+	ProviderData    map[string]any               `yaml:"config"`
+}
+
+func (o *Options) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*o = *(New())
+
+	var load loaderOptions
+	if err := unmarshal(&load); err != nil {
+		return err
+	}
+
+	if load.Provider != nil {
+		o.Provider = *load.Provider
+	}
+	if load.ObserveOnly != nil {
+		o.ObserveOnly = *load.ObserveOnly
+	}
+	if load.ProxyPreserve != nil {
+		o.ProxyPreserve = *load.ProxyPreserve
+	}
+	if load.UsersFile != nil {
+		o.UsersFile = *load.UsersFile
+	}
+	if load.UsersFileFormat != nil {
+		o.UsersFileFormat = *load.UsersFileFormat
+	}
+	if load.Users != nil {
+		o.Users = load.Users
+	}
+	if load.UsersFormat != nil {
+		o.UsersFormat = *load.UsersFormat
+	}
+	if load.ProviderData != nil {
+		o.ProviderData = load.ProviderData
+	}
+
 	return nil
 }

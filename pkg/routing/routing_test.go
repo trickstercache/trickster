@@ -23,6 +23,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/clickhouse"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
@@ -241,7 +242,7 @@ func TestRegisterProxyRoutesALB(t *testing.T) {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	conf.Backends["default"].ALBOptions = &options.Options{MechanismName: "tsm", OutputFormat: providers.Prometheus}
+	conf.Backends["default"].ALBOptions = &options.Options{MechanismName: names.MechanismTSM, OutputFormat: providers.Prometheus}
 
 	caches := registry.LoadCachesFromConfig(conf)
 	defer registry.CloseCaches(caches)
@@ -270,7 +271,7 @@ func TestRegisterProxyRoutesWithReqRewriters(t *testing.T) {
 
 	tpo := po.New()
 	tpo.ReqRewriterName = "path"
-	conf.Backends["test"].Paths["test"] = tpo
+	conf.Backends["test"].Paths = append(conf.Backends["test"].Paths, tpo)
 
 	caches := registry.LoadCachesFromConfig(conf)
 	defer registry.CloseCaches(caches)
@@ -372,8 +373,7 @@ func TestRegisterMultipleBackendsPlusDefault(t *testing.T) {
 
 func TestRegisterPathRoutes(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Info))
-	p := po.Lookup{"test": {}}
-	RegisterPathRoutes(nil, nil, nil, nil, nil, nil, p, nil)
+	RegisterPathRoutes(nil, nil, nil, nil, nil, nil, nil)
 
 	conf, err := config.Load([]string{"-log-level", "debug", "-origin-url",
 		"http://1", "-provider", providers.ReverseProxyCacheShort})
@@ -387,20 +387,33 @@ func TestRegisterPathRoutes(t *testing.T) {
 	oo := conf.Backends["default"]
 	rpc, _ := reverseproxycache.NewClient("test", oo, lm.NewRouter(), nil, nil, nil)
 	dpc := rpc.DefaultPathConfigs(oo)
-	dpc["/-GET-HEAD"].Methods = nil
+	for _, pathConfig := range dpc {
+		if pathConfig.Path == "/" && len(pathConfig.Methods) > 0 {
+			pathConfig.Methods = nil
+			break
+		}
+	}
 
 	testHandler := http.HandlerFunc(testutil.BasicHTTPHandler)
 	handlers := handlers.Lookup{"testHandler": testHandler}
 
-	RegisterPathRoutes(nil, conf, handlers, rpc, oo, nil, dpc, nil)
+	oo.Paths = dpc
+	RegisterPathRoutes(nil, conf, handlers, rpc, oo, nil, nil)
 
 	router := lm.NewRouter()
 	dpc = rpc.DefaultPathConfigs(oo)
-	dpc["/-GET-HEAD"].Methods = []string{"*"}
-	dpc["/-GET-HEAD"].Handler = testHandler
-	dpc["/-GET-HEAD"].HandlerName = "testHandler"
-	dpc["/-GET-HEAD"].ReqRewriter = testutil.NewTestRewriteInstructions()
-	RegisterPathRoutes(router, conf, handlers, rpc, oo, nil, dpc, nil)
+	oo.Paths = dpc
+	// Find the path config with GET and HEAD methods and update it
+	for _, pathConfig := range dpc {
+		if pathConfig.Path == "/" && len(pathConfig.Methods) > 0 {
+			pathConfig.Methods = []string{"*"}
+			pathConfig.Handler = testHandler
+			pathConfig.HandlerName = "testHandler"
+			pathConfig.ReqRewriter = testutil.NewTestRewriteInstructions()
+			break
+		}
+	}
+	RegisterPathRoutes(router, conf, handlers, rpc, oo, nil, nil)
 
 }
 
@@ -455,7 +468,7 @@ func TestRegisterDefaultBackendRoutes(t *testing.T) {
 	po1.MatchType = matching.PathMatchTypePrefix
 
 	oo.TracingConfigName = "testTracer"
-	oo.Paths = po.Lookup{"root": po1}
+	oo.Paths = po.List{po1}
 	oo.IsDefault = true
 	rpc, _ := reverseproxycache.NewClient("default", oo, lm.NewRouter(), nil, nil, nil)
 	b := backends.Backends{"default": rpc}

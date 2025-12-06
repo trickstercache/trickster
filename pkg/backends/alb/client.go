@@ -19,13 +19,13 @@ package alb
 import (
 	"fmt"
 	"net/http"
-	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	alberr "github.com/trickstercache/trickster/v2/pkg/backends/alb/errors"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/registry"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/ur"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
@@ -67,7 +67,7 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 	}
 	c.Backend = b
 	if o != nil && o.ALBOptions != nil {
-		m, err := registry.New(types.Name(o.ALBOptions.MechanismName),
+		m, err := registry.New(o.ALBOptions.MechanismName,
 			o.ALBOptions, factories)
 		if err != nil {
 			return nil, err
@@ -126,7 +126,7 @@ func (c *Client) Validate(backends sets.Set[string]) error {
 	if o.ALBOptions == nil {
 		return errors.ErrInvalidOptions
 	}
-	if !registry.IsRegistered(types.Name(o.ALBOptions.MechanismName)) {
+	if !registry.IsRegistered(o.ALBOptions.MechanismName) {
 		return fmt.Errorf("invalid mechanism name [%s] in backend [%s]",
 			o.ALBOptions.MechanismName, o.Name)
 	}
@@ -153,7 +153,7 @@ func (c *Client) ValidateAndStartPool(clients backends.Backends, hcs healthcheck
 	if err != nil {
 		return err
 	}
-	if o.MechanismName == string(ur.ShortName) && o.UserRouter != nil {
+	if o.MechanismName == names.MechanismUR && o.UserRouter != nil {
 		return c.validateAndStartUserRouter(clients)
 	}
 	targets := make([]*pool.Target, 0, len(o.Pool))
@@ -254,16 +254,14 @@ func (c *Client) StopPool() {
 // Boilerplate Interface Functions (to EOF)
 
 // DefaultPathConfigs returns the default PathConfigs for the given Provider
-func (c *Client) DefaultPathConfigs(_ *bo.Options) po.Lookup {
-	m := methods.AllHTTPMethods()
-	paths := po.Lookup{
-		"/" + strings.Join(m, "-"): {
+func (c *Client) DefaultPathConfigs(_ *bo.Options) po.List {
+	return po.List{
+		{
 			Path:          "/",
 			HandlerName:   providers.ALB,
-			Methods:       m,
+			Methods:       methods.AllHTTPMethods(),
 			MatchType:     matching.PathMatchTypePrefix,
-			MatchTypeName: "prefix",
+			MatchTypeName: matching.PathMatchNamePrefix,
 		},
 	}
-	return paths
 }

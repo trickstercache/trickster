@@ -127,13 +127,11 @@ func TestDeriveCacheKey(t *testing.T) {
 	}
 
 	cfg := &bo.Options{
-		Paths: po.Lookup{
-			"root": rpath,
-		},
+		Paths: po.List{rpath},
 	}
 
 	newResources := func() *request.Resources {
-		return request.NewResources(cfg, cfg.Paths["root"], nil, nil, nil, nil)
+		return request.NewResources(cfg, cfg.Paths[0], nil, nil, nil, nil)
 	}
 
 	tr := httptest.NewRequest("GET", "http://127.0.0.1/?query=12345&start=0&end=0&step=300&time=0", nil)
@@ -146,7 +144,7 @@ func TestDeriveCacheKey(t *testing.T) {
 		t.Errorf("expected %s got %s", "52dc11456c84506d3444e53ee4c99777", ck)
 	}
 
-	cfg.Paths["root"].CacheKeyParams = []string{"*"}
+	cfg.Paths[0].CacheKeyParams = []string{"*"}
 
 	pr = newProxyRequest(tr, nil)
 	// might need to get something into the resources
@@ -218,13 +216,11 @@ func exampleKeyHasher(path string, params url.Values, headers http.Header,
 func TestDeriveCacheKeyAuthHeader(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	client, err := NewTestClient("test", &bo.Options{
-		Paths: po.Lookup{
-			"root": {
-				Path:            "/",
-				CacheKeyParams:  []string{"query", "step", "time"},
-				CacheKeyHeaders: []string{"X-Test-Header"},
-			},
-		},
+		Paths: po.List{{
+			Path:            "/",
+			CacheKeyParams:  []string{"query", "step", "time"},
+			CacheKeyHeaders: []string{"X-Test-Header"},
+		}},
 	}, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
@@ -232,7 +228,7 @@ func TestDeriveCacheKeyAuthHeader(t *testing.T) {
 
 	tr := httptest.NewRequest("GET", "http://127.0.0.1/?query=12345&start=0&end=0&step=300&time=0", nil)
 	tr = tr.WithContext(ct.WithResources(context.Background(),
-		request.NewResources(client.Configuration(), client.Configuration().Paths["root"],
+		request.NewResources(client.Configuration(), client.Configuration().Paths[0],
 			nil, nil, nil, nil)))
 
 	tr.Header.Add("Authorization", "test")
@@ -251,13 +247,11 @@ func TestDeriveCacheKeyAuthHeader(t *testing.T) {
 func TestDeriveCacheKeyNoPathConfig(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	client, err := NewTestClient("test", &bo.Options{
-		Paths: po.Lookup{
-			"root": {
-				Path:            "/",
-				CacheKeyParams:  []string{"query", "step", "time"},
-				CacheKeyHeaders: []string{},
-			},
-		},
+		Paths: po.List{{
+			Path:            "/",
+			CacheKeyParams:  []string{"query", "step", "time"},
+			CacheKeyHeaders: []string{},
+		}},
 	}, nil, nil, nil)
 	if err != nil {
 		t.Error(err)

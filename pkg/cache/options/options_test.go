@@ -17,12 +17,10 @@
 package options
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/cache/providers"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
-	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
 )
 
 func TestNew(t *testing.T) {
@@ -47,113 +45,114 @@ func TestCloneAndEqual(t *testing.T) {
 
 }
 
-func TestOverlayYAMLData(t *testing.T) {
-	o := New()
-	l := Lookup{"default": o}
-	_, err := l.OverlayYAMLData(nil, nil)
-	if err != nil {
-		t.Error()
+func TestInitialize(t *testing.T) {
+	tests := []struct {
+		name             string
+		options          *Options
+		activeCaches     sets.Set[string]
+		expectedWarnings int
+		expectedError    error
+	}{
+		{
+			name:             "nil active caches",
+			options:          New(),
+			activeCaches:     nil,
+			expectedWarnings: 0,
+			expectedError:    nil,
+		},
+		{
+			name:             "empty active caches",
+			options:          New(),
+			activeCaches:     sets.NewStringSet(),
+			expectedWarnings: 0,
+			expectedError:    nil,
+		},
+		{
+			name: "redis standard client with endpoint",
+			options: func() *Options {
+				o := New()
+				o.Provider = "redis"
+				o.ProviderID = providers.Redis
+				o.Redis.ClientType = "standard"
+				o.Redis.Endpoint = "127.0.0.1:6379"
+				return o
+			}(),
+			activeCaches:     sets.New([]string{"default"}),
+			expectedWarnings: 0,
+			expectedError:    nil,
+		},
+		{
+			name: "redis standard client with endpoints",
+			options: func() *Options {
+				o := New()
+				o.Provider = "redis"
+				o.Redis.ClientType = "standard"
+				o.Redis.Endpoints = []string{"127.0.0.1:6379"}
+				return o
+			}(),
+			activeCaches:     sets.New([]string{"default"}),
+			expectedWarnings: 0,
+			expectedError:    nil,
+		},
+		{
+			name: "redis sentinel client with endpoint",
+			options: func() *Options {
+				o := New()
+				o.Provider = "redis"
+				o.Redis.ClientType = "sentinel"
+				o.Redis.Endpoint = "127.0.0.1:6379"
+				return o
+			}(),
+			activeCaches:     sets.New([]string{"default"}),
+			expectedWarnings: 0,
+			expectedError:    nil,
+		},
+		{
+			name: "max size backoff bytes too big",
+			options: func() *Options {
+				o := New()
+				o.Index.MaxSizeBackoffBytes = 16384
+				o.Index.MaxSizeBytes = 1
+				return o
+			}(),
+			activeCaches:     sets.New([]string{"default"}),
+			expectedWarnings: 0,
+			expectedError:    nil, // Validation happens in Validate(), not Initialize()
+		},
+		{
+			name: "max size backoff objects too big",
+			options: func() *Options {
+				o := New()
+				o.Index.MaxSizeBackoffObjects = 32768
+				o.Index.MaxSizeObjects = 16384
+				return o
+			}(),
+			activeCaches:     sets.New([]string{"default"}),
+			expectedWarnings: 0,
+			expectedError:    nil, // Validation happens in Validate(), not Initialize()
+		},
 	}
 
-	kl, err := yamlx.GetKeyList(testYAML)
-	if err != nil {
-		t.Error(err)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			l := Lookup{"default": test.options}
+			warnings, err := l.Initialize(test.activeCaches)
+
+			if test.expectedError != nil {
+				if err != test.expectedError {
+					t.Errorf("expected error %v, got %v", test.expectedError, err)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+
+			if len(warnings) != test.expectedWarnings {
+				t.Errorf("expected %d warnings, got %d", test.expectedWarnings, len(warnings))
+			}
+		})
 	}
-
-	o.Provider = "Redis"
-	o.ProviderID = providers.Redis
-	l = Lookup{"default": o}
-
-	ac := sets.New([]string{"default"})
-	lw, err := l.OverlayYAMLData(kl, ac)
-	if err != nil {
-		t.Error()
-	}
-
-	if len(lw) != 1 {
-		t.Errorf("expected %d got %d", 1, len(lw))
-	}
-
-	ty := strings.Replace(
-		strings.Replace(testYAML,
-			"client_type: standard", "client_type: sentinel", -1),
-		"endpoints: [ 127.0.0.1:6839 ]", "endpoint: 127.0.0.1:6839", -1)
-
-	kl, err = yamlx.GetKeyList(ty)
-	if err != nil {
-		t.Error(err)
-	}
-
-	l = Lookup{"default": o}
-	o.Redis.ClientType = "sentinel"
-	ac = sets.New([]string{"default"})
-	lw, err = l.OverlayYAMLData(kl, ac)
-	if err != nil {
-		t.Error()
-	}
-	if len(lw) != 1 {
-		t.Errorf("expected %d got %d", 1, len(lw))
-	}
-
-	l = Lookup{"default": o}
-	o.Index.MaxSizeBackoffBytes = 16384
-	o.Index.MaxSizeBytes = 1
-	_, err = l.OverlayYAMLData(kl, ac)
-	if err != errMaxSizeBackoffBytesTooBig {
-		t.Error(err)
-	}
-
-	l = Lookup{"default": o}
-	o.Index.MaxSizeBackoffBytes = 16384
-	o.Index.MaxSizeBytes = 32768
-	o.Index.MaxSizeBackoffObjects = 32768
-	o.Index.MaxSizeObjects = 16384
-
-	_, err = l.OverlayYAMLData(kl, ac)
-	if err != errMaxSizeBackoffObjectsTooBig {
-		t.Error(err)
-	}
-
 }
-
-const testYAML = `
-caches:
-  default:
-    provider: redis
-    redis:
-      client_type: standard
-      protocol: tcp
-      endpoints: [ 127.0.0.1:6839 ]
-      client_type: sentinel
-      sentinel_master: 127.0.0.1:6839
-      password: '********'
-      db: trickster
-      max_retries: 3
-      min_retry_backoff: 2000ms
-      max_retry_backoff: 4000ms
-      dial_timeout: 2000ms
-      read_timeout: 1000ms
-      write_timeout: 3000ms
-      pool_size: 16
-      min_idle_conns: 16
-      max_conn_age: 16ms
-      pool_timeout: 16ms
-      idle_timeout: 16ms
-      use_tls: false
-    filesystem:
-      cache_path: /tmp/trickster
-    bbolt:
-      filename: trickster.bbolt.db
-      bucket: trickster
-    badger:
-      directory: /tmp/trickster
-      value_directory: /tmp/trickster
-    index:
-      reap_interval: 2000ms
-      flush_interval: 2000ms
-      max_size_bytes: 1
-      max_size_backoff_bytes: 16384
-      max_size_objects: 4096
-      max_size_backoff_objects: 24
-
-`

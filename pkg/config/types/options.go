@@ -14,43 +14,12 @@
  * limitations under the License.
  */
 
-package stdout
+package types
 
-import (
-	"testing"
-
-	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
-)
-
-func TestNew(t *testing.T) {
-
-	_, err := New(nil)
-	if err != nil {
-		t.Error(err)
-	}
-
-	opt := options.New()
-	opt.Tags = map[string]string{"test": "test"}
-	opt.Endpoint = "1.2.3.4:8000"
-	opt.StdOutOptions.PrettyPrint = true
-
-	_, err = New(opt)
-	if err != nil {
-		t.Error(err)
-	}
-
-	sampleRate1 := 1.0
-	opt.SampleRate = &sampleRate1
-	_, err = New(opt)
-	if err != nil {
-		t.Error(err)
-	}
-
-	sampleRate2 := 0.5
-	opt.SampleRate = &sampleRate2
-	_, err = New(opt)
-	if err != nil {
-		t.Error(err)
-	}
-
+// ConfigOptions is an interface for configuration options that can be
+// initialized and validated.
+type ConfigOptions[T any] interface {
+	Initialize(string) error
+	Validate() (bool, error)
+	Clone() *T
 }

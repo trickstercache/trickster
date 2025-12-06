@@ -22,6 +22,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -136,10 +137,8 @@ func (t *target) isGoodHeader(h http.Header) bool {
 }
 
 func (t *target) isGoodCode(i int) bool {
-	for _, v := range t.ec {
-		if v == i {
-			return true
-		}
+	if slices.Contains(t.ec, i) {
+		return true
 	}
 	t.status.detail = fmt.Sprintf("required status code mismatch, got [%d] expected one of %v", i, t.ec)
 	return false

@@ -17,9 +17,11 @@
 package clickhouse
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
 )
@@ -57,7 +59,11 @@ func TestDefaultPathConfigs(t *testing.T) {
 	rsc.BackendClient = client
 	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
 
-	if _, ok := backendClient.Configuration().Paths["/"]; !ok {
+	// Find the path config with path "/"
+	if !slices.ContainsFunc([]*po.Options(backendClient.Configuration().Paths),
+		func(pathConfig *po.Options) bool {
+			return pathConfig.Path == "/"
+		}) {
 		t.Errorf("expected to find path named: %s", "/")
 	}
 

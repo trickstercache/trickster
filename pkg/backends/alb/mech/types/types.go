@@ -28,7 +28,7 @@ import (
 type ID byte
 
 // Name is a type alias for the load balancing mechanism common name
-type Name string
+type Name = string
 
 // NewMechanismFunc defines a function that returns a new Mechanism from the
 // provided Options

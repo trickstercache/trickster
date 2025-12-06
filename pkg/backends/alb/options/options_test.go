@@ -20,9 +20,8 @@ import (
 	"errors"
 	"testing"
 
-	ae "github.com/trickstercache/trickster/v2/pkg/backends/alb/errors"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
-	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
 
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
@@ -36,24 +35,20 @@ type testOptions2 struct {
 	Alb *Options `yaml:"alb,omitempty"`
 }
 
-func fromYAML(conf string) (*Options, yamlx.KeyLookup, error) {
+func fromYAML(conf string) (*Options, error) {
 
 	to := &testOptions1{}
 	err := yaml.Unmarshal([]byte(conf), to)
 	if err != nil {
-		return nil, nil, err
-	}
-	md, err := yamlx.GetKeyList(conf)
-	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	for _, v := range to.Backends {
 		if v != nil && v.Alb != nil {
-			return v.Alb, md, nil
+			return v.Alb, nil
 		}
 	}
-	return nil, md, nil
+	return nil, nil
 }
 
 func TestNew(t *testing.T) {
@@ -85,76 +80,54 @@ func TestClone(t *testing.T) {
 	}
 }
 
-func TestOverlayYAMLData(t *testing.T) {
+func TestInitialize(t *testing.T) {
 
-	_, err := OverlayYAMLData("test", nil, nil)
-	if err != ae.ErrInvalidOptionsMetadata {
-		t.Error("expected error for invalid options metadata", err)
-	}
+	// Test with nil options - this should panic, so we don't test it
+	// since Initialize() is a method on the struct, calling it on nil will panic
 
-	o2, err := OverlayYAMLData("test", nil, yamlx.KeyLookup{})
-	if err != nil {
-		t.Error(err)
-	}
-	if o2 != nil {
-		t.Error("expected nil Options")
-	}
-
-	o, md, err := fromYAML(testTOML)
-	if err != nil {
-		t.Error(err)
-	}
-	_, err = OverlayYAMLData("test", o, md)
+	// Test with empty options
+	o := New()
+	err := o.Initialize("")
 	if err != nil {
 		t.Error(err)
 	}
 
-	o, md, err = fromYAML(testTOMLNoALB)
+	// Test with TSM mechanism
+	o, err = fromYAML(testTOML)
 	if err != nil {
 		t.Error(err)
 	}
-	o2, err = OverlayYAMLData("test", o, md)
+	err = o.Initialize("")
 	if err != nil {
 		t.Error(err)
 	}
-	if o2 != nil {
-		t.Error("expected nil Options")
+	if o.OutputFormat != "prometheus" {
+		t.Error("expected output_format to be set to prometheus")
 	}
 
-	o, md, err = fromYAML(testTOMLBadOutputFormat1)
+	// Test with FGR mechanism
+	o, err = fromYAML(testFGR)
 	if err != nil {
 		t.Error(err)
 	}
-	_, err = OverlayYAMLData("test", o, md)
-	if err == nil {
-		t.Error("expected output_format error")
-	}
-
-	o, md, err = fromYAML(testTOMLBadOutputFormat2)
-	if err != nil {
-		t.Error(err)
-	}
-	_, err = OverlayYAMLData("test", o, md)
-	if err == nil {
-		t.Error("expected output_format error")
-	}
-
-	o, md, err = fromYAML(testFGR)
-	if err != nil {
-		t.Error(err)
-	}
-	_, err = OverlayYAMLData("test", o, md)
+	err = o.Initialize("")
 	if err != nil {
 		t.Error("failed to set defaults")
 	}
+	if o.FgrCodesLookup == nil || !o.FgrCodesLookup.Contains(200) || !o.FgrCodesLookup.Contains(201) {
+		t.Error("expected FGR codes lookup to be set")
+	}
 
-	_, md, err = fromYAML(testFGR)
+	// Test with tsmerge mechanism name (should be shortened to tsm)
+	o = New()
+	o.MechanismName = "tsmerge"
+	o.OutputFormat = "prometheus"
+	err = o.Initialize("")
 	if err != nil {
 		t.Error(err)
 	}
-	_, err = OverlayYAMLData("test", o, md)
-	if err != nil {
-		t.Error("failed to set defaults")
+	if o.MechanismName != names.MechanismTSM {
+		t.Error("expected mechanism name to be shortened to tsm")
 	}
 
 }

@@ -16,7 +16,10 @@
 
 package options
 
-import "github.com/trickstercache/trickster/v2/pkg/errors"
+import (
+	"github.com/trickstercache/trickster/v2/pkg/config/types"
+	"github.com/trickstercache/trickster/v2/pkg/errors"
+)
 
 // Options is a collection of Metrics Collection configurations
 type Options struct {
@@ -25,6 +28,8 @@ type Options struct {
 	// ListenPort is TCP Port from which the Application Metrics are available for pulling at /metrics
 	ListenPort int `yaml:"listen_port,omitempty"`
 }
+
+var _ types.ConfigOptions[Options] = &Options{}
 
 // New returns a new Options with default values
 func New() *Options {
@@ -42,9 +47,19 @@ func (o *Options) Clone() *Options {
 	}
 }
 
-func (o *Options) Validate() error {
-	if o.ListenPort < 0 {
-		return errors.ErrInvalidListenPort
+func (o *Options) Initialize(_ string) error {
+	if o.ListenAddress == "" {
+		o.ListenAddress = DefaultMetricsListenAddress
+	}
+	if o.ListenPort == 0 {
+		o.ListenPort = DefaultMetricsListenPort
 	}
 	return nil
+}
+
+func (o *Options) Validate() (bool, error) {
+	if o.ListenPort < 0 {
+		return false, errors.ErrInvalidListenPort
+	}
+	return true, nil
 }

@@ -48,11 +48,46 @@ import (
 	pnh "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/ping"
 	ph "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/purge"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/reload"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 	"github.com/trickstercache/trickster/v2/pkg/routing"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
 )
 
 var mtx sync.Mutex
+var lg = listener.NewGroup()
+
+// BootstrapConfig loads, validates, processes and prepares a configuration
+// along with its backend clients. This centralizes the common initialization
+// logic used by both startup and reload operations.
+func BootstrapConfig() (*config.Config, backends.Backends, error) {
+	conf, err := LoadAndValidate()
+	if err != nil {
+		return nil, nil, err
+	}
+	if conf == nil {
+		return nil, nil, te.ErrInvalidOptions
+	}
+	if conf.Flags != nil {
+		if conf.Flags.PrintVersion {
+			return conf, nil, nil
+		}
+		if conf.Flags.ValidateConfig {
+			return conf, nil, nil
+		}
+	}
+	err = conf.Process()
+	if err != nil {
+		return nil, nil, err
+	}
+	clients := make(backends.Backends, len(conf.Backends))
+	// these can't be done until the config is processed
+	err = validate.RoutesRulesAndPools(conf, clients)
+	if err != nil {
+		return nil, nil, err
+	}
+	return conf, clients, nil
+}
 
 func LoadAndValidate() (*config.Config, error) {
 	mtx.Lock()
@@ -66,7 +101,7 @@ func LoadAndValidate() (*config.Config, error) {
 		}
 		return nil, err
 	}
-	if cfg == nil {
+	if cfg == nil || len(cfg.Backends) == 0 {
 		return nil, te.ErrInvalidOptions
 	}
 	if cfg.Flags != nil && (cfg.Flags.PrintVersion) {
@@ -75,6 +110,18 @@ func LoadAndValidate() (*config.Config, error) {
 
 	for _, w := range cfg.LoaderWarnings {
 		logger.Warn(w, nil)
+	}
+
+	err = cfg.Backends.Validate()
+	if err != nil {
+		return nil, err
+	}
+
+	if len(cfg.Caches) > 0 {
+		err = cfg.Caches.Validate()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Validate Config
@@ -118,7 +165,7 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	// every config (re)load is a new router
 	r := lm.NewRouter()
 	mr := lm.NewRouter()
-	mr.SetMatchingScheme(0) // metrics router is exact-match only
+	mr.SetMatchingScheme(router.MatchExactPath)
 
 	r.RegisterRoute(newConf.MgmtConfig.PingHandlerPath, nil,
 		[]string{http.MethodGet, http.MethodHead}, false,
@@ -153,13 +200,14 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	alb.StartALBPools(clients, si.HealthChecker.Statuses())
 	routing.RegisterDefaultBackendRoutes(r, newConf, clients, tracers)
 	routing.RegisterHealthHandler(mr, newConf.MgmtConfig.HealthHandlerPath, si.HealthChecker)
-	applyListenerConfigs(newConf, si.Config, r, rh, mr, tracers, clients, errorFunc)
+	applyListenerConfigs(newConf, si.Config, r, rh, mr, tracers, clients, errorFunc, lg)
 
 	metrics.LastReloadSuccessfulTimestamp.Set(float64(time.Now().Unix()))
 	metrics.LastReloadSuccessful.Set(1)
 	si.Config = newConf
 	si.Caches = caches
 	si.Backends = clients
+	si.Listeners = lg
 	return nil
 }
 

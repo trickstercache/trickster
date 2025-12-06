@@ -66,8 +66,7 @@ func (c *Client) MergeablePaths() []string {
 }
 
 // DefaultPathConfigs returns the default PathConfigs for the given Provider
-func (c *Client) DefaultPathConfigs(o *bo.Options) po.Lookup {
-
+func (c *Client) DefaultPathConfigs(o *bo.Options) po.List {
 	var rhts map[string]string
 	if o != nil {
 		rhts = map[string]string{
@@ -75,157 +74,139 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) po.Lookup {
 	}
 	rhinst := map[string]string{
 		headers.NameCacheControl: fmt.Sprintf("%s=%d", headers.ValueSharedMaxAge, 30)}
-
-	paths := po.Lookup{
-
-		APIPath + mnQueryRange: {
+	paths := po.List{
+		{
 			Path:            APIPath + mnQueryRange,
 			HandlerName:     mnQueryRange,
 			Methods:         methods.GetAndPost(),
 			CacheKeyParams:  []string{upQuery, upStep},
 			CacheKeyHeaders: []string{},
 			ResponseHeaders: rhts,
-			MatchTypeName:   "exact",
+			MatchTypeName:   matching.PathMatchNameExact,
 			MatchType:       matching.PathMatchTypeExact,
 		},
-
-		APIPath + mnQuery: {
+		{
 			Path:            APIPath + mnQuery,
 			HandlerName:     mnQuery,
 			Methods:         methods.GetAndPost(),
 			CacheKeyParams:  []string{upQuery, upTime},
 			CacheKeyHeaders: []string{},
 			ResponseHeaders: rhinst,
-			MatchTypeName:   "exact",
+			MatchTypeName:   matching.PathMatchNameExact,
 			MatchType:       matching.PathMatchTypeExact,
 		},
-
-		APIPath + mnSeries: {
+		{
 			Path:            APIPath + mnSeries,
 			HandlerName:     mnSeries,
 			Methods:         methods.GetAndPost(),
 			CacheKeyParams:  []string{upMatch, upStart, upEnd},
 			CacheKeyHeaders: []string{},
 			ResponseHeaders: rhinst,
-			MatchTypeName:   "exact",
+			MatchTypeName:   matching.PathMatchNameExact,
 			MatchType:       matching.PathMatchTypeExact,
 		},
-
-		APIPath + mnLabels: {
+		{
 			Path:            APIPath + mnLabels,
 			HandlerName:     "labels",
 			Methods:         methods.GetAndPost(),
 			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{},
 			ResponseHeaders: rhinst,
-			MatchTypeName:   "exact",
+			MatchTypeName:   matching.PathMatchNameExact,
 			MatchType:       matching.PathMatchTypeExact,
 		},
-
-		APIPath + mnLabel + "/": {
+		{
 			Path:            APIPath + mnLabel + "/",
 			HandlerName:     "labels",
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{},
-			MatchTypeName:   "prefix",
+			MatchTypeName:   matching.PathMatchNamePrefix,
 			MatchType:       matching.PathMatchTypePrefix,
 			ResponseHeaders: rhinst,
 		},
-
-		APIPath + mnTargets: {
+		{
 			Path:            APIPath + mnTargets,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{},
 			ResponseHeaders: rhinst,
-			MatchTypeName:   "exact",
+			MatchTypeName:   matching.PathMatchNameExact,
 			MatchType:       matching.PathMatchTypeExact,
 		},
-
-		APIPath + mnTargetsMeta: {
+		{
 			Path:            APIPath + mnTargetsMeta,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{"match_target", "metric", "limit"},
 			CacheKeyHeaders: []string{},
 			ResponseHeaders: rhinst,
-			MatchTypeName:   "exact",
+			MatchTypeName:   matching.PathMatchNameExact,
 			MatchType:       matching.PathMatchTypeExact,
 		},
-
-		APIPath + mnRules: {
+		{
 			Path:            APIPath + mnRules,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{},
 			ResponseHeaders: rhinst,
-			MatchTypeName:   "exact",
+			MatchTypeName:   matching.PathMatchNameExact,
 			MatchType:       matching.PathMatchTypeExact,
 		},
-
-		APIPath + mnAlerts: {
+		{
 			Path:            APIPath + mnAlerts,
 			HandlerName:     "alerts",
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{},
 			ResponseHeaders: rhinst,
-			MatchTypeName:   "exact",
+			MatchTypeName:   matching.PathMatchNameExact,
 			MatchType:       matching.PathMatchTypeExact,
 		},
-
-		APIPath + mnAlertManagers: {
+		{
 			Path:            APIPath + mnAlertManagers,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{},
 			ResponseHeaders: rhinst,
-			MatchTypeName:   "exact",
+			MatchTypeName:   matching.PathMatchNameExact,
 			MatchType:       matching.PathMatchTypeExact,
 		},
-
-		APIPath + mnStatus: {
+		{
 			Path:            APIPath + mnStatus,
 			HandlerName:     "proxycache",
 			Methods:         []string{http.MethodGet},
 			CacheKeyParams:  []string{},
 			CacheKeyHeaders: []string{},
-			MatchTypeName:   "prefix",
+			MatchTypeName:   matching.PathMatchNamePrefix,
 			MatchType:       matching.PathMatchTypePrefix,
 			ResponseHeaders: rhinst,
 		},
-
-		APIPath + "admin": {
+		{
 			Path:          APIPath + "admin",
 			HandlerName:   "admin",
 			Methods:       methods.AllHTTPMethods(),
 			MatchType:     matching.PathMatchTypePrefix,
-			MatchTypeName: "prefix",
+			MatchTypeName: matching.PathMatchNamePrefix,
 		},
-
-		APIPath: {
+		{
 			Path:          APIPath,
 			HandlerName:   providers.Proxy,
 			Methods:       methods.GetAndPost(),
 			MatchType:     matching.PathMatchTypePrefix,
-			MatchTypeName: "prefix",
+			MatchTypeName: matching.PathMatchNamePrefix,
 		},
-
-		"/": {
+		{
 			Path:          "/",
 			HandlerName:   providers.Proxy,
 			Methods:       methods.GetAndPost(),
 			MatchType:     matching.PathMatchTypePrefix,
-			MatchTypeName: "prefix",
+			MatchTypeName: matching.PathMatchNamePrefix,
 		},
 	}
-
-	o.FastForwardPath = paths[APIPath+mnQuery].Clone()
-
+	o.FastForwardPath = paths[1].Clone()
 	return paths
-
 }

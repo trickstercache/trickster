@@ -37,7 +37,7 @@ type Options struct {
 	// ConnectionsLimit indicates how many concurrent front end connections trickster will handle at any time
 	ConnectionsLimit int `yaml:"connections_limit,omitempty"`
 	// MaxRequestBodySize indicates the maximum allowed size of the request body.
-	// If the body is too large. Trickster will truncate the payload or return a
+	// If the body is too large, Trickster will truncate the payload or return a
 	// 413 Payload Too Large response depending upon truncate_request_body_too_big.
 	// Use 0 for no body allowed, and < 0 for no maximum.
 	MaxRequestBodySizeBytes *int64 `yaml:"max_request_body_size_bytes"`
@@ -84,6 +84,13 @@ func (o *Options) Clone() *Options {
 	}
 }
 
+func (o *Options) Initialize() error {
+	if o.MaxRequestBodySizeBytes == nil {
+		o.MaxRequestBodySizeBytes = pointers.New(DefaultMaxRequestBodySizeBytes)
+	}
+	return nil
+}
+
 func (o *Options) Validate(f TLSConfigFunc) error {
 	if o.TLSListenPort < 1 && o.ListenPort < 1 {
 		return errors.New("no http or https listeners configured")
@@ -91,9 +98,6 @@ func (o *Options) Validate(f TLSConfigFunc) error {
 	if o.ServeTLS && o.TLSListenPort > 0 {
 		_, err := f()
 		return err
-	}
-	if o.MaxRequestBodySizeBytes == nil {
-		o.MaxRequestBodySizeBytes = pointers.New(DefaultMaxRequestBodySizeBytes)
 	}
 	return nil
 }

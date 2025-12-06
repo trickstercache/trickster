@@ -153,7 +153,6 @@ func MarshalTimeseries(ts timeseries.Timeseries, rlo *timeseries.RequestOptions,
 // MarshalTimeseriesWriter converts a Timeseries into a JSON blob via an io.Writer
 func MarshalTimeseriesWriter(ts timeseries.Timeseries,
 	_ *timeseries.RequestOptions, _ int, w io.Writer) error {
-
 	ds, ok := ts.(*dataset.DataSet)
 	if !ok {
 		return timeseries.ErrUnknownFormat
@@ -162,16 +161,14 @@ func MarshalTimeseriesWriter(ts timeseries.Timeseries,
 	if len(ds.Results) != 1 {
 		return timeseries.ErrUnknownFormat
 	}
-
 	w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[`))
-
-	seriesSep := ""
+	var seriesSep string
 	for _, s := range ds.Results[0].SeriesList {
 		if s == nil {
 			continue
 		}
 		w.Write([]byte(seriesSep + `{"metric":{`))
-		sep := ""
+		var sep string
 		for _, k := range s.Header.Tags.Keys() {
 			fmt.Fprintf(w, `%s"%s":"%s"`, sep, k, s.Header.Tags[k])
 			sep = ","

@@ -20,6 +20,7 @@ import (
 	"errors"
 	"slices"
 
+	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
@@ -37,8 +38,15 @@ type Options struct {
 // Lookup is a map of Options keyed by Rule Name
 type Lookup map[string]*Options
 
+var _ types.ConfigOptions[Options] = &Options{}
+
 var ErrInvalidName = errors.New("invalid rewriter name")
 var restrictedNames = sets.New([]string{"", "none"})
+
+// New returns a new Rewriter Options with default values
+func New() *Options {
+	return &Options{}
+}
 
 // Clone returns an exact copy of the subject *Options
 func (o *Options) Clone() *Options {
@@ -49,12 +57,17 @@ func (o *Options) Clone() *Options {
 	return o2
 }
 
-// Validate returns an error if there are issues with the Rewriter options.
-func (o *Options) Validate() error {
-	if restrictedNames.Contains(o.Name) {
-		return ErrInvalidName
-	}
+func (o *Options) Initialize(_ string) error {
+	// stub function required for ConfigOptions interface
 	return nil
+}
+
+// Validate returns an error if there are issues with the Rewriter options.
+func (o *Options) Validate() (bool, error) {
+	if restrictedNames.Contains(o.Name) {
+		return false, ErrInvalidName
+	}
+	return true, nil
 }
 
 // Validate returns an error if there are issues with any of the Rewriters options.
@@ -64,7 +77,8 @@ func (l Lookup) Validate() error {
 			continue
 		}
 		o.Name = k
-		if err := o.Validate(); err != nil {
+		_, err := o.Validate()
+		if err != nil {
 			return err
 		}
 	}
@@ -81,4 +95,20 @@ func (rl RewriteList) Clone() RewriteList {
 		}
 	}
 	return rl2
+}
+
+type loaderOptions struct {
+	Instructions RewriteList `yaml:"instructions,omitempty"`
+}
+
+func (o *Options) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*o = *(New())
+	var load loaderOptions
+	if err := unmarshal(&load); err != nil {
+		return err
+	}
+	if load.Instructions != nil {
+		o.Instructions = load.Instructions
+	}
+	return nil
 }

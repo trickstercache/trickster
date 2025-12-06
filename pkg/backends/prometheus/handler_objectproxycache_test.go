@@ -18,9 +18,11 @@ package prometheus
 
 import (
 	"io"
+	"slices"
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
 )
@@ -47,8 +49,11 @@ func TestObjectProxyCacheHandler(t *testing.T) {
 	rsc.BackendClient = client
 	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
 
-	_, ok := rsc.BackendOptions.Paths[APIPath+mnQuery]
-	if !ok {
+	// Find the path config with path "/api/v1/query"
+	if !slices.ContainsFunc([]*po.Options(rsc.BackendOptions.Paths),
+		func(pathConfig *po.Options) bool {
+			return pathConfig.Path == APIPath+mnQuery
+		}) {
 		t.Errorf("could not find path config named %s", APIPath+mnQuery)
 	}
 

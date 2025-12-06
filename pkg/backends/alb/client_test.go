@@ -21,6 +21,8 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/errors"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/tsm"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
@@ -34,7 +36,7 @@ const invalidPoolMemberCheck = "invalid pool member name [invalid] provided for 
 func TestHandlers(t *testing.T) {
 
 	a := &ao.Options{
-		MechanismName: "fr",
+		MechanismName: names.MechanismFR,
 		OutputFormat:  providers.Prometheus,
 	}
 	o := bo.New()
@@ -49,25 +51,25 @@ func TestHandlers(t *testing.T) {
 		t.Error("expected alb handler")
 	}
 
-	a.MechanismName = "fgr"
+	a.MechanismName = names.MechanismFGR
 	_, err = NewClient("test", o, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
 
-	a.MechanismName = "nlm"
+	a.MechanismName = names.MechanismNLM
 	_, err = NewClient("test", o, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
 
-	a.MechanismName = "tsm"
+	a.MechanismName = string(tsm.ShortName)
 	_, err = NewClient("test", o, nil, nil, nil, types.Lookup{providers.Prometheus: prometheus.NewClient})
 	if err != nil {
 		t.Error(err)
 	}
 
-	a.MechanismName = "rr"
+	a.MechanismName = names.MechanismRR
 	_, err = NewClient("test", o, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
@@ -113,7 +115,7 @@ func TestValidateClients(t *testing.T) {
 		t.Error("expected error for unsupported mechanism")
 		return
 	}
-	a.MechanismName = "rr"
+	a.MechanismName = names.MechanismRR
 	cl, err := NewClient("test", o, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
@@ -156,7 +158,7 @@ func TestValidateAndStartPool(t *testing.T) {
 	o.ALBOptions = a
 	b := backends.Backends{"test": cl}
 
-	a.MechanismName = "rr"
+	a.MechanismName = names.MechanismRR
 	a.Pool = []string{"invalid"}
 	err = cl.ValidateAndStartPool(b, nil)
 	if err == nil || err.Error() != invalidPoolMemberCheck {

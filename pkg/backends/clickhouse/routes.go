@@ -22,6 +22,7 @@ import (
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 )
@@ -40,16 +41,15 @@ func (c *Client) RegisterHandlers(handlers.Lookup) {
 }
 
 // DefaultPathConfigs returns the default PathConfigs for the given Provider
-func (c *Client) DefaultPathConfigs(_ *bo.Options) po.Lookup {
-	paths := po.Lookup{
-		"/": {
+func (c *Client) DefaultPathConfigs(_ *bo.Options) po.List {
+	return po.List{
+		{
 			Path:           "/",
 			HandlerName:    "query",
-			Methods:        []string{http.MethodGet, http.MethodPost},
+			Methods:        methods.GetAndPost(),
 			MatchType:      matching.PathMatchTypePrefix,
-			MatchTypeName:  "prefix",
+			MatchTypeName:  matching.PathMatchNamePrefix,
 			CacheKeyParams: []string{"database"},
 		},
 	}
-	return paths
 }

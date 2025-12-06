@@ -36,10 +36,8 @@ const (
 )
 
 const (
-	cacheableMethods   = get + head
-	bodyMethods        = post + put + patch
-	uncacheableMethods = bodyMethods + del + options + connect + trace + purge
-	allMethods         = cacheableMethods + uncacheableMethods
+	cacheableMethods = get + head
+	bodyMethods      = post + put + patch
 )
 
 const (
@@ -128,4 +126,34 @@ func MethodMask(methods ...string) uint16 {
 // IsValidMethod returns true if the provided method is recognized in methodsMap
 func IsValidMethod(method string) bool {
 	return getMethodLogicalID(method) > 0
+}
+
+func AreEqual(l1, l2 []string) bool {
+	if len(l1) != len(l2) {
+		return false
+	}
+	return MethodMask(l1...) == MethodMask(l2...)
+}
+
+// HasAll returns true if methods2 contains all methods from methods1
+func HasAll(methods1, methods2 []string) bool {
+	if len(methods1) == 0 {
+		return true
+	}
+	if len(methods2) == 0 {
+		return false
+	}
+	mask1 := MethodMask(methods1...)
+	mask2 := MethodMask(methods2...)
+	return (mask1 & mask2) == mask1
+}
+
+// HasAny returns true if methods2 contains any methods from methods1
+func HasAny(methods1, methods2 []string) bool {
+	if len(methods1) == 0 || len(methods2) == 0 {
+		return false
+	}
+	mask1 := MethodMask(methods1...)
+	mask2 := MethodMask(methods2...)
+	return (mask1 & mask2) != 0
 }

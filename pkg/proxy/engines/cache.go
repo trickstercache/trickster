@@ -141,7 +141,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 			wg := &sync.WaitGroup{}
 			// Result slice of timeseries
 			ress := make(timeseries.List, cct)
-			resi := 0
+			var resi int
 			for chunkStart := cext.Start; chunkStart.Before(cext.End); chunkStart = chunkStart.Add(csize) {
 				// Chunk range (inclusive, on-step)
 				chunkExtent := timeseries.Extent{

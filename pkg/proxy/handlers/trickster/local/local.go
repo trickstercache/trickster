@@ -41,5 +41,5 @@ func HandleLocalResponse(w http.ResponseWriter, r *http.Request) {
 	} else {
 		w.WriteHeader(http.StatusOK)
 	}
-	w.Write([]byte(p.ResponseBody))
+	w.Write(p.ResponseBodyBytes)
 }

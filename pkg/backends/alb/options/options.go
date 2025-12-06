@@ -24,9 +24,10 @@ import (
 
 	te "github.com/trickstercache/trickster/v2/pkg/backends/alb/errors"
 	ur "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/ur/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
-	"github.com/trickstercache/trickster/v2/pkg/util/yamlx"
 )
 
 // Options defines options for ALBs
@@ -47,7 +48,7 @@ type Options struct {
 	OutputFormat string `yaml:"output_format,omitempty"`
 	// FGRStatusCodes provides an explicit list of status codes considered "good" when using
 	// the First Good Response (fgr) methodology. By default, any code < 400 is good.
-	FGRStatusCodes []int `yaml:"fgr_status_codes"`
+	FGRStatusCodes []int `yaml:"fgr_status_codes,omitempty"`
 	// UserRouter provides options for the User Router mechanism
 	UserRouter *ur.Options `yaml:"user_router,omitempty"`
 	//
@@ -55,12 +56,20 @@ type Options struct {
 	FgrCodesLookup sets.Set[int] `yaml:"-"`
 }
 
-const defaultTSOutputFormat = providers.Prometheus
-
 // InvalidALBOptionsError is an error type for invalid ALB Options
 type InvalidALBOptionsError struct {
 	error
 }
+
+var _ types.ConfigOptions[Options] = &Options{}
+
+const defaultTSOutputFormat = providers.Prometheus
+
+var (
+	ErrUserRouterRequired     = errors.New("'user_router' block is required")
+	ErrInvalidOutputFormat    = errors.New("value for 'output_format' is invalid")
+	ErrOutputFormatOnlyForTSM = errors.New("'output_format' option is only valid for provider 'alb' and mechanism 'tsmerge'")
+)
 
 // NewErrInvalidALBOptions returns an invalid ALB Options error
 func NewErrInvalidALBOptions(backendName string) error {
@@ -104,65 +113,42 @@ func (o *Options) Clone() *Options {
 	return c
 }
 
-// OverlayYAMLData extracts supported ALB Options values from the yaml map,
-// and returns a new default Options overlaid with the extracted values
-func OverlayYAMLData(name string, options *Options,
-	y yamlx.KeyLookup) (*Options, error) {
-
-	if y == nil {
-		return nil, te.ErrInvalidOptionsMetadata
+func (o *Options) Initialize(_ string) error {
+	if strings.HasPrefix(o.MechanismName, names.MechanismTSM) && o.MechanismName != names.MechanismTSM {
+		// shorten from tsmerge to tsm
+		o.MechanismName = names.MechanismTSM
 	}
-
-	o := New()
-
-	if !y.IsDefined("backends", name, providers.ALB) {
-		return nil, nil
-	}
-
-	if y.IsDefined("backends", name, providers.ALB, "pool") {
-		o.Pool = options.Pool
-	}
-
-	if y.IsDefined("backends", name, providers.ALB, "mechanism") && options.MechanismName != "" {
-		o.MechanismName = options.MechanismName
-	}
-
-	if y.IsDefined("backends", name, providers.ALB, "healthy_floor") && options.HealthyFloor > 0 {
-		o.HealthyFloor = options.HealthyFloor
-	}
-
-	if o.MechanismName == "fgr" {
-		if y.IsDefined("backends", name, providers.ALB, "fgr_status_codes") && options.FGRStatusCodes != nil {
-			o.FGRStatusCodes = options.FGRStatusCodes
-		}
-		if o.FGRStatusCodes != nil {
+	switch o.MechanismName {
+	case names.MechanismFGR:
+		if len(o.FGRStatusCodes) > 0 {
 			o.FgrCodesLookup = sets.NewIntSet()
 			o.FgrCodesLookup.SetAll(o.FGRStatusCodes)
 		}
-	}
-
-	if o.MechanismName == "ur" && options.UserRouter != nil {
-		var err error
-		o.UserRouter, err = ur.OverlayYAMLData(name, options.UserRouter, y)
-		if err != nil {
-			return nil, err
+	case names.MechanismTSM:
+		if o.OutputFormat == "" {
+			o.OutputFormat = defaultTSOutputFormat
 		}
 	}
 
-	if y.IsDefined("backends", name, providers.ALB, "output_format") && options.OutputFormat != "" {
-		if !strings.HasPrefix(o.MechanismName, "tsm") {
-			return nil, errors.New("'output_format' option is only valid for provider 'alb' and mechanism 'tsmerge'")
-		}
-		o.OutputFormat = options.OutputFormat
-		if !providers.IsSupportedTimeSeriesMergeProvider(o.OutputFormat) {
-			return nil, errors.New("value for 'output_format' is invalid")
-		}
-	}
+	return nil
+}
 
-	if strings.HasPrefix(o.MechanismName, "tsm") && o.OutputFormat == "" {
-		o.OutputFormat = defaultTSOutputFormat
+func (o *Options) Validate() (bool, error) {
+	switch o.MechanismName {
+	case names.MechanismUR:
+		if o.UserRouter == nil {
+			return false, ErrUserRouterRequired
+		}
+	case names.MechanismTSM:
+		if o.OutputFormat != "" && !providers.IsSupportedTimeSeriesMergeProvider(o.OutputFormat) {
+			return false, ErrInvalidOutputFormat
+		}
+	default:
+		if o.OutputFormat != "" {
+			return false, ErrOutputFormatOnlyForTSM
+		}
 	}
-	return o, nil
+	return true, nil
 }
 
 func (o *Options) ValidatePool(backendName string, allBackends sets.Set[string]) error {
@@ -171,5 +157,44 @@ func (o *Options) ValidatePool(backendName string, allBackends sets.Set[string])
 			return te.NewErrInvalidPoolMemberName(backendName, bn)
 		}
 	}
+	return nil
+}
+
+type loaderOptions struct {
+	MechanismName  *string     `yaml:"mechanism,omitempty"`
+	Pool           []string    `yaml:"pool,omitempty"`
+	HealthyFloor   *int        `yaml:"healthy_floor,omitempty"`
+	OutputFormat   *string     `yaml:"output_format,omitempty"`
+	FGRStatusCodes []int       `yaml:"fgr_status_codes,omitempty"`
+	UserRouter     *ur.Options `yaml:"user_router,omitempty"`
+}
+
+func (o *Options) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*o = *(New())
+
+	var load loaderOptions
+	if err := unmarshal(&load); err != nil {
+		return err
+	}
+
+	if load.MechanismName != nil {
+		o.MechanismName = *load.MechanismName
+	}
+	if load.Pool != nil {
+		o.Pool = load.Pool
+	}
+	if load.HealthyFloor != nil {
+		o.HealthyFloor = *load.HealthyFloor
+	}
+	if load.OutputFormat != nil {
+		o.OutputFormat = *load.OutputFormat
+	}
+	if load.FGRStatusCodes != nil {
+		o.FGRStatusCodes = load.FGRStatusCodes
+	}
+	if load.UserRouter != nil {
+		o.UserRouter = load.UserRouter
+	}
+
 	return nil
 }

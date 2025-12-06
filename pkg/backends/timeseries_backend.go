@@ -36,7 +36,7 @@ type TimeseriesBackend interface {
 	// Handlers returns a map of the HTTP Handlers the Backend has registered
 	Handlers() handlers.Lookup
 	// DefaultPathConfigs returns the default PathConfigs for the given Provider
-	DefaultPathConfigs(*bo.Options) po.Lookup
+	DefaultPathConfigs(*bo.Options) po.List
 	// ParseTimeRangeQuery returns a timeseries.TimeRangeQuery based on the provided HTTP Request
 	ParseTimeRangeQuery(*http.Request) (*timeseries.TimeRangeQuery, *timeseries.RequestOptions, bool, error)
 	// Configuration returns the configuration for the Backend

@@ -21,7 +21,31 @@ type Options struct {
 	PrettyPrint bool `yaml:"pretty_print,omitempty"`
 }
 
+// New returns a new StdOutTracing Exporter Options with default values
+func New() *Options {
+	return &Options{}
+}
+
 // Clone returns a perfect copy of the subject *Options
 func (o *Options) Clone() *Options {
 	return &Options{PrettyPrint: o.PrettyPrint}
+}
+
+type loaderOptions struct {
+	PrettyPrint *bool `yaml:"pretty_print,omitempty"`
+}
+
+func (o *Options) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*o = *(New())
+
+	var load loaderOptions
+	if err := unmarshal(&load); err != nil {
+		return err
+	}
+
+	if load.PrettyPrint != nil {
+		o.PrettyPrint = *load.PrettyPrint
+	}
+
+	return nil
 }

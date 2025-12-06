@@ -50,9 +50,9 @@ func TestRegisterAll(t *testing.T) {
 	cfg := config.NewConfig()
 	tc := options.New()
 
-	cfg.TracingConfigs = make(options.Lookup)
-	cfg.TracingConfigs["test"] = tc
-	cfg.TracingConfigs["test3"] = tc
+	cfg.TracingOptions = make(options.Lookup)
+	cfg.TracingOptions["test"] = tc
+	cfg.TracingOptions["test3"] = tc
 	cfg.Backends["default"].TracingConfigName = "test"
 
 	_, err = RegisterAll(cfg, true)
@@ -101,14 +101,14 @@ func TestRegisterAll(t *testing.T) {
 	}
 	cfg.Backends["default"].TracingConfigName = "test"
 
-	temp := cfg.TracingConfigs
-	cfg.TracingConfigs = nil
+	temp := cfg.TracingOptions
+	cfg.TracingOptions = nil
 	// test nil tracing config
 	f, _ = RegisterAll(cfg, true)
 	if len(f) > 0 {
 		t.Errorf("expected %d got %d", 0, len(f))
 	}
-	cfg.TracingConfigs = temp
+	cfg.TracingOptions = temp
 
 	// test nil backend options
 	cfg.Backends = nil

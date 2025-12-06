@@ -21,10 +21,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/readers"
@@ -67,8 +69,11 @@ func TestQueryHandler(t *testing.T) {
 	rsc.BackendClient = client
 	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
 
-	_, ok := client.Configuration().Paths["/"]
-	if !ok {
+	// Find the path config with path "/"
+	if !slices.ContainsFunc([]*po.Options(client.Configuration().Paths),
+		func(pathConfig *po.Options) bool {
+			return pathConfig.Path == "/"
+		}) {
 		t.Errorf("could not find path config named %s", "/")
 	}
 
@@ -140,8 +145,11 @@ func TestQueryHandlerBody(t *testing.T) {
 		rsc.BackendClient = client
 		rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
 
-		_, ok := client.Configuration().Paths["/"]
-		if !ok {
+		// Find the path config with path "/"
+		if !slices.ContainsFunc([]*po.Options(client.Configuration().Paths),
+			func(pathConfig *po.Options) bool {
+				return pathConfig.Path == "/"
+			}) {
 			t.Errorf("could not find path config named %s", "/")
 		}
 
@@ -187,8 +195,11 @@ func TestQueryHandlerBody(t *testing.T) {
 		rsc.BackendClient = client
 		rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
 
-		_, ok := client.Configuration().Paths["/"]
-		if !ok {
+		// Find the path config with path "/"
+		if !slices.ContainsFunc([]*po.Options(client.Configuration().Paths),
+			func(pathConfig *po.Options) bool {
+				return pathConfig.Path == "/"
+			}) {
 			t.Errorf("could not find path config named %s", "/")
 		}
 
@@ -234,8 +245,11 @@ func TestQueryHandlerBody(t *testing.T) {
 		rsc.BackendClient = client
 		rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
 
-		_, ok := client.Configuration().Paths["/"]
-		if !ok {
+		// Find the path config with path "/"
+		if !slices.ContainsFunc([]*po.Options(client.Configuration().Paths),
+			func(pathConfig *po.Options) bool {
+				return pathConfig.Path == "/"
+			}) {
 			t.Errorf("could not find path config named %s", "/")
 		}
 
