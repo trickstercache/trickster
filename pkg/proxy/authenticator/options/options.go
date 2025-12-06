@@ -96,49 +96,12 @@ func (l Lookup) Validate(f types.IsRegisteredFunc) error {
 	return nil
 }
 
-type loaderOptions struct {
-	Provider        *types.Provider              `yaml:"provider"`
-	ObserveOnly     *bool                        `yaml:"observe_only"`
-	ProxyPreserve   *bool                        `yaml:"proxy_preserve"`
-	UsersFile       *string                      `yaml:"users_file"`
-	UsersFileFormat *types.CredentialsFileFormat `yaml:"users_file_format"`
-	Users           ct.EnvStringMap              `yaml:"users,omitempty"`
-	UsersFormat     *types.CredentialsFormat     `yaml:"users_format"`
-	ProviderData    map[string]any               `yaml:"config"`
-}
-
 func (o *Options) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	*o = *(New())
-
-	var load loaderOptions
-	if err := unmarshal(&load); err != nil {
+	type loadOptions Options
+	lo := loadOptions(*(New()))
+	if err := unmarshal(&lo); err != nil {
 		return err
 	}
-
-	if load.Provider != nil {
-		o.Provider = *load.Provider
-	}
-	if load.ObserveOnly != nil {
-		o.ObserveOnly = *load.ObserveOnly
-	}
-	if load.ProxyPreserve != nil {
-		o.ProxyPreserve = *load.ProxyPreserve
-	}
-	if load.UsersFile != nil {
-		o.UsersFile = *load.UsersFile
-	}
-	if load.UsersFileFormat != nil {
-		o.UsersFileFormat = *load.UsersFileFormat
-	}
-	if load.Users != nil {
-		o.Users = load.Users
-	}
-	if load.UsersFormat != nil {
-		o.UsersFormat = *load.UsersFormat
-	}
-	if load.ProviderData != nil {
-		o.ProviderData = load.ProviderData
-	}
-
+	*o = Options(lo)
 	return nil
 }

@@ -97,18 +97,12 @@ func (rl RewriteList) Clone() RewriteList {
 	return rl2
 }
 
-type loaderOptions struct {
-	Instructions RewriteList `yaml:"instructions,omitempty"`
-}
-
 func (o *Options) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	*o = *(New())
-	var load loaderOptions
-	if err := unmarshal(&load); err != nil {
+	type loadOptions Options
+	lo := loadOptions(*(New()))
+	if err := unmarshal(&lo); err != nil {
 		return err
 	}
-	if load.Instructions != nil {
-		o.Instructions = load.Instructions
-	}
+	*o = Options(lo)
 	return nil
 }

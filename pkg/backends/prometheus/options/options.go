@@ -39,25 +39,12 @@ func (o *Options) Clone() *Options {
 	}
 }
 
-type loaderOptions struct {
-	Labels       map[string]string `yaml:"labels,omitempty"`
-	InstantRound *time.Duration    `yaml:"instant_round,omitempty"`
-}
-
 func (o *Options) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	*o = *(New())
-
-	var load loaderOptions
-	if err := unmarshal(&load); err != nil {
+	type loadOptions Options
+	lo := loadOptions(*(New()))
+	if err := unmarshal(&lo); err != nil {
 		return err
 	}
-
-	if load.Labels != nil {
-		o.Labels = load.Labels
-	}
-	if load.InstantRound != nil {
-		o.InstantRound = *load.InstantRound
-	}
-
+	*o = Options(lo)
 	return nil
 }

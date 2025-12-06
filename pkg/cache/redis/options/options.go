@@ -80,102 +80,12 @@ func New() *Options {
 	}
 }
 
-type loaderOptions struct {
-	ClientType      *string          `yaml:"client_type,omitempty"`
-	Protocol        *string          `yaml:"protocol,omitempty"`
-	Endpoint        *string          `yaml:"endpoint,omitempty"`
-	Endpoints       []string         `yaml:"endpoints,omitempty"`
-	Username        *string          `yaml:"username,omitempty"`
-	Password        *types.EnvString `yaml:"password,omitempty"`
-	SentinelMaster  *string          `yaml:"sentinel_master,omitempty"`
-	DB              *int             `yaml:"db,omitempty"`
-	MaxRetries      *int             `yaml:"max_retries,omitempty"`
-	MinRetryBackoff *time.Duration   `yaml:"min_retry_backoff,omitempty"`
-	MaxRetryBackoff *time.Duration   `yaml:"max_retry_backoff,omitempty"`
-	DialTimeout     *time.Duration   `yaml:"dial_timeout,omitempty"`
-	ReadTimeout     *time.Duration   `yaml:"read_timeout,omitempty"`
-	WriteTimeout    *time.Duration   `yaml:"write_timeout,omitempty"`
-	PoolSize        *int             `yaml:"pool_size,omitempty"`
-	MinIdleConns    *int             `yaml:"min_idle_conns,omitempty"`
-	ConnMaxLifetime *time.Duration   `yaml:"max_conn_age,omitempty"`
-	PoolTimeout     *time.Duration   `yaml:"pool_timeout,omitempty"`
-	ConnMaxIdleTime *time.Duration   `yaml:"idle_timeout,omitempty"`
-	UseTLS          *bool            `yaml:"use_tls,omitempty"`
-}
-
 func (o *Options) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	*o = *(New())
-
-	var load loaderOptions
-	if err := unmarshal(&load); err != nil {
+	type loadOptions Options
+	lo := loadOptions(*(New()))
+	if err := unmarshal(&lo); err != nil {
 		return err
 	}
-
-	if load.ClientType != nil {
-		o.ClientType = *load.ClientType
-	}
-	if load.Protocol != nil {
-		o.Protocol = *load.Protocol
-	}
-	if load.Endpoint != nil {
-		o.Endpoint = *load.Endpoint
-	}
-	if load.Endpoints != nil {
-		o.Endpoints = load.Endpoints
-	}
-	if load.Endpoints != nil && load.Endpoint == nil {
-		o.Endpoint = ""
-	} else if load.Endpoint != nil && load.Endpoints == nil {
-		o.Endpoints = nil
-	}
-	if load.Username != nil {
-		o.Username = *load.Username
-	}
-	if load.Password != nil {
-		o.Password = *load.Password
-	}
-	if load.SentinelMaster != nil {
-		o.SentinelMaster = *load.SentinelMaster
-	}
-	if load.DB != nil {
-		o.DB = *load.DB
-	}
-	if load.MaxRetries != nil {
-		o.MaxRetries = *load.MaxRetries
-	}
-	if load.MinRetryBackoff != nil {
-		o.MinRetryBackoff = *load.MinRetryBackoff
-	}
-	if load.MaxRetryBackoff != nil {
-		o.MaxRetryBackoff = *load.MaxRetryBackoff
-	}
-	if load.DialTimeout != nil {
-		o.DialTimeout = *load.DialTimeout
-	}
-	if load.ReadTimeout != nil {
-		o.ReadTimeout = *load.ReadTimeout
-	}
-	if load.WriteTimeout != nil {
-		o.WriteTimeout = *load.WriteTimeout
-	}
-	if load.PoolSize != nil {
-		o.PoolSize = *load.PoolSize
-	}
-	if load.MinIdleConns != nil {
-		o.MinIdleConns = *load.MinIdleConns
-	}
-	if load.ConnMaxLifetime != nil {
-		o.ConnMaxLifetime = *load.ConnMaxLifetime
-	}
-	if load.PoolTimeout != nil {
-		o.PoolTimeout = *load.PoolTimeout
-	}
-	if load.ConnMaxIdleTime != nil {
-		o.ConnMaxIdleTime = *load.ConnMaxIdleTime
-	}
-	if load.UseTLS != nil {
-		o.UseTLS = *load.UseTLS
-	}
-
+	*o = Options(lo)
 	return nil
 }

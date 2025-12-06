@@ -66,18 +66,6 @@ type Options struct {
 	ProviderID providers.Provider `yaml:"-"`
 }
 
-type loadOptions struct {
-	Provider              *string             `yaml:"provider,omitempty"`
-	Index                 *index.Options      `yaml:"index,omitempty"`
-	Redis                 *redis.Options      `yaml:"redis,omitempty"`
-	Filesystem            *filesystem.Options `yaml:"filesystem,omitempty"`
-	BBolt                 *bbolt.Options      `yaml:"bbolt,omitempty"`
-	Badger                *badger.Options     `yaml:"badger,omitempty"`
-	UseCacheChunking      *bool               `yaml:"use_cache_chunking,omitempty"`
-	TimeseriesChunkFactor *int64              `yaml:"timeseries_chunk_factor"`
-	ByterangeChunkSize    *int64              `yaml:"byterange_chunk_size"`
-}
-
 var _ types.ConfigOptions[Options] = &Options{}
 
 var restrictedNames = sets.New([]string{"", "none"})
@@ -273,37 +261,11 @@ func (l Lookup) Validate() error {
 }
 
 func (o *Options) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	*o = *(New())
-	var load loadOptions
-	if err := unmarshal(&load); err != nil {
+	type loadOptions Options
+	lo := loadOptions(*(New()))
+	if err := unmarshal(&lo); err != nil {
 		return err
 	}
-	if load.Provider != nil {
-		o.Provider = *load.Provider
-	}
-	if load.Index != nil {
-		o.Index = load.Index
-	}
-	if load.Redis != nil {
-		o.Redis = load.Redis
-	}
-	if load.Filesystem != nil {
-		o.Filesystem = load.Filesystem
-	}
-	if load.BBolt != nil {
-		o.BBolt = load.BBolt
-	}
-	if load.Badger != nil {
-		o.Badger = load.Badger
-	}
-	if load.UseCacheChunking != nil {
-		o.UseCacheChunking = *load.UseCacheChunking
-	}
-	if load.TimeseriesChunkFactor != nil {
-		o.TimeseriesChunkFactor = *load.TimeseriesChunkFactor
-	}
-	if load.ByterangeChunkSize != nil {
-		o.ByterangeChunkSize = *load.ByterangeChunkSize
-	}
+	*o = Options(lo)
 	return nil
 }

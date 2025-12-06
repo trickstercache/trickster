@@ -31,21 +31,12 @@ func (o *Options) Clone() *Options {
 	return &Options{PrettyPrint: o.PrettyPrint}
 }
 
-type loaderOptions struct {
-	PrettyPrint *bool `yaml:"pretty_print,omitempty"`
-}
-
 func (o *Options) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	*o = *(New())
-
-	var load loaderOptions
-	if err := unmarshal(&load); err != nil {
+	type loadOptions Options
+	lo := loadOptions(*(New()))
+	if err := unmarshal(&lo); err != nil {
 		return err
 	}
-
-	if load.PrettyPrint != nil {
-		o.PrettyPrint = *load.PrettyPrint
-	}
-
+	*o = Options(lo)
 	return nil
 }
