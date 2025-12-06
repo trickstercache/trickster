@@ -19,10 +19,12 @@ package prometheus
 import (
 	"io"
 	"net/http/httptest"
+	"slices"
 	"testing"
 
 	po "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	pathopts "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
 )
@@ -57,14 +59,10 @@ func TestQueryHandler(t *testing.T) {
 	}
 
 	// Find the path config with path "/api/v1/query"
-	found := false
-	for _, pathConfig := range rsc.BackendOptions.Paths {
-		if pathConfig.Path == APIPath+mnQuery {
-			found = true
-			break
-		}
-	}
-	if !found {
+	if !slices.ContainsFunc([]*pathopts.Options(rsc.BackendOptions.Paths),
+		func(pathConfig *pathopts.Options) bool {
+			return pathConfig.Path == APIPath+mnQuery
+		}) {
 		t.Errorf("could not find path config named %s", mnQuery)
 	}
 

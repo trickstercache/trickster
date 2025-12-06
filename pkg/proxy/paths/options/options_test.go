@@ -17,6 +17,7 @@
 package options
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -373,19 +374,16 @@ func TestOverlay(t *testing.T) {
 			},
 			expected: func(t *testing.T, result List) {
 				require.Len(t, result, 2)
-				foundClone := false
-				foundO2 := false
-				for _, opt := range result {
-					if len(opt.Methods) == 2 {
-						if (opt.Methods[0] == "GET" && opt.Methods[1] == "PUT") ||
-							(opt.Methods[0] == "PUT" && opt.Methods[1] == "GET") {
-							foundClone = true
-						} else if (opt.Methods[0] == "POST" && opt.Methods[1] == "DELETE") ||
-							(opt.Methods[0] == "DELETE" && opt.Methods[1] == "POST") {
-							foundO2 = true
-						}
-					}
-				}
+				foundClone := slices.ContainsFunc(result, func(opt *Options) bool {
+					return len(opt.Methods) == 2 &&
+						((opt.Methods[0] == "GET" && opt.Methods[1] == "PUT") ||
+							(opt.Methods[0] == "PUT" && opt.Methods[1] == "GET"))
+				})
+				foundO2 := slices.ContainsFunc(result, func(opt *Options) bool {
+					return len(opt.Methods) == 2 &&
+						((opt.Methods[0] == "POST" && opt.Methods[1] == "DELETE") ||
+							(opt.Methods[0] == "DELETE" && opt.Methods[1] == "POST"))
+				})
 				require.True(t, foundClone, "expected clone with GET and PUT")
 				require.True(t, foundO2, "expected o2 with POST and DELETE")
 			},
@@ -498,19 +496,16 @@ func TestOverlay(t *testing.T) {
 			},
 			expected: func(t *testing.T, result List) {
 				require.Len(t, result, 2)
-				foundClone := false
-				foundO2 := false
-				for _, opt := range result {
-					if len(opt.Methods) == 2 {
-						if (opt.Methods[0] == "PUT" && opt.Methods[1] == "DELETE") ||
-							(opt.Methods[0] == "DELETE" && opt.Methods[1] == "PUT") {
-							foundClone = true
-						} else if (opt.Methods[0] == "GET" && opt.Methods[1] == "POST") ||
-							(opt.Methods[0] == "POST" && opt.Methods[1] == "GET") {
-							foundO2 = true
-						}
-					}
-				}
+				foundClone := slices.ContainsFunc(result, func(opt *Options) bool {
+					return len(opt.Methods) == 2 &&
+						((opt.Methods[0] == "PUT" && opt.Methods[1] == "DELETE") ||
+							(opt.Methods[0] == "DELETE" && opt.Methods[1] == "PUT"))
+				})
+				foundO2 := slices.ContainsFunc(result, func(opt *Options) bool {
+					return len(opt.Methods) == 2 &&
+						((opt.Methods[0] == "GET" && opt.Methods[1] == "POST") ||
+							(opt.Methods[0] == "POST" && opt.Methods[1] == "GET"))
+				})
 				require.True(t, foundClone, "expected clone with PUT and DELETE")
 				require.True(t, foundO2, "expected o2 with GET and POST")
 			},

@@ -18,9 +18,11 @@ package prometheus
 
 import (
 	"io"
+	"slices"
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
 )
@@ -51,14 +53,10 @@ func TestSeriesHandler(t *testing.T) {
 	rsc.IsMergeMember = true
 
 	// Find the path config with path "/api/v1/series"
-	found := false
-	for _, pathConfig := range rsc.BackendOptions.Paths {
-		if pathConfig.Path == APIPath+mnSeries {
-			found = true
-			break
-		}
-	}
-	if !found {
+	if !slices.ContainsFunc([]*po.Options(rsc.BackendOptions.Paths),
+		func(pathConfig *po.Options) bool {
+			return pathConfig.Path == APIPath+mnSeries
+		}) {
 		t.Errorf("could not find path config named %s", mnSeries)
 	}
 

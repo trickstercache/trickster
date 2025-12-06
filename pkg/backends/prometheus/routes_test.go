@@ -17,9 +17,11 @@
 package prometheus
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
 )
@@ -60,14 +62,10 @@ func TestDefaultPathConfigs(t *testing.T) {
 	dpc := client.DefaultPathConfigs(rsc.BackendOptions)
 
 	// Find the path config with path "/"
-	found := false
-	for _, pathConfig := range dpc {
-		if pathConfig.Path == "/" {
-			found = true
-			break
-		}
-	}
-	if !found {
+	if !slices.ContainsFunc([]*po.Options(dpc),
+		func(pathConfig *po.Options) bool {
+			return pathConfig.Path == "/"
+		}) {
 		t.Errorf("expected to find path named: %s", "/")
 	}
 
