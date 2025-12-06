@@ -18,6 +18,7 @@ package options
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
@@ -177,6 +178,9 @@ func (o *Options) Validate() (bool, error) {
 
 func (l Lookup) Initialize() error {
 	for k, o := range l {
+		if o == nil { // skip empty rules
+			return fmt.Errorf("empty rule found: %s", k)
+		}
 		o.Name = k
 		if err := o.Initialize(""); err != nil {
 			return err
@@ -187,6 +191,9 @@ func (l Lookup) Initialize() error {
 
 func (l Lookup) Validate() error {
 	for k, o := range l {
+		if o == nil { // skip empty rules
+			return fmt.Errorf("empty rule found: %s", k)
+		}
 		o.Name = k
 		_, err := o.Validate()
 		if err != nil {
