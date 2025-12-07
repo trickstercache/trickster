@@ -152,11 +152,7 @@ func (o *Options) Equal(o2 *Options) bool {
 		o.ByterangeChunkSize != o2.ByterangeChunkSize {
 		return false
 	}
-	if o.Index == nil && o2.Index == nil {
-		// Both nil, continue
-	} else if o.Index == nil || o2.Index == nil {
-		return false
-	} else if !o.Index.Equal(o2.Index) {
+	if (o.Index == nil || o2.Index == nil) || !o.Index.Equal(o2.Index) {
 		return false
 	}
 	switch o.ProviderID {
