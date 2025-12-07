@@ -178,7 +178,7 @@ func (o *Options) Validate() (bool, error) {
 
 func (l Lookup) Initialize() error {
 	for k, o := range l {
-		if o == nil { // skip empty rules
+		if o == nil { // error on empty rule
 			return fmt.Errorf("empty rule found: %s", k)
 		}
 		o.Name = k
@@ -191,7 +191,7 @@ func (l Lookup) Initialize() error {
 
 func (l Lookup) Validate() error {
 	for k, o := range l {
-		if o == nil { // skip empty rules
+		if o == nil { // error on empty rule
 			return fmt.Errorf("empty rule found: %s", k)
 		}
 		o.Name = k
