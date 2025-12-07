@@ -89,3 +89,46 @@ func (o *Options) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	*o = Options(lo)
 	return nil
 }
+
+// Equal returns true if all values in the Options are identical
+func (o *Options) Equal(o2 *Options) bool {
+	if o2 == nil {
+		return o == nil
+	}
+	if o == nil {
+		return false
+	}
+	return o.ClientType == o2.ClientType &&
+		o.Protocol == o2.Protocol &&
+		o.Endpoint == o2.Endpoint &&
+		equalStringSlices(o.Endpoints, o2.Endpoints) &&
+		o.Username == o2.Username &&
+		o.Password == o2.Password &&
+		o.SentinelMaster == o2.SentinelMaster &&
+		o.DB == o2.DB &&
+		o.MaxRetries == o2.MaxRetries &&
+		o.MinRetryBackoff == o2.MinRetryBackoff &&
+		o.MaxRetryBackoff == o2.MaxRetryBackoff &&
+		o.DialTimeout == o2.DialTimeout &&
+		o.ReadTimeout == o2.ReadTimeout &&
+		o.WriteTimeout == o2.WriteTimeout &&
+		o.PoolSize == o2.PoolSize &&
+		o.MinIdleConns == o2.MinIdleConns &&
+		o.ConnMaxLifetime == o2.ConnMaxLifetime &&
+		o.PoolTimeout == o2.PoolTimeout &&
+		o.ConnMaxIdleTime == o2.ConnMaxIdleTime &&
+		o.UseTLS == o2.UseTLS
+}
+
+// equalStringSlices compares two string slices for equality
+func equalStringSlices(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}

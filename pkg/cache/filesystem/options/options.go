@@ -40,3 +40,14 @@ func (o *Options) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	*o = Options(lo)
 	return nil
 }
+
+// Equal returns true if all values in the Options are identical
+func (o *Options) Equal(o2 *Options) bool {
+	if o2 == nil {
+		return o == nil
+	}
+	if o == nil {
+		return false
+	}
+	return o.CachePath == o2.CachePath
+}
