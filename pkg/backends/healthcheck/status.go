@@ -67,8 +67,8 @@ func (s *Status) Headers() http.Header {
 
 // Set updates the status
 func (s *Status) Set(i int32) {
-	s.mtx.Lock()
 	s.status.Store(i)
+	s.mtx.Lock()
 	for _, ch := range s.subscribers {
 		ch <- true
 	}
@@ -87,7 +87,16 @@ func (s *Status) Get() int {
 
 // Detail provides the current detail
 func (s *Status) Detail() string {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
 	return s.detail
+}
+
+// SetDetail sets the current detail
+func (s *Status) SetDetail(d string) {
+	s.mtx.Lock()
+	s.detail = d
+	s.mtx.Unlock()
 }
 
 // Description provides the current detail

@@ -22,10 +22,13 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/stretchr/testify/require"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
@@ -218,26 +221,53 @@ func TestProbe(t *testing.T) {
 	logger.SetLogger(testLogger)
 	ts := newTestServer(200, "OK", map[string]string{})
 
-	r, _ := http.NewRequest("GET", ts.URL+"/", nil)
-	target := &target{
-		status:      &Status{},
-		baseRequest: r,
-		httpClient:  ts.Client(),
-		ec:          []int{200},
-	}
-	target.probe(context.Background())
-	if v := target.successConsecutiveCnt.Load(); v != 1 {
-		t.Error("expected 1 got ", v)
-	}
-	target.ec[0] = 404
-	target.probe(context.Background())
-	if v := target.successConsecutiveCnt.Load(); v != 0 {
-		t.Error("expected 0 got ", v)
-	}
-	if v := target.failConsecutiveCnt.Load(); v != 1 {
-		t.Error("expected 1 got ", v)
-	}
+	t.Run("direct probe calls", func(t *testing.T) {
+		r, _ := http.NewRequest("GET", ts.URL+"/", nil)
+		target := &target{
+			status:      &Status{},
+			baseRequest: r,
+			httpClient:  ts.Client(),
+			ec:          []int{200},
+		}
+		target.probe(context.Background())
+		if v := target.successConsecutiveCnt.Load(); v != 1 {
+			t.Error("expected 1 got ", v)
+		}
+		target.ec[0] = 404
+		target.probe(context.Background())
+		if v := target.successConsecutiveCnt.Load(); v != 0 {
+			t.Error("expected 0 got ", v)
+		}
+		if v := target.failConsecutiveCnt.Load(); v != 1 {
+			t.Error("expected 1 got ", v)
+		}
+	})
 
+	t.Run("probe loop", func(t *testing.T) {
+		u, err := url.Parse(ts.URL)
+		require.NoError(t, err)
+		target, err := newTarget(context.Background(), "testprobe", "testprobe", &ho.Options{
+			Verb:          "GET",
+			Scheme:        u.Scheme,
+			Host:          u.Host,
+			Path:          "/",
+			Interval:      1 * time.Second,
+			ExpectedCodes: []int{200},
+		}, ts.Client())
+		require.NoError(t, err)
+		// start probe loop
+		ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(1500*time.Millisecond))
+		defer cancel()
+		target.interval = 5 * time.Millisecond
+		target.Start(ctx)
+		time.Sleep(1500 * time.Millisecond)
+		// verify results
+		success := target.successConsecutiveCnt.Load()
+		fail := target.failConsecutiveCnt.Load()
+		require.GreaterOrEqual(t, success, int32(1500/5)-25) // allow some margin
+		require.Equal(t, int32(0), fail)
+
+	})
 }
 
 func TestDemandProbe(t *testing.T) {
