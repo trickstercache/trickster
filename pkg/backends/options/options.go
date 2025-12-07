@@ -546,7 +546,7 @@ func (l Lookup) Keys() sets.Set[string] {
 	return out
 }
 
-func (l Lookup) Load() error {
+func (l Lookup) Initialize() error {
 	ncb := providers.NonCacheBackends()
 	for k, v := range l {
 		v.Name = k

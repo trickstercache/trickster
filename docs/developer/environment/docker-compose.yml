@@ -4,13 +4,15 @@ services:
 
   redis:
     image: redis:latest
-    user: nobody
     build:
       context: .
       network: host
     restart: always
     ports:
      - 6379:6379
+    volumes:
+     - redis-data:/data
+    command: redis-server --appendonly yes --stop-writes-on-bgsave-error no
 
   # ui's
 
@@ -151,3 +153,4 @@ services:
 
 volumes:
   influxdbv2:
+  redis-data:

@@ -144,9 +144,29 @@ func (o *Options) Equal(o2 *Options) bool {
 	if o2 == nil {
 		return false
 	}
-	return o.Name == o2.Name &&
-		o.Provider == o2.Provider &&
-		o.ProviderID == o2.ProviderID
+	if o.Name != o2.Name ||
+		o.Provider != o2.Provider ||
+		o.ProviderID != o2.ProviderID ||
+		o.UseCacheChunking != o2.UseCacheChunking ||
+		o.TimeseriesChunkFactor != o2.TimeseriesChunkFactor ||
+		o.ByterangeChunkSize != o2.ByterangeChunkSize {
+		return false
+	}
+	if (o.Index == nil || o2.Index == nil) || !o.Index.Equal(o2.Index) {
+		return false
+	}
+	switch o.ProviderID {
+	case providers.Redis:
+		return o.Redis.Equal(o2.Redis)
+	case providers.Filesystem:
+		return o.Filesystem.Equal(o2.Filesystem)
+	case providers.Bbolt:
+		return o.BBolt.Equal(o2.BBolt)
+	case providers.BadgerDB:
+		return o.Badger.Equal(o2.Badger)
+	default:
+		return true
+	}
 }
 
 func (o *Options) Validate() (bool, error) {
