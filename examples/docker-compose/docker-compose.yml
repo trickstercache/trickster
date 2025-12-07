@@ -81,12 +81,14 @@ services:
 
   redis:
     image: redis:latest
-    user: nobody
     ports:
       - 6379:6379
     networks:
       - trk-ex-back-tier
     restart: always
+    volumes:
+     - redis-data:/data
+    command: redis-server --appendonly yes --stop-writes-on-bgsave-error no
 
   jaeger:
     image: jaegertracing/all-in-one:1.67.0
@@ -124,3 +126,4 @@ services:
 
 volumes:
   influxdbv2:
+  redis-data:
