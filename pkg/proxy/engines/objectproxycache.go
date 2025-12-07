@@ -448,6 +448,13 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 	if !rsc.NoLock {
 		pr.cacheLock, _ = cc.Locker().RAcquire(pr.key)
 		pr.hasReadLock = true
+		defer func() {
+			if pr.hasWriteLock {
+				pr.cacheLock.Release()
+			} else if pr.hasReadLock {
+				pr.cacheLock.RRelease()
+			}
+		}()
 	}
 
 	var err error
@@ -471,12 +478,6 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 		if err := handleCacheKeyMiss(pr); err != nil {
 			return nil, status.LookupStatusKeyMiss
 		}
-	}
-
-	if pr.hasWriteLock {
-		pr.cacheLock.Release()
-	} else if pr.hasReadLock {
-		pr.cacheLock.RRelease()
 	}
 
 	if pr.wasReran {
