@@ -197,6 +197,21 @@ func checkTokens(input string) bool {
 	return false
 }
 
+// parseKeyBasedInstruction parses a 4-part key-based instruction
+func parseKeyBasedInstruction(parts []string, dict *dictFunc, key *string, value *string, hasTokens *bool) error {
+	if len(parts) != 4 {
+		return errBadParams
+	}
+	var ok bool
+	if *dict, ok = dicts[parts[0]]; !ok {
+		return errBadParams
+	}
+	*key = parts[2]
+	*value = parts[3]
+	*hasTokens = checkTokens(*value)
+	return nil
+}
+
 type rwiKeyBasedSetter struct {
 	key, value string
 	hasTokens  bool
@@ -209,17 +224,7 @@ func (ri *rwiKeyBasedSetter) String() string {
 }
 
 func (ri *rwiKeyBasedSetter) Parse(parts []string) error {
-	if len(parts) != 4 {
-		return errBadParams
-	}
-	var ok bool
-	if ri.dict, ok = dicts[parts[0]]; !ok {
-		return errBadParams
-	}
-	ri.key = parts[2]
-	ri.value = parts[3]
-	ri.hasTokens = checkTokens(ri.value)
-	return nil
+	return parseKeyBasedInstruction(parts, &ri.dict, &ri.key, &ri.value, &ri.hasTokens)
 }
 
 func (ri *rwiKeyBasedSetter) Execute(r *http.Request) {
@@ -246,17 +251,7 @@ func (ri *rwiKeyBasedAppender) String() string {
 }
 
 func (ri *rwiKeyBasedAppender) Parse(parts []string) error {
-	if len(parts) != 4 {
-		return errBadParams
-	}
-	var ok bool
-	if ri.dict, ok = dicts[parts[0]]; !ok {
-		return errBadParams
-	}
-	ri.key = parts[2]
-	ri.value = parts[3]
-	ri.hasTokens = checkTokens(ri.value)
-	return nil
+	return parseKeyBasedInstruction(parts, &ri.dict, &ri.key, &ri.value, &ri.hasTokens)
 }
 
 type mappable map[string][]string

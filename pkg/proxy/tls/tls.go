@@ -17,7 +17,10 @@
 // Package tls handles options for TLS (https) requests
 package tls
 
-import "github.com/trickstercache/trickster/v2/pkg/config"
+import (
+	"github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/config"
+)
 
 // OptionsChanged will return true if the TLS options for any backend
 // is different between configs
@@ -29,25 +32,22 @@ func OptionsChanged(conf, oldConf *config.Config) bool {
 		return true
 	}
 
-	for k, v := range oldConf.Backends {
-		if v.TLS != nil && v.TLS.ServeTLS {
-			if o, ok := conf.Backends[k]; !ok ||
-				o.TLS == nil || !o.TLS.ServeTLS ||
-				!o.TLS.Equal(v.TLS) {
-				return true
+	// Helper function to check if any TLS-enabled backend in sourceMap
+	// has different or missing TLS config in targetMap
+	checkTLSChanges := func(sourceMap, targetMap map[string]*options.Options) bool {
+		for k, v := range sourceMap {
+			if v.TLS != nil && v.TLS.ServeTLS {
+				if o, ok := targetMap[k]; !ok ||
+					o.TLS == nil || !o.TLS.ServeTLS ||
+					!o.TLS.Equal(v.TLS) {
+					return true
+				}
 			}
 		}
+		return false
 	}
 
-	for k, v := range conf.Backends {
-		if v.TLS != nil && v.TLS.ServeTLS {
-			if o, ok := oldConf.Backends[k]; !ok ||
-				o.TLS == nil || !o.TLS.ServeTLS ||
-				!o.TLS.Equal(v.TLS) {
-				return true
-			}
-		}
-	}
-
-	return false
+	// Check both directions: oldConf -> conf and conf -> oldConf
+	return checkTLSChanges(oldConf.Backends, conf.Backends) ||
+		checkTLSChanges(conf.Backends, oldConf.Backends)
 }

@@ -176,16 +176,26 @@ func IsFromFieldDelimiterType(t token.Typ) bool {
 	return t == token.Comma
 }
 
-// AtFrom is the state where the current item is of type TokenFrom
-func AtFrom(_, ip parsing.Parser, rs *parsing.RunState) parsing.StateFn {
+// parseFieldListTokens is a helper function for common field list parsing pattern
+func parseFieldListTokens(ip parsing.Parser, rs *parsing.RunState,
+	resultKey string, expectedToken token.Typ, notAtErr error,
+	delimiterFn, breakableFn, continuableFn token.TypeCheckFunc,
+	allowLogical bool,
+) parsing.StateFn {
 	p, ok := ip.(*Parser)
 	if !ok {
 		rs.WithError(parsing.ErrUnsupportedParser)
 		return nil
 	}
-	rs.SetResultsCollection("fromTokens", p.GetFieldList(rs, lsql.TokenFrom, ErrNotAtFrom,
-		token.IsComma, DefaultIsBreakable, DefaultIsContinuable, false))
+	rs.SetResultsCollection(resultKey, p.GetFieldList(rs, expectedToken, notAtErr,
+		delimiterFn, breakableFn, continuableFn, allowLogical))
 	return rs.GetReturnFunc(nil, p.skDecisions, false)
+}
+
+// AtFrom is the state where the current item is of type TokenFrom
+func AtFrom(_, ip parsing.Parser, rs *parsing.RunState) parsing.StateFn {
+	return parseFieldListTokens(ip, rs, "fromTokens", lsql.TokenFrom, ErrNotAtFrom,
+		token.IsComma, DefaultIsBreakable, DefaultIsContinuable, false)
 }
 
 // AtWhere is the state where the current item is of type TokenWhere
@@ -237,26 +247,14 @@ func AtGroupBy(_, ip parsing.Parser, rs *parsing.RunState) parsing.StateFn {
 
 // AtHaving is the state where the current item is of type TokenHaving
 func AtHaving(_, ip parsing.Parser, rs *parsing.RunState) parsing.StateFn {
-	p, ok := ip.(*Parser)
-	if !ok {
-		rs.WithError(parsing.ErrUnsupportedParser)
-		return nil
-	}
-	rs.SetResultsCollection("havingTokens", p.GetFieldList(rs, lsql.TokenHaving, ErrNotAtHaving,
-		token.IsLogicalOperator, DefaultIsBreakable, DefaultIsContinuable, true))
-	return rs.GetReturnFunc(nil, p.skDecisions, false)
+	return parseFieldListTokens(ip, rs, "havingTokens", lsql.TokenHaving, ErrNotAtHaving,
+		token.IsLogicalOperator, DefaultIsBreakable, DefaultIsContinuable, true)
 }
 
 // AtOrderBy is the state where the current item is of type TokenOrderBy
 func AtOrderBy(_, ip parsing.Parser, rs *parsing.RunState) parsing.StateFn {
-	p, ok := ip.(*Parser)
-	if !ok {
-		rs.WithError(parsing.ErrUnsupportedParser)
-		return nil
-	}
-	rs.SetResultsCollection("orderByTokens", p.GetFieldList(rs, lsql.TokenOrderBy, ErrNotAtOrderBy,
-		token.IsComma, DefaultIsBreakable, DefaultIsContinuable, false))
-	return rs.GetReturnFunc(nil, p.skDecisions, false)
+	return parseFieldListTokens(ip, rs, "orderByTokens", lsql.TokenOrderBy, ErrNotAtOrderBy,
+		token.IsComma, DefaultIsBreakable, DefaultIsContinuable, false)
 }
 
 // AtUnion is the state where the current item is of type TokenUnion
@@ -270,14 +268,8 @@ func AtUnion(_, _ parsing.Parser, rs *parsing.RunState) parsing.StateFn {
 
 // AtLimit is the state where the current item is of type TokenLimit
 func AtLimit(_, ip parsing.Parser, rs *parsing.RunState) parsing.StateFn {
-	p, ok := ip.(*Parser)
-	if !ok {
-		rs.WithError(parsing.ErrUnsupportedParser)
-		return nil
-	}
-	rs.SetResultsCollection("limitTokens", p.GetFieldList(rs, lsql.TokenLimit, ErrNotAtLimit,
-		token.IsComma, DefaultIsBreakable, DefaultIsContinuable, false))
-	return rs.GetReturnFunc(nil, p.skDecisions, false)
+	return parseFieldListTokens(ip, rs, "limitTokens", lsql.TokenLimit, ErrNotAtLimit,
+		token.IsComma, DefaultIsBreakable, DefaultIsContinuable, false)
 }
 
 // AtIntoOutfile is the state where the current item is of type TokenIntoOutfile

@@ -22,11 +22,40 @@ import (
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
+	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/checksum/md5"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
+
+// writeValidationError writes a standardized validation error response
+func writeValidationError(w http.ResponseWriter, errorMsg string) {
+	w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
+	w.Header().Set(headers.NameCacheControl, headers.ValueNoCache)
+	w.WriteHeader(http.StatusBadRequest)
+	w.Write([]byte(errorMsg))
+}
+
+// validateBackend checks if the backend exists and writes an error response if not
+// Returns true if valid, false if invalid (and error response was written)
+func validateBackend(w http.ResponseWriter, backend backends.Backend, backendName string) bool {
+	if backend == nil {
+		writeValidationError(w, "Backend "+backendName+" doesn't exist.")
+		return false
+	}
+	return true
+}
+
+// validateCache checks if the backend has a cache and writes an error response if not
+// Returns true if valid, false if invalid (and error response was written)
+func validateCache(w http.ResponseWriter, cache cache.Cache, backendName string) bool {
+	if cache == nil {
+		writeValidationError(w, "Backend "+backendName+" doesn't have a cache.")
+		return false
+	}
+	return true
+}
 
 // KeyHandler purges an object from a cache based on key.
 func KeyHandler(pathPrefix string,
@@ -42,19 +71,11 @@ func KeyHandler(pathPrefix string,
 		backendName := parts[0]
 		purgeKey := parts[1]
 		backend := from.Get(backendName)
-		if backend == nil {
-			w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
-			w.Header().Set(headers.NameCacheControl, headers.ValueNoCache)
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte("Backend " + backendName + " doesn't exist."))
+		if !validateBackend(w, backend, backendName) {
 			return
 		}
 		cache := backend.Cache()
-		if cache == nil {
-			w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
-			w.Header().Set(headers.NameCacheControl, headers.ValueNoCache)
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte("Backend " + backendName + " doesn't have a cache."))
+		if !validateCache(w, cache, backendName) {
 			return
 		}
 		cache.Remove(purgeKey)
@@ -99,19 +120,11 @@ func PathHandler(pathPrefix string,
 		logger.Debug("purging cache item",
 			logging.Pairs{"backend": backendName, "path": purgePath})
 		backend := from.Get(backendName)
-		if backend == nil {
-			w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
-			w.Header().Set(headers.NameCacheControl, headers.ValueNoCache)
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte("Backend " + backendName + " doesn't exist."))
+		if !validateBackend(w, backend, backendName) {
 			return
 		}
 		cache := backend.Cache()
-		if cache == nil {
-			w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
-			w.Header().Set(headers.NameCacheControl, headers.ValueNoCache)
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte("Backend " + backendName + " doesn't have a cache."))
+		if !validateCache(w, cache, backendName) {
 			return
 		}
 

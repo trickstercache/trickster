@@ -123,9 +123,10 @@ func (p Points) Swap(i, j int) {
 
 // binarySearchEpoch performs a binary search on Points based on epoch values
 // with customizable comparison and adjustment logic
-func (p Points) binarySearchEpoch(ts epoch.Epoch, s, e int, 
-	baseCondition func(epoch.Epoch, epoch.Epoch) bool, 
-	adjustment int) int {
+func (p Points) binarySearchEpoch(ts epoch.Epoch, s, e int,
+	baseCondition func(epoch.Epoch, epoch.Epoch) bool,
+	adjustment int,
+) int {
 	if s >= e {
 		if baseCondition(p[s].Epoch, ts) {
 			return s + adjustment

@@ -243,17 +243,24 @@ func updateStatusText(hc healthcheck.HealthChecker, hd *healthDetail, backends b
 	u = u[:ul]
 	q = q[:ql]
 
-	if len(a) > 0 {
-		sort.Strings(a)
-		status.Available = make([]backendStatus, len(a))
-		for i, k := range a {
+	// populateBasicBackendStatus populates a backend status slice with name and provider info
+	populateBasicBackendStatus := func(names []string) []backendStatus {
+		if len(names) == 0 {
+			return nil
+		}
+		sort.Strings(names)
+		result := make([]backendStatus, len(names))
+		for i, k := range names {
 			d := cleanupDescription(st[k].Description())
-			status.Available[i] = backendStatus{
+			result[i] = backendStatus{
 				Name:     k,
 				Provider: d,
 			}
 		}
+		return result
 	}
+
+	status.Available = populateBasicBackendStatus(a)
 
 	if len(u) > 0 {
 		sort.Strings(u)
@@ -271,17 +278,7 @@ func updateStatusText(hc healthcheck.HealthChecker, hd *healthDetail, backends b
 		}
 	}
 
-	if len(q) > 0 {
-		sort.Strings(q)
-		status.Unchecked = make([]backendStatus, len(q))
-		for i, k := range q {
-			d := cleanupDescription(st[k].Description())
-			status.Unchecked[i] = backendStatus{
-				Name:     k,
-				Provider: d,
-			}
-		}
-	}
+	status.Unchecked = populateBasicBackendStatus(q)
 
 	// process ALB backends
 	if backends != nil {

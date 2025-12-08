@@ -39,6 +39,19 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+// setupSpanForRequest configures a request span with range detection and returns the modified request
+func setupSpanForRequest(req *http.Request, span trace.Span) *http.Request {
+	if span != nil {
+		if req.Header != nil {
+			if _, ok := req.Header[headers.NameRange]; ok {
+				span.SetAttributes(attribute.Bool("isRange", true))
+			}
+		}
+		req = req.WithContext(trace.ContextWithSpan(req.Context(), span))
+	}
+	return req
+}
+
 type proxyRequest struct {
 	*http.Request
 	responseWriter io.Writer
@@ -266,13 +279,8 @@ func (pr *proxyRequest) makeSimpleUpstreamRequests(req *http.Request,
 	tracer *tracing.Tracer,
 ) (io.ReadCloser, *http.Response) {
 	_, span := tspan.NewChildSpan(req.Context(), tracer, "Fetch")
+	req = setupSpanForRequest(req, span)
 	if span != nil {
-		if req.Header != nil {
-			if _, ok := req.Header[headers.NameRange]; ok {
-				span.SetAttributes(attribute.Bool("isRange", true))
-			}
-		}
-		req = req.WithContext(trace.ContextWithSpan(req.Context(), span))
 		defer span.End()
 	}
 	reader, resp, _ := PrepareFetchReader(req)
@@ -316,13 +324,8 @@ func (pr *proxyRequest) makeUpstreamRequests() error {
 			wg.Go(func() {
 				req := pr.originRequests[i]
 				_, span := tspan.NewChildSpan(req.Context(), rsc.Tracer, "Fetch")
+				req = setupSpanForRequest(req, span)
 				if span != nil {
-					if req.Header != nil {
-						if _, ok := req.Header[headers.NameRange]; ok {
-							span.SetAttributes(attribute.Bool("isRange", true))
-						}
-					}
-					req = req.WithContext(trace.ContextWithSpan(req.Context(), span))
 					defer span.End()
 				}
 				pr.originReaders[i], pr.originResponses[i], _ = PrepareFetchReader(req)
