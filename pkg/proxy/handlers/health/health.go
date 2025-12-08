@@ -26,10 +26,13 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"text/tabwriter"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/contenttype"
@@ -37,7 +40,8 @@ import (
 )
 
 type detail struct {
-	text, json string
+	text, json   string
+	lastModified time.Time
 }
 
 type healthDetail struct {
@@ -45,18 +49,68 @@ type healthDetail struct {
 }
 
 type backendStatus struct {
-	Name      string `json:"name"`
-	Provider  string `json:"provider"`
-	DownSince string `json:"downSince,omitempty"`
-	Detail    string `json:"detail,omitempty"`
+	Name                   string   `json:"name"`
+	Provider               string   `json:"provider"`
+	DownSince              string   `json:"downSince,omitempty"`
+	Detail                 string   `json:"detail,omitempty"`
+	Mechanism              string   `json:"mechanism,omitempty"`
+	AvailablePoolMembers   []string `json:"availablePoolMembers,omitempty"`
+	UnavailablePoolMembers []string `json:"unavailablePoolMembers,omitempty"`
+	UncheckedPoolMembers   []string `json:"uncheckedPoolMembers,omitempty"`
 }
 
 type healthStatus struct {
 	Title       string          `json:"title"`
 	UpdateTime  string          `json:"udpateTime"`
-	Available   []backendStatus `json:"available,omitempty"`
 	Unavailable []backendStatus `json:"unavailable,omitempty"`
+	Available   []backendStatus `json:"available,omitempty"`
 	Unchecked   []backendStatus `json:"unchecked,omitempty"`
+}
+
+var updateLock sync.Mutex
+
+// String renders a text/plain-compatible version of the status page
+func (hs *healthStatus) String() string {
+	txt := &strings.Builder{}
+	fmt.Fprintf(txt, "\n%s            last change: %s\n", hs.Title, hs.UpdateTime)
+	txt.WriteString("-------------------------------------------------------------------------------\n\n")
+
+	b := bytes.NewBuffer(nil)
+	tw := tabwriter.NewWriter(b, 10, 10, 3, ' ', 0)
+
+	if len(hs.Unavailable) > 0 {
+		for _, k := range hs.Unavailable {
+			detail := formatALBSummary(k)
+			downSince := k.DownSince
+			fmt.Fprintf(tw, "%s\t%s\t%s %s%s\n", k.Name, k.Provider,
+				statusToString(-1, downSince != ""), downSince, detail)
+		}
+		tw.Write([]byte("\t\t\t\n"))
+	}
+
+	if len(hs.Available) > 0 {
+		for _, k := range hs.Available {
+			detail := formatALBSummary(k)
+			fmt.Fprintf(tw, "%s\t%s\t%s%s\n", k.Name, k.Provider, statusToString(1, false), detail)
+		}
+		tw.Write([]byte("\t\t\t\n"))
+	}
+
+	if len(hs.Unchecked) > 0 {
+		for _, k := range hs.Unchecked {
+			detail := formatALBSummary(k)
+			fmt.Fprintf(tw, "%s\t%s\t%s%s\n", k.Name, k.Provider, statusToString(0, false), detail)
+		}
+		tw.Write([]byte("\n"))
+	}
+
+	tw.Flush()
+	txt.Write(b.Bytes())
+	txt.WriteString("-------------------------------------------------------------------------------\n")
+	fmt.Fprintf(txt, "You can also provide a '%s: %s' Header or query param ?json\n",
+		headers.NameAccept, headers.ValueApplicationJSON)
+
+	return txt.String()
 }
 
 // StatusHandler returns an http.Handler that prints
@@ -64,34 +118,48 @@ type healthStatus struct {
 // This handler spins up an infinitely looping background goroutine ("builder")
 // that updates the status text in real-time. So long as the HealthChecker
 // is closed with ShutDown(), the builder goroutine will exit
-func StatusHandler(hc healthcheck.HealthChecker) http.Handler {
+func StatusHandler(hc healthcheck.HealthChecker, backends backends.Backends) http.Handler {
 	if hc == nil {
 		return nil
 	}
-	hd := &healthDetail{} // stores the status text in JSON and Text
-	go builder(hc, hd)    // listens for rebuild notifications and updates the texts
+	hd := &healthDetail{}        // stores the status text in JSON and Text
+	go builder(hc, hd, backends) // listens for rebuild notifications and updates the texts
 
 	// the handler, when requested, simply prints out the static text stored in the healthDetail
 	// which is being updated in real time by the builder.
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		detail := hd.detail.Load()
+		// return 304 if client's cached version is still fresh
+		if ims := r.Header.Get(headers.NameIfModifiedSince); ims != "" && !detail.lastModified.IsZero() {
+			if ifModifiedSince, err := time.Parse(time.RFC1123, ims); err == nil {
+				if !detail.lastModified.After(ifModifiedSince) {
+					w.WriteHeader(http.StatusNotModified)
+					return
+				}
+			}
+		}
+
 		var body, ct string
 		if headers.AcceptsJSON(r) ||
 			(r != nil && r.URL != nil &&
 				strings.Contains(r.URL.RawQuery, contenttype.JSON)) {
-			body = hd.detail.Load().json
+			body = detail.json
 			ct = headers.ValueApplicationJSON
 		} else {
-			body = hd.detail.Load().text
+			body = detail.text
 			ct = headers.ValueTextPlain
 		}
 		w.Header().Set(headers.NameContentType, ct)
+		if !detail.lastModified.IsZero() {
+			w.Header().Set(headers.NameLastModified, detail.lastModified.Format(time.RFC1123))
+		}
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(body))
 	})
 }
 
-func builder(hc healthcheck.HealthChecker, hd *healthDetail) {
-	udpateStatusText(hc, hd) // setup the initial status page text
+func builder(hc healthcheck.HealthChecker, hd *healthDetail, backends backends.Backends) {
+	udpateStatusText(hc, hd, backends) // setup the initial status page text
 	notifier := make(chan bool, 32)
 	for _, c := range hc.Statuses() {
 		c.RegisterSubscriber(notifier)
@@ -103,29 +171,28 @@ func builder(hc healthcheck.HealthChecker, hd *healthDetail) {
 		case <-closer: // a bool comes over closer when the Health Checker is closing down, so the builder should as well
 			return
 		case <-notifier: // a bool comes over notifier when the status text should be rebuilt
-			udpateStatusText(hc, hd)
+			udpateStatusText(hc, hd, backends)
 		}
 	}
 }
 
 const title = "Trickster Backend Health Status"
 
-func udpateStatusText(hc healthcheck.HealthChecker, hd *healthDetail) {
+func udpateStatusText(hc healthcheck.HealthChecker, hd *healthDetail, backends backends.Backends) {
+	updateLock.Lock()
+	defer updateLock.Unlock()
 
-	ut := time.Now().Truncate(time.Second).UTC().String()[:20] + "UTC"
+	// HTTP Spec prefers GMT in RFC1123 Headers
+	lastModified := time.Now().Truncate(time.Second).In(time.FixedZone("GMT", 0))
+	// use UTC in the response body
+	ut := lastModified.String()[:20] + "UTC"
 
-	txt := &strings.Builder{}
 	status := &healthStatus{
 		Title:      title,
 		UpdateTime: ut,
 	}
 
-	fmt.Fprintf(txt, "\n%s            last change: %s\n", title, ut)
-	txt.WriteString("-------------------------------------------------------------------------------\n\n")
 	st := hc.Statuses()
-
-	buff := bytes.NewBuffer(nil)
-	tw := tabwriter.NewWriter(buff, 10, 10, 3, ' ', 0)
 
 	a := make([]string, len(st))
 	u := make([]string, len(st))
@@ -155,13 +222,11 @@ func udpateStatusText(hc healthcheck.HealthChecker, hd *healthDetail) {
 		status.Available = make([]backendStatus, len(a))
 		for i, k := range a {
 			d := cleanupDescription(st[k].Description())
-			fmt.Fprintf(tw, "%s\t%s\t%s\n", k, d, statusToString(1))
 			status.Available[i] = backendStatus{
 				Name:     k,
 				Provider: d,
 			}
 		}
-		tw.Write([]byte("\t\t\t\n"))
 	}
 
 	if len(u) > 0 {
@@ -171,7 +236,6 @@ func udpateStatusText(hc healthcheck.HealthChecker, hd *healthDetail) {
 			v := st[k]
 			d := cleanupDescription(st[k].Description())
 			fs := v.FailingSince().Truncate(time.Second).UTC().String()[:20] + "UTC"
-			fmt.Fprintf(tw, "%s\t%s\t%s %s\n", k, d, statusToString(-1), fs)
 			status.Unavailable[i] = backendStatus{
 				Name:      k,
 				Provider:  d,
@@ -179,7 +243,6 @@ func udpateStatusText(hc healthcheck.HealthChecker, hd *healthDetail) {
 				Detail:    v.Detail(),
 			}
 		}
-		tw.Write([]byte("\t\t\t\n"))
 	}
 
 	if len(q) > 0 {
@@ -187,20 +250,77 @@ func udpateStatusText(hc healthcheck.HealthChecker, hd *healthDetail) {
 		status.Unchecked = make([]backendStatus, len(q))
 		for i, k := range q {
 			d := cleanupDescription(st[k].Description())
-			fmt.Fprintf(tw, "%s\t%s\t%s\n", k, d, statusToString(0))
 			status.Unchecked[i] = backendStatus{
 				Name:     k,
 				Provider: d,
 			}
 		}
-		tw.Write([]byte("\n"))
 	}
 
-	tw.Flush()
-	txt.Write(buff.Bytes())
-	txt.WriteString("-------------------------------------------------------------------------------\n")
-	fmt.Fprintf(txt, "You can also provide a '%s: %s' Header or query param ?json\n",
-		headers.NameAccept, headers.ValueApplicationJSON)
+	// process ALB backends
+	if backends != nil {
+		albNames := make([]string, 0)
+		for name, backend := range backends {
+			if backend != nil && backend.Configuration() != nil &&
+				backend.Configuration().Provider == providers.ALB {
+				albNames = append(albNames, name)
+			}
+		}
+		sort.Strings(albNames)
+
+		for _, albName := range albNames {
+			albBackend := backends[albName]
+			albClient, ok := albBackend.(*alb.Client)
+			if !ok {
+				continue
+			}
+			albConfig := albClient.Configuration()
+			if albConfig == nil || albConfig.ALBOptions == nil {
+				continue
+			}
+
+			// get pool members w/ health status
+			availableMembers := make([]string, 0)
+			unavailableMembers := make([]string, 0)
+			uncheckedMembers := make([]string, 0)
+
+			for _, poolMemberName := range albConfig.ALBOptions.Pool {
+				memberStatus := st[poolMemberName]
+				if memberStatus == nil {
+					uncheckedMembers = append(uncheckedMembers, poolMemberName)
+					continue
+				}
+				memberHealth := memberStatus.Get()
+				switch {
+				case memberHealth >= 1:
+					availableMembers = append(availableMembers, poolMemberName)
+				case memberHealth < 0:
+					unavailableMembers = append(unavailableMembers, poolMemberName)
+				default:
+					uncheckedMembers = append(uncheckedMembers, poolMemberName)
+				}
+			}
+			sort.Strings(availableMembers)
+			sort.Strings(unavailableMembers)
+			sort.Strings(uncheckedMembers)
+
+			albStatus := backendStatus{
+				Name:                   albName,
+				Provider:               providers.ALB,
+				Mechanism:              albConfig.ALBOptions.MechanismName,
+				AvailablePoolMembers:   availableMembers,
+				UnavailablePoolMembers: unavailableMembers,
+				UncheckedPoolMembers:   uncheckedMembers,
+			}
+
+			// ALB is "available" if >= 1 pool member is either available or unchecked
+			if len(availableMembers) > 0 || len(uncheckedMembers) > 0 {
+				status.Available = append(status.Available, albStatus)
+			} else {
+				status.Unavailable = append(status.Unavailable, albStatus)
+			}
+		}
+	}
 
 	b, err := json.Marshal(status)
 	if err != nil {
@@ -208,17 +328,40 @@ func udpateStatusText(hc healthcheck.HealthChecker, hd *healthDetail) {
 		b = []byte("{}")
 	}
 
-	hd.detail.Store(&detail{text: txt.String(), json: string(b)})
+	hd.detail.Store(&detail{text: status.String(), json: string(b), lastModified: lastModified})
 }
 
-func statusToString(i int) string {
+func statusToString(i int, hasSince bool) string {
 	if i > 0 {
 		return "available"
 	}
 	if i < 0 {
-		return "unavailable since"
+		if hasSince {
+			return "unavailable since"
+		}
+		return "unavailable"
 	}
 	return "not configured for automated health checks"
+}
+
+func formatALBSummary(bs backendStatus) string {
+	if bs.Provider != providers.ALB {
+		return ""
+	}
+	parts := make([]string, 0, 3)
+	if len(bs.UnavailablePoolMembers) > 0 {
+		parts = append(parts, fmt.Sprintf("u:[%s]", strings.Join(bs.UnavailablePoolMembers, ", ")))
+	}
+	if len(bs.AvailablePoolMembers) > 0 {
+		parts = append(parts, fmt.Sprintf("a:[%s]", strings.Join(bs.AvailablePoolMembers, ", ")))
+	}
+	if len(bs.UncheckedPoolMembers) > 0 {
+		parts = append(parts, fmt.Sprintf("nc:[%s]", strings.Join(bs.UncheckedPoolMembers, ", ")))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return " " + strings.Join(parts, " ")
 }
 
 func cleanupDescription(in string) string {

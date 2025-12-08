@@ -48,10 +48,10 @@ import (
 	pnh "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/ping"
 	ph "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/purge"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/reload"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 	"github.com/trickstercache/trickster/v2/pkg/routing"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
 )
 
 var mtx sync.Mutex
@@ -199,7 +199,7 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	}
 	alb.StartALBPools(clients, si.HealthChecker.Statuses())
 	routing.RegisterDefaultBackendRoutes(r, newConf, clients, tracers)
-	routing.RegisterHealthHandler(mr, newConf.MgmtConfig.HealthHandlerPath, si.HealthChecker)
+	routing.RegisterHealthHandler(mr, newConf.MgmtConfig.HealthHandlerPath, si.HealthChecker, clients)
 	applyListenerConfigs(newConf, si.Config, r, rh, mr, tracers, clients, errorFunc, lg)
 
 	metrics.LastReloadSuccessfulTimestamp.Set(float64(time.Now().Unix()))

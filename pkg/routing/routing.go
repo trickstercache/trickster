@@ -117,8 +117,8 @@ func RegisterProxyRoutes(conf *config.Config, clients backends.Backends,
 
 // RegisterHealthHandler registers the main health handler
 func RegisterHealthHandler(router router.Router, path string,
-	hc healthcheck.HealthChecker) {
-	router.RegisterRoute(path, nil, nil, false, health.StatusHandler(hc))
+	hc healthcheck.HealthChecker, backends backends.Backends) {
+	router.RegisterRoute(path, nil, nil, false, health.StatusHandler(hc, backends))
 }
 
 func registerBackendRoutes(r router.Router, metricsRouter router.Router,
