@@ -43,6 +43,8 @@ type DataSet struct {
 	// Results is the list of type Result. Each Result represents information about a
 	// different statement in the source query for this DataSet
 	Results Results `msg:"results"`
+	// UpdateLock is used to synchronize updates to the DataSet
+	UpdateLock sync.Mutex `msg:"-"`
 	// Error is a container for any DataSet-level Errors
 	Error string `msg:"error"`
 	// ErrorType describes the type for any DataSet-level Errors
@@ -95,6 +97,8 @@ func (ds *DataSet) CroppedClone(e timeseries.Extent) timeseries.Timeseries {
 		RangeCropper: ds.RangeCropper,
 		Results:      make([]*Result, len(ds.Results)),
 	}
+	ds.UpdateLock.Lock()
+	defer ds.UpdateLock.Unlock()
 	if ds.TimeRangeQuery != nil {
 		clone.TimeRangeQuery = ds.TimeRangeQuery.Clone()
 	}
@@ -181,6 +185,8 @@ func (ds *DataSet) CroppedClone(e timeseries.Extent) timeseries.Timeseries {
 
 // Clone returns a new, perfect copy of the DataSet
 func (ds *DataSet) Clone() timeseries.Timeseries {
+	ds.UpdateLock.Lock()
+	defer ds.UpdateLock.Unlock()
 	clone := &DataSet{
 		Error:        ds.Error,
 		Sorter:       ds.Sorter,
@@ -226,6 +232,8 @@ func (ds *DataSet) Merge(sortPoints bool, collection ...timeseries.Timeseries) {
 
 // DefaultMerger is the default Merger function
 func (ds *DataSet) DefaultMerger(sortPoints bool, collection ...timeseries.Timeseries) {
+	ds.UpdateLock.Lock()
+	defer ds.UpdateLock.Unlock()
 
 	rl := make(ResultsLookup)
 	for _, r := range ds.Results {
@@ -361,8 +369,8 @@ func (ds *DataSet) DefaultRangeCropper(e timeseries.Extent) {
 			index := j
 			wg.Go(func() {
 				var (
-					start, end, l = 0, -1, len(s.Points)
-					iwg           sync.WaitGroup
+				        start, end, l = 0, -1, len(s.Points)
+				        iwg sync.WaitGroup
 				)
 				iwg.Add(2)
 				go func() {
