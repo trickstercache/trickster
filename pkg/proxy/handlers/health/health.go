@@ -63,7 +63,7 @@ type backendStatus struct {
 
 type healthStatus struct {
 	Title       string          `json:"title" yaml:"title"`
-	UpdateTime  string          `json:"udpateTime" yaml:"updateTime"`
+	UpdateTime  string          `json:"updateTime" yaml:"updateTime"`
 	Unavailable []backendStatus `json:"unavailable,omitempty" yaml:"unavailable,omitempty"`
 	Available   []backendStatus `json:"available,omitempty" yaml:"available,omitempty"`
 	Unchecked   []backendStatus `json:"unchecked,omitempty" yaml:"unchecked,omitempty"`
@@ -186,7 +186,7 @@ func StatusHandler(hc healthcheck.HealthChecker, backends backends.Backends) htt
 }
 
 func builder(hc healthcheck.HealthChecker, hd *healthDetail, backends backends.Backends) {
-	udpateStatusText(hc, hd, backends) // setup the initial status page text
+	updateStatusText(hc, hd, backends) // setup the initial status page text
 	notifier := make(chan bool, 32)
 	for _, c := range hc.Statuses() {
 		c.RegisterSubscriber(notifier)
@@ -198,14 +198,14 @@ func builder(hc healthcheck.HealthChecker, hd *healthDetail, backends backends.B
 		case <-closer: // a bool comes over closer when the Health Checker is closing down, so the builder should as well
 			return
 		case <-notifier: // a bool comes over notifier when the status text should be rebuilt
-			udpateStatusText(hc, hd, backends)
+			updateStatusText(hc, hd, backends)
 		}
 	}
 }
 
 const title = "Trickster Backend Health Status"
 
-func udpateStatusText(hc healthcheck.HealthChecker, hd *healthDetail, backends backends.Backends) {
+func updateStatusText(hc healthcheck.HealthChecker, hd *healthDetail, backends backends.Backends) {
 	updateLock.Lock()
 	defer updateLock.Unlock()
 
