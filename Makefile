@@ -299,4 +299,4 @@ serve-dev:
 	@go run $(RUN_FLAGS) cmd/trickster/main.go -config $(if $(TRK_CONFIG),$(TRK_CONFIG),docs/developer/environment/trickster-config/trickster.yaml)
 
 serve-dev-data-race:
-	RUN_FLAGS=-race $(MAKE) serve-dev
+	RUN_FLAGS=-race $(MAKE) serve-dev | tee race-output.log

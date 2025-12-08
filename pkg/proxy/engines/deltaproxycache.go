@@ -161,11 +161,8 @@ checkCache:
 				return // fetchTimeseries logs the error
 			}
 		} else {
-			// Load the Cached Timeseries
 			if doc == nil {
 				err = tpe.ErrEmptyDocumentBody
-			} else {
-				cts = doc.timeseries
 			}
 			if err != nil {
 				logger.Error("cache object unmarshaling failed",
@@ -181,6 +178,7 @@ checkCache:
 					return // fetchTimeseries logs the error
 				}
 			} else {
+				cts = doc.timeseries.Clone() // Load the Cached Timeseries
 				if o.TimeseriesEvictionMethod == evictionmethods.EvictionMethodLRU {
 					el := cts.Extents()
 					tsc := cts.TimestampCount()
