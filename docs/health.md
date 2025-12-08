@@ -8,7 +8,7 @@ Trickster provides a `/trickster/ping` endpoint that returns a response of `200 
 
 Trickster offers `health` endpoints for monitoring the health of the Trickster service with respect to its upstream connection to origin servers.
 
-### General Endppoint
+### General Endpoint
 
 The main health check path is `/trickster/health`, which by default will return a `text/plain` summary of the backend health. You can request YAML or JSON format using the appropriate `Accept` header, or by providing a `?json` or `?yaml` query param.
 
