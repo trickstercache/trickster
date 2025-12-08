@@ -33,7 +33,7 @@ func New() *Options {
 	return &Options{Directory: d.DefaultCachePath, ValueDirectory: d.DefaultCachePath}
 }
 
-func (o *Options) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (o *Options) UnmarshalYAML(unmarshal func(any) error) error {
 	type loadOptions Options
 	lo := loadOptions(*(New()))
 	if err := unmarshal(&lo); err != nil {

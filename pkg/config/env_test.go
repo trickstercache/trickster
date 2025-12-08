@@ -23,7 +23,6 @@ import (
 )
 
 func TestLoadEnvVars(t *testing.T) {
-
 	os.Setenv(evOriginURL, "http://1.1.1.1:9090/some/path")
 	os.Setenv(evProvider, "testing")
 	os.Setenv(evProxyPort, "4001")
@@ -70,5 +69,4 @@ func TestLoadEnvVars(t *testing.T) {
 	os.Unsetenv(evProxyPort)
 	os.Unsetenv(evMetricsPort)
 	os.Unsetenv(evLogLevel)
-
 }

@@ -31,7 +31,6 @@ func TestNew(t *testing.T) {
 }
 
 func TestCloneAndEqual(t *testing.T) {
-
 	o := New()
 	o2 := o.Clone()
 
@@ -42,7 +41,6 @@ func TestCloneAndEqual(t *testing.T) {
 	if o.Equal(nil) {
 		t.Error("expected false")
 	}
-
 }
 
 func TestInitialize(t *testing.T) {

@@ -28,7 +28,6 @@ func TestErrMissingProvider(t *testing.T) {
 	if !ok {
 		t.Error("invalid type assertion")
 	}
-
 }
 
 func TestNewErrMissingOriginURL(t *testing.T) {
@@ -38,7 +37,6 @@ func TestNewErrMissingOriginURL(t *testing.T) {
 	if !ok {
 		t.Error("invalid type assertion")
 	}
-
 }
 
 func TestInvalidNegativeCacheName(t *testing.T) {
@@ -57,7 +55,6 @@ func TestInvalidRuleName(t *testing.T) {
 	if !ok {
 		t.Error("invalid type assertion")
 	}
-
 }
 
 func TestInvalidCacheName(t *testing.T) {

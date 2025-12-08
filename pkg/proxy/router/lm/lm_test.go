@@ -27,13 +27,14 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/testutil/writer"
 )
 
-const testPathExact1 = "/path/exact"
-const testPathExact2 = "/path/exact/2"
-const testPathPrefix1 = "/path/prefix"
-const testPathPrefix2 = "/path/prefix/2"
+const (
+	testPathExact1  = "/path/exact"
+	testPathExact2  = "/path/exact/2"
+	testPathPrefix1 = "/path/prefix"
+	testPathPrefix2 = "/path/prefix/2"
+)
 
 func TestRegisterRoute(t *testing.T) {
-
 	const testPathExact1 = "/path1/exact"
 
 	r := NewRouter().(*lmRouter)
@@ -163,7 +164,6 @@ func TestHandler(t *testing.T) {
 	if !ok {
 		t.Fatal("expected 404 not found handler")
 	}
-
 }
 
 func TestServeHTTP(t *testing.T) {
@@ -187,19 +187,23 @@ func TestServeHTTP(t *testing.T) {
 }
 
 func verifyNotFound(h http.Handler, w *writer.TestResponseWriter,
-	r *http.Request) bool {
+	r *http.Request,
+) bool {
 	h.ServeHTTP(w, r)
 	return w.StatusCode == http.StatusNotFound
 }
 
 func verifyMethodNotAllowed(h http.Handler, w *writer.TestResponseWriter,
-	r *http.Request) bool {
+	r *http.Request,
+) bool {
 	h.ServeHTTP(w, r)
 	return w.StatusCode == http.StatusMethodNotAllowed
 }
 
-const testResponse1Text = "test response 1"
-const testResponse2Text = "test response 2"
+const (
+	testResponse1Text = "test response 1"
+	testResponse2Text = "test response 2"
+)
 
 func testResponse1(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, testResponse1Text, http.StatusOK)
@@ -208,7 +212,8 @@ func testResponse1(w http.ResponseWriter, r *http.Request) {
 var testResponse1Handler = http.HandlerFunc(testResponse1)
 
 func serveAndVerifyTestResponse1(h http.Handler, w *writer.TestResponseWriter,
-	r *http.Request) bool {
+	r *http.Request,
+) bool {
 	h.ServeHTTP(w, r)
 	return verifyTestResponse1(w)
 }
@@ -225,7 +230,8 @@ func testResponse2(w http.ResponseWriter, r *http.Request) {
 var testResponse2Handler = http.HandlerFunc(testResponse2)
 
 func verifyTestResponse2(h http.Handler, w *writer.TestResponseWriter,
-	r *http.Request) bool {
+	r *http.Request,
+) bool {
 	h.ServeHTTP(w, r)
 	return w.StatusCode == http.StatusOK &&
 		strings.TrimSpace(string(w.Bytes)) == testResponse2Text
@@ -259,5 +265,4 @@ func Test_lmRouter(t *testing.T) {
 	require.Equal(t, 3, prefixes[1].PathLen)
 	require.Equal(t, "/ab", prefixes[2].Path)
 	require.Equal(t, 2, prefixes[2].PathLen)
-
 }

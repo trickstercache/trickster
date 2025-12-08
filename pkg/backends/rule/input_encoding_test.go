@@ -22,7 +22,6 @@ import (
 )
 
 func TestDecodingFuncs(t *testing.T) {
-
 	tests := []struct {
 		encoding, input, expected string
 		idx                       int
@@ -44,5 +43,4 @@ func TestDecodingFuncs(t *testing.T) {
 			}
 		})
 	}
-
 }

@@ -33,18 +33,21 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
-const expectedTokenized = "SELECT * FROM some_column WHERE time >= '$START_TIME$' AND time < '$END_TIME$' GROUP BY time(1m)"
-const untokenized = "SELECT * FROM some_column WHERE time >= now() - 6h GROUP BY time(1m)"
+const (
+	expectedTokenized = "SELECT * FROM some_column WHERE time >= '$START_TIME$' AND time < '$END_TIME$' GROUP BY time(1m)"
+	untokenized       = "SELECT * FROM some_column WHERE time >= now() - 6h GROUP BY time(1m)"
+)
 
 const testQuery = `SELECT mean("value") FROM "monthly"."rollup.1min" WHERE ("application" = 'web') AND time >= now() - 6h ` +
 	`GROUP BY time(15s), "cluster" fill(null)`
 
-var testVals = url.Values(map[string][]string{"q": {testQuery},
-	"epoch": {"ms"}})
+var testVals = url.Values(map[string][]string{
+	"q":     {testQuery},
+	"epoch": {"ms"},
+})
 var testRawQuery = testVals.Encode()
 
 func TestParseTimeRangeQuery(t *testing.T) {
-
 	// test GET
 	req := &http.Request{
 		Method: http.MethodGet,
@@ -53,7 +56,8 @@ func TestParseTimeRangeQuery(t *testing.T) {
 			Host:     "blah.com",
 			Path:     "/",
 			RawQuery: testRawQuery,
-		}}
+		},
+	}
 
 	trq, _, _, err := ParseTimeRangeQuery(req, iofmt.InfluxqlGet)
 	if err != nil {
@@ -82,11 +86,9 @@ func TestParseTimeRangeQuery(t *testing.T) {
 			t.Errorf("expected %d got %d", 6, int(trq.Extent.End.Sub(trq.Extent.Start).Hours()))
 		}
 	}
-
 }
 
 func TestSetExtent(t *testing.T) {
-
 	start := time.Now().UTC().Add(time.Duration(-6) * time.Hour).Truncate(time.Second)
 	end := time.Now().UTC().Truncate(time.Second)
 
@@ -119,5 +121,4 @@ func TestSetExtent(t *testing.T) {
 	if expected != v.Get("q") {
 		t.Errorf("\nexpected [%s]\ngot    [%s]", expected, v.Get("q"))
 	}
-
 }

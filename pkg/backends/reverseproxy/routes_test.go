@@ -74,5 +74,4 @@ func TestDefaultPathConfigs(t *testing.T) {
 	if len(dpc) != expectedLen {
 		t.Errorf("expected ordered length to be: %d got %d", expectedLen, len(dpc))
 	}
-
 }

@@ -19,7 +19,6 @@ package options
 import "testing"
 
 func TestClone(t *testing.T) {
-
 	o := &Options{
 		PrettyPrint: true,
 	}
@@ -29,5 +28,4 @@ func TestClone(t *testing.T) {
 	if !o2.PrettyPrint {
 		t.Errorf("clone failed")
 	}
-
 }

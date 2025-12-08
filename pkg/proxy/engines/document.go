@@ -190,7 +190,6 @@ func (d *HTTPDocument) SetBody(body []byte) {
 
 // LoadRangeParts convert a StoredRangeParts into a RangeParts
 func (d *HTTPDocument) LoadRangeParts() {
-
 	if d.rangePartsLoaded {
 		return
 	}
@@ -207,8 +206,8 @@ func (d *HTTPDocument) LoadRangeParts() {
 
 // ParsePartialContentBody parses a Partial Content response body into 0 or more discrete parts
 func (d *HTTPDocument) ParsePartialContentBody(resp *http.Response,
-	body []byte) {
-
+	body []byte,
+) {
 	ct := resp.Header.Get(headers.NameContentType)
 	if cr := resp.Header.Get(headers.NameContentRange); cr != "" {
 		if !strings.HasPrefix(ct, headers.ValueMultipartByteRanges) {
@@ -276,7 +275,6 @@ func (d *HTTPDocument) ParsePartialContentBody(resp *http.Response,
 // FulfillContentBody will concatenate the document's Range parts into a single, full content body
 // the caller must know that document's multipart ranges include full content length before calling this method
 func (d *HTTPDocument) FulfillContentBody() error {
-
 	if len(d.RangeParts) == 0 {
 		d.SetBody(nil)
 		return txe.ErrNoRanges

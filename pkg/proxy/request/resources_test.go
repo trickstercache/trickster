@@ -68,7 +68,6 @@ func TestGetAndSetResources(t *testing.T) {
 	if r3 != nil {
 		t.Errorf("expected nil result, got %v", r3)
 	}
-
 }
 
 func TestMergeResources(t *testing.T) {

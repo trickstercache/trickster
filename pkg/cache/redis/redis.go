@@ -20,19 +20,17 @@ package redis
 
 import (
 	"context"
+	"errors"
 	"time"
 
+	redis "github.com/redis/go-redis/v9"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
-
-	redis "github.com/redis/go-redis/v9"
 )
 
-var (
-	// CacheClient implements the cache.Client interface
-	_ cache.Client = &CacheClient{}
-)
+// CacheClient implements the cache.Client interface
+var _ cache.Client = &CacheClient{}
 
 // Redis is the string "redis"
 const Redis = "redis"
@@ -105,7 +103,7 @@ func (c *CacheClient) Retrieve(cacheKey string) ([]byte, status.LookupStatus, er
 		return data, status.LookupStatusHit, nil
 	}
 
-	if err == redis.Nil {
+	if errors.Is(err, redis.Nil) {
 		return nil, status.LookupStatusKeyMiss, cache.ErrKNF
 	}
 

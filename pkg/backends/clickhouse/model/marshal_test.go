@@ -55,5 +55,4 @@ func TestMarshalTimeseries(t *testing.T) {
 	if string(b) != testDataTSVWithNamesAndTypes {
 		t.Errorf("unexpected output:\n%s", string(b))
 	}
-
 }

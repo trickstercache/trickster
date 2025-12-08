@@ -18,7 +18,6 @@ import (
 )
 
 func TestDecode(t *testing.T) {
-
 	var s string
 
 	_, err := Decode("asd")
@@ -34,15 +33,12 @@ func TestDecode(t *testing.T) {
 	if s != "trickster" {
 		t.Errorf("expected %s got %s", "trickster", s)
 	}
-
 }
 
 func TestEncode(t *testing.T) {
-
 	s := Encode("trickster")
 
 	if s != "dHJpY2tzdGVy" {
 		t.Errorf("expected %s got %s", "dHJpY2tzdGVy", s)
 	}
-
 }

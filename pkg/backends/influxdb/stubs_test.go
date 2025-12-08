@@ -21,7 +21,6 @@ import (
 )
 
 func TestUnmarshalInstantaneous(t *testing.T) {
-
 	client := &Client{}
 	tr, err := client.UnmarshalInstantaneous(nil)
 
@@ -32,5 +31,4 @@ func TestUnmarshalInstantaneous(t *testing.T) {
 	if err != nil {
 		t.Errorf("Expected nil err, got %s", err)
 	}
-
 }

@@ -70,7 +70,6 @@ https://github.com/trickstercache/trickster
 `
 
 func version() string {
-
 	goVer := goruntime.Version()
 	arch := goruntime.GOARCH
 	os := goruntime.GOOS

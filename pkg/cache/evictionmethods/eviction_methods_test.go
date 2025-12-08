@@ -21,7 +21,6 @@ import (
 )
 
 func TestTEMString(t *testing.T) {
-
 	t1 := EvictionMethodLRU
 	t2 := EvictionMethodOldest
 	var t3 TimeseriesEvictionMethod = 3
@@ -37,5 +36,4 @@ func TestTEMString(t *testing.T) {
 	if t3.String() != "3" {
 		t.Errorf("expected %s got %s", "3", t3.String())
 	}
-
 }

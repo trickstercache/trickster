@@ -27,7 +27,6 @@ import (
 
 // AlertsHandler proxies requests for path /alerts to the origin by way of the object proxy cache
 func (c *Client) AlertsHandler(w http.ResponseWriter, r *http.Request) {
-
 	rsc := request.GetResources(r)
 	r.URL = urls.BuildUpstreamURL(r, c.BaseUpstreamURL())
 	resp := engines.DoProxy(w, r, true)
@@ -35,5 +34,4 @@ func (c *Client) AlertsHandler(w http.ResponseWriter, r *http.Request) {
 		rsc.ResponseMergeFunc = model.MergeAndWriteAlerts
 		rsc.Response = resp
 	}
-
 }

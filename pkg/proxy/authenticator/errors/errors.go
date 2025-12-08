@@ -18,8 +18,10 @@ package errors
 
 import "errors"
 
-var ErrInvalidCredentials = errors.New("invalid credentials")
-var ErrInvalidCredentialsFormat = errors.New("invalid credentials format")
-var ErrInvalidName = errors.New("invalid authenticator name")
-var ErrInvalidProvider = errors.New("invalid authenticator provider name")
-var ErrInvalidUsersFile = errors.New("users does not exist or is not readable")
+var (
+	ErrInvalidCredentials       = errors.New("invalid credentials")
+	ErrInvalidCredentialsFormat = errors.New("invalid credentials format")
+	ErrInvalidName              = errors.New("invalid authenticator name")
+	ErrInvalidProvider          = errors.New("invalid authenticator provider name")
+	ErrInvalidUsersFile         = errors.New("users does not exist or is not readable")
+)

@@ -25,7 +25,6 @@ import (
 )
 
 func TestLabelsHandler(t *testing.T) {
-
 	backendClient, err := NewClient("test", nil, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
@@ -54,5 +53,4 @@ func TestLabelsHandler(t *testing.T) {
 	if rsc.ResponseMergeFunc == nil {
 		t.Error("expected non-nil func value")
 	}
-
 }

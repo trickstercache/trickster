@@ -63,7 +63,6 @@ func TestCloneLookup(t *testing.T) {
 }
 
 func TestGetCompatibleWebProviders(t *testing.T) {
-
 	s, p := GetCompatibleWebProviders("")
 	if s != "" {
 		t.Error("got", s)
@@ -87,5 +86,4 @@ func TestGetCompatibleWebProviders(t *testing.T) {
 	if p != Brotli {
 		t.Error("got", p)
 	}
-
 }

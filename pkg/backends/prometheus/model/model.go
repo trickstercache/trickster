@@ -33,6 +33,11 @@ const (
 	Matrix ResultType = "matrix"
 )
 
+const (
+	statusSuccess = "success"
+	statusErr     = "error"
+)
+
 // Envelope represents a Proemtheus Response Envelope Root Type
 type Envelope struct {
 	Status    string   `json:"status"`
@@ -49,7 +54,7 @@ func (e *Envelope) StartMarshal(w io.Writer, httpStatus int) {
 		return
 	}
 	if httpStatus == 0 {
-		httpStatus = 200
+		httpStatus = http.StatusOK
 	}
 	if rw, ok := w.(http.ResponseWriter); ok {
 		h := rw.Header()
@@ -73,7 +78,6 @@ func (e *Envelope) StartMarshal(w io.Writer, httpStatus int) {
 
 // Merge combines the passed envelope data with the subject data
 func (e *Envelope) Merge(e2 *Envelope) {
-
 	if e2.Error != "" {
 		e.Warnings = append(e.Warnings, e2.Error)
 	}
@@ -83,10 +87,9 @@ func (e *Envelope) Merge(e2 *Envelope) {
 
 	// if one of the two statuses is success, the resulting status should be
 	// the warnings will pick up any errors from the merged envelope
-	if e.Status == "error" && e2.Status == "success" {
-		e.Status = "success"
+	if e.Status == statusErr && e2.Status == statusSuccess {
+		e.Status = statusSuccess
 		e.Warnings = append(e.Warnings, e.Error)
 		e.Error = ""
 	}
-
 }

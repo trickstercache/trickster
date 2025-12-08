@@ -112,7 +112,8 @@ func (sp *Parser) Options() *parsing.Options {
 
 // Run runs the SQL Parser
 func (sp *Parser) Run(ctx context.Context, p parsing.Parser,
-	query string) (*parsing.RunState, error) {
+	query string,
+) (*parsing.RunState, error) {
 	lexer, _ := sp.options.Lexer()
 	if lexer == nil {
 		return nil, parsing.ErrNoLexer

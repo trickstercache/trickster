@@ -40,8 +40,10 @@ type Lookup map[string]*Options
 
 var _ types.ConfigOptions[Options] = &Options{}
 
-var ErrInvalidName = errors.New("invalid rewriter name")
-var restrictedNames = sets.New([]string{"", "none"})
+var (
+	ErrInvalidName  = errors.New("invalid rewriter name")
+	restrictedNames = sets.New([]string{"", "none"})
+)
 
 // New returns a new Rewriter Options with default values
 func New() *Options {
@@ -97,7 +99,7 @@ func (rl RewriteList) Clone() RewriteList {
 	return rl2
 }
 
-func (o *Options) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (o *Options) UnmarshalYAML(unmarshal func(any) error) error {
 	type loadOptions Options
 	lo := loadOptions(*(New()))
 	if err := unmarshal(&lo); err != nil {

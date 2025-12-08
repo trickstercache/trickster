@@ -41,7 +41,8 @@ func NewModeler() *timeseries.Modeler {
 }
 
 func UnmarshalTimeseries(data []byte,
-	trq *timeseries.TimeRangeQuery) (timeseries.Timeseries, error) {
+	trq *timeseries.TimeRangeQuery,
+) (timeseries.Timeseries, error) {
 	if len(data) == 0 || trq == nil {
 		return nil, errors.ErrBadRequest
 	}
@@ -52,7 +53,8 @@ func UnmarshalTimeseries(data []byte,
 }
 
 func UnmarshalTimeseriesReader(reader io.Reader,
-	trq *timeseries.TimeRangeQuery) (timeseries.Timeseries, error) {
+	trq *timeseries.TimeRangeQuery,
+) (timeseries.Timeseries, error) {
 	if reader == nil || trq == nil {
 		return nil, errors.ErrBadRequest
 	}
@@ -63,7 +65,8 @@ func UnmarshalTimeseriesReader(reader io.Reader,
 }
 
 func MarshalTimeseries(ts timeseries.Timeseries,
-	rlo *timeseries.RequestOptions, status int) ([]byte, error) {
+	rlo *timeseries.RequestOptions, status int,
+) ([]byte, error) {
 	if ts == nil || rlo == nil {
 		return nil, errors.ErrBadRequest
 	}
@@ -74,7 +77,8 @@ func MarshalTimeseries(ts timeseries.Timeseries,
 }
 
 func MarshalTimeseriesWriter(ts timeseries.Timeseries,
-	rlo *timeseries.RequestOptions, status int, w io.Writer) error {
+	rlo *timeseries.RequestOptions, status int, w io.Writer,
+) error {
 	if ts == nil || rlo == nil || w == nil {
 		return errors.ErrBadRequest
 	}

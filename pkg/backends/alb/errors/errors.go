@@ -21,9 +21,11 @@ import (
 	"fmt"
 )
 
-var ErrInvalidTimeSeriesMergeProvider = errors.New("invalid time series merge provider")
-var ErrUnsupportedMechanism = errors.New("unsupported mechanism")
-var ErrInvalidOptionsMetadata = errors.New("invalid options metadata")
+var (
+	ErrInvalidTimeSeriesMergeProvider = errors.New("invalid time series merge provider")
+	ErrUnsupportedMechanism           = errors.New("unsupported mechanism")
+	ErrInvalidOptionsMetadata         = errors.New("invalid options metadata")
+)
 
 // InvalidALBOptionsError is an error type for invalid ALB Options
 type InvalidALBOptionsError struct {

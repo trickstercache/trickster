@@ -27,8 +27,10 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/encoding/zstd"
 )
 
-type EncoderInitializer func(io.Writer, int) io.WriteCloser
-type DecoderInitializer func(io.Reader) reader.ReadCloserResetter
+type (
+	EncoderInitializer func(io.Writer, int) io.WriteCloser
+	DecoderInitializer func(io.Reader) reader.ReadCloserResetter
+)
 
 // GetEncoderInitializer returns an EncoderInitializer - one that can be passed an io.Writer
 // to get an encoder wrapper for the passed writer, as well as an encoding value that is

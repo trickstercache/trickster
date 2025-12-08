@@ -55,5 +55,4 @@ func (c *Config) TLSCertConfig() (*tls.Config, error) {
 	}
 
 	return tlsConfig, nil
-
 }

@@ -224,7 +224,8 @@ func (c *Client) validateAndStartUserRouter(clients backends.Backends) error {
 			h.SetDefaultHandler(http.HandlerFunc(failures.HandleNotFound))
 		default:
 			h.SetDefaultHandler(http.HandlerFunc(func(w http.ResponseWriter,
-				_ *http.Request) {
+				_ *http.Request,
+			) {
 				failures.HandleMiscFailure(o.NoRouteStatusCode, w)
 			}))
 		}

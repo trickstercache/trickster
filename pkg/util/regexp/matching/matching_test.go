@@ -28,7 +28,6 @@ func init() {
 }
 
 func TestGetNamedMatches(t *testing.T) {
-
 	m := GetNamedMatches(testRegexp, "i love tests!", nil)
 	if len(m) != 1 {
 		t.Errorf("expected %d got %d", 1, len(m))
@@ -48,11 +47,9 @@ func TestGetNamedMatches(t *testing.T) {
 	if len(m) != 1 {
 		t.Errorf("expected %d got %d", 1, len(m))
 	}
-
 }
 
 func TestGetNamedMatch(t *testing.T) {
-
 	s, b := GetNamedMatch("", testRegexp, "i love tests!")
 	if b {
 		t.Errorf("expected %t got %t", false, b)
@@ -84,5 +81,4 @@ func TestGetNamedMatch(t *testing.T) {
 	if s != "" {
 		t.Errorf("expected %s got %s", "", s)
 	}
-
 }

@@ -34,8 +34,10 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/util/atomicx"
 )
 
-const ID types.ID = 3
-const Name types.Name = "newest_last_modified"
+const (
+	ID   types.ID   = 3
+	Name types.Name = "newest_last_modified"
+)
 
 type handler struct {
 	pool pool.Pool
@@ -148,9 +150,12 @@ func (nrm *newestResponseMux) getNewest() int64 {
 }
 
 func newNewestResponseGate(w http.ResponseWriter, i int,
-	nrm *newestResponseMux) *newestResponseGate {
-	return &newestResponseGate{ResponseWriter: w, h: http.Header{},
-		i: int64(i), nrm: nrm}
+	nrm *newestResponseMux,
+) *newestResponseGate {
+	return &newestResponseGate{
+		ResponseWriter: w, h: http.Header{},
+		i: int64(i), nrm: nrm,
+	}
 }
 
 func (nrg *newestResponseGate) Header() http.Header {

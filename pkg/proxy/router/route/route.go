@@ -29,8 +29,10 @@ type Route struct {
 
 type Routes []*Route
 
-type Lookup map[string]*Route
-type LookupLookup map[string]Lookup
+type (
+	Lookup       map[string]*Route
+	LookupLookup map[string]Lookup
+)
 
 type PrefixRouteSet struct {
 	Path           string
@@ -38,8 +40,10 @@ type PrefixRouteSet struct {
 	RoutesByMethod Lookup
 }
 
-type PrefixRouteSets []*PrefixRouteSet
-type PrefixRouteSetLookup map[string]*PrefixRouteSet
+type (
+	PrefixRouteSets      []*PrefixRouteSet
+	PrefixRouteSetLookup map[string]*PrefixRouteSet
+)
 
 type HostRouteSet struct {
 	ExactMatchRoutes     LookupLookup

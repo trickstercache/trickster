@@ -33,8 +33,10 @@ type Entry struct {
 	TargetProvider string
 }
 
-type Entries []*Entry
-type Lookup map[string]*Entry
+type (
+	Entries []*Entry
+	Lookup  map[string]*Entry
+)
 
 // InvalidBackendRoutingError is an error type for Invalid Backend Routing
 type InvalidBackendRoutingError struct {

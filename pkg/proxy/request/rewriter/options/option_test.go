@@ -19,7 +19,6 @@ package options
 import "testing"
 
 func TestClone(t *testing.T) {
-
 	o := &Options{
 		Instructions: [][]string{
 			{"test"},
@@ -30,5 +29,4 @@ func TestClone(t *testing.T) {
 	if len(c.Instructions) != 1 {
 		t.Errorf("Expected %d got %d", 1, len(c.Instructions))
 	}
-
 }

@@ -52,7 +52,8 @@ func TestParser(t *testing.T) {
 	po := parsing.New(FindVerb, nil, nil)
 	po.Decisions = map[string]parsing.DecisionSet{
 		"FindVerb":            map[token.Typ]parsing.StateFn{token.Space: parsing.Noop, token.Bool: nil},
-		"SelectQueryKeywords": map[token.Typ]parsing.StateFn{token.Space: parsing.Noop, token.Bool: nil}}
+		"SelectQueryKeywords": map[token.Typ]parsing.StateFn{token.Space: parsing.Noop, token.Bool: nil},
+	}
 	sp = New(po).(*Parser)
 	if sp == nil {
 		t.Error("expected non-nil parser")
@@ -78,7 +79,6 @@ func TestParser(t *testing.T) {
 	if err != parsing.ErrUnsupportedKeyword {
 		t.Error("expected error for UnsupportedKeyword got", err)
 	}
-
 }
 
 func TestUnsupportedVerb(t *testing.T) {

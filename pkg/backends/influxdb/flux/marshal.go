@@ -55,7 +55,8 @@ const (
 
 // MarshalTimeseries converts a Timeseries into a JSON blob
 func MarshalTimeseries(ts timeseries.Timeseries,
-	ro *timeseries.RequestOptions, status int) ([]byte, error) {
+	ro *timeseries.RequestOptions, status int,
+) ([]byte, error) {
 	buf := new(bytes.Buffer)
 	err := MarshalTimeseriesWriter(ts, ro, status, buf)
 	if err != nil {
@@ -66,7 +67,8 @@ func MarshalTimeseries(ts timeseries.Timeseries,
 
 // MarshalTimeseriesWriter writes a Timeseries out to an io.Writer in the desired format.
 func MarshalTimeseriesWriter(ts timeseries.Timeseries,
-	ro *timeseries.RequestOptions, status int, w io.Writer) error {
+	ro *timeseries.RequestOptions, status int, w io.Writer,
+) error {
 	ds, frb, m, err := validateMarshalerOptions(ts, ro)
 	if err != nil {
 		return err
@@ -76,7 +78,8 @@ func MarshalTimeseriesWriter(ts timeseries.Timeseries,
 
 func validateMarshalerOptions(ts timeseries.Timeseries,
 	ro *timeseries.RequestOptions) (*dataset.DataSet, *JSONRequestBody,
-	marshaler, error) {
+	marshaler, error,
+) {
 	if ts == nil {
 		return nil, nil, nil, timeseries.ErrUnknownFormat
 	}
@@ -116,11 +119,9 @@ func setStartStopTimes(fds timeseries.FieldDefinitions, e timeseries.Extent) {
 		}
 		switch fd.Name {
 		case startColumnName:
-			fds[i].DefaultValue =
-				epoch.FormatTime(e.Start, fd.DataType, false)
+			fds[i].DefaultValue = epoch.FormatTime(e.Start, fd.DataType, false)
 		case stopColumnName:
-			fds[i].DefaultValue =
-				epoch.FormatTime(e.End, fd.DataType, false)
+			fds[i].DefaultValue = epoch.FormatTime(e.End, fd.DataType, false)
 		}
 	}
 }

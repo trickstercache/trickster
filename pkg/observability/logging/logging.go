@@ -30,12 +30,13 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	tstr "github.com/trickstercache/trickster/v2/pkg/util/strings"
-
 	lumberjack "gopkg.in/natefinch/lumberjack.v2"
 )
 
-var _ Logger = &logger{}
-var _ io.Writer = &logger{}
+var (
+	_ Logger    = &logger{}
+	_ io.Writer = &logger{}
+)
 
 type Logger interface {
 	//
@@ -218,7 +219,6 @@ func (l *logger) LogSynchronous(logLevel level.Level, event string, detail Pairs
 		return
 	}
 	l.log(logLevel, event, detail)
-
 }
 
 func (l *logger) logConditionally(level level.Level, levelID level.ID, event string, detail Pairs) {
@@ -262,7 +262,8 @@ func (l *logger) LogOnce(logLevel level.Level, key, event string, detail Pairs) 
 }
 
 func (l *logger) logOnce(logLevel level.Level, lid level.ID,
-	key, event string, detail Pairs) bool {
+	key, event string, detail Pairs,
+) bool {
 	if lid == 0 || lid < l.levelID || l.HasLoggedOnce(logLevel, key) {
 		return false
 	}

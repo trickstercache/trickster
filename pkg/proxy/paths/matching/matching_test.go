@@ -19,7 +19,6 @@ package matching
 import "testing"
 
 func TestPMTString(t *testing.T) {
-
 	t1 := PathMatchTypeExact
 	t2 := PathMatchTypePrefix
 

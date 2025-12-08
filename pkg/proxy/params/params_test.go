@@ -28,7 +28,6 @@ import (
 )
 
 func TestUpdateParams(t *testing.T) {
-
 	params := url.Values{"param1": {"value1"}, "param3": {"value3"}, "param4": {"value4"}}
 	updates := map[string]string{"param2": "value2", "+param3": "value3.1", "-param4": "", "": "empty_key_ignored"}
 	expected := url.Values{"param1": {"value1"}, "param2": {"value2"}, "param3": {"value3", "value3.1"}}
@@ -47,11 +46,9 @@ func TestUpdateParams(t *testing.T) {
 	if !reflect.DeepEqual(params, expected) {
 		t.Errorf("mismatch\nexpected: %v\n     got: %v\n", expected, params)
 	}
-
 }
 
 func TestGetSetRequestValues(t *testing.T) {
-
 	const params = "param1=value1"
 
 	r, _ := http.NewRequest(http.MethodGet, "http://example.com/?"+params, nil)

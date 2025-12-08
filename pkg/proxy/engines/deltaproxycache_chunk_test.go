@@ -30,7 +30,6 @@ import (
 )
 
 func TestDeltaProxyCacheRequestMissThenHitChunksChunks(t *testing.T) {
-
 	ts, w, r, rsc, err := setupTestHarnessDPC()
 	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
@@ -111,7 +110,6 @@ func TestDeltaProxyCacheRequestMissThenHitChunksChunks(t *testing.T) {
 }
 
 func TestDeltaProxyCacheRequestRemoveStaleChunks(t *testing.T) {
-
 	ts, w, r, rsc, err := setupTestHarnessDPC()
 	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
@@ -183,7 +181,6 @@ func TestDeltaProxyCacheRequestRemoveStaleChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-
 }
 
 // Will understand why this test is failing, and if it's due to an application or test defect,
@@ -268,7 +265,6 @@ func TestDeltaProxyCacheRequestRemoveStaleChunks(t *testing.T) {
 // }
 
 func TestDeltaProxyCacheRequestMarshalFailureChunks(t *testing.T) {
-
 	ts, w, r, rsc, err := setupTestHarnessDPC()
 	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
@@ -310,11 +306,9 @@ func TestDeltaProxyCacheRequestMarshalFailureChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-
 }
 
 func TestDeltaProxyCacheRequestPartialHitChunks(t *testing.T) {
-
 	ts, w, r, rsc, err := setupTestHarnessDPC()
 	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
@@ -508,7 +502,6 @@ func TestDeltaProxyCacheRequestPartialHitChunks(t *testing.T) {
 }
 
 func TestDeltayProxyCacheRequestDeltaFetchErrorChunks(t *testing.T) {
-
 	ts, w, r, rsc, err := setupTestHarnessDPC()
 	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
@@ -564,11 +557,11 @@ func TestDeltayProxyCacheRequestDeltaFetchErrorChunks(t *testing.T) {
 	}
 
 	// test partial hit (needing an upper fragment)
-	//phitStart := extr.End.Add(step)
+	// phitStart := extr.End.Add(step)
 	extr.End = extr.End.Add(time.Duration(1) * time.Hour) // Extend the top by 1 hour to generate partial hit
 	extn.End = extr.End.Truncate(step)
 
-	//expectedFetched := fmt.Sprintf("[%d:%d]", phitStart.Truncate(step).Unix(), extn.End.Unix())
+	// expectedFetched := fmt.Sprintf("[%d:%d]", phitStart.Truncate(step).Unix(), extn.End.Unix())
 	mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
 	client.InstantCacheKey = "foo1"
@@ -597,11 +590,9 @@ func TestDeltayProxyCacheRequestDeltaFetchErrorChunks(t *testing.T) {
 	// if err != nil {
 	// 	t.Error(err)
 	// }
-
 }
 
 func TestDeltaProxyCacheRequestRangeMissChunks(t *testing.T) {
-
 	ts, w, r, rsc, err := setupTestHarnessDPC()
 	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
@@ -747,7 +738,6 @@ func TestDeltaProxyCacheRequestRangeMissChunks(t *testing.T) {
 }
 
 func TestDeltaProxyCacheRequestFastForwardChunks(t *testing.T) {
-
 	ts, w, r, rsc, err := setupTestHarnessDPC()
 	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
@@ -871,7 +861,6 @@ func TestDeltaProxyCacheRequestFastForwardChunks(t *testing.T) {
 }
 
 func TestDeltaProxyCacheRequestFastForwardUrlErrorChunks(t *testing.T) {
-
 	ts, w, r, rsc, err := setupTestHarnessDPC()
 	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
@@ -928,11 +917,9 @@ func TestDeltaProxyCacheRequestFastForwardUrlErrorChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-
 }
 
 func TestDeltaProxyCacheRequestWithRefreshChunks(t *testing.T) {
-
 	ts, w, r, rsc, err := setupTestHarnessDPC()
 	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
@@ -988,7 +975,6 @@ func TestDeltaProxyCacheRequestWithRefreshChunks(t *testing.T) {
 }
 
 func TestDeltaProxyCacheRequestWithRefreshErrorChunks(t *testing.T) {
-
 	ts, w, r, rsc, err := setupTestHarnessDPC()
 	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
@@ -1023,11 +1009,9 @@ func TestDeltaProxyCacheRequestWithRefreshErrorChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-
 }
 
 func TestDeltaProxyCacheRequestWithUnmarshalAndUpstreamErrorsChunks(t *testing.T) {
-
 	ts, w, r, rsc, err := setupTestHarnessDPC()
 	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
@@ -1127,11 +1111,9 @@ func TestDeltaProxyCacheRequestWithUnmarshalAndUpstreamErrorsChunks(t *testing.T
 	if err != nil {
 		t.Error(err)
 	}
-
 }
 
 func TestDeltaProxyCacheRequest_BadParamsChunks(t *testing.T) {
-
 	ts, w, r, rsc, err := setupTestHarnessDPC()
 	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
@@ -1169,11 +1151,9 @@ func TestDeltaProxyCacheRequest_BadParamsChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-
 }
 
 func TestDeltaProxyCacheRequestCacheMissUnmarshalFailedChunks(t *testing.T) {
-
 	ts, w, r, rsc, err := setupTestHarnessDPC()
 	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
@@ -1234,11 +1214,9 @@ func TestDeltaProxyCacheRequestCacheMissUnmarshalFailedChunks(t *testing.T) {
 	if err == nil {
 		t.Errorf("expected unmarshaling error for %s", string(body))
 	}
-
 }
 
 func TestDeltaProxyCacheRequestOutOfWindowChunks(t *testing.T) {
-
 	ts, w, r, rsc, err := setupTestHarnessDPC()
 	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
@@ -1314,7 +1292,6 @@ func TestDeltaProxyCacheRequestOutOfWindowChunks(t *testing.T) {
 }
 
 func TestDeltaProxyCacheRequestBadGatewayChunks(t *testing.T) {
-
 	ts, w, r, rsc, err := setupTestHarnessDPC()
 	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
@@ -1349,11 +1326,9 @@ func TestDeltaProxyCacheRequestBadGatewayChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-
 }
 
 func TestDeltaProxyCacheRequest_BackfillToleranceChunks(t *testing.T) {
-
 	ts, w, r, rsc, err := setupTestHarnessDPC()
 	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
@@ -1432,11 +1407,9 @@ func TestDeltaProxyCacheRequest_BackfillToleranceChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-
 }
 
 func TestDeltaProxyCacheRequestFFTTLBiggerThanStepChunks(t *testing.T) {
-
 	ts, w, r, rsc, err := setupTestHarnessDPC()
 	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
@@ -1492,11 +1465,9 @@ func TestDeltaProxyCacheRequestFFTTLBiggerThanStepChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-
 }
 
 func TestDeltaProxyCacheRequestShardByPointsChunks(t *testing.T) {
-
 	ts, w, r, rsc, err := setupTestHarnessDPC()
 	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
@@ -1595,5 +1566,4 @@ func TestDeltaProxyCacheRequestShardByPointsChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-
 }

@@ -54,8 +54,8 @@ var noCacheBackends = providers.NonCacheBackends()
 // registers the routes for the configured backends
 func RegisterProxyRoutes(conf *config.Config, clients backends.Backends,
 	r router.Router, metricsRouter router.Router, caches cache.Lookup,
-	tracers tracing.Tracers, dryRun bool) error {
-
+	tracers tracing.Tracers, dryRun bool,
+) error {
 	// a fake "top-level" backend representing the main frontend, so rules can route
 	// to it via the clients map
 	clients["frontend"], _ = reverseproxycache.NewClient("frontend", &bo.Options{}, r, nil, nil, nil)
@@ -117,13 +117,15 @@ func RegisterProxyRoutes(conf *config.Config, clients backends.Backends,
 
 // RegisterHealthHandler registers the main health handler
 func RegisterHealthHandler(router router.Router, path string,
-	hc healthcheck.HealthChecker, backends backends.Backends) {
+	hc healthcheck.HealthChecker, backends backends.Backends,
+) {
 	router.RegisterRoute(path, nil, nil, false, health.StatusHandler(hc, backends))
 }
 
 func registerBackendRoutes(r router.Router, metricsRouter router.Router,
 	conf *config.Config, k string, o *bo.Options, clients backends.Backends,
-	caches cache.Lookup, tracers tracing.Tracers, dryRun bool) error {
+	caches cache.Lookup, tracers tracing.Tracers, dryRun bool,
+) error {
 	var c cache.Cache
 
 	if _, ok := noCacheBackends[o.Provider]; !ok {
@@ -150,8 +152,10 @@ func registerBackendRoutes(r router.Router, metricsRouter router.Router,
 		if c != nil {
 			client.SetCache(c)
 		}
-		logger.Info("registering route paths", logging.Pairs{"backendName": k,
-			"backendProvider": o.Provider, "upstreamHost": o.Host})
+		logger.Info("registering route paths", logging.Pairs{
+			"backendName":     k,
+			"backendProvider": o.Provider, "upstreamHost": o.Host,
+		})
 
 		o.Paths = client.DefaultPathConfigs(o).Overlay(o.Paths)
 
@@ -164,9 +168,11 @@ func registerBackendRoutes(r router.Router, metricsRouter router.Router,
 			o.HealthCheck.Verb != "x") {
 			hp := strings.ReplaceAll(conf.MgmtConfig.HealthHandlerPath+"/"+o.Name, "//", "/")
 			logger.Debug("registering health handler path",
-				logging.Pairs{"path": hp, "backendName": o.Name,
+				logging.Pairs{
+					"path": hp, "backendName": o.Name,
 					"upstreamPath": o.HealthCheck.Path,
-					"upstreamVerb": o.HealthCheck.Verb})
+					"upstreamVerb": o.HealthCheck.Verb,
+				})
 			metricsRouter.RegisterRoute(hp, nil, nil, false,
 				middleware.WithResourcesContext(client, o, nil,
 					nil, nil, h))
@@ -179,7 +185,8 @@ func registerBackendRoutes(r router.Router, metricsRouter router.Router,
 // merge it with any path data in the provided backend options, and then register
 // the path routes to the appropriate handler from the provided handlers map
 func RegisterPathRoutes(r router.Router, conf *config.Config, handlers handlers.Lookup,
-	client backends.Backend, o *bo.Options, c cache.Cache, tracers tracing.Tracers) {
+	client backends.Backend, o *bo.Options, c cache.Cache, tracers tracing.Tracers,
+) {
 	if o == nil {
 		return
 	}
@@ -238,11 +245,13 @@ func RegisterPathRoutes(r router.Router, conf *config.Config, handlers handlers.
 		handledPath := pathPrefix + p.Path
 
 		logger.Debug("registering backend handler path",
-			logging.Pairs{"backendName": o.Name, "path": p.Path,
+			logging.Pairs{
+				"backendName": o.Name, "path": p.Path,
 				"methods": p.Methods, "handlerName": p.HandlerName,
 				"backendHost": o.Host, "handledPath": handledPath,
 				"matchType":     p.MatchType,
-				"frontendHosts": strings.Join(o.Hosts, ",")})
+				"frontendHosts": strings.Join(o.Hosts, ","),
+			})
 		if p.Handler != nil && len(p.Methods) > 0 {
 			if p.Methods[0] == "*" {
 				p.Methods = methods.AllHTTPMethods()
@@ -266,10 +275,11 @@ func RegisterPathRoutes(r router.Router, conf *config.Config, handlers handlers.
 
 // RegisterDefaultBackendRoutes will iterate the Backends and register the default routes
 func RegisterDefaultBackendRoutes(r router.Router, conf *config.Config,
-	bknds backends.Backends, tracers tracing.Tracers) {
-
+	bknds backends.Backends, tracers tracing.Tracers,
+) {
 	applyMiddleware := func(o *bo.Options, po *po.Options, tr *tracing.Tracer,
-		c cache.Cache, client backends.Backend) http.Handler {
+		c cache.Cache, client backends.Backend,
+	) http.Handler {
 		// default base route is the path handler
 		maxBodySizeBytes, truncateOnly := getSizeLimits(conf.Frontend)
 		h := bodyfilter.Handler(maxBodySizeBytes, truncateOnly, po.Handler)
@@ -314,9 +324,11 @@ func RegisterDefaultBackendRoutes(r router.Router, conf *config.Config,
 				if p.Handler != nil && len(p.Methods) > 0 {
 					logger.Debug(
 						"registering default backend handler path",
-						logging.Pairs{"backendName": o.Name, "path": p.Path,
+						logging.Pairs{
+							"backendName": o.Name, "path": p.Path,
 							"handlerName": p.HandlerName,
-							"matchType":   p.MatchType})
+							"matchType":   p.MatchType,
+						})
 
 					if p.MatchType == matching.PathMatchTypePrefix {
 						r.RegisterRoute(p.Path, nil, p.Methods,
@@ -328,7 +340,6 @@ func RegisterDefaultBackendRoutes(r router.Router, conf *config.Config,
 			}
 		}
 	}
-
 }
 
 func getSizeLimits(opt *fopt.Options) (int64, bool) {

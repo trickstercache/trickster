@@ -34,7 +34,6 @@ import (
 var testLogger = logging.NoopLogger()
 
 func testMergeFunc(w http.ResponseWriter, r *http.Request, rgs merge.ResponseGates) {
-
 }
 
 func TestHandleResponseMerge(t *testing.T) {

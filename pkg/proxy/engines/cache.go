@@ -29,6 +29,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/andybalholm/brotli"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
@@ -40,10 +41,12 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
-
-	"github.com/andybalholm/brotli"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+)
+
+const (
+	providerMemory = "memory"
 )
 
 type queryResult struct {
@@ -55,7 +58,7 @@ type queryResult struct {
 
 func queryConcurrent(_ context.Context, c cache.Cache, key string) *queryResult {
 	qr := &queryResult{queryKey: key, d: &HTTPDocument{}}
-	if c.Configuration().Provider == "memory" {
+	if c.Configuration().Provider == providerMemory {
 		mc := c.(cache.MemoryCache)
 		var ifc any
 		ifc, qr.lookupStatus, qr.err = mc.RetrieveReference(key)
@@ -68,7 +71,6 @@ func queryConcurrent(_ context.Context, c cache.Cache, key string) *queryResult 
 			return qr
 		}
 		qr.d, _ = ifc.(*HTTPDocument)
-
 	} else {
 		var b []byte
 		b, qr.lookupStatus, qr.err = c.Retrieve(key)
@@ -104,8 +106,8 @@ func queryConcurrent(_ context.Context, c cache.Cache, key string) *queryResult 
 
 // QueryCache queries the cache for an HTTPDocument and returns it
 func QueryCache(ctx context.Context, c cache.Cache, key string,
-	ranges byterange.Ranges, unmarshal timeseries.UnmarshalerFunc) (*HTTPDocument, status.LookupStatus, byterange.Ranges, error) {
-
+	ranges byterange.Ranges, unmarshal timeseries.UnmarshalerFunc,
+) (*HTTPDocument, status.LookupStatus, byterange.Ranges, error) {
 	rsc := tc.Resources(ctx).(*request.Resources)
 
 	ctx, span := tspan.NewChildSpan(ctx, rsc.Tracer, "QueryCache")
@@ -133,7 +135,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 			// Do timeseries chunk retrieval
 			// Determine chunk extent and number of chunks
 			var cext timeseries.Extent
-			var csize = trq.Step * time.Duration(c.Configuration().TimeseriesChunkFactor)
+			csize := trq.Step * time.Duration(c.Configuration().TimeseriesChunkFactor)
 			var cct int
 			cext.Start, cext.End = trq.Extent.Start.Truncate(csize), trq.Extent.End.Truncate(csize).Add(csize)
 			cct = int(cext.End.Sub(cext.Start) / csize)
@@ -155,21 +157,25 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 				wg.Go(func() {
 					qr := queryConcurrent(ctx, c, subkey)
 					if qr.lookupStatus != status.LookupStatusHit &&
-						(qr.err == nil || qr.err == cache.ErrKNF) {
+						(qr.err == nil || errors.Is(qr.err, cache.ErrKNF)) {
 						return
 					}
 					if qr.err != nil {
 						logger.Error("dpc query cache chunk failed",
-							logging.Pairs{"error": qr.err, "chunkIdx": outIdx,
-								"key": subkey, "cacheQueryStatus": qr.lookupStatus})
+							logging.Pairs{
+								"error": qr.err, "chunkIdx": outIdx,
+								"key": subkey, "cacheQueryStatus": qr.lookupStatus,
+							})
 						return
 					}
-					if c.Configuration().Provider != "memory" {
+					if c.Configuration().Provider != providerMemory {
 						qr.d.timeseries, qr.err = unmarshal(qr.d.Body, nil)
 						if qr.err != nil {
 							logger.Error("dpc query cache chunk failed",
-								logging.Pairs{"error": qr.err, "chunkIdx": outIdx,
-									"key": subkey, "cacheQueryStatus": qr.lookupStatus})
+								logging.Pairs{
+									"error": qr.err, "chunkIdx": outIdx,
+									"key": subkey, "cacheQueryStatus": qr.lookupStatus,
+								})
 							return
 						}
 					}
@@ -177,7 +183,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 						ress[outIdx] = qr.d.timeseries
 					}
 				})
-				
+
 				resi++
 			}
 			// Wait on queries
@@ -214,7 +220,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 				// Determine subkey
 				subkey := key + chunkRange.String()
 				// Query subdocument
-				
+
 				index := i
 				wg.Go(func() {
 					qr := queryConcurrent(ctx, c, subkey)
@@ -321,13 +327,13 @@ func stripConditionalHeaders(h http.Header) {
 }
 
 func writeConcurrent(_ context.Context, c cache.Cache, key string, d *HTTPDocument,
-	compress bool, ttl time.Duration) error {
-
+	compress bool, ttl time.Duration,
+) error {
 	var b []byte
 	var err error
 
 	// for memory cache, don't serialize the document, since we can retrieve it by reference.
-	if c.Configuration().Provider == "memory" {
+	if c.Configuration().Provider == providerMemory {
 		mc := c.(cache.MemoryCache)
 
 		if d != nil {
@@ -367,8 +373,8 @@ func writeConcurrent(_ context.Context, c cache.Cache, key string, d *HTTPDocume
 
 // WriteCache writes an HTTPDocument to the cache
 func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
-	ttl time.Duration, compressTypes sets.Set[string], marshal timeseries.MarshalerFunc) error {
-
+	ttl time.Duration, compressTypes sets.Set[string], marshal timeseries.MarshalerFunc,
+) error {
 	rsc := tc.Resources(ctx).(*request.Resources)
 
 	ctx, span := tspan.NewChildSpan(ctx, rsc.Tracer, "WriteCache")
@@ -407,7 +413,7 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 			meta := d.GetMeta()
 			// Determine chunk extent and number of chunks
 			var cext timeseries.Extent
-			var csize = trq.Step * time.Duration(c.Configuration().TimeseriesChunkFactor)
+			csize := trq.Step * time.Duration(c.Configuration().TimeseriesChunkFactor)
 			var cct int
 			cext.Start, cext.End = trq.Extent.Start.Truncate(csize), trq.Extent.End.Truncate(csize).Add(csize)
 			cct = int(cext.End.Sub(cext.Start) / csize)
@@ -427,7 +433,7 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 				index := i
 				wg.Go(func() {
 					cd := d.GetTimeseriesChunk(chunkExtent)
-					if c.Configuration().Provider != "memory" {
+					if c.Configuration().Provider != providerMemory {
 						cd.Body, _ = marshal(cd.timeseries, nil, 0)
 					}
 					cr[index] = writeConcurrent(ctx, c, subkey, cd, compress, ttl)
@@ -510,13 +516,13 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 		)
 	}
 	return nil
-
 }
 
 // DocumentFromHTTPResponse returns an HTTPDocument from the provided
 // HTTP Response and Body
 func DocumentFromHTTPResponse(resp *http.Response, body []byte,
-	cp *CachingPolicy) *HTTPDocument {
+	cp *CachingPolicy,
+) *HTTPDocument {
 	d := &HTTPDocument{}
 	d.StatusCode = resp.StatusCode
 	d.Status = resp.Status

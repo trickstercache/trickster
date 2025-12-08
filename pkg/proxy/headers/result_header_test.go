@@ -44,7 +44,6 @@ func TestSetResultsHeaderEmtpy(t *testing.T) {
 }
 
 func TestMergeResultHeaderVals(t *testing.T) {
-
 	const h1 = "status=kmiss; ffstatus=kmiss"
 	const h2 = "engine=ObjectProxyCache; status=phit; fetched=[1612804980000-1612804980000]; ffstatus=hit"
 	const ex2 = "engine=ObjectProxyCache; status=phit; fetched=[1612804980000-1612804980000]; ffstatus=phit"
@@ -64,11 +63,9 @@ func TestMergeResultHeaderVals(t *testing.T) {
 	if res := MergeResultHeaderVals(h2, h2); res != h2 {
 		t.Errorf("unexpected merged header: %s", res)
 	}
-
 }
 
 func TestParseResultHeaderVals(t *testing.T) {
-
 	const h1 = "engine=ObjectProxyCache; status=phit; fetched=[aaa-bbb]; ffstatus=hit"
 	const h2 = "engine=ObjectProxyCache; status=phit; fetched=[11-bbb]; ffstatus=hit"
 
@@ -85,5 +82,4 @@ func TestParseResultHeaderVals(t *testing.T) {
 	}
 
 	// t.Error()
-
 }

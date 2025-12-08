@@ -253,8 +253,8 @@ func parseForwardHeaders(h http.Header) Hops {
 		for _, f := range fwds {
 			hop := &Hop{}
 			var ok bool
-			parts := strings.Split(f, ";")
-			for _, p := range parts {
+			parts := strings.SplitSeq(f, ";")
+			for p := range parts {
 				subparts := strings.Split(p, "=")
 				if len(subparts) == 2 {
 					switch subparts[0] {
@@ -287,8 +287,10 @@ func (hop *Hop) normalizeAddresses() {
 	hop.Server = normalizeAddress(hop.Server)
 }
 
-const v6LB = `["`
-const v6RB = `"]`
+const (
+	v6LB = `["`
+	v6RB = `"]`
+)
 
 func normalizeAddress(input string) string {
 	input = strings.TrimPrefix(input, v6LB)

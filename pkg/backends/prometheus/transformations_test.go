@@ -62,5 +62,4 @@ func TestProcessVectorTransformations(t *testing.T) {
 	if w.Code != 200 {
 		t.Errorf("expected %d got %d", 200, w.Code)
 	}
-
 }

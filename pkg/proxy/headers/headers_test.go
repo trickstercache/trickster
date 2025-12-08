@@ -25,7 +25,6 @@ import (
 )
 
 func TestExtractHeader(t *testing.T) {
-
 	headers := http.Header{}
 
 	const appName = "trickster-test"
@@ -55,7 +54,6 @@ func TestExtractHeader(t *testing.T) {
 	if _, ok := ExtractHeader(headers, NameAllowOrigin); ok {
 		t.Errorf("unexpected header %s", NameAllowOrigin)
 	}
-
 }
 
 func TestUpdateHeaders(t *testing.T) {
@@ -67,16 +65,16 @@ func TestUpdateHeaders(t *testing.T) {
 		t.Errorf("expected %d got %d", len(headers), 3)
 	}
 
-	UpdateHeaders(headers, map[string]string{"": "ineffectual", "foo1": "bar", "-foo2": "",
-		"+foo3": "bar", "foo4": "bar", "+foo5": "bar", "-foo6": ""})
+	UpdateHeaders(headers, map[string]string{
+		"": "ineffectual", "foo1": "bar", "-foo2": "",
+		"+foo3": "bar", "foo4": "bar", "+foo5": "bar", "-foo6": "",
+	})
 	if !reflect.DeepEqual(headers, expected) {
 		t.Errorf("mismatch\nexpected: %v\n     got: %v\n", expected, headers)
 	}
-
 }
 
 func TestRemoveClientHeaders(t *testing.T) {
-
 	headers := http.Header{}
 	headers.Set(NameAcceptEncoding, "test")
 
@@ -85,7 +83,6 @@ func TestRemoveClientHeaders(t *testing.T) {
 	if _, ok := ExtractHeader(headers, NameAcceptEncoding); ok {
 		t.Errorf("unexpected header %s", NameAcceptEncoding)
 	}
-
 }
 
 func TestMerge(t *testing.T) {
@@ -110,11 +107,9 @@ func TestMerge(t *testing.T) {
 	if h1.Get("test") != "pass" {
 		t.Errorf("expected 'pass' got '%s'", h1.Get("test"))
 	}
-
 }
 
 func TestAddResponseHeaders(t *testing.T) {
-
 	headers := http.Header{}
 	appinfo.Name = "trickster-test"
 	appinfo.Version = "tests"
@@ -124,11 +119,9 @@ func TestAddResponseHeaders(t *testing.T) {
 	if _, ok := headers[NameAllowOrigin]; !ok {
 		t.Errorf("missing header %s", NameAllowOrigin)
 	}
-
 }
 
 func TestString(t *testing.T) {
-
 	expected := "test: test\n\n"
 	h := http.Header{"test": {"test"}}
 	x := String(h)
@@ -142,11 +135,9 @@ func TestString(t *testing.T) {
 	if x != expected {
 		t.Errorf("expected %s got %s", expected, x)
 	}
-
 }
 
 func TestLogString(t *testing.T) {
-
 	expected := "{[test1:test],[test2:test2val]}"
 	h := http.Header{"test1": {"test"}, "test2": {"test2val"}}
 	x := LogString(h)
@@ -165,7 +156,6 @@ func TestLogString(t *testing.T) {
 	if x != expected {
 		t.Errorf("expected %s got %s", expected, x)
 	}
-
 }
 
 func TestLookup(t *testing.T) {

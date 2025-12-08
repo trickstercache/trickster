@@ -29,11 +29,12 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 )
 
-const provider = "memory"
-const cacheKey = "cacheKey"
+const (
+	provider = "memory"
+	cacheKey = "cacheKey"
+)
 
-type testReferenceObject struct {
-}
+type testReferenceObject struct{}
 
 func (r *testReferenceObject) Size() int {
 	return 1
@@ -95,7 +96,6 @@ func TestCache_StoreReferenceDirect(t *testing.T) {
 	if err == nil {
 		t.Errorf("expected non-nil error")
 	}
-
 }
 
 func TestCache_StoreReference(t *testing.T) {
@@ -309,7 +309,6 @@ func TestCache_BulkRemove(t *testing.T) {
 	if ls != status.LookupStatusKeyMiss {
 		t.Errorf("expected %s got %s", status.LookupStatusKeyMiss, ls)
 	}
-
 }
 
 func BenchmarkCache_BulkRemove(b *testing.B) {

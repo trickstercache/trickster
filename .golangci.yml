@@ -15,6 +15,15 @@ linters:
     - revive
     - gosec
     - misspell
+    - whitespace
+    - testifylint
+    - promlinter
+    - modernize
+    - intrange
+    - exptostd
+    - errorlint
+    - gocheckcompilerdirectives
+    - goconst
   disable:
     - errcheck
   settings:
@@ -141,6 +150,10 @@ linters:
       - builtin$
       - examples$
 formatters:
+  enable:
+  - gci
+  - goimports
+  - gofumpt
   exclusions:
     generated: lax
     paths:

@@ -34,7 +34,8 @@ type WFDocument struct {
 }
 
 func marshalTimeseriesJSONWriter(ds *dataset.DataSet,
-	_ *JSONRequestBody, status int, w io.Writer) error {
+	_ *JSONRequestBody, status int, w io.Writer,
+) error {
 	if hw, ok := w.(http.ResponseWriter); ok {
 		hw.Header().Set(headers.NameContentType, headers.ValueApplicationJSON)
 		hw.WriteHeader(status)
@@ -116,7 +117,8 @@ func getFormattedTimestamp(e epoch.Epoch, tfd timeseries.FieldDefinition) any {
 }
 
 func getCellValue(sh dataset.SeriesHeader, fd timeseries.FieldDefinition,
-	c dataset.Point, nextValue, table int) ([]byte, bool) {
+	c dataset.Point, nextValue, table int,
+) ([]byte, bool) {
 	switch fd.Role {
 	case timeseries.RoleTimestamp:
 		b, _ := json.Marshal(getFormattedTimestamp(c.Epoch, fd))

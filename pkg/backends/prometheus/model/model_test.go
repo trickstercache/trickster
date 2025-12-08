@@ -51,7 +51,6 @@ func TestUnmarshalTimeseries(t *testing.T) {
 	if string(b) != testMatrix {
 		t.Error("marsahing error")
 	}
-
 }
 
 func TestUnmarshalInstantaneous(t *testing.T) {

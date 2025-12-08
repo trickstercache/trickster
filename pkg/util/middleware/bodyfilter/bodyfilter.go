@@ -17,6 +17,7 @@
 package bodyfilter
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
@@ -33,7 +34,7 @@ func Handler(maxSize int64, truncateOnly bool, next http.Handler) http.Handler {
 			return
 		}
 		b, err := request.GetBody(r, maxSize)
-		if err != nil && (!truncateOnly || err != failures.ErrPayloadTooLarge) {
+		if err != nil && (!truncateOnly || !errors.Is(err, failures.ErrPayloadTooLarge)) {
 			failures.HandleBadRequestResponse(w, nil)
 			return
 		}

@@ -35,7 +35,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ranges/byterange"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
-
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -143,7 +142,6 @@ func (pr *proxyRequest) Clone() *proxyRequest {
 // Fetch makes an HTTP request to the provided Origin URL, bypassing the Cache, and returns the
 // response and elapsed time to the caller.
 func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration) {
-
 	rsc := request.GetResources(pr.upstreamRequest)
 	o := rsc.BackendOptions
 	pc := rsc.PathConfig
@@ -178,7 +176,6 @@ func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration) {
 }
 
 func (pr *proxyRequest) prepareRevalidationRequest() {
-
 	rsc := request.GetResources(pr.upstreamRequest)
 	pr.revalidation = RevalStatusInProgress
 	pr.revalidationRequest, _ = request.Clone(pr.upstreamRequest)
@@ -186,8 +183,7 @@ func (pr *proxyRequest) prepareRevalidationRequest() {
 		request.GetResources(pr.Request))
 	_, span := tspan.NewChildSpan(pr.revalidationRequest.Context(), rsc.Tracer, "FetchRevlidation")
 	if span != nil {
-		pr.revalidationRequest =
-			pr.revalidationRequest.WithContext(trace.ContextWithSpan(pr.revalidationRequest.Context(), span))
+		pr.revalidationRequest = pr.revalidationRequest.WithContext(trace.ContextWithSpan(pr.revalidationRequest.Context(), span))
 		defer span.End()
 	}
 
@@ -220,7 +216,6 @@ func (pr *proxyRequest) prepareRevalidationRequest() {
 		} else {
 			pr.revalidationRequest.Header.Del(headers.NameRange)
 		}
-
 	}
 
 	if pr.cachingPolicy.ETag != "" {
@@ -230,7 +225,6 @@ func (pr *proxyRequest) prepareRevalidationRequest() {
 		pr.revalidationRequest.Header.Set(headers.NameIfModifiedSince,
 			pr.cachingPolicy.LastModified.UTC().Format(time.RFC1123))
 	}
-
 }
 
 func (pr *proxyRequest) setRangeHeader(h http.Header) {
@@ -241,7 +235,6 @@ func (pr *proxyRequest) setRangeHeader(h http.Header) {
 }
 
 func (pr *proxyRequest) prepareUpstreamRequests() {
-
 	pr.setRangeHeader(pr.upstreamRequest.Header)
 
 	pr.stripConditionalHeaders()
@@ -270,7 +263,8 @@ func (pr *proxyRequest) prepareUpstreamRequests() {
 }
 
 func (pr *proxyRequest) makeSimpleUpstreamRequests(req *http.Request,
-	tracer *tracing.Tracer) (io.ReadCloser, *http.Response) {
+	tracer *tracing.Tracer,
+) (io.ReadCloser, *http.Response) {
 	_, span := tspan.NewChildSpan(req.Context(), tracer, "Fetch")
 	if span != nil {
 		if req.Header != nil {
@@ -287,14 +281,12 @@ func (pr *proxyRequest) makeSimpleUpstreamRequests(req *http.Request,
 }
 
 func (pr *proxyRequest) makeUpstreamRequests() error {
-
 	// short circuit for when there is only 1 upstream request
 	rsc := request.GetResources(pr.Request)
 	if pr.revalidationRequest == nil && len(pr.originRequests) == 1 {
 		pr.originReaders = make([]io.ReadCloser, 1)
 		pr.originResponses = make([]*http.Response, 1)
-		pr.originReaders[0], pr.originResponses[0] =
-			pr.makeSimpleUpstreamRequests(pr.originRequests[0], rsc.Tracer)
+		pr.originReaders[0], pr.originResponses[0] = pr.makeSimpleUpstreamRequests(pr.originRequests[0], rsc.Tracer)
 		return nil
 	}
 
@@ -386,7 +378,6 @@ func (pr *proxyRequest) writeResponseHeader() {
 }
 
 func (pr *proxyRequest) setBodyWriter() {
-
 	if !pr.isPCF {
 		pr.mapLock.Lock()
 		PrepareResponseWriter(pr.responseWriter, pr.upstreamResponse.StatusCode, pr.upstreamResponse.Header)
@@ -423,7 +414,6 @@ func (pr *proxyRequest) writeResponseBody() {
 }
 
 func (pr *proxyRequest) determineCacheability() {
-
 	rsc := request.GetResources(pr.Request)
 	resp := pr.upstreamResponse
 
@@ -438,7 +428,6 @@ func (pr *proxyRequest) determineCacheability() {
 	}
 
 	if pr.revalidation == RevalStatusLocal {
-
 		tpc := pr.cachingPolicy.Clone()
 		tpc.IfModifiedSinceTime = pr.cacheDocument.CachingPolicy.LastModified
 		tpc.IfNoneMatchValue = pr.cacheDocument.CachingPolicy.ETag
@@ -453,8 +442,10 @@ func (pr *proxyRequest) determineCacheability() {
 
 	if rsc.AlternateCacheTTL > 0 {
 		pr.writeToCache = true
-		pr.cachingPolicy = &CachingPolicy{LocalDate: time.Now(),
-			FreshnessLifetime: int(rsc.AlternateCacheTTL.Seconds())}
+		pr.cachingPolicy = &CachingPolicy{
+			LocalDate:         time.Now(),
+			FreshnessLifetime: int(rsc.AlternateCacheTTL.Seconds()),
+		}
 		return
 	}
 
@@ -468,7 +459,6 @@ func (pr *proxyRequest) determineCacheability() {
 }
 
 func (pr *proxyRequest) store() error {
-
 	if !pr.writeToCache || pr.cacheDocument == nil {
 		return nil
 	}
@@ -505,7 +495,6 @@ func (pr *proxyRequest) store() error {
 }
 
 func (pr *proxyRequest) updateContentLength() {
-
 	resp := pr.upstreamResponse
 	if resp == nil || pr.responseBody == nil || pr.upstreamResponse.StatusCode > 299 {
 		return
@@ -519,7 +508,6 @@ func (pr *proxyRequest) updateContentLength() {
 }
 
 func (pr *proxyRequest) prepareResponse() {
-
 	pr.cachingPolicy.ResolveClientConditionals(pr.cacheStatus)
 
 	d := pr.cacheDocument
@@ -543,7 +531,6 @@ func (pr *proxyRequest) prepareResponse() {
 	}
 
 	if pr.wantsRanges && (resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusPartialContent) {
-
 		// since the user wants ranges, we have to extract them from what we have already
 		if (d == nil || !d.isLoaded) &&
 			(pr.cacheStatus == status.LookupStatusPartialHit || pr.cacheStatus == status.LookupStatusKeyMiss ||
@@ -587,13 +574,11 @@ func (pr *proxyRequest) prepareResponse() {
 	}
 
 	pr.updateContentLength()
-
 }
 
 // reconstitute will arrange and process multiple responses so that
 // we have just one response for the initial request
 func (pr *proxyRequest) reconstituteResponses() {
-
 	hasRevalidationRequest := pr.revalidationRequest != nil
 
 	var wasRevalidated bool
@@ -656,7 +641,6 @@ func (pr *proxyRequest) reconstituteResponses() {
 	pr.wasReconstituted = requestCount > 1
 
 	if pr.wasReconstituted {
-
 		// in this case, we should _not_ use the revalidation request as the base upstreamResponse,
 		// since it could have a 304 not modified as the response, instead of a 200 or 206, and this
 		// point assumes fresh
@@ -750,7 +734,5 @@ func (pr *proxyRequest) reconstituteResponses() {
 		pr.cachingPolicy.Merge(GetResponseCachingPolicy(pr.upstreamResponse.StatusCode,
 			rsc.BackendOptions.NegativeCache, pr.upstreamResponse.Header))
 		pr.mapLock.Unlock()
-
 	}
-
 }

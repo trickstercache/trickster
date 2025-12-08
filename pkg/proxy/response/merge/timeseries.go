@@ -29,7 +29,6 @@ import (
 // Timeseries merges the provided Responses into a single Timeseries DataSet
 // and writes it to the provided responsewriter
 func Timeseries(w http.ResponseWriter, r *http.Request, rgs ResponseGates) {
-
 	var f timeseries.MarshalWriterFunc
 	var rlo *timeseries.RequestOptions
 
@@ -40,7 +39,6 @@ func Timeseries(w http.ResponseWriter, r *http.Request, rgs ResponseGates) {
 	tsm := make(timeseries.List, len(rgs))
 	var k int
 	for i, rg := range rgs {
-
 		if rg == nil || rg.Resources == nil ||
 			rg.Resources.Response == nil {
 			continue
@@ -78,7 +76,7 @@ func Timeseries(w http.ResponseWriter, r *http.Request, rgs ResponseGates) {
 		return
 	}
 
-	statusCode := 200
+	statusCode := http.StatusOK
 	if bestResp != nil {
 		statusCode = bestResp.StatusCode
 	}

@@ -71,7 +71,7 @@ type Query struct {
 type JSONRequestBody struct {
 	Query   string                 `json:"query"`
 	Type    string                 `json:"type"`
-	Dialect JSONRequestBodyDialect `json:"dialect,omitempty"`
+	Dialect JSONRequestBodyDialect `json:"dialect,omitzero"`
 	Params  map[string]any         `json:"params,omitempty"`
 	Now     any                    `json:"now,omitempty"`
 }
@@ -103,7 +103,7 @@ type Column struct {
 }
 
 type Record struct {
-	Values map[string]interface{} `json:"values"`
+	Values map[string]any `json:"values"`
 }
 
 func DefaultJSONRequestBody() *JSONRequestBody {
@@ -123,8 +123,8 @@ func DefaultAnnotations() []string {
 
 func ParseTimeRangeQuery(r *http.Request,
 	f iofmt.Format) (*timeseries.TimeRangeQuery, *timeseries.RequestOptions,
-	bool, error) {
-
+	bool, error,
+) {
 	if !f.IsFlux() {
 		return nil, nil, false, iofmt.ErrSupportedQueryLanguage
 	}
@@ -199,8 +199,8 @@ func vndfluxToJSON(b []byte) *JSONRequestBody {
 }
 
 func SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
-	e *timeseries.Extent, q *Query) {
-
+	e *timeseries.Extent, q *Query,
+) {
 	start := e.Start.Unix()
 	end := e.End.Unix()
 	// This fixes the "cannot query an empty range" condition

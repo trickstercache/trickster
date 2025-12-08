@@ -48,9 +48,11 @@ const (
 	BrotliAltValue    = "brotli"
 )
 
-type Provider byte
-type Lookup map[string]Provider
-type ReverseLookup map[Provider]string
+type (
+	Provider      byte
+	Lookup        map[string]Provider
+	ReverseLookup map[Provider]string
+)
 
 // Update whenever a new encoder provider is added
 var providerVals = []Provider{1, 2, 4, 8, 128}
@@ -65,14 +67,16 @@ var providerValLookup = ReverseLookup{
 }
 
 // these are populated in init based on maxWebProvider, providerVals, and providerValLookup
-var providers []string
-var webProviders []string
-var providerLookup Lookup
-var webProviderLookup Lookup
-var webValLookup ReverseLookup
-var webProviderVals []Provider
-var AllSupportedWebProviders string
-var AllSupportedWebProvidersBitmap Provider
+var (
+	providers                      []string
+	webProviders                   []string
+	providerLookup                 Lookup
+	webProviderLookup              Lookup
+	webValLookup                   ReverseLookup
+	webProviderVals                []Provider
+	AllSupportedWebProviders       string
+	AllSupportedWebProvidersBitmap Provider
+)
 
 func init() {
 	l := len(providerVals)
@@ -129,7 +133,7 @@ func GetCompatibleWebProviders(acceptedEncodings string) (string, Provider) {
 		return s, b
 	}
 	// this converts the acceptedEncodings string into a bitmap of Trickster-compatible encoders
-	for _, enc := range strings.Split(acceptedEncodings, ",") {
+	for enc := range strings.SplitSeq(acceptedEncodings, ",") {
 		if v, ok := webProviderLookup[strings.TrimSpace(enc)]; ok {
 			b |= v
 		}

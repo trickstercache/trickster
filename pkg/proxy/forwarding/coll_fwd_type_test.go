@@ -21,7 +21,6 @@ import (
 )
 
 func TestCollapsedForwardingTypeString(t *testing.T) {
-
 	t1 := CFTypeBasic
 	t2 := CFTypeProgressive
 	var t3 CollapsedForwardingType = 13
@@ -47,5 +46,4 @@ func TestCollapsedForwardingTypeString(t *testing.T) {
 	if t3 != CFTypeBasic {
 		t.Errorf("expected %s got %s", CFNameBasic, t3.String())
 	}
-
 }

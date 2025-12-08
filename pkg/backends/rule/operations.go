@@ -26,13 +26,14 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/encoding/base64"
 )
 
-type operation string
-type operationFunc func(input string, arg string, negate bool) string
+type (
+	operation     string
+	operationFunc func(input string, arg string, negate bool) string
+)
 
 var compiledRegexes = make(map[string]*regexp.Regexp)
 
 var operationFuncs = map[operation]operationFunc{
-
 	"string-rmatch":   opStringRMatch,
 	"string-eq":       opStringEquality,
 	"string-contains": opStringContains,
@@ -57,14 +58,13 @@ var operationFuncs = map[operation]operationFunc{
 }
 
 func btos(t bool, negate bool) string {
-
 	if negate {
 		t = !t
 	}
 	if t {
-		return "true"
+		return trueValue
 	}
-	return "false"
+	return falseValue
 }
 
 func opStringRMatch(input, arg string, _ bool) string {
@@ -74,14 +74,14 @@ func opStringRMatch(input, arg string, _ bool) string {
 		re, err = regexp.Compile(arg)
 		if err != nil {
 			compiledRegexes[arg] = nil
-			return "false"
+			return falseValue
 		}
 		compiledRegexes[arg] = re
 	}
 	if re != nil && re.Match([]byte(input)) {
-		return "true"
+		return trueValue
 	}
-	return "false"
+	return falseValue
 }
 
 func opStringEquality(input, arg string, negate bool) string {

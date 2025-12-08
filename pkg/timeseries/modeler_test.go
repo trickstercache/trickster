@@ -19,7 +19,6 @@ package timeseries
 import "testing"
 
 func TestNewModeler(t *testing.T) {
-
 	f := func([]byte, *TimeRangeQuery) (Timeseries, error) {
 		return nil, nil
 	}
@@ -33,5 +32,4 @@ func TestNewModeler(t *testing.T) {
 	if m.CacheUnmarshaler == nil {
 		t.Error("expected non-nil CacheUnmarshaler")
 	}
-
 }

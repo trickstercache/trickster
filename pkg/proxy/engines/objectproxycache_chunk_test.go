@@ -37,7 +37,6 @@ import (
 )
 
 func TestObjectProxyCacheRequestChunks(t *testing.T) {
-
 	hdrs := map[string]string{"Cache-Control": "max-age=60"}
 	ts, _, r, rsc, err := setupTestHarnessOPC("", "test", http.StatusPartialContent, hdrs)
 	rsc.CacheConfig.UseCacheChunking = true
@@ -64,7 +63,6 @@ func TestObjectProxyCacheRequestChunks(t *testing.T) {
 }
 
 func TestObjectProxyCachePartialHitChunks(t *testing.T) {
-
 	ts, _, r, rsc, err := setupTestHarnessOPCRange(nil)
 	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
@@ -141,7 +139,6 @@ func TestObjectProxyCachePartialHitChunks(t *testing.T) {
 }
 
 func TestFullArticuationChunks(t *testing.T) {
-
 	ts, _, r, rsc, err := setupTestHarnessOPCRange(nil)
 	rsc.CacheConfig.UseCacheChunking = true
 	require.NoError(t, err)
@@ -249,11 +246,9 @@ func TestFullArticuationChunks(t *testing.T) {
 	r.Header.Del(headers.NameRange)
 	_, e = testFetchOPC(r, http.StatusOK, byterange.Body, map[string]string{"status": "hit"})
 	require.NoError(t, stderrors.Join(e...))
-
 }
 
 func TestObjectProxyCachePartialHitNotFreshChunks(t *testing.T) {
-
 	ts, w, r, rsc, err := setupTestHarnessOPCRange(nil)
 	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
@@ -289,7 +284,6 @@ func TestObjectProxyCachePartialHitNotFreshChunks(t *testing.T) {
 }
 
 func TestObjectProxyCachePartialHitFullResponseChunks(t *testing.T) {
-
 	ts, w, r, rsc, err := setupTestHarnessOPCRange(nil)
 	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
@@ -314,7 +308,6 @@ func TestObjectProxyCachePartialHitFullResponseChunks(t *testing.T) {
 }
 
 func TestObjectProxyCacheRangeMissChunks(t *testing.T) {
-
 	ts, _, r, rsc, err := setupTestHarnessOPCRange(nil)
 	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
@@ -344,7 +337,6 @@ func TestObjectProxyCacheRangeMissChunks(t *testing.T) {
 }
 
 func TestObjectProxyCacheRevalidationChunks(t *testing.T) {
-
 	ts, _, r, rsc, err := setupTestHarnessOPCRange(nil)
 	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
@@ -430,7 +422,6 @@ func TestObjectProxyCacheRevalidationChunks(t *testing.T) {
 }
 
 func TestObjectProxyCacheRequestWithPCFChunks(t *testing.T) {
-
 	headers := map[string]string{"Cache-Control": "max-age=60"}
 	ts, _, r, rsc, err := setupTestHarnessOPCWithPCF("", "test", http.StatusOK, headers)
 	rsc.CacheConfig.UseCacheChunking = true
@@ -448,11 +439,9 @@ func TestObjectProxyCacheRequestWithPCFChunks(t *testing.T) {
 	for _, err = range e {
 		t.Error(err)
 	}
-
 }
 
 func TestObjectProxyCacheTrueHitNoDocumentErrChunks(t *testing.T) {
-
 	pr := &proxyRequest{}
 	err := handleTrueCacheHit(pr)
 	if err != errors.ErrNilCacheDocument {
@@ -461,7 +450,6 @@ func TestObjectProxyCacheTrueHitNoDocumentErrChunks(t *testing.T) {
 }
 
 func TestObjectProxyCacheRequestClientNoCacheChunks(t *testing.T) {
-
 	ts, _, r, rsc, err := setupTestHarnessOPC("", "test", http.StatusOK, nil)
 	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
@@ -478,7 +466,6 @@ func TestObjectProxyCacheRequestClientNoCacheChunks(t *testing.T) {
 }
 
 func TestFetchViaObjectProxyCacheRequestClientNoCacheChunks(t *testing.T) {
-
 	ts, _, r, rsc, err := setupTestHarnessOPC("", "test", http.StatusOK, nil)
 	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
@@ -500,7 +487,6 @@ func TestFetchViaObjectProxyCacheRequestClientNoCacheChunks(t *testing.T) {
 }
 
 func TestObjectProxyCacheRequestOriginNoCacheChunks(t *testing.T) {
-
 	headers := map[string]string{"Cache-Control": "no-cache"}
 	ts, _, r, rsc, err := setupTestHarnessOPC("", "test", http.StatusOK, headers)
 	rsc.CacheConfig.UseCacheChunking = true
@@ -516,7 +502,6 @@ func TestObjectProxyCacheRequestOriginNoCacheChunks(t *testing.T) {
 }
 
 func TestObjectProxyCacheIMSChunks(t *testing.T) {
-
 	hdrs := map[string]string{"Cache-Control": "max-age=1"}
 	ts, _, r, rsc, err := setupTestHarnessOPCRange(hdrs)
 	rsc.CacheConfig.UseCacheChunking = true
@@ -550,7 +535,6 @@ func TestObjectProxyCacheIMSChunks(t *testing.T) {
 }
 
 func TestObjectProxyCacheINMChunks(t *testing.T) {
-
 	rh := map[string]string{headers.NameCacheControl: "max-age=60", headers.NameETag: "test"}
 	ts, _, r, rsc, err := setupTestHarnessOPC("", "test", http.StatusOK, rh)
 	rsc.CacheConfig.UseCacheChunking = true
@@ -578,7 +562,6 @@ func TestObjectProxyCacheINMChunks(t *testing.T) {
 }
 
 func TestObjectProxyCacheNoRevalidateChunks(t *testing.T) {
-
 	headers := map[string]string{headers.NameCacheControl: headers.ValueMaxAge + "=1"}
 	ts, _, r, rsc, err := setupTestHarnessOPC("", "test", http.StatusOK, headers)
 	rsc.CacheConfig.UseCacheChunking = true
@@ -604,7 +587,6 @@ func TestObjectProxyCacheNoRevalidateChunks(t *testing.T) {
 }
 
 func TestObjectProxyCacheCanRevalidateChunks(t *testing.T) {
-
 	headers := map[string]string{
 		headers.NameCacheControl: headers.ValueMaxAge + "=1",
 		headers.NameETag:         "test-etag",
@@ -634,7 +616,6 @@ func TestObjectProxyCacheCanRevalidateChunks(t *testing.T) {
 }
 
 func TestObjectProxyCacheRevalidatedChunks(t *testing.T) {
-
 	const dt = "Sun, 16 Jun 2019 14:19:04 GMT"
 
 	hdr := map[string]string{
@@ -663,7 +644,6 @@ func TestObjectProxyCacheRevalidatedChunks(t *testing.T) {
 }
 
 func TestObjectProxyCacheRequestNegativeCacheChunks(t *testing.T) {
-
 	ts, _, r, rsc, err := setupTestHarnessOPC("", "test", http.StatusNotFound, nil)
 	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
@@ -701,7 +681,6 @@ func TestObjectProxyCacheRequestNegativeCacheChunks(t *testing.T) {
 }
 
 func TestHandleCacheRevalidationChunks(t *testing.T) {
-
 	ts, _, r, rsc, err := setupTestHarnessOPC("", "test", http.StatusNotFound, nil)
 	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
@@ -720,7 +699,6 @@ func TestHandleCacheRevalidationChunks(t *testing.T) {
 }
 
 func TestRangesExhaustiveChunks(t *testing.T) {
-
 	ts, _, r, rsc, err := setupTestHarnessOPCRange(nil)
 	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
@@ -979,7 +957,6 @@ func TestRangesExhaustiveChunks(t *testing.T) {
 }
 
 func TestFetchViaObjectProxyCacheRequestErroringCacheChunks(t *testing.T) {
-
 	ts, _, r, rsc, err := setupTestHarnessOPC("", "test", http.StatusOK, nil)
 	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {

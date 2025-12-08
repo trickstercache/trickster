@@ -34,7 +34,6 @@ import (
 const invalidPoolMemberCheck = "invalid pool member name [invalid] provided for alb [test]"
 
 func TestHandlers(t *testing.T) {
-
 	a := &ao.Options{
 		MechanismName: names.MechanismFR,
 		OutputFormat:  providers.Prometheus,
@@ -74,7 +73,6 @@ func TestHandlers(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-
 }
 
 func TestDefaultPathConfigs(t *testing.T) {
@@ -139,11 +137,9 @@ func TestValidateClients(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-
 }
 
 func TestValidateAndStartPool(t *testing.T) {
-
 	o := bo.New()
 	o.ALBOptions = nil
 	tscl, _ := NewClient("test", o, nil, nil, nil, nil)
@@ -174,5 +170,4 @@ func TestValidateAndStartPool(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-
 }

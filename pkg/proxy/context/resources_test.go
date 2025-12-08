@@ -26,7 +26,6 @@ type testStruct struct {
 }
 
 func TestResources(t *testing.T) {
-
 	ctx := context.Background()
 
 	// cover nil short circuit case
@@ -39,5 +38,4 @@ func TestResources(t *testing.T) {
 	if !r2.(*testStruct).testField1 {
 		t.Errorf("expected %t got %t", true, r2.(testStruct).testField1)
 	}
-
 }

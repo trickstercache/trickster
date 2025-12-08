@@ -31,7 +31,6 @@ import (
 var ErrInvalidRegularExpression = errors.New("invalid regular expression")
 
 func (c *Client) parseOptions(o *ro.Options, rwi rewriter.InstructionsLookup) error {
-
 	name := c.Name()
 
 	if o == nil {
@@ -163,7 +162,6 @@ func (c *Client) parseOptions(o *ro.Options, rwi rewriter.InstructionsLookup) er
 		r.cases = make(caseList, 0)
 
 		for k, v := range o.CaseOptions {
-
 			var ri rewriter.RewriteInstructions
 			if v.ReqRewriterName != "" {
 				i, ok := rwi[v.ReqRewriterName]

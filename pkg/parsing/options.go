@@ -17,6 +17,8 @@
 package parsing
 
 import (
+	"maps"
+
 	"github.com/trickstercache/trickster/v2/pkg/parsing/lex"
 )
 
@@ -51,9 +53,7 @@ func (o *Options) WithDecisions(name string, ds DecisionSet) *Options {
 	if !ok {
 		m = make(DecisionSet)
 	}
-	for k, v := range ds {
-		m[k] = v
-	}
+	maps.Copy(m, ds)
 	o.Decisions[name] = m
 	return o
 }

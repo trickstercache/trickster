@@ -30,7 +30,7 @@ type responderClaim struct {
 
 func newResponderClaim(sz int) *responderClaim {
 	contexts := make([]context.Context, sz)
-	for i := 0; i < sz; i++ {
+	for i := range sz {
 		contexts[i] = context.Background()
 	}
 	return &responderClaim{lockVal: -1, contexts: contexts}

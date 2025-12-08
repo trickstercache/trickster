@@ -25,18 +25,15 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
-
 	"go.opentelemetry.io/otel/attribute"
 )
 
 func TestNewChildSpan(t *testing.T) {
-
 	// test with nil context and tracer:
 	_, span := NewChildSpan(stdcontext.Background(), nil, "test")
 
 	if span != nil {
 		t.Error("expected nil span")
-
 	}
 
 	// test with nil context but non-nil tracer
@@ -64,7 +61,6 @@ func TestNewChildSpan(t *testing.T) {
 }
 
 func TestPrepareRequest(t *testing.T) {
-
 	r, _ := http.NewRequest("GET", "http://example.com", nil)
 
 	_, sp := PrepareRequest(r, nil)

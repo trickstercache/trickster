@@ -22,7 +22,6 @@ import (
 )
 
 func getSwapper(t *testing.T) (*certSwapper, *tls.Config, func()) {
-
 	options, closer, err := tlsConfig("")
 	if closer != nil {
 		defer closer()
@@ -33,19 +32,16 @@ func getSwapper(t *testing.T) (*certSwapper, *tls.Config, func()) {
 
 	tlscfg1 := &tls.Config{NextProtos: []string{"h2"}}
 	tlscfg1.Certificates = make([]tls.Certificate, 1)
-	tlscfg1.Certificates[0], err =
-		tls.LoadX509KeyPair(options.FullChainCertPath, options.PrivateKeyPath)
+	tlscfg1.Certificates[0], err = tls.LoadX509KeyPair(options.FullChainCertPath, options.PrivateKeyPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	sw := NewSwapper(tlscfg1.Certificates).(*certSwapper)
 	return sw, tlscfg1, closer
-
 }
 
 func TestGetSetCert(t *testing.T) {
-
 	chi := &tls.ClientHelloInfo{}
 	sw, cfg, closer := getSwapper(t)
 	if closer != nil {

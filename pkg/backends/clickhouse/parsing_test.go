@@ -52,6 +52,7 @@ const tq03 = `SELECT (intDiv(toUInt32(time_column), 60) * 60) * 1000 AS t, count
 	`FROM testdb.test_table WHERE time_column BETWEEN toDateTime(1516665600) AND toDateTime(1516687200) ` +
 	`AND date_column >= toDate(1516665600) AND date_column <= toDate(1516687200) ` +
 	`AND field1 > 0 AND field2 = 'some_value' GROUP BY t, field1, field2 ORDER BY t, field1 FORMAT JSON`
+
 const tq04 = `SELECT toStartOfFiveMinute(datetime) AS t,` +
 	` count() as cnt, testfield1, testfield2 FROM (SELECT * FROM test_db.test_table WHERE x = 1) WHERE datetime > 1589904000` +
 	` GROUP BY t, testfield1, testfield2 ORDER BY  t DESC FORMAT TabSeparatedWithNamesAndTypes // test comment
@@ -158,7 +159,6 @@ func TestParseErrors(t *testing.T) {
 }
 
 func TestAtWith(t *testing.T) {
-
 	tk := token.Tokens{&token.Token{Typ: token.Space, Val: " "}}
 	rs := parsing.NewRunState(context.Background(), tk)
 	rs.Next()
@@ -226,7 +226,6 @@ func TestAtPreWhere(t *testing.T) {
 }
 
 func TestAtFormat(t *testing.T) {
-
 	tk := token.Tokens{
 		&token.Token{Typ: sql.TokenComment},
 		&token.Token{Typ: token.EOF},
@@ -457,7 +456,6 @@ func TestParseSelectTokens(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-
 }
 
 func TestParseGroupByTokens(t *testing.T) {
@@ -492,27 +490,34 @@ func TestParseWhereTokens(t *testing.T) {
 		{[]token.Tokens{}, nil, nil, nil, rlo, sqlparser.ErrNotTimeRangeQuery}, // 2
 		{[]token.Tokens{{&token.Token{Typ: token.EOF}}}, nil, nil, // 3
 			nil, rlo, sqlparser.ErrNoLowerBound},
-		{[]token.Tokens{{&token.Token{Typ: token.Identifier, Val: "x"}}}, nil, // 4
+		{
+			[]token.Tokens{{&token.Token{Typ: token.Identifier, Val: "x"}}},
+			nil, // 4
 			token.Lookup{"x": &token.Token{Typ: token.Number, Val: "8480"}},
-			&timeseries.TimeRangeQuery{}, rlo, sqlparser.ErrNoLowerBound},
-		{[]token.Tokens{ // 5
-			{
-				&token.Token{Typ: token.Identifier, Val: "x"},
-				&token.Token{Typ: token.GreaterThan, Val: ">"},
-				&token.Token{Typ: token.String, Val: "not-a-time"},
+			&timeseries.TimeRangeQuery{}, rlo, sqlparser.ErrNoLowerBound,
+		},
+		{
+			[]token.Tokens{ // 5
+				{
+					&token.Token{Typ: token.Identifier, Val: "x"},
+					&token.Token{Typ: token.GreaterThan, Val: ">"},
+					&token.Token{Typ: token.String, Val: "not-a-time"},
+				},
 			},
-		}, nil, nil, nil, &timeseries.RequestOptions{BaseTimestampFieldName: "x"},
+			nil, nil, nil, &timeseries.RequestOptions{BaseTimestampFieldName: "x"},
 			sql.ErrInvalidInputLength,
 		},
-		{[]token.Tokens{ // 6
-			{
-				&token.Token{Typ: token.Identifier, Val: "x"},
-				&token.Token{Typ: token.GreaterThan, Val: "between"},
-				&token.Token{Typ: token.Number, Val: "0"},
-				&token.Token{Typ: token.LogicalAnd, Val: "and"},
-				&token.Token{Typ: token.String, Val: "not-a-time"},
+		{
+			[]token.Tokens{ // 6
+				{
+					&token.Token{Typ: token.Identifier, Val: "x"},
+					&token.Token{Typ: token.GreaterThan, Val: "between"},
+					&token.Token{Typ: token.Number, Val: "0"},
+					&token.Token{Typ: token.LogicalAnd, Val: "and"},
+					&token.Token{Typ: token.String, Val: "not-a-time"},
+				},
 			},
-		}, nil, nil, &timeseries.TimeRangeQuery{Step: time.Minute},
+			nil, nil, &timeseries.TimeRangeQuery{Step: time.Minute},
 			&timeseries.RequestOptions{BaseTimestampFieldName: "x"},
 			sql.ErrInvalidInputLength,
 		},
@@ -557,7 +562,6 @@ func TestParseWhereTokens(t *testing.T) {
 }
 
 func TestSolveMathExpression(t *testing.T) {
-
 	tests := []struct {
 		input    token.Tokens
 		withVars token.Lookup
@@ -642,7 +646,6 @@ func TestBadQueries(t *testing.T) {
 			}
 		})
 	}
-
 }
 
 // func TestBackfillTolerance(t *testing.T) {

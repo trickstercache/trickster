@@ -32,7 +32,6 @@ func TestNewTarget(t *testing.T) {
 }
 
 func TestNewPool(t *testing.T) {
-
 	s := &healthcheck.Status{}
 	tgt := NewTarget(http.NotFoundHandler(), s)
 	if tgt.hcStatus != s {
@@ -57,5 +56,4 @@ func TestNewPool(t *testing.T) {
 	if len(p.Healthy()) != 1 {
 		t.Error("expected 1 healthy target", len(p.Healthy()))
 	}
-
 }

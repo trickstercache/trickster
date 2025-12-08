@@ -62,8 +62,8 @@ type DemandProbe func(w http.ResponseWriter)
 
 // newTarget returns a new target
 func newTarget(_ context.Context, name, description string, o *ho.Options,
-	client *http.Client) (*target, error) {
-
+	client *http.Client,
+) (*target, error) {
 	if o == nil {
 		return nil, ho.ErrNoOptionsProvided
 	}
@@ -109,7 +109,7 @@ func newTarget(_ context.Context, name, description string, o *ho.Options,
 	if len(o.ExpectedCodes) > 0 {
 		t.ec = o.ExpectedCodes
 	} else {
-		t.ec = []int{200}
+		t.ec = []int{http.StatusOK}
 	}
 	return t, nil
 }
@@ -219,16 +219,20 @@ func (t *target) probe(ctx context.Context) {
 		t.status.Set(-1)
 		t.ks = -1
 		logger.Info("hc status changed",
-			logging.Pairs{"targetName": t.name, "status": "failed",
-				"detail": t.status.Detail(), "threshold": t.failureThreshold})
+			logging.Pairs{
+				"targetName": t.name, "status": "failed",
+				"detail": t.status.Detail(), "threshold": t.failureThreshold,
+			})
 	} else if passed && t.ks != 1 && (successCnt == t.recoveryThreshold || t.ks == 0) {
 		t.status.failingSince = time.Time{}
 		t.status.Set(1)
 		t.ks = 1
 		t.status.SetDetail("") // this is only populated with failure details, so it is cleared upon recovery
 		logger.Info("hc status changed",
-			logging.Pairs{"targetName": t.name, "status": "available",
-				"threshold": t.recoveryThreshold})
+			logging.Pairs{
+				"targetName": t.name, "status": "available",
+				"threshold": t.recoveryThreshold,
+			})
 	}
 }
 

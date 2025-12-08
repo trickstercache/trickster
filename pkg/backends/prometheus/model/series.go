@@ -86,7 +86,6 @@ func MergeAndWriteSeries(w http.ResponseWriter, r *http.Request, rgs merge.Respo
 			headers.Merge(h, bestResp.Header)
 			w.WriteHeader(bestResp.StatusCode)
 			io.Copy(w, bestResp.Body)
-
 		} else {
 			failures.HandleBadGateway(w, r)
 		}

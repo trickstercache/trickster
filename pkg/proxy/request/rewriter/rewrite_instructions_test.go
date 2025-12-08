@@ -102,8 +102,7 @@ var testRL3 = options.RewriteList{
 	[]string{"hostname", "replace", "example.com", "trickstercache.org"},
 }
 
-type testRewriteInstruction struct {
-}
+type testRewriteInstruction struct{}
 
 func (ri *testRewriteInstruction) Execute(*http.Request) {}
 func (ri *testRewriteInstruction) Parse([]string) error  { return nil }
@@ -160,8 +159,7 @@ var testRI3 = RewriteInstructions{
 }
 
 func TestParseRewriteList(t *testing.T) {
-
-	var tests = []struct {
+	tests := []struct {
 		rl          options.RewriteList
 		expected    RewriteInstructions
 		expectedErr error
@@ -278,7 +276,6 @@ func TestParseRewriteList(t *testing.T) {
 
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-
 			got, err := ParseRewriteList(test.rl)
 			if err != test.expectedErr {
 				t.Errorf("expected error %s got %s", test.expectedErr, err)
@@ -291,13 +288,11 @@ func TestParseRewriteList(t *testing.T) {
 			if got.String() != test.expected.String() {
 				t.Errorf("\ngot      %s\nexpected %s", got.String(), test.expected.String())
 			}
-
 		})
 	}
 }
 
 func TestDictFuncsNilRequest(t *testing.T) {
-
 	f := dicts["header"]
 	d := f(nil)
 	if d != nil {
@@ -309,12 +304,10 @@ func TestDictFuncsNilRequest(t *testing.T) {
 	if d != nil {
 		t.Error("expected nil value")
 	}
-
 }
 
 func TestExecuteRewriteInstructions(t *testing.T) {
-
-	var exh0 = http.Header{"Cache-Control": []string{"max-age=60, smax-age=30"}}
+	exh0 := http.Header{"Cache-Control": []string{"max-age=60, smax-age=30"}}
 	eu0, _ := url.Parse("https://example.com:8480/path1/path2?param1=bar&param1=too&param3=trickster")
 	ri0, _ := ParseRewriteList(testRL0)
 
@@ -327,7 +320,7 @@ func TestExecuteRewriteInstructions(t *testing.T) {
 	eu3, _ := url.Parse("https://trickstercache.org:8480/path1/path2?param1=value&param2=value&param1=value2")
 	ri3, _ := ParseRewriteList(testRL3)
 
-	var tests = []struct {
+	tests := []struct {
 		in       *http.Request
 		ri       RewriteInstructions
 		expected *http.Request
@@ -369,7 +362,6 @@ func TestExecuteRewriteInstructions(t *testing.T) {
 }
 
 func reqLazyEqual(r1, r2 *http.Request) bool {
-
 	if r1 == nil && r2 == nil {
 		return true
 	}
@@ -378,11 +370,9 @@ func reqLazyEqual(r1, r2 *http.Request) bool {
 	}
 
 	return reqString(r1) == reqString(r2)
-
 }
 
 func TestHasTokens(t *testing.T) {
-
 	ris := RewriteInstructions{
 		&rwiPathSetter{},
 		&rwiPathReplacer{},
@@ -400,7 +390,6 @@ func TestHasTokens(t *testing.T) {
 			t.Error("expected false got true")
 		}
 	}
-
 }
 
 func TestNilRequestGetters(t *testing.T) {
@@ -413,7 +402,6 @@ func TestNilRequestGetters(t *testing.T) {
 }
 
 func TestMiscRequestGetters(t *testing.T) {
-
 	r := &http.Request{Method: "GET", URL: testURL}
 	fm := scalarGets["method"]
 	fh := scalarGets["hostname"]
@@ -427,11 +415,9 @@ func TestMiscRequestGetters(t *testing.T) {
 	if v != "example.com" {
 		t.Errorf("expected %s got %s", "example.com", v)
 	}
-
 }
 
 func TestMiscRequestSetters(t *testing.T) {
-
 	r := &http.Request{Method: "GET", URL: testURL}
 	fp := scalarSets["port"]
 	fh := scalarSets["hostname"]
@@ -496,7 +482,6 @@ func TestMiscRequestSetters(t *testing.T) {
 }
 
 func reqString(r *http.Request) string {
-
 	if r == nil || r.URL == nil {
 		return ""
 	}

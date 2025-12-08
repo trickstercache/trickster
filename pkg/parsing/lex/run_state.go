@@ -62,8 +62,10 @@ func (rs *RunState) Backup() {
 
 // Emit passes an Token back to the client.
 func (rs *RunState) Emit(t token.Typ) {
-	rs.Tokens = append(rs.Tokens, &token.Token{Typ: t, Pos: rs.Start,
-		Val: rs.InputLowered[rs.Start:rs.Pos]})
+	rs.Tokens = append(rs.Tokens, &token.Token{
+		Typ: t, Pos: rs.Start,
+		Val: rs.InputLowered[rs.Start:rs.Pos],
+	})
 	rs.Start = rs.Pos
 }
 

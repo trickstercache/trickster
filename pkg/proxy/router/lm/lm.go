@@ -43,8 +43,10 @@ func NewRouter() router.Router {
 	}
 }
 
-var emptyHost = []string{""}
-var defaultMethods = []string{http.MethodGet, http.MethodHead}
+var (
+	emptyHost      = []string{""}
+	defaultMethods = []string{http.MethodGet, http.MethodHead}
+)
 
 func (rt *lmRouter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.RequestURI == "*" {
@@ -58,7 +60,8 @@ func (rt *lmRouter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (rt *lmRouter) RegisterRoute(path string, hosts, methods []string,
-	matchPrefix bool, handler http.Handler) error {
+	matchPrefix bool, handler http.Handler,
+) error {
 	pl := len(path)
 	if pl == 0 {
 		return errors.ErrInvalidPath
@@ -220,8 +223,10 @@ func MethodNotAllowed(w http.ResponseWriter, _ *http.Request) {
 	http.Error(w, "405 method not allowed", http.StatusMethodNotAllowed)
 }
 
-var methodNotAllowedHandler = http.HandlerFunc(MethodNotAllowed)
-var notFoundHandler = http.NotFoundHandler()
+var (
+	methodNotAllowedHandler = http.HandlerFunc(MethodNotAllowed)
+	notFoundHandler         = http.NotFoundHandler()
+)
 
 // prefixRouteSets allows the route.PrefixRouteSets to be sorted by path from
 // longest-to-shortest using sort.Interface

@@ -19,13 +19,14 @@ package zstd
 import (
 	"io"
 
-	"github.com/trickstercache/trickster/v2/pkg/encoding/reader"
-
 	"github.com/klauspost/compress/zstd"
+	"github.com/trickstercache/trickster/v2/pkg/encoding/reader"
 )
 
-var commonDecoder *zstd.Decoder
-var commonEncoder *zstd.Encoder
+var (
+	commonDecoder *zstd.Decoder
+	commonEncoder *zstd.Encoder
+)
 
 func init() {
 	commonDecoder, _ = zstd.NewReader(nil)

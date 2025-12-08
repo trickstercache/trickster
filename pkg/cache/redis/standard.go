@@ -25,7 +25,6 @@ import (
 )
 
 func (c *CacheClient) clientOpts() (*redis.Options, error) {
-
 	if c.Config.Redis.Endpoint == "" {
 		return nil, fmt.Errorf("invalid endpoint: %s", c.Config.Redis.Endpoint)
 	}

@@ -22,7 +22,6 @@ import (
 )
 
 func TestHealthcheck(t *testing.T) {
-
 	b := HealthCheckFlag(context.Background())
 	if b {
 		t.Error("expected false")
@@ -41,5 +40,4 @@ func TestHealthcheck(t *testing.T) {
 	if !b {
 		t.Error("expected true")
 	}
-
 }

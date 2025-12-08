@@ -52,7 +52,6 @@ func TestReadCloserResetter(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-
 }
 
 func TestReadCloserResetterBytes(t *testing.T) {

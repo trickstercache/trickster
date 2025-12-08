@@ -29,7 +29,6 @@ func ExamplePrintVersion() {
 
 // ExamplePrintUsage tests the output of the PrintUsage() func
 func ExamplePrintUsage() {
-
 	appinfo.Version = "test"
 	PrintUsage()
 	// Output: Trickster version: test (/), buildInfo:  , goVersion: , copyright: © 2018 The Trickster Authors

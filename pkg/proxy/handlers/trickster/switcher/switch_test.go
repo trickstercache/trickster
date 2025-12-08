@@ -48,7 +48,6 @@ func TestUpdate(t *testing.T) {
 }
 
 func TestHandler(t *testing.T) {
-
 	router := http.NewServeMux()
 	sh := NewSwitchHandler(router)
 

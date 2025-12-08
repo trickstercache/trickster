@@ -31,7 +31,8 @@ var contentTypeHints = map[byte]string{
 }
 
 func WriteResponseHeader(w io.Writer, statusCode int, contentTypeHint byte,
-	h http.Header) error {
+	h http.Header,
+) error {
 	if rw, ok := w.(http.ResponseWriter); ok {
 		rwh := rw.Header()
 		if cth, ok := contentTypeHints[contentTypeHint]; ok && cth != "" {

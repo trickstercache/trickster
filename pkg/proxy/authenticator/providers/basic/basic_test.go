@@ -18,26 +18,31 @@ package basic
 
 import (
 	"fmt"
+	"maps"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
-
-	"maps"
 
 	ct "github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/types"
 	"golang.org/x/crypto/bcrypt"
 )
 
-const testUser1 = "testUser1"
-const testUser1p = "testUser1p"
+const (
+	testUser1  = "testUser1"
+	testUser1p = "testUser1p"
+)
 
-const testUser2 = "testUser2"
-const testUser2p = "testUser2p"
+const (
+	testUser2  = "testUser2"
+	testUser2p = "testUser2p"
+)
 
-const testUser3 = "testUser3"
-const testUser3p = "testUser3p"
+const (
+	testUser3  = "testUser3"
+	testUser3p = "testUser3p"
+)
 
 func bcryptHash(pass string) string {
 	h, _ := bcrypt.GenerateFromPassword([]byte(pass), bcrypt.DefaultCost)

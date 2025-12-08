@@ -26,18 +26,15 @@ import (
 )
 
 func TestNew(t *testing.T) {
-
 	pc := New()
 	require.NotNil(t, pc)
 
 	if pc.HandlerName != providers.Proxy {
 		t.Errorf("expected value %s, got %s", providers.Proxy, pc.HandlerName)
 	}
-
 }
 
 func TestPathClone(t *testing.T) {
-
 	pc := New()
 	pc2 := pc.Clone()
 	require.NotNil(t, pc2)
@@ -45,7 +42,6 @@ func TestPathClone(t *testing.T) {
 	if pc2.HandlerName != providers.Proxy {
 		t.Errorf("expected value %s, got %s", providers.Proxy, pc2.HandlerName)
 	}
-
 }
 
 func TestInitialize(t *testing.T) {

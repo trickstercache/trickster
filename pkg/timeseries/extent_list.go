@@ -335,7 +335,7 @@ func (el ExtentList) Remove(r ExtentList, step time.Duration) ExtentList {
 	}
 	out := make(ExtentList, len(el)*2)
 	var k int
-	for i := range len(el) {
+	for i := range el {
 		ex := el[i]
 		var split bool
 		for _, rem := range r {
@@ -390,7 +390,8 @@ func (el ExtentList) TimestampCount(d time.Duration) int64 {
 // needed extent. step is used to determine which absolute timestamps in need
 // will be checked in el.
 func (el ExtentList) CalculateDeltas(needs ExtentList,
-	step time.Duration) ExtentList {
+	step time.Duration,
+) ExtentList {
 	sort.Sort(el)
 	sort.Sort(needs)
 	out := ExtentList(segments.Diff(el, needs, step, segments.Time{}))
@@ -442,7 +443,6 @@ func (el ExtentListLRU) String() string {
 // UpdateLastUsed updates the ExtentListLRU's LastUsed field for the provided extent.
 // The step is required in order to properly split extents.
 func (el ExtentListLRU) UpdateLastUsed(lur Extent, step time.Duration) ExtentListLRU {
-
 	if el == nil {
 		return nil
 	}
@@ -455,7 +455,6 @@ func (el ExtentListLRU) UpdateLastUsed(lur Extent, step time.Duration) ExtentLis
 	el2 := make(ExtentList, 0, len(el))
 
 	for _, x := range el {
-
 		// This case captures when extent x is sandwiched between the
 		// extents in the list containing lur.Start and lur.End
 		// So we'll mark its Last Used and move on without splitting.

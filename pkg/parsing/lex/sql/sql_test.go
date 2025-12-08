@@ -53,9 +53,10 @@ func newLexTestHarness(lo *lex.Options) *mockParser {
 }
 
 func TestLexer(t *testing.T) {
-
-	defaultLO := &lex.Options{CustomKeywords: map[string]token.Typ{"test": TokenWhere},
-		SpacedKeywordHints: SpacedKeywords()}
+	defaultLO := &lex.Options{
+		CustomKeywords:     map[string]token.Typ{"test": TokenWhere},
+		SpacedKeywordHints: SpacedKeywords(),
+	}
 
 	tests := []struct {
 		in, expected string

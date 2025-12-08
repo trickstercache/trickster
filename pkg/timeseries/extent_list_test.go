@@ -26,33 +26,34 @@ import (
 	"time"
 )
 
-var t0 = time.Unix(0, 0)
-var t98 = time.Unix(98, 0)
-var t99 = time.Unix(99, 0)
-var t100 = time.Unix(100, 0)
-var t101 = time.Unix(101, 0)
-var t200 = time.Unix(200, 0)
-var t201 = time.Unix(201, 0)
-var t300 = time.Unix(300, 0)
-var t400 = time.Unix(400, 0) //lint:ignore U1000 - unused, but placeholder for future use
-var t500 = time.Unix(500, 0)
-var t600 = time.Unix(600, 0)
-var t700 = time.Unix(700, 0)
-var t800 = time.Unix(800, 0)
-var t900 = time.Unix(900, 0)
-var t1000 = time.Unix(1000, 0)
-var t1100 = time.Unix(1100, 0)
-var t1200 = time.Unix(1200, 0)
-var t1300 = time.Unix(1300, 0)
-var t1400 = time.Unix(1400, 0)
-var t1500 = time.Unix(1500, 0)
-var t1600 = time.Unix(1600, 0)
-var t1700 = time.Unix(1700, 0)
-var t1800 = time.Unix(1800, 0)
-var t1900 = time.Unix(1900, 0)
+var (
+	t0    = time.Unix(0, 0)
+	t98   = time.Unix(98, 0)
+	t99   = time.Unix(99, 0)
+	t100  = time.Unix(100, 0)
+	t101  = time.Unix(101, 0)
+	t200  = time.Unix(200, 0)
+	t201  = time.Unix(201, 0)
+	t300  = time.Unix(300, 0)
+	t400  = time.Unix(400, 0) //lint:ignore U1000 - unused, but placeholder for future use
+	t500  = time.Unix(500, 0)
+	t600  = time.Unix(600, 0)
+	t700  = time.Unix(700, 0)
+	t800  = time.Unix(800, 0)
+	t900  = time.Unix(900, 0)
+	t1000 = time.Unix(1000, 0)
+	t1100 = time.Unix(1100, 0)
+	t1200 = time.Unix(1200, 0)
+	t1300 = time.Unix(1300, 0)
+	t1400 = time.Unix(1400, 0)
+	t1500 = time.Unix(1500, 0)
+	t1600 = time.Unix(1600, 0)
+	t1700 = time.Unix(1700, 0)
+	t1800 = time.Unix(1800, 0)
+	t1900 = time.Unix(1900, 0)
+)
 
 func TestUpdateLastUsed(t *testing.T) {
-
 	now := time.Now().Truncate(time.Second).Unix()
 
 	tests := []struct {
@@ -139,11 +140,9 @@ func TestUpdateLastUsed(t *testing.T) {
 			}
 		})
 	}
-
 }
 
 func TestEncompasses(t *testing.T) {
-
 	el := ExtentList{
 		Extent{Start: t100, End: t200},
 		Extent{Start: t600, End: t900},
@@ -198,7 +197,6 @@ func TestEncompasses(t *testing.T) {
 }
 
 func TestEncompassedBy(t *testing.T) {
-
 	el := ExtentList{
 		Extent{Start: t100, End: t200},
 		Extent{Start: t600, End: t900},
@@ -253,7 +251,6 @@ func TestEncompassedBy(t *testing.T) {
 }
 
 func TestRemove(t *testing.T) {
-
 	step := time.Second * 1
 
 	tests := []struct {
@@ -397,11 +394,9 @@ func TestRemove(t *testing.T) {
 			}
 		})
 	}
-
 }
 
 func TestOutsideOf(t *testing.T) {
-
 	el := ExtentList{
 		Extent{Start: t100, End: t200},
 		Extent{Start: t600, End: t900},
@@ -436,7 +431,6 @@ func TestOutsideOf(t *testing.T) {
 }
 
 func TestString(t *testing.T) {
-
 	tests := []struct {
 		el       ExtentList
 		expected string
@@ -470,11 +464,9 @@ func TestString(t *testing.T) {
 			}
 		})
 	}
-
 }
 
 func TestCloneRange(t *testing.T) {
-
 	el := ExtentList{
 		Extent{Start: t600, End: t900},
 	}
@@ -499,11 +491,9 @@ func TestCloneRange(t *testing.T) {
 	if len(res) != 2 {
 		t.Error("expected 2 got", len(res))
 	}
-
 }
 
 func TestCrop(t *testing.T) {
-
 	el := ExtentList{
 		Extent{Start: t100, End: t200},
 		Extent{Start: t600, End: t900},
@@ -514,7 +504,6 @@ func TestCrop(t *testing.T) {
 		cropRange      Extent
 		seed, expected ExtentList
 	}{
-
 		{ // Run 0
 			Extent{Start: t98, End: t1300},
 			el.Clone(),
@@ -772,7 +761,6 @@ func TestExtentListLRUSort(t *testing.T) {
 	if !reflect.DeepEqual(el, el2) {
 		t.Errorf("mismatch in sort: expected=%s got=%s", el2, el)
 	}
-
 }
 
 func TestExtentListLRUCopy(t *testing.T) {
@@ -787,11 +775,9 @@ func TestExtentListLRUCopy(t *testing.T) {
 	if !reflect.DeepEqual(el, el2) {
 		t.Errorf("mismatch in sort: expected=%s got=%s", el2, el)
 	}
-
 }
 
 func TestCompress(t *testing.T) {
-
 	tests := []struct {
 		uncompressed, compressed ExtentList
 	}{
@@ -855,7 +841,6 @@ func TestCompress(t *testing.T) {
 
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-
 			result := test.uncompressed.Compress(time.Duration(30) * time.Second)
 
 			if !reflect.DeepEqual(result, test.compressed) {
@@ -866,7 +851,6 @@ func TestCompress(t *testing.T) {
 }
 
 func TestSize(t *testing.T) {
-
 	el := ExtentList{
 		Extent{Start: time.Unix(90, 0), End: time.Unix(120, 0)},
 		Extent{Start: time.Unix(90, 0), End: time.Unix(120, 0)},
@@ -878,11 +862,9 @@ func TestSize(t *testing.T) {
 	if el.Size() != expected {
 		t.Errorf("expected %d got %d", expected, el.Size())
 	}
-
 }
 
 func TestCalculateDeltas(t *testing.T) {
-
 	tests := []struct {
 		have                 []Extent
 		expected             []Extent
@@ -900,8 +882,10 @@ func TestCalculateDeltas(t *testing.T) {
 		},
 		{
 			[]Extent{{Start: time.Unix(50, 0), End: time.Unix(100, 0)}},
-			[]Extent{{Start: time.Unix(1, 0), End: time.Unix(49, 0)},
-				{Start: time.Unix(101, 0), End: time.Unix(101, 0)}},
+			[]Extent{
+				{Start: time.Unix(1, 0), End: time.Unix(49, 0)},
+				{Start: time.Unix(101, 0), End: time.Unix(101, 0)},
+			},
 			1, 101, 1,
 		},
 		{
@@ -934,7 +918,6 @@ func TestCalculateDeltas(t *testing.T) {
 }
 
 func TestTimestampCount(t *testing.T) {
-
 	el := ExtentList{
 		Extent{Start: t100, End: t200},
 		Extent{Start: t600, End: t900},
@@ -947,11 +930,9 @@ func TestTimestampCount(t *testing.T) {
 	if v := el.TimestampCount(time.Second * 100); v != expected {
 		t.Errorf("expected %d got %d", expected, v)
 	}
-
 }
 
 func TestSplice(t *testing.T) {
-
 	tests := []struct {
 		el, expected               ExtentList
 		step, maxRange, spliceStep time.Duration
@@ -962,7 +943,8 @@ func TestSplice(t *testing.T) {
 				Extent{Start: t100, End: t200},
 				Extent{Start: t600, End: t900},
 				Extent{},
-				Extent{Start: t1100, End: t1300}},
+				Extent{Start: t1100, End: t1300},
+			},
 			expected: ExtentList{
 				Extent{Start: t100, End: t200},
 				Extent{Start: t600, End: t700},

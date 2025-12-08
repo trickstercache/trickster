@@ -35,7 +35,6 @@ import (
 	trerr "github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/switcher"
 	sw "github.com/trickstercache/trickster/v2/pkg/proxy/tls"
-
 	"golang.org/x/net/netutil"
 )
 
@@ -79,7 +78,6 @@ func (o *observedConnection) Close() error {
 
 // Accept implements Listener.Accept
 func (l *Listener) Accept() (net.Conn, error) {
-
 	metrics.ProxyConnectionRequested.Inc()
 
 	c, err := l.Listener.Accept()
@@ -180,8 +178,8 @@ func (l *Listener) WaitForReady(timeout time.Duration) bool {
 // connections (with operates with sampling through scrapes), and a set of
 // counter metrics for connections accepted, rejected and closed.
 func NewListener(listenAddress string, listenPort, connectionsLimit int,
-	tlsConfig *tls.Config, _ time.Duration) (net.Listener, error) {
-
+	tlsConfig *tls.Config, _ time.Duration,
+) (net.Listener, error) {
 	var listener net.Listener
 	var err error
 
@@ -211,7 +209,6 @@ func NewListener(listenAddress string, listenPort, connectionsLimit int,
 	})
 
 	return listener, nil
-
 }
 
 // Get returns the listener if it exists
@@ -228,7 +225,8 @@ func (lg *Group) Get(name string) *Listener {
 // StartListener starts a new HTTP listener and adds it to the listener group
 func (lg *Group) StartListener(listenerName, address string, port int, connectionsLimit int,
 	tlsConfig *tls.Config, router http.Handler, tracers tracing.Tracers,
-	f func(), drainTimeout, readHeaderTimeout time.Duration) error {
+	f func(), drainTimeout, readHeaderTimeout time.Duration,
+) error {
 	l := &Listener{
 		routeSwapper: switcher.NewSwitchHandler(router),
 		exitOnError:  f != nil,
@@ -325,7 +323,8 @@ func handleTracerShutdowns(tracers tracing.Tracers) {
 // StartListenerRouter starts a new HTTP listener with a new router, and adds it to the listener group
 func (lg *Group) StartListenerRouter(listenerName, address string, port int, connectionsLimit int,
 	tlsConfig *tls.Config, path string, handler http.Handler,
-	tracers tracing.Tracers, f func(), drainTimeout, readHeaderTimeout time.Duration) error {
+	tracers tracing.Tracers, f func(), drainTimeout, readHeaderTimeout time.Duration,
+) error {
 	router := http.NewServeMux()
 	router.Handle(path, handler)
 	return lg.StartListener(listenerName, address, port, connectionsLimit,

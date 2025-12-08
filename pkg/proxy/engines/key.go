@@ -36,7 +36,6 @@ import (
 
 // DeriveCacheKey calculates a query-specific keyname based on the user request
 func (pr *proxyRequest) DeriveCacheKey(extra string) string {
-
 	rsc := request.GetResources(pr.Request)
 	pc := rsc.PathConfig
 
@@ -180,7 +179,6 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 }
 
 func deepSearch(document map[string]any, key string) (string, error) {
-
 	if key == "" {
 		return "", fmt.Errorf("invalid key name: %s", key)
 	}
@@ -211,7 +209,6 @@ func deepSearch(document map[string]any, key string) (string, error) {
 		if b, ok := v.(bool); ok {
 			return fmt.Sprintf("%t", b), nil
 		}
-
 	}
 	return "", errors.CouldNotFindKey(key)
 }

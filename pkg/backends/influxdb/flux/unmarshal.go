@@ -38,14 +38,16 @@ var parser = dcsv.NewParserMust(buildFieldDefinitions, typeToFieldDataType,
 
 // UnmarshalTimeseries converts a Flux CSV into a Timeseries
 func UnmarshalTimeseries(data []byte,
-	trq *timeseries.TimeRangeQuery) (timeseries.Timeseries, error) {
+	trq *timeseries.TimeRangeQuery,
+) (timeseries.Timeseries, error) {
 	buf := bytes.NewReader(data)
 	return UnmarshalTimeseriesReader(buf, trq)
 }
 
 // UnmarshalTimeseriesReader converts a Flux CSV into a Timeseries via io.Reader
 func UnmarshalTimeseriesReader(reader io.Reader,
-	trq *timeseries.TimeRangeQuery) (timeseries.Timeseries, error) {
+	trq *timeseries.TimeRangeQuery,
+) (timeseries.Timeseries, error) {
 	if trq == nil {
 		return nil, timeseries.ErrNoTimerangeQuery
 	}
@@ -69,7 +71,8 @@ func UnmarshalTimeseriesReader(reader io.Reader,
 
 // buildFieldDefinitions is the FieldParserFunc passed to the Parser
 func buildFieldDefinitions(rows [][]string,
-	_ *timeseries.TimeRangeQuery) (timeseries.SeriesFields, error) {
+	_ *timeseries.TimeRangeQuery,
+) (timeseries.SeriesFields, error) {
 	l := len(rows[dataStartRow-1])
 	if l < dataStartRow {
 		return timeseries.SeriesFields{}, timeseries.ErrInvalidBody
@@ -107,8 +110,10 @@ func buildFieldDefinitions(rows [][]string,
 			k++
 		}
 	}
-	return timeseries.SeriesFields{Timestamp: tfd, Tags: outTags[:j],
-		Values: outVals[:k], Untracked: outUntracked[:u], ResultNameCol: 1}, nil
+	return timeseries.SeriesFields{
+		Timestamp: tfd, Tags: outTags[:j],
+		Values: outVals[:k], Untracked: outUntracked[:u], ResultNameCol: 1,
+	}, nil
 }
 
 // loadFieldDef returns a field definition from the name, datatype and group.

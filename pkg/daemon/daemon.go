@@ -38,8 +38,10 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 )
 
-var mtx sync.Mutex
-var wasStarted bool
+var (
+	mtx        sync.Mutex
+	wasStarted bool
+)
 
 func Start() error {
 	var skipUnlock bool

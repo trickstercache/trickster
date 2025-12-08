@@ -31,14 +31,13 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"gopkg.in/yaml.v2"
-
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/contenttype"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"gopkg.in/yaml.v2"
 )
 
 type detail struct {
@@ -349,8 +348,10 @@ func updateStatusText(hc healthcheck.HealthChecker, hd *healthDetail, backends b
 		}
 	}
 
-	hd.detail.Store(&detail{text: status.Tabular(), json: status.JSON(),
-		yaml: status.YAML(), lastModified: lastModified})
+	hd.detail.Store(&detail{
+		text: status.Tabular(), json: status.JSON(),
+		yaml: status.YAML(), lastModified: lastModified,
+	})
 }
 
 func statusToString(i int, hasSince bool) string {

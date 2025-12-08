@@ -26,7 +26,6 @@ import (
 )
 
 func TestHTTPToCode(t *testing.T) {
-
 	tests := []struct {
 		code     int
 		expected codes.Code
@@ -56,11 +55,9 @@ func TestHTTPToCode(t *testing.T) {
 			}
 		})
 	}
-
 }
 
 func TestTags(t *testing.T) {
-
 	t1 := Tags{"testKey1": "testValue1"}
 	t2 := Tags{"testKey2": "testValue2"}
 
@@ -89,5 +86,4 @@ func TestTags(t *testing.T) {
 	if len(attrs) != 3 {
 		t.Errorf("expected %d got %d", 3, len(attrs))
 	}
-
 }

@@ -28,7 +28,6 @@ import (
 )
 
 func TestHandleNewestResponse(t *testing.T) {
-
 	r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
 
 	p, _, _ := albpool.New(0, nil)
@@ -65,7 +64,6 @@ func TestHandleNewestResponse(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Error("expected 200 got", w.Code)
 	}
-
 }
 
 func TestWriteHeader(t *testing.T) {

@@ -24,7 +24,8 @@ import (
 )
 
 func New(healthyFloor int, hs []http.Handler) (pool.Pool,
-	[]*pool.Target, []*healthcheck.Status) {
+	[]*pool.Target, []*healthcheck.Status,
+) {
 	var targets []*pool.Target
 	var statuses []*healthcheck.Status
 	if len(hs) > 0 {

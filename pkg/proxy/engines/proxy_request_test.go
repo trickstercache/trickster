@@ -36,13 +36,11 @@ import (
 )
 
 func TestCheckCacheFreshness(t *testing.T) {
-
 	// CachingPolicy should be nil and will return false
 	pr := proxyRequest{}
 	if pr.checkCacheFreshness() {
 		t.Errorf("got %t expected %t", pr.checkCacheFreshness(), false)
 	}
-
 }
 
 func TestParseRequestRanges(t *testing.T) {
@@ -85,7 +83,6 @@ func TestStripConditionalHeaders(t *testing.T) {
 }
 
 func TestSetBodyWriter(t *testing.T) {
-
 	buff := make([]byte, 0)
 	pr := proxyRequest{
 		writeToCache:     true,
@@ -111,11 +108,9 @@ func TestSetBodyWriter(t *testing.T) {
 	if pr.cacheBuffer == nil {
 		t.Error("expected non-nil cacheBody")
 	}
-
 }
 
 func TestWriteResponseBody(t *testing.T) {
-
 	pr := proxyRequest{}
 	pr.writeResponseBody()
 	if pr.responseWriter != nil {
@@ -126,8 +121,10 @@ func TestWriteResponseBody(t *testing.T) {
 func TestDetermineCacheability(t *testing.T) {
 	logger.SetLogger(testLogger)
 
-	conf, err := config.Load([]string{"-origin-url", "http://1", "-provider",
-		"test"})
+	conf, err := config.Load([]string{
+		"-origin-url", "http://1", "-provider",
+		"test",
+	})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
@@ -275,7 +272,6 @@ func TestPrepareRevalidationRequest(t *testing.T) {
 	if v != expected {
 		t.Errorf("expected %s got %s", expected, v)
 	}
-
 }
 
 func TestPrepareRevalidationRequestNoRange(t *testing.T) {
@@ -291,7 +287,7 @@ func TestPrepareRevalidationRequestNoRange(t *testing.T) {
 		upstreamRequest:  r,
 		cachingPolicy:    &CachingPolicy{},
 		upstreamResponse: &http.Response{},
-		cacheDocument:    &HTTPDocument{}, //Ranges: byterange.Ranges{byterange.Range{Start: 30, End: 40}}},
+		cacheDocument:    &HTTPDocument{}, // Ranges: byterange.Ranges{byterange.Range{Start: 30, End: 40}}},
 		cacheStatus:      status.LookupStatusPartialHit,
 		wantedRanges:     byterange.Ranges{{Start: 0, End: 10}, {Start: 12, End: 20}},
 	}
@@ -333,7 +329,6 @@ func TestPrepareUpstreamRequests(t *testing.T) {
 }
 
 func TestStoreTrueContentType(t *testing.T) {
-
 	ts, _, r, _, _ := setupTestHarnessOPC("", "test", http.StatusOK, nil)
 	defer ts.Close()
 
@@ -356,16 +351,13 @@ func TestStoreTrueContentType(t *testing.T) {
 	if pr.cacheDocument.ContentType != expected {
 		t.Errorf("expected %s got %s", expected, pr.cacheDocument.ContentType)
 	}
-
 }
 
 func TestReconstituteResponses(t *testing.T) {
-
 	pr := &proxyRequest{}
 
 	pr.reconstituteResponses()
 	if len(pr.originRequests) != 0 {
 		t.Errorf("expected %d got %d", 0, len(pr.originRequests))
 	}
-
 }

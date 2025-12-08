@@ -24,7 +24,8 @@ import (
 )
 
 func LoadData(path string, ff types.CredentialsFileFormat,
-	cf types.CredentialsFormat) (types.CredentialsManifest, error) {
+	cf types.CredentialsFormat,
+) (types.CredentialsManifest, error) {
 	switch ff {
 	case types.HTPasswd:
 		return htpasswd.LoadHtpasswdBcrypt(path)
@@ -35,7 +36,8 @@ func LoadData(path string, ff types.CredentialsFileFormat,
 }
 
 func LoadMap(users types.CredentialsManifest,
-	cf types.CredentialsFormat) types.CredentialsManifest {
+	cf types.CredentialsFormat,
+) types.CredentialsManifest {
 	out := make(types.CredentialsManifest, len(users))
 	for username, password := range users {
 		switch cf {

@@ -22,7 +22,6 @@ import (
 )
 
 func TestIsValidForwardingType(t *testing.T) {
-
 	b := IsValidForwardingType("fail")
 	if b {
 		t.Error("expected false")
@@ -32,7 +31,6 @@ func TestIsValidForwardingType(t *testing.T) {
 	if !b {
 		t.Error("expected true")
 	}
-
 }
 
 var testHops1 = &Hop{
@@ -52,8 +50,7 @@ var testHops2 = &Hop{
 }
 
 func TestForwardedString(t *testing.T) {
-
-	var hop = testHops1
+	hop := testHops1
 	hop.Hops = []*Hop{testHops2}
 
 	s := hop.String()
@@ -62,7 +59,6 @@ func TestForwardedString(t *testing.T) {
 	if s != expected {
 		t.Errorf("expected %s got %s", expected, s)
 	}
-
 }
 
 func TestFdFromRequest(t *testing.T) {
@@ -77,7 +73,6 @@ func TestFdFromRequest(t *testing.T) {
 }
 
 func TestSetVia(t *testing.T) {
-
 	r, _ := http.NewRequest("GET", "https://bar.com/", nil)
 	r.Header = nil
 	r.RemoteAddr = "1.2.3.4:5678"
@@ -91,11 +86,9 @@ func TestSetVia(t *testing.T) {
 	if _, ok := r.Header[NameVia]; !ok {
 		t.Error("expected Via header to be set")
 	}
-
 }
 
 func TestAddForwardingHeaders(t *testing.T) {
-
 	r, _ := http.NewRequest("GET", "https://bar.com/", nil)
 	r.RemoteAddr = "1.2.3.4:5678"
 	r.ProtoMajor = 2
@@ -111,7 +104,6 @@ func TestAddForwardingHeaders(t *testing.T) {
 	if _, ok := r.Header[NameXForwardedFor]; !ok {
 		t.Error("expected X-Forwarded-For header to be set")
 	}
-
 }
 
 func TestXHeader(t *testing.T) {
@@ -142,7 +134,6 @@ func TestAddForwardedAndX(t *testing.T) {
 }
 
 func TestHopsFromHeader(t *testing.T) {
-
 	h := http.Header{}
 	hops := HopsFromHeader(h)
 	if hops != nil {
@@ -165,7 +156,6 @@ func TestHopsFromHeader(t *testing.T) {
 	if len(hops) != 2 {
 		t.Errorf("expected %d got  %d", 2, len(hops))
 	}
-
 }
 
 func TestParseXForwardHeaders(t *testing.T) {
@@ -185,7 +175,6 @@ func TestFormatForwardedAddress(t *testing.T) {
 }
 
 func TestStripMergeHeaders(t *testing.T) {
-
 	h := http.Header{NameContentLength: []string{"42"}, NameLocation: []string{"https://trickstercache.org/"}}
 	StripMergeHeaders(h)
 
@@ -196,5 +185,4 @@ func TestStripMergeHeaders(t *testing.T) {
 	if _, ok := h[NameLocation]; !ok {
 		t.Error("expected Location Header to remain present")
 	}
-
 }

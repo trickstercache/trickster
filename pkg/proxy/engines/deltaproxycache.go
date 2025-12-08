@@ -42,7 +42,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
-
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -106,8 +105,10 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 		OldestRetainedTimestamp = now.Truncate(trq.Step).Add(-(trq.Step * o.TimeseriesRetention))
 		if trq.Extent.End.Before(OldestRetainedTimestamp) {
 			logger.Debug("timerange end is too old to consider caching",
-				logging.Pairs{"oldestRetainedTimestamp": OldestRetainedTimestamp,
-					"step": trq.Step, "retention": o.TimeseriesRetention})
+				logging.Pairs{
+					"oldestRetainedTimestamp": OldestRetainedTimestamp,
+					"step":                    trq.Step, "retention": o.TimeseriesRetention,
+				})
 			if trq.OriginalBody != nil {
 				request.SetBody(r, trq.OriginalBody)
 			}
@@ -150,7 +151,7 @@ checkCache:
 		}
 	} else {
 		doc, cacheStatus, _, err = QueryCache(ctx, cache, key, nil, modeler.CacheUnmarshaler)
-		if cacheStatus == status.LookupStatusKeyMiss && err == tc.ErrKNF {
+		if cacheStatus == status.LookupStatusKeyMiss && errors.Is(err, tc.ErrKNF) {
 			cts, doc, elapsed, err = fetchTimeseries(pr, trq, client, modeler)
 			if err != nil {
 				pr.cacheLock.RRelease()
@@ -265,14 +266,19 @@ checkCache:
 		writeLock = pr.cacheLock
 	}
 
-	ffStatus := "off"
+	const (
+		statusOff = "off"
+		statusErr = "err"
+	)
+
+	ffStatus := statusOff
 	var ffReq *http.Request
 	// if the step resolution <= Fast Forward TTL, then no need to even try Fast Forward
 	if !rlo.FastForwardDisable {
 		if trq.Step > o.FastForwardTTL {
 			ffReq, err = client.FastForwardRequest(r)
 			if err != nil || ffReq == nil || ffReq.URL == nil || ffReq.URL.Scheme == "" {
-				ffStatus = "err"
+				ffStatus = statusErr
 				rlo.FastForwardDisable = true
 			} else {
 				ffReq = ffReq.WithContext(profile.ToContext(ffReq.Context(), dpcEncodingProfile.Clone()))
@@ -304,7 +310,7 @@ checkCache:
 			if resp != nil && resp.StatusCode == http.StatusOK && len(body) > 0 {
 				ffts, err = modeler.WireUnmarshalerReader(getDecoderReader(resp), trq)
 				if err != nil {
-					ffStatus = "err"
+					ffStatus = statusErr
 					logger.Error("proxy object unmarshaling failed",
 						logging.Pairs{"body": string(body)})
 					return
@@ -318,7 +324,7 @@ checkCache:
 				}
 				hasFastForwardData = len(x) > 0 && x[0].End.After(trq.Extent.End)
 			} else {
-				ffStatus = "err"
+				ffStatus = statusErr
 			}
 		})
 	}
@@ -370,7 +376,6 @@ checkCache:
 	// this handles the tolerance part of backfill tolerance, by adding new tolerable ranges to
 	// the timeseries's volatile list, and removing those that no longer tolerate backfill
 	if bt > 0 && cacheStatus != status.LookupStatusHit {
-
 		var shouldCompress bool
 		ve := cts.VolatileExtents()
 
@@ -401,7 +406,6 @@ checkCache:
 		if shouldCompress {
 			cts.SetVolatileExtents(ve.Compress(trq.Step))
 		}
-
 	}
 
 	// cts is the cacheable time series, rts is the user's response timeseries
@@ -498,8 +502,8 @@ var dpcEncodingProfile = &profile.Profile{
 
 func fetchTimeseries(pr *proxyRequest, trq *timeseries.TimeRangeQuery,
 	client backends.TimeseriesBackend, modeler *timeseries.Modeler) (timeseries.Timeseries,
-	*HTTPDocument, time.Duration, error) {
-
+	*HTTPDocument, time.Duration, error,
+) {
 	rsc := request.GetResources(pr.Request).Clone()
 	o := rsc.BackendOptions
 	pc := rsc.PathConfig
@@ -554,7 +558,8 @@ func fetchTimeseries(pr *proxyRequest, trq *timeseries.TimeRangeQuery,
 
 func recordDPCResult(r *http.Request, cacheStatus status.LookupStatus,
 	httpStatus int, path, ffStatus string, elapsed float64,
-	needed timeseries.ExtentList, header http.Header) {
+	needed timeseries.ExtentList, header http.Header,
+) {
 	recordResults(r, "DeltaProxyCache", cacheStatus, httpStatus, path, ffStatus,
 		elapsed, needed, header)
 }
@@ -575,8 +580,8 @@ func getDecoderReader(resp *http.Response) io.Reader {
 // this will concurrently fetch provided requested extents
 func fetchExtents(el timeseries.ExtentList, rsc *request.Resources, h http.Header,
 	client backends.TimeseriesBackend, pr *proxyRequest, wur timeseries.UnmarshalerReaderFunc,
-	span trace.Span) (timeseries.List, int64, *http.Response, error) {
-
+	span trace.Span,
+) (timeseries.List, int64, *http.Response, error) {
 	var uncachedValueCount atomic.Int64
 	var wg sync.WaitGroup
 	var appendLock, respLock sync.Mutex

@@ -17,6 +17,7 @@
 package options
 
 import (
+	"maps"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
@@ -34,10 +35,12 @@ func New() *Options {
 }
 
 func (o *Options) Clone() *Options {
-	return pointers.Clone(o)
+	out := pointers.Clone(o)
+	out.Labels = maps.Clone(o.Labels)
+	return out
 }
 
-func (o *Options) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (o *Options) UnmarshalYAML(unmarshal func(any) error) error {
 	type loadOptions Options
 	lo := loadOptions(*(New()))
 	if err := unmarshal(&lo); err != nil {

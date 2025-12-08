@@ -15,5 +15,3 @@
  */
 
 package config
-
-const ()

@@ -22,7 +22,6 @@ import (
 )
 
 func TestBToS(t *testing.T) {
-
 	b := btos(true, false)
 	expected := "true"
 	if b != expected {
@@ -40,11 +39,9 @@ func TestBToS(t *testing.T) {
 	if b != expected {
 		t.Errorf("expected %s got %s", expected, b)
 	}
-
 }
 
 func TestOperations(t *testing.T) {
-
 	tests := []struct {
 		opKey, input, arg string
 		negate            bool

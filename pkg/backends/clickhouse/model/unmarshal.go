@@ -66,8 +66,8 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 
 // buildFieldDefinitions is the FieldParserFunc passed to the Parser
 func buildFieldDefinitions(rows [][]string,
-	trq *timeseries.TimeRangeQuery) (timeseries.SeriesFields, error) {
-
+	trq *timeseries.TimeRangeQuery,
+) (timeseries.SeriesFields, error) {
 	l := len(rows[dataStartRow-1])
 	// the first 2 rows must have an identical # of cells
 	for i := range dataStartRow - 1 {
@@ -95,14 +95,17 @@ func buildFieldDefinitions(rows [][]string,
 			k++
 		}
 	}
-	return timeseries.SeriesFields{Timestamp: tfd, Tags: outTags[:j],
+	return timeseries.SeriesFields{
+		Timestamp: tfd, Tags: outTags[:j],
 		Values: outVals[:k], Untracked: make(timeseries.FieldDefinitions, 0),
-		ResultNameCol: -1}, nil
+		ResultNameCol: -1,
+	}, nil
 }
 
 // loadFieldDef returns a field definition from the name, datatype and group.
 func loadFieldDef(fieldName, dataType string, col int,
-	trq *timeseries.TimeRangeQuery) timeseries.FieldDefinition {
+	trq *timeseries.TimeRangeQuery,
+) timeseries.FieldDefinition {
 	fd := timeseries.FieldDefinition{
 		Name:           fieldName,
 		DataType:       typeToFieldDataType(dataType),

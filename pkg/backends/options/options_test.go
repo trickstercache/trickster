@@ -36,7 +36,6 @@ import (
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
-
 	"gopkg.in/yaml.v2"
 )
 
@@ -84,11 +83,9 @@ func TestClone(t *testing.T) {
 	if o2.CacheName != "test" {
 		t.Error("clone failed")
 	}
-
 }
 
 func TestValidateBackendName(t *testing.T) {
-
 	err := ValidateBackendName("test")
 	if err != nil {
 		t.Error(err)
@@ -98,11 +95,9 @@ func TestValidateBackendName(t *testing.T) {
 	if err == nil {
 		t.Error("expected error for invalid backend name")
 	}
-
 }
 
 func TestValidateConfigMappings(t *testing.T) {
-
 	o, err := fromTestYAML()
 	if err != nil {
 		t.Error(err)
@@ -162,7 +157,6 @@ func TestValidateConfigMappings(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-
 }
 
 func testStringValueValidationError(to *testOptions, location *string, testValue string) error {
@@ -193,7 +187,6 @@ func testDurationValueValidationError(to *testOptions, sws []durationSwapper) er
 }
 
 func TestValidate(t *testing.T) {
-
 	o, err := fromTestYAML()
 	if err != nil {
 		t.Error(err)
@@ -210,8 +203,8 @@ func TestValidate(t *testing.T) {
 	}
 	to := &testOptions{Backends: Lookup{o.Name: o, o2.Name: o2}}
 
-	var errType02 = NewErrMissingOriginURL("test").(*ErrMissingOriginURL)
-	var errType03 = NewErrMissingProvider("test").(*ErrMissingProvider)
+	errType02 := NewErrMissingOriginURL("test").(*ErrMissingOriginURL)
+	errType03 := NewErrMissingProvider("test").(*ErrMissingProvider)
 
 	// string value tests
 	tests := []struct {
@@ -260,7 +253,6 @@ func TestValidate(t *testing.T) {
 
 	for i, test := range tests {
 		t.Run(fmt.Sprintf("strings %d", i), func(t *testing.T) {
-
 			err = testStringValueValidationError(test.to, test.loc, test.val)
 			if err == nil && test.expected == nil {
 				return
@@ -343,7 +335,6 @@ func TestValidate(t *testing.T) {
 }
 
 func TestInitialize(t *testing.T) {
-
 	o, err := fromTestYAML()
 	if err != nil {
 		t.Error(err)
@@ -383,11 +374,9 @@ func TestInitialize(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-
 }
 
 func TestValidateTLSConfigs(t *testing.T) {
-
 	o, err := fromTestYAML()
 	if err != nil {
 		t.Error(err)
@@ -429,11 +418,9 @@ func TestValidateTLSConfigs(t *testing.T) {
 	if !b {
 		t.Error("expected true")
 	}
-
 }
 
 func TestCloneYAMLSafe(t *testing.T) {
-
 	o, err := fromTestYAML()
 	if err != nil {
 		t.Error(err)
@@ -468,7 +455,6 @@ func TestCloneYAMLSafe(t *testing.T) {
 	}
 
 	p2.RequestHeaders = map[string]string{headers.NameAuthorization: "trickster"}
-
 }
 
 func TestToYAML(t *testing.T) {

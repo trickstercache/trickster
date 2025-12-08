@@ -19,7 +19,6 @@ package md5
 import "testing"
 
 func TestChecksum(t *testing.T) {
-
 	input := "test"
 	expected := "098f6bcd4621d373cade4e832627b4f6"
 	result := Checksum(input)
@@ -33,5 +32,4 @@ func TestChecksum(t *testing.T) {
 	if expected != result {
 		t.Errorf("unexpected checksum for '%s', wanted %s got %s", input, expected, result)
 	}
-
 }

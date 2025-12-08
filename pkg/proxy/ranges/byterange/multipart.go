@@ -64,7 +64,6 @@ func (mbrs MultipartByteRanges) PackableMultipartByteRanges() map[string]*Multip
 // Body returns http headers and body representing the subject MultipartByteRanges map,
 // which is suitable for responding to an HTTP request for the full cached range
 func (mbrs MultipartByteRanges) Body(fullContentLength int64, contentType string) (http.Header, []byte) {
-
 	ranges := mbrs.Ranges()
 	if len(ranges) == 0 {
 		return nil, []byte{}
@@ -84,7 +83,7 @@ func (mbrs MultipartByteRanges) Body(fullContentLength int64, contentType string
 	sort.Sort(ranges)
 
 	boundary := md5.Checksum(ranges.String())
-	var bw = bytes.NewBuffer(make([]byte, 0))
+	bw := bytes.NewBuffer(make([]byte, 0))
 	mw := multipart.NewWriter(bw)
 	mw.SetBoundary(boundary)
 
@@ -105,7 +104,6 @@ func (mbrs MultipartByteRanges) Body(fullContentLength int64, contentType string
 	return http.Header{
 		headers.NameContentType: []string{headers.ValueMultipartByteRanges + boundary},
 	}, bw.Bytes()
-
 }
 
 // Ranges returns a Ranges object from the MultipartByteRanges Object
@@ -154,7 +152,8 @@ func (mbrs MultipartByteRanges) Compress() {
 
 // ParseMultipartRangeResponseBody returns a MultipartByteRanges from the provided body
 func ParseMultipartRangeResponseBody(body io.Reader,
-	contentTypeHeader string) (MultipartByteRanges, string, Ranges, int64, error) {
+	contentTypeHeader string,
+) (MultipartByteRanges, string, Ranges, int64, error) {
 	parts := make(MultipartByteRanges)
 	ranges := make(Ranges, 0)
 	fullContentLength := int64(-1)
@@ -205,8 +204,8 @@ func ParseMultipartRangeResponseBody(body io.Reader,
 // ExtractResponseRange returns http headers and body representing the subject MultipartByteRanges map,
 // cropped to the provided ranges
 func (mbrs MultipartByteRanges) ExtractResponseRange(ranges Ranges, fullContentLength int64,
-	contentType string, body []byte) (http.Header, []byte) {
-
+	contentType string, body []byte,
+) (http.Header, []byte) {
 	if len(ranges) == 0 {
 		return nil, body
 	}
@@ -230,11 +229,9 @@ func (mbrs MultipartByteRanges) ExtractResponseRange(ranges Ranges, fullContentL
 		} else {
 			brs := mbrs.Ranges()
 			for _, r2 := range brs {
-
 				p := mbrs[r2]
 
 				if r.Start >= p.Range.Start && r.End <= p.Range.End {
-
 					// unsure if we need this depending upon how ranges are filled and compressed
 					// so leaving it present but commented for now.
 					startOffset := r.Start - p.Range.Start
@@ -249,7 +246,6 @@ func (mbrs MultipartByteRanges) ExtractResponseRange(ranges Ranges, fullContentL
 		}
 
 		m[r] = mbr
-
 	}
 	return m.Body(fullContentLength, contentType)
 }

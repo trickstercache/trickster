@@ -23,7 +23,6 @@ import (
 )
 
 func TestExtractions(t *testing.T) {
-
 	const scheme = "https"
 	const hostname = "example.com"
 	const port = "8480"
@@ -81,11 +80,9 @@ func TestExtractions(t *testing.T) {
 			}
 		})
 	}
-
 }
 
 func TestIsValidSourceName(t *testing.T) {
-
 	tests := []struct {
 		source   string
 		expected bool
@@ -102,7 +99,6 @@ func TestIsValidSourceName(t *testing.T) {
 			}
 		})
 	}
-
 }
 
 func TestExtractSourcePart(t *testing.T) {

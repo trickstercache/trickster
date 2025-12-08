@@ -34,9 +34,11 @@ import (
 
 const ID types.Provider = "basic"
 
-const showLoginFormField = "showLoginForm"
-const optionsField = "options"
-const realmField = "realm"
+const (
+	showLoginFormField = "showLoginForm"
+	optionsField       = "options"
+	realmField         = "realm"
+)
 
 type Authenticator struct {
 	users            types.CredentialsManifest
@@ -98,7 +100,8 @@ func failureHeader(showLoginForm bool, realm string) map[string]string {
 		return nil
 	}
 	return map[string]string{
-		headers.NameWWWAuthenticate: fmt.Sprintf(`Basic realm="%s"`, realm)}
+		headers.NameWWWAuthenticate: fmt.Sprintf(`Basic realm="%s"`, realm),
+	}
 }
 
 func failedResult(showLoginForm bool, realm string) *types.AuthResult {
@@ -162,7 +165,8 @@ func (a *Authenticator) Sanitize(r *http.Request) {
 }
 
 func (a *Authenticator) ExtractCredentials(r *http.Request) (string, string,
-	types.CredentialsFormat, error) {
+	types.CredentialsFormat, error,
+) {
 	if a.extractCredsFunc != nil {
 		return a.extractCredsFunc(r)
 	}
@@ -178,7 +182,8 @@ func (a *Authenticator) SetExtractCredentialsFunc(f types.ExtractCredsFunc) {
 }
 
 func (a *Authenticator) SetCredentials(r *http.Request, user, credential string,
-	f types.CredentialsFormat) error {
+	f types.CredentialsFormat,
+) error {
 	if a.setCredsFunc != nil {
 		return a.setCredsFunc(r, user, credential, f)
 	}
@@ -200,7 +205,8 @@ func (a *Authenticator) IsObserveOnly() bool {
 
 // LoadUsers resets the users list, then loads from the htpasswd-formatted file
 func (a *Authenticator) LoadUsers(path string, ff types.CredentialsFileFormat,
-	cf types.CredentialsFormat, replace bool) error {
+	cf types.CredentialsFormat, replace bool,
+) error {
 	users, err := loaders.LoadData(path, ff, cf)
 	if err != nil {
 		return err
@@ -215,7 +221,8 @@ func (a *Authenticator) LoadUsers(path string, ff types.CredentialsFileFormat,
 
 // AddUser adds a new user to the users list
 func (a *Authenticator) AddUser(username, password string,
-	cf types.CredentialsFormat) error {
+	cf types.CredentialsFormat,
+) error {
 	p, err := cred.ProcessRawCredential(password, cf)
 	if err != nil {
 		return err
@@ -237,7 +244,8 @@ func (a *Authenticator) RemoveUser(username string) {
 
 // AddUsersFromMap merges in users from a map[string]any
 func (a *Authenticator) AddUsersFromMap(users esLookup,
-	cf types.CredentialsFormat) {
+	cf types.CredentialsFormat,
+) {
 	loaded := loaders.LoadMap(users.ToCredentialsManifest(), cf)
 	if a.users == nil {
 		a.users = loaded
@@ -249,7 +257,8 @@ func (a *Authenticator) AddUsersFromMap(users esLookup,
 // LoadUsersFromMap resets the users list, then loads from a map[string]any
 // via AddUsersFromMap
 func (a *Authenticator) LoadUsersFromMap(users esLookup,
-	cf types.CredentialsFormat) {
+	cf types.CredentialsFormat,
+) {
 	a.users = loaders.LoadMap(users.ToCredentialsManifest(), cf)
 }
 
@@ -257,8 +266,6 @@ type esLookup ct.EnvStringMap
 
 func (l esLookup) ToCredentialsManifest() types.CredentialsManifest {
 	out := make(types.CredentialsManifest, len(l))
-	for k, v := range l {
-		out[k] = v
-	}
+	maps.Copy(out, l)
 	return out
 }

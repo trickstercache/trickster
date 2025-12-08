@@ -16,8 +16,10 @@
 
 package level
 
-type Level string
-type ID int
+type (
+	Level string
+	ID    int
+)
 
 const (
 	Debug Level = "debug"

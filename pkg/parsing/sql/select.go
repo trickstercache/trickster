@@ -111,7 +111,8 @@ func GetField(
 // just prior to the start of the
 func (p *Parser) GetFieldList(rs *parsing.RunState, allowedToken token.Typ, disAllowedTokenErr error,
 	isDelim, isBreakable, isContinuable token.TypeCheckFunc,
-	isolateDelimiter bool) []token.Tokens {
+	isolateDelimiter bool,
+) []token.Tokens {
 	if rs.Current() == nil || rs.Current().Typ != allowedToken {
 		rs.WithError(disAllowedTokenErr)
 		return nil

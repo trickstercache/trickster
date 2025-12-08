@@ -33,14 +33,18 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 )
 
-const cacheProvider = "filesystem"
-const cacheKey = "cacheKey"
+const (
+	cacheProvider = "filesystem"
+	cacheKey      = "cacheKey"
+)
 
 func storeBenchmark(b *testing.B) CacheClient {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	dir := b.TempDir() + "/cache/" + cacheProvider
-	cacheConfig := co.Options{Provider: cacheProvider,
-		Filesystem: &flo.Options{CachePath: dir}, Index: &io.Options{ReapInterval: time.Second}}
+	cacheConfig := co.Options{
+		Provider:   cacheProvider,
+		Filesystem: &flo.Options{CachePath: dir}, Index: &io.Options{ReapInterval: time.Second},
+	}
 	fc := NewCache(b.Name(), &cacheConfig)
 
 	err := fc.Connect()
@@ -61,8 +65,10 @@ func storeBenchmark(b *testing.B) CacheClient {
 
 func newCacheConfig(t *testing.T) co.Options {
 	dir := t.TempDir() + "/cache/" + cacheProvider
-	return co.Options{Provider: cacheProvider, Filesystem: &flo.Options{CachePath: dir},
-		Index: &io.Options{ReapInterval: time.Second}}
+	return co.Options{
+		Provider: cacheProvider, Filesystem: &flo.Options{CachePath: dir},
+		Index: &io.Options{ReapInterval: time.Second},
+	}
 }
 
 func TestFilesystemCache_Connect(t *testing.T) {
@@ -133,7 +139,6 @@ func TestFilesystemCache_Store(t *testing.T) {
 	if !strings.HasPrefix(err.Error(), expected2) {
 		t.Errorf("expected error '%s' got '%s'", expected2, err.Error())
 	}
-
 }
 
 func BenchmarkCache_Store(b *testing.B) {
@@ -210,7 +215,7 @@ func BenchmarkCache_Retrieve(b *testing.B) {
 
 		filename := fc.getFileName(cacheKey + strconv.Itoa(n))
 		// create a corrupted cache entry and expect an error
-		os.WriteFile(filename, []byte("junk"), os.FileMode(0777))
+		os.WriteFile(filename, []byte("junk"), os.FileMode(0o777))
 
 		// it should fail to retrieve a value
 		data, ls, err = fc.Retrieve(cacheKey + strconv.Itoa(n))

@@ -44,5 +44,4 @@ func TestHandleCompression(t *testing.T) {
 	if w.Body.String() != "trickster" {
 		t.Error("writer data mismatch")
 	}
-
 }

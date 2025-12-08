@@ -21,7 +21,6 @@ import (
 )
 
 func TestString(t *testing.T) {
-
 	t1 := None
 	t2 := Zipkin
 	var t3 Provider = 13
@@ -37,5 +36,4 @@ func TestString(t *testing.T) {
 	if t3.String() != "13" {
 		t.Errorf("expected %s got %s", "13", t3.String())
 	}
-
 }

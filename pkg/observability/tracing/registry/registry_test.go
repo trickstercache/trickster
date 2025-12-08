@@ -116,7 +116,6 @@ func TestRegisterAll(t *testing.T) {
 	if err == nil {
 		t.Error("expected error for invalid tracing implementation")
 	}
-
 }
 
 func TestGetTracer(t *testing.T) {

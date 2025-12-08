@@ -23,6 +23,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/influxdata/influxql"
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/iofmt"
 	te "github.com/trickstercache/trickster/v2/pkg/errors"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
@@ -32,8 +33,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
-
-	"github.com/influxdata/influxql"
 )
 
 var epochToFlag = map[string]byte{
@@ -56,7 +55,8 @@ const (
 
 func ParseTimeRangeQuery(r *http.Request,
 	f iofmt.Format) (*timeseries.TimeRangeQuery, *timeseries.RequestOptions,
-	bool, error) {
+	bool, error,
+) {
 	if r == nil || !f.IsInfluxQL() {
 		return nil, nil, false, iofmt.ErrSupportedQueryLanguage
 	}
@@ -82,7 +82,7 @@ func ParseTimeRangeQuery(r *http.Request,
 	}
 	trq.Statement = statement
 
-	var valuer = &influxql.NowValuer{Now: time.Now()}
+	valuer := &influxql.NowValuer{Now: time.Now()}
 
 	if x, ok := epochToFlag[cv.Get(ParamEpoch)]; ok {
 		rlo.TimeFormat = x
@@ -182,7 +182,8 @@ func ParseTimeRangeQuery(r *http.Request,
 }
 
 func SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
-	extent *timeseries.Extent, q *influxql.Query) {
+	extent *timeseries.Extent, q *influxql.Query,
+) {
 	for _, s := range q.Statements {
 		if sel, ok := s.(*influxql.SelectStatement); ok {
 			// since setting timerange results in a clause of '>= start AND < end', we add the

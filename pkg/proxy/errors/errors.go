@@ -92,7 +92,7 @@ func ParseDuration(input string) (time.Duration, error) {
 // ParseRequestBody returns an error indicating the request body could not
 // parsed into a valid value.
 func ParseRequestBody(err error) error {
-	return fmt.Errorf("unable to parse request body: %v", err)
+	return fmt.Errorf("unable to parse request body: %w", err)
 }
 
 // MissingRequestParam returns an error indicating the request is missing a

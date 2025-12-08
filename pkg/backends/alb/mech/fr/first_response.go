@@ -89,7 +89,6 @@ func (h *handler) StopPool() {
 }
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-
 	hl := h.pool.Healthy() // should return a fanout list
 	l := len(hl)
 	if l == 0 {
@@ -131,7 +130,8 @@ type firstResponseGate struct {
 }
 
 func newFirstResponseGate(w http.ResponseWriter, c *responderClaim, i int,
-	fgr bool) *firstResponseGate {
+	fgr bool,
+) *firstResponseGate {
 	return &firstResponseGate{ResponseWriter: w, c: c, fh: http.Header{}, i: i, fgr: fgr}
 }
 
@@ -140,7 +140,7 @@ func (frg *firstResponseGate) Header() http.Header {
 }
 
 func (frg *firstResponseGate) WriteHeader(i int) {
-	var custom = frg.fgr && len(frg.fgrCodes) > 0
+	custom := frg.fgr && len(frg.fgrCodes) > 0
 	var isGood bool
 	if custom {
 		_, isGood = frg.fgrCodes[i]

@@ -26,7 +26,6 @@ func TestNew(t *testing.T) {
 }
 
 func TestEqual(t *testing.T) {
-
 	o := New()
 
 	if o.Equal(nil) {
@@ -36,5 +35,4 @@ func TestEqual(t *testing.T) {
 	if !o.Equal(o) {
 		t.Error("expected true")
 	}
-
 }

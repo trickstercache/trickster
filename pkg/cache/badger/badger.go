@@ -18,19 +18,17 @@
 package badger
 
 import (
+	"errors"
 	"time"
 
+	"github.com/dgraph-io/badger/v4"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
-
-	"github.com/dgraph-io/badger/v4"
 )
 
-var (
-	// CacheClient implements the cache.Client interface
-	_ cache.Client = &CacheClient{}
-)
+// CacheClient implements the cache.Client interface
+var _ cache.Client = &CacheClient{}
 
 // CacheClient describes a Badger CacheClient
 type CacheClient struct {
@@ -94,14 +92,13 @@ func (c *CacheClient) Retrieve(cacheKey string) ([]byte, status.LookupStatus, er
 		}
 		data, err = item.ValueCopy(nil)
 		return err
-
 	})
 
 	if err == nil {
 		return data, status.LookupStatusHit, nil
 	}
 
-	if err == badger.ErrKeyNotFound {
+	if errors.Is(err, badger.ErrKeyNotFound) {
 		err = cache.ErrKNF
 		return nil, status.LookupStatusKeyMiss, err
 	}

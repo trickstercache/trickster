@@ -56,7 +56,8 @@ func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 
 // ParseTimeRangeQuery parses the key parts of a TimeRangeQuery from the inbound HTTP Request
 func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery,
-	*timeseries.RequestOptions, bool, error) {
+	*timeseries.RequestOptions, bool, error,
+) {
 	f := iofmt.Detect(r)
 	switch {
 	case f.IsInfluxQL():

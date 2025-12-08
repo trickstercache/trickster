@@ -37,7 +37,8 @@ type Parser struct {
 
 // NewRunContext returns a context with the Time Range Query and Request Options attached
 func NewRunContext(trq *timeseries.TimeRangeQuery,
-	ro *timeseries.RequestOptions) context.Context {
+	ro *timeseries.RequestOptions,
+) context.Context {
 	return context.WithValue(
 		context.WithValue(context.Background(), timeseries.TimeRangeQueryCtx, trq),
 		timeseries.RequestOptionsCtx, ro)
@@ -87,8 +88,10 @@ func ParseFVComment(_, _ parsing.Parser, rs *parsing.RunState) parsing.StateFn {
 	return rs.GetReturnFunc(sql.FindVerb, nil, true)
 }
 
-const billion epoch.Epoch = 1000000000
-const million epoch.Epoch = 1000000
+const (
+	billion epoch.Epoch = 1000000000
+	million epoch.Epoch = 1000000
+)
 
 // ParseEpoch accepts the following formats, and returns an epoch.Epoch (NS since 1-1-1970):
 // typ 0 - 10-digit epoch in seconds:     "1577836800"

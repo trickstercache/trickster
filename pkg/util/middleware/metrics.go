@@ -31,7 +31,7 @@ func Decorate(backendName, backendProvider, path string, next http.Handler) http
 		observer := &responseObserver{
 			w,
 			"2xx",
-			200,
+			http.StatusOK,
 		}
 
 		n := time.Now()

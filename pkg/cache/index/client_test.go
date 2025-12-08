@@ -95,7 +95,6 @@ func TestIndexedClient(t *testing.T) {
 	})
 
 	t.Run("atime", func(t *testing.T) {
-
 		// init indexed client
 		ic := NewIndexedClient("test", provider, &options.Options{
 			ReapInterval:          time.Second * time.Duration(10),
@@ -361,7 +360,6 @@ func TestIndexedClient(t *testing.T) {
 	require.Len(t, state.Objects, 0)
 	require.Equal(t, int64(0), state.ObjectCount)
 	require.Equal(t, int64(0), state.CacheSize)
-
 }
 
 type indexedClientState struct {

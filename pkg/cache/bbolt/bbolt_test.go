@@ -31,12 +31,15 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 )
 
-const cacheProvider = "bbolt"
-const cacheKey = "cacheKey"
+const (
+	cacheProvider = "bbolt"
+	cacheKey      = "cacheKey"
+)
 
 func newCacheConfig(dbPath string) co.Options {
 	return co.Options{Provider: cacheProvider, BBolt: &bo.Options{
-		Filename: dbPath, Bucket: "trickster_test"}, Index: &io.Options{ReapInterval: time.Second}}
+		Filename: dbPath, Bucket: "trickster_test",
+	}, Index: &io.Options{ReapInterval: time.Second}}
 }
 
 func storeBenchmark(b *testing.B) CacheClient {
@@ -173,7 +176,6 @@ func TestBboltCache_Remove(t *testing.T) {
 	if ls != status.LookupStatusKeyMiss {
 		t.Errorf("expected %s got %s", status.LookupStatusKeyMiss, ls)
 	}
-
 }
 
 func BenchmarkCache_Remove(b *testing.B) {
@@ -252,7 +254,6 @@ func TestBboltCache_BulkRemove(t *testing.T) {
 	if ls != status.LookupStatusKeyMiss {
 		t.Errorf("expected %s got %s", status.LookupStatusKeyMiss, ls)
 	}
-
 }
 
 func BenchmarkCache_BulkRemove(b *testing.B) {

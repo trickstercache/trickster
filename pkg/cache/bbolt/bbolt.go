@@ -24,14 +24,11 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
-
 	"go.etcd.io/bbolt"
 )
 
-var (
-	// CacheClient implements the cache.Client interface
-	_ cache.Client = &CacheClient{}
-)
+// CacheClient implements the cache.Client interface
+var _ cache.Client = &CacheClient{}
 
 // CacheClient describes a BBolt CacheClient
 type CacheClient struct {
@@ -71,7 +68,7 @@ func (c *CacheClient) Close() error {
 // Connect instantiates the Cache mutex map and starts the Expired Entry Reaper goroutine
 func (c *CacheClient) Connect() error {
 	var err error
-	c.dbh, err = bbolt.Open(c.Config.BBolt.Filename, 0644, &bbolt.Options{Timeout: 1 * time.Second})
+	c.dbh, err = bbolt.Open(c.Config.BBolt.Filename, 0o644, &bbolt.Options{Timeout: 1 * time.Second})
 	if err != nil {
 		return err
 	}
@@ -79,7 +76,7 @@ func (c *CacheClient) Connect() error {
 	err = c.dbh.Update(func(tx *bbolt.Tx) error {
 		_, err2 := tx.CreateBucketIfNotExists([]byte(c.Config.BBolt.Bucket))
 		if err2 != nil {
-			return fmt.Errorf("create bucket: %s", err2)
+			return fmt.Errorf("create bucket: %w", err2)
 		}
 		return nil
 	})
@@ -107,7 +104,6 @@ func writeToBBolt(dbh *bbolt.DB, bucketName, cacheKey string, data []byte) error
 }
 
 func (c *CacheClient) Retrieve(cacheKey string) ([]byte, status.LookupStatus, error) {
-
 	var data []byte
 	err := c.dbh.View(func(tx *bbolt.Tx) error {
 		b := tx.Bucket([]byte(c.Config.BBolt.Bucket))

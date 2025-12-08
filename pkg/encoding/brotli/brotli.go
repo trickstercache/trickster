@@ -20,9 +20,8 @@ import (
 	"bytes"
 	"io"
 
-	"github.com/trickstercache/trickster/v2/pkg/encoding/reader"
-
 	"github.com/andybalholm/brotli"
+	"github.com/trickstercache/trickster/v2/pkg/encoding/reader"
 )
 
 // Decode returns the decoded version of the encoded byte slice

@@ -30,8 +30,10 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 )
 
-var logger logging.Logger = logging.ConsoleLogger(level.Info)
-var mtx sync.Mutex
+var (
+	logger logging.Logger = logging.ConsoleLogger(level.Info)
+	mtx    sync.Mutex
+)
 
 func Logger() logging.Logger {
 	mtx.Lock()
@@ -156,6 +158,7 @@ func WarnOnce(key, event string, detail logging.Pairs) bool {
 	defer mtx.Unlock()
 	return logger.WarnOnce(key, event, detail)
 }
+
 func ErrorOnce(key, event string, detail logging.Pairs) bool {
 	mtx.Lock()
 	defer mtx.Unlock()

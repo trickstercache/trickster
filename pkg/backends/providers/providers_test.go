@@ -22,7 +22,6 @@ import (
 )
 
 func TestProviderString(t *testing.T) {
-
 	t1 := RPCID
 	t2 := PrometheusID
 	var t3 Provider = 13
@@ -38,11 +37,9 @@ func TestProviderString(t *testing.T) {
 	if t3.String() != "13" {
 		t.Errorf("expected %s got %s", "13", t3.String())
 	}
-
 }
 
 func TestIsValidProvider(t *testing.T) {
-
 	tests := []struct {
 		o        string
 		expected bool
@@ -62,11 +59,9 @@ func TestIsValidProvider(t *testing.T) {
 			}
 		})
 	}
-
 }
 
 func TestIsSupportedTimeSeriesProvider(t *testing.T) {
-
 	name := "test-should-fail"
 	ok := IsSupportedTimeSeriesProvider(name)
 	if ok {
@@ -78,5 +73,4 @@ func TestIsSupportedTimeSeriesProvider(t *testing.T) {
 	if !ok {
 		t.Error("expected true")
 	}
-
 }

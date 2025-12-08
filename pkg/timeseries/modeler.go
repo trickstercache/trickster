@@ -46,7 +46,8 @@ type MarshalWriterFunc func(Timeseries, *RequestOptions, int, io.Writer) error
 func NewModeler(
 	wu UnmarshalerFunc, wur UnmarshalerReaderFunc,
 	wm MarshalerFunc, wmw MarshalWriterFunc,
-	cu UnmarshalerFunc, cm MarshalerFunc) *Modeler {
+	cu UnmarshalerFunc, cm MarshalerFunc,
+) *Modeler {
 	return &Modeler{
 		WireUnmarshaler:       wu,
 		WireUnmarshalerReader: wur,

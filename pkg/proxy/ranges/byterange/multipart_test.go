@@ -26,13 +26,15 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
 
-const testSeparator = "TEST-SEPARATOR"
-const testRange1 = "0-49"
-const testRange2 = "100-149"
-const testContentLength = "150"
-const testContentType1 = headers.ValueTextPlain
-const testPart1Body = "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwx"
-const testPart2Body = `{ "body": "ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJ" }`
+const (
+	testSeparator     = "TEST-SEPARATOR"
+	testRange1        = "0-49"
+	testRange2        = "100-149"
+	testContentLength = "150"
+	testContentType1  = headers.ValueTextPlain
+	testPart1Body     = "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwx"
+	testPart2Body     = `{ "body": "ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJ" }`
+)
 
 var content = []byte(fmt.Sprintf(`--%s
 Content-Type: %s
@@ -49,7 +51,6 @@ Content-Range: bytes %s/%s
 	testPart2Body, testSeparator))
 
 func TestParseMultipartRangeResponseBody(t *testing.T) {
-
 	reader := io.NopCloser(bytes.NewBuffer(content))
 
 	parts, ct, ranges, cl, err := ParseMultipartRangeResponseBody(reader,
@@ -100,7 +101,6 @@ func TestParseMultipartRangeResponseBody(t *testing.T) {
 }
 
 func testArtifacts() (MultipartByteRanges, MultipartByteRanges) {
-
 	r1 := &MultipartByteRange{
 		Range:   Range{Start: 0, End: 6},
 		Content: []byte("Lorem i"),
@@ -132,11 +132,9 @@ func testArtifacts() (MultipartByteRanges, MultipartByteRanges) {
 	}
 
 	return m1, m2
-
 }
 
 func TestMerge(t *testing.T) {
-
 	m1, m2 := testArtifacts()
 	m1.Merge(m2)
 
@@ -149,7 +147,6 @@ func TestMerge(t *testing.T) {
 	if len(m1) != 4 {
 		t.Errorf("expected %d got %d", 4, len(m1))
 	}
-
 }
 
 func TestPackableMultipartByteRanges(t *testing.T) {
@@ -161,7 +158,6 @@ func TestPackableMultipartByteRanges(t *testing.T) {
 }
 
 func TestBody(t *testing.T) {
-
 	m1, _ := testArtifacts()
 	// test multiple range
 	h, b := m1.Body(1222, headers.ValueTextPlain)
@@ -197,11 +193,9 @@ func TestBody(t *testing.T) {
 	if len(b) != 0 {
 		t.Errorf("expected %d got %d", 0, len(b))
 	}
-
 }
 
 func TestCompress(t *testing.T) {
-
 	m1, m2 := testArtifacts()
 
 	r1 := &MultipartByteRange{
@@ -221,11 +215,9 @@ func TestCompress(t *testing.T) {
 	if len(m2) != 1 {
 		t.Errorf("expected %d got %d", 1, len(m2))
 	}
-
 }
 
 func TestExtractResponseRange(t *testing.T) {
-
 	m1, _ := testArtifacts()
 
 	r := Ranges{Range{Start: 12, End: 15}}
@@ -291,5 +283,4 @@ func TestExtractResponseRange(t *testing.T) {
 	if string(b) != "large" {
 		t.Errorf("expected %s got %s", "large", string(b))
 	}
-
 }

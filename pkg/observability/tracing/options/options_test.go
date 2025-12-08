@@ -70,7 +70,6 @@ func TestProcessTracingOptions(t *testing.T) {
 }
 
 func TestGenerateOmitTags(t *testing.T) {
-
 	o := &Options{OmitTagsList: []string{"test1"}}
 	o.generateOmitTags()
 	if _, ok := o.OmitTags["test1"]; !ok {
@@ -79,7 +78,6 @@ func TestGenerateOmitTags(t *testing.T) {
 }
 
 func TestAttachTagsToSpan(t *testing.T) {
-
 	o := &Options{Provider: "zipkin", Tags: map[string]string{"test": "test"}}
 	if o.AttachTagsToSpan() {
 		t.Error("expected false")
@@ -88,5 +86,4 @@ func TestAttachTagsToSpan(t *testing.T) {
 	if !o.AttachTagsToSpan() {
 		t.Error("expected true")
 	}
-
 }

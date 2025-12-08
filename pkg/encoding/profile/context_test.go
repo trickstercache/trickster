@@ -22,7 +22,6 @@ import (
 )
 
 func TestContext(t *testing.T) {
-
 	ctx := context.Background()
 	ep := &Profile{Supported: 8}
 	ctx2 := ToContext(ctx, ep)

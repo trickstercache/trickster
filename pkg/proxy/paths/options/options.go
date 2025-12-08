@@ -277,12 +277,9 @@ func (l List) Overlay(l2 List) List {
 			} else {
 				overlappingMethods := make([]string, 0)
 				for _, m := range remainingMethods {
-					for _, m2 := range o2.Methods {
-						if m == m2 {
-							overlappingMethods = append(overlappingMethods, m)
-							replacedMethods[m] = true
-							break
-						}
+					if slices.Contains(o2.Methods, m) {
+						overlappingMethods = append(overlappingMethods, m)
+						replacedMethods[m] = true
 					}
 				}
 				oClone := o.Clone()
@@ -302,7 +299,7 @@ func (l List) Overlay(l2 List) List {
 	return out
 }
 
-func (o *Options) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (o *Options) UnmarshalYAML(unmarshal func(any) error) error {
 	type loadOptions Options
 	lo := loadOptions(*(New()))
 	if err := unmarshal(&lo); err != nil {

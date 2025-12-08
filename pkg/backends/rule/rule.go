@@ -25,6 +25,11 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
 )
 
+const (
+	trueValue  = "true"
+	falseValue = "false"
+)
+
 type rule struct {
 	defaultRouter  http.Handler
 	extractionFunc extractionFunc
@@ -62,7 +67,6 @@ type evaluatorFunc func(*http.Request) (http.Handler, *http.Request, error)
 var badRequestHandler = http.HandlerFunc(failures.HandleBadRequestResponse)
 
 func (r *rule) EvaluateOpArg(hr *http.Request) (http.Handler, *http.Request, error) {
-
 	currentHops, maxHops := context.Hops(hr.Context())
 	if r.maxRuleExecutions < maxHops {
 		maxHops = r.maxRuleExecutions
@@ -120,7 +124,6 @@ func (r *rule) EvaluateOpArg(hr *http.Request) (http.Handler, *http.Request, err
 }
 
 func (r *rule) EvaluateCaseArg(hr *http.Request) (http.Handler, *http.Request, error) {
-
 	currentHops, maxHops := context.Hops(hr.Context())
 	if r.maxRuleExecutions < maxHops {
 		maxHops = r.maxRuleExecutions
@@ -139,13 +142,12 @@ func (r *rule) EvaluateCaseArg(hr *http.Request) (http.Handler, *http.Request, e
 	var nonDefault bool
 
 	for _, c := range r.cases {
-
 		extraction := r.extractionFunc(hr, r.extractionArg)
 
 		res := r.operationFunc(extraction, c.matchValue, r.negateOpResult)
 
 		// TODO: support comparison of other values via 'where'
-		if res == "true" {
+		if res == trueValue {
 			nonDefault = true
 			h = c.router
 

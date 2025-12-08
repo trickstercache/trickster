@@ -57,8 +57,10 @@ import (
 // mtx guards the config loading and validation process,
 // to ensure only one operation can occur at a time.
 // There is no race-related reason for this mutex, it simply prevents overlapping config operations.
-var mtx sync.Mutex
-var lg = listener.NewGroup()
+var (
+	mtx sync.Mutex
+	lg  = listener.NewGroup()
+)
 
 // BootstrapConfig loads, validates, processes and prepares a configuration
 // along with its backend clients. This centralizes the common initialization
@@ -136,7 +138,8 @@ func LoadAndValidate() (*config.Config, error) {
 }
 
 func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
-	clients backends.Backends, hupFunc dr.Reloader, errorFunc func()) error {
+	clients backends.Backends, hupFunc dr.Reloader, errorFunc func(),
+) error {
 	if si == nil || newConf == nil {
 		return nil
 	}
@@ -174,7 +177,7 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 		[]string{http.MethodGet, http.MethodHead}, false,
 		http.HandlerFunc((pnh.HandlerFunc(newConf))))
 
-	var caches = applyCachingConfig(si, newConf)
+	caches := applyCachingConfig(si, newConf)
 	rh := reload.HandlerFunc(hupFunc)
 	err = routing.RegisterProxyRoutes(newConf, clients, r, mr, caches, tracers, false)
 	if err != nil {
@@ -263,8 +266,8 @@ func applyLoggingConfig(c, o *config.Config) {
 }
 
 func applyCachingConfig(si *instance.ServerInstance,
-	newConf *config.Config) cache.Lookup {
-
+	newConf *config.Config,
+) cache.Lookup {
 	if si == nil || newConf == nil {
 		return nil
 	}
@@ -279,9 +282,7 @@ func applyCachingConfig(si *instance.ServerInstance,
 	}
 
 	for k, v := range newConf.Caches {
-
 		if w, ok := si.Caches[k]; ok {
-
 			ocfg := w.Configuration()
 
 			// if a cache is in both the old and new config, and unchanged, pass the

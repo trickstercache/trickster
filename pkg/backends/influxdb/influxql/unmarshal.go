@@ -159,7 +159,8 @@ func tryParseTimestamp(v any) int64 {
 }
 
 func pointFromValues(v []any, tsIndex int) (dataset.Point,
-	[]timeseries.FieldDataType, error) {
+	[]timeseries.FieldDataType, error,
+) {
 	p := dataset.Point{}
 	ns := tryParseTimestamp(v[tsIndex])
 	if ns == -1 {

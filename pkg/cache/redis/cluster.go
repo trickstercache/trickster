@@ -24,7 +24,6 @@ import (
 )
 
 func (c *CacheClient) clusterOpts() (*redis.ClusterOptions, error) {
-
 	if len(c.Config.Redis.Endpoints) == 0 {
 		return nil, ErrInvalidEndpointsConfig
 	}

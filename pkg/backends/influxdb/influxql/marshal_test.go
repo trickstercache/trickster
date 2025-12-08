@@ -26,7 +26,6 @@ import (
 )
 
 func TestMarshalTimeseries(t *testing.T) {
-
 	_, err := MarshalTimeseries(nil, nil, 200)
 	if err != timeseries.ErrUnknownFormat {
 		t.Error("expected ErrUnknownFormat got", err)
@@ -68,5 +67,4 @@ func TestMarshalTimeseries(t *testing.T) {
 	if !strings.HasPrefix(w.Header().Get(headers.NameContentType), headers.ValueApplicationJSON) {
 		t.Error("expected JSON content type header; got", w.Header().Get(headers.NameContentType))
 	}
-
 }

@@ -29,7 +29,6 @@ import (
 )
 
 func TestHandleRoundRobin(t *testing.T) {
-
 	w := httptest.NewRecorder()
 	h := &handler{}
 	h.ServeHTTP(w, nil)
@@ -60,7 +59,6 @@ func TestHandleRoundRobin(t *testing.T) {
 	if w.Code != http.StatusBadGateway {
 		t.Error("expected 502 got", w.Code)
 	}
-
 }
 
 func TestNextTarget(t *testing.T) {

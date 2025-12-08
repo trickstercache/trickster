@@ -19,7 +19,6 @@ package options
 import "testing"
 
 func TestClone(t *testing.T) {
-
 	const expectedMS = 87
 	const expectedLen = 1
 
@@ -35,5 +34,4 @@ func TestClone(t *testing.T) {
 	if len(o2.Labels) != expectedLen {
 		t.Errorf("expected %d got %d", expectedLen, len(o2.Labels))
 	}
-
 }

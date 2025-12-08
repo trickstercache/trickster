@@ -32,8 +32,10 @@ const (
 	Zipkin
 )
 
-type ProviderLookup map[string]Provider
-type ProviderReverseLookup map[Provider]string
+type (
+	ProviderLookup        map[string]Provider
+	ProviderReverseLookup map[Provider]string
+)
 
 // Names is a map of tracing providers keyed by name
 var Names = ProviderLookup{

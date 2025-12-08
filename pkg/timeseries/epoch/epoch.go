@@ -33,8 +33,10 @@ type Epoch int64
 // Epochs is a slice of type Epoch
 type Epochs []Epoch
 
-const BillionNS Epoch = 1000000000
-const MillionNS Epoch = 1000000
+const (
+	BillionNS Epoch = 1000000000
+	MillionNS Epoch = 1000000
+)
 
 // Format returns the epoch as a string in the specified format
 func (e Epoch) Format(to timeseries.FieldDataType, quoteDateTimeSQL bool) string {

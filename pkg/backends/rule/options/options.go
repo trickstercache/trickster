@@ -116,8 +116,10 @@ type CaseOptionsList []*CaseOptions
 
 var _ types.ConfigOptions[Options] = &Options{}
 
-var ErrInvalidName = errors.New("invalid rule name")
-var restrictedNames = sets.New([]string{"", "none"})
+var (
+	ErrInvalidName  = errors.New("invalid rule name")
+	restrictedNames = sets.New([]string{"", "none"})
+)
 
 // New returns a new Rule Options with default values
 func New() *Options {
@@ -187,7 +189,7 @@ func (l Lookup) Validate() error {
 	return nil
 }
 
-func (o *Options) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (o *Options) UnmarshalYAML(unmarshal func(any) error) error {
 	type loadOptions Options
 	lo := loadOptions(*(New()))
 	if err := unmarshal(&lo); err != nil {
@@ -197,7 +199,7 @@ func (o *Options) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return nil
 }
 
-func (o *CaseOptions) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (o *CaseOptions) UnmarshalYAML(unmarshal func(any) error) error {
 	type loadOptions CaseOptions
 	lo := loadOptions(CaseOptions{})
 	if err := unmarshal(&lo); err != nil {

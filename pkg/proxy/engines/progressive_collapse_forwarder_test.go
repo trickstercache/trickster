@@ -210,7 +210,6 @@ func TestPCFWaits(t *testing.T) {
 	if a := atomic.LoadUint64(&allComplete); a != 2 {
 		t.Errorf("Expected WaitAllComplete to not block after pcf completion")
 	}
-
 }
 
 func TestPCFReadWriteClose(t *testing.T) {
@@ -228,7 +227,6 @@ func TestPCFReadWriteClose(t *testing.T) {
 
 	if err != io.EOF {
 		t.Errorf("PCF Close call did not return io.EOF")
-
 	}
 
 	if n != 2 {
@@ -289,7 +287,6 @@ func TestPCFResp(t *testing.T) {
 }
 
 func BenchmarkPCFWrite(b *testing.B) {
-
 	bufSize := 32
 
 	testBytes := make([]byte, bufSize*1024)
@@ -306,7 +303,6 @@ func BenchmarkPCFWrite(b *testing.B) {
 }
 
 func BenchmarkPCFRead(b *testing.B) {
-
 	bufSize := 32
 
 	testBytes := make([]byte, bufSize*1024)
@@ -336,7 +332,6 @@ func BenchmarkPCFRead(b *testing.B) {
 }
 
 func BenchmarkPCFWriteRead(b *testing.B) {
-
 	bufSize := 32
 
 	testBytes := make([]byte, bufSize*1024)
