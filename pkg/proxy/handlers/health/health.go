@@ -129,8 +129,10 @@ func (hs *healthStatus) Tabular() string {
 	tw.Flush()
 	txt.Write(b.Bytes())
 	txt.WriteString("-------------------------------------------------------------------------------\n")
-	fmt.Fprintf(txt, "You can also provide a '%s: %s' Header or query param ?json\n",
+	fmt.Fprintf(txt, "For JSON, provide a '%s: %s' Header or query param ?json\n",
 		headers.NameAccept, headers.ValueApplicationJSON)
+	fmt.Fprintf(txt, "For YAML, provide a '%s: %s' Header or query param ?yaml\n",
+		headers.NameAccept, headers.ValueApplicationYAML)
 
 	return txt.String()
 }
