@@ -25,7 +25,6 @@ import (
 )
 
 func TestProcessConfig(t *testing.T) {
-
 	_, err := ProcessConfigs(nil)
 	if err != ErrInvalidRewriterOptions {
 		return
@@ -59,5 +58,4 @@ func TestProcessConfig(t *testing.T) {
 	if err == nil {
 		t.Error("expected error for invalid instruction")
 	}
-
 }

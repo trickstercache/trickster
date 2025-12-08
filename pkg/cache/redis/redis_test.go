@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alicebob/miniredis/v2"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	ro "github.com/trickstercache/trickster/v2/pkg/cache/redis/options"
@@ -30,8 +31,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
-
-	"github.com/alicebob/miniredis/v2"
 )
 
 const cacheKey = `cacheKey`
@@ -78,9 +77,11 @@ func setupRedisCache(ct clientType) (*CacheClient, func()) {
 func TestClientSelectionSentinel(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	const expected1 = "ERR unknown command `sentinel`"
-	args := []string{"-config", "../../../testdata/test.redis-sentinel.conf",
+	args := []string{
+		"-config", "../../../testdata/test.redis-sentinel.conf",
 		"-origin-url", "http://0.0.0.0", "-provider",
-		providers.ReverseProxyCacheShort, "-log-level", "info"}
+		providers.ReverseProxyCacheShort, "-log-level", "info",
+	}
 	conf, err := config.Load(args)
 	if err != nil {
 		t.Fatal(err)
@@ -101,7 +102,6 @@ func TestClientSelectionSentinel(t *testing.T) {
 }
 
 func TestSentinelOpts(t *testing.T) {
-
 	const expected1 = `invalid 'endpoints' config`
 	const expected2 = `invalid 'sentinel_master' config`
 
@@ -126,7 +126,6 @@ func TestSentinelOpts(t *testing.T) {
 }
 
 func TestClusterOpts(t *testing.T) {
-
 	const expected1 = `invalid 'endpoints' config`
 
 	rc, close := setupRedisCache(clientTypeCluster)
@@ -141,7 +140,6 @@ func TestClusterOpts(t *testing.T) {
 }
 
 func TestClientOpts(t *testing.T) {
-
 	const expected1 = `invalid endpoint: `
 
 	rc, close := setupRedisCache(clientTypeStandard)
@@ -158,9 +156,11 @@ func TestClientOpts(t *testing.T) {
 func TestClientSelectionCluster(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	expected1 := "invalid endpoint"
-	args := []string{"-config", "../../../testdata/test.redis-cluster.conf",
+	args := []string{
+		"-config", "../../../testdata/test.redis-cluster.conf",
 		"-origin-url", "http://0.0.0.0", "-provider",
-		providers.ReverseProxyCacheShort, "-log-level", "info"}
+		providers.ReverseProxyCacheShort, "-log-level", "info",
+	}
 	conf, err := config.Load(args)
 	if err != nil {
 		t.Fatal(err)
@@ -183,9 +183,11 @@ func TestClientSelectionCluster(t *testing.T) {
 func TestClientSelectionStandard(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	expected1 := "invalid endpoint"
-	args := []string{"-config", "../../../testdata/test.redis-standard.conf",
+	args := []string{
+		"-config", "../../../testdata/test.redis-standard.conf",
 		"-origin-url", "http://0.0.0.0", "-provider",
-		providers.ReverseProxyCacheShort, "-log-level", "info"}
+		providers.ReverseProxyCacheShort, "-log-level", "info",
+	}
 	conf, err := config.Load(args)
 	if err != nil {
 		t.Fatal(err)
@@ -301,7 +303,6 @@ func TestRedisCache_Close(t *testing.T) {
 }
 
 func TestCache_Remove(t *testing.T) {
-
 	rc, close := setupRedisCache(clientTypeStandard)
 	defer close()
 
@@ -371,7 +372,6 @@ func BenchmarkCache_Remove(b *testing.B) {
 }
 
 func TestCache_BulkRemove(t *testing.T) {
-
 	rc, close := setupRedisCache(clientTypeStandard)
 	defer close()
 

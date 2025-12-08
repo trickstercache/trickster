@@ -32,7 +32,6 @@ import (
 // NewHTTPClient returns an HTTP client configured to the specifications of the
 // running Trickster config.
 func NewHTTPClient(o *bo.Options) (*http.Client, error) {
-
 	if o == nil {
 		return nil, nil
 	}
@@ -52,7 +51,6 @@ func NewHTTPClient(o *bo.Options) (*http.Client, error) {
 		}
 
 		if len(o.TLS.CertificateAuthorityPaths) > 0 {
-
 			// credit snippet to https://forfuncsake.github.io/post/2017/08/trust-extra-ca-cert-in-go-app/
 			// Get the SystemCertPool, continue with an empty pool on error
 			rootCAs, _ := x509.SystemCertPool()

@@ -23,7 +23,6 @@ import (
 )
 
 func TestClone(t *testing.T) {
-
 	u1, _ := url.Parse("http://user:pass@127.0.0.1:8080/path?param1=param2")
 	u2 := Clone(u1)
 	if u2.Hostname() != "127.0.0.1" {
@@ -35,7 +34,6 @@ func TestClone(t *testing.T) {
 	if u2.Hostname() != "127.0.0.1" {
 		t.Errorf("expected %s got %s", "127.0.0.1", u2.Hostname())
 	}
-
 }
 
 func TestBuildUpstreamURL(t *testing.T) {
@@ -49,7 +47,6 @@ func TestBuildUpstreamURL(t *testing.T) {
 }
 
 func TestSize(t *testing.T) {
-
 	const expected = 24
 	u, _ := url.Parse("https://trickstercache.org")
 	i := Size(u)
@@ -60,5 +57,4 @@ func TestSize(t *testing.T) {
 	if i != 0 {
 		t.Errorf("expected %d got %d", 0, i)
 	}
-
 }

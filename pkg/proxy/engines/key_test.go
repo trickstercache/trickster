@@ -40,8 +40,9 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
-const testMultipartBoundary = `; boundary=------------------------d0509edbe55938c0`
-const testMultipartBody = `--------------------------d0509edbe55938c0
+const (
+	testMultipartBoundary = `; boundary=------------------------d0509edbe55938c0`
+	testMultipartBody     = `--------------------------d0509edbe55938c0
 Content-Disposition: form-data; name="field1"
 
 value1
@@ -51,6 +52,7 @@ Content-Disposition: form-data; name="field2"
 value2
 --------------------------d0509edbe55938c0--
 `
+)
 
 const testJSONDocument = `
 {
@@ -70,7 +72,6 @@ const testJSONDocument = `
 `
 
 func TestDeepSearch(t *testing.T) {
-
 	var document map[string]any
 	err := json.Unmarshal([]byte(testJSONDocument), &document)
 	if err != nil {
@@ -209,7 +210,8 @@ func TestDeriveCacheKey(t *testing.T) {
 }
 
 func exampleKeyHasher(path string, params url.Values, headers http.Header,
-	body []byte, trq *timeseries.TimeRangeQuery, extra string) string {
+	body []byte, trq *timeseries.TimeRangeQuery, extra string,
+) string {
 	return "test-key"
 }
 
@@ -241,7 +243,6 @@ func TestDeriveCacheKeyAuthHeader(t *testing.T) {
 	if ck != "60257fa6b18d6072b90a294269a8e6e1" {
 		t.Errorf("expected %s got %s", "60257fa6b18d6072b90a294269a8e6e1", ck)
 	}
-
 }
 
 func TestDeriveCacheKeyNoPathConfig(t *testing.T) {
@@ -267,11 +268,9 @@ func TestDeriveCacheKeyNoPathConfig(t *testing.T) {
 	if ck != "f53b04ce5c434a7357804ae15a64ee6c" {
 		t.Errorf("expected %s got %s", "f53b04ce5c434a7357804ae15a64ee6c", ck)
 	}
-
 }
 
 func TestDeriveCacheKeyNilURL(t *testing.T) {
-
 	_, w, r, _, _ := tu.NewTestInstance("", nil, 0, "", nil, providers.ReverseProxyCacheShort,
 		"http://127.0.0.1/?query=12345&start=0&end=0&step=300&time=0", "INFO")
 

@@ -25,7 +25,6 @@ import (
 )
 
 func TestLoadConfigurationFileFailures(t *testing.T) {
-
 	tests := []struct {
 		filename string
 		expected string
@@ -77,5 +76,4 @@ func TestLoadConfigurationFileFailures(t *testing.T) {
 			}
 		})
 	}
-
 }

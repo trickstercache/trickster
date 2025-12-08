@@ -23,7 +23,6 @@ import (
 )
 
 func TestFrontendOptions(t *testing.T) {
-
 	// expect f1 and f2 to be equal
 	f1 := New()
 	f2 := New()

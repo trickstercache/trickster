@@ -108,10 +108,9 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 				pts = append(pts, pointFromValues(v))
 			}
 		} else if wfd.Data.ResultType == "vector" && len(pr.Value) == 2 {
-			pts = make(dataset.Points, 1)
 			pt := pointFromValues(pr.Value)
-			pts[0] = pt
 			t := time.Unix(0, int64(pt.Epoch))
+			pts = dataset.Points{pt}
 			ds.ExtentList = timeseries.ExtentList{timeseries.Extent{Start: t, End: t}}
 		}
 		s := &dataset.Series{
@@ -152,7 +151,8 @@ func MarshalTimeseries(ts timeseries.Timeseries, rlo *timeseries.RequestOptions,
 
 // MarshalTimeseriesWriter converts a Timeseries into a JSON blob via an io.Writer
 func MarshalTimeseriesWriter(ts timeseries.Timeseries,
-	_ *timeseries.RequestOptions, _ int, w io.Writer) error {
+	_ *timeseries.RequestOptions, _ int, w io.Writer,
+) error {
 	ds, ok := ts.(*dataset.DataSet)
 	if !ok {
 		return timeseries.ErrUnknownFormat

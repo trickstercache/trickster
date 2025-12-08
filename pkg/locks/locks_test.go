@@ -25,8 +25,7 @@ import (
 const testKey = "testKey"
 
 func TestLocks(t *testing.T) {
-
-	var testVal = 0
+	testVal := 0
 
 	lk := NewNamedLocker()
 
@@ -56,11 +55,9 @@ func TestLocks(t *testing.T) {
 	if err.Error() != expected {
 		t.Errorf("got %s expected %s", err.Error(), expected)
 	}
-
 }
 
 func TestLocksOrdering(t *testing.T) {
-
 	lk := NewNamedLocker()
 	var wg sync.WaitGroup
 	wg.Add(4)
@@ -109,11 +106,9 @@ func TestLocksOrdering(t *testing.T) {
 	}()
 
 	wg.Wait()
-
 }
 
 func TestLocksUpgradePileup(t *testing.T) {
-
 	const size = 2500
 
 	lk := NewNamedLocker()
@@ -150,7 +145,6 @@ func TestLocksUpgradePileup(t *testing.T) {
 }
 
 func TestLocksConcurrent(t *testing.T) {
-
 	const size = 10000
 
 	lk := NewNamedLocker()
@@ -216,7 +210,6 @@ func TestLocksConcurrent(t *testing.T) {
 }
 
 func TestLockReadAndWrite(t *testing.T) {
-
 	lk := NewNamedLocker()
 	var i, j int
 	wg := &sync.WaitGroup{}
@@ -249,11 +242,9 @@ func TestLockReadAndWrite(t *testing.T) {
 	if err == nil || !strings.HasPrefix(err.Error(), "invalid lock name:") {
 		t.Error("expected error for invalid lock name")
 	}
-
 }
 
 func TestUpgrade(t *testing.T) {
-
 	locker := NewNamedLocker()
 	nl, _ := locker.RAcquire("test")
 
@@ -271,5 +262,4 @@ func TestUpgrade(t *testing.T) {
 	if b {
 		t.Errorf("expected firstWrite to be false")
 	}
-
 }

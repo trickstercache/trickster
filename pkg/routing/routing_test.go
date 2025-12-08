@@ -161,7 +161,6 @@ func TestRegisterProxyRoutes(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-
 }
 
 func TestRegisterProxyRoutesInflux(t *testing.T) {
@@ -185,13 +184,14 @@ func TestRegisterProxyRoutesInflux(t *testing.T) {
 	if len(proxyClients) == 0 {
 		t.Errorf("expected %d got %d", 1, 0)
 	}
-
 }
 
 func TestRegisterProxyRoutesReverseProxy(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
-	conf, err := config.Load([]string{"-log-level", "debug",
-		"-origin-url", "http://1", "-provider", providers.ReverseProxyShort})
+	conf, err := config.Load([]string{
+		"-log-level", "debug",
+		"-origin-url", "http://1", "-provider", providers.ReverseProxyShort,
+	})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
@@ -210,7 +210,6 @@ func TestRegisterProxyRoutesReverseProxy(t *testing.T) {
 	if len(proxyClients) == 0 {
 		t.Errorf("expected %d got %d", 1, 0)
 	}
-
 }
 
 func TestRegisterProxyRoutesClickHouse(t *testing.T) {
@@ -259,7 +258,6 @@ func TestRegisterProxyRoutesALB(t *testing.T) {
 	if len(proxyClients) == 0 {
 		t.Errorf("expected %d got %d", 1, 0)
 	}
-
 }
 
 func TestRegisterProxyRoutesWithReqRewriters(t *testing.T) {
@@ -375,8 +373,10 @@ func TestRegisterPathRoutes(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Info))
 	RegisterPathRoutes(nil, nil, nil, nil, nil, nil, nil)
 
-	conf, err := config.Load([]string{"-log-level", "debug", "-origin-url",
-		"http://1", "-provider", providers.ReverseProxyCacheShort})
+	conf, err := config.Load([]string{
+		"-log-level", "debug", "-origin-url",
+		"http://1", "-provider", providers.ReverseProxyCacheShort,
+	})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
@@ -414,22 +414,22 @@ func TestRegisterPathRoutes(t *testing.T) {
 		}
 	}
 	RegisterPathRoutes(router, conf, handlers, rpc, oo, nil, nil)
-
 }
 
 func TestValidateRuleClients(t *testing.T) {
-
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	c, err := rule.NewClient("test", nil, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
 
-	var cl = backends.Backends{"test": c}
+	cl := backends.Backends{"test": c}
 	rule.ValidateOptions(cl, nil)
 
-	conf, err := config.Load([]string{"-log-level", "debug", "-origin-url",
-		"http://1", "-provider", providers.ReverseProxyCacheShort})
+	conf, err := config.Load([]string{
+		"-log-level", "debug", "-origin-url",
+		"http://1", "-provider", providers.ReverseProxyCacheShort,
+	})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
@@ -447,11 +447,9 @@ func TestValidateRuleClients(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-
 }
 
 func TestRegisterDefaultBackendRoutes(t *testing.T) {
-
 	// successful passing of this test is no panic
 
 	r := lm.NewRouter()

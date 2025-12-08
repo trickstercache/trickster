@@ -146,7 +146,7 @@ func Backends(c *config.Config) error {
 }
 
 func RoutesRulesAndPools(c *config.Config, clients backends.Backends) error {
-	var caches = make(cache.Lookup)
+	caches := make(cache.Lookup)
 	for k := range c.Caches {
 		caches[k] = nil
 	}

@@ -163,9 +163,7 @@ func (l Lookup) ToHeader() http.Header {
 // Clone returns an exact copy of the subject Lookup
 func (l Lookup) Clone() Lookup {
 	l2 := make(Lookup)
-	for k, v := range l {
-		l2[k] = v
-	}
+	maps.Copy(l2, l)
 	return l2
 }
 

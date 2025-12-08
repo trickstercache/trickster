@@ -36,7 +36,6 @@ func TestNew(t *testing.T) {
 }
 
 func TestRunContext(t *testing.T) {
-
 	trq := &timeseries.TimeRangeQuery{Statement: "trickster"}
 	ro := &timeseries.RequestOptions{TimeFormat: 42}
 
@@ -54,11 +53,9 @@ func TestRunContext(t *testing.T) {
 	if r2.TimeFormat != 42 {
 		t.Errorf("run context persistence error")
 	}
-
 }
 
 func TestParseComment(t *testing.T) {
-
 	trq := &timeseries.TimeRangeQuery{Statement: "trickster"}
 	ro := &timeseries.RequestOptions{TimeFormat: 42}
 	rc := NewRunContext(trq, ro)
@@ -71,11 +68,9 @@ func TestParseComment(t *testing.T) {
 	if rs.Current().Typ != lsql.TokenComment {
 		t.Error("token parsing error")
 	}
-
 }
 
 func TestParseEpoch(t *testing.T) {
-
 	tests := []struct {
 		input string
 		exp1  epoch.Epoch
@@ -118,5 +113,4 @@ func TestParseEpoch(t *testing.T) {
 			}
 		})
 	}
-
 }

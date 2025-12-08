@@ -29,7 +29,6 @@ import (
 )
 
 func TestClickhouseClientInterfacing(t *testing.T) {
-
 	// this test ensures the client will properly conform to the
 	// Client and TimeseriesBackend interfaces
 
@@ -51,7 +50,6 @@ func TestClickhouseClientInterfacing(t *testing.T) {
 }
 
 func TestNewClient(t *testing.T) {
-
 	conf, err := config.Load([]string{"-provider", providers.ClickHouse, "-origin-url", "http://1"})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
@@ -84,12 +82,13 @@ func TestNewClient(t *testing.T) {
 }
 
 func TestParseTimeRangeQuery(t *testing.T) {
-	req := &http.Request{URL: &url.URL{
-		Scheme:   "https",
-		Host:     "blah.com",
-		Path:     "/",
-		RawQuery: testRawQuery(),
-	},
+	req := &http.Request{
+		URL: &url.URL{
+			Scheme:   "https",
+			Host:     "blah.com",
+			Path:     "/",
+			RawQuery: testRawQuery(),
+		},
 		Header: http.Header{},
 	}
 	client := &Client{}
@@ -115,7 +114,8 @@ func TestParseTimeRangeQuery(t *testing.T) {
 		`SELECT (intDiv(toUInt32(abc), 6z0) * 6z0) * 1000 AS t, countMerge(some_count) AS cnt, field1, field2 ` +
 			`FROM testdb.test_table WHERE abc BETWEEN toDateTime(1516665600) AND toDateTime(1516687200) ` +
 			`AND date_column >= toDate(1516665600) AND toDate(1516687200) ` +
-			`AND field1 > 0 AND field2 = 'some_value' GROUP BY t, field1, field2 ORDER BY t, field1 FORMAT JSON`}}).Encode()
+			`AND field1 > 0 AND field2 = 'some_value' GROUP BY t, field1, field2 ORDER BY t, field1 FORMAT JSON`,
+	}}).Encode()
 	_, _, _, err = client.ParseTimeRangeQuery(req)
 	if err == nil {
 		t.Errorf("expected error for: %s", "not a time range query")
@@ -125,10 +125,10 @@ func TestParseTimeRangeQuery(t *testing.T) {
 		`SELECT (intDiv(toUInt32(0^^^), 60) * 60) * 1000 AS t, countMerge(some_count) AS cnt, field1, field2 ` +
 			`FROM testdb.test_table WHERE 0^^^ BETWEEN toDateTime(1516665600) AND toDateTime(1516687200) ` +
 			`AND date_column >= toDate(1516665600) AND toDate(1516687200) ` +
-			`AND field1 > 0 AND field2 = 'some_value' GROUP BY t, field1, field2 ORDER BY t, field1 FORMAT JSON`}}).Encode()
+			`AND field1 > 0 AND field2 = 'some_value' GROUP BY t, field1, field2 ORDER BY t, field1 FORMAT JSON`,
+	}}).Encode()
 	_, _, _, err = client.ParseTimeRangeQuery(req)
 	if err == nil {
 		t.Errorf("expected error for: %s", "not a time range query")
 	}
-
 }

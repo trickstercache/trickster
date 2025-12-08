@@ -37,7 +37,6 @@ func TestCachingPolicyClone(t *testing.T) {
 }
 
 func TestMerge(t *testing.T) {
-
 	cp := &CachingPolicy{
 		IsClientFresh: true,
 	}
@@ -46,11 +45,9 @@ func TestMerge(t *testing.T) {
 	if !cp.IsClientFresh {
 		t.Errorf("expected %t got %t", true, cp.IsClientFresh)
 	}
-
 }
 
 func TestGetResponseCachingPolicy(t *testing.T) {
-
 	now := time.Now().Truncate(time.Second)
 
 	tests := []struct {
@@ -187,7 +184,6 @@ func TestGetResponseCachingPolicy(t *testing.T) {
 
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-
 			p := GetResponseCachingPolicy(200, nil, test.a)
 			d := time.Duration(p.FreshnessLifetime) * time.Second
 			if test.expectedTTL != d {
@@ -198,7 +194,6 @@ func TestGetResponseCachingPolicy(t *testing.T) {
 }
 
 func TestResolveClientConditionalsIUS(t *testing.T) {
-
 	cp := &CachingPolicy{
 		IsClientConditional:   true,
 		HasIfUnmodifiedSince:  true,
@@ -210,7 +205,6 @@ func TestResolveClientConditionalsIUS(t *testing.T) {
 	if !cp.IsClientFresh {
 		t.Errorf("expected %t got %t", true, cp.IsClientFresh)
 	}
-
 }
 
 func TestGetResponseCachingPolicyNegativeCache(t *testing.T) {
@@ -221,7 +215,6 @@ func TestGetResponseCachingPolicyNegativeCache(t *testing.T) {
 }
 
 func TestGetRequestCacheability(t *testing.T) {
-
 	tests := []struct {
 		a           http.Header
 		isCacheable bool
@@ -283,11 +276,9 @@ func TestGetRequestCacheability(t *testing.T) {
 			}
 		})
 	}
-
 }
 
 func TestCheckIfNoneMatch(t *testing.T) {
-
 	res := CheckIfNoneMatch("", "", status.LookupStatusHit)
 	if !res {
 		t.Errorf("expected %t got %t", true, res)
@@ -312,5 +303,4 @@ func TestCheckIfNoneMatch(t *testing.T) {
 	if res {
 		t.Errorf("expected %t got %t", false, res)
 	}
-
 }

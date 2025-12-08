@@ -28,8 +28,10 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
 )
 
-const ID types.ID = 0
-const Name types.Name = "round_robin"
+const (
+	ID   types.ID   = 0
+	Name types.Name = "round_robin"
+)
 
 type handler struct {
 	pool pool.Pool

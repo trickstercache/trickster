@@ -28,6 +28,6 @@ func (c *Client) UnsupportedHandler(w http.ResponseWriter, _ *http.Request) {
 		Status: "error",
 		Error:  "trickster does not support proxying this endpoint",
 	}
-	e.StartMarshal(w, 400)
+	e.StartMarshal(w, http.StatusBadRequest)
 	w.Write([]byte("}"))
 }

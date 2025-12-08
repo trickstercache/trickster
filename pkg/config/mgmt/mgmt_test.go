@@ -19,7 +19,6 @@ package mgmt
 import "testing"
 
 func TestValidate(t *testing.T) {
-
 	c := New()
 	c.PprofServer = ""
 
@@ -38,5 +37,4 @@ func TestValidate(t *testing.T) {
 	if err == nil {
 		t.Error("expected error for invalid pprof server name")
 	}
-
 }

@@ -83,7 +83,6 @@ func TestRunState(t *testing.T) {
 }
 
 func TestScanNumber(t *testing.T) {
-
 	tr := &RunState{
 		Input:        "1234",
 		InputLowered: "1234",
@@ -159,7 +158,6 @@ func TestScanNumber(t *testing.T) {
 	if b {
 		t.Error("expected false")
 	}
-
 }
 
 func TestAtTeminator(t *testing.T) {

@@ -40,7 +40,6 @@ func TestString(t *testing.T) {
 }
 
 func TestHeaders(t *testing.T) {
-
 	const expectedDetail = "status-detail"
 	const expectedStatus = -1
 	const expectedStatusStr = "-1"
@@ -59,7 +58,6 @@ func TestHeaders(t *testing.T) {
 }
 
 func TestProber(t *testing.T) {
-
 	status := &Status{}
 	if status.Prober() != nil {
 		t.Error("expected nil prober")
@@ -67,7 +65,6 @@ func TestProber(t *testing.T) {
 }
 
 func TestGet(t *testing.T) {
-
 	status := &Status{}
 	status.status.Store(8480)
 	if status.Get() != 8480 {
@@ -76,7 +73,6 @@ func TestGet(t *testing.T) {
 }
 
 func TestDetail(t *testing.T) {
-
 	status := &Status{detail: "trickster"}
 	if status.Detail() != "trickster" {
 		t.Error("expected trickster got", status.Detail())
@@ -84,7 +80,6 @@ func TestDetail(t *testing.T) {
 }
 
 func TestDescription(t *testing.T) {
-
 	status := &Status{description: "trickster"}
 	if status.Description() != "trickster" {
 		t.Error("expected trickster got", status.Description())

@@ -29,7 +29,6 @@ import (
 )
 
 func (c *Client) RegisterHandlers(handlers.Lookup) {
-
 	c.TimeseriesBackend.RegisterHandlers(
 		handlers.Lookup{
 			// This is the registry of handlers that Trickster supports for InfluxDB,

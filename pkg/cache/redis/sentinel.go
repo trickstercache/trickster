@@ -23,7 +23,6 @@ import (
 )
 
 func (c *CacheClient) sentinelOpts() (*redis.FailoverOptions, error) {
-
 	if len(c.Config.Redis.Endpoints) == 0 {
 		return nil, ErrInvalidEndpointsConfig
 	}

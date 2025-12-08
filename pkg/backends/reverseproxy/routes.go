@@ -29,7 +29,6 @@ import (
 )
 
 func (c *Client) RegisterHandlers(handlers.Lookup) {
-
 	c.Backend.RegisterHandlers(
 		handlers.Lookup{
 			"health":        http.HandlerFunc(c.HealthHandler),
@@ -37,7 +36,6 @@ func (c *Client) RegisterHandlers(handlers.Lookup) {
 			"localresponse": http.HandlerFunc(local.HandleLocalResponse),
 		},
 	)
-
 }
 
 // DefaultPathConfigs returns the default PathConfigs for the given Provider

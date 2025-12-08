@@ -24,7 +24,6 @@ import (
 )
 
 func TestFormat(t *testing.T) {
-
 	tests := []struct {
 		input Epoch
 		exp1  string
@@ -76,5 +75,4 @@ func TestFormat(t *testing.T) {
 			}
 		})
 	}
-
 }

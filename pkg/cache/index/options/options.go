@@ -58,7 +58,6 @@ func New() *Options {
 // Equal returns true if all members of the subject and provided Options
 // are identical
 func (o *Options) Equal(o2 *Options) bool {
-
 	if o2 == nil {
 		return false
 	}
@@ -71,7 +70,7 @@ func (o *Options) Equal(o2 *Options) bool {
 		o.MaxSizeBackoffObjects == o2.MaxSizeBackoffObjects
 }
 
-func (o *Options) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (o *Options) UnmarshalYAML(unmarshal func(any) error) error {
 	type loadOptions Options
 	lo := loadOptions(*(New()))
 	if err := unmarshal(&lo); err != nil {

@@ -22,7 +22,6 @@ import (
 )
 
 func TestParseOptions(t *testing.T) {
-
 	c, err := newTestClient()
 	if err != nil {
 		t.Error(err)

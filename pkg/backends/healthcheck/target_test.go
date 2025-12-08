@@ -35,7 +35,6 @@ import (
 )
 
 func TestNewTarget(t *testing.T) {
-
 	_, err := newTarget(context.Background(), "", "", nil, nil)
 	if err != ho.ErrNoOptionsProvided {
 		t.Errorf("expected %v got %v", ho.ErrNoOptionsProvided, err)
@@ -61,11 +60,9 @@ func TestNewTarget(t *testing.T) {
 	if err.Error() != expected {
 		t.Error("expected error for invalid method, got ", err)
 	}
-
 }
 
 func TestIsGoodHeader(t *testing.T) {
-
 	tests := []struct {
 		target         *target
 		header         http.Header
@@ -79,31 +76,36 @@ func TestIsGoodHeader(t *testing.T) {
 			"",
 		},
 		{ // 1
-			&target{status: &Status{},
-				eh: http.Header{"test-header": []string{"test-header-value"}}},
+			&target{
+				status: &Status{},
+				eh:     http.Header{"test-header": []string{"test-header-value"}},
+			},
 			nil,
 			false,
 			"no response headers",
 		},
 		{ // 2
-			&target{status: &Status{},
-				eh: http.Header{"Test": []string{"test-header-value"}},
+			&target{
+				status: &Status{},
+				eh:     http.Header{"Test": []string{"test-header-value"}},
 			},
 			http.Header{"Test-1": []string{"test-header-value"}},
 			false,
 			"server response is missing required header [Test]",
 		},
 		{ // 3
-			&target{status: &Status{},
-				eh: http.Header{"Test": []string{"test-header-value"}},
+			&target{
+				status: &Status{},
+				eh:     http.Header{"Test": []string{"test-header-value"}},
 			},
 			http.Header{"Test": []string{"test-header-value-1"}},
 			false,
 			"required header mismatch for [Test] got [test-header-value-1] expected [test-header-value]",
 		},
 		{ // 4
-			&target{status: &Status{},
-				eh: http.Header{"Test": []string{"test-header-value"}},
+			&target{
+				status: &Status{},
+				eh:     http.Header{"Test": []string{"test-header-value"}},
 			},
 			http.Header{"Test": []string{"test-header-value"}},
 			true,
@@ -125,7 +127,6 @@ func TestIsGoodHeader(t *testing.T) {
 }
 
 func TestIsGoodCode(t *testing.T) {
-
 	tests := []struct {
 		target   *target
 		code     int
@@ -137,15 +138,17 @@ func TestIsGoodCode(t *testing.T) {
 			false,
 		},
 		{ // 1
-			&target{status: &Status{},
-				ec: []int{200},
+			&target{
+				status: &Status{},
+				ec:     []int{200},
 			},
 			404,
 			false,
 		},
 		{ // 2
-			&target{status: &Status{},
-				ec: []int{200},
+			&target{
+				status: &Status{},
+				ec:     []int{200},
 			},
 			200,
 			true,
@@ -163,7 +166,6 @@ func TestIsGoodCode(t *testing.T) {
 }
 
 func TestIsGoodBody(t *testing.T) {
-
 	tests := []struct {
 		target   *target
 		body     string
@@ -175,24 +177,27 @@ func TestIsGoodBody(t *testing.T) {
 			true,
 		},
 		{ // 1
-			&target{status: &Status{},
-				ceb: true,
+			&target{
+				status: &Status{},
+				ceb:    true,
 			},
 			"",
 			true,
 		},
 		{ // 2
-			&target{status: &Status{},
-				ceb: true,
-				eb:  "trickster",
+			&target{
+				status: &Status{},
+				ceb:    true,
+				eb:     "trickster",
 			},
 			"",
 			false,
 		},
 		{ // 3
-			&target{status: &Status{},
-				ceb: true,
-				eb:  "trickster",
+			&target{
+				status: &Status{},
+				ceb:    true,
+				eb:     "trickster",
 			},
 			"trickster",
 			true,
@@ -210,7 +215,6 @@ func TestIsGoodBody(t *testing.T) {
 }
 
 func TestNewHTTPClient(t *testing.T) {
-
 	c := newHTTPClient(0)
 	if c.CheckRedirect(nil, nil) != http.ErrUseLastResponse {
 		t.Error("expected", http.ErrUseLastResponse)
@@ -266,12 +270,10 @@ func TestProbe(t *testing.T) {
 		fail := target.failConsecutiveCnt.Load()
 		require.GreaterOrEqual(t, success, int32(1500/5)-25) // allow some margin
 		require.Equal(t, int32(0), fail)
-
 	})
 }
 
 func TestDemandProbe(t *testing.T) {
-
 	ts := newTestServer(200, "OK", map[string]string{})
 
 	w := httptest.NewRecorder()
@@ -307,11 +309,11 @@ func TestDemandProbe(t *testing.T) {
 	if w.Code != 500 {
 		t.Error("expected 500 got ", w.Code)
 	}
-
 }
 
 func newTestServer(responseCode int, responseBody string,
-	hdrs map[string]string) *httptest.Server {
+	hdrs map[string]string,
+) *httptest.Server {
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		headers.UpdateHeaders(w.Header(), hdrs)
 		w.WriteHeader(responseCode)

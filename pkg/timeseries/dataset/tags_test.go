@@ -87,11 +87,9 @@ func TestTags(t *testing.T) {
 	if len(t2) != 3 {
 		t.Error("expected 3, got", len(t2))
 	}
-
 }
 
 func TestInjectTags(t *testing.T) {
-
 	ds := testDataSet2()
 	ds.Results[0].SeriesList[0].Header.Tags = nil
 
@@ -106,5 +104,4 @@ func TestInjectTags(t *testing.T) {
 	if len(ds.Results[1].SeriesList[1].Header.Tags) != 2 {
 		t.Errorf("expected %d got %d", 2, len(ds.Results[1].SeriesList[1].Header.Tags))
 	}
-
 }

@@ -23,8 +23,10 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
 )
 
-type inputType string
-type extractionFunc func(*http.Request, string) string
+type (
+	inputType      string
+	extractionFunc func(*http.Request, string) string
+)
 
 var sourceExtractionFuncs = map[inputType]extractionFunc{
 	"method":        extractMethodFromSource,

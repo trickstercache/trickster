@@ -19,5 +19,7 @@ package reload
 
 type Reloader func(string) (bool, error)
 
-const ConfigNotReloadedText = "configuration NOT reloaded"
-const ConfigReloadedText = "configuration reloaded"
+const (
+	ConfigNotReloadedText = "configuration NOT reloaded"
+	ConfigReloadedText    = "configuration reloaded"
+)

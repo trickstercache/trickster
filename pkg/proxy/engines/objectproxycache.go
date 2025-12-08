@@ -18,6 +18,7 @@ package engines
 
 import (
 	"bytes"
+	stderrors "errors"
 	"io"
 	"net/http"
 	"time"
@@ -33,13 +34,11 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
-
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
 
 func handleCacheKeyHit(pr *proxyRequest) error {
-
 	d := pr.cacheDocument
 
 	if d != nil && d.StoredRangeParts != nil && len(d.StoredRangeParts) > 0 {
@@ -61,7 +60,6 @@ func handleCacheKeyHit(pr *proxyRequest) error {
 }
 
 func handleCachePartialHit(pr *proxyRequest) error {
-
 	// if we already have a revalidation in progress, then we've already confirmed it's not
 	// a true cache hit on the existing cached ranges. otherwise we need to verify first.
 	if pr.revalidation == RevalStatusNone {
@@ -113,7 +111,6 @@ func handleCachePartialHit(pr *proxyRequest) error {
 			pr.mapLock.Unlock()
 			pr.upstreamReader = io.NopCloser(bytes.NewReader(b))
 		}
-
 	} else if d != nil {
 		d.RangeParts = nil
 		d.Ranges = nil
@@ -129,11 +126,9 @@ func handleCachePartialHit(pr *proxyRequest) error {
 	}
 
 	return handleResponse(pr)
-
 }
 
 func confirmTrueCacheHit(pr *proxyRequest) (bool, error) {
-
 	pr.cachingPolicy.Merge(pr.cacheDocument.CachingPolicy)
 
 	if (!pr.checkCacheFreshness()) && (pr.cachingPolicy.CanRevalidate) {
@@ -156,7 +151,6 @@ func handleCacheRangeMiss(pr *proxyRequest) error {
 }
 
 func handleCacheRevalidation(pr *proxyRequest) error {
-
 	b1, b2 := upgradeLock(pr)
 	if b1 && !b2 {
 		rerunRequest(pr)
@@ -206,11 +200,9 @@ func handleCacheRevalidation(pr *proxyRequest) error {
 	}
 
 	return handleCacheRevalidationResponse(pr)
-
 }
 
 func handleCacheRevalidationResponse(pr *proxyRequest) error {
-
 	if pr.upstreamResponse.StatusCode == http.StatusNotModified {
 		pr.revalidation = RevalStatusOK
 		pr.cachingPolicy.IsFresh = true
@@ -231,7 +223,6 @@ func handleCacheRevalidationResponse(pr *proxyRequest) error {
 }
 
 func handleTrueCacheHit(pr *proxyRequest) error {
-
 	d := pr.cacheDocument
 	if d == nil {
 		return errors.ErrNilCacheDocument
@@ -241,8 +232,10 @@ func handleTrueCacheHit(pr *proxyRequest) error {
 		pr.cacheStatus = status.LookupStatusNegativeCacheHit
 	}
 
-	pr.upstreamResponse = &http.Response{StatusCode: d.StatusCode, Request: pr.Request,
-		Header: d.SafeHeaderClone()}
+	pr.upstreamResponse = &http.Response{
+		StatusCode: d.StatusCode, Request: pr.Request,
+		Header: d.SafeHeaderClone(),
+	}
 	if pr.wantsRanges {
 		h, b := d.RangeParts.ExtractResponseRange(pr.wantedRanges, d.ContentLength, d.ContentType, d.Body)
 		headers.Merge(pr.upstreamResponse.Header, h)
@@ -257,11 +250,9 @@ func handleTrueCacheHit(pr *proxyRequest) error {
 	}
 
 	return handleResponse(pr)
-
 }
 
 func handleCacheKeyMiss(pr *proxyRequest) error {
-
 	b1, b2 := upgradeLock(pr)
 	if b1 && !b2 {
 		rerunRequest(pr)
@@ -274,7 +265,7 @@ func handleCacheKeyMiss(pr *proxyRequest) error {
 	// if a we're using PCF, handle that separately
 	if !methods.HasBody(pr.Method) && !pr.wantsRanges && pc != nil &&
 		pc.CollapsedForwardingType == forwarding.CFTypeProgressive {
-		if err := handlePCF(pr); err != errors.ErrPCFContentLength {
+		if err := handlePCF(pr); !stderrors.Is(err, errors.ErrPCFContentLength) {
 			// if err is nil, or something else, we'll proceed.
 			return err
 		}
@@ -297,7 +288,6 @@ func handleUpstreamTransactions(pr *proxyRequest) error {
 }
 
 func handlePCF(pr *proxyRequest) error {
-
 	rsc := request.GetResources(pr.Request)
 	o := rsc.BackendOptions
 
@@ -404,7 +394,6 @@ func cacheResponseHandler(s status.LookupStatus) func(*proxyRequest) error {
 }
 
 func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, status.LookupStatus) {
-
 	rsc := request.GetResources(r)
 	o := rsc.BackendOptions
 	cc := rsc.CacheClient
@@ -458,9 +447,8 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 	}
 
 	var err error
-	pr.cacheDocument, pr.cacheStatus, pr.neededRanges, err =
-		QueryCache(pr.upstreamRequest.Context(), cc, pr.key, pr.wantedRanges, nil)
-	if err == nil || err == cache.ErrKNF {
+	pr.cacheDocument, pr.cacheStatus, pr.neededRanges, err = QueryCache(pr.upstreamRequest.Context(), cc, pr.key, pr.wantedRanges, nil)
+	if err == nil || stderrors.Is(err, cache.ErrKNF) {
 		f := cacheResponseHandler(pr.cacheStatus)
 		if f == nil {
 			logger.Warn("unhandled cache lookup response",
@@ -523,7 +511,8 @@ func FetchViaObjectProxyCache(r *http.Request) ([]byte, *http.Response, bool) {
 }
 
 func recordOPCResult(pr *proxyRequest, cacheStatus status.LookupStatus, httpStatus int,
-	path string, elapsed float64, header http.Header) {
+	path string, elapsed float64, header http.Header,
+) {
 	pr.mapLock.Lock()
 	recordResults(pr.Request, "ObjectProxyCache", cacheStatus, httpStatus, path, "", elapsed, nil, header)
 	pr.mapLock.Unlock()

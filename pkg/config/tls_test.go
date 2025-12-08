@@ -24,7 +24,6 @@ import (
 )
 
 func TestTLSCertConfig(t *testing.T) {
-
 	config := NewConfig()
 
 	// test empty config condition #1 (ServeTLS is false, early bail)
@@ -91,11 +90,9 @@ func TestTLSCertConfig(t *testing.T) {
 	if err == nil {
 		t.Errorf("expected error: %s", expectedErr)
 	}
-
 }
 
 func tlsConfig(condition string) (*options.Options, func(), error) {
-
 	kf, cf, closer, err := tlstest.GetTestKeyAndCertFiles(condition)
 	if err != nil {
 		return nil, nil, err

@@ -31,10 +31,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 )
 
-var (
-	// CacheClient implements the cache.Client interface
-	_ cache.Client = &CacheClient{}
-)
+// CacheClient implements the cache.Client interface
+var _ cache.Client = &CacheClient{}
 
 func NewCache(name string, config *options.Options) *CacheClient {
 	c := &CacheClient{
@@ -77,7 +75,7 @@ func (c *CacheClient) Store(cacheKey string, data []byte, ttl time.Duration) err
 		return errors.New("cacheKey required")
 	}
 	dataFile := c.getFileName(cacheKey)
-	err := os.WriteFile(dataFile, data, os.FileMode(0777))
+	err := os.WriteFile(dataFile, data, os.FileMode(0o777))
 	if err != nil {
 		return err
 	}
@@ -102,7 +100,7 @@ func (c *CacheClient) getFileName(cacheKey string) string {
 
 // makeDirectory creates a directory on the filesystem and returns the error in the event of a failure.
 func makeDirectory(path string) error {
-	err := os.MkdirAll(path, 0755)
+	err := os.MkdirAll(path, 0o755)
 	if err == nil {
 		var s string
 		if !strings.HasSuffix(path, "/") {
@@ -110,13 +108,13 @@ func makeDirectory(path string) error {
 		}
 		// verify writability by attempting to touch a test file in the cache path
 		tf := path + s + ".test." + strconv.FormatInt(time.Now().Unix(), 10)
-		err = os.WriteFile(tf, []byte(""), 0600)
+		err = os.WriteFile(tf, []byte(""), 0o600)
 		if err == nil {
 			os.Remove(tf)
 		}
 	}
 	if err != nil {
-		return fmt.Errorf("[%s] directory is not writeable by trickster: %v", path, err)
+		return fmt.Errorf("[%s] directory is not writeable by trickster: %w", path, err)
 	}
 	return nil
 }

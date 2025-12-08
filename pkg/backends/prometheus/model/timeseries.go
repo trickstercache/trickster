@@ -148,8 +148,8 @@ func MarshalTimeseriesWriter(ts timeseries.Timeseries, rlo *timeseries.RequestOp
 
 // marshalTSOrVectorWriter writes matrix and vector outputs to the provided io.Writer
 func MarshalTSOrVectorWriter(ts timeseries.Timeseries, _ *timeseries.RequestOptions,
-	status int, w io.Writer, isVector bool) error {
-
+	status int, w io.Writer, isVector bool,
+) error {
 	if w == nil {
 		return errors.ErrNilWriter
 	}
@@ -164,7 +164,7 @@ func MarshalTSOrVectorWriter(ts timeseries.Timeseries, _ *timeseries.RequestOpti
 	}
 
 	if ds.Status == "" {
-		ds.Status = "success"
+		ds.Status = statusSuccess
 	}
 
 	(&Envelope{ds.Status, ds.Error, ds.ErrorType, ds.Warnings}).StartMarshal(w, status)
@@ -217,7 +217,8 @@ func MarshalTSOrVectorWriter(ts timeseries.Timeseries, _ *timeseries.RequestOpti
 }
 
 func populateSeries(ds *dataset.DataSet, result []*WFResult,
-	trq *timeseries.TimeRangeQuery, isVector bool) {
+	trq *timeseries.TimeRangeQuery, isVector bool,
+) {
 	ds.Results = []*dataset.Result{{}}
 	ds.Results[0].SeriesList = make([]*dataset.Series, len(result))
 	for i, pr := range result {

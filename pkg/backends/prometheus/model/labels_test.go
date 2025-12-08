@@ -30,7 +30,6 @@ import (
 )
 
 func TestMergeLabelData(t *testing.T) {
-
 	ld1 := &WFLabelData{
 		Envelope: &Envelope{
 			Status: "error",
@@ -72,11 +71,9 @@ func TestMergeLabelData(t *testing.T) {
 	if len(ld1.Envelope.Warnings) != 3 {
 		t.Errorf("expected %d got %d", 3, len(ld1.Envelope.Warnings))
 	}
-
 }
 
 func TestMergeAndWriteLabelData(t *testing.T) {
-
 	var nilRG *merge.ResponseGate
 
 	tests := []struct {
@@ -115,7 +112,6 @@ func TestMergeAndWriteLabelData(t *testing.T) {
 			}
 		})
 	}
-
 }
 
 func testResponseGates3() merge.ResponseGates {
@@ -163,11 +159,9 @@ func testResponseGates3() merge.ResponseGates {
 	rg3.Write(b3)
 
 	return merge.ResponseGates{rg1, rg2, rg3}
-
 }
 
 func testResponseGates4() merge.ResponseGates {
-
 	b1 := []byte(`{"status":"error"`)
 	closer1 := io.NopCloser(bytes.NewReader(b1))
 	rsc1 := request.NewResources(nil, nil, nil, nil, nil, nil)
@@ -197,5 +191,4 @@ func testResponseGates4() merge.ResponseGates {
 	rg2.Write(b2)
 
 	return merge.ResponseGates{rg1, rg2}
-
 }

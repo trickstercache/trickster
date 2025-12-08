@@ -40,7 +40,8 @@ type state struct {
 }
 
 func marshalTimeseriesCSVWriter(ds *dataset.DataSet, frb *JSONRequestBody,
-	status int, w io.Writer) error {
+	status int, w io.Writer,
+) error {
 	if hw, ok := w.(http.ResponseWriter); ok {
 		hw.Header().Set(headers.NameContentType, headers.ValueApplicationCSV)
 		hw.WriteHeader(status)
@@ -72,7 +73,8 @@ func marshalTimeseriesCSVWriter(ds *dataset.DataSet, frb *JSONRequestBody,
 }
 
 func printCsvDatatypeAnnotationRow(w *csv.Writer,
-	fds timeseries.FieldDefinitions) error {
+	fds timeseries.FieldDefinitions,
+) error {
 	cells := make([]string, len(fds))
 	for i, fd := range fds {
 		if i == 0 {
@@ -85,7 +87,8 @@ func printCsvDatatypeAnnotationRow(w *csv.Writer,
 }
 
 func printCsvGroupAnnotationRow(w *csv.Writer,
-	fds timeseries.FieldDefinitions) error {
+	fds timeseries.FieldDefinitions,
+) error {
 	cells := make([]string, len(fds))
 	for i, fd := range fds {
 		if i == 0 {
@@ -104,7 +107,8 @@ func printCsvGroupAnnotationRow(w *csv.Writer,
 }
 
 func printCsvDefaultAnnotationRow(w *csv.Writer,
-	fds timeseries.FieldDefinitions) error {
+	fds timeseries.FieldDefinitions,
+) error {
 	cells := make([]string, len(fds))
 	for i, fd := range fds {
 		if i == 0 {
@@ -186,7 +190,8 @@ func processCsvRowData(st *state, p dataset.Point) error {
 }
 
 func getCsvCellValue(sh dataset.SeriesHeader, fd timeseries.FieldDefinition,
-	c dataset.Point, nextValue, table int) (string, bool) {
+	c dataset.Point, nextValue, table int,
+) (string, bool) {
 	switch fd.Role {
 	case timeseries.RoleTimestamp:
 		return fmt.Sprintf("%v", getFormattedTimestamp(c.Epoch, fd)), false

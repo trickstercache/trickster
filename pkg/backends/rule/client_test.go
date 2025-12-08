@@ -55,9 +55,9 @@ func TestRegisterHandlers(t *testing.T) {
 }
 
 func TestValidate(t *testing.T) {
-
 	backendClient, err := NewClient("test", &bo.Options{
-		RuleOptions: &options.Options{InputType: "header"}}, nil, nil, nil, nil)
+		RuleOptions: &options.Options{InputType: "header"},
+	}, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -77,11 +77,9 @@ func TestValidate(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-
 }
 
 func TestValidateOptions(t *testing.T) {
-
 	backendClient, err := NewClient("test", nil, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)

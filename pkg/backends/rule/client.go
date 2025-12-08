@@ -48,8 +48,8 @@ var _ types.NewBackendClientFunc = NewClient
 // NewClient returns a new Rules Router client reference
 func NewClient(name string, o *bo.Options, router http.Handler,
 	_ cache.Cache, clients backends.Backends,
-	_ types.Lookup) (backends.Backend, error) {
-
+	_ types.Lookup,
+) (backends.Backend, error) {
 	c := &Client{
 		clients:    clients,
 		pathPrefix: "/" + name,
@@ -66,7 +66,8 @@ type Clients []*Client
 // until all backends are processed, so the rule's destination origin names
 // can be mapped to their respective clients
 func ValidateOptions(clients backends.Backends,
-	rwi rewriter.InstructionsLookup) error {
+	rwi rewriter.InstructionsLookup,
+) error {
 	ruleClients := make(Clients, 0, len(clients))
 	for _, c := range clients {
 		if rc, ok := c.(*Client); ok {

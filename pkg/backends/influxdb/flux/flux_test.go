@@ -65,8 +65,10 @@ func TestParseQuery(t *testing.T) {
 	if d != time.Minute*5 {
 		t.Error("invalid duration", d)
 	}
-	e2 := timeseries.Extent{Start: time.Unix(1672531200, 0),
-		End: time.Unix(1673136000, 0)}
+	e2 := timeseries.Extent{
+		Start: time.Unix(1672531200, 0),
+		End:   time.Unix(1673136000, 0),
+	}
 	if !e.Start.Equal(e2.Start) {
 		t.Error("invalid extent start")
 	}
@@ -97,7 +99,6 @@ func TestParseTimeRangeQuery(t *testing.T) {
 }
 
 func TestSetExtent(t *testing.T) {
-
 	now := time.Now()
 
 	start := now.Add(-7 * 24 * time.Hour)

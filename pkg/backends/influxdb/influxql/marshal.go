@@ -33,7 +33,8 @@ const timeColumnName = "time"
 
 // MarshalTimeseries converts a Timeseries into a JSON blob
 func MarshalTimeseries(ts timeseries.Timeseries,
-	rlo *timeseries.RequestOptions, _ int) ([]byte, error) {
+	rlo *timeseries.RequestOptions, _ int,
+) ([]byte, error) {
 	if ts == nil {
 		return nil, timeseries.ErrUnknownFormat
 	}
@@ -59,7 +60,8 @@ func MarshalTimeseries(ts timeseries.Timeseries,
 
 // MarshalTimeseriesWriter writes a Timeseries as a JSON blob to an io.Writer
 func MarshalTimeseriesWriter(ts timeseries.Timeseries,
-	rlo *timeseries.RequestOptions, _ int, w io.Writer) error {
+	rlo *timeseries.RequestOptions, _ int, w io.Writer,
+) error {
 	if ts == nil {
 		return timeseries.ErrUnknownFormat
 	}
@@ -91,7 +93,8 @@ func formatEpochTime(epoch epoch.Epoch, m int64) any {
 }
 
 func toWireFormat(ds *dataset.DataSet,
-	rlo *timeseries.RequestOptions) (*WFDocument, error) {
+	rlo *timeseries.RequestOptions,
+) (*WFDocument, error) {
 	if ds == nil {
 		return nil, nil
 	}

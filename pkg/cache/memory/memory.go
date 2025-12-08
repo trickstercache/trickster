@@ -80,8 +80,8 @@ func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
 }
 
 func (c *Cache) store(cacheKey string, byteData []byte, refData cache.ReferenceObject,
-	_ time.Duration) error {
-
+	_ time.Duration,
+) error {
 	var o1, o2 any
 	if byteData != nil {
 		o1 = byteData
@@ -100,7 +100,8 @@ func (c *Cache) store(cacheKey string, byteData []byte, refData cache.ReferenceO
 
 // RetrieveReference looks for an object in cache and returns it (or an error if not found)
 func (c *Cache) RetrieveReference(cacheKey string) (any,
-	status.LookupStatus, error) {
+	status.LookupStatus, error,
+) {
 	o, s, err := c.retrieve(cacheKey)
 	if err != nil {
 		return nil, s, err
@@ -121,7 +122,8 @@ func (c *Cache) Retrieve(cacheKey string) ([]byte, status.LookupStatus, error) {
 }
 
 func (c *Cache) retrieve(cacheKey string) (any,
-	status.LookupStatus, error) {
+	status.LookupStatus, error,
+) {
 	record, ok := c.client.Load(cacheKey)
 	if ok {
 		return record, status.LookupStatusHit, nil

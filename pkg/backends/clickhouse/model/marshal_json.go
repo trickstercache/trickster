@@ -45,7 +45,8 @@ func (d WFDataItem) MarshalJSON() ([]byte, error) {
 }
 
 func marshalTimeseriesJSON(w io.Writer, ds *dataset.DataSet,
-	_ *timeseries.RequestOptions, _ int) error {
+	_ *timeseries.RequestOptions, _ int,
+) error {
 	wf, err := toWireFormat(ds)
 	if err != nil {
 		logger.Error("failed to convert dataset to clickhouse wire format",

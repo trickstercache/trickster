@@ -35,7 +35,6 @@ func indicateTransoformations(timeseries.Timeseries) {}
 
 // QueryHandler handles calls to /query (for instantaneous values)
 func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
-
 	var err error
 	rsc := request.GetResources(r)
 

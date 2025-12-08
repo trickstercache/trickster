@@ -24,7 +24,6 @@ import (
 )
 
 func TestHops(t *testing.T) {
-
 	ctx := context.Background()
 	_, j := Hops(ctx)
 	if j != options.DefaultMaxRuleExecutions {
@@ -51,5 +50,4 @@ func TestHops(t *testing.T) {
 	if i != 5 {
 		t.Error("expected 5 got", i)
 	}
-
 }

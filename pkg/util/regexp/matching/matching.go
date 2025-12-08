@@ -22,7 +22,6 @@ import "regexp"
 // GetNamedMatches will return a map of NamedSubmatches=Value for a Regexp and input string,
 // filtered to the provided list when populated. If there are multiple matches of the same name, last one wins
 func GetNamedMatches(re *regexp.Regexp, input string, filter []string) map[string]string {
-
 	found := make(map[string]string)
 	if input == "" || re == nil {
 		return found
@@ -60,7 +59,6 @@ func GetNamedMatches(re *regexp.Regexp, input string, filter []string) map[strin
 // GetNamedMatch will return the value of a Named Submatch for a given regexp and its matches.
 // If there are multiple matches of the same name, first one wins
 func GetNamedMatch(filter string, re *regexp.Regexp, input string) (string, bool) {
-
 	if input == "" || filter == "" || re == nil {
 		return "", false
 	}
@@ -86,5 +84,4 @@ func GetNamedMatch(filter string, re *regexp.Regexp, input string) (string, bool
 	}
 
 	return "", false
-
 }

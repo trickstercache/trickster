@@ -31,7 +31,6 @@ import (
 )
 
 func TestLoadCachesFromConfig(t *testing.T) {
-
 	conf, err := config.Load(
 		[]string{"-log-level", "debug", "-origin-url", "http://1", "-provider", "test"})
 	if err != nil {
@@ -69,11 +68,9 @@ func TestLoadCachesFromConfig(t *testing.T) {
 	if ok {
 		t.Errorf("expected error")
 	}
-
 }
 
 func newCacheConfig(t *testing.T, cacheProvider string) *co.Options {
-
 	bd := "."
 	fd := "."
 

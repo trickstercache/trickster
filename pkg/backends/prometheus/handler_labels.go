@@ -30,7 +30,6 @@ import (
 
 // LabelsHandler proxies requests for path /label and /labels to the origin by way of the object proxy cache
 func (c *Client) LabelsHandler(w http.ResponseWriter, r *http.Request) {
-
 	u := urls.BuildUpstreamURL(r, c.BaseUpstreamURL())
 
 	rsc := request.GetResources(r)

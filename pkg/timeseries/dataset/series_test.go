@@ -132,11 +132,9 @@ func TestSeriesHeaderClone(t *testing.T) {
 		sh2.ValueFieldsList[0].Name != "Field1" {
 		t.Error("series header clone mismatch")
 	}
-
 }
 
 func TestSeriesClone(t *testing.T) {
-
 	s := testSeries()
 	s2 := s.Clone()
 
@@ -147,5 +145,4 @@ func TestSeriesClone(t *testing.T) {
 	if s2.Points[0].Epoch != s.Points[0].Epoch {
 		t.Error("series clone mismatch")
 	}
-
 }

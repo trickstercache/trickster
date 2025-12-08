@@ -24,7 +24,6 @@ import (
 )
 
 func TestDefaultHealthCheckConfig(t *testing.T) {
-
 	c, _ := NewClient("test", bo.New(), nil, nil, nil, nil)
 
 	dho := c.DefaultHealthCheckConfig()
@@ -33,5 +32,4 @@ func TestDefaultHealthCheckConfig(t *testing.T) {
 	if dho.Path != "" {
 		t.Error("expected / for path", dho.Path)
 	}
-
 }

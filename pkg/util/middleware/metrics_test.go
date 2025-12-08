@@ -118,5 +118,4 @@ func TestDecorate(t *testing.T) {
 			}
 		})
 	}
-
 }

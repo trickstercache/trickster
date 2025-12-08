@@ -22,7 +22,6 @@ import "github.com/trickstercache/trickster/v2/pkg/config"
 // OptionsChanged will return true if the TLS options for any backend
 // is different between configs
 func OptionsChanged(conf, oldConf *config.Config) bool {
-
 	if conf == nil {
 		return false
 	}

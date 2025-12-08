@@ -86,7 +86,6 @@ func New() *Options {
 
 // Clone returns a perfect copy of the Options
 func (o *Options) Clone() *Options {
-
 	var fsc []int
 	var fscm sets.Set[int]
 
@@ -160,7 +159,7 @@ func (o *Options) ValidatePool(backendName string, allBackends sets.Set[string])
 	return nil
 }
 
-func (o *Options) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (o *Options) UnmarshalYAML(unmarshal func(any) error) error {
 	type loadOptions Options
 	lo := loadOptions(*(New()))
 	if err := unmarshal(&lo); err != nil {

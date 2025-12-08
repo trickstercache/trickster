@@ -26,9 +26,10 @@ import (
 )
 
 func TestPingHandler(t *testing.T) {
-
-	conf, err := config.Load([]string{"-provider", providers.ReverseProxyCache,
-		"-origin-url", "http://0/"})
+	conf, err := config.Load([]string{
+		"-provider", providers.ReverseProxyCache,
+		"-origin-url", "http://0/",
+	})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
@@ -53,5 +54,4 @@ func TestPingHandler(t *testing.T) {
 	if string(bodyBytes) != "pong" {
 		t.Errorf("expected 'pong' got %s.", bodyBytes)
 	}
-
 }

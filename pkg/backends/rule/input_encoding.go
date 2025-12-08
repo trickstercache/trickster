@@ -20,8 +20,10 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/encoding/base64"
 )
 
-type encoding string
-type decodingFunc func(string, string, int) string
+type (
+	encoding     string
+	decodingFunc func(string, string, int) string
+)
 
 var decodingFuncs = map[encoding]decodingFunc{
 	"base64": decodeBase64,

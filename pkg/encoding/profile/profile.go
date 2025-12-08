@@ -94,7 +94,7 @@ func (p *Profile) String() string {
 		k++
 	}
 	if p.Level > -1 {
-		lines[k] = fmt.Sprintf(`"level":"%d"`, p.Level)
+		lines[k] = fmt.Sprintf(`"level":"%d"`, p.Level) // #nosec G602 -- false positive
 		k++
 	}
 	return "{" + strings.Join(lines[:k], ",") + "}"

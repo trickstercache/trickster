@@ -118,7 +118,6 @@ var ProxyConnectionClosed prometheus.Counter
 var ProxyConnectionFailed prometheus.Counter
 
 func init() {
-
 	BuildInfo = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: metricNamespace,

@@ -21,7 +21,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
-
 	"go.opentelemetry.io/otel/attribute"
 	stdout "go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -30,7 +29,6 @@ import (
 
 // New returns a new Stdout Tracer
 func New(opts *options.Options) (*tracing.Tracer, error) {
-
 	var exp *stdout.Exporter
 	var err error
 
@@ -91,5 +89,4 @@ func New(opts *options.Options) (*tracing.Tracer, error) {
 		Tracer:  tracer,
 		Options: opts,
 	}, nil
-
 }

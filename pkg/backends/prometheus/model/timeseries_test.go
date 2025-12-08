@@ -72,11 +72,9 @@ func TestUnmarshalTimeseriesReader(t *testing.T) {
 	require.Equal(t, epoch.Epoch(1435781430000000000), dataset.Results[0].SeriesList[0].Points[0].Epoch)
 	require.Equal(t, epoch.Epoch(1435781445000000000), dataset.Results[0].SeriesList[0].Points[1].Epoch)
 	require.Equal(t, epoch.Epoch(1435781460000000000), dataset.Results[0].SeriesList[0].Points[2].Epoch)
-
 }
 
 func TestPointFromValues(t *testing.T) {
-
 	tests := []struct {
 		values []any
 		expP   epoch.Epoch
@@ -112,7 +110,6 @@ func TestPointFromValues(t *testing.T) {
 }
 
 func TestMarshalTSOrVectorWriter(t *testing.T) {
-
 	w := httptest.NewRecorder()
 
 	err := MarshalTSOrVectorWriter(nil, nil, 0, nil, false)
@@ -150,5 +147,4 @@ func TestMarshalTSOrVectorWriter(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-
 }

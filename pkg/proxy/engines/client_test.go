@@ -77,8 +77,8 @@ type TestClient struct {
 }
 
 func NewTestClient(name string, o *bo.Options, router http.Handler,
-	cache cache.Cache, modeler *timeseries.Modeler) (backends.TimeseriesBackend, error) {
-
+	cache cache.Cache, modeler *timeseries.Modeler,
+) (backends.TimeseriesBackend, error) {
 	c := &TestClient{}
 	b, err := backends.NewTimeseriesBackend(name, o, c.RegisterHandlers, router, cache, modeler)
 	c.TimeseriesBackend = b
@@ -223,8 +223,8 @@ func parseDuration(input string) (time.Duration, error) {
 
 // ParseTimeRangeQuery parses the key parts of a TimeRangeQuery from the inbound HTTP Request
 func (c *TestClient) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery,
-	*timeseries.RequestOptions, bool, error) {
-
+	*timeseries.RequestOptions, bool, error,
+) {
 	trq := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{}}
 	rlo := &timeseries.RequestOptions{}
 	qp, _, _ := params.GetRequestValues(r)

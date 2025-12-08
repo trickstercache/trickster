@@ -50,7 +50,9 @@ func SanitizeForLogging(h http.Header) Lookup {
 	return out
 }
 
-var allowList = []string{NameAccept, NameAcceptEncoding, NameAcceptLanguage,
+var allowList = []string{
+	NameAccept, NameAcceptEncoding, NameAcceptLanguage,
 	NameCacheControl, NameConnection, NameContentLength, NameContentType,
 	NameDate, NameHost, NameIfModifiedSince, NameIfNoneMatch, NameRange,
-	NameUserAgent, NameVia, NameXForwardedFor, NameTricksterResult}
+	NameUserAgent, NameVia, NameXForwardedFor, NameTricksterResult,
+}

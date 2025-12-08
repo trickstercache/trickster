@@ -37,5 +37,4 @@ func TestParseTimeRangeQuery(t *testing.T) {
 	if trq == nil {
 		t.Error("expected non-nil time range query")
 	}
-
 }

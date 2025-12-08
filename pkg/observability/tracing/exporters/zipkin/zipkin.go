@@ -21,7 +21,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	errs "github.com/trickstercache/trickster/v2/pkg/observability/tracing/errors"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
-
 	"go.opentelemetry.io/otel/exporters/zipkin"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
@@ -65,5 +64,4 @@ func New(opts *options.Options) (*tracing.Tracer, error) {
 		Tracer:  tracer,
 		Options: opts,
 	}, nil
-
 }

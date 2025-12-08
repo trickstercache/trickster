@@ -41,8 +41,10 @@ type Range struct {
 // Good: [ 1-10, 21-30, 35-40 ]; Bad: [ 1-10, 10-20 ]; Bad: [ 1-10, 5-20 ]
 type Ranges []Range
 
-const byteRequestRangePrefix = "bytes="
-const byteResponsRangePrefix = "bytes "
+const (
+	byteRequestRangePrefix = "bytes="
+	byteResponsRangePrefix = "bytes "
+)
 
 func (r Range) StartVal() int64 { return r.Start }
 func (r Range) EndVal() int64   { return r.End }
@@ -78,20 +80,14 @@ func (r Range) Mod(i int64) Range {
 // Generally equal to b[r.Start-offset:r.End-offset+1], but will automatically adjust the end to avoid overflow.
 // Use offset if b is a part of a whole.
 func (r Range) CropByteSlice(b []byte) ([]byte, Range) {
-	over := (r.End + 1) - int64(len(b))
-	if over < 0 {
-		over = 0
-	}
+	over := max((r.End+1)-int64(len(b)), 0)
 	return b[r.Start : r.End+1-over], Range{Start: r.Start, End: r.End - over}
 }
 
 // Copy a source byte slice, whose data range is represented by r, into dst in the range of r.
 // If src is smaller than r, Copy assumes that r.End should be reduced by the overage.
 func (r Range) Copy(dst []byte, src []byte) int {
-	over := r.End - r.Start + 1 - int64(len(src))
-	if over < 0 {
-		over = 0
-	}
+	over := max(r.End-r.Start+1-int64(len(src)), 0)
 	return copy(dst[r.Start:r.End+1-over], src)
 }
 
@@ -189,14 +185,13 @@ func ParseRangeHeader(input string) Ranges {
 	ranges := make(Ranges, len(parts))
 
 	for i, p := range parts {
-
 		j := strings.Index(p, "-")
 		if j < 0 {
 			return nil
 		}
 
-		var start = int64(-1)
-		var end = int64(-1)
+		start := int64(-1)
+		end := int64(-1)
 		var err error
 
 		if j > 0 {

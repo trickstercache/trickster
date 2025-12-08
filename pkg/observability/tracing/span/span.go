@@ -22,9 +22,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
-
 	"go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace"
-
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/trace"
@@ -35,7 +33,6 @@ import (
 // all span and tracing info. It also returns a span with the name "Request" that is meant
 // to be a parent span for all child spans of this request.
 func PrepareRequest(r *http.Request, tr *tracing.Tracer) (*http.Request, trace.Span) {
-
 	if tr == nil || tr.Tracer == nil {
 		return r, nil
 	}
@@ -68,8 +65,8 @@ func PrepareRequest(r *http.Request, tr *tracing.Tracer) (*http.Request, trace.S
 
 // NewChildSpan returns the context with a new Span situated as the child of the previous span
 func NewChildSpan(ctx context.Context, tr *tracing.Tracer,
-	spanName string) (context.Context, trace.Span) {
-
+	spanName string,
+) (context.Context, trace.Span) {
 	var span trace.Span
 
 	if tctx.HealthCheckFlag(ctx) {
@@ -94,7 +91,6 @@ func NewChildSpan(ctx context.Context, tr *tracing.Tracer,
 	}
 
 	return ctx, span
-
 }
 
 // SetAttributes safely sets attributes on a span, unless they are in the omit list

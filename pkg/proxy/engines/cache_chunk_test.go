@@ -292,7 +292,6 @@ func TestRangeRequestFromClientChunks(t *testing.T) {
 	defer s.Close()
 	client := &http.Client{}
 	req, err := http.NewRequest(http.MethodGet, s.URL, nil)
-
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -422,5 +421,4 @@ func TestQueryCacheChunks(t *testing.T) {
 	if d2.StatusCode != 200 {
 		t.Errorf("expected %d got %d", 200, d2.StatusCode)
 	}
-
 }

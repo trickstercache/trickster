@@ -19,9 +19,8 @@ package snappy
 import (
 	"io"
 
-	"github.com/trickstercache/trickster/v2/pkg/encoding/reader"
-
 	"github.com/golang/snappy"
+	"github.com/trickstercache/trickster/v2/pkg/encoding/reader"
 )
 
 // Decode returns the decoded version of the encoded byte slice

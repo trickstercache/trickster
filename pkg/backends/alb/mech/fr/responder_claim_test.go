@@ -19,7 +19,6 @@ package fr
 import "testing"
 
 func TestNewResponderClaim(t *testing.T) {
-
 	rc := newResponderClaim(1)
 	if len(rc.contexts) != 1 {
 		t.Error("expected 1 got ", len(rc.contexts))
@@ -27,11 +26,9 @@ func TestNewResponderClaim(t *testing.T) {
 	if rc.lockVal != -1 {
 		t.Error("expected -1 got ", rc.lockVal)
 	}
-
 }
 
 func TestClaim(t *testing.T) {
-
 	rc := newResponderClaim(2)
 
 	b := rc.Claim(1)
@@ -48,5 +45,4 @@ func TestClaim(t *testing.T) {
 	if b {
 		t.Error("expected false")
 	}
-
 }

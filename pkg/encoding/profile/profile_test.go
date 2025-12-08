@@ -33,19 +33,38 @@ func TestClone(t *testing.T) {
 }
 
 func TestString(t *testing.T) {
-	p := &Profile{
-		ClientAcceptEncoding: "test-ae",
-		Supported:            4,
-		SupportedHeaderVal:   "test-ae-header",
-		NoTransform:          true,
-		ContentEncoding:      "gzip",
-		CompressTypes:        sets.New([]string{headers.ValueTextPlain}),
-		ContentType:          headers.ValueTextPlain,
-	}
-	s := p.String()
-	if !strings.Contains(s, headers.ValueTextPlain) {
-		t.Error("mismatch")
-	}
+	t.Run("basic", func(t *testing.T) {
+		p := &Profile{
+			ClientAcceptEncoding: "test-ae",
+			Supported:            4,
+			SupportedHeaderVal:   "test-ae-header",
+			NoTransform:          true,
+			ContentEncoding:      "gzip",
+			CompressTypes:        sets.New([]string{headers.ValueTextPlain}),
+			ContentType:          headers.ValueTextPlain,
+		}
+		s := p.String()
+		if !strings.Contains(s, headers.ValueTextPlain) {
+			t.Error("mismatch")
+		}
+	})
+
+	t.Run("with level", func(t *testing.T) {
+		p := &Profile{
+			ClientAcceptEncoding: "test-ae",
+			Supported:            4,
+			SupportedHeaderVal:   "test-ae-header",
+			NoTransform:          true,
+			ContentEncoding:      "gzip",
+			CompressTypes:        sets.New([]string{headers.ValueTextPlain}),
+			ContentType:          headers.ValueTextPlain,
+			Level:                3,
+		}
+		s := p.String()
+		if !strings.Contains(s, `"level":"3"`) {
+			t.Error("mismatch")
+		}
+	})
 }
 
 func TestClientAcceptsEncoding(t *testing.T) {
@@ -61,7 +80,6 @@ func TestClientAcceptsEncoding(t *testing.T) {
 }
 
 func TestGetEncoderInitializer(t *testing.T) {
-
 	p := &Profile{}
 	f, s := p.GetEncoderInitializer()
 	if f != nil {

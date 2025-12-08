@@ -37,8 +37,10 @@ import (
 	tt "github.com/trickstercache/trickster/v2/pkg/util/timeconv"
 )
 
-var _ backends.TimeseriesBackend = (*Client)(nil)
-var _ backends.MergeableTimeseriesBackend = (*Client)(nil)
+var (
+	_ backends.TimeseriesBackend          = (*Client)(nil)
+	_ backends.MergeableTimeseriesBackend = (*Client)(nil)
+)
 
 // Prometheus API
 const (
@@ -79,8 +81,8 @@ var _ types.NewBackendClientFunc = NewClient
 // NewClient returns a new Client Instance
 func NewClient(name string, o *bo.Options, router http.Handler,
 	cache cache.Cache, _ backends.Backends,
-	_ types.Lookup) (backends.Backend, error) {
-
+	_ types.Lookup,
+) (backends.Backend, error) {
 	c := &Client{}
 	b, err := backends.NewTimeseriesBackend(name, o, c.RegisterHandlers, router,
 		cache, modelprom.NewModeler())
@@ -128,8 +130,8 @@ func parseDuration(input string) (time.Duration, error) {
 
 // ParseTimeRangeQuery parses the key parts of a TimeRangeQuery from the inbound HTTP Request
 func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery,
-	*timeseries.RequestOptions, bool, error) {
-
+	*timeseries.RequestOptions, bool, error,
+) {
 	trq := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{}}
 	rlo := &timeseries.RequestOptions{}
 	qp, b, isBody := params.GetRequestValues(r)
@@ -197,7 +199,6 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 
 // parseVectorQuery parses the key parts of an Instantaneous Query from the inbound HTTP Request
 func parseVectorQuery(r *http.Request, rounder time.Duration) (*timeseries.TimeRangeQuery, error) {
-
 	trq := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{}}
 	qp, _, _ := params.GetRequestValues(r)
 

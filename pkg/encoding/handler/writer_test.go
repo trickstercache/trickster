@@ -36,7 +36,6 @@ func TestNewEncoder(t *testing.T) {
 }
 
 func TestWrite(t *testing.T) {
-
 	w := httptest.NewRecorder()
 	ew := &responseEncoder{ResponseWriter: w}
 	ew.writeFunc = ew.writeDirect
@@ -55,11 +54,9 @@ func TestWrite(t *testing.T) {
 	ew.encoder = &responseEncoder{ResponseWriter: w}
 	ew.decoder = reader.NewReadCloserResetter(nil)
 	ew.Close()
-
 }
 
 func TestSelectWriter(t *testing.T) {
-
 	w := httptest.NewRecorder()
 	ew := &responseEncoder{ResponseWriter: w}
 	ew.decoderInit = gzip.NewDecoder
@@ -91,7 +88,6 @@ func TestSelectWriter(t *testing.T) {
 }
 
 func TestWriteEncoded(t *testing.T) {
-
 	w := httptest.NewRecorder()
 	ew := &responseEncoder{ResponseWriter: w}
 	ew2 := &responseEncoder{ResponseWriter: w}
@@ -106,7 +102,6 @@ func TestWriteEncoded(t *testing.T) {
 }
 
 func TestWriteDecoded(t *testing.T) {
-
 	const expected = "trickster"
 
 	w := httptest.NewRecorder()
@@ -144,11 +139,9 @@ func TestWriteDecoded(t *testing.T) {
 	if s != expected {
 		t.Errorf("expected %s got %s", expected, s)
 	}
-
 }
 
 func TestWriteTranscoded(t *testing.T) {
-
 	const expected = "trickster"
 
 	w := httptest.NewRecorder()
@@ -187,15 +180,15 @@ func TestWriteTranscoded(t *testing.T) {
 	if s != expected {
 		t.Errorf("expected %s got %s", expected, s)
 	}
-
 }
 
 func TestPrepareWriter(t *testing.T) {
-
 	w := httptest.NewRecorder()
 	h := w.Header()
-	ep := &profile.Profile{Supported: 1, ContentType: headers.ValueTextPlain,
-		CompressTypes: sets.New([]string{headers.ValueTextPlain})}
+	ep := &profile.Profile{
+		Supported: 1, ContentType: headers.ValueTextPlain,
+		CompressTypes: sets.New([]string{headers.ValueTextPlain}),
+	}
 	ew := &responseEncoder{EncodingProfile: ep, ResponseWriter: w}
 	h.Set(headers.NameContentType, headers.ValueTextPlain)
 	ew.prepareWriter()
@@ -209,5 +202,4 @@ func TestPrepareWriter(t *testing.T) {
 	if ew.encoder == nil {
 		t.Error("expected non-nil encoder")
 	}
-
 }

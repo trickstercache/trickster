@@ -49,7 +49,6 @@ func TestClone(t *testing.T) {
 	if o2.Verb != "trickster" {
 		t.Error("clone mismatch")
 	}
-
 }
 
 func TestURL(t *testing.T) {
@@ -65,7 +64,6 @@ func TestURL(t *testing.T) {
 	if u.String() != expected {
 		t.Errorf("expected %s got %s", expected, u.String())
 	}
-
 }
 
 func TestHasExpectedBody(t *testing.T) {
@@ -88,7 +86,6 @@ func TestSetExpectedBody(t *testing.T) {
 }
 
 func TestOverlay(t *testing.T) {
-
 	o := New()
 	o.Overlay(nil)
 	if o.Interval != 0 {
@@ -128,7 +125,6 @@ backends:
 `
 
 func TestCalibrateTimeout(t *testing.T) {
-
 	const defaultTimeout = DefaultHealthCheckTimeout
 	const maxTimeout = MaxProbeWait
 	const minTimeout = MinProbeWait

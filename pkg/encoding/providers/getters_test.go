@@ -22,7 +22,6 @@ import (
 )
 
 func TestGetEncoderInitializer(t *testing.T) {
-
 	tests := []struct {
 		provider      string
 		expectNilFunc bool
@@ -83,7 +82,6 @@ func TestGetEncoderInitializer(t *testing.T) {
 }
 
 func TestGetDecoderInitializer(t *testing.T) {
-
 	tests := []struct {
 		provider      string
 		expectNilFunc bool

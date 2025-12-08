@@ -30,13 +30,14 @@ import (
 	rwo "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 )
 
-var testMux1 = http.NewServeMux()
-var testMux2 = http.NewServeMux()
+var (
+	testMux1 = http.NewServeMux()
+	testMux2 = http.NewServeMux()
+)
 
 var testRuleHeader = "Test-Rule-Header"
 
 func newTestRewriterOpts() rwo.Lookup {
-
 	return rwo.Lookup{
 		"test-rewriter-1": {
 			Instructions: [][]string{
@@ -112,7 +113,6 @@ func newTestRuleOpts() *ro.Options {
 }
 
 func newTestCaseOpts() ro.CaseOptionsList {
-
 	return ro.CaseOptionsList{
 		{
 			Matches:   []string{"trickster"},
@@ -135,7 +135,6 @@ func newTestCaseOpts() ro.CaseOptionsList {
 }
 
 func newTestRules() ([]*rule, error) {
-
 	oopts := bo.New()
 
 	rwi := newTestRewriterInstructions()
@@ -181,7 +180,6 @@ func newTestRules() ([]*rule, error) {
 }
 
 func newTestClient() (*Client, error) {
-
 	oopts := bo.New()
 
 	rwi, err := rewriter.ProcessConfigs(newTestRewriterOpts())
@@ -218,7 +216,6 @@ func newTestClient() (*Client, error) {
 }
 
 func TestEvaluateOpArg(t *testing.T) {
-
 	rules, err := newTestRules()
 	if err != nil {
 		t.Error(err)
@@ -268,11 +265,9 @@ func TestEvaluateOpArg(t *testing.T) {
 	if h == nil {
 		t.Error("unexpected handler value")
 	}
-
 }
 
 func TestEvaluateCaseArg(t *testing.T) {
-
 	rules, err := newTestRules()
 	if err != nil {
 		t.Error(err)
@@ -316,5 +311,4 @@ func TestEvaluateCaseArg(t *testing.T) {
 	if h == nil {
 		t.Error("unexpected handler value")
 	}
-
 }

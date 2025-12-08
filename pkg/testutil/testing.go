@@ -26,6 +26,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/trickstercache/mockster/pkg/testutil"
 	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
@@ -43,8 +44,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
-
-	"github.com/trickstercache/mockster/pkg/testutil"
 )
 
 const (
@@ -103,7 +102,6 @@ func NewTestInstance(
 	respCode int, respBody string, respHeaders map[string]string,
 	backendProvider, urlPath, logLevel string,
 ) (*httptest.Server, *httptest.ResponseRecorder, *http.Request, *http.Client, error) {
-
 	var isBasicTestServer bool
 
 	var ts *httptest.Server
@@ -224,7 +222,6 @@ func BasicHTTPHandler(w http.ResponseWriter, _ *http.Request) {
 // NewTestRewriterInstructions returns a set of example Rewriter Instructions
 // for use in unit testing
 func NewTestRewriteInstructions() rewriter.RewriteInstructions {
-
 	trwl := options.RewriteList{
 		[]string{"method", "set", "POST"},
 		[]string{"host", "set", "example.com:9090"},

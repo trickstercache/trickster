@@ -24,11 +24,9 @@ import (
 )
 
 func TestNew(t *testing.T) {
-
 	o := options.New()
 	_, err := New(o)
 	if err != nil {
 		t.Error(err)
 	}
-
 }

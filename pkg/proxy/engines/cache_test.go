@@ -45,7 +45,6 @@ import (
 const testRangeBody = "This is a test file, to see how the byte range requests work.\n"
 
 func newRangeRequestTestServer() *httptest.Server {
-
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.ServeContent(w, r, "", time.Now(),
 			strings.NewReader(testRangeBody))
@@ -315,7 +314,6 @@ func TestRangeRequestFromClient(t *testing.T) {
 	defer s.Close()
 	client := &http.Client{}
 	req, err := http.NewRequest(http.MethodGet, s.URL, nil)
-
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -443,7 +441,6 @@ func TestQueryCache(t *testing.T) {
 	if d2.StatusCode != 200 {
 		t.Errorf("expected %d got %d", 200, d2.StatusCode)
 	}
-
 }
 
 // Mock Cache for testing error conditions

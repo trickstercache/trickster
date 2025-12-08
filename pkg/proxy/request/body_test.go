@@ -24,7 +24,6 @@ import (
 )
 
 func TestGetAndSetBody(t *testing.T) {
-
 	req, _ := http.NewRequest(http.MethodPost, "http://127.0.0.1/", nil)
 
 	body, _ := GetBody(req)
@@ -49,5 +48,4 @@ func TestGetAndSetBody(t *testing.T) {
 	if string(body) != "trickster" {
 		t.Errorf("expected `trickster` got `%s`", string(body))
 	}
-
 }

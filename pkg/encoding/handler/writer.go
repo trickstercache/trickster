@@ -122,7 +122,6 @@ func (ew *responseEncoder) prepareWriter() {
 	// nil vs non-nil encoder and decoders
 	ew.selectWriter()
 	ew.prepared = true
-
 }
 
 func (ew *responseEncoder) selectWriter() {

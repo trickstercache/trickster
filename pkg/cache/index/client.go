@@ -379,10 +379,7 @@ REAPER:
 // reap makes a single iteration through the cache index to to find and remove expired elements
 // and evict least-recently-accessed elements to maintain the Maximum allowed Cache Size
 func (idx *IndexedClient) reap() {
-	cacheSize := atomic.LoadInt64(&idx.CacheSize)
-	if cacheSize < 0 {
-		cacheSize = 0
-	}
+	cacheSize := max(atomic.LoadInt64(&idx.CacheSize), 0)
 	removals := make([]string, 0)
 	remainders := make(objectsAtime, 0, cacheSize)
 
@@ -425,7 +422,6 @@ func (idx *IndexedClient) reap() {
 				"cacheSizeBytes": cacheSize, "maxSizeBytes": opts.MaxSizeBytes,
 				"cacheSizeObjects": objectCount, "maxSizeObjects": opts.MaxSizeObjects,
 			})
-
 	}
 	if cacheChanged {
 		idx.lastWrite.Store(time.Now())

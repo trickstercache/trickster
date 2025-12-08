@@ -101,8 +101,8 @@ func MergeResultHeaderVals(h1, h2 string) string {
 
 func parseResultHeaderVals(h string) ResultHeaderParts {
 	r := ResultHeaderParts{}
-	parts := strings.Split(h, "; ")
-	for _, part := range parts {
+	parts := strings.SplitSeq(h, "; ")
+	for part := range parts {
 		if i := strings.Index(part, "="); i > 0 && i < len(part)-1 {
 			key := part[0:i]
 			val := part[i+1:]
@@ -127,7 +127,6 @@ func parseResultHeaderVals(h string) ResultHeaderParts {
 				var k int
 				for _, fpart := range fparts {
 					if i = strings.Index(fpart, "-"); i > 0 && i < len(fpart)-1 {
-
 						start, err := strconv.ParseInt(fpart[0:i], 10, 64)
 						if err != nil {
 							continue

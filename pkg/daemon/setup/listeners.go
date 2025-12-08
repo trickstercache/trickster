@@ -39,8 +39,8 @@ import (
 func applyListenerConfigs(conf, oldConf *config.Config,
 	router, reloadHandler http.Handler, metricsRouter router.Router,
 	tracers tracing.Tracers, o backends.Backends, errorFunc func(),
-	lg *listener.Group) {
-
+	lg *listener.Group,
+) {
 	var err error
 	var tlsConfig *tls.Config
 
@@ -65,8 +65,10 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 
 	if oldConf != nil && oldConf.Frontend.ConnectionsLimit != conf.Frontend.ConnectionsLimit {
 		logger.Warn("connections limit change requires a process restart. listeners not updated.",
-			logging.Pairs{"oldLimit": oldConf.Frontend.ConnectionsLimit,
-				"newLimit": conf.Frontend.ConnectionsLimit})
+			logging.Pairs{
+				"oldLimit": oldConf.Frontend.ConnectionsLimit,
+				"newLimit": conf.Frontend.ConnectionsLimit,
+			})
 		return
 	}
 

@@ -19,7 +19,6 @@ package engines
 import "testing"
 
 func TestRevalidationStatusString(t *testing.T) {
-
 	t1 := RevalStatusNone
 	t2 := RevalStatusInProgress
 	var t3 RevalidationStatus = 10
@@ -35,5 +34,4 @@ func TestRevalidationStatusString(t *testing.T) {
 	if t3.String() != "10" {
 		t.Errorf("expected %s got %s", "10", t3.String())
 	}
-
 }

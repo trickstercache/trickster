@@ -23,7 +23,6 @@ import (
 )
 
 func TestOptions(t *testing.T) {
-
 	o := New(nil, nil, nil)
 	if o == nil {
 		t.Error("expected non-nil options")
@@ -63,5 +62,4 @@ func TestOptions(t *testing.T) {
 	if lo != nil {
 		t.Error("expected nil lexopts")
 	}
-
 }

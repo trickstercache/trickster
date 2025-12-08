@@ -95,8 +95,10 @@ func TestProxyRequestBadGateway(t *testing.T) {
 	const badUpstream = "http://127.0.0.1:64389"
 
 	// assume nothing listens on badUpstream, so this should force the proxy to generate a 502 Bad Gateway
-	conf, err := config.Load([]string{"-origin-url",
-		badUpstream, "-provider", testResponseBody, "-log-level", "debug"})
+	conf, err := config.Load([]string{
+		"-origin-url",
+		badUpstream, "-provider", testResponseBody, "-log-level", "debug",
+	})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
@@ -127,7 +129,6 @@ func TestProxyRequestBadGateway(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-
 }
 
 func TestClockOffsetWarning(t *testing.T) {
@@ -137,8 +138,10 @@ func TestClockOffsetWarning(t *testing.T) {
 	}
 	s := httptest.NewServer(http.HandlerFunc(handler))
 
-	conf, err := config.Load([]string{"-origin-url",
-		s.URL, "-provider", testResponseBody, "-log-level", "debug"})
+	conf, err := config.Load([]string{
+		"-origin-url",
+		s.URL, "-provider", testResponseBody, "-log-level", "debug",
+	})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
@@ -171,7 +174,6 @@ func TestClockOffsetWarning(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-
 }
 
 func TestDoProxyWithPCF(t *testing.T) {
@@ -232,8 +234,10 @@ func TestProxyRequestWithPCFMultipleClients(t *testing.T) {
 	es := tu.NewTestServer(http.StatusOK, testResponseBody, nil)
 	defer es.Close()
 
-	conf, err := config.Load([]string{"-origin-url",
-		es.URL, "-provider", testResponseBody, "-log-level", "debug"})
+	conf, err := config.Load([]string{
+		"-origin-url",
+		es.URL, "-provider", testResponseBody, "-log-level", "debug",
+	})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
@@ -283,8 +287,10 @@ func TestProxyRequestWithPCFMultipleClients(t *testing.T) {
 
 func TestPrepareFetchReaderErr(t *testing.T) {
 	logger.SetLogger(testLogger)
-	conf, err := config.Load([]string{"-origin-url", "http://example.com/",
-		"-provider", testResponseBody, "-log-level", "debug"})
+	conf, err := config.Load([]string{
+		"-origin-url", "http://example.com/",
+		"-provider", testResponseBody, "-log-level", "debug",
+	})
 	if err != nil {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}

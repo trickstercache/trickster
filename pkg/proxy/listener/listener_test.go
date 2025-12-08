@@ -174,7 +174,6 @@ func TestNewListenerTLS(t *testing.T) {
 	} else {
 		defer l.Close()
 	}
-
 }
 
 func TestListenerConnectionLimitWorks(t *testing.T) {
@@ -257,7 +256,6 @@ func TestListenerConnectionLimitWorks(t *testing.T) {
 					res.Body.Close()
 				}()
 			}
-
 		})
 	}
 }
@@ -329,7 +327,6 @@ func TestUpdateRouters(t *testing.T) {
 }
 
 func TestCloseObservedConnection(t *testing.T) {
-
 	s := httptest.NewServer(http.HandlerFunc(testutil.BasicHTTPHandler))
 	defer s.Close()
 	address := s.URL[7:]

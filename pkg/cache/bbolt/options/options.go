@@ -29,7 +29,7 @@ func New() *Options {
 	return &Options{Filename: DefaultBBoltFile, Bucket: DefaultBBoltBucket}
 }
 
-func (o *Options) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (o *Options) UnmarshalYAML(unmarshal func(any) error) error {
 	type loadOptions Options
 	lo := loadOptions(*(New()))
 	if err := unmarshal(&lo); err != nil {

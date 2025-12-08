@@ -25,7 +25,6 @@ import (
 )
 
 func TestDefaultHealthCheckConfig(t *testing.T) {
-
 	c, _ := NewClient("test", bo.New(), nil, nil, nil, nil)
 
 	dho := c.DefaultHealthCheckConfig()
@@ -34,5 +33,4 @@ func TestDefaultHealthCheckConfig(t *testing.T) {
 	if !strings.HasPrefix(dho.Query, "query=SELECT") {
 		t.Error("expected SELECT-based query string")
 	}
-
 }

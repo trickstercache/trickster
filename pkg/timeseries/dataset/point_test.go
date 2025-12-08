@@ -138,7 +138,6 @@ func BenchmarkPointClone(b *testing.B) {
 }
 
 func TestPointsCloneRange(t *testing.T) {
-
 	tests := []struct {
 		start, end, expLen, epoch int
 	}{
@@ -163,7 +162,6 @@ func TestPointsCloneRange(t *testing.T) {
 			}
 		})
 	}
-
 }
 
 func TestPointsClone(t *testing.T) {
@@ -189,7 +187,6 @@ func TestPointsClone(t *testing.T) {
 	if len(pts2) != 2 {
 		t.Error("clone mismatch")
 	}
-
 }
 
 func TestPointsSize(t *testing.T) {
@@ -218,7 +215,6 @@ func TestPointsSort(t *testing.T) {
 }
 
 func TestOnOrJustAfter(t *testing.T) {
-
 	pts := testPoints()
 	i := pts.onOrJustAfter(0, 0, len(pts)-1)
 	if i != 0 {
@@ -234,11 +230,9 @@ func TestOnOrJustAfter(t *testing.T) {
 	if i != 1 {
 		t.Errorf("expected %d got %d", 1, i)
 	}
-
 }
 
 func TestOnOrJustBefore(t *testing.T) {
-
 	pts := testPoints()
 	i := pts.onOrJustBefore(0, 0, len(pts)-1)
 	if i != -1 {
@@ -259,7 +253,6 @@ func TestOnOrJustBefore(t *testing.T) {
 	if i != 1 {
 		t.Errorf("expected %d got %d", 1, i)
 	}
-
 }
 
 func TestMergePoints(t *testing.T) {

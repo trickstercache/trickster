@@ -17,6 +17,7 @@
 package sql
 
 import (
+	"maps"
 	"strings"
 	"time"
 	"unicode"
@@ -59,12 +60,8 @@ func NewLexer(lo *lex.Options) lex.Lexer {
 	}
 	l.SpacedKeywordHints = SpacedKeywords()
 	if lo != nil {
-		for k, v := range lo.SpacedKeywordHints {
-			l.SpacedKeywordHints[k] = v
-		}
-		for k, v := range lo.CustomKeywords {
-			l.Key[k] = v
-		}
+		maps.Copy(l.SpacedKeywordHints, lo.SpacedKeywordHints)
+		maps.Copy(l.Key, lo.CustomKeywords)
 	}
 	return l
 }
@@ -437,7 +434,6 @@ Loop:
 				break Loop
 			}
 			rs.Next()
-
 		}
 	}
 	rs.Emit(token.String)

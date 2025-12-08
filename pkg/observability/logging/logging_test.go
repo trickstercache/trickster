@@ -29,7 +29,6 @@ import (
 )
 
 func TestConsoleLogger(t *testing.T) {
-
 	testCases := []string{
 		"debug",
 		"info",
@@ -252,7 +251,6 @@ func TestNewLoggerFatal_LogFile(t *testing.T) {
 }
 
 func TestSetLogLevel(t *testing.T) {
-
 	l := ConsoleLogger(level.Info)
 	if l.Level() != level.Info {
 		t.Errorf("expected %s got %s", "info", l.Level())
@@ -262,7 +260,6 @@ func TestSetLogLevel(t *testing.T) {
 	if l.Level() != "warn" {
 		t.Errorf("expected %s got %s", "warn", l.Level())
 	}
-
 }
 
 func TestStreamLogger(t *testing.T) {
@@ -273,7 +270,6 @@ func TestStreamLogger(t *testing.T) {
 	if w.Body.String() == "" {
 		t.Error("expected non-empty string")
 	}
-
 }
 
 func Benchmark_logOnce(b *testing.B) {

@@ -17,10 +17,10 @@
 package rule
 
 import (
+	"testing"
+
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
-
-	"testing"
 )
 
 func TestHandler(t *testing.T) {

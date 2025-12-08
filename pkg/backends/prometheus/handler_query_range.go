@@ -28,7 +28,6 @@ import (
 // QueryRangeHandler handles timeseries requests for
 // Prometheus and processes them through the delta proxy cache
 func (c *Client) QueryRangeHandler(w http.ResponseWriter, r *http.Request) {
-
 	// if this request is part of a scatter/gather, provide a reconstitution function
 	rsc := request.GetResources(r)
 	if rsc != nil {

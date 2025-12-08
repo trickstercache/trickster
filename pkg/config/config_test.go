@@ -96,7 +96,6 @@ func TestString(t *testing.T) {
 }
 
 func TestCloneBackendOptions(t *testing.T) {
-
 	o := bo.New()
 	o.Hosts = []string{"test"}
 
@@ -110,11 +109,9 @@ func TestCloneBackendOptions(t *testing.T) {
 	if oc2.Hosts[0] != "test" {
 		t.Errorf("expected %s got %s", "test", oc2.Hosts[0])
 	}
-
 }
 
 func TestCheckFileLastModified(t *testing.T) {
-
 	c := NewConfig()
 
 	if !c.CheckFileLastModified().IsZero() {
@@ -128,7 +125,6 @@ func TestCheckFileLastModified(t *testing.T) {
 }
 
 func TestConfigProcess(t *testing.T) {
-
 	c, _ := emptyTestConfig()
 	err := c.Process()
 	if err != nil {
@@ -165,7 +161,6 @@ backends:
 `
 
 func TestProcessBackendOptions(t *testing.T) {
-
 	c, _ := emptyTestConfig()
 	yml := c.String() + testRewriter
 	yml = strings.Replace(strings.Replace(
@@ -190,11 +185,9 @@ func TestProcessBackendOptions(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-
 }
 
 func TestLoadYAMLConfig(t *testing.T) {
-
 	c := NewConfig()
 	err := c.loadYAMLConfig("[[")
 
@@ -210,11 +203,10 @@ func TestLoadYAMLConfig(t *testing.T) {
 }
 
 func TestIsStale(t *testing.T) {
-
 	testFile := t.TempDir() + "/trickster_test.conf"
 	_, tml := emptyTestConfig()
 
-	err := os.WriteFile(testFile, []byte(tml), 0666)
+	err := os.WriteFile(testFile, []byte(tml), 0o666)
 	if err != nil {
 		t.Error(err)
 	}
@@ -233,7 +225,7 @@ func TestIsStale(t *testing.T) {
 	c.Main.configFilePath = testFile
 	time.Sleep(time.Millisecond * 10)
 
-	err = os.WriteFile(testFile, []byte(tml), 0666)
+	err = os.WriteFile(testFile, []byte(tml), 0o666)
 	if err != nil {
 		t.Error(err)
 	}
@@ -253,7 +245,6 @@ func TestIsStale(t *testing.T) {
 }
 
 func TestConfigFilePath(t *testing.T) {
-
 	c, _ := emptyTestConfig()
 
 	if c.ConfigFilePath() != emptyFilePath {
@@ -264,11 +255,9 @@ func TestConfigFilePath(t *testing.T) {
 	if c.ConfigFilePath() != "" {
 		t.Errorf("expected %s got %s", "", c.ConfigFilePath())
 	}
-
 }
 
 func TestSetStalenessInfo(t *testing.T) {
-
 	fp := "trickster"
 	t1 := time.Now()
 	t2 := t1.Add(-1 * time.Minute)
@@ -311,7 +300,7 @@ func TestConfig_defaulting(t *testing.T) {
 		goldenFile := filepath.Join("testdata", filepath.Base(file))
 		// trigger update of golden file
 		if os.Getenv("UPDATE_GOLDENS") == "true" {
-			require.NoError(t, os.WriteFile(goldenFile, []byte(generatedOutput), 0666))
+			require.NoError(t, os.WriteFile(goldenFile, []byte(generatedOutput), 0o666))
 			continue
 		}
 		b, err = os.ReadFile(goldenFile)

@@ -145,7 +145,7 @@ func (ds *DataSet) CroppedClone(e timeseries.Extent) timeseries.Timeseries {
 				sc := &Series{
 					Header: s.Header.Clone(),
 				}
-				var start, end, l = 0, -1, len(s.Points)
+				start, end, l := 0, -1, len(s.Points)
 				var iwg sync.WaitGroup
 				iwg.Add(2)
 				go func() {
@@ -369,8 +369,8 @@ func (ds *DataSet) DefaultRangeCropper(e timeseries.Extent) {
 			index := j
 			wg.Go(func() {
 				var (
-				        start, end, l = 0, -1, len(s.Points)
-				        iwg sync.WaitGroup
+					start, end, l = 0, -1, len(s.Points)
+					iwg           sync.WaitGroup
 				)
 				iwg.Add(2)
 				go func() {
@@ -495,7 +495,8 @@ func UnmarshalDataSet(b []byte, trq *timeseries.TimeRangeQuery) (timeseries.Time
 
 // MarshalDataSet marshals the dataset into a msgpack-formatted byte slice
 func MarshalDataSet(ts timeseries.Timeseries, _ *timeseries.RequestOptions,
-	_ int) ([]byte, error) {
+	_ int,
+) ([]byte, error) {
 	ds, ok := ts.(*DataSet)
 	if !ok || ds == nil {
 		return nil, timeseries.ErrUnknownFormat
@@ -521,7 +522,8 @@ func (ds *DataSet) SetVolatileExtents(e timeseries.ExtentList) {
 // All FDs, Tag FDs, Value FDs, Timestamp FD
 func (ds *DataSet) FieldDefinitions() (timeseries.FieldDefinitions,
 	timeseries.FieldDefinitions, timeseries.FieldDefinitions,
-	timeseries.FieldDefinition) {
+	timeseries.FieldDefinition,
+) {
 	used := sets.NewStringSet()
 	all := make(timeseries.FieldDefinitions, 0, 32)
 	tags := make(timeseries.FieldDefinitions, 0, 32)

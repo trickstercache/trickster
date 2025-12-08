@@ -30,12 +30,12 @@ import (
 
 func SupportedProviders() types.Lookup {
 	return types.Lookup{
-		providers.ALB:                            alb.NewClient,
-		providers.ClickHouse:                     clickhouse.NewClient,
-		providers.InfluxDB:                       influxdb.NewClient,
-		providers.Prometheus:                     prometheus.NewClient,
-		providers.Rule:                           rule.NewClient,
-		providers.Proxy:                          reverseproxy.NewClient,
+		providers.ALB:                    alb.NewClient,
+		providers.ClickHouse:             clickhouse.NewClient,
+		providers.InfluxDB:               influxdb.NewClient,
+		providers.Prometheus:             prometheus.NewClient,
+		providers.Rule:                   rule.NewClient,
+		providers.Proxy:                  reverseproxy.NewClient,
 		providers.ReverseProxyShort:      reverseproxy.NewClient,
 		providers.ReverseProxy:           reverseproxy.NewClient,
 		providers.ReverseProxyCacheShort: reverseproxycache.NewClient,

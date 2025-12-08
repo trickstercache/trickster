@@ -19,6 +19,7 @@ package options
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -39,7 +40,6 @@ var ErrNoOptionsProvided = errors.New("no health check options provided")
 
 // Options defines Health Checking Options
 type Options struct {
-
 	// Interval defines the interval at which the target will be probed
 	Interval time.Duration `yaml:"interval,omitempty"`
 	// FailureThreshold indicates the number of consecutive failed probes required to
@@ -89,7 +89,7 @@ func New() *Options {
 		Headers:           make(map[string]string),
 		Path:              DefaultHealthCheckPath,
 		Query:             DefaultHealthCheckQuery,
-		ExpectedCodes:     []int{200},
+		ExpectedCodes:     []int{http.StatusOK},
 		FailureThreshold:  DefaultHealthCheckFailureThreshold,
 		RecoveryThreshold: DefaultHealthCheckRecoveryThreshold,
 	}
@@ -111,7 +111,7 @@ func (o *Options) Initialize(_ string) error {
 		o.Query = DefaultHealthCheckQuery
 	}
 	if len(o.ExpectedCodes) == 0 {
-		o.ExpectedCodes = []int{200}
+		o.ExpectedCodes = []int{http.StatusOK}
 	}
 	if o.FailureThreshold == 0 {
 		o.FailureThreshold = DefaultHealthCheckFailureThreshold
@@ -265,7 +265,7 @@ func CalibrateTimeout(d time.Duration) time.Duration {
 	return d
 }
 
-func (o *Options) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (o *Options) UnmarshalYAML(unmarshal func(any) error) error {
 	type loadOptions Options
 	lo := loadOptions(*(New()))
 	if err := unmarshal(&lo); err != nil {

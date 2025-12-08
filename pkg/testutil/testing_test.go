@@ -38,7 +38,6 @@ func TestNewTestServer(t *testing.T) {
 	if resp.StatusCode != 200 {
 		t.Errorf("expected 200 got %d", resp.StatusCode)
 	}
-
 }
 
 func TestNewTestWebClient(t *testing.T) {
@@ -51,7 +50,6 @@ func TestNewTestWebClient(t *testing.T) {
 	if err != http.ErrUseLastResponse {
 		t.Error(err)
 	}
-
 }
 
 func TestNewTestInstance(t *testing.T) {
@@ -105,7 +103,6 @@ func TestNewTestInstance(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-
 }
 
 func TestNewTestTracer(t *testing.T) {

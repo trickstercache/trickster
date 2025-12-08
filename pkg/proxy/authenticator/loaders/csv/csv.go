@@ -26,7 +26,8 @@ import (
 )
 
 func LoadCSV(path string, ff types.CredentialsFileFormat,
-	cf types.CredentialsFormat) (types.CredentialsManifest, error) {
+	cf types.CredentialsFormat,
+) (types.CredentialsManifest, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err

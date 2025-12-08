@@ -31,7 +31,6 @@ func TestStripSize(t *testing.T) {
 }
 
 func TestUnmarshalTimeseries(t *testing.T) {
-
 	ts, err := UnmarshalTimeseries([]byte(testDataTSVWithNamesAndTypes), testTRQ.Clone())
 	if err != nil {
 		t.Error(err)
@@ -49,5 +48,4 @@ func TestUnmarshalTimeseries(t *testing.T) {
 		!ds.ExtentList[0].End.Equal(el[0].End) {
 		t.Error("unexpected extents: ", ds.ExtentList)
 	}
-
 }

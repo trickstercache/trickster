@@ -39,7 +39,8 @@ type Diffabble[P any, StepT any] interface {
 
 // Diff compares haves to needs and returns a []Segments missing from needs
 func Diff[P any, S Segment[P], StepT comparable, D Diffabble[P, StepT]](
-	haves []S, needs []S, step StepT, diff D) []S {
+	haves []S, needs []S, step StepT, diff D,
+) []S {
 	var zero StepT
 	if len(haves) == 0 {
 		return needs

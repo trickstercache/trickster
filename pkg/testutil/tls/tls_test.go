@@ -22,16 +22,13 @@ import (
 )
 
 func TestGetTestKeyAndCert(t *testing.T) {
-
 	_, _, err := GetTestKeyAndCert(true)
 	if err != nil {
 		t.Error(err)
 	}
-
 }
 
 func TestGetTestKeyAndCertFiles(t *testing.T) {
-
 	_, _, closer, err := GetTestKeyAndCertFiles("invalid-key")
 	if closer != nil {
 		defer closer()
@@ -47,16 +44,13 @@ func TestGetTestKeyAndCertFiles(t *testing.T) {
 	if err2 != nil {
 		t.Error(err2)
 	}
-
 }
 
 func TestWriteKeyAndCert(t *testing.T) {
-
 	err := WriteTestKeyAndCert(true, t.TempDir()+"/test.key", t.TempDir()+"/test.cert")
 	if err != nil {
 		t.Error(err)
 	}
-
 }
 
 // func WriteTestKeyAndCert(isCA bool, keyPath, certPath string) error {

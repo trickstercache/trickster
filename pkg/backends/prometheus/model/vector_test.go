@@ -40,7 +40,6 @@ const testVector2 = `{"status":"success","data":{"resultType":"vector","result":
 	`"value":[1577836800,"1"]}]}}`
 
 func TestMergeAndWriteVector(t *testing.T) {
-
 	w := httptest.NewRecorder()
 	MergeAndWriteVector(w, nil, nil)
 	if w.Code != http.StatusBadGateway {
@@ -108,7 +107,6 @@ func testResponseGates7() merge.ResponseGates {
 	var rg4 *merge.ResponseGate
 
 	return merge.ResponseGates{rg1, rg2, rg4, rg3}
-
 }
 
 func testResponseGates8() merge.ResponseGates {
@@ -142,5 +140,4 @@ func testResponseGates8() merge.ResponseGates {
 	rg2.Write(b2)
 
 	return merge.ResponseGates{rg1, rg2}
-
 }

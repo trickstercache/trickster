@@ -82,7 +82,6 @@ func MergeAndWriteLabelData(w http.ResponseWriter, r *http.Request, rgs merge.Re
 			headers.Merge(h, bestResp.Header)
 			w.WriteHeader(bestResp.StatusCode)
 			io.Copy(w, bestResp.Body)
-
 		} else {
 			failures.HandleBadGateway(w, r)
 		}

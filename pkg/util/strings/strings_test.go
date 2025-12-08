@@ -37,7 +37,6 @@ func TestSubstring(t *testing.T) {
 }
 
 func TestMap(t *testing.T) {
-
 	sm := Map(map[string]string{"test": "value"})
 	s := sm.String()
 	const expected = `{"test":"value"}`
@@ -45,7 +44,6 @@ func TestMap(t *testing.T) {
 	if s != expected {
 		t.Errorf("expected %s got %s", expected, s)
 	}
-
 }
 
 func TestUnique(t *testing.T) {
@@ -70,7 +68,6 @@ func BenchmarkUnique(b *testing.B) {
 }
 
 func TestGetInt(t *testing.T) {
-
 	m := Map{"trickster": providers.Proxy, "test": "1"}
 
 	if _, err := m.GetInt("invalid"); err != ErrKeyNotInMap {

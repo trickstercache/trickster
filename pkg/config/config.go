@@ -37,7 +37,6 @@ import (
 	auth "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
-
 	"gopkg.in/yaml.v2"
 )
 
@@ -219,7 +218,6 @@ func (c *Config) Process() error {
 
 // Clone returns an exact copy of the subject *Config
 func (c *Config) Clone() *Config {
-
 	nc := NewConfig()
 	delete(nc.Caches, defaultResourceName)
 	delete(nc.Backends, defaultResourceName)
@@ -286,7 +284,6 @@ func (c *Config) Clone() *Config {
 
 // IsStale returns true if the running config is stale versus the config on disk
 func (c *Config) IsStale() bool {
-
 	c.Main.stalenessCheckLock.Lock()
 	defer c.Main.stalenessCheckLock.Unlock()
 
@@ -299,8 +296,7 @@ func (c *Config) IsStale() bool {
 		c.MgmtConfig = mgmt.New()
 	}
 
-	c.Main.configRateLimitTime =
-		time.Now().Add(c.MgmtConfig.ReloadRateLimit)
+	c.Main.configRateLimitTime = time.Now().Add(c.MgmtConfig.ReloadRateLimit)
 	t := c.CheckFileLastModified()
 	if t.IsZero() {
 		return false
@@ -352,7 +348,6 @@ func (c *Config) String() string {
 	}
 
 	return ""
-
 }
 
 // ConfigFilePath returns the file path from which this configuration is based

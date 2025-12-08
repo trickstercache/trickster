@@ -27,7 +27,6 @@ import (
 )
 
 func TestDefaultTLSConfig(t *testing.T) {
-
 	dc := options.New()
 	if dc == nil {
 		t.Errorf("expected config named %s", "default")
@@ -41,11 +40,9 @@ func TestDefaultTLSConfig(t *testing.T) {
 	if dc.PrivateKeyPath != "" {
 		t.Errorf("expected empty key path got %s", dc.PrivateKeyPath)
 	}
-
 }
 
 func tlsConfig(condition string) (*options.Options, func(), error) {
-
 	kf, cf, closer, err := tlstest.GetTestKeyAndCertFiles(condition)
 	if err != nil {
 		return nil, nil, err
@@ -59,7 +56,6 @@ func tlsConfig(condition string) (*options.Options, func(), error) {
 }
 
 func TestVerifyTLSConfigs(t *testing.T) {
-
 	tls01, closer, err := tlsConfig("")
 	if err != nil {
 		t.Error(err)
@@ -127,13 +123,12 @@ func TestVerifyTLSConfigs(t *testing.T) {
 }
 
 func TestProcessTLSConfigs(t *testing.T) {
-
 	td := t.TempDir()
 	confFile := td + "/trickster_test.conf"
 
 	_, ca, _ := tlstest.GetTestKeyAndCert(true)
 	caFile := td + "/rootca.01.pem"
-	err := os.WriteFile(caFile, ca, 0600)
+	err := os.WriteFile(caFile, ca, 0o600)
 	if err != nil {
 		t.Error(err)
 	}
@@ -141,13 +136,13 @@ func TestProcessTLSConfigs(t *testing.T) {
 	k, c, _ := tlstest.GetTestKeyAndCert(false)
 
 	certFile := td + "/01.cert.pem"
-	err = os.WriteFile(certFile, c, 0600)
+	err = os.WriteFile(certFile, c, 0o600)
 	if err != nil {
 		t.Error(err)
 	}
 
 	keyfile := td + "/01.key.pem"
-	err = os.WriteFile(keyfile, k, 0600)
+	err = os.WriteFile(keyfile, k, 0o600)
 	if err != nil {
 		t.Error(err)
 	}
@@ -158,7 +153,7 @@ func TestProcessTLSConfigs(t *testing.T) {
 	}
 	b = []byte(strings.ReplaceAll(string(b), "../../../testdata/test.", td+"/"))
 
-	err = os.WriteFile(confFile, b, 0600)
+	err = os.WriteFile(confFile, b, 0o600)
 	if err != nil {
 		t.Error(err)
 	}
@@ -168,11 +163,9 @@ func TestProcessTLSConfigs(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-
 }
 
 func TestTLSCertConfig(t *testing.T) {
-
 	config := config.NewConfig()
 
 	// test empty config condition #1 (ServeTLS is false, early bail)
@@ -239,11 +232,9 @@ func TestTLSCertConfig(t *testing.T) {
 	if err == nil {
 		t.Errorf("expected error: %s", expectedErr)
 	}
-
 }
 
 func TestOptionsChanged(t *testing.T) {
-
 	c1 := config.NewConfig()
 	c2 := config.NewConfig()
 
@@ -282,5 +273,4 @@ func TestOptionsChanged(t *testing.T) {
 	if !b {
 		t.Errorf("expected true")
 	}
-
 }

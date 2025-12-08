@@ -35,7 +35,8 @@ const (
 
 // SetExtent will change the upstream request query to use the provided Extent
 func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
-	extent *timeseries.Extent) {
+	extent *timeseries.Extent,
+) {
 	if extent == nil || r == nil || trq == nil {
 		return
 	}
@@ -51,8 +52,8 @@ func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
 }
 
 func interpolateTimeQuery(template string, tfd timeseries.FieldDefinition,
-	extent *timeseries.Extent) string {
-
+	extent *timeseries.Extent,
+) string {
 	var start, end, tStart, tEnd string
 
 	// tfd.DataType holds the database internal format for the timestamp used
@@ -86,7 +87,6 @@ func interpolateTimeQuery(template string, tfd timeseries.FieldDefinition,
 	default: // epoch secs
 		tStart = strconv.FormatInt(extent.Start.Unix(), 10)
 		tEnd = strconv.FormatInt(extent.End.Unix(), 10)
-
 	}
 	trange := fmt.Sprintf("%s BETWEEN %s AND %s", tfd.Name, start, end)
 	out := strings.NewReplacer(

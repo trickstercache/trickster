@@ -30,7 +30,8 @@ import (
 
 // KeyHandler purges an object from a cache based on key.
 func KeyHandler(pathPrefix string,
-	from backends.Backends) func(http.ResponseWriter, *http.Request) {
+	from backends.Backends,
+) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, req *http.Request) {
 		vals := strings.Replace(req.URL.Path, pathPrefix, "", 1)
 		parts := strings.Split(vals, "/")
@@ -64,12 +65,17 @@ func KeyHandler(pathPrefix string,
 	}
 }
 
-var engines = []string{"opc", "dpc"}
-var methods = []string{http.MethodGet, http.MethodHead, http.MethodPost,
-	http.MethodPut, http.MethodPatch}
+var (
+	engines = []string{"opc", "dpc"}
+	methods = []string{
+		http.MethodGet, http.MethodHead, http.MethodPost,
+		http.MethodPut, http.MethodPatch,
+	}
+)
 
 func PathHandler(pathPrefix string,
-	from *backends.Backends) func(http.ResponseWriter, *http.Request) {
+	from *backends.Backends,
+) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, req *http.Request) {
 		vals := strings.Replace(req.URL.Path, pathPrefix, "", 1)
 		parts := strings.SplitN(vals, "/", 2)

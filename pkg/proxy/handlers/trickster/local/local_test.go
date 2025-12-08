@@ -33,11 +33,12 @@ import (
 )
 
 func TestHandleLocalResponse(t *testing.T) {
-
 	HandleLocalResponse(nil, nil)
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
-	_, err := config.Load([]string{"-origin-url", "http://1.2.3.4", "-provider",
-		providers.Prometheus})
+	_, err := config.Load([]string{
+		"-origin-url", "http://1.2.3.4", "-provider",
+		providers.Prometheus,
+	})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
@@ -84,13 +85,14 @@ func TestHandleLocalResponse(t *testing.T) {
 	if resp.Header.Get(headers.NameTricksterResult) == "" {
 		t.Errorf("expected header valuef for %s", headers.NameTricksterResult)
 	}
-
 }
 
 func TestHandleLocalResponseBadResponseCode(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
-	_, err := config.Load([]string{"-origin-url", "http://1.2.3.4", "-provider",
-		providers.Prometheus})
+	_, err := config.Load([]string{
+		"-origin-url", "http://1.2.3.4", "-provider",
+		providers.Prometheus,
+	})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
@@ -132,13 +134,14 @@ func TestHandleLocalResponseBadResponseCode(t *testing.T) {
 	if resp.Header.Get(headers.NameTricksterResult) == "" {
 		t.Errorf("expected header valuef for %s", headers.NameTricksterResult)
 	}
-
 }
 
 func TestHandleLocalResponseNoPathConfig(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
-	_, err := config.Load([]string{"-origin-url", "http://1.2.3.4", "-provider",
-		providers.Prometheus})
+	_, err := config.Load([]string{
+		"-origin-url", "http://1.2.3.4", "-provider",
+		providers.Prometheus,
+	})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
@@ -165,5 +168,4 @@ func TestHandleLocalResponseNoPathConfig(t *testing.T) {
 	if len(bodyBytes) > 0 {
 		t.Errorf("body should be empty")
 	}
-
 }

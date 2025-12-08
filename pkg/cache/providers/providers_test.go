@@ -21,7 +21,6 @@ import (
 )
 
 func TestProviderIDString(t *testing.T) {
-
 	t1 := Memory
 	t2 := Filesystem
 	var t3 Provider = 13
@@ -37,5 +36,4 @@ func TestProviderIDString(t *testing.T) {
 	if t3.String() != "13" {
 		t.Errorf("expected %s got %s", "13", t3.String())
 	}
-
 }

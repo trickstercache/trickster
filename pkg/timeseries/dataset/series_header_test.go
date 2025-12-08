@@ -41,7 +41,6 @@ func testHeader() *SeriesHeader {
 }
 
 func TestCalculateSeriesHeaderSize(t *testing.T) {
-
 	const expected = 633
 	sh := testHeader()
 	i := sh.CalculateSize()

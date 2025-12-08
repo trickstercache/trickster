@@ -25,7 +25,6 @@ import (
 )
 
 func TestObjectFromBytes(t *testing.T) {
-
 	obj := &Object{}
 	b := obj.ToBytes()
 	obj2, err := ObjectFromBytes(b)
@@ -36,11 +35,9 @@ func TestObjectFromBytes(t *testing.T) {
 	if obj2 == nil {
 		t.Errorf("nil cache index")
 	}
-
 }
 
 func TestSort(t *testing.T) {
-
 	o := objectsAtime{
 		&Object{
 			Key:        "3",
@@ -68,5 +65,4 @@ func TestSort(t *testing.T) {
 	if o[2].Key != "3" {
 		t.Errorf("expected %s got %s", "3", o[2].Key)
 	}
-
 }

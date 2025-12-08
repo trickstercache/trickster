@@ -27,7 +27,6 @@ import (
 )
 
 func TestSetExtent(t *testing.T) {
-
 	start := time.Now().Add(time.Duration(-6) * time.Hour)
 	end := time.Now()
 	expected := "query=select+%28intdiv%28touint32%28myTimeField%29%2C+" +
@@ -56,5 +55,4 @@ func TestSetExtent(t *testing.T) {
 	if expected != r.URL.RawQuery {
 		t.Errorf("\nexpected [%s]\ngot      [%s]", expected, r.URL.RawQuery)
 	}
-
 }

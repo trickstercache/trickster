@@ -17,6 +17,7 @@
 package manager
 
 import (
+	"errors"
 	"path/filepath"
 	"time"
 
@@ -77,7 +78,7 @@ func (cm *Manager) Store(cacheKey string, byteData []byte, ttl time.Duration) er
 
 func (cm *Manager) observeRetrieval(cacheKey string, size int, s status.LookupStatus, err error) {
 	switch {
-	case err == cache.ErrKNF || s == status.LookupStatusKeyMiss:
+	case errors.Is(err, cache.ErrKNF) || s == status.LookupStatusKeyMiss:
 		logger.Debug("cache miss", logging.Pairs{"key": cacheKey, "provider": cm.config.Provider})
 		metrics.ObserveCacheMiss(cm.config.Name, cm.config.Provider)
 	case err != nil:
@@ -154,6 +155,7 @@ func (cm *Manager) Configuration() *options.Options {
 func (cm *Manager) Locker() locks.NamedLocker {
 	return cm.locker
 }
+
 func (cm *Manager) SetLocker(l locks.NamedLocker) {
 	cm.locker = l
 }

@@ -37,7 +37,8 @@ var _ types.NewBackendClientFunc = NewClient
 
 // NewClient returns a new Client Instance
 func NewClient(name string, o *bo.Options, router http.Handler,
-	cache cache.Cache, _ backends.Backends, _ types.Lookup) (backends.Backend, error) {
+	cache cache.Cache, _ backends.Backends, _ types.Lookup,
+) (backends.Backend, error) {
 	if o != nil {
 		o.FastForwardDisable = true
 	}

@@ -25,7 +25,6 @@ import (
 )
 
 func TestRanges_CalculateDelta(t *testing.T) {
-
 	tests := []struct {
 		need, have, expected Ranges
 		cl                   int64
@@ -148,7 +147,6 @@ func TestRanges_CalculateDelta(t *testing.T) {
 }
 
 func TestRangesString(t *testing.T) {
-
 	tests := []struct {
 		out, expected string
 	}{
@@ -180,7 +178,6 @@ func TestRangesString(t *testing.T) {
 			}
 		})
 	}
-
 }
 
 func TestParseContentRangeHeader(t *testing.T) {
@@ -240,12 +237,10 @@ func TestRangesFilter(t *testing.T) {
 }
 
 func TestRangesEqual(t *testing.T) {
-
 	need := Ranges{Range{Start: 0, End: 20}}
 	if need.Equal(nil) {
 		t.Errorf("expected %t got %t", false, true)
 	}
-
 }
 
 func TestRangeSort(t *testing.T) {
@@ -265,7 +260,6 @@ func TestRangeLess(t *testing.T) {
 }
 
 func TestContentRangeHeader(t *testing.T) {
-
 	const expected = "bytes 0-20/100"
 
 	r := Range{Start: 0, End: 20}
@@ -274,7 +268,6 @@ func TestContentRangeHeader(t *testing.T) {
 	if h != expected {
 		t.Errorf("expected %s got %s", expected, h)
 	}
-
 }
 
 func TestParseRangeHeader_EmptyString(t *testing.T) {
@@ -356,7 +349,6 @@ func TestParseRangeHeader_Ends(t *testing.T) {
 	if res[0].Start != -1 || res[0].End != 500 {
 		t.Errorf("expected start %d end %d, got start %d end %d", 500, -1, res[0].Start, res[0].End)
 	}
-
 }
 
 func TestParseRangeHeader_MultiRange(t *testing.T) {
@@ -386,7 +378,6 @@ func TestRangeCrop(t *testing.T) {
 }
 
 func TestCompressRanges(t *testing.T) {
-
 	tests := []struct {
 		uncompressed, compressed Ranges
 	}{
@@ -483,7 +474,6 @@ func TestCompressRanges(t *testing.T) {
 			continue
 		}
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-
 			result := test.uncompressed.Compress()
 
 			if !reflect.DeepEqual(result, test.compressed) {

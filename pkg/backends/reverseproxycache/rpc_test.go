@@ -24,7 +24,6 @@ import (
 )
 
 func TestReverseProxyCacheClientInterfacing(t *testing.T) {
-
 	// this test ensures the client will properly conform to the
 	// Client interface
 
@@ -37,7 +36,6 @@ func TestReverseProxyCacheClientInterfacing(t *testing.T) {
 	if o.Name() != "test" {
 		t.Errorf("expected %s got %s", "test", o.Name())
 	}
-
 }
 
 func TestNewNewClient(t *testing.T) {

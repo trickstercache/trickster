@@ -24,7 +24,6 @@ import (
 )
 
 func TestNewHTTPClient(t *testing.T) {
-
 	// test invalid backend options
 	c, err := NewHTTPClient(nil)
 	if c != nil {

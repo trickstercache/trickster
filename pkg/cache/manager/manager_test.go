@@ -90,7 +90,6 @@ func TestManager(t *testing.T) {
 		require.Equal(t, status.LookupStatusHit, s)
 		require.Equal(t, val, *v.(*object))
 	})
-
 }
 
 type object struct {

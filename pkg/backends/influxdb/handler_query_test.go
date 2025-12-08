@@ -31,7 +31,6 @@ import (
 )
 
 func TestQueryHandlerWithSelect(t *testing.T) {
-
 	backendClient, err := NewClient("test", nil, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
@@ -72,7 +71,6 @@ func TestQueryHandlerWithSelect(t *testing.T) {
 }
 
 func TestQueryHandlerNotSelect(t *testing.T) {
-
 	backendClient, err := NewClient("test", nil, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
@@ -138,7 +136,6 @@ func TestParseTimeRangeQueryMissingQuery(t *testing.T) {
 }
 
 func TestParseTimeRangeQueryBadDuration(t *testing.T) {
-
 	expected := pe.ErrStepParse
 
 	req := &http.Request{
@@ -152,7 +149,8 @@ func TestParseTimeRangeQueryBadDuration(t *testing.T) {
 					`WHERE ("application" = 'web') AND time >= now() - 6h GROUP BY times(15s), "cluster" fill(null)`},
 				"epoch": {"ms"},
 			}).Encode(),
-		}}
+		},
+	}
 	client := &Client{}
 	_, _, _, err := client.ParseTimeRangeQuery(req)
 	if err == nil {
@@ -162,5 +160,4 @@ func TestParseTimeRangeQueryBadDuration(t *testing.T) {
 	if err != expected {
 		t.Errorf(`Expected "%s", got "%s"`, expected.Error(), err.Error())
 	}
-
 }

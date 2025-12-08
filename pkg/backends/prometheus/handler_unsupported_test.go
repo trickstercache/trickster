@@ -22,7 +22,6 @@ import (
 )
 
 func TestUnsupportedHandler(t *testing.T) {
-
 	b, err := NewClient("test", nil, nil, nil, nil, nil)
 	if err != nil {
 		t.Error(err)
@@ -40,7 +39,5 @@ func TestUnsupportedHandler(t *testing.T) {
 
 	if w.Body.String() != expected {
 		t.Errorf("expected %s got %s", expected, w.Body.String())
-
 	}
-
 }

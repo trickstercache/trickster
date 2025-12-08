@@ -19,10 +19,10 @@ package tracing
 
 import (
 	"context"
+	"maps"
 	"net/http"
 
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
-
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -60,9 +60,7 @@ func (t Tags) Merge(t2 Tags) {
 	if t2 == nil {
 		return
 	}
-	for k, v := range t2 {
-		t[k] = v
-	}
+	maps.Copy(t, t2)
 }
 
 // MergeAttr merges the provided attributes into the Tags map

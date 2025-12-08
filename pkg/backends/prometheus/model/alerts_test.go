@@ -31,11 +31,12 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 )
 
-var testLogger = logging.NoopLogger()
-var testResources = request.NewResources(nil, nil, nil, nil, nil, nil)
+var (
+	testLogger    = logging.NoopLogger()
+	testResources = request.NewResources(nil, nil, nil, nil, nil, nil)
+)
 
 func TestCalculateHash(t *testing.T) {
-
 	a := &WFAlert{
 		State: "test",
 	}
@@ -46,11 +47,9 @@ func TestCalculateHash(t *testing.T) {
 	if i != expected {
 		t.Errorf("expected %d got %d", expected, i)
 	}
-
 }
 
 func TestMerge(t *testing.T) {
-
 	a1 := &WFAlerts{
 		Envelope: &Envelope{
 			Status: "error",
@@ -60,7 +59,8 @@ func TestMerge(t *testing.T) {
 				{
 					State:  "test",
 					Labels: map[string]string{"test": "trickster"},
-				}},
+				},
+			},
 		},
 	}
 	a2 := &WFAlerts{
@@ -84,7 +84,6 @@ func TestMerge(t *testing.T) {
 	if a1.Envelope.Status != "success" {
 		t.Errorf("expected %s got %s", "success", a1.Envelope.Status)
 	}
-
 }
 
 func newTestReq() *http.Request {
@@ -132,7 +131,6 @@ func TestMergeAndWriteAlerts(t *testing.T) {
 			}
 		})
 	}
-
 }
 
 func testResponseGates1() merge.ResponseGates {
@@ -182,11 +180,9 @@ func testResponseGates1() merge.ResponseGates {
 	rg3.Write(b3)
 
 	return merge.ResponseGates{rg1, rg2, rg3}
-
 }
 
 func testResponseGates2() merge.ResponseGates {
-
 	b1 := []byte(`{"status":"error","data":{"alerts":[]}}`)
 	closer1 := io.NopCloser(bytes.NewReader(b1))
 	rsc1 := request.NewResources(nil, nil, nil, nil, nil, nil)
@@ -216,5 +212,4 @@ func testResponseGates2() merge.ResponseGates {
 	rg2.Write(b2)
 
 	return merge.ResponseGates{rg1, rg2}
-
 }

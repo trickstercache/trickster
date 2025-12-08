@@ -23,7 +23,6 @@ import (
 )
 
 func TestEqualHeader(t *testing.T) {
-
 	sl := SeriesList{testSeries()}
 	if sl.EqualHeader(nil) {
 		t.Error("expected false")
@@ -37,11 +36,9 @@ func TestEqualHeader(t *testing.T) {
 	if sl.EqualHeader(sl2) {
 		t.Error("expected false")
 	}
-
 }
 
 func TestListMerge(t *testing.T) {
-
 	tests := []struct {
 		sl1, sl2 SeriesList
 		expected []string
@@ -87,5 +84,4 @@ func TestListMerge(t *testing.T) {
 			}
 		})
 	}
-
 }

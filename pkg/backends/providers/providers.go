@@ -121,8 +121,10 @@ func IsValidProvider(t string) bool {
 
 // NonCacheBackends returns a set of backend Providers that do not use a cache
 func NonCacheBackends() sets.Set[string] {
-	return sets.New([]string{ReverseProxyShort,
-		ReverseProxy, ALB, Proxy, Rule})
+	return sets.New([]string{
+		ReverseProxyShort,
+		ReverseProxy, ALB, Proxy, Rule,
+	})
 }
 
 // NonOriginBackends returns a set of backend Providers that never proxy to an

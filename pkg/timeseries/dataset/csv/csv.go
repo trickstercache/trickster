@@ -31,9 +31,11 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
-type FieldParserFunc func([][]string, *timeseries.TimeRangeQuery) (timeseries.SeriesFields, error)
-type DataTypeParserFunc func(string) timeseries.FieldDataType
-type TimestampParserFunc func(string, timeseries.FieldDefinition) (epoch.Epoch, error)
+type (
+	FieldParserFunc     func([][]string, *timeseries.TimeRangeQuery) (timeseries.SeriesFields, error)
+	DataTypeParserFunc  func(string) timeseries.FieldDataType
+	TimestampParserFunc func(string, timeseries.FieldDefinition) (epoch.Epoch, error)
+)
 
 // Parser represents a CSV-to-DataSet Parser
 type Parser interface {
@@ -58,16 +60,21 @@ type seriesKeyDataCacheItems []seriesKeyDataCacheItem
 
 // delim is an internal delimiter that just needs to be something that a
 // real user in all probability would not use in a result set name.
-const delim1 = `/°|³\`
-const delim2 = `/✓¿⨉\`
+const (
+	delim1 = `/°|³\`
+	delim2 = `/✓¿⨉\`
+)
 
-var ErrInvalidFieldParserFunc = errors.New("invalid Field Parser Function")
-var ErrInvalidDataTypeParserFunc = errors.New("invalid Data Type Parser Function")
-var ErrInvalidTimestampParserFunc = errors.New("invalid Timestamp Parser Function")
+var (
+	ErrInvalidFieldParserFunc     = errors.New("invalid Field Parser Function")
+	ErrInvalidDataTypeParserFunc  = errors.New("invalid Data Type Parser Function")
+	ErrInvalidTimestampParserFunc = errors.New("invalid Timestamp Parser Function")
+)
 
 // NewParser returns a concurrency-safe CSV parser
 func NewParser(fp FieldParserFunc, dp DataTypeParserFunc,
-	tp TimestampParserFunc, firstDataRow int) (Parser, error) {
+	tp TimestampParserFunc, firstDataRow int,
+) (Parser, error) {
 	if fp == nil {
 		return nil, ErrInvalidFieldParserFunc
 	}
@@ -91,7 +98,8 @@ func NewParser(fp FieldParserFunc, dp DataTypeParserFunc,
 // NewParserMust returns a concurrency-safe CSV parser or panics if the provided
 // options are invalid
 func NewParserMust(fp FieldParserFunc, dp DataTypeParserFunc,
-	tp TimestampParserFunc, firstDataRow int) Parser {
+	tp TimestampParserFunc, firstDataRow int,
+) Parser {
 	p, err := NewParser(fp, dp, tp, firstDataRow)
 	if err != nil {
 		panic(err)
@@ -119,12 +127,14 @@ type csvState struct {
 }
 
 func (p *parser) ToTimeseries(matrix [][]string,
-	trq *timeseries.TimeRangeQuery) (timeseries.Timeseries, error) {
+	trq *timeseries.TimeRangeQuery,
+) (timeseries.Timeseries, error) {
 	return p.ToDataSet(matrix, trq)
 }
 
 func (p *parser) ToDataSet(matrix [][]string,
-	trq *timeseries.TimeRangeQuery) (*dataset.DataSet, error) {
+	trq *timeseries.TimeRangeQuery,
+) (*dataset.DataSet, error) {
 	sf, err := p.fieldParser(matrix, trq)
 	if err != nil {
 		return nil, err
@@ -146,7 +156,8 @@ func (p *parser) ToDataSet(matrix [][]string,
 }
 
 func (p *parser) analyzeCSV(sf timeseries.SeriesFields,
-	matrix [][]string) (*csvState, error) {
+	matrix [][]string,
+) (*csvState, error) {
 	out := &csvState{
 		seriesCounts:  sets.NewStringCounterSetCap(4),  // counts # series per-result
 		pointCounts:   sets.NewStringCounterSetCap(32), // counts # points per-series
@@ -297,7 +308,8 @@ func getSeriesKeyData(row []string, sf timeseries.SeriesFields) seriesKeyDataCac
 }
 
 func emptyDataSet(sf timeseries.SeriesFields, sbr, pbc sets.StringCounterSet,
-	so seriesKeyDataCacheItems) *dataset.DataSet {
+	so seriesKeyDataCacheItems,
+) *dataset.DataSet {
 	rsl := make(map[string]dataset.SeriesList, 16)
 	used := sets.NewStringCounterSetCap(len(so))
 	out := &dataset.DataSet{}

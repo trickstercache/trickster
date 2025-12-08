@@ -16,7 +16,6 @@ package sha1
 import "testing"
 
 func TestChecksum(t *testing.T) {
-
 	input := "test"
 	expected := "a94a8fe5ccb19ba61c4c0873d391e987982fbbd3"
 	result := Checksum(input)
@@ -30,5 +29,4 @@ func TestChecksum(t *testing.T) {
 	if expected != result {
 		t.Errorf("unexpected checksum for '%s', wanted %s got %s", input, expected, result)
 	}
-
 }

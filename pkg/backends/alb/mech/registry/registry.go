@@ -50,7 +50,8 @@ func compileSupportedByName() map[types.Name]types.NewMechanismFunc {
 }
 
 func New(name types.Name, opts *options.Options,
-	factories rt.Lookup) (types.Mechanism, error) {
+	factories rt.Lookup,
+) (types.Mechanism, error) {
 	if f, ok := registryByName[name]; ok && f != nil {
 		return f(opts, factories)
 	}

@@ -25,7 +25,6 @@ import (
 )
 
 func TestCheckHealth(t *testing.T) {
-
 	ctx, cancel := context.WithCancel(context.Background())
 
 	tgt := &Target{
@@ -53,5 +52,4 @@ func TestCheckHealth(t *testing.T) {
 	if l != 1 {
 		t.Errorf("expected %d got %d", 1, l)
 	}
-
 }

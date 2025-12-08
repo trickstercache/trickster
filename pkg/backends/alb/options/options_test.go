@@ -20,10 +20,9 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
-
-	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
 )
 
@@ -36,7 +35,6 @@ type testOptions2 struct {
 }
 
 func fromYAML(conf string) (*Options, error) {
-
 	to := &testOptions1{}
 	err := yaml.Unmarshal([]byte(conf), to)
 	if err != nil {
@@ -52,16 +50,13 @@ func fromYAML(conf string) (*Options, error) {
 }
 
 func TestNew(t *testing.T) {
-
 	o := New()
 	if o == nil {
 		t.Error("expected non-nil")
 	}
-
 }
 
 func TestClone(t *testing.T) {
-
 	o := New()
 	o.Pool = []string{"test"}
 	o.FGRStatusCodes = []int{200}
@@ -81,7 +76,6 @@ func TestClone(t *testing.T) {
 }
 
 func TestInitialize(t *testing.T) {
-
 	// Test with nil options - this should panic, so we don't test it
 	// since Initialize() is a method on the struct, calling it on nil will panic
 
@@ -129,7 +123,6 @@ func TestInitialize(t *testing.T) {
 	if o.MechanismName != names.MechanismTSM {
 		t.Error("expected mechanism name to be shortened to tsm")
 	}
-
 }
 
 func TestErrInvalidALBOptions(t *testing.T) {

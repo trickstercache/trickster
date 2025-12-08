@@ -19,10 +19,8 @@ package flux
 import "testing"
 
 func TestNewModeler(t *testing.T) {
-
 	m := NewModeler()
 	if m.WireMarshalWriter == nil {
 		t.Error("expected non-nil modeler funcs")
 	}
-
 }

@@ -36,9 +36,11 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 )
 
-const ID types.ID = 4
-const ShortName = names.MechanismTSM
-const Name types.Name = "time_series_merge"
+const (
+	ID        types.ID   = 4
+	ShortName            = names.MechanismTSM
+	Name      types.Name = "time_series_merge"
+)
 
 type handler struct {
 	pool            pool.Pool
@@ -98,7 +100,6 @@ func (h *handler) StopPool() {
 }
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-
 	hl := h.pool.Healthy() // should return a fanout list
 	l := len(hl)
 	if l == 0 {
@@ -143,7 +144,8 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // GetResponseGates makes the handler request to each fanout backend and
 // returns a collection of responses
 func GetResponseGates(w http.ResponseWriter, r *http.Request,
-	hl []http.Handler) merge.ResponseGates {
+	hl []http.Handler,
+) merge.ResponseGates {
 	var wg sync.WaitGroup
 	l := len(hl)
 	mgs := make(merge.ResponseGates, l)

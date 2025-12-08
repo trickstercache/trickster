@@ -30,7 +30,6 @@ import (
 var testLogger = logging.NoopLogger()
 
 func TestNew(t *testing.T) {
-
 	hc := New()
 	if hc == nil {
 		t.Error("expected non-nil")

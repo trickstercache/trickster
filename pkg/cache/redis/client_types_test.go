@@ -21,7 +21,6 @@ import (
 )
 
 func TestClientTypeString(t *testing.T) {
-
 	t1 := clientTypeStandard
 	var t2 clientType = 20
 
@@ -32,5 +31,4 @@ func TestClientTypeString(t *testing.T) {
 	if t2.String() != "20" {
 		t.Errorf("expected %s got %s", "20", t2.String())
 	}
-
 }

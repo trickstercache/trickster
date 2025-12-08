@@ -68,8 +68,10 @@ type Options struct {
 
 var _ types.ConfigOptions[Options] = &Options{}
 
-var restrictedNames = sets.New([]string{"", "none"})
-var ErrInvalidName = errors.New("invalid cache name")
+var (
+	restrictedNames = sets.New([]string{"", "none"})
+	ErrInvalidName  = errors.New("invalid cache name")
+)
 
 // New will return a pointer to a CacheOptions with the default configuration settings
 func New() *Options {
@@ -89,7 +91,6 @@ func New() *Options {
 
 // Clone returns an exact copy of a *CachingConfig
 func (o *Options) Clone() *Options {
-
 	out := New()
 	out.Name = o.Name
 	out.Provider = o.Provider
@@ -183,8 +184,10 @@ func (o *Options) Validate() (bool, error) {
 	return true, nil
 }
 
-var errMaxSizeBackoffBytesTooBig = errors.New("MaxSizeBackoffBytes can't be larger than MaxSizeBytes")
-var errMaxSizeBackoffObjectsTooBig = errors.New("MaxSizeBackoffObjects can't be larger than MaxSizeObjects")
+var (
+	errMaxSizeBackoffBytesTooBig   = errors.New("MaxSizeBackoffBytes can't be larger than MaxSizeBytes")
+	errMaxSizeBackoffObjectsTooBig = errors.New("MaxSizeBackoffObjects can't be larger than MaxSizeObjects")
+)
 
 // Initialize sets up the cache Options with default values and overlays
 // any values that were set during YAML unmarshaling
@@ -280,7 +283,7 @@ func (l Lookup) Validate() error {
 	return nil
 }
 
-func (o *Options) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (o *Options) UnmarshalYAML(unmarshal func(any) error) error {
 	type loadOptions Options
 	lo := loadOptions(*(New()))
 	if err := unmarshal(&lo); err != nil {

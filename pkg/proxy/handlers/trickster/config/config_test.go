@@ -27,9 +27,10 @@ import (
 )
 
 func TestConfigHandler(t *testing.T) {
-
-	conf, err := config.Load([]string{"-origin-url", "http://1.2.3.4",
-		"-provider", providers.Prometheus})
+	conf, err := config.Load([]string{
+		"-origin-url", "http://1.2.3.4",
+		"-provider", providers.Prometheus,
+	})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
@@ -60,5 +61,4 @@ func TestConfigHandler(t *testing.T) {
 	if !strings.HasSuffix(lines[0], ":") {
 		t.Errorf("response is not yaml format")
 	}
-
 }

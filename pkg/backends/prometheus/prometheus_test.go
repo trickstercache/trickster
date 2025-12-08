@@ -39,7 +39,6 @@ import (
 )
 
 func TestPrometheusClientInterfacing(t *testing.T) {
-
 	// this test ensures the client will properly conform to the
 	// Backend and TimeseriesBackend interfaces
 
@@ -62,8 +61,10 @@ func TestPrometheusClientInterfacing(t *testing.T) {
 func TestNewClient(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 
-	conf, err := config.Load([]string{"-origin-url", "http://1",
-		"-provider", "test"})
+	conf, err := config.Load([]string{
+		"-origin-url", "http://1",
+		"-provider", "test",
+	})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
@@ -181,7 +182,8 @@ func TestParseTimeRangeQueryMissingQuery(t *testing.T) {
 			"query_": {`up`},
 			"start":  {strconv.Itoa(int(time.Now().Add(time.Duration(-6) * time.Hour).Unix()))},
 			"end":    {strconv.Itoa(int(time.Now().Unix()))},
-			"step":   {"15"}}).Encode(),
+			"step":   {"15"},
+		}).Encode(),
 	}}
 	client := &Client{}
 	_, _, _, err := client.ParseTimeRangeQuery(req)
@@ -205,7 +207,8 @@ func TestParseTimeRangeBadStartTime(t *testing.T) {
 			"query": {`up`},
 			"start": {color},
 			"end":   {strconv.Itoa(int(time.Now().Unix()))},
-			"step":  {"15"}}).Encode(),
+			"step":  {"15"},
+		}).Encode(),
 	}}
 	client := &Client{}
 	_, _, _, err := client.ParseTimeRangeQuery(req)
@@ -229,7 +232,8 @@ func TestParseTimeRangeBadEndTime(t *testing.T) {
 			"query": {`up`},
 			"start": {strconv.Itoa(int(time.Now().Add(time.Duration(-6) * time.Hour).Unix()))},
 			"end":   {color},
-			"step":  {"15"}}).Encode(),
+			"step":  {"15"},
+		}).Encode(),
 	}}
 	client := &Client{}
 	_, _, _, err := client.ParseTimeRangeQuery(req)
@@ -243,7 +247,6 @@ func TestParseTimeRangeBadEndTime(t *testing.T) {
 }
 
 func TestParseTimeRangeQueryBadDuration(t *testing.T) {
-
 	expected := `duration literal x: expected value of at least length 2 at position 0`
 
 	req := &http.Request{URL: &url.URL{
@@ -254,7 +257,8 @@ func TestParseTimeRangeQueryBadDuration(t *testing.T) {
 			"query": {`up`},
 			"start": {strconv.Itoa(int(time.Now().Add(time.Duration(-6) * time.Hour).Unix()))},
 			"end":   {strconv.Itoa(int(time.Now().Unix()))},
-			"step":  {"x"}}).Encode(),
+			"step":  {"x"},
+		}).Encode(),
 	}}
 	client := &Client{}
 	_, _, _, err := client.ParseTimeRangeQuery(req)
@@ -268,7 +272,6 @@ func TestParseTimeRangeQueryBadDuration(t *testing.T) {
 }
 
 func TestParseTimeRangeQueryNoStart(t *testing.T) {
-
 	expected := `missing URL parameter: [start]`
 
 	req := &http.Request{URL: &url.URL{
@@ -278,7 +281,8 @@ func TestParseTimeRangeQueryNoStart(t *testing.T) {
 		RawQuery: url.Values(map[string][]string{
 			"query": {`up`},
 			"end":   {strconv.Itoa(int(time.Now().Unix()))},
-			"step":  {"x"}}).Encode(),
+			"step":  {"x"},
+		}).Encode(),
 	}}
 	client := &Client{}
 	_, _, _, err := client.ParseTimeRangeQuery(req)
@@ -292,7 +296,6 @@ func TestParseTimeRangeQueryNoStart(t *testing.T) {
 }
 
 func TestParseTimeRangeQueryNoEnd(t *testing.T) {
-
 	expected := `missing URL parameter: [end]`
 
 	req := &http.Request{URL: &url.URL{
@@ -302,7 +305,8 @@ func TestParseTimeRangeQueryNoEnd(t *testing.T) {
 		RawQuery: url.Values(map[string][]string{
 			"query": {`up`},
 			"start": {strconv.Itoa(int(time.Now().Add(time.Duration(-6) * time.Hour).Unix()))},
-			"step":  {"x"}}).Encode(),
+			"step":  {"x"},
+		}).Encode(),
 	}}
 	client := &Client{}
 	_, _, _, err := client.ParseTimeRangeQuery(req)
@@ -316,7 +320,6 @@ func TestParseTimeRangeQueryNoEnd(t *testing.T) {
 }
 
 func TestParseTimeRangeQueryNoStep(t *testing.T) {
-
 	expected := `missing URL parameter: [step]`
 
 	req := &http.Request{URL: &url.URL{
@@ -326,7 +329,8 @@ func TestParseTimeRangeQueryNoStep(t *testing.T) {
 		RawQuery: url.Values(map[string][]string{
 			"query": {`up`},
 			"start": {strconv.Itoa(int(time.Now().Add(time.Duration(-6) * time.Hour).Unix()))},
-			"end":   {strconv.Itoa(int(time.Now().Unix()))}},
+			"end":   {strconv.Itoa(int(time.Now().Unix()))},
+		},
 		).Encode(),
 	}}
 	client := &Client{}
@@ -362,7 +366,6 @@ func TestParseTimeRangeQueryWithOffset(t *testing.T) {
 	if !res.IsOffset {
 		t.Errorf("expected true got %t", res.IsOffset)
 	}
-
 }
 
 func TestParseVectorQuery(t *testing.T) {
@@ -431,5 +434,4 @@ func TestParseVectorQuery(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-
 }

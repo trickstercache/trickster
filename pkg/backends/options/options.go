@@ -25,6 +25,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/prometheus/common/sigv4"
 	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	prop "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/options"
@@ -44,8 +45,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
 	to "github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
-
-	"github.com/prometheus/common/sigv4"
 	"gopkg.in/yaml.v2"
 )
 
@@ -56,7 +55,6 @@ type Lookup map[string]*Options
 
 // Options is a collection of configurations for Trickster backends
 type Options struct {
-
 	// HTTP and Proxy Configurations
 	//
 	// Hosts identifies the frontend hostnames this backend should handle (virtual hosting)
@@ -427,7 +425,6 @@ func (l Lookup) Validate() error {
 			continue
 		}
 		o.ALBOptions.UserRouter.TargetProvider = e.TargetProvider
-
 	}
 	return backendTree[:k].Validate()
 }
@@ -444,7 +441,8 @@ func ValidateBackendName(name string) error {
 // ValidateConfigMappings ensures that named config mappings from within origin configs
 // (e.g., backends.cache_name) are valid
 func (l Lookup) ValidateConfigMappings(c co.Lookup, ncl negative.Lookups,
-	rul ro.Lookup, rwl rwopts.Lookup, a autho.Lookup, tr tro.Lookup) error {
+	rul ro.Lookup, rwl rwopts.Lookup, a autho.Lookup, tr tro.Lookup,
+) error {
 	for _, o := range l {
 		if err := ValidateBackendName(o.Name); err != nil {
 			return err
@@ -634,7 +632,6 @@ func (o *Options) Initialize(name string) error {
 // CloneYAMLSafe returns a copy of the Options that is safe to export to YAML without
 // exposing credentials (by masking known credential fields with "*****")
 func (o *Options) CloneYAMLSafe() *Options {
-
 	co := o.Clone()
 	for _, w := range co.Paths {
 		w.Handler = nil
@@ -656,7 +653,7 @@ func (o *Options) ToYAML() string {
 	return string(b)
 }
 
-func (o *Options) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (o *Options) UnmarshalYAML(unmarshal func(any) error) error {
 	type loadOptions Options
 	lo := loadOptions(*(New()))
 	if err := unmarshal(&lo); err != nil {

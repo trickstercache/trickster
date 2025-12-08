@@ -59,6 +59,5 @@ func HandleCompression(next http.Handler, compressTypes sets.Set[string]) http.H
 		ew := NewEncoder(w, ep)
 		next.ServeHTTP(ew, r)
 		ew.Close()
-
 	})
 }

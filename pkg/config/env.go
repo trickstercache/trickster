@@ -58,5 +58,4 @@ func (c *Config) loadEnvVars() {
 	if x := os.Getenv(evLogLevel); x != "" {
 		c.Logging.LogLevel = x
 	}
-
 }
