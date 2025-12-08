@@ -7,6 +7,8 @@ backends:
     max_idle_conns: 20
     cache_name: default
     healthcheck:
+      failure_threshold: 3
+      recovery_threshold: 3
       verb: GET
       scheme: http
       path: /
@@ -44,6 +46,8 @@ backends:
     cache_name: default
     healthcheck:
       interval: 1s
+      failure_threshold: 3
+      recovery_threshold: 3
       verb: GET
       scheme: http
       path: /health
@@ -81,6 +85,8 @@ backends:
     cache_name: default
     healthcheck:
       interval: 1s
+      failure_threshold: 3
+      recovery_threshold: 3
       verb: GET
       scheme: http
       path: /health
@@ -118,6 +124,8 @@ backends:
     cache_name: default
     healthcheck:
       interval: 1s
+      failure_threshold: 3
+      recovery_threshold: 3
       verb: GET
       scheme: http
       path: /
@@ -155,6 +163,8 @@ backends:
     cache_name: default
     healthcheck:
       interval: 1s
+      failure_threshold: 3
+      recovery_threshold: 3
       verb: GET
       scheme: http
       path: /
@@ -190,6 +200,8 @@ backends:
     max_idle_conns: 20
     cache_name: default
     healthcheck:
+      failure_threshold: 3
+      recovery_threshold: 3
       verb: GET
       scheme: http
       path: /
@@ -230,6 +242,8 @@ backends:
     max_idle_conns: 20
     cache_name: default
     healthcheck:
+      failure_threshold: 3
+      recovery_threshold: 3
       verb: GET
       scheme: http
       path: /
