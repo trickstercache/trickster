@@ -21,6 +21,7 @@ package health
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"sort"
@@ -41,6 +42,21 @@ type detail struct {
 
 type healthDetail struct {
 	detail atomic.Pointer[detail]
+}
+
+type backendStatus struct {
+	Name      string `json:"name"`
+	Provider  string `json:"provider"`
+	DownSince string `json:"downSince,omitempty"`
+	Detail    string `json:"detail,omitempty"`
+}
+
+type healthStatus struct {
+	Title       string          `json:"title"`
+	UpdateTime  string          `json:"udpateTime"`
+	Available   []backendStatus `json:"available,omitempty"`
+	Unavailable []backendStatus `json:"unavailable,omitempty"`
+	Unchecked   []backendStatus `json:"unchecked,omitempty"`
 }
 
 // StatusHandler returns an http.Handler that prints
@@ -99,14 +115,17 @@ func udpateStatusText(hc healthcheck.HealthChecker, hd *healthDetail) {
 	ut := time.Now().Truncate(time.Second).UTC().String()[:20] + "UTC"
 
 	txt := &strings.Builder{}
-	json := &strings.Builder{}
+	status := &healthStatus{
+		Title:      title,
+		UpdateTime: ut,
+	}
 
 	fmt.Fprintf(txt, "\n%s            last change: %s\n", title, ut)
-	fmt.Fprintf(json, `{"title":"%s","udpateTime":"%s"`, title, ut)
 	txt.WriteString("-------------------------------------------------------------------------------\n\n")
 	st := hc.Statuses()
-	b := bytes.NewBuffer(nil)
-	tw := tabwriter.NewWriter(b, 10, 10, 3, ' ', 0)
+
+	buff := bytes.NewBuffer(nil)
+	tw := tabwriter.NewWriter(buff, 10, 10, 3, ' ', 0)
 
 	a := make([]string, len(st))
 	u := make([]string, len(st))
@@ -132,61 +151,64 @@ func udpateStatusText(hc healthcheck.HealthChecker, hd *healthDetail) {
 	q = q[:ql]
 
 	if len(a) > 0 {
-		json.WriteString(`,"available":[`)
 		sort.Strings(a)
+		status.Available = make([]backendStatus, len(a))
 		for i, k := range a {
-			if i > 0 {
-				json.WriteString(",")
-			}
 			d := cleanupDescription(st[k].Description())
 			fmt.Fprintf(tw, "%s\t%s\t%s\n", k, d, statusToString(1))
-			fmt.Fprintf(json, `{"name":"%s","provider":"%s"}`, k, d)
+			status.Available[i] = backendStatus{
+				Name:     k,
+				Provider: d,
+			}
 		}
-		json.WriteString(`]`)
 		tw.Write([]byte("\t\t\t\n"))
 	}
 
 	if len(u) > 0 {
-		json.WriteString(`,"unavailable":[`)
 		sort.Strings(u)
+		status.Unavailable = make([]backendStatus, len(u))
 		for i, k := range u {
-			if i > 0 {
-				json.WriteString(",")
-			}
 			v := st[k]
 			d := cleanupDescription(st[k].Description())
 			fs := v.FailingSince().Truncate(time.Second).UTC().String()[:20] + "UTC"
 			fmt.Fprintf(tw, "%s\t%s\t%s %s\n", k, d, statusToString(-1), fs)
-			fmt.Fprintf(json, `{"name":"%s","provider":"%s","downSince":"%s","detail":"%s"}`,
-				k, d, fs, strings.ReplaceAll(v.Detail(), `"`, `'`))
+			status.Unavailable[i] = backendStatus{
+				Name:      k,
+				Provider:  d,
+				DownSince: fs,
+				Detail:    v.Detail(),
+			}
 		}
-		json.WriteString(`]`)
 		tw.Write([]byte("\t\t\t\n"))
 	}
 
 	if len(q) > 0 {
-		json.WriteString(`,"unchecked":[`)
 		sort.Strings(q)
+		status.Unchecked = make([]backendStatus, len(q))
 		for i, k := range q {
-			if i > 0 {
-				json.WriteString(",")
-			}
 			d := cleanupDescription(st[k].Description())
 			fmt.Fprintf(tw, "%s\t%s\t%s\n", k, d, statusToString(0))
-			fmt.Fprintf(json, `{"name":"%s","provider":"%s"}`, k, d)
+			status.Unchecked[i] = backendStatus{
+				Name:     k,
+				Provider: d,
+			}
 		}
-		json.WriteString(`]`)
 		tw.Write([]byte("\n"))
 	}
 
 	tw.Flush()
-	txt.Write(b.Bytes())
+	txt.Write(buff.Bytes())
 	txt.WriteString("-------------------------------------------------------------------------------\n")
 	fmt.Fprintf(txt, "You can also provide a '%s: %s' Header or query param ?json\n",
 		headers.NameAccept, headers.ValueApplicationJSON)
-	json.WriteString("}")
 
-	hd.detail.Store(&detail{text: txt.String(), json: json.String()})
+	b, err := json.Marshal(status)
+	if err != nil {
+		// Fallback to empty JSON object if marshaling fails
+		b = []byte("{}")
+	}
+
+	hd.detail.Store(&detail{text: txt.String(), json: string(b)})
 }
 
 func statusToString(i int) string {
