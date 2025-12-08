@@ -21,6 +21,7 @@ import (
 	"os"
 	goruntime "runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/appinfo"
@@ -53,6 +54,10 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/routing"
 )
 
+// mtx guards the config loading and validation process,
+// to ensure only one operation can occur at a time.
+// There is no race-related reason for this mutex, it simply prevents overlapping config operations.
+var mtx sync.Mutex
 var lg = listener.NewGroup()
 
 // BootstrapConfig loads, validates, processes and prepares a configuration
@@ -88,6 +93,8 @@ func BootstrapConfig() (*config.Config, backends.Backends, error) {
 }
 
 func LoadAndValidate() (*config.Config, error) {
+	mtx.Lock()
+	defer mtx.Unlock()
 	// Load Config
 	cfg, err := config.Load(os.Args[1:])
 	if err != nil {
