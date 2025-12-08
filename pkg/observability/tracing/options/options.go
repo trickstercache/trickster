@@ -64,18 +64,14 @@ func (o *Options) Clone() *Options {
 	if o.StdOutOptions != nil {
 		so = o.StdOutOptions.Clone()
 	}
-	return &Options{
-		Name:             o.Name,
-		Provider:         o.Provider,
-		ServiceName:      o.ServiceName,
-		Endpoint:         o.Endpoint,
-		SampleRate:       o.SampleRate,
-		Tags:             maps.Clone(o.Tags),
-		OmitTags:         maps.Clone(o.OmitTags),
-		OmitTagsList:     slices.Clone(o.OmitTagsList),
-		StdOutOptions:    so,
-		attachTagsToSpan: o.attachTagsToSpan,
+	out := pointers.Clone(o)
+	out.StdOutOptions = so
+	out.Tags = maps.Clone(o.Tags)
+	out.OmitTagsList = slices.Clone(o.OmitTagsList)
+	if o.SampleRate != nil {
+		out.SampleRate = pointers.New(*o.SampleRate)
 	}
+	return out
 }
 
 // ProcessTracingOptions enriches the configuration data of the provided Tracing Options collection

@@ -25,6 +25,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 )
 
 //go:generate go tool msgp
@@ -60,29 +61,7 @@ type CachingPolicy struct {
 
 // Clone returns an exact copy of the Caching Policy
 func (cp *CachingPolicy) Clone() *CachingPolicy {
-	return &CachingPolicy{
-		IsFresh:               cp.IsFresh,
-		NoCache:               cp.NoCache,
-		NoTransform:           cp.NoTransform,
-		FreshnessLifetime:     cp.FreshnessLifetime,
-		CanRevalidate:         cp.CanRevalidate,
-		MustRevalidate:        cp.MustRevalidate,
-		LastModified:          cp.LastModified,
-		Expires:               cp.Expires,
-		Date:                  cp.Date,
-		LocalDate:             cp.LocalDate,
-		ETag:                  cp.ETag,
-		IsNegativeCache:       cp.IsNegativeCache,
-		IfNoneMatchValue:      cp.IfNoneMatchValue,
-		IfModifiedSinceTime:   cp.IfModifiedSinceTime,
-		IfUnmodifiedSinceTime: cp.IfUnmodifiedSinceTime,
-		IsClientConditional:   cp.IsClientConditional,
-		IsClientFresh:         cp.IsClientFresh,
-		HasIfModifiedSince:    cp.HasIfModifiedSince,
-		HasIfUnmodifiedSince:  cp.HasIfUnmodifiedSince,
-		HasIfNoneMatch:        cp.HasIfNoneMatch,
-		IfNoneMatchResult:     cp.IfNoneMatchResult,
-	}
+	return pointers.Clone(cp)
 }
 
 // ResetClientConditionals sets the request-specific conditional values of the subject

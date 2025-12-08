@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/encoding/providers"
+	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
@@ -49,16 +50,9 @@ type Profile struct {
 }
 
 func (p *Profile) Clone() *Profile {
-	return &Profile{
-		ClientAcceptEncoding: p.ClientAcceptEncoding,
-		Supported:            p.Supported,
-		SupportedHeaderVal:   p.SupportedHeaderVal,
-		NoTransform:          p.NoTransform,
-		ContentEncoding:      p.ContentEncoding,
-		CompressTypes:        p.CompressTypes,
-		ContentType:          p.ContentType,
-		Level:                p.Level,
-	}
+	out := pointers.Clone(p)
+	out.CompressTypes = p.CompressTypes.Clone()
+	return out
 }
 
 func (p *Profile) String() string {
