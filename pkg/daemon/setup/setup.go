@@ -202,7 +202,7 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	}
 	alb.StartALBPools(clients, si.HealthChecker.Statuses())
 	routing.RegisterDefaultBackendRoutes(r, newConf, clients, tracers)
-	routing.RegisterHealthHandler(mr, newConf.MgmtConfig.HealthHandlerPath, si.HealthChecker)
+	routing.RegisterHealthHandler(mr, newConf.MgmtConfig.HealthHandlerPath, si.HealthChecker, clients)
 	applyListenerConfigs(newConf, si.Config, r, rh, mr, tracers, clients, errorFunc, lg)
 
 	metrics.LastReloadSuccessfulTimestamp.Set(float64(time.Now().Unix()))

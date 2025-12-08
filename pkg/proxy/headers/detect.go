@@ -45,6 +45,11 @@ func AcceptsJSON(r *http.Request) bool {
 	return AcceptsContentType(r, ValueApplicationJSON)
 }
 
+// AcceptsYAML returns true if r has an Accept: application/yaml header
+func AcceptsYAML(r *http.Request) bool {
+	return AcceptsContentType(r, ValueApplicationYAML)
+}
+
 // AcceptsCSV returns true if r has an Accept: application/csv header
 func AcceptsCSV(r *http.Request) bool {
 	return AcceptsContentType(r, ValueApplicationCSV)

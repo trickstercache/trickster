@@ -61,7 +61,7 @@ func TestRegisterHealthHandler(t *testing.T) {
 	router := lm.NewRouter()
 	path := "/test"
 	hc := healthcheck.New()
-	RegisterHealthHandler(router, path, hc)
+	RegisterHealthHandler(router, path, hc, nil)
 }
 
 func TestRegisterProxyRoutes(t *testing.T) {

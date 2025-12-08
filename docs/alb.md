@@ -449,7 +449,7 @@ $ curl "http://${trickster-fqdn}:8481/trickster/health?json" | jq
 
 {
   "title": "Trickster Backend Health Status",
-  "udpateTime": "2020-01-01 00:00:00 UTC",
+  "updateTime": "2020-01-01 00:00:00 UTC",
   "available": [
     {
       "name": "flux-01",
