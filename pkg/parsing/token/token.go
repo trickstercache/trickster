@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 )
 
 // Common Tokens
@@ -57,11 +59,7 @@ var ErrParsingInt = errors.New("error parsing input for integer")
 
 // Clone makes a perfect copy of the subject Token
 func (t *Token) Clone() *Token {
-	return &Token{
-		Typ: t.Typ,
-		Pos: t.Pos,
-		Val: t.Val,
-	}
+	return pointers.Clone(t)
 }
 
 // Int64 attempts to return an int64 rendition of the token value

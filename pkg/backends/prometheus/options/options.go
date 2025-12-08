@@ -17,8 +17,9 @@
 package options
 
 import (
-	"maps"
 	"time"
+
+	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 )
 
 // Options stores information about Prometheus Options
@@ -33,10 +34,7 @@ func New() *Options {
 }
 
 func (o *Options) Clone() *Options {
-	return &Options{
-		InstantRound: o.InstantRound,
-		Labels:       maps.Clone(o.Labels),
-	}
+	return pointers.Clone(o)
 }
 
 func (o *Options) UnmarshalYAML(unmarshal func(interface{}) error) error {

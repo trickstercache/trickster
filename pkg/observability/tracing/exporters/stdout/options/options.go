@@ -16,6 +16,8 @@
 
 package options
 
+import "github.com/trickstercache/trickster/v2/pkg/util/pointers"
+
 // Options is a collection of Stdout-specific options
 type Options struct {
 	PrettyPrint bool `yaml:"pretty_print,omitempty"`
@@ -28,7 +30,7 @@ func New() *Options {
 
 // Clone returns a perfect copy of the subject *Options
 func (o *Options) Clone() *Options {
-	return &Options{PrettyPrint: o.PrettyPrint}
+	return pointers.Clone(o)
 }
 
 func (o *Options) UnmarshalYAML(unmarshal func(interface{}) error) error {

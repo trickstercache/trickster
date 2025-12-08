@@ -22,6 +22,7 @@ import (
 	"net/http"
 
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
+	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
@@ -80,11 +81,9 @@ func NewErrInvalidUserRouterOptions(backendName string) error {
 }
 
 func (o *Options) Clone() *Options {
-	return &Options{
-		DefaultBackend:    o.DefaultBackend,
-		NoRouteStatusCode: o.NoRouteStatusCode,
-		Users:             maps.Clone(o.Users),
-	}
+	out := pointers.Clone(o)
+	out.Users = maps.Clone(o.Users)
+	return out
 }
 
 // New returns a new User Router Options with default values

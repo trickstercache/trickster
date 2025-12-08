@@ -23,6 +23,7 @@ import (
 	ae "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/types"
 	"github.com/trickstercache/trickster/v2/pkg/util/files"
+	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
@@ -50,17 +51,9 @@ func New() *Options {
 }
 
 func (o *Options) Clone() *Options {
-	out := &Options{
-		Name:            o.Name,
-		Provider:        o.Provider,
-		UsersFile:       o.UsersFile,
-		UsersFileFormat: o.UsersFileFormat,
-		UsersFormat:     o.UsersFormat,
-		Authenticator:   o.Authenticator,
-		Users:           maps.Clone(o.Users),
-		ProviderData:    maps.Clone(o.ProviderData),
-		ProxyPreserve:   o.ProxyPreserve,
-	}
+	out := pointers.Clone(o)
+	out.Users = maps.Clone(o.Users)
+	out.ProviderData = maps.Clone(o.ProviderData)
 	return out
 }
 
