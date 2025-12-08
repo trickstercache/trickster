@@ -29,6 +29,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/providers"
 	redis "github.com/trickstercache/trickster/v2/pkg/cache/redis/options"
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
+	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
@@ -89,52 +90,12 @@ func New() *Options {
 
 // Clone returns an exact copy of a *CachingConfig
 func (o *Options) Clone() *Options {
-
-	out := New()
-	out.Name = o.Name
-	out.Provider = o.Provider
-	out.ProviderID = o.ProviderID
-
-	out.Index.FlushInterval = o.Index.FlushInterval
-	out.Index.FlushInterval = o.Index.FlushInterval
-	out.Index.MaxSizeBackoffBytes = o.Index.MaxSizeBackoffBytes
-	out.Index.MaxSizeBackoffObjects = o.Index.MaxSizeBackoffObjects
-	out.Index.MaxSizeBytes = o.Index.MaxSizeBytes
-	out.Index.MaxSizeObjects = o.Index.MaxSizeObjects
-	out.Index.ReapInterval = o.Index.ReapInterval
-	out.Index.ReapInterval = o.Index.ReapInterval
-
-	out.Badger.Directory = o.Badger.Directory
-	out.Badger.ValueDirectory = o.Badger.ValueDirectory
-
-	out.Filesystem.CachePath = o.Filesystem.CachePath
-
-	out.BBolt.Bucket = o.BBolt.Bucket
-	out.BBolt.Filename = o.BBolt.Filename
-
-	out.Redis.ClientType = o.Redis.ClientType
-	out.Redis.DB = o.Redis.DB
-	out.Redis.DialTimeout = o.Redis.DialTimeout
-	out.Redis.Endpoint = o.Redis.Endpoint
-	out.Redis.Endpoints = o.Redis.Endpoints
-	out.Redis.ConnMaxIdleTime = o.Redis.ConnMaxIdleTime
-	out.Redis.ConnMaxLifetime = o.Redis.ConnMaxLifetime
-	out.Redis.MaxRetries = o.Redis.MaxRetries
-	out.Redis.MaxRetryBackoff = o.Redis.MaxRetryBackoff
-	out.Redis.MinIdleConns = o.Redis.MinIdleConns
-	out.Redis.MinRetryBackoff = o.Redis.MinRetryBackoff
-	out.Redis.Password = o.Redis.Password
-	out.Redis.PoolSize = o.Redis.PoolSize
-	out.Redis.PoolTimeout = o.Redis.PoolTimeout
-	out.Redis.Protocol = o.Redis.Protocol
-	out.Redis.ReadTimeout = o.Redis.ReadTimeout
-	out.Redis.SentinelMaster = o.Redis.SentinelMaster
-	out.Redis.WriteTimeout = o.Redis.WriteTimeout
-
-	out.UseCacheChunking = o.UseCacheChunking
-	out.TimeseriesChunkFactor = o.TimeseriesChunkFactor
-	out.ByterangeChunkSize = o.ByterangeChunkSize
-
+	out := pointers.Clone(o)
+	out.Redis = pointers.Clone(o.Redis)
+	out.Filesystem = pointers.Clone(o.Filesystem)
+	out.BBolt = pointers.Clone(o.BBolt)
+	out.Badger = pointers.Clone(o.Badger)
+	out.Index = pointers.Clone(o.Index)
 	return out
 }
 

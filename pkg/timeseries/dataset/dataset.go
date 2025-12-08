@@ -24,6 +24,7 @@ import (
 	"io"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
@@ -134,10 +135,10 @@ func (ds *DataSet) CroppedClone(e timeseries.Extent) timeseries.Timeseries {
 		}
 		clone.Results[i].SeriesList = make([]*Series, len(ds.Results[i].SeriesList))
 		var wg sync.WaitGroup
-		var skips bool
+		var skips int32
 		for j, s := range ds.Results[i].SeriesList {
 			if s == nil || len(s.Points) == 0 {
-				skips = true
+				atomic.StoreInt32(&skips, 1)
 				continue
 			}
 			n := i
@@ -162,12 +163,12 @@ func (ds *DataSet) CroppedClone(e timeseries.Extent) timeseries.Timeseries {
 					sc.PointSize = sc.Points.Size()
 					clone.Results[n].SeriesList[j] = sc
 				} else {
-					skips = true
+					atomic.StoreInt32(&skips, 1)
 				}
 			})
 		}
 		wg.Wait()
-		if skips {
+		if skips == 1 {
 			sl := make([]*Series, len(ds.Results[i].SeriesList))
 			var k int
 			for _, s := range ds.Results[i].SeriesList {
@@ -369,8 +370,8 @@ func (ds *DataSet) DefaultRangeCropper(e timeseries.Extent) {
 			index := j
 			wg.Go(func() {
 				var (
-				        start, end, l = 0, -1, len(s.Points)
-				        iwg sync.WaitGroup
+					start, end, l = 0, -1, len(s.Points)
+					iwg           sync.WaitGroup
 				)
 				iwg.Add(2)
 				go func() {

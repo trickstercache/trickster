@@ -56,7 +56,7 @@ func (s *Series) Size() int64 {
 
 // Clone returns a perfect, new copy of the Series
 func (s *Series) Clone() *Series {
-	clone := &Series{Header: s.Header.Clone()}
+	clone := &Series{Header: s.Header.Clone(), PointSize: s.PointSize}
 	if s.Points != nil {
 		clone.Points = s.Points.Clone()
 	}

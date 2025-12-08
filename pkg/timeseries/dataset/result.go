@@ -68,6 +68,7 @@ func (r *Result) Hashes() Hashes {
 // Clone returns an exact copy of the Result
 func (r *Result) Clone() *Result {
 	clone := &Result{
+		Name:        r.Name,
 		StatementID: r.StatementID,
 		Error:       r.Error,
 		SeriesList:  make([]*Series, len(r.SeriesList)),

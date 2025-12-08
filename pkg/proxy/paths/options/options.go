@@ -120,27 +120,15 @@ func New() *Options {
 
 // Clone returns an exact copy of the subject Options
 func (o *Options) Clone() *Options {
-	out := &Options{
-		Path:                    o.Path,
-		MatchTypeName:           o.MatchTypeName,
-		MatchType:               o.MatchType,
-		HandlerName:             o.HandlerName,
-		Handler:                 o.Handler,
-		RequestHeaders:          maps.Clone(o.RequestHeaders),
-		RequestParams:           maps.Clone(o.RequestParams),
-		ReqRewriter:             o.ReqRewriter,
-		ReqRewriterName:         o.ReqRewriterName,
-		ResponseHeaders:         maps.Clone(o.ResponseHeaders),
-		CollapsedForwardingName: o.CollapsedForwardingName,
-		CollapsedForwardingType: o.CollapsedForwardingType,
-		NoMetrics:               o.NoMetrics,
-		Methods:                 slices.Clone(o.Methods),
-		CacheKeyParams:          slices.Clone(o.CacheKeyParams),
-		CacheKeyHeaders:         slices.Clone(o.CacheKeyHeaders),
-		CacheKeyFormFields:      slices.Clone(o.CacheKeyFormFields),
-		KeyHasher:               o.KeyHasher,
-		AuthenticatorName:       o.AuthenticatorName,
-	}
+	out := pointers.Clone(o)
+	out.RequestHeaders = maps.Clone(o.RequestHeaders)
+	out.RequestParams = maps.Clone(o.RequestParams)
+	out.ResponseHeaders = maps.Clone(o.ResponseHeaders)
+	out.Methods = slices.Clone(o.Methods)
+	out.CacheKeyParams = slices.Clone(o.CacheKeyParams)
+	out.CacheKeyHeaders = slices.Clone(o.CacheKeyHeaders)
+	out.CacheKeyFormFields = slices.Clone(o.CacheKeyFormFields)
+
 	out.ResponseBody = pointers.Clone(o.ResponseBody)
 	if out.ResponseBody != nil {
 		out.ResponseBodyBytes = []byte(*out.ResponseBody)
