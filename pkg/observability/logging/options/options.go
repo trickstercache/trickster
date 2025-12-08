@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
+	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 )
 
 // Options is a collection of Logging options
@@ -42,7 +43,7 @@ func New() *Options {
 
 // Clone returns a clone of the Options
 func (o *Options) Clone() *Options {
-	return &Options{LogLevel: o.LogLevel, LogFile: o.LogFile}
+	return pointers.Clone(o)
 }
 
 func (o *Options) Initialize(_ string) error {

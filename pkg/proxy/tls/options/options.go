@@ -21,6 +21,7 @@ import (
 	"slices"
 
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
+	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 )
 
 // Options is a collection of TLS-related client and server configurations
@@ -57,15 +58,9 @@ func New() *Options {
 
 // Clone returns an exact copy of the subject *Options
 func (o *Options) Clone() *Options {
-	return &Options{
-		FullChainCertPath:         o.FullChainCertPath,
-		PrivateKeyPath:            o.PrivateKeyPath,
-		ServeTLS:                  o.ServeTLS,
-		InsecureSkipVerify:        o.InsecureSkipVerify,
-		CertificateAuthorityPaths: slices.Clone(o.CertificateAuthorityPaths),
-		ClientCertPath:            o.ClientCertPath,
-		ClientKeyPath:             o.ClientKeyPath,
-	}
+	out := pointers.Clone(o)
+	out.CertificateAuthorityPaths = slices.Clone(o.CertificateAuthorityPaths)
+	return out
 }
 
 // Equal returns true if all exposed option members are equal

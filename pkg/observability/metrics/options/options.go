@@ -19,6 +19,7 @@ package options
 import (
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/errors"
+	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 )
 
 // Options is a collection of Metrics Collection configurations
@@ -41,10 +42,7 @@ func New() *Options {
 
 // Clone returns an exact copy of the Options
 func (o *Options) Clone() *Options {
-	return &Options{
-		ListenAddress: o.ListenAddress,
-		ListenPort:    o.ListenPort,
-	}
+	return pointers.Clone(o)
 }
 
 func (o *Options) Initialize(_ string) error {

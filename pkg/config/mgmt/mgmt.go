@@ -19,6 +19,8 @@ package mgmt
 import (
 	"errors"
 	"time"
+
+	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 )
 
 // Options is a collection of configurations for trickster management features
@@ -85,14 +87,5 @@ func (o *Options) Validate() error {
 }
 
 func (o *Options) Clone() *Options {
-	return &Options{
-		ListenAddress:          o.ListenAddress,
-		ListenPort:             o.ListenPort,
-		ConfigHandlerPath:      o.ConfigHandlerPath,
-		PingHandlerPath:        o.PingHandlerPath,
-		HealthHandlerPath:      o.HealthHandlerPath,
-		PurgeByKeyHandlerPath:  o.PurgeByKeyHandlerPath,
-		PurgeByPathHandlerPath: o.PurgeByPathHandlerPath,
-		PprofServer:            o.PprofServer,
-	}
+	return pointers.Clone(o)
 }

@@ -16,7 +16,11 @@
 
 package pointers
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
 
 func TestNew(t *testing.T) {
 	const port = 8480
@@ -39,4 +43,28 @@ func TestNew(t *testing.T) {
 	if intPtr != nil {
 		t.Fatal("expected nil")
 	}
+}
+
+func TestClone(t *testing.T) {
+	type example struct {
+		Name    string
+		Details map[string]string
+	}
+	e := &example{
+		Name: "test",
+		Details: map[string]string{
+			"key1": "value1",
+			"key2": "value2",
+		},
+	}
+	// clone example
+	e2 := Clone(e)
+	require.NotNil(t, e2)
+	// modify original, verify clone is partially affected
+	e.Name = "modified"
+	e.Details["key1"] = "modifiedValue1"
+
+	require.Equal(t, "test", e2.Name, "expect simple fields to be safe from modification")
+	require.NotEqual(t, "value1", e2.Details["key1"], "expect pointer-based fields to be shallow copied, modification affects clone")
+	require.Equal(t, "modifiedValue1", e2.Details["key1"])
 }

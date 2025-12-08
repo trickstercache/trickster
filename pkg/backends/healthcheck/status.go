@@ -47,7 +47,7 @@ func (s *Status) String() string {
 	sb := &strings.Builder{}
 	fmt.Fprintf(sb, "target: %s\nstatus: %d\n", s.name, s.status.Load())
 	if s.status.Load() < 1 {
-		fmt.Fprintf(sb, "detail: %s\n", s.detail)
+		fmt.Fprintf(sb, "detail: %s\n", s.Detail())
 	}
 	if s.status.Load() < 0 {
 		fmt.Fprintf(sb, "since: %d", s.failingSince.Unix())
@@ -60,15 +60,15 @@ func (s *Status) Headers() http.Header {
 	h := http.Header{}
 	h.Set(headers.NameTrkHCStatus, strconv.Itoa(int(s.status.Load())))
 	if s.status.Load() < 1 {
-		h.Set(headers.NameTrkHCDetail, s.detail)
+		h.Set(headers.NameTrkHCDetail, s.Detail())
 	}
 	return h
 }
 
 // Set updates the status
 func (s *Status) Set(i int32) {
-	s.mtx.Lock()
 	s.status.Store(i)
+	s.mtx.Lock()
 	for _, ch := range s.subscribers {
 		ch <- true
 	}
@@ -87,7 +87,16 @@ func (s *Status) Get() int {
 
 // Detail provides the current detail
 func (s *Status) Detail() string {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
 	return s.detail
+}
+
+// SetDetail sets the current detail
+func (s *Status) SetDetail(d string) {
+	s.mtx.Lock()
+	s.detail = d
+	s.mtx.Unlock()
 }
 
 // Description provides the current detail

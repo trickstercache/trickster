@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
+	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
@@ -149,24 +150,7 @@ func (o *Options) Initialize(_ string) error {
 
 // Clone returns a perfect copy of the subject *Options
 func (o *Options) Clone() *Options {
-	return &Options{
-		Name:                   o.Name,
-		NextRoute:              o.NextRoute,
-		IngressReqRewriterName: o.IngressReqRewriterName,
-		EgressReqRewriterName:  o.EgressReqRewriterName,
-		NoMatchReqRewriterName: o.NoMatchReqRewriterName,
-		InputSource:            o.InputSource,
-		InputKey:               o.InputKey,
-		InputType:              o.InputType,
-		InputEncoding:          o.InputEncoding,
-		InputIndex:             o.InputIndex,
-		InputDelimiter:         o.InputDelimiter,
-		Operation:              o.Operation,
-		OperationArg:           o.OperationArg,
-		CaseOptions:            o.CaseOptions,
-		RedirectURL:            o.RedirectURL,
-		MaxRuleExecutions:      o.MaxRuleExecutions,
-	}
+	return pointers.Clone(o)
 }
 
 func (o *Options) Validate() (bool, error) {
