@@ -102,26 +102,24 @@ func (hs *healthStatus) Tabular() string {
 
 	if len(hs.Unavailable) > 0 {
 		for _, k := range hs.Unavailable {
-			detail := formatALBSummary(k)
-			downSince := k.DownSince
-			fmt.Fprintf(tw, "%s\t%s\t%s %s%s\n", k.Name, k.Provider,
-				statusToString(-1, downSince != ""), downSince, detail)
+			fmt.Fprintf(tw, "%s\t%s\t%s %s%s\n", k.Name, formatProvider(k),
+				statusToString(-1, k.DownSince != ""), k.DownSince, formatDetail(k))
 		}
 		tw.Write([]byte("\t\t\t\n"))
 	}
 
 	if len(hs.Available) > 0 {
 		for _, k := range hs.Available {
-			detail := formatALBSummary(k)
-			fmt.Fprintf(tw, "%s\t%s\t%s%s\n", k.Name, k.Provider, statusToString(1, false), detail)
+			fmt.Fprintf(tw, "%s\t%s\t%s%s\n", k.Name, formatProvider(k),
+				statusToString(1, false), formatDetail(k))
 		}
 		tw.Write([]byte("\t\t\t\n"))
 	}
 
 	if len(hs.Unchecked) > 0 {
 		for _, k := range hs.Unchecked {
-			detail := formatALBSummary(k)
-			fmt.Fprintf(tw, "%s\t%s\t%s%s\n", k.Name, k.Provider, statusToString(0, false), detail)
+			fmt.Fprintf(tw, "%s\t%s\t%s%s\n", k.Name, formatProvider(k),
+				statusToString(0, false), formatDetail(k))
 		}
 		tw.Write([]byte("\n"))
 	}
@@ -368,7 +366,14 @@ func statusToString(i int, hasSince bool) string {
 	return "not configured for automated health checks"
 }
 
-func formatALBSummary(bs backendStatus) string {
+func formatProvider(bs backendStatus) string {
+	if bs.Provider == providers.ALB && bs.Mechanism != "" {
+		return fmt.Sprintf("%s (%s)", bs.Provider, bs.Mechanism)
+	}
+	return bs.Provider
+}
+
+func formatDetail(bs backendStatus) string {
 	if bs.Provider != providers.ALB {
 		return ""
 	}
