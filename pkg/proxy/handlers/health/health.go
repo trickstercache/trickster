@@ -71,8 +71,28 @@ type healthStatus struct {
 
 var updateLock sync.Mutex
 
-// String renders a text/plain-compatible version of the status page
 func (hs *healthStatus) String() string {
+	return hs.Tabular()
+}
+
+func (hs *healthStatus) JSON() string {
+	b, err := json.Marshal(hs)
+	if err != nil {
+		return "{}"
+	}
+	return string(b)
+}
+
+func (hs *healthStatus) YAML() string {
+	b, err := yaml.Marshal(hs)
+	if err != nil {
+		return "---"
+	}
+	return string(b)
+}
+
+// Tabular renders a text/plain-compatible version of the status page
+func (hs *healthStatus) Tabular() string {
 	txt := &strings.Builder{}
 	fmt.Fprintf(txt, "\n%s            last change: %s\n", hs.Title, hs.UpdateTime)
 	txt.WriteString("-------------------------------------------------------------------------------\n\n")
@@ -329,18 +349,8 @@ func udpateStatusText(hc healthcheck.HealthChecker, hd *healthDetail, backends b
 		}
 	}
 
-	b, err := json.Marshal(status)
-	if err != nil {
-		b = []byte("{}")
-	}
-
-	y, err := yaml.Marshal(status)
-	if err != nil {
-		y = []byte("---")
-	}
-
-	hd.detail.Store(&detail{text: status.String(), json: string(b),
-		yaml: string(y), lastModified: lastModified})
+	hd.detail.Store(&detail{text: status.Tabular(), json: status.JSON(),
+		yaml: status.YAML(), lastModified: lastModified})
 }
 
 func statusToString(i int, hasSince bool) string {
