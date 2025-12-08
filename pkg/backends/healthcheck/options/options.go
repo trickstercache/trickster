@@ -26,6 +26,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
+	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 )
 
 // MaxProbeWait is the maximum time a health check will wait before timing out
@@ -171,15 +172,7 @@ func (o *Options) Validate() (bool, error) {
 
 // Clone returns an exact copy of a *healthcheck.Options
 func (o *Options) Clone() *Options {
-	c := &Options{}
-	c.Verb = o.Verb
-	c.Scheme = o.Scheme
-	c.Host = o.Host
-	c.Path = o.Path
-	c.Query = o.Query
-	c.Body = o.Body
-	c.Interval = o.Interval
-	c.ExpectedBody = o.ExpectedBody
+	c := pointers.Clone(o)
 	if o.Headers != nil {
 		c.Headers = types.EnvStringMap(headers.Lookup(o.Headers).Clone())
 	}
@@ -190,7 +183,6 @@ func (o *Options) Clone() *Options {
 		c.ExpectedCodes = make([]int, len(o.ExpectedCodes))
 		copy(c.ExpectedCodes, o.ExpectedCodes)
 	}
-	c.hasExpectedBody = o.hasExpectedBody
 	return c
 }
 

@@ -27,6 +27,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
+	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
@@ -99,17 +100,13 @@ func (o *Options) Clone() *Options {
 		fscm = o.FgrCodesLookup.Clone()
 	}
 
-	c := &Options{
-		MechanismName:  o.MechanismName,
-		HealthyFloor:   o.HealthyFloor,
-		OutputFormat:   o.OutputFormat,
-		FgrCodesLookup: fscm,
-		FGRStatusCodes: fsc,
-	}
+	c := pointers.Clone(o)
 	if o.UserRouter != nil {
 		c.UserRouter = o.UserRouter.Clone()
 	}
 	c.Pool = slices.Clone(o.Pool)
+	c.FGRStatusCodes = fsc
+	c.FgrCodesLookup = fscm
 	return c
 }
 

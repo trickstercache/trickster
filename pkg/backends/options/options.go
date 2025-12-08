@@ -43,6 +43,7 @@ import (
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
 	to "github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
+	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 
 	"github.com/prometheus/common/sigv4"
@@ -252,44 +253,7 @@ func New() *Options {
 
 // Clone returns an exact copy of an *backends.Options
 func (o *Options) Clone() *Options {
-	out := &Options{}
-	out.DearticulateUpstreamRanges = o.DearticulateUpstreamRanges
-	out.BackfillTolerance = o.BackfillTolerance
-	out.BackfillTolerance = o.BackfillTolerance
-	out.BackfillTolerancePoints = o.BackfillTolerancePoints
-	out.CacheName = o.CacheName
-	out.CacheKeyPrefix = o.CacheKeyPrefix
-	out.DoesShard = o.DoesShard
-	out.FastForwardDisable = o.FastForwardDisable
-	out.FastForwardTTL = o.FastForwardTTL
-	out.ForwardedHeaders = o.ForwardedHeaders
-	out.Host = o.Host
-	out.LatencyMin = o.LatencyMin
-	out.LatencyMax = o.LatencyMax
-	out.Name = o.Name
-	out.IsDefault = o.IsDefault
-	out.KeepAliveTimeout = o.KeepAliveTimeout
-	out.MaxIdleConns = o.MaxIdleConns
-	out.MaxTTL = o.MaxTTL
-	out.MaxObjectSizeBytes = o.MaxObjectSizeBytes
-	out.MultipartRangesDisabled = o.MultipartRangesDisabled
-	out.Provider = o.Provider
-	out.OriginURL = o.OriginURL
-	out.PathPrefix = o.PathPrefix
-	out.ReqRewriterName = o.ReqRewriterName
-	out.RevalidationFactor = o.RevalidationFactor
-	out.RuleName = o.RuleName
-	out.Scheme = o.Scheme
-	out.MaxShardSizeTime = o.MaxShardSizeTime
-	out.MaxShardSizePoints = o.MaxShardSizePoints
-	out.ShardStep = o.ShardStep
-	out.Timeout = o.Timeout
-	out.TimeseriesRetention = o.TimeseriesRetention
-	out.TimeseriesRetentionFactor = o.TimeseriesRetentionFactor
-	out.TimeseriesEvictionMethodName = o.TimeseriesEvictionMethodName
-	out.TimeseriesEvictionMethod = o.TimeseriesEvictionMethod
-	out.TimeseriesTTL = o.TimeseriesTTL
-	out.TracingConfigName = o.TracingConfigName
+	out := pointers.Clone(o)
 	if o.HealthCheck != nil {
 		out.HealthCheck = o.HealthCheck.Clone()
 	}
@@ -301,14 +265,12 @@ func (o *Options) Clone() *Options {
 	if o.Paths != nil {
 		out.Paths = o.Paths.Clone()
 	}
-	out.NegativeCacheName = o.NegativeCacheName
 	if o.NegativeCache != nil {
 		out.NegativeCache = maps.Clone(o.NegativeCache)
 	}
 	if o.TLS != nil {
 		out.TLS = o.TLS.Clone()
 	}
-	out.RequireTLS = o.RequireTLS
 
 	if o.FastForwardPath != nil {
 		out.FastForwardPath = o.FastForwardPath.Clone()
@@ -326,7 +288,6 @@ func (o *Options) Clone() *Options {
 		out.Prometheus = o.Prometheus.Clone()
 	}
 
-	out.AuthenticatorName = o.AuthenticatorName
 	if o.AuthOptions != nil {
 		out.AuthOptions = o.AuthOptions.Clone()
 	}
