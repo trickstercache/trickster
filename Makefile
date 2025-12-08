@@ -293,6 +293,10 @@ developer-restart:
 developer-seed-data:
 	@cd docs/developer/environment && docker compose run --rm clickhouse_seed
 
+RUN_FLAGS ?=
 .PHONY: serve-dev
 serve-dev:
-	@go run cmd/trickster/main.go -config $(if $(TRK_CONFIG),$(TRK_CONFIG),docs/developer/environment/trickster-config/trickster.yaml)
+	@go run $(RUN_FLAGS) cmd/trickster/main.go -config $(if $(TRK_CONFIG),$(TRK_CONFIG),docs/developer/environment/trickster-config/trickster.yaml)
+
+serve-dev-data-race:
+	RUN_FLAGS=-race $(MAKE) serve-dev | tee race-output.log

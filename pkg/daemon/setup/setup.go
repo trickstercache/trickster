@@ -48,12 +48,15 @@ import (
 	pnh "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/ping"
 	ph "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/purge"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/reload"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 	"github.com/trickstercache/trickster/v2/pkg/routing"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
 )
 
+// mtx guards the config loading and validation process,
+// to ensure only one operation can occur at a time.
+// There is no race-related reason for this mutex, it simply prevents overlapping config operations.
 var mtx sync.Mutex
 var lg = listener.NewGroup()
 

@@ -119,17 +119,17 @@ func (t *target) isGoodHeader(h http.Header) bool {
 		return true
 	}
 	if len(h) == 0 {
-		t.status.detail = "no response headers"
+		t.status.SetDetail("no response headers")
 		return false
 	}
 	for k := range t.eh {
 		if _, ok := h[k]; !ok {
-			t.status.detail = fmt.Sprintf("server response is missing required header [%s]", k)
+			t.status.SetDetail(fmt.Sprintf("server response is missing required header [%s]", k))
 			return false
 		}
 		if t.eh.Get(k) != h.Get(k) {
-			t.status.detail = fmt.Sprintf("required header mismatch for [%s] got [%s] expected [%s]",
-				k, h.Get(k), t.eh.Get(k))
+			t.status.SetDetail(fmt.Sprintf("required header mismatch for [%s] got [%s] expected [%s]",
+				k, h.Get(k), t.eh.Get(k)))
 			return false
 		}
 	}
@@ -140,7 +140,7 @@ func (t *target) isGoodCode(i int) bool {
 	if slices.Contains(t.ec, i) {
 		return true
 	}
-	t.status.detail = fmt.Sprintf("required status code mismatch, got [%d] expected one of %v", i, t.ec)
+	t.status.SetDetail(fmt.Sprintf("required status code mismatch, got [%d] expected one of %v", i, t.ec))
 	return false
 }
 
@@ -150,11 +150,11 @@ func (t *target) isGoodBody(r io.ReadCloser) bool {
 	}
 	x, err := io.ReadAll(r)
 	if err != nil {
-		t.status.detail = "error reading response body from target"
+		t.status.SetDetail("error reading response body from target")
 		return false
 	}
 	if string(x) != t.eb {
-		t.status.detail = fmt.Sprintf("required response body mismatch expected [%s] got [%s]", t.eb, string(x))
+		t.status.SetDetail(fmt.Sprintf("required response body mismatch expected [%s] got [%s]", t.eb, string(x)))
 		return false
 	}
 	return true
@@ -202,7 +202,7 @@ func (t *target) probe(ctx context.Context) {
 	var passed bool
 	switch {
 	case err != nil, resp == nil:
-		t.status.detail = fmt.Sprintf("error probing target: %v", err)
+		t.status.SetDetail(fmt.Sprintf("error probing target: %v", err))
 		errCnt = int(t.failConsecutiveCnt.Add(1))
 		t.successConsecutiveCnt.Store(0)
 	case !t.isGoodCode(resp.StatusCode) || !t.isGoodHeader(resp.Header) || !t.isGoodBody(resp.Body):
@@ -220,12 +220,12 @@ func (t *target) probe(ctx context.Context) {
 		t.ks = -1
 		logger.Info("hc status changed",
 			logging.Pairs{"targetName": t.name, "status": "failed",
-				"detail": t.status.detail, "threshold": t.failureThreshold})
+				"detail": t.status.Detail(), "threshold": t.failureThreshold})
 	} else if passed && t.ks != 1 && (successCnt == t.recoveryThreshold || t.ks == 0) {
 		t.status.failingSince = time.Time{}
 		t.status.Set(1)
 		t.ks = 1
-		t.status.detail = "" // this is only populated with failure details, so it is cleared upon recovery
+		t.status.SetDetail("") // this is only populated with failure details, so it is cleared upon recovery
 		logger.Info("hc status changed",
 			logging.Pairs{"targetName": t.name, "status": "available",
 				"threshold": t.recoveryThreshold})
