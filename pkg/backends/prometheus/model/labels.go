@@ -17,19 +17,11 @@
 package model
 
 import (
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
-	"slices"
 	"sort"
 	"strings"
 
-	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
-	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
-	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
@@ -59,38 +51,13 @@ func (ld *WFLabelData) Merge(results ...*WFLabelData) {
 // MergeAndWriteLabelData merges the provided Responses into a single prometheus basic data object,
 // and writes it to the provided ResponseWriter
 func MergeAndWriteLabelData(w http.ResponseWriter, r *http.Request, rgs merge.ResponseGates) {
-	var ld *WFLabelData
-	responses, bestResp := gatherResponses(r, rgs, func(rg *merge.ResponseGate) bool {
-		ld1 := &WFLabelData{}
-		err := json.Unmarshal(rg.Body(), &ld1)
-		if err != nil {
-			logger.Error("labels unmarshaling error",
-				logging.Pairs{"provider": providers.Prometheus, "detail": err.Error()})
-			return false
-		}
-		if ld == nil {
-			ld = ld1
-		} else {
-			ld.Merge(ld1)
-		}
-		return true
+	ld, responses, bestResp := unmarshalAndMerge(r, rgs, "labels", func() *WFLabelData {
+		return &WFLabelData{}
 	})
 
-	if ld == nil || len(responses) == 0 {
-		if bestResp != nil {
-			h := w.Header()
-			headers.Merge(h, bestResp.Header)
-			w.WriteHeader(bestResp.StatusCode)
-			io.Copy(w, bestResp.Body)
-		} else {
-			failures.HandleBadGateway(w, r)
-		}
+	if !handleMergeResult(w, r, ld, responses, bestResp) {
 		return
 	}
-
-	slices.Sort(responses)
-	statusCode := responses[0]
-	ld.StartMarshal(w, statusCode)
 
 	if len(ld.Data) > 0 {
 		sort.Strings(ld.Data)

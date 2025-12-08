@@ -149,7 +149,8 @@ func (ew *responseEncoder) writeEncoded(b []byte) (int, error) {
 	return len(b), err
 }
 
-func (ew *responseEncoder) writeDecoded(b []byte) (int, error) {
+// writeWithDecoding handles the common pattern of decoding data and copying to a destination
+func (ew *responseEncoder) writeWithDecoding(b []byte, dest io.Writer) (int, error) {
 	if ew.buff == nil {
 		ew.buff = bytes.NewBuffer(b)
 		ew.decoder = ew.decoderInit(io.NopCloser(ew.buff)) // new readcloser for bytes to go in
@@ -159,22 +160,16 @@ func (ew *responseEncoder) writeDecoded(b []byte) (int, error) {
 			return 0, err
 		}
 	}
-	_, err := io.Copy(ew.ResponseWriter, ew.decoder)
+	_, err := io.Copy(dest, ew.decoder)
 	return len(b), err
 }
 
+func (ew *responseEncoder) writeDecoded(b []byte) (int, error) {
+	return ew.writeWithDecoding(b, ew.ResponseWriter)
+}
+
 func (ew *responseEncoder) writeTranscoded(b []byte) (int, error) {
-	if ew.buff == nil {
-		ew.buff = bytes.NewBuffer(b)
-		ew.decoder = ew.decoderInit(io.NopCloser(ew.buff)) // new readcloser for bytes to go in
-	} else {
-		err := ew.decoder.Reset(reader.NewReadCloserResetterBytes(b))
-		if err != nil {
-			return 0, err
-		}
-	}
-	_, err := io.Copy(ew.encoder, ew.decoder)
-	return len(b), err
+	return ew.writeWithDecoding(b, ew.encoder)
 }
 
 func (ew *responseEncoder) Close() error {

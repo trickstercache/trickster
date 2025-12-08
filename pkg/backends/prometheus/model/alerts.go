@@ -98,27 +98,54 @@ func (a *WFAlerts) Merge(results ...*WFAlerts) {
 	a.Data.Alerts = alerts
 }
 
-// MergeAndWriteAlerts merges the provided Responses into a single prometheus Alerts data object,
-// and writes it to the provided ResponseWriter
-func MergeAndWriteAlerts(w http.ResponseWriter, r *http.Request, rgs merge.ResponseGates) {
-	var a *WFAlerts
+// Mergeable represents types that can merge with other instances of the same type
+type Mergeable[T any] interface {
+	*T
+	Merge(...*T)
+}
+
+// MarshallerPtr represents pointer types that can start marshaling with an envelope
+type MarshallerPtr[T any] interface {
+	*T
+	StartMarshal(w io.Writer, httpStatus int)
+}
+
+// unmarshalAndMerge is a generic function that handles the common pattern of
+// unmarshaling JSON responses and merging them using a Merge method
+func unmarshalAndMerge[T any, PT Mergeable[T]](
+	r *http.Request,
+	rgs merge.ResponseGates,
+	errorType string,
+	newInstance func() PT,
+) (PT, []int, *http.Response) {
+	var result PT
 	responses, bestResp := gatherResponses(r, rgs, func(rg *merge.ResponseGate) bool {
-		a1 := &WFAlerts{}
-		err := json.Unmarshal(rg.Body(), &a1)
+		instance := newInstance()
+		err := json.Unmarshal(rg.Body(), instance)
 		if err != nil {
-			logger.Error("alerts unmarshaling error",
+			logger.Error(errorType+" unmarshaling error",
 				logging.Pairs{"provider": providers.Prometheus, "detail": err.Error()})
 			return false
 		}
-		if a == nil {
-			a = a1
+		if result == nil {
+			result = instance
 		} else {
-			a.Merge(a1)
+			result.Merge(instance)
 		}
 		return true
 	})
+	return result, responses, bestResp
+}
 
-	if a == nil || len(responses) == 0 {
+// handleMergeResult handles the common error pattern and starts marshaling if successful
+func handleMergeResult[T any, PT MarshallerPtr[T]](
+	w http.ResponseWriter,
+	r *http.Request,
+	result PT,
+	responses []int,
+	bestResp *http.Response,
+) bool {
+	if result == nil || len(responses) == 0 {
 		if bestResp != nil {
 			h := w.Header()
 			headers.Merge(h, bestResp.Header)
@@ -127,12 +154,25 @@ func MergeAndWriteAlerts(w http.ResponseWriter, r *http.Request, rgs merge.Respo
 		} else {
 			failures.HandleBadGateway(w, r)
 		}
-		return
+		return false
 	}
 
 	sort.Ints(responses)
 	statusCode := responses[0]
-	a.StartMarshal(w, statusCode)
+	result.StartMarshal(w, statusCode)
+	return true
+}
+
+// MergeAndWriteAlerts merges the provided Responses into a single prometheus Alerts data object,
+// and writes it to the provided ResponseWriter
+func MergeAndWriteAlerts(w http.ResponseWriter, r *http.Request, rgs merge.ResponseGates) {
+	a, responses, bestResp := unmarshalAndMerge(r, rgs, "alerts", func() *WFAlerts {
+		return &WFAlerts{}
+	})
+
+	if !handleMergeResult(w, r, a, responses, bestResp) {
+		return
+	}
 
 	var sep string
 	w.Write([]byte(`,"data":{"alerts":[`))

@@ -27,6 +27,8 @@ linters:
   disable:
     - errcheck
   settings:
+    dupl:
+      threshold: 150 # default is 100; have brought current codebase down to 75, but leaving default at 150 for now
     lll:
       line-length: 180
     staticcheck:
