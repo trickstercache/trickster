@@ -31,6 +31,8 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"gopkg.in/yaml.v2"
+
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
@@ -40,8 +42,8 @@ import (
 )
 
 type detail struct {
-	text, json   string
-	lastModified time.Time
+	text, json, yaml string
+	lastModified     time.Time
 }
 
 type healthDetail struct {
@@ -49,22 +51,22 @@ type healthDetail struct {
 }
 
 type backendStatus struct {
-	Name                   string   `json:"name"`
-	Provider               string   `json:"provider"`
-	DownSince              string   `json:"downSince,omitempty"`
-	Detail                 string   `json:"detail,omitempty"`
-	Mechanism              string   `json:"mechanism,omitempty"`
-	AvailablePoolMembers   []string `json:"availablePoolMembers,omitempty"`
-	UnavailablePoolMembers []string `json:"unavailablePoolMembers,omitempty"`
-	UncheckedPoolMembers   []string `json:"uncheckedPoolMembers,omitempty"`
+	Name                   string   `json:"name" yaml:"name"`
+	Provider               string   `json:"provider" yaml:"provider"`
+	DownSince              string   `json:"downSince,omitempty" yaml:"downSince,omitempty"`
+	Detail                 string   `json:"detail,omitempty" yaml:"detail,omitempty"`
+	Mechanism              string   `json:"mechanism,omitempty" yaml:"mechanism,omitempty"`
+	AvailablePoolMembers   []string `json:"availablePoolMembers,omitempty" yaml:"availablePoolMembers,omitempty"`
+	UnavailablePoolMembers []string `json:"unavailablePoolMembers,omitempty" yaml:"unavailablePoolMembers,omitempty"`
+	UncheckedPoolMembers   []string `json:"uncheckedPoolMembers,omitempty" yaml:"uncheckedPoolMembers,omitempty"`
 }
 
 type healthStatus struct {
-	Title       string          `json:"title"`
-	UpdateTime  string          `json:"udpateTime"`
-	Unavailable []backendStatus `json:"unavailable,omitempty"`
-	Available   []backendStatus `json:"available,omitempty"`
-	Unchecked   []backendStatus `json:"unchecked,omitempty"`
+	Title       string          `json:"title" yaml:"title"`
+	UpdateTime  string          `json:"udpateTime" yaml:"updateTime"`
+	Unavailable []backendStatus `json:"unavailable,omitempty" yaml:"unavailable,omitempty"`
+	Available   []backendStatus `json:"available,omitempty" yaml:"available,omitempty"`
+	Unchecked   []backendStatus `json:"unchecked,omitempty" yaml:"unchecked,omitempty"`
 }
 
 var updateLock sync.Mutex
@@ -140,12 +142,17 @@ func StatusHandler(hc healthcheck.HealthChecker, backends backends.Backends) htt
 		}
 
 		var body, ct string
-		if headers.AcceptsJSON(r) ||
+		switch {
+		case headers.AcceptsJSON(r),
 			(r != nil && r.URL != nil &&
-				strings.Contains(r.URL.RawQuery, contenttype.JSON)) {
+				strings.Contains(r.URL.RawQuery, contenttype.JSON)):
 			body = detail.json
 			ct = headers.ValueApplicationJSON
-		} else {
+		case headers.AcceptsYAML(r),
+			(r != nil && r.URL != nil && strings.Contains(strings.ToLower(r.URL.RawQuery), "yaml")):
+			body = detail.yaml
+			ct = headers.ValueApplicationYAML
+		default:
 			body = detail.text
 			ct = headers.ValueTextPlain
 		}
@@ -324,11 +331,16 @@ func udpateStatusText(hc healthcheck.HealthChecker, hd *healthDetail, backends b
 
 	b, err := json.Marshal(status)
 	if err != nil {
-		// Fallback to empty JSON object if marshaling fails
 		b = []byte("{}")
 	}
 
-	hd.detail.Store(&detail{text: status.String(), json: string(b), lastModified: lastModified})
+	y, err := yaml.Marshal(status)
+	if err != nil {
+		y = []byte("---")
+	}
+
+	hd.detail.Store(&detail{text: status.String(), json: string(b),
+		yaml: string(y), lastModified: lastModified})
 }
 
 func statusToString(i int, hasSince bool) string {

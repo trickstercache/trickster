@@ -33,6 +33,8 @@ const (
 	ValueApplicationCSV = "application/csv"
 	// ValueApplicationJSON represents the HTTP Header Value of "application/json"
 	ValueApplicationJSON = "application/json"
+	// ValueApplicationYAML represents the HTTP Header Value of "application/yaml"
+	ValueApplicationYAML = "application/yaml"
 	// ValueApplicationFlux represents the HTTP Header Value of "application/vnd.flux"
 	ValueApplicationFlux = "application/vnd.flux"
 	// ValueChunked represents the HTTP Header Value of "chunked"
