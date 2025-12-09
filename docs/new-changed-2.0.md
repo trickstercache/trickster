@@ -17,7 +17,7 @@
 - The [Rules Engine](./rule.md) now supports `rmatch` operations to permit regular expression-based routing against any part of the HTTP request.
 - You can now chain a collection of [request rewriters](./request_rewriters.md) for more robust possibilities.
 
-## New in Beta 4
+## New in RC1
 - The configuration format for custom Backend [paths](./paths.md) been updated to use a YAML Sequence for enumerating paths, rather than named paths via a YAML Map. 
 - The configuration format for the [Rule Backend Provider](./rule.md) has been updated to use a YAML Sequence for enumerating rules, rather than named rules via a YAML Map. See the [Full Example Configuration](../examples/conf/example.full.yaml) for more info.
 - A configurable Request Body Size limit has been added for `POST`, `PUT` and `PATCH` requests, with a default of 10MB. Requests with a body size exceeding the limit will receive a `413 Content Too Large` response. See [Request Body Handling Customizations](./body.md) for more info.
@@ -67,23 +67,12 @@
 Trickster 2.0 is not yet feature complete, and we anticipate including the following additional features in Beta 4 before the GA Release:
 - an up-to-date Grafana dashboard template for monitoring Trickster
 - incorporate ALB examples into the docker-compose demo
-- support for Auto-Discovery of Backend Targets (e.g., Kubernetes Pod Annotations)
-- support MySQL as a Backend Time Series
-- Support for InfluxDB 3.x
 
 ## Known Issues With the Latest Beta
 
 The current Trickster 2.0 beta has the following known issues:
 
-- the `lru` Time Series Eviction Method currently does not function, but will be added back in a future beta. This feature has not yet been ported into the Common Time Series format. Comment out this setting in your configuration to use the default eviction method.
-
-- certain Path configs that should modify the client request or response (e.g., `response_headers`) are [not working reliably](https://github.com/trickstercache/trickster/issues/671). This will be fixed up in Beta 4.
-
-- You may see warnings like the following on application startup for memory caches and other cache types that are instantiating for the first time. These are fine and are just complaining that newly-created caches don't yet have an index record. We will address in Beta 4.
-
-```
-time=2025-05-20T00:00:00.000000Z app=trickster level=warn event="cache index was not loaded" cacheName=default error="key not found in cache"
-```
+- the `lru` Time Series Eviction Method currently does not function, but will be added back in a future release. This feature has not yet been ported into the Common Time Series format. Comment out this setting in your configuration to use the default eviction method.
 
 ## Installing
 
