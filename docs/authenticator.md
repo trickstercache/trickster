@@ -2,11 +2,7 @@
 
 Trickster 2.0 provides a new Authenticator capability that allows you to protect Backends with an Authentication layer.
 
-Authenticator resources are defined globally by name, and then mapped into any Backend and/or Path configuration as needed. Authenticators can be loaded from `htpasswd` or `csv` files, or directly in the Trickster config file.
-
-When embedding in the config file, you can include credentials in plaintext or pre-encrypted with bcrypt; but you must specify `users_format: bcrypt` when credentials are pre-encrypted. See `example_auth_3` in the blob below.
-
-If you are loading Users into the same Authenticator from both a CSV and the embedded manifest, you must use the same format of credential (plaintext or bcrypt) for both. If the credentials are already encrypted, you must provide the encryption format in `users_format: bcrypt`. If no `users_format` value is supplied, credential are assumed to be provided in plaintext. Trickster will internally bcrypt any plaintext credential upon loading into the Authenticator. However, any plaintext credentials provided will persist in any Environment Variables or files from which they are sourced via configuration.
+Authenticator resources are defined globally by name, and then mapped into any Backend and/or Path configuration as needed. Authenticator users can be loaded from `htpasswd` or `csv` files, or directly in the Trickster config file. You can provide credentials in plaintext, bcrypt, apache md5-script, as well as legacy formats rsa-256 and rsa-512.
 
 Authenticators work with all Backend provider types. Requests are handled by their respective Authenticators before all other Handlers (e.g., Caches, Rules, Request Rewrites, ALB Routes, etc.).
 
@@ -103,7 +99,6 @@ authenticators:
     users_file_format: csv # required when users_file is set
     users: # optional embedded users manifest (username: credential)
       user1: red123
-    users_format: plaintext # plaintext is the default format if this value is omitted
     config: # optional provider-specific configs
       showLoginForm: true # with basic auth, causes the browser to show the login form
       realm: custom-realm-name # realm would be example_auth_1 if not overridden here
@@ -118,8 +113,7 @@ authenticators:
   example_auth_3:
     provider: basic
     users:
-      user1: asf;j2ihj0h8vabjkwdqbv29hq
-    users_format: bcrypt # credentials are already bcrypted
+      user1: $2y$asf;j2ihj0h8vabjkwdqbv29hq
 
   # example_auth_4 loads users from the embedded manifest, credentials injected from env,
   # and supports ClickHouse query params (user/password) in addition to Basic Auth

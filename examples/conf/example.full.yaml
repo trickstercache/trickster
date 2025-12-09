@@ -676,9 +676,6 @@ backends:
 #     # users is an optional embedded users list (format is: name: credential)
 #     users: 
 #       user1: red123
-#     # users_format provides the format of the passwords in both the users_file CSVs and the embedded users list.
-#     # Valid options are: plaintext (default), bcrypt.
-#     users_format: plaintext 
 #     # config holds optional provider-specific configs
 #     config:
 #       # basic auth optional configs:

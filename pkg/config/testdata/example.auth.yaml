@@ -219,7 +219,6 @@ authenticators:
     users:
       user1: red123
       user2: ${USER2_PASS}
-    users_format: plaintext
     config:
       realm: custom-realm-name
       showLoginForm: true
@@ -229,7 +228,6 @@ authenticators:
     proxy_preserve: false
     users_file: /path/to/user-manifest.htpasswd
     users_file_format: htpasswd
-    users_format: ""
     config: {}
   example_auth_3:
     provider: basic
@@ -238,6 +236,5 @@ authenticators:
     users_file: ""
     users_file_format: ""
     users:
-      user1: asf;j2ihj0h8vabjkwdqbv29hq
-    users_format: bcrypt
+      user1: $2y$asf;j2ihj0h8vabjkwdqbv29hq
     config: {}

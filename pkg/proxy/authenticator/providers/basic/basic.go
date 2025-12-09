@@ -29,7 +29,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/types"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
-	"golang.org/x/crypto/bcrypt"
 )
 
 const ID types.Provider = "basic"
@@ -84,13 +83,13 @@ func NewPtr(data map[string]any) (*Authenticator, error) {
 		}
 	}
 	if opts.UsersFile != "" {
-		err := a.LoadUsers(opts.UsersFile, opts.UsersFileFormat, opts.UsersFormat, true)
+		err := a.LoadUsers(opts.UsersFile, opts.UsersFileFormat, true)
 		if err != nil {
 			return nil, err
 		}
 	}
 	if len(opts.Users) > 0 {
-		a.AddUsersFromMap(esLookup(opts.Users), opts.UsersFormat)
+		a.AddUsersFromMap(esLookup(opts.Users))
 	}
 	return a, nil
 }
@@ -113,21 +112,18 @@ func failedResult(showLoginForm bool, realm string) *types.AuthResult {
 
 // Authenticate checks the BasicAuth credentials
 func (a *Authenticator) Authenticate(r *http.Request) (*types.AuthResult, error) {
-	u, p, f, err := a.ExtractCredentials(r)
+	u, p, err := a.ExtractCredentials(r)
 	if err != nil && !a.observeOnly {
 		return failedResult(a.showLoginForm, a.realm), err
 	}
 	if a.observeOnly {
 		return &types.AuthResult{Username: u, Status: types.AuthObserved}, nil
 	}
-	if f != types.PlainText {
-		return failedResult(a.showLoginForm, a.realm), ae.ErrInvalidCredentialsFormat
-	}
 	hash, ok := a.users[u]
 	if !ok {
 		return failedResult(a.showLoginForm, a.realm), ae.ErrInvalidCredentials
 	}
-	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(p)) != nil {
+	if err := cred.VerifyPassword(hash, p); err != nil {
 		return failedResult(a.showLoginForm, a.realm), ae.ErrInvalidCredentials
 	}
 	return &types.AuthResult{Username: u, Status: types.AuthSuccess}, nil
@@ -164,28 +160,28 @@ func (a *Authenticator) Sanitize(r *http.Request) {
 	r.Header.Del(headers.NameAuthorization)
 }
 
-func (a *Authenticator) ExtractCredentials(r *http.Request) (string, string,
-	types.CredentialsFormat, error,
+func (a *Authenticator) ExtractCredentials(r *http.Request) (
+	string, string, error,
 ) {
 	if a.extractCredsFunc != nil {
 		return a.extractCredsFunc(r)
 	}
 	u, p, ok := r.BasicAuth()
 	if !ok {
-		return "", "", "", ae.ErrInvalidCredentials
+		return "", "", ae.ErrInvalidCredentials
 	}
-	return u, p, types.PlainText, nil
+	return u, p, nil
 }
 
 func (a *Authenticator) SetExtractCredentialsFunc(f types.ExtractCredsFunc) {
 	a.extractCredsFunc = f
 }
 
-func (a *Authenticator) SetCredentials(r *http.Request, user, credential string,
-	f types.CredentialsFormat,
+func (a *Authenticator) SetCredentials(
+	r *http.Request, user, credential string,
 ) error {
 	if a.setCredsFunc != nil {
-		return a.setCredsFunc(r, user, credential, f)
+		return a.setCredsFunc(r, user, credential)
 	}
 	r.SetBasicAuth(user, credential)
 	return nil
@@ -204,10 +200,10 @@ func (a *Authenticator) IsObserveOnly() bool {
 }
 
 // LoadUsers resets the users list, then loads from the htpasswd-formatted file
-func (a *Authenticator) LoadUsers(path string, ff types.CredentialsFileFormat,
-	cf types.CredentialsFormat, replace bool,
+func (a *Authenticator) LoadUsers(
+	path string, ff types.CredentialsFileFormat, replace bool,
 ) error {
-	users, err := loaders.LoadData(path, ff, cf)
+	users, err := loaders.LoadData(path, ff)
 	if err != nil {
 		return err
 	}
@@ -220,17 +216,11 @@ func (a *Authenticator) LoadUsers(path string, ff types.CredentialsFileFormat,
 }
 
 // AddUser adds a new user to the users list
-func (a *Authenticator) AddUser(username, password string,
-	cf types.CredentialsFormat,
-) error {
-	p, err := cred.ProcessRawCredential(password, cf)
-	if err != nil {
-		return err
-	}
+func (a *Authenticator) AddUser(username, password string) error {
 	if a.users == nil {
 		a.users = make(types.CredentialsManifest)
 	}
-	a.users[username] = p
+	a.users[username] = password
 	return nil
 }
 
@@ -243,23 +233,18 @@ func (a *Authenticator) RemoveUser(username string) {
 }
 
 // AddUsersFromMap merges in users from a map[string]any
-func (a *Authenticator) AddUsersFromMap(users esLookup,
-	cf types.CredentialsFormat,
-) {
-	loaded := loaders.LoadMap(users.ToCredentialsManifest(), cf)
+func (a *Authenticator) AddUsersFromMap(users esLookup) {
 	if a.users == nil {
-		a.users = loaded
+		a.users = users.ToCredentialsManifest()
 	} else {
-		maps.Copy(a.users, loaded)
+		maps.Copy(a.users, users.ToCredentialsManifest())
 	}
 }
 
 // LoadUsersFromMap resets the users list, then loads from a map[string]any
 // via AddUsersFromMap
-func (a *Authenticator) LoadUsersFromMap(users esLookup,
-	cf types.CredentialsFormat,
-) {
-	a.users = loaders.LoadMap(users.ToCredentialsManifest(), cf)
+func (a *Authenticator) LoadUsersFromMap(users esLookup) {
+	a.users = users.ToCredentialsManifest()
 }
 
 type esLookup ct.EnvStringMap
