@@ -132,9 +132,9 @@ func Hup(si *instance.ServerInstance, source string) (bool, error) {
 	logger.Warn("configuration reload starting now",
 		logging.Pairs{"source": source})
 
-	newConf, newClients, err := setup.BootstrapConfig()
-	if err != nil {
-		logger.Error("reload failed: could not load new config",
+	// handleReloadFailure handles common reload failure logging and metrics
+	handleReloadFailure := func(message string, err error) (bool, error) {
+		logger.Error(message,
 			logging.Pairs{"error": err.Error(), "source": source})
 		metrics.ReloadFailuresTotal.Inc()
 		metrics.LastReloadSuccessful.Set(0)
@@ -142,13 +142,13 @@ func Hup(si *instance.ServerInstance, source string) (bool, error) {
 		return false, err
 	}
 
+	newConf, newClients, err := setup.BootstrapConfig()
+	if err != nil {
+		return handleReloadFailure("reload failed: could not load new config", err)
+	}
+
 	if err := validate.Validate(newConf); err != nil {
-		logger.Error("reload failed: new configuration is invalid",
-			logging.Pairs{"error": err.Error(), "source": source})
-		metrics.ReloadFailuresTotal.Inc()
-		metrics.LastReloadSuccessful.Set(0)
-		metrics.ReloadDurationSeconds.Observe(time.Since(startTime).Seconds())
-		return false, err
+		return handleReloadFailure("reload failed: new configuration is invalid", err)
 	}
 
 	oldConfig := si.Config

@@ -128,39 +128,25 @@ func (sh *SeriesHeader) String() string {
 	if len(sh.Tags) > 0 {
 		fmt.Fprintf(sb, `"tags":"%s",`, sh.Tags.String())
 	}
-	if len(sh.ValueFieldsList) > 0 {
-		sb.WriteString(`"valueFields":[`)
-		l := len(sh.ValueFieldsList)
-		for i, fd := range sh.ValueFieldsList {
-			fmt.Fprintf(sb, `"%s"`, fd.Name)
-			if i < l-1 {
-				sb.WriteByte(',')
+
+	// Helper function to write field lists to JSON
+	writeFieldList := func(fieldName string, fields timeseries.FieldDefinitions) {
+		if len(fields) > 0 {
+			fmt.Fprintf(sb, `"%s":[`, fieldName)
+			l := len(fields)
+			for i, fd := range fields {
+				fmt.Fprintf(sb, `"%s"`, fd.Name)
+				if i < l-1 {
+					sb.WriteByte(',')
+				}
 			}
+			sb.WriteString("],")
 		}
-		sb.WriteString("],")
 	}
-	if len(sh.TagFieldsList) > 0 {
-		sb.WriteString(`"tagFields":[`)
-		l := len(sh.TagFieldsList)
-		for i, fd := range sh.TagFieldsList {
-			fmt.Fprintf(sb, `"%s"`, fd.Name)
-			if i < l-1 {
-				sb.WriteByte(',')
-			}
-		}
-		sb.WriteString("],")
-	}
-	if len(sh.UntrackedFieldsList) > 0 {
-		sb.WriteString(`"untrackedFields":[`)
-		l := len(sh.UntrackedFieldsList)
-		for i, fd := range sh.UntrackedFieldsList {
-			fmt.Fprintf(sb, `"%s"`, fd.Name)
-			if i < l-1 {
-				sb.WriteByte(',')
-			}
-		}
-		sb.WriteString("],")
-	}
+
+	writeFieldList("valueFields", sh.ValueFieldsList)
+	writeFieldList("tagFields", sh.TagFieldsList)
+	writeFieldList("untrackedFields", sh.UntrackedFieldsList)
 	fmt.Fprintf(sb, `"timeStampField":"%s"`, sh.TimestampField.Name)
 	sb.WriteByte('}')
 	return sb.String()

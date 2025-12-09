@@ -50,6 +50,17 @@ import (
 
 var noCacheBackends = providers.NonCacheBackends()
 
+// attachAuthenticator attaches authentication middleware to the handler based on path and backend options
+func attachAuthenticator(h http.Handler, pathOptions *po.Options, backendOptions *bo.Options) http.Handler {
+	if pathOptions.AuthOptions != nil && pathOptions.AuthOptions.Authenticator != nil {
+		h = handler.Middleware(pathOptions.AuthOptions.Authenticator, h)
+	} else if pathOptions.AuthenticatorName != "none" && backendOptions.AuthOptions != nil &&
+		backendOptions.AuthOptions.Authenticator != nil {
+		h = handler.Middleware(backendOptions.AuthOptions.Authenticator, h)
+	}
+	return h
+}
+
 // RegisterProxyRoutes iterates the Trickster Configuration and
 // registers the routes for the configured backends
 func RegisterProxyRoutes(conf *config.Config, clients backends.Backends,
@@ -208,12 +219,7 @@ func RegisterPathRoutes(r router.Router, conf *config.Config, handlers handlers.
 			h = middleware.Trace(tr, h)
 		}
 		// attach authenticator
-		if po1.AuthOptions != nil && po1.AuthOptions.Authenticator != nil {
-			h = handler.Middleware(po1.AuthOptions.Authenticator, (h))
-		} else if po1.AuthenticatorName != "none" && o.AuthOptions != nil &&
-			o.AuthOptions.Authenticator != nil {
-			h = handler.Middleware(o.AuthOptions.Authenticator, (h))
-		}
+		h = attachAuthenticator(h, po1, o)
 		// attach compression handler
 		h = encoding.HandleCompression(h, o.CompressibleTypes)
 		// add Backend, Cache, and Path Configs to the HTTP Request's context
@@ -288,12 +294,7 @@ func RegisterDefaultBackendRoutes(r router.Router, conf *config.Config,
 			h = middleware.Trace(tr, h)
 		}
 		// attach authenticator
-		if po.AuthOptions != nil && po.AuthOptions.Authenticator != nil {
-			h = handler.Middleware(po.AuthOptions.Authenticator, (h))
-		} else if po.AuthenticatorName != "none" && o.AuthOptions != nil &&
-			o.AuthOptions.Authenticator != nil {
-			h = handler.Middleware(o.AuthOptions.Authenticator, (h))
-		}
+		h = attachAuthenticator(h, po, o)
 		// add Backend, Cache, and Path Configs to the HTTP Request's context
 		h = middleware.WithResourcesContext(client, o, c, po, tr, h)
 		// attach any request rewriters

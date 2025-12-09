@@ -18,8 +18,6 @@ package prometheus
 
 import (
 	"net/http"
-	"strconv"
-	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus/model"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/engines"
@@ -40,17 +38,7 @@ func (c *Client) SeriesHandler(w http.ResponseWriter, r *http.Request) {
 	qp, _, _ := params.GetRequestValues(r)
 
 	// Round Start and End times down to top of most recent minute for cacheability
-	if p := qp.Get(upStart); p != "" {
-		if i, err := strconv.ParseInt(p, 10, 64); err == nil {
-			qp.Set(upStart, strconv.FormatInt(time.Unix(i, 0).Truncate(time.Second*time.Duration(60)).Unix(), 10))
-		}
-	}
-
-	if p := qp.Get(upEnd); p != "" {
-		if i, err := strconv.ParseInt(p, 10, 64); err == nil {
-			qp.Set(upEnd, strconv.FormatInt(time.Unix(i, 0).Truncate(time.Second*time.Duration(60)).Unix(), 10))
-		}
-	}
+	roundTimestampsToMinute(qp)
 
 	r.URL = u
 	params.SetRequestValues(r, qp)

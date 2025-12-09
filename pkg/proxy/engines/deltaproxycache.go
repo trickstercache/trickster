@@ -132,6 +132,16 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 	var doc *HTTPDocument
 	var elapsed time.Duration
 
+	// handleFetchError handles common error response pattern for fetchTimeseries failures
+	handleFetchError := func() {
+		pr.cacheLock.RRelease()
+		h := doc.SafeHeaderClone()
+		recordDPCResult(r, status.LookupStatusProxyError, doc.StatusCode,
+			r.URL.Path, "", elapsed.Seconds(), nil, h)
+		Respond(w, doc.StatusCode, h, bytes.NewReader(doc.Body))
+		// fetchTimeseries logs the error
+	}
+
 	coReq := GetRequestCachingPolicy(r.Header)
 checkCache:
 	if coReq.NoCache {
@@ -142,24 +152,16 @@ checkCache:
 		go cache.Remove(key)
 		cts, doc, elapsed, err = fetchTimeseries(pr, trq, client, modeler)
 		if err != nil {
-			pr.cacheLock.RRelease()
-			h := doc.SafeHeaderClone()
-			recordDPCResult(r, status.LookupStatusProxyError, doc.StatusCode,
-				r.URL.Path, "", elapsed.Seconds(), nil, h)
-			Respond(w, doc.StatusCode, h, bytes.NewReader(doc.Body))
-			return // fetchTimeseries logs the error
+			handleFetchError()
+			return
 		}
 	} else {
 		doc, cacheStatus, _, err = QueryCache(ctx, cache, key, nil, modeler.CacheUnmarshaler)
 		if cacheStatus == status.LookupStatusKeyMiss && errors.Is(err, tc.ErrKNF) {
 			cts, doc, elapsed, err = fetchTimeseries(pr, trq, client, modeler)
 			if err != nil {
-				pr.cacheLock.RRelease()
-				h := doc.SafeHeaderClone()
-				recordDPCResult(r, status.LookupStatusProxyError, doc.StatusCode,
-					r.URL.Path, "", elapsed.Seconds(), nil, h)
-				Respond(w, doc.StatusCode, h, bytes.NewReader(doc.Body))
-				return // fetchTimeseries logs the error
+				handleFetchError()
+				return
 			}
 		} else {
 			if doc == nil {
@@ -171,12 +173,8 @@ checkCache:
 				go cache.Remove(key)
 				cts, doc, elapsed, err = fetchTimeseries(pr, trq, client, modeler)
 				if err != nil {
-					pr.cacheLock.RRelease()
-					h := doc.SafeHeaderClone()
-					recordDPCResult(r, status.LookupStatusProxyError, doc.StatusCode,
-						r.URL.Path, "", elapsed.Seconds(), nil, h)
-					Respond(w, doc.StatusCode, h, bytes.NewReader(doc.Body))
-					return // fetchTimeseries logs the error
+					handleFetchError()
+					return
 				}
 			} else {
 				cts = doc.timeseries.Clone() // Load the Cached Timeseries

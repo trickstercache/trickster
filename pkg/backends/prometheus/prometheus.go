@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -67,6 +68,21 @@ const (
 	upTime  = "time"
 	upMatch = "match[]"
 )
+
+// roundTimestampParameterToMinute rounds a specific timestamp parameter down to the minute for cacheability
+func roundTimestampParameterToMinute(qp url.Values, paramName string) {
+	if p := qp.Get(paramName); p != "" {
+		if i, err := strconv.ParseInt(p, 10, 64); err == nil {
+			qp.Set(paramName, strconv.FormatInt(time.Unix(i, 0).Truncate(time.Second*time.Duration(60)).Unix(), 10))
+		}
+	}
+}
+
+// roundTimestampsToMinute rounds start and end timestamp parameters down to the minute for cacheability
+func roundTimestampsToMinute(qp url.Values) {
+	roundTimestampParameterToMinute(qp, upStart)
+	roundTimestampParameterToMinute(qp, upEnd)
+}
 
 // Client Implements Proxy Client Interface
 type Client struct {

@@ -72,18 +72,29 @@ func marshalTimeseriesCSVWriter(ds *dataset.DataSet, frb *JSONRequestBody,
 	return nil
 }
 
-func printCsvDatatypeAnnotationRow(w *csv.Writer,
+// printCsvAnnotationRow is a generic helper function for printing CSV annotation rows
+func printCsvAnnotationRow(w *csv.Writer,
 	fds timeseries.FieldDefinitions,
+	annotationType string,
+	getValue func(timeseries.FieldDefinition) string,
 ) error {
 	cells := make([]string, len(fds))
 	for i, fd := range fds {
 		if i == 0 {
-			cells[i] = "#datatype"
+			cells[i] = annotationType
 			continue
 		}
-		cells[i] = fd.SDataType
+		cells[i] = getValue(fd)
 	}
 	return w.Write(cells)
+}
+
+func printCsvDatatypeAnnotationRow(w *csv.Writer,
+	fds timeseries.FieldDefinitions,
+) error {
+	return printCsvAnnotationRow(w, fds, "#datatype", func(fd timeseries.FieldDefinition) string {
+		return fd.SDataType
+	})
 }
 
 func printCsvGroupAnnotationRow(w *csv.Writer,
@@ -109,15 +120,9 @@ func printCsvGroupAnnotationRow(w *csv.Writer,
 func printCsvDefaultAnnotationRow(w *csv.Writer,
 	fds timeseries.FieldDefinitions,
 ) error {
-	cells := make([]string, len(fds))
-	for i, fd := range fds {
-		if i == 0 {
-			cells[i] = "#default"
-			continue
-		}
-		cells[i] = fd.DefaultValue
-	}
-	return w.Write(cells)
+	return printCsvAnnotationRow(w, fds, "#default", func(fd timeseries.FieldDefinition) string {
+		return fd.DefaultValue
+	})
 }
 
 func printCsvHeaderRow(w *csv.Writer, fds timeseries.FieldDefinitions) error {

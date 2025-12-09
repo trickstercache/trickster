@@ -82,10 +82,12 @@ func marshalTimeseriesXSV(w io.Writer, ds *dataset.DataSet,
 	// at this point, we're going to write the TSV/CSV
 	cw := csv.NewWriter(w)
 	cw.Comma = rune(separator)
-	if writeNames || writeTypes {
+
+	// Helper function to write a row with field data
+	writeFieldRow := func(getValue func(timeseries.FieldDefinition) string) {
 		row := make([]string, fieldCount)
 		fd := tfd
-		row[fd.OutputPosition] = fd.Name
+		row[fd.OutputPosition] = getValue(fd)
 		for _, fd = range tags {
 			if fd.Name == tfd.Name {
 				continue
@@ -93,30 +95,19 @@ func marshalTimeseriesXSV(w io.Writer, ds *dataset.DataSet,
 			if fd.OutputPosition > fieldCount {
 				continue
 			}
-			row[fd.OutputPosition] = fd.Name
+			row[fd.OutputPosition] = getValue(fd)
 		}
 		for _, fd = range vals {
-			row[fd.OutputPosition] = fd.Name
+			row[fd.OutputPosition] = getValue(fd)
 		}
 		cw.Write(row)
 	}
+
+	if writeNames || writeTypes {
+		writeFieldRow(func(fd timeseries.FieldDefinition) string { return fd.Name })
+	}
 	if writeTypes {
-		row := make([]string, fieldCount)
-		fd := tfd
-		row[fd.OutputPosition] = fd.SDataType
-		for _, fd = range tags {
-			if fd.Name == tfd.Name {
-				continue
-			}
-			if fd.OutputPosition > fieldCount {
-				continue
-			}
-			row[fd.OutputPosition] = fd.SDataType
-		}
-		for _, fd = range vals {
-			row[fd.OutputPosition] = fd.SDataType
-		}
-		cw.Write(row)
+		writeFieldRow(func(fd timeseries.FieldDefinition) string { return fd.SDataType })
 	}
 	for _, s := range ds.Results[0].SeriesList {
 		for _, p := range s.Points {

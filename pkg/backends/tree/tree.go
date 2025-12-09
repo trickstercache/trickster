@@ -57,37 +57,16 @@ func (e Entries) Validate() error {
 		entryLookup[entry.Name] = entry
 	}
 
-	var follow func(name string, path sets.Set[string]) error
-	follow = func(name string, path sets.Set[string]) error {
-		ent, ok := entryLookup[name]
-		if !ok {
-			return NewErrInvalidBackendRouting("unknown entry '%s' referenced in UserRouterPool", name)
-		}
-		if len(ent.UserRouterPool) > 0 {
-			for _, p := range ent.UserRouterPool {
-				if p == name {
-					return NewErrInvalidBackendRouting("entry '%s' cannot include itself in its UserRouterPool", name)
-				}
-				if _, seen := path[p]; seen {
-					return NewErrInvalidBackendRouting("endless loop detected between '%s' and '%s' (UserRouterPool)", name, p)
-				}
-				// Recursively walk the UserRouterPool
-				path2 := path.Clone()
-				path2.Set(name)
-				if err := follow(p, path2); err != nil {
-					return err
-				}
-			}
-			return nil
-		}
-		for _, p := range ent.Pool {
+	// validatePoolLoop validates a pool for self-inclusion and endless loops
+	validatePoolLoop := func(name string, path sets.Set[string], pool []string, poolType string, follow func(string, sets.Set[string]) error) error {
+		for _, p := range pool {
 			if p == name {
-				return NewErrInvalidBackendRouting("entry '%s' cannot include itself in its Pool", name)
+				return NewErrInvalidBackendRouting("entry '%s' cannot include itself in its %s", name, poolType)
 			}
 			if _, seen := path[p]; seen {
-				return NewErrInvalidBackendRouting("endless loop detected between '%s' and '%s' (Pool)", name, p)
+				return NewErrInvalidBackendRouting("endless loop detected between '%s' and '%s' (%s)", name, p, poolType)
 			}
-			// Recursively walk the Pool
+			// Recursively walk the pool
 			path2 := path.Clone()
 			path2.Set(name)
 			if err := follow(p, path2); err != nil {
@@ -95,6 +74,18 @@ func (e Entries) Validate() error {
 			}
 		}
 		return nil
+	}
+
+	var follow func(name string, path sets.Set[string]) error
+	follow = func(name string, path sets.Set[string]) error {
+		ent, ok := entryLookup[name]
+		if !ok {
+			return NewErrInvalidBackendRouting("unknown entry '%s' referenced in UserRouterPool", name)
+		}
+		if len(ent.UserRouterPool) > 0 {
+			return validatePoolLoop(name, path, ent.UserRouterPool, "UserRouterPool", follow)
+		}
+		return validatePoolLoop(name, path, ent.Pool, "Pool", follow)
 	}
 
 	var collectNonVirtualTypes func(name string, visited sets.Set[string], types sets.Set[string])

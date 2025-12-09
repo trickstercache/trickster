@@ -30,6 +30,24 @@ const (
 	falseValue = "false"
 )
 
+// handleMatchedCase processes a matched case by setting the router, executing rewriters, and handling redirects
+func handleMatchedCase(c *ruleCase, hr *http.Request) (http.Handler, *http.Request) {
+	h := c.router
+
+	// if this case includes rewriter instructions, execute those now
+	if len(c.rewriter) > 0 {
+		c.rewriter.Execute(hr)
+	}
+
+	// if it's a redirect response, set the appropriate context
+	if c.redirectCode > 0 {
+		hr = hr.WithContext(redirect.WithRedirects(hr.Context(),
+			c.redirectCode, c.redirectURL))
+	}
+
+	return h, hr
+}
+
 type rule struct {
 	defaultRouter  http.Handler
 	extractionFunc extractionFunc
@@ -89,18 +107,7 @@ func (r *rule) EvaluateOpArg(hr *http.Request) (http.Handler, *http.Request, err
 	for _, c := range r.cases {
 		if c.matchValue == res {
 			nonDefault = true
-			h = c.router
-
-			// if this case includes rewriter instructions, execute those now
-			if len(c.rewriter) > 0 {
-				c.rewriter.Execute(hr)
-			}
-
-			// if it's a redirect response, set the appropriate context
-			if c.redirectCode > 0 {
-				hr = hr.WithContext(redirect.WithRedirects(hr.Context(),
-					c.redirectCode, c.redirectURL))
-			}
+			h, hr = handleMatchedCase(c, hr)
 		}
 	}
 
@@ -149,18 +156,7 @@ func (r *rule) EvaluateCaseArg(hr *http.Request) (http.Handler, *http.Request, e
 		// TODO: support comparison of other values via 'where'
 		if res == trueValue {
 			nonDefault = true
-			h = c.router
-
-			// if this case includes rewriter instructions, execute those now
-			if len(c.rewriter) > 0 {
-				c.rewriter.Execute(hr)
-			}
-
-			// if it's a redirect response, set the appropriate context
-			if c.redirectCode > 0 {
-				hr = hr.WithContext(redirect.WithRedirects(hr.Context(),
-					c.redirectCode, c.redirectURL))
-			}
+			h, hr = handleMatchedCase(c, hr)
 		}
 	}
 

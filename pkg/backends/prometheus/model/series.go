@@ -17,17 +17,9 @@
 package model
 
 import (
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
-	"sort"
 
-	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
-	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
-	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
@@ -63,38 +55,13 @@ func (s *WFSeries) Merge(results ...*WFSeries) {
 // MergeAndWriteSeries merges the provided Responses into a single prometheus Series data object,
 // and writes it to the provided ResponseWriter
 func MergeAndWriteSeries(w http.ResponseWriter, r *http.Request, rgs merge.ResponseGates) {
-	var s *WFSeries
-	responses, bestResp := gatherResponses(r, rgs, func(rg *merge.ResponseGate) bool {
-		s1 := &WFSeries{}
-		err := json.Unmarshal(rg.Body(), &s1)
-		if err != nil {
-			logger.Error("series unmarshaling error",
-				logging.Pairs{"provider": providers.Prometheus, "detail": err.Error()})
-			return false
-		}
-		if s == nil {
-			s = s1
-		} else {
-			s.Merge(s1)
-		}
-		return true
+	s, responses, bestResp := unmarshalAndMerge(r, rgs, "series", func() *WFSeries {
+		return &WFSeries{}
 	})
 
-	if s == nil || len(responses) == 0 {
-		if bestResp != nil {
-			h := w.Header()
-			headers.Merge(h, bestResp.Header)
-			w.WriteHeader(bestResp.StatusCode)
-			io.Copy(w, bestResp.Body)
-		} else {
-			failures.HandleBadGateway(w, r)
-		}
+	if !handleMergeResult(w, r, s, responses, bestResp) {
 		return
 	}
-
-	sort.Ints(responses)
-	statusCode := responses[0]
-	s.StartMarshal(w, statusCode)
 
 	var sep string
 	if len(s.Data) > 0 {

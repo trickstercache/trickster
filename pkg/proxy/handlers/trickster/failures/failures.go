@@ -45,32 +45,27 @@ func HandleBadGateway(w http.ResponseWriter, _ *http.Request) {
 
 // HandleUnauthorized responds to an HTTP Request with a 401 Unauthorized
 func HandleUnauthorized(w http.ResponseWriter, _ *http.Request) {
-	if w == nil {
-		return
-	}
-	w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
-	w.WriteHeader(http.StatusUnauthorized)
-	w.Write([]byte("Unauthorized"))
+	handleFailureWithMessage(w, http.StatusUnauthorized, "Unauthorized")
 }
 
 // HandleNotFound responds to an HTTP Request with a 404 Not Found
 func HandleNotFound(w http.ResponseWriter, _ *http.Request) {
-	if w == nil {
-		return
-	}
-	w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
-	w.WriteHeader(http.StatusNotFound)
-	w.Write([]byte("Resource Not Found"))
+	handleFailureWithMessage(w, http.StatusNotFound, "Resource Not Found")
 }
 
 // HandlePayloadTooLarge responds to an HTTP Request with a 413 Payload Too Large
 func HandlePayloadTooLarge(w http.ResponseWriter, _ *http.Request) {
+	handleFailureWithMessage(w, http.StatusRequestEntityTooLarge, PayloadTooLargeText)
+}
+
+// handleFailureWithMessage responds to an HTTP Request with the provided status code and message
+func handleFailureWithMessage(w http.ResponseWriter, statusCode int, message string) {
 	if w == nil {
 		return
 	}
 	w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
-	w.WriteHeader(http.StatusRequestEntityTooLarge)
-	w.Write([]byte(PayloadTooLargeText))
+	w.WriteHeader(statusCode)
+	w.Write([]byte(message))
 }
 
 // HandleMiscFailure responds to an HTTP Request the provided status code

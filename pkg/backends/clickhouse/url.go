@@ -51,14 +51,9 @@ func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
 	}
 }
 
-func interpolateTimeQuery(template string, tfd timeseries.FieldDefinition,
-	extent *timeseries.Extent,
-) string {
-	var start, end, tStart, tEnd string
-
-	// tfd.DataType holds the database internal format for the timestamp used
-	// when setting extents
-	switch tfd.DataType {
+// formatTimestampValues formats start and end timestamps based on the data type
+func formatTimestampValues(dataType timeseries.FieldDataType, extent *timeseries.Extent) (start, end string) {
+	switch dataType {
 	case timeseries.DateTimeUnixMilli: // epoch millisecs
 		start = strconv.FormatInt(extent.Start.UnixMilli(), 10)
 		end = strconv.FormatInt(extent.End.UnixMilli(), 10)
@@ -72,22 +67,18 @@ func interpolateTimeQuery(template string, tfd timeseries.FieldDefinition,
 		start = strconv.FormatInt(extent.Start.Unix(), 10)
 		end = strconv.FormatInt(extent.End.Unix(), 10)
 	}
+	return start, end
+}
+
+func interpolateTimeQuery(template string, tfd timeseries.FieldDefinition,
+	extent *timeseries.Extent,
+) string {
+	// tfd.DataType holds the database internal format for the timestamp used
+	// when setting extents
+	start, end := formatTimestampValues(tfd.DataType, extent)
 
 	// ProviderData1 holds the format of a secondary time field
-	switch timeseries.FieldDataType(tfd.ProviderData1) {
-	case timeseries.DateTimeUnixMilli: // epoch millisecs
-		tStart = strconv.FormatInt(extent.Start.UnixMilli(), 10)
-		tEnd = strconv.FormatInt(extent.End.UnixMilli(), 10)
-	case timeseries.DateTimeUnixNano: // epoch nanosecs
-		tStart = strconv.FormatInt(extent.Start.UnixNano(), 10)
-		tEnd = strconv.FormatInt(extent.End.UnixNano(), 10)
-	case timeseries.DateTimeSQL: // '2025-05-01 11:39:18'
-		tStart = "'" + extent.Start.Format(sql.SQLDateTimeLayout) + "'"
-		tEnd = "'" + extent.End.Format(sql.SQLDateTimeLayout) + "'"
-	default: // epoch secs
-		tStart = strconv.FormatInt(extent.Start.Unix(), 10)
-		tEnd = strconv.FormatInt(extent.End.Unix(), 10)
-	}
+	tStart, tEnd := formatTimestampValues(timeseries.FieldDataType(tfd.ProviderData1), extent)
 	trange := fmt.Sprintf("%s BETWEEN %s AND %s", tfd.Name, start, end)
 	out := strings.NewReplacer(
 		tkRange, trange,

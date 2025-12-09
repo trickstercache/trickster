@@ -233,24 +233,23 @@ func emitMinus(_ lex.Lexer, rs *lex.RunState) lex.StateFn {
 	return lexText
 }
 
-func handleGreaterThan(_ lex.Lexer, rs *lex.RunState) lex.StateFn {
-	t := token.GreaterThan
+// handleComparisonOperator processes comparison operators that can optionally have '=' suffix
+func handleComparisonOperator(rs *lex.RunState, baseToken, equalToken token.Typ) lex.StateFn {
+	t := baseToken
 	if rs.Peek() == lex.RuneEqual {
 		rs.Next()
-		t = token.GreaterThanOrEqual
+		t = equalToken
 	}
 	rs.Emit(t)
 	return lexText
 }
 
+func handleGreaterThan(_ lex.Lexer, rs *lex.RunState) lex.StateFn {
+	return handleComparisonOperator(rs, token.GreaterThan, token.GreaterThanOrEqual)
+}
+
 func handleLessThan(_ lex.Lexer, rs *lex.RunState) lex.StateFn {
-	t := token.LessThan
-	if rs.Peek() == lex.RuneEqual {
-		rs.Next()
-		t = token.LessThanOrEqual
-	}
-	rs.Emit(t)
-	return lexText
+	return handleComparisonOperator(rs, token.LessThan, token.LessThanOrEqual)
 }
 
 func handleSlash(li lex.Lexer, rs *lex.RunState) lex.StateFn {
@@ -314,14 +313,12 @@ func lexText(li lex.Lexer, rs *lex.RunState) lex.StateFn {
 	return rs.EmitToken(rs.Errorf("unrecognized character in action: %#U", r))
 }
 
-// lexNewline scans a run of newline characters.
-// We have not consumed the first space, which is known to be present.
-// Take care if there is a trim-marked right delimiter, which starts with a space.
-func lexNewline(_ lex.Lexer, rs *lex.RunState) lex.StateFn {
+// lexWhitespaceWithCondition scans a run of characters based on a condition function
+func lexWhitespaceWithCondition(rs *lex.RunState, conditionFunc func(rune) bool) lex.StateFn {
 	var r rune
 	for {
 		r = rs.Peek()
-		if !lex.IsWhiteSpace(r) {
+		if !conditionFunc(r) {
 			break
 		}
 		rs.Next()
@@ -330,20 +327,18 @@ func lexNewline(_ lex.Lexer, rs *lex.RunState) lex.StateFn {
 	return lexText
 }
 
+// lexNewline scans a run of newline characters.
+// We have not consumed the first space, which is known to be present.
+// Take care if there is a trim-marked right delimiter, which starts with a space.
+func lexNewline(_ lex.Lexer, rs *lex.RunState) lex.StateFn {
+	return lexWhitespaceWithCondition(rs, lex.IsWhiteSpace)
+}
+
 // lexSpace scans a run of space characters.
 // We have not consumed the first space, which is known to be present.
 // Take care if there is a trim-marked right delimiter, which starts with a space.
 func lexSpace(_ lex.Lexer, rs *lex.RunState) lex.StateFn {
-	var r rune
-	for {
-		r = rs.Peek()
-		if !lex.IsSpace(r) {
-			break
-		}
-		rs.Next()
-	}
-	rs.Emit(token.Space)
-	return lexText
+	return lexWhitespaceWithCondition(rs, lex.IsSpace)
 }
 
 // SpacedKeywords gives hints to lexIdentifier to check for keywords that have a space in
