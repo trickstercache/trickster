@@ -55,8 +55,7 @@ func New(data map[string]any) (types.Authenticator, error) {
 	return a, nil
 }
 
-func (a *authenticator) setCredentials(r *http.Request,
-	user, credential string) error {
+func (a *authenticator) setCredentials(r *http.Request, user, credential string) error {
 	q := r.URL.Query()
 	if q.Has(upUser) && q.Has(upPassword) {
 		q.Set(upUser, user)
@@ -69,7 +68,8 @@ func (a *authenticator) setCredentials(r *http.Request,
 }
 
 func (a *authenticator) extractCredentials(r *http.Request) (string,
-	string, error) {
+	string, error,
+) {
 	q := r.URL.Query()
 	if q.Has(upUser) && q.Has(upPassword) {
 		return q.Get(upUser), q.Get(upPassword), nil
