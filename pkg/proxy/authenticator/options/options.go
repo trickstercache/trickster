@@ -37,7 +37,6 @@ type Options struct {
 	UsersFile       string                      `yaml:"users_file"`
 	UsersFileFormat types.CredentialsFileFormat `yaml:"users_file_format"`
 	Users           ct.EnvStringMap             `yaml:"users,omitempty"`
-	UsersFormat     types.CredentialsFormat     `yaml:"users_format"`
 	ProviderData    map[string]any              `yaml:"config"`
 	Authenticator   types.Authenticator         `yaml:"-"`
 }
@@ -58,9 +57,6 @@ func (o *Options) Clone() *Options {
 }
 
 func (o *Options) Initialize() error {
-	if len(o.Users) > 0 && o.UsersFormat == "" {
-		o.UsersFormat = types.Unknown
-	}
 	return nil
 }
 

@@ -26,14 +26,14 @@ type Authenticator interface {
 	Authenticate(*http.Request) (*AuthResult, error)
 	// ExtractCredentials returns the username, credentials and format (as
 	// applicable) from the request.
-	ExtractCredentials(*http.Request) (string, string, CredentialsFormat, error)
+	ExtractCredentials(*http.Request) (string, string, error)
 	// SetExtractCredentialsFunc allows the Authenticator to use a custom (e.g,
 	// Backend-provider-specific) Credentials Extractor in lieu of the
 	// Authenticator implementation's built-in Extractor.
 	SetExtractCredentialsFunc(ExtractCredsFunc)
 	// SetCredentials will replace any credentials in the current request with
 	// the provided Credentials
-	SetCredentials(*http.Request, string, string, CredentialsFormat) error
+	SetCredentials(*http.Request, string, string) error
 	// SetSetCredentialsFunc allows the Authenticator to use a custom (e.g,
 	// Backend-provider-specific) Credentials Setter in lieu of the
 	// Authenticator implementation's built-in Setter.
@@ -46,9 +46,9 @@ type Authenticator interface {
 	IsObserveOnly() bool
 	// LoadUsers loads the provided users into the Authenticator. If the bool is
 	// true, the existing list will be replaced, otherwise appended.
-	LoadUsers(string, CredentialsFileFormat, CredentialsFormat, bool) error
+	LoadUsers(string, CredentialsFileFormat, bool) error
 	// AddUser adds the provided user to the Authenticator's users list
-	AddUser(string, string, CredentialsFormat) error
+	AddUser(string, string) error
 	// RemoveUser removes the provided user from the Authenticator's users list
 	RemoveUser(string)
 	// Clone returns a new / independent duplicate of the Authenticator
@@ -64,9 +64,9 @@ type Lookup map[string]Authenticator
 // Provider is a defined type for the Authenticator Provider's name
 type Provider string
 
-type ExtractCredsFunc func(*http.Request) (string, string, CredentialsFormat, error)
+type ExtractCredsFunc func(*http.Request) (string, string, error)
 
-type SetCredentialsFunc func(*http.Request, string, string, CredentialsFormat) error
+type SetCredentialsFunc func(*http.Request, string, string) error
 
 // NewAuthenticatorFunc defines a function that returns a new Authenticator
 type NewAuthenticatorFunc func(map[string]any) (Authenticator, error)

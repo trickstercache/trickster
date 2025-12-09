@@ -21,13 +21,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/cred"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/types"
 )
 
-func LoadCSV(path string, ff types.CredentialsFileFormat,
-	cf types.CredentialsFormat,
-) (types.CredentialsManifest, error) {
+func LoadCSV(path string, ff types.CredentialsFileFormat) (types.CredentialsManifest, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -46,11 +43,7 @@ func LoadCSV(path string, ff types.CredentialsFileFormat,
 		if i < start || len(row) < 2 {
 			continue
 		}
-		p, err := cred.ProcessRawCredential(strings.TrimSpace(row[1]), cf)
-		if err != nil {
-			return nil, err
-		}
-		out[strings.TrimSpace(row[0])] = p
+		out[strings.TrimSpace(row[0])] = strings.TrimSpace(row[1])
 	}
 	return out, nil
 }

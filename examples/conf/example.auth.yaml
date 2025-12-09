@@ -24,7 +24,6 @@ authenticators:
     users: # optional embedded users list (name: credential)
       user1: red123
       user2: ${USER2_PASS} # password for user2 is sourced from the ENV
-    users_format: plaintext
     config: # optional provider-specific configs
       showLoginForm: true # show the login form on missing or invalid creds
       realm: custom-realm-name # realm name defaults to the authenticator name
@@ -39,5 +38,4 @@ authenticators:
   example_auth_3:
     provider: basic # http basic auth (required)
     users: # optional embedded users list (name: credential)
-      user1: asf;j2ihj0h8vabjkwdqbv29hq
-    users_format: bcrypt
+      user1: $2y$asf;j2ihj0h8vabjkwdqbv29hq

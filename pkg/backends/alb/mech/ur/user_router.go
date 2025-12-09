@@ -77,7 +77,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		username = rsc.AuthResult.Username
 		enableReplaceCreds = h.enableReplaceCreds && rsc.AuthResult.Status == at.AuthSuccess
 	} else if h.authenticator != nil {
-		u, c, _, err := h.authenticator.ExtractCredentials(r)
+		u, c, err := h.authenticator.ExtractCredentials(r)
 		if err == nil && u != "" {
 			username = u
 			cred = c
@@ -102,7 +102,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if opts.ToCredential != "" {
 				cred = string(opts.ToCredential)
 			}
-			h.authenticator.SetCredentials(r, username, cred, at.Unknown)
+			h.authenticator.SetCredentials(r, username, cred)
 		}
 		// this passes the request to a user-specific route handler, if set
 		if opts.ToHandler != nil {

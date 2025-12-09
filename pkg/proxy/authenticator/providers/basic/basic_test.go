@@ -52,7 +52,8 @@ func bcryptHash(pass string) string {
 func TestAddUserAndAuthenticate(t *testing.T) {
 	a := &Authenticator{}
 	user, pass := testUser1, testUser1p
-	if err := a.AddUser(user, pass, types.PlainText); err != nil {
+	hash := bcryptHash(pass)
+	if err := a.AddUser(user, hash); err != nil {
 		t.Fatalf("AddUser: %v", err)
 	}
 
@@ -90,7 +91,8 @@ func TestAddUserAndAuthenticate(t *testing.T) {
 
 func TestRemoveUser(t *testing.T) {
 	a := &Authenticator{}
-	a.AddUser(testUser1, testUser1p, types.PlainText)
+	hash := bcryptHash(testUser1p)
+	a.AddUser(testUser1, hash)
 	a.RemoveUser(testUser1)
 	req := httptest.NewRequest("GET", "/", nil)
 	req.SetBasicAuth(testUser1, testUser1p)
@@ -103,10 +105,10 @@ func TestRemoveUser(t *testing.T) {
 func TestAddUsersFromMapLoadUsersFromMap(t *testing.T) {
 	a := &Authenticator{}
 	users := ct.EnvStringMap{
-		testUser1: testUser1p,
-		testUser2: testUser2p,
+		testUser1: bcryptHash(testUser1p),
+		testUser2: bcryptHash(testUser2p),
 	}
-	a.AddUsersFromMap(esLookup(users), types.PlainText) // not encrypted
+	a.AddUsersFromMap(esLookup(users))
 
 	// Should authenticate both
 	for user, pass := range users {
@@ -120,9 +122,9 @@ func TestAddUsersFromMapLoadUsersFromMap(t *testing.T) {
 
 	// Now replace with LoadUsersFromMap and test
 	newUsers := ct.EnvStringMap{
-		testUser3: testUser3p,
+		testUser3: bcryptHash(testUser3p),
 	}
-	a.LoadUsersFromMap(esLookup(newUsers), types.PlainText)
+	a.LoadUsersFromMap(esLookup(newUsers))
 	// Only linus should work
 	req := httptest.NewRequest("GET", "/", nil)
 	req.SetBasicAuth(testUser3, testUser3p)
@@ -143,7 +145,7 @@ func TestAddUsersFromMap_Encrypted(t *testing.T) {
 	users := ct.EnvStringMap{
 		testUser1: hash,
 	}
-	a.AddUsersFromMap(esLookup(users), types.BCrypt) // already encrypted
+	a.AddUsersFromMap(esLookup(users)) // already encrypted (bcrypt hash)
 
 	req := httptest.NewRequest("GET", "/", nil)
 	req.SetBasicAuth(testUser1, testUser1p)
@@ -166,7 +168,7 @@ func TestLoadUsersAndAddUsers_File(t *testing.T) {
 	f.Close()
 
 	a := &Authenticator{}
-	if err := a.LoadUsers(htpasswd1, types.HTPasswd, types.BCrypt, true); err != nil {
+	if err := a.LoadUsers(htpasswd1, types.HTPasswd, true); err != nil {
 		t.Fatal(err)
 	}
 	// testUser1 should work
@@ -185,7 +187,7 @@ func TestLoadUsersAndAddUsers_File(t *testing.T) {
 	}
 	_, _ = f2.WriteString(fmt.Sprintf("%s:%s\n", testUser2, bcryptHash(testUser2p)))
 	f2.Close()
-	if err := a.LoadUsers(htpasswd2, types.HTPasswd, types.BCrypt, false); err != nil {
+	if err := a.LoadUsers(htpasswd2, types.HTPasswd, false); err != nil {
 		t.Fatal(err)
 	}
 	req.SetBasicAuth(testUser2, testUser2p)
@@ -197,7 +199,7 @@ func TestLoadUsersAndAddUsers_File(t *testing.T) {
 
 func TestAddUsers_MergeLogic(t *testing.T) {
 	a := &Authenticator{}
-	_ = a.AddUser(testUser1, testUser1p, types.PlainText)
+	_ = a.AddUser(testUser1, bcryptHash(testUser1p))
 	// Simulate AddUsers merges and updates
 	users := map[string]string{
 		testUser1: bcryptHash("updated"), // should replace

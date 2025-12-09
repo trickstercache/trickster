@@ -299,7 +299,6 @@ authenticators:
     provider: clickhouse # use the clickhouse authenticator
     users_file: /path/to/user-manifest.csv # this file should include casey and taylor users
     users_file_format: csv # required when users_file is set
-    users_format: bcrypt # passwords in the CSV are bcrypted
 ```
 
 <img src="./images/alb-ur-01.png" width="800">
