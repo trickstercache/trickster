@@ -33,10 +33,12 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/contenttype"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 	"gopkg.in/yaml.v2"
 )
 
@@ -307,7 +309,29 @@ func updateStatusText(hc healthcheck.HealthChecker, hd *healthDetail, backends b
 			unavailableMembers := make([]string, 0)
 			uncheckedMembers := make([]string, 0)
 
-			for _, poolMemberName := range albConfig.ALBOptions.Pool {
+			var pool []string
+			if albConfig.ALBOptions.MechanismName == names.MechanismUR &&
+				albConfig.ALBOptions.UserRouter != nil {
+				urPool := sets.NewStringSet()
+				if albConfig.ALBOptions.UserRouter.DefaultBackend != "" {
+					urPool.Set(albConfig.ALBOptions.UserRouter.DefaultBackend)
+				}
+				for _, userOpts := range albConfig.ALBOptions.UserRouter.Users {
+					if userOpts != nil && userOpts.ToBackend != "" {
+						urPool.Set(userOpts.ToBackend)
+					}
+				}
+				pool = urPool.Keys()
+			} else {
+				pool = albConfig.ALBOptions.Pool
+			}
+
+			seen := sets.NewStringSet()
+			for _, poolMemberName := range pool {
+				if seen.Contains(poolMemberName) {
+					continue
+				}
+				seen.Set(poolMemberName)
 				memberStatus := st[poolMemberName]
 				if memberStatus == nil {
 					uncheckedMembers = append(uncheckedMembers, poolMemberName)
