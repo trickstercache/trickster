@@ -401,13 +401,13 @@ func formatDetail(bs backendStatus) string {
 	}
 	parts := make([]string, 0, 3)
 	if len(bs.UnavailablePoolMembers) > 0 {
-		parts = append(parts, fmt.Sprintf("u:[%s]", strings.Join(bs.UnavailablePoolMembers, ", ")))
+		parts = append(parts, fmt.Sprintf("u:[%s]", strings.Join(bs.UnavailablePoolMembers, ",")))
 	}
 	if len(bs.AvailablePoolMembers) > 0 {
-		parts = append(parts, fmt.Sprintf("a:[%s]", strings.Join(bs.AvailablePoolMembers, ", ")))
+		parts = append(parts, fmt.Sprintf("a:[%s]", strings.Join(bs.AvailablePoolMembers, ",")))
 	}
 	if len(bs.UncheckedPoolMembers) > 0 {
-		parts = append(parts, fmt.Sprintf("nc:[%s]", strings.Join(bs.UncheckedPoolMembers, ", ")))
+		parts = append(parts, fmt.Sprintf("nc:[%s]", strings.Join(bs.UncheckedPoolMembers, ",")))
 	}
 	if len(parts) == 0 {
 		return ""
