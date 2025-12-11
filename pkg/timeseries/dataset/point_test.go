@@ -255,6 +255,54 @@ func TestOnOrJustBefore(t *testing.T) {
 	}
 }
 
+func TestFindRange(t *testing.T) {
+	pts := testPoints()
+
+	expectedStart := pts.onOrJustAfter(epoch.Epoch(5*time.Second), 0, len(pts)-1)
+	expectedEnd := pts.onOrJustBefore(epoch.Epoch(15*time.Second), 0, len(pts)-1) + 1
+	start, end := pts.findRange(epoch.Epoch(5*time.Second), epoch.Epoch(15*time.Second), 0, len(pts)-1)
+	if start != expectedStart || end != expectedEnd {
+		t.Errorf("findRange doesn't match individual calls: expected start=%d, end=%d; got start=%d, end=%d",
+			expectedStart, expectedEnd, start, end)
+	}
+
+	expectedStart = pts.onOrJustAfter(0, 0, len(pts)-1)
+	expectedEnd = pts.onOrJustBefore(epoch.Epoch(10*time.Second), 0, len(pts)-1) + 1
+	start, end = pts.findRange(0, epoch.Epoch(10*time.Second), 0, len(pts)-1)
+	if start != expectedStart || end != expectedEnd {
+		t.Errorf("findRange doesn't match individual calls for edge case: expected start=%d, end=%d; got start=%d, end=%d",
+			expectedStart, expectedEnd, start, end)
+	}
+
+	expectedStart = pts.onOrJustAfter(epoch.Epoch(20*time.Second), 0, len(pts)-1)
+	expectedEnd = pts.onOrJustBefore(epoch.Epoch(30*time.Second), 0, len(pts)-1) + 1
+	start, end = pts.findRange(epoch.Epoch(20*time.Second), epoch.Epoch(30*time.Second), 0, len(pts)-1)
+	if start != expectedStart || end != expectedEnd {
+		t.Errorf("findRange doesn't match individual calls for beyond range: expected start=%d, end=%d; got start=%d, end=%d",
+			expectedStart, expectedEnd, start, end)
+	}
+}
+
+func BenchmarkFindRange(b *testing.B) {
+	pts := genTestPoints(0, 10000) // Create a large dataset for meaningful benchmarks
+	startEpoch := epoch.Epoch(2500 * time.Second)
+	endEpoch := epoch.Epoch(7500 * time.Second)
+
+	b.Run("Combined", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			_, _ = pts.findRange(startEpoch, endEpoch, 0, len(pts)-1)
+		}
+	})
+
+	b.Run("Individual", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			start := pts.onOrJustAfter(startEpoch, 0, len(pts)-1)
+			end := pts.onOrJustBefore(endEpoch, 0, len(pts)-1) + 1
+			_, _ = start, end
+		}
+	})
+}
+
 func TestMergePoints(t *testing.T) {
 	tests := []struct {
 		p1, p2, expected Points

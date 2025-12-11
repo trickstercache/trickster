@@ -160,6 +160,40 @@ func (p Points) onOrJustBefore(ts epoch.Epoch, s, e int) int {
 	}, -1)
 }
 
+// findRange finds both the start and end indices for a time range that is between the start and end epochs.
+func (p Points) findRange(startEpoch, endEpoch epoch.Epoch, s, e int) (int, int) {
+	if len(p) == 0 || s > e {
+		return 0, 0
+	}
+	start := s
+	end := e
+	for start <= end {
+		mid := (start + end) >> 1
+		if p[mid].Epoch < startEpoch {
+			start = mid + 1
+		} else {
+			end = mid - 1
+		}
+	}
+	startPos := start
+	if startPos > e {
+		return startPos, startPos
+	}
+	left := startPos
+	right := e
+	endPos := startPos - 1
+	for left <= right {
+		mid := (left + right) >> 1
+		if p[mid].Epoch <= endEpoch {
+			endPos = mid
+			left = mid + 1
+		} else {
+			right = mid - 1
+		}
+	}
+	return startPos, endPos + 1
+}
+
 // sortAndDedupe sorts and deduplicates p in-place. Because deduplication can
 // shorten p, the version of p used to call sortAndDedupe is no longer valid.
 // Set p to the call's return value, as in:   p = sortAndDedupe(p)
