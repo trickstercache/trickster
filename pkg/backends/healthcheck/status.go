@@ -40,8 +40,24 @@ type Status struct {
 	prober       func(http.ResponseWriter)
 }
 
-// StatusLookup is a map of named Status references
-type StatusLookup map[string]*Status
+func NewStatus(
+	name string,
+	description,
+	detail string,
+	status int32,
+	failingSince time.Time,
+	prober func(http.ResponseWriter),
+) *Status {
+	s := &Status{
+		name:         name,
+		description:  description,
+		detail:       detail,
+		prober:       prober,
+		failingSince: failingSince,
+	}
+	s.status.Store(status)
+	return s
+}
 
 func (s *Status) String() string {
 	sb := &strings.Builder{}

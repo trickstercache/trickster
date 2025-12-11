@@ -130,7 +130,7 @@ func RegisterProxyRoutes(conf *config.Config, clients backends.Backends,
 func RegisterHealthHandler(router router.Router, path string,
 	hc healthcheck.HealthChecker, backends backends.Backends,
 ) {
-	router.RegisterRoute(path, nil, nil, false, health.StatusHandler(hc, backends))
+	router.RegisterRoute(path, nil, nil, false, health.StatusHandler(nil, hc, backends))
 }
 
 func registerBackendRoutes(r router.Router, metricsRouter router.Router,
