@@ -53,11 +53,16 @@ import (
 // request while caching the results for subsequent requests of the same data
 func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *timeseries.Modeler) {
 	rsc := request.GetResources(r)
+	o := rsc.BackendOptions
+	if o != nil && o.ProxyOnly {
+		DoProxy(w, r, true)
+		return
+	}
+
 	if modeler != nil {
 		rsc.TSMarshaler = modeler.WireMarshalWriter
 		rsc.TSUnmarshaler = modeler.WireUnmarshaler
 	}
-	o := rsc.BackendOptions
 	ctx, span := tspan.NewChildSpan(r.Context(), rsc.Tracer, "DeltaProxyCacheRequest")
 	if span != nil {
 		defer span.End()

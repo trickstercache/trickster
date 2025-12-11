@@ -130,6 +130,8 @@ type Options struct {
 	// shards are not aligned to the epoch at a specific step. MaxShardSizeMS must be perfectly
 	// divisible by ShardStep when both are > 0, or the configuration is invalid
 	ShardStep time.Duration `yaml:"shard_step,omitempty"`
+	// ProxyOnly, when true, will cause this backend to bypass caching while handling the request
+	ProxyOnly bool `yaml:"proxy_only,omitempty"`
 
 	// ALBOptions holds the options for ALBs
 	ALBOptions *ao.Options `yaml:"alb,omitempty"`
