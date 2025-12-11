@@ -96,7 +96,7 @@ func (hc *healthChecker) Unregister(name string) {
 		return
 	}
 	if t, ok := hc.targets[name]; ok && t != nil {
-		go t.Stop()
+		t.Stop()
 		delete(hc.targets, t.name)
 		delete(hc.statuses, t.name)
 	}
