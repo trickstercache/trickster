@@ -20,6 +20,7 @@ package dataset
 
 import (
 	"slices"
+	"sort"
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 	"github.com/trickstercache/trickster/v2/pkg/util/cmp"
@@ -126,33 +127,17 @@ func (p Points) findRange(startEpoch, endEpoch epoch.Epoch, s, e int) (int, int)
 	if len(p) == 0 || s > e {
 		return 0, 0
 	}
-	start := s
-	end := e
-	for start <= end {
-		mid := (start + end) >> 1
-		if p[mid].Epoch < startEpoch {
-			start = mid + 1
-		} else {
-			end = mid - 1
-		}
-	}
-	startPos := start
+	idxStart := sort.Search((e-s)+1, func(i int) bool {
+		return p[s+i].Epoch >= startEpoch
+	})
+	startPos := s + idxStart
 	if startPos > e {
 		return startPos, startPos
 	}
-	left := startPos
-	right := e
-	endPos := startPos - 1
-	for left <= right {
-		mid := (left + right) >> 1
-		if p[mid].Epoch <= endEpoch {
-			endPos = mid
-			left = mid + 1
-		} else {
-			right = mid - 1
-		}
-	}
-	return startPos, endPos + 1
+	idxEnd := sort.Search((e-startPos)+1, func(i int) bool {
+		return p[startPos+i].Epoch > endEpoch
+	})
+	return startPos, startPos + idxEnd
 }
 
 // sortAndDedupe sorts and deduplicates p in-place. Because deduplication can
