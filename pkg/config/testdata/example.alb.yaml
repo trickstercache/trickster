@@ -6,14 +6,7 @@ backends:
     keep_alive_timeout: 5m0s
     max_idle_conns: 20
     cache_name: default
-    healthcheck:
-      failure_threshold: 3
-      recovery_threshold: 3
-      verb: GET
-      scheme: http
-      path: /
-      expected_codes:
-      - 200
+    healthcheck: {}
     timeseries_retention_factor: 1024
     timeseries_eviction_method: oldest
     negative_cache_name: default
@@ -46,13 +39,7 @@ backends:
     cache_name: default
     healthcheck:
       interval: 1s
-      failure_threshold: 3
-      recovery_threshold: 3
-      verb: GET
-      scheme: http
       path: /health
-      expected_codes:
-      - 200
     timeseries_retention_factor: 1024
     timeseries_eviction_method: oldest
     negative_cache_name: default
@@ -85,13 +72,7 @@ backends:
     cache_name: default
     healthcheck:
       interval: 1s
-      failure_threshold: 3
-      recovery_threshold: 3
-      verb: GET
-      scheme: http
       path: /health
-      expected_codes:
-      - 200
     timeseries_retention_factor: 1024
     timeseries_eviction_method: oldest
     negative_cache_name: default
@@ -124,13 +105,6 @@ backends:
     cache_name: default
     healthcheck:
       interval: 1s
-      failure_threshold: 3
-      recovery_threshold: 3
-      verb: GET
-      scheme: http
-      path: /
-      expected_codes:
-      - 200
     timeseries_retention_factor: 1024
     timeseries_eviction_method: oldest
     negative_cache_name: default
@@ -163,13 +137,6 @@ backends:
     cache_name: default
     healthcheck:
       interval: 1s
-      failure_threshold: 3
-      recovery_threshold: 3
-      verb: GET
-      scheme: http
-      path: /
-      expected_codes:
-      - 200
     timeseries_retention_factor: 1024
     timeseries_eviction_method: oldest
     negative_cache_name: default
@@ -199,14 +166,7 @@ backends:
     keep_alive_timeout: 5m0s
     max_idle_conns: 20
     cache_name: default
-    healthcheck:
-      failure_threshold: 3
-      recovery_threshold: 3
-      verb: GET
-      scheme: http
-      path: /
-      expected_codes:
-      - 200
+    healthcheck: {}
     timeseries_retention_factor: 1024
     timeseries_eviction_method: oldest
     negative_cache_name: default
@@ -241,14 +201,7 @@ backends:
     keep_alive_timeout: 5m0s
     max_idle_conns: 20
     cache_name: default
-    healthcheck:
-      failure_threshold: 3
-      recovery_threshold: 3
-      verb: GET
-      scheme: http
-      path: /
-      expected_codes:
-      - 200
+    healthcheck: {}
     timeseries_retention_factor: 1024
     timeseries_eviction_method: oldest
     negative_cache_name: default
