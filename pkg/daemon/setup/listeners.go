@@ -181,5 +181,4 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 	} else {
 		lg.UpdateRouter("mgmtListener", mr)
 	}
-
 }
