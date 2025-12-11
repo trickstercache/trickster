@@ -121,45 +121,6 @@ func (p Points) Swap(i, j int) {
 	p[i], p[j] = p[j], p[i]
 }
 
-// binarySearchEpoch performs a binary search on Points based on epoch values
-// with customizable comparison and adjustment logic
-func (p Points) binarySearchEpoch(ts epoch.Epoch, s, e int,
-	baseCondition func(epoch.Epoch, epoch.Epoch) bool,
-	adjustment int,
-) int {
-	if s >= e {
-		if baseCondition(p[s].Epoch, ts) {
-			return s + adjustment
-		}
-		return s
-	}
-	mid := (s + e) >> 1
-	if p[mid].Epoch < ts {
-		return p.binarySearchEpoch(ts, mid+1, e, baseCondition, adjustment)
-	}
-	return p.binarySearchEpoch(ts, s, mid, baseCondition, adjustment)
-}
-
-// onOrJustAfter returns the index of the element having a value of ts. if the value of ts
-// is not in p, the index of the first element whose value is greater than ts is returned.
-// onOrJustafter requires p to be sorted chronologically from earliest to latest epoch.
-// This is a variation of justGreater found @ https://stackoverflow.com/a/56815151
-func (p Points) onOrJustAfter(ts epoch.Epoch, s, e int) int {
-	return p.binarySearchEpoch(ts, s, e, func(pEpoch, targetEpoch epoch.Epoch) bool {
-		return pEpoch < targetEpoch
-	}, 1)
-}
-
-// onOrJustBefore returns the index of the element having a value of ts. if the value of ts
-// is not in p, the index of the last element whose value is less than ts is returned.
-// onOrJustBefore requires p to be sorted chronologically from earliest to latest epoch.
-// This is a variation of justGreater found @ https://stackoverflow.com/a/56815151
-func (p Points) onOrJustBefore(ts epoch.Epoch, s, e int) int {
-	return p.binarySearchEpoch(ts, s, e, func(pEpoch, targetEpoch epoch.Epoch) bool {
-		return pEpoch > targetEpoch
-	}, -1)
-}
-
 // findRange finds both the start and end indices for a time range that is between the start and end epochs.
 func (p Points) findRange(startEpoch, endEpoch epoch.Epoch, s, e int) (int, int) {
 	if len(p) == 0 || s > e {
