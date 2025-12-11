@@ -19,7 +19,6 @@ package options
 import (
 	"errors"
 	"fmt"
-	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -84,51 +83,12 @@ var _ types.ConfigOptions[Options] = &Options{}
 
 // New returns a new Options reference with default values
 func New() *Options {
-	return &Options{
-		Verb:              DefaultHealthCheckVerb,
-		Scheme:            "http",
-		Headers:           make(map[string]string),
-		Path:              DefaultHealthCheckPath,
-		Query:             DefaultHealthCheckQuery,
-		ExpectedCodes:     []int{http.StatusOK},
-		FailureThreshold:  DefaultHealthCheckFailureThreshold,
-		RecoveryThreshold: DefaultHealthCheckRecoveryThreshold,
-	}
+	return &Options{}
 }
 
-// Initialize sets up the healthcheck Options with default values where needed
+// Initialize currently unused for Health Check Options, since they are backend
+// provider-specific and initialized by backends.StartHealthChecks()
 func (o *Options) Initialize(_ string) error {
-	// Set default values if not already set
-	if o.Verb == "" {
-		o.Verb = DefaultHealthCheckVerb
-	}
-	if o.Scheme == "" {
-		o.Scheme = "http"
-	}
-	if o.Path == "" {
-		o.Path = DefaultHealthCheckPath
-	}
-	if o.Query == "" {
-		o.Query = DefaultHealthCheckQuery
-	}
-	if len(o.ExpectedCodes) == 0 {
-		o.ExpectedCodes = []int{http.StatusOK}
-	}
-	if o.FailureThreshold == 0 {
-		o.FailureThreshold = DefaultHealthCheckFailureThreshold
-	}
-	if o.RecoveryThreshold == 0 {
-		o.RecoveryThreshold = DefaultHealthCheckRecoveryThreshold
-	}
-	if o.Headers == nil {
-		o.Headers = make(map[string]string)
-	}
-
-	// Set hasExpectedBody flag if ExpectedBody is set
-	if o.ExpectedBody != "" {
-		o.hasExpectedBody = true
-	}
-
 	return nil
 }
 
@@ -255,14 +215,4 @@ func CalibrateTimeout(d time.Duration) time.Duration {
 		d = MinProbeWait
 	}
 	return d
-}
-
-func (o *Options) UnmarshalYAML(unmarshal func(any) error) error {
-	type loadOptions Options
-	lo := loadOptions(*(New()))
-	if err := unmarshal(&lo); err != nil {
-		return err
-	}
-	*o = Options(lo)
-	return nil
 }

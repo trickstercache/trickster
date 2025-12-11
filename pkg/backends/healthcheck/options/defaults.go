@@ -17,23 +17,10 @@
 package options
 
 import (
-	"net/http"
 	"time"
 )
 
 const (
-	// DefaultHealthCheckPath is the default value (noop) for Backends' Health Check Path
-	DefaultHealthCheckPath = "/"
-	// DefaultHealthCheckQuery is the default value (noop) for Backends' Health Check Query Parameters
-	DefaultHealthCheckQuery = ""
-	// DefaultHealthCheckVerb is the default value (noop) for Backends' Health Check Verb
-	DefaultHealthCheckVerb = http.MethodGet
 	// DefaultHealthCheckTimeout is the default duration for health check probes to wait before timing out
 	DefaultHealthCheckTimeout = 3 * time.Second
-	// DefaultHealthCheckRecoveryThreshold defines the default number of successful health checks
-	// following failure to indicate true recovery
-	DefaultHealthCheckRecoveryThreshold = 3
-	// DefaultHealthCheckFailureThreshold defines the default number of failed health checks
-	// following recovery or initial healthy to indicate true recovery
-	DefaultHealthCheckFailureThreshold = 3
 )
