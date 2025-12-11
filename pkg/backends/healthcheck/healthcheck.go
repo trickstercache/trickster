@@ -85,7 +85,7 @@ func (hc *healthChecker) Register(name, description string, o *ho.Options,
 	}
 	hc.targets[t.name] = t
 	if t.interval > 0 {
-		t.Start(context.Background())
+		go t.Start(context.Background())
 	}
 	hc.statuses[t.name] = t.status
 	return t.status, nil
@@ -96,7 +96,7 @@ func (hc *healthChecker) Unregister(name string) {
 		return
 	}
 	if t, ok := hc.targets[name]; ok && t != nil {
-		t.Stop()
+		go t.Stop()
 		delete(hc.targets, t.name)
 		delete(hc.statuses, t.name)
 	}
