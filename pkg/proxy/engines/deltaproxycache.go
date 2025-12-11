@@ -54,7 +54,7 @@ import (
 func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *timeseries.Modeler) {
 	rsc := request.GetResources(r)
 	o := rsc.BackendOptions
-	if o != nil && o.ProxyOnly {
+	if o == nil || o.ProxyOnly {
 		DoProxy(w, r, true)
 		return
 	}

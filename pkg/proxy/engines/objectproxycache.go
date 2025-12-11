@@ -396,7 +396,7 @@ func cacheResponseHandler(s status.LookupStatus) func(*proxyRequest) error {
 func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, status.LookupStatus) {
 	rsc := request.GetResources(r)
 	o := rsc.BackendOptions
-	if o != nil && o.ProxyOnly {
+	if o == nil || o.ProxyOnly {
 		return nil, status.LookupStatusProxyOnly
 	}
 
