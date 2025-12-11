@@ -29,7 +29,7 @@ import (
 func RegisterRoutes(routerName string, r router.Router) {
 	logger.Info("registering pprof /debug routes", logging.Pairs{"routerName": routerName})
 	r.RegisterRoute("/debug/pprof/", nil, nil,
-		false, http.HandlerFunc(pprof.Index))
+		true, http.HandlerFunc(pprof.Index))
 	r.RegisterRoute("/debug/pprof/cmdline", nil, nil,
 		false, http.HandlerFunc(pprof.Cmdline))
 	r.RegisterRoute("/debug/pprof/profile", nil, nil,
