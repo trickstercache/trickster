@@ -23,7 +23,6 @@ import (
 	"io"
 	"sort"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
@@ -115,11 +114,15 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 						}
 					}
 					pts[vi] = pt
-					atomic.AddInt64(&sz, int64(pt.Size))
 					wfd.Results[i].SeriesList[j].Values[vi] = nil
 				})
 			}
 			wg.Wait()
+
+			for _, pt := range pts {
+				sz += int64(pt.Size)
+			}
+
 			if err := errors.Join(errs...); err != nil {
 				return nil, err
 			}
