@@ -17,7 +17,6 @@
 package nlm
 
 import (
-	"context"
 	"net/http"
 	"sync"
 	"sync/atomic"
@@ -120,10 +119,6 @@ type newestResponseMux struct {
 }
 
 func newNewestResponseMux(sz int) *newestResponseMux {
-	contexts := make([]context.Context, sz)
-	for i := range sz {
-		contexts[i] = context.Background()
-	}
 	nrm := &newestResponseMux{i: -1}
 	nrm.wg.Add(sz)
 	return nrm
