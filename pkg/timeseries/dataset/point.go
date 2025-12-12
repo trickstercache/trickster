@@ -127,6 +127,8 @@ func (p Points) findRange(startEpoch, endEpoch epoch.Epoch, s, e int) (int, int)
 	if len(p) == 0 || s > e {
 		return 0, 0
 	}
+
+	// find start index (looking for the first index after s and before e where Epoch >= startEpoch)
 	idxStart := sort.Search((e-s)+1, func(i int) bool {
 		return p[s+i].Epoch >= startEpoch
 	})
@@ -134,10 +136,16 @@ func (p Points) findRange(startEpoch, endEpoch epoch.Epoch, s, e int) (int, int)
 	if startPos > e {
 		return startPos, startPos
 	}
-	idxEnd := sort.Search((e-startPos)+1, func(i int) bool {
-		return p[startPos+i].Epoch > endEpoch
+
+	// find end index (starting from e and going backwards to s, looking for the first index where Epoch <= endEpoch)
+	idxEnd := sort.Search((e-s)+1, func(i int) bool {
+		return p[e-i].Epoch <= endEpoch
 	})
-	return startPos, startPos + idxEnd
+	endPos := max(
+		// guard against empty range
+		e-idxEnd+1, startPos,
+	)
+	return startPos, endPos
 }
 
 // sortAndDedupe sorts and deduplicates p in-place. Because deduplication can
