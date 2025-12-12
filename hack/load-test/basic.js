@@ -11,11 +11,15 @@ export const options = {
     },
 };
 
+function getBaseEndpoint() {
+    const url = __ENV.TRICKSTER_BASE_ENDPOINT;
+    return url;
+}
+
 export default function () {
-    const TRICKSTER_URL = 'http://localhost:8480/prom1';
     const QUERY_ENDPOINT = '/api/v1/query';
     const PROMQL_QUERY = 'rate(process_cpu_seconds_total[5m])';
-    const fullUrl = `${TRICKSTER_URL}${QUERY_ENDPOINT}?query=${encodeURIComponent(PROMQL_QUERY)}`;
+    const fullUrl = `${getBaseEndpoint()}${QUERY_ENDPOINT}?query=${encodeURIComponent(PROMQL_QUERY)}`;
     const res = http.get(fullUrl);
     check(res, {
         'is status 200': (r) => r.status === 200,
