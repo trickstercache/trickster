@@ -25,7 +25,6 @@ import (
 	"mime"
 	"net/http"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -43,6 +42,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -140,7 +140,8 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 			cext.Start, cext.End = trq.Extent.Start.Truncate(csize), trq.Extent.End.Truncate(csize).Add(csize)
 			cct = int(cext.End.Sub(cext.Start) / csize)
 			// Prepare buffered results and waitgroup
-			wg := &sync.WaitGroup{}
+			eg := errgroup.Group{}
+			eg.SetLimit(16) // FIXME: make configurable
 			// Result slice of timeseries
 			ress := make(timeseries.List, cct)
 
@@ -160,18 +161,18 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 				subkey := getSubKey(key, chunkExtent)
 				// Query
 				outIdx := resi
-				wg.Go(func() {
+				eg.Go(func() error {
 					// Check if we should abort due to previous error
 					select {
 					case <-ctx.Done():
-						return
+						return nil
 					default:
 					}
 
 					qr := queryConcurrent(ctx, c, subkey)
 					if qr.lookupStatus != status.LookupStatusHit &&
 						(qr.err == nil || errors.Is(qr.err, cache.ErrKNF)) {
-						return
+						return nil
 					}
 					if qr.err != nil {
 						// Set first error and cancel remaining operations
@@ -183,7 +184,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 								"error": qr.err, "chunkIdx": outIdx,
 								"key": subkey, "cacheQueryStatus": qr.lookupStatus,
 							})
-						return
+						return qr.err
 					}
 					if c.Configuration().Provider != providerMemory {
 						qr.d.timeseries, qr.err = unmarshal(qr.d.Body, nil)
@@ -197,18 +198,21 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 									"error": qr.err, "chunkIdx": outIdx,
 									"key": subkey, "cacheQueryStatus": qr.lookupStatus,
 								})
-							return
+							return qr.err
 						}
 					}
 					if qr.d.timeseries != nil {
 						ress[outIdx] = qr.d.timeseries
 					}
+					return nil
 				})
 
 				resi++
 			}
 			// Wait on queries
-			wg.Wait()
+			if err := eg.Wait(); err != nil {
+				return nil, status.LookupStatusKeyMiss, ranges, err
+			}
 
 			// Check if we had any errors during timeseries processing
 			if err := firstErr.Load(); err != nil {
@@ -232,8 +236,9 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 			// Allocate body in meta document
 			d.Body = make([]byte, d.ContentLength)
 			// Prepare waitgroup for concurrent processing
-			wg := &sync.WaitGroup{}
-			var dbl int64 // Track document body length
+			eg := errgroup.Group{}
+			eg.SetLimit(16) // FIXME: make configurable
+			var dbl int64   // Track document body length
 
 			// Iterate chunks with early cancellation context
 			ctx, cancel := context.WithCancel(ctx)
@@ -250,18 +255,18 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 				// Determine subkey
 				subkey := key + chunkRange.String()
 
-				wg.Go(func() {
+				eg.Go(func() error {
 					// Check if we should abort due to previous error
 					select {
 					case <-ctx.Done():
-						return
+						return nil
 					default:
 					}
 
 					// Query and process chunk in single goroutine
 					qr := queryConcurrent(ctx, c, subkey)
 					if qr == nil {
-						return
+						return nil
 					}
 
 					// Handle error - set first error and cancel context
@@ -269,7 +274,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 						if firstErr.CompareAndSwap(nil, &qr.err) {
 							cancel() // Cancel remaining operations
 						}
-						return
+						return qr.err
 					}
 
 					// Process successful result immediately
@@ -282,17 +287,16 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 							}
 						}
 					}
+					return nil
 				})
 				i++
 			}
 
-			// Wait for all goroutines to complete
-			wg.Wait()
-
 			// Check if we had any errors
-			if err := firstErr.Load(); err != nil {
-				return nil, status.LookupStatusKeyMiss, ranges, *err
+			if err := eg.Wait(); err != nil {
+				return nil, status.LookupStatusKeyMiss, ranges, err
 			}
+
 			if len(d.Ranges) > 1 {
 				d.StoredRangeParts = make(map[string]*byterange.MultipartByteRange)
 				for _, r := range d.Ranges {
@@ -453,7 +457,8 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 			cct = int(cext.End.Sub(cext.Start) / csize)
 			// Prepare buffered results and waitgroup
 			cr := make([]error, cct+1)
-			wg := &sync.WaitGroup{}
+			eg := errgroup.Group{}
+			eg.SetLimit(16) // FIXME: make configurable
 			var i int
 			for chunkStart := cext.Start; chunkStart.Before(cext.End); chunkStart = chunkStart.Add(csize) {
 				// Chunk range (inclusive, on-step)
@@ -465,21 +470,23 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 				subkey := getSubKey(key, chunkExtent)
 				// Write
 				index := i
-				wg.Go(func() {
+				eg.Go(func() error {
 					cd := d.GetTimeseriesChunk(chunkExtent)
 					if c.Configuration().Provider != providerMemory {
 						cd.Body, _ = marshal(cd.timeseries, nil, 0)
 					}
 					cr[index] = writeConcurrent(ctx, c, subkey, cd, compress, ttl)
+					return nil
 				})
 				i++
 			}
 			// Store metadocument
-			wg.Go(func() {
+			eg.Go(func() error {
 				cr[i] = writeConcurrent(ctx, c, key, meta, compress, ttl)
+				return nil
 			})
 			// Wait on writes to finish (result channel is buffered and doesn't hold for receive)
-			wg.Wait()
+			eg.Wait()
 			// Handle results
 			err = errors.Join(cr...)
 		} else {
@@ -495,7 +502,8 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 			meta := d.GetMeta()
 			// Prepare buffered results and waitgroup
 			cr := make([]error, cct+1)
-			wg := &sync.WaitGroup{}
+			eg := errgroup.Group{}
+			eg.SetLimit(16) // FIXME: make configurable
 			// Iterate chunks
 			var i int
 			for chunkStart := crs; chunkStart < cre; chunkStart += size {
@@ -510,17 +518,19 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 				cd := d.GetByterangeChunk(chunkRange, size)
 				// Store subdocument
 				index := i
-				wg.Go(func() {
+				eg.Go(func() error {
 					cr[index] = writeConcurrent(ctx, c, subkey, cd, compress, ttl)
+					return nil
 				})
 				i++
 			}
 			// Store metadocument
-			wg.Go(func() {
+			eg.Go(func() error {
 				cr[i] = writeConcurrent(ctx, c, key, meta, compress, ttl)
+				return nil
 			})
 			// Wait on writes to finish (result channel is buffered and doesn't hold for receive)
-			wg.Wait()
+			eg.Wait()
 			err = errors.Join(cr...)
 		}
 	} else {
