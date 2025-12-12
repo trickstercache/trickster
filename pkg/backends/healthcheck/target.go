@@ -97,8 +97,11 @@ func newTarget(_ context.Context, name, description string, o *ho.Options,
 		failureThreshold:  o.FailureThreshold,
 		recoveryThreshold: o.RecoveryThreshold,
 		interval:          interval,
+		ks:                StatusInitializing,
 	}
+
 	t.status = &Status{name: name, detail: isd, description: description, prober: t.demandProbe}
+	t.status.Set(StatusInitializing)
 	if len(o.ExpectedHeaders) > 0 {
 		t.eh = headers.Lookup(o.ExpectedHeaders).ToHeader()
 	}
