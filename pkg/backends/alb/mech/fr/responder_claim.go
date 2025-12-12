@@ -24,16 +24,23 @@ import (
 // responderClaim is a construct that allows only the first claimant
 // to the response to act as the downstream responder
 type responderClaim struct {
-	lockVal  int64
+	lockVal int64
+
+	cancels  []context.CancelFunc
 	contexts []context.Context
 }
 
 func newResponderClaim(sz int) *responderClaim {
 	contexts := make([]context.Context, sz)
+	cancels := make([]context.CancelFunc, sz)
 	for i := range sz {
-		contexts[i] = context.Background()
+		contexts[i], cancels[i] = context.WithCancel(context.Background())
 	}
-	return &responderClaim{lockVal: -1, contexts: contexts}
+	return &responderClaim{
+		lockVal:  -1,
+		contexts: contexts,
+		cancels:  cancels,
+	}
 }
 
 func (rc *responderClaim) Claim(i int64) bool {
@@ -41,13 +48,12 @@ func (rc *responderClaim) Claim(i int64) bool {
 		return true
 	}
 	if atomic.CompareAndSwapInt64(&rc.lockVal, -1, i) {
-		for j, ctx := range rc.contexts {
+		for j, cancel := range rc.cancels {
 			if int64(j) != i {
-				go ctx.Done()
+				cancel()
 			}
 		}
 		return true
 	}
-	rc.contexts[i].Done()
 	return false
 }
