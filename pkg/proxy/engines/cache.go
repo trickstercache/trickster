@@ -194,8 +194,8 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 			}
 		} else {
 			// Do byterange chunking
-			// Determine chunk start/end and number of chunks
-			var crs, cre, cct int64
+			// Determine chunk start/end
+			var crs, cre int64
 			if len(ranges) == 0 {
 				ranges = byterange.Ranges{byterange.Range{Start: 0, End: d.ContentLength - 1}}
 			}
@@ -203,14 +203,18 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 			crs, cre = ranges[0].Start, ranges[len(ranges)-1].End
 			crs = (crs / size) * size
 			cre = (cre/size + 1) * size
-			cct = (cre - crs) / size
 			// Allocate body in meta document
 			d.Body = make([]byte, d.ContentLength)
-			// Prepare buffered results and waitgroup
-			cr := make([]*queryResult, cct)
+			// Prepare waitgroup for concurrent processing
 			wg := &sync.WaitGroup{}
-			// Iterate chunks
+			var dbl int64 // Track document body length
+
+			// Iterate chunks with early cancellation context
+			ctx, cancel := context.WithCancel(ctx)
+			defer cancel()
+
 			var i int
+			var firstErr atomic.Pointer[error]
 			for chunkStart := crs; chunkStart < cre; chunkStart += size {
 				// Determine chunk range (inclusive)
 				chunkRange := byterange.Range{
@@ -219,35 +223,31 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 				}
 				// Determine subkey
 				subkey := key + chunkRange.String()
-				// Query subdocument
 
-				index := i
 				wg.Go(func() {
+					// Check if we should abort due to previous error
+					select {
+					case <-ctx.Done():
+						return
+					default:
+					}
+
+					// Query and process chunk in single goroutine
 					qr := queryConcurrent(ctx, c, subkey)
-					cr[index] = qr
-				})
-				i++
-			}
-			// Wait on queries to finish (result channel is buffered and doesn't hold for receive)
-			wg.Wait()
-			// Handle results
-			var dbl int64
-			for _, qr := range cr {
-				if qr == nil {
-					continue
-				}
-				// Return on error
-				if qr.err != nil && !errors.Is(qr.err, cache.ErrKNF) {
-					return qr.d, qr.lookupStatus, ranges, qr.err
-				}
-				// Merge with meta document on success
-				// We can do this concurrently since chunk ranges don't overlap
-
-				wg.Go(func() {
-					if qr.d.IsMeta {
+					if qr == nil {
 						return
 					}
-					if qr.lookupStatus == status.LookupStatusHit {
+
+					// Handle error - set first error and cancel context
+					if qr.err != nil && !errors.Is(qr.err, cache.ErrKNF) {
+						if firstErr.CompareAndSwap(nil, &qr.err) {
+							cancel() // Cancel remaining operations
+						}
+						return
+					}
+
+					// Process successful result immediately
+					if !qr.d.IsMeta && qr.lookupStatus == status.LookupStatusHit {
 						for _, r := range qr.d.Ranges {
 							content := qr.d.Body[r.Start%size : r.End%size+1]
 							r.Copy(d.Body, content)
@@ -257,8 +257,16 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 						}
 					}
 				})
+				i++
 			}
+
+			// Wait for all goroutines to complete
 			wg.Wait()
+
+			// Check if we had any errors
+			if err := firstErr.Load(); err != nil {
+				return nil, status.LookupStatusKeyMiss, ranges, *err
+			}
 			if len(d.Ranges) > 1 {
 				d.StoredRangeParts = make(map[string]*byterange.MultipartByteRange)
 				for _, r := range d.Ranges {
