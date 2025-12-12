@@ -143,6 +143,12 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 			wg := &sync.WaitGroup{}
 			// Result slice of timeseries
 			ress := make(timeseries.List, cct)
+
+			// Early cancellation context for timeseries chunks
+			ctx, cancel := context.WithCancel(ctx)
+			defer cancel()
+			var firstErr atomic.Pointer[error]
+
 			var resi int
 			for chunkStart := cext.Start; chunkStart.Before(cext.End); chunkStart = chunkStart.Add(csize) {
 				// Chunk range (inclusive, on-step)
@@ -155,12 +161,23 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 				// Query
 				outIdx := resi
 				wg.Go(func() {
+					// Check if we should abort due to previous error
+					select {
+					case <-ctx.Done():
+						return
+					default:
+					}
+
 					qr := queryConcurrent(ctx, c, subkey)
 					if qr.lookupStatus != status.LookupStatusHit &&
 						(qr.err == nil || errors.Is(qr.err, cache.ErrKNF)) {
 						return
 					}
 					if qr.err != nil {
+						// Set first error and cancel remaining operations
+						if firstErr.CompareAndSwap(nil, &qr.err) {
+							cancel()
+						}
 						logger.Error("dpc query cache chunk failed",
 							logging.Pairs{
 								"error": qr.err, "chunkIdx": outIdx,
@@ -171,6 +188,10 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 					if c.Configuration().Provider != providerMemory {
 						qr.d.timeseries, qr.err = unmarshal(qr.d.Body, nil)
 						if qr.err != nil {
+							// Set first error and cancel remaining operations
+							if firstErr.CompareAndSwap(nil, &qr.err) {
+								cancel()
+							}
 							logger.Error("dpc query cache chunk failed",
 								logging.Pairs{
 									"error": qr.err, "chunkIdx": outIdx,
@@ -188,6 +209,11 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 			}
 			// Wait on queries
 			wg.Wait()
+
+			// Check if we had any errors during timeseries processing
+			if err := firstErr.Load(); err != nil {
+				return nil, status.LookupStatusKeyMiss, ranges, *err
+			}
 			d.timeseries = ress.Merge(true)
 			if d.timeseries != nil {
 				d.timeseries.SetExtents(d.timeseries.Extents().Compress(trq.Step))
