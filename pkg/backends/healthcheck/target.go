@@ -47,7 +47,7 @@ type target struct {
 	recoveryThreshold     int
 	failConsecutiveCnt    atomic.Int32
 	successConsecutiveCnt atomic.Int32
-	ks                    int // used internally and is not thread safe, do not expose
+	ks                    int32 // used internally and is not thread safe, do not expose
 	cancel                context.CancelFunc
 	wg                    sync.WaitGroup
 	ceb                   bool
@@ -214,19 +214,19 @@ func (t *target) probe(ctx context.Context) {
 		t.failConsecutiveCnt.Store(0)
 		passed = true
 	}
-	if !passed && t.ks != -1 && (errCnt == t.failureThreshold || t.ks == 0) {
+	if !passed && t.ks != StatusFailing && errCnt == t.failureThreshold {
 		t.status.failingSince = time.Now()
-		t.status.Set(-1)
-		t.ks = -1
+		t.status.Set(StatusFailing)
+		t.ks = StatusFailing
 		logger.Info("hc status changed",
 			logging.Pairs{
 				"targetName": t.name, "status": "failed",
 				"detail": t.status.Detail(), "threshold": t.failureThreshold,
 			})
-	} else if passed && t.ks != 1 && (successCnt == t.recoveryThreshold || t.ks == 0) {
+	} else if passed && t.ks != StatusPassing && successCnt == t.recoveryThreshold {
 		t.status.failingSince = time.Time{}
-		t.status.Set(1)
-		t.ks = 1
+		t.status.Set(StatusPassing)
+		t.ks = StatusPassing
 		t.status.SetDetail("") // this is only populated with failure details, so it is cleared upon recovery
 		logger.Info("hc status changed",
 			logging.Pairs{
@@ -241,7 +241,7 @@ func (t *target) demandProbe(w http.ResponseWriter) {
 	resp, err := t.httpClient.Do(r)
 	h := w.Header()
 	if err != nil {
-		if t.status != nil && t.status.Get() != 0 {
+		if t.status != nil && t.status.Get() != StatusUnchecked {
 			sh := t.status.Headers()
 			for k := range sh {
 				h.Set(k, sh.Get(k))
@@ -254,7 +254,7 @@ func (t *target) demandProbe(w http.ResponseWriter) {
 	for k := range resp.Header {
 		h.Set(k, resp.Header.Get(k))
 	}
-	if t.status != nil && t.status.Get() != 0 {
+	if t.status != nil && t.status.Get() != StatusUnchecked {
 		sh := t.status.Headers()
 		for k := range sh {
 			h.Set(k, sh.Get(k))

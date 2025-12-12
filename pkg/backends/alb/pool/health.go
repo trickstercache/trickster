@@ -38,7 +38,7 @@ func (p *pool) checkHealth() {
 			h := make([]http.Handler, len(p.targets))
 			var k int
 			for _, t := range p.targets {
-				if t.hcStatus.Get() >= p.healthyFloor {
+				if int(t.hcStatus.Get()) >= p.healthyFloor {
 					h[k] = t.handler
 					k++
 				}
