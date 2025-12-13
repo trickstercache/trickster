@@ -17,7 +17,6 @@
 package nlm
 
 import (
-	"context"
 	"net/http"
 	"sync"
 	"sync/atomic"
@@ -86,15 +85,13 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var wg sync.WaitGroup
 	for i := range l {
 		// only one of these i fanouts to respond will be mapped back to
-		// the end user based on the methodology and the rest will have their
-		// contexts canceled
+		// the end user based on the methodology
 		wg.Go(func() {
 			if hl[i] == nil {
 				return
 			}
 			nrg := newNewestResponseGate(w, i, nrm)
 			r2, _ := request.Clone(r)
-			r2 = r2.WithContext(nrm.contexts[i])
 			hl[i].ServeHTTP(nrg, r2)
 		})
 	}
@@ -116,18 +113,13 @@ type newestResponseGate struct {
 // Responses to track the response slice index representing the Response
 // with the newest LastModified header.
 type newestResponseMux struct {
-	i        int64
-	t        atomicx.Time
-	wg       sync.WaitGroup
-	contexts []context.Context
+	i  int64
+	t  atomicx.Time
+	wg sync.WaitGroup
 }
 
 func newNewestResponseMux(sz int) *newestResponseMux {
-	contexts := make([]context.Context, sz)
-	for i := range sz {
-		contexts[i] = context.Background()
-	}
-	nrm := &newestResponseMux{i: -1, contexts: contexts}
+	nrm := &newestResponseMux{i: -1}
 	nrm.wg.Add(sz)
 	return nrm
 }

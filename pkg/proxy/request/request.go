@@ -32,11 +32,9 @@ func Clone(r *http.Request) (*http.Request, error) {
 		return nil, nil
 	}
 	rsc := GetResources(r)
-	if rsc != nil {
-		rsc = rsc.Clone()
-	}
 	ctx := context.Background()
 	if rsc != nil {
+		rsc = rsc.Clone()
 		ctx = tctx.WithResources(ctx, rsc.Clone())
 	}
 	out := r.Clone(ctx)

@@ -23,8 +23,6 @@ import (
 	"io"
 	"sort"
 	"strconv"
-	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/errors"
@@ -239,22 +237,17 @@ func populateSeries(ds *dataset.DataSet, result []*WFResult,
 		var ps int64 = 16
 		if !isVector && l > 0 {
 			pts = make(dataset.Points, l)
-			var wg sync.WaitGroup
 			for i, v := range pr.Values {
-				wg.Go(func() {
-					pt, _ := pointFromValues(v)
-					if pt.Epoch > 0 {
-						atomic.AddInt64(&ps, int64(pt.Size))
-						pts[i] = pt
-					}
-				})
+				pt, _ := pointFromValues(v)
+				if pt.Epoch > 0 {
+					ps += int64(pt.Size)
+					pts[i] = pt
+				}
 			}
-			wg.Wait()
 		} else if isVector && len(pr.Value) == 2 {
-			pts = make(dataset.Points, 1)
 			pt, _ := pointFromValues(pr.Value)
 			ps = int64(pt.Size)
-			pts[0] = pt
+			pts = dataset.Points{pt}
 			t := time.Unix(0, int64(pt.Epoch))
 			ds.ExtentList = timeseries.ExtentList{timeseries.Extent{Start: t, End: t}}
 		}
