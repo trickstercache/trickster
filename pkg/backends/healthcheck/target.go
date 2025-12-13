@@ -100,7 +100,7 @@ func newTarget(_ context.Context, name, description string, o *ho.Options,
 	}
 
 	t.status = &Status{name: name, detail: isd, description: description, prober: t.demandProbe}
-	t.status.SetAndNotify(StatusInitializing)
+	t.status.Set(StatusInitializing)
 	if len(o.ExpectedHeaders) > 0 {
 		t.eh = headers.Lookup(o.ExpectedHeaders).ToHeader()
 	}
@@ -254,7 +254,7 @@ func (t *target) notifyStatus(st int32, detail string) {
 		pairs["threshold"] = t.recoveryThreshold
 		t.status.SetDetail("")
 	}
-	t.status.SetAndNotify(st)
+	t.status.Set(st)
 	logger.Info("hc status changed", pairs)
 }
 

@@ -75,17 +75,9 @@ func (s *Status) Headers() http.Header {
 	return h
 }
 
-func (s *Status) SetAndNotify(i int32) {
-	s.Set(i)
-	s.Notify()
-}
-
 // Set updates the status
 func (s *Status) Set(i int32) {
 	s.status.Store(i)
-}
-
-func (s *Status) Notify() {
 	s.mtx.Lock()
 	subs := slices.Clone(s.subscribers)
 	s.mtx.Unlock()

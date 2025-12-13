@@ -48,7 +48,7 @@ func TestHeaders(t *testing.T) {
 		detail: expectedDetail,
 	}
 	status.RegisterSubscriber(make(chan bool, 1))
-	status.SetAndNotify(expectedStatus)
+	status.Set(expectedStatus)
 
 	h := status.Headers()
 	v := h.Get(headers.NameTrkHCStatus)
