@@ -11,15 +11,8 @@
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
- * limitations// ByterangeChunkQueryProcessor implements ChunkQueryProcessor for byterange chunks (reading)
-type ByterangeChunkQueryProcessor struct {
-	d    *HTTPDocument
-	size int64
-	dbl  *int64 // atomic counter for document body length
-}
-
-func (bcp *ByterangeChunkQueryProcessor) ProcessChunk(index int, subkey string, qr *queryResult, c cache.Cache) error {he License.
-*/
+ * limitations
+ */
 
 package engines
 
