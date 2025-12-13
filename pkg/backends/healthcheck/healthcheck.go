@@ -25,16 +25,25 @@ import (
 
 // HealthChecker defines the Health Checker interface
 type HealthChecker interface {
-	Register(string, string, *ho.Options, *http.Client) (*Status, error)
-	Unregister(string)
-	Status(string) *Status
+	// Register a health check Target
+	Register(name string, description string, options *ho.Options, client *http.Client) (*Status, error)
+	// Remove a health check Target
+	Unregister(name string)
+	// Resolve status of named Target
+	Status(name string) *Status
+	// Retrieve all Target statuses
 	Statuses() StatusLookup
+	// Shutdown the health checker
 	Shutdown()
+	// Listen to be notified that status updates or shutdown has occurred
 	Subscribe(chan bool)
 }
 
 // Lookup is a map of named Target references
 type Lookup map[string]*target
+
+// StatusLookup is a map of named Status references
+type StatusLookup map[string]*Status
 
 type healthChecker struct {
 	targets     Lookup

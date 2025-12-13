@@ -151,12 +151,17 @@ func (hs *healthStatus) Tabular() string {
 // This handler spins up an infinitely looping background goroutine ("builder")
 // that updates the status text in real-time. So long as the HealthChecker
 // is closed with ShutDown(), the builder goroutine will exit
-func StatusHandler(hc healthcheck.HealthChecker, backends backends.Backends) http.Handler {
+func StatusHandler(now func() time.Time, hc healthcheck.HealthChecker, backends backends.Backends) http.Handler {
 	if hc == nil {
 		return nil
 	}
-	hd := &healthDetail{}        // stores the status text in JSON and Text
-	go builder(hc, hd, backends) // listens for rebuild notifications and updates the texts
+	hd := &healthDetail{} // stores the status text in JSON and Text
+	ready := make(chan bool, 1)
+	if now == nil {
+		now = time.Now
+	}
+	go builder(now, hc, hd, backends, ready) // listens for rebuild notifications and updates the texts
+	<-ready                                  // wait for the builder to be ready before returning the handler
 
 	// the handler, when requested, simply prints out the static text stored in the healthDetail
 	// which is being updated in real time by the builder.
@@ -196,8 +201,8 @@ func StatusHandler(hc healthcheck.HealthChecker, backends backends.Backends) htt
 	})
 }
 
-func builder(hc healthcheck.HealthChecker, hd *healthDetail, backends backends.Backends) {
-	updateStatusText(hc, hd, backends) // setup the initial status page text
+func builder(now func() time.Time, hc healthcheck.HealthChecker, hd *healthDetail, backends backends.Backends, ready chan<- bool) {
+	updateStatusText(now, hc, hd, backends) // setup the initial status page text
 	notifier := make(chan bool, 32)
 	for _, c := range hc.Statuses() {
 		c.RegisterSubscriber(notifier)
@@ -206,22 +211,24 @@ func builder(hc healthcheck.HealthChecker, hd *healthDetail, backends backends.B
 	hc.Subscribe(closer)
 	for {
 		select {
+		case ready <- true:
+			// signal that the builder is in its ready state
 		case <-closer: // a bool comes over closer when the Health Checker is closing down, so the builder should as well
 			return
 		case <-notifier: // a bool comes over notifier when the status text should be rebuilt
-			updateStatusText(hc, hd, backends)
+			updateStatusText(now, hc, hd, backends)
 		}
 	}
 }
 
 const title = "Trickster Backend Health Status"
 
-func updateStatusText(hc healthcheck.HealthChecker, hd *healthDetail, backends backends.Backends) {
+func updateStatusText(now func() time.Time, hc healthcheck.HealthChecker, hd *healthDetail, backends backends.Backends) {
 	updateLock.Lock()
 	defer updateLock.Unlock()
 
 	// HTTP Spec prefers GMT in RFC1123 Headers
-	lastModified := time.Now().Truncate(time.Second).In(time.FixedZone("GMT", 0))
+	lastModified := now().Truncate(time.Second).In(time.FixedZone("GMT", 0))
 	// use UTC in the response body
 	ut := lastModified.String()[:20] + "UTC"
 
