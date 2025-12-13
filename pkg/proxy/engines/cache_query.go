@@ -187,6 +187,16 @@ type ChunkQueryIterator interface {
 	IterateChunks(func(int, string) bool)
 }
 
+// iterateChunksHelper is a generic helper that reduces code duplication for chunk iteration
+func iterateChunksHelper(fn func(int, string) bool, generateSubkey func(int) string, shouldContinue func(int) bool) {
+	for i := 0; shouldContinue(i); i++ {
+		subkey := generateSubkey(i)
+		if !fn(i, subkey) {
+			break
+		}
+	}
+}
+
 // ChunkQueryProcessor handles the result of querying a single chunk from cache (reading)
 type ChunkQueryProcessor interface {
 	// ProcessChunk processes a successful query result for a chunk
@@ -269,18 +279,19 @@ type TimeseriesChunkQueryIterator struct {
 }
 
 func (tci *TimeseriesChunkQueryIterator) IterateChunks(fn func(int, string) bool) {
-	var resi int
-	for chunkStart := tci.cext.Start; chunkStart.Before(tci.cext.End); chunkStart = chunkStart.Add(tci.csize) {
-		chunkExtent := timeseries.Extent{
-			Start: chunkStart,
-			End:   chunkStart.Add(tci.csize - tci.trq.Step),
-		}
-		subkey := getSubKey(tci.key, chunkExtent)
-		if !fn(resi, subkey) {
-			break
-		}
-		resi++
-	}
+	chunkStart := tci.cext.Start
+
+	iterateChunksHelper(fn,
+		func(i int) string {
+			chunkExtent := timeseries.Extent{
+				Start: chunkStart.Add(time.Duration(i) * tci.csize),
+				End:   chunkStart.Add(time.Duration(i) * tci.csize).Add(tci.csize - tci.trq.Step),
+			}
+			return getSubKey(tci.key, chunkExtent)
+		},
+		func(i int) bool {
+			return chunkStart.Add(time.Duration(i) * tci.csize).Before(tci.cext.End)
+		})
 }
 
 // TimeseriesChunkQueryProcessor implements ChunkQueryProcessor for timeseries chunks (reading)
@@ -352,18 +363,18 @@ type ByterangeChunkQueryIterator struct {
 }
 
 func (bci *ByterangeChunkQueryIterator) IterateChunks(fn func(int, string) bool) {
-	var i int
-	for chunkStart := bci.crs; chunkStart < bci.cre; chunkStart += bci.size {
-		chunkRange := byterange.Range{
-			Start: chunkStart,
-			End:   chunkStart + bci.size - 1,
-		}
-		subkey := bci.key + chunkRange.String()
-		if !fn(i, subkey) {
-			break
-		}
-		i++
-	}
+	iterateChunksHelper(fn,
+		func(i int) string {
+			chunkStart := bci.crs + int64(i)*bci.size
+			chunkRange := byterange.Range{
+				Start: chunkStart,
+				End:   chunkStart + bci.size - 1,
+			}
+			return bci.key + chunkRange.String()
+		},
+		func(i int) bool {
+			return bci.crs+int64(i)*bci.size < bci.cre
+		})
 }
 
 // ByterangeChunkQueryProcessor implements ChunkQueryProcessor for byterange chunks (reading)
