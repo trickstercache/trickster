@@ -19,6 +19,7 @@ package engines
 import (
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
@@ -37,4 +38,40 @@ func stripConditionalHeaders(h http.Header) {
 
 func getSubKey(key string, chunkExtent timeseries.Extent) string {
 	return fmt.Sprintf("%s.%s", key, chunkExtent)
+}
+
+// DocumentFromHTTPResponse returns an HTTPDocument from the provided
+// HTTP Response and Body
+func DocumentFromHTTPResponse(resp *http.Response, body []byte,
+	cp *CachingPolicy,
+) *HTTPDocument {
+	d := &HTTPDocument{}
+	d.StatusCode = resp.StatusCode
+	d.Status = resp.Status
+	d.CachingPolicy = cp
+	d.ContentLength = resp.ContentLength
+
+	if resp.Header != nil {
+		d.headerLock.Lock()
+		d.Headers = resp.Header.Clone()
+		d.headerLock.Unlock()
+	}
+
+	d.headerLock.Lock()
+	ct := http.Header(d.Headers).Get(headers.NameContentType)
+	d.headerLock.Unlock()
+	if !strings.HasPrefix(ct, headers.ValueMultipartByteRanges) {
+		d.ContentType = ct
+	}
+
+	if d.StatusCode == http.StatusPartialContent && body != nil && len(body) > 0 {
+		d.ParsePartialContentBody(resp, body)
+		if err := d.FulfillContentBody(); err != nil {
+			return d
+		}
+	} else {
+		d.SetBody(body)
+	}
+
+	return d
 }

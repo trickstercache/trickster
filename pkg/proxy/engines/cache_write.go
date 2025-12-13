@@ -22,7 +22,6 @@ import (
 	"errors"
 	"mime"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/andybalholm/brotli"
@@ -157,42 +156,6 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 		)
 	}
 	return nil
-}
-
-// DocumentFromHTTPResponse returns an HTTPDocument from the provided
-// HTTP Response and Body
-func DocumentFromHTTPResponse(resp *http.Response, body []byte,
-	cp *CachingPolicy,
-) *HTTPDocument {
-	d := &HTTPDocument{}
-	d.StatusCode = resp.StatusCode
-	d.Status = resp.Status
-	d.CachingPolicy = cp
-	d.ContentLength = resp.ContentLength
-
-	if resp.Header != nil {
-		d.headerLock.Lock()
-		d.Headers = resp.Header.Clone()
-		d.headerLock.Unlock()
-	}
-
-	d.headerLock.Lock()
-	ct := http.Header(d.Headers).Get(headers.NameContentType)
-	d.headerLock.Unlock()
-	if !strings.HasPrefix(ct, headers.ValueMultipartByteRanges) {
-		d.ContentType = ct
-	}
-
-	if d.StatusCode == http.StatusPartialContent && body != nil && len(body) > 0 {
-		d.ParsePartialContentBody(resp, body)
-		if err := d.FulfillContentBody(); err != nil {
-			return d
-		}
-	} else {
-		d.SetBody(body)
-	}
-
-	return d
 }
 
 // CacheableDocument abstracts the source data for chunking operations when writing to cache.
