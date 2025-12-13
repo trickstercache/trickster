@@ -132,185 +132,16 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 	// If we got a meta document and want to use cache chunking, do so
 	if c.Configuration().UseCacheChunking {
 		if trq := rsc.TimeRangeQuery; trq != nil {
-			// Do timeseries chunk retrieval
-			// Determine chunk extent and number of chunks
-			var cext timeseries.Extent
-			csize := trq.Step * time.Duration(c.Configuration().TimeseriesChunkFactor)
-			var cct int
-			cext.Start, cext.End = trq.Extent.Start.Truncate(csize), trq.Extent.End.Truncate(csize).Add(csize)
-			cct = int(cext.End.Sub(cext.Start) / csize)
-			// Prepare buffered results and waitgroup
-			eg := errgroup.Group{}
-			eg.SetLimit(16) // FIXME: make configurable
-			// Result slice of timeseries
-			ress := make(timeseries.List, cct)
-
-			// Early cancellation context for timeseries chunks
-			ctx, cancel := context.WithCancel(ctx)
-			defer cancel()
-			var firstErr atomic.Pointer[error]
-
-			var resi int
-		PROCESS_TIME_SERIES_CHUNKS:
-			for chunkStart := cext.Start; chunkStart.Before(cext.End); chunkStart = chunkStart.Add(csize) {
-				// Chunk range (inclusive, on-step)
-				chunkExtent := timeseries.Extent{
-					Start: chunkStart,
-					End:   chunkStart.Add(csize - trq.Step),
-				}
-				// Derive subkey
-				subkey := getSubKey(key, chunkExtent)
-				// Query
-				outIdx := resi
-
-				// Check if we should abort due to previous error
-				select {
-				case <-ctx.Done():
-					break PROCESS_TIME_SERIES_CHUNKS
-				default:
-				}
-
-				eg.Go(func() error {
-					qr := queryConcurrent(ctx, c, subkey)
-					if qr.lookupStatus != status.LookupStatusHit &&
-						(qr.err == nil || errors.Is(qr.err, cache.ErrKNF)) {
-						return nil
-					}
-					if qr.err != nil {
-						// Set first error and cancel remaining operations
-						if firstErr.CompareAndSwap(nil, &qr.err) {
-							cancel()
-						}
-						logger.Error("dpc query cache chunk failed",
-							logging.Pairs{
-								"error": qr.err, "chunkIdx": outIdx,
-								"key": subkey, "cacheQueryStatus": qr.lookupStatus,
-							})
-						return qr.err
-					}
-					if c.Configuration().Provider != providerMemory {
-						qr.d.timeseries, qr.err = unmarshal(qr.d.Body, nil)
-						if qr.err != nil {
-							// Set first error and cancel remaining operations
-							if firstErr.CompareAndSwap(nil, &qr.err) {
-								cancel()
-							}
-							logger.Error("dpc query cache chunk failed",
-								logging.Pairs{
-									"error": qr.err, "chunkIdx": outIdx,
-									"key": subkey, "cacheQueryStatus": qr.lookupStatus,
-								})
-							return qr.err
-						}
-					}
-					if qr.d.timeseries != nil {
-						ress[outIdx] = qr.d.timeseries
-					}
-					return nil
-				})
-
-				resi++
-			}
-			// Wait on queries
-			if err := eg.Wait(); err != nil {
+			// Use timeseries chunk querying
+			err := executeTimeseriesChunkQuery(ctx, c, key, d, trq, unmarshal)
+			if err != nil {
 				return nil, status.LookupStatusKeyMiss, ranges, err
-			}
-
-			// Check if we had any errors during timeseries processing
-			if err := firstErr.Load(); err != nil {
-				return nil, status.LookupStatusKeyMiss, ranges, *err
-			}
-			d.timeseries = ress.Merge(true)
-			if d.timeseries != nil {
-				d.timeseries.SetExtents(d.timeseries.Extents().Compress(trq.Step))
 			}
 		} else {
-			// Do byterange chunking
-			// Determine chunk start/end
-			var crs, cre int64
-			if len(ranges) == 0 {
-				ranges = byterange.Ranges{byterange.Range{Start: 0, End: d.ContentLength - 1}}
-			}
-			size := c.Configuration().ByterangeChunkSize
-			crs, cre = ranges[0].Start, ranges[len(ranges)-1].End
-			crs = (crs / size) * size
-			cre = (cre/size + 1) * size
-			// Allocate body in meta document
-			d.Body = make([]byte, d.ContentLength)
-			// Prepare waitgroup for concurrent processing
-			eg := errgroup.Group{}
-			eg.SetLimit(16) // FIXME: make configurable
-			var dbl int64   // Track document body length
-
-			// Iterate chunks with early cancellation context
-			ctx, cancel := context.WithCancel(ctx)
-			defer cancel()
-
-			var i int
-			var firstErr atomic.Pointer[error]
-		PROCESS_BYTERANGE_CHUNKS:
-			for chunkStart := crs; chunkStart < cre; chunkStart += size {
-				// Determine chunk range (inclusive)
-				chunkRange := byterange.Range{
-					Start: chunkStart,
-					End:   chunkStart + size - 1,
-				}
-				// Determine subkey
-				subkey := key + chunkRange.String()
-
-				// Check if we should abort due to previous error
-				select {
-				case <-ctx.Done():
-					break PROCESS_BYTERANGE_CHUNKS
-				default:
-				}
-
-				eg.Go(func() error {
-					// Query and process chunk in single goroutine
-					qr := queryConcurrent(ctx, c, subkey)
-					if qr == nil {
-						return nil
-					}
-
-					// Handle error - set first error and cancel context
-					if qr.err != nil && !errors.Is(qr.err, cache.ErrKNF) {
-						if firstErr.CompareAndSwap(nil, &qr.err) {
-							cancel() // Cancel remaining operations
-						}
-						return qr.err
-					}
-
-					// Process successful result immediately
-					if !qr.d.IsMeta && qr.lookupStatus == status.LookupStatusHit {
-						for _, r := range qr.d.Ranges {
-							content := qr.d.Body[r.Start%size : r.End%size+1]
-							r.Copy(d.Body, content)
-							if v := atomic.LoadInt64(&dbl); r.End+1 > v {
-								atomic.CompareAndSwapInt64(&dbl, v, r.End+1)
-							}
-						}
-					}
-					return nil
-				})
-				i++
-			}
-
-			// Check if we had any errors
-			if err := eg.Wait(); err != nil {
+			// Use byterange chunk querying
+			err := executeByterangeChunkQuery(ctx, c, key, d, ranges)
+			if err != nil {
 				return nil, status.LookupStatusKeyMiss, ranges, err
-			}
-
-			if len(d.Ranges) > 1 {
-				d.StoredRangeParts = make(map[string]*byterange.MultipartByteRange)
-				for _, r := range d.Ranges {
-					d.StoredRangeParts[r.String()] = &byterange.MultipartByteRange{
-						Range:   r,
-						Content: d.Body[r.Start : r.End+1],
-					}
-				}
-				d.Body = nil
-			} else {
-				d.Body = d.Body[:dbl]
 			}
 		}
 	}
@@ -555,11 +386,276 @@ type Chunker interface {
 	// The write function takes (index, subkey, chunkData).
 	IterateChunks(
 		d DataDocument, // The source data document
-		writeFunc func(int, string, interface{}) error,
+		writeFunc func(int, string, any) error,
 	) error
 
 	// GetMeta returns the metadata document to be stored separately.
-	GetMeta(d DataDocument) interface{}
+	GetMeta(d DataDocument) any
+}
+
+// ChunkIterator provides iteration over chunks with early cancellation
+type ChunkIterator interface {
+	// IterateChunks calls the provided function for each chunk
+	// The function receives (index, subkey) and should return whether to continue
+	IterateChunks(func(int, string) bool)
+}
+
+// ChunkProcessor handles the result of querying a single chunk
+type ChunkProcessor interface {
+	// ProcessChunk processes a successful query result for a chunk
+	ProcessChunk(index int, subkey string, qr *queryResult, c cache.Cache) error
+
+	// Finalize performs any final processing after all chunks are processed
+	Finalize() error
+}
+
+// executeChunkQuery performs generic chunk querying with early cancellation
+func executeChunkQuery(ctx context.Context, c cache.Cache, iterator ChunkIterator, processor ChunkProcessor) error {
+	// Prepare waitgroup for concurrent processing
+	eg := errgroup.Group{}
+	eg.SetLimit(16) // FIXME: make configurable
+
+	// Early cancellation context
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var firstErr atomic.Pointer[error]
+
+	iterator.IterateChunks(func(index int, subkey string) bool {
+		// Check if we should abort due to previous error
+		select {
+		case <-ctx.Done():
+			return false
+		default:
+		}
+
+		eg.Go(func() error {
+			qr := queryConcurrent(ctx, c, subkey)
+			if qr.lookupStatus != status.LookupStatusHit &&
+				(qr.err == nil || errors.Is(qr.err, cache.ErrKNF)) {
+				return nil
+			}
+			if qr.err != nil {
+				// Set first error and cancel remaining operations
+				if firstErr.CompareAndSwap(nil, &qr.err) {
+					cancel()
+				}
+				logger.Error("chunk query failed",
+					logging.Pairs{
+						"error": qr.err, "chunkIdx": index,
+						"key": subkey, "cacheQueryStatus": qr.lookupStatus,
+					})
+				return qr.err
+			}
+
+			// Process the successful result
+			if err := processor.ProcessChunk(index, subkey, qr, c); err != nil {
+				if firstErr.CompareAndSwap(nil, &err) {
+					cancel()
+				}
+				return err
+			}
+			return nil
+		})
+		return true
+	})
+
+	// Wait on queries
+	if err := eg.Wait(); err != nil {
+		return err
+	}
+
+	// Check if we had any errors
+	if err := firstErr.Load(); err != nil {
+		return *err
+	}
+
+	// Finalize processing
+	return processor.Finalize()
+}
+
+// TimeseriesChunkIterator implements ChunkIterator for timeseries chunks
+type TimeseriesChunkIterator struct {
+	key   string
+	cext  timeseries.Extent
+	csize time.Duration
+	trq   *timeseries.TimeRangeQuery
+}
+
+func (tci *TimeseriesChunkIterator) IterateChunks(fn func(int, string) bool) {
+	var resi int
+	for chunkStart := tci.cext.Start; chunkStart.Before(tci.cext.End); chunkStart = chunkStart.Add(tci.csize) {
+		chunkExtent := timeseries.Extent{
+			Start: chunkStart,
+			End:   chunkStart.Add(tci.csize - tci.trq.Step),
+		}
+		subkey := getSubKey(tci.key, chunkExtent)
+		if !fn(resi, subkey) {
+			break
+		}
+		resi++
+	}
+}
+
+// TimeseriesChunkProcessor implements ChunkProcessor for timeseries chunks
+type TimeseriesChunkProcessor struct {
+	d         *HTTPDocument
+	trq       *timeseries.TimeRangeQuery
+	unmarshal timeseries.UnmarshalerFunc
+	ress      timeseries.List
+}
+
+func (tcp *TimeseriesChunkProcessor) ProcessChunk(index int, subkey string, qr *queryResult, c cache.Cache) error {
+	if c.Configuration().Provider != providerMemory {
+		var err error
+		qr.d.timeseries, err = tcp.unmarshal(qr.d.Body, nil)
+		if err != nil {
+			logger.Error("chunk unmarshal failed",
+				logging.Pairs{
+					"error": err, "chunkIdx": index,
+					"key": subkey, "cacheQueryStatus": qr.lookupStatus,
+				})
+			return err
+		}
+	}
+	if qr.d.timeseries != nil {
+		tcp.ress[index] = qr.d.timeseries
+	}
+	return nil
+}
+
+func (tcp *TimeseriesChunkProcessor) Finalize() error {
+	tcp.d.timeseries = tcp.ress.Merge(true)
+	if tcp.d.timeseries != nil {
+		tcp.d.timeseries.SetExtents(tcp.d.timeseries.Extents().Compress(tcp.trq.Step))
+	}
+	return nil
+}
+
+// executeTimeseriesChunkQuery performs timeseries chunk querying with early cancellation
+func executeTimeseriesChunkQuery(ctx context.Context, c cache.Cache, key string, d *HTTPDocument, trq *timeseries.TimeRangeQuery, unmarshal timeseries.UnmarshalerFunc) error {
+	// Determine chunk extent and number of chunks
+	var cext timeseries.Extent
+	csize := trq.Step * time.Duration(c.Configuration().TimeseriesChunkFactor)
+	cext.Start, cext.End = trq.Extent.Start.Truncate(csize), trq.Extent.End.Truncate(csize).Add(csize)
+	cct := int(cext.End.Sub(cext.Start) / csize)
+
+	iterator := &TimeseriesChunkIterator{
+		key:   key,
+		cext:  cext,
+		csize: csize,
+		trq:   trq,
+	}
+
+	processor := &TimeseriesChunkProcessor{
+		d:         d,
+		trq:       trq,
+		unmarshal: unmarshal,
+		ress:      make(timeseries.List, cct),
+	}
+
+	return executeChunkQuery(ctx, c, iterator, processor)
+}
+
+// ByterangeChunkIterator implements ChunkIterator for byterange chunks
+type ByterangeChunkIterator struct {
+	key  string
+	crs  int64
+	cre  int64
+	size int64
+}
+
+func (bci *ByterangeChunkIterator) IterateChunks(fn func(int, string) bool) {
+	var i int
+	for chunkStart := bci.crs; chunkStart < bci.cre; chunkStart += bci.size {
+		chunkRange := byterange.Range{
+			Start: chunkStart,
+			End:   chunkStart + bci.size - 1,
+		}
+		subkey := bci.key + chunkRange.String()
+		if !fn(i, subkey) {
+			break
+		}
+		i++
+	}
+}
+
+// ByterangeChunkProcessor implements ChunkProcessor for byterange chunks
+type ByterangeChunkProcessor struct {
+	d    *HTTPDocument
+	size int64
+	dbl  *int64 // atomic counter for document body length
+}
+
+func (bcp *ByterangeChunkProcessor) ProcessChunk(index int, subkey string, qr *queryResult, c cache.Cache) error {
+	if qr == nil {
+		return nil
+	}
+
+	// Handle error - different from timeseries as we allow cache.ErrKNF
+	if qr.err != nil && !errors.Is(qr.err, cache.ErrKNF) {
+		return qr.err
+	}
+
+	// Process successful result immediately
+	if !qr.d.IsMeta && qr.lookupStatus == status.LookupStatusHit {
+		for _, r := range qr.d.Ranges {
+			content := qr.d.Body[r.Start%bcp.size : r.End%bcp.size+1]
+			r.Copy(bcp.d.Body, content)
+			if v := atomic.LoadInt64(bcp.dbl); r.End+1 > v {
+				atomic.CompareAndSwapInt64(bcp.dbl, v, r.End+1)
+			}
+		}
+	}
+	return nil
+}
+
+func (bcp *ByterangeChunkProcessor) Finalize() error {
+	if len(bcp.d.Ranges) > 1 {
+		bcp.d.StoredRangeParts = make(map[string]*byterange.MultipartByteRange)
+		for _, r := range bcp.d.Ranges {
+			bcp.d.StoredRangeParts[r.String()] = &byterange.MultipartByteRange{
+				Range:   r,
+				Content: bcp.d.Body[r.Start : r.End+1],
+			}
+		}
+		bcp.d.Body = nil
+	} else {
+		bcp.d.Body = bcp.d.Body[:*bcp.dbl]
+	}
+	return nil
+}
+
+// executeByterangeChunkQuery performs byterange chunk querying with early cancellation
+func executeByterangeChunkQuery(ctx context.Context, c cache.Cache, key string, d *HTTPDocument, ranges byterange.Ranges) error {
+	// Determine chunk start/end
+	var crs, cre int64
+	if len(ranges) == 0 {
+		ranges = byterange.Ranges{byterange.Range{Start: 0, End: d.ContentLength - 1}}
+	}
+	size := c.Configuration().ByterangeChunkSize
+	crs, cre = ranges[0].Start, ranges[len(ranges)-1].End
+	crs = (crs / size) * size
+	cre = (cre/size + 1) * size
+
+	// Allocate body in meta document
+	d.Body = make([]byte, d.ContentLength)
+
+	var dbl int64 // Track document body length
+
+	iterator := &ByterangeChunkIterator{
+		key:  key,
+		crs:  crs,
+		cre:  cre,
+		size: size,
+	}
+
+	processor := &ByterangeChunkProcessor{
+		d:    d,
+		size: size,
+		dbl:  &dbl,
+	}
+
+	return executeChunkQuery(ctx, c, iterator, processor)
 }
 
 // TimeseriesChunker handles timeseries chunking operations
@@ -587,13 +683,13 @@ func (tc *TimeseriesChunker) ChunkCount() int {
 	return tc.cct + 1 // chunks + meta
 }
 
-func (tc *TimeseriesChunker) GetMeta(d DataDocument) interface{} {
+func (tc *TimeseriesChunker) GetMeta(d DataDocument) any {
 	return d.GetMeta()
 }
 
 func (tc *TimeseriesChunker) IterateChunks(
 	d DataDocument,
-	writeFunc func(int, string, interface{}) error,
+	writeFunc func(int, string, any) error,
 ) error {
 	i := 0
 	for chunkStart := tc.cext.Start; chunkStart.Before(tc.cext.End); chunkStart = chunkStart.Add(tc.csize) {
@@ -652,7 +748,7 @@ func (bc *ByterangeChunker) ChunkCount() int {
 
 func (bc *ByterangeChunker) IterateChunks(
 	d DataDocument,
-	writeFunc func(int, string, interface{}) error,
+	writeFunc func(int, string, any) error,
 ) error {
 	i := 0
 	for chunkStart := bc.crs; chunkStart < bc.cre; chunkStart += bc.size {
@@ -671,7 +767,7 @@ func (bc *ByterangeChunker) IterateChunks(
 	return nil
 }
 
-func (bc *ByterangeChunker) GetMeta(d DataDocument) interface{} {
+func (bc *ByterangeChunker) GetMeta(d DataDocument) any {
 	return d.GetMeta()
 }
 
@@ -684,7 +780,7 @@ func executeChunking(ctx context.Context, c cache.Cache, key string, d DataDocum
 	eg.SetLimit(16) // FIXME: make configurable
 
 	// 1. Iterate over chunks and start concurrent writes
-	chunker.IterateChunks(d, func(index int, subkey string, chunkData interface{}) error {
+	err := chunker.IterateChunks(d, func(index int, subkey string, chunkData any) error {
 		// This is the core concurrent write logic
 		eg.Go(func() error {
 			httpDoc, ok := chunkData.(*HTTPDocument)
@@ -696,6 +792,9 @@ func executeChunking(ctx context.Context, c cache.Cache, key string, d DataDocum
 		})
 		return nil // The return value here is unused, we use the errgroup for final errors
 	})
+	if err != nil {
+		return err
+	}
 
 	// The last index is reserved for the metadata document.
 	metaIndex := cct - 1
@@ -712,6 +811,8 @@ func executeChunking(ctx context.Context, c cache.Cache, key string, d DataDocum
 	})
 
 	// 3. Wait on writes to finish and handle results
-	eg.Wait()
+	if err := eg.Wait(); err != nil {
+		return err
+	}
 	return errors.Join(cr...)
 }
