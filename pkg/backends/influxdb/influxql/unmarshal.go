@@ -19,10 +19,8 @@ package influxql
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"io"
 	"sort"
-	"sync"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
@@ -96,36 +94,27 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 			sh.CalculateSize()
 			pts := make(dataset.Points, len(wfd.Results[i].SeriesList[j].Values))
 			var sz int64
-			var wg sync.WaitGroup
-			errs := make([]error, len(wfd.Results[i].SeriesList[j].Values))
 			for vi, v := range wfd.Results[i].SeriesList[j].Values {
-				wg.Go(func() {
-					pt, cols, err := pointFromValues(v, sh.TimestampField.OutputPosition)
-					if err != nil {
-						errs[vi] = err
-						return
+				pt, cols, err := pointFromValues(v, sh.TimestampField.OutputPosition)
+				if err != nil {
+					return nil, err
+				}
+				if pt.Epoch == 0 {
+					continue
+				}
+				if vi == 0 {
+					for x := range cols {
+						sh.ValueFieldsList[x].DataType = cols[x]
 					}
-					if pt.Epoch == 0 {
-						return
-					}
-					if vi == 0 {
-						for x := range cols {
-							sh.ValueFieldsList[x].DataType = cols[x]
-						}
-					}
-					pts[vi] = pt
-					wfd.Results[i].SeriesList[j].Values[vi] = nil
-				})
+				}
+				pts[vi] = pt
+				wfd.Results[i].SeriesList[j].Values[vi] = nil
 			}
-			wg.Wait()
 
 			for _, pt := range pts {
 				sz += int64(pt.Size)
 			}
 
-			if err := errors.Join(errs...); err != nil {
-				return nil, err
-			}
 			sort.Sort(pts)
 			s := &dataset.Series{
 				Header:    sh,

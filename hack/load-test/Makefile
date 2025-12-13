@@ -1,9 +1,9 @@
 
 TRICKSTER_BASE_ENDPOINT ?= http://localhost:8480/prom1
 
-VIRTUAL_USERS ?= 10
+VIRTUAL_USERS ?= 50
 BATCH_SIZE ?= 100
-ITERATIONS ?= 1000
+ITERATIONS ?= 5000
 
 run:
 	for file in $$(find . -name '*.js'); do \
