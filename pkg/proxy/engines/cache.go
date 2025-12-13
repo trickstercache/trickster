@@ -11,8 +11,15 @@
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+ * limitations// ByterangeChunkQueryProcessor implements ChunkQueryProcessor for byterange chunks (reading)
+type ByterangeChunkQueryProcessor struct {
+	d    *HTTPDocument
+	size int64
+	dbl  *int64 // atomic counter for document body length
+}
+
+func (bcp *ByterangeChunkQueryProcessor) ProcessChunk(index int, subkey string, qr *queryResult, c cache.Cache) error {he License.
+*/
 
 package engines
 
@@ -282,11 +289,11 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 		rsc.Unlock()
 		if trq != nil {
 			// Use timeseries chunking
-			chunker := NewTimeseriesChunker(c, key, trq, marshal)
+			chunker := NewTimeseriesChunkWriter(c, key, trq, marshal)
 			err = executeChunking(ctx, c, key, d, compress, ttl, chunker)
 		} else {
 			// Use byterange chunking
-			chunker := NewByterangeChunker(c, key, d)
+			chunker := NewByterangeChunkWriter(c, key, d)
 			err = executeChunking(ctx, c, key, d, compress, ttl, chunker)
 		}
 	} else {
@@ -358,8 +365,8 @@ func getSubKey(key string, chunkExtent timeseries.Extent) string {
 	return fmt.Sprintf("%s.%s", key, chunkExtent)
 }
 
-// DataDocument abstracts the source data for chunking operations.
-type DataDocument interface {
+// CacheableDocument abstracts the source data for chunking operations when writing to cache.
+type CacheableDocument interface {
 	// GetMeta returns the metadata document that acts as a manifest for all chunks.
 	GetMeta() *HTTPDocument
 
@@ -377,31 +384,31 @@ type DataDocument interface {
 	GetByterangeChunk(dataRange byterange.Range, size int64) *HTTPDocument
 }
 
-// Chunker abstracts the logic for different types of chunking.
-type Chunker interface {
+// ChunkWriter abstracts the logic for different types of chunking when writing to cache.
+type ChunkWriter interface {
 	// Determine the number of chunks plus one for the metadata document.
 	ChunkCount() int
 
 	// Iterate over chunks and execute the provided write function for each.
 	// The write function takes (index, subkey, chunkData).
 	IterateChunks(
-		d DataDocument, // The source data document
+		d CacheableDocument, // The source data document
 		writeFunc func(int, string, any) error,
 	) error
 
 	// GetMeta returns the metadata document to be stored separately.
-	GetMeta(d DataDocument) any
+	GetMeta(d CacheableDocument) any
 }
 
-// ChunkIterator provides iteration over chunks with early cancellation
-type ChunkIterator interface {
+// ChunkQueryIterator provides iteration over chunks for cache queries (reading)
+type ChunkQueryIterator interface {
 	// IterateChunks calls the provided function for each chunk
 	// The function receives (index, subkey) and should return whether to continue
 	IterateChunks(func(int, string) bool)
 }
 
-// ChunkProcessor handles the result of querying a single chunk
-type ChunkProcessor interface {
+// ChunkQueryProcessor handles the result of querying a single chunk from cache (reading)
+type ChunkQueryProcessor interface {
 	// ProcessChunk processes a successful query result for a chunk
 	ProcessChunk(index int, subkey string, qr *queryResult, c cache.Cache) error
 
@@ -409,8 +416,8 @@ type ChunkProcessor interface {
 	Finalize() error
 }
 
-// executeChunkQuery performs generic chunk querying with early cancellation
-func executeChunkQuery(ctx context.Context, c cache.Cache, iterator ChunkIterator, processor ChunkProcessor) error {
+// executeChunkQuery performs generic chunk querying with early cancellation (reading from cache)
+func executeChunkQuery(ctx context.Context, c cache.Cache, iterator ChunkQueryIterator, processor ChunkQueryProcessor) error {
 	// Prepare waitgroup for concurrent processing
 	eg := errgroup.Group{}
 	eg.SetLimit(16) // FIXME: make configurable
@@ -473,15 +480,15 @@ func executeChunkQuery(ctx context.Context, c cache.Cache, iterator ChunkIterato
 	return processor.Finalize()
 }
 
-// TimeseriesChunkIterator implements ChunkIterator for timeseries chunks
-type TimeseriesChunkIterator struct {
+// TimeseriesChunkQueryIterator implements ChunkQueryIterator for timeseries chunks (reading)
+type TimeseriesChunkQueryIterator struct {
 	key   string
 	cext  timeseries.Extent
 	csize time.Duration
 	trq   *timeseries.TimeRangeQuery
 }
 
-func (tci *TimeseriesChunkIterator) IterateChunks(fn func(int, string) bool) {
+func (tci *TimeseriesChunkQueryIterator) IterateChunks(fn func(int, string) bool) {
 	var resi int
 	for chunkStart := tci.cext.Start; chunkStart.Before(tci.cext.End); chunkStart = chunkStart.Add(tci.csize) {
 		chunkExtent := timeseries.Extent{
@@ -496,15 +503,15 @@ func (tci *TimeseriesChunkIterator) IterateChunks(fn func(int, string) bool) {
 	}
 }
 
-// TimeseriesChunkProcessor implements ChunkProcessor for timeseries chunks
-type TimeseriesChunkProcessor struct {
+// TimeseriesChunkQueryProcessor implements ChunkQueryProcessor for timeseries chunks (reading)
+type TimeseriesChunkQueryProcessor struct {
 	d         *HTTPDocument
 	trq       *timeseries.TimeRangeQuery
 	unmarshal timeseries.UnmarshalerFunc
 	ress      timeseries.List
 }
 
-func (tcp *TimeseriesChunkProcessor) ProcessChunk(index int, subkey string, qr *queryResult, c cache.Cache) error {
+func (tcp *TimeseriesChunkQueryProcessor) ProcessChunk(index int, subkey string, qr *queryResult, c cache.Cache) error {
 	if c.Configuration().Provider != providerMemory {
 		var err error
 		qr.d.timeseries, err = tcp.unmarshal(qr.d.Body, nil)
@@ -523,7 +530,7 @@ func (tcp *TimeseriesChunkProcessor) ProcessChunk(index int, subkey string, qr *
 	return nil
 }
 
-func (tcp *TimeseriesChunkProcessor) Finalize() error {
+func (tcp *TimeseriesChunkQueryProcessor) Finalize() error {
 	tcp.d.timeseries = tcp.ress.Merge(true)
 	if tcp.d.timeseries != nil {
 		tcp.d.timeseries.SetExtents(tcp.d.timeseries.Extents().Compress(tcp.trq.Step))
@@ -539,14 +546,14 @@ func executeTimeseriesChunkQuery(ctx context.Context, c cache.Cache, key string,
 	cext.Start, cext.End = trq.Extent.Start.Truncate(csize), trq.Extent.End.Truncate(csize).Add(csize)
 	cct := int(cext.End.Sub(cext.Start) / csize)
 
-	iterator := &TimeseriesChunkIterator{
+	iterator := &TimeseriesChunkQueryIterator{
 		key:   key,
 		cext:  cext,
 		csize: csize,
 		trq:   trq,
 	}
 
-	processor := &TimeseriesChunkProcessor{
+	processor := &TimeseriesChunkQueryProcessor{
 		d:         d,
 		trq:       trq,
 		unmarshal: unmarshal,
@@ -556,15 +563,15 @@ func executeTimeseriesChunkQuery(ctx context.Context, c cache.Cache, key string,
 	return executeChunkQuery(ctx, c, iterator, processor)
 }
 
-// ByterangeChunkIterator implements ChunkIterator for byterange chunks
-type ByterangeChunkIterator struct {
+// ByterangeChunkQueryIterator implements ChunkQueryIterator for byterange chunks (reading)
+type ByterangeChunkQueryIterator struct {
 	key  string
 	crs  int64
 	cre  int64
 	size int64
 }
 
-func (bci *ByterangeChunkIterator) IterateChunks(fn func(int, string) bool) {
+func (bci *ByterangeChunkQueryIterator) IterateChunks(fn func(int, string) bool) {
 	var i int
 	for chunkStart := bci.crs; chunkStart < bci.cre; chunkStart += bci.size {
 		chunkRange := byterange.Range{
@@ -579,14 +586,14 @@ func (bci *ByterangeChunkIterator) IterateChunks(fn func(int, string) bool) {
 	}
 }
 
-// ByterangeChunkProcessor implements ChunkProcessor for byterange chunks
-type ByterangeChunkProcessor struct {
+// ByterangeChunkQueryProcessor implements ChunkQueryProcessor for byterange chunks (reading)
+type ByterangeChunkQueryProcessor struct {
 	d    *HTTPDocument
 	size int64
 	dbl  *int64 // atomic counter for document body length
 }
 
-func (bcp *ByterangeChunkProcessor) ProcessChunk(index int, subkey string, qr *queryResult, c cache.Cache) error {
+func (bcp *ByterangeChunkQueryProcessor) ProcessChunk(index int, subkey string, qr *queryResult, c cache.Cache) error {
 	if qr == nil {
 		return nil
 	}
@@ -609,7 +616,7 @@ func (bcp *ByterangeChunkProcessor) ProcessChunk(index int, subkey string, qr *q
 	return nil
 }
 
-func (bcp *ByterangeChunkProcessor) Finalize() error {
+func (bcp *ByterangeChunkQueryProcessor) Finalize() error {
 	if len(bcp.d.Ranges) > 1 {
 		bcp.d.StoredRangeParts = make(map[string]*byterange.MultipartByteRange)
 		for _, r := range bcp.d.Ranges {
@@ -642,14 +649,14 @@ func executeByterangeChunkQuery(ctx context.Context, c cache.Cache, key string, 
 
 	var dbl int64 // Track document body length
 
-	iterator := &ByterangeChunkIterator{
+	iterator := &ByterangeChunkQueryIterator{
 		key:  key,
 		crs:  crs,
 		cre:  cre,
 		size: size,
 	}
 
-	processor := &ByterangeChunkProcessor{
+	processor := &ByterangeChunkQueryProcessor{
 		d:    d,
 		size: size,
 		dbl:  &dbl,
@@ -658,8 +665,8 @@ func executeByterangeChunkQuery(ctx context.Context, c cache.Cache, key string, 
 	return executeChunkQuery(ctx, c, iterator, processor)
 }
 
-// TimeseriesChunker handles timeseries chunking operations
-type TimeseriesChunker struct {
+// TimeseriesChunkWriter handles timeseries chunking operations when writing to cache
+type TimeseriesChunkWriter struct {
 	trq     *timeseries.TimeRangeQuery
 	c       cache.Cache
 	key     string
@@ -669,26 +676,26 @@ type TimeseriesChunker struct {
 	marshal timeseries.MarshalerFunc
 }
 
-// NewTimeseriesChunker creates a new TimeseriesChunker
-func NewTimeseriesChunker(c cache.Cache, key string, trq *timeseries.TimeRangeQuery, marshal timeseries.MarshalerFunc) *TimeseriesChunker {
+// NewTimeseriesChunkWriter creates a new TimeseriesChunkWriter
+func NewTimeseriesChunkWriter(c cache.Cache, key string, trq *timeseries.TimeRangeQuery, marshal timeseries.MarshalerFunc) *TimeseriesChunkWriter {
 	csize := trq.Step * time.Duration(c.Configuration().TimeseriesChunkFactor)
 	var cext timeseries.Extent
 	cext.Start, cext.End = trq.Extent.Start.Truncate(csize), trq.Extent.End.Truncate(csize).Add(csize)
 	cct := int(cext.End.Sub(cext.Start) / csize)
 
-	return &TimeseriesChunker{trq: trq, c: c, key: key, cext: cext, csize: csize, cct: cct, marshal: marshal}
+	return &TimeseriesChunkWriter{trq: trq, c: c, key: key, cext: cext, csize: csize, cct: cct, marshal: marshal}
 }
 
-func (tc *TimeseriesChunker) ChunkCount() int {
+func (tc *TimeseriesChunkWriter) ChunkCount() int {
 	return tc.cct + 1 // chunks + meta
 }
 
-func (tc *TimeseriesChunker) GetMeta(d DataDocument) any {
+func (tc *TimeseriesChunkWriter) GetMeta(d CacheableDocument) any {
 	return d.GetMeta()
 }
 
-func (tc *TimeseriesChunker) IterateChunks(
-	d DataDocument,
+func (tc *TimeseriesChunkWriter) IterateChunks(
+	d CacheableDocument,
 	writeFunc func(int, string, any) error,
 ) error {
 	i := 0
@@ -713,8 +720,8 @@ func (tc *TimeseriesChunker) IterateChunks(
 	return nil
 }
 
-// ByterangeChunker handles byterange chunking operations
-type ByterangeChunker struct {
+// ByterangeChunkWriter handles byterange chunking operations when writing to cache
+type ByterangeChunkWriter struct {
 	c    cache.Cache
 	key  string
 	size int64
@@ -723,8 +730,8 @@ type ByterangeChunker struct {
 	cct  int64 // chunk count
 }
 
-// NewByterangeChunker creates a new byterange chunker
-func NewByterangeChunker(c cache.Cache, key string, d DataDocument) *ByterangeChunker {
+// NewByterangeChunkWriter creates a new byterange chunk writer
+func NewByterangeChunkWriter(c cache.Cache, key string, d CacheableDocument) *ByterangeChunkWriter {
 	drs := d.getByteRanges()
 	size := c.Configuration().ByterangeChunkSize
 	crs, cre := drs[0].Start, drs[len(drs)-1].End
@@ -732,7 +739,7 @@ func NewByterangeChunker(c cache.Cache, key string, d DataDocument) *ByterangeCh
 	cre = (cre/size + 1) * size
 	cct := (cre - crs) / size
 
-	return &ByterangeChunker{
+	return &ByterangeChunkWriter{
 		c:    c,
 		key:  key,
 		size: size,
@@ -742,12 +749,12 @@ func NewByterangeChunker(c cache.Cache, key string, d DataDocument) *ByterangeCh
 	}
 }
 
-func (bc *ByterangeChunker) ChunkCount() int {
+func (bc *ByterangeChunkWriter) ChunkCount() int {
 	return int(bc.cct) + 1 // +1 for meta
 }
 
-func (bc *ByterangeChunker) IterateChunks(
-	d DataDocument,
+func (bc *ByterangeChunkWriter) IterateChunks(
+	d CacheableDocument,
 	writeFunc func(int, string, any) error,
 ) error {
 	i := 0
@@ -767,12 +774,12 @@ func (bc *ByterangeChunker) IterateChunks(
 	return nil
 }
 
-func (bc *ByterangeChunker) GetMeta(d DataDocument) any {
+func (bc *ByterangeChunkWriter) GetMeta(d CacheableDocument) any {
 	return d.GetMeta()
 }
 
 // executeChunking performs the generic chunking and concurrent write logic.
-func executeChunking(ctx context.Context, c cache.Cache, key string, d DataDocument, compress bool, ttl time.Duration, chunker Chunker) error {
+func executeChunking(ctx context.Context, c cache.Cache, key string, d CacheableDocument, compress bool, ttl time.Duration, chunker ChunkWriter) error {
 	cct := chunker.ChunkCount()
 	cr := make([]error, cct) // Error slice size is chunks + 1 (for meta)
 
