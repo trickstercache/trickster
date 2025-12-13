@@ -33,6 +33,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/util/timeconv"
 )
 
 // target defines a Health Check target
@@ -47,7 +48,6 @@ type target struct {
 	recoveryThreshold     int
 	failConsecutiveCnt    atomic.Int32
 	successConsecutiveCnt atomic.Int32
-	ks                    int32 // used internally and is not thread safe, do not expose
 	cancel                context.CancelFunc
 	wg                    sync.WaitGroup
 	ceb                   bool
@@ -88,7 +88,7 @@ func newTarget(_ context.Context, name, description string, o *ho.Options,
 	if o.RecoveryThreshold < 1 {
 		o.RecoveryThreshold = 3 // default to 3
 	}
-	isd := fmt.Sprintf("unknown monitored status (check interval: %dms)", interval.Milliseconds())
+	isd := fmt.Sprintf("initializing (check interval: %dms)", interval.Milliseconds())
 	t := &target{
 		name:              name,
 		description:       description,
@@ -97,11 +97,10 @@ func newTarget(_ context.Context, name, description string, o *ho.Options,
 		failureThreshold:  o.FailureThreshold,
 		recoveryThreshold: o.RecoveryThreshold,
 		interval:          interval,
-		ks:                StatusInitializing,
 	}
 
 	t.status = &Status{name: name, detail: isd, description: description, prober: t.demandProbe}
-	t.status.Set(StatusInitializing)
+	t.status.SetAndNotify(StatusInitializing)
 	if len(o.ExpectedHeaders) > 0 {
 		t.eh = headers.Lookup(o.ExpectedHeaders).ToHeader()
 	}
@@ -115,6 +114,10 @@ func newTarget(_ context.Context, name, description string, o *ho.Options,
 		t.ec = []int{http.StatusOK}
 	}
 	return t, nil
+}
+
+func (t *target) Name() string {
+	return t.name
 }
 
 func (t *target) isGoodHeader(h http.Header) bool {
@@ -184,6 +187,8 @@ func (t *target) Stop() {
 
 func (t *target) probeLoop(ctx context.Context) {
 	t.wg.Go(func() {
+		// this prevents all health checks from always probing at the same time
+		timeconv.SleepRandomMS(10, 1000)
 		t.probe(ctx) // perform initial probe
 		ticker := time.NewTicker(t.interval)
 		defer ticker.Stop()
@@ -203,40 +208,54 @@ func (t *target) probe(ctx context.Context) {
 	resp, err := t.httpClient.Do(r)
 	var errCnt, successCnt int
 	var passed bool
+	var detail string
 	switch {
 	case err != nil, resp == nil:
-		t.status.SetDetail(fmt.Sprintf("error probing target: %v", err))
+		detail = fmt.Sprintf("error probing target: %v", err)
+		t.status.SetDetail(detail)
 		errCnt = int(t.failConsecutiveCnt.Add(1))
 		t.successConsecutiveCnt.Store(0)
 	case !t.isGoodCode(resp.StatusCode) || !t.isGoodHeader(resp.Header) || !t.isGoodBody(resp.Body):
 		errCnt = int(t.failConsecutiveCnt.Add(1))
 		t.successConsecutiveCnt.Store(0)
+		resp.Body.Close()
 	default:
 		resp.Body.Close()
 		successCnt = int(t.successConsecutiveCnt.Add(1))
 		t.failConsecutiveCnt.Store(0)
 		passed = true
 	}
-	if !passed && t.ks != StatusFailing && errCnt == t.failureThreshold {
-		t.status.failingSince = time.Now()
-		t.status.Set(StatusFailing)
-		t.ks = StatusFailing
-		logger.Info("hc status changed",
-			logging.Pairs{
-				"targetName": t.name, "status": "failed",
-				"detail": t.status.Detail(), "threshold": t.failureThreshold,
-			})
-	} else if passed && t.ks != StatusPassing && successCnt == t.recoveryThreshold {
-		t.status.failingSince = time.Time{}
-		t.status.Set(StatusPassing)
-		t.ks = StatusPassing
-		t.status.SetDetail("") // this is only populated with failure details, so it is cleared upon recovery
-		logger.Info("hc status changed",
-			logging.Pairs{
-				"targetName": t.name, "status": "available",
-				"threshold": t.recoveryThreshold,
-			})
+	st := t.status.Get()
+	nst := StatusFailing
+	if (passed && successCnt >= t.recoveryThreshold) ||
+		(st == StatusPassing && errCnt < t.failureThreshold) {
+		nst = StatusPassing
+	} else if st == StatusInitializing && errCnt < t.failureThreshold &&
+		successCnt < t.recoveryThreshold {
+		nst = StatusInitializing
 	}
+	if st != nst {
+		t.notifyStatus(nst, detail)
+	}
+}
+
+func (t *target) notifyStatus(st int32, detail string) {
+	pairs := logging.Pairs{"targetName": t.name}
+	switch st {
+	case StatusFailing:
+		t.status.failingSince = time.Now()
+		t.status.SetDetail(detail)
+		pairs["status"] = "unavailable"
+		pairs["detail"] = detail
+		pairs["threshold"] = t.failureThreshold
+	case StatusPassing:
+		t.status.failingSince = time.Time{}
+		pairs["status"] = "available"
+		pairs["threshold"] = t.recoveryThreshold
+		t.status.SetDetail("")
+	}
+	t.status.SetAndNotify(st)
+	logger.Info("hc status changed", pairs)
 }
 
 func (t *target) demandProbe(w http.ResponseWriter) {

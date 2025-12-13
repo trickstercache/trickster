@@ -52,14 +52,15 @@ type healthDetail struct {
 }
 
 type backendStatus struct {
-	Name                   string   `json:"name" yaml:"name"`
-	Provider               string   `json:"provider" yaml:"provider"`
-	DownSince              string   `json:"downSince,omitempty" yaml:"downSince,omitempty"`
-	Detail                 string   `json:"detail,omitempty" yaml:"detail,omitempty"`
-	Mechanism              string   `json:"mechanism,omitempty" yaml:"mechanism,omitempty"`
-	AvailablePoolMembers   []string `json:"availablePoolMembers,omitempty" yaml:"availablePoolMembers,omitempty"`
-	UnavailablePoolMembers []string `json:"unavailablePoolMembers,omitempty" yaml:"unavailablePoolMembers,omitempty"`
-	UncheckedPoolMembers   []string `json:"uncheckedPoolMembers,omitempty" yaml:"uncheckedPoolMembers,omitempty"`
+	Name                    string   `json:"name" yaml:"name"`
+	Provider                string   `json:"provider" yaml:"provider"`
+	DownSince               string   `json:"downSince,omitempty" yaml:"downSince,omitempty"`
+	Detail                  string   `json:"detail,omitempty" yaml:"detail,omitempty"`
+	Mechanism               string   `json:"mechanism,omitempty" yaml:"mechanism,omitempty"`
+	AvailablePoolMembers    []string `json:"availablePoolMembers,omitempty" yaml:"availablePoolMembers,omitempty"`
+	UnavailablePoolMembers  []string `json:"unavailablePoolMembers,omitempty" yaml:"unavailablePoolMembers,omitempty"`
+	UncheckedPoolMembers    []string `json:"uncheckedPoolMembers,omitempty" yaml:"uncheckedPoolMembers,omitempty"`
+	InitializingPoolMembers []string `json:"initializingPoolMembers,omitempty" yaml:"initializingPoolMembers,omitempty"`
 }
 
 type healthStatus struct {
@@ -181,7 +182,7 @@ func StatusHandler(hc healthcheck.HealthChecker, backends backends.Backends) htt
 		case headers.AcceptsYAML(r),
 			(r != nil && r.URL != nil && strings.Contains(strings.ToLower(r.URL.RawQuery), "yaml")):
 			body = detail.yaml
-			ct = headers.ValueApplicationYAML
+			ct = headers.ValueTextYAML
 		default:
 			body = detail.text
 			ct = headers.ValueTextPlain
@@ -297,6 +298,45 @@ func updateStatusText(hc healthcheck.HealthChecker, hd *healthDetail, backends b
 	status.Initializing = populateBasicBackendStatus(i)
 	status.Unchecked = populateBasicBackendStatus(q)
 
+	// backends without an interval health check go to unchecked
+	if backends != nil {
+		uncheckedBackendNames := make([]string, 0)
+		for name, backend := range backends {
+			if backend == nil {
+				continue
+			}
+			c := backend.Configuration()
+			if c == nil {
+				continue
+			}
+			// skip virtual backends (ALB, Rule) and frontend
+			if c.Provider == providers.ALB || c.Provider == providers.Rule ||
+				name == "frontend" {
+				continue
+			}
+			if _, ok := st[name]; ok {
+				continue
+			}
+			if c.HealthCheck == nil || c.HealthCheck.Interval == 0 {
+				uncheckedBackendNames = append(uncheckedBackendNames, name)
+			}
+		}
+		if len(uncheckedBackendNames) > 0 {
+			sort.Strings(uncheckedBackendNames)
+			uncheckedBackends := make([]backendStatus, len(uncheckedBackendNames))
+			for i, name := range uncheckedBackendNames {
+				backend := backends[name]
+				provider := backend.Configuration().Provider
+				d := cleanupDescription(provider)
+				uncheckedBackends[i] = backendStatus{
+					Name:     name,
+					Provider: d,
+				}
+			}
+			status.Unchecked = append(status.Unchecked, uncheckedBackends...)
+		}
+	}
+
 	// process ALB backends
 	if backends != nil {
 		albNames := make([]string, 0)
@@ -323,6 +363,7 @@ func updateStatusText(hc healthcheck.HealthChecker, hd *healthDetail, backends b
 			availableMembers := make([]string, 0)
 			unavailableMembers := make([]string, 0)
 			uncheckedMembers := make([]string, 0)
+			initializingMembers := make([]string, 0)
 
 			var pool []string
 			if albConfig.ALBOptions.MechanismName == names.MechanismUR &&
@@ -360,19 +401,23 @@ func updateStatusText(hc healthcheck.HealthChecker, hd *healthDetail, backends b
 					unavailableMembers = append(unavailableMembers, poolMemberName)
 				case healthcheck.StatusUnchecked:
 					uncheckedMembers = append(uncheckedMembers, poolMemberName)
+				case healthcheck.StatusInitializing:
+					initializingMembers = append(initializingMembers, poolMemberName)
 				}
 			}
 			sort.Strings(availableMembers)
 			sort.Strings(unavailableMembers)
 			sort.Strings(uncheckedMembers)
+			sort.Strings(initializingMembers)
 
 			albStatus := backendStatus{
-				Name:                   albName,
-				Provider:               providers.ALB,
-				Mechanism:              albConfig.ALBOptions.MechanismName,
-				AvailablePoolMembers:   availableMembers,
-				UnavailablePoolMembers: unavailableMembers,
-				UncheckedPoolMembers:   uncheckedMembers,
+				Name:                    albName,
+				Provider:                providers.ALB,
+				Mechanism:               albConfig.ALBOptions.MechanismName,
+				AvailablePoolMembers:    availableMembers,
+				UnavailablePoolMembers:  unavailableMembers,
+				UncheckedPoolMembers:    uncheckedMembers,
+				InitializingPoolMembers: initializingMembers,
 			}
 
 			// ALB is "available" if >= 1 pool member is either available or unchecked

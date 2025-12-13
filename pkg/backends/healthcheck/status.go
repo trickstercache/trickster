@@ -19,6 +19,7 @@ package healthcheck
 import (
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -57,7 +58,7 @@ func (s *Status) String() string {
 	if st < StatusPassing {
 		fmt.Fprintf(sb, "detail: %s\n", s.Detail())
 	}
-	if st == StatusUnchecked {
+	if st == StatusFailing {
 		fmt.Fprintf(sb, "since: %d", s.failingSince.Unix())
 	}
 	return sb.String()
@@ -74,14 +75,23 @@ func (s *Status) Headers() http.Header {
 	return h
 }
 
+func (s *Status) SetAndNotify(i int32) {
+	s.Set(i)
+	s.Notify()
+}
+
 // Set updates the status
 func (s *Status) Set(i int32) {
 	s.status.Store(i)
+}
+
+func (s *Status) Notify() {
 	s.mtx.Lock()
-	for _, ch := range s.subscribers {
+	subs := slices.Clone(s.subscribers)
+	s.mtx.Unlock()
+	for _, ch := range subs {
 		ch <- true
 	}
-	s.mtx.Unlock()
 }
 
 // Prober returns the Prober func

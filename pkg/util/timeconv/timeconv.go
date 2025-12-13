@@ -18,6 +18,8 @@
 package timeconv
 
 import (
+	"crypto/rand"
+	"math/big"
 	"strconv"
 	"time"
 
@@ -173,4 +175,14 @@ func ParseDuration(s string) (time.Duration, error) {
 		return 0, ErrInvalidDurationFormat(len(s), "valid duration unit", s)
 	}
 	return d, nil
+}
+
+// SleepRandomMS sleeps a random amount of MS between min and max (inclusive)
+func SleepRandomMS(min, max int) {
+	delay := min
+	max++
+	if n, err := rand.Int(rand.Reader, big.NewInt(int64(max-min))); err == nil {
+		delay += int(n.Int64())
+	}
+	time.Sleep(time.Duration(delay) * time.Millisecond)
 }

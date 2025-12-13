@@ -41,7 +41,7 @@ func TestHandleFirstResponse(t *testing.T) {
 	var st []*healthcheck.Status
 	h.pool, _, st = albpool.New(-1,
 		[]http.Handler{http.HandlerFunc(tu.BasicHTTPHandler)})
-	st[0].Set(0)
+	st[0].SetAndNotify(0)
 	time.Sleep(250 * time.Millisecond)
 
 	w = httptest.NewRecorder()
@@ -55,8 +55,8 @@ func TestHandleFirstResponse(t *testing.T) {
 			http.HandlerFunc(tu.BasicHTTPHandler),
 			http.HandlerFunc(tu.BasicHTTPHandler),
 		})
-	st[0].Set(0)
-	st[1].Set(0)
+	st[0].SetAndNotify(0)
+	st[1].SetAndNotify(0)
 	time.Sleep(250 * time.Millisecond)
 
 	w = httptest.NewRecorder()

@@ -41,7 +41,7 @@ func TestHandleRoundRobin(t *testing.T) {
 
 	h.pool = p
 
-	hsts[0].Set(0)
+	hsts[0].SetAndNotify(0)
 	time.Sleep(250 * time.Millisecond)
 
 	w = httptest.NewRecorder()
@@ -52,7 +52,7 @@ func TestHandleRoundRobin(t *testing.T) {
 
 	h.pool, _, hsts = albpool.New(0,
 		[]http.Handler{http.HandlerFunc(failures.HandleBadGateway)})
-	hsts[0].Set(-1)
+	hsts[0].SetAndNotify(-1)
 	time.Sleep(250 * time.Millisecond)
 	w = httptest.NewRecorder()
 	h.ServeHTTP(w, nil)
