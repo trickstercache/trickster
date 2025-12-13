@@ -151,6 +151,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 			var firstErr atomic.Pointer[error]
 
 			var resi int
+		PROCESS_TIME_SERIES_CHUNKS:
 			for chunkStart := cext.Start; chunkStart.Before(cext.End); chunkStart = chunkStart.Add(csize) {
 				// Chunk range (inclusive, on-step)
 				chunkExtent := timeseries.Extent{
@@ -161,14 +162,15 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 				subkey := getSubKey(key, chunkExtent)
 				// Query
 				outIdx := resi
-				eg.Go(func() error {
-					// Check if we should abort due to previous error
-					select {
-					case <-ctx.Done():
-						return nil
-					default:
-					}
 
+				// Check if we should abort due to previous error
+				select {
+				case <-ctx.Done():
+					break PROCESS_TIME_SERIES_CHUNKS
+				default:
+				}
+
+				eg.Go(func() error {
 					qr := queryConcurrent(ctx, c, subkey)
 					if qr.lookupStatus != status.LookupStatusHit &&
 						(qr.err == nil || errors.Is(qr.err, cache.ErrKNF)) {
@@ -246,6 +248,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 
 			var i int
 			var firstErr atomic.Pointer[error]
+		PROCESS_BYTERANGE_CHUNKS:
 			for chunkStart := crs; chunkStart < cre; chunkStart += size {
 				// Determine chunk range (inclusive)
 				chunkRange := byterange.Range{
@@ -255,14 +258,14 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 				// Determine subkey
 				subkey := key + chunkRange.String()
 
-				eg.Go(func() error {
-					// Check if we should abort due to previous error
-					select {
-					case <-ctx.Done():
-						return nil
-					default:
-					}
+				// Check if we should abort due to previous error
+				select {
+				case <-ctx.Done():
+					break PROCESS_BYTERANGE_CHUNKS
+				default:
+				}
 
+				eg.Go(func() error {
 					// Query and process chunk in single goroutine
 					qr := queryConcurrent(ctx, c, subkey)
 					if qr == nil {
@@ -447,91 +450,13 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 		trq := rsc.TimeRangeQuery
 		rsc.Unlock()
 		if trq != nil {
-			// Do timeseries chunking
-			meta := d.GetMeta()
-			// Determine chunk extent and number of chunks
-			var cext timeseries.Extent
-			csize := trq.Step * time.Duration(c.Configuration().TimeseriesChunkFactor)
-			var cct int
-			cext.Start, cext.End = trq.Extent.Start.Truncate(csize), trq.Extent.End.Truncate(csize).Add(csize)
-			cct = int(cext.End.Sub(cext.Start) / csize)
-			// Prepare buffered results and waitgroup
-			cr := make([]error, cct+1)
-			eg := errgroup.Group{}
-			eg.SetLimit(16) // FIXME: make configurable
-			var i int
-			for chunkStart := cext.Start; chunkStart.Before(cext.End); chunkStart = chunkStart.Add(csize) {
-				// Chunk range (inclusive, on-step)
-				chunkExtent := timeseries.Extent{
-					Start: chunkStart,
-					End:   chunkStart.Add(csize - trq.Step),
-				}
-				// Derive subkey
-				subkey := getSubKey(key, chunkExtent)
-				// Write
-				index := i
-				eg.Go(func() error {
-					cd := d.GetTimeseriesChunk(chunkExtent)
-					if c.Configuration().Provider != providerMemory {
-						cd.Body, _ = marshal(cd.timeseries, nil, 0)
-					}
-					cr[index] = writeConcurrent(ctx, c, subkey, cd, compress, ttl)
-					return nil
-				})
-				i++
-			}
-			// Store metadocument
-			eg.Go(func() error {
-				cr[i] = writeConcurrent(ctx, c, key, meta, compress, ttl)
-				return nil
-			})
-			// Wait on writes to finish (result channel is buffered and doesn't hold for receive)
-			eg.Wait()
-			// Handle results
-			err = errors.Join(cr...)
+			// Use timeseries chunking
+			chunker := NewTimeseriesChunker(c, key, trq, marshal)
+			err = executeChunking(ctx, c, key, d, compress, ttl, chunker)
 		} else {
-			// Do byterange chunking
-			// Determine chunk start/end and number of chunks
-			drs := d.getByteRanges()
-			size := c.Configuration().ByterangeChunkSize
-			crs, cre := drs[0].Start, drs[len(drs)-1].End
-			crs = (crs / size) * size
-			cre = (cre/size + 1) * size
-			cct := (cre - crs) / size
-			// Create meta document
-			meta := d.GetMeta()
-			// Prepare buffered results and waitgroup
-			cr := make([]error, cct+1)
-			eg := errgroup.Group{}
-			eg.SetLimit(16) // FIXME: make configurable
-			// Iterate chunks
-			var i int
-			for chunkStart := crs; chunkStart < cre; chunkStart += size {
-				// Determine chunk range (inclusive)
-				chunkRange := byterange.Range{
-					Start: chunkStart,
-					End:   chunkStart + size - 1,
-				}
-				// Determine subkey
-				subkey := key + chunkRange.String()
-				// Get chunk
-				cd := d.GetByterangeChunk(chunkRange, size)
-				// Store subdocument
-				index := i
-				eg.Go(func() error {
-					cr[index] = writeConcurrent(ctx, c, subkey, cd, compress, ttl)
-					return nil
-				})
-				i++
-			}
-			// Store metadocument
-			eg.Go(func() error {
-				cr[i] = writeConcurrent(ctx, c, key, meta, compress, ttl)
-				return nil
-			})
-			// Wait on writes to finish (result channel is buffered and doesn't hold for receive)
-			eg.Wait()
-			err = errors.Join(cr...)
+			// Use byterange chunking
+			chunker := NewByterangeChunker(c, key, d)
+			err = executeChunking(ctx, c, key, d, compress, ttl, chunker)
 		}
 	} else {
 		if marshal != nil {
@@ -600,4 +525,193 @@ func DocumentFromHTTPResponse(resp *http.Response, body []byte,
 
 func getSubKey(key string, chunkExtent timeseries.Extent) string {
 	return fmt.Sprintf("%s.%s", key, chunkExtent)
+}
+
+// DataDocument abstracts the source data for chunking operations.
+type DataDocument interface {
+	// GetMeta returns the metadata document that acts as a manifest for all chunks.
+	GetMeta() *HTTPDocument
+
+	// --- Timeseries Chunking Methods ---
+
+	// GetTimeseriesChunk retrieves the specific chunk of data for a given time extent.
+	GetTimeseriesChunk(extent timeseries.Extent) *HTTPDocument
+
+	// --- Byterange Chunking Methods ---
+
+	// getByteRanges returns the total extent of the data in byte ranges.
+	getByteRanges() byterange.Ranges
+
+	// GetByterangeChunk retrieves the specific chunk of data for a given byte range.
+	GetByterangeChunk(dataRange byterange.Range, size int64) *HTTPDocument
+}
+
+// Chunker abstracts the logic for different types of chunking.
+type Chunker interface {
+	// Determine the number of chunks plus one for the metadata document.
+	ChunkCount() int
+
+	// Iterate over chunks and execute the provided write function for each.
+	// The write function takes (index, subkey, chunkData).
+	IterateChunks(
+		d DataDocument, // The source data document
+		writeFunc func(int, string, interface{}) error,
+	) error
+
+	// GetMeta returns the metadata document to be stored separately.
+	GetMeta(d DataDocument) interface{}
+}
+
+// TimeseriesChunker handles timeseries chunking operations
+type TimeseriesChunker struct {
+	trq     *timeseries.TimeRangeQuery
+	c       cache.Cache
+	key     string
+	cext    timeseries.Extent
+	csize   time.Duration
+	cct     int
+	marshal timeseries.MarshalerFunc
+}
+
+// NewTimeseriesChunker creates a new TimeseriesChunker
+func NewTimeseriesChunker(c cache.Cache, key string, trq *timeseries.TimeRangeQuery, marshal timeseries.MarshalerFunc) *TimeseriesChunker {
+	csize := trq.Step * time.Duration(c.Configuration().TimeseriesChunkFactor)
+	var cext timeseries.Extent
+	cext.Start, cext.End = trq.Extent.Start.Truncate(csize), trq.Extent.End.Truncate(csize).Add(csize)
+	cct := int(cext.End.Sub(cext.Start) / csize)
+
+	return &TimeseriesChunker{trq: trq, c: c, key: key, cext: cext, csize: csize, cct: cct, marshal: marshal}
+}
+
+func (tc *TimeseriesChunker) ChunkCount() int {
+	return tc.cct + 1 // chunks + meta
+}
+
+func (tc *TimeseriesChunker) GetMeta(d DataDocument) interface{} {
+	return d.GetMeta()
+}
+
+func (tc *TimeseriesChunker) IterateChunks(
+	d DataDocument,
+	writeFunc func(int, string, interface{}) error,
+) error {
+	i := 0
+	for chunkStart := tc.cext.Start; chunkStart.Before(tc.cext.End); chunkStart = chunkStart.Add(tc.csize) {
+		chunkExtent := timeseries.Extent{
+			Start: chunkStart,
+			End:   chunkStart.Add(tc.csize - tc.trq.Step),
+		}
+		subkey := getSubKey(tc.key, chunkExtent)
+		chunkData := d.GetTimeseriesChunk(chunkExtent)
+
+		// Handle serialization for non-memory providers
+		if tc.c.Configuration().Provider != providerMemory && tc.marshal != nil {
+			chunkData.Body, _ = tc.marshal(chunkData.timeseries, nil, 0)
+		}
+
+		if err := writeFunc(i, subkey, chunkData); err != nil {
+			return err
+		}
+		i++
+	}
+	return nil
+}
+
+// ByterangeChunker handles byterange chunking operations
+type ByterangeChunker struct {
+	c    cache.Cache
+	key  string
+	size int64
+	crs  int64 // chunk range start
+	cre  int64 // chunk range end
+	cct  int64 // chunk count
+}
+
+// NewByterangeChunker creates a new byterange chunker
+func NewByterangeChunker(c cache.Cache, key string, d DataDocument) *ByterangeChunker {
+	drs := d.getByteRanges()
+	size := c.Configuration().ByterangeChunkSize
+	crs, cre := drs[0].Start, drs[len(drs)-1].End
+	crs = (crs / size) * size
+	cre = (cre/size + 1) * size
+	cct := (cre - crs) / size
+
+	return &ByterangeChunker{
+		c:    c,
+		key:  key,
+		size: size,
+		crs:  crs,
+		cre:  cre,
+		cct:  cct,
+	}
+}
+
+func (bc *ByterangeChunker) ChunkCount() int {
+	return int(bc.cct) + 1 // +1 for meta
+}
+
+func (bc *ByterangeChunker) IterateChunks(
+	d DataDocument,
+	writeFunc func(int, string, interface{}) error,
+) error {
+	i := 0
+	for chunkStart := bc.crs; chunkStart < bc.cre; chunkStart += bc.size {
+		chunkRange := byterange.Range{
+			Start: chunkStart,
+			End:   chunkStart + bc.size - 1,
+		}
+		subkey := bc.key + chunkRange.String()
+		chunkData := d.GetByterangeChunk(chunkRange, bc.size)
+
+		if err := writeFunc(i, subkey, chunkData); err != nil {
+			return err
+		}
+		i++
+	}
+	return nil
+}
+
+func (bc *ByterangeChunker) GetMeta(d DataDocument) interface{} {
+	return d.GetMeta()
+}
+
+// executeChunking performs the generic chunking and concurrent write logic.
+func executeChunking(ctx context.Context, c cache.Cache, key string, d DataDocument, compress bool, ttl time.Duration, chunker Chunker) error {
+	cct := chunker.ChunkCount()
+	cr := make([]error, cct) // Error slice size is chunks + 1 (for meta)
+
+	eg := errgroup.Group{}
+	eg.SetLimit(16) // FIXME: make configurable
+
+	// 1. Iterate over chunks and start concurrent writes
+	chunker.IterateChunks(d, func(index int, subkey string, chunkData interface{}) error {
+		// This is the core concurrent write logic
+		eg.Go(func() error {
+			httpDoc, ok := chunkData.(*HTTPDocument)
+			if !ok {
+				return errors.New("invalid chunk data type")
+			}
+			cr[index] = writeConcurrent(ctx, c, subkey, httpDoc, compress, ttl)
+			return nil
+		})
+		return nil // The return value here is unused, we use the errgroup for final errors
+	})
+
+	// The last index is reserved for the metadata document.
+	metaIndex := cct - 1
+	meta := chunker.GetMeta(d)
+
+	// 2. Store metadocument concurrently
+	eg.Go(func() error {
+		httpDoc, ok := meta.(*HTTPDocument)
+		if !ok {
+			return errors.New("invalid meta data type")
+		}
+		cr[metaIndex] = writeConcurrent(ctx, c, key, httpDoc, compress, ttl)
+		return nil
+	})
+
+	// 3. Wait on writes to finish and handle results
+	eg.Wait()
+	return errors.Join(cr...)
 }
