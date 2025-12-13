@@ -71,7 +71,7 @@ func (hc *healthChecker) Register(name, description string, o *ho.Options,
 		return nil, ho.ErrNoOptionsProvided
 	}
 	if t2, ok := hc.targets[name]; ok && t2 != nil {
-		t2.Stop()
+		go t2.Stop()
 	}
 	t, err := newTarget(
 		context.Background(),
@@ -84,10 +84,10 @@ func (hc *healthChecker) Register(name, description string, o *ho.Options,
 		return nil, err
 	}
 	hc.targets[t.name] = t
+	hc.statuses[t.name] = t.status
 	if t.interval > 0 {
 		t.Start(context.Background())
 	}
-	hc.statuses[t.name] = t.status
 	return t.status, nil
 }
 

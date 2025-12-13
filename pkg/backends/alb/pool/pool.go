@@ -20,6 +20,7 @@ package pool
 import (
 	"context"
 	"net/http"
+	"sync"
 	"sync/atomic"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
@@ -33,6 +34,8 @@ type Pool interface {
 	SetHealthy([]http.Handler)
 	// Stop stops the pool and its health checker goroutines
 	Stop()
+	// RefreshHealthy forces a refresh of the pool's healthy handlers list
+	RefreshHealthy()
 }
 
 // Target defines an alb pool target
@@ -76,7 +79,22 @@ type pool struct {
 	ctx          context.Context
 	stopper      context.CancelFunc
 	ch           chan bool
-	hcInProgress atomic.Bool
+	mtx          sync.Mutex
+}
+
+func (p *pool) RefreshHealthy() {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+	h := make([]http.Handler, len(p.targets))
+	var k int
+	for _, t := range p.targets {
+		if int(t.hcStatus.Get()) >= p.healthyFloor {
+			h[k] = t.handler
+			k++
+		}
+	}
+	h = h[:k]
+	p.healthy.Store(&h)
 }
 
 func (p *pool) Healthy() []http.Handler {

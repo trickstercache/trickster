@@ -19,6 +19,7 @@ package healthcheck
 import (
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -26,6 +27,13 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+)
+
+const (
+	StatusInitializing int32 = -2
+	StatusFailing      int32 = -1
+	StatusUnchecked    int32 = 0
+	StatusPassing      int32 = 1
 )
 
 // Status maintains the Status of a Target
@@ -45,11 +53,12 @@ type StatusLookup map[string]*Status
 
 func (s *Status) String() string {
 	sb := &strings.Builder{}
-	fmt.Fprintf(sb, "target: %s\nstatus: %d\n", s.name, s.status.Load())
-	if s.status.Load() < 1 {
+	st := s.status.Load()
+	fmt.Fprintf(sb, "target: %s\nstatus: %d\n", s.name, st)
+	if st < StatusPassing {
 		fmt.Fprintf(sb, "detail: %s\n", s.Detail())
 	}
-	if s.status.Load() < 0 {
+	if st == StatusFailing {
 		fmt.Fprintf(sb, "since: %d", s.failingSince.Unix())
 	}
 	return sb.String()
@@ -58,8 +67,9 @@ func (s *Status) String() string {
 // Headers returns a header set indicating the Status
 func (s *Status) Headers() http.Header {
 	h := http.Header{}
-	h.Set(headers.NameTrkHCStatus, strconv.Itoa(int(s.status.Load())))
-	if s.status.Load() < 1 {
+	st := s.status.Load()
+	h.Set(headers.NameTrkHCStatus, strconv.Itoa(int(st)))
+	if st < StatusPassing {
 		h.Set(headers.NameTrkHCDetail, s.Detail())
 	}
 	return h
@@ -69,10 +79,11 @@ func (s *Status) Headers() http.Header {
 func (s *Status) Set(i int32) {
 	s.status.Store(i)
 	s.mtx.Lock()
-	for _, ch := range s.subscribers {
+	subs := slices.Clone(s.subscribers)
+	s.mtx.Unlock()
+	for _, ch := range subs {
 		ch <- true
 	}
-	s.mtx.Unlock()
 }
 
 // Prober returns the Prober func
@@ -81,8 +92,8 @@ func (s *Status) Prober() func(http.ResponseWriter) {
 }
 
 // Get provides the current status
-func (s *Status) Get() int {
-	return int(s.status.Load())
+func (s *Status) Get() int32 {
+	return s.status.Load()
 }
 
 // Detail provides the current detail

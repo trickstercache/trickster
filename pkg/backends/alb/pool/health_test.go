@@ -31,7 +31,7 @@ func TestCheckHealth(t *testing.T) {
 		hcStatus: &healthcheck.Status{},
 	}
 
-	tgt.hcStatus.Set(1)
+	tgt.hcStatus.Set(healthcheck.StatusPassing)
 
 	p := &pool{ch: make(chan bool), ctx: ctx, targets: []*Target{tgt}, healthyFloor: -1}
 	go func() {

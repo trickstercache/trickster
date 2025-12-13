@@ -63,6 +63,9 @@ const (
 	ValueSharedMaxAge = "s-maxage"
 	// ValueTextPlain represents the HTTP Header Value of "text/plain"
 	ValueTextPlain = "text/plain"
+	// ValueTextYAML represents the HTTP Header Value of "text/yaml"
+	ValueTextYAML = "text/yaml"
+
 	// ValueXFormURLEncoded represents the HTTP Header Value of "application/x-www-form-urlencoded"
 	ValueXFormURLEncoded = "application/x-www-form-urlencoded"
 

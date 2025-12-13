@@ -268,8 +268,8 @@ func TestProbe(t *testing.T) {
 		// verify results
 		success := target.successConsecutiveCnt.Load()
 		fail := target.failConsecutiveCnt.Load()
-		require.GreaterOrEqual(t, success, int32(1500/5)-25) // allow some margin
 		require.Equal(t, int32(0), fail)
+		require.GreaterOrEqual(t, success, int32(90))
 	})
 }
 

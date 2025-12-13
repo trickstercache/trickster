@@ -17,8 +17,6 @@
 package pool
 
 import (
-	"net/http"
-
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 )
 
@@ -29,23 +27,7 @@ func (p *pool) checkHealth() {
 			logger.Debug("stopping ALB pool", nil)
 			return
 		case <-p.ch: // msg arrives whenever the healthy list must be rebuilt
-			if p.hcInProgress.Load() {
-				// this skips a health check cycle if one is already in progress
-				// to avoid pileups if a target is very slow to respond
-				return
-			}
-			p.hcInProgress.Store(true)
-			h := make([]http.Handler, len(p.targets))
-			var k int
-			for _, t := range p.targets {
-				if t.hcStatus.Get() >= p.healthyFloor {
-					h[k] = t.handler
-					k++
-				}
-			}
-			h = h[:k]
-			p.healthy.Store(&h)
-			p.hcInProgress.Store(false)
+			p.RefreshHealthy()
 		}
 	}
 }
