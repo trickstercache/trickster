@@ -65,6 +65,10 @@ const (
 	DefaultTimeseriesShardSize = 0
 	// DefaultTimeseriesShardStep defines the default shard step of 0 (no sharding)
 	DefaultTimeseriesShardStep = 0
+	// DefaultChunkReadConcurrencyLimit defines the default chunk read concurrency limit
+	DefaultChunkReadConcurrencyLimit = 16
+	// DefaultChunkReadConcurrencyLimit defines the default chunk write concurrency limit
+	DefaultChunkWriteConcurrencyLimit = 16
 )
 
 // DefaultCompressibleTypes returns a list of types that Trickster should compress before caching

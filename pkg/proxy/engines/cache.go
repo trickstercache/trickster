@@ -19,21 +19,16 @@ package engines
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"mime"
 	"net/http"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/andybalholm/brotli"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
-	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
-	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	tspan "github.com/trickstercache/trickster/v2/pkg/observability/tracing/span"
 	tc "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
@@ -130,146 +125,19 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 	lookupStatus = qr.lookupStatus
 
 	// If we got a meta document and want to use cache chunking, do so
+	opts := rsc.BackendOptions
 	if c.Configuration().UseCacheChunking {
 		if trq := rsc.TimeRangeQuery; trq != nil {
-			// Do timeseries chunk retrieval
-			// Determine chunk extent and number of chunks
-			var cext timeseries.Extent
-			csize := trq.Step * time.Duration(c.Configuration().TimeseriesChunkFactor)
-			var cct int
-			cext.Start, cext.End = trq.Extent.Start.Truncate(csize), trq.Extent.End.Truncate(csize).Add(csize)
-			cct = int(cext.End.Sub(cext.Start) / csize)
-			// Prepare buffered results and waitgroup
-			wg := &sync.WaitGroup{}
-			// Result slice of timeseries
-			ress := make(timeseries.List, cct)
-			var resi int
-			for chunkStart := cext.Start; chunkStart.Before(cext.End); chunkStart = chunkStart.Add(csize) {
-				// Chunk range (inclusive, on-step)
-				chunkExtent := timeseries.Extent{
-					Start: chunkStart,
-					End:   chunkStart.Add(csize - trq.Step),
-				}
-				// Derive subkey
-				subkey := getSubKey(key, chunkExtent)
-				// Query
-				outIdx := resi
-				wg.Go(func() {
-					qr := queryConcurrent(ctx, c, subkey)
-					if qr.lookupStatus != status.LookupStatusHit &&
-						(qr.err == nil || errors.Is(qr.err, cache.ErrKNF)) {
-						return
-					}
-					if qr.err != nil {
-						logger.Error("dpc query cache chunk failed",
-							logging.Pairs{
-								"error": qr.err, "chunkIdx": outIdx,
-								"key": subkey, "cacheQueryStatus": qr.lookupStatus,
-							})
-						return
-					}
-					if c.Configuration().Provider != providerMemory {
-						qr.d.timeseries, qr.err = unmarshal(qr.d.Body, nil)
-						if qr.err != nil {
-							logger.Error("dpc query cache chunk failed",
-								logging.Pairs{
-									"error": qr.err, "chunkIdx": outIdx,
-									"key": subkey, "cacheQueryStatus": qr.lookupStatus,
-								})
-							return
-						}
-					}
-					if qr.d.timeseries != nil {
-						ress[outIdx] = qr.d.timeseries
-					}
-				})
-
-				resi++
-			}
-			// Wait on queries
-			wg.Wait()
-			d.timeseries = ress.Merge(true)
-			if d.timeseries != nil {
-				d.timeseries.SetExtents(d.timeseries.Extents().Compress(trq.Step))
+			// Use timeseries chunk querying
+			err := executeTimeseriesChunkQuery(ctx, c, key, d, trq, unmarshal, opts)
+			if err != nil {
+				return nil, status.LookupStatusKeyMiss, ranges, err
 			}
 		} else {
-			// Do byterange chunking
-			// Determine chunk start/end and number of chunks
-			var crs, cre, cct int64
-			if len(ranges) == 0 {
-				ranges = byterange.Ranges{byterange.Range{Start: 0, End: d.ContentLength - 1}}
-			}
-			size := c.Configuration().ByterangeChunkSize
-			crs, cre = ranges[0].Start, ranges[len(ranges)-1].End
-			crs = (crs / size) * size
-			cre = (cre/size + 1) * size
-			cct = (cre - crs) / size
-			// Allocate body in meta document
-			d.Body = make([]byte, d.ContentLength)
-			// Prepare buffered results and waitgroup
-			cr := make([]*queryResult, cct)
-			wg := &sync.WaitGroup{}
-			// Iterate chunks
-			var i int
-			for chunkStart := crs; chunkStart < cre; chunkStart += size {
-				// Determine chunk range (inclusive)
-				chunkRange := byterange.Range{
-					Start: chunkStart,
-					End:   chunkStart + size - 1,
-				}
-				// Determine subkey
-				subkey := key + chunkRange.String()
-				// Query subdocument
-
-				index := i
-				wg.Go(func() {
-					qr := queryConcurrent(ctx, c, subkey)
-					cr[index] = qr
-				})
-				i++
-			}
-			// Wait on queries to finish (result channel is buffered and doesn't hold for receive)
-			wg.Wait()
-			// Handle results
-			var dbl int64
-			for _, qr := range cr {
-				if qr == nil {
-					continue
-				}
-				// Return on error
-				if qr.err != nil && !errors.Is(qr.err, cache.ErrKNF) {
-					return qr.d, qr.lookupStatus, ranges, qr.err
-				}
-				// Merge with meta document on success
-				// We can do this concurrently since chunk ranges don't overlap
-
-				wg.Go(func() {
-					if qr.d.IsMeta {
-						return
-					}
-					if qr.lookupStatus == status.LookupStatusHit {
-						for _, r := range qr.d.Ranges {
-							content := qr.d.Body[r.Start%size : r.End%size+1]
-							r.Copy(d.Body, content)
-							if v := atomic.LoadInt64(&dbl); r.End+1 > v {
-								atomic.CompareAndSwapInt64(&dbl, v, r.End+1)
-							}
-						}
-					}
-				})
-			}
-			wg.Wait()
-			if len(d.Ranges) > 1 {
-				d.StoredRangeParts = make(map[string]*byterange.MultipartByteRange)
-				for _, r := range d.Ranges {
-					d.StoredRangeParts[r.String()] = &byterange.MultipartByteRange{
-						Range:   r,
-						Content: d.Body[r.Start : r.End+1],
-					}
-				}
-				d.Body = nil
-			} else {
-				d.Body = d.Body[:dbl]
+			// Use byterange chunk querying
+			err := executeByterangeChunkQuery(ctx, c, key, d, ranges, opts)
+			if err != nil {
+				return nil, status.LookupStatusKeyMiss, ranges, err
 			}
 		}
 	}
@@ -404,90 +272,19 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 		}
 	}
 
+	opts := rsc.BackendOptions
 	if c.Configuration().UseCacheChunking {
 		rsc.Lock()
 		trq := rsc.TimeRangeQuery
 		rsc.Unlock()
 		if trq != nil {
-			// Do timeseries chunking
-			meta := d.GetMeta()
-			// Determine chunk extent and number of chunks
-			var cext timeseries.Extent
-			csize := trq.Step * time.Duration(c.Configuration().TimeseriesChunkFactor)
-			var cct int
-			cext.Start, cext.End = trq.Extent.Start.Truncate(csize), trq.Extent.End.Truncate(csize).Add(csize)
-			cct = int(cext.End.Sub(cext.Start) / csize)
-			// Prepare buffered results and waitgroup
-			cr := make([]error, cct+1)
-			wg := &sync.WaitGroup{}
-			var i int
-			for chunkStart := cext.Start; chunkStart.Before(cext.End); chunkStart = chunkStart.Add(csize) {
-				// Chunk range (inclusive, on-step)
-				chunkExtent := timeseries.Extent{
-					Start: chunkStart,
-					End:   chunkStart.Add(csize - trq.Step),
-				}
-				// Derive subkey
-				subkey := getSubKey(key, chunkExtent)
-				// Write
-				index := i
-				wg.Go(func() {
-					cd := d.GetTimeseriesChunk(chunkExtent)
-					if c.Configuration().Provider != providerMemory {
-						cd.Body, _ = marshal(cd.timeseries, nil, 0)
-					}
-					cr[index] = writeConcurrent(ctx, c, subkey, cd, compress, ttl)
-				})
-				i++
-			}
-			// Store metadocument
-			wg.Go(func() {
-				cr[i] = writeConcurrent(ctx, c, key, meta, compress, ttl)
-			})
-			// Wait on writes to finish (result channel is buffered and doesn't hold for receive)
-			wg.Wait()
-			// Handle results
-			err = errors.Join(cr...)
+			// Use timeseries chunking
+			chunker := NewTimeseriesChunkWriter(c, key, trq, marshal)
+			err = executeChunking(ctx, c, key, d, compress, ttl, chunker, opts)
 		} else {
-			// Do byterange chunking
-			// Determine chunk start/end and number of chunks
-			drs := d.getByteRanges()
-			size := c.Configuration().ByterangeChunkSize
-			crs, cre := drs[0].Start, drs[len(drs)-1].End
-			crs = (crs / size) * size
-			cre = (cre/size + 1) * size
-			cct := (cre - crs) / size
-			// Create meta document
-			meta := d.GetMeta()
-			// Prepare buffered results and waitgroup
-			cr := make([]error, cct+1)
-			wg := &sync.WaitGroup{}
-			// Iterate chunks
-			var i int
-			for chunkStart := crs; chunkStart < cre; chunkStart += size {
-				// Determine chunk range (inclusive)
-				chunkRange := byterange.Range{
-					Start: chunkStart,
-					End:   chunkStart + size - 1,
-				}
-				// Determine subkey
-				subkey := key + chunkRange.String()
-				// Get chunk
-				cd := d.GetByterangeChunk(chunkRange, size)
-				// Store subdocument
-				index := i
-				wg.Go(func() {
-					cr[index] = writeConcurrent(ctx, c, subkey, cd, compress, ttl)
-				})
-				i++
-			}
-			// Store metadocument
-			wg.Go(func() {
-				cr[i] = writeConcurrent(ctx, c, key, meta, compress, ttl)
-			})
-			// Wait on writes to finish (result channel is buffered and doesn't hold for receive)
-			wg.Wait()
-			err = errors.Join(cr...)
+			// Use byterange chunking
+			chunker := NewByterangeChunkWriter(c, key, d)
+			err = executeChunking(ctx, c, key, d, compress, ttl, chunker, opts)
 		}
 	} else {
 		if marshal != nil {

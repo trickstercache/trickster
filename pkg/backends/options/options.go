@@ -75,6 +75,10 @@ type Options struct {
 	CacheName string `yaml:"cache_name,omitempty"`
 	// CacheKeyPrefix defines the cache key prefix the backend will use when writing objects to the cache
 	CacheKeyPrefix string `yaml:"cache_key_prefix,omitempty"`
+	// ChunkReadConcurrencyLimit defines the concurrency limit while reading a chunked object
+	ChunkReadConcurrencyLimit int `yaml:"chunk_read_concurrency_limit,omitempty"`
+	// ChunkWriteConcurrencyLimit defines the concurrency limit while writing a chunked object
+	ChunkWriteConcurrencyLimit int `yaml:"chunk_write_concurrency_limit,omitempty"`
 	// HealthCheck is the health check options reference for this backend
 	HealthCheck *ho.Options `yaml:"healthcheck,omitempty"`
 	// Object Proxy Cache and Delta Proxy Cache Configurations
@@ -226,6 +230,8 @@ func New() *Options {
 		CacheKeyPrefix:               "",
 		CacheName:                    DefaultBackendCacheName,
 		CompressibleTypeList:         DefaultCompressibleTypes(),
+		ChunkReadConcurrencyLimit:    DefaultChunkReadConcurrencyLimit,
+		ChunkWriteConcurrencyLimit:   DefaultChunkWriteConcurrencyLimit,
 		FastForwardTTL:               DefaultFastForwardTTL,
 		ForwardedHeaders:             DefaultForwardedHeaders,
 		HealthCheck:                  ho.New(),
