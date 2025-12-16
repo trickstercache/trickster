@@ -17,8 +17,10 @@
 package fr
 
 import (
+	"context"
 	"net/http"
 	"sync"
+	"sync/atomic"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
@@ -28,6 +30,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/response/capture"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
@@ -68,6 +71,10 @@ func (h *handler) SetPool(p pool.Pool) {
 	h.pool = p
 }
 
+func (h *handler) Pool() pool.Pool {
+	return h.pool
+}
+
 func (h *handler) ID() types.ID {
 	if h.fgr {
 		return FGRID
@@ -101,67 +108,79 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// otherwise iterate the fanout
-	wc := newResponderClaim(l)
-	var wg sync.WaitGroup
+	var claimed int64 = -1
+	contexts := make([]context.Context, l)
+	cancels := make([]context.CancelFunc, l)
 	for i := range l {
-		// only the one of these i fanouts to respond will be mapped back to the
-		// end user based on the methodology and the rest will have their
-		// contexts canceled
-		wg.Go(func() {
-			if hl[i] == nil {
-				return
+		contexts[i], cancels[i] = context.WithCancel(r.Context())
+	}
+	captures := make([]*capture.CaptureResponseWriter, l)
+	var wg sync.WaitGroup
+	responseWritten := make(chan struct{}, 1)
+
+	serveAndCancelOthers := func(i int, crw *capture.CaptureResponseWriter) {
+		go func() {
+			// cancels all other contexts
+			for j, cancel := range cancels {
+				if j != i {
+					cancel()
+				}
 			}
-			wm := newFirstResponseGate(w, wc, i, h.fgr)
+		}()
+		headers.Merge(w.Header(), crw.Header())
+		w.WriteHeader(crw.StatusCode())
+		w.Write(crw.Body())
+		responseWritten <- struct{}{}
+	}
+
+	// fanout to all healthy targets
+	for i := range l {
+		if hl[i] == nil {
+			continue
+		}
+		wg.Go(func() {
 			r2, _ := request.Clone(r)
-			r2 = r2.WithContext(wc.contexts[i])
-			hl[i].ServeHTTP(wm, r2)
+			r2 = r2.WithContext(contexts[i])
+			r2 = request.SetResources(r2, &request.Resources{Cancelable: true})
+			crw := capture.NewCaptureResponseWriter()
+			captures[i] = crw
+			hl[i].ServeHTTP(crw, r2)
+			statusCode := crw.StatusCode()
+			custom := h.fgr && len(h.fgrCodes) > 0
+			isGood := custom && h.fgrCodes.Contains(statusCode)
+			// this checks if the response qualifies as a client response
+			if (!h.fgr || (!custom && statusCode < 400) || isGood) &&
+				// this checks that the qualifying response is the first response
+				atomic.CompareAndSwapInt64(&claimed, -1, int64(i)) {
+				// this serves only the first qualifying response
+				serveAndCancelOthers(i, crw)
+				// this signals the response is written
+			}
 		})
 	}
-	wg.Wait()
-}
 
-type firstResponseGate struct {
-	http.ResponseWriter
-	i        int
-	fh       http.Header
-	c        *responderClaim
-	fgr      bool
-	fgrCodes sets.Set[int]
-}
-
-func newFirstResponseGate(w http.ResponseWriter, c *responderClaim, i int,
-	fgr bool,
-) *firstResponseGate {
-	return &firstResponseGate{ResponseWriter: w, c: c, fh: http.Header{}, i: i, fgr: fgr}
-}
-
-func (frg *firstResponseGate) Header() http.Header {
-	return frg.fh
-}
-
-func (frg *firstResponseGate) WriteHeader(i int) {
-	custom := frg.fgr && len(frg.fgrCodes) > 0
-	var isGood bool
-	if custom {
-		_, isGood = frg.fgrCodes[i]
-	}
-	if (!frg.fgr || !custom && i < 400 || custom && isGood) && frg.c.Claim(int64(frg.i)) {
-		if len(frg.fh) > 0 {
-			headers.Merge(frg.ResponseWriter.Header(), frg.fh)
-			frg.fh = nil
+	// this is a fallback case for when no qualifying upstream response arrives,
+	// the first response is used, regardless of qualification
+	go func() {
+		wg.Wait()
+		// if claimed is still -1, the fallback case must be used
+		if atomic.LoadInt64(&claimed) == -1 && r.Context().Err() == nil {
+			// this iterates the captures and serves the first non-nil response
+			for i, crw := range captures {
+				if crw != nil {
+					serveAndCancelOthers(i, crw)
+					break
+				}
+			}
 		}
-		frg.ResponseWriter.WriteHeader(i)
+	}()
+
+	// this prevents ServeHTTP from returning until the response is fully
+	// written or the request context is canceled
+	select {
+	case <-responseWritten:
+		return
+	case <-r.Context().Done():
 		return
 	}
-}
-
-func (frg *firstResponseGate) Write(b []byte) (int, error) {
-	if frg.c.Claim(int64(frg.i)) {
-		if len(frg.fh) > 0 {
-			headers.Merge(frg.ResponseWriter.Header(), frg.fh)
-			frg.fh = nil
-		}
-		return frg.ResponseWriter.Write(b)
-	}
-	return len(b), nil
 }
