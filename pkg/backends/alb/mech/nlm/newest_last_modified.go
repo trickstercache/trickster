@@ -57,6 +57,7 @@ func (h *handler) SetPool(p pool.Pool) {
 func (h *handler) Pool() pool.Pool {
 	return h.pool
 }
+
 func (h *handler) ID() types.ID {
 	return ID
 }
@@ -92,7 +93,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Track the newest Last-Modified response
-	var newestIdx = -1
+	newestIdx := -1
 	var newestTime time.Time
 	var mu sync.Mutex
 

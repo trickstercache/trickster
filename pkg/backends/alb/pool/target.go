@@ -54,7 +54,8 @@ func New(targets Targets, healthyFloor int) Pool {
 
 // NewTarget returns a new Target using the provided inputs
 func NewTarget(handler http.Handler, hcStatus *healthcheck.Status,
-	backend backends.Backend) *Target {
+	backend backends.Backend,
+) *Target {
 	return &Target{
 		hcStatus: hcStatus,
 		handler:  handler,

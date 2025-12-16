@@ -514,7 +514,9 @@ func (l Lookup) Initialize() error {
 		if !ncb.Contains(v.Provider) && v.CacheName == "" {
 			v.CacheName = DefaultBackendCacheName
 		}
-		v.Initialize(k)
+		if err := v.Initialize(k); err != nil {
+			return err
+		}
 		if len(v.Paths) > 0 {
 			err := v.Paths.Initialize()
 			if err != nil {

@@ -31,15 +31,15 @@ func TimeseriesMergeFunc(unmarshaler timeseries.UnmarshalerFunc) MergeFunc {
 		ts, ok := data.(timeseries.Timeseries)
 		if !ok {
 			// If data is []byte, unmarshal it first (for backward compatibility during transition)
-			if body, ok := data.([]byte); ok {
-				var err error
-				ts, err = unmarshaler(body, nil)
-				if err != nil {
-					return err
-				}
-			} else {
+			body, ok := data.([]byte)
+			if !ok {
 				// Not a timeseries and not []byte
 				return nil
+			}
+			var err error
+			ts, err = unmarshaler(body, nil)
+			if err != nil {
+				return err
 			}
 		}
 		if accum.tsdata == nil {

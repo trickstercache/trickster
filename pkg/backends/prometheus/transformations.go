@@ -40,7 +40,8 @@ func (c *Client) ProcessTransformations(ts timeseries.Timeseries) {
 }
 
 func (c *Client) processVectorTransformations(w http.ResponseWriter,
-	body []byte, statusCode int, rsc *request.Resources) {
+	body []byte, statusCode int, rsc *request.Resources,
+) {
 	var trq *timeseries.TimeRangeQuery
 	if rsc != nil && rsc.TimeRangeQuery != nil {
 		trq = rsc.TimeRangeQuery

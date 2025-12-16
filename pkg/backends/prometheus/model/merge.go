@@ -29,7 +29,8 @@ import (
 // MakeMergeFunc creates a MergeFunc for a specific type that implements Merge
 // The returned function accepts a type conforming to Mergeable[T] and merges it into the accumulator
 func MakeMergeFunc[T any, PT merge.Mergeable[T]](errorType string,
-	newInstance func() PT) merge.MergeFunc {
+	newInstance func() PT,
+) merge.MergeFunc {
 	return func(accum *merge.Accumulator, data any, idx int) error {
 		var instance PT
 		// Try to type assert to PT first
@@ -68,7 +69,8 @@ func MakeMergeFunc[T any, PT merge.Mergeable[T]](errorType string,
 // MakeMergeFuncFromBytes creates a MergeFunc that accepts []byte and unmarshals it
 // This is a convenience function for call sites that still have []byte
 func MakeMergeFuncFromBytes[T any, PT merge.Mergeable[T]](errorType string,
-	newInstance func() PT) func(*merge.Accumulator, []byte, int) error {
+	newInstance func() PT,
+) func(*merge.Accumulator, []byte, int) error {
 	mergeFunc := MakeMergeFunc(errorType, newInstance)
 	return func(accum *merge.Accumulator, body []byte, idx int) error {
 		instance := newInstance()
@@ -86,7 +88,8 @@ func MakeRespondFunc[T any, PT merge.MarshallerPtr[T]](
 	handleResult func(http.ResponseWriter, *http.Request, PT, int),
 ) merge.RespondFunc {
 	return func(w http.ResponseWriter, r *http.Request,
-		accum *merge.Accumulator, statusCode int) {
+		accum *merge.Accumulator, statusCode int,
+	) {
 		generic := accum.GetGeneric()
 		if generic == nil {
 			return
