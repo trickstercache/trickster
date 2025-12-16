@@ -22,14 +22,14 @@ import (
 	"net/http"
 	"sync"
 	"sync/atomic"
-
-	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 )
 
 // Pool defines the interface for a load balancer pool
 type Pool interface {
-	// Healthy returns the full list of Healthy Targets
+	// Healthy returns the full list of Healthy Targets as http.Handlers
 	Healthy() []http.Handler
+	// HealthyTargets returns the full list of Healthy Targets as *Targets
+	HealthyTargets() Targets
 	// SetHealthy sets the Healthy Targets List
 	SetHealthy([]http.Handler)
 	// Stop stops the pool and its health checker goroutines
@@ -38,67 +38,48 @@ type Pool interface {
 	RefreshHealthy()
 }
 
-// Target defines an alb pool target
-type Target struct {
-	hcStatus *healthcheck.Status
-	handler  http.Handler
-}
-
-// New returns a new Pool
-func New(targets []*Target, healthyFloor int) Pool {
-	ctx, cancel := context.WithCancel(context.Background())
-	p := &pool{
-		targets:      targets,
-		ctx:          ctx,
-		stopper:      cancel,
-		ch:           make(chan bool, 16),
-		healthyFloor: healthyFloor,
-	}
-	p.ch <- true
-
-	for _, t := range targets {
-		t.hcStatus.RegisterSubscriber(p.ch)
-	}
-	go p.checkHealth()
-	return p
-}
-
-// NewTarget returns a new Target using the provided inputs
-func NewTarget(handler http.Handler, hcStatus *healthcheck.Status) *Target {
-	return &Target{
-		hcStatus: hcStatus,
-		handler:  handler,
-	}
-}
-
 // pool implements Pool
 type pool struct {
-	targets      []*Target
-	healthy      atomic.Pointer[[]http.Handler]
-	healthyFloor int
-	ctx          context.Context
-	stopper      context.CancelFunc
-	ch           chan bool
-	mtx          sync.Mutex
+	targets         Targets
+	healthyTargets  atomic.Pointer[Targets]
+	healthyHandlers atomic.Pointer[[]http.Handler]
+	healthyFloor    int
+	ctx             context.Context
+	stopper         context.CancelFunc
+	ch              chan bool
+	mtx             sync.Mutex
 }
 
 func (p *pool) RefreshHealthy() {
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
-	h := make([]http.Handler, len(p.targets))
+	hh := make([]http.Handler, len(p.targets))
+	ht := make(Targets, len(p.targets))
+
 	var k int
 	for _, t := range p.targets {
 		if int(t.hcStatus.Get()) >= p.healthyFloor {
-			h[k] = t.handler
+			hh[k] = t.handler
+			ht[k] = t
 			k++
 		}
 	}
-	h = h[:k]
-	p.healthy.Store(&h)
+	hh = hh[:k]
+	ht = ht[:k]
+	p.healthyHandlers.Store(&hh)
+	p.healthyTargets.Store(&ht)
+}
+
+func (p *pool) HealthyTargets() Targets {
+	t := p.healthyTargets.Load()
+	if t != nil {
+		return *t
+	}
+	return nil
 }
 
 func (p *pool) Healthy() []http.Handler {
-	t := p.healthy.Load()
+	t := p.healthyHandlers.Load()
 	if t != nil {
 		return *t
 	}
@@ -106,7 +87,7 @@ func (p *pool) Healthy() []http.Handler {
 }
 
 func (p *pool) SetHealthy(h []http.Handler) {
-	p.healthy.Store(&h)
+	p.healthyHandlers.Store(&h)
 }
 
 func (p *pool) Stop() {
