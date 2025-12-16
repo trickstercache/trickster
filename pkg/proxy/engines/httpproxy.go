@@ -18,6 +18,8 @@ package engines
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"io"
 	"math"
 	"net/http"
@@ -209,8 +211,10 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 
 	resp, err := o.HTTPClient.Do(r)
 	if err != nil {
-		logger.Error("error downloading url",
-			logging.Pairs{"url": r.URL.String(), "detail": err.Error()})
+		if rsc == nil || !rsc.Cancelable || !errors.Is(err, context.Canceled) {
+			logger.Error("error downloading url",
+				logging.Pairs{"url": r.URL.String(), "detail": err.Error()})
+		}
 		// if there is an err and the response is nil, the server could not be reached
 		// so make a 502 for the downstream response
 		if resp == nil {

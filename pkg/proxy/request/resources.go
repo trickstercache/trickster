@@ -30,6 +30,7 @@ import (
 	auth "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/types"
 	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
@@ -48,7 +49,8 @@ type Resources struct {
 	Tracer            *tracing.Tracer
 	IsMergeMember     bool
 	RequestBody       []byte
-	ResponseMergeFunc any
+	MergeFunc         merge.MergeFunc
+	MergeRespondFunc  merge.RespondFunc
 	TSUnmarshaler     timeseries.UnmarshalerFunc
 	TSMarshaler       timeseries.MarshalWriterFunc
 	TSTransformer     func(timeseries.Timeseries)
@@ -57,6 +59,7 @@ type Resources struct {
 	Response          *http.Response
 	AuthResult        *auth.AuthResult
 	AlreadyEncoded    bool
+	Cancelable        bool
 }
 
 // Clone returns an exact copy of the subject Resources collection
@@ -73,7 +76,8 @@ func (r *Resources) Clone() *Resources {
 		Tracer:            r.Tracer,
 		IsMergeMember:     r.IsMergeMember,
 		RequestBody:       slices.Clone(r.RequestBody),
-		ResponseMergeFunc: r.ResponseMergeFunc,
+		MergeFunc:         r.MergeFunc,
+		MergeRespondFunc:  r.MergeRespondFunc,
 		TSUnmarshaler:     r.TSUnmarshaler,
 		TSMarshaler:       r.TSMarshaler,
 		TSTransformer:     r.TSTransformer,
@@ -81,6 +85,7 @@ func (r *Resources) Clone() *Resources {
 		TSReqestOptions:   r.TSReqestOptions,
 		AuthResult:        r.AuthResult, // shallow copy of the auth result
 		AlreadyEncoded:    r.AlreadyEncoded,
+		Cancelable:        r.Cancelable,
 	}
 }
 
@@ -119,6 +124,14 @@ func SetResources(r *http.Request, rsc *Resources) *http.Request {
 	return r.WithContext(tctx.WithResources(r.Context(), rsc))
 }
 
+// ClearResources removes Resources from the HTTP Request's context
+func ClearResources(r *http.Request) *http.Request {
+	if r == nil {
+		return r
+	}
+	return r.WithContext(tctx.ClearResources(r.Context()))
+}
+
 // Merge sets the configuration references in the subject resources to the source's
 func (r *Resources) Merge(r2 *Resources) {
 	if r == nil || r2 == nil {
@@ -138,5 +151,7 @@ func (r *Resources) Merge(r2 *Resources) {
 	r.RequestBody = slices.Clone(r2.RequestBody)
 	r.IsMergeMember = r.IsMergeMember || r2.IsMergeMember
 	r.AlreadyEncoded = r.AlreadyEncoded || r2.AlreadyEncoded
-	r.ResponseMergeFunc = r2.ResponseMergeFunc
+	r.MergeFunc = r2.MergeFunc
+	r.MergeRespondFunc = r2.MergeRespondFunc
+	r.Cancelable = r.Cancelable || r2.Cancelable
 }
