@@ -146,6 +146,15 @@ func (o *Options) Initialize(_ string) error {
 		o.Methods = []string{http.MethodGet}
 	}
 
+	// Expand "*" to all HTTP methods
+	// If "*" is present, it replaces all other methods
+	for _, method := range o.Methods {
+		if method == "*" {
+			o.Methods = methods.AllHTTPMethods()
+			break
+		}
+	}
+
 	if o.MatchTypeName == "" {
 		o.MatchTypeName = matching.PathMatchNameExact
 		o.MatchType = matching.PathMatchTypeExact
