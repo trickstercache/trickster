@@ -52,26 +52,30 @@ func (s *WFSeries) Merge(results ...*WFSeries) {
 	}
 }
 
-// MergeAndWriteSeries merges the provided Responses into a single prometheus Series data object,
-// and writes it to the provided ResponseWriter
-func MergeAndWriteSeries(w http.ResponseWriter, r *http.Request, rgs merge.ResponseGates) {
-	s, responses, bestResp := unmarshalAndMerge(r, rgs, "series", func() *WFSeries {
+// MergeAndWriteSeriesMergeFunc returns a MergeFunc for WFSeries
+func MergeAndWriteSeriesMergeFunc() merge.MergeFunc {
+	return MakeMergeFunc("series", func() *WFSeries {
 		return &WFSeries{}
 	})
+}
 
-	if !handleMergeResult(w, r, s, responses, bestResp) {
-		return
-	}
-
-	var sep string
-	if len(s.Data) > 0 {
-		w.Write([]byte(`,"data":[`))
-		for _, series := range s.Data {
-			fmt.Fprintf(w, `%s{"__name__":"%s","instance":"%s","job":"%s"}`,
-				sep, series.Name, series.Instance, series.Job)
-			sep = ","
+// MergeAndWriteSeriesRespondFunc returns a RespondFunc for WFSeries
+func MergeAndWriteSeriesRespondFunc() merge.RespondFunc {
+	return MakeRespondFunc(func(w http.ResponseWriter, r *http.Request, s *WFSeries, statusCode int) {
+		if s == nil {
+			return
 		}
-		w.Write([]byte("]"))
-	}
-	w.Write([]byte("}")) // complete the envelope
+		s.StartMarshal(w, statusCode)
+		var sep string
+		if len(s.Data) > 0 {
+			w.Write([]byte(`,"data":[`))
+			for _, series := range s.Data {
+				fmt.Fprintf(w, `%s{"__name__":"%s","instance":"%s","job":"%s"}`,
+					sep, series.Name, series.Instance, series.Job)
+				sep = ","
+			}
+			w.Write([]byte("]"))
+		}
+		w.Write([]byte("}")) // complete the envelope
+	})
 }

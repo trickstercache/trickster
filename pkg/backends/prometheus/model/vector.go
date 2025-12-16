@@ -17,67 +17,31 @@
 package model
 
 import (
-	"io"
 	"net/http"
 
-	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
-	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
-	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
-	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 )
 
-// MergeAndWriteVector merges the provided Responses into a single prometheus Vector data object,
-// and writes it to the provided ResponseWriter
-func MergeAndWriteVector(w http.ResponseWriter, r *http.Request, rgs merge.ResponseGates) {
-	var ts *dataset.DataSet
-	var trq *timeseries.TimeRangeQuery
+// MergeAndWriteVectorMergeFunc returns a MergeFunc for Vector (timeseries)
+func MergeAndWriteVectorMergeFunc(unmarshaler timeseries.UnmarshalerFunc) merge.MergeFunc {
+	return merge.TimeseriesMergeFunc(unmarshaler)
+}
 
-	responses, bestResp := gatherResponses(r, rgs, func(rg *merge.ResponseGate) bool {
-		if rg.Resources.TimeRangeQuery != nil {
-			trq = rg.Resources.TimeRangeQuery
-		}
-
-		t2, err := UnmarshalTimeseries(rg.Body(), trq)
-		if err != nil {
-			logger.Error("vector unmarshaling error",
-				logging.Pairs{"provider": providers.Prometheus, "detail": err.Error()})
-			return false
-		}
-
+// MergeAndWriteVectorRespondFunc returns a RespondFunc for Vector (timeseries)
+func MergeAndWriteVectorRespondFunc(marshaler timeseries.MarshalWriterFunc) merge.RespondFunc {
+	return func(w http.ResponseWriter, r *http.Request, accum *merge.Accumulator, statusCode int) {
+		ts := accum.GetTSData()
 		if ts == nil {
-			ds, ok := t2.(*dataset.DataSet)
-			if !ok {
-				logger.Error("vector unmarshaling error",
-					logging.Pairs{"provider": providers.Prometheus})
-				return false
-			}
-			ts = ds
-		} else {
-			ts.Merge(false, t2)
-		}
-		return true
-	})
-
-	if len(responses) == 0 {
-		failures.HandleBadGateway(w, r)
-		return
-	}
-
-	if ts == nil {
-		if bestResp != nil {
-			h := w.Header()
-			headers.Merge(h, bestResp.Header)
-			w.WriteHeader(bestResp.StatusCode)
-			io.Copy(w, bestResp.Body)
-		} else {
 			failures.HandleBadGateway(w, r)
+			return
 		}
-		return
-	}
 
-	MarshalTSOrVectorWriter(ts, nil, bestResp.StatusCode, w, true) //revive:disable:unhandled-error
+		if statusCode == 0 {
+			statusCode = http.StatusOK
+		}
+
+		MarshalTSOrVectorWriter(ts, nil, statusCode, w, true) //revive:disable:unhandled-error
+	}
 }

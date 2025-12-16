@@ -30,8 +30,9 @@ import (
 func (c *Client) SeriesHandler(w http.ResponseWriter, r *http.Request) {
 	// if this request is part of a scatter/gather, provide a reconstitution function
 	rsc := request.GetResources(r)
-	if rsc.IsMergeMember {
-		rsc.ResponseMergeFunc = model.MergeAndWriteSeries
+	if rsc != nil && rsc.IsMergeMember {
+		rsc.MergeFunc = model.MergeAndWriteSeriesMergeFunc()
+		rsc.MergeRespondFunc = model.MergeAndWriteSeriesRespondFunc()
 	}
 
 	u := urls.BuildUpstreamURL(r, c.BaseUpstreamURL())

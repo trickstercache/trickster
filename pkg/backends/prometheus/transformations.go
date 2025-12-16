@@ -23,8 +23,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 )
@@ -40,24 +39,26 @@ func (c *Client) ProcessTransformations(ts timeseries.Timeseries) {
 	ds.InjectTags(c.injectLabels)
 }
 
-func (c *Client) processVectorTransformations(w http.ResponseWriter, rg *merge.ResponseGate) {
+func (c *Client) processVectorTransformations(w http.ResponseWriter,
+	body []byte, statusCode int, rsc *request.Resources) {
 	var trq *timeseries.TimeRangeQuery
-	if rg.Resources.TimeRangeQuery != nil {
-		trq = rg.Resources.TimeRangeQuery
+	if rsc != nil && rsc.TimeRangeQuery != nil {
+		trq = rsc.TimeRangeQuery
 	}
-	bytes := rg.Body()
-	h := w.Header()
-	headers.Merge(h, rg.Header())
-	t2, err := model.UnmarshalTimeseries(bytes, trq)
+	t2, err := model.UnmarshalTimeseries(body, trq)
 	if err != nil || t2 == nil {
 		logger.Error("vector unmarshaling error",
 			logging.Pairs{"provider": providers.Prometheus, "detail": err.Error()})
-		defaultWrite(rg.Response.StatusCode, w, bytes)
+		defaultWrite(statusCode, w, body)
 		return
 	}
 	ds := t2.(*dataset.DataSet) // failure of this type assertion should be impossible
 	ds.InjectTags(c.injectLabels)
-	model.MarshalTSOrVectorWriter(ds, rg.Resources.TSReqestOptions, rg.Response.StatusCode, w, true)
+	var requestOptions *timeseries.RequestOptions
+	if rsc != nil {
+		requestOptions = rsc.TSReqestOptions
+	}
+	model.MarshalTSOrVectorWriter(ds, requestOptions, statusCode, w, true)
 }
 
 func defaultWrite(statusCode int, w http.ResponseWriter, b []byte) {

@@ -40,7 +40,7 @@ func TestHandleResponseMerge(t *testing.T) {
 	logger.SetLogger(testLogger)
 	r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
 	rsc := request.NewResources(nil, nil, nil, nil, nil, nil)
-	rsc.ResponseMergeFunc = testMergeFunc
+	rsc.MergeFunc = testMergeFunc
 	rsc.IsMergeMember = true
 	r = request.SetResources(r, rsc)
 
