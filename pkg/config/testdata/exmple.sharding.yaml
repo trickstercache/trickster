@@ -8,6 +8,7 @@ backends:
     keep_alive_timeout: 5m0s
     max_idle_conns: 20
     cache_name: default
+    cache_key_prefix: prometheus:9090
     healthcheck: {}
     timeseries_retention_factor: 1024
     timeseries_eviction_method: oldest
@@ -28,6 +29,7 @@ backends:
     - application/javascript
     - application/xml
     tracing_name: default
+    shard_max_size_time: 2h0m0s
     shard_step: 2h0m0s
     tls: {}
     forwarded_headers: standard

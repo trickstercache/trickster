@@ -37,6 +37,7 @@ backends:
     keep_alive_timeout: 5m0s
     max_idle_conns: 20
     cache_name: default
+    cache_key_prefix: origin1
     healthcheck:
       interval: 1s
       path: /health
@@ -70,6 +71,7 @@ backends:
     keep_alive_timeout: 5m0s
     max_idle_conns: 20
     cache_name: default
+    cache_key_prefix: origin2
     healthcheck:
       interval: 1s
       path: /health
@@ -103,6 +105,7 @@ backends:
     keep_alive_timeout: 5m0s
     max_idle_conns: 20
     cache_name: default
+    cache_key_prefix: prom1:9090
     healthcheck:
       interval: 1s
     timeseries_retention_factor: 1024
@@ -135,6 +138,7 @@ backends:
     keep_alive_timeout: 5m0s
     max_idle_conns: 20
     cache_name: default
+    cache_key_prefix: prom2:9090
     healthcheck:
       interval: 1s
     timeseries_retention_factor: 1024
@@ -191,6 +195,7 @@ backends:
       pool:
       - prom1
       - prom1
+      output_format: prometheus
     tls: {}
     forwarded_headers: standard
     latency_min: 0s

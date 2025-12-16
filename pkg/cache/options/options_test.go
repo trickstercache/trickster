@@ -70,7 +70,7 @@ func TestInitialize(t *testing.T) {
 			options: func() *Options {
 				o := New()
 				o.Provider = "redis"
-				o.ProviderID = providers.Redis
+				o.ProviderID = providers.RedisID
 				o.Redis.ClientType = "standard"
 				o.Redis.Endpoint = "127.0.0.1:6379"
 				return o

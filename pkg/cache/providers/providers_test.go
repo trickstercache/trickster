@@ -21,8 +21,8 @@ import (
 )
 
 func TestProviderIDString(t *testing.T) {
-	t1 := Memory
-	t2 := Filesystem
+	t1 := MemoryID
+	t2 := FilesystemID
 	var t3 Provider = 13
 
 	if t1.String() != "memory" {

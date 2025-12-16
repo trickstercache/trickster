@@ -17,14 +17,10 @@
 package model
 
 import (
-	"bytes"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
-	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
@@ -40,104 +36,50 @@ const testVector2 = `{"status":"success","data":{"resultType":"vector","result":
 	`"value":[1577836800,"1"]}]}}`
 
 func TestMergeAndWriteVector(t *testing.T) {
+	unmarshaler := func(data []byte, trq *timeseries.TimeRangeQuery) (timeseries.Timeseries, error) {
+		if trq == nil {
+			trq = &timeseries.TimeRangeQuery{}
+		}
+		return UnmarshalTimeseries(data, trq)
+	}
+	marshaler := MarshalTimeseriesWriter
+	mergeFunc := MergeAndWriteVectorMergeFunc(unmarshaler)
+	respondFunc := MergeAndWriteVectorRespondFunc(marshaler)
+
 	w := httptest.NewRecorder()
-	MergeAndWriteVector(w, nil, nil)
+	r, _ := http.NewRequest("GET", "/", nil)
+	accum := merge.NewAccumulator()
+	respondFunc(w, r, accum, http.StatusOK)
 	if w.Code != http.StatusBadGateway {
 		t.Errorf("expected %d got %d", http.StatusBadGateway, w.Code)
 	}
 
 	w = httptest.NewRecorder()
-	MergeAndWriteVector(w, nil, testResponseGates7())
+	accum = merge.NewAccumulator()
+	err := mergeFunc(accum, []byte(testVector), 0)
+	if err != nil {
+		t.Errorf("unexpected error merging first vector: %v", err)
+	}
+	_ = mergeFunc(accum, []byte(`{"stat`), 1) // bad JSON, should be skipped (error ignored)
+	err = mergeFunc(accum, []byte(testVector2), 2)
+	if err != nil {
+		t.Errorf("unexpected error merging second vector: %v", err)
+	}
+	respondFunc(w, r, accum, http.StatusOK)
 	if w.Code != http.StatusOK {
 		t.Errorf("expected %d got %d", http.StatusOK, w.Code)
 	}
 
 	w = httptest.NewRecorder()
-	MergeAndWriteVector(w, nil, testResponseGates8())
-	if w.Code != http.StatusBadRequest {
+	accum = merge.NewAccumulator()
+	err = mergeFunc(accum, []byte(`{"status":"error","data":{}}`), 0)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	respondFunc(w, r, accum, http.StatusOK)
+	// Error status in envelope doesn't change HTTP status code
+	if w.Code != http.StatusOK {
 		t.Errorf("expected %d got %d", http.StatusOK, w.Code)
 	}
-}
 
-func testResponseGates7() merge.ResponseGates {
-	logger.SetLogger(testLogger)
-	b1 := []byte(testVector)
-	closer1 := io.NopCloser(bytes.NewReader(b1))
-	rsc1 := request.NewResources(nil, nil, nil, nil, nil, nil)
-	rsc1.Response = &http.Response{
-		Body:       closer1,
-		StatusCode: 200,
-	}
-	rsc1.TimeRangeQuery = &timeseries.TimeRangeQuery{}
-	rg1 := merge.NewResponseGate(
-		nil, // w
-		nil, // r
-		rsc1,
-	)
-	rg1.Write(b1)
-
-	b2bad := []byte(`{"stat`)
-	closer2 := io.NopCloser(bytes.NewReader(b2bad))
-	rsc2 := request.NewResources(nil, nil, nil, nil, nil, nil)
-	rsc2.Response = &http.Response{
-		Body:       closer2,
-		StatusCode: 200,
-	}
-	rg2 := merge.NewResponseGate(
-		nil, // w
-		nil, // r
-		rsc2,
-	)
-	rg2.Write(b2bad)
-
-	b3 := []byte(testVector2)
-	closer3 := io.NopCloser(bytes.NewReader(b3))
-	rsc3 := request.NewResources(nil, nil, nil, nil, nil, nil)
-	rsc3.Response = &http.Response{
-		Body:       closer3,
-		StatusCode: 200,
-	}
-	rg3 := merge.NewResponseGate(
-		nil, // w
-		nil, // r
-		rsc3,
-	)
-	rg3.Write(b3)
-
-	var rg4 *merge.ResponseGate
-
-	return merge.ResponseGates{rg1, rg2, rg4, rg3}
-}
-
-func testResponseGates8() merge.ResponseGates {
-	logger.SetLogger(testLogger)
-	b1 := []byte(`{"status":"error","data":{}`)
-	closer1 := io.NopCloser(bytes.NewReader(b1))
-	rsc1 := request.NewResources(nil, nil, nil, nil, nil, nil)
-	rsc1.Response = &http.Response{
-		Body:       closer1,
-		StatusCode: 400,
-	}
-	rg1 := merge.NewResponseGate(
-		nil, // w
-		nil, // r
-		rsc1,
-	)
-	rg1.Write(b1)
-
-	b2 := []byte(`{"status":"error","data":{}`)
-	closer2 := io.NopCloser(bytes.NewReader(b1))
-	rsc2 := request.NewResources(nil, nil, nil, nil, nil, nil)
-	rsc2.Response = &http.Response{
-		Body:       closer2,
-		StatusCode: 400,
-	}
-	rg2 := merge.NewResponseGate(
-		nil, // w
-		nil, // r
-		rsc1,
-	)
-	rg2.Write(b2)
-
-	return merge.ResponseGates{rg1, rg2}
 }

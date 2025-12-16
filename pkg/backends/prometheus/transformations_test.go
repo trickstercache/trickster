@@ -17,14 +17,12 @@
 package prometheus
 
 import (
-	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 )
 
@@ -51,14 +49,11 @@ func TestProcessVectorTransformations(t *testing.T) {
 	logger.SetLogger(testLogger)
 	c := &Client{}
 	w := httptest.NewRecorder()
-	r, _ := http.NewRequest(http.MethodGet, "http://example.com/", nil)
-	resp := &http.Response{StatusCode: 200}
 
 	rsc := &request.Resources{}
-	rg := merge.NewResponseGate(w, r, rsc)
-	rg.Response = resp
-	rg.Write([]byte("trickster"))
-	c.processVectorTransformations(w, rg)
+	body := []byte("trickster")
+	statusCode := 200
+	c.processVectorTransformations(w, body, statusCode, rsc)
 	if w.Code != 200 {
 		t.Errorf("expected %d got %d", 200, w.Code)
 	}
