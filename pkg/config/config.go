@@ -337,7 +337,7 @@ func (c *Config) String() string {
 
 	// strip Redis password
 	for k, v := range cp.Caches {
-		if v != nil && cp.Caches[k].Redis.Password != "" {
+		if v != nil && cp.Caches[k].Redis != nil && cp.Caches[k].Redis.Password != "" {
 			cp.Caches[k].Redis.Password = "*****"
 		}
 	}

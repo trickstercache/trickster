@@ -67,7 +67,7 @@ func storeBenchmark(b *testing.B) CacheClient {
 	return *bc
 }
 
-func TestBboltCache_Connect(t *testing.T) {
+func TestBBoltCache_Connect(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	testDbPath := t.TempDir() + "/test.db"
 	cacheConfig := newCacheConfig(testDbPath)
@@ -80,7 +80,7 @@ func TestBboltCache_Connect(t *testing.T) {
 	bc.Close()
 }
 
-func TestBboltCache_ConnectFailed(t *testing.T) {
+func TestBBoltCache_ConnectFailed(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	const expected = `open /root/noaccess.bbolt:`
 	cacheConfig := newCacheConfig("/root/noaccess.bbolt")
@@ -96,7 +96,7 @@ func TestBboltCache_ConnectFailed(t *testing.T) {
 	}
 }
 
-func TestBboltCache_ConnectBadBucketName(t *testing.T) {
+func TestBBoltCache_ConnectBadBucketName(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	const expected = `create bucket: bucket name required`
 	testDbPath := t.TempDir() + "/test.db"
@@ -113,7 +113,7 @@ func TestBboltCache_ConnectBadBucketName(t *testing.T) {
 	}
 }
 
-func TestBboltCache_Store(t *testing.T) {
+func TestBBoltCache_Store(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	testDbPath := t.TempDir() + "/test.db"
 	cacheConfig := newCacheConfig(testDbPath)
@@ -137,7 +137,7 @@ func BenchmarkCache_Store(b *testing.B) {
 	defer bc.Close()
 }
 
-func TestBboltCache_Remove(t *testing.T) {
+func TestBBoltCache_Remove(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	testDbPath := t.TempDir() + "/test.db"
 	cacheConfig := newCacheConfig(testDbPath)
@@ -215,7 +215,7 @@ func BenchmarkCache_Remove(b *testing.B) {
 	}
 }
 
-func TestBboltCache_BulkRemove(t *testing.T) {
+func TestBBoltCache_BulkRemove(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	testDbPath := t.TempDir() + "/test.db"
 	cacheConfig := newCacheConfig(testDbPath)
@@ -279,7 +279,7 @@ func BenchmarkCache_BulkRemove(b *testing.B) {
 	}
 }
 
-func TestBboltCache_Retrieve(t *testing.T) {
+func TestBBoltCache_Retrieve(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 
 	testDbPath := t.TempDir() + "/test.db"
