@@ -50,6 +50,10 @@ func (h *handler) SetPool(p pool.Pool) {
 	h.pool = p
 }
 
+func (h *handler) Pool() pool.Pool {
+	return h.pool
+}
+
 func (h *handler) ID() types.ID {
 	return ID
 }
@@ -63,8 +67,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		failures.HandleBadGateway(w, r)
 		return
 	}
-	t := h.nextTarget()
-	if t != nil {
+	if t := h.nextTarget(); t != nil {
 		t.ServeHTTP(w, r)
 		return
 	}
