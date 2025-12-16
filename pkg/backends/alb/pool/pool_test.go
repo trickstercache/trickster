@@ -25,7 +25,7 @@ import (
 
 func TestNewTarget(t *testing.T) {
 	s := &healthcheck.Status{}
-	tgt := NewTarget(http.NotFoundHandler(), s)
+	tgt := NewTarget(http.NotFoundHandler(), s, nil)
 	if tgt.hcStatus != s {
 		t.Error("unexpected mismatch")
 	}
@@ -33,12 +33,12 @@ func TestNewTarget(t *testing.T) {
 
 func TestNewPool(t *testing.T) {
 	s := &healthcheck.Status{}
-	tgt := NewTarget(http.NotFoundHandler(), s)
+	tgt := NewTarget(http.NotFoundHandler(), s, nil)
 	if tgt.hcStatus != s {
 		t.Error("unexpected mismatch")
 	}
 
-	p := New([]*Target{tgt}, 1)
+	p := New(Targets{tgt}, 1)
 	if p == nil {
 		t.Error("expected non-nil")
 	}
@@ -51,7 +51,7 @@ func TestNewPool(t *testing.T) {
 
 	p2 := p.(*pool)
 	hl := []http.Handler{http.NotFoundHandler()}
-	p2.healthy.Store(&hl)
+	p2.healthyHandlers.Store(&hl)
 
 	if len(p.Healthy()) != 1 {
 		t.Error("expected 1 healthy target", len(p.Healthy()))

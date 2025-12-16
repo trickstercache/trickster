@@ -156,7 +156,7 @@ func (c *Client) ValidateAndStartPool(clients backends.Backends, hcs healthcheck
 	if o.MechanismName == names.MechanismUR && o.UserRouter != nil {
 		return c.validateAndStartUserRouter(clients)
 	}
-	targets := make([]*pool.Target, 0, len(o.Pool))
+	targets := make(pool.Targets, 0, len(o.Pool))
 	for _, n := range o.Pool {
 		tc, ok := clients[n]
 		if !ok {
@@ -166,7 +166,7 @@ func (c *Client) ValidateAndStartPool(clients backends.Backends, hcs healthcheck
 		if !ok {
 			continue // virtual backends (rule, alb) don't currently have health checks
 		}
-		targets = append(targets, pool.NewTarget(tc.Router(), hc))
+		targets = append(targets, pool.NewTarget(tc.Router(), hc, tc))
 	}
 	if c.handler != nil {
 		c.handler.SetPool(pool.New(targets, o.HealthyFloor))

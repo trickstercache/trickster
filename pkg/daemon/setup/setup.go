@@ -297,7 +297,7 @@ func applyCachingConfig(si *instance.ServerInstance,
 			// is the only change. In this case, we'll apply the new index configuration,
 			// then add the old cache with the new index config to the new cache map
 			if ocfg.ProviderID == v.ProviderID &&
-				v.ProviderID == providers.Memory {
+				v.ProviderID == providers.MemoryID {
 				// Note: this is only necessary for the memory cache as all other providers will be closed and reopened with the newest config
 				if v.Index != nil {
 					mc := w.(*manager.Manager).Client.(*index.IndexedClient)

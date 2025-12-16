@@ -34,7 +34,7 @@ func New(healthyFloor int, hs []http.Handler) (pool.Pool,
 		for _, h := range hs {
 			hst := &healthcheck.Status{}
 			statuses = append(statuses, hst)
-			targets = append(targets, pool.NewTarget(h, hst))
+			targets = append(targets, pool.NewTarget(h, hst, nil))
 		}
 	}
 	pool := pool.New(targets, healthyFloor)

@@ -514,6 +514,7 @@ func (l Lookup) Initialize() error {
 		if !ncb.Contains(v.Provider) && v.CacheName == "" {
 			v.CacheName = DefaultBackendCacheName
 		}
+		v.Initialize(k)
 		if len(v.Paths) > 0 {
 			err := v.Paths.Initialize()
 			if err != nil {
@@ -527,14 +528,7 @@ func (l Lookup) Initialize() error {
 // Initialize sets up the backend Options with default values and overlays
 // any values that were set during YAML unmarshaling
 func (o *Options) Initialize(name string) error {
-	// activeCaches sets.Set[string],
 	o.Name = name
-
-	// // If there is only one backend and is_default is not explicitly false, make it true
-	// if len(backends) == 1 && (!y.IsDefined("backends", name, "is_default")) {
-	// 	out.IsDefault = true
-	// }
-	// activeCaches.Set(out.CacheName)
 
 	if o.OriginURL != "" {
 		parsedURL, err := url.Parse(o.OriginURL)
