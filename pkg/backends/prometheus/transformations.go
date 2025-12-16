@@ -58,6 +58,7 @@ func (c *Client) processVectorTransformations(w http.ResponseWriter,
 	var requestOptions *timeseries.RequestOptions
 	if rsc != nil {
 		requestOptions = rsc.TSReqestOptions
+		rsc.TS = t2
 	}
 	model.MarshalTSOrVectorWriter(ds, requestOptions, statusCode, w, true)
 }
