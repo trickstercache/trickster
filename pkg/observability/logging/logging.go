@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -319,7 +320,7 @@ func (l *logger) HasLoggedOnce(logLevel level.Level, key string) bool {
 }
 
 func (l *logger) logAsyncronous(logLevel level.Level, event string, detail Pairs) {
-	go l.log(logLevel, event, detail)
+	go l.logWithStack(logLevel, event, detail, getCallerStack(1))
 }
 
 type item struct {
@@ -337,7 +338,40 @@ const (
 	newline = "\n"
 )
 
+// getCallerStack returns the first path in the call stack from /pkg not in
+func getCallerStack(skip int) string {
+	for s := skip; s < skip+20; s++ {
+		pc, file, line, ok := runtime.Caller(s)
+		if !ok {
+			break
+		}
+		idx := strings.Index(file, "/pkg/")
+		if idx == -1 || strings.Contains(file, "/pkg/observability/logging/") {
+			continue
+		}
+		fn := runtime.FuncForPC(pc)
+		if fn == nil {
+			continue
+		}
+		return file[idx+1:] + ":" + strconv.Itoa(line)
+	}
+	return ""
+}
+
 func (l *logger) log(logLevel level.Level, event string, detail Pairs) {
+	// For synchronous logging, capture caller here
+	// Call stack from getCallerStack's perspective:
+	// runtime.Caller(1) = log
+	// runtime.Caller(2) = logConditionally or logFuncConditionally
+	// runtime.Caller(3) = Warn/Info/etc in logging package
+	// runtime.Caller(4) = Warn/Info/etc in logger package
+	// runtime.Caller(5) = actual caller
+	// Start from skip 1 to check log itself, then walk up
+	stack := getCallerStack(1)
+	l.logWithStack(logLevel, event, detail, stack)
+}
+
+func (l *logger) logWithStack(logLevel level.Level, event string, detail Pairs, stack string) {
 	if l.writer == nil {
 		return
 	}
@@ -346,12 +380,19 @@ func (l *logger) log(logLevel level.Level, event string, detail Pairs) {
 	if strings.HasPrefix(event, space) || strings.HasSuffix(event, space) {
 		event = strings.TrimSpace(event)
 	}
+
 	logLine := []byte(
 		"time=" + ts.UTC().Format(time.RFC3339Nano) + space +
 			"app=trickster" + space +
 			"level=" + string(logLevel) + space +
 			"event=" + quoteAsNeeded(event),
 	)
+
+	// Add stack field if available
+	if stack != "" {
+		logLine = append(logLine, []byte(space+"stack="+stack)...)
+	}
+
 	if ld > 0 {
 		logLine = append(logLine, []byte(space)...)
 		keyPairs := make([]item, ld)
