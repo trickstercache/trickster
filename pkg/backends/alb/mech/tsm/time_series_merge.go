@@ -154,16 +154,21 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			r2, _ := request.Clone(r)
 			rsc2 := &request.Resources{IsMergeMember: true}
 			r2 = request.SetResources(r2, rsc2)
-
 			crw := capture.NewCaptureResponseWriter()
 			hl[i].Handler().ServeHTTP(crw, r2)
+			rsc2 = request.GetResources(r2)
+			if rsc2 == nil {
+				logger.Warn("tsm gather failed due to nil resources", nil)
+				return
+			}
+
 			// Ensure merge functions are set on cloned request
 			if rsc2.MergeFunc == nil || rsc2.MergeRespondFunc == nil {
 				logger.Warn("tsm gather failed due to nil func", nil)
 			}
 			// As soon as response is complete, unmarshal and merge
 			// This happens in parallel for each response as it arrives
-			if rsc2.MergeFunc != nil {
+			if rsc2.MergeFunc != nil && rsc2.TS != nil {
 				rsc2.MergeFunc(accumulator, rsc2.TS, i)
 			}
 			// Update status code and headers (take best status code)
