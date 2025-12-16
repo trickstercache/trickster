@@ -320,7 +320,7 @@ func (l *logger) HasLoggedOnce(logLevel level.Level, key string) bool {
 }
 
 func (l *logger) logAsyncronous(logLevel level.Level, event string, detail Pairs) {
-	go l.logWithStack(logLevel, event, detail, getCallerStack(1))
+	go l.logWithCaller(logLevel, event, detail, getCaller(1))
 }
 
 type item struct {
@@ -338,8 +338,8 @@ const (
 	newline = "\n"
 )
 
-// getCallerStack returns the first path in the call stack from /pkg not in
-func getCallerStack(skip int) string {
+// getCaller returns the first path in the call stack from /pkg not in
+func getCaller(skip int) string {
 	for s := skip; s < skip+20; s++ {
 		pc, file, line, ok := runtime.Caller(s)
 		if !ok {
@@ -359,19 +359,11 @@ func getCallerStack(skip int) string {
 }
 
 func (l *logger) log(logLevel level.Level, event string, detail Pairs) {
-	// For synchronous logging, capture caller here
-	// Call stack from getCallerStack's perspective:
-	// runtime.Caller(1) = log
-	// runtime.Caller(2) = logConditionally or logFuncConditionally
-	// runtime.Caller(3) = Warn/Info/etc in logging package
-	// runtime.Caller(4) = Warn/Info/etc in logger package
-	// runtime.Caller(5) = actual caller
-	// Start from skip 1 to check log itself, then walk up
-	stack := getCallerStack(1)
-	l.logWithStack(logLevel, event, detail, stack)
+	caller := getCaller(1)
+	l.logWithCaller(logLevel, event, detail, caller)
 }
 
-func (l *logger) logWithStack(logLevel level.Level, event string, detail Pairs, stack string) {
+func (l *logger) logWithCaller(logLevel level.Level, event string, detail Pairs, caller string) {
 	if l.writer == nil {
 		return
 	}
@@ -388,9 +380,9 @@ func (l *logger) logWithStack(logLevel level.Level, event string, detail Pairs, 
 			"event=" + quoteAsNeeded(event),
 	)
 
-	// Add stack field if available
-	if stack != "" {
-		logLine = append(logLine, []byte(space+"stack="+stack)...)
+	// Add caller field if available
+	if caller != "" {
+		logLine = append(logLine, []byte(space+"caller="+caller)...)
 	}
 
 	if ld > 0 {
