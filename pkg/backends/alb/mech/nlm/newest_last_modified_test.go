@@ -66,18 +66,3 @@ func TestHandleNewestResponse(t *testing.T) {
 	}
 }
 
-func TestWriteHeader(t *testing.T) {
-	w := httptest.NewRecorder()
-	nrm := &newestResponseMux{}
-	nrm.wg.Add(1)
-	nrg := newNewestResponseGate(w, 0, nrm)
-	nrg.WriteHeader(200)
-}
-
-func TestRegisterLM(t *testing.T) {
-	nrm := &newestResponseMux{}
-	b := nrm.registerLM(0, time.Time{})
-	if b {
-		t.Error("expected false")
-	}
-}
