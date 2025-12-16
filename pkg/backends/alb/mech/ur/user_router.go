@@ -134,3 +134,4 @@ func (h *Handler) handleDefault(w http.ResponseWriter, r *http.Request) {
 // stubs for unused interface functions
 func (h *Handler) SetPool(_ pool.Pool) {}
 func (h *Handler) StopPool()           {}
+func (h *Handler) Pool() pool.Pool     { return nil }
