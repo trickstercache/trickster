@@ -122,6 +122,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		headers.Merge(w.Header(), crw.Header())
 		w.WriteHeader(crw.StatusCode())
 		w.Write(crw.Body())
+		// this signals the response is written
 		responseWritten <- struct{}{}
 	}
 
@@ -158,7 +159,6 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				atomic.CompareAndSwapInt64(&claimed, -1, int64(i)) {
 				// this serves only the first qualifying response
 				serveAndCancelOthers(i, crw)
-				// this signals the response is written
 			}
 		})
 	}
