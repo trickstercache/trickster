@@ -300,7 +300,7 @@ backends:
 #     compressable_types:
 #     - text/javascript, text/css, text/plain, text/xml, text/json, application/json, application/javascript, application/xml ]
 
-#     # timeout defines how long Trickster will wait before aborting and upstream http request. Default: 60s
+#     # timeout defines how long Trickster will wait before aborting an upstream http request. Default: 60s
 #     timeout: 60s
 
 #     # keep_alive_timeout defines how long Trickster will wait before closing a keep-alive connection due to inactivity
