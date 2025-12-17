@@ -25,7 +25,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/engines"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/response/capture"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
@@ -48,7 +48,11 @@ func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 				rsc.TimeRangeQuery = trq
 			}
 			if rsc.IsMergeMember {
-				rsc.ResponseMergeFunc = model.MergeAndWriteVector
+				m := c.Modeler()
+				if m != nil {
+					rsc.MergeFunc = model.MergeAndWriteVectorMergeFunc(m.WireUnmarshaler)
+					rsc.MergeRespondFunc = model.MergeAndWriteVectorRespondFunc(m.WireMarshalWriter)
+				}
 			}
 		}
 		if c.hasTransformations {
@@ -69,11 +73,14 @@ func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 
 	// if there are labels to append to the dataset,
 	if c.hasTransformations {
-		// using a merge response gate allows the capturing of the response body for transformation
-		mg := merge.NewResponseGate(w, r, rsc)
-		engines.ObjectProxyCacheRequest(mg, r)
-		mg.Response = rsc.Response
-		c.processVectorTransformations(w, mg)
+		// use a streaming response writer to capture the response body for transformation
+		sw := capture.NewCaptureResponseWriter()
+		engines.ObjectProxyCacheRequest(sw, r)
+		statusCode := sw.StatusCode()
+		if rsc != nil && rsc.Response != nil {
+			statusCode = rsc.Response.StatusCode
+		}
+		c.processVectorTransformations(w, sw.Body(), statusCode, rsc)
 		return
 	}
 

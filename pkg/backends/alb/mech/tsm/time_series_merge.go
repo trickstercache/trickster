@@ -30,9 +30,11 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/response/capture"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 )
 
@@ -46,6 +48,7 @@ type handler struct {
 	pool            pool.Pool
 	mergePaths      []string        // paths handled by the alb client that are enabled for tsmerge
 	nonmergeHandler types.Mechanism // when methodology is tsmerge, this handler is for non-mergeable paths
+	outputFormat    string          // the provider output format (e.g., "prometheus")
 }
 
 func RegistryEntry() types.RegistryEntry {
@@ -60,6 +63,7 @@ func New(o *options.Options, factories rt.Lookup) (types.Mechanism, error) {
 	if !providers.IsSupportedTimeSeriesMergeProvider(o.OutputFormat) {
 		return nil, errors.ErrInvalidTimeSeriesMergeProvider
 	}
+
 	// next, get the factory function required to create a backend handler for the supplied format
 	f, ok := factories[o.OutputFormat]
 	if !ok {
@@ -77,6 +81,7 @@ func New(o *options.Options, factories rt.Lookup) (types.Mechanism, error) {
 	}
 	// set the merge paths in the ALB client
 	out.mergePaths = mc2.MergeablePaths()
+	out.outputFormat = o.OutputFormat
 	return out, nil
 }
 
@@ -99,19 +104,18 @@ func (h *handler) StopPool() {
 	}
 }
 
+func (h *handler) Pool() pool.Pool {
+	return h.pool
+}
+
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	hl := h.pool.Healthy() // should return a fanout list
+	hl := h.pool.HealthyTargets() // should return a fanout list
 	l := len(hl)
 	if l == 0 {
 		failures.HandleBadGateway(w, r)
 		return
 	}
-	// just proxy 1:1 if no folds in the fan
-	if l == 1 {
-		hl[0].ServeHTTP(w, r)
-		return
-	}
-
+	defaultHandler := hl[0].Handler()
 	var isMergeablePath bool
 	for _, v := range h.mergePaths {
 		if strings.HasPrefix(r.URL.Path, v) {
@@ -119,68 +123,85 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
-
 	if !isMergeablePath {
-		hl[0].ServeHTTP(w, r)
+		defaultHandler.ServeHTTP(w, r)
+		return
+	}
+	// just proxy 1:1 if no folds in the fan or if there
+	// are no merge functions attached to the request
+	rsc := request.GetResources(r)
+	if rsc == nil || l == 1 {
+		defaultHandler.ServeHTTP(w, r)
 		return
 	}
 
-	mgs := GetResponseGates(w, r, hl)
-	if len(mgs) == 0 {
-		failures.HandleBadGateway(w, r)
-		return
-	}
-	SetStatusHeader(w, mgs)
+	var mrf merge.RespondFunc
 
-	rsc := request.GetResources(mgs[0].Request)
-	if rsc != nil && rsc.ResponseMergeFunc != nil {
-		if f, ok := rsc.ResponseMergeFunc.(func(http.ResponseWriter,
-			*http.Request, merge.ResponseGates)); ok {
-			f(w, r, mgs)
-		}
-	}
-}
+	// Scatter/Gather section
 
-// GetResponseGates makes the handler request to each fanout backend and
-// returns a collection of responses
-func GetResponseGates(w http.ResponseWriter, r *http.Request,
-	hl []http.Handler,
-) merge.ResponseGates {
+	accumulator := merge.NewAccumulator()
 	var wg sync.WaitGroup
-	l := len(hl)
-	mgs := make(merge.ResponseGates, l)
-	for i := range l {
-		wg.Go(func() {
-			if hl[i] == nil {
-				return
-			}
-			r2, _ := request.Clone(r)
-			rsc := request.GetResources(r2)
-			rsc.IsMergeMember = true
-			mgs[i] = merge.NewResponseGate(w, r2, rsc)
-			hl[i].ServeHTTP(mgs[i], r2)
-		})
-	}
-	wg.Wait()
-	return mgs.Compress()
-}
-
-// SetStatusHeader inspects the X-Trickster-Result header value crafted for each mergeable response
-// and aggregates into a single header value for the primary merged response
-func SetStatusHeader(w http.ResponseWriter, mgs merge.ResponseGates) {
+	var statusCode int
 	var statusHeader string
-	for _, mg := range mgs {
-		if mg == nil {
+	var mu sync.Mutex // protects statusCode and statusHeader
+
+	for i := range l {
+		if hl[i] == nil {
 			continue
 		}
-		if h := mg.Header(); h != nil {
-			headers.StripMergeHeaders(h)
-			statusHeader = headers.MergeResultHeaderVals(statusHeader,
-				h.Get(headers.NameTricksterResult))
-		}
+		wg.Go(func() {
+			r2, _ := request.Clone(r)
+			rsc2 := &request.Resources{IsMergeMember: true, TSReqestOptions: rsc.TSReqestOptions}
+			r2 = request.SetResources(r2, rsc2)
+			crw := capture.NewCaptureResponseWriter()
+			hl[i].Handler().ServeHTTP(crw, r2)
+			rsc2 = request.GetResources(r2)
+			if rsc2 == nil {
+				logger.Warn("tsm gather failed due to nil resources", nil)
+				return
+			}
+
+			// ensure merge functions are set on cloned request
+			if rsc2.MergeFunc == nil || rsc2.MergeRespondFunc == nil {
+				logger.Warn("tsm gather failed due to nil func", nil)
+			}
+			// as soon as response is complete, unmarshal and merge
+			// this happens in parallel for each response as it arrives
+			if rsc2.MergeFunc != nil && rsc2.TS != nil {
+				rsc2.MergeFunc(accumulator, rsc2.TS, i)
+			}
+			// update status code and headers (take best status code)
+			mu.Lock()
+			if mrf == nil {
+				mrf = rsc2.MergeRespondFunc
+			}
+			if crw.StatusCode() > 0 {
+				if statusCode == 0 || crw.StatusCode() < statusCode {
+					statusCode = crw.StatusCode()
+				}
+			}
+			if crw.Header() != nil {
+				headers.StripMergeHeaders(crw.Header())
+				statusHeader = headers.MergeResultHeaderVals(statusHeader,
+					crw.Header().Get(headers.NameTricksterResult))
+			}
+			mu.Unlock()
+		})
 	}
+
+	// wait for all fanout requests to complete
+	wg.Wait()
+
+	// set aggregated status header
 	if statusHeader != "" {
-		h := w.Header()
-		h.Set(headers.NameTricksterResult, statusHeader)
+		w.Header().Set(headers.NameTricksterResult, statusHeader)
+	}
+
+	// marshal and write the merged series to the client
+	if statusCode == 0 {
+		statusCode = http.StatusOK
+	}
+	if mrf != nil {
+		mrf(w, r, accumulator, statusCode)
 	}
 }

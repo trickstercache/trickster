@@ -100,7 +100,9 @@ func newTarget(_ context.Context, name, description string, o *ho.Options,
 	}
 
 	t.status = &Status{name: name, detail: isd, description: description, prober: t.demandProbe}
-	t.status.Set(StatusInitializing)
+	if interval > 0 {
+		t.status.Set(StatusInitializing)
+	}
 	if len(o.ExpectedHeaders) > 0 {
 		t.eh = headers.Lookup(o.ExpectedHeaders).ToHeader()
 	}

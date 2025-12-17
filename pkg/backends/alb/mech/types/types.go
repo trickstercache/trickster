@@ -39,6 +39,7 @@ type Mechanism interface {
 	http.Handler
 	SetPool(pool.Pool)
 	StopPool()
+	Pool() pool.Pool
 	ID() ID
 	Name() Name
 }

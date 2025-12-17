@@ -26,21 +26,16 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/albpool"
 )
 
 var testLogger = logging.NoopLogger()
 
-func testMergeFunc(w http.ResponseWriter, r *http.Request, rgs merge.ResponseGates) {
-}
-
 func TestHandleResponseMerge(t *testing.T) {
 	logger.SetLogger(testLogger)
 	r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
 	rsc := request.NewResources(nil, nil, nil, nil, nil, nil)
-	rsc.ResponseMergeFunc = testMergeFunc
 	rsc.IsMergeMember = true
 	r = request.SetResources(r, rsc)
 

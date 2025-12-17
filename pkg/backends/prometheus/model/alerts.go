@@ -17,21 +17,12 @@
 package model
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
-	"io"
 	"maps"
 	"net/http"
 	"slices"
-	"sort"
 
-	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/checksum/fnv"
-	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
-	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 )
@@ -98,132 +89,39 @@ func (a *WFAlerts) Merge(results ...*WFAlerts) {
 	a.Data.Alerts = alerts
 }
 
-// Mergeable represents types that can merge with other instances of the same type
-type Mergeable[T any] interface {
-	*T
-	Merge(...*T)
-}
-
-// MarshallerPtr represents pointer types that can start marshaling with an envelope
-type MarshallerPtr[T any] interface {
-	*T
-	StartMarshal(w io.Writer, httpStatus int)
-}
-
-// unmarshalAndMerge is a generic function that handles the common pattern of
-// unmarshaling JSON responses and merging them using a Merge method
-func unmarshalAndMerge[T any, PT Mergeable[T]](
-	r *http.Request,
-	rgs merge.ResponseGates,
-	errorType string,
-	newInstance func() PT,
-) (PT, []int, *http.Response) {
-	var result PT
-	responses, bestResp := gatherResponses(r, rgs, func(rg *merge.ResponseGate) bool {
-		instance := newInstance()
-		err := json.Unmarshal(rg.Body(), instance)
-		if err != nil {
-			logger.Error(errorType+" unmarshaling error",
-				logging.Pairs{"provider": providers.Prometheus, "detail": err.Error()})
-			return false
-		}
-		if result == nil {
-			result = instance
-		} else {
-			result.Merge(instance)
-		}
-		return true
-	})
-	return result, responses, bestResp
-}
-
-// handleMergeResult handles the common error pattern and starts marshaling if successful
-func handleMergeResult[T any, PT MarshallerPtr[T]](
-	w http.ResponseWriter,
-	r *http.Request,
-	result PT,
-	responses []int,
-	bestResp *http.Response,
-) bool {
-	if result == nil || len(responses) == 0 {
-		if bestResp != nil {
-			h := w.Header()
-			headers.Merge(h, bestResp.Header)
-			w.WriteHeader(bestResp.StatusCode)
-			io.Copy(w, bestResp.Body)
-		} else {
-			failures.HandleBadGateway(w, r)
-		}
-		return false
-	}
-
-	sort.Ints(responses)
-	statusCode := responses[0]
-	result.StartMarshal(w, statusCode)
-	return true
-}
-
-// MergeAndWriteAlerts merges the provided Responses into a single prometheus Alerts data object,
-// and writes it to the provided ResponseWriter
-func MergeAndWriteAlerts(w http.ResponseWriter, r *http.Request, rgs merge.ResponseGates) {
-	a, responses, bestResp := unmarshalAndMerge(r, rgs, "alerts", func() *WFAlerts {
+// MergeAndWriteAlertsMergeFunc returns a MergeFunc for WFAlerts
+func MergeAndWriteAlertsMergeFunc() merge.MergeFunc {
+	return MakeMergeFunc("alerts", func() *WFAlerts {
 		return &WFAlerts{}
 	})
-
-	if !handleMergeResult(w, r, a, responses, bestResp) {
-		return
-	}
-
-	var sep string
-	w.Write([]byte(`,"data":{"alerts":[`))
-	if a.Data != nil && len(a.Data.Alerts) > 0 {
-		for _, alert := range a.Data.Alerts {
-			fmt.Fprintf(w,
-				`{"state":"%s","labels":%s,"annotations":%s`,
-				alert.State, dataset.Tags(alert.Labels).JSON(),
-				dataset.Tags(alert.Annotations).JSON(),
-			)
-			if alert.Value != "" {
-				fmt.Fprintf(w, `,"value":"%s"`, alert.Value)
-			}
-			if alert.ActiveAt != "" {
-				fmt.Fprintf(w, `,"activeAt":"%s"`, alert.ActiveAt)
-			}
-			w.Write([]byte("}" + sep))
-			sep = ","
-		}
-	}
-	w.Write([]byte("]}}")) // complete the alert list and the envelope
 }
 
-// helper function to gather responses from a ResponseGate
-func gatherResponses(_ *http.Request, rgs merge.ResponseGates, handler func(*merge.ResponseGate) bool) ([]int, *http.Response) {
-	responses := make([]int, len(rgs))
-	var bestResp *http.Response
-	for i, rg := range rgs {
-		if rg == nil {
-			continue
+// MergeAndWriteAlertsRespondFunc returns a RespondFunc for WFAlerts
+func MergeAndWriteAlertsRespondFunc() merge.RespondFunc {
+	return MakeRespondFunc(func(w http.ResponseWriter, r *http.Request, a *WFAlerts, statusCode int) {
+		if a == nil {
+			return
 		}
-		if rg.Resources != nil && rg.Resources.Response != nil {
-			resp := rg.Resources.Response
-			responses[i] = resp.StatusCode
-
-			if resp.Body != nil {
-				defer resp.Body.Close()
-			}
-
-			if resp.StatusCode < 400 {
-				ok := handler(rg)
-				if !ok {
-					continue
+		a.StartMarshal(w, statusCode)
+		var sep string
+		w.Write([]byte(`,"data":{"alerts":[`))
+		if a.Data != nil && len(a.Data.Alerts) > 0 {
+			for _, alert := range a.Data.Alerts {
+				fmt.Fprintf(w,
+					`{"state":"%s","labels":%s,"annotations":%s`,
+					alert.State, dataset.Tags(alert.Labels).JSON(),
+					dataset.Tags(alert.Annotations).JSON(),
+				)
+				if alert.Value != "" {
+					fmt.Fprintf(w, `,"value":"%s"`, alert.Value)
 				}
-			}
-			if bestResp == nil || resp.StatusCode < bestResp.StatusCode {
-				bestResp = resp
-				resp.Body = io.NopCloser(bytes.NewReader(rg.Body()))
+				if alert.ActiveAt != "" {
+					fmt.Fprintf(w, `,"activeAt":"%s"`, alert.ActiveAt)
+				}
+				w.Write([]byte("}" + sep))
+				sep = ","
 			}
 		}
-	}
-
-	return responses, bestResp
+		w.Write([]byte("]}}")) // complete the alert list and the envelope
+	})
 }

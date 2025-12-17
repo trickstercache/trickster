@@ -41,11 +41,11 @@ func TestLoadCachesFromConfig(t *testing.T) {
 		cfg := newCacheConfig(t, key)
 		conf.Caches[key] = cfg
 		switch v {
-		case providers.Bbolt:
+		case providers.BBoltID:
 			cfg.BBolt.Filename = t.TempDir() + "/" + key + "-testcache.db"
-		case providers.Filesystem:
+		case providers.FilesystemID:
 			cfg.BBolt.Filename = t.TempDir() + "/" + key + "-testcache"
-		case providers.BadgerDB:
+		case providers.BadgerDBID:
 			cfg.BBolt.Filename = t.TempDir() + "/" + key + "-testcache"
 		}
 	}
@@ -76,13 +76,13 @@ func newCacheConfig(t *testing.T, cacheProvider string) *co.Options {
 
 	ctid, ok := providers.Names[cacheProvider]
 	if !ok {
-		ctid = providers.Memory
+		ctid = providers.MemoryID
 	}
 
 	switch ctid {
-	case providers.BadgerDB:
+	case providers.BadgerDBID:
 		bd = t.TempDir() + "/" + cacheProvider
-	case providers.Filesystem:
+	case providers.FilesystemID:
 		fd = t.TempDir() + "/" + cacheProvider
 	}
 

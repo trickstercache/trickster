@@ -22,25 +22,31 @@ import "strconv"
 type Provider int
 
 const (
-	// Memory indicates a memory cache
-	Memory = Provider(iota)
-	// Filesystem indicates a filesystem cache
-	Filesystem
-	// Redis indicates a Redis cache
-	Redis
-	// Bbolt indicates a Bbolt cache
-	Bbolt
-	// BadgerDB indicates a BadgerDB cache
-	BadgerDB
+	// MemoryID indicates a memory cache
+	MemoryID = Provider(iota)
+	// FilesystemID indicates a filesystem cache
+	FilesystemID
+	// RedisID indicates a Redis cache
+	RedisID
+	// BBoltID indicates a BBolt cache
+	BBoltID
+	// BadgerDBID indicates a BadgerDB cache
+	BadgerDBID
+
+	Memory     = "memory"
+	Filesystem = "filesystem"
+	Redis      = "redis"
+	BBolt      = "bbolt"
+	BadgerDB   = "badger"
 )
 
 // Names is a map of cache providers keyed by name
 var Names = map[string]Provider{
-	"memory":     Memory,
-	"filesystem": Filesystem,
-	"redis":      Redis,
-	"bbolt":      Bbolt,
-	"badger":     BadgerDB,
+	Memory:     MemoryID,
+	Filesystem: FilesystemID,
+	Redis:      RedisID,
+	BBolt:      BBoltID,
+	BadgerDB:   BadgerDBID,
 }
 
 // Values is a map of cache providers keyed by internal id
@@ -57,4 +63,10 @@ func (p Provider) String() string {
 		return v
 	}
 	return strconv.Itoa(int(p))
+}
+
+// UsesIndex returns true if the providerName uses an index
+// providerName is expected to already be lowercase/no-space
+func UsesIndex(providerName string) bool {
+	return providerName != BadgerDB && providerName != Redis
 }

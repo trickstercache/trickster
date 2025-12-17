@@ -224,6 +224,7 @@ func TestNewHTTPClient(t *testing.T) {
 func TestProbe(t *testing.T) {
 	logger.SetLogger(testLogger)
 	ts := newTestServer(200, "OK", map[string]string{})
+	defer ts.Close()
 
 	t.Run("direct probe calls", func(t *testing.T) {
 		r, _ := http.NewRequest("GET", ts.URL+"/", nil)
@@ -248,6 +249,9 @@ func TestProbe(t *testing.T) {
 	})
 
 	t.Run("probe loop", func(t *testing.T) {
+		const intervalMS = 5
+		const windowMS = 1500
+
 		u, err := url.Parse(ts.URL)
 		require.NoError(t, err)
 		target, err := newTarget(context.Background(), "testprobe", "testprobe", &ho.Options{
@@ -255,21 +259,21 @@ func TestProbe(t *testing.T) {
 			Scheme:        u.Scheme,
 			Host:          u.Host,
 			Path:          "/",
-			Interval:      1 * time.Second,
+			Interval:      intervalMS * time.Millisecond,
 			ExpectedCodes: []int{200},
 		}, ts.Client())
 		require.NoError(t, err)
 		// start probe loop
-		ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(1500*time.Millisecond))
+		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		target.interval = 5 * time.Millisecond
 		target.Start(ctx)
-		time.Sleep(1500 * time.Millisecond)
+		time.Sleep((intervalMS + windowMS) * time.Millisecond)
 		// verify results
 		success := target.successConsecutiveCnt.Load()
 		fail := target.failConsecutiveCnt.Load()
 		require.Equal(t, int32(0), fail)
 		require.GreaterOrEqual(t, success, int32(90))
+		target.Stop()
 	})
 }
 

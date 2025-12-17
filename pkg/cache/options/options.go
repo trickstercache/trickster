@@ -119,13 +119,13 @@ func (o *Options) Equal(o2 *Options) bool {
 		return false
 	}
 	switch o.ProviderID {
-	case providers.Redis:
+	case providers.RedisID:
 		return o.Redis.Equal(o2.Redis)
-	case providers.Filesystem:
+	case providers.FilesystemID:
 		return o.Filesystem.Equal(o2.Filesystem)
-	case providers.Bbolt:
+	case providers.BBoltID:
 		return o.BBolt.Equal(o2.BBolt)
-	case providers.BadgerDB:
+	case providers.BadgerDBID:
 		return o.Badger.Equal(o2.Badger)
 	default:
 		return true
@@ -135,6 +135,9 @@ func (o *Options) Equal(o2 *Options) bool {
 func (o *Options) Validate() (bool, error) {
 	if restrictedNames.Contains(o.Name) {
 		return false, ErrInvalidName
+	}
+	if o.Index == nil {
+		return true, nil
 	}
 	if o.Index.MaxSizeBytes > 0 && o.Index.MaxSizeBackoffBytes > o.Index.MaxSizeBytes {
 		return false, errMaxSizeBackoffBytesTooBig
@@ -157,26 +160,46 @@ func (o *Options) Initialize(name string) error {
 	o.Name = name
 
 	if o.Provider != "" {
-		o.Provider = strings.ToLower(o.Provider)
+		o.Provider = strings.TrimSpace(strings.ToLower(o.Provider))
 		if n, ok := providers.Names[o.Provider]; ok {
 			o.ProviderID = n
 		}
 	}
 
-	if o.Index == nil {
-		o.Index = index.New()
+	if providers.UsesIndex(o.Provider) {
+		if o.Index == nil {
+			o.Index = index.New()
+		}
+	} else {
+		o.Index = nil
 	}
-	if o.Redis == nil {
-		o.Redis = redis.New()
+	if o.ProviderID == providers.RedisID {
+		if o.Redis == nil {
+			o.Redis = redis.New()
+		}
+	} else {
+		o.Redis = nil
 	}
-	if o.Filesystem == nil {
-		o.Filesystem = filesystem.New()
+	if o.ProviderID == providers.FilesystemID {
+		if o.Filesystem == nil {
+			o.Filesystem = filesystem.New()
+		}
+	} else {
+		o.Filesystem = nil
 	}
-	if o.BBolt == nil {
-		o.BBolt = bbolt.New()
+	if o.ProviderID == providers.BBoltID {
+		if o.BBolt == nil {
+			o.BBolt = bbolt.New()
+		}
+	} else {
+		o.BBolt = nil
 	}
-	if o.Badger == nil {
-		o.Badger = badger.New()
+	if o.ProviderID == providers.BadgerDBID {
+		if o.Badger == nil {
+			o.Badger = badger.New()
+		}
+	} else {
+		o.Badger = nil
 	}
 
 	o.UseCacheChunking = defaults.DefaultUseCacheChunking
@@ -207,7 +230,7 @@ func (l Lookup) Initialize(activeCaches sets.Set[string]) ([]string, error) {
 			return nil, err
 		}
 
-		if v.ProviderID == providers.Redis {
+		if v.ProviderID == providers.RedisID {
 			var hasEndpoint, hasEndpoints bool
 
 			if v.Redis.Endpoint != "" {
@@ -253,4 +276,12 @@ func (o *Options) UnmarshalYAML(unmarshal func(any) error) error {
 	}
 	*o = Options(lo)
 	return nil
+}
+
+func (o *Options) ClearProviderOptions() {
+	o.Index = nil
+	o.Redis = nil
+	o.Filesystem = nil
+	o.BBolt = nil
+	o.Badger = nil
 }

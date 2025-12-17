@@ -48,20 +48,24 @@ func (ld *WFLabelData) Merge(results ...*WFLabelData) {
 	}
 }
 
-// MergeAndWriteLabelData merges the provided Responses into a single prometheus basic data object,
-// and writes it to the provided ResponseWriter
-func MergeAndWriteLabelData(w http.ResponseWriter, r *http.Request, rgs merge.ResponseGates) {
-	ld, responses, bestResp := unmarshalAndMerge(r, rgs, "labels", func() *WFLabelData {
+// MergeAndWriteLabelDataMergeFunc returns a MergeFunc for WFLabelData
+func MergeAndWriteLabelDataMergeFunc() merge.MergeFunc {
+	return MakeMergeFunc("labels", func() *WFLabelData {
 		return &WFLabelData{}
 	})
+}
 
-	if !handleMergeResult(w, r, ld, responses, bestResp) {
-		return
-	}
-
-	if len(ld.Data) > 0 {
-		sort.Strings(ld.Data)
-		fmt.Fprintf(w, `,"data":["%s"]`, strings.Join(ld.Data, `","`))
-	}
-	w.Write([]byte("}"))
+// MergeAndWriteLabelDataRespondFunc returns a RespondFunc for WFLabelData
+func MergeAndWriteLabelDataRespondFunc() merge.RespondFunc {
+	return MakeRespondFunc(func(w http.ResponseWriter, r *http.Request, ld *WFLabelData, statusCode int) {
+		if ld == nil {
+			return
+		}
+		ld.StartMarshal(w, statusCode)
+		if len(ld.Data) > 0 {
+			sort.Strings(ld.Data)
+			fmt.Fprintf(w, `,"data":["%s"]`, strings.Join(ld.Data, `","`))
+		}
+		w.Write([]byte("}"))
+	})
 }

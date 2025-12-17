@@ -17,74 +17,98 @@
 package merge
 
 import (
-	stdbytes "bytes"
+	"io"
 	"net/http"
+	"sync"
 
-	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
-	"github.com/trickstercache/trickster/v2/pkg/util/bytes"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
-// ResponseGate is a Request/ResponseWriter Pair that must be handled in its entirety
-// before its respective response pool can be merged.
-type ResponseGate struct {
-	http.ResponseWriter
-	Request   *http.Request
-	Response  *http.Response
-	Resources *request.Resources
-	body      []byte
-	header    http.Header
+// MergeFunc is a function type that merges unmarshaled data into an accumulator
+// It takes the accumulator, unmarshaled data (either timeseries.Timeseries or a type
+// conforming to Mergeable[T]), and index, and returns an error
+type MergeFunc func(*Accumulator, any, int) error
+
+// RespondFunc is a function type that writes the merged result to the response writer
+// It takes the response writer, request, accumulator, and status code
+type RespondFunc func(http.ResponseWriter, *http.Request, *Accumulator, int)
+
+type MergeFuncPair struct {
+	Merge   MergeFunc
+	Respond RespondFunc
 }
 
-// ResponseGates represents a slice of type *ResponseGate
-type ResponseGates []*ResponseGate
+type MergeFuncLookup map[string]*MergeFuncPair
 
-// NewResponseGate provides a new ResponseGate object
-func NewResponseGate(w http.ResponseWriter, r *http.Request, rsc *request.Resources) *ResponseGate {
-	rg := &ResponseGate{ResponseWriter: w, Request: r, Resources: rsc}
-	if w != nil {
-		rg.header = w.Header().Clone()
-	}
-	return rg
+// Mergeable represents types that can merge with other instances of the same type
+type Mergeable[T any] interface {
+	*T
+	Merge(...*T)
 }
 
-// Header returns the ResponseGate's Header map
-func (rg *ResponseGate) Header() http.Header {
-	return rg.header
+// MarshallerPtr represents pointer types that can start marshaling with an envelope
+type MarshallerPtr[T any] interface {
+	*T
+	StartMarshal(w io.Writer, httpStatus int)
 }
 
-// WriteHeader is not used with a ResponseGate
-func (rg *ResponseGate) WriteHeader(_ int) {
+// Accumulator is a thread-safe accumulator for merging data
+// It can hold either timeseries.Timeseries or any other mergeable type
+type Accumulator struct {
+	mu      sync.Mutex
+	tsdata  timeseries.Timeseries
+	generic any // For non-timeseries mergeable types
 }
 
-// Body returns the stored body for merging
-func (rg *ResponseGate) Body() []byte {
-	return rg.body
+// NewAccumulator returns a new Accumulator
+func NewAccumulator() *Accumulator {
+	return &Accumulator{}
 }
 
-// Write is not used with a ResponseGate
-func (rg *ResponseGate) Write(b []byte) (int, error) {
-	l := len(b)
-	if l == 0 {
-		return 0, nil
-	}
-	if len(rg.body) == 0 {
-		rg.body = stdbytes.Clone(b)
-	} else {
-		rg.body = bytes.MergeSlices(rg.body, b)
-	}
-	return len(b), nil
+// GetTSData returns the accumulated timeseries data (thread-safe)
+func (a *Accumulator) GetTSData() timeseries.Timeseries {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.tsdata
 }
 
-// Compress removes nil ResponseGates from the slice
-func (rgs ResponseGates) Compress() ResponseGates {
-	out := make(ResponseGates, len(rgs))
-	var k int
-	for _, rg := range rgs {
-		if rg == nil {
-			continue
-		}
-		out[k] = rg
-		k++
-	}
-	return out[:k]
+// SetTSData sets the accumulated timeseries data (thread-safe)
+func (a *Accumulator) SetTSData(data timeseries.Timeseries) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.tsdata = data
+}
+
+// GetGeneric returns the accumulated generic data (thread-safe)
+func (a *Accumulator) GetGeneric() any {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.generic
+}
+
+// SetGeneric sets the accumulated generic data (thread-safe)
+func (a *Accumulator) SetGeneric(data any) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.generic = data
+}
+
+// Lock locks the accumulator's mutex (for use by merge functions)
+func (a *Accumulator) Lock() {
+	a.mu.Lock()
+}
+
+// Unlock unlocks the accumulator's mutex (for use by merge functions)
+func (a *Accumulator) Unlock() {
+	a.mu.Unlock()
+}
+
+// GetGenericUnsafe returns the generic data without locking (caller must hold lock)
+func (a *Accumulator) GetGenericUnsafe() any {
+	return a.generic
+}
+
+// SetGenericUnsafe sets the generic data without locking (caller must hold lock)
+func (a *Accumulator) SetGenericUnsafe(data any) {
+	a.generic = data
 }

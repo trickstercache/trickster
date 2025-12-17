@@ -2,8 +2,8 @@ main:
   server_name: trickster-test
 backends:
   default:
-    timeout: 3m0s
-    keep_alive_timeout: 5m0s
+    timeout: 1m0s
+    keep_alive_timeout: 2m0s
     max_idle_conns: 20
     cache_name: default
     chunk_read_concurrency_limit: 16
@@ -35,10 +35,11 @@ backends:
   origin1:
     provider: rpc
     origin_url: https://origin1/
-    timeout: 3m0s
-    keep_alive_timeout: 5m0s
+    timeout: 1m0s
+    keep_alive_timeout: 2m0s
     max_idle_conns: 20
     cache_name: default
+    cache_key_prefix: origin1
     chunk_read_concurrency_limit: 16
     chunk_write_concurrency_limit: 16
     healthcheck:
@@ -70,10 +71,11 @@ backends:
   origin2:
     provider: rp
     origin_url: http://origin2
-    timeout: 3m0s
-    keep_alive_timeout: 5m0s
+    timeout: 1m0s
+    keep_alive_timeout: 2m0s
     max_idle_conns: 20
     cache_name: default
+    cache_key_prefix: origin2
     chunk_read_concurrency_limit: 16
     chunk_write_concurrency_limit: 16
     healthcheck:
@@ -105,10 +107,11 @@ backends:
   prom1:
     provider: prometheus
     origin_url: http://prom1:9090
-    timeout: 3m0s
-    keep_alive_timeout: 5m0s
+    timeout: 1m0s
+    keep_alive_timeout: 2m0s
     max_idle_conns: 20
     cache_name: default
+    cache_key_prefix: prom1:9090
     chunk_read_concurrency_limit: 16
     chunk_write_concurrency_limit: 16
     healthcheck:
@@ -139,10 +142,11 @@ backends:
   prom2:
     provider: prometheus
     origin_url: http://prom2:9090
-    timeout: 3m0s
-    keep_alive_timeout: 5m0s
+    timeout: 1m0s
+    keep_alive_timeout: 2m0s
     max_idle_conns: 20
     cache_name: default
+    cache_key_prefix: prom2:9090
     chunk_read_concurrency_limit: 16
     chunk_write_concurrency_limit: 16
     healthcheck:
@@ -172,8 +176,8 @@ backends:
     latency_max: 0s
   promalb:
     provider: alb
-    timeout: 3m0s
-    keep_alive_timeout: 5m0s
+    timeout: 1m0s
+    keep_alive_timeout: 2m0s
     max_idle_conns: 20
     cache_name: default
     chunk_read_concurrency_limit: 16
@@ -203,14 +207,15 @@ backends:
       pool:
       - prom1
       - prom1
+      output_format: prometheus
     tls: {}
     forwarded_headers: standard
     latency_min: 0s
     latency_max: 0s
   proxycache:
     provider: alb
-    timeout: 3m0s
-    keep_alive_timeout: 5m0s
+    timeout: 1m0s
+    keep_alive_timeout: 2m0s
     max_idle_conns: 20
     cache_name: default
     chunk_read_concurrency_limit: 16

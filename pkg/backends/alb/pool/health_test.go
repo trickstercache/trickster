@@ -43,7 +43,7 @@ func TestCheckHealth(t *testing.T) {
 	cancel()
 	time.Sleep(10 * time.Millisecond)
 
-	h := p.healthy.Load()
+	h := p.healthyHandlers.Load()
 	if h == nil {
 		t.Error("expected non-nil healthy list")
 		return

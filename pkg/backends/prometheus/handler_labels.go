@@ -31,8 +31,9 @@ func (c *Client) LabelsHandler(w http.ResponseWriter, r *http.Request) {
 	u := urls.BuildUpstreamURL(r, c.BaseUpstreamURL())
 
 	rsc := request.GetResources(r)
-	if rsc.IsMergeMember {
-		rsc.ResponseMergeFunc = model.MergeAndWriteLabelData
+	if rsc != nil && rsc.IsMergeMember {
+		rsc.MergeFunc = model.MergeAndWriteLabelDataMergeFunc()
+		rsc.MergeRespondFunc = model.MergeAndWriteLabelDataRespondFunc()
 	}
 
 	qp, _, _ := params.GetRequestValues(r)

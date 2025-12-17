@@ -25,21 +25,12 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/badger"
 	"github.com/trickstercache/trickster/v2/pkg/cache/bbolt"
 	"github.com/trickstercache/trickster/v2/pkg/cache/filesystem"
-	"github.com/trickstercache/trickster/v2/pkg/cache/index"
-	indexopts "github.com/trickstercache/trickster/v2/pkg/cache/index/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/manager"
 	"github.com/trickstercache/trickster/v2/pkg/cache/memory"
 	"github.com/trickstercache/trickster/v2/pkg/cache/options"
+	"github.com/trickstercache/trickster/v2/pkg/cache/providers"
 	"github.com/trickstercache/trickster/v2/pkg/cache/redis"
 	"github.com/trickstercache/trickster/v2/pkg/config"
-)
-
-// Cache Interface Types
-const (
-	ctFilesystem = "filesystem"
-	ctRedis      = "redis"
-	ctBBolt      = "bbolt"
-	ctBadger     = "badger"
 )
 
 // LoadCachesFromConfig iterates the Caching Config and Connects/Maps each Cache
@@ -64,41 +55,27 @@ func CloseCaches(caches cache.Lookup) error {
 
 // NewCache returns a Cache object based on the provided config.CachingConfig
 func NewCache(cacheName string, cfg *options.Options) cache.Cache {
-	if cfg.Index == nil {
-		cfg.Index = indexopts.New()
-	}
-
 	var c cache.Cache
-
+	co := manager.CacheOptions{
+		UseIndex: providers.UsesIndex(cfg.Provider),
+	}
 	switch cfg.Provider {
-	case ctFilesystem:
-		c = manager.NewCache(filesystem.NewCache(cacheName, cfg), manager.CacheOptions{
-			UseIndex: true,
-			IndexCliOpts: index.IndexedClientOptions{
-				NeedsFlushInterval: true,
-				NeedsReapInterval:  true,
-			},
-		}, cfg)
-	case ctRedis:
-		c = manager.NewCache(redis.New(context.Background(), cacheName, cfg), manager.CacheOptions{}, cfg)
-	case ctBBolt:
-		c = manager.NewCache(bbolt.New(cacheName, "", "", cfg), manager.CacheOptions{
-			UseIndex: true,
-			IndexCliOpts: index.IndexedClientOptions{
-				NeedsFlushInterval: true,
-				NeedsReapInterval:  true,
-			},
-		}, cfg)
-	case ctBadger:
-		c = manager.NewCache(badger.New(cacheName, cfg), manager.CacheOptions{}, cfg)
+	case providers.Filesystem:
+		co.IndexCliOpts.NeedsFlushInterval = true
+		co.IndexCliOpts.NeedsReapInterval = true
+		c = manager.NewCache(filesystem.NewCache(cacheName, cfg), co, cfg)
+	case providers.Redis:
+		c = manager.NewCache(redis.New(context.Background(), cacheName, cfg), co, cfg)
+	case providers.BBolt:
+		co.IndexCliOpts.NeedsFlushInterval = true
+		co.IndexCliOpts.NeedsReapInterval = true
+		c = manager.NewCache(bbolt.New(cacheName, "", "", cfg), co, cfg)
+	case providers.BadgerDB:
+		c = manager.NewCache(badger.New(cacheName, cfg), co, cfg)
 	default:
 		// Default to MemoryCache
-		c = manager.NewCache(memory.New(cacheName, cfg), manager.CacheOptions{
-			UseIndex: true,
-			IndexCliOpts: index.IndexedClientOptions{
-				NeedsReapInterval: true,
-			},
-		}, cfg)
+		co.IndexCliOpts.NeedsReapInterval = true
+		c = manager.NewCache(memory.New(cacheName, cfg), co, cfg)
 	}
 	c.Connect()
 	return c

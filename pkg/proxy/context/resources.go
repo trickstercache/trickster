@@ -33,3 +33,11 @@ func WithResources(ctx context.Context, r any) context.Context {
 func Resources(ctx context.Context) any {
 	return ctx.Value(resourcesKey)
 }
+
+// ClearResources removes Resources from the context
+func ClearResources(ctx context.Context) context.Context {
+	if ctx == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, resourcesKey, nil)
+}

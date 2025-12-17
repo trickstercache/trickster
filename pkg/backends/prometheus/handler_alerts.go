@@ -31,7 +31,8 @@ func (c *Client) AlertsHandler(w http.ResponseWriter, r *http.Request) {
 	r.URL = urls.BuildUpstreamURL(r, c.BaseUpstreamURL())
 	resp := engines.DoProxy(w, r, true)
 	if rsc != nil && rsc.IsMergeMember {
-		rsc.ResponseMergeFunc = model.MergeAndWriteAlerts
+		rsc.MergeFunc = model.MergeAndWriteAlertsMergeFunc()
+		rsc.MergeRespondFunc = model.MergeAndWriteAlertsRespondFunc()
 		rsc.Response = resp
 	}
 }

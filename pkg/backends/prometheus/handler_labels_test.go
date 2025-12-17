@@ -50,7 +50,7 @@ func TestLabelsHandler(t *testing.T) {
 
 	client.LabelsHandler(w, r)
 
-	if rsc.ResponseMergeFunc == nil {
+	if rsc.MergeFunc == nil {
 		t.Error("expected non-nil func value")
 	}
 }

@@ -146,6 +146,12 @@ func (o *Options) Initialize(_ string) error {
 		o.Methods = []string{http.MethodGet}
 	}
 
+	// Expand "*" to all HTTP methods
+	// If "*" is present, it replaces all other methods
+	if slices.Contains(o.Methods, "*") {
+		o.Methods = methods.AllHTTPMethods()
+	}
+
 	if o.MatchTypeName == "" {
 		o.MatchTypeName = matching.PathMatchNameExact
 		o.MatchType = matching.PathMatchTypeExact

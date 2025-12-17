@@ -17,10 +17,8 @@
 package nlm
 
 import (
-	"context"
 	"net/http"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
@@ -31,7 +29,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
-	"github.com/trickstercache/trickster/v2/pkg/util/atomicx"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/response/capture"
 )
 
 const (
@@ -55,6 +53,10 @@ func (h *handler) SetPool(p pool.Pool) {
 	h.pool = p
 }
 
+func (h *handler) Pool() pool.Pool {
+	return h.pool
+}
+
 func (h *handler) ID() types.ID {
 	return ID
 }
@@ -72,7 +74,7 @@ func (h *handler) StopPool() {
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	hl := h.pool.Healthy() // should return a fanout list
 	l := len(hl)
-	if len(hl) == 0 {
+	if l == 0 {
 		failures.HandleBadGateway(w, r)
 		return
 	}
@@ -81,111 +83,66 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		hl[0].ServeHTTP(w, r)
 		return
 	}
-	// otherwise iterate the fanout
-	nrm := newNewestResponseMux(l)
+
+	// Create contexts for cancellation
+	ctx := r.Context()
+
+	// Track the newest Last-Modified response
+	newestIdx := -1
+	var newestTime time.Time
+	var mu sync.Mutex
+
+	// Capture all responses
+	captures := make([]*capture.CaptureResponseWriter, l)
 	var wg sync.WaitGroup
+
+	// Fanout to all healthy targets
 	for i := range l {
-		// only one of these i fanouts to respond will be mapped back to
-		// the end user based on the methodology and the rest will have their
-		// contexts canceled
+		if hl[i] == nil {
+			continue
+		}
+		idx := i
 		wg.Go(func() {
-			if hl[i] == nil {
-				return
-			}
-			nrg := newNewestResponseGate(w, i, nrm)
 			r2, _ := request.Clone(r)
-			r2 = r2.WithContext(nrm.contexts[i])
-			hl[i].ServeHTTP(nrg, r2)
+			r2 = request.ClearResources(r2.WithContext(ctx))
+			crw := capture.NewCaptureResponseWriter()
+			captures[idx] = crw
+			hl[idx].ServeHTTP(crw, r2)
+
+			if lmStr := crw.Header().Get(headers.NameLastModified); lmStr != "" {
+				lm, err := time.Parse(time.RFC1123, lmStr)
+				if err == nil && !lm.IsZero() {
+					mu.Lock()
+					if newestIdx == -1 || lm.After(newestTime) {
+						newestIdx = idx
+						newestTime = lm
+					}
+					mu.Unlock()
+				}
+			}
 		})
 	}
+
+	// Wait for all responses to complete
 	wg.Wait()
-}
 
-// newestResponseGate is a ResponseWriter that only writes when the muxer
-// selects it based on the newness of the response's LastModified header when
-// compared to other responses in the Mux
-type newestResponseGate struct {
-	http.ResponseWriter
-	i, s  int64
-	ca    bool
-	h, wh http.Header
-	nrm   *newestResponseMux
-}
-
-// newestResponseMux is used by the ResponseGate while collecting the fanout
-// Responses to track the response slice index representing the Response
-// with the newest LastModified header.
-type newestResponseMux struct {
-	i        int64
-	t        atomicx.Time
-	wg       sync.WaitGroup
-	contexts []context.Context
-}
-
-func newNewestResponseMux(sz int) *newestResponseMux {
-	contexts := make([]context.Context, sz)
-	for i := range sz {
-		contexts[i] = context.Background()
+	// Write the response with the newest Last-Modified
+	if newestIdx >= 0 && newestIdx < len(captures) && captures[newestIdx] != nil {
+		crw := captures[newestIdx]
+		headers.Merge(w.Header(), crw.Header())
+		statusCode := crw.StatusCode()
+		w.WriteHeader(statusCode)
+		w.Write(crw.Body())
+		return
 	}
-	nrm := &newestResponseMux{i: -1, contexts: contexts}
-	nrm.wg.Add(sz)
-	return nrm
-}
-
-func (nrm *newestResponseMux) registerLM(i int, t time.Time) bool {
-	var ok bool
-	if t.IsZero() {
-		return false
-	}
-	if nrm.t.Load().IsZero() || t.After(nrm.t.Load()) {
-		atomic.StoreInt64(&nrm.i, int64(i))
-		nrm.t.Store(t)
-		ok = true
-	}
-	return ok
-}
-
-func (nrm *newestResponseMux) getNewest() int64 {
-	return atomic.LoadInt64(&nrm.i)
-}
-
-func newNewestResponseGate(w http.ResponseWriter, i int,
-	nrm *newestResponseMux,
-) *newestResponseGate {
-	return &newestResponseGate{
-		ResponseWriter: w, h: http.Header{},
-		i: int64(i), nrm: nrm,
-	}
-}
-
-func (nrg *newestResponseGate) Header() http.Header {
-	return nrg.h
-}
-
-func (nrg *newestResponseGate) WriteHeader(i int) {
-	nrg.s = int64(i)
-	nrg.wh = nrg.h
-	nrg.h = nil
-	lm, err := time.Parse(time.RFC1123, nrg.wh.Get(headers.NameLastModified))
-	if err == nil {
-		nrg.ca = !nrg.nrm.registerLM(int(nrg.i), lm)
-	}
-	nrg.nrm.wg.Done()
-}
-
-func (nrg *newestResponseGate) Write(b []byte) (int, error) {
-	if nrg.ca { // can abort without waiting, since this gate is already proven
-		// not to be newest
-		return len(b), nil
-	}
-	nrg.nrm.wg.Wait()
-	if nrg.nrm.getNewest() == nrg.i {
-		if len(nrg.wh) > 0 {
-			headers.Merge(nrg.ResponseWriter.Header(), nrg.wh)
-			nrg.wh = nil
+	// No valid response found, use the first available
+	for _, crw := range captures {
+		if crw != nil {
+			headers.Merge(w.Header(), crw.Header())
+			statusCode := crw.StatusCode()
+			w.WriteHeader(statusCode)
+			w.Write(crw.Body())
+			break
 		}
-		nrg.ResponseWriter.WriteHeader(int(nrg.s))
-		nrg.ResponseWriter.Write(b)
 	}
-	return len(b), nil
 }

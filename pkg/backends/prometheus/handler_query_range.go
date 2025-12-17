@@ -35,7 +35,11 @@ func (c *Client) QueryRangeHandler(w http.ResponseWriter, r *http.Request) {
 			rsc.TSTransformer = c.ProcessTransformations
 		}
 		if rsc.IsMergeMember {
-			rsc.ResponseMergeFunc = merge.Timeseries
+			m := c.Modeler()
+			if m != nil {
+				rsc.MergeFunc = merge.TimeseriesMergeFunc(m.WireUnmarshaler)
+				rsc.MergeRespondFunc = merge.TimeseriesRespondFunc(m.WireMarshalWriter, rsc.TSReqestOptions)
+			}
 		}
 	}
 	r.URL = urls.BuildUpstreamURL(r, c.BaseUpstreamURL())

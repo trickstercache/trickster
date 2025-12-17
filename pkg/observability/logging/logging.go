@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -319,7 +320,7 @@ func (l *logger) HasLoggedOnce(logLevel level.Level, key string) bool {
 }
 
 func (l *logger) logAsyncronous(logLevel level.Level, event string, detail Pairs) {
-	go l.log(logLevel, event, detail)
+	go l.logWithCaller(logLevel, event, detail, getCaller(1))
 }
 
 type item struct {
@@ -337,7 +338,32 @@ const (
 	newline = "\n"
 )
 
+// getCaller returns the first path in the call stack from /pkg not in
+func getCaller(skip int) string {
+	for s := skip; s < skip+20; s++ {
+		pc, file, line, ok := runtime.Caller(s)
+		if !ok {
+			break
+		}
+		idx := strings.Index(file, "/pkg/")
+		if idx == -1 || strings.Contains(file, "/pkg/observability/logging/") {
+			continue
+		}
+		fn := runtime.FuncForPC(pc)
+		if fn == nil {
+			continue
+		}
+		return file[idx+1:] + ":" + strconv.Itoa(line)
+	}
+	return ""
+}
+
 func (l *logger) log(logLevel level.Level, event string, detail Pairs) {
+	caller := getCaller(1)
+	l.logWithCaller(logLevel, event, detail, caller)
+}
+
+func (l *logger) logWithCaller(logLevel level.Level, event string, detail Pairs, caller string) {
 	if l.writer == nil {
 		return
 	}
@@ -346,12 +372,19 @@ func (l *logger) log(logLevel level.Level, event string, detail Pairs) {
 	if strings.HasPrefix(event, space) || strings.HasSuffix(event, space) {
 		event = strings.TrimSpace(event)
 	}
+
 	logLine := []byte(
 		"time=" + ts.UTC().Format(time.RFC3339Nano) + space +
 			"app=trickster" + space +
 			"level=" + string(logLevel) + space +
 			"event=" + quoteAsNeeded(event),
 	)
+
+	// Add caller field if available
+	if caller != "" {
+		logLine = append(logLine, []byte(space+"caller="+caller)...)
+	}
+
 	if ld > 0 {
 		logLine = append(logLine, []byte(space)...)
 		keyPairs := make([]item, ld)

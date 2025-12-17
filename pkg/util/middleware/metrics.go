@@ -17,6 +17,7 @@
 package middleware
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
@@ -55,18 +56,7 @@ type responseObserver struct {
 
 func (w *responseObserver) WriteHeader(statusCode int) {
 	w.ResponseWriter.WriteHeader(statusCode)
-	switch {
-	case statusCode >= 100 && statusCode < 199:
-		w.status = "1xx"
-	case statusCode >= 200 && statusCode < 299:
-		w.status = "2xx"
-	case statusCode >= 300 && statusCode < 399:
-		w.status = "3xx"
-	case statusCode >= 400 && statusCode < 499:
-		w.status = "4xx"
-	case statusCode >= 500 && statusCode < 599:
-		w.status = "5xx"
-	}
+	w.status = fmt.Sprintf("%dxx", statusCode/100)
 }
 
 func (w *responseObserver) Write(b []byte) (int, error) {

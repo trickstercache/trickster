@@ -25,6 +25,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/cache/evictionmethods"
+	cacheproviders "github.com/trickstercache/trickster/v2/pkg/cache/providers"
 	"github.com/trickstercache/trickster/v2/pkg/errors"
 	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
 )
@@ -247,32 +248,38 @@ func TestFullLoadConfiguration(t *testing.T) {
 		t.Errorf("expected redis, got %s", c.Provider)
 	}
 
-	if c.Index.ReapInterval != 4000 {
-		t.Errorf("expected 4000, got %d", c.Index.ReapInterval)
-	}
+	if cacheproviders.UsesIndex(c.Provider) {
+		if c.Index == nil {
+			t.Errorf("expected index for provider %s, got nil", c.Provider)
+		} else {
+			if c.Index.ReapInterval != 4000 {
+				t.Errorf("expected 4000, got %d", c.Index.ReapInterval)
+			}
 
-	if c.Index.FlushInterval != 6000 {
-		t.Errorf("expected 6000, got %d", c.Index.FlushInterval)
-	}
+			if c.Index.FlushInterval != 6000 {
+				t.Errorf("expected 6000, got %d", c.Index.FlushInterval)
+			}
 
-	if c.Index.MaxSizeBytes != 536870913 {
-		t.Errorf("expected 536870913, got %d", c.Index.MaxSizeBytes)
-	}
+			if c.Index.MaxSizeBytes != 536870913 {
+				t.Errorf("expected 536870913, got %d", c.Index.MaxSizeBytes)
+			}
 
-	if c.Index.MaxSizeBackoffBytes != 16777217 {
-		t.Errorf("expected 16777217, got %d", c.Index.MaxSizeBackoffBytes)
-	}
+			if c.Index.MaxSizeBackoffBytes != 16777217 {
+				t.Errorf("expected 16777217, got %d", c.Index.MaxSizeBackoffBytes)
+			}
 
-	if c.Index.MaxSizeObjects != 80 {
-		t.Errorf("expected 80, got %d", c.Index.MaxSizeObjects)
-	}
+			if c.Index.MaxSizeObjects != 80 {
+				t.Errorf("expected 80, got %d", c.Index.MaxSizeObjects)
+			}
 
-	if c.Index.MaxSizeBackoffObjects != 20 {
-		t.Errorf("expected 20, got %d", c.Index.MaxSizeBackoffObjects)
-	}
-
-	if c.Index.ReapInterval != 4000 {
-		t.Errorf("expected 4000, got %d", c.Index.ReapInterval)
+			if c.Index.MaxSizeBackoffObjects != 20 {
+				t.Errorf("expected 20, got %d", c.Index.MaxSizeBackoffObjects)
+			}
+		}
+	} else {
+		if c.Index != nil {
+			t.Errorf("expected nil index for provider %s, got non-nil", c.Provider)
+		}
 	}
 
 	if c.Redis.ClientType != "test_redis_type" {
@@ -343,24 +350,40 @@ func TestFullLoadConfiguration(t *testing.T) {
 		t.Errorf("expected 300001, got %d", c.Redis.ConnMaxIdleTime)
 	}
 
-	if c.Filesystem.CachePath != "test_cache_path" {
-		t.Errorf("expected test_cache_path, got %s", c.Filesystem.CachePath)
-	}
+	if c.Provider == "redis" {
+		if c.Filesystem != nil {
+			t.Errorf("expected nil Filesystem for redis provider, got non-nil")
+		}
+		if c.BBolt != nil {
+			t.Errorf("expected nil BBolt for redis provider, got non-nil")
+		}
+		if c.Badger != nil {
+			t.Errorf("expected nil Badger for redis provider, got non-nil")
+		}
+	} else {
+		if c.Filesystem != nil && c.Filesystem.CachePath != "test_cache_path" {
+			t.Errorf("expected test_cache_path, got %s", c.Filesystem.CachePath)
+		}
 
-	if c.BBolt.Filename != "test_filename" {
-		t.Errorf("expected test_filename, got %s", c.BBolt.Filename)
-	}
+		if c.BBolt != nil {
+			if c.BBolt.Filename != "test_filename" {
+				t.Errorf("expected test_filename, got %s", c.BBolt.Filename)
+			}
 
-	if c.BBolt.Bucket != "test_bucket" {
-		t.Errorf("expected test_bucket, got %s", c.BBolt.Bucket)
-	}
+			if c.BBolt.Bucket != "test_bucket" {
+				t.Errorf("expected test_bucket, got %s", c.BBolt.Bucket)
+			}
+		}
 
-	if c.Badger.Directory != "test_directory" {
-		t.Errorf("expected test_directory, got %s", c.Badger.Directory)
-	}
+		if c.Badger != nil {
+			if c.Badger.Directory != "test_directory" {
+				t.Errorf("expected test_directory, got %s", c.Badger.Directory)
+			}
 
-	if c.Badger.ValueDirectory != "test_value_directory" {
-		t.Errorf("expected test_value_directory, got %s", c.Badger.ValueDirectory)
+			if c.Badger.ValueDirectory != "test_value_directory" {
+				t.Errorf("expected test_value_directory, got %s", c.Badger.ValueDirectory)
+			}
+		}
 	}
 }
 
@@ -412,88 +435,134 @@ func TestEmptyLoadConfiguration(t *testing.T) {
 		return
 	}
 
-	if c.Index.ReapInterval != 3000*time.Millisecond {
-		t.Errorf("expected 3000, got %d", c.Index.ReapInterval)
+	if cacheproviders.UsesIndex(c.Provider) {
+		if c.Index == nil {
+			t.Errorf("expected index for provider %s, got nil", c.Provider)
+		} else if c.Index.ReapInterval != 3000*time.Millisecond {
+			t.Errorf("expected 3000, got %d", c.Index.ReapInterval)
+		}
+	} else {
+		if c.Index != nil {
+			t.Errorf("expected nil index for provider %s, got non-nil", c.Provider)
+		}
 	}
 
-	if c.Redis.Endpoint != "redis:6379" {
-		t.Errorf("expected redis:6379, got %s", c.Redis.Endpoint)
+	if c.Provider == "redis" {
+		if c.Redis == nil {
+			t.Errorf("expected redis config for redis provider, got nil")
+		} else {
+			if c.Redis.Endpoint != "redis:6379" {
+				t.Errorf("expected redis:6379, got %s", c.Redis.Endpoint)
+			}
+
+			if c.Redis.SentinelMaster != "" {
+				t.Errorf("expected '', got %s", c.Redis.SentinelMaster)
+			}
+
+			if c.Redis.Password != "" {
+				t.Errorf("expected '', got %s", c.Redis.Password)
+			}
+
+			if c.Redis.DB != 0 {
+				t.Errorf("expected 0, got %d", c.Redis.DB)
+			}
+
+			if c.Redis.MaxRetries != 0 {
+				t.Errorf("expected 0, got %d", c.Redis.MaxRetries)
+			}
+
+			if c.Redis.MinRetryBackoff != 0 {
+				t.Errorf("expected 0, got %d", c.Redis.MinRetryBackoff)
+			}
+
+			if c.Redis.MaxRetryBackoff != 0 {
+				t.Errorf("expected 0, got %d", c.Redis.MaxRetryBackoff)
+			}
+
+			if c.Redis.DialTimeout != 0 {
+				t.Errorf("expected 0, got %d", c.Redis.DialTimeout)
+			}
+
+			if c.Redis.ReadTimeout != 0 {
+				t.Errorf("expected 0, got %d", c.Redis.ReadTimeout)
+			}
+
+			if c.Redis.WriteTimeout != 0 {
+				t.Errorf("expected 0, got %d", c.Redis.WriteTimeout)
+			}
+
+			if c.Redis.PoolSize != 0 {
+				t.Errorf("expected 0, got %d", c.Redis.PoolSize)
+			}
+
+			if c.Redis.MinIdleConns != 0 {
+				t.Errorf("expected 0, got %d", c.Redis.PoolSize)
+			}
+
+			if c.Redis.ConnMaxLifetime != 0 {
+				t.Errorf("expected 0, got %d", c.Redis.ConnMaxLifetime)
+			}
+
+			if c.Redis.PoolTimeout != 0 {
+				t.Errorf("expected 0, got %d", c.Redis.PoolTimeout)
+			}
+
+			if c.Redis.ConnMaxIdleTime != 0 {
+				t.Errorf("expected 0, got %d", c.Redis.ConnMaxIdleTime)
+			}
+		}
+	} else {
+		if c.Redis != nil {
+			t.Errorf("expected nil redis config for provider %s, got non-nil", c.Provider)
+		}
 	}
 
-	if c.Redis.SentinelMaster != "" {
-		t.Errorf("expected '', got %s", c.Redis.SentinelMaster)
+	if c.Provider == "filesystem" {
+		if c.Filesystem == nil {
+			t.Errorf("expected filesystem config for filesystem provider, got nil")
+		} else if c.Filesystem.CachePath != "/tmp/trickster" {
+			t.Errorf("expected /tmp/trickster, got %s", c.Filesystem.CachePath)
+		}
+	} else {
+		if c.Filesystem != nil {
+			t.Errorf("expected nil filesystem config for provider %s, got non-nil", c.Provider)
+		}
 	}
 
-	if c.Redis.Password != "" {
-		t.Errorf("expected '', got %s", c.Redis.Password)
+	if c.Provider == "bbolt" {
+		if c.BBolt == nil {
+			t.Errorf("expected bbolt config for bbolt provider, got nil")
+		} else {
+			if c.BBolt.Filename != "trickster.db" {
+				t.Errorf("expected trickster.db, got %s", c.BBolt.Filename)
+			}
+
+			if c.BBolt.Bucket != "trickster" {
+				t.Errorf("expected trickster, got %s", c.BBolt.Bucket)
+			}
+		}
+	} else {
+		if c.BBolt != nil {
+			t.Errorf("expected nil bbolt config for provider %s, got non-nil", c.Provider)
+		}
 	}
 
-	if c.Redis.DB != 0 {
-		t.Errorf("expected 0, got %d", c.Redis.DB)
-	}
+	if c.Provider == "badger" {
+		if c.Badger == nil {
+			t.Errorf("expected badger config for badger provider, got nil")
+		} else {
+			if c.Badger.Directory != "/tmp/trickster" {
+				t.Errorf("expected /tmp/trickster, got %s", c.Badger.Directory)
+			}
 
-	if c.Redis.MaxRetries != 0 {
-		t.Errorf("expected 0, got %d", c.Redis.MaxRetries)
-	}
-
-	if c.Redis.MinRetryBackoff != 0 {
-		t.Errorf("expected 0, got %d", c.Redis.MinRetryBackoff)
-	}
-
-	if c.Redis.MaxRetryBackoff != 0 {
-		t.Errorf("expected 0, got %d", c.Redis.MaxRetryBackoff)
-	}
-
-	if c.Redis.DialTimeout != 0 {
-		t.Errorf("expected 0, got %d", c.Redis.DialTimeout)
-	}
-
-	if c.Redis.ReadTimeout != 0 {
-		t.Errorf("expected 0, got %d", c.Redis.ReadTimeout)
-	}
-
-	if c.Redis.WriteTimeout != 0 {
-		t.Errorf("expected 0, got %d", c.Redis.WriteTimeout)
-	}
-
-	if c.Redis.PoolSize != 0 {
-		t.Errorf("expected 0, got %d", c.Redis.PoolSize)
-	}
-
-	if c.Redis.MinIdleConns != 0 {
-		t.Errorf("expected 0, got %d", c.Redis.PoolSize)
-	}
-
-	if c.Redis.ConnMaxLifetime != 0 {
-		t.Errorf("expected 0, got %d", c.Redis.ConnMaxLifetime)
-	}
-
-	if c.Redis.PoolTimeout != 0 {
-		t.Errorf("expected 0, got %d", c.Redis.PoolTimeout)
-	}
-
-	if c.Redis.ConnMaxIdleTime != 0 {
-		t.Errorf("expected 0, got %d", c.Redis.ConnMaxIdleTime)
-	}
-
-	if c.Filesystem.CachePath != "/tmp/trickster" {
-		t.Errorf("expected /tmp/trickster, got %s", c.Filesystem.CachePath)
-	}
-
-	if c.BBolt.Filename != "trickster.db" {
-		t.Errorf("expected trickster.db, got %s", c.BBolt.Filename)
-	}
-
-	if c.BBolt.Bucket != "trickster" {
-		t.Errorf("expected trickster, got %s", c.BBolt.Bucket)
-	}
-
-	if c.Badger.Directory != "/tmp/trickster" {
-		t.Errorf("expected /tmp/trickster, got %s", c.Badger.Directory)
-	}
-
-	if c.Badger.ValueDirectory != "/tmp/trickster" {
-		t.Errorf("expected /tmp/trickster, got %s", c.Badger.ValueDirectory)
+			if c.Badger.ValueDirectory != "/tmp/trickster" {
+				t.Errorf("expected /tmp/trickster, got %s", c.Badger.ValueDirectory)
+			}
+		}
+	} else {
+		if c.Badger != nil {
+			t.Errorf("expected nil badger config for provider %s, got non-nil", c.Provider)
+		}
 	}
 }
 

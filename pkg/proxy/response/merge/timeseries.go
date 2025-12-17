@@ -17,8 +17,6 @@
 package merge
 
 import (
-	"bytes"
-	"io"
 	"net/http"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
@@ -26,61 +24,61 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
-// Timeseries merges the provided Responses into a single Timeseries DataSet
-// and writes it to the provided responsewriter
-func Timeseries(w http.ResponseWriter, r *http.Request, rgs ResponseGates) {
-	var f timeseries.MarshalWriterFunc
-	var rlo *timeseries.RequestOptions
-
-	responses := make([]int, len(rgs))
-	var bestResp *http.Response
-
-	h := w.Header()
-	tsm := make(timeseries.List, len(rgs))
-	var k int
-	for i, rg := range rgs {
-		if rg == nil || rg.Resources == nil ||
-			rg.Resources.Response == nil {
-			continue
-		}
-
-		resp := rg.Resources.Response
-		responses[i] = resp.StatusCode
-
-		if rg.Resources.TS != nil {
-			headers.Merge(h, rg.Header())
-			if f == nil && rg.Resources.TSMarshaler != nil {
-				f = rg.Resources.TSMarshaler
+// TimeseriesMergeFunc creates a MergeFunc for timeseries data
+// The returned function accepts a timeseries.Timeseries and merges it into the accumulator
+func TimeseriesMergeFunc(unmarshaler timeseries.UnmarshalerFunc) MergeFunc {
+	return func(accum *Accumulator, data any, idx int) error {
+		ts, ok := data.(timeseries.Timeseries)
+		if !ok {
+			// If data is []byte, unmarshal it first (for backward compatibility during transition)
+			body, ok := data.([]byte)
+			if !ok {
+				// Not a timeseries and not []byte
+				return nil
 			}
-			if rlo == nil {
-				rlo = rg.Resources.TSReqestOptions
+			var err error
+			ts, err = unmarshaler(body, nil)
+			if err != nil {
+				return err
 			}
-			tsm[k] = rg.Resources.TS
-			k++
 		}
-		if bestResp == nil || resp.StatusCode < bestResp.StatusCode {
-			bestResp = resp
-			resp.Body = io.NopCloser(bytes.NewReader(rg.Body()))
-		}
-	}
-
-	if k == 0 || f == nil {
-		if bestResp != nil {
-			h := w.Header()
-			headers.Merge(h, bestResp.Header)
-			w.WriteHeader(bestResp.StatusCode)
-			io.Copy(w, bestResp.Body)
+		if accum.tsdata == nil {
+			accum.tsdata = ts
 		} else {
-			failures.HandleBadGateway(w, r)
+			accum.tsdata.Merge(false, ts)
 		}
-		return
+		return nil
 	}
+}
 
-	statusCode := http.StatusOK
-	if bestResp != nil {
-		statusCode = bestResp.StatusCode
+// TimeseriesMergeFuncFromBytes creates a MergeFunc that accepts []byte and unmarshals it
+// This is a convenience function for call sites that still have []byte
+func TimeseriesMergeFuncFromBytes(unmarshaler timeseries.UnmarshalerFunc) func(*Accumulator, []byte, int) error {
+	mergeFunc := TimeseriesMergeFunc(unmarshaler)
+	return func(accum *Accumulator, body []byte, idx int) error {
+		ts, err := unmarshaler(body, nil)
+		if err != nil {
+			return err
+		}
+		return mergeFunc(accum, ts, idx)
 	}
+}
 
-	headers.StripMergeHeaders(h)
-	f(tsm.Merge(false), rlo, statusCode, w)
+// TimeseriesRespondFunc creates a RespondFunc for timeseries data
+// It writes the merged timeseries using the marshaler
+func TimeseriesRespondFunc(marshaler timeseries.MarshalWriterFunc, requestOptions *timeseries.RequestOptions) RespondFunc {
+	return func(w http.ResponseWriter, r *http.Request, accum *Accumulator, statusCode int) {
+		accum.mu.Lock()
+		ts := accum.tsdata
+		accum.mu.Unlock()
+		if ts == nil {
+			failures.HandleBadGateway(w, r)
+			return
+		}
+		if statusCode == 0 {
+			statusCode = http.StatusOK
+		}
+		headers.StripMergeHeaders(w.Header())
+		marshaler(ts, requestOptions, statusCode, w)
+	}
 }

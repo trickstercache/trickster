@@ -48,7 +48,7 @@ func TestAlertsHandler(t *testing.T) {
 
 	client.AlertsHandler(w, r)
 
-	if rsc.ResponseMergeFunc == nil {
+	if rsc.MergeFunc == nil {
 		t.Error("expected non-nil func value")
 	}
 }
