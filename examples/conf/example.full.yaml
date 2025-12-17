@@ -300,12 +300,12 @@ backends:
 #     compressable_types:
 #     - text/javascript, text/css, text/plain, text/xml, text/json, application/json, application/javascript, application/xml ]
 
-#     # timeout defines how long Trickster will wait before aborting and upstream http request. Default: 180s
-#     timeout: 180s
+#     # timeout defines how long Trickster will wait before aborting and upstream http request. Default: 60s
+#     timeout: 60s
 
 #     # keep_alive_timeout defines how long Trickster will wait before closing a keep-alive connection due to inactivity
-#     # if the origins keep-alive timeout is shorter than Tricksters, the connect will be closed sooner. Default: 300
-#     keep_alive_timeout: 5m
+#     # if the origins keep-alive timeout is shorter than Tricksters, the connect will be closed sooner. Default: 120s
+#     keep_alive_timeout: 120s
 
 #     # max_idle_conns set the maximum concurrent keep-alive connections Trickster may have opened to this backend
 #     # additional requests will be queued. Default: 20

@@ -42,7 +42,7 @@ const (
 	// DefaultBackendTEMName is the default Timeseries Eviction Method name for Time Series-based Backends
 	DefaultBackendTEMName = "oldest"
 	// DefaultBackendTimeout is the default Upstream Request Timeout for Backends
-	DefaultBackendTimeout = 3 * time.Minute
+	DefaultBackendTimeout = 1 * time.Minute
 	// DefaultBackendCacheName is the default Cache Name for Backends
 	DefaultBackendCacheName = "default"
 	// DefaultBackendNegativeCacheName is the default Negative Cache Name for Backends
@@ -54,7 +54,7 @@ const (
 	// DefaultBackfillTolerancePoints is the default Backfill Tolerance setting for Backends
 	DefaultBackfillTolerancePoints = 0
 	// DefaultKeepAliveTimeout is the default Keep Alive Timeout for Backends' upstream client pools
-	DefaultKeepAliveTimeout = 5 * time.Minute
+	DefaultKeepAliveTimeout = 2 * time.Minute
 	// DefaultMaxIdleConns is the default number of Idle Connections in Backends' upstream client pools
 	DefaultMaxIdleConns = 20
 	// DefaultForwardedHeaders defines which class of 'Forwarded' headers are attached to upstream requests

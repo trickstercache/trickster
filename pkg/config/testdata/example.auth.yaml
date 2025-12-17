@@ -4,8 +4,8 @@ backends:
   backend01:
     provider: reverseproxy
     origin_url: https://example.com/
-    timeout: 3m0s
-    keep_alive_timeout: 5m0s
+    timeout: 1m0s
+    keep_alive_timeout: 2m0s
     max_idle_conns: 20
     cache_name: default
     cache_key_prefix: example.com
@@ -39,8 +39,8 @@ backends:
   backend02:
     provider: reverseproxy
     origin_url: https://example.com/
-    timeout: 3m0s
-    keep_alive_timeout: 5m0s
+    timeout: 1m0s
+    keep_alive_timeout: 2m0s
     max_idle_conns: 20
     cache_name: default
     cache_key_prefix: example.com
@@ -74,8 +74,8 @@ backends:
   backend03:
     provider: reverseproxy
     origin_url: https://example.com/
-    timeout: 3m0s
-    keep_alive_timeout: 5m0s
+    timeout: 1m0s
+    keep_alive_timeout: 2m0s
     max_idle_conns: 20
     cache_name: default
     cache_key_prefix: example.com
@@ -107,8 +107,8 @@ backends:
     latency_min: 0s
     latency_max: 0s
   default:
-    timeout: 3m0s
-    keep_alive_timeout: 5m0s
+    timeout: 1m0s
+    keep_alive_timeout: 2m0s
     max_idle_conns: 20
     cache_name: default
     chunk_read_concurrency_limit: 16
