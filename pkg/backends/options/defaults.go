@@ -57,7 +57,7 @@ const (
 	DefaultKeepAliveTimeout = 2 * time.Minute
 	// DefaultMaxIdleConns is the default number of Idle Connections in Backends' upstream client pools
 	DefaultMaxIdleConns = 20
-	// DefaultMaxConcurrentConns is the default max nubmer of concurrent connections to the origin the Backend can use
+	// DefaultMaxConcurrentConns is the default max number of concurrent connections to the origin the Backend can use
 	DefaultMaxConcurrentConns = 20
 	// DefaultForwardedHeaders defines which class of 'Forwarded' headers are attached to upstream requests
 	DefaultForwardedHeaders = "standard"
