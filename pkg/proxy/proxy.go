@@ -24,10 +24,13 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/prometheus/common/sigv4"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 )
+
+const connectTimeout = time.Second * 10
 
 // NewHTTPClient returns an HTTP client configured to the specifications of the
 // running Trickster config.
@@ -81,10 +84,17 @@ func NewHTTPClient(o *bo.Options) (*http.Client, error) {
 			return http.ErrUseLastResponse
 		},
 		Transport: &http.Transport{
-			Dial:                (&net.Dialer{KeepAlive: o.KeepAliveTimeout}).Dial,
-			MaxIdleConns:        o.MaxIdleConns,
-			MaxIdleConnsPerHost: o.MaxIdleConns,
-			TLSClientConfig:     TLSConfig,
+			Dial: (&net.Dialer{
+				KeepAlive: o.KeepAliveTimeout,
+				Timeout:   connectTimeout,
+			}).Dial,
+			MaxIdleConns:          o.MaxIdleConns,
+			MaxIdleConnsPerHost:   o.MaxIdleConns,
+			IdleConnTimeout:       o.KeepAliveTimeout,
+			TLSHandshakeTimeout:   connectTimeout,
+			ExpectContinueTimeout: o.Timeout,
+			ResponseHeaderTimeout: o.Timeout,
+			TLSClientConfig:       TLSConfig,
 		},
 	}
 
