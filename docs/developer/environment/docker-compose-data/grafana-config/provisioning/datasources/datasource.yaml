@@ -63,6 +63,16 @@ datasources:
   editable: true
   jsonData:
     httpMethod: POST
+- name: "7: Trickster | ALB 1"
+  type: prometheus
+  access: proxy
+  orgId: 1
+  uid: ds_prom_trickster_alb_1
+  url: http://host.docker.internal:8480/alb1
+  version: 1
+  editable: true
+  jsonData:
+    httpMethod: POST
 
 # Mockster (Prom API Simulator)
 - name: sim-direct
