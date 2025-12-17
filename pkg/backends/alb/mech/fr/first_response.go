@@ -118,6 +118,13 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var wg sync.WaitGroup
 	responseWritten := make(chan struct{}, 1)
 
+	serve := func(crw *capture.CaptureResponseWriter) {
+		headers.Merge(w.Header(), crw.Header())
+		w.WriteHeader(crw.StatusCode())
+		w.Write(crw.Body())
+		responseWritten <- struct{}{}
+	}
+
 	serveAndCancelOthers := func(i int, crw *capture.CaptureResponseWriter) {
 		go func() {
 			// cancels all other contexts
@@ -127,10 +134,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}()
-		headers.Merge(w.Header(), crw.Header())
-		w.WriteHeader(crw.StatusCode())
-		w.Write(crw.Body())
-		responseWritten <- struct{}{}
+		serve(crw)
 	}
 
 	// fanout to all healthy targets
@@ -166,9 +170,9 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// if claimed is still -1, the fallback case must be used
 		if atomic.CompareAndSwapInt64(&claimed, -1, -2) && r.Context().Err() == nil {
 			// this iterates the captures and serves the first non-nil response
-			for i, crw := range captures {
+			for _, crw := range captures {
 				if crw != nil {
-					serveAndCancelOthers(i, crw)
+					serve(crw)
 					break
 				}
 			}
