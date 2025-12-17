@@ -56,15 +56,15 @@ type responseObserver struct {
 func (w *responseObserver) WriteHeader(statusCode int) {
 	w.ResponseWriter.WriteHeader(statusCode)
 	switch {
-	case statusCode >= 100 && statusCode < 199:
+	case statusCode >= 100 && statusCode < 200:
 		w.status = "1xx"
-	case statusCode >= 200 && statusCode < 299:
+	case statusCode >= 200 && statusCode < 300:
 		w.status = "2xx"
-	case statusCode >= 300 && statusCode < 399:
+	case statusCode >= 300 && statusCode < 400:
 		w.status = "3xx"
-	case statusCode >= 400 && statusCode < 499:
+	case statusCode >= 400 && statusCode < 500:
 		w.status = "4xx"
-	case statusCode >= 500 && statusCode < 599:
+	case statusCode >= 500 && statusCode < 600:
 		w.status = "5xx"
 	}
 }

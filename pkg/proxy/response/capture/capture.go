@@ -33,7 +33,8 @@ type CaptureResponseWriter struct {
 // NewCaptureResponseWriter returns a new CaptureResponseWriter
 func NewCaptureResponseWriter() *CaptureResponseWriter {
 	return &CaptureResponseWriter{
-		header: make(http.Header),
+		header:     make(http.Header),
+		statusCode: http.StatusOK,
 	}
 }
 
@@ -45,7 +46,7 @@ func (sw *CaptureResponseWriter) Header() http.Header {
 // WriteHeader sets the status code
 func (sw *CaptureResponseWriter) WriteHeader(code int) {
 	if code == 0 {
-		code = 200
+		code = http.StatusOK
 	}
 	sw.statusCode = code
 }
@@ -64,5 +65,8 @@ func (sw *CaptureResponseWriter) Body() []byte {
 
 // StatusCode returns the captured status code
 func (sw *CaptureResponseWriter) StatusCode() int {
+	if sw.statusCode == 0 {
+		sw.statusCode = http.StatusOK
+	}
 	return sw.statusCode
 }
