@@ -127,8 +127,8 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		defaultHandler.ServeHTTP(w, r)
 		return
 	}
-	// just proxy 1:1 if no folds in the fan
-	// there are now merge functions attached to the request
+	// just proxy 1:1 if no folds in the fan or if there
+	// are no merge functions attached to the request
 	rsc := request.GetResources(r)
 	if rsc == nil || l == 1 {
 		defaultHandler.ServeHTTP(w, r)
@@ -139,7 +139,6 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Scatter/Gather section
 
-	// Perform streaming merge: each goroutine merges as soon as response arrives
 	accumulator := merge.NewAccumulator()
 	var wg sync.WaitGroup
 	var statusCode int
@@ -152,7 +151,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		wg.Go(func() {
 			r2, _ := request.Clone(r)
-			rsc2 := &request.Resources{IsMergeMember: true}
+			rsc2 := &request.Resources{IsMergeMember: true, TSReqestOptions: rsc.TSReqestOptions}
 			r2 = request.SetResources(r2, rsc2)
 			crw := capture.NewCaptureResponseWriter()
 			hl[i].Handler().ServeHTTP(crw, r2)
@@ -162,16 +161,16 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			// Ensure merge functions are set on cloned request
+			// ensure merge functions are set on cloned request
 			if rsc2.MergeFunc == nil || rsc2.MergeRespondFunc == nil {
 				logger.Warn("tsm gather failed due to nil func", nil)
 			}
-			// As soon as response is complete, unmarshal and merge
-			// This happens in parallel for each response as it arrives
+			// as soon as response is complete, unmarshal and merge
+			// this happens in parallel for each response as it arrives
 			if rsc2.MergeFunc != nil && rsc2.TS != nil {
 				rsc2.MergeFunc(accumulator, rsc2.TS, i)
 			}
-			// Update status code and headers (take best status code)
+			// update status code and headers (take best status code)
 			mu.Lock()
 			if mrf == nil {
 				mrf = rsc2.MergeRespondFunc
@@ -190,15 +189,15 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	// Wait for all fanout requests to complete
+	// wait for all fanout requests to complete
 	wg.Wait()
 
-	// Set aggregated status header
+	// set aggregated status header
 	if statusHeader != "" {
 		w.Header().Set(headers.NameTricksterResult, statusHeader)
 	}
 
-	// Marshal and write the merged series to the client
+	// marshal and write the merged series to the client
 	if statusCode == 0 {
 		statusCode = http.StatusOK
 	}
