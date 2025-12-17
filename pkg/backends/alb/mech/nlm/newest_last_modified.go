@@ -17,7 +17,6 @@
 package nlm
 
 import (
-	"context"
 	"net/http"
 	"sync"
 	"time"
@@ -86,11 +85,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create contexts for cancellation
-	contexts := make([]context.Context, l)
-	cancels := make([]context.CancelFunc, l)
-	for i := range l {
-		contexts[i], cancels[i] = context.WithCancel(r.Context())
-	}
+	ctx := r.Context()
 
 	// Track the newest Last-Modified response
 	newestIdx := -1
@@ -109,7 +104,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		idx := i
 		wg.Go(func() {
 			r2, _ := request.Clone(r)
-			r2 = request.ClearResources(r2.WithContext(contexts[idx]))
+			r2 = request.ClearResources(r2.WithContext(ctx))
 			crw := capture.NewCaptureResponseWriter()
 			captures[idx] = crw
 			hl[idx].ServeHTTP(crw, r2)
@@ -138,30 +133,16 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		statusCode := crw.StatusCode()
 		w.WriteHeader(statusCode)
 		w.Write(crw.Body())
-
-		// Cancel all other contexts
-		for j, cancel := range cancels {
-			if j != newestIdx {
-				cancel()
-			}
-		}
-	} else {
-		// No valid response found, use the first available
-		for i, crw := range captures {
-			if crw != nil {
-				headers.Merge(w.Header(), crw.Header())
-				statusCode := crw.StatusCode()
-				w.WriteHeader(statusCode)
-				w.Write(crw.Body())
-
-				// Cancel all other contexts
-				for j, cancel := range cancels {
-					if j != i {
-						cancel()
-					}
-				}
-				break
-			}
+		return
+	}
+	// No valid response found, use the first available
+	for _, crw := range captures {
+		if crw != nil {
+			headers.Merge(w.Header(), crw.Header())
+			statusCode := crw.StatusCode()
+			w.WriteHeader(statusCode)
+			w.Write(crw.Body())
+			break
 		}
 	}
 }
