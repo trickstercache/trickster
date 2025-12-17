@@ -164,7 +164,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		wg.Wait()
 		// if claimed is still -1, the fallback case must be used
-		if atomic.LoadInt64(&claimed) == -1 && r.Context().Err() == nil {
+		if atomic.CompareAndSwapInt64(&claimed, -1, -2) && r.Context().Err() == nil {
 			// this iterates the captures and serves the first non-nil response
 			for i, crw := range captures {
 				if crw != nil {
