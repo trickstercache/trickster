@@ -6,6 +6,7 @@ backends:
     origin_url: https://example.com/
     timeout: 1m0s
     keep_alive_timeout: 2m0s
+    max_concurrent_conns: 20
     max_idle_conns: 20
     cache_name: default
     cache_key_prefix: example.com
@@ -41,6 +42,7 @@ backends:
     origin_url: https://example.com/
     timeout: 1m0s
     keep_alive_timeout: 2m0s
+    max_concurrent_conns: 20
     max_idle_conns: 20
     cache_name: default
     cache_key_prefix: example.com
@@ -76,6 +78,7 @@ backends:
     origin_url: https://example.com/
     timeout: 1m0s
     keep_alive_timeout: 2m0s
+    max_concurrent_conns: 20
     max_idle_conns: 20
     cache_name: default
     cache_key_prefix: example.com
@@ -109,6 +112,7 @@ backends:
   default:
     timeout: 1m0s
     keep_alive_timeout: 2m0s
+    max_concurrent_conns: 20
     max_idle_conns: 20
     cache_name: default
     chunk_read_concurrency_limit: 16

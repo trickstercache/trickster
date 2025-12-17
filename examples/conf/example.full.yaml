@@ -308,8 +308,12 @@ backends:
 #     keep_alive_timeout: 120s
 
 #     # max_idle_conns set the maximum concurrent keep-alive connections Trickster may have opened to this backend
-#     # additional requests will be queued. Default: 20
+#     # while no clients are being served. Default: 20
 #     max_idle_conns: 20
+
+#     # max_concurrent_conns set the maximum number of concurrent connections Trickster may have opened to this backend
+#     # additional requests will be queued. Default: 20
+#     max_concurrent_conns: 20
 
 #     # max_ttl defines the maximum allowed TTL for any object cached for this backend. default is 24 hours
 #     max_ttl: 24h

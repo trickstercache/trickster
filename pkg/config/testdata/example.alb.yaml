@@ -4,6 +4,7 @@ backends:
   default:
     timeout: 1m0s
     keep_alive_timeout: 2m0s
+    max_concurrent_conns: 20
     max_idle_conns: 20
     cache_name: default
     chunk_read_concurrency_limit: 16
@@ -37,6 +38,7 @@ backends:
     origin_url: https://origin1/
     timeout: 1m0s
     keep_alive_timeout: 2m0s
+    max_concurrent_conns: 20
     max_idle_conns: 20
     cache_name: default
     cache_key_prefix: origin1
@@ -73,6 +75,7 @@ backends:
     origin_url: http://origin2
     timeout: 1m0s
     keep_alive_timeout: 2m0s
+    max_concurrent_conns: 20
     max_idle_conns: 20
     cache_name: default
     cache_key_prefix: origin2
@@ -109,6 +112,7 @@ backends:
     origin_url: http://prom1:9090
     timeout: 1m0s
     keep_alive_timeout: 2m0s
+    max_concurrent_conns: 20
     max_idle_conns: 20
     cache_name: default
     cache_key_prefix: prom1:9090
@@ -144,6 +148,7 @@ backends:
     origin_url: http://prom2:9090
     timeout: 1m0s
     keep_alive_timeout: 2m0s
+    max_concurrent_conns: 20
     max_idle_conns: 20
     cache_name: default
     cache_key_prefix: prom2:9090
@@ -178,6 +183,7 @@ backends:
     provider: alb
     timeout: 1m0s
     keep_alive_timeout: 2m0s
+    max_concurrent_conns: 20
     max_idle_conns: 20
     cache_name: default
     chunk_read_concurrency_limit: 16
@@ -216,6 +222,7 @@ backends:
     provider: alb
     timeout: 1m0s
     keep_alive_timeout: 2m0s
+    max_concurrent_conns: 20
     max_idle_conns: 20
     cache_name: default
     chunk_read_concurrency_limit: 16
