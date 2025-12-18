@@ -146,18 +146,8 @@ func (ds *DataSet) CroppedClone(e timeseries.Extent) timeseries.Timeseries {
 				sc := &Series{
 					Header: s.Header.Clone(),
 				}
-				start, end, l := 0, -1, len(s.Points)
-				var iwg sync.WaitGroup
-				iwg.Add(2)
-				go func() {
-					start = s.Points.onOrJustAfter(startNS, 0, l-1)
-					iwg.Done()
-				}()
-				go func() {
-					end = s.Points.onOrJustBefore(endNS, 0, l-1) + 1
-					iwg.Done()
-				}()
-				iwg.Wait()
+				l := len(s.Points)
+				start, end := s.Points.findRange(startNS, endNS, 0, l-1)
 				if start < l && end <= l && end > start {
 					sc.Points = s.Points.CloneRange(start, end)
 					sc.PointSize = sc.Points.Size()
@@ -369,20 +359,8 @@ func (ds *DataSet) DefaultRangeCropper(e timeseries.Extent) {
 
 			index := j
 			wg.Go(func() {
-				var (
-					start, end, l = 0, -1, len(s.Points)
-					iwg           sync.WaitGroup
-				)
-				iwg.Add(2)
-				go func() {
-					start = s.Points.onOrJustAfter(startNS, 0, l-1)
-					iwg.Done()
-				}()
-				go func() {
-					end = s.Points.onOrJustBefore(endNS, 0, l-1) + 1
-					iwg.Done()
-				}()
-				iwg.Wait()
+				l := len(s.Points)
+				start, end := s.Points.findRange(startNS, endNS, 0, l-1)
 				if start < l && end <= l && end > start {
 					s.Points = s.Points.CloneRange(start, end)
 					s.PointSize = s.Points.Size()

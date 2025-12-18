@@ -214,44 +214,95 @@ func TestPointsSort(t *testing.T) {
 	}
 }
 
-func TestOnOrJustAfter(t *testing.T) {
-	pts := testPoints()
-	i := pts.onOrJustAfter(0, 0, len(pts)-1)
-	if i != 0 {
-		t.Errorf("expected %d got %d", 0, i)
+func TestFindRange(t *testing.T) {
+	pts := Points{
+		Point{Epoch: epoch.Epoch(1 * time.Second), Size: 1, Values: []any{1}},
+		Point{Epoch: epoch.Epoch(3 * time.Second), Size: 1, Values: []any{2}},
+		Point{Epoch: epoch.Epoch(5 * time.Second), Size: 1, Values: []any{3}},
+		Point{Epoch: epoch.Epoch(7 * time.Second), Size: 1, Values: []any{4}},
+		Point{Epoch: epoch.Epoch(9 * time.Second), Size: 1, Values: []any{5}},
 	}
 
-	i = pts.onOrJustAfter(epoch.Epoch(6*time.Second), 0, 0)
-	if i != 1 {
-		t.Errorf("expected %d got %d", 1, i)
+	tests := []struct {
+		name       string
+		startEpoch epoch.Epoch
+		endEpoch   epoch.Epoch
+		wantStart  int
+		wantEnd    int
+	}{
+		{
+			name:       "exact match both ends",
+			startEpoch: epoch.Epoch(3 * time.Second),
+			endEpoch:   epoch.Epoch(7 * time.Second),
+			wantStart:  1,
+			wantEnd:    4,
+		},
+		{
+			name:       "start before data, end in middle",
+			startEpoch: epoch.Epoch(0),
+			endEpoch:   epoch.Epoch(5 * time.Second),
+			wantStart:  0,
+			wantEnd:    3,
+		},
+		{
+			name:       "start in middle, end after data",
+			startEpoch: epoch.Epoch(6 * time.Second),
+			endEpoch:   epoch.Epoch(15 * time.Second),
+			wantStart:  3,
+			wantEnd:    5,
+		},
+		{
+			name:       "range entirely before data",
+			startEpoch: epoch.Epoch(-5 * time.Second),
+			endEpoch:   epoch.Epoch(-1 * time.Second),
+			wantStart:  0,
+			wantEnd:    0,
+		},
+		{
+			name:       "range entirely after data",
+			startEpoch: epoch.Epoch(15 * time.Second),
+			endEpoch:   epoch.Epoch(20 * time.Second),
+			wantStart:  5,
+			wantEnd:    5,
+		},
+		{
+			name:       "single point range",
+			startEpoch: epoch.Epoch(5 * time.Second),
+			endEpoch:   epoch.Epoch(5 * time.Second),
+			wantStart:  2,
+			wantEnd:    3,
+		},
+		{
+			name:       "gap in data - start in gap",
+			startEpoch: epoch.Epoch(4 * time.Second),
+			endEpoch:   epoch.Epoch(6 * time.Second),
+			wantStart:  2,
+			wantEnd:    3,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotStart, gotEnd := pts.findRange(tt.startEpoch, tt.endEpoch, 0, len(pts)-1)
+			require.Equal(t, tt.wantStart, gotStart, "start value not expected")
+			require.Equal(t, tt.wantEnd, gotEnd, "end value not expected")
+			require.LessOrEqual(t, gotStart, gotEnd)
+			require.False(t, gotStart < 0 || gotStart > len(pts), "start index out of bounds")
+			require.False(t, gotEnd < 0 || gotEnd > len(pts), "end index out of bounds")
+		})
 	}
 
-	i = pts.onOrJustAfter(epoch.Epoch(6*time.Second), 0, 1)
-	if i != 1 {
-		t.Errorf("expected %d got %d", 1, i)
-	}
+	t.Run("empty points", func(t *testing.T) {
+		start, end := Points{}.findRange(epoch.Epoch(1*time.Second), epoch.Epoch(5*time.Second), 0, -1)
+		require.False(t, start != 0 || end != 0, "should return 0,0")
+	})
 }
 
-func TestOnOrJustBefore(t *testing.T) {
-	pts := testPoints()
-	i := pts.onOrJustBefore(0, 0, len(pts)-1)
-	if i != -1 {
-		t.Errorf("expected %d got %d", -1, i)
-	}
-
-	i = pts.onOrJustBefore(epoch.Epoch(6*time.Second), 0, 0)
-	if i != 0 {
-		t.Errorf("expected %d got %d", 0, i)
-	}
-
-	i = pts.onOrJustAfter(epoch.Epoch(15*time.Second), 0, 1)
-	if i != 2 {
-		t.Errorf("expected %d got %d", 2, i)
-	}
-
-	i = pts.onOrJustAfter(epoch.Epoch(6*time.Second), 0, 1)
-	if i != 1 {
-		t.Errorf("expected %d got %d", 1, i)
+func BenchmarkFindRange(b *testing.B) {
+	pts := genTestPoints(0, 10000) // Create a large dataset for meaningful benchmarks
+	startEpoch := epoch.Epoch(2500 * time.Second)
+	endEpoch := epoch.Epoch(7500 * time.Second)
+	for i := 0; i < b.N; i++ {
+		_, _ = pts.findRange(startEpoch, endEpoch, 0, len(pts)-1)
 	}
 }
 
