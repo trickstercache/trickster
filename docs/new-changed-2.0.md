@@ -17,6 +17,10 @@
 - The [Rules Engine](./rule.md) now supports `rmatch` operations to permit regular expression-based routing against any part of the HTTP request.
 - You can now chain a collection of [request rewriters](./request_rewriters.md) for more robust possibilities.
 
+## New in RC2
+- A new  `max_concurrent_conns` Backend configuration has been added to limit the number of concurrent connections the Backend opens to its origin. The default is 20, whereas previously it was unbounded and non-configurable. See the [Full Example Configuration](../examples/conf/example.full.yaml) for more info.
+- Default values for upstream proxy connection timings are changed as follows: Keep-Alive 300s -> 120s, Timeout 180s -> 60s.
+
 ## New in RC1
 - The configuration format for custom Backend [paths](./paths.md) been updated to use a YAML Sequence for enumerating paths, rather than named paths via a YAML Map. 
 - The configuration format for the [Rule Backend Provider](./rule.md) has been updated to use a YAML Sequence for enumerating rules, rather than named rules via a YAML Map. See the [Full Example Configuration](../examples/conf/example.full.yaml) for more info.
