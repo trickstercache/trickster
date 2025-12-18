@@ -90,6 +90,7 @@ func NewHTTPClient(o *bo.Options) (*http.Client, error) {
 			}).Dial,
 			MaxIdleConns:          o.MaxIdleConns,
 			MaxIdleConnsPerHost:   o.MaxIdleConns,
+			MaxConnsPerHost:       o.MaxConcurrentConns,
 			IdleConnTimeout:       o.KeepAliveTimeout,
 			TLSHandshakeTimeout:   connectTimeout,
 			ExpectContinueTimeout: o.Timeout,

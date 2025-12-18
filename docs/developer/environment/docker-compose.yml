@@ -11,7 +11,7 @@ services:
     ports:
      - 6379:6379
     volumes:
-     - redis-data:/data
+     - ./docker-compose-data/redis-data:/data
     command: redis-server --appendonly yes --stop-writes-on-bgsave-error no
 
   # ui's
@@ -40,6 +40,7 @@ services:
     image: prom/prometheus:v3.2.1
     volumes:
       - ./docker-compose-data/prometheus-config:/etc/prometheus
+      - ./docker-compose-data/prometheus-data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
@@ -153,4 +154,3 @@ services:
 
 volumes:
   influxdbv2:
-  redis-data:

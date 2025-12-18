@@ -69,6 +69,8 @@ type Options struct {
 	Timeout time.Duration `yaml:"timeout,omitempty"`
 	// KeepAliveTimeout defines how long an open keep-alive HTTP connection remains idle before closing
 	KeepAliveTimeout time.Duration `yaml:"keep_alive_timeout,omitempty"`
+	// MaxConcurrentConns defines maximum number of open concurrent connections to maintain to the backend
+	MaxConcurrentConns int `yaml:"max_concurrent_conns,omitempty"`
 	// MaxIdleConns defines maximum number of open keep-alive connections to maintain
 	MaxIdleConns int `yaml:"max_idle_conns,omitempty"`
 	// CacheName provides the name of the configured cache where the backend client will store it's cache data
@@ -237,6 +239,7 @@ func New() *Options {
 		HealthCheck:                  ho.New(),
 		KeepAliveTimeout:             DefaultKeepAliveTimeout,
 		MaxIdleConns:                 DefaultMaxIdleConns,
+		MaxConcurrentConns:           DefaultMaxConcurrentConns,
 		MaxObjectSizeBytes:           DefaultMaxObjectSizeBytes,
 		MaxTTL:                       DefaultMaxTTL,
 		NegativeCache:                make(map[int]time.Duration),

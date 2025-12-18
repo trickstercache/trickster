@@ -290,11 +290,11 @@ developer-stop:
 
 .PHONY: developer-delete
 developer-delete:
-	@cd docs/developer/environment && docker compose down
+	@cd docs/developer/environment && docker compose down -v --remove-orphans
 
-.PHONY: developer-restart
-developer-restart:
-	@cd docs/developer/environment && docker compose down && docker compose up -d
+.PHONY: developer-recreate
+developer-recreate: developer-delete
+	@cd docs/developer/environment && docker compose up -d
 
 .PHONY: developer-seed-data
 developer-seed-data:

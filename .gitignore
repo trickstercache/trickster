@@ -8,7 +8,8 @@ sha256sum.txt
 # Test binary, build with `go test -c`
 *.test
 .coverprofile
-prometheus-data
+prometheus-data/
+redis-data/
 trickster-data
 trips_*.gz
 
