@@ -114,12 +114,12 @@ func TestCloneBackendOptions(t *testing.T) {
 func TestCheckFileLastModified(t *testing.T) {
 	c := NewConfig()
 
-	if !c.CheckFileLastModified().IsZero() {
+	if !c.CheckFileLastModified("").IsZero() {
 		t.Error("expected zero time")
 	}
 
 	c.Main.configFilePath = "\t\n"
-	if !c.CheckFileLastModified().IsZero() {
+	if !c.CheckFileLastModified("").IsZero() {
 		t.Error("expected zero time")
 	}
 }
@@ -307,6 +307,125 @@ func TestConfig_defaulting(t *testing.T) {
 		require.NoError(t, err)
 		expected := string(b)
 		require.Equal(t, expected, generatedOutput)
+	}
+}
+
+
+const (
+	dataTrk1 = `
+frontend:
+  listen_port: 8480
+
+caches:
+  default:
+    provider: memory
+
+backends:
+  default:
+    provider: prometheus
+    origin_url: http://prometheus:9090
+    cache_name: default
+    is_default: true
+`
+
+	dataTrk2 = `
+backends:
+  prometheus_backend:
+    provider: prometheus
+    origin_url: http://prometheus:9090
+    cache_name: mycache
+    is_default: true
+
+caches:
+  mycache:
+    provider: memory
+`
+)
+
+func TestLoadAndMergeFiles(t *testing.T) {
+	dir := t.TempDir()
+	err := os.WriteFile(dir + "/trickster1.yaml", []byte(dataTrk1), 0666)
+	if err != nil {
+		t.Error(err)
+	}
+	err = os.WriteFile(dir + "/trickster2.yaml", []byte(dataTrk2), 0666)
+	if err != nil {
+		t.Error(err)
+	}
+
+	c := NewConfig()
+
+	args := []string{"-config", dir}
+	sargs := make([]string, 0, len(args))
+	for _, v := range args {
+		if !strings.HasPrefix(v, "-test.") {
+			sargs = append(sargs, v)
+		}
+	}
+	flags, err := parseFlags(sargs) 
+	if err != nil {
+		t.Error(err)
+	}
+	
+	err = c.loadAndMergeFiles(flags)
+	if err != nil {
+		t.Error(err)
+	}
+
+	opt1, ok1 := c.Backends["default"]
+	opt2, ok2 := c.Backends["prometheus_backend"]
+
+	switch  {
+	case !ok1, !ok2:
+		t.Error("expected true result when performing backend lookup")
+	case opt1.Provider != "prometheus", opt2.Provider != "prometheus":
+		t.Error("expected prometheus as provider")
+	case opt1.OriginURL != "http://prometheus:9090", opt2.OriginURL != "http://prometheus:9090": 
+		t.Error("expected http://prometheus:9090 as origin url")
+	}
+
+	cOpt1, cOk1 := c.Caches["default"]
+	cOpt2, cOk2 := c.Caches["mycache"]
+
+	switch {
+	case !cOk1, !cOk2:
+		t.Error("expected true result when performing cache lookup")
+	case cOpt1.Provider != "memory", cOpt2.Provider != "memory":
+		t.Error("expected memory as cache provider")
+	}
+}
+
+func TestIsStaleWithMultipleFiles(t *testing.T) {
+	_, tml := emptyTestConfig()
+	dir := t.TempDir()
+	err := os.WriteFile(dir + "/trickster1.yaml", []byte(dataTrk1), 0666)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = os.WriteFile(dir + "/trickster2.yaml", []byte(dataTrk2), 0666)
+	if err != nil {
+		t.Error(err)
+	}
+
+	configs, err := Load([]string{"-config", dir})
+	configs.MgmtConfig.ReloadRateLimit = 0
+	if err != nil {
+		t.Error(err)
+	}
+
+	if configs.IsStale() {
+		t.Error("expected non-stale configs")
+	}
+
+	time.Sleep(400 * time.Millisecond)
+	err = os.WriteFile(dir + "/trickster1.yaml", []byte(tml), 0666)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if !configs.IsStale() {
+		t.Error("expected stale configs")
 	}
 }
 
