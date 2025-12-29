@@ -21,8 +21,8 @@ package config
 
 import (
 	"fmt"
-	"os"
 	"io/fs"
+	"os"
 	"sync"
 	"time"
 
@@ -38,7 +38,7 @@ import (
 	auth "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v2"
 )
 
 const defaultResourceName = "default"
@@ -117,8 +117,8 @@ func NewConfig() *Config {
 		},
 		Logging: lo.New(),
 		Main: &MainConfig{
-			ServerName: hn,
-			configFilesPath: make([]string, 0),
+			ServerName:         hn,
+			configFilesPath:    make([]string, 0),
 			configFilesLastMod: make([]time.Time, 0),
 		},
 		MgmtConfig: mgmt.New(),
@@ -355,11 +355,11 @@ func (c *Config) IsStale() bool {
 	defer c.Main.stalenessCheckLock.Unlock()
 
 	if c.Main == nil ||
-   		(len(c.Main.configFilesPath) == 0 &&
-    		(c.Main.configFilePath == "" ||
-     			time.Now().Before(c.Main.configRateLimitTime))) {
-    	return false
-	}	
+		(len(c.Main.configFilesPath) == 0 &&
+			(c.Main.configFilePath == "" ||
+				time.Now().Before(c.Main.configRateLimitTime))) {
+		return false
+	}
 
 	if c.MgmtConfig == nil {
 		c.MgmtConfig = mgmt.New()
@@ -374,11 +374,11 @@ func (c *Config) IsStale() bool {
 			}
 			if !t.Equal(c.Main.configFilesLastMod[index]) {
 				return true
-			} 
+			}
 		}
 		return false
 	}
-	
+
 	t := c.CheckFileLastModified("")
 	if t.IsZero() {
 		return false
@@ -391,8 +391,8 @@ func (c *Config) IsStale() bool {
 func (c *Config) CheckAndMarkReloadInProgress() bool {
 	c.Main.stalenessCheckLock.Lock()
 	defer c.Main.stalenessCheckLock.Unlock()
-	if c.Main == nil || 
-	    (c.Main.configFilePath == "" && len(c.Main.configFilesPath) == 0) ||
+	if c.Main == nil ||
+		(c.Main.configFilePath == "" && len(c.Main.configFilesPath) == 0) ||
 		time.Now().Before(c.Main.configRateLimitTime) {
 		return false
 	}
@@ -410,7 +410,7 @@ func (c *Config) CheckAndMarkReloadInProgress() bool {
 			if !t.Equal(c.Main.configFilesLastMod[index]) {
 				c.Main.configFilesLastMod[index] = t
 				return true
-			} 
+			}
 		}
 		return false
 	}
@@ -452,7 +452,7 @@ func (c *Config) String() string {
 func (c *Config) ConfigFilePath() string {
 	if c.Main != nil {
 		if len(c.Main.configFilesPath) == 0 {
-			return c.Main.configFilePath	
+			return c.Main.configFilePath
 		}
 		return c.Flags.ConfigPath
 	}

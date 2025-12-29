@@ -46,7 +46,7 @@ func Load(args []string) (*Config, error) {
 		c.Flags = flags
 		return c, nil
 	}
-	
+
 	if err := c.loadConfigs(flags); err != nil && flags.customPath {
 		// a user-provided path couldn't be loaded. return the error for the application to handle
 		return nil, err
