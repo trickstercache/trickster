@@ -21,9 +21,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"runtime"
 	"sort"
 	"strconv"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -31,6 +31,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
+	"golang.org/x/sync/errgroup"
 )
 
 // WFMatrixDocument is the Wire Format Document for prometheus range / timeseries
@@ -239,17 +240,19 @@ func populateSeries(ds *dataset.DataSet, result []*WFResult,
 		var ps int64 = 16
 		if !isVector && l > 0 {
 			pts = make(dataset.Points, l)
-			var wg sync.WaitGroup
+			var eg errgroup.Group
+			eg.SetLimit(runtime.GOMAXPROCS(0))
 			for i, v := range pr.Values {
-				wg.Go(func() {
+				eg.Go(func() error {
 					pt, _ := pointFromValues(v)
 					if pt.Epoch > 0 {
 						atomic.AddInt64(&ps, int64(pt.Size))
 						pts[i] = pt
 					}
+					return nil
 				})
 			}
-			wg.Wait()
+			eg.Wait()
 		} else if isVector && len(pr.Value) == 2 {
 			pts = make(dataset.Points, 1)
 			pt, _ := pointFromValues(pr.Value)
