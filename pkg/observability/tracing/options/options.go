@@ -42,8 +42,6 @@ type Options struct {
 	StdOutOptions *stdoutopts.Options `yaml:"stdout,omitempty"`
 
 	OmitTags sets.Set[string] `yaml:"-"`
-	// for tracers that don't support WithProcess (e.g., Zipkin)
-	attachTagsToSpan bool
 }
 
 // Lookup is a map of Options keyed by Options Name
@@ -88,7 +86,6 @@ func ProcessTracingOptions(mo Lookup) {
 			v.Provider = DefaultTracerProvider
 		}
 		v.generateOmitTags()
-		v.setAttachTags()
 	}
 }
 
@@ -103,17 +100,6 @@ func (o *Options) SanitizeSampleRate() {
 
 func (o *Options) generateOmitTags() {
 	o.OmitTags = sets.New(o.OmitTagsList)
-}
-
-// AttachTagsToSpan indicates that Tags should be attached to the span
-func (o *Options) AttachTagsToSpan() bool {
-	return o.attachTagsToSpan
-}
-
-func (o *Options) setAttachTags() {
-	if o.Provider == "zipkin" && o.Tags != nil && len(o.Tags) > 0 {
-		o.attachTagsToSpan = true
-	}
 }
 
 func (o *Options) Valdiate() error {

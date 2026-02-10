@@ -46,14 +46,6 @@ func PrepareRequest(r *http.Request, tr *tracing.Tracer) (*http.Request, trace.S
 
 	r = r.WithContext(baggage.ContextWithBaggage(r.Context(), entries))
 
-	// This will add any configured static tags to the span for Zipkin
-	if tr.Options.AttachTagsToSpan() {
-		if len(attrs) > 0 {
-			tracing.Tags(tr.Options.Tags).MergeAttr(attrs)
-		}
-		attrs = tracing.Tags(tr.Options.Tags).ToAttr()
-	}
-
 	ctx, span := tr.Start(
 		trace.ContextWithRemoteSpanContext(r.Context(), spanCtx),
 		"request",
@@ -85,10 +77,6 @@ func NewChildSpan(ctx context.Context, tr *tracing.Tracer,
 		ctx,
 		spanName,
 	)
-
-	if span != nil && tr.Options.AttachTagsToSpan() {
-		span.SetAttributes(tracing.Tags(tr.Options.Tags).ToAttr()...)
-	}
 
 	return ctx, span
 }

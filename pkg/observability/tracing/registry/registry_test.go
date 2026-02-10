@@ -73,12 +73,6 @@ func TestRegisterAll(t *testing.T) {
 		t.Error(err)
 	}
 
-	tc.Provider = "zipkin"
-	_, err = RegisterAll(cfg, true)
-	if err != nil {
-		t.Error(err)
-	}
-
 	tc.Provider = "foo"
 
 	_, err = RegisterAll(cfg, true)

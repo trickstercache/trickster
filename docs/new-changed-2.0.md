@@ -1,89 +1,72 @@
 # Trickster 2.0
 
-## What's Improved
+## An All-New Bag of Tricks
 
-2.0 continues to improve the Trickster project, with a ton of new features, bug fixes, and optimizations. Here's the quick rundown of what's new and improved:
+Trickster 2.0 is a near-complete rewrite of the project with performance, durability and extensibility in mind. We've made major architectural improvements, added new features and improved performance. Here's a comprehensive overview of it all:
 
-- Trickster 2.0 uses YAML for configuration instead of TOML.
-- example configurations are relocated to the [examples](../examples/conf) directory
-- the [Trickster docker-compose demo](../examples/docker-compose) has been relocated to the examples directory and updated to use latest version tags
-- we now use a common time series format internally for caching all supported TSDB's, rather than implementing each one separately
-- [health checking](./health.md) now uses a common package for all backend providers, rather than implementing separately in each backend, and we now support automated health check polling for any backend, and provide a global health status endpoint
-- we offer a brand new [Application Load Balancer](./alb.md) feature with unique and powerful options, like merging data from multiple backends into a single response.
-- We've updated to Go 1.25
-- We've re-organized many packages in the codebase to be more easily importable by other projects. Over the course of the beta, we'll be publishing new patterns to the [examples](../examples/) folder for using Trickster packages in your own projects, including caching, acceleration and load balancing.
-- InfluxDB and ClickHouse now support additional output formats like CSV. More documentation will be provided over the course of the beta
-- Expanded Compression support now includes options for Broti and Zstd
-- The [Rules Engine](./rule.md) now supports `rmatch` operations to permit regular expression-based routing against any part of the HTTP request.
-- You can now chain a collection of [request rewriters](./request_rewriters.md) for more robust possibilities.
-
-## New in RC2
-- A new  `max_concurrent_conns` Backend configuration has been added to limit the number of concurrent connections the Backend opens to its origin. The default is 20, whereas previously it was unbounded and non-configurable. See the [Full Example Configuration](../examples/conf/example.full.yaml) for more info.
-- Default values for upstream proxy connection timings are changed as follows: Keep-Alive 300s -> 120s, Timeout 180s -> 60s.
-
-## New in RC1
-- The configuration format for custom Backend [paths](./paths.md) been updated to use a YAML Sequence for enumerating paths, rather than named paths via a YAML Map. 
-- The configuration format for the [Rule Backend Provider](./rule.md) has been updated to use a YAML Sequence for enumerating rules, rather than named rules via a YAML Map. See the [Full Example Configuration](../examples/conf/example.full.yaml) for more info.
-- A configurable Request Body Size limit has been added for `POST`, `PUT` and `PATCH` requests, with a default of 10MB. Requests with a body size exceeding the limit will receive a `413 Content Too Large` response. See [Request Body Handling Customizations](./body.md) for more info.
-- We now support TLS-based Redis Endpoints. See the [Full Example Configuration](../examples/conf/example.full.yaml) for more info.
-
-## New in Beta 3
-- We've switched to our all-new, made-for-proxies HTTP Request Router, which is up to 10X faster than the previous router
-- We now support InfluxData's Flux query language for InfluxDB query acceleration
-  - We resolved tons of issues around POST requests for InfluxQL too!
-- The Helm Charts repository is now updated for Trickster 2.0
-- We now support [Cache Object Chunking](./chunked_caching.md)
-  - Allows a Time Series to be chunked into multiple cache entries based on a configurable chunk size.
-  - Only the chunk entries needed to span the request range are inspected, rather than the entire time series.
+### Features
+- **Application Load Balancer (ALB)**: We have a brand new [Application Load Balancer](./alb.md) available as a backend provider type, with unique and powerful options, including:
+  - Fanout and merge data from multiple time series backends into a single response
+    - currently supports Prometheus backends
+  - Fanout and return the first response received from any backend pool member
+  - Fanout and return the response with the newest 'Last-Modified' header from all backend pool members
+  - Routing a request to a given backend based on Basic Auth username
+  - General Round Robin
+- **Enhanced Health Checking**: [Health checking](./health.md) now supports automated health check polling for any backend, and provides a global health status endpoint. Automated health checks for an ALB pool member backend determines whether the ALB will route requests to it or not.
+- **Cache Object Chunking**: We now support [Cache Object Chunking](./chunked_caching.md). This optional configuration allows a Time Series dataset to be chunked into multiple cache entries based on a configurable chunk size
+    - Also supported by standard Reverse Proxy Cache for cache-chunking objects by a Byte Range size
+  - Only the chunked cache entries needed to span the request range are inspected, rather than the entire time series
   - Significantly improves Redis and Filesystem performance of large timeseries records
-  - Also supported by standard Reverse Proxy Cache for chunking objects by Byte Range
-  - Disabled by default
-- We now support [Time Series Backend Request Sharding](./timeseries_sharding.md)
-  - Allows requests proxied to Time Series Backends to be chunked into multiple concurrent based on a configurable chunk size in arbitrary time units (milliseconds, seconds, etc) or by data points.
-  - Backend Responses are merged into a single response before caching
-  - Disabled by default
-  - You can use Cache Chunking and TS Backend Request Sharding in any combination (on/on, on/off, off/on, off/off) as they work together seamlessly. They can be configured with the same or different chunk sizes.
-- We have added new CI tools, including better linters and race condition checkers
-- We've updated our Docker automation:
-  - The trickster-docker-images repo is now retired and image publishing is handled in the trickster repo.
-  - All merges to main will now push an image to Docker Hub at `trickstercache/trickster:main` as well as to `trickstercache/trickster:<COMMIT_ID>`
-    - We no longer push images to the legacy `tricksterio` and `tricksterproxy` orgs on DockeHub. Everything is now `trickstercache`!
-  - Images are now pushed to the GitHub Container Repository:
-    - `ghcr.io/trickstercache/trickster`
-- We've eliminated over 70 race conditions and random panics
-- We've switched from Regular Expression matches for SQL-based Time Series Backends to an extensible lexer/parser solution
-  - ClickHouse backend providers now use the new SQL Parser
-- We now support [Simulated Latency](./simulated-latency.md) if you want to use Trickster for that purpose in a test harness.
-- We've added a new [Authenticator](authenticator.md) feature so you can guard backends with Basic Auth or ClickHouse Auth
-- We've added a new [User Router Mechanism](alb.md) to the ALB.
-- We now support Environment variable substitution in configuration files where sensitive information is expected.
+- **Time Series Backend Request Sharding**: We now support [Time Series Backend Request Sharding](./timeseries_sharding.md). This optional feature allows a client request destined for a Time Series Backend to be cloned into multiple concurrent requests with different time ranges constituting the full uncached range
+  - Backend shard responses + already-cached data are merged into a single downstream response
+  - Cache Chunking and TS Backend Request Sharding work together seamlessly and can be used in any combination (on/on, on/off, off/on, off/off, including different cache chunk and request shard sizes).
+- **Authenticator**: We've added a new [Authenticator](./authenticator.md) feature so you can guard backends with Basic Auth or ClickHouse Auth
+- **Enhanced Rules Engine**: The [Rules Engine](./rule.md) now supports `rmatch` operations to permit regular expression-based routing against any part of the HTTP request
+- **Request Rewriters**: You can now chain a collection of [request rewriters](./request_rewriters.md) for more robust request transformation possibilities
+- **Cache Purging**: We now support purging specific cache items by Key (on the public ports) or Path (on the mgmt port). Read more in the [cache documentation](./caches.md)
+- **Simulated Latency**: You can use Trickster for [Simulated Latency](./simulated-latency.md) in lab environments
+- We've added support for InfluxDB 2.0 and Flux Query Language and are targeting support for InfluxDB 3.0 in Trickster v2.1.x.
+
+### Configuration & Security
+- **YAML Configuration**: Trickster 2.0 uses YAML for configuration instead of TOML
+- **Environment Variable Substitution**: Environment Variable substitution is now possible in configuration files where sensitive information is expected
   - Supported via the following fields:
     - `caches[*].redis.password`, `backends[*].healthcheck.headers`, `backends[*].paths[*].request_headers`, `backends[*].paths[*].request_params`, `backends[*].paths[*].response_headers`, `authenticators[*].users`
   - Usage: `password: ${MY_SECRET_VAR}`
-- Previous Trickster 2.0 Betas used millisecond config values like `timeout_ms: 1500`. These have changed to `timeout: 1500ms`. See more details in the Configuration section below.
-- We no longer include the `vendor` directory in the project repository and `vendor` is now in `.gitignore`. `vendor` will continue to be included in Release source tarballs.
-- The listener port formerly called `reload` is now called `mgmt` in documentation and the YAML config specification. Several management-specific configs from the `main` section have been relocated to `mgmt` (e.g., Ping and Pprof handler settings) while the pre-existing reload `handler_path`, `drain_timeout`, and `rate_limit` configs are now prefixed with `reload_` (e.g., `reload_rate_limit`) for clarity. See the Full Example YAML's for more information.
-- We now support Purging specific cache items by Key (on the public ports) or Path (on the mgmt port). Read more in the [cache documentation](./caches.md).
-- The [tricktool](https://github.com/trickstercache/tricktool) utility is deprecated and archived.
+- **Request Body Size Limit**: A configurable Request Body Size limit has been added for `POST`, `PUT` and `PATCH` requests, with a default of 10MB. Requests with a body size exceeding the limit will receive a `413 Content Too Large` response. See [Request Body Handling Customizations](./body.md) for more info
+- **Zipkin Deprecation**: Trickster uses packages provided by the OpenTelemetry project for Distributed Tracing capabilities. These external packages recently deprecated support for exporting spans via Zipkin, therefore Zipkin support has been removed for Trickster 2.0. Trickster retains support for OTLP.
+
+### Under the Hood & Performance
+- **Common Time Series Format**: We now use a common time series format internally for caching all supported TSDB's, rather than implementing delta + merge algorithms per-provider.
+- **New HTTP Request Router**: We've switched to an all-new, made-for-proxies HTTP Request Router, which is up to 10X faster than the previous one
+- **SQL Parser**: We've switched from Regular Expression matches for SQL-based Time Series Backends to an extensible lexer/parser solution, providing better performance and accuracy
+  - ClickHouse backend providers now use the new SQL Parser
+- **Race Condition Fixes**: We've eliminated nearly 100 race conditions and random panics
+- **Expanded Compression Support**: Compression support now includes options for Brotli and Zstd
+
+### Developer & Environment Improvements
+- **Package Reorganization**: We've re-organized many packages in the codebase to be more easily importable by other projects. A future maintenance release will add documentation to the [examples](../examples/) folder for using Trickster packages in your own projects, including caching, acceleration and load balancing
+- For Trickster contributors, we have a new [Docker Compose for developer environments](./developer/environment/docker-compose.yml).
+- **CI/CD Enhancements**: We have added new CI tools, including better linters and race condition checkers to enforce and ensure ongoing project quality
+- **Docker Automation**: We've updated our Docker automation:
+  - The trickster-docker-images repo is now retired and image publishing is handled in the trickster repo
+  - All merges to main will now push an image to Docker Hub at `trickstercache/trickster:main` as well as to `trickstercache/trickster:<COMMIT_ID>`
+    - We no longer push images to the legacy `tricksterio` and `tricksterproxy` orgs on DockerHub. Everything is now and only `trickstercache` 🎉!
+  - Images are also now pushed to the GitHub Container Repository as `ghcr.io/trickstercache/trickster`
+- **Helm Charts**: The Helm Charts repository is now updated for Trickster 2.0
+- **Vendor Directory**: We no longer include the `vendor` directory in the project repository and `vendor` is now in `.gitignore`. `vendor` will continue to be included in Release source tarballs
+
+### Documentation & Examples
+
+- **Example Configurations**: Example configurations are relocated to the [examples](../examples/conf) directory
+- **Docker Compose Demo**: The [Trickster docker-compose demo](../examples/docker-compose) has been relocated to the examples directory and updated to use the latest version tags. This is the easiest way to try out Trickster 2.0!
 
 ## Still to Come
 
-Trickster 2.0 is not yet feature complete, and we anticipate including the following additional features in Beta 4 before the GA Release:
-- an up-to-date Grafana dashboard template for monitoring Trickster
+A future Trickster 2.0.x will include the following additional features that didn't quite make it to the finish line:
 - incorporate ALB examples into the docker-compose demo
-
-## Known Issues With the Latest Beta
-
-The current Trickster 2.0 beta has the following known issues:
-
-- the `lru` Time Series Eviction Method currently does not function, but will be added back in a future release. This feature has not yet been ported into the Common Time Series format. Comment out this setting in your configuration to use the default eviction method.
+- the `lru` Time Series Cache Eviction Method is disabled, but will be added back in a future release. This feature has not yet been ported into the Common Time Series format
 
 ## Installing
 
-You can build the 2.0 binary from the `main` branch, download binaries from the [Releases](http://github.com/trickstercache/trickster/releases) page, or use the `trickstercache/trickster:2` Docker image tag in containerized environments.
-
-## Breaking Changes from 1.x
-
-### Metrics
-
-- In metrics related to Trickster's operation, all label names of `origin_name` are changed to `backend_name`
+You can build the 2.0 binary from the `main` branch, download binaries from the [Releases](http://github.com/trickstercache/trickster/releases) page, or use the `trickstercache/trickster` Docker image tag in containerized environments

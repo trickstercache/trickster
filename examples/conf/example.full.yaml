@@ -603,7 +603,7 @@ backends:
 #   default:
 
 #     # provider specifies the type of backend tracing system where traces are sent (in that format)
-#     # options are: otlp, zipkin, stdout or none.  none is the default
+#     # options are: otlp, stdout or none.  none is the default
 #     provider: none
 
 #     # service_name specifies the service name under which the traces are registered by this tracer
@@ -611,7 +611,7 @@ backends:
 #     service_name: trickster
 
 #     # endpoint is the URL, URI or Path to the tracing backend
-#     # required for Zipkin and OTLP, unused for stdout
+#     # required for OTLP, unused for stdout
 #     endpoint: http://jaeger:14268/api/traces
 
 #     # timeout is the amount of time in arbitrary time units (ns, ms, s, h, d) for the tracing post
@@ -657,12 +657,6 @@ backends:
 #     provider: otlp
 #     endpoint: jaeger:6831
 #     sample_rate: 0.5
-
-#     # another example tracing config named zipkin-example using zipkin backend and a 10% sample rate
-#   zipkin-example:
-#     provider: zipkin
-#     endpoint: https://zipkin.example.com:9411/api/v2/spans
-#     sample_rate: 0.1
 
 # # Configuration Options for Authentication
 # authenticators:

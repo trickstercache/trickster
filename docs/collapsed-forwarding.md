@@ -30,7 +30,7 @@ The feature is further detailed in the following diagram:
 
 ## How to enable Progressive Collapsed Forwarding
 
-When configuring path configs as described in [Paths Documentation](./paths.md) you simply need to add `progressive_collapsed_forwarding = true` in any path config using the `proxy` or `proxycache` handlers.
+When configuring path configs as described in [Paths Documentation](./paths.md) add `collapsed_forwarding: progressive` in any path config using the `proxy` or `proxycache` handlers.
 
 Example:
 
@@ -41,11 +41,11 @@ origins:
       - path: /test_path1/
         match_type: prefix
         handler: proxycache
-        progressive_collapsed_forwarding: true
+        collapsed_forwarding: progressive
       - path: /test_path2/
         match_type: prefix
         handler: proxy
-        progressive_collapsed_forwarding: true
+        collapsed_forwarding: progressive
 ```
 
 See the [example.full.yaml](../examples/conf/example.full.yaml) for more configuration examples.
