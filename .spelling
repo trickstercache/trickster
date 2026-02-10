@@ -186,7 +186,6 @@ unparsable
 otel
 go.mod
 dropdown
-zipkin
 stdout
 QueryCache
 WriteCache

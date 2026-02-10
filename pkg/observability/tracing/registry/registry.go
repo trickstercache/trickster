@@ -28,7 +28,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/exporters/noop"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/exporters/otlp"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/exporters/stdout"
-	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/exporters/zipkin"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/providers"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
@@ -116,9 +115,6 @@ func GetTracer(options *options.Options,
 	case providers.OTLP.String():
 		logTracerRegistration()
 		return otlp.New(options)
-	case providers.Zipkin.String():
-		logTracerRegistration()
-		return zipkin.New(options)
 	}
 
 	return nil, nil

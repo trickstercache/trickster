@@ -7,7 +7,6 @@ As OpenTelemetry evolves to support additional exporter formats, we will work to
 ## Supported Tracing Backends
 
 - Jaeger (via OTLP)
-- Zipkin
 - Console/Stdout (printed locally by the Trickster process)
 
 ## Configuration

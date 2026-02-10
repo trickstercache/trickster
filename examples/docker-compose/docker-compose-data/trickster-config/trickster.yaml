@@ -30,9 +30,6 @@ tracing:
     provider: stdout
     stdout:
       pretty_print: true
-  zip1:
-    provider: zipkin
-    endpoint: 'http://zipkin:9411/api/v2/spans'
   jc1:
     provider: otlp # jaeger collector
     endpoint: 'http://jaeger:14268/api/traces'

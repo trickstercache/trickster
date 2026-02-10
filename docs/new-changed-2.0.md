@@ -34,6 +34,7 @@ Trickster 2.0 is a near-complete rewrite of the project with performance, durabi
     - `caches[*].redis.password`, `backends[*].healthcheck.headers`, `backends[*].paths[*].request_headers`, `backends[*].paths[*].request_params`, `backends[*].paths[*].response_headers`, `authenticators[*].users`
   - Usage: `password: ${MY_SECRET_VAR}`
 - **Request Body Size Limit**: A configurable Request Body Size limit has been added for `POST`, `PUT` and `PATCH` requests, with a default of 10MB. Requests with a body size exceeding the limit will receive a `413 Content Too Large` response. See [Request Body Handling Customizations](./body.md) for more info
+- **Zipkin Deprecation**: Trickster uses packages provided by the OpenTelemetry project for Distributed Tracing capabilities. These external packages recently deprecated support for exporting spans via Zipkin, therefore Zipkin support has been removed for Trickster 2.0. Trickster retains support for OTLP.
 
 ### Under the Hood & Performance
 - **Common Time Series Format**: We now use a common time series format internally for caching all supported TSDB's, rather than implementing delta + merge algorithms per-provider.

@@ -40,7 +40,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
-	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/exporters/zipkin"
+	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/exporters/stdout"
 	to "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
@@ -79,7 +79,7 @@ func TestRegisterProxyRoutes(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	z, err := zipkin.New(&to.Options{ServiceName: "test", Endpoint: "http://1.2.3.4/"})
+	z, err := stdout.New(&to.Options{ServiceName: "test", Endpoint: "http://1.2.3.4/"})
 	if err != nil {
 		t.Error(err)
 	}
