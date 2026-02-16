@@ -117,12 +117,12 @@ style:
 LINT_FLAGS ?= 
 .PHONY: lint
 lint:
-	@golangci-lint run $(LINT_FLAGS) -c .golangci.yml
+	@go tool golangci-lint run $(LINT_FLAGS) -c .golangci.yml
 
 .PHONY: lint-fix
 lint-fix:
 	@LINT_FLAGS="--fix" $(MAKE) lint
-	@golangci-lint fmt -c .golangci.yml
+	@go tool golangci-lint fmt -c .golangci.yml
 
 GO_TEST_FLAGS ?= -coverprofile=.coverprofile
 .PHONY: test
@@ -273,8 +273,8 @@ GOLANG_CI_LINT_VERSION ?= v2.7.2
 .PHONY: get-tools
 get-tools: get-msgpack
 	@echo "Installing tools..."
-	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANG_CI_LINT_VERSION)
-	go install honnef.co/go/tools/cmd/staticcheck@2025.1.1
+	go get -tool github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANG_CI_LINT_VERSION)
+	go get -tool honnef.co/go/tools/cmd/staticcheck@2025.1.1
 
 .PHONY: get-msgpack
 get-msgpack:
