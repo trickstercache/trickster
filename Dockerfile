@@ -2,7 +2,7 @@ FROM alpine:latest as certs
 RUN apk update && apk add ca-certificates
 
 ARG BUILDPLATFORM=linux/amd64
-FROM --platform=${BUILDPLATFORM} golang:1.25 as builder
+FROM --platform=${BUILDPLATFORM} golang:1.26 as builder
 ARG GIT_LATEST_COMMIT_ID
 ARG TAGVER
 
