@@ -42,6 +42,8 @@ func TimeseriesMergeFunc(unmarshaler timeseries.UnmarshalerFunc) MergeFunc {
 				return err
 			}
 		}
+		accum.mu.Lock()
+		defer accum.mu.Unlock()
 		if accum.tsdata == nil {
 			accum.tsdata = ts
 		} else {
