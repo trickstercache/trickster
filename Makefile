@@ -278,7 +278,7 @@ get-tools: get-msgpack
 
 .PHONY: get-msgpack
 get-msgpack:
-	$(GO) get -tool github.com/tinylib/msgp@v1.4.0
+	$(GO) get -tool github.com/tinylib/msgp@v1.6.3
 
 .PHONY: developer-start
 developer-start:

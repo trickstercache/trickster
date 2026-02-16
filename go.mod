@@ -15,7 +15,7 @@ require (
 	github.com/prometheus/common/sigv4 v0.1.0
 	github.com/redis/go-redis/v9 v9.17.3
 	github.com/stretchr/testify v1.11.1
-	github.com/tinylib/msgp v1.4.0
+	github.com/tinylib/msgp v1.6.3
 	github.com/trickstercache/mockster v1.1.3
 	go.etcd.io/bbolt v1.4.3
 	go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace v0.65.0
