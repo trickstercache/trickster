@@ -72,8 +72,9 @@ func PutCapturesSlice(slice []*capture.CaptureResponseWriter) {
 		return
 	}
 
-	// Clear all pointers to prevent memory retention
+	// Return each writer to the capture pool, then clear the pointer
 	for i := range slice {
+		capture.PutCaptureResponseWriter(slice[i])
 		slice[i] = nil
 	}
 

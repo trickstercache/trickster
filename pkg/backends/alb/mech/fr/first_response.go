@@ -149,7 +149,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			r2, _ := request.Clone(r)
 			r2 = r2.WithContext(contexts[i])
 			r2 = request.SetResources(r2, &request.Resources{Cancelable: true})
-			crw := capture.NewCaptureResponseWriter()
+			crw := capture.GetCaptureResponseWriter()
 			captures[i] = crw
 			hl[i].ServeHTTP(crw, r2)
 			statusCode := crw.StatusCode()

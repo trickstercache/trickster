@@ -259,7 +259,7 @@ func (pr *proxyRequest) prepareUpstreamRequests() {
 		} else {
 			l = len(pr.neededRanges)
 		}
-		pr.originRequests = make([]*http.Request, 0, l)
+		pr.originRequests = getRequestSlice(l)
 	}
 
 	// if we are articulating the origin range requests, break those out here
@@ -271,7 +271,7 @@ func (pr *proxyRequest) prepareUpstreamRequests() {
 			pr.originRequests = append(pr.originRequests, req)
 		}
 	} else { // otherwise it will just be a list of one request.
-		pr.originRequests = []*http.Request{pr.upstreamRequest}
+		pr.originRequests = append(pr.originRequests[:0], pr.upstreamRequest)
 	}
 }
 
@@ -292,8 +292,8 @@ func (pr *proxyRequest) makeUpstreamRequests() error {
 	// short circuit for when there is only 1 upstream request
 	rsc := request.GetResources(pr.Request)
 	if pr.revalidationRequest == nil && len(pr.originRequests) == 1 {
-		pr.originReaders = make([]io.ReadCloser, 1)
-		pr.originResponses = make([]*http.Response, 1)
+		pr.originReaders = getReadCloserSlice(1)
+		pr.originResponses = getResponseSlice(1)
 		pr.originReaders[0], pr.originResponses[0] = pr.makeSimpleUpstreamRequests(pr.originRequests[0], rsc.Tracer)
 		return nil
 	}
@@ -318,8 +318,8 @@ func (pr *proxyRequest) makeUpstreamRequests() error {
 	}
 
 	if len(pr.originRequests) > 0 {
-		pr.originResponses = make([]*http.Response, len(pr.originRequests))
-		pr.originReaders = make([]io.ReadCloser, len(pr.originRequests))
+		pr.originResponses = getResponseSlice(len(pr.originRequests))
+		pr.originReaders = getReadCloserSlice(len(pr.originRequests))
 		for i := range pr.originRequests {
 			wg.Go(func() {
 				req := pr.originRequests[i]
@@ -388,7 +388,7 @@ func (pr *proxyRequest) setBodyWriter() {
 	}
 
 	if pr.writeToCache && pr.cacheBuffer == nil {
-		pr.cacheBuffer = &bytes.Buffer{}
+		pr.cacheBuffer = getCacheBuffer()
 
 		if pr.cachingPolicy.IsClientFresh {
 			// don't write response body to the client on a 304 Not Modified
@@ -738,4 +738,14 @@ func (pr *proxyRequest) reconstituteResponses() {
 			rsc.BackendOptions.NegativeCache, pr.upstreamResponse.Header))
 		pr.mapLock.Unlock()
 	}
+
+	// The origin slices are fully consumed at this point; return their backing
+	// arrays to the pool. The individual pointers have been promoted to
+	// pr.upstreamRequest/Response/Reader and remain valid.
+	putRequestSlice(pr.originRequests)
+	pr.originRequests = nil
+	putResponseSlice(pr.originResponses)
+	pr.originResponses = nil
+	putReadCloserSlice(pr.originReaders)
+	pr.originReaders = nil
 }

@@ -108,7 +108,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		wg.Go(func() {
 			r2, _ := request.Clone(r)
 			r2 = request.ClearResources(r2.WithContext(ctx))
-			crw := capture.NewCaptureResponseWriter()
+			crw := capture.GetCaptureResponseWriter()
 			captures[idx] = crw
 			hl[idx].ServeHTTP(crw, r2)
 
