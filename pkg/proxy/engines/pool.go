@@ -158,3 +158,32 @@ func putReadCloserSlice(s []io.ReadCloser) {
 	s = s[:0]
 	originReadersPool.Put(&s)
 }
+
+// HTTPDocument msgp serialization buffer pool
+//
+// Pooling the []byte output of d.MarshalMsg avoids a fresh allocation on every
+// cache write. Stored as *[]byte to preserve capacity across pool round-trips.
+
+// maxHTTPDocMarshalBufSize is the maximum buffer capacity to allow back into the
+// pool. Set to 2x DefaultMaxObjectSizeBytes (524288) with headroom for headers.
+const maxHTTPDocMarshalBufSize = 1 << 20 // 1 MB
+
+var httpDocMarshalBufPool = sync.Pool{
+	New: func() any {
+		b := make([]byte, 0, 1024)
+		return &b
+	},
+}
+
+func getHTTPDocMarshalBuf() []byte {
+	bp := httpDocMarshalBufPool.Get().(*[]byte)
+	return (*bp)[:0]
+}
+
+// putHTTPDocMarshalBuf returns b to the pool. b must not be used after this call.
+func putHTTPDocMarshalBuf(b []byte) {
+	if cap(b) > maxHTTPDocMarshalBufSize {
+		return
+	}
+	httpDocMarshalBufPool.Put(&b)
+}
