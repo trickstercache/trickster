@@ -33,7 +33,6 @@ import (
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
-	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 )
 
 var testLogger = logging.ConsoleLogger("warn")
@@ -55,7 +54,7 @@ func TestDoProxy(t *testing.T) {
 		Path:              "/",
 		RequestHeaders:    map[string]string{},
 		ResponseHeaders:   map[string]string{},
-		ResponseBody:      pointers.New(testResponseBody),
+		ResponseBody:      new(string),
 		ResponseBodyBytes: []byte(testResponseBody),
 	}
 
@@ -191,7 +190,7 @@ func TestDoProxyWithPCF(t *testing.T) {
 		Path:                    po.DefaultPath,
 		RequestHeaders:          map[string]string{},
 		ResponseHeaders:         map[string]string{},
-		ResponseBody:            pointers.New(testResponseBody),
+		ResponseBody:            new(string),
 		ResponseBodyBytes:       []byte(testResponseBody),
 		CollapsedForwardingName: forwarding.CFNameProgressive,
 		CollapsedForwardingType: forwarding.CFTypeProgressive,
@@ -247,7 +246,7 @@ func TestProxyRequestWithPCFMultipleClients(t *testing.T) {
 		Path:                    "/",
 		RequestHeaders:          map[string]string{},
 		ResponseHeaders:         map[string]string{},
-		ResponseBody:            pointers.New(testResponseBody),
+		ResponseBody:            new(string),
 		ResponseBodyBytes:       []byte(testResponseBody),
 		CollapsedForwardingName: forwarding.CFNameProgressive,
 		CollapsedForwardingType: forwarding.CFTypeProgressive,

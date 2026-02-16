@@ -118,12 +118,6 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	captures := GetCapturesSlice(l)
 	responseWritten := getResponseChannel()
 
-	// Ensure cleanup of pooled resources
-	defer func() {
-		PutCapturesSlice(captures)
-		putResponseChannel(responseWritten)
-	}()
-
 	var wg sync.WaitGroup
 
 	serve := func(crw *capture.CaptureResponseWriter) {
