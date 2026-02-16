@@ -23,8 +23,8 @@ import (
 )
 
 const (
-	maxPoolSize = 32 // Don't pool for very large fanouts
-	minPoolSize = 2  // Don't pool for tiny fanouts
+	maxPoolSize = 128 // Don't pool for very large fanouts
+	minPoolSize = 2   // Don't pool for tiny fanouts
 )
 
 // Pools for FR/FGR mechanism allocations
