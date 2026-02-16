@@ -3,7 +3,7 @@
 ## Prerequisites
 
 * Docker is installed and running, and the `docker` command is available.
-* Golang 1.25 is installed
+* Golang 1.26 is installed
 * Make and other tools are installed
 
 ## Running
