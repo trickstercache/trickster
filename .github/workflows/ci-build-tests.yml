@@ -16,6 +16,10 @@ on:
 
 name: CI Tests
 
+concurrency:
+  group: ci-build-tests-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint:
     runs-on: ubuntu-latest
