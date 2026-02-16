@@ -86,10 +86,15 @@ func queryConcurrent(_ context.Context, c cache.Cache, key string) *queryResult 
 		if inflate {
 			// tl.Debug(rsc.Logger, "decompressing cached data", tl.Pairs{"cacheKey": key})
 			decoder := brotli.NewReader(bytes.NewReader(b))
-			b, qr.err = io.ReadAll(decoder)
+			decompBuf := getCacheBuffer()
+			_, qr.err = io.Copy(decompBuf, decoder)
 			if qr.err != nil {
+				putCacheBuffer(decompBuf)
 				return qr
 			}
+			// Copy decompressed bytes out of pooled buffer before returning it
+			b = append([]byte(nil), decompBuf.Bytes()...)
+			putCacheBuffer(decompBuf)
 		}
 		_, qr.err = qr.d.UnmarshalMsg(b)
 		if qr.err != nil {

@@ -170,9 +170,17 @@ func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration) {
 	var body []byte
 	var err error
 	if reader != nil {
-		body, err = io.ReadAll(reader)
+		buf := getCacheBuffer()
+		_, err = io.Copy(buf, reader)
 		resp.Body.Close()
-		resp.Body = io.NopCloser(bytes.NewReader(body))
+		if err != nil {
+			putCacheBuffer(buf)
+		} else {
+			// Copy bytes out before returning buffer to pool
+			body = append([]byte(nil), buf.Bytes()...)
+			putCacheBuffer(buf)
+			resp.Body = io.NopCloser(bytes.NewReader(body))
+		}
 	}
 	if err != nil {
 		logger.Error("error reading body from http response",
@@ -538,12 +546,14 @@ func (pr *proxyRequest) prepareResponse() {
 		if (d == nil || !d.isLoaded) &&
 			(pr.cacheStatus == status.LookupStatusPartialHit || pr.cacheStatus == status.LookupStatusKeyMiss ||
 				pr.cacheStatus == status.LookupStatusRangeMiss) {
-			var b []byte
 			if pr.upstreamReader != nil {
-				b, _ = io.ReadAll(pr.upstreamReader)
+				// Reuse pooled cache buffer for reading response body
+				pr.cacheBuffer = getCacheBuffer()
+				_, _ = io.Copy(pr.cacheBuffer, pr.upstreamReader)
 			}
-			d = DocumentFromHTTPResponse(pr.upstreamResponse, b, pr.cachingPolicy)
-			pr.cacheBuffer = bytes.NewBuffer(b)
+			// DocumentFromHTTPResponse uses buffer's bytes; buffer will be
+			// returned to pool later in objectproxycache.go after copying bytes out
+			d = DocumentFromHTTPResponse(pr.upstreamResponse, pr.cacheBuffer.Bytes(), pr.cachingPolicy)
 			if pr.writeToCache {
 				d.isLoaded = true
 				pr.cacheDocument = d
@@ -668,7 +678,11 @@ func (pr *proxyRequest) reconstituteResponses() {
 				wg.Go(func() {
 					// oh snap. so we have some partial content to merge in, but the original cache document
 					// is now invalid. lets go ahead and reset it.
-					b, _ := io.ReadAll(resp.Body)
+					buf := getCacheBuffer()
+					_, _ = io.Copy(buf, resp.Body)
+					// Copy bytes out before returning buffer to pool
+					b := append([]byte(nil), buf.Bytes()...)
+					putCacheBuffer(buf)
 					appendLock.Lock()
 					parts.ParsePartialContentBody(resp, b)
 					appendLock.Unlock()
@@ -690,7 +704,11 @@ func (pr *proxyRequest) reconstituteResponses() {
 				appendLock.Unlock()
 
 				if resp.StatusCode == http.StatusPartialContent {
-					b, _ := io.ReadAll(resp.Body)
+					buf := getCacheBuffer()
+					_, _ = io.Copy(buf, resp.Body)
+					// Copy bytes out before returning buffer to pool
+					b := append([]byte(nil), buf.Bytes()...)
+					putCacheBuffer(buf)
 					appendLock.Lock()
 					parts.ParsePartialContentBody(resp, b)
 					appendLock.Unlock()
@@ -714,7 +732,9 @@ func (pr *proxyRequest) reconstituteResponses() {
 				if bodyFromParts = err != nil; !bodyFromParts {
 					pr.upstreamReader = bytes.NewReader(parts.Body)
 					resp.StatusCode = http.StatusOK
-					pr.cacheBuffer = bytes.NewBuffer(parts.Body)
+					// Reuse pooled cache buffer instead of creating new one
+					pr.cacheBuffer = getCacheBuffer()
+					_, _ = pr.cacheBuffer.Write(parts.Body)
 				}
 			}
 		} else {

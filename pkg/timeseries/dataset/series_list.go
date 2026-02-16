@@ -22,8 +22,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-
-	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
 //go:generate go tool msgp
@@ -43,7 +41,11 @@ func (sl SeriesList) Merge(sl2 SeriesList, sortPoints bool) SeriesList {
 	if len(sl) == 0 {
 		return sl2.Clone()
 	}
-	m := make(map[Hash]*Series, len(sl)+len(sl2))
+	m := getSeriesHashMap()
+	defer putSeriesHashMap(m)
+	seen := getSeriesHashSet()
+	defer putSeriesHashSet(seen)
+
 	out := make(SeriesList, len(sl)+len(sl2))
 	var k int
 	for _, s := range sl {
@@ -58,7 +60,6 @@ func (sl SeriesList) Merge(sl2 SeriesList, sortPoints bool) SeriesList {
 		m[h] = s
 		k++
 	}
-	seen := make(sets.Set[Hash], len(sl2))
 	var wg sync.WaitGroup
 	for _, s := range sl2 {
 		if s == nil {

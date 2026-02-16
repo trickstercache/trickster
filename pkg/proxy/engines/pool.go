@@ -187,3 +187,38 @@ func putHTTPDocMarshalBuf(b []byte) {
 	}
 	httpDocMarshalBufPool.Put(&b)
 }
+
+// Cache key values pool
+//
+// DeriveCacheKey allocates a []string to collect cache key components. Pooling
+// reuses these slices across requests.
+
+const maxCacheKeyValuesSliceCap = 200
+
+var cacheKeyValuesPool = sync.Pool{
+	New: func() any {
+		s := make([]string, 0, 16)
+		return &s
+	},
+}
+
+// getCacheKeyValues returns a zero-length []string with capacity for appending
+// cache key values. The slice backing array is reused across calls.
+func getCacheKeyValues() []string {
+	sp := cacheKeyValuesPool.Get().(*[]string)
+	return (*sp)[:0]
+}
+
+// putCacheKeyValues returns the slice to the pool. The slice must not be used
+// after this call. Oversized slices are discarded.
+func putCacheKeyValues(s []string) {
+	if cap(s) > maxCacheKeyValuesSliceCap {
+		return
+	}
+	// Clear string references to allow GC
+	for i := range s {
+		s[i] = ""
+	}
+	s = s[:0]
+	cacheKeyValuesPool.Put(&s)
+}

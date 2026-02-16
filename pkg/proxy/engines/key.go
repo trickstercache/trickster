@@ -75,7 +75,14 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 	}
 
 	var k int
-	vals := make([]string, 2+len(qp)+len(r.Header)+len(pc.CacheKeyFormFields)+ckeCnt)
+	vals := getCacheKeyValues()
+	defer putCacheKeyValues(vals)
+	// Reserve capacity if needed
+	needed := 2 + len(qp) + len(r.Header) + len(pc.CacheKeyFormFields) + ckeCnt
+	if cap(vals) < needed {
+		vals = append(vals[:0], make([]string, needed)...)[:0]
+	}
+	vals = vals[:needed] // Set length to allow direct indexing
 	// overrides contains query data modified by the backend provider when
 	// parsing the time range (e.g., a tokenized version of the query statement)
 	var overrides map[string]string

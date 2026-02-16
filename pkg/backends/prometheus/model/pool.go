@@ -30,6 +30,9 @@ const (
 	// Set pool constants
 	maxStringSetSize     = 10000
 	maxSeriesDataSetSize = 10000
+
+	// Alert map pool constants
+	maxAlertMapSize = 1000
 )
 
 var (
@@ -48,6 +51,12 @@ var (
 	seriesDataSetPool = sync.Pool{
 		New: func() any {
 			return make(sets.Set[WFSeriesData])
+		},
+	}
+
+	alertMapPool = sync.Pool{
+		New: func() any {
+			return make(map[uint64]WFAlert)
 		},
 	}
 )
@@ -137,4 +146,36 @@ func putSeriesDataSet(m sets.Set[WFSeriesData]) {
 	}
 
 	seriesDataSetPool.Put(m)
+}
+
+// getAlertMap retrieves a map[uint64]WFAlert from the pool.
+// The map is cleared and ready for use.
+// Always use defer putAlertMap(m) after getting a map.
+func getAlertMap() map[uint64]WFAlert {
+	m := alertMapPool.Get().(map[uint64]WFAlert)
+	// Clear all entries
+	for k := range m {
+		delete(m, k)
+	}
+	return m
+}
+
+// putAlertMap returns a map[uint64]WFAlert to the pool.
+// Clears all entries to prevent memory retention.
+// Oversized maps are discarded to prevent pool bloat.
+func putAlertMap(m map[uint64]WFAlert) {
+	if m == nil {
+		return
+	}
+	// Reject oversized maps to prevent pool bloat
+	if len(m) > maxAlertMapSize {
+		return
+	}
+
+	// Clear all entries
+	for k := range m {
+		delete(m, k)
+	}
+
+	alertMapPool.Put(m)
 }
