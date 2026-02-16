@@ -1,0 +1,140 @@
+/*
+ * Copyright 2018 The Trickster Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package model
+
+import (
+	"bytes"
+	"sync"
+
+	"github.com/trickstercache/trickster/v2/pkg/util/sets"
+)
+
+const (
+	// Buffer pool constants
+	maxBufferSize = 65536 // 64KB - reject buffers larger than this
+
+	// Set pool constants
+	maxStringSetSize     = 10000
+	maxSeriesDataSetSize = 10000
+)
+
+var (
+	bytesBufferPool = sync.Pool{
+		New: func() any {
+			return &bytes.Buffer{}
+		},
+	}
+
+	stringSetPool = sync.Pool{
+		New: func() any {
+			return sets.NewStringSet()
+		},
+	}
+
+	seriesDataSetPool = sync.Pool{
+		New: func() any {
+			return make(sets.Set[WFSeriesData])
+		},
+	}
+)
+
+// getBuffer retrieves a bytes.Buffer from the pool.
+// The buffer is reset and ready for use.
+// Always use defer putBuffer(buf) after getting a buffer.
+func getBuffer() *bytes.Buffer {
+	buf := bytesBufferPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	return buf
+}
+
+// putBuffer returns a bytes.Buffer to the pool.
+// Buffers larger than maxBufferSize are discarded to prevent memory bloat.
+func putBuffer(buf *bytes.Buffer) {
+	if buf == nil {
+		return
+	}
+	// Reject oversized buffers to prevent pool bloat
+	if buf.Cap() > maxBufferSize {
+		return
+	}
+	buf.Reset()
+	bytesBufferPool.Put(buf)
+}
+
+// getStringSet retrieves a sets.Set[string] from the pool.
+// The set is cleared and ready for use.
+// Always use defer putStringSet(m) after getting a set.
+func getStringSet() sets.Set[string] {
+	m := stringSetPool.Get().(sets.Set[string])
+	// Clear all entries
+	for k := range m {
+		delete(m, k)
+	}
+	return m
+}
+
+// putStringSet returns a sets.Set[string] to the pool.
+// Clears all entries to prevent memory retention.
+// Oversized sets are discarded to prevent pool bloat.
+func putStringSet(m sets.Set[string]) {
+	if m == nil {
+		return
+	}
+	// Reject oversized sets to prevent pool bloat
+	if len(m) > maxStringSetSize {
+		return
+	}
+
+	// Clear all entries
+	for k := range m {
+		delete(m, k)
+	}
+
+	stringSetPool.Put(m)
+}
+
+// getSeriesDataSet retrieves a sets.Set[WFSeriesData] from the pool.
+// The set is cleared and ready for use.
+// Always use defer putSeriesDataSet(m) after getting a set.
+func getSeriesDataSet() sets.Set[WFSeriesData] {
+	m := seriesDataSetPool.Get().(sets.Set[WFSeriesData])
+	// Clear all entries
+	for k := range m {
+		delete(m, k)
+	}
+	return m
+}
+
+// putSeriesDataSet returns a sets.Set[WFSeriesData] to the pool.
+// Clears all entries to prevent memory retention.
+// Oversized sets are discarded to prevent pool bloat.
+func putSeriesDataSet(m sets.Set[WFSeriesData]) {
+	if m == nil {
+		return
+	}
+	// Reject oversized sets to prevent pool bloat
+	if len(m) > maxSeriesDataSetSize {
+		return
+	}
+
+	// Clear all entries
+	for k := range m {
+		delete(m, k)
+	}
+
+	seriesDataSetPool.Put(m)
+}

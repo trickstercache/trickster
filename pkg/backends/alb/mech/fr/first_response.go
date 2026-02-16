@@ -109,14 +109,22 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	// otherwise iterate the fanout
 	var claimed int64 = -1
+
 	contexts := make([]context.Context, l)
 	cancels := make([]context.CancelFunc, l)
 	for i := range l {
 		contexts[i], cancels[i] = context.WithCancel(r.Context())
 	}
-	captures := make([]*capture.CaptureResponseWriter, l)
+	captures := GetCapturesSlice(l)
+	responseWritten := getResponseChannel()
+
+	// Ensure cleanup of pooled resources
+	defer func() {
+		PutCapturesSlice(captures)
+		putResponseChannel(responseWritten)
+	}()
+
 	var wg sync.WaitGroup
-	responseWritten := make(chan struct{}, 1)
 
 	serve := func(crw *capture.CaptureResponseWriter) {
 		headers.Merge(w.Header(), crw.Header())
@@ -183,8 +191,11 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// written or the request context is canceled
 	select {
 	case <-responseWritten:
-		return
 	case <-r.Context().Done():
-		return
 	}
+
+	// Wait for all goroutines to complete before cleaning up pooled resources
+	wg.Wait()
+	PutCapturesSlice(captures)
+	putResponseChannel(responseWritten)
 }

@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/fr"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
@@ -92,8 +93,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var newestTime time.Time
 	var mu sync.Mutex
 
-	// Capture all responses
-	captures := make([]*capture.CaptureResponseWriter, l)
+	// Get capture slice from pool
+	captures := fr.GetCapturesSlice(l)
+	defer fr.PutCapturesSlice(captures)
+
 	var wg sync.WaitGroup
 
 	// Fanout to all healthy targets

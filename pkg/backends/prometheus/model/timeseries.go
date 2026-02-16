@@ -137,7 +137,8 @@ func pointFromValues(v []any) (dataset.Point, error) {
 
 // MarshalTimeseries converts a Timeseries into a JSON blob
 func MarshalTimeseries(ts timeseries.Timeseries, rlo *timeseries.RequestOptions, status int) ([]byte, error) {
-	buf := bytes.NewBuffer(nil)
+	buf := getBuffer()
+	defer putBuffer(buf)
 	err := MarshalTimeseriesWriter(ts, rlo, status, buf)
 	return buf.Bytes(), err
 }
