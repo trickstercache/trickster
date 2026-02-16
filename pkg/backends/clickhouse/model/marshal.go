@@ -17,7 +17,6 @@
 package model
 
 import (
-	"bytes"
 	"io"
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
@@ -26,12 +25,15 @@ import (
 
 // MarshalTimeseries converts a Timeseries into a JSON blob
 func MarshalTimeseries(ts timeseries.Timeseries, rlo *timeseries.RequestOptions, status int) ([]byte, error) {
-	w := new(bytes.Buffer)
+	w := getMarshalBuf()
 	err := MarshalTimeseriesWriter(ts, rlo, status, w)
 	if err != nil {
+		putMarshalBuf(w)
 		return nil, err
 	}
-	return w.Bytes(), nil
+	b := append([]byte(nil), w.Bytes()...)
+	putMarshalBuf(w)
+	return b, nil
 }
 
 // MarshalTimeseriesWriter converts a Timeseries into a JSON blob via an io.Writer
