@@ -46,8 +46,12 @@ func TestLoadConfiguration(t *testing.T) {
 		t.Errorf("expected 15, got %s", conf.Backends["default"].FastForwardTTL)
 	}
 
-	if conf.Caches["default"].Index.ReapInterval != time.Duration(3)*time.Second {
-		t.Errorf("expected 3, got %s", conf.Caches["default"].Index.ReapInterval)
+	// Memory cache no longer uses IndexedClient, so Index may be nil
+	defaultCache := conf.Caches["default"]
+	if defaultCache.Provider != "memory" && defaultCache.Index != nil {
+		if defaultCache.Index.ReapInterval != time.Duration(3)*time.Second {
+			t.Errorf("expected 3, got %s", defaultCache.Index.ReapInterval)
+		}
 	}
 }
 

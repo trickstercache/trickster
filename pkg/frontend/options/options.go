@@ -61,7 +61,7 @@ func New() *Options {
 		TLSListenPort:           DefaultTLSProxyListenPort,
 		TLSListenAddress:        DefaultTLSProxyListenAddress,
 		ReadHeaderTimeout:       DefaultReadHeaderTimeout,
-		MaxRequestBodySizeBytes: pointers.New(DefaultMaxRequestBodySizeBytes),
+		MaxRequestBodySizeBytes: new(DefaultMaxRequestBodySizeBytes),
 	}
 }
 
@@ -74,14 +74,14 @@ func (o *Options) Equal(o2 *Options) bool {
 func (o *Options) Clone() *Options {
 	out := pointers.Clone(o)
 	if o.MaxRequestBodySizeBytes != nil {
-		out.MaxRequestBodySizeBytes = pointers.New(*o.MaxRequestBodySizeBytes)
+		out.MaxRequestBodySizeBytes = new(*o.MaxRequestBodySizeBytes)
 	}
 	return out
 }
 
 func (o *Options) Initialize() error {
 	if o.MaxRequestBodySizeBytes == nil {
-		o.MaxRequestBodySizeBytes = pointers.New(DefaultMaxRequestBodySizeBytes)
+		o.MaxRequestBodySizeBytes = new(DefaultMaxRequestBodySizeBytes)
 	}
 	return nil
 }

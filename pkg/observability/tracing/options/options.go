@@ -67,7 +67,7 @@ func (o *Options) Clone() *Options {
 	out.Tags = maps.Clone(o.Tags)
 	out.OmitTagsList = slices.Clone(o.OmitTagsList)
 	if o.SampleRate != nil {
-		out.SampleRate = pointers.New(*o.SampleRate)
+		out.SampleRate = new(*o.SampleRate)
 	}
 	return out
 }
@@ -92,9 +92,9 @@ func ProcessTracingOptions(mo Lookup) {
 func (o *Options) SanitizeSampleRate() {
 	switch {
 	case o.SampleRate == nil || *o.SampleRate > 1:
-		o.SampleRate = pointers.New(1.0)
+		o.SampleRate = new(1.0)
 	case *o.SampleRate < 0:
-		o.SampleRate = pointers.New(0.0)
+		o.SampleRate = new(0.0)
 	}
 }
 

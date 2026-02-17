@@ -28,9 +28,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 )
 
-var (
-	testResources = request.NewResources(nil, nil, nil, nil, nil, nil)
-)
+var testResources = request.NewResources(nil, nil, nil, nil, nil, nil)
 
 func TestCalculateHash(t *testing.T) {
 	a := &WFAlert{

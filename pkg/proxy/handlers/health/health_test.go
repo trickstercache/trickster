@@ -139,9 +139,11 @@ func (m *mockBackend) DefaultPathConfigs(*bo.Options) po.List {
 func (m *mockBackend) Configuration() *bo.Options {
 	return nil
 }
+
 func (m *mockBackend) Name() string {
 	return m.name
 }
+
 func (m *mockBackend) HTTPClient() *http.Client {
 	return nil
 }
@@ -149,9 +151,11 @@ func (m *mockBackend) SetCache(cache.Cache) {}
 func (m *mockBackend) Router() http.Handler {
 	return nil
 }
+
 func (m *mockBackend) Cache() cache.Cache {
 	return nil
 }
+
 func (m *mockBackend) BaseUpstreamURL() *url.URL {
 	return nil
 }
@@ -160,6 +164,7 @@ func (m *mockBackend) HealthHandler(http.ResponseWriter, *http.Request) {}
 func (m *mockBackend) DefaultHealthCheckConfig() *ho.Options {
 	return nil
 }
+
 func (m *mockBackend) HealthCheckHTTPClient() *http.Client {
 	return nil
 }

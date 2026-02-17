@@ -20,7 +20,6 @@ package stdout
 import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
-	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 	"go.opentelemetry.io/otel/attribute"
 	stdout "go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -36,7 +35,7 @@ func New(opts *options.Options) (*tracing.Tracer, error) {
 
 	if opts == nil {
 		opts = &options.Options{
-			SampleRate:  pointers.New(1.0),
+			SampleRate:  new(1.0),
 			ServiceName: options.DefaultTracerServiceName,
 			Provider:    "stdout",
 		}

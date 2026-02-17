@@ -27,19 +27,22 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/filesystem"
 	fso "github.com/trickstercache/trickster/v2/pkg/cache/filesystem/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/index/options"
-	"github.com/trickstercache/trickster/v2/pkg/cache/memory"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 )
 
 func TestIndexedClient(t *testing.T) {
-	const provider = "memory"
-
-	// init memory cache client
-	cacheConfig := co.Options{Provider: provider}
-	mc := memory.New("test", &cacheConfig)
-
 	t.Run("basic", func(t *testing.T) {
+		const provider = "filesystem"
+
+		// init filesystem cache client
+		cacheConfig := co.Options{
+			Provider: provider,
+			Filesystem: &fso.Options{
+				CachePath: t.TempDir(),
+			},
+		}
+		fsc := filesystem.NewCache("test", &cacheConfig)
 		// init indexed client
 		ic := NewIndexedClient("test", provider, &options.Options{
 			ReapInterval:          time.Second * time.Duration(10),
@@ -49,7 +52,7 @@ func TestIndexedClient(t *testing.T) {
 			MaxSizeBytes:          100,
 			MaxSizeBackoffBytes:   30,
 			IndexExpiry:           1 * time.Hour,
-		}, mc)
+		}, fsc)
 		t.Log("basic")
 		state := getIndexedClientState(ic)
 		require.Equal(t, int64(0), state.ObjectCount)
@@ -65,7 +68,8 @@ func TestIndexedClient(t *testing.T) {
 
 		// store & retrieve
 		val := []byte("bar")
-		require.NoError(t, ic.Store(key, val, 0))
+		ttl := 60 * time.Second
+		require.NoError(t, ic.Store(key, val, ttl))
 
 		state = getIndexedClientState(ic)
 		require.Equal(t, int64(1), state.ObjectCount)
@@ -95,6 +99,16 @@ func TestIndexedClient(t *testing.T) {
 	})
 
 	t.Run("atime", func(t *testing.T) {
+		const provider = "filesystem"
+
+		// init filesystem cache client
+		cacheConfig := co.Options{
+			Provider: provider,
+			Filesystem: &fso.Options{
+				CachePath: t.TempDir(),
+			},
+		}
+		fsc := filesystem.NewCache("test", &cacheConfig)
 		// init indexed client
 		ic := NewIndexedClient("test", provider, &options.Options{
 			ReapInterval:          time.Second * time.Duration(10),
@@ -104,11 +118,12 @@ func TestIndexedClient(t *testing.T) {
 			MaxSizeBytes:          100,
 			MaxSizeBackoffBytes:   30,
 			IndexExpiry:           1 * time.Hour,
-		}, mc)
+		}, fsc)
 
 		// store & retrieve
 		val := []byte("bar")
-		require.NoError(t, ic.Store("foo", val, 0))
+		ttl := 60 * time.Second
+		require.NoError(t, ic.Store("foo", val, ttl))
 		// expect atime to be set
 		o, ok := ic.Objects.Load("foo")
 		require.True(t, ok)
@@ -202,6 +217,16 @@ func TestIndexedClient(t *testing.T) {
 			// test the actual flush loop by forcing it to flush, this utilizes goroutines
 			// and should detect more potential race conditions vs the existing flush tests that use
 			// flush internal methods
+
+			// Create fresh filesystem cache for this subtest
+			freshCacheConfig := co.Options{
+				Provider: provider,
+				Filesystem: &fso.Options{
+					CachePath: t.TempDir(),
+				},
+			}
+			freshFs := filesystem.NewCache("flushTest", &freshCacheConfig)
+			ttl := 60 * time.Second
 			ic1 := NewIndexedClient("flushTest", provider, &options.Options{
 				ReapInterval:          time.Second * 60 * 60 * 24,
 				FlushInterval:         time.Second * 60 * 60 * 24,
@@ -210,12 +235,12 @@ func TestIndexedClient(t *testing.T) {
 				MaxSizeBytes:          100,
 				MaxSizeBackoffBytes:   30,
 				IndexExpiry:           1 * time.Hour,
-			}, mc)
+			}, freshFs)
 			defer ic1.Close()
 			for i := range 5 {
 				index := fmt.Sprintf("%d", i)
 				key := "key." + index
-				require.NoError(t, ic1.Store(key, []byte("value1."+index), 0))
+				require.NoError(t, ic1.Store(key, []byte("value1."+index), ttl))
 			}
 			_, s, err := ic1.Client.Retrieve(IndexKey)
 			require.Equal(t, cache.ErrKNF, err)
@@ -231,6 +256,16 @@ func TestIndexedClient(t *testing.T) {
 			// test the actual reap loop by forcing it to reap, this utilizes goroutines
 			// and should detect more potential race conditions vs the existing reap tests that use
 			// reap internal methods
+
+			// Create fresh filesystem cache for this subtest
+			freshCacheConfig := co.Options{
+				Provider: provider,
+				Filesystem: &fso.Options{
+					CachePath: t.TempDir(),
+				},
+			}
+			freshFs := filesystem.NewCache("reapTest", &freshCacheConfig)
+			ttl := 60 * time.Second
 			ic2 := NewIndexedClient("reapTest", provider, &options.Options{
 				ReapInterval:          time.Second * 60 * 60 * 24,
 				FlushInterval:         time.Second * 60 * 60 * 24,
@@ -239,14 +274,14 @@ func TestIndexedClient(t *testing.T) {
 				MaxSizeBytes:          10000,
 				MaxSizeBackoffBytes:   300,
 				IndexExpiry:           1 * time.Hour,
-			}, mc)
+			}, freshFs)
 			defer ic2.Close()
 
 			// write 5 objects, expect 5 objects
 			for i := range 5 {
 				index := fmt.Sprintf("%d", i)
 				key := "key." + index
-				require.NoError(t, ic2.Store(key, []byte("value1."+index), 0))
+				require.NoError(t, ic2.Store(key, []byte("value1."+index), ttl))
 			}
 			state := getIndexedClientState(ic2)
 			require.Equal(t, int64(5), state.ObjectCount)
@@ -262,7 +297,7 @@ func TestIndexedClient(t *testing.T) {
 			for i := range 5 {
 				index := fmt.Sprintf("%d", i)
 				key := "another.key." + index
-				require.NoError(t, ic2.Store(key, []byte("value1."+index), 0))
+				require.NoError(t, ic2.Store(key, []byte("value1."+index), ttl))
 			}
 			state = getIndexedClientState(ic2)
 			require.Equal(t, int64(10), state.ObjectCount)
@@ -276,90 +311,100 @@ func TestIndexedClient(t *testing.T) {
 		})
 	})
 
-	/* converting */
-	// init indexed client
-	ic := NewIndexedClient("test", provider, &options.Options{
-		ReapInterval:          time.Second * time.Duration(10),
-		FlushInterval:         time.Second * time.Duration(10),
-		MaxSizeObjects:        5,
-		MaxSizeBackoffObjects: 3,
-		MaxSizeBytes:          100,
-		MaxSizeBackoffBytes:   30,
-		IndexExpiry:           1 * time.Hour,
-	}, mc, func(ico *IndexedClientOptions) {
-		ico.NeedsFlushInterval = true
-		ico.NeedsReapInterval = true
+	t.Run("reap eviction", func(t *testing.T) {
+		const provider = "filesystem"
+
+		// init filesystem cache client
+		cacheConfig := co.Options{
+			Provider: provider,
+			Filesystem: &fso.Options{
+				CachePath: t.TempDir(),
+			},
+		}
+		fsc := filesystem.NewCache("test", &cacheConfig)
+		// init indexed client
+		ic := NewIndexedClient("test", provider, &options.Options{
+			ReapInterval:          time.Second * time.Duration(10),
+			FlushInterval:         time.Second * time.Duration(10),
+			MaxSizeObjects:        5,
+			MaxSizeBackoffObjects: 3,
+			MaxSizeBytes:          100,
+			MaxSizeBackoffBytes:   30,
+			IndexExpiry:           1 * time.Hour,
+		}, fsc, func(ico *IndexedClientOptions) {
+			ico.NeedsFlushInterval = true
+			ico.NeedsReapInterval = true
+		})
+		ttl := 60 * time.Second
+
+		// add expired key to cover the case that the reaper remove it
+		ic.Store("test.1", []byte("test_value"), ttl)
+
+		// add key with no expiration which should not be reaped
+		ic.Store("test.2", []byte("test_value"), ttl)
+
+		// add key with future expiration which should not be reaped
+		ic.Store("test.3", []byte("test_value"), ttl)
+
+		// trigger a reap that will only remove expired elements but not size down the full cache
+		keyCount := len(ic.Objects.Keys())
+		ic.reap()
+		require.Equal(t, keyCount, len(ic.Objects.Keys()))
+
+		state := getIndexedClientState(ic)
+		require.Equal(t, int64(3), state.ObjectCount)
+		require.Equal(t, int64(30), state.CacheSize)
+		require.Len(t, state.Objects, 3)
+
+		// add key with future expiration which should not be reaped
+		ic.Store("test.4", []byte("test_value"), ttl)
+
+		// add key with future expiration which should not be reaped
+		ic.Store("test.5", []byte("test_value"), ttl)
+
+		// add key with future expiration which should not be reaped
+		ic.Store("test.6", []byte("test_value"), ttl)
+
+		// trigger size-based reap eviction of some elements
+		keyCount = len(ic.Objects.Keys())
+		require.Equal(t, 6, keyCount)
+		ic.reap()
+
+		_, ok := ic.Objects.Load("test.1")
+		require.False(t, ok, "expected key %s to be missing", "test.1")
+
+		_, ok = ic.Objects.Load("test.2")
+		require.False(t, ok, "expected key test.2 to be missing")
+
+		_, ok = ic.Objects.Load("test.3")
+		require.False(t, ok, "expected key test.3 to be missing")
+
+		_, ok = ic.Objects.Load("test.4")
+		require.False(t, ok, "expected key test.4 to be missing")
+
+		_, ok = ic.Objects.Load("test.5")
+		require.True(t, ok, "expected key test.5 to be present")
+
+		_, ok = ic.Objects.Load("test.6")
+		require.True(t, ok, "expected key test.6 to be present")
+
+		// add key with large body to reach byte size threshold
+		ic.Store("test.7", []byte("test_value00000000000000000000000000000000000000000000000000000000000000000000000000000"), ttl)
+
+		// trigger a byte-based reap
+		keyCount = len(ic.Objects.Keys())
+		require.Equal(t, 3, keyCount)
+		ic.reap()
+		require.Len(t, ic.Objects.Keys(), 0)
+
+		// expect index to be empty
+		objects := ic.Objects.ToObjects()
+		require.Len(t, objects, 0)
+		state = getIndexedClientState(ic)
+		require.Len(t, state.Objects, 0)
+		require.Equal(t, int64(0), state.ObjectCount)
+		require.Equal(t, int64(0), state.CacheSize)
 	})
-	t.Log("wip, converting prior test")
-	ttl := 60 * time.Second
-
-	// add expired key to cover the case that the reaper remove it
-	ic.Store("test.1", []byte("test_value"), ttl)
-
-	// add key with no expiration which should not be reaped
-	ic.Store("test.2", []byte("test_value"), ttl)
-
-	// add key with future expiration which should not be reaped
-	ic.Store("test.3", []byte("test_value"), ttl)
-
-	// trigger a reap that will only remove expired elements but not size down the full cache
-	keyCount := len(ic.Objects.Keys())
-	ic.reap()
-	require.Equal(t, keyCount, len(ic.Objects.Keys()))
-
-	state := getIndexedClientState(ic)
-	require.Equal(t, int64(3), state.ObjectCount)
-	require.Equal(t, int64(30), state.CacheSize)
-	require.Len(t, state.Objects, 3)
-
-	// add key with future expiration which should not be reaped
-	ic.Store("test.4", []byte("test_value"), ttl)
-
-	// add key with future expiration which should not be reaped
-	ic.Store("test.5", []byte("test_value"), ttl)
-
-	// add key with future expiration which should not be reaped
-	ic.Store("test.6", []byte("test_value"), ttl)
-
-	// trigger size-based reap eviction of some elements
-	keyCount = len(ic.Objects.Keys())
-	require.Equal(t, 6, keyCount)
-	ic.reap()
-
-	_, ok := ic.Objects.Load("test.1")
-	require.False(t, ok, "expected key %s to be missing", "test.1")
-
-	_, ok = ic.Objects.Load("test.2")
-	require.False(t, ok, "expected key test.2 to be missing")
-
-	_, ok = ic.Objects.Load("test.3")
-	require.False(t, ok, "expected key test.3 to be missing")
-
-	_, ok = ic.Objects.Load("test.4")
-	require.False(t, ok, "expected key test.4 to be missing")
-
-	_, ok = ic.Objects.Load("test.5")
-	require.True(t, ok, "expected key test.5 to be present")
-
-	_, ok = ic.Objects.Load("test.6")
-	require.True(t, ok, "expected key test.6 to be present")
-
-	// add key with large body to reach byte size threshold
-	ic.Store("test.7", []byte("test_value00000000000000000000000000000000000000000000000000000000000000000000000000000"), ttl)
-
-	// trigger a byte-based reap
-	keyCount = len(ic.Objects.Keys())
-	require.Equal(t, 3, keyCount)
-	ic.reap()
-	require.Len(t, ic.Objects.Keys(), 0)
-
-	// expect index to be empty
-	objects := ic.Objects.ToObjects()
-	require.Len(t, objects, 0)
-	state = getIndexedClientState(ic)
-	require.Len(t, state.Objects, 0)
-	require.Equal(t, int64(0), state.ObjectCount)
-	require.Equal(t, int64(0), state.CacheSize)
 }
 
 type indexedClientState struct {
