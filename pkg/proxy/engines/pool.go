@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 )
 
@@ -221,4 +222,41 @@ func putCacheKeyValues(s []string) {
 	}
 	s = s[:0]
 	cacheKeyValuesPool.Put(&s)
+}
+
+// Cache key builder pool
+//
+// DeriveCacheKey builds the final cache key by concatenating URL path, key
+// components, and extra suffix. Using a pooled strings.Builder avoids multiple
+// string concatenation allocations.
+
+const maxCacheKeyBuilderSize = 8192 // typical cache keys are 100-2000 bytes
+
+var cacheKeyBuilderPool = sync.Pool{
+	New: func() any {
+		sb := &strings.Builder{}
+		sb.Grow(512) // pre-allocate for typical cache key size
+		return sb
+	},
+}
+
+// getCacheKeyBuilder returns a strings.Builder from the pool, reset and ready
+// for use.
+func getCacheKeyBuilder() *strings.Builder {
+	sb := cacheKeyBuilderPool.Get().(*strings.Builder)
+	sb.Reset()
+	return sb
+}
+
+// putCacheKeyBuilder returns the builder to the pool. Oversized builders are
+// discarded to prevent pool bloat.
+func putCacheKeyBuilder(sb *strings.Builder) {
+	if sb == nil {
+		return
+	}
+	if sb.Cap() > maxCacheKeyBuilderSize {
+		return
+	}
+	sb.Reset()
+	cacheKeyBuilderPool.Put(sb)
 }

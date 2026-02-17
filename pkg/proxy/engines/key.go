@@ -94,33 +94,33 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 	}
 
 	if v := r.Header.Get(headers.NameAuthorization); v != "" {
-		vals[k] = fmt.Sprintf("%s.%s.", headers.NameAuthorization, v)
+		vals[k] = headers.NameAuthorization + "." + v + "."
 		k++
 	}
 	// Append the http method to the slice for creating the derived cache key
-	vals[k] = fmt.Sprintf("%s.%s.", "method", r.Method)
+	vals[k] = "method." + r.Method + "."
 	k++
 
 	if len(pc.CacheKeyParams) == 1 && pc.CacheKeyParams[0] == "*" {
 		for p := range qp {
 			if v, ok := overrides[p]; ok {
-				vals[k] = fmt.Sprintf("%s.%s.", p, v)
+				vals[k] = p + "." + v + "."
 				used.Set(p)
 			} else {
-				vals[k] = fmt.Sprintf("%s.%s.", p, qp.Get(p))
+				vals[k] = p + "." + qp.Get(p) + "."
 			}
 			k++
 		}
 	} else {
 		for _, p := range pc.CacheKeyParams {
 			if v, ok := overrides[p]; ok {
-				vals[k] = fmt.Sprintf("%s.%s.", p, v)
+				vals[k] = p + "." + v + "."
 				used.Set(p)
 				k++
 				continue
 			}
 			if v := qp.Get(p); v != "" {
-				vals[k] = fmt.Sprintf("%s.%s.", p, v)
+				vals[k] = p + "." + v + "."
 				k++
 			}
 		}
@@ -128,7 +128,7 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 
 	for _, p := range pc.CacheKeyHeaders {
 		if v := r.Header.Get(p); v != "" {
-			vals[k] = fmt.Sprintf("%s.%s.", p, v)
+			vals[k] = p + "." + v + "."
 			k++
 		}
 	}
@@ -157,13 +157,13 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 			for _, f := range pc.CacheKeyFormFields {
 				if v, ok := overrides[f]; ok {
 					used.Set(f)
-					vals[k] = fmt.Sprintf("%s.%s.", f, v)
+					vals[k] = f + "." + v + "."
 					k++
 					continue
 				}
 				if _, ok := pr.Form[f]; ok {
 					if v := pr.FormValue(f); v != "" {
-						vals[k] = fmt.Sprintf("%s.%s.", f, v)
+						vals[k] = f + "." + v + "."
 						k++
 					}
 				}
@@ -176,13 +176,23 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 			if _, ok := used[key]; ok {
 				continue
 			}
-			vals[k] = fmt.Sprintf("%s.%s.", key, val)
+			vals[k] = key + "." + val + "."
 			k++
 		}
 	}
 	vals = vals[:k]
 	sort.Strings(vals)
-	return md5.Checksum(pr.URL.Path + "." + strings.Join(vals, "") + extra)
+
+	// Build final cache key using pooled strings.Builder
+	sb := getCacheKeyBuilder()
+	defer putCacheKeyBuilder(sb)
+	sb.WriteString(pr.URL.Path)
+	sb.WriteByte('.')
+	for _, v := range vals {
+		sb.WriteString(v)
+	}
+	sb.WriteString(extra)
+	return md5.Checksum(sb.String())
 }
 
 func deepSearch(document map[string]any, key string) (string, error) {
