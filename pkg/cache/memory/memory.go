@@ -15,13 +15,13 @@
  */
 
 // Package memory is the memory implementation of the Trickster Cache
-// and uses a sync.Map to manage cache objects
+// and uses ristretto (TinyLFU admission-controlled cache) to manage cache objects
 package memory
 
 import (
-	"sync"
 	"time"
 
+	"github.com/dgraph-io/ristretto/v2"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
@@ -33,11 +33,11 @@ var (
 	_ cache.MemoryCache = &Cache{}
 )
 
-// Cache defines a a Memory Cache client that conforms to the Cache interface
+// Cache defines a Memory Cache client that conforms to the Cache interface
 type Cache struct {
 	Name   string
 	Config *options.Options
-	client sync.Map
+	client *ristretto.Cache[string, any]
 }
 
 // New returns a new memory cache as a Trickster Cache Interface type
@@ -45,22 +45,67 @@ func New(name string, cfg *options.Options) *Cache {
 	if cfg == nil {
 		cfg = options.New()
 	}
+
+	// Determine max cache size from config
+	maxSize := int64(512 * 1024 * 1024) // 512MB default
+	if cfg.Index != nil && cfg.Index.MaxSizeBytes > 0 {
+		maxSize = cfg.Index.MaxSizeBytes
+	}
+
+	// Configure ristretto with appropriate settings for Trickster
+	config := &ristretto.Config[string, any]{
+		// NumCounters: number of keys to track frequency, should be ~10x expected max entries
+		// For a cache with MaxSizeBytes of 512MB and average object size of 1KB = ~500K entries
+		// So 10M counters provides good headroom
+		NumCounters: 10_000_000,
+
+		// MaxCost: total "cost" budget; we use byte size as cost
+		MaxCost: maxSize,
+
+		// BufferItems: number of keys per Get buffer (64 is ristretto default)
+		BufferItems: 64,
+
+		// Metrics: enable metrics collection (can be queried later)
+		Metrics: true,
+
+		// Cost function: for []byte use length, for ReferenceObject use Size() method
+		Cost: func(value any) int64 {
+			switch v := value.(type) {
+			case []byte:
+				return int64(len(v))
+			case cache.ReferenceObject:
+				return int64(v.Size())
+			default:
+				return 1 // fallback for unknown types
+			}
+		},
+	}
+
+	client, err := ristretto.NewCache(config)
+	if err != nil {
+		// This should never happen with valid config, but handle gracefully
+		panic("failed to create ristretto cache: " + err.Error())
+	}
+
 	c := &Cache{
 		Name:   name,
 		Config: cfg,
+		client: client,
 	}
 	return c
 }
 
 func (c *Cache) Remove(cacheKeys ...string) error {
 	for _, k := range cacheKeys {
-		c.client.Delete(k)
+		c.client.Del(k)
 	}
+	// Wait for buffered deletes to complete to ensure synchronous semantics
+	c.client.Wait()
 	return nil
 }
 
 func (c *Cache) Close() error {
-	c.client.Clear()
+	c.client.Close()
 	return nil
 }
 
@@ -80,19 +125,23 @@ func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
 }
 
 func (c *Cache) store(cacheKey string, byteData []byte, refData cache.ReferenceObject,
-	_ time.Duration,
+	ttl time.Duration,
 ) error {
-	var o1, o2 any
+	var value any
 	if byteData != nil {
-		o1 = byteData
-		o2 = byteData
+		value = byteData
 	} else if refData != nil {
-		o1 = refData
-		o2 = refData
+		value = refData
 	}
 
-	if o1 != nil && o2 != nil {
-		c.client.Store(cacheKey, o1)
+	if value != nil {
+		if ttl > 0 {
+			c.client.SetWithTTL(cacheKey, value, 0, ttl) // 0 = use Cost function
+		} else {
+			c.client.Set(cacheKey, value, 0) // 0 = use Cost function
+		}
+		// Wait for buffered write to complete to ensure synchronous semantics
+		c.client.Wait()
 	}
 
 	return nil
@@ -124,7 +173,7 @@ func (c *Cache) Retrieve(cacheKey string) ([]byte, status.LookupStatus, error) {
 func (c *Cache) retrieve(cacheKey string) (any,
 	status.LookupStatus, error,
 ) {
-	record, ok := c.client.Load(cacheKey)
+	record, ok := c.client.Get(cacheKey)
 	if ok {
 		return record, status.LookupStatusHit, nil
 	}
