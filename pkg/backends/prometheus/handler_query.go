@@ -71,8 +71,9 @@ func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 	r.URL = u
 	params.SetRequestValues(r, qp)
 
-	// if there are labels to append to the dataset,
-	if c.hasTransformations {
+	// if there are labels to append to the dataset, or if this is a merge member,
+	// we need to capture and unmarshal the response
+	if c.hasTransformations || (rsc != nil && rsc.IsMergeMember) {
 		// use a streaming response writer to capture the response body for transformation
 		sw := capture.NewCaptureResponseWriter()
 		engines.ObjectProxyCacheRequest(sw, r)
