@@ -99,7 +99,6 @@ func (ds *DataSet) CroppedClone(e timeseries.Extent) timeseries.Timeseries {
 		Results:      make([]*Result, len(ds.Results)),
 	}
 	ds.UpdateLock.Lock()
-	defer ds.UpdateLock.Unlock()
 	if ds.TimeRangeQuery != nil {
 		clone.TimeRangeQuery = ds.TimeRangeQuery.Clone()
 	}
@@ -117,6 +116,7 @@ func (ds *DataSet) CroppedClone(e timeseries.Extent) timeseries.Timeseries {
 			}
 		}
 		clone.ExtentList = timeseries.ExtentList{}
+		ds.UpdateLock.Unlock()
 		return clone
 	}
 	clone.ExtentList = ds.ExtentList.Clone().Crop(e)
@@ -157,7 +157,12 @@ func (ds *DataSet) CroppedClone(e timeseries.Extent) timeseries.Timeseries {
 				}
 			})
 		}
+		// Release lock before waiting for goroutines to complete their work.
+		// The goroutines only read from source series and write to clone.
+		ds.UpdateLock.Unlock()
 		wg.Wait()
+		// Re-acquire lock for source dataset modification
+		ds.UpdateLock.Lock()
 		if skips == 1 {
 			sl := make([]*Series, len(ds.Results[i].SeriesList))
 			var k int
@@ -171,6 +176,7 @@ func (ds *DataSet) CroppedClone(e timeseries.Extent) timeseries.Timeseries {
 			ds.Results[i].SeriesList = sl[:k]
 		}
 	}
+	ds.UpdateLock.Unlock()
 	return clone
 }
 
