@@ -125,15 +125,16 @@ type IndexedClient struct {
 	LastFlush atomicx.Time `msg:"LastFlush,extension"`
 
 	// internal index configuration
-	name          string               `msg:"-"`
-	cacheProvider string               `msg:"-"`
-	options       atomic.Value         `msg:"-"`
-	ico           IndexedClientOptions `msg:"-"`
-	lastWrite     atomicx.Time         `msg:"-"`
-	isClosing     atomic.Bool
-	cancel        context.CancelFunc
-	flusherExited atomic.Bool
-	reaperExited  atomic.Bool
+	name           string               `msg:"-"`
+	cacheProvider  string               `msg:"-"`
+	options        atomic.Value         `msg:"-"`
+	ico            IndexedClientOptions `msg:"-"`
+	lastWrite      atomicx.Time         `msg:"-"`
+	isClosing      atomic.Bool
+	cancel         context.CancelFunc
+	flusherExited  atomic.Bool
+	reaperExited   atomic.Bool
+	reapInProgress atomic.Bool
 
 	// used only in tests: fields to interact with client goroutines
 	forceFlush chan bool
@@ -184,6 +185,23 @@ func (idx *IndexedClient) updateIndex(cacheKey string, size int64, la, lw, e tim
 	metrics.ObserveCacheSizeChange(idx.name, idx.cacheProvider, cacheSize, count)
 	idx.lastWrite.Store(time.Now())
 	idx.Objects.Store(cacheKey, obj)
+
+	// Inline eviction guard: trigger async reaping if approaching max size
+	// to prevent large overshoot between periodic reaper cycles.
+	// Only trigger if reaper goroutine is running (ReapInterval > 0) and
+	// no reap is already in progress.
+	opts := idx.options.Load().(*options.Options)
+	if opts.ReapInterval > 0 && opts.MaxSizeBytes > 0 && cacheSize > 0 && !idx.reapInProgress.Load() {
+		threshold := int64(float64(opts.MaxSizeBytes) * 0.9) // 90% threshold
+		if cacheSize > threshold {
+			select {
+			case idx.forceReap <- true:
+				// successfully triggered async reap
+			default:
+				// reap already in progress or channel full, skip
+			}
+		}
+	}
 }
 
 func (idx *IndexedClient) StoreReference(cacheKey string, data cache.ReferenceObject, ttl time.Duration) error {
@@ -407,6 +425,12 @@ REAPER:
 // reap makes a single iteration through the cache index to to find and remove expired elements
 // and evict least-recently-accessed elements to maintain the Maximum allowed Cache Size
 func (idx *IndexedClient) reap() {
+	// Set flag to prevent concurrent reaps
+	if !idx.reapInProgress.CompareAndSwap(false, true) {
+		return // reap already in progress, skip
+	}
+	defer idx.reapInProgress.Store(false)
+
 	cacheSize := max(atomic.LoadInt64(&idx.CacheSize), 0)
 	removals := make([]string, 0)
 	remainders := make(objectsAtime, 0, cacheSize)

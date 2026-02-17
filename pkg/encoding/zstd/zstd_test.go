@@ -19,6 +19,7 @@ package zstd
 import (
 	"bytes"
 	"net/http/httptest"
+	"sync"
 	"testing"
 )
 
@@ -73,5 +74,85 @@ func TestNewEncoder(t *testing.T) {
 	enc = NewEncoder(w, 9)
 	if enc == nil {
 		t.Error("expected non-nil encoder")
+	}
+}
+
+// TestConcurrentEncodeDecode verifies that the shared commonEncoder and
+// commonDecoder are safe for concurrent use via EncodeAll/DecodeAll.
+// If this test fails or produces data corruption, the shared instances
+// must be replaced with sync.Pool.
+func TestConcurrentEncodeDecode(t *testing.T) {
+	// Create test data with varying patterns to detect corruption
+	testData := [][]byte{
+		bytes.Repeat([]byte("test data 1"), 100),
+		bytes.Repeat([]byte("different pattern 2"), 150),
+		bytes.Repeat([]byte("yet another test 3"), 200),
+		bytes.Repeat([]byte("final test pattern 4"), 250),
+	}
+
+	const goroutines = 100
+	const iterations = 10
+
+	var wg sync.WaitGroup
+	errors := make(chan error, goroutines*iterations*2)
+
+	// Launch concurrent encode/decode operations
+	for i := 0; i < goroutines; i++ {
+		dataIndex := i % len(testData)
+		testBytes := testData[dataIndex]
+
+		wg.Add(2)
+
+		// Concurrent encode
+		go func(data []byte, idx int) {
+			defer wg.Done()
+			for j := 0; j < iterations; j++ {
+				encoded, err := Encode(data)
+				if err != nil {
+					errors <- err
+					return
+				}
+				// Verify we can decode what we just encoded
+				decoded, err := Decode(encoded)
+				if err != nil {
+					errors <- err
+					return
+				}
+				if !bytes.Equal(decoded, data) {
+					t.Errorf("data corruption: goroutine %d iteration %d", idx, j)
+					return
+				}
+			}
+		}(testBytes, i)
+
+		// Concurrent decode (of pre-encoded data)
+		go func(data []byte, idx int) {
+			defer wg.Done()
+			// Pre-encode the data
+			encoded, err := Encode(data)
+			if err != nil {
+				errors <- err
+				return
+			}
+			for j := 0; j < iterations; j++ {
+				decoded, err := Decode(encoded)
+				if err != nil {
+					errors <- err
+					return
+				}
+				if !bytes.Equal(decoded, data) {
+					t.Errorf("data corruption: goroutine %d iteration %d", idx, j)
+					return
+				}
+			}
+		}(testBytes, i)
+	}
+
+	wg.Wait()
+	close(errors)
+
+	// Check for any errors
+	for err := range errors {
+		t.Error(err)
 	}
 }
