@@ -28,8 +28,6 @@ const (
 )
 
 // Pools for FR/FGR mechanism allocations
-// Note: We only pool the captures slice since contexts/cancels are
-// interface/function values that don't benefit from pooling
 var (
 	capturesPool = sync.Pool{
 		New: func() any {
@@ -51,10 +49,12 @@ func GetCapturesSlice(size int) []*capture.CaptureResponseWriter {
 		return make([]*capture.CaptureResponseWriter, size)
 	}
 
-	slice := *capturesPool.Get().(*[]*capture.CaptureResponseWriter)
+	sp := capturesPool.Get().(*[]*capture.CaptureResponseWriter)
+	slice := *sp
 
 	// Ensure capacity and set length
 	if cap(slice) < size {
+		capturesPool.Put(sp)
 		return make([]*capture.CaptureResponseWriter, size)
 	}
 

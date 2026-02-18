@@ -128,8 +128,7 @@ func AddForwardingHeaders(r *http.Request, headerType string) {
 
 // String returns a "Forwarded" Header value
 func (hop *Hop) String(expand ...bool) string {
-	parts := getHopParts()
-	defer putHopParts(parts)
+	parts := make([]string, 4)
 	var k int
 	if hop.Server != "" {
 		parts[k] = fmt.Sprintf("by=%s", formatForwardedAddress(hop.Server))
@@ -161,9 +160,16 @@ func (hop *Hop) String(expand ...bool) string {
 }
 
 // XHeader returns an http.Header containing the "X-Forwarded-*" headers.
-// The returned header is from a pool and should be returned via putHeader() when done.
 func (hop *Hop) XHeader() http.Header {
-	h := getHeader()
+	return hop.fillXHeader(make(http.Header))
+}
+
+// xHeader is like XHeader but uses a pooled header. Callers must putHeader the result.
+func (hop *Hop) xHeader() http.Header {
+	return hop.fillXHeader(getHeader())
+}
+
+func (hop *Hop) fillXHeader(h http.Header) http.Header {
 	if hop.Server != "" {
 		h.Set(NameXForwardedServer, hop.Server)
 	}
@@ -196,7 +202,7 @@ func AddForwarded(r *http.Request, hop *Hop) {
 
 // AddXForwarded sets or appends to the "X-Forwarded-*" headers to the provided request
 func AddXForwarded(r *http.Request, hop *Hop) {
-	h := hop.XHeader()
+	h := hop.xHeader()
 	Merge(r.Header, h)
 	putHeader(h)
 }
@@ -204,7 +210,7 @@ func AddXForwarded(r *http.Request, hop *Hop) {
 // AddForwardedAndX sets or appends to the to the "X-Forwarded-*" headers
 // headers, and to the standard Forwarded header to the provided request
 func AddForwardedAndX(r *http.Request, hop *Hop) {
-	h := hop.XHeader()
+	h := hop.xHeader()
 	h.Set(NameForwarded, hop.String())
 	Merge(r.Header, h)
 	putHeader(h)

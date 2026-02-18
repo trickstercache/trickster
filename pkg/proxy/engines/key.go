@@ -76,7 +76,7 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 
 	var k int
 	vals := getCacheKeyValues()
-	defer putCacheKeyValues(vals)
+	defer func() { putCacheKeyValues(vals) }()
 	// Reserve capacity if needed
 	needed := 2 + len(qp) + len(r.Header) + len(pc.CacheKeyFormFields) + ckeCnt
 	if cap(vals) < needed {
