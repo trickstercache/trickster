@@ -23,6 +23,7 @@ import (
 
 	"github.com/dgraph-io/ristretto/v2"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
+	memoryopts "github.com/trickstercache/trickster/v2/pkg/cache/memory/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 )
@@ -46,29 +47,25 @@ func New(name string, cfg *options.Options) *Cache {
 		cfg = options.New()
 	}
 
-	// Determine max cache size from config
-	maxSize := int64(512 * 1024 * 1024) // 512MB default
-	if cfg.Index != nil && cfg.Index.MaxSizeBytes > 0 {
+	// Determine max cache size — prefer memory-specific option, fall back to index for compat.
+	maxSize := memoryopts.DefaultMaxSizeBytes
+	if cfg.Memory != nil && cfg.Memory.MaxSizeBytes > 0 {
+		maxSize = cfg.Memory.MaxSizeBytes
+	} else if cfg.Index != nil && cfg.Index.MaxSizeBytes > 0 {
 		maxSize = cfg.Index.MaxSizeBytes
+	}
+
+	numCounters := memoryopts.DefaultNumCounters
+	if cfg.Memory != nil && cfg.Memory.NumCounters > 0 {
+		numCounters = cfg.Memory.NumCounters
 	}
 
 	// Configure ristretto with appropriate settings for Trickster
 	config := &ristretto.Config[string, any]{
-		// NumCounters: number of keys to track frequency, should be ~10x expected max entries
-		// For a cache with MaxSizeBytes of 512MB and average object size of 1KB = ~500K entries
-		// So 10M counters provides good headroom
-		NumCounters: 10_000_000,
-
-		// MaxCost: total "cost" budget; we use byte size as cost
-		MaxCost: maxSize,
-
-		// BufferItems: number of keys per Get buffer (64 is ristretto default)
+		MaxCost:     maxSize,
+		NumCounters: numCounters,
+		// BufferItems: number of keys per Get buffer (64 is ristretto default, not recommended to tune)
 		BufferItems: 64,
-
-		// Metrics: enable metrics collection (can be queried later)
-		Metrics: true,
-
-		// Cost function: for []byte use length, for ReferenceObject use Size() method
 		Cost: func(value any) int64 {
 			switch v := value.(type) {
 			case []byte:
