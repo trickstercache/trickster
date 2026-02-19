@@ -25,6 +25,7 @@ import (
 	bbolt "github.com/trickstercache/trickster/v2/pkg/cache/bbolt/options"
 	filesystem "github.com/trickstercache/trickster/v2/pkg/cache/filesystem/options"
 	index "github.com/trickstercache/trickster/v2/pkg/cache/index/options"
+	memory "github.com/trickstercache/trickster/v2/pkg/cache/memory/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/options/defaults"
 	"github.com/trickstercache/trickster/v2/pkg/cache/providers"
 	redis "github.com/trickstercache/trickster/v2/pkg/cache/redis/options"
@@ -52,6 +53,8 @@ type Options struct {
 	BBolt *bbolt.Options `yaml:"bbolt,omitempty"`
 	// Badger provides options for BadgerDB caching
 	Badger *badger.Options `yaml:"badger,omitempty"`
+	// Memory provides options for Memory caching
+	Memory *memory.Options `yaml:"memory,omitempty"`
 
 	// Defines if the cache should use cache chunking. Splits cache objects into smaller, reliably-sized parts.
 	UseCacheChunking bool `yaml:"use_cache_chunking,omitempty"`
@@ -83,6 +86,7 @@ func New() *Options {
 		Filesystem:            filesystem.New(),
 		BBolt:                 bbolt.New(),
 		Badger:                badger.New(),
+		Memory:                memory.New(),
 		Index:                 index.New(),
 		UseCacheChunking:      defaults.DefaultUseCacheChunking,
 		TimeseriesChunkFactor: defaults.DefaultTimeseriesChunkFactor,
@@ -97,6 +101,7 @@ func (o *Options) Clone() *Options {
 	out.Filesystem = pointers.Clone(o.Filesystem)
 	out.BBolt = pointers.Clone(o.BBolt)
 	out.Badger = pointers.Clone(o.Badger)
+	out.Memory = pointers.Clone(o.Memory)
 	out.Index = pointers.Clone(o.Index)
 	return out
 }
@@ -127,8 +132,8 @@ func (o *Options) Equal(o2 *Options) bool {
 		return o.BBolt.Equal(o2.BBolt)
 	case providers.BadgerDBID:
 		return o.Badger.Equal(o2.Badger)
-	default:
-		return true
+	default: // memory
+		return o.Memory.Equal(o2.Memory)
 	}
 }
 
@@ -200,6 +205,13 @@ func (o *Options) Initialize(name string) error {
 		}
 	} else {
 		o.Badger = nil
+	}
+	if o.ProviderID == providers.MemoryID {
+		if o.Memory == nil {
+			o.Memory = memory.New()
+		}
+	} else {
+		o.Memory = nil
 	}
 
 	o.UseCacheChunking = defaults.DefaultUseCacheChunking
@@ -284,4 +296,5 @@ func (o *Options) ClearProviderOptions() {
 	o.Filesystem = nil
 	o.BBolt = nil
 	o.Badger = nil
+	o.Memory = nil
 }

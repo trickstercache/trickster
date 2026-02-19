@@ -54,7 +54,7 @@ func TestDoProxy(t *testing.T) {
 		Path:              "/",
 		RequestHeaders:    map[string]string{},
 		ResponseHeaders:   map[string]string{},
-		ResponseBody:      new(string),
+		ResponseBody:      new(testResponseBody),
 		ResponseBodyBytes: []byte(testResponseBody),
 	}
 
@@ -190,7 +190,7 @@ func TestDoProxyWithPCF(t *testing.T) {
 		Path:                    po.DefaultPath,
 		RequestHeaders:          map[string]string{},
 		ResponseHeaders:         map[string]string{},
-		ResponseBody:            new(string),
+		ResponseBody:            new(testResponseBody),
 		ResponseBodyBytes:       []byte(testResponseBody),
 		CollapsedForwardingName: forwarding.CFNameProgressive,
 		CollapsedForwardingType: forwarding.CFTypeProgressive,
@@ -246,7 +246,7 @@ func TestProxyRequestWithPCFMultipleClients(t *testing.T) {
 		Path:                    "/",
 		RequestHeaders:          map[string]string{},
 		ResponseHeaders:         map[string]string{},
-		ResponseBody:            new(string),
+		ResponseBody:            new(testResponseBody),
 		ResponseBodyBytes:       []byte(testResponseBody),
 		CollapsedForwardingName: forwarding.CFNameProgressive,
 		CollapsedForwardingType: forwarding.CFTypeProgressive,

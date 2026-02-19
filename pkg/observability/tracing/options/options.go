@@ -67,7 +67,7 @@ func (o *Options) Clone() *Options {
 	out.Tags = maps.Clone(o.Tags)
 	out.OmitTagsList = slices.Clone(o.OmitTagsList)
 	if o.SampleRate != nil {
-		out.SampleRate = new(float64)
+		out.SampleRate = new(*o.SampleRate)
 	}
 	return out
 }

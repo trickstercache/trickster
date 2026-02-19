@@ -61,6 +61,9 @@ caches:
     badger:
       directory: /tmp/trickster
       value_directory: /tmp/trickster
+    memory:
+      max_size_bytes: 536870912
+      num_counters: 500000
     timeseries_chunk_factor: 420
     byterange_chunk_size: 4096
 frontend:
