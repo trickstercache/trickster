@@ -91,7 +91,7 @@ frontend:
 #       # admission time. default is 512MB
 #       max_size_bytes: 536870912
 #       # num_counters is the number of keys to track for admission and eviction decisions. This is not a hard limit but a max sampling size.
-#       # ristretto recommends ~10x the number of unique keys you expect to hold concurrently.
+#       # Recommended to use ~10x the number of unique keys you expect to hold for full utilization.
 #       # default is 500000
 #       num_counters: 500000
 
