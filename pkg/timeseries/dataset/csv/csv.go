@@ -18,7 +18,6 @@ package csv
 
 import (
 	"errors"
-	"fmt"
 	"strconv"
 	"strings"
 
@@ -358,7 +357,7 @@ func (d seriesKeyData) String(prefix string) string {
 		if kvp.name == "" || kvp.value == "" {
 			continue
 		}
-		pairs[k] = fmt.Sprintf("%s%s%s", kvp.name, delim1, kvp.value)
+		pairs[k] = kvp.name + delim1 + kvp.value
 		k++
 	}
 	return prefix + "." + strings.Join(pairs[:k], delim2)

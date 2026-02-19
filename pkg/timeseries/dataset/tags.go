@@ -19,7 +19,6 @@
 package dataset
 
 import (
-	"fmt"
 	"maps"
 	"slices"
 	"sort"
@@ -62,7 +61,7 @@ func (t Tags) StringsWithSep(sep1, sep2 string) string {
 	pairs := make(sort.StringSlice, len(t))
 	var i int
 	for k, v := range t {
-		pairs[i] = fmt.Sprintf("%s%s%s", k, sep1, v)
+		pairs[i] = k + sep1 + v
 		i++
 	}
 	sort.Sort(pairs)

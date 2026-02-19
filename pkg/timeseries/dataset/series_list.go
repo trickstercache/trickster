@@ -138,7 +138,8 @@ func (sl SeriesList) SortByTags() {
 		if s == nil {
 			continue
 		}
-		key := fmt.Sprintf("%s.%s", s.Header.Tags, s.Header.Name)
+
+		key := s.Header.Tags.String() + "." + s.Header.Name
 		lkp[key] = s
 		keys[i] = key
 		i++
