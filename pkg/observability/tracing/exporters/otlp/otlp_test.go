@@ -22,7 +22,6 @@ import (
 
 	errs "github.com/trickstercache/trickster/v2/pkg/observability/tracing/errors"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
-	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 )
 
 func TestNew(t *testing.T) {
@@ -40,13 +39,13 @@ func TestNew(t *testing.T) {
 		t.Error(err)
 	}
 
-	opt.SampleRate = pointers.New(1.0)
+	opt.SampleRate = new(0.0)
 	_, err = New(opt)
 	if err != nil {
 		t.Error(err)
 	}
 
-	opt.SampleRate = pointers.New(0.5)
+	opt.SampleRate = new(0.5)
 	_, err = New(opt)
 	if err != nil {
 		t.Error(err)

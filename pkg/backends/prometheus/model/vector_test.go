@@ -81,5 +81,4 @@ func TestMergeAndWriteVector(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Errorf("expected %d got %d", http.StatusOK, w.Code)
 	}
-
 }

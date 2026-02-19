@@ -84,6 +84,17 @@ frontend:
 #       # max_size_backoff_objects indicates how far under max_size_objects the cache size must be to complete object-size-based eviction exercise. default is 100
 #       max_size_backoff_objects: 100
 
+#     ## Configuration options when using a Memory Cache #######
+#     memory:
+#       # max_size_bytes is the maximum total byte cost will admit to the cache.
+#       # unlike index.max_size_bytes (a soft eviction threshold), this is enforced at
+#       # admission time. default is 512MB
+#       max_size_bytes: 536870912
+#       # num_counters is the number of keys to track for admission and eviction decisions. This is not a hard limit but a max sampling size.
+#       # Recommended to use ~10x the number of unique keys you expect to hold for full utilization.
+#       # default is 500000
+#       num_counters: 500000
+
 #     ## Configuration options when using a Redis Cache
 #     redis:
 #       # client_type indicates which kind of Redis client to use. Options are: standard, cluster and sentinel

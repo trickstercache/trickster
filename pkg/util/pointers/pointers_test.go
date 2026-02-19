@@ -24,10 +24,7 @@ import (
 
 func TestNew(t *testing.T) {
 	const port = 8480
-	intPtr := New(port)
-	if intPtr == nil {
-		t.Fatal("expected non-nil")
-	}
+	intPtr := new(port)
 	if *intPtr != port {
 		t.Fatalf("expected %d got %d", port, *intPtr)
 	}

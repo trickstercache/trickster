@@ -49,7 +49,7 @@ func storeBenchmark(b *testing.B) *Cache {
 	if err != nil {
 		b.Error(err)
 	}
-	defer mc.Close()
+	// Note: don't close the cache here, callers use the cache after this for testing purposes
 	for n := 0; n < b.N; n++ {
 		err = mc.Store(cacheKey+strconv.Itoa(n), []byte("data"+strconv.Itoa(n)), time.Duration(60)*time.Second)
 		if err != nil {
@@ -252,7 +252,7 @@ func BenchmarkCache_Remove(b *testing.B) {
 
 		// this should now return error
 		data, ls, err = mc.Retrieve(cacheKey + strconv.Itoa(n))
-		expectederr := `value for key [` + cacheKey + strconv.Itoa(n) + `] not in cache`
+		expectederr := `key not found in cache` // cache.ErrKNF
 		if err == nil {
 			b.Errorf("expected error for %s", expectederr)
 			mc.Close()
