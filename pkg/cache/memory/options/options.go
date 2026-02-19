@@ -17,19 +17,19 @@
 package options
 
 const (
-	// DefaultMaxSizeBytes is the default maximum byte cost ristretto will admit to the cache (512 MB)
+	// DefaultMaxSizeBytes is the default maximum byte cost memory provider will admit to the cache (512 MB)
 	DefaultMaxSizeBytes = int64(512 * 1024 * 1024)
-	// DefaultNumCounters is the default number of keys ristretto tracks for admission control
+	// DefaultNumCounters is the default number of keys memory provider tracks for admission control
 	DefaultNumCounters = int64(500_000)
 )
 
-// Options holds memory-cache-specific (ristretto) configuration.
+// Options holds memory-cache-specific configuration.
 type Options struct {
-	// MaxSizeBytes is the maximum total byte cost ristretto will admit to the cache.
-	// Maps to ristretto Config.MaxCost. Defaults to 512MB.
+	// MaxSizeBytes is the maximum total byte cost memory provider will admit to the cache.
+	// Defaults to 512MB.
 	MaxSizeBytes int64 `yaml:"max_size_bytes,omitempty"`
-	// NumCounters is the number of keys ristretto tracks for admission control.
-	// ristretto recommends ~10x the number of unique keys you expect to hold.
+	// NumCounters is the number of keys memory provider tracks for admission control. Not a hard limit, but a sampling size.
+	// Recommended to use ~10x the number of unique keys you expect to hold for full utilization.
 	// Defaults to 500,000.
 	NumCounters int64 `yaml:"num_counters,omitempty"`
 }

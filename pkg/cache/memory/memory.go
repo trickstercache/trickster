@@ -60,7 +60,6 @@ func New(name string, cfg *options.Options) *Cache {
 		numCounters = cfg.Memory.NumCounters
 	}
 
-	// Configure ristretto with appropriate settings for Trickster
 	config := &ristretto.Config[string, any]{
 		MaxCost:     maxSize,
 		NumCounters: numCounters,
@@ -81,7 +80,7 @@ func New(name string, cfg *options.Options) *Cache {
 	client, err := ristretto.NewCache(config)
 	if err != nil {
 		// This should never happen with valid config, but handle gracefully
-		panic("failed to create ristretto cache: " + err.Error())
+		panic("failed to create memory cache: " + err.Error())
 	}
 
 	c := &Cache{
