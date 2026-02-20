@@ -26,8 +26,10 @@ import (
 // merging. These pools reduce GC pressure on the critical Prometheus query path.
 
 const (
-	maxSeriesHashMapSize = 10000 // reject maps larger than this to prevent pool bloat
-	maxSeriesHashSetSize = 10000 // reject sets larger than this to prevent pool bloat
+	maxSeriesHashMapSize  = 10000 // reject maps larger than this to prevent pool bloat
+	maxSeriesHashSetSize  = 10000 // reject sets larger than this to prevent pool bloat
+	maxSeriesKeyMapSize   = 10000 // reject sort key maps larger than this to prevent pool bloat
+	maxSeriesKeySliceSize = 10000 // reject sort key slices larger than this to prevent pool bloat
 )
 
 var (
@@ -40,6 +42,19 @@ var (
 	seriesHashSetPool = sync.Pool{
 		New: func() any {
 			return make(sets.Set[Hash])
+		},
+	}
+
+	seriesKeyMapPool = sync.Pool{
+		New: func() any {
+			return make(map[string]*Series)
+		},
+	}
+
+	seriesKeySlicePool = sync.Pool{
+		New: func() any {
+			s := make([]string, 0, 256)
+			return &s
 		},
 	}
 )
@@ -96,4 +111,54 @@ func putSeriesHashSet(s sets.Set[Hash]) {
 		delete(s, k)
 	}
 	seriesHashSetPool.Put(s)
+}
+
+// getSeriesKeyMap retrieves a map[string]*Series from the pool for SortByTags.
+// The map is cleared and ready for use.
+func getSeriesKeyMap() map[string]*Series {
+	m := seriesKeyMapPool.Get().(map[string]*Series)
+	// Clear all entries to prevent memory retention
+	for k := range m {
+		delete(m, k)
+	}
+	return m
+}
+
+// putSeriesKeyMap returns a map[string]*Series to the pool.
+// Oversized maps are discarded to prevent pool bloat.
+func putSeriesKeyMap(m map[string]*Series) {
+	if m == nil {
+		return
+	}
+	if len(m) > maxSeriesKeyMapSize {
+		return
+	}
+	// Clear all entries
+	for k := range m {
+		delete(m, k)
+	}
+	seriesKeyMapPool.Put(m)
+}
+
+// getSeriesKeySlice retrieves a []string from the pool for SortByTags.
+// The slice is cleared and ready for use.
+func getSeriesKeySlice() []string {
+	sp := seriesKeySlicePool.Get().(*[]string)
+	s := *sp
+	// Clear to zero length to prevent retention
+	return s[:0]
+}
+
+// putSeriesKeySlice returns a []string to the pool.
+// Oversized slices are discarded to prevent pool bloat.
+func putSeriesKeySlice(s []string) {
+	if cap(s) > maxSeriesKeySliceSize {
+		return
+	}
+	// Clear string references
+	for i := range s {
+		s[i] = ""
+	}
+	s = s[:0]
+	seriesKeySlicePool.Put(&s)
 }

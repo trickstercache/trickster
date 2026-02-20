@@ -45,7 +45,7 @@ func (ds *DataSet) InjectTags(tags Tags) {
 				if s.Header.Tags == nil {
 					s.Header.Tags = tags.Clone()
 				} else {
-					s.Header.Tags.Merge(tags.Clone())
+					s.Header.Tags.Merge(tags)
 				}
 			})
 		}

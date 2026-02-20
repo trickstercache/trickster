@@ -131,9 +131,16 @@ func (sl SeriesList) Clone() SeriesList {
 }
 
 func (sl SeriesList) SortByTags() {
-	lkp := make(map[string]*Series, len(sl))
-	keys := make([]string, len(sl))
-	var i int
+	lkp := getSeriesKeyMap()
+	defer putSeriesKeyMap(lkp)
+	keys := getSeriesKeySlice()
+	defer putSeriesKeySlice(keys)
+
+	// Ensure keys has sufficient capacity to avoid append reallocations
+	if cap(keys) < len(sl) {
+		keys = make([]string, 0, len(sl))
+	}
+
 	for _, s := range sl {
 		if s == nil {
 			continue
@@ -141,10 +148,8 @@ func (sl SeriesList) SortByTags() {
 
 		key := s.Header.Tags.String() + "." + s.Header.Name
 		lkp[key] = s
-		keys[i] = key
-		i++
+		keys = append(keys, key)
 	}
-	keys = keys[:i]
 	slices.Sort(keys)
 	for i, key := range keys {
 		sl[i] = lkp[key]

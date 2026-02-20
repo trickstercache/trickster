@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/tsm"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
