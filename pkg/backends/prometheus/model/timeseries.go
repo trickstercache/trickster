@@ -184,6 +184,10 @@ func MarshalTSOrVectorWriter(ts timeseries.Timeseries, _ *timeseries.RequestOpti
 
 	fmt.Fprintf(w, `,"data":{"resultType":"%s","result":[`, resultType)
 
+	// Get a pooled buffer for float formatting
+	floatBuf := getFloatBuf()
+	defer putFloatBuf(floatBuf)
+
 	var seriesSep string
 	for _, s := range ds.Results[0].SeriesList {
 		if s == nil || len(s.Points) == 0 {
@@ -198,10 +202,11 @@ func MarshalTSOrVectorWriter(ts timeseries.Timeseries, _ *timeseries.RequestOpti
 		if isVector {
 			w.Write([]byte(`},"value":[`))
 			if len(s.Points) > 0 {
-				fmt.Fprintf(w, `%s,"%s"`,
-					strconv.FormatFloat(float64(s.Points[0].Epoch)/1000000000, 'f', -1, 64),
-					s.Points[0].Values[0],
-				)
+				*floatBuf = strconv.AppendFloat((*floatBuf)[:0], float64(s.Points[0].Epoch)/1000000000, 'f', -1, 64)
+				w.Write(*floatBuf)
+				w.Write([]byte(`,"`))
+				fmt.Fprintf(w, `%s`, s.Points[0].Values[0])
+				w.Write([]byte(`"`))
 			}
 			w.Write([]byte("]}"))
 		} else {
@@ -209,11 +214,13 @@ func MarshalTSOrVectorWriter(ts timeseries.Timeseries, _ *timeseries.RequestOpti
 			sep = ""
 			sort.Sort(s.Points)
 			for _, p := range s.Points {
-				fmt.Fprintf(w, `%s[%s,"%s"]`,
-					sep,
-					strconv.FormatFloat(float64(p.Epoch)/1000000000, 'f', -1, 64),
-					p.Values[0],
-				)
+				w.Write([]byte(sep))
+				w.Write([]byte("["))
+				*floatBuf = strconv.AppendFloat((*floatBuf)[:0], float64(p.Epoch)/1000000000, 'f', -1, 64)
+				w.Write(*floatBuf)
+				w.Write([]byte(`,"`))
+				fmt.Fprintf(w, `%s`, p.Values[0])
+				w.Write([]byte(`"]`))
 				sep = ","
 			}
 			w.Write([]byte("]}"))

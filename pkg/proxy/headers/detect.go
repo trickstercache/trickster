@@ -24,10 +24,11 @@ import (
 // HasHeaderValue returns true if r's Header map contains a key matching name
 // with a value that starts with val (case insensitive)
 func HasHeaderValue(r *http.Request, name, val string) bool {
-	if r == nil || len(r.Header) == 0 {
+	headerVal := r.Header.Get(name)
+	if r == nil || len(r.Header) == 0 || len(headerVal) < len(val) {
 		return false
 	}
-	return strings.HasPrefix(strings.ToLower(r.Header.Get(name)), val)
+	return strings.EqualFold(headerVal[:len(val)], val)
 }
 
 // AcceptsContentType returns true if r has an Accept header of contentType

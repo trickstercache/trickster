@@ -35,6 +35,10 @@ const (
 
 	// Alert map pool constants
 	maxAlertMapSize = 1000
+
+	// Float buffer pool constants
+	floatBufSize    = 32  // Typical float representation is ~20 bytes
+	maxFloatBufSize = 128 // Reject oversized buffers
 )
 
 var (
@@ -66,6 +70,14 @@ var (
 	decoderPool = sync.Pool{
 		New: func() any {
 			return &jsonDecoder{}
+		},
+	}
+
+	// Float buffer pool for formatting float values
+	floatBufPool = sync.Pool{
+		New: func() any {
+			b := make([]byte, 0, floatBufSize)
+			return &b
 		},
 	}
 )
@@ -211,4 +223,27 @@ func putDecoder(dec *json.Decoder) {
 		return
 	}
 	decoderPool.Put(&jsonDecoder{dec: dec})
+}
+
+// getFloatBuf retrieves a byte slice from the pool for float formatting.
+// The buffer is reset and ready for use.
+// Always use defer putFloatBuf(buf) after getting a buffer.
+func getFloatBuf() *[]byte {
+	buf := floatBufPool.Get().(*[]byte)
+	*buf = (*buf)[:0]
+	return buf
+}
+
+// putFloatBuf returns a byte slice to the pool.
+// Oversized buffers are discarded to prevent pool bloat.
+func putFloatBuf(buf *[]byte) {
+	if buf == nil {
+		return
+	}
+	// Reject oversized buffers to prevent pool bloat
+	if cap(*buf) > maxFloatBufSize {
+		return
+	}
+	*buf = (*buf)[:0]
+	floatBufPool.Put(buf)
 }
