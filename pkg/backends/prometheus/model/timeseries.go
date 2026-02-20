@@ -80,7 +80,8 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 		return nil, timeseries.ErrNoTimerangeQuery
 	}
 	wfd := &WFMatrixDocument{}
-	d := json.NewDecoder(reader)
+	d := getDecoder(reader)
+	defer putDecoder(d)
 	err := d.Decode(wfd)
 	if err != nil {
 		return nil, err

@@ -18,6 +18,8 @@ package model
 
 import (
 	"bytes"
+	"encoding/json"
+	"io"
 	"sync"
 
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
@@ -59,7 +61,19 @@ var (
 			return make(map[uint64]WFAlert)
 		},
 	}
+
+	// Decoder pool for JSON unmarshaling
+	decoderPool = sync.Pool{
+		New: func() any {
+			return &jsonDecoder{}
+		},
+	}
 )
+
+// jsonDecoder wraps a json.Decoder for pooling
+type jsonDecoder struct {
+	dec *json.Decoder
+}
 
 // getBuffer retrieves a bytes.Buffer from the pool.
 // The buffer is reset and ready for use.
@@ -178,4 +192,23 @@ func putAlertMap(m map[uint64]WFAlert) {
 	}
 
 	alertMapPool.Put(m)
+}
+
+// getDecoder retrieves a json.Decoder from the pool configured for the given reader.
+// The decoder is reset and ready for use.
+// Always use defer putDecoder(dec) after getting a decoder.
+func getDecoder(r io.Reader) *json.Decoder {
+	jd := decoderPool.Get().(*jsonDecoder)
+	// Create a new decoder with the provided reader
+	// json.Decoder doesn't have a Reset method, so we create fresh each time
+	jd.dec = json.NewDecoder(r)
+	return jd.dec
+}
+
+// putDecoder returns a json.Decoder wrapper to the pool.
+func putDecoder(dec *json.Decoder) {
+	if dec == nil {
+		return
+	}
+	decoderPool.Put(&jsonDecoder{dec: dec})
 }

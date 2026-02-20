@@ -41,6 +41,18 @@ func (s *WFSeries) Merge(results ...*WFSeries) {
 	m := getSeriesDataSet()
 	defer putSeriesDataSet(m)
 	m.SetAll(s.Data)
+
+	// Pre-allocate estimated capacity to reduce reallocations
+	estimatedSize := len(s.Data)
+	for _, s2 := range results {
+		estimatedSize += len(s2.Data)
+	}
+	if cap(s.Data) < estimatedSize {
+		newData := make([]WFSeriesData, len(s.Data), estimatedSize)
+		copy(newData, s.Data)
+		s.Data = newData
+	}
+
 	for _, s2 := range results {
 		s.Envelope.Merge(s2.Envelope)
 		for _, d := range s2.Data {
