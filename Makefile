@@ -274,7 +274,10 @@ GOLANG_CI_LINT_VERSION ?= v2.10.1
 get-tools: get-msgpack
 	@echo "Installing tools..."
 	go get -tool github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANG_CI_LINT_VERSION)
-	go get -tool honnef.co/go/tools/cmd/staticcheck@2025.1.1
+
+render-tool-versions:
+	rm .tool-versions && touch .tool-versions
+	@echo "golangci-lint $(GOLANG_CI_LINT_VERSION)" > .tool-versions
 
 .PHONY: get-msgpack
 get-msgpack:
