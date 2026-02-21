@@ -24,6 +24,9 @@ linters:
     - errorlint
     - gocheckcompilerdirectives
     - goconst
+    - mirror
+    - importas
+    - perfsprint
   disable:
     - errcheck
   settings:

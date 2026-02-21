@@ -78,7 +78,7 @@ func opStringRMatch(input, arg string, _ bool) string {
 		}
 		compiledRegexes[arg] = re
 	}
-	if re != nil && re.Match([]byte(input)) {
+	if re != nil && re.MatchString(input) {
 		return trueValue
 	}
 	return falseValue

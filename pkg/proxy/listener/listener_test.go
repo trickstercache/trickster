@@ -230,13 +230,18 @@ func TestListenerConnectionLimitWorks(t *testing.T) {
 			} else {
 				defer l.Close()
 			}
-
 			go func() {
 				http.Serve(l, lm.NewRouter())
 			}()
 
-			if err != nil {
-				t.Fatalf("failed to create listener: %s", err)
+			// poll until listener is up
+			for {
+				conn, err := net.Dial("tcp", fmt.Sprintf("localhost:%d", tc.ListenPort))
+				if err == nil {
+					conn.Close()
+					break
+				}
+				time.Sleep(50 * time.Millisecond)
 			}
 
 			for i := 0; i < tc.Clients; i++ {
