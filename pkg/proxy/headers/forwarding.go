@@ -17,7 +17,6 @@
 package headers
 
 import (
-	"fmt"
 	"net"
 	"net/http"
 	"strings"
@@ -131,19 +130,19 @@ func (hop *Hop) String(expand ...bool) string {
 	parts := make([]string, 4)
 	var k int
 	if hop.Server != "" {
-		parts[k] = fmt.Sprintf("by=%s", formatForwardedAddress(hop.Server))
+		parts[k] = "by=" + formatForwardedAddress(hop.Server)
 		k++
 	}
 	if hop.RemoteAddr != "" {
-		parts[k] = fmt.Sprintf("for=%s", formatForwardedAddress(hop.RemoteAddr))
+		parts[k] = "for=" + formatForwardedAddress(hop.RemoteAddr)
 		k++
 	}
 	if hop.Host != "" {
-		parts[k] = fmt.Sprintf("host=%s", formatForwardedAddress(hop.Host))
+		parts[k] = "host=" + formatForwardedAddress(hop.Host)
 		k++
 	}
 	if hop.Scheme != "" {
-		parts[k] = fmt.Sprintf("proto=%s", formatForwardedAddress(hop.Scheme))
+		parts[k] = "proto=" + formatForwardedAddress(hop.Scheme)
 		k++
 	}
 	currentHop := strings.Join(parts[:k], ";")
