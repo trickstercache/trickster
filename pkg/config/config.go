@@ -21,6 +21,7 @@ package config
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"sync"
 	"time"
@@ -37,7 +38,7 @@ import (
 	auth "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v2"
 )
 
 const defaultResourceName = "default"
@@ -92,7 +93,9 @@ type MainConfig struct {
 	ServerName string `yaml:"server_name,omitempty"`
 
 	configFilePath      string
+	configFilesPath     []string
 	configLastModified  time.Time
+	configFilesLastMod  []time.Time
 	configRateLimitTime time.Time
 	stalenessCheckLock  sync.Mutex
 }
@@ -114,7 +117,9 @@ func NewConfig() *Config {
 		},
 		Logging: lo.New(),
 		Main: &MainConfig{
-			ServerName: hn,
+			ServerName:         hn,
+			configFilesPath:    make([]string, 0),
+			configFilesLastMod: make([]time.Time, 0),
 		},
 		MgmtConfig: mgmt.New(),
 		Metrics:    mo.New(),
@@ -132,6 +137,18 @@ func NewConfig() *Config {
 	}
 }
 
+func (c *Config) loadConfigs(flags *Flags) error {
+	ok, err := c.isDir(flags)
+	if err != nil {
+		return err
+	}
+
+	if !ok {
+		return c.loadFile(flags)
+	}
+	return c.loadAndMergeFiles(flags)
+}
+
 // loadFile loads application configuration from a YAML-formatted file.
 func (c *Config) loadFile(flags *Flags) error {
 	b, err := os.ReadFile(flags.ConfigPath)
@@ -143,8 +160,47 @@ func (c *Config) loadFile(flags *Flags) error {
 		return err
 	}
 	c.Main.configFilePath = flags.ConfigPath
-	c.Main.configLastModified = c.CheckFileLastModified()
+	c.Main.configLastModified = c.CheckFileLastModified("")
 	return nil
+}
+
+// loadAndMergeFiles loads application configuration from multiple YAML files
+func (c *Config) loadAndMergeFiles(flags *Flags) error {
+	files, err := fs.Glob(os.DirFS(flags.ConfigPath), "*.yaml")
+	if err != nil {
+		return err
+	}
+
+	for _, file := range files {
+		path := flags.ConfigPath + "/" + file
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+
+		if err = c.loadYAMLConfig(string(data)); err != nil {
+			return err
+		}
+
+		c.Main.configFilesPath = append(
+			c.Main.configFilesPath,
+			path,
+		)
+		c.Main.configFilesLastMod = append(
+			c.Main.configFilesLastMod,
+			c.CheckFileLastModified(path),
+		)
+	}
+	return nil
+}
+
+func (c *Config) isDir(flags *Flags) (bool, error) {
+	finfo, err := os.Stat(flags.ConfigPath)
+	if err != nil {
+		return false, err
+	}
+
+	return finfo.IsDir(), nil
 }
 
 // loadYAMLConfig loads application configuration from a YAML-formatted byte slice.
@@ -172,15 +228,24 @@ func (c *Config) loadYAMLConfig(yml string) error {
 }
 
 // CheckFileLastModified returns the last modified date of the running config file, if present
-func (c *Config) CheckFileLastModified() time.Time {
-	if c.Main == nil || c.Main.configFilePath == "" {
+func (c *Config) CheckFileLastModified(confFile string) time.Time {
+	if c.Main == nil {
 		return time.Time{}
 	}
-	file, err := os.Stat(c.Main.configFilePath)
+
+	path := confFile
+	if path == "" {
+		path = c.Main.configFilePath
+		if path == "" {
+			return time.Time{}
+		}
+	}
+
+	fInfo, err := os.Stat(path)
 	if err != nil {
 		return time.Time{}
 	}
-	return file.ModTime()
+	return fInfo.ModTime()
 }
 
 // Process converts various raw config options into internal data structures
@@ -228,7 +293,9 @@ func (c *Config) Clone() *Config {
 	nc.MgmtConfig = c.MgmtConfig.Clone()
 
 	nc.Main.configFilePath = c.Main.configFilePath
+	nc.Main.configFilesPath = c.Main.configFilesPath
 	nc.Main.configLastModified = c.Main.configLastModified
+	nc.Main.configFilesLastMod = c.Main.configFilesLastMod
 	nc.Main.configRateLimitTime = c.Main.configRateLimitTime
 
 	nc.Metrics.ListenAddress = c.Metrics.ListenAddress
@@ -287,8 +354,10 @@ func (c *Config) IsStale() bool {
 	c.Main.stalenessCheckLock.Lock()
 	defer c.Main.stalenessCheckLock.Unlock()
 
-	if c.Main == nil || c.Main.configFilePath == "" ||
-		time.Now().Before(c.Main.configRateLimitTime) {
+	if c.Main == nil ||
+		(len(c.Main.configFilesPath) == 0 &&
+			(c.Main.configFilePath == "" ||
+				time.Now().Before(c.Main.configRateLimitTime))) {
 		return false
 	}
 
@@ -297,7 +366,20 @@ func (c *Config) IsStale() bool {
 	}
 
 	c.Main.configRateLimitTime = time.Now().Add(c.MgmtConfig.ReloadRateLimit)
-	t := c.CheckFileLastModified()
+	if len(c.Main.configFilesPath) > 0 {
+		for index, file := range c.Main.configFilesPath {
+			t := c.CheckFileLastModified(file)
+			if t.IsZero() {
+				continue
+			}
+			if !t.Equal(c.Main.configFilesLastMod[index]) {
+				return true
+			}
+		}
+		return false
+	}
+
+	t := c.CheckFileLastModified("")
 	if t.IsZero() {
 		return false
 	}
@@ -309,7 +391,8 @@ func (c *Config) IsStale() bool {
 func (c *Config) CheckAndMarkReloadInProgress() bool {
 	c.Main.stalenessCheckLock.Lock()
 	defer c.Main.stalenessCheckLock.Unlock()
-	if c.Main == nil || c.Main.configFilePath == "" ||
+	if c.Main == nil ||
+		(c.Main.configFilePath == "" && len(c.Main.configFilesPath) == 0) ||
 		time.Now().Before(c.Main.configRateLimitTime) {
 		return false
 	}
@@ -317,7 +400,22 @@ func (c *Config) CheckAndMarkReloadInProgress() bool {
 		c.MgmtConfig = mgmt.New()
 	}
 	c.Main.configRateLimitTime = time.Now().Add(c.MgmtConfig.ReloadRateLimit)
-	t := c.CheckFileLastModified()
+
+	if len(c.Main.configFilesPath) > 0 {
+		for index, file := range c.Main.configFilesPath {
+			t := c.CheckFileLastModified(file)
+			if t.IsZero() {
+				continue
+			}
+			if !t.Equal(c.Main.configFilesLastMod[index]) {
+				c.Main.configFilesLastMod[index] = t
+				return true
+			}
+		}
+		return false
+	}
+
+	t := c.CheckFileLastModified("")
 	if t.IsZero() {
 		return false
 	}
@@ -353,7 +451,10 @@ func (c *Config) String() string {
 // ConfigFilePath returns the file path from which this configuration is based
 func (c *Config) ConfigFilePath() string {
 	if c.Main != nil {
-		return c.Main.configFilePath
+		if len(c.Main.configFilesPath) == 0 {
+			return c.Main.configFilePath
+		}
+		return c.Flags.ConfigPath
 	}
 	return ""
 }
