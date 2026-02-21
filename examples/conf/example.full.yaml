@@ -557,11 +557,11 @@ backends:
 #       # -1 includes all backends, regardless of reporting state
 #       # default is 0
 #       healthy_floor: 0
-
-#       # fgr_status_codes is a list of status codes considered 'good' when using the fgr mechanism
-#       # when this is not set, any response code < 400 is considered good. Use this setting to
-#       # provide an explicit list.
-#       fgr_status_codes: [ 200 ] # this would consider only 200 OK's good, and not 204, 302, etc.
+#       fgr: # First Good Response mechanism options, only applicable when mechanism is set to fgr
+#         # status_codes is a list of status codes considered 'good' when using the fgr mechanism
+#         # when this is not set, any response code < 400 is considered good. Use this setting to
+#         # provide an explicit list.
+#         status_codes: [ 200 ] # this would consider only 200 OK's good, and not 204, 302, etc.
 
 # # Configuration Options for Request Routing Rules - see /docs/rule.md for more information
 

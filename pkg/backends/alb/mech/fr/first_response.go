@@ -19,7 +19,6 @@ package fr
 import (
 	"context"
 	"net/http"
-	"sync"
 	"sync/atomic"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
@@ -32,6 +31,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/capture"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -46,6 +46,7 @@ type handler struct {
 	pool     pool.Pool
 	fgr      bool
 	fgrCodes sets.Set[int]
+	options  options.FirstGoodResponseOptions
 }
 
 func RegistryEntry() types.RegistryEntry {
@@ -60,6 +61,7 @@ func NewFGR(o *options.Options, _ rt.Lookup) (types.Mechanism, error) {
 	return &handler{
 		fgr:      true,
 		fgrCodes: o.FgrCodesLookup,
+		options:  o.FGROptions,
 	}, nil
 }
 
@@ -109,13 +111,11 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	// otherwise iterate the fanout
 	var claimed int64 = -1
-	contexts := make([]context.Context, l)
-	cancels := make([]context.CancelFunc, l)
-	for i := range l {
-		contexts[i], cancels[i] = context.WithCancel(r.Context())
-	}
 	captures := make([]*capture.CaptureResponseWriter, l)
-	var wg sync.WaitGroup
+	var eg errgroup.Group
+	if limit := h.options.ConcurrencyOptions.GetQueryConcurrencyLimit(); limit > 0 {
+		eg.SetLimit(limit)
+	}
 	responseWritten := make(chan struct{}, 1)
 
 	serve := func(crw *capture.CaptureResponseWriter) {
@@ -126,26 +126,16 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		responseWritten <- struct{}{}
 	}
 
-	serveAndCancelOthers := func(i int, crw *capture.CaptureResponseWriter) {
-		go func() {
-			// cancels all other contexts
-			for j, cancel := range cancels {
-				if j != i {
-					cancel()
-				}
-			}
-		}()
-		serve(crw)
-	}
-
 	// fanout to all healthy targets
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
 	for i := range l {
 		if hl[i] == nil {
 			continue
 		}
-		wg.Go(func() {
+		eg.Go(func() error {
 			r2, _ := request.Clone(r)
-			r2 = r2.WithContext(contexts[i])
+			r2 = r2.WithContext(ctx)
 			r2 = request.SetResources(r2, &request.Resources{Cancelable: true})
 			crw := capture.NewCaptureResponseWriter()
 			captures[i] = crw
@@ -153,20 +143,20 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			statusCode := crw.StatusCode()
 			custom := h.fgr && len(h.fgrCodes) > 0
 			isGood := custom && h.fgrCodes.Contains(statusCode)
-			// this checks if the response qualifies as a client response
-			if (!h.fgr || (!custom && statusCode < 400) || isGood) &&
-				// this checks that the qualifying response is the first response
-				atomic.CompareAndSwapInt64(&claimed, -1, int64(i)) {
-				// this serves only the first qualifying response
-				serveAndCancelOthers(i, crw)
+
+			if (!h.fgr || (!custom && statusCode < 400) || isGood) && // this checks if the response qualifies as a client response
+				atomic.CompareAndSwapInt64(&claimed, -1, int64(i)) { // this checks that the qualifying response is the first response
+				serve(crw)
+				cancel()
 			}
+			return nil
 		})
 	}
 
 	// this is a fallback case for when no qualifying upstream response arrives,
 	// the first response is used, regardless of qualification
 	go func() {
-		wg.Wait()
+		eg.Wait()
 		// if claimed is still -1, the fallback case must be used
 		if atomic.CompareAndSwapInt64(&claimed, -1, -2) && r.Context().Err() == nil {
 			// this iterates the captures and serves the first non-nil response

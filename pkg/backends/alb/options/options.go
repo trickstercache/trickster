@@ -19,6 +19,7 @@ package options
 import (
 	"errors"
 	"fmt"
+	"runtime"
 	"slices"
 	"strings"
 
@@ -47,6 +48,7 @@ type Options struct {
 	// OutputFormat accompanies the tsmerge Mechanism to indicate the provider output format
 	// options include any valid time seres backend like prometheus, influxdb or clickhouse
 	OutputFormat string `yaml:"output_format,omitempty"`
+	// Deprecated: use fgr.status_codes instead of this top-level option
 	// FGRStatusCodes provides an explicit list of status codes considered "good" when using
 	// the First Good Response (fgr) methodology. By default, any code < 400 is good.
 	FGRStatusCodes []int `yaml:"fgr_status_codes,omitempty"`
@@ -55,6 +57,52 @@ type Options struct {
 	//
 	// synthetic values
 	FgrCodesLookup sets.Set[int] `yaml:"-"`
+
+	// mechanism-specific options
+	TSMOptions TimeSeriesMergeOptions    `yaml:"tsm,omitempty"`
+	NLMOptions NewestLastModifiedOptions `yaml:"nlm,omitempty"`
+	FGROptions FirstGoodResponseOptions  `yaml:"fgr,omitempty"`
+}
+
+type FirstGoodResponseOptions struct {
+	// StatusCodes provides an explicit list of status codes considered "good" when using
+	// the First Good Response (fgr) methodology. By default, any code < 400 is good.
+	StatusCodes        []int              `yaml:"status_codes,omitempty"`
+	ConcurrencyOptions ConcurrencyOptions `yaml:",inline"`
+}
+
+type TimeSeriesMergeOptions struct {
+	ConcurrencyOptions ConcurrencyOptions `yaml:",inline"`
+}
+
+type NewestLastModifiedOptions struct {
+	ConcurrencyOptions ConcurrencyOptions `yaml:",inline"`
+}
+
+// Common concurrency options to apply to ALB mechanisms
+type ConcurrencyOptions struct {
+	// QueryConcurrencyLimit defines the concurrency limit while querying backends for the given mechanism.
+	// If set to 0, no limit is applied, if set to a positive integer, that number of queries can be performed concurrently.
+	// If the value is not set, it defaults to the number of logical CPUs available to the process (GOMAXPROCS).
+	// Default value is GOMAXPROCS.
+	QueryConcurrencyLimit *int `yaml:"query_concurrency_limit,omitempty"`
+
+	// QueryConcurrencyMultiplier is a multiplier that can be applied to the default concurrency limit.
+	// This multiplier is applied to the query_concurrency_limit value to result in the overall concurrency limit for the given mechanism.
+	// Default and minimum value is 1.
+	QueryConcurrencyMultiplier *int `yaml:"query_concurrency_multiplier,omitempty"`
+}
+
+func (o *ConcurrencyOptions) GetQueryConcurrencyLimit() int {
+	multiplier := 1
+	if o != nil && o.QueryConcurrencyMultiplier != nil && *o.QueryConcurrencyMultiplier > 1 {
+		multiplier = *o.QueryConcurrencyMultiplier
+	}
+	limit := runtime.GOMAXPROCS(0)
+	if o != nil && o.QueryConcurrencyLimit != nil {
+		limit = *o.QueryConcurrencyLimit
+	}
+	return limit * multiplier
 }
 
 // InvalidALBOptionsError is an error type for invalid ALB Options
@@ -116,9 +164,13 @@ func (o *Options) Initialize(_ string) error {
 	}
 	switch o.MechanismName {
 	case names.MechanismFGR:
-		if len(o.FGRStatusCodes) > 0 {
+		// apply deprecated top-level FGRStatusCodes to new FROptions level
+		if len(o.FGRStatusCodes) > 0 && len(o.FGROptions.StatusCodes) == 0 {
+			o.FGROptions.StatusCodes = o.FGRStatusCodes
+		}
+		if len(o.FGROptions.StatusCodes) > 0 {
 			o.FgrCodesLookup = sets.NewIntSet()
-			o.FgrCodesLookup.SetAll(o.FGRStatusCodes)
+			o.FgrCodesLookup.SetAll(o.FGROptions.StatusCodes)
 		}
 	case names.MechanismTSM:
 		if o.OutputFormat == "" {

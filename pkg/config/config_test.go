@@ -274,8 +274,11 @@ func TestSetStalenessInfo(t *testing.T) {
 func TestConfig_defaulting(t *testing.T) {
 	// test the overall defaulting logic for the entire trickster config, using
 	// existing documentation examples as input
-	// NOTE: if adding new config fields, run tests with the UPDATE_GOLDENS=true
-	// environment variable to update the golden files with the new default values.
+	t.Cleanup(func() {
+		if t.Failed() {
+			t.Log("Config defaulting test failed, if adding new config fields please run tests with UPDATE_GOLDENS=true to update the golden files with the new default values.")
+		}
+	})
 
 	entries, err := os.ReadDir("../../examples/conf")
 	require.NoError(t, err)
