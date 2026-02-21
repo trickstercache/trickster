@@ -17,9 +17,9 @@
 package tsm
 
 import (
+	stderrors "errors"
 	"net/http"
 	"strings"
-	"sync"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/errors"
@@ -30,12 +30,14 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/capture"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -49,6 +51,7 @@ type handler struct {
 	mergePaths      []string        // paths handled by the alb client that are enabled for tsmerge
 	nonmergeHandler types.Mechanism // when methodology is tsmerge, this handler is for non-mergeable paths
 	outputFormat    string          // the provider output format (e.g., "prometheus")
+	tsmOptions      options.TimeSeriesMergeOptions
 }
 
 func RegistryEntry() types.RegistryEntry {
@@ -57,7 +60,10 @@ func RegistryEntry() types.RegistryEntry {
 
 func New(o *options.Options, factories rt.Lookup) (types.Mechanism, error) {
 	nmh, _ := rr.New(nil, nil)
-	out := &handler{nonmergeHandler: nmh}
+	out := &handler{
+		nonmergeHandler: nmh,
+		tsmOptions:      o.TSMOptions,
+	}
 	// this validates the merge configuration for the ALB client as it sets it up
 	// First, verify the output format is a support merge provider
 	if !providers.IsSupportedTimeSeriesMergeProvider(o.OutputFormat) {
@@ -140,16 +146,23 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Scatter/Gather section
 
 	accumulator := merge.NewAccumulator()
-	var wg sync.WaitGroup
-	var statusCode int
-	var statusHeader string
-	var mu sync.Mutex // protects statusCode and statusHeader
+	var eg errgroup.Group
+	if limit := h.tsmOptions.ConcurrencyOptions.GetQueryConcurrencyLimit(); limit > 0 {
+		eg.SetLimit(limit)
+	}
+
+	type result struct {
+		statusCode int
+		header     http.Header
+		mergeFunc  merge.RespondFunc
+	}
+	results := make([]result, l)
 
 	for i := range l {
 		if hl[i] == nil {
 			continue
 		}
-		wg.Go(func() {
+		eg.Go(func() error {
 			r2, _ := request.Clone(r)
 			rsc2 := &request.Resources{IsMergeMember: true, TSReqestOptions: rsc.TSReqestOptions}
 			r2 = request.SetResources(r2, rsc2)
@@ -158,8 +171,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			hl[i].Handler().ServeHTTP(crw, r2)
 			rsc2 = request.GetResources(r2)
 			if rsc2 == nil {
-				logger.Warn("tsm gather failed due to nil resources", nil)
-				return
+				return stderrors.New("tsm gather failed due to nil resources")
 			}
 
 			// ensure merge functions are set on cloned request
@@ -171,27 +183,38 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if rsc2.MergeFunc != nil && rsc2.TS != nil {
 				rsc2.MergeFunc(accumulator, rsc2.TS, i)
 			}
-			// update status code and headers (take best status code)
-			mu.Lock()
-			if mrf == nil {
-				mrf = rsc2.MergeRespondFunc
+			results[i] = result{
+				statusCode: crw.StatusCode(),
+				header:     crw.Header(),
+				mergeFunc:  rsc2.MergeRespondFunc,
 			}
-			if crw.StatusCode() > 0 {
-				if statusCode == 0 || crw.StatusCode() < statusCode {
-					statusCode = crw.StatusCode()
-				}
-			}
-			if crw.Header() != nil {
-				headers.StripMergeHeaders(crw.Header())
-				statusHeader = headers.MergeResultHeaderVals(statusHeader,
-					crw.Header().Get(headers.NameTricksterResult))
-			}
-			mu.Unlock()
+			return nil
 		})
 	}
 
 	// wait for all fanout requests to complete
-	wg.Wait()
+	if err := eg.Wait(); err != nil {
+		logger.Warn("tsm gather failure", logging.Pairs{"error": err})
+	}
+
+	// Aggregate results sequentially - no mutex contention
+	var statusCode int
+	var statusHeader string
+	for _, res := range results {
+		if mrf == nil {
+			mrf = res.mergeFunc
+		}
+		if res.statusCode > 0 {
+			if statusCode == 0 || res.statusCode < statusCode {
+				statusCode = res.statusCode
+			}
+		}
+		if res.header != nil {
+			headers.StripMergeHeaders(res.header)
+			statusHeader = headers.MergeResultHeaderVals(statusHeader,
+				res.header.Get(headers.NameTricksterResult))
+		}
+	}
 
 	// set aggregated status header
 	if statusHeader != "" {

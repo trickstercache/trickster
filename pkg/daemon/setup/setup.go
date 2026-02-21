@@ -28,6 +28,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/appinfo/usage"
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb"
+	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/index"
 	"github.com/trickstercache/trickster/v2/pkg/cache/manager"
@@ -199,7 +200,11 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	if si.HealthChecker != nil {
 		si.HealthChecker.Shutdown()
 	}
-	si.HealthChecker, err = clients.StartHealthChecks()
+	var oldStatuses healthcheck.StatusLookup
+	if si.HealthChecker != nil {
+		oldStatuses = si.HealthChecker.Statuses()
+	}
+	si.HealthChecker, err = clients.StartHealthChecks(oldStatuses)
 	if err != nil {
 		return err
 	}

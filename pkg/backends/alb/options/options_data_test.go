@@ -52,5 +52,6 @@ backends:
   test:
     alb:
       mechanism: fgr
-      fgr_status_codes: [200, 201]
+      fgr:
+        status_codes: [200, 201]
 `

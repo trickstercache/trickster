@@ -29,8 +29,9 @@ import (
 type Backends map[string]Backend
 
 // StartHealthChecks iterates the backends to fully configure health checkers
-// and start up any intervaled health checks
-func (b Backends) StartHealthChecks() (healthcheck.HealthChecker, error) {
+// and start up any intervaled health checks. knownStatuses is optional and
+// sets the initial status of the provided targets (e.g., after a config reload)
+func (b Backends) StartHealthChecks(knownStatuses healthcheck.StatusLookup) (healthcheck.HealthChecker, error) {
 	hc := healthcheck.New()
 	for k, c := range b {
 		bo := c.Configuration()
@@ -50,6 +51,11 @@ func (b Backends) StartHealthChecks() (healthcheck.HealthChecker, error) {
 		st, err := hc.Register(k, bo.Provider, bo.HealthCheck, c.HealthCheckHTTPClient())
 		if err != nil {
 			return nil, err
+		}
+		if oldSt, ok := knownStatuses[k]; ok {
+			if v := oldSt.Get(); v != healthcheck.StatusInitializing {
+				st.Set(v)
+			}
 		}
 		c.SetHealthCheckProbe(st.Prober())
 	}

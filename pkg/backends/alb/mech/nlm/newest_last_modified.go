@@ -31,6 +31,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/capture"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -39,15 +40,18 @@ const (
 )
 
 type handler struct {
-	pool pool.Pool
+	pool    pool.Pool
+	options options.NewestLastModifiedOptions
 }
 
 func RegistryEntry() types.RegistryEntry {
 	return types.RegistryEntry{ID: ID, Name: Name, ShortName: names.MechanismNLM, New: New}
 }
 
-func New(_ *options.Options, _ rt.Lookup) (types.Mechanism, error) {
-	return &handler{}, nil
+func New(o *options.Options, _ rt.Lookup) (types.Mechanism, error) {
+	return &handler{
+		options: o.NLMOptions,
+	}, nil
 }
 
 func (h *handler) SetPool(p pool.Pool) {
@@ -93,19 +97,20 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var newestTime time.Time
 	var mu sync.Mutex
 
-	// Get capture slice from pool
+	// Capture all responses
 	captures := fr.GetCapturesSlice(l)
 	defer fr.PutCapturesSlice(captures)
-
-	var wg sync.WaitGroup
-
+	var eg errgroup.Group
+	if limit := h.options.ConcurrencyOptions.GetQueryConcurrencyLimit(); limit > 0 {
+		eg.SetLimit(limit)
+	}
 	// Fanout to all healthy targets
 	for i := range l {
 		if hl[i] == nil {
 			continue
 		}
 		idx := i
-		wg.Go(func() {
+		eg.Go(func() error {
 			r2, _ := request.Clone(r)
 			r2 = request.ClearResources(r2.WithContext(ctx))
 			crw := capture.GetCaptureResponseWriter()
@@ -123,11 +128,12 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					mu.Unlock()
 				}
 			}
+			return nil
 		})
 	}
 
 	// Wait for all responses to complete
-	wg.Wait()
+	eg.Wait()
 
 	// Write the response with the newest Last-Modified
 	if newestIdx >= 0 && newestIdx < len(captures) && captures[newestIdx] != nil {
