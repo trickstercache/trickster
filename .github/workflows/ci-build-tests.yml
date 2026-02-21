@@ -29,13 +29,11 @@ jobs:
           go-version-file: go.mod
       - run: |
           make check-codegen
-          make render-tool-versions
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
           args: --timeout 5m
           only-new-issues: true
-          version-file: .tool-versions
   docker:
     runs-on: ubuntu-latest
     steps:

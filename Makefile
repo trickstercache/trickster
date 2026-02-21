@@ -275,11 +275,6 @@ get-tools: get-msgpack
 	@echo "Installing tools..."
 	go get -tool github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANG_CI_LINT_VERSION)
 
-render-tool-versions:
-	@rm .tool-versions || true
-	@touch .tool-versions
-	@echo "golangci-lint $(GOLANG_CI_LINT_VERSION)" > .tool-versions
-
 .PHONY: get-msgpack
 get-msgpack:
 	$(GO) get -tool github.com/tinylib/msgp@$(shell go list -m github.com/tinylib/msgp | cut -d' ' -f2)
