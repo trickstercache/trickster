@@ -98,7 +98,7 @@ func TestStringSetPool(t *testing.T) {
 func TestStringSetPoolOversized(t *testing.T) {
 	m := getStringSet()
 	// Add more than maxStringSetSize entries
-	for i := 0; i < maxStringSetSize+100; i++ {
+	for i := range maxStringSetSize + 100 {
 		m.Set(string(rune(i)))
 	}
 
@@ -148,7 +148,7 @@ func TestSeriesDataSetPool(t *testing.T) {
 func TestSeriesDataSetPoolOversized(t *testing.T) {
 	m := getSeriesDataSet()
 	// Add more than maxSeriesDataSetSize entries
-	for i := 0; i < maxSeriesDataSetSize+100; i++ {
+	for i := range maxSeriesDataSetSize + 100 {
 		m.Set(WFSeriesData{Name: string(rune(i)), Instance: "i", Job: "j"})
 	}
 
@@ -180,10 +180,10 @@ func TestConcurrentBufferPool(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(goroutines)
 
-	for i := 0; i < goroutines; i++ {
+	for range goroutines {
 		go func() {
 			defer wg.Done()
-			for j := 0; j < iterations; j++ {
+			for range iterations {
 				buf := getBuffer()
 				buf.WriteString("test")
 				putBuffer(buf)
@@ -202,10 +202,10 @@ func TestConcurrentStringSetPool(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(goroutines)
 
-	for i := 0; i < goroutines; i++ {
+	for range goroutines {
 		go func() {
 			defer wg.Done()
-			for j := 0; j < iterations; j++ {
+			for range iterations {
 				m := getStringSet()
 				m.Set("test")
 				putStringSet(m)

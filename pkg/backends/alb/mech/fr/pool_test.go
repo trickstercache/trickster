@@ -182,9 +182,9 @@ func TestConcurrentPoolAccess(t *testing.T) {
 
 	done := make(chan bool, goroutines)
 
-	for i := 0; i < goroutines; i++ {
+	for range goroutines {
 		go func() {
-			for j := 0; j < iterations; j++ {
+			for j := range iterations {
 				// Alternate between different sizes
 				size := 4 + (j % 8)
 
@@ -210,7 +210,7 @@ func TestConcurrentPoolAccess(t *testing.T) {
 	}
 
 	// Wait for all goroutines to complete
-	for i := 0; i < goroutines; i++ {
+	for range goroutines {
 		<-done
 	}
 }
