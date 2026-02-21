@@ -3,7 +3,7 @@ module github.com/trickstercache/trickster/v2
 go 1.26.0
 
 require (
-	github.com/alicebob/miniredis/v2 v2.35.0
+	github.com/alicebob/miniredis/v2 v2.36.1
 	github.com/andybalholm/brotli v1.2.0
 	github.com/dgraph-io/badger/v4 v4.9.1
 	github.com/dgraph-io/ristretto/v2 v2.4.0
