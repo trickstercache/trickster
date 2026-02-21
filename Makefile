@@ -121,6 +121,7 @@ lint:
 
 .PHONY: lint-fix
 lint-fix:
+	@go fix ./...
 	@LINT_FLAGS="--fix" $(MAKE) lint
 	@go tool golangci-lint fmt -c .golangci.yml
 

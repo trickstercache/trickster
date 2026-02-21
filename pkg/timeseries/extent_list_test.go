@@ -1146,7 +1146,7 @@ func genBenchmarkExtentList(len int, step time.Duration) (el ExtentList, start, 
 	end = time.Now()
 	start = end.Add(time.Duration(-1*len) * step)
 	el = make(ExtentList, len)
-	for i := 0; i < len; i++ {
+	for i := range len {
 		el[i] = Extent{
 			Start: start.Add(time.Duration(i) * step),
 			End:   start.Add(time.Duration(i+1) * step),

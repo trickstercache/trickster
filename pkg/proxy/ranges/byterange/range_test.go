@@ -224,7 +224,7 @@ func TestRangesFilter(t *testing.T) {
 		if len(bs0) != len(bs1) {
 			return fmt.Errorf("slice lengths %d and %d not eq", len(bs0), len(bs1))
 		}
-		for i := 0; i < len(bs0); i++ {
+		for i := range bs0 {
 			if bs0[i] != bs1[i] {
 				return fmt.Errorf("slices not eq at %d, got %b and %b", i, bs0[i], bs1[i])
 			}
