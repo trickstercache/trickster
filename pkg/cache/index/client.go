@@ -211,11 +211,10 @@ func (idx *IndexedClient) Store(cacheKey string, byteData []byte, ttl time.Durat
 		return ErrIndexInvalidCacheKey
 	}
 	// wrap input value with Object + timing/size information
-	obj := &Object{
-		Key:   cacheKey,
-		Value: byteData,
-		Size:  int64(len(byteData)),
-	}
+	obj := getObject()
+	obj.Key = cacheKey
+	obj.Value = byteData
+	obj.Size = int64(len(byteData))
 	now := time.Now()
 	obj.LastAccess.Store(now)
 	obj.LastWrite.Store(now)
@@ -224,11 +223,25 @@ func (idx *IndexedClient) Store(cacheKey string, byteData []byte, ttl time.Durat
 		expiry = now.Add(ttl)
 		obj.Expiration.Store(expiry)
 	}
-	// store the object in the cache
-	if err := idx.Client.Store(cacheKey, obj.ToBytes(), ttl); err != nil {
+	// serialize the object into a pooled buffer
+	msgBuf := getObjectMsgBuf()
+	b, err := obj.MarshalMsg(msgBuf[:0])
+	// release references before returning Object to pool
+	obj.Value = nil
+	obj.ReferenceValue = nil
+	putObject(obj)
+	if err != nil {
+		putObjectMsgBuf(b)
 		return err
 	}
-	idx.updateIndex(cacheKey, obj.Size, now, now, expiry)
+	// Copy b to a fresh slice before returning to pool: the memory cache stores
+	// []byte by reference (no copy), so b must not be pooled while in use.
+	stored := append([]byte(nil), b...)
+	putObjectMsgBuf(b)
+	if err := idx.Client.Store(cacheKey, stored, ttl); err != nil {
+		return err
+	}
+	idx.updateIndex(cacheKey, int64(len(byteData)), now, now, expiry)
 	return nil
 }
 
@@ -254,6 +267,18 @@ func (idx *IndexedClient) RetrieveReference(cacheKey string) (any, status.Lookup
 	return mc.RetrieveReference(cacheKey)
 }
 
+// extractObjectValue deserializes a cached object and returns just its value,
+// using a pooled *Object to avoid a per-retrieve struct allocation.
+func extractObjectValue(data []byte) ([]byte, error) {
+	o := getObject()
+	_, err := o.UnmarshalMsg(data)
+	v := o.Value
+	o.Value = nil
+	o.ReferenceValue = nil
+	putObject(o)
+	return v, err
+}
+
 // Retrieve implements the cache.Client interface, looking up the object and updating the index last access time
 func (idx *IndexedClient) Retrieve(cacheKey string) ([]byte, status.LookupStatus, error) {
 	if cacheKey == IndexKey {
@@ -266,12 +291,12 @@ func (idx *IndexedClient) Retrieve(cacheKey string) ([]byte, status.LookupStatus
 	if s != status.LookupStatusHit {
 		return nil, s, err
 	}
-	o, err := ObjectFromBytes(data)
+	v, err := extractObjectValue(data)
 	if err != nil {
 		return nil, status.LookupStatusError, err
 	}
 	idx.updateAccessTime(cacheKey)
-	return o.Value, s, nil
+	return v, s, nil
 }
 
 // Remove implements the cache.Client interface and removes the object from the cache and index
@@ -345,13 +370,16 @@ func (idx *IndexedClient) clone() *IndexedClient {
 func (idx *IndexedClient) flushOnce() {
 	idx.LastFlush.Store(time.Now()) // update flush time, so that it is marshalled / stored
 	clone := idx.clone()
-	bytes, err := clone.MarshalMsg(nil)
+	buf := getObjectMsgBuf()
+	b, err := clone.MarshalMsg(buf[:0])
 	if err != nil {
+		putObjectMsgBuf(b)
 		logger.Warn("unable to serialize index for flushing",
 			logging.Pairs{"cacheName": idx.name, "detail": err.Error()})
 		return
 	}
-	idx.Client.Store(IndexKey, bytes, idx.options.Load().(*options.Options).IndexExpiry)
+	idx.Client.Store(IndexKey, b, idx.options.Load().(*options.Options).IndexExpiry)
+	putObjectMsgBuf(b)
 }
 
 // reaper continually iterates through the cache to find expired elements and removes them

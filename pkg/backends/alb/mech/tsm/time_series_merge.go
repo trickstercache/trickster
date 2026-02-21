@@ -166,7 +166,8 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			r2, _ := request.Clone(r)
 			rsc2 := &request.Resources{IsMergeMember: true, TSReqestOptions: rsc.TSReqestOptions}
 			r2 = request.SetResources(r2, rsc2)
-			crw := capture.NewCaptureResponseWriter()
+			crw := capture.GetCaptureResponseWriter()
+			defer capture.PutCaptureResponseWriter(crw)
 			hl[i].Handler().ServeHTTP(crw, r2)
 			rsc2 = request.GetResources(r2)
 			if rsc2 == nil {

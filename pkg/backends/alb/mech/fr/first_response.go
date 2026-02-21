@@ -111,12 +111,14 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	// otherwise iterate the fanout
 	var claimed int64 = -1
-	captures := make([]*capture.CaptureResponseWriter, l)
+
+	captures := GetCapturesSlice(l)
+	responseWritten := getResponseChannel()
+
 	var eg errgroup.Group
 	if limit := h.options.ConcurrencyOptions.GetQueryConcurrencyLimit(); limit > 0 {
 		eg.SetLimit(limit)
 	}
-	responseWritten := make(chan struct{}, 1)
 
 	serve := func(crw *capture.CaptureResponseWriter) {
 		headers.Merge(w.Header(), crw.Header())
@@ -137,7 +139,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			r2, _ := request.Clone(r)
 			r2 = r2.WithContext(ctx)
 			r2 = request.SetResources(r2, &request.Resources{Cancelable: true})
-			crw := capture.NewCaptureResponseWriter()
+			crw := capture.GetCaptureResponseWriter()
 			captures[i] = crw
 			hl[i].ServeHTTP(crw, r2)
 			statusCode := crw.StatusCode()
@@ -173,8 +175,11 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// written or the request context is canceled
 	select {
 	case <-responseWritten:
-		return
 	case <-r.Context().Done():
-		return
 	}
+
+	// Wait for all goroutines to complete before cleaning up pooled resources
+	eg.Wait()
+	PutCapturesSlice(captures)
+	putResponseChannel(responseWritten)
 }

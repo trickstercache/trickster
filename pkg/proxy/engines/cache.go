@@ -19,7 +19,6 @@ package engines
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"io"
 	"mime"
 	"net/http"
@@ -86,10 +85,15 @@ func queryConcurrent(_ context.Context, c cache.Cache, key string) *queryResult 
 		if inflate {
 			// tl.Debug(rsc.Logger, "decompressing cached data", tl.Pairs{"cacheKey": key})
 			decoder := brotli.NewReader(bytes.NewReader(b))
-			b, qr.err = io.ReadAll(decoder)
+			decompBuf := getCacheBuffer()
+			_, qr.err = io.Copy(decompBuf, decoder)
 			if qr.err != nil {
+				putCacheBuffer(decompBuf)
 				return qr
 			}
+			// Copy decompressed bytes out of pooled buffer before returning it
+			b = append([]byte(nil), decompBuf.Bytes()...)
+			putCacheBuffer(decompBuf)
 		}
 		_, qr.err = qr.d.UnmarshalMsg(b)
 		if qr.err != nil {
@@ -219,24 +223,32 @@ func writeConcurrent(_ context.Context, c cache.Cache, key string, d *HTTPDocume
 	}
 
 	// for non-memory, we have to serialize the document to a byte slice to store
-	b, err = d.MarshalMsg(nil)
+	marshalBuf := getHTTPDocMarshalBuf()
+	b, err = d.MarshalMsg(marshalBuf[:0])
 	if err != nil {
+		putHTTPDocMarshalBuf(b)
 		return err
 	}
 
 	if compress {
-		buf := bytes.NewBuffer([]byte{1})
-		encoder := brotli.NewWriter(buf)
-		encoder.Write(b)
-		encoder.Close()
-		b = buf.Bytes()
+		// Reuse the pooled cache buffer for brotli output; write the compression
+		// marker byte first, then let the encoder append compressed content.
+		cbuf := getCacheBuffer()
+		_ = cbuf.WriteByte(1) // bytes.Buffer.WriteByte only fails if buffer can't grow; ignore
+		encoder := brotli.NewWriter(cbuf)
+		_, _ = encoder.Write(b) // brotli.Writer buffers internally; errors caught on Close
+		_ = encoder.Close()     // final flush; any compression errors would show here
+		putHTTPDocMarshalBuf(b) // marshal bytes consumed by brotli; safe to return
+		err = c.Store(key, cbuf.Bytes(), ttl)
+		putCacheBuffer(cbuf)
 	} else {
 		buf := make([]byte, len(b)+1)
 		copy(buf[1:], b)
-		b = buf
+		putHTTPDocMarshalBuf(b) // marshal bytes copied; safe to return
+		err = c.Store(key, buf, ttl)
 	}
 
-	return c.Store(key, b, ttl)
+	return err
 }
 
 // WriteCache writes an HTTPDocument to the cache
@@ -352,5 +364,5 @@ func DocumentFromHTTPResponse(resp *http.Response, body []byte,
 }
 
 func getSubKey(key string, chunkExtent timeseries.Extent) string {
-	return fmt.Sprintf("%s.%s", key, chunkExtent)
+	return key + "." + chunkExtent.String()
 }

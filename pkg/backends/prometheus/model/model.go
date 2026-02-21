@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
@@ -72,7 +71,14 @@ func (e *Envelope) StartMarshal(w io.Writer, httpStatus int) {
 	}
 
 	if len(e.Warnings) > 0 {
-		fmt.Fprintf(w, `,"warnings":["%s"]`, strings.Join(e.Warnings, `","`))
+		w.Write([]byte(`,"warnings":["`))
+		for i, warning := range e.Warnings {
+			if i > 0 {
+				w.Write([]byte(`","`))
+			}
+			w.Write([]byte(warning))
+		}
+		w.Write([]byte(`"]`))
 	}
 }
 

@@ -331,7 +331,7 @@ func handlePCF(pr *proxyRequest) error {
 		go func() {
 			var dest io.Writer = pcf
 			if pr.writeToCache {
-				pr.cacheBuffer = &bytes.Buffer{}
+				pr.cacheBuffer = getCacheBuffer()
 				dest = io.MultiWriter(pcf, pr.cacheBuffer)
 			}
 			io.Copy(dest, reader)
@@ -356,10 +356,15 @@ func handleAllWrites(pr *proxyRequest) error {
 		if pr.cacheDocument == nil || !pr.cacheDocument.isLoaded {
 			d := DocumentFromHTTPResponse(pr.upstreamResponse, nil, pr.cachingPolicy)
 			pr.cacheDocument = d
+			// Copy bytes out of the buffer so the document owns its data
+			// independently of the pool-managed buffer backing array.
+			body := append([]byte(nil), pr.cacheBuffer.Bytes()...)
+			putCacheBuffer(pr.cacheBuffer)
+			pr.cacheBuffer = nil
 			if pr.isPartialResponse {
-				d.ParsePartialContentBody(pr.upstreamResponse, pr.cacheBuffer.Bytes())
+				d.ParsePartialContentBody(pr.upstreamResponse, body)
 			} else {
-				d.Body = pr.cacheBuffer.Bytes()
+				d.Body = body
 			}
 		}
 		if err := pr.store(); err != nil {

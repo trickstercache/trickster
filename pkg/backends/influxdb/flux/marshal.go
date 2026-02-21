@@ -17,7 +17,6 @@
 package flux
 
 import (
-	"bytes"
 	"io"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/iofmt"
@@ -57,12 +56,15 @@ const (
 func MarshalTimeseries(ts timeseries.Timeseries,
 	ro *timeseries.RequestOptions, status int,
 ) ([]byte, error) {
-	buf := new(bytes.Buffer)
+	buf := getMarshalBuf()
 	err := MarshalTimeseriesWriter(ts, ro, status, buf)
 	if err != nil {
+		putMarshalBuf(buf)
 		return nil, err
 	}
-	return buf.Bytes(), nil
+	b := append([]byte(nil), buf.Bytes()...)
+	putMarshalBuf(buf)
+	return b, nil
 }
 
 // MarshalTimeseriesWriter writes a Timeseries out to an io.Writer in the desired format.

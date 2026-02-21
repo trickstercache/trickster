@@ -170,9 +170,17 @@ func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration) {
 	var body []byte
 	var err error
 	if reader != nil {
-		body, err = io.ReadAll(reader)
+		buf := getCacheBuffer()
+		_, err = io.Copy(buf, reader)
 		resp.Body.Close()
-		resp.Body = io.NopCloser(bytes.NewReader(body))
+		if err != nil {
+			putCacheBuffer(buf)
+		} else {
+			// Copy bytes out before returning buffer to pool
+			body = append([]byte(nil), buf.Bytes()...)
+			putCacheBuffer(buf)
+			resp.Body = io.NopCloser(bytes.NewReader(body))
+		}
 	}
 	if err != nil {
 		logger.Error("error reading body from http response",
@@ -259,7 +267,7 @@ func (pr *proxyRequest) prepareUpstreamRequests() {
 		} else {
 			l = len(pr.neededRanges)
 		}
-		pr.originRequests = make([]*http.Request, 0, l)
+		pr.originRequests = getRequestSlice(l)
 	}
 
 	// if we are articulating the origin range requests, break those out here
@@ -271,7 +279,7 @@ func (pr *proxyRequest) prepareUpstreamRequests() {
 			pr.originRequests = append(pr.originRequests, req)
 		}
 	} else { // otherwise it will just be a list of one request.
-		pr.originRequests = []*http.Request{pr.upstreamRequest}
+		pr.originRequests = append(pr.originRequests[:0], pr.upstreamRequest)
 	}
 }
 
@@ -292,8 +300,8 @@ func (pr *proxyRequest) makeUpstreamRequests() error {
 	// short circuit for when there is only 1 upstream request
 	rsc := request.GetResources(pr.Request)
 	if pr.revalidationRequest == nil && len(pr.originRequests) == 1 {
-		pr.originReaders = make([]io.ReadCloser, 1)
-		pr.originResponses = make([]*http.Response, 1)
+		pr.originReaders = getReadCloserSlice(1)
+		pr.originResponses = getResponseSlice(1)
 		pr.originReaders[0], pr.originResponses[0] = pr.makeSimpleUpstreamRequests(pr.originRequests[0], rsc.Tracer)
 		return nil
 	}
@@ -318,8 +326,8 @@ func (pr *proxyRequest) makeUpstreamRequests() error {
 	}
 
 	if len(pr.originRequests) > 0 {
-		pr.originResponses = make([]*http.Response, len(pr.originRequests))
-		pr.originReaders = make([]io.ReadCloser, len(pr.originRequests))
+		pr.originResponses = getResponseSlice(len(pr.originRequests))
+		pr.originReaders = getReadCloserSlice(len(pr.originRequests))
 		for i := range pr.originRequests {
 			wg.Go(func() {
 				req := pr.originRequests[i]
@@ -388,7 +396,7 @@ func (pr *proxyRequest) setBodyWriter() {
 	}
 
 	if pr.writeToCache && pr.cacheBuffer == nil {
-		pr.cacheBuffer = &bytes.Buffer{}
+		pr.cacheBuffer = getCacheBuffer()
 
 		if pr.cachingPolicy.IsClientFresh {
 			// don't write response body to the client on a 304 Not Modified
@@ -538,12 +546,14 @@ func (pr *proxyRequest) prepareResponse() {
 		if (d == nil || !d.isLoaded) &&
 			(pr.cacheStatus == status.LookupStatusPartialHit || pr.cacheStatus == status.LookupStatusKeyMiss ||
 				pr.cacheStatus == status.LookupStatusRangeMiss) {
-			var b []byte
 			if pr.upstreamReader != nil {
-				b, _ = io.ReadAll(pr.upstreamReader)
+				// Reuse pooled cache buffer for reading response body
+				pr.cacheBuffer = getCacheBuffer()
+				_, _ = io.Copy(pr.cacheBuffer, pr.upstreamReader)
 			}
-			d = DocumentFromHTTPResponse(pr.upstreamResponse, b, pr.cachingPolicy)
-			pr.cacheBuffer = bytes.NewBuffer(b)
+			// DocumentFromHTTPResponse uses buffer's bytes; buffer will be
+			// returned to pool later in objectproxycache.go after copying bytes out
+			d = DocumentFromHTTPResponse(pr.upstreamResponse, pr.cacheBuffer.Bytes(), pr.cachingPolicy)
 			if pr.writeToCache {
 				d.isLoaded = true
 				pr.cacheDocument = d
@@ -668,7 +678,11 @@ func (pr *proxyRequest) reconstituteResponses() {
 				wg.Go(func() {
 					// oh snap. so we have some partial content to merge in, but the original cache document
 					// is now invalid. lets go ahead and reset it.
-					b, _ := io.ReadAll(resp.Body)
+					buf := getCacheBuffer()
+					_, _ = io.Copy(buf, resp.Body)
+					// Copy bytes out before returning buffer to pool
+					b := append([]byte(nil), buf.Bytes()...)
+					putCacheBuffer(buf)
 					appendLock.Lock()
 					parts.ParsePartialContentBody(resp, b)
 					appendLock.Unlock()
@@ -690,7 +704,11 @@ func (pr *proxyRequest) reconstituteResponses() {
 				appendLock.Unlock()
 
 				if resp.StatusCode == http.StatusPartialContent {
-					b, _ := io.ReadAll(resp.Body)
+					buf := getCacheBuffer()
+					_, _ = io.Copy(buf, resp.Body)
+					// Copy bytes out before returning buffer to pool
+					b := append([]byte(nil), buf.Bytes()...)
+					putCacheBuffer(buf)
 					appendLock.Lock()
 					parts.ParsePartialContentBody(resp, b)
 					appendLock.Unlock()
@@ -714,7 +732,9 @@ func (pr *proxyRequest) reconstituteResponses() {
 				if bodyFromParts = err != nil; !bodyFromParts {
 					pr.upstreamReader = bytes.NewReader(parts.Body)
 					resp.StatusCode = http.StatusOK
-					pr.cacheBuffer = bytes.NewBuffer(parts.Body)
+					// Reuse pooled cache buffer instead of creating new one
+					pr.cacheBuffer = getCacheBuffer()
+					_, _ = pr.cacheBuffer.Write(parts.Body)
 				}
 			}
 		} else {
@@ -738,4 +758,14 @@ func (pr *proxyRequest) reconstituteResponses() {
 			rsc.BackendOptions.NegativeCache, pr.upstreamResponse.Header))
 		pr.mapLock.Unlock()
 	}
+
+	// The origin slices are fully consumed at this point; return their backing
+	// arrays to the pool. The individual pointers have been promoted to
+	// pr.upstreamRequest/Response/Reader and remain valid.
+	putRequestSlice(pr.originRequests)
+	pr.originRequests = nil
+	putResponseSlice(pr.originResponses)
+	pr.originResponses = nil
+	putReadCloserSlice(pr.originReaders)
+	pr.originReaders = nil
 }

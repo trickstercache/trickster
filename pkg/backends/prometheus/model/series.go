@@ -21,7 +21,6 @@ import (
 	"net/http"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
-	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
 // WFSeries is the Wire Format Document for the /series endpoint
@@ -39,8 +38,21 @@ type WFSeriesData struct {
 
 // Merge merges the passed WFSeries into the subject WFSeries
 func (s *WFSeries) Merge(results ...*WFSeries) {
-	m := make(sets.Set[WFSeriesData], len(s.Data))
+	m := getSeriesDataSet()
+	defer putSeriesDataSet(m)
 	m.SetAll(s.Data)
+
+	// Pre-allocate estimated capacity to reduce reallocations
+	estimatedSize := len(s.Data)
+	for _, s2 := range results {
+		estimatedSize += len(s2.Data)
+	}
+	if cap(s.Data) < estimatedSize {
+		newData := make([]WFSeriesData, len(s.Data), estimatedSize)
+		copy(newData, s.Data)
+		s.Data = newData
+	}
+
 	for _, s2 := range results {
 		s.Envelope.Merge(s2.Envelope)
 		for _, d := range s2.Data {
