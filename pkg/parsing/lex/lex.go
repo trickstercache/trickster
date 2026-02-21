@@ -45,7 +45,11 @@ var SpaceCharLookup = sets.New([]byte{9, 10, 13, 32}) // \t \n \r and space
 
 // IsWhiteSpace reports whether r is a whitespace character.
 func IsWhiteSpace(r rune) bool {
-	_, ok := SpaceCharLookup[byte(r)]
+	// Only ASCII whitespace is supported; check range before converting
+	if r > 255 {
+		return false
+	}
+	_, ok := SpaceCharLookup[byte(r)] // #nosec G115 - rune is limited to byte range above
 	return ok
 }
 

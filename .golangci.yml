@@ -50,6 +50,8 @@ linters:
       - G401 # MD5 & SHA1 adequate for non-cryptographic use cases
       - G501 # MD5 & SHA1, again
       - G505 # MD5 & SHA1, again
+      - G704 # False positive: trickster is a proxy and must interact with configured backends, so it must be able to make requests to arbitrary URLs
+      - G705 # XSS checks are not helpful for trickster's carefully constructed responses, this has many false positives at this time; revisit later
     revive:
       enable-all-rules: true
       rules:

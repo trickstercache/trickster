@@ -269,12 +269,11 @@ serve-info:
 serve-cli:
 	@cd cmd/trickster && go run . -origin-url http://127.0.0.1:9090/ -provider prometheus
 
-GOLANG_CI_LINT_VERSION ?= v2.7.2
+GOLANG_CI_LINT_VERSION ?= v2.10.1
 .PHONY: get-tools
 get-tools: get-msgpack
 	@echo "Installing tools..."
 	go get -tool github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANG_CI_LINT_VERSION)
-	go get -tool honnef.co/go/tools/cmd/staticcheck@2025.1.1
 
 .PHONY: get-msgpack
 get-msgpack:
