@@ -207,7 +207,7 @@ func deepSearch(document map[string]any, key string) (string, error) {
 		}
 
 		if b, ok := v.(bool); ok {
-			return fmt.Sprintf("%t", b), nil
+			return strconv.FormatBool(b), nil
 		}
 	}
 	return "", errors.CouldNotFindKey(key)
