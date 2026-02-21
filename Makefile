@@ -276,7 +276,8 @@ get-tools: get-msgpack
 	go get -tool github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANG_CI_LINT_VERSION)
 
 render-tool-versions:
-	rm .tool-versions && touch .tool-versions
+	@rm .tool-versions || true
+	@touch .tool-versions
 	@echo "golangci-lint $(GOLANG_CI_LINT_VERSION)" > .tool-versions
 
 .PHONY: get-msgpack
