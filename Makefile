@@ -117,6 +117,7 @@ style:
 LINT_FLAGS ?= 
 .PHONY: lint
 lint:
+	@go fix -diff ./...
 	@go tool golangci-lint run $(LINT_FLAGS) -c .golangci.yml
 
 .PHONY: lint-fix
