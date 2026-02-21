@@ -81,34 +81,34 @@ func TestStartHealthChecks(t *testing.T) {
 	c2, _ := New("test2", o2, nil, lm.NewRouter(), nil)
 
 	b := Backends{"test1": c1}
-	_, err := b.StartHealthChecks()
+	_, err := b.StartHealthChecks(nil)
 	if err != nil {
 		t.Error(err)
 	}
 
 	b = Backends{"test1": c1, "test2": c2}
-	_, err = b.StartHealthChecks()
+	_, err = b.StartHealthChecks(nil)
 	if err != nil {
 		t.Error(err)
 	}
 
 	o2.HealthCheck = nil
 	b = Backends{"test1": c1, "test2": c2}
-	_, err = b.StartHealthChecks()
+	_, err = b.StartHealthChecks(nil)
 	if err != nil {
 		t.Error(err)
 	}
 
 	o2.HealthCheck = ho.New()
 	b = Backends{"test1": c1, "test2": c2}
-	_, err = b.StartHealthChecks()
+	_, err = b.StartHealthChecks(nil)
 	if err != nil {
 		t.Error(err)
 	}
 
 	c2a := &testBackend{Backend: c2}
 	b = Backends{"test1": c1, "test2": c2a}
-	_, err = b.StartHealthChecks()
+	_, err = b.StartHealthChecks(nil)
 	if err != nil {
 		t.Error(err)
 	}
