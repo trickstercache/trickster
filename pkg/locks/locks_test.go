@@ -31,13 +31,11 @@ func TestLocks(t *testing.T) {
 
 	nl, _ := lk.Acquire("test")
 	wg := sync.WaitGroup{}
-	wg.Add(1)
-	go func() {
+	wg.Go(func() {
 		nl2, _ := lk.Acquire("test")
 		testVal += 10
 		nl2.Release()
-		wg.Done()
-	}()
+	})
 	testVal++
 	if testVal != 1 {
 		t.Errorf("expected 1 got %d", testVal)
@@ -123,7 +121,7 @@ func TestLocksUpgradePileup(t *testing.T) {
 		errLock.Unlock()
 	}
 
-	for i := 0; i < size; i++ {
+	for range size {
 		go func() {
 			nl, err := lk.RAcquire(testKey)
 			if err != nil {
@@ -159,7 +157,7 @@ func TestLocksConcurrent(t *testing.T) {
 		errLock.Unlock()
 	}
 
-	for i := 0; i < size; i++ {
+	for i := range size {
 		go func(j int) {
 			time.Sleep(time.Duration(rand.Int63()%5000000) * time.Nanosecond)
 			if j%3 == 0 {
@@ -221,13 +219,11 @@ func TestLockReadAndWrite(t *testing.T) {
 		t.Error("expected error for invalid key name")
 	}
 
-	wg.Add(1)
-	go func() {
+	wg.Go(func() {
 		nl1, _ := lk.RAcquire("test")
 		j = i
 		nl1.RRelease()
-		wg.Done()
-	}()
+	})
 
 	i = 10
 	nl.Release()

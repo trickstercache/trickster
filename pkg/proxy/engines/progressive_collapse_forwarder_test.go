@@ -129,7 +129,7 @@ func TestPCFReadWriteGetBody(t *testing.T) {
 
 func TestPCFWaits(t *testing.T) {
 	var testStringLong string
-	for i := 0; i < 32000; i++ {
+	for range 32000 {
 		testStringLong += "DEADBEEF"
 	}
 	w := bytes.NewBuffer(make([]byte, 0, len(testStringLong)))

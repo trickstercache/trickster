@@ -75,7 +75,7 @@ func testPoints3() Points {
 
 func genTestPoints(baseEpoch, n int) Points {
 	points := make(Points, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		points[i] = Point{
 			Epoch:  epoch.Epoch((i * 10 * timeseries.Second) + baseEpoch),
 			Size:   27,

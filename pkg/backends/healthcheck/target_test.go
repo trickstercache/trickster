@@ -264,8 +264,7 @@ func TestProbe(t *testing.T) {
 		}, ts.Client())
 		require.NoError(t, err)
 		// start probe loop
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 		target.Start(ctx)
 		time.Sleep((intervalMS + windowMS) * time.Millisecond)
 		// verify results
