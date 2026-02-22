@@ -17,7 +17,6 @@
 package rewriter
 
 import (
-	"context"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -512,7 +511,7 @@ func TestReqChainExecute(t *testing.T) {
 		&rwiChainExecutor{rewriterName: "rewriter1", rewriter: testRWI},
 	}
 	r, _ := http.NewRequest(http.MethodGet, "/", nil)
-	r = r.WithContext(tctx.StartRewriterHops(context.Background()))
+	r = r.WithContext(tctx.StartRewriterHops(t.Context()))
 	ri.Execute(r)
 	hops := tctx.RewriterHops(r.Context())
 	if hops != 1 {

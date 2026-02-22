@@ -17,7 +17,6 @@
 package engines
 
 import (
-	"context"
 	stderrors "errors"
 	"net/http"
 	"net/http/httptest"
@@ -255,7 +254,7 @@ func TestObjectProxyCachePartialHitNotFreshChunks(t *testing.T) {
 		t.Error(err)
 	}
 	defer ts.Close()
-	ctx := context.Background()
+	ctx := t.Context()
 	ctx = tc.WithResources(ctx, &request.Resources{BackendOptions: rsc.BackendOptions})
 
 	pr := newProxyRequest(r, w)
@@ -290,7 +289,7 @@ func TestObjectProxyCachePartialHitFullResponseChunks(t *testing.T) {
 		t.Error(err)
 	}
 	defer ts.Close()
-	ctx := context.Background()
+	ctx := t.Context()
 	ctx = tc.WithResources(ctx, &request.Resources{BackendOptions: rsc.BackendOptions})
 
 	pr := newProxyRequest(r, w)
@@ -711,7 +710,7 @@ func TestRangesExhaustiveChunks(t *testing.T) {
 
 	r.URL.Path = "/byterange/test/1"
 	r.Header.Set(headers.NameRange, "bytes=0-6,25-32")
-	req := r.Clone(context.Background())
+	req := r.Clone(t.Context())
 	expectedBodyA, err := getExpectedRangeBody(req, "563a7014513fc6f0cbb4e8632dd107fc")
 	if err != nil {
 		t.Error(err)
@@ -722,7 +721,7 @@ func TestRangesExhaustiveChunks(t *testing.T) {
 	}
 
 	r.Header.Set(headers.NameRange, "bytes=0-10,20-28")
-	req = r.Clone(context.Background())
+	req = r.Clone(t.Context())
 	expectedBody, err := getExpectedRangeBody(req, "33f2477458123b02034bfbe20c52d949")
 	if err != nil {
 		t.Error(err)
@@ -733,7 +732,7 @@ func TestRangesExhaustiveChunks(t *testing.T) {
 	}
 
 	r.Header.Set(headers.NameRange, "bytes=0-6")
-	req = r.Clone(context.Background())
+	req = r.Clone(t.Context())
 	expectedBody, err = getExpectedRangeBody(req, "33f2477458123b02034bfbe20c52d949")
 	if err != nil {
 		t.Error(err)
@@ -745,7 +744,7 @@ func TestRangesExhaustiveChunks(t *testing.T) {
 	}
 
 	r.Header.Set(headers.NameRange, "bytes=5-7")
-	req = r.Clone(context.Background())
+	req = r.Clone(t.Context())
 	expectedBody, err = getExpectedRangeBody(req, "33f2477458123b02034bfbe20c52d949")
 	if err != nil {
 		t.Error(err)
@@ -756,7 +755,7 @@ func TestRangesExhaustiveChunks(t *testing.T) {
 	}
 
 	r.Header.Set(headers.NameRange, "bytes=29-29")
-	req = r.Clone(context.Background())
+	req = r.Clone(t.Context())
 	expectedBody, err = getExpectedRangeBody(req, "33f2477458123b02034bfbe20c52d949")
 	if err != nil {
 		t.Error(err)
@@ -767,7 +766,7 @@ func TestRangesExhaustiveChunks(t *testing.T) {
 	}
 
 	r.Header.Set(headers.NameRange, "bytes=9-22,28-60")
-	req = r.Clone(context.Background())
+	req = r.Clone(t.Context())
 	expectedBody, err = getExpectedRangeBody(req, "1fd80b6b357b4608027dd500ad3f3c21")
 	if err != nil {
 		t.Error(err)
@@ -778,7 +777,7 @@ func TestRangesExhaustiveChunks(t *testing.T) {
 	}
 
 	r.Header.Del(headers.NameRange)
-	req = r.Clone(context.Background())
+	req = r.Clone(t.Context())
 	expectedBody, err = getExpectedRangeBody(req, "1fd80b6b357b4608027dd500ad3f3c21")
 	if err != nil {
 		t.Error(err)
@@ -789,7 +788,7 @@ func TestRangesExhaustiveChunks(t *testing.T) {
 	}
 
 	r.Header.Set(headers.NameRange, "bytes=0-10,20-28")
-	req = r.Clone(context.Background())
+	req = r.Clone(t.Context())
 	expectedBody, err = getExpectedRangeBody(req, "33f2477458123b02034bfbe20c52d949")
 	if err != nil {
 		t.Error(err)
@@ -800,7 +799,7 @@ func TestRangesExhaustiveChunks(t *testing.T) {
 	}
 
 	r.Header.Set(headers.NameRange, "bytes=0-6")
-	req = r.Clone(context.Background())
+	req = r.Clone(t.Context())
 	expectedBody, err = getExpectedRangeBody(req, "33f2477458123b02034bfbe20c52d949")
 	if err != nil {
 		t.Error(err)
@@ -817,7 +816,7 @@ func TestRangesExhaustiveChunks(t *testing.T) {
 
 	r.URL.Path = "/byterange/test/2"
 	r.Header.Set(headers.NameRange, "bytes=0-6")
-	req = r.Clone(context.Background())
+	req = r.Clone(t.Context())
 	expectedBody1, err := getExpectedRangeBody(req, "")
 	if err != nil {
 		t.Error(err)
@@ -829,7 +828,7 @@ func TestRangesExhaustiveChunks(t *testing.T) {
 
 	r.URL.Path = "/byterange/test/3"
 	r.Header.Set(headers.NameRange, "bytes=0-6, 8-10")
-	req = r.Clone(context.Background())
+	req = r.Clone(t.Context())
 	expectedBody2, err := getExpectedRangeBody(req, "1b4e59d25d723e317359c5e542d80f5c")
 	if err != nil {
 		t.Error(err)
@@ -841,7 +840,7 @@ func TestRangesExhaustiveChunks(t *testing.T) {
 
 	r.URL.Path = "/byterange/test/4"
 	r.Header.Set(headers.NameRange, "bytes=0-6, 8-10")
-	req = r.Clone(context.Background())
+	req = r.Clone(t.Context())
 	expectedBody3, err := getExpectedRangeBody(req, "1b4e59d25d723e317359c5e542d80f5c")
 	if err != nil {
 		t.Error(err)
@@ -853,7 +852,7 @@ func TestRangesExhaustiveChunks(t *testing.T) {
 
 	r.URL.Path = "/byterange/test/5"
 	r.Header.Set(headers.NameRange, "bytes=6-20")
-	req = r.Clone(context.Background())
+	req = r.Clone(t.Context())
 	expectedBody4, err := getExpectedRangeBody(req, "")
 	if err != nil {
 		t.Error(err)
@@ -865,7 +864,7 @@ func TestRangesExhaustiveChunks(t *testing.T) {
 
 	r.URL.Path = "/byterange/test/6"
 	r.Header.Set(headers.NameRange, "bytes=6-20")
-	req = r.Clone(context.Background())
+	req = r.Clone(t.Context())
 	expectedBody5, err := getExpectedRangeBody(req, "")
 	if err != nil {
 		t.Error(err)
@@ -877,7 +876,7 @@ func TestRangesExhaustiveChunks(t *testing.T) {
 
 	r.URL.Path = "/byterange/test/7"
 	r.Header.Set(headers.NameRange, "bytes=6-20")
-	req = r.Clone(context.Background())
+	req = r.Clone(t.Context())
 	expectedBody6, err := getExpectedRangeBody(req, "")
 	if err != nil {
 		t.Error(err)
@@ -909,7 +908,7 @@ func TestRangesExhaustiveChunks(t *testing.T) {
 
 	r.URL.Path = "/byterange/test/4"
 	r.Header.Set(headers.NameRange, "bytes=5-9")
-	req = r.Clone(context.Background())
+	req = r.Clone(t.Context())
 	expectedBody3, err = getExpectedRangeBody(req, "1b4e59d25d723e317359c5e542d80f5c")
 	if err != nil {
 		t.Error(err)
@@ -921,7 +920,7 @@ func TestRangesExhaustiveChunks(t *testing.T) {
 
 	r.URL.Path = "/byterange/test/5"
 	r.Header.Set(headers.NameRange, "bytes=0-5")
-	req = r.Clone(context.Background())
+	req = r.Clone(t.Context())
 	expectedBody4, err = getExpectedRangeBody(req, "")
 	if err != nil {
 		t.Error(err)
@@ -933,7 +932,7 @@ func TestRangesExhaustiveChunks(t *testing.T) {
 
 	r.URL.Path = "/byterange/test/6"
 	r.Header.Set(headers.NameRange, "bytes=0-5,21-30")
-	req = r.Clone(context.Background())
+	req = r.Clone(t.Context())
 	expectedBody5, err = getExpectedRangeBody(req, "d51d39834c9650e17cc486c4a52cf572")
 	if err != nil {
 		t.Error(err)
@@ -945,7 +944,7 @@ func TestRangesExhaustiveChunks(t *testing.T) {
 
 	r.URL.Path = "/byterange/test/7"
 	r.Header.Set(headers.NameRange, "bytes=22-30,32-40")
-	req = r.Clone(context.Background())
+	req = r.Clone(t.Context())
 	expectedBody6, err = getExpectedRangeBody(req, "bab29463882afe6d6033e88dc74d2bdd")
 	if err != nil {
 		t.Error(err)

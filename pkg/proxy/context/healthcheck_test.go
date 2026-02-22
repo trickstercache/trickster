@@ -17,17 +17,16 @@
 package context
 
 import (
-	"context"
 	"testing"
 )
 
 func TestHealthcheck(t *testing.T) {
-	b := HealthCheckFlag(context.Background())
+	b := HealthCheckFlag(t.Context())
 	if b {
 		t.Error("expected false")
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	b = HealthCheckFlag(ctx)
 	if b {

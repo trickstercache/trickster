@@ -17,7 +17,6 @@
 package parsing
 
 import (
-	"context"
 	"errors"
 	"testing"
 
@@ -25,7 +24,7 @@ import (
 )
 
 func TestNewRunState(t *testing.T) {
-	rs := NewRunState(context.Background(), nil)
+	rs := NewRunState(t.Context(), nil)
 	if rs == nil {
 		t.Error("expected non-nil run state")
 	}
@@ -37,8 +36,8 @@ func testStateFn(p1, p2 Parser, rs *RunState) StateFn {
 
 func TestRunState(t *testing.T) {
 	v := "trickster"
-	ctx := context.Background()
-	rs := NewRunState(context.Background(), nil).WithContext(ctx)
+	ctx := t.Context()
+	rs := NewRunState(t.Context(), nil).WithContext(ctx)
 	rs.SetResultsCollection("test", v)
 	v2, _ := rs.GetResultsCollection("test")
 	if v3, ok := v2.(string); !ok || v3 != v {
@@ -83,7 +82,7 @@ func TestRunState(t *testing.T) {
 
 	tk := &token.Token{Typ: token.EOF}
 	tokens := token.Tokens{tk}
-	rs = NewRunState(context.Background(), tokens).WithContext(ctx)
+	rs = NewRunState(t.Context(), tokens).WithContext(ctx)
 	rs.Peek()
 	tk2 := rs.Next()
 	if tk2 != tk {

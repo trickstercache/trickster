@@ -17,13 +17,12 @@
 package redirect
 
 import (
-	"context"
 	"net/http/httptest"
 	"testing"
 )
 
 func TestRedirector(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	ctx = WithRedirects(ctx, 302, "http://trickstercache.org")
 	r := httptest.NewRequest("GET", "http://0/trickster/", nil)
 	w := httptest.NewRecorder()

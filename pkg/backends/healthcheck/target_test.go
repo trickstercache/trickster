@@ -17,7 +17,6 @@
 package healthcheck
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -35,12 +34,12 @@ import (
 )
 
 func TestNewTarget(t *testing.T) {
-	_, err := newTarget(context.Background(), "", "", nil, nil)
+	_, err := newTarget(t.Context(), "", "", nil, nil)
 	if err != ho.ErrNoOptionsProvided {
 		t.Errorf("expected %v got %v", ho.ErrNoOptionsProvided, err)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	o := ho.New()
 	o.FailureThreshold = -1
 	o.RecoveryThreshold = -1
@@ -234,12 +233,12 @@ func TestProbe(t *testing.T) {
 			httpClient:  ts.Client(),
 			ec:          []int{200},
 		}
-		target.probe(context.Background())
+		target.probe(t.Context())
 		if v := target.successConsecutiveCnt.Load(); v != 1 {
 			t.Error("expected 1 got ", v)
 		}
 		target.ec[0] = 404
-		target.probe(context.Background())
+		target.probe(t.Context())
 		if v := target.successConsecutiveCnt.Load(); v != 0 {
 			t.Error("expected 0 got ", v)
 		}
@@ -254,7 +253,7 @@ func TestProbe(t *testing.T) {
 
 		u, err := url.Parse(ts.URL)
 		require.NoError(t, err)
-		target, err := newTarget(context.Background(), "testprobe", "testprobe", &ho.Options{
+		target, err := newTarget(t.Context(), "testprobe", "testprobe", &ho.Options{
 			Verb:          "GET",
 			Scheme:        u.Scheme,
 			Host:          u.Host,

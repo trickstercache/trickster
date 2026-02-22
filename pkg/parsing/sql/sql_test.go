@@ -17,7 +17,6 @@
 package sql
 
 import (
-	"context"
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/parsing"
@@ -58,7 +57,7 @@ func TestParser(t *testing.T) {
 	if sp == nil {
 		t.Error("expected non-nil parser")
 	}
-	_, err := sp.Run(context.Background(), p, tq01)
+	_, err := sp.Run(t.Context(), p, tq01)
 	if err != parsing.ErrNoLexer {
 		t.Error("expected error for no lexer")
 	}
@@ -70,19 +69,19 @@ func TestParser(t *testing.T) {
 	if sp == nil {
 		t.Error("expected non-nil parser")
 	}
-	_, err = sp.Run(context.Background(), sp, tq01+"\n LIMIT 10")
+	_, err = sp.Run(t.Context(), sp, tq01+"\n LIMIT 10")
 	if err != nil {
 		t.Error(err)
 	}
 
-	_, err = sp.Run(context.Background(), sp, tq01+"\n UNION something else")
+	_, err = sp.Run(t.Context(), sp, tq01+"\n UNION something else")
 	if err != parsing.ErrUnsupportedKeyword {
 		t.Error("expected error for UnsupportedKeyword got", err)
 	}
 }
 
 func TestUnsupportedVerb(t *testing.T) {
-	rs := parsing.NewRunState(context.Background(), nil)
+	rs := parsing.NewRunState(t.Context(), nil)
 	UnsupportedVerb(nil, nil, rs)
 	if rs.Error() != ErrUnsupportedVerb {
 		t.Error("expected err for UnsupportedVerb")
@@ -90,7 +89,7 @@ func TestUnsupportedVerb(t *testing.T) {
 }
 
 func TestUnsupportedClause(t *testing.T) {
-	rs := parsing.NewRunState(context.Background(), nil)
+	rs := parsing.NewRunState(t.Context(), nil)
 	UnsupportedClause(nil, nil, rs)
 	if rs.Error() != ErrUnsupportedClause {
 		t.Error("expected err for UnsupportedClause")
@@ -98,7 +97,7 @@ func TestUnsupportedClause(t *testing.T) {
 }
 
 func TestFindVerbUnsupportedParser(t *testing.T) {
-	rs := parsing.NewRunState(context.Background(), nil)
+	rs := parsing.NewRunState(t.Context(), nil)
 	FindVerb(nil, nil, rs)
 	if rs.Error() != parsing.ErrUnsupportedParser {
 		t.Error("expected err for UnsupportedParser")

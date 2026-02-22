@@ -25,7 +25,7 @@ import (
 )
 
 func TestCheckHealth(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 
 	tgt := &Target{
 		hcStatus: &healthcheck.Status{},
