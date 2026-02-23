@@ -40,9 +40,7 @@ var (
 	_ cache.MemoryCache = &IndexedClient{}
 )
 
-var (
-	ErrIndexInvalidCacheKey = errors.New("cannot store index")
-)
+var ErrIndexInvalidCacheKey = errors.New("cannot store index")
 
 // IndexedClientOptions modify an IndexedClient's behavior.
 type IndexedClientOptions struct {

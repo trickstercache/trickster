@@ -78,6 +78,4 @@ func TestManager(t *testing.T) {
 		require.Equal(t, status.LookupStatusHit, s)
 		require.Equal(t, []byte("baz"), b)
 	})
-
 }
-
