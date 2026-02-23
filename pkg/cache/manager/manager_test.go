@@ -20,7 +20,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/memory"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
@@ -80,22 +79,5 @@ func TestManager(t *testing.T) {
 		require.Equal(t, []byte("baz"), b)
 	})
 
-	t.Run("reference", func(t *testing.T) {
-		mc := c.(cache.MemoryCache)
-		key := "foo"
-		val := object{"bar"}
-		require.NoError(t, mc.StoreReference(key, &val, 0))
-		v, s, err := mc.RetrieveReference(key)
-		require.NoError(t, err)
-		require.Equal(t, status.LookupStatusHit, s)
-		require.Equal(t, val, *v.(*object))
-	})
 }
 
-type object struct {
-	field string
-}
-
-func (o *object) Size() int {
-	return len(o.field)
-}

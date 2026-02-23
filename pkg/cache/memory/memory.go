@@ -69,8 +69,6 @@ func New(name string, cfg *options.Options) *Cache {
 			switch v := value.(type) {
 			case []byte:
 				return int64(len(v))
-			case cache.ReferenceObject:
-				return int64(v.Size())
 			default:
 				return 1 // fallback for unknown types
 			}
@@ -110,48 +108,23 @@ func (c *Cache) Connect() error {
 	return nil
 }
 
-// StoreReference stores an object directly to the memory cache without requiring serialization
-func (c *Cache) StoreReference(cacheKey string, data cache.ReferenceObject, ttl time.Duration) error {
-	return c.store(cacheKey, nil, data, ttl)
-}
-
 // Store places an object in the cache using the specified key and ttl
 func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
-	return c.store(cacheKey, data, nil, ttl)
+	return c.store(cacheKey, data, ttl)
 }
 
-func (c *Cache) store(cacheKey string, byteData []byte, refData cache.ReferenceObject,
-	ttl time.Duration,
-) error {
-	var value any
+func (c *Cache) store(cacheKey string, byteData []byte, ttl time.Duration) error {
 	if byteData != nil {
-		value = byteData
-	} else if refData != nil {
-		value = refData
-	}
-
-	if value != nil {
 		if ttl > 0 {
-			c.client.SetWithTTL(cacheKey, value, 0, ttl) // 0 = use Cost function
+			c.client.SetWithTTL(cacheKey, byteData, 0, ttl) // 0 = use Cost function
 		} else {
-			c.client.Set(cacheKey, value, 0) // 0 = use Cost function
+			c.client.Set(cacheKey, byteData, 0) // 0 = use Cost function
 		}
 		// Wait for buffered write to complete to ensure synchronous semantics
 		c.client.Wait()
 	}
 
 	return nil
-}
-
-// RetrieveReference looks for an object in cache and returns it (or an error if not found)
-func (c *Cache) RetrieveReference(cacheKey string) (any,
-	status.LookupStatus, error,
-) {
-	o, s, err := c.retrieve(cacheKey)
-	if err != nil {
-		return nil, s, err
-	}
-	return o, s, nil
 }
 
 // Retrieve looks for an object in cache and returns it (or an error if not found)

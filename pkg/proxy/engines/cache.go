@@ -40,10 +40,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-const (
-	providerMemory = "memory"
-)
-
 type queryResult struct {
 	queryKey     string
 	d            *HTTPDocument
@@ -53,48 +49,33 @@ type queryResult struct {
 
 func queryConcurrent(_ context.Context, c cache.Cache, key string) *queryResult {
 	qr := &queryResult{queryKey: key, d: &HTTPDocument{}}
-	if c.Configuration().Provider == providerMemory {
-		mc := c.(cache.MemoryCache)
-		var ifc any
-		ifc, qr.lookupStatus, qr.err = mc.RetrieveReference(key)
+	var b []byte
+	b, qr.lookupStatus, qr.err = c.Retrieve(key)
 
-		if qr.err != nil || (qr.lookupStatus != status.LookupStatusHit) {
-			return qr
-		}
+	if qr.err != nil || (qr.lookupStatus != status.LookupStatusHit) {
+		return qr
+	}
 
-		if ifc == nil {
-			return qr
+	var inflate bool
+	// check and remove compression bit
+	if len(b) > 0 {
+		if b[0] == 1 {
+			inflate = true
 		}
-		qr.d, _ = ifc.(*HTTPDocument)
-	} else {
-		var b []byte
-		b, qr.lookupStatus, qr.err = c.Retrieve(key)
+		b = b[1:]
+	}
 
-		if qr.err != nil || (qr.lookupStatus != status.LookupStatusHit) {
-			return qr
-		}
-
-		var inflate bool
-		// check and remove compression bit
-		if len(b) > 0 {
-			if b[0] == 1 {
-				inflate = true
-			}
-			b = b[1:]
-		}
-
-		if inflate {
-			// tl.Debug(rsc.Logger, "decompressing cached data", tl.Pairs{"cacheKey": key})
-			decoder := brotli.NewReader(bytes.NewReader(b))
-			b, qr.err = io.ReadAll(decoder)
-			if qr.err != nil {
-				return qr
-			}
-		}
-		_, qr.err = qr.d.UnmarshalMsg(b)
+	if inflate {
+		// tl.Debug(rsc.Logger, "decompressing cached data", tl.Pairs{"cacheKey": key})
+		decoder := brotli.NewReader(bytes.NewReader(b))
+		b, qr.err = io.ReadAll(decoder)
 		if qr.err != nil {
 			return qr
 		}
+	}
+	_, qr.err = qr.d.UnmarshalMsg(b)
+	if qr.err != nil {
+		return qr
 	}
 	return qr
 }
@@ -200,25 +181,6 @@ func writeConcurrent(_ context.Context, c cache.Cache, key string, d *HTTPDocume
 	var b []byte
 	var err error
 
-	// for memory cache, don't serialize the document, since we can retrieve it by reference.
-	if c.Configuration().Provider == providerMemory {
-		mc := c.(cache.MemoryCache)
-
-		if d != nil {
-			// during unmarshal, these would come back as false, so lets set them as such even for direct access
-			d.rangePartsLoaded = false
-			d.isFulfillment = false
-			d.isLoaded = false
-			d.RangeParts = nil
-
-			if d.CachingPolicy != nil {
-				d.CachingPolicy.ResetClientConditionals()
-			}
-		}
-		return mc.StoreReference(key, d, ttl)
-	}
-
-	// for non-memory, we have to serialize the document to a byte slice to store
 	b, err = d.MarshalMsg(nil)
 	if err != nil {
 		return err

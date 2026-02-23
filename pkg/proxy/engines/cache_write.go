@@ -101,8 +101,7 @@ func (tc *TimeseriesChunkWriter) IterateChunks(
 		subkey := getSubKey(tc.key, chunkExtent)
 		chunkData := d.GetTimeseriesChunk(chunkExtent)
 
-		// Handle serialization for non-memory providers
-		if tc.c.Configuration().Provider != providerMemory && tc.marshal != nil {
+		if tc.marshal != nil {
 			chunkData.Body, _ = tc.marshal(chunkData.timeseries, nil, 0)
 		}
 
