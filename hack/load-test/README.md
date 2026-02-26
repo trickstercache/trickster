@@ -33,4 +33,4 @@ make run TRICKSTER_BASE_ENDPOINT=http://localhost:8480/myprom PROMQL_QUERY='up' 
 ## Test scripts
 
 **basic.js** — Runs a PromQL instant query (controlled by `PROMQL_QUERY`) in a 30-second ramp-up
-to 10 VUs. Passes if 95% of requests complete under 500 ms and >99% return a successful response.
+to the configured number of VUs. Passes if 95% of requests complete under 500 ms and >99% return a successful response.
