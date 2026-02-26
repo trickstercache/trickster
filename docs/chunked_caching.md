@@ -16,7 +16,6 @@ Chunked caching can be enabled and disabled using `use_cache_chunking`:
 
 ```yaml
 fs1:
-    cache_type: filesystem
     provider: filesystem
     use_cache_chunking: true
     timeseries_chunk_factor: 420
@@ -58,7 +57,6 @@ frontend:
 
 caches:
   mem1:
-    cache_type: memory
     provider: memory
     index:
       max_size_objects: 512

@@ -8,20 +8,17 @@ negative_caches:
     '502': 3s
 caches:
   mem1:
-    cache_type: memory
     provider: memory
-    index:
-      max_size_objects: 512
-      max_size_backoff_objects: 128
   mem2:
-    cache_type: memory
     provider: memory
-    index:
-      max_size_objects: 1024
-      max_size_backoff_objects: 128
   fs1:
-    cache_type: filesystem
     provider: filesystem
+  redis:
+    provider: redis
+    redis:
+      client_type: standard
+      endpoint: localhost:6379
+      protocol: tcp
 request_rewriters:
   remove-accept-encoding:
     instructions:
@@ -114,6 +111,10 @@ backends:
     provider: prometheus
     origin_url: 'http://127.0.0.1:9090'
     cache_name: fs1
+  prom3:
+    provider: prometheus
+    origin_url: 'http://127.0.0.1:9090'
+    cache_name: redis
   flux1:
     provider: influxdb
     origin_url: 'http://127.0.0.1:8186/'
