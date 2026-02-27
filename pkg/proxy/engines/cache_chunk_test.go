@@ -17,7 +17,6 @@
 package engines
 
 import (
-	"context"
 	"io"
 	"log"
 	"net/http"
@@ -55,7 +54,7 @@ func TestMultiPartByteRangeChunks(t *testing.T) {
 	resp2.StatusCode = 200
 	d := DocumentFromHTTPResponse(resp2, []byte("This is a t"), nil)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	ctx = tc.WithResources(ctx, &request.Resources{BackendOptions: conf.Backends["default"], Tracer: tu.NewTestTracer()})
 
 	ranges := make(byterange.Ranges, 1)
@@ -86,7 +85,7 @@ func TestCacheHitRangeRequestChunks(t *testing.T) {
 	resp2.Header.Add(headers.NameContentLength, strconv.Itoa(len(testRangeBody)))
 	resp2.StatusCode = 200
 	d := DocumentFromHTTPResponse(resp2, []byte(testRangeBody), nil)
-	ctx := context.Background()
+	ctx := t.Context()
 	ctx = tc.WithResources(ctx, &request.Resources{BackendOptions: conf.Backends["default"], Tracer: tu.NewTestTracer()})
 
 	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, sets.New([]string{headers.ValueTextPlain}), nil)
@@ -131,7 +130,7 @@ func TestCacheHitRangeRequest2Chunks(t *testing.T) {
 	resp2.Header.Add(headers.NameContentRange, have.ContentRangeHeader(cl))
 	resp2.StatusCode = 206
 	d := DocumentFromHTTPResponse(resp2, []byte(testRangeBody[have.Start:have.End+1]), nil)
-	ctx := context.Background()
+	ctx := t.Context()
 	ctx = tc.WithResources(ctx, &request.Resources{BackendOptions: conf.Backends["default"], Tracer: tu.NewTestTracer()})
 
 	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, sets.New([]string{headers.ValueTextPlain}), nil)
@@ -176,7 +175,7 @@ func TestCacheHitRangeRequest3Chunks(t *testing.T) {
 	resp2.Header.Add(headers.NameContentRange, have.ContentRangeHeader(cl))
 	resp2.StatusCode = 206
 	d := DocumentFromHTTPResponse(resp2, []byte(testRangeBody[have.Start:have.End+1]), nil)
-	ctx := context.Background()
+	ctx := t.Context()
 	ctx = tc.WithResources(ctx, &request.Resources{BackendOptions: conf.Backends["default"], Tracer: tu.NewTestTracer()})
 
 	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, sets.New([]string{headers.ValueTextPlain}), nil)
@@ -219,7 +218,7 @@ func TestPartialCacheMissRangeRequestChunks(t *testing.T) {
 	resp2.StatusCode = 206
 	d := DocumentFromHTTPResponse(resp2, []byte(testRangeBody[have.Start:have.End+1]), nil)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	ctx = tc.WithResources(ctx, &request.Resources{BackendOptions: conf.Backends["default"], Tracer: tu.NewTestTracer()})
 
 	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, sets.New([]string{headers.ValueTextPlain}), nil)
@@ -264,7 +263,7 @@ func TestFullCacheMissRangeRequestChunks(t *testing.T) {
 	resp2.StatusCode = 206
 	d := DocumentFromHTTPResponse(resp2, []byte(testRangeBody[have.Start:have.End+1]), nil)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	ctx = tc.WithResources(ctx, &request.Resources{BackendOptions: conf.Backends["default"], Tracer: tu.NewTestTracer()})
 
 	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, sets.New([]string{headers.ValueTextPlain}), nil)
@@ -316,7 +315,7 @@ func TestRangeRequestFromClientChunks(t *testing.T) {
 	}
 	cache.Configuration().UseCacheChunking = true
 
-	ctx := context.Background()
+	ctx := t.Context()
 	ctx = tc.WithResources(ctx, &request.Resources{BackendOptions: conf.Backends["default"], Tracer: tu.NewTestTracer()})
 
 	d := DocumentFromHTTPResponse(resp, bytes, nil)
@@ -369,7 +368,7 @@ func TestQueryCacheChunks(t *testing.T) {
 	d := DocumentFromHTTPResponse(resp, []byte(expected), nil)
 	d.ContentType = headers.ValueTextPlain
 
-	ctx := context.Background()
+	ctx := t.Context()
 	ctx = tc.WithResources(ctx, &request.Resources{BackendOptions: conf.Backends["default"], Tracer: tu.NewTestTracer()})
 
 	err = WriteCache(ctx, cache, "testKey", d, time.Duration(60)*time.Second, sets.New([]string{headers.ValueTextPlain}), nil)

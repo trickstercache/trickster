@@ -17,7 +17,6 @@
 package healthcheck
 
 import (
-	"context"
 	"net/http"
 	"testing"
 	"time"
@@ -68,7 +67,7 @@ func TestRegister(t *testing.T) {
 		t.Error(err)
 	}
 	target := hc.targets["test"]
-	target.Start(context.Background())
+	target.Start(t.Context())
 	target.Stop()
 	_, err = hc.Register("test", "test", o, http.DefaultClient)
 	if err != nil {

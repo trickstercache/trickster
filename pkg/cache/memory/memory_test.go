@@ -34,12 +34,6 @@ const (
 	cacheKey = "cacheKey"
 )
 
-type testReferenceObject struct{}
-
-func (r *testReferenceObject) Size() int {
-	return 1
-}
-
 func storeBenchmark(b *testing.B) *Cache {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	cacheConfig := co.Options{Provider: provider, Index: &io.Options{ReapInterval: 0}}
@@ -70,45 +64,6 @@ func TestCache_Connect(t *testing.T) {
 
 	// it should connect
 	err := mc.Connect()
-	if err != nil {
-		t.Error(err)
-	}
-}
-
-func TestCache_StoreReferenceDirect(t *testing.T) {
-	logger.SetLogger(logging.ConsoleLogger(level.Error))
-	cacheConfig := newCacheConfig()
-	mc := New(t.Name(), &cacheConfig)
-
-	err := mc.Connect()
-	if err != nil {
-		t.Error(err)
-	}
-	// it should store a value
-	mc.StoreReference("test", &testReferenceObject{}, 1*time.Second)
-
-	r, _, _ := mc.RetrieveReference("test")
-	if r == nil {
-		t.Errorf("expected %s got nil", r)
-	}
-
-	_, _, err = mc.RetrieveReference("test2")
-	if err == nil {
-		t.Errorf("expected non-nil error")
-	}
-}
-
-func TestCache_StoreReference(t *testing.T) {
-	logger.SetLogger(logging.ConsoleLogger(level.Error))
-	cacheConfig := newCacheConfig()
-	mc := New(t.Name(), &cacheConfig)
-
-	err := mc.Connect()
-	if err != nil {
-		t.Error(err)
-	}
-	// it should store a value
-	err = mc.StoreReference(cacheKey, nil, time.Duration(60)*time.Second)
 	if err != nil {
 		t.Error(err)
 	}

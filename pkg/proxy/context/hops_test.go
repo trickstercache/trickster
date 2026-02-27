@@ -17,14 +17,13 @@
 package context
 
 import (
-	"context"
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
 )
 
 func TestHops(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	_, j := Hops(ctx)
 	if j != options.DefaultMaxRuleExecutions {
 		t.Errorf("expected %d got %d", options.DefaultMaxRuleExecutions, j)
@@ -41,7 +40,7 @@ func TestHops(t *testing.T) {
 		t.Errorf("expected %d got %d", 1, j)
 	}
 
-	ctx = context.Background()
+	ctx = t.Context()
 	IncrementedRewriterHops(ctx, 5)
 	_ = RewriterHops(ctx)
 	ctx = StartRewriterHops(ctx)

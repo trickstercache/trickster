@@ -17,7 +17,6 @@
 package clickhouse
 
 import (
-	"context"
 	"errors"
 	"strconv"
 	"testing"
@@ -160,7 +159,7 @@ func TestParseErrors(t *testing.T) {
 
 func TestAtWith(t *testing.T) {
 	tk := token.Tokens{&token.Token{Typ: token.Space, Val: " "}}
-	rs := parsing.NewRunState(context.Background(), tk)
+	rs := parsing.NewRunState(t.Context(), tk)
 	rs.Next()
 	f := atWith(nil, nil, rs)
 	if f != nil {
@@ -168,7 +167,7 @@ func TestAtWith(t *testing.T) {
 	}
 
 	tk = token.Tokens{&token.Token{Typ: sql.TokenWith, Val: "with"}}
-	rs = parsing.NewRunState(context.Background(), tk)
+	rs = parsing.NewRunState(t.Context(), tk)
 	rs.Next()
 	atWith(nil, nil, rs)
 	if rs.Error() != parsing.ErrUnsupportedParser {
@@ -180,7 +179,7 @@ func TestAtWith(t *testing.T) {
 		&token.Token{Typ: sql.TokenSelect, Val: "select"},
 	}
 
-	rs = parsing.NewRunState(context.Background(), tk)
+	rs = parsing.NewRunState(t.Context(), tk)
 	rs.Next()
 	f = atWith(parser, parser, rs)
 	if f == nil {
@@ -191,7 +190,7 @@ func TestAtWith(t *testing.T) {
 		&token.Token{Typ: sql.TokenWith, Val: "with"},
 		&token.Token{Typ: token.EOF},
 	}
-	rs = parsing.NewRunState(context.Background(), tk)
+	rs = parsing.NewRunState(t.Context(), tk)
 	rs.Next()
 	f = atWith(parser, parser, rs)
 	if f != nil {
@@ -203,7 +202,7 @@ func TestAtWith(t *testing.T) {
 		&token.Token{Typ: token.Identifier, Val: "x"},
 		&token.Token{Typ: sql.TokenSelect, Val: "select"},
 	}
-	rs = parsing.NewRunState(context.Background(), tk)
+	rs = parsing.NewRunState(t.Context(), tk)
 	rs.Next()
 	f = atWith(parser, parser, rs)
 	if f != nil {
@@ -215,7 +214,7 @@ func TestAtWith(t *testing.T) {
 }
 
 func TestAtPreWhere(t *testing.T) {
-	rs := parsing.NewRunState(context.Background(), nil)
+	rs := parsing.NewRunState(t.Context(), nil)
 	f := atPreWhere(nil, nil, rs)
 	if f != nil {
 		t.Error("expected nil StateFn")
@@ -230,7 +229,7 @@ func TestAtFormat(t *testing.T) {
 		&token.Token{Typ: sql.TokenComment},
 		&token.Token{Typ: token.EOF},
 	}
-	rs := parsing.NewRunState(context.Background(), tk)
+	rs := parsing.NewRunState(t.Context(), tk)
 	f := atFormat(nil, nil, rs)
 	if f != nil {
 		t.Error("expected nil StateFn")
@@ -240,7 +239,7 @@ func TestAtFormat(t *testing.T) {
 		&token.Token{Typ: token.Identifier, Val: "UnsupportedFormat"},
 		&token.Token{Typ: token.EOF},
 	}
-	rs = parsing.NewRunState(context.Background(), tk)
+	rs = parsing.NewRunState(t.Context(), tk)
 	f = atFormat(nil, nil, rs)
 	if f != nil {
 		t.Error("expected nil StateFn")

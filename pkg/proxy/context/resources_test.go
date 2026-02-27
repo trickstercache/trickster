@@ -17,7 +17,6 @@
 package context
 
 import (
-	"context"
 	"testing"
 )
 
@@ -26,7 +25,7 @@ type testStruct struct {
 }
 
 func TestResources(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// cover nil short circuit case
 	ctx = WithResources(ctx, nil)

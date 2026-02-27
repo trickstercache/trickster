@@ -91,10 +91,7 @@ func TestClientSelectionSentinel(t *testing.T) {
 	if !ok {
 		t.Errorf("expected cache named %s", cacheName)
 	}
-	cache := New(context.Background(), cacheName, cfg)
-	if err != nil {
-		t.Error(err)
-	}
+	cache := New(t.Context(), cacheName, cfg)
 	err = cache.Connect()
 	if err == nil {
 		t.Errorf("expected error for %s", expected1)
@@ -170,10 +167,7 @@ func TestClientSelectionCluster(t *testing.T) {
 	if !ok {
 		t.Errorf("expected cache named %s", cacheName)
 	}
-	cache := New(context.Background(), cacheName, cfg)
-	if err != nil {
-		t.Error(err)
-	}
+	cache := New(t.Context(), cacheName, cfg)
 	err = cache.Connect()
 	if err == nil {
 		t.Errorf("expected error for %s", expected1)
@@ -197,7 +191,7 @@ func TestClientSelectionStandard(t *testing.T) {
 	if !ok {
 		t.Errorf("expected cache named %s", cacheName)
 	}
-	cache := New(context.Background(), cacheName, cfg)
+	cache := New(t.Context(), cacheName, cfg)
 	if err != nil {
 		t.Error(err)
 	}

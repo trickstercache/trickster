@@ -17,7 +17,6 @@
 package rule
 
 import (
-	"context"
 	"net/http"
 	"testing"
 
@@ -225,7 +224,7 @@ func TestEvaluateOpArg(t *testing.T) {
 
 	hr, _ := http.NewRequest(http.MethodGet, "http://www.google.com/", nil)
 	hr.Header = http.Header{testRuleHeader: []string{"trickster"}}
-	ctx := tc.WithHops(context.Background(), 0, 20)
+	ctx := tc.WithHops(t.Context(), 0, 20)
 	hr = hr.WithContext(ctx)
 
 	_, _, err = r.EvaluateOpArg(hr)
@@ -277,7 +276,7 @@ func TestEvaluateCaseArg(t *testing.T) {
 
 	hr, _ := http.NewRequest(http.MethodGet, "http://www.google.com/", nil)
 	hr.Header = http.Header{testRuleHeader: []string{providers.Proxy}}
-	ctx := tc.WithHops(context.Background(), 0, 20)
+	ctx := tc.WithHops(t.Context(), 0, 20)
 	hr = hr.WithContext(ctx)
 
 	_, _, err = r.EvaluateCaseArg(hr)

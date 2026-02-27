@@ -17,7 +17,6 @@
 package request
 
 import (
-	"context"
 	"net/http"
 	"testing"
 	"time"
@@ -48,7 +47,7 @@ func TestGetAndSetResources(t *testing.T) {
 	r = NewResources(nil, nil, nil, nil, nil, nil)
 	r.AlternateCacheTTL = time.Duration(1) * time.Second
 	req, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
-	ctx := context.Background()
+	ctx := t.Context()
 	// test nil short circuit bail out
 	req = SetResources(req.WithContext(ctx), nil)
 	req = SetResources(req.WithContext(ctx), r)
@@ -58,7 +57,7 @@ func TestGetAndSetResources(t *testing.T) {
 	}
 
 	req, _ = http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
-	ctx = context.Background()
+	ctx = t.Context()
 	req = req.WithContext(ctx)
 
 	// set something other than a resource into the context to verify a get returns nil

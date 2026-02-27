@@ -17,26 +17,24 @@
 package profile
 
 import (
-	"context"
 	"testing"
 )
 
 func TestContext(t *testing.T) {
-	ctx := context.Background()
 	ep := &Profile{Supported: 8}
-	ctx2 := ToContext(ctx, ep)
+	ctx2 := ToContext(t.Context(), ep)
 
 	ep2 := FromContext(ctx2)
 	if ep2.Supported != 8 {
 		t.Errorf("expected %d got %d", 8, ep2.Supported)
 	}
 
-	ep2 = FromContext(context.Background())
+	ep2 = FromContext(t.Context())
 	if ep2 != nil {
 		t.Error("expected nil")
 	}
 
-	ep2 = FromContext(context.Background())
+	ep2 = FromContext(t.Context())
 	if ep2 != nil {
 		t.Error("expected nil")
 	}

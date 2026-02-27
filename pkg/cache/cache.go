@@ -46,11 +46,8 @@ type Cache interface {
 type Lookup map[string]Cache
 
 // MemoryCache is the interface for an in-memory cache
-// This offers an additional method for storing references to bypass serialization
 type MemoryCache interface {
 	Client
-	StoreReference(cacheKey string, data ReferenceObject, ttl time.Duration) error
-	RetrieveReference(cacheKey string) (any, status.LookupStatus, error)
 }
 
 // ReferenceObject defines an interface for a cache object possessing the ability to report

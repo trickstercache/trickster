@@ -17,7 +17,6 @@
 package span
 
 import (
-	stdcontext "context"
 	"net/http"
 	"testing"
 
@@ -30,7 +29,7 @@ import (
 
 func TestNewChildSpan(t *testing.T) {
 	// test with nil context and tracer:
-	_, span := NewChildSpan(stdcontext.Background(), nil, "test")
+	_, span := NewChildSpan(t.Context(), nil, "test")
 
 	if span != nil {
 		t.Error("expected nil span")
@@ -44,7 +43,7 @@ func TestNewChildSpan(t *testing.T) {
 	tr.Options.Provider = "stdout"
 	options.ProcessTracingOptions(options.Lookup{"default": tr.Options})
 
-	ctx, span := NewChildSpan(stdcontext.Background(), tr, "test")
+	ctx, span := NewChildSpan(t.Context(), tr, "test")
 	if ctx == nil {
 		t.Error("expected non-nil context")
 	}

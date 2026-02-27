@@ -159,17 +159,15 @@ type TimeseriesChunkQueryProcessor struct {
 }
 
 func (tcp *TimeseriesChunkQueryProcessor) ProcessChunk(index int, subkey string, qr *queryResult, c cache.Cache) error {
-	if c.Configuration().Provider != providerMemory {
-		var err error
-		qr.d.timeseries, err = tcp.unmarshal(qr.d.Body, nil)
-		if err != nil {
-			logger.Error("chunk unmarshal failed",
-				logging.Pairs{
-					"error": err, "chunkIdx": index,
-					"key": subkey, "cacheQueryStatus": qr.lookupStatus,
-				})
-			return err
-		}
+	var err error
+	qr.d.timeseries, err = tcp.unmarshal(qr.d.Body, nil)
+	if err != nil {
+		logger.Error("chunk unmarshal failed",
+			logging.Pairs{
+				"error": err, "chunkIdx": index,
+				"key": subkey, "cacheQueryStatus": qr.lookupStatus,
+			})
+		return err
 	}
 	if qr.d.timeseries != nil {
 		tcp.ress[index] = qr.d.timeseries

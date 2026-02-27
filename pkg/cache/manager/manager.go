@@ -60,14 +60,6 @@ type Manager struct {
 	opts        CacheOptions
 }
 
-func (cm *Manager) StoreReference(cacheKey string, data cache.ReferenceObject, ttl time.Duration) error {
-	nl, _ := cm.locker.Acquire(filepath.Join(cm.config.Name, cm.config.Provider, cacheKey))
-	defer nl.Release()
-	metrics.ObserveCacheOperation(cm.config.Name, cm.config.Provider, "setDirect", "none", float64(data.Size()))
-	logger.Debug("cache store", logging.Pairs{"key": cacheKey, "provider": cm.config.Provider})
-	return cm.Client.(cache.MemoryCache).StoreReference(cacheKey, data, ttl)
-}
-
 func (cm *Manager) Store(cacheKey string, byteData []byte, ttl time.Duration) error {
 	nl, _ := cm.locker.Acquire(filepath.Join(cm.config.Name, cm.config.Provider, cacheKey))
 	defer nl.Release()
@@ -88,16 +80,6 @@ func (cm *Manager) observeRetrieval(cacheKey string, size int, s status.LookupSt
 		logger.Debug("cache retrieve", logging.Pairs{"key": cacheKey, "provider": cm.config.Provider})
 		metrics.ObserveCacheOperation(cm.config.Name, cm.config.Provider, "get", "hit", float64(size))
 	}
-}
-
-func (cm *Manager) RetrieveReference(cacheKey string) (any, status.LookupStatus, error) {
-	nl, _ := cm.locker.RAcquire(filepath.Join(cm.config.Name, cm.config.Provider, cacheKey))
-	defer nl.RRelease()
-	v, s, err := cm.Client.(cache.MemoryCache).RetrieveReference(cacheKey)
-	if ro, ok := v.(cache.ReferenceObject); ok {
-		cm.observeRetrieval(cacheKey, ro.Size(), s, err)
-	}
-	return v, s, err
 }
 
 type retrieveResult struct {
