@@ -253,29 +253,91 @@ func handleTrueCacheHit(pr *proxyRequest) error {
 }
 
 func handleCacheKeyMiss(pr *proxyRequest) error {
-	b1, b2 := upgradeLock(pr)
-	if b1 && !b2 {
-		rerunRequest(pr)
-		return nil
-	}
-
 	rsc := request.GetResources(pr.Request)
 	pc := rsc.PathConfig
 
-	// if a we're using PCF, handle that separately
+	// PCF has its own dedup mechanism — keep existing lock-upgrade path
 	if !methods.HasBody(pr.Method) && !pr.wantsRanges && pc != nil &&
 		pc.CollapsedForwardingType == forwarding.CFTypeProgressive {
+		b1, b2 := upgradeLock(pr)
+		if b1 && !b2 {
+			rerunRequest(pr)
+			return nil
+		}
 		if err := handlePCF(pr); !stderrors.Is(err, errors.ErrPCFContentLength) {
-			// if err is nil, or something else, we'll proceed.
 			return err
 		}
+		// PCF not applicable (content too large), fall through to normal fetch
+		pr.prepareUpstreamRequests()
+		if err := handleUpstreamTransactions(pr); err != nil {
+			return err
+		}
+		return handleAllWrites(pr)
 	}
 
-	pr.prepareUpstreamRequests()
-	if err := handleUpstreamTransactions(pr); err != nil {
+	// Release read lock before singleflight to avoid deadlock:
+	// waiters holding a read lock would block the executor's write lock acquisition.
+	if pr.hasReadLock {
+		pr.cacheLock.RRelease()
+		pr.hasReadLock = false
+	}
+
+	v, err, shared := opcGroup.Do(pr.key, func() (any, error) {
+		return opcFetchAndCache(pr)
+	})
+	if err != nil {
 		return err
 	}
-	return handleAllWrites(pr)
+
+	if shared {
+		// Waiter: serve from the shared result
+		result := v.(*opcResult)
+		return serveOPCResult(pr, result)
+	}
+	// Executor: response already written inside opcFetchAndCache
+	return nil
+}
+
+// opcFetchAndCache is the singleflight executor function for OPC cache misses.
+// It fetches from origin, writes the response to the executor's client, stores
+// to cache, and returns an opcResult for any waiting goroutines.
+func opcFetchAndCache(pr *proxyRequest) (*opcResult, error) {
+	pr.prepareUpstreamRequests()
+	if err := handleUpstreamTransactions(pr); err != nil {
+		return nil, err
+	}
+	if err := handleAllWrites(pr); err != nil {
+		return nil, err
+	}
+
+	// Build a result for singleflight waiters.
+	// Use the cached document body if available (cacheable response),
+	// otherwise use the cacheBuffer that setBodyWriter tee'd into.
+	var body []byte
+	if pr.cacheDocument != nil && pr.cacheDocument.Body != nil {
+		body = pr.cacheDocument.Body
+	} else if pr.cacheBuffer != nil {
+		body = pr.cacheBuffer.Bytes()
+	}
+	// Deep-copy body to avoid aliasing with memory cache (stores by reference).
+	result := &opcResult{
+		statusCode: pr.upstreamResponse.StatusCode,
+		headers:    pr.upstreamResponse.Header.Clone(),
+		body:       append([]byte(nil), body...),
+	}
+	return result, nil
+}
+
+// serveOPCResult writes a singleflight-shared result to a waiting request's client.
+func serveOPCResult(pr *proxyRequest, result *opcResult) error {
+	pr.upstreamResponse = &http.Response{
+		StatusCode: result.statusCode,
+		Request:    pr.Request,
+		Header:     result.headers.Clone(),
+	}
+	pr.upstreamReader = bytes.NewReader(result.body)
+	pr.cacheStatus = status.LookupStatusHit
+	return handleResponse(pr)
 }
 
 func handleUpstreamTransactions(pr *proxyRequest) error {
