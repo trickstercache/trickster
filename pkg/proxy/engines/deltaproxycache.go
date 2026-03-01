@@ -387,8 +387,12 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 		doc = &HTTPDocument{StatusCode: result.statusCode, Headers: result.headers}
 		elapsed = time.Duration(result.elapsed * float64(time.Second))
 		cacheStatus = result.cacheStatus
-		if sfShared && status.IsSuccessful(cacheStatus) {
-			cacheStatus = status.LookupStatusProxyHit
+		if sfShared {
+			if status.IsSuccessful(cacheStatus) {
+				cacheStatus = status.LookupStatusProxyHit
+			} else {
+				cacheStatus = status.LookupStatusProxyError
+			}
 		}
 		uncachedValueCount = result.uncachedValueCount
 		missRanges = result.missRanges

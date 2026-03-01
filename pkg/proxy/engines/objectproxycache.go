@@ -338,6 +338,8 @@ func serveOPCResult(pr *proxyRequest, result *opcResult) error {
 	pr.upstreamReader = bytes.NewReader(result.body)
 	if status.IsSuccessful(pr.cacheStatus) {
 		pr.cacheStatus = status.LookupStatusProxyHit
+	} else {
+		pr.cacheStatus = status.LookupStatusProxyError
 	}
 	return handleResponse(pr)
 }

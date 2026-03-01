@@ -118,8 +118,12 @@ func (cm *Manager) Retrieve(cacheKey string) ([]byte, status.LookupStatus, error
 	})
 	rr := val.(*retrieveResult)
 	s := rr.Status
-	if shared && status.IsSuccessful(s) {
-		s = status.LookupStatusProxyHit
+	if shared {
+		if status.IsSuccessful(s) {
+			s = status.LookupStatusProxyHit
+		} else {
+			s = status.LookupStatusProxyError
+		}
 	}
 	return rr.Data.([]byte), s, err
 }
