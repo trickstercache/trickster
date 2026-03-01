@@ -85,9 +85,9 @@ func (s LookupStatus) String() string {
 // Returns true if the LookupStatus is considered a successful cache lookup, false otherwise
 func IsSuccessful(s LookupStatus) bool {
 	switch s {
-	case LookupStatusHit, LookupStatusPartialHit, LookupStatusRevalidated, LookupStatusProxyHit, LookupStatusNegativeCacheHit, LookupStatusPurge:
-		return true
-	default:
+	case LookupStatusProxyError, LookupStatusError:
 		return false
+	default:
+		return true
 	}
 }
