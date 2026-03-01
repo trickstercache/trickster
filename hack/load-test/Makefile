@@ -1,9 +1,21 @@
 TRICKSTER_BASE_ENDPOINT ?= http://localhost:8480/prom1
 PROMQL_QUERY ?= rate(process_cpu_seconds_total[5m])
 
+# standard test
 VIRTUAL_USERS ?= 500
 BATCH_SIZE ?= 500
 ITERATIONS ?= 50000
+
+# stress test
+VIRTUAL_USERS_STRESS ?= 5000
+BATCH_SIZE_STRESS ?= 2500
+ITERATIONS_STRESS ?= 500000 # 500k iterations
+
+stress-%:
+	VIRTUAL_USERS=$(VIRTUAL_USERS_STRESS) \
+	BATCH_SIZE=$(BATCH_SIZE_STRESS) \
+	ITERATIONS=$(ITERATIONS_STRESS) \
+	$(MAKE) $*
 
 # dashboard.js settings
 RANGE_SECONDS ?= 21600 # 6 hours
