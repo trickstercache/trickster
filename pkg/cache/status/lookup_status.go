@@ -81,3 +81,13 @@ func (s LookupStatus) String() string {
 	}
 	return strconv.Itoa(int(s))
 }
+
+// Returns true if the LookupStatus is considered a successful cache lookup, false otherwise
+func IsSuccessful(s LookupStatus) bool {
+	switch s {
+	case LookupStatusHit, LookupStatusPartialHit, LookupStatusRevalidated, LookupStatusProxyHit, LookupStatusNegativeCacheHit:
+		return true
+	default:
+		return false
+	}
+}
