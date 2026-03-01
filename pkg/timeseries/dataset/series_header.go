@@ -117,25 +117,25 @@ func (sh *SeriesHeader) CalculateSize() int {
 }
 
 func (sh *SeriesHeader) String() string {
-	sb := &strings.Builder{}
+	var sb strings.Builder
 	sb.WriteByte('{')
 	if sh.Name != "" {
-		fmt.Fprintf(sb, `"name":"%s",`, sh.Name)
+		fmt.Fprintf(&sb, `"name":"%s",`, sh.Name)
 	}
 	if sh.QueryStatement != "" {
-		fmt.Fprintf(sb, `"query":"%s",`, sh.QueryStatement)
+		fmt.Fprintf(&sb, `"query":"%s",`, sh.QueryStatement)
 	}
 	if len(sh.Tags) > 0 {
-		fmt.Fprintf(sb, `"tags":"%s",`, sh.Tags.String())
+		fmt.Fprintf(&sb, `"tags":"%s",`, sh.Tags.String())
 	}
 
 	// Helper function to write field lists to JSON
 	writeFieldList := func(fieldName string, fields timeseries.FieldDefinitions) {
 		if len(fields) > 0 {
-			fmt.Fprintf(sb, `"%s":[`, fieldName)
+			fmt.Fprintf(&sb, `"%s":[`, fieldName)
 			l := len(fields)
 			for i, fd := range fields {
-				fmt.Fprintf(sb, `"%s"`, fd.Name)
+				fmt.Fprintf(&sb, `"%s"`, fd.Name)
 				if i < l-1 {
 					sb.WriteByte(',')
 				}
@@ -147,7 +147,7 @@ func (sh *SeriesHeader) String() string {
 	writeFieldList("valueFields", sh.ValueFieldsList)
 	writeFieldList("tagFields", sh.TagFieldsList)
 	writeFieldList("untrackedFields", sh.UntrackedFieldsList)
-	fmt.Fprintf(sb, `"timeStampField":"%s"`, sh.TimestampField.Name)
+	fmt.Fprintf(&sb, `"timeStampField":"%s"`, sh.TimestampField.Name)
 	sb.WriteByte('}')
 	return sb.String()
 }

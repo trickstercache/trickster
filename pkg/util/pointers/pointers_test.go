@@ -22,26 +22,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestNew(t *testing.T) {
-	const port = 8480
-	intPtr := new(port)
-	if *intPtr != port {
-		t.Fatalf("expected %d got %d", port, *intPtr)
-	}
-	intPtr = Clone(intPtr)
-	if intPtr == nil {
-		t.Fatal("expected non-nil")
-	}
-	if *intPtr != port {
-		t.Fatalf("expected %d got %d", port, *intPtr)
-	}
-	intPtr = nil
-	intPtr = Clone(intPtr)
-	if intPtr != nil {
-		t.Fatal("expected nil")
-	}
-}
-
 func TestClone(t *testing.T) {
 	type example struct {
 		Name    string

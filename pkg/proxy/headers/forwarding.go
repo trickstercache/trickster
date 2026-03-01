@@ -158,9 +158,17 @@ func (hop *Hop) String(expand ...bool) string {
 	return strings.Join(parts, ", ")
 }
 
-// XHeader returns an http.Header containing the "X-Forwarded-*" headers
+// XHeader returns an http.Header containing the "X-Forwarded-*" headers.
 func (hop *Hop) XHeader() http.Header {
-	h := make(http.Header)
+	return hop.fillXHeader(make(http.Header))
+}
+
+// xHeader is like XHeader but uses a pooled header. Callers must putHeader the result.
+func (hop *Hop) xHeader() http.Header {
+	return hop.fillXHeader(getHeader())
+}
+
+func (hop *Hop) fillXHeader(h http.Header) http.Header {
 	if hop.Server != "" {
 		h.Set(NameXForwardedServer, hop.Server)
 	}
@@ -193,16 +201,18 @@ func AddForwarded(r *http.Request, hop *Hop) {
 
 // AddXForwarded sets or appends to the "X-Forwarded-*" headers to the provided request
 func AddXForwarded(r *http.Request, hop *Hop) {
-	h := hop.XHeader()
+	h := hop.xHeader()
 	Merge(r.Header, h)
+	putHeader(h)
 }
 
 // AddForwardedAndX sets or appends to the to the "X-Forwarded-*" headers
 // headers, and to the standard Forwarded header to the provided request
 func AddForwardedAndX(r *http.Request, hop *Hop) {
-	h := hop.XHeader()
+	h := hop.xHeader()
 	h.Set(NameForwarded, hop.String())
 	Merge(r.Header, h)
+	putHeader(h)
 }
 
 // SetVia sets the "Via" header to the provided request

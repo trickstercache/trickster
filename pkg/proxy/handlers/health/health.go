@@ -96,8 +96,8 @@ func (hs *healthStatus) YAML() string {
 
 // Tabular renders a text/plain-compatible version of the status page
 func (hs *healthStatus) Tabular() string {
-	txt := &strings.Builder{}
-	fmt.Fprintf(txt, "\n%s            last change: %s\n", hs.Title, hs.UpdateTime)
+	var txt strings.Builder
+	fmt.Fprintf(&txt, "\n%s            last change: %s\n", hs.Title, hs.UpdateTime)
 	txt.WriteString("-------------------------------------------------------------------------------\n\n")
 
 	b := bytes.NewBuffer(nil)
@@ -138,9 +138,9 @@ func (hs *healthStatus) Tabular() string {
 	tw.Flush()
 	txt.Write(b.Bytes())
 	txt.WriteString("-------------------------------------------------------------------------------\n")
-	fmt.Fprintf(txt, "For JSON, provide a '%s: %s' Header or query param ?json\n",
+	fmt.Fprintf(&txt, "For JSON, provide a '%s: %s' Header or query param ?json\n",
 		headers.NameAccept, headers.ValueApplicationJSON)
-	fmt.Fprintf(txt, "For YAML, provide a '%s: %s' Header or query param ?yaml\n",
+	fmt.Fprintf(&txt, "For YAML, provide a '%s: %s' Header or query param ?yaml\n",
 		headers.NameAccept, headers.ValueApplicationYAML)
 
 	return txt.String()

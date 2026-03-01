@@ -68,14 +68,14 @@ func NewStatus(
 }
 
 func (s *Status) String() string {
-	sb := &strings.Builder{}
+	var sb strings.Builder
 	st := s.status.Load()
-	fmt.Fprintf(sb, "target: %s\nstatus: %d\n", s.name, st)
+	fmt.Fprintf(&sb, "target: %s\nstatus: %d\n", s.name, st)
 	if st < StatusPassing {
-		fmt.Fprintf(sb, "detail: %s\n", s.Detail())
+		fmt.Fprintf(&sb, "detail: %s\n", s.Detail())
 	}
 	if st == StatusFailing {
-		fmt.Fprintf(sb, "since: %d", s.failingSince.Unix())
+		fmt.Fprintf(&sb, "since: %d", s.failingSince.Unix())
 	}
 	return sb.String()
 }

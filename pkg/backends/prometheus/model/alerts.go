@@ -59,7 +59,8 @@ func (a *WFAlert) CalculateHash() uint64 {
 // Merge merges the passed WFAlerts into the subject WFAlerts
 // by preferring higher-severity states during de-duplication
 func (a *WFAlerts) Merge(results ...*WFAlerts) {
-	m := map[uint64]WFAlert{}
+	m := getAlertMap()
+	defer putAlertMap(m)
 
 	if a.Data != nil && len(a.Data.Alerts) > 0 {
 		for _, d := range a.Data.Alerts {

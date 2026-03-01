@@ -83,7 +83,7 @@ func (t Tokens) String() string {
 	if lm1 == -1 {
 		return "[]"
 	}
-	sb := &strings.Builder{}
+	var sb strings.Builder
 	sb.WriteByte('[')
 	for i, v := range t {
 		sb.WriteString(v.String())

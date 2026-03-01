@@ -248,10 +248,10 @@ func String(h http.Header) string {
 	if len(h) == 0 {
 		return "\n\n"
 	}
-	sb := &strings.Builder{}
+	var sb strings.Builder
 	for k, v := range h {
 		if len(v) > 0 {
-			fmt.Fprintf(sb, "%s: %s\n", k, v[0])
+			fmt.Fprintf(&sb, "%s: %s\n", k, v[0])
 		}
 	}
 	// add the header section end new line
@@ -267,13 +267,13 @@ func LogString(h http.Header) string {
 	}
 
 	names := slices.Sorted(maps.Keys(h))
-	sb := &strings.Builder{}
+	var sb strings.Builder
 	sb.WriteString("{")
 	var sep string
 	for _, k := range names {
 		v := h[k]
 		if len(v) > 0 {
-			fmt.Fprintf(sb, "%s[%s:%s]", sep, k, v[0])
+			fmt.Fprintf(&sb, "%s[%s:%s]", sep, k, v[0])
 			sep = ","
 		}
 	}

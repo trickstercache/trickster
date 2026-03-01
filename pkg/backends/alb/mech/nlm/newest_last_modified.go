@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/fr"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
@@ -97,7 +98,8 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var mu sync.Mutex
 
 	// Capture all responses
-	captures := make([]*capture.CaptureResponseWriter, l)
+	captures := fr.GetCapturesSlice(l)
+	defer fr.PutCapturesSlice(captures)
 	var eg errgroup.Group
 	if limit := h.options.ConcurrencyOptions.GetQueryConcurrencyLimit(); limit > 0 {
 		eg.SetLimit(limit)
@@ -111,7 +113,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		eg.Go(func() error {
 			r2, _ := request.Clone(r)
 			r2 = request.ClearResources(r2.WithContext(ctx))
-			crw := capture.NewCaptureResponseWriter()
+			crw := capture.GetCaptureResponseWriter()
 			captures[idx] = crw
 			hl[idx].ServeHTTP(crw, r2)
 

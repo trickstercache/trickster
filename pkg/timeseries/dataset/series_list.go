@@ -22,8 +22,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-
-	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
 //go:generate go tool msgp
@@ -43,7 +41,11 @@ func (sl SeriesList) Merge(sl2 SeriesList, sortPoints bool) SeriesList {
 	if len(sl) == 0 {
 		return sl2.Clone()
 	}
-	m := make(map[Hash]*Series, len(sl)+len(sl2))
+	m := getSeriesHashMap()
+	defer putSeriesHashMap(m)
+	seen := getSeriesHashSet()
+	defer putSeriesHashSet(seen)
+
 	out := make(SeriesList, len(sl)+len(sl2))
 	var k int
 	for _, s := range sl {
@@ -58,7 +60,6 @@ func (sl SeriesList) Merge(sl2 SeriesList, sortPoints bool) SeriesList {
 		m[h] = s
 		k++
 	}
-	seen := make(sets.Set[Hash], len(sl2))
 	var wg sync.WaitGroup
 	for _, s := range sl2 {
 		if s == nil {
@@ -130,19 +131,25 @@ func (sl SeriesList) Clone() SeriesList {
 }
 
 func (sl SeriesList) SortByTags() {
-	lkp := make(map[string]*Series, len(sl))
-	keys := make([]string, len(sl))
-	var i int
+	lkp := getSeriesKeyMap()
+	defer putSeriesKeyMap(lkp)
+	keys := getSeriesKeySlice()
+	defer putSeriesKeySlice(keys)
+
+	// Ensure keys has sufficient capacity to avoid append reallocations
+	if cap(keys) < len(sl) {
+		keys = make([]string, 0, len(sl))
+	}
+
 	for _, s := range sl {
 		if s == nil {
 			continue
 		}
-		key := fmt.Sprintf("%s.%s", s.Header.Tags, s.Header.Name)
+
+		key := s.Header.Tags.String() + "." + s.Header.Name
 		lkp[key] = s
-		keys[i] = key
-		i++
+		keys = append(keys, key)
 	}
-	keys = keys[:i]
 	slices.Sort(keys)
 	for i, key := range keys {
 		sl[i] = lkp[key]

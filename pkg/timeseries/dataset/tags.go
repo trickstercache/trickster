@@ -19,7 +19,6 @@
 package dataset
 
 import (
-	"fmt"
 	"maps"
 	"slices"
 	"sort"
@@ -46,7 +45,7 @@ func (ds *DataSet) InjectTags(tags Tags) {
 				if s.Header.Tags == nil {
 					s.Header.Tags = tags.Clone()
 				} else {
-					s.Header.Tags.Merge(tags.Clone())
+					s.Header.Tags.Merge(tags)
 				}
 			})
 		}
@@ -62,7 +61,7 @@ func (t Tags) StringsWithSep(sep1, sep2 string) string {
 	pairs := make(sort.StringSlice, len(t))
 	var i int
 	for k, v := range t {
-		pairs[i] = fmt.Sprintf("%s%s%s", k, sep1, v)
+		pairs[i] = k + sep1 + v
 		i++
 	}
 	sort.Sort(pairs)

@@ -17,13 +17,10 @@
 package model
 
 import (
-	"fmt"
 	"net/http"
 	"sort"
-	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
-	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
 // WFLabelData is the Wire Format Document for the /labels and /label/<name>/values endpoints
@@ -35,8 +32,21 @@ type WFLabelData struct {
 
 // Merge merges the passed WFSeries into the subject WFSeries
 func (ld *WFLabelData) Merge(results ...*WFLabelData) {
-	m := sets.NewStringSet()
+	m := getStringSet()
+	defer putStringSet(m)
 	m.SetAll(ld.Data)
+
+	// Pre-allocate estimated capacity to reduce reallocations
+	estimatedSize := len(ld.Data)
+	for _, ld2 := range results {
+		estimatedSize += len(ld2.Data)
+	}
+	if cap(ld.Data) < estimatedSize {
+		newData := make([]string, len(ld.Data), estimatedSize)
+		copy(newData, ld.Data)
+		ld.Data = newData
+	}
+
 	for _, ld2 := range results {
 		ld.Envelope.Merge(ld2.Envelope)
 		for _, d := range ld2.Data {
@@ -64,7 +74,14 @@ func MergeAndWriteLabelDataRespondFunc() merge.RespondFunc {
 		ld.StartMarshal(w, statusCode)
 		if len(ld.Data) > 0 {
 			sort.Strings(ld.Data)
-			fmt.Fprintf(w, `,"data":["%s"]`, strings.Join(ld.Data, `","`))
+			w.Write([]byte(`,"data":["`))
+			for i, label := range ld.Data {
+				if i > 0 {
+					w.Write([]byte(`","`))
+				}
+				w.Write([]byte(label))
+			}
+			w.Write([]byte(`"]`))
 		}
 		w.Write([]byte("}"))
 	})

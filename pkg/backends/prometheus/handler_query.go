@@ -75,13 +75,14 @@ func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 	// we need to capture and unmarshal the response
 	if c.hasTransformations || (rsc != nil && rsc.IsMergeMember) {
 		// use a streaming response writer to capture the response body for transformation
-		sw := capture.NewCaptureResponseWriter()
+		sw := capture.GetCaptureResponseWriter()
 		engines.ObjectProxyCacheRequest(sw, r)
 		statusCode := sw.StatusCode()
 		if rsc != nil && rsc.Response != nil {
 			statusCode = rsc.Response.StatusCode
 		}
 		c.processVectorTransformations(w, sw.Body(), statusCode, rsc)
+		capture.PutCaptureResponseWriter(sw)
 		return
 	}
 
