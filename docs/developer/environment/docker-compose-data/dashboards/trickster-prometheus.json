@@ -562,7 +562,7 @@
               }
             ]
           },
-          "unit": "short"
+          "unit": "percentunit"
         },
         "overrides": [
           {
@@ -1390,7 +1390,7 @@
               }
             ]
           },
-          "unit": "none"
+          "unit": "decbytes"
         },
         "overrides": [
           {
@@ -2320,8 +2320,8 @@
     "list": [
       {
         "current": {
-          "text": "1: Prom | Direct | GET",
-          "value": "ds_prom_direct"
+          "text": "8: Trickster | Redis | GET",
+          "value": "ds_prom_trickster_redis_get"
         },
         "includeAll": false,
         "label": "Prometheus datasource",
@@ -2342,5 +2342,5 @@
   "timezone": "browser",
   "title": "Prometheus",
   "uid": "uAJ8w1wZz",
-  "version": 12
+  "version": 39
 }
