@@ -185,7 +185,10 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 			if sfCacheStatus == status.LookupStatusKeyMiss && errors.Is(err, tc.ErrKNF) {
 				cts, sfDoc, sfElapsed, err = fetchTimeseries(pr, trq, client, modeler)
 				if err != nil {
-					return &dpcResult{doc: sfDoc, cacheStatus: status.LookupStatusProxyError}, nil
+					return &dpcResult{
+						headers: sfDoc.SafeHeaderClone(), statusCode: sfDoc.StatusCode,
+						body: sfDoc.Body, cacheStatus: status.LookupStatusProxyError,
+					}, nil
 				}
 			} else {
 				if sfDoc == nil {
@@ -197,7 +200,10 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 					go cache.Remove(key)
 					cts, sfDoc, sfElapsed, err = fetchTimeseries(pr, trq, client, modeler)
 					if err != nil {
-						return &dpcResult{doc: sfDoc, cacheStatus: status.LookupStatusProxyError}, nil
+						return &dpcResult{
+							headers: sfDoc.SafeHeaderClone(), statusCode: sfDoc.StatusCode,
+							body: sfDoc.Body, cacheStatus: status.LookupStatusProxyError,
+						}, nil
 					}
 				} else {
 					cts = sfDoc.timeseries.Clone() // Load the Cached Timeseries
@@ -256,14 +262,18 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 				frsc.TimeRangeQuery = trq
 				var mts timeseries.List
 				var mresp *http.Response
+				// clone headers so fetchExtents goroutines don't mutate the cached document
+				fetchHeaders := http.Header(sfDoc.Headers).Clone()
 				mts, sfUncachedVC, mresp, ferr := fetchExtents(sfMissRanges, frsc,
-					sfDoc.Headers, client, pr, modeler.WireUnmarshalerReader, span)
+					fetchHeaders, client, pr, modeler.WireUnmarshalerReader, span)
 				if ferr != nil {
 					return &dpcResult{
-						doc:         &HTTPDocument{StatusCode: mresp.StatusCode, Headers: mresp.Header, Body: func() []byte { b, _ := io.ReadAll(mresp.Body); return b }()},
+						headers: mresp.Header.Clone(), statusCode: mresp.StatusCode,
+						body: func() []byte { b, _ := io.ReadAll(mresp.Body); return b }(),
 						cacheStatus: status.LookupStatusProxyError,
 					}, nil
 				}
+				sfDoc.Headers = fetchHeaders // update with merged upstream response headers
 				// Merge the new delta timeseries into the cached timeseries
 				if len(mts) > 0 {
 					// on phit, elapsed records the time spent waiting for all upstream requests to complete
@@ -342,7 +352,8 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 
 			return &dpcResult{
 				rts:                sfRts,
-				doc:                sfDoc,
+				headers:            sfDoc.SafeHeaderClone(),
+				statusCode:         sfDoc.StatusCode,
 				elapsed:            float64(sfElapsed.Seconds()),
 				uncachedValueCount: sfRts.ValueCount() - cts.ValueCount(), // approximation; recalculated below
 				cacheStatus:        sfCacheStatus,
@@ -367,15 +378,14 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 			return
 		}
 		if result.cacheStatus == status.LookupStatusProxyError {
-			h := result.doc.SafeHeaderClone()
-			recordDPCResult(r, status.LookupStatusProxyError, result.doc.StatusCode,
-				r.URL.Path, "", result.elapsed, nil, h)
-			Respond(w, result.doc.StatusCode, h, bytes.NewReader(result.doc.Body))
+			recordDPCResult(r, status.LookupStatusProxyError, result.statusCode,
+				r.URL.Path, "", result.elapsed, nil, result.headers)
+			Respond(w, result.statusCode, result.headers, bytes.NewReader(result.body))
 			return
 		}
 
 		rts = result.rts.Clone() // clone for this request — marshal mutates (SetExtents, etc.)
-		doc = result.doc
+		doc = &HTTPDocument{StatusCode: result.statusCode, Headers: result.headers}
 		elapsed = time.Duration(result.elapsed * float64(time.Second))
 		cacheStatus = result.cacheStatus
 		uncachedValueCount = result.uncachedValueCount

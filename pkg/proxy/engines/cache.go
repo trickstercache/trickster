@@ -65,7 +65,13 @@ func queryConcurrent(_ context.Context, c cache.Cache, key string) *queryResult 
 		if ifc == nil {
 			return qr
 		}
-		qr.d, _ = ifc.(*HTTPDocument)
+		if d, ok := ifc.(*HTTPDocument); ok {
+			// shallow-copy the struct so that concurrent callers (e.g., singleflight
+			// executors with different keys) don't race when QueryCache mutates
+			// fields like timeseries, isFulfillment, IsMeta, etc.
+			// Uses ShallowCopy to avoid copying the headerLock mutex.
+			qr.d = d.ShallowCopy()
+		}
 	} else {
 		var b []byte
 		b, qr.lookupStatus, qr.err = c.Retrieve(key)
