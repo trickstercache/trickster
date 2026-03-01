@@ -160,6 +160,12 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 		}
 		rts = cts.Clone()
 	} else {
+		// it's not a NoCache request, so something is _likely_ going to be cached now.
+		// we use singleflight here, so as to prevent other concurrent client requests for
+		// the same url, which will have the same cacheStatus, from causing the same or
+		// similar HTTP requests to be made against the origin, since just one should do.
+		// waiters receive the shared result directly — no extra cache round-trips or lock churn.
+
 		// Release read lock before singleflight to avoid deadlock:
 		// waiters holding a read lock would block the executor's cache write.
 		pr.cacheLock.RRelease()
@@ -168,7 +174,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 			"|" + strconv.FormatInt(trq.Extent.End.UnixMilli(), 10)
 
 		v, sfErr, _ := dpcGroup.Do(sfKey, func() (any, error) {
-			// --- Cache query (inside singleflight so only one goroutine queries + fetches) ---
+			// cache query + origin fetch inside singleflight so only one goroutine does the work
 			var cts timeseries.Timeseries
 			var sfDoc *HTTPDocument
 			var sfElapsed time.Duration
@@ -476,11 +482,11 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 	recordDPCResult(r, cacheStatus, sc, r.URL.Path, ffStatus, elapsed.Seconds(), missRanges, rh)
 
 	rsc.TS = rts
-	Respond(w, 0, rh, nil)
+	Respond(w, 0, rh, nil) // body and code are nil so this only sets appropriate headers; no writes
 	if rsc.TSTransformer != nil {
 		rsc.TSTransformer(rts)
 	}
-	if rsc.IsMergeMember {
+	if rsc.IsMergeMember { // don't bother marshaling this dataset if it's just going to be merged internally
 		if rsc.Response == nil {
 			rsc.Response = &http.Response{StatusCode: sc}
 		}
