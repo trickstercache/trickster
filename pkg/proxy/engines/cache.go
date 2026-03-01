@@ -65,7 +65,11 @@ func queryConcurrent(_ context.Context, c cache.Cache, key string) *queryResult 
 		if ifc == nil {
 			return qr
 		}
-		qr.d, _ = ifc.(*HTTPDocument)
+		if d, ok := ifc.(*HTTPDocument); ok {
+			// memory cache returns a shared reference; copy so QueryCache
+			// can safely mutate fields like timeseries, isFulfillment, etc.
+			qr.d = d.ShallowCopy()
+		}
 	} else {
 		var b []byte
 		b, qr.lookupStatus, qr.err = c.Retrieve(key)

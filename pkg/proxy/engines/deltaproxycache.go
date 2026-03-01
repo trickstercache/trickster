@@ -22,6 +22,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -32,7 +33,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/encoding/profile"
 	"github.com/trickstercache/trickster/v2/pkg/encoding/providers"
-	"github.com/trickstercache/trickster/v2/pkg/locks"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
@@ -133,142 +133,267 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 	}
 	normalizedNow.NormalizeExtent()
 
-	var cts timeseries.Timeseries
 	var doc *HTTPDocument
 	var elapsed time.Duration
-
-	// handleFetchError handles common error response pattern for fetchTimeseries failures
-	handleFetchError := func() {
-		pr.cacheLock.RRelease()
-		h := doc.SafeHeaderClone()
-		recordDPCResult(r, status.LookupStatusProxyError, doc.StatusCode,
-			r.URL.Path, "", elapsed.Seconds(), nil, h)
-		Respond(w, doc.StatusCode, h, bytes.NewReader(doc.Body))
-		// fetchTimeseries logs the error
-	}
+	var rts timeseries.Timeseries
+	var uncachedValueCount int64
+	var missRanges timeseries.ExtentList
 
 	coReq := GetRequestCachingPolicy(r.Header)
-checkCache:
+
 	if coReq.NoCache {
+		// NoCache: bypass cache and singleflight, fetch directly from origin
+		pr.cacheLock.RRelease()
 		if span != nil {
 			span.AddEvent("Not Caching")
 		}
 		cacheStatus = status.LookupStatusPurge
 		go cache.Remove(key)
+		var cts timeseries.Timeseries
 		cts, doc, elapsed, err = fetchTimeseries(pr, trq, client, modeler)
 		if err != nil {
-			handleFetchError()
+			h := doc.SafeHeaderClone()
+			recordDPCResult(r, status.LookupStatusProxyError, doc.StatusCode,
+				r.URL.Path, "", elapsed.Seconds(), nil, h)
+			Respond(w, doc.StatusCode, h, bytes.NewReader(doc.Body))
 			return
 		}
+		rts = cts.Clone()
 	} else {
-		doc, cacheStatus, _, err = QueryCache(ctx, cache, key, nil, modeler.CacheUnmarshaler)
-		if cacheStatus == status.LookupStatusKeyMiss && errors.Is(err, tc.ErrKNF) {
-			cts, doc, elapsed, err = fetchTimeseries(pr, trq, client, modeler)
-			if err != nil {
-				handleFetchError()
-				return
-			}
-		} else {
-			if doc == nil {
-				err = tpe.ErrEmptyDocumentBody
-			}
-			if err != nil {
-				logger.Error("cache object unmarshaling failed",
-					logging.Pairs{"key": key, "backendName": client.Name(), "detail": err.Error()})
-				go cache.Remove(key)
-				cts, doc, elapsed, err = fetchTimeseries(pr, trq, client, modeler)
+		// it's not a NoCache request, so something is _likely_ going to be cached now.
+		// we use singleflight here, so as to prevent other concurrent client requests for
+		// the same url, which will have the same cacheStatus, from causing the same or
+		// similar HTTP requests to be made against the origin, since just one should do.
+		// waiters receive the shared result directly — no extra cache round-trips or lock churn.
+
+		// Release read lock before singleflight to avoid deadlock:
+		// waiters holding a read lock would block the executor's cache write.
+		pr.cacheLock.RRelease()
+
+		sfKey := key + "|" + strconv.FormatInt(trq.Extent.Start.UnixMilli(), 10) +
+			"|" + strconv.FormatInt(trq.Extent.End.UnixMilli(), 10)
+
+		v, sfErr, _ := dpcGroup.Do(sfKey, func() (any, error) {
+			// cache query + origin fetch inside singleflight so only one goroutine does the work
+			var cts timeseries.Timeseries
+			var sfDoc *HTTPDocument
+			var sfElapsed time.Duration
+			var sfCacheStatus status.LookupStatus
+			var sfMissRanges, cvr timeseries.ExtentList
+
+			sfDoc, sfCacheStatus, _, err = QueryCache(ctx, cache, key, nil, modeler.CacheUnmarshaler)
+			if sfCacheStatus == status.LookupStatusKeyMiss && errors.Is(err, tc.ErrKNF) {
+				cts, sfDoc, sfElapsed, err = fetchTimeseries(pr, trq, client, modeler)
 				if err != nil {
-					handleFetchError()
-					return
+					return &dpcResult{
+						headers: sfDoc.SafeHeaderClone(), statusCode: sfDoc.StatusCode,
+						body: sfDoc.Body, cacheStatus: status.LookupStatusProxyError,
+					}, nil
 				}
 			} else {
-				cts = doc.timeseries.Clone() // Load the Cached Timeseries
-				if o.TimeseriesEvictionMethod == evictionmethods.EvictionMethodLRU {
-					el := cts.Extents()
-					tsc := cts.TimestampCount()
-					if tsc > 0 &&
-						tsc >= int64(o.TimeseriesRetentionFactor) {
-						if trq.Extent.End.Before(el[0].Start) {
-							pr.cacheLock.RRelease()
-							logger.Debug("timerange end is too old to consider caching",
-								logging.Pairs{"step": trq.Step, "retention": o.TimeseriesRetention})
-							if trq.OriginalBody != nil {
-								request.SetBody(r, trq.OriginalBody)
+				if sfDoc == nil {
+					err = tpe.ErrEmptyDocumentBody
+				}
+				if err != nil {
+					logger.Error("cache object unmarshaling failed",
+						logging.Pairs{"key": key, "backendName": client.Name(), "detail": err.Error()})
+					go cache.Remove(key)
+					cts, sfDoc, sfElapsed, err = fetchTimeseries(pr, trq, client, modeler)
+					if err != nil {
+						return &dpcResult{
+							headers: sfDoc.SafeHeaderClone(), statusCode: sfDoc.StatusCode,
+							body: sfDoc.Body, cacheStatus: status.LookupStatusProxyError,
+						}, nil
+					}
+				} else {
+					cts = sfDoc.timeseries.Clone() // Load the Cached Timeseries
+					if o.TimeseriesEvictionMethod == evictionmethods.EvictionMethodLRU {
+						el := cts.Extents()
+						tsc := cts.TimestampCount()
+						if tsc > 0 && tsc >= int64(o.TimeseriesRetentionFactor) {
+							if trq.Extent.End.Before(el[0].Start) {
+								// Too old to cache — return a sentinel so the caller proxies
+								return &dpcResult{cacheStatus: status.LookupStatusProxyOnly}, nil
 							}
-							DoProxy(w, r, true)
-							return
 						}
 					}
+					sfCacheStatus = status.LookupStatusPartialHit
 				}
-				cacheStatus = status.LookupStatusPartialHit
 			}
-		}
-	}
 
-	// Find the ranges that we want, but which are not currently cached
-	var missRanges, vr, cvr timeseries.ExtentList
-	if cts != nil {
-		vr = cts.VolatileExtents()
-	}
-	if cacheStatus == status.LookupStatusPartialHit {
-		missRanges = cts.Extents().CalculateDeltas(timeseries.ExtentList{trq.Extent}, trq.Step)
-		// this is the backfill part of backfill tolerance. if there are any volatile
-		// ranges in the timeseries, this determines if any fall within the client's
-		// requested range and ensures they are re-requested. this only happens if
-		// the request is already a phit
-		if bt > 0 && len(missRanges) > 0 && len(vr) > 0 {
-			// this checks the timeseries's volatile ranges for any overlap with
-			// the request extent, and adds those to the missRanges to refresh
-			if cvr = vr.Crop(trq.Extent); len(cvr) > 0 {
-				merged := make(timeseries.ExtentList, len(missRanges)+len(cvr))
-				copy(merged, missRanges)
-				copy(merged[len(missRanges):], cvr)
-				missRanges = merged.Compress(trq.Step)
+			// Find the ranges that we want, but which are not currently cached
+			var vr timeseries.ExtentList
+			if cts != nil {
+				vr = cts.VolatileExtents()
 			}
-		}
-	}
+			if sfCacheStatus == status.LookupStatusPartialHit {
+				sfMissRanges = cts.Extents().CalculateDeltas(timeseries.ExtentList{trq.Extent}, trq.Step)
+				// this is the backfill part of backfill tolerance. if there are any volatile
+				// ranges in the timeseries, this determines if any fall within the client's
+				// requested range and ensures they are re-requested. this only happens if
+				// the request is already a phit
+				if bt > 0 && len(sfMissRanges) > 0 && len(vr) > 0 {
+					// this checks the timeseries's volatile ranges for any overlap with
+					// the request extent, and adds those to the missRanges to refresh
+					if cvr = vr.Crop(trq.Extent); len(cvr) > 0 {
+						merged := make(timeseries.ExtentList, len(sfMissRanges)+len(cvr))
+						copy(merged, sfMissRanges)
+						copy(merged[len(sfMissRanges):], cvr)
+						sfMissRanges = merged.Compress(trq.Step)
+					}
+				}
+			}
+			if len(sfMissRanges) == 0 && sfCacheStatus == status.LookupStatusPartialHit {
+				// on full cache hit, elapsed records the time taken to query the cache
+				// and definitively conclude that it is a full cache hit
+				sfElapsed = time.Since(now)
+				sfCacheStatus = status.LookupStatusHit
+			} else if len(sfMissRanges) == 1 && sfMissRanges[0].Start.Equal(trq.Extent.Start) &&
+				sfMissRanges[0].End.Equal(trq.Extent.End) {
+				sfCacheStatus = status.LookupStatusRangeMiss
+			}
 
-	if len(missRanges) == 0 && cacheStatus == status.LookupStatusPartialHit {
-		// on full cache hit, elapsed records the time taken to query the cache
-		// and definitively conclude that it is a full cache hit
-		elapsed = time.Since(now)
-		cacheStatus = status.LookupStatusHit
-	} else if len(missRanges) == 1 && missRanges[0].Start.Equal(trq.Extent.Start) &&
-		missRanges[0].End.Equal(trq.Extent.End) {
-		cacheStatus = status.LookupStatusRangeMiss
+			// this concurrently fetches all missing ranges from the origin
+			if sfCacheStatus != status.LookupStatusHit && len(sfMissRanges) > 0 {
+				if o.DoesShard {
+					sfMissRanges = sfMissRanges.Splice(trq.Step, o.MaxShardSizeTime, o.ShardStep, o.MaxShardSizePoints)
+				}
+				frsc := request.NewResources(o, pc, cc, cache, client, rsc.Tracer)
+				frsc.TimeRangeQuery = trq
+				var mts timeseries.List
+				var mresp *http.Response
+				fetchHeaders := http.Header(sfDoc.Headers).Clone()
+				mts, sfUncachedVC, mresp, ferr := fetchExtents(sfMissRanges, frsc,
+					fetchHeaders, client, pr, modeler.WireUnmarshalerReader, span)
+				if ferr != nil {
+					return &dpcResult{
+						headers: mresp.Header.Clone(), statusCode: mresp.StatusCode,
+						body:        func() []byte { b, _ := io.ReadAll(mresp.Body); return b }(),
+						cacheStatus: status.LookupStatusProxyError,
+					}, nil
+				}
+				sfDoc.Headers = fetchHeaders // update with merged upstream response headers
+				// Merge the new delta timeseries into the cached timeseries
+				if len(mts) > 0 {
+					// on phit, elapsed records the time spent waiting for all upstream requests to complete
+					sfElapsed = time.Since(now)
+					cts.Merge(true, mts...)
+				}
+				_ = sfUncachedVC // will be recomputed from rts below
+			}
+
+			// this handles the tolerance part of backfill tolerance, by adding new tolerable ranges to
+			// the timeseries's volatile list, and removing those that no longer tolerate backfill
+			if bt > 0 && sfCacheStatus != status.LookupStatusHit {
+				var shouldCompress bool
+				ve := cts.VolatileExtents()
+				// first, remove those that are now too old to tolerate backfill.
+				if len(cvr) > 0 {
+					// this updates the timeseries's volatile list to remove anything just fetched that is
+					// older than the current backfill tolerance timestamp; so it is now immutable in cache
+					ve = ve.Remove(cvr, trq.Step)
+					shouldCompress = true
+				}
+				// now add in any new time ranges that should tolerate backfill
+				var adds timeseries.Extent
+				if trq.Extent.End.After(bfs) {
+					adds.End = trq.Extent.End
+					if trq.Extent.Start.Before(bfs) {
+						adds.Start = bfs
+					} else {
+						adds.Start = trq.Extent.Start
+					}
+				}
+				if !adds.End.IsZero() {
+					ve = append(ve, adds)
+					shouldCompress = true
+				}
+				// if any changes happened to the volatile list, set it in the cached timeseries
+				if shouldCompress {
+					cts.SetVolatileExtents(ve.Compress(trq.Step))
+				}
+			}
+
+			// cts is the cacheable time series, sfRts is the user's response timeseries
+			var sfRts timeseries.Timeseries
+			if sfCacheStatus != status.LookupStatusKeyMiss {
+				sfRts = cts.CroppedClone(trq.Extent)
+			} else {
+				sfRts = cts.Clone()
+			}
+
+			// Crop the Cache Object down to the Sample Size or Age Retention Policy and the
+			// Backfill Tolerance before storing to cache
+			if sfCacheStatus != status.LookupStatusHit {
+				switch o.TimeseriesEvictionMethod {
+				case evictionmethods.EvictionMethodLRU:
+					cts.CropToSize(o.TimeseriesRetentionFactor, now, trq.Extent)
+				default:
+					cts.CropToRange(timeseries.Extent{End: now, Start: OldestRetainedTimestamp})
+				}
+				// Don't cache datasets with empty extents
+				// (everything was cropped so there is nothing to cache)
+				if len(cts.Extents()) > 0 {
+					sfDoc.timeseries = cts
+					if werr := WriteCache(ctx, cache, key, sfDoc, o.TimeseriesTTL,
+						o.CompressibleTypes, modeler.CacheMarshaler); werr != nil {
+						logger.Error("error writing object to cache",
+							logging.Pairs{
+								"backendName": o.Name,
+								"cacheName":   cache.Configuration().Name,
+								"cacheKey":    key,
+								"detail":      werr.Error(),
+							},
+						)
+					}
+				}
+			}
+
+			return &dpcResult{
+				rts:                sfRts,
+				headers:            sfDoc.SafeHeaderClone(),
+				statusCode:         sfDoc.StatusCode,
+				elapsed:            float64(sfElapsed.Seconds()),
+				uncachedValueCount: sfRts.ValueCount() - cts.ValueCount(), // approximation; recalculated below
+				cacheStatus:        sfCacheStatus,
+				missRanges:         sfMissRanges,
+			}, nil
+		})
+
+		if sfErr != nil {
+			Respond(w, http.StatusBadGateway, http.Header{}, nil)
+			return
+		}
+
+		result := v.(*dpcResult)
+
+		// Handle sentinel statuses that require special responses
+		if result.cacheStatus == status.LookupStatusProxyOnly {
+			// LRU eviction determined the request is too old to cache
+			if trq.OriginalBody != nil {
+				request.SetBody(r, trq.OriginalBody)
+			}
+			DoProxy(w, r, true)
+			return
+		}
+		if result.cacheStatus == status.LookupStatusProxyError {
+			recordDPCResult(r, status.LookupStatusProxyError, result.statusCode,
+				r.URL.Path, "", result.elapsed, nil, result.headers)
+			Respond(w, result.statusCode, result.headers, bytes.NewReader(result.body))
+			return
+		}
+
+		rts = result.rts.Clone() // clone for this request — marshal mutates (SetExtents, etc.)
+		doc = &HTTPDocument{StatusCode: result.statusCode, Headers: result.headers}
+		elapsed = time.Duration(result.elapsed * float64(time.Second))
+		cacheStatus = result.cacheStatus
+		uncachedValueCount = result.uncachedValueCount
+		missRanges = result.missRanges
 	}
 
 	tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", cacheStatus.String()))
 
-	var writeLock locks.NamedLock
-
-	if cacheStatus == status.LookupStatusHit {
-		// In a cache hit, nothing changes so we just release the reader lock
-		pr.cacheLock.RRelease()
-	} else {
-		// in this case, it's not a cache hit, so something is _likely_ going to be cached now.
-		// we write lock here, so as to prevent other concurrent client requests for the same url,
-		// which will have the same cacheStatus, from causing the same or similar HTTP requests
-		// to be made against the origin, since just one should do.
-
-		// acquire a write lock via the Upgrade method, which will swap the read lock for a
-		// write lock, and return true if this client was the only one, or otherwise the first
-		// client in a concurrent read lock group to request an Upgrade.
-		wasFirst := pr.cacheLock.Upgrade()
-
-		// if this request was first, it is good to proceed with upstream communications and caching.
-		// when another requests was first to acquire the mutex, we will jump up to checkCache
-		// to get the refreshed version. after 3 reiterations, we'll proceed anyway to avoid long loops.
-		if !wasFirst && pr.rerunCount < 3 {
-			// we weren't first, so quickly drop our write lock, and re-run the request
-			pr.cacheLock.Release()
-			pr.cacheLock, _ = locker.RAcquire(key)
-			pr.rerunCount++
-			goto checkCache
-		}
-		writeLock = pr.cacheLock
-	}
-
+	// --- Fast Forward ---
 	const (
 		statusOff = "off"
 		statusErr = "err"
@@ -294,20 +419,17 @@ checkCache:
 		}
 	}
 
-	// maintain a list of timeseries to merge into the main timeseries
 	wg := &sync.WaitGroup{}
-
 	var hasFastForwardData bool
 	var ffts timeseries.Timeseries
-
 	// Only fast forward if configured and the user request is for the absolute latest datapoint
 	if (!rlo.FastForwardDisable) &&
 		(trq.Extent.End.Equal(normalizedNow.Extent.End)) {
 		wg.Go(func() {
-			_, span := tspan.NewChildSpan(ctx, rsc.Tracer, "FetchFastForward")
-			if span != nil {
-				ffReq = ffReq.WithContext(trace.ContextWithSpan(ffReq.Context(), span))
-				defer span.End()
+			_, ffSpan := tspan.NewChildSpan(ctx, rsc.Tracer, "FetchFastForward")
+			if ffSpan != nil {
+				ffReq = ffReq.WithContext(trace.ContextWithSpan(ffReq.Context(), ffSpan))
+				defer ffSpan.End()
 			}
 			body, resp, isHit := FetchViaObjectProxyCache(ffReq)
 			if resp != nil && resp.StatusCode == http.StatusOK && len(body) > 0 {
@@ -331,9 +453,9 @@ checkCache:
 			}
 		})
 	}
+	wg.Wait()
 
-	// while fast forward fetching is occurring in a goroutine, this section will
-	// fetch any uncached ranges in cases of partial hit or range miss
+	// --- Metrics ---
 	dpStatus := logging.Pairs{
 		"cacheKey":    key,
 		"cacheStatus": cacheStatus,
@@ -341,128 +463,18 @@ checkCache:
 		"reqEnd":      trq.Extent.End.Unix(),
 	}
 
-	var mts timeseries.List
-	var uncachedValueCount int64
-	var mresp *http.Response
-
-	var ferr error
-
-	// this concurrently fetches all missing ranges from the origin
-	if len(missRanges) > 0 {
-		if o.DoesShard {
-			missRanges = missRanges.Splice(trq.Step, o.MaxShardSizeTime, o.ShardStep, o.MaxShardSizePoints)
-		}
-		dpStatus["extentsFetched"] = missRanges.String()
-		frsc := request.NewResources(o, pc, cc, cache, client, rsc.Tracer)
-		frsc.TimeRangeQuery = trq
-		mts, uncachedValueCount, mresp, ferr = fetchExtents(missRanges, frsc, doc.Headers, client,
-			pr, modeler.WireUnmarshalerReader, span)
-	}
-
-	wg.Wait()
-
-	if ferr != nil {
-		if writeLock != nil {
-			writeLock.Release()
-		}
-		Respond(w, mresp.StatusCode, mresp.Header, mresp.Body)
-		return
-	}
-
-	// Merge the new delta timeseries into the cached timeseries
-	if len(mts) > 0 {
-		// on phit, elapsed records the time spent waiting for all upstream requests to complete
-		elapsed = time.Since(now)
-		cts.Merge(true, mts...)
-	}
-
-	// this handles the tolerance part of backfill tolerance, by adding new tolerable ranges to
-	// the timeseries's volatile list, and removing those that no longer tolerate backfill
-	if bt > 0 && cacheStatus != status.LookupStatusHit {
-		var shouldCompress bool
-		ve := cts.VolatileExtents()
-
-		// first, remove those that are now too old to tolerate backfill.
-		if len(cvr) > 0 {
-			// this updates the timeseries's volatile list to remove anything just fetched that is
-			// older than the current backfill tolerance timestamp; so it is now immutable in cache
-			ve = ve.Remove(cvr, trq.Step)
-			shouldCompress = true
-		}
-
-		// now add in any new time ranges that should tolerate backfill
-		var adds timeseries.Extent
-		if trq.Extent.End.After(bfs) {
-			adds.End = trq.Extent.End
-			if trq.Extent.Start.Before(bfs) {
-				adds.Start = bfs
-			} else {
-				adds.Start = trq.Extent.Start
-			}
-		}
-		if !adds.End.IsZero() {
-			ve = append(ve, adds)
-			shouldCompress = true
-		}
-
-		// if any changes happened to the volatile list, set it in the cached timeseries
-		if shouldCompress {
-			cts.SetVolatileExtents(ve.Compress(trq.Step))
-		}
-	}
-
-	// cts is the cacheable time series, rts is the user's response timeseries
-	var rts timeseries.Timeseries
-	if cacheStatus != status.LookupStatusKeyMiss {
-		rts = cts.CroppedClone(trq.Extent)
-	} else {
-		rts = cts.Clone()
-	}
-
-	if writeLock != nil {
-		// if the mutex is still locked, it means we need to write the time series to cache
-		go func() {
-			defer writeLock.Release()
-			// Crop the Cache Object down to the Sample Size or Age Retention Policy and the
-			// Backfill Tolerance before storing to cache
-			switch o.TimeseriesEvictionMethod {
-			case evictionmethods.EvictionMethodLRU:
-				cts.CropToSize(o.TimeseriesRetentionFactor, now, trq.Extent)
-			default:
-				cts.CropToRange(timeseries.Extent{End: now, Start: OldestRetainedTimestamp})
-			}
-			// Don't cache datasets with empty extents
-			// (everything was cropped so there is nothing to cache)
-			if len(cts.Extents()) > 0 {
-				doc.timeseries = cts
-				if err := WriteCache(ctx, cache, key, doc, o.TimeseriesTTL, o.CompressibleTypes, modeler.CacheMarshaler); err != nil {
-					logger.Error("error writing object to cache",
-						logging.Pairs{
-							"backendName": o.Name,
-							"cacheName":   cache.Configuration().Name,
-							"cacheKey":    key,
-							"detail":      err.Error(),
-						},
-					)
-				}
-			}
-		}()
-	}
-
 	cachedValueCount := rts.ValueCount() - uncachedValueCount
-
 	if uncachedValueCount > 0 {
 		metrics.ProxyRequestElements.WithLabelValues(o.Name,
 			o.Provider, "uncached", r.URL.Path).Add(float64(uncachedValueCount))
 	}
-
 	if cachedValueCount > 0 {
 		metrics.ProxyRequestElements.WithLabelValues(o.Name,
 			o.Provider, "cached", r.URL.Path).Add(float64(cachedValueCount))
 	}
 
 	// Merge Fast Forward data if present. This must be done after the Downstream Crop since
-	// the cropped extent was normalized to stepboundaries and would remove fast forward data
+	// the cropped extent was normalized to stepboundaries and would remove fast forward data.
 	// If the fast forward data point is older (e.g. cached) than the last datapoint in the
 	// returned time series, it will not be merged
 	if hasFastForwardData && len(ffts.Extents()) == 1 &&
@@ -470,7 +482,6 @@ checkCache:
 		rts.Merge(false, ffts)
 	}
 	rts.SetExtents(nil) // so they are not included in the client response json
-	// rts.SetTimeRangeQuery(&timeseries.TimeRangeQuery{})
 	rh := doc.SafeHeaderClone()
 	sc := doc.StatusCode
 
