@@ -38,8 +38,8 @@ type opcResult struct {
 
 // dpcResult is the shared result returned to singleflight waiters for DPC.
 type dpcResult struct {
-	rts                timeseries.Timeseries    // response timeseries (cropped clone)
-	doc                *HTTPDocument            // for response headers / status code
+	rts                timeseries.Timeseries // response timeseries (cropped clone)
+	doc                *HTTPDocument         // for response headers / status code
 	elapsed            float64
 	uncachedValueCount int64
 	cacheStatus        status.LookupStatus
