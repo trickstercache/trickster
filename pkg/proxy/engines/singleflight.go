@@ -32,18 +32,16 @@ var (
 // opcResult is the shared result returned to singleflight waiters for OPC.
 type opcResult struct {
 	statusCode int
-	headers    http.Header // already cloned — safe for concurrent use
-	body       []byte      // deep copy — safe even with memory cache
+	headers    http.Header
+	body       []byte
 }
 
 // dpcResult is the shared result returned to singleflight waiters for DPC.
-// Headers are pre-cloned to avoid races with memory-cache aliasing
-// (the cached *HTTPDocument may be mutated by a subsequent request's fetchExtents).
 type dpcResult struct {
-	rts                timeseries.Timeseries // response timeseries (cropped clone)
-	headers            http.Header           // already cloned — safe for concurrent use
+	rts                timeseries.Timeseries
+	headers            http.Header
 	statusCode         int
-	body               []byte // only populated for error responses
+	body               []byte
 	elapsed            float64
 	uncachedValueCount int64
 	cacheStatus        status.LookupStatus

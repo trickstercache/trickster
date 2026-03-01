@@ -140,10 +140,7 @@ func (d *HTTPDocument) getByteRanges() byterange.Ranges {
 	return byterange.Ranges{byterange.Range{Start: 0, End: d.ContentLength}}
 }
 
-// ShallowCopy returns a shallow copy of the HTTPDocument with a fresh
-// (zero-value) headerLock. This avoids the data race that occurs when
-// copying the struct literal (cp := *d), which copies the mutex bytes
-// while another goroutine may be locking/unlocking it.
+// ShallowCopy returns a shallow copy of the HTTPDocument with a fresh headerLock.
 func (d *HTTPDocument) ShallowCopy() *HTTPDocument {
 	d.headerLock.Lock()
 	h := d.Headers
@@ -165,7 +162,6 @@ func (d *HTTPDocument) ShallowCopy() *HTTPDocument {
 		isFulfillment:    d.isFulfillment,
 		isLoaded:         d.isLoaded,
 		timeseries:       d.timeseries,
-		// headerLock is intentionally left as zero value
 	}
 }
 

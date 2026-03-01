@@ -262,14 +262,13 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 				frsc.TimeRangeQuery = trq
 				var mts timeseries.List
 				var mresp *http.Response
-				// clone headers so fetchExtents goroutines don't mutate the cached document
 				fetchHeaders := http.Header(sfDoc.Headers).Clone()
 				mts, sfUncachedVC, mresp, ferr := fetchExtents(sfMissRanges, frsc,
 					fetchHeaders, client, pr, modeler.WireUnmarshalerReader, span)
 				if ferr != nil {
 					return &dpcResult{
 						headers: mresp.Header.Clone(), statusCode: mresp.StatusCode,
-						body: func() []byte { b, _ := io.ReadAll(mresp.Body); return b }(),
+						body:        func() []byte { b, _ := io.ReadAll(mresp.Body); return b }(),
 						cacheStatus: status.LookupStatusProxyError,
 					}, nil
 				}
