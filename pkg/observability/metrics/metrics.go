@@ -39,85 +39,8 @@ var (
 	defaultBuckets = []float64{0.05, 0.1, 0.5, 1, 5, 10, 20}
 )
 
-// BuildInfo is a Gauge representing the Trickster binary build information of the running server instance
-var BuildInfo *prometheus.GaugeVec
-
-// LastReloadSuccessful gauge will be set to 1 if Trickster's last config reload succeeded else 0
-var LastReloadSuccessful prometheus.Gauge
-
-// LastReloadSuccessfulTimestamp gauge is the epoch time of the most recent successful config load
-var LastReloadSuccessfulTimestamp prometheus.Gauge
-
-// ReloadAttemptsTotal is a Counter of total configuration reload attempts
-var ReloadAttemptsTotal prometheus.Counter
-
-// ReloadSuccessesTotal is a Counter of successful configuration reloads
-var ReloadSuccessesTotal prometheus.Counter
-
-// ReloadFailuresTotal is a Counter of failed configuration reloads
-var ReloadFailuresTotal prometheus.Counter
-
-// ReloadDurationSeconds is a Histogram of configuration reload duration in seconds
-var ReloadDurationSeconds prometheus.Histogram
-
-// FrontendRequestStatus is a Counter of front end requests that have been processed with their status
-var FrontendRequestStatus *prometheus.CounterVec
-
-// FrontendRequestDuration is a histogram that tracks the time it takes to process a request
-var FrontendRequestDuration *prometheus.HistogramVec
-
-// FrontendRequestWrittenBytes is a Counter of bytes written for front end requests
-var FrontendRequestWrittenBytes *prometheus.CounterVec
-
-// ProxyRequestStatus is a Counter of downstream client requests handled by Trickster
-var ProxyRequestStatus *prometheus.CounterVec
-
-// ProxyRequestElements is a Counter of data points in the timeseries returned to the requesting client
-var ProxyRequestElements *prometheus.CounterVec
-
-// ProxyRequestDuration is a Histogram of time required in seconds to proxy a given Prometheus query
-var ProxyRequestDuration *prometheus.HistogramVec
-
-// CacheObjectOperations is a Counter of operations (in # of objects) performed on a Trickster cache
-var CacheObjectOperations *prometheus.CounterVec
-
-// CacheByteOperations is a Counter of operations (in # of bytes) performed on a Trickster cache
-var CacheByteOperations *prometheus.CounterVec
-
-// CacheEvents is a Counter of events performed on a Trickster cache
-var CacheEvents *prometheus.CounterVec
-
-// CacheObjects is a Gauge representing the number of objects in a Trickster cache
-var CacheObjects *prometheus.GaugeVec
-
-// CacheBytes is a Gauge representing the number of bytes in a Trickster cache
-var CacheBytes *prometheus.GaugeVec
-
-// CacheMaxObjects is a Gauge for the Trickster cache's Max Object Threshold for triggering an eviction exercise
-var CacheMaxObjects *prometheus.GaugeVec
-
-// CacheMaxBytes is a Gauge for the Trickster cache's Max Object Threshold for triggering an eviction exercise
-var CacheMaxBytes *prometheus.GaugeVec
-
-// ProxyMaxConnections is a Gauge representing the max number of active concurrent connections in the server
-var ProxyMaxConnections prometheus.Gauge
-
-// ProxyActiveConnections is a Gauge representing the number of active connections in the server
-var ProxyActiveConnections prometheus.Gauge
-
-// ProxyConnectionRequested is a counter representing the total number of connections requested by clients to the Proxy
-var ProxyConnectionRequested prometheus.Counter
-
-// ProxyConnectionAccepted is a counter representing the total number of connections accepted by the Proxy
-var ProxyConnectionAccepted prometheus.Counter
-
-// ProxyConnectionClosed is a counter representing the total number of connections closed by the Proxy
-var ProxyConnectionClosed prometheus.Counter
-
-// ProxyConnectionFailed is a counter for the total number of connections failed to connect for whatever reason
-var ProxyConnectionFailed prometheus.Counter
-
-func init() {
+var (
+	// BuildInfo is a Gauge representing the Trickster binary build information of the running server instance
 	BuildInfo = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: metricNamespace,
@@ -129,15 +52,7 @@ func init() {
 		[]string{"goversion", "revision", "version"},
 	)
 
-	LastReloadSuccessfulTimestamp = prometheus.NewGauge(
-		prometheus.GaugeOpts{
-			Namespace: metricNamespace,
-			Subsystem: configSubsystem,
-			Name:      "last_reload_success_time_seconds",
-			Help:      "Timestamp of the last successful configuration reload.",
-		},
-	)
-
+	// LastReloadSuccessful gauge will be set to 1 if Trickster's last config reload succeeded else 0
 	LastReloadSuccessful = prometheus.NewGauge(
 		prometheus.GaugeOpts{
 			Namespace: metricNamespace,
@@ -147,6 +62,17 @@ func init() {
 		},
 	)
 
+	// LastReloadSuccessfulTimestamp gauge is the epoch time of the most recent successful config load
+	LastReloadSuccessfulTimestamp = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: configSubsystem,
+			Name:      "last_reload_success_time_seconds",
+			Help:      "Timestamp of the last successful configuration reload.",
+		},
+	)
+
+	// ReloadAttemptsTotal is a Counter of total configuration reload attempts
 	ReloadAttemptsTotal = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Namespace: metricNamespace,
@@ -156,6 +82,7 @@ func init() {
 		},
 	)
 
+	// ReloadSuccessesTotal is a Counter of successful configuration reloads
 	ReloadSuccessesTotal = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Namespace: metricNamespace,
@@ -165,6 +92,7 @@ func init() {
 		},
 	)
 
+	// ReloadFailuresTotal is a Counter of failed configuration reloads
 	ReloadFailuresTotal = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Namespace: metricNamespace,
@@ -174,6 +102,7 @@ func init() {
 		},
 	)
 
+	// ReloadDurationSeconds is a Histogram of configuration reload duration in seconds
 	ReloadDurationSeconds = prometheus.NewHistogram(
 		prometheus.HistogramOpts{
 			Namespace: metricNamespace,
@@ -184,6 +113,7 @@ func init() {
 		},
 	)
 
+	// FrontendRequestStatus is a Counter of front end requests that have been processed with their status
 	FrontendRequestStatus = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: metricNamespace,
@@ -194,6 +124,7 @@ func init() {
 		[]string{"backend_name", "provider", "method", "path", "http_status"},
 	)
 
+	// FrontendRequestDuration is a histogram that tracks the time it takes to process a request
 	FrontendRequestDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Namespace: metricNamespace,
@@ -205,6 +136,7 @@ func init() {
 		[]string{"backend_name", "provider", "method", "path", "http_status"},
 	)
 
+	// FrontendRequestWrittenBytes is a Counter of bytes written for front end requests
 	FrontendRequestWrittenBytes = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: metricNamespace,
@@ -212,8 +144,10 @@ func init() {
 			Name:      "written_bytes_total",
 			Help:      "Count of bytes written in front end requests handled by Trickster",
 		},
-		[]string{"backend_name", "provider", "method", "path", "http_status"})
+		[]string{"backend_name", "provider", "method", "path", "http_status"},
+	)
 
+	// ProxyRequestStatus is a Counter of downstream client requests handled by Trickster
 	ProxyRequestStatus = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: metricNamespace,
@@ -224,6 +158,7 @@ func init() {
 		[]string{"backend_name", "provider", "method", "cache_status", "http_status", "path"},
 	)
 
+	// ProxyRequestElements is a Counter of data points in the timeseries returned to the requesting client
 	ProxyRequestElements = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: metricNamespace,
@@ -234,6 +169,7 @@ func init() {
 		[]string{"backend_name", "provider", "cache_status", "path"},
 	)
 
+	// ProxyRequestDuration is a Histogram of time required in seconds to proxy a given Prometheus query
 	ProxyRequestDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Namespace: metricNamespace,
@@ -245,59 +181,7 @@ func init() {
 		[]string{"backend_name", "provider", "method", "status", "http_status", "path"},
 	)
 
-	ProxyMaxConnections = prometheus.NewGauge(
-		prometheus.GaugeOpts{
-			Namespace: metricNamespace,
-			Subsystem: proxySubsystem,
-			Name:      "max_connections",
-			Help:      "Trickster max number of active connections.",
-		},
-	)
-
-	ProxyActiveConnections = prometheus.NewGauge(
-		prometheus.GaugeOpts{
-			Namespace: metricNamespace,
-			Subsystem: proxySubsystem,
-			Name:      "active_connections",
-			Help:      "Trickster number of active connections.",
-		},
-	)
-
-	ProxyConnectionRequested = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Namespace: metricNamespace,
-			Subsystem: proxySubsystem,
-			Name:      "requested_connections_total",
-			Help:      "Trickster total number of connections requested by clients.",
-		},
-	)
-	ProxyConnectionAccepted = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Namespace: metricNamespace,
-			Subsystem: proxySubsystem,
-			Name:      "accepted_connections_total",
-			Help:      "Trickster total number of accepted connections.",
-		},
-	)
-
-	ProxyConnectionClosed = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Namespace: metricNamespace,
-			Subsystem: proxySubsystem,
-			Name:      "closed_connections_total",
-			Help:      "Trickster total number of closed connections.",
-		},
-	)
-
-	ProxyConnectionFailed = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Namespace: metricNamespace,
-			Subsystem: proxySubsystem,
-			Name:      "failed_connections_total",
-			Help:      "Trickster total number of failed connections.",
-		},
-	)
-
+	// CacheObjectOperations is a Counter of operations (in # of objects) performed on a Trickster cache
 	CacheObjectOperations = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: metricNamespace,
@@ -308,6 +192,7 @@ func init() {
 		[]string{"cache_name", "provider", "operation", "status"},
 	)
 
+	// CacheByteOperations is a Counter of operations (in # of bytes) performed on a Trickster cache
 	CacheByteOperations = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: metricNamespace,
@@ -318,6 +203,7 @@ func init() {
 		[]string{"cache_name", "provider", "operation", "status"},
 	)
 
+	// CacheEvents is a Counter of events performed on a Trickster cache
 	CacheEvents = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: metricNamespace,
@@ -328,6 +214,7 @@ func init() {
 		[]string{"cache_name", "provider", "event", "reason"},
 	)
 
+	// CacheObjects is a Gauge representing the number of objects in a Trickster cache
 	CacheObjects = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: metricNamespace,
@@ -338,6 +225,7 @@ func init() {
 		[]string{"cache_name", "provider"},
 	)
 
+	// CacheBytes is a Gauge representing the number of bytes in a Trickster cache
 	CacheBytes = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: metricNamespace,
@@ -348,6 +236,7 @@ func init() {
 		[]string{"cache_name", "provider"},
 	)
 
+	// CacheMaxObjects is a Gauge for the Trickster cache's Max Object Threshold for triggering an eviction exercise
 	CacheMaxObjects = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: metricNamespace,
@@ -358,6 +247,7 @@ func init() {
 		[]string{"cache_name", "provider"},
 	)
 
+	// CacheMaxBytes is a Gauge for the Trickster cache's Max Object Threshold for triggering an eviction exercise
 	CacheMaxBytes = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: metricNamespace,
@@ -368,6 +258,68 @@ func init() {
 		[]string{"cache_name", "provider"},
 	)
 
+	// ProxyMaxConnections is a Gauge representing the max number of active concurrent connections in the server
+	ProxyMaxConnections = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "max_connections",
+			Help:      "Trickster max number of active connections.",
+		},
+	)
+
+	// ProxyActiveConnections is a Gauge representing the number of active connections in the server
+	ProxyActiveConnections = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "active_connections",
+			Help:      "Trickster number of active connections.",
+		},
+	)
+
+	// ProxyConnectionRequested is a counter representing the total number of connections requested by clients to the Proxy
+	ProxyConnectionRequested = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "requested_connections_total",
+			Help:      "Trickster total number of connections requested by clients.",
+		},
+	)
+
+	// ProxyConnectionAccepted is a counter representing the total number of connections accepted by the Proxy
+	ProxyConnectionAccepted = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "accepted_connections_total",
+			Help:      "Trickster total number of accepted connections.",
+		},
+	)
+
+	// ProxyConnectionClosed is a counter representing the total number of connections closed by the Proxy
+	ProxyConnectionClosed = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "closed_connections_total",
+			Help:      "Trickster total number of closed connections.",
+		},
+	)
+
+	// ProxyConnectionFailed is a counter for the total number of connections failed to connect for whatever reason
+	ProxyConnectionFailed = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "failed_connections_total",
+			Help:      "Trickster total number of failed connections.",
+		},
+	)
+)
+
+func init() {
 	// Register Metrics
 	prometheus.MustRegister(FrontendRequestStatus)
 	prometheus.MustRegister(FrontendRequestDuration)
