@@ -82,7 +82,8 @@ func (s LookupStatus) String() string {
 	return strconv.Itoa(int(s))
 }
 
-// Returns true if the LookupStatus is considered a successful cache lookup, false otherwise
+// Returns true if the LookupStatus is considered a successful cache operations, false if it is considered an error.
+// Note: a cache miss is considered a success, as the cache is operational but the requested object is not present.
 func IsSuccessful(s LookupStatus) bool {
 	switch s {
 	case LookupStatusProxyError, LookupStatusError:
