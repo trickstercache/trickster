@@ -106,7 +106,7 @@ type retrieveResult struct {
 }
 
 func (cm *Manager) Retrieve(cacheKey string) ([]byte, status.LookupStatus, error) {
-	val, err, _ := cm.sf.Do(cacheKey, func() (any, error) {
+	val, err, shared := cm.sf.Do(cacheKey, func() (any, error) {
 		nl, _ := cm.locker.RAcquire(filepath.Join(cm.config.Name, cm.config.Provider, cacheKey))
 		defer nl.RRelease()
 		b, s, err := cm.Client.Retrieve(cacheKey)
@@ -117,7 +117,11 @@ func (cm *Manager) Retrieve(cacheKey string) ([]byte, status.LookupStatus, error
 		}, err
 	})
 	rr := val.(*retrieveResult)
-	return rr.Data.([]byte), rr.Status, err
+	s := rr.Status
+	if shared && s == status.LookupStatusHit {
+		s = status.LookupStatusProxyHit
+	}
+	return rr.Data.([]byte), s, err
 }
 
 func (cm *Manager) Remove(cacheKeys ...string) error {

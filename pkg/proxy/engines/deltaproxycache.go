@@ -173,7 +173,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 		sfKey := key + "|" + strconv.FormatInt(trq.Extent.Start.UnixMilli(), 10) +
 			"|" + strconv.FormatInt(trq.Extent.End.UnixMilli(), 10)
 
-		v, sfErr, _ := dpcGroup.Do(sfKey, func() (any, error) {
+		v, sfErr, sfShared := dpcGroup.Do(sfKey, func() (any, error) {
 			// cache query + origin fetch inside singleflight so only one goroutine does the work
 			var cts timeseries.Timeseries
 			var sfDoc *HTTPDocument
@@ -387,6 +387,9 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 		doc = &HTTPDocument{StatusCode: result.statusCode, Headers: result.headers}
 		elapsed = time.Duration(result.elapsed * float64(time.Second))
 		cacheStatus = result.cacheStatus
+		if sfShared {
+			cacheStatus = status.LookupStatusProxyHit
+		}
 		uncachedValueCount = result.uncachedValueCount
 		missRanges = result.missRanges
 	}

@@ -336,7 +336,7 @@ func serveOPCResult(pr *proxyRequest, result *opcResult) error {
 		Header:     result.headers.Clone(),
 	}
 	pr.upstreamReader = bytes.NewReader(result.body)
-	pr.cacheStatus = status.LookupStatusHit
+	pr.cacheStatus = status.LookupStatusProxyHit
 	return handleResponse(pr)
 }
 
