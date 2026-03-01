@@ -74,7 +74,8 @@ func queryConcurrent(_ context.Context, c cache.Cache, key string) *queryResult 
 		var b []byte
 		b, qr.lookupStatus, qr.err = c.Retrieve(key)
 
-		if qr.err != nil || (qr.lookupStatus != status.LookupStatusHit) {
+		if qr.err != nil ||
+			(qr.lookupStatus != status.LookupStatusHit && qr.lookupStatus != status.LookupStatusProxyHit) {
 			return qr
 		}
 

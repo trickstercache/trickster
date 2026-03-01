@@ -37,12 +37,16 @@ type opcResult struct {
 }
 
 // dpcResult is the shared result returned to singleflight waiters for DPC.
+// For normal requests, waiters serve wireBody directly (pre-marshaled JSON).
+// For IsMergeMember/TSTransformer requests, waiters use rts instead.
 type dpcResult struct {
+	wireBody           []byte
 	rts                timeseries.Timeseries
 	headers            http.Header
 	statusCode         int
-	body               []byte
+	body               []byte // only populated for error responses
 	elapsed            float64
+	ffStatus           string
 	uncachedValueCount int64
 	cacheStatus        status.LookupStatus
 	missRanges         timeseries.ExtentList
