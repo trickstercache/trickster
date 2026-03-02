@@ -447,7 +447,7 @@ func handleResponse(pr *proxyRequest) error {
 
 func cacheResponseHandler(s status.LookupStatus) func(*proxyRequest) error {
 	switch s {
-	case status.LookupStatusHit:
+	case status.LookupStatusHit, status.LookupStatusProxyHit:
 		return handleCacheKeyHit
 	case status.LookupStatusPartialHit:
 		return handleCachePartialHit

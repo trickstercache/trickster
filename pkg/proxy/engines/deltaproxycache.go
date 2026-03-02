@@ -28,8 +28,10 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
+	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	tc "github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/evictionmethods"
+	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/encoding/profile"
 	"github.com/trickstercache/trickster/v2/pkg/encoding/providers"
@@ -45,6 +47,125 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
+
+// --- Fast Forward ---
+const (
+	statusOff  = "off"
+	statusErr  = "err"
+	statusHit  = "hit"
+	statusMiss = "miss"
+)
+
+// fetchFastForward executes a fast-forward request and merges the result into rts.
+// Returns the fast-forward status string ("off", "hit", "miss", or "err").
+func fetchFastForward(
+	ctx context.Context, r *http.Request,
+	o *bo.Options, cc *co.Options, cache tc.Cache,
+	client backends.TimeseriesBackend, rsc *request.Resources,
+	rlo *timeseries.RequestOptions, trq *timeseries.TimeRangeQuery,
+	normalizedNow *timeseries.TimeRangeQuery, modeler *timeseries.Modeler,
+	rts timeseries.Timeseries,
+) string {
+	if rlo.FastForwardDisable {
+		return statusOff
+	}
+	// if the step resolution <= Fast Forward TTL, then no need to even try Fast Forward
+	if trq.Step <= o.FastForwardTTL {
+		return statusOff
+	}
+	ffReq, err := client.FastForwardRequest(r)
+	if err != nil || ffReq == nil || ffReq.URL == nil || ffReq.URL.Scheme == "" {
+		return statusErr
+	}
+	// Only fast forward if the user request is for the absolute latest datapoint
+	if !trq.Extent.End.Equal(normalizedNow.Extent.End) {
+		return statusOff
+	}
+	ffReq = ffReq.WithContext(profile.ToContext(ffReq.Context(), dpcEncodingProfile.Clone()))
+	rs := request.NewResources(o, o.FastForwardPath, cc, cache, client, rsc.Tracer)
+	rs.AlternateCacheTTL = o.FastForwardTTL
+	ffReq = ffReq.WithContext(tctx.WithResources(ffReq.Context(), rs))
+
+	_, ffSpan := tspan.NewChildSpan(ctx, rsc.Tracer, "FetchFastForward")
+	if ffSpan != nil {
+		ffReq = ffReq.WithContext(trace.ContextWithSpan(ffReq.Context(), ffSpan))
+		defer ffSpan.End()
+	}
+	body, resp, isHit := FetchViaObjectProxyCache(ffReq)
+	if resp == nil || resp.StatusCode != http.StatusOK || len(body) == 0 {
+		return statusErr
+	}
+	ffts, err := modeler.WireUnmarshalerReader(getDecoderReader(resp), trq)
+	if err != nil {
+		logger.Error("proxy object unmarshaling failed", logging.Pairs{"body": string(body)})
+		return statusErr
+	}
+	ffts.SetTimeRangeQuery(trq)
+	x := ffts.Extents()
+	ffStatus := statusMiss
+	if isHit {
+		ffStatus = statusHit
+	}
+	// Merge Fast Forward data if present. This must be done after the Downstream Crop since
+	// the cropped extent was normalized to step boundaries and would remove fast forward data.
+	// If the fast forward data point is older (e.g. cached) than the last datapoint in the
+	// returned time series, it will not be merged
+	if len(x) > 0 && x[0].End.After(trq.Extent.End) &&
+		len(x) == 1 && x[0].Start.Truncate(time.Second).After(normalizedNow.Extent.End) {
+		rts.Merge(false, ffts)
+	}
+	return ffStatus
+}
+
+// finalizeDPCResponse writes metrics, logs, and the HTTP response for a DPC request.
+// If wireBody is non-nil, it is written directly (skipping marshal).
+// Otherwise rts is marshaled to the wire format.
+func finalizeDPCResponse(
+	w http.ResponseWriter, r *http.Request, rsc *request.Resources,
+	rts timeseries.Timeseries, rh http.Header, sc int,
+	cacheStatus status.LookupStatus, ffStatus string, elapsed float64,
+	missRanges timeseries.ExtentList, uncachedValueCount int64,
+	key string, o *bo.Options, rlo *timeseries.RequestOptions,
+	modeler *timeseries.Modeler, wireBody []byte,
+) {
+	dpStatus := logging.Pairs{
+		"cacheKey":    key,
+		"cacheStatus": cacheStatus,
+		"reqStart":    rsc.TimeRangeQuery.Extent.Start.Unix(),
+		"reqEnd":      rsc.TimeRangeQuery.Extent.End.Unix(),
+	}
+	if uncachedValueCount > 0 {
+		metrics.ProxyRequestElements.WithLabelValues(o.Name,
+			o.Provider, "uncached", r.URL.Path).Add(float64(uncachedValueCount))
+	}
+	cachedValueCount := rts.ValueCount() - uncachedValueCount
+	if cachedValueCount > 0 {
+		metrics.ProxyRequestElements.WithLabelValues(o.Name,
+			o.Provider, "cached", r.URL.Path).Add(float64(cachedValueCount))
+	}
+
+	// Respond to the user. Using the response headers from a Delta Response,
+	// so as to not map conflict with cacheData on WriteCache
+	logDeltaRoutine(dpStatus)
+	recordDPCResult(r, cacheStatus, sc, r.URL.Path, ffStatus, elapsed, missRanges, rh)
+
+	rsc.TS = rts
+	Respond(w, 0, rh, nil) // body and code are nil so this only sets appropriate headers; no writes
+	if rsc.TSTransformer != nil {
+		rsc.TSTransformer(rts)
+	}
+	if rsc.IsMergeMember { // don't bother marshaling this dataset if it's just going to be merged internally
+		if rsc.Response == nil {
+			rsc.Response = &http.Response{StatusCode: sc}
+		}
+		return
+	}
+	if wireBody != nil {
+		w.Write(wireBody)
+	} else {
+		modeler.WireMarshalWriter(rts, rlo, sc, w)
+	}
+}
 
 // DeltaProxyCache is used for Time Series Acceleration, but not for normal HTTP Object Caching
 
@@ -124,6 +245,12 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 
 	client.SetExtent(pr.upstreamRequest, trq, &trq.Extent)
 	key := o.CacheKeyPrefix + ".dpc." + pr.DeriveCacheKey("")
+
+	coReq := GetRequestCachingPolicy(r.Header)
+
+	sfKey := key + "|" + strconv.FormatInt(trq.Extent.Start.UnixMilli(), 10) +
+		"|" + strconv.FormatInt(trq.Extent.End.UnixMilli(), 10)
+
 	pr.cacheLock, _ = locker.RAcquire(key)
 
 	// this is used to determine if Fast Forward should be activated for this request
@@ -139,27 +266,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 	var uncachedValueCount int64
 	var missRanges timeseries.ExtentList
 
-	coReq := GetRequestCachingPolicy(r.Header)
-
-	if coReq.NoCache {
-		// NoCache: bypass cache and singleflight, fetch directly from origin
-		pr.cacheLock.RRelease()
-		if span != nil {
-			span.AddEvent("Not Caching")
-		}
-		cacheStatus = status.LookupStatusPurge
-		go cache.Remove(key)
-		var cts timeseries.Timeseries
-		cts, doc, elapsed, err = fetchTimeseries(pr, trq, client, modeler)
-		if err != nil {
-			h := doc.SafeHeaderClone()
-			recordDPCResult(r, status.LookupStatusProxyError, doc.StatusCode,
-				r.URL.Path, "", elapsed.Seconds(), nil, h)
-			Respond(w, doc.StatusCode, h, bytes.NewReader(doc.Body))
-			return
-		}
-		rts = cts.Clone()
-	} else {
+	if !coReq.NoCache {
 		// it's not a NoCache request, so something is _likely_ going to be cached now.
 		// we use singleflight here, so as to prevent other concurrent client requests for
 		// the same url, which will have the same cacheStatus, from causing the same or
@@ -170,11 +277,9 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 		// waiters holding a read lock would block the executor's cache write.
 		pr.cacheLock.RRelease()
 
-		sfKey := key + "|" + strconv.FormatInt(trq.Extent.Start.UnixMilli(), 10) +
-			"|" + strconv.FormatInt(trq.Extent.End.UnixMilli(), 10)
-
 		v, sfErr, sfShared := dpcGroup.Do(sfKey, func() (any, error) {
-			// cache query + origin fetch inside singleflight so only one goroutine does the work
+			// The entire response path runs inside singleflight: cache query, origin fetch,
+			// fast-forward, merge, and marshal. Waiters receive the final wire bytes directly.
 			var cts timeseries.Timeseries
 			var sfDoc *HTTPDocument
 			var sfElapsed time.Duration
@@ -349,12 +454,24 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 				}
 			}
 
+			sfUncachedValueCount := sfRts.ValueCount() - cts.ValueCount()
+
+			sfFFStatus := fetchFastForward(ctx, r, o, cc, cache, client, rsc,
+				rlo, trq, normalizedNow, modeler, sfRts)
+
+			// Marshal the response timeseries to wire format
+			sfRts.SetExtents(nil) // so they are not included in the client response json
+			var buf bytes.Buffer
+			modeler.WireMarshalWriter(sfRts, rlo, sfDoc.StatusCode, &buf)
+
 			return &dpcResult{
+				wireBody:           buf.Bytes(),
 				rts:                sfRts,
 				headers:            sfDoc.SafeHeaderClone(),
 				statusCode:         sfDoc.StatusCode,
 				elapsed:            float64(sfElapsed.Seconds()),
-				uncachedValueCount: sfRts.ValueCount() - cts.ValueCount(), // approximation; recalculated below
+				ffStatus:           sfFFStatus,
+				uncachedValueCount: sfUncachedValueCount,
 				cacheStatus:        sfCacheStatus,
 				missRanges:         sfMissRanges,
 			}, nil
@@ -383,9 +500,6 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 			return
 		}
 
-		rts = result.rts.Clone() // clone for this request — marshal mutates (SetExtents, etc.)
-		doc = &HTTPDocument{StatusCode: result.statusCode, Headers: result.headers}
-		elapsed = time.Duration(result.elapsed * float64(time.Second))
 		cacheStatus = result.cacheStatus
 		if sfShared {
 			if status.IsSuccessful(cacheStatus) {
@@ -394,121 +508,58 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 				cacheStatus = status.LookupStatusProxyError
 			}
 		}
-		uncachedValueCount = result.uncachedValueCount
-		missRanges = result.missRanges
+
+		tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", cacheStatus.String()))
+
+		rh := result.headers.Clone()
+		sc := result.statusCode
+
+		// For merge members or requests with a TSTransformer, provide the timeseries
+		if rsc.IsMergeMember || rsc.TSTransformer != nil {
+			rts := result.rts.Clone()
+			finalizeDPCResponse(w, r, rsc, rts, rh, sc,
+				cacheStatus, result.ffStatus, result.elapsed, result.missRanges,
+				result.uncachedValueCount, key, o, rlo, modeler, nil)
+			return
+		}
+
+		// Normal path: serve the pre-marshaled wire bytes directly
+		finalizeDPCResponse(w, r, rsc, result.rts, rh, sc,
+			cacheStatus, result.ffStatus, result.elapsed, result.missRanges,
+			result.uncachedValueCount, key, o, rlo, modeler, result.wireBody)
+		return
 	}
+
+	// NoCache: bypass cache and singleflight, fetch directly from origin
+	pr.cacheLock.RRelease()
+	if span != nil {
+		span.AddEvent("Not Caching")
+	}
+	cacheStatus = status.LookupStatusPurge
+	go cache.Remove(key)
+	var cts timeseries.Timeseries
+	cts, doc, elapsed, err = fetchTimeseries(pr, trq, client, modeler)
+	if err != nil {
+		h := doc.SafeHeaderClone()
+		recordDPCResult(r, status.LookupStatusProxyError, doc.StatusCode,
+			r.URL.Path, "", elapsed.Seconds(), nil, h)
+		Respond(w, doc.StatusCode, h, bytes.NewReader(doc.Body))
+		return
+	}
+	rts = cts.Clone()
 
 	tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", cacheStatus.String()))
 
-	// --- Fast Forward ---
-	const (
-		statusOff = "off"
-		statusErr = "err"
-	)
+	ffStatus := fetchFastForward(ctx, r, o, cc, cache, client, rsc,
+		rlo, trq, normalizedNow, modeler, rts)
 
-	ffStatus := statusOff
-	var ffReq *http.Request
-	// if the step resolution <= Fast Forward TTL, then no need to even try Fast Forward
-	if !rlo.FastForwardDisable {
-		if trq.Step > o.FastForwardTTL {
-			ffReq, err = client.FastForwardRequest(r)
-			if err != nil || ffReq == nil || ffReq.URL == nil || ffReq.URL.Scheme == "" {
-				ffStatus = statusErr
-				rlo.FastForwardDisable = true
-			} else {
-				ffReq = ffReq.WithContext(profile.ToContext(ffReq.Context(), dpcEncodingProfile.Clone()))
-				rs := request.NewResources(o, o.FastForwardPath, cc, cache, client, rsc.Tracer)
-				rs.AlternateCacheTTL = o.FastForwardTTL
-				ffReq = ffReq.WithContext(tctx.WithResources(ffReq.Context(), rs))
-			}
-		} else {
-			rlo.FastForwardDisable = true
-		}
-	}
-
-	wg := &sync.WaitGroup{}
-	var hasFastForwardData bool
-	var ffts timeseries.Timeseries
-	// Only fast forward if configured and the user request is for the absolute latest datapoint
-	if (!rlo.FastForwardDisable) &&
-		(trq.Extent.End.Equal(normalizedNow.Extent.End)) {
-		wg.Go(func() {
-			_, ffSpan := tspan.NewChildSpan(ctx, rsc.Tracer, "FetchFastForward")
-			if ffSpan != nil {
-				ffReq = ffReq.WithContext(trace.ContextWithSpan(ffReq.Context(), ffSpan))
-				defer ffSpan.End()
-			}
-			body, resp, isHit := FetchViaObjectProxyCache(ffReq)
-			if resp != nil && resp.StatusCode == http.StatusOK && len(body) > 0 {
-				ffts, err = modeler.WireUnmarshalerReader(getDecoderReader(resp), trq)
-				if err != nil {
-					ffStatus = statusErr
-					logger.Error("proxy object unmarshaling failed",
-						logging.Pairs{"body": string(body)})
-					return
-				}
-				ffts.SetTimeRangeQuery(trq)
-				x := ffts.Extents()
-				if isHit {
-					ffStatus = "hit"
-				} else {
-					ffStatus = "miss"
-				}
-				hasFastForwardData = len(x) > 0 && x[0].End.After(trq.Extent.End)
-			} else {
-				ffStatus = statusErr
-			}
-		})
-	}
-	wg.Wait()
-
-	// --- Metrics ---
-	dpStatus := logging.Pairs{
-		"cacheKey":    key,
-		"cacheStatus": cacheStatus,
-		"reqStart":    trq.Extent.Start.Unix(),
-		"reqEnd":      trq.Extent.End.Unix(),
-	}
-
-	cachedValueCount := rts.ValueCount() - uncachedValueCount
-	if uncachedValueCount > 0 {
-		metrics.ProxyRequestElements.WithLabelValues(o.Name,
-			o.Provider, "uncached", r.URL.Path).Add(float64(uncachedValueCount))
-	}
-	if cachedValueCount > 0 {
-		metrics.ProxyRequestElements.WithLabelValues(o.Name,
-			o.Provider, "cached", r.URL.Path).Add(float64(cachedValueCount))
-	}
-
-	// Merge Fast Forward data if present. This must be done after the Downstream Crop since
-	// the cropped extent was normalized to stepboundaries and would remove fast forward data.
-	// If the fast forward data point is older (e.g. cached) than the last datapoint in the
-	// returned time series, it will not be merged
-	if hasFastForwardData && len(ffts.Extents()) == 1 &&
-		ffts.Extents()[0].Start.Truncate(time.Second).After(normalizedNow.Extent.End) {
-		rts.Merge(false, ffts)
-	}
 	rts.SetExtents(nil) // so they are not included in the client response json
 	rh := doc.SafeHeaderClone()
 	sc := doc.StatusCode
 
-	// Respond to the user. Using the response headers from a Delta Response,
-	// so as to not map conflict with cacheData on WriteCache
-	logDeltaRoutine(dpStatus)
-	recordDPCResult(r, cacheStatus, sc, r.URL.Path, ffStatus, elapsed.Seconds(), missRanges, rh)
-
-	rsc.TS = rts
-	Respond(w, 0, rh, nil) // body and code are nil so this only sets appropriate headers; no writes
-	if rsc.TSTransformer != nil {
-		rsc.TSTransformer(rts)
-	}
-	if rsc.IsMergeMember { // don't bother marshaling this dataset if it's just going to be merged internally
-		if rsc.Response == nil {
-			rsc.Response = &http.Response{StatusCode: sc}
-		}
-		return
-	}
-	modeler.WireMarshalWriter(rts, rlo, sc, w)
+	finalizeDPCResponse(w, r, rsc, rts, rh, sc,
+		cacheStatus, ffStatus, elapsed.Seconds(), missRanges, uncachedValueCount,
+		key, o, rlo, modeler, nil)
 }
 
 func logDeltaRoutine(p logging.Pairs) {

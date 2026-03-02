@@ -84,6 +84,7 @@ func executeChunkQuery(ctx context.Context, c cache.Cache, iterator ChunkQueryIt
 		eg.Go(func() error {
 			qr := queryConcurrent(ctx, c, subkey)
 			if qr.lookupStatus != status.LookupStatusHit &&
+				qr.lookupStatus != status.LookupStatusProxyHit &&
 				(qr.err == nil || errors.Is(qr.err, cache.ErrKNF)) {
 				return nil
 			}
