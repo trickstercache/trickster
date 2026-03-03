@@ -143,4 +143,3 @@ func (cm *Manager) Connect() error {
 func (cm *Manager) Configuration() *options.Options {
 	return cm.config
 }
-

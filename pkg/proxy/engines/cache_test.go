@@ -464,4 +464,4 @@ func (tc *testCache) Retrieve(cacheKey string) ([]byte, status.LookupStatus, err
 func (tc *testCache) SetTTL(cacheKey string, ttl time.Duration) {}
 func (tc *testCache) Remove(cacheKey ...string) error           { return nil }
 func (tc *testCache) Close() error                              { return errTest }
-func (tc *testCache) Configuration() *co.Options { return tc.configuration }
+func (tc *testCache) Configuration() *co.Options                { return tc.configuration }
