@@ -20,7 +20,6 @@ import (
 	"context"
 	stderrors "errors"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -971,25 +970,5 @@ func TestFetchViaObjectProxyCacheRequestErroringCacheChunks(t *testing.T) {
 	_, _, b := FetchViaObjectProxyCache(r)
 	if b {
 		t.Errorf("expected %t got %t", false, b)
-	}
-}
-
-func TestRerunRequestChunks(t *testing.T) {
-	ts, _, r, rsc, err := setupTestHarnessOPC("", "test", http.StatusOK, nil)
-	rsc.CacheConfig.UseCacheChunking = true
-	if err != nil {
-		t.Error(err)
-	} else {
-		defer ts.Close()
-	}
-	w := httptest.NewRecorder()
-	pr := newProxyRequest(r, w)
-	locker := locks.NewNamedLocker()
-	nl, _ := locker.Acquire("test")
-	pr.cacheLock = nl
-	pr.hasWriteLock = true
-	rerunRequest(pr)
-	if !pr.wasReran {
-		t.Error("expected true")
 	}
 }

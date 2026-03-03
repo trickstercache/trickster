@@ -25,7 +25,6 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
-	"github.com/trickstercache/trickster/v2/pkg/locks"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
@@ -70,11 +69,8 @@ type proxyRequest struct {
 	revalidationResponse *http.Response
 	revalidationReader   io.ReadCloser
 
-	rerunCount int
-
 	cacheDocument *HTTPDocument
 	cacheBuffer   *bytes.Buffer
-	cacheLock     locks.NamedLock
 	mapLock       *sync.Mutex
 
 	key         string
@@ -96,9 +92,6 @@ type proxyRequest struct {
 
 	isPCF             bool
 	writeToCache      bool
-	hasWriteLock      bool
-	hasReadLock       bool
-	wasReran          bool
 	wantsRanges       bool
 	isPartialResponse bool
 	wasReconstituted  bool
