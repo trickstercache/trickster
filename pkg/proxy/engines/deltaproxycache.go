@@ -193,8 +193,6 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 	pc := rsc.PathConfig
 	cache := rsc.CacheClient
 	cc := rsc.CacheConfig
-	locker := cache.Locker()
-
 	client := rsc.BackendClient.(backends.TimeseriesBackend)
 
 	trq, rlo, canOPC, err := client.ParseTimeRangeQuery(r)
@@ -251,8 +249,6 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 	sfKey := key + "|" + strconv.FormatInt(trq.Extent.Start.UnixMilli(), 10) +
 		"|" + strconv.FormatInt(trq.Extent.End.UnixMilli(), 10)
 
-	pr.cacheLock, _ = locker.RAcquire(key)
-
 	// this is used to determine if Fast Forward should be activated for this request
 	normalizedNow := &timeseries.TimeRangeQuery{
 		Extent: timeseries.Extent{Start: time.Unix(0, 0), End: now},
@@ -272,10 +268,6 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 		// the same url, which will have the same cacheStatus, from causing the same or
 		// similar HTTP requests to be made against the origin, since just one should do.
 		// waiters receive the shared result directly — no extra cache round-trips or lock churn.
-
-		// Release read lock before singleflight to avoid deadlock:
-		// waiters holding a read lock would block the executor's cache write.
-		pr.cacheLock.RRelease()
 
 		v, sfErr, sfShared := dpcGroup.Do(sfKey, func() (any, error) {
 			// The entire response path runs inside singleflight: cache query, origin fetch,
@@ -531,7 +523,6 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 	}
 
 	// NoCache: bypass cache and singleflight, fetch directly from origin
-	pr.cacheLock.RRelease()
 	if span != nil {
 		span.AddEvent("Not Caching")
 	}

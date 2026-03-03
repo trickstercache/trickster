@@ -73,14 +73,14 @@ func TestGetAndSetResources(t *testing.T) {
 func TestMergeResources(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	r1 := NewResources(nil, nil, nil, nil, nil, nil)
-	r1.NoLock = true
+	r1.AlternateCacheTTL = time.Minute
 	r1.Merge(nil)
-	if !r1.NoLock {
+	if r1.AlternateCacheTTL != time.Minute {
 		t.Errorf("nil merge shouldn't set anything in subject resources")
 	}
 	r2 := NewResources(nil, nil, nil, nil, nil, nil)
 	r1.Merge(r2)
-	if r1.NoLock {
+	if r1.AlternateCacheTTL != 0 {
 		t.Errorf("merge should override subject resources")
 	}
 }

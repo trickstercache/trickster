@@ -18,7 +18,6 @@ package manager
 
 import (
 	"errors"
-	"path/filepath"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/cache"
@@ -26,7 +25,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
-	"github.com/trickstercache/trickster/v2/pkg/locks"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"golang.org/x/sync/singleflight"
@@ -45,7 +43,6 @@ func NewCache(cli cache.Client, cacheOpts CacheOptions, cacheConfig *options.Opt
 		config:      cacheConfig,
 		opts:        cacheOpts,
 	}
-	cm.locker = locks.NewNamedLocker()
 	return cm
 }
 
@@ -56,21 +53,16 @@ type Manager struct {
 	originalCli cache.Client
 	sf          singleflight.Group
 	config      *options.Options
-	locker      locks.NamedLocker
 	opts        CacheOptions
 }
 
 func (cm *Manager) StoreReference(cacheKey string, data cache.ReferenceObject, ttl time.Duration) error {
-	nl, _ := cm.locker.Acquire(filepath.Join(cm.config.Name, cm.config.Provider, cacheKey))
-	defer nl.Release()
 	metrics.ObserveCacheOperation(cm.config.Name, cm.config.Provider, "setDirect", "none", float64(data.Size()))
 	logger.Debug("cache store", logging.Pairs{"key": cacheKey, "provider": cm.config.Provider})
 	return cm.Client.(cache.MemoryCache).StoreReference(cacheKey, data, ttl)
 }
 
 func (cm *Manager) Store(cacheKey string, byteData []byte, ttl time.Duration) error {
-	nl, _ := cm.locker.Acquire(filepath.Join(cm.config.Name, cm.config.Provider, cacheKey))
-	defer nl.Release()
 	metrics.ObserveCacheOperation(cm.config.Name, cm.config.Provider, "set", "none", float64(len(byteData)))
 	logger.Debug("cache store", logging.Pairs{"key": cacheKey, "provider": cm.config.Provider})
 	return cm.Client.Store(cacheKey, byteData, ttl)
@@ -91,8 +83,6 @@ func (cm *Manager) observeRetrieval(cacheKey string, size int, s status.LookupSt
 }
 
 func (cm *Manager) RetrieveReference(cacheKey string) (any, status.LookupStatus, error) {
-	nl, _ := cm.locker.RAcquire(filepath.Join(cm.config.Name, cm.config.Provider, cacheKey))
-	defer nl.RRelease()
 	v, s, err := cm.Client.(cache.MemoryCache).RetrieveReference(cacheKey)
 	if ro, ok := v.(cache.ReferenceObject); ok {
 		cm.observeRetrieval(cacheKey, ro.Size(), s, err)
@@ -107,8 +97,6 @@ type retrieveResult struct {
 
 func (cm *Manager) Retrieve(cacheKey string) ([]byte, status.LookupStatus, error) {
 	val, err, shared := cm.sf.Do(cacheKey, func() (any, error) {
-		nl, _ := cm.locker.RAcquire(filepath.Join(cm.config.Name, cm.config.Provider, cacheKey))
-		defer nl.RRelease()
 		b, s, err := cm.Client.Retrieve(cacheKey)
 		cm.observeRetrieval(cacheKey, len(b), s, err)
 		return &retrieveResult{
@@ -129,10 +117,6 @@ func (cm *Manager) Retrieve(cacheKey string) ([]byte, status.LookupStatus, error
 }
 
 func (cm *Manager) Remove(cacheKeys ...string) error {
-	for _, k := range cacheKeys {
-		nl, _ := cm.locker.Acquire(filepath.Join(cm.config.Name, cm.config.Provider, k))
-		defer nl.Release()
-	}
 	metrics.ObserveCacheDel(cm.config.Name, cm.config.Provider, float64(len(cacheKeys)-1))
 	logger.Debug("cache remove", logging.Pairs{"keys": cacheKeys, "provider": cm.config.Provider})
 	return cm.Client.Remove(cacheKeys...)
@@ -158,12 +142,4 @@ func (cm *Manager) Connect() error {
 
 func (cm *Manager) Configuration() *options.Options {
 	return cm.config
-}
-
-func (cm *Manager) Locker() locks.NamedLocker {
-	return cm.locker
-}
-
-func (cm *Manager) SetLocker(l locks.NamedLocker) {
-	cm.locker = l
 }

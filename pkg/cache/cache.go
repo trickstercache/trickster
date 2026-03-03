@@ -24,7 +24,6 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
-	"github.com/trickstercache/trickster/v2/pkg/locks"
 )
 
 // ErrKNF represents the error "key not found in cache"
@@ -39,8 +38,6 @@ type Cache interface {
 	Remove(cacheKeys ...string) error
 	Close() error
 	Configuration() *options.Options
-	Locker() locks.NamedLocker
-	SetLocker(locks.NamedLocker)
 }
 
 type Lookup map[string]Cache

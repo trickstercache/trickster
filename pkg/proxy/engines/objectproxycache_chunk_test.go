@@ -20,7 +20,6 @@ import (
 	"context"
 	stderrors "errors"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -28,7 +27,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/trickstercache/mockster/pkg/mocks/byterange"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
-	"github.com/trickstercache/trickster/v2/pkg/locks"
 	tc "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
@@ -964,32 +962,12 @@ func TestFetchViaObjectProxyCacheRequestErroringCacheChunks(t *testing.T) {
 	}
 	defer ts.Close()
 
-	tc := &testCache{configuration: rsc.CacheConfig, locker: locks.NewNamedLocker()}
+	tc := &testCache{configuration: rsc.CacheConfig}
 	rsc.CacheClient = tc
 	tc.configuration.Provider = "test"
 
 	_, _, b := FetchViaObjectProxyCache(r)
 	if b {
 		t.Errorf("expected %t got %t", false, b)
-	}
-}
-
-func TestRerunRequestChunks(t *testing.T) {
-	ts, _, r, rsc, err := setupTestHarnessOPC("", "test", http.StatusOK, nil)
-	rsc.CacheConfig.UseCacheChunking = true
-	if err != nil {
-		t.Error(err)
-	} else {
-		defer ts.Close()
-	}
-	w := httptest.NewRecorder()
-	pr := newProxyRequest(r, w)
-	locker := locks.NewNamedLocker()
-	nl, _ := locker.Acquire("test")
-	pr.cacheLock = nl
-	pr.hasWriteLock = true
-	rerunRequest(pr)
-	if !pr.wasReran {
-		t.Error("expected true")
 	}
 }

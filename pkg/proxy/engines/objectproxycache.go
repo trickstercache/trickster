@@ -47,10 +47,6 @@ func handleCacheKeyHit(pr *proxyRequest) error {
 
 	ok, err := confirmTrueCacheHit(pr)
 	if ok {
-		if pr.hasReadLock {
-			pr.cacheLock.RRelease()
-			pr.hasReadLock = false
-		}
 		return handleTrueCacheHit(pr)
 	}
 
@@ -68,12 +64,6 @@ func handleCachePartialHit(pr *proxyRequest) error {
 			// request to the correct handle; we just return its result here.
 			return err
 		}
-	}
-
-	b1, b2 := upgradeLock(pr)
-	if b1 && !b2 && pr.rerunCount < 3 {
-		rerunRequest(pr)
-		return nil
 	}
 
 	pr.prepareUpstreamRequests()
@@ -151,12 +141,6 @@ func handleCacheRangeMiss(pr *proxyRequest) error {
 }
 
 func handleCacheRevalidation(pr *proxyRequest) error {
-	b1, b2 := upgradeLock(pr)
-	if b1 && !b2 {
-		rerunRequest(pr)
-		return nil
-	}
-
 	rsc := request.GetResources(pr.Request)
 
 	_, span := tspan.NewChildSpan(pr.Request.Context(), rsc.Tracer, "CacheRevalidation")
@@ -256,14 +240,8 @@ func handleCacheKeyMiss(pr *proxyRequest) error {
 	rsc := request.GetResources(pr.Request)
 	pc := rsc.PathConfig
 
-	// PCF has its own dedup mechanism — keep existing lock-upgrade path
 	if !methods.HasBody(pr.Method) && !pr.wantsRanges && pc != nil &&
 		pc.CollapsedForwardingType == forwarding.CFTypeProgressive {
-		b1, b2 := upgradeLock(pr)
-		if b1 && !b2 {
-			rerunRequest(pr)
-			return nil
-		}
 		if err := handlePCF(pr); !stderrors.Is(err, errors.ErrPCFContentLength) {
 			return err
 		}
@@ -273,13 +251,6 @@ func handleCacheKeyMiss(pr *proxyRequest) error {
 			return err
 		}
 		return handleAllWrites(pr)
-	}
-
-	// Release read lock before singleflight to avoid deadlock:
-	// waiters holding a read lock would block the executor's write lock acquisition.
-	if pr.hasReadLock {
-		pr.cacheLock.RRelease()
-		pr.hasReadLock = false
 	}
 
 	v, err, shared := opcGroup.Do(pr.key, func() (any, error) {
@@ -361,8 +332,6 @@ func handlePCF(pr *proxyRequest) error {
 	pcfResult, pcfExists := reqs.Load(pr.key)
 	// a PCF session is in progress for this URL, join this client to it.
 	if pcfExists {
-		pr.cacheLock.Release()
-		pr.hasWriteLock = false
 		pcf := pcfResult.(ProgressiveCollapseForwarder)
 		pr.upstreamResponse = pcf.GetResp()
 		pr.mapLock.Lock()
@@ -387,8 +356,18 @@ func handlePCF(pr *proxyRequest) error {
 	// Check if we know the content length and if it is less than our max object size.
 	if contentLength > 0 && contentLength < int64(o.MaxObjectSizeBytes) {
 		pcf := NewPCF(resp, contentLength)
-		reqs.Store(pr.key, pcf)
-		// Blocks until server completes
+		actual, loaded := reqs.LoadOrStore(pr.key, pcf)
+		if loaded {
+			// Another goroutine created a PCF session first; join it instead.
+			resp.Body.Close()
+			existingPCF := actual.(ProgressiveCollapseForwarder)
+			pr.upstreamResponse = existingPCF.GetResp()
+			pr.mapLock.Lock()
+			pr.responseWriter = PrepareResponseWriter(pr.responseWriter, pr.upstreamResponse.StatusCode,
+				pr.upstreamResponse.Header)
+			pr.mapLock.Unlock()
+			return existingPCF.AddClient(pr.responseWriter)
+		}
 
 		pr.cachingPolicy.Merge(GetResponseCachingPolicy(pr.upstreamResponse.StatusCode,
 			rsc.BackendOptions.NegativeCache, pr.upstreamResponse.Header))
@@ -504,18 +483,6 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 
 	pr.cachingPolicy.ParseClientConditionals()
 
-	if !rsc.NoLock {
-		pr.cacheLock, _ = cc.Locker().RAcquire(pr.key)
-		pr.hasReadLock = true
-		defer func() {
-			if pr.hasWriteLock {
-				pr.cacheLock.Release()
-			} else if pr.hasReadLock {
-				pr.cacheLock.RRelease()
-			}
-		}()
-	}
-
 	var err error
 	pr.cacheDocument, pr.cacheStatus, pr.neededRanges, err = QueryCache(pr.upstreamRequest.Context(), cc, pr.key, pr.wantedRanges, nil)
 	if err == nil || stderrors.Is(err, cache.ErrKNF) {
@@ -536,10 +503,6 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 		if err := handleCacheKeyMiss(pr); err != nil {
 			return nil, status.LookupStatusKeyMiss
 		}
-	}
-
-	if pr.wasReran {
-		return nil, status.LookupStatusRevalidated
 	}
 
 	// newProxyRequest sets pr.started to time.Now()
@@ -586,28 +549,4 @@ func recordOPCResult(pr *proxyRequest, cacheStatus status.LookupStatus, httpStat
 	pr.mapLock.Lock()
 	recordResults(pr.Request, "ObjectProxyCache", cacheStatus, httpStatus, path, "", elapsed, nil, header)
 	pr.mapLock.Unlock()
-}
-
-func upgradeLock(pr *proxyRequest) (bool, bool) {
-	if pr.hasReadLock && !pr.hasWriteLock {
-		wasFirst := pr.cacheLock.Upgrade()
-		pr.hasReadLock = false
-		pr.hasWriteLock = true
-		if wasFirst {
-			return true, true
-		}
-		return true, false
-	}
-	return false, false
-}
-
-func rerunRequest(pr *proxyRequest) {
-	pr.wasReran = true
-	if w, ok := pr.responseWriter.(http.ResponseWriter); ok {
-		if pr.hasWriteLock {
-			pr.cacheLock.Release()
-			pr.hasWriteLock = false
-		}
-		ObjectProxyCacheRequest(w, pr.Request)
-	}
 }

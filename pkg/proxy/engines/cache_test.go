@@ -32,7 +32,6 @@ import (
 	cr "github.com/trickstercache/trickster/v2/pkg/cache/registry"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/config"
-	"github.com/trickstercache/trickster/v2/pkg/locks"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	tc "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
@@ -446,7 +445,6 @@ func TestQueryCache(t *testing.T) {
 // Mock Cache for testing error conditions
 type testCache struct {
 	configuration *co.Options
-	locker        locks.NamedLocker
 }
 
 func (tc *testCache) Connect() error {
@@ -467,5 +465,3 @@ func (tc *testCache) SetTTL(cacheKey string, ttl time.Duration) {}
 func (tc *testCache) Remove(cacheKey ...string) error           { return nil }
 func (tc *testCache) Close() error                              { return errTest }
 func (tc *testCache) Configuration() *co.Options                { return tc.configuration }
-func (tc *testCache) Locker() locks.NamedLocker                 { return tc.locker }
-func (tc *testCache) SetLocker(l locks.NamedLocker)             { tc.locker = l }

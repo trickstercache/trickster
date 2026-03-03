@@ -41,7 +41,6 @@ type Resources struct {
 	BackendOptions    *bo.Options
 	PathConfig        *po.Options
 	CacheConfig       *co.Options
-	NoLock            bool
 	CacheClient       cache.Cache
 	BackendClient     backends.Backend
 	AlternateCacheTTL time.Duration
@@ -68,7 +67,6 @@ func (r *Resources) Clone() *Resources {
 		BackendOptions:    r.BackendOptions,
 		PathConfig:        r.PathConfig,
 		CacheConfig:       r.CacheConfig,
-		NoLock:            r.NoLock,
 		CacheClient:       r.CacheClient,
 		BackendClient:     r.BackendClient,
 		AlternateCacheTTL: r.AlternateCacheTTL,
@@ -140,7 +138,6 @@ func (r *Resources) Merge(r2 *Resources) {
 	r.BackendOptions = r2.BackendOptions
 	r.PathConfig = r2.PathConfig
 	r.CacheConfig = r2.CacheConfig
-	r.NoLock = r2.NoLock
 	r.CacheClient = r2.CacheClient
 	r.BackendClient = r2.BackendClient
 	r.AlternateCacheTTL = r2.AlternateCacheTTL
