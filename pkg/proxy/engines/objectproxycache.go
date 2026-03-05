@@ -466,6 +466,27 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 		capture := &sfResponseCapture{inner: pr.responseWriter}
 		pr.responseWriter = capture
 
+		// buildErrorResult constructs an opcResult from whatever state exists
+		// after a handler error. The executor may have partially written a
+		// response; capture.buf holds whatever was written.
+		buildErrorResult := func() *opcResult {
+			sc := http.StatusBadGateway
+			var h http.Header
+			if pr.upstreamResponse != nil {
+				sc = pr.upstreamResponse.StatusCode
+				h = pr.upstreamResponse.Header.Clone()
+			}
+			if h == nil {
+				h = http.Header{}
+			}
+			return &opcResult{
+				statusCode:  sc,
+				headers:     h,
+				body:        append([]byte(nil), capture.buf.Bytes()...),
+				cacheStatus: status.LookupStatusProxyError,
+			}
+		}
+
 		var err error
 		pr.cacheDocument, pr.cacheStatus, pr.neededRanges, err = QueryCache(pr.upstreamRequest.Context(), cc, pr.key, pr.wantedRanges, nil)
 		if err == nil || stderrors.Is(err, cache.ErrKNF) {
@@ -476,7 +497,7 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 				return &opcResult{proxyOnly: true}, nil
 			}
 			if fErr := f(pr); fErr != nil {
-				return nil, fErr
+				return buildErrorResult(), nil
 			}
 		} else {
 			logger.Error("cache lookup error",
@@ -484,7 +505,7 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 			pr.cacheDocument = nil
 			pr.cacheStatus = status.LookupStatusKeyMiss
 			if fErr := handleCacheKeyMiss(pr); fErr != nil {
-				return nil, fErr
+				return buildErrorResult(), nil
 			}
 		}
 
@@ -522,6 +543,17 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 		if err := serveOPCResult(pr, result); err != nil {
 			return nil, status.LookupStatusError
 		}
+	}
+
+	// Ensure pr.upstreamResponse is set for metrics recording below.
+	// It may be nil if the executor's handler errored before contacting upstream.
+	if pr.upstreamResponse == nil {
+		pr.upstreamResponse = &http.Response{
+			StatusCode: result.statusCode,
+			Request:    pr.Request,
+			Header:     result.headers.Clone(),
+		}
+		pr.cacheStatus = result.cacheStatus
 	}
 
 	// newProxyRequest sets pr.started to time.Now()

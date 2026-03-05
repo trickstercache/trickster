@@ -31,6 +31,7 @@ import (
 
 	"github.com/trickstercache/mockster/pkg/mocks/byterange"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	tc "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
@@ -1410,5 +1411,92 @@ func TestOPCSingleflightIdenticalRangesDeduped(t *testing.T) {
 	}
 	if sawPhit != n-1 {
 		t.Errorf("expected %d proxy-hit (waiters), got %d", n-1, sawPhit)
+	}
+}
+
+// failStoreCache wraps a cache.Cache (expected to be a MemoryCache) and makes
+// StoreReference return an error, which triggers the handler error (fErr) path
+// inside the singleflight closure.
+type failStoreCache struct {
+	cache.Cache
+}
+
+func (f *failStoreCache) StoreReference(string, cache.ReferenceObject, time.Duration) error {
+	return fmt.Errorf("injected store error")
+}
+
+func (f *failStoreCache) RetrieveReference(cacheKey string) (any, status.LookupStatus, error) {
+	return f.Cache.(cache.MemoryCache).RetrieveReference(cacheKey)
+}
+
+// TestOPCSingleflightHandlerError verifies that when the handler inside the
+// singleflight closure returns an error (e.g., cache store failure), all
+// concurrent waiters still receive a valid HTTP response.
+func TestOPCSingleflightHandlerError(t *testing.T) {
+	const n = 5
+	const body = "hello from origin"
+
+	// Gated origin that returns 200 with a cacheable response.
+	var originHits atomic.Int64
+	gate := make(chan struct{})
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		originHits.Add(1)
+		<-gate
+		w.Header().Set("Cache-Control", "max-age=60")
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, body)
+	}))
+	defer origin.Close()
+
+	ts, _, r, rsc, err := setupTestHarnessOPC("", body, http.StatusOK,
+		map[string]string{"Cache-Control": "max-age=60", "Content-Type": "text/plain"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ts.Close()
+
+	// Wrap the cache client so StoreReference fails, triggering the fErr path.
+	rsc.CacheClient = &failStoreCache{Cache: rsc.CacheClient}
+	rsc.BackendOptions.HTTPClient = origin.Client()
+	originURL, _ := url.Parse(origin.URL + "/opc")
+
+	var wg sync.WaitGroup
+	recorders := make([]*httptest.ResponseRecorder, n)
+
+	for i := range n {
+		wg.Add(1)
+		idx := i
+		go func() {
+			defer wg.Done()
+			clone := r.Clone(r.Context())
+			clone.RequestURI = ""
+			clone.URL = originURL
+			w := httptest.NewRecorder()
+			recorders[idx] = w
+			ObjectProxyCacheRequest(w, clone)
+		}()
+	}
+
+	time.Sleep(50 * time.Millisecond)
+	close(gate)
+	wg.Wait()
+
+	if hits := originHits.Load(); hits != 1 {
+		t.Errorf("expected 1 origin request, got %d", hits)
+	}
+
+	// All callers should get a valid HTTP response even though the cache store
+	// failed. The executor wrote its response before store() was called, and
+	// waiters receive the result via buildErrorResult/serveOPCResult.
+	for i, rec := range recorders {
+		resp := rec.Result()
+		b, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("request %d: expected status 200, got %d", i, resp.StatusCode)
+		}
+		if string(b) != body {
+			t.Errorf("request %d: expected body %q, got %q", i, body, string(b))
+		}
 	}
 }
