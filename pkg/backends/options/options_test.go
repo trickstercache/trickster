@@ -409,6 +409,8 @@ func TestValidateTLSConfigs(t *testing.T) {
 	o.TLS.CertificateAuthorityPaths = []string{caFile}
 	o.TLS.PrivateKeyPath = keyFile
 	o.TLS.FullChainCertPath = certFile
+	o.TLS.ClientCertPath = certFile
+	o.TLS.ClientKeyPath = keyFile
 
 	b, err = l.ValidateTLSConfigs()
 	if err != nil {
