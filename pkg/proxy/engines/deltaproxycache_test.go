@@ -1887,7 +1887,7 @@ func TestDPCNoCacheBypass(t *testing.T) {
 }
 
 // TestDPCSingleflightBadPayload verifies that when the origin returns an
-// OK response with an unparseable body, the error is propagated through
+// OK response with an unparsable body, the error is propagated through
 // the singleflight to all waiters.
 func TestDPCSingleflightBadPayload(t *testing.T) {
 	const n = 3
