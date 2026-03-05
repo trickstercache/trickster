@@ -21,6 +21,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -33,6 +36,20 @@ import (
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
+
+// gatedTransport wraps an http.RoundTripper to add a gate (for synchronizing
+// concurrent goroutines) and a hit counter (for verifying deduplication).
+type gatedTransport struct {
+	inner http.RoundTripper
+	gate  <-chan struct{}
+	hits  *atomic.Int64
+}
+
+func (g *gatedTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	g.hits.Add(1)
+	<-g.gate
+	return g.inner.RoundTrip(req)
+}
 
 // test queries
 const (
@@ -1589,5 +1606,175 @@ func TestDeltaProxyCacheRequestShardByPoints(t *testing.T) {
 	err = testResultHeaderPartMatch(resp.Header, map[string]string{"fetched": expectedFetched})
 	if err != nil {
 		t.Error(err)
+	}
+}
+
+// TestDPCSingleflightDedup verifies that concurrent identical DPC requests
+// result in only 1 origin fetch, with waiters receiving the shared result.
+func TestDPCSingleflightDedup(t *testing.T) {
+	const n = 5
+
+	ts, _, r, rsc, err := setupTestHarnessDPC()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ts.Close()
+
+	client := rsc.BackendClient.(*TestClient)
+	o := rsc.BackendOptions
+	o.FastForwardDisable = true
+
+	step := time.Duration(300) * time.Second
+	now := time.Now()
+	end := now.Add(-time.Duration(12) * time.Hour)
+	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
+	extn := timeseries.Extent{Start: extr.Start.Truncate(step), End: extr.End.Truncate(step)}
+
+	expected, _, _ := mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+
+	r.URL.Path = "/prometheus/api/v1/query_range"
+	r.URL.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
+		int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
+
+	// Wrap the HTTP transport with a gated counter to control timing
+	// and count origin fetches while preserving the real promsim responses.
+	var originHits atomic.Int64
+	gate := make(chan struct{})
+	origTransport := rsc.BackendOptions.HTTPClient.Transport
+	if origTransport == nil {
+		origTransport = http.DefaultTransport
+	}
+	rsc.BackendOptions.HTTPClient.Transport = &gatedTransport{
+		inner: origTransport,
+		gate:  gate,
+		hits:  &originHits,
+	}
+
+	var wg sync.WaitGroup
+	recorders := make([]*httptest.ResponseRecorder, n)
+
+	for i := range n {
+		wg.Add(1)
+		idx := i
+		// Use request.Clone to give each goroutine its own Resources,
+		// avoiding data races on shared fields like TSMarshaler.
+		clone, _ := request.Clone(r)
+		go func() {
+			defer wg.Done()
+			w := httptest.NewRecorder()
+			recorders[idx] = w
+			client.QueryRangeHandler(w, clone)
+		}()
+	}
+
+	// Give goroutines time to enter singleflight, then release the gate.
+	time.Sleep(50 * time.Millisecond)
+	close(gate)
+	wg.Wait()
+
+	if hits := originHits.Load(); hits != 1 {
+		t.Errorf("expected 1 origin request, got %d", hits)
+	}
+
+	var sawKmiss, sawPhit int
+	for i, rec := range recorders {
+		resp := rec.Result()
+		b, _ := io.ReadAll(resp.Body)
+		if string(b) != expected {
+			t.Errorf("request %d: body mismatch\nexpected: %s\ngot:      %s", i, expected, string(b))
+		}
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("request %d: expected status 200, got %d", i, resp.StatusCode)
+		}
+		resultHdr := resp.Header.Get(headers.NameTricksterResult)
+		if strings.Contains(resultHdr, "status=kmiss") {
+			sawKmiss++
+		} else if strings.Contains(resultHdr, "status=proxy-hit") {
+			sawPhit++
+		}
+	}
+	if sawKmiss != 1 {
+		t.Errorf("expected 1 kmiss (executor), got %d", sawKmiss)
+	}
+	if sawPhit != n-1 {
+		t.Errorf("expected %d proxy-hit (waiters), got %d", n-1, sawPhit)
+	}
+}
+
+// TestDPCSingleflightDifferentTimeRangesNotDeduped verifies that concurrent
+// DPC requests with different time ranges are NOT collapsed into the same
+// singleflight group (the key includes start|end in millis).
+func TestDPCSingleflightDifferentTimeRangesNotDeduped(t *testing.T) {
+	ts, _, r, rsc, err := setupTestHarnessDPC()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ts.Close()
+
+	client := rsc.BackendClient.(*TestClient)
+	o := rsc.BackendOptions
+	o.FastForwardDisable = true
+
+	step := time.Duration(300) * time.Second
+	now := time.Now()
+
+	// Two non-overlapping time ranges
+	end1 := now.Add(-time.Duration(12) * time.Hour)
+	start1 := end1.Add(-time.Duration(6) * time.Hour)
+
+	end2 := now.Add(-time.Duration(24) * time.Hour)
+	start2 := end2.Add(-time.Duration(6) * time.Hour)
+
+	var originHits atomic.Int64
+	gate := make(chan struct{})
+	origTransport := rsc.BackendOptions.HTTPClient.Transport
+	if origTransport == nil {
+		origTransport = http.DefaultTransport
+	}
+	rsc.BackendOptions.HTTPClient.Transport = &gatedTransport{
+		inner: origTransport,
+		gate:  gate,
+		hits:  &originHits,
+	}
+
+	type timeRange struct {
+		start, end time.Time
+	}
+	ranges := []timeRange{
+		{start1, end1},
+		{start2, end2},
+	}
+
+	var wg sync.WaitGroup
+	recorders := make([]*httptest.ResponseRecorder, len(ranges))
+
+	for i, tr := range ranges {
+		wg.Add(1)
+		idx := i
+		clone, _ := request.Clone(r)
+		clone.URL.Path = "/prometheus/api/v1/query_range"
+		clone.URL.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
+			int(step.Seconds()), tr.start.Unix(), tr.end.Unix(), queryReturnsOKNoLatency)
+		go func() {
+			defer wg.Done()
+			w := httptest.NewRecorder()
+			recorders[idx] = w
+			client.QueryRangeHandler(w, clone)
+		}()
+	}
+
+	time.Sleep(50 * time.Millisecond)
+	close(gate)
+	wg.Wait()
+
+	if hits := originHits.Load(); hits != 2 {
+		t.Errorf("expected 2 origin requests (different time ranges), got %d", hits)
+	}
+
+	for i, rec := range recorders {
+		resp := rec.Result()
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("request %d: expected status 200, got %d", i, resp.StatusCode)
+		}
 	}
 }
