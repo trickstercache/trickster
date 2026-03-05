@@ -1846,3 +1846,115 @@ func TestDPCSingleflightErrorPropagation(t *testing.T) {
 		}
 	}
 }
+
+// TestDPCNoCacheBypass verifies that requests with Cache-Control: no-cache
+// bypass the singleflight group and go directly to the origin.
+func TestDPCNoCacheBypass(t *testing.T) {
+	ts, _, r, rsc, err := setupTestHarnessDPC()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ts.Close()
+
+	client := rsc.BackendClient.(*TestClient)
+	o := rsc.BackendOptions
+	o.FastForwardDisable = true
+
+	step := time.Duration(300) * time.Second
+	now := time.Now()
+	end := now.Add(-time.Duration(12) * time.Hour)
+	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
+
+	r.URL.Path = "/prometheus/api/v1/query_range"
+	r.URL.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
+		int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
+
+	// set no-cache to bypass singleflight
+	r.Header.Set("Cache-Control", "no-cache")
+
+	w := httptest.NewRecorder()
+	client.QueryRangeHandler(w, r)
+	resp := w.Result()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "purge"})
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+// TestDPCSingleflightBadPayload verifies that when the origin returns an
+// OK response with an unparseable body, the error is propagated through
+// the singleflight to all waiters.
+func TestDPCSingleflightBadPayload(t *testing.T) {
+	const n = 3
+
+	ts, _, r, rsc, err := setupTestHarnessDPC()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ts.Close()
+
+	client := rsc.BackendClient.(*TestClient)
+	o := rsc.BackendOptions
+	o.FastForwardDisable = true
+
+	step := time.Duration(300) * time.Second
+	now := time.Now()
+	end := now.Add(-time.Duration(12) * time.Hour)
+	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
+
+	r.URL.Path = "/prometheus/api/v1/query_range"
+	r.URL.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
+		int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsBadPayload)
+
+	var originHits atomic.Int64
+	gate := make(chan struct{})
+	origTransport := rsc.BackendOptions.HTTPClient.Transport
+	if origTransport == nil {
+		origTransport = http.DefaultTransport
+	}
+	rsc.BackendOptions.HTTPClient.Transport = &gatedTransport{
+		inner: origTransport,
+		gate:  gate,
+		hits:  &originHits,
+	}
+
+	var wg sync.WaitGroup
+	recorders := make([]*httptest.ResponseRecorder, n)
+
+	for i := range n {
+		wg.Add(1)
+		idx := i
+		clone, _ := request.Clone(r)
+		go func() {
+			defer wg.Done()
+			w := httptest.NewRecorder()
+			recorders[idx] = w
+			client.QueryRangeHandler(w, clone)
+		}()
+	}
+
+	time.Sleep(50 * time.Millisecond)
+	close(gate)
+	wg.Wait()
+
+	if hits := originHits.Load(); hits != 1 {
+		t.Errorf("expected 1 origin request, got %d", hits)
+	}
+
+	// all callers should get a proxy-error cache status (the unmarshaling failure
+	// triggers buildErrorResult inside the singleflight closure).
+	// the HTTP status is 200 because that's what the origin returned, but the
+	// Trickster-Result header indicates the error.
+	for i, rec := range recorders {
+		resp := rec.Result()
+		hdr := resp.Header.Get(headers.NameTricksterResult)
+		if !strings.Contains(hdr, "status=proxy-error") {
+			t.Errorf("request %d: expected proxy-error in result header, got %q", i, hdr)
+		}
+	}
+}

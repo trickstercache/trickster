@@ -33,6 +33,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ranges/byterange"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
@@ -420,5 +421,179 @@ func TestQueryCacheChunks(t *testing.T) {
 
 	if d2.StatusCode != 200 {
 		t.Errorf("expected %d got %d", 200, d2.StatusCode)
+	}
+}
+
+// TestTimeseriesChunkIteratorBoundary verifies chunk iteration with exact
+// boundary alignment (extent fits exactly into chunk boundaries).
+func TestTimeseriesChunkIteratorBoundary(t *testing.T) {
+	step := 10 * time.Second
+	csize := step * 5 // 50s per chunk
+
+	start := time.Unix(0, 0)
+	end := time.Unix(100, 0) // exactly 2 chunks
+
+	iter := &TimeseriesChunkQueryIterator{
+		key:   "test",
+		cext:  timeseries.Extent{Start: start, End: end},
+		csize: csize,
+		trq:   &timeseries.TimeRangeQuery{Step: step},
+	}
+
+	var count int
+	iter.IterateChunks(func(i int, subkey string) bool {
+		count++
+		if subkey == "" {
+			t.Errorf("chunk %d: empty subkey", i)
+		}
+		return true
+	})
+
+	// [0,50) and [50,100) = 2 chunks
+	if count != 2 {
+		t.Errorf("expected 2 chunks, got %d", count)
+	}
+}
+
+// TestTimeseriesChunkIteratorEarlyStop verifies that returning false from
+// the callback stops iteration.
+func TestTimeseriesChunkIteratorEarlyStop(t *testing.T) {
+	step := 10 * time.Second
+	csize := step * 5
+
+	iter := &TimeseriesChunkQueryIterator{
+		key:   "test",
+		cext:  timeseries.Extent{Start: time.Unix(0, 0), End: time.Unix(200, 0)},
+		csize: csize,
+		trq:   &timeseries.TimeRangeQuery{Step: step},
+	}
+
+	var count int
+	iter.IterateChunks(func(i int, subkey string) bool {
+		count++
+		return count < 2 // stop after 2 iterations
+	})
+
+	if count != 2 {
+		t.Errorf("expected iteration to stop at 2, got %d", count)
+	}
+}
+
+// TestByterangeChunkIteratorSingleChunk verifies edge case where the
+// entire range fits within a single chunk.
+func TestByterangeChunkIteratorSingleChunk(t *testing.T) {
+	iter := &ByterangeChunkQueryIterator{
+		key:  "test",
+		crs:  0,
+		cre:  1024,
+		size: 4096, // chunk size larger than range
+	}
+
+	var count int
+	var keys []string
+	iter.IterateChunks(func(i int, subkey string) bool {
+		count++
+		keys = append(keys, subkey)
+		return true
+	})
+
+	// range [0, 1024) with 4096 chunk size = only crs(0) < cre(1024), so 1 chunk
+	if count != 1 {
+		t.Errorf("expected 1 chunk for single-chunk range, got %d", count)
+	}
+}
+
+// TestByterangeChunkIteratorMultiple verifies iteration over multiple byte range chunks.
+func TestByterangeChunkIteratorMultiple(t *testing.T) {
+	iter := &ByterangeChunkQueryIterator{
+		key:  "test",
+		crs:  0,
+		cre:  3072,
+		size: 1024,
+	}
+
+	var count int
+	iter.IterateChunks(func(i int, subkey string) bool {
+		count++
+		return true
+	})
+
+	// [0, 1024), [1024, 2048), [2048, 3072) = 3 chunks
+	if count != 3 {
+		t.Errorf("expected 3 chunks, got %d", count)
+	}
+}
+
+// TestChunkWriteAndReadRoundtrip verifies that writing chunks and reading
+// them back produces the same data.
+func TestChunkWriteAndReadRoundtrip(t *testing.T) {
+	logger.SetLogger(testLogger)
+	expected := "the quick brown fox jumps over the lazy dog"
+
+	conf, err := config.Load([]string{"-origin-url", "http://1", "-provider", "test"})
+	if err != nil {
+		t.Fatalf("Could not load configuration: %s", err.Error())
+	}
+
+	caches := cr.LoadCachesFromConfig(conf)
+	defer cr.CloseCaches(caches)
+	cache, ok := caches["default"]
+	if !ok {
+		t.Fatal("could not load cache")
+	}
+	cache.Configuration().UseCacheChunking = true
+
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{headers.NameContentLength: {strconv.Itoa(len(expected))}},
+	}
+	d := DocumentFromHTTPResponse(resp, []byte(expected), nil)
+	d.ContentType = headers.ValueTextPlain
+
+	ctx := context.Background()
+	ctx = tc.WithResources(ctx, &request.Resources{BackendOptions: conf.Backends["default"], Tracer: tu.NewTestTracer()})
+
+	err = WriteCache(ctx, cache, "roundtrip-key", d, 60*time.Second, sets.New([]string{headers.ValueTextPlain}), nil)
+	if err != nil {
+		t.Fatalf("WriteCache: %v", err)
+	}
+
+	d2, _, _, err := QueryCache(ctx, cache, "roundtrip-key", nil, nil)
+	if err != nil {
+		t.Fatalf("QueryCache: %v", err)
+	}
+
+	if string(d2.Body) != expected {
+		t.Errorf("roundtrip mismatch: expected %q, got %q", expected, string(d2.Body))
+	}
+	if d2.StatusCode != http.StatusOK {
+		t.Errorf("expected status %d, got %d", http.StatusOK, d2.StatusCode)
+	}
+}
+
+// TestChunkQueryMissingKey verifies that querying chunks for a key that
+// doesn't exist returns an appropriate error.
+func TestChunkQueryMissingKey(t *testing.T) {
+	logger.SetLogger(testLogger)
+
+	conf, err := config.Load([]string{"-origin-url", "http://1", "-provider", "test"})
+	if err != nil {
+		t.Fatalf("Could not load configuration: %s", err.Error())
+	}
+
+	caches := cr.LoadCachesFromConfig(conf)
+	defer cr.CloseCaches(caches)
+	cache, ok := caches["default"]
+	if !ok {
+		t.Fatal("could not load cache")
+	}
+	cache.Configuration().UseCacheChunking = true
+
+	ctx := context.Background()
+	ctx = tc.WithResources(ctx, &request.Resources{BackendOptions: conf.Backends["default"], Tracer: tu.NewTestTracer()})
+
+	_, _, _, err = QueryCache(ctx, cache, "nonexistent-key", nil, nil)
+	if err == nil {
+		t.Error("expected error for nonexistent key, got nil")
 	}
 }

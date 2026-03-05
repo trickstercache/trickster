@@ -1429,3 +1429,132 @@ func TestOPCSingleflightHandlerError(t *testing.T) {
 		}
 	}
 }
+
+func TestServeOPCResult(t *testing.T) {
+	ts, _, r, _, err := setupTestHarnessOPC("", "test", http.StatusOK,
+		map[string]string{"Cache-Control": "max-age=60"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ts.Close()
+
+	w := httptest.NewRecorder()
+	pr := newProxyRequest(r, w)
+	pr.mapLock = &sync.Mutex{}
+
+	result := &opcResult{
+		statusCode:  http.StatusOK,
+		headers:     http.Header{"X-Custom": {"val"}},
+		body:        []byte("shared body"),
+		elapsed:     0.5,
+		cacheStatus: status.LookupStatusHit,
+	}
+
+	err = serveOPCResult(pr, result)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected status %d, got %d", http.StatusOK, resp.StatusCode)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	if string(b) != "shared body" {
+		t.Errorf("expected body %q, got %q", "shared body", string(b))
+	}
+	// on successful cacheStatus, serveOPCResult should set proxy-hit
+	if pr.cacheStatus != status.LookupStatusProxyHit {
+		t.Errorf("expected cacheStatus proxy-hit, got %s", pr.cacheStatus)
+	}
+}
+
+func TestServeOPCResultError(t *testing.T) {
+	ts, _, r, _, err := setupTestHarnessOPC("", "err", http.StatusBadGateway,
+		map[string]string{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ts.Close()
+
+	w := httptest.NewRecorder()
+	pr := newProxyRequest(r, w)
+	pr.mapLock = &sync.Mutex{}
+
+	result := &opcResult{
+		statusCode:  http.StatusBadGateway,
+		headers:     http.Header{},
+		body:        []byte(`{"error":"upstream error"}`),
+		elapsed:     0.1,
+		cacheStatus: status.LookupStatusProxyError,
+	}
+
+	err = serveOPCResult(pr, result)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusBadGateway {
+		t.Errorf("expected status %d, got %d", http.StatusBadGateway, resp.StatusCode)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	if string(b) != `{"error":"upstream error"}` {
+		t.Errorf("expected error body, got %q", string(b))
+	}
+	// on error cacheStatus, serveOPCResult should set proxy-error
+	if pr.cacheStatus != status.LookupStatusProxyError {
+		t.Errorf("expected cacheStatus proxy-error, got %s", pr.cacheStatus)
+	}
+}
+
+func TestOPCProxyOnlyFallback(t *testing.T) {
+	// when BackendOptions.ProxyOnly is true, OPC should fall through to DoProxy
+	ts, _, r, rsc, err := setupTestHarnessOPC("", "test", http.StatusOK,
+		map[string]string{"Cache-Control": "max-age=60"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ts.Close()
+
+	rsc.BackendOptions.ProxyOnly = true
+	w := httptest.NewRecorder()
+
+	ObjectProxyCacheRequest(w, r)
+	resp := w.Result()
+
+	// should get a proxied response (not cached)
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+	hdr := resp.Header.Get(headers.NameTricksterResult)
+	if !strings.Contains(hdr, "engine=HTTPProxy") {
+		t.Errorf("expected HTTPProxy engine in result header, got %q", hdr)
+	}
+	rsc.BackendOptions.ProxyOnly = false
+}
+
+func TestOPCClientNoCache(t *testing.T) {
+	// when client sends Cache-Control: no-cache, OPC should remove the cache entry and proxy
+	ts, _, r, _, err := setupTestHarnessOPC("", "test", http.StatusOK,
+		map[string]string{"Cache-Control": "max-age=60"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ts.Close()
+
+	r.Header.Set("Cache-Control", "no-cache")
+	w := httptest.NewRecorder()
+
+	ObjectProxyCacheRequest(w, r)
+	resp := w.Result()
+
+	// should get a proxied response
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+	hdr := resp.Header.Get(headers.NameTricksterResult)
+	if !strings.Contains(hdr, "engine=HTTPProxy") {
+		t.Errorf("expected proxy-only path for no-cache, got %q", hdr)
+	}
+}
