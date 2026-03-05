@@ -483,6 +483,7 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 				statusCode:  sc,
 				headers:     h,
 				body:        append([]byte(nil), capture.buf.Bytes()...),
+				elapsed:     float64(time.Since(pr.started).Milliseconds()) / 1000.0,
 				cacheStatus: status.LookupStatusProxyError,
 			}
 		}
@@ -494,7 +495,7 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 			if f == nil {
 				logger.Warn("unhandled cache lookup response",
 					logging.Pairs{"lookupStatus": pr.cacheStatus})
-				return &opcResult{proxyOnly: true}, nil
+				return &opcResult{cacheStatus: status.LookupStatusProxyOnly}, nil
 			}
 			if fErr := f(pr); fErr != nil {
 				return buildErrorResult(), nil
@@ -525,6 +526,7 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 			statusCode:  pr.upstreamResponse.StatusCode,
 			headers:     pr.upstreamResponse.Header.Clone(),
 			body:        append([]byte(nil), body...),
+			elapsed:     float64(time.Since(pr.started).Milliseconds()) / 1000.0,
 			cacheStatus: pr.cacheStatus,
 		}, nil
 	})
@@ -533,7 +535,7 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 		return nil, status.LookupStatusError
 	}
 	result := val.(*opcResult)
-	if result.proxyOnly {
+	if result.cacheStatus == status.LookupStatusProxyOnly {
 		return nil, status.LookupStatusProxyOnly
 	}
 
@@ -556,10 +558,7 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 		pr.cacheStatus = result.cacheStatus
 	}
 
-	// newProxyRequest sets pr.started to time.Now()
-	pr.elapsed = time.Since(pr.started)
-	el := float64(pr.elapsed.Milliseconds()) / 1000.0
-	recordOPCResult(pr, pr.cacheStatus, pr.upstreamResponse.StatusCode, r.URL.Path, el, pr.upstreamResponse.Header)
+	recordOPCResult(pr, pr.cacheStatus, pr.upstreamResponse.StatusCode, r.URL.Path, result.elapsed, pr.upstreamResponse.Header)
 
 	return pr.upstreamResponse, pr.cacheStatus
 }

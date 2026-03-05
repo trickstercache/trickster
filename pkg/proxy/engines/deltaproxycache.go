@@ -277,6 +277,19 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 			isExecutor = true
 			// The entire response path runs inside singleflight: cache query, origin fetch,
 			// fast-forward, merge, and marshal. Waiters receive the final wire bytes directly.
+
+			// buildErrorResult constructs a dpcResult for error responses.
+			// Centralizes the pattern used at multiple error sites in the closure.
+			buildErrorResult := func(sc int, h http.Header, body []byte) *dpcResult {
+				return &dpcResult{
+					statusCode:  sc,
+					headers:     h,
+					body:        body,
+					elapsed:     float64(time.Since(now).Seconds()),
+					cacheStatus: status.LookupStatusProxyError,
+				}
+			}
+
 			var cts timeseries.Timeseries
 			var sfDoc *HTTPDocument
 			var sfElapsed time.Duration
@@ -287,10 +300,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 			if sfCacheStatus == status.LookupStatusKeyMiss && errors.Is(err, tc.ErrKNF) {
 				cts, sfDoc, sfElapsed, err = fetchTimeseries(pr, trq, client, modeler)
 				if err != nil {
-					return &dpcResult{
-						headers: sfDoc.SafeHeaderClone(), statusCode: sfDoc.StatusCode,
-						body: sfDoc.Body, cacheStatus: status.LookupStatusProxyError,
-					}, nil
+					return buildErrorResult(sfDoc.StatusCode, sfDoc.SafeHeaderClone(), sfDoc.Body), nil
 				}
 			} else {
 				if sfDoc == nil {
@@ -302,10 +312,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 					go cache.Remove(key)
 					cts, sfDoc, sfElapsed, err = fetchTimeseries(pr, trq, client, modeler)
 					if err != nil {
-						return &dpcResult{
-							headers: sfDoc.SafeHeaderClone(), statusCode: sfDoc.StatusCode,
-							body: sfDoc.Body, cacheStatus: status.LookupStatusProxyError,
-						}, nil
+						return buildErrorResult(sfDoc.StatusCode, sfDoc.SafeHeaderClone(), sfDoc.Body), nil
 					}
 				} else {
 					cts = sfDoc.timeseries.Clone() // Load the Cached Timeseries
@@ -368,11 +375,8 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 				mts, sfUncachedVC, mresp, ferr := fetchExtents(sfMissRanges, frsc,
 					fetchHeaders, client, pr, modeler.WireUnmarshalerReader, span)
 				if ferr != nil {
-					return &dpcResult{
-						headers: mresp.Header.Clone(), statusCode: mresp.StatusCode,
-						body:        func() []byte { b, _ := io.ReadAll(mresp.Body); return b }(),
-						cacheStatus: status.LookupStatusProxyError,
-					}, nil
+					return buildErrorResult(mresp.StatusCode, mresp.Header.Clone(),
+						func() []byte { b, _ := io.ReadAll(mresp.Body); return b }()), nil
 				}
 				sfDoc.Headers = fetchHeaders // update with merged upstream response headers
 				// Merge the new delta timeseries into the cached timeseries

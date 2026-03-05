@@ -68,8 +68,8 @@ type opcResult struct {
 	statusCode  int
 	headers     http.Header
 	body        []byte
+	elapsed     float64
 	cacheStatus status.LookupStatus
-	proxyOnly   bool // signal caller to proxy instead
 }
 
 // dpcResult is the shared result returned to singleflight waiters for DPC.
