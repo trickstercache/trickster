@@ -239,6 +239,202 @@
       "type": "stat"
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 4,
+        "x": 6,
+        "y": 0
+      },
+      "id": 94,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.6.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum(delta(trickster_proxy_requests_total{job=\"trickster\"}[$window])) by (backend_name)",
+          "instant": false,
+          "legendFormat": "{{backend_name}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Requests / $window",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          },
+          "unit": "decbytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 4,
+        "x": 10,
+        "y": 0
+      },
+      "id": 95,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.6.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum(delta(trickster_frontend_written_bytes_total{job=\"trickster\"}[$window])) by (backend_name)",
+          "instant": false,
+          "legendFormat": "{{backend_name}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Bytes Written / $window",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          },
+          "unit": "short",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 4,
+        "x": 14,
+        "y": 0
+      },
+      "id": 96,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.6.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum(delta(trickster_proxy_requests_total{job=\"trickster\"}[$window])) / sum(delta(trickster_proxy_accepted_connections_total{job=\"trickster\"}[$window]))",
+          "instant": false,
+          "legendFormat": "req/conn",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Requests / Connection",
+      "type": "stat"
+    },
+    {
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -1833,7 +2029,7 @@
           "datasource": {
             "uid": "$datasource"
           },
-          "expr": "sum(idelta(trickster_frontend_written_bytes_total{job=\"trickster\",job=\"trickster\"}[$window]))",
+          "expr": "sum(delta(trickster_frontend_written_bytes_total{job=\"trickster\",job=\"trickster\"}[$window]))",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "total",
@@ -1950,7 +2146,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "sum(idelta(trickster_proxy_accepted_connections_total{job=\"trickster\"}[$window])) "
+              "options": "sum(delta(trickster_proxy_accepted_connections_total{job=\"trickster\"}[$window])) "
             },
             "properties": [
               {
@@ -2003,7 +2199,7 @@
           "datasource": {
             "uid": "$datasource"
           },
-          "expr": "sum(idelta(trickster_proxy_accepted_connections_total{job=\"trickster\"}[$window])) ",
+          "expr": "sum(delta(trickster_proxy_accepted_connections_total{job=\"trickster\"}[$window])) ",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "accepted",
@@ -2013,7 +2209,7 @@
           "datasource": {
             "uid": "$datasource"
           },
-          "expr": "sum(idelta(trickster_proxy_closed_connections_total{job=\"trickster\"}[$window])) ",
+          "expr": "sum(delta(trickster_proxy_closed_connections_total{job=\"trickster\"}[$window])) ",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "closed",
@@ -2023,7 +2219,7 @@
           "datasource": {
             "uid": "$datasource"
           },
-          "expr": "sum(idelta(trickster_proxy_failed_connections_total{job=\"trickster\"}[$window])) ",
+          "expr": "sum(delta(trickster_proxy_failed_connections_total{job=\"trickster\"}[$window])) ",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "failed",
@@ -2031,6 +2227,107 @@
         }
       ],
       "title": "# Inbound Connections Handled",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "short",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 46
+      },
+      "id": 97,
+      "options": {
+        "dataLinks": [],
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.6.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum(delta(trickster_proxy_requests_total{job=\"trickster\"}[$window])) / sum(delta(trickster_proxy_accepted_connections_total{job=\"trickster\"}[$window]))",
+          "instant": false,
+          "legendFormat": "req/conn",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Requests per Connection",
       "type": "timeseries"
     },
     {
@@ -2057,7 +2354,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 46
+        "y": 54
       },
       "id": 91,
       "options": {
@@ -2118,7 +2415,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 54
+        "y": 62
       },
       "id": 88,
       "panels": [],
@@ -2187,7 +2484,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "sum(idelta(trickster_proxy_accepted_connections_total{job=\"trickster\"}[$window])) "
+              "options": "sum(delta(trickster_proxy_accepted_connections_total{job=\"trickster\"}[$window])) "
             },
             "properties": [
               {
@@ -2205,7 +2502,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 55
+        "y": 63
       },
       "id": 76,
       "options": {
@@ -2264,7 +2561,7 @@
         "h": 8,
         "w": 16,
         "x": 8,
-        "y": 55
+        "y": 63
       },
       "id": 90,
       "options": {
@@ -2342,15 +2639,15 @@
       },
       {
         "current": {
-          "text": "30m",
-          "value": "30m"
+          "text": "1m",
+          "value": "1m"
         },
         "includeAll": false,
         "label": "Window",
         "name": "window",
         "options": [
           {
-            "selected": false,
+            "selected": true,
             "text": "1m",
             "value": "1m"
           },
@@ -2360,7 +2657,7 @@
             "value": "5m"
           },
           {
-            "selected": true,
+            "selected": false,
             "text": "30m",
             "value": "30m"
           },
