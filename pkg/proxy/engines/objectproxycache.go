@@ -459,6 +459,13 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 	var isExecutor bool
 	val, sfErr, _ := opcGroup.Do(sfKey, func() (any, error) {
 		isExecutor = true
+
+		// Wrap the response writer to capture body writes for the opcResult.
+		// This ensures non-cacheable responses (e.g. 502) are captured too,
+		// since cacheBuffer is only populated when writeToCache is true.
+		capture := &sfResponseCapture{inner: pr.responseWriter}
+		pr.responseWriter = capture
+
 		var err error
 		pr.cacheDocument, pr.cacheStatus, pr.neededRanges, err = QueryCache(pr.upstreamRequest.Context(), cc, pr.key, pr.wantedRanges, nil)
 		if err == nil || stderrors.Is(err, cache.ErrKNF) {
@@ -482,12 +489,15 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 		}
 
 		// Build result for singleflight waiters.
-		// Use cached document body if available, else cacheBuffer (tee'd during write).
+		// Use cached document body if available, else cacheBuffer (tee'd during write),
+		// else the sfResponseCapture buffer (fallback for non-cacheable responses).
 		var body []byte
 		if pr.cacheDocument != nil && pr.cacheDocument.Body != nil {
 			body = pr.cacheDocument.Body
 		} else if pr.cacheBuffer != nil {
 			body = pr.cacheBuffer.Bytes()
+		} else {
+			body = capture.buf.Bytes()
 		}
 		// Deep-copy body to avoid aliasing with memory cache (stores by reference).
 		return &opcResult{

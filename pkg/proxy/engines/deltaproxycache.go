@@ -491,9 +491,10 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 			return
 		}
 		if result.cacheStatus == status.LookupStatusProxyError {
+			rh := result.headers.Clone()
 			recordDPCResult(r, status.LookupStatusProxyError, result.statusCode,
-				r.URL.Path, "", result.elapsed, nil, result.headers)
-			Respond(w, result.statusCode, result.headers, bytes.NewReader(result.body))
+				r.URL.Path, "", result.elapsed, nil, rh)
+			Respond(w, result.statusCode, rh, bytes.NewReader(result.body))
 			return
 		}
 

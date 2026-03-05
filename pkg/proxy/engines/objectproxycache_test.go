@@ -1276,6 +1276,71 @@ func TestOPCSingleflightDifferentRangesNotDeduped(t *testing.T) {
 	}
 }
 
+// TestOPCSingleflightErrorPropagation verifies that when the origin returns
+// an error (502), all concurrent singleflight callers receive the error response.
+func TestOPCSingleflightErrorPropagation(t *testing.T) {
+	const n = 5
+	const errBody = `{"error":"bad gateway"}`
+
+	// Origin that returns 502 after the gate opens.
+	var originHits atomic.Int64
+	gate := make(chan struct{})
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		originHits.Add(1)
+		<-gate
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadGateway)
+		fmt.Fprint(w, errBody)
+	}))
+	defer origin.Close()
+
+	ts, _, r, rsc, err := setupTestHarnessOPC("", errBody, http.StatusBadGateway,
+		map[string]string{"Content-Type": "application/json"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ts.Close()
+
+	rsc.BackendOptions.HTTPClient = origin.Client()
+	originURL, _ := url.Parse(origin.URL + "/opc")
+
+	var wg sync.WaitGroup
+	recorders := make([]*httptest.ResponseRecorder, n)
+
+	for i := range n {
+		wg.Add(1)
+		idx := i
+		go func() {
+			defer wg.Done()
+			clone := r.Clone(r.Context())
+			clone.RequestURI = ""
+			clone.URL = originURL
+			w := httptest.NewRecorder()
+			recorders[idx] = w
+			ObjectProxyCacheRequest(w, clone)
+		}()
+	}
+
+	time.Sleep(50 * time.Millisecond)
+	close(gate)
+	wg.Wait()
+
+	if hits := originHits.Load(); hits != 1 {
+		t.Errorf("expected 1 origin request, got %d", hits)
+	}
+
+	for i, rec := range recorders {
+		resp := rec.Result()
+		if resp.StatusCode != http.StatusBadGateway {
+			t.Errorf("request %d: expected status 502, got %d", i, resp.StatusCode)
+		}
+		b, _ := io.ReadAll(resp.Body)
+		if string(b) != errBody {
+			t.Errorf("request %d: expected body %q, got %q", i, errBody, string(b))
+		}
+	}
+}
+
 // TestOPCSingleflightIdenticalRangesDeduped verifies that concurrent requests
 // with the same byte Range header share a single origin fetch.
 func TestOPCSingleflightIdenticalRangesDeduped(t *testing.T) {

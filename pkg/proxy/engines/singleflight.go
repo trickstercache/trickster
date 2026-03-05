@@ -17,12 +17,46 @@
 package engines
 
 import (
+	"bytes"
+	"io"
 	"net/http"
 
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"golang.org/x/sync/singleflight"
 )
+
+// sfResponseCapture wraps the executor's response writer to tee body writes
+// into a buffer. This ensures the singleflight opcResult captures the response
+// body even for non-cacheable responses (e.g. 502) where cacheBuffer is not
+// populated.
+//
+// It implements http.ResponseWriter so that PrepareResponseWriter and the rest
+// of the handler chain work unchanged. When the inner writer is not an
+// http.ResponseWriter (e.g. *bytes.Buffer in FetchViaObjectProxyCache), the
+// Header/WriteHeader methods are safe no-ops.
+type sfResponseCapture struct {
+	inner io.Writer
+	buf   bytes.Buffer
+}
+
+func (c *sfResponseCapture) Write(p []byte) (int, error) {
+	c.buf.Write(p)
+	return c.inner.Write(p)
+}
+
+func (c *sfResponseCapture) Header() http.Header {
+	if rw, ok := c.inner.(http.ResponseWriter); ok {
+		return rw.Header()
+	}
+	return http.Header{}
+}
+
+func (c *sfResponseCapture) WriteHeader(statusCode int) {
+	if rw, ok := c.inner.(http.ResponseWriter); ok {
+		rw.WriteHeader(statusCode)
+	}
+}
 
 var (
 	opcGroup singleflight.Group // deduplicates ObjectProxyCache origin fetches

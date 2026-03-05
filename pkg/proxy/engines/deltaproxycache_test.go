@@ -1778,3 +1778,71 @@ func TestDPCSingleflightDifferentTimeRangesNotDeduped(t *testing.T) {
 		}
 	}
 }
+
+// TestDPCSingleflightErrorPropagation verifies that when the origin returns
+// an error (502), all concurrent singleflight callers receive the error response.
+func TestDPCSingleflightErrorPropagation(t *testing.T) {
+	const n = 5
+
+	ts, _, r, rsc, err := setupTestHarnessDPC()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ts.Close()
+
+	client := rsc.BackendClient.(*TestClient)
+	o := rsc.BackendOptions
+	o.FastForwardDisable = true
+
+	step := time.Duration(300) * time.Second
+	now := time.Now()
+	end := now.Add(-time.Duration(12) * time.Hour)
+	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
+
+	// Use queryReturnsBadGateway to make promsim return 502.
+	r.URL.Path = "/prometheus/api/v1/query_range"
+	r.URL.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
+		int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsBadGateway)
+
+	var originHits atomic.Int64
+	gate := make(chan struct{})
+	origTransport := rsc.BackendOptions.HTTPClient.Transport
+	if origTransport == nil {
+		origTransport = http.DefaultTransport
+	}
+	rsc.BackendOptions.HTTPClient.Transport = &gatedTransport{
+		inner: origTransport,
+		gate:  gate,
+		hits:  &originHits,
+	}
+
+	var wg sync.WaitGroup
+	recorders := make([]*httptest.ResponseRecorder, n)
+
+	for i := range n {
+		wg.Add(1)
+		idx := i
+		clone, _ := request.Clone(r)
+		go func() {
+			defer wg.Done()
+			w := httptest.NewRecorder()
+			recorders[idx] = w
+			client.QueryRangeHandler(w, clone)
+		}()
+	}
+
+	time.Sleep(50 * time.Millisecond)
+	close(gate)
+	wg.Wait()
+
+	if hits := originHits.Load(); hits != 1 {
+		t.Errorf("expected 1 origin request, got %d", hits)
+	}
+
+	for i, rec := range recorders {
+		resp := rec.Result()
+		if resp.StatusCode != http.StatusBadGateway {
+			t.Errorf("request %d: expected status 502, got %d", i, resp.StatusCode)
+		}
+	}
+}
