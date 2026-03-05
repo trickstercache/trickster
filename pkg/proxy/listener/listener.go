@@ -88,7 +88,6 @@ func (l *Listener) Accept() (net.Conn, error) {
 
 	metrics.ProxyActiveConnections.Inc()
 	metrics.ProxyConnectionAccepted.Inc()
-
 	// this is necessary for HTTP/2 to work
 	if t, ok := c.(*net.TCPConn); ok {
 		return &observedConnection{t}, nil

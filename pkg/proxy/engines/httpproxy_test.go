@@ -284,6 +284,110 @@ func TestProxyRequestWithPCFMultipleClients(t *testing.T) {
 	}
 }
 
+func TestRespond(t *testing.T) {
+	w := httptest.NewRecorder()
+	h := http.Header{"X-Custom": {"val"}}
+	body := bytes.NewReader([]byte("response body"))
+
+	Respond(w, http.StatusCreated, h, body)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusCreated {
+		t.Errorf("expected status %d, got %d", http.StatusCreated, resp.StatusCode)
+	}
+	if resp.Header.Get("X-Custom") != "val" {
+		t.Errorf("expected X-Custom header to be set")
+	}
+	b, _ := io.ReadAll(resp.Body)
+	if string(b) != "response body" {
+		t.Errorf("expected body %q, got %q", "response body", string(b))
+	}
+}
+
+func TestRespondNilBody(t *testing.T) {
+	w := httptest.NewRecorder()
+	h := http.Header{"X-Test": {"1"}}
+
+	Respond(w, http.StatusNoContent, h, nil)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Errorf("expected status %d, got %d", http.StatusNoContent, resp.StatusCode)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	if len(b) != 0 {
+		t.Errorf("expected empty body, got %q", string(b))
+	}
+}
+
+func TestRespondPlainWriter(t *testing.T) {
+	var buf bytes.Buffer
+	h := http.Header{"X-Ignored": {"yes"}}
+	body := bytes.NewReader([]byte("plain writer body"))
+
+	Respond(&buf, http.StatusOK, h, body)
+
+	// plain writer doesn't handle headers/status, but body should be written
+	if buf.String() != "plain writer body" {
+		t.Errorf("expected body %q, got %q", "plain writer body", buf.String())
+	}
+}
+
+func TestPrepareResponseWriterMergesHeaders(t *testing.T) {
+	w := httptest.NewRecorder()
+	upstream := http.Header{
+		"X-Upstream": {"upstream-val"},
+	}
+
+	result := PrepareResponseWriter(w, http.StatusOK, upstream)
+	if result == nil {
+		t.Fatal("expected non-nil writer")
+	}
+
+	// upstream headers should be merged into the response
+	if w.Header().Get("X-Upstream") != "upstream-val" {
+		t.Errorf("expected upstream header to be merged")
+	}
+}
+
+func TestPrepareResponseWriterPlainWriter(t *testing.T) {
+	var buf bytes.Buffer
+	upstream := http.Header{"X-Test": {"val"}}
+
+	result := PrepareResponseWriter(&buf, http.StatusOK, upstream)
+	// should return the same writer as-is
+	if result != &buf {
+		t.Errorf("expected plain writer to be returned unchanged")
+	}
+}
+
+func TestSetStatusHeader(t *testing.T) {
+	tests := []struct {
+		httpStatus     int
+		expectedStatus string
+	}{
+		{http.StatusOK, "proxy-only"},
+		{http.StatusNoContent, "proxy-only"},
+		{http.StatusBadRequest, "proxy-error"},
+		{http.StatusInternalServerError, "proxy-error"},
+		{http.StatusBadGateway, "proxy-error"},
+	}
+
+	for _, tt := range tests {
+		h := http.Header{}
+		st := setStatusHeader(tt.httpStatus, h)
+		if st.String() != tt.expectedStatus {
+			t.Errorf("httpStatus=%d: expected %q, got %q",
+				tt.httpStatus, tt.expectedStatus, st.String())
+		}
+		// verify header was set
+		result := h.Get(headers.NameTricksterResult)
+		if result == "" {
+			t.Errorf("httpStatus=%d: expected Trickster-Result header to be set", tt.httpStatus)
+		}
+	}
+}
+
 func TestPrepareFetchReaderErr(t *testing.T) {
 	logger.SetLogger(testLogger)
 	conf, err := config.Load([]string{

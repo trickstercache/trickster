@@ -75,7 +75,6 @@ type proxyRequest struct {
 
 	key         string
 	started     time.Time
-	elapsed     time.Duration
 	cacheStatus status.LookupStatus
 
 	wantedRanges byterange.Ranges

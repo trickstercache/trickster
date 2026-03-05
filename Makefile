@@ -240,6 +240,20 @@ check-todos: # there are 11 known "TODO"s in the codebase. This check fails if m
 	fi ; \
 	echo "" ; echo "\033[1;32m✓\033[0m No new TODOs found." ; echo ""
 
+.PHONY: install-codespell
+install-codespell:
+	# if brew is available, use it to install codespell
+	@which codespell ; \
+	if [ "$$?" != "0" ]; then \
+		if which brew ; then \
+			brew install codespell ; \
+		else \
+			echo "codespell is not installed and brew is not available to install it" ; \
+		fi ; \
+	else \
+		echo "codespell is already installed" ; \
+	fi
+
 .PHONY: spelling
 spelling:
 	@which mdspell ; \
