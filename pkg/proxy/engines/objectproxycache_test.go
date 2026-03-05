@@ -1135,12 +1135,12 @@ func TestFetchViaObjectProxyCacheRequestErroringCache(t *testing.T) {
 }
 
 // TestOPCSingleflightDedup verifies that concurrent identical OPC requests
-// result in only 1 origin fetch, with waiters receiving the shared result.
+// result in only 1 origin fetch, with waiters receiving the shared result
 func TestOPCSingleflightDedup(t *testing.T) {
 	const n = 5
 	const body = "singleflight-test-body"
 
-	// Create a gated origin server that counts requests.
+	// gated origin server that counts requests
 	var originHits atomic.Int64
 	gate := make(chan struct{})
 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -1152,8 +1152,7 @@ func TestOPCSingleflightDedup(t *testing.T) {
 	}))
 	defer origin.Close()
 
-	// Use setupTestHarnessOPC to get a properly configured request,
-	// then repoint to our gated origin.
+	// get a properly configured request, then redirect to our gated origin
 	ts, _, r, rsc, err := setupTestHarnessOPC("", body, http.StatusOK,
 		map[string]string{"Cache-Control": "max-age=60"})
 	if err != nil {
@@ -1164,7 +1163,7 @@ func TestOPCSingleflightDedup(t *testing.T) {
 	rsc.BackendOptions.HTTPClient = origin.Client()
 	originURL, _ := url.Parse(origin.URL + "/opc")
 
-	// Launch n concurrent requests, each with its own cloned request.
+	// launch n concurrent requests, each with its own cloned request
 	var wg sync.WaitGroup
 	recorders := make([]*httptest.ResponseRecorder, n)
 
@@ -1182,7 +1181,7 @@ func TestOPCSingleflightDedup(t *testing.T) {
 		}()
 	}
 
-	// Give goroutines time to enter singleflight, then release the gate.
+	// give goroutines time to enter singleflight, then release the gate
 	time.Sleep(50 * time.Millisecond)
 	close(gate)
 	wg.Wait()
@@ -1217,7 +1216,7 @@ func TestOPCSingleflightDedup(t *testing.T) {
 }
 
 // TestOPCSingleflightDifferentRangesNotDeduped verifies that requests with
-// different byte Range headers are NOT collapsed into the same singleflight group.
+// different byte Range headers are not collapsed into the same singleflight group
 func TestOPCSingleflightDifferentRangesNotDeduped(t *testing.T) {
 	ts, _, r, rsc, err := setupTestHarnessOPCRange(
 		map[string]string{"Cache-Control": "max-age=60"})
@@ -1226,13 +1225,13 @@ func TestOPCSingleflightDifferentRangesNotDeduped(t *testing.T) {
 	}
 	defer ts.Close()
 
-	// Create a gated origin that counts requests and serves byte range content.
+	// gated origin that counts requests and serves byte range content
 	var originHits atomic.Int64
 	gate := make(chan struct{})
 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		originHits.Add(1)
 		<-gate
-		// Serve the full body; let Trickster handle range slicing.
+		// serve the full body; let Trickster handle range slicing
 		w.Header().Set("Cache-Control", "max-age=60")
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprint(w, byterange.Body)
@@ -1278,12 +1277,12 @@ func TestOPCSingleflightDifferentRangesNotDeduped(t *testing.T) {
 }
 
 // TestOPCSingleflightErrorPropagation verifies that when the origin returns
-// an error (502), all concurrent singleflight callers receive the error response.
+// an error (502), all concurrent singleflight callers receive the error response
 func TestOPCSingleflightErrorPropagation(t *testing.T) {
 	const n = 5
 	const errBody = `{"error":"bad gateway"}`
 
-	// Origin that returns 502 after the gate opens.
+	// origin that returns 502 after the gate opens
 	var originHits atomic.Int64
 	gate := make(chan struct{})
 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -1343,7 +1342,7 @@ func TestOPCSingleflightErrorPropagation(t *testing.T) {
 }
 
 // TestOPCSingleflightIdenticalRangesDeduped verifies that concurrent requests
-// with the same byte Range header share a single origin fetch.
+// with the same byte Range header share a single origin fetch
 func TestOPCSingleflightIdenticalRangesDeduped(t *testing.T) {
 	const n = 5
 
@@ -1414,9 +1413,8 @@ func TestOPCSingleflightIdenticalRangesDeduped(t *testing.T) {
 	}
 }
 
-// failStoreCache wraps a cache.Cache (expected to be a MemoryCache) and makes
-// StoreReference return an error, which triggers the handler error (fErr) path
-// inside the singleflight closure.
+// failStoreCache wraps a cache.Cache and makes StoreReference return an error,
+// triggering the handler error path inside the singleflight closure
 type failStoreCache struct {
 	cache.Cache
 }
@@ -1429,14 +1427,13 @@ func (f *failStoreCache) RetrieveReference(cacheKey string) (any, status.LookupS
 	return f.Cache.(cache.MemoryCache).RetrieveReference(cacheKey)
 }
 
-// TestOPCSingleflightHandlerError verifies that when the handler inside the
-// singleflight closure returns an error (e.g., cache store failure), all
-// concurrent waiters still receive a valid HTTP response.
+// TestOPCSingleflightHandlerError verifies that when the handler returns an
+// error (e.g., cache store failure), all concurrent waiters still get a response
 func TestOPCSingleflightHandlerError(t *testing.T) {
 	const n = 5
 	const body = "hello from origin"
 
-	// Gated origin that returns 200 with a cacheable response.
+	// gated origin that returns 200 with a cacheable response
 	var originHits atomic.Int64
 	gate := make(chan struct{})
 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -1456,7 +1453,7 @@ func TestOPCSingleflightHandlerError(t *testing.T) {
 	}
 	defer ts.Close()
 
-	// Wrap the cache client so StoreReference fails, triggering the fErr path.
+	// wrap the cache client so StoreReference fails, triggering the fErr path
 	rsc.CacheClient = &failStoreCache{Cache: rsc.CacheClient}
 	rsc.BackendOptions.HTTPClient = origin.Client()
 	originURL, _ := url.Parse(origin.URL + "/opc")
@@ -1486,9 +1483,7 @@ func TestOPCSingleflightHandlerError(t *testing.T) {
 		t.Errorf("expected 1 origin request, got %d", hits)
 	}
 
-	// All callers should get a valid HTTP response even though the cache store
-	// failed. The executor wrote its response before store() was called, and
-	// waiters receive the result via buildErrorResult/serveOPCResult.
+	// all callers should get a valid HTTP response even though the cache store failed
 	for i, rec := range recorders {
 		resp := rec.Result()
 		b, _ := io.ReadAll(resp.Body)

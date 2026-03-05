@@ -257,8 +257,7 @@ func handleCacheKeyMiss(pr *proxyRequest) error {
 }
 
 // serveOPCResult writes a singleflight-shared result to a waiting request's client.
-// It writes directly rather than going through handleResponse, because the waiter
-// has no cacheDocument or upstream reader state — only the pre-built opcResult.
+// the waiter has no cacheDocument or upstream reader state, only the pre-built opcResult.
 func serveOPCResult(pr *proxyRequest, result *opcResult) error {
 	pr.upstreamResponse = &http.Response{
 		StatusCode: result.statusCode,
@@ -446,29 +445,23 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 
 	pr.cachingPolicy.ParseClientConditionals()
 
-	// deduplicate cache lookup + handler work per cache key.
-	// The executor runs QueryCache and the handler (hit, partial hit, miss, revalidation, etc.),
-	// writes its own response, and returns an opcResult for any waiters.
+	// deduplicate cache lookup + handler work per cache key via singleflight.
+	// the executor writes its own response and returns an opcResult for any waiters.
 	sfKey := pr.key
 	if pr.wantsRanges {
 		sfKey += "|" + pr.wantedRanges.String()
 	}
-	// isExecutor is set to true inside the closure so we can distinguish the
-	// executor from waiters after Do returns. singleflight.Do returns shared=true
-	// for the executor too when there are waiters, so shared alone is insufficient.
+	// isExecutor distinguishes the executor from waiters after Do returns,
+	// since singleflight.Do returns shared=true for the executor too.
 	var isExecutor bool
 	val, sfErr, _ := opcGroup.Do(sfKey, func() (any, error) {
 		isExecutor = true
 
-		// Wrap the response writer to capture body writes for the opcResult.
-		// This ensures non-cacheable responses (e.g. 502) are captured too,
-		// since cacheBuffer is only populated when writeToCache is true.
+		// wrap the response writer to capture body writes for the opcResult
 		capture := &sfResponseCapture{inner: pr.responseWriter}
 		pr.responseWriter = capture
 
-		// buildErrorResult constructs an opcResult from whatever state exists
-		// after a handler error. The executor may have partially written a
-		// response; capture.buf holds whatever was written.
+		// buildErrorResult constructs an opcResult for error responses.
 		buildErrorResult := func() *opcResult {
 			sc := http.StatusBadGateway
 			var h http.Header
@@ -510,9 +503,8 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 			}
 		}
 
-		// Build result for singleflight waiters.
-		// Use cached document body if available, else cacheBuffer (tee'd during write),
-		// else the sfResponseCapture buffer (fallback for non-cacheable responses).
+		// build result for singleflight waiters; prefer cached doc body,
+		// then cacheBuffer, then sfResponseCapture buffer as fallback.
 		var body []byte
 		if pr.cacheDocument != nil && pr.cacheDocument.Body != nil {
 			body = pr.cacheDocument.Body
@@ -521,7 +513,7 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 		} else {
 			body = capture.buf.Bytes()
 		}
-		// Deep-copy body to avoid aliasing with memory cache (stores by reference).
+		// deep-copy body to avoid aliasing with memory cache (stores by reference)
 		return &opcResult{
 			statusCode:  pr.upstreamResponse.StatusCode,
 			headers:     pr.upstreamResponse.Header.Clone(),
@@ -539,16 +531,15 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 		return nil, status.LookupStatusProxyOnly
 	}
 
-	// Only serve the shared result for waiters. The executor already wrote
-	// its response inside the closure via the handler.
+	// only serve the shared result for waiters; the executor already wrote its response
 	if !isExecutor {
 		if err := serveOPCResult(pr, result); err != nil {
 			return nil, status.LookupStatusError
 		}
 	}
 
-	// Ensure pr.upstreamResponse is set for metrics recording below.
-	// It may be nil if the executor's handler errored before contacting upstream.
+	// ensure pr.upstreamResponse is set for metrics recording;
+	// may be nil if the handler errored before contacting upstream
 	if pr.upstreamResponse == nil {
 		pr.upstreamResponse = &http.Response{
 			StatusCode: result.statusCode,

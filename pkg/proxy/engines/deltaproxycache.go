@@ -48,7 +48,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// --- Fast Forward ---
 const (
 	statusOff  = "off"
 	statusErr  = "err"
@@ -267,19 +266,13 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 		// we use singleflight here, so as to prevent other concurrent client requests for
 		// the same url, which will have the same cacheStatus, from causing the same or
 		// similar HTTP requests to be made against the origin, since just one should do.
-		// waiters receive the shared result directly — no extra cache round-trips or lock churn.
 
-		// isExecutor is set to true inside the closure so we can distinguish the
-		// executor from waiters after Do returns. singleflight.Do returns shared=true
-		// for the executor too when there are waiters, so shared alone is insufficient.
+		// isExecutor distinguishes the executor from waiters after Do returns,
+		// since singleflight.Do returns shared=true for the executor too.
 		var isExecutor bool
 		v, sfErr, _ := dpcGroup.Do(sfKey, func() (any, error) {
 			isExecutor = true
-			// The entire response path runs inside singleflight: cache query, origin fetch,
-			// fast-forward, merge, and marshal. Waiters receive the final wire bytes directly.
-
 			// buildErrorResult constructs a dpcResult for error responses.
-			// Centralizes the pattern used at multiple error sites in the closure.
 			buildErrorResult := func(sc int, h http.Header, body []byte) *dpcResult {
 				return &dpcResult{
 					statusCode:  sc,
@@ -321,7 +314,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 						tsc := cts.TimestampCount()
 						if tsc > 0 && tsc >= int64(o.TimeseriesRetentionFactor) {
 							if trq.Extent.End.Before(el[0].Start) {
-								// Too old to cache — return a sentinel so the caller proxies
+								// too old to cache; return a sentinel so the caller proxies
 								return &dpcResult{cacheStatus: status.LookupStatusProxyOnly}, nil
 							}
 						}
@@ -378,7 +371,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 					return buildErrorResult(mresp.StatusCode, mresp.Header.Clone(),
 						func() []byte { b, _ := io.ReadAll(mresp.Body); return b }()), nil
 				}
-				sfDoc.Headers = fetchHeaders // update with merged upstream response headers
+				sfDoc.Headers = fetchHeaders
 				// Merge the new delta timeseries into the cached timeseries
 				if len(mts) > 0 {
 					// on phit, elapsed records the time spent waiting for all upstream requests to complete
@@ -460,7 +453,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 			sfFFStatus := fetchFastForward(ctx, r, o, cc, cache, client, rsc,
 				rlo, trq, normalizedNow, modeler, sfRts)
 
-			// Marshal the response timeseries to wire format
+			// marshal the response timeseries to wire format
 			sfRts.SetExtents(nil) // so they are not included in the client response json
 			var buf bytes.Buffer
 			modeler.WireMarshalWriter(sfRts, rlo, sfDoc.StatusCode, &buf)
@@ -485,7 +478,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 
 		result := v.(*dpcResult)
 
-		// Handle sentinel statuses that require special responses
+		// handle sentinel statuses that require special responses
 		if result.cacheStatus == status.LookupStatusProxyOnly {
 			// LRU eviction determined the request is too old to cache
 			if trq.OriginalBody != nil {
@@ -516,7 +509,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 		rh := result.headers.Clone()
 		sc := result.statusCode
 
-		// For merge members or requests with a TSTransformer, provide the timeseries
+		// for merge members or requests with a TSTransformer, provide the timeseries
 		if rsc.IsMergeMember || rsc.TSTransformer != nil {
 			rts := result.rts.Clone()
 			finalizeDPCResponse(w, r, rsc, rts, rh, sc,
@@ -525,14 +518,14 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 			return
 		}
 
-		// Normal path: serve the pre-marshaled wire bytes directly
+		// normal path: serve the pre-marshaled wire bytes directly
 		finalizeDPCResponse(w, r, rsc, result.rts, rh, sc,
 			cacheStatus, result.ffStatus, result.elapsed, result.missRanges,
 			result.uncachedValueCount, key, o, rlo, modeler, result.wireBody)
 		return
 	}
 
-	// NoCache: bypass cache and singleflight, fetch directly from origin
+	// noCache: bypass cache and singleflight, fetch directly from origin
 	if span != nil {
 		span.AddEvent("Not Caching")
 	}

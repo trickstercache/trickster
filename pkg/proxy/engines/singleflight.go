@@ -26,15 +26,10 @@ import (
 	"golang.org/x/sync/singleflight"
 )
 
-// sfResponseCapture wraps the executor's response writer to tee body writes
-// into a buffer. This ensures the singleflight opcResult captures the response
-// body even for non-cacheable responses (e.g. 502) where cacheBuffer is not
-// populated.
-//
-// It implements http.ResponseWriter so that PrepareResponseWriter and the rest
-// of the handler chain work unchanged. When the inner writer is not an
-// http.ResponseWriter (e.g. *bytes.Buffer in FetchViaObjectProxyCache), the
-// Header/WriteHeader methods are safe no-ops.
+// sfResponseCapture tees body writes into a buffer so the singleflight result
+// captures the response even for non-cacheable status codes (e.g. 502).
+// It implements http.ResponseWriter; when the inner writer is not an
+// http.ResponseWriter, Header/WriteHeader are safe no-ops.
 type sfResponseCapture struct {
 	inner io.Writer
 	buf   bytes.Buffer
@@ -73,8 +68,7 @@ type opcResult struct {
 }
 
 // dpcResult is the shared result returned to singleflight waiters for DPC.
-// For normal requests, waiters serve wireBody directly (pre-marshaled JSON).
-// For IsMergeMember/TSTransformer requests, waiters use rts instead.
+// Normal waiters serve wireBody directly; IsMergeMember/TSTransformer waiters use rts.
 type dpcResult struct {
 	wireBody           []byte
 	rts                timeseries.Timeseries
