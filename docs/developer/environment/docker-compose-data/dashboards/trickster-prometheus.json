@@ -378,6 +378,7 @@
           "color": {
             "mode": "thresholds"
           },
+          "decimals": 1,
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
@@ -387,8 +388,7 @@
               }
             ]
           },
-          "unit": "short",
-          "decimals": 1
+          "unit": "short"
         },
         "overrides": []
       },
@@ -424,9 +424,9 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum(delta(trickster_proxy_requests_total{job=\"trickster\"}[$window])) / sum(delta(trickster_proxy_accepted_connections_total{job=\"trickster\"}[$window]))",
+          "expr": "sum(rate(trickster_proxy_requests_total{job=\"trickster\"}[$window])) / sum(trickster_proxy_active_connections{job=\"trickster\"})",
           "instant": false,
-          "legendFormat": "req/conn",
+          "legendFormat": "req/s/conn",
           "range": true,
           "refId": "A"
         }
@@ -1978,6 +1978,7 @@
               "mode": "off"
             }
           },
+          "decimals": 1,
           "mappings": [],
           "min": 0,
           "thresholds": {
@@ -1992,8 +1993,7 @@
               }
             ]
           },
-          "unit": "short",
-          "decimals": 1
+          "unit": "short"
         },
         "overrides": []
       },
@@ -2555,6 +2555,7 @@
               "mode": "off"
             }
           },
+          "decimals": 1,
           "mappings": [],
           "min": 0,
           "thresholds": {
@@ -2569,8 +2570,7 @@
               }
             ]
           },
-          "unit": "short",
-          "decimals": 1
+          "unit": "short"
         },
         "overrides": []
       },
@@ -2603,9 +2603,9 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum(delta(trickster_proxy_requests_total{job=\"trickster\"}[$window])) / sum(delta(trickster_proxy_accepted_connections_total{job=\"trickster\"}[$window]))",
+          "expr": "sum(rate(trickster_proxy_requests_total{job=\"trickster\"}[$window])) / sum(trickster_proxy_active_connections{job=\"trickster\"})",
           "instant": false,
-          "legendFormat": "req/conn",
+          "legendFormat": "req/s/conn",
           "range": true,
           "refId": "A"
         }
@@ -3263,5 +3263,5 @@
   "timezone": "browser",
   "title": "Prometheus",
   "uid": "uAJ8w1wZz",
-  "version": 64
+  "version": 89
 }
