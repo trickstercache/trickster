@@ -1134,39 +1134,25 @@ func TestFetchViaObjectProxyCacheRequestErroringCache(t *testing.T) {
 	}
 }
 
-// TestOPCSingleflightDedup verifies that concurrent identical OPC requests
-// result in only 1 origin fetch, with waiters receiving the shared result
-func TestOPCSingleflightDedup(t *testing.T) {
-	const n = 5
-	const body = "singleflight-test-body"
-
-	// gated origin server that counts requests
-	var originHits atomic.Int64
-	gate := make(chan struct{})
-	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		originHits.Add(1)
-		<-gate // block until test releases
-		w.Header().Set("Cache-Control", "max-age=60")
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, body)
+// gatedOrigin creates an httptest.Server that blocks until gate is closed,
+// counting requests via hits. The handler fn writes the response.
+func gatedOrigin(gate chan struct{}, hits *atomic.Int64,
+	fn func(w http.ResponseWriter, r *http.Request),
+) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		<-gate
+		fn(w, r)
 	}))
-	defer origin.Close()
+}
 
-	// get a properly configured request, then redirect to our gated origin
-	ts, _, r, rsc, err := setupTestHarnessOPC("", body, http.StatusOK,
-		map[string]string{"Cache-Control": "max-age=60"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ts.Close()
-
-	rsc.BackendOptions.HTTPClient = origin.Client()
-	originURL, _ := url.Parse(origin.URL + "/opc")
-
-	// launch n concurrent requests, each with its own cloned request
+// runConcurrentOPC fires n concurrent ObjectProxyCacheRequest calls against
+// originURL using clones of r, then closes gate and waits for completion.
+func runConcurrentOPC(n int, r *http.Request, originURL *url.URL,
+	gate chan struct{},
+) []*httptest.ResponseRecorder {
 	var wg sync.WaitGroup
 	recorders := make([]*httptest.ResponseRecorder, n)
-
 	for i := range n {
 		wg.Add(1)
 		idx := i
@@ -1180,118 +1166,71 @@ func TestOPCSingleflightDedup(t *testing.T) {
 			ObjectProxyCacheRequest(w, clone)
 		}()
 	}
-
-	// give goroutines time to enter singleflight, then release the gate
 	time.Sleep(50 * time.Millisecond)
 	close(gate)
 	wg.Wait()
-
-	if hits := originHits.Load(); hits != 1 {
-		t.Errorf("expected 1 origin request, got %d", hits)
-	}
-
-	var sawKmiss, sawPhit int
-	for i, rec := range recorders {
-		resp := rec.Result()
-		b, _ := io.ReadAll(resp.Body)
-		resultHdr := resp.Header.Get(headers.NameTricksterResult)
-		if strings.Contains(resultHdr, "status=kmiss") {
-			sawKmiss++
-		} else if strings.Contains(resultHdr, "status=proxy-hit") {
-			sawPhit++
-		}
-		if string(b) != body {
-			t.Errorf("request %d: expected body %q, got %q", i, body, string(b))
-		}
-		if resp.StatusCode != http.StatusOK {
-			t.Errorf("request %d: expected status 200, got %d", i, resp.StatusCode)
-		}
-	}
-	if sawKmiss != 1 {
-		t.Errorf("expected 1 kmiss (executor), got %d", sawKmiss)
-	}
-	if sawPhit != n-1 {
-		t.Errorf("expected %d proxy-hit (waiters), got %d", n-1, sawPhit)
-	}
+	return recorders
 }
 
-// TestOPCSingleflightDifferentRangesNotDeduped verifies that requests with
-// different byte Range headers are not collapsed into the same singleflight group
-func TestOPCSingleflightDifferentRangesNotDeduped(t *testing.T) {
-	ts, _, r, rsc, err := setupTestHarnessOPCRange(
+func TestOPCSingleflightDedup(t *testing.T) {
+	const body = "singleflight-test-body"
+	var hits atomic.Int64
+	gate := make(chan struct{})
+	origin := gatedOrigin(gate, &hits, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Cache-Control", "max-age=60")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, body)
+	})
+	defer origin.Close()
+
+	ts, _, r, rsc, err := setupTestHarnessOPC("", body, http.StatusOK,
 		map[string]string{"Cache-Control": "max-age=60"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer ts.Close()
-
-	// gated origin that counts requests and serves byte range content
-	var originHits atomic.Int64
-	gate := make(chan struct{})
-	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		originHits.Add(1)
-		<-gate
-		// serve the full body; let Trickster handle range slicing
-		w.Header().Set("Cache-Control", "max-age=60")
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, byterange.Body)
-	}))
-	defer origin.Close()
-
 	rsc.BackendOptions.HTTPClient = origin.Client()
+	originURL, _ := url.Parse(origin.URL + "/opc")
 
-	ranges := []string{"bytes=0-5", "bytes=10-15"}
-	var wg sync.WaitGroup
-	recorders := make([]*httptest.ResponseRecorder, len(ranges))
+	recorders := runConcurrentOPC(5, r, originURL, gate)
 
-	for i, rng := range ranges {
-		wg.Add(1)
-		idx := i
-		clone := r.Clone(r.Context())
-		clone.RequestURI = ""
-		u, _ := url.Parse(origin.URL + "/byterange/opc")
-		clone.URL = u
-		clone.Header.Set("Range", rng)
-		go func() {
-			defer wg.Done()
-			w := httptest.NewRecorder()
-			recorders[idx] = w
-			ObjectProxyCacheRequest(w, clone)
-		}()
+	if h := hits.Load(); h != 1 {
+		t.Errorf("expected 1 origin request, got %d", h)
 	}
-
-	time.Sleep(50 * time.Millisecond)
-	close(gate)
-	wg.Wait()
-
-	if hits := originHits.Load(); hits != 2 {
-		t.Errorf("expected 2 origin requests (different ranges), got %d", hits)
-	}
-
+	var sawKmiss, sawPhit int
 	for i, rec := range recorders {
 		resp := rec.Result()
-		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
-			t.Errorf("request %d: unexpected status %d", i, resp.StatusCode)
+		b, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("request %d: expected status 200, got %d", i, resp.StatusCode)
 		}
+		if string(b) != body {
+			t.Errorf("request %d: expected body %q, got %q", i, body, string(b))
+		}
+		hdr := resp.Header.Get(headers.NameTricksterResult)
+		if strings.Contains(hdr, "status=kmiss") {
+			sawKmiss++
+		} else if strings.Contains(hdr, "status=proxy-hit") {
+			sawPhit++
+		}
+	}
+	if sawKmiss != 1 {
+		t.Errorf("expected 1 kmiss (executor), got %d", sawKmiss)
+	}
+	if sawPhit != 4 {
+		t.Errorf("expected 4 proxy-hit (waiters), got %d", sawPhit)
 	}
 }
 
-// TestOPCSingleflightErrorPropagation verifies that when the origin returns
-// an error (502), all concurrent singleflight callers receive the error response
 func TestOPCSingleflightErrorPropagation(t *testing.T) {
-	const n = 5
 	const errBody = `{"error":"bad gateway"}`
-
-	// origin that returns 502 after the gate opens
-	var originHits atomic.Int64
+	var hits atomic.Int64
 	gate := make(chan struct{})
-	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		originHits.Add(1)
-		<-gate
+	origin := gatedOrigin(gate, &hits, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadGateway)
 		fmt.Fprint(w, errBody)
-	}))
+	})
 	defer origin.Close()
 
 	ts, _, r, rsc, err := setupTestHarnessOPC("", errBody, http.StatusBadGateway,
@@ -1300,35 +1239,14 @@ func TestOPCSingleflightErrorPropagation(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ts.Close()
-
 	rsc.BackendOptions.HTTPClient = origin.Client()
 	originURL, _ := url.Parse(origin.URL + "/opc")
 
-	var wg sync.WaitGroup
-	recorders := make([]*httptest.ResponseRecorder, n)
+	recorders := runConcurrentOPC(3, r, originURL, gate)
 
-	for i := range n {
-		wg.Add(1)
-		idx := i
-		go func() {
-			defer wg.Done()
-			clone := r.Clone(r.Context())
-			clone.RequestURI = ""
-			clone.URL = originURL
-			w := httptest.NewRecorder()
-			recorders[idx] = w
-			ObjectProxyCacheRequest(w, clone)
-		}()
+	if h := hits.Load(); h != 1 {
+		t.Errorf("expected 1 origin request, got %d", h)
 	}
-
-	time.Sleep(50 * time.Millisecond)
-	close(gate)
-	wg.Wait()
-
-	if hits := originHits.Load(); hits != 1 {
-		t.Errorf("expected 1 origin request, got %d", hits)
-	}
-
 	for i, rec := range recorders {
 		resp := rec.Result()
 		if resp.StatusCode != http.StatusBadGateway {
@@ -1341,76 +1259,122 @@ func TestOPCSingleflightErrorPropagation(t *testing.T) {
 	}
 }
 
-// TestOPCSingleflightIdenticalRangesDeduped verifies that concurrent requests
-// with the same byte Range header share a single origin fetch
-func TestOPCSingleflightIdenticalRangesDeduped(t *testing.T) {
-	const n = 5
-
-	ts, _, r, rsc, err := setupTestHarnessOPCRange(
-		map[string]string{"Cache-Control": "max-age=60"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ts.Close()
-
-	var originHits atomic.Int64
-	gate := make(chan struct{})
-	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		originHits.Add(1)
-		<-gate
-		w.Header().Set("Cache-Control", "max-age=60")
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, byterange.Body)
-	}))
-	defer origin.Close()
-
-	rsc.BackendOptions.HTTPClient = origin.Client()
-
-	var wg sync.WaitGroup
-	recorders := make([]*httptest.ResponseRecorder, n)
-	for i := range n {
-		wg.Add(1)
-		idx := i
-		clone := r.Clone(r.Context())
-		clone.RequestURI = ""
-		u, _ := url.Parse(origin.URL + "/byterange/opc")
-		clone.URL = u
-		clone.Header.Set("Range", "bytes=0-10")
-		go func() {
-			defer wg.Done()
-			w := httptest.NewRecorder()
-			recorders[idx] = w
-			ObjectProxyCacheRequest(w, clone)
-		}()
-	}
-
-	time.Sleep(50 * time.Millisecond)
-	close(gate)
-	wg.Wait()
-
-	if hits := originHits.Load(); hits != 1 {
-		t.Errorf("expected 1 origin request (identical ranges), got %d", hits)
-	}
-
-	var sawKmiss, sawPhit int
-	for i, rec := range recorders {
-		resp := rec.Result()
-		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
-			t.Errorf("request %d: unexpected status %d", i, resp.StatusCode)
+func TestOPCSingleflightRanges(t *testing.T) {
+	t.Run("identical ranges deduped", func(t *testing.T) {
+		ts, _, r, rsc, err := setupTestHarnessOPCRange(
+			map[string]string{"Cache-Control": "max-age=60"})
+		if err != nil {
+			t.Fatal(err)
 		}
-		result := resp.Header.Get(headers.NameTricksterResult)
-		if strings.Contains(result, "status=kmiss") {
-			sawKmiss++
-		} else if strings.Contains(result, "status=proxy-hit") {
-			sawPhit++
+		defer ts.Close()
+
+		var hits atomic.Int64
+		gate := make(chan struct{})
+		origin := gatedOrigin(gate, &hits, func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Cache-Control", "max-age=60")
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprint(w, byterange.Body)
+		})
+		defer origin.Close()
+		rsc.BackendOptions.HTTPClient = origin.Client()
+
+		// all requests use the same range
+		n := 4
+		var wg sync.WaitGroup
+		recorders := make([]*httptest.ResponseRecorder, n)
+		for i := range n {
+			wg.Add(1)
+			idx := i
+			clone := r.Clone(r.Context())
+			clone.RequestURI = ""
+			u, _ := url.Parse(origin.URL + "/byterange/opc")
+			clone.URL = u
+			clone.Header.Set("Range", "bytes=0-10")
+			go func() {
+				defer wg.Done()
+				w := httptest.NewRecorder()
+				recorders[idx] = w
+				ObjectProxyCacheRequest(w, clone)
+			}()
 		}
-	}
-	if sawKmiss != 1 {
-		t.Errorf("expected 1 kmiss (executor), got %d", sawKmiss)
-	}
-	if sawPhit != n-1 {
-		t.Errorf("expected %d proxy-hit (waiters), got %d", n-1, sawPhit)
-	}
+		time.Sleep(50 * time.Millisecond)
+		close(gate)
+		wg.Wait()
+
+		if h := hits.Load(); h != 1 {
+			t.Errorf("expected 1 origin request (identical ranges), got %d", h)
+		}
+		var sawKmiss, sawPhit int
+		for i, rec := range recorders {
+			resp := rec.Result()
+			if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
+				t.Errorf("request %d: unexpected status %d", i, resp.StatusCode)
+			}
+			hdr := resp.Header.Get(headers.NameTricksterResult)
+			if strings.Contains(hdr, "status=kmiss") {
+				sawKmiss++
+			} else if strings.Contains(hdr, "status=proxy-hit") {
+				sawPhit++
+			}
+		}
+		if sawKmiss != 1 {
+			t.Errorf("expected 1 kmiss (executor), got %d", sawKmiss)
+		}
+		if sawPhit != n-1 {
+			t.Errorf("expected %d proxy-hit (waiters), got %d", n-1, sawPhit)
+		}
+	})
+
+	t.Run("different ranges not deduped", func(t *testing.T) {
+		ts, _, r, rsc, err := setupTestHarnessOPCRange(
+			map[string]string{"Cache-Control": "max-age=60"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer ts.Close()
+
+		var hits atomic.Int64
+		gate := make(chan struct{})
+		origin := gatedOrigin(gate, &hits, func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Cache-Control", "max-age=60")
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprint(w, byterange.Body)
+		})
+		defer origin.Close()
+		rsc.BackendOptions.HTTPClient = origin.Client()
+
+		ranges := []string{"bytes=0-5", "bytes=10-15"}
+		var wg sync.WaitGroup
+		recorders := make([]*httptest.ResponseRecorder, len(ranges))
+		for i, rng := range ranges {
+			wg.Add(1)
+			idx := i
+			clone := r.Clone(r.Context())
+			clone.RequestURI = ""
+			u, _ := url.Parse(origin.URL + "/byterange/opc")
+			clone.URL = u
+			clone.Header.Set("Range", rng)
+			go func() {
+				defer wg.Done()
+				w := httptest.NewRecorder()
+				recorders[idx] = w
+				ObjectProxyCacheRequest(w, clone)
+			}()
+		}
+		time.Sleep(50 * time.Millisecond)
+		close(gate)
+		wg.Wait()
+
+		if h := hits.Load(); h != 2 {
+			t.Errorf("expected 2 origin requests (different ranges), got %d", h)
+		}
+		for i, rec := range recorders {
+			resp := rec.Result()
+			if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
+				t.Errorf("request %d: unexpected status %d", i, resp.StatusCode)
+			}
+		}
+	})
 }
 
 // failStoreCache wraps a cache.Cache and makes StoreReference return an error,
@@ -1427,23 +1391,16 @@ func (f *failStoreCache) RetrieveReference(cacheKey string) (any, status.LookupS
 	return f.Cache.(cache.MemoryCache).RetrieveReference(cacheKey)
 }
 
-// TestOPCSingleflightHandlerError verifies that when the handler returns an
-// error (e.g., cache store failure), all concurrent waiters still get a response
 func TestOPCSingleflightHandlerError(t *testing.T) {
-	const n = 5
 	const body = "hello from origin"
-
-	// gated origin that returns 200 with a cacheable response
-	var originHits atomic.Int64
+	var hits atomic.Int64
 	gate := make(chan struct{})
-	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		originHits.Add(1)
-		<-gate
+	origin := gatedOrigin(gate, &hits, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Cache-Control", "max-age=60")
 		w.Header().Set("Content-Type", "text/plain")
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprint(w, body)
-	}))
+	})
 	defer origin.Close()
 
 	ts, _, r, rsc, err := setupTestHarnessOPC("", body, http.StatusOK,
@@ -1452,38 +1409,15 @@ func TestOPCSingleflightHandlerError(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ts.Close()
-
-	// wrap the cache client so StoreReference fails, triggering the fErr path
 	rsc.CacheClient = &failStoreCache{Cache: rsc.CacheClient}
 	rsc.BackendOptions.HTTPClient = origin.Client()
 	originURL, _ := url.Parse(origin.URL + "/opc")
 
-	var wg sync.WaitGroup
-	recorders := make([]*httptest.ResponseRecorder, n)
+	recorders := runConcurrentOPC(6, r, originURL, gate)
 
-	for i := range n {
-		wg.Add(1)
-		idx := i
-		go func() {
-			defer wg.Done()
-			clone := r.Clone(r.Context())
-			clone.RequestURI = ""
-			clone.URL = originURL
-			w := httptest.NewRecorder()
-			recorders[idx] = w
-			ObjectProxyCacheRequest(w, clone)
-		}()
+	if h := hits.Load(); h != 1 {
+		t.Errorf("expected 1 origin request, got %d", h)
 	}
-
-	time.Sleep(50 * time.Millisecond)
-	close(gate)
-	wg.Wait()
-
-	if hits := originHits.Load(); hits != 1 {
-		t.Errorf("expected 1 origin request, got %d", hits)
-	}
-
-	// all callers should get a valid HTTP response even though the cache store failed
 	for i, rec := range recorders {
 		resp := rec.Result()
 		b, _ := io.ReadAll(resp.Body)

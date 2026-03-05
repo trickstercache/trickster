@@ -284,31 +284,31 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 			}
 
 			var cts timeseries.Timeseries
-			var sfDoc *HTTPDocument
-			var sfElapsed time.Duration
-			var sfCacheStatus status.LookupStatus
-			var sfMissRanges, cvr timeseries.ExtentList
+			var doc *HTTPDocument
+			var elapsed time.Duration
+			var cacheStatus status.LookupStatus
+			var missRanges, cvr timeseries.ExtentList
 
-			sfDoc, sfCacheStatus, _, err = QueryCache(ctx, cache, key, nil, modeler.CacheUnmarshaler)
-			if sfCacheStatus == status.LookupStatusKeyMiss && errors.Is(err, tc.ErrKNF) {
-				cts, sfDoc, sfElapsed, err = fetchTimeseries(pr, trq, client, modeler)
+			doc, cacheStatus, _, err = QueryCache(ctx, cache, key, nil, modeler.CacheUnmarshaler)
+			if cacheStatus == status.LookupStatusKeyMiss && errors.Is(err, tc.ErrKNF) {
+				cts, doc, elapsed, err = fetchTimeseries(pr, trq, client, modeler)
 				if err != nil {
-					return buildErrorResult(sfDoc.StatusCode, sfDoc.SafeHeaderClone(), sfDoc.Body), nil
+					return buildErrorResult(doc.StatusCode, doc.SafeHeaderClone(), doc.Body), nil
 				}
 			} else {
-				if sfDoc == nil {
+				if doc == nil {
 					err = tpe.ErrEmptyDocumentBody
 				}
 				if err != nil {
 					logger.Error("cache object unmarshaling failed",
 						logging.Pairs{"key": key, "backendName": client.Name(), "detail": err.Error()})
 					go cache.Remove(key)
-					cts, sfDoc, sfElapsed, err = fetchTimeseries(pr, trq, client, modeler)
+					cts, doc, elapsed, err = fetchTimeseries(pr, trq, client, modeler)
 					if err != nil {
-						return buildErrorResult(sfDoc.StatusCode, sfDoc.SafeHeaderClone(), sfDoc.Body), nil
+						return buildErrorResult(doc.StatusCode, doc.SafeHeaderClone(), doc.Body), nil
 					}
 				} else {
-					cts = sfDoc.timeseries.Clone() // Load the Cached Timeseries
+					cts = doc.timeseries.Clone() // Load the Cached Timeseries
 					if o.TimeseriesEvictionMethod == evictionmethods.EvictionMethodLRU {
 						el := cts.Extents()
 						tsc := cts.TimestampCount()
@@ -319,7 +319,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 							}
 						}
 					}
-					sfCacheStatus = status.LookupStatusPartialHit
+					cacheStatus = status.LookupStatusPartialHit
 				}
 			}
 
@@ -328,62 +328,61 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 			if cts != nil {
 				vr = cts.VolatileExtents()
 			}
-			if sfCacheStatus == status.LookupStatusPartialHit {
-				sfMissRanges = cts.Extents().CalculateDeltas(timeseries.ExtentList{trq.Extent}, trq.Step)
+			if cacheStatus == status.LookupStatusPartialHit {
+				missRanges = cts.Extents().CalculateDeltas(timeseries.ExtentList{trq.Extent}, trq.Step)
 				// this is the backfill part of backfill tolerance. if there are any volatile
 				// ranges in the timeseries, this determines if any fall within the client's
 				// requested range and ensures they are re-requested. this only happens if
 				// the request is already a phit
-				if bt > 0 && len(sfMissRanges) > 0 && len(vr) > 0 {
+				if bt > 0 && len(missRanges) > 0 && len(vr) > 0 {
 					// this checks the timeseries's volatile ranges for any overlap with
 					// the request extent, and adds those to the missRanges to refresh
 					if cvr = vr.Crop(trq.Extent); len(cvr) > 0 {
-						merged := make(timeseries.ExtentList, len(sfMissRanges)+len(cvr))
-						copy(merged, sfMissRanges)
-						copy(merged[len(sfMissRanges):], cvr)
-						sfMissRanges = merged.Compress(trq.Step)
+						merged := make(timeseries.ExtentList, len(missRanges)+len(cvr))
+						copy(merged, missRanges)
+						copy(merged[len(missRanges):], cvr)
+						missRanges = merged.Compress(trq.Step)
 					}
 				}
 			}
-			if len(sfMissRanges) == 0 && sfCacheStatus == status.LookupStatusPartialHit {
+			if len(missRanges) == 0 && cacheStatus == status.LookupStatusPartialHit {
 				// on full cache hit, elapsed records the time taken to query the cache
 				// and definitively conclude that it is a full cache hit
-				sfElapsed = time.Since(now)
-				sfCacheStatus = status.LookupStatusHit
-			} else if len(sfMissRanges) == 1 && sfMissRanges[0].Start.Equal(trq.Extent.Start) &&
-				sfMissRanges[0].End.Equal(trq.Extent.End) {
-				sfCacheStatus = status.LookupStatusRangeMiss
+				elapsed = time.Since(now)
+				cacheStatus = status.LookupStatusHit
+			} else if len(missRanges) == 1 && missRanges[0].Start.Equal(trq.Extent.Start) &&
+				missRanges[0].End.Equal(trq.Extent.End) {
+				cacheStatus = status.LookupStatusRangeMiss
 			}
 
 			// this concurrently fetches all missing ranges from the origin
-			if sfCacheStatus != status.LookupStatusHit && len(sfMissRanges) > 0 {
+			if cacheStatus != status.LookupStatusHit && len(missRanges) > 0 {
 				if o.DoesShard {
-					sfMissRanges = sfMissRanges.Splice(trq.Step, o.MaxShardSizeTime, o.ShardStep, o.MaxShardSizePoints)
+					missRanges = missRanges.Splice(trq.Step, o.MaxShardSizeTime, o.ShardStep, o.MaxShardSizePoints)
 				}
 				frsc := request.NewResources(o, pc, cc, cache, client, rsc.Tracer)
 				frsc.TimeRangeQuery = trq
 				var mts timeseries.List
 				var mresp *http.Response
-				fetchHeaders := http.Header(sfDoc.Headers).Clone()
-				mts, sfUncachedVC, mresp, ferr := fetchExtents(sfMissRanges, frsc,
+				fetchHeaders := http.Header(doc.Headers).Clone()
+				mts, _, mresp, ferr := fetchExtents(missRanges, frsc,
 					fetchHeaders, client, pr, modeler.WireUnmarshalerReader, span)
 				if ferr != nil {
 					return buildErrorResult(mresp.StatusCode, mresp.Header.Clone(),
 						func() []byte { b, _ := io.ReadAll(mresp.Body); return b }()), nil
 				}
-				sfDoc.Headers = fetchHeaders
+				doc.Headers = fetchHeaders
 				// Merge the new delta timeseries into the cached timeseries
 				if len(mts) > 0 {
 					// on phit, elapsed records the time spent waiting for all upstream requests to complete
-					sfElapsed = time.Since(now)
+					elapsed = time.Since(now)
 					cts.Merge(true, mts...)
 				}
-				_ = sfUncachedVC // will be recomputed from rts below
 			}
 
 			// this handles the tolerance part of backfill tolerance, by adding new tolerable ranges to
 			// the timeseries's volatile list, and removing those that no longer tolerate backfill
-			if bt > 0 && sfCacheStatus != status.LookupStatusHit {
+			if bt > 0 && cacheStatus != status.LookupStatusHit {
 				var shouldCompress bool
 				ve := cts.VolatileExtents()
 				// first, remove those that are now too old to tolerate backfill.
@@ -413,17 +412,17 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 				}
 			}
 
-			// cts is the cacheable time series, sfRts is the user's response timeseries
-			var sfRts timeseries.Timeseries
-			if sfCacheStatus != status.LookupStatusKeyMiss {
-				sfRts = cts.CroppedClone(trq.Extent)
+			// cts is the cacheable time series, rts is the user's response timeseries
+			var rts timeseries.Timeseries
+			if cacheStatus != status.LookupStatusKeyMiss {
+				rts = cts.CroppedClone(trq.Extent)
 			} else {
-				sfRts = cts.Clone()
+				rts = cts.Clone()
 			}
 
 			// Crop the Cache Object down to the Sample Size or Age Retention Policy and the
 			// Backfill Tolerance before storing to cache
-			if sfCacheStatus != status.LookupStatusHit {
+			if cacheStatus != status.LookupStatusHit {
 				switch o.TimeseriesEvictionMethod {
 				case evictionmethods.EvictionMethodLRU:
 					cts.CropToSize(o.TimeseriesRetentionFactor, now, trq.Extent)
@@ -433,8 +432,8 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 				// Don't cache datasets with empty extents
 				// (everything was cropped so there is nothing to cache)
 				if len(cts.Extents()) > 0 {
-					sfDoc.timeseries = cts
-					if werr := WriteCache(ctx, cache, key, sfDoc, o.TimeseriesTTL,
+					doc.timeseries = cts
+					if werr := WriteCache(ctx, cache, key, doc, o.TimeseriesTTL,
 						o.CompressibleTypes, modeler.CacheMarshaler); werr != nil {
 						logger.Error("error writing object to cache",
 							logging.Pairs{
@@ -448,26 +447,26 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 				}
 			}
 
-			sfUncachedValueCount := sfRts.ValueCount() - cts.ValueCount()
+			uncachedValueCount := rts.ValueCount() - cts.ValueCount()
 
-			sfFFStatus := fetchFastForward(ctx, r, o, cc, cache, client, rsc,
-				rlo, trq, normalizedNow, modeler, sfRts)
+			ffStatus := fetchFastForward(ctx, r, o, cc, cache, client, rsc,
+				rlo, trq, normalizedNow, modeler, rts)
 
 			// marshal the response timeseries to wire format
-			sfRts.SetExtents(nil) // so they are not included in the client response json
+			rts.SetExtents(nil) // so they are not included in the client response json
 			var buf bytes.Buffer
-			modeler.WireMarshalWriter(sfRts, rlo, sfDoc.StatusCode, &buf)
+			modeler.WireMarshalWriter(rts, rlo, doc.StatusCode, &buf)
 
 			return &dpcResult{
 				wireBody:           buf.Bytes(),
-				rts:                sfRts,
-				headers:            sfDoc.SafeHeaderClone(),
-				statusCode:         sfDoc.StatusCode,
-				elapsed:            float64(sfElapsed.Seconds()),
-				ffStatus:           sfFFStatus,
-				uncachedValueCount: sfUncachedValueCount,
-				cacheStatus:        sfCacheStatus,
-				missRanges:         sfMissRanges,
+				rts:                rts,
+				headers:            doc.SafeHeaderClone(),
+				statusCode:         doc.StatusCode,
+				elapsed:            float64(elapsed.Seconds()),
+				ffStatus:           ffStatus,
+				uncachedValueCount: uncachedValueCount,
+				cacheStatus:        cacheStatus,
+				missRanges:         missRanges,
 			}, nil
 		})
 
