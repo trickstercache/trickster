@@ -624,7 +624,7 @@
           "datasource": {
             "uid": "$datasource"
           },
-          "expr": "rate(process_cpu_seconds_total{job=\"trickster\"}[1m])",
+          "expr": "rate(process_cpu_seconds_total{job=\"trickster\"}[$window])",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "cpu",
@@ -722,7 +722,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum(rate(go_gc_duration_seconds_sum{job=\"trickster\"}[5m])) / sum(rate(go_gc_duration_seconds_count{job=\"trickster\"}[5m]))",
+          "expr": "sum(rate(go_gc_duration_seconds_sum{job=\"trickster\"}[$window])) / sum(rate(go_gc_duration_seconds_count{job=\"trickster\"}[$window]))",
           "instant": false,
           "legendFormat": "__auto",
           "range": true,
@@ -820,7 +820,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum(increase(process_network_transmit_bytes_total{job=\"trickster\"}[5m]))",
+          "expr": "sum(increase(process_network_transmit_bytes_total{job=\"trickster\"}[$window]))",
           "instant": false,
           "legendFormat": "TX",
           "range": true,
@@ -832,7 +832,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum(increase(process_network_receive_bytes_total{job=\"trickster\"}[5m]))",
+          "expr": "sum(increase(process_network_receive_bytes_total{job=\"trickster\"}[$window]))",
           "hide": false,
           "instant": false,
           "legendFormat": "RX",
@@ -840,7 +840,7 @@
           "refId": "B"
         }
       ],
-      "title": "Processed Bytes Last 5m",
+      "title": "Processed Bytes",
       "type": "timeseries"
     },
     {
@@ -974,7 +974,7 @@
           "datasource": {
             "uid": "$datasource"
           },
-          "expr": "sum(delta(trickster_proxy_requests_total{job=\"trickster\"}[1m])) by (cache_status)",
+          "expr": "sum(delta(trickster_proxy_requests_total{job=\"trickster\"}[$window])) by (cache_status)",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{cache_status}}",
@@ -1326,7 +1326,7 @@
           "datasource": {
             "uid": "$datasource"
           },
-          "expr": "sum(delta(trickster_cache_events_total{event=\"eviction\",job=\"trickster\"}[1m])) by (cache_name)",
+          "expr": "sum(delta(trickster_cache_events_total{event=\"eviction\",job=\"trickster\"}[$window])) by (cache_name)",
           "legendFormat": "{{cache_name}}",
           "refId": "B"
         }
@@ -1439,7 +1439,7 @@
           "datasource": {
             "uid": "$datasource"
           },
-          "expr": "sum(delta(trickster_cache_operation_bytes_total{job=\"trickster\"}[1m])) by (cache_name, operation)",
+          "expr": "sum(delta(trickster_cache_operation_bytes_total{job=\"trickster\"}[$window])) by (cache_name, operation)",
           "legendFormat": "{{cache_name}} - {{operation}}",
           "refId": "B"
         }
@@ -1551,7 +1551,7 @@
           "datasource": {
             "uid": "$datasource"
           },
-          "expr": "sum(delta(trickster_cache_operation_objects_total{job=\"trickster\"}[1m])) by (cache_name, operation)",
+          "expr": "sum(delta(trickster_cache_operation_objects_total{job=\"trickster\"}[$window])) by (cache_name, operation)",
           "legendFormat": "{{cache_name}} - {{operation}}",
           "refId": "B"
         }
@@ -1675,10 +1675,12 @@
           "datasource": {
             "uid": "$datasource"
           },
-          "expr": "sum(idelta(trickster_frontend_requests_total{job=\"trickster\",job=\"trickster\"}[1m])) by (backend_name, http_status)",
+          "editorMode": "code",
+          "expr": "sum(delta(trickster_frontend_requests_total{job=\"trickster\",job=\"trickster\"}[$window])) by (backend_name, http_status)",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{backend_name}} - {{http_status}}",
+          "range": true,
           "refId": "A"
         }
       ],
@@ -1819,17 +1821,19 @@
           "datasource": {
             "uid": "$datasource"
           },
-          "expr": "sum(idelta(trickster_frontend_written_bytes_total{job=\"trickster\",job=\"trickster\"}[1m])) by (backend_name)",
+          "editorMode": "code",
+          "expr": "sum(delta(trickster_frontend_written_bytes_total{job=\"trickster\",job=\"trickster\"}[$window])) by (backend_name)",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{backend_name}}",
+          "range": true,
           "refId": "A"
         },
         {
           "datasource": {
             "uid": "$datasource"
           },
-          "expr": "sum(idelta(trickster_frontend_written_bytes_total{job=\"trickster\",job=\"trickster\"}[1m]))",
+          "expr": "sum(idelta(trickster_frontend_written_bytes_total{job=\"trickster\",job=\"trickster\"}[$window]))",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "total",
@@ -1946,7 +1950,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "sum(idelta(trickster_proxy_accepted_connections_total{job=\"trickster\"}[1m])) "
+              "options": "sum(idelta(trickster_proxy_accepted_connections_total{job=\"trickster\"}[$window])) "
             },
             "properties": [
               {
@@ -1987,17 +1991,19 @@
           "datasource": {
             "uid": "$datasource"
           },
-          "expr": "sum(idelta(trickster_proxy_requested_connections_total{job=\"trickster\"}[1m])) ",
+          "editorMode": "code",
+          "expr": "sum(delta(trickster_proxy_requested_connections_total{job=\"trickster\"}[$window])) ",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "requested",
+          "range": true,
           "refId": "B"
         },
         {
           "datasource": {
             "uid": "$datasource"
           },
-          "expr": "sum(idelta(trickster_proxy_accepted_connections_total{job=\"trickster\"}[1m])) ",
+          "expr": "sum(idelta(trickster_proxy_accepted_connections_total{job=\"trickster\"}[$window])) ",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "accepted",
@@ -2007,7 +2013,7 @@
           "datasource": {
             "uid": "$datasource"
           },
-          "expr": "sum(idelta(trickster_proxy_closed_connections_total{job=\"trickster\"}[1m])) ",
+          "expr": "sum(idelta(trickster_proxy_closed_connections_total{job=\"trickster\"}[$window])) ",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "closed",
@@ -2017,7 +2023,7 @@
           "datasource": {
             "uid": "$datasource"
           },
-          "expr": "sum(idelta(trickster_proxy_failed_connections_total{job=\"trickster\"}[1m])) ",
+          "expr": "sum(idelta(trickster_proxy_failed_connections_total{job=\"trickster\"}[$window])) ",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "failed",
@@ -2181,7 +2187,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "sum(idelta(trickster_proxy_accepted_connections_total{job=\"trickster\"}[1m])) "
+              "options": "sum(idelta(trickster_proxy_accepted_connections_total{job=\"trickster\"}[$window])) "
             },
             "properties": [
               {
@@ -2222,10 +2228,12 @@
           "datasource": {
             "uid": "$datasource"
           },
-          "expr": "sum(idelta(trickster_proxy_requests_total{job=\"trickster\"}[1m])) by (backend_name)",
+          "editorMode": "code",
+          "expr": "sum(delta(trickster_proxy_requests_total{job=\"trickster\"}[$window])) by (backend_name)",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{backend_name}}",
+          "range": true,
           "refId": "A"
         }
       ],
@@ -2331,6 +2339,39 @@
         "refresh": 1,
         "regex": "",
         "type": "datasource"
+      },
+      {
+        "current": {
+          "text": "30m",
+          "value": "30m"
+        },
+        "includeAll": false,
+        "label": "Window",
+        "name": "window",
+        "options": [
+          {
+            "selected": false,
+            "text": "1m",
+            "value": "1m"
+          },
+          {
+            "selected": false,
+            "text": "5m",
+            "value": "5m"
+          },
+          {
+            "selected": true,
+            "text": "30m",
+            "value": "30m"
+          },
+          {
+            "selected": false,
+            "text": "1h",
+            "value": "1h"
+          }
+        ],
+        "query": "1m,5m,30m,1h",
+        "type": "custom"
       }
     ]
   },
@@ -2342,5 +2383,5 @@
   "timezone": "browser",
   "title": "Prometheus",
   "uid": "uAJ8w1wZz",
-  "version": 39
+  "version": 64
 }
