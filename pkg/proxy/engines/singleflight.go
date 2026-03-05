@@ -31,9 +31,11 @@ var (
 
 // opcResult is the shared result returned to singleflight waiters for OPC.
 type opcResult struct {
-	statusCode int
-	headers    http.Header
-	body       []byte
+	statusCode  int
+	headers     http.Header
+	body        []byte
+	cacheStatus status.LookupStatus
+	proxyOnly   bool // signal caller to proxy instead
 }
 
 // dpcResult is the shared result returned to singleflight waiters for DPC.

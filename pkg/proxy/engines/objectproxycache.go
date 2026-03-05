@@ -240,79 +240,42 @@ func handleCacheKeyMiss(pr *proxyRequest) error {
 	rsc := request.GetResources(pr.Request)
 	pc := rsc.PathConfig
 
+	// if we're using PCF, handle that separately
 	if !methods.HasBody(pr.Method) && !pr.wantsRanges && pc != nil &&
 		pc.CollapsedForwardingType == forwarding.CFTypeProgressive {
 		if err := handlePCF(pr); !stderrors.Is(err, errors.ErrPCFContentLength) {
 			return err
 		}
 		// PCF not applicable (content too large), fall through to normal fetch
-		pr.prepareUpstreamRequests()
-		if err := handleUpstreamTransactions(pr); err != nil {
-			return err
-		}
-		return handleAllWrites(pr)
 	}
 
-	v, err, shared := opcGroup.Do(pr.key, func() (any, error) {
-		return opcFetchAndCache(pr)
-	})
-	if err != nil {
-		return err
-	}
-
-	if shared {
-		// Waiter: serve from the shared result
-		result := v.(*opcResult)
-		return serveOPCResult(pr, result)
-	}
-	// Executor: response already written inside opcFetchAndCache
-	return nil
-}
-
-// opcFetchAndCache is the singleflight executor function for OPC cache misses.
-// It fetches from origin, writes the response to the executor's client, stores
-// to cache, and returns an opcResult for any waiting goroutines.
-func opcFetchAndCache(pr *proxyRequest) (*opcResult, error) {
 	pr.prepareUpstreamRequests()
 	if err := handleUpstreamTransactions(pr); err != nil {
-		return nil, err
+		return err
 	}
-	if err := handleAllWrites(pr); err != nil {
-		return nil, err
-	}
-
-	// Build a result for singleflight waiters.
-	// Use the cached document body if available (cacheable response),
-	// otherwise use the cacheBuffer that setBodyWriter tee'd into.
-	var body []byte
-	if pr.cacheDocument != nil && pr.cacheDocument.Body != nil {
-		body = pr.cacheDocument.Body
-	} else if pr.cacheBuffer != nil {
-		body = pr.cacheBuffer.Bytes()
-	}
-	// Deep-copy body to avoid aliasing with memory cache (stores by reference).
-	result := &opcResult{
-		statusCode: pr.upstreamResponse.StatusCode,
-		headers:    pr.upstreamResponse.Header.Clone(),
-		body:       append([]byte(nil), body...),
-	}
-	return result, nil
+	return handleAllWrites(pr)
 }
 
 // serveOPCResult writes a singleflight-shared result to a waiting request's client.
+// It writes directly rather than going through handleResponse, because the waiter
+// has no cacheDocument or upstream reader state — only the pre-built opcResult.
 func serveOPCResult(pr *proxyRequest, result *opcResult) error {
 	pr.upstreamResponse = &http.Response{
 		StatusCode: result.statusCode,
 		Request:    pr.Request,
 		Header:     result.headers.Clone(),
 	}
-	pr.upstreamReader = bytes.NewReader(result.body)
-	if status.IsSuccessful(pr.cacheStatus) {
+	if status.IsSuccessful(result.cacheStatus) {
 		pr.cacheStatus = status.LookupStatusProxyHit
 	} else {
 		pr.cacheStatus = status.LookupStatusProxyError
 	}
-	return handleResponse(pr)
+	pr.writeResponseHeader()
+	pr.mapLock.Lock()
+	PrepareResponseWriter(pr.responseWriter, result.statusCode, pr.upstreamResponse.Header)
+	pr.mapLock.Unlock()
+	_, err := io.Copy(pr.responseWriter, bytes.NewReader(result.body))
+	return err
 }
 
 func handleUpstreamTransactions(pr *proxyRequest) error {
@@ -483,25 +446,71 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 
 	pr.cachingPolicy.ParseClientConditionals()
 
-	var err error
-	pr.cacheDocument, pr.cacheStatus, pr.neededRanges, err = QueryCache(pr.upstreamRequest.Context(), cc, pr.key, pr.wantedRanges, nil)
-	if err == nil || stderrors.Is(err, cache.ErrKNF) {
-		f := cacheResponseHandler(pr.cacheStatus)
-		if f == nil {
-			logger.Warn("unhandled cache lookup response",
-				logging.Pairs{"lookupStatus": pr.cacheStatus})
-			return nil, status.LookupStatusProxyOnly
+	// deduplicate cache lookup + handler work per cache key.
+	// The executor runs QueryCache and the handler (hit, partial hit, miss, revalidation, etc.),
+	// writes its own response, and returns an opcResult for any waiters.
+	sfKey := pr.key
+	if pr.wantsRanges {
+		sfKey += "|" + pr.wantedRanges.String()
+	}
+	// isExecutor is set to true inside the closure so we can distinguish the
+	// executor from waiters after Do returns. singleflight.Do returns shared=true
+	// for the executor too when there are waiters, so shared alone is insufficient.
+	var isExecutor bool
+	val, sfErr, _ := opcGroup.Do(sfKey, func() (any, error) {
+		isExecutor = true
+		var err error
+		pr.cacheDocument, pr.cacheStatus, pr.neededRanges, err = QueryCache(pr.upstreamRequest.Context(), cc, pr.key, pr.wantedRanges, nil)
+		if err == nil || stderrors.Is(err, cache.ErrKNF) {
+			f := cacheResponseHandler(pr.cacheStatus)
+			if f == nil {
+				logger.Warn("unhandled cache lookup response",
+					logging.Pairs{"lookupStatus": pr.cacheStatus})
+				return &opcResult{proxyOnly: true}, nil
+			}
+			if fErr := f(pr); fErr != nil {
+				return nil, fErr
+			}
+		} else {
+			logger.Error("cache lookup error",
+				logging.Pairs{"detail": err.Error()})
+			pr.cacheDocument = nil
+			pr.cacheStatus = status.LookupStatusKeyMiss
+			if fErr := handleCacheKeyMiss(pr); fErr != nil {
+				return nil, fErr
+			}
 		}
-		if err := f(pr); err != nil {
+
+		// Build result for singleflight waiters.
+		// Use cached document body if available, else cacheBuffer (tee'd during write).
+		var body []byte
+		if pr.cacheDocument != nil && pr.cacheDocument.Body != nil {
+			body = pr.cacheDocument.Body
+		} else if pr.cacheBuffer != nil {
+			body = pr.cacheBuffer.Bytes()
+		}
+		// Deep-copy body to avoid aliasing with memory cache (stores by reference).
+		return &opcResult{
+			statusCode:  pr.upstreamResponse.StatusCode,
+			headers:     pr.upstreamResponse.Header.Clone(),
+			body:        append([]byte(nil), body...),
+			cacheStatus: pr.cacheStatus,
+		}, nil
+	})
+
+	if sfErr != nil {
+		return nil, status.LookupStatusError
+	}
+	result := val.(*opcResult)
+	if result.proxyOnly {
+		return nil, status.LookupStatusProxyOnly
+	}
+
+	// Only serve the shared result for waiters. The executor already wrote
+	// its response inside the closure via the handler.
+	if !isExecutor {
+		if err := serveOPCResult(pr, result); err != nil {
 			return nil, status.LookupStatusError
-		}
-	} else {
-		logger.Error("cache lookup error",
-			logging.Pairs{"detail": err.Error()})
-		pr.cacheDocument = nil
-		pr.cacheStatus = status.LookupStatusKeyMiss
-		if err := handleCacheKeyMiss(pr); err != nil {
-			return nil, status.LookupStatusKeyMiss
 		}
 	}
 

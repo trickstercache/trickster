@@ -269,7 +269,12 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 		// similar HTTP requests to be made against the origin, since just one should do.
 		// waiters receive the shared result directly — no extra cache round-trips or lock churn.
 
-		v, sfErr, sfShared := dpcGroup.Do(sfKey, func() (any, error) {
+		// isExecutor is set to true inside the closure so we can distinguish the
+		// executor from waiters after Do returns. singleflight.Do returns shared=true
+		// for the executor too when there are waiters, so shared alone is insufficient.
+		var isExecutor bool
+		v, sfErr, _ := dpcGroup.Do(sfKey, func() (any, error) {
+			isExecutor = true
 			// The entire response path runs inside singleflight: cache query, origin fetch,
 			// fast-forward, merge, and marshal. Waiters receive the final wire bytes directly.
 			var cts timeseries.Timeseries
@@ -493,7 +498,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 		}
 
 		cacheStatus = result.cacheStatus
-		if sfShared {
+		if !isExecutor {
 			if status.IsSuccessful(cacheStatus) {
 				cacheStatus = status.LookupStatusProxyHit
 			} else {

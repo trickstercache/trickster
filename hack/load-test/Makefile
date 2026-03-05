@@ -35,16 +35,10 @@ run:
 	    $(K6_ENV) $$file; \
 	done
 
-query-range:
+# examples: `make query-range`, `make query-instant`
+%:
 	k6 run \
 	  --vus $(VIRTUAL_USERS) \
 	  --batch $(BATCH_SIZE) \
 	  --iterations $(ITERATIONS) \
-	  $(K6_ENV) query-range.js
-
-instant-query:
-	k6 run \
-	  --vus $(VIRTUAL_USERS) \
-	  --batch $(BATCH_SIZE) \
-	  --iterations $(ITERATIONS) \
-	  $(K6_ENV) instant-query.js
+	  $(K6_ENV) $@.js
