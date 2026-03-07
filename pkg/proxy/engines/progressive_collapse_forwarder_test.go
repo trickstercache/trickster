@@ -276,6 +276,16 @@ func TestPCFReadLarge(t *testing.T) {
 	}
 }
 
+// TestNewPCFNegativeContentLength verifies that NewPCF returns nil when
+// the content length is negative (e.g. chunked transfer encoding).
+func TestNewPCFNegativeContentLength(t *testing.T) {
+	resp := &http.Response{}
+	pcf := NewPCF(resp, -1)
+	if pcf != nil {
+		t.Error("expected nil PCF for negative content length")
+	}
+}
+
 func TestPCFResp(t *testing.T) {
 	resp := &http.Response{}
 

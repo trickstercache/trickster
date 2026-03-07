@@ -36,10 +36,49 @@ import (
 )
 
 func TestCheckCacheFreshness(t *testing.T) {
-	// CachingPolicy should be nil and will return false
-	pr := proxyRequest{}
-	if pr.checkCacheFreshness() {
-		t.Errorf("got %t expected %t", pr.checkCacheFreshness(), false)
+	tests := []struct {
+		name      string
+		policy    *CachingPolicy
+		wantFresh bool
+	}{
+		{
+			name:      "nil policy",
+			policy:    nil,
+			wantFresh: false,
+		},
+		{
+			name: "fresh — lifetime not expired",
+			policy: &CachingPolicy{
+				LocalDate:        time.Now(),
+				FreshnessLifetime: 3600,
+			},
+			wantFresh: true,
+		},
+		{
+			name: "stale — lifetime expired",
+			policy: &CachingPolicy{
+				LocalDate:        time.Now().Add(-2 * time.Hour),
+				FreshnessLifetime: 3600,
+			},
+			wantFresh: false,
+		},
+		{
+			name: "zero lifetime — stale immediately",
+			policy: &CachingPolicy{
+				LocalDate:        time.Now().Add(-time.Second),
+				FreshnessLifetime: 0,
+			},
+			wantFresh: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pr := proxyRequest{cachingPolicy: tt.policy}
+			if got := pr.checkCacheFreshness(); got != tt.wantFresh {
+				t.Errorf("expected %t got %t", tt.wantFresh, got)
+			}
+		})
 	}
 }
 

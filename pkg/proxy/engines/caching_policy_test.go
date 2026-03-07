@@ -51,139 +51,189 @@ func TestGetResponseCachingPolicy(t *testing.T) {
 	now := time.Now().Truncate(time.Second)
 
 	tests := []struct {
+		name        string
 		a           http.Header
 		expectedTTL time.Duration
 	}{
-		{ // 0 - Cache-Control: no-store
+		{
+			name: "no-store",
 			a: http.Header{
 				headers.NameCacheControl: []string{headers.ValueNoStore},
 			},
 			expectedTTL: -1 * time.Second,
 		},
-		{ // 1 -  Cache-Control: no-cache
+		{
+			name: "no-cache",
 			a: http.Header{
 				headers.NameCacheControl: []string{headers.ValueNoCache},
 			},
 			expectedTTL: -1 * time.Second,
 		},
-		{ // 2 - Cache-Control: max-age=300
+		{
+			name: "max-age 300",
 			a: http.Header{
 				headers.NameCacheControl: []string{headers.ValueMaxAge + "=300"},
 			},
 			expectedTTL: time.Minute * time.Duration(5),
 		},
-		{ // 3 - Cache-Control: max-age=   should come back as -1 ttl
+		{
+			name: "max-age empty value",
+			// Cache-Control: max-age=   should come back as -1 ttl
 			a: http.Header{
 				headers.NameCacheControl: []string{headers.ValueMaxAge + "="},
 			},
 			expectedTTL: -1 * time.Second,
 		},
-		{ // 4 - Cache-Control: max-age (no =anything)  should come back as 0 ttl
+		{
+			name: "max-age no value",
+			// Cache-Control: max-age (no =anything)  should come back as -1 ttl
 			a: http.Header{
 				headers.NameCacheControl: []string{headers.ValueMaxAge},
 			},
 			expectedTTL: -1 * time.Second,
 		},
-		{ // 5 - Cache-Control: private,max-age=300  should be treated as non-cacheable by proxy
+		{
+			name: "private with max-age",
+			// private,max-age=300 should be treated as non-cacheable by proxy
 			a: http.Header{
 				headers.NameCacheControl: []string{headers.ValuePrivate + "," + headers.ValueMaxAge + "=300"},
 			},
 			expectedTTL: -1 * time.Second,
 		},
-		{ // 6 - Cache-Control: public,max-age=300  should be treated as cacheable by proxy
+		{
+			name: "public with max-age",
+			// public,max-age=300 should be treated as cacheable by proxy
 			a: http.Header{
 				headers.NameCacheControl: []string{headers.ValuePublic + "," + headers.ValueMaxAge + "=300"},
 			},
 			expectedTTL: time.Minute * time.Duration(5),
 		},
-		{ // 7 - Cache-Control and Expires, Cache-Control should win
+		{
+			name: "cache-control wins over expires",
 			a: http.Header{
 				headers.NameCacheControl: []string{headers.ValuePublic + "," + headers.ValueMaxAge + "=300"},
 				headers.NameExpires:      []string{"-1"},
 			},
 			expectedTTL: time.Minute * time.Duration(5),
 		},
-		{ // 8 - Cache-Control and LastModified, Cache-Control should win
+		{
+			name: "cache-control wins over last-modified",
 			a: http.Header{
 				headers.NameCacheControl: []string{headers.ValuePublic + "," + headers.ValueMaxAge + "=300"},
 				headers.NameLastModified: []string{"Sun, 16 Jun 2019 14:19:04 GMT"},
 			},
 			expectedTTL: time.Minute * time.Duration(5),
 		},
-		{ // 9 - Already Expired (could not parse)
+		{
+			name: "expires unparsable past",
 			a: http.Header{
 				headers.NameExpires: []string{"-1"},
 			},
 			expectedTTL: -1 * time.Second,
 		},
-		{ // 10 - Already Expired (parseable in the past)
+		{
+			name: "expires parseable past",
 			a: http.Header{
 				headers.NameExpires: []string{"Sun, 16 Jun 2019 14:19:04 GMT"},
 			},
 			expectedTTL: -1 * time.Second,
 		},
-		{ // 11 - Expires in an hour
+		{
+			name: "expires in one hour",
 			a: http.Header{
 				headers.NameDate:    []string{now.UTC().Format(time.RFC1123)},
 				headers.NameExpires: []string{now.Add(time.Hour * time.Duration(1)).UTC().Format(time.RFC1123)},
 			},
 			expectedTTL: 1 * time.Hour,
 		},
-		{ // 12 - Synthesized TTL from Last Modified
+		{
+			name: "synthesized from last-modified",
 			a: http.Header{
 				headers.NameDate:         []string{now.UTC().Format(time.RFC1123)},
 				headers.NameLastModified: []string{now.Add(-time.Hour * time.Duration(5)).UTC().Format(time.RFC1123)},
 			},
 			expectedTTL: 1 * time.Hour,
 		},
-		{ // 13 - No Cache Control Response Headers
+		{
+			name: "no cache headers",
 			a: http.Header{
 				headers.NameDate: []string{now.UTC().Format(time.RFC1123)},
 			},
 			expectedTTL: -1 * time.Second,
 		},
-		{ // 14 - Invalid Date Header Format
+		{
+			name: "invalid date format",
 			a: http.Header{
 				headers.NameDate:    []string{"1571338193"},
 				headers.NameExpires: []string{"-1"},
 			},
 			expectedTTL: -1 * time.Second,
 		},
-		{ // 15 - Invalid Date Header Format
+		{
+			name: "etag only",
 			a: http.Header{
 				headers.NameETag: []string{"etag-test"},
 			},
 			expectedTTL: 0,
 		},
-		{ // 16 - Invalid Last Modified Date Header Format
+		{
+			name: "invalid last-modified format",
 			a: http.Header{
 				headers.NameLastModified: []string{"1571338193"},
 			},
 			expectedTTL: -1 * time.Second,
 		},
-		{ // 17 - Must Revalidate
+		{
+			name: "must-revalidate",
 			a: http.Header{
 				headers.NameCacheControl: []string{headers.ValueMustRevalidate},
 				headers.NameLastModified: []string{"Sun, 16 Jun 2019 14:19:04 GMT"},
 			},
 			expectedTTL: 0,
 		},
-		{ // 18 - NoTransform
+		{
+			name: "no-transform",
 			a: http.Header{
 				headers.NameCacheControl: []string{headers.ValueNoTransform},
 			},
 			expectedTTL: -1 * time.Second,
 		},
-		{ // 19 - Set-Cookie
+		{
+			name: "set-cookie",
 			a: http.Header{
 				headers.NameSetCookie: []string{"some-fake-value-for-testing"},
 			},
 			expectedTTL: -1 * time.Second,
 		},
+		{
+			name: "s-maxage only",
+			// s-maxage=600 should be used for shared cache TTL
+			a: http.Header{
+				headers.NameCacheControl: []string{headers.ValueSharedMaxAge + "=600"},
+			},
+			expectedTTL: 10 * time.Minute,
+		},
+		{
+			name: "s-maxage overrides max-age",
+			// s-maxage takes precedence over max-age for shared caches
+			a: http.Header{
+				headers.NameCacheControl: []string{headers.ValueSharedMaxAge + "=600," + headers.ValueMaxAge + "=300"},
+			},
+			expectedTTL: 10 * time.Minute,
+		},
+		{
+			name: "proxy-revalidate",
+			// proxy-revalidate should set MustRevalidate, TTL=0
+			a: http.Header{
+				headers.NameCacheControl: []string{headers.ValueProxyRevalidate},
+				headers.NameLastModified: []string{"Sun, 16 Jun 2019 14:19:04 GMT"},
+			},
+			expectedTTL: 0,
+		},
 	}
 
-	for i, test := range tests {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
 			p := GetResponseCachingPolicy(200, nil, test.a)
 			d := time.Duration(p.FreshnessLifetime) * time.Second
 			if test.expectedTTL != d {
@@ -279,28 +329,47 @@ func TestGetRequestCacheability(t *testing.T) {
 }
 
 func TestCheckIfNoneMatch(t *testing.T) {
-	res := CheckIfNoneMatch("", "", status.LookupStatusHit)
-	if !res {
-		t.Errorf("expected %t got %t", true, res)
+	tests := []struct {
+		name string
+		etag string
+		inm  string // If-None-Match header value
+		ls   status.LookupStatus
+		want bool
+	}{
+		{"both empty", "", "", status.LookupStatusHit, true},
+		{"etag empty inm not", "", "test", status.LookupStatusHit, false},
+		{"inm empty etag not", "test", "", status.LookupStatusHit, false},
+		{"wildcard match on hit", "test", "*", status.LookupStatusHit, false},
+		{"wildcard on revalidated", "test", "*", status.LookupStatusRevalidated, false},
+		{"wildcard on miss", "test", "*", status.LookupStatusKeyMiss, true},
+		{"exact match", "test", "test", status.LookupStatusHit, false},
+		{"weak match", "test", "w/test", status.LookupStatusHit, false},
+		{"quoted match", "test", `"test"`, status.LookupStatusHit, false},
+		{"multi-value one matches", "test", `"foo", "test"`, status.LookupStatusHit, false},
+		{"multi-value none match", "test", `"foo", "bar"`, status.LookupStatusHit, true},
 	}
 
-	res = CheckIfNoneMatch("test", "*", status.LookupStatusHit)
-	if res {
-		t.Errorf("expected %t got %t", false, res)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := CheckIfNoneMatch(tt.etag, tt.inm, tt.ls); got != tt.want {
+				t.Errorf("expected %t got %t", tt.want, got)
+			}
+		})
 	}
+}
 
-	res = CheckIfNoneMatch("test", "*", status.LookupStatusKeyMiss)
-	if !res {
-		t.Errorf("expected %t got %t", true, res)
+// TestParseCacheControlNoTransform verifies that the no-transform directive
+// is correctly parsed and sets the NoTransform flag on the caching policy.
+func TestParseCacheControlNoTransform(t *testing.T) {
+	h := http.Header{
+		headers.NameCacheControl: []string{headers.ValueNoTransform + ",max-age=300"},
 	}
-
-	res = CheckIfNoneMatch("test", "test", status.LookupStatusHit)
-	if res {
-		t.Errorf("expected %t got %t", false, res)
+	cp := GetResponseCachingPolicy(200, nil, h)
+	if !cp.NoTransform {
+		t.Error("expected NoTransform=true")
 	}
-
-	res = CheckIfNoneMatch("test", "w/test", status.LookupStatusHit)
-	if res {
-		t.Errorf("expected %t got %t", false, res)
+	// verify max-age is still parsed alongside no-transform
+	if cp.FreshnessLifetime != 300 {
+		t.Errorf("expected FreshnessLifetime=300, got %d", cp.FreshnessLifetime)
 	}
 }
