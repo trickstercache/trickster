@@ -19,6 +19,7 @@ package fr
 import (
 	"context"
 	"net/http"
+	"sync"
 	"sync/atomic"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
@@ -98,6 +99,10 @@ func (h *handler) StopPool() {
 }
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if h.pool == nil {
+		failures.HandleBadGateway(w, r)
+		return
+	}
 	hl := h.pool.Healthy() // should return a fanout list
 	l := len(hl)
 	if l == 0 {
@@ -118,7 +123,17 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	responseWritten := make(chan struct{}, 1)
 
+	// wmu serializes response writes with the return path to prevent
+	// writing to w after ServeHTTP returns (e.g. on context cancellation).
+	var wmu sync.Mutex
+	var returned bool
+
 	serve := func(crw *capture.CaptureResponseWriter) {
+		wmu.Lock()
+		defer wmu.Unlock()
+		if returned {
+			return
+		}
 		headers.Merge(w.Header(), crw.Header())
 		w.WriteHeader(crw.StatusCode())
 		w.Write(crw.Body())
@@ -134,7 +149,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		eg.Go(func() error {
-			r2, _ := request.Clone(r)
+			r2, _ := request.CloneWithoutResources(r)
 			r2 = r2.WithContext(ctx)
 			r2 = request.SetResources(r2, &request.Resources{Cancelable: true})
 			crw := capture.NewCaptureResponseWriter()
@@ -175,6 +190,12 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case <-responseWritten:
 		return
 	case <-r.Context().Done():
+		// Acquire wmu to ensure no in-progress serve() write is active.
+		// If serve() holds the lock, this blocks until the write completes.
+		// If serve() hasn't started, setting returned prevents future writes.
+		wmu.Lock()
+		returned = true
+		wmu.Unlock()
 		return
 	}
 }

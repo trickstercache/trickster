@@ -23,9 +23,20 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/albpool"
 )
+
+func TestHandleNewestResponseNilPool(t *testing.T) {
+	h := &handler{}
+	w := httptest.NewRecorder()
+	r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
+	h.ServeHTTP(w, r)
+	if w.Code != http.StatusBadGateway {
+		t.Errorf("expected %d got %d", http.StatusBadGateway, w.Code)
+	}
+}
 
 func TestHandleNewestResponse(t *testing.T) {
 	r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
@@ -64,4 +75,85 @@ func TestHandleNewestResponse(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Error("expected 200 got", w.Code)
 	}
+}
+
+func TestNewestLastModifiedSelection(t *testing.T) {
+	older := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	newer := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+
+	handlerWithLM := func(body string, lm time.Time) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set(headers.NameLastModified, lm.Format(time.RFC1123))
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(body))
+		})
+	}
+
+	t.Run("picks newest", func(t *testing.T) {
+		p, _, st := albpool.New(-1, []http.Handler{
+			handlerWithLM("older", older),
+			handlerWithLM("newer", newer),
+		})
+		st[0].Set(0)
+		st[1].Set(0)
+		time.Sleep(250 * time.Millisecond)
+
+		h := &handler{pool: p}
+		w := httptest.NewRecorder()
+		r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
+		h.ServeHTTP(w, r)
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200 got %d", w.Code)
+		}
+		if w.Body.String() != "newer" {
+			t.Errorf("expected body 'newer' got %q", w.Body.String())
+		}
+	})
+
+	t.Run("invalid Last-Modified ignored", func(t *testing.T) {
+		// One backend returns a valid date, the other returns garbage.
+		// The valid one should be selected.
+		badLM := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set(headers.NameLastModified, "not-a-date")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("bad"))
+		})
+		p, _, st := albpool.New(-1, []http.Handler{
+			badLM,
+			handlerWithLM("valid", newer),
+		})
+		st[0].Set(0)
+		st[1].Set(0)
+		time.Sleep(250 * time.Millisecond)
+
+		h := &handler{pool: p}
+		w := httptest.NewRecorder()
+		r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
+		h.ServeHTTP(w, r)
+		if w.Body.String() != "valid" {
+			t.Errorf("expected body 'valid' got %q", w.Body.String())
+		}
+	})
+
+	t.Run("fallback when no Last-Modified", func(t *testing.T) {
+		noLM := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("fallback"))
+		})
+		p, _, st := albpool.New(-1, []http.Handler{noLM, noLM})
+		st[0].Set(0)
+		st[1].Set(0)
+		time.Sleep(250 * time.Millisecond)
+
+		h := &handler{pool: p}
+		w := httptest.NewRecorder()
+		r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
+		h.ServeHTTP(w, r)
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200 got %d", w.Code)
+		}
+		if w.Body.String() != "fallback" {
+			t.Errorf("expected body 'fallback' got %q", w.Body.String())
+		}
+	})
 }

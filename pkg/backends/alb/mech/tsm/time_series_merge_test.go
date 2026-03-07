@@ -32,6 +32,16 @@ import (
 
 var testLogger = logging.NoopLogger()
 
+func TestHandleResponseMergeNilPool(t *testing.T) {
+	h := &handler{}
+	w := httptest.NewRecorder()
+	r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
+	h.ServeHTTP(w, r)
+	if w.Code != http.StatusBadGateway {
+		t.Errorf("expected %d got %d", http.StatusBadGateway, w.Code)
+	}
+}
+
 func TestHandleResponseMerge(t *testing.T) {
 	logger.SetLogger(testLogger)
 	r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
