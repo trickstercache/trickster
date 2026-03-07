@@ -296,6 +296,93 @@ func TestPCFResp(t *testing.T) {
 	}
 }
 
+// TestPCFCloseRaceNoDeadlock exercises the race window between checking
+// serverReadDone and waiting on readCond in IndexRead. Without proper
+// synchronization, AddClient could block forever if Close() fires
+// between the check and wait. We run many iterations to increase the
+// chance of hitting the window.
+func TestPCFCloseRaceNoDeadlock(t *testing.T) {
+	for i := range 200 {
+		resp := &http.Response{}
+		data := []byte("hello")
+		pcf := NewPCF(resp, int64(len(data)))
+
+		done := make(chan error, 1)
+		go func() {
+			w := &bytes.Buffer{}
+			done <- pcf.AddClient(w)
+		}()
+
+		// Write and immediately close — this maximizes the race window
+		pcf.Write(data)
+		pcf.Close()
+
+		select {
+		case err := <-done:
+			if err != io.EOF {
+				t.Fatalf("iteration %d: expected io.EOF, got %v", i, err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("iteration %d: AddClient deadlocked", i)
+		}
+	}
+}
+
+// TestPCFWaitServerCompleteRace exercises the race window in
+// WaitServerComplete where Close() could fire between the check
+// and the condition wait, causing a permanent block.
+func TestPCFWaitServerCompleteRace(t *testing.T) {
+	for i := range 200 {
+		resp := &http.Response{}
+		pcf := NewPCF(resp, 5)
+
+		done := make(chan struct{}, 1)
+		go func() {
+			pcf.WaitServerComplete()
+			done <- struct{}{}
+		}()
+
+		pcf.Close()
+
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("iteration %d: WaitServerComplete deadlocked", i)
+		}
+	}
+}
+
+// TestPCFWaitAllCompleteRace exercises the race window in
+// WaitAllComplete where the last client's broadcast could be
+// missed if it fires between the count check and the wait.
+func TestPCFWaitAllCompleteRace(t *testing.T) {
+	for i := range 200 {
+		resp := &http.Response{}
+		data := []byte("test")
+		pcf := NewPCF(resp, int64(len(data)))
+
+		go func() {
+			pcf.Write(data)
+			pcf.Close()
+		}()
+
+		w := &bytes.Buffer{}
+		pcf.AddClient(w)
+
+		done := make(chan struct{}, 1)
+		go func() {
+			pcf.WaitAllComplete()
+			done <- struct{}{}
+		}()
+
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("iteration %d: WaitAllComplete deadlocked", i)
+		}
+	}
+}
+
 func BenchmarkPCFWrite(b *testing.B) {
 	bufSize := 32
 
