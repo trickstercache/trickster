@@ -156,6 +156,53 @@ func TestParseDuration(t *testing.T) {
 	}
 }
 
+func TestRoundTimestampParameterToMinute(t *testing.T) {
+	tests := []struct {
+		name     string
+		param    string
+		value    string
+		expected string
+	}{
+		{
+			name:     "rounds down to minute",
+			param:    "time",
+			value:    "1523077733", // 2018-04-07 05:08:53 UTC
+			expected: "1523077680", // 2018-04-07 05:08:00 UTC
+		},
+		{
+			name:     "already at minute boundary",
+			param:    "time",
+			value:    "1523077680",
+			expected: "1523077680",
+		},
+		{
+			name:     "non-integer ignored",
+			param:    "time",
+			value:    "1523077733.5",
+			expected: "1523077733.5", // ParseInt fails, value unchanged
+		},
+		{
+			name:     "empty value no-op",
+			param:    "time",
+			value:    "",
+			expected: "",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			qp := url.Values{}
+			if test.value != "" {
+				qp.Set(test.param, test.value)
+			}
+			roundTimestampParameterToMinute(qp, test.param)
+			got := qp.Get(test.param)
+			if got != test.expected {
+				t.Errorf("expected %q got %q", test.expected, got)
+			}
+		})
+	}
+}
+
 func TestParseTimeRangeQuery(t *testing.T) {
 	logger.SetLogger(testLogger)
 	qp := url.Values(map[string][]string{

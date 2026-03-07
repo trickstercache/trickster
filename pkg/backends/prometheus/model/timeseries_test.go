@@ -159,10 +159,210 @@ func TestMarshalTSOrVectorWriter(t *testing.T) {
 			t.Error(err)
 		}
 	})
+
+	t.Run("matrix write with sorted output", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		s := &dataset.Series{
+			Header: dataset.SeriesHeader{
+				Tags: dataset.Tags{"__name__": "up", "job": "test"},
+			},
+			Points: dataset.Points{
+				{Epoch: 1435781460000000000, Values: []any{"3"}},
+				{Epoch: 1435781430000000000, Values: []any{"1"}},
+				{Epoch: 1435781445000000000, Values: []any{"2"}},
+			},
+		}
+		err := MarshalTSOrVectorWriter(&dataset.DataSet{
+			Status: "success",
+			Results: []*dataset.Result{
+				{SeriesList: []*dataset.Series{s}},
+			},
+		}, nil, 200, w, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body := w.Body.String()
+		if !strings.Contains(body, `"resultType":"matrix"`) {
+			t.Errorf("expected matrix resultType: %s", body)
+		}
+		// Points must appear sorted by epoch
+		if !strings.Contains(body, `[1435781430,"1"],[1435781445,"2"],[1435781460,"3"]`) {
+			t.Errorf("expected sorted points: %s", body)
+		}
+	})
+
+	t.Run("matrix multi-series", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		s1 := &dataset.Series{
+			Header: dataset.SeriesHeader{
+				Tags: dataset.Tags{"__name__": "up", "instance": "a"},
+			},
+			Points: dataset.Points{
+				{Epoch: 1000000000000000000, Values: []any{"1"}},
+			},
+		}
+		s2 := &dataset.Series{
+			Header: dataset.SeriesHeader{
+				Tags: dataset.Tags{"__name__": "up", "instance": "b"},
+			},
+			Points: dataset.Points{
+				{Epoch: 2000000000000000000, Values: []any{"2"}},
+			},
+		}
+		err := MarshalTSOrVectorWriter(&dataset.DataSet{
+			Status: "success",
+			Results: []*dataset.Result{
+				{SeriesList: []*dataset.Series{s1, s2}},
+			},
+		}, nil, 200, w, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body := w.Body.String()
+		// Both series should appear separated by comma
+		if !strings.Contains(body, `"instance":"a"`) || !strings.Contains(body, `"instance":"b"`) {
+			t.Errorf("expected both series in output: %s", body)
+		}
+		if !strings.Contains(body, `},{`) {
+			t.Errorf("expected series separator in output: %s", body)
+		}
+	})
+
+	t.Run("vector skips empty series", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		empty := &dataset.Series{
+			Header: dataset.SeriesHeader{
+				Tags: dataset.Tags{"__name__": "empty"},
+			},
+			Points: dataset.Points{},
+		}
+		withPoints := &dataset.Series{
+			Header: dataset.SeriesHeader{
+				Tags: dataset.Tags{"__name__": "has_data"},
+			},
+			Points: dataset.Points{
+				{Epoch: 1000000000000000000, Values: []any{"42"}},
+			},
+		}
+		err := MarshalTSOrVectorWriter(&dataset.DataSet{
+			Status: "success",
+			Results: []*dataset.Result{
+				{SeriesList: []*dataset.Series{empty, withPoints}},
+			},
+		}, nil, 200, w, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body := w.Body.String()
+		if strings.Contains(body, `"empty"`) {
+			t.Errorf("empty series should be skipped: %s", body)
+		}
+		if !strings.Contains(body, `"has_data"`) {
+			t.Errorf("non-empty series should be present: %s", body)
+		}
+	})
+
+	t.Run("vector uses first point only", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		s := &dataset.Series{
+			Header: dataset.SeriesHeader{
+				Tags: dataset.Tags{"__name__": "multi"},
+			},
+			Points: dataset.Points{
+				{Epoch: 1000000000000000000, Values: []any{"first"}},
+				{Epoch: 2000000000000000000, Values: []any{"second"}},
+			},
+		}
+		err := MarshalTSOrVectorWriter(&dataset.DataSet{
+			Status: "success",
+			Results: []*dataset.Result{
+				{SeriesList: []*dataset.Series{s}},
+			},
+		}, nil, 200, w, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body := w.Body.String()
+		if !strings.Contains(body, `"first"`) {
+			t.Errorf("expected first point value: %s", body)
+		}
+		if strings.Contains(body, `"second"`) {
+			t.Errorf("second point should not appear in vector output: %s", body)
+		}
+	})
 }
 
 func TestUnmarshalScalar(t *testing.T) {
-	const input = `{"status":"success","data":{"resultType":"scalar","result":[1435781430,"1"]}}`
+	t.Run("valid scalar", func(t *testing.T) {
+		const input = `{"status":"success","data":{"resultType":"scalar","result":[1435781430,"1"]}}`
+		trq := &timeseries.TimeRangeQuery{}
+		ts, err := UnmarshalTimeseries([]byte(input), trq)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ds, ok := ts.(*dataset.DataSet)
+		if !ok {
+			t.Fatal("expected *dataset.DataSet")
+		}
+		require.Len(t, ds.Results, 1)
+		require.Len(t, ds.Results[0].SeriesList, 1)
+		require.Len(t, ds.Results[0].SeriesList[0].Points, 1)
+		require.Equal(t, epoch.Epoch(1435781430000000000), ds.Results[0].SeriesList[0].Points[0].Epoch)
+	})
+
+	t.Run("malformed result not array", func(t *testing.T) {
+		const input = `{"status":"success","data":{"resultType":"scalar","result":"not_array"}}`
+		trq := &timeseries.TimeRangeQuery{}
+		_, err := UnmarshalTimeseries([]byte(input), trq)
+		if err == nil {
+			t.Error("expected error for non-array scalar result")
+		}
+	})
+
+	t.Run("empty result array", func(t *testing.T) {
+		const input = `{"status":"success","data":{"resultType":"scalar","result":[]}}`
+		trq := &timeseries.TimeRangeQuery{}
+		ts, err := UnmarshalTimeseries([]byte(input), trq)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ds, ok := ts.(*dataset.DataSet)
+		if !ok {
+			t.Fatal("expected *dataset.DataSet")
+		}
+		// Empty scalar → populateSeries with len(pr.Value)==0, isVector=true
+		// → no points created
+		require.Len(t, ds.Results, 1)
+		require.Len(t, ds.Results[0].SeriesList, 1)
+		require.Empty(t, ds.Results[0].SeriesList[0].Points)
+	})
+
+	t.Run("single element array", func(t *testing.T) {
+		const input = `{"status":"success","data":{"resultType":"scalar","result":[1435781430]}}`
+		trq := &timeseries.TimeRangeQuery{}
+		ts, err := UnmarshalTimeseries([]byte(input), trq)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ds, ok := ts.(*dataset.DataSet)
+		if !ok {
+			t.Fatal("expected *dataset.DataSet")
+		}
+		// Single element → len(pr.Value)==1 != 2, so no points
+		require.Len(t, ds.Results, 1)
+		require.Len(t, ds.Results[0].SeriesList, 1)
+		require.Empty(t, ds.Results[0].SeriesList[0].Points)
+	})
+}
+
+func TestPopulateSeriesMalformedPoints(t *testing.T) {
+	// Matrix with mix of valid and malformed values.
+	// populateSeries silently ignores pointFromValues errors;
+	// malformed points get zero-epoch which remain in the slice.
+	const input = `{"status":"success","data":{"resultType":"matrix","result":[` +
+		`{"metric":{"__name__":"test"},"values":[` +
+		`[1435781430,"1"],["bad","not_float"],[1435781460,"3"]` +
+		`]}]}}`
 	trq := &timeseries.TimeRangeQuery{}
 	ts, err := UnmarshalTimeseries([]byte(input), trq)
 	if err != nil {
@@ -174,6 +374,10 @@ func TestUnmarshalScalar(t *testing.T) {
 	}
 	require.Len(t, ds.Results, 1)
 	require.Len(t, ds.Results[0].SeriesList, 1)
-	require.Len(t, ds.Results[0].SeriesList[0].Points, 1)
-	require.Equal(t, epoch.Epoch(1435781430000000000), ds.Results[0].SeriesList[0].Points[0].Epoch)
+	pts := ds.Results[0].SeriesList[0].Points
+	// All 3 slots exist; middle one has zero epoch from failed parse
+	require.Len(t, pts, 3)
+	require.Equal(t, epoch.Epoch(1435781430000000000), pts[0].Epoch)
+	require.Equal(t, epoch.Epoch(0), pts[1].Epoch, "malformed point should have zero epoch")
+	require.Equal(t, epoch.Epoch(1435781460000000000), pts[2].Epoch)
 }

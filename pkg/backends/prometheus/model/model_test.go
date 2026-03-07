@@ -117,63 +117,70 @@ func TestStartMarshal(t *testing.T) {
 
 func TestEnvelopeMerge(t *testing.T) {
 	tests := []struct {
-		name            string
-		e1Status        string
-		e1Error         string
-		e2Status        string
-		e2Error         string
-		e2Warnings      []string
-		expectStatus    string
-		expectWarnCount int
+		name           string
+		e1Status       string
+		e1Error        string
+		e2Status       string
+		e2Error        string
+		e2Warnings     []string
+		expectStatus   string
+		expectError    string
+		expectWarnings []string
 	}{
 		{
-			name:            "success + success",
-			e1Status:        "success",
-			e2Status:        "success",
-			expectStatus:    "success",
-			expectWarnCount: 0,
+			name:           "success + success",
+			e1Status:       "success",
+			e2Status:       "success",
+			expectStatus:   "success",
+			expectError:    "",
+			expectWarnings: nil,
 		},
 		{
-			name:            "error + success promotes",
-			e1Status:        "error",
-			e1Error:         "err1",
-			e2Status:        "success",
-			expectStatus:    "success",
-			expectWarnCount: 1,
+			name:           "error + success promotes",
+			e1Status:       "error",
+			e1Error:        "err1",
+			e2Status:       "success",
+			expectStatus:   "success",
+			expectError:    "",
+			expectWarnings: []string{"err1"},
 		},
 		{
-			name:            "success + error keeps success",
-			e1Status:        "success",
-			e2Status:        "error",
-			e2Error:         "err2",
-			expectStatus:    "success",
-			expectWarnCount: 1,
+			name:           "success + error keeps success",
+			e1Status:       "success",
+			e2Status:       "error",
+			e2Error:        "err2",
+			expectStatus:   "success",
+			expectError:    "",
+			expectWarnings: []string{"err2"},
 		},
 		{
-			name:            "both errors stays error",
-			e1Status:        "error",
-			e1Error:         "err1",
-			e2Status:        "error",
-			e2Error:         "err2",
-			expectStatus:    "error",
-			expectWarnCount: 1,
+			name:           "both errors stays error",
+			e1Status:       "error",
+			e1Error:        "err1",
+			e2Status:       "error",
+			e2Error:        "err2",
+			expectStatus:   "error",
+			expectError:    "err1",
+			expectWarnings: []string{"err2"},
 		},
 		{
-			name:            "warnings accumulate",
-			e1Status:        "success",
-			e2Status:        "success",
-			e2Warnings:      []string{"w1"},
-			expectStatus:    "success",
-			expectWarnCount: 1,
+			name:           "warnings accumulate",
+			e1Status:       "success",
+			e2Status:       "success",
+			e2Warnings:     []string{"w1"},
+			expectStatus:   "success",
+			expectError:    "",
+			expectWarnings: []string{"w1"},
 		},
 		{
-			name:            "error with warnings",
-			e1Status:        "success",
-			e2Status:        "error",
-			e2Error:         "err",
-			e2Warnings:      []string{"w1"},
-			expectStatus:    "success",
-			expectWarnCount: 2,
+			name:           "error with warnings",
+			e1Status:       "success",
+			e2Status:       "error",
+			e2Error:        "err",
+			e2Warnings:     []string{"w1"},
+			expectStatus:   "success",
+			expectError:    "",
+			expectWarnings: []string{"err", "w1"},
 		},
 	}
 	for _, test := range tests {
@@ -184,8 +191,17 @@ func TestEnvelopeMerge(t *testing.T) {
 			if e1.Status != test.expectStatus {
 				t.Errorf("status: expected %q got %q", test.expectStatus, e1.Status)
 			}
-			if len(e1.Warnings) != test.expectWarnCount {
-				t.Errorf("warnings count: expected %d got %d (%v)", test.expectWarnCount, len(e1.Warnings), e1.Warnings)
+			if e1.Error != test.expectError {
+				t.Errorf("error: expected %q got %q", test.expectError, e1.Error)
+			}
+			if len(e1.Warnings) != len(test.expectWarnings) {
+				t.Fatalf("warnings count: expected %d got %d (%v)",
+					len(test.expectWarnings), len(e1.Warnings), e1.Warnings)
+			}
+			for i, w := range test.expectWarnings {
+				if e1.Warnings[i] != w {
+					t.Errorf("warning[%d]: expected %q got %q", i, w, e1.Warnings[i])
+				}
 			}
 		})
 	}

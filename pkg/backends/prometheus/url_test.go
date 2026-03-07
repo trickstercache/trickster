@@ -122,3 +122,60 @@ func TestFastForwardURL(t *testing.T) {
 		t.Error(err)
 	}
 }
+
+func TestFastForwardRequestEdgeCases(t *testing.T) {
+	conf, err := config.Load([]string{
+		"-origin-url", "none:9090", "-provider",
+		providers.Prometheus, "-log-level", "debug",
+	})
+	if err != nil {
+		t.Fatalf("Could not load configuration: %s", err.Error())
+	}
+
+	o := conf.Backends["default"]
+	client, err := NewClient("default", o, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pc := client.(*Client)
+
+	tests := []struct {
+		name         string
+		path         string
+		expectedPath string
+	}{
+		{
+			name:         "query_range suffix stripped",
+			path:         "/api/v1/query_range",
+			expectedPath: "/api/v1/query",
+		},
+		{
+			name:         "root query_range stripped",
+			path:         "/query_range",
+			expectedPath: "/query",
+		},
+		{
+			name:         "no suffix unchanged",
+			path:         "/api/v1/query",
+			expectedPath: "/api/v1/query",
+		},
+		{
+			name:         "other path unchanged",
+			path:         "/api/v1/labels",
+			expectedPath: "/api/v1/labels",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			r, _ := http.NewRequest(http.MethodGet, test.path+"?q=up", nil)
+			r = request.SetResources(r, &request.Resources{})
+			r2, err := pc.FastForwardRequest(r)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if r2.URL.Path != test.expectedPath {
+				t.Errorf("path: expected %q got %q", test.expectedPath, r2.URL.Path)
+			}
+		})
+	}
+}
