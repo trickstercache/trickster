@@ -146,3 +146,49 @@ func TestMergeAndWriteAlerts(t *testing.T) {
 		})
 	}
 }
+
+func TestMergeAlertStatePriority(t *testing.T) {
+	// All cases use same Labels+Annotations so they share the same hash
+	labels := map[string]string{"alertname": "TestAlert", "job": "test"}
+	annotations := map[string]string{"summary": "test alert"}
+
+	tests := []struct {
+		name          string
+		existingState string
+		incomingState string
+		expectedState string
+	}{
+		{"firing beats inactive", "inactive", "firing", "firing"},
+		{"firing beats pending", "pending", "firing", "firing"},
+		{"pending beats inactive", "inactive", "pending", "pending"},
+		{"firing not downgraded", "firing", "inactive", "firing"},
+		{"same state no change", "firing", "firing", "firing"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			a1 := &WFAlerts{
+				Envelope: &Envelope{Status: "success"},
+				Data: &WFAlertData{
+					Alerts: []WFAlert{
+						{State: test.existingState, Labels: labels, Annotations: annotations},
+					},
+				},
+			}
+			a2 := &WFAlerts{
+				Envelope: &Envelope{Status: "success"},
+				Data: &WFAlertData{
+					Alerts: []WFAlert{
+						{State: test.incomingState, Labels: labels, Annotations: annotations},
+					},
+				},
+			}
+			a1.Merge(a2)
+			if len(a1.Data.Alerts) != 1 {
+				t.Fatalf("expected 1 alert after dedup, got %d", len(a1.Data.Alerts))
+			}
+			if a1.Data.Alerts[0].State != test.expectedState {
+				t.Errorf("expected state %q got %q", test.expectedState, a1.Data.Alerts[0].State)
+			}
+		})
+	}
+}
