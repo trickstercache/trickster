@@ -125,7 +125,7 @@ func TestGetResponseCachingPolicy(t *testing.T) {
 			expectedTTL: time.Minute * time.Duration(5),
 		},
 		{
-			name: "expires unparseable past",
+			name: "expires unparsable past",
 			a: http.Header{
 				headers.NameExpires: []string{"-1"},
 			},
