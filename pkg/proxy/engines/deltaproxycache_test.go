@@ -1847,6 +1847,43 @@ func TestDPCSingleflightErrorPropagation(t *testing.T) {
 	}
 }
 
+// TestDPCProxyOnly verifies that when BackendOptions.ProxyOnly is true,
+// DeltaProxyCacheRequest falls through directly to DoProxy.
+func TestDPCProxyOnly(t *testing.T) {
+	ts, _, r, rsc, err := setupTestHarnessDPC()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ts.Close()
+
+	client := rsc.BackendClient.(*TestClient)
+	rsc.BackendOptions.ProxyOnly = true
+	defer func() { rsc.BackendOptions.ProxyOnly = false }()
+
+	step := time.Duration(300) * time.Second
+	now := time.Now()
+	end := now.Add(-time.Duration(12) * time.Hour)
+	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
+
+	r.URL.Path = "/prometheus/api/v1/query_range"
+	r.URL.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
+		int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
+
+	w := httptest.NewRecorder()
+	client.QueryRangeHandler(w, r)
+	resp := w.Result()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	// ProxyOnly should bypass DeltaProxyCache and use HTTPProxy engine
+	hdr := resp.Header.Get(headers.NameTricksterResult)
+	if !strings.Contains(hdr, "engine=HTTPProxy") {
+		t.Errorf("expected HTTPProxy engine in result header, got %q", hdr)
+	}
+}
+
 // TestDPCNoCacheBypass verifies that requests with Cache-Control: no-cache
 // bypass the singleflight group and go directly to the origin.
 func TestDPCNoCacheBypass(t *testing.T) {

@@ -75,46 +75,41 @@ func TestDeepSearch(t *testing.T) {
 	var document map[string]any
 	err := json.Unmarshal([]byte(testJSONDocument), &document)
 	if err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 
-	val, err := deepSearch(document, "query/table")
-	if err != nil {
-		t.Error(err)
+	tests := []struct {
+		name    string
+		key     string
+		wantVal string
+		wantErr bool
+	}{
+		{"top-level string value", "requestType", "query", false},
+		{"nested string value", "query/table", "movies", false},
+		{"empty key", "", "", true},
+		{"missing top-level key", "missingKey", "", true},
+		{"intermediate not a map", "query/filter/nottamap", "", true},
+		{"nested float value", "query/options/batchSize", "20.0000", false},
+		{"nested boolean value", "query/options/booleanHere", "true", false},
+		{"array terminal (unsupported)", "query/options/someArray", "", true},
 	}
 
-	if val != "movies" {
-		t.Errorf("expected %s got %s", "movies", val)
-	}
-
-	_, err = deepSearch(document, "")
-	if err == nil {
-		t.Errorf("expected error: %s", "could not find key")
-	}
-
-	_, err = deepSearch(document, "missingKey")
-	if err == nil {
-		t.Errorf("expected error: %s", "could not find key")
-	}
-
-	_, err = deepSearch(document, "query/filter/nottamap")
-	if err == nil {
-		t.Errorf("expected error: %s", "could not find key")
-	}
-
-	_, err = deepSearch(document, "query/options/batchSize")
-	if err != nil {
-		t.Error(err)
-	}
-
-	_, err = deepSearch(document, "query/options/booleanHere")
-	if err != nil {
-		t.Error(err)
-	}
-
-	_, err = deepSearch(document, "query/options/someArray")
-	if err == nil {
-		t.Errorf("expected error: %s", "could not find key")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			val, err := deepSearch(document, tt.key)
+			if tt.wantErr {
+				if err == nil {
+					t.Error("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if val != tt.wantVal {
+				t.Errorf("expected %s got %s", tt.wantVal, val)
+			}
+		})
 	}
 }
 
