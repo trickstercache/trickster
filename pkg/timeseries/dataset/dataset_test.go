@@ -226,21 +226,52 @@ func TestSeriesCount(t *testing.T) {
 }
 
 func TestMerge(t *testing.T) {
-	ds := &DataSet{}
-	ds.Merge(false, nil)
-	if len(ds.Results) > 0 {
-		t.Error("dataset merge error")
-	}
+	t.Run("empty dataset", func(t *testing.T) {
+		ds := &DataSet{}
+		ds.Merge(false, nil)
+		if len(ds.Results) > 0 {
+			t.Error("dataset merge error")
+		}
+	})
 
-	ds = testDataSet2()
-	ds2 := testDataSet2()
-	ds.Results = ds.Results[:1]
+	t.Run("basic two-dataset merge", func(t *testing.T) {
+		ds := testDataSet2()
+		ds2 := testDataSet2()
+		ds.Results = ds.Results[:1]
+		ds.Merge(false, ds2)
+		if ds.SeriesCount() != 4 {
+			t.Errorf("expected %d got %d", 4, ds.SeriesCount())
+		}
+	})
 
-	ds.Merge(false, ds2)
+	t.Run("nil collection element skipped", func(t *testing.T) {
+		ds := testDataSet()
+		before := ds.SeriesCount()
+		ds.Merge(false, nil, nil)
+		if ds.SeriesCount() != before {
+			t.Errorf("expected %d got %d", before, ds.SeriesCount())
+		}
+	})
 
-	if ds.SeriesCount() != 4 {
-		t.Errorf("expected %d got %d", 4, ds.SeriesCount())
-	}
+	t.Run("overlapping statement IDs merge series", func(t *testing.T) {
+		ds := testDataSet()  // has StatementID 42
+		ds2 := testDataSet() // also StatementID 42, same series
+		ds.Merge(true, ds2)
+		// same StatementID → series merged, not duplicated
+		if ds.SeriesCount() != 1 {
+			t.Errorf("expected 1 series after merging same statement, got %d", ds.SeriesCount())
+		}
+	})
+
+	t.Run("disjoint statement IDs append results", func(t *testing.T) {
+		ds := testDataSet() // StatementID 42
+		ds2 := testDataSet()
+		ds2.Results[0].StatementID = 99
+		ds.Merge(false, ds2)
+		if len(ds.Results) != 2 {
+			t.Errorf("expected 2 results, got %d", len(ds.Results))
+		}
+	})
 }
 
 func TestSize(t *testing.T) {
@@ -458,6 +489,104 @@ func genBenchmarkDataset(pointct int) *DataSet {
 	}
 	return &DataSet{
 		Results: []*Result{res},
+	}
+}
+
+func TestDataSetFieldDefinitions(t *testing.T) {
+	t.Run("with fields", func(t *testing.T) {
+		sh := SeriesHeader{
+			Name: "test",
+			TimestampField: timeseries.FieldDefinition{
+				Name: "time", DataType: timeseries.Int64, OutputPosition: 0,
+			},
+			TagFieldsList: timeseries.FieldDefinitions{
+				{Name: "host", DataType: timeseries.String, OutputPosition: 1},
+			},
+			ValueFieldsList: timeseries.FieldDefinitions{
+				{Name: "value", DataType: timeseries.Float64, OutputPosition: 2},
+			},
+			UntrackedFieldsList: timeseries.FieldDefinitions{
+				{Name: "extra", DataType: timeseries.String, OutputPosition: 3},
+			},
+		}
+		ds := &DataSet{
+			Results: []*Result{{
+				SeriesList: SeriesList{&Series{Header: sh}},
+			}},
+		}
+		all, tags, vals, tfd := ds.FieldDefinitions()
+		if len(all) != 4 {
+			t.Errorf("expected 4 total fields, got %d", len(all))
+		}
+		if len(tags) != 1 || tags[0].Name != "host" {
+			t.Errorf("expected 1 tag field 'host', got %v", tags)
+		}
+		// vals includes both value and untracked fields
+		if len(vals) != 2 {
+			t.Errorf("expected 2 value fields, got %d", len(vals))
+		}
+		if tfd.Name != "time" {
+			t.Errorf("expected timestamp field 'time', got %q", tfd.Name)
+		}
+		// verify sorted by OutputPosition
+		for i := 1; i < len(all); i++ {
+			if all[i].OutputPosition < all[i-1].OutputPosition {
+				t.Errorf("fields not sorted by OutputPosition at index %d", i)
+			}
+		}
+	})
+
+	t.Run("deduplicates across series", func(t *testing.T) {
+		sh := SeriesHeader{
+			TimestampField: timeseries.FieldDefinition{
+				Name: "time", DataType: timeseries.Int64, OutputPosition: 0,
+			},
+			ValueFieldsList: timeseries.FieldDefinitions{
+				{Name: "value", DataType: timeseries.Float64, OutputPosition: 1},
+			},
+		}
+		ds := &DataSet{
+			Results: []*Result{{
+				SeriesList: SeriesList{
+					&Series{Header: sh},
+					&Series{Header: sh}, // same field names
+				},
+			}},
+		}
+		all, _, vals, _ := ds.FieldDefinitions()
+		// "time" + "value" = 2, deduped from 4 total across 2 series
+		if len(all) != 2 {
+			t.Errorf("expected 2 deduped fields, got %d", len(all))
+		}
+		if len(vals) != 1 {
+			t.Errorf("expected 1 value field, got %d", len(vals))
+		}
+	})
+}
+
+func TestDataSetPointCount(t *testing.T) {
+	t.Run("empty dataset", func(t *testing.T) {
+		ds := &DataSet{Results: []*Result{{}}}
+		if ds.PointCount() != 0 {
+			t.Errorf("expected 0, got %d", ds.PointCount())
+		}
+	})
+
+	t.Run("multiple results and series", func(t *testing.T) {
+		ds := genTestDataSet(3, 2)
+		// genTestDataSet(3, 2): 2 results, each with 3 series, each series has 6 points
+		// total = 2 * 3 * 6 = 36
+		expected := 36
+		if got := ds.PointCount(); got != expected {
+			t.Errorf("expected %d, got %d", expected, got)
+		}
+	})
+}
+
+func TestStepNilTimeRangeQuery(t *testing.T) {
+	ds := &DataSet{}
+	if ds.Step() != 0 {
+		t.Errorf("expected 0 for nil TimeRangeQuery, got %v", ds.Step())
 	}
 }
 
