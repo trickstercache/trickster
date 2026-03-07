@@ -18,8 +18,6 @@ package timeseries
 
 import (
 	"net/url"
-	"reflect"
-	"strconv"
 	"testing"
 	"time"
 )
@@ -29,59 +27,126 @@ func TestNormalizeExtent(t *testing.T) {
 	expected := (time.Now().Unix() / 10) * 10
 
 	tests := []struct {
-		start, end, stepSecs, now int64
-		rangeStart, rangeEnd      int64
-		err                       bool
+		name                 string
+		start, end, stepSecs int64
+		isOffset             bool
+		rangeStart, rangeEnd int64
 	}{
-		// Basic test
 		{
-			1, 100, 1, 1,
-			1, 100,
-			false,
+			name: "basic no change",
+			start: 1, end: 100, stepSecs: 1,
+			rangeStart: 1, rangeEnd: 100,
 		},
-		// Ensure that it aligns to the step interval
 		{
-			1, 103, 10, 1,
-			0, 100,
-			false,
+			name: "aligns to step",
+			start: 1, end: 103, stepSecs: 10,
+			rangeStart: 0, rangeEnd: 100,
 		},
-		// Ensure that it brings in future times
 		{
-			1, tmrw, 10, 1,
-			0, expected,
-			false,
+			name: "clamps future end to now",
+			start: 1, end: tmrw, stepSecs: 10,
+			rangeStart: 0, rangeEnd: expected,
+		},
+		{
+			name: "isOffset skips future clamp",
+			start: 1, end: tmrw, stepSecs: 10, isOffset: true,
+			rangeStart: 0, rangeEnd: (tmrw / 10) * 10,
+		},
+		{
+			name: "zero step no normalization",
+			start: 1, end: 103, stepSecs: 0,
+			rangeStart: 1, rangeEnd: 103,
 		},
 	}
 
-	for i, test := range tests {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			trq := TimeRangeQuery{Statement: "up", Extent: Extent{
-				Start: time.Unix(test.start, 0),
-				End:   time.Unix(test.end, 0),
-			}, Step: time.Duration(test.stepSecs) * time.Second}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			trq := TimeRangeQuery{
+				Statement: "up",
+				Extent: Extent{
+					Start: time.Unix(test.start, 0),
+					End:   time.Unix(test.end, 0),
+				},
+				Step:     time.Duration(test.stepSecs) * time.Second,
+				IsOffset: test.isOffset,
+			}
 
 			trq.NormalizeExtent()
 
 			if trq.Extent.Start.Unix() != test.rangeStart {
-				t.Errorf("Mismatch in rangeStart: expected=%d actual=%d", test.rangeStart, trq.Extent.Start.Unix())
+				t.Errorf("rangeStart: expected=%d actual=%d", test.rangeStart, trq.Extent.Start.Unix())
 			}
 			if trq.Extent.End.Unix() != test.rangeEnd {
-				t.Errorf("Mismatch in rangeStart: expected=%d actual=%d", test.rangeEnd, trq.Extent.End.Unix())
+				t.Errorf("rangeEnd: expected=%d actual=%d", test.rangeEnd, trq.Extent.End.Unix())
 			}
 		})
 	}
 }
 
 func TestClone(t *testing.T) {
-	u, _ := url.Parse("http://127.0.0.1/")
-	trq := &TimeRangeQuery{Statement: "1234", Extent: Extent{
-		Start: time.Unix(5, 0),
-		End:   time.Unix(10, 0),
-	}, Step: time.Duration(5) * time.Second, TemplateURL: u}
-	c := trq.Clone()
-	if !reflect.DeepEqual(trq, c) {
-		t.Errorf("expected %s got %s", trq.String(), c.String())
-	}
+	t.Run("basic with TemplateURL", func(t *testing.T) {
+		u, _ := url.Parse("http://127.0.0.1/")
+		trq := &TimeRangeQuery{
+			Statement:   "1234",
+			Extent:      Extent{Start: time.Unix(5, 0), End: time.Unix(10, 0)},
+			Step:        time.Duration(5) * time.Second,
+			TemplateURL: u,
+		}
+		c := trq.Clone()
+		if c.Statement != trq.Statement || c.Step != trq.Step {
+			t.Error("basic fields mismatch")
+		}
+		if c.TemplateURL == trq.TemplateURL {
+			t.Error("TemplateURL should be a different pointer")
+		}
+		if c.TemplateURL.String() != trq.TemplateURL.String() {
+			t.Error("TemplateURL value mismatch")
+		}
+	})
+
+	t.Run("nil TemplateURL", func(t *testing.T) {
+		trq := &TimeRangeQuery{Statement: "test"}
+		c := trq.Clone()
+		if c.TemplateURL != nil {
+			t.Error("expected nil TemplateURL")
+		}
+	})
+
+	t.Run("OriginalBody independent copy", func(t *testing.T) {
+		trq := &TimeRangeQuery{
+			Statement:    "test",
+			OriginalBody: []byte("original"),
+		}
+		c := trq.Clone()
+		c.OriginalBody[0] = 'X'
+		if trq.OriginalBody[0] == 'X' {
+			t.Error("clone mutation affected original OriginalBody")
+		}
+	})
+
+	t.Run("CacheKeyElements independent copy", func(t *testing.T) {
+		trq := &TimeRangeQuery{
+			Statement:        "test",
+			CacheKeyElements: map[string]string{"key": "val"},
+		}
+		c := trq.Clone()
+		c.CacheKeyElements["key"] = "mutated"
+		if trq.CacheKeyElements["key"] == "mutated" {
+			t.Error("clone mutation affected original CacheKeyElements")
+		}
+	})
+
+	t.Run("TagFieldDefintions independent copy", func(t *testing.T) {
+		trq := &TimeRangeQuery{
+			Statement:          "test",
+			TagFieldDefintions: FieldDefinitions{{Name: "host", DataType: String}},
+		}
+		c := trq.Clone()
+		c.TagFieldDefintions[0].Name = "mutated"
+		if trq.TagFieldDefintions[0].Name == "mutated" {
+			t.Error("clone mutation affected original TagFieldDefintions")
+		}
+	})
 }
 
 func TestSizeTRQ(t *testing.T) {
@@ -97,13 +162,30 @@ func TestSizeTRQ(t *testing.T) {
 }
 
 func TestExtractBackfillTolerance(t *testing.T) {
-	trq := &TimeRangeQuery{}
+	t.Run("valid flag", func(t *testing.T) {
+		trq := &TimeRangeQuery{}
+		trq.ExtractBackfillTolerance("testing trickster-backfill-tolerance:30 ")
+		if trq.BackfillTolerance != time.Second*30 {
+			t.Error("expected 30s got", trq.BackfillTolerance)
+		}
+	})
 
-	trq.ExtractBackfillTolerance("testing trickster-backfill-tolerance:30 ")
+	t.Run("flag not present", func(t *testing.T) {
+		trq := &TimeRangeQuery{}
+		trq.ExtractBackfillTolerance("no flag here")
+		if trq.BackfillTolerance != 0 {
+			t.Error("expected 0 got", trq.BackfillTolerance)
+		}
+	})
 
-	if trq.BackfillTolerance != time.Second*30 {
-		t.Error("expected 30 got", trq.BackfillTolerance)
-	}
+	t.Run("flag at position 0", func(t *testing.T) {
+		trq := &TimeRangeQuery{}
+		trq.ExtractBackfillTolerance("trickster-backfill-tolerance:30")
+		// x > 1 check means position 0 is not extracted
+		if trq.BackfillTolerance != 0 {
+			t.Error("expected 0 for position 0, got", trq.BackfillTolerance)
+		}
+	})
 }
 
 func TestStringTRQ(t *testing.T) {
@@ -120,32 +202,58 @@ func TestStringTRQ(t *testing.T) {
 }
 
 func TestGetBackfillTolerance(t *testing.T) {
-	expected := time.Second * 5
-
-	trq := &TimeRangeQuery{Statement: "1234"}
-	i := trq.GetBackfillTolerance(expected, 0)
-	if i != expected {
-		t.Errorf("expected %s got %s", expected, i)
+	tests := []struct {
+		name      string
+		tolerance time.Duration
+		step      time.Duration
+		def       time.Duration
+		points    int
+		expected  time.Duration
+	}{
+		{
+			name:     "returns default when tolerance is 0",
+			def:      time.Second * 5,
+			expected: time.Second * 5,
+		},
+		{
+			name:      "returns override when positive",
+			tolerance: time.Second * 30,
+			def:       time.Second * 5,
+			expected:  time.Second * 30,
+		},
+		{
+			name:     "points override when larger than default",
+			step:     5 * time.Second,
+			def:      time.Second * 5,
+			points:   10,
+			expected: time.Second * 50,
+		},
+		{
+			name:      "returns 0 when negative",
+			tolerance: -1,
+			step:      5 * time.Second,
+			def:       time.Second * 5,
+			points:    10,
+			expected:  0,
+		},
+		{
+			name:     "points not larger than default uses default",
+			step:     1 * time.Second,
+			def:      time.Second * 50,
+			points:   3,
+			expected: time.Second * 50,
+		},
 	}
 
-	trq.BackfillTolerance = time.Second * 30
-	i = trq.GetBackfillTolerance(expected, 0)
-	if i == expected {
-		t.Errorf("expected %s got %s", time.Second*30, i)
-	}
-
-	trq.Step = 5 * time.Second
-	trq.BackfillTolerance = 0
-
-	expected = time.Second * 50
-	i = trq.GetBackfillTolerance(time.Second*5, 10)
-	if i != expected {
-		t.Errorf("expected %s got %s", expected, i)
-	}
-
-	trq.BackfillTolerance = -1
-	i = trq.GetBackfillTolerance(time.Second*5, 10)
-	if i != 0 {
-		t.Errorf("expected %d got %d", 0, i)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			trq := &TimeRangeQuery{
+				BackfillTolerance: test.tolerance,
+				Step:              test.step,
+			}
+			if got := trq.GetBackfillTolerance(test.def, test.points); got != test.expected {
+				t.Errorf("expected %s got %s", test.expected, got)
+			}
+		})
 	}
 }
