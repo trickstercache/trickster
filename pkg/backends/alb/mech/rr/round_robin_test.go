@@ -72,3 +72,43 @@ func TestNextTarget(t *testing.T) {
 		t.Error("expected non-nil target")
 	}
 }
+
+func TestRoundRobinProgression(t *testing.T) {
+	h0 := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte("0"))
+	})
+	h1 := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte("1"))
+	})
+	h2 := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte("2"))
+	})
+
+	p, _, st := albpool.New(-1, []http.Handler{h0, h1, h2})
+	st[0].Set(0)
+	st[1].Set(0)
+	st[2].Set(0)
+	time.Sleep(250 * time.Millisecond)
+
+	rr := &handler{pool: p}
+
+	// Fire 6 requests and verify rotation through all 3 backends.
+	// Each backend must appear exactly twice.
+	seen := make([]string, 6)
+	for i := range 6 {
+		w := httptest.NewRecorder()
+		rr.ServeHTTP(w, nil)
+		seen[i] = w.Body.String()
+	}
+
+	counts := map[string]int{}
+	for _, s := range seen {
+		counts[s]++
+	}
+	for _, id := range []string{"0", "1", "2"} {
+		if counts[id] != 2 {
+			t.Errorf("backend %s called %d times (expected 2); sequence: %v",
+				id, counts[id], seen)
+		}
+	}
+}

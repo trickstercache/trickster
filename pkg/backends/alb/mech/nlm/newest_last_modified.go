@@ -18,7 +18,6 @@ package nlm
 
 import (
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
@@ -26,6 +25,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
+	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
@@ -76,6 +76,10 @@ func (h *handler) StopPool() {
 }
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if h.pool == nil {
+		failures.HandleBadGateway(w, r)
+		return
+	}
 	hl := h.pool.Healthy() // should return a fanout list
 	l := len(hl)
 	if l == 0 {
@@ -88,16 +92,12 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create contexts for cancellation
-	ctx := r.Context()
+	// Strip resources from the parent context once; reuse for all goroutines
+	bareCtx := tctx.ClearResources(r.Context())
 
-	// Track the newest Last-Modified response
-	newestIdx := -1
-	var newestTime time.Time
-	var mu sync.Mutex
-
-	// Capture all responses
+	// Capture all responses with per-slot Last-Modified timestamps
 	captures := make([]*capture.CaptureResponseWriter, l)
+	lastMods := make([]time.Time, l)
 	var eg errgroup.Group
 	if limit := h.options.ConcurrencyOptions.GetQueryConcurrencyLimit(); limit > 0 {
 		eg.SetLimit(limit)
@@ -107,23 +107,16 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if hl[i] == nil {
 			continue
 		}
-		idx := i
 		eg.Go(func() error {
-			r2, _ := request.Clone(r)
-			r2 = request.ClearResources(r2.WithContext(ctx))
+			r2, _ := request.CloneWithoutResources(r)
+			r2 = r2.WithContext(bareCtx)
 			crw := capture.NewCaptureResponseWriter()
-			captures[idx] = crw
-			hl[idx].ServeHTTP(crw, r2)
+			captures[i] = crw
+			hl[i].ServeHTTP(crw, r2)
 
 			if lmStr := crw.Header().Get(headers.NameLastModified); lmStr != "" {
-				lm, err := time.Parse(time.RFC1123, lmStr)
-				if err == nil && !lm.IsZero() {
-					mu.Lock()
-					if newestIdx == -1 || lm.After(newestTime) {
-						newestIdx = idx
-						newestTime = lm
-					}
-					mu.Unlock()
+				if lm, err := time.Parse(time.RFC1123, lmStr); err == nil {
+					lastMods[i] = lm
 				}
 			}
 			return nil
@@ -133,12 +126,21 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Wait for all responses to complete
 	eg.Wait()
 
+	// Find the response with the newest Last-Modified
+	newestIdx := -1
+	var newestTime time.Time
+	for i, lm := range lastMods {
+		if !lm.IsZero() && (newestIdx == -1 || lm.After(newestTime)) {
+			newestIdx = i
+			newestTime = lm
+		}
+	}
+
 	// Write the response with the newest Last-Modified
-	if newestIdx >= 0 && newestIdx < len(captures) && captures[newestIdx] != nil {
+	if newestIdx >= 0 && captures[newestIdx] != nil {
 		crw := captures[newestIdx]
 		headers.Merge(w.Header(), crw.Header())
-		statusCode := crw.StatusCode()
-		w.WriteHeader(statusCode)
+		w.WriteHeader(crw.StatusCode())
 		w.Write(crw.Body())
 		return
 	}
@@ -146,8 +148,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	for _, crw := range captures {
 		if crw != nil {
 			headers.Merge(w.Header(), crw.Header())
-			statusCode := crw.StatusCode()
-			w.WriteHeader(statusCode)
+			w.WriteHeader(crw.StatusCode())
 			w.Write(crw.Body())
 			break
 		}

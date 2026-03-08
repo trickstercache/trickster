@@ -37,8 +37,21 @@ func Clone(r *http.Request) (*http.Request, error) {
 	}
 	ctx := context.Background()
 	if rsc != nil {
-		ctx = tctx.WithResources(ctx, rsc.Clone())
+		ctx = tctx.WithResources(ctx, rsc)
 	}
+	return cloneWithContext(ctx, r)
+}
+
+// CloneWithoutResources clones the HTTP request and body reader without cloning Resources.
+// Use this when the caller will immediately set or clear Resources on the result.
+func CloneWithoutResources(r *http.Request) (*http.Request, error) {
+	if r == nil {
+		return nil, nil
+	}
+	return cloneWithContext(context.Background(), r)
+}
+
+func cloneWithContext(ctx context.Context, r *http.Request) (*http.Request, error) {
 	out := r.Clone(ctx)
 	if r.Method == http.MethodPost || r.Method == http.MethodPut ||
 		r.Method == http.MethodPatch {

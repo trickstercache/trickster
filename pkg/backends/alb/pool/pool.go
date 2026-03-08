@@ -88,6 +88,8 @@ func (p *pool) Healthy() []http.Handler {
 
 func (p *pool) SetHealthy(h []http.Handler) {
 	p.healthyHandlers.Store(&h)
+	t := make(Targets, len(h))
+	p.healthyTargets.Store(&t)
 }
 
 func (p *pool) Stop() {

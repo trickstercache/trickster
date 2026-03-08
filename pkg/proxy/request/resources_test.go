@@ -18,7 +18,9 @@ package request
 
 import (
 	"context"
+	"io"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -68,6 +70,119 @@ func TestGetAndSetResources(t *testing.T) {
 	if r3 != nil {
 		t.Errorf("expected nil result, got %v", r3)
 	}
+}
+
+func TestClone(t *testing.T) {
+	t.Run("nil request", func(t *testing.T) {
+		out, err := Clone(nil)
+		if err != nil {
+			t.Fatal("unexpected error:", err)
+		}
+		if out != nil {
+			t.Fatal("expected nil, got non-nil request")
+		}
+	})
+
+	t.Run("request without resources", func(t *testing.T) {
+		r, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
+		out, err := Clone(r)
+		if err != nil {
+			t.Fatal("unexpected error:", err)
+		}
+		if out == r {
+			t.Fatal("Clone should return a different request pointer")
+		}
+		if GetResources(out) != nil {
+			t.Error("expected nil resources on clone of request without resources")
+		}
+	})
+
+	t.Run("cloned resources are independent", func(t *testing.T) {
+		rsc := NewResources(nil, nil, nil, nil, nil, nil)
+		rsc.AlternateCacheTTL = time.Minute
+		rsc.RequestBody = []byte("original")
+		r, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
+		r = SetResources(r, rsc)
+
+		out, err := Clone(r)
+		if err != nil {
+			t.Fatal("unexpected error:", err)
+		}
+		rsc2 := GetResources(out)
+		if rsc2 == nil {
+			t.Fatal("expected resources on cloned request")
+		}
+		if rsc2 == rsc {
+			t.Fatal("Clone should return independent Resources pointer")
+		}
+		if rsc2.AlternateCacheTTL != time.Minute {
+			t.Error("cloned resources should preserve AlternateCacheTTL")
+		}
+		// mutating the clone must not affect the original
+		rsc2.AlternateCacheTTL = time.Hour
+		rsc2.RequestBody[0] = 'X'
+		if rsc.AlternateCacheTTL != time.Minute {
+			t.Error("mutating clone affected original AlternateCacheTTL")
+		}
+		if rsc.RequestBody[0] != 'o' {
+			t.Error("mutating clone affected original RequestBody")
+		}
+	})
+
+	t.Run("POST body is cloned", func(t *testing.T) {
+		r, _ := http.NewRequest(http.MethodPost, "http://127.0.0.1/", nil)
+		SetBody(r, []byte("post-body"))
+		r.Body = io.NopCloser(strings.NewReader("post-body"))
+		out, err := Clone(r)
+		if err != nil {
+			t.Fatal("unexpected error:", err)
+		}
+		b, _ := io.ReadAll(out.Body)
+		if string(b) != "post-body" {
+			t.Errorf("expected 'post-body' got %q", string(b))
+		}
+	})
+}
+
+func TestCloneBare(t *testing.T) {
+	t.Run("nil request", func(t *testing.T) {
+		out, err := CloneWithoutResources(nil)
+		if err != nil {
+			t.Fatal("unexpected error:", err)
+		}
+		if out != nil {
+			t.Fatal("expected nil, got non-nil request")
+		}
+	})
+
+	t.Run("strips resources", func(t *testing.T) {
+		rsc := NewResources(nil, nil, nil, nil, nil, nil)
+		rsc.AlternateCacheTTL = time.Minute
+		r, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
+		r = SetResources(r, rsc)
+
+		out, err := CloneWithoutResources(r)
+		if err != nil {
+			t.Fatal("unexpected error:", err)
+		}
+		if GetResources(out) != nil {
+			t.Error("CloneBare should not carry Resources")
+		}
+	})
+
+	t.Run("POST body is cloned", func(t *testing.T) {
+		r, _ := http.NewRequest(http.MethodPost, "http://127.0.0.1/", nil)
+		SetBody(r, []byte("post-body"))
+		r.Body = io.NopCloser(strings.NewReader("post-body"))
+		out, err := CloneWithoutResources(r)
+		if err != nil {
+			t.Fatal("unexpected error:", err)
+		}
+		b, _ := io.ReadAll(out.Body)
+		if string(b) != "post-body" {
+			t.Errorf("expected 'post-body' got %q", string(b))
+		}
+	})
 }
 
 func TestMergeResources(t *testing.T) {

@@ -49,7 +49,7 @@ func TestCheckCacheFreshness(t *testing.T) {
 		{
 			name: "fresh — lifetime not expired",
 			policy: &CachingPolicy{
-				LocalDate:        time.Now(),
+				LocalDate:         time.Now(),
 				FreshnessLifetime: 3600,
 			},
 			wantFresh: true,
@@ -57,7 +57,7 @@ func TestCheckCacheFreshness(t *testing.T) {
 		{
 			name: "stale — lifetime expired",
 			policy: &CachingPolicy{
-				LocalDate:        time.Now().Add(-2 * time.Hour),
+				LocalDate:         time.Now().Add(-2 * time.Hour),
 				FreshnessLifetime: 3600,
 			},
 			wantFresh: false,
@@ -65,7 +65,7 @@ func TestCheckCacheFreshness(t *testing.T) {
 		{
 			name: "zero lifetime — stale immediately",
 			policy: &CachingPolicy{
-				LocalDate:        time.Now().Add(-time.Second),
+				LocalDate:         time.Now().Add(-time.Second),
 				FreshnessLifetime: 0,
 			},
 			wantFresh: false,

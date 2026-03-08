@@ -115,6 +115,10 @@ func (h *handler) Pool() pool.Pool {
 }
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if h.pool == nil {
+		failures.HandleBadGateway(w, r)
+		return
+	}
 	hl := h.pool.HealthyTargets() // should return a fanout list
 	l := len(hl)
 	if l == 0 {
@@ -163,7 +167,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		eg.Go(func() error {
-			r2, _ := request.Clone(r)
+			r2, _ := request.CloneWithoutResources(r)
 			rsc2 := &request.Resources{IsMergeMember: true, TSReqestOptions: rsc.TSReqestOptions}
 			r2 = request.SetResources(r2, rsc2)
 			crw := capture.NewCaptureResponseWriter()

@@ -127,6 +127,7 @@ func (h *Handler) SetDefaultHandler(h2 http.Handler) {
 func (h *Handler) handleDefault(w http.ResponseWriter, r *http.Request) {
 	if h.options.DefaultHandler == nil {
 		failures.HandleBadGateway(w, r)
+		return
 	}
 	h.options.DefaultHandler.ServeHTTP(w, r)
 }
