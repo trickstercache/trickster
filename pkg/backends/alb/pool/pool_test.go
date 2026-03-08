@@ -57,3 +57,28 @@ func TestNewPool(t *testing.T) {
 		t.Error("expected 1 healthy target", len(p.Healthy()))
 	}
 }
+
+func TestSetHealthyUpdatesTargets(t *testing.T) {
+	s := &healthcheck.Status{}
+	tgt := NewTarget(http.NotFoundHandler(), s, nil)
+	p := New(Targets{tgt}, 1)
+	p.Stop()
+
+	h := []http.Handler{http.NotFoundHandler(), http.NotFoundHandler()}
+	p.SetHealthy(h)
+
+	if got := len(p.Healthy()); got != 2 {
+		t.Errorf("Healthy: expected 2 got %d", got)
+	}
+	if got := len(p.HealthyTargets()); got != 2 {
+		t.Errorf("HealthyTargets: expected 2 got %d", got)
+	}
+}
+
+func TestStopIdempotent(t *testing.T) {
+	s := &healthcheck.Status{}
+	tgt := NewTarget(http.NotFoundHandler(), s, nil)
+	p := New(Targets{tgt}, 1)
+	p.Stop()
+	p.Stop() // must not panic
+}

@@ -18,7 +18,6 @@
 package pool
 
 import (
-	"context"
 	"net/http"
 	"sync"
 	"sync/atomic"
@@ -44,8 +43,7 @@ type pool struct {
 	healthyTargets  atomic.Pointer[Targets]
 	healthyHandlers atomic.Pointer[[]http.Handler]
 	healthyFloor    int
-	ctx             context.Context
-	stopper         context.CancelFunc
+	done            chan struct{}
 	ch              chan bool
 	mtx             sync.Mutex
 }
@@ -93,7 +91,9 @@ func (p *pool) SetHealthy(h []http.Handler) {
 }
 
 func (p *pool) Stop() {
-	if p.stopper != nil {
-		p.stopper()
+	select {
+	case <-p.done:
+	default:
+		close(p.done)
 	}
 }
