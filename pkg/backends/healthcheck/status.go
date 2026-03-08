@@ -98,7 +98,10 @@ func (s *Status) Set(i int32) {
 	subs := slices.Clone(s.subscribers)
 	s.mtx.Unlock()
 	for _, ch := range subs {
-		ch <- true
+		select {
+		case ch <- true:
+		default:
+		}
 	}
 }
 
