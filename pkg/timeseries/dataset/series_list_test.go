@@ -146,7 +146,7 @@ func TestListMerge(t *testing.T) {
 	t.Run("point merge on overlap", func(t *testing.T) {
 		s1 := testSeries()
 		s1.Points = testPoints() // epochs 5, 10
-		s2 := testSeries()      // same header hash
+		s2 := testSeries()       // same header hash
 		s2.Points = Points{
 			{Epoch: epoch.Epoch(15 * timeseries.Second), Size: 27, Values: []any{1, 34}},
 		}

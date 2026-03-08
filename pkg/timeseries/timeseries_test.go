@@ -28,20 +28,20 @@ type mockTimeseries struct {
 	merged  []Timeseries
 }
 
-func (m *mockTimeseries) SetExtents(el ExtentList)            { m.extents = el }
-func (m *mockTimeseries) Extents() ExtentList                 { return m.extents }
-func (m *mockTimeseries) VolatileExtents() ExtentList          { return nil }
-func (m *mockTimeseries) SetVolatileExtents(ExtentList)        {}
-func (m *mockTimeseries) TimestampCount() int64                { return 0 }
-func (m *mockTimeseries) Step() time.Duration                  { return 0 }
-func (m *mockTimeseries) Sort()                                {}
-func (m *mockTimeseries) SeriesCount() int                     { return 1 }
-func (m *mockTimeseries) ValueCount() int64                    { return 0 }
-func (m *mockTimeseries) Size() int64                          { return 0 }
-func (m *mockTimeseries) SetTimeRangeQuery(*TimeRangeQuery)    {}
-func (m *mockTimeseries) CropToRange(Extent)                   {}
-func (m *mockTimeseries) CropToSize(int, time.Time, Extent)    {}
-func (m *mockTimeseries) CroppedClone(Extent) Timeseries       { return m.Clone() }
+func (m *mockTimeseries) SetExtents(el ExtentList)          { m.extents = el }
+func (m *mockTimeseries) Extents() ExtentList               { return m.extents }
+func (m *mockTimeseries) VolatileExtents() ExtentList       { return nil }
+func (m *mockTimeseries) SetVolatileExtents(ExtentList)     {}
+func (m *mockTimeseries) TimestampCount() int64             { return 0 }
+func (m *mockTimeseries) Step() time.Duration               { return 0 }
+func (m *mockTimeseries) Sort()                             {}
+func (m *mockTimeseries) SeriesCount() int                  { return 1 }
+func (m *mockTimeseries) ValueCount() int64                 { return 0 }
+func (m *mockTimeseries) Size() int64                       { return 0 }
+func (m *mockTimeseries) SetTimeRangeQuery(*TimeRangeQuery) {}
+func (m *mockTimeseries) CropToRange(Extent)                {}
+func (m *mockTimeseries) CropToSize(int, time.Time, Extent) {}
+func (m *mockTimeseries) CroppedClone(Extent) Timeseries    { return m.Clone() }
 
 func (m *mockTimeseries) Clone() Timeseries {
 	return &mockTimeseries{id: m.id, extents: m.extents}
@@ -56,9 +56,9 @@ func TestListCompress(t *testing.T) {
 	m2 := &mockTimeseries{id: 2}
 
 	tests := []struct {
-		name     string
-		input    List
-		wantLen  int
+		name    string
+		input   List
+		wantLen int
 	}{
 		{"empty list", List{}, 0},
 		{"all nil", List{nil, nil, nil}, 0},

@@ -17,7 +17,6 @@
 package pool
 
 import (
-	"context"
 	"net/http"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
@@ -35,11 +34,9 @@ type Targets []*Target
 
 // New returns a new Pool
 func New(targets Targets, healthyFloor int) Pool {
-	ctx, cancel := context.WithCancel(context.Background())
 	p := &pool{
 		targets:      targets,
-		ctx:          ctx,
-		stopper:      cancel,
+		done:         make(chan struct{}),
 		ch:           make(chan bool, 16),
 		healthyFloor: healthyFloor,
 	}

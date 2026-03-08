@@ -33,27 +33,27 @@ func TestNormalizeExtent(t *testing.T) {
 		rangeStart, rangeEnd int64
 	}{
 		{
-			name: "basic no change",
+			name:  "basic no change",
 			start: 1, end: 100, stepSecs: 1,
 			rangeStart: 1, rangeEnd: 100,
 		},
 		{
-			name: "aligns to step",
+			name:  "aligns to step",
 			start: 1, end: 103, stepSecs: 10,
 			rangeStart: 0, rangeEnd: 100,
 		},
 		{
-			name: "clamps future end to now",
+			name:  "clamps future end to now",
 			start: 1, end: tmrw, stepSecs: 10,
 			rangeStart: 0, rangeEnd: expected,
 		},
 		{
-			name: "isOffset skips future clamp",
+			name:  "isOffset skips future clamp",
 			start: 1, end: tmrw, stepSecs: 10, isOffset: true,
 			rangeStart: 0, rangeEnd: (tmrw / 10) * 10,
 		},
 		{
-			name: "zero step no normalization",
+			name:  "zero step no normalization",
 			start: 1, end: 103, stepSecs: 0,
 			rangeStart: 1, rangeEnd: 103,
 		},
