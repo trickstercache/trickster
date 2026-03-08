@@ -137,7 +137,7 @@ func (d *HTTPDocument) getByteRanges() byterange.Ranges {
 	} else if ranges := d.RangeParts.Ranges(); len(ranges) > 0 {
 		return ranges
 	}
-	return byterange.Ranges{byterange.Range{Start: 0, End: d.ContentLength}}
+	return byterange.Ranges{byterange.Range{Start: 0, End: d.ContentLength - 1}}
 }
 
 // ShallowCopy returns a shallow copy of the HTTPDocument with a fresh headerLock.

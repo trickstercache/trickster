@@ -75,7 +75,10 @@ func handleCachePartialHit(pr *proxyRequest) error {
 	d := pr.cacheDocument
 	resp := pr.upstreamResponse
 	if pr.isPartialResponse {
-		b, _ := io.ReadAll(pr.upstreamReader)
+		b, err := io.ReadAll(pr.upstreamReader)
+		if err != nil {
+			return err
+		}
 		d2 := &HTTPDocument{}
 
 		d2.ParsePartialContentBody(resp, b)
@@ -86,7 +89,7 @@ func handleCachePartialHit(pr *proxyRequest) error {
 		d.RangeParts.Merge(d2.RangeParts)
 		d.Ranges = d.RangeParts.Ranges()
 		d.StoredRangeParts = d.RangeParts.PackableMultipartByteRanges()
-		err := d.FulfillContentBody()
+		err = d.FulfillContentBody()
 
 		if err == nil {
 			pr.upstreamResponse.Body = io.NopCloser(bytes.NewReader(d.Body))

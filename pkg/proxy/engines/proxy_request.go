@@ -203,7 +203,7 @@ func (pr *proxyRequest) prepareRevalidationRequest() {
 		if len(pr.wantedRanges) > 0 {
 			wr = pr.wantedRanges
 		} else {
-			wr = byterange.Ranges{{Start: 0, End: cl}}
+			wr = byterange.Ranges{{Start: 0, End: cl - 1}}
 		}
 
 		// revalRanges are the ranges we have in cache that have expired, but the user needs
@@ -660,7 +660,12 @@ func (pr *proxyRequest) reconstituteResponses() {
 				wg.Go(func() {
 					// oh snap. so we have some partial content to merge in, but the original cache document
 					// is now invalid. lets go ahead and reset it.
-					b, _ := io.ReadAll(resp.Body)
+					b, err := io.ReadAll(resp.Body)
+					if err != nil {
+						logger.Error("error reading revalidation response body",
+							logging.Pairs{"detail": err.Error()})
+						return
+					}
 					appendLock.Lock()
 					parts.ParsePartialContentBody(resp, b)
 					appendLock.Unlock()
@@ -682,7 +687,12 @@ func (pr *proxyRequest) reconstituteResponses() {
 				appendLock.Unlock()
 
 				if resp.StatusCode == http.StatusPartialContent {
-					b, _ := io.ReadAll(resp.Body)
+					b, err := io.ReadAll(resp.Body)
+					if err != nil {
+						logger.Error("error reading origin response body",
+							logging.Pairs{"detail": err.Error()})
+						return
+					}
 					appendLock.Lock()
 					parts.ParsePartialContentBody(resp, b)
 					appendLock.Unlock()
