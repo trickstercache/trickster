@@ -126,18 +126,19 @@ func (pcf *progressiveCollapseForwarder) AddClient(w io.Writer) error {
 		}
 	}
 	pcf.clientCount.Add(-1)
+	pcf.clientCond.L.Lock()
 	pcf.clientCond.Broadcast()
+	pcf.clientCond.L.Unlock()
 	return err
 }
 
 // WaitServerComplete blocks until the object has been retrieved from the origin server
 // Need to get payload before can send to actual cache
 func (pcf *progressiveCollapseForwarder) WaitServerComplete() {
-	if pcf.serverReadDone.Load() != 0 {
-		return
-	}
 	pcf.serverWaitCond.L.Lock()
-	pcf.serverWaitCond.Wait()
+	for pcf.serverReadDone.Load() == 0 {
+		pcf.serverWaitCond.Wait()
+	}
 	pcf.serverWaitCond.L.Unlock()
 }
 
@@ -177,7 +178,9 @@ func (pcf *progressiveCollapseForwarder) Write(b []byte) (int, error) {
 	pcf.dataLocker.Unlock()
 	pcf.dataIndex += uint64(len(b))
 	pcf.rIndex.Add(1)
+	pcf.readCond.L.Lock()
 	pcf.readCond.Broadcast()
+	pcf.readCond.L.Unlock()
 	return len(b), nil
 }
 
@@ -185,25 +188,29 @@ func (pcf *progressiveCollapseForwarder) Write(b []byte) (int, error) {
 // This should be triggered by the client io.EOF
 func (pcf *progressiveCollapseForwarder) Close() {
 	pcf.serverReadDone.Add(1)
+	pcf.serverWaitCond.L.Lock()
 	pcf.serverWaitCond.Broadcast()
+	pcf.serverWaitCond.L.Unlock()
+	pcf.readCond.L.Lock()
 	pcf.readCond.Broadcast()
+	pcf.readCond.L.Unlock()
 }
 
-// Read will return the given index data requested by the read is behind the PCF readindex,
-// else blocks and waits for the data
+// IndexRead will return the given index data if the read index is behind the PCF write index,
+// else blocks and waits for the data to become available or for the server to finish.
 func (pcf *progressiveCollapseForwarder) IndexRead(index uint64, b []byte) (int, error) {
-	i := pcf.rIndex.Load()
-	if index >= i {
-		// need to check completion and return io.EOF
-		if index > pcf.dataLen {
-			return 0, errors.ErrReadIndexTooLarge
-		} else if pcf.serverReadDone.Load() != 0 {
+	if index > pcf.dataLen {
+		return 0, errors.ErrReadIndexTooLarge
+	}
+	pcf.readCond.L.Lock()
+	for index >= pcf.rIndex.Load() {
+		if pcf.serverReadDone.Load() != 0 {
+			pcf.readCond.L.Unlock()
 			return 0, io.EOF
 		}
-		pcf.readCond.L.Lock()
 		pcf.readCond.Wait()
-		pcf.readCond.L.Unlock()
 	}
+	pcf.readCond.L.Unlock()
 	var n int
 	pcf.dataLocker.Lock()
 	copy(b, pcf.data[index])
