@@ -57,48 +57,54 @@ type Manager struct {
 }
 
 func (cm *Manager) StoreReference(cacheKey string, data cache.ReferenceObject, ttl time.Duration) error {
-	metrics.ObserveCacheOperation(cm.config.Name, cm.config.Provider, "setDirect", "none", float64(data.Size()))
 	logger.Debug("cache store", logging.Pairs{"key": cacheKey, "provider": cm.config.Provider})
-	return cm.Client.(cache.MemoryCache).StoreReference(cacheKey, data, ttl)
+	start := time.Now()
+	err := cm.Client.(cache.MemoryCache).StoreReference(cacheKey, data, ttl)
+	metrics.ObserveCacheOperation(cm.config.Name, cm.config.Provider, "setDirect", "none", float64(data.Size()), time.Since(start))
+	return err
 }
 
 func (cm *Manager) Store(cacheKey string, byteData []byte, ttl time.Duration) error {
-	metrics.ObserveCacheOperation(cm.config.Name, cm.config.Provider, "set", "none", float64(len(byteData)))
 	logger.Debug("cache store", logging.Pairs{"key": cacheKey, "provider": cm.config.Provider})
-	return cm.Client.Store(cacheKey, byteData, ttl)
+	start := time.Now()
+	err := cm.Client.Store(cacheKey, byteData, ttl)
+	metrics.ObserveCacheOperation(cm.config.Name, cm.config.Provider, "set", "none", float64(len(byteData)), time.Since(start))
+	return err
 }
 
-func (cm *Manager) observeRetrieval(cacheKey string, size int, s status.LookupStatus, err error) {
+func (cm *Manager) observeRetrieval(cacheKey string, size int, s status.LookupStatus, err error, elapsed time.Duration) {
 	switch {
 	case errors.Is(err, cache.ErrKNF) || s == status.LookupStatusKeyMiss:
 		logger.Debug("cache miss", logging.Pairs{"key": cacheKey, "provider": cm.config.Provider})
-		metrics.ObserveCacheMiss(cm.config.Name, cm.config.Provider)
+		metrics.ObserveCacheMiss(cm.config.Name, cm.config.Provider, elapsed)
 	case err != nil:
 		logger.Debug("cache retrieve failed", logging.Pairs{"key": cacheKey, "provider": cm.config.Provider})
 		metrics.ObserveCacheEvent(cm.config.Name, cm.config.Provider, "error", "failed to retrieve cache entry")
 	case s == status.LookupStatusHit:
 		logger.Debug("cache retrieve", logging.Pairs{"key": cacheKey, "provider": cm.config.Provider})
-		metrics.ObserveCacheOperation(cm.config.Name, cm.config.Provider, "get", "hit", float64(size))
+		metrics.ObserveCacheOperation(cm.config.Name, cm.config.Provider, "get", "hit", float64(size), elapsed)
 	}
 }
 
 func (cm *Manager) RetrieveReference(cacheKey string) (any, status.LookupStatus, error) {
+	start := time.Now()
 	v, s, err := cm.Client.(cache.MemoryCache).RetrieveReference(cacheKey)
+	elapsed := time.Since(start)
 	if ro, ok := v.(cache.ReferenceObject); ok {
-		cm.observeRetrieval(cacheKey, ro.Size(), s, err)
+		cm.observeRetrieval(cacheKey, ro.Size(), s, err, elapsed)
 	}
 	return v, s, err
 }
 
 type retrieveResult struct {
-	Data   any
+	Data   []byte
 	Status status.LookupStatus
 }
 
 func (cm *Manager) Retrieve(cacheKey string) ([]byte, status.LookupStatus, error) {
+	start := time.Now()
 	val, err, shared := cm.sf.Do(cacheKey, func() (any, error) {
 		b, s, err := cm.Client.Retrieve(cacheKey)
-		cm.observeRetrieval(cacheKey, len(b), s, err)
 		return &retrieveResult{
 			Data:   b,
 			Status: s,
@@ -113,13 +119,16 @@ func (cm *Manager) Retrieve(cacheKey string) ([]byte, status.LookupStatus, error
 			s = status.LookupStatusProxyError
 		}
 	}
-	return rr.Data.([]byte), s, err
+	cm.observeRetrieval(cacheKey, len(rr.Data), s, err, time.Since(start))
+	return rr.Data, s, err
 }
 
 func (cm *Manager) Remove(cacheKeys ...string) error {
-	metrics.ObserveCacheDel(cm.config.Name, cm.config.Provider, float64(len(cacheKeys)-1))
 	logger.Debug("cache remove", logging.Pairs{"keys": cacheKeys, "provider": cm.config.Provider})
-	return cm.Client.Remove(cacheKeys...)
+	start := time.Now()
+	err := cm.Client.Remove(cacheKeys...)
+	metrics.ObserveCacheDel(cm.config.Name, cm.config.Provider, float64(len(cacheKeys)-1), time.Since(start))
+	return err
 }
 
 func (cm *Manager) Connect() error {

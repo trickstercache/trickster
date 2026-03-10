@@ -282,7 +282,7 @@ func (idx *IndexedClient) Remove(cacheKeys ...string) error {
 			obj := o.(*Object)
 			size := atomic.AddInt64(&idx.CacheSize, -obj.Size)
 			count := atomic.AddInt64(&idx.ObjectCount, -1)
-			metrics.ObserveCacheOperation(idx.name, idx.cacheProvider, "del", "none", float64(obj.Size))
+			metrics.ObserveCacheOperation(idx.name, idx.cacheProvider, "del", "none", float64(obj.Size), 0)
 			idx.Objects.Delete(key)
 			metrics.ObserveCacheSizeChange(idx.name, idx.cacheProvider, size, count)
 		}
