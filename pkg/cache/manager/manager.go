@@ -77,12 +77,12 @@ func (cm *Manager) observeRetrieval(cacheKey string, size int, s status.LookupSt
 	case errors.Is(err, cache.ErrKNF) || s == status.LookupStatusKeyMiss:
 		logger.Debug("cache miss", logging.Pairs{"key": cacheKey, "provider": cm.config.Provider})
 		metrics.ObserveCacheMiss(cm.config.Name, cm.config.Provider, elapsed)
-	case err != nil:
-		logger.Debug("cache retrieve failed", logging.Pairs{"key": cacheKey, "provider": cm.config.Provider})
-		metrics.ObserveCacheEvent(cm.config.Name, cm.config.Provider, "error", "failed to retrieve cache entry")
-	case s == status.LookupStatusHit:
+	case status.IsSuccessful(s):
 		logger.Debug("cache retrieve", logging.Pairs{"key": cacheKey, "provider": cm.config.Provider})
 		metrics.ObserveCacheOperation(cm.config.Name, cm.config.Provider, "get", "hit", float64(size), elapsed)
+	default:
+		logger.Debug("cache retrieve failed", logging.Pairs{"key": cacheKey, "provider": cm.config.Provider})
+		metrics.ObserveCacheEvent(cm.config.Name, cm.config.Provider, "error", "failed to retrieve cache entry")
 	}
 }
 

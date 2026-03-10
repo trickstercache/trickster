@@ -280,7 +280,11 @@ func (idx *IndexedClient) Retrieve(cacheKey string) ([]byte, status.LookupStatus
 		o    *Object
 	)
 	defer func() {
-		metrics.ObserveCacheOperation(idx.indexName, idx.cacheProvider, "get", s.String(), float64(len(o.Value)), time.Since(start))
+		size := float64(0)
+		if o != nil {
+			size = float64(len(o.Value))
+		}
+		metrics.ObserveCacheOperation(idx.indexName, idx.cacheProvider, "get", s.String(), size, time.Since(start))
 	}()
 	data, s, err = idx.Client.Retrieve(cacheKey)
 	if err != nil {
