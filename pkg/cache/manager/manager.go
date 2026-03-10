@@ -127,7 +127,8 @@ func (cm *Manager) Remove(cacheKeys ...string) error {
 	logger.Debug("cache remove", logging.Pairs{"keys": cacheKeys, "provider": cm.config.Provider})
 	start := time.Now()
 	err := cm.Client.Remove(cacheKeys...)
-	metrics.ObserveCacheDel(cm.config.Name, cm.config.Provider, float64(len(cacheKeys)-1), time.Since(start))
+	// key count, not bytes: the manager doesn't track object sizes; the index layer reports byte counts
+	metrics.ObserveCacheDel(cm.config.Name, cm.config.Provider, float64(len(cacheKeys)), time.Since(start))
 	return err
 }
 
