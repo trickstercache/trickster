@@ -260,9 +260,9 @@ func (idx *IndexedClient) RetrieveReference(cacheKey string) (any, status.Lookup
 	v, s, err := mc.RetrieveReference(cacheKey)
 	if err == nil && s == status.LookupStatusHit {
 		idx.updateAccessTime(cacheKey)
-		if ro, ok := v.(cache.ReferenceObject); ok {
-			metrics.ObserveCacheOperation(idx.indexName, idx.cacheProvider, "getDirect", "hit", float64(ro.Size()), time.Since(start))
-		}
+	}
+	if ro, ok := v.(cache.ReferenceObject); ok {
+		metrics.ObserveCacheOperation(idx.indexName, idx.cacheProvider, "getDirect", s.String(), float64(ro.Size()), time.Since(start))
 	}
 	return v, s, err
 }
@@ -273,19 +273,27 @@ func (idx *IndexedClient) Retrieve(cacheKey string) ([]byte, status.LookupStatus
 		return nil, status.LookupStatusError, ErrIndexInvalidCacheKey
 	}
 	start := time.Now()
-	data, s, err := idx.Client.Retrieve(cacheKey)
+	var (
+		data []byte
+		s    = status.LookupStatusHit
+		err  error
+		o    *Object
+	)
+	defer func() {
+		metrics.ObserveCacheOperation(idx.indexName, idx.cacheProvider, "get", s.String(), float64(len(o.Value)), time.Since(start))
+	}()
+	data, s, err = idx.Client.Retrieve(cacheKey)
 	if err != nil {
 		return nil, s, err
 	}
 	if s != status.LookupStatusHit {
 		return nil, s, err
 	}
-	o, err := ObjectFromBytes(data)
+	o, err = ObjectFromBytes(data)
 	if err != nil {
 		return nil, status.LookupStatusError, err
 	}
 	idx.updateAccessTime(cacheKey)
-	metrics.ObserveCacheOperation(idx.indexName, idx.cacheProvider, "get", "hit", float64(len(o.Value)), time.Since(start))
 	return o.Value, s, nil
 }
 
