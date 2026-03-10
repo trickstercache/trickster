@@ -22,6 +22,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 )
 
@@ -181,13 +182,13 @@ var (
 		[]string{"backend_name", "provider", "method", "status", "http_status", "path"},
 	)
 
-	// CacheObjectOperations is a Counter of operations (in # of objects) performed on a Trickster cache
-	CacheObjectOperations = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
+	CacheObjectOperationDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
 			Namespace: metricNamespace,
 			Subsystem: cacheSubsystem,
-			Name:      "operation_objects_total",
-			Help:      "Count (in # of objects) of operations performed on a Trickster cache.",
+			Name:      "operation_duration_seconds",
+			Help:      "Time required in seconds to perform an operation on a Trickster cache.",
+			Buckets:   defaultBuckets,
 		},
 		[]string{"cache_name", "provider", "operation", "status"},
 	)
@@ -319,6 +320,45 @@ var (
 	)
 )
 
+type histogramCounterRenamed struct {
+	desc      *prometheus.Desc
+	histogram *prometheus.HistogramVec
+}
+
+func (hcr *histogramCounterRenamed) Describe(ch chan<- *prometheus.Desc) {
+	ch <- hcr.desc
+}
+
+func (hcr *histogramCounterRenamed) Collect(ch chan<- prometheus.Metric) {
+	histCh := make(chan prometheus.Metric, 128)
+	hcr.histogram.Collect(histCh)
+	close(histCh)
+	for m := range histCh {
+		var dm dto.Metric
+		if err := m.Write(&dm); err != nil {
+			continue
+		}
+		h := dm.GetHistogram()
+		if h == nil {
+			continue
+		}
+		labelValues := make([]string, 0, len(dm.GetLabel()))
+		for _, lp := range dm.GetLabel() {
+			labelValues = append(labelValues, lp.GetValue())
+		}
+		cm, err := prometheus.NewConstMetric(
+			hcr.desc,
+			prometheus.CounterValue,
+			float64(h.GetSampleCount()),
+			labelValues...,
+		)
+		if err != nil {
+			continue
+		}
+		ch <- cm
+	}
+}
+
 func init() {
 	// Register Metrics
 	prometheus.MustRegister(FrontendRequestStatus)
@@ -333,7 +373,16 @@ func init() {
 	prometheus.MustRegister(ProxyConnectionAccepted)
 	prometheus.MustRegister(ProxyConnectionClosed)
 	prometheus.MustRegister(ProxyConnectionFailed)
-	prometheus.MustRegister(CacheObjectOperations)
+	prometheus.MustRegister(CacheObjectOperationDuration)
+	prometheus.MustRegister(&histogramCounterRenamed{
+		desc: prometheus.NewDesc(
+			"trickster_cache_operation_objects_total",
+			"Count (in # of objects) of operations performed on a Trickster cache.",
+			[]string{"cache_name", "operation", "provider", "status"},
+			nil,
+		),
+		histogram: CacheObjectOperationDuration,
+	})
 	prometheus.MustRegister(CacheByteOperations)
 	prometheus.MustRegister(CacheEvents)
 	prometheus.MustRegister(CacheObjects)
