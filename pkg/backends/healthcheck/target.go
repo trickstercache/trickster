@@ -217,10 +217,15 @@ func (t *target) probe(ctx context.Context) {
 		t.status.SetDetail(detail)
 		errCnt = int(t.failConsecutiveCnt.Add(1))
 		t.successConsecutiveCnt.Store(0)
+
+		LogHealthCheckError(t.Name, err)
+
 	case !t.isGoodCode(resp.StatusCode) || !t.isGoodHeader(resp.Header) || !t.isGoodBody(resp.Body):
 		errCnt = int(t.failConsecutiveCnt.Add(1))
 		t.successConsecutiveCnt.Store(0)
 		resp.Body.Close()
+
+		LogHealthCheckError(t.Name, resp.StatusCode)
 	default:
 		resp.Body.Close()
 		successCnt = int(t.successConsecutiveCnt.Add(1))
@@ -257,7 +262,7 @@ func (t *target) notifyStatus(st int32, detail string) {
 		t.status.SetDetail("")
 	}
 	t.status.Set(st)
-	logger.Info("hc status changed", pairs)
+	logger.Info("healthcheck status changed", pairs)
 }
 
 func (t *target) demandProbe(w http.ResponseWriter) {
@@ -273,6 +278,8 @@ func (t *target) demandProbe(w http.ResponseWriter) {
 		}
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte("error performing health check: " + err.Error()))
+
+		LogHealthCheckError(t.Name, err)
 		return
 	}
 	for k := range resp.Header {
@@ -288,6 +295,24 @@ func (t *target) demandProbe(w http.ResponseWriter) {
 	if resp.Body != nil {
 		io.Copy(w, resp.Body)
 	}
+}
+
+func LogHealthCheckError(pairsValues ...any) {
+	const standardLogLine = "healthcheck failed"
+	pairs := logging.Pairs{}
+
+	for _, pairValue := range pairsValues {
+		switch p := pairValue.(type) {
+		case string:
+			pairs["targetName"] = p
+		case error:
+			pairs["error"] = p
+		case int:
+			pairs["status_code"] = p
+		}
+	}
+
+	logger.Error(standardLogLine, pairs)
 }
 
 func newHTTPClient(timeout time.Duration) *http.Client {
