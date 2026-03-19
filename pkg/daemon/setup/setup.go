@@ -206,6 +206,7 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	}
 	si.HealthChecker, err = clients.StartHealthChecks(oldStatuses)
 	if err != nil {
+		healthcheck.LogHealthCheckError(err)
 		return err
 	}
 	alb.StartALBPools(clients, si.HealthChecker.Statuses())
