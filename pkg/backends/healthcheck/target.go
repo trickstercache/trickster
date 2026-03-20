@@ -308,7 +308,7 @@ func LogHealthCheckError(pairsValues ...any) {
 		case error:
 			pairs["error"] = p
 		case int:
-			pairs["status_code"] = p
+			pairs["httpStatus"] = p
 		}
 	}
 
