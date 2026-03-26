@@ -218,14 +218,14 @@ func (t *target) probe(ctx context.Context) {
 		errCnt = int(t.failConsecutiveCnt.Add(1))
 		t.successConsecutiveCnt.Store(0)
 
-		LogHealthCheckError(t.Name, err)
+		LogHealthCheckError(t.Name(), err, 0)
 
 	case !t.isGoodCode(resp.StatusCode) || !t.isGoodHeader(resp.Header) || !t.isGoodBody(resp.Body):
 		errCnt = int(t.failConsecutiveCnt.Add(1))
 		t.successConsecutiveCnt.Store(0)
 		resp.Body.Close()
 
-		LogHealthCheckError(t.Name, resp.StatusCode)
+		LogHealthCheckError(t.Name(), nil, resp.StatusCode)
 	default:
 		resp.Body.Close()
 		successCnt = int(t.successConsecutiveCnt.Add(1))
@@ -279,7 +279,7 @@ func (t *target) demandProbe(w http.ResponseWriter) {
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte("error performing health check: " + err.Error()))
 
-		LogHealthCheckError(t.Name, err)
+		LogHealthCheckError(t.Name(), err, 0)
 		return
 	}
 	for k := range resp.Header {
@@ -297,19 +297,23 @@ func (t *target) demandProbe(w http.ResponseWriter) {
 	}
 }
 
-func LogHealthCheckError(pairsValues ...any) {
+// LogHealthCheckError logs a failed health check by printing
+// the backend target name, error, and HTTP status. These parameters
+// are optional and can be omitted by passing their default values.
+func LogHealthCheckError(targetName string, err error, status int) {
 	const standardLogLine = "healthcheck failed"
 	pairs := logging.Pairs{}
 
-	for _, pairValue := range pairsValues {
-		switch p := pairValue.(type) {
-		case string:
-			pairs["targetName"] = p
-		case error:
-			pairs["error"] = p
-		case int:
-			pairs["httpStatus"] = p
-		}
+	if targetName != "" {
+		pairs["targetName"] = targetName
+	}
+
+	if err != nil {
+		pairs["error"] = err
+	}
+
+	if status > 0 {
+		pairs["httpStatus"] = status
 	}
 
 	logger.Error(standardLogLine, pairs)

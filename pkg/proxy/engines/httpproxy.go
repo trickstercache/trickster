@@ -223,10 +223,13 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 				Request:    r, Header: make(http.Header),
 			}
 
-			logger.Error("error reaching upstream node",
+			logger.Error("error reaching upstream origin",
 				logging.Pairs{
-					"upstreamHost": r.Host,
-					"detail":       "nil response from upstream",
+					"origin":          r.Host,
+					"url":             r.URL.String(),
+					"backendName":     o.Name,
+					"backendProvider": o.Provider,
+					"detail":          "nil response from upstream origin",
 				})
 		}
 
@@ -250,8 +253,10 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 	if resp.StatusCode == http.StatusBadGateway {
 		logger.Error("received 502 from upstream",
 			logging.Pairs{
-				"url":        r.URL.String(),
-				"httpStatus": resp.StatusCode,
+				"url":             r.URL.String(),
+				"backendProvider": o.Provider,
+				"backendName":     o.Name,
+				"httpStatus":      resp.StatusCode,
 			})
 	}
 
