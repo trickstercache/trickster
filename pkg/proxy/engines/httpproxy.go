@@ -222,6 +222,15 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 				StatusCode: http.StatusBadGateway,
 				Request:    r, Header: make(http.Header),
 			}
+
+			logger.Error("error reaching upstream origin",
+				logging.Pairs{
+					"origin":          r.Host,
+					"url":             r.URL.String(),
+					"backendName":     o.Name,
+					"backendProvider": o.Provider,
+					"detail":          "nil response from upstream origin",
+				})
 		}
 
 		if pc != nil {
@@ -239,6 +248,16 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 			doSpan.SetStatus(tracing.HTTPToCode(resp.StatusCode), "")
 		}
 		return nil, resp, 0
+	}
+
+	if resp.StatusCode == http.StatusBadGateway {
+		logger.Error("received 502 from upstream",
+			logging.Pairs{
+				"url":             r.URL.String(),
+				"backendProvider": o.Provider,
+				"backendName":     o.Name,
+				"httpStatus":      resp.StatusCode,
+			})
 	}
 
 	if ce := resp.Header.Get(headers.NameContentEncoding); ep != nil && ce != "" {

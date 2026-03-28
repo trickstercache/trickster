@@ -217,10 +217,15 @@ func (t *target) probe(ctx context.Context) {
 		t.status.SetDetail(detail)
 		errCnt = int(t.failConsecutiveCnt.Add(1))
 		t.successConsecutiveCnt.Store(0)
+
+		LogHealthCheckError(t.Name(), err, 0)
+
 	case !t.isGoodCode(resp.StatusCode) || !t.isGoodHeader(resp.Header) || !t.isGoodBody(resp.Body):
 		errCnt = int(t.failConsecutiveCnt.Add(1))
 		t.successConsecutiveCnt.Store(0)
 		resp.Body.Close()
+
+		LogHealthCheckError(t.Name(), nil, resp.StatusCode)
 	default:
 		resp.Body.Close()
 		successCnt = int(t.successConsecutiveCnt.Add(1))
@@ -257,7 +262,7 @@ func (t *target) notifyStatus(st int32, detail string) {
 		t.status.SetDetail("")
 	}
 	t.status.Set(st)
-	logger.Info("hc status changed", pairs)
+	logger.Info("healthcheck status changed", pairs)
 }
 
 func (t *target) demandProbe(w http.ResponseWriter) {
@@ -273,6 +278,8 @@ func (t *target) demandProbe(w http.ResponseWriter) {
 		}
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte("error performing health check: " + err.Error()))
+
+		LogHealthCheckError(t.Name(), err, 0)
 		return
 	}
 	for k := range resp.Header {
@@ -288,6 +295,28 @@ func (t *target) demandProbe(w http.ResponseWriter) {
 	if resp.Body != nil {
 		io.Copy(w, resp.Body)
 	}
+}
+
+// LogHealthCheckError logs a failed health check by printing
+// the backend target name, error, and HTTP status. These parameters
+// are optional and can be omitted by passing their default values.
+func LogHealthCheckError(targetName string, err error, status int) {
+	const standardLogLine = "healthcheck failed"
+	pairs := logging.Pairs{}
+
+	if targetName != "" {
+		pairs["targetName"] = targetName
+	}
+
+	if err != nil {
+		pairs["error"] = err
+	}
+
+	if status > 0 {
+		pairs["httpStatus"] = status
+	}
+
+	logger.Error(standardLogLine, pairs)
 }
 
 func newHTTPClient(timeout time.Duration) *http.Client {
