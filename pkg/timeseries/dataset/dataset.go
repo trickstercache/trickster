@@ -314,7 +314,7 @@ func (ds *DataSet) DefaultSizeCropper(sz int, t time.Time, lur timeseries.Extent
 		}
 		ec := ((el[i].End.UnixNano() - el[i].Start.UnixNano()) / step.Nanoseconds()) + 1
 		tsc -= ec
-		remove = append(remove, timeseries.Extent(el[i]))
+		remove = append(remove, el[i])
 	}
 	if len(remove) == 0 {
 		return

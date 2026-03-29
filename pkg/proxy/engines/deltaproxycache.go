@@ -715,7 +715,12 @@ func fetchExtents(el timeseries.ExtentList, rsc *request.Resources, h http.Heade
 				var b []byte
 				var s string
 				if resp.Body != nil {
-					b, _ = io.ReadAll(resp.Body)
+					var readErr error
+					b, readErr = io.ReadAll(resp.Body)
+					if readErr != nil {
+						logger.Warn("failed to read upstream error response body",
+							logging.Pairs{"detail": readErr.Error()})
+					}
 					s = string(b)
 					respLock.Lock()
 					mresp.Body = io.NopCloser(bytes.NewReader(b))
