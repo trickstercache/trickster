@@ -19,10 +19,23 @@ package brotli
 import (
 	"bytes"
 	"io"
+	"sync"
 
 	"github.com/andybalholm/brotli"
 	"github.com/trickstercache/trickster/v2/pkg/encoding/reader"
 )
+
+var writerPool sync.Pool
+
+type pooledWriter struct {
+	*brotli.Writer
+}
+
+func (pw *pooledWriter) Close() error {
+	err := pw.Writer.Close()
+	writerPool.Put(pw.Writer)
+	return err
+}
 
 // Decode returns the decoded version of the encoded byte slice
 func Decode(in []byte) ([]byte, error) {
@@ -43,7 +56,12 @@ func NewEncoder(w io.Writer, level int) io.WriteCloser {
 	if level < 1 {
 		level = 4
 	}
-	return brotli.NewWriterLevel(w, level)
+	if v := writerPool.Get(); v != nil {
+		bw := v.(*brotli.Writer)
+		bw.Reset(w)
+		return &pooledWriter{bw}
+	}
+	return &pooledWriter{brotli.NewWriterLevel(w, level)}
 }
 
 func NewDecoder(r io.Reader) reader.ReadCloserResetter {

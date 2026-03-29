@@ -21,9 +21,23 @@ import (
 	"bytes"
 	"compress/gzip"
 	"io"
+	"sync"
 
 	"github.com/trickstercache/trickster/v2/pkg/encoding/reader"
 )
+
+var writerPool sync.Pool
+
+// pooledWriter wraps a gzip.Writer and returns it to the pool on Close.
+type pooledWriter struct {
+	*gzip.Writer
+}
+
+func (pw *pooledWriter) Close() error {
+	err := pw.Writer.Close()
+	writerPool.Put(pw.Writer)
+	return err
+}
 
 // Decode returns the decoded version of the encoded byte slice
 func Decode(in []byte) ([]byte, error) {
@@ -47,8 +61,13 @@ func NewEncoder(w io.Writer, level int) io.WriteCloser {
 	if level == -1 {
 		level = 6
 	}
-	wc, _ := gzip.NewWriterLevel(w, level)
-	return wc
+	if v := writerPool.Get(); v != nil {
+		gw := v.(*gzip.Writer)
+		gw.Reset(w)
+		return &pooledWriter{gw}
+	}
+	gw, _ := gzip.NewWriterLevel(w, level)
+	return &pooledWriter{gw}
 }
 
 func NewDecoder(r io.Reader) reader.ReadCloserResetter {

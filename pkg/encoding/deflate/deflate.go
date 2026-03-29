@@ -20,9 +20,22 @@ import (
 	"bytes"
 	"compress/flate"
 	"io"
+	"sync"
 
 	"github.com/trickstercache/trickster/v2/pkg/encoding/reader"
 )
+
+var writerPool sync.Pool
+
+type pooledWriter struct {
+	*flate.Writer
+}
+
+func (pw *pooledWriter) Close() error {
+	err := pw.Writer.Close()
+	writerPool.Put(pw.Writer)
+	return err
+}
 
 // Decode returns the decoded version of the encoded byte slice
 func Decode(in []byte) ([]byte, error) {
@@ -41,8 +54,13 @@ func Encode(in []byte) ([]byte, error) {
 }
 
 func NewEncoder(w io.Writer, level int) io.WriteCloser {
-	wc, _ := flate.NewWriter(w, level)
-	return wc
+	if v := writerPool.Get(); v != nil {
+		fw := v.(*flate.Writer)
+		fw.Reset(w)
+		return &pooledWriter{fw}
+	}
+	fw, _ := flate.NewWriter(w, level)
+	return &pooledWriter{fw}
 }
 
 func NewDecoder(r io.Reader) reader.ReadCloserResetter {
