@@ -325,7 +325,7 @@ func (el ExtentList) CloneRange(start, end int) ExtentList {
 }
 
 // Remove returns an Extentlist that is effectively the subject ExtentList minus
-// the provided ExtentList
+// the provided ExtentList. Both el and r are assumed to be sorted by Start time.
 func (el ExtentList) Remove(r ExtentList, step time.Duration) ExtentList {
 	if len(r) == 0 {
 		return el
@@ -333,15 +333,25 @@ func (el ExtentList) Remove(r ExtentList, step time.Duration) ExtentList {
 	if len(el) == 0 {
 		return ExtentList{}
 	}
-	out := make(ExtentList, len(el)*2)
-	var k int
+	out := make(ExtentList, 0, len(el))
+	j := 0 // pointer into r; advances as we move through el
 	for i := range el {
 		ex := el[i]
 		var split bool
-		for _, rem := range r {
-			switch {
-			case (rem.End.Before(ex.Start) || rem.Start.After(ex.End)):
+		// start from j, since r[0..j-1] have End < el[i-1].Start and thus < el[i].Start
+		for ri := j; ri < len(r); ri++ {
+			rem := r[ri]
+			if rem.End.Before(ex.Start) {
+				// this removal is entirely before the current extent;
+				// it won't overlap any future el[i] either, so advance j
+				j = ri + 1
 				continue
+			}
+			if rem.Start.After(ex.End) {
+				// this and all subsequent removals are past the current extent
+				break
+			}
+			switch {
 			case (rem.Start.Before(ex.Start) || rem.Start.Equal(ex.Start)):
 				if rem.End.After(ex.End) || rem.End.Equal(ex.End) {
 					ex = Extent{}
@@ -351,12 +361,11 @@ func (el ExtentList) Remove(r ExtentList, step time.Duration) ExtentList {
 			case (rem.End.After(ex.End) || rem.End.Equal(ex.End)):
 				ex.End = rem.Start.Add(-step)
 			default:
-				out[k] = Extent{
+				out = append(out, Extent{
 					Start:    ex.Start,
 					End:      rem.Start.Add(-step),
 					LastUsed: ex.LastUsed,
-				}
-				k++
+				})
 				ex.Start = rem.End.Add(step)
 				split = true
 			}
@@ -364,13 +373,12 @@ func (el ExtentList) Remove(r ExtentList, step time.Duration) ExtentList {
 		if ex.Start.IsZero() || ex.End.Before(ex.Start) {
 			continue
 		}
-		out[k] = ex
-		k++
+		out = append(out, ex)
 		if split {
 			continue
 		}
 	}
-	return out[:k]
+	return out
 }
 
 // TimestampCount returns the calculated number of timestamps based on the extents

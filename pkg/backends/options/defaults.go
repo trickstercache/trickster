@@ -71,6 +71,9 @@ const (
 	DefaultChunkReadConcurrencyLimit = 16
 	// DefaultChunkReadConcurrencyLimit defines the default chunk write concurrency limit
 	DefaultChunkWriteConcurrencyLimit = 16
+	// DefaultFetchConcurrencyLimit defines the default max concurrent upstream fetch requests
+	// when retrieving missing time-series extents
+	DefaultFetchConcurrencyLimit = 16
 )
 
 // DefaultCompressibleTypes returns a list of types that Trickster should compress before caching

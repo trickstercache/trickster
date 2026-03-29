@@ -142,6 +142,26 @@ func TestListMerge(t *testing.T) {
 		})
 	}
 
+	// verify Merge deduplicates correctly even when hashes haven't been pre-calculated
+	t.Run("uncached hashes", func(t *testing.T) {
+		// create series with fresh headers (hash field = 0)
+		s1 := &Series{
+			Header: SeriesHeader{Name: "metric", Tags: Tags{"env": "prod"}},
+			Points: testPoints(),
+		}
+		s2 := &Series{
+			Header: SeriesHeader{Name: "metric", Tags: Tags{"env": "prod"}},
+			Points: Points{{Epoch: epoch.Epoch(15 * timeseries.Second), Size: 16, Values: []any{1}}},
+		}
+		out := SeriesList{s1}.Merge(SeriesList{s2}, true)
+		if len(out) != 1 {
+			t.Fatalf("expected 1 series (deduped), got %d", len(out))
+		}
+		if len(out[0].Points) != 3 {
+			t.Errorf("expected 3 points after merge, got %d", len(out[0].Points))
+		}
+	})
+
 	// verify point merging when same series appears in both lists
 	t.Run("point merge on overlap", func(t *testing.T) {
 		s1 := testSeries()
@@ -213,6 +233,31 @@ func TestSortByTags(t *testing.T) {
 		if sl[0].Header.Name != "test" || sl[1].Header.Name != "test2" {
 			t.Errorf("unexpected order: %s, %s", sl[0].Header.Name, sl[1].Header.Name)
 		}
+	})
+
+	t.Run("empty tags sorts before non-empty", func(t *testing.T) {
+		sEmpty := &Series{Header: SeriesHeader{Name: "aaa", Tags: Tags{}}, Points: testPoints()}
+		sTagged := &Series{Header: SeriesHeader{Name: "bbb", Tags: Tags{"z": "1"}}, Points: testPoints()}
+		sl := SeriesList{sTagged, sEmpty}
+		sl.SortByTags()
+		if sl[0].Header.Name != "aaa" {
+			t.Errorf("expected empty-tags series first, got %s", sl[0].Header.Name)
+		}
+	})
+
+	t.Run("same tags different names", func(t *testing.T) {
+		s1 := &Series{Header: SeriesHeader{Name: "beta", Tags: Tags{"env": "prod"}}, Points: testPoints()}
+		s2 := &Series{Header: SeriesHeader{Name: "alpha", Tags: Tags{"env": "prod"}}, Points: testPoints()}
+		sl := SeriesList{s1, s2}
+		sl.SortByTags()
+		if sl[0].Header.Name != "alpha" || sl[1].Header.Name != "beta" {
+			t.Errorf("expected alpha,beta got %s,%s", sl[0].Header.Name, sl[1].Header.Name)
+		}
+	})
+
+	t.Run("all nil no panic", func(t *testing.T) {
+		sl := SeriesList{nil, nil, nil}
+		sl.SortByTags() // should not panic
 	})
 }
 

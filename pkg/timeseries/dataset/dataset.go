@@ -23,6 +23,7 @@ package dataset
 import (
 	"io"
 	"slices"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -285,7 +286,56 @@ func (ds *DataSet) CropToSize(sz int, t time.Time, lur timeseries.Extent) {
 
 // DefaultSizeCropper is the default SizeCropper Function
 func (ds *DataSet) DefaultSizeCropper(sz int, t time.Time, lur timeseries.Extent) {
-	// TODO: Complete this method
+	step := ds.Step()
+	if step == 0 || sz <= 0 {
+		return
+	}
+	tsc := ds.ExtentList.TimestampCount(step)
+	if tsc <= int64(sz) {
+		return
+	}
+	// Sort extents by LastUsed (ascending = least-recently-used first)
+	el := timeseries.ExtentListLRU(ds.ExtentList.Clone())
+	sort.Sort(el)
+	// Remove the least-recently-used extents until we're within budget,
+	// but never remove extents that overlap the current request (lur)
+	var remove timeseries.ExtentList
+	for i := range el {
+		if tsc <= int64(sz) {
+			break
+		}
+		// don't evict extents that overlap the last-used range
+		if !el[i].End.Before(lur.Start) && !el[i].Start.After(lur.End) {
+			continue
+		}
+		// don't evict extents beyond the provided time boundary
+		if el[i].Start.After(t) {
+			continue
+		}
+		ec := ((el[i].End.UnixNano() - el[i].Start.UnixNano()) / step.Nanoseconds()) + 1
+		tsc -= ec
+		remove = append(remove, el[i])
+	}
+	if len(remove) == 0 {
+		return
+	}
+	ds.ExtentList = ds.ExtentList.Remove(remove, step)
+	// Crop the actual data points to match the remaining extents.
+	// We call DefaultRangeCropper directly after temporarily widening the ExtentList,
+	// because CropToRange short-circuits when ExtentList is already encompassed by
+	// the crop range (which it always is here since we just set it via Remove).
+	if len(ds.ExtentList) > 0 {
+		cropExtent := timeseries.Extent{
+			Start: ds.ExtentList[0].Start,
+			End:   ds.ExtentList[len(ds.ExtentList)-1].End,
+		}
+		saved := ds.ExtentList
+		ds.ExtentList = timeseries.ExtentList{
+			{Start: time.Unix(0, 0), End: cropExtent.End.Add(step)},
+		}
+		ds.CropToRange(cropExtent)
+		ds.ExtentList = saved
+	}
 }
 
 // CropToRange reduces the DataSet down to timestamps contained within the provided Extents (inclusive).

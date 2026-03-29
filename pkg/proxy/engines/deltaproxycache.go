@@ -46,6 +46,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -648,7 +649,6 @@ func fetchExtents(el timeseries.ExtentList, rsc *request.Resources, h http.Heade
 	span trace.Span,
 ) (timeseries.List, int64, *http.Response, error) {
 	var uncachedValueCount atomic.Int64
-	var wg sync.WaitGroup
 	var appendLock, respLock sync.Mutex
 	errs := make([]error, len(el))
 
@@ -657,10 +657,18 @@ func fetchExtents(el timeseries.ExtentList, rsc *request.Resources, h http.Heade
 	// the meta-response aggregating all upstream responses
 	mresp := &http.Response{Header: h}
 
+	// limit concurrent upstream requests to avoid overwhelming the origin
+	eg := errgroup.Group{}
+	limit := bo.DefaultFetchConcurrencyLimit
+	if rsc.BackendOptions != nil && rsc.BackendOptions.FetchConcurrencyLimit > 0 {
+		limit = rsc.BackendOptions.FetchConcurrencyLimit
+	}
+	eg.SetLimit(limit)
+
 	// iterate each time range that the client needs and fetch from the upstream origin
 	for i := range el {
 		// This concurrently fetches gaps from the origin and adds their datasets to the merge list
-		wg.Go(func() {
+		eg.Go(func() error {
 			e := &el[i]
 			rq := pr.Clone()
 			mrsc := rsc.Clone()
@@ -692,7 +700,7 @@ func fetchExtents(el timeseries.ExtentList, rsc *request.Resources, h http.Heade
 					logger.Error("proxy object unmarshaling failed",
 						logging.Pairs{"detail": ferr.Error()})
 					errs[i] = ferr
-					return
+					return nil
 				}
 				uncachedValueCount.Add(nts.ValueCount())
 				nts.SetTimeRangeQuery(rsc.TimeRangeQuery)
@@ -706,7 +714,12 @@ func fetchExtents(el timeseries.ExtentList, rsc *request.Resources, h http.Heade
 				var b []byte
 				var s string
 				if resp.Body != nil {
-					b, _ = io.ReadAll(resp.Body)
+					var readErr error
+					b, readErr = io.ReadAll(resp.Body)
+					if readErr != nil {
+						logger.Warn("failed to read upstream error response body",
+							logging.Pairs{"detail": readErr.Error()})
+					}
 					s = string(b)
 					respLock.Lock()
 					mresp.Body = io.NopCloser(bytes.NewReader(b))
@@ -729,8 +742,9 @@ func fetchExtents(el timeseries.ExtentList, rsc *request.Resources, h http.Heade
 					},
 				)
 			}
+			return nil
 		})
 	}
-	wg.Wait()
+	eg.Wait()
 	return mts, uncachedValueCount.Load(), mresp, errors.Join(errs...)
 }

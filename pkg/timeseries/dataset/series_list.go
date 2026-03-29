@@ -50,7 +50,7 @@ func (sl SeriesList) Merge(sl2 SeriesList, sortPoints bool) SeriesList {
 		if s == nil {
 			continue
 		}
-		h := s.Header.CalculateHash(true)
+		h := s.Header.CalculateHash()
 		if _, ok := m[h]; ok {
 			continue
 		}
@@ -64,7 +64,7 @@ func (sl SeriesList) Merge(sl2 SeriesList, sortPoints bool) SeriesList {
 		if s == nil {
 			continue
 		}
-		h := s.Header.CalculateHash(true)
+		h := s.Header.CalculateHash()
 		if seen.Contains(h) {
 			continue
 		}
@@ -130,23 +130,21 @@ func (sl SeriesList) Clone() SeriesList {
 }
 
 func (sl SeriesList) SortByTags() {
-	lkp := make(map[string]*Series, len(sl))
-	keys := make([]string, len(sl))
-	var i int
-	for _, s := range sl {
-		if s == nil {
-			continue
+	slices.SortFunc(sl, func(a, b *Series) int {
+		if a == nil && b == nil {
+			return 0
 		}
-		key := fmt.Sprintf("%s.%s", s.Header.Tags, s.Header.Name)
-		lkp[key] = s
-		keys[i] = key
-		i++
-	}
-	keys = keys[:i]
-	slices.Sort(keys)
-	for i, key := range keys {
-		sl[i] = lkp[key]
-	}
+		if a == nil {
+			return 1
+		}
+		if b == nil {
+			return -1
+		}
+		if c := strings.Compare(a.Header.Tags.String(), b.Header.Tags.String()); c != 0 {
+			return c
+		}
+		return strings.Compare(a.Header.Name, b.Header.Name)
+	})
 }
 
 func (sl SeriesList) SortPoints() {
