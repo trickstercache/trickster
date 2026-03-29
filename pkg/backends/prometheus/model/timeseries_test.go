@@ -191,6 +191,32 @@ func TestMarshalTSOrVectorWriter(t *testing.T) {
 		}
 	})
 
+	t.Run("exact JSON output", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		s := &dataset.Series{
+			Header: dataset.SeriesHeader{
+				Tags: dataset.Tags{"__name__": "up"},
+			},
+			Points: dataset.Points{
+				{Epoch: 1000000000000000000, Values: []any{"1"}},
+				{Epoch: 2000000000000000000, Values: []any{"2"}},
+			},
+		}
+		err := MarshalTSOrVectorWriter(&dataset.DataSet{
+			Status: "success",
+			Results: []*dataset.Result{
+				{SeriesList: []*dataset.Series{s}},
+			},
+		}, nil, 200, w, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		expected := `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"__name__":"up"},"values":[[1000000000,"1"],[2000000000,"2"]]}]}}`
+		if body := w.Body.String(); body != expected {
+			t.Errorf("exact JSON mismatch\nexpected: %s\n     got: %s", expected, body)
+		}
+	})
+
 	t.Run("matrix multi-series", func(t *testing.T) {
 		w := httptest.NewRecorder()
 		s1 := &dataset.Series{

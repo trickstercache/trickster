@@ -19,7 +19,6 @@ package model
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"io"
 	"runtime"
 	"sort"
@@ -175,43 +174,61 @@ func MarshalTSOrVectorWriter(ts timeseries.Timeseries, _ *timeseries.RequestOpti
 		resultType = Vector
 	}
 
-	fmt.Fprintf(w, `,"data":{"resultType":"%s","result":[`, resultType)
+	w.Write([]byte(`,"data":{"resultType":"`))
+	w.Write([]byte(resultType))
+	w.Write([]byte(`","result":[`))
 
-	var seriesSep string
+	var buf [64]byte
+	var seriesSep bool
 	for _, s := range ds.Results[0].SeriesList {
 		if s == nil || len(s.Points) == 0 {
 			continue
 		}
-		w.Write([]byte(seriesSep + `{"metric":{`))
-		var sep string
-		for _, k := range s.Header.Tags.Keys() {
-			fmt.Fprintf(w, `%s"%s":"%s"`, sep, k, s.Header.Tags[k])
-			sep = ","
+		if seriesSep {
+			w.Write([]byte(`,{"metric":{`))
+		} else {
+			w.Write([]byte(`{"metric":{`))
+			seriesSep = true
+		}
+		for i, k := range s.Header.Tags.Keys() {
+			if i > 0 {
+				w.Write([]byte{','})
+			}
+			w.Write([]byte{'"'})
+			w.Write([]byte(k))
+			w.Write([]byte(`":"`))
+			w.Write([]byte(s.Header.Tags[k]))
+			w.Write([]byte{'"'})
 		}
 		if isVector {
 			w.Write([]byte(`},"value":[`))
 			if len(s.Points) > 0 {
-				fmt.Fprintf(w, `%s,"%s"`,
-					strconv.FormatFloat(float64(s.Points[0].Epoch)/1000000000, 'f', -1, 64),
-					s.Points[0].Values[0],
-				)
+				b := strconv.AppendFloat(buf[:0], float64(s.Points[0].Epoch)/1000000000, 'f', -1, 64)
+				w.Write(b)
+				w.Write([]byte(`,"`))
+				w.Write([]byte(s.Points[0].Values[0].(string)))
+				w.Write([]byte(`"]}`))
+			} else {
+				w.Write([]byte("]}"))
 			}
-			w.Write([]byte("]}"))
 		} else {
 			w.Write([]byte(`},"values":[`))
-			sep = ""
-			sort.Sort(s.Points)
-			for _, p := range s.Points {
-				fmt.Fprintf(w, `%s[%s,"%s"]`,
-					sep,
-					strconv.FormatFloat(float64(p.Epoch)/1000000000, 'f', -1, 64),
-					p.Values[0],
-				)
-				sep = ","
+			if !sort.IsSorted(s.Points) {
+				sort.Sort(s.Points)
+			}
+			for i, p := range s.Points {
+				if i > 0 {
+					w.Write([]byte{','})
+				}
+				w.Write([]byte{'['})
+				b := strconv.AppendFloat(buf[:0], float64(p.Epoch)/1000000000, 'f', -1, 64)
+				w.Write(b)
+				w.Write([]byte(`,"`))
+				w.Write([]byte(p.Values[0].(string)))
+				w.Write([]byte(`"]`))
 			}
 			w.Write([]byte("]}"))
 		}
-		seriesSep = ","
 	}
 	w.Write([]byte("]}}"))
 	return nil

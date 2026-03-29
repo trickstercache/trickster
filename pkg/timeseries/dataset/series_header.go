@@ -91,6 +91,7 @@ func (sh *SeriesHeader) Clone() SeriesHeader {
 		TimestampField:      sh.TimestampField,
 		QueryStatement:      sh.QueryStatement,
 		Size:                sh.Size,
+		hash:                sh.hash,
 	}
 	copy(clone.ValueFieldsList, sh.ValueFieldsList)
 	copy(clone.TagFieldsList, sh.TagFieldsList)
