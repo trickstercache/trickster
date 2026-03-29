@@ -55,3 +55,25 @@ backends:
       fgr:
         status_codes: [200, 201]
 `
+
+const testTSMWithMergeStrategy = `
+backends:
+  test:
+    alb:
+      mechanism: tsm
+      output_format: prometheus
+      pool: [ 'test' ]
+      tsm:
+        merge_strategy: sum
+`
+
+const testTSMWithInvalidMergeStrategy = `
+backends:
+  test:
+    alb:
+      mechanism: tsm
+      output_format: prometheus
+      pool: [ 'test' ]
+      tsm:
+        merge_strategy: invalid_strategy
+`

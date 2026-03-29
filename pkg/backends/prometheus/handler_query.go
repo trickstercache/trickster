@@ -53,10 +53,11 @@ func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 				if m != nil {
 					if rsc.TSMergeStrategy != 0 {
 						rsc.MergeFunc = merge.TimeseriesMergeFuncWithStrategy(m.WireUnmarshaler, rsc.TSMergeStrategy)
+						rsc.MergeRespondFunc = merge.TimeseriesRespondFuncWithStrategy(m.WireMarshalWriter, nil, rsc.TSMergeStrategy)
 					} else {
 						rsc.MergeFunc = model.MergeAndWriteVectorMergeFunc(m.WireUnmarshaler)
+						rsc.MergeRespondFunc = model.MergeAndWriteVectorRespondFunc(m.WireMarshalWriter)
 					}
-					rsc.MergeRespondFunc = model.MergeAndWriteVectorRespondFunc(m.WireMarshalWriter)
 				}
 			}
 		}

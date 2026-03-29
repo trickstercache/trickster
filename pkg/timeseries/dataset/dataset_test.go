@@ -274,6 +274,97 @@ func TestMerge(t *testing.T) {
 	})
 }
 
+func TestMergeWithStrategy(t *testing.T) {
+	// Build a DataSet with one Result containing one series with string-encoded float values
+	makeDS := func(stmtID int, name string, tags Tags, points ...struct {
+		epoch int64
+		value string
+	}) *DataSet {
+		p := make(Points, len(points))
+		for i, pt := range points {
+			p[i] = Point{Epoch: epoch.Epoch(pt.epoch), Size: 32, Values: []any{pt.value}}
+		}
+		return &DataSet{
+			Results: Results{
+				{StatementID: stmtID, SeriesList: SeriesList{
+					{Header: SeriesHeader{Name: name, Tags: tags}, Points: p},
+				}},
+			},
+		}
+	}
+
+	type ep struct {
+		epoch int64
+		value string
+	}
+
+	t.Run("sum across two datasets", func(t *testing.T) {
+		ds1 := makeDS(0, "up", Tags{}, ep{100, "1"}, ep{200, "2"})
+		ds2 := makeDS(0, "up", Tags{}, ep{100, "3"}, ep{200, "4"})
+		ds1.MergeWithStrategy(true, int(MergeStrategySum), ds2)
+		if ds1.SeriesCount() != 1 {
+			t.Fatalf("expected 1 series, got %d", ds1.SeriesCount())
+		}
+		pts := ds1.Results[0].SeriesList[0].Points
+		if len(pts) != 2 {
+			t.Fatalf("expected 2 points, got %d", len(pts))
+		}
+		if pts[0].Values[0] != "4" {
+			t.Errorf("expected sum 4 at epoch 100, got %v", pts[0].Values[0])
+		}
+		if pts[1].Values[0] != "6" {
+			t.Errorf("expected sum 6 at epoch 200, got %v", pts[1].Values[0])
+		}
+	})
+
+	t.Run("dedup delegates to Merge", func(t *testing.T) {
+		ds1 := makeDS(0, "up", Tags{}, ep{100, "1"})
+		ds2 := makeDS(0, "up", Tags{}, ep{100, "9"})
+		ds1.MergeWithStrategy(true, int(MergeStrategyDedup), ds2)
+		if ds1.SeriesCount() != 1 {
+			t.Fatalf("expected 1 series, got %d", ds1.SeriesCount())
+		}
+		// dedup: last value wins
+		if ds1.Results[0].SeriesList[0].Points[0].Values[0] != "9" {
+			t.Errorf("expected dedup value 9, got %v", ds1.Results[0].SeriesList[0].Points[0].Values[0])
+		}
+	})
+
+	t.Run("disjoint statement IDs append", func(t *testing.T) {
+		ds1 := makeDS(0, "up", Tags{}, ep{100, "1"})
+		ds2 := makeDS(1, "down", Tags{}, ep{100, "2"})
+		ds1.MergeWithStrategy(true, int(MergeStrategySum), ds2)
+		if len(ds1.Results) != 2 {
+			t.Errorf("expected 2 results, got %d", len(ds1.Results))
+		}
+	})
+
+	t.Run("nil collection skipped", func(t *testing.T) {
+		ds1 := makeDS(0, "up", Tags{}, ep{100, "1"})
+		ds1.MergeWithStrategy(true, int(MergeStrategySum), nil)
+		if ds1.SeriesCount() != 1 {
+			t.Errorf("expected 1 series, got %d", ds1.SeriesCount())
+		}
+	})
+
+	t.Run("avg across three datasets", func(t *testing.T) {
+		// For avg, MergeWithStrategy accumulates sums pairwise;
+		// the caller must call FinalizeAvg with the total merge count.
+		// This mirrors the real flow where TimeseriesRespondFuncWithStrategy
+		// calls FinalizeAvg before writing the response.
+		ds1 := makeDS(0, "latency", Tags{}, ep{100, "10"})
+		ds2 := makeDS(0, "latency", Tags{}, ep{100, "20"})
+		ds3 := makeDS(0, "latency", Tags{}, ep{100, "30"})
+		// Use sum for pairwise accumulation (as the merge func does for avg)
+		ds1.MergeWithStrategy(true, int(MergeStrategySum), ds2, ds3)
+		ds1.FinalizeAvg(3) // 3 datasets total
+		pts := ds1.Results[0].SeriesList[0].Points
+		if pts[0].Values[0] != "20" {
+			t.Errorf("expected avg 20, got %v", pts[0].Values[0])
+		}
+	})
+}
+
 func TestSize(t *testing.T) {
 	ds := testDataSet()
 	s := ds.Size()

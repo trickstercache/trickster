@@ -329,6 +329,28 @@ func (ds *DataSet) MergeWithStrategy(sortPoints bool, strategy int, collection .
 	ds.Results = rs[:k]
 }
 
+// FinalizeAvg divides all point values by count, converting accumulated sums into averages.
+func (ds *DataSet) FinalizeAvg(count int) {
+	if count <= 1 {
+		return
+	}
+	ds.UpdateLock.Lock()
+	defer ds.UpdateLock.Unlock()
+	for _, r := range ds.Results {
+		if r == nil {
+			continue
+		}
+		for _, s := range r.SeriesList {
+			if s == nil {
+				continue
+			}
+			for i := range s.Points {
+				finalizeAvg(&s.Points[i], count)
+			}
+		}
+	}
+}
+
 // CropToSize reduces the number of elements in the Timeseries to the provided count, by evicting elements
 // using a least-recently-used methodology. The time parameter limits the upper extent to the provided time,
 // in order to support backfill tolerance
