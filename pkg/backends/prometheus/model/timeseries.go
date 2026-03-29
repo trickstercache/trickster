@@ -42,8 +42,31 @@ type WFMatrixDocument struct {
 
 // WFMatrixData is the data section of the WFD for timeseries responses
 type WFMatrixData struct {
-	ResultType ResultType      `json:"resultType"`
-	Results    json.RawMessage `json:"result"`
+	ResultType    ResultType `json:"resultType"`
+	MatrixResults []*WFResult      `json:"-"`
+	ScalarResult  WFResultScalar   `json:"-"`
+}
+
+func (d *WFMatrixData) UnmarshalJSON(data []byte) error {
+	// First pass: decode just the resultType using a lightweight struct
+	var envelope struct {
+		ResultType ResultType      `json:"resultType"`
+		Result     json.RawMessage `json:"result"`
+	}
+	if err := json.Unmarshal(data, &envelope); err != nil {
+		return err
+	}
+	d.ResultType = envelope.ResultType
+	if len(envelope.Result) == 0 {
+		return nil
+	}
+	switch d.ResultType {
+	case Matrix, Vector:
+		return json.Unmarshal(envelope.Result, &d.MatrixResults)
+	case Scalar:
+		return json.Unmarshal(envelope.Result, &d.ScalarResult)
+	}
+	return nil
 }
 
 // WFResult is the Result section of the WFD (matrix and vector only)
@@ -94,23 +117,14 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 		ExtentList:     timeseries.ExtentList{trq.Extent},
 	}
 
-	if len(wfd.Data.Results) == 0 {
-		return ds, nil
-	}
 	switch wfd.Data.ResultType {
 	case Matrix, Vector:
-		var wfr []*WFResult
-		if err := json.Unmarshal(wfd.Data.Results, &wfr); err != nil {
-			return nil, err
-		}
-		populateSeries(ds, wfr, trq, wfd.Data.ResultType == Vector)
+		populateSeries(ds, wfd.Data.MatrixResults, trq, wfd.Data.ResultType == Vector)
 	case Scalar:
-		var wfrs WFResultScalar
-		if err := json.Unmarshal(wfd.Data.Results, &wfrs); err != nil {
-			return nil, err
-		}
-		wfr := &WFResult{Value: wfrs}
+		wfr := &WFResult{Value: wfd.Data.ScalarResult}
 		populateSeries(ds, []*WFResult{wfr}, trq, true)
+	default:
+		return ds, nil
 	}
 	return ds, nil
 }
