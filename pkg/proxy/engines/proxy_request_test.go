@@ -451,8 +451,8 @@ func TestReconstituteResponsesReadError(t *testing.T) {
 	readErr := errors.New("simulated read error")
 
 	pr := &proxyRequest{
-		mapLock:       &sync.Mutex{},
-		cachingPolicy: &CachingPolicy{},
+		mapLock:        &sync.Mutex{},
+		cachingPolicy:  &CachingPolicy{},
 		originRequests: []*http.Request{r1, r2},
 		originResponses: []*http.Response{
 			{
@@ -490,8 +490,8 @@ func TestReconstituteResponsesRevalidationReadError(t *testing.T) {
 	readErr := errors.New("simulated revalidation read error")
 
 	pr := &proxyRequest{
-		mapLock:       &sync.Mutex{},
-		cachingPolicy: &CachingPolicy{},
+		mapLock:             &sync.Mutex{},
+		cachingPolicy:       &CachingPolicy{},
 		revalidationRequest: reval,
 		revalidationResponse: &http.Response{
 			StatusCode: http.StatusPartialContent,
