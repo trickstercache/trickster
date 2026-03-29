@@ -200,7 +200,9 @@ func MarshalTSOrVectorWriter(ts timeseries.Timeseries, _ *timeseries.RequestOpti
 		} else {
 			w.Write([]byte(`},"values":[`))
 			sep = ""
-			sort.Sort(s.Points)
+			if !sort.IsSorted(s.Points) {
+				sort.Sort(s.Points)
+			}
 			for _, p := range s.Points {
 				fmt.Fprintf(w, `%s[%s,"%s"]`,
 					sep,
