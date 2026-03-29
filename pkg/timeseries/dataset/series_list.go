@@ -18,12 +18,14 @@ package dataset
 
 import (
 	"fmt"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
 	"sync"
 
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
+	"golang.org/x/sync/errgroup"
 )
 
 //go:generate go tool msgp
@@ -148,11 +150,13 @@ func (sl SeriesList) SortByTags() {
 }
 
 func (sl SeriesList) SortPoints() {
-	var wg sync.WaitGroup
+	eg := errgroup.Group{}
+	eg.SetLimit(runtime.GOMAXPROCS(0))
 	for _, s := range sl {
-		wg.Go(func() {
+		eg.Go(func() error {
 			sort.Sort(s.Points)
+			return nil
 		})
 	}
-	wg.Wait()
+	eg.Wait()
 }

@@ -22,6 +22,7 @@ package dataset
 
 import (
 	"io"
+	"runtime"
 	"slices"
 	"sort"
 	"sync"
@@ -32,6 +33,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 	"github.com/trickstercache/trickster/v2/pkg/util/numbers"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
+	"golang.org/x/sync/errgroup"
 )
 
 // DataSet is the Common Time Series Format that Trickster uses to
@@ -135,7 +137,8 @@ func (ds *DataSet) CroppedClone(e timeseries.Extent) timeseries.Timeseries {
 			Error:       ds.Results[i].Error,
 		}
 		clone.Results[i].SeriesList = make([]*Series, len(ds.Results[i].SeriesList))
-		var wg sync.WaitGroup
+		eg := errgroup.Group{}
+		eg.SetLimit(runtime.GOMAXPROCS(0))
 		var skips int32
 		for j, s := range ds.Results[i].SeriesList {
 			if s == nil || len(s.Points) == 0 {
@@ -143,7 +146,7 @@ func (ds *DataSet) CroppedClone(e timeseries.Extent) timeseries.Timeseries {
 				continue
 			}
 			n := i
-			wg.Go(func() {
+			eg.Go(func() error {
 				sc := &Series{
 					Header: s.Header.Clone(),
 				}
@@ -156,9 +159,10 @@ func (ds *DataSet) CroppedClone(e timeseries.Extent) timeseries.Timeseries {
 				} else {
 					atomic.StoreInt32(&skips, 1)
 				}
+				return nil
 			})
 		}
-		wg.Wait()
+		eg.Wait()
 		if skips == 1 {
 			sl := make([]*Series, len(ds.Results[i].SeriesList))
 			var k int
@@ -396,10 +400,11 @@ func (ds *DataSet) DefaultRangeCropper(e timeseries.Extent) {
 		if ds.Results[i] == nil {
 			continue
 		}
-		var wg sync.WaitGroup
 		if len(ds.Results[i].SeriesList) == 0 {
 			continue
 		}
+		eg := errgroup.Group{}
+		eg.SetLimit(runtime.GOMAXPROCS(0))
 		sl := make([]*Series, len(ds.Results[i].SeriesList))
 		var j int
 		for _, s := range ds.Results[i].SeriesList {
@@ -408,7 +413,7 @@ func (ds *DataSet) DefaultRangeCropper(e timeseries.Extent) {
 			}
 
 			index := j
-			wg.Go(func() {
+			eg.Go(func() error {
 				l := len(s.Points)
 				start, end := s.Points.findRange(startNS, endNS, 0, l-1)
 				if start < l && end <= l && end > start {
@@ -416,10 +421,11 @@ func (ds *DataSet) DefaultRangeCropper(e timeseries.Extent) {
 					s.PointSize = s.Points.Size()
 				}
 				sl[index] = s
+				return nil
 			})
 			j++
 		}
-		wg.Wait()
+		eg.Wait()
 		ds.Results[i].SeriesList = sl[:j]
 	}
 }
