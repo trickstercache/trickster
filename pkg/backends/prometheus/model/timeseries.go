@@ -42,9 +42,9 @@ type WFMatrixDocument struct {
 
 // WFMatrixData is the data section of the WFD for timeseries responses
 type WFMatrixData struct {
-	ResultType    ResultType `json:"resultType"`
-	MatrixResults []*WFResult      `json:"-"`
-	ScalarResult  WFResultScalar   `json:"-"`
+	ResultType    ResultType     `json:"resultType"`
+	MatrixResults []*WFResult    `json:"-"`
+	ScalarResult  WFResultScalar `json:"-"`
 }
 
 func (d *WFMatrixData) UnmarshalJSON(data []byte) error {
