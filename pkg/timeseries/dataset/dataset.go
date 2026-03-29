@@ -273,6 +273,62 @@ func (ds *DataSet) DefaultMerger(sortPoints bool, collection ...timeseries.Times
 	ds.Results = rs[:k]
 }
 
+// MergeWithStrategy merges the provided Timeseries list into the base DataSet
+// using the specified MergeStrategy for combining values from matching series.
+func (ds *DataSet) MergeWithStrategy(sortPoints bool, strategy int, collection ...timeseries.Timeseries) {
+	if MergeStrategy(strategy) == MergeStrategyDedup {
+		ds.Merge(sortPoints, collection...)
+		return
+	}
+	ds.UpdateLock.Lock()
+	defer ds.UpdateLock.Unlock()
+
+	rl := make(ResultsLookup)
+	for _, r := range ds.Results {
+		if r == nil {
+			continue
+		}
+		rl[r.StatementID] = r
+	}
+	dl := make(DataSets, 0, 32)
+	k := len(ds.Results)
+	rlen := k
+	for _, ts := range collection {
+		if ts == nil {
+			continue
+		}
+		ds2, ok := ts.(*DataSet)
+		if !ok || ds2 == nil {
+			continue
+		}
+		dl = append(dl, ds2)
+		rlen += len(ds2.Results)
+	}
+	rs := make(Results, rlen)
+	copy(rs, ds.Results)
+	for _, ds2 := range dl {
+		ds.ExtentList = ds.ExtentList.Merge(ds2.ExtentList, ds.Step())
+		for _, r2 := range ds2.Results {
+			if r2 == nil || len(r2.SeriesList) == 0 {
+				continue
+			}
+			r1, ok := rl[r2.StatementID]
+			if !ok {
+				rl[r2.StatementID] = r2
+				rs[k] = r2
+				k++
+				continue
+			}
+			if len(r1.SeriesList) == 0 {
+				r1.SeriesList = r2.SeriesList.Clone()
+				continue
+			}
+			r1.SeriesList = r1.SeriesList.MergeWithStrategy(r2.SeriesList, sortPoints, MergeStrategy(strategy))
+		}
+	}
+	ds.Results = rs[:k]
+}
+
 // CropToSize reduces the number of elements in the Timeseries to the provided count, by evicting elements
 // using a least-recently-used methodology. The time parameter limits the upper extent to the provided time,
 // in order to support backfill tolerance

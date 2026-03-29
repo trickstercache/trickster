@@ -37,7 +37,11 @@ func (c *Client) QueryRangeHandler(w http.ResponseWriter, r *http.Request) {
 		if rsc.IsMergeMember {
 			m := c.Modeler()
 			if m != nil {
-				rsc.MergeFunc = merge.TimeseriesMergeFunc(m.WireUnmarshaler)
+				if rsc.TSMergeStrategy != 0 {
+					rsc.MergeFunc = merge.TimeseriesMergeFuncWithStrategy(m.WireUnmarshaler, rsc.TSMergeStrategy)
+				} else {
+					rsc.MergeFunc = merge.TimeseriesMergeFunc(m.WireUnmarshaler)
+				}
 				rsc.MergeRespondFunc = merge.TimeseriesRespondFunc(m.WireMarshalWriter, rsc.TSReqestOptions)
 			}
 		}

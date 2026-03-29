@@ -37,6 +37,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/capture"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -52,6 +53,7 @@ type handler struct {
 	nonmergeHandler types.Mechanism // when methodology is tsmerge, this handler is for non-mergeable paths
 	outputFormat    string          // the provider output format (e.g., "prometheus")
 	tsmOptions      options.TimeSeriesMergeOptions
+	mergeStrategy   dataset.MergeStrategy
 }
 
 func RegistryEntry() types.RegistryEntry {
@@ -60,9 +62,11 @@ func RegistryEntry() types.RegistryEntry {
 
 func New(o *options.Options, factories rt.Lookup) (types.Mechanism, error) {
 	nmh, _ := rr.New(nil, nil)
+	ms, _ := dataset.ParseMergeStrategy(o.TSMOptions.MergeStrategy)
 	out := &handler{
 		nonmergeHandler: nmh,
 		tsmOptions:      o.TSMOptions,
+		mergeStrategy:   ms,
 	}
 	// this validates the merge configuration for the ALB client as it sets it up
 	// First, verify the output format is a support merge provider
@@ -168,7 +172,11 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		eg.Go(func() error {
 			r2, _ := request.CloneWithoutResources(r)
-			rsc2 := &request.Resources{IsMergeMember: true, TSReqestOptions: rsc.TSReqestOptions}
+			rsc2 := &request.Resources{
+				IsMergeMember:   true,
+				TSReqestOptions: rsc.TSReqestOptions,
+				TSMergeStrategy: int(h.mergeStrategy),
+			}
 			r2 = request.SetResources(r2, rsc2)
 			crw := capture.NewCaptureResponseWriter()
 			hl[i].Handler().ServeHTTP(crw, r2)

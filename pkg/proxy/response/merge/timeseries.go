@@ -53,6 +53,45 @@ func TimeseriesMergeFunc(unmarshaler timeseries.UnmarshalerFunc) MergeFunc {
 	}
 }
 
+// strategyMerger is implemented by types that support strategy-aware merging
+// (e.g., *dataset.DataSet). Using an interface avoids importing the dataset
+// package, which would create an import cycle.
+type strategyMerger interface {
+	MergeWithStrategy(sortPoints bool, strategy int, collection ...timeseries.Timeseries)
+}
+
+// TimeseriesMergeFuncWithStrategy creates a MergeFunc that uses a merge strategy
+// (as an int matching dataset.MergeStrategy) to aggregate values from matching
+// series across backends, rather than deduplicating.
+func TimeseriesMergeFuncWithStrategy(unmarshaler timeseries.UnmarshalerFunc, strategy int) MergeFunc {
+	return func(accum *Accumulator, data any, idx int) error {
+		ts, ok := data.(timeseries.Timeseries)
+		if !ok {
+			body, ok := data.([]byte)
+			if !ok {
+				return nil
+			}
+			var err error
+			ts, err = unmarshaler(body, nil)
+			if err != nil {
+				return err
+			}
+		}
+		accum.mu.Lock()
+		defer accum.mu.Unlock()
+		if accum.tsdata == nil {
+			accum.tsdata = ts
+		} else {
+			if sm, ok := accum.tsdata.(strategyMerger); ok {
+				sm.MergeWithStrategy(false, strategy, ts)
+			} else {
+				accum.tsdata.Merge(false, ts)
+			}
+		}
+		return nil
+	}
+}
+
 // TimeseriesMergeFuncFromBytes creates a MergeFunc that accepts []byte and unmarshals it
 // This is a convenience function for call sites that still have []byte
 func TimeseriesMergeFuncFromBytes(unmarshaler timeseries.UnmarshalerFunc) func(*Accumulator, []byte, int) error {
