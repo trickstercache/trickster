@@ -390,7 +390,7 @@ func (idx *IndexedClient) reap() {
 
 	idx.Objects.Range(func(_, value any) bool {
 		o := value.(*Object)
-		if o.Expiration.Load().Before(now) && !o.Expiration.Load().IsZero() {
+		if exp := o.Expiration.Load(); exp.Before(now) && !exp.IsZero() {
 			removals = append(removals, o.Key)
 		} else {
 			remainders = append(remainders, o)
