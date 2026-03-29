@@ -149,9 +149,17 @@ func TestCalculateHashCaching(t *testing.T) {
 		sh := testSeriesHeader()
 		h1 := sh.CalculateHash()
 		clone := sh.Clone()
-		h2 := clone.CalculateHash() // should return cached value, not recalculate
+		// mutate the clone's fields — if hash was cached by Clone,
+		// CalculateHash() without rehash still returns the old value
+		clone.Name = "mutated-clone"
+		h2 := clone.CalculateHash() // should return cached h1, not recompute
 		if h1 != h2 {
-			t.Error("clone should preserve cached hash")
+			t.Error("clone should return cached hash even after field mutation")
+		}
+		// with rehash, the mutated name should produce a different hash
+		h3 := clone.CalculateHash(true)
+		if h1 == h3 {
+			t.Error("rehash after mutation should produce different hash")
 		}
 	})
 

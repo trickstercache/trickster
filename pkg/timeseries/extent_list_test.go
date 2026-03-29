@@ -708,6 +708,42 @@ func TestCalculateDeltas(t *testing.T) {
 			[]Extent{{Start: time.Unix(101, 0), End: time.Unix(101, 0)}},
 			1, 101, 1,
 		},
+		{
+			"have completely covers need",
+			[]Extent{{Start: time.Unix(1, 0), End: time.Unix(200, 0)}},
+			[]Extent{},
+			50, 100, 1,
+		},
+		{
+			"multiple haves with gap returns only the gap",
+			[]Extent{
+				{Start: time.Unix(1, 0), End: time.Unix(40, 0)},
+				{Start: time.Unix(60, 0), End: time.Unix(100, 0)},
+			},
+			[]Extent{{Start: time.Unix(41, 0), End: time.Unix(59, 0)}},
+			1, 100, 1,
+		},
+		{
+			"need entirely before all haves",
+			[]Extent{{Start: time.Unix(200, 0), End: time.Unix(300, 0)}},
+			[]Extent{{Start: time.Unix(1, 0), End: time.Unix(100, 0)}},
+			1, 100, 1,
+		},
+		{
+			"need entirely after all haves",
+			[]Extent{{Start: time.Unix(1, 0), End: time.Unix(50, 0)}},
+			[]Extent{{Start: time.Unix(100, 0), End: time.Unix(200, 0)}},
+			100, 200, 1,
+		},
+		{
+			"adjacent haves with no gap",
+			[]Extent{
+				{Start: time.Unix(1, 0), End: time.Unix(50, 0)},
+				{Start: time.Unix(51, 0), End: time.Unix(100, 0)},
+			},
+			[]Extent{},
+			1, 100, 1,
+		},
 	}
 
 	for _, test := range tests {
