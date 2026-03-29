@@ -229,7 +229,8 @@ func writeConcurrent(_ context.Context, c cache.Cache, key string, d *HTTPDocume
 		return err
 	}
 
-	if compress {
+	// skip compression for small payloads where overhead exceeds benefit
+	if compress && len(b) >= 512 {
 		buf := bytes.NewBuffer([]byte{1})
 		encoder := brotli.NewWriter(buf)
 		encoder.Write(b)
