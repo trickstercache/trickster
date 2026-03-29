@@ -145,6 +145,16 @@ func TestCalculateHashCaching(t *testing.T) {
 		}
 	})
 
+	t.Run("clone preserves cached hash", func(t *testing.T) {
+		sh := testSeriesHeader()
+		h1 := sh.CalculateHash()
+		clone := sh.Clone()
+		h2 := clone.CalculateHash() // should return cached value, not recalculate
+		if h1 != h2 {
+			t.Error("clone should preserve cached hash")
+		}
+	})
+
 	t.Run("rehash forces recalculation", func(t *testing.T) {
 		sh := testSeriesHeader()
 		h1 := sh.CalculateHash()
