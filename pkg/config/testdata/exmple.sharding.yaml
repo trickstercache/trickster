@@ -11,6 +11,7 @@ backends:
     cache_name: default
     cache_key_prefix: prometheus:9090
     chunk_read_concurrency_limit: 16
+    fetch_concurrency_limit: 16
     chunk_write_concurrency_limit: 16
     healthcheck: {}
     timeseries_retention_factor: 1024

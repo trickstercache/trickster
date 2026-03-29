@@ -11,6 +11,7 @@ backends:
     cache_name: default
     cache_key_prefix: example.com
     chunk_read_concurrency_limit: 16
+    fetch_concurrency_limit: 16
     chunk_write_concurrency_limit: 16
     healthcheck: {}
     timeseries_retention_factor: 1024
@@ -47,6 +48,7 @@ backends:
     cache_name: default
     cache_key_prefix: example.com
     chunk_read_concurrency_limit: 16
+    fetch_concurrency_limit: 16
     chunk_write_concurrency_limit: 16
     healthcheck: {}
     timeseries_retention_factor: 1024
@@ -83,6 +85,7 @@ backends:
     cache_name: default
     cache_key_prefix: example.com
     chunk_read_concurrency_limit: 16
+    fetch_concurrency_limit: 16
     chunk_write_concurrency_limit: 16
     healthcheck: {}
     timeseries_retention_factor: 1024
@@ -116,6 +119,7 @@ backends:
     max_idle_conns: 20
     cache_name: default
     chunk_read_concurrency_limit: 16
+    fetch_concurrency_limit: 16
     chunk_write_concurrency_limit: 16
     healthcheck: {}
     timeseries_retention_factor: 1024

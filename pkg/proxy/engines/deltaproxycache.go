@@ -657,10 +657,19 @@ func fetchExtents(el timeseries.ExtentList, rsc *request.Resources, h http.Heade
 	// the meta-response aggregating all upstream responses
 	mresp := &http.Response{Header: h}
 
+	// limit concurrent upstream requests to avoid overwhelming the origin
+	limit := bo.DefaultFetchConcurrencyLimit
+	if rsc.BackendOptions != nil && rsc.BackendOptions.FetchConcurrencyLimit > 0 {
+		limit = rsc.BackendOptions.FetchConcurrencyLimit
+	}
+	sem := make(chan struct{}, limit)
+
 	// iterate each time range that the client needs and fetch from the upstream origin
 	for i := range el {
 		// This concurrently fetches gaps from the origin and adds their datasets to the merge list
 		wg.Go(func() {
+			sem <- struct{}{}
+			defer func() { <-sem }()
 			e := &el[i]
 			rq := pr.Clone()
 			mrsc := rsc.Clone()
