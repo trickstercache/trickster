@@ -320,12 +320,21 @@ func (ds *DataSet) DefaultSizeCropper(sz int, t time.Time, lur timeseries.Extent
 		return
 	}
 	ds.ExtentList = ds.ExtentList.Remove(remove, step)
-	// Crop the actual data points to match the remaining extents
+	// Crop the actual data points to match the remaining extents.
+	// We call DefaultRangeCropper directly after temporarily widening the ExtentList,
+	// because CropToRange short-circuits when ExtentList is already encompassed by
+	// the crop range (which it always is here since we just set it via Remove).
 	if len(ds.ExtentList) > 0 {
-		ds.CropToRange(timeseries.Extent{
+		cropExtent := timeseries.Extent{
 			Start: ds.ExtentList[0].Start,
 			End:   ds.ExtentList[len(ds.ExtentList)-1].End,
-		})
+		}
+		saved := ds.ExtentList
+		ds.ExtentList = timeseries.ExtentList{
+			{Start: time.Unix(0, 0), End: cropExtent.End.Add(step)},
+		}
+		ds.CropToRange(cropExtent)
+		ds.ExtentList = saved
 	}
 }
 

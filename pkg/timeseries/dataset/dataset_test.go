@@ -602,6 +602,156 @@ func BenchmarkMerge(b *testing.B) {
 	}
 }
 
+func TestDefaultSizeCropper(t *testing.T) {
+	// helper: build a multi-extent dataset with controllable LastUsed timestamps
+	mkDataSet := func(extents timeseries.ExtentList, step time.Duration) *DataSet {
+		// create points spanning the full extent range
+		sh := testSeriesHeader()
+		sh.Name = "metric"
+		sh.CalculateHash()
+		var pts Points
+		if len(extents) > 0 && step > 0 {
+			start := extents[0].Start
+			end := extents[len(extents)-1].End
+			for ts := start; !ts.After(end); ts = ts.Add(step) {
+				pts = append(pts, Point{
+					Epoch:  epoch.Epoch(ts.UnixNano()),
+					Size:   16,
+					Values: []any{1},
+				})
+			}
+		}
+		ds := &DataSet{
+			TimeRangeQuery: &timeseries.TimeRangeQuery{Step: step},
+			ExtentList:     extents,
+			Results:        []*Result{{StatementID: 0, SeriesList: []*Series{{sh, pts, pts.Size()}}}},
+		}
+		ds.Merger = ds.DefaultMerger
+		ds.SizeCropper = ds.DefaultSizeCropper
+		ds.RangeCropper = ds.DefaultRangeCropper
+		ds.Sorter = func() {}
+		return ds
+	}
+
+	t.Run("no-op when step is zero", func(t *testing.T) {
+		ds := mkDataSet(timeseries.ExtentList{
+			{Start: time.Unix(0, 0), End: time.Unix(10, 0), LastUsed: time.Unix(1, 0)},
+		}, 0)
+		origLen := len(ds.ExtentList)
+		ds.DefaultSizeCropper(1, time.Unix(100, 0), timeseries.Extent{})
+		if len(ds.ExtentList) != origLen {
+			t.Error("expected no change when step=0")
+		}
+	})
+
+	t.Run("no-op when sz <= 0", func(t *testing.T) {
+		ds := mkDataSet(timeseries.ExtentList{
+			{Start: time.Unix(0, 0), End: time.Unix(10, 0), LastUsed: time.Unix(1, 0)},
+		}, 5*time.Second)
+		origLen := len(ds.ExtentList)
+		ds.DefaultSizeCropper(0, time.Unix(100, 0), timeseries.Extent{})
+		if len(ds.ExtentList) != origLen {
+			t.Error("expected no change when sz<=0")
+		}
+	})
+
+	t.Run("no-op when already within budget", func(t *testing.T) {
+		ds := mkDataSet(timeseries.ExtentList{
+			{Start: time.Unix(5, 0), End: time.Unix(10, 0), LastUsed: time.Unix(50, 0)},
+		}, 5*time.Second)
+		// 2 timestamps (5s, 10s), budget=10
+		ds.DefaultSizeCropper(10, time.Unix(100, 0), timeseries.Extent{})
+		if len(ds.ExtentList) != 1 {
+			t.Error("expected no eviction when within budget")
+		}
+	})
+
+	t.Run("evicts LRU extents", func(t *testing.T) {
+		// 3 extents: oldest LU=1, mid LU=50, newest LU=100
+		// each has 3 timestamps (0-10, 20-30, 40-50 at step=5s)
+		// total = 9, budget = 6 → must evict 1 extent (the LU=1 one)
+		ds := mkDataSet(timeseries.ExtentList{
+			{Start: time.Unix(0, 0), End: time.Unix(10, 0), LastUsed: time.Unix(1, 0)},
+			{Start: time.Unix(20, 0), End: time.Unix(30, 0), LastUsed: time.Unix(50, 0)},
+			{Start: time.Unix(40, 0), End: time.Unix(50, 0), LastUsed: time.Unix(100, 0)},
+		}, 5*time.Second)
+		ds.DefaultSizeCropper(6, time.Unix(200, 0), timeseries.Extent{Start: time.Unix(40, 0), End: time.Unix(50, 0)})
+		if len(ds.ExtentList) != 2 {
+			t.Fatalf("expected 2 extents after eviction, got %d", len(ds.ExtentList))
+		}
+		// the oldest (0-10) should be gone
+		if ds.ExtentList[0].Start != time.Unix(20, 0) {
+			t.Errorf("expected first remaining extent to start at 20, got %v", ds.ExtentList[0].Start)
+		}
+	})
+
+	t.Run("preserves lur overlap", func(t *testing.T) {
+		// 2 extents: ext1 (LU=1, very old) overlaps lur, ext2 (LU=50) does not
+		// budget forces eviction of 1, but ext1 overlaps lur so ext2 is evicted instead
+		ds := mkDataSet(timeseries.ExtentList{
+			{Start: time.Unix(0, 0), End: time.Unix(10, 0), LastUsed: time.Unix(1, 0)},
+			{Start: time.Unix(20, 0), End: time.Unix(30, 0), LastUsed: time.Unix(50, 0)},
+		}, 5*time.Second)
+		lur := timeseries.Extent{Start: time.Unix(5, 0), End: time.Unix(8, 0)}
+		ds.DefaultSizeCropper(3, time.Unix(200, 0), lur)
+		if len(ds.ExtentList) != 1 {
+			t.Fatalf("expected 1 extent, got %d", len(ds.ExtentList))
+		}
+		if ds.ExtentList[0].Start != time.Unix(0, 0) {
+			t.Error("expected the lur-overlapping extent to be preserved")
+		}
+	})
+
+	t.Run("respects time boundary", func(t *testing.T) {
+		// ext1 (LU=1) is before time boundary → eligible for eviction
+		// ext2 (LU=2) starts after time boundary → not eligible
+		// budget forces eviction of 1
+		ds := mkDataSet(timeseries.ExtentList{
+			{Start: time.Unix(0, 0), End: time.Unix(10, 0), LastUsed: time.Unix(1, 0)},
+			{Start: time.Unix(20, 0), End: time.Unix(30, 0), LastUsed: time.Unix(2, 0)},
+		}, 5*time.Second)
+		// t=15 means ext2 (start=20) is past the boundary
+		ds.DefaultSizeCropper(3, time.Unix(15, 0), timeseries.Extent{})
+		if len(ds.ExtentList) != 1 {
+			t.Fatalf("expected 1 extent, got %d", len(ds.ExtentList))
+		}
+		// ext1 should be evicted (before boundary, older LU), ext2 preserved
+		if ds.ExtentList[0].Start != time.Unix(20, 0) {
+			t.Error("expected the future extent to be preserved")
+		}
+	})
+
+	t.Run("evicts multiple until within budget", func(t *testing.T) {
+		// 4 extents, each 3 timestamps, total=12, budget=3 → evict 3 oldest
+		ds := mkDataSet(timeseries.ExtentList{
+			{Start: time.Unix(0, 0), End: time.Unix(10, 0), LastUsed: time.Unix(1, 0)},
+			{Start: time.Unix(20, 0), End: time.Unix(30, 0), LastUsed: time.Unix(2, 0)},
+			{Start: time.Unix(40, 0), End: time.Unix(50, 0), LastUsed: time.Unix(3, 0)},
+			{Start: time.Unix(60, 0), End: time.Unix(70, 0), LastUsed: time.Unix(100, 0)},
+		}, 5*time.Second)
+		ds.DefaultSizeCropper(3, time.Unix(200, 0), timeseries.Extent{Start: time.Unix(60, 0), End: time.Unix(70, 0)})
+		if len(ds.ExtentList) != 1 {
+			t.Fatalf("expected 1 extent after eviction, got %d", len(ds.ExtentList))
+		}
+		if ds.ExtentList[0].Start != time.Unix(60, 0) {
+			t.Error("expected only the newest extent to remain")
+		}
+	})
+
+	t.Run("data points cropped after eviction", func(t *testing.T) {
+		ds := mkDataSet(timeseries.ExtentList{
+			{Start: time.Unix(0, 0), End: time.Unix(10, 0), LastUsed: time.Unix(1, 0)},
+			{Start: time.Unix(20, 0), End: time.Unix(30, 0), LastUsed: time.Unix(100, 0)},
+		}, 5*time.Second)
+		origCount := ds.ValueCount()
+		ds.DefaultSizeCropper(3, time.Unix(200, 0), timeseries.Extent{Start: time.Unix(20, 0), End: time.Unix(30, 0)})
+		newCount := ds.ValueCount()
+		if newCount >= origCount {
+			t.Errorf("expected fewer data points after eviction, got %d >= %d", newCount, origCount)
+		}
+	})
+}
+
 func BenchmarkCropToRange(b *testing.B) {
 	dss := make([]*DataSet, b.N)
 	for i := 0; i < b.N; i++ {
