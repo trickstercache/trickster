@@ -105,3 +105,88 @@ func TestInjectTags(t *testing.T) {
 		t.Errorf("expected %d got %d", 2, len(ds.Results[1].SeriesList[1].Header.Tags))
 	}
 }
+
+func TestStripTags(t *testing.T) {
+	t.Run("strips specified keys and rehashes", func(t *testing.T) {
+		s1 := &Series{
+			Header: SeriesHeader{
+				Name: "cpu",
+				Tags: Tags{"region": "us-east-1", "env": "prod"},
+			},
+			Points: testPoints(),
+		}
+		s2 := &Series{
+			Header: SeriesHeader{
+				Name: "cpu",
+				Tags: Tags{"region": "us-west-2", "env": "prod"},
+			},
+			Points: testPoints(),
+		}
+
+		ds1 := &DataSet{Results: Results{{SeriesList: SeriesList{s1}}}}
+		ds2 := &DataSet{Results: Results{{SeriesList: SeriesList{s2}}}}
+
+		// Before stripping, hashes differ due to different "region" values
+		h1 := ds1.Results[0].SeriesList[0].Header.CalculateHash(true)
+		h2 := ds2.Results[0].SeriesList[0].Header.CalculateHash(true)
+		if h1 == h2 {
+			t.Fatal("expected different hashes before stripping")
+		}
+
+		ds1.StripTags([]string{"region"})
+		ds2.StripTags([]string{"region"})
+
+		// After stripping, "region" is gone
+		if _, ok := ds1.Results[0].SeriesList[0].Header.Tags["region"]; ok {
+			t.Error("expected region tag to be stripped")
+		}
+
+		// "env" is preserved
+		if ds1.Results[0].SeriesList[0].Header.Tags["env"] != "prod" {
+			t.Error("expected env tag to be preserved")
+		}
+
+		// Hashes now match (both have only env=prod)
+		h1 = ds1.Results[0].SeriesList[0].Header.CalculateHash()
+		h2 = ds2.Results[0].SeriesList[0].Header.CalculateHash()
+		if h1 != h2 {
+			t.Error("expected identical hashes after stripping")
+		}
+	})
+
+	t.Run("no-op with empty keys", func(t *testing.T) {
+		ds := testDataSet()
+		before := ds.Results[0].SeriesList[0].Header.Tags.Clone()
+		ds.StripTags(nil)
+		ds.StripTags([]string{})
+		after := ds.Results[0].SeriesList[0].Header.Tags
+		if len(before) != len(after) {
+			t.Error("tags should be unchanged")
+		}
+	})
+
+	t.Run("strip enables merge of previously distinct series", func(t *testing.T) {
+		s1 := &Series{
+			Header: SeriesHeader{Name: "up", Tags: Tags{"region": "a"}},
+			Points: makeStringPoints(ev{100, "10"}),
+		}
+		s2 := &Series{
+			Header: SeriesHeader{Name: "up", Tags: Tags{"region": "b"}},
+			Points: makeStringPoints(ev{100, "20"}),
+		}
+		ds1 := &DataSet{Results: Results{{SeriesList: SeriesList{s1}}}}
+		ds2 := &DataSet{Results: Results{{SeriesList: SeriesList{s2}}}}
+
+		ds1.StripTags([]string{"region"})
+		ds2.StripTags([]string{"region"})
+
+		// Now merge with sum — should aggregate since hashes match
+		ds1.MergeWithStrategy(true, int(MergeStrategySum), ds2)
+		if ds1.SeriesCount() != 1 {
+			t.Fatalf("expected 1 series after strip+merge, got %d", ds1.SeriesCount())
+		}
+		if ds1.Results[0].SeriesList[0].Points[0].Values[0] != "30" {
+			t.Errorf("expected sum 30, got %v", ds1.Results[0].SeriesList[0].Points[0].Values[0])
+		}
+	})
+}

@@ -151,6 +151,33 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	var mrf merge.RespondFunc
 
+	// When a merge strategy is active, collect all injected label keys
+	// across pool backends so they can be stripped before merging.
+	// This ensures series from different backends hash identically
+	// despite having different injected labels (e.g., region tags).
+	var stripKeys []string
+	if h.mergeStrategy != 0 {
+		seen := make(map[string]struct{})
+		for _, t := range hl {
+			if t == nil {
+				continue
+			}
+			b := t.Backend()
+			if b == nil {
+				continue
+			}
+			cfg := b.Configuration()
+			if cfg != nil && cfg.Prometheus != nil {
+				for k := range cfg.Prometheus.Labels {
+					if _, ok := seen[k]; !ok {
+						seen[k] = struct{}{}
+						stripKeys = append(stripKeys, k)
+					}
+				}
+			}
+		}
+	}
+
 	// Scatter/Gather section
 
 	accumulator := merge.NewAccumulator()
@@ -188,6 +215,13 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			// ensure merge functions are set on cloned request
 			if rsc2.MergeFunc == nil || rsc2.MergeRespondFunc == nil {
 				logger.Warn("tsm gather failed due to nil func", nil)
+			}
+			// strip injected labels before merging so series from
+			// different backends hash identically for aggregation
+			if len(stripKeys) > 0 && rsc2.TS != nil {
+				if ds, ok := rsc2.TS.(*dataset.DataSet); ok {
+					ds.StripTags(stripKeys)
+				}
 			}
 			// as soon as response is complete, unmarshal and merge
 			// this happens in parallel for each response as it arrives
