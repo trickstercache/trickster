@@ -26,3 +26,7 @@ backends:
       labels:
         datacenter: us-east-1b
 ```
+
+### Interaction with ALB Merge Strategy
+
+When using label injection with an ALB configured for [Time Series Merge](./alb.md#time-series-merge), and the ALB has a `merge_strategy` other than `dedup` (e.g., `sum`, `avg`), injected labels are automatically stripped from responses before merging. This ensures that series from different backends are aggregated correctly, and the injected labels do not appear in the final response to the caller. See the [ALB Merge Strategy documentation](./alb.md#merge-strategy) for details.

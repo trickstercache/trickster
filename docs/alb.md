@@ -83,7 +83,35 @@ Here is the visual representation of this configuration:
 
 The recommended application for using the **Time Series Merge** mechanism is as a High Availability solution. In this application, Trickster fans the client request out to multiple redundant tsdb endpoints and merges the responses back into a single document for the client. If any of the endpoints are down, or have gaps in their response (due to prior downtime), the Trickster cache along with the data from the healthy endpoints will ensure the client receives the most complete response possible. Instantaneous downtime of any Backend will result in a warning being injected in the client response.
 
-Separate from an HA use case, it is possible to Time Series Merge as a Federation broker that merges responses from different, non-redundant tsdb endpoints; for example, to aggregate metrics from a solution running clusters in multiple regions, with separate, in-region-only tsdb deployments. In this use case, it is recommended to [inject labels](./prometheus.md#injecting-labels) into the responses to protect against data collisions across series. Label injection is demonstrated in the snippet below.
+Separate from an HA use case, it is possible to use Time Series Merge as a Federation broker that merges responses from different, non-redundant tsdb endpoints; for example, to aggregate metrics from a solution running clusters in multiple regions, with separate, in-region-only tsdb deployments. In this use case, it is recommended to [inject labels](./prometheus.md#injecting-labels) into the responses to protect against data collisions across series. Label injection is demonstrated in the snippet below.
+
+#### Merge Strategy
+
+By default, TSM deduplicates values when merging series with identical labels — for each timestamp, only one value is kept. This works well for HA configurations where backends hold redundant copies of the same data.
+
+For Federation use cases where backends hold different, non-overlapping data, you can configure a `merge_strategy` to control how values from matching series are combined across backends. This is particularly important for PromQL aggregation queries like `sum()` or `avg()`, which strip labels from results and cause series from different backends to appear identical.
+
+| Strategy | Behavior |
+|----------|----------|
+| `dedup` | Default. Last value wins for matching timestamps. |
+| `sum` | Sums values at matching timestamps. |
+| `avg` | Averages values at matching timestamps. |
+| `min` | Takes the minimum value at matching timestamps. |
+| `max` | Takes the maximum value at matching timestamps. |
+| `count` | Counts the number of values at matching timestamps. |
+
+When a merge strategy other than `dedup` is active and backends have [injected labels](./prometheus.md#injecting-labels) configured, those labels are automatically stripped before merging. This ensures series from different backends hash identically for aggregation, and the injected labels do not appear in the response.
+
+```yaml
+backends:
+  prom-alb-federated:
+    provider: alb
+    alb:
+      mechanism: tsm
+      pool: [prom-region1, prom-region2, prom-region3]
+      tsm:
+        merge_strategy: sum  # aggregate values across backends
+```
 
 #### Providers Supporting Time Series Merge
 
@@ -137,17 +165,20 @@ backends:
         region: us-west-1
 
   # prom-alb-all scatter/gathers prom01a/b, prom02 and prom03 and merges their responses
-  # for the caller. since a unique region label was applied to non-redundant backends,
-  # collisions are avoided. each backend caches data independently of the aggregated response
+  # for the caller. merge_strategy: sum re-aggregates values across backends for queries
+  # like sum(metric). injected labels are automatically stripped before merging so that
+  # series from different backends are combined correctly.
   prom-alb-all:
     provider: alb
     alb:
       mechanism: tsm
-      pool: 
+      pool:
         - prom01a
         - prom01b
         - prom02
         - prom03
+      tsm:
+        merge_strategy: sum
 ```
 
 Here is the visual representation of a basic TS Merge configuration:
