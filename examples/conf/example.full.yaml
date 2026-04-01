@@ -562,7 +562,6 @@ backends:
 #         # when this is not set, any response code < 400 is considered good. Use this setting to
 #         # provide an explicit list.
 #         status_codes: [ 200 ] # this would consider only 200 OK's good, and not 204, 302, etc.
-#       tsm: # Time Series Merge mechanism options, only applicable when mechanism is set to tsm
 
 # # Configuration Options for Request Routing Rules - see /docs/rule.md for more information
 
