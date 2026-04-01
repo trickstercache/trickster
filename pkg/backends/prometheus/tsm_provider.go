@@ -51,13 +51,11 @@ func (c *Client) ClassifyMerge(query string) (strategy int, needsDualQuery bool,
 		return int(dataset.MergeStrategyMin), false, ""
 	case "max":
 		return int(dataset.MergeStrategyMax), false, ""
-	case "group":
-		return int(dataset.MergeStrategyDedup), false, ""
 	case "stddev", "stdvar", "quantile", "topk", "bottomk", "limitk", "limit_ratio":
 		return int(dataset.MergeStrategyDedup), false,
 			`trickster: outer aggregator "` + agg + `" cannot be correctly ` +
 				`merged across fanout backends; results may be inaccurate`
-	default:
+	default: // covers "group"
 		return int(dataset.MergeStrategyDedup), false, ""
 	}
 }
