@@ -378,8 +378,8 @@ github.com/hexops/gotextdiff v1.0.3/go.mod h1:pSWU5MAI3yDq+fZBTazCSJysOMbxWL1BSo
 github.com/ianlancetaylor/demangle v0.0.0-20181102032728-5e5cf60278f6/go.mod h1:aSSvb/t6k1mPoxDqO4vJh6VOCGPwU4O0C2/Eqndh1Sc=
 github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2s0bqwp9tc8=
 github.com/inconshreveable/mousetrap v1.1.0/go.mod h1:vpF70FUmC8bwa3OWnCshd2FqLfsEA9PFc4w1p2J65bw=
-github.com/influxdata/influxdb v1.12.2 h1:Y0ZBu47gYVbDCRPMFOrlRRZ3grdqPGIJxerFysVSq+g=
-github.com/influxdata/influxdb v1.12.2/go.mod h1:EwqFMB6GKV0Huug82Msa5f8QfXhqETUmC4L9A0QZJQM=
+github.com/influxdata/influxdb v1.12.3 h1:nrqbOazMNQt969yQ7fXepY9hvy7xyg+efN1eb0bihfg=
+github.com/influxdata/influxdb v1.12.3/go.mod h1:czsGl4TCm2kWtzEHsGh74Nye77o/KgmKsLtF4/L9QVc=
 github.com/influxdata/influxql v1.4.1 h1:UB+TMc9cB6mDdkPmH/5sBU8FQ+ZCWRX2JPcPDIFrLcs=
 github.com/influxdata/influxql v1.4.1/go.mod h1:VqxAKyQz5p8GzgGsxWalCWYGxEqw6kvJo2IickMQiQk=
 github.com/jgautheron/goconst v1.8.2 h1:y0XF7X8CikZ93fSNT6WBTb/NElBu9IjaY7CCYQrCMX4=
