@@ -53,7 +53,6 @@ type handler struct {
 	nonmergeHandler types.Mechanism // when methodology is tsmerge, this handler is for non-mergeable paths
 	outputFormat    string          // the provider output format (e.g., "prometheus")
 	tsmOptions      options.TimeSeriesMergeOptions
-	mergeStrategy   dataset.MergeStrategy
 }
 
 func RegistryEntry() types.RegistryEntry {
@@ -62,11 +61,9 @@ func RegistryEntry() types.RegistryEntry {
 
 func New(o *options.Options, factories rt.Lookup) (types.Mechanism, error) {
 	nmh, _ := rr.New(nil, nil)
-	ms, _ := dataset.ParseMergeStrategy(o.TSMOptions.MergeStrategy)
 	out := &handler{
 		nonmergeHandler: nmh,
 		tsmOptions:      o.TSMOptions,
-		mergeStrategy:   ms,
 	}
 	// this validates the merge configuration for the ALB client as it sets it up
 	// First, verify the output format is a support merge provider
@@ -149,14 +146,44 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var mrf merge.RespondFunc
+	// Determine the correct merge strategy for this query. We ask the first
+	// healthy pool backend to parse the request via its ParseTimeRangeQuery
+	// method. If rsc already carries a parsed TimeRangeQuery (set by upstream
+	// middleware), we use its Statement directly.
+	var query string
+	switch {
+	case rsc.TimeRangeQuery != nil:
+		query = rsc.TimeRangeQuery.Statement
+	case len(hl) > 0 && hl[0] != nil:
+		if b := hl[0].Backend(); b != nil {
+			if tsb, ok := b.(backends.TimeseriesBackend); ok {
+				if trq, _, _, err := tsb.ParseTimeRangeQuery(r); err == nil && trq != nil {
+					query = trq.Statement
+				}
+			}
+		}
+	}
+	var mergeStrategy dataset.MergeStrategy
+	var needsDualQuery bool
+	var warnMsg string
+	var mp backends.TSMMergeProvider
+	if len(hl) > 0 && hl[0] != nil {
+		if b := hl[0].Backend(); b != nil {
+			if p, ok := b.(backends.TSMMergeProvider); ok {
+				mp = p
+				strategyInt, dq, w := mp.ClassifyMerge(query)
+				mergeStrategy, needsDualQuery, warnMsg = dataset.MergeStrategy(strategyInt), dq, w
+			}
+			// backends that don't implement TSMMergeProvider default to dedup.
+		}
+	}
 
-	// When a merge strategy is active, collect all injected label keys
-	// across pool backends so they can be stripped before merging.
-	// This ensures series from different backends hash identically
-	// despite having different injected labels (e.g., region tags).
+	// Collect injected label keys from pool backends so they can be stripped
+	// before merging. This ensures series from different backends hash
+	// identically despite having different injected labels (e.g., region tags).
+	// Stripping is only needed when a non-dedup strategy is in play.
 	var stripKeys []string
-	if h.mergeStrategy != 0 {
+	if mergeStrategy != dataset.MergeStrategyDedup || needsDualQuery {
 		seen := make(map[string]struct{})
 		for _, t := range hl {
 			if t == nil {
@@ -178,7 +205,27 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Scatter/Gather section
+	if needsDualQuery {
+		h.serveWeightedAvg(w, r, hl, rsc, mp, query, stripKeys)
+		return
+	}
+
+	// Standard scatter/gather for all non-avg strategies.
+	h.serveStandard(w, r, hl, rsc, mergeStrategy, stripKeys, warnMsg)
+}
+
+// serveStandard handles the common scatter/gather path: each shard gets one
+// request, results are merged with mergeStrategy, and an optional warning is
+// appended to the accumulated dataset before writing the response.
+func (h *handler) serveStandard(
+	w http.ResponseWriter, r *http.Request,
+	hl pool.Targets, rsc *request.Resources,
+	mergeStrategy dataset.MergeStrategy,
+	stripKeys []string,
+	warnMsg string,
+) {
+	l := len(hl)
+	var mrf merge.RespondFunc
 
 	accumulator := merge.NewAccumulator()
 	var eg errgroup.Group
@@ -202,7 +249,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			rsc2 := &request.Resources{
 				IsMergeMember:   true,
 				TSReqestOptions: rsc.TSReqestOptions,
-				TSMergeStrategy: int(h.mergeStrategy),
+				TSMergeStrategy: int(mergeStrategy),
 			}
 			r2 = request.SetResources(r2, rsc2)
 			crw := capture.NewCaptureResponseWriter()
@@ -211,13 +258,12 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if rsc2 == nil {
 				return stderrors.New("tsm gather failed due to nil resources")
 			}
-
 			// ensure merge functions are set on cloned request
 			if rsc2.MergeFunc == nil || rsc2.MergeRespondFunc == nil {
 				logger.Warn("tsm gather failed due to nil func", nil)
 			}
-			// strip injected labels before merging so series from
-			// different backends hash identically for aggregation
+			// strip injected labels so series from different backends hash
+			// identically for aggregation
 			if len(stripKeys) > 0 && rsc2.TS != nil {
 				if ds, ok := rsc2.TS.(*dataset.DataSet); ok {
 					ds.StripTags(stripKeys)
@@ -242,7 +288,16 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		logger.Warn("tsm gather failure", logging.Pairs{"error": err})
 	}
 
-	// Aggregate results sequentially - no mutex contention
+	// For non-supportable aggregators, inject a warning into the Prometheus
+	// response so clients know the merged results may be inaccurate.
+	if warnMsg != "" {
+		if ts := accumulator.GetTSData(); ts != nil {
+			if ds, ok := ts.(*dataset.DataSet); ok {
+				ds.Warnings = append(ds.Warnings, warnMsg)
+			}
+		}
+	}
+
 	var statusCode int
 	var statusHeader string
 	for _, res := range results {
@@ -272,5 +327,156 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if mrf != nil {
 		mrf(w, r, accumulator, statusCode)
+	}
+}
+
+// serveWeightedAvg implements the dual-query scatter/gather for outer avg
+// aggregators. For each shard it fires two concurrent requests:
+//   - a "sum" variant (avg → sum) to accumulate the total sum per series
+//   - a "count" variant (avg → count) to accumulate the total count per series
+//
+// After all shards respond, FinalizeWeightedAvg divides sum by count to
+// produce a true weighted arithmetic mean, avoiding the skew that
+// avg-of-averages produces when shards have different cardinalities.
+// The original query string is passed for pairing so sum/count rewrites
+// align with the same logical statement (see dataset.FinalizeWeightedAvg).
+func (h *handler) serveWeightedAvg(
+	w http.ResponseWriter, r *http.Request,
+	hl pool.Targets, rsc *request.Resources,
+	mp backends.TSMMergeProvider, query string, stripKeys []string,
+) {
+	l := len(hl)
+
+	// Rewrite the request once; the provider encapsulates both the query
+	// expression substitution and the wire-protocol injection (URL param,
+	// POST body, etc.).
+	sumBase, countBase := mp.RewriteForWeightedAvg(r, query)
+
+	sumAccum := merge.NewAccumulator()
+	countAccum := merge.NewAccumulator()
+
+	var eg errgroup.Group
+	if limit := h.tsmOptions.ConcurrencyOptions.GetQueryConcurrencyLimit(); limit > 0 {
+		// Each shard spawns two goroutines; scale the limit accordingly so we
+		// don't serialize unnecessarily.
+		eg.SetLimit(limit * 2)
+	}
+
+	type result struct {
+		statusCode int
+		header     http.Header
+		mergeFunc  merge.RespondFunc // from the sum query (used to write the final response)
+	}
+	results := make([]result, l)
+
+	for i := range l {
+		if hl[i] == nil {
+			continue
+		}
+		// Sum query for shard i — clone from the pre-rewritten base request.
+		eg.Go(func() error {
+			r2, _ := request.CloneWithoutResources(sumBase)
+			rsc2 := &request.Resources{
+				IsMergeMember:   true,
+				TSReqestOptions: rsc.TSReqestOptions,
+				TSMergeStrategy: int(dataset.MergeStrategySum),
+			}
+			r2 = request.SetResources(r2, rsc2)
+			crw := capture.NewCaptureResponseWriter()
+			hl[i].Handler().ServeHTTP(crw, r2)
+			rsc2 = request.GetResources(r2)
+			if rsc2 == nil {
+				return stderrors.New("tsm avg/sum gather failed due to nil resources")
+			}
+			if len(stripKeys) > 0 && rsc2.TS != nil {
+				if ds, ok := rsc2.TS.(*dataset.DataSet); ok {
+					ds.StripTags(stripKeys)
+				}
+			}
+			if rsc2.MergeFunc != nil && rsc2.TS != nil {
+				rsc2.MergeFunc(sumAccum, rsc2.TS, i)
+			}
+			results[i] = result{
+				statusCode: crw.StatusCode(),
+				header:     crw.Header(),
+				mergeFunc:  rsc2.MergeRespondFunc,
+			}
+			return nil
+		})
+
+		// Count query for shard i — clone from the pre-rewritten base request.
+		eg.Go(func() error {
+			r2, _ := request.CloneWithoutResources(countBase)
+			rsc2 := &request.Resources{
+				IsMergeMember:   true,
+				TSReqestOptions: rsc.TSReqestOptions,
+				TSMergeStrategy: int(dataset.MergeStrategySum),
+			}
+			r2 = request.SetResources(r2, rsc2)
+			crw := capture.NewCaptureResponseWriter()
+			hl[i].Handler().ServeHTTP(crw, r2)
+			rsc2 = request.GetResources(r2)
+			if rsc2 == nil {
+				return stderrors.New("tsm avg/count gather failed due to nil resources")
+			}
+			if len(stripKeys) > 0 && rsc2.TS != nil {
+				if ds, ok := rsc2.TS.(*dataset.DataSet); ok {
+					ds.StripTags(stripKeys)
+				}
+			}
+			if rsc2.MergeFunc != nil && rsc2.TS != nil {
+				rsc2.MergeFunc(countAccum, rsc2.TS, i)
+			}
+			return nil
+		})
+	}
+
+	if err := eg.Wait(); err != nil {
+		logger.Warn("tsm weighted-avg gather failure", logging.Pairs{"error": err})
+	}
+
+	// Finalize: divide sum totals by count totals to obtain the weighted average.
+	sumTS := sumAccum.GetTSData()
+	countTS := countAccum.GetTSData()
+	if sumTS != nil && countTS != nil {
+		if sumDS, ok := sumTS.(*dataset.DataSet); ok {
+			if countDS, ok := countTS.(*dataset.DataSet); ok {
+				sumDS.FinalizeWeightedAvg(countDS, query)
+			}
+		}
+	}
+
+	// Aggregate status and headers from sum-query results (count results are
+	// only used for the arithmetic and do not affect the response envelope).
+	var mrf merge.RespondFunc
+	var statusCode int
+	var statusHeader string
+	for _, res := range results {
+		if mrf == nil {
+			mrf = res.mergeFunc
+		}
+		if res.statusCode > 0 {
+			if statusCode == 0 || res.statusCode < statusCode {
+				statusCode = res.statusCode
+			}
+		}
+		if res.header != nil {
+			headers.StripMergeHeaders(res.header)
+			statusHeader = headers.MergeResultHeaderVals(statusHeader,
+				res.header.Get(headers.NameTricksterResult))
+		}
+	}
+
+	if statusHeader != "" {
+		w.Header().Set(headers.NameTricksterResult, statusHeader)
+	}
+
+	if statusCode == 0 {
+		statusCode = http.StatusOK
+	}
+	// Write the finalized sum accumulator (which now contains weighted averages)
+	// using the RespondFunc from the sum queries.
+	if mrf != nil {
+		mrf(w, r, sumAccum, statusCode)
 	}
 }

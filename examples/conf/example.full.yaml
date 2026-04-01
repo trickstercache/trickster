@@ -563,13 +563,6 @@ backends:
 #         # provide an explicit list.
 #         status_codes: [ 200 ] # this would consider only 200 OK's good, and not 204, 302, etc.
 #       tsm: # Time Series Merge mechanism options, only applicable when mechanism is set to tsm
-#         # merge_strategy controls how values from matching series are combined across backends.
-#         # For HA (redundant backends), use the default 'dedup'. For federation (non-redundant
-#         # backends), use an aggregation strategy to re-aggregate PromQL results like sum() or avg().
-#         # When set to a value other than 'dedup', any injected labels (prometheus.labels) are
-#         # automatically stripped before merging and excluded from the response.
-#         # values: dedup (default), sum, avg, min, max, count
-#         merge_strategy: dedup
 
 # # Configuration Options for Request Routing Rules - see /docs/rule.md for more information
 

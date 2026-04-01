@@ -89,29 +89,26 @@ Separate from an HA use case, it is possible to use Time Series Merge as a Feder
 
 By default, TSM deduplicates values when merging series with identical labels — for each timestamp, only one value is kept. This works well for HA configurations where backends hold redundant copies of the same data.
 
-For Federation use cases where backends hold different, non-overlapping data, you can configure a `merge_strategy` to control how values from matching series are combined across backends. This is particularly important for PromQL aggregation queries like `sum()` or `avg()`, which strip labels from results and cause series from different backends to appear identical.
+For Federation use cases where backends hold different, non-overlapping data, Trickster **automatically selects a merge strategy per query** by inspecting the outermost PromQL aggregation operator. No configuration is required. This is particularly important for PromQL aggregation queries like `sum()` or `avg()`, which strip labels from results and cause series from different backends to appear identical.
 
-| Strategy | Behavior |
-|----------|----------|
-| `dedup` | Default. Last value wins for matching timestamps. |
-| `sum` | Sums values at matching timestamps. |
-| `avg` | Averages values at matching timestamps. |
-| `min` | Takes the minimum value at matching timestamps. |
-| `max` | Takes the maximum value at matching timestamps. |
-| `count` | Counts the number of values at matching timestamps. |
+| Outer Operator | Trickster Merge Behavior |
+|----------------|--------------------------|
+| `sum` | Sum of values per unique label set + timestamp |
+| `count` | Sum of values per unique label set + timestamp |
+| `count_values` | Sum of values per unique label set + timestamp |
+| `min` | Minimum value per unique label set + timestamp |
+| `max` | Maximum value per unique label set + timestamp |
+| `group` | Deduplicate per unique label set + timestamp |
+| `avg` | Dual queries (avg→sum and avg→count); weighted arithmetic mean per unique label set + timestamp |
+| `stddev`, `stdvar`, `quantile`, `topk`, `bottomk`, `limitk`, `limit_ratio` | Deduplicate + inject a warning into the Prometheus response |
+| _(none)_ | Deduplicate (default) |
 
-When a merge strategy other than `dedup` is active and backends have [injected labels](./prometheus.md#injecting-labels) configured, those labels are automatically stripped before merging. This ensures series from different backends hash identically for aggregation, and the injected labels do not appear in the response.
+For `avg` queries, Trickster issues two concurrent sub-queries per backend shard — one rewriting the outer `avg` to `sum` and another to `count` — then computes a true weighted arithmetic mean (`sum_total / count_total`) per series per timestamp. This avoids the skew introduced by a naïve avg-of-averages when backends have different data cardinalities.
 
-```yaml
-backends:
-  prom-alb-federated:
-    provider: alb
-    alb:
-      mechanism: tsm
-      pool: [prom-region1, prom-region2, prom-region3]
-      tsm:
-        merge_strategy: sum  # aggregate values across backends
-```
+For non-supportable aggregators (`stddev`, `stdvar`, `quantile`, `topk`, `bottomk`, `limitk`, `limit_ratio`), Trickster falls back to deduplication and injects a `warnings` entry in the Prometheus response body to alert the caller that results may be inaccurate.
+
+When a non-dedup strategy is in effect and backends have [injected labels](./prometheus.md#injecting-labels) configured, those labels are automatically stripped before merging. This ensures series from different backends hash identically for aggregation, and the injected labels do not appear in the response.
+
 
 #### Providers Supporting Time Series Merge
 
@@ -165,9 +162,9 @@ backends:
         region: us-west-1
 
   # prom-alb-all scatter/gathers prom01a/b, prom02 and prom03 and merges their responses
-  # for the caller. merge_strategy: sum re-aggregates values across backends for queries
-  # like sum(metric). injected labels are automatically stripped before merging so that
-  # series from different backends are combined correctly.
+  # for the caller. The merge strategy is automatically selected per-query based on the
+  # outer PromQL aggregation operator. Injected labels are automatically stripped before
+  # merging so that series from different backends are combined correctly.
   prom-alb-all:
     provider: alb
     alb:
@@ -177,8 +174,6 @@ backends:
         - prom01b
         - prom02
         - prom03
-      tsm:
-        merge_strategy: sum
 ```
 
 Here is the visual representation of a basic TS Merge configuration:

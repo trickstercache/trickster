@@ -24,6 +24,7 @@ import (
 	"io"
 	"slices"
 	"sort"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -327,6 +328,87 @@ func (ds *DataSet) MergeWithStrategy(sortPoints bool, strategy int, collection .
 		}
 	}
 	ds.Results = rs[:k]
+}
+
+// FinalizeWeightedAvg divides each point value in ds (accumulated sums from a
+// sum-rewritten query) by the corresponding count value from countDS (from a
+// count-rewritten query), producing a true weighted arithmetic mean per series
+// per timestamp. Both datasets must have been accumulated using
+// MergeStrategySum across the same fanout backends.
+//
+// pairingQueryStatement, when non-empty, is used only for series pairing: the
+// same value must be passed for both sum and count DataSets so their rows align
+// even when each SeriesHeader.QueryStatement differs (e.g. PromQL sum(...) vs
+// count(...) rewrites of one logical avg(...)). It should be the original user
+// query string (or another canonical statement shared by both sides). When empty,
+// pairing uses SeriesHeader.CalculateHash() so distinct statements keep distinct
+// identities (e.g. multiple Influx series that share tags but differ by query).
+//
+// global_avg = sum_of_all_values / count_of_all_values
+func (ds *DataSet) FinalizeWeightedAvg(countDS *DataSet, pairingQueryStatement string) {
+	if countDS == nil {
+		return
+	}
+	pairingHash := func(sh *SeriesHeader) Hash {
+		if pairingQueryStatement == "" {
+			return sh.CalculateHash()
+		}
+		return sh.CalculateHashWithQueryStatement(pairingQueryStatement)
+	}
+	// Build lookup: statementID → seriesHash → epoch → count value
+	type epochCounts = map[epoch.Epoch]float64
+	countLookup := make(map[int]map[Hash]epochCounts, len(countDS.Results))
+	for _, r := range countDS.Results {
+		if r == nil {
+			continue
+		}
+		seriesMap := make(map[Hash]epochCounts, len(r.SeriesList))
+		countLookup[r.StatementID] = seriesMap
+		for _, s := range r.SeriesList {
+			if s == nil {
+				continue
+			}
+			h := pairingHash(&s.Header)
+			ec := make(epochCounts, len(s.Points))
+			for _, pt := range s.Points {
+				if len(pt.Values) > 0 {
+					ec[pt.Epoch] = parseFloat(pt.Values[0])
+				}
+			}
+			seriesMap[h] = ec
+		}
+	}
+	// Divide accumulated sum values by their corresponding total counts
+	ds.UpdateLock.Lock()
+	defer ds.UpdateLock.Unlock()
+	for _, r := range ds.Results {
+		if r == nil {
+			continue
+		}
+		seriesMap, ok := countLookup[r.StatementID]
+		if !ok {
+			continue
+		}
+		for _, s := range r.SeriesList {
+			if s == nil {
+				continue
+			}
+			ec, ok := seriesMap[pairingHash(&s.Header)]
+			if !ok {
+				continue
+			}
+			for i := range s.Points {
+				if len(s.Points[i].Values) == 0 {
+					continue
+				}
+				cnt, ok := ec[s.Points[i].Epoch]
+				if ok && cnt != 0 {
+					sum := parseFloat(s.Points[i].Values[0])
+					s.Points[i].Values[0] = strconv.FormatFloat(sum/cnt, 'f', -1, 64)
+				}
+			}
+		}
+	}
 }
 
 // FinalizeAvg divides all point values by count, converting accumulated sums into averages.

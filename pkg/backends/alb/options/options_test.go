@@ -125,35 +125,6 @@ func TestInitialize(t *testing.T) {
 	}
 }
 
-func TestMergeStrategyValidation(t *testing.T) {
-	t.Run("valid merge strategy", func(t *testing.T) {
-		o, err := fromYAML(testTSMWithMergeStrategy)
-		require.NoError(t, err)
-		require.NotNil(t, o)
-		err = o.Initialize("")
-		require.NoError(t, err)
-		ok, err := o.Validate()
-		require.NoError(t, err)
-		require.True(t, ok)
-		require.Equal(t, "sum", o.TSMOptions.MergeStrategy)
-	})
-
-	t.Run("invalid merge strategy rejected", func(t *testing.T) {
-		o, err := fromYAML(testTSMWithInvalidMergeStrategy)
-		require.NoError(t, err)
-		require.NotNil(t, o)
-		err = o.Initialize("")
-		require.Error(t, err)
-	})
-
-	t.Run("empty merge strategy defaults to dedup", func(t *testing.T) {
-		o, err := fromYAML(testTOML)
-		require.NoError(t, err)
-		err = o.Initialize("")
-		require.NoError(t, err)
-		require.Equal(t, "", o.TSMOptions.MergeStrategy) // empty = dedup
-	})
-}
 
 func TestErrInvalidALBOptions(t *testing.T) {
 	err := NewErrInvalidALBOptions("test")

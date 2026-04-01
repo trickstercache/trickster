@@ -21,9 +21,6 @@ backends:
     alb:
       pool: [ prom1, prom2 ]
       mechanism: tsm
-      # tsm:
-      #   merge_strategy: sum  # sum|avg|min|max|count|dedup (default)
-      #                        # use for federation to re-aggregate PromQL results across backends
 
   # a reverse proxy cache round-robin alb
   proxycache:

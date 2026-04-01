@@ -161,3 +161,20 @@ func TestCalculateHashCaching(t *testing.T) {
 		}
 	})
 }
+
+func TestCalculateHashWithQueryStatement(t *testing.T) {
+	sh1 := testSeriesHeader()
+	sh2 := testSeriesHeader()
+	sh1.QueryStatement = "sum(rate(http_requests_total[5m]))"
+	sh2.QueryStatement = "count(rate(http_requests_total[5m]))"
+	if sh1.CalculateHash(true) == sh2.CalculateHash(true) {
+		t.Error("full header hash must differ when QueryStatement differs")
+	}
+	logical := "avg(rate(http_requests_total[5m]))"
+	if sh1.CalculateHashWithQueryStatement(logical) != sh2.CalculateHashWithQueryStatement(logical) {
+		t.Error("pairing hash with shared logical statement must match across sum/count rewrites")
+	}
+	if sh1.CalculateHashWithQueryStatement(logical) == sh1.CalculateHashWithQueryStatement("other") {
+		t.Error("different pairing statements must yield different hashes")
+	}
+}

@@ -73,9 +73,6 @@ type FirstGoodResponseOptions struct {
 
 type TimeSeriesMergeOptions struct {
 	ConcurrencyOptions ConcurrencyOptions `yaml:",inline"`
-	// MergeStrategy defines how values from matching series (identical labels)
-	// are combined across backends. Valid values: dedup (default), sum, avg, min, max, count.
-	MergeStrategy string `yaml:"merge_strategy,omitempty"`
 }
 
 type NewestLastModifiedOptions struct {
@@ -179,9 +176,6 @@ func (o *Options) Initialize(_ string) error {
 		if o.OutputFormat == "" {
 			o.OutputFormat = defaultTSOutputFormat
 		}
-		if err := validateMergeStrategy(o.TSMOptions.MergeStrategy); err != nil {
-			return err
-		}
 	}
 
 	return nil
@@ -197,9 +191,6 @@ func (o *Options) Validate() (bool, error) {
 		if o.OutputFormat != "" && !providers.IsSupportedTimeSeriesMergeProvider(o.OutputFormat) {
 			return false, ErrInvalidOutputFormat
 		}
-		if err := validateMergeStrategy(o.TSMOptions.MergeStrategy); err != nil {
-			return false, err
-		}
 	default:
 		if o.OutputFormat != "" {
 			return false, ErrOutputFormatOnlyForTSM
@@ -213,15 +204,6 @@ func (o *Options) ValidatePool(backendName string, allBackends sets.Set[string])
 		if _, ok := allBackends[bn]; !ok {
 			return te.NewErrInvalidPoolMemberName(backendName, bn)
 		}
-	}
-	return nil
-}
-
-var validMergeStrategies = sets.New([]string{"", "dedup", "sum", "avg", "min", "max", "count"})
-
-func validateMergeStrategy(s string) error {
-	if !validMergeStrategies.Contains(s) {
-		return fmt.Errorf("unknown merge strategy: %q", s)
 	}
 	return nil
 }
