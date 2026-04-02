@@ -82,6 +82,20 @@ func Start(ctx context.Context, args ...string) error {
 	if err != nil {
 		return err
 	}
+
+	if si.Listeners != nil {
+		readinessTimeout := 30 * time.Second
+		if conf.MgmtConfig != nil && conf.MgmtConfig.ReloadDrainTimeout > 0 {
+			readinessTimeout = conf.MgmtConfig.ReloadDrainTimeout * 2
+		}
+		if err := si.Listeners.WaitForReady(readinessTimeout); err != nil {
+			logger.Warn("startup completed but some listeners not ready",
+				logging.Pairs{"error": err.Error()})
+		} else {
+			logger.Info("all listeners ready", nil)
+		}
+	}
+
 	skipUnlock = true
 	mtx.Unlock()
 	signaling.Wait(ctx, hupFunc)

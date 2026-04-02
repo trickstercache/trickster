@@ -92,4 +92,3 @@ func SelectDecoderInitializer(p Provider) DecoderInitializer {
 	}
 	return nil
 }
-
