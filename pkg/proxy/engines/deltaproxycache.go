@@ -570,7 +570,7 @@ func fetchTimeseries(pr *proxyRequest, trq *timeseries.TimeRangeQuery,
 	client backends.TimeseriesBackend, modeler *timeseries.Modeler) (timeseries.Timeseries,
 	*HTTPDocument, time.Duration, error,
 ) {
-	rsc := request.GetResources(pr.Request).Clone()
+	rsc := pr.rsc.Clone()
 	o := rsc.BackendOptions
 	pc := rsc.PathConfig
 

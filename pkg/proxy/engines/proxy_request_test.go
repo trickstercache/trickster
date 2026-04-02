@@ -94,6 +94,7 @@ func TestParseRequestRanges(t *testing.T) {
 
 	pr := proxyRequest{
 		Request:         r,
+		rsc:             request.GetResources(r),
 		upstreamRequest: r,
 	}
 	pr.parseRequestRanges()
@@ -183,6 +184,7 @@ func TestDetermineCacheability(t *testing.T) {
 
 	pr := proxyRequest{
 		Request:       r,
+		rsc:           request.GetResources(r),
 		cachingPolicy: &CachingPolicy{NoCache: true, LastModified: time.Unix(1, 0)},
 		writeToCache:  true,
 		cacheDocument: &HTTPDocument{
@@ -231,6 +233,7 @@ func TestPrepareResponse(t *testing.T) {
 
 	pr := proxyRequest{
 		Request:          r,
+		rsc:              request.GetResources(r),
 		cachingPolicy:    &CachingPolicy{},
 		upstreamResponse: &http.Response{StatusCode: http.StatusOK},
 		cacheDocument:    &HTTPDocument{},
@@ -298,6 +301,7 @@ func TestPrepareRevalidationRequest(t *testing.T) {
 
 	pr := proxyRequest{
 		Request:          r,
+		rsc:              request.GetResources(r),
 		upstreamRequest:  r,
 		cachingPolicy:    &CachingPolicy{},
 		upstreamResponse: &http.Response{},
@@ -325,6 +329,7 @@ func TestPrepareRevalidationRequestNoRange(t *testing.T) {
 
 	pr := proxyRequest{
 		Request:          r,
+		rsc:              request.GetResources(r),
 		upstreamRequest:  r,
 		cachingPolicy:    &CachingPolicy{},
 		upstreamResponse: &http.Response{},
@@ -349,6 +354,7 @@ func TestPrepareRevalidationRequestDefaultRangeInclusiveEnd(t *testing.T) {
 
 	pr := proxyRequest{
 		Request:          r,
+		rsc:              request.GetResources(r),
 		upstreamRequest:  r,
 		cachingPolicy:    &CachingPolicy{},
 		upstreamResponse: &http.Response{},
@@ -381,6 +387,7 @@ func TestPrepareUpstreamRequests(t *testing.T) {
 
 	pr := proxyRequest{
 		Request:          r,
+		rsc:              request.GetResources(r),
 		upstreamRequest:  r,
 		cachingPolicy:    &CachingPolicy{},
 		upstreamResponse: &http.Response{},
@@ -452,6 +459,7 @@ func TestReconstituteResponsesReadError(t *testing.T) {
 
 	pr := &proxyRequest{
 		mapLock:        &sync.Mutex{},
+		rsc:            request.GetResources(baseReq),
 		cachingPolicy:  &CachingPolicy{},
 		originRequests: []*http.Request{r1, r2},
 		originResponses: []*http.Response{
@@ -491,6 +499,7 @@ func TestReconstituteResponsesRevalidationReadError(t *testing.T) {
 
 	pr := &proxyRequest{
 		mapLock:             &sync.Mutex{},
+		rsc:                 request.GetResources(baseReq),
 		cachingPolicy:       &CachingPolicy{},
 		revalidationRequest: reval,
 		revalidationResponse: &http.Response{
