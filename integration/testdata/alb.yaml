@@ -1,0 +1,65 @@
+# Copyright 2018 The Trickster Authors
+# Licensed under the Apache License, Version 2.0
+
+frontend:
+  listen_port: 8490
+
+metrics:
+  listen_port: 8491
+
+mgmt:
+  listen_port: 8492
+
+logging:
+  log_level: info
+
+negative_caches:
+  default:
+    "400": 3
+    "404": 3
+    "500": 3
+
+caches:
+  mem1:
+    provider: memory
+  mem2:
+    provider: memory
+
+backends:
+  prom1:
+    provider: prometheus
+    origin_url: http://127.0.0.1:9090
+    cache_name: mem1
+  prom2:
+    provider: prometheus
+    origin_url: http://127.0.0.1:9090
+    cache_name: mem2
+  alb-fgr:
+    provider: alb
+    alb:
+      mechanism: fgr
+      pool:
+        - prom1
+        - prom2
+  alb-rr:
+    provider: alb
+    alb:
+      mechanism: rr
+      pool:
+        - prom1
+        - prom2
+        - prom1
+  alb-tsm:
+    provider: alb
+    alb:
+      mechanism: tsm
+      pool:
+        - prom1
+        - prom2
+  alb-nlm:
+    provider: alb
+    alb:
+      mechanism: nlm
+      pool:
+        - prom1
+        - prom2

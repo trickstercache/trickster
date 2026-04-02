@@ -132,7 +132,7 @@ func queryTricksterProm(t *testing.T, address, backend, apiPath string, params u
 // parseTricksterResult parses the X-Trickster-Result header into key-value pairs.
 func parseTricksterResult(header string) map[string]string {
 	result := make(map[string]string)
-	for _, part := range strings.Split(header, "; ") {
+	for part := range strings.SplitSeq(header, "; ") {
 		if i := strings.Index(part, "="); i > 0 && i < len(part)-1 {
 			result[part[:i]] = part[i+1:]
 		}

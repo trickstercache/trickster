@@ -17,7 +17,10 @@
 package tsm
 
 import (
+	"bytes"
+	"compress/gzip"
 	stderrors "errors"
+	"io"
 	"net/http"
 	"strings"
 
@@ -271,8 +274,15 @@ func (h *handler) serveStandard(
 			}
 			// as soon as response is complete, unmarshal and merge
 			// this happens in parallel for each response as it arrives
-			if rsc2.MergeFunc != nil && rsc2.TS != nil {
-				rsc2.MergeFunc(accumulator, rsc2.TS, i)
+			if rsc2.MergeFunc != nil {
+				if rsc2.TS != nil {
+					rsc2.MergeFunc(accumulator, rsc2.TS, i)
+				} else if body := decompressGzip(crw.Body()); len(body) > 0 {
+					// For non-timeseries paths (labels, series, etc.), rsc.TS is not
+					// populated. Fall back to passing the captured response body to
+					// MergeFunc, which handles []byte input via JSON unmarshal.
+					rsc2.MergeFunc(accumulator, body, i)
+				}
 			}
 			results[i] = result{
 				statusCode: crw.StatusCode(),
@@ -479,4 +489,21 @@ func (h *handler) serveWeightedAvg(
 	if mrf != nil {
 		mrf(w, r, sumAccum, statusCode)
 	}
+}
+
+// decompressGzip returns decompressed bytes if b is gzip-encoded, otherwise returns b unchanged.
+func decompressGzip(b []byte) []byte {
+	if len(b) < 2 || b[0] != 0x1f || b[1] != 0x8b {
+		return b
+	}
+	gr, err := gzip.NewReader(bytes.NewReader(b))
+	if err != nil {
+		return b
+	}
+	defer gr.Close()
+	decompressed, err := io.ReadAll(gr)
+	if err != nil {
+		return b
+	}
+	return decompressed
 }

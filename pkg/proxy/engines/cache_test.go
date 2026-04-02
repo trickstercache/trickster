@@ -484,6 +484,7 @@ func (sc *spyCache) Store(key string, data []byte, _ time.Duration) error {
 	sc.stored[key] = data
 	return nil
 }
+
 func (sc *spyCache) Retrieve(key string) ([]byte, status.LookupStatus, error) {
 	if b, ok := sc.stored[key]; ok {
 		return b, status.LookupStatusHit, nil

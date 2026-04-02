@@ -52,5 +52,3 @@ func TestTrickster(t *testing.T) {
 		t.Log("Trickster metrics count:", len(metrics))
 	})
 }
-
-func new(s string) *string { return &s }

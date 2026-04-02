@@ -246,23 +246,35 @@ func TestPrometheusALB(t *testing.T) {
 	})
 
 	t.Run("tsm instant query", func(t *testing.T) {
+		// Regression test for https://github.com/trickstercache/trickster/issues/937
 		pr, hdr := queryTricksterProm(t, albAddr, "alb-tsm", "/api/v1/query", url.Values{"query": {"up"}})
 		require.Equal(t, "success", pr.Status)
 		var qd promQueryData
 		require.NoError(t, json.Unmarshal(pr.Data, &qd))
 		require.Equal(t, "vector", qd.ResultType)
+		require.NotEmpty(t, qd.Result, "instant query through TSM should return non-empty result")
 		t.Logf("tsm instant: %s", hdr.Get("X-Trickster-Result"))
 	})
 
-	t.Run("tsm non-mergeable falls back", func(t *testing.T) {
-		// Non-mergeable paths (like /labels) should fall back to a single backend via RR.
-		u := "http://" + albAddr + "/alb-tsm/api/v1/labels"
-		resp, err := http.Get(u)
-		require.NoError(t, err)
-		defer resp.Body.Close()
-		t.Logf("tsm labels: status=%d, X-Trickster-Result=%s",
-			resp.StatusCode, resp.Header.Get("X-Trickster-Result"))
-		require.Equal(t, http.StatusOK, resp.StatusCode)
+	t.Run("tsm labels merge", func(t *testing.T) {
+		// Regression test for https://github.com/trickstercache/trickster/issues/936
+		pr, hdr := queryTricksterProm(t, albAddr, "alb-tsm", "/api/v1/labels", nil)
+		require.Equal(t, "success", pr.Status)
+		var labels []string
+		require.NoError(t, json.Unmarshal(pr.Data, &labels), "labels through TSM should return valid JSON array")
+		require.Contains(t, labels, "job")
+		require.Contains(t, labels, "__name__")
+		t.Logf("tsm labels: %s", hdr.Get("X-Trickster-Result"))
+	})
+
+	t.Run("tsm label values merge", func(t *testing.T) {
+		// Regression test for https://github.com/trickstercache/trickster/issues/936
+		pr, hdr := queryTricksterProm(t, albAddr, "alb-tsm", "/api/v1/label/job/values", nil)
+		require.Equal(t, "success", pr.Status)
+		var values []string
+		require.NoError(t, json.Unmarshal(pr.Data, &values), "label values through TSM should return valid JSON array")
+		require.Contains(t, values, "prometheus")
+		t.Logf("tsm label values: %s", hdr.Get("X-Trickster-Result"))
 	})
 
 	t.Run("nlm range query", func(t *testing.T) {
