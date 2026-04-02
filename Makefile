@@ -146,6 +146,7 @@ data-race-test-inspect:
 .PHONY: integration-test
 integration-test:
 	$(MAKE) -C integration test
+	$(MAKE) -C integration data-race-test
 
 .PHONY: bench
 bench:

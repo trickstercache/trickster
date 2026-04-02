@@ -17,9 +17,12 @@
 package integration
 
 import (
+	"compress/gzip"
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -81,4 +84,58 @@ func checkTrickster(t *testing.T, address string, path string, expectedStatus in
 	body, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
 	return string(body), resp.Header.Clone()
+}
+
+// promResponse is a lightweight representation of a Prometheus API response.
+// Data is raw JSON because different endpoints return different shapes:
+//   - query/query_range: {"resultType": "...", "result": [...]}
+//   - labels/series/label values: [...]
+type promResponse struct {
+	Status string          `json:"status"`
+	Data   json.RawMessage `json:"data"`
+}
+
+// promQueryData is the typed data for query and query_range endpoints.
+type promQueryData struct {
+	ResultType string          `json:"resultType"`
+	Result     json.RawMessage `json:"result"`
+}
+
+// queryTricksterProm queries a Trickster Prometheus backend and returns the parsed response and headers.
+func queryTricksterProm(t *testing.T, address, backend, apiPath string, params url.Values) (promResponse, http.Header) {
+	t.Helper()
+	u := "http://" + address + "/" + backend + apiPath
+	if len(params) > 0 {
+		u += "?" + params.Encode()
+	}
+	// Use a transport that doesn't auto-decompress so we can handle gzip ourselves.
+	// ALB mechanisms (FGR, NLM) may merge headers in ways that confuse Go's auto-decompression.
+	client := &http.Client{Transport: &http.Transport{DisableCompression: true}}
+	resp, err := client.Get(u)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	var reader io.Reader = resp.Body
+	if resp.Header.Get("Content-Encoding") == "gzip" {
+		gr, err := gzip.NewReader(resp.Body)
+		require.NoError(t, err)
+		defer gr.Close()
+		reader = gr
+	}
+	b, err := io.ReadAll(reader)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode, "unexpected status %d: %s", resp.StatusCode, string(b))
+	var pr promResponse
+	require.NoError(t, json.Unmarshal(b, &pr))
+	return pr, resp.Header.Clone()
+}
+
+// parseTricksterResult parses the X-Trickster-Result header into key-value pairs.
+func parseTricksterResult(header string) map[string]string {
+	result := make(map[string]string)
+	for _, part := range strings.Split(header, "; ") {
+		if i := strings.Index(part, "="); i > 0 && i < len(part)-1 {
+			result[part[:i]] = part[i+1:]
+		}
+	}
+	return result
 }

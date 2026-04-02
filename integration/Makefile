@@ -12,3 +12,6 @@ developer-delete:
 
 test:
 	$(GO) test -v --failfast
+
+data-race-test:
+	$(GO) test -v --failfast --race
