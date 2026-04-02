@@ -210,6 +210,88 @@ func exampleKeyHasher(path string, params url.Values, headers http.Header,
 	return "test-key"
 }
 
+// TestDeriveCacheKey_LabelEndpointMatchParam proves that requests to Prometheus
+// label endpoints with different match[] params must produce different cache keys.
+// This is a regression test for https://github.com/trickstercache/trickster/issues/858
+func TestDeriveCacheKey_LabelEndpointMatchParam(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
+
+	// Simulate the default label endpoint path config from prometheus/routes.go:
+	// CacheKeyParams is empty, which is the root cause of issue #858.
+	labelPath := &po.Options{
+		Path:           "/api/v1/label/job/values",
+		CacheKeyParams: []string{}, // BUG: match[] is not included
+	}
+
+	cfg := &bo.Options{
+		Paths: po.List{labelPath},
+	}
+
+	newResources := func() *request.Resources {
+		return request.NewResources(cfg, cfg.Paths[0], nil, nil, nil, nil)
+	}
+
+	// Two requests to the same label endpoint with different match[] selectors,
+	// simulating switching between Grafana dashboards.
+	r1 := httptest.NewRequest("GET",
+		`http://127.0.0.1/api/v1/label/job/values?match[]={__name__="vm_rows"}&start=1000&end=2000`, nil)
+	r1 = r1.WithContext(ct.WithResources(context.Background(), newResources()))
+
+	r2 := httptest.NewRequest("GET",
+		`http://127.0.0.1/api/v1/label/job/values?match[]={__name__="node_cpu_seconds_total"}&start=1000&end=2000`, nil)
+	r2 = r2.WithContext(ct.WithResources(context.Background(), newResources()))
+
+	pr1 := newProxyRequest(r1, nil)
+	pr2 := newProxyRequest(r2, nil)
+
+	key1 := pr1.DeriveCacheKey("")
+	key2 := pr2.DeriveCacheKey("")
+
+	if key1 == key2 {
+		t.Errorf("label endpoint cache keys must differ when match[] params differ, "+
+			"but both produced %s (issue #858)", key1)
+	}
+}
+
+// TestDeriveCacheKey_MultiValueMatchParam proves that requests with different
+// sets of multiple match[] values produce different cache keys.
+func TestDeriveCacheKey_MultiValueMatchParam(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
+
+	seriesPath := &po.Options{
+		Path:           "/api/v1/series",
+		CacheKeyParams: []string{"match[]", "start", "end"},
+	}
+
+	cfg := &bo.Options{
+		Paths: po.List{seriesPath},
+	}
+
+	newResources := func() *request.Resources {
+		return request.NewResources(cfg, cfg.Paths[0], nil, nil, nil, nil)
+	}
+
+	// Two match[] values vs one — these must produce different cache keys.
+	r1 := httptest.NewRequest("GET",
+		`http://127.0.0.1/api/v1/series?match[]={__name__="up"}&match[]={__name__="down"}&start=0&end=0`, nil)
+	r1 = r1.WithContext(ct.WithResources(context.Background(), newResources()))
+
+	r2 := httptest.NewRequest("GET",
+		`http://127.0.0.1/api/v1/series?match[]={__name__="up"}&start=0&end=0`, nil)
+	r2 = r2.WithContext(ct.WithResources(context.Background(), newResources()))
+
+	pr1 := newProxyRequest(r1, nil)
+	pr2 := newProxyRequest(r2, nil)
+
+	key1 := pr1.DeriveCacheKey("")
+	key2 := pr2.DeriveCacheKey("")
+
+	if key1 == key2 {
+		t.Errorf("cache keys must differ when number of match[] values differs, "+
+			"but both produced %s", key1)
+	}
+}
+
 func TestDeriveCacheKeyAuthHeader(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	client, err := NewTestClient("test", &bo.Options{
