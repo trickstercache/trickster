@@ -617,6 +617,26 @@ func TestObjectProxyCacheRequestOriginNoCache(t *testing.T) {
 	}
 }
 
+func TestObjectProxyCacheRequestOriginNoCacheHeaders(t *testing.T) {
+	ts, _, r, _, err := setupTestHarnessOPC("", "test", http.StatusOK, nil) // nil headers means origin will not provide any caching signals
+	if err != nil {
+		t.Error(err)
+	}
+	defer ts.Close()
+
+	// First request: cache miss, origin has no caching headers so nothing is stored
+	_, e := testFetchOPC(r, http.StatusOK, "test", map[string]string{"status": "kmiss"})
+	for _, err = range e {
+		t.Error(err)
+	}
+
+	// Second request: still a cache miss — origin never provided caching signals
+	_, e = testFetchOPC(r, http.StatusOK, "test", map[string]string{"status": "kmiss"})
+	for _, err = range e {
+		t.Error(err)
+	}
+}
+
 func TestObjectProxyCacheIMS(t *testing.T) {
 	hdrs := map[string]string{"Cache-Control": "max-age=1"}
 	ts, _, r, rsc, err := setupTestHarnessOPCRange(hdrs)
