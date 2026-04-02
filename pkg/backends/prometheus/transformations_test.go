@@ -17,8 +17,6 @@
 package prometheus
 
 import (
-	"bytes"
-	"compress/gzip"
 	"net/http/httptest"
 	"testing"
 
@@ -61,50 +59,3 @@ func TestProcessVectorTransformations(t *testing.T) {
 	}
 }
 
-func testGzipCompress(t *testing.T, data []byte) []byte {
-	t.Helper()
-	var buf bytes.Buffer
-	w := gzip.NewWriter(&buf)
-	if _, err := w.Write(data); err != nil {
-		t.Fatal(err)
-	}
-	if err := w.Close(); err != nil {
-		t.Fatal(err)
-	}
-	return buf.Bytes()
-}
-
-func TestDecompressGzip(t *testing.T) {
-	t.Run("plain JSON returned unchanged", func(t *testing.T) {
-		input := []byte(`{"status":"ok"}`)
-		got := decompressGzip(input)
-		if !bytes.Equal(got, input) {
-			t.Errorf("expected input unchanged, got %q", got)
-		}
-	})
-
-	t.Run("gzip-compressed JSON returned decompressed", func(t *testing.T) {
-		want := []byte(`{"status":"ok"}`)
-		compressed := testGzipCompress(t, want)
-		got := decompressGzip(compressed)
-		if !bytes.Equal(got, want) {
-			t.Errorf("expected %q, got %q", want, got)
-		}
-	})
-
-	t.Run("empty input returned unchanged", func(t *testing.T) {
-		input := []byte{}
-		got := decompressGzip(input)
-		if !bytes.Equal(got, input) {
-			t.Errorf("expected empty slice, got %q", got)
-		}
-	})
-
-	t.Run("truncated gzip returned unchanged", func(t *testing.T) {
-		input := []byte{0x1f, 0x8b}
-		got := decompressGzip(input)
-		if !bytes.Equal(got, input) {
-			t.Errorf("expected input unchanged, got %q", got)
-		}
-	})
-}

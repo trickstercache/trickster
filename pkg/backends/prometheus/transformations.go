@@ -17,13 +17,11 @@
 package prometheus
 
 import (
-	"bytes"
-	"compress/gzip"
-	"io"
 	"net/http"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus/model"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	tgzip "github.com/trickstercache/trickster/v2/pkg/encoding/gzip"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
@@ -48,7 +46,7 @@ func (c *Client) processVectorTransformations(w http.ResponseWriter,
 	// Decompress gzip if the response body is gzip-encoded.
 	// This can happen when ALB mechanisms (FGR, NLM, TSM) capture responses
 	// from pool members that return compressed data.
-	body = decompressGzip(body)
+	body = tgzip.Decompress(body)
 	var trq *timeseries.TimeRangeQuery
 	if rsc != nil && rsc.TimeRangeQuery != nil {
 		trq = rsc.TimeRangeQuery
@@ -73,21 +71,4 @@ func (c *Client) processVectorTransformations(w http.ResponseWriter,
 func defaultWrite(statusCode int, w http.ResponseWriter, b []byte) {
 	w.WriteHeader(statusCode)
 	w.Write(b)
-}
-
-// decompressGzip returns decompressed bytes if b is gzip-encoded, otherwise returns b unchanged.
-func decompressGzip(b []byte) []byte {
-	if len(b) < 2 || b[0] != 0x1f || b[1] != 0x8b {
-		return b
-	}
-	gr, err := gzip.NewReader(bytes.NewReader(b))
-	if err != nil {
-		return b
-	}
-	defer gr.Close()
-	decompressed, err := io.ReadAll(gr)
-	if err != nil {
-		return b
-	}
-	return decompressed
 }

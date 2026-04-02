@@ -48,6 +48,18 @@ func Decode(in []byte) ([]byte, error) {
 	return io.ReadAll(gr)
 }
 
+// Decompress returns decompressed bytes if b is gzip-encoded, otherwise returns b unchanged.
+func Decompress(b []byte) []byte {
+	if len(b) < 2 || b[0] != 0x1f || b[1] != 0x8b {
+		return b
+	}
+	out, err := Decode(b)
+	if err != nil {
+		return b
+	}
+	return out
+}
+
 // Encode returns the encoded version of the byte slice
 func Encode(in []byte) ([]byte, error) {
 	buf := bytes.NewBuffer(make([]byte, 0, len(in)))
