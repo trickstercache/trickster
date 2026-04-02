@@ -52,48 +52,52 @@ func setupSpanForRequest(req *http.Request, span trace.Span) *http.Request {
 }
 
 type proxyRequest struct {
+	// client request/response
 	*http.Request
+	rsc            *request.Resources
 	responseWriter io.Writer
 	responseBody   []byte
 
+	// upstream
 	upstreamRequest  *http.Request
 	upstreamResponse *http.Response
 	upstreamReader   io.Reader
 
-	// for parallel requests
+	// parallel origin requests
 	originRequests  []*http.Request
 	originResponses []*http.Response
 	originReaders   []io.ReadCloser
 
+	// revalidation
 	revalidationRequest  *http.Request
 	revalidationResponse *http.Response
 	revalidationReader   io.ReadCloser
+	revalidation         RevalidationStatus
 
+	// cache state
 	cacheDocument *HTTPDocument
 	cacheBuffer   *bytes.Buffer
-	mapLock       *sync.Mutex
+	cacheStatus   status.LookupStatus
+	cachingPolicy *CachingPolicy
+	key           string
+	writeToCache  bool
 
-	key         string
-	started     time.Time
-	cacheStatus status.LookupStatus
-
-	wantedRanges byterange.Ranges
-	neededRanges byterange.Ranges
-	rangeParts   byterange.MultipartByteRanges
-
-	contentLength int64
-	revalidation  RevalidationStatus
-
-	trueContentType string
-
-	collapsedForwarder ProgressiveCollapseForwarder
-	cachingPolicy      *CachingPolicy
-
-	isPCF             bool
-	writeToCache      bool
+	// range handling
+	wantedRanges      byterange.Ranges
+	neededRanges      byterange.Ranges
+	rangeParts        byterange.MultipartByteRanges
 	wantsRanges       bool
 	isPartialResponse bool
-	wasReconstituted  bool
+
+	// progressive collapse forwarding
+	collapsedForwarder ProgressiveCollapseForwarder
+	isPCF              bool
+
+	// misc
+	mapLock         *sync.Mutex
+	started         time.Time
+	contentLength   int64
+	trueContentType string
 }
 
 func cloneRequestWithSpan(r *http.Request) *http.Request {
@@ -114,6 +118,7 @@ func cloneRequestWithSpan(r *http.Request) *http.Request {
 func newProxyRequest(r *http.Request, w io.Writer) *proxyRequest {
 	pr := &proxyRequest{
 		Request:         r,
+		rsc:             request.GetResources(r),
 		upstreamRequest: cloneRequestWithSpan(r),
 		contentLength:   -1,
 		responseWriter:  w,
@@ -126,6 +131,7 @@ func newProxyRequest(r *http.Request, w io.Writer) *proxyRequest {
 func (pr *proxyRequest) Clone() *proxyRequest {
 	return &proxyRequest{
 		Request:            cloneRequestWithSpan(pr.Request),
+		rsc:                pr.rsc,
 		upstreamRequest:    cloneRequestWithSpan(pr.upstreamRequest),
 		cacheDocument:      pr.cacheDocument,
 		key:                pr.key,
@@ -147,7 +153,7 @@ func (pr *proxyRequest) Clone() *proxyRequest {
 // Fetch makes an HTTP request to the provided Origin URL, bypassing the Cache, and returns the
 // response and elapsed time to the caller.
 func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration) {
-	rsc := request.GetResources(pr.upstreamRequest)
+	rsc := pr.rsc
 	o := rsc.BackendOptions
 	pc := rsc.PathConfig
 
@@ -181,11 +187,10 @@ func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration) {
 }
 
 func (pr *proxyRequest) prepareRevalidationRequest() {
-	rsc := request.GetResources(pr.upstreamRequest)
+	rsc := pr.rsc
 	pr.revalidation = RevalStatusInProgress
 	pr.revalidationRequest, _ = request.Clone(pr.upstreamRequest)
-	pr.revalidationRequest = request.SetResources(pr.revalidationRequest,
-		request.GetResources(pr.Request))
+	pr.revalidationRequest = request.SetResources(pr.revalidationRequest, pr.rsc)
 	_, span := tspan.NewChildSpan(pr.revalidationRequest.Context(), rsc.Tracer, "FetchRevlidation")
 	if span != nil {
 		pr.revalidationRequest = pr.revalidationRequest.WithContext(trace.ContextWithSpan(pr.revalidationRequest.Context(), span))
@@ -197,7 +202,7 @@ func (pr *proxyRequest) prepareRevalidationRequest() {
 		d := pr.cacheDocument
 		cl := d.ContentLength
 
-		rsc := request.GetResources(pr.Request)
+		rsc := pr.rsc
 
 		var wr byterange.Ranges
 		if len(pr.wantedRanges) > 0 {
@@ -243,7 +248,7 @@ func (pr *proxyRequest) prepareUpstreamRequests() {
 	pr.setRangeHeader(pr.upstreamRequest.Header)
 
 	pr.stripConditionalHeaders()
-	rsc := request.GetResources(pr.Request)
+	rsc := pr.rsc
 	if pr.originRequests == nil {
 		var l int
 		if pr.neededRanges == nil {
@@ -282,7 +287,7 @@ func (pr *proxyRequest) makeSimpleUpstreamRequests(req *http.Request,
 
 func (pr *proxyRequest) makeUpstreamRequests() error {
 	// short circuit for when there is only 1 upstream request
-	rsc := request.GetResources(pr.Request)
+	rsc := pr.rsc
 	if pr.revalidationRequest == nil && len(pr.originRequests) == 1 {
 		pr.originReaders = make([]io.ReadCloser, 1)
 		pr.originResponses = make([]*http.Response, 1)
@@ -349,7 +354,7 @@ func (pr *proxyRequest) parseRequestRanges() bool {
 	pr.wantedRanges = out
 
 	// if the client shouldn't support multipart ranges, force a full range
-	rsc := request.GetResources(pr.Request)
+	rsc := pr.rsc
 	if rsc.BackendOptions.MultipartRangesDisabled && len(pr.wantedRanges) > 1 {
 		pr.upstreamRequest.Header.Del(headers.NameRange)
 		pr.wantsRanges = false
@@ -409,7 +414,7 @@ func (pr *proxyRequest) writeResponseBody() {
 }
 
 func (pr *proxyRequest) determineCacheability() {
-	rsc := request.GetResources(pr.Request)
+	rsc := pr.rsc
 	resp := pr.upstreamResponse
 
 	if resp != nil && resp.StatusCode >= 400 {
@@ -472,7 +477,7 @@ func (pr *proxyRequest) store() error {
 		d.ContentType = pr.trueContentType
 	}
 
-	rsc := request.GetResources(pr.Request)
+	rsc := pr.rsc
 	o := rsc.BackendOptions
 
 	rf := o.RevalidationFactor
@@ -633,9 +638,9 @@ func (pr *proxyRequest) reconstituteResponses() {
 	}
 
 	// if all requests were 206, we have to reconstitute to a single multipart body
-	pr.wasReconstituted = requestCount > 1
+	wasReconstituted := requestCount > 1
 
-	if pr.wasReconstituted {
+	if wasReconstituted {
 		// in this case, we should _not_ use the revalidation request as the base upstreamResponse,
 		// since it could have a 304 not modified as the response, instead of a 200 or 206, and this
 		// point assumes fresh
@@ -734,7 +739,7 @@ func (pr *proxyRequest) reconstituteResponses() {
 
 	// now we merge the caching policy of the new upstreams
 	if pr.upstreamResponse.StatusCode != http.StatusNotModified {
-		rsc := request.GetResources(pr.Request)
+		rsc := pr.rsc
 		pr.mapLock.Lock()
 		pr.cachingPolicy.Merge(GetResponseCachingPolicy(pr.upstreamResponse.StatusCode,
 			rsc.BackendOptions.NegativeCache, pr.upstreamResponse.Header))

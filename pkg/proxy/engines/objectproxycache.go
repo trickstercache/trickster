@@ -144,7 +144,7 @@ func handleCacheRangeMiss(pr *proxyRequest) error {
 }
 
 func handleCacheRevalidation(pr *proxyRequest) error {
-	rsc := request.GetResources(pr.Request)
+	rsc := pr.rsc
 
 	_, span := tspan.NewChildSpan(pr.Request.Context(), rsc.Tracer, "CacheRevalidation")
 	if span != nil {
@@ -240,7 +240,7 @@ func handleTrueCacheHit(pr *proxyRequest) error {
 }
 
 func handleCacheKeyMiss(pr *proxyRequest) error {
-	rsc := request.GetResources(pr.Request)
+	rsc := pr.rsc
 	pc := rsc.PathConfig
 
 	// if we're using PCF, handle that separately
@@ -290,7 +290,7 @@ func handleUpstreamTransactions(pr *proxyRequest) error {
 }
 
 func handlePCF(pr *proxyRequest) error {
-	rsc := request.GetResources(pr.Request)
+	rsc := pr.rsc
 	o := rsc.BackendOptions
 
 	pr.isPCF = true
