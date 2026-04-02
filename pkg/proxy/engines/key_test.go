@@ -210,87 +210,116 @@ func exampleKeyHasher(path string, params url.Values, headers http.Header,
 	return "test-key"
 }
 
-// TestDeriveCacheKey_LabelEndpointMatchParam proves that requests to Prometheus
-// label endpoints with different match[] params must produce different cache keys.
-// This is a regression test for https://github.com/trickstercache/trickster/issues/858
-func TestDeriveCacheKey_LabelEndpointMatchParam(t *testing.T) {
+// TestDeriveCacheKey_MultiValueParams is a comprehensive test for multi-value
+// query parameter handling in cache key derivation.
+// Regression tests for https://github.com/trickstercache/trickster/issues/858
+func TestDeriveCacheKey_MultiValueParams(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 
-	// Simulate the label endpoint path config from prometheus/routes.go.
-	// match[], start, and end must be included to avoid cache collisions
-	// when Grafana switches dashboards (issue #858).
-	labelPath := &po.Options{
-		Path:           "/api/v1/label/job/values",
-		CacheKeyParams: []string{"match[]", "start", "end"},
+	makeKey := func(path string, ckp []string, rawURL string) string {
+		t.Helper()
+		pc := &po.Options{Path: path, CacheKeyParams: ckp}
+		cfg := &bo.Options{Paths: po.List{pc}}
+		rsc := request.NewResources(cfg, cfg.Paths[0], nil, nil, nil, nil)
+		r := httptest.NewRequest("GET", rawURL, nil)
+		r = r.WithContext(ct.WithResources(context.Background(), rsc))
+		return newProxyRequest(r, nil).DeriveCacheKey("")
 	}
 
-	cfg := &bo.Options{
-		Paths: po.List{labelPath},
-	}
+	t.Run("empty CacheKeyParams ignores all params", func(t *testing.T) {
+		// This was the root cause of #858: label endpoints had empty
+		// CacheKeyParams so different match[] filters shared one cache entry.
+		k1 := makeKey("/api/v1/label/job/values", []string{},
+			`http://h/api/v1/label/job/values?match[]={__name__="a"}`)
+		k2 := makeKey("/api/v1/label/job/values", []string{},
+			`http://h/api/v1/label/job/values?match[]={__name__="b"}`)
+		if k1 != k2 {
+			t.Error("empty CacheKeyParams should ignore query params")
+		}
+	})
 
-	newResources := func() *request.Resources {
-		return request.NewResources(cfg, cfg.Paths[0], nil, nil, nil, nil)
-	}
+	t.Run("label endpoint different match selectors", func(t *testing.T) {
+		ckp := []string{"match[]", "start", "end"}
+		k1 := makeKey("/api/v1/label/job/values", ckp,
+			`http://h/api/v1/label/job/values?match[]={__name__="vm_rows"}&start=1000&end=2000`)
+		k2 := makeKey("/api/v1/label/job/values", ckp,
+			`http://h/api/v1/label/job/values?match[]={__name__="node_cpu_seconds_total"}&start=1000&end=2000`)
+		if k1 == k2 {
+			t.Errorf("different match[] must produce different keys, both got %s", k1)
+		}
+	})
 
-	// Two requests to the same label endpoint with different match[] selectors,
-	// simulating switching between Grafana dashboards.
-	r1 := httptest.NewRequest("GET",
-		`http://127.0.0.1/api/v1/label/job/values?match[]={__name__="vm_rows"}&start=1000&end=2000`, nil)
-	r1 = r1.WithContext(ct.WithResources(context.Background(), newResources()))
+	t.Run("labels endpoint different match selectors", func(t *testing.T) {
+		ckp := []string{"match[]", "start", "end"}
+		k1 := makeKey("/api/v1/labels", ckp,
+			`http://h/api/v1/labels?match[]={__name__="vm_rows"}`)
+		k2 := makeKey("/api/v1/labels", ckp,
+			`http://h/api/v1/labels?match[]={__name__="node_cpu"}`)
+		if k1 == k2 {
+			t.Errorf("different match[] must produce different keys, both got %s", k1)
+		}
+	})
 
-	r2 := httptest.NewRequest("GET",
-		`http://127.0.0.1/api/v1/label/job/values?match[]={__name__="node_cpu_seconds_total"}&start=1000&end=2000`, nil)
-	r2 = r2.WithContext(ct.WithResources(context.Background(), newResources()))
+	t.Run("different label names produce different keys", func(t *testing.T) {
+		ckp := []string{"match[]", "start", "end"}
+		k1 := makeKey("/api/v1/label/job/values", ckp,
+			`http://h/api/v1/label/job/values?match[]={__name__="up"}`)
+		k2 := makeKey("/api/v1/label/instance/values", ckp,
+			`http://h/api/v1/label/instance/values?match[]={__name__="up"}`)
+		if k1 == k2 {
+			t.Errorf("different label paths must produce different keys, both got %s", k1)
+		}
+	})
 
-	pr1 := newProxyRequest(r1, nil)
-	pr2 := newProxyRequest(r2, nil)
+	t.Run("multi-value match vs single-value match", func(t *testing.T) {
+		ckp := []string{"match[]", "start", "end"}
+		k1 := makeKey("/api/v1/series", ckp,
+			`http://h/api/v1/series?match[]={__name__="up"}&match[]={__name__="down"}&start=0&end=0`)
+		k2 := makeKey("/api/v1/series", ckp,
+			`http://h/api/v1/series?match[]={__name__="up"}&start=0&end=0`)
+		if k1 == k2 {
+			t.Errorf("different match[] count must produce different keys, both got %s", k1)
+		}
+	})
 
-	key1 := pr1.DeriveCacheKey("")
-	key2 := pr2.DeriveCacheKey("")
+	t.Run("wildcard CacheKeyParams includes all multi-value params", func(t *testing.T) {
+		k1 := makeKey("/api/v1/series", []string{"*"},
+			`http://h/api/v1/series?match[]={__name__="up"}&match[]={__name__="down"}&start=0&end=0`)
+		k2 := makeKey("/api/v1/series", []string{"*"},
+			`http://h/api/v1/series?match[]={__name__="up"}&start=0&end=0`)
+		if k1 == k2 {
+			t.Errorf("wildcard mode: different match[] count must produce different keys, both got %s", k1)
+		}
+	})
 
-	if key1 == key2 {
-		t.Errorf("label endpoint cache keys must differ when match[] params differ, "+
-			"but both produced %s (issue #858)", key1)
-	}
-}
+	t.Run("single-value params unchanged", func(t *testing.T) {
+		// Ensure the multi-value change doesn't alter keys for single-value params.
+		// This uses the same config as TestDeriveCacheKey to confirm stability.
+		rpath := &po.Options{
+			Path:           "/",
+			CacheKeyParams: []string{"query", "step", "time"},
+		}
+		cfg := &bo.Options{Paths: po.List{rpath}}
+		rsc := request.NewResources(cfg, cfg.Paths[0], nil, nil, nil, nil)
+		r := httptest.NewRequest("GET",
+			"http://127.0.0.1/?query=12345&start=0&end=0&step=300&time=0", nil)
+		r = r.WithContext(ct.WithResources(context.Background(), rsc))
+		k := newProxyRequest(r, nil).DeriveCacheKey("extra")
+		if k != "52dc11456c84506d3444e53ee4c99777" {
+			t.Errorf("single-value param key changed: got %s, want 52dc11456c84506d3444e53ee4c99777", k)
+		}
+	})
 
-// TestDeriveCacheKey_MultiValueMatchParam proves that requests with different
-// sets of multiple match[] values produce different cache keys.
-func TestDeriveCacheKey_MultiValueMatchParam(t *testing.T) {
-	logger.SetLogger(logging.ConsoleLogger(level.Error))
-
-	seriesPath := &po.Options{
-		Path:           "/api/v1/series",
-		CacheKeyParams: []string{"match[]", "start", "end"},
-	}
-
-	cfg := &bo.Options{
-		Paths: po.List{seriesPath},
-	}
-
-	newResources := func() *request.Resources {
-		return request.NewResources(cfg, cfg.Paths[0], nil, nil, nil, nil)
-	}
-
-	// Two match[] values vs one — these must produce different cache keys.
-	r1 := httptest.NewRequest("GET",
-		`http://127.0.0.1/api/v1/series?match[]={__name__="up"}&match[]={__name__="down"}&start=0&end=0`, nil)
-	r1 = r1.WithContext(ct.WithResources(context.Background(), newResources()))
-
-	r2 := httptest.NewRequest("GET",
-		`http://127.0.0.1/api/v1/series?match[]={__name__="up"}&start=0&end=0`, nil)
-	r2 = r2.WithContext(ct.WithResources(context.Background(), newResources()))
-
-	pr1 := newProxyRequest(r1, nil)
-	pr2 := newProxyRequest(r2, nil)
-
-	key1 := pr1.DeriveCacheKey("")
-	key2 := pr2.DeriveCacheKey("")
-
-	if key1 == key2 {
-		t.Errorf("cache keys must differ when number of match[] values differs, "+
-			"but both produced %s", key1)
-	}
+	t.Run("no match param vs with match param", func(t *testing.T) {
+		ckp := []string{"match[]", "start", "end"}
+		k1 := makeKey("/api/v1/label/job/values", ckp,
+			`http://h/api/v1/label/job/values?start=1000&end=2000`)
+		k2 := makeKey("/api/v1/label/job/values", ckp,
+			`http://h/api/v1/label/job/values?match[]={__name__="up"}&start=1000&end=2000`)
+		if k1 == k2 {
+			t.Errorf("presence vs absence of match[] must produce different keys, both got %s", k1)
+		}
+	})
 }
 
 func TestDeriveCacheKeyAuthHeader(t *testing.T) {
