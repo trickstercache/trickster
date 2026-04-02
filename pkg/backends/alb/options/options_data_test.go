@@ -55,4 +55,3 @@ backends:
       fgr:
         status_codes: [200, 201]
 `
-

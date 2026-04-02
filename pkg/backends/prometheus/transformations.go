@@ -21,6 +21,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus/model"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	tgzip "github.com/trickstercache/trickster/v2/pkg/encoding/gzip"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
@@ -42,6 +43,10 @@ func (c *Client) ProcessTransformations(ts timeseries.Timeseries) {
 func (c *Client) processVectorTransformations(w http.ResponseWriter,
 	body []byte, statusCode int, rsc *request.Resources,
 ) {
+	// Decompress gzip if the response body is gzip-encoded.
+	// This can happen when ALB mechanisms (FGR, NLM, TSM) capture responses
+	// from pool members that return compressed data.
+	body = tgzip.Decompress(body)
 	var trq *timeseries.TimeRangeQuery
 	if rsc != nil && rsc.TimeRangeQuery != nil {
 		trq = rsc.TimeRangeQuery

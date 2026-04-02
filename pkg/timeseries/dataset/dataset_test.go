@@ -279,7 +279,8 @@ func TestMergeWithStrategy(t *testing.T) {
 	makeDS := func(stmtID int, name string, tags Tags, points ...struct {
 		epoch int64
 		value string
-	}) *DataSet {
+	},
+	) *DataSet {
 		p := make(Points, len(points))
 		for i, pt := range points {
 			p[i] = Point{Epoch: epoch.Epoch(pt.epoch), Size: 32, Values: []any{pt.value}}
@@ -369,7 +370,8 @@ func TestFinalizeWeightedAvg(t *testing.T) {
 	makeDS := func(stmtID int, name string, tags Tags, points ...struct {
 		epoch int64
 		value string
-	}) *DataSet {
+	},
+	) *DataSet {
 		p := make(Points, len(points))
 		for i, pt := range points {
 			p[i] = Point{Epoch: epoch.Epoch(pt.epoch), Size: 32, Values: []any{pt.value}}

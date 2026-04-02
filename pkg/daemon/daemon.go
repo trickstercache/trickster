@@ -19,6 +19,7 @@
 package daemon
 
 import (
+	"context"
 	"fmt"
 	"os"
 	goruntime "runtime"
@@ -38,12 +39,9 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 )
 
-var (
-	mtx        sync.Mutex
-	wasStarted bool
-)
+var mtx sync.Mutex
 
-func Start() error {
+func Start(ctx context.Context, args ...string) error {
 	var skipUnlock bool
 	unlock := func() {
 		if !skipUnlock {
@@ -52,13 +50,10 @@ func Start() error {
 	}
 	mtx.Lock()
 	defer unlock()
-	if wasStarted {
-		return errors.ErrServerAlreadyStarted
-	}
 	metrics.BuildInfo.WithLabelValues(goruntime.Version(),
 		appinfo.GitCommitID, appinfo.Version).Set(1)
 
-	conf, clients, err := setup.BootstrapConfig()
+	conf, clients, err := setup.BootstrapConfig(args...)
 	if err != nil {
 		return err
 	}
@@ -80,7 +75,7 @@ func Start() error {
 
 	si := &instance.ServerInstance{}
 	var hupFunc reload.Reloader = func(source string) (bool, error) {
-		return Hup(si, source)
+		return Hup(si, source, args...)
 	}
 	// Serve with Config
 	err = setup.ApplyConfig(si, conf, clients, hupFunc, func() { os.Exit(1) })
@@ -101,14 +96,13 @@ func Start() error {
 		}
 	}
 
-	wasStarted = true
 	skipUnlock = true
 	mtx.Unlock()
-	signaling.Wait(hupFunc)
+	signaling.Wait(ctx, hupFunc)
 	return nil
 }
 
-func Hup(si *instance.ServerInstance, source string) (bool, error) {
+func Hup(si *instance.ServerInstance, source string, args ...string) (bool, error) {
 	mtx.Lock()
 	defer mtx.Unlock()
 
@@ -142,7 +136,7 @@ func Hup(si *instance.ServerInstance, source string) (bool, error) {
 		return false, err
 	}
 
-	newConf, newClients, err := setup.BootstrapConfig()
+	newConf, newClients, err := setup.BootstrapConfig(args...)
 	if err != nil {
 		return handleReloadFailure("reload failed: could not load new config", err)
 	}

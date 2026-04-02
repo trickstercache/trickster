@@ -128,13 +128,13 @@ func TestPCFReadWriteGetBody(t *testing.T) {
 }
 
 func TestPCFWaits(t *testing.T) {
-	var testStringLong string
+	var testStringLong strings.Builder
 	for range 32000 {
-		testStringLong += "DEADBEEF"
+		testStringLong.WriteString("DEADBEEF")
 	}
-	w := bytes.NewBuffer(make([]byte, 0, len(testStringLong)))
-	r := strings.NewReader(testStringLong)
-	l := len(testStringLong)
+	w := bytes.NewBuffer(make([]byte, 0, len(testStringLong.String())))
+	r := strings.NewReader(testStringLong.String())
+	l := len(testStringLong.String())
 	resp := &http.Response{}
 	allComplete := uint64(0)
 	serverComplete := uint64(0)

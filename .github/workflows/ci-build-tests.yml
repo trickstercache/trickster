@@ -102,9 +102,25 @@ jobs:
           path-to-profile: .coverprofile
           flag-name: Go-${{ matrix.go }}
           parallel: true
+
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Start developer environment
+        run: make developer-start
+      - name: Show container status
+        if: always()
+        run: cd docs/developer/environment && docker compose ps && docker compose logs prometheus --tail=30
+      - name: Run integration tests
+        run: make integration-test
   finish:
     needs:
       - build
+      - integration
     runs-on: ubuntu-latest
     steps:
       - uses: shogo82148/actions-goveralls@v1
