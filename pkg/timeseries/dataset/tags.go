@@ -54,6 +54,28 @@ func (ds *DataSet) InjectTags(tags Tags) {
 	wg.Wait()
 }
 
+// StripTags removes the specified tag keys from all series in all results in the DataSet
+// and forces a hash recalculation so that series identity reflects the updated tags.
+func (ds *DataSet) StripTags(keys []string) {
+	if len(keys) == 0 {
+		return
+	}
+	for _, r := range ds.Results {
+		if r == nil {
+			continue
+		}
+		for _, s := range r.SeriesList {
+			if s == nil || len(s.Header.Tags) == 0 {
+				continue
+			}
+			for _, k := range keys {
+				delete(s.Header.Tags, k)
+			}
+			s.Header.CalculateHash(true) // force rehash with updated tags
+		}
+	}
+}
+
 // StringsWithSep returns a string representation of the Tags with the provided key/value separator
 func (t Tags) StringsWithSep(sep1, sep2 string) string {
 	if len(t) == 0 {

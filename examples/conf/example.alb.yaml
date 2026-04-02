@@ -19,7 +19,7 @@ backends:
   promalb:
     provider: alb
     alb:
-      pool: [ prom1, prom1 ]
+      pool: [ prom1, prom2 ]
       mechanism: tsm
 
   # a reverse proxy cache round-robin alb

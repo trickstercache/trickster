@@ -218,7 +218,7 @@ backends:
       mechanism: tsm
       pool:
       - prom1
-      - prom1
+      - prom2
       output_format: prometheus
     tls: {}
     forwarded_headers: standard

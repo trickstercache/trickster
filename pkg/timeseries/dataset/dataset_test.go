@@ -274,6 +274,259 @@ func TestMerge(t *testing.T) {
 	})
 }
 
+func TestMergeWithStrategy(t *testing.T) {
+	// Build a DataSet with one Result containing one series with string-encoded float values
+	makeDS := func(stmtID int, name string, tags Tags, points ...struct {
+		epoch int64
+		value string
+	}) *DataSet {
+		p := make(Points, len(points))
+		for i, pt := range points {
+			p[i] = Point{Epoch: epoch.Epoch(pt.epoch), Size: 32, Values: []any{pt.value}}
+		}
+		return &DataSet{
+			Results: Results{
+				{StatementID: stmtID, SeriesList: SeriesList{
+					{Header: SeriesHeader{Name: name, Tags: tags}, Points: p},
+				}},
+			},
+		}
+	}
+
+	type ep struct {
+		epoch int64
+		value string
+	}
+
+	t.Run("sum across two datasets", func(t *testing.T) {
+		ds1 := makeDS(0, "up", Tags{}, ep{100, "1"}, ep{200, "2"})
+		ds2 := makeDS(0, "up", Tags{}, ep{100, "3"}, ep{200, "4"})
+		ds1.MergeWithStrategy(true, int(MergeStrategySum), ds2)
+		if ds1.SeriesCount() != 1 {
+			t.Fatalf("expected 1 series, got %d", ds1.SeriesCount())
+		}
+		pts := ds1.Results[0].SeriesList[0].Points
+		if len(pts) != 2 {
+			t.Fatalf("expected 2 points, got %d", len(pts))
+		}
+		if pts[0].Values[0] != "4" {
+			t.Errorf("expected sum 4 at epoch 100, got %v", pts[0].Values[0])
+		}
+		if pts[1].Values[0] != "6" {
+			t.Errorf("expected sum 6 at epoch 200, got %v", pts[1].Values[0])
+		}
+	})
+
+	t.Run("dedup delegates to Merge", func(t *testing.T) {
+		ds1 := makeDS(0, "up", Tags{}, ep{100, "1"})
+		ds2 := makeDS(0, "up", Tags{}, ep{100, "9"})
+		ds1.MergeWithStrategy(true, int(MergeStrategyDedup), ds2)
+		if ds1.SeriesCount() != 1 {
+			t.Fatalf("expected 1 series, got %d", ds1.SeriesCount())
+		}
+		// dedup: last value wins
+		if ds1.Results[0].SeriesList[0].Points[0].Values[0] != "9" {
+			t.Errorf("expected dedup value 9, got %v", ds1.Results[0].SeriesList[0].Points[0].Values[0])
+		}
+	})
+
+	t.Run("disjoint statement IDs append", func(t *testing.T) {
+		ds1 := makeDS(0, "up", Tags{}, ep{100, "1"})
+		ds2 := makeDS(1, "down", Tags{}, ep{100, "2"})
+		ds1.MergeWithStrategy(true, int(MergeStrategySum), ds2)
+		if len(ds1.Results) != 2 {
+			t.Errorf("expected 2 results, got %d", len(ds1.Results))
+		}
+	})
+
+	t.Run("nil collection skipped", func(t *testing.T) {
+		ds1 := makeDS(0, "up", Tags{}, ep{100, "1"})
+		ds1.MergeWithStrategy(true, int(MergeStrategySum), nil)
+		if ds1.SeriesCount() != 1 {
+			t.Errorf("expected 1 series, got %d", ds1.SeriesCount())
+		}
+	})
+
+	t.Run("avg across three datasets", func(t *testing.T) {
+		// For avg, MergeWithStrategy accumulates sums pairwise;
+		// the caller must call FinalizeAvg with the total merge count.
+		// This mirrors the real flow where TimeseriesRespondFuncWithStrategy
+		// calls FinalizeAvg before writing the response.
+		ds1 := makeDS(0, "latency", Tags{}, ep{100, "10"})
+		ds2 := makeDS(0, "latency", Tags{}, ep{100, "20"})
+		ds3 := makeDS(0, "latency", Tags{}, ep{100, "30"})
+		// Use sum for pairwise accumulation (as the merge func does for avg)
+		ds1.MergeWithStrategy(true, int(MergeStrategySum), ds2, ds3)
+		ds1.FinalizeAvg(3) // 3 datasets total
+		pts := ds1.Results[0].SeriesList[0].Points
+		if pts[0].Values[0] != "20" {
+			t.Errorf("expected avg 20, got %v", pts[0].Values[0])
+		}
+	})
+}
+
+func TestFinalizeWeightedAvg(t *testing.T) {
+	makeDS := func(stmtID int, name string, tags Tags, points ...struct {
+		epoch int64
+		value string
+	}) *DataSet {
+		p := make(Points, len(points))
+		for i, pt := range points {
+			p[i] = Point{Epoch: epoch.Epoch(pt.epoch), Size: 32, Values: []any{pt.value}}
+		}
+		return &DataSet{
+			Results: Results{
+				{StatementID: stmtID, SeriesList: SeriesList{
+					{Header: SeriesHeader{Name: name, Tags: tags}, Points: p},
+				}},
+			},
+		}
+	}
+
+	type ep struct {
+		epoch int64
+		value string
+	}
+
+	t.Run("basic weighted avg", func(t *testing.T) {
+		// Two backends:
+		//   backend A: avg(requests) where sum=60, count=3 → avg=20
+		//   backend B: avg(requests) where sum=40, count=1 → avg=40
+		// Weighted avg = (60+40)/(3+1) = 100/4 = 25
+		sumDS := makeDS(0, "requests", Tags{}, ep{100, "60"}, ep{200, "40"})
+		countDS := makeDS(0, "requests", Tags{}, ep{100, "3"}, ep{200, "1"})
+		sumDS.FinalizeWeightedAvg(countDS, "")
+		pts := sumDS.Results[0].SeriesList[0].Points
+		if len(pts) != 2 {
+			t.Fatalf("expected 2 points, got %d", len(pts))
+		}
+		want0 := "20" // 60/3
+		if pts[0].Values[0] != want0 {
+			t.Errorf("epoch 100: got %v, want %v", pts[0].Values[0], want0)
+		}
+		want1 := "40" // 40/1
+		if pts[1].Values[0] != want1 {
+			t.Errorf("epoch 200: got %v, want %v", pts[1].Values[0], want1)
+		}
+	})
+
+	t.Run("nil countDS is a no-op", func(t *testing.T) {
+		ds := makeDS(0, "up", Tags{}, ep{100, "10"})
+		ds.FinalizeWeightedAvg(nil, "")
+		if ds.Results[0].SeriesList[0].Points[0].Values[0] != "10" {
+			t.Error("expected unchanged value '10'")
+		}
+	})
+
+	t.Run("missing epoch in countDS leaves sum value unchanged", func(t *testing.T) {
+		sumDS := makeDS(0, "m", Tags{}, ep{100, "50"}, ep{200, "80"})
+		countDS := makeDS(0, "m", Tags{}, ep{100, "5"}) // no epoch 200
+		sumDS.FinalizeWeightedAvg(countDS, "")
+		pts := sumDS.Results[0].SeriesList[0].Points
+		if pts[0].Values[0] != "10" { // 50/5
+			t.Errorf("epoch 100: got %v, want 10", pts[0].Values[0])
+		}
+		if pts[1].Values[0] != "80" { // unchanged
+			t.Errorf("epoch 200: got %v, want 80 (unchanged)", pts[1].Values[0])
+		}
+	})
+
+	t.Run("distinct QueryStatement not conflated when pairing string empty", func(t *testing.T) {
+		pSum := Point{Epoch: 100, Size: 32, Values: []any{"100"}}
+		pCnt := Point{Epoch: 100, Size: 32, Values: []any{"4"}}
+		sumDS := &DataSet{
+			Results: Results{{
+				StatementID: 0,
+				SeriesList: SeriesList{
+					{Header: SeriesHeader{Name: "m", Tags: Tags{}, QueryStatement: "sum(x)"}, Points: Points{pSum}},
+				},
+			}},
+		}
+		countDS := &DataSet{
+			Results: Results{{
+				StatementID: 0,
+				SeriesList: SeriesList{
+					{Header: SeriesHeader{Name: "m", Tags: Tags{}, QueryStatement: "count(x)"}, Points: Points{pCnt}},
+				},
+			}},
+		}
+		sumDS.FinalizeWeightedAvg(countDS, "")
+		if sumDS.Results[0].SeriesList[0].Points[0].Values[0] != "100" {
+			t.Errorf("with empty pairing, mismatched statement hashes must skip divide; got %v",
+				sumDS.Results[0].SeriesList[0].Points[0].Values[0])
+		}
+	})
+
+	t.Run("different QueryStatement on sum vs count rewrite still pairs", func(t *testing.T) {
+		// Real ALB path: sum and count sub-queries produce different trq.Statement /
+		// SeriesHeader.QueryStatement; FinalizeWeightedAvg must still align series.
+		pSum := Point{Epoch: 100, Size: 32, Values: []any{"100"}}
+		pCnt := Point{Epoch: 100, Size: 32, Values: []any{"4"}}
+		sumDS := &DataSet{
+			Results: Results{{
+				StatementID: 0,
+				SeriesList: SeriesList{
+					{Header: SeriesHeader{Name: "m", Tags: Tags{}, QueryStatement: "sum(x)"}, Points: Points{pSum}},
+				},
+			}},
+		}
+		countDS := &DataSet{
+			Results: Results{{
+				StatementID: 0,
+				SeriesList: SeriesList{
+					{Header: SeriesHeader{Name: "m", Tags: Tags{}, QueryStatement: "count(x)"}, Points: Points{pCnt}},
+				},
+			}},
+		}
+		sumDS.FinalizeWeightedAvg(countDS, "avg(x)")
+		got := sumDS.Results[0].SeriesList[0].Points[0].Values[0]
+		if got != "25" {
+			t.Errorf("weighted avg = 100/4: got %v, want 25", got)
+		}
+	})
+
+	t.Run("multiple series matched by hash", func(t *testing.T) {
+		// Two separate series (different tag sets)
+		sumRegionA := Point{Epoch: 100, Size: 32, Values: []any{"100"}}
+		sumRegionB := Point{Epoch: 100, Size: 32, Values: []any{"200"}}
+		cntRegionA := Point{Epoch: 100, Size: 32, Values: []any{"10"}}
+		cntRegionB := Point{Epoch: 100, Size: 32, Values: []any{"5"}}
+		sumDS := &DataSet{
+			Results: Results{{
+				StatementID: 0,
+				SeriesList: SeriesList{
+					{Header: SeriesHeader{Name: "rps", Tags: Tags{"region": "us-east-1"}}, Points: Points{sumRegionA}},
+					{Header: SeriesHeader{Name: "rps", Tags: Tags{"region": "us-west-2"}}, Points: Points{sumRegionB}},
+				},
+			}},
+		}
+		countDS := &DataSet{
+			Results: Results{{
+				StatementID: 0,
+				SeriesList: SeriesList{
+					{Header: SeriesHeader{Name: "rps", Tags: Tags{"region": "us-east-1"}}, Points: Points{cntRegionA}},
+					{Header: SeriesHeader{Name: "rps", Tags: Tags{"region": "us-west-2"}}, Points: Points{cntRegionB}},
+				},
+			}},
+		}
+		sumDS.FinalizeWeightedAvg(countDS, "")
+		for _, s := range sumDS.Results[0].SeriesList {
+			region := s.Header.Tags["region"]
+			got := s.Points[0].Values[0]
+			switch region {
+			case "us-east-1":
+				if got != "10" { // 100/10
+					t.Errorf("us-east-1: got %v, want 10", got)
+				}
+			case "us-west-2":
+				if got != "40" { // 200/5
+					t.Errorf("us-west-2: got %v, want 40", got)
+				}
+			}
+		}
+	})
+}
+
 func TestSize(t *testing.T) {
 	ds := testDataSet()
 	s := ds.Size()

@@ -55,6 +55,7 @@ type Resources struct {
 	TSTransformer     func(timeseries.Timeseries)
 	TS                timeseries.Timeseries
 	TSReqestOptions   *timeseries.RequestOptions
+	TSMergeStrategy   int
 	Response          *http.Response
 	AuthResult        *auth.AuthResult
 	AlreadyEncoded    bool
@@ -81,6 +82,7 @@ func (r *Resources) Clone() *Resources {
 		TSTransformer:     r.TSTransformer,
 		TS:                r.TS,
 		TSReqestOptions:   r.TSReqestOptions,
+		TSMergeStrategy:   r.TSMergeStrategy,
 		AuthResult:        r.AuthResult, // shallow copy of the auth result
 		AlreadyEncoded:    r.AlreadyEncoded,
 		Cancelable:        r.Cancelable,

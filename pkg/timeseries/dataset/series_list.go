@@ -131,6 +131,62 @@ func (sl SeriesList) Clone() SeriesList {
 	return out[:k]
 }
 
+// MergeWithStrategy merges sl2 into the subject SeriesList using the specified
+// MergeStrategy to combine values from series with identical headers.
+// For MergeStrategyDedup, this behaves identically to Merge.
+func (sl SeriesList) MergeWithStrategy(sl2 SeriesList, sortPoints bool, strategy MergeStrategy) SeriesList {
+	if strategy == MergeStrategyDedup {
+		return sl.Merge(sl2, sortPoints)
+	}
+	if len(sl2) == 0 {
+		return sl.Clone()
+	}
+	if len(sl) == 0 {
+		return sl2.Clone()
+	}
+	m := make(map[Hash]*Series, len(sl)+len(sl2))
+	out := make(SeriesList, len(sl)+len(sl2))
+	var k int
+	for _, s := range sl {
+		if s == nil {
+			continue
+		}
+		h := s.Header.CalculateHash()
+		if _, ok := m[h]; ok {
+			continue
+		}
+		out[k] = s
+		m[h] = s
+		k++
+	}
+	seen := make(sets.Set[Hash], len(sl2))
+	var wg sync.WaitGroup
+	for _, s := range sl2 {
+		if s == nil {
+			continue
+		}
+		h := s.Header.CalculateHash()
+		if seen.Contains(h) {
+			continue
+		}
+		seen.Set(h)
+		if cs, ok := m[h]; !ok {
+			out[k] = s
+			m[h] = s
+			k++
+		} else {
+			wg.Go(func() {
+				cs.Points = MergePointsWithStrategy(cs.Points, s.Points, sortPoints, strategy)
+				cs.PointSize = cs.Points.Size()
+			})
+		}
+	}
+	wg.Wait()
+	out = out[:k]
+	out.SortByTags()
+	return out
+}
+
 func (sl SeriesList) SortByTags() {
 	slices.SortFunc(sl, func(a, b *Series) int {
 		if a == nil && b == nil {

@@ -125,6 +125,7 @@ func TestInitialize(t *testing.T) {
 	}
 }
 
+
 func TestErrInvalidALBOptions(t *testing.T) {
 	err := NewErrInvalidALBOptions("test")
 	var e *InvalidALBOptionsError

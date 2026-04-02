@@ -26,6 +26,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/capture"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
@@ -50,8 +51,13 @@ func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 			if rsc.IsMergeMember {
 				m := c.Modeler()
 				if m != nil {
-					rsc.MergeFunc = model.MergeAndWriteVectorMergeFunc(m.WireUnmarshaler)
-					rsc.MergeRespondFunc = model.MergeAndWriteVectorRespondFunc(m.WireMarshalWriter)
+					if rsc.TSMergeStrategy != 0 {
+						rsc.MergeFunc = merge.TimeseriesMergeFuncWithStrategy(m.WireUnmarshaler, rsc.TSMergeStrategy)
+						rsc.MergeRespondFunc = merge.TimeseriesRespondFuncWithStrategy(m.WireMarshalWriter, nil, rsc.TSMergeStrategy)
+					} else {
+						rsc.MergeFunc = model.MergeAndWriteVectorMergeFunc(m.WireUnmarshaler)
+						rsc.MergeRespondFunc = model.MergeAndWriteVectorRespondFunc(m.WireMarshalWriter)
+					}
 				}
 			}
 		}

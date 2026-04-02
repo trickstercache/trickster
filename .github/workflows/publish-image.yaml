@@ -12,6 +12,9 @@ on:
           default: ''
 name: Publish Trickster Image
 
+concurrency:
+  group: publish-image-${{ github.ref_name }}
+
 env:
   oci_metadata: |
     org.opencontainers.image.description="Open Source HTTP Reverse Proxy Cache and Time Series Dashboard Accelerator"
