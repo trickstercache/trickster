@@ -144,9 +144,7 @@ func handleCacheRangeMiss(pr *proxyRequest) error {
 }
 
 func handleCacheRevalidation(pr *proxyRequest) error {
-	rsc := pr.rsc
-
-	_, span := tspan.NewChildSpan(pr.Request.Context(), rsc.Tracer, "CacheRevalidation")
+	_, span := tspan.NewChildSpan(pr.Request.Context(), pr.rsc.Tracer, "CacheRevalidation")
 	if span != nil {
 		defer func() {
 			reval := revalidationStatusValues[pr.revalidation]
@@ -240,8 +238,7 @@ func handleTrueCacheHit(pr *proxyRequest) error {
 }
 
 func handleCacheKeyMiss(pr *proxyRequest) error {
-	rsc := pr.rsc
-	pc := rsc.PathConfig
+	pc := pr.rsc.PathConfig
 
 	// if we're using PCF, handle that separately
 	if !methods.HasBody(pr.Method) && !pr.wantsRanges && pc != nil &&
@@ -290,8 +287,7 @@ func handleUpstreamTransactions(pr *proxyRequest) error {
 }
 
 func handlePCF(pr *proxyRequest) error {
-	rsc := pr.rsc
-	o := rsc.BackendOptions
+	o := pr.rsc.BackendOptions
 
 	pr.isPCF = true
 	pcfResult, pcfExists := reqs.Load(pr.key)
@@ -306,7 +302,7 @@ func handlePCF(pr *proxyRequest) error {
 		return pcf.AddClient(pr.responseWriter)
 	}
 
-	ctx, span := tspan.NewChildSpan(pr.upstreamRequest.Context(), rsc.Tracer, "FetchObject")
+	ctx, span := tspan.NewChildSpan(pr.upstreamRequest.Context(), pr.rsc.Tracer, "FetchObject")
 	if span != nil {
 		span.SetAttributes(attribute.Bool("isPCF", true))
 		defer span.End()
@@ -335,7 +331,7 @@ func handlePCF(pr *proxyRequest) error {
 		}
 
 		pr.cachingPolicy.Merge(GetResponseCachingPolicy(pr.upstreamResponse.StatusCode,
-			rsc.BackendOptions.NegativeCache, pr.upstreamResponse.Header))
+			pr.rsc.BackendOptions.NegativeCache, pr.upstreamResponse.Header))
 		pr.determineCacheability()
 
 		go func() {
