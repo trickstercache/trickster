@@ -14,6 +14,11 @@ STEP_SECONDS ?= 15
 REFRESH_INTERVAL ?= 5
 PANEL_QUERIES ?=
 
+# Rate mode: set RATE to target iterations/sec (e.g., make query-range RATE=100)
+RATE ?=
+DURATION ?= 2m
+MAX_VUS ?= 500
+
 K6_ENV = \
 	--env TRICKSTER_BASE_ENDPOINT="$(TRICKSTER_BASE_ENDPOINT)" \
 	--env PROMQL_QUERY="$(PROMQL_QUERY)" \
@@ -25,20 +30,21 @@ ifneq ($(PANEL_QUERIES),)
 K6_ENV += --env PANEL_QUERIES='$(PANEL_QUERIES)'
 endif
 
+# In rate mode, the script defines a constant-arrival-rate scenario;
+# --vus/--iterations are omitted so they don't override it.
+ifneq ($(RATE),)
+K6_ENV += --env K6_RATE="$(RATE)" --env K6_DURATION="$(DURATION)" --env K6_MAX_VUS="$(MAX_VUS)"
+K6_EXEC_FLAGS = --batch $(BATCH_SIZE)
+else
+K6_EXEC_FLAGS = --vus $(VIRTUAL_USERS) --batch $(BATCH_SIZE) --iterations $(ITERATIONS)
+endif
+
 run:
-	for file in $$(find . -name '*.js'); do \
-	  echo "Running load test: $$file"; \
-	  k6 run \
-	    --vus $(VIRTUAL_USERS) \
-	    --batch $(BATCH_SIZE) \
-	    --iterations $(ITERATIONS) \
-	    $(K6_ENV) $$file; \
+	@for file in $$(find . -name '*.js'); do \
+	  $(MAKE) $$(basename $$file .js); \
 	done
 
-# examples: `make query-range`, `make query-instant`
+# examples: `make query-range`, `make query-range RATE=100`
 %:
-	k6 run \
-	  --vus $(VIRTUAL_USERS) \
-	  --batch $(BATCH_SIZE) \
-	  --iterations $(ITERATIONS) \
-	  $(K6_ENV) $@.js
+	@echo "Running load test: $@.js"
+	k6 run $(K6_EXEC_FLAGS) $(K6_ENV) $@.js
