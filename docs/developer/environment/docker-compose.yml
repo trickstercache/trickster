@@ -38,9 +38,10 @@ services:
 
   prometheus:
     image: prom/prometheus:v3.2.1
+    user: nobody
     volumes:
       - ./docker-compose-data/prometheus-config:/etc/prometheus
-      - ./docker-compose-data/prometheus-data:/prometheus
+      - prometheus-data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
@@ -154,3 +155,4 @@ services:
 
 volumes:
   influxdbv2:
+  prometheus-data:

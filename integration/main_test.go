@@ -28,7 +28,9 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/trickstercache/trickster/v2/pkg/daemon"
 )
@@ -84,6 +86,19 @@ func checkTrickster(t *testing.T, address string, path string, expectedStatus in
 	body, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
 	return string(body), resp.Header.Clone()
+}
+
+// waitForTrickster polls the metrics endpoint until Trickster is ready.
+func waitForTrickster(t *testing.T, metricsAddr string) {
+	t.Helper()
+	require.EventuallyWithT(t, func(collect *assert.CollectT) {
+		resp, err := http.Get("http://" + metricsAddr + "/metrics")
+		if !assert.NoError(collect, err) {
+			return
+		}
+		resp.Body.Close()
+		assert.Equal(collect, 200, resp.StatusCode)
+	}, 10*time.Second, 250*time.Millisecond, "trickster did not become ready")
 }
 
 // promResponse is a lightweight representation of a Prometheus API response.

@@ -25,11 +25,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-const tricksterAddr = "localhost:8480"
+const tricksterAddr = "127.0.0.1:8480"
 
 // TestPrometheus tests Prometheus-specific capabilities through Trickster.
 // Requires: make developer-start && a running trickster with the developer config.
@@ -38,14 +37,7 @@ func TestPrometheus(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	go startTrickster(t, ctx, expectedStartError{}, "-config", "../docs/developer/environment/trickster-config/trickster.yaml")
-	require.EventuallyWithT(t, func(collect *assert.CollectT) {
-		resp, err := http.Get("http://localhost:8481/metrics")
-		if !assert.NoError(collect, err) {
-			return
-		}
-		resp.Body.Close()
-		assert.Equal(collect, 200, resp.StatusCode)
-	}, 10*time.Second, 250*time.Millisecond, "trickster did not become ready")
+	waitForTrickster(t, "127.0.0.1:8481")
 
 	t.Run("range query cache miss then hit", func(t *testing.T) {
 		now := time.Now()
@@ -174,7 +166,7 @@ func TestPrometheus(t *testing.T) {
 	})
 }
 
-const albAddr = "localhost:8490"
+const albAddr = "127.0.0.1:8490"
 
 // TestPrometheusALB tests ALB mechanisms with Prometheus backends.
 // Requires: make developer-start (for Prometheus on :9090).
@@ -182,14 +174,7 @@ func TestPrometheusALB(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	go startTrickster(t, ctx, expectedStartError{}, "-config", "testdata/alb.yaml")
-	require.EventuallyWithT(t, func(collect *assert.CollectT) {
-		resp, err := http.Get("http://localhost:8491/metrics")
-		if !assert.NoError(collect, err) {
-			return
-		}
-		resp.Body.Close()
-		assert.Equal(collect, 200, resp.StatusCode)
-	}, 10*time.Second, 250*time.Millisecond, "trickster did not become ready")
+	waitForTrickster(t, "127.0.0.1:8491")
 
 	rangeParams := func() url.Values {
 		now := time.Now()

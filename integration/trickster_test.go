@@ -18,12 +18,7 @@ package integration
 
 import (
 	"context"
-	"net/http"
 	"testing"
-	"time"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // Test Trickster capabilities common to all backends / caches / configurations.
@@ -40,15 +35,8 @@ func TestTrickster(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Cleanup(cancel)
 		go startTrickster(t, ctx, expectedStartError{}, "-config", "../docs/developer/environment/trickster-config/trickster.yaml")
-		require.EventuallyWithT(t, func(collect *assert.CollectT) {
-			resp, err := http.Get("http://localhost:8481/metrics")
-			if !assert.NoError(collect, err) {
-				return
-			}
-			resp.Body.Close()
-			assert.Equal(collect, 200, resp.StatusCode)
-		}, 10*time.Second, 250*time.Millisecond, "trickster did not become ready")
-		metrics := checkTricksterMetrics(t, "localhost:8481")
+		waitForTrickster(t, "127.0.0.1:8481")
+		metrics := checkTricksterMetrics(t, "127.0.0.1:8481")
 		t.Log("Trickster metrics count:", len(metrics))
 	})
 }

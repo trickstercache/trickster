@@ -304,6 +304,8 @@ get-msgpack:
 .PHONY: developer-start
 developer-start:
 	@cd docs/developer/environment && docker compose up -d
+	@echo "Waiting for Prometheus to be ready..."
+	@timeout 120 sh -c 'until curl -sf http://127.0.0.1:9090/-/ready >/dev/null 2>&1; do sleep 2; done'
 	
 .PHONY: developer-stop
 developer-stop:

@@ -110,7 +110,13 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - run: make developer-start integration-test
+      - name: Start developer environment
+        run: make developer-start
+      - name: Show container status
+        if: always()
+        run: cd docs/developer/environment && docker compose ps && docker compose logs prometheus --tail=30
+      - name: Run integration tests
+        run: make integration-test
   finish:
     needs:
       - build
