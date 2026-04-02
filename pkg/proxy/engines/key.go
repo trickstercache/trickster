@@ -100,7 +100,7 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 				vals[k] = fmt.Sprintf("%s.%s.", p, v)
 				used.Set(p)
 			} else {
-				vals[k] = fmt.Sprintf("%s.%s.", p, qp.Get(p))
+				vals[k] = fmt.Sprintf("%s.%s.", p, strings.Join(qp[p], ","))
 			}
 			k++
 		}
@@ -112,8 +112,8 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 				k++
 				continue
 			}
-			if v := qp.Get(p); v != "" {
-				vals[k] = fmt.Sprintf("%s.%s.", p, v)
+			if vv := qp[p]; len(vv) > 0 {
+				vals[k] = fmt.Sprintf("%s.%s.", p, strings.Join(vv, ","))
 				k++
 			}
 		}
