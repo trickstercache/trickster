@@ -216,11 +216,12 @@ func exampleKeyHasher(path string, params url.Values, headers http.Header,
 func TestDeriveCacheKey_LabelEndpointMatchParam(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 
-	// Simulate the default label endpoint path config from prometheus/routes.go:
-	// CacheKeyParams is empty, which is the root cause of issue #858.
+	// Simulate the label endpoint path config from prometheus/routes.go.
+	// match[], start, and end must be included to avoid cache collisions
+	// when Grafana switches dashboards (issue #858).
 	labelPath := &po.Options{
 		Path:           "/api/v1/label/job/values",
-		CacheKeyParams: []string{}, // BUG: match[] is not included
+		CacheKeyParams: []string{"match[]", "start", "end"},
 	}
 
 	cfg := &bo.Options{
