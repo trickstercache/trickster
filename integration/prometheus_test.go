@@ -25,7 +25,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -39,6 +38,7 @@ func TestPrometheus(t *testing.T) {
 	t.Cleanup(cancel)
 	go startTrickster(t, ctx, expectedStartError{}, "-config", "../docs/developer/environment/trickster-config/trickster.yaml")
 	waitForTrickster(t, "127.0.0.1:8481")
+	waitForPrometheusData(t, "127.0.0.1:9090")
 
 	t.Run("range query cache miss then hit", func(t *testing.T) {
 		now := time.Now()
@@ -131,21 +131,14 @@ func TestPrometheus(t *testing.T) {
 	})
 
 	t.Run("label values", func(t *testing.T) {
-		// Prometheus may not have completed its first self-scrape yet, so poll
-		// until the "prometheus" job label appears (up to 2 full scrape intervals).
-		require.EventuallyWithT(t, func(collect *assert.CollectT) {
-			pr, hdr := queryTricksterProm(t, tricksterAddr, "prom1", "/api/v1/label/job/values", nil)
-			if !assert.Equal(collect, "success", pr.Status) {
-				return
-			}
-			result := parseTricksterResult(hdr.Get("X-Trickster-Result"))
-			t.Logf("label values: engine=%s; status=%s", result["engine"], result["status"])
-			var values []string
-			if !assert.NoError(collect, json.Unmarshal(pr.Data, &values)) {
-				return
-			}
-			assert.Contains(collect, values, "prometheus")
-		}, 30*time.Second, 2*time.Second, "label values never included \"prometheus\" job")
+		pr, hdr := queryTricksterProm(t, tricksterAddr, "prom1", "/api/v1/label/job/values", nil)
+		require.Equal(t, "success", pr.Status)
+		result := parseTricksterResult(hdr.Get("X-Trickster-Result"))
+		t.Logf("label values: %s", hdr.Get("X-Trickster-Result"))
+		require.Equal(t, "ObjectProxyCache", result["engine"])
+		var values []string
+		require.NoError(t, json.Unmarshal(pr.Data, &values))
+		require.Contains(t, values, "prometheus")
 	})
 
 	t.Run("negative cache", func(t *testing.T) {
@@ -183,6 +176,7 @@ func TestPrometheusALB(t *testing.T) {
 	t.Cleanup(cancel)
 	go startTrickster(t, ctx, expectedStartError{}, "-config", "testdata/alb.yaml")
 	waitForTrickster(t, "127.0.0.1:8491")
+	waitForPrometheusData(t, "127.0.0.1:9090")
 
 	rangeParams := func() url.Values {
 		now := time.Now()

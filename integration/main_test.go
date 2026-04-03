@@ -101,6 +101,35 @@ func waitForTrickster(t *testing.T, metricsAddr string) {
 	}, 10*time.Second, 250*time.Millisecond, "trickster did not become ready")
 }
 
+// waitForPrometheusData polls Prometheus directly until at least one scrape
+// has completed and the "prometheus" job label is available. This must be
+// called before any tests that depend on scraped metrics (labels, series,
+// label values). The scrape_interval is 15s with a random jitter offset, so
+// we allow up to 30s (2 full intervals) for the first scrape to land.
+func waitForPrometheusData(t *testing.T, prometheusAddr string) {
+	t.Helper()
+	require.EventuallyWithT(t, func(collect *assert.CollectT) {
+		resp, err := http.Get("http://" + prometheusAddr + "/api/v1/label/job/values")
+		if !assert.NoError(collect, err) {
+			return
+		}
+		defer resp.Body.Close()
+		b, err := io.ReadAll(resp.Body)
+		if !assert.NoError(collect, err) {
+			return
+		}
+		var pr promResponse
+		if !assert.NoError(collect, json.Unmarshal(b, &pr)) {
+			return
+		}
+		var values []string
+		if !assert.NoError(collect, json.Unmarshal(pr.Data, &values)) {
+			return
+		}
+		assert.Contains(collect, values, "prometheus", "waiting for prometheus self-scrape")
+	}, 30*time.Second, 2*time.Second, "Prometheus scrape data never became available")
+}
+
 // promResponse is a lightweight representation of a Prometheus API response.
 // Data is raw JSON because different endpoints return different shapes:
 //   - query/query_range: {"resultType": "...", "result": [...]}
