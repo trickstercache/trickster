@@ -54,7 +54,7 @@ func (c *Client) processVectorTransformations(w http.ResponseWriter,
 	t2, err := model.UnmarshalTimeseries(body, trq)
 	if err != nil || t2 == nil {
 		logger.Error("vector unmarshaling error",
-			logging.Pairs{"provider": providers.Prometheus, "detail": err.Error()})
+			logging.Pairs{"provider": providers.Prometheus, "detail": err.Error(), "body": string(body)})
 		defaultWrite(statusCode, w, body)
 		return
 	}
