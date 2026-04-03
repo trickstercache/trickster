@@ -299,6 +299,8 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 			} else {
 				if doc == nil {
 					err = tpe.ErrEmptyDocumentBody
+				} else if doc.timeseries == nil {
+					err = tpe.ErrEmptyDocumentBody
 				}
 				if err != nil {
 					logger.Error("cache object unmarshaling failed",
