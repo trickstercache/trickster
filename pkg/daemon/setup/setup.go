@@ -58,10 +58,7 @@ import (
 // mtx guards the config loading and validation process,
 // to ensure only one operation can occur at a time.
 // There is no race-related reason for this mutex, it simply prevents overlapping config operations.
-var (
-	mtx sync.Mutex
-	lg  = listener.NewGroup()
-)
+var mtx sync.Mutex
 
 // BootstrapConfig loads, validates, processes and prepares a configuration
 // along with its backend clients. This centralizes the common initialization
@@ -140,6 +137,7 @@ func LoadAndValidate(args ...string) (*config.Config, error) {
 
 func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	clients backends.Backends, hupFunc dr.Reloader, errorFunc func(),
+	lg *listener.Group,
 ) error {
 	if si == nil || newConf == nil {
 		return nil

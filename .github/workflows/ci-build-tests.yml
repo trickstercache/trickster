@@ -112,6 +112,8 @@ jobs:
           go-version-file: go.mod
       - name: Start developer environment
         run: make developer-start
+      - name: Seed ClickHouse data
+        run: make developer-seed-data
       - name: Show container status
         if: always()
         run: cd docs/developer/environment && docker compose ps && docker compose logs prometheus --tail=30
