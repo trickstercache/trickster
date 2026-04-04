@@ -1,0 +1,25 @@
+frontend:
+  listen_port: 8493
+caches:
+  mem1:
+    provider: memory
+request_rewriters:
+  range-to-instant:
+    instructions:
+      - [path, set, /api/v1/query]
+      - [param, delete, start]
+      - [param, delete, end]
+      - [param, delete, step]
+backends:
+  prom1:
+    provider: prometheus
+    origin_url: 'http://127.0.0.1:9090'
+    cache_name: mem1
+    paths:
+      - path: /api/v1/query_range
+        match_type: exact
+        handler: query
+        methods: [GET]
+        req_rewriter_name: range-to-instant
+metrics:
+  listen_port: 8494
