@@ -62,6 +62,7 @@ func NewIndexedClient(
 		Client:        client,
 		name:          cacheName,
 		cacheProvider: cacheProvider,
+		indexName:     "index_" + cacheName,
 		cancel:        cancel,
 		forceFlush:    make(chan bool),
 		hasFlushed:    make(chan bool, 1),
@@ -127,6 +128,7 @@ type IndexedClient struct {
 	// internal index configuration
 	name          string               `msg:"-"`
 	cacheProvider string               `msg:"-"`
+	indexName     string               `msg:"-"`
 	options       atomic.Value         `msg:"-"`
 	ico           IndexedClientOptions `msg:"-"`
 	lastWrite     atomicx.Time         `msg:"-"`
@@ -181,7 +183,7 @@ func (idx *IndexedClient) updateIndex(cacheKey string, size int64, la, lw, e tim
 		cacheSize = atomic.AddInt64(&idx.CacheSize, obj.Size)
 		count = atomic.AddInt64(&idx.ObjectCount, 1)
 	}
-	metrics.ObserveCacheSizeChange(idx.name, idx.cacheProvider, cacheSize, count)
+	metrics.ObserveCacheSizeChange(idx.indexName, idx.cacheProvider, cacheSize, count)
 	idx.lastWrite.Store(time.Now())
 	idx.Objects.Store(cacheKey, obj)
 }
@@ -194,6 +196,7 @@ func (idx *IndexedClient) StoreReference(cacheKey string, data cache.ReferenceOb
 	if !ok {
 		return ErrInvalidCacheBackend
 	}
+	start := time.Now()
 	if err := mc.StoreReference(cacheKey, data, ttl); err != nil {
 		return err
 	}
@@ -203,6 +206,7 @@ func (idx *IndexedClient) StoreReference(cacheKey string, data cache.ReferenceOb
 		expiry = now.Add(ttl)
 	}
 	idx.updateIndex(cacheKey, int64(data.Size()), now, now, expiry)
+	metrics.ObserveCacheOperation(idx.indexName, idx.cacheProvider, "setDirect", "none", float64(data.Size()), time.Since(start))
 	return nil
 }
 
@@ -224,11 +228,13 @@ func (idx *IndexedClient) Store(cacheKey string, byteData []byte, ttl time.Durat
 		expiry = now.Add(ttl)
 		obj.Expiration.Store(expiry)
 	}
+	start := time.Now()
 	// store the object in the cache
 	if err := idx.Client.Store(cacheKey, obj.ToBytes(), ttl); err != nil {
 		return err
 	}
 	idx.updateIndex(cacheKey, obj.Size, now, now, expiry)
+	metrics.ObserveCacheOperation(idx.indexName, idx.cacheProvider, "set", "none", float64(len(byteData)), time.Since(start))
 	return nil
 }
 
@@ -250,8 +256,15 @@ func (idx *IndexedClient) RetrieveReference(cacheKey string) (any, status.Lookup
 	if !ok {
 		return nil, status.LookupStatusError, ErrInvalidCacheBackend
 	}
-	idx.updateAccessTime(cacheKey)
-	return mc.RetrieveReference(cacheKey)
+	start := time.Now()
+	v, s, err := mc.RetrieveReference(cacheKey)
+	if err == nil && s == status.LookupStatusHit {
+		idx.updateAccessTime(cacheKey)
+	}
+	if ro, ok := v.(cache.ReferenceObject); ok {
+		metrics.ObserveCacheOperation(idx.indexName, idx.cacheProvider, "getDirect", s.String(), float64(ro.Size()), time.Since(start))
+	}
+	return v, s, err
 }
 
 // Retrieve implements the cache.Client interface, looking up the object and updating the index last access time
@@ -259,14 +272,28 @@ func (idx *IndexedClient) Retrieve(cacheKey string) ([]byte, status.LookupStatus
 	if cacheKey == IndexKey {
 		return nil, status.LookupStatusError, ErrIndexInvalidCacheKey
 	}
-	data, s, err := idx.Client.Retrieve(cacheKey)
+	start := time.Now()
+	var (
+		data []byte
+		s    = status.LookupStatusHit
+		err  error
+		o    *Object
+	)
+	defer func() {
+		size := float64(0)
+		if o != nil {
+			size = float64(len(o.Value))
+		}
+		metrics.ObserveCacheOperation(idx.indexName, idx.cacheProvider, "get", s.String(), size, time.Since(start))
+	}()
+	data, s, err = idx.Client.Retrieve(cacheKey)
 	if err != nil {
 		return nil, s, err
 	}
 	if s != status.LookupStatusHit {
 		return nil, s, err
 	}
-	o, err := ObjectFromBytes(data)
+	o, err = ObjectFromBytes(data)
 	if err != nil {
 		return nil, status.LookupStatusError, err
 	}
@@ -276,19 +303,23 @@ func (idx *IndexedClient) Retrieve(cacheKey string) ([]byte, status.LookupStatus
 
 // Remove implements the cache.Client interface and removes the object from the cache and index
 func (idx *IndexedClient) Remove(cacheKeys ...string) error {
+	start := time.Now()
+	var totalBytes float64
 	// remove the objects from the index
 	for _, key := range cacheKeys {
 		if o, ok := idx.Objects.Load(key); ok {
 			obj := o.(*Object)
+			totalBytes += float64(obj.Size)
 			size := atomic.AddInt64(&idx.CacheSize, -obj.Size)
 			count := atomic.AddInt64(&idx.ObjectCount, -1)
-			metrics.ObserveCacheOperation(idx.name, idx.cacheProvider, "del", "none", float64(obj.Size))
 			idx.Objects.Delete(key)
-			metrics.ObserveCacheSizeChange(idx.name, idx.cacheProvider, size, count)
+			metrics.ObserveCacheSizeChange(idx.indexName, idx.cacheProvider, size, count)
 		}
 	}
 	idx.lastWrite.Store(time.Now())
-	return idx.Client.Remove(cacheKeys...)
+	err := idx.Client.Remove(cacheKeys...)
+	metrics.ObserveCacheDel(idx.indexName, idx.cacheProvider, totalBytes, time.Since(start))
+	return err
 }
 
 // Stop the indexed cache, flush its state, and close the underlying cache
@@ -399,7 +430,7 @@ func (idx *IndexedClient) reap() {
 	})
 
 	if len(removals) > 0 {
-		metrics.ObserveCacheEvent(idx.name, idx.cacheProvider, "eviction", "ttl")
+		metrics.ObserveCacheEvent(idx.indexName, idx.cacheProvider, "eviction", "ttl")
 		if err := idx.Remove(removals...); err != nil {
 			logger.Error("reap remove error", logging.Pairs{"cacheName": idx.name, "error": err})
 		}
@@ -411,7 +442,7 @@ func (idx *IndexedClient) reap() {
 
 	evictionType, removals := reap(cacheSize, objectCount, remainders, *opts)
 	if len(removals) > 0 {
-		metrics.ObserveCacheEvent(idx.name, idx.cacheProvider, "eviction", evictionType)
+		metrics.ObserveCacheEvent(idx.indexName, idx.cacheProvider, "eviction", evictionType)
 		if err := idx.Remove(removals...); err != nil {
 			logger.Error("reap remove error", logging.Pairs{"cacheName": idx.name, "error": err})
 		}
