@@ -38,6 +38,7 @@ func TestPrometheus(t *testing.T) {
 	t.Cleanup(cancel)
 	go startTrickster(t, ctx, expectedStartError{}, "-config", "../docs/developer/environment/trickster-config/trickster.yaml")
 	waitForTrickster(t, "127.0.0.1:8481")
+	waitForPrometheusData(t, "127.0.0.1:9090")
 
 	t.Run("range query cache miss then hit", func(t *testing.T) {
 		now := time.Now()
@@ -175,6 +176,7 @@ func TestPrometheusALB(t *testing.T) {
 	t.Cleanup(cancel)
 	go startTrickster(t, ctx, expectedStartError{}, "-config", "testdata/alb.yaml")
 	waitForTrickster(t, "127.0.0.1:8491")
+	waitForPrometheusData(t, "127.0.0.1:9090")
 
 	rangeParams := func() url.Values {
 		now := time.Now()
