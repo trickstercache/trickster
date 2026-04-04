@@ -7,7 +7,9 @@ services:
     restart: always
     ports:
      - 6379:6379
-    command: redis-server --save "" --appendonly no
+    volumes:
+     - ./docker-compose-data/redis-data:/data
+    command: redis-server --appendonly yes --stop-writes-on-bgsave-error no
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 3s
