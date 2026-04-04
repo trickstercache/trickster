@@ -222,6 +222,41 @@ func TestPrometheus(t *testing.T) {
 			"fast-forward should be attempted for a query ending at now with step > fastforward_ttl")
 	})
 
+	// Regression test for https://github.com/trickstercache/trickster/issues/587
+	// Two different POST /api/v1/query requests must return different cached results.
+	t.Run("POST instant queries with different query params return different results", func(t *testing.T) {
+		client := &http.Client{Transport: &http.Transport{DisableCompression: true}}
+		base := "http://" + tricksterAddr + "/prom1/api/v1/query"
+
+		// First POST: query=up
+		params1 := url.Values{"query": {"up"}}
+		resp1, err := client.Post(base, "application/x-www-form-urlencoded",
+			strings.NewReader(params1.Encode()))
+		require.NoError(t, err)
+		defer resp1.Body.Close()
+		require.Equal(t, http.StatusOK, resp1.StatusCode)
+		var pr1 promResponse
+		require.NoError(t, json.NewDecoder(resp1.Body).Decode(&pr1))
+		require.Equal(t, "success", pr1.Status)
+		t.Logf("POST query=up: %s", resp1.Header.Get("X-Trickster-Result"))
+
+		// Second POST: query=process_cpu_seconds_total (different metric)
+		params2 := url.Values{"query": {"process_cpu_seconds_total"}}
+		resp2, err := client.Post(base, "application/x-www-form-urlencoded",
+			strings.NewReader(params2.Encode()))
+		require.NoError(t, err)
+		defer resp2.Body.Close()
+		require.Equal(t, http.StatusOK, resp2.StatusCode)
+		var pr2 promResponse
+		require.NoError(t, json.NewDecoder(resp2.Body).Decode(&pr2))
+		require.Equal(t, "success", pr2.Status)
+		t.Logf("POST query=process_cpu_seconds_total: %s", resp2.Header.Get("X-Trickster-Result"))
+
+		// The two responses must have different data (different metrics).
+		require.NotEqual(t, string(pr1.Data), string(pr2.Data),
+			"different POST queries must return different results (issue #587)")
+	})
+
 	t.Run("negative cache 500", func(t *testing.T) {
 		// Use sim1 (Mockster) which supports status_code injection via query labels.
 		params := url.Values{"query": {`test{status_code="500"}`}}
