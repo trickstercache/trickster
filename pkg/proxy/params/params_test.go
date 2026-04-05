@@ -121,3 +121,40 @@ func TestGetSetRequestValues(t *testing.T) {
 		t.Errorf("expected true")
 	}
 }
+
+// TestSetRequestValues_POSTJSONURLSync verifies that SetRequestValues for POST
+// requests with JSON content-type also updates r.URL.RawQuery, so that
+// subsequent reads via GetRequestValues (which reads from URL for POST+JSON)
+// see the updated values. This is critical for cache key derivation after
+// time-rounding in QueryHandler.
+func TestSetRequestValues_POSTJSONURLSync(t *testing.T) {
+	// Simulate the vmalert pattern: POST with JSON content-type,
+	// params in URL query string, empty body.
+	r, _ := http.NewRequest(http.MethodPost,
+		"http://example.com/api/v1/query?query=up&time=1001", nil)
+	r.Header.Set(headers.NameContentType, headers.ValueApplicationJSON)
+
+	// GetRequestValues should return URL query params for POST+JSON
+	v, _, _ := GetRequestValues(r)
+	if v.Get("query") != "up" {
+		t.Fatalf("expected query=up, got %s", v.Get("query"))
+	}
+	if v.Get("time") != "1001" {
+		t.Fatalf("expected time=1001, got %s", v.Get("time"))
+	}
+
+	// Simulate time-rounding: modify the time param
+	v.Set("time", "1000")
+	SetRequestValues(r, v)
+
+	// After SetRequestValues, GetRequestValues must return the updated values.
+	// This fails without the fix because SetRequestValues only wrote to body,
+	// but GetRequestValues for POST+JSON reads from r.URL.Query().
+	v2, _, _ := GetRequestValues(r)
+	if v2.Get("time") != "1000" {
+		t.Errorf("expected time=1000 after SetRequestValues, got %s", v2.Get("time"))
+	}
+	if v2.Get("query") != "up" {
+		t.Errorf("expected query=up after SetRequestValues, got %s", v2.Get("query"))
+	}
+}

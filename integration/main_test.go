@@ -39,6 +39,7 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+
 // the expected error for Trickster's 'Start' to return
 type expectedStartError struct {
 	ErrorContains *string
@@ -88,17 +89,23 @@ func checkTrickster(t *testing.T, address string, path string, expectedStatus in
 	return string(body), resp.Header.Clone()
 }
 
-// waitForTrickster polls the metrics endpoint until Trickster is ready.
-func waitForTrickster(t *testing.T, metricsAddr string) {
+// waitForTrickster polls the given address until it returns 200.
+// If no path segments are provided, it defaults to /metrics.
+func waitForTrickster(t *testing.T, addr string, path ...string) {
 	t.Helper()
+	p := "/metrics"
+	if len(path) > 0 {
+		p = path[0]
+	}
+	url := "http://" + addr + p
 	require.EventuallyWithT(t, func(collect *assert.CollectT) {
-		resp, err := http.Get("http://" + metricsAddr + "/metrics")
+		resp, err := http.Get(url)
 		if !assert.NoError(collect, err) {
 			return
 		}
 		resp.Body.Close()
 		assert.Equal(collect, 200, resp.StatusCode)
-	}, 10*time.Second, 250*time.Millisecond, "trickster did not become ready")
+	}, 10*time.Second, 250*time.Millisecond, "endpoint did not become ready: "+url)
 }
 
 // waitForPrometheusData polls Prometheus directly until at least one scrape
@@ -128,6 +135,51 @@ func waitForPrometheusData(t *testing.T, prometheusAddr string) {
 		}
 		assert.Contains(collect, values, "prometheus", "waiting for prometheus self-scrape")
 	}, 30*time.Second, 2*time.Second, "Prometheus scrape data never became available")
+}
+
+// waitForClickHouseData polls ClickHouse directly until the trips table has data.
+func waitForClickHouseData(t *testing.T, clickhouseAddr string) {
+	t.Helper()
+	require.EventuallyWithT(t, func(collect *assert.CollectT) {
+		resp, err := http.Get("http://" + clickhouseAddr + "/?query=" +
+			url.QueryEscape("SELECT count() FROM trips"))
+		if !assert.NoError(collect, err) {
+			return
+		}
+		defer resp.Body.Close()
+		b, err := io.ReadAll(resp.Body)
+		if !assert.NoError(collect, err) {
+			return
+		}
+		assert.NotEqual(collect, "0\n", string(b), "waiting for ClickHouse seed data")
+	}, 30*time.Second, 2*time.Second, "ClickHouse trips data never became available")
+}
+
+// waitForInfluxDBData polls InfluxDB directly until Telegraf has written at least one point.
+func waitForInfluxDBData(t *testing.T, influxAddr string) {
+	t.Helper()
+	require.EventuallyWithT(t, func(collect *assert.CollectT) {
+		req, err := http.NewRequest("POST",
+			"http://"+influxAddr+"/api/v2/query?org=trickster-dev",
+			strings.NewReader(`{"query": "from(bucket: \"trickster\") |> range(start: -5m) |> limit(n: 1)", "type": "flux"}`))
+		if !assert.NoError(collect, err) {
+			return
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Token trickster-dev-token")
+		resp, err := http.DefaultClient.Do(req)
+		if !assert.NoError(collect, err) {
+			return
+		}
+		defer resp.Body.Close()
+		b, err := io.ReadAll(resp.Body)
+		if !assert.NoError(collect, err) {
+			return
+		}
+		// CSV response should have more than just the header line
+		lines := strings.Split(strings.TrimSpace(string(b)), "\n")
+		assert.Greater(collect, len(lines), 1, "waiting for Telegraf to write data to InfluxDB")
+	}, 30*time.Second, 2*time.Second, "InfluxDB data never became available")
 }
 
 // promResponse is a lightweight representation of a Prometheus API response.

@@ -37,6 +37,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
 )
 
 var mtx sync.Mutex
@@ -73,12 +74,14 @@ func Start(ctx context.Context, args ...string) error {
 		}
 	}
 
-	si := &instance.ServerInstance{}
+	si := &instance.ServerInstance{
+		Listeners: listener.NewGroup(),
+	}
 	var hupFunc reload.Reloader = func(source string) (bool, error) {
 		return Hup(si, source, args...)
 	}
 	// Serve with Config
-	err = setup.ApplyConfig(si, conf, clients, hupFunc, func() { os.Exit(1) })
+	err = setup.ApplyConfig(si, conf, clients, hupFunc, func() { os.Exit(1) }, si.Listeners)
 	if err != nil {
 		return err
 	}
@@ -99,6 +102,12 @@ func Start(ctx context.Context, args ...string) error {
 	skipUnlock = true
 	mtx.Unlock()
 	signaling.Wait(ctx, hupFunc)
+	if si.Listeners != nil {
+		si.Listeners.DrainAndClose("httpListener", 0)
+		si.Listeners.DrainAndClose("tlsListener", 0)
+		si.Listeners.DrainAndClose("metricsListener", 0)
+		si.Listeners.DrainAndClose("mgmtListener", 0)
+	}
 	return nil
 }
 
@@ -155,7 +164,7 @@ func Hup(si *instance.ServerInstance, source string, args ...string) (bool, erro
 		return Hup(si, source)
 	}
 
-	err = setup.ApplyConfig(si, newConf, newClients, hupFunc, nil)
+	err = setup.ApplyConfig(si, newConf, newClients, hupFunc, nil, si.Listeners)
 	if err != nil {
 		logger.Error("reload failed, rolling back to previous configuration",
 			logging.Pairs{"error": err.Error(), "source": source})
