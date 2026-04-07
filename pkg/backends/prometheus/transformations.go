@@ -24,6 +24,7 @@ import (
 	tgzip "github.com/trickstercache/trickster/v2/pkg/encoding/gzip"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
@@ -46,15 +47,29 @@ func (c *Client) processVectorTransformations(w http.ResponseWriter,
 	// Decompress gzip if the response body is gzip-encoded.
 	// This can happen when ALB mechanisms (FGR, NLM, TSM) capture responses
 	// from pool members that return compressed data.
+	wasGzip := len(body) >= 2 && body[0] == 0x1f && body[1] == 0x8b
 	body = tgzip.Decompress(body)
+	if wasGzip {
+		// We're about to write the decompressed bytes (or, if unmarshal succeeds,
+		// a freshly marshaled JSON envelope). Either way the downstream payload is
+		// no longer gzip-encoded, so any propagated upstream Content-Encoding /
+		// Content-Length headers are now stale and would mislead the client.
+		// See trickstercache/trickster#937.
+		w.Header().Del(headers.NameContentEncoding)
+		w.Header().Del(headers.NameContentLength)
+	}
 	var trq *timeseries.TimeRangeQuery
 	if rsc != nil && rsc.TimeRangeQuery != nil {
 		trq = rsc.TimeRangeQuery
 	}
 	t2, err := model.UnmarshalTimeseries(body, trq)
 	if err != nil || t2 == nil {
+		detail := "nil timeseries"
+		if err != nil {
+			detail = err.Error()
+		}
 		logger.Error("vector unmarshaling error",
-			logging.Pairs{"provider": providers.Prometheus, "detail": err.Error()})
+			logging.Pairs{"provider": providers.Prometheus, "detail": detail})
 		defaultWrite(statusCode, w, body)
 		return
 	}
@@ -65,10 +80,16 @@ func (c *Client) processVectorTransformations(w http.ResponseWriter,
 		requestOptions = rsc.TSReqestOptions
 		rsc.TS = t2
 	}
+	// Marshaled body length is computed by the writer; drop any stale length
+	// header that came from the captured upstream response.
+	w.Header().Del(headers.NameContentLength)
 	model.MarshalTSOrVectorWriter(ds, requestOptions, statusCode, w, true)
 }
 
 func defaultWrite(statusCode int, w http.ResponseWriter, b []byte) {
+	// We don't know the post-decompression length of b at the header layer above
+	// us; let net/http compute it from the Write call.
+	w.Header().Del(headers.NameContentLength)
 	w.WriteHeader(statusCode)
 	w.Write(b)
 }

@@ -23,6 +23,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus/model"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/engines"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/capture"
@@ -83,6 +84,11 @@ func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 		// use a streaming response writer to capture the response body for transformation
 		sw := capture.NewCaptureResponseWriter()
 		engines.ObjectProxyCacheRequest(sw, r)
+		// Propagate captured upstream headers (Content-Type, X-Trickster-Result,
+		// etc.) to the outer ResponseWriter. Without this, ALB mechanisms see a
+		// body with no Content-Type and downstream consumers (Grafana, Mimir)
+		// may discard it as empty. See trickstercache/trickster#937.
+		headers.Merge(w.Header(), sw.Header())
 		statusCode := sw.StatusCode()
 		if rsc != nil && rsc.Response != nil {
 			statusCode = rsc.Response.StatusCode
