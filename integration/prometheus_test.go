@@ -387,4 +387,42 @@ func TestPrometheusALB(t *testing.T) {
 		require.Equal(t, "matrix", qd.ResultType)
 		t.Logf("nlm range: %s", hdr.Get("X-Trickster-Result"))
 	})
+
+	// Regression tests for https://github.com/trickstercache/trickster/issues/937
+	// These exercise the prometheus capture/transform path through ALB by
+	// pointing at backends that have prometheus.labels configured (which sets
+	// hasTransformations=true and routes the request through the
+	// processVectorTransformations capture path).
+	for _, mech := range []string{"fgr", "nlm", "tsm"} {
+		t.Run(mech+"-labeled instant query (#937)", func(t *testing.T) {
+			backend := "alb-" + mech + "-labeled"
+			pr, hdr := queryTricksterProm(t, albAddr, backend, "/api/v1/query", url.Values{"query": {"up"}})
+			require.Equal(t, "success", pr.Status)
+			// The capture/transform path used to drop the upstream Content-Type
+			// and X-Trickster-Result headers, leaving the ALB to serve a body
+			// with no JSON content type (which Grafana / Mimir would discard).
+			require.Contains(t, hdr.Get("Content-Type"), "json",
+				"%s instant query must advertise a JSON content type (issue #937)", backend)
+			require.NotEmpty(t, hdr.Get("X-Trickster-Result"),
+				"%s instant query must propagate X-Trickster-Result from the inner backend (issue #937)", backend)
+			require.Empty(t, hdr.Get("Content-Encoding"),
+				"%s instant query must not advertise stale upstream Content-Encoding (issue #937)", backend)
+			var qd promQueryData
+			require.NoError(t, json.Unmarshal(pr.Data, &qd))
+			require.Equal(t, "vector", qd.ResultType)
+			require.NotEmpty(t, qd.Result,
+				"%s instant query should return a non-empty result", backend)
+			// Each series should carry an injected `region` label.
+			var series []struct {
+				Metric map[string]string `json:"metric"`
+			}
+			require.NoError(t, json.Unmarshal(qd.Result, &series))
+			require.NotEmpty(t, series)
+			for _, s := range series {
+				require.NotEmpty(t, s.Metric["region"],
+					"%s: each merged series should carry the injected region label", backend)
+			}
+			t.Logf("%s instant: %s", backend, hdr.Get("X-Trickster-Result"))
+		})
+	}
 }
