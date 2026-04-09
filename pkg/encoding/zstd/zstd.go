@@ -65,3 +65,8 @@ func NewDecoder(r io.Reader) reader.ReadCloserResetter {
 	zr, _ := zstd.NewReader(r)
 	return reader.NewReadCloserResetter(zr)
 }
+
+// Detect reports whether in begins with an RFC 8878 Zstd frame magic
+func Detect(in []byte) bool {
+	return len(in) >= 4 && in[0] == 0x28 && in[1] == 0xb5 && in[2] == 0x2f && in[3] == 0xfd
+}

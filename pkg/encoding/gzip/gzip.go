@@ -89,3 +89,8 @@ func NewDecoder(r io.Reader) reader.ReadCloserResetter {
 	}
 	return rc
 }
+
+// Detect reports whether in begins with an RFC 1952 gzip member header
+func Detect(in []byte) bool {
+	return len(in) >= 2 && in[0] == 0x1f && in[1] == 0x8b
+}
