@@ -30,7 +30,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
-	tgzip "github.com/trickstercache/trickster/v2/pkg/encoding/gzip"
+	"github.com/trickstercache/trickster/v2/pkg/encoding"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
@@ -275,11 +275,20 @@ func (h *handler) serveStandard(
 			if rsc2.MergeFunc != nil {
 				if rsc2.TS != nil {
 					rsc2.MergeFunc(accumulator, rsc2.TS, i)
-				} else if body := tgzip.Decompress(crw.Body()); len(body) > 0 {
-					// For non-timeseries paths (labels, series, etc.), rsc.TS is not
-					// populated. Fall back to passing the captured response body to
-					// MergeFunc, which handles []byte input via JSON unmarshal.
-					rsc2.MergeFunc(accumulator, body, i)
+				} else {
+					body, err := encoding.DecompressResponseBody(
+						crw.Header().Get(headers.NameContentEncoding),
+						crw.Body(),
+					)
+					if err != nil {
+						return err
+					}
+					if len(body) > 0 {
+						// For non-timeseries paths (labels, series, etc.), rsc.TS is not
+						// populated. Fall back to passing the captured response body to
+						// MergeFunc, which handles []byte input via JSON unmarshal.
+						rsc2.MergeFunc(accumulator, body, i)
+					}
 				}
 			}
 			results[i] = result{
