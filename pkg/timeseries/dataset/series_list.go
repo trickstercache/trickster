@@ -18,12 +18,14 @@ package dataset
 
 import (
 	"fmt"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
 	"sync"
 
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
+	"golang.org/x/sync/errgroup"
 )
 
 //go:generate go tool msgp
@@ -50,7 +52,7 @@ func (sl SeriesList) Merge(sl2 SeriesList, sortPoints bool) SeriesList {
 		if s == nil {
 			continue
 		}
-		h := s.Header.CalculateHash(true)
+		h := s.Header.CalculateHash()
 		if _, ok := m[h]; ok {
 			continue
 		}
@@ -64,7 +66,7 @@ func (sl SeriesList) Merge(sl2 SeriesList, sortPoints bool) SeriesList {
 		if s == nil {
 			continue
 		}
-		h := s.Header.CalculateHash(true)
+		h := s.Header.CalculateHash()
 		if seen.Contains(h) {
 			continue
 		}
@@ -129,32 +131,88 @@ func (sl SeriesList) Clone() SeriesList {
 	return out[:k]
 }
 
-func (sl SeriesList) SortByTags() {
-	lkp := make(map[string]*Series, len(sl))
-	keys := make([]string, len(sl))
-	var i int
+// MergeWithStrategy merges sl2 into the subject SeriesList using the specified
+// MergeStrategy to combine values from series with identical headers.
+// For MergeStrategyDedup, this behaves identically to Merge.
+func (sl SeriesList) MergeWithStrategy(sl2 SeriesList, sortPoints bool, strategy MergeStrategy) SeriesList {
+	if strategy == MergeStrategyDedup {
+		return sl.Merge(sl2, sortPoints)
+	}
+	if len(sl2) == 0 {
+		return sl.Clone()
+	}
+	if len(sl) == 0 {
+		return sl2.Clone()
+	}
+	m := make(map[Hash]*Series, len(sl)+len(sl2))
+	out := make(SeriesList, len(sl)+len(sl2))
+	var k int
 	for _, s := range sl {
 		if s == nil {
 			continue
 		}
-		key := fmt.Sprintf("%s.%s", s.Header.Tags, s.Header.Name)
-		lkp[key] = s
-		keys[i] = key
-		i++
+		h := s.Header.CalculateHash()
+		if _, ok := m[h]; ok {
+			continue
+		}
+		out[k] = s
+		m[h] = s
+		k++
 	}
-	keys = keys[:i]
-	slices.Sort(keys)
-	for i, key := range keys {
-		sl[i] = lkp[key]
+	seen := make(sets.Set[Hash], len(sl2))
+	var wg sync.WaitGroup
+	for _, s := range sl2 {
+		if s == nil {
+			continue
+		}
+		h := s.Header.CalculateHash()
+		if seen.Contains(h) {
+			continue
+		}
+		seen.Set(h)
+		if cs, ok := m[h]; !ok {
+			out[k] = s
+			m[h] = s
+			k++
+		} else {
+			wg.Go(func() {
+				cs.Points = MergePointsWithStrategy(cs.Points, s.Points, sortPoints, strategy)
+				cs.PointSize = cs.Points.Size()
+			})
+		}
 	}
+	wg.Wait()
+	out = out[:k]
+	out.SortByTags()
+	return out
+}
+
+func (sl SeriesList) SortByTags() {
+	slices.SortFunc(sl, func(a, b *Series) int {
+		if a == nil && b == nil {
+			return 0
+		}
+		if a == nil {
+			return 1
+		}
+		if b == nil {
+			return -1
+		}
+		if c := strings.Compare(a.Header.Tags.String(), b.Header.Tags.String()); c != 0 {
+			return c
+		}
+		return strings.Compare(a.Header.Name, b.Header.Name)
+	})
 }
 
 func (sl SeriesList) SortPoints() {
-	var wg sync.WaitGroup
+	eg := errgroup.Group{}
+	eg.SetLimit(runtime.GOMAXPROCS(0))
 	for _, s := range sl {
-		wg.Go(func() {
+		eg.Go(func() error {
 			sort.Sort(s.Points)
+			return nil
 		})
 	}
-	wg.Wait()
+	eg.Wait()
 }

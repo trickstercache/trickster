@@ -54,3 +54,10 @@ func TestIsRegistered(t *testing.T) {
 		t.Error("expected false")
 	}
 }
+
+func TestNewUnregisteredMechanism(t *testing.T) {
+	_, err := New("nonexistent", nil, nil)
+	if err == nil {
+		t.Error("expected error for unregistered mechanism")
+	}
+}

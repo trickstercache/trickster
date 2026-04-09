@@ -379,9 +379,10 @@ REAPER:
 // reap makes a single iteration through the cache index to to find and remove expired elements
 // and evict least-recently-accessed elements to maintain the Maximum allowed Cache Size
 func (idx *IndexedClient) reap() {
-	cacheSize := max(atomic.LoadInt64(&idx.CacheSize), 0)
-	removals := make([]string, 0)
-	remainders := make(objectsAtime, 0, cacheSize)
+	cacheSize := atomic.LoadInt64(&idx.CacheSize)
+	objectCount := max(atomic.LoadInt64(&idx.ObjectCount), 0)
+	removals := make([]string, 0, objectCount/10) // estimate ~10% expired per cycle
+	remainders := make(objectsAtime, 0, objectCount)
 
 	var cacheChanged bool
 
@@ -389,7 +390,7 @@ func (idx *IndexedClient) reap() {
 
 	idx.Objects.Range(func(_, value any) bool {
 		o := value.(*Object)
-		if o.Expiration.Load().Before(now) && !o.Expiration.Load().IsZero() {
+		if exp := o.Expiration.Load(); exp.Before(now) && !exp.IsZero() {
 			removals = append(removals, o.Key)
 		} else {
 			remainders = append(remainders, o)
@@ -405,7 +406,7 @@ func (idx *IndexedClient) reap() {
 		cacheChanged = true
 		cacheSize = atomic.LoadInt64(&idx.CacheSize)
 	}
-	objectCount := atomic.LoadInt64(&idx.ObjectCount)
+	objectCount = atomic.LoadInt64(&idx.ObjectCount)
 	opts := idx.options.Load().(*options.Options)
 
 	evictionType, removals := reap(cacheSize, objectCount, remainders, *opts)

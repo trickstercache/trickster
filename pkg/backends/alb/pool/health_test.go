@@ -17,7 +17,6 @@
 package pool
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -25,22 +24,20 @@ import (
 )
 
 func TestCheckHealth(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-
 	tgt := &Target{
 		hcStatus: &healthcheck.Status{},
 	}
 
 	tgt.hcStatus.Set(healthcheck.StatusPassing)
 
-	p := &pool{ch: make(chan bool), ctx: ctx, targets: []*Target{tgt}, healthyFloor: -1}
+	p := &pool{ch: make(chan bool), done: make(chan struct{}), targets: []*Target{tgt}, healthyFloor: -1}
 	go func() {
 		p.checkHealth()
 	}()
 	time.Sleep(150 * time.Millisecond)
 	p.ch <- true
 	time.Sleep(150 * time.Millisecond)
-	cancel()
+	p.Stop()
 	time.Sleep(10 * time.Millisecond)
 
 	h := p.healthyHandlers.Load()

@@ -23,7 +23,7 @@ import (
 func (p *pool) checkHealth() {
 	for {
 		select {
-		case <-p.ctx.Done():
+		case <-p.done:
 			logger.Debug("stopping ALB pool", nil)
 			return
 		case <-p.ch: // msg arrives whenever the healthy list must be rebuilt

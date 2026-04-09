@@ -17,12 +17,41 @@
 package engines
 
 import (
+	"bytes"
+	"io"
 	"net/http"
 
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"golang.org/x/sync/singleflight"
 )
+
+// sfResponseCapture tees body writes into a buffer so the singleflight result
+// captures the response even for non-cacheable status codes (e.g. 502).
+// It implements http.ResponseWriter; when the inner writer is not an
+// http.ResponseWriter, Header/WriteHeader are safe no-ops.
+type sfResponseCapture struct {
+	inner io.Writer
+	buf   bytes.Buffer
+}
+
+func (c *sfResponseCapture) Write(p []byte) (int, error) {
+	c.buf.Write(p)
+	return c.inner.Write(p)
+}
+
+func (c *sfResponseCapture) Header() http.Header {
+	if rw, ok := c.inner.(http.ResponseWriter); ok {
+		return rw.Header()
+	}
+	return http.Header{}
+}
+
+func (c *sfResponseCapture) WriteHeader(statusCode int) {
+	if rw, ok := c.inner.(http.ResponseWriter); ok {
+		rw.WriteHeader(statusCode)
+	}
+}
 
 var (
 	opcGroup singleflight.Group // deduplicates ObjectProxyCache origin fetches
@@ -31,14 +60,15 @@ var (
 
 // opcResult is the shared result returned to singleflight waiters for OPC.
 type opcResult struct {
-	statusCode int
-	headers    http.Header
-	body       []byte
+	statusCode  int
+	headers     http.Header
+	body        []byte
+	elapsed     float64
+	cacheStatus status.LookupStatus
 }
 
 // dpcResult is the shared result returned to singleflight waiters for DPC.
-// For normal requests, waiters serve wireBody directly (pre-marshaled JSON).
-// For IsMergeMember/TSTransformer requests, waiters use rts instead.
+// Normal waiters serve wireBody directly; IsMergeMember/TSTransformer waiters use rts.
 type dpcResult struct {
 	wireBody           []byte
 	rts                timeseries.Timeseries

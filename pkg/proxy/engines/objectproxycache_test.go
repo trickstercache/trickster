@@ -22,12 +22,16 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/trickstercache/mockster/pkg/mocks/byterange"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	tc "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
@@ -613,6 +617,26 @@ func TestObjectProxyCacheRequestOriginNoCache(t *testing.T) {
 	}
 }
 
+func TestObjectProxyCacheRequestOriginNoCacheHeaders(t *testing.T) {
+	ts, _, r, _, err := setupTestHarnessOPC("", "test", http.StatusOK, nil) // nil headers means origin will not provide any caching signals
+	if err != nil {
+		t.Error(err)
+	}
+	defer ts.Close()
+
+	// First request: cache miss, origin has no caching headers so nothing is stored
+	_, e := testFetchOPC(r, http.StatusOK, "test", map[string]string{"status": "kmiss"})
+	for _, err = range e {
+		t.Error(err)
+	}
+
+	// Second request: still a cache miss — origin never provided caching signals
+	_, e = testFetchOPC(r, http.StatusOK, "test", map[string]string{"status": "kmiss"})
+	for _, err = range e {
+		t.Error(err)
+	}
+}
+
 func TestObjectProxyCacheIMS(t *testing.T) {
 	hdrs := map[string]string{"Cache-Control": "max-age=1"}
 	ts, _, r, rsc, err := setupTestHarnessOPCRange(hdrs)
@@ -1127,5 +1151,430 @@ func TestFetchViaObjectProxyCacheRequestErroringCache(t *testing.T) {
 	_, _, b := FetchViaObjectProxyCache(r)
 	if b {
 		t.Errorf("expected %t got %t", false, b)
+	}
+}
+
+// gatedOrigin creates an httptest.Server that blocks until gate is closed,
+// counting requests via hits. The handler fn writes the response.
+func gatedOrigin(gate chan struct{}, hits *atomic.Int64,
+	fn func(w http.ResponseWriter, r *http.Request),
+) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		<-gate
+		fn(w, r)
+	}))
+}
+
+// runConcurrentOPC fires n concurrent ObjectProxyCacheRequest calls against
+// originURL using clones of r, then closes gate and waits for completion.
+func runConcurrentOPC(n int, r *http.Request, originURL *url.URL,
+	gate chan struct{},
+) []*httptest.ResponseRecorder {
+	var wg sync.WaitGroup
+	recorders := make([]*httptest.ResponseRecorder, n)
+	for i := range n {
+		wg.Add(1)
+		idx := i
+		go func() {
+			defer wg.Done()
+			clone := r.Clone(r.Context())
+			clone.RequestURI = ""
+			clone.URL = originURL
+			w := httptest.NewRecorder()
+			recorders[idx] = w
+			ObjectProxyCacheRequest(w, clone)
+		}()
+	}
+	time.Sleep(50 * time.Millisecond)
+	close(gate)
+	wg.Wait()
+	return recorders
+}
+
+func TestOPCSingleflightDedup(t *testing.T) {
+	const body = "singleflight-test-body"
+	var hits atomic.Int64
+	gate := make(chan struct{})
+	origin := gatedOrigin(gate, &hits, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Cache-Control", "max-age=60")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, body)
+	})
+	defer origin.Close()
+
+	ts, _, r, rsc, err := setupTestHarnessOPC("", body, http.StatusOK,
+		map[string]string{"Cache-Control": "max-age=60"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ts.Close()
+	rsc.BackendOptions.HTTPClient = origin.Client()
+	originURL, _ := url.Parse(origin.URL + "/opc")
+
+	recorders := runConcurrentOPC(5, r, originURL, gate)
+
+	if h := hits.Load(); h != 1 {
+		t.Errorf("expected 1 origin request, got %d", h)
+	}
+	var sawKmiss, sawPhit int
+	for i, rec := range recorders {
+		resp := rec.Result()
+		b, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("request %d: expected status 200, got %d", i, resp.StatusCode)
+		}
+		if string(b) != body {
+			t.Errorf("request %d: expected body %q, got %q", i, body, string(b))
+		}
+		hdr := resp.Header.Get(headers.NameTricksterResult)
+		if strings.Contains(hdr, "status=kmiss") {
+			sawKmiss++
+		} else if strings.Contains(hdr, "status=proxy-hit") {
+			sawPhit++
+		}
+	}
+	if sawKmiss != 1 {
+		t.Errorf("expected 1 kmiss (executor), got %d", sawKmiss)
+	}
+	if sawPhit != 4 {
+		t.Errorf("expected 4 proxy-hit (waiters), got %d", sawPhit)
+	}
+}
+
+func TestOPCSingleflightErrorPropagation(t *testing.T) {
+	const errBody = `{"error":"bad gateway"}`
+	var hits atomic.Int64
+	gate := make(chan struct{})
+	origin := gatedOrigin(gate, &hits, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadGateway)
+		fmt.Fprint(w, errBody)
+	})
+	defer origin.Close()
+
+	ts, _, r, rsc, err := setupTestHarnessOPC("", errBody, http.StatusBadGateway,
+		map[string]string{"Content-Type": "application/json"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ts.Close()
+	rsc.BackendOptions.HTTPClient = origin.Client()
+	originURL, _ := url.Parse(origin.URL + "/opc")
+
+	recorders := runConcurrentOPC(3, r, originURL, gate)
+
+	if h := hits.Load(); h != 1 {
+		t.Errorf("expected 1 origin request, got %d", h)
+	}
+	for i, rec := range recorders {
+		resp := rec.Result()
+		if resp.StatusCode != http.StatusBadGateway {
+			t.Errorf("request %d: expected status 502, got %d", i, resp.StatusCode)
+		}
+		b, _ := io.ReadAll(resp.Body)
+		if string(b) != errBody {
+			t.Errorf("request %d: expected body %q, got %q", i, errBody, string(b))
+		}
+	}
+}
+
+func TestOPCSingleflightRanges(t *testing.T) {
+	t.Run("identical ranges deduped", func(t *testing.T) {
+		ts, _, r, rsc, err := setupTestHarnessOPCRange(
+			map[string]string{"Cache-Control": "max-age=60"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer ts.Close()
+
+		var hits atomic.Int64
+		gate := make(chan struct{})
+		origin := gatedOrigin(gate, &hits, func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Cache-Control", "max-age=60")
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprint(w, byterange.Body)
+		})
+		defer origin.Close()
+		rsc.BackendOptions.HTTPClient = origin.Client()
+
+		// all requests use the same range
+		n := 4
+		var wg sync.WaitGroup
+		recorders := make([]*httptest.ResponseRecorder, n)
+		for i := range n {
+			wg.Add(1)
+			idx := i
+			clone := r.Clone(r.Context())
+			clone.RequestURI = ""
+			u, _ := url.Parse(origin.URL + "/byterange/opc")
+			clone.URL = u
+			clone.Header.Set("Range", "bytes=0-10")
+			go func() {
+				defer wg.Done()
+				w := httptest.NewRecorder()
+				recorders[idx] = w
+				ObjectProxyCacheRequest(w, clone)
+			}()
+		}
+		time.Sleep(50 * time.Millisecond)
+		close(gate)
+		wg.Wait()
+
+		if h := hits.Load(); h != 1 {
+			t.Errorf("expected 1 origin request (identical ranges), got %d", h)
+		}
+		var sawKmiss, sawPhit int
+		for i, rec := range recorders {
+			resp := rec.Result()
+			if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
+				t.Errorf("request %d: unexpected status %d", i, resp.StatusCode)
+			}
+			hdr := resp.Header.Get(headers.NameTricksterResult)
+			if strings.Contains(hdr, "status=kmiss") {
+				sawKmiss++
+			} else if strings.Contains(hdr, "status=proxy-hit") {
+				sawPhit++
+			}
+		}
+		if sawKmiss != 1 {
+			t.Errorf("expected 1 kmiss (executor), got %d", sawKmiss)
+		}
+		if sawPhit != n-1 {
+			t.Errorf("expected %d proxy-hit (waiters), got %d", n-1, sawPhit)
+		}
+	})
+
+	t.Run("different ranges not deduped", func(t *testing.T) {
+		ts, _, r, rsc, err := setupTestHarnessOPCRange(
+			map[string]string{"Cache-Control": "max-age=60"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer ts.Close()
+
+		var hits atomic.Int64
+		gate := make(chan struct{})
+		origin := gatedOrigin(gate, &hits, func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Cache-Control", "max-age=60")
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprint(w, byterange.Body)
+		})
+		defer origin.Close()
+		rsc.BackendOptions.HTTPClient = origin.Client()
+
+		ranges := []string{"bytes=0-5", "bytes=10-15"}
+		var wg sync.WaitGroup
+		recorders := make([]*httptest.ResponseRecorder, len(ranges))
+		for i, rng := range ranges {
+			wg.Add(1)
+			idx := i
+			clone := r.Clone(r.Context())
+			clone.RequestURI = ""
+			u, _ := url.Parse(origin.URL + "/byterange/opc")
+			clone.URL = u
+			clone.Header.Set("Range", rng)
+			go func() {
+				defer wg.Done()
+				w := httptest.NewRecorder()
+				recorders[idx] = w
+				ObjectProxyCacheRequest(w, clone)
+			}()
+		}
+		time.Sleep(50 * time.Millisecond)
+		close(gate)
+		wg.Wait()
+
+		if h := hits.Load(); h != 2 {
+			t.Errorf("expected 2 origin requests (different ranges), got %d", h)
+		}
+		for i, rec := range recorders {
+			resp := rec.Result()
+			if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
+				t.Errorf("request %d: unexpected status %d", i, resp.StatusCode)
+			}
+		}
+	})
+}
+
+// failStoreCache wraps a cache.Cache and makes StoreReference return an error,
+// triggering the handler error path inside the singleflight closure
+type failStoreCache struct {
+	cache.Cache
+}
+
+func (f *failStoreCache) StoreReference(string, cache.ReferenceObject, time.Duration) error {
+	return fmt.Errorf("injected store error")
+}
+
+func (f *failStoreCache) RetrieveReference(cacheKey string) (any, status.LookupStatus, error) {
+	return f.Cache.(cache.MemoryCache).RetrieveReference(cacheKey)
+}
+
+func TestOPCSingleflightHandlerError(t *testing.T) {
+	const body = "hello from origin"
+	var hits atomic.Int64
+	gate := make(chan struct{})
+	origin := gatedOrigin(gate, &hits, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Cache-Control", "max-age=60")
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, body)
+	})
+	defer origin.Close()
+
+	ts, _, r, rsc, err := setupTestHarnessOPC("", body, http.StatusOK,
+		map[string]string{"Cache-Control": "max-age=60", "Content-Type": "text/plain"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ts.Close()
+	rsc.CacheClient = &failStoreCache{Cache: rsc.CacheClient}
+	rsc.BackendOptions.HTTPClient = origin.Client()
+	originURL, _ := url.Parse(origin.URL + "/opc")
+
+	recorders := runConcurrentOPC(6, r, originURL, gate)
+
+	if h := hits.Load(); h != 1 {
+		t.Errorf("expected 1 origin request, got %d", h)
+	}
+	for i, rec := range recorders {
+		resp := rec.Result()
+		b, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("request %d: expected status 200, got %d", i, resp.StatusCode)
+		}
+		if string(b) != body {
+			t.Errorf("request %d: expected body %q, got %q", i, body, string(b))
+		}
+	}
+}
+
+func TestServeOPCResult(t *testing.T) {
+	ts, _, r, _, err := setupTestHarnessOPC("", "test", http.StatusOK,
+		map[string]string{"Cache-Control": "max-age=60"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ts.Close()
+
+	w := httptest.NewRecorder()
+	pr := newProxyRequest(r, w)
+	pr.mapLock = &sync.Mutex{}
+
+	result := &opcResult{
+		statusCode:  http.StatusOK,
+		headers:     http.Header{"X-Custom": {"val"}},
+		body:        []byte("shared body"),
+		elapsed:     0.5,
+		cacheStatus: status.LookupStatusHit,
+	}
+
+	err = serveOPCResult(pr, result)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected status %d, got %d", http.StatusOK, resp.StatusCode)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	if string(b) != "shared body" {
+		t.Errorf("expected body %q, got %q", "shared body", string(b))
+	}
+	// on successful cacheStatus, serveOPCResult should set proxy-hit
+	if pr.cacheStatus != status.LookupStatusProxyHit {
+		t.Errorf("expected cacheStatus proxy-hit, got %s", pr.cacheStatus)
+	}
+}
+
+func TestServeOPCResultError(t *testing.T) {
+	ts, _, r, _, err := setupTestHarnessOPC("", "err", http.StatusBadGateway,
+		map[string]string{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ts.Close()
+
+	w := httptest.NewRecorder()
+	pr := newProxyRequest(r, w)
+	pr.mapLock = &sync.Mutex{}
+
+	result := &opcResult{
+		statusCode:  http.StatusBadGateway,
+		headers:     http.Header{},
+		body:        []byte(`{"error":"upstream error"}`),
+		elapsed:     0.1,
+		cacheStatus: status.LookupStatusProxyError,
+	}
+
+	err = serveOPCResult(pr, result)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusBadGateway {
+		t.Errorf("expected status %d, got %d", http.StatusBadGateway, resp.StatusCode)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	if string(b) != `{"error":"upstream error"}` {
+		t.Errorf("expected error body, got %q", string(b))
+	}
+	// on error cacheStatus, serveOPCResult should set proxy-error
+	if pr.cacheStatus != status.LookupStatusProxyError {
+		t.Errorf("expected cacheStatus proxy-error, got %s", pr.cacheStatus)
+	}
+}
+
+func TestOPCProxyOnlyFallback(t *testing.T) {
+	// when BackendOptions.ProxyOnly is true, OPC should fall through to DoProxy
+	ts, _, r, rsc, err := setupTestHarnessOPC("", "test", http.StatusOK,
+		map[string]string{"Cache-Control": "max-age=60"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ts.Close()
+
+	rsc.BackendOptions.ProxyOnly = true
+	w := httptest.NewRecorder()
+
+	ObjectProxyCacheRequest(w, r)
+	resp := w.Result()
+
+	// should get a proxied response (not cached)
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+	hdr := resp.Header.Get(headers.NameTricksterResult)
+	if !strings.Contains(hdr, "engine=HTTPProxy") {
+		t.Errorf("expected HTTPProxy engine in result header, got %q", hdr)
+	}
+	rsc.BackendOptions.ProxyOnly = false
+}
+
+func TestOPCClientNoCache(t *testing.T) {
+	// when client sends Cache-Control: no-cache, OPC should remove the cache entry and proxy
+	ts, _, r, _, err := setupTestHarnessOPC("", "test", http.StatusOK,
+		map[string]string{"Cache-Control": "max-age=60"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ts.Close()
+
+	r.Header.Set("Cache-Control", "no-cache")
+	w := httptest.NewRecorder()
+
+	ObjectProxyCacheRequest(w, r)
+	resp := w.Result()
+
+	// should get a proxied response
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+	hdr := resp.Header.Get(headers.NameTricksterResult)
+	if !strings.Contains(hdr, "engine=HTTPProxy") {
+		t.Errorf("expected proxy-only path for no-cache, got %q", hdr)
 	}
 }

@@ -2,11 +2,11 @@ import http from 'k6/http';
 import { check, sleep } from 'k6';
 
 // Simulates a Grafana dashboard: multiple panels issuing query_range requests
-// with a floating time window (e.g., "last 3 hours") on a periodic refresh.
+// with a floating time window (e.g., "last 6 hours") on a periodic refresh.
 
-const RANGE_SECONDS = parseInt(__ENV.RANGE_SECONDS || '10800'); // default 3h
+const RANGE_SECONDS = parseInt(__ENV.RANGE_SECONDS || '21600'); // default 6h
 const STEP_SECONDS  = parseInt(__ENV.STEP_SECONDS  || '15');    // default 15s
-const REFRESH_INTERVAL = parseFloat(__ENV.REFRESH_INTERVAL || '10'); // seconds between refreshes
+const REFRESH_INTERVAL = parseFloat(__ENV.REFRESH_INTERVAL || '5'); // seconds between refreshes
 
 // Panels — each entry is a PromQL query, like a real dashboard with several panels.
 // Override PROMQL_QUERY to set a single query, or PANEL_QUERIES for a JSON array.
@@ -22,17 +22,30 @@ function getBaseEndpoint() {
     return __ENV.TRICKSTER_BASE_ENDPOINT || 'http://localhost:8480/prom1';
 }
 
-export const options = {
-    stages: [
-        { duration: '15s', target: 10 },  // ramp up
-        { duration: '60s', target: 10 },   // sustained load
-        { duration: '10s', target: 0 },   // ramp down
-    ],
+const opts = {
     thresholds: {
         http_req_duration: ['p(95)<1000'],
         'checks': ['rate>0.95'],
     },
 };
+
+if (__ENV.K6_RATE) {
+    const rate     = parseInt(__ENV.K6_RATE);
+    const duration = __ENV.K6_DURATION || '2m';
+    const maxVUs   = parseInt(__ENV.K6_MAX_VUS || '500');
+    opts.scenarios = {
+        constant_rate: {
+            executor: 'constant-arrival-rate',
+            rate: rate,
+            timeUnit: '1s',
+            duration: duration,
+            preAllocatedVUs: Math.min(maxVUs, Math.ceil(rate / 2)),
+            maxVUs: maxVUs,
+        },
+    };
+}
+
+export const options = opts;
 
 export default function () {
     const base = getBaseEndpoint();
@@ -49,7 +62,8 @@ export default function () {
             + `?query=${encodeURIComponent(q)}`
             + `&start=${startEpoch}`
             + `&end=${endEpoch}`
-            + `&step=${STEP_SECONDS}`,
+            + `&step=${STEP_SECONDS}`
+            + `&time=${endEpoch}`,
     }));
 
     const responses = http.batch(requests);
@@ -67,6 +81,8 @@ export default function () {
         });
     }
 
-    // Simulate dashboard refresh interval
-    sleep(REFRESH_INTERVAL);
+    // In rate mode the executor controls pacing; only sleep in iterations mode.
+    if (!__ENV.K6_RATE) {
+        sleep(REFRESH_INTERVAL);
+    }
 }

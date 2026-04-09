@@ -141,7 +141,7 @@ func (rs *RunState) Peek() *token.Token {
 	return rs.next
 }
 
-// IsPeeked returnst true if the RunState has peeked to the next token
+// IsPeeked returns true if the RunState has peeked to the next token
 func (rs *RunState) IsPeeked() bool {
 	return rs.next != nil
 }

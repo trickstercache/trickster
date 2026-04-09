@@ -66,6 +66,10 @@ func TestNew(t *testing.T) {
 	if o == nil {
 		t.Error("expected non-nil options")
 	}
+	if o.FetchConcurrencyLimit != DefaultFetchConcurrencyLimit {
+		t.Errorf("expected FetchConcurrencyLimit=%d, got %d",
+			DefaultFetchConcurrencyLimit, o.FetchConcurrencyLimit)
+	}
 }
 
 func TestClone(t *testing.T) {
@@ -409,6 +413,8 @@ func TestValidateTLSConfigs(t *testing.T) {
 	o.TLS.CertificateAuthorityPaths = []string{caFile}
 	o.TLS.PrivateKeyPath = keyFile
 	o.TLS.FullChainCertPath = certFile
+	o.TLS.ClientCertPath = certFile
+	o.TLS.ClientKeyPath = keyFile
 
 	b, err = l.ValidateTLSConfigs()
 	if err != nil {

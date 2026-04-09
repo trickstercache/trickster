@@ -68,6 +68,57 @@ func TestNewEncoder(t *testing.T) {
 	}
 }
 
-// 	b := []byte("trickster")
-// 	r := bytes.NewReader(b)
-// 	rc := io.NopCloser(r)
+func TestPooledEncoderRoundtrip(t *testing.T) {
+	for i := range 3 {
+		var buf bytes.Buffer
+		enc := NewEncoder(&buf, -1)
+		data := []byte("trickster pooled encoder test")
+		enc.Write(data)
+		enc.Close() // returns encoder to pool
+
+		decoded, err := Decode(buf.Bytes())
+		if err != nil {
+			t.Fatalf("iteration %d: decode error: %v", i, err)
+		}
+		if string(decoded) != string(data) {
+			t.Fatalf("iteration %d: expected %q got %q", i, data, decoded)
+		}
+	}
+}
+
+func TestDecompress(t *testing.T) {
+	t.Run("plain bytes returned unchanged", func(t *testing.T) {
+		input := []byte(`{"status":"ok"}`)
+		got := Decompress(input)
+		if !bytes.Equal(got, input) {
+			t.Errorf("expected input unchanged, got %q", got)
+		}
+	})
+
+	t.Run("gzip-compressed bytes returned decompressed", func(t *testing.T) {
+		want := []byte(`{"status":"ok"}`)
+		compressed, err := Encode(want)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := Decompress(compressed)
+		if !bytes.Equal(got, want) {
+			t.Errorf("expected %q, got %q", want, got)
+		}
+	})
+
+	t.Run("empty input returned unchanged", func(t *testing.T) {
+		got := Decompress([]byte{})
+		if len(got) != 0 {
+			t.Errorf("expected empty, got %q", got)
+		}
+	})
+
+	t.Run("truncated gzip returned unchanged", func(t *testing.T) {
+		input := []byte{0x1f, 0x8b}
+		got := Decompress(input)
+		if !bytes.Equal(got, input) {
+			t.Errorf("expected input unchanged, got %q", got)
+		}
+	})
+}

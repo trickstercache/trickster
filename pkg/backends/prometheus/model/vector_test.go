@@ -42,43 +42,46 @@ func TestMergeAndWriteVector(t *testing.T) {
 		}
 		return UnmarshalTimeseries(data, trq)
 	}
-	marshaler := MarshalTimeseriesWriter
 	mergeFunc := MergeAndWriteVectorMergeFunc(unmarshaler)
-	respondFunc := MergeAndWriteVectorRespondFunc(marshaler)
+	respondFunc := MergeAndWriteVectorRespondFunc(MarshalTimeseriesWriter)
 
-	w := httptest.NewRecorder()
-	r, _ := http.NewRequest("GET", "/", nil)
-	accum := merge.NewAccumulator()
-	respondFunc(w, r, accum, http.StatusOK)
-	if w.Code != http.StatusBadGateway {
-		t.Errorf("expected %d got %d", http.StatusBadGateway, w.Code)
-	}
+	t.Run("nil accumulator responds bad gateway", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		r, _ := http.NewRequest("GET", "/", nil)
+		accum := merge.NewAccumulator()
+		respondFunc(w, r, accum, http.StatusOK)
+		if w.Code != http.StatusBadGateway {
+			t.Errorf("expected %d got %d", http.StatusBadGateway, w.Code)
+		}
+	})
 
-	w = httptest.NewRecorder()
-	accum = merge.NewAccumulator()
-	err := mergeFunc(accum, []byte(testVector), 0)
-	if err != nil {
-		t.Errorf("unexpected error merging first vector: %v", err)
-	}
-	_ = mergeFunc(accum, []byte(`{"stat`), 1) // bad JSON, should be skipped (error ignored)
-	err = mergeFunc(accum, []byte(testVector2), 2)
-	if err != nil {
-		t.Errorf("unexpected error merging second vector: %v", err)
-	}
-	respondFunc(w, r, accum, http.StatusOK)
-	if w.Code != http.StatusOK {
-		t.Errorf("expected %d got %d", http.StatusOK, w.Code)
-	}
+	t.Run("valid merge of two vectors", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		r, _ := http.NewRequest("GET", "/", nil)
+		accum := merge.NewAccumulator()
+		if err := mergeFunc(accum, []byte(testVector), 0); err != nil {
+			t.Fatalf("unexpected error merging first vector: %v", err)
+		}
+		_ = mergeFunc(accum, []byte(`{"stat`), 1) // bad JSON, skipped
+		if err := mergeFunc(accum, []byte(testVector2), 2); err != nil {
+			t.Fatalf("unexpected error merging second vector: %v", err)
+		}
+		respondFunc(w, r, accum, http.StatusOK)
+		if w.Code != http.StatusOK {
+			t.Errorf("expected %d got %d", http.StatusOK, w.Code)
+		}
+	})
 
-	w = httptest.NewRecorder()
-	accum = merge.NewAccumulator()
-	err = mergeFunc(accum, []byte(`{"status":"error","data":{}}`), 0)
-	if err != nil {
-		t.Errorf("unexpected error: %v", err)
-	}
-	respondFunc(w, r, accum, http.StatusOK)
-	// Error status in envelope doesn't change HTTP status code
-	if w.Code != http.StatusOK {
-		t.Errorf("expected %d got %d", http.StatusOK, w.Code)
-	}
+	t.Run("error envelope", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		r, _ := http.NewRequest("GET", "/", nil)
+		accum := merge.NewAccumulator()
+		if err := mergeFunc(accum, []byte(`{"status":"error","data":{}}`), 0); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		respondFunc(w, r, accum, http.StatusOK)
+		if w.Code != http.StatusOK {
+			t.Errorf("expected %d got %d", http.StatusOK, w.Code)
+		}
+	})
 }

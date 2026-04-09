@@ -79,6 +79,9 @@ type Options struct {
 	CacheKeyPrefix string `yaml:"cache_key_prefix,omitempty"`
 	// ChunkReadConcurrencyLimit defines the concurrency limit while reading a chunked object
 	ChunkReadConcurrencyLimit int `yaml:"chunk_read_concurrency_limit,omitempty"`
+	// FetchConcurrencyLimit defines the max concurrent upstream requests when fetching
+	// missing time-series extents in the Delta Proxy Cache
+	FetchConcurrencyLimit int `yaml:"fetch_concurrency_limit,omitempty"`
 	// ChunkWriteConcurrencyLimit defines the concurrency limit while writing a chunked object
 	ChunkWriteConcurrencyLimit int `yaml:"chunk_write_concurrency_limit,omitempty"`
 	// HealthCheck is the health check options reference for this backend
@@ -234,6 +237,7 @@ func New() *Options {
 		CompressibleTypeList:         DefaultCompressibleTypes(),
 		ChunkReadConcurrencyLimit:    DefaultChunkReadConcurrencyLimit,
 		ChunkWriteConcurrencyLimit:   DefaultChunkWriteConcurrencyLimit,
+		FetchConcurrencyLimit:        DefaultFetchConcurrencyLimit,
 		FastForwardTTL:               DefaultFastForwardTTL,
 		ForwardedHeaders:             DefaultForwardedHeaders,
 		HealthCheck:                  ho.New(),

@@ -3,16 +3,18 @@ services:
   # caches
 
   redis:
-    image: redis:latest
-    build:
-      context: .
-      network: host
+    image: redis:7-alpine
     restart: always
     ports:
      - 6379:6379
     volumes:
      - ./docker-compose-data/redis-data:/data
     command: redis-server --appendonly yes --stop-writes-on-bgsave-error no
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 2s
+      retries: 5
 
   # ui's
 
@@ -38,9 +40,10 @@ services:
 
   prometheus:
     image: prom/prometheus:v3.2.1
+    user: nobody
     volumes:
       - ./docker-compose-data/prometheus-config:/etc/prometheus
-      - ./docker-compose-data/prometheus-data:/prometheus
+      - prometheus-data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
@@ -154,3 +157,4 @@ services:
 
 volumes:
   influxdbv2:
+  prometheus-data:

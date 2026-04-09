@@ -55,9 +55,10 @@ type MarshallerPtr[T any] interface {
 // Accumulator is a thread-safe accumulator for merging data
 // It can hold either timeseries.Timeseries or any other mergeable type
 type Accumulator struct {
-	mu      sync.Mutex
-	tsdata  timeseries.Timeseries
-	generic any // For non-timeseries mergeable types
+	mu         sync.Mutex
+	tsdata     timeseries.Timeseries
+	generic    any // For non-timeseries mergeable types
+	MergeCount int // number of datasets merged (for avg finalization)
 }
 
 // NewAccumulator returns a new Accumulator

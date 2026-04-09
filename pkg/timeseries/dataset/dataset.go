@@ -22,7 +22,10 @@ package dataset
 
 import (
 	"io"
+	"runtime"
 	"slices"
+	"sort"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -31,6 +34,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 	"github.com/trickstercache/trickster/v2/pkg/util/numbers"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
+	"golang.org/x/sync/errgroup"
 )
 
 // DataSet is the Common Time Series Format that Trickster uses to
@@ -134,7 +138,8 @@ func (ds *DataSet) CroppedClone(e timeseries.Extent) timeseries.Timeseries {
 			Error:       ds.Results[i].Error,
 		}
 		clone.Results[i].SeriesList = make([]*Series, len(ds.Results[i].SeriesList))
-		var wg sync.WaitGroup
+		eg := errgroup.Group{}
+		eg.SetLimit(runtime.GOMAXPROCS(0))
 		var skips int32
 		for j, s := range ds.Results[i].SeriesList {
 			if s == nil || len(s.Points) == 0 {
@@ -142,7 +147,7 @@ func (ds *DataSet) CroppedClone(e timeseries.Extent) timeseries.Timeseries {
 				continue
 			}
 			n := i
-			wg.Go(func() {
+			eg.Go(func() error {
 				sc := &Series{
 					Header: s.Header.Clone(),
 				}
@@ -155,9 +160,10 @@ func (ds *DataSet) CroppedClone(e timeseries.Extent) timeseries.Timeseries {
 				} else {
 					atomic.StoreInt32(&skips, 1)
 				}
+				return nil
 			})
 		}
-		wg.Wait()
+		eg.Wait()
 		if skips == 1 {
 			sl := make([]*Series, len(ds.Results[i].SeriesList))
 			var k int
@@ -272,6 +278,165 @@ func (ds *DataSet) DefaultMerger(sortPoints bool, collection ...timeseries.Times
 	ds.Results = rs[:k]
 }
 
+// MergeWithStrategy merges the provided Timeseries list into the base DataSet
+// using the specified MergeStrategy for combining values from matching series.
+func (ds *DataSet) MergeWithStrategy(sortPoints bool, strategy int, collection ...timeseries.Timeseries) {
+	if MergeStrategy(strategy) == MergeStrategyDedup {
+		ds.Merge(sortPoints, collection...)
+		return
+	}
+	ds.UpdateLock.Lock()
+	defer ds.UpdateLock.Unlock()
+
+	rl := make(ResultsLookup)
+	for _, r := range ds.Results {
+		if r == nil {
+			continue
+		}
+		rl[r.StatementID] = r
+	}
+	dl := make(DataSets, 0, 32)
+	k := len(ds.Results)
+	rlen := k
+	for _, ts := range collection {
+		if ts == nil {
+			continue
+		}
+		ds2, ok := ts.(*DataSet)
+		if !ok || ds2 == nil {
+			continue
+		}
+		dl = append(dl, ds2)
+		rlen += len(ds2.Results)
+	}
+	rs := make(Results, rlen)
+	copy(rs, ds.Results)
+	for _, ds2 := range dl {
+		ds.ExtentList = ds.ExtentList.Merge(ds2.ExtentList, ds.Step())
+		for _, r2 := range ds2.Results {
+			if r2 == nil || len(r2.SeriesList) == 0 {
+				continue
+			}
+			r1, ok := rl[r2.StatementID]
+			if !ok {
+				rl[r2.StatementID] = r2
+				rs[k] = r2
+				k++
+				continue
+			}
+			if len(r1.SeriesList) == 0 {
+				r1.SeriesList = r2.SeriesList.Clone()
+				continue
+			}
+			r1.SeriesList = r1.SeriesList.MergeWithStrategy(r2.SeriesList, sortPoints, MergeStrategy(strategy))
+		}
+	}
+	ds.Results = rs[:k]
+}
+
+// FinalizeWeightedAvg divides each point value in ds (accumulated sums from a
+// sum-rewritten query) by the corresponding count value from countDS (from a
+// count-rewritten query), producing a true weighted arithmetic mean per series
+// per timestamp. Both datasets must have been accumulated using
+// MergeStrategySum across the same fanout backends.
+//
+// pairingQueryStatement, when non-empty, is used only for series pairing: the
+// same value must be passed for both sum and count DataSets so their rows align
+// even when each SeriesHeader.QueryStatement differs (e.g. PromQL sum(...) vs
+// count(...) rewrites of one logical avg(...)). It should be the original user
+// query string (or another canonical statement shared by both sides). When empty,
+// pairing uses SeriesHeader.CalculateHash() so distinct statements keep distinct
+// identities (e.g. multiple Influx series that share tags but differ by query).
+//
+// global_avg = sum_of_all_values / count_of_all_values
+func (ds *DataSet) FinalizeWeightedAvg(countDS *DataSet, pairingQueryStatement string) {
+	if countDS == nil {
+		return
+	}
+	pairingHash := func(sh *SeriesHeader) Hash {
+		if pairingQueryStatement == "" {
+			return sh.CalculateHash()
+		}
+		return sh.CalculateHashWithQueryStatement(pairingQueryStatement)
+	}
+	// Build lookup: statementID → seriesHash → epoch → count value
+	type epochCounts = map[epoch.Epoch]float64
+	countLookup := make(map[int]map[Hash]epochCounts, len(countDS.Results))
+	for _, r := range countDS.Results {
+		if r == nil {
+			continue
+		}
+		seriesMap := make(map[Hash]epochCounts, len(r.SeriesList))
+		countLookup[r.StatementID] = seriesMap
+		for _, s := range r.SeriesList {
+			if s == nil {
+				continue
+			}
+			h := pairingHash(&s.Header)
+			ec := make(epochCounts, len(s.Points))
+			for _, pt := range s.Points {
+				if len(pt.Values) > 0 {
+					ec[pt.Epoch] = parseFloat(pt.Values[0])
+				}
+			}
+			seriesMap[h] = ec
+		}
+	}
+	// Divide accumulated sum values by their corresponding total counts
+	ds.UpdateLock.Lock()
+	defer ds.UpdateLock.Unlock()
+	for _, r := range ds.Results {
+		if r == nil {
+			continue
+		}
+		seriesMap, ok := countLookup[r.StatementID]
+		if !ok {
+			continue
+		}
+		for _, s := range r.SeriesList {
+			if s == nil {
+				continue
+			}
+			ec, ok := seriesMap[pairingHash(&s.Header)]
+			if !ok {
+				continue
+			}
+			for i := range s.Points {
+				if len(s.Points[i].Values) == 0 {
+					continue
+				}
+				cnt, ok := ec[s.Points[i].Epoch]
+				if ok && cnt != 0 {
+					sum := parseFloat(s.Points[i].Values[0])
+					s.Points[i].Values[0] = strconv.FormatFloat(sum/cnt, 'f', -1, 64)
+				}
+			}
+		}
+	}
+}
+
+// FinalizeAvg divides all point values by count, converting accumulated sums into averages.
+func (ds *DataSet) FinalizeAvg(count int) {
+	if count <= 1 {
+		return
+	}
+	ds.UpdateLock.Lock()
+	defer ds.UpdateLock.Unlock()
+	for _, r := range ds.Results {
+		if r == nil {
+			continue
+		}
+		for _, s := range r.SeriesList {
+			if s == nil {
+				continue
+			}
+			for i := range s.Points {
+				finalizeAvg(&s.Points[i], count)
+			}
+		}
+	}
+}
+
 // CropToSize reduces the number of elements in the Timeseries to the provided count, by evicting elements
 // using a least-recently-used methodology. The time parameter limits the upper extent to the provided time,
 // in order to support backfill tolerance
@@ -285,7 +450,56 @@ func (ds *DataSet) CropToSize(sz int, t time.Time, lur timeseries.Extent) {
 
 // DefaultSizeCropper is the default SizeCropper Function
 func (ds *DataSet) DefaultSizeCropper(sz int, t time.Time, lur timeseries.Extent) {
-	// TODO: Complete this method
+	step := ds.Step()
+	if step == 0 || sz <= 0 {
+		return
+	}
+	tsc := ds.ExtentList.TimestampCount(step)
+	if tsc <= int64(sz) {
+		return
+	}
+	// Sort extents by LastUsed (ascending = least-recently-used first)
+	el := timeseries.ExtentListLRU(ds.ExtentList.Clone())
+	sort.Sort(el)
+	// Remove the least-recently-used extents until we're within budget,
+	// but never remove extents that overlap the current request (lur)
+	var remove timeseries.ExtentList
+	for i := range el {
+		if tsc <= int64(sz) {
+			break
+		}
+		// don't evict extents that overlap the last-used range
+		if !el[i].End.Before(lur.Start) && !el[i].Start.After(lur.End) {
+			continue
+		}
+		// don't evict extents beyond the provided time boundary
+		if el[i].Start.After(t) {
+			continue
+		}
+		ec := ((el[i].End.UnixNano() - el[i].Start.UnixNano()) / step.Nanoseconds()) + 1
+		tsc -= ec
+		remove = append(remove, el[i])
+	}
+	if len(remove) == 0 {
+		return
+	}
+	ds.ExtentList = ds.ExtentList.Remove(remove, step)
+	// Crop the actual data points to match the remaining extents.
+	// We call DefaultRangeCropper directly after temporarily widening the ExtentList,
+	// because CropToRange short-circuits when ExtentList is already encompassed by
+	// the crop range (which it always is here since we just set it via Remove).
+	if len(ds.ExtentList) > 0 {
+		cropExtent := timeseries.Extent{
+			Start: ds.ExtentList[0].Start,
+			End:   ds.ExtentList[len(ds.ExtentList)-1].End,
+		}
+		saved := ds.ExtentList
+		ds.ExtentList = timeseries.ExtentList{
+			{Start: time.Unix(0, 0), End: cropExtent.End.Add(step)},
+		}
+		ds.CropToRange(cropExtent)
+		ds.ExtentList = saved
+	}
 }
 
 // CropToRange reduces the DataSet down to timestamps contained within the provided Extents (inclusive).
@@ -346,10 +560,11 @@ func (ds *DataSet) DefaultRangeCropper(e timeseries.Extent) {
 		if ds.Results[i] == nil {
 			continue
 		}
-		var wg sync.WaitGroup
 		if len(ds.Results[i].SeriesList) == 0 {
 			continue
 		}
+		eg := errgroup.Group{}
+		eg.SetLimit(runtime.GOMAXPROCS(0))
 		sl := make([]*Series, len(ds.Results[i].SeriesList))
 		var j int
 		for _, s := range ds.Results[i].SeriesList {
@@ -358,7 +573,7 @@ func (ds *DataSet) DefaultRangeCropper(e timeseries.Extent) {
 			}
 
 			index := j
-			wg.Go(func() {
+			eg.Go(func() error {
 				l := len(s.Points)
 				start, end := s.Points.findRange(startNS, endNS, 0, l-1)
 				if start < l && end <= l && end > start {
@@ -366,10 +581,11 @@ func (ds *DataSet) DefaultRangeCropper(e timeseries.Extent) {
 					s.PointSize = s.Points.Size()
 				}
 				sl[index] = s
+				return nil
 			})
 			j++
 		}
-		wg.Wait()
+		eg.Wait()
 		ds.Results[i].SeriesList = sl[:j]
 	}
 }

@@ -119,10 +119,9 @@ func GetRequestValues(r *http.Request) (url.Values, []byte, bool) {
 // regardless of method
 func SetRequestValues(r *http.Request, v url.Values) {
 	s := v.Encode()
-	if !methods.HasBody(r.Method) {
-		r.URL.RawQuery = s
-	} else {
-		// reset the body
+	r.URL.RawQuery = s
+	if methods.HasBody(r.Method) {
+		// also reset the body so the upstream request carries the updated params
 		if r.Body != nil {
 			r.Body.Close()
 		}

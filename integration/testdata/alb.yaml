@@ -1,0 +1,105 @@
+# Copyright 2018 The Trickster Authors
+# Licensed under the Apache License, Version 2.0
+
+frontend:
+  listen_port: 8490
+
+metrics:
+  listen_port: 8491
+
+mgmt:
+  listen_port: 8492
+
+logging:
+  log_level: info
+
+negative_caches:
+  default:
+    "400": 3
+    "404": 3
+    "500": 3
+
+caches:
+  mem1:
+    provider: memory
+  mem2:
+    provider: memory
+
+backends:
+  prom1:
+    provider: prometheus
+    origin_url: http://127.0.0.1:9090
+    cache_name: mem1
+  prom2:
+    provider: prometheus
+    origin_url: http://127.0.0.1:9090
+    cache_name: mem2
+  # Backends with prometheus.labels configured to exercise the
+  # hasTransformations capture path through ALB (regression test for #937).
+  prom1-labeled:
+    provider: prometheus
+    origin_url: http://127.0.0.1:9090
+    cache_name: mem1
+    prometheus:
+      labels:
+        region: us-east
+  prom2-labeled:
+    provider: prometheus
+    origin_url: http://127.0.0.1:9090
+    cache_name: mem2
+    prometheus:
+      labels:
+        region: us-west
+  alb-fgr:
+    provider: alb
+    alb:
+      mechanism: fgr
+      pool:
+        - prom1
+        - prom2
+  alb-rr:
+    provider: alb
+    alb:
+      mechanism: rr
+      pool:
+        - prom1
+        - prom2
+        - prom1
+  alb-tsm:
+    provider: alb
+    alb:
+      mechanism: tsm
+      pool:
+        - prom1
+        - prom2
+  alb-nlm:
+    provider: alb
+    alb:
+      mechanism: nlm
+      pool:
+        - prom1
+        - prom2
+  # Labeled-pool ALBs that exercise the prometheus capture/transform path
+  # (regression test for #937). Each pool member injects a different region
+  # label so the test can also verify InjectTags is applied.
+  alb-fgr-labeled:
+    provider: alb
+    alb:
+      mechanism: fgr
+      pool:
+        - prom1-labeled
+        - prom2-labeled
+  alb-nlm-labeled:
+    provider: alb
+    alb:
+      mechanism: nlm
+      pool:
+        - prom1-labeled
+        - prom2-labeled
+  alb-tsm-labeled:
+    provider: alb
+    alb:
+      mechanism: tsm
+      pool:
+        - prom1-labeled
+        - prom2-labeled

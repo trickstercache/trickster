@@ -226,21 +226,307 @@ func TestSeriesCount(t *testing.T) {
 }
 
 func TestMerge(t *testing.T) {
-	ds := &DataSet{}
-	ds.Merge(false, nil)
-	if len(ds.Results) > 0 {
-		t.Error("dataset merge error")
+	t.Run("empty dataset", func(t *testing.T) {
+		ds := &DataSet{}
+		ds.Merge(false, nil)
+		if len(ds.Results) > 0 {
+			t.Error("dataset merge error")
+		}
+	})
+
+	t.Run("basic two-dataset merge", func(t *testing.T) {
+		ds := testDataSet2()
+		ds2 := testDataSet2()
+		ds.Results = ds.Results[:1]
+		ds.Merge(false, ds2)
+		if ds.SeriesCount() != 4 {
+			t.Errorf("expected %d got %d", 4, ds.SeriesCount())
+		}
+	})
+
+	t.Run("nil collection element skipped", func(t *testing.T) {
+		ds := testDataSet()
+		before := ds.SeriesCount()
+		ds.Merge(false, nil, nil)
+		if ds.SeriesCount() != before {
+			t.Errorf("expected %d got %d", before, ds.SeriesCount())
+		}
+	})
+
+	t.Run("overlapping statement IDs merge series", func(t *testing.T) {
+		ds := testDataSet()  // has StatementID 42
+		ds2 := testDataSet() // also StatementID 42, same series
+		ds.Merge(true, ds2)
+		// same StatementID → series merged, not duplicated
+		if ds.SeriesCount() != 1 {
+			t.Errorf("expected 1 series after merging same statement, got %d", ds.SeriesCount())
+		}
+	})
+
+	t.Run("disjoint statement IDs append results", func(t *testing.T) {
+		ds := testDataSet() // StatementID 42
+		ds2 := testDataSet()
+		ds2.Results[0].StatementID = 99
+		ds.Merge(false, ds2)
+		if len(ds.Results) != 2 {
+			t.Errorf("expected 2 results, got %d", len(ds.Results))
+		}
+	})
+}
+
+func TestMergeWithStrategy(t *testing.T) {
+	// Build a DataSet with one Result containing one series with string-encoded float values
+	makeDS := func(stmtID int, name string, tags Tags, points ...struct {
+		epoch int64
+		value string
+	},
+	) *DataSet {
+		p := make(Points, len(points))
+		for i, pt := range points {
+			p[i] = Point{Epoch: epoch.Epoch(pt.epoch), Size: 32, Values: []any{pt.value}}
+		}
+		return &DataSet{
+			Results: Results{
+				{StatementID: stmtID, SeriesList: SeriesList{
+					{Header: SeriesHeader{Name: name, Tags: tags}, Points: p},
+				}},
+			},
+		}
 	}
 
-	ds = testDataSet2()
-	ds2 := testDataSet2()
-	ds.Results = ds.Results[:1]
-
-	ds.Merge(false, ds2)
-
-	if ds.SeriesCount() != 4 {
-		t.Errorf("expected %d got %d", 4, ds.SeriesCount())
+	type ep struct {
+		epoch int64
+		value string
 	}
+
+	t.Run("sum across two datasets", func(t *testing.T) {
+		ds1 := makeDS(0, "up", Tags{}, ep{100, "1"}, ep{200, "2"})
+		ds2 := makeDS(0, "up", Tags{}, ep{100, "3"}, ep{200, "4"})
+		ds1.MergeWithStrategy(true, int(MergeStrategySum), ds2)
+		if ds1.SeriesCount() != 1 {
+			t.Fatalf("expected 1 series, got %d", ds1.SeriesCount())
+		}
+		pts := ds1.Results[0].SeriesList[0].Points
+		if len(pts) != 2 {
+			t.Fatalf("expected 2 points, got %d", len(pts))
+		}
+		if pts[0].Values[0] != "4" {
+			t.Errorf("expected sum 4 at epoch 100, got %v", pts[0].Values[0])
+		}
+		if pts[1].Values[0] != "6" {
+			t.Errorf("expected sum 6 at epoch 200, got %v", pts[1].Values[0])
+		}
+	})
+
+	t.Run("dedup delegates to Merge", func(t *testing.T) {
+		ds1 := makeDS(0, "up", Tags{}, ep{100, "1"})
+		ds2 := makeDS(0, "up", Tags{}, ep{100, "9"})
+		ds1.MergeWithStrategy(true, int(MergeStrategyDedup), ds2)
+		if ds1.SeriesCount() != 1 {
+			t.Fatalf("expected 1 series, got %d", ds1.SeriesCount())
+		}
+		// dedup: last value wins
+		if ds1.Results[0].SeriesList[0].Points[0].Values[0] != "9" {
+			t.Errorf("expected dedup value 9, got %v", ds1.Results[0].SeriesList[0].Points[0].Values[0])
+		}
+	})
+
+	t.Run("disjoint statement IDs append", func(t *testing.T) {
+		ds1 := makeDS(0, "up", Tags{}, ep{100, "1"})
+		ds2 := makeDS(1, "down", Tags{}, ep{100, "2"})
+		ds1.MergeWithStrategy(true, int(MergeStrategySum), ds2)
+		if len(ds1.Results) != 2 {
+			t.Errorf("expected 2 results, got %d", len(ds1.Results))
+		}
+	})
+
+	t.Run("nil collection skipped", func(t *testing.T) {
+		ds1 := makeDS(0, "up", Tags{}, ep{100, "1"})
+		ds1.MergeWithStrategy(true, int(MergeStrategySum), nil)
+		if ds1.SeriesCount() != 1 {
+			t.Errorf("expected 1 series, got %d", ds1.SeriesCount())
+		}
+	})
+
+	t.Run("avg across three datasets", func(t *testing.T) {
+		// For avg, MergeWithStrategy accumulates sums pairwise;
+		// the caller must call FinalizeAvg with the total merge count.
+		// This mirrors the real flow where TimeseriesRespondFuncWithStrategy
+		// calls FinalizeAvg before writing the response.
+		ds1 := makeDS(0, "latency", Tags{}, ep{100, "10"})
+		ds2 := makeDS(0, "latency", Tags{}, ep{100, "20"})
+		ds3 := makeDS(0, "latency", Tags{}, ep{100, "30"})
+		// Use sum for pairwise accumulation (as the merge func does for avg)
+		ds1.MergeWithStrategy(true, int(MergeStrategySum), ds2, ds3)
+		ds1.FinalizeAvg(3) // 3 datasets total
+		pts := ds1.Results[0].SeriesList[0].Points
+		if pts[0].Values[0] != "20" {
+			t.Errorf("expected avg 20, got %v", pts[0].Values[0])
+		}
+	})
+}
+
+func TestFinalizeWeightedAvg(t *testing.T) {
+	makeDS := func(stmtID int, name string, tags Tags, points ...struct {
+		epoch int64
+		value string
+	},
+	) *DataSet {
+		p := make(Points, len(points))
+		for i, pt := range points {
+			p[i] = Point{Epoch: epoch.Epoch(pt.epoch), Size: 32, Values: []any{pt.value}}
+		}
+		return &DataSet{
+			Results: Results{
+				{StatementID: stmtID, SeriesList: SeriesList{
+					{Header: SeriesHeader{Name: name, Tags: tags}, Points: p},
+				}},
+			},
+		}
+	}
+
+	type ep struct {
+		epoch int64
+		value string
+	}
+
+	t.Run("basic weighted avg", func(t *testing.T) {
+		// Two backends:
+		//   backend A: avg(requests) where sum=60, count=3 → avg=20
+		//   backend B: avg(requests) where sum=40, count=1 → avg=40
+		// Weighted avg = (60+40)/(3+1) = 100/4 = 25
+		sumDS := makeDS(0, "requests", Tags{}, ep{100, "60"}, ep{200, "40"})
+		countDS := makeDS(0, "requests", Tags{}, ep{100, "3"}, ep{200, "1"})
+		sumDS.FinalizeWeightedAvg(countDS, "")
+		pts := sumDS.Results[0].SeriesList[0].Points
+		if len(pts) != 2 {
+			t.Fatalf("expected 2 points, got %d", len(pts))
+		}
+		want0 := "20" // 60/3
+		if pts[0].Values[0] != want0 {
+			t.Errorf("epoch 100: got %v, want %v", pts[0].Values[0], want0)
+		}
+		want1 := "40" // 40/1
+		if pts[1].Values[0] != want1 {
+			t.Errorf("epoch 200: got %v, want %v", pts[1].Values[0], want1)
+		}
+	})
+
+	t.Run("nil countDS is a no-op", func(t *testing.T) {
+		ds := makeDS(0, "up", Tags{}, ep{100, "10"})
+		ds.FinalizeWeightedAvg(nil, "")
+		if ds.Results[0].SeriesList[0].Points[0].Values[0] != "10" {
+			t.Error("expected unchanged value '10'")
+		}
+	})
+
+	t.Run("missing epoch in countDS leaves sum value unchanged", func(t *testing.T) {
+		sumDS := makeDS(0, "m", Tags{}, ep{100, "50"}, ep{200, "80"})
+		countDS := makeDS(0, "m", Tags{}, ep{100, "5"}) // no epoch 200
+		sumDS.FinalizeWeightedAvg(countDS, "")
+		pts := sumDS.Results[0].SeriesList[0].Points
+		if pts[0].Values[0] != "10" { // 50/5
+			t.Errorf("epoch 100: got %v, want 10", pts[0].Values[0])
+		}
+		if pts[1].Values[0] != "80" { // unchanged
+			t.Errorf("epoch 200: got %v, want 80 (unchanged)", pts[1].Values[0])
+		}
+	})
+
+	t.Run("distinct QueryStatement not conflated when pairing string empty", func(t *testing.T) {
+		pSum := Point{Epoch: 100, Size: 32, Values: []any{"100"}}
+		pCnt := Point{Epoch: 100, Size: 32, Values: []any{"4"}}
+		sumDS := &DataSet{
+			Results: Results{{
+				StatementID: 0,
+				SeriesList: SeriesList{
+					{Header: SeriesHeader{Name: "m", Tags: Tags{}, QueryStatement: "sum(x)"}, Points: Points{pSum}},
+				},
+			}},
+		}
+		countDS := &DataSet{
+			Results: Results{{
+				StatementID: 0,
+				SeriesList: SeriesList{
+					{Header: SeriesHeader{Name: "m", Tags: Tags{}, QueryStatement: "count(x)"}, Points: Points{pCnt}},
+				},
+			}},
+		}
+		sumDS.FinalizeWeightedAvg(countDS, "")
+		if sumDS.Results[0].SeriesList[0].Points[0].Values[0] != "100" {
+			t.Errorf("with empty pairing, mismatched statement hashes must skip divide; got %v",
+				sumDS.Results[0].SeriesList[0].Points[0].Values[0])
+		}
+	})
+
+	t.Run("different QueryStatement on sum vs count rewrite still pairs", func(t *testing.T) {
+		// Real ALB path: sum and count sub-queries produce different trq.Statement /
+		// SeriesHeader.QueryStatement; FinalizeWeightedAvg must still align series.
+		pSum := Point{Epoch: 100, Size: 32, Values: []any{"100"}}
+		pCnt := Point{Epoch: 100, Size: 32, Values: []any{"4"}}
+		sumDS := &DataSet{
+			Results: Results{{
+				StatementID: 0,
+				SeriesList: SeriesList{
+					{Header: SeriesHeader{Name: "m", Tags: Tags{}, QueryStatement: "sum(x)"}, Points: Points{pSum}},
+				},
+			}},
+		}
+		countDS := &DataSet{
+			Results: Results{{
+				StatementID: 0,
+				SeriesList: SeriesList{
+					{Header: SeriesHeader{Name: "m", Tags: Tags{}, QueryStatement: "count(x)"}, Points: Points{pCnt}},
+				},
+			}},
+		}
+		sumDS.FinalizeWeightedAvg(countDS, "avg(x)")
+		got := sumDS.Results[0].SeriesList[0].Points[0].Values[0]
+		if got != "25" {
+			t.Errorf("weighted avg = 100/4: got %v, want 25", got)
+		}
+	})
+
+	t.Run("multiple series matched by hash", func(t *testing.T) {
+		// Two separate series (different tag sets)
+		sumRegionA := Point{Epoch: 100, Size: 32, Values: []any{"100"}}
+		sumRegionB := Point{Epoch: 100, Size: 32, Values: []any{"200"}}
+		cntRegionA := Point{Epoch: 100, Size: 32, Values: []any{"10"}}
+		cntRegionB := Point{Epoch: 100, Size: 32, Values: []any{"5"}}
+		sumDS := &DataSet{
+			Results: Results{{
+				StatementID: 0,
+				SeriesList: SeriesList{
+					{Header: SeriesHeader{Name: "rps", Tags: Tags{"region": "us-east-1"}}, Points: Points{sumRegionA}},
+					{Header: SeriesHeader{Name: "rps", Tags: Tags{"region": "us-west-2"}}, Points: Points{sumRegionB}},
+				},
+			}},
+		}
+		countDS := &DataSet{
+			Results: Results{{
+				StatementID: 0,
+				SeriesList: SeriesList{
+					{Header: SeriesHeader{Name: "rps", Tags: Tags{"region": "us-east-1"}}, Points: Points{cntRegionA}},
+					{Header: SeriesHeader{Name: "rps", Tags: Tags{"region": "us-west-2"}}, Points: Points{cntRegionB}},
+				},
+			}},
+		}
+		sumDS.FinalizeWeightedAvg(countDS, "")
+		for _, s := range sumDS.Results[0].SeriesList {
+			region := s.Header.Tags["region"]
+			got := s.Points[0].Values[0]
+			switch region {
+			case "us-east-1":
+				if got != "10" { // 100/10
+					t.Errorf("us-east-1: got %v, want 10", got)
+				}
+			case "us-west-2":
+				if got != "40" { // 200/5
+					t.Errorf("us-west-2: got %v, want 40", got)
+				}
+			}
+		}
+	})
 }
 
 func TestSize(t *testing.T) {
@@ -461,6 +747,104 @@ func genBenchmarkDataset(pointct int) *DataSet {
 	}
 }
 
+func TestDataSetFieldDefinitions(t *testing.T) {
+	t.Run("with fields", func(t *testing.T) {
+		sh := SeriesHeader{
+			Name: "test",
+			TimestampField: timeseries.FieldDefinition{
+				Name: "time", DataType: timeseries.Int64, OutputPosition: 0,
+			},
+			TagFieldsList: timeseries.FieldDefinitions{
+				{Name: "host", DataType: timeseries.String, OutputPosition: 1},
+			},
+			ValueFieldsList: timeseries.FieldDefinitions{
+				{Name: "value", DataType: timeseries.Float64, OutputPosition: 2},
+			},
+			UntrackedFieldsList: timeseries.FieldDefinitions{
+				{Name: "extra", DataType: timeseries.String, OutputPosition: 3},
+			},
+		}
+		ds := &DataSet{
+			Results: []*Result{{
+				SeriesList: SeriesList{&Series{Header: sh}},
+			}},
+		}
+		all, tags, vals, tfd := ds.FieldDefinitions()
+		if len(all) != 4 {
+			t.Errorf("expected 4 total fields, got %d", len(all))
+		}
+		if len(tags) != 1 || tags[0].Name != "host" {
+			t.Errorf("expected 1 tag field 'host', got %v", tags)
+		}
+		// vals includes both value and untracked fields
+		if len(vals) != 2 {
+			t.Errorf("expected 2 value fields, got %d", len(vals))
+		}
+		if tfd.Name != "time" {
+			t.Errorf("expected timestamp field 'time', got %q", tfd.Name)
+		}
+		// verify sorted by OutputPosition
+		for i := 1; i < len(all); i++ {
+			if all[i].OutputPosition < all[i-1].OutputPosition {
+				t.Errorf("fields not sorted by OutputPosition at index %d", i)
+			}
+		}
+	})
+
+	t.Run("deduplicates across series", func(t *testing.T) {
+		sh := SeriesHeader{
+			TimestampField: timeseries.FieldDefinition{
+				Name: "time", DataType: timeseries.Int64, OutputPosition: 0,
+			},
+			ValueFieldsList: timeseries.FieldDefinitions{
+				{Name: "value", DataType: timeseries.Float64, OutputPosition: 1},
+			},
+		}
+		ds := &DataSet{
+			Results: []*Result{{
+				SeriesList: SeriesList{
+					&Series{Header: sh},
+					&Series{Header: sh}, // same field names
+				},
+			}},
+		}
+		all, _, vals, _ := ds.FieldDefinitions()
+		// "time" + "value" = 2, deduped from 4 total across 2 series
+		if len(all) != 2 {
+			t.Errorf("expected 2 deduped fields, got %d", len(all))
+		}
+		if len(vals) != 1 {
+			t.Errorf("expected 1 value field, got %d", len(vals))
+		}
+	})
+}
+
+func TestDataSetPointCount(t *testing.T) {
+	t.Run("empty dataset", func(t *testing.T) {
+		ds := &DataSet{Results: []*Result{{}}}
+		if ds.PointCount() != 0 {
+			t.Errorf("expected 0, got %d", ds.PointCount())
+		}
+	})
+
+	t.Run("multiple results and series", func(t *testing.T) {
+		ds := genTestDataSet(3, 2)
+		// genTestDataSet(3, 2): 2 results, each with 3 series, each series has 6 points
+		// total = 2 * 3 * 6 = 36
+		expected := 36
+		if got := ds.PointCount(); got != expected {
+			t.Errorf("expected %d, got %d", expected, got)
+		}
+	})
+}
+
+func TestStepNilTimeRangeQuery(t *testing.T) {
+	ds := &DataSet{}
+	if ds.Step() != 0 {
+		t.Errorf("expected 0 for nil TimeRangeQuery, got %v", ds.Step())
+	}
+}
+
 func BenchmarkMerge(b *testing.B) {
 	dss := make([]*DataSet, b.N*2)
 	for i := 0; i < b.N; i++ {
@@ -471,6 +855,156 @@ func BenchmarkMerge(b *testing.B) {
 	for i := 0; i < b.N; i += 2 {
 		dss[i].Merge(true, dss[i+1])
 	}
+}
+
+func TestDefaultSizeCropper(t *testing.T) {
+	// helper: build a multi-extent dataset with controllable LastUsed timestamps
+	mkDataSet := func(extents timeseries.ExtentList, step time.Duration) *DataSet {
+		// create points spanning the full extent range
+		sh := testSeriesHeader()
+		sh.Name = "metric"
+		sh.CalculateHash()
+		var pts Points
+		if len(extents) > 0 && step > 0 {
+			start := extents[0].Start
+			end := extents[len(extents)-1].End
+			for ts := start; !ts.After(end); ts = ts.Add(step) {
+				pts = append(pts, Point{
+					Epoch:  epoch.Epoch(ts.UnixNano()),
+					Size:   16,
+					Values: []any{1},
+				})
+			}
+		}
+		ds := &DataSet{
+			TimeRangeQuery: &timeseries.TimeRangeQuery{Step: step},
+			ExtentList:     extents,
+			Results:        []*Result{{StatementID: 0, SeriesList: []*Series{{sh, pts, pts.Size()}}}},
+		}
+		ds.Merger = ds.DefaultMerger
+		ds.SizeCropper = ds.DefaultSizeCropper
+		ds.RangeCropper = ds.DefaultRangeCropper
+		ds.Sorter = func() {}
+		return ds
+	}
+
+	t.Run("no-op when step is zero", func(t *testing.T) {
+		ds := mkDataSet(timeseries.ExtentList{
+			{Start: time.Unix(0, 0), End: time.Unix(10, 0), LastUsed: time.Unix(1, 0)},
+		}, 0)
+		origLen := len(ds.ExtentList)
+		ds.DefaultSizeCropper(1, time.Unix(100, 0), timeseries.Extent{})
+		if len(ds.ExtentList) != origLen {
+			t.Error("expected no change when step=0")
+		}
+	})
+
+	t.Run("no-op when sz <= 0", func(t *testing.T) {
+		ds := mkDataSet(timeseries.ExtentList{
+			{Start: time.Unix(0, 0), End: time.Unix(10, 0), LastUsed: time.Unix(1, 0)},
+		}, 5*time.Second)
+		origLen := len(ds.ExtentList)
+		ds.DefaultSizeCropper(0, time.Unix(100, 0), timeseries.Extent{})
+		if len(ds.ExtentList) != origLen {
+			t.Error("expected no change when sz<=0")
+		}
+	})
+
+	t.Run("no-op when already within budget", func(t *testing.T) {
+		ds := mkDataSet(timeseries.ExtentList{
+			{Start: time.Unix(5, 0), End: time.Unix(10, 0), LastUsed: time.Unix(50, 0)},
+		}, 5*time.Second)
+		// 2 timestamps (5s, 10s), budget=10
+		ds.DefaultSizeCropper(10, time.Unix(100, 0), timeseries.Extent{})
+		if len(ds.ExtentList) != 1 {
+			t.Error("expected no eviction when within budget")
+		}
+	})
+
+	t.Run("evicts LRU extents", func(t *testing.T) {
+		// 3 extents: oldest LU=1, mid LU=50, newest LU=100
+		// each has 3 timestamps (0-10, 20-30, 40-50 at step=5s)
+		// total = 9, budget = 6 → must evict 1 extent (the LU=1 one)
+		ds := mkDataSet(timeseries.ExtentList{
+			{Start: time.Unix(0, 0), End: time.Unix(10, 0), LastUsed: time.Unix(1, 0)},
+			{Start: time.Unix(20, 0), End: time.Unix(30, 0), LastUsed: time.Unix(50, 0)},
+			{Start: time.Unix(40, 0), End: time.Unix(50, 0), LastUsed: time.Unix(100, 0)},
+		}, 5*time.Second)
+		ds.DefaultSizeCropper(6, time.Unix(200, 0), timeseries.Extent{Start: time.Unix(40, 0), End: time.Unix(50, 0)})
+		if len(ds.ExtentList) != 2 {
+			t.Fatalf("expected 2 extents after eviction, got %d", len(ds.ExtentList))
+		}
+		// the oldest (0-10) should be gone
+		if ds.ExtentList[0].Start != time.Unix(20, 0) {
+			t.Errorf("expected first remaining extent to start at 20, got %v", ds.ExtentList[0].Start)
+		}
+	})
+
+	t.Run("preserves lur overlap", func(t *testing.T) {
+		// 2 extents: ext1 (LU=1, very old) overlaps lur, ext2 (LU=50) does not
+		// budget forces eviction of 1, but ext1 overlaps lur so ext2 is evicted instead
+		ds := mkDataSet(timeseries.ExtentList{
+			{Start: time.Unix(0, 0), End: time.Unix(10, 0), LastUsed: time.Unix(1, 0)},
+			{Start: time.Unix(20, 0), End: time.Unix(30, 0), LastUsed: time.Unix(50, 0)},
+		}, 5*time.Second)
+		lur := timeseries.Extent{Start: time.Unix(5, 0), End: time.Unix(8, 0)}
+		ds.DefaultSizeCropper(3, time.Unix(200, 0), lur)
+		if len(ds.ExtentList) != 1 {
+			t.Fatalf("expected 1 extent, got %d", len(ds.ExtentList))
+		}
+		if ds.ExtentList[0].Start != time.Unix(0, 0) {
+			t.Error("expected the lur-overlapping extent to be preserved")
+		}
+	})
+
+	t.Run("respects time boundary", func(t *testing.T) {
+		// ext1 (LU=1) is before time boundary → eligible for eviction
+		// ext2 (LU=2) starts after time boundary → not eligible
+		// budget forces eviction of 1
+		ds := mkDataSet(timeseries.ExtentList{
+			{Start: time.Unix(0, 0), End: time.Unix(10, 0), LastUsed: time.Unix(1, 0)},
+			{Start: time.Unix(20, 0), End: time.Unix(30, 0), LastUsed: time.Unix(2, 0)},
+		}, 5*time.Second)
+		// t=15 means ext2 (start=20) is past the boundary
+		ds.DefaultSizeCropper(3, time.Unix(15, 0), timeseries.Extent{})
+		if len(ds.ExtentList) != 1 {
+			t.Fatalf("expected 1 extent, got %d", len(ds.ExtentList))
+		}
+		// ext1 should be evicted (before boundary, older LU), ext2 preserved
+		if ds.ExtentList[0].Start != time.Unix(20, 0) {
+			t.Error("expected the future extent to be preserved")
+		}
+	})
+
+	t.Run("evicts multiple until within budget", func(t *testing.T) {
+		// 4 extents, each 3 timestamps, total=12, budget=3 → evict 3 oldest
+		ds := mkDataSet(timeseries.ExtentList{
+			{Start: time.Unix(0, 0), End: time.Unix(10, 0), LastUsed: time.Unix(1, 0)},
+			{Start: time.Unix(20, 0), End: time.Unix(30, 0), LastUsed: time.Unix(2, 0)},
+			{Start: time.Unix(40, 0), End: time.Unix(50, 0), LastUsed: time.Unix(3, 0)},
+			{Start: time.Unix(60, 0), End: time.Unix(70, 0), LastUsed: time.Unix(100, 0)},
+		}, 5*time.Second)
+		ds.DefaultSizeCropper(3, time.Unix(200, 0), timeseries.Extent{Start: time.Unix(60, 0), End: time.Unix(70, 0)})
+		if len(ds.ExtentList) != 1 {
+			t.Fatalf("expected 1 extent after eviction, got %d", len(ds.ExtentList))
+		}
+		if ds.ExtentList[0].Start != time.Unix(60, 0) {
+			t.Error("expected only the newest extent to remain")
+		}
+	})
+
+	t.Run("data points cropped after eviction", func(t *testing.T) {
+		ds := mkDataSet(timeseries.ExtentList{
+			{Start: time.Unix(0, 0), End: time.Unix(10, 0), LastUsed: time.Unix(1, 0)},
+			{Start: time.Unix(20, 0), End: time.Unix(30, 0), LastUsed: time.Unix(100, 0)},
+		}, 5*time.Second)
+		origCount := ds.ValueCount()
+		ds.DefaultSizeCropper(3, time.Unix(200, 0), timeseries.Extent{Start: time.Unix(20, 0), End: time.Unix(30, 0)})
+		newCount := ds.ValueCount()
+		if newCount >= origCount {
+			t.Errorf("expected fewer data points after eviction, got %d >= %d", newCount, origCount)
+		}
+	})
 }
 
 func BenchmarkCropToRange(b *testing.B) {

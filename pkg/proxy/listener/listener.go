@@ -88,7 +88,6 @@ func (l *Listener) Accept() (net.Conn, error) {
 
 	metrics.ProxyActiveConnections.Inc()
 	metrics.ProxyConnectionAccepted.Inc()
-
 	// this is necessary for HTTP/2 to work
 	if t, ok := c.(*net.TCPConn); ok {
 		return &observedConnection{t}, nil
@@ -109,19 +108,16 @@ func (l *Listener) RouteSwapper() *switcher.SwitchHandler {
 
 // Group is a collection of listeners
 type Group struct {
-	members        map[string]*Listener
-	listenersLock  sync.Mutex
-	shutdownCtx    context.Context
-	shutdownCancel context.CancelFunc
+	members       map[string]*Listener
+	listenersLock sync.Mutex
+	done          chan struct{}
 }
 
 // NewGroup returns a new Group
 func NewGroup() *Group {
-	ctx, cancel := context.WithCancel(context.Background())
 	return &Group{
-		members:        make(map[string]*Listener),
-		shutdownCtx:    ctx,
-		shutdownCancel: cancel,
+		members: make(map[string]*Listener),
+		done:    make(chan struct{}),
 	}
 }
 
@@ -417,7 +413,11 @@ func (lg *Group) Shutdown(drainWait time.Duration) error {
 		}
 	}
 
-	lg.shutdownCancel()
+	select {
+	case <-lg.done:
+	default:
+		close(lg.done)
+	}
 	return firstErr
 }
 

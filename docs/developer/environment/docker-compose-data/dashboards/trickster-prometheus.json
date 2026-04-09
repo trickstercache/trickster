@@ -239,6 +239,275 @@
       "type": "stat"
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 4,
+        "x": 6,
+        "y": 0
+      },
+      "id": 94,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.6.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum(delta(trickster_proxy_requests_total{job=\"trickster\"}[$window])) by (backend_name)",
+          "instant": false,
+          "legendFormat": "{{backend_name}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Requests / $window",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          },
+          "unit": "decbytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 4,
+        "x": 10,
+        "y": 0
+      },
+      "id": 95,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.6.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum(delta(trickster_frontend_written_bytes_total{job=\"trickster\"}[$window])) by (backend_name)",
+          "instant": false,
+          "legendFormat": "{{backend_name}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Bytes Written / $window",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 1,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 4,
+        "x": 14,
+        "y": 0
+      },
+      "id": 96,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.6.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(trickster_proxy_requests_total{job=\"trickster\"}[$window])) / sum(trickster_proxy_active_connections{job=\"trickster\"})",
+          "instant": false,
+          "legendFormat": "req/s/conn",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Requests / Connection",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "yellow",
+                "value": 0.01
+              },
+              {
+                "color": "red",
+                "value": 0.05
+              }
+            ]
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "id": 98,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.6.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum(delta(trickster_frontend_requests_total{job=\"trickster\",http_status=~\"5..\"}[$window])) / sum(delta(trickster_frontend_requests_total{job=\"trickster\"}[$window]))",
+          "instant": false,
+          "legendFormat": "5xx",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Error Rate",
+      "type": "stat"
+    },
+    {
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -624,7 +893,7 @@
           "datasource": {
             "uid": "$datasource"
           },
-          "expr": "rate(process_cpu_seconds_total{job=\"trickster\"}[1m])",
+          "expr": "rate(process_cpu_seconds_total{job=\"trickster\"}[$window])",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "cpu",
@@ -722,7 +991,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum(rate(go_gc_duration_seconds_sum{job=\"trickster\"}[5m])) / sum(rate(go_gc_duration_seconds_count{job=\"trickster\"}[5m]))",
+          "expr": "sum(rate(go_gc_duration_seconds_sum{job=\"trickster\"}[$window])) / sum(rate(go_gc_duration_seconds_count{job=\"trickster\"}[$window]))",
           "instant": false,
           "legendFormat": "__auto",
           "range": true,
@@ -820,7 +1089,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum(increase(process_network_transmit_bytes_total{job=\"trickster\"}[5m]))",
+          "expr": "sum(increase(process_network_transmit_bytes_total{job=\"trickster\"}[$window]))",
           "instant": false,
           "legendFormat": "TX",
           "range": true,
@@ -832,7 +1101,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum(increase(process_network_receive_bytes_total{job=\"trickster\"}[5m]))",
+          "expr": "sum(increase(process_network_receive_bytes_total{job=\"trickster\"}[$window]))",
           "hide": false,
           "instant": false,
           "legendFormat": "RX",
@@ -840,7 +1109,7 @@
           "refId": "B"
         }
       ],
-      "title": "Processed Bytes Last 5m",
+      "title": "Processed Bytes",
       "type": "timeseries"
     },
     {
@@ -974,7 +1243,7 @@
           "datasource": {
             "uid": "$datasource"
           },
-          "expr": "sum(delta(trickster_proxy_requests_total{job=\"trickster\"}[1m])) by (cache_status)",
+          "expr": "sum(delta(trickster_proxy_requests_total{job=\"trickster\"}[$window])) by (cache_status)",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{cache_status}}",
@@ -1326,7 +1595,7 @@
           "datasource": {
             "uid": "$datasource"
           },
-          "expr": "sum(delta(trickster_cache_events_total{event=\"eviction\",job=\"trickster\"}[1m])) by (cache_name)",
+          "expr": "sum(delta(trickster_cache_events_total{event=\"eviction\",job=\"trickster\"}[$window])) by (cache_name)",
           "legendFormat": "{{cache_name}}",
           "refId": "B"
         }
@@ -1439,7 +1708,7 @@
           "datasource": {
             "uid": "$datasource"
           },
-          "expr": "sum(delta(trickster_cache_operation_bytes_total{job=\"trickster\"}[1m])) by (cache_name, operation)",
+          "expr": "sum(delta(trickster_cache_operation_bytes_total{job=\"trickster\"}[$window])) by (cache_name, operation)",
           "legendFormat": "{{cache_name}} - {{operation}}",
           "refId": "B"
         }
@@ -1551,7 +1820,7 @@
           "datasource": {
             "uid": "$datasource"
           },
-          "expr": "sum(delta(trickster_cache_operation_objects_total{job=\"trickster\"}[1m])) by (cache_name, operation)",
+          "expr": "sum(delta(trickster_cache_operation_objects_total{job=\"trickster\"}[$window])) by (cache_name, operation)",
           "legendFormat": "{{cache_name}} - {{operation}}",
           "refId": "B"
         }
@@ -1560,12 +1829,222 @@
       "type": "timeseries"
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "max": 1,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red"
+              },
+              {
+                "color": "yellow",
+                "value": 0.5
+              },
+              {
+                "color": "green",
+                "value": 0.8
+              }
+            ]
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 37
+      },
+      "id": 99,
+      "options": {
+        "dataLinks": [],
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.6.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum(delta(trickster_proxy_requests_total{job=\"trickster\",cache_status=~\"hit|phit|rhit\"}[$window])) / sum(delta(trickster_proxy_requests_total{job=\"trickster\",cache_status!=\"\"}[$window]))",
+          "instant": false,
+          "legendFormat": "hit ratio",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Cache Hit Ratio",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "decimals": 1,
+          "mappings": [],
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 37
+      },
+      "id": 100,
+      "options": {
+        "dataLinks": [],
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.6.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum(delta(trickster_frontend_requests_total{job=\"trickster\"}[$window])) / sum(delta(trickster_proxy_requests_total{job=\"trickster\"}[$window]))",
+          "instant": false,
+          "legendFormat": "frontend/origin",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Frontend / Origin Request Ratio",
+      "type": "timeseries"
+    },
+    {
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 37
+        "y": 45
       },
       "id": 70,
       "panels": [],
@@ -1652,7 +2131,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 38
+        "y": 46
       },
       "id": 71,
       "options": {
@@ -1675,10 +2154,12 @@
           "datasource": {
             "uid": "$datasource"
           },
-          "expr": "sum(idelta(trickster_frontend_requests_total{job=\"trickster\",job=\"trickster\"}[1m])) by (backend_name, http_status)",
+          "editorMode": "code",
+          "expr": "sum(delta(trickster_frontend_requests_total{job=\"trickster\",job=\"trickster\"}[$window])) by (backend_name, http_status)",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{backend_name}} - {{http_status}}",
+          "range": true,
           "refId": "A"
         }
       ],
@@ -1796,7 +2277,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 38
+        "y": 46
       },
       "id": 72,
       "options": {
@@ -1819,17 +2300,19 @@
           "datasource": {
             "uid": "$datasource"
           },
-          "expr": "sum(idelta(trickster_frontend_written_bytes_total{job=\"trickster\",job=\"trickster\"}[1m])) by (backend_name)",
+          "editorMode": "code",
+          "expr": "sum(delta(trickster_frontend_written_bytes_total{job=\"trickster\",job=\"trickster\"}[$window])) by (backend_name)",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{backend_name}}",
+          "range": true,
           "refId": "A"
         },
         {
           "datasource": {
             "uid": "$datasource"
           },
-          "expr": "sum(idelta(trickster_frontend_written_bytes_total{job=\"trickster\",job=\"trickster\"}[1m]))",
+          "expr": "sum(delta(trickster_frontend_written_bytes_total{job=\"trickster\",job=\"trickster\"}[$window]))",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "total",
@@ -1946,7 +2429,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "sum(idelta(trickster_proxy_accepted_connections_total{job=\"trickster\"}[1m])) "
+              "options": "sum(delta(trickster_proxy_accepted_connections_total{job=\"trickster\"}[$window])) "
             },
             "properties": [
               {
@@ -1964,7 +2447,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 38
+        "y": 46
       },
       "id": 73,
       "options": {
@@ -1987,17 +2470,19 @@
           "datasource": {
             "uid": "$datasource"
           },
-          "expr": "sum(idelta(trickster_proxy_requested_connections_total{job=\"trickster\"}[1m])) ",
+          "editorMode": "code",
+          "expr": "sum(delta(trickster_proxy_requested_connections_total{job=\"trickster\"}[$window])) ",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "requested",
+          "range": true,
           "refId": "B"
         },
         {
           "datasource": {
             "uid": "$datasource"
           },
-          "expr": "sum(idelta(trickster_proxy_accepted_connections_total{job=\"trickster\"}[1m])) ",
+          "expr": "sum(delta(trickster_proxy_accepted_connections_total{job=\"trickster\"}[$window])) ",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "accepted",
@@ -2007,7 +2492,7 @@
           "datasource": {
             "uid": "$datasource"
           },
-          "expr": "sum(idelta(trickster_proxy_closed_connections_total{job=\"trickster\"}[1m])) ",
+          "expr": "sum(delta(trickster_proxy_closed_connections_total{job=\"trickster\"}[$window])) ",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "closed",
@@ -2017,7 +2502,7 @@
           "datasource": {
             "uid": "$datasource"
           },
-          "expr": "sum(idelta(trickster_proxy_failed_connections_total{job=\"trickster\"}[1m])) ",
+          "expr": "sum(delta(trickster_proxy_failed_connections_total{job=\"trickster\"}[$window])) ",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "failed",
@@ -2025,6 +2510,307 @@
         }
       ],
       "title": "# Inbound Connections Handled",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "decimals": 1,
+          "mappings": [],
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 54
+      },
+      "id": 97,
+      "options": {
+        "dataLinks": [],
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.6.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(trickster_proxy_requests_total{job=\"trickster\"}[$window])) / sum(trickster_proxy_active_connections{job=\"trickster\"})",
+          "instant": false,
+          "legendFormat": "req/s/conn",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Requests per Connection",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 62
+      },
+      "id": 101,
+      "options": {
+        "dataLinks": [],
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.6.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum(trickster_proxy_accepted_connections_total{job=\"trickster\"}) - sum(trickster_proxy_closed_connections_total{job=\"trickster\"})",
+          "instant": false,
+          "legendFormat": "active",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Active Connections",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 0.05
+              }
+            ]
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 62
+      },
+      "id": 102,
+      "options": {
+        "dataLinks": [],
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.6.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum(delta(trickster_frontend_requests_total{job=\"trickster\",http_status=~\"5..\"}[$window])) / sum(delta(trickster_frontend_requests_total{job=\"trickster\"}[$window]))",
+          "instant": false,
+          "legendFormat": "5xx error rate",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Error Rate (5xx)",
       "type": "timeseries"
     },
     {
@@ -2051,7 +2837,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 46
+        "y": 70
       },
       "id": 91,
       "options": {
@@ -2112,7 +2898,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 54
+        "y": 78
       },
       "id": 88,
       "panels": [],
@@ -2181,7 +2967,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "sum(idelta(trickster_proxy_accepted_connections_total{job=\"trickster\"}[1m])) "
+              "options": "sum(delta(trickster_proxy_accepted_connections_total{job=\"trickster\"}[$window])) "
             },
             "properties": [
               {
@@ -2199,7 +2985,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 55
+        "y": 79
       },
       "id": 76,
       "options": {
@@ -2222,10 +3008,12 @@
           "datasource": {
             "uid": "$datasource"
           },
-          "expr": "sum(idelta(trickster_proxy_requests_total{job=\"trickster\"}[1m])) by (backend_name)",
+          "editorMode": "code",
+          "expr": "sum(delta(trickster_proxy_requests_total{job=\"trickster\"}[$window])) by (backend_name)",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{backend_name}}",
+          "range": true,
           "refId": "A"
         }
       ],
@@ -2256,7 +3044,7 @@
         "h": 8,
         "w": 16,
         "x": 8,
-        "y": 55
+        "y": 79
       },
       "id": 90,
       "options": {
@@ -2310,6 +3098,106 @@
       ],
       "title": "Request Duration Heatmap",
       "type": "heatmap"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 87
+      },
+      "id": 103,
+      "options": {
+        "dataLinks": [],
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.6.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "rate(trickster_proxy_request_duration_seconds_sum{job=\"trickster\"}[$window]) / rate(trickster_proxy_request_duration_seconds_count{job=\"trickster\"}[$window])",
+          "instant": false,
+          "legendFormat": "{{backend_name}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Origin Latency by Backend",
+      "type": "timeseries"
     }
   ],
   "preload": false,
@@ -2331,6 +3219,39 @@
         "refresh": 1,
         "regex": "",
         "type": "datasource"
+      },
+      {
+        "current": {
+          "text": "1m",
+          "value": "1m"
+        },
+        "includeAll": false,
+        "label": "Window",
+        "name": "window",
+        "options": [
+          {
+            "selected": true,
+            "text": "1m",
+            "value": "1m"
+          },
+          {
+            "selected": false,
+            "text": "5m",
+            "value": "5m"
+          },
+          {
+            "selected": false,
+            "text": "30m",
+            "value": "30m"
+          },
+          {
+            "selected": false,
+            "text": "1h",
+            "value": "1h"
+          }
+        ],
+        "query": "1m,5m,30m,1h",
+        "type": "custom"
       }
     ]
   },
@@ -2342,5 +3263,5 @@
   "timezone": "browser",
   "title": "Prometheus",
   "uid": "uAJ8w1wZz",
-  "version": 39
+  "version": 89
 }

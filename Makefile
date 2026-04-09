@@ -116,7 +116,7 @@ style:
 
 LINT_FLAGS ?= 
 .PHONY: lint
-lint:
+lint: spelling
 	@go fix -diff ./...
 	@go tool golangci-lint run $(LINT_FLAGS) -c .golangci.yml
 
@@ -130,9 +130,10 @@ GO_TEST_FLAGS ?= -coverprofile=.coverprofile
 .PHONY: test
 test: check-license-headers check-codegen gotest check-fmtprints check-todos
 
+GO_TEST_PATH ?= $(shell $(GO) list ./... | grep -v v2/integration)
 .PHONY: gotest
 gotest:
-	go test -timeout=5m -v ${GO_TEST_FLAGS} ./...
+	$(GO) test -timeout=5m -v ${GO_TEST_FLAGS} $(GO_TEST_PATH)
 
 .PHONY: data-race-test
 data-race-test:
@@ -141,6 +142,11 @@ data-race-test:
 .PHONY: data-race-test-inspect
 data-race-test-inspect:
 	./hack/inspect-race-output.sh race-output.log
+
+.PHONY: integration-test
+integration-test:
+	$(MAKE) -C integration test
+	$(MAKE) -C integration data-race-test
 
 .PHONY: bench
 bench:
@@ -159,11 +165,11 @@ generate: perform-generate insert-license-headers
 
 .PHONY: perform-generate
 perform-generate:
-	$(GO) generate ./pkg/... ./cmd/...
+	$(GO) generate ./pkg/... ./cmd/... ./integration/...
 
 .PHONY: insert-license-headers
 insert-license-headers:
-	@for file in $$(find ./pkg ./cmd -name '*.go') ; \
+	@for file in $$(find ./pkg ./cmd ./integration -name '*.go') ; \
 	do \
 		output=$$(grep 'Licensed under the Apache License' $$file) ; \
 		if [ "$$?" != "0" ]; then \
@@ -240,6 +246,20 @@ check-todos: # there are 11 known "TODO"s in the codebase. This check fails if m
 	fi ; \
 	echo "" ; echo "\033[1;32m✓\033[0m No new TODOs found." ; echo ""
 
+.PHONY: install-codespell
+install-codespell:
+	# if brew is available, use it to install codespell
+	@which codespell ; \
+	if [ "$$?" != "0" ]; then \
+		if which brew ; then \
+			brew install codespell ; \
+		else \
+			echo "codespell is not installed and brew is not available to install it" ; \
+		fi ; \
+	else \
+		echo "codespell is already installed" ; \
+	fi
+
 .PHONY: spelling
 spelling:
 	@which mdspell ; \
@@ -271,7 +291,7 @@ serve-info:
 serve-cli:
 	@cd cmd/trickster && go run . -origin-url http://127.0.0.1:9090/ -provider prometheus
 
-GOLANG_CI_LINT_VERSION ?= v2.10.1
+GOLANG_CI_LINT_VERSION ?= v2.11.4
 .PHONY: get-tools
 get-tools: get-msgpack
 	@echo "Installing tools..."
@@ -284,6 +304,10 @@ get-msgpack:
 .PHONY: developer-start
 developer-start:
 	@cd docs/developer/environment && docker compose up -d
+	@echo "Waiting for Redis to be ready..."
+	@timeout 30 sh -c 'until printf "PING\r\n" | nc 127.0.0.1 6379 2>/dev/null | grep -q PONG; do sleep 1; done'
+	@echo "Waiting for Prometheus to be ready..."
+	@timeout 120 sh -c 'until curl -sf http://127.0.0.1:9090/-/ready >/dev/null 2>&1; do sleep 2; done'
 	
 .PHONY: developer-stop
 developer-stop:

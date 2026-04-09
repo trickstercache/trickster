@@ -32,6 +32,32 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/testutil/readers"
 )
 
+func TestIsSelectQuery(t *testing.T) {
+	tests := []struct {
+		name  string
+		query string
+		want  bool
+	}{
+		{"space", "SELECT col FROM t", true},
+		{"tab", "SELECT\tcol FROM t", true},
+		{"newline", "SELECT\ncol FROM t", true},
+		{"crlf", "SELECT\r\ncol FROM t", true},
+		{"lowercase", "select col from t", true},
+		{"with clause", "WITH x AS (SELECT 1) SELECT col FROM t", true},
+		{"comment prefix", "/* comment */ SELECT col FROM t", true},
+		{"insert", "INSERT INTO t VALUES (1)", false},
+		{"empty", "", false},
+		{"no query", "enable_http_compression=1", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isSelectQuery(tt.query); got != tt.want {
+				t.Errorf("isSelectQuery(%q) = %v, want %v", tt.query, got, tt.want)
+			}
+		})
+	}
+}
+
 func testRawQuery() string {
 	return url.Values(map[string][]string{"query": {
 		`SELECT (intDiv(toUInt32(time_column), 60) * 60) * 1000 AS t, countMerge(some_count) AS cnt, field1, field2 ` +
@@ -117,6 +143,7 @@ func TestQueryHandler(t *testing.T) {
 	if string(bodyBytes) != "{}" {
 		t.Errorf("expected '{}' got %s.", bodyBytes)
 	}
+
 }
 
 func TestQueryHandlerBody(t *testing.T) {

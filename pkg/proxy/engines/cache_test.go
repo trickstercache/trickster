@@ -465,3 +465,71 @@ func (tc *testCache) SetTTL(cacheKey string, ttl time.Duration) {}
 func (tc *testCache) Remove(cacheKey ...string) error           { return nil }
 func (tc *testCache) Close() error                              { return errTest }
 func (tc *testCache) Configuration() *co.Options                { return tc.configuration }
+
+// spyCache captures stored bytes for inspection
+type spyCache struct {
+	stored map[string][]byte
+	config *co.Options
+}
+
+func newSpyCache() *spyCache {
+	return &spyCache{
+		stored: make(map[string][]byte),
+		config: &co.Options{Provider: "filesystem"},
+	}
+}
+
+func (sc *spyCache) Connect() error { return nil }
+func (sc *spyCache) Store(key string, data []byte, _ time.Duration) error {
+	sc.stored[key] = data
+	return nil
+}
+
+func (sc *spyCache) Retrieve(key string) ([]byte, status.LookupStatus, error) {
+	if b, ok := sc.stored[key]; ok {
+		return b, status.LookupStatusHit, nil
+	}
+	return nil, status.LookupStatusKeyMiss, nil
+}
+func (sc *spyCache) SetTTL(string, time.Duration) {}
+func (sc *spyCache) Remove(...string) error       { return nil }
+func (sc *spyCache) Close() error                 { return nil }
+func (sc *spyCache) Configuration() *co.Options   { return sc.config }
+
+func TestWriteConcurrentCompressionThreshold(t *testing.T) {
+	t.Run("small payload not compressed", func(t *testing.T) {
+		sc := newSpyCache()
+		d := &HTTPDocument{StatusCode: 200, Body: []byte("small")}
+		err := writeConcurrent(context.Background(), sc, "k1", d, true, time.Minute)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b := sc.stored["k1"]
+		if len(b) == 0 {
+			t.Fatal("expected stored data")
+		}
+		if b[0] != 0 {
+			t.Error("small payload should not be compressed (first byte should be 0)")
+		}
+	})
+
+	t.Run("large payload compressed", func(t *testing.T) {
+		sc := newSpyCache()
+		body := make([]byte, 1024)
+		for i := range body {
+			body[i] = byte(i % 256)
+		}
+		d := &HTTPDocument{StatusCode: 200, Body: body}
+		err := writeConcurrent(context.Background(), sc, "k2", d, true, time.Minute)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b := sc.stored["k2"]
+		if len(b) == 0 {
+			t.Fatal("expected stored data")
+		}
+		if b[0] != 1 {
+			t.Error("large payload should be compressed (first byte should be 1)")
+		}
+	})
+}
