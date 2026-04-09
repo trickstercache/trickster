@@ -24,6 +24,8 @@ import (
 	"io"
 
 	"github.com/trickstercache/trickster/v2/pkg/encoding/reader"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 )
 
 // ErrInvalidHeader indicates the input does not begin with a valid zlib wrapper.
@@ -75,7 +77,10 @@ func Encode(in []byte) ([]byte, error) {
 	var buf bytes.Buffer
 	w := stdzlib.NewWriter(&buf)
 	if _, err := w.Write(in); err != nil {
-		w.Close()
+		if err2 := w.Close(); err2 != nil {
+			logger.Error("failed to close encoder writer",
+				logging.Pairs{"error": err2, "parentError": err})
+		}
 		return nil, err
 	}
 	if err := w.Close(); err != nil {

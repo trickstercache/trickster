@@ -17,6 +17,7 @@
 package encoding
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/trickstercache/trickster/v2/pkg/encoding/brotli"
@@ -48,7 +49,7 @@ func ceFieldEqualFoldASCII(field, lowerASCII string) bool {
 	if len(field) != len(lowerASCII) {
 		return false
 	}
-	for i := 0; i < len(field); i++ {
+	for i := range len(field) {
 		c := field[i]
 		if c >= 'A' && c <= 'Z' {
 			c += 'a' - 'A'
@@ -88,7 +89,8 @@ func classifyContentEncodingField(field string) (ceKind, bool) {
 // scanContentEncodings walks ce in a single pass. Codings are recorded
 // in application order; the caller decodes last-applied first.
 func scanContentEncodings(ce string,
-	stack *[maxContentEncodingStack]ceKind) (n int, err error) {
+	stack *[maxContentEncodingStack]ceKind,
+) (n int, err error) {
 	i := 0
 	for i < len(ce) {
 		for i < len(ce) && (ce[i] == ',' || ceFieldIsSpace(ce[i])) {
@@ -131,7 +133,7 @@ func scanContentEncodings(ce string,
 				return 0, fmt.Errorf("unsupported content-encoding %q", field)
 			}
 			if n >= maxContentEncodingStack {
-				return 0, fmt.Errorf("too many content-encoding layers")
+				return 0, errors.New("too many content-encoding layers")
 			}
 			stack[n] = kind
 			n++
