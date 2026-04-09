@@ -41,7 +41,7 @@ func MakeMergeFunc[T any, PT merge.Mergeable[T]](errorType string,
 			instance = newInstance()
 			if err := json.Unmarshal(body, instance); err != nil {
 				logger.Error(errorType+" unmarshaling error",
-					logging.Pairs{"provider": providers.Prometheus, "detail": err.Error()})
+					logging.Pairs{"provider": providers.Prometheus, "detail": err.Error(), "body": string(body)})
 				return err
 			}
 		} else {
