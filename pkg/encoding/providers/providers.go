@@ -41,6 +41,7 @@ const (
 	ZstandardValue = "zstd"
 	BrotliValue    = "br"
 	GZipValue      = "gzip"
+	GZipAltValue   = "x-gzip"
 	DeflateValue   = "deflate"
 	SnappyValue    = "snappy"
 	// might be used in configs
