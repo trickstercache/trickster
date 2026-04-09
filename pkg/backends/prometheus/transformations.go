@@ -69,7 +69,7 @@ func (c *Client) processVectorTransformations(w http.ResponseWriter,
 			detail = err.Error()
 		}
 		logger.Error("vector unmarshaling error",
-			logging.Pairs{"provider": providers.Prometheus, "detail": detail})
+			logging.Pairs{"provider": providers.Prometheus, "detail": detail, "body": string(body)})
 		defaultWrite(statusCode, w, body)
 		return
 	}
