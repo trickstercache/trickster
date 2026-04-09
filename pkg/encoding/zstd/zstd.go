@@ -33,9 +33,29 @@ func init() {
 	commonEncoder, _ = zstd.NewWriter(nil)
 }
 
-// Decode returns the decoded version of the encoded byte slice
-func Decode(in []byte) ([]byte, error) {
+func decodeBody(in []byte) ([]byte, error) {
 	return commonDecoder.DecodeAll(in, nil)
+}
+
+// Decode returns the decoded version of the encoded byte slice.
+func Decode(in []byte) ([]byte, error) {
+	if !Detect(in) {
+		return nil, zstd.ErrMagicMismatch
+	}
+	return decodeBody(in)
+}
+
+// Decompress returns decompressed bytes if b is zstd-framed,
+// otherwise returns b unchanged.
+func Decompress(b []byte) []byte {
+	if !Detect(b) {
+		return b
+	}
+	out, err := decodeBody(b)
+	if err != nil {
+		return b
+	}
+	return out
 }
 
 // Encode returns the encoded version of the byte slice

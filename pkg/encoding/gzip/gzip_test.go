@@ -18,6 +18,8 @@ package gzip
 
 import (
 	"bytes"
+	"compress/gzip"
+	"errors"
 	"net/http/httptest"
 	"testing"
 )
@@ -37,8 +39,8 @@ func TestDecodeEncode(t *testing.T) {
 	}
 
 	_, err = Decode([]byte(expected))
-	if err == nil {
-		t.Error("expected EOF error")
+	if !errors.Is(err, gzip.ErrHeader) {
+		t.Errorf("expected gzip.ErrHeader, got %v", err)
 	}
 }
 
@@ -55,8 +57,8 @@ func TestNewDecoder(t *testing.T) {
 	}
 
 	_, err = Decode([]byte(expected))
-	if err == nil {
-		t.Error("expected EOF error")
+	if !errors.Is(err, gzip.ErrHeader) {
+		t.Errorf("expected gzip.ErrHeader, got %v", err)
 	}
 }
 
