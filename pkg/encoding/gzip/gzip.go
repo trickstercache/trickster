@@ -39,21 +39,29 @@ func (pw *pooledWriter) Close() error {
 	return err
 }
 
-// Decode returns the decoded version of the encoded byte slice
-func Decode(in []byte) ([]byte, error) {
+func decodeBody(in []byte) ([]byte, error) {
 	gr, err := gzip.NewReader(bytes.NewReader(in))
 	if err != nil {
-		return []byte{}, err
+		return nil, err
 	}
+	defer gr.Close()
 	return io.ReadAll(gr)
+}
+
+// Decode returns the decoded version of the encoded byte slice.
+func Decode(in []byte) ([]byte, error) {
+	if !Detect(in) {
+		return nil, gzip.ErrHeader
+	}
+	return decodeBody(in)
 }
 
 // Decompress returns decompressed bytes if b is gzip-encoded, otherwise returns b unchanged.
 func Decompress(b []byte) []byte {
-	if len(b) < 2 || b[0] != 0x1f || b[1] != 0x8b {
+	if !Detect(b) {
 		return b
 	}
-	out, err := Decode(b)
+	out, err := decodeBody(b)
 	if err != nil {
 		return b
 	}
@@ -88,4 +96,9 @@ func NewDecoder(r io.Reader) reader.ReadCloserResetter {
 		return nil
 	}
 	return rc
+}
+
+// Detect reports whether in begins with an RFC 1952 gzip member header
+func Detect(in []byte) bool {
+	return len(in) >= 2 && in[0] == 0x1f && in[1] == 0x8b
 }

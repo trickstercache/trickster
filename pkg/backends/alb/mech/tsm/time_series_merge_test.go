@@ -91,4 +91,3 @@ func TestHandleResponseMerge(t *testing.T) {
 		t.Error("expected 200 got", w.Code)
 	}
 }
-

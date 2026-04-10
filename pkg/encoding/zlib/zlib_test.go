@@ -14,73 +14,39 @@
  * limitations under the License.
  */
 
-package zstd
+package zlib
 
 import (
 	"bytes"
-	"errors"
 	"net/http/httptest"
 	"testing"
-
-	"github.com/klauspost/compress/zstd"
 )
 
 func TestDecodeEncode(t *testing.T) {
 	const expected = "trickster"
 	b, err := Encode([]byte(expected))
 	if err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 	b, err = Decode(b)
 	if err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 	if string(b) != expected {
-		t.Errorf("expected %s got %s", expected, string(b))
+		t.Fatalf("expected %s got %s", expected, string(b))
 	}
 
 	_, err = Decode([]byte(expected))
-	if !errors.Is(err, zstd.ErrMagicMismatch) {
-		t.Errorf("expected ErrMagicMismatch, got %v", err)
-	}
-}
-
-func TestNewDecoder(t *testing.T) {
-	const expected = "trickster"
-	b, err := Encode([]byte(expected))
-	if err != nil {
-		t.Error(err)
-	}
-	r := bytes.NewReader(b)
-	dec := NewDecoder(r)
-	if dec == nil {
-		t.Error("expected non-nil decoder")
+	if err == nil {
+		t.Error("expected error for non-zlib input")
 	}
 }
 
 func TestNewEncoder(t *testing.T) {
 	w := httptest.NewRecorder()
-	enc := NewEncoder(w, 0)
+	enc := NewEncoder(w, -1)
 	if enc == nil {
-		t.Error("expected non-nil encoder")
-	}
-
-	w = httptest.NewRecorder()
-	enc = NewEncoder(w, 1)
-	if enc == nil {
-		t.Error("expected non-nil encoder")
-	}
-
-	w = httptest.NewRecorder()
-	enc = NewEncoder(w, 4)
-	if enc == nil {
-		t.Error("expected non-nil encoder")
-	}
-
-	w = httptest.NewRecorder()
-	enc = NewEncoder(w, 9)
-	if enc == nil {
-		t.Error("expected non-nil encoder")
+		t.Fatal("expected non-nil encoder")
 	}
 }
 
@@ -93,7 +59,7 @@ func TestDecompress(t *testing.T) {
 		}
 	})
 
-	t.Run("zstd roundtrip", func(t *testing.T) {
+	t.Run("zlib roundtrip", func(t *testing.T) {
 		want := []byte(`{"status":"ok"}`)
 		zb, err := Encode(want)
 		if err != nil {
