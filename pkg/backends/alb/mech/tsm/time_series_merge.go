@@ -317,9 +317,16 @@ func (h *handler) serveStandard(
 
 	var statusCode int
 	var statusHeader string
+	// winnerHeaders carries custom response headers (e.g. those set by a
+	// pool member's path override via response_headers:) from the same
+	// member whose mergeFunc will write the final response. Without this,
+	// TSM fanout would strip any backend-set headers that FGR would
+	// happily propagate. See #970.
+	var winnerHeaders http.Header
 	for _, res := range results {
 		if mrf == nil {
 			mrf = res.mergeFunc
+			winnerHeaders = res.header
 		}
 		if res.statusCode > 0 {
 			if statusCode == 0 || res.statusCode < statusCode {
@@ -331,6 +338,17 @@ func (h *handler) serveStandard(
 			statusHeader = headers.MergeResultHeaderVals(statusHeader,
 				res.header.Get(headers.NameTricksterResult))
 		}
+	}
+
+	// Carry the winner's custom headers onto the outbound response BEFORE
+	// setting the aggregated X-Trickster-Result. headers.Merge makes the
+	// source value authoritative for every key it touches, so the Set
+	// below keeps TSM's own merged status header regardless of what the
+	// member advertised for that key. Structural headers (Content-Type,
+	// Content-Length, Date, Last-Modified, Transfer-Encoding) were already
+	// removed by StripMergeHeaders.
+	if winnerHeaders != nil {
+		headers.Merge(w.Header(), winnerHeaders)
 	}
 
 	// set aggregated status header
@@ -468,9 +486,14 @@ func (h *handler) serveWeightedAvg(
 	var mrf merge.RespondFunc
 	var statusCode int
 	var statusHeader string
+	// See serveStandard for the rationale — carry the winner's custom
+	// response headers through the fanout so backend-set headers like
+	// `X-Test-Origin` survive the merge. (#970)
+	var winnerHeaders http.Header
 	for _, res := range results {
 		if mrf == nil {
 			mrf = res.mergeFunc
+			winnerHeaders = res.header
 		}
 		if res.statusCode > 0 {
 			if statusCode == 0 || res.statusCode < statusCode {
@@ -482,6 +505,10 @@ func (h *handler) serveWeightedAvg(
 			statusHeader = headers.MergeResultHeaderVals(statusHeader,
 				res.header.Get(headers.NameTricksterResult))
 		}
+	}
+
+	if winnerHeaders != nil {
+		headers.Merge(w.Header(), winnerHeaders)
 	}
 
 	if statusHeader != "" {

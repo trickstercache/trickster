@@ -181,12 +181,14 @@ func TestALB_HeaderPropagation(t *testing.T) {
 		t.Logf("%s headers: %v", backend, hdr)
 	})
 
-	// TODO(#970): TSM mechanism rebuilds the response via model.MarshalTSOrVectorWriter
-	// and currently drops backend-emitted response headers like X-Test-Origin before
-	// writing the merged body. Enabling this case requires fixing TSM to preserve
-	// passthrough response headers from its pool members.
 	t.Run("tsm instant query propagates X-Test-Origin", func(t *testing.T) {
-		t.Skip("TODO(#970): TSM merge path does not currently propagate custom response headers")
+		backend := "alb-tsm-labeled"
+		_, hdr := queryTricksterProm(t, albAddr, backend, "/api/v1/query",
+			url.Values{"query": {"up"}})
+		require.Equal(t, "prom1", hdr.Get("X-Test-Origin"),
+			"%s: TSM merge path must preserve custom response headers from pool members (issue #970)",
+			backend)
+		t.Logf("%s headers: %v", backend, hdr)
 	})
 }
 
