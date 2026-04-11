@@ -35,6 +35,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/capture"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
@@ -162,6 +163,17 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					query = trq.Statement
 				}
 			}
+		}
+	}
+	// Fallback for instant queries (/api/v1/query): ParseTimeRangeQuery
+	// rejects requests without start/end/step, so classify directly off
+	// the `query` form parameter. Without this, the merge-strategy
+	// classifier sees an empty string on every instant query and always
+	// falls back to Dedup — which defeats the per-query strip-injected-
+	// labels path for any PromQL aggregation issued as an instant query.
+	if query == "" {
+		if qp, _, _ := params.GetRequestValues(r); qp != nil {
+			query = qp.Get("query")
 		}
 	}
 	var mergeStrategy dataset.MergeStrategy
