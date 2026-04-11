@@ -74,20 +74,55 @@ func TestEqual(t *testing.T) {
 }
 
 func TestInitialize(t *testing.T) {
-	o := &Options{CertificateAuthorityPaths: []string{"/ca"}}
-	if err := o.Initialize(""); err != nil {
+	// CA-only: ServeTLS must stay false — a CA bundle only governs
+	// outbound peer verification and must not flip the frontend into
+	// TLS-serving mode. See #940.
+	caOnly := &Options{CertificateAuthorityPaths: []string{"/ca"}}
+	if err := caOnly.Initialize(""); err != nil {
 		t.Fatal(err)
 	}
-	if !o.ServeTLS {
-		t.Error("expected ServeTLS=true when CA paths are set")
+	if caOnly.ServeTLS {
+		t.Error("CA-only options must NOT flip ServeTLS=true (#940)")
 	}
 
-	o2 := New()
-	if err := o2.Initialize(""); err != nil {
+	// Empty options: ServeTLS stays false.
+	empty := New()
+	if err := empty.Initialize(""); err != nil {
 		t.Fatal(err)
 	}
-	if o2.ServeTLS {
+	if empty.ServeTLS {
 		t.Error("expected ServeTLS=false for empty options")
+	}
+
+	// Full server cert+key pair: ServeTLS flips true.
+	pair := &Options{FullChainCertPath: "/cert", PrivateKeyPath: "/key"}
+	if err := pair.Initialize(""); err != nil {
+		t.Fatal(err)
+	}
+	if !pair.ServeTLS {
+		t.Error("expected ServeTLS=true when cert+key pair is configured")
+	}
+
+	// Cert+key AND CA: still ServeTLS=true (the CA adds mTLS verification).
+	pairWithCA := &Options{
+		FullChainCertPath:         "/cert",
+		PrivateKeyPath:            "/key",
+		CertificateAuthorityPaths: []string{"/ca"},
+	}
+	if err := pairWithCA.Initialize(""); err != nil {
+		t.Fatal(err)
+	}
+	if !pairWithCA.ServeTLS {
+		t.Error("expected ServeTLS=true for cert+key+CA")
+	}
+
+	// Cert without key (malformed): must not flip ServeTLS.
+	certOnly := &Options{FullChainCertPath: "/cert"}
+	if err := certOnly.Initialize(""); err != nil {
+		t.Fatal(err)
+	}
+	if certOnly.ServeTLS {
+		t.Error("cert without key must NOT flip ServeTLS")
 	}
 }
 

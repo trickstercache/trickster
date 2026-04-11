@@ -34,28 +34,12 @@ import (
 // TestTLS_CAOnlyConfig starts Trickster with a backend TLS block that
 // contains only a certificate_authority_paths entry (no full chain cert,
 // no private key, no client cert/key). Prior to #940 this panicked because
-// options.Validate() called os.ReadFile on an empty FullChainCertPath.
+// tls/options Initialize flipped ServeTLS=true for CA-only configs, which
+// cascaded into LoadX509KeyPair("","") both in config.TLSCertConfig and
+// in daemon/setup/listeners.go's reload path.
 //
 // regression: #940
 func TestTLS_CAOnlyConfig(t *testing.T) {
-	// TODO(#940): the partial fix (commit 1b782010) only guarded
-	// TLS.Options.Validate(), but two upstream call sites still read the
-	// empty FullChainCertPath/PrivateKeyPath on a CA-only backend:
-	//
-	//   - pkg/config/tls.go TLSCertConfig -> tls.LoadX509KeyPair("", "")
-	//     is invoked from pkg/frontend/options.(*Options).Validate when
-	//     ServeTLS is flipped true by CertificateAuthorityPaths and
-	//     TLSListenPort is non-zero (its default is 8483).
-	//   - pkg/daemon/setup/listeners.go case on line 104 (ServeTLS &&
-	//     OptionsChanged) also calls TLSCertConfig unconditionally and
-	//     early-returns on error, preventing the metrics listener from
-	//     starting.
-	//
-	// Until those paths are guarded on empty FullChainCertPath the test
-	// below cannot reach the "metrics listener up" assertion. Skipping
-	// (rather than deleting) keeps the regression target in the suite so
-	// the completed fix can flip this to an assertion trivially.
-	t.Skip("skipping: underlying #940 fix is incomplete — see TODO comment above")
 	// Generate a self-signed CA PEM on the fly and write it to the location
 	// referenced by testdata/configs/tls.yaml. Using a runtime-generated PEM
 	// keeps the testdata tree free of crypto blobs that are hard to audit.
