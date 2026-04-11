@@ -31,29 +31,49 @@ func TestInfluxDB(t *testing.T) {
 	developerHarness().start(t)
 	waitForInfluxDBData(t, "127.0.0.1:8086")
 
-	t.Run("flux query", func(t *testing.T) {
-		fluxQuery := `{
-			"query": "from(bucket: \"trickster\") |> range(start: -1h, stop: now()) |> aggregateWindow(every: 1m, fn: mean) |> limit(n: 5)",
-			"type": "flux"
-		}`
-		u := "http://" + tricksterAddr + "/flux2/api/v2/query?org=trickster-dev"
-		req, err := http.NewRequest("POST", u, strings.NewReader(fluxQuery))
+	fluxURL := "http://" + tricksterAddr + "/flux2/api/v2/query?org=trickster-dev"
+	post := func(t *testing.T, body, token string) (*http.Response, []byte) {
+		t.Helper()
+		req, err := http.NewRequest("POST", fluxURL, strings.NewReader(body))
 		require.NoError(t, err)
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", "Token trickster-dev-token")
-
+		req.Header.Set("Authorization", "Token "+token)
 		resp, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)
 		defer resp.Body.Close()
-		body, err := io.ReadAll(resp.Body)
+		b, err := io.ReadAll(resp.Body)
 		require.NoError(t, err)
-		require.Equal(t, http.StatusOK, resp.StatusCode, "unexpected status: %s", string(body))
-		require.NotEmpty(t, body, "expected non-empty response from InfluxDB Flux query")
+		return resp, b
+	}
 
+	t.Run("flux query", func(t *testing.T) {
+		resp, body := post(t, `{"query": "from(bucket: \"trickster\") |> range(start: -1h, stop: now()) |> aggregateWindow(every: 1m, fn: mean) |> limit(n: 5)", "type": "flux"}`, "trickster-dev-token")
+		require.Equal(t, http.StatusOK, resp.StatusCode, "unexpected status: %s", string(body))
+		require.NotEmpty(t, body)
 		hdr := parseTricksterResult(resp.Header.Get("X-Trickster-Result"))
-		t.Logf("influxdb flux: %s", resp.Header.Get("X-Trickster-Result"))
 		require.NotEmpty(t, hdr["engine"], "expected engine in X-Trickster-Result")
-		// The engine may be DeltaProxyCache or HTTPProxy depending on whether
-		// the Flux query parser can extract the time range from the query body.
+	})
+
+	// Aggregation matrix: mean/max/sum over -1h windows. Each must round-trip
+	// CSV back through Trickster with a valid engine set.
+	fluxCases := []struct{ name, fn string }{
+		{"mean", "mean"},
+		{"max", "max"},
+		{"sum", "sum"},
+	}
+	for _, fc := range fluxCases {
+		t.Run("flux_"+fc.name, func(t *testing.T) {
+			q := `{"query": "from(bucket: \"trickster\") |> range(start: -1h, stop: now()) |> filter(fn: (r) => r._field == \"usage_idle\") |> aggregateWindow(every: 1m, fn: ` + fc.fn + `) |> limit(n: 5)", "type": "flux"}`
+			resp, body := post(t, q, "trickster-dev-token")
+			require.Equal(t, http.StatusOK, resp.StatusCode, "unexpected status: %s", string(body))
+			lines := strings.Split(strings.TrimSpace(string(body)), "\n")
+			require.Greater(t, len(lines), 1, "expected more than the header row from %s aggregation", fc.fn)
+		})
+	}
+
+	t.Run("auth failure", func(t *testing.T) {
+		resp, body := post(t, `{"query": "from(bucket: \"trickster\") |> range(start: -1h) |> limit(n: 1)", "type": "flux"}`, "wrong-token")
+		require.Equal(t, http.StatusUnauthorized, resp.StatusCode,
+			"expected 401 for wrong token, got %d: %s", resp.StatusCode, string(body))
 	})
 }
