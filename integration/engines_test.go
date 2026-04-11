@@ -238,23 +238,19 @@ func TestEngines_Singleflight_ErrorPropagation(t *testing.T) {
 	wg.Wait()
 	close(results)
 
-	// All collapsed waiters must agree on the error status code and body.
-	// The DPC error path currently drops the upstream body before it reaches
-	// the singleflight result (doc.Body is not populated in fetchTimeseries),
-	// so the shared body observed here may be empty. The guard still
-	// validates that every waiter sees the *same* body, which is the
-	// property #939 was concerned with.
-	var first string
-	seenFirst := false
+	// All collapsed waiters must agree on the error status code AND on the
+	// exact body the origin served. Before the DPC error-body fix, the
+	// upstream body was dropped in fetchTimeseries (HTTPDocument.Body left
+	// nil) and every waiter got an empty string. Post-fix they must all
+	// see the origin's structured error JSON verbatim.
 	for r := range results {
 		require.Equal(t, http.StatusServiceUnavailable, r.status)
-		if !seenFirst {
-			first = r.body
-			seenFirst = true
-			continue
-		}
-		require.Equal(t, first, r.body,
-			"all collapsed waiters must see the same error body")
+		require.NotEmpty(t, r.body,
+			"collapsed waiter must see the upstream error body, not empty")
+		require.Contains(t, r.body, "origin failure",
+			"collapsed waiter must see the origin's error detail")
+		require.Equal(t, errBody, r.body,
+			"collapsed waiter body must match the origin response byte-for-byte")
 	}
 	require.Equal(t, int32(1), counter.Load(),
 		"origin must be contacted exactly once for error responses")

@@ -54,6 +54,12 @@ const (
 	statusErr  = "err"
 	statusHit  = "hit"
 	statusMiss = "miss"
+
+	// errorBodyCap bounds the amount of upstream error body copied into
+	// HTTPDocument on non-2xx responses. Protects singleflight waiters
+	// from a malicious or misconfigured origin that returns a huge error
+	// page. 1 MiB is larger than any reasonable structured error payload.
+	errorBodyCap = 1 << 20
 )
 
 // fetchFastForward executes a fast-forward request and merges the result into rts.
@@ -610,6 +616,18 @@ func fetchTimeseries(pr *proxyRequest, trq *timeseries.TimeRangeQuery,
 	}
 
 	if err != nil {
+		// Capture the upstream error body so collapsed singleflight waiters
+		// and negative-cache entries see the origin's error detail instead
+		// of an empty body. fetchExtents already read the body into a
+		// bytes.NewReader wrapper (deltaproxycache.go:720-727), so reading
+		// again is safe; we still cap with io.LimitReader as a belt-and-
+		// suspenders guard against pathological origin responses.
+		if resp.Body != nil {
+			b, readErr := io.ReadAll(io.LimitReader(resp.Body, errorBodyCap))
+			if readErr == nil && len(b) > 0 {
+				d.Body = b
+			}
+		}
 		return nil, d, time.Duration(0), err
 	}
 
