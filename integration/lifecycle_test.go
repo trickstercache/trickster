@@ -38,13 +38,10 @@ import (
 //
 // regression: #919
 func TestLifecycle_ReloadPreservesHCStatus(t *testing.T) {
-	// Any previous test in this package that invoked daemon.Start will
-	// have registered a SIGHUP handler via signaling.Wait; those
-	// goroutines call `defer close(sigs)` on ctx cancellation but never
-	// `signal.Stop(sigs)`. When this test later sends SIGHUP the stale
-	// entries in os/signal's fanout will try to send on the already
-	// closed channel and panic. Reset the signal state for SIGHUP to
-	// guarantee this test owns the only live receiver.
+	// Test-isolation hygiene: drop any prior SIGHUP handlers registered by
+	// earlier tests in this package so this test owns the only live
+	// receiver for the signal it intends to send. signaling.Wait now calls
+	// signal.Stop on teardown, so this Reset is defensive, not a bug shield.
 	signal.Reset(syscall.SIGHUP)
 
 	ctx, cancel := context.WithCancel(context.Background())
