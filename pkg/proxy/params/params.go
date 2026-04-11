@@ -90,7 +90,16 @@ func GetRequestValues(r *http.Request) (url.Values, []byte, bool) {
 		r.ParseMultipartForm(10 * 1024 * 1024)
 		r.Body.Close()
 		r.Body = io.NopCloser(bytes.NewReader(b))
-		return r.PostForm, []byte(r.PostForm.Encode()), true
+		// Merge URL query with form body: the caller may have split params
+		// across `?step=15` and the form body, and cache-key generation must
+		// see the full parameter space. Body values overlay URL values on
+		// conflict — matching Go stdlib r.Form semantics and the write-side
+		// convention in SetRequestValues. See #969 follow-up.
+		merged := r.URL.Query()
+		for k, vs := range r.PostForm {
+			merged[k] = vs
+		}
+		return merged, []byte(merged.Encode()), true
 	default:
 		v := r.URL.Query()
 		b, err := request.GetBody(r)

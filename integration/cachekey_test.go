@@ -76,14 +76,18 @@ func TestCacheKey_LabelValues_MatchParam(t *testing.T) {
 		"second request with a different match[] must not collide with the first (issue #965), got %v", r2)
 }
 
-// TestCacheKey_POST_RawQuery validates that a POST range query with its
-// parameters carried in a form body survives Trickster's SetRequestValues
-// rewrite: the upstream request must carry the normalized params in its URL
-// RawQuery so the range_query path matcher and DeltaProxyCache engine both
-// pick up the request. Before the #969 fix, SetRequestValues skipped updating
-// r.URL.RawQuery for methods with bodies, so any downstream code that read
-// the upstream request URL (including path matching and DPC routing) saw a
-// stale query string.
+// TestCacheKey_POST_RawQuery validates the full split-params POST path:
+//   - #969: SetRequestValues must sync the form body back into r.URL.RawQuery
+//     so path matching and DPC routing see the normalized query string
+//   - #969 read-side follow-up: GetRequestValues must MERGE r.URL.Query()
+//     with r.PostForm so a client that carries `step` in the URL and the
+//     rest in the body doesn't lose `step` on its way into cache key
+//     derivation and time-range extraction
+//
+// The test POSTs with `step` in the URL and query/start/end in the form body,
+// then re-POSTs with a different `step` to prove that `step` actually
+// participates in the cache key (if it were dropped, the second call would
+// be a hit on the first's entry).
 //
 // regression: #969
 func TestCacheKey_POST_RawQuery(t *testing.T) {
@@ -95,35 +99,56 @@ func TestCacheKey_POST_RawQuery(t *testing.T) {
 	waitForPrometheusData(t, "127.0.0.1:9090")
 
 	now := time.Now()
-	// The form body carries every range query param. A unique query suffix
-	// forces a kmiss on the first call so we see the DPC engine rather than
-	// an unrelated cached entry from an earlier sub-test.
-	form := url.Values{
-		"query": {fmt.Sprintf("up + 0*%d", now.UnixNano())},
+	// Unique query suffix so we get a kmiss on the first call regardless
+	// of anything cached by earlier tests.
+	queryExpr := fmt.Sprintf("up + 0*%d", now.UnixNano())
+	body := url.Values{
+		"query": {queryExpr},
 		"start": {fmt.Sprintf("%d", now.Add(-5*time.Minute).Unix())},
 		"end":   {fmt.Sprintf("%d", now.Unix())},
-		"step":  {"15"},
-	}
-	u := "http://" + tricksterAddr + "/prom1/api/v1/query_range"
+	}.Encode()
 	client := &http.Client{Transport: &http.Transport{DisableCompression: true}}
-	resp, err := client.Post(u, "application/x-www-form-urlencoded",
-		strings.NewReader(form.Encode()))
-	require.NoError(t, err)
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, resp.StatusCode,
-		"unexpected status %d: %s", resp.StatusCode, string(body))
 
-	var pr promResponse
-	require.NoError(t, json.Unmarshal(body, &pr))
-	require.Equal(t, "success", pr.Status)
-	var qd promQueryData
-	require.NoError(t, json.Unmarshal(pr.Data, &qd))
-	require.Equal(t, "matrix", qd.ResultType)
+	post := func(t *testing.T, step string) map[string]string {
+		t.Helper()
+		u := "http://" + tricksterAddr + "/prom1/api/v1/query_range?step=" + step
+		resp, err := client.Post(u, "application/x-www-form-urlencoded",
+			strings.NewReader(body))
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		rb, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, resp.StatusCode,
+			"unexpected status %d: %s", resp.StatusCode, string(rb))
+		var pr promResponse
+		require.NoError(t, json.Unmarshal(rb, &pr))
+		require.Equal(t, "success", pr.Status)
+		var qd promQueryData
+		require.NoError(t, json.Unmarshal(pr.Data, &qd))
+		require.Equal(t, "matrix", qd.ResultType,
+			"split-params POST must reach the range handler (step in URL must survive)")
+		return parseTricksterResult(resp.Header.Get("X-Trickster-Result"))
+	}
 
-	result := parseTricksterResult(resp.Header.Get("X-Trickster-Result"))
-	t.Logf("POST form body range query: %v", result)
-	require.Equal(t, "DeltaProxyCache", result["engine"],
-		"POST range query with a form body must route through DeltaProxyCache (issue #969)")
+	// First: step=15 in URL, everything else in form body. Must route through
+	// DPC (proves step survived the URL→form merge) and must be a cold miss.
+	r1 := post(t, "15")
+	t.Logf("step=15 split POST: %v", r1)
+	require.Equal(t, "DeltaProxyCache", r1["engine"],
+		"split-params POST must route through DeltaProxyCache (#969 read side)")
+
+	// Second: same request, should cache-hit.
+	r2 := post(t, "15")
+	t.Logf("step=15 repeat: %v", r2)
+	require.Equal(t, "hit", r2["status"],
+		"repeat of identical split-params POST must hit the cache")
+
+	// Third: same body, DIFFERENT step in URL. If step were dropped on read,
+	// the cache key would collide with r1 and this would be a hit. The fix
+	// preserves step in the merged param set, so the cache key differs and
+	// this is a fresh miss.
+	r3 := post(t, "30")
+	t.Logf("step=30 split POST: %v", r3)
+	require.NotEqual(t, "hit", r3["status"],
+		"changing step in URL must produce a distinct cache key (proves URL params are preserved in GetRequestValues)")
 }
