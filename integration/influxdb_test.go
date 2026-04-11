@@ -17,7 +17,6 @@
 package integration
 
 import (
-	"context"
 	"io"
 	"net/http"
 	"strings"
@@ -29,10 +28,7 @@ import (
 // TestInfluxDB tests InfluxDB (Flux) capabilities through Trickster.
 // Requires: make developer-start (Telegraf continuously writes to InfluxDB 2.x).
 func TestInfluxDB(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	go startTrickster(t, ctx, expectedStartError{}, "-config", "../docs/developer/environment/trickster-config/trickster.yaml")
-	waitForTrickster(t, "127.0.0.1:8481")
+	developerHarness().start(t)
 	waitForInfluxDBData(t, "127.0.0.1:8086")
 
 	t.Run("flux query", func(t *testing.T) {

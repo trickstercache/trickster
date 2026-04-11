@@ -17,7 +17,6 @@
 package integration
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -34,49 +33,35 @@ const tricksterAddr = "127.0.0.1:8480"
 // TestPrometheus tests Prometheus-specific capabilities through Trickster.
 // Requires: make developer-start && a running trickster with the developer config.
 func TestPrometheus(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	go startTrickster(t, ctx, expectedStartError{}, "-config", "../docs/developer/environment/trickster-config/trickster.yaml")
-	waitForTrickster(t, "127.0.0.1:8481")
+	h := developerHarness()
+	h.start(t)
 	waitForPrometheusData(t, "127.0.0.1:9090")
 
-	// Table-driven cache backend test: validates miss/hit cycle across all
-	// configured cache providers (memory, filesystem, redis).
-	for _, tc := range []struct {
-		name    string
-		backend string
-	}{
-		{"memory", "prom1"},
-		{"filesystem", "prom2"},
-		{"redis", "prom3"},
-	} {
-		t.Run(tc.name+" range query cache miss then hit", func(t *testing.T) {
+	// Validate miss/hit cycle across every configured cache provider.
+	runCacheProviderMatrix(t, func(t *testing.T, c cacheProviderCase) {
+		t.Run("range query cache miss then hit", func(t *testing.T) {
 			now := time.Now()
 			params := url.Values{
-				// Use a unique query per backend so cache keys don't collide across sub-tests.
+				// Unique query per backend so cache keys don't collide across subtests.
 				"query": {fmt.Sprintf("up + 0*%d", now.UnixNano())},
 				"start": {fmt.Sprintf("%d", now.Add(-5*time.Minute).Unix())},
 				"end":   {fmt.Sprintf("%d", now.Unix())},
 				"step":  {"15"},
 			}
-			// First request: expect cache miss
-			pr, hdr := queryTricksterProm(t, tricksterAddr, tc.backend, "/api/v1/query_range", params)
+			pr, hdr := h.queryProm(t, c.Backend, "/api/v1/query_range", withParams(params))
 			require.Equal(t, "success", pr.Status)
 			var qd promQueryData
 			require.NoError(t, json.Unmarshal(pr.Data, &qd))
 			require.Equal(t, "matrix", qd.ResultType)
-			result := parseTricksterResult(hdr.Get("X-Trickster-Result"))
-			t.Logf("first request: %s", hdr.Get("X-Trickster-Result"))
-			require.Equal(t, "DeltaProxyCache", result["engine"])
-			require.Equal(t, "kmiss", result["status"])
+			requireTricksterResult(t, hdr, map[string]string{
+				"engine": "DeltaProxyCache",
+				"status": "kmiss",
+			})
 
-			// Second identical request: expect cache hit
-			_, hdr2 := queryTricksterProm(t, tricksterAddr, tc.backend, "/api/v1/query_range", params)
-			result2 := parseTricksterResult(hdr2.Get("X-Trickster-Result"))
-			t.Logf("second request: %s", hdr2.Get("X-Trickster-Result"))
-			require.Equal(t, "hit", result2["status"])
+			_, hdr2 := h.queryProm(t, c.Backend, "/api/v1/query_range", withParams(params))
+			requireTricksterResult(t, hdr2, map[string]string{"status": "hit"})
 		})
-	}
+	})
 
 	t.Run("range query partial hit", func(t *testing.T) {
 		now := time.Now()
@@ -287,10 +272,7 @@ const albAddr = "127.0.0.1:8490"
 // TestPrometheusALB tests ALB mechanisms with Prometheus backends.
 // Requires: make developer-start (for Prometheus on :9090).
 func TestPrometheusALB(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	go startTrickster(t, ctx, expectedStartError{}, "-config", "testdata/alb.yaml")
-	waitForTrickster(t, "127.0.0.1:8491")
+	albHarness().start(t)
 	waitForPrometheusData(t, "127.0.0.1:9090")
 
 	rangeParams := func() url.Values {

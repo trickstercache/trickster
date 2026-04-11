@@ -17,7 +17,6 @@
 package integration
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -33,10 +32,7 @@ import (
 // Requires: make developer-start && make developer-seed-data.
 // Shares the Trickster instance started by TestPrometheus (same dev config, same ports).
 func TestClickHouse(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	go startTrickster(t, ctx, expectedStartError{}, "-config", "../docs/developer/environment/trickster-config/trickster.yaml")
-	waitForTrickster(t, "127.0.0.1:8481")
+	developerHarness().start(t)
 	waitForClickHouseData(t, "127.0.0.1:8123")
 
 	t.Run("time series query", func(t *testing.T) {

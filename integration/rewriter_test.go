@@ -17,7 +17,6 @@
 package integration
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -32,10 +31,7 @@ import (
 // converting it into an instant query (/api/v1/query).
 // Requires: make developer-start (for Prometheus on :9090).
 func TestRequestRewriter(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	go startTrickster(t, ctx, expectedStartError{}, "-config", "testdata/rewriter.yaml")
-	waitForTrickster(t, "127.0.0.1:8494")
+	rewriterHarness().start(t)
 	waitForPrometheusData(t, "127.0.0.1:9090")
 
 	const rewriterAddr = "127.0.0.1:8493"

@@ -37,19 +37,13 @@ func TestTrickster(t *testing.T) {
 		startTrickster(t, ctx, expected, "-config", "testdata/cfg-notfound.yaml")
 	})
 	t.Run("start and stop", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
-		t.Cleanup(cancel)
-		go startTrickster(t, ctx, expectedStartError{}, "-config", "../docs/developer/environment/trickster-config/trickster.yaml")
-		waitForTrickster(t, "127.0.0.1:8481")
+		developerHarness().start(t)
 		metrics := checkTricksterMetrics(t, "127.0.0.1:8481")
 		t.Log("Trickster metrics count:", len(metrics))
 	})
 
 	t.Run("health endpoint", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
-		t.Cleanup(cancel)
-		go startTrickster(t, ctx, expectedStartError{}, "-config", "../docs/developer/environment/trickster-config/trickster.yaml")
-		waitForTrickster(t, "127.0.0.1:8481")
+		developerHarness().start(t)
 		// The health endpoint is on the metrics listener (8481).
 		waitForTrickster(t, "127.0.0.1:8481", "/trickster/health")
 

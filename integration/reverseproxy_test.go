@@ -17,7 +17,6 @@
 package integration
 
 import (
-	"context"
 	"io"
 	"net/http"
 	"testing"
@@ -28,10 +27,7 @@ import (
 // TestReverseProxyCache tests reverse proxy cache with byte-range support.
 // Requires: make developer-start (for Mockster on :8482).
 func TestReverseProxyCache(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	go startTrickster(t, ctx, expectedStartError{}, "-config", "../docs/developer/environment/trickster-config/trickster.yaml")
-	waitForTrickster(t, "127.0.0.1:8481")
+	developerHarness().start(t)
 
 	t.Run("full object cache", func(t *testing.T) {
 		u := "http://" + tricksterAddr + "/rpc1/test/object"
