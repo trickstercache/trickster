@@ -104,9 +104,12 @@ func TestALB_UR(t *testing.T) {
 		return "Basic " + base64.StdEncoding.EncodeToString([]byte(user+":"+pass))
 	}
 
-	doQuery := func(t *testing.T, authz string) (promQueryData, http.Header) {
+	doQuery := func(t *testing.T, authz, path string, params url.Values) (promQueryData, http.Header) {
 		t.Helper()
-		u := "http://" + albAddr + "/alb-ur/api/v1/query?query=up"
+		u := "http://" + albAddr + "/alb-ur" + path
+		if len(params) > 0 {
+			u += "?" + params.Encode()
+		}
 		req, err := http.NewRequest(http.MethodGet, u, nil)
 		require.NoError(t, err)
 		req.Header.Set("Authorization", authz)
@@ -124,6 +127,17 @@ func TestALB_UR(t *testing.T) {
 		return qd, resp.Header.Clone()
 	}
 
+	instantParams := url.Values{"query": {"up"}}
+	rangeParams := func() url.Values {
+		now := time.Now()
+		return url.Values{
+			"query": {"up"},
+			"start": {fmt.Sprintf("%d", now.Add(-5*time.Minute).Unix())},
+			"end":   {fmt.Sprintf("%d", now.Unix())},
+			"step":  {"60"},
+		}
+	}
+
 	// Each returned series carries a "region" metric label, injected by
 	// prometheus.labels on the destination prom*-labeled backend.
 	extractRegions := func(t *testing.T, qd promQueryData) map[string]bool {
@@ -139,24 +153,49 @@ func TestALB_UR(t *testing.T) {
 		return regions
 	}
 
-	t.Run("alice routes to prom1-labeled (us-east)", func(t *testing.T) {
-		qd, hdr := doQuery(t, basic("alice", "alicepw"))
+	t.Run("alice instant routes to prom1-labeled (us-east)", func(t *testing.T) {
+		qd, hdr := doQuery(t, basic("alice", "alicepw"), "/api/v1/query", instantParams)
 		regions := extractRegions(t, qd)
 		require.True(t, regions["us-east"],
 			"alice should be routed to prom1-labeled (region=us-east); got %v", regions)
 		require.False(t, regions["us-west"],
 			"alice must not see prom2-labeled's us-west label; got %v", regions)
-		t.Logf("ur alice: %s", hdr.Get("X-Trickster-Result"))
+		t.Logf("ur alice instant: %s", hdr.Get("X-Trickster-Result"))
 	})
 
-	t.Run("bob routes to prom2-labeled (us-west)", func(t *testing.T) {
-		qd, hdr := doQuery(t, basic("bob", "bobpw"))
+	t.Run("bob instant routes to prom2-labeled (us-west)", func(t *testing.T) {
+		qd, hdr := doQuery(t, basic("bob", "bobpw"), "/api/v1/query", instantParams)
 		regions := extractRegions(t, qd)
 		require.True(t, regions["us-west"],
 			"bob should be routed to prom2-labeled (region=us-west); got %v", regions)
 		require.False(t, regions["us-east"],
 			"bob must not see prom1-labeled's us-east label; got %v", regions)
-		t.Logf("ur bob: %s", hdr.Get("X-Trickster-Result"))
+		t.Logf("ur bob instant: %s", hdr.Get("X-Trickster-Result"))
+	})
+
+	// Range path hits a different code path (DPC engine, matrix result
+	// envelope, time-range extraction at ParseTimeRangeQuery). UR must
+	// route identically regardless of query type.
+	t.Run("alice range routes to prom1-labeled (us-east)", func(t *testing.T) {
+		qd, hdr := doQuery(t, basic("alice", "alicepw"), "/api/v1/query_range", rangeParams())
+		require.Equal(t, "matrix", qd.ResultType)
+		regions := extractRegions(t, qd)
+		require.True(t, regions["us-east"],
+			"alice range query should route to prom1-labeled; got %v", regions)
+		require.False(t, regions["us-west"],
+			"alice range query must not see us-west; got %v", regions)
+		t.Logf("ur alice range: %s", hdr.Get("X-Trickster-Result"))
+	})
+
+	t.Run("bob range routes to prom2-labeled (us-west)", func(t *testing.T) {
+		qd, hdr := doQuery(t, basic("bob", "bobpw"), "/api/v1/query_range", rangeParams())
+		require.Equal(t, "matrix", qd.ResultType)
+		regions := extractRegions(t, qd)
+		require.True(t, regions["us-west"],
+			"bob range query should route to prom2-labeled; got %v", regions)
+		require.False(t, regions["us-east"],
+			"bob range query must not see us-east; got %v", regions)
+		t.Logf("ur bob range: %s", hdr.Get("X-Trickster-Result"))
 	})
 }
 
@@ -209,60 +248,78 @@ func TestALB_HeaderPropagation(t *testing.T) {
 func TestALB_TSM_AggregationMerge(t *testing.T) {
 	startALB(t)
 
-	// Range query so ParseTimeRangeQuery populates rsc.TimeRangeQuery for
-	// the TSM merge-strategy classifier. Nonce in the inner `up` expression
-	// forces a unique cache key. The outer `sum by (job)` is what triggers
-	// MergeStrategySum and the strip-injected-labels path.
-	now := time.Now()
-	queryExpr := fmt.Sprintf("sum by (job) (up + 0*%d)", now.UnixNano())
-	rangeVals := url.Values{
-		"query": {queryExpr},
-		"start": {fmt.Sprintf("%d", now.Add(-5*time.Minute).Unix())},
-		"end":   {fmt.Sprintf("%d", now.Unix())},
-		"step":  {"60"},
-	}
-	pr, hdr := queryTricksterProm(t, albAddr, "alb-tsm-labeled", "/api/v1/query_range", rangeVals)
-	require.Equal(t, "success", pr.Status)
-	var qd promQueryData
-	require.NoError(t, json.Unmarshal(pr.Data, &qd))
-	require.Equal(t, "matrix", qd.ResultType)
-	require.NotEmpty(t, qd.Result,
-		"tsm merge must return a non-empty result for `sum by (job) (up)` (issue #956)")
+	// assertAggregationCollapses validates the strip-and-collapse property
+	// against either an instant or range TSM query: each distinct `job`
+	// label must appear exactly once and no series may leak the injected
+	// `region` label. The body handles both resultType=vector (instant)
+	// and resultType=matrix (range) payloads.
+	assertAggregationCollapses := func(t *testing.T, qd promQueryData) {
+		t.Helper()
+		require.NotEmpty(t, qd.Result,
+			"tsm merge must return a non-empty result for `sum by (job) (up)` (issue #956)")
 
-	var series []struct {
-		Metric map[string]string `json:"metric"`
-		Value  []any             `json:"value"`
-	}
-	require.NoError(t, json.Unmarshal(qd.Result, &series))
-	require.NotEmpty(t, series,
-		"aggregation merge must not drop all rows (issue #956)")
+		var series []struct {
+			Metric map[string]string `json:"metric"`
+		}
+		require.NoError(t, json.Unmarshal(qd.Result, &series))
+		require.NotEmpty(t, series,
+			"aggregation merge must not drop all rows (issue #956)")
 
-	// Each result series must carry the `job` grouping label and must NOT
-	// carry the `region` label — the strip path is supposed to remove
-	// injected labels before the per-query merge so backends' series hash
-	// identically and aggregation collapses duplicates.
-	jobs := make(map[string]int)
-	for _, s := range series {
-		require.NotEmpty(t, s.Metric["job"],
-			"each `sum by (job)` result series must carry a job label (issue #956); got %v",
-			s.Metric)
-		require.Empty(t, s.Metric["region"],
-			"aggregation merge must strip injected labels before hashing; "+
-				"series still carries region=%q (issue #956)", s.Metric["region"])
-		jobs[s.Metric["job"]]++
+		jobs := make(map[string]int)
+		for _, s := range series {
+			require.NotEmpty(t, s.Metric["job"],
+				"each `sum by (job)` result series must carry a job label (issue #956); got %v",
+				s.Metric)
+			require.Empty(t, s.Metric["region"],
+				"aggregation merge must strip injected labels before hashing; "+
+					"series still carries region=%q (issue #956)", s.Metric["region"])
+			jobs[s.Metric["job"]]++
+		}
+		for job, n := range jobs {
+			require.Equal(t, 1, n,
+				"job=%q appears %d times in sum-by aggregation; rows failed to collapse (issue #956)",
+				job, n)
+		}
 	}
 
-	// Collapse check: each distinct job must appear EXACTLY once in the
-	// merged result. Before the fix, the injected region label caused the
-	// two labeled pool members' rows to hash differently and the merge
-	// would emit one row per (job, region) pair instead of collapsing to
-	// one row per job.
-	for job, n := range jobs {
-		require.Equal(t, 1, n,
-			"job=%q appears %d times in sum-by aggregation; rows failed to collapse (issue #956)",
-			job, n)
-	}
-	t.Logf("tsm aggregation merge: %s  (%d distinct jobs)", hdr.Get("X-Trickster-Result"), len(jobs))
+	// Range path: ParseTimeRangeQuery populates rsc.TimeRangeQuery, which
+	// feeds the TSM merge-strategy classifier. The nonce in the inner `up`
+	// expression forces a fresh cache key each run. The outer `sum by (job)`
+	// is what triggers MergeStrategySum and the strip-injected-labels path.
+	t.Run("range", func(t *testing.T) {
+		now := time.Now()
+		queryExpr := fmt.Sprintf("sum by (job) (up + 0*%d)", now.UnixNano())
+		rangeVals := url.Values{
+			"query": {queryExpr},
+			"start": {fmt.Sprintf("%d", now.Add(-5*time.Minute).Unix())},
+			"end":   {fmt.Sprintf("%d", now.Unix())},
+			"step":  {"60"},
+		}
+		pr, hdr := queryTricksterProm(t, albAddr, "alb-tsm-labeled", "/api/v1/query_range", rangeVals)
+		require.Equal(t, "success", pr.Status)
+		var qd promQueryData
+		require.NoError(t, json.Unmarshal(pr.Data, &qd))
+		require.Equal(t, "matrix", qd.ResultType)
+		assertAggregationCollapses(t, qd)
+		t.Logf("tsm aggregation merge (range): %s", hdr.Get("X-Trickster-Result"))
+	})
+
+	// Instant path: exercises a different code path in both the classifier
+	// (no start/end/step → ParseTimeRangeQuery fails and we fall back to
+	// reading the `query` form parameter directly) and the marshaler
+	// (strategy-aware RespondFunc must emit vector envelope, not matrix).
+	t.Run("instant", func(t *testing.T) {
+		queryExpr := fmt.Sprintf("sum by (job) (up + 0*%d)", time.Now().UnixNano())
+		pr, hdr := queryTricksterProm(t, albAddr, "alb-tsm-labeled", "/api/v1/query",
+			url.Values{"query": {queryExpr}})
+		require.Equal(t, "success", pr.Status)
+		var qd promQueryData
+		require.NoError(t, json.Unmarshal(pr.Data, &qd))
+		require.Equal(t, "vector", qd.ResultType,
+			"instant aggregation through TSM must emit vector envelope, not matrix")
+		assertAggregationCollapses(t, qd)
+		t.Logf("tsm aggregation merge (instant): %s", hdr.Get("X-Trickster-Result"))
+	})
 }
 
 // TestALB_TSM_DeflateOrigin starts an httptest.Server on the reserved

@@ -314,7 +314,23 @@ func TestPrometheusALB(t *testing.T) {
 			pr, hdr := queryTricksterProm(t, albAddr, "alb-rr", "/api/v1/query_range", rangeParams())
 			require.Equal(t, "success", pr.Status)
 			require.NotEmpty(t, hdr.Get("X-Trickster-Result"))
-			t.Logf("rr request %d: %s", i, hdr.Get("X-Trickster-Result"))
+			t.Logf("rr range request %d: %s", i, hdr.Get("X-Trickster-Result"))
+		}
+	})
+
+	// RR exercises a different dispatch path for instant queries: round-
+	// robin picks a single backend per request and hands the instant-query
+	// handler the real client request (no scatter/gather), so the cache
+	// interaction is OPC, not DPC.
+	t.Run("rr instant query", func(t *testing.T) {
+		for i := range 3 {
+			pr, hdr := queryTricksterProm(t, albAddr, "alb-rr", "/api/v1/query",
+				url.Values{"query": {"up"}})
+			require.Equal(t, "success", pr.Status)
+			var qd promQueryData
+			require.NoError(t, json.Unmarshal(pr.Data, &qd))
+			require.Equal(t, "vector", qd.ResultType)
+			t.Logf("rr instant request %d: %s", i, hdr.Get("X-Trickster-Result"))
 		}
 	})
 
@@ -368,6 +384,20 @@ func TestPrometheusALB(t *testing.T) {
 		require.NoError(t, json.Unmarshal(pr.Data, &qd))
 		require.Equal(t, "matrix", qd.ResultType)
 		t.Logf("nlm range: %s", hdr.Get("X-Trickster-Result"))
+	})
+
+	// NLM's Last-Modified comparison happens on the ALB side; exercising
+	// an instant query path proves it picks a healthy backend for /query
+	// and not just /query_range.
+	t.Run("nlm instant query", func(t *testing.T) {
+		pr, hdr := queryTricksterProm(t, albAddr, "alb-nlm", "/api/v1/query",
+			url.Values{"query": {"up"}})
+		require.Equal(t, "success", pr.Status)
+		var qd promQueryData
+		require.NoError(t, json.Unmarshal(pr.Data, &qd))
+		require.Equal(t, "vector", qd.ResultType)
+		require.NotEmpty(t, qd.Result, "nlm instant query should return non-empty result")
+		t.Logf("nlm instant: %s", hdr.Get("X-Trickster-Result"))
 	})
 
 	// Regression tests for https://github.com/trickstercache/trickster/issues/937
