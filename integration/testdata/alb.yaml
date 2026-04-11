@@ -25,6 +25,14 @@ caches:
   mem2:
     provider: memory
 
+authenticators:
+  alb-ur-users:
+    provider: basic
+    proxy_preserve: true
+    users:
+      alice: alicepw
+      bob: bobpw
+
 backends:
   prom1:
     provider: prometheus
@@ -43,6 +51,18 @@ backends:
     prometheus:
       labels:
         region: us-east
+    # Path override injects a custom downstream response header on instant
+    # queries. Used by TestALB_HeaderPropagation to verify backend-emitted
+    # response headers survive the ALB FGR transform path.
+    # regression: #970
+    paths:
+      - path: /api/v1/query
+        handler: query
+        methods: [GET, POST]
+        match_type: exact
+        cache_key_params: [query, time]
+        response_headers:
+          X-Test-Origin: prom1
   prom2-labeled:
     provider: prometheus
     origin_url: http://127.0.0.1:9090
@@ -50,6 +70,18 @@ backends:
     prometheus:
       labels:
         region: us-west
+    # Both labeled members advertise X-Test-Origin so the fanout winner is
+    # irrelevant to TestALB_HeaderPropagation; either pool member proves
+    # backend-emitted response headers survive the ALB transform path.
+    # regression: #970
+    paths:
+      - path: /api/v1/query
+        handler: query
+        methods: [GET, POST]
+        match_type: exact
+        cache_key_params: [query, time]
+        response_headers:
+          X-Test-Origin: prom1
   alb-fgr:
     provider: alb
     alb:
@@ -103,3 +135,44 @@ backends:
       pool:
         - prom1-labeled
         - prom2-labeled
+  # A Prometheus-shaped origin that serves `Content-Encoding: deflate`
+  # bodies via a test httptest.Server bound to a reserved port.
+  # regression: #938
+  prom-deflate:
+    provider: prometheus
+    origin_url: http://127.0.0.1:18500
+    cache_name: mem1
+  # TSM over a deflate-encoded origin + a gzip-capable origin. Used by
+  # TestALB_TSM_DeflateOrigin to verify the merge path can decode
+  # non-gzip compressed upstream responses.
+  # regression: #938
+  alb-tsm-deflate:
+    provider: alb
+    alb:
+      mechanism: tsm
+      pool:
+        - prom-deflate
+        - prom1
+  # FR mechanism: fanout + first response wins (no status-code gating).
+  alb-fr:
+    provider: alb
+    alb:
+      mechanism: fr
+      pool:
+        - prom1
+        - prom2
+  # UR mechanism: routes requests by observed basic-auth username.
+  # alice -> prom1-labeled (region=us-east)
+  # bob   -> prom2-labeled (region=us-west)
+  alb-ur:
+    provider: alb
+    authenticator_name: alb-ur-users
+    alb:
+      mechanism: ur
+      user_router:
+        default_backend: prom1-labeled
+        users:
+          alice:
+            to_backend: prom1-labeled
+          bob:
+            to_backend: prom2-labeled
