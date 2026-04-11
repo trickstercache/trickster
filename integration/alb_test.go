@@ -197,52 +197,72 @@ func TestALB_HeaderPropagation(t *testing.T) {
 // through an alb-tsm-labeled ALB (where each pool member injects a
 // distinct `region` label) used to produce empty or broken results
 // because the injected region label defeated the aggregation hash
-// equality during the per-query merge. After f023660e the merge path
-// correctly strips the injected labels before hashing so aggregation
-// rows collapse properly.
+// equality during the per-query merge. The merge path strips the
+// injected labels before hashing so aggregation rows collapse properly.
+//
+// The Prometheus backend's TSMMergeProvider auto-classifies any outer
+// `sum` / `count` / `min` / `max` / `avg` aggregator as a non-dedup
+// strategy, so no ALB-side config knob is needed — the strip path
+// activates automatically for this query.
 //
 // regression: #956
 func TestALB_TSM_AggregationMerge(t *testing.T) {
 	startALB(t)
 
-	pr, hdr := queryTricksterProm(t, albAddr, "alb-tsm-labeled", "/api/v1/query",
-		url.Values{"query": {"sum by (job) (up)"}})
+	// Range query so ParseTimeRangeQuery populates rsc.TimeRangeQuery for
+	// the TSM merge-strategy classifier. Nonce in the inner `up` expression
+	// forces a unique cache key. The outer `sum by (job)` is what triggers
+	// MergeStrategySum and the strip-injected-labels path.
+	now := time.Now()
+	queryExpr := fmt.Sprintf("sum by (job) (up + 0*%d)", now.UnixNano())
+	rangeVals := url.Values{
+		"query": {queryExpr},
+		"start": {fmt.Sprintf("%d", now.Add(-5*time.Minute).Unix())},
+		"end":   {fmt.Sprintf("%d", now.Unix())},
+		"step":  {"60"},
+	}
+	pr, hdr := queryTricksterProm(t, albAddr, "alb-tsm-labeled", "/api/v1/query_range", rangeVals)
 	require.Equal(t, "success", pr.Status)
 	var qd promQueryData
 	require.NoError(t, json.Unmarshal(pr.Data, &qd))
-	require.Equal(t, "vector", qd.ResultType)
+	require.Equal(t, "matrix", qd.ResultType)
 	require.NotEmpty(t, qd.Result,
 		"tsm merge must return a non-empty result for `sum by (job) (up)` (issue #956)")
 
 	var series []struct {
 		Metric map[string]string `json:"metric"`
+		Value  []any             `json:"value"`
 	}
 	require.NoError(t, json.Unmarshal(qd.Result, &series))
 	require.NotEmpty(t, series,
 		"aggregation merge must not drop all rows (issue #956)")
-	// Prior to f023660e the injected region label caused per-query hash
-	// inequality and the merge would drop one or both aggregation rows.
-	// Every returned series must carry the `job` grouping label.
+
+	// Each result series must carry the `job` grouping label and must NOT
+	// carry the `region` label — the strip path is supposed to remove
+	// injected labels before the per-query merge so backends' series hash
+	// identically and aggregation collapses duplicates.
+	jobs := make(map[string]int)
 	for _, s := range series {
 		require.NotEmpty(t, s.Metric["job"],
 			"each `sum by (job)` result series must carry a job label (issue #956); got %v",
 			s.Metric)
+		require.Empty(t, s.Metric["region"],
+			"aggregation merge must strip injected labels before hashing; "+
+				"series still carries region=%q (issue #956)", s.Metric["region"])
+		jobs[s.Metric["job"]]++
 	}
-	// TODO(#956): once f023660e (strip injected labels before aggregation
-	// merge hashing) lands on this branch, tighten this check to require
-	// exactly one row per distinct `job` — the fix makes the per-query merge
-	// collapse the two labeled backends' rows instead of duplicating them.
-	//
-	//   jobs := make(map[string]int)
-	//   for _, s := range series {
-	//       jobs[s.Metric["job"]]++
-	//   }
-	//   for job, n := range jobs {
-	//       require.Equal(t, 1, n,
-	//           "job=%q appears %d times in sum-by aggregation; rows failed to collapse",
-	//           job, n)
-	//   }
-	t.Logf("tsm aggregation merge: %s  (rows=%d)", hdr.Get("X-Trickster-Result"), len(series))
+
+	// Collapse check: each distinct job must appear EXACTLY once in the
+	// merged result. Before the fix, the injected region label caused the
+	// two labeled pool members' rows to hash differently and the merge
+	// would emit one row per (job, region) pair instead of collapsing to
+	// one row per job.
+	for job, n := range jobs {
+		require.Equal(t, 1, n,
+			"job=%q appears %d times in sum-by aggregation; rows failed to collapse (issue #956)",
+			job, n)
+	}
+	t.Logf("tsm aggregation merge: %s  (%d distinct jobs)", hdr.Get("X-Trickster-Result"), len(jobs))
 }
 
 // TestALB_TSM_DeflateOrigin starts an httptest.Server on the reserved
