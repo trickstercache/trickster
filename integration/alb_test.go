@@ -23,10 +23,12 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -319,6 +321,37 @@ func TestALB_TSM_AggregationMerge(t *testing.T) {
 			"instant aggregation through TSM must emit vector envelope, not matrix")
 		assertAggregationCollapses(t, qd)
 		t.Logf("tsm aggregation merge (instant): %s", hdr.Get("X-Trickster-Result"))
+	})
+
+	// POST instant path: proves the body-duplication contract between
+	// params.GetRequestValues (which mutates r.Body by rewrapping it over
+	// a cached []byte) and the subsequent TSM fanout via
+	// CloneWithoutResources (which hands each pool-member clone its own
+	// fresh bytes.NewReader over the same read-only bytes). If that
+	// contract breaks, concurrent clones would race a shared stateful
+	// Reader and this test would flake or return a partial merge.
+	t.Run("instant POST", func(t *testing.T) {
+		queryExpr := fmt.Sprintf("sum by (job) (up + 0*%d)", time.Now().UnixNano())
+		form := url.Values{"query": {queryExpr}}
+		u := "http://" + albAddr + "/alb-tsm-labeled/api/v1/query"
+		client := &http.Client{Transport: &http.Transport{DisableCompression: true}}
+		resp, err := client.Post(u, "application/x-www-form-urlencoded",
+			strings.NewReader(form.Encode()))
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, resp.StatusCode,
+			"unexpected status %d: %s", resp.StatusCode, string(body))
+		var pr promResponse
+		require.NoError(t, json.Unmarshal(body, &pr))
+		require.Equal(t, "success", pr.Status)
+		var qd promQueryData
+		require.NoError(t, json.Unmarshal(pr.Data, &qd))
+		require.Equal(t, "vector", qd.ResultType,
+			"POST instant aggregation through TSM must still emit vector envelope")
+		assertAggregationCollapses(t, qd)
+		t.Logf("tsm aggregation merge (instant POST): %s", resp.Header.Get("X-Trickster-Result"))
 	})
 }
 

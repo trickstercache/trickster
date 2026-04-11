@@ -618,10 +618,19 @@ func fetchTimeseries(pr *proxyRequest, trq *timeseries.TimeRangeQuery,
 	if err != nil {
 		// Capture the upstream error body so collapsed singleflight waiters
 		// and negative-cache entries see the origin's error detail instead
-		// of an empty body. fetchExtents already read the body into a
-		// bytes.NewReader wrapper (deltaproxycache.go:720-727), so reading
-		// again is safe; we still cap with io.LimitReader as a belt-and-
-		// suspenders guard against pathological origin responses.
+		// of an empty body.
+		//
+		// fetchExtents populates resp.Body (wrapped in a fresh
+		// bytes.NewReader under respLock) only on the non-2xx response
+		// path; see the ErrUnexpectedUpstreamResponse branch there. On the
+		// unmarshal-failure path (2xx but bad body) resp.Body is nil — the
+		// nil check + len(b) > 0 guard handles that. On transport errors,
+		// resp itself may be nil, but in that case the caller would have
+		// panicked on resp.Status/StatusCode access above us, so we can
+		// safely assume resp is non-nil here.
+		//
+		// Bounded read: cap at errorBodyCap via io.LimitReader to protect
+		// against pathological origin responses.
 		if resp.Body != nil {
 			b, readErr := io.ReadAll(io.LimitReader(resp.Body, errorBodyCap))
 			if readErr == nil && len(b) > 0 {

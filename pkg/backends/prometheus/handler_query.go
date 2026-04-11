@@ -33,12 +33,12 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
-// vectorMarshalWriter is a MarshalWriterFunc that forces vector (instant
-// query) output shape. Used by the instant-query handler's strategy-aware
-// merge RespondFunc so that merged instant queries (e.g. `sum by (job)`
-// through an ALB TSM pool) keep the vector envelope — the generic
+// vectorInstantMarshalWriter is a MarshalWriterFunc that forces vector
+// (instant query) output shape. It lives alongside the other prometheus
+// marshaler helpers in this file because it is only consumed by
+// QueryHandler's strategy-aware merge RespondFunc — the generic
 // WireMarshalWriter always emits matrix, which is wrong for /api/v1/query.
-func vectorMarshalWriter(ts timeseries.Timeseries, rlo *timeseries.RequestOptions, status int, w io.Writer) error {
+func vectorInstantMarshalWriter(ts timeseries.Timeseries, rlo *timeseries.RequestOptions, status int, w io.Writer) error {
 	return model.MarshalTSOrVectorWriter(ts, rlo, status, w, true)
 }
 
@@ -66,7 +66,7 @@ func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 						rsc.MergeFunc = merge.TimeseriesMergeFuncWithStrategy(m.WireUnmarshaler, rsc.TSMergeStrategy)
 						// Instant queries marshal as vector, not matrix
 						// (WireMarshalWriter always emits matrix shape).
-						rsc.MergeRespondFunc = merge.TimeseriesRespondFuncWithStrategy(vectorMarshalWriter, nil, rsc.TSMergeStrategy)
+						rsc.MergeRespondFunc = merge.TimeseriesRespondFuncWithStrategy(vectorInstantMarshalWriter, nil, rsc.TSMergeStrategy)
 					} else {
 						rsc.MergeFunc = model.MergeAndWriteVectorMergeFunc(m.WireUnmarshaler)
 						rsc.MergeRespondFunc = model.MergeAndWriteVectorRespondFunc(m.WireMarshalWriter)

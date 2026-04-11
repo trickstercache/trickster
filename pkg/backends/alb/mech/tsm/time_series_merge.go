@@ -171,6 +171,15 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// classifier sees an empty string on every instant query and always
 	// falls back to Dedup — which defeats the per-query strip-injected-
 	// labels path for any PromQL aggregation issued as an instant query.
+	//
+	// Body safety for POST form requests: params.GetRequestValues reads
+	// r.Body during form parsing and then replaces it with a fresh
+	// bytes.NewReader over the cached []byte (see pkg/proxy/request/body.go
+	// GetBody: rsc.RequestBody caches the bytes). Subsequent per-member
+	// request.CloneWithoutResources calls go through GetBodyReader which
+	// wraps another fresh bytes.NewReader over the same read-only bytes,
+	// so concurrent reads from pool-member handlers each have an
+	// independent reader position and do not race.
 	if query == "" {
 		if qp, _, _ := params.GetRequestValues(r); qp != nil {
 			query = qp.Get("query")

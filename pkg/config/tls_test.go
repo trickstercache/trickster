@@ -104,3 +104,66 @@ func tlsConfig(condition string) (*options.Options, func(), error) {
 		ServeTLS:          true,
 	}, closer, nil
 }
+
+// TestTLSCertConfig_CAOnlyBackendExcluded locks in the #940 guard in
+// TLSCertConfig: a backend whose TLS block has ServeTLS=true (e.g. set by
+// an older config load or test harness) but no server cert/key paths must
+// NOT be fed to tls.LoadX509KeyPair("", "") — it must be silently excluded.
+// This is the unit-level analogue of the listeners.go reload-failure path:
+// a misconfigured backend cannot crash the whole TLS setup func.
+func TestTLSCertConfig_CAOnlyBackendExcluded(t *testing.T) {
+	config := NewConfig()
+	config.Frontend.ServeTLS = true
+
+	// CA-only: ServeTLS flipped true but no cert+key paths. Pre-#940 this
+	// would trip LoadX509KeyPair("","") with "open : no such file".
+	config.Backends["default"].TLS = &options.Options{
+		CertificateAuthorityPaths: []string{"/some/ca.pem"},
+		ServeTLS:                  true,
+	}
+	got, err := config.TLSCertConfig()
+	if err != nil {
+		t.Errorf("CA-only backend must not produce an error; got %v", err)
+	}
+	if got != nil {
+		t.Errorf("CA-only backend must contribute 0 certs; got %d", len(got.Certificates))
+	}
+}
+
+// TestTLSCertConfig_MixedBackendsOnlyValidContribute verifies that a mix of
+// a CA-only backend and a valid cert+key backend yields a tls.Config with
+// exactly the valid backend's certificate — the CA-only one is skipped
+// without error.
+func TestTLSCertConfig_MixedBackendsOnlyValidContribute(t *testing.T) {
+	config := NewConfig()
+	config.Frontend.ServeTLS = true
+
+	validTLS, closer, err := tlsConfig("")
+	if closer != nil {
+		defer closer()
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Reuse the "default" backend for the valid cert+key, add a second
+	// backend with only a CA path.
+	config.Backends["default"].TLS = validTLS
+	config.Backends["ca-only"] = config.Backends["default"].Clone()
+	config.Backends["ca-only"].TLS = &options.Options{
+		CertificateAuthorityPaths: []string{"/some/ca.pem"},
+		ServeTLS:                  true,
+	}
+
+	got, err := config.TLSCertConfig()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got == nil {
+		t.Fatal("expected non-nil tls.Config")
+	}
+	if len(got.Certificates) != 1 {
+		t.Errorf("expected exactly 1 certificate (only the valid backend contributes), got %d",
+			len(got.Certificates))
+	}
+}
