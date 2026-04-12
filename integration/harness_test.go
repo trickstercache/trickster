@@ -20,9 +20,13 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -191,6 +195,27 @@ func requireTricksterResult(t *testing.T, hdr http.Header, want map[string]strin
 type cacheProviderCase struct {
 	Name    string // subtest name, e.g. "memory"
 	Backend string // backend id, e.g. "prom1"
+}
+
+// writeTestConfig clones the developer config with the frontend and metrics
+// listen_port values replaced by the given ports. This gives each top-level
+// test its own port range while preserving the full config (backends, caches,
+// healthcheck settings, negative caching, etc.), eliminating port-release
+// races between sequential tests that previously shared :8480/:8481.
+func writeTestConfig(t *testing.T, frontPort, metricsPort, mgmtPort int) string {
+	t.Helper()
+	b, err := os.ReadFile("../docs/developer/environment/trickster-config/trickster.yaml")
+	require.NoError(t, err)
+	cfg := string(b)
+	cfg = strings.Replace(cfg, "listen_port: 8480", fmt.Sprintf("listen_port: %d", frontPort), 1)
+	cfg = strings.Replace(cfg, "listen_port: 8481", fmt.Sprintf("listen_port: %d", metricsPort), 1)
+	// The dev config has no explicit mgmt section — inject one after metrics
+	// so the mgmt listener doesn't collide across tests on the default port.
+	cfg = strings.Replace(cfg, "listen_port: "+fmt.Sprintf("%d", metricsPort)+"\n",
+		fmt.Sprintf("listen_port: %d\nmgmt:\n  listen_port: %d\n", metricsPort, mgmtPort), 1)
+	path := filepath.Join(t.TempDir(), "trickster.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(cfg), 0644))
+	return path
 }
 
 // defaultCacheProviders returns the cache-provider matrix exercised by the

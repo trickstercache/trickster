@@ -17,7 +17,6 @@
 package integration
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -33,18 +32,17 @@ import (
 // TestCacheKey groups cache-key correctness tests under a single Trickster
 // boot so that sequential subtests don't race on the shared :8480 port.
 func TestCacheKey(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	go startTrickster(t, ctx, expectedStartError{},
-		"-config", "../docs/developer/environment/trickster-config/trickster.yaml")
-	waitForTrickster(t, "127.0.0.1:8481")
+	cfg := writeTestConfig(t, 8576, 8577, 8585)
+	ckAddr := "127.0.0.1:8576"
+	h := tricksterHarness{ConfigPath: cfg, BaseAddr: ckAddr, MetricsAddr: "127.0.0.1:8577"}
+	h.start(t)
 	waitForPrometheusData(t, "127.0.0.1:9090")
 
 	// regression: #965
 	t.Run("label values match param", func(t *testing.T) {
 		fetch := func(t *testing.T, match string) map[string]string {
 			t.Helper()
-			u := "http://" + tricksterAddr + "/prom1/api/v1/label/job/values?" +
+			u := "http://" + ckAddr + "/prom1/api/v1/label/job/values?" +
 				url.Values{"match[]": {match}}.Encode()
 			client := &http.Client{Transport: &http.Transport{DisableCompression: true}}
 			resp, err := client.Get(u)
@@ -84,7 +82,7 @@ func TestCacheKey(t *testing.T) {
 
 		post := func(t *testing.T, step string) map[string]string {
 			t.Helper()
-			u := "http://" + tricksterAddr + "/prom1/api/v1/query_range?step=" + step
+			u := "http://" + ckAddr + "/prom1/api/v1/query_range?step=" + step
 			resp, err := client.Post(u, "application/x-www-form-urlencoded",
 				strings.NewReader(body))
 			require.NoError(t, err)

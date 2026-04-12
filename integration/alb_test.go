@@ -492,7 +492,8 @@ func TestALB(t *testing.T) {
 	for _, mech := range []string{"fgr", "nlm", "tsm"} {
 		t.Run(mech+"-labeled instant query (#937)", func(t *testing.T) {
 			backend := "alb-" + mech + "-labeled"
-			pr, hdr := queryTricksterProm(t, albAddr, backend, "/api/v1/query", url.Values{"query": {"up"}})
+			q := fmt.Sprintf("up + 0*%d", time.Now().UnixNano())
+			pr, hdr := queryTricksterProm(t, albAddr, backend, "/api/v1/query", url.Values{"query": {q}})
 			require.Equal(t, "success", pr.Status)
 			require.Contains(t, hdr.Get("Content-Type"), "json",
 				"%s instant query must advertise a JSON content type (issue #937)", backend)

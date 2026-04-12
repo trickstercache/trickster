@@ -28,10 +28,13 @@ import (
 // TestInfluxDB tests InfluxDB (Flux) capabilities through Trickster.
 // Requires: make developer-start (Telegraf continuously writes to InfluxDB 2.x).
 func TestInfluxDB(t *testing.T) {
-	developerHarness().start(t)
+	cfg := writeTestConfig(t, 8572, 8573, 8583)
+	influxAddr := "127.0.0.1:8572"
+	h := tricksterHarness{ConfigPath: cfg, BaseAddr: influxAddr, MetricsAddr: "127.0.0.1:8573"}
+	h.start(t)
 	waitForInfluxDBData(t, "127.0.0.1:8086")
 
-	fluxURL := "http://" + tricksterAddr + "/flux2/api/v2/query?org=trickster-dev"
+	fluxURL := "http://" + influxAddr + "/flux2/api/v2/query?org=trickster-dev"
 	post := func(t *testing.T, body, token string) (*http.Response, []byte) {
 		t.Helper()
 		req, err := http.NewRequest("POST", fluxURL, strings.NewReader(body))

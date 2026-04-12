@@ -30,9 +30,11 @@ import (
 
 // TestClickHouse tests ClickHouse-specific capabilities through Trickster.
 // Requires: make developer-start && make developer-seed-data.
-// Shares the Trickster instance started by TestPrometheus (same dev config, same ports).
 func TestClickHouse(t *testing.T) {
-	developerHarness().start(t)
+	cfg := writeTestConfig(t, 8570, 8571, 8582)
+	clickAddr := "127.0.0.1:8570"
+	h := tricksterHarness{ConfigPath: cfg, BaseAddr: clickAddr, MetricsAddr: "127.0.0.1:8571"}
+	h.start(t)
 	waitForClickHouseData(t, "127.0.0.1:8123")
 
 	t.Run("time series query", func(t *testing.T) {
@@ -47,7 +49,7 @@ func TestClickHouse(t *testing.T) {
 			0, time.Now().Unix(),
 		)
 		params := url.Values{"query": {q}}
-		u := "http://" + tricksterAddr + "/click1/?" + params.Encode()
+		u := "http://" + clickAddr + "/click1/?" + params.Encode()
 		resp, err := http.Get(u)
 		require.NoError(t, err)
 		defer resp.Body.Close()
@@ -71,7 +73,7 @@ func TestClickHouse(t *testing.T) {
 
 	t.Run("non-select proxied", func(t *testing.T) {
 		params := url.Values{"query": {"SHOW TABLES"}}
-		u := "http://" + tricksterAddr + "/click1/?" + params.Encode()
+		u := "http://" + clickAddr + "/click1/?" + params.Encode()
 		resp, err := http.Get(u)
 		require.NoError(t, err)
 		defer resp.Body.Close()
@@ -92,7 +94,7 @@ func TestClickHouse(t *testing.T) {
 			0, time.Now().Unix(),
 		)
 		params := url.Values{"query": {q}}
-		u := "http://" + tricksterAddr + "/click1/?" + params.Encode()
+		u := "http://" + clickAddr + "/click1/?" + params.Encode()
 		resp, err := http.Get(u)
 		require.NoError(t, err)
 		defer resp.Body.Close()
@@ -123,7 +125,7 @@ func TestClickHouse(t *testing.T) {
 				tc.group, 0, time.Now().Unix(),
 			)
 			params := url.Values{"query": {q}}
-			u := "http://" + tricksterAddr + "/click1/?" + params.Encode()
+			u := "http://" + clickAddr + "/click1/?" + params.Encode()
 
 			resp, err := http.Get(u)
 			require.NoError(t, err)

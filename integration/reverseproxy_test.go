@@ -27,10 +27,13 @@ import (
 // TestReverseProxyCache tests reverse proxy cache with byte-range support.
 // Requires: make developer-start (for Mockster on :8482).
 func TestReverseProxyCache(t *testing.T) {
-	developerHarness().start(t)
+	cfg := writeTestConfig(t, 8574, 8575, 8584)
+	rpcAddr := "127.0.0.1:8574"
+	h := tricksterHarness{ConfigPath: cfg, BaseAddr: rpcAddr, MetricsAddr: "127.0.0.1:8575"}
+	h.start(t)
 
 	t.Run("full object cache", func(t *testing.T) {
-		u := "http://" + tricksterAddr + "/rpc1/test/object"
+		u := "http://" + rpcAddr + "/rpc1/test/object"
 		// First request: cache miss
 		resp, err := http.Get(u)
 		require.NoError(t, err)
@@ -57,7 +60,7 @@ func TestReverseProxyCache(t *testing.T) {
 	})
 
 	t.Run("byte range request", func(t *testing.T) {
-		u := "http://" + tricksterAddr + "/rpc1/test/range"
+		u := "http://" + rpcAddr + "/rpc1/test/range"
 		req, err := http.NewRequest("GET", u, nil)
 		require.NoError(t, err)
 		req.Header.Set("Range", "bytes=0-99")
@@ -84,7 +87,7 @@ func TestReverseProxyCache(t *testing.T) {
 	rangeClient := &http.Client{Transport: &http.Transport{DisableCompression: true}}
 	getRange := func(t *testing.T, path, rangeHdr string) (*http.Response, []byte) {
 		t.Helper()
-		req, err := http.NewRequest("GET", "http://"+tricksterAddr+path, nil)
+		req, err := http.NewRequest("GET", "http://"+rpcAddr+path, nil)
 		require.NoError(t, err)
 		if rangeHdr != "" {
 			req.Header.Set("Range", rangeHdr)
@@ -141,7 +144,7 @@ func TestReverseProxyCache(t *testing.T) {
 		lm := resp0.Header.Get("Last-Modified")
 		require.NotEmpty(t, lm, "expected Last-Modified on first response")
 
-		req, err := http.NewRequest("GET", "http://"+tricksterAddr+"/rpc1/cond", nil)
+		req, err := http.NewRequest("GET", "http://"+rpcAddr+"/rpc1/cond", nil)
 		require.NoError(t, err)
 		req.Header.Set("If-Modified-Since", lm)
 		resp, err := rangeClient.Do(req)
