@@ -56,7 +56,7 @@ func (o *engineFakeOrigin) setHandler(h func(http.ResponseWriter, *http.Request)
 }
 
 // Package-level state shared by every TestEngines_* test so that a single
-// trickster process and a single fake origin are re-used. This avoids port
+// trickster process and a single fake origin are reused. This avoids port
 // conflicts when multiple top-level tests run in sequence inside one binary.
 var (
 	engSetupOnce sync.Once
