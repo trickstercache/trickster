@@ -36,43 +36,34 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The tests in this file target ALB regression and expansion coverage
-// using testdata/alb.yaml. Each top-level TestALB_* function boots its
-// own Trickster instance (daemon.Start is mutex-serialized) and drains
-// it via context cancellation in t.Cleanup. Tests in the same package
-// run sequentially by default, so the shared 8490/8491/8492 listeners
-// do not conflict.
+const albAddr = "127.0.0.1:8490"
 
-// startALB boots a Trickster instance using testdata/alb.yaml and
-// waits until the metrics endpoint and Prometheus origin are ready.
-func startALB(t *testing.T) {
-	t.Helper()
+// TestALB groups all ALB-mechanism tests under a single Trickster boot
+// on testdata/alb.yaml (:8490/:8491/:8492). This eliminates the port-
+// release race that occurs when sequential top-level tests each start
+// and stop their own instance on the same listeners.
+func TestALB(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	go startTrickster(t, ctx, expectedStartError{}, "-config", "testdata/alb.yaml")
 	waitForTrickster(t, "127.0.0.1:8491")
 	waitForPrometheusData(t, "127.0.0.1:9090")
-}
 
-// rangeParams returns a 5-minute range-query param set centered on now.
-func rangeParams() url.Values {
-	now := time.Now()
-	return url.Values{
-		"query": {"up"},
-		"start": {fmt.Sprintf("%d", now.Add(-5*time.Minute).Unix())},
-		"end":   {fmt.Sprintf("%d", now.Unix())},
-		"step":  {"15"},
+	// rangeParams returns a 5-minute range-query param set centered on now.
+	rangeParams := func() url.Values {
+		now := time.Now()
+		return url.Values{
+			"query": {"up"},
+			"start": {fmt.Sprintf("%d", now.Add(-5*time.Minute).Unix())},
+			"end":   {fmt.Sprintf("%d", now.Unix())},
+			"step":  {"15"},
+		}
 	}
-}
 
-// TestALB_FR exercises the "first_response" ALB mechanism.
-// FR fans out to every pool member and serves the first response that
-// comes back, regardless of HTTP status. With two identical Prometheus
-// members, either response is valid so we only assert success shape.
-func TestALB_FR(t *testing.T) {
-	startALB(t)
-
-	t.Run("range query", func(t *testing.T) {
+	// --- FR mechanism ---
+	// FR fans out to every pool member and serves the first response that
+	// comes back, regardless of HTTP status.
+	t.Run("FR range query", func(t *testing.T) {
 		pr, hdr := queryTricksterProm(t, albAddr, "alb-fr", "/api/v1/query_range", rangeParams())
 		require.Equal(t, "success", pr.Status)
 		var qd promQueryData
@@ -82,7 +73,7 @@ func TestALB_FR(t *testing.T) {
 		t.Logf("fr range: %s", hdr.Get("X-Trickster-Result"))
 	})
 
-	t.Run("instant query", func(t *testing.T) {
+	t.Run("FR instant query", func(t *testing.T) {
 		pr, hdr := queryTricksterProm(t, albAddr, "alb-fr", "/api/v1/query",
 			url.Values{"query": {"up"}})
 		require.Equal(t, "success", pr.Status)
@@ -92,21 +83,16 @@ func TestALB_FR(t *testing.T) {
 		require.NotEmpty(t, qd.Result, "fr instant query should return a non-empty vector")
 		t.Logf("fr instant: %s", hdr.Get("X-Trickster-Result"))
 	})
-}
 
-// TestALB_UR exercises the "user_router" ALB mechanism. Basic-auth
-// credentials observed by the Trickster authenticator select the
-// destination backend; the two routed destinations inject distinct
-// prometheus labels (region=us-east vs region=us-west) so the assertion
-// can prove both branches resolved as expected.
-func TestALB_UR(t *testing.T) {
-	startALB(t)
-
+	// --- UR mechanism ---
+	// Basic-auth credentials select the destination backend. The two
+	// routed destinations inject distinct prometheus labels
+	// (region=us-east vs region=us-west).
 	basic := func(user, pass string) string {
 		return "Basic " + base64.StdEncoding.EncodeToString([]byte(user+":"+pass))
 	}
 
-	doQuery := func(t *testing.T, authz, path string, params url.Values) (promQueryData, http.Header) {
+	doURQuery := func(t *testing.T, authz, path string, params url.Values) (promQueryData, http.Header) {
 		t.Helper()
 		u := "http://" + albAddr + "/alb-ur" + path
 		if len(params) > 0 {
@@ -129,19 +115,6 @@ func TestALB_UR(t *testing.T) {
 		return qd, resp.Header.Clone()
 	}
 
-	instantParams := url.Values{"query": {"up"}}
-	rangeParams := func() url.Values {
-		now := time.Now()
-		return url.Values{
-			"query": {"up"},
-			"start": {fmt.Sprintf("%d", now.Add(-5*time.Minute).Unix())},
-			"end":   {fmt.Sprintf("%d", now.Unix())},
-			"step":  {"60"},
-		}
-	}
-
-	// Each returned series carries a "region" metric label, injected by
-	// prometheus.labels on the destination prom*-labeled backend.
 	extractRegions := func(t *testing.T, qd promQueryData) map[string]bool {
 		var series []struct {
 			Metric map[string]string `json:"metric"`
@@ -155,8 +128,19 @@ func TestALB_UR(t *testing.T) {
 		return regions
 	}
 
-	t.Run("alice instant routes to prom1-labeled (us-east)", func(t *testing.T) {
-		qd, hdr := doQuery(t, basic("alice", "alicepw"), "/api/v1/query", instantParams)
+	instantParams := url.Values{"query": {"up"}}
+	urRangeParams := func() url.Values {
+		now := time.Now()
+		return url.Values{
+			"query": {"up"},
+			"start": {fmt.Sprintf("%d", now.Add(-5*time.Minute).Unix())},
+			"end":   {fmt.Sprintf("%d", now.Unix())},
+			"step":  {"60"},
+		}
+	}
+
+	t.Run("UR alice instant routes to us-east", func(t *testing.T) {
+		qd, hdr := doURQuery(t, basic("alice", "alicepw"), "/api/v1/query", instantParams)
 		regions := extractRegions(t, qd)
 		require.True(t, regions["us-east"],
 			"alice should be routed to prom1-labeled (region=us-east); got %v", regions)
@@ -165,8 +149,8 @@ func TestALB_UR(t *testing.T) {
 		t.Logf("ur alice instant: %s", hdr.Get("X-Trickster-Result"))
 	})
 
-	t.Run("bob instant routes to prom2-labeled (us-west)", func(t *testing.T) {
-		qd, hdr := doQuery(t, basic("bob", "bobpw"), "/api/v1/query", instantParams)
+	t.Run("UR bob instant routes to us-west", func(t *testing.T) {
+		qd, hdr := doURQuery(t, basic("bob", "bobpw"), "/api/v1/query", instantParams)
 		regions := extractRegions(t, qd)
 		require.True(t, regions["us-west"],
 			"bob should be routed to prom2-labeled (region=us-west); got %v", regions)
@@ -175,11 +159,8 @@ func TestALB_UR(t *testing.T) {
 		t.Logf("ur bob instant: %s", hdr.Get("X-Trickster-Result"))
 	})
 
-	// Range path hits a different code path (DPC engine, matrix result
-	// envelope, time-range extraction at ParseTimeRangeQuery). UR must
-	// route identically regardless of query type.
-	t.Run("alice range routes to prom1-labeled (us-east)", func(t *testing.T) {
-		qd, hdr := doQuery(t, basic("alice", "alicepw"), "/api/v1/query_range", rangeParams())
+	t.Run("UR alice range routes to us-east", func(t *testing.T) {
+		qd, hdr := doURQuery(t, basic("alice", "alicepw"), "/api/v1/query_range", urRangeParams())
 		require.Equal(t, "matrix", qd.ResultType)
 		regions := extractRegions(t, qd)
 		require.True(t, regions["us-east"],
@@ -189,8 +170,8 @@ func TestALB_UR(t *testing.T) {
 		t.Logf("ur alice range: %s", hdr.Get("X-Trickster-Result"))
 	})
 
-	t.Run("bob range routes to prom2-labeled (us-west)", func(t *testing.T) {
-		qd, hdr := doQuery(t, basic("bob", "bobpw"), "/api/v1/query_range", rangeParams())
+	t.Run("UR bob range routes to us-west", func(t *testing.T) {
+		qd, hdr := doURQuery(t, basic("bob", "bobpw"), "/api/v1/query_range", urRangeParams())
 		require.Equal(t, "matrix", qd.ResultType)
 		regions := extractRegions(t, qd)
 		require.True(t, regions["us-west"],
@@ -199,62 +180,40 @@ func TestALB_UR(t *testing.T) {
 			"bob range query must not see us-east; got %v", regions)
 		t.Logf("ur bob range: %s", hdr.Get("X-Trickster-Result"))
 	})
-}
 
-// TestALB_HeaderPropagation verifies that custom response headers set
-// on the inner Prometheus backend path survive the ALB FGR transform
-// path when the backend has prometheus.labels configured (which enables
-// the hasTransformations capture pipeline). Both labeled pool members
-// advertise X-Test-Origin=prom1 via a path override so the fanout winner
-// is irrelevant.
-//
-// regression: #970
-func TestALB_HeaderPropagation(t *testing.T) {
-	startALB(t)
+	// --- Header propagation (#970) ---
+	// Verifies custom response headers from pool members survive the
+	// ALB transform path. Uses unique queries to avoid OPC cache hits
+	// from earlier subtests that query `up` through the same backends.
 
-	t.Run("fgr instant query propagates X-Test-Origin", func(t *testing.T) {
+	// regression: #970
+	t.Run("FGR header propagation", func(t *testing.T) {
 		backend := "alb-fgr-labeled"
+		q := fmt.Sprintf("up + 0*%d", time.Now().UnixNano())
 		_, hdr := queryTricksterProm(t, albAddr, backend, "/api/v1/query",
-			url.Values{"query": {"up"}})
+			url.Values{"query": {q}})
 		require.Equal(t, "prom1", hdr.Get("X-Test-Origin"),
 			"%s: backend-emitted response headers must survive the ALB FGR transform path (issue #970)",
 			backend)
 		t.Logf("%s headers: %v", backend, hdr)
 	})
 
-	t.Run("tsm instant query propagates X-Test-Origin", func(t *testing.T) {
+	// regression: #970
+	t.Run("TSM header propagation", func(t *testing.T) {
 		backend := "alb-tsm-labeled"
+		q := fmt.Sprintf("up + 0*%d", time.Now().UnixNano())
 		_, hdr := queryTricksterProm(t, albAddr, backend, "/api/v1/query",
-			url.Values{"query": {"up"}})
+			url.Values{"query": {q}})
 		require.Equal(t, "prom1", hdr.Get("X-Test-Origin"),
 			"%s: TSM merge path must preserve custom response headers from pool members (issue #970)",
 			backend)
 		t.Logf("%s headers: %v", backend, hdr)
 	})
-}
 
-// TestALB_TSM_AggregationMerge is a regression test for the TSM per-query
-// merge + label strip behavior. A `sum by (job) (up)` aggregation query
-// through an alb-tsm-labeled ALB (where each pool member injects a
-// distinct `region` label) used to produce empty or broken results
-// because the injected region label defeated the aggregation hash
-// equality during the per-query merge. The merge path strips the
-// injected labels before hashing so aggregation rows collapse properly.
-//
-// The Prometheus backend's TSMMergeProvider auto-classifies any outer
-// `sum` / `count` / `min` / `max` / `avg` aggregator as a non-dedup
-// strategy, so no ALB-side config knob is needed — the strip path
-// activates automatically for this query.
-//
-// regression: #956
-func TestALB_TSM_AggregationMerge(t *testing.T) {
-	startALB(t)
+	// --- TSM aggregation merge (#956) ---
+	// `sum by (job) (up)` through labeled backends must strip injected
+	// labels before hashing so rows collapse to 1 per distinct job.
 
-	// assertAggregationCollapses validates the strip-and-collapse property
-	// against either an instant or range TSM query: each distinct `job`
-	// label must appear exactly once and no series may leak the injected
-	// `region` label. The body handles both resultType=vector (instant)
-	// and resultType=matrix (range) payloads.
 	assertAggregationCollapses := func(t *testing.T, qd promQueryData) {
 		t.Helper()
 		require.NotEmpty(t, qd.Result,
@@ -284,11 +243,8 @@ func TestALB_TSM_AggregationMerge(t *testing.T) {
 		}
 	}
 
-	// Range path: ParseTimeRangeQuery populates rsc.TimeRangeQuery, which
-	// feeds the TSM merge-strategy classifier. The nonce in the inner `up`
-	// expression forces a fresh cache key each run. The outer `sum by (job)`
-	// is what triggers MergeStrategySum and the strip-injected-labels path.
-	t.Run("range", func(t *testing.T) {
+	// regression: #956
+	t.Run("TSM aggregation merge range", func(t *testing.T) {
 		now := time.Now()
 		queryExpr := fmt.Sprintf("sum by (job) (up + 0*%d)", now.UnixNano())
 		rangeVals := url.Values{
@@ -306,11 +262,8 @@ func TestALB_TSM_AggregationMerge(t *testing.T) {
 		t.Logf("tsm aggregation merge (range): %s", hdr.Get("X-Trickster-Result"))
 	})
 
-	// Instant path: exercises a different code path in both the classifier
-	// (no start/end/step → ParseTimeRangeQuery fails and we fall back to
-	// reading the `query` form parameter directly) and the marshaler
-	// (strategy-aware RespondFunc must emit vector envelope, not matrix).
-	t.Run("instant", func(t *testing.T) {
+	// regression: #956
+	t.Run("TSM aggregation merge instant", func(t *testing.T) {
 		queryExpr := fmt.Sprintf("sum by (job) (up + 0*%d)", time.Now().UnixNano())
 		pr, hdr := queryTricksterProm(t, albAddr, "alb-tsm-labeled", "/api/v1/query",
 			url.Values{"query": {queryExpr}})
@@ -323,14 +276,7 @@ func TestALB_TSM_AggregationMerge(t *testing.T) {
 		t.Logf("tsm aggregation merge (instant): %s", hdr.Get("X-Trickster-Result"))
 	})
 
-	// POST instant path: proves the body-duplication contract between
-	// params.GetRequestValues (which mutates r.Body by rewrapping it over
-	// a cached []byte) and the subsequent TSM fanout via
-	// CloneWithoutResources (which hands each pool-member clone its own
-	// fresh bytes.NewReader over the same read-only bytes). If that
-	// contract breaks, concurrent clones would race a shared stateful
-	// Reader and this test would flake or return a partial merge.
-	t.Run("instant POST", func(t *testing.T) {
+	t.Run("TSM aggregation merge instant POST", func(t *testing.T) {
 		queryExpr := fmt.Sprintf("sum by (job) (up + 0*%d)", time.Now().UnixNano())
 		form := url.Values{"query": {queryExpr}}
 		u := "http://" + albAddr + "/alb-tsm-labeled/api/v1/query"
@@ -353,106 +299,222 @@ func TestALB_TSM_AggregationMerge(t *testing.T) {
 		assertAggregationCollapses(t, qd)
 		t.Logf("tsm aggregation merge (instant POST): %s", resp.Header.Get("X-Trickster-Result"))
 	})
-}
 
-// TestALB_TSM_DeflateOrigin starts an httptest.Server on the reserved
-// loopback port 18500 that serves a Prometheus-shaped instant-query
-// response with `Content-Encoding: deflate`. It then issues a TSM
-// instant query through alb-tsm-deflate (whose pool contains the
-// deflate origin and a real Prometheus origin) and asserts the TSM
-// merge path decodes the non-gzip compressed body.
-//
-// regression: #938
-func TestALB_TSM_DeflateOrigin(t *testing.T) {
-	// Build a valid Prometheus instant-query body and deflate-encode it.
-	body := `{"status":"success","data":{"resultType":"vector","result":[` +
-		`{"metric":{"__name__":"up","job":"fake","instance":"deflate:1"},` +
-		`"value":[1700000000,"1"]}]}}`
-	var buf bytes.Buffer
-	fw, err := flate.NewWriter(&buf, flate.DefaultCompression)
-	require.NoError(t, err)
-	_, err = fw.Write([]byte(body))
-	require.NoError(t, err)
-	require.NoError(t, fw.Close())
-	deflated := buf.Bytes()
+	// --- TSM deflate origin (#938) ---
+	// regression: #938
+	t.Run("TSM deflate origin", func(t *testing.T) {
+		deflateBody := `{"status":"success","data":{"resultType":"vector","result":[` +
+			`{"metric":{"__name__":"up","job":"fake","instance":"deflate:1"},` +
+			`"value":[1700000000,"1"]}]}}`
+		var buf bytes.Buffer
+		fw, err := flate.NewWriter(&buf, flate.DefaultCompression)
+		require.NoError(t, err)
+		_, err = fw.Write([]byte(deflateBody))
+		require.NoError(t, err)
+		require.NoError(t, fw.Close())
+		deflated := buf.Bytes()
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/api/v1/query", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Content-Encoding", "deflate")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write(deflated)
+		mux := http.NewServeMux()
+		mux.HandleFunc("/api/v1/query", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Content-Encoding", "deflate")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(deflated)
+		})
+		mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[]}}`))
+		})
+
+		l, err := net.Listen("tcp", "127.0.0.1:18500")
+		if err != nil {
+			t.Skipf("TODO(#938): port 18500 unavailable (%v); deflate-origin test skipped", err)
+			return
+		}
+		srv := &httptest.Server{
+			Listener: l,
+			Config:   &http.Server{Handler: mux},
+		}
+		srv.Start()
+		t.Cleanup(srv.Close)
+
+		pr, hdr := queryTricksterProm(t, albAddr, "alb-tsm-deflate", "/api/v1/query",
+			url.Values{"query": {"up"}})
+		require.Equal(t, "success", pr.Status)
+		var qd promQueryData
+		require.NoError(t, json.Unmarshal(pr.Data, &qd))
+		require.Equal(t, "vector", qd.ResultType)
+		require.NotEmpty(t, qd.Result,
+			"tsm merge must decode deflate-encoded upstream and return a non-empty merged vector (issue #938)")
+		t.Logf("tsm deflate origin: %s", hdr.Get("X-Trickster-Result"))
 	})
-	// Fallback for any other probe/path the backend may touch.
-	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[]}}`))
+
+	// --- FR cancel race (#945) ---
+	// regression: #945
+	t.Run("FR cancel race", func(t *testing.T) {
+		const iterations = 50
+		u := "http://" + albAddr + "/alb-fr/api/v1/query?query=up"
+
+		var wg sync.WaitGroup
+		for i := 0; i < iterations; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				ctx, cancel := context.WithCancel(context.Background())
+				req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+				if err != nil {
+					cancel()
+					return
+				}
+				go cancel()
+				resp, err := http.DefaultClient.Do(req)
+				if err == nil {
+					resp.Body.Close()
+				}
+			}()
+		}
+		wg.Wait()
 	})
 
-	// Bind the httptest server to the reserved worktree port so alb.yaml's
-	// hardcoded origin_url matches the real listener.
-	l, err := net.Listen("tcp", "127.0.0.1:18500")
-	if err != nil {
-		t.Skipf("TODO(#938): port 18500 unavailable (%v); deflate-origin test skipped", err)
-		return
-	}
-	srv := &httptest.Server{
-		Listener: l,
-		Config:   &http.Server{Handler: mux},
-	}
-	srv.Start()
-	t.Cleanup(srv.Close)
+	// --- FGR/RR/TSM/NLM mechanism coverage (originally TestPrometheusALB) ---
+	// These subtests exercised the original ALB mechanisms before the
+	// expansion above added FR/UR/header-propagation/aggregation/deflate/race
+	// coverage. They share the same alb.yaml boot.
 
-	startALB(t)
+	t.Run("fgr range query", func(t *testing.T) {
+		pr, hdr := queryTricksterProm(t, albAddr, "alb-fgr", "/api/v1/query_range", rangeParams())
+		require.Equal(t, "success", pr.Status)
+		var qd promQueryData
+		require.NoError(t, json.Unmarshal(pr.Data, &qd))
+		require.Equal(t, "matrix", qd.ResultType)
+		result := parseTricksterResult(hdr.Get("X-Trickster-Result"))
+		t.Logf("fgr range: %s", hdr.Get("X-Trickster-Result"))
+		require.NotEmpty(t, result["engine"])
 
-	pr, hdr := queryTricksterProm(t, albAddr, "alb-tsm-deflate", "/api/v1/query",
-		url.Values{"query": {"up"}})
-	require.Equal(t, "success", pr.Status)
-	var qd promQueryData
-	require.NoError(t, json.Unmarshal(pr.Data, &qd))
-	require.Equal(t, "vector", qd.ResultType)
-	require.NotEmpty(t, qd.Result,
-		"tsm merge must decode deflate-encoded upstream and return a non-empty merged vector (issue #938)")
-	t.Logf("tsm deflate origin: %s", hdr.Get("X-Trickster-Result"))
-}
+		_, hdr2 := queryTricksterProm(t, albAddr, "alb-fgr", "/api/v1/query_range", rangeParams())
+		t.Logf("fgr range (repeat): %s", hdr2.Get("X-Trickster-Result"))
+	})
 
-// TestALB_FR_CancelRace exercises the FR fanout path under aggressive
-// client cancellation. Issue #945 was a write-after-return race where a
-// slower pool member could attempt to write to the ResponseWriter after
-// ServeHTTP had already returned via ctx.Done(). This test makes N
-// rapid-cancel requests and asserts no panics are observed. The test is
-// only meaningful with `go test -race`; without -race it merely proves
-// there is no panic.
-//
-// regression: #945
-func TestALB_FR_CancelRace(t *testing.T) {
-	startALB(t)
+	t.Run("fgr instant query", func(t *testing.T) {
+		pr, hdr := queryTricksterProm(t, albAddr, "alb-fgr", "/api/v1/query", url.Values{"query": {"up"}})
+		require.Equal(t, "success", pr.Status)
+		var qd promQueryData
+		require.NoError(t, json.Unmarshal(pr.Data, &qd))
+		require.Equal(t, "vector", qd.ResultType)
+		t.Logf("fgr instant: %s", hdr.Get("X-Trickster-Result"))
+	})
 
-	const iterations = 50
-	u := "http://" + albAddr + "/alb-fr/api/v1/query?query=up"
+	t.Run("rr multiple requests", func(t *testing.T) {
+		for i := range 3 {
+			pr, hdr := queryTricksterProm(t, albAddr, "alb-rr", "/api/v1/query_range", rangeParams())
+			require.Equal(t, "success", pr.Status)
+			require.NotEmpty(t, hdr.Get("X-Trickster-Result"))
+			t.Logf("rr range request %d: %s", i, hdr.Get("X-Trickster-Result"))
+		}
+	})
 
-	var wg sync.WaitGroup
-	for i := 0; i < iterations; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			ctx, cancel := context.WithCancel(context.Background())
-			req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-			if err != nil {
-				cancel()
-				return
+	t.Run("rr instant query", func(t *testing.T) {
+		for i := range 3 {
+			pr, hdr := queryTricksterProm(t, albAddr, "alb-rr", "/api/v1/query",
+				url.Values{"query": {"up"}})
+			require.Equal(t, "success", pr.Status)
+			var qd promQueryData
+			require.NoError(t, json.Unmarshal(pr.Data, &qd))
+			require.Equal(t, "vector", qd.ResultType)
+			t.Logf("rr instant request %d: %s", i, hdr.Get("X-Trickster-Result"))
+		}
+	})
+
+	t.Run("tsm range query merges", func(t *testing.T) {
+		pr, hdr := queryTricksterProm(t, albAddr, "alb-tsm", "/api/v1/query_range", rangeParams())
+		require.Equal(t, "success", pr.Status)
+		var qd promQueryData
+		require.NoError(t, json.Unmarshal(pr.Data, &qd))
+		require.Equal(t, "matrix", qd.ResultType)
+		result := parseTricksterResult(hdr.Get("X-Trickster-Result"))
+		t.Logf("tsm range: %s", hdr.Get("X-Trickster-Result"))
+		require.NotEmpty(t, result["engine"])
+	})
+
+	// regression: #937
+	t.Run("tsm instant query", func(t *testing.T) {
+		pr, hdr := queryTricksterProm(t, albAddr, "alb-tsm", "/api/v1/query", url.Values{"query": {"up"}})
+		require.Equal(t, "success", pr.Status)
+		var qd promQueryData
+		require.NoError(t, json.Unmarshal(pr.Data, &qd))
+		require.Equal(t, "vector", qd.ResultType)
+		require.NotEmpty(t, qd.Result, "instant query through TSM should return non-empty result")
+		t.Logf("tsm instant: %s", hdr.Get("X-Trickster-Result"))
+	})
+
+	// regression: #936
+	t.Run("tsm labels merge", func(t *testing.T) {
+		pr, hdr := queryTricksterProm(t, albAddr, "alb-tsm", "/api/v1/labels", nil)
+		require.Equal(t, "success", pr.Status)
+		var labels []string
+		require.NoError(t, json.Unmarshal(pr.Data, &labels), "labels through TSM should return valid JSON array")
+		require.Contains(t, labels, "job")
+		require.Contains(t, labels, "__name__")
+		t.Logf("tsm labels: %s", hdr.Get("X-Trickster-Result"))
+	})
+
+	// regression: #936
+	t.Run("tsm label values merge", func(t *testing.T) {
+		pr, hdr := queryTricksterProm(t, albAddr, "alb-tsm", "/api/v1/label/job/values", nil)
+		require.Equal(t, "success", pr.Status)
+		var values []string
+		require.NoError(t, json.Unmarshal(pr.Data, &values), "label values through TSM should return valid JSON array")
+		require.Contains(t, values, "prometheus")
+		t.Logf("tsm label values: %s", hdr.Get("X-Trickster-Result"))
+	})
+
+	t.Run("nlm range query", func(t *testing.T) {
+		pr, hdr := queryTricksterProm(t, albAddr, "alb-nlm", "/api/v1/query_range", rangeParams())
+		require.Equal(t, "success", pr.Status)
+		var qd promQueryData
+		require.NoError(t, json.Unmarshal(pr.Data, &qd))
+		require.Equal(t, "matrix", qd.ResultType)
+		t.Logf("nlm range: %s", hdr.Get("X-Trickster-Result"))
+	})
+
+	t.Run("nlm instant query", func(t *testing.T) {
+		pr, hdr := queryTricksterProm(t, albAddr, "alb-nlm", "/api/v1/query",
+			url.Values{"query": {"up"}})
+		require.Equal(t, "success", pr.Status)
+		var qd promQueryData
+		require.NoError(t, json.Unmarshal(pr.Data, &qd))
+		require.Equal(t, "vector", qd.ResultType)
+		require.NotEmpty(t, qd.Result, "nlm instant query should return non-empty result")
+		t.Logf("nlm instant: %s", hdr.Get("X-Trickster-Result"))
+	})
+
+	// regression: #937
+	for _, mech := range []string{"fgr", "nlm", "tsm"} {
+		t.Run(mech+"-labeled instant query (#937)", func(t *testing.T) {
+			backend := "alb-" + mech + "-labeled"
+			pr, hdr := queryTricksterProm(t, albAddr, backend, "/api/v1/query", url.Values{"query": {"up"}})
+			require.Equal(t, "success", pr.Status)
+			require.Contains(t, hdr.Get("Content-Type"), "json",
+				"%s instant query must advertise a JSON content type (issue #937)", backend)
+			require.NotEmpty(t, hdr.Get("X-Trickster-Result"),
+				"%s instant query must propagate X-Trickster-Result from the inner backend (issue #937)", backend)
+			require.Empty(t, hdr.Get("Content-Encoding"),
+				"%s instant query must not advertise stale upstream Content-Encoding (issue #937)", backend)
+			var qd promQueryData
+			require.NoError(t, json.Unmarshal(pr.Data, &qd))
+			require.Equal(t, "vector", qd.ResultType)
+			require.NotEmpty(t, qd.Result,
+				"%s instant query should return a non-empty result", backend)
+			var series []struct {
+				Metric map[string]string `json:"metric"`
 			}
-			// Immediately cancel mid-flight; the goal is to race the ALB
-			// fanout serve() path against the request context.Done() path.
-			go cancel()
-			resp, err := http.DefaultClient.Do(req)
-			if err == nil {
-				resp.Body.Close()
+			require.NoError(t, json.Unmarshal(qd.Result, &series))
+			require.NotEmpty(t, series)
+			for _, s := range series {
+				require.NotEmpty(t, s.Metric["region"],
+					"%s: each merged series should carry the injected region label", backend)
 			}
-		}()
+			t.Logf("%s instant: %s", backend, hdr.Get("X-Trickster-Result"))
+		})
 	}
-	wg.Wait()
-	// A surviving process proves no panic fired on any fanout goroutine.
-	// Run under `go test -race` for full coverage of the write-after-return
-	// data race on w / wmu / returned in fr.ServeHTTP.
 }
