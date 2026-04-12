@@ -158,7 +158,7 @@ func TestGetRequestValues_POSTFormSplitParams(t *testing.T) {
 
 // TestGetRequestValues_POSTFormBodyOverridesURL verifies that when the same
 // key appears in both the URL query string and the form body, the body value
-// wins — matching Go stdlib r.Form semantics.
+// replaces the URL value (single-valued merge, not append).
 func TestGetRequestValues_POSTFormBodyOverridesURL(t *testing.T) {
 	const body = "step=30"
 	r, _ := http.NewRequest(http.MethodPost,
