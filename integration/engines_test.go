@@ -18,6 +18,7 @@ package integration
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -300,6 +301,76 @@ func TestEngines_Collapse_MetricsReport(t *testing.T) {
 
 	require.InDelta(t, float64(n-1), after-before, 0.0001,
 		"expected exactly %d proxy-hit increments, got %v", n-1, after-before)
+}
+
+// engValidVectorBody returns a minimally-valid Prometheus instant vector
+// response with n result entries. Each entry is ~80 bytes, so n=500
+// produces ~40KB — well over io.Copy's 32KB internal buffer.
+func engValidVectorBody(n int) string {
+	var buf strings.Builder
+	buf.WriteString(`{"status":"success","data":{"resultType":"vector","result":[`)
+	for i := range n {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		fmt.Fprintf(&buf, `{"metric":{"__name__":"fake","instance":"inst-%04d"},"value":[1700000000,"1"]}`, i)
+	}
+	buf.WriteString(`]}}`)
+	return buf.String()
+}
+
+func doEngineInstant(t *testing.T, params url.Values) (int, []byte, http.Header) {
+	t.Helper()
+	u := "http://" + engTricksterAddr + "/prom-fake/api/v1/query?" + params.Encode()
+	client := &http.Client{Transport: &http.Transport{DisableCompression: true}}
+	resp, err := client.Get(u)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	b, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	return resp.StatusCode, b, resp.Header.Clone()
+}
+
+// TestEngines_LargeResponse verifies that a Prometheus instant query
+// response larger than 32KB is delivered intact through the proxy.
+//
+// CaptureResponseWriter.Write had a bug where it returned the cumulative
+// byte count instead of the per-call count, violating the io.Writer
+// contract. Go's io.Copy checks nr < nw after each Write; on the second
+// 32KB chunk, the cumulative return value triggers errInvalidWrite and
+// silently truncates the response. This test catches that regression.
+func TestEngines_LargeResponse(t *testing.T) {
+	origin := engineSetup(t)
+
+	const nResults = 500 // ~40KB response
+	body := engValidVectorBody(nResults)
+	require.Greater(t, len(body), 32*1024, "test body must exceed 32KB to exercise the bug")
+
+	origin.setHandler(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, body)
+	})
+
+	// Use a unique query to avoid cache collisions with other tests.
+	params := url.Values{"query": {fmt.Sprintf("fake + 0*%d", time.Now().UnixNano())}}
+	sc, got, _ := doEngineInstant(t, params)
+	require.Equal(t, http.StatusOK, sc)
+	require.Greater(t, len(got), 32*1024,
+		"response must exceed 32KB — if truncated, CaptureResponseWriter.Write is returning cumulative len")
+
+	var pr promResponse
+	require.NoError(t, json.Unmarshal(got, &pr),
+		"response must be valid JSON — truncation causes unexpected EOF")
+	require.Equal(t, "success", pr.Status)
+
+	var qd promQueryData
+	require.NoError(t, json.Unmarshal(pr.Data, &qd))
+	require.Equal(t, "vector", qd.ResultType)
+
+	var results []json.RawMessage
+	require.NoError(t, json.Unmarshal(qd.Result, &results))
+	require.Len(t, results, nResults, "all vector results must survive the proxy round-trip")
 }
 
 // readProxyHitCount returns the current sum of
