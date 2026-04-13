@@ -265,4 +265,31 @@ func TestPrometheus(t *testing.T) {
 			require.Equal(t, http.StatusInternalServerError, resp2.StatusCode)
 		}
 	})
+
+	// Regression test for CaptureResponseWriter.Write io.Writer contract
+	// violation that truncated any response larger than io.Copy's 32KB
+	// buffer. Uses the real Prometheus backend so the full upstream
+	// response lifecycle (chunked transfer, keep-alive) is exercised,
+	// not just a single-WriteString fake origin.
+	t.Run("large range response survives proxy", func(t *testing.T) {
+		now := time.Now()
+		// 1 hour window at 1s step = 3600 samples per series. Scraped
+		// series on the developer Prometheus easily push this over 32KB.
+		params := url.Values{
+			"query": {fmt.Sprintf("process_cpu_seconds_total + 0*%d", now.UnixNano())},
+			"start": {fmt.Sprintf("%d", now.Add(-1*time.Hour).Unix())},
+			"end":   {fmt.Sprintf("%d", now.Unix())},
+			"step":  {"1"},
+		}
+		pr, hdr := queryTricksterProm(t, tricksterAddr, "prom1", "/api/v1/query_range", params)
+		require.Equal(t, "success", pr.Status)
+		require.Greater(t, len(pr.Data), 32*1024,
+			"response data must exceed 32KB to exercise the io.Copy truncation bug")
+		var qd promQueryData
+		require.NoError(t, json.Unmarshal(pr.Data, &qd),
+			"response must be complete valid JSON — truncation causes unexpected EOF")
+		require.Equal(t, "matrix", qd.ResultType)
+		t.Logf("large range response: %d bytes, X-Trickster-Result=%s",
+			len(pr.Data), hdr.Get("X-Trickster-Result"))
+	})
 }
