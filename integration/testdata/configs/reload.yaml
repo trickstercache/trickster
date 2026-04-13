@@ -1,0 +1,33 @@
+# Copyright 2018 The Trickster Authors
+# Licensed under the Apache License, Version 2.0
+#
+# Config for TestLifecycle_ReloadPreservesHCStatus (regression #919)
+
+frontend:
+  listen_port: 8530
+
+metrics:
+  listen_port: 8531
+
+mgmt:
+  listen_port: 8532
+
+logging:
+  log_level: info
+
+caches:
+  mem1:
+    provider: memory
+
+backends:
+  prom1:
+    provider: prometheus
+    origin_url: http://127.0.0.1:9090
+    cache_name: mem1
+    healthcheck:
+      interval: 500ms
+      timeout: 1s
+      path: /-/healthy
+      verb: GET
+      expected_codes:
+        - 200

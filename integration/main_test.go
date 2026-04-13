@@ -26,6 +26,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -137,7 +138,8 @@ func waitForPrometheusData(t *testing.T, prometheusAddr string) {
 	}, 30*time.Second, 2*time.Second, "Prometheus scrape data never became available")
 }
 
-// waitForClickHouseData polls ClickHouse directly until the trips table has data.
+// waitForClickHouseData polls ClickHouse directly until the trips table exists
+// and has been populated with at least one row by the clickhouse_seed service.
 func waitForClickHouseData(t *testing.T, clickhouseAddr string) {
 	t.Helper()
 	require.EventuallyWithT(t, func(collect *assert.CollectT) {
@@ -151,8 +153,18 @@ func waitForClickHouseData(t *testing.T, clickhouseAddr string) {
 		if !assert.NoError(collect, err) {
 			return
 		}
-		assert.NotEqual(collect, "0\n", string(b), "waiting for ClickHouse seed data")
-	}, 30*time.Second, 2*time.Second, "ClickHouse trips data never became available")
+		// A missing trips table returns HTTP 404 with an error body (not "0\n"),
+		// so gate on status code before parsing the count.
+		if !assert.Equal(collect, 200, resp.StatusCode,
+			"clickhouse not ready: %s", strings.TrimSpace(string(b))) {
+			return
+		}
+		n, err := strconv.Atoi(strings.TrimSpace(string(b)))
+		if !assert.NoError(collect, err) {
+			return
+		}
+		assert.Greater(collect, n, 0, "waiting for ClickHouse seed data")
+	}, 5*time.Minute, 2*time.Second, "ClickHouse trips data never became available")
 }
 
 // waitForInfluxDBData polls InfluxDB directly until Telegraf has written at least one point.

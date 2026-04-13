@@ -54,6 +54,12 @@ const (
 	statusErr  = "err"
 	statusHit  = "hit"
 	statusMiss = "miss"
+
+	// errorBodyCap bounds the amount of upstream error body copied into
+	// HTTPDocument on non-2xx responses. Protects singleflight waiters
+	// from a malicious or misconfigured origin that returns a huge error
+	// page. 1 MiB is larger than any reasonable structured error payload.
+	errorBodyCap = 1 << 20
 )
 
 // fetchFastForward executes a fast-forward request and merges the result into rts.
@@ -610,6 +616,27 @@ func fetchTimeseries(pr *proxyRequest, trq *timeseries.TimeRangeQuery,
 	}
 
 	if err != nil {
+		// Capture the upstream error body so collapsed singleflight waiters
+		// and negative-cache entries see the origin's error detail instead
+		// of an empty body.
+		//
+		// fetchExtents populates resp.Body (wrapped in a fresh
+		// bytes.NewReader under respLock) only on the non-2xx response
+		// path; see the ErrUnexpectedUpstreamResponse branch there. On the
+		// unmarshal-failure path (2xx but bad body) resp.Body is nil — the
+		// nil check + len(b) > 0 guard handles that. On transport errors,
+		// resp itself may be nil, but in that case the caller would have
+		// panicked on resp.Status/StatusCode access above us, so we can
+		// safely assume resp is non-nil here.
+		//
+		// Bounded read: cap at errorBodyCap via io.LimitReader to protect
+		// against pathological origin responses.
+		if resp.Body != nil {
+			b, readErr := io.ReadAll(io.LimitReader(resp.Body, errorBodyCap))
+			if readErr == nil && len(b) > 0 {
+				d.Body = b
+			}
+		}
 		return nil, d, time.Duration(0), err
 	}
 

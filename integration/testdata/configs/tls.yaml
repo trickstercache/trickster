@@ -1,0 +1,34 @@
+# Copyright 2018 The Trickster Authors
+# Licensed under the Apache License, Version 2.0
+#
+# Config for TestTLS_CAOnlyConfig (regression #940)
+# The prom1 backend configures TLS with ONLY a certificate_authority_paths
+# entry — no full_chain_cert_path, no private_key_path, no client cert/key.
+# Before #940 this path panicked because tls options validation tried to
+# ReadFile an empty cert path.
+
+frontend:
+  listen_port: 8533
+  tls_listen_port: 0
+
+metrics:
+  listen_port: 8534
+
+mgmt:
+  listen_port: 8535
+
+logging:
+  log_level: info
+
+caches:
+  mem1:
+    provider: memory
+
+backends:
+  prom1:
+    provider: prometheus
+    origin_url: http://127.0.0.1:9090
+    cache_name: mem1
+    tls:
+      certificate_authority_paths:
+        - testdata/configs/ca.pem

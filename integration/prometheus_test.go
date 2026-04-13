@@ -17,7 +17,6 @@
 package integration
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -34,49 +33,35 @@ const tricksterAddr = "127.0.0.1:8480"
 // TestPrometheus tests Prometheus-specific capabilities through Trickster.
 // Requires: make developer-start && a running trickster with the developer config.
 func TestPrometheus(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	go startTrickster(t, ctx, expectedStartError{}, "-config", "../docs/developer/environment/trickster-config/trickster.yaml")
-	waitForTrickster(t, "127.0.0.1:8481")
+	h := developerHarness()
+	h.start(t)
 	waitForPrometheusData(t, "127.0.0.1:9090")
 
-	// Table-driven cache backend test: validates miss/hit cycle across all
-	// configured cache providers (memory, filesystem, redis).
-	for _, tc := range []struct {
-		name    string
-		backend string
-	}{
-		{"memory", "prom1"},
-		{"filesystem", "prom2"},
-		{"redis", "prom3"},
-	} {
-		t.Run(tc.name+" range query cache miss then hit", func(t *testing.T) {
+	// Validate miss/hit cycle across every configured cache provider.
+	runCacheProviderMatrix(t, func(t *testing.T, c cacheProviderCase) {
+		t.Run("range query cache miss then hit", func(t *testing.T) {
 			now := time.Now()
 			params := url.Values{
-				// Use a unique query per backend so cache keys don't collide across sub-tests.
+				// Unique query per backend so cache keys don't collide across subtests.
 				"query": {fmt.Sprintf("up + 0*%d", now.UnixNano())},
 				"start": {fmt.Sprintf("%d", now.Add(-5*time.Minute).Unix())},
 				"end":   {fmt.Sprintf("%d", now.Unix())},
 				"step":  {"15"},
 			}
-			// First request: expect cache miss
-			pr, hdr := queryTricksterProm(t, tricksterAddr, tc.backend, "/api/v1/query_range", params)
+			pr, hdr := h.queryProm(t, c.Backend, "/api/v1/query_range", withParams(params))
 			require.Equal(t, "success", pr.Status)
 			var qd promQueryData
 			require.NoError(t, json.Unmarshal(pr.Data, &qd))
 			require.Equal(t, "matrix", qd.ResultType)
-			result := parseTricksterResult(hdr.Get("X-Trickster-Result"))
-			t.Logf("first request: %s", hdr.Get("X-Trickster-Result"))
-			require.Equal(t, "DeltaProxyCache", result["engine"])
-			require.Equal(t, "kmiss", result["status"])
+			requireTricksterResult(t, hdr, map[string]string{
+				"engine": "DeltaProxyCache",
+				"status": "kmiss",
+			})
 
-			// Second identical request: expect cache hit
-			_, hdr2 := queryTricksterProm(t, tricksterAddr, tc.backend, "/api/v1/query_range", params)
-			result2 := parseTricksterResult(hdr2.Get("X-Trickster-Result"))
-			t.Logf("second request: %s", hdr2.Get("X-Trickster-Result"))
-			require.Equal(t, "hit", result2["status"])
+			_, hdr2 := h.queryProm(t, c.Backend, "/api/v1/query_range", withParams(params))
+			requireTricksterResult(t, hdr2, map[string]string{"status": "hit"})
 		})
-	}
+	})
 
 	t.Run("range query partial hit", func(t *testing.T) {
 		now := time.Now()
@@ -280,149 +265,4 @@ func TestPrometheus(t *testing.T) {
 			require.Equal(t, http.StatusInternalServerError, resp2.StatusCode)
 		}
 	})
-}
-
-const albAddr = "127.0.0.1:8490"
-
-// TestPrometheusALB tests ALB mechanisms with Prometheus backends.
-// Requires: make developer-start (for Prometheus on :9090).
-func TestPrometheusALB(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	go startTrickster(t, ctx, expectedStartError{}, "-config", "testdata/alb.yaml")
-	waitForTrickster(t, "127.0.0.1:8491")
-	waitForPrometheusData(t, "127.0.0.1:9090")
-
-	rangeParams := func() url.Values {
-		now := time.Now()
-		return url.Values{
-			"query": {"up"},
-			"start": {fmt.Sprintf("%d", now.Add(-5*time.Minute).Unix())},
-			"end":   {fmt.Sprintf("%d", now.Unix())},
-			"step":  {"15"},
-		}
-	}
-
-	t.Run("fgr range query", func(t *testing.T) {
-		pr, hdr := queryTricksterProm(t, albAddr, "alb-fgr", "/api/v1/query_range", rangeParams())
-		require.Equal(t, "success", pr.Status)
-		var qd promQueryData
-		require.NoError(t, json.Unmarshal(pr.Data, &qd))
-		require.Equal(t, "matrix", qd.ResultType)
-		result := parseTricksterResult(hdr.Get("X-Trickster-Result"))
-		t.Logf("fgr range: %s", hdr.Get("X-Trickster-Result"))
-		require.NotEmpty(t, result["engine"])
-
-		// Second request: should benefit from caching
-		_, hdr2 := queryTricksterProm(t, albAddr, "alb-fgr", "/api/v1/query_range", rangeParams())
-		t.Logf("fgr range (repeat): %s", hdr2.Get("X-Trickster-Result"))
-	})
-
-	t.Run("fgr instant query", func(t *testing.T) {
-		pr, hdr := queryTricksterProm(t, albAddr, "alb-fgr", "/api/v1/query", url.Values{"query": {"up"}})
-		require.Equal(t, "success", pr.Status)
-		var qd promQueryData
-		require.NoError(t, json.Unmarshal(pr.Data, &qd))
-		require.Equal(t, "vector", qd.ResultType)
-		t.Logf("fgr instant: %s", hdr.Get("X-Trickster-Result"))
-	})
-
-	t.Run("rr multiple requests", func(t *testing.T) {
-		for i := range 3 {
-			pr, hdr := queryTricksterProm(t, albAddr, "alb-rr", "/api/v1/query_range", rangeParams())
-			require.Equal(t, "success", pr.Status)
-			require.NotEmpty(t, hdr.Get("X-Trickster-Result"))
-			t.Logf("rr request %d: %s", i, hdr.Get("X-Trickster-Result"))
-		}
-	})
-
-	t.Run("tsm range query merges", func(t *testing.T) {
-		pr, hdr := queryTricksterProm(t, albAddr, "alb-tsm", "/api/v1/query_range", rangeParams())
-		require.Equal(t, "success", pr.Status)
-		var qd promQueryData
-		require.NoError(t, json.Unmarshal(pr.Data, &qd))
-		require.Equal(t, "matrix", qd.ResultType)
-		result := parseTricksterResult(hdr.Get("X-Trickster-Result"))
-		t.Logf("tsm range: %s", hdr.Get("X-Trickster-Result"))
-		require.NotEmpty(t, result["engine"])
-	})
-
-	t.Run("tsm instant query", func(t *testing.T) {
-		// Regression test for https://github.com/trickstercache/trickster/issues/937
-		pr, hdr := queryTricksterProm(t, albAddr, "alb-tsm", "/api/v1/query", url.Values{"query": {"up"}})
-		require.Equal(t, "success", pr.Status)
-		var qd promQueryData
-		require.NoError(t, json.Unmarshal(pr.Data, &qd))
-		require.Equal(t, "vector", qd.ResultType)
-		require.NotEmpty(t, qd.Result, "instant query through TSM should return non-empty result")
-		t.Logf("tsm instant: %s", hdr.Get("X-Trickster-Result"))
-	})
-
-	t.Run("tsm labels merge", func(t *testing.T) {
-		// Regression test for https://github.com/trickstercache/trickster/issues/936
-		pr, hdr := queryTricksterProm(t, albAddr, "alb-tsm", "/api/v1/labels", nil)
-		require.Equal(t, "success", pr.Status)
-		var labels []string
-		require.NoError(t, json.Unmarshal(pr.Data, &labels), "labels through TSM should return valid JSON array")
-		require.Contains(t, labels, "job")
-		require.Contains(t, labels, "__name__")
-		t.Logf("tsm labels: %s", hdr.Get("X-Trickster-Result"))
-	})
-
-	t.Run("tsm label values merge", func(t *testing.T) {
-		// Regression test for https://github.com/trickstercache/trickster/issues/936
-		pr, hdr := queryTricksterProm(t, albAddr, "alb-tsm", "/api/v1/label/job/values", nil)
-		require.Equal(t, "success", pr.Status)
-		var values []string
-		require.NoError(t, json.Unmarshal(pr.Data, &values), "label values through TSM should return valid JSON array")
-		require.Contains(t, values, "prometheus")
-		t.Logf("tsm label values: %s", hdr.Get("X-Trickster-Result"))
-	})
-
-	t.Run("nlm range query", func(t *testing.T) {
-		pr, hdr := queryTricksterProm(t, albAddr, "alb-nlm", "/api/v1/query_range", rangeParams())
-		require.Equal(t, "success", pr.Status)
-		var qd promQueryData
-		require.NoError(t, json.Unmarshal(pr.Data, &qd))
-		require.Equal(t, "matrix", qd.ResultType)
-		t.Logf("nlm range: %s", hdr.Get("X-Trickster-Result"))
-	})
-
-	// Regression tests for https://github.com/trickstercache/trickster/issues/937
-	// These exercise the prometheus capture/transform path through ALB by
-	// pointing at backends that have prometheus.labels configured (which sets
-	// hasTransformations=true and routes the request through the
-	// processVectorTransformations capture path).
-	for _, mech := range []string{"fgr", "nlm", "tsm"} {
-		t.Run(mech+"-labeled instant query (#937)", func(t *testing.T) {
-			backend := "alb-" + mech + "-labeled"
-			pr, hdr := queryTricksterProm(t, albAddr, backend, "/api/v1/query", url.Values{"query": {"up"}})
-			require.Equal(t, "success", pr.Status)
-			// The capture/transform path used to drop the upstream Content-Type
-			// and X-Trickster-Result headers, leaving the ALB to serve a body
-			// with no JSON content type (which Grafana / Mimir would discard).
-			require.Contains(t, hdr.Get("Content-Type"), "json",
-				"%s instant query must advertise a JSON content type (issue #937)", backend)
-			require.NotEmpty(t, hdr.Get("X-Trickster-Result"),
-				"%s instant query must propagate X-Trickster-Result from the inner backend (issue #937)", backend)
-			require.Empty(t, hdr.Get("Content-Encoding"),
-				"%s instant query must not advertise stale upstream Content-Encoding (issue #937)", backend)
-			var qd promQueryData
-			require.NoError(t, json.Unmarshal(pr.Data, &qd))
-			require.Equal(t, "vector", qd.ResultType)
-			require.NotEmpty(t, qd.Result,
-				"%s instant query should return a non-empty result", backend)
-			// Each series should carry an injected `region` label.
-			var series []struct {
-				Metric map[string]string `json:"metric"`
-			}
-			require.NoError(t, json.Unmarshal(qd.Result, &series))
-			require.NotEmpty(t, series)
-			for _, s := range series {
-				require.NotEmpty(t, s.Metric["region"],
-					"%s: each merged series should carry the injected region label", backend)
-			}
-			t.Logf("%s instant: %s", backend, hdr.Get("X-Trickster-Result"))
-		})
-	}
 }

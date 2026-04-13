@@ -122,6 +122,59 @@ func TestGetSetRequestValues(t *testing.T) {
 	}
 }
 
+// TestGetRequestValues_POSTFormSplitParams verifies that when a client POSTs
+// with some params in the URL query string and others in the urlencoded form
+// body, GetRequestValues returns the MERGED set (previously it dropped the
+// URL query entirely). This is the read-side companion to #969's fix to
+// SetRequestValues.
+func TestGetRequestValues_POSTFormSplitParams(t *testing.T) {
+	// ?step=15 in URL, the rest in the form body.
+	const body = "query=up&start=1000&end=2000"
+	r, _ := http.NewRequest(http.MethodPost,
+		"http://example.com/api/v1/query_range?step=15",
+		io.NopCloser(bytes.NewBufferString(body)))
+	r.Header.Set(headers.NameContentType, headers.ValueXFormURLEncoded)
+
+	v, _, hb := GetRequestValues(r)
+	if !hb {
+		t.Fatal("expected hasBody=true for form POST")
+	}
+	if got := v.Get("step"); got != "15" {
+		t.Errorf("step param (URL) lost: got %q, want %q", got, "15")
+	}
+	if got := v.Get("query"); got != "up" {
+		t.Errorf("query param (body): got %q, want %q", got, "up")
+	}
+	if got := v.Get("start"); got != "1000" {
+		t.Errorf("start param (body): got %q, want %q", got, "1000")
+	}
+	if got := v.Get("end"); got != "2000" {
+		t.Errorf("end param (body): got %q, want %q", got, "2000")
+	}
+	if len(v) != 4 {
+		t.Errorf("expected 4 merged params, got %d: %v", len(v), v)
+	}
+}
+
+// TestGetRequestValues_POSTFormBodyOverridesURL verifies that when the same
+// key appears in both the URL query string and the form body, the body value
+// replaces the URL value (single-valued merge, not append).
+func TestGetRequestValues_POSTFormBodyOverridesURL(t *testing.T) {
+	const body = "step=30"
+	r, _ := http.NewRequest(http.MethodPost,
+		"http://example.com/?step=15",
+		io.NopCloser(bytes.NewBufferString(body)))
+	r.Header.Set(headers.NameContentType, headers.ValueXFormURLEncoded)
+
+	v, _, _ := GetRequestValues(r)
+	if got := v.Get("step"); got != "30" {
+		t.Errorf("body should override URL on key conflict: got %q, want %q", got, "30")
+	}
+	if len(v["step"]) != 1 {
+		t.Errorf("expected single merged value, got %v", v["step"])
+	}
+}
+
 // TestSetRequestValues_POSTJSONURLSync verifies that SetRequestValues for POST
 // requests with JSON content-type also updates r.URL.RawQuery, so that
 // subsequent reads via GetRequestValues (which reads from URL for POST+JSON)

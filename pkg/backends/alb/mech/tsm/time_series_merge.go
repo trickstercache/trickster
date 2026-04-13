@@ -35,6 +35,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/capture"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
@@ -162,6 +163,26 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					query = trq.Statement
 				}
 			}
+		}
+	}
+	// Fallback for instant queries (/api/v1/query): ParseTimeRangeQuery
+	// rejects requests without start/end/step, so classify directly off
+	// the `query` form parameter. Without this, the merge-strategy
+	// classifier sees an empty string on every instant query and always
+	// falls back to Dedup — which defeats the per-query strip-injected-
+	// labels path for any PromQL aggregation issued as an instant query.
+	//
+	// Body safety for POST form requests: params.GetRequestValues reads
+	// r.Body during form parsing and then replaces it with a fresh
+	// bytes.NewReader over the cached []byte (see pkg/proxy/request/body.go
+	// GetBody: rsc.RequestBody caches the bytes). Subsequent per-member
+	// request.CloneWithoutResources calls go through GetBodyReader which
+	// wraps another fresh bytes.NewReader over the same read-only bytes,
+	// so concurrent reads from pool-member handlers each have an
+	// independent reader position and do not race.
+	if query == "" {
+		if qp, _, _ := params.GetRequestValues(r); qp != nil {
+			query = qp.Get("query")
 		}
 	}
 	var mergeStrategy dataset.MergeStrategy
@@ -317,9 +338,16 @@ func (h *handler) serveStandard(
 
 	var statusCode int
 	var statusHeader string
+	// winnerHeaders carries custom response headers (e.g. those set by a
+	// pool member's path override via response_headers:) from the same
+	// member whose mergeFunc will write the final response. Without this,
+	// TSM fanout would strip any backend-set headers that FGR would
+	// happily propagate. See #970.
+	var winnerHeaders http.Header
 	for _, res := range results {
 		if mrf == nil {
 			mrf = res.mergeFunc
+			winnerHeaders = res.header
 		}
 		if res.statusCode > 0 {
 			if statusCode == 0 || res.statusCode < statusCode {
@@ -331,6 +359,17 @@ func (h *handler) serveStandard(
 			statusHeader = headers.MergeResultHeaderVals(statusHeader,
 				res.header.Get(headers.NameTricksterResult))
 		}
+	}
+
+	// Carry the winner's custom headers onto the outbound response BEFORE
+	// setting the aggregated X-Trickster-Result. headers.Merge makes the
+	// source value authoritative for every key it touches, so the Set
+	// below keeps TSM's own merged status header regardless of what the
+	// member advertised for that key. Structural headers (Content-Type,
+	// Content-Length, Date, Last-Modified, Transfer-Encoding) were already
+	// removed by StripMergeHeaders.
+	if winnerHeaders != nil {
+		headers.Merge(w.Header(), winnerHeaders)
 	}
 
 	// set aggregated status header
@@ -468,9 +507,14 @@ func (h *handler) serveWeightedAvg(
 	var mrf merge.RespondFunc
 	var statusCode int
 	var statusHeader string
+	// See serveStandard for the rationale — carry the winner's custom
+	// response headers through the fanout so backend-set headers like
+	// `X-Test-Origin` survive the merge. (#970)
+	var winnerHeaders http.Header
 	for _, res := range results {
 		if mrf == nil {
 			mrf = res.mergeFunc
+			winnerHeaders = res.header
 		}
 		if res.statusCode > 0 {
 			if statusCode == 0 || res.statusCode < statusCode {
@@ -482,6 +526,10 @@ func (h *handler) serveWeightedAvg(
 			statusHeader = headers.MergeResultHeaderVals(statusHeader,
 				res.header.Get(headers.NameTricksterResult))
 		}
+	}
+
+	if winnerHeaders != nil {
+		headers.Merge(w.Header(), winnerHeaders)
 	}
 
 	if statusHeader != "" {

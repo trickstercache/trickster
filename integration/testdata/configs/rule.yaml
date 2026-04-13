@@ -1,0 +1,112 @@
+# Copyright 2018 The Trickster Authors
+# Licensed under the Apache License, Version 2.0
+#
+# Integration config for the rule-engine integration tests
+# (integration/rule_test.go). Defines:
+#   - two real Prometheus backends (prom-a, prom-b), each tagged with a
+#     distinctive response header on /api/v1/query so tests can verify
+#     which member a rule routed to.
+#   - three rules exercising different input sources / operations:
+#       by-header   -> string-eq on X-Route header
+#       by-ua       -> string-rmatch (regex) on User-Agent header
+#       by-default  -> string-eq on a header whose value is unlikely to
+#                      match, so the default (next_route) always fires.
+#   - three rule-provider backends (rule1, rule-ua, rule-default), one
+#     for each rule, all exposed through the same data listener.
+
+frontend:
+  listen_port: 8550
+
+metrics:
+  listen_port: 8551
+
+mgmt:
+  listen_port: 8552
+
+logging:
+  log_level: info
+
+caches:
+  mem1:
+    provider: memory
+
+backends:
+  prom-a:
+    provider: prometheus
+    origin_url: http://127.0.0.1:9090
+    cache_name: mem1
+    paths:
+      - path: /api/v1/query
+        match_type: exact
+        handler: query
+        methods: [GET]
+        response_headers:
+          X-Rule-Target: prom-a
+  prom-b:
+    provider: prometheus
+    origin_url: http://127.0.0.1:9090
+    cache_name: mem1
+    paths:
+      - path: /api/v1/query
+        match_type: exact
+        handler: query
+        methods: [GET]
+        response_headers:
+          X-Rule-Target: prom-b
+
+  rule1:
+    provider: rule
+    rule_name: by-header
+  rule-ua:
+    provider: rule
+    rule_name: by-ua
+  rule-default:
+    provider: rule
+    rule_name: by-default
+
+rules:
+  # Header-based routing: X-Route: a -> prom-a, X-Route: b -> prom-b,
+  # anything else falls through to next_route (prom-a).
+  by-header:
+    input_source: header
+    input_key: X-Route
+    input_type: string
+    operation: eq
+    next_route: prom-a
+    cases:
+      - matches:
+          - 'a'
+        next_route: prom-a
+      - matches:
+          - 'b'
+        next_route: prom-b
+
+  # Regex routing on User-Agent: anything containing "Grafana" -> prom-b,
+  # everything else (e.g. Go-http-client, curl) -> prom-a.
+  # string-rmatch emits "true"/"false" as its rule output, so the case
+  # matches on those literal strings.
+  by-ua:
+    input_source: header
+    input_key: User-Agent
+    input_type: string
+    operation: rmatch
+    operation_arg: 'Grafana'
+    next_route: prom-a
+    cases:
+      - matches:
+          - 'true'
+        next_route: prom-b
+
+  # Default-case routing: the input header is never set by the test,
+  # so the empty string never matches any case and the rule falls
+  # through to next_route (prom-b).
+  by-default:
+    input_source: header
+    input_key: X-Never-Set
+    input_type: string
+    operation: eq
+    next_route: prom-b
+    cases:
+      - matches:
+          - 'never-matches'
+        next_route: prom-a

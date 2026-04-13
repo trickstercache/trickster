@@ -27,7 +27,11 @@ import (
 
 func Wait(ctx context.Context, reloader reload.Reloader) {
 	sigs := make(chan os.Signal, 1)
+	// Defers run LIFO: signal.Stop unregisters our channel from os/signal's
+	// fanout before close runs, so no send-on-closed-channel panic can occur
+	// if a signal arrives while we're tearing down.
 	defer close(sigs)
+	defer signal.Stop(sigs)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 	for {
 		select {

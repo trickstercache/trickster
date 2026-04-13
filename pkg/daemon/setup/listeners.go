@@ -104,9 +104,17 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 	case conf.Frontend.ServeTLS && ttls.OptionsChanged(conf, oldConf):
 		tlsConfig, err = conf.TLSCertConfig()
 		if err != nil {
+			// A TLS-cert reload failure must not bring down the rest of
+			// the listeners (metrics/mgmt/http). Log and continue so the
+			// non-TLS surface stays up; the stale TLS listener keeps its
+			// existing certs until the operator fixes the config. See #940.
 			logger.Error("unable to update tls config to certificate error",
 				logging.Pairs{"detail": err})
-			return
+			break
+		}
+		if tlsConfig == nil {
+			// No backends present a server cert+key — nothing to swap.
+			break
 		}
 		l := lg.Get("tlsListener")
 		if l != nil {

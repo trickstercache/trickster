@@ -29,31 +29,31 @@ import (
 // Test Trickster capabilities common to all backends / caches / configurations.
 func TestTrickster(t *testing.T) {
 	t.Run("config not found", func(t *testing.T) {
-		// Simple test to ensure trickster returns an error if its config is not found.
 		ctx := context.Background()
 		expected := expectedStartError{
 			ErrorContains: new("open testdata/cfg-notfound.yaml: no such file or directory"),
 		}
 		startTrickster(t, ctx, expected, "-config", "testdata/cfg-notfound.yaml")
 	})
+
+	// Boot once for both start-and-stop and health subtests.
+	cfg := writeTestConfig(t, 8578, 8579, 8586)
+	h := tricksterHarness{
+		ConfigPath:  cfg,
+		BaseAddr:    "127.0.0.1:8578",
+		MetricsAddr: "127.0.0.1:8579",
+	}
+	h.start(t)
+
 	t.Run("start and stop", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
-		t.Cleanup(cancel)
-		go startTrickster(t, ctx, expectedStartError{}, "-config", "../docs/developer/environment/trickster-config/trickster.yaml")
-		waitForTrickster(t, "127.0.0.1:8481")
-		metrics := checkTricksterMetrics(t, "127.0.0.1:8481")
+		metrics := checkTricksterMetrics(t, "127.0.0.1:8579")
 		t.Log("Trickster metrics count:", len(metrics))
 	})
 
 	t.Run("health endpoint", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
-		t.Cleanup(cancel)
-		go startTrickster(t, ctx, expectedStartError{}, "-config", "../docs/developer/environment/trickster-config/trickster.yaml")
-		waitForTrickster(t, "127.0.0.1:8481")
-		// The health endpoint is on the metrics listener (8481).
-		waitForTrickster(t, "127.0.0.1:8481", "/trickster/health")
+		waitForTrickster(t, "127.0.0.1:8579", "/trickster/health")
 
-		req, err := http.NewRequest("GET", "http://127.0.0.1:8481/trickster/health", nil)
+		req, err := http.NewRequest("GET", "http://127.0.0.1:8579/trickster/health", nil)
 		require.NoError(t, err)
 		req.Header.Set("Accept", "application/json")
 		resp, err := http.DefaultClient.Do(req)
@@ -72,7 +72,6 @@ func TestTrickster(t *testing.T) {
 		}
 		require.NoError(t, json.Unmarshal(body, &health))
 		require.Equal(t, "Trickster Backend Health Status", health.Title)
-		// At least some backends should be available
 		require.NotEmpty(t, health.Available, "expected at least one available backend")
 	})
 }

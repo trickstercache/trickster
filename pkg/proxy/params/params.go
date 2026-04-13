@@ -90,7 +90,20 @@ func GetRequestValues(r *http.Request) (url.Values, []byte, bool) {
 		r.ParseMultipartForm(10 * 1024 * 1024)
 		r.Body.Close()
 		r.Body = io.NopCloser(bytes.NewReader(b))
-		return r.PostForm, []byte(r.PostForm.Encode()), true
+		// Merge URL query with form body: the caller may have split params
+		// across `?step=15` and the form body, and cache-key generation must
+		// see the full parameter space. Body values REPLACE URL values on
+		// key conflict (single-valued merge, not append) to stay consistent
+		// with SetRequestValues, which writes the same encoded blob to both
+		// URL RawQuery and body. Go stdlib r.Form appends conflicting values;
+		// we deliberately differ because multi-valued params aren't used by
+		// any backend Trickster supports, and a single canonical value makes
+		// cache keys deterministic. See #969 follow-up.
+		merged := r.URL.Query()
+		for k, vs := range r.PostForm {
+			merged[k] = vs
+		}
+		return merged, []byte(merged.Encode()), true
 	default:
 		v := r.URL.Query()
 		b, err := request.GetBody(r)

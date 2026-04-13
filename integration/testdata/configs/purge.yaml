@@ -1,0 +1,27 @@
+# Copyright 2018 The Trickster Authors
+# Licensed under the Apache License, Version 2.0
+#
+# Config for TestPurge_ByKey
+
+frontend:
+  listen_port: 8539
+
+metrics:
+  listen_port: 8540
+
+mgmt:
+  listen_port: 8541
+
+logging:
+  log_level: info
+
+caches:
+  mem1:
+    provider: memory
+
+backends:
+  prom1:
+    provider: prometheus
+    origin_url: http://127.0.0.1:9090
+    cache_name: mem1
+    cache_key_prefix: prom1
