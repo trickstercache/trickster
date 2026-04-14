@@ -278,6 +278,109 @@ func TestALB_TSM_Scale(t *testing.T) {
 			t.Logf("%s: %s", alb, hdr.Get("X-Trickster-Result"))
 		})
 	}
+
+	t.Run("labels_50_partial_fail", func(t *testing.T) {
+		resetAll()
+		fakes[0].setBehavior(behaviorStatus(http.StatusInternalServerError))
+		pr, hdr := queryTricksterProm(t, listenAddr, backendName, "/api/v1/labels", nil)
+		require.Equal(t, "success", pr.Status)
+		var labels []string
+		require.NoError(t, json.Unmarshal(pr.Data, &labels))
+		require.NotEmpty(t, labels)
+		t.Logf("%d labels, %s", len(labels), hdr.Get("X-Trickster-Result"))
+	})
+
+	t.Run("label_values_50_fanout_oversized", func(t *testing.T) {
+		resetAll()
+		for _, f := range fakes {
+			f.setBehavior(behaviorLabelValuesKB(2))
+		}
+		body, hdr, sc := doRaw(t, listenAddr, backendName, "/api/v1/label/__name__/values", nil)
+		require.Equal(t, http.StatusOK, sc)
+		require.Greater(t, len(body), 64*1024)
+		var pr promResponse
+		require.NoError(t, json.Unmarshal(body, &pr))
+		require.Equal(t, "success", pr.Status)
+		var values []string
+		require.NoError(t, json.Unmarshal(pr.Data, &values))
+		require.NotEmpty(t, values)
+		t.Logf("%d values, %d bytes, %s", len(values), len(body), hdr.Get("X-Trickster-Result"))
+	})
+
+	t.Run("series_50_fanout", func(t *testing.T) {
+		resetAll()
+		now := time.Now()
+		params := url.Values{
+			"match[]": {"up"},
+			"start":   {fmt.Sprintf("%d", now.Add(-5*time.Minute).Unix())},
+			"end":     {fmt.Sprintf("%d", now.Unix())},
+		}
+		pr, hdr := queryTricksterProm(t, listenAddr, backendName, "/api/v1/series", params)
+		require.Equal(t, "success", pr.Status)
+		var series []map[string]string
+		require.NoError(t, json.Unmarshal(pr.Data, &series))
+		require.NotEmpty(t, series)
+		t.Logf("%d series, %s", len(series), hdr.Get("X-Trickster-Result"))
+	})
+
+	t.Run("post_query_range", func(t *testing.T) {
+		resetAll()
+		form := rangeParams().Encode()
+		u := "http://" + listenAddr + "/" + backendName + "/api/v1/query_range"
+		resp, err := http.Post(u, "application/x-www-form-urlencoded", strings.NewReader(form))
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		var pr promResponse
+		require.NoError(t, json.Unmarshal(body, &pr))
+		require.Equal(t, "success", pr.Status)
+		var qd promQueryData
+		require.NoError(t, json.Unmarshal(pr.Data, &qd))
+		var series []json.RawMessage
+		require.NoError(t, json.Unmarshal(qd.Result, &series))
+		require.GreaterOrEqual(t, len(series), numBackends)
+		t.Logf("POST: %d series, %s", len(series), resp.Header.Get("X-Trickster-Result"))
+	})
+
+	t.Run("variable_refresh_burst", func(t *testing.T) {
+		resetAll()
+		const vars = 10
+		var wg sync.WaitGroup
+		errCh := make(chan error, vars)
+		for i := range vars {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				path := fmt.Sprintf("/api/v1/label/var%d/values", i)
+				body, _, sc := doRaw(t, listenAddr, backendName, path, nil)
+				if sc != http.StatusOK {
+					errCh <- fmt.Errorf("var%d status %d: %s", i, sc, body)
+				}
+			}()
+		}
+		wg.Wait()
+		close(errCh)
+		for err := range errCh {
+			t.Fatal(err)
+		}
+	})
+
+	t.Run("error_body_passthrough", func(t *testing.T) {
+		resetAll()
+		for _, f := range fakes {
+			f.setBehavior(behaviorErrJSON())
+		}
+		path := fmt.Sprintf("/api/v1/label/errprobe%d/values", time.Now().UnixNano())
+		body, hdr, sc := doRaw(t, listenAddr, backendName, path, nil)
+		require.GreaterOrEqual(t, sc, 400, "body=%s", body)
+		var pr promResponse
+		require.NoError(t, json.Unmarshal(body, &pr),
+			"merged error body must still be parseable Prometheus error JSON")
+		require.Equal(t, "error", pr.Status)
+		t.Logf("status=%d, %s", sc, hdr.Get("X-Trickster-Result"))
+	})
 }
 
 type fakeProm struct {
@@ -305,6 +408,10 @@ func behaviorStatus(code int) *promBehavior {
 func behaviorBadShape() *promBehavior              { return &promBehavior{mode: "badshape"} }
 func behaviorTruncate() *promBehavior              { return &promBehavior{mode: "truncate"} }
 func behaviorSlow(d time.Duration) *promBehavior   { return &promBehavior{mode: "ok", delay: d} }
+func behaviorErrJSON() *promBehavior               { return &promBehavior{mode: "errjson"} }
+func behaviorLabelValuesKB(kb int) *promBehavior {
+	return &promBehavior{mode: "labelvalues", seriesKB: kb}
+}
 
 func newFakeProm(t *testing.T, label string) *fakeProm {
 	t.Helper()
@@ -313,6 +420,9 @@ func newFakeProm(t *testing.T, label string) *fakeProm {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/query_range", f.handleRange)
 	mux.HandleFunc("/api/v1/query", f.handleInstant)
+	mux.HandleFunc("/api/v1/labels", f.handleLabels)
+	mux.HandleFunc("/api/v1/label/", f.handleLabelValues)
+	mux.HandleFunc("/api/v1/series", f.handleSeries)
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[]}}`))
@@ -384,6 +494,94 @@ func (f *fakeProm) handleInstant(w http.ResponseWriter, _ *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(buildVectorBody(f.label))
+}
+
+func (f *fakeProm) handleLabels(w http.ResponseWriter, _ *http.Request) {
+	f.hits.Add(1)
+	b := f.behavior.Load()
+	if b.delay > 0 {
+		time.Sleep(b.delay)
+	}
+	switch b.mode {
+	case "status":
+		http.Error(w, "fake error", b.status)
+		return
+	case "errjson":
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write(buildPromErrBody("bad_data", "invalid parameter"))
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(fmt.Sprintf(
+		`{"status":"success","data":["__name__","job","instance","label_%s"]}`, f.label)))
+}
+
+func (f *fakeProm) handleLabelValues(w http.ResponseWriter, r *http.Request) {
+	f.hits.Add(1)
+	b := f.behavior.Load()
+	if b.delay > 0 {
+		time.Sleep(b.delay)
+	}
+	switch b.mode {
+	case "status":
+		http.Error(w, "fake error", b.status)
+		return
+	case "errjson":
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write(buildPromErrBody("bad_data", "invalid label name"))
+		return
+	case "labelvalues":
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(buildOversizedLabelValues(f.label, b.seriesKB))
+		return
+	}
+	name := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v1/label/"), "/values")
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(fmt.Sprintf(
+		`{"status":"success","data":["value-%s-%s-a","value-%s-%s-b"]}`,
+		name, f.label, name, f.label)))
+}
+
+func (f *fakeProm) handleSeries(w http.ResponseWriter, _ *http.Request) {
+	f.hits.Add(1)
+	b := f.behavior.Load()
+	if b.delay > 0 {
+		time.Sleep(b.delay)
+	}
+	switch b.mode {
+	case "status":
+		http.Error(w, "fake error", b.status)
+		return
+	case "errjson":
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write(buildPromErrBody("bad_data", "invalid matcher"))
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(fmt.Sprintf(
+		`{"status":"success","data":[{"__name__":"up","job":"fake","instance":%q}]}`, f.label)))
+}
+
+func buildPromErrBody(errType, msg string) []byte {
+	return []byte(fmt.Sprintf(
+		`{"status":"error","errorType":%q,"error":%q}`, errType, msg))
+}
+
+func buildOversizedLabelValues(label string, targetKB int) []byte {
+	var sb strings.Builder
+	sb.WriteString(`{"status":"success","data":[`)
+	target := targetKB * 1024
+	for i := 0; sb.Len() < target; i++ {
+		if i > 0 {
+			sb.WriteString(",")
+		}
+		fmt.Fprintf(&sb, `"value-%s-%06d"`, label, i)
+	}
+	sb.WriteString("]}")
+	return []byte(sb.String())
 }
 
 func buildVectorBody(instance string) []byte {
