@@ -269,6 +269,76 @@ func TestPrepareResponse(t *testing.T) {
 	pr.prepareResponse()
 }
 
+// truncatingReader returns some bytes from partial on the first Read, then
+// returns an error on the next call. It simulates an upstream HTTP body
+// that is cut off mid-stream (e.g. connection drop, idle timeout).
+type truncatingReader struct {
+	partial []byte
+	err     error
+	done    bool
+}
+
+func (r *truncatingReader) Read(p []byte) (int, error) {
+	if r.done {
+		return 0, r.err
+	}
+	n := copy(p, r.partial)
+	r.done = true
+	return n, nil // next Read returns the error
+}
+
+// TestPrepareResponse_UpstreamReadErrorSkipsCache is a regression test for
+// a silent-truncation cache-poisoning bug. When the range extraction path
+// reads the upstream body with io.ReadAll and the upstream errors mid-
+// stream, the partial bytes must not be cached as a complete document —
+// a subsequent request would see the truncated body as a valid cache hit.
+// The fix clears writeToCache on read error so the truncated body never
+// reaches pr.store().
+func TestPrepareResponse_UpstreamReadErrorSkipsCache(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
+	r, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
+	r.Header.Set(headers.NameRange, "bytes=0-10")
+
+	o := &bo.Options{}
+	r = request.SetResources(r, request.NewResources(o, nil, nil, nil, nil, nil))
+
+	pr := proxyRequest{
+		Request:          r,
+		rsc:              request.GetResources(r),
+		cachingPolicy:    &CachingPolicy{},
+		upstreamResponse: &http.Response{StatusCode: http.StatusOK},
+		cacheDocument:    &HTTPDocument{},
+	}
+	pr.parseRequestRanges()
+	pr.cacheDocument.Ranges = pr.wantedRanges
+
+	// Simulate a truncated upstream: a few bytes arrive, then the
+	// connection drops with an unexpected EOF — the exact shape of
+	// the bug this test defends against.
+	pr.cacheStatus = status.LookupStatusKeyMiss
+	pr.writeToCache = true
+	pr.upstreamReader = &truncatingReader{
+		partial: []byte("trunc"),
+		err:     io.ErrUnexpectedEOF,
+	}
+	headers.Merge(pr.upstreamResponse.Header, http.Header{
+		headers.NameContentRange: {"bytes 0-99"}, // claims 100 bytes, we only got 5
+	})
+
+	pr.prepareResponse()
+
+	// The truncated body must not be promoted to a complete cache doc.
+	// pr.store() only persists when writeToCache is true, so the fix
+	// clears it on read error.
+	if pr.writeToCache {
+		t.Error("writeToCache must be cleared after upstream read error — " +
+			"a truncated body would otherwise be cached as complete")
+	}
+	if pr.cacheDocument != nil && pr.cacheDocument.isLoaded {
+		t.Error("cacheDocument.isLoaded must not be true when upstream read errored")
+	}
+}
+
 func TestPrepareResponsePreconditionFailed(t *testing.T) {
 	r, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
 	pr := proxyRequest{
