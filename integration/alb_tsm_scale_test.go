@@ -159,7 +159,7 @@ func TestALB_TSM_Scale(t *testing.T) {
 	})
 
 	// 5. Mismatched vector shape: one backend returns matrix on instant query.
-	// Verifies ALB+TSM does not panic on the heterogenous-shape path (#937 hardening).
+	// Verifies ALB+TSM does not panic on the heterogeneous-shape path (#937 hardening).
 	t.Run("mismatched_vector_shape", func(t *testing.T) {
 		resetAll()
 		fakes[0].setBehavior(behaviorBadShape())
@@ -305,7 +305,7 @@ func (f *fakeProm) handleInstant(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[]}}`))
 		return
 	case "badshape":
-		// Return matrix on instant endpoint to exercise heterogenous merge.
+		// Return matrix on instant endpoint to exercise heterogeneous merge.
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(buildMatrixBody(f.label))
 		return
