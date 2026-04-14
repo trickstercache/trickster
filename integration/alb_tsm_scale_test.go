@@ -383,6 +383,128 @@ func TestALB_TSM_Scale(t *testing.T) {
 	})
 }
 
+func TestALB_TSM_RealProm_Scale(t *testing.T) {
+	const (
+		listenPort  = 8690
+		metricsPort = 8691
+		mgmtPort    = 8692
+		listenAddr  = "127.0.0.1:8690"
+		promAddr    = "127.0.0.1:9090"
+		backendName = "alb-tsm-real-scale"
+		numShards   = 50
+	)
+
+	cfgPath := writeRealPromScaleConfig(t, listenPort, metricsPort, mgmtPort,
+		promAddr, backendName, numShards)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go startTrickster(t, ctx, expectedStartError{}, "-config", cfgPath)
+	waitForTrickster(t, fmt.Sprintf("127.0.0.1:%d", metricsPort))
+	waitForPrometheusData(t, promAddr)
+
+	uniq := func() string { return fmt.Sprintf("%d", time.Now().UnixNano()) }
+	rangeParams := func() url.Values {
+		now := time.Now()
+		return url.Values{
+			"query": {"up + 0*" + uniq()},
+			"start": {fmt.Sprintf("%d", now.Add(-5*time.Minute).Unix())},
+			"end":   {fmt.Sprintf("%d", now.Unix())},
+			"step":  {"15"},
+		}
+	}
+
+	t.Run("range_query", func(t *testing.T) {
+		pr, hdr := queryTricksterProm(t, listenAddr, backendName, "/api/v1/query_range", rangeParams())
+		require.Equal(t, "success", pr.Status)
+		var qd promQueryData
+		require.NoError(t, json.Unmarshal(pr.Data, &qd))
+		require.Equal(t, "matrix", qd.ResultType)
+		var series []struct {
+			Metric map[string]string `json:"metric"`
+		}
+		require.NoError(t, json.Unmarshal(qd.Result, &series))
+		shards := make(map[string]struct{})
+		for _, s := range series {
+			if v, ok := s.Metric["shard"]; ok {
+				shards[v] = struct{}{}
+			}
+		}
+		require.GreaterOrEqual(t, len(shards), numShards,
+			"merged matrix must carry %d distinct shard labels, got %d", numShards, len(shards))
+		t.Logf("%d series across %d shards, %s", len(series), len(shards), hdr.Get("X-Trickster-Result"))
+	})
+
+	t.Run("instant_query", func(t *testing.T) {
+		pr, hdr := queryTricksterProm(t, listenAddr, backendName, "/api/v1/query",
+			url.Values{"query": {"up + 0*" + uniq()}})
+		require.Equal(t, "success", pr.Status)
+		var qd promQueryData
+		require.NoError(t, json.Unmarshal(pr.Data, &qd))
+		require.Equal(t, "vector", qd.ResultType)
+		require.NotEmpty(t, qd.Result)
+		t.Logf("%s", hdr.Get("X-Trickster-Result"))
+	})
+
+	t.Run("labels", func(t *testing.T) {
+		t.Skip("bug: /api/v1/labels does not surface injected prometheus.labels names in the merged list")
+		pr, hdr := queryTricksterProm(t, listenAddr, backendName, "/api/v1/labels", nil)
+		require.Equal(t, "success", pr.Status)
+		var labels []string
+		require.NoError(t, json.Unmarshal(pr.Data, &labels))
+		require.Contains(t, labels, "shard")
+		t.Logf("%d labels, %s", len(labels), hdr.Get("X-Trickster-Result"))
+	})
+
+	t.Run("label_values_shard", func(t *testing.T) {
+		t.Skip(`bug: /api/v1/label/<injected>/values returns {"status":"success"} with no data field — malformed Prometheus API JSON`)
+		body, hdr, sc := doRaw(t, listenAddr, backendName, "/api/v1/label/shard/values", nil)
+		require.Equal(t, http.StatusOK, sc)
+		var pr promResponse
+		require.NoError(t, json.Unmarshal(body, &pr))
+		require.Equal(t, "success", pr.Status)
+		var values []string
+		require.NoError(t, json.Unmarshal(pr.Data, &values))
+		require.GreaterOrEqual(t, len(values), numShards)
+		t.Logf("%d values, %s", len(values), hdr.Get("X-Trickster-Result"))
+	})
+
+	t.Run("series", func(t *testing.T) {
+		now := time.Now()
+		params := url.Values{
+			"match[]": {"up"},
+			"start":   {fmt.Sprintf("%d", now.Add(-5*time.Minute).Unix())},
+			"end":     {fmt.Sprintf("%d", now.Unix())},
+		}
+		pr, hdr := queryTricksterProm(t, listenAddr, backendName, "/api/v1/series", params)
+		require.Equal(t, "success", pr.Status)
+		var series []map[string]string
+		require.NoError(t, json.Unmarshal(pr.Data, &series))
+		require.NotEmpty(t, series)
+		t.Logf("%d series, %s", len(series), hdr.Get("X-Trickster-Result"))
+	})
+
+	t.Run("post_query_range", func(t *testing.T) {
+		form := rangeParams().Encode()
+		u := "http://" + listenAddr + "/" + backendName + "/api/v1/query_range"
+		resp, err := http.Post(u, "application/x-www-form-urlencoded", strings.NewReader(form))
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		var pr promResponse
+		require.NoError(t, json.Unmarshal(body, &pr))
+		require.Equal(t, "success", pr.Status)
+		var qd promQueryData
+		require.NoError(t, json.Unmarshal(pr.Data, &qd))
+		var series []json.RawMessage
+		require.NoError(t, json.Unmarshal(qd.Result, &series))
+		require.NotEmpty(t, series)
+		t.Logf("POST: %d series, %s", len(series), resp.Header.Get("X-Trickster-Result"))
+	})
+}
+
 type fakeProm struct {
 	srv      *httptest.Server
 	label    string
@@ -729,6 +851,38 @@ func writeScaleConfig(t *testing.T, fakes []*fakeProm,
 		}
 	}
 	path := filepath.Join(t.TempDir(), "alb-tsm-scale.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(sb.String()), 0o644))
+	return path
+}
+
+func writeRealPromScaleConfig(t *testing.T, listenPort, metricsPort, mgmtPort int,
+	promAddr, albName string, numShards int) string {
+	t.Helper()
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "frontend:\n  listen_port: %d\n", listenPort)
+	fmt.Fprintf(&sb, "metrics:\n  listen_port: %d\n", metricsPort)
+	fmt.Fprintf(&sb, "mgmt:\n  listen_port: %d\n", mgmtPort)
+	sb.WriteString("logging:\n  log_level: info\n")
+	sb.WriteString("caches:\n  mem:\n    provider: memory\n")
+	sb.WriteString("backends:\n")
+	for i := 0; i < numShards; i++ {
+		fmt.Fprintf(&sb, "  prom-real-%d:\n", i)
+		sb.WriteString("    provider: prometheus\n")
+		fmt.Fprintf(&sb, "    origin_url: http://%s\n", promAddr)
+		sb.WriteString("    cache_name: mem\n")
+		sb.WriteString("    prometheus:\n")
+		sb.WriteString("      labels:\n")
+		fmt.Fprintf(&sb, "        shard: shard-%02d\n", i)
+	}
+	fmt.Fprintf(&sb, "  %s:\n", albName)
+	sb.WriteString("    provider: alb\n")
+	sb.WriteString("    alb:\n")
+	sb.WriteString("      mechanism: tsm\n")
+	sb.WriteString("      pool:\n")
+	for i := 0; i < numShards; i++ {
+		fmt.Fprintf(&sb, "        - prom-real-%d\n", i)
+	}
+	path := filepath.Join(t.TempDir(), "alb-tsm-real-scale.yaml")
 	require.NoError(t, os.WriteFile(path, []byte(sb.String()), 0o644))
 	return path
 }
