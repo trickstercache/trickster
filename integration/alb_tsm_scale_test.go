@@ -156,7 +156,14 @@ func TestALB_TSM_Scale(t *testing.T) {
 		resetAll()
 		params := rangeParams()
 		fakes[0].setBehavior(behaviorTruncate())
-		_, _ = rawQueryAllowError(t, listenAddr, backendName, "/api/v1/query_range", params)
+		// Partial-success merge or a surfaced upstream error are both
+		// acceptable; the hard guard is no panic/goroutine-leak in the
+		// response body. The second call below is the real assertion.
+		firstBody, firstHdr, firstSC := doRaw(t, listenAddr, backendName, "/api/v1/query_range", params)
+		require.NotContains(t, string(firstBody), "runtime error")
+		require.NotContains(t, string(firstBody), "goroutine ")
+		t.Logf("first (truncating): status=%d, %d bytes, %s",
+			firstSC, len(firstBody), firstHdr.Get("X-Trickster-Result"))
 
 		resetAll()
 		body, hdr := rawQuery(t, listenAddr, backendName, "/api/v1/query_range", params)
