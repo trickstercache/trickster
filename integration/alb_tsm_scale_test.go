@@ -28,6 +28,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -35,20 +36,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestALB_TSM_Scale exercises the ALB+TSM mechanism end-to-end against many
-// in-process fake Prometheus backends with configurable fault behaviors.
-// It complements TestALB (2 backends, real Prometheus) by covering the
-// high-fanout scenarios reported by users running ALB+TSM with ~50 backends,
-// and pins down regression coverage for issues #937, #976, and #977 at the
-// integration layer rather than only in unit tests.
+// TestALB_TSM_Scale exercises ALB+TSM against many in-process fake Prometheus
+// backends with configurable fault behaviors, covering the high-fanout shape
+// that the 2-backend TestALB harness does not.
 func TestALB_TSM_Scale(t *testing.T) {
 	const (
-		listenPort  = 8590
-		metricsPort = 8591
-		mgmtPort    = 8592
-		listenAddr  = "127.0.0.1:8590"
-		backendName = "alb-tsm-scale"
-		numBackends = 50
+		listenPort         = 8590
+		metricsPort        = 8591
+		mgmtPort           = 8592
+		listenAddr         = "127.0.0.1:8590"
+		backendName        = "alb-tsm-scale"
+		labeledBackendName = "alb-tsm-scale-labeled"
+		numBackends        = 50
+		numLabeledBackends = 10
 	)
 
 	fakes := make([]*fakeProm, numBackends)
@@ -56,7 +56,8 @@ func TestALB_TSM_Scale(t *testing.T) {
 		fakes[i] = newFakeProm(t, fmt.Sprintf("prom-%02d", i))
 	}
 
-	cfgPath := writeScaleConfig(t, fakes, listenPort, metricsPort, mgmtPort, backendName)
+	cfgPath := writeScaleConfig(t, fakes, listenPort, metricsPort, mgmtPort,
+		backendName, labeledBackendName, numLabeledBackends)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -82,7 +83,6 @@ func TestALB_TSM_Scale(t *testing.T) {
 		}
 	}
 
-	// 1. 50-backend range query: large fanout, then served from cache.
 	t.Run("50_backends_range_query", func(t *testing.T) {
 		resetAll()
 		params := rangeParams()
@@ -94,35 +94,26 @@ func TestALB_TSM_Scale(t *testing.T) {
 
 		var series []json.RawMessage
 		require.NoError(t, json.Unmarshal(qd.Result, &series))
-		require.GreaterOrEqual(t, len(series), numBackends,
-			"TSM merge must surface at least one series per pool member")
-		t.Logf("50 backends merge: %d series, X-Trickster-Result=%q", len(series),
-			hdr.Get("X-Trickster-Result"))
+		require.GreaterOrEqual(t, len(series), numBackends)
+		t.Logf("%d series, %s", len(series), hdr.Get("X-Trickster-Result"))
 
-		// Repeat: should be a cache hit on the merged document.
 		_, hdr2 := queryTricksterProm(t, listenAddr, backendName, "/api/v1/query_range", params)
-		t.Logf("50 backends merge (repeat): %s", hdr2.Get("X-Trickster-Result"))
+		t.Logf("repeat: %s", hdr2.Get("X-Trickster-Result"))
 	})
 
-	// 2. 50-backend instant query (regression #937 at scale).
 	t.Run("50_backends_instant_query", func(t *testing.T) {
 		resetAll()
 		pr, hdr := queryTricksterProm(t, listenAddr, backendName, "/api/v1/query", instantParams())
 		require.Equal(t, "success", pr.Status)
 		var qd promQueryData
 		require.NoError(t, json.Unmarshal(pr.Data, &qd))
-		require.Equal(t, "vector", qd.ResultType,
-			"TSM instant merge must emit vector envelope, not matrix (#937)")
+		require.Equal(t, "vector", qd.ResultType)
 		require.NotEmpty(t, qd.Result)
-		t.Logf("50 backends instant: %s", hdr.Get("X-Trickster-Result"))
+		t.Logf("%s", hdr.Get("X-Trickster-Result"))
 	})
 
-	// 3. Oversized merged response > 32KB (regression #976).
-	// CaptureResponseWriter.Write returned cumulative length pre-fix,
-	// causing io.Copy to abort the second 32KB chunk silently.
 	t.Run("oversized_responses_not_truncated", func(t *testing.T) {
 		resetAll()
-		// 10 backends, each emitting ~8KB of distinct series → ~80KB merged.
 		const oversizedN = 10
 		for i, f := range fakes {
 			if i < oversizedN {
@@ -132,18 +123,13 @@ func TestALB_TSM_Scale(t *testing.T) {
 			}
 		}
 		body, hdr := rawQuery(t, listenAddr, backendName, "/api/v1/query_range", rangeParams())
-		require.Greater(t, len(body), 64*1024,
-			"merged response should exceed 64KB; truncation past 32KB indicates #976 regression")
-		// Response must be valid JSON end-to-end (truncation breaks JSON).
+		require.Greater(t, len(body), 64*1024)
 		var pr promResponse
-		require.NoError(t, json.Unmarshal(body, &pr),
-			"merged body must be parseable JSON; partial-write truncation breaks parsing (#976)")
+		require.NoError(t, json.Unmarshal(body, &pr))
 		require.Equal(t, "success", pr.Status)
-		t.Logf("oversized merge: %d bytes, X-Trickster-Result=%q", len(body),
-			hdr.Get("X-Trickster-Result"))
+		t.Logf("%d bytes, %s", len(body), hdr.Get("X-Trickster-Result"))
 	})
 
-	// 4. One backend returns 500: TSM merge should still succeed with the rest.
 	t.Run("backend_5xx_partial_success", func(t *testing.T) {
 		resetAll()
 		fakes[0].setBehavior(behaviorStatus(http.StatusInternalServerError))
@@ -153,84 +139,163 @@ func TestALB_TSM_Scale(t *testing.T) {
 		require.NoError(t, json.Unmarshal(pr.Data, &qd))
 		var series []json.RawMessage
 		require.NoError(t, json.Unmarshal(qd.Result, &series))
-		require.NotEmpty(t, series, "TSM should merge surviving N-1 backends despite one 500")
-		t.Logf("partial-success: %d series, X-Trickster-Result=%q", len(series),
-			hdr.Get("X-Trickster-Result"))
+		require.NotEmpty(t, series)
+		t.Logf("%d series, %s", len(series), hdr.Get("X-Trickster-Result"))
 	})
 
-	// 5. Mismatched vector shape: one backend returns matrix on instant query.
-	// Verifies ALB+TSM does not panic on the heterogeneous-shape path (#937 hardening).
 	t.Run("mismatched_vector_shape", func(t *testing.T) {
+		// A panic in TSM merge tears down subsequent sub-tests, so only
+		// assert the daemon keeps serving; response shape is not contracted.
 		resetAll()
 		fakes[0].setBehavior(behaviorBadShape())
-		// Don't assert success — just that the request returns without crashing
-		// the daemon. A panic in TSM merge would tear down subsequent tests.
 		body, hdr := rawQueryAllowError(t, listenAddr, backendName, "/api/v1/query", instantParams())
-		t.Logf("mismatched shape: %d bytes, X-Trickster-Result=%q", len(body),
-			hdr.Get("X-Trickster-Result"))
+		t.Logf("%d bytes, %s", len(body), hdr.Get("X-Trickster-Result"))
 	})
 
-	// 6. Truncating upstream + cache: cache must not be poisoned (#977).
-	// First request hits a truncating backend; if the bug were live the
-	// truncated bytes would be cached as a "complete" document. After
-	// restoring the backend, a second request must return full data.
-	//
-	// FOLLOW-UP: on origin/main this scenario triggers a nil-pointer panic
-	// at deltaproxycache.go:429 (cts.Clone on nil cts) when the upstream
-	// body read fails mid-stream. PR #977 addresses the cache-poisoning
-	// half but the panic on the read-error path is a separate defect.
-	// Re-enable this sub-test once that panic is fixed.
 	t.Run("truncating_upstream_does_not_poison_cache", func(t *testing.T) {
 		resetAll()
-		params := rangeParams() // unique query → fresh cache key
+		params := rangeParams()
 		fakes[0].setBehavior(behaviorTruncate())
-
-		// Best-effort: pull whatever we can from the poisoned-or-not first hit.
 		_, _ = rawQueryAllowError(t, listenAddr, backendName, "/api/v1/query_range", params)
 
-		// Restore and re-query with the same params: must NOT serve a
-		// truncated cache hit; response must be a complete merged matrix.
 		resetAll()
 		body, hdr := rawQuery(t, listenAddr, backendName, "/api/v1/query_range", params)
 		var pr promResponse
-		require.NoError(t, json.Unmarshal(body, &pr),
-			"second request must return complete JSON; truncated cache entry would break parsing (#977)")
+		require.NoError(t, json.Unmarshal(body, &pr))
 		require.Equal(t, "success", pr.Status)
 		var qd promQueryData
 		require.NoError(t, json.Unmarshal(pr.Data, &qd))
 		var series []json.RawMessage
 		require.NoError(t, json.Unmarshal(qd.Result, &series))
-		require.NotEmpty(t, series, "post-recovery query must surface a non-empty merged matrix")
-		t.Logf("post-truncation recovery: %d series, X-Trickster-Result=%q", len(series),
-			hdr.Get("X-Trickster-Result"))
+		require.NotEmpty(t, series)
+		t.Logf("%d series, %s", len(series), hdr.Get("X-Trickster-Result"))
+	})
+
+	t.Run("concurrent_clients_collapse", func(t *testing.T) {
+		resetAll()
+		params := rangeParams()
+		for _, f := range fakes {
+			f.hits.Store(0)
+		}
+		const clients = 25
+		var wg sync.WaitGroup
+		errCh := make(chan error, clients)
+		for range clients {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				body, _, sc := doRaw(t, listenAddr, backendName, "/api/v1/query_range", params)
+				if sc != http.StatusOK {
+					errCh <- fmt.Errorf("status %d: %s", sc, body)
+				}
+			}()
+		}
+		wg.Wait()
+		close(errCh)
+		for err := range errCh {
+			t.Fatal(err)
+		}
+		var total int64
+		for _, f := range fakes {
+			total += f.hits.Load()
+		}
+		// Perfect collapse is numBackends; allow 3x for waiters arriving
+		// after the executor completes.
+		require.LessOrEqual(t, total, int64(numBackends*3))
+		t.Logf("%d clients → %d upstream fetches (expected ~%d)", clients, total, numBackends)
+	})
+
+	t.Run("slow_backend_merge", func(t *testing.T) {
+		resetAll()
+		fakes[0].setBehavior(behaviorSlow(150 * time.Millisecond))
+		start := time.Now()
+		pr, hdr := queryTricksterProm(t, listenAddr, backendName, "/api/v1/query_range", rangeParams())
+		elapsed := time.Since(start)
+		require.Equal(t, "success", pr.Status)
+		var qd promQueryData
+		require.NoError(t, json.Unmarshal(pr.Data, &qd))
+		var series []json.RawMessage
+		require.NoError(t, json.Unmarshal(qd.Result, &series))
+		require.GreaterOrEqual(t, len(series), numBackends-1)
+		t.Logf("%d series in %s, %s", len(series), elapsed, hdr.Get("X-Trickster-Result"))
+	})
+
+	t.Run("client_cancel_during_merge", func(t *testing.T) {
+		resetAll()
+		for _, f := range fakes {
+			f.setBehavior(behaviorSlow(200 * time.Millisecond))
+		}
+		u := "http://" + listenAddr + "/" + backendName + "/api/v1/query_range?" + rangeParams().Encode()
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+		defer cancel()
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+		require.NoError(t, err)
+		resp, err := http.DefaultClient.Do(req)
+		if err == nil {
+			resp.Body.Close()
+		}
+		resetAll()
+		pr, _ := queryTricksterProm(t, listenAddr, backendName, "/api/v1/query_range", rangeParams())
+		require.Equal(t, "success", pr.Status)
+	})
+
+	t.Run("all_backends_5xx", func(t *testing.T) {
+		resetAll()
+		for _, f := range fakes {
+			f.setBehavior(behaviorStatus(http.StatusInternalServerError))
+		}
+		body, hdr, sc := doRaw(t, listenAddr, backendName, "/api/v1/query_range", rangeParams())
+		require.GreaterOrEqual(t, sc, 500, "expected 5xx, got %d: %s", sc, body)
+		t.Logf("status=%d, %s", sc, hdr.Get("X-Trickster-Result"))
+	})
+
+	t.Run("labeled_backends_merge", func(t *testing.T) {
+		resetAll()
+		pr, hdr := queryTricksterProm(t, listenAddr, labeledBackendName, "/api/v1/query_range", rangeParams())
+		require.Equal(t, "success", pr.Status)
+		var qd promQueryData
+		require.NoError(t, json.Unmarshal(pr.Data, &qd))
+		var series []struct {
+			Metric map[string]string `json:"metric"`
+		}
+		require.NoError(t, json.Unmarshal(qd.Result, &series))
+		require.GreaterOrEqual(t, len(series), numLabeledBackends)
+		regions := make(map[string]struct{})
+		for _, s := range series {
+			r, ok := s.Metric["region"]
+			require.True(t, ok, "every merged series must carry the injected region label")
+			regions[r] = struct{}{}
+		}
+		require.GreaterOrEqual(t, len(regions), numLabeledBackends)
+		t.Logf("%d series across %d regions, %s", len(series), len(regions), hdr.Get("X-Trickster-Result"))
 	})
 }
 
-// --- fake Prometheus server -------------------------------------------------
-
 type fakeProm struct {
 	srv      *httptest.Server
-	label    string // unique instance label so TSM merge produces N distinct series
+	label    string
 	behavior atomic.Pointer[promBehavior]
+	hits     atomic.Int64
 }
 
 type promBehavior struct {
-	mode      string // "ok", "empty", "oversized", "status", "badshape", "truncate"
-	status    int
-	seriesKB  int // for "oversized": approximate body size per response
-	delay     time.Duration
+	mode     string
+	status   int
+	seriesKB int
+	delay    time.Duration
 }
 
-func behaviorOK() *promBehavior        { return &promBehavior{mode: "ok"} }
-func behaviorEmpty() *promBehavior     { return &promBehavior{mode: "empty"} }
+func behaviorOK() *promBehavior    { return &promBehavior{mode: "ok"} }
+func behaviorEmpty() *promBehavior { return &promBehavior{mode: "empty"} }
 func behaviorOversized(kb int) *promBehavior {
 	return &promBehavior{mode: "oversized", seriesKB: kb}
 }
 func behaviorStatus(code int) *promBehavior {
 	return &promBehavior{mode: "status", status: code}
 }
-func behaviorBadShape() *promBehavior { return &promBehavior{mode: "badshape"} }
-func behaviorTruncate() *promBehavior { return &promBehavior{mode: "truncate"} }
+func behaviorBadShape() *promBehavior              { return &promBehavior{mode: "badshape"} }
+func behaviorTruncate() *promBehavior              { return &promBehavior{mode: "truncate"} }
+func behaviorSlow(d time.Duration) *promBehavior   { return &promBehavior{mode: "ok", delay: d} }
 
 func newFakeProm(t *testing.T, label string) *fakeProm {
 	t.Helper()
@@ -248,11 +313,11 @@ func newFakeProm(t *testing.T, label string) *fakeProm {
 	return f
 }
 
-func (f *fakeProm) URL() string { return f.srv.URL }
-
+func (f *fakeProm) URL() string                 { return f.srv.URL }
 func (f *fakeProm) setBehavior(b *promBehavior) { f.behavior.Store(b) }
 
 func (f *fakeProm) handleRange(w http.ResponseWriter, _ *http.Request) {
+	f.hits.Add(1)
 	b := f.behavior.Load()
 	if b.delay > 0 {
 		time.Sleep(b.delay)
@@ -270,11 +335,10 @@ func (f *fakeProm) handleRange(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write(buildOversizedMatrix(f.label, b.seriesKB))
 		return
 	case "truncate":
-		// Promise a full Content-Length, then close mid-stream.
+		// Promise full Content-Length, write partial, hijack + close.
 		full := buildMatrixBody(f.label)
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Content-Length", fmt.Sprintf("%d", len(full)))
-		// Write only ~30% then drop the connection by hijacking and closing.
 		cut := len(full) / 3
 		_, _ = w.Write(full[:cut])
 		hj, ok := w.(http.Hijacker)
@@ -292,6 +356,7 @@ func (f *fakeProm) handleRange(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (f *fakeProm) handleInstant(w http.ResponseWriter, _ *http.Request) {
+	f.hits.Add(1)
 	b := f.behavior.Load()
 	if b.delay > 0 {
 		time.Sleep(b.delay)
@@ -305,7 +370,6 @@ func (f *fakeProm) handleInstant(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[]}}`))
 		return
 	case "badshape":
-		// Return matrix on instant endpoint to exercise heterogeneous merge.
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(buildMatrixBody(f.label))
 		return
@@ -314,19 +378,14 @@ func (f *fakeProm) handleInstant(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write(buildVectorBody(f.label))
 }
 
-// buildVectorBody returns a Prometheus instant-query response with a single
-// series labeled by the given instance.
 func buildVectorBody(instance string) []byte {
-	body := fmt.Sprintf(
+	return []byte(fmt.Sprintf(
 		`{"status":"success","data":{"resultType":"vector","result":[`+
 			`{"metric":{"__name__":"up","job":"fake","instance":%q},`+
 			`"value":[%d,"1"]}]}}`,
-		instance, time.Now().Unix())
-	return []byte(body)
+		instance, time.Now().Unix()))
 }
 
-// buildMatrixBody returns a Prometheus range-query response with a single
-// time-series labeled by the given instance and ~5 datapoints.
 func buildMatrixBody(instance string) []byte {
 	now := time.Now().Unix()
 	var sb strings.Builder
@@ -343,8 +402,6 @@ func buildMatrixBody(instance string) []byte {
 	return []byte(sb.String())
 }
 
-// buildOversizedMatrix returns a range-query response padded out to roughly
-// targetKB kilobytes by emitting many distinct series under the given instance.
 func buildOversizedMatrix(instance string, targetKB int) []byte {
 	now := time.Now().Unix()
 	var sb strings.Builder
@@ -370,8 +427,6 @@ func buildOversizedMatrix(instance string, targetKB int) []byte {
 	sb.WriteString("]}}")
 	return []byte(sb.String())
 }
-
-// --- raw HTTP helpers (queryTricksterProm requires 200; some tests don't) ----
 
 func rawQuery(t *testing.T, address, backend, path string, params url.Values) ([]byte, http.Header) {
 	t.Helper()
@@ -411,10 +466,9 @@ func doRaw(t *testing.T, address, backend, path string, params url.Values) ([]by
 	return b, resp.Header.Clone(), resp.StatusCode
 }
 
-// --- synthesized YAML config ------------------------------------------------
-
 func writeScaleConfig(t *testing.T, fakes []*fakeProm,
-	listenPort, metricsPort, mgmtPort int, albName string) string {
+	listenPort, metricsPort, mgmtPort int,
+	albName, labeledAlbName string, labeledN int) string {
 	t.Helper()
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "frontend:\n  listen_port: %d\n", listenPort)
@@ -429,6 +483,15 @@ func writeScaleConfig(t *testing.T, fakes []*fakeProm,
 		fmt.Fprintf(&sb, "    origin_url: %s\n", f.URL())
 		sb.WriteString("    cache_name: mem\n")
 	}
+	for i := 0; i < labeledN; i++ {
+		fmt.Fprintf(&sb, "  prom-lab-%d:\n", i)
+		sb.WriteString("    provider: prometheus\n")
+		fmt.Fprintf(&sb, "    origin_url: %s\n", fakes[i].URL())
+		sb.WriteString("    cache_name: mem\n")
+		sb.WriteString("    prometheus:\n")
+		sb.WriteString("      labels:\n")
+		fmt.Fprintf(&sb, "        region: region-%d\n", i)
+	}
 	fmt.Fprintf(&sb, "  %s:\n", albName)
 	sb.WriteString("    provider: alb\n")
 	sb.WriteString("    alb:\n")
@@ -436,6 +499,14 @@ func writeScaleConfig(t *testing.T, fakes []*fakeProm,
 	sb.WriteString("      pool:\n")
 	for i := range fakes {
 		fmt.Fprintf(&sb, "        - prom%d\n", i)
+	}
+	fmt.Fprintf(&sb, "  %s:\n", labeledAlbName)
+	sb.WriteString("    provider: alb\n")
+	sb.WriteString("    alb:\n")
+	sb.WriteString("      mechanism: tsm\n")
+	sb.WriteString("      pool:\n")
+	for i := 0; i < labeledN; i++ {
+		fmt.Fprintf(&sb, "        - prom-lab-%d\n", i)
 	}
 	path := filepath.Join(t.TempDir(), "alb-tsm-scale.yaml")
 	require.NoError(t, os.WriteFile(path, []byte(sb.String()), 0o644))
