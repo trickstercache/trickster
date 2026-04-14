@@ -211,9 +211,9 @@ func SetVia(r *http.Request, hop *Hop) {
 		return
 	}
 	if hop.Via != "" {
-		r.Header.Set(NameVia, hop.Via+", "+hop.Protocol+" "+appinfo.Server)
+		r.Header.Set(NameVia, hop.Via+", "+hop.Protocol+" "+appinfo.Server())
 	} else {
-		r.Header.Set(NameVia, hop.Protocol+" "+appinfo.Server)
+		r.Header.Set(NameVia, hop.Protocol+" "+appinfo.Server())
 	}
 }
 

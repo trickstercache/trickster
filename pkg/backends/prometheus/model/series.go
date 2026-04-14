@@ -66,16 +66,13 @@ func MergeAndWriteSeriesRespondFunc() merge.RespondFunc {
 			return
 		}
 		s.StartMarshal(w, statusCode)
+		w.Write([]byte(`,"data":[`))
 		var sep string
-		if len(s.Data) > 0 {
-			w.Write([]byte(`,"data":[`))
-			for _, series := range s.Data {
-				fmt.Fprintf(w, `%s{"__name__":"%s","instance":"%s","job":"%s"}`,
-					sep, series.Name, series.Instance, series.Job)
-				sep = ","
-			}
-			w.Write([]byte("]"))
+		for _, series := range s.Data {
+			fmt.Fprintf(w, `%s{"__name__":"%s","instance":"%s","job":"%s"}`,
+				sep, series.Name, series.Instance, series.Job)
+			sep = ","
 		}
-		w.Write([]byte("}")) // complete the envelope
+		w.Write([]byte("]}"))
 	})
 }

@@ -18,6 +18,7 @@ package integration
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -300,6 +301,62 @@ func TestEngines_Collapse_MetricsReport(t *testing.T) {
 
 	require.InDelta(t, float64(n-1), after-before, 0.0001,
 		"expected exactly %d proxy-hit increments, got %v", n-1, after-before)
+}
+
+func engValidVectorBody(n int) string {
+	var buf strings.Builder
+	buf.WriteString(`{"status":"success","data":{"resultType":"vector","result":[`)
+	for i := range n {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		fmt.Fprintf(&buf, `{"metric":{"__name__":"fake","instance":"inst-%04d"},"value":[1700000000,"1"]}`, i)
+	}
+	buf.WriteString(`]}}`)
+	return buf.String()
+}
+
+func doEngineInstant(t *testing.T, params url.Values) (int, []byte, http.Header) {
+	t.Helper()
+	u := "http://" + engTricksterAddr + "/prom-fake/api/v1/query?" + params.Encode()
+	client := &http.Client{Transport: &http.Transport{DisableCompression: true}}
+	resp, err := client.Get(u)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	b, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	return resp.StatusCode, b, resp.Header.Clone()
+}
+
+func TestEngines_LargeResponse(t *testing.T) {
+	origin := engineSetup(t)
+
+	const nResults = 500
+	body := engValidVectorBody(nResults)
+	require.Greater(t, len(body), 32*1024)
+
+	origin.setHandler(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, body)
+	})
+
+	params := url.Values{"query": {fmt.Sprintf("fake + 0*%d", time.Now().UnixNano())}}
+	sc, got, _ := doEngineInstant(t, params)
+	require.Equal(t, http.StatusOK, sc)
+	require.Greater(t, len(got), 32*1024)
+
+	var pr promResponse
+	require.NoError(t, json.Unmarshal(got, &pr))
+	require.Equal(t, "success", pr.Status)
+
+	var qd promQueryData
+	require.NoError(t, json.Unmarshal(pr.Data, &qd))
+	require.Equal(t, "vector", qd.ResultType)
+
+	var results []json.RawMessage
+	require.NoError(t, json.Unmarshal(qd.Result, &results))
+	require.Len(t, results, nResults)
 }
 
 // readProxyHitCount returns the current sum of

@@ -65,6 +65,8 @@ func MergeAndWriteLabelDataRespondFunc() merge.RespondFunc {
 		if len(ld.Data) > 0 {
 			sort.Strings(ld.Data)
 			fmt.Fprintf(w, `,"data":["%s"]`, strings.Join(ld.Data, `","`))
+		} else {
+			w.Write([]byte(`,"data":[]`))
 		}
 		w.Write([]byte("}"))
 	})

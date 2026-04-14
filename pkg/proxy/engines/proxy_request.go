@@ -150,9 +150,10 @@ func (pr *proxyRequest) Clone() *proxyRequest {
 	}
 }
 
-// Fetch makes an HTTP request to the provided Origin URL, bypassing the Cache, and returns the
-// response and elapsed time to the caller.
-func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration) {
+// Fetch makes an HTTP request to the Origin URL, bypassing the Cache.
+// A non-nil error indicates a mid-stream read failure; resp.StatusCode
+// still reflects the upstream status, so callers must check both.
+func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration, error) {
 	o := pr.rsc.BackendOptions
 	pc := pr.rsc.PathConfig
 
@@ -174,7 +175,7 @@ func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration) {
 	if err != nil {
 		logger.Error("error reading body from http response",
 			logging.Pairs{"url": pr.URL.String(), "detail": err.Error()})
-		return []byte{}, resp, 0
+		return body, resp, 0, err
 	}
 
 	elapsed := time.Since(start) // includes any time required to decompress the document for deserialization
@@ -182,7 +183,7 @@ func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration) {
 	go logUpstreamRequest(o.Name, o.Provider, handlerName, pr.upstreamRequest.Method,
 		pr.upstreamRequest.URL.String(), pr.UserAgent(), resp.StatusCode, len(body), elapsed.Seconds())
 
-	return body, resp, elapsed
+	return body, resp, elapsed, nil
 }
 
 func (pr *proxyRequest) prepareRevalidationRequest() {
@@ -403,7 +404,9 @@ func (pr *proxyRequest) writeResponseBody() {
 	if pr.upstreamReader == nil || pr.responseWriter == nil {
 		return
 	}
-	io.Copy(pr.responseWriter, pr.upstreamReader)
+	if _, err := io.Copy(pr.responseWriter, pr.upstreamReader); err != nil {
+		logger.Error("error copying upstream response body", logging.Pairs{"error": err})
+	}
 }
 
 func (pr *proxyRequest) determineCacheability() {
@@ -528,7 +531,18 @@ func (pr *proxyRequest) prepareResponse() {
 				pr.cacheStatus == status.LookupStatusRangeMiss) {
 			var b []byte
 			if pr.upstreamReader != nil {
-				b, _ = io.ReadAll(pr.upstreamReader)
+				var err error
+				b, err = io.ReadAll(pr.upstreamReader)
+				if err != nil {
+					// Upstream cut off mid-stream — b holds only a truncated
+					// prefix. Never cache a truncated body as if it were
+					// complete; a later request would see it as a valid hit.
+					// The current client still gets what we received, but
+					// writeToCache is cleared so pr.store() is skipped.
+					logger.Error("upstream read error during range extraction; skipping cache write",
+						logging.Pairs{"error": err})
+					pr.writeToCache = false
+				}
 			}
 			d = DocumentFromHTTPResponse(pr.upstreamResponse, b, pr.cachingPolicy)
 			pr.cacheBuffer = bytes.NewBuffer(b)

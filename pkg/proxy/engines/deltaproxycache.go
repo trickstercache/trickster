@@ -714,7 +714,7 @@ func fetchExtents(el timeseries.ExtentList, rsc *request.Resources, h http.Heade
 				defer spanMR.End()
 			}
 
-			body, resp, _ := rq.Fetch()
+			body, resp, _, fetchErr := rq.Fetch()
 
 			respLock.Lock()
 			if resp.StatusCode > mresp.StatusCode {
@@ -722,6 +722,13 @@ func fetchExtents(el timeseries.ExtentList, rsc *request.Resources, h http.Heade
 				mresp.StatusCode = resp.StatusCode
 			}
 			respLock.Unlock()
+
+			// Mid-stream read failure: 2xx + empty body would fall through
+			// both branches below and nil-deref downstream in the merge.
+			if fetchErr != nil {
+				errs[i] = fetchErr
+				return nil
+			}
 
 			if resp.StatusCode == http.StatusOK && len(body) > 0 {
 				nts, ferr := wur(getDecoderReader(resp), rsc.TimeRangeQuery)

@@ -55,7 +55,7 @@ func (sw *CaptureResponseWriter) WriteHeader(code int) {
 func (sw *CaptureResponseWriter) Write(b []byte) (int, error) {
 	sw.body.Write(b)
 	sw.len += len(b)
-	return sw.len, nil
+	return len(b), nil
 }
 
 // Body returns the captured response body

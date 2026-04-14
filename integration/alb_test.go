@@ -404,6 +404,19 @@ func TestALB(t *testing.T) {
 		t.Logf("fgr instant: %s", hdr.Get("X-Trickster-Result"))
 	})
 
+	for _, mech := range []string{"fgr", "nlm", "tsm"} {
+		t.Run(mech+" large instant response survives proxy", func(t *testing.T) {
+			params := url.Values{"query": {`{__name__=~".+"}`}}
+			pr, hdr := queryTricksterProm(t, albAddr, "alb-"+mech, "/api/v1/query", params)
+			require.Equal(t, "success", pr.Status)
+			require.Greater(t, len(pr.Data), 32*1024)
+			var qd promQueryData
+			require.NoError(t, json.Unmarshal(pr.Data, &qd))
+			require.Equal(t, "vector", qd.ResultType)
+			t.Logf("%s: %d bytes, %s", mech, len(pr.Data), hdr.Get("X-Trickster-Result"))
+		})
+	}
+
 	t.Run("rr multiple requests", func(t *testing.T) {
 		for i := range 3 {
 			pr, hdr := queryTricksterProm(t, albAddr, "alb-rr", "/api/v1/query_range", rangeParams())

@@ -269,6 +269,59 @@ func TestPrepareResponse(t *testing.T) {
 	pr.prepareResponse()
 }
 
+type truncatingReader struct {
+	partial []byte
+	err     error
+	done    bool
+}
+
+func (r *truncatingReader) Read(p []byte) (int, error) {
+	if r.done {
+		return 0, r.err
+	}
+	n := copy(p, r.partial)
+	r.done = true
+	return n, nil
+}
+
+func TestPrepareResponse_UpstreamReadErrorSkipsCache(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
+	r, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
+	r.Header.Set(headers.NameRange, "bytes=0-10")
+
+	o := &bo.Options{}
+	r = request.SetResources(r, request.NewResources(o, nil, nil, nil, nil, nil))
+
+	pr := proxyRequest{
+		Request:          r,
+		rsc:              request.GetResources(r),
+		cachingPolicy:    &CachingPolicy{},
+		upstreamResponse: &http.Response{StatusCode: http.StatusOK},
+		cacheDocument:    &HTTPDocument{},
+	}
+	pr.parseRequestRanges()
+	pr.cacheDocument.Ranges = pr.wantedRanges
+
+	pr.cacheStatus = status.LookupStatusKeyMiss
+	pr.writeToCache = true
+	pr.upstreamReader = &truncatingReader{
+		partial: []byte("trunc"),
+		err:     io.ErrUnexpectedEOF,
+	}
+	headers.Merge(pr.upstreamResponse.Header, http.Header{
+		headers.NameContentRange: {"bytes 0-99"},
+	})
+
+	pr.prepareResponse()
+
+	if pr.writeToCache {
+		t.Error("writeToCache must be cleared after upstream read error")
+	}
+	if pr.cacheDocument != nil && pr.cacheDocument.isLoaded {
+		t.Error("cacheDocument.isLoaded must not be true when upstream read errored")
+	}
+}
+
 func TestPrepareResponsePreconditionFailed(t *testing.T) {
 	r, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
 	pr := proxyRequest{
