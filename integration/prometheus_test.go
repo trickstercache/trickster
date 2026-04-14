@@ -265,4 +265,5 @@ func TestPrometheus(t *testing.T) {
 			require.Equal(t, http.StatusInternalServerError, resp2.StatusCode)
 		}
 	})
+
 }

@@ -403,7 +403,9 @@ func (pr *proxyRequest) writeResponseBody() {
 	if pr.upstreamReader == nil || pr.responseWriter == nil {
 		return
 	}
-	io.Copy(pr.responseWriter, pr.upstreamReader)
+	if _, err := io.Copy(pr.responseWriter, pr.upstreamReader); err != nil {
+		logger.Error("error copying upstream response body", logging.Pairs{"error": err})
+	}
 }
 
 func (pr *proxyRequest) determineCacheability() {
