@@ -528,7 +528,18 @@ func (pr *proxyRequest) prepareResponse() {
 				pr.cacheStatus == status.LookupStatusRangeMiss) {
 			var b []byte
 			if pr.upstreamReader != nil {
-				b, _ = io.ReadAll(pr.upstreamReader)
+				var err error
+				b, err = io.ReadAll(pr.upstreamReader)
+				if err != nil {
+					// Upstream cut off mid-stream — b holds only a truncated
+					// prefix. Never cache a truncated body as if it were
+					// complete; a later request would see it as a valid hit.
+					// The current client still gets what we received, but
+					// writeToCache is cleared so pr.store() is skipped.
+					logger.Error("upstream read error during range extraction; skipping cache write",
+						logging.Pairs{"error": err})
+					pr.writeToCache = false
+				}
 			}
 			d = DocumentFromHTTPResponse(pr.upstreamResponse, b, pr.cachingPolicy)
 			pr.cacheBuffer = bytes.NewBuffer(b)
