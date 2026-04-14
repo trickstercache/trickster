@@ -36,9 +36,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestALB_TSM_Scale exercises ALB+TSM against many in-process fake Prometheus
-// backends with configurable fault behaviors, covering the high-fanout shape
-// that the 2-backend TestALB harness does not.
 func TestALB_TSM_Scale(t *testing.T) {
 	const (
 		listenPort         = 8590
@@ -144,8 +141,6 @@ func TestALB_TSM_Scale(t *testing.T) {
 	})
 
 	t.Run("mismatched_vector_shape", func(t *testing.T) {
-		// A panic in TSM merge tears down subsequent sub-tests, so only
-		// assert the daemon keeps serving; response shape is not contracted.
 		resetAll()
 		fakes[0].setBehavior(behaviorBadShape())
 		body, hdr := rawQueryAllowError(t, listenAddr, backendName, "/api/v1/query", instantParams())
@@ -156,9 +151,6 @@ func TestALB_TSM_Scale(t *testing.T) {
 		resetAll()
 		params := rangeParams()
 		fakes[0].setBehavior(behaviorTruncate())
-		// Partial-success merge or a surfaced upstream error are both
-		// acceptable; the hard guard is no panic/goroutine-leak in the
-		// response body. The second call below is the real assertion.
 		firstBody, firstHdr, firstSC := doRaw(t, listenAddr, backendName, "/api/v1/query_range", params)
 		require.NotContains(t, string(firstBody), "runtime error")
 		require.NotContains(t, string(firstBody), "goroutine ")
@@ -206,8 +198,6 @@ func TestALB_TSM_Scale(t *testing.T) {
 		for _, f := range fakes {
 			total += f.hits.Load()
 		}
-		// Perfect collapse is numBackends; allow 3x for waiters arriving
-		// after the executor completes.
 		require.LessOrEqual(t, total, int64(numBackends*3))
 		t.Logf("%d clients → %d upstream fetches (expected ~%d)", clients, total, numBackends)
 	})
@@ -342,7 +332,6 @@ func (f *fakeProm) handleRange(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write(buildOversizedMatrix(f.label, b.seriesKB))
 		return
 	case "truncate":
-		// Promise full Content-Length, write partial, hijack + close.
 		full := buildMatrixBody(f.label)
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Content-Length", fmt.Sprintf("%d", len(full)))
