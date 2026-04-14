@@ -181,7 +181,6 @@ func TestALB_TSM_Scale(t *testing.T) {
 	// half but the panic on the read-error path is a separate defect.
 	// Re-enable this sub-test once that panic is fixed.
 	t.Run("truncating_upstream_does_not_poison_cache", func(t *testing.T) {
-		t.Skip("blocked on follow-up: deltaproxycache.go:429 nil-pointer panic on truncated upstream body (related to #977)")
 		resetAll()
 		params := rangeParams() // unique query → fresh cache key
 		fakes[0].setBehavior(behaviorTruncate())

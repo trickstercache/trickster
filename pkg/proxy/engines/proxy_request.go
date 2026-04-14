@@ -150,9 +150,15 @@ func (pr *proxyRequest) Clone() *proxyRequest {
 	}
 }
 
-// Fetch makes an HTTP request to the provided Origin URL, bypassing the Cache, and returns the
-// response and elapsed time to the caller.
-func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration) {
+// Fetch makes an HTTP request to the provided Origin URL, bypassing the Cache,
+// and returns the body, response, elapsed time, and any read error.
+//
+// A non-nil error indicates the upstream connection failed mid-stream after a
+// successful HTTP response was received (e.g. truncated body, unexpected EOF).
+// Callers MUST check this error: resp.StatusCode will still reflect the
+// upstream's original status (commonly 200), so a status check alone cannot
+// distinguish a complete response from a truncated one.
+func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration, error) {
 	o := pr.rsc.BackendOptions
 	pc := pr.rsc.PathConfig
 
@@ -174,7 +180,7 @@ func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration) {
 	if err != nil {
 		logger.Error("error reading body from http response",
 			logging.Pairs{"url": pr.URL.String(), "detail": err.Error()})
-		return []byte{}, resp, 0
+		return body, resp, 0, err
 	}
 
 	elapsed := time.Since(start) // includes any time required to decompress the document for deserialization
@@ -182,7 +188,7 @@ func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration) {
 	go logUpstreamRequest(o.Name, o.Provider, handlerName, pr.upstreamRequest.Method,
 		pr.upstreamRequest.URL.String(), pr.UserAgent(), resp.StatusCode, len(body), elapsed.Seconds())
 
-	return body, resp, elapsed
+	return body, resp, elapsed, nil
 }
 
 func (pr *proxyRequest) prepareRevalidationRequest() {
