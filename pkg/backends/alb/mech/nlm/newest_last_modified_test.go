@@ -17,6 +17,8 @@
 package nlm
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -156,4 +158,91 @@ func TestNewestLastModifiedSelection(t *testing.T) {
 			t.Errorf("expected body 'fallback' got %q", w.Body.String())
 		}
 	})
+
+	t.Run("50 picks newest", func(t *testing.T) {
+		base := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+		hs := make([]http.Handler, 50)
+		for i := range hs {
+			lm := base.AddDate(0, i, 0)
+			body := fmt.Sprintf("b%02d", i)
+			hs[i] = handlerWithLM(body, lm)
+		}
+		p, _, st := albpool.New(-1, hs)
+		for _, s := range st {
+			s.Set(0)
+		}
+		time.Sleep(250 * time.Millisecond)
+
+		h := &handler{pool: p}
+		w := httptest.NewRecorder()
+		r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
+		h.ServeHTTP(w, r)
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200 got %d", w.Code)
+		}
+		if w.Body.String() != "b49" {
+			t.Errorf("expected newest body 'b49' got %q", w.Body.String())
+		}
+	})
+
+	t.Run("50 partial fail picks only valid", func(t *testing.T) {
+		err500 := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+		})
+		hs := make([]http.Handler, 50)
+		for i := range hs {
+			hs[i] = err500
+		}
+		hs[23] = handlerWithLM("winner", newer)
+		p, _, st := albpool.New(-1, hs)
+		for _, s := range st {
+			s.Set(0)
+		}
+		time.Sleep(250 * time.Millisecond)
+
+		h := &handler{pool: p}
+		w := httptest.NewRecorder()
+		r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
+		h.ServeHTTP(w, r)
+		if w.Body.String() != "winner" {
+			t.Errorf("expected 'winner' got %q (code %d)", w.Body.String(), w.Code)
+		}
+	})
+}
+
+func TestHandleNewestContextCancel(t *testing.T) {
+	slow := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(20 * time.Millisecond)
+		w.Header().Set(headers.NameLastModified, time.Now().UTC().Format(time.RFC1123))
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	})
+	hs := make([]http.Handler, 50)
+	for i := range hs {
+		hs[i] = slow
+	}
+	for range 10 {
+		p, _, _ := albpool.New(-1, hs)
+		p.SetHealthy(hs)
+
+		h := &handler{pool: p}
+		ctx, cancel := context.WithCancel(context.Background())
+		r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
+		r = r.WithContext(ctx)
+		w := httptest.NewRecorder()
+
+		done := make(chan struct{})
+		go func() {
+			h.ServeHTTP(w, r)
+			close(done)
+		}()
+		time.Sleep(5 * time.Millisecond)
+		cancel()
+
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Fatal("ServeHTTP did not return after context cancel")
+		}
+	}
 }

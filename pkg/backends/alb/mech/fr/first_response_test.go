@@ -171,6 +171,47 @@ func TestFirstGoodResponse(t *testing.T) {
 			t.Errorf("expected 500 or 502, got %d", w.Code)
 		}
 	})
+
+	t.Run("FGR 50-backend partial fail", func(t *testing.T) {
+		hs := make([]http.Handler, 50)
+		for i := range hs {
+			hs[i] = statusHandler(http.StatusInternalServerError, "bad")
+		}
+		hs[37] = statusHandler(http.StatusOK, "good")
+		p, _, st := albpool.New(-1, hs)
+		for _, s := range st {
+			s.Set(0)
+		}
+		time.Sleep(250 * time.Millisecond)
+
+		h := &handler{pool: p, fgr: true}
+		w := httptest.NewRecorder()
+		r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
+		h.ServeHTTP(w, r)
+		if w.Code != http.StatusOK {
+			t.Errorf("expected 200 got %d", w.Code)
+		}
+	})
+
+	t.Run("FGR 50-backend all fail fallback", func(t *testing.T) {
+		hs := make([]http.Handler, 50)
+		for i := range hs {
+			hs[i] = statusHandler(http.StatusInternalServerError, "err")
+		}
+		p, _, st := albpool.New(-1, hs)
+		for _, s := range st {
+			s.Set(0)
+		}
+		time.Sleep(250 * time.Millisecond)
+
+		h := &handler{pool: p, fgr: true}
+		w := httptest.NewRecorder()
+		r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
+		h.ServeHTTP(w, r)
+		if w.Code < 400 {
+			t.Errorf("expected 4xx/5xx fallback, got %d", w.Code)
+		}
+	})
 }
 
 // TestHandleFirstResponseContextCancel verifies that cancelling the request
@@ -217,6 +258,44 @@ func TestHandleFirstResponseContextCancel(t *testing.T) {
 		// ServeHTTP is still calling rw.Write/WriteHeader, the race
 		// detector will flag the concurrent read of rw.returned above
 		// against this write.
+		rw.returned = true
+	}
+}
+
+func TestHandleFirstResponseContextCancel_50Backends(t *testing.T) {
+	slow := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(20 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	})
+
+	hs := make([]http.Handler, 50)
+	for i := range hs {
+		hs[i] = slow
+	}
+	for range 10 {
+		p, _, _ := albpool.New(-1, hs)
+		p.SetHealthy(hs)
+
+		h := &handler{pool: p}
+		ctx, cancel := context.WithCancel(context.Background())
+		r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
+		r = r.WithContext(ctx)
+		rw := &raceWriter{ResponseWriter: httptest.NewRecorder()}
+
+		done := make(chan struct{})
+		go func() {
+			h.ServeHTTP(rw, r)
+			close(done)
+		}()
+		time.Sleep(5 * time.Millisecond)
+		cancel()
+
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Fatal("ServeHTTP did not return after context cancel")
+		}
 		rw.returned = true
 	}
 }

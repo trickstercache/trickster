@@ -44,6 +44,8 @@ func TestALB_TSM_Scale(t *testing.T) {
 		listenAddr         = "127.0.0.1:8590"
 		backendName        = "alb-tsm-scale"
 		labeledBackendName = "alb-tsm-scale-labeled"
+		fgrBackendName     = "alb-fgr-scale"
+		nlmBackendName     = "alb-nlm-scale"
 		numBackends        = 50
 		numLabeledBackends = 10
 	)
@@ -54,7 +56,8 @@ func TestALB_TSM_Scale(t *testing.T) {
 	}
 
 	cfgPath := writeScaleConfig(t, fakes, listenPort, metricsPort, mgmtPort,
-		backendName, labeledBackendName, numLabeledBackends)
+		backendName, labeledBackendName, numLabeledBackends,
+		fgrBackendName, nlmBackendName)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -266,6 +269,15 @@ func TestALB_TSM_Scale(t *testing.T) {
 		require.GreaterOrEqual(t, len(regions), numLabeledBackends)
 		t.Logf("%d series across %d regions, %s", len(series), len(regions), hdr.Get("X-Trickster-Result"))
 	})
+
+	for _, alb := range []string{fgrBackendName, nlmBackendName} {
+		t.Run(alb+"_cross_mechanism", func(t *testing.T) {
+			resetAll()
+			pr, hdr := queryTricksterProm(t, listenAddr, alb, "/api/v1/query_range", rangeParams())
+			require.Equal(t, "success", pr.Status)
+			t.Logf("%s: %s", alb, hdr.Get("X-Trickster-Result"))
+		})
+	}
 }
 
 type fakeProm struct {
@@ -464,7 +476,8 @@ func doRaw(t *testing.T, address, backend, path string, params url.Values) ([]by
 
 func writeScaleConfig(t *testing.T, fakes []*fakeProm,
 	listenPort, metricsPort, mgmtPort int,
-	albName, labeledAlbName string, labeledN int) string {
+	albName, labeledAlbName string, labeledN int,
+	fgrAlbName, nlmAlbName string) string {
 	t.Helper()
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "frontend:\n  listen_port: %d\n", listenPort)
@@ -503,6 +516,19 @@ func writeScaleConfig(t *testing.T, fakes []*fakeProm,
 	sb.WriteString("      pool:\n")
 	for i := 0; i < labeledN; i++ {
 		fmt.Fprintf(&sb, "        - prom-lab-%d\n", i)
+	}
+	for _, entry := range []struct{ name, mech string }{
+		{fgrAlbName, "fgr"},
+		{nlmAlbName, "nlm"},
+	} {
+		fmt.Fprintf(&sb, "  %s:\n", entry.name)
+		sb.WriteString("    provider: alb\n")
+		sb.WriteString("    alb:\n")
+		fmt.Fprintf(&sb, "      mechanism: %s\n", entry.mech)
+		sb.WriteString("      pool:\n")
+		for i := range fakes {
+			fmt.Fprintf(&sb, "        - prom%d\n", i)
+		}
 	}
 	path := filepath.Join(t.TempDir(), "alb-tsm-scale.yaml")
 	require.NoError(t, os.WriteFile(path, []byte(sb.String()), 0o644))
