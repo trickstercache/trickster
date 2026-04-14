@@ -723,11 +723,8 @@ func fetchExtents(el timeseries.ExtentList, rsc *request.Resources, h http.Heade
 			}
 			respLock.Unlock()
 
-			// A mid-stream read failure (e.g. truncated body, unexpected EOF)
-			// arrives here with the upstream's original 2xx status but a
-			// short or empty body. Without this guard the empty body would
-			// silently fall through both branches below, leaving mts[i] nil
-			// and triggering a nil-deref later in the merge path.
+			// Mid-stream read failure: 2xx + empty body would fall through
+			// both branches below and nil-deref downstream in the merge.
 			if fetchErr != nil {
 				errs[i] = fetchErr
 				return nil

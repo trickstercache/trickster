@@ -404,30 +404,16 @@ func TestALB(t *testing.T) {
 		t.Logf("fgr instant: %s", hdr.Get("X-Trickster-Result"))
 	})
 
-	// Regression test for CaptureResponseWriter.Write io.Writer contract
-	// violation. ALB fanout mechanisms (fgr, nlm, tsm) each create a
-	// CaptureResponseWriter per pool member and run the full proxy
-	// pipeline into it — the path most likely to stream an upstream
-	// body through io.Copy into CaptureResponseWriter without the body
-	// being pre-buffered. A >32KB response tripped errInvalidWrite on
-	// the second io.Copy chunk before the fix, truncating the body and
-	// causing downstream JSON decoders to report "unexpected EOF".
 	for _, mech := range []string{"fgr", "nlm", "tsm"} {
 		t.Run(mech+" large instant response survives proxy", func(t *testing.T) {
-			// {__name__=~".+"} returns every scraped series — ~130KB of
-			// vector JSON from the developer Prometheus, well over
-			// io.Copy's 32KB internal buffer.
 			params := url.Values{"query": {`{__name__=~".+"}`}}
 			pr, hdr := queryTricksterProm(t, albAddr, "alb-"+mech, "/api/v1/query", params)
 			require.Equal(t, "success", pr.Status)
-			require.Greater(t, len(pr.Data), 32*1024,
-				"response data must exceed 32KB to exercise the io.Copy truncation bug")
+			require.Greater(t, len(pr.Data), 32*1024)
 			var qd promQueryData
-			require.NoError(t, json.Unmarshal(pr.Data, &qd),
-				"response must be complete valid JSON — truncation causes unexpected EOF")
+			require.NoError(t, json.Unmarshal(pr.Data, &qd))
 			require.Equal(t, "vector", qd.ResultType)
-			t.Logf("%s large instant: %d bytes, X-Trickster-Result=%s",
-				mech, len(pr.Data), hdr.Get("X-Trickster-Result"))
+			t.Logf("%s: %d bytes, %s", mech, len(pr.Data), hdr.Get("X-Trickster-Result"))
 		})
 	}
 

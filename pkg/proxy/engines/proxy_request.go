@@ -150,14 +150,9 @@ func (pr *proxyRequest) Clone() *proxyRequest {
 	}
 }
 
-// Fetch makes an HTTP request to the provided Origin URL, bypassing the Cache,
-// and returns the body, response, elapsed time, and any read error.
-//
-// A non-nil error indicates the upstream connection failed mid-stream after a
-// successful HTTP response was received (e.g. truncated body, unexpected EOF).
-// Callers MUST check this error: resp.StatusCode will still reflect the
-// upstream's original status (commonly 200), so a status check alone cannot
-// distinguish a complete response from a truncated one.
+// Fetch makes an HTTP request to the Origin URL, bypassing the Cache.
+// A non-nil error indicates a mid-stream read failure; resp.StatusCode
+// still reflects the upstream status, so callers must check both.
 func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration, error) {
 	o := pr.rsc.BackendOptions
 	pc := pr.rsc.PathConfig

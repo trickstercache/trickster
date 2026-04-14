@@ -25,50 +25,35 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestWrite_ReturnValue verifies that Write returns the number of bytes
-// written in the current call, not a cumulative total. Returning the
-// cumulative count violates the io.Writer contract and causes io.Copy to
-// abort with errInvalidWrite on the second chunk.
 func TestWrite_ReturnValue(t *testing.T) {
 	sw := NewCaptureResponseWriter()
 
 	a := []byte("hello")
 	n1, err1 := sw.Write(a)
 	require.NoError(t, err1)
-	require.Equal(t, len(a), n1, "first Write must return len(a)")
+	require.Equal(t, len(a), n1)
 
 	b := []byte(" world")
 	n2, err2 := sw.Write(b)
 	require.NoError(t, err2)
-	require.Equal(t, len(b), n2,
-		"second Write must return len(b), not cumulative len(a)+len(b)")
+	require.Equal(t, len(b), n2)
 }
 
-// TestWrite_IoCopy_LargeBody verifies that a body larger than io.Copy's
-// internal 32KB buffer is fully copied without error. Before the fix,
-// CaptureResponseWriter.Write returned a cumulative byte count which
-// triggered errInvalidWrite in io.Copy on the second chunk, silently
-// truncating the response to ~32KB.
 func TestWrite_IoCopy_LargeBody(t *testing.T) {
-	const size = 100 * 1024 // 100KB — well over the 32KB io.Copy buffer
+	const size = 100 * 1024
 	src := make([]byte, size)
 	for i := range src {
-		src[i] = byte(i % 251) // non-zero pattern for content verification
+		src[i] = byte(i % 251)
 	}
 
 	sw := NewCaptureResponseWriter()
-	// Wrap in a plain io.Reader to strip the WriterTo interface from
-	// bytes.Reader; otherwise io.Copy calls WriteTo which does a single
-	// Write call and never exercises the multi-chunk read/write loop
-	// that triggers the bug.
+	// Strip WriterTo so io.Copy takes the multi-chunk Read/Write loop.
 	n, err := io.Copy(sw, struct{ io.Reader }{bytes.NewReader(src)})
-	require.NoError(t, err, "io.Copy must not return errInvalidWrite")
-	require.Equal(t, int64(size), n, "io.Copy must report all bytes copied")
-	require.Equal(t, src, sw.Body(), "captured body must match source")
+	require.NoError(t, err)
+	require.Equal(t, int64(size), n)
+	require.Equal(t, src, sw.Body())
 }
 
-// TestWrite_IoCopy_SmallBody verifies the happy path for bodies that fit
-// in a single io.Copy chunk (<32KB).
 func TestWrite_IoCopy_SmallBody(t *testing.T) {
 	src := []byte("small body under 32KB")
 	sw := NewCaptureResponseWriter()
@@ -78,25 +63,20 @@ func TestWrite_IoCopy_SmallBody(t *testing.T) {
 	require.Equal(t, src, sw.Body())
 }
 
-// TestHeaderStatusCodeBody exercises the basic accessors.
 func TestHeaderStatusCodeBody(t *testing.T) {
 	sw := NewCaptureResponseWriter()
 
-	// Default status is 200.
 	require.Equal(t, http.StatusOK, sw.StatusCode())
 
-	// WriteHeader(0) normalizes to 200.
 	sw.WriteHeader(0)
 	require.Equal(t, http.StatusOK, sw.StatusCode())
 
 	sw.WriteHeader(http.StatusNotFound)
 	require.Equal(t, http.StatusNotFound, sw.StatusCode())
 
-	// Header returns a writable map.
 	sw.Header().Set("X-Test", "value")
 	require.Equal(t, "value", sw.Header().Get("X-Test"))
 
-	// Body accumulates writes.
 	sw.Write([]byte("ab"))
 	sw.Write([]byte("cd"))
 	require.Equal(t, []byte("abcd"), sw.Body())
