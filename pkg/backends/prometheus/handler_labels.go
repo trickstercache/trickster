@@ -21,13 +21,16 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus/model"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/engines"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/response/capture"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
 )
 
 // LabelsHandler proxies requests for path /label and /labels to the origin by way of the object proxy cache
 func (c *Client) LabelsHandler(w http.ResponseWriter, r *http.Request) {
+	origPath := r.URL.Path
 	u := urls.BuildUpstreamURL(r, c.BaseUpstreamURL())
 
 	rsc := request.GetResources(r)
@@ -38,11 +41,23 @@ func (c *Client) LabelsHandler(w http.ResponseWriter, r *http.Request) {
 
 	qp, _, _ := params.GetRequestValues(r)
 
-	// Round Start and End times down to top of most recent minute for cacheability
+	// start rounds down, end rounds up — see roundEndTimestampParameterToMinute
 	roundTimestampsToMinute(qp)
 
 	r.URL = u
 	params.SetRequestValues(r, qp)
+
+	if c.hasTransformations {
+		sw := capture.NewCaptureResponseWriter()
+		engines.ObjectProxyCacheRequest(sw, r)
+		headers.Merge(w.Header(), sw.Header())
+		body := c.processLabelsResponse(sw.Body(), origPath)
+		w.Header().Del(headers.NameContentLength)
+		w.Header().Del(headers.NameContentEncoding)
+		w.WriteHeader(sw.StatusCode())
+		w.Write(body)
+		return
+	}
 
 	engines.ObjectProxyCacheRequest(w, r)
 }

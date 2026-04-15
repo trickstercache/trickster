@@ -17,6 +17,7 @@
 package model
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -144,6 +145,49 @@ func TestMergeAndWriteAlerts(t *testing.T) {
 				t.Errorf("expected %d got %d", test.expCode, w.Code)
 			}
 		})
+	}
+}
+
+// TestMergeAndWriteAlerts_MultipleAlertsParseable pins the separator layout
+// in MergeAndWriteAlertsRespondFunc. Today it writes the separator AFTER the
+// closing brace instead of between alert objects, which produces invalid JSON
+// ({...}{...},) as soon as more than one alert is merged. Existing tests only
+// assert the status code and never parse the body, so this is slipping
+// through.
+func TestMergeAndWriteAlerts_MultipleAlertsParseable(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
+	bodies := [][]byte{
+		[]byte(`{"status":"success","data":{"alerts":[` +
+			`{"state":"firing","labels":{"alertname":"A"},"annotations":{"summary":"a"}}` +
+			`]}}`),
+		[]byte(`{"status":"success","data":{"alerts":[` +
+			`{"state":"firing","labels":{"alertname":"B"},"annotations":{"summary":"b"}}` +
+			`]}}`),
+	}
+
+	w := httptest.NewRecorder()
+	r := request.SetResources(newTestReq(), testResources)
+	accum := merge.NewAccumulator()
+	mergeFunc := MergeAndWriteAlertsMergeFunc()
+	respondFunc := MergeAndWriteAlertsRespondFunc()
+	for i, b := range bodies {
+		if err := mergeFunc(accum, b, i); err != nil {
+			t.Fatalf("merge %d: %v", i, err)
+		}
+	}
+	respondFunc(w, r, accum, http.StatusOK)
+
+	var env struct {
+		Status string `json:"status"`
+		Data   struct {
+			Alerts []map[string]any `json:"alerts"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &env); err != nil {
+		t.Fatalf("merged body is invalid JSON: %v (body=%s)", err, w.Body.String())
+	}
+	if len(env.Data.Alerts) != 2 {
+		t.Fatalf("want 2 merged alerts, got %d: %s", len(env.Data.Alerts), w.Body.String())
 	}
 }
 

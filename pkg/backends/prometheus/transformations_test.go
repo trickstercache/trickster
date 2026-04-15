@@ -17,7 +17,9 @@
 package prometheus
 
 import (
+	"encoding/json"
 	"net/http/httptest"
+	"slices"
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
@@ -35,6 +37,67 @@ func TestProcessTransformations(t *testing.T) {
 	c.hasTransformations = true
 	c.ProcessTransformations(nil)
 	c.ProcessTransformations(&dataset.DataSet{})
+}
+
+// TestProcessLabelsResponse_InjectsKeysAndValues pins the layer behind the
+// skipped /api/v1/labels integration test: when a backend has
+// `prometheus.labels` injected, its /labels response must surface the
+// injected keys, and /label/<k>/values must surface the injected value —
+// otherwise the TSM fanout can never merge those labels into the output.
+func TestProcessLabelsResponse_InjectsKeysAndValues(t *testing.T) {
+	parse := func(body []byte) []string {
+		t.Helper()
+		var env struct {
+			Status string   `json:"status"`
+			Data   []string `json:"data"`
+		}
+		if err := json.Unmarshal(body, &env); err != nil {
+			t.Fatalf("unmarshal: %v (body=%s)", err, body)
+		}
+		if env.Status != "success" {
+			t.Fatalf("want success, got %q", env.Status)
+		}
+		return env.Data
+	}
+
+	t.Run("labels endpoint appends injected keys", func(t *testing.T) {
+		c := &Client{
+			injectLabels:       map[string]string{"shard": "s1", "region": "us"},
+			hasTransformations: true,
+		}
+		in := []byte(`{"status":"success","data":["__name__","job","instance"]}`)
+		out := c.processLabelsResponse(in, "/api/v1/labels")
+		got := parse(out)
+		if !slices.Contains(got, "shard") || !slices.Contains(got, "region") {
+			t.Fatalf("want injected keys in data, got %+v", got)
+		}
+	})
+
+	t.Run("label values endpoint appends injected value when name matches", func(t *testing.T) {
+		c := &Client{
+			injectLabels:       map[string]string{"shard": "s1"},
+			hasTransformations: true,
+		}
+		in := []byte(`{"status":"success","data":["prometheus"]}`)
+		out := c.processLabelsResponse(in, "/api/v1/label/shard/values")
+		got := parse(out)
+		if !slices.Contains(got, "s1") {
+			t.Fatalf("want injected value in data, got %+v", got)
+		}
+	})
+
+	t.Run("label values endpoint does not inject when name does not match", func(t *testing.T) {
+		c := &Client{
+			injectLabels:       map[string]string{"shard": "s1"},
+			hasTransformations: true,
+		}
+		in := []byte(`{"status":"success","data":["a","b"]}`)
+		out := c.processLabelsResponse(in, "/api/v1/label/region/values")
+		got := parse(out)
+		if slices.Contains(got, "s1") {
+			t.Fatalf("must not inject shard value into unrelated label endpoint, got %+v", got)
+		}
+	})
 }
 
 func TestDefaultWrite(t *testing.T) {

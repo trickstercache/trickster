@@ -103,13 +103,13 @@ func MergeAndWriteAlertsRespondFunc() merge.RespondFunc {
 			return
 		}
 		a.StartMarshal(w, statusCode)
-		var sep string
 		w.Write([]byte(`,"data":{"alerts":[`))
 		if a.Data != nil && len(a.Data.Alerts) > 0 {
+			var sep string
 			for _, alert := range a.Data.Alerts {
 				fmt.Fprintf(w,
-					`{"state":"%s","labels":%s,"annotations":%s`,
-					alert.State, dataset.Tags(alert.Labels).JSON(),
+					`%s{"state":"%s","labels":%s,"annotations":%s`,
+					sep, alert.State, dataset.Tags(alert.Labels).JSON(),
 					dataset.Tags(alert.Annotations).JSON(),
 				)
 				if alert.Value != "" {
@@ -118,7 +118,7 @@ func MergeAndWriteAlertsRespondFunc() merge.RespondFunc {
 				if alert.ActiveAt != "" {
 					fmt.Fprintf(w, `,"activeAt":"%s"`, alert.ActiveAt)
 				}
-				w.Write([]byte("}" + sep))
+				w.Write([]byte("}"))
 				sep = ","
 			}
 		}
