@@ -203,6 +203,35 @@ func TestRoundTimestampParameterToMinute(t *testing.T) {
 	}
 }
 
+// TestRoundTimestampsToMinute_EndIncludesRecentData pins the fundamental layer
+// behind the ALB+TSM /api/v1/series fanout losing all results right after
+// Prometheus starts up. `roundTimestampsToMinute` is applied to both start
+// and end for cacheability, but rounding `end` DOWN to the previous minute
+// boundary excludes up to 59s of the newest data. When Prometheus has just
+// had its first scrape, the window [rounded_start, rounded_end_floor] can
+// end BEFORE the earliest sample, and Prometheus returns an empty series
+// list. `end` must round UP (ceiling) so that recent samples remain in
+// window while still sharing a cache key with nearby-in-time callers.
+func TestRoundTimestampsToMinute_EndIncludesRecentData(t *testing.T) {
+	now := time.Unix(1523077733, 0) // 2018-04-07 05:08:53 UTC
+	qp := url.Values{}
+	qp.Set(upStart, strconv.FormatInt(now.Add(-5*time.Minute).Unix(), 10))
+	qp.Set(upEnd, strconv.FormatInt(now.Unix(), 10))
+
+	roundTimestampsToMinute(qp)
+
+	end, err := strconv.ParseInt(qp.Get(upEnd), 10, 64)
+	if err != nil {
+		t.Fatalf("parse end: %v", err)
+	}
+	if end < now.Unix() {
+		t.Fatalf("rounded end %d is BEFORE the requested end %d — "+
+			"samples between %d and %d will be excluded from /series & /labels "+
+			"merge results when prometheus has just started scraping",
+			end, now.Unix(), end, now.Unix())
+	}
+}
+
 func TestParseTimeRangeQuery(t *testing.T) {
 	logger.SetLogger(testLogger)
 	qp := url.Values(map[string][]string{
