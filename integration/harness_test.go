@@ -20,16 +20,17 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	tkconfig "github.com/trickstercache/trickster/v2/pkg/config"
+	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
+	"gopkg.in/yaml.v2"
 )
 
 // tricksterHarness bundles the config path + listener addresses for a
@@ -206,15 +207,18 @@ func writeTestConfig(t *testing.T, frontPort, metricsPort, mgmtPort int) string 
 	t.Helper()
 	b, err := os.ReadFile("../docs/developer/environment/trickster-config/trickster.yaml")
 	require.NoError(t, err)
-	cfg := string(b)
-	cfg = strings.Replace(cfg, "listen_port: 8480", fmt.Sprintf("listen_port: %d", frontPort), 1)
-	cfg = strings.Replace(cfg, "listen_port: 8481", fmt.Sprintf("listen_port: %d", metricsPort), 1)
-	// The dev config has no explicit mgmt section — inject one after metrics
-	// so the mgmt listener doesn't collide across tests on the default port.
-	cfg = strings.Replace(cfg, "listen_port: "+fmt.Sprintf("%d", metricsPort)+"\n",
-		fmt.Sprintf("listen_port: %d\nmgmt:\n  listen_port: %d\n", metricsPort, mgmtPort), 1)
+	var c tkconfig.Config
+	require.NoError(t, yaml.Unmarshal(b, &c))
+	c.Frontend.ListenPort = frontPort
+	c.Metrics.ListenPort = metricsPort
+	if c.MgmtConfig == nil {
+		c.MgmtConfig = mgmt.New()
+	}
+	c.MgmtConfig.ListenPort = mgmtPort
+	out, err := yaml.Marshal(&c)
+	require.NoError(t, err)
 	path := filepath.Join(t.TempDir(), "trickster.yaml")
-	require.NoError(t, os.WriteFile(path, []byte(cfg), 0644))
+	require.NoError(t, os.WriteFile(path, out, 0644))
 	return path
 }
 
