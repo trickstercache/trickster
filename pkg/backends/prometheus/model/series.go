@@ -19,7 +19,7 @@ package model
 import (
 	"encoding/json"
 	"net/http"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
@@ -43,7 +43,7 @@ func (d WFSeriesData) canonicalKey() string {
 	for k := range d {
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 	var sb strings.Builder
 	for _, k := range keys {
 		sb.WriteString(k)
