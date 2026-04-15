@@ -148,6 +148,10 @@ integration-test:
 	$(MAKE) -C integration test
 	$(MAKE) -C integration data-race-test
 
+.PHONY: integration-cover
+integration-cover:
+	$(MAKE) -C integration cover
+
 .PHONY: bench
 bench:
 	bash -c "$(GO) test -v -coverprofile=.coverprofile ./... -run=nonthingplease -bench=. | grep -v ' app=trickster '; exit ${PIPESTATUS[0]}"

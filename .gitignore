@@ -24,6 +24,7 @@ trips_*.gz
 
 # Test Coverage Profile Output
 .coverprofile
+.integration.coverprofile
 
 # output path
 OPATH

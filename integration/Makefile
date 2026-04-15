@@ -15,3 +15,10 @@ test:
 
 data-race-test:
 	$(GO) test -v --failfast --race
+
+cover:
+	$(GO) test -v --failfast -coverpkg=../... -coverprofile=.integration.coverprofile
+	$(GO) tool cover -func=.integration.coverprofile | tail -1
+
+cover-html: cover
+	$(GO) tool cover -html=.integration.coverprofile

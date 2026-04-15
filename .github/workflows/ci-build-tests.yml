@@ -100,11 +100,12 @@ jobs:
         continue-on-error: true
         with:
           path-to-profile: .coverprofile
-          flag-name: Go-${{ matrix.go }}
+          flag-name: unit-Go-${{ matrix.go }}
           parallel: true
 
   integration:
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -115,8 +116,19 @@ jobs:
       - name: Show container status
         if: always()
         run: cd docs/developer/environment && docker compose ps && docker compose logs prometheus --tail=30
-      - name: Run integration tests
-        run: make integration-test
+      - name: Run integration tests (with coverage)
+        run: make integration-cover
+      - name: Run integration tests (with race detection enabled)
+        run: make -C integration data-race-test
+      - run: sed -i -e '/^.*_gen\.go:.*$/d' integration/.integration.coverprofile
+      - name: Send integration coverage
+        if: github.repository_owner == 'trickstercache'
+        uses: shogo82148/actions-goveralls@v1
+        continue-on-error: true
+        with:
+          path-to-profile: integration/.integration.coverprofile
+          flag-name: integration
+          parallel: true
   finish:
     needs:
       - build
