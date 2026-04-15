@@ -17,8 +17,10 @@
 package model
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
@@ -118,6 +120,74 @@ func TestMergeAndWriteLabelData(t *testing.T) {
 
 			if w.Code != test.expCode {
 				t.Errorf("expected %d got %d", test.expCode, w.Code)
+			}
+		})
+	}
+}
+
+// TestMergeAndWriteLabelData_BodyParseable verifies the marshaled envelope
+// is valid JSON and carries every merged entry. Prior tests asserted only
+// the status code, which would have masked a separator or field-drop bug.
+func TestMergeAndWriteLabelData_BodyParseable(t *testing.T) {
+	tests := []struct {
+		name     string
+		bodies   [][]byte
+		wantData []string
+	}{
+		{
+			name: "single body",
+			bodies: [][]byte{
+				[]byte(`{"status":"success","data":["a"]}`),
+			},
+			wantData: []string{"a"},
+		},
+		{
+			name: "two distinct bodies merge and dedup",
+			bodies: [][]byte{
+				[]byte(`{"status":"success","data":["a","b"]}`),
+				[]byte(`{"status":"success","data":["b","c"]}`),
+			},
+			wantData: []string{"a", "b", "c"},
+		},
+		{
+			name: "empty merged set emits empty array",
+			bodies: [][]byte{
+				[]byte(`{"status":"success","data":[]}`),
+			},
+			wantData: []string{},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			r, _ := http.NewRequest("GET", "/", nil)
+			accum := merge.NewAccumulator()
+			mergeFunc := MergeAndWriteLabelDataMergeFunc()
+			respondFunc := MergeAndWriteLabelDataRespondFunc()
+			for i, b := range test.bodies {
+				if err := mergeFunc(accum, b, i); err != nil {
+					t.Fatalf("merge %d: %v", i, err)
+				}
+			}
+			respondFunc(w, r, accum, http.StatusOK)
+
+			var env struct {
+				Status string   `json:"status"`
+				Data   []string `json:"data"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &env); err != nil {
+				t.Fatalf("merged body invalid JSON: %v (body=%s)", err, w.Body.String())
+			}
+			if env.Status != "success" {
+				t.Fatalf("want status=success, got %q", env.Status)
+			}
+			if len(env.Data) != len(test.wantData) {
+				t.Fatalf("want %d entries, got %d: %+v", len(test.wantData), len(env.Data), env.Data)
+			}
+			for _, want := range test.wantData {
+				if !slices.Contains(env.Data, want) {
+					t.Errorf("missing %q in merged data: %+v", want, env.Data)
+				}
 			}
 		})
 	}
