@@ -26,7 +26,7 @@ import (
 )
 
 func TestMarshalUnmarshalEpochs(t *testing.T) {
-	v := Epochs{}
+	v := Epochs{1609459200000000000, 1609545600000000000}
 	bts, err := v.MarshalMsg(nil)
 	if err != nil {
 		t.Fatal(err)
@@ -37,6 +37,10 @@ func TestMarshalUnmarshalEpochs(t *testing.T) {
 	}
 	if len(left) > 0 {
 		t.Errorf("%d bytes left over after UnmarshalMsg(): %q", len(left), left)
+	}
+
+	if len(v) != 2 || v[0] != 1609459200000000000 || v[1] != 1609545600000000000 {
+		t.Errorf("round-trip mismatch: got %v", v)
 	}
 
 	left, err = msgp.Skip(bts)

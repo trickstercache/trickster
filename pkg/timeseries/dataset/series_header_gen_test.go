@@ -26,17 +26,26 @@ import (
 )
 
 func TestMarshalUnmarshalSeriesHeader(t *testing.T) {
-	v := SeriesHeader{}
+	v := SeriesHeader{
+		Name:           "cpu_usage",
+		Tags:           Tags{"host": "server1"},
+		QueryStatement: "SELECT mean(usage) FROM cpu",
+	}
 	bts, err := v.MarshalMsg(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	left, err := v.UnmarshalMsg(bts)
+	var v2 SeriesHeader
+	left, err := v2.UnmarshalMsg(bts)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(left) > 0 {
 		t.Errorf("%d bytes left over after UnmarshalMsg(): %q", len(left), left)
+	}
+
+	if v2.Name != "cpu_usage" || v2.Tags["host"] != "server1" || v2.QueryStatement != "SELECT mean(usage) FROM cpu" {
+		t.Errorf("round-trip mismatch: got Name=%q Tags=%v Query=%q", v2.Name, v2.Tags, v2.QueryStatement)
 	}
 
 	left, err = msgp.Skip(bts)
@@ -84,7 +93,10 @@ func BenchmarkUnmarshalSeriesHeader(b *testing.B) {
 }
 
 func TestEncodeDecodeSeriesHeader(t *testing.T) {
-	v := SeriesHeader{}
+	v := SeriesHeader{
+		Name: "mem_free",
+		Tags: Tags{"region": "us-east-1"},
+	}
 	var buf bytes.Buffer
 	msgp.Encode(&buf, &v)
 
@@ -97,6 +109,10 @@ func TestEncodeDecodeSeriesHeader(t *testing.T) {
 	err := msgp.Decode(&buf, &vn)
 	if err != nil {
 		t.Error(err)
+	}
+
+	if vn.Name != "mem_free" || vn.Tags["region"] != "us-east-1" {
+		t.Errorf("decoded SeriesHeader mismatch: got Name=%q Tags=%v", vn.Name, vn.Tags)
 	}
 
 	buf.Reset()

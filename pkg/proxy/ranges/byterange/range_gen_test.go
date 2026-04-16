@@ -26,17 +26,22 @@ import (
 )
 
 func TestMarshalUnmarshalRange(t *testing.T) {
-	v := Range{}
+	v := Range{Start: 100, End: 200}
 	bts, err := v.MarshalMsg(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	left, err := v.UnmarshalMsg(bts)
+	var v2 Range
+	left, err := v2.UnmarshalMsg(bts)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(left) > 0 {
 		t.Errorf("%d bytes left over after UnmarshalMsg(): %q", len(left), left)
+	}
+
+	if v2.Start != 100 || v2.End != 200 {
+		t.Errorf("round-trip mismatch: got Start=%d End=%d", v2.Start, v2.End)
 	}
 
 	left, err = msgp.Skip(bts)
@@ -84,7 +89,7 @@ func BenchmarkUnmarshalRange(b *testing.B) {
 }
 
 func TestEncodeDecodeRange(t *testing.T) {
-	v := Range{}
+	v := Range{Start: 500, End: 999}
 	var buf bytes.Buffer
 	msgp.Encode(&buf, &v)
 
@@ -97,6 +102,10 @@ func TestEncodeDecodeRange(t *testing.T) {
 	err := msgp.Decode(&buf, &vn)
 	if err != nil {
 		t.Error(err)
+	}
+
+	if vn.Start != 500 || vn.End != 999 {
+		t.Errorf("decoded Range mismatch: got Start=%d End=%d", vn.Start, vn.End)
 	}
 
 	buf.Reset()
@@ -139,7 +148,7 @@ func BenchmarkDecodeRange(b *testing.B) {
 }
 
 func TestMarshalUnmarshalRanges(t *testing.T) {
-	v := Ranges{}
+	v := Ranges{{Start: 0, End: 99}, {Start: 200, End: 299}}
 	bts, err := v.MarshalMsg(nil)
 	if err != nil {
 		t.Fatal(err)
@@ -150,6 +159,10 @@ func TestMarshalUnmarshalRanges(t *testing.T) {
 	}
 	if len(left) > 0 {
 		t.Errorf("%d bytes left over after UnmarshalMsg(): %q", len(left), left)
+	}
+
+	if len(v) != 2 || v[0].Start != 0 || v[1].End != 299 {
+		t.Errorf("round-trip mismatch: got %+v", v)
 	}
 
 	left, err = msgp.Skip(bts)

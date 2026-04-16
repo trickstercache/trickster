@@ -26,17 +26,30 @@ import (
 )
 
 func TestMarshalUnmarshalFieldDefinition(t *testing.T) {
-	v := FieldDefinition{}
+	v := FieldDefinition{
+		Name:           "temperature",
+		DataType:       Float64,
+		SDataType:      "float64",
+		OutputPosition: 2,
+		DefaultValue:   "0.0",
+		Role:           RoleValue,
+		ProviderData1:  7,
+	}
 	bts, err := v.MarshalMsg(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	left, err := v.UnmarshalMsg(bts)
+	var v2 FieldDefinition
+	left, err := v2.UnmarshalMsg(bts)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(left) > 0 {
 		t.Errorf("%d bytes left over after UnmarshalMsg(): %q", len(left), left)
+	}
+
+	if v2.Name != "temperature" || v2.DataType != Float64 || v2.OutputPosition != 2 || v2.Role != RoleValue {
+		t.Errorf("round-trip mismatch: got %+v", v2)
 	}
 
 	left, err = msgp.Skip(bts)
@@ -84,7 +97,13 @@ func BenchmarkUnmarshalFieldDefinition(b *testing.B) {
 }
 
 func TestEncodeDecodeFieldDefinition(t *testing.T) {
-	v := FieldDefinition{}
+	v := FieldDefinition{
+		Name:           "humidity",
+		DataType:       Int64,
+		SDataType:      "int64",
+		OutputPosition: 1,
+		Role:           RoleTag,
+	}
 	var buf bytes.Buffer
 	msgp.Encode(&buf, &v)
 
@@ -97,6 +116,10 @@ func TestEncodeDecodeFieldDefinition(t *testing.T) {
 	err := msgp.Decode(&buf, &vn)
 	if err != nil {
 		t.Error(err)
+	}
+
+	if vn.Name != "humidity" || vn.DataType != Int64 || vn.Role != RoleTag {
+		t.Errorf("decoded FieldDefinition mismatch: got %+v", vn)
 	}
 
 	buf.Reset()
@@ -139,7 +162,9 @@ func BenchmarkDecodeFieldDefinition(b *testing.B) {
 }
 
 func TestMarshalUnmarshalFieldDefinitionLookup(t *testing.T) {
-	v := FieldDefinitionLookup{}
+	v := FieldDefinitionLookup{
+		"temp": {Name: "temp", DataType: Float64},
+	}
 	bts, err := v.MarshalMsg(nil)
 	if err != nil {
 		t.Fatal(err)
@@ -150,6 +175,10 @@ func TestMarshalUnmarshalFieldDefinitionLookup(t *testing.T) {
 	}
 	if len(left) > 0 {
 		t.Errorf("%d bytes left over after UnmarshalMsg(): %q", len(left), left)
+	}
+
+	if fd, ok := v["temp"]; !ok || fd.Name != "temp" || fd.DataType != Float64 {
+		t.Errorf("round-trip mismatch for FieldDefinitionLookup: got %+v", v)
 	}
 
 	left, err = msgp.Skip(bts)
@@ -252,7 +281,10 @@ func BenchmarkDecodeFieldDefinitionLookup(b *testing.B) {
 }
 
 func TestMarshalUnmarshalFieldDefinitions(t *testing.T) {
-	v := FieldDefinitions{}
+	v := FieldDefinitions{
+		{Name: "a", DataType: Int64},
+		{Name: "b", DataType: String},
+	}
 	bts, err := v.MarshalMsg(nil)
 	if err != nil {
 		t.Fatal(err)
@@ -263,6 +295,10 @@ func TestMarshalUnmarshalFieldDefinitions(t *testing.T) {
 	}
 	if len(left) > 0 {
 		t.Errorf("%d bytes left over after UnmarshalMsg(): %q", len(left), left)
+	}
+
+	if len(v) != 2 || v[0].Name != "a" || v[1].DataType != String {
+		t.Errorf("round-trip mismatch for FieldDefinitions: got %+v", v)
 	}
 
 	left, err = msgp.Skip(bts)

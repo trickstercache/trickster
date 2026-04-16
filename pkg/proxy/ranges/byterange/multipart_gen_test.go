@@ -26,17 +26,25 @@ import (
 )
 
 func TestMarshalUnmarshalMultipartByteRange(t *testing.T) {
-	v := MultipartByteRange{}
+	v := MultipartByteRange{
+		Range:   Range{Start: 0, End: 4},
+		Content: []byte("hello"),
+	}
 	bts, err := v.MarshalMsg(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	left, err := v.UnmarshalMsg(bts)
+	var v2 MultipartByteRange
+	left, err := v2.UnmarshalMsg(bts)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(left) > 0 {
 		t.Errorf("%d bytes left over after UnmarshalMsg(): %q", len(left), left)
+	}
+
+	if v2.Range.Start != 0 || v2.Range.End != 4 || string(v2.Content) != "hello" {
+		t.Errorf("round-trip mismatch: got Range=%+v Content=%q", v2.Range, v2.Content)
 	}
 
 	left, err = msgp.Skip(bts)

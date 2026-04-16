@@ -26,17 +26,29 @@ import (
 )
 
 func TestMarshalUnmarshalHTTPDocument(t *testing.T) {
-	v := HTTPDocument{}
+	v := HTTPDocument{
+		StatusCode:    200,
+		Status:        "200 OK",
+		Headers:       map[string][]string{"Content-Type": {"text/plain"}},
+		Body:          []byte("test body"),
+		ContentLength: 9,
+		ContentType:   "text/plain",
+	}
 	bts, err := v.MarshalMsg(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	left, err := v.UnmarshalMsg(bts)
+	var v2 HTTPDocument
+	left, err := v2.UnmarshalMsg(bts)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(left) > 0 {
 		t.Errorf("%d bytes left over after UnmarshalMsg(): %q", len(left), left)
+	}
+
+	if v2.StatusCode != 200 || v2.Status != "200 OK" || string(v2.Body) != "test body" || v2.ContentLength != 9 {
+		t.Errorf("round-trip mismatch: got StatusCode=%d Status=%q Body=%q ContentLength=%d", v2.StatusCode, v2.Status, v2.Body, v2.ContentLength)
 	}
 
 	left, err = msgp.Skip(bts)
@@ -84,7 +96,12 @@ func BenchmarkUnmarshalHTTPDocument(b *testing.B) {
 }
 
 func TestEncodeDecodeHTTPDocument(t *testing.T) {
-	v := HTTPDocument{}
+	v := HTTPDocument{
+		StatusCode:  404,
+		Status:      "404 Not Found",
+		Body:        []byte("not found"),
+		ContentType: "text/html",
+	}
 	var buf bytes.Buffer
 	msgp.Encode(&buf, &v)
 
@@ -97,6 +114,10 @@ func TestEncodeDecodeHTTPDocument(t *testing.T) {
 	err := msgp.Decode(&buf, &vn)
 	if err != nil {
 		t.Error(err)
+	}
+
+	if vn.StatusCode != 404 || vn.Status != "404 Not Found" || string(vn.Body) != "not found" {
+		t.Errorf("decoded HTTPDocument mismatch: got StatusCode=%d Status=%q Body=%q", vn.StatusCode, vn.Status, vn.Body)
 	}
 
 	buf.Reset()
