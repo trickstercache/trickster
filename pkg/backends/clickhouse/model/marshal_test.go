@@ -18,11 +18,34 @@ package model
 
 import (
 	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
+
+func TestWFDataItem_MarshalJSON_EscapesSpecialChars(t *testing.T) {
+	item := WFDataItem{
+		{Key: "name", Value: `O'Brien`},
+		{Key: "query", Value: `SELECT * WHERE x = "y"`},
+		{Key: "path", Value: `C:\Users\test`},
+	}
+	b, err := item.MarshalJSON()
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var out map[string]string
+	if err := json.Unmarshal(b, &out); err != nil {
+		t.Fatalf("invalid JSON: %v (body=%s)", err, string(b))
+	}
+	if out["query"] != `SELECT * WHERE x = "y"` {
+		t.Errorf("value not escaped, got %q", out["query"])
+	}
+	if out["path"] != `C:\Users\test` {
+		t.Errorf("backslash not escaped, got %q", out["path"])
+	}
+}
 
 func TestMarshalJSON(t *testing.T) {
 	b := new(bytes.Buffer)

@@ -17,6 +17,7 @@
 package model
 
 import (
+	"encoding/json"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -51,6 +52,35 @@ func TestUnmarshalTimeseries(t *testing.T) {
 
 	if string(b) != testMatrix {
 		t.Error("marsahing error")
+	}
+}
+
+func TestMarshalTimeseries_EscapesTagValues(t *testing.T) {
+	ds := &dataset.DataSet{
+		Results: dataset.Results{{
+			SeriesList: dataset.SeriesList{{
+				Header: dataset.SeriesHeader{
+					Name: "up",
+					Tags: dataset.Tags{
+						"__name__": "up",
+						"path":     `/api/v1/query?q="a"`,
+					},
+				},
+				Points: dataset.Points{{
+					Epoch:  1435781430000000000,
+					Size:   33,
+					Values: []any{"1"},
+				}},
+			}},
+		}},
+	}
+	b, err := MarshalTimeseries(ds, nil, 200)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var env map[string]any
+	if err := json.Unmarshal(b, &env); err != nil {
+		t.Fatalf("invalid JSON: %v (body=%s)", err, string(b))
 	}
 }
 
@@ -113,6 +143,26 @@ func TestStartMarshal(t *testing.T) {
 			t.Errorf("expected 200 got %d", w.Code)
 		}
 	})
+}
+
+func TestStartMarshal_EscapesSpecialChars(t *testing.T) {
+	w := httptest.NewRecorder()
+	e := &Envelope{
+		Status:    "error",
+		Error:     `parse error: unexpected "}"`,
+		ErrorType: `bad_data`,
+		Warnings:  []string{`warning with "quotes"`, `back\slash`},
+	}
+	e.StartMarshal(w, 400)
+	w.Write([]byte("}"))
+
+	var env map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &env); err != nil {
+		t.Fatalf("invalid JSON: %v (body=%s)", err, w.Body.String())
+	}
+	if env["error"] != `parse error: unexpected "}"` {
+		t.Errorf("error not escaped, got %q", env["error"])
+	}
 }
 
 func TestEnvelopeMerge(t *testing.T) {

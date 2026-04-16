@@ -199,23 +199,14 @@ func MarshalTSOrVectorWriter(ts timeseries.Timeseries, _ *timeseries.RequestOpti
 			continue
 		}
 		if seriesSep {
-			w.Write([]byte(`,{"metric":{`))
+			w.Write([]byte(`,{"metric":`))
 		} else {
-			w.Write([]byte(`{"metric":{`))
+			w.Write([]byte(`{"metric":`))
 			seriesSep = true
 		}
-		for i, k := range s.Header.Tags.Keys() {
-			if i > 0 {
-				w.Write([]byte{','})
-			}
-			w.Write([]byte{'"'})
-			w.Write([]byte(k))
-			w.Write([]byte(`":"`))
-			w.Write([]byte(s.Header.Tags[k]))
-			w.Write([]byte{'"'})
-		}
+		w.Write([]byte(s.Header.Tags.JSON()))
 		if isVector {
-			w.Write([]byte(`},"value":[`))
+			w.Write([]byte(`,"value":[`))
 			if len(s.Points) > 0 {
 				b := strconv.AppendFloat(buf[:0], float64(s.Points[0].Epoch)/1000000000, 'f', -1, 64)
 				w.Write(b)
@@ -226,7 +217,7 @@ func MarshalTSOrVectorWriter(ts timeseries.Timeseries, _ *timeseries.RequestOpti
 				w.Write([]byte("]}"))
 			}
 		} else {
-			w.Write([]byte(`},"values":[`))
+			w.Write([]byte(`,"values":[`))
 			if !sort.IsSorted(s.Points) {
 				sort.Sort(s.Points)
 			}
@@ -284,6 +275,14 @@ func populateSeries(ds *dataset.DataSet, result []*WFResult,
 				})
 			}
 			eg.Wait()
+			j := 0
+			for _, p := range pts {
+				if p.Epoch > 0 {
+					pts[j] = p
+					j++
+				}
+			}
+			pts = pts[:j]
 		} else if isVector && len(pr.Value) == 2 {
 			pts = make(dataset.Points, 1)
 			pt, _ := pointFromValues(pr.Value)

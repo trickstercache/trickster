@@ -17,6 +17,7 @@
 package model
 
 import (
+	"encoding/json"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -413,9 +414,12 @@ func TestPopulateSeriesMalformedPoints(t *testing.T) {
 	require.Len(t, ds.Results, 1)
 	require.Len(t, ds.Results[0].SeriesList, 1)
 	pts := ds.Results[0].SeriesList[0].Points
-	// All 3 slots exist; middle one has zero epoch from failed parse
-	require.Len(t, pts, 3)
+	require.Len(t, pts, 2, "malformed points must be compacted out")
 	require.Equal(t, epoch.Epoch(1435781430000000000), pts[0].Epoch)
-	require.Equal(t, epoch.Epoch(0), pts[1].Epoch, "malformed point should have zero epoch")
-	require.Equal(t, epoch.Epoch(1435781460000000000), pts[2].Epoch)
+	require.Equal(t, epoch.Epoch(1435781460000000000), pts[1].Epoch)
+
+	b, err := MarshalTimeseries(ds, nil, 200)
+	require.NoError(t, err)
+	var env map[string]any
+	require.NoError(t, json.Unmarshal(b, &env), "marshal of dataset with malformed points produced invalid JSON: %s", string(b))
 }
