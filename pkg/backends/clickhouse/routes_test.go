@@ -71,3 +71,17 @@ func TestDefaultPathConfigs(t *testing.T) {
 		t.Errorf("expected %d got %d", expectedLen, len(backendClient.Configuration().Paths))
 	}
 }
+
+func TestDefaultPathConfigs_QueryInCacheKey(t *testing.T) {
+	c, err := NewClient("test", nil, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := c.DefaultPathConfigs(nil)
+	if len(paths) == 0 {
+		t.Fatal("no paths")
+	}
+	if !slices.Contains(paths[0].CacheKeyParams, "query") {
+		t.Fatalf("CacheKeyParams must include 'query' to differentiate SQL statements: %v", paths[0].CacheKeyParams)
+	}
+}

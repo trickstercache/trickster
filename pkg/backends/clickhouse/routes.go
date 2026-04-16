@@ -48,7 +48,7 @@ func (c *Client) DefaultPathConfigs(_ *bo.Options) po.List {
 			Methods:        methods.GetAndPost(),
 			MatchType:      matching.PathMatchTypePrefix,
 			MatchTypeName:  matching.PathMatchNamePrefix,
-			CacheKeyParams: []string{"database"},
+			CacheKeyParams: []string{"query", "database"},
 		},
 	}
 }
