@@ -116,9 +116,13 @@ style:
 
 LINT_FLAGS ?= 
 .PHONY: lint
-lint: spelling
+lint: spelling vulncheck
 	@go fix -diff ./...
 	@go tool golangci-lint run $(LINT_FLAGS) -c .golangci.yml
+
+.PHONY: vulncheck
+vulncheck:
+	@go tool govulncheck ./...
 
 .PHONY: lint-fix
 lint-fix:

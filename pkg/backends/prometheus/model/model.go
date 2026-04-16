@@ -61,7 +61,8 @@ func (e *Envelope) StartMarshal(w io.Writer, httpStatus int) {
 		h.Set(headers.NameContentType, headers.ValueApplicationJSON+"; charset=UTF-8")
 		rw.WriteHeader(httpStatus)
 	}
-	fmt.Fprintf(w, `{"status":"%s"`, e.Status)
+	sb, _ := json.Marshal(e.Status)
+	fmt.Fprintf(w, `{"status":%s`, sb)
 
 	if e.Error != "" {
 		b, _ := json.Marshal(e.Error)

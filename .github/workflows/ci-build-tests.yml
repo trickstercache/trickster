@@ -82,9 +82,7 @@ jobs:
           go mod download
       - name: govulncheck
         continue-on-error: true
-        run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
-          govulncheck ./...
+        run: go tool govulncheck ./...
       - run: go mod vendor
       - name: Run tests
         run: make test

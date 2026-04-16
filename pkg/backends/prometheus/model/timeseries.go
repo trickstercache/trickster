@@ -107,6 +107,9 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 	if err != nil {
 		return nil, err
 	}
+	if wfd.Envelope == nil {
+		wfd.Envelope = &Envelope{}
+	}
 	ds := &dataset.DataSet{
 		Status:         wfd.Status,
 		Error:          wfd.Error,
