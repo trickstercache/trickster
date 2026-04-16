@@ -185,7 +185,8 @@ generate: perform-generate insert-license-headers
 
 .PHONY: perform-generate
 perform-generate:
-	$(GO) generate ./pkg/... ./cmd/... ./integration/...
+	$(GO) generate ./pkg/... ./cmd/...
+	cd integration && $(GO) generate ./...
 
 .PHONY: insert-license-headers
 insert-license-headers:
