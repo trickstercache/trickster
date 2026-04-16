@@ -80,9 +80,22 @@ jobs:
       - name: Get dependencies
         run: |
           go mod download
+      - name: govulncheck
+        continue-on-error: true
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
       - run: go mod vendor
       - name: Run tests
         run: make test
+      - name: Check coverage floor
+        run: |
+          COVERAGE=$(go tool cover -func=.coverprofile | tail -1 | awk '{print $3}' | tr -d '%')
+          echo "Total coverage: ${COVERAGE}%"
+          if (( $(echo "$COVERAGE < 50" | bc -l) )); then
+            echo "::error::Coverage ${COVERAGE}% is below 50% minimum"
+            exit 1
+          fi
       - name: Run tests (with race detection enabled)
         run: |
           echo "::group::Race Detection Tests"
