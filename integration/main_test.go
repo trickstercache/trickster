@@ -109,12 +109,7 @@ func waitForTrickster(t *testing.T, addr string, path ...string) {
 	}, 10*time.Second, 250*time.Millisecond, "endpoint did not become ready: "+url)
 }
 
-// waitForPrometheusData polls Prometheus directly until a step-aligned
-// range_query for `up` returns non-empty results. Checking label metadata
-// alone isn't sufficient — DPC truncates the query's `end` to the nearest
-// step boundary, so the first scrape must be old enough to fall within the
-// truncated [start, end] window. Without this, range_query tests are flaky
-// because the step-truncated end can land before the first sample exists.
+// Uses range_query (not label metadata) — DPC truncates end to step boundary.
 func waitForPrometheusData(t *testing.T, prometheusAddr string) {
 	t.Helper()
 	require.EventuallyWithT(t, func(collect *assert.CollectT) {

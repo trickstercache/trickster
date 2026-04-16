@@ -125,12 +125,6 @@ func TestMergeAndWriteLabelData(t *testing.T) {
 	}
 }
 
-// TestMergeAndWriteLabelData_EscapesSpecialChars pins the layer behind
-// malformed JSON when label values contain quotes or backslashes. The
-// current hand-rolled emitter does `"`+strings.Join(data, `","`)+`"`, which
-// produces invalid JSON for values like `a"b`. Prometheus label values are
-// unrestricted UTF-8 — any client using `/api/v1/label/<name>/values`
-// against data with quoted labels gets an unparsable merged body.
 func TestMergeAndWriteLabelData_EscapesSpecialChars(t *testing.T) {
 	body := []byte(`{"status":"success","data":["simple","with \"quote\"","back\\slash"]}`)
 	w := httptest.NewRecorder()
@@ -162,9 +156,6 @@ func TestMergeAndWriteLabelData_EscapesSpecialChars(t *testing.T) {
 	}
 }
 
-// TestMergeAndWriteLabelData_BodyParseable verifies the marshaled envelope
-// is valid JSON and carries every merged entry. Prior tests asserted only
-// the status code, which would have masked a separator or field-drop bug.
 func TestMergeAndWriteLabelData_BodyParseable(t *testing.T) {
 	tests := []struct {
 		name     string

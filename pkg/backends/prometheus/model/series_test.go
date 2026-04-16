@@ -112,11 +112,6 @@ func TestSeries(t *testing.T) {
 	}
 }
 
-// TestSeries_PreservesArbitraryLabels pins the fundamental layer that the
-// ALB+TSM /api/v1/series fanout relies on: WFSeriesData must round-trip the
-// full Prometheus label set. Real series carry labels beyond __name__/
-// instance/job (e.g. shard, region, cluster) and merging across shards
-// depends on those labels to differentiate and emit results.
 func TestSeries_PreservesArbitraryLabels(t *testing.T) {
 	bodies := [][]byte{
 		[]byte(`{"status":"success","data":[{"__name__":"up","instance":"i","job":"j","shard":"a"}]}`),

@@ -148,12 +148,6 @@ func TestMergeAndWriteAlerts(t *testing.T) {
 	}
 }
 
-// TestMergeAndWriteAlerts_MultipleAlertsParseable pins the separator layout
-// in MergeAndWriteAlertsRespondFunc. Today it writes the separator AFTER the
-// closing brace instead of between alert objects, which produces invalid JSON
-// ({...}{...},) as soon as more than one alert is merged. Existing tests only
-// assert the status code and never parse the body, so this is slipping
-// through.
 func TestMergeAndWriteAlerts_MultipleAlertsParseable(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	bodies := [][]byte{

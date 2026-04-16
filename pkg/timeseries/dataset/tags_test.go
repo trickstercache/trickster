@@ -21,11 +21,6 @@ import (
 	"testing"
 )
 
-// TestTagsJSON_EscapesSpecialChars pins the escaping contract of Tags.JSON.
-// Prometheus label values are arbitrary UTF-8 — quotes and backslashes are
-// permitted. The hand-rolled string-concat emitter produces invalid JSON
-// for those, which shows up downstream as unparsable metric labels in
-// matrix/vector query responses and in alert labels/annotations.
 func TestTagsJSON_EscapesSpecialChars(t *testing.T) {
 	tags := Tags{
 		"path":  `/api/v1/query?q="a"`,

@@ -39,11 +39,6 @@ func TestProcessTransformations(t *testing.T) {
 	c.ProcessTransformations(&dataset.DataSet{})
 }
 
-// TestProcessLabelsResponse_InjectsKeysAndValues pins the layer behind the
-// skipped /api/v1/labels integration test: when a backend has
-// `prometheus.labels` injected, its /labels response must surface the
-// injected keys, and /label/<k>/values must surface the injected value —
-// otherwise the TSM fanout can never merge those labels into the output.
 func TestProcessLabelsResponse_InjectsKeysAndValues(t *testing.T) {
 	parse := func(body []byte) []string {
 		t.Helper()
