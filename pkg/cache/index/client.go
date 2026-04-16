@@ -225,7 +225,11 @@ func (idx *IndexedClient) Store(cacheKey string, byteData []byte, ttl time.Durat
 		obj.Expiration.Store(expiry)
 	}
 	// store the object in the cache
-	if err := idx.Client.Store(cacheKey, obj.ToBytes(), ttl); err != nil {
+	b, err := obj.ToBytes()
+	if err != nil {
+		return err
+	}
+	if err := idx.Client.Store(cacheKey, b, ttl); err != nil {
 		return err
 	}
 	idx.updateIndex(cacheKey, obj.Size, now, now, expiry)

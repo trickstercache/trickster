@@ -85,8 +85,10 @@ func GetRequestValues(r *http.Request) (url.Values, []byte, bool) {
 	case !methods.HasBody(r.Method):
 		return r.URL.Query(), []byte(r.URL.RawQuery), false
 	case isMultipartOrForm(r):
-		// r.ParseMultipartForm doesn't reset the request body, so this handles:
-		b, _ := request.GetBody(r)
+		b, err := request.GetBody(r)
+		if err != nil {
+			return r.URL.Query(), nil, false
+		}
 		r.ParseMultipartForm(10 * 1024 * 1024)
 		r.Body.Close()
 		r.Body = io.NopCloser(bytes.NewReader(b))

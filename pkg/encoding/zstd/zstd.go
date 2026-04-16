@@ -29,8 +29,15 @@ var (
 )
 
 func init() {
-	commonDecoder, _ = zstd.NewReader(nil)
-	commonEncoder, _ = zstd.NewWriter(nil)
+	var err error
+	commonDecoder, err = zstd.NewReader(nil)
+	if err != nil {
+		panic("zstd: failed to create decoder: " + err.Error())
+	}
+	commonEncoder, err = zstd.NewWriter(nil)
+	if err != nil {
+		panic("zstd: failed to create encoder: " + err.Error())
+	}
 }
 
 func decodeBody(in []byte) ([]byte, error) {

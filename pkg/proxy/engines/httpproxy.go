@@ -80,7 +80,10 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 		cacheStatusCode = setStatusHeader(resp.StatusCode, resp.Header)
 		writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)
 		if writer != nil && reader != nil {
-			io.Copy(writer, reader)
+			if _, err := io.Copy(writer, reader); err != nil {
+				logger.Error("proxy response copy failed",
+					logging.Pairs{"error": err.Error()})
+			}
 		}
 	} else {
 		pr := newProxyRequest(r, w)
@@ -101,7 +104,10 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 				grClose := reader != nil && closeResponse
 				closeResponse = false
 				go func() {
-					io.Copy(pcf, reader)
+					if _, err := io.Copy(pcf, reader); err != nil {
+						logger.Error("pcf upstream copy failed",
+							logging.Pairs{"error": err.Error()})
+					}
 					pcf.Close()
 					reqs.Delete(key)
 					if grClose {

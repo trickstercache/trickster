@@ -594,7 +594,10 @@ func parseWhereTokens(results ts.Lookup,
 					return t, err
 				}
 				trq.TimestampDefinition.ProviderData1 = byte(f)
-				val, j, _ := SolveMathExpression(fieldParts[i:], ts, withVars)
+				val, j, err := SolveMathExpression(fieldParts[i:], ts, withVars)
+				if err != nil {
+					return t, err
+				}
 				t2 := t.Clone()
 				t2.Val = strconv.FormatInt(val, 10)
 				t2.Typ = token.Number
@@ -626,8 +629,10 @@ func parseWhereTokens(results ts.Lookup,
 				if err != nil {
 					return t, err
 				}
-				v, j, _ := SolveMathExpression(fieldParts[i:], ts, withVars)
-				// since we must be in a BETWEEN to be here, this must be the upper bound
+				v, j, err := SolveMathExpression(fieldParts[i:], ts, withVars)
+				if err != nil {
+					return t, err
+				}
 				e.End = time.Unix(v, 0)
 				tsr2 = t.Val
 				i += j

@@ -69,7 +69,11 @@ func RegisterProxyRoutes(conf *config.Config, clients backends.Backends,
 ) error {
 	// a fake "top-level" backend representing the main frontend, so rules can route
 	// to it via the clients map
-	clients["frontend"], _ = reverseproxycache.NewClient("frontend", &bo.Options{}, r, nil, nil, nil)
+	var err error
+	clients["frontend"], err = reverseproxycache.NewClient("frontend", &bo.Options{}, r, nil, nil, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create frontend client: %w", err)
+	}
 
 	var defaultBackend string
 	var ndo *bo.Options // points to the backend options named "default"

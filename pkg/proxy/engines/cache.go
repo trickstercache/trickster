@@ -233,8 +233,12 @@ func writeConcurrent(_ context.Context, c cache.Cache, key string, d *HTTPDocume
 	if compress && len(b) >= 512 {
 		buf := bytes.NewBuffer([]byte{1})
 		encoder := brotli.NewWriter(buf)
-		encoder.Write(b)
-		encoder.Close()
+		if _, err = encoder.Write(b); err != nil {
+			return err
+		}
+		if err = encoder.Close(); err != nil {
+			return err
+		}
 		b = buf.Bytes()
 	} else {
 		buf := make([]byte, len(b)+1)
@@ -294,7 +298,10 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 		}
 	} else {
 		if marshal != nil {
-			d.Body, _ = marshal(d.timeseries, nil, 0)
+			d.Body, err = marshal(d.timeseries, nil, 0)
+			if err != nil {
+				return err
+			}
 		}
 		err = writeConcurrent(ctx, c, key, d, compress, ttl)
 	}
