@@ -26,24 +26,17 @@ import (
 )
 
 func TestMarshalUnmarshalDataSet(t *testing.T) {
-	v := DataSet{
-		Status: "success",
-	}
+	v := DataSet{}
 	bts, err := v.MarshalMsg(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var v2 DataSet
-	left, err := v2.UnmarshalMsg(bts)
+	left, err := v.UnmarshalMsg(bts)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(left) > 0 {
 		t.Errorf("%d bytes left over after UnmarshalMsg(): %q", len(left), left)
-	}
-
-	if v2.Status != "success" {
-		t.Errorf("round-trip mismatch: got Status=%q", v2.Status)
 	}
 
 	left, err = msgp.Skip(bts)

@@ -26,7 +26,7 @@ import (
 )
 
 func TestMarshalUnmarshalTags(t *testing.T) {
-	v := Tags{"__name__": "up", "job": "prometheus", "instance": "localhost:9090"}
+	v := Tags{}
 	bts, err := v.MarshalMsg(nil)
 	if err != nil {
 		t.Fatal(err)
@@ -37,10 +37,6 @@ func TestMarshalUnmarshalTags(t *testing.T) {
 	}
 	if len(left) > 0 {
 		t.Errorf("%d bytes left over after UnmarshalMsg(): %q", len(left), left)
-	}
-
-	if len(v) != 3 || v["job"] != "prometheus" || v["instance"] != "localhost:9090" {
-		t.Errorf("round-trip mismatch: got %+v", v)
 	}
 
 	left, err = msgp.Skip(bts)

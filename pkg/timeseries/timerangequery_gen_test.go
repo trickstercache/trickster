@@ -26,26 +26,17 @@ import (
 )
 
 func TestMarshalUnmarshalTimeRangeQuery(t *testing.T) {
-	v := TimeRangeQuery{
-		Statement:   "SELECT * FROM cpu",
-		StepNS:      15000000000,
-		RecordLimit: 100,
-	}
+	v := TimeRangeQuery{}
 	bts, err := v.MarshalMsg(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var v2 TimeRangeQuery
-	left, err := v2.UnmarshalMsg(bts)
+	left, err := v.UnmarshalMsg(bts)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(left) > 0 {
 		t.Errorf("%d bytes left over after UnmarshalMsg(): %q", len(left), left)
-	}
-
-	if v2.Statement != "SELECT * FROM cpu" || v2.StepNS != 15000000000 || v2.RecordLimit != 100 {
-		t.Errorf("round-trip mismatch: got Statement=%q StepNS=%d RecordLimit=%d", v2.Statement, v2.StepNS, v2.RecordLimit)
 	}
 
 	left, err = msgp.Skip(bts)

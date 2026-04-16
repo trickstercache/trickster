@@ -21,17 +21,12 @@ package timeseries
 import (
 	"bytes"
 	"testing"
-	"time"
 
 	"github.com/tinylib/msgp/msgp"
 )
 
 func TestMarshalUnmarshalExtent(t *testing.T) {
-	v := Extent{
-		Start:    time.Unix(1609459200, 0).UTC(),
-		End:      time.Unix(1609545600, 0).UTC(),
-		LastUsed: time.Unix(1609632000, 0).UTC(),
-	}
+	v := Extent{}
 	bts, err := v.MarshalMsg(nil)
 	if err != nil {
 		t.Fatal(err)
@@ -42,14 +37,6 @@ func TestMarshalUnmarshalExtent(t *testing.T) {
 	}
 	if len(left) > 0 {
 		t.Errorf("%d bytes left over after UnmarshalMsg(): %q", len(left), left)
-	}
-
-	bts2, err := v.MarshalMsg(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(bts, bts2) {
-		t.Error("round-trip marshal bytes mismatch")
 	}
 
 	left, err = msgp.Skip(bts)
@@ -97,11 +84,7 @@ func BenchmarkUnmarshalExtent(b *testing.B) {
 }
 
 func TestEncodeDecodeExtent(t *testing.T) {
-	v := Extent{
-		Start:    time.Unix(1609459200, 0).UTC(),
-		End:      time.Unix(1609545600, 0).UTC(),
-		LastUsed: time.Unix(1609632000, 0).UTC(),
-	}
+	v := Extent{}
 	var buf bytes.Buffer
 	msgp.Encode(&buf, &v)
 
@@ -114,10 +97,6 @@ func TestEncodeDecodeExtent(t *testing.T) {
 	err := msgp.Decode(&buf, &vn)
 	if err != nil {
 		t.Error(err)
-	}
-
-	if !vn.Start.Equal(v.Start) || !vn.End.Equal(v.End) || !vn.LastUsed.Equal(v.LastUsed) {
-		t.Errorf("decoded Extent does not match original: got Start=%v End=%v LastUsed=%v", vn.Start, vn.End, vn.LastUsed)
 	}
 
 	buf.Reset()

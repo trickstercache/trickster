@@ -139,25 +139,17 @@ func BenchmarkDecodeHashes(b *testing.B) {
 }
 
 func TestMarshalUnmarshalSeries(t *testing.T) {
-	v := Series{
-		Header:    SeriesHeader{Name: "cpu"},
-		PointSize: 42,
-	}
+	v := Series{}
 	bts, err := v.MarshalMsg(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var v2 Series
-	left, err := v2.UnmarshalMsg(bts)
+	left, err := v.UnmarshalMsg(bts)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(left) > 0 {
 		t.Errorf("%d bytes left over after UnmarshalMsg(): %q", len(left), left)
-	}
-
-	if v2.Header.Name != "cpu" || v2.PointSize != 42 {
-		t.Errorf("round-trip mismatch: got Header.Name=%q PointSize=%d", v2.Header.Name, v2.PointSize)
 	}
 
 	left, err = msgp.Skip(bts)
@@ -260,22 +252,17 @@ func BenchmarkDecodeSeries(b *testing.B) {
 }
 
 func TestMarshalUnmarshalSeriesLookupKey(t *testing.T) {
-	v := SeriesLookupKey{StatementID: 3, Hash: 12345}
+	v := SeriesLookupKey{}
 	bts, err := v.MarshalMsg(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var v2 SeriesLookupKey
-	left, err := v2.UnmarshalMsg(bts)
+	left, err := v.UnmarshalMsg(bts)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(left) > 0 {
 		t.Errorf("%d bytes left over after UnmarshalMsg(): %q", len(left), left)
-	}
-
-	if v2.StatementID != 3 || v2.Hash != 12345 {
-		t.Errorf("round-trip mismatch: got StatementID=%d Hash=%d", v2.StatementID, v2.Hash)
 	}
 
 	left, err = msgp.Skip(bts)

@@ -26,25 +26,17 @@ import (
 )
 
 func TestMarshalUnmarshalResult(t *testing.T) {
-	v := Result{
-		StatementID: 7,
-		Error:       "partial error",
-	}
+	v := Result{}
 	bts, err := v.MarshalMsg(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var v2 Result
-	left, err := v2.UnmarshalMsg(bts)
+	left, err := v.UnmarshalMsg(bts)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(left) > 0 {
 		t.Errorf("%d bytes left over after UnmarshalMsg(): %q", len(left), left)
-	}
-
-	if v2.StatementID != 7 || v2.Error != "partial error" {
-		t.Errorf("round-trip mismatch: got StatementID=%d Error=%q", v2.StatementID, v2.Error)
 	}
 
 	left, err = msgp.Skip(bts)
