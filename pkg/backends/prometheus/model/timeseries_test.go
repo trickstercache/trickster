@@ -104,6 +104,18 @@ func TestPointFromValues(t *testing.T) {
 			expP:   epoch.Epoch(1435781430000000000),
 			expE:   nil,
 		},
+		{
+			// Prometheus emits timestamps as `seconds.millis`, e.g.
+			// `[1435781430.5, "1"]`. Casting the float to int64 *before*
+			// multiplying by 1e9 drops the sub-second portion, silently
+			// re-bucketing every point to the top of its second. Using an
+			// exactly-representable binary fraction (0.5) so the assertion
+			// is immune to float64 rounding noise.
+			name:   "sub-second precision preserved",
+			values: []any{1435781430.5, "1"},
+			expP:   epoch.Epoch(1435781430500000000),
+			expE:   nil,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

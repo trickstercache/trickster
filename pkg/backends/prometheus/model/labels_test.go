@@ -125,6 +125,43 @@ func TestMergeAndWriteLabelData(t *testing.T) {
 	}
 }
 
+// TestMergeAndWriteLabelData_EscapesSpecialChars pins the layer behind
+// malformed JSON when label values contain quotes or backslashes. The
+// current hand-rolled emitter does `"`+strings.Join(data, `","`)+`"`, which
+// produces invalid JSON for values like `a"b`. Prometheus label values are
+// unrestricted UTF-8 — any client using `/api/v1/label/<name>/values`
+// against data with quoted labels gets an unparseable merged body.
+func TestMergeAndWriteLabelData_EscapesSpecialChars(t *testing.T) {
+	body := []byte(`{"status":"success","data":["simple","with \"quote\"","back\\slash"]}`)
+	w := httptest.NewRecorder()
+	r, _ := http.NewRequest("GET", "/", nil)
+	accum := merge.NewAccumulator()
+	mergeFunc := MergeAndWriteLabelDataMergeFunc()
+	respondFunc := MergeAndWriteLabelDataRespondFunc()
+	if err := mergeFunc(accum, body, 0); err != nil {
+		t.Fatalf("merge: %v", err)
+	}
+	respondFunc(w, r, accum, http.StatusOK)
+
+	var env struct {
+		Status string   `json:"status"`
+		Data   []string `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &env); err != nil {
+		t.Fatalf("merged body invalid JSON: %v (body=%s)", err, w.Body.String())
+	}
+	want := map[string]bool{"simple": true, `with "quote"`: true, `back\slash`: true}
+	got := map[string]bool{}
+	for _, v := range env.Data {
+		got[v] = true
+	}
+	for v := range want {
+		if !got[v] {
+			t.Errorf("missing %q in merged data: %+v", v, env.Data)
+		}
+	}
+}
+
 // TestMergeAndWriteLabelData_BodyParseable verifies the marshaled envelope
 // is valid JSON and carries every merged entry. Prior tests asserted only
 // the status code, which would have masked a separator or field-drop bug.
