@@ -130,7 +130,7 @@ func TestMergeAndWriteLabelData(t *testing.T) {
 // current hand-rolled emitter does `"`+strings.Join(data, `","`)+`"`, which
 // produces invalid JSON for values like `a"b`. Prometheus label values are
 // unrestricted UTF-8 — any client using `/api/v1/label/<name>/values`
-// against data with quoted labels gets an unparseable merged body.
+// against data with quoted labels gets an unparsable merged body.
 func TestMergeAndWriteLabelData_EscapesSpecialChars(t *testing.T) {
 	body := []byte(`{"status":"success","data":["simple","with \"quote\"","back\\slash"]}`)
 	w := httptest.NewRecorder()
