@@ -23,8 +23,6 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
-	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
@@ -53,8 +51,7 @@ func marshalTimeseriesJSON(w io.Writer, ds *dataset.DataSet,
 ) error {
 	wf, err := toWireFormat(ds)
 	if err != nil {
-		logger.Error("failed to convert dataset to clickhouse wire format",
-			logging.Pairs{"error": err})
+		return err
 	}
 	if hw, ok := w.(http.ResponseWriter); ok && hw != nil {
 		hw.Header().Set(formatHeader, "JSON")
