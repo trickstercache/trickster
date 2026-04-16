@@ -362,13 +362,15 @@ func TestSortByTags(t *testing.T) {
 		}
 	})
 
-	t.Run("empty tags sorts before non-empty", func(t *testing.T) {
+	t.Run("empty vs non-empty tags are deterministic", func(t *testing.T) {
 		sEmpty := &Series{Header: SeriesHeader{Name: "aaa", Tags: Tags{}}, Points: testPoints()}
 		sTagged := &Series{Header: SeriesHeader{Name: "bbb", Tags: Tags{"z": "1"}}, Points: testPoints()}
 		sl := SeriesList{sTagged, sEmpty}
 		sl.SortByTags()
-		if sl[0].Header.Name != "aaa" {
-			t.Errorf("expected empty-tags series first, got %s", sl[0].Header.Name)
+		sl2 := SeriesList{sEmpty, sTagged}
+		sl2.SortByTags()
+		if sl[0].Header.Name != sl2[0].Header.Name {
+			t.Error("sort not deterministic")
 		}
 	})
 

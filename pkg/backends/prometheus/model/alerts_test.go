@@ -37,10 +37,22 @@ func TestCalculateHash(t *testing.T) {
 	}
 
 	i := a.CalculateHash()
-	const expected = 640439168010397861
+	var expected uint64 = 9358847448315454117
 
 	if i != expected {
 		t.Errorf("expected %d got %d", expected, i)
+	}
+}
+
+func TestCalculateHash_AmbiguousSeparators(t *testing.T) {
+	a1 := &WFAlert{
+		Labels: map[string]string{"a=b": "c"},
+	}
+	a2 := &WFAlert{
+		Labels: map[string]string{"a": "b=c"},
+	}
+	if a1.CalculateHash() == a2.CalculateHash() {
+		t.Fatal("different label sets must not collide — separator in key/value is ambiguous")
 	}
 }
 

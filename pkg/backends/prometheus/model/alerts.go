@@ -50,9 +50,9 @@ type WFAlert struct {
 // CalculateHash sums the FNV64a hash for the Header and stores it to the Hash member
 func (a *WFAlert) CalculateHash() uint64 {
 	hash := fnv.NewInlineFNV64a()
-	hash.Write([]byte(dataset.Tags(a.Labels).String()))
+	hash.Write([]byte(dataset.Tags(a.Labels).JSON()))
 	hash.Write([]byte("||"))
-	hash.Write([]byte(dataset.Tags(a.Annotations).String()))
+	hash.Write([]byte(dataset.Tags(a.Annotations).JSON()))
 	return hash.Sum64()
 }
 
