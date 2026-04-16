@@ -25,6 +25,29 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
+func FuzzWFDataItemMarshalJSON(f *testing.F) {
+	f.Add("key1", "value1", "key2", "value2")
+	f.Add("query", `SELECT * WHERE x = "y"`, "path", `C:\Users\test`)
+	f.Add("unicode", "héllo\nwörld", "null\x00byte", "a\tb")
+	f.Fuzz(func(t *testing.T, k1, v1, k2, v2 string) {
+		item := WFDataItem{
+			{Key: k1, Value: v1},
+			{Key: k2, Value: v2},
+		}
+		b, err := item.MarshalJSON()
+		if err != nil {
+			return
+		}
+		if !json.Valid(b) {
+			t.Fatalf("WFDataItem.MarshalJSON produced invalid JSON: %s", string(b))
+		}
+		var roundTrip map[string]string
+		if err := json.Unmarshal(b, &roundTrip); err != nil {
+			t.Fatalf("WFDataItem.MarshalJSON unmarshal failed: %v\nbody: %s", err, string(b))
+		}
+	})
+}
+
 func TestWFDataItem_MarshalJSON_EscapesSpecialChars(t *testing.T) {
 	item := WFDataItem{
 		{Key: "name", Value: `O'Brien`},

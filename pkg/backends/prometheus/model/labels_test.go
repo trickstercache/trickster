@@ -26,6 +26,31 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 )
 
+func FuzzLabelsMergeRoundTrip(f *testing.F) {
+	f.Add("label1", "label2", "label3")
+	f.Add(`val"with"quotes`, `C:\back\slash`, "héllo\nwörld\t\u0000")
+	f.Fuzz(func(t *testing.T, l1, l2, l3 string) {
+		input := &WFLabelData{
+			Envelope: &Envelope{Status: "success"},
+			Data:     []string{l1, l2, l3},
+		}
+		w := httptest.NewRecorder()
+		r, _ := http.NewRequest("GET", "/", nil)
+		accum := merge.NewAccumulator()
+		accum.SetGeneric(input)
+		respondFunc := MergeAndWriteLabelDataRespondFunc()
+		respondFunc(w, r, accum, http.StatusOK)
+		body := w.Body.Bytes()
+		if !json.Valid(body) {
+			t.Fatalf("label respond produced invalid JSON: %s", string(body))
+		}
+		var generic map[string]any
+		if err := json.Unmarshal(body, &generic); err != nil {
+			t.Fatalf("label respond JSON unmarshal failed: %v\nbody: %s", err, string(body))
+		}
+	})
+}
+
 func TestMergeLabelData(t *testing.T) {
 	ld1 := &WFLabelData{
 		Envelope: &Envelope{

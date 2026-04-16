@@ -29,6 +29,29 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 )
 
+func FuzzUnmarshalMarshalTimeseries(f *testing.F) {
+	f.Add([]byte(testMatrix))
+	f.Add([]byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"__name__":"up","label":"val with \"quotes\" and \\backslash and \nnewline and \u00e9"},"values":[[1435781430,"1"]]}]}}`))
+	f.Fuzz(func(t *testing.T, data []byte) {
+		trq := &timeseries.TimeRangeQuery{}
+		ts, err := UnmarshalTimeseries(data, trq)
+		if err != nil {
+			return
+		}
+		ds, ok := ts.(*dataset.DataSet)
+		if !ok {
+			return
+		}
+		b, err := MarshalTimeseries(ds, nil, 200)
+		if err != nil {
+			return
+		}
+		if !json.Valid(b) {
+			t.Fatalf("MarshalTimeseries produced invalid JSON: %s", string(b))
+		}
+	})
+}
+
 func TestNewModeler(t *testing.T) {
 	m := NewModeler()
 	if m == nil {

@@ -25,6 +25,34 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 )
 
+func FuzzSeriesMergeRoundTrip(f *testing.F) {
+	f.Add("key1", "value1", "key2", "value2")
+	f.Add("name", `val"with"quotes`, "path", `C:\back\slash`)
+	f.Add("unicode", "héllo\nwörld", "tab", "a\tb")
+	f.Fuzz(func(t *testing.T, k1, v1, k2, v2 string) {
+		input := &WFSeries{
+			Envelope: &Envelope{Status: "success"},
+			Data: []WFSeriesData{
+				{k1: v1, k2: v2},
+			},
+		}
+		w := httptest.NewRecorder()
+		r, _ := http.NewRequest("GET", "/", nil)
+		accum := merge.NewAccumulator()
+		accum.SetGeneric(input)
+		respondFunc := MergeAndWriteSeriesRespondFunc()
+		respondFunc(w, r, accum, http.StatusOK)
+		body := w.Body.Bytes()
+		if !json.Valid(body) {
+			t.Fatalf("series respond produced invalid JSON: %s", string(body))
+		}
+		var generic map[string]any
+		if err := json.Unmarshal(body, &generic); err != nil {
+			t.Fatalf("series respond JSON unmarshal failed: %v\nbody: %s", err, string(body))
+		}
+	})
+}
+
 const testSeries = `{
 	"status": "success",
 	"data": [

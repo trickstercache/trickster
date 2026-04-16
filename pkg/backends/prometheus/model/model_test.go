@@ -32,6 +32,33 @@ const testMatrix = `{"status":"success","data":{"resultType":"matrix","result":[
 	`{"__name__":"up","instance":"localhost:9091","job":"node"},"values":` +
 	`[[1435781430,"0"],[1435781445,"0"],[1435781460,"1"]]}]}}`
 
+func FuzzEnvelopeStartMarshal(f *testing.F) {
+	f.Add("success", "", "", "")
+	f.Add("error", `err with "quotes"`, `bad\type`, `warn: "tricky" \n value`)
+	f.Add("error", "null\x00byte", "back\\slash", "héllo\nwörld")
+	f.Fuzz(func(t *testing.T, status, errMsg, errType, warning string) {
+		e := &Envelope{
+			Status:    status,
+			Error:     errMsg,
+			ErrorType: errType,
+		}
+		if warning != "" {
+			e.Warnings = []string{warning}
+		}
+		w := httptest.NewRecorder()
+		e.StartMarshal(w, 200)
+		w.Write([]byte("}"))
+		body := w.Body.Bytes()
+		if !json.Valid(body) {
+			t.Fatalf("StartMarshal produced invalid JSON: %s", string(body))
+		}
+		var generic map[string]any
+		if err := json.Unmarshal(body, &generic); err != nil {
+			t.Fatalf("StartMarshal JSON unmarshal failed: %v\nbody: %s", err, string(body))
+		}
+	})
+}
+
 func TestUnmarshalTimeseries(t *testing.T) {
 	b := []byte(testMatrix)
 	trq := &timeseries.TimeRangeQuery{}
@@ -89,10 +116,32 @@ func TestUnmarshalInstantaneous(t *testing.T) {
 	bytes := []byte(`{"status":"success","data":{"resultType":"vector","result":[` +
 		`{"metric":{"__name__":"up","instance":"localhost:9090","job":"prometheus"},` +
 		`"value":[1554730772.113,"1"]}]}}`)
-	_, err := UnmarshalTimeseries(bytes, trq)
+	ts, err := UnmarshalTimeseries(bytes, trq)
 	if err != nil {
 		t.Error(err)
 		return
+	}
+	ds, ok := ts.(*dataset.DataSet)
+	if !ok {
+		t.Fatal("expected *dataset.DataSet")
+	}
+	if len(ds.Results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(ds.Results))
+	}
+	if len(ds.Results[0].SeriesList) != 1 {
+		t.Fatalf("expected 1 series, got %d", len(ds.Results[0].SeriesList))
+	}
+	s := ds.Results[0].SeriesList[0]
+	if len(s.Points) != 1 {
+		t.Fatalf("expected 1 point, got %d", len(s.Points))
+	}
+	got := int64(s.Points[0].Epoch)
+	want := int64(1554730772113000000)
+	if diff := got - want; diff < -1000 || diff > 1000 {
+		t.Errorf("expected epoch ~%d, got %d (diff=%d)", want, got, diff)
+	}
+	if s.Header.Tags["job"] != "prometheus" {
+		t.Errorf("expected tag job=prometheus, got %q", s.Header.Tags["job"])
 	}
 }
 

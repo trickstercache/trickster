@@ -152,6 +152,18 @@ integration-test:
 integration-cover:
 	$(MAKE) -C integration cover
 
+FUZZ_TIME ?= 30s
+
+.PHONY: fuzz
+fuzz:
+	@for pkg in $$($(GO) list ./... | grep -v /vendor/); do \
+		fuzz_funcs=$$($(GO) test -list 'Fuzz.*' $$pkg 2>/dev/null | grep '^Fuzz'); \
+		for fn in $$fuzz_funcs; do \
+			echo "fuzzing $$fn in $$pkg ($(FUZZ_TIME))"; \
+			$(GO) test -fuzz=$$fn -fuzztime=$(FUZZ_TIME) $$pkg || exit 1; \
+		done; \
+	done
+
 .PHONY: bench
 bench:
 	bash -c "$(GO) test -v -coverprofile=.coverprofile ./... -run=nonthingplease -bench=. | grep -v ' app=trickster '; exit ${PIPESTATUS[0]}"
