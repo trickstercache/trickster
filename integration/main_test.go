@@ -106,10 +106,14 @@ func waitForPrometheusData(t *testing.T, prometheusAddr string) {
 	t.Helper()
 	require.EventuallyWithT(t, func(collect *assert.CollectT) {
 		now := time.Now()
+		step := 15 * time.Second
+		// Truncate end to step boundary to match DPC's NormalizeExtent.
+		end := now.Truncate(step)
+		start := end.Add(-5 * time.Minute)
 		qp := url.Values{
 			"query": {"up"},
-			"start": {strconv.FormatInt(now.Add(-5*time.Minute).Unix(), 10)},
-			"end":   {strconv.FormatInt(now.Unix(), 10)},
+			"start": {strconv.FormatInt(start.Unix(), 10)},
+			"end":   {strconv.FormatInt(end.Unix(), 10)},
 			"step":  {"15"},
 		}
 		resp, err := http.Get("http://" + prometheusAddr + "/api/v1/query_range?" + qp.Encode())
