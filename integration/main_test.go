@@ -109,15 +109,23 @@ func waitForTrickster(t *testing.T, addr string, path ...string) {
 	}, 10*time.Second, 250*time.Millisecond, "endpoint did not become ready: "+url)
 }
 
-// waitForPrometheusData polls Prometheus directly until at least one scrape
-// has completed and the "prometheus" job label is available. This must be
-// called before any tests that depend on scraped metrics (labels, series,
-// label values). The scrape_interval is 15s with a random jitter offset, so
-// we allow up to 30s (2 full intervals) for the first scrape to land.
+// waitForPrometheusData polls Prometheus directly until a step-aligned
+// range_query for `up` returns non-empty results. Checking label metadata
+// alone isn't sufficient — DPC truncates the query's `end` to the nearest
+// step boundary, so the first scrape must be old enough to fall within the
+// truncated [start, end] window. Without this, range_query tests are flaky
+// because the step-truncated end can land before the first sample exists.
 func waitForPrometheusData(t *testing.T, prometheusAddr string) {
 	t.Helper()
 	require.EventuallyWithT(t, func(collect *assert.CollectT) {
-		resp, err := http.Get("http://" + prometheusAddr + "/api/v1/label/job/values")
+		now := time.Now()
+		qp := url.Values{
+			"query": {"up"},
+			"start": {strconv.FormatInt(now.Add(-5*time.Minute).Unix(), 10)},
+			"end":   {strconv.FormatInt(now.Unix(), 10)},
+			"step":  {"15"},
+		}
+		resp, err := http.Get("http://" + prometheusAddr + "/api/v1/query_range?" + qp.Encode())
 		if !assert.NoError(collect, err) {
 			return
 		}
@@ -130,12 +138,16 @@ func waitForPrometheusData(t *testing.T, prometheusAddr string) {
 		if !assert.NoError(collect, json.Unmarshal(b, &pr)) {
 			return
 		}
-		var values []string
-		if !assert.NoError(collect, json.Unmarshal(pr.Data, &values)) {
+		var qd promQueryData
+		if !assert.NoError(collect, json.Unmarshal(pr.Data, &qd)) {
 			return
 		}
-		assert.Contains(collect, values, "prometheus", "waiting for prometheus self-scrape")
-	}, 30*time.Second, 2*time.Second, "Prometheus scrape data never became available")
+		var series []json.RawMessage
+		if !assert.NoError(collect, json.Unmarshal(qd.Result, &series)) {
+			return
+		}
+		assert.NotEmpty(collect, series, "waiting for step-aligned range data")
+	}, 60*time.Second, 2*time.Second, "Prometheus range data never became available at step alignment")
 }
 
 // waitForClickHouseData polls ClickHouse directly until the trips table exists
