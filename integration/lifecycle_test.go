@@ -32,16 +32,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestLifecycle_ReloadPreservesHCStatus verifies that a SIGHUP-driven config
-// reload keeps health-check-enabled targets reported as "available" in the
-// /trickster/health endpoint.
-//
-// regression: #919
 func TestLifecycle_ReloadPreservesHCStatus(t *testing.T) {
-	// Test-isolation hygiene: drop any prior SIGHUP handlers registered by
-	// earlier tests in this package so this test owns the only live
-	// receiver for the signal it intends to send. signaling.Wait now calls
-	// signal.Stop on teardown, so this Reset is defensive, not a bug shield.
+	// Drop prior SIGHUP handlers so this test owns the only live receiver.
 	signal.Reset(syscall.SIGHUP)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -51,25 +43,16 @@ func TestLifecycle_ReloadPreservesHCStatus(t *testing.T) {
 	const metricsAddr = "127.0.0.1:8531"
 	waitForTrickster(t, metricsAddr)
 
-	// Wait for the prom1 healthcheck target to report available.
 	healthURL := "http://" + metricsAddr + "/trickster/health"
 	requireTargetAvailable(t, healthURL, "prom1", 15*time.Second)
 
-	// daemon.Start is running in a background goroutine within this test
-	// binary; signaling.Wait installs a SIGHUP handler on the same process.
-	// Sending SIGHUP to os.Getpid() triggers the in-process reload path.
 	require.NoError(t, syscall.Kill(os.Getpid(), syscall.SIGHUP),
 		"failed to send SIGHUP for in-process reload")
 
-	// After the reload, the target should still be reported available.
-	// Allow a short grace period for the reload to complete and the
-	// health status rebuilder to publish a new snapshot.
 	time.Sleep(500 * time.Millisecond)
 	requireTargetAvailable(t, healthURL, "prom1", 15*time.Second)
 }
 
-// requireTargetAvailable polls /trickster/health (JSON) until the named
-// backend shows up in the "available" list.
 func requireTargetAvailable(t *testing.T, healthURL, name string, timeout time.Duration) {
 	t.Helper()
 	require.EventuallyWithT(t, func(collect *assert.CollectT) {

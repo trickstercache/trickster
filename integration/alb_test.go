@@ -38,10 +38,6 @@ import (
 
 const albAddr = "127.0.0.1:8490"
 
-// TestALB groups all ALB-mechanism tests under a single Trickster boot
-// on testdata/alb.yaml (:8490/:8491/:8492). This eliminates the port-
-// release race that occurs when sequential top-level tests each start
-// and stop their own instance on the same listeners.
 func TestALB(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -49,7 +45,6 @@ func TestALB(t *testing.T) {
 	waitForTrickster(t, "127.0.0.1:8491")
 	waitForPrometheusData(t, "127.0.0.1:9090")
 
-	// rangeParams returns a 5-minute range-query param set centered on now.
 	rangeParams := func() url.Values {
 		now := time.Now()
 		return url.Values{
@@ -60,9 +55,6 @@ func TestALB(t *testing.T) {
 		}
 	}
 
-	// --- FR mechanism ---
-	// FR fans out to every pool member and serves the first response that
-	// comes back, regardless of HTTP status.
 	t.Run("FR range query", func(t *testing.T) {
 		pr, hdr := queryTricksterProm(t, albAddr, "alb-fr", "/api/v1/query_range", rangeParams())
 		require.Equal(t, "success", pr.Status)
@@ -84,10 +76,6 @@ func TestALB(t *testing.T) {
 		t.Logf("fr instant: %s", hdr.Get("X-Trickster-Result"))
 	})
 
-	// --- UR mechanism ---
-	// Basic-auth credentials select the destination backend. The two
-	// routed destinations inject distinct prometheus labels
-	// (region=us-east vs region=us-west).
 	basic := func(user, pass string) string {
 		return "Basic " + base64.StdEncoding.EncodeToString([]byte(user+":"+pass))
 	}
@@ -181,12 +169,6 @@ func TestALB(t *testing.T) {
 		t.Logf("ur bob range: %s", hdr.Get("X-Trickster-Result"))
 	})
 
-	// --- Header propagation (#970) ---
-	// Verifies custom response headers from pool members survive the
-	// ALB transform path. Uses unique queries to avoid OPC cache hits
-	// from earlier subtests that query `up` through the same backends.
-
-	// regression: #970
 	t.Run("FGR header propagation", func(t *testing.T) {
 		backend := "alb-fgr-labeled"
 		q := fmt.Sprintf("up + 0*%d", time.Now().UnixNano())
@@ -198,7 +180,6 @@ func TestALB(t *testing.T) {
 		t.Logf("%s headers: %v", backend, hdr)
 	})
 
-	// regression: #970
 	t.Run("TSM header propagation", func(t *testing.T) {
 		backend := "alb-tsm-labeled"
 		q := fmt.Sprintf("up + 0*%d", time.Now().UnixNano())
@@ -209,10 +190,6 @@ func TestALB(t *testing.T) {
 			backend)
 		t.Logf("%s headers: %v", backend, hdr)
 	})
-
-	// --- TSM aggregation merge (#956) ---
-	// `sum by (job) (up)` through labeled backends must strip injected
-	// labels before hashing so rows collapse to 1 per distinct job.
 
 	assertAggregationCollapses := func(t *testing.T, qd promQueryData) {
 		t.Helper()
@@ -243,7 +220,6 @@ func TestALB(t *testing.T) {
 		}
 	}
 
-	// regression: #956
 	t.Run("TSM aggregation merge range", func(t *testing.T) {
 		now := time.Now()
 		queryExpr := fmt.Sprintf("sum by (job) (up + 0*%d)", now.UnixNano())
@@ -262,7 +238,6 @@ func TestALB(t *testing.T) {
 		t.Logf("tsm aggregation merge (range): %s", hdr.Get("X-Trickster-Result"))
 	})
 
-	// regression: #956
 	t.Run("TSM aggregation merge instant", func(t *testing.T) {
 		queryExpr := fmt.Sprintf("sum by (job) (up + 0*%d)", time.Now().UnixNano())
 		pr, hdr := queryTricksterProm(t, albAddr, "alb-tsm-labeled", "/api/v1/query",
@@ -300,8 +275,6 @@ func TestALB(t *testing.T) {
 		t.Logf("tsm aggregation merge (instant POST): %s", resp.Header.Get("X-Trickster-Result"))
 	})
 
-	// --- TSM deflate origin (#938) ---
-	// regression: #938
 	t.Run("TSM deflate origin", func(t *testing.T) {
 		deflateBody := `{"status":"success","data":{"resultType":"vector","result":[` +
 			`{"metric":{"__name__":"up","job":"fake","instance":"deflate:1"},` +
@@ -349,8 +322,6 @@ func TestALB(t *testing.T) {
 		t.Logf("tsm deflate origin: %s", hdr.Get("X-Trickster-Result"))
 	})
 
-	// --- FR cancel race (#945) ---
-	// regression: #945
 	t.Run("FR cancel race", func(t *testing.T) {
 		const iterations = 50
 		u := "http://" + albAddr + "/alb-fr/api/v1/query?query=up"
@@ -375,11 +346,6 @@ func TestALB(t *testing.T) {
 		}
 		wg.Wait()
 	})
-
-	// --- FGR/RR/TSM/NLM mechanism coverage (originally TestPrometheusALB) ---
-	// These subtests exercised the original ALB mechanisms before the
-	// expansion above added FR/UR/header-propagation/aggregation/deflate/race
-	// coverage. They share the same alb.yaml boot.
 
 	t.Run("fgr range query", func(t *testing.T) {
 		pr, hdr := queryTricksterProm(t, albAddr, "alb-fgr", "/api/v1/query_range", rangeParams())
@@ -449,7 +415,6 @@ func TestALB(t *testing.T) {
 		require.NotEmpty(t, result["engine"])
 	})
 
-	// regression: #937
 	t.Run("tsm instant query", func(t *testing.T) {
 		pr, hdr := queryTricksterProm(t, albAddr, "alb-tsm", "/api/v1/query", url.Values{"query": {"up"}})
 		require.Equal(t, "success", pr.Status)
@@ -460,7 +425,6 @@ func TestALB(t *testing.T) {
 		t.Logf("tsm instant: %s", hdr.Get("X-Trickster-Result"))
 	})
 
-	// regression: #936
 	t.Run("tsm labels merge", func(t *testing.T) {
 		pr, hdr := queryTricksterProm(t, albAddr, "alb-tsm", "/api/v1/labels", nil)
 		require.Equal(t, "success", pr.Status)
@@ -471,7 +435,6 @@ func TestALB(t *testing.T) {
 		t.Logf("tsm labels: %s", hdr.Get("X-Trickster-Result"))
 	})
 
-	// regression: #936
 	t.Run("tsm label values merge", func(t *testing.T) {
 		pr, hdr := queryTricksterProm(t, albAddr, "alb-tsm", "/api/v1/label/job/values", nil)
 		require.Equal(t, "success", pr.Status)
@@ -501,7 +464,6 @@ func TestALB(t *testing.T) {
 		t.Logf("nlm instant: %s", hdr.Get("X-Trickster-Result"))
 	})
 
-	// regression: #937
 	for _, mech := range []string{"fgr", "nlm", "tsm"} {
 		t.Run(mech+"-labeled instant query (#937)", func(t *testing.T) {
 			backend := "alb-" + mech + "-labeled"

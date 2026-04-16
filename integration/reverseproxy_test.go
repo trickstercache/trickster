@@ -24,8 +24,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestReverseProxyCache tests reverse proxy cache with byte-range support.
-// Requires: make developer-start (for Mockster on :8482).
 func TestReverseProxyCache(t *testing.T) {
 	cfg := writeTestConfig(t, 8574, 8575, 8584)
 	rpcAddr := "127.0.0.1:8574"
@@ -34,7 +32,6 @@ func TestReverseProxyCache(t *testing.T) {
 
 	t.Run("full object cache", func(t *testing.T) {
 		u := "http://" + rpcAddr + "/rpc1/test/object"
-		// First request: cache miss
 		resp, err := http.Get(u)
 		require.NoError(t, err)
 		body, err := io.ReadAll(resp.Body)
@@ -45,7 +42,6 @@ func TestReverseProxyCache(t *testing.T) {
 		result := parseTricksterResult(resp.Header.Get("X-Trickster-Result"))
 		t.Logf("rpc first: %s", resp.Header.Get("X-Trickster-Result"))
 
-		// Second request: should be a cache hit
 		resp2, err := http.Get(u)
 		require.NoError(t, err)
 		body2, err := io.ReadAll(resp2.Body)
@@ -65,7 +61,6 @@ func TestReverseProxyCache(t *testing.T) {
 		require.NoError(t, err)
 		req.Header.Set("Range", "bytes=0-99")
 
-		// Use a transport that doesn't auto-decompress
 		client := &http.Client{Transport: &http.Transport{DisableCompression: true}}
 		resp, err := client.Do(req)
 		require.NoError(t, err)
@@ -76,7 +71,6 @@ func TestReverseProxyCache(t *testing.T) {
 		t.Logf("byte range: status=%d, Content-Range=%s, X-Trickster-Result=%s",
 			resp.StatusCode, resp.Header.Get("Content-Range"), resp.Header.Get("X-Trickster-Result"))
 
-		// Mockster's /byterange endpoint should return 206 for range requests
 		require.Equal(t, http.StatusPartialContent, resp.StatusCode,
 			"expected 206 Partial Content for Range request, body: %s", string(body))
 		require.NotEmpty(t, resp.Header.Get("Content-Range"),
@@ -100,8 +94,6 @@ func TestReverseProxyCache(t *testing.T) {
 		return resp, b
 	}
 
-	// regression: #948 — sequential byte ranges were off-by-one and
-	// io.ReadAll errors from document assembly were being ignored.
 	t.Run("sequential byte ranges", func(t *testing.T) {
 		resp1, b1 := getRange(t, "/rpc1/seq-range", "bytes=0-99")
 		require.Equal(t, http.StatusPartialContent, resp1.StatusCode)
@@ -113,7 +105,6 @@ func TestReverseProxyCache(t *testing.T) {
 		require.NotEqual(t, b1, b2, "distinct ranges must return distinct byte slices")
 	})
 
-	// Overlapping ranges must agree on the overlap region (100..150).
 	t.Run("overlapping byte ranges", func(t *testing.T) {
 		resp1, b1 := getRange(t, "/rpc1/overlap-range", "bytes=0-150")
 		require.Equal(t, http.StatusPartialContent, resp1.StatusCode)
@@ -123,7 +114,7 @@ func TestReverseProxyCache(t *testing.T) {
 		require.Equal(t, http.StatusPartialContent, resp2.StatusCode)
 		require.Len(t, b2, 151)
 
-		// Overlap region: bytes 100-150 appears at [100:151] in b1 and [0:51] in b2.
+		// b1[100:151] and b2[0:51] both represent bytes 100-150.
 		require.Equal(t, b1[100:151], b2[0:51],
 			"overlap region must be byte-identical between the two ranged responses")
 	})
@@ -134,10 +125,6 @@ func TestReverseProxyCache(t *testing.T) {
 			"expected 416 for out-of-bounds range, got %d", resp.StatusCode)
 	})
 
-	// Conditional GET via If-Modified-Since: Mockster serves a static
-	// Last-Modified of 2020-01-01; a matching conditional request must
-	// return 304. We warm the cache first so the revalidation path is
-	// exercised through the cache index rather than raw pass-through.
 	t.Run("conditional if-modified-since", func(t *testing.T) {
 		resp0, _ := getRange(t, "/rpc1/cond", "")
 		require.Equal(t, http.StatusOK, resp0.StatusCode)

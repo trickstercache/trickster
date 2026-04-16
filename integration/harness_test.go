@@ -33,18 +33,12 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-// tricksterHarness bundles the config path + listener addresses for a
-// Trickster instance under test. Each test function constructs one (via a
-// preset constructor or by hand for custom configs) and calls start.
 type tricksterHarness struct {
 	ConfigPath  string // path to YAML config passed to the daemon
 	BaseAddr    string // host:port of the data listener (e.g. "127.0.0.1:8480")
 	MetricsAddr string // host:port of the metrics/health listener
 }
 
-// developerHarness returns the harness for the shared developer config.
-// Used by any test that just needs the full multi-backend playground
-// (prom1/2/3, click1, flux2, rpc1, sim1, ...).
 func developerHarness() tricksterHarness {
 	return tricksterHarness{
 		ConfigPath:  "../docs/developer/environment/trickster-config/trickster.yaml",
@@ -53,7 +47,6 @@ func developerHarness() tricksterHarness {
 	}
 }
 
-// albHarness returns the harness for the ALB-specific config (testdata/alb.yaml).
 func albHarness() tricksterHarness {
 	return tricksterHarness{
 		ConfigPath:  "testdata/alb.yaml",
@@ -62,7 +55,6 @@ func albHarness() tricksterHarness {
 	}
 }
 
-// rewriterHarness returns the harness for the request-rewriter config.
 func rewriterHarness() tricksterHarness {
 	return tricksterHarness{
 		ConfigPath:  "testdata/rewriter.yaml",
@@ -71,9 +63,6 @@ func rewriterHarness() tricksterHarness {
 	}
 }
 
-// start boots a Trickster instance and blocks until the metrics listener is
-// ready. Cancellation is bound to t.Cleanup, so callers do not need to manage
-// the context themselves.
 func (h tricksterHarness) start(t *testing.T) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -82,7 +71,6 @@ func (h tricksterHarness) start(t *testing.T) {
 	waitForTrickster(t, h.MetricsAddr)
 }
 
-// requestOptions collects overrides for tricksterHarness.do.
 type requestOptions struct {
 	method      string
 	headers     http.Header
@@ -93,10 +81,8 @@ type requestOptions struct {
 
 type requestOption func(*requestOptions)
 
-// withMethod overrides the HTTP method (default GET, or POST if withBody is set).
 func withMethod(m string) requestOption { return func(o *requestOptions) { o.method = m } }
 
-// withHeader adds a single request header.
 func withHeader(k, v string) requestOption {
 	return func(o *requestOptions) {
 		if o.headers == nil {
@@ -106,7 +92,6 @@ func withHeader(k, v string) requestOption {
 	}
 }
 
-// withBody sets a request body and Content-Type, and defaults the method to POST.
 func withBody(contentType string, r io.Reader) requestOption {
 	return func(o *requestOptions) {
 		o.contentType = contentType
@@ -117,12 +102,8 @@ func withBody(contentType string, r io.Reader) requestOption {
 	}
 }
 
-// withParams sets URL query parameters.
 func withParams(p url.Values) requestOption { return func(o *requestOptions) { o.params = p } }
 
-// do issues a request to h.BaseAddr+path and returns the response (for
-// headers/status) plus the decoded body. gzip Content-Encoding is handled
-// transparently; other encodings are returned as-is so tests can assert on them.
 func (h tricksterHarness) do(t *testing.T, path string, opts ...requestOption) (*http.Response, []byte) {
 	t.Helper()
 	o := &requestOptions{method: http.MethodGet}
@@ -143,8 +124,7 @@ func (h tricksterHarness) do(t *testing.T, path string, opts ...requestOption) (
 			req.Header.Add(k, v)
 		}
 	}
-	// Disable automatic gzip so we control decoding — ALB mechanisms can
-	// produce merged headers that confuse Go's auto-decompression.
+	// ALB mechanisms can produce merged headers that confuse Go's auto-decompression.
 	client := &http.Client{Transport: &http.Transport{DisableCompression: true}}
 	resp, err := client.Do(req)
 	require.NoError(t, err)
@@ -161,8 +141,6 @@ func (h tricksterHarness) do(t *testing.T, path string, opts ...requestOption) (
 	return resp, body
 }
 
-// queryProm issues a request to a Prometheus-shaped backend and decodes the
-// envelope into promResponse. Asserts 200 OK.
 func (h tricksterHarness) queryProm(t *testing.T, backend, apiPath string, opts ...requestOption) (promResponse, http.Header) {
 	t.Helper()
 	resp, body := h.do(t, "/"+backend+apiPath, opts...)
@@ -172,16 +150,6 @@ func (h tricksterHarness) queryProm(t *testing.T, backend, apiPath string, opts 
 	return pr, resp.Header.Clone()
 }
 
-// requireTricksterResult parses the X-Trickster-Result header and asserts
-// that every key in want matches. Missing keys in the actual header fail the
-// assertion. Extra keys in the actual header are ignored.
-//
-// Example:
-//
-//	requireTricksterResult(t, hdr, map[string]string{
-//	    "engine": "DeltaProxyCache",
-//	    "status": "kmiss",
-//	})
 func requireTricksterResult(t *testing.T, hdr http.Header, want map[string]string) {
 	t.Helper()
 	raw := hdr.Get("X-Trickster-Result")
@@ -191,18 +159,11 @@ func requireTricksterResult(t *testing.T, hdr http.Header, want map[string]strin
 	}
 }
 
-// cacheProviderCase identifies a Prometheus backend wired to a specific cache
-// provider in the developer config.
 type cacheProviderCase struct {
 	Name    string // subtest name, e.g. "memory"
 	Backend string // backend id, e.g. "prom1"
 }
 
-// writeTestConfig clones the developer config with the frontend and metrics
-// listen_port values replaced by the given ports. This gives each top-level
-// test its own port range while preserving the full config (backends, caches,
-// healthcheck settings, negative caching, etc.), eliminating port-release
-// races between sequential tests that previously shared :8480/:8481.
 func writeTestConfig(t *testing.T, frontPort, metricsPort, mgmtPort int) string {
 	t.Helper()
 	b, err := os.ReadFile("../docs/developer/environment/trickster-config/trickster.yaml")
@@ -222,9 +183,6 @@ func writeTestConfig(t *testing.T, frontPort, metricsPort, mgmtPort int) string 
 	return path
 }
 
-// defaultCacheProviders returns the cache-provider matrix exercised by the
-// developer config: memory, filesystem, redis. bbolt and badger are covered
-// by unit tests only.
 func defaultCacheProviders() []cacheProviderCase {
 	return []cacheProviderCase{
 		{Name: "memory", Backend: "prom1"},
@@ -233,9 +191,6 @@ func defaultCacheProviders() []cacheProviderCase {
 	}
 }
 
-// runCacheProviderMatrix runs fn as a subtest for each cache provider case.
-// Use this instead of hand-rolling a for loop so future providers only need
-// to be added to defaultCacheProviders.
 func runCacheProviderMatrix(t *testing.T, fn func(t *testing.T, c cacheProviderCase)) {
 	t.Helper()
 	for _, c := range defaultCacheProviders() {

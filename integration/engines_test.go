@@ -42,8 +42,6 @@ const (
 	engOriginAddr    = "127.0.0.1:18520"
 )
 
-// engineFakeOrigin wraps an httptest.Server bound to a fixed address so the
-// TestEngines_* configs can point at a known port.
 type engineFakeOrigin struct {
 	srv     *httptest.Server
 	handler func(http.ResponseWriter, *http.Request)
@@ -56,17 +54,11 @@ func (o *engineFakeOrigin) setHandler(h func(http.ResponseWriter, *http.Request)
 	o.mu.Unlock()
 }
 
-// Package-level state shared by every TestEngines_* test so that a single
-// trickster process and a single fake origin are reused. This avoids port
-// conflicts when multiple top-level tests run in sequence inside one binary.
 var (
 	engSetupOnce sync.Once
 	engOrigin    *engineFakeOrigin
 )
 
-// engineSetup lazily boots the shared trickster+origin pair. The context
-// behind daemon.Start is not cancelled for the life of the test binary; Go
-// tears the process down at exit.
 func engineSetup(t *testing.T) *engineFakeOrigin {
 	t.Helper()
 	engSetupOnce.Do(func() {
@@ -92,9 +84,6 @@ func engineSetup(t *testing.T) *engineFakeOrigin {
 		o.srv = srv
 		engOrigin = o
 
-		// Start trickster with a background context that lives for the whole
-		// test binary. No t.Cleanup: we want this to survive across
-		// TestEngines_* functions.
 		ctx := context.Background()
 		go startTrickster(t, ctx, expectedStartError{},
 			"-config", "testdata/configs/engines.yaml")
@@ -103,8 +92,6 @@ func engineSetup(t *testing.T) *engineFakeOrigin {
 	return engOrigin
 }
 
-// validRangeBody returns a minimally-valid Prometheus matrix response whose
-// samples span [start,end] on the given step.
 func engValidRangeBody(start, end, step int64) string {
 	var vals strings.Builder
 	vals.WriteByte('[')
@@ -120,9 +107,6 @@ func engValidRangeBody(start, end, step int64) string {
 	return `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"__name__":"up","job":"fake"},"values":` + vals.String() + `}]}}`
 }
 
-// engRangeParams builds a set of range query params pinned to a fresh "now"
-// per call. Each test passes a unique query suffix so the cache key is unique
-// across subtests in the same binary run.
 func engRangeParams(querySuffix string) (url.Values, int64, int64, int64) {
 	const step int64 = 15
 	end := time.Now().Unix()
@@ -152,15 +136,6 @@ func doEngineRange(t *testing.T, params url.Values) (int, []byte, http.Header) {
 	return resp.StatusCode, b, resp.Header.Clone()
 }
 
-// TestEngines_PCF_Collapse validates that many concurrent identical range
-// queries collapse onto a single origin fetch.
-//
-// regression: #944
-//
-// (Issue #944 was filed against the progressive-collapse-forwarder deadlock.
-// DeltaProxyCache now uses a singleflight group to provide the same
-// end-to-end collapse guarantee for range queries; this test asserts that
-// behavior through the public HTTP surface.)
 func TestEngines_PCF_Collapse(t *testing.T) {
 	origin := engineSetup(t)
 
@@ -168,8 +143,6 @@ func TestEngines_PCF_Collapse(t *testing.T) {
 	var counter atomic.Int32
 	origin.setHandler(func(w http.ResponseWriter, r *http.Request) {
 		counter.Add(1)
-		// Hold the origin response open so concurrent requests pile up on
-		// the singleflight executor before it finishes.
 		time.Sleep(500 * time.Millisecond)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -202,11 +175,6 @@ func TestEngines_PCF_Collapse(t *testing.T) {
 		"all %d concurrent requests must collapse onto a single origin fetch", n)
 }
 
-// TestEngines_Singleflight_ErrorPropagation validates that when a singleflight
-// executor receives a non-2xx response, every waiter sees the same status
-// code and body.
-//
-// regression: #939
 func TestEngines_Singleflight_ErrorPropagation(t *testing.T) {
 	origin := engineSetup(t)
 
@@ -239,11 +207,6 @@ func TestEngines_Singleflight_ErrorPropagation(t *testing.T) {
 	wg.Wait()
 	close(results)
 
-	// All collapsed waiters must agree on the error status code AND on the
-	// exact body the origin served. Before the DPC error-body fix, the
-	// upstream body was dropped in fetchTimeseries (HTTPDocument.Body left
-	// nil) and every waiter got an empty string. Post-fix they must all
-	// see the origin's structured error JSON verbatim.
 	for r := range results {
 		require.Equal(t, http.StatusServiceUnavailable, r.status)
 		require.NotEmpty(t, r.body,
@@ -257,11 +220,6 @@ func TestEngines_Singleflight_ErrorPropagation(t *testing.T) {
 		"origin must be contacted exactly once for error responses")
 }
 
-// TestEngines_Collapse_MetricsReport validates that the proxy-hit counter
-// advances by exactly N-1 when N concurrent requests collapse onto a single
-// origin fetch.
-//
-// regression: #933
 func TestEngines_Collapse_MetricsReport(t *testing.T) {
 	origin := engineSetup(t)
 
@@ -290,8 +248,7 @@ func TestEngines_Collapse_MetricsReport(t *testing.T) {
 	wg.Wait()
 	require.Equal(t, int32(1), counter.Load(), "collapse must hit origin exactly once")
 
-	// Metrics are incremented after the response is flushed; allow a brief
-	// window for the deferred metric updates to land.
+	// Metrics are incremented after the response is flushed.
 	var after float64
 	require.Eventually(t, func() bool {
 		after = readProxyHitCount(t)
@@ -359,9 +316,6 @@ func TestEngines_LargeResponse(t *testing.T) {
 	require.Len(t, results, nResults)
 }
 
-// readProxyHitCount returns the current sum of
-// trickster_proxy_requests_total{cache_status="proxy-hit"} samples from the
-// /metrics endpoint. A minimal line parser keeps this test self-contained.
 func readProxyHitCount(t *testing.T) float64 {
 	t.Helper()
 	resp, err := http.Get("http://" + engMetricsAddr + "/metrics")

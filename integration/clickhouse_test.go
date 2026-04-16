@@ -28,8 +28,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestClickHouse tests ClickHouse-specific capabilities through Trickster.
-// Requires: make developer-start && make developer-seed-data.
 func TestClickHouse(t *testing.T) {
 	cfg := writeTestConfig(t, 8570, 8571, 8582)
 	clickAddr := "127.0.0.1:8570"
@@ -38,9 +36,7 @@ func TestClickHouse(t *testing.T) {
 	waitForClickHouseData(t, "127.0.0.1:8123")
 
 	t.Run("time series query", func(t *testing.T) {
-		// The seed data is historical NYC taxi trips with timestamps from
-		// ~2015, so a "last 7 days" window returns nothing. Use the actual
-		// data range instead: query the full span from epoch to now.
+		// Seed data timestamps are from ~2015, so query the full span from epoch to now.
 		q := fmt.Sprintf(
 			"SELECT toStartOfFiveMinute(pickup_datetime) AS t, count() AS cnt "+
 				"FROM trips "+
@@ -84,10 +80,6 @@ func TestClickHouse(t *testing.T) {
 		t.Logf("clickhouse non-select: %s", string(body))
 	})
 
-	// regression: #967 — multi-line SQL queries were rejected by the
-	// ClickHouse parser because embedded newlines disrupted statement
-	// classification. A well-formed SELECT split across lines must proxy
-	// and cache through the DeltaProxyCache engine.
 	t.Run("multi-line SQL", func(t *testing.T) {
 		q := fmt.Sprintf(
 			"SELECT\n    toStartOfFiveMinute(pickup_datetime) AS t,\n    count() AS cnt\nFROM trips\nWHERE pickup_datetime BETWEEN toDateTime(%d) AND toDateTime(%d)\nGROUP BY t\nORDER BY t\nFORMAT JSON",
@@ -106,8 +98,6 @@ func TestClickHouse(t *testing.T) {
 			"multi-line SQL must reach DeltaProxyCache (issue #967)")
 	})
 
-	// Aggregation matrix: exercise a few grouping windows to confirm DPC
-	// caches and serves repeat queries at different scales.
 	aggCases := []struct {
 		name  string
 		group string

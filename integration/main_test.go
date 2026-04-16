@@ -41,13 +41,11 @@ func TestMain(m *testing.M) {
 }
 
 
-// the expected error for Trickster's 'Start' to return
 type expectedStartError struct {
 	ErrorContains *string
 	Error         *error
 }
 
-// start a trickster instance with the provided context (for cancellation), and any args to pass to the daemon.
 func startTrickster(t *testing.T, ctx context.Context, expected expectedStartError, args ...string) {
 	err := daemon.Start(ctx, args...)
 	if expected.Error != nil {
@@ -59,7 +57,6 @@ func startTrickster(t *testing.T, ctx context.Context, expected expectedStartErr
 	}
 }
 
-// query for prometheus metrics from a Trickster server at the given address.
 func checkTricksterMetrics(t *testing.T, address string) []string {
 	url := "http://" + filepath.Join(address, "metrics")
 	t.Log("Checking Trickster metrics at", url)
@@ -70,7 +67,6 @@ func checkTricksterMetrics(t *testing.T, address string) []string {
 	b, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
 	lines := strings.Split(string(b), "\n")
-	// Filter out comments and empty lines
 	return slices.DeleteFunc(lines, func(s string) bool {
 		if strings.HasPrefix(s, "#") || s == "" {
 			return true
@@ -79,7 +75,6 @@ func checkTricksterMetrics(t *testing.T, address string) []string {
 	})
 }
 
-// query trickster at the provided address/path.
 func checkTrickster(t *testing.T, address string, path string, expectedStatus int) (string, http.Header) {
 	resp, err := http.Get("http://" + filepath.Join(address, path))
 	require.NoError(t, err)
@@ -90,8 +85,6 @@ func checkTrickster(t *testing.T, address string, path string, expectedStatus in
 	return string(body), resp.Header.Clone()
 }
 
-// waitForTrickster polls the given address until it returns 200.
-// If no path segments are provided, it defaults to /metrics.
 func waitForTrickster(t *testing.T, addr string, path ...string) {
 	t.Helper()
 	p := "/metrics"
@@ -109,7 +102,6 @@ func waitForTrickster(t *testing.T, addr string, path ...string) {
 	}, 10*time.Second, 250*time.Millisecond, "endpoint did not become ready: "+url)
 }
 
-// Uses range_query (not label metadata) — DPC truncates end to step boundary.
 func waitForPrometheusData(t *testing.T, prometheusAddr string) {
 	t.Helper()
 	require.EventuallyWithT(t, func(collect *assert.CollectT) {
@@ -145,8 +137,6 @@ func waitForPrometheusData(t *testing.T, prometheusAddr string) {
 	}, 60*time.Second, 2*time.Second, "Prometheus range data never became available at step alignment")
 }
 
-// waitForClickHouseData polls ClickHouse directly until the trips table exists
-// and has been populated with at least one row by the clickhouse_seed service.
 func waitForClickHouseData(t *testing.T, clickhouseAddr string) {
 	t.Helper()
 	require.EventuallyWithT(t, func(collect *assert.CollectT) {
@@ -160,8 +150,6 @@ func waitForClickHouseData(t *testing.T, clickhouseAddr string) {
 		if !assert.NoError(collect, err) {
 			return
 		}
-		// A missing trips table returns HTTP 404 with an error body (not "0\n"),
-		// so gate on status code before parsing the count.
 		if !assert.Equal(collect, 200, resp.StatusCode,
 			"clickhouse not ready: %s", strings.TrimSpace(string(b))) {
 			return
@@ -174,7 +162,6 @@ func waitForClickHouseData(t *testing.T, clickhouseAddr string) {
 	}, 5*time.Minute, 2*time.Second, "ClickHouse trips data never became available")
 }
 
-// waitForInfluxDBData polls InfluxDB directly until Telegraf has written at least one point.
 func waitForInfluxDBData(t *testing.T, influxAddr string) {
 	t.Helper()
 	require.EventuallyWithT(t, func(collect *assert.CollectT) {
@@ -195,36 +182,28 @@ func waitForInfluxDBData(t *testing.T, influxAddr string) {
 		if !assert.NoError(collect, err) {
 			return
 		}
-		// CSV response should have more than just the header line
 		lines := strings.Split(strings.TrimSpace(string(b)), "\n")
 		assert.Greater(collect, len(lines), 1, "waiting for Telegraf to write data to InfluxDB")
 	}, 30*time.Second, 2*time.Second, "InfluxDB data never became available")
 }
 
-// promResponse is a lightweight representation of a Prometheus API response.
-// Data is raw JSON because different endpoints return different shapes:
-//   - query/query_range: {"resultType": "...", "result": [...]}
-//   - labels/series/label values: [...]
 type promResponse struct {
 	Status string          `json:"status"`
 	Data   json.RawMessage `json:"data"`
 }
 
-// promQueryData is the typed data for query and query_range endpoints.
 type promQueryData struct {
 	ResultType string          `json:"resultType"`
 	Result     json.RawMessage `json:"result"`
 }
 
-// queryTricksterProm queries a Trickster Prometheus backend and returns the parsed response and headers.
 func queryTricksterProm(t *testing.T, address, backend, apiPath string, params url.Values) (promResponse, http.Header) {
 	t.Helper()
 	u := "http://" + address + "/" + backend + apiPath
 	if len(params) > 0 {
 		u += "?" + params.Encode()
 	}
-	// Use a transport that doesn't auto-decompress so we can handle gzip ourselves.
-	// ALB mechanisms (FGR, NLM) may merge headers in ways that confuse Go's auto-decompression.
+	// ALB mechanisms may merge headers in ways that confuse Go's auto-decompression.
 	client := &http.Client{Transport: &http.Transport{DisableCompression: true}}
 	resp, err := client.Get(u)
 	require.NoError(t, err)
@@ -244,7 +223,6 @@ func queryTricksterProm(t *testing.T, address, backend, apiPath string, params u
 	return pr, resp.Header.Clone()
 }
 
-// parseTricksterResult parses the X-Trickster-Result header into key-value pairs.
 func parseTricksterResult(header string) map[string]string {
 	result := make(map[string]string)
 	for part := range strings.SplitSeq(header, "; ") {
