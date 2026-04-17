@@ -447,7 +447,6 @@ func TestALB_TSM_RealProm_Scale(t *testing.T) {
 	})
 
 	t.Run("labels", func(t *testing.T) {
-		t.Skip("bug: /api/v1/labels does not surface injected prometheus.labels names in the merged list")
 		pr, hdr := queryTricksterProm(t, listenAddr, backendName, "/api/v1/labels", nil)
 		require.Equal(t, "success", pr.Status)
 		var labels []string

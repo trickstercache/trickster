@@ -25,8 +25,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestInfluxDB tests InfluxDB (Flux) capabilities through Trickster.
-// Requires: make developer-start (Telegraf continuously writes to InfluxDB 2.x).
 func TestInfluxDB(t *testing.T) {
 	cfg := writeTestConfig(t, 8572, 8573, 8583)
 	influxAddr := "127.0.0.1:8572"
@@ -57,8 +55,6 @@ func TestInfluxDB(t *testing.T) {
 		require.NotEmpty(t, hdr["engine"], "expected engine in X-Trickster-Result")
 	})
 
-	// Aggregation matrix: mean/max/sum over -1h windows. Each must round-trip
-	// CSV back through Trickster with a valid engine set.
 	fluxCases := []struct{ name, fn string }{
 		{"mean", "mean"},
 		{"max", "max"},

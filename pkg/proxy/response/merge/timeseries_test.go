@@ -119,8 +119,7 @@ func TestTimeseriesMergeFuncWithStrategy_NonDataSet(t *testing.T) {
 		return nil, nil
 	}
 	mf := TimeseriesMergeFuncWithStrategy(unmarshaler, int(dataset.MergeStrategySum))
-	// Passing non-timeseries, non-[]byte data should be a no-op
-	require.NoError(t, mf(accum, 42, 0))
+	require.Error(t, mf(accum, 42, 0))
 	require.Nil(t, accum.GetTSData())
 }
 

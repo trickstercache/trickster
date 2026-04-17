@@ -26,7 +26,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Test Trickster capabilities common to all backends / caches / configurations.
 func TestTrickster(t *testing.T) {
 	t.Run("config not found", func(t *testing.T) {
 		ctx := context.Background()
@@ -36,7 +35,6 @@ func TestTrickster(t *testing.T) {
 		startTrickster(t, ctx, expected, "-config", "testdata/cfg-notfound.yaml")
 	})
 
-	// Boot once for both start-and-stop and health subtests.
 	cfg := writeTestConfig(t, 8578, 8579, 8586)
 	h := tricksterHarness{
 		ConfigPath:  cfg,

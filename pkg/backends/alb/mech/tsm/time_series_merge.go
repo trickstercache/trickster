@@ -267,7 +267,10 @@ func (h *handler) serveStandard(
 			continue
 		}
 		eg.Go(func() error {
-			r2, _ := request.CloneWithoutResources(r)
+			r2, err := request.CloneWithoutResources(r)
+			if err != nil {
+				return err
+			}
 			rsc2 := &request.Resources{
 				IsMergeMember:   true,
 				TSReqestOptions: rsc.TSReqestOptions,
@@ -431,7 +434,10 @@ func (h *handler) serveWeightedAvg(
 		}
 		// Sum query for shard i — clone from the pre-rewritten base request.
 		eg.Go(func() error {
-			r2, _ := request.CloneWithoutResources(sumBase)
+			r2, err := request.CloneWithoutResources(sumBase)
+			if err != nil {
+				return err
+			}
 			rsc2 := &request.Resources{
 				IsMergeMember:   true,
 				TSReqestOptions: rsc.TSReqestOptions,
@@ -462,7 +468,10 @@ func (h *handler) serveWeightedAvg(
 
 		// Count query for shard i — clone from the pre-rewritten base request.
 		eg.Go(func() error {
-			r2, _ := request.CloneWithoutResources(countBase)
+			r2, err := request.CloneWithoutResources(countBase)
+			if err != nil {
+				return err
+			}
 			rsc2 := &request.Resources{
 				IsMergeMember:   true,
 				TSReqestOptions: rsc.TSReqestOptions,

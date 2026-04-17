@@ -17,6 +17,7 @@
 package model
 
 import (
+	"encoding/json"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -27,6 +28,29 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 )
+
+func FuzzUnmarshalMarshalTimeseries(f *testing.F) {
+	f.Add([]byte(testMatrix))
+	f.Add([]byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"__name__":"up","label":"val with \"quotes\" and \\backslash and \nnewline and \u00e9"},"values":[[1435781430,"1"]]}]}}`))
+	f.Fuzz(func(t *testing.T, data []byte) {
+		trq := &timeseries.TimeRangeQuery{}
+		ts, err := UnmarshalTimeseries(data, trq)
+		if err != nil {
+			return
+		}
+		ds, ok := ts.(*dataset.DataSet)
+		if !ok {
+			return
+		}
+		b, err := MarshalTimeseries(ds, nil, 200)
+		if err != nil {
+			return
+		}
+		if !json.Valid(b) {
+			t.Fatalf("MarshalTimeseries produced invalid JSON: %s", string(b))
+		}
+	})
+}
 
 func TestNewModeler(t *testing.T) {
 	m := NewModeler()
@@ -102,6 +126,18 @@ func TestPointFromValues(t *testing.T) {
 			name:   "valid point",
 			values: []any{1435781430.0, "1"},
 			expP:   epoch.Epoch(1435781430000000000),
+			expE:   nil,
+		},
+		{
+			// Prometheus emits timestamps as `seconds.millis`, e.g.
+			// `[1435781430.5, "1"]`. Casting the float to int64 *before*
+			// multiplying by 1e9 drops the sub-second portion, silently
+			// re-bucketing every point to the top of its second. Using an
+			// exactly-representable binary fraction (0.5) so the assertion
+			// is immune to float64 rounding noise.
+			name:   "sub-second precision preserved",
+			values: []any{1435781430.5, "1"},
+			expP:   epoch.Epoch(1435781430500000000),
 			expE:   nil,
 		},
 	}
@@ -401,9 +437,12 @@ func TestPopulateSeriesMalformedPoints(t *testing.T) {
 	require.Len(t, ds.Results, 1)
 	require.Len(t, ds.Results[0].SeriesList, 1)
 	pts := ds.Results[0].SeriesList[0].Points
-	// All 3 slots exist; middle one has zero epoch from failed parse
-	require.Len(t, pts, 3)
+	require.Len(t, pts, 2, "malformed points must be compacted out")
 	require.Equal(t, epoch.Epoch(1435781430000000000), pts[0].Epoch)
-	require.Equal(t, epoch.Epoch(0), pts[1].Epoch, "malformed point should have zero epoch")
-	require.Equal(t, epoch.Epoch(1435781460000000000), pts[2].Epoch)
+	require.Equal(t, epoch.Epoch(1435781460000000000), pts[1].Epoch)
+
+	b, err := MarshalTimeseries(ds, nil, 200)
+	require.NoError(t, err)
+	var env map[string]any
+	require.NoError(t, json.Unmarshal(b, &env), "marshal of dataset with malformed points produced invalid JSON: %s", string(b))
 }

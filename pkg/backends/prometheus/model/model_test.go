@@ -17,6 +17,7 @@
 package model
 
 import (
+	"encoding/json"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -30,6 +31,33 @@ const testMatrix = `{"status":"success","data":{"resultType":"matrix","result":[
 	`:[[1435781430,"1"],[1435781445,"1"],[1435781460,"1"]]},{"metric":` +
 	`{"__name__":"up","instance":"localhost:9091","job":"node"},"values":` +
 	`[[1435781430,"0"],[1435781445,"0"],[1435781460,"1"]]}]}}`
+
+func FuzzEnvelopeStartMarshal(f *testing.F) {
+	f.Add("success", "", "", "")
+	f.Add("error", `err with "quotes"`, `bad\type`, `warn: "tricky" \n value`)
+	f.Add("error", "null\x00byte", "back\\slash", "héllo\nwörld")
+	f.Fuzz(func(t *testing.T, status, errMsg, errType, warning string) {
+		e := &Envelope{
+			Status:    status,
+			Error:     errMsg,
+			ErrorType: errType,
+		}
+		if warning != "" {
+			e.Warnings = []string{warning}
+		}
+		w := httptest.NewRecorder()
+		e.StartMarshal(w, 200)
+		w.Write([]byte("}"))
+		body := w.Body.Bytes()
+		if !json.Valid(body) {
+			t.Fatalf("StartMarshal produced invalid JSON: %s", string(body))
+		}
+		var generic map[string]any
+		if err := json.Unmarshal(body, &generic); err != nil {
+			t.Fatalf("StartMarshal JSON unmarshal failed: %v\nbody: %s", err, string(body))
+		}
+	})
+}
 
 func TestUnmarshalTimeseries(t *testing.T) {
 	b := []byte(testMatrix)
@@ -54,15 +82,66 @@ func TestUnmarshalTimeseries(t *testing.T) {
 	}
 }
 
+func TestMarshalTimeseries_EscapesTagValues(t *testing.T) {
+	ds := &dataset.DataSet{
+		Results: dataset.Results{{
+			SeriesList: dataset.SeriesList{{
+				Header: dataset.SeriesHeader{
+					Name: "up",
+					Tags: dataset.Tags{
+						"__name__": "up",
+						"path":     `/api/v1/query?q="a"`,
+					},
+				},
+				Points: dataset.Points{{
+					Epoch:  1435781430000000000,
+					Size:   33,
+					Values: []any{"1"},
+				}},
+			}},
+		}},
+	}
+	b, err := MarshalTimeseries(ds, nil, 200)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var env map[string]any
+	if err := json.Unmarshal(b, &env); err != nil {
+		t.Fatalf("invalid JSON: %v (body=%s)", err, string(b))
+	}
+}
+
 func TestUnmarshalInstantaneous(t *testing.T) {
 	trq := &timeseries.TimeRangeQuery{}
 	bytes := []byte(`{"status":"success","data":{"resultType":"vector","result":[` +
 		`{"metric":{"__name__":"up","instance":"localhost:9090","job":"prometheus"},` +
 		`"value":[1554730772.113,"1"]}]}}`)
-	_, err := UnmarshalTimeseries(bytes, trq)
+	ts, err := UnmarshalTimeseries(bytes, trq)
 	if err != nil {
 		t.Error(err)
 		return
+	}
+	ds, ok := ts.(*dataset.DataSet)
+	if !ok {
+		t.Fatal("expected *dataset.DataSet")
+	}
+	if len(ds.Results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(ds.Results))
+	}
+	if len(ds.Results[0].SeriesList) != 1 {
+		t.Fatalf("expected 1 series, got %d", len(ds.Results[0].SeriesList))
+	}
+	s := ds.Results[0].SeriesList[0]
+	if len(s.Points) != 1 {
+		t.Fatalf("expected 1 point, got %d", len(s.Points))
+	}
+	got := int64(s.Points[0].Epoch)
+	want := int64(1554730772113000000)
+	if diff := got - want; diff < -1000 || diff > 1000 {
+		t.Errorf("expected epoch ~%d, got %d (diff=%d)", want, got, diff)
+	}
+	if s.Header.Tags["job"] != "prometheus" {
+		t.Errorf("expected tag job=prometheus, got %q", s.Header.Tags["job"])
 	}
 }
 
@@ -113,6 +192,26 @@ func TestStartMarshal(t *testing.T) {
 			t.Errorf("expected 200 got %d", w.Code)
 		}
 	})
+}
+
+func TestStartMarshal_EscapesSpecialChars(t *testing.T) {
+	w := httptest.NewRecorder()
+	e := &Envelope{
+		Status:    "error",
+		Error:     `parse error: unexpected "}"`,
+		ErrorType: `bad_data`,
+		Warnings:  []string{`warning with "quotes"`, `back\slash`},
+	}
+	e.StartMarshal(w, 400)
+	w.Write([]byte("}"))
+
+	var env map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &env); err != nil {
+		t.Fatalf("invalid JSON: %v (body=%s)", err, w.Body.String())
+	}
+	if env["error"] != `parse error: unexpected "}"` {
+		t.Errorf("error not escaped, got %q", env["error"])
+	}
 }
 
 func TestEnvelopeMerge(t *testing.T) {

@@ -28,16 +28,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// TestAuth_HtpasswdBasic attaches an htpasswd-backed basic authenticator
-// to a prometheus backend and verifies:
-//   - unauthenticated requests are rejected with 401
-//   - wrong password requests are rejected with 401
-//   - correctly credentialed requests succeed with 200
 func TestAuth_HtpasswdBasic(t *testing.T) {
-	// Generate the htpasswd file from a known user/password pair. We write
-	// the file at runtime (instead of checking a pre-baked bcrypt hash into
-	// the tree) so the test remains reproducible and the fixture stays
-	// transparent.
 	const (
 		user = "test"
 		pass = "password"
@@ -61,7 +52,6 @@ func TestAuth_HtpasswdBasic(t *testing.T) {
 
 	client := &http.Client{}
 
-	// 1) No Authorization header → 401.
 	req, err := http.NewRequest(http.MethodGet, promURL, nil)
 	require.NoError(t, err)
 	resp, err := client.Do(req)
@@ -70,7 +60,6 @@ func TestAuth_HtpasswdBasic(t *testing.T) {
 	require.Equal(t, http.StatusUnauthorized, resp.StatusCode,
 		"expected 401 with no credentials")
 
-	// 2) Wrong password → 401.
 	req, err = http.NewRequest(http.MethodGet, promURL, nil)
 	require.NoError(t, err)
 	req.SetBasicAuth(user, "not-the-password")
@@ -80,9 +69,6 @@ func TestAuth_HtpasswdBasic(t *testing.T) {
 	require.Equal(t, http.StatusUnauthorized, resp.StatusCode,
 		"expected 401 with wrong password")
 
-	// 3) Correct creds → 200. We build the header manually to ensure the
-	// test also exercises the exact base64 path (rather than only the
-	// stdlib SetBasicAuth helper).
 	req, err = http.NewRequest(http.MethodGet, promURL, nil)
 	require.NoError(t, err)
 	token := base64.StdEncoding.EncodeToString([]byte(user + ":" + pass))
@@ -94,7 +80,6 @@ func TestAuth_HtpasswdBasic(t *testing.T) {
 		"expected 200 with valid credentials")
 }
 
-// writeHtpasswd writes a single-user bcrypt htpasswd file at path.
 func writeHtpasswd(t *testing.T, path, user, pass string) {
 	t.Helper()
 	h, err := bcrypt.GenerateFromPassword([]byte(pass), bcrypt.MinCost)

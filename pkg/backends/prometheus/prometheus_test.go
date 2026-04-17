@@ -203,6 +203,26 @@ func TestRoundTimestampParameterToMinute(t *testing.T) {
 	}
 }
 
+func TestRoundTimestampsToMinute_EndIncludesRecentData(t *testing.T) {
+	now := time.Unix(1523077733, 0) // 2018-04-07 05:08:53 UTC
+	qp := url.Values{}
+	qp.Set(upStart, strconv.FormatInt(now.Add(-5*time.Minute).Unix(), 10))
+	qp.Set(upEnd, strconv.FormatInt(now.Unix(), 10))
+
+	roundTimestampsToMinute(qp)
+
+	end, err := strconv.ParseInt(qp.Get(upEnd), 10, 64)
+	if err != nil {
+		t.Fatalf("parse end: %v", err)
+	}
+	if end < now.Unix() {
+		t.Fatalf("rounded end %d is BEFORE the requested end %d — "+
+			"samples between %d and %d will be excluded from /series & /labels "+
+			"merge results when prometheus has just started scraping",
+			end, now.Unix(), end, now.Unix())
+	}
+}
+
 func TestParseTimeRangeQuery(t *testing.T) {
 	logger.SetLogger(testLogger)
 	qp := url.Values(map[string][]string{

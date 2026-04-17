@@ -17,7 +17,9 @@
 package prometheus
 
 import (
+	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus/model"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
@@ -84,6 +86,52 @@ func (c *Client) processVectorTransformations(w http.ResponseWriter,
 	// header that came from the captured upstream response.
 	w.Header().Del(headers.NameContentLength)
 	model.MarshalTSOrVectorWriter(ds, requestOptions, statusCode, w, true)
+}
+
+// processLabelsResponse injects the backend's configured prometheus.labels
+// into /api/v1/labels and /api/v1/label/<name>/values responses so that
+// downstream TSM merges can surface them. For /labels it appends each
+// configured key; for /label/<name>/values it appends the configured value
+// only when <name> matches an injected key.
+func (c *Client) processLabelsResponse(body []byte, path string) []byte {
+	if !c.hasTransformations || len(body) == 0 {
+		return body
+	}
+	decoded := tgzip.Decompress(body)
+	var ld model.WFLabelData
+	if err := json.Unmarshal(decoded, &ld); err != nil || ld.Envelope == nil ||
+		ld.Envelope.Status != "success" {
+		return body
+	}
+	seen := make(map[string]struct{}, len(ld.Data)+len(c.injectLabels))
+	for _, d := range ld.Data {
+		seen[d] = struct{}{}
+	}
+	switch {
+	case strings.HasSuffix(path, "/"+mnLabels):
+		for k := range c.injectLabels {
+			if _, ok := seen[k]; !ok {
+				ld.Data = append(ld.Data, k)
+				seen[k] = struct{}{}
+			}
+		}
+	case strings.HasSuffix(path, "/values"):
+		if i := strings.LastIndex(path, "/"+mnLabel+"/"); i >= 0 {
+			name := strings.TrimSuffix(path[i+len("/"+mnLabel+"/"):], "/values")
+			if v, ok := c.injectLabels[name]; ok {
+				if _, has := seen[v]; !has {
+					ld.Data = append(ld.Data, v)
+				}
+			}
+		}
+	default:
+		return body
+	}
+	out, err := json.Marshal(&ld)
+	if err != nil {
+		return body
+	}
+	return out
 }
 
 func defaultWrite(statusCode int, w http.ResponseWriter, b []byte) {

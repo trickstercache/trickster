@@ -25,6 +25,34 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 )
 
+func FuzzSeriesMergeRoundTrip(f *testing.F) {
+	f.Add("key1", "value1", "key2", "value2")
+	f.Add("name", `val"with"quotes`, "path", `C:\back\slash`)
+	f.Add("unicode", "héllo\nwörld", "tab", "a\tb")
+	f.Fuzz(func(t *testing.T, k1, v1, k2, v2 string) {
+		input := &WFSeries{
+			Envelope: &Envelope{Status: "success"},
+			Data: []WFSeriesData{
+				{k1: v1, k2: v2},
+			},
+		}
+		w := httptest.NewRecorder()
+		r, _ := http.NewRequest("GET", "/", nil)
+		accum := merge.NewAccumulator()
+		accum.SetGeneric(input)
+		respondFunc := MergeAndWriteSeriesRespondFunc()
+		respondFunc(w, r, accum, http.StatusOK)
+		body := w.Body.Bytes()
+		if !json.Valid(body) {
+			t.Fatalf("series respond produced invalid JSON: %s", string(body))
+		}
+		var generic map[string]any
+		if err := json.Unmarshal(body, &generic); err != nil {
+			t.Fatalf("series respond JSON unmarshal failed: %v\nbody: %s", err, string(body))
+		}
+	})
+}
+
 const testSeries = `{
 	"status": "success",
 	"data": [
@@ -54,11 +82,7 @@ func TestSeries(t *testing.T) {
 			Status: "success",
 		},
 		Data: []WFSeriesData{
-			{
-				Name:     "test1",
-				Instance: "instance1",
-				Job:      "job1",
-			},
+			{"__name__": "test1", "instance": "instance1", "job": "job1"},
 		},
 	}
 
@@ -76,16 +100,8 @@ func TestSeries(t *testing.T) {
 			Warnings: []string{"test warning"},
 		},
 		Data: []WFSeriesData{
-			{
-				Name:     "test1",
-				Instance: "instance1",
-				Job:      "job1",
-			},
-			{
-				Name:     "test2",
-				Instance: "instance",
-				Job:      "job1",
-			},
+			{"__name__": "test1", "instance": "instance1", "job": "job1"},
+			{"__name__": "test2", "instance": "instance", "job": "job1"},
 		},
 	}
 
@@ -121,6 +137,52 @@ func TestSeries(t *testing.T) {
 
 	if len(s1.Warnings) != 1 || s1.Warnings[0] != "test warning" {
 		t.Error("expected test warning")
+	}
+}
+
+func TestSeries_PreservesArbitraryLabels(t *testing.T) {
+	bodies := [][]byte{
+		[]byte(`{"status":"success","data":[{"__name__":"up","instance":"i","job":"j","shard":"a"}]}`),
+		[]byte(`{"status":"success","data":[{"__name__":"up","instance":"i","job":"j","shard":"b"}]}`),
+	}
+	w := httptest.NewRecorder()
+	r, _ := http.NewRequest("GET", "/", nil)
+	accum := merge.NewAccumulator()
+	mergeFunc := MergeAndWriteSeriesMergeFunc()
+	respondFunc := MergeAndWriteSeriesRespondFunc()
+	for i, b := range bodies {
+		if err := mergeFunc(accum, b, i); err != nil {
+			t.Fatalf("merge %d: %v", i, err)
+		}
+	}
+	respondFunc(w, r, accum, http.StatusOK)
+
+	var env struct {
+		Status string              `json:"status"`
+		Data   []map[string]string `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &env); err != nil {
+		t.Fatalf("unmarshal merged body: %v (body=%s)", err, w.Body.String())
+	}
+	if env.Status != "success" {
+		t.Fatalf("want success, got %s", env.Status)
+	}
+	if len(env.Data) != 2 {
+		t.Fatalf("want 2 distinct series after merge, got %d: %+v", len(env.Data), env.Data)
+	}
+	shards := map[string]struct{}{}
+	for _, d := range env.Data {
+		s, ok := d["shard"]
+		if !ok {
+			t.Fatalf("merged series dropped 'shard' label: %+v", d)
+		}
+		shards[s] = struct{}{}
+	}
+	if _, ok := shards["a"]; !ok {
+		t.Fatalf("missing shard=a in merged output: %+v", env.Data)
+	}
+	if _, ok := shards["b"]; !ok {
+		t.Fatalf("missing shard=b in merged output: %+v", env.Data)
 	}
 }
 

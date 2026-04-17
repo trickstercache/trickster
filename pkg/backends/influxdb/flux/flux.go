@@ -240,7 +240,11 @@ func SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
 	rb.Dialect = JSONRequestBodyDialect{
 		Annotations: DefaultAnnotations(),
 	}
-	b, _ = json.Marshal(rb)
+	b, err = json.Marshal(rb)
+	if err != nil {
+		logger.Error(setExtentErrorLogEvent, logging.Pairs{"error": err})
+		return
+	}
 	request.SetBody(r, b)
 }
 

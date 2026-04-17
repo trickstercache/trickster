@@ -66,31 +66,40 @@ func parse(statement string) (*timeseries.TimeRangeQuery, *timeseries.RequestOpt
 	rs, err := parser.Run(sqlparser.NewRunContext(trq, ro), parser, trq.Statement)
 	results := rs.Results()
 	verb, ok := rs.GetResultsCollection("verb")
-	var canObjectCache bool // indicates the query, while not a time series can be cached by the Object Proxy Cache
+	var canObjectCache bool
 	if !ok {
 		return nil, nil, false, sqlparser.ErrNotTimeRangeQuery
 	}
 	if vs, ok := verb.(string); ok {
 		canObjectCache = vs == lsql.TokenValSelect
 	}
+
+	trq.CacheKeyElements = map[string]string{
+		"query": trq.Statement,
+	}
+
+	returnWithKey := func(e error) (*timeseries.TimeRangeQuery, *timeseries.RequestOptions, bool, error) {
+		if canObjectCache {
+			return trq, nil, canObjectCache, e
+		}
+		return nil, nil, canObjectCache, e
+	}
+
 	if err != nil {
-		return nil, nil, canObjectCache, parsing.ParserError(err, rs.Current())
+		return returnWithKey(parsing.ParserError(err, rs.Current()))
 	}
 	var t *token.Token
 	if sql.HasLimitClause(results) {
-		return nil, nil, canObjectCache, ErrLimitUnsupported
+		return returnWithKey(ErrLimitUnsupported)
 	}
 	if t, err = parseGroupByTokens(results, trq); err != nil {
-		return nil, nil, canObjectCache, parsing.ParserError(err, t)
+		return returnWithKey(parsing.ParserError(err, t))
 	}
 	if t, err = parseSelectTokens(results, trq, ro); err != nil {
-		return nil, nil, canObjectCache, parsing.ParserError(err, t)
+		return returnWithKey(parsing.ParserError(err, t))
 	}
 	if t, err = parseWhereTokens(results, trq, ro); err != nil {
-		return nil, nil, canObjectCache, parsing.ParserError(err, t)
-	}
-	trq.CacheKeyElements = map[string]string{
-		"query": trq.Statement,
+		return returnWithKey(parsing.ParserError(err, t))
 	}
 	return trq, ro, canObjectCache, nil
 }
@@ -594,7 +603,10 @@ func parseWhereTokens(results ts.Lookup,
 					return t, err
 				}
 				trq.TimestampDefinition.ProviderData1 = byte(f)
-				val, j, _ := SolveMathExpression(fieldParts[i:], ts, withVars)
+				val, j, err := SolveMathExpression(fieldParts[i:], ts, withVars)
+				if err != nil {
+					return t, err
+				}
 				t2 := t.Clone()
 				t2.Val = strconv.FormatInt(val, 10)
 				t2.Typ = token.Number
@@ -626,8 +638,10 @@ func parseWhereTokens(results ts.Lookup,
 				if err != nil {
 					return t, err
 				}
-				v, j, _ := SolveMathExpression(fieldParts[i:], ts, withVars)
-				// since we must be in a BETWEEN to be here, this must be the upper bound
+				v, j, err := SolveMathExpression(fieldParts[i:], ts, withVars)
+				if err != nil {
+					return t, err
+				}
 				e.End = time.Unix(v, 0)
 				tsr2 = t.Val
 				i += j

@@ -19,6 +19,7 @@
 package dataset
 
 import (
+	"encoding/json"
 	"fmt"
 	"maps"
 	"slices"
@@ -99,12 +100,30 @@ func (t Tags) String() string {
 	return t.StringsWithSep("=", ";")
 }
 
-// JSON returns a string representation of the Tags as a JSON object
+// JSON returns a string representation of the Tags as a JSON object. Keys
+// are emitted in sorted order. Keys and values are escaped via encoding/json
+// since Prometheus label values are arbitrary UTF-8 (see data model spec)
+// and the older string-concat form produced invalid JSON for any value
+// containing `"` or `\`.
 func (t Tags) JSON() string {
 	if len(t) == 0 {
 		return "{}"
 	}
-	return `{"` + t.StringsWithSep(`":"`, `","`) + `"}`
+	keys := t.Keys()
+	var sb strings.Builder
+	sb.WriteByte('{')
+	for i, k := range keys {
+		if i > 0 {
+			sb.WriteByte(',')
+		}
+		kb, _ := json.Marshal(k)
+		vb, _ := json.Marshal(t[k])
+		sb.Write(kb)
+		sb.WriteByte(':')
+		sb.Write(vb)
+	}
+	sb.WriteByte('}')
+	return sb.String()
 }
 
 // KVP returns a string representation of the Tags as "key"="value","key2"="value2"

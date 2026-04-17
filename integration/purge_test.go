@@ -27,13 +27,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestPurge_ByKey verifies the mgmt purge-by-path API invalidates cached
-// objects stored under the ObjectProxyCache engine. The prom /api/v1/rules
-// endpoint is used because it is registered with an empty CacheKeyParams
-// slice, so its derived cache key only hashes "method.GET." — which is
-// exactly what the purge-by-path handler recomputes before calling
-// cache.Remove. Endpoints like /api/v1/query fold query params into the
-// key hash and therefore can't be reached by purge-by-path.
 func TestPurge_ByKey(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -47,27 +40,20 @@ func TestPurge_ByKey(t *testing.T) {
 	waitForTrickster(t, metricsAddr)
 	waitForPrometheusData(t, "127.0.0.1:9090")
 
-	// /api/v1/rules is registered with empty CacheKeyParams, so its
-	// cache key is deterministic from path+method alone.
+	// /api/v1/rules has empty CacheKeyParams, so its key is deterministic from path+method alone.
 	const apiPath = "/api/v1/rules"
 
-	// 1) Warm the cache — expect kmiss.
 	_, hdr1 := queryTricksterProm(t, frontAddr, "prom1", apiPath, nil)
 	res1 := parseTricksterResult(hdr1.Get("X-Trickster-Result"))
 	t.Logf("first request: %s", hdr1.Get("X-Trickster-Result"))
 	require.Equal(t, "ObjectProxyCache", res1["engine"])
 	require.Equal(t, "kmiss", res1["status"])
 
-	// 2) Re-issue — expect hit.
 	_, hdr2 := queryTricksterProm(t, frontAddr, "prom1", apiPath, nil)
 	res2 := parseTricksterResult(hdr2.Get("X-Trickster-Result"))
 	t.Logf("second request: %s", hdr2.Get("X-Trickster-Result"))
 	require.Equal(t, "hit", res2["status"])
 
-	// 3) Issue a purge-by-path against the mgmt listener. The handler
-	// path prefix is /trickster/purge/path/ followed by {backend}/{path};
-	// it recomputes cache keys for all OPC/DPC engine + HTTP method
-	// combinations and calls cache.Remove on each.
 	purgeURL := fmt.Sprintf("http://%s/trickster/purge/path/prom1%s", mgmtAddr, apiPath)
 	req, err := http.NewRequest(http.MethodGet, purgeURL, nil)
 	require.NoError(t, err)
@@ -79,8 +65,6 @@ func TestPurge_ByKey(t *testing.T) {
 		"purge call failed: %s", strings.TrimSpace(string(body)))
 	t.Logf("purge response: %s", strings.TrimSpace(string(body)))
 
-	// 4) Re-issue the same request — expect kmiss again (cache entry
-	// was evicted).
 	_, hdr3 := queryTricksterProm(t, frontAddr, "prom1", apiPath, nil)
 	res3 := parseTricksterResult(hdr3.Get("X-Trickster-Result"))
 	t.Logf("after-purge request: %s", hdr3.Get("X-Trickster-Result"))

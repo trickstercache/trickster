@@ -29,8 +29,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestCacheKey groups cache-key correctness tests under a single Trickster
-// boot so that sequential subtests don't race on the shared :8480 port.
 func TestCacheKey(t *testing.T) {
 	cfg := writeTestConfig(t, 8576, 8577, 8585)
 	ckAddr := "127.0.0.1:8576"
@@ -38,7 +36,6 @@ func TestCacheKey(t *testing.T) {
 	h.start(t)
 	waitForPrometheusData(t, "127.0.0.1:9090")
 
-	// regression: #965
 	t.Run("label values match param", func(t *testing.T) {
 		fetch := func(t *testing.T, match string) map[string]string {
 			t.Helper()
@@ -69,7 +66,6 @@ func TestCacheKey(t *testing.T) {
 			"second request with a different match[] must not collide with the first (issue #965), got %v", r2)
 	})
 
-	// regression: #969
 	t.Run("POST split params", func(t *testing.T) {
 		now := time.Now()
 		queryExpr := fmt.Sprintf("up + 0*%d", now.UnixNano())

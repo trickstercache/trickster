@@ -17,6 +17,7 @@
 package model
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -36,10 +37,22 @@ func TestCalculateHash(t *testing.T) {
 	}
 
 	i := a.CalculateHash()
-	const expected = 640439168010397861
+	var expected uint64 = 9358847448315454117
 
 	if i != expected {
 		t.Errorf("expected %d got %d", expected, i)
+	}
+}
+
+func TestCalculateHash_AmbiguousSeparators(t *testing.T) {
+	a1 := &WFAlert{
+		Labels: map[string]string{"a=b": "c"},
+	}
+	a2 := &WFAlert{
+		Labels: map[string]string{"a": "b=c"},
+	}
+	if a1.CalculateHash() == a2.CalculateHash() {
+		t.Fatal("different label sets must not collide — separator in key/value is ambiguous")
 	}
 }
 
@@ -144,6 +157,43 @@ func TestMergeAndWriteAlerts(t *testing.T) {
 				t.Errorf("expected %d got %d", test.expCode, w.Code)
 			}
 		})
+	}
+}
+
+func TestMergeAndWriteAlerts_MultipleAlertsParseable(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
+	bodies := [][]byte{
+		[]byte(`{"status":"success","data":{"alerts":[` +
+			`{"state":"firing","labels":{"alertname":"A"},"annotations":{"summary":"a"}}` +
+			`]}}`),
+		[]byte(`{"status":"success","data":{"alerts":[` +
+			`{"state":"firing","labels":{"alertname":"B"},"annotations":{"summary":"b"}}` +
+			`]}}`),
+	}
+
+	w := httptest.NewRecorder()
+	r := request.SetResources(newTestReq(), testResources)
+	accum := merge.NewAccumulator()
+	mergeFunc := MergeAndWriteAlertsMergeFunc()
+	respondFunc := MergeAndWriteAlertsRespondFunc()
+	for i, b := range bodies {
+		if err := mergeFunc(accum, b, i); err != nil {
+			t.Fatalf("merge %d: %v", i, err)
+		}
+	}
+	respondFunc(w, r, accum, http.StatusOK)
+
+	var env struct {
+		Status string `json:"status"`
+		Data   struct {
+			Alerts []map[string]any `json:"alerts"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &env); err != nil {
+		t.Fatalf("merged body is invalid JSON: %v (body=%s)", err, w.Body.String())
+	}
+	if len(env.Data.Alerts) != 2 {
+		t.Fatalf("want 2 merged alerts, got %d: %s", len(env.Data.Alerts), w.Body.String())
 	}
 }
 

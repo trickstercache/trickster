@@ -105,7 +105,10 @@ func cloneRequestWithSpan(r *http.Request) *http.Request {
 		return nil
 	}
 	rsc := request.GetResources(r)
-	out, _ := request.Clone(r)
+	out, err := request.Clone(r)
+	if err != nil {
+		return nil
+	}
 	out = out.WithContext(tctx.WithResources(
 		trace.ContextWithSpan(context.Background(),
 			trace.SpanFromContext(r.Context())),
@@ -188,7 +191,12 @@ func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration, error) {
 
 func (pr *proxyRequest) prepareRevalidationRequest() {
 	pr.revalidation = RevalStatusInProgress
-	pr.revalidationRequest, _ = request.Clone(pr.upstreamRequest)
+	var err error
+	pr.revalidationRequest, err = request.Clone(pr.upstreamRequest)
+	if err != nil {
+		pr.revalidation = RevalStatusNone
+		return
+	}
 	pr.revalidationRequest = request.SetResources(pr.revalidationRequest, pr.rsc)
 	_, span := tspan.NewChildSpan(pr.revalidationRequest.Context(), pr.rsc.Tracer, "FetchRevlidation")
 	if span != nil {
@@ -258,7 +266,10 @@ func (pr *proxyRequest) prepareUpstreamRequests() {
 	// if we are articulating the origin range requests, break those out here
 	if len(pr.neededRanges) > 0 && pr.rsc.BackendOptions.DearticulateUpstreamRanges {
 		for _, r := range pr.neededRanges {
-			req, _ := request.Clone(pr.upstreamRequest)
+			req, err := request.Clone(pr.upstreamRequest)
+			if err != nil {
+				continue
+			}
 			req = request.SetResources(req, pr.rsc.Clone())
 			req.Header.Set(headers.NameRange, "bytes="+r.String())
 			pr.originRequests = append(pr.originRequests, req)

@@ -26,7 +26,10 @@ import (
 
 func TestObjectFromBytes(t *testing.T) {
 	obj := &Object{}
-	b := obj.ToBytes()
+	b, err := obj.ToBytes()
+	if err != nil {
+		t.Fatal(err)
+	}
 	obj2, err := ObjectFromBytes(b)
 	if err != nil {
 		t.Error(err)

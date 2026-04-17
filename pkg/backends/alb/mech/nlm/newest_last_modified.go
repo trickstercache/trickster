@@ -108,7 +108,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		eg.Go(func() error {
-			r2, _ := request.CloneWithoutResources(r)
+			r2, err := request.CloneWithoutResources(r)
+			if err != nil {
+				return err
+			}
 			r2 = r2.WithContext(bareCtx)
 			crw := capture.NewCaptureResponseWriter()
 			captures[i] = crw

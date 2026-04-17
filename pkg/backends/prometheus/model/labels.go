@@ -17,10 +17,9 @@
 package model
 
 import (
-	"fmt"
+	"encoding/json"
 	"net/http"
 	"sort"
-	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
@@ -62,11 +61,17 @@ func MergeAndWriteLabelDataRespondFunc() merge.RespondFunc {
 			return
 		}
 		ld.StartMarshal(w, statusCode)
+		w.Write([]byte(`,"data":`))
 		if len(ld.Data) > 0 {
 			sort.Strings(ld.Data)
-			fmt.Fprintf(w, `,"data":["%s"]`, strings.Join(ld.Data, `","`))
+			b, err := json.Marshal(ld.Data)
+			if err != nil {
+				w.Write([]byte("[]"))
+			} else {
+				w.Write(b)
+			}
 		} else {
-			w.Write([]byte(`,"data":[]`))
+			w.Write([]byte("[]"))
 		}
 		w.Write([]byte("}"))
 	})

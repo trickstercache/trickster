@@ -78,10 +78,30 @@ func roundTimestampParameterToMinute(qp url.Values, paramName string) {
 	}
 }
 
-// roundTimestampsToMinute rounds start and end timestamp parameters down to the minute for cacheability
+// roundEndTimestampParameterToMinute rounds an end-of-window timestamp up to the
+// next minute boundary. Rounding down can silently drop up to 59s of the newest
+// data when the caller's `end` is mid-minute, which surfaces as empty /series
+// and /labels responses immediately after Prometheus starts scraping. Rounding
+// up keeps recent samples in-window while still producing stable cache keys.
+func roundEndTimestampParameterToMinute(qp url.Values, paramName string) {
+	if p := qp.Get(paramName); p != "" {
+		if i, err := strconv.ParseInt(p, 10, 64); err == nil {
+			t := time.Unix(i, 0)
+			rounded := t.Truncate(time.Minute)
+			if !rounded.Equal(t) {
+				rounded = rounded.Add(time.Minute)
+			}
+			qp.Set(paramName, strconv.FormatInt(rounded.Unix(), 10))
+		}
+	}
+}
+
+// roundTimestampsToMinute aligns start and end timestamps to minute boundaries
+// for cacheability: start rounds down, end rounds up so the queried window
+// still covers all samples the caller asked about.
 func roundTimestampsToMinute(qp url.Values) {
 	roundTimestampParameterToMinute(qp, upStart)
-	roundTimestampParameterToMinute(qp, upEnd)
+	roundEndTimestampParameterToMinute(qp, upEnd)
 }
 
 // Client Implements Proxy Client Interface

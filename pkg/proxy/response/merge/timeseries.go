@@ -17,6 +17,7 @@
 package merge
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
@@ -33,8 +34,7 @@ func TimeseriesMergeFunc(unmarshaler timeseries.UnmarshalerFunc) MergeFunc {
 			// If data is []byte, unmarshal it first (for backward compatibility during transition)
 			body, ok := data.([]byte)
 			if !ok {
-				// Not a timeseries and not []byte
-				return nil
+				return fmt.Errorf("timeseries merge received unexpected data type %T", data)
 			}
 			var err error
 			ts, err = unmarshaler(body, nil)
@@ -84,7 +84,7 @@ func TimeseriesMergeFuncWithStrategy(unmarshaler timeseries.UnmarshalerFunc, str
 		if !ok {
 			body, ok := data.([]byte)
 			if !ok {
-				return nil
+				return fmt.Errorf("timeseries strategy merge received unexpected data type %T", data)
 			}
 			var err error
 			ts, err = unmarshaler(body, nil)

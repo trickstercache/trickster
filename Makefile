@@ -116,9 +116,13 @@ style:
 
 LINT_FLAGS ?= 
 .PHONY: lint
-lint: spelling
+lint: spelling vulncheck
 	@go fix -diff ./...
 	@go tool golangci-lint run $(LINT_FLAGS) -c .golangci.yml
+
+.PHONY: vulncheck
+vulncheck:
+	@go tool govulncheck ./...
 
 .PHONY: lint-fix
 lint-fix:
@@ -148,6 +152,22 @@ integration-test:
 	$(MAKE) -C integration test
 	$(MAKE) -C integration data-race-test
 
+.PHONY: integration-cover
+integration-cover:
+	$(MAKE) -C integration cover
+
+FUZZ_TIME ?= 30s
+
+.PHONY: fuzz
+fuzz:
+	@for pkg in $$($(GO) list ./... | grep -v /vendor/); do \
+		fuzz_funcs=$$($(GO) test -list 'Fuzz.*' $$pkg 2>/dev/null | grep '^Fuzz'); \
+		for fn in $$fuzz_funcs; do \
+			echo "fuzzing $$fn in $$pkg ($(FUZZ_TIME))"; \
+			$(GO) test -fuzz=$$fn -fuzztime=$(FUZZ_TIME) $$pkg || exit 1; \
+		done; \
+	done
+
 .PHONY: bench
 bench:
 	bash -c "$(GO) test -v -coverprofile=.coverprofile ./... -run=nonthingplease -bench=. | grep -v ' app=trickster '; exit ${PIPESTATUS[0]}"
@@ -165,7 +185,8 @@ generate: perform-generate insert-license-headers
 
 .PHONY: perform-generate
 perform-generate:
-	$(GO) generate ./pkg/... ./cmd/... ./integration/...
+	$(GO) generate ./pkg/... ./cmd/...
+	cd integration && $(GO) generate ./...
 
 .PHONY: insert-license-headers
 insert-license-headers:

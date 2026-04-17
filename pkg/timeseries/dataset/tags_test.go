@@ -16,7 +16,55 @@
 
 package dataset
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+	"unicode/utf8"
+)
+
+func FuzzTagsJSON(f *testing.F) {
+	f.Add("key1", "value1", "key2", "value2")
+	f.Add("name", `val"with"quotes`, "path", `C:\back\slash`)
+	f.Add("unicode", "héllo\nwörld", "null\x00byte", "a\tb")
+	f.Fuzz(func(t *testing.T, k1, v1, k2, v2 string) {
+		tags := Tags{k1: v1, k2: v2}
+		out := tags.JSON()
+		if !json.Valid([]byte(out)) {
+			t.Fatalf("Tags.JSON() produced invalid JSON: %s", out)
+		}
+		var roundTrip map[string]string
+		if err := json.Unmarshal([]byte(out), &roundTrip); err != nil {
+			t.Fatalf("Tags.JSON() unmarshal failed: %v\noutput: %s", err, out)
+		}
+		if k1 == k2 {
+			return
+		}
+		if utf8.ValidString(k1) && utf8.ValidString(v1) && roundTrip[k1] != v1 {
+			t.Fatalf("round-trip mismatch for key %q: got %q want %q", k1, roundTrip[k1], v1)
+		}
+		if utf8.ValidString(k2) && utf8.ValidString(v2) && roundTrip[k2] != v2 {
+			t.Fatalf("round-trip mismatch for key %q: got %q want %q", k2, roundTrip[k2], v2)
+		}
+	})
+}
+
+func TestTagsJSON_EscapesSpecialChars(t *testing.T) {
+	tags := Tags{
+		"path":  `/api/v1/query?q="a"`,
+		"slash": `back\slash`,
+		"plain": "ok",
+	}
+	got := tags.JSON()
+	var out map[string]string
+	if err := json.Unmarshal([]byte(got), &out); err != nil {
+		t.Fatalf("Tags.JSON produced invalid JSON: %v (out=%s)", err, got)
+	}
+	for k, want := range tags {
+		if out[k] != want {
+			t.Errorf("key %q: want %q, got %q", k, want, out[k])
+		}
+	}
+}
 
 func TestTags(t *testing.T) {
 	tags := make(Tags)

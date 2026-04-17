@@ -52,11 +52,13 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 	if oldConf != nil && oldConf.Frontend != nil &&
 		oldConf.Frontend.Equal(conf.Frontend) {
 		if ttls.OptionsChanged(conf, oldConf) {
-			tlsConfig, _ = conf.TLSCertConfig()
-			l := lg.Get("tlsListener")
-			if l != nil {
-				cs := l.CertSwapper()
-				if cs != nil {
+			var tlsErr error
+			tlsConfig, tlsErr = conf.TLSCertConfig()
+			if tlsErr != nil {
+				logger.Error("failed to load tls cert config",
+					logging.Pairs{"error": tlsErr})
+			} else if l := lg.Get("tlsListener"); l != nil {
+				if cs := l.CertSwapper(); cs != nil {
 					cs.SetCerts(tlsConfig.Certificates)
 				}
 			}

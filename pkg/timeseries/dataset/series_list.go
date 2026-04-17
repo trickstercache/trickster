@@ -198,7 +198,7 @@ func (sl SeriesList) SortByTags() {
 		if b == nil {
 			return -1
 		}
-		if c := strings.Compare(a.Header.Tags.String(), b.Header.Tags.String()); c != 0 {
+		if c := strings.Compare(a.Header.Tags.JSON(), b.Header.Tags.JSON()); c != 0 {
 			return c
 		}
 		return strings.Compare(a.Header.Name, b.Header.Name)

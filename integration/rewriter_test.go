@@ -26,10 +26,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestRequestRewriter tests the request rewriting feature.
-// Uses a config that applies the range-to-instant rewriter to /api/v1/query_range,
-// converting it into an instant query (/api/v1/query).
-// Requires: make developer-start (for Prometheus on :9090).
 func TestRequestRewriter(t *testing.T) {
 	rewriterHarness().start(t)
 	waitForPrometheusData(t, "127.0.0.1:9090")
@@ -38,7 +34,6 @@ func TestRequestRewriter(t *testing.T) {
 
 	t.Run("range to instant rewrite", func(t *testing.T) {
 		now := time.Now()
-		// Send a range query — the rewriter should convert it to an instant query.
 		params := url.Values{
 			"query": {"up"},
 			"start": {fmt.Sprintf("%d", now.Add(-5*time.Minute).Unix())},
@@ -48,8 +43,6 @@ func TestRequestRewriter(t *testing.T) {
 		pr, hdr := queryTricksterProm(t, rewriterAddr, "prom1", "/api/v1/query_range", params)
 		require.Equal(t, "success", pr.Status)
 
-		// The rewriter converts query_range → query, so the result should be
-		// a vector (instant query) instead of a matrix (range query).
 		var qd promQueryData
 		require.NoError(t, json.Unmarshal(pr.Data, &qd))
 		require.Equal(t, "vector", qd.ResultType,

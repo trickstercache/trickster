@@ -136,7 +136,7 @@ func pointFromValues(v []any) dataset.Point {
 		return dataset.Point{}
 	}
 	return dataset.Point{
-		Epoch:  epoch.Epoch(f1) * 1000000000,
+		Epoch:  epoch.Epoch(f1 * 1e9),
 		Size:   len(s) + 16,
 		Values: []any{s},
 	}

@@ -17,8 +17,10 @@
 package model
 
 import (
-	"fmt"
+	"encoding/json"
 	"net/http"
+	"slices"
+	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
@@ -30,22 +32,40 @@ type WFSeries struct {
 	Data []WFSeriesData `json:"data"`
 }
 
-// WFSeriesData describes the wire format document for series data elements
-type WFSeriesData struct {
-	Name     string `json:"__name__"`
-	Instance string `json:"instance"`
-	Job      string `json:"job"`
+// WFSeriesData is a single label set as returned by Prometheus /api/v1/series.
+// Prometheus series carry an arbitrary label set (e.g. shard, region,
+// cluster), so a fixed struct would silently drop data on round-trip and
+// collapse otherwise-distinct series during merge.
+type WFSeriesData map[string]string
+
+func (d WFSeriesData) canonicalKey() string {
+	keys := make([]string, 0, len(d))
+	for k := range d {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	var sb strings.Builder
+	for _, k := range keys {
+		sb.WriteString(k)
+		sb.WriteByte('=')
+		sb.WriteString(d[k])
+		sb.WriteByte('\x00')
+	}
+	return sb.String()
 }
 
 // Merge merges the passed WFSeries into the subject WFSeries
 func (s *WFSeries) Merge(results ...*WFSeries) {
-	m := make(sets.Set[WFSeriesData], len(s.Data))
-	m.SetAll(s.Data)
+	m := make(sets.Set[string], len(s.Data))
+	for _, d := range s.Data {
+		m.Set(d.canonicalKey())
+	}
 	for _, s2 := range results {
 		s.Envelope.Merge(s2.Envelope)
 		for _, d := range s2.Data {
-			if !m.Contains(d) {
-				m.Set(d)
+			k := d.canonicalKey()
+			if !m.Contains(k) {
+				m.Set(k)
 				s.Data = append(s.Data, d)
 			}
 		}
@@ -69,8 +89,12 @@ func MergeAndWriteSeriesRespondFunc() merge.RespondFunc {
 		w.Write([]byte(`,"data":[`))
 		var sep string
 		for _, series := range s.Data {
-			fmt.Fprintf(w, `%s{"__name__":"%s","instance":"%s","job":"%s"}`,
-				sep, series.Name, series.Instance, series.Job)
+			b, err := json.Marshal(map[string]string(series))
+			if err != nil {
+				continue
+			}
+			w.Write([]byte(sep))
+			w.Write(b)
 			sep = ","
 		}
 		w.Write([]byte("]}"))
