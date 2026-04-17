@@ -81,7 +81,7 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 
 	trq, ro, canOPC, err := parse(sqlQuery)
 	if err != nil {
-		return nil, nil, canOPC, err
+		return trq, ro, canOPC, err
 	}
 	if isBody && trq != nil {
 		trq.OriginalBody = originalBody

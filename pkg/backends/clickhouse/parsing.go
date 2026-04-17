@@ -66,31 +66,40 @@ func parse(statement string) (*timeseries.TimeRangeQuery, *timeseries.RequestOpt
 	rs, err := parser.Run(sqlparser.NewRunContext(trq, ro), parser, trq.Statement)
 	results := rs.Results()
 	verb, ok := rs.GetResultsCollection("verb")
-	var canObjectCache bool // indicates the query, while not a time series can be cached by the Object Proxy Cache
+	var canObjectCache bool
 	if !ok {
 		return nil, nil, false, sqlparser.ErrNotTimeRangeQuery
 	}
 	if vs, ok := verb.(string); ok {
 		canObjectCache = vs == lsql.TokenValSelect
 	}
+
+	trq.CacheKeyElements = map[string]string{
+		"query": trq.Statement,
+	}
+
+	returnWithKey := func(e error) (*timeseries.TimeRangeQuery, *timeseries.RequestOptions, bool, error) {
+		if canObjectCache {
+			return trq, nil, canObjectCache, e
+		}
+		return nil, nil, canObjectCache, e
+	}
+
 	if err != nil {
-		return nil, nil, canObjectCache, parsing.ParserError(err, rs.Current())
+		return returnWithKey(parsing.ParserError(err, rs.Current()))
 	}
 	var t *token.Token
 	if sql.HasLimitClause(results) {
-		return nil, nil, canObjectCache, ErrLimitUnsupported
+		return returnWithKey(ErrLimitUnsupported)
 	}
 	if t, err = parseGroupByTokens(results, trq); err != nil {
-		return nil, nil, canObjectCache, parsing.ParserError(err, t)
+		return returnWithKey(parsing.ParserError(err, t))
 	}
 	if t, err = parseSelectTokens(results, trq, ro); err != nil {
-		return nil, nil, canObjectCache, parsing.ParserError(err, t)
+		return returnWithKey(parsing.ParserError(err, t))
 	}
 	if t, err = parseWhereTokens(results, trq, ro); err != nil {
-		return nil, nil, canObjectCache, parsing.ParserError(err, t)
-	}
-	trq.CacheKeyElements = map[string]string{
-		"query": trq.Statement,
+		return returnWithKey(parsing.ParserError(err, t))
 	}
 	return trq, ro, canObjectCache, nil
 }
