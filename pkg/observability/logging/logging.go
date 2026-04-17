@@ -346,7 +346,8 @@ func getCaller(skip int) string {
 			break
 		}
 		idx := strings.Index(file, "/pkg/")
-		if idx == -1 || strings.Contains(file, "/pkg/observability/logging/") {
+		if idx == -1 || strings.Contains(file, "/pkg/mod/") ||
+			strings.Contains(file, "/pkg/observability/logging/") {
 			continue
 		}
 		fn := runtime.FuncForPC(pc)

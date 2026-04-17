@@ -43,6 +43,13 @@ func (c *Client) RegisterHandlers(handlers.Lookup) {
 func (c *Client) DefaultPathConfigs(_ *bo.Options) po.List {
 	return po.List{
 		{
+			Path:          "/ping",
+			HandlerName:   "health",
+			Methods:       []string{http.MethodGet},
+			MatchType:     matching.PathMatchTypeExact,
+			MatchTypeName: matching.PathMatchNameExact,
+		},
+		{
 			Path:           "/",
 			HandlerName:    "query",
 			Methods:        methods.GetAndPost(),

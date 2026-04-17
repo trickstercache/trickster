@@ -28,7 +28,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestClickHouseSDK(t *testing.T) {
+func TestClickHouseHTTP(t *testing.T) {
 	cfg := writeTestConfig(t, 8574, 8575, 8584)
 	clickAddr := "127.0.0.1:8574"
 	h := tricksterHarness{ConfigPath: cfg, BaseAddr: clickAddr, MetricsAddr: "127.0.0.1:8575"}
