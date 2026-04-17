@@ -6,7 +6,9 @@ Trickster will accelerate ClickHouse queries that return time series data normal
 
 Trickster is tested with the [ClickHouse DataSource Plugin for Grafana](https://grafana.com/grafana/plugins/vertamedia-clickhouse-datasource) v1.9.3 by Vertamedia, and supports acceleration of queries constructed by this plugin using the plugin's built-in `$timeSeries` macro.  Trickster also supports several other query formats that return "time series like" data.
 
-Because ClickHouse does not provide a golang-based query parser, Trickster uses custom parsing code on the incoming ClickHouse query to deconstruct its components, determine if it is cacheable and, if so, what elements are factored into the cache key derivation. Trickster also determines the requested time range and step based on the provided absolute values, in order to normalize the query before hashing the cache key.
+Trickster also supports the ClickHouse Go SDK (`clickhouse-go/v2`). Queries made through the SDK's HTTP protocol — including those using `clickhouse.OpenDB` — are proxied and cached through Trickster. The SDK's Native binary protocol is supported via transparent proxying (OPC).
+
+Because ClickHouse does not ship an official Go query parser, Trickster includes its own custom SQL parser and lexer to deconstruct incoming ClickHouse queries, determine if they are cacheable and, if so, what elements are factored into the cache key derivation. Trickster also determines the requested time range and step based on the provided absolute values, in order to normalize the query before hashing the cache key.
 
 If you find query or response structures that are not yet supported, or providing inconsistent or unexpected results, we'd love for you to report those. We also always welcome any contributions around this functionality.
 
@@ -51,6 +53,14 @@ WHERE datetime BETWEEN 1574686300 AND 1574689900
 ```
 
 Note that these values can be wrapped in the ClickHouse toDateTime function, but ClickHouse will make that conversion implicitly and it is not required.   All string times are assumed to be UTC.
+
+### Non-Time-Series Queries
+
+Queries that are not cacheable as time series — such as `LIMIT`-based queries, `SELECT 1` health checks, or SDK handshake requests — are transparently proxied to the upstream ClickHouse server. These requests are cached using the Object Proxy Cache (OPC) with per-query cache keys derived from the `query` and `database` URL parameters, ensuring that different SQL statements receive distinct cache entries.
+
+### Health and Ping Endpoint
+
+Trickster exposes a `/ping` endpoint that returns a health check response, matching the endpoint provided by ClickHouse itself. This enables compatibility with clients and SDKs that probe `/ping` during connection initialization.
 
 ### Normalization and "Fast Forwarding"
 
