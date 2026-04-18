@@ -20,13 +20,19 @@ package clickhouse
 import (
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	modelch "github.com/trickstercache/trickster/v2/pkg/backends/clickhouse/model"
+	chnative "github.com/trickstercache/trickster/v2/pkg/backends/clickhouse/native"
+	chserver "github.com/trickstercache/trickster/v2/pkg/backends/clickhouse/native/server"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/connhandler"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
@@ -39,6 +45,7 @@ var _ backends.TimeseriesBackend = (*Client)(nil)
 // Client Implements the Proxy Client Interface
 type Client struct {
 	backends.TimeseriesBackend
+	nativeClient *chnative.NativeClient
 }
 
 var _ types.NewBackendClientFunc = NewClient
@@ -54,7 +61,27 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 	c := &Client{}
 	b, err := backends.NewTimeseriesBackend(name, o, c.RegisterHandlers, router, cache, modelch.NewModeler())
 	c.TimeseriesBackend = b
+	if err == nil && o != nil && o.Protocol == "native" {
+		nc, ncErr := chnative.NewNativeClient(o)
+		if ncErr != nil {
+			logger.Error("clickhouse native client setup failed",
+				logging.Pairs{"backend": name, "detail": ncErr.Error()})
+		} else {
+			c.nativeClient = nc
+			o.Fetcher = nc.Fetch
+		}
+	}
 	return c, err
+}
+
+// ConnectionHandler implements backends.ConnectionHandlerProvider.
+func (c *Client) ConnectionHandler(protocol string) connhandler.ConnectionHandler {
+	if protocol != "clickhouse-native" {
+		return nil
+	}
+	return &chserver.Handler{
+		QueryHandler: c.Router(),
+	}
 }
 
 // ParseTimeRangeQuery parses the key parts of a TimeRangeQuery from the inbound HTTP Request
@@ -82,6 +109,11 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	trq, ro, canOPC, err := parse(sqlQuery)
 	if err != nil {
 		return trq, ro, canOPC, err
+	}
+	// When the client requests Native format via URL params (official Grafana
+	// plugin), set the output format so the marshaler returns Native binary.
+	if ro != nil && strings.EqualFold(r.URL.Query().Get("default_format"), "Native") {
+		ro.OutputFormat = modelch.OutputFormatNative
 	}
 	if isBody && trq != nil {
 		trq.OriginalBody = originalBody
