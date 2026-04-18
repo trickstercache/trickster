@@ -55,8 +55,15 @@ const (
 	mnTargetsMeta   = "targets/metadata"
 	mnRules         = "rules"
 	mnAlerts        = "alerts"
-	mnAlertManagers = "alertmanagers"
-	mnStatus        = "status"
+	mnAlertManagers   = "alertmanagers"
+	mnStatus          = "status"
+	mnQueryExemplars  = "query_exemplars"
+	mnMetadata        = "metadata"
+	mnFormatQuery     = "format_query"
+	mnParseQuery      = "parse_query"
+	mnScrapePools     = "scrape_pools"
+	mnFeatures        = "features"
+	mnNotificationsLv = "notifications/live"
 )
 
 // Common URL Parameter Names
@@ -68,6 +75,34 @@ const (
 	upTime  = "time"
 	upMatch = "match[]"
 )
+
+// containsOffsetKeyword reports whether stmt contains the PromQL " offset "
+// keyword outside of curly-brace selectors and double-quoted strings.
+// This avoids false positives from UTF-8 metric/label names like
+// {"metric offset name"} that became valid in Prometheus 3.0+.
+func containsOffsetKeyword(stmt string) bool {
+	const target = " offset "
+	depth := 0
+	inQuote := false
+	for i := 0; i < len(stmt); i++ {
+		switch {
+		case stmt[i] == '\\' && inQuote:
+			i++ // skip escaped character
+		case stmt[i] == '"':
+			inQuote = !inQuote
+		case inQuote:
+			continue
+		case stmt[i] == '{':
+			depth++
+		case stmt[i] == '}' && depth > 0:
+			depth--
+		case depth == 0 && i+len(target) <= len(stmt) &&
+			stmt[i:i+len(target)] == target:
+			return true
+		}
+	}
+	return false
+}
 
 // roundTimestampParameterToMinute rounds a specific timestamp parameter down to the minute for cacheability
 func roundTimestampParameterToMinute(qp url.Values, paramName string) {
@@ -209,7 +244,7 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	}
 	trq.Step = step
 
-	if strings.Contains(trq.Statement, " offset ") {
+	if containsOffsetKeyword(trq.Statement) {
 		trq.IsOffset = true
 		rlo.FastForwardDisable = true
 	}
@@ -254,7 +289,7 @@ func parseVectorQuery(r *http.Request, rounder time.Duration) (*timeseries.TimeR
 		trq.Extent.Start = time.Now().Truncate(rounder)
 	}
 
-	if strings.Contains(trq.Statement, " offset ") {
+	if containsOffsetKeyword(trq.Statement) {
 		trq.IsOffset = true
 	}
 

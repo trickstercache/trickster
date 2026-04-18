@@ -68,7 +68,7 @@ func TestDefaultPathConfigs(t *testing.T) {
 		t.Errorf("expected to find path named: %s", "/")
 	}
 
-	const expectedLen = 14
+	const expectedLen = 21
 	if len(dpc) != expectedLen {
 		t.Errorf("expected ordered length to be: %d got %d", expectedLen, len(dpc))
 	}

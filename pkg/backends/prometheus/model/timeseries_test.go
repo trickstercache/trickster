@@ -32,6 +32,9 @@ import (
 func FuzzUnmarshalMarshalTimeseries(f *testing.F) {
 	f.Add([]byte(testMatrix))
 	f.Add([]byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"__name__":"up","label":"val with \"quotes\" and \\backslash and \nnewline and \u00e9"},"values":[[1435781430,"1"]]}]}}`))
+	f.Add([]byte(testHistogramMatrix))
+	f.Add([]byte(testMixedMatrix))
+	f.Add([]byte(testHistogramVector))
 	f.Fuzz(func(t *testing.T, data []byte) {
 		trq := &timeseries.TimeRangeQuery{}
 		ts, err := UnmarshalTimeseries(data, trq)
@@ -445,4 +448,145 @@ func TestPopulateSeriesMalformedPoints(t *testing.T) {
 	require.NoError(t, err)
 	var env map[string]any
 	require.NoError(t, json.Unmarshal(b, &env), "marshal of dataset with malformed points produced invalid JSON: %s", string(b))
+}
+
+const testHistogramMatrix = `{"status":"success","data":{"resultType":"matrix","result":[` +
+	`{"metric":{"__name__":"test_histogram","job":"prom"},` +
+	`"histograms":[[1435781430,{"count":"10","sum":"3.14","schema":3,` +
+	`"zero_threshold":0.001,"zero_count":"2",` +
+	`"positive_spans":[{"offset":0,"length":2}],"positive_deltas":[1,3],` +
+	`"negative_spans":[{"offset":0,"length":1}],"negative_deltas":[4]}],` +
+	`[1435781445,{"count":"20","sum":"6.28","schema":3,` +
+	`"zero_threshold":0.001,"zero_count":"4",` +
+	`"positive_spans":[{"offset":0,"length":2}],"positive_deltas":[2,6],` +
+	`"negative_spans":[{"offset":0,"length":1}],"negative_deltas":[8]}]]}]}}`
+
+const testMixedMatrix = `{"status":"success","data":{"resultType":"matrix","result":[` +
+	`{"metric":{"__name__":"mixed","job":"prom"},` +
+	`"values":[[1435781430,"1"],[1435781445,"2"]],` +
+	`"histograms":[[1435781460,{"count":"10","sum":"3.14","schema":3,` +
+	`"zero_threshold":0.001,"zero_count":"2",` +
+	`"positive_spans":[{"offset":0,"length":1}],"positive_deltas":[1]}]]}]}}`
+
+const testHistogramVector = `{"status":"success","data":{"resultType":"vector","result":[` +
+	`{"metric":{"__name__":"test_histogram","job":"prom"},` +
+	`"histogram":[1435781430,{"count":"10","sum":"3.14","schema":3,` +
+	`"zero_threshold":0.001,"zero_count":"2",` +
+	`"positive_spans":[{"offset":0,"length":2}],"positive_deltas":[1,3]}]}]}}`
+
+func TestUnmarshalHistogramMatrix(t *testing.T) {
+	trq := &timeseries.TimeRangeQuery{}
+	ts, err := UnmarshalTimeseries([]byte(testHistogramMatrix), trq)
+	require.NoError(t, err)
+	ds, ok := ts.(*dataset.DataSet)
+	require.True(t, ok)
+	require.Len(t, ds.Results, 1)
+	require.Len(t, ds.Results[0].SeriesList, 1)
+
+	s := ds.Results[0].SeriesList[0]
+	require.Equal(t, fieldNameHistogram, s.Header.ValueFieldsList[0].Name)
+	require.Len(t, s.Points, 2)
+	require.Equal(t, epoch.Epoch(1435781430000000000), s.Points[0].Epoch)
+	require.Equal(t, epoch.Epoch(1435781445000000000), s.Points[1].Epoch)
+
+	// Round-trip: marshal and verify valid JSON
+	b, err := MarshalTimeseries(ds, nil, 200)
+	require.NoError(t, err)
+	require.True(t, json.Valid(b), "invalid JSON: %s", string(b))
+
+	// Verify histograms key present
+	require.Contains(t, string(b), `"histograms":`)
+	require.NotContains(t, string(b), `"values":`)
+}
+
+func TestUnmarshalMixedMatrix(t *testing.T) {
+	trq := &timeseries.TimeRangeQuery{}
+	ts, err := UnmarshalTimeseries([]byte(testMixedMatrix), trq)
+	require.NoError(t, err)
+	ds, ok := ts.(*dataset.DataSet)
+	require.True(t, ok)
+	require.Len(t, ds.Results, 1)
+	// Mixed series produces two internal series: one for values, one for histograms
+	require.Len(t, ds.Results[0].SeriesList, 2)
+
+	valueSer := ds.Results[0].SeriesList[0]
+	histSer := ds.Results[0].SeriesList[1]
+	require.Equal(t, "value", valueSer.Header.ValueFieldsList[0].Name)
+	require.Equal(t, fieldNameHistogram, histSer.Header.ValueFieldsList[0].Name)
+	require.Len(t, valueSer.Points, 2)
+	require.Len(t, histSer.Points, 1)
+
+	// Round-trip marshal
+	b, err := MarshalTimeseries(ds, nil, 200)
+	require.NoError(t, err)
+	require.True(t, json.Valid(b), "invalid JSON: %s", string(b))
+
+	// Both values and histograms should appear under the same metric
+	require.Contains(t, string(b), `"values":`)
+	require.Contains(t, string(b), `"histograms":`)
+	// Only one result object (same metric tags grouped)
+	require.Equal(t, 1, strings.Count(string(b), `"__name__":"mixed"`))
+}
+
+func TestUnmarshalHistogramVector(t *testing.T) {
+	trq := &timeseries.TimeRangeQuery{}
+	ts, err := UnmarshalTimeseries([]byte(testHistogramVector), trq)
+	require.NoError(t, err)
+	ds, ok := ts.(*dataset.DataSet)
+	require.True(t, ok)
+	require.Len(t, ds.Results, 1)
+	require.Len(t, ds.Results[0].SeriesList, 1)
+
+	s := ds.Results[0].SeriesList[0]
+	require.Equal(t, fieldNameHistogram, s.Header.ValueFieldsList[0].Name)
+	require.Len(t, s.Points, 1)
+
+	// Vector marshal: call MarshalTSOrVectorWriter directly with isVector=true
+	var buf strings.Builder
+	require.NoError(t, MarshalTSOrVectorWriter(ds, nil, 200, &buf, true))
+	body := buf.String()
+	require.True(t, json.Valid([]byte(body)), "invalid JSON: %s", body)
+	require.Contains(t, body, `"histogram":`)
+	require.Contains(t, body, `"resultType":"vector"`)
+	require.NotContains(t, body, `"value":`)
+}
+
+func TestHistogramRoundTrip(t *testing.T) {
+	trq := &timeseries.TimeRangeQuery{}
+	ts, err := UnmarshalTimeseries([]byte(testHistogramMatrix), trq)
+	require.NoError(t, err)
+	ds := ts.(*dataset.DataSet)
+
+	// Marshal → Unmarshal → Marshal should produce identical output
+	b1, err := MarshalTimeseries(ds, nil, 200)
+	require.NoError(t, err)
+
+	ts2, err := UnmarshalTimeseries(b1, &timeseries.TimeRangeQuery{})
+	require.NoError(t, err)
+	ds2 := ts2.(*dataset.DataSet)
+
+	b2, err := MarshalTimeseries(ds2, nil, 200)
+	require.NoError(t, err)
+	require.Equal(t, string(b1), string(b2))
+}
+
+func TestPointFromHistogram(t *testing.T) {
+	t.Run("valid histogram", func(t *testing.T) {
+		v := []any{1435781430.0, map[string]any{"count": "10", "sum": "3.14"}}
+		p, err := pointFromHistogram(v)
+		require.NoError(t, err)
+		require.Equal(t, epoch.Epoch(1435781430000000000), p.Epoch)
+		require.Len(t, p.Values, 1)
+		require.Contains(t, p.Values[0].(string), `"count":"10"`)
+	})
+
+	t.Run("wrong length", func(t *testing.T) {
+		_, err := pointFromHistogram([]any{1.0})
+		require.Error(t, err)
+	})
+
+	t.Run("bad epoch type", func(t *testing.T) {
+		_, err := pointFromHistogram([]any{"bad", map[string]any{}})
+		require.Error(t, err)
+	})
 }

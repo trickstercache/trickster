@@ -226,6 +226,207 @@ func TestPrometheus(t *testing.T) {
 			"different POST queries must return different results (issue #587)")
 	})
 
+	t.Run("metadata endpoint cached", func(t *testing.T) {
+		params := url.Values{"limit": {"5"}}
+		pr, hdr := queryTricksterProm(t, tricksterAddr, "prom1", "/api/v1/metadata", params)
+		require.Equal(t, "success", pr.Status)
+		result := parseTricksterResult(hdr.Get("X-Trickster-Result"))
+		t.Logf("metadata: %s", hdr.Get("X-Trickster-Result"))
+		require.Equal(t, "ObjectProxyCache", result["engine"])
+
+		var md map[string]json.RawMessage
+		require.NoError(t, json.Unmarshal(pr.Data, &md))
+		require.NotEmpty(t, md)
+	})
+
+	t.Run("format_query endpoint cached", func(t *testing.T) {
+		params := url.Values{"query": {"up{job='prometheus'}"}}
+		pr, hdr := queryTricksterProm(t, tricksterAddr, "prom1", "/api/v1/format_query", params)
+		require.Equal(t, "success", pr.Status)
+		result := parseTricksterResult(hdr.Get("X-Trickster-Result"))
+		t.Logf("format_query: %s", hdr.Get("X-Trickster-Result"))
+		require.Equal(t, "ObjectProxyCache", result["engine"])
+
+		// Second request should be a cache hit
+		_, hdr2 := queryTricksterProm(t, tricksterAddr, "prom1", "/api/v1/format_query", params)
+		result2 := parseTricksterResult(hdr2.Get("X-Trickster-Result"))
+		require.Equal(t, "hit", result2["status"])
+	})
+
+	t.Run("parse_query endpoint cached", func(t *testing.T) {
+		params := url.Values{"query": {"rate(up[5m])"}}
+		pr, hdr := queryTricksterProm(t, tricksterAddr, "prom1", "/api/v1/parse_query", params)
+		require.Equal(t, "success", pr.Status)
+		result := parseTricksterResult(hdr.Get("X-Trickster-Result"))
+		t.Logf("parse_query: %s", hdr.Get("X-Trickster-Result"))
+		require.Equal(t, "ObjectProxyCache", result["engine"])
+	})
+
+	t.Run("scrape_pools endpoint cached", func(t *testing.T) {
+		pr, hdr := queryTricksterProm(t, tricksterAddr, "prom1", "/api/v1/scrape_pools", nil)
+		require.Equal(t, "success", pr.Status)
+		result := parseTricksterResult(hdr.Get("X-Trickster-Result"))
+		t.Logf("scrape_pools: %s", hdr.Get("X-Trickster-Result"))
+		require.Equal(t, "ObjectProxyCache", result["engine"])
+
+		var wrapper struct {
+			ScrapePools []string `json:"scrapePools"`
+		}
+		require.NoError(t, json.Unmarshal(pr.Data, &wrapper))
+		require.Contains(t, wrapper.ScrapePools, "prometheus")
+	})
+
+	t.Run("stats=all uses separate cache key", func(t *testing.T) {
+		params := url.Values{"query": {"up"}}
+		_, hdr1 := queryTricksterProm(t, tricksterAddr, "prom1", "/api/v1/query", params)
+		result1 := parseTricksterResult(hdr1.Get("X-Trickster-Result"))
+		t.Logf("query without stats: %s", hdr1.Get("X-Trickster-Result"))
+
+		paramsStats := url.Values{"query": {"up"}, "stats": {"all"}}
+		_, hdr2 := queryTricksterProm(t, tricksterAddr, "prom1", "/api/v1/query", paramsStats)
+		result2 := parseTricksterResult(hdr2.Get("X-Trickster-Result"))
+		t.Logf("query with stats=all: %s", hdr2.Get("X-Trickster-Result"))
+
+		// The stats=all request should NOT be a cache hit from the non-stats query
+		// (it should be a miss since it has a different cache key)
+		if result1["status"] == "hit" || result1["status"] == "kmiss" {
+			require.NotEqual(t, "hit", result2["status"],
+				"stats=all query should have a different cache key")
+		}
+	})
+
+	t.Run("native histogram instant query", func(t *testing.T) {
+		params := url.Values{"query": {"prometheus_http_request_duration_seconds"}}
+		pr, hdr := queryTricksterProm(t, tricksterAddr, "prom1", "/api/v1/query", params)
+		require.Equal(t, "success", pr.Status)
+		result := parseTricksterResult(hdr.Get("X-Trickster-Result"))
+		t.Logf("histogram instant: %s", hdr.Get("X-Trickster-Result"))
+		require.Equal(t, "ObjectProxyCache", result["engine"])
+
+		var qd promQueryData
+		require.NoError(t, json.Unmarshal(pr.Data, &qd))
+		require.Equal(t, "vector", qd.ResultType)
+
+		// The result should contain at least one series with a "histogram" field
+		// (Prometheus 3.x with native-histograms enabled + PrometheusProto scrape)
+		var results []json.RawMessage
+		require.NoError(t, json.Unmarshal(qd.Result, &results))
+		require.NotEmpty(t, results)
+
+		foundHistogram := false
+		for _, raw := range results {
+			var entry map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal(raw, &entry))
+			if _, ok := entry["histogram"]; ok {
+				foundHistogram = true
+				break
+			}
+		}
+		require.True(t, foundHistogram,
+			"expected at least one native histogram in prometheus_http_request_duration_seconds results")
+	})
+
+	t.Run("native histogram range query", func(t *testing.T) {
+		now := time.Now()
+		params := url.Values{
+			"query": {"prometheus_http_request_duration_seconds"},
+			"start": {fmt.Sprintf("%d", now.Add(-2*time.Minute).Unix())},
+			"end":   {fmt.Sprintf("%d", now.Unix())},
+			"step":  {"15"},
+		}
+		pr, hdr := queryTricksterProm(t, tricksterAddr, "prom1", "/api/v1/query_range", params)
+		require.Equal(t, "success", pr.Status)
+		result := parseTricksterResult(hdr.Get("X-Trickster-Result"))
+		t.Logf("histogram range: %s", hdr.Get("X-Trickster-Result"))
+		require.Equal(t, "DeltaProxyCache", result["engine"])
+
+		var qd promQueryData
+		require.NoError(t, json.Unmarshal(pr.Data, &qd))
+		require.Equal(t, "matrix", qd.ResultType)
+
+		var results []json.RawMessage
+		require.NoError(t, json.Unmarshal(qd.Result, &results))
+		require.NotEmpty(t, results)
+
+		foundHistograms := false
+		for _, raw := range results {
+			var entry map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal(raw, &entry))
+			if _, ok := entry["histograms"]; ok {
+				foundHistograms = true
+				break
+			}
+		}
+		require.True(t, foundHistograms,
+			"expected at least one series with histograms array in range query")
+	})
+
+	t.Run("native histogram range query cache hit", func(t *testing.T) {
+		now := time.Now()
+		step := 15 * time.Second
+		end := now.Truncate(step)
+		start := end.Add(-2 * time.Minute)
+		params := url.Values{
+			"query": {fmt.Sprintf("prometheus_http_request_duration_seconds + 0*%d", now.UnixNano())},
+			"start": {fmt.Sprintf("%d", start.Unix())},
+			"end":   {fmt.Sprintf("%d", end.Unix())},
+			"step":  {"15"},
+		}
+
+		// First request: cache miss
+		pr, hdr := queryTricksterProm(t, tricksterAddr, "prom1", "/api/v1/query_range", params)
+		require.Equal(t, "success", pr.Status)
+		result := parseTricksterResult(hdr.Get("X-Trickster-Result"))
+		t.Logf("histogram cache miss: %s", hdr.Get("X-Trickster-Result"))
+		require.Equal(t, "kmiss", result["status"])
+
+		// Second request: cache hit
+		_, hdr2 := queryTricksterProm(t, tricksterAddr, "prom1", "/api/v1/query_range", params)
+		result2 := parseTricksterResult(hdr2.Get("X-Trickster-Result"))
+		t.Logf("histogram cache hit: %s", hdr2.Get("X-Trickster-Result"))
+		require.Equal(t, "hit", result2["status"])
+	})
+
+	t.Run("native histogram round-trip fidelity", func(t *testing.T) {
+		params := url.Values{"query": {"prometheus_http_request_duration_seconds"}}
+
+		// Query directly against Prometheus
+		prDirect, _ := queryTricksterProm(t, "127.0.0.1:9090", "", "/api/v1/query", params)
+		// Query through Trickster (cache miss)
+		prProxy, _ := queryTricksterProm(t, tricksterAddr, "prom1", "/api/v1/query", params)
+
+		require.Equal(t, prDirect.Status, prProxy.Status)
+
+		var qdDirect, qdProxy promQueryData
+		require.NoError(t, json.Unmarshal(prDirect.Data, &qdDirect))
+		require.NoError(t, json.Unmarshal(prProxy.Data, &qdProxy))
+		require.Equal(t, qdDirect.ResultType, qdProxy.ResultType)
+
+		var directResults, proxyResults []map[string]json.RawMessage
+		require.NoError(t, json.Unmarshal(qdDirect.Result, &directResults))
+		require.NoError(t, json.Unmarshal(qdProxy.Result, &proxyResults))
+
+		// Both should have the same number of series
+		require.Equal(t, len(directResults), len(proxyResults),
+			"Trickster proxy should return same number of series as direct Prometheus query")
+
+		// Count histogram vs value series in each
+		directHist := 0
+		for _, r := range directResults {
+			if _, ok := r["histogram"]; ok {
+				directHist++
+			}
+		}
+		proxyHist := 0
+		for _, r := range proxyResults {
+			if _, ok := r["histogram"]; ok {
+				proxyHist++
+			}
+		}
+		require.Equal(t, directHist, proxyHist,
+			"same number of native histogram series should come through proxy")
+	})
+
 	t.Run("negative cache 500", func(t *testing.T) {
 		params := url.Values{"query": {`test{status_code="500"}`}}
 		u := "http://" + tricksterAddr + "/sim1/api/v1/query?" + params.Encode()

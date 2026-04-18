@@ -70,9 +70,11 @@ func (d *WFMatrixData) UnmarshalJSON(data []byte) error {
 
 // WFResult is the Result section of the WFD (matrix and vector only)
 type WFResult struct {
-	Metric dataset.Tags `json:"metric"`
-	Values [][]any      `json:"values,omitempty"`
-	Value  []any        `json:"value,omitempty"`
+	Metric     dataset.Tags `json:"metric"`
+	Values     [][]any      `json:"values,omitempty"`
+	Value      []any        `json:"value,omitempty"`
+	Histograms [][]any      `json:"histograms,omitempty"`
+	Histogram  []any        `json:"histogram,omitempty"`
 }
 
 // WFResultScalar is the Result section of the WFD (scalar only)
@@ -151,6 +153,28 @@ func pointFromValues(v []any) (dataset.Point, error) {
 	}, nil
 }
 
+const fieldNameHistogram = "histogram"
+
+func pointFromHistogram(v []any) (dataset.Point, error) {
+	if len(v) != 2 {
+		return dataset.Point{}, timeseries.ErrInvalidBody
+	}
+	f1, ok := v[0].(float64)
+	if !ok {
+		return dataset.Point{}, timeseries.ErrInvalidBody
+	}
+	hb, err := json.Marshal(v[1])
+	if err != nil {
+		return dataset.Point{}, err
+	}
+	s := string(hb)
+	return dataset.Point{
+		Epoch:  epoch.Epoch(f1 * 1e9),
+		Size:   len(s) + 32,
+		Values: []any{s},
+	}, nil
+}
+
 // MarshalTimeseries converts a Timeseries into a JSON blob
 func MarshalTimeseries(ts timeseries.Timeseries, rlo *timeseries.RequestOptions, status int) ([]byte, error) {
 	buf := bytes.NewBuffer(nil)
@@ -163,7 +187,14 @@ func MarshalTimeseriesWriter(ts timeseries.Timeseries, rlo *timeseries.RequestOp
 	return MarshalTSOrVectorWriter(ts, rlo, status, w, false)
 }
 
-// marshalTSOrVectorWriter writes matrix and vector outputs to the provided io.Writer
+// seriesGroup collects value and histogram series that share the same metric tags.
+type seriesGroup struct {
+	tagsJSON  string
+	valueSer  *dataset.Series
+	histSer   *dataset.Series
+}
+
+// MarshalTSOrVectorWriter writes matrix and vector outputs to the provided io.Writer
 func MarshalTSOrVectorWriter(ts timeseries.Timeseries, _ *timeseries.RequestOptions,
 	status int, w io.Writer, isVector bool,
 ) error {
@@ -195,10 +226,15 @@ func MarshalTSOrVectorWriter(ts timeseries.Timeseries, _ *timeseries.RequestOpti
 	w.Write([]byte(resultType))
 	w.Write([]byte(`","result":[`))
 
+	// Group series by metric tags so a single Prometheus result object can
+	// contain both "values" and "histograms" arrays when a metric has mixed types.
+	groups := groupSeriesByTags(ds.Results[0].SeriesList)
+
 	var buf [64]byte
 	var seriesSep bool
-	for _, s := range ds.Results[0].SeriesList {
-		if s == nil || len(s.Points) == 0 {
+	for _, g := range groups {
+		if (g.valueSer == nil || len(g.valueSer.Points) == 0) &&
+			(g.histSer == nil || len(g.histSer.Points) == 0) {
 			continue
 		}
 		if seriesSep {
@@ -207,99 +243,226 @@ func MarshalTSOrVectorWriter(ts timeseries.Timeseries, _ *timeseries.RequestOpti
 			w.Write([]byte(`{"metric":`))
 			seriesSep = true
 		}
-		w.Write([]byte(s.Header.Tags.JSON()))
+		w.Write([]byte(g.tagsJSON))
+
 		if isVector {
-			w.Write([]byte(`,"value":[`))
-			if len(s.Points) > 0 {
-				b := strconv.AppendFloat(buf[:0], float64(s.Points[0].Epoch)/1000000000, 'f', -1, 64)
-				w.Write(b)
-				w.Write([]byte(`,"`))
-				w.Write([]byte(s.Points[0].Values[0].(string)))
-				w.Write([]byte(`"]}`))
-			} else {
-				w.Write([]byte("]}"))
-			}
+			marshalVectorGroup(w, g, buf)
 		} else {
-			w.Write([]byte(`,"values":[`))
-			if !sort.IsSorted(s.Points) {
-				sort.Sort(s.Points)
-			}
-			for i, p := range s.Points {
-				if i > 0 {
-					w.Write([]byte{','})
-				}
-				w.Write([]byte{'['})
-				b := strconv.AppendFloat(buf[:0], float64(p.Epoch)/1000000000, 'f', -1, 64)
-				w.Write(b)
-				w.Write([]byte(`,"`))
-				w.Write([]byte(p.Values[0].(string)))
-				w.Write([]byte(`"]`))
-			}
-			w.Write([]byte("]}"))
+			marshalMatrixGroup(w, g, buf)
 		}
+		w.Write([]byte("}"))
 	}
 	w.Write([]byte("]}}"))
 	return nil
+}
+
+func groupSeriesByTags(seriesList []*dataset.Series) []seriesGroup {
+	order := make([]string, 0, len(seriesList))
+	idx := make(map[string]int, len(seriesList))
+	var groups []seriesGroup
+	for _, s := range seriesList {
+		if s == nil || len(s.Points) == 0 {
+			continue
+		}
+		tj := s.Header.Tags.JSON()
+		gi, exists := idx[tj]
+		if !exists {
+			gi = len(groups)
+			idx[tj] = gi
+			groups = append(groups, seriesGroup{tagsJSON: tj})
+			order = append(order, tj)
+		}
+		isHist := len(s.Header.ValueFieldsList) > 0 &&
+			s.Header.ValueFieldsList[0].Name == fieldNameHistogram
+		if isHist {
+			groups[gi].histSer = s
+		} else {
+			groups[gi].valueSer = s
+		}
+	}
+	return groups
+}
+
+func marshalVectorGroup(w io.Writer, g seriesGroup, buf [64]byte) {
+	if g.histSer != nil && len(g.histSer.Points) > 0 {
+		w.Write([]byte(`,"histogram":[`))
+		b := strconv.AppendFloat(buf[:0], float64(g.histSer.Points[0].Epoch)/1e9, 'f', -1, 64)
+		w.Write(b)
+		w.Write([]byte(`,`))
+		w.Write([]byte(g.histSer.Points[0].Values[0].(string)))
+		w.Write([]byte(`]`))
+	} else if g.valueSer != nil && len(g.valueSer.Points) > 0 {
+		w.Write([]byte(`,"value":[`))
+		b := strconv.AppendFloat(buf[:0], float64(g.valueSer.Points[0].Epoch)/1e9, 'f', -1, 64)
+		w.Write(b)
+		w.Write([]byte(`,"`))
+		w.Write([]byte(g.valueSer.Points[0].Values[0].(string)))
+		w.Write([]byte(`"]`))
+	}
+}
+
+func marshalMatrixGroup(w io.Writer, g seriesGroup, buf [64]byte) {
+	if g.valueSer != nil && len(g.valueSer.Points) > 0 {
+		if !sort.IsSorted(g.valueSer.Points) {
+			sort.Sort(g.valueSer.Points)
+		}
+		w.Write([]byte(`,"values":[`))
+		for i, p := range g.valueSer.Points {
+			if i > 0 {
+				w.Write([]byte{','})
+			}
+			w.Write([]byte{'['})
+			b := strconv.AppendFloat(buf[:0], float64(p.Epoch)/1e9, 'f', -1, 64)
+			w.Write(b)
+			w.Write([]byte(`,"`))
+			w.Write([]byte(p.Values[0].(string)))
+			w.Write([]byte(`"]`))
+		}
+		w.Write([]byte(`]`))
+	}
+	if g.histSer != nil && len(g.histSer.Points) > 0 {
+		if !sort.IsSorted(g.histSer.Points) {
+			sort.Sort(g.histSer.Points)
+		}
+		w.Write([]byte(`,"histograms":[`))
+		for i, p := range g.histSer.Points {
+			if i > 0 {
+				w.Write([]byte{','})
+			}
+			w.Write([]byte{'['})
+			b := strconv.AppendFloat(buf[:0], float64(p.Epoch)/1e9, 'f', -1, 64)
+			w.Write(b)
+			w.Write([]byte(`,`))
+			w.Write([]byte(p.Values[0].(string)))
+			w.Write([]byte(`]`))
+		}
+		w.Write([]byte(`]`))
+	}
 }
 
 func populateSeries(ds *dataset.DataSet, result []*WFResult,
 	trq *timeseries.TimeRangeQuery, isVector bool,
 ) {
 	ds.Results = []*dataset.Result{{}}
-	ds.Results[0].SeriesList = make([]*dataset.Series, len(result))
-	for i, pr := range result {
-		sh := dataset.SeriesHeader{
-			Tags:           pr.Metric,
-			QueryStatement: trq.Statement,
-		}
+	ds.Results[0].SeriesList = make([]*dataset.Series, 0, len(result))
+
+	fdValue := timeseries.FieldDefinition{
+		Name:     "value",
+		DataType: timeseries.String,
+	}
+	fdHist := timeseries.FieldDefinition{
+		Name:     fieldNameHistogram,
+		DataType: timeseries.String,
+	}
+
+	for _, pr := range result {
+		baseName := ""
 		if n, ok := pr.Metric["__name__"]; ok {
-			sh.Name = n
+			baseName = n
 		}
-		fd := timeseries.FieldDefinition{
-			Name:     "value",
-			DataType: timeseries.String,
-		}
-		sh.ValueFieldsList = []timeseries.FieldDefinition{fd}
-		var pts dataset.Points
-		l := len(pr.Values)
-		var ps int64 = 16
-		if !isVector && l > 0 {
-			pts = make(dataset.Points, l)
-			var eg errgroup.Group
-			eg.SetLimit(runtime.GOMAXPROCS(0))
-			for i, v := range pr.Values {
-				eg.Go(func() error {
-					pt, _ := pointFromValues(v)
-					if pt.Epoch > 0 {
-						atomic.AddInt64(&ps, int64(pt.Size))
-						pts[i] = pt
-					}
-					return nil
-				})
+
+		hasValues := (!isVector && len(pr.Values) > 0) || (isVector && len(pr.Value) >= 1)
+		hasHistograms := (!isVector && len(pr.Histograms) > 0) || (isVector && len(pr.Histogram) == 2)
+
+		// Always emit at least one series per result to preserve SeriesList
+		// length for callers that expect it (e.g. scalar results with no data).
+		if hasValues || !hasHistograms {
+			sh := dataset.SeriesHeader{
+				Tags:            pr.Metric,
+				QueryStatement:  trq.Statement,
+				Name:            baseName,
+				ValueFieldsList: []timeseries.FieldDefinition{fdValue},
 			}
-			eg.Wait()
-			j := 0
-			for _, p := range pts {
-				if p.Epoch > 0 {
-					pts[j] = p
-					j++
+			var pts dataset.Points
+			var ps int64 = 16
+			if !isVector && len(pr.Values) > 0 {
+				l := len(pr.Values)
+				pts = make(dataset.Points, l)
+				var eg errgroup.Group
+				eg.SetLimit(runtime.GOMAXPROCS(0))
+				for i, v := range pr.Values {
+					eg.Go(func() error {
+						pt, _ := pointFromValues(v)
+						if pt.Epoch > 0 {
+							atomic.AddInt64(&ps, int64(pt.Size))
+							pts[i] = pt
+						}
+						return nil
+					})
 				}
+				eg.Wait()
+				j := 0
+				for _, p := range pts {
+					if p.Epoch > 0 {
+						pts[j] = p
+						j++
+					}
+				}
+				pts = pts[:j]
+			} else if isVector && len(pr.Value) == 2 {
+				pts = make(dataset.Points, 1)
+				pt, _ := pointFromValues(pr.Value)
+				ps = int64(pt.Size)
+				pts[0] = pt
+				t := time.Unix(0, int64(pt.Epoch))
+				ds.ExtentList = timeseries.ExtentList{timeseries.Extent{Start: t, End: t}}
 			}
-			pts = pts[:j]
-		} else if isVector && len(pr.Value) == 2 {
-			pts = make(dataset.Points, 1)
-			pt, _ := pointFromValues(pr.Value)
-			ps = int64(pt.Size)
-			pts[0] = pt
-			t := time.Unix(0, int64(pt.Epoch))
-			ds.ExtentList = timeseries.ExtentList{timeseries.Extent{Start: t, End: t}}
+			sh.CalculateSize()
+			ds.Results[0].SeriesList = append(ds.Results[0].SeriesList, &dataset.Series{
+				Header:    sh,
+				Points:    pts,
+				PointSize: ps,
+			})
 		}
-		sh.CalculateSize()
-		s := &dataset.Series{
-			Header:    sh,
-			Points:    pts,
-			PointSize: ps,
+
+		// Histogram series
+		if hasHistograms {
+			sh := dataset.SeriesHeader{
+				Tags:            pr.Metric,
+				QueryStatement:  trq.Statement,
+				Name:            baseName,
+				ValueFieldsList: []timeseries.FieldDefinition{fdHist},
+			}
+			var pts dataset.Points
+			var ps int64 = 16
+			if !isVector {
+				l := len(pr.Histograms)
+				pts = make(dataset.Points, l)
+				var eg errgroup.Group
+				eg.SetLimit(runtime.GOMAXPROCS(0))
+				for i, v := range pr.Histograms {
+					eg.Go(func() error {
+						pt, _ := pointFromHistogram(v)
+						if pt.Epoch > 0 {
+							atomic.AddInt64(&ps, int64(pt.Size))
+							pts[i] = pt
+						}
+						return nil
+					})
+				}
+				eg.Wait()
+				j := 0
+				for _, p := range pts {
+					if p.Epoch > 0 {
+						pts[j] = p
+						j++
+					}
+				}
+				pts = pts[:j]
+			} else {
+				pts = make(dataset.Points, 1)
+				pt, _ := pointFromHistogram(pr.Histogram)
+				ps = int64(pt.Size)
+				pts[0] = pt
+				t := time.Unix(0, int64(pt.Epoch))
+				ds.ExtentList = timeseries.ExtentList{timeseries.Extent{Start: t, End: t}}
+			}
+			sh.CalculateSize()
+			ds.Results[0].SeriesList = append(ds.Results[0].SeriesList, &dataset.Series{
+				Header:    sh,
+				Points:    pts,
+				PointSize: ps,
+			})
 		}
-		ds.Results[0].SeriesList[i] = s
 	}
 }
