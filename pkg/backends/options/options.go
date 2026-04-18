@@ -65,6 +65,10 @@ type Options struct {
 	// OriginURL provides the base upstream URL for all proxied requests to this Backend.
 	// it can be as simple as http://example.com or as complex as https://example.com:8443/path/prefix
 	OriginURL string `yaml:"origin_url,omitempty"`
+	// Protocol selects the upstream wire protocol used to communicate with the origin.
+	// When empty, HTTP is used. Supported values are provider-specific (e.g., "native"
+	// for ClickHouse to use the binary protocol on port 9000).
+	Protocol string `yaml:"protocol,omitempty"`
 	// Timeout defines how long the HTTP request will wait for a response before timing out
 	Timeout time.Duration `yaml:"timeout,omitempty"`
 	// KeepAliveTimeout defines how long an open keep-alive HTTP connection remains idle before closing
@@ -153,6 +157,11 @@ type Options struct {
 	// ForwardedHeaders indicates the class of 'Forwarded' header to attach to upstream requests
 	ForwardedHeaders string `yaml:"forwarded_headers,omitempty"`
 
+	// DPCFallbackWarning, when true (default), logs a warning when a query cannot
+	// be parsed as a time range query and falls back from DPC to OPC. Set to false
+	// to suppress these warnings (they will still appear at debug level).
+	DPCFallbackWarning *bool `yaml:"dpc_fallback_warning,omitempty"`
+
 	// IsDefault indicates if this is the d.Default backend for any request not matching a configured route
 	IsDefault bool `yaml:"is_default,omitempty"`
 	// FastForwardDisable indicates whether the FastForward feature should be disabled for this backend
@@ -223,6 +232,11 @@ type Options struct {
 	// DoesShard is true when sharding will be used with this origin, based on how the
 	// sharding options have been configured
 	DoesShard bool `yaml:"-"`
+	// Fetcher, when non-nil, replaces HTTPClient.Do for upstream requests.
+	// This allows non-HTTP backends (e.g. ClickHouse native protocol) to
+	// intercept the fetch and translate between HTTP-shaped requests and the
+	// native wire format. When nil, HTTPClient.Do is used.
+	Fetcher func(*http.Request) (*http.Response, error) `yaml:"-"`
 }
 
 var _ types.ConfigOptions[Options] = &Options{}

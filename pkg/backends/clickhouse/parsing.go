@@ -101,6 +101,12 @@ func parse(statement string) (*timeseries.TimeRangeQuery, *timeseries.RequestOpt
 	if t, err = parseWhereTokens(results, trq, ro); err != nil {
 		return returnWithKey(parsing.ParserError(err, t))
 	}
+	// Ensure the statement has a FORMAT token. Queries from the official Grafana
+	// ClickHouse plugin omit FORMAT and rely on default_format=Native. DPC needs
+	// to control the format via the SQL clause so default_format doesn't override.
+	if !strings.Contains(trq.Statement, tkFormat) {
+		trq.Statement = strings.TrimRight(trq.Statement, "; \t\n") + " FORMAT " + tkFormat
+	}
 	return trq, ro, canObjectCache, nil
 }
 
@@ -110,6 +116,10 @@ const (
 	tkTS1    = "<$TS1$>"
 	tkTS2    = "<$TS2$>"
 	tkFormat = "<$FORMAT$>"
+
+	// sdtDate marks the timestamp field as returning ClickHouse Date type
+	// (not DateTime). Used to wrap interpolated boundaries in toDate().
+	sdtDate = "Date"
 )
 
 const (
@@ -126,14 +136,52 @@ var tokenToStartOfLookup = map[string]time.Duration{
 	"tostartoffiveminute":     time.Minute * 5,
 	"tostartoftenminutes":     time.Minute * 10,
 	"tostartoffifteenminutes": time.Minute * 15,
+	"tostartofmonth":          day * 30,
+	"tostartofquarter":        day * 90,
+	"tostartofyear":           day * 365,
+	"tostartofmillisecond":    time.Millisecond,
+	"tostartofsecond":         time.Second,
+	"tostartofmicrosecond":    time.Microsecond,
+	"tostartofnanosecond":     time.Nanosecond,
+	"timeslot":                time.Minute * 30,
 }
 
 var tokenDurations = map[token.Typ]time.Duration{
-	tokenWeek:   week,
-	tokenDay:    day,
-	tokenHour:   time.Hour,
-	tokenMinute: time.Minute,
-	tokenSecond: time.Second,
+	tokenWeek:        week,
+	tokenDay:         day,
+	tokenHour:        time.Hour,
+	tokenMinute:      time.Minute,
+	tokenSecond:      time.Second,
+	tokenMonth:       day * 30,
+	tokenQuarter:     day * 90,
+	tokenYear:        day * 365,
+	tokenMillisecond: time.Millisecond,
+	tokenMicrosecond: time.Microsecond,
+	tokenNanosecond:  time.Nanosecond,
+}
+
+var dateReturningFunctions = map[string]bool{
+	"tostartofmonth":   true,
+	"tostartofquarter": true,
+	"tostartofyear":    true,
+}
+
+var dateReturningTruncUnits = map[string]bool{
+	"month":   true,
+	"quarter": true,
+	"year":    true,
+}
+
+var dateTruncUnits = map[string]time.Duration{
+	"year":        day * 365,
+	"quarter":     day * 90,
+	"month":       day * 30,
+	"week":        week,
+	"day":         day,
+	"hour":        time.Hour,
+	"minute":      time.Minute,
+	"second":      time.Second,
+	"millisecond": time.Millisecond,
 }
 
 var supportedFormats = map[string]byte{
@@ -300,7 +348,7 @@ func parseSelectTokens(results ts.Lookup,
 	for _, fieldParts := range st {
 		var prev *token.Token
 		var isTimeSeries, isIntDiv, needStep, checkMultiplier, expectBaseTimeField,
-			isToStartOfInterval, expectAlias bool
+			isToStartOfInterval, isDateTrunc, expectAlias bool
 		var d time.Duration
 		var x int
 		var err error
@@ -341,6 +389,27 @@ func parseSelectTokens(results ts.Lookup,
 					isToStartOfInterval = false
 					checkMultiplier = true
 					foundTimeSeries = true
+				}
+				goto nextIteration
+			}
+			// date_trunc('unit', column) — unit is a string literal, column follows
+			if isDateTrunc {
+				if t.Typ == token.String {
+					unit := strings.ToLower(strings.Trim(t.Val, "'\""))
+					d, ok := dateTruncUnits[unit]
+					if !ok {
+						return t, sqlparser.ErrStepParse
+					}
+					trq.Step = d
+					isTimeSeries = true
+					foundTimeSeries = true
+					checkMultiplier = true
+					if dateReturningTruncUnits[unit] {
+						trq.TimestampDefinition.SDataType = sdtDate
+					}
+				} else if !token.IsComma(t.Typ) && isTimeSeries && ro.BaseTimestampFieldName == "" {
+					ro.BaseTimestampFieldName = t.Val
+					isDateTrunc = false
 				}
 				goto nextIteration
 			}
@@ -409,6 +478,17 @@ func parseSelectTokens(results ts.Lookup,
 				isToStartOfInterval = true
 				goto nextIteration
 			}
+			if t.Typ == tokenDateTrunc {
+				isDateTrunc = true
+				goto nextIteration
+			}
+			if t.Typ == tokenTimeSlot {
+				isTimeSeries = true
+				foundTimeSeries = true
+				expectBaseTimeField = true
+				trq.Step = time.Minute * 30
+				goto nextIteration
+			}
 			if (prev != nil && prev.Typ == tokenIntDiv && t.Typ == tokenToInt32) ||
 				((prev == nil || prev.Typ == tokenToInt32) && t.Typ == tokenToStartOf) {
 				isTimeSeries = true
@@ -422,6 +502,9 @@ func parseSelectTokens(results ts.Lookup,
 						return t, ErrUnsupportedToStartOfFunc
 					}
 					trq.Step = d
+					if dateReturningFunctions[t.Val] {
+						trq.TimestampDefinition.SDataType = sdtDate
+					}
 				}
 			}
 		nextIteration:
@@ -477,7 +560,7 @@ func SolveMathExpression(fieldParts token.Tokens, startValue int64,
 			t.Typ == token.Space || t.Typ == lsql.TokenComment {
 			continue
 		}
-		if t.Typ.IsBreakable() || token.IsLogicalOperator(t.Typ) {
+		if t.Typ.IsBreakable() || token.IsLogicalOperator(t.Typ) || token.IsComma(t.Typ) {
 			i--
 			break
 		}
@@ -563,14 +646,33 @@ func parseWhereTokens(results ts.Lookup,
 	for n, fieldParts := range wt {
 		var atLowerBound bool
 		var state int
+		var dateFuncDepth int
 		var i int
 		// c-style iteration, rather than ranging, allows passing a subslice of fieldParts to other funcs for
 		// processing, while also advancing the iterator
 		lfp := len(fieldParts)
 		for i = 0; i < lfp; i++ {
 			t := fieldParts[i]
+			// Skip date function wrappers like toDateTime64(value, precision).
+			// Track paren depth so we can skip the trailing precision argument
+			// after the comma while still parsing the time value normally.
+			if t.Typ == tokenToDateFunc {
+				dateFuncDepth = 1
+				continue
+			}
 			if t.Typ == token.LeftParen || t.Typ == token.RightParen ||
-				t.Typ == token.Space || t.Typ == lsql.TokenComment || t.Typ == tokenToDateFunc {
+				t.Typ == token.Space || t.Typ == lsql.TokenComment {
+				if dateFuncDepth > 0 && t.Typ == token.RightParen {
+					dateFuncDepth--
+				}
+				continue
+			}
+			// Inside a date function after the time value, skip comma + precision args
+			if dateFuncDepth > 0 && token.IsComma(t.Typ) {
+				dateFuncDepth++
+				continue
+			}
+			if dateFuncDepth > 1 {
 				continue
 			}
 			if t.Typ.IsBreakable() {

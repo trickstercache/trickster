@@ -17,6 +17,7 @@
 package sql
 
 import (
+	"strconv"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/parsing/token"
@@ -201,7 +202,12 @@ func TokenToTime(i *token.Token) (time.Time, byte, error) {
 	case token.Number:
 		n, err := i.Int64()
 		if err != nil {
-			return t, 0, err
+			// Handle float epoch values like 1589904000.000 from toDateTime64()
+			f, ferr := strconv.ParseFloat(i.Val, 64)
+			if ferr != nil {
+				return t, 0, err
+			}
+			n = int64(f)
 		}
 		if n > 999999999999999999 {
 			return time.Unix(0, n), TimeFormatUnixNano, nil

@@ -42,9 +42,10 @@ func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
 	}
 	qi := r.URL.Query()
 	isBody := methods.HasBody(r.Method)
-	q := interpolateTimeQuery(trq.Statement, trq.TimestampDefinition, extent)
+	q := interpolateTimeQuery(trq.Statement, trq.TimestampDefinition, extent, qi.Get("default_format"))
 	if isBody {
 		request.SetBody(r, []byte(q))
+		r.URL.RawQuery = qi.Encode()
 	} else {
 		qi.Set(upQuery, q)
 		r.URL.RawQuery = qi.Encode()
@@ -71,7 +72,7 @@ func formatTimestampValues(dataType timeseries.FieldDataType, extent *timeseries
 }
 
 func interpolateTimeQuery(template string, tfd timeseries.FieldDefinition,
-	extent *timeseries.Extent,
+	extent *timeseries.Extent, defaultFormat string,
 ) string {
 	// tfd.DataType holds the database internal format for the timestamp used
 	// when setting extents
@@ -79,12 +80,32 @@ func interpolateTimeQuery(template string, tfd timeseries.FieldDefinition,
 
 	// ProviderData1 holds the format of a secondary time field
 	tStart, tEnd := formatTimestampValues(timeseries.FieldDataType(tfd.ProviderData1), extent)
+	// toStartOfMonth/Quarter/Year and toDate return Date type, not DateTime.
+	// ClickHouse requires Date comparisons to use toDate() wrapped values.
+	if tfd.SDataType == sdtDate {
+		start = "toDate(" + start + ")"
+		end = "toDate(" + end + ")"
+	}
 	trange := fmt.Sprintf("%s BETWEEN %s AND %s", tfd.Name, start, end)
+	// When the client provides default_format=Native via URL params, ClickHouse
+	// uses that format regardless of any FORMAT clause. Remove the FORMAT token
+	// from the SQL so ClickHouse doesn't see a conflicting clause. Otherwise,
+	// inject TSVWithNamesAndTypes as the DPC wire format.
+	wireFormat := "TSVWithNamesAndTypes"
+	formatReplacement := wireFormat
+	if strings.EqualFold(defaultFormat, "Native") {
+		formatReplacement = ""
+	}
+	// Clean up "FORMAT " prefix if the replacement is empty
+	if formatReplacement == "" {
+		template = strings.Replace(template, " FORMAT "+tkFormat, "", 1)
+		template = strings.Replace(template, "FORMAT "+tkFormat, "", 1)
+	}
 	out := strings.NewReplacer(
 		tkRange, trange,
 		tkTS1, tStart,
 		tkTS2, tEnd,
-		tkFormat, "TSVWithNamesAndTypes",
+		tkFormat, formatReplacement,
 	).Replace(template)
 	return out
 }

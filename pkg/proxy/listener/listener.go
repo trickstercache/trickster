@@ -108,16 +108,18 @@ func (l *Listener) RouteSwapper() *switcher.SwitchHandler {
 
 // Group is a collection of listeners
 type Group struct {
-	members       map[string]*Listener
-	listenersLock sync.Mutex
-	done          chan struct{}
+	members         map[string]*Listener
+	protocolMembers map[string]*ProtocolListener
+	listenersLock   sync.Mutex
+	done            chan struct{}
 }
 
 // NewGroup returns a new Group
 func NewGroup() *Group {
 	return &Group{
-		members: make(map[string]*Listener),
-		done:    make(chan struct{}),
+		members:         make(map[string]*Listener),
+		protocolMembers: make(map[string]*ProtocolListener),
+		done:            make(chan struct{}),
 	}
 }
 
@@ -368,9 +370,15 @@ func (lg *Group) WaitForReady(timeout time.Duration) error {
 			listeners = append(listeners, l)
 		}
 	}
+	protoListeners := make([]*ProtocolListener, 0, len(lg.protocolMembers))
+	for _, pl := range lg.protocolMembers {
+		if pl != nil {
+			protoListeners = append(protoListeners, pl)
+		}
+	}
 	lg.listenersLock.Unlock()
 
-	if len(listeners) == 0 {
+	if len(listeners) == 0 && len(protoListeners) == 0 {
 		return nil
 	}
 
@@ -378,6 +386,9 @@ func (lg *Group) WaitForReady(timeout time.Duration) error {
 	go func() {
 		for _, l := range listeners {
 			l.WaitForReady(0)
+		}
+		for _, pl := range protoListeners {
+			pl.WaitForReady(0)
 		}
 		close(done)
 	}()
@@ -404,11 +415,20 @@ func (lg *Group) Shutdown(drainWait time.Duration) error {
 	for name := range lg.members {
 		names = append(names, name)
 	}
+	protoNames := make([]string, 0, len(lg.protocolMembers))
+	for name := range lg.protocolMembers {
+		protoNames = append(protoNames, name)
+	}
 	lg.listenersLock.Unlock()
 
 	var firstErr error
 	for _, name := range names {
 		if err := lg.DrainAndClose(name, drainWait); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	for _, name := range protoNames {
+		if err := lg.DrainAndCloseProtocol(name, drainWait); err != nil && firstErr == nil {
 			firstErr = err
 		}
 	}
