@@ -80,17 +80,28 @@ func aggregateValues(dst, src *Point, strategy MergeStrategy) {
 	}
 	dv := parseFloat(dst.Values[0])
 	sv := parseFloat(src.Values[0])
+	dNaN := math.IsNaN(dv)
+	sNaN := math.IsNaN(sv)
+	if dNaN && sNaN {
+		return // both non-numeric (e.g. histograms): keep dst as-is
+	}
+	if dNaN {
+		dst.Values[0] = src.Values[0] // only dst is non-numeric: take src
+		return
+	}
+	if sNaN {
+		return // only src is non-numeric: keep dst
+	}
 	var result float64
 	switch strategy {
 	case MergeStrategySum, MergeStrategyAvg, MergeStrategyCount:
-		// sum/count: accumulate totals; avg: accumulate sum, divide later in finalizeAvg
 		result = dv + sv
 	case MergeStrategyMin:
 		result = math.Min(dv, sv)
 	case MergeStrategyMax:
 		result = math.Max(dv, sv)
 	default:
-		result = sv // dedup fallback
+		result = sv
 	}
 	dst.Values[0] = strconv.FormatFloat(result, 'f', -1, 64)
 }
@@ -101,6 +112,9 @@ func finalizeAvg(p *Point, count int) {
 		return
 	}
 	v := parseFloat(p.Values[0])
+	if math.IsNaN(v) {
+		return
+	}
 	v /= float64(count)
 	p.Values[0] = strconv.FormatFloat(v, 'f', -1, 64)
 }

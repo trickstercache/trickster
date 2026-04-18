@@ -18,7 +18,6 @@ package dataset
 
 import (
 	"math"
-	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -131,9 +130,7 @@ func TestSortAndAggregateNaN(t *testing.T) {
 	)
 	result := sortAndAggregate(p, MergeStrategySum)
 	require.Len(t, result, 1)
-	f, err := strconv.ParseFloat(result[0].Values[0].(string), 64)
-	require.NoError(t, err)
-	require.True(t, math.IsNaN(f))
+	require.Equal(t, "5.0", result[0].Values[0])
 }
 
 func TestMergePointsWithStrategySum(t *testing.T) {
@@ -180,4 +177,60 @@ func TestParseFloat(t *testing.T) {
 	require.Equal(t, 1.5, parseFloat(float64(1.5)))
 	require.True(t, math.IsNaN(parseFloat("not_a_number")))
 	require.True(t, math.IsNaN(parseFloat(42))) // int, not float64 or string
+}
+
+func TestAggregateValuesHistogramBothNonNumeric(t *testing.T) {
+	histA := `{"count":"10","sum":"100","buckets":[[0,"1","2","3"]]}`
+	histB := `{"count":"20","sum":"200","buckets":[[0,"1","2","5"]]}`
+	dst := Point{Epoch: 100, Values: []any{histA}}
+	src := Point{Epoch: 100, Values: []any{histB}}
+	aggregateValues(&dst, &src, MergeStrategySum)
+	require.Equal(t, histA, dst.Values[0])
+}
+
+func TestAggregateValuesHistogramOneNumeric(t *testing.T) {
+	hist := `{"count":"10","sum":"100","buckets":[[0,"1","2","3"]]}`
+	dst := Point{Epoch: 100, Values: []any{hist}}
+	src := Point{Epoch: 100, Values: []any{"5.0"}}
+	aggregateValues(&dst, &src, MergeStrategySum)
+	require.Equal(t, "5.0", dst.Values[0])
+
+	dst2 := Point{Epoch: 100, Values: []any{"5.0"}}
+	src2 := Point{Epoch: 100, Values: []any{hist}}
+	aggregateValues(&dst2, &src2, MergeStrategySum)
+	require.Equal(t, "5.0", dst2.Values[0])
+}
+
+func TestSortAndAggregateHistogramDedup(t *testing.T) {
+	hist := `{"count":"10","sum":"100","buckets":[[0,"1","2","3"]]}`
+	p := makeStringPoints(
+		ev{100, hist}, ev{200, "2.0"}, ev{100, hist},
+	)
+	result := sortAndAggregate(p, MergeStrategySum)
+	require.Len(t, result, 2)
+	require.Equal(t, hist, result[0].Values[0])
+	require.Equal(t, "2.0", result[1].Values[0])
+}
+
+func TestMergePointsWithStrategyHistogram(t *testing.T) {
+	hist := `{"count":"10","sum":"100","buckets":[[0,"1","2","3"]]}`
+	p1 := makeStringPoints(ev{100, hist}, ev{200, "2.0"})
+	p2 := makeStringPoints(ev{100, hist}, ev{200, "4.0"})
+	result := MergePointsWithStrategy(p1, p2, true, MergeStrategySum)
+	require.Len(t, result, 2)
+	require.Equal(t, hist, result[0].Values[0])
+	require.Equal(t, "6", result[1].Values[0])
+}
+
+func TestFinalizeAvgNaN(t *testing.T) {
+	hist := `{"count":"10","sum":"100"}`
+	p := Point{Epoch: 100, Values: []any{hist}}
+	finalizeAvg(&p, 3)
+	require.Equal(t, hist, p.Values[0])
+}
+
+func TestFinalizeAvgNumeric(t *testing.T) {
+	p := Point{Epoch: 100, Values: []any{"12"}}
+	finalizeAvg(&p, 3)
+	require.Equal(t, "4", p.Values[0])
 }

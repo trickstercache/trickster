@@ -25,17 +25,17 @@ type WFHistogramSpan struct {
 // WFHistogram represents a Prometheus native histogram sample in the JSON
 // wire format returned by the Prometheus HTTP API.
 type WFHistogram struct {
-	Count         string            `json:"count"`
-	Sum           string            `json:"sum"`
-	Schema        int               `json:"schema"`
-	ZeroThreshold float64           `json:"zero_threshold"`
-	ZeroCount     string            `json:"zero_count"`
-	NegativeSpans []WFHistogramSpan `json:"negative_spans,omitempty"`
-	NegativeDeltas []int64          `json:"negative_deltas,omitempty"`
-	NegativeCounts []string         `json:"negative_counts,omitempty"`
+	Count          string            `json:"count"`
+	Sum            string            `json:"sum"`
+	Schema         int               `json:"schema"`
+	ZeroThreshold  float64           `json:"zero_threshold"`
+	ZeroCount      string            `json:"zero_count"`
+	NegativeSpans  []WFHistogramSpan `json:"negative_spans,omitempty"`
+	NegativeDeltas []int64           `json:"negative_deltas,omitempty"`
+	NegativeCounts []string          `json:"negative_counts,omitempty"`
 	PositiveSpans  []WFHistogramSpan `json:"positive_spans,omitempty"`
-	PositiveDeltas []int64          `json:"positive_deltas,omitempty"`
-	PositiveCounts []string         `json:"positive_counts,omitempty"`
-	Buckets        [][]any          `json:"buckets,omitempty"`
-	CustomValues   []float64        `json:"custom_values,omitempty"`
+	PositiveDeltas []int64           `json:"positive_deltas,omitempty"`
+	PositiveCounts []string          `json:"positive_counts,omitempty"`
+	Buckets        [][]any           `json:"buckets,omitempty"`
+	CustomValues   []float64         `json:"custom_values,omitempty"`
 }
