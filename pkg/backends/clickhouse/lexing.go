@@ -38,12 +38,20 @@ const (
 	tokenToStartOfInterval
 	tokenToStartOf
 	tokenInterval
+	tokenDateTrunc
+	tokenTimeSlot
 	tokenToDateFunc
 	tokenWeek
 	tokenDay
 	tokenHour
 	tokenMinute
 	tokenSecond
+	tokenMonth
+	tokenQuarter
+	tokenYear
+	tokenMicrosecond
+	tokenNanosecond
+	tokenMillisecond
 )
 
 // tokens for ClickHouse select
@@ -69,6 +77,15 @@ var chKey = map[string]token.Typ{
 	"tostartoftenminutes":     tokenToStartOf,
 	"tostartoffifteenminutes": tokenToStartOf,
 	"tostartofinterval":       tokenToStartOfInterval,
+	"tostartofmonth":          tokenToStartOf,
+	"tostartofquarter":        tokenToStartOf,
+	"tostartofyear":           tokenToStartOf,
+	"tostartofmillisecond":    tokenToStartOf,
+	"tostartofsecond":         tokenToStartOf,
+	"tostartofmicrosecond":    tokenToStartOf,
+	"tostartofnanosecond":     tokenToStartOf,
+	"date_trunc":              tokenDateTrunc,
+	"timeslot":                tokenTimeSlot,
 	tokenValPreWhere:          tokenPreWhere,
 	tokenValFormat:            tokenFormat,
 	tokenValUnionAll:          tokenUnionAll,
@@ -82,7 +99,16 @@ var chKey = map[string]token.Typ{
 	"minute":                  tokenMinute,
 	"second":                  tokenSecond,
 	"todatetime":              tokenToDateFunc,
+	"todatetime64":            tokenToDateFunc,
 	"todate":                  tokenToDateFunc,
+	"todate32":                tokenToDateFunc,
+	"now64":                   lsql.TokenNowFunc,
+	"month":                   tokenMonth,
+	"quarter":                 tokenQuarter,
+	"year":                    tokenYear,
+	"microsecond":             tokenMicrosecond,
+	"nanosecond":              tokenNanosecond,
+	"millisecond":             tokenMillisecond,
 }
 
 // LexerOptions returns a Clickhouse-crafted Lexer Options Pointer
