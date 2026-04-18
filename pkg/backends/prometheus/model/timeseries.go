@@ -190,9 +190,9 @@ func MarshalTimeseriesWriter(ts timeseries.Timeseries, rlo *timeseries.RequestOp
 
 // seriesGroup collects value and histogram series that share the same metric tags.
 type seriesGroup struct {
-	tagsJSON  string
-	valueSer  *dataset.Series
-	histSer   *dataset.Series
+	tagsJSON string
+	valueSer *dataset.Series
+	histSer  *dataset.Series
 }
 
 // MarshalTSOrVectorWriter writes matrix and vector outputs to the provided io.Writer
@@ -306,41 +306,30 @@ func marshalVectorGroup(w io.Writer, g seriesGroup, buf [64]byte) {
 
 func marshalMatrixGroup(w io.Writer, g seriesGroup, buf [64]byte) {
 	if g.valueSer != nil && len(g.valueSer.Points) > 0 {
-		if !slices.IsSortedFunc(g.valueSer.Points, pointCmp) {
-			slices.SortFunc(g.valueSer.Points, pointCmp)
-		}
-		w.Write([]byte(`,"values":[`))
-		for i, p := range g.valueSer.Points {
-			if i > 0 {
-				w.Write([]byte{','})
-			}
-			w.Write([]byte{'['})
-			b := strconv.AppendFloat(buf[:0], float64(p.Epoch)/1e9, 'f', -1, 64)
-			w.Write(b)
-			w.Write([]byte(`,"`))
-			w.Write([]byte(p.Values[0].(string)))
-			w.Write([]byte(`"]`))
-		}
-		w.Write([]byte(`]`))
+		writePointsArray(w, g.valueSer.Points, `,"values":[`, `,"`, `"]`, buf)
 	}
 	if g.histSer != nil && len(g.histSer.Points) > 0 {
-		if !slices.IsSortedFunc(g.histSer.Points, pointCmp) {
-			slices.SortFunc(g.histSer.Points, pointCmp)
-		}
-		w.Write([]byte(`,"histograms":[`))
-		for i, p := range g.histSer.Points {
-			if i > 0 {
-				w.Write([]byte{','})
-			}
-			w.Write([]byte{'['})
-			b := strconv.AppendFloat(buf[:0], float64(p.Epoch)/1e9, 'f', -1, 64)
-			w.Write(b)
-			w.Write([]byte(`,`))
-			w.Write([]byte(p.Values[0].(string)))
-			w.Write([]byte(`]`))
-		}
-		w.Write([]byte(`]`))
+		writePointsArray(w, g.histSer.Points, `,"histograms":[`, `,`, `]`, buf)
 	}
+}
+
+func writePointsArray(w io.Writer, pts dataset.Points, header, valPrefix, valSuffix string, buf [64]byte) {
+	if !slices.IsSortedFunc(pts, pointCmp) {
+		slices.SortFunc(pts, pointCmp)
+	}
+	w.Write([]byte(header))
+	for i, p := range pts {
+		if i > 0 {
+			w.Write([]byte{','})
+		}
+		w.Write([]byte{'['})
+		b := strconv.AppendFloat(buf[:0], float64(p.Epoch)/1e9, 'f', -1, 64)
+		w.Write(b)
+		w.Write([]byte(valPrefix))
+		w.Write([]byte(p.Values[0].(string)))
+		w.Write([]byte(valSuffix))
+	}
+	w.Write([]byte(`]`))
 }
 
 func populateSeries(ds *dataset.DataSet, result []*WFResult,
