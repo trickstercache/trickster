@@ -18,10 +18,11 @@ package model
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"io"
 	"runtime"
-	"sort"
+	"slices"
 	"strconv"
 	"sync/atomic"
 	"time"
@@ -257,7 +258,6 @@ func MarshalTSOrVectorWriter(ts timeseries.Timeseries, _ *timeseries.RequestOpti
 }
 
 func groupSeriesByTags(seriesList []*dataset.Series) []seriesGroup {
-	order := make([]string, 0, len(seriesList))
 	idx := make(map[string]int, len(seriesList))
 	var groups []seriesGroup
 	for _, s := range seriesList {
@@ -270,7 +270,6 @@ func groupSeriesByTags(seriesList []*dataset.Series) []seriesGroup {
 			gi = len(groups)
 			idx[tj] = gi
 			groups = append(groups, seriesGroup{tagsJSON: tj})
-			order = append(order, tj)
 		}
 		isHist := len(s.Header.ValueFieldsList) > 0 &&
 			s.Header.ValueFieldsList[0].Name == fieldNameHistogram
@@ -281,6 +280,10 @@ func groupSeriesByTags(seriesList []*dataset.Series) []seriesGroup {
 		}
 	}
 	return groups
+}
+
+func pointCmp(a, b dataset.Point) int {
+	return cmp.Compare(a.Epoch, b.Epoch)
 }
 
 func marshalVectorGroup(w io.Writer, g seriesGroup, buf [64]byte) {
@@ -303,8 +306,8 @@ func marshalVectorGroup(w io.Writer, g seriesGroup, buf [64]byte) {
 
 func marshalMatrixGroup(w io.Writer, g seriesGroup, buf [64]byte) {
 	if g.valueSer != nil && len(g.valueSer.Points) > 0 {
-		if !sort.IsSorted(g.valueSer.Points) {
-			sort.Sort(g.valueSer.Points)
+		if !slices.IsSortedFunc(g.valueSer.Points, pointCmp) {
+			slices.SortFunc(g.valueSer.Points, pointCmp)
 		}
 		w.Write([]byte(`,"values":[`))
 		for i, p := range g.valueSer.Points {
@@ -321,8 +324,8 @@ func marshalMatrixGroup(w io.Writer, g seriesGroup, buf [64]byte) {
 		w.Write([]byte(`]`))
 	}
 	if g.histSer != nil && len(g.histSer.Points) > 0 {
-		if !sort.IsSorted(g.histSer.Points) {
-			sort.Sort(g.histSer.Points)
+		if !slices.IsSortedFunc(g.histSer.Points, pointCmp) {
+			slices.SortFunc(g.histSer.Points, pointCmp)
 		}
 		w.Write([]byte(`,"histograms":[`))
 		for i, p := range g.histSer.Points {
