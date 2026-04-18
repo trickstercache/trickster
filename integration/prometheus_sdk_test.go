@@ -100,6 +100,33 @@ func TestPrometheusSDK(t *testing.T) {
 		require.NotEmpty(t, series)
 	})
 
+	t.Run("metadata", func(t *testing.T) {
+		meta, err := sdk.Metadata(ctx, "prometheus_http_request_duration_seconds", "")
+		require.NoError(t, err)
+		md, ok := meta["prometheus_http_request_duration_seconds"]
+		require.True(t, ok, "expected metadata for prometheus_http_request_duration_seconds")
+		require.NotEmpty(t, md)
+		require.Equal(t, v1.MetricTypeHistogram, md[0].Type)
+	})
+
+	t.Run("targets", func(t *testing.T) {
+		targets, err := sdk.Targets(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, targets.Active, "expected at least one active target")
+	})
+
+	t.Run("rules", func(t *testing.T) {
+		rules, err := sdk.Rules(ctx)
+		require.NoError(t, err)
+		t.Logf("rule groups: %d", len(rules.Groups))
+	})
+
+	t.Run("alertmanagers", func(t *testing.T) {
+		am, err := sdk.AlertManagers(ctx)
+		require.NoError(t, err)
+		t.Logf("active alertmanagers: %d, dropped: %d", len(am.Active), len(am.Dropped))
+	})
+
 	t.Run("cache_hit", func(t *testing.T) {
 		now := time.Now()
 		step := 15 * time.Second

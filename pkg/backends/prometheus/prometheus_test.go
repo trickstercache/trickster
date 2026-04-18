@@ -406,3 +406,36 @@ func TestParseVectorQuery(t *testing.T) {
 		})
 	}
 }
+
+func TestContainsOffsetKeyword(t *testing.T) {
+	tests := []struct {
+		stmt string
+		want bool
+	}{
+		{`rate(http_requests_total[5m] offset 1h)`, true},
+		{`rate(http_requests_total[5m])`, false},
+		{`sum(rate(x[5m] offset 10m))`, true},
+		// Inside braces — should not match
+		{`{"metric offset name"}`, false},
+		// Inside quoted string in selector
+		{`{label="has offset in value"}`, false},
+		// Offset outside braces with UTF-8 metric name
+		{`{"héllo"} offset 1h`, true},
+		// No spaces around offset
+		{`rate(x[5m])offset1h`, false},
+		// Escaped quote inside braces
+		{`{label="escaped\"offset"}`, false},
+		// Nested braces (unusual but should be safe)
+		{`{a="{offset}"}`, false},
+		{``, false},
+		{` offset `, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.stmt, func(t *testing.T) {
+			got := containsOffsetKeyword(tt.stmt)
+			if got != tt.want {
+				t.Errorf("containsOffsetKeyword(%q) = %v, want %v", tt.stmt, got, tt.want)
+			}
+		})
+	}
+}

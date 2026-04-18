@@ -12,7 +12,7 @@ Trickster operates as a fully-featured and highly-customizable reverse proxy cac
 
 ### <img src="./images/external/prom_logo_60.png" width=16 /> Prometheus
 
-Trickster fully supports the [Prometheus HTTP API (v1)](https://prometheus.io/docs/prometheus/latest/querying/api/). Specify `'prometheus'` as the Provider when configuring Trickster. Trickster supports [label injection](./prometheus.md) for Prometheus.
+Trickster fully supports the [Prometheus HTTP API (v1)](https://prometheus.io/docs/prometheus/latest/querying/api/), including Prometheus 3.x features like native histograms and UTF-8 metric names. Specify `'prometheus'` as the Provider when configuring Trickster. See the [Prometheus Support Document](./prometheus.md) for more information.
 
 ### <img src="./images/external/influx_logo_60.png" width=16 /> InfluxDB
 
