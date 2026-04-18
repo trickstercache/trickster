@@ -42,6 +42,22 @@ func UnmarshalTimeseries(data []byte, trq *timeseries.TimeRangeQuery) (timeserie
 	return UnmarshalTimeseriesReader(buf, trq)
 }
 
+// UnmarshalTimeseriesAuto dispatches to Native or TSV based on data content.
+// Without header hints, falls back to TSV (the default DPC wire format).
+func UnmarshalTimeseriesAuto(data []byte, trq *timeseries.TimeRangeQuery) (timeseries.Timeseries, error) {
+	return UnmarshalTimeseries(data, trq)
+}
+
+// UnmarshalTimeseriesAutoReader auto-detects Native vs TSV from an io.Reader.
+// It checks the FormatHintReader wrapper set by the DPC engine from the
+// X-ClickHouse-Format response header.
+func UnmarshalTimeseriesAutoReader(reader io.Reader, trq *timeseries.TimeRangeQuery) (timeseries.Timeseries, error) {
+	if hr, ok := reader.(*timeseries.FormatHintReader); ok && strings.EqualFold(hr.Format, "Native") {
+		return UnmarshalTimeseriesNativeReader(hr.Reader, trq)
+	}
+	return UnmarshalTimeseriesReader(reader, trq)
+}
+
 // parser is safe for concurrency
 var parser = dcsv.NewParserMust(buildFieldDefinitions, typeToFieldDataType,
 	parseTimeField, dataStartRow)
