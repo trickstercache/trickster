@@ -18,6 +18,7 @@ package iofmt
 
 import (
 	"net/http"
+	"net/url"
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
@@ -150,6 +151,70 @@ func TestDetect(t *testing.T) {
 			out := Detect(r)
 			if out != test.expected {
 				t.Errorf("expected %d got %d", test.expected, out)
+			}
+		})
+	}
+}
+
+func TestDetectV3(t *testing.T) {
+	tests := []struct {
+		name     string
+		path     string
+		method   string
+		expected Format
+	}{
+		{"v3 SQL GET", "/api/v3/query_sql", http.MethodGet, V3SQL},
+		{"v3 SQL POST", "/api/v3/query_sql", http.MethodPost, V3SQL},
+		{"v3 InfluxQL GET", "/api/v3/query_influxql", http.MethodGet, V3InfluxQL},
+		{"v3 InfluxQL POST", "/api/v3/query_influxql", http.MethodPost, V3InfluxQL},
+		{"v1 query GET", "/query", http.MethodGet, InfluxqlGet},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := &http.Request{
+				Method: tt.method,
+				URL:    &url.URL{Path: tt.path},
+			}
+			out := Detect(r)
+			if out != tt.expected {
+				t.Errorf("expected %d got %d", tt.expected, out)
+			}
+		})
+	}
+}
+
+func TestIsV3(t *testing.T) {
+	if !V3SQL.IsV3() {
+		t.Error("V3SQL.IsV3() should be true")
+	}
+	if !V3InfluxQL.IsV3() {
+		t.Error("V3InfluxQL.IsV3() should be true")
+	}
+	if InfluxqlGet.IsV3() {
+		t.Error("InfluxqlGet.IsV3() should be false")
+	}
+	if FluxRawCsv.IsV3() {
+		t.Error("FluxRawCsv.IsV3() should be false")
+	}
+}
+
+func TestV3OutputFormat(t *testing.T) {
+	tests := []struct {
+		format   string
+		expected byte
+	}{
+		{"json", V3OutputJSON},
+		{"jsonl", V3OutputJSONL},
+		{"csv", V3OutputCSV},
+		{"", V3OutputJSON},
+		{"parquet", V3OutputJSON},
+	}
+	for _, tt := range tests {
+		t.Run(tt.format, func(t *testing.T) {
+			r := &http.Request{URL: &url.URL{RawQuery: "format=" + tt.format}}
+			out := V3OutputFormat(r)
+			if out != tt.expected {
+				t.Errorf("expected %d got %d", tt.expected, out)
 			}
 		})
 	}
