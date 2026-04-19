@@ -28,6 +28,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 	"github.com/trickstercache/trickster/v2/pkg/appinfo/usage"
+	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/flight"
 	"github.com/trickstercache/trickster/v2/pkg/config/reload"
 	"github.com/trickstercache/trickster/v2/pkg/config/validate"
 	"github.com/trickstercache/trickster/v2/pkg/daemon/instance"
@@ -107,6 +108,11 @@ func Start(ctx context.Context, args ...string) error {
 		si.Listeners.DrainAndClose("tlsListener", 0)
 		si.Listeners.DrainAndClose("metricsListener", 0)
 		si.Listeners.DrainAndClose("mgmtListener", 0)
+	}
+	flightCtx, cancelFlight := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelFlight()
+	if err := flight.ShutdownAll(flightCtx); err != nil {
+		logger.Warn("flight sql shutdown error", logging.Pairs{"error": err.Error()})
 	}
 	return nil
 }
