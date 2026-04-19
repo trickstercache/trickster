@@ -16,7 +16,7 @@ Trickster fully supports the [Prometheus HTTP API (v1)](https://prometheus.io/do
 
 ### <img src="./images/external/influx_logo_60.png" width=16 /> InfluxDB
 
-Trickster supports for InfluxDB. Specify `'influxdb'` as the Provider when configuring Trickster.
+Trickster supports InfluxDB 1.x, 2.x, and 3.x. Specify `'influxdb'` as the Provider when configuring Trickster.
 
 See the [InfluxDB Support Document](./influxdb.md) for more information.
 

@@ -18,6 +18,9 @@ package integration
 
 import (
 	"context"
+	"io"
+	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -71,5 +74,39 @@ func TestInfluxDBSDK(t *testing.T) {
 		for result2.Next() {
 		}
 		require.NoError(t, result2.Err())
+	})
+
+	// cache_hit_header uses raw HTTP to inspect X-Trickster-Result since the v2
+	// SDK hides response headers. Asserts the second identical query lands in
+	// the delta-proxy cache — regression coverage for the `now()` range-bound
+	// handling in flux.parseRange (which previously flowed to HTTPProxy).
+	t.Run("cache_hit_header", func(t *testing.T) {
+		fluxURL := "http://" + influxAddr + "/flux2/api/v2/query?org=trickster-dev"
+		body := `{"query": "from(bucket: \"trickster\") |> range(start: -1h, stop: now()) |> aggregateWindow(every: 1m, fn: mean) |> limit(n: 5)", "type": "flux"}`
+		do := func() *http.Response {
+			req, err := http.NewRequest("POST", fluxURL, strings.NewReader(body))
+			require.NoError(t, err)
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Authorization", "Token trickster-dev-token")
+			resp, err := http.DefaultClient.Do(req)
+			require.NoError(t, err)
+			_, _ = io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+			return resp
+		}
+		r1 := do()
+		require.Equal(t, http.StatusOK, r1.StatusCode)
+		hdr1 := parseTricksterResult(r1.Header.Get("X-Trickster-Result"))
+		require.Equal(t, "DeltaProxyCache", hdr1["engine"],
+			"expected DeltaProxyCache engine (got %q) — now() range bound may not be parsed",
+			r1.Header.Get("X-Trickster-Result"))
+
+		r2 := do()
+		require.Equal(t, http.StatusOK, r2.StatusCode)
+		hdr2 := parseTricksterResult(r2.Header.Get("X-Trickster-Result"))
+		// "hit" = full cache hit, "phit" = partial (next step boundary advanced).
+		require.Contains(t, []string{"hit", "phit"}, hdr2["status"],
+			"expected cache hit on second call, got %q (header: %q)",
+			hdr2["status"], r2.Header.Get("X-Trickster-Result"))
 	})
 }

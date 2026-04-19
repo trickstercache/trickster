@@ -166,6 +166,14 @@ type cacheProviderCase struct {
 
 func writeTestConfig(t *testing.T, frontPort, metricsPort, mgmtPort int) string {
 	t.Helper()
+	return writeTestConfigWithFlight(t, frontPort, metricsPort, mgmtPort, 0)
+}
+
+// writeTestConfigWithFlight writes a per-test trickster config and overrides
+// the influx3 backend's flight_port. Pass 0 to disable the Flight SQL listener
+// for this test; pass a unique port to avoid collisions across parallel tests.
+func writeTestConfigWithFlight(t *testing.T, frontPort, metricsPort, mgmtPort, flightPort int) string {
+	t.Helper()
 	b, err := os.ReadFile("../docs/developer/environment/trickster-config/trickster.yaml")
 	require.NoError(t, err)
 	var c tkconfig.Config
@@ -176,6 +184,9 @@ func writeTestConfig(t *testing.T, frontPort, metricsPort, mgmtPort int) string 
 		c.MgmtConfig = mgmt.New()
 	}
 	c.MgmtConfig.ListenPort = mgmtPort
+	if bo, ok := c.Backends["influx3"]; ok && bo != nil {
+		bo.FlightPort = flightPort
+	}
 	out, err := yaml.Marshal(&c)
 	require.NoError(t, err)
 	path := filepath.Join(t.TempDir(), "trickster.yaml")

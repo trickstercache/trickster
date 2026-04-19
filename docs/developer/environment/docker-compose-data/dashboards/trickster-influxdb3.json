@@ -1,0 +1,266 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "Exercises both HTTP InfluxQL (cached via /query) and Flight SQL (cached via gRPC passthrough). HTTP SQL (/api/v3/query_sql) is tested via curl — Grafana does not speak HTTP for SQL mode.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "links": [],
+  "panels": [
+    {
+      "type": "row",
+      "title": "$measurement",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "panels": []
+    },
+    {
+      "title": "HTTP InfluxQL — ${measurement} row count (Direct vs Trickster)",
+      "type": "timeseries",
+      "datasource": { "type": "datasource", "uid": "-- Mixed --" },
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10,
+            "pointSize": 5, "showPoints": "auto", "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" }
+          },
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byFrameRefID", "options": "Direct" },
+            "properties": [
+              { "id": "displayName", "value": "Direct (InfluxDB 3)" },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byFrameRefID", "options": "Trickster" },
+            "properties": [
+              { "id": "displayName", "value": "Trickster (cached)" },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "blue" } },
+              { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [10, 10] } },
+              { "id": "custom.lineWidth", "value": 3 }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "mean"] }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "influxdb", "uid": "ds_infl3_direct_ql" },
+          "query": "SELECT count(*) FROM \"${measurement}\" WHERE $timeFilter GROUP BY time($__interval) fill(0)",
+          "rawQuery": true, "resultFormat": "time_series", "refId": "Direct"
+        },
+        {
+          "datasource": { "type": "influxdb", "uid": "ds_infl3_trk_ql" },
+          "query": "SELECT count(*) FROM \"${measurement}\" WHERE $timeFilter GROUP BY time($__interval) fill(0)",
+          "rawQuery": true, "resultFormat": "time_series", "refId": "Trickster"
+        }
+      ]
+    },
+    {
+      "title": "Flight SQL — ${measurement} row count (Direct vs Trickster)",
+      "type": "timeseries",
+      "datasource": { "type": "datasource", "uid": "-- Mixed --" },
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10,
+            "pointSize": 5, "showPoints": "auto", "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" }
+          },
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byFrameRefID", "options": "Direct" },
+            "properties": [
+              { "id": "displayName", "value": "Direct (InfluxDB 3)" },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byFrameRefID", "options": "Trickster" },
+            "properties": [
+              { "id": "displayName", "value": "Trickster (cached)" },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "blue" } },
+              { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [10, 10] } },
+              { "id": "custom.lineWidth", "value": 3 }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "mean"] }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "influxdb", "uid": "ds_infl3_direct_flight" },
+          "rawSql": "SELECT date_bin(INTERVAL '${__interval_ms} milliseconds', time) AS time, count(*) AS count FROM ${measurement} WHERE time >= $__timeFrom AND time < $__timeTo GROUP BY 1 ORDER BY 1",
+          "resultFormat": "time_series", "refId": "Direct"
+        },
+        {
+          "datasource": { "type": "influxdb", "uid": "ds_infl3_trk_flight" },
+          "rawSql": "SELECT date_bin(INTERVAL '${__interval_ms} milliseconds', time) AS time, count(*) AS count FROM ${measurement} WHERE time >= $__timeFrom AND time < $__timeTo GROUP BY 1 ORDER BY 1",
+          "resultFormat": "time_series", "refId": "Trickster"
+        }
+      ]
+    },
+    {
+      "title": "${measurement}.${field} over time (Direct vs Trickster)",
+      "type": "timeseries",
+      "datasource": { "type": "datasource", "uid": "-- Mixed --" },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 11 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10,
+            "pointSize": 5, "showPoints": "auto", "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byFrameRefID", "options": "Direct" },
+            "properties": [
+              { "id": "displayName", "value": "Direct (InfluxDB 3)" },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byFrameRefID", "options": "Trickster" },
+            "properties": [
+              { "id": "displayName", "value": "Trickster (cached)" },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "blue" } },
+              { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [10, 10] } },
+              { "id": "custom.lineWidth", "value": 3 }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "mean"] }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "influxdb", "uid": "ds_infl3_direct_flight" },
+          "rawSql": "SELECT date_bin(INTERVAL '${__interval_ms} milliseconds', time) AS time, avg(\"${field}\") AS \"${field}\" FROM ${measurement} WHERE time >= $__timeFrom AND time < $__timeTo GROUP BY 1 ORDER BY 1",
+          "resultFormat": "time_series", "refId": "Direct"
+        },
+        {
+          "datasource": { "type": "influxdb", "uid": "ds_infl3_trk_flight" },
+          "rawSql": "SELECT date_bin(INTERVAL '${__interval_ms} milliseconds', time) AS time, avg(\"${field}\") AS \"${field}\" FROM ${measurement} WHERE time >= $__timeFrom AND time < $__timeTo GROUP BY 1 ORDER BY 1",
+          "resultFormat": "time_series", "refId": "Trickster"
+        }
+      ]
+    },
+    {
+      "title": "Flight SQL — Latest ${measurement} rows (via Trickster)",
+      "type": "table",
+      "datasource": { "type": "influxdb", "uid": "ds_infl3_trk_flight" },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 21 },
+      "description": "Latest 20 rows of the selected measurement. Exercises a non-aggregated Flight SQL query through Trickster's cache.",
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "left" } },
+        "overrides": []
+      },
+      "options": { "showHeader": true, "cellHeight": "sm" },
+      "targets": [
+        {
+          "datasource": { "type": "influxdb", "uid": "ds_infl3_trk_flight" },
+          "rawSql": "SELECT * FROM (SELECT * FROM ${measurement} WHERE time >= $__timeFrom AND time < $__timeTo ORDER BY time DESC LIMIT 20) ORDER BY time ASC",
+          "resultFormat": "table",
+          "refId": "Latest"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "metadata",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 31 },
+      "panels": []
+    },
+    {
+      "title": "Flight SQL — Tables in trickster DB (information_schema)",
+      "type": "table",
+      "datasource": { "type": "influxdb", "uid": "ds_infl3_trk_flight" },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 32 },
+      "description": "Exercises InfluxDB 3's information_schema via Trickster's Flight SQL proxy. Proves the Flight SQL query path end-to-end with a non-time-series result set.",
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "left" } },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "time" },
+            "properties": [{ "id": "custom.hidden", "value": true }]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "influxdb", "uid": "ds_infl3_trk_flight" },
+          "rawSql": "SELECT now() AS time, table_catalog, table_schema, table_name, table_type FROM information_schema.tables WHERE table_schema IN ('iox', 'system') ORDER BY table_schema, table_name",
+          "resultFormat": "table",
+          "refId": "Tables"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["influxdb", "influxdb3", "trickster"],
+  "templating": {
+    "list": [
+      {
+        "name": "measurement",
+        "label": "Measurement (via Flight SQL)",
+        "type": "query",
+        "datasource": { "type": "influxdb", "uid": "ds_infl3_trk_flight" },
+        "query": "SELECT DISTINCT table_name FROM information_schema.tables WHERE table_schema = 'iox' ORDER BY table_name",
+        "refresh": 1,
+        "multi": false,
+        "includeAll": false,
+        "current": { "value": "cpu", "text": "cpu" }
+      },
+      {
+        "name": "field",
+        "label": "Field (numeric columns of selected measurement)",
+        "type": "query",
+        "datasource": { "type": "influxdb", "uid": "ds_infl3_trk_flight" },
+        "query": "SELECT column_name FROM information_schema.columns WHERE table_schema = 'iox' AND table_name = '${measurement}' AND data_type IN ('Float64', 'Int64', 'UInt64') ORDER BY column_name",
+        "refresh": 1,
+        "multi": false,
+        "includeAll": false
+      }
+    ]
+  },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "",
+  "title": "Trickster - InfluxDB 3.x",
+  "uid": "trickster-influxdb3",
+  "version": 4
+}
