@@ -191,6 +191,33 @@ func waitForInfluxDBData(t *testing.T, influxAddr string) {
 	}, 30*time.Second, 2*time.Second, "InfluxDB data never became available")
 }
 
+// waitForInfluxDB3Data polls the v3 SQL endpoint until rows land in the cpu
+// table (seeded by telegraf via v1-compat writes).
+func waitForInfluxDB3Data(t *testing.T, influxAddr string) {
+	t.Helper()
+	require.EventuallyWithT(t, func(collect *assert.CollectT) {
+		req, err := http.NewRequest("POST",
+			"http://"+influxAddr+"/api/v3/query_sql",
+			strings.NewReader(`{"q": "SELECT cpu FROM cpu LIMIT 1", "db": "trickster"}`))
+		if !assert.NoError(collect, err) {
+			return
+		}
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		if !assert.NoError(collect, err) {
+			return
+		}
+		defer resp.Body.Close()
+		b, err := io.ReadAll(resp.Body)
+		if !assert.NoError(collect, err) {
+			return
+		}
+		// v3 returns [] when no rows, [{...}] when rows exist
+		assert.Greater(collect, len(strings.TrimSpace(string(b))), 2,
+			"waiting for Telegraf to write data to InfluxDB 3")
+	}, 60*time.Second, 2*time.Second, "InfluxDB 3 data never became available")
+}
+
 type promResponse struct {
 	Status string          `json:"status"`
 	Data   json.RawMessage `json:"data"`
