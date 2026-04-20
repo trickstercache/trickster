@@ -109,6 +109,9 @@ For non-supportable aggregators (`stddev`, `stdvar`, `quantile`, `topk`, `bottom
 
 When a non-dedup strategy is in effect and backends have [injected labels](./prometheus.md#injecting-labels) configured, those labels are automatically stripped before merging. This ensures series from different backends hash identically for aggregation, and the injected labels do not appear in the response.
 
+#### Native Histograms
+
+Native histogram samples are preserved through the merge rather than being numerically aggregated. When a timestamp has a histogram on one backend and a float sample on another (or histograms on both), the histogram value is kept as-is — numeric aggregators like `sum` only apply across float samples. This prevents mixed-type series from being corrupted into garbage values when backends return a mix of float and histogram samples at the same timestamp.
 
 #### Providers Supporting Time Series Merge
 
