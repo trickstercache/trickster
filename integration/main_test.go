@@ -17,7 +17,6 @@
 package integration
 
 import (
-	"compress/gzip"
 	"context"
 	"encoding/json"
 	"io"
@@ -31,6 +30,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/klauspost/compress/gzip"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/trickstercache/trickster/v2/pkg/daemon"
@@ -39,7 +39,6 @@ import (
 func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
-
 
 type expectedStartError struct {
 	ErrorContains *string

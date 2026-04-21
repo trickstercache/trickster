@@ -18,10 +18,10 @@ package deflate
 
 import (
 	"bytes"
-	"compress/flate"
 	"io"
 	"sync"
 
+	"github.com/klauspost/compress/flate"
 	"github.com/trickstercache/trickster/v2/pkg/encoding/reader"
 )
 

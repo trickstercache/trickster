@@ -18,10 +18,11 @@ package gzip
 
 import (
 	"bytes"
-	"compress/gzip"
 	"errors"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/klauspost/compress/gzip"
 )
 
 func TestDecodeEncode(t *testing.T) {

@@ -30,10 +30,6 @@ const (
 	Deflate                // 8
 	Identity  Provider = 0 // no encoding
 	// capacity for 3 more encoding types @ 16, 32, 64
-	//
-	// browsers don't currently support snappy, so it is isolated to ensure a full
-	// bifurcation of web vs. general encoders, as more providers are added later
-	Snappy Provider = 128
 
 	maxWebProvider = Deflate // update whenever another web-compatible provider is added
 
@@ -43,7 +39,7 @@ const (
 	GZipValue      = "gzip"
 	GZipAltValue   = "x-gzip"
 	DeflateValue   = "deflate"
-	SnappyValue    = "snappy"
+
 	// might be used in configs
 	ZstandardAltValue = "zstandard"
 	BrotliAltValue    = "brotli"
@@ -56,7 +52,7 @@ type (
 )
 
 // Update whenever a new encoder provider is added
-var providerVals = []Provider{1, 2, 4, 8, 128}
+var providerVals = []Provider{1, 2, 4, 8}
 
 // Update whenever a new encoder provider is added
 var providerValLookup = ReverseLookup{
@@ -64,7 +60,6 @@ var providerValLookup = ReverseLookup{
 	Brotli:    BrotliValue,
 	GZip:      GZipValue,
 	Deflate:   DeflateValue,
-	Snappy:    SnappyValue,
 }
 
 // these are populated in init based on maxWebProvider, providerVals, and providerValLookup

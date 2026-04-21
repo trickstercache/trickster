@@ -83,9 +83,9 @@ linters:
           - mime/multipart.Writer.Close
           - mime/multipart.Writer.SetBoundary
           - net/http.Request.ParseForm
-          - compress/gzip.Writer.Close
-          - compress/flate.Writer.Write
-          - compress/flate.Writer.Close
+          - github.com/klauspost/compress/gzip.Writer.Close
+          - github.com/klauspost/compress/flate.Writer.Write 
+          - github.com/klauspost/compress/flate.Writer.Close
           - net/http.Request.ParseMultipartForm
           - handler.ResponseEncoder.Close
           - config.Config.setDefaults

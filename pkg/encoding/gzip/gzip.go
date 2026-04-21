@@ -19,10 +19,10 @@ package gzip
 
 import (
 	"bytes"
-	"compress/gzip"
 	"io"
 	"sync"
 
+	"github.com/klauspost/compress/gzip"
 	"github.com/trickstercache/trickster/v2/pkg/encoding/reader"
 )
 
