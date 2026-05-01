@@ -18,18 +18,19 @@ package metrics
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 )
 
 // ObserveCacheMiss records a Cache Miss event
-func ObserveCacheMiss(cacheName, cacheProvider string) {
-	ObserveCacheOperation(cacheName, cacheProvider, "get", "miss", 0)
+func ObserveCacheMiss(cacheName, cacheProvider string, elapsed time.Duration) {
+	ObserveCacheOperation(cacheName, cacheProvider, "get", "miss", 0, elapsed)
 }
 
 // ObserveCacheDel records a cache deletion event
-func ObserveCacheDel(cache, cacheProvider string, count float64) {
-	ObserveCacheOperation(cache, cacheProvider, "del", "none", count)
+func ObserveCacheDel(cache, cacheProvider string, count float64, elapsed time.Duration) {
+	ObserveCacheOperation(cache, cacheProvider, "del", "none", count, elapsed)
 }
 
 // CacheError returns an empty cache object and the formatted error
@@ -38,9 +39,9 @@ func CacheError(cacheKey, cacheName, cacheProvider string, msg string) ([]byte, 
 	return nil, fmt.Errorf(msg, cacheKey)
 }
 
-// ObserveCacheOperation increments counters as cache operations occur
-func ObserveCacheOperation(cache, cacheProvider, operation, status string, bytes float64) {
-	metrics.CacheObjectOperations.WithLabelValues(cache, cacheProvider, operation, status).Inc()
+// ObserveCacheOperation records cache operations with timing and byte counts
+func ObserveCacheOperation(cache, cacheProvider, operation, status string, bytes float64, elapsed time.Duration) {
+	metrics.CacheObjectOperationDuration.WithLabelValues(cache, cacheProvider, operation, status).Observe(elapsed.Seconds())
 	if bytes > 0 {
 		metrics.CacheByteOperations.WithLabelValues(cache, cacheProvider, operation, status).Add(bytes)
 	}

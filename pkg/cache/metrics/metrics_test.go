@@ -18,6 +18,7 @@ package metrics
 
 import (
 	"testing"
+	"time"
 )
 
 var testCacheKey, testCacheName, testCacheProvider string
@@ -29,12 +30,12 @@ func init() {
 }
 
 func TestObserveCacheMiss(t *testing.T) {
-	ObserveCacheMiss(testCacheName, testCacheProvider)
+	ObserveCacheMiss(testCacheName, testCacheProvider, time.Millisecond)
 }
 
 // ObserveCacheDel records a cache deletion event
 func TestObserveCacheDel(t *testing.T) {
-	ObserveCacheDel(testCacheName, testCacheProvider, 0)
+	ObserveCacheDel(testCacheName, testCacheProvider, 0, time.Millisecond)
 }
 
 func TestCacheError(t *testing.T) {
@@ -45,8 +46,8 @@ func TestCacheError(t *testing.T) {
 }
 
 func TestObserveCacheOperation(t *testing.T) {
-	ObserveCacheOperation(testCacheName, testCacheProvider, "set", "ok", 0)
-	ObserveCacheOperation(testCacheName, testCacheProvider, "set", "ok", 1)
+	ObserveCacheOperation(testCacheName, testCacheProvider, "set", "ok", 0, time.Millisecond)
+	ObserveCacheOperation(testCacheName, testCacheProvider, "set", "ok", 1, time.Millisecond)
 }
 
 func TestObserveCacheEvent(t *testing.T) {
