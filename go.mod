@@ -7,7 +7,7 @@ require (
 	github.com/andybalholm/brotli v1.2.1
 	github.com/dgraph-io/badger/v4 v4.9.1
 	github.com/dgraph-io/ristretto/v2 v2.4.0
-	github.com/influxdata/influxdb v1.12.3
+	github.com/influxdata/influxdb v1.12.4
 	github.com/influxdata/influxql v1.4.1
 	github.com/klauspost/compress v1.18.5
 	github.com/prometheus/client_golang v1.23.2
