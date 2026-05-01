@@ -9,7 +9,7 @@ require (
 	github.com/dgraph-io/ristretto/v2 v2.4.0
 	github.com/influxdata/influxdb v1.12.3
 	github.com/influxdata/influxql v1.4.1
-	github.com/klauspost/compress v1.18.5
+	github.com/klauspost/compress v1.18.6
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/client_model v0.6.2
 	github.com/prometheus/common/sigv4 v0.1.0
