@@ -208,6 +208,7 @@ func (t *target) probeLoop(ctx context.Context) {
 func (t *target) probe(ctx context.Context) {
 	r := t.baseRequest.Clone(ctx)
 	resp, err := t.httpClient.Do(r)
+	st := t.status.Get()
 	var errCnt, successCnt int
 	var passed bool
 	var detail string
@@ -218,21 +219,24 @@ func (t *target) probe(ctx context.Context) {
 		errCnt = int(t.failConsecutiveCnt.Add(1))
 		t.successConsecutiveCnt.Store(0)
 
-		LogHealthCheckError(t.Name(), err, 0)
+		if st != StatusFailing {
+			LogHealthCheckError(t.Name(), err, 0)
+		}
 
 	case !t.isGoodCode(resp.StatusCode) || !t.isGoodHeader(resp.Header) || !t.isGoodBody(resp.Body):
 		errCnt = int(t.failConsecutiveCnt.Add(1))
 		t.successConsecutiveCnt.Store(0)
 		resp.Body.Close()
 
-		LogHealthCheckError(t.Name(), nil, resp.StatusCode)
+		if st != StatusFailing {
+			LogHealthCheckError(t.Name(), nil, resp.StatusCode)
+		}
 	default:
 		resp.Body.Close()
 		successCnt = int(t.successConsecutiveCnt.Add(1))
 		t.failConsecutiveCnt.Store(0)
 		passed = true
 	}
-	st := t.status.Get()
 	nst := StatusFailing
 	if (passed && successCnt >= t.recoveryThreshold) ||
 		(st == StatusPassing && errCnt < t.failureThreshold) {
