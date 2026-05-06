@@ -30,12 +30,12 @@ func TestCheckHealth(t *testing.T) {
 
 	tgt.hcStatus.Set(healthcheck.StatusPassing)
 
-	p := &pool{ch: make(chan bool), done: make(chan struct{}), targets: []*Target{tgt}, healthyFloor: -1}
+	p := &pool{ch: make(chan bool, 1), done: make(chan struct{}), targets: []*Target{tgt}, healthyFloor: -1}
 	go func() {
 		p.checkHealth()
 	}()
 	time.Sleep(150 * time.Millisecond)
-	p.ch <- true
+	p.scheduleRefresh()
 	time.Sleep(150 * time.Millisecond)
 	p.Stop()
 	time.Sleep(10 * time.Millisecond)

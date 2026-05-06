@@ -42,10 +42,23 @@ type pool struct {
 	targets         Targets
 	healthyTargets  atomic.Pointer[Targets]
 	healthyHandlers atomic.Pointer[[]http.Handler]
+	refreshPending  atomic.Bool // sticky dirty flag indicating HealthyTargets must be rebuilt
 	healthyFloor    int
 	done            chan struct{}
+	statusCh        chan bool // receives raw health status change notifications from targets
 	ch              chan bool
 	mtx             sync.Mutex
+}
+
+// scheduleRefresh marks the healthy list as dirty and coalesces wakeups for
+// the refresh worker. The pending flag preserves refresh intent even when
+// bursty status changes saturate the channel.
+func (p *pool) scheduleRefresh() {
+	p.refreshPending.Store(true)
+	select {
+	case p.ch <- true:
+	default:
+	}
 }
 
 func (p *pool) RefreshHealthy() {

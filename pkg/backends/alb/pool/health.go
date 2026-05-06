@@ -20,6 +20,21 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 )
 
+// listenStatusUpdates bridges target health-status notifications into refresh
+// scheduling. It marks the pool list dirty for every received update and
+// coalesces worker wakeups via scheduleRefresh so bursty changes cannot strand
+// a stale healthy-target list.
+func (p *pool) listenStatusUpdates() {
+	for {
+		select {
+		case <-p.done:
+			return
+		case <-p.statusCh:
+			p.scheduleRefresh()
+		}
+	}
+}
+
 func (p *pool) checkHealth() {
 	for {
 		select {
@@ -27,7 +42,10 @@ func (p *pool) checkHealth() {
 			logger.Debug("stopping ALB pool", nil)
 			return
 		case <-p.ch: // msg arrives whenever the healthy list must be rebuilt
-			p.RefreshHealthy()
+			// this coalesces bursts of updates into a single refresh
+			for p.refreshPending.Swap(false) {
+				p.RefreshHealthy()
+			}
 		}
 	}
 }
