@@ -109,12 +109,15 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return err
 			}
 			r2 = r2.WithContext(bareCtx)
-			crw := capture.NewCaptureResponseWriter()
+			crw := capture.NewCaptureResponseWriterWithLimit(capture.DefaultMaxBytes)
 			captures[i] = crw
 			hl[i].Handler().ServeHTTP(crw, r2)
 
 			if lmStr := crw.Header().Get(headers.NameLastModified); lmStr != "" {
-				if lm, err := time.Parse(time.RFC1123, lmStr); err == nil {
+				// http.ParseTime accepts all three RFC 7231 §7.1.1.1 forms
+				// (IMF-fixdate with GMT, RFC 850, ANSI C asctime); time.RFC1123
+				// alone rejects the IMF-fixdate "GMT" suffix that real servers emit
+				if lm, err := http.ParseTime(lmStr); err == nil {
 					lastMods[i] = lm
 				}
 			}

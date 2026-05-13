@@ -151,7 +151,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			r2 = r2.WithContext(ctx)
 			r2 = request.SetResources(r2, &request.Resources{Cancelable: true})
-			crw := capture.NewCaptureResponseWriter()
+			crw := capture.NewCaptureResponseWriterWithLimit(capture.DefaultMaxBytes)
 			captures[i] = crw
 			hl[i].Handler().ServeHTTP(crw, r2)
 			statusCode := crw.StatusCode()

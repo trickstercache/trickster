@@ -21,6 +21,12 @@ import (
 	"net/http"
 )
 
+// DefaultMaxBytes is the per-writer cap applied by NewCaptureResponseWriterWithLimit
+// when callers want defense-in-depth against pathological upstream responses
+// blowing the heap during ALB fanout. 256 MiB is generous for legitimate
+// time-series payloads and stops one bad backend from OOMing the proxy.
+const DefaultMaxBytes = 256 * 1024 * 1024
+
 // CaptureResponseWriter captures the response body to a byte slice
 type CaptureResponseWriter struct {
 	http.ResponseWriter
@@ -28,6 +34,8 @@ type CaptureResponseWriter struct {
 	statusCode int
 	body       bytes.Buffer
 	len        int
+	maxBytes   int
+	truncated  bool
 }
 
 // NewCaptureResponseWriter returns a new CaptureResponseWriter
@@ -35,6 +43,17 @@ func NewCaptureResponseWriter() *CaptureResponseWriter {
 	return &CaptureResponseWriter{
 		header:     make(http.Header),
 		statusCode: http.StatusOK,
+	}
+}
+
+// NewCaptureResponseWriterWithLimit returns a CaptureResponseWriter that drops
+// bytes past maxBytes and flips Truncated() to true. A non-positive maxBytes
+// means unlimited.
+func NewCaptureResponseWriterWithLimit(maxBytes int) *CaptureResponseWriter {
+	return &CaptureResponseWriter{
+		header:     make(http.Header),
+		statusCode: http.StatusOK,
+		maxBytes:   maxBytes,
 	}
 }
 
@@ -51,8 +70,18 @@ func (sw *CaptureResponseWriter) WriteHeader(code int) {
 	sw.statusCode = code
 }
 
-// Write appends data to the response body
+// Write appends data to the response body. Returns len(b) even after the cap
+// is reached so the upstream producer doesn't error or block; Truncated()
+// surfaces the drop to the merge layer.
 func (sw *CaptureResponseWriter) Write(b []byte) (int, error) {
+	if sw.maxBytes > 0 && sw.len+len(b) > sw.maxBytes {
+		if remaining := sw.maxBytes - sw.len; remaining > 0 {
+			sw.body.Write(b[:remaining])
+			sw.len += remaining
+		}
+		sw.truncated = true
+		return len(b), nil
+	}
 	sw.body.Write(b)
 	sw.len += len(b)
 	return len(b), nil
@@ -69,4 +98,9 @@ func (sw *CaptureResponseWriter) StatusCode() int {
 		sw.statusCode = http.StatusOK
 	}
 	return sw.statusCode
+}
+
+// Truncated reports whether Write dropped bytes due to hitting maxBytes.
+func (sw *CaptureResponseWriter) Truncated() bool {
+	return sw.truncated
 }

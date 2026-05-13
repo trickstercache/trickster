@@ -63,6 +63,38 @@ func TestWrite_IoCopy_SmallBody(t *testing.T) {
 	require.Equal(t, src, sw.Body())
 }
 
+func TestWriteWithLimit_TruncatesAndFlags(t *testing.T) {
+	sw := NewCaptureResponseWriterWithLimit(10)
+	n, err := sw.Write([]byte("0123456789ABCDEF"))
+	require.NoError(t, err)
+	require.Equal(t, 16, n, "Write must report full input length even when truncating")
+	require.Equal(t, []byte("0123456789"), sw.Body())
+	require.True(t, sw.Truncated())
+}
+
+func TestWriteWithLimit_NoTruncationWhenUnderCap(t *testing.T) {
+	sw := NewCaptureResponseWriterWithLimit(100)
+	sw.Write([]byte("hello"))
+	sw.Write([]byte(" world"))
+	require.Equal(t, []byte("hello world"), sw.Body())
+	require.False(t, sw.Truncated())
+}
+
+func TestWriteWithLimit_BoundaryExact(t *testing.T) {
+	sw := NewCaptureResponseWriterWithLimit(11)
+	sw.Write([]byte("hello world"))
+	require.False(t, sw.Truncated())
+	sw.Write([]byte("!"))
+	require.True(t, sw.Truncated())
+}
+
+func TestWriteWithLimit_ZeroMeansUnlimited(t *testing.T) {
+	sw := NewCaptureResponseWriterWithLimit(0)
+	sw.Write(make([]byte, 1024*1024))
+	require.False(t, sw.Truncated())
+	require.Equal(t, 1024*1024, len(sw.Body()))
+}
+
 func TestHeaderStatusCodeBody(t *testing.T) {
 	sw := NewCaptureResponseWriter()
 

@@ -88,7 +88,10 @@ func TestNewestLastModifiedSelection(t *testing.T) {
 
 	handlerWithLM := func(body string, lm time.Time) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.Header().Set(headers.NameLastModified, lm.Format(time.RFC1123))
+			// http.TimeFormat is IMF-fixdate (RFC 7231) with the literal "GMT"
+			// suffix that real HTTP servers emit. time.RFC1123 formatted with
+			// a UTC time produces "UTC" which no RFC 7231 parser accepts.
+			w.Header().Set(headers.NameLastModified, lm.UTC().Format(http.TimeFormat))
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte(body))
 		})

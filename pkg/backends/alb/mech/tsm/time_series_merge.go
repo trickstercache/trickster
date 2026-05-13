@@ -280,6 +280,41 @@ func pickWinner(results []gatherResult) (merge.RespondFunc, http.Header) {
 	return nil, nil
 }
 
+// aggregateStatus collapses per-shard outcomes into the outbound response's
+// status code and trickster status header. When any shard returned 2xx, the
+// outbound code is the lowest 2xx seen (so 200 wins over 206); otherwise the
+// highest non-2xx wins so the more severe failure propagates instead of being
+// masked by an incidentally-lower error code.
+func aggregateStatus(results []gatherResult) (status int, statusHeader string, has2xx, hasNon2xx bool) {
+	var min2xx, maxErr int
+	for _, res := range results {
+		if res.statusCode > 0 {
+			if res.statusCode >= 200 && res.statusCode < 300 {
+				has2xx = true
+				if min2xx == 0 || res.statusCode < min2xx {
+					min2xx = res.statusCode
+				}
+			} else {
+				hasNon2xx = true
+				if res.statusCode > maxErr {
+					maxErr = res.statusCode
+				}
+			}
+		}
+		if res.header != nil {
+			headers.StripMergeHeaders(res.header)
+			statusHeader = headers.MergeResultHeaderVals(statusHeader,
+				res.header.Get(headers.NameTricksterResult))
+		}
+	}
+	if has2xx {
+		status = min2xx
+	} else {
+		status = maxErr
+	}
+	return
+}
+
 // serveStandard handles the common scatter/gather path: each shard gets one
 // request, results are merged with mergeStrategy, and an optional warning is
 // appended to the accumulated dataset before writing the response.
@@ -313,13 +348,14 @@ func (h *handler) serveStandard(
 				results[i].failed = true
 				return err
 			}
+			r2 = r2.WithContext(r.Context())
 			rsc2 := &request.Resources{
 				IsMergeMember:   true,
 				TSReqestOptions: rsc.TSReqestOptions,
 				TSMergeStrategy: int(mergeStrategy),
 			}
 			r2 = request.SetResources(r2, rsc2)
-			crw := capture.NewCaptureResponseWriter()
+			crw := capture.NewCaptureResponseWriterWithLimit(capture.DefaultMaxBytes)
 			hl[i].Handler().ServeHTTP(crw, r2)
 			rsc2 = request.GetResources(r2)
 			if rsc2 == nil {
@@ -383,8 +419,10 @@ func (h *handler) serveStandard(
 				// proxy-error (e.g. unsupported Content-Encoding decoded
 				// upstream then unmarshal failed) and surfaced 200 + empty
 				// body to us. Without this, the merged response would look
-				// identical to a fully-successful fanout.
-				failed: !contributed,
+				// identical to a fully-successful fanout. A truncated capture
+				// (response exceeded the buffer cap) is also surfaced as a
+				// failure so the merge doesn't silently drop tail data.
+				failed: !contributed || crw.Truncated(),
 			}
 			return nil
 		})
@@ -428,26 +466,7 @@ func (h *handler) serveStandard(
 	// TSM fanout would strip any backend-set headers that FGR would
 	// happily propagate. See #970.
 	mrf, winnerHeaders := pickWinner(results)
-	var statusCode int
-	var statusHeader string
-	var has2xx, hasNon2xx bool
-	for _, res := range results {
-		if res.statusCode > 0 {
-			if statusCode == 0 || res.statusCode < statusCode {
-				statusCode = res.statusCode
-			}
-			if res.statusCode >= 200 && res.statusCode < 300 {
-				has2xx = true
-			} else {
-				hasNon2xx = true
-			}
-		}
-		if res.header != nil {
-			headers.StripMergeHeaders(res.header)
-			statusHeader = headers.MergeResultHeaderVals(statusHeader,
-				res.header.Get(headers.NameTricksterResult))
-		}
-	}
+	statusCode, statusHeader, has2xx, hasNon2xx := aggregateStatus(results)
 	// Mixed 2xx + non-2xx fanout: surface a partial-hit marker so clients
 	// can detect that some members failed even when each member's own
 	// Trickster status string happens to agree (V2). hasGatherFailure
@@ -555,13 +574,14 @@ func (h *handler) serveWeightedAvg(
 			if err != nil {
 				return err
 			}
+			r2 = r2.WithContext(r.Context())
 			rsc2 := &request.Resources{
 				IsMergeMember:   true,
 				TSReqestOptions: rsc.TSReqestOptions,
 				TSMergeStrategy: int(dataset.MergeStrategySum),
 			}
 			r2 = request.SetResources(r2, rsc2)
-			crw := capture.NewCaptureResponseWriter()
+			crw := capture.NewCaptureResponseWriterWithLimit(capture.DefaultMaxBytes)
 			hl[i].Handler().ServeHTTP(crw, r2)
 			rsc2 = request.GetResources(r2)
 			if rsc2 == nil {
@@ -598,13 +618,14 @@ func (h *handler) serveWeightedAvg(
 			if err != nil {
 				return err
 			}
+			r2 = r2.WithContext(r.Context())
 			rsc2 := &request.Resources{
 				IsMergeMember:   true,
 				TSReqestOptions: rsc.TSReqestOptions,
 				TSMergeStrategy: int(dataset.MergeStrategySum),
 			}
 			r2 = request.SetResources(r2, rsc2)
-			crw := capture.NewCaptureResponseWriter()
+			crw := capture.NewCaptureResponseWriterWithLimit(capture.DefaultMaxBytes)
 			hl[i].Handler().ServeHTTP(crw, r2)
 			rsc2 = request.GetResources(r2)
 			if rsc2 == nil {
@@ -662,26 +683,7 @@ func (h *handler) serveWeightedAvg(
 	// Aggregate status and headers from sum-query results (count results are
 	// only used for the arithmetic and do not affect the response envelope).
 	mrf, winnerHeaders := pickWinner(results)
-	var statusCode int
-	var statusHeader string
-	var has2xx, hasNon2xx bool
-	for _, res := range results {
-		if res.statusCode > 0 {
-			if statusCode == 0 || res.statusCode < statusCode {
-				statusCode = res.statusCode
-			}
-			if res.statusCode >= 200 && res.statusCode < 300 {
-				has2xx = true
-			} else {
-				hasNon2xx = true
-			}
-		}
-		if res.header != nil {
-			headers.StripMergeHeaders(res.header)
-			statusHeader = headers.MergeResultHeaderVals(statusHeader,
-				res.header.Get(headers.NameTricksterResult))
-		}
-	}
+	statusCode, statusHeader, has2xx, hasNon2xx := aggregateStatus(results)
 	if has2xx && hasNon2xx {
 		statusHeader = headers.MergeResultHeaderVals(statusHeader, "engine=ALB; status=phit")
 	}

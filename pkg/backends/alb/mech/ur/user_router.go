@@ -18,6 +18,7 @@ package ur
 
 import (
 	"net/http"
+	"sync"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	uropt "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/ur/options"
@@ -36,6 +37,10 @@ const (
 )
 
 type Handler struct {
+	// mu guards options, authenticator, enableReplaceCreds against concurrent
+	// reads on the request path and writes during SIGHUP config reload via
+	// ValidateAndStartPool -> SetAuthenticator / SetDefaultHandler.
+	mu                 sync.RWMutex
 	authenticator      at.Authenticator
 	enableReplaceCreds bool
 	options            *uropt.Options
@@ -65,6 +70,12 @@ func (h *Handler) Name() types.Name {
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	h.mu.RLock()
+	opts := h.options
+	auth := h.authenticator
+	replaceAllowed := h.enableReplaceCreds
+	h.mu.RUnlock()
+
 	var username, cred string
 	var enableReplaceCreds bool
 
@@ -74,9 +85,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// default authenticator (usually Basic Auth) for the username.
 	if rsc != nil && rsc.AuthResult != nil && rsc.AuthResult.Username != "" {
 		username = rsc.AuthResult.Username
-		enableReplaceCreds = h.enableReplaceCreds && rsc.AuthResult.Status == at.AuthSuccess
-	} else if h.authenticator != nil {
-		u, c, err := h.authenticator.ExtractCredentials(r)
+		enableReplaceCreds = replaceAllowed && rsc.AuthResult.Status == at.AuthSuccess
+	} else if auth != nil {
+		u, c, err := auth.ExtractCredentials(r)
 		if err == nil && u != "" {
 			username = u
 			cred = c
@@ -85,26 +96,29 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	// if the request doesn't have a username or there are 0 Users in the Router,
 	// the default handler takes the request
-	if username == "" || len(h.options.Users) == 0 {
+	if username == "" || len(opts.Users) == 0 {
 		h.handleDefault(w, r)
 		return
 	}
 	// if the User is found in the Router map, process their options
-	if opts, ok := h.options.Users[username]; ok {
+	if u, ok := opts.Users[username]; ok {
 		// this handles when username or credential is configured to be remapped
-		if enableReplaceCreds && (opts.ToUser != "" || opts.ToCredential != "") {
+		if enableReplaceCreds && (u.ToUser != "" || u.ToCredential != "") {
 			// swap in the new user if configured
-			if opts.ToUser != "" {
-				username = opts.ToUser
+			if u.ToUser != "" {
+				username = u.ToUser
 			}
-			// swap in the new credential if configured
-			if opts.ToCredential != "" {
-				cred = string(opts.ToCredential)
+			// swap in the new credential if configured. When ToCredential is
+			// empty, retain the inbound credential rather than overwriting with
+			// an empty password (which would silently corrupt Basic auth on
+			// the backend).
+			if u.ToCredential != "" {
+				cred = string(u.ToCredential)
 			}
 			// strip the inbound Authorization before writing the new credential,
 			// since Sanitize unconditionally clears the header
-			h.authenticator.Sanitize(r)
-			if err := h.authenticator.SetCredentials(r, username, cred); err != nil {
+			auth.Sanitize(r)
+			if err := auth.SetCredentials(r, username, cred); err != nil {
 				h.handleDefault(w, r)
 				return
 			}
@@ -113,9 +127,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// and the routed backend is currently considered healthy. ToStatus
 		// values below StatusUnchecked (Failing, Initializing) fall through
 		// to the default handler instead of dispatching to a known-bad target.
-		if opts.ToHandler != nil {
-			if opts.ToStatus == nil || opts.ToStatus.Get() >= 0 {
-				opts.ToHandler.ServeHTTP(w, r)
+		if u.ToHandler != nil {
+			if u.ToStatus == nil || u.ToStatus.Get() >= 0 {
+				u.ToHandler.ServeHTTP(w, r)
 				return
 			}
 		}
@@ -126,24 +140,33 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) SetAuthenticator(a at.Authenticator, enableReplaceCreds bool) {
+	h.mu.Lock()
 	h.authenticator = a
 	h.enableReplaceCreds = enableReplaceCreds
+	h.mu.Unlock()
 }
 
 func (h *Handler) SetDefaultHandler(h2 http.Handler) {
-	h.options.DefaultHandler = h2
+	h.mu.Lock()
+	if h.options != nil {
+		h.options.DefaultHandler = h2
+	}
+	h.mu.Unlock()
 }
 
 func (h *Handler) handleDefault(w http.ResponseWriter, r *http.Request) {
-	if h.options.DefaultHandler == nil {
-		code := h.options.NoRouteStatusCode
+	h.mu.RLock()
+	dh := h.options.DefaultHandler
+	code := h.options.NoRouteStatusCode
+	h.mu.RUnlock()
+	if dh == nil {
 		if code < 100 || code >= 600 {
 			code = http.StatusBadGateway
 		}
 		w.WriteHeader(code)
 		return
 	}
-	h.options.DefaultHandler.ServeHTTP(w, r)
+	dh.ServeHTTP(w, r)
 }
 
 // stubs for unused interface functions
