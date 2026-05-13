@@ -17,7 +17,6 @@
 package tsm
 
 import (
-	stderrors "errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -25,6 +24,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/errors"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/fanout"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/rr"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
@@ -40,7 +40,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/response/capture"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"golang.org/x/sync/errgroup"
@@ -329,109 +328,82 @@ func (h *handler) serveStandard(
 	l := len(hl)
 
 	accumulator := merge.NewAccumulator()
-	var eg errgroup.Group
-	if limit := h.tsmOptions.ConcurrencyOptions.GetQueryConcurrencyLimit(); limit > 0 {
-		eg.SetLimit(limit)
-	}
-
 	results := make([]gatherResult, l)
 
-	for i := range l {
-		if hl[i] == nil {
-			continue
-		}
-		eg.Go(func() error {
-			// recover so a single bad upstream doesn't crash the proxy; mark
-			// the slot failed so partial-failure surfacing fires downstream
-			defer mech.RecoverFanoutPanic("tsm", i, func() { results[i] = gatherResult{failed: true} })
-			r2, err := request.CloneWithoutResources(r)
-			if err != nil {
-				results[i].failed = true
-				return err
-			}
-			r2 = r2.WithContext(r.Context())
-			rsc2 := &request.Resources{
+	r, err := fanout.PrimeBody(r)
+	if err != nil {
+		failures.HandleBadGateway(w, r)
+		return
+	}
+
+	fanoutResults, _ := fanout.All(r.Context(), r, hl, fanout.Config{
+		Mechanism:        "tsm",
+		ConcurrencyLimit: h.tsmOptions.ConcurrencyOptions.GetQueryConcurrencyLimit(),
+		Resources: func(int) *request.Resources {
+			return &request.Resources{
 				IsMergeMember:   true,
 				TSReqestOptions: rsc.TSReqestOptions,
 				TSMergeStrategy: int(mergeStrategy),
 			}
-			r2 = request.SetResources(r2, rsc2)
-			crw := capture.NewCaptureResponseWriterWithLimit(capture.DefaultMaxBytes)
-			hl[i].Handler().ServeHTTP(crw, r2)
-			rsc2 = request.GetResources(r2)
+		},
+		OnResult: func(i int, fr *fanout.Result) {
+			if fr.Failed || fr.Request == nil || fr.Capture == nil {
+				results[i].failed = true
+				return
+			}
+			rsc2 := request.GetResources(fr.Request)
 			if rsc2 == nil {
 				results[i].failed = true
-				return stderrors.New("tsm gather failed due to nil resources")
+				return
 			}
-			// ensure merge functions are set on cloned request
 			if rsc2.MergeFunc == nil || rsc2.MergeRespondFunc == nil {
 				logger.Warn("tsm gather failed due to nil func", nil)
 			}
-			// strip injected labels so series from different backends hash
-			// identically for aggregation
 			if len(stripKeys) > 0 && rsc2.TS != nil {
 				if ds, ok := rsc2.TS.(*dataset.DataSet); ok {
 					ds.StripTags(stripKeys)
 				}
 			}
-			// as soon as response is complete, unmarshal and merge
-			// this happens in parallel for each response as it arrives
 			var contributed bool
 			if rsc2.MergeFunc != nil {
 				if rsc2.TS != nil {
 					rsc2.MergeFunc(accumulator, rsc2.TS, i)
 					contributed = true
 				} else {
-					body, err := encoding.DecompressResponseBody(
-						crw.Header().Get(headers.NameContentEncoding),
-						crw.Body(),
+					body, derr := encoding.DecompressResponseBody(
+						fr.Capture.Header().Get(headers.NameContentEncoding),
+						fr.Capture.Body(),
 					)
-					if err != nil {
+					if derr != nil {
+						logger.Warn("tsm gather decode failure", logging.Pairs{
+							"member": i, "error": derr,
+						})
 						results[i].failed = true
-						return err
+						return
 					}
 					if len(body) > 0 {
-						// For non-timeseries paths (labels, series, etc.), rsc.TS is not
-						// populated. Fall back to passing the captured response body to
-						// MergeFunc, which handles []byte input via JSON unmarshal.
 						rsc2.MergeFunc(accumulator, body, i)
 						contributed = true
 					}
 				}
 			}
-			// rsc2.Response carries the upstream's true status code (set by
-			// ObjectProxyCacheRequest for merge members). The CRW status can
-			// stay at the default 200 when the per-shard handler unmarshals
-			// an error envelope but writes nothing through the outer writer
-			// (see prometheus.processVectorTransformations + MarshalTSOrVectorWriter
-			// returning ErrUnknownFormat for zero-result error responses).
-			// Without this fallback, mixed 2xx/5xx fanouts look uniformly OK
-			// to TSM and the partial-hit detection below misses (V2).
-			sc := crw.StatusCode()
+			sc := fr.Capture.StatusCode()
 			if rsc2.Response != nil && rsc2.Response.StatusCode > 0 {
 				sc = rsc2.Response.StatusCode
 			}
 			results[i] = gatherResult{
 				statusCode: sc,
-				header:     crw.Header(),
+				header:     fr.Capture.Header(),
 				mergeFunc:  rsc2.MergeRespondFunc,
-				// A member that wrote no contribution to the accumulator is
-				// a silent failure: typically the per-member handler hit a
-				// proxy-error (e.g. unsupported Content-Encoding decoded
-				// upstream then unmarshal failed) and surfaced 200 + empty
-				// body to us. Without this, the merged response would look
-				// identical to a fully-successful fanout. A truncated capture
-				// (response exceeded the buffer cap) is also surfaced as a
-				// failure so the merge doesn't silently drop tail data.
-				failed: !contributed || crw.Truncated(),
+				failed:     !contributed,
 			}
-			return nil
-		})
-	}
+		},
+	})
 
-	// wait for all fanout requests to complete
-	if err := eg.Wait(); err != nil {
-		logger.Warn("tsm gather failure", logging.Pairs{"error": err})
+	for i, fr := range fanoutResults {
+		if fr.Failed && !results[i].failed {
+			results[i].failed = true
+		}
 	}
 
 	// Surface goroutine-level failures (e.g. unsupported Content-Encoding,
@@ -548,105 +520,103 @@ func (h *handler) serveWeightedAvg(
 	// POST body, etc.).
 	sumBase, countBase := mp.RewriteForWeightedAvg(r, query)
 
+	sumBase, err := fanout.PrimeBody(sumBase)
+	if err != nil {
+		failures.HandleBadGateway(w, r)
+		return
+	}
+	countBase, err = fanout.PrimeBody(countBase)
+	if err != nil {
+		failures.HandleBadGateway(w, r)
+		return
+	}
+
 	sumAccum := merge.NewAccumulator()
 	countAccum := merge.NewAccumulator()
 
-	var eg errgroup.Group
-	if limit := h.tsmOptions.ConcurrencyOptions.GetQueryConcurrencyLimit(); limit > 0 {
-		// Each shard spawns two goroutines; scale the limit accordingly so we
-		// don't serialize unnecessarily.
-		eg.SetLimit(limit * 2)
-	}
+	limit := h.tsmOptions.ConcurrencyOptions.GetQueryConcurrencyLimit()
 
-	// results captures sum-query outcomes only — the response envelope
+	// results captures sum-query outcomes only -- the response envelope
 	// (status, headers, RespondFunc) comes from the sum side; count results
 	// affect the arithmetic, not the envelope.
 	results := make([]gatherResult, l)
 
-	for i := range l {
-		if hl[i] == nil {
-			continue
+	resourcesFn := func(int) *request.Resources {
+		return &request.Resources{
+			IsMergeMember:   true,
+			TSReqestOptions: rsc.TSReqestOptions,
+			TSMergeStrategy: int(dataset.MergeStrategySum),
 		}
-		// Sum query for shard i — clone from the pre-rewritten base request.
-		eg.Go(func() error {
-			// recover so a single bad upstream doesn't crash the proxy; mark
-			// the slot failed so partial-failure surfacing fires downstream
-			defer mech.RecoverFanoutPanic("tsm/avg-sum", i, func() { results[i] = gatherResult{failed: true} })
-			r2, err := request.CloneWithoutResources(sumBase)
-			if err != nil {
-				return err
-			}
-			r2 = r2.WithContext(r.Context())
-			rsc2 := &request.Resources{
-				IsMergeMember:   true,
-				TSReqestOptions: rsc.TSReqestOptions,
-				TSMergeStrategy: int(dataset.MergeStrategySum),
-			}
-			r2 = request.SetResources(r2, rsc2)
-			crw := capture.NewCaptureResponseWriterWithLimit(capture.DefaultMaxBytes)
-			hl[i].Handler().ServeHTTP(crw, r2)
-			rsc2 = request.GetResources(r2)
-			if rsc2 == nil {
-				return stderrors.New("tsm avg/sum gather failed due to nil resources")
-			}
-			if len(stripKeys) > 0 && rsc2.TS != nil {
-				if ds, ok := rsc2.TS.(*dataset.DataSet); ok {
-					ds.StripTags(stripKeys)
-				}
-			}
-			if rsc2.MergeFunc != nil && rsc2.TS != nil {
-				rsc2.MergeFunc(sumAccum, rsc2.TS, i)
-			}
-			// See serveStandard for why we prefer rsc2.Response.StatusCode.
-			sc := crw.StatusCode()
-			if rsc2.Response != nil && rsc2.Response.StatusCode > 0 {
-				sc = rsc2.Response.StatusCode
-			}
-			results[i] = gatherResult{
-				statusCode: sc,
-				header:     crw.Header(),
-				mergeFunc:  rsc2.MergeRespondFunc,
-			}
-			return nil
-		})
-
-		// Count query for shard i — clone from the pre-rewritten base request.
-		eg.Go(func() error {
-			// recover so a single bad upstream doesn't crash the proxy; the
-			// count side doesn't own the response envelope, so we don't touch
-			// results[i] here — the sum-side recover handles that
-			defer mech.RecoverFanoutPanic("tsm/avg-count", i, nil)
-			r2, err := request.CloneWithoutResources(countBase)
-			if err != nil {
-				return err
-			}
-			r2 = r2.WithContext(r.Context())
-			rsc2 := &request.Resources{
-				IsMergeMember:   true,
-				TSReqestOptions: rsc.TSReqestOptions,
-				TSMergeStrategy: int(dataset.MergeStrategySum),
-			}
-			r2 = request.SetResources(r2, rsc2)
-			crw := capture.NewCaptureResponseWriterWithLimit(capture.DefaultMaxBytes)
-			hl[i].Handler().ServeHTTP(crw, r2)
-			rsc2 = request.GetResources(r2)
-			if rsc2 == nil {
-				return stderrors.New("tsm avg/count gather failed due to nil resources")
-			}
-			if len(stripKeys) > 0 && rsc2.TS != nil {
-				if ds, ok := rsc2.TS.(*dataset.DataSet); ok {
-					ds.StripTags(stripKeys)
-				}
-			}
-			if rsc2.MergeFunc != nil && rsc2.TS != nil {
-				rsc2.MergeFunc(countAccum, rsc2.TS, i)
-			}
-			return nil
-		})
 	}
 
+	parentCtx := r.Context()
+	var eg errgroup.Group
+	eg.Go(func() error {
+		_, err := fanout.All(parentCtx, sumBase, hl, fanout.Config{
+			Mechanism:        "tsm/avg-sum",
+			ConcurrencyLimit: limit,
+			Resources:        resourcesFn,
+			OnResult: func(i int, fr *fanout.Result) {
+				if fr.Failed || fr.Request == nil || fr.Capture == nil {
+					results[i].failed = true
+					return
+				}
+				rsc2 := request.GetResources(fr.Request)
+				if rsc2 == nil {
+					results[i].failed = true
+					return
+				}
+				if len(stripKeys) > 0 && rsc2.TS != nil {
+					if ds, ok := rsc2.TS.(*dataset.DataSet); ok {
+						ds.StripTags(stripKeys)
+					}
+				}
+				if rsc2.MergeFunc != nil && rsc2.TS != nil {
+					rsc2.MergeFunc(sumAccum, rsc2.TS, i)
+				}
+				sc := fr.Capture.StatusCode()
+				if rsc2.Response != nil && rsc2.Response.StatusCode > 0 {
+					sc = rsc2.Response.StatusCode
+				}
+				results[i] = gatherResult{
+					statusCode: sc,
+					header:     fr.Capture.Header(),
+					mergeFunc:  rsc2.MergeRespondFunc,
+				}
+			},
+		})
+		return err
+	})
+	eg.Go(func() error {
+		_, err := fanout.All(parentCtx, countBase, hl, fanout.Config{
+			Mechanism:        "tsm/avg-count",
+			ConcurrencyLimit: limit,
+			Resources:        resourcesFn,
+			OnResult: func(i int, fr *fanout.Result) {
+				// Count-side intentionally does not touch results[i]: the
+				// sum-side owns the response envelope. Panics in this slot
+				// are already recovered + countered by fanout.All.
+				if fr.Failed || fr.Request == nil {
+					return
+				}
+				rsc2 := request.GetResources(fr.Request)
+				if rsc2 == nil {
+					return
+				}
+				if len(stripKeys) > 0 && rsc2.TS != nil {
+					if ds, ok := rsc2.TS.(*dataset.DataSet); ok {
+						ds.StripTags(stripKeys)
+					}
+				}
+				if rsc2.MergeFunc != nil && rsc2.TS != nil {
+					rsc2.MergeFunc(countAccum, rsc2.TS, i)
+				}
+			},
+		})
+		return err
+	})
 	if err := eg.Wait(); err != nil {
-		logger.Warn("tsm weighted-avg gather failure", logging.Pairs{"error": err})
+		logger.Warn("tsm avg gather failure", logging.Pairs{"error": err})
 	}
 
 	// Finalize: divide sum totals by count totals to obtain the weighted

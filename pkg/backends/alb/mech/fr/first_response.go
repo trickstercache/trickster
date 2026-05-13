@@ -23,6 +23,7 @@ import (
 	"sync/atomic"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/fanout"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
@@ -107,13 +108,8 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		hl[0].Handler().ServeHTTP(w, r)
 		return
 	}
-	// Ensure the parent has Resources so GetBody caches the body bytes.
-	// Without a cache, each fanout goroutine's CloneWithoutResources re-reads
-	// and mutates r.Body, racing on the parent request.
-	if request.GetResources(r) == nil {
-		r = request.SetResources(r, &request.Resources{})
-	}
-	if _, err := request.GetBody(r); err != nil {
+	r, err := fanout.PrimeBody(r)
+	if err != nil {
 		failures.HandleBadGateway(w, r)
 		return
 	}
@@ -155,13 +151,13 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			// recover so a single bad upstream doesn't crash the proxy; clear
 			// the slot so the fallback path doesn't serve a partial capture
 			defer mech.RecoverFanoutPanic("fr", i, func() { captures[i] = nil })
-			r2, err := request.CloneWithoutResources(r)
+			r2, crw, err := fanout.PrepareClone(ctx, r, i, fanout.Config{
+				Mechanism: "fr",
+				Resources: func(int) *request.Resources { return &request.Resources{Cancelable: true} },
+			})
 			if err != nil {
 				return err
 			}
-			r2 = r2.WithContext(ctx)
-			r2 = request.SetResources(r2, &request.Resources{Cancelable: true})
-			crw := capture.NewCaptureResponseWriterWithLimit(capture.DefaultMaxBytes)
 			captures[i] = crw
 			hl[i].Handler().ServeHTTP(crw, r2)
 			statusCode := crw.StatusCode()

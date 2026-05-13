@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/fanout"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
@@ -28,9 +29,7 @@ import (
 	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/capture"
-	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -73,97 +72,63 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		failures.HandleBadGateway(w, r)
 		return
 	}
-	hl := p.LiveTargets() // should return a fanout list
+	hl := p.LiveTargets()
 	l := len(hl)
 	if l == 0 {
 		failures.HandleBadGateway(w, r)
 		return
 	}
-	// just proxy 1:1 if no folds in the fan
 	if l == 1 {
 		hl[0].Handler().ServeHTTP(w, r)
 		return
 	}
-	// Ensure the parent has Resources so GetBody caches the body bytes.
-	// Without a cache, each fanout goroutine's CloneWithoutResources re-reads
-	// and mutates r.Body, racing on the parent request.
-	if request.GetResources(r) == nil {
-		r = request.SetResources(r, &request.Resources{})
-	}
-	if _, err := request.GetBody(r); err != nil {
+
+	r, err := fanout.PrimeBody(r)
+	if err != nil {
 		failures.HandleBadGateway(w, r)
 		return
 	}
 
-	// Strip resources from the parent context once; reuse for all goroutines
-	bareCtx := tctx.ClearResources(r.Context())
+	results, _ := fanout.All(r.Context(), r, hl, fanout.Config{
+		Mechanism:        "nlm",
+		ConcurrencyLimit: h.options.ConcurrencyOptions.GetQueryConcurrencyLimit(),
+		Context:          tctx.ClearResources,
+	})
 
-	// Capture all responses with per-slot Last-Modified timestamps
-	captures := make([]*capture.CaptureResponseWriter, l)
-	lastMods := make([]time.Time, l)
-	var eg errgroup.Group
-	if limit := h.options.ConcurrencyOptions.GetQueryConcurrencyLimit(); limit > 0 {
-		eg.SetLimit(limit)
-	}
-	// Fanout to all healthy targets
-	for i := range l {
-		if hl[i] == nil {
-			continue
-		}
-		eg.Go(func() error {
-			// recover so a single bad upstream doesn't crash the proxy; clear
-			// the slot so the fallback path doesn't pick a partial capture
-			defer mech.RecoverFanoutPanic("nlm", i, func() { captures[i] = nil })
-			r2, err := request.CloneWithoutResources(r)
-			if err != nil {
-				return err
-			}
-			r2 = r2.WithContext(bareCtx)
-			crw := capture.NewCaptureResponseWriterWithLimit(capture.DefaultMaxBytes)
-			captures[i] = crw
-			hl[i].Handler().ServeHTTP(crw, r2)
-
-			if lmStr := crw.Header().Get(headers.NameLastModified); lmStr != "" {
-				// http.ParseTime accepts all three RFC 7231 §7.1.1.1 forms
-				// (IMF-fixdate with GMT, RFC 850, ANSI C asctime); time.RFC1123
-				// alone rejects the IMF-fixdate "GMT" suffix that real servers emit
-				if lm, err := http.ParseTime(lmStr); err == nil {
-					lastMods[i] = lm
-				}
-			}
-			return nil
-		})
-	}
-
-	// Wait for all responses to complete
-	eg.Wait()
-
-	// Find the response with the newest Last-Modified
 	newestIdx := -1
 	var newestTime time.Time
-	for i, lm := range lastMods {
-		if !lm.IsZero() && (newestIdx == -1 || lm.After(newestTime)) {
+	for i, res := range results {
+		if res.Capture == nil {
+			continue
+		}
+		lmStr := res.Capture.Header().Get(headers.NameLastModified)
+		if lmStr == "" {
+			continue
+		}
+		lm, perr := http.ParseTime(lmStr)
+		if perr != nil {
+			continue
+		}
+		if newestIdx == -1 || lm.After(newestTime) {
 			newestIdx = i
 			newestTime = lm
 		}
 	}
 
-	if newestIdx >= 0 && captures[newestIdx] != nil {
-		writeCapture(w, captures[newestIdx])
+	if newestIdx >= 0 {
+		writeCapture(w, results[newestIdx].Capture)
 		return
 	}
-	// No valid Last-Modified found; prefer a 2xx capture before falling back
-	// to the first non-nil response.
-	for _, crw := range captures {
-		if crw != nil && crw.StatusCode() >= 200 && crw.StatusCode() < 300 {
-			writeCapture(w, crw)
+	for _, res := range results {
+		if res.Capture != nil && res.Capture.StatusCode() >= 200 && res.Capture.StatusCode() < 300 {
+			writeCapture(w, res.Capture)
 			return
 		}
 	}
-	for _, crw := range captures {
-		if crw != nil {
-			writeCapture(w, crw)
-			break
+	for _, res := range results {
+		if res.Capture != nil {
+			writeCapture(w, res.Capture)
+			return
 		}
 	}
 }
