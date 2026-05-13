@@ -84,6 +84,16 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		hl[0].Handler().ServeHTTP(w, r)
 		return
 	}
+	// Ensure the parent has Resources so GetBody caches the body bytes.
+	// Without a cache, each fanout goroutine's CloneWithoutResources re-reads
+	// and mutates r.Body, racing on the parent request.
+	if request.GetResources(r) == nil {
+		r = request.SetResources(r, &request.Resources{})
+	}
+	if _, err := request.GetBody(r); err != nil {
+		failures.HandleBadGateway(w, r)
+		return
+	}
 
 	// Strip resources from the parent context once; reuse for all goroutines
 	bareCtx := tctx.ClearResources(r.Context())

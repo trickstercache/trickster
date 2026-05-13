@@ -145,6 +145,11 @@ const (
 	// NameWWWAuthenticate represents the HTTP Header Name of "WWW-Authenticate"
 	NameWWWAuthenticate = "WWW-Authenticate"
 
+	// NameVary represents the HTTP Header Name of "Vary"
+	NameVary = "Vary"
+	// NameAge represents the HTTP Header Name of "Age"
+	NameAge = "Age"
+
 	// NameTrkHCStatus represents the HTTP Header Name of "Trk-HC-Status"
 	NameTrkHCStatus = "Trk-HC-Status"
 	// NameTrkHCDetail represents the HTTP Header Name of "Trk-HC-Detail"

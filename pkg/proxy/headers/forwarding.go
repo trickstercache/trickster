@@ -87,13 +87,21 @@ var ForwardingHeaders = []string{
 	NameVia,
 }
 
-// MergeRemoveHeaders defines a list of headers that should be removed when Merging time series results
+// MergeRemoveHeaders defines a list of headers that should be removed when Merging time series results.
+// Cache-related fields (Cache-Control, Vary, Age, Etag, Expires) are stripped because the merged body
+// is by definition not equivalent to any single shard's response; carrying one shard's cache directives
+// onto the merged response can poison downstream HTTP caches with hybrid policies.
 var MergeRemoveHeaders = []string{
 	NameLastModified,
 	NameDate,
 	NameContentLength,
 	NameContentType,
 	NameTransferEncoding,
+	NameCacheControl,
+	NameVary,
+	NameAge,
+	NameETag,
+	NameExpires,
 }
 
 var forwardingFuncs = map[string]func(*http.Request, *Hop){

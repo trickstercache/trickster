@@ -21,6 +21,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 )
 
 // RecoverFanoutPanic recovers from a panic in an ALB fanout goroutine and
@@ -38,6 +39,7 @@ func RecoverFanoutPanic(mech string, member int, onPanic func()) {
 		"panic":  rec,
 		"stack":  string(debug.Stack()),
 	})
+	metrics.ALBFanoutFailures.WithLabelValues(mech, "panic").Inc()
 	if onPanic != nil {
 		onPanic()
 	}

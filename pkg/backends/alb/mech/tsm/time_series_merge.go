@@ -35,6 +35,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/encoding"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
@@ -441,6 +442,7 @@ func (h *handler) serveStandard(
 	for i, res := range results {
 		if res.failed {
 			hasGatherFailure = true
+			metrics.ALBFanoutFailures.WithLabelValues("tsm", "no_contribution").Inc()
 			if ts := accumulator.GetTSData(); ts != nil {
 				if ds, ok := ts.(*dataset.DataSet); ok {
 					ds.Warnings = append(ds.Warnings,

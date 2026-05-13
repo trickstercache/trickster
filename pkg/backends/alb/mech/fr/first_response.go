@@ -107,6 +107,16 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		hl[0].Handler().ServeHTTP(w, r)
 		return
 	}
+	// Ensure the parent has Resources so GetBody caches the body bytes.
+	// Without a cache, each fanout goroutine's CloneWithoutResources re-reads
+	// and mutates r.Body, racing on the parent request.
+	if request.GetResources(r) == nil {
+		r = request.SetResources(r, &request.Resources{})
+	}
+	if _, err := request.GetBody(r); err != nil {
+		failures.HandleBadGateway(w, r)
+		return
+	}
 	// otherwise iterate the fanout
 	var claimed int64 = -1
 	captures := make([]*capture.CaptureResponseWriter, l)
