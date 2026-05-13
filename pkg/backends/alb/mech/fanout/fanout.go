@@ -134,7 +134,7 @@ func All(ctx context.Context, parent *http.Request, targets pool.Targets, cfg Co
 				results[i].Capture = nil
 			})
 
-			r2, crw, err := prepareClone(ctx, parent, i, cfg)
+			r2, crw, err := PrepareClone(ctx, parent, i, cfg)
 			if err != nil {
 				results[i].Failed = true
 				results[i].Err = err
@@ -165,18 +165,6 @@ func All(ctx context.Context, parent *http.Request, targets pool.Targets, cfg Co
 	return results, err
 }
 
-// PrepareClone produces one safe, capture-wrapped clone of parent suitable
-// for handing to a pool member's handler. Mechanisms that own their own
-// goroutine orchestration (FR) call this to avoid re-implementing the
-// clone + ctx + resources + bounded capture sequence.
-//
-// PrepareClone does NOT prime parent's body; callers using their own
-// goroutine pool must call request.GetBody on parent before spawning, or
-// the per-clone GetBody calls will race on r.Body / rsc.RequestBody.
-func PrepareClone(ctx context.Context, parent *http.Request, idx int, cfg Config) (*http.Request, *capture.CaptureResponseWriter, error) {
-	return prepareClone(ctx, parent, idx, cfg)
-}
-
 // PrimeBody ensures parent has a Resources value and a cached body so
 // fanout goroutines can clone it concurrently without racing on r.Body.
 // Returns the (possibly new) request; callers must use the returned value
@@ -191,7 +179,15 @@ func PrimeBody(parent *http.Request) (*http.Request, error) {
 	return parent, nil
 }
 
-func prepareClone(ctx context.Context, parent *http.Request, idx int, cfg Config) (*http.Request, *capture.CaptureResponseWriter, error) {
+// PrepareClone produces one safe, capture-wrapped clone of parent suitable
+// for handing to a pool member's handler. Mechanisms that own their own
+// goroutine orchestration (FR) call this to avoid re-implementing the
+// clone + ctx + resources + bounded capture sequence.
+//
+// PrepareClone does NOT prime parent's body; callers using their own
+// goroutine pool must call request.GetBody on parent before spawning, or
+// the per-clone GetBody calls will race on r.Body / rsc.RequestBody.
+func PrepareClone(ctx context.Context, parent *http.Request, idx int, cfg Config) (*http.Request, *capture.CaptureResponseWriter, error) {
 	r2, err := request.CloneWithoutResources(parent)
 	if err != nil {
 		return nil, nil, err

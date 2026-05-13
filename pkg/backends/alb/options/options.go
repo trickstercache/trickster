@@ -45,6 +45,13 @@ type Options struct {
 	// unknown means the first hc hasn't returned yet,
 	// or (more likely) HealthCheck Interval on target backend is not set
 	HealthyFloor int `yaml:"healthy_floor,omitempty"`
+	// MaxCaptureBytes overrides the backend-level max_capture_bytes for this
+	// ALB's fanout members. Set this when the ALB's expected response shape
+	// differs from the backend default (e.g. a TSM fan-out of 50 small-payload
+	// shards may safely use a lower cap than the global default to surface
+	// runaway upstreams faster). When 0, falls back to the parent Backend's
+	// max_capture_bytes, then to the package-level default (256 MiB).
+	MaxCaptureBytes int `yaml:"max_capture_bytes,omitempty"`
 	// OutputFormat accompanies the tsmerge Mechanism to indicate the provider output format
 	// options include any valid time seres backend like prometheus, influxdb or clickhouse
 	OutputFormat string `yaml:"output_format,omitempty"`

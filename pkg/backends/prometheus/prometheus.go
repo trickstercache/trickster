@@ -34,6 +34,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/response/capture"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	tt "github.com/trickstercache/trickster/v2/pkg/util/timeconv"
 )
@@ -145,6 +146,18 @@ type Client struct {
 	instantRounder     time.Duration
 	hasTransformations bool
 	injectLabels       map[string]string
+}
+
+// captureLimit returns the per-response capture buffer cap for c. Reads
+// max_capture_bytes from the backend's configuration; falls back to the
+// package-level default when unset.
+func captureLimit(c *Client) int {
+	if c != nil {
+		if o := c.Configuration(); o != nil && o.MaxCaptureBytes > 0 {
+			return o.MaxCaptureBytes
+		}
+	}
+	return capture.DefaultMaxBytes
 }
 
 var _ types.NewBackendClientFunc = NewClient

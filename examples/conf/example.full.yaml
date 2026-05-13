@@ -337,6 +337,11 @@ backends:
 #     # max_object_size_bytes defines the largest byte size an object may be before it is uncacheable due to size. default is 524288 (512k)
 #     max_object_size_bytes: 524288
 
+#     # max_capture_bytes caps the per-response in-memory capture buffer used by ALB fanout and Prometheus
+#     # transform/label handlers. A member whose body exceeds the cap is treated as a partial failure
+#     # (X-Trickster-Result: phit) rather than truncating the merged response silently. default is 268435456 (256 MiB)
+#     max_capture_bytes: 268435456
+
 #     # These next 7 settings only apply to Time Series backends
 
 #     # backfill_tolerance prevents new datapoints that fall within the tolerance window (relative to time.Now) from being permanently
@@ -557,6 +562,11 @@ backends:
 #       # -1 includes all backends, regardless of reporting state
 #       # default is 0
 #       healthy_floor: 0
+
+#       # max_capture_bytes overrides the backend-level max_capture_bytes for this ALB's fanout members.
+#       # Set this when the ALB's expected response shape differs from the backend default. When 0 (the
+#       # default), the parent Backend's max_capture_bytes is used, falling back to 268435456 (256 MiB).
+#       max_capture_bytes: 16777216 # 16 MiB
 #       fgr: # First Good Response mechanism options, only applicable when mechanism is set to fgr
 #         # status_codes is a list of status codes considered 'good' when using the fgr mechanism
 #         # when this is not set, any response code < 400 is considered good. Use this setting to

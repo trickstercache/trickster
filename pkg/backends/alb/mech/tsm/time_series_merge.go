@@ -57,6 +57,7 @@ type handler struct {
 	nonmergeHandler types.Mechanism // when methodology is tsmerge, this handler is for non-mergeable paths
 	outputFormat    string          // the provider output format (e.g., "prometheus")
 	tsmOptions      options.TimeSeriesMergeOptions
+	maxCaptureBytes int
 }
 
 func RegistryEntry() types.RegistryEntry {
@@ -68,6 +69,7 @@ func New(o *options.Options, factories rt.Lookup) (types.Mechanism, error) {
 	out := &handler{
 		nonmergeHandler: nmh,
 		tsmOptions:      o.TSMOptions,
+		maxCaptureBytes: o.MaxCaptureBytes,
 	}
 	// this validates the merge configuration for the ALB client as it sets it up
 	// First, verify the output format is a support merge provider
@@ -339,6 +341,7 @@ func (h *handler) serveStandard(
 	fanoutResults, _ := fanout.All(r.Context(), r, hl, fanout.Config{
 		Mechanism:        "tsm",
 		ConcurrencyLimit: h.tsmOptions.ConcurrencyOptions.GetQueryConcurrencyLimit(),
+		MaxCaptureBytes:  h.maxCaptureBytes,
 		Resources: func(int) *request.Resources {
 			return &request.Resources{
 				IsMergeMember:   true,
@@ -555,6 +558,7 @@ func (h *handler) serveWeightedAvg(
 		_, err := fanout.All(parentCtx, sumBase, hl, fanout.Config{
 			Mechanism:        "tsm/avg-sum",
 			ConcurrencyLimit: limit,
+			MaxCaptureBytes:  h.maxCaptureBytes,
 			Resources:        resourcesFn,
 			OnResult: func(i int, fr *fanout.Result) {
 				if fr.Failed || fr.Request == nil || fr.Capture == nil {
@@ -591,6 +595,7 @@ func (h *handler) serveWeightedAvg(
 		_, err := fanout.All(parentCtx, countBase, hl, fanout.Config{
 			Mechanism:        "tsm/avg-count",
 			ConcurrencyLimit: limit,
+			MaxCaptureBytes:  h.maxCaptureBytes,
 			Resources:        resourcesFn,
 			OnResult: func(i int, fr *fanout.Result) {
 				// Count-side intentionally does not touch results[i]: the

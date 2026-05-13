@@ -48,7 +48,7 @@ func (c *Client) LabelsHandler(w http.ResponseWriter, r *http.Request) {
 	params.SetRequestValues(r, qp)
 
 	if c.hasTransformations {
-		sw := capture.NewCaptureResponseWriterWithLimit(capture.DefaultMaxBytes)
+		sw := capture.NewCaptureResponseWriterWithLimit(captureLimit(c))
 		engines.ObjectProxyCacheRequest(sw, r)
 		headers.Merge(w.Header(), sw.Header())
 		body := c.processLabelsResponse(sw.Body(), origPath)

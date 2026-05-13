@@ -387,6 +387,31 @@ The User Router does not rotate through or fanout to a Pool of Backends like the
 
 You can configure a User Router ALB's backend destinations to be other ALBs with mechanisms that utilize healthchecked pools.
 
+## Bounding Per-Member Response Captures
+
+ALB mechanisms that fan out (TSM, FR, FGR, NLM) buffer each pool member's response in memory before merging or selecting a winner. Without a cap, one misbehaving upstream returning an oversized body can OOM the proxy -- an N-way fanout multiplies that by N.
+
+Trickster applies a default cap of **256 MiB** per response. A member whose body exceeds the cap is treated as a partial failure: the merged response carries an `X-Trickster-Result: phit` marker and the `trickster_alb_fanout_failures_total{mechanism, reason="truncated"}` metric increments.
+
+Override the cap at the backend or ALB level:
+
+```yaml
+backends:
+  default:
+    max_capture_bytes: 67108864  # 64 MiB, applies to all backends (Prometheus, ClickHouse, ALB members, etc.)
+
+  prom-alb-tsm:
+    provider: alb
+    alb:
+      mechanism: tsm
+      max_capture_bytes: 16777216  # 16 MiB, ALB-specific override
+      pool:
+        - prom01
+        - prom02
+```
+
+The ALB-level value takes precedence over the backend-level value, which in turn takes precedence over the 256 MiB default.
+
 ## Maintaining Healthy Pools With Automated Health Check Integrations
 
 Health Checks are configured per-Backend as described in the [Health documentation](./health.md). Each Backend's health checker will notify all ALB pools of which it is a member when its health status changes, so long as it has been configured with a [health check interval](./health#example+health+check+configuration+for+use+in+alb) for automated checking. When an ALB is notified that the state of a pool member has changed, the ALB will reconstruct its list of healthy pool members before serving the next request.

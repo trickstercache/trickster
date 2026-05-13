@@ -116,6 +116,13 @@ type Options struct {
 	RevalidationFactor float64 `yaml:"revalidation_factor,omitempty"`
 	// MaxObjectSizeBytes specifies the max objectsize to be accepted for any given cache object
 	MaxObjectSizeBytes int `yaml:"max_object_size_bytes,omitempty"`
+	// MaxCaptureBytes caps the per-response in-memory capture buffer that
+	// Trickster's internal capture writer allocates when an ALB mechanism
+	// fans out to pool members or a backend handler transforms an upstream
+	// response. A member whose body exceeds the cap is treated as a
+	// partial-failure (the merge surfaces an X-Trickster-Result phit marker)
+	// rather than truncating the response silently. Defaults to 256 MiB.
+	MaxCaptureBytes int `yaml:"max_capture_bytes,omitempty"`
 	// CompressibleTypeList specifies the HTTP Object Content Types that will be compressed internally
 	// when stored in the Trickster cache or served to clients with a compatible 'Accept-Encoding' header
 	CompressibleTypeList []string `yaml:"compressible_types,omitempty"`
@@ -244,6 +251,7 @@ func New() *Options {
 		KeepAliveTimeout:             DefaultKeepAliveTimeout,
 		MaxIdleConns:                 DefaultMaxIdleConns,
 		MaxConcurrentConns:           DefaultMaxConcurrentConns,
+		MaxCaptureBytes:              DefaultMaxCaptureBytes,
 		MaxObjectSizeBytes:           DefaultMaxObjectSizeBytes,
 		MaxTTL:                       DefaultMaxTTL,
 		NegativeCache:                make(map[int]time.Duration),

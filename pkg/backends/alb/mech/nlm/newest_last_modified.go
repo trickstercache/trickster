@@ -39,7 +39,8 @@ const (
 
 type handler struct {
 	mech.PoolHolder
-	options options.NewestLastModifiedOptions
+	options         options.NewestLastModifiedOptions
+	maxCaptureBytes int
 }
 
 func RegistryEntry() types.RegistryEntry {
@@ -48,7 +49,8 @@ func RegistryEntry() types.RegistryEntry {
 
 func New(o *options.Options, _ rt.Lookup) (types.Mechanism, error) {
 	return &handler{
-		options: o.NLMOptions,
+		options:         o.NLMOptions,
+		maxCaptureBytes: o.MaxCaptureBytes,
 	}, nil
 }
 
@@ -92,6 +94,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	results, _ := fanout.All(r.Context(), r, hl, fanout.Config{
 		Mechanism:        "nlm",
 		ConcurrencyLimit: h.options.ConcurrencyOptions.GetQueryConcurrencyLimit(),
+		MaxCaptureBytes:  h.maxCaptureBytes,
 		Context:          tctx.ClearResources,
 	})
 

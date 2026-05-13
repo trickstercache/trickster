@@ -68,6 +68,9 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 	}
 	c.Backend = b
 	if o != nil && o.ALBOptions != nil {
+		if o.ALBOptions.MaxCaptureBytes == 0 {
+			o.ALBOptions.MaxCaptureBytes = o.MaxCaptureBytes
+		}
 		m, err := registry.New(o.ALBOptions.MechanismName,
 			o.ALBOptions, factories)
 		if err != nil {

@@ -94,7 +94,7 @@ func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 	// we need to capture and unmarshal the response
 	if c.hasTransformations || (rsc != nil && rsc.IsMergeMember) {
 		// use a streaming response writer to capture the response body for transformation
-		sw := capture.NewCaptureResponseWriterWithLimit(capture.DefaultMaxBytes)
+		sw := capture.NewCaptureResponseWriterWithLimit(captureLimit(c))
 		engines.ObjectProxyCacheRequest(sw, r)
 		// Propagate captured upstream headers (Content-Type, X-Trickster-Result,
 		// etc.) to the outer ResponseWriter. Without this, ALB mechanisms see a

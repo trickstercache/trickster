@@ -46,9 +46,10 @@ const (
 
 type handler struct {
 	mech.PoolHolder
-	fgr      bool
-	fgrCodes sets.Set[int]
-	options  options.FirstGoodResponseOptions
+	fgr             bool
+	fgrCodes        sets.Set[int]
+	options         options.FirstGoodResponseOptions
+	maxCaptureBytes int
 }
 
 func RegistryEntry() types.RegistryEntry {
@@ -61,14 +62,19 @@ func RegistryEntryFGR() types.RegistryEntry {
 
 func NewFGR(o *options.Options, _ rt.Lookup) (types.Mechanism, error) {
 	return &handler{
-		fgr:      true,
-		fgrCodes: o.FgrCodesLookup,
-		options:  o.FGROptions,
+		fgr:             true,
+		fgrCodes:        o.FgrCodesLookup,
+		options:         o.FGROptions,
+		maxCaptureBytes: o.MaxCaptureBytes,
 	}, nil
 }
 
-func New(_ *options.Options, _ rt.Lookup) (types.Mechanism, error) {
-	return &handler{}, nil
+func New(o *options.Options, _ rt.Lookup) (types.Mechanism, error) {
+	h := &handler{}
+	if o != nil {
+		h.maxCaptureBytes = o.MaxCaptureBytes
+	}
+	return h, nil
 }
 
 func (h *handler) ID() types.ID {
@@ -152,8 +158,9 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			// the slot so the fallback path doesn't serve a partial capture
 			defer mech.RecoverFanoutPanic("fr", i, func() { captures[i] = nil })
 			r2, crw, err := fanout.PrepareClone(ctx, r, i, fanout.Config{
-				Mechanism: "fr",
-				Resources: func(int) *request.Resources { return &request.Resources{Cancelable: true} },
+				Mechanism:       "fr",
+				MaxCaptureBytes: h.maxCaptureBytes,
+				Resources:       func(int) *request.Resources { return &request.Resources{Cancelable: true} },
 			})
 			if err != nil {
 				return err
