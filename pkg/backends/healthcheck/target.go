@@ -18,8 +18,10 @@ package healthcheck
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"io"
+	"math/big"
 	"net"
 	"net/http"
 	"slices"
@@ -33,7 +35,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
-	"github.com/trickstercache/trickster/v2/pkg/util/timeconv"
 )
 
 // target defines a Health Check target
@@ -48,12 +49,14 @@ type target struct {
 	recoveryThreshold     int
 	failConsecutiveCnt    atomic.Int32
 	successConsecutiveCnt atomic.Int32
-	cancel                context.CancelFunc
-	wg                    sync.WaitGroup
-	ceb                   bool
-	eb                    string
-	eh                    http.Header
-	ec                    []int
+	// guards cancel and wg across Start/Stop cycles
+	mtx    sync.Mutex
+	cancel context.CancelFunc
+	wg     sync.WaitGroup
+	ceb    bool
+	eb     string
+	eh     http.Header
+	ec     []int
 }
 
 // DemandProbe defines a health check probe that makes an HTTP Request to the backend and writes the
@@ -170,9 +173,14 @@ func (t *target) isGoodBody(r io.ReadCloser) bool {
 
 // Start begins health checking the target
 func (t *target) Start(ctx context.Context) {
+	t.mtx.Lock()
+	defer t.mtx.Unlock()
 	if t.cancel != nil {
-		t.Stop()
+		t.cancel()
+		t.wg.Wait()
+		t.cancel = nil
 	}
+	t.wg = sync.WaitGroup{}
 	ctx, cancel := context.WithCancel(tctx.WithHealthCheckFlag(ctx, true))
 	t.cancel = cancel
 	t.probeLoop(ctx)
@@ -180,17 +188,26 @@ func (t *target) Start(ctx context.Context) {
 
 // Stop stops healthchecking the target
 func (t *target) Stop() {
+	t.mtx.Lock()
+	defer t.mtx.Unlock()
 	if t.cancel == nil {
 		return
 	}
 	t.cancel()
 	t.wg.Wait()
+	t.cancel = nil
 }
 
 func (t *target) probeLoop(ctx context.Context) {
 	t.wg.Go(func() {
 		// this prevents all health checks from always probing at the same time
-		timeconv.SleepRandomMS(10, 1000)
+		jitter := time.NewTimer(randomJitter(10*time.Millisecond, time.Second))
+		select {
+		case <-ctx.Done():
+			jitter.Stop()
+			return
+		case <-jitter.C:
+		}
 		t.probe(ctx) // perform initial probe
 		ticker := time.NewTicker(t.interval)
 		defer ticker.Stop()
@@ -321,6 +338,17 @@ func LogHealthCheckError(targetName string, err error, status int) {
 	}
 
 	logger.Error(standardLogLine, pairs)
+}
+
+func randomJitter(min, max time.Duration) time.Duration {
+	if max <= min {
+		return min
+	}
+	n, err := rand.Int(rand.Reader, big.NewInt(int64(max-min)))
+	if err != nil {
+		return min
+	}
+	return min + time.Duration(n.Int64())
 }
 
 func newHTTPClient(timeout time.Duration) *http.Client {

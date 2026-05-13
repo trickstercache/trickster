@@ -176,14 +176,29 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		eg.Wait()
 		// if claimed is still -1, the fallback case must be used
-		if atomic.CompareAndSwapInt64(&claimed, -1, -2) && r.Context().Err() == nil {
-			// this iterates the captures and serves the first non-nil response
-			for _, crw := range captures {
-				if crw != nil {
-					serve(crw)
-					break
-				}
+		if !atomic.CompareAndSwapInt64(&claimed, -1, -2) {
+			return
+		}
+		if r.Context().Err() != nil {
+			return
+		}
+		// this iterates the captures and serves the first non-nil response
+		for _, crw := range captures {
+			if crw != nil {
+				serve(crw)
+				return
 			}
+		}
+		// no member produced any response; emit 502 directly
+		wmu.Lock()
+		defer wmu.Unlock()
+		if returned {
+			return
+		}
+		failures.HandleBadGateway(w, r)
+		select {
+		case responseWritten <- struct{}{}:
+		default:
 		}
 	}()
 

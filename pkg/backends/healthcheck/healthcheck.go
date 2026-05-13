@@ -18,7 +18,10 @@ package healthcheck
 
 import (
 	"context"
+	"maps"
 	"net/http"
+	"slices"
+	"sync"
 
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 )
@@ -46,6 +49,8 @@ type Lookup map[string]*target
 type StatusLookup map[string]*Status
 
 type healthChecker struct {
+	// guards targets, statuses, subscribers
+	mtx         sync.RWMutex
 	targets     Lookup
 	statuses    StatusLookup
 	subscribers []chan bool
@@ -61,14 +66,20 @@ func New() HealthChecker {
 }
 
 func (hc *healthChecker) Subscribe(ch chan bool) {
+	hc.mtx.Lock()
 	hc.subscribers = append(hc.subscribers, ch)
+	hc.mtx.Unlock()
 }
 
 func (hc *healthChecker) Shutdown() {
-	for _, t := range hc.targets {
+	hc.mtx.RLock()
+	targets := slices.Collect(maps.Values(hc.targets))
+	subs := slices.Clone(hc.subscribers)
+	hc.mtx.RUnlock()
+	for _, t := range targets {
 		t.Stop()
 	}
-	for _, ch := range hc.subscribers {
+	for _, ch := range subs {
 		ch <- true
 	}
 }
@@ -78,9 +89,6 @@ func (hc *healthChecker) Register(name, description string, o *ho.Options,
 ) (*Status, error) {
 	if o == nil {
 		return nil, ho.ErrNoOptionsProvided
-	}
-	if t2, ok := hc.targets[name]; ok && t2 != nil {
-		go t2.Stop()
 	}
 	t, err := newTarget(
 		context.Background(),
@@ -92,8 +100,13 @@ func (hc *healthChecker) Register(name, description string, o *ho.Options,
 	if err != nil {
 		return nil, err
 	}
+	hc.mtx.Lock()
+	if t2, ok := hc.targets[name]; ok && t2 != nil {
+		go t2.Stop()
+	}
 	hc.targets[t.name] = t
 	hc.statuses[t.name] = t.status
+	hc.mtx.Unlock()
 	if t.interval > 0 {
 		t.Start(context.Background())
 	}
@@ -104,10 +117,15 @@ func (hc *healthChecker) Unregister(name string) {
 	if name == "" {
 		return
 	}
-	if t, ok := hc.targets[name]; ok && t != nil {
-		t.Stop()
+	hc.mtx.Lock()
+	t, ok := hc.targets[name]
+	if ok && t != nil {
 		delete(hc.targets, t.name)
 		delete(hc.statuses, t.name)
+	}
+	hc.mtx.Unlock()
+	if ok && t != nil {
+		t.Stop()
 	}
 }
 
@@ -115,6 +133,8 @@ func (hc *healthChecker) Status(name string) *Status {
 	if name == "" {
 		return nil
 	}
+	hc.mtx.RLock()
+	defer hc.mtx.RUnlock()
 	if t, ok := hc.targets[name]; ok && t != nil {
 		return t.status
 	}
@@ -122,5 +142,7 @@ func (hc *healthChecker) Status(name string) *Status {
 }
 
 func (hc *healthChecker) Statuses() StatusLookup {
-	return hc.statuses
+	hc.mtx.RLock()
+	defer hc.mtx.RUnlock()
+	return maps.Clone(hc.statuses)
 }

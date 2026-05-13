@@ -19,6 +19,7 @@ package alb
 import (
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	alberr "github.com/trickstercache/trickster/v2/pkg/backends/alb/errors"
@@ -164,7 +165,8 @@ func (c *Client) ValidateAndStartPool(clients backends.Backends, hcs healthcheck
 		}
 		hc, ok := hcs[n]
 		if !ok {
-			continue // virtual backends (rule, alb) don't currently have health checks
+			// virtual backends (rule, alb) have no health checks; treat as passing
+			hc = healthcheck.NewStatus(n, "virtual", "", healthcheck.StatusPassing, time.Time{}, nil)
 		}
 		targets = append(targets, pool.NewTarget(tc.Router(), hc, tc))
 	}
