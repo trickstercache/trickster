@@ -388,3 +388,61 @@ func TestDeriveCacheKeyNilURL(t *testing.T) {
 		t.Errorf("unexpected cache key: %s", k)
 	}
 }
+
+// TestCacheKey_BackendNamePrefixIsolatesPoolMembers asserts that two backends
+// sharing CacheKeyPrefix and the same cache produce distinct cache keys per
+// engine, with the backend name as the leading segment.
+func TestCacheKey_BackendNamePrefixIsolatesPoolMembers(t *testing.T) {
+	const sharedPrefix = "shared"
+	derived := "abc123"
+
+	cases := []struct {
+		engine string
+		want   func(name string) string
+	}{
+		{"opc", func(n string) string { return n + "." + sharedPrefix + ".opc." + derived }},
+		{"dpc", func(n string) string { return n + "." + sharedPrefix + ".dpc." + derived }},
+		{"http", func(n string) string { return n + "." + sharedPrefix + "." + derived }},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.engine, func(t *testing.T) {
+			a := &bo.Options{Name: "a", CacheKeyPrefix: sharedPrefix}
+			b := &bo.Options{Name: "b", CacheKeyPrefix: sharedPrefix}
+
+			ka := composeKey(tc.engine, a, derived)
+			kb := composeKey(tc.engine, b, derived)
+
+			if ka == kb {
+				t.Fatalf("backends %q and %q produced colliding key %q", a.Name, b.Name, ka)
+			}
+			if !strings.HasPrefix(ka, "a.") {
+				t.Errorf("expected key to start with %q, got %q", "a.", ka)
+			}
+			if !strings.HasPrefix(kb, "b.") {
+				t.Errorf("expected key to start with %q, got %q", "b.", kb)
+			}
+			if ka != tc.want("a") {
+				t.Errorf("unexpected key for backend a: got %q want %q", ka, tc.want("a"))
+			}
+			if kb != tc.want("b") {
+				t.Errorf("unexpected key for backend b: got %q want %q", kb, tc.want("b"))
+			}
+		})
+	}
+}
+
+// composeKey mirrors the per-engine cache key composition. Keep this in sync
+// with the call sites in objectproxycache.go, deltaproxycache.go, httpproxy.go
+// and the purge handler in pkg/proxy/handlers/trickster/purge/purge.go.
+func composeKey(engine string, o *bo.Options, derived string) string {
+	switch engine {
+	case "opc":
+		return o.Name + "." + o.CacheKeyPrefix + ".opc." + derived
+	case "dpc":
+		return o.Name + "." + o.CacheKeyPrefix + ".dpc." + derived
+	case "http":
+		return o.Name + "." + o.CacheKeyPrefix + "." + derived
+	}
+	return ""
+}

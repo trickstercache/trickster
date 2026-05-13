@@ -128,10 +128,11 @@ func PathHandler(pathPrefix string,
 			return
 		}
 
+		cfg := backend.Configuration()
 		for _, engine := range engines {
 			for _, method := range methods {
-				cache.Remove(fmt.Sprintf("%s.%s.%s",
-					backend.Configuration().CacheKeyPrefix, engine,
+				cache.Remove(fmt.Sprintf("%s.%s.%s.%s",
+					cfg.Name, cfg.CacheKeyPrefix, engine,
 					md5.Checksum(fmt.Sprintf("%s.method.%s.", purgePath, method))))
 			}
 		}

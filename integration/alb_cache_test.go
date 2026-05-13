@@ -37,7 +37,6 @@ import (
 
 func TestALBCache(t *testing.T) {
 	t.Run("C1 shared cache_key_prefix collides across pool members", func(t *testing.T) {
-		t.Skip("known: cache key derivation does not include backend identity; tracked for follow-up")
 		const respTmpl = `{"status":"success","data":{"resultType":"vector","result":[` +
 			`{"metric":{"__name__":"up","job":"%s"},"value":[1700000000,"%s"]}]}}`
 
@@ -127,6 +126,10 @@ backends:
 		client := &http.Client{Transport: &http.Transport{DisableCompression: true}}
 		seenJobs := make(map[string]int)
 		seenValues := make(map[string]int)
+		// Wait until both pool members have been queried at least once,
+		// otherwise RR can be sticky to whichever member became healthy first
+		// and the assertion below would fail on healthcheck timing rather
+		// than the cache-key collision being tested.
 		require.EventuallyWithT(t, func(c *assert.CollectT) {
 			r, err := client.Get(u)
 			if !assert.NoError(c, err) {
@@ -135,7 +138,9 @@ backends:
 			b, _ := io.ReadAll(r.Body)
 			r.Body.Close()
 			assert.Equal(c, http.StatusOK, r.StatusCode, "body=%s", string(b))
-		}, 5*time.Second, 100*time.Millisecond, "alb pool never produced 200")
+			assert.GreaterOrEqual(c, aHits.Load(), int64(1), "waiting for upstream A to be queried")
+			assert.GreaterOrEqual(c, bHits.Load(), int64(1), "waiting for upstream B to be queried")
+		}, 10*time.Second, 100*time.Millisecond, "alb pool never queried both members")
 
 		const reqs = 8
 		for range reqs {
