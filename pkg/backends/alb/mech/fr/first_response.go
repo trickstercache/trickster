@@ -182,7 +182,22 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if r.Context().Err() != nil {
 			return
 		}
-		// this iterates the captures and serves the first non-nil response
+		if h.fgr {
+			// FGR: no member qualified under fgrCodes; emit 502 rather
+			// than serving a disqualified response.
+			wmu.Lock()
+			defer wmu.Unlock()
+			if returned {
+				return
+			}
+			failures.HandleBadGateway(w, r)
+			select {
+			case responseWritten <- struct{}{}:
+			default:
+			}
+			return
+		}
+		// FR: serve the first non-nil response regardless of status.
 		for _, crw := range captures {
 			if crw != nil {
 				serve(crw)

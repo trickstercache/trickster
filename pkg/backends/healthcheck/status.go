@@ -158,3 +158,13 @@ func (s *Status) RegisterSubscriber(ch chan bool) {
 	s.subscribers = append(s.subscribers, ch)
 	s.mtx.Unlock()
 }
+
+// UnregisterSubscriber removes a previously-registered channel. No-op if ch
+// was not registered.
+func (s *Status) UnregisterSubscriber(ch chan bool) {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+	s.subscribers = slices.DeleteFunc(s.subscribers, func(c chan bool) bool {
+		return c == ch
+	})
+}

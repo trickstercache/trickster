@@ -19,6 +19,7 @@ package tsm
 import (
 	stderrors "errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
@@ -248,11 +249,15 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // gatherResult captures the per-member fanout outcome used to assemble the
 // merged response (status, headers, and the RespondFunc that knows how to
-// marshal the accumulator).
+// marshal the accumulator). failed flags a goroutine-level failure (e.g.
+// unsupported Content-Encoding, parse error) where the member produced no
+// usable contribution to the accumulator even though no HTTP error code
+// reached this layer.
 type gatherResult struct {
 	statusCode int
 	header     http.Header
 	mergeFunc  merge.RespondFunc
+	failed     bool
 }
 
 // pickWinner chooses which member's RespondFunc and headers feed the outbound
@@ -300,6 +305,7 @@ func (h *handler) serveStandard(
 		eg.Go(func() error {
 			r2, err := request.CloneWithoutResources(r)
 			if err != nil {
+				results[i].failed = true
 				return err
 			}
 			rsc2 := &request.Resources{
@@ -312,6 +318,7 @@ func (h *handler) serveStandard(
 			hl[i].Handler().ServeHTTP(crw, r2)
 			rsc2 = request.GetResources(r2)
 			if rsc2 == nil {
+				results[i].failed = true
 				return stderrors.New("tsm gather failed due to nil resources")
 			}
 			// ensure merge functions are set on cloned request
@@ -327,15 +334,18 @@ func (h *handler) serveStandard(
 			}
 			// as soon as response is complete, unmarshal and merge
 			// this happens in parallel for each response as it arrives
+			var contributed bool
 			if rsc2.MergeFunc != nil {
 				if rsc2.TS != nil {
 					rsc2.MergeFunc(accumulator, rsc2.TS, i)
+					contributed = true
 				} else {
 					body, err := encoding.DecompressResponseBody(
 						crw.Header().Get(headers.NameContentEncoding),
 						crw.Body(),
 					)
 					if err != nil {
+						results[i].failed = true
 						return err
 					}
 					if len(body) > 0 {
@@ -343,6 +353,7 @@ func (h *handler) serveStandard(
 						// populated. Fall back to passing the captured response body to
 						// MergeFunc, which handles []byte input via JSON unmarshal.
 						rsc2.MergeFunc(accumulator, body, i)
+						contributed = true
 					}
 				}
 			}
@@ -362,6 +373,13 @@ func (h *handler) serveStandard(
 				statusCode: sc,
 				header:     crw.Header(),
 				mergeFunc:  rsc2.MergeRespondFunc,
+				// A member that wrote no contribution to the accumulator is
+				// a silent failure: typically the per-member handler hit a
+				// proxy-error (e.g. unsupported Content-Encoding decoded
+				// upstream then unmarshal failed) and surfaced 200 + empty
+				// body to us. Without this, the merged response would look
+				// identical to a fully-successful fanout.
+				failed: !contributed,
 			}
 			return nil
 		})
@@ -370,6 +388,23 @@ func (h *handler) serveStandard(
 	// wait for all fanout requests to complete
 	if err := eg.Wait(); err != nil {
 		logger.Warn("tsm gather failure", logging.Pairs{"error": err})
+	}
+
+	// Surface goroutine-level failures (e.g. unsupported Content-Encoding,
+	// parse error) where a member produced no contribution but no HTTP
+	// status reached this layer. Without this, the merged response would
+	// silently look identical to a fully-successful fanout.
+	var hasGatherFailure bool
+	for i, res := range results {
+		if res.failed {
+			hasGatherFailure = true
+			if ts := accumulator.GetTSData(); ts != nil {
+				if ds, ok := ts.(*dataset.DataSet); ok {
+					ds.Warnings = append(ds.Warnings,
+						"trickster: tsm partial failure: pool member "+strconv.Itoa(i)+" returned no usable response")
+				}
+			}
+		}
 	}
 
 	// For non-supportable aggregators, inject a warning into the Prometheus
@@ -410,8 +445,11 @@ func (h *handler) serveStandard(
 	}
 	// Mixed 2xx + non-2xx fanout: surface a partial-hit marker so clients
 	// can detect that some members failed even when each member's own
-	// Trickster status string happens to agree (V2).
-	if has2xx && hasNon2xx {
+	// Trickster status string happens to agree (V2). hasGatherFailure
+	// extends this to silent goroutine failures (e.g. unsupported
+	// Content-Encoding) where the member returned 200 but produced no
+	// usable contribution to the merged result.
+	if (has2xx && hasNon2xx) || (hasGatherFailure && has2xx) {
 		statusHeader = headers.MergeResultHeaderVals(statusHeader, "engine=ALB; status=phit")
 	}
 

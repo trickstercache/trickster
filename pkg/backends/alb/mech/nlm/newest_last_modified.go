@@ -147,7 +147,16 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Write(crw.Body())
 		return
 	}
-	// No valid response found, use the first available
+	// No valid Last-Modified found; prefer a 2xx capture before falling back
+	// to the first non-nil response.
+	for _, crw := range captures {
+		if crw != nil && crw.StatusCode() >= 200 && crw.StatusCode() < 300 {
+			headers.Merge(w.Header(), crw.Header())
+			w.WriteHeader(crw.StatusCode())
+			w.Write(crw.Body())
+			return
+		}
+	}
 	for _, crw := range captures {
 		if crw != nil {
 			headers.Merge(w.Header(), crw.Header())

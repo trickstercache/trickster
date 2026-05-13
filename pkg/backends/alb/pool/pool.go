@@ -133,7 +133,13 @@ func (p *pool) SetHealthy(h []http.Handler) {
 func (p *pool) Stop() {
 	select {
 	case <-p.done:
+		// already stopped
 	default:
 		close(p.done)
+		for _, t := range p.targets {
+			if t != nil && t.hcStatus != nil {
+				t.hcStatus.UnregisterSubscriber(p.statusCh)
+			}
+		}
 	}
 }

@@ -214,6 +214,36 @@ func TestFirstGoodResponse(t *testing.T) {
 	})
 }
 
+func TestFGRFallbackEmits502WhenNoMemberQualifies(t *testing.T) {
+	statusHandler := func(code int, body string) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(code)
+			w.Write([]byte(body))
+		})
+	}
+
+	codes := sets.New([]int{http.StatusOK})
+	p, _, st := albpool.New(-1, []http.Handler{
+		statusHandler(http.StatusInternalServerError, "body0"),
+		statusHandler(http.StatusInternalServerError, "body1"),
+	})
+	st[0].Set(0)
+	st[1].Set(0)
+	time.Sleep(250 * time.Millisecond)
+
+	h := &handler{pool: p, fgr: true, fgrCodes: codes}
+	w := httptest.NewRecorder()
+	r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
+	h.ServeHTTP(w, r)
+
+	if w.Code != http.StatusBadGateway {
+		t.Errorf("expected 502 got %d (body %q)", w.Code, w.Body.String())
+	}
+	if body := w.Body.String(); body == "body0" || body == "body1" {
+		t.Errorf("fallback served disqualified upstream body %q", body)
+	}
+}
+
 // TestHandleFirstResponseContextCancel verifies that cancelling the request
 // context while a backend is responding does not race on the ResponseWriter.
 // The raceWriter makes the race detector catch any write-after-return.
