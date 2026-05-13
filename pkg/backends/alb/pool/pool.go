@@ -29,18 +29,20 @@ import (
 type Pool interface {
 	// Healthy returns the full list of Healthy Targets as http.Handlers
 	Healthy() []http.Handler
-	// HealthyTargets returns the full list of Healthy Targets as *Targets
+	// HealthyTargets returns the snapshot of Healthy Targets. Snapshots can
+	// lag behind atomic status flips; callers that dispatch traffic should
+	// prefer LiveTargets.
 	HealthyTargets() Targets
+	// LiveTargets returns the snapshot of Healthy Targets re-filtered against
+	// each target's current hcStatus. This closes the race window between
+	// an atomic status flip and the asynchronous healthy-list refresh.
+	LiveTargets() Targets
 	// SetHealthy sets the Healthy Targets List
 	SetHealthy([]http.Handler)
 	// Stop stops the pool and its health checker goroutines
 	Stop()
 	// RefreshHealthy forces a refresh of the pool's healthy handlers list
 	RefreshHealthy()
-	// HealthyFloor returns the minimum hcStatus value a target must have to
-	// be considered healthy. Used by mechanisms to re-check a target's status
-	// at dispatch time, in case the snapshot is stale.
-	HealthyFloor() int
 }
 
 // pool implements Pool
@@ -103,8 +105,16 @@ func (p *pool) Healthy() []http.Handler {
 	return nil
 }
 
-func (p *pool) HealthyFloor() int {
-	return p.healthyFloor
+func (p *pool) LiveTargets() Targets {
+	hl := p.HealthyTargets()
+	live := make(Targets, 0, len(hl))
+	for _, t := range hl {
+		if t == nil || int(t.hcStatus.Get()) < p.healthyFloor {
+			continue
+		}
+		live = append(live, t)
+	}
+	return live
 }
 
 func (p *pool) SetHealthy(h []http.Handler) {

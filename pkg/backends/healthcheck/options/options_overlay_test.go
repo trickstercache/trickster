@@ -45,6 +45,23 @@ func TestOverlayCarriesThresholdsAndTimeout(t *testing.T) {
 	}
 }
 
+// URL() composes Scheme + Host + Path + Query. Without Overlay carrying
+// Scheme/Host, a user that configures `scheme: https` or `host: hc.example.com`
+// in their backend's healthcheck block silently inherits the upstream's
+// scheme/host and probes the wrong endpoint.
+func TestOverlayCarriesSchemeAndHost(t *testing.T) {
+	base := &Options{Scheme: "http", Host: "default.example.com"}
+	custom := &Options{Scheme: "https", Host: "hc.example.com"}
+	base.Overlay(custom)
+
+	if base.Scheme != "https" {
+		t.Errorf("Scheme: expected https got %s", base.Scheme)
+	}
+	if base.Host != "hc.example.com" {
+		t.Errorf("Host: expected hc.example.com got %s", base.Host)
+	}
+}
+
 // Non-positive custom values should not stomp existing base values.
 func TestOverlayPreservesBaseWhenCustomZero(t *testing.T) {
 	base := &Options{

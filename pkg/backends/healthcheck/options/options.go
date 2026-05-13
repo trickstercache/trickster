@@ -151,6 +151,12 @@ func (o *Options) Overlay(custom *Options) {
 	if custom == nil {
 		return
 	}
+	if custom.Scheme != "" {
+		o.Scheme = custom.Scheme
+	}
+	if custom.Host != "" {
+		o.Host = custom.Host
+	}
 	if custom.Path != "" {
 		o.Path = custom.Path
 	}

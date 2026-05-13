@@ -81,23 +81,10 @@ func (h *handler) StopPool() {
 }
 
 func (h *handler) nextTarget() http.Handler {
-	targets := h.pool.HealthyTargets()
+	targets := h.pool.LiveTargets()
 	n := uint64(len(targets))
 	if n == 0 {
 		return nil
 	}
-	floor := h.pool.HealthyFloor()
-	// Re-check each candidate's status against the floor at dispatch time;
-	// the snapshot can be stale relative to the latest atomic status flip.
-	start := h.pos.Add(1) % n
-	for i := range n {
-		t := targets[(start+i)%n]
-		if t == nil {
-			continue
-		}
-		if int(t.HealthStatus().Get()) >= floor {
-			return t.Handler()
-		}
-	}
-	return nil
+	return targets[h.pos.Add(1)%n].Handler()
 }

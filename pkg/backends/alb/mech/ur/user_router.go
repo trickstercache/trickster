@@ -105,9 +105,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			h.authenticator.SetCredentials(r, username, cred)
 		}
 		// this passes the request to a user-specific route handler, if set
+		// and the routed backend is currently considered healthy. ToStatus
+		// values below StatusUnchecked (Failing, Initializing) fall through
+		// to the default handler instead of dispatching to a known-bad target.
 		if opts.ToHandler != nil {
-			opts.ToHandler.ServeHTTP(w, r)
-			return
+			if opts.ToStatus == nil || opts.ToStatus.Get() >= 0 {
+				opts.ToHandler.ServeHTTP(w, r)
+				return
+			}
 		}
 	}
 	// the default handler serves the request when the user doesn't have an entry

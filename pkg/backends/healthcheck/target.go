@@ -254,13 +254,13 @@ func (t *target) notifyStatus(st int32, detail string) {
 	pairs := logging.Pairs{"targetName": t.name}
 	switch st {
 	case StatusFailing:
-		t.status.failingSince = time.Now()
+		t.status.SetFailingSince(time.Now())
 		t.status.SetDetail(detail)
 		pairs["status"] = "unavailable"
 		pairs["detail"] = detail
 		pairs["threshold"] = t.failureThreshold
 	case StatusPassing:
-		t.status.failingSince = time.Time{}
+		t.status.SetFailingSince(time.Time{})
 		pairs["status"] = "available"
 		pairs["threshold"] = t.recoveryThreshold
 		t.status.SetDetail("")

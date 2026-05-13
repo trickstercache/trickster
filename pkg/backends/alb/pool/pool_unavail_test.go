@@ -24,61 +24,32 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 )
 
-func TestPoolHealthyFloorAccessor(t *testing.T) {
-	st := &healthcheck.Status{}
-	tgt := NewTarget(http.NotFoundHandler(), st, nil)
-	p := New(Targets{tgt}, 1)
-	defer p.Stop()
-
-	if got := p.HealthyFloor(); got != 1 {
-		t.Errorf("HealthyFloor: expected 1 got %d", got)
-	}
-}
-
-// TestStaleSnapshotExcludesFailingTarget reproduces the routing bug where a
-// mechanism captures pool.HealthyTargets() then a target flips to Failing
-// while requests are in flight. The snapshot stays stale; without a
-// per-invocation status re-check, the failing target keeps receiving traffic.
-func TestStaleSnapshotExcludesFailingTarget(t *testing.T) {
+// LiveTargets must drop a target whose status flipped below the floor after
+// the cached HealthyTargets snapshot was last refreshed. HealthyTargets keeps
+// the snapshot intact; LiveTargets re-checks against the current atomic
+// status to close the race window.
+func TestLiveTargetsDropsStaleFailingTarget(t *testing.T) {
 	st1 := &healthcheck.Status{}
 	st2 := &healthcheck.Status{}
 	t1 := NewTarget(http.NotFoundHandler(), st1, nil)
 	t2 := NewTarget(http.NotFoundHandler(), st2, nil)
 
 	p := New(Targets{t1, t2}, 1)
-	defer p.Stop()
-
 	st1.Set(healthcheck.StatusPassing)
 	st2.Set(healthcheck.StatusPassing)
 	waitForHealthyTargetsLen(t, p, 2, 2*time.Second)
 
-	// Mechanism takes a snapshot of healthy targets.
-	snapshot := p.HealthyTargets()
-	if len(snapshot) != 2 {
-		t.Fatalf("snapshot: expected 2 targets, got %d", len(snapshot))
+	// Pin the snapshot stale by stopping the pool's refresh goroutines, then
+	// flip t2 to Failing.
+	p.Stop()
+	st2.Set(healthcheck.StatusFailing)
+
+	if got := len(p.HealthyTargets()); got != 2 {
+		t.Fatalf("HealthyTargets snapshot: expected 2 (stale), got %d", got)
 	}
 
-	// A request is now in flight; before it dispatches, t1 flips to Failing.
-	st1.Set(healthcheck.StatusFailing)
-
-	// The snapshot is intentionally stale — it still contains t1.
-	if len(snapshot) != 2 {
-		t.Fatalf("snapshot must remain length 2 after status flip; got %d", len(snapshot))
-	}
-
-	// Defense-in-depth check: each goroutine must compare the target's
-	// current status against the pool's healthyFloor before invoking.
-	floor := p.HealthyFloor()
-	var keep []*Target
-	for _, tgt := range snapshot {
-		if int(tgt.HealthStatus().Get()) >= floor {
-			keep = append(keep, tgt)
-		}
-	}
-	if len(keep) != 1 {
-		t.Fatalf("expected 1 target after status re-check, got %d", len(keep))
-	}
-	if keep[0] != t2 {
-		t.Fatalf("expected t2 to be the surviving target, got different reference")
+	live := p.LiveTargets()
+	if len(live) != 1 || live[0] != t1 {
+		t.Fatalf("LiveTargets: expected only t1, got %#v", live)
 	}
 }

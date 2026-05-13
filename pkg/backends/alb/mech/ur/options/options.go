@@ -53,6 +53,13 @@ type Options struct {
 	albName        string
 }
 
+// HealthStatusGetter exposes the subset of *healthcheck.Status that the
+// router needs to gate dispatch. Declared here to avoid an import cycle
+// into pkg/backends/healthcheck.
+type HealthStatusGetter interface {
+	Get() int32
+}
+
 // UserMappingOptions holds per-user configurations that direct the User Router
 type UserMappingOptions struct {
 	// ToBackend is the name of the Backend where requests from this user are routed
@@ -63,6 +70,10 @@ type UserMappingOptions struct {
 	ToCredential types.EnvString `yaml:"to_credential"`
 	// ToHandler is the the HTTP Handler for the Backend in ToBackend
 	ToHandler http.Handler `yaml:"-"`
+	// ToStatus is the Health Status of the routed Backend, when known. When set
+	// and the status is below StatusUnchecked (i.e., Failing or Initializing),
+	// the request falls through to the default handler.
+	ToStatus HealthStatusGetter `yaml:"-"`
 }
 
 type UserMappingOptionsByUser map[string]*UserMappingOptions

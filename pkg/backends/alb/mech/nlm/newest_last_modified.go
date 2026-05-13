@@ -80,19 +80,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		failures.HandleBadGateway(w, r)
 		return
 	}
-	hl := h.pool.HealthyTargets() // should return a fanout list
-	floor := h.pool.HealthyFloor()
-	live := make(pool.Targets, 0, len(hl))
-	for _, t := range hl {
-		if t == nil {
-			continue
-		}
-		if int(t.HealthStatus().Get()) < floor {
-			continue
-		}
-		live = append(live, t)
-	}
-	hl = live
+	hl := h.pool.LiveTargets() // should return a fanout list
 	l := len(hl)
 	if l == 0 {
 		failures.HandleBadGateway(w, r)

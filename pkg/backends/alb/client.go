@@ -154,7 +154,7 @@ func (c *Client) ValidateAndStartPool(clients backends.Backends, hcs healthcheck
 		return err
 	}
 	if o.MechanismName == names.MechanismUR && o.UserRouter != nil {
-		return c.validateAndStartUserRouter(clients)
+		return c.validateAndStartUserRouter(clients, hcs)
 	}
 	targets := make(pool.Targets, 0, len(o.Pool))
 	for _, n := range o.Pool {
@@ -178,7 +178,7 @@ func observeOnlyOpts() *authopt.Options {
 	return &authopt.Options{ObserveOnly: true}
 }
 
-func (c *Client) validateAndStartUserRouter(clients backends.Backends) error {
+func (c *Client) validateAndStartUserRouter(clients backends.Backends, hcs healthcheck.StatusLookup) error {
 	conf := c.Configuration()
 	var canReplaceCreds bool
 	o := conf.ALBOptions.UserRouter
@@ -238,6 +238,9 @@ func (c *Client) validateAndStartUserRouter(clients backends.Backends) error {
 				return alberr.NewErrInvalidBackendName(c.Name(), m.ToBackend)
 			}
 			m.ToHandler = bh.Router()
+			if hc, ok := hcs[m.ToBackend]; ok {
+				m.ToStatus = hc
+			}
 		}
 		if !canReplaceCreds && m.ToCredential != "" {
 			return alberr.NewErrInvalidUserRouterCreds(c.Name())
