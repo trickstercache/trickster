@@ -58,7 +58,8 @@ func TestNextTargetSkipsStaleFailingTarget(t *testing.T) {
 	// the dispatch-time re-check kicks in.
 	sts[1].Set(healthcheck.StatusFailing)
 
-	rr := &handler{pool: p}
+	rr := &handler{}
+	rr.SetPool(p)
 	const reqs = 50
 	for range reqs {
 		w := httptest.NewRecorder()

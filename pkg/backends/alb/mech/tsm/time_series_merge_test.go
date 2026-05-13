@@ -50,7 +50,8 @@ func TestHandleResponseMerge(t *testing.T) {
 	r = request.SetResources(r, rsc)
 
 	p, _, _ := albpool.New(0, nil)
-	h := &handler{pool: p, mergePaths: []string{"/"}}
+	h := &handler{mergePaths: []string{"/"}}
+	h.SetPool(p)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, r)
 	if w.Code != http.StatusBadGateway {
@@ -58,8 +59,9 @@ func TestHandleResponseMerge(t *testing.T) {
 	}
 
 	var st []*healthcheck.Status
-	h.pool, _, st = albpool.New(-1,
+	p, _, st = albpool.New(-1,
 		[]http.Handler{http.HandlerFunc(tu.BasicHTTPHandler)})
+	h.SetPool(p)
 	st[0].Set(0)
 	time.Sleep(250 * time.Millisecond)
 
@@ -69,11 +71,12 @@ func TestHandleResponseMerge(t *testing.T) {
 		t.Error("expected 200 got", w.Code)
 	}
 
-	h.pool, _, st = albpool.New(-1,
+	p, _, st = albpool.New(-1,
 		[]http.Handler{
 			http.HandlerFunc(tu.BasicHTTPHandler),
 			http.HandlerFunc(tu.BasicHTTPHandler),
 		})
+	h.SetPool(p)
 	st[0].Set(0)
 	st[1].Set(0)
 	time.Sleep(250 * time.Millisecond)

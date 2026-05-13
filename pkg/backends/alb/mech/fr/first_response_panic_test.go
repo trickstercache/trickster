@@ -43,7 +43,8 @@ func TestFRPanicMemberDoesNotCrashRequest(t *testing.T) {
 	st[1].Set(healthcheck.StatusPassing)
 	time.Sleep(250 * time.Millisecond)
 
-	h := &handler{pool: p}
+	h := &handler{}
+	h.SetPool(p)
 	w := httptest.NewRecorder()
 	r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
 
@@ -89,7 +90,8 @@ func TestFRPanicAllMembersDoesNotCrashRequest(t *testing.T) {
 	st[1].Set(healthcheck.StatusPassing)
 	time.Sleep(250 * time.Millisecond)
 
-	h := &handler{pool: p}
+	h := &handler{}
+	h.SetPool(p)
 	w := httptest.NewRecorder()
 	r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
 

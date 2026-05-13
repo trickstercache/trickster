@@ -208,7 +208,10 @@ func (t *target) probeLoop(ctx context.Context) {
 			return
 		case <-jitter.C:
 		}
-		t.probe(ctx) // perform initial probe
+		// detach the probe request from the loop ctx so Stop waits for the
+		// in-flight probe to finish instead of cancelling it; this serializes
+		// Register-over-existing at the upstream level.
+		t.probe(context.WithoutCancel(ctx))
 		ticker := time.NewTicker(t.interval)
 		defer ticker.Stop()
 		for {
@@ -216,7 +219,7 @@ func (t *target) probeLoop(ctx context.Context) {
 			case <-ctx.Done():
 				return // probe complete, stop loop and prevent goroutine leak
 			case <-ticker.C:
-				t.probe(ctx)
+				t.probe(context.WithoutCancel(ctx))
 			}
 		}
 	})

@@ -39,7 +39,7 @@ func TestHandleRoundRobin(t *testing.T) {
 	p, _, hsts := albpool.New(0,
 		[]http.Handler{http.HandlerFunc(tu.BasicHTTPHandler)})
 
-	h.pool = p
+	h.SetPool(p)
 
 	hsts[0].Set(0)
 	time.Sleep(250 * time.Millisecond)
@@ -50,8 +50,10 @@ func TestHandleRoundRobin(t *testing.T) {
 		t.Error("expected 200 got", w.Code)
 	}
 
-	h.pool, _, hsts = albpool.New(0,
+	var p2 pool.Pool
+	p2, _, hsts = albpool.New(0,
 		[]http.Handler{http.HandlerFunc(failures.HandleBadGateway)})
+	h.SetPool(p2)
 	hsts[0].Set(-1)
 	time.Sleep(250 * time.Millisecond)
 	w = httptest.NewRecorder()
@@ -62,12 +64,12 @@ func TestHandleRoundRobin(t *testing.T) {
 }
 
 func TestNextTarget(t *testing.T) {
-	h := &handler{
-		pool: pool.New(nil, -1),
-	}
+	p := pool.New(nil, -1)
+	h := &handler{}
+	h.SetPool(p)
 	h.StopPool()
-	h.pool.SetHealthy([]http.Handler{http.NotFoundHandler()})
-	n := h.nextTarget()
+	p.SetHealthy([]http.Handler{http.NotFoundHandler()})
+	n := h.nextTarget(p)
 	if n == nil {
 		t.Error("expected non-nil target")
 	}
@@ -90,7 +92,8 @@ func TestRoundRobinProgression(t *testing.T) {
 	st[2].Set(0)
 	time.Sleep(250 * time.Millisecond)
 
-	rr := &handler{pool: p}
+	rr := &handler{}
+	rr.SetPool(p)
 
 	// Fire 6 requests and verify rotation through all 3 backends.
 	// Each backend must appear exactly twice.

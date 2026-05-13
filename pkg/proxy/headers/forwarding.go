@@ -330,6 +330,17 @@ func AddResponseHeaders(h http.Header) {
 
 // StripClientHeaders strips certain headers from the HTTP request to facililate acceleration
 func StripClientHeaders(h http.Header) {
+	// RFC 7230 6.1: headers named in Connection are hop-by-hop. Strip these
+	// before the static list, which removes Connection itself.
+	for _, conn := range h.Values(NameConnection) {
+		for name := range strings.SplitSeq(conn, ",") {
+			name = strings.TrimSpace(name)
+			if name == "" {
+				continue
+			}
+			h.Del(name)
+		}
+	}
 	for _, k := range HopHeaders {
 		h.Del(k)
 	}

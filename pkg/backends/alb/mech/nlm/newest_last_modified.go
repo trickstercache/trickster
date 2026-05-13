@@ -24,7 +24,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
-	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
@@ -40,7 +39,7 @@ const (
 )
 
 type handler struct {
-	pool    pool.Pool
+	mech.PoolHolder
 	options options.NewestLastModifiedOptions
 }
 
@@ -54,14 +53,6 @@ func New(o *options.Options, _ rt.Lookup) (types.Mechanism, error) {
 	}, nil
 }
 
-func (h *handler) SetPool(p pool.Pool) {
-	h.pool = p
-}
-
-func (h *handler) Pool() pool.Pool {
-	return h.pool
-}
-
 func (h *handler) ID() types.ID {
 	return ID
 }
@@ -71,17 +62,18 @@ func (h *handler) Name() types.Name {
 }
 
 func (h *handler) StopPool() {
-	if h.pool != nil {
-		h.pool.Stop()
+	if p := h.Pool(); p != nil {
+		p.Stop()
 	}
 }
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if h.pool == nil {
+	p := h.Pool()
+	if p == nil {
 		failures.HandleBadGateway(w, r)
 		return
 	}
-	hl := h.pool.LiveTargets() // should return a fanout list
+	hl := p.LiveTargets() // should return a fanout list
 	l := len(hl)
 	if l == 0 {
 		failures.HandleBadGateway(w, r)

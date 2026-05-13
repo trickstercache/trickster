@@ -44,7 +44,8 @@ func TestHandleNewestResponse(t *testing.T) {
 	r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
 
 	p, _, _ := albpool.New(0, nil)
-	h := &handler{pool: p}
+	h := &handler{}
+	h.SetPool(p)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, r)
 	if w.Code != http.StatusBadGateway {
@@ -52,8 +53,9 @@ func TestHandleNewestResponse(t *testing.T) {
 	}
 
 	var st []*healthcheck.Status
-	h.pool, _, st = albpool.New(-1,
+	p, _, st = albpool.New(-1,
 		[]http.Handler{http.HandlerFunc(tu.BasicHTTPHandler)})
+	h.SetPool(p)
 	st[0].Set(0)
 	time.Sleep(250 * time.Millisecond)
 
@@ -63,11 +65,12 @@ func TestHandleNewestResponse(t *testing.T) {
 		t.Error("expected 200 got", w.Code)
 	}
 
-	h.pool, _, st = albpool.New(-1,
+	p, _, st = albpool.New(-1,
 		[]http.Handler{
 			http.HandlerFunc(tu.BasicHTTPHandler),
 			http.HandlerFunc(tu.BasicHTTPHandler),
 		})
+	h.SetPool(p)
 	st[0].Set(0)
 	st[1].Set(0)
 	time.Sleep(250 * time.Millisecond)
@@ -100,7 +103,8 @@ func TestNewestLastModifiedSelection(t *testing.T) {
 		st[1].Set(0)
 		time.Sleep(250 * time.Millisecond)
 
-		h := &handler{pool: p}
+		h := &handler{}
+		h.SetPool(p)
 		w := httptest.NewRecorder()
 		r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
 		h.ServeHTTP(w, r)
@@ -128,7 +132,8 @@ func TestNewestLastModifiedSelection(t *testing.T) {
 		st[1].Set(0)
 		time.Sleep(250 * time.Millisecond)
 
-		h := &handler{pool: p}
+		h := &handler{}
+		h.SetPool(p)
 		w := httptest.NewRecorder()
 		r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
 		h.ServeHTTP(w, r)
@@ -147,7 +152,8 @@ func TestNewestLastModifiedSelection(t *testing.T) {
 		st[1].Set(0)
 		time.Sleep(250 * time.Millisecond)
 
-		h := &handler{pool: p}
+		h := &handler{}
+		h.SetPool(p)
 		w := httptest.NewRecorder()
 		r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
 		h.ServeHTTP(w, r)
@@ -173,7 +179,8 @@ func TestNewestLastModifiedSelection(t *testing.T) {
 		}
 		time.Sleep(250 * time.Millisecond)
 
-		h := &handler{pool: p}
+		h := &handler{}
+		h.SetPool(p)
 		w := httptest.NewRecorder()
 		r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
 		h.ServeHTTP(w, r)
@@ -200,7 +207,8 @@ func TestNewestLastModifiedSelection(t *testing.T) {
 		}
 		time.Sleep(250 * time.Millisecond)
 
-		h := &handler{pool: p}
+		h := &handler{}
+		h.SetPool(p)
 		w := httptest.NewRecorder()
 		r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
 		h.ServeHTTP(w, r)
@@ -225,7 +233,8 @@ func TestHandleNewestContextCancel(t *testing.T) {
 		p, _, _ := albpool.New(-1, hs)
 		p.SetHealthy(hs)
 
-		h := &handler{pool: p}
+		h := &handler{}
+		h.SetPool(p)
 		ctx, cancel := context.WithCancel(context.Background())
 		r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
 		r = r.WithContext(ctx)

@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"sync/atomic"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
@@ -34,8 +35,8 @@ const (
 )
 
 type handler struct {
-	pool pool.Pool
-	pos  atomic.Uint64
+	mech.PoolHolder
+	pos atomic.Uint64
 }
 
 func RegistryEntry() types.RegistryEntry {
@@ -44,14 +45,6 @@ func RegistryEntry() types.RegistryEntry {
 
 func New(_ *options.Options, _ rt.Lookup) (types.Mechanism, error) {
 	return &handler{}, nil
-}
-
-func (h *handler) SetPool(p pool.Pool) {
-	h.pool = p
-}
-
-func (h *handler) Pool() pool.Pool {
-	return h.pool
 }
 
 func (h *handler) ID() types.ID {
@@ -63,11 +56,12 @@ func (h *handler) Name() types.Name {
 }
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if h.pool == nil {
+	p := h.Pool()
+	if p == nil {
 		failures.HandleBadGateway(w, r)
 		return
 	}
-	if t := h.nextTarget(); t != nil {
+	if t := h.nextTarget(p); t != nil {
 		t.ServeHTTP(w, r)
 		return
 	}
@@ -75,13 +69,13 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) StopPool() {
-	if h.pool != nil {
-		h.pool.Stop()
+	if p := h.Pool(); p != nil {
+		p.Stop()
 	}
 }
 
-func (h *handler) nextTarget() http.Handler {
-	targets := h.pool.LiveTargets()
+func (h *handler) nextTarget(p pool.Pool) http.Handler {
+	targets := p.LiveTargets()
 	n := uint64(len(targets))
 	if n == 0 {
 		return nil

@@ -41,7 +41,8 @@ func TestNLMFallbackPrefers2xxOver5xx(t *testing.T) {
 	st[1].Set(0)
 	time.Sleep(250 * time.Millisecond)
 
-	h := &handler{pool: p}
+	h := &handler{}
+	h.SetPool(p)
 	w := httptest.NewRecorder()
 	r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
 	h.ServeHTTP(w, r)

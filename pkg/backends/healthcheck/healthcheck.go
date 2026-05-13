@@ -102,7 +102,8 @@ func (hc *healthChecker) Register(name, description string, o *ho.Options,
 	}
 	hc.mtx.Lock()
 	if t2, ok := hc.targets[name]; ok && t2 != nil {
-		go t2.Stop()
+		// synchronous stop so the old probe loop exits before the new one starts
+		t2.Stop()
 	}
 	hc.targets[t.name] = t
 	hc.statuses[t.name] = t.status

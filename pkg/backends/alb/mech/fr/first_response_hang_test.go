@@ -45,7 +45,8 @@ func TestFRDoesNotHangWhenAllTargetsAbort(t *testing.T) {
 	p, _, _ := albpool.New(-1, []http.Handler{never, never})
 	p.SetHealthy([]http.Handler{never, never})
 
-	h := &handler{pool: p}
+	h := &handler{}
+	h.SetPool(p)
 
 	// POST with an erroring body causes CloneWithoutResources to fail in
 	// every goroutine before captures[i] = crw runs.

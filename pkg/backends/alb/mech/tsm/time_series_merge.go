@@ -52,7 +52,7 @@ const (
 )
 
 type handler struct {
-	pool            pool.Pool
+	mech.PoolHolder
 	mergePaths      []string        // paths handled by the alb client that are enabled for tsmerge
 	nonmergeHandler types.Mechanism // when methodology is tsmerge, this handler is for non-mergeable paths
 	outputFormat    string          // the provider output format (e.g., "prometheus")
@@ -104,27 +104,28 @@ func (h *handler) Name() types.Name {
 	return ShortName
 }
 
+// SetPool overrides PoolHolder.SetPool to also propagate the pool to the
+// non-merge handler used for paths that bypass the TSM merge path.
 func (h *handler) SetPool(p pool.Pool) {
-	h.pool = p
-	h.nonmergeHandler.SetPool(p)
+	h.PoolHolder.SetPool(p)
+	if h.nonmergeHandler != nil {
+		h.nonmergeHandler.SetPool(p)
+	}
 }
 
 func (h *handler) StopPool() {
-	if h.pool != nil {
-		h.pool.Stop()
+	if p := h.Pool(); p != nil {
+		p.Stop()
 	}
-}
-
-func (h *handler) Pool() pool.Pool {
-	return h.pool
 }
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if h.pool == nil {
+	p := h.Pool()
+	if p == nil {
 		failures.HandleBadGateway(w, r)
 		return
 	}
-	hl := h.pool.LiveTargets() // should return a fanout list
+	hl := p.LiveTargets() // should return a fanout list
 	l := len(hl)
 	if l == 0 {
 		failures.HandleBadGateway(w, r)
@@ -457,6 +458,9 @@ func (h *handler) serveStandard(
 		statusHeader = headers.MergeResultHeaderVals(statusHeader, "engine=ALB; status=phit")
 	}
 
+	// preserve Set-Cookie from all members; headers.Merge below would otherwise collapse to winner only
+	mergeMultiValuedHeaders(w.Header(), results, winnerHeaders)
+
 	// Carry the winner's custom headers onto the outbound response BEFORE
 	// setting the aggregated X-Trickster-Result. headers.Merge makes the
 	// source value authoritative for every key it touches, so the Set
@@ -479,6 +483,25 @@ func (h *handler) serveStandard(
 	}
 	if mrf != nil {
 		mrf(w, r, accumulator, statusCode)
+	}
+}
+
+// mergeMultiValuedHeaders appends every member's Set-Cookie values onto dst
+// and clears Set-Cookie on winnerHeaders so the subsequent headers.Merge
+// (which uses Set semantics) doesn't collapse them. RFC 6265 allows multiple
+// Set-Cookie response headers; Warning (RFC 7234) is similar but no current
+// backend sets it.
+func mergeMultiValuedHeaders(dst http.Header, results []gatherResult, winnerHeaders http.Header) {
+	for _, res := range results {
+		if res.header == nil {
+			continue
+		}
+		for _, v := range res.header.Values(headers.NameSetCookie) {
+			dst.Add(headers.NameSetCookie, v)
+		}
+	}
+	if winnerHeaders != nil {
+		winnerHeaders.Del(headers.NameSetCookie)
 	}
 }
 
@@ -663,9 +686,10 @@ func (h *handler) serveWeightedAvg(
 		statusHeader = headers.MergeResultHeaderVals(statusHeader, "engine=ALB; status=phit")
 	}
 
-	// See serveStandard for the rationale — carry the winner's custom
+	// See serveStandard for the rationale -- carry the winner's custom
 	// response headers through the fanout so backend-set headers like
 	// `X-Test-Origin` survive the merge. (#970)
+	mergeMultiValuedHeaders(w.Header(), results, winnerHeaders)
 	if winnerHeaders != nil {
 		headers.Merge(w.Header(), winnerHeaders)
 	}
