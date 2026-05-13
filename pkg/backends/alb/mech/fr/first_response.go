@@ -22,6 +22,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
@@ -149,6 +150,9 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		eg.Go(func() error {
+			// recover so a single bad upstream doesn't crash the proxy; clear
+			// the slot so the fallback path doesn't serve a partial capture
+			defer mech.RecoverFanoutPanic("fr", i, func() { captures[i] = nil })
 			r2, err := request.CloneWithoutResources(r)
 			if err != nil {
 				return err

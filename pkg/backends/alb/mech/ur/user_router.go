@@ -27,7 +27,6 @@ import (
 	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 	"github.com/trickstercache/trickster/v2/pkg/errors"
 	at "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/types"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 )
 
@@ -102,7 +101,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if opts.ToCredential != "" {
 				cred = string(opts.ToCredential)
 			}
-			h.authenticator.SetCredentials(r, username, cred)
+			// strip the inbound Authorization before writing the new credential,
+			// since Sanitize unconditionally clears the header
+			h.authenticator.Sanitize(r)
+			if err := h.authenticator.SetCredentials(r, username, cred); err != nil {
+				h.handleDefault(w, r)
+				return
+			}
 		}
 		// this passes the request to a user-specific route handler, if set
 		// and the routed backend is currently considered healthy. ToStatus
@@ -131,7 +136,11 @@ func (h *Handler) SetDefaultHandler(h2 http.Handler) {
 
 func (h *Handler) handleDefault(w http.ResponseWriter, r *http.Request) {
 	if h.options.DefaultHandler == nil {
-		failures.HandleBadGateway(w, r)
+		code := h.options.NoRouteStatusCode
+		if code < 100 || code >= 600 {
+			code = http.StatusBadGateway
+		}
+		w.WriteHeader(code)
 		return
 	}
 	h.options.DefaultHandler.ServeHTTP(w, r)

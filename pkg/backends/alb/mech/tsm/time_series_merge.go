@@ -24,6 +24,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/errors"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/rr"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
@@ -303,6 +304,9 @@ func (h *handler) serveStandard(
 			continue
 		}
 		eg.Go(func() error {
+			// recover so a single bad upstream doesn't crash the proxy; mark
+			// the slot failed so partial-failure surfacing fires downstream
+			defer mech.RecoverFanoutPanic("tsm", i, func() { results[i] = gatherResult{failed: true} })
 			r2, err := request.CloneWithoutResources(r)
 			if err != nil {
 				results[i].failed = true
@@ -521,6 +525,9 @@ func (h *handler) serveWeightedAvg(
 		}
 		// Sum query for shard i — clone from the pre-rewritten base request.
 		eg.Go(func() error {
+			// recover so a single bad upstream doesn't crash the proxy; mark
+			// the slot failed so partial-failure surfacing fires downstream
+			defer mech.RecoverFanoutPanic("tsm/avg-sum", i, func() { results[i] = gatherResult{failed: true} })
 			r2, err := request.CloneWithoutResources(sumBase)
 			if err != nil {
 				return err
@@ -560,6 +567,10 @@ func (h *handler) serveWeightedAvg(
 
 		// Count query for shard i — clone from the pre-rewritten base request.
 		eg.Go(func() error {
+			// recover so a single bad upstream doesn't crash the proxy; the
+			// count side doesn't own the response envelope, so we don't touch
+			// results[i] here — the sum-side recover handles that
+			defer mech.RecoverFanoutPanic("tsm/avg-count", i, nil)
 			r2, err := request.CloneWithoutResources(countBase)
 			if err != nil {
 				return err

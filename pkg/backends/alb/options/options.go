@@ -102,7 +102,7 @@ func (o *ConcurrencyOptions) GetQueryConcurrencyLimit() int {
 	if o != nil && o.QueryConcurrencyLimit != nil {
 		limit = *o.QueryConcurrencyLimit
 	}
-	return limit * multiplier
+	return max(limit*multiplier, 0)
 }
 
 // InvalidALBOptionsError is an error type for invalid ALB Options

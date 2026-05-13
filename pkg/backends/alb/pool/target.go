@@ -44,6 +44,9 @@ func New(targets Targets, healthyFloor int) Pool {
 	p.scheduleRefresh()
 
 	for _, t := range targets {
+		if t == nil || t.hcStatus == nil {
+			continue
+		}
 		t.hcStatus.RegisterSubscriber(p.statusCh)
 	}
 	go p.listenStatusUpdates()

@@ -17,8 +17,10 @@
 package ur
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 
 	uropt "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/ur/options"
@@ -28,10 +30,13 @@ import (
 
 // mockAuth implements at.Authenticator for testing
 type mockAuth struct {
-	username string
-	cred     string
-	err      error
-	setCalls []setCred
+	username      string
+	cred          string
+	err           error
+	setErr        error
+	setCalls      []setCred
+	sanitizeCalls atomic.Int64
+	sanitizeFn    func(*http.Request)
 }
 
 type setCred struct{ user, cred string }
@@ -43,7 +48,7 @@ func (m *mockAuth) ExtractCredentials(*http.Request) (string, string, error) {
 func (m *mockAuth) SetExtractCredentialsFunc(at.ExtractCredsFunc) {}
 func (m *mockAuth) SetCredentials(r *http.Request, u, c string) error {
 	m.setCalls = append(m.setCalls, setCred{u, c})
-	return nil
+	return m.setErr
 }
 func (m *mockAuth) SetSetCredentialsFunc(at.SetCredentialsFunc)            {}
 func (m *mockAuth) SetObserveOnly(bool)                                    {}
@@ -53,7 +58,12 @@ func (m *mockAuth) AddUser(string, string) error                           { ret
 func (m *mockAuth) RemoveUser(string)                                      {}
 func (m *mockAuth) Clone() at.Authenticator                                { return m }
 func (m *mockAuth) ProxyPreserve() bool                                    { return false }
-func (m *mockAuth) Sanitize(*http.Request)                                 {}
+func (m *mockAuth) Sanitize(r *http.Request) {
+	m.sanitizeCalls.Add(1)
+	if m.sanitizeFn != nil {
+		m.sanitizeFn(r)
+	}
+}
 
 func TestHandleDefaultNilHandler(t *testing.T) {
 	// Before the fix, this would panic with a nil pointer dereference
@@ -239,6 +249,105 @@ func TestServeHTTP(t *testing.T) {
 		h.ServeHTTP(w, r)
 		if !defaultCalled {
 			t.Error("expected default handler when user has no ToHandler")
+		}
+	})
+
+	// SetCredentials returning an error must not be silently ignored. Dispatch
+	// to the mapped target with stale or partial credentials risks leaking the
+	// inbound user's credentials to the downstream backend.
+	t.Run("SetCredentials error must not dispatch", func(t *testing.T) {
+		var targetCalls atomic.Int64
+		target := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			targetCalls.Add(1)
+			w.WriteHeader(http.StatusAccepted)
+		})
+		auth := &mockAuth{setErr: errors.New("boom")}
+		h := &Handler{
+			authenticator:      auth,
+			enableReplaceCreds: true,
+			options: &uropt.Options{
+				DefaultHandler: okHandler,
+				Users: uropt.UserMappingOptionsByUser{
+					"alice": {
+						ToUser:       "admin",
+						ToCredential: "secret",
+						ToHandler:    target,
+					},
+				},
+			},
+		}
+		w := httptest.NewRecorder()
+		r, _ := http.NewRequest("GET", "http://example.com/", nil)
+		r = request.SetResources(r, &request.Resources{
+			AuthResult: &at.AuthResult{Username: "alice", Status: at.AuthSuccess},
+		})
+		h.ServeHTTP(w, r)
+
+		if targetCalls.Load() != 0 {
+			t.Errorf("target handler dispatched despite SetCredentials error; got %d calls",
+				targetCalls.Load())
+		}
+	})
+
+	// NoRouteStatusCode must be honored even when no DefaultBackend is configured
+	// and no DefaultHandler has been wired up by the client startup path.
+	t.Run("NoRouteStatusCode honored without DefaultHandler", func(t *testing.T) {
+		h := &Handler{
+			options: &uropt.Options{
+				NoRouteStatusCode: http.StatusNotFound,
+			},
+		}
+		w := httptest.NewRecorder()
+		r, _ := http.NewRequest("GET", "http://example.com/", nil)
+		h.ServeHTTP(w, r)
+		if w.Code != http.StatusNotFound {
+			t.Errorf("expected %d (NoRouteStatusCode) got %d",
+				http.StatusNotFound, w.Code)
+		}
+	})
+
+	// After credential remap, the downstream backend must not see the original
+	// inbound Authorization header alongside the new credential. The router
+	// should call the authenticator's Sanitize on the downstream request.
+	t.Run("inbound Authorization sanitized after remap", func(t *testing.T) {
+		var observedAuthz string
+		target := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			observedAuthz = r.Header.Get("Authorization")
+			w.WriteHeader(http.StatusOK)
+		})
+		auth := &mockAuth{
+			sanitizeFn: func(r *http.Request) {
+				r.Header.Del("Authorization")
+			},
+		}
+		h := &Handler{
+			authenticator:      auth,
+			enableReplaceCreds: true,
+			options: &uropt.Options{
+				DefaultHandler: okHandler,
+				Users: uropt.UserMappingOptionsByUser{
+					"alice": {
+						ToUser:       "admin",
+						ToCredential: "secret",
+						ToHandler:    target,
+					},
+				},
+			},
+		}
+		w := httptest.NewRecorder()
+		r, _ := http.NewRequest("GET", "http://example.com/", nil)
+		// inbound: alice's original creds
+		r.Header.Set("Authorization", "Basic YWxpY2U6b2xkcHc=") // alice:oldpw
+		r = request.SetResources(r, &request.Resources{
+			AuthResult: &at.AuthResult{Username: "alice", Status: at.AuthSuccess},
+		})
+		h.ServeHTTP(w, r)
+
+		if auth.sanitizeCalls.Load() == 0 {
+			t.Error("expected Sanitize to be called on downstream request after remap")
+		}
+		if observedAuthz == "Basic YWxpY2U6b2xkcHc=" {
+			t.Errorf("downstream received original inbound Authorization: %q", observedAuthz)
 		}
 	})
 }

@@ -77,6 +77,9 @@ func (p *pool) RefreshHealthy() {
 
 	var k int
 	for _, t := range p.targets {
+		if t == nil || t.hcStatus == nil {
+			continue
+		}
 		if int(t.hcStatus.Get()) >= p.healthyFloor {
 			hh[k] = t.handler
 			ht[k] = t
