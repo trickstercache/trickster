@@ -212,6 +212,41 @@ func TestSetRequestValues_SyncsRequestBodyCache(t *testing.T) {
 	if s := gotVals.Get("start"); s != "1000" {
 		t.Errorf("RequestBody start param: got %q, want %q", s, "1000")
 	}
+
+	// A later GetRequestValues call must not reuse the stale PostForm parsed
+	// before SetRequestValues rewrote the body.
+	gotParsed, _, _ := GetRequestValues(r)
+	if q := gotParsed.Get("query"); q != "sum(up)" {
+		t.Errorf("reparsed query param: got %q, want %q", q, "sum(up)")
+	}
+}
+
+func TestSetRequestValues_ClearsParsedFormCache(t *testing.T) {
+	const origBody = "query=avg%28up%29&start=1000&end=2000&step=15"
+	r, _ := http.NewRequest(http.MethodPost, "http://example.com/api/v1/query_range",
+		io.NopCloser(bytes.NewBufferString(origBody)))
+	r.Header.Set(headers.NameContentType, headers.ValueXFormURLEncoded)
+	r = request.SetResources(r, &request.Resources{RequestBody: []byte(origBody)})
+
+	v, _, _ := GetRequestValues(r)
+	if q := v.Get("query"); q != "avg(up)" {
+		t.Fatalf("initial query param: got %q, want %q", q, "avg(up)")
+	}
+	if r.PostForm == nil {
+		t.Fatal("expected form cache to be populated")
+	}
+
+	v.Set("query", "count(up)")
+	SetRequestValues(r, v)
+	if r.Form != nil || r.PostForm != nil || r.MultipartForm != nil {
+		t.Fatalf("expected parsed form caches cleared, got Form=%v PostForm=%v MultipartForm=%v",
+			r.Form, r.PostForm, r.MultipartForm)
+	}
+
+	got, _, _ := GetRequestValues(r)
+	if q := got.Get("query"); q != "count(up)" {
+		t.Errorf("reparsed query param: got %q, want %q", q, "count(up)")
+	}
 }
 
 // TestSetRequestValues_POSTJSONURLSync verifies that SetRequestValues for POST

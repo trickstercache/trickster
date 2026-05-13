@@ -25,6 +25,7 @@ import (
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 )
@@ -152,6 +153,13 @@ func TestRewriteForWeightedAvgPOST(t *testing.T) {
 			}
 			if s := gotCache.Get("start"); s != "1000" {
 				t.Errorf("rsc.RequestBody start param: got %q, want %q", s, "1000")
+			}
+
+			// Verify subsequent provider parsing sees the rewritten body, not a
+			// stale PostForm cache populated when the original avg body was read.
+			gotParsed, _, _ := params.GetRequestValues(tc.req)
+			if q := gotParsed.Get("query"); q != tc.wantQ {
+				t.Errorf("reparsed query param: got %q, want %q", q, tc.wantQ)
 			}
 		})
 	}
