@@ -140,7 +140,12 @@ func SetRequestValues(r *http.Request, v url.Values) {
 		if r.Body != nil {
 			r.Body.Close()
 		}
-		r.ContentLength = int64(len(s))
-		r.Body = io.NopCloser(strings.NewReader(s))
+		b := []byte(s)
+		r.ContentLength = int64(len(b))
+		r.Body = io.NopCloser(bytes.NewReader(b))
+		// keep the resource body cache in sync
+		if rsc := request.GetResources(r); rsc != nil {
+			rsc.RequestBody = b
+		}
 	}
 }
