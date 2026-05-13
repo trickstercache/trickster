@@ -17,10 +17,14 @@
 package prometheus
 
 import (
+	"maps"
 	"net/http"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus/promql"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 )
 
@@ -65,19 +69,32 @@ func (c *Client) ClassifyMerge(query string) (strategy int, needsDualQuery bool,
 // replaced by "sum" and one by "count" — with the rewritten expression injected
 // into the Prometheus "query" parameter. Both GET (query string) and POST
 // (request body) encodings are handled transparently by params.SetRequestValues.
-func (c *Client) RewriteForWeightedAvg(r *http.Request, query string) (sumReq, countReq *http.Request) {
+func (c *Client) RewriteForWeightedAvg(r *http.Request, query string) (*http.Request, *http.Request) {
+
+	// Read the original params from r
+	qp, _, _ := params.GetRequestValues(r)
+
+	// construct the sumReq
 	sumQuery := promql.ReplaceOuterAggregator(query, "avg", "sum")
+	sumReq, err := request.Clone(r)
+	if err != nil {
+		logger.Error("failed to clone avg aggregator sumReq",
+			logging.Pairs{"error": err})
+	}
+	sumQP := maps.Clone(qp)
+	sumQP.Set(promQueryParam, sumQuery)
+	params.SetRequestValues(sumReq, sumQP)
+
+	// construct the countReq
 	countQuery := promql.ReplaceOuterAggregator(query, "avg", "count")
-
-	sumReq = r.Clone(r.Context())
-	qp, _, _ := params.GetRequestValues(sumReq)
-	qp.Set(promQueryParam, sumQuery)
-	params.SetRequestValues(sumReq, qp)
-
-	countReq = r.Clone(r.Context())
-	qp, _, _ = params.GetRequestValues(countReq)
-	qp.Set(promQueryParam, countQuery)
-	params.SetRequestValues(countReq, qp)
+	countReq, err := request.Clone(r)
+	if err != nil {
+		logger.Error("failed to clone avg aggregator countReq",
+			logging.Pairs{"error": err})
+	}
+	countQP := maps.Clone(qp)
+	countQP.Set(promQueryParam, countQuery)
+	params.SetRequestValues(countReq, countQP)
 
 	return sumReq, countReq
 }
