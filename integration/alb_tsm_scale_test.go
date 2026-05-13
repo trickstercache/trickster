@@ -150,6 +150,22 @@ func TestALB_TSM_Scale(t *testing.T) {
 		t.Logf("%d bytes, %s", len(body), hdr.Get("X-Trickster-Result"))
 	})
 
+	t.Run("bad_encoding_advertised_as_gzip", func(t *testing.T) {
+		// Upstream claims gzip but sends plaintext; DecompressResponseBody
+		// fails. The merge surfaces the partial-failure marker but the
+		// remaining 49 backends still produce a successful merged response.
+		resetAll()
+		fakes[0].setBehavior(behaviorBadEncoding())
+		pr, hdr := queryTricksterProm(t, listenAddr, backendName, "/api/v1/query_range", rangeParams())
+		require.Equal(t, "success", pr.Status)
+		var qd promQueryData
+		require.NoError(t, json.Unmarshal(pr.Data, &qd))
+		var series []json.RawMessage
+		require.NoError(t, json.Unmarshal(qd.Result, &series))
+		require.NotEmpty(t, series)
+		t.Logf("%d series, %s", len(series), hdr.Get("X-Trickster-Result"))
+	})
+
 	t.Run("truncating_upstream_does_not_poison_cache", func(t *testing.T) {
 		resetAll()
 		params := rangeParams()
@@ -367,6 +383,49 @@ func TestALB_TSM_Scale(t *testing.T) {
 		}
 	})
 
+	t.Run("post_concurrent_clients_safe", func(t *testing.T) {
+		// POST query_range fans out N clones of the same parent request. The
+		// body must be re-readable per clone or the upstreams see truncated
+		// requests. Race the request body cache under -race to catch any
+		// unsynchronized r.Body mutation in the clone path.
+		resetAll()
+		form := rangeParams().Encode()
+		u := "http://" + listenAddr + "/" + backendName + "/api/v1/query_range"
+		const clients = 25
+		var wg sync.WaitGroup
+		errCh := make(chan error, clients)
+		for range clients {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				resp, err := http.Post(u, "application/x-www-form-urlencoded", strings.NewReader(form))
+				if err != nil {
+					errCh <- err
+					return
+				}
+				defer resp.Body.Close()
+				if resp.StatusCode != http.StatusOK {
+					errCh <- fmt.Errorf("status %d", resp.StatusCode)
+					return
+				}
+				body, _ := io.ReadAll(resp.Body)
+				var pr promResponse
+				if err := json.Unmarshal(body, &pr); err != nil {
+					errCh <- fmt.Errorf("invalid json: %w", err)
+					return
+				}
+				if pr.Status != "success" {
+					errCh <- fmt.Errorf("non-success: %s", pr.Status)
+				}
+			}()
+		}
+		wg.Wait()
+		close(errCh)
+		for err := range errCh {
+			t.Fatal(err)
+		}
+	})
+
 	t.Run("error_body_passthrough", func(t *testing.T) {
 		resetAll()
 		for _, f := range fakes {
@@ -528,6 +587,7 @@ func behaviorBadShape() *promBehavior              { return &promBehavior{mode: 
 func behaviorTruncate() *promBehavior              { return &promBehavior{mode: "truncate"} }
 func behaviorSlow(d time.Duration) *promBehavior   { return &promBehavior{mode: "ok", delay: d} }
 func behaviorErrJSON() *promBehavior               { return &promBehavior{mode: "errjson"} }
+func behaviorBadEncoding() *promBehavior           { return &promBehavior{mode: "badencoding"} }
 func behaviorLabelValuesKB(kb int) *promBehavior {
 	return &promBehavior{mode: "labelvalues", seriesKB: kb}
 }
@@ -586,6 +646,13 @@ func (f *fakeProm) handleRange(w http.ResponseWriter, _ *http.Request) {
 		if err == nil {
 			_ = conn.Close()
 		}
+		return
+	case "badencoding":
+		// Advertise gzip but send plaintext. The TSM gather path's
+		// DecompressResponseBody will fail, surfacing as a partial-failure.
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Encoding", "gzip")
+		_, _ = w.Write(buildMatrixBody(f.label))
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

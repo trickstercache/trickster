@@ -1,0 +1,33 @@
+/*
+ * Copyright 2018 The Trickster Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package tsm
+
+import (
+	"testing"
+
+	"go.uber.org/goleak"
+)
+
+// Pool-side goroutines from albpool.New are ignored; they predate this file.
+// Mechanism-side leaks (TSM fanout that ignores ctx, panic recovery that
+// doesn't unwind) will still surface here.
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m,
+		goleak.IgnoreAnyFunction("github.com/trickstercache/trickster/v2/pkg/backends/alb/pool.(*pool).checkHealth"),
+		goleak.IgnoreAnyFunction("github.com/trickstercache/trickster/v2/pkg/backends/alb/pool.(*pool).listenStatusUpdates"),
+	)
+}

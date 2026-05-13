@@ -1,0 +1,36 @@
+/*
+ * Copyright 2018 The Trickster Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package fr
+
+import (
+	"testing"
+
+	"go.uber.org/goleak"
+)
+
+// FR fanout spawns errgroup workers per request plus a detached eg.Wait()
+// drainer. A regression that fails to cancel on client disconnect would leak;
+// goleak surfaces it. The pool-side goroutines (checkHealth /
+// listenStatusUpdates) are ignored because the existing test helpers
+// (albpool.New) don't expose a Stop() call site; those leaks are pre-existing
+// test hygiene, not mechanism bugs.
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m,
+		goleak.IgnoreAnyFunction("github.com/trickstercache/trickster/v2/pkg/backends/alb/pool.(*pool).checkHealth"),
+		goleak.IgnoreAnyFunction("github.com/trickstercache/trickster/v2/pkg/backends/alb/pool.(*pool).listenStatusUpdates"),
+	)
+}
