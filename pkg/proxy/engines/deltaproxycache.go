@@ -248,8 +248,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 	}
 
 	client.SetExtent(pr.upstreamRequest, trq, &trq.Extent)
-	// name prefix isolates per-backend keys when cache_name is shared
-	key := o.Name + "." + o.CacheKeyPrefix + ".dpc." + pr.DeriveCacheKey("")
+	key := ComposeCacheKey(o.Name, o.CacheKeyPrefix, "dpc", pr.DeriveCacheKey(""))
 
 	coReq := GetRequestCachingPolicy(r.Header)
 

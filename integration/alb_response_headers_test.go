@@ -183,11 +183,7 @@ backends:
 	t.Logf("Set-Cookie values observed in merged TSM response: %v", cookies)
 }
 
-// HX3: TSM merge writes raw merged bytes via mrf but also propagates the
-// winner's headers via headers.Merge. StripMergeHeaders does not include
-// Content-Encoding (see pkg/proxy/headers/forwarding.go MergeRemoveHeaders).
-// If the winner advertised Content-Encoding: gzip, the outbound headers
-// claim gzip but the body is the raw merged dataset.
+// HX3: TSM headers.Merge propagates the winner's Content-Encoding but mrf merges raw bytes -- mismatch if the winner was gzipped.
 func TestALBResponseHeadersTSMContentEncoding(t *testing.T) {
 	gzipBody := func(s string) []byte {
 		var buf bytes.Buffer

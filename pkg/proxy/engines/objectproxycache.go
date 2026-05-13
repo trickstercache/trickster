@@ -420,8 +420,7 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 
 	pr.cachingPolicy = GetRequestCachingPolicy(pr.Header)
 
-	// name prefix isolates per-backend keys when cache_name is shared
-	pr.key = o.Name + "." + o.CacheKeyPrefix + ".opc." + pr.DeriveCacheKey("")
+	pr.key = ComposeCacheKey(o.Name, o.CacheKeyPrefix, "opc", pr.DeriveCacheKey(""))
 
 	// if a PCF entry exists, or the client requested no-cache for this object, proxy out to it
 	pcfResult, pcfExists := reqs.Load(pr.key)

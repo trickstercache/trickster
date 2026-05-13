@@ -281,14 +281,12 @@ backends:
 			resp, body = r, b
 		}, 5*time.Second, 100*time.Millisecond, "alb pool never fanned out the sum query")
 
-		// confirm the upstreams actually saw both rewrites
 		require.Greater(t, sumHits.Load(), int64(0), "expected sum() rewrite to reach upstreams")
 		require.Greater(t, countHits.Load(), int64(0), "expected count() rewrite to reach upstreams")
 
 		t.Logf("status=%d sumHits=%d countHits=%d otherHits=%d body=%s",
 			resp.StatusCode, sumHits.Load(), countHits.Load(), otherHits.Load(), string(body))
 
-		// hypothesis: response is HTTP 200 with the raw sum and no warning
 		var pr promResponse
 		if err := json.Unmarshal(body, &pr); err == nil {
 			var qd promQueryData
@@ -307,8 +305,6 @@ backends:
 			}
 		}
 
-		// pass condition: either a non-2xx, or a partial-failure marker, or a
-		// warning indicating the count fanout failed
 		nonOK := resp.StatusCode >= 400
 		hasWarn := strings.Contains(string(body), `"warnings"`)
 		result := parseTricksterResult(resp.Header.Get("X-Trickster-Result"))
@@ -437,10 +433,7 @@ backends:
 		go startTrickster(t, ctx, expectedStartError{}, "-config", cfgPath)
 		waitForTrickster(t, fmt.Sprintf("127.0.0.1:%d", metricsPort))
 
-		// Poll until at least one OK and one broken backend are both live
-		// (healthcheck registration is async and races test timing under
-		// -race). The test asserts the partial-hit marker that arises from
-		// mixed 2xx+5xx fanout, so we need both populations represented.
+		// Poll until mixed 2xx+5xx fanout occurs; healthcheck registration is async.
 		var (
 			resp *http.Response
 			body []byte

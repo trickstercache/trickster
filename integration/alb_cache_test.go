@@ -378,11 +378,6 @@ backends:
 	})
 
 	t.Run("V3 tsm phit marker for mixed cache hit/miss across members", func(t *testing.T) {
-		// Characterization: this currently relies on whichever per-member
-		// X-Trickster-Result the prom backend emits being aggregated by the
-		// TSM merge. The phit force at tsm.go:414 only triggers on mixed
-		// 2xx+non-2xx; mixed hit/miss across members is not specifically
-		// surfaced. This subtest documents the observed behavior.
 		var m1Hits, m2Hits atomic.Int64
 		mk := func(hits *atomic.Int64) *httptest.Server {
 			return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -493,9 +488,7 @@ backends:
 		u := fmt.Sprintf("http://127.0.0.1:%d/alb-tsm-mixed-cache/api/v1/query_range?%s",
 			frontPort, params.Encode())
 
-		// Warmup: poll until both upstream counters reach >=1 so we know both
-		// members were live and queried (TSM may otherwise ship to a single
-		// healthy target and leave the other miss-state ambiguous).
+		// Warmup until both members are queried; else TSM may ship to one and leave the miss-state ambiguous.
 		require.EventuallyWithT(t, func(c *assert.CollectT) {
 			r, err := client.Get(u)
 			if !assert.NoError(c, err) {
@@ -510,13 +503,6 @@ backends:
 				"warmup waiting for prom-c2 to receive a request")
 		}, 10*time.Second, 250*time.Millisecond, "warmup never reached both members")
 
-		// Purge mem2 so that prom-c2 misses on the next request while prom-c1 hits.
-		// Use the management port to invalidate via cache flush if exposed; if no
-		// management API is available for selective purge, fall back to issuing the
-		// same request directly to prom-c2 with a header-driven cache bypass.
-		// Easier and self-contained: blow away c2's cache by sending a request
-		// directly through prom-c2 with the no-cache directive so its cached
-		// entry for the warmup key is removed.
 		bypass := fmt.Sprintf("http://127.0.0.1:%d/prom-c2/api/v1/query_range?%s",
 			frontPort, params.Encode())
 		req, _ := http.NewRequest("GET", bypass, nil)
@@ -526,8 +512,6 @@ backends:
 		_, _ = io.ReadAll(r2.Body)
 		r2.Body.Close()
 
-		// Now hit the ALB again. Expect prom-c1 to be a cache hit and prom-c2
-		// (whose cache was just invalidated by no-cache) to be a miss.
 		resp, err := client.Get(u)
 		require.NoError(t, err)
 		body, _ := io.ReadAll(resp.Body)
@@ -539,11 +523,6 @@ backends:
 
 		require.Equal(t, http.StatusOK, resp.StatusCode)
 
-		// Hypothesis: when one member is a hit and another a miss, the merged
-		// X-Trickster-Result should reflect the partial-cache state. Today the
-		// phit force is gated on mixed 2xx+non-2xx, so this likely will not
-		// surface phit. This assertion characterizes whether the marker is
-		// reflected; if the assertion fails, V3 has surfaced the gap.
 		assert.Containsf(t, raw, "phit",
 			"mixed cache hit/miss across pool members did not surface phit in X-Trickster-Result=%q",
 			raw)

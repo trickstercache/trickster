@@ -135,30 +135,28 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Write the response with the newest Last-Modified
 	if newestIdx >= 0 && captures[newestIdx] != nil {
-		crw := captures[newestIdx]
-		headers.Merge(w.Header(), crw.Header())
-		w.WriteHeader(crw.StatusCode())
-		w.Write(crw.Body())
+		writeCapture(w, captures[newestIdx])
 		return
 	}
 	// No valid Last-Modified found; prefer a 2xx capture before falling back
 	// to the first non-nil response.
 	for _, crw := range captures {
 		if crw != nil && crw.StatusCode() >= 200 && crw.StatusCode() < 300 {
-			headers.Merge(w.Header(), crw.Header())
-			w.WriteHeader(crw.StatusCode())
-			w.Write(crw.Body())
+			writeCapture(w, crw)
 			return
 		}
 	}
 	for _, crw := range captures {
 		if crw != nil {
-			headers.Merge(w.Header(), crw.Header())
-			w.WriteHeader(crw.StatusCode())
-			w.Write(crw.Body())
+			writeCapture(w, crw)
 			break
 		}
 	}
+}
+
+func writeCapture(w http.ResponseWriter, crw *capture.CaptureResponseWriter) {
+	headers.Merge(w.Header(), crw.Header())
+	w.WriteHeader(crw.StatusCode())
+	w.Write(crw.Body())
 }
