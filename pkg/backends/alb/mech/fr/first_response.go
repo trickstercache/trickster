@@ -103,7 +103,21 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		failures.HandleBadGateway(w, r)
 		return
 	}
-	hl := h.pool.Healthy() // should return a fanout list
+	hl := h.pool.HealthyTargets() // should return a fanout list
+	floor := h.pool.HealthyFloor()
+	// Re-check status at dispatch time and drop any target that has flipped
+	// to failing since the snapshot was captured.
+	live := make(pool.Targets, 0, len(hl))
+	for _, t := range hl {
+		if t == nil {
+			continue
+		}
+		if int(t.HealthStatus().Get()) < floor {
+			continue
+		}
+		live = append(live, t)
+	}
+	hl = live
 	l := len(hl)
 	if l == 0 {
 		failures.HandleBadGateway(w, r)
@@ -111,7 +125,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	// just proxy 1:1 if no folds in the fan
 	if l == 1 {
-		hl[0].ServeHTTP(w, r)
+		hl[0].Handler().ServeHTTP(w, r)
 		return
 	}
 	// otherwise iterate the fanout
@@ -157,7 +171,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			r2 = request.SetResources(r2, &request.Resources{Cancelable: true})
 			crw := capture.NewCaptureResponseWriter()
 			captures[i] = crw
-			hl[i].ServeHTTP(crw, r2)
+			hl[i].Handler().ServeHTTP(crw, r2)
 			statusCode := crw.StatusCode()
 			custom := h.fgr && len(h.fgrCodes) > 0
 			isGood := custom && h.fgrCodes.Contains(statusCode)

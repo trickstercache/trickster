@@ -21,6 +21,8 @@ import (
 	"net/http"
 	"sync"
 	"sync/atomic"
+
+	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 )
 
 // Pool defines the interface for a load balancer pool
@@ -35,6 +37,10 @@ type Pool interface {
 	Stop()
 	// RefreshHealthy forces a refresh of the pool's healthy handlers list
 	RefreshHealthy()
+	// HealthyFloor returns the minimum hcStatus value a target must have to
+	// be considered healthy. Used by mechanisms to re-check a target's status
+	// at dispatch time, in case the snapshot is stale.
+	HealthyFloor() int
 }
 
 // pool implements Pool
@@ -97,9 +103,20 @@ func (p *pool) Healthy() []http.Handler {
 	return nil
 }
 
+func (p *pool) HealthyFloor() int {
+	return p.healthyFloor
+}
+
 func (p *pool) SetHealthy(h []http.Handler) {
 	p.healthyHandlers.Store(&h)
+	// Materialize parallel Targets each backed by a synthetic Passing status
+	// so dispatch-time re-checks against HealthyFloor won't reject them.
 	t := make(Targets, len(h))
+	for i, hh := range h {
+		st := &healthcheck.Status{}
+		st.Set(healthcheck.StatusPassing)
+		t[i] = NewTarget(hh, st, nil)
+	}
 	p.healthyTargets.Store(&t)
 }
 

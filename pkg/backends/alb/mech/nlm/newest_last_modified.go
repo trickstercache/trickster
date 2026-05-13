@@ -80,7 +80,19 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		failures.HandleBadGateway(w, r)
 		return
 	}
-	hl := h.pool.Healthy() // should return a fanout list
+	hl := h.pool.HealthyTargets() // should return a fanout list
+	floor := h.pool.HealthyFloor()
+	live := make(pool.Targets, 0, len(hl))
+	for _, t := range hl {
+		if t == nil {
+			continue
+		}
+		if int(t.HealthStatus().Get()) < floor {
+			continue
+		}
+		live = append(live, t)
+	}
+	hl = live
 	l := len(hl)
 	if l == 0 {
 		failures.HandleBadGateway(w, r)
@@ -88,7 +100,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	// just proxy 1:1 if no folds in the fan
 	if l == 1 {
-		hl[0].ServeHTTP(w, r)
+		hl[0].Handler().ServeHTTP(w, r)
 		return
 	}
 
@@ -115,7 +127,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			r2 = r2.WithContext(bareCtx)
 			crw := capture.NewCaptureResponseWriter()
 			captures[i] = crw
-			hl[i].ServeHTTP(crw, r2)
+			hl[i].Handler().ServeHTTP(crw, r2)
 
 			if lmStr := crw.Header().Get(headers.NameLastModified); lmStr != "" {
 				if lm, err := time.Parse(time.RFC1123, lmStr); err == nil {

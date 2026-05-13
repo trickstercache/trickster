@@ -179,6 +179,15 @@ func (o *Options) Overlay(custom *Options) {
 	if custom.Interval > 0 {
 		o.Interval = custom.Interval
 	}
+	if custom.FailureThreshold > 0 {
+		o.FailureThreshold = custom.FailureThreshold
+	}
+	if custom.RecoveryThreshold > 0 {
+		o.RecoveryThreshold = custom.RecoveryThreshold
+	}
+	if custom.Timeout > 0 {
+		o.Timeout = custom.Timeout
+	}
 }
 
 // URL returns a URL from the Options
