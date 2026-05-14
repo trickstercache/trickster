@@ -31,3 +31,19 @@ for verification purposes.
 You can stop the developer environment by running `make developer-stop`. To
 delete the developer environment, run `make developer-delete` which will destroy
 all data.
+
+## Included backends
+
+The Compose file brings up Prometheus, InfluxDB 2.x, InfluxDB 3.x Core (on
+`:8181`, seeded by the telegraf container) and ClickHouse alongside Grafana.
+Trickster's dev config registers a matching backend for each, so Grafana can
+query the upstream directly or via Trickster for a side-by-side comparison.
+
+For InfluxDB 3.x, Trickster also exposes an Apache Arrow Flight SQL (gRPC)
+proxy on `:8485` (`flight_port` in the backend config). The
+`Trickster InfluxDB 3` Grafana dashboard exercises both the HTTP InfluxQL
+endpoint and Flight SQL via the InfluxDB datasource in SQL mode, with direct
+and Trickster-cached targets on the same panel. An equivalent
+`ClickHouse (Grafana Plugin)` dashboard is included for ClickHouse. The
+`verify-influxdb3.sh` script runs a quick end-to-end check of the v3 HTTP
+and Flight SQL paths through Trickster.

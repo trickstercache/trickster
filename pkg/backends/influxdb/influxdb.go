@@ -19,11 +19,16 @@ package influxdb
 
 import (
 	"net/http"
+	"net/url"
+	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
+	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/flight"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 )
 
 var _ backends.TimeseriesBackend = (*Client)(nil)
@@ -37,14 +42,79 @@ var _ types.NewBackendClientFunc = NewClient
 
 // NewClient returns a new Client Instance
 func NewClient(name string, o *bo.Options, router http.Handler,
-	cache cache.Cache, _ backends.Backends, _ types.Lookup,
+	c cache.Cache, _ backends.Backends, _ types.Lookup,
 ) (backends.Backend, error) {
 	if o != nil {
 		o.FastForwardDisable = true
 	}
-	c := &Client{}
-	b, err := backends.NewTimeseriesBackend(name, o, c.RegisterHandlers,
-		router, cache, NewModeler())
-	c.TimeseriesBackend = b
-	return c, err
+	client := &Client{}
+	b, err := backends.NewTimeseriesBackend(name, o, client.RegisterHandlers,
+		router, c, NewModeler())
+	client.TimeseriesBackend = b
+	if err == nil && o != nil && o.FlightPort > 0 {
+		if ferr := startFlightListener(name, o, c); ferr != nil {
+			logger.Error("flight sql listener startup failed",
+				logging.Pairs{"backend": name, "port": o.FlightPort, "detail": ferr})
+		}
+	}
+	return client, err
+}
+
+// startFlightListener launches a Flight SQL server on o.FlightPort that
+// proxies queries to the backend's upstream Flight SQL endpoint. The listener
+// is registered in the flight package's registry; the daemon drains it on
+// SIGTERM via flight.ShutdownAll, and calls with a reused Name replace the
+// existing listener (supporting config reload).
+func startFlightListener(name string, o *bo.Options, c cache.Cache) error {
+	upstream := o.FlightUpstreamAddress
+	if upstream == "" {
+		u, err := url.Parse(o.OriginURL)
+		if err != nil {
+			return err
+		}
+		upstream = u.Host
+	}
+	fc, err := flight.NewFlightSQLClient(flight.UpstreamConfig{
+		Address: upstream,
+	})
+	if err != nil {
+		return err
+	}
+	srv := flight.NewServer(fc, newFlightCache(c))
+	lis, err := flight.Start(flight.ListenerConfig{
+		Address: "0.0.0.0",
+		Port:    o.FlightPort,
+		Name:    name,
+	}, srv)
+	if err != nil {
+		return err
+	}
+	logger.Info("flight sql listener started",
+		logging.Pairs{"backend": name, "address": lis.Addr().String()})
+	return nil
+}
+
+// flightCacheAdapter adapts a Trickster cache.Cache to the flight.Cache
+// interface (Get/Set vs Retrieve/Store). Without this, Flight SQL requests
+// pass through to upstream unconditionally and the caching path advertised
+// in docs/influxdb.md never engages.
+type flightCacheAdapter struct{ c cache.Cache }
+
+func newFlightCache(c cache.Cache) flight.Cache {
+	if c == nil {
+		return nil
+	}
+	return &flightCacheAdapter{c: c}
+}
+
+func (a *flightCacheAdapter) Get(key string) ([]byte, bool) {
+	b, _, err := a.c.Retrieve(key)
+	if err != nil || len(b) == 0 {
+		return nil, false
+	}
+	return b, true
+}
+
+func (a *flightCacheAdapter) Set(key string, data []byte, ttl time.Duration) {
+	_ = a.c.Store(key, data, ttl)
 }

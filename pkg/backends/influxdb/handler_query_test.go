@@ -17,6 +17,7 @@
 package influxdb
 
 import (
+	"bytes"
 	"io"
 	"net/http"
 	"net/url"
@@ -109,6 +110,78 @@ func TestQueryHandlerNotSelect(t *testing.T) {
 
 	if string(bodyBytes) != "{}" {
 		t.Errorf("expected '{}' got %s.", bodyBytes)
+	}
+}
+
+func TestIsV3SelectQuery(t *testing.T) {
+	sql := "SELECT * FROM cpu WHERE time >= 1704067200 AND time < 1704070800"
+	cases := []struct {
+		name        string
+		method      string
+		rawQuery    string
+		contentType string
+		body        string
+		want        bool
+	}{
+		{
+			name:     "GET with q param",
+			method:   http.MethodGet,
+			rawQuery: url.Values{"q": {sql}}.Encode(),
+			want:     true,
+		},
+		{
+			name:        "POST JSON body with q field",
+			method:      http.MethodPost,
+			contentType: "application/json",
+			body:        `{"q":"` + sql + `"}`,
+			want:        true,
+		},
+		{
+			name:        "POST form-urlencoded body",
+			method:      http.MethodPost,
+			contentType: "application/x-www-form-urlencoded",
+			body:        url.Values{"q": {sql}}.Encode(),
+			want:        true,
+		},
+		{
+			name:   "POST raw SQL body",
+			method: http.MethodPost,
+			body:   sql,
+			want:   true,
+		},
+		{
+			name:   "POST non-select raw body",
+			method: http.MethodPost,
+			body:   "CREATE TABLE foo (id INT)",
+			want:   false,
+		},
+		{
+			name:        "POST JSON non-select",
+			method:      http.MethodPost,
+			contentType: "application/json",
+			body:        `{"q":"DROP TABLE foo"}`,
+			want:        false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &http.Request{
+				Method: tc.method,
+				URL:    &url.URL{Path: "/api/v3/query_sql", RawQuery: tc.rawQuery},
+				Header: http.Header{},
+			}
+			if tc.body != "" {
+				r.Body = io.NopCloser(bytes.NewReader([]byte(tc.body)))
+				r.ContentLength = int64(len(tc.body))
+			}
+			if tc.contentType != "" {
+				r.Header.Set("Content-Type", tc.contentType)
+			}
+			got := isV3SelectQuery(r)
+			if got != tc.want {
+				t.Fatalf("got %v want %v", got, tc.want)
+			}
+		})
 	}
 }
 

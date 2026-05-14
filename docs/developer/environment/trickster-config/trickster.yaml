@@ -117,7 +117,7 @@ backends:
     cache_name: redis
   flux1:
     provider: influxdb
-    origin_url: 'http://127.0.0.1:8186/'
+    origin_url: 'http://127.0.0.1:8086/'
     cache_name: mem1
     backfill_tolerance: 30s
     timeseries_retention_factor: 5184000
@@ -127,6 +127,14 @@ backends:
     cache_name: mem1
     backfill_tolerance: 30s
     timeseries_retention_factor: 5184000
+  influx3:
+    provider: influxdb
+    origin_url: 'http://127.0.0.1:8181/'
+    cache_name: mem1
+    backfill_tolerance: 30s
+    timeseries_retention_factor: 5184000
+    flight_port: 8485
+    flight_upstream_address: '127.0.0.1:8181'
   sim1:
     provider: prometheus
     origin_url: 'http://127.0.0.1:8482/prometheus'

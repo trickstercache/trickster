@@ -197,6 +197,74 @@ datasources:
   secureJsonData:
     token: trickster-dev-token
 
+# InfluxDB 3.x (SQL via HTTP — not used by Grafana, here for parity)
+- name: "1: InfluxDB3 | Direct | SQL"
+  type: influxdb
+  access: proxy
+  orgId: 1
+  uid: ds_infl3_direct_sql
+  url: http://influxdb3:8181
+  editable: true
+  jsonData:
+    version: SQL
+    dbName: trickster
+
+- name: "2: InfluxDB3 | Trickster | SQL"
+  type: influxdb
+  access: proxy
+  orgId: 1
+  uid: ds_infl3_trk_sql
+  url: http://host.docker.internal:8480/influx3
+  editable: true
+  jsonData:
+    version: SQL
+    dbName: trickster
+
+- name: "3: InfluxDB3 | Direct | InfluxQL"
+  type: influxdb
+  access: proxy
+  orgId: 1
+  uid: ds_infl3_direct_ql
+  url: http://influxdb3:8181
+  editable: true
+  jsonData:
+    dbName: trickster
+
+- name: "4: InfluxDB3 | Trickster | InfluxQL"
+  type: influxdb
+  access: proxy
+  orgId: 1
+  uid: ds_infl3_trk_ql
+  url: http://host.docker.internal:8480/influx3
+  editable: true
+  jsonData:
+    dbName: trickster
+
+# InfluxDB 3.x via Flight SQL (gRPC) — Trickster proxies on port 8485
+- name: "5: InfluxDB3 | Trickster | SQL (Flight)"
+  type: influxdb
+  access: proxy
+  orgId: 1
+  uid: ds_infl3_trk_flight
+  url: http://host.docker.internal:8485
+  editable: true
+  jsonData:
+    version: SQL
+    dbName: trickster
+    insecureGrpc: true
+
+- name: "6: InfluxDB3 | Direct | SQL (Flight)"
+  type: influxdb
+  access: proxy
+  orgId: 1
+  uid: ds_infl3_direct_flight
+  url: http://influxdb3:8181
+  editable: true
+  jsonData:
+    version: SQL
+    dbName: trickster
+    insecureGrpc: true
+
 # ClickHouse
 - name: clickhouse-direct
   type: vertamedia-clickhouse-datasource
@@ -231,3 +299,29 @@ datasources:
     username: default
     password: ""
     usePOST: true
+
+# ClickHouse (Official Grafana Plugin)
+- name: clickhouse-grafana-direct
+  type: grafana-clickhouse-datasource
+  access: proxy
+  editable: true
+  isDefault: false
+  jsonData:
+    host: clickhouse
+    port: 8123
+    protocol: http
+    defaultDatabase: default
+    username: default
+
+- name: clickhouse-grafana-trickster
+  type: grafana-clickhouse-datasource
+  access: proxy
+  editable: true
+  isDefault: false
+  jsonData:
+    host: host.docker.internal
+    port: 8480
+    path: /click1/
+    protocol: http
+    defaultDatabase: default
+    username: default

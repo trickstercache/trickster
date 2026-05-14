@@ -33,7 +33,7 @@ The roadmap for Trickster in 2025 focuses on delivering Trickster versions 2.0 a
   - [ ] Kube Gateway API support
   - [ ] More easily-importable Trickster packages by other projects
   - [ ] Support for MySQL as Time Series
-  - [ ] Support for InfluxDB 3.0
+  - [x] Support for InfluxDB 3.x (HTTP v3 API + Flight SQL)
   - [ ] Support for Autodiscovery (e.g., Kubernetes Pod Annotations)
   - [ ] Object Pooling where possible to improve memory management
 

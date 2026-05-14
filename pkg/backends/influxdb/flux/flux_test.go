@@ -80,6 +80,33 @@ func TestParseQuery(t *testing.T) {
 	}
 }
 
+// TestParseQuery_Now verifies that `now()` as a range bound is accepted and
+// resolved to the current time. This is Grafana's default `stop` value for
+// Flux queries — without this, aggregateWindow dashboards fall through to
+// HTTPProxy instead of being delta-proxy cached.
+func TestParseQuery_Now(t *testing.T) {
+	before := time.Now()
+	q := `from(bucket: "trickster") |> range(start: -1h, stop: now()) |> aggregateWindow(every: 1m, fn: mean) |> limit(n: 5)`
+	_, e, d, err := ParseQuery(q)
+	if err != nil {
+		t.Fatalf("ParseQuery(now()): %v", err)
+	}
+	if d != time.Minute {
+		t.Errorf("step: got %v, want 1m", d)
+	}
+	if e.Start.IsZero() || e.End.IsZero() {
+		t.Fatalf("extent should be populated, got %+v", e)
+	}
+	if e.End.Before(before) {
+		t.Errorf("now() should resolve to ~now, got %v (before=%v)", e.End, before)
+	}
+	// start is relative -1h, end is now: window should be ~1h.
+	window := e.End.Sub(e.Start)
+	if window < 55*time.Minute || window > 65*time.Minute {
+		t.Errorf("expected ~1h window, got %v", window)
+	}
+}
+
 func TestParseTimeRangeQuery(t *testing.T) {
 	b, _ := json.Marshal(JSONRequestBody{
 		Query: testFluxQuery1,

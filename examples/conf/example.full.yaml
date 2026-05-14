@@ -534,6 +534,25 @@ backends:
 #     healthcheck:
 #       interval: 1s
 
+# # InfluxDB 3.x backend example. See /docs/influxdb.md for full details
+# # (v3 HTTP API: /api/v3/query_sql, /api/v3/query_influxql, /api/v3/write_lp;
+# # v1/v2 compatibility endpoints also work against the same backend).
+#
+#   influx3:
+#     is_default: false
+#     provider: influxdb
+#     origin_url: 'http://influxdb3:8181/'
+#
+#     # flight_port enables an Apache Arrow Flight SQL (gRPC) listener on the given port.
+#     # When > 0, Trickster proxies Flight SQL queries, metadata RPCs (GetTables/Schemas/etc.)
+#     # and the full prepared-statement lifecycle, caching the Arrow IPC byte stream.
+#     # Leave unset or 0 to disable Flight SQL for this backend. InfluxDB 3.x only.
+#     flight_port: 8485
+#
+#     # flight_upstream_address overrides the upstream Flight SQL address.
+#     # Defaults to the host:port from origin_url when empty.
+#     flight_upstream_address: 'influxdb3:8181'
+
 # # Application Load Balancer Backend configuration options, see /docs/alb.md for more information
 #
 #   alb01:

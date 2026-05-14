@@ -60,6 +60,13 @@ type Options struct {
 	//
 	// Hosts identifies the frontend hostnames this backend should handle (virtual hosting)
 	Hosts []string `yaml:"hosts,omitempty"`
+	// FlightPort enables an Apache Arrow Flight SQL listener on the given port
+	// when > 0 (InfluxDB 3.x backends only). The upstream Flight SQL address is
+	// derived from OriginURL (host:port). Leave 0 to disable.
+	FlightPort int `yaml:"flight_port,omitempty"`
+	// FlightUpstreamAddress overrides the upstream Flight SQL address when set.
+	// Defaults to the host:port from OriginURL.
+	FlightUpstreamAddress string `yaml:"flight_upstream_address,omitempty"`
 	// Provider describes the type of backend (e.g., 'prometheus')
 	Provider string `yaml:"provider,omitempty"`
 	// OriginURL provides the base upstream URL for all proxied requests to this Backend.

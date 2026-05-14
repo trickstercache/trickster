@@ -21,6 +21,7 @@ package iofmt
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
@@ -35,6 +36,8 @@ const (
 	isFlux                  // 4
 	isFluxInputJSON         // 8
 	isFluxOutputJSON        // 16
+	isV3SQL                 // 32
+	isV3InfluxQL            // 64
 
 	InfluxqlGet  = isInfluxql
 	InfluxqlPost = isInfluxql + isInfluxqlPost
@@ -44,6 +47,16 @@ const (
 
 	FluxRawJSON = isFlux + isFluxOutputJSON
 	FluxRawCsv  = isFlux
+
+	V3SQL      = isV3SQL
+	V3InfluxQL = isV3InfluxQL
+)
+
+// V3 output format constants stored in RequestOptions.OutputFormat
+const (
+	V3OutputJSON  byte = 32
+	V3OutputJSONL byte = 33
+	V3OutputCSV   byte = 34
 )
 
 var ErrSupportedQueryLanguage = errors.New("unsupported query language")
@@ -64,11 +77,44 @@ func (f Format) IsFluxOutputJSON() bool {
 	return f&isFluxOutputJSON == isFluxOutputJSON
 }
 
+func (f Format) IsV3SQL() bool {
+	return f&isV3SQL == isV3SQL
+}
+
+func (f Format) IsV3InfluxQL() bool {
+	return f&isV3InfluxQL == isV3InfluxQL
+}
+
+func (f Format) IsV3() bool {
+	return f.IsV3SQL() || f.IsV3InfluxQL()
+}
+
 func (f Format) IsPost() bool {
 	return f&isFlux == isFlux || f&isInfluxqlPost == isInfluxqlPost
 }
 
+// V3OutputFormat returns the v3 output format byte from the request's format param.
+func V3OutputFormat(r *http.Request) byte {
+	switch strings.ToLower(r.URL.Query().Get("format")) {
+	case "jsonl":
+		return V3OutputJSONL
+	case "csv":
+		return V3OutputCSV
+	default:
+		return V3OutputJSON
+	}
+}
+
 func Detect(r *http.Request) Format {
+	if r.URL != nil {
+		p := r.URL.Path
+		switch {
+		case strings.HasSuffix(p, "/api/v3/query_sql"):
+			return V3SQL
+		case strings.HasSuffix(p, "/api/v3/query_influxql"):
+			return V3InfluxQL
+		}
+	}
 	if r.Method == http.MethodGet {
 		return InfluxqlGet
 	}

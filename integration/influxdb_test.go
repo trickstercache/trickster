@@ -19,6 +19,7 @@ package integration
 import (
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -74,5 +75,39 @@ func TestInfluxDB(t *testing.T) {
 		resp, body := post(t, `{"query": "from(bucket: \"trickster\") |> range(start: -1h) |> limit(n: 1)", "type": "flux"}`, "wrong-token")
 		require.Equal(t, http.StatusUnauthorized, resp.StatusCode,
 			"expected 401 for wrong token, got %d: %s", resp.StatusCode, string(body))
+	})
+
+	// v1 InfluxQL goes through /flux2/query against InfluxDB 2's v1-compat
+	// endpoint. Verifies Trickster's v1 InfluxQL handler + cache path.
+	t.Run("influxql_select", func(t *testing.T) {
+		q := `SELECT mean("usage_idle") FROM "cpu" WHERE "cpu" = 'cpu-total' AND time > now() - 5m GROUP BY time(10s)`
+		u := "http://" + influxAddr + "/flux2/query?db=trickster&q=" + url.QueryEscape(q)
+		req, err := http.NewRequest("GET", u, nil)
+		require.NoError(t, err)
+		req.Header.Set("Authorization", "Token trickster-dev-token")
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		b, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, resp.StatusCode, "unexpected status: %s", string(b))
+		hdr := parseTricksterResult(resp.Header.Get("X-Trickster-Result"))
+		require.NotEmpty(t, hdr["engine"], "expected engine header on v1 InfluxQL response")
+	})
+
+	// Non-cacheable InfluxQL (SHOW MEASUREMENTS) should passthrough to upstream.
+	t.Run("influxql_show_measurements", func(t *testing.T) {
+		u := "http://" + influxAddr + "/flux2/query?db=trickster&q=" + url.QueryEscape("SHOW MEASUREMENTS")
+		req, err := http.NewRequest("GET", u, nil)
+		require.NoError(t, err)
+		req.Header.Set("Authorization", "Token trickster-dev-token")
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		b, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, resp.StatusCode,
+			"expected SHOW MEASUREMENTS to proxy through: %s", string(b))
+		require.Contains(t, string(b), "cpu", "expected cpu measurement in response")
 	})
 }

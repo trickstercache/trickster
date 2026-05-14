@@ -134,10 +134,11 @@ GO_TEST_FLAGS ?= -coverprofile=.coverprofile
 .PHONY: test
 test: check-license-headers check-codegen gotest check-fmtprints check-todos
 
-GO_TEST_PATH ?= $(shell $(GO) list ./... | grep -v v2/integration)
+GO_TEST_PATH ?= $(shell $(GO) list ./... | grep -v v2/integration | tr '\n' ' ')
 .PHONY: gotest
 gotest:
 	$(GO) test -timeout=5m -v ${GO_TEST_FLAGS} $(GO_TEST_PATH)
+	@echo "All tests passed successfully."
 
 .PHONY: data-race-test
 data-race-test:
