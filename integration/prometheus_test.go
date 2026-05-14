@@ -388,7 +388,8 @@ func TestPrometheus(t *testing.T) {
 	})
 
 	t.Run("native histogram round-trip fidelity", func(t *testing.T) {
-		params := url.Values{"query": {"prometheus_http_request_duration_seconds"}}
+		query := fmt.Sprintf("prometheus_http_request_duration_seconds + 0*%d", time.Now().UnixNano())
+		params := url.Values{"query": {query}}
 
 		// Query directly against Prometheus
 		prDirect, _ := queryTricksterProm(t, "127.0.0.1:9090", "", "/api/v1/query", params)
