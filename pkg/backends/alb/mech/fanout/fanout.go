@@ -30,6 +30,7 @@ import (
 	"net/http"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
@@ -65,9 +66,15 @@ type Result struct {
 
 // Config configures one fanout call.
 type Config struct {
-	// Mechanism is the short name ("fr", "nlm", "tsm", "tsm/avg-sum", ...)
-	// used in panic recovery logs and the fanout_failures_total metric.
-	Mechanism string
+	// Mechanism is the registered short name of the mechanism running the
+	// fanout ("fr", "nlm", "tsm"). Used in panic recovery logs and as the
+	// mechanism label on the fanout_failures_total metric.
+	Mechanism types.Name
+	// Variant carries optional sub-fanout context within a Mechanism, e.g.
+	// "avg-sum" / "avg-count" for TSM's paired weighted-avg queries. Empty
+	// for mechanisms with only one fanout path. Surfaces as the variant
+	// label on the fanout_failures_total metric.
+	Variant string
 	// ConcurrencyLimit caps in-flight member calls. 0 means unlimited.
 	ConcurrencyLimit int
 	// MaxCaptureBytes caps each member's response body capture. 0 uses
@@ -129,7 +136,7 @@ func All(ctx context.Context, parent *http.Request, targets pool.Targets, cfg Co
 		}
 		eg.Go(func() error {
 			results[i].Index = i
-			defer mech.RecoverFanoutPanic(cfg.Mechanism, i, func() {
+			defer mech.RecoverFanoutPanic(cfg.Mechanism, cfg.Variant, i, func() {
 				results[i].Failed = true
 				results[i].Capture = nil
 			})
@@ -138,7 +145,7 @@ func All(ctx context.Context, parent *http.Request, targets pool.Targets, cfg Co
 			if err != nil {
 				results[i].Failed = true
 				results[i].Err = err
-				metrics.ALBFanoutFailures.WithLabelValues(cfg.Mechanism, "clone").Inc()
+				metrics.ALBFanoutFailures.WithLabelValues(cfg.Mechanism, cfg.Variant, "clone").Inc()
 				return err
 			}
 			results[i].Request = r2
@@ -147,7 +154,7 @@ func All(ctx context.Context, parent *http.Request, targets pool.Targets, cfg Co
 			targets[i].Handler().ServeHTTP(crw, r2)
 			if crw.Truncated() {
 				results[i].Failed = true
-				metrics.ALBFanoutFailures.WithLabelValues(cfg.Mechanism, "truncated").Inc()
+				metrics.ALBFanoutFailures.WithLabelValues(cfg.Mechanism, cfg.Variant, "truncated").Inc()
 			}
 			if cfg.OnResult != nil {
 				cfg.OnResult(i, &results[i])

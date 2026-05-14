@@ -156,7 +156,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		eg.Go(func() error {
 			// recover so a single bad upstream doesn't crash the proxy; clear
 			// the slot so the fallback path doesn't serve a partial capture
-			defer mech.RecoverFanoutPanic("fr", i, func() { captures[i] = nil })
+			defer mech.RecoverFanoutPanic("fr", "", i, func() { captures[i] = nil })
 			r2, crw, err := fanout.PrepareClone(ctx, r, i, fanout.Config{
 				Mechanism:       "fr",
 				MaxCaptureBytes: h.maxCaptureBytes,

@@ -417,7 +417,7 @@ func (h *handler) serveStandard(
 	for i, res := range results {
 		if res.failed {
 			hasGatherFailure = true
-			metrics.ALBFanoutFailures.WithLabelValues("tsm", "no_contribution").Inc()
+			metrics.ALBFanoutFailures.WithLabelValues("tsm", "", "no_contribution").Inc()
 			if ts := accumulator.GetTSData(); ts != nil {
 				if ds, ok := ts.(*dataset.DataSet); ok {
 					ds.Warnings = append(ds.Warnings,
@@ -556,7 +556,8 @@ func (h *handler) serveWeightedAvg(
 	var eg errgroup.Group
 	eg.Go(func() error {
 		_, err := fanout.All(parentCtx, sumBase, hl, fanout.Config{
-			Mechanism:        "tsm/avg-sum",
+			Mechanism:        "tsm",
+			Variant:          "avg-sum",
 			ConcurrencyLimit: limit,
 			MaxCaptureBytes:  h.maxCaptureBytes,
 			Resources:        resourcesFn,
@@ -593,7 +594,8 @@ func (h *handler) serveWeightedAvg(
 	})
 	eg.Go(func() error {
 		_, err := fanout.All(parentCtx, countBase, hl, fanout.Config{
-			Mechanism:        "tsm/avg-count",
+			Mechanism:        "tsm",
+			Variant:          "avg-count",
 			ConcurrencyLimit: limit,
 			MaxCaptureBytes:  h.maxCaptureBytes,
 			Resources:        resourcesFn,

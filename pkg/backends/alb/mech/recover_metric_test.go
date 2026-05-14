@@ -25,28 +25,42 @@ import (
 )
 
 func TestRecoverFanoutPanicIncrementsMetric(t *testing.T) {
-	before := testutil.ToFloat64(metrics.ALBFanoutFailures.WithLabelValues("metric-test", "panic"))
+	before := testutil.ToFloat64(metrics.ALBFanoutFailures.WithLabelValues("metric-test", "", "panic"))
 
 	func() {
-		defer mech.RecoverFanoutPanic("metric-test", 0, nil)
+		defer mech.RecoverFanoutPanic("metric-test", "", 0, nil)
 		panic("forced")
 	}()
 
-	after := testutil.ToFloat64(metrics.ALBFanoutFailures.WithLabelValues("metric-test", "panic"))
+	after := testutil.ToFloat64(metrics.ALBFanoutFailures.WithLabelValues("metric-test", "", "panic"))
 	if after-before != 1 {
 		t.Errorf("expected counter to increment by 1, before=%v after=%v", before, after)
 	}
 }
 
-func TestRecoverFanoutPanicNoPanicNoIncrement(t *testing.T) {
-	before := testutil.ToFloat64(metrics.ALBFanoutFailures.WithLabelValues("metric-test-noop", "panic"))
+func TestRecoverFanoutPanicVariantLabel(t *testing.T) {
+	before := testutil.ToFloat64(metrics.ALBFanoutFailures.WithLabelValues("metric-test", "avg-sum", "panic"))
 
 	func() {
-		defer mech.RecoverFanoutPanic("metric-test-noop", 0, nil)
+		defer mech.RecoverFanoutPanic("metric-test", "avg-sum", 0, nil)
+		panic("forced")
+	}()
+
+	after := testutil.ToFloat64(metrics.ALBFanoutFailures.WithLabelValues("metric-test", "avg-sum", "panic"))
+	if after-before != 1 {
+		t.Errorf("expected variant-labeled counter to increment by 1, before=%v after=%v", before, after)
+	}
+}
+
+func TestRecoverFanoutPanicNoPanicNoIncrement(t *testing.T) {
+	before := testutil.ToFloat64(metrics.ALBFanoutFailures.WithLabelValues("metric-test-noop", "", "panic"))
+
+	func() {
+		defer mech.RecoverFanoutPanic("metric-test-noop", "", 0, nil)
 		// no panic
 	}()
 
-	after := testutil.ToFloat64(metrics.ALBFanoutFailures.WithLabelValues("metric-test-noop", "panic"))
+	after := testutil.ToFloat64(metrics.ALBFanoutFailures.WithLabelValues("metric-test-noop", "", "panic"))
 	if after != before {
 		t.Errorf("expected counter unchanged, before=%v after=%v", before, after)
 	}

@@ -27,19 +27,23 @@ import (
 // RecoverFanoutPanic recovers from a panic in an ALB fanout goroutine and
 // invokes onPanic so the caller can mark its per-member result as failed.
 // errgroup.Group.Go does not recover panics on its own, so without this a
-// single bad upstream handler would crash the whole proxy.
-func RecoverFanoutPanic(mech string, member int, onPanic func()) {
+// single bad upstream handler would crash the whole proxy. variant carries
+// optional sub-fanout context (e.g. "avg-sum" / "avg-count" for TSM's
+// paired weighted-avg queries); pass "" when the mechanism has only one
+// fanout path.
+func RecoverFanoutPanic(mech, variant string, member int, onPanic func()) {
 	rec := recover()
 	if rec == nil {
 		return
 	}
 	logger.Error("alb fanout member panic", logging.Pairs{
-		"mech":   mech,
-		"member": member,
-		"panic":  rec,
-		"stack":  string(debug.Stack()),
+		"mech":    mech,
+		"variant": variant,
+		"member":  member,
+		"panic":   rec,
+		"stack":   string(debug.Stack()),
 	})
-	metrics.ALBFanoutFailures.WithLabelValues(mech, "panic").Inc()
+	metrics.ALBFanoutFailures.WithLabelValues(mech, variant, "panic").Inc()
 	if onPanic != nil {
 		onPanic()
 	}
