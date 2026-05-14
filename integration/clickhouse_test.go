@@ -98,6 +98,58 @@ func TestClickHouse(t *testing.T) {
 			"multi-line SQL must reach DeltaProxyCache (issue #967)")
 	})
 
+	t.Run("grafana_official_plugin_native", func(t *testing.T) {
+		// The official Grafana ClickHouse plugin sends default_format=Native
+		// and client_protocol_version=54460 as URL params, with NO FORMAT in
+		// the SQL. This triggers TCP-style Native responses (block info +
+		// customSerialization flags).
+		now := time.Now().Unix()
+		q := fmt.Sprintf(
+			"SELECT toStartOfFiveMinute(pickup_datetime) AS t, count() AS cnt "+
+				"FROM trips "+
+				"WHERE pickup_datetime BETWEEN toDateTime(%d) AND toDateTime(%d) "+
+				"GROUP BY t ORDER BY t",
+			now-3600, now,
+		)
+		params := url.Values{
+			"query":                   {q},
+			"default_format":          {"Native"},
+			"client_protocol_version": {"54460"},
+			"database":                {"default"},
+		}
+		u := "http://" + clickAddr + "/click1/?" + params.Encode()
+
+		// First request — should go through DPC and return Native binary
+		resp, err := http.Get(u)
+		require.NoError(t, err)
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, resp.StatusCode, "unexpected status: %s", string(body))
+		require.Greater(t, len(body), 10, "expected Native binary response with data")
+
+		hdr := parseTricksterResult(resp.Header.Get("X-Trickster-Result"))
+		require.Equal(t, "DeltaProxyCache", hdr["engine"])
+
+		// Verify the response is Native binary — first byte is numCols (uvarint),
+		// or block info field 1 (0x01) if TCP-style. Either way, it should be
+		// a small positive number, not a printable ASCII character.
+		require.Less(t, body[0], byte(0x20), "expected Native binary, got text (byte 0x%02x)", body[0])
+
+		// Second request — should hit DPC cache
+		resp2, err := http.Get(u)
+		require.NoError(t, err)
+		body2, err := io.ReadAll(resp2.Body)
+		resp2.Body.Close()
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, resp2.StatusCode)
+		require.Greater(t, len(body2), 10, "expected cached Native response with data")
+
+		hdr2 := parseTricksterResult(resp2.Header.Get("X-Trickster-Result"))
+		require.Contains(t, []string{"hit", "phit"}, hdr2["status"],
+			"second request should hit the cache, got %s", hdr2["status"])
+	})
+
 	aggCases := []struct {
 		name  string
 		group string
@@ -105,6 +157,10 @@ func TestClickHouse(t *testing.T) {
 		{"five_minute", "toStartOfFiveMinute(pickup_datetime)"},
 		{"fifteen_minute", "toStartOfInterval(pickup_datetime, INTERVAL 15 MINUTE)"},
 		{"one_hour", "toStartOfHour(pickup_datetime)"},
+		{"one_day", "toStartOfDay(pickup_datetime)"},
+		{"one_month", "toStartOfMonth(pickup_datetime)"},
+		{"date_trunc_hour", "date_trunc('hour', pickup_datetime)"},
+		{"date_trunc_day", "date_trunc('day', pickup_datetime)"},
 	}
 	for _, tc := range aggCases {
 		t.Run("aggregation_"+tc.name, func(t *testing.T) {

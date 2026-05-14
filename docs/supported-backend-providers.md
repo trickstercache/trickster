@@ -22,6 +22,6 @@ See the [InfluxDB Support Document](./influxdb.md) for more information.
 
 ### <img src="./images/external/clickhouse_logo.png" width=16 /> ClickHouse
 
-Trickster supports accelerating ClickHouse time series. Specify `'clickhouse'` as the Provider when configuring Trickster.
+Trickster supports accelerating ClickHouse time series over both HTTP and the ClickHouse native binary protocol (port 9000), and is tested against the Vertamedia and official Grafana ClickHouse (v4+) datasource plugins. Specify `'clickhouse'` as the Provider when configuring Trickster.
 
 See the [ClickHouse Support Document](./clickhouse.md) for more information.

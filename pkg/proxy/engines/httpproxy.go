@@ -215,7 +215,13 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 		r.Header.Set(headers.NameAcceptEncoding, ep.SupportedHeaderVal)
 	}
 
-	resp, err := o.HTTPClient.Do(r)
+	var resp *http.Response
+	var err error
+	if o.Fetcher != nil {
+		resp, err = o.Fetcher(r)
+	} else {
+		resp, err = o.HTTPClient.Do(r)
+	}
 	if err != nil {
 		if rsc == nil || !rsc.Cancelable || !errors.Is(err, context.Canceled) {
 			logger.Error("error downloading url",

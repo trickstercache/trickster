@@ -30,6 +30,7 @@ import (
 	"github.com/stretchr/testify/require"
 	tkconfig "github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
+	fropt "github.com/trickstercache/trickster/v2/pkg/frontend/options"
 	"gopkg.in/yaml.v2"
 )
 
@@ -176,6 +177,34 @@ func writeTestConfig(t *testing.T, frontPort, metricsPort, mgmtPort int) string 
 		c.MgmtConfig = mgmt.New()
 	}
 	c.MgmtConfig.ListenPort = mgmtPort
+	out, err := yaml.Marshal(&c)
+	require.NoError(t, err)
+	path := filepath.Join(t.TempDir(), "trickster.yaml")
+	require.NoError(t, os.WriteFile(path, out, 0644))
+	return path
+}
+
+func writeNativeListenerConfig(t *testing.T, frontPort, metricsPort, mgmtPort, nativePort int) string {
+	t.Helper()
+	b, err := os.ReadFile("../docs/developer/environment/trickster-config/trickster.yaml")
+	require.NoError(t, err)
+	var c tkconfig.Config
+	require.NoError(t, yaml.Unmarshal(b, &c))
+	c.Frontend.ListenPort = frontPort
+	c.Metrics.ListenPort = metricsPort
+	if c.MgmtConfig == nil {
+		c.MgmtConfig = mgmt.New()
+	}
+	c.MgmtConfig.ListenPort = mgmtPort
+	// Add protocol listener for ClickHouse native protocol
+	c.Frontend.ProtocolListeners = append(c.Frontend.ProtocolListeners,
+		&fropt.ProtocolListenerOptions{
+			Name:         "clickhouse-native",
+			Protocol:     "clickhouse-native",
+			ListenPort:   nativePort,
+			Backend:      "click1",
+		},
+	)
 	out, err := yaml.Marshal(&c)
 	require.NoError(t, err)
 	path := filepath.Join(t.TempDir(), "trickster.yaml")

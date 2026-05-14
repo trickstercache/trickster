@@ -71,3 +71,75 @@ func TestClickHouseNativeSDK(t *testing.T) {
 		t.Logf("%d typed rows", count)
 	})
 }
+
+// TestClickHouseNativeProtocolListener tests Flow 1: client speaks native
+// protocol to Trickster's protocol listener, which proxies through the
+// caching engine to ClickHouse's HTTP port.
+func TestClickHouseNativeProtocolListener(t *testing.T) {
+	cfg := writeNativeListenerConfig(t, 8582, 8583, 8588, 9100)
+	h := tricksterHarness{ConfigPath: cfg, BaseAddr: "127.0.0.1:8582", MetricsAddr: "127.0.0.1:8583"}
+	h.start(t)
+	waitForClickHouseData(t, "127.0.0.1:8123")
+
+	// Connect via native protocol to Trickster's protocol listener
+	conn, err := clickhouse.Open(&clickhouse.Options{
+		Addr:     []string{"127.0.0.1:9100"},
+		Protocol: clickhouse.Native,
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	t.Cleanup(cancel)
+
+	t.Run("ping", func(t *testing.T) {
+		require.NoError(t, conn.Ping(ctx))
+	})
+
+	t.Run("select", func(t *testing.T) {
+		rows, err := conn.Query(ctx, "SELECT count() FROM trips")
+		require.NoError(t, err)
+		defer rows.Close()
+		require.True(t, rows.Next())
+	})
+
+	t.Run("nullable", func(t *testing.T) {
+		rows, err := conn.Query(ctx, "SELECT toNullable(1) AS n, NULL AS m")
+		require.NoError(t, err)
+		defer rows.Close()
+		require.True(t, rows.Next())
+	})
+
+	t.Run("array", func(t *testing.T) {
+		rows, err := conn.Query(ctx, "SELECT [1,2,3] AS arr")
+		require.NoError(t, err)
+		defer rows.Close()
+		require.True(t, rows.Next())
+	})
+
+	t.Run("tuple", func(t *testing.T) {
+		rows, err := conn.Query(ctx, "SELECT tuple(1, 'hello') AS t")
+		require.NoError(t, err)
+		defer rows.Close()
+		require.True(t, rows.Next())
+	})
+
+	t.Run("map", func(t *testing.T) {
+		rows, err := conn.Query(ctx, "SELECT map('key', 1) AS m")
+		require.NoError(t, err)
+		defer rows.Close()
+		require.True(t, rows.Next())
+	})
+
+	t.Run("cache_hit", func(t *testing.T) {
+		q := "SELECT count() FROM trips"
+		rows1, err := conn.Query(ctx, q)
+		require.NoError(t, err)
+		rows1.Close()
+
+		rows2, err := conn.Query(ctx, q)
+		require.NoError(t, err)
+		defer rows2.Close()
+		require.True(t, rows2.Next())
+	})
+}

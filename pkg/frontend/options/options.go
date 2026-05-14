@@ -19,6 +19,7 @@ package options
 import (
 	"crypto/tls"
 	"errors"
+	"slices"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
@@ -49,6 +50,9 @@ type Options struct {
 	// ServeTLS indicates whether to listen and serve on the TLS port, meaning
 	// at least one backend options has a valid certificate and key file configured.
 	ServeTLS bool `yaml:"-"`
+	// ProtocolListeners configures raw TCP listeners for non-HTTP protocols
+	// (e.g. ClickHouse native binary, MySQL wire protocol).
+	ProtocolListeners []*ProtocolListenerOptions `yaml:"protocol_listeners,omitempty"`
 }
 
 type TLSConfigFunc func() (*tls.Config, error)
@@ -67,7 +71,24 @@ func New() *Options {
 
 // Equal returns true if the FrontendConfigs are identical in value.
 func (o *Options) Equal(o2 *Options) bool {
-	return *o == *o2
+	if o.ListenAddress != o2.ListenAddress ||
+		o.ListenPort != o2.ListenPort ||
+		o.TLSListenAddress != o2.TLSListenAddress ||
+		o.TLSListenPort != o2.TLSListenPort ||
+		o.ConnectionsLimit != o2.ConnectionsLimit ||
+		o.TruncateRequestBodyTooLarge != o2.TruncateRequestBodyTooLarge ||
+		o.ReadHeaderTimeout != o2.ReadHeaderTimeout ||
+		o.ServeTLS != o2.ServeTLS {
+		return false
+	}
+	if (o.MaxRequestBodySizeBytes == nil) != (o2.MaxRequestBodySizeBytes == nil) {
+		return false
+	}
+	if o.MaxRequestBodySizeBytes != nil && *o.MaxRequestBodySizeBytes != *o2.MaxRequestBodySizeBytes {
+		return false
+	}
+	return slices.EqualFunc(o.ProtocolListeners, o2.ProtocolListeners,
+		func(a, b *ProtocolListenerOptions) bool { return *a == *b })
 }
 
 // Clone returns a clone of the Options
@@ -75,6 +96,12 @@ func (o *Options) Clone() *Options {
 	out := pointers.Clone(o)
 	if o.MaxRequestBodySizeBytes != nil {
 		out.MaxRequestBodySizeBytes = new(*o.MaxRequestBodySizeBytes)
+	}
+	if len(o.ProtocolListeners) > 0 {
+		out.ProtocolListeners = make([]*ProtocolListenerOptions, len(o.ProtocolListeners))
+		for i, pl := range o.ProtocolListeners {
+			out.ProtocolListeners[i] = pointers.Clone(pl)
+		}
 	}
 	return out
 }

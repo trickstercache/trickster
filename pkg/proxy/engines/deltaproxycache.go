@@ -39,11 +39,14 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	tspan "github.com/trickstercache/trickster/v2/pkg/observability/tracing/span"
+	"github.com/trickstercache/trickster/v2/pkg/parsing"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/sql"
 	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	tpe "github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/sqlparser"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
@@ -208,8 +211,12 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 	rsc.Unlock()
 	if err != nil {
 		if canOPC {
-			logger.Debug("could not parse time range query, using object proxy cache",
-				logging.Pairs{"error": err.Error()})
+			pairs := logging.Pairs{"backendName": o.Name, "error": err.Error()}
+			if (o.DPCFallbackWarning == nil || *o.DPCFallbackWarning) && !isStructuralParseError(err) {
+				logger.Warn("query fell back from DPC to OPC (not cached as time series)", pairs)
+			} else {
+				logger.Debug("query fell back from DPC to OPC (not cached as time series)", pairs)
+			}
 			rsc.AlternateCacheTTL = time.Minute
 			ObjectProxyCacheRequest(w, r)
 			return
@@ -733,7 +740,13 @@ func fetchExtents(el timeseries.ExtentList, rsc *request.Resources, h http.Heade
 			}
 
 			if resp.StatusCode == http.StatusOK && len(body) > 0 {
-				nts, ferr := wur(getDecoderReader(resp), rsc.TimeRangeQuery)
+				var dr io.Reader
+				if chFmt := resp.Header.Get("X-ClickHouse-Format"); chFmt != "" {
+					dr = timeseries.NewFormatHintReader(bytes.NewReader(body), chFmt)
+				} else {
+					dr = getDecoderReader(resp)
+				}
+				nts, ferr := wur(dr, rsc.TimeRangeQuery)
 				if ferr != nil {
 					logger.Error("proxy object unmarshaling failed",
 						logging.Pairs{"detail": ferr.Error()})
@@ -785,4 +798,17 @@ func fetchExtents(el timeseries.ExtentList, rsc *request.Resources, h http.Heade
 	}
 	eg.Wait()
 	return mts, uncachedValueCount.Load(), mresp, errors.Join(errs...)
+}
+
+// isStructuralParseError returns true if the error indicates the query is
+// structurally not a time series query (no FROM, no SELECT, no WHERE, etc.)
+// rather than a time series query that failed to parse. These are expected
+// for health checks, version queries, and other non-timeseries SELECTs.
+func isStructuralParseError(err error) bool {
+	return errors.Is(err, sql.ErrNotAtFrom) ||
+		errors.Is(err, sql.ErrNotAtSelect) ||
+		errors.Is(err, sql.ErrNotAtWhere) ||
+		errors.Is(err, sql.ErrNotAtGroupBy) ||
+		errors.Is(err, sqlparser.ErrNotTimeRangeQuery) ||
+		errors.Is(err, parsing.ErrUnexpectedToken)
 }
