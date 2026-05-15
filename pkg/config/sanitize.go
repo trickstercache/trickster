@@ -26,6 +26,7 @@ import (
 	rule "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
 	cache "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	cp "github.com/trickstercache/trickster/v2/pkg/cache/providers"
+	auth "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 )
 
 // SanitizedString returns the running Config as YAML with private backend and
@@ -41,6 +42,7 @@ func (c *Config) SanitizedClone() *Config {
 
 	cacheNameMap := anonymizedCacheNames(cp.Caches)
 	backendNameMap := anonymizedBackendNames(cp.Backends)
+	authNameMap := anonymizedAuthenticatorNames(cp.Authenticators)
 
 	renamedCaches := make(cache.Lookup, len(cp.Caches))
 	for oldName, opts := range cp.Caches {
@@ -66,12 +68,27 @@ func (c *Config) SanitizedClone() *Config {
 			if newCacheName, ok := cacheNameMap[opts.CacheName]; ok {
 				opts.CacheName = newCacheName
 			}
+			if newAuthName, ok := authNameMap[opts.AuthenticatorName]; ok {
+				opts.AuthenticatorName = newAuthName
+			}
+			sanitizePathAuthenticatorReferences(opts, authNameMap)
 			sanitizeBackendReferences(opts, backendNameMap)
 			sanitizePathHeaderValues(opts)
 		}
 		renamedBackends[newName] = opts
 	}
 	cp.Backends = renamedBackends
+
+	renamedAuthenticators := make(auth.Lookup, len(cp.Authenticators))
+	for oldName, opts := range cp.Authenticators {
+		newName := authNameMap[oldName]
+		if opts != nil {
+			opts.Name = newName
+			sanitizeAuthenticatorUsers(opts)
+		}
+		renamedAuthenticators[newName] = opts
+	}
+	cp.Authenticators = renamedAuthenticators
 
 	for _, opts := range cp.Rules {
 		sanitizeRuleReferences(opts, backendNameMap)
@@ -110,6 +127,15 @@ func anonymizedBackendNames(backends bo.Lookup) map[string]string {
 	return out
 }
 
+func anonymizedAuthenticatorNames(authenticators auth.Lookup) map[string]string {
+	names := sortedKeys(authenticators)
+	out := make(map[string]string, len(authenticators))
+	for i, name := range names {
+		out[name] = fmt.Sprintf("auth%d", i+1)
+	}
+	return out
+}
+
 func anonymizedBackendProviderName(provider string) string {
 	provider = strings.TrimSpace(strings.ToLower(provider))
 	if provider == bp.Prometheus {
@@ -133,6 +159,17 @@ func anonymizedCacheProviderName(provider string) string {
 		return "cache"
 	}
 	return provider
+}
+
+func sanitizePathAuthenticatorReferences(opts *bo.Options, authNameMap map[string]string) {
+	for _, path := range opts.Paths {
+		if path == nil {
+			continue
+		}
+		if newName, ok := authNameMap[path.AuthenticatorName]; ok {
+			path.AuthenticatorName = newName
+		}
+	}
 }
 
 func sanitizeBackendReferences(opts *bo.Options, backendNameMap map[string]string) {
@@ -175,6 +212,15 @@ func sanitizeRuleReferences(opts *rule.Options, backendNameMap map[string]string
 			c.NextRoute = newName
 		}
 	}
+}
+
+func sanitizeAuthenticatorUsers(opts *auth.Options) {
+	userNames := sortedKeys(opts.Users)
+	users := make(map[string]string, len(opts.Users))
+	for i := range userNames {
+		users[fmt.Sprintf("user%d", i+1)] = "redacted"
+	}
+	opts.Users = users
 }
 
 func sanitizePathHeaderValues(opts *bo.Options) {

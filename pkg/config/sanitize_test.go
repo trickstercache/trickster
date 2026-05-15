@@ -29,6 +29,16 @@ caches:
     provider: memory
   cache-b:
     provider: memory
+authenticators:
+  auth-a:
+    provider: basic
+    users:
+      alice: secret-a
+      bob: secret-b
+  auth-z:
+    provider: basic
+    users:
+      charlie: secret-c
 backends:
   alb-main:
     provider: alb
@@ -50,12 +60,16 @@ backends:
     provider: prometheus
     origin_url: http://prom-a.private.example:9090/private/path
     cache_name: cache-a
+    authenticator_name: auth-z
     paths:
       - path: /query
+        authenticator_name: auth-a
         request_headers:
           X-Org-ID: private-org
         response_headers:
           X-Environment: private-env
+      - path: /public
+        authenticator_name: none
   prom-b:
     provider: prometheus
     origin_url: http://prom-b.private.example:9090/private/path
@@ -85,6 +99,13 @@ rules:
 		"rule-1:",
 		"memory-1:",
 		"memory-2:",
+		"auth1:",
+		"auth2:",
+		"authenticator_name: auth2",
+		"authenticator_name: auth1",
+		"authenticator_name: none",
+		"user1: redacted",
+		"user2: redacted",
 		"origin_url: example.com",
 		"cache_name: memory-1",
 		"cache_name: memory-2",
@@ -110,6 +131,14 @@ rules:
 		"rule-main",
 		"cache-a",
 		"cache-b",
+		"auth-a",
+		"auth-z",
+		"alice",
+		"bob",
+		"charlie",
+		"secret-a",
+		"secret-b",
+		"secret-c",
 		"prom-a.private.example",
 		"prom-b.private.example",
 		"private-org",
@@ -125,6 +154,15 @@ rules:
 	}
 	if conf.Backends["prom-a"].Paths[0].RequestHeaders["X-Org-ID"] != "private-org" {
 		t.Errorf("expected original path request header to remain unchanged")
+	}
+	if conf.Backends["prom-a"].AuthenticatorName != "auth-z" {
+		t.Errorf("expected original backend authenticator reference to remain unchanged")
+	}
+	if conf.Backends["prom-a"].Paths[0].AuthenticatorName != "auth-a" {
+		t.Errorf("expected original path authenticator reference to remain unchanged")
+	}
+	if conf.Authenticators["auth-a"].Users["alice"] != "secret-a" {
+		t.Errorf("expected original authenticator users to remain unchanged")
 	}
 	if conf.Backends["alb-users"].ALBOptions.UserRouter.Users["user-a"].ToBackend != "prom-b" {
 		t.Errorf("expected original user router backend reference to remain unchanged")
