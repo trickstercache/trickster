@@ -94,6 +94,9 @@ func NewErrInvalidUserRouterOptions(backendName string) error {
 func (o *Options) Clone() *Options {
 	out := pointers.Clone(o)
 	out.Users = maps.Clone(o.Users)
+	for k, v := range out.Users {
+		out.Users[k] = pointers.Clone(v)
+	}
 	return out
 }
 
