@@ -39,6 +39,15 @@ authenticators:
     provider: basic
     users:
       charlie: secret-c
+tracing:
+  traces-a:
+    provider: otlp
+    endpoint: http://traces-a.private.example:4318/v1/traces
+  traces-b:
+    provider: otlp
+    endpoint: traces-b.private.example:4317
+  traces-stdout:
+    provider: stdout
 backends:
   alb-main:
     provider: alb
@@ -61,6 +70,7 @@ backends:
     origin_url: http://prom-a.private.example:9090/private/path
     cache_name: cache-a
     authenticator_name: auth-z
+    tracing_name: traces-b
     paths:
       - path: /query
         authenticator_name: auth-a
@@ -74,9 +84,11 @@ backends:
     provider: prometheus
     origin_url: http://prom-b.private.example:9090/private/path
     cache_name: cache-b
+    tracing_name: traces-a
   rule-main:
     provider: rule
     rule_name: route-rule
+    tracing_name: traces-stdout
 rules:
   route-rule:
     next_route: alb-main
@@ -106,6 +118,13 @@ rules:
 		"authenticator_name: none",
 		"user1: redacted",
 		"user2: redacted",
+		"otlp-1:",
+		"otlp-2:",
+		"stdout-1:",
+		"tracing_name: otlp-2",
+		"tracing_name: otlp-1",
+		"tracing_name: stdout-1",
+		"endpoint: example.com",
 		"origin_url: example.com",
 		"cache_name: memory-1",
 		"cache_name: memory-2",
@@ -139,6 +158,11 @@ rules:
 		"secret-a",
 		"secret-b",
 		"secret-c",
+		"traces-a",
+		"traces-b",
+		"traces-stdout",
+		"traces-a.private.example",
+		"traces-b.private.example",
 		"prom-a.private.example",
 		"prom-b.private.example",
 		"private-org",
@@ -163,6 +187,12 @@ rules:
 	}
 	if conf.Authenticators["auth-a"].Users["alice"] != "secret-a" {
 		t.Errorf("expected original authenticator users to remain unchanged")
+	}
+	if conf.Backends["prom-a"].TracingConfigName != "traces-b" {
+		t.Errorf("expected original backend tracing reference to remain unchanged")
+	}
+	if conf.TracingOptions["traces-b"].Endpoint != "traces-b.private.example:4317" {
+		t.Errorf("expected original tracing endpoint to remain unchanged")
 	}
 	if conf.Backends["alb-users"].ALBOptions.UserRouter.Users["user-a"].ToBackend != "prom-b" {
 		t.Errorf("expected original user router backend reference to remain unchanged")

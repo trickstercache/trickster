@@ -26,6 +26,8 @@ import (
 	rule "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
 	cache "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	cp "github.com/trickstercache/trickster/v2/pkg/cache/providers"
+	tracing "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
+	tp "github.com/trickstercache/trickster/v2/pkg/observability/tracing/providers"
 	auth "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 )
 
@@ -45,6 +47,7 @@ func (c *Config) SanitizedClone() *Config {
 	cacheNameMap := anonymizedCacheNames(cp.Caches)
 	backendNameMap := anonymizedBackendNames(cp.Backends)
 	authNameMap := anonymizedAuthenticatorNames(cp.Authenticators)
+	tracingNameMap := anonymizedTracingNames(cp.TracingOptions)
 
 	renamedCaches := make(cache.Lookup, len(cp.Caches))
 	for oldName, opts := range cp.Caches {
@@ -73,6 +76,9 @@ func (c *Config) SanitizedClone() *Config {
 			if newAuthName, ok := authNameMap[opts.AuthenticatorName]; ok {
 				opts.AuthenticatorName = newAuthName
 			}
+			if newTracingName, ok := tracingNameMap[opts.TracingConfigName]; ok {
+				opts.TracingConfigName = newTracingName
+			}
 			sanitizePathAuthenticatorReferences(opts, authNameMap)
 			sanitizeBackendReferences(opts, backendNameMap)
 			sanitizePathHeaderValues(opts)
@@ -91,6 +97,19 @@ func (c *Config) SanitizedClone() *Config {
 		renamedAuthenticators[newName] = opts
 	}
 	cp.Authenticators = renamedAuthenticators
+
+	renamedTracing := make(tracing.Lookup, len(cp.TracingOptions))
+	for oldName, opts := range cp.TracingOptions {
+		newName := tracingNameMap[oldName]
+		if opts != nil {
+			opts.Name = newName
+			if opts.Endpoint != "" {
+				opts.Endpoint = "example.com"
+			}
+		}
+		renamedTracing[newName] = opts
+	}
+	cp.TracingOptions = renamedTracing
 
 	for _, opts := range cp.Rules {
 		sanitizeRuleReferences(opts, backendNameMap)
@@ -138,6 +157,21 @@ func anonymizedAuthenticatorNames(authenticators auth.Lookup) map[string]string 
 	return out
 }
 
+func anonymizedTracingNames(tracingOptions tracing.Lookup) map[string]string {
+	names := sortedKeys(tracingOptions)
+	counts := make(map[string]int)
+	out := make(map[string]string, len(tracingOptions))
+	for _, name := range names {
+		provider := "tracing"
+		if tracingOptions[name] != nil {
+			provider = anonymizedTracingProviderName(tracingOptions[name].Provider)
+		}
+		counts[provider]++
+		out[name] = fmt.Sprintf("%s-%d", provider, counts[provider])
+	}
+	return out
+}
+
 func anonymizedBackendProviderName(provider string) string {
 	provider = strings.TrimSpace(strings.ToLower(provider))
 	if provider == bp.Prometheus {
@@ -159,6 +193,17 @@ func anonymizedCacheProviderName(provider string) string {
 	}
 	if provider == "" {
 		return "cache"
+	}
+	return provider
+}
+
+func anonymizedTracingProviderName(provider string) string {
+	provider = strings.TrimSpace(strings.ToLower(provider))
+	if id, ok := tp.Names[provider]; ok {
+		return id.String()
+	}
+	if provider == "" {
+		return "tracing"
 	}
 	return provider
 }
