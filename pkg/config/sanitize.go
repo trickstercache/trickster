@@ -18,7 +18,7 @@ package config
 
 import (
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
@@ -28,6 +28,8 @@ import (
 	cp "github.com/trickstercache/trickster/v2/pkg/cache/providers"
 	auth "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 )
+
+const sanitizedSecret = "*****"
 
 // SanitizedString returns the running Config as YAML with private backend and
 // cache names, origin URLs, and path header values anonymized.
@@ -229,10 +231,10 @@ func sanitizePathHeaderValues(opts *bo.Options) {
 			continue
 		}
 		for k := range path.RequestHeaders {
-			path.RequestHeaders[k] = "*****"
+			path.RequestHeaders[k] = sanitizedSecret
 		}
 		for k := range path.ResponseHeaders {
-			path.ResponseHeaders[k] = "*****"
+			path.ResponseHeaders[k] = sanitizedSecret
 		}
 	}
 }
@@ -242,6 +244,6 @@ func sortedKeys[V any](m map[string]V) []string {
 	for k := range m {
 		out = append(out, k)
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }
