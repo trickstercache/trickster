@@ -19,6 +19,7 @@ package options
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
@@ -152,7 +153,22 @@ func (o *Options) Initialize(_ string) error {
 
 // Clone returns a perfect copy of the subject *Options
 func (o *Options) Clone() *Options {
-	return pointers.Clone(o)
+	out := pointers.Clone(o)
+	out.CaseOptions = o.CaseOptions.Clone()
+	return out
+}
+
+// Clone returns a perfect copy of the subject CaseOptionsList
+func (l CaseOptionsList) Clone() CaseOptionsList {
+	out := make(CaseOptionsList, len(l))
+	for i, c := range l {
+		if c == nil {
+			continue
+		}
+		out[i] = pointers.Clone(c)
+		out[i].Matches = slices.Clone(c.Matches)
+	}
+	return out
 }
 
 func (o *Options) Validate() (bool, error) {
