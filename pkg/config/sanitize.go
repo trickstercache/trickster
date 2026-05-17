@@ -26,10 +26,19 @@ import (
 	rule "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
 	cache "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	cp "github.com/trickstercache/trickster/v2/pkg/cache/providers"
+	tracing "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
+	tp "github.com/trickstercache/trickster/v2/pkg/observability/tracing/providers"
 	auth "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
+	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 )
 
 const sanitizedSecret = "*****"
+const sanitizedEndpoint = "example.com"
+
+var unsanitizedPathHeaders = map[string]struct{}{
+	"cache-control": {},
+	"expires":       {},
+}
 
 // SanitizedString returns the running Config as YAML with private backend and
 // cache names, origin URLs, and path header values anonymized.
@@ -45,12 +54,14 @@ func (c *Config) SanitizedClone() *Config {
 	cacheNameMap := anonymizedCacheNames(cp.Caches)
 	backendNameMap := anonymizedBackendNames(cp.Backends)
 	authNameMap := anonymizedAuthenticatorNames(cp.Authenticators)
+	tracingNameMap := anonymizedTracingNames(cp.TracingOptions)
 
 	renamedCaches := make(cache.Lookup, len(cp.Caches))
 	for oldName, opts := range cp.Caches {
 		newName := cacheNameMap[oldName]
 		if opts != nil {
 			opts.Name = newName
+			sanitizeRedisEndpoints(opts)
 		}
 		renamedCaches[newName] = opts
 	}
@@ -62,16 +73,19 @@ func (c *Config) SanitizedClone() *Config {
 		if opts != nil {
 			opts.Name = newName
 			if opts.OriginURL != "" {
-				opts.OriginURL = "example.com"
+				opts.OriginURL = sanitizedEndpoint
 			}
 			if opts.CacheKeyPrefix != "" {
-				opts.CacheKeyPrefix = "example.com"
+				opts.CacheKeyPrefix = sanitizedEndpoint
 			}
 			if newCacheName, ok := cacheNameMap[opts.CacheName]; ok {
 				opts.CacheName = newCacheName
 			}
 			if newAuthName, ok := authNameMap[opts.AuthenticatorName]; ok {
 				opts.AuthenticatorName = newAuthName
+			}
+			if newTracingName, ok := tracingNameMap[opts.TracingConfigName]; ok {
+				opts.TracingConfigName = newTracingName
 			}
 			sanitizePathAuthenticatorReferences(opts, authNameMap)
 			sanitizeBackendReferences(opts, backendNameMap)
@@ -91,6 +105,21 @@ func (c *Config) SanitizedClone() *Config {
 		renamedAuthenticators[newName] = opts
 	}
 	cp.Authenticators = renamedAuthenticators
+
+	renamedTracing := make(tracing.Lookup, len(cp.TracingOptions))
+	for oldName, opts := range cp.TracingOptions {
+		newName := tracingNameMap[oldName]
+		if opts != nil {
+			opts.Name = newName
+			if opts.Endpoint != "" {
+				opts.Endpoint = sanitizedEndpoint
+			}
+		}
+		renamedTracing[newName] = opts
+	}
+	cp.TracingOptions = renamedTracing
+
+	sanitizeRequestRewriters(cp.RequestRewriters)
 
 	for _, opts := range cp.Rules {
 		sanitizeRuleReferences(opts, backendNameMap)
@@ -138,6 +167,21 @@ func anonymizedAuthenticatorNames(authenticators auth.Lookup) map[string]string 
 	return out
 }
 
+func anonymizedTracingNames(tracingOptions tracing.Lookup) map[string]string {
+	names := sortedKeys(tracingOptions)
+	counts := make(map[string]int)
+	out := make(map[string]string, len(tracingOptions))
+	for _, name := range names {
+		provider := "tracing"
+		if tracingOptions[name] != nil {
+			provider = anonymizedTracingProviderName(tracingOptions[name].Provider)
+		}
+		counts[provider]++
+		out[name] = fmt.Sprintf("%s-%d", provider, counts[provider])
+	}
+	return out
+}
+
 func anonymizedBackendProviderName(provider string) string {
 	provider = strings.TrimSpace(strings.ToLower(provider))
 	if provider == bp.Prometheus {
@@ -161,6 +205,31 @@ func anonymizedCacheProviderName(provider string) string {
 		return "cache"
 	}
 	return provider
+}
+
+func anonymizedTracingProviderName(provider string) string {
+	provider = strings.TrimSpace(strings.ToLower(provider))
+	if id, ok := tp.Names[provider]; ok {
+		return id.String()
+	}
+	if provider == "" {
+		return "tracing"
+	}
+	return provider
+}
+
+func sanitizeRedisEndpoints(opts *cache.Options) {
+	if opts == nil || opts.Redis == nil {
+		return
+	}
+	if opts.Redis.Endpoint != "" {
+		opts.Redis.Endpoint = sanitizedEndpoint
+	}
+	for i, endpoint := range opts.Redis.Endpoints {
+		if endpoint != "" {
+			opts.Redis.Endpoints[i] = sanitizedEndpoint
+		}
+	}
 }
 
 func sanitizePathAuthenticatorReferences(opts *bo.Options, authNameMap map[string]string) {
@@ -225,18 +294,60 @@ func sanitizeAuthenticatorUsers(opts *auth.Options) {
 	opts.Users = users
 }
 
+func sanitizeRequestRewriters(rewriters map[string]*rwopts.Options) {
+	for _, opts := range rewriters {
+		if opts == nil {
+			continue
+		}
+		for _, instruction := range opts.Instructions {
+			sanitizeRewriterInstruction(instruction)
+		}
+	}
+}
+
+func sanitizeRewriterInstruction(instruction []string) {
+	if len(instruction) < 2 {
+		return
+	}
+	switch strings.ToLower(instruction[0]) {
+	case "host", "hostname":
+		sanitizeRewriterValues(instruction, 2)
+	case "header":
+		if len(instruction) > 2 && strings.EqualFold(instruction[2], "host") {
+			sanitizeRewriterValues(instruction, 3)
+		}
+	}
+}
+
+func sanitizeRewriterValues(instruction []string, start int) {
+	for i := start; i < len(instruction); i++ {
+		if instruction[i] != "" {
+			instruction[i] = sanitizedEndpoint
+		}
+	}
+}
+
 func sanitizePathHeaderValues(opts *bo.Options) {
 	for _, path := range opts.Paths {
 		if path == nil {
 			continue
 		}
 		for k := range path.RequestHeaders {
-			path.RequestHeaders[k] = sanitizedSecret
+			if shouldSanitizePathHeader(k) {
+				path.RequestHeaders[k] = sanitizedSecret
+			}
 		}
 		for k := range path.ResponseHeaders {
-			path.ResponseHeaders[k] = sanitizedSecret
+			if shouldSanitizePathHeader(k) {
+				path.ResponseHeaders[k] = sanitizedSecret
+			}
 		}
 	}
+}
+
+func shouldSanitizePathHeader(name string) bool {
+	_, ok := unsanitizedPathHeaders[strings.ToLower(name)]
+	return !ok
 }
 
 func sortedKeys[V any](m map[string]V) []string {
