@@ -1,0 +1,6 @@
+backends:
+  test:
+    alb:
+      mechanism: fgr
+      fgr:
+        status_codes: [200, 201]

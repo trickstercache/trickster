@@ -27,21 +27,18 @@ import (
 
 // Pool defines the interface for a load balancer pool
 type Pool interface {
-	// Healthy returns the full list of Healthy Targets as http.Handlers
-	Healthy() []http.Handler
-	// HealthyTargets returns the snapshot of Healthy Targets. Snapshots can
-	// lag behind atomic status flips; callers that dispatch traffic should
-	// prefer LiveTargets.
-	HealthyTargets() Targets
-	// LiveTargets returns the snapshot of Healthy Targets re-filtered against
-	// each target's current hcStatus. This closes the race window between
-	// an atomic status flip and the asynchronous healthy-list refresh.
-	LiveTargets() Targets
-	// SetHealthy sets the Healthy Targets List
+	// Targets returns the current set of dispatchable targets, re-filtered
+	// against each target's atomic hcStatus. This closes the race window
+	// between a status flip and the asynchronous healthy-list refresh, so it
+	// is the correct method for request dispatch.
+	Targets() Targets
+	// SetHealthy seeds the pool's healthy set from a handler list. Intended
+	// for tests and bootstrap paths that don't drive status updates through
+	// healthcheck subscribers.
 	SetHealthy([]http.Handler)
-	// Stop stops the pool and its health checker goroutines
+	// Stop stops the pool and its health checker goroutines.
 	Stop()
-	// RefreshHealthy forces a refresh of the pool's healthy handlers list
+	// RefreshHealthy forces a refresh of the pool's healthy handlers list.
 	RefreshHealthy()
 }
 
@@ -49,13 +46,16 @@ type Pool interface {
 type pool struct {
 	targets         Targets
 	healthyTargets  atomic.Pointer[Targets]
+	liveTargets     atomic.Pointer[Targets]
 	healthyHandlers atomic.Pointer[[]http.Handler]
-	refreshPending  atomic.Bool // sticky dirty flag indicating HealthyTargets must be rebuilt
+	refreshPending  atomic.Bool // sticky dirty flag indicating healthyTargets must be rebuilt
 	healthyFloor    int
 	done            chan struct{}
 	statusCh        chan bool // receives raw health status change notifications from targets
 	ch              chan bool
 	mtx             sync.Mutex
+	stopOnce        sync.Once
+	workers         sync.WaitGroup
 }
 
 // scheduleRefresh marks the healthy list as dirty and coalesces wakeups for
@@ -90,9 +90,14 @@ func (p *pool) RefreshHealthy() {
 	ht = ht[:k]
 	p.healthyHandlers.Store(&hh)
 	p.healthyTargets.Store(&ht)
+	lt := ht
+	p.liveTargets.Store(&lt)
 }
 
-func (p *pool) HealthyTargets() Targets {
+// snapshot returns the eventually-consistent healthy-targets snapshot. Snapshots
+// can lag behind atomic status flips; only the refresh worker and internal tests
+// should read this directly. Dispatch callers must use Targets().
+func (p *pool) snapshot() Targets {
 	t := p.healthyTargets.Load()
 	if t != nil {
 		return *t
@@ -100,19 +105,24 @@ func (p *pool) HealthyTargets() Targets {
 	return nil
 }
 
-func (p *pool) Healthy() []http.Handler {
-	t := p.healthyHandlers.Load()
-	if t != nil {
-		return *t
+func (p *pool) Targets() Targets {
+	if lt := p.liveTargets.Load(); lt != nil && !p.refreshPending.Load() {
+		cached := *lt
+		allLive := true
+		for _, t := range cached {
+			if t == nil || t.hcStatus == nil || int(t.hcStatus.Get()) < p.healthyFloor {
+				allLive = false
+				break
+			}
+		}
+		if allLive {
+			return cached
+		}
 	}
-	return nil
-}
-
-func (p *pool) LiveTargets() Targets {
-	hl := p.HealthyTargets()
+	hl := p.snapshot()
 	live := make(Targets, 0, len(hl))
 	for _, t := range hl {
-		if t == nil || int(t.hcStatus.Get()) < p.healthyFloor {
+		if t == nil || t.hcStatus == nil || int(t.hcStatus.Get()) < p.healthyFloor {
 			continue
 		}
 		live = append(live, t)
@@ -131,18 +141,20 @@ func (p *pool) SetHealthy(h []http.Handler) {
 		t[i] = NewTarget(hh, st, nil)
 	}
 	p.healthyTargets.Store(&t)
+	lt := t
+	p.liveTargets.Store(&lt)
 }
 
 func (p *pool) Stop() {
-	select {
-	case <-p.done:
-		// already stopped
-	default:
+	p.stopOnce.Do(func() {
 		close(p.done)
 		for _, t := range p.targets {
 			if t != nil && t.hcStatus != nil {
 				t.hcStatus.UnregisterSubscriber(p.statusCh)
 			}
 		}
-	}
+		// Wait for refresh goroutines so SetHealthy after Stop cannot
+		// be overwritten by a late RefreshHealthy.
+		p.workers.Wait()
+	})
 }

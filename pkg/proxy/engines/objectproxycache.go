@@ -334,16 +334,24 @@ func handlePCF(pr *proxyRequest) error {
 			pr.rsc.BackendOptions.NegativeCache, pr.upstreamResponse.Header))
 		pr.determineCacheability()
 
-		go func() {
+		goWithRecover("opc.pcf.copy", func() {
+			defer func() {
+				if reader != nil {
+					reader.Close()
+				}
+			}()
+			defer reqs.Delete(pr.key)
+			defer pcf.Close()
 			var dest io.Writer = pcf
 			if pr.writeToCache {
 				pr.cacheBuffer = &bytes.Buffer{}
 				dest = io.MultiWriter(pcf, pr.cacheBuffer)
 			}
-			io.Copy(dest, reader)
-			pcf.Close()
-			reqs.Delete(pr.key)
-		}()
+			if _, err := io.Copy(dest, reader); err != nil {
+				logger.Error("pcf upstream copy failed",
+					logging.Pairs{"key": pr.key, "detail": err.Error()})
+			}
+		})
 
 		if err := pcf.AddClient(pr.responseWriter); err != nil {
 			return err

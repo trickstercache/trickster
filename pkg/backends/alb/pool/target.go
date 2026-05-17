@@ -49,6 +49,7 @@ func New(targets Targets, healthyFloor int) Pool {
 		}
 		t.hcStatus.RegisterSubscriber(p.statusCh)
 	}
+	p.workers.Add(2)
 	go p.listenStatusUpdates()
 	go p.checkHealth()
 	return p

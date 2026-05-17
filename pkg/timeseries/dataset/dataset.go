@@ -257,6 +257,16 @@ func (ds *DataSet) DefaultMerger(sortPoints bool, collection ...timeseries.Times
 	copy(rs, ds.Results)
 	for _, ds2 := range dl {
 		ds.ExtentList = ds.ExtentList.Merge(ds2.ExtentList, ds.Step())
+		// Preserve per-shard Warnings: operators expect to see every warning
+		// emitted by any backend (e.g. Prometheus partial-result warnings).
+		if len(ds2.Warnings) > 0 {
+			ds.Warnings = append(ds.Warnings, ds2.Warnings...)
+		}
+		// Status priority mirrors prometheus model.Envelope.Merge: success wins
+		// over error (error text is already surfaced via Warnings on upgrade).
+		if ds.Status == "" || (ds.Status != "success" && ds2.Status == "success") {
+			ds.Status = ds2.Status
+		}
 		for _, r2 := range ds2.Results {
 			if r2 == nil || len(r2.SeriesList) == 0 {
 				continue
@@ -281,8 +291,30 @@ func (ds *DataSet) DefaultMerger(sortPoints bool, collection ...timeseries.Times
 // MergeWithStrategy merges the provided Timeseries list into the base DataSet
 // using the specified MergeStrategy for combining values from matching series.
 func (ds *DataSet) MergeWithStrategy(sortPoints bool, strategy int, collection ...timeseries.Timeseries) {
-	if MergeStrategy(strategy) == MergeStrategyDedup {
-		ds.Merge(sortPoints, collection...)
+	ds.MergeWithOpts(MergeOpts{
+		SortPoints: sortPoints,
+		Strategy:   MergeStrategy(strategy),
+	}, collection...)
+}
+
+// MergeWithStrategyTolerant is the primitive-typed entrypoint used by the
+// response/merge package to plumb tolerance through without importing the
+// dataset package (which would form an import cycle).
+func (ds *DataSet) MergeWithStrategyTolerant(sortPoints bool, strategy int, toleranceNanos int64,
+	collection ...timeseries.Timeseries,
+) {
+	ds.MergeWithOpts(MergeOpts{
+		SortPoints:     sortPoints,
+		Strategy:       MergeStrategy(strategy),
+		ToleranceNanos: toleranceNanos,
+	}, collection...)
+}
+
+// MergeWithOpts merges the provided Timeseries list into the base DataSet
+// honoring every field of opts (including ToleranceNanos for sub-step dedup).
+func (ds *DataSet) MergeWithOpts(opts MergeOpts, collection ...timeseries.Timeseries) {
+	if opts.Strategy == MergeStrategyDedup && opts.ToleranceNanos == 0 {
+		ds.Merge(opts.SortPoints, collection...)
 		return
 	}
 	ds.UpdateLock.Lock()
@@ -328,7 +360,7 @@ func (ds *DataSet) MergeWithStrategy(sortPoints bool, strategy int, collection .
 				r1.SeriesList = r2.SeriesList.Clone()
 				continue
 			}
-			r1.SeriesList = r1.SeriesList.MergeWithStrategy(r2.SeriesList, sortPoints, MergeStrategy(strategy))
+			r1.SeriesList = r1.SeriesList.MergeWithOpts(r2.SeriesList, opts)
 		}
 	}
 	ds.Results = rs[:k]
@@ -401,15 +433,28 @@ func (ds *DataSet) FinalizeWeightedAvg(countDS *DataSet, pairingQueryStatement s
 			if !ok {
 				continue
 			}
+			kept := s.Points[:0]
+			dropped := 0
 			for i := range s.Points {
 				if len(s.Points[i].Values) == 0 {
+					kept = append(kept, s.Points[i])
 					continue
 				}
 				cnt, ok := ec[s.Points[i].Epoch]
-				if ok && cnt != 0 {
-					sum := parseFloat(s.Points[i].Values[0])
-					s.Points[i].Values[0] = strconv.FormatFloat(sum/cnt, 'f', -1, 64)
+				if !ok || cnt == 0 {
+					dropped++
+					continue
 				}
+				sum := parseFloat(s.Points[i].Values[0])
+				s.Points[i].Values[0] = strconv.FormatFloat(sum/cnt, 'f', -1, 64)
+				kept = append(kept, s.Points[i])
+			}
+			s.Points = kept
+			if dropped > 0 {
+				ds.Warnings = append(ds.Warnings,
+					"trickster: weighted-avg series "+s.Header.Name+
+						" had sum epochs with no matching count; "+
+						strconv.Itoa(dropped)+" point(s) dropped to avoid returning unfinalized sums")
 			}
 		}
 	}

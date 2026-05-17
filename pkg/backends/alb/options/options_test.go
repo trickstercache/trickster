@@ -18,6 +18,7 @@ package options
 
 import (
 	"errors"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -47,6 +48,19 @@ func fromYAML(conf string) (*Options, error) {
 		}
 	}
 	return nil, nil
+}
+
+func fromYAMLFile(t *testing.T, path string) *Options {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	o, err := fromYAML(string(b))
+	if err != nil {
+		t.Fatalf("parse %s: %v", path, err)
+	}
+	return o
 }
 
 func TestNew(t *testing.T) {
@@ -87,10 +101,7 @@ func TestInitialize(t *testing.T) {
 	}
 
 	// Test with TSM mechanism
-	o, err = fromYAML(testTOML)
-	if err != nil {
-		t.Error(err)
-	}
+	o = fromYAMLFile(t, "testdata/tsm.yaml")
 	err = o.Initialize("")
 	if err != nil {
 		t.Error(err)
@@ -100,10 +111,7 @@ func TestInitialize(t *testing.T) {
 	}
 
 	// Test with FGR mechanism
-	o, err = fromYAML(testFGR)
-	if err != nil {
-		t.Error(err)
-	}
+	o = fromYAMLFile(t, "testdata/fgr.yaml")
 	err = o.Initialize("")
 	if err != nil {
 		t.Error("failed to set defaults")

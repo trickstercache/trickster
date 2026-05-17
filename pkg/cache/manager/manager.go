@@ -18,6 +18,7 @@ package manager
 
 import (
 	"errors"
+	"sync"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/cache"
@@ -29,6 +30,17 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"golang.org/x/sync/singleflight"
 )
+
+// DefaultCloseDrainHardTimeout is the absolute upper bound a draining Close()
+// will wait for in-flight cache operations before invoking the underlying
+// client Close anyway. Prevents one stuck request from blocking reload forever.
+const DefaultCloseDrainHardTimeout = 30 * time.Second
+
+// ErrCacheClosed is returned by Store/Retrieve/Remove when invoked after
+// Close() has started draining. Handlers should treat this as a transient
+// failure (config reload in progress) and respond to the client without
+// touching the cache.
+var ErrCacheClosed = errors.New("cache is closed")
 
 // Provide initialization options to the Manager / cache.Cache creation
 type CacheOptions struct {
@@ -48,21 +60,71 @@ func NewCache(cli cache.Client, cacheOpts CacheOptions, cacheConfig *options.Opt
 
 // Manager implements the cache.Cache interface for Trickster, providing an abstracted
 // cache layer with metrics, locking, and optional index / LRU-key-reaper.
+//
+// Manager also tracks in-flight Store/Retrieve/Remove operations so that
+// Close() can drain them before tearing down the underlying client. This is
+// the reload-safety contract: when the daemon replaces a cache instance on
+// config reload, Close() on the old Manager blocks until handlers that still
+// hold a reference have finished, with a hard timeout fallback so a single
+// stuck request can't block reload forever.
 type Manager struct {
 	cache.Client
 	originalCli cache.Client
 	sf          singleflight.Group
 	config      *options.Options
 	opts        CacheOptions
+
+	// mu serializes acquire/release vs Close. WaitGroup forbids concurrent
+	// Add and Wait, so the closing flag and Add(1) live under one lock.
+	mu sync.Mutex
+	// inflight counts active Store/Retrieve/Remove calls. Close() waits for
+	// it to reach zero before invoking the underlying client Close.
+	inflight sync.WaitGroup
+	// closing is set once Close() begins so new operations short-circuit.
+	closing bool
+	// closeDrainTimeout bounds how long Close() waits for inflight to drain.
+	closeDrainTimeout time.Duration
+}
+
+// SetCloseDrainTimeout overrides the hard timeout used by Close(). A zero or
+// negative value resets to DefaultCloseDrainHardTimeout. Safe to call once
+// during construction.
+func (cm *Manager) SetCloseDrainTimeout(d time.Duration) {
+	cm.closeDrainTimeout = d
+}
+
+// acquire increments the inflight counter if the cache is not closing.
+// Returns false if Close() has already started.
+func (cm *Manager) acquire() bool {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	if cm.closing {
+		return false
+	}
+	cm.inflight.Add(1)
+	return true
+}
+
+// release decrements the inflight counter.
+func (cm *Manager) release() {
+	cm.inflight.Done()
 }
 
 func (cm *Manager) StoreReference(cacheKey string, data cache.ReferenceObject, ttl time.Duration) error {
+	if !cm.acquire() {
+		return ErrCacheClosed
+	}
+	defer cm.release()
 	metrics.ObserveCacheOperation(cm.config.Name, cm.config.Provider, "setDirect", "none", float64(data.Size()))
 	logger.Debug("cache store", logging.Pairs{"key": cacheKey, "provider": cm.config.Provider})
 	return cm.Client.(cache.MemoryCache).StoreReference(cacheKey, data, ttl)
 }
 
 func (cm *Manager) Store(cacheKey string, byteData []byte, ttl time.Duration) error {
+	if !cm.acquire() {
+		return ErrCacheClosed
+	}
+	defer cm.release()
 	metrics.ObserveCacheOperation(cm.config.Name, cm.config.Provider, "set", "none", float64(len(byteData)))
 	logger.Debug("cache store", logging.Pairs{"key": cacheKey, "provider": cm.config.Provider})
 	return cm.Client.Store(cacheKey, byteData, ttl)
@@ -83,6 +145,10 @@ func (cm *Manager) observeRetrieval(cacheKey string, size int, s status.LookupSt
 }
 
 func (cm *Manager) RetrieveReference(cacheKey string) (any, status.LookupStatus, error) {
+	if !cm.acquire() {
+		return nil, status.LookupStatusError, ErrCacheClosed
+	}
+	defer cm.release()
 	v, s, err := cm.Client.(cache.MemoryCache).RetrieveReference(cacheKey)
 	if ro, ok := v.(cache.ReferenceObject); ok {
 		cm.observeRetrieval(cacheKey, ro.Size(), s, err)
@@ -96,6 +162,10 @@ type retrieveResult struct {
 }
 
 func (cm *Manager) Retrieve(cacheKey string) ([]byte, status.LookupStatus, error) {
+	if !cm.acquire() {
+		return nil, status.LookupStatusError, ErrCacheClosed
+	}
+	defer cm.release()
 	val, err, shared := cm.sf.Do(cacheKey, func() (any, error) {
 		b, s, err := cm.Client.Retrieve(cacheKey)
 		cm.observeRetrieval(cacheKey, len(b), s, err)
@@ -117,9 +187,53 @@ func (cm *Manager) Retrieve(cacheKey string) ([]byte, status.LookupStatus, error
 }
 
 func (cm *Manager) Remove(cacheKeys ...string) error {
-	metrics.ObserveCacheDel(cm.config.Name, cm.config.Provider, float64(len(cacheKeys)-1))
+	if len(cacheKeys) == 0 {
+		return nil
+	}
+	if !cm.acquire() {
+		return ErrCacheClosed
+	}
+	defer cm.release()
+	metrics.ObserveCacheDel(cm.config.Name, cm.config.Provider, float64(len(cacheKeys)))
 	logger.Debug("cache remove", logging.Pairs{"keys": cacheKeys, "provider": cm.config.Provider})
 	return cm.Client.Remove(cacheKeys...)
+}
+
+// Close marks the Manager as closing, waits for in-flight cache operations
+// to drain, then closes the underlying client. The drain wait is bounded by
+// closeDrainTimeout (default DefaultCloseDrainHardTimeout); if it elapses the
+// underlying Close is invoked anyway so reload cannot hang.
+//
+// Subsequent Store/Retrieve/Remove calls return ErrCacheClosed without
+// touching the underlying client. Close is safe to call once; further calls
+// no-op the drain and forward to the client.
+func (cm *Manager) Close() error {
+	cm.mu.Lock()
+	first := !cm.closing
+	cm.closing = true
+	cm.mu.Unlock()
+	if !first {
+		return cm.Client.Close()
+	}
+	timeout := cm.closeDrainTimeout
+	if timeout <= 0 {
+		timeout = DefaultCloseDrainHardTimeout
+	}
+	done := make(chan struct{})
+	go func() {
+		cm.inflight.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(timeout):
+		logger.Warn("cache close drain timed out, closing underlying client anyway",
+			logging.Pairs{
+				"cache":   cm.config.Name,
+				"timeout": timeout.String(),
+			})
+	}
+	return cm.Client.Close()
 }
 
 func (cm *Manager) Connect() error {

@@ -24,7 +24,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/albpool"
@@ -33,50 +32,46 @@ import (
 func TestHandleNewestResponseNilPool(t *testing.T) {
 	h := &handler{}
 	w := httptest.NewRecorder()
-	r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
-	h.ServeHTTP(w, r)
+	h.ServeHTTP(w, albpool.NewParentGET(t))
 	if w.Code != http.StatusBadGateway {
 		t.Errorf("expected %d got %d", http.StatusBadGateway, w.Code)
 	}
 }
 
 func TestHandleNewestResponse(t *testing.T) {
-	r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
-
 	p, _, _ := albpool.New(0, nil)
+	defer p.Stop()
 	h := &handler{}
 	h.SetPool(p)
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, r)
+	h.ServeHTTP(w, albpool.NewParentGET(t))
 	if w.Code != http.StatusBadGateway {
 		t.Error("expected 502 got", w.Code)
 	}
 
-	var st []*healthcheck.Status
-	p, _, st = albpool.New(-1,
+	p2, _, _ := albpool.NewHealthy(
 		[]http.Handler{http.HandlerFunc(tu.BasicHTTPHandler)})
-	h.SetPool(p)
-	st[0].Set(0)
-	time.Sleep(250 * time.Millisecond)
+	defer p2.Stop()
+	h.SetPool(p2)
+	albpool.WaitHealthy(t, p2, 1)
 
 	w = httptest.NewRecorder()
-	h.ServeHTTP(w, r)
+	h.ServeHTTP(w, albpool.NewParentGET(t))
 	if w.Code != http.StatusOK {
 		t.Error("expected 200 got", w.Code)
 	}
 
-	p, _, st = albpool.New(-1,
+	p3, _, _ := albpool.NewHealthy(
 		[]http.Handler{
 			http.HandlerFunc(tu.BasicHTTPHandler),
 			http.HandlerFunc(tu.BasicHTTPHandler),
 		})
-	h.SetPool(p)
-	st[0].Set(0)
-	st[1].Set(0)
-	time.Sleep(250 * time.Millisecond)
+	defer p3.Stop()
+	h.SetPool(p3)
+	albpool.WaitHealthy(t, p3, 2)
 
 	w = httptest.NewRecorder()
-	h.ServeHTTP(w, r)
+	h.ServeHTTP(w, albpool.NewParentGET(t))
 	if w.Code != http.StatusOK {
 		t.Error("expected 200 got", w.Code)
 	}
@@ -98,19 +93,17 @@ func TestNewestLastModifiedSelection(t *testing.T) {
 	}
 
 	t.Run("picks newest", func(t *testing.T) {
-		p, _, st := albpool.New(-1, []http.Handler{
+		p, _, _ := albpool.NewHealthy([]http.Handler{
 			handlerWithLM("older", older),
 			handlerWithLM("newer", newer),
 		})
-		st[0].Set(0)
-		st[1].Set(0)
-		time.Sleep(250 * time.Millisecond)
+		defer p.Stop()
+		albpool.WaitHealthy(t, p, 2)
 
 		h := &handler{}
 		h.SetPool(p)
 		w := httptest.NewRecorder()
-		r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
-		h.ServeHTTP(w, r)
+		h.ServeHTTP(w, albpool.NewParentGET(t))
 		if w.Code != http.StatusOK {
 			t.Fatalf("expected 200 got %d", w.Code)
 		}
@@ -127,19 +120,17 @@ func TestNewestLastModifiedSelection(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte("bad"))
 		})
-		p, _, st := albpool.New(-1, []http.Handler{
+		p, _, _ := albpool.NewHealthy([]http.Handler{
 			badLM,
 			handlerWithLM("valid", newer),
 		})
-		st[0].Set(0)
-		st[1].Set(0)
-		time.Sleep(250 * time.Millisecond)
+		defer p.Stop()
+		albpool.WaitHealthy(t, p, 2)
 
 		h := &handler{}
 		h.SetPool(p)
 		w := httptest.NewRecorder()
-		r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
-		h.ServeHTTP(w, r)
+		h.ServeHTTP(w, albpool.NewParentGET(t))
 		if w.Body.String() != "valid" {
 			t.Errorf("expected body 'valid' got %q", w.Body.String())
 		}
@@ -150,16 +141,14 @@ func TestNewestLastModifiedSelection(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte("fallback"))
 		})
-		p, _, st := albpool.New(-1, []http.Handler{noLM, noLM})
-		st[0].Set(0)
-		st[1].Set(0)
-		time.Sleep(250 * time.Millisecond)
+		p, _, _ := albpool.NewHealthy([]http.Handler{noLM, noLM})
+		defer p.Stop()
+		albpool.WaitHealthy(t, p, 2)
 
 		h := &handler{}
 		h.SetPool(p)
 		w := httptest.NewRecorder()
-		r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
-		h.ServeHTTP(w, r)
+		h.ServeHTTP(w, albpool.NewParentGET(t))
 		if w.Code != http.StatusOK {
 			t.Fatalf("expected 200 got %d", w.Code)
 		}
@@ -176,17 +165,14 @@ func TestNewestLastModifiedSelection(t *testing.T) {
 			body := fmt.Sprintf("b%02d", i)
 			hs[i] = handlerWithLM(body, lm)
 		}
-		p, _, st := albpool.New(-1, hs)
-		for _, s := range st {
-			s.Set(0)
-		}
-		time.Sleep(250 * time.Millisecond)
+		p, _, _ := albpool.NewHealthy(hs)
+		defer p.Stop()
+		albpool.WaitHealthy(t, p, len(hs))
 
 		h := &handler{}
 		h.SetPool(p)
 		w := httptest.NewRecorder()
-		r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
-		h.ServeHTTP(w, r)
+		h.ServeHTTP(w, albpool.NewParentGET(t))
 		if w.Code != http.StatusOK {
 			t.Fatalf("expected 200 got %d", w.Code)
 		}
@@ -196,25 +182,20 @@ func TestNewestLastModifiedSelection(t *testing.T) {
 	})
 
 	t.Run("50 partial fail picks only valid", func(t *testing.T) {
-		err500 := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.WriteHeader(http.StatusInternalServerError)
-		})
+		err500 := albpool.StatusHandler(http.StatusInternalServerError, "")
 		hs := make([]http.Handler, 50)
 		for i := range hs {
 			hs[i] = err500
 		}
 		hs[23] = handlerWithLM("winner", newer)
-		p, _, st := albpool.New(-1, hs)
-		for _, s := range st {
-			s.Set(0)
-		}
-		time.Sleep(250 * time.Millisecond)
+		p, _, _ := albpool.NewHealthy(hs)
+		defer p.Stop()
+		albpool.WaitHealthy(t, p, len(hs))
 
 		h := &handler{}
 		h.SetPool(p)
 		w := httptest.NewRecorder()
-		r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
-		h.ServeHTTP(w, r)
+		h.ServeHTTP(w, albpool.NewParentGET(t))
 		if w.Body.String() != "winner" {
 			t.Errorf("expected 'winner' got %q (code %d)", w.Body.String(), w.Code)
 		}
@@ -233,28 +214,30 @@ func TestHandleNewestContextCancel(t *testing.T) {
 		hs[i] = slow
 	}
 	for range 10 {
-		p, _, _ := albpool.New(-1, hs)
-		p.SetHealthy(hs)
+		func() {
+			p, _, _ := albpool.New(-1, hs)
+			defer p.Stop()
+			p.SetHealthy(hs)
 
-		h := &handler{}
-		h.SetPool(p)
-		ctx, cancel := context.WithCancel(context.Background())
-		r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
-		r = r.WithContext(ctx)
-		w := httptest.NewRecorder()
+			h := &handler{}
+			h.SetPool(p)
+			ctx, cancel := context.WithCancel(context.Background())
+			r := albpool.NewParentGET(t).WithContext(ctx)
+			w := httptest.NewRecorder()
 
-		done := make(chan struct{})
-		go func() {
-			h.ServeHTTP(w, r)
-			close(done)
+			done := make(chan struct{})
+			go func() {
+				h.ServeHTTP(w, r)
+				close(done)
+			}()
+			time.Sleep(5 * time.Millisecond)
+			cancel()
+
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				t.Error("ServeHTTP did not return after context cancel")
+			}
 		}()
-		time.Sleep(5 * time.Millisecond)
-		cancel()
-
-		select {
-		case <-done:
-		case <-time.After(5 * time.Second):
-			t.Fatal("ServeHTTP did not return after context cancel")
-		}
 	}
 }

@@ -192,28 +192,24 @@ func TestListenerConnectionLimitWorks(t *testing.T) {
 
 	tt := []struct {
 		Name             string
-		ListenPort       int
 		ConnectionsLimit int
 		Clients          int
 		expectedErr      string
 	}{
 		{
 			"Without connection limit",
-			34001,
 			0,
 			1,
 			"",
 		},
 		{
 			"With connection limit of 10",
-			34002,
 			10,
 			10,
 			"",
 		},
 		{
 			"With connection limit of 1, but with 10 clients",
-			34003,
 			1,
 			10,
 			"(Client.Timeout exceeded while awaiting headers)",
@@ -224,19 +220,23 @@ func TestListenerConnectionLimitWorks(t *testing.T) {
 
 	for _, tc := range tt {
 		t.Run(tc.Name, func(t *testing.T) {
-			l, err := NewListener("", tc.ListenPort, tc.ConnectionsLimit, nil, 0)
+			// Bind to port 0 so the kernel picks a free ephemeral port;
+			// fixed ports flake on shared CI runners when the prior
+			// subtest's socket lingers in TIME_WAIT.
+			l, err := NewListener("", 0, tc.ConnectionsLimit, nil, 0)
 			if err != nil {
 				t.Fatal(err)
 			} else {
 				defer l.Close()
 			}
+			port := l.Addr().(*net.TCPAddr).Port
 			go func() {
 				http.Serve(l, lm.NewRouter())
 			}()
 
 			// poll until listener is up
 			for {
-				conn, err := net.Dial("tcp", fmt.Sprintf("localhost:%d", tc.ListenPort))
+				conn, err := net.Dial("tcp", fmt.Sprintf("localhost:%d", port))
 				if err == nil {
 					conn.Close()
 					break
@@ -245,7 +245,7 @@ func TestListenerConnectionLimitWorks(t *testing.T) {
 			}
 
 			for i := 0; i < tc.Clients; i++ {
-				r, err := http.NewRequest("GET", fmt.Sprintf("http://localhost:%d/", tc.ListenPort), nil)
+				r, err := http.NewRequest("GET", fmt.Sprintf("http://localhost:%d/", port), nil)
 				if err != nil {
 					t.Fatalf("failed to create request: %s", err)
 				}

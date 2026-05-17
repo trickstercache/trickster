@@ -327,10 +327,8 @@ func TestALB(t *testing.T) {
 		u := "http://" + albAddr + "/alb-fr/api/v1/query?query=up"
 
 		var wg sync.WaitGroup
-		for i := 0; i < iterations; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+		for range iterations {
+			wg.Go(func() {
 				ctx, cancel := context.WithCancel(context.Background())
 				req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 				if err != nil {
@@ -342,7 +340,7 @@ func TestALB(t *testing.T) {
 				if err == nil {
 					resp.Body.Close()
 				}
-			}()
+			})
 		}
 		wg.Wait()
 	})

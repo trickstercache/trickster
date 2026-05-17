@@ -23,7 +23,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/albpool"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
@@ -32,50 +31,46 @@ import (
 func TestHandleFirstResponseNilPool(t *testing.T) {
 	h := &handler{}
 	w := httptest.NewRecorder()
-	r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
-	h.ServeHTTP(w, r)
+	h.ServeHTTP(w, albpool.NewParentGET(t))
 	if w.Code != http.StatusBadGateway {
 		t.Errorf("expected %d got %d", http.StatusBadGateway, w.Code)
 	}
 }
 
 func TestHandleFirstResponse(t *testing.T) {
-	r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
-
 	p, _, _ := albpool.New(0, nil)
+	defer p.Stop()
 	h := &handler{}
 	h.SetPool(p)
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, r)
+	h.ServeHTTP(w, albpool.NewParentGET(t))
 	if w.Code != http.StatusBadGateway {
 		t.Error("expected 502 got", w.Code)
 	}
 
-	var st []*healthcheck.Status
-	p, _, st = albpool.New(-1,
+	p2, _, _ := albpool.NewHealthy(
 		[]http.Handler{http.HandlerFunc(tu.BasicHTTPHandler)})
-	h.SetPool(p)
-	st[0].Set(0)
-	time.Sleep(250 * time.Millisecond)
+	defer p2.Stop()
+	h.SetPool(p2)
+	albpool.WaitHealthy(t, p2, 1)
 
 	w = httptest.NewRecorder()
-	h.ServeHTTP(w, r)
+	h.ServeHTTP(w, albpool.NewParentGET(t))
 	if w.Code != http.StatusOK {
 		t.Error("expected 200 got", w.Code)
 	}
 
-	p, _, st = albpool.New(-1,
+	p3, _, _ := albpool.NewHealthy(
 		[]http.Handler{
 			http.HandlerFunc(tu.BasicHTTPHandler),
 			http.HandlerFunc(tu.BasicHTTPHandler),
 		})
-	h.SetPool(p)
-	st[0].Set(0)
-	st[1].Set(0)
-	time.Sleep(250 * time.Millisecond)
+	defer p3.Stop()
+	h.SetPool(p3)
+	albpool.WaitHealthy(t, p3, 2)
 
 	w = httptest.NewRecorder()
-	h.ServeHTTP(w, r)
+	h.ServeHTTP(w, albpool.NewParentGET(t))
 	if w.Code != http.StatusOK {
 		t.Error("expected 200 got", w.Code)
 	}
@@ -106,73 +101,53 @@ func (w *raceWriter) Write(b []byte) (int, error) {
 }
 
 func TestFirstGoodResponse(t *testing.T) {
-	statusHandler := func(code int, body string) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.WriteHeader(code)
-			w.Write([]byte(body))
-		})
-	}
-
 	t.Run("FGR default rejects 4xx", func(t *testing.T) {
-		// FGR mode without custom codes: any status < 400 qualifies.
-		// Backend 0 returns 500, backend 1 returns 200.
-		// FGR should pick the 200.
-		p, _, st := albpool.New(-1, []http.Handler{
-			statusHandler(http.StatusInternalServerError, "bad"),
-			statusHandler(http.StatusOK, "good"),
+		p, _, _ := albpool.NewHealthy([]http.Handler{
+			albpool.StatusHandler(http.StatusInternalServerError, "bad"),
+			albpool.StatusHandler(http.StatusOK, "good"),
 		})
-		st[0].Set(0)
-		st[1].Set(0)
-		time.Sleep(250 * time.Millisecond)
+		defer p.Stop()
+		albpool.WaitHealthy(t, p, 2)
 
 		h := &handler{fgr: true}
 		h.SetPool(p)
 		w := httptest.NewRecorder()
-		r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
-		h.ServeHTTP(w, r)
-		// The "good" backend should be selected
+		h.ServeHTTP(w, albpool.NewParentGET(t))
 		if w.Code != http.StatusOK {
 			t.Errorf("expected 200 got %d", w.Code)
 		}
 	})
 
 	t.Run("FGR custom codes", func(t *testing.T) {
-		// Only 202 is considered "good"
 		codes := sets.New([]int{http.StatusAccepted})
-		p, _, st := albpool.New(-1, []http.Handler{
-			statusHandler(http.StatusOK, "not-accepted"),
-			statusHandler(http.StatusAccepted, "accepted"),
+		p, _, _ := albpool.NewHealthy([]http.Handler{
+			albpool.StatusHandler(http.StatusOK, "not-accepted"),
+			albpool.StatusHandler(http.StatusAccepted, "accepted"),
 		})
-		st[0].Set(0)
-		st[1].Set(0)
-		time.Sleep(250 * time.Millisecond)
+		defer p.Stop()
+		albpool.WaitHealthy(t, p, 2)
 
 		h := &handler{fgr: true, fgrCodes: codes}
 		h.SetPool(p)
 		w := httptest.NewRecorder()
-		r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
-		h.ServeHTTP(w, r)
+		h.ServeHTTP(w, albpool.NewParentGET(t))
 		if w.Code != http.StatusAccepted {
 			t.Errorf("expected 202 got %d", w.Code)
 		}
 	})
 
 	t.Run("FGR fallback when none qualify", func(t *testing.T) {
-		// All backends return 500; none qualify. Fallback serves first available.
-		p, _, st := albpool.New(-1, []http.Handler{
-			statusHandler(http.StatusInternalServerError, "err1"),
-			statusHandler(http.StatusBadGateway, "err2"),
+		p, _, _ := albpool.NewHealthy([]http.Handler{
+			albpool.StatusHandler(http.StatusInternalServerError, "err1"),
+			albpool.StatusHandler(http.StatusBadGateway, "err2"),
 		})
-		st[0].Set(0)
-		st[1].Set(0)
-		time.Sleep(250 * time.Millisecond)
+		defer p.Stop()
+		albpool.WaitHealthy(t, p, 2)
 
 		h := &handler{fgr: true}
 		h.SetPool(p)
 		w := httptest.NewRecorder()
-		r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
-		h.ServeHTTP(w, r)
-		// Fallback should serve one of the error responses
+		h.ServeHTTP(w, albpool.NewParentGET(t))
 		if w.Code != http.StatusInternalServerError && w.Code != http.StatusBadGateway {
 			t.Errorf("expected 500 or 502, got %d", w.Code)
 		}
@@ -181,20 +156,17 @@ func TestFirstGoodResponse(t *testing.T) {
 	t.Run("FGR 50-backend partial fail", func(t *testing.T) {
 		hs := make([]http.Handler, 50)
 		for i := range hs {
-			hs[i] = statusHandler(http.StatusInternalServerError, "bad")
+			hs[i] = albpool.StatusHandler(http.StatusInternalServerError, "bad")
 		}
-		hs[37] = statusHandler(http.StatusOK, "good")
-		p, _, st := albpool.New(-1, hs)
-		for _, s := range st {
-			s.Set(0)
-		}
-		time.Sleep(250 * time.Millisecond)
+		hs[37] = albpool.StatusHandler(http.StatusOK, "good")
+		p, _, _ := albpool.NewHealthy(hs)
+		defer p.Stop()
+		albpool.WaitHealthy(t, p, len(hs))
 
 		h := &handler{fgr: true}
 		h.SetPool(p)
 		w := httptest.NewRecorder()
-		r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
-		h.ServeHTTP(w, r)
+		h.ServeHTTP(w, albpool.NewParentGET(t))
 		if w.Code != http.StatusOK {
 			t.Errorf("expected 200 got %d", w.Code)
 		}
@@ -203,19 +175,16 @@ func TestFirstGoodResponse(t *testing.T) {
 	t.Run("FGR 50-backend all fail fallback", func(t *testing.T) {
 		hs := make([]http.Handler, 50)
 		for i := range hs {
-			hs[i] = statusHandler(http.StatusInternalServerError, "err")
+			hs[i] = albpool.StatusHandler(http.StatusInternalServerError, "err")
 		}
-		p, _, st := albpool.New(-1, hs)
-		for _, s := range st {
-			s.Set(0)
-		}
-		time.Sleep(250 * time.Millisecond)
+		p, _, _ := albpool.NewHealthy(hs)
+		defer p.Stop()
+		albpool.WaitHealthy(t, p, len(hs))
 
 		h := &handler{fgr: true}
 		h.SetPool(p)
 		w := httptest.NewRecorder()
-		r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
-		h.ServeHTTP(w, r)
+		h.ServeHTTP(w, albpool.NewParentGET(t))
 		if w.Code < 400 {
 			t.Errorf("expected 4xx/5xx fallback, got %d", w.Code)
 		}
@@ -223,27 +192,18 @@ func TestFirstGoodResponse(t *testing.T) {
 }
 
 func TestFGRFallbackEmits502WhenNoMemberQualifies(t *testing.T) {
-	statusHandler := func(code int, body string) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.WriteHeader(code)
-			w.Write([]byte(body))
-		})
-	}
-
 	codes := sets.New([]int{http.StatusOK})
-	p, _, st := albpool.New(-1, []http.Handler{
-		statusHandler(http.StatusInternalServerError, "body0"),
-		statusHandler(http.StatusInternalServerError, "body1"),
+	p, _, _ := albpool.NewHealthy([]http.Handler{
+		albpool.StatusHandler(http.StatusInternalServerError, "body0"),
+		albpool.StatusHandler(http.StatusInternalServerError, "body1"),
 	})
-	st[0].Set(0)
-	st[1].Set(0)
-	time.Sleep(250 * time.Millisecond)
+	defer p.Stop()
+	albpool.WaitHealthy(t, p, 2)
 
 	h := &handler{fgr: true, fgrCodes: codes}
 	h.SetPool(p)
 	w := httptest.NewRecorder()
-	r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
-	h.ServeHTTP(w, r)
+	h.ServeHTTP(w, albpool.NewParentGET(t))
 
 	if w.Code != http.StatusBadGateway {
 		t.Errorf("expected 502 got %d (body %q)", w.Code, w.Body.String())
@@ -256,55 +216,60 @@ func TestFGRFallbackEmits502WhenNoMemberQualifies(t *testing.T) {
 // TestHandleFirstResponseContextCancel verifies that cancelling the request
 // context while a backend is responding does not race on the ResponseWriter.
 // The raceWriter makes the race detector catch any write-after-return.
+//
+// Handlers observe the request context so cancelled iterations drain
+// promptly: WaitForFirst returns on winner-claim without draining losers, so
+// uncooperative handlers would orphan scatter goroutines past goleak's window.
 func TestHandleFirstResponseContextCancel(t *testing.T) {
-	// A handler that always writes a response (never short-circuits on
-	// context cancel), maximizing the chance of a write landing after
-	// ServeHTTP returns.
 	slow := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		time.Sleep(20 * time.Millisecond)
+		select {
+		case <-r.Context().Done():
+			return
+		case <-time.After(20 * time.Millisecond):
+		}
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("ok"))
 	})
 
 	for i := range 100 {
-		p, _, _ := albpool.New(-1, []http.Handler{slow, slow})
-		p.SetHealthy([]http.Handler{slow, slow})
+		func() {
+			p, _, _ := albpool.New(-1, []http.Handler{slow, slow})
+			defer p.Stop()
+			p.SetHealthy([]http.Handler{slow, slow})
 
-		h := &handler{}
-		h.SetPool(p)
-		ctx, cancel := context.WithCancel(context.Background())
-		r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
-		r = r.WithContext(ctx)
-		rw := &raceWriter{ResponseWriter: httptest.NewRecorder()}
+			h := &handler{}
+			h.SetPool(p)
+			ctx, cancel := context.WithCancel(context.Background())
+			r := albpool.NewParentGET(t).WithContext(ctx)
+			rw := &raceWriter{ResponseWriter: httptest.NewRecorder()}
 
-		done := make(chan struct{})
-		go func() {
-			h.ServeHTTP(rw, r)
-			close(done)
+			done := make(chan struct{})
+			go func() {
+				h.ServeHTTP(rw, r)
+				close(done)
+			}()
+
+			time.Sleep(5 * time.Millisecond)
+			cancel()
+
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				t.Errorf("iteration %d: ServeHTTP did not return after context cancel", i)
+			}
+
+			rw.returned = true
 		}()
-
-		// Cancel context while backends are in-flight to trigger the
-		// r.Context().Done() select case in ServeHTTP.
-		time.Sleep(5 * time.Millisecond)
-		cancel()
-
-		select {
-		case <-done:
-		case <-time.After(5 * time.Second):
-			t.Fatalf("iteration %d: ServeHTTP did not return after context cancel", i)
-		}
-
-		// Signal that the handler has returned. If a goroutine spawned by
-		// ServeHTTP is still calling rw.Write/WriteHeader, the race
-		// detector will flag the concurrent read of rw.returned above
-		// against this write.
-		rw.returned = true
 	}
 }
 
 func TestHandleFirstResponseContextCancel_50Backends(t *testing.T) {
 	slow := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		time.Sleep(20 * time.Millisecond)
+		select {
+		case <-r.Context().Done():
+			return
+		case <-time.After(20 * time.Millisecond):
+		}
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("ok"))
 	})
@@ -314,29 +279,31 @@ func TestHandleFirstResponseContextCancel_50Backends(t *testing.T) {
 		hs[i] = slow
 	}
 	for range 10 {
-		p, _, _ := albpool.New(-1, hs)
-		p.SetHealthy(hs)
+		func() {
+			p, _, _ := albpool.New(-1, hs)
+			defer p.Stop()
+			p.SetHealthy(hs)
 
-		h := &handler{}
-		h.SetPool(p)
-		ctx, cancel := context.WithCancel(context.Background())
-		r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
-		r = r.WithContext(ctx)
-		rw := &raceWriter{ResponseWriter: httptest.NewRecorder()}
+			h := &handler{}
+			h.SetPool(p)
+			ctx, cancel := context.WithCancel(context.Background())
+			r := albpool.NewParentGET(t).WithContext(ctx)
+			rw := &raceWriter{ResponseWriter: httptest.NewRecorder()}
 
-		done := make(chan struct{})
-		go func() {
-			h.ServeHTTP(rw, r)
-			close(done)
+			done := make(chan struct{})
+			go func() {
+				h.ServeHTTP(rw, r)
+				close(done)
+			}()
+			time.Sleep(5 * time.Millisecond)
+			cancel()
+
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				t.Error("ServeHTTP did not return after context cancel")
+			}
+			rw.returned = true
 		}()
-		time.Sleep(5 * time.Millisecond)
-		cancel()
-
-		select {
-		case <-done:
-		case <-time.After(5 * time.Second):
-			t.Fatal("ServeHTTP did not return after context cancel")
-		}
-		rw.returned = true
 	}
 }

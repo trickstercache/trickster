@@ -32,14 +32,16 @@ func TestCheckHealth(t *testing.T) {
 	tgt.hcStatus.Set(healthcheck.StatusPassing)
 
 	p := &pool{ch: make(chan bool, 1), done: make(chan struct{}), targets: []*Target{tgt}, healthyFloor: -1}
+	p.workers.Add(1)
 	go func() {
 		p.checkHealth()
 	}()
-	time.Sleep(150 * time.Millisecond)
 	p.scheduleRefresh()
-	time.Sleep(150 * time.Millisecond)
+	waitFor(t, func() bool {
+		h := p.healthyHandlers.Load()
+		return h != nil && len(*h) == 1
+	}, 2*time.Second)
 	p.Stop()
-	time.Sleep(10 * time.Millisecond)
 
 	h := p.healthyHandlers.Load()
 	if h == nil {
@@ -67,7 +69,7 @@ func TestBurstUpdatesEvictFailingTarget(t *testing.T) {
 
 	// Emit a burst of updates that may overrun subscriber channel buffers and
 	// drop intermediate notifications. Final state is failing.
-	for i := 0; i < 256; i++ {
+	for range 256 {
 		st1.Set(healthcheck.StatusPassing)
 		st1.Set(healthcheck.StatusFailing)
 	}
@@ -75,7 +77,7 @@ func TestBurstUpdatesEvictFailingTarget(t *testing.T) {
 
 	waitForHealthyTargetsLen(t, p, 1, 2*time.Second)
 
-	got := p.HealthyTargets()
+	got := p.Targets()
 	if len(got) != 1 || got[0] != t2 {
 		t.Fatalf("expected only target 2 to remain healthy, got: %#v", got)
 	}
@@ -85,10 +87,22 @@ func waitForHealthyTargetsLen(t *testing.T, p Pool, expected int, timeout time.D
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		if len(p.HealthyTargets()) == expected {
+		if len(p.Targets()) == expected {
 			return
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	t.Fatalf("timed out waiting for %d healthy targets; got %d", expected, len(p.HealthyTargets()))
+	t.Fatalf("timed out waiting for %d healthy targets; got %d", expected, len(p.Targets()))
+}
+
+func waitFor(t *testing.T, cond func() bool, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for condition")
 }

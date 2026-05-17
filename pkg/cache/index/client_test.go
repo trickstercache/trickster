@@ -119,6 +119,7 @@ func TestIndexedClient(t *testing.T) {
 			MaxSizeBackoffBytes:   30,
 			IndexExpiry:           1 * time.Hour,
 		}, fsc)
+		t.Cleanup(func() { _ = ic.Close() })
 
 		// store & retrieve
 		val := []byte("bar")
@@ -197,6 +198,7 @@ func TestIndexedClient(t *testing.T) {
 			ico.NeedsFlushInterval = true
 			ico.NeedsReapInterval = true
 		})
+		t.Cleanup(func() { _ = ic.Close() })
 		// look up the index key, expect a hit
 		b2, s, err := ic.Client.Retrieve(IndexKey)
 		require.NoError(t, err)
@@ -335,6 +337,7 @@ func TestIndexedClient(t *testing.T) {
 			ico.NeedsFlushInterval = true
 			ico.NeedsReapInterval = true
 		})
+		t.Cleanup(func() { _ = ic.Close() })
 		ttl := 60 * time.Second
 
 		// add expired key to cover the case that the reaper remove it

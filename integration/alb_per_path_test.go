@@ -33,9 +33,7 @@ import (
 )
 
 func TestALBPerPathHeadersTSM(t *testing.T) {
-	const matrixBodyTmpl = `{"status":"success","data":{"resultType":"matrix","result":[` +
-		`{"metric":{"job":"prometheus"},"values":[%s]}` +
-		`]}}`
+	matrixBodyTmpl := albTestdata(t, "alb_per_path/matrix.json.tmpl")
 
 	mkMatrix := func(start, end, step int64, val string) string {
 		var b strings.Builder
@@ -79,66 +77,8 @@ func TestALBPerPathHeadersTSM(t *testing.T) {
 	metricsPort := 19001
 	mgmtPort := 19002
 
-	yaml := fmt.Sprintf(`
-frontend:
-  listen_port: %d
-metrics:
-  listen_port: %d
-mgmt:
-  listen_port: %d
-logging:
-  log_level: error
-caches:
-  mem1:
-    provider: memory
-backends:
-  prom-a:
-    provider: prometheus
-    origin_url: %s
-    cache_name: mem1
-    healthcheck:
-      path: /api/v1/status/buildinfo
-      query: ""
-      interval: 100ms
-      timeout: 500ms
-      failure_threshold: 1
-      recovery_threshold: 1
-    paths:
-      - path: /api/v1/query_range
-        handler: query_range
-        methods: [GET, POST]
-        match_type: exact
-        cache_key_params: [query, start, end, step]
-        response_headers:
-          X-Origin: A
-  prom-b:
-    provider: prometheus
-    origin_url: %s
-    cache_name: mem1
-    healthcheck:
-      path: /api/v1/status/buildinfo
-      query: ""
-      interval: 100ms
-      timeout: 500ms
-      failure_threshold: 1
-      recovery_threshold: 1
-    paths:
-      - path: /api/v1/query_range
-        handler: query_range
-        methods: [GET, POST]
-        match_type: exact
-        cache_key_params: [query, start, end, step]
-        response_headers:
-          X-Origin: B
-  alb-tsm-perpath:
-    provider: alb
-    alb:
-      mechanism: tsm
-      output_format: prometheus
-      pool:
-        - prom-a
-        - prom-b
-`, frontPort, metricsPort, mgmtPort, upA.URL, upB.URL)
+	yaml := fmt.Sprintf(albTestdata(t, "alb_per_path/perpath.yaml.tmpl"),
+		frontPort, metricsPort, mgmtPort, upA.URL, upB.URL)
 
 	cfgPath := filepath.Join(t.TempDir(), "trickster.yaml")
 	require.NoError(t, os.WriteFile(cfgPath, []byte(yaml), 0644))

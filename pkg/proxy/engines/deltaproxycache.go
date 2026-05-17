@@ -225,7 +225,11 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 
 	pr := newProxyRequest(r, w)
 	rlo.FastForwardDisable = o.FastForwardDisable || rlo.FastForwardDisable
+	// republish trq after normalize so concurrent readers see the normalized extent atomically
+	rsc.Lock()
 	trq.NormalizeExtent()
+	rsc.TimeRangeQuery = trq
+	rsc.Unlock()
 	now := time.Now()
 	bt := trq.GetBackfillTolerance(o.BackfillTolerance, o.BackfillTolerancePoints)
 	bfs := now.Add(-bt).Truncate(trq.Step) // start of the backfill tolerance window
@@ -311,7 +315,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 				if err != nil {
 					logger.Error("cache object unmarshaling failed",
 						logging.Pairs{"key": key, "backendName": client.Name(), "detail": err.Error()})
-					go cache.Remove(key)
+					goWithRecover("dpc.cache.Remove.unmarshal", func() { cache.Remove(key) })
 					cts, doc, elapsed, err = fetchTimeseries(pr, trq, client, modeler)
 					if err != nil {
 						return buildErrorResult(doc.StatusCode, doc.SafeHeaderClone(), doc.Body), nil
@@ -379,8 +383,15 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 				mts, _, mresp, ferr := fetchExtents(missRanges, frsc,
 					fetchHeaders, client, pr, modeler.WireUnmarshalerReader, span)
 				if ferr != nil {
-					return buildErrorResult(mresp.StatusCode, mresp.Header.Clone(),
-						func() []byte { b, _ := io.ReadAll(mresp.Body); return b }()), nil
+					// mresp.Body is only set inside fetchExtents's non-200
+					// branch; when every shard fails at the transport level
+					// (e.g. dial refused) mresp.Body remains nil and
+					// io.ReadAll(nil) panics on the first Read.
+					var body []byte
+					if mresp.Body != nil {
+						body, _ = io.ReadAll(mresp.Body)
+					}
+					return buildErrorResult(mresp.StatusCode, mresp.Header.Clone(), body), nil
 				}
 				doc.Headers = fetchHeaders
 				// Merge the new delta timeseries into the cached timeseries
@@ -540,7 +551,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 		span.AddEvent("Not Caching")
 	}
 	cacheStatus = status.LookupStatusPurge
-	go cache.Remove(key)
+	goWithRecover("dpc.cache.Remove.purge", func() { cache.Remove(key) })
 	var cts timeseries.Timeseries
 	cts, doc, elapsed, err = fetchTimeseries(pr, trq, client, modeler)
 	if err != nil {
@@ -608,8 +619,10 @@ func fetchTimeseries(pr *proxyRequest, trq *timeseries.TimeRangeQuery,
 		elapsed = time.Since(start)
 	}
 
-	go logUpstreamRequest(o.Name, o.Provider, handlerName,
-		pr.Method, pr.URL.String(), pr.UserAgent(), resp.StatusCode, 0, elapsed.Seconds())
+	goWithRecover("dpc.logUpstreamRequest", func() {
+		logUpstreamRequest(o.Name, o.Provider, handlerName,
+			pr.Method, pr.URL.String(), pr.UserAgent(), resp.StatusCode, 0, elapsed.Seconds())
+	})
 
 	d := &HTTPDocument{
 		Status:     resp.Status,
@@ -753,7 +766,7 @@ func fetchExtents(el timeseries.ExtentList, rsc *request.Resources, h http.Heade
 				var s string
 				if resp.Body != nil {
 					var readErr error
-					b, readErr = io.ReadAll(resp.Body)
+					b, readErr = io.ReadAll(io.LimitReader(resp.Body, errorBodyCap))
 					if readErr != nil {
 						logger.Warn("failed to read upstream error response body",
 							logging.Pairs{"detail": readErr.Error()})
@@ -774,7 +787,7 @@ func fetchExtents(el timeseries.ExtentList, rsc *request.Resources, h http.Heade
 						"clientRequestHeaders":    headers.SanitizeForLogging(pr.Request.Header),
 						"upstreamRequestURL":      pr.upstreamRequest.URL.String(),
 						"upstreamRequestMethod":   pr.upstreamRequest.Method,
-						"upstreamRequestHeaders":  headers.LogString(pr.upstreamRequest.Header),
+						"upstreamRequestHeaders":  headers.SanitizeForLogging(pr.upstreamRequest.Header),
 						"upstreamResponseHeaders": headers.LogString(resp.Header),
 						"upstreamResponseBody":    s,
 					},

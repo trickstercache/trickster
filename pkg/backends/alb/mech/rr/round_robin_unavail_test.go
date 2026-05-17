@@ -21,7 +21,6 @@ import (
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/albpool"
@@ -40,14 +39,7 @@ func TestNextTargetSkipsStaleFailingTarget(t *testing.T) {
 	sts[0].Set(healthcheck.StatusPassing)
 	sts[1].Set(healthcheck.StatusPassing)
 
-	// Allow the initial pool refresh to land both targets in the healthy snapshot.
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) && len(p.HealthyTargets()) != 2 {
-		time.Sleep(5 * time.Millisecond)
-	}
-	if l := len(p.HealthyTargets()); l != 2 {
-		t.Fatalf("expected snapshot of 2 healthy, got %d", l)
-	}
+	albpool.WaitHealthy(t, p, 2)
 
 	// Stop the pool so no auto-refresh can repair a stale snapshot. This
 	// pins the test to the exact race window the dispatch-time re-check

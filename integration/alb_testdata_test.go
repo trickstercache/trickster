@@ -14,11 +14,21 @@
  * limitations under the License.
  */
 
-package healthcheck
+package integration
 
-import "net/http"
+import (
+	"embed"
+	"testing"
+)
 
-func DemandProbe(w http.ResponseWriter) {
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("{}"))
+//go:embed testdata/alb_cache testdata/alb_tsm_correctness testdata/alb_response_headers testdata/alb_nested testdata/alb_per_path testdata/alb_unavail testdata/alb_request_headers testdata/alb_compose
+var albTestdataFS embed.FS
+
+func albTestdata(t testing.TB, name string) string {
+	t.Helper()
+	b, err := albTestdataFS.ReadFile("testdata/" + name)
+	if err != nil {
+		t.Fatalf("read embedded testdata %q: %v", name, err)
+	}
+	return string(b)
 }

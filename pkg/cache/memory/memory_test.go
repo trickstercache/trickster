@@ -67,6 +67,7 @@ func TestCache_Connect(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	cacheConfig := newCacheConfig()
 	mc := New(t.Name(), &cacheConfig)
+	t.Cleanup(func() { _ = mc.Close() })
 
 	// it should connect
 	err := mc.Connect()
@@ -79,6 +80,7 @@ func TestCache_StoreReferenceDirect(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	cacheConfig := newCacheConfig()
 	mc := New(t.Name(), &cacheConfig)
+	t.Cleanup(func() { _ = mc.Close() })
 
 	err := mc.Connect()
 	if err != nil {
@@ -102,6 +104,7 @@ func TestCache_StoreReference(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	cacheConfig := newCacheConfig()
 	mc := New(t.Name(), &cacheConfig)
+	t.Cleanup(func() { _ = mc.Close() })
 
 	err := mc.Connect()
 	if err != nil {
@@ -118,6 +121,7 @@ func TestCache_Store(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	cacheConfig := newCacheConfig()
 	mc := New(t.Name(), &cacheConfig)
+	t.Cleanup(func() { _ = mc.Close() })
 
 	err := mc.Connect()
 	if err != nil {
@@ -138,6 +142,7 @@ func TestCache_Retrieve(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	cacheConfig := newCacheConfig()
 	mc := New(t.Name(), &cacheConfig)
+	t.Cleanup(func() { _ = mc.Close() })
 
 	err := mc.Connect()
 	if err != nil {

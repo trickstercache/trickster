@@ -17,9 +17,11 @@
 package tsm
 
 import (
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/errors"
@@ -46,30 +48,53 @@ import (
 )
 
 const (
-	ID        types.ID   = 4
 	ShortName            = names.MechanismTSM
 	Name      types.Name = "time_series_merge"
 )
 
 type handler struct {
 	mech.PoolHolder
-	mergePaths      []string        // paths handled by the alb client that are enabled for tsmerge
-	nonmergeHandler types.Mechanism // when methodology is tsmerge, this handler is for non-mergeable paths
-	outputFormat    string          // the provider output format (e.g., "prometheus")
-	tsmOptions      options.TimeSeriesMergeOptions
-	maxCaptureBytes int
+	mergePaths            []string            // paths handled by the alb client that are enabled for tsmerge
+	nonmergeHandler       types.PoolMechanism // when methodology is tsmerge, this handler is for non-mergeable paths
+	outputFormat          string              // the provider output format (e.g., "prometheus")
+	tsmOptions            options.TimeSeriesMergeOptions
+	maxCaptureBytes       int
+	maxFanoutCaptureBytes int
+
+	// poolVersion increments on every SetPool so cached pool-derived data
+	// (stripKeys) can be invalidated without locking.
+	poolVersion atomic.Uint64
+	// cachedStripKeys memoizes the stripKeys slice across requests as long
+	// as the pool hasn't been replaced. Hot path is a single atomic load
+	// plus a uint64 compare.
+	cachedStripKeys atomic.Pointer[stripKeysSnapshot]
+}
+
+// stripKeysSnapshot binds a computed stripKeys slice to the poolVersion it
+// was derived from. Readers compare version against the current poolVersion;
+// a mismatch triggers a rebuild. The seen set lets subsequent calls union new
+// label keys in as targets become healthy without bumping poolVersion (a
+// target unhealthy on the first compute would otherwise be permanently
+// excluded until SetPool fires; see computeStripKeys). Snapshots are
+// immutable once stored, so copy-on-write is required to grow them.
+type stripKeysSnapshot struct {
+	version uint64
+	keys    []string
+	seen    map[string]struct{}
 }
 
 func RegistryEntry() types.RegistryEntry {
-	return types.RegistryEntry{ID: ID, Name: Name, ShortName: ShortName, New: New}
+	return types.RegistryEntry{Name: Name, ShortName: ShortName, New: New}
 }
 
 func New(o *options.Options, factories rt.Lookup) (types.Mechanism, error) {
 	nmh, _ := rr.New(nil, nil)
+	nmpm, _ := nmh.(types.PoolMechanism)
 	out := &handler{
-		nonmergeHandler: nmh,
-		tsmOptions:      o.TSMOptions,
-		maxCaptureBytes: o.MaxCaptureBytes,
+		nonmergeHandler:       nmpm,
+		tsmOptions:            o.TSMOptions,
+		maxCaptureBytes:       o.MaxCaptureBytes,
+		maxFanoutCaptureBytes: o.MaxFanoutCaptureBytes,
 	}
 	// this validates the merge configuration for the ALB client as it sets it up
 	// First, verify the output format is a support merge provider
@@ -98,8 +123,16 @@ func New(o *options.Options, factories rt.Lookup) (types.Mechanism, error) {
 	return out, nil
 }
 
-func (h *handler) ID() types.ID {
-	return ID
+// dedupToleranceNanos returns the configured per-shard dedup tolerance as
+// nanoseconds. Nil/zero means tolerance is disabled (legacy exact-epoch dedup).
+func (h *handler) dedupToleranceNanos() int64 {
+	if h.tsmOptions.DedupToleranceMs == nil || *h.tsmOptions.DedupToleranceMs <= 0 {
+		return 0
+	}
+	// Clamp at math.MaxInt64/1e6 to avoid int64 multiply overflow producing a negative window.
+	const maxMs = math.MaxInt64 / 1_000_000
+	ms := min(*h.tsmOptions.DedupToleranceMs, maxMs)
+	return int64(ms) * 1_000_000
 }
 
 func (h *handler) Name() types.Name {
@@ -113,6 +146,79 @@ func (h *handler) SetPool(p pool.Pool) {
 	if h.nonmergeHandler != nil {
 		h.nonmergeHandler.SetPool(p)
 	}
+	h.poolVersion.Add(1)
+}
+
+// computeStripKeys returns the union of Prometheus injected-label keys across
+// pool backends. The cache is keyed by poolVersion (bumped by SetPool); within
+// the same poolVersion the cached union grows as new healthy targets are
+// observed. This avoids a regression where a target unhealthy at first
+// compute, then healthy on a later request, would have its injected labels
+// permanently excluded from the cached set until SetPool fired -- causing its
+// series to ship with un-stripped backend labels and split during dedup.
+// hl is the live-target snapshot for the current request. The pool's full
+// configured target list is not reachable through the public Pool interface;
+// the union-on-each-call design keeps the cache eventually consistent with
+// every target that has been healthy at least once, which is sufficient
+// because labels can only need stripping for targets whose responses have
+// reached the merge.
+//
+// Concurrent calls may build divergent snapshots; atomic.Pointer.Store is
+// last-writer-wins, but every snapshot is a superset of previously-observed
+// keys for the same version, so the missed writer's union is harmless --
+// future calls will re-add anything dropped.
+func (h *handler) computeStripKeys(hl pool.Targets) []string {
+	ver := h.poolVersion.Load()
+	snap := h.cachedStripKeys.Load()
+
+	var baseKeys []string
+	var baseSeen map[string]struct{}
+	if snap != nil && snap.version == ver {
+		baseKeys = snap.keys
+		baseSeen = snap.seen
+	}
+
+	keys, seen := baseKeys, baseSeen
+	var grew bool
+	for _, t := range hl {
+		if t == nil {
+			continue
+		}
+		b := t.Backend()
+		if b == nil {
+			continue
+		}
+		cfg := b.Configuration()
+		if cfg == nil || cfg.Prometheus == nil {
+			continue
+		}
+		for k := range cfg.Prometheus.Labels {
+			if _, ok := seen[k]; ok {
+				continue
+			}
+			if !grew {
+				// Copy-on-write: existing snapshot may be observed by other
+				// goroutines, so we cannot mutate seen/keys in place.
+				seen = make(map[string]struct{}, len(baseSeen)+1)
+				for sk := range baseSeen {
+					seen[sk] = struct{}{}
+				}
+				keys = append([]string(nil), baseKeys...)
+				grew = true
+			}
+			seen[k] = struct{}{}
+			keys = append(keys, k)
+		}
+	}
+
+	if grew || snap == nil || snap.version != ver {
+		h.cachedStripKeys.Store(&stripKeysSnapshot{
+			version: ver,
+			keys:    keys,
+			seen:    seen,
+		})
+	}
+	return keys
 }
 
 func (h *handler) StopPool() {
@@ -127,7 +233,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		failures.HandleBadGateway(w, r)
 		return
 	}
-	hl := p.LiveTargets() // should return a fanout list
+	hl := p.Targets() // should return a fanout list
 	l := len(hl)
 	if l == 0 {
 		failures.HandleBadGateway(w, r)
@@ -145,9 +251,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		defaultHandler.ServeHTTP(w, r)
 		return
 	}
-	// just proxy 1:1 if there's no per-request resources object;
-	// the single-member shortcut is decided after stripKeys is computed
-	// so we don't bypass label-stripping for solo pools (D1).
+	// just proxy 1:1 if there's no per-request resources object.
 	rsc := request.GetResources(r)
 	if rsc == nil {
 		defaultHandler.ServeHTTP(w, r)
@@ -162,7 +266,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case rsc.TimeRangeQuery != nil:
 		query = rsc.TimeRangeQuery.Statement
-	case len(hl) > 0 && hl[0] != nil:
+	case hl[0] != nil:
 		if b := hl[0].Backend(); b != nil {
 			if tsb, ok := b.(backends.TimeseriesBackend); ok {
 				if trq, _, _, err := tsb.ParseTimeRangeQuery(r); err == nil && trq != nil {
@@ -195,7 +299,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var needsDualQuery bool
 	var warnMsg string
 	var mp backends.TSMMergeProvider
-	if len(hl) > 0 && hl[0] != nil {
+	if hl[0] != nil {
 		if b := hl[0].Backend(); b != nil {
 			if p, ok := b.(backends.TSMMergeProvider); ok {
 				mp = p
@@ -209,35 +313,23 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Collect injected label keys from pool backends so they can be stripped
 	// before merging. This ensures series from different backends hash
 	// identically despite having different injected labels (e.g., region tags).
-	// Stripping is only needed when a non-dedup strategy is in play.
+	// Stripping is only needed when a non-dedup strategy is in play. The set
+	// is cached and reused across requests until the pool is replaced.
 	var stripKeys []string
 	if mergeStrategy != dataset.MergeStrategyDedup || needsDualQuery {
-		seen := make(map[string]struct{})
-		for _, t := range hl {
-			if t == nil {
-				continue
-			}
-			b := t.Backend()
-			if b == nil {
-				continue
-			}
-			cfg := b.Configuration()
-			if cfg != nil && cfg.Prometheus != nil {
-				for k := range cfg.Prometheus.Labels {
-					if _, ok := seen[k]; !ok {
-						seen[k] = struct{}{}
-						stripKeys = append(stripKeys, k)
-					}
-				}
-			}
-		}
+		stripKeys = h.computeStripKeys(hl)
 	}
 
-	// Single-member fast path: only safe when there's nothing to strip and
-	// the strategy is plain dedup. Otherwise the merge path is still needed
-	// to apply StripTags or the dual-query rewrite to the lone backend's
-	// response (D1).
-	if l == 1 && len(stripKeys) == 0 && mergeStrategy == dataset.MergeStrategyDedup && !needsDualQuery {
+	// Single-live-member fast path: with one shard there is nothing to merge
+	// or dedup against, so the lone backend's response IS the answer. Skip
+	// only when label stripping or dual-query rewriting would still need to
+	// happen (D1 covers the strip case; weighted-avg covers the dual-query
+	// case). Otherwise the merge path's OnResult stripping handles solo pools
+	// correctly, and degraded N-pools where N-1 are unhealthy now return the
+	// surviving member's response directly instead of 502'ing on a one-shard
+	// merge that has no peer to dedup or cross-merge against.
+	// dual-query still needs merge even for one healthy target; one-shard fast path requires all three conditions
+	if l == 1 && len(stripKeys) == 0 && !needsDualQuery {
 		defaultHandler.ServeHTTP(w, r)
 		return
 	}
@@ -287,6 +379,18 @@ func pickWinner(results []gatherResult) (merge.RespondFunc, http.Header) {
 // outbound code is the lowest 2xx seen (so 200 wins over 206); otherwise the
 // highest non-2xx wins so the more severe failure propagates instead of being
 // masked by an incidentally-lower error code.
+func allFanoutFailed(results []fanout.Result) bool {
+	if len(results) == 0 {
+		return false
+	}
+	for _, r := range results {
+		if !r.Failed {
+			return false
+		}
+	}
+	return true
+}
+
 func aggregateStatus(results []gatherResult) (status int, statusHeader string, has2xx, hasNon2xx bool) {
 	var min2xx, maxErr int
 	for _, res := range results {
@@ -338,15 +442,18 @@ func (h *handler) serveStandard(
 		return
 	}
 
+	dedupToleranceNanos := h.dedupToleranceNanos()
 	fanoutResults, _ := fanout.All(r.Context(), r, hl, fanout.Config{
-		Mechanism:        "tsm",
-		ConcurrencyLimit: h.tsmOptions.ConcurrencyOptions.GetQueryConcurrencyLimit(),
-		MaxCaptureBytes:  h.maxCaptureBytes,
+		Mechanism:             names.MechanismTSM,
+		ConcurrencyLimit:      h.tsmOptions.ConcurrencyOptions.GetQueryConcurrencyLimit(),
+		MaxCaptureBytes:       h.maxCaptureBytes,
+		MaxFanoutCaptureBytes: h.maxFanoutCaptureBytes,
 		Resources: func(int) *request.Resources {
 			return &request.Resources{
-				IsMergeMember:   true,
-				TSReqestOptions: rsc.TSReqestOptions,
-				TSMergeStrategy: int(mergeStrategy),
+				IsMergeMember:         true,
+				TSReqestOptions:       rsc.TSReqestOptions,
+				TSMergeStrategy:       int(mergeStrategy),
+				TSDedupToleranceNanos: dedupToleranceNanos,
 			}
 		},
 		OnResult: func(i int, fr *fanout.Result) {
@@ -417,7 +524,7 @@ func (h *handler) serveStandard(
 	for i, res := range results {
 		if res.failed {
 			hasGatherFailure = true
-			metrics.ALBFanoutFailures.WithLabelValues("tsm", "", "no_contribution").Inc()
+			metrics.ALBFanoutFailures.WithLabelValues(names.MechanismTSM, "", "no_contribution").Inc()
 			if ts := accumulator.GetTSData(); ts != nil {
 				if ds, ok := ts.(*dataset.DataSet); ok {
 					ds.Warnings = append(ds.Warnings,
@@ -435,6 +542,14 @@ func (h *handler) serveStandard(
 				ds.Warnings = append(ds.Warnings, warnMsg)
 			}
 		}
+	}
+
+	// If every fanout slot failed at the dispatch level (panics, transport
+	// errors, all-clone-errors), surface 502 rather than the empty-200
+	// branch below.
+	if allFanoutFailed(fanoutResults) {
+		failures.HandleBadGateway(w, r)
+		return
 	}
 
 	// winnerHeaders carries custom response headers (e.g. those set by a
@@ -464,6 +579,10 @@ func (h *handler) serveStandard(
 	// member advertised for that key. Structural headers (Content-Type,
 	// Content-Length, Date, Last-Modified, Transfer-Encoding) were already
 	// removed by StripMergeHeaders.
+	if mrf == nil {
+		failures.HandleBadGateway(w, r)
+		return
+	}
 	if winnerHeaders != nil {
 		headers.Merge(w.Header(), winnerHeaders)
 	}
@@ -482,23 +601,83 @@ func (h *handler) serveStandard(
 	}
 }
 
-// mergeMultiValuedHeaders appends every member's Set-Cookie values onto dst
+// mergeMultiValuedHeaders forwards Set-Cookie from the winning shard only
 // and clears Set-Cookie on winnerHeaders so the subsequent headers.Merge
-// (which uses Set semantics) doesn't collapse them. RFC 6265 allows multiple
-// Set-Cookie response headers; Warning (RFC 7234) is similar but no current
-// backend sets it.
-func mergeMultiValuedHeaders(dst http.Header, results []gatherResult, winnerHeaders http.Header) {
-	for _, res := range results {
-		if res.header == nil {
+// (which uses Set semantics) doesn't collapse multi-valued cookies. RFC 6265
+// allows multiple Set-Cookie response headers per response.
+//
+// Set-Cookie is winner-only (not aggregated across shards) so a TSM ALB
+// placed in front of tenant-scoped upstreams doesn't mix session cookies
+// between tenants. The results slice is retained in the signature for
+// future multi-valued headers that genuinely should aggregate.
+func mergeMultiValuedHeaders(dst http.Header, _ []gatherResult, winnerHeaders http.Header) {
+	if winnerHeaders == nil {
+		return
+	}
+	for _, v := range winnerHeaders.Values(headers.NameSetCookie) {
+		dst.Add(headers.NameSetCookie, v)
+	}
+	winnerHeaders.Del(headers.NameSetCookie)
+}
+
+// pruneUnpairedWeightedAvgSeries drops series from sumDS that have no
+// matching series in countDS under the same (statementID, pairing hash).
+// FinalizeWeightedAvg silently leaves unmatched series unfinalized (the
+// raw summed value is returned as if it were an average), so series with
+// no countDS counterpart must be removed before finalize. A single
+// warning naming the dropped series is appended to sumDS.Warnings so the
+// client can see which results were affected. pairingQueryStatement is
+// the same statement passed to FinalizeWeightedAvg.
+func pruneUnpairedWeightedAvgSeries(sumDS, countDS *dataset.DataSet, pairingQueryStatement string) {
+	if sumDS == nil || countDS == nil {
+		return
+	}
+	pairingHash := func(sh *dataset.SeriesHeader) dataset.Hash {
+		if pairingQueryStatement == "" {
+			return sh.CalculateHash()
+		}
+		return sh.CalculateHashWithQueryStatement(pairingQueryStatement)
+	}
+	countSeries := make(map[int]map[dataset.Hash]struct{}, len(countDS.Results))
+	for _, r := range countDS.Results {
+		if r == nil {
 			continue
 		}
-		for _, v := range res.header.Values(headers.NameSetCookie) {
-			dst.Add(headers.NameSetCookie, v)
+		set := make(map[dataset.Hash]struct{}, len(r.SeriesList))
+		countSeries[r.StatementID] = set
+		for _, s := range r.SeriesList {
+			if s == nil {
+				continue
+			}
+			set[pairingHash(&s.Header)] = struct{}{}
 		}
 	}
-	if winnerHeaders != nil {
-		winnerHeaders.Del(headers.NameSetCookie)
+	var dropped []string
+	sumDS.UpdateLock.Lock()
+	for _, r := range sumDS.Results {
+		if r == nil {
+			continue
+		}
+		set := countSeries[r.StatementID]
+		kept := r.SeriesList[:0]
+		for _, s := range r.SeriesList {
+			if s == nil {
+				continue
+			}
+			if _, ok := set[pairingHash(&s.Header)]; !ok {
+				dropped = append(dropped, s.Header.Name)
+				continue
+			}
+			kept = append(kept, s)
+		}
+		r.SeriesList = kept
 	}
+	if len(dropped) > 0 {
+		sumDS.Warnings = append(sumDS.Warnings,
+			"trickster: weighted-avg dropped "+strconv.Itoa(len(dropped))+
+				" series with no matching count side: "+strings.Join(dropped, ","))
+	}
+	sumDS.UpdateLock.Unlock()
 }
 
 // serveWeightedAvg implements the dual-query scatter/gather for outer avg
@@ -544,11 +723,13 @@ func (h *handler) serveWeightedAvg(
 	// affect the arithmetic, not the envelope.
 	results := make([]gatherResult, l)
 
+	dedupToleranceNanos := h.dedupToleranceNanos()
 	resourcesFn := func(int) *request.Resources {
 		return &request.Resources{
-			IsMergeMember:   true,
-			TSReqestOptions: rsc.TSReqestOptions,
-			TSMergeStrategy: int(dataset.MergeStrategySum),
+			IsMergeMember:         true,
+			TSReqestOptions:       rsc.TSReqestOptions,
+			TSMergeStrategy:       int(dataset.MergeStrategySum),
+			TSDedupToleranceNanos: dedupToleranceNanos,
 		}
 	}
 
@@ -556,11 +737,12 @@ func (h *handler) serveWeightedAvg(
 	var eg errgroup.Group
 	eg.Go(func() error {
 		_, err := fanout.All(parentCtx, sumBase, hl, fanout.Config{
-			Mechanism:        "tsm",
-			Variant:          "avg-sum",
-			ConcurrencyLimit: limit,
-			MaxCaptureBytes:  h.maxCaptureBytes,
-			Resources:        resourcesFn,
+			Mechanism:             names.MechanismTSM,
+			Variant:               "avg-sum",
+			ConcurrencyLimit:      limit,
+			MaxCaptureBytes:       h.maxCaptureBytes,
+			MaxFanoutCaptureBytes: h.maxFanoutCaptureBytes,
+			Resources:             resourcesFn,
 			OnResult: func(i int, fr *fanout.Result) {
 				if fr.Failed || fr.Request == nil || fr.Capture == nil {
 					results[i].failed = true
@@ -594,11 +776,12 @@ func (h *handler) serveWeightedAvg(
 	})
 	eg.Go(func() error {
 		_, err := fanout.All(parentCtx, countBase, hl, fanout.Config{
-			Mechanism:        "tsm",
-			Variant:          "avg-count",
-			ConcurrencyLimit: limit,
-			MaxCaptureBytes:  h.maxCaptureBytes,
-			Resources:        resourcesFn,
+			Mechanism:             names.MechanismTSM,
+			Variant:               "avg-count",
+			ConcurrencyLimit:      limit,
+			MaxCaptureBytes:       h.maxCaptureBytes,
+			MaxFanoutCaptureBytes: h.maxFanoutCaptureBytes,
+			Resources:             resourcesFn,
 			OnResult: func(i int, fr *fanout.Result) {
 				// Count-side intentionally does not touch results[i]: the
 				// sum-side owns the response envelope. Panics in this slot
@@ -641,6 +824,7 @@ func (h *handler) serveWeightedAvg(
 	case sumTS != nil && countTS != nil:
 		if sumDS, ok := sumTS.(*dataset.DataSet); ok {
 			if countDS, ok := countTS.(*dataset.DataSet); ok {
+				pruneUnpairedWeightedAvgSeries(sumDS, countDS, query)
 				sumDS.FinalizeWeightedAvg(countDS, query)
 			}
 		}
@@ -670,6 +854,10 @@ func (h *handler) serveWeightedAvg(
 	// See serveStandard for the rationale -- carry the winner's custom
 	// response headers through the fanout so backend-set headers like
 	// `X-Test-Origin` survive the merge. (#970)
+	if mrf == nil {
+		failures.HandleBadGateway(w, r)
+		return
+	}
 	mergeMultiValuedHeaders(w.Header(), results, winnerHeaders)
 	if winnerHeaders != nil {
 		headers.Merge(w.Header(), winnerHeaders)

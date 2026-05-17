@@ -1,0 +1,44 @@
+
+frontend:
+  listen_port: %d
+metrics:
+  listen_port: %d
+mgmt:
+  listen_port: %d
+logging:
+  log_level: error
+caches:
+  mem1:
+    provider: memory
+backends:
+  prom-A:
+    provider: prometheus
+    origin_url: %s
+    cache_name: mem1
+    cache_key_prefix: shared
+    healthcheck:
+      path: /api/v1/status/buildinfo
+      query: ""
+      interval: 100ms
+      timeout: 500ms
+      failure_threshold: 1
+      recovery_threshold: 1
+  prom-B:
+    provider: prometheus
+    origin_url: %s
+    cache_name: mem1
+    cache_key_prefix: shared
+    healthcheck:
+      path: /api/v1/status/buildinfo
+      query: ""
+      interval: 100ms
+      timeout: 500ms
+      failure_threshold: 1
+      recovery_threshold: 1
+  alb-shared-cache:
+    provider: alb
+    alb:
+      mechanism: rr
+      pool:
+        - prom-A
+        - prom-B

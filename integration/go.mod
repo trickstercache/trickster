@@ -1,6 +1,6 @@
 module github.com/trickstercache/trickster/v2/integration
 
-go 1.26.2
+go 1.26.3
 
 replace github.com/trickstercache/trickster/v2 => ../
 
@@ -12,6 +12,7 @@ require (
 	github.com/prometheus/common v0.67.5
 	github.com/stretchr/testify v1.11.1
 	github.com/trickstercache/trickster/v2 v2.0.0-00010101000000-000000000000
+	go.uber.org/goleak v1.3.0
 	golang.org/x/crypto v0.50.0
 	gopkg.in/yaml.v2 v2.4.0
 )

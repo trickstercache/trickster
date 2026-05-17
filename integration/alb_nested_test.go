@@ -33,6 +33,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/trickstercache/trickster/v2/integration/promstub"
 )
 
 // Issue #996: an ALB whose pool contains another ALB ("nested") was reported
@@ -42,10 +43,7 @@ import (
 //   - alb-inner appears in alb-outer's availablePoolMembers (not unchecked)
 //   - traffic through alb-outer reaches alb-inner's leaf members
 func TestALBNestedPoolAvailable(t *testing.T) {
-	const promRange = `{"status":"success","data":{"resultType":"matrix","result":[` +
-		`{"metric":{"__name__":"up","job":"prometheus"},"values":[%s]}` +
-		`]}}`
-	const buildInfo = `{"status":"success","data":{"version":"2.0"}}`
+	promRange := albTestdata(t, "alb_nested/prom_range.json.tmpl")
 
 	mkRange := func(start, end, step int64) string {
 		var b strings.Builder
@@ -63,12 +61,11 @@ func TestALBNestedPoolAvailable(t *testing.T) {
 	var aHits, bHits atomic.Int64
 	mk := func(hits *atomic.Int64) *httptest.Server {
 		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			if r.URL.Path == "/api/v1/status/buildinfo" {
-				w.WriteHeader(http.StatusOK)
-				fmt.Fprint(w, buildInfo)
+			if r.URL.Path == promstub.BuildInfoPath {
+				promstub.WriteBuildInfo(w)
 				return
 			}
+			w.Header().Set("Content-Type", "application/json")
 			_ = r.ParseForm()
 			start, _ := parseInt(r.Form.Get("start"))
 			end, _ := parseInt(r.Form.Get("end"))
@@ -92,56 +89,8 @@ func TestALBNestedPoolAvailable(t *testing.T) {
 		mgmtPort    = 18962
 	)
 
-	yaml := fmt.Sprintf(`
-frontend:
-  listen_port: %d
-metrics:
-  listen_port: %d
-mgmt:
-  listen_port: %d
-logging:
-  log_level: error
-caches:
-  mem1:
-    provider: memory
-backends:
-  prom-a:
-    provider: prometheus
-    origin_url: %s
-    cache_name: mem1
-    healthcheck:
-      path: /api/v1/status/buildinfo
-      query: ""
-      interval: 100ms
-      timeout: 500ms
-      failure_threshold: 1
-      recovery_threshold: 1
-  prom-b:
-    provider: prometheus
-    origin_url: %s
-    cache_name: mem1
-    healthcheck:
-      path: /api/v1/status/buildinfo
-      query: ""
-      interval: 100ms
-      timeout: 500ms
-      failure_threshold: 1
-      recovery_threshold: 1
-  alb-inner:
-    provider: alb
-    alb:
-      mechanism: rr
-      pool:
-        - prom-a
-        - prom-b
-  alb-outer:
-    provider: alb
-    alb:
-      mechanism: tsm
-      output_format: prometheus
-      pool:
-        - alb-inner
-`, frontPort, metricsPort, mgmtPort, leafA.URL, leafB.URL)
+	yaml := fmt.Sprintf(albTestdata(t, "alb_nested/nested.yaml.tmpl"),
+		frontPort, metricsPort, mgmtPort, leafA.URL, leafB.URL)
 
 	cfgPath := filepath.Join(t.TempDir(), "trickster.yaml")
 	require.NoError(t, os.WriteFile(cfgPath, []byte(yaml), 0644))

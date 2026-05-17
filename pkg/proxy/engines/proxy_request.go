@@ -30,6 +30,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	tspan "github.com/trickstercache/trickster/v2/pkg/observability/tracing/span"
 	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
+	tpe "github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ranges/byterange"
@@ -109,8 +110,9 @@ func cloneRequestWithSpan(r *http.Request) *http.Request {
 	if err != nil {
 		return nil
 	}
+	baseCtx := request.RebindUpstreamShortReadCapture(context.Background(), r.Context())
 	out = out.WithContext(tctx.WithResources(
-		trace.ContextWithSpan(context.Background(),
+		trace.ContextWithSpan(baseCtx,
 			trace.SpanFromContext(r.Context())),
 		rsc))
 	return out
@@ -171,7 +173,18 @@ func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration, error) {
 	var body []byte
 	var err error
 	if reader != nil {
-		body, err = io.ReadAll(reader)
+		if o != nil && o.MaxObjectSizeBytes > 0 {
+			// +1 so reaching limit means overflow, not exactly-at-limit.
+			limit := int64(o.MaxObjectSizeBytes) + 1
+			body, err = io.ReadAll(io.LimitReader(reader, limit))
+			if err == nil && int64(len(body)) >= limit {
+				err = tpe.ErrUnexpectedUpstreamResponse
+				logger.Error("upstream response exceeded MaxObjectSizeBytes",
+					logging.Pairs{"url": pr.URL.String(), "max": o.MaxObjectSizeBytes})
+			}
+		} else {
+			body, err = io.ReadAll(reader)
+		}
 		resp.Body.Close()
 		resp.Body = io.NopCloser(bytes.NewReader(body))
 	}
@@ -183,8 +196,10 @@ func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration, error) {
 
 	elapsed := time.Since(start) // includes any time required to decompress the document for deserialization
 
-	go logUpstreamRequest(o.Name, o.Provider, handlerName, pr.upstreamRequest.Method,
-		pr.upstreamRequest.URL.String(), pr.UserAgent(), resp.StatusCode, len(body), elapsed.Seconds())
+	goWithRecover("proxyRequest.Fetch.logUpstreamRequest", func() {
+		logUpstreamRequest(o.Name, o.Provider, handlerName, pr.upstreamRequest.Method,
+			pr.upstreamRequest.URL.String(), pr.UserAgent(), resp.StatusCode, len(body), elapsed.Seconds())
+	})
 
 	return body, resp, elapsed, nil
 }
@@ -316,7 +331,15 @@ func (pr *proxyRequest) makeUpstreamRequests() error {
 				pr.revalidationRequest = req.WithContext(trace.ContextWithSpan(req.Context(), span))
 				defer span.End()
 			}
-			pr.revalidationReader, pr.revalidationResponse, _ = PrepareFetchReader(pr.revalidationRequest)
+			var contentLength int64
+			pr.revalidationReader, pr.revalidationResponse, contentLength = PrepareFetchReader(pr.revalidationRequest)
+			if pr.revalidationReader == nil {
+				logger.Error("revalidation upstream returned no reader",
+					logging.Pairs{
+						"url":           pr.revalidationRequest.URL.String(),
+						"contentLength": contentLength,
+					})
+			}
 		})
 	}
 
@@ -331,7 +354,15 @@ func (pr *proxyRequest) makeUpstreamRequests() error {
 				if span != nil {
 					defer span.End()
 				}
-				pr.originReaders[i], pr.originResponses[i], _ = PrepareFetchReader(req)
+				var contentLength int64
+				pr.originReaders[i], pr.originResponses[i], contentLength = PrepareFetchReader(req)
+				if pr.originReaders[i] == nil {
+					logger.Error("origin upstream returned no reader",
+						logging.Pairs{
+							"url":           req.URL.String(),
+							"contentLength": contentLength,
+						})
+				}
 			})
 		}
 	}
@@ -415,8 +446,17 @@ func (pr *proxyRequest) writeResponseBody() {
 	if pr.upstreamReader == nil || pr.responseWriter == nil {
 		return
 	}
-	if _, err := io.Copy(pr.responseWriter, pr.upstreamReader); err != nil {
+	n, err := io.Copy(pr.responseWriter, pr.upstreamReader)
+	if err != nil {
 		logger.Error("error copying upstream response body", logging.Pairs{"error": err})
+	}
+	// Chunked / transparent-gzip transports can return err==nil with n<CL;
+	// trigger short-read regardless of err.
+	if pr.upstreamResponse != nil && pr.upstreamResponse.ContentLength > 0 &&
+		n < pr.upstreamResponse.ContentLength {
+		if c := request.GetUpstreamShortReadCapture(pr.upstreamRequest.Context()); c != nil {
+			c.Mark()
+		}
 	}
 }
 

@@ -24,14 +24,9 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
-func TestNamesAndIDsAreUnique(t *testing.T) {
-	usedIDs := sets.New([]types.ID{})
+func TestNamesAreUnique(t *testing.T) {
 	usedNames := sets.New([]types.Name{})
 	for _, m := range registry {
-		if usedIDs.Contains(m.ID) {
-			t.Errorf("mechanism %s reuses ID %d; IDs must be unique.",
-				m.Name, m.ID)
-		}
 		if usedNames.Contains(m.Name) {
 			t.Errorf("mechanism Name %s has been reused; Names must be unique.",
 				m.Name)
@@ -40,7 +35,6 @@ func TestNamesAndIDsAreUnique(t *testing.T) {
 			t.Errorf("mechanism %s reuses ShortName %s; ShortNames must be unique.",
 				m.Name, m.ShortName)
 		}
-		usedIDs.Set(m.ID)
 		usedNames.Set(m.Name)
 		usedNames.Set(m.ShortName)
 	}

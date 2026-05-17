@@ -20,7 +20,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/albpool"
@@ -46,19 +45,17 @@ func TestNLMAcceptsAllRFC7231DateFormats(t *testing.T) {
 					w.Write([]byte(body))
 				})
 			}
-			p, _, st := albpool.New(-1, []http.Handler{
+			p, _, _ := albpool.NewHealthy([]http.Handler{
 				mk(tc.older, "older"),
 				mk(tc.newest, "newest"),
 			})
-			st[0].Set(0)
-			st[1].Set(0)
-			time.Sleep(250 * time.Millisecond)
+			defer p.Stop()
+			albpool.WaitHealthy(t, p, 2)
 
 			h := &handler{}
 			h.SetPool(p)
 			w := httptest.NewRecorder()
-			r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
-			h.ServeHTTP(w, r)
+			h.ServeHTTP(w, albpool.NewParentGET(t))
 
 			if w.Body.String() != "newest" {
 				t.Errorf("%s: expected newest body, got %q", tc.name, w.Body.String())
@@ -76,16 +73,14 @@ func TestNLMTieBreakPrefersFirstSeen(t *testing.T) {
 			w.Write([]byte(body))
 		})
 	}
-	p, _, st := albpool.New(-1, []http.Handler{mk("first"), mk("second")})
-	st[0].Set(0)
-	st[1].Set(0)
-	time.Sleep(250 * time.Millisecond)
+	p, _, _ := albpool.NewHealthy([]http.Handler{mk("first"), mk("second")})
+	defer p.Stop()
+	albpool.WaitHealthy(t, p, 2)
 
 	h := &handler{}
 	h.SetPool(p)
 	w := httptest.NewRecorder()
-	r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
-	h.ServeHTTP(w, r)
+	h.ServeHTTP(w, albpool.NewParentGET(t))
 
 	if w.Body.String() != "first" {
 		t.Errorf("tie should resolve to first-seen, got %q", w.Body.String())

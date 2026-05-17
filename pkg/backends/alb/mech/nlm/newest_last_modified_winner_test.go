@@ -20,32 +20,22 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/testutil/albpool"
 )
 
 func TestNLMFallbackPrefers2xxOver5xx(t *testing.T) {
-	statusHandler := func(code int, body string) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.WriteHeader(code)
-			w.Write([]byte(body))
-		})
-	}
-
-	p, _, st := albpool.New(-1, []http.Handler{
-		statusHandler(http.StatusInternalServerError, "body0"),
-		statusHandler(http.StatusOK, "body1"),
+	p, _, _ := albpool.NewHealthy([]http.Handler{
+		albpool.StatusHandler(http.StatusInternalServerError, "body0"),
+		albpool.StatusHandler(http.StatusOK, "body1"),
 	})
-	st[0].Set(0)
-	st[1].Set(0)
-	time.Sleep(250 * time.Millisecond)
+	defer p.Stop()
+	albpool.WaitHealthy(t, p, 2)
 
 	h := &handler{}
 	h.SetPool(p)
 	w := httptest.NewRecorder()
-	r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
-	h.ServeHTTP(w, r)
+	h.ServeHTTP(w, albpool.NewParentGET(t))
 
 	if w.Code != http.StatusOK {
 		t.Errorf("expected 200 got %d", w.Code)

@@ -32,10 +32,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/capture"
 )
 
-const (
-	ID   types.ID   = 3
-	Name types.Name = "newest_last_modified"
-)
+const Name types.Name = "newest_last_modified"
 
 type handler struct {
 	mech.PoolHolder
@@ -44,7 +41,7 @@ type handler struct {
 }
 
 func RegistryEntry() types.RegistryEntry {
-	return types.RegistryEntry{ID: ID, Name: Name, ShortName: names.MechanismNLM, New: New}
+	return types.RegistryEntry{Name: Name, ShortName: names.MechanismNLM, New: New}
 }
 
 func New(o *options.Options, _ rt.Lookup) (types.Mechanism, error) {
@@ -52,10 +49,6 @@ func New(o *options.Options, _ rt.Lookup) (types.Mechanism, error) {
 		options:         o.NLMOptions,
 		maxCaptureBytes: o.MaxCaptureBytes,
 	}, nil
-}
-
-func (h *handler) ID() types.ID {
-	return ID
 }
 
 func (h *handler) Name() types.Name {
@@ -74,7 +67,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		failures.HandleBadGateway(w, r)
 		return
 	}
-	hl := p.LiveTargets()
+	hl := p.Targets()
 	l := len(hl)
 	if l == 0 {
 		failures.HandleBadGateway(w, r)
@@ -101,7 +94,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	newestIdx := -1
 	var newestTime time.Time
 	for i, res := range results {
-		if res.Capture == nil {
+		if res.Failed || res.Capture == nil {
 			continue
 		}
 		lmStr := res.Capture.Header().Get(headers.NameLastModified)
@@ -123,17 +116,22 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, res := range results {
-		if res.Capture != nil && res.Capture.StatusCode() >= 200 && res.Capture.StatusCode() < 300 {
+		if res.Failed || res.Capture == nil {
+			continue
+		}
+		if res.Capture.StatusCode() >= 200 && res.Capture.StatusCode() < 300 {
 			writeCapture(w, res.Capture)
 			return
 		}
 	}
 	for _, res := range results {
-		if res.Capture != nil {
-			writeCapture(w, res.Capture)
-			return
+		if res.Failed || res.Capture == nil {
+			continue
 		}
+		writeCapture(w, res.Capture)
+		return
 	}
+	failures.HandleBadGateway(w, r)
 }
 
 func writeCapture(w http.ResponseWriter, crw *capture.CaptureResponseWriter) {

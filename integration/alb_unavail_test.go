@@ -40,8 +40,7 @@ import (
 // data path. After healthchecks mark it Failing, no further data requests
 // should reach it via the ALB.
 func TestALBUnavailableMemberNotQueried(t *testing.T) {
-	const healthyResp = `{"status":"success","data":{"resultType":"vector","result":[` +
-		`{"metric":{"__name__":"up","job":"healthy"},"value":[1700000000,"1"]}]}}`
+	healthyResp := albTestdata(t, "alb_unavail/healthy.json")
 
 	healthy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -73,57 +72,8 @@ func TestALBUnavailableMemberNotQueried(t *testing.T) {
 	metricsPort := 18651
 	mgmtPort := 18652
 
-	yaml := fmt.Sprintf(`
-frontend:
-  listen_port: %d
-metrics:
-  listen_port: %d
-mgmt:
-  listen_port: %d
-logging:
-  log_level: error
-caches:
-  mem1:
-    provider: memory
-backends:
-  prom-healthy:
-    provider: prometheus
-    origin_url: %s
-    cache_name: mem1
-    healthcheck:
-      path: /api/v1/status/buildinfo
-      query: ""
-      interval: 100ms
-      timeout: 500ms
-      failure_threshold: 1
-      recovery_threshold: 1
-  prom-broken:
-    provider: prometheus
-    origin_url: %s
-    cache_name: mem1
-    healthcheck:
-      path: /api/v1/status/buildinfo
-      query: ""
-      interval: 100ms
-      timeout: 500ms
-      failure_threshold: 1
-      recovery_threshold: 1
-  alb-fr-test:
-    provider: alb
-    alb:
-      mechanism: fr
-      pool:
-        - prom-healthy
-        - prom-broken
-  alb-tsm-test:
-    provider: alb
-    alb:
-      mechanism: tsm
-      output_format: prometheus
-      pool:
-        - prom-healthy
-        - prom-broken
-`, frontPort, metricsPort, mgmtPort, healthy.URL, broken.URL)
+	yaml := fmt.Sprintf(albTestdata(t, "alb_unavail/unavail.yaml.tmpl"),
+		frontPort, metricsPort, mgmtPort, healthy.URL, broken.URL)
 
 	cfgPath := filepath.Join(t.TempDir(), "trickster.yaml")
 	require.NoError(t, os.WriteFile(cfgPath, []byte(yaml), 0644))

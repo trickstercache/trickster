@@ -71,6 +71,9 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 		if o.ALBOptions.MaxCaptureBytes == 0 {
 			o.ALBOptions.MaxCaptureBytes = o.MaxCaptureBytes
 		}
+		if o.ALBOptions.MaxFanoutCaptureBytes == 0 {
+			o.ALBOptions.MaxFanoutCaptureBytes = o.MaxFanoutCaptureBytes
+		}
 		m, err := registry.New(o.ALBOptions.MechanismName,
 			o.ALBOptions, factories)
 		if err != nil {
@@ -173,8 +176,8 @@ func (c *Client) ValidateAndStartPool(clients backends.Backends, hcs healthcheck
 		}
 		targets = append(targets, pool.NewTarget(tc.Router(), hc, tc))
 	}
-	if c.handler != nil {
-		c.handler.SetPool(pool.New(targets, o.HealthyFloor))
+	if pm, ok := c.handler.(types.PoolMechanism); ok {
+		pm.SetPool(pool.New(targets, o.HealthyFloor))
 	}
 	return nil
 }
@@ -255,9 +258,12 @@ func (c *Client) validateAndStartUserRouter(clients backends.Backends, hcs healt
 	return nil
 }
 
-// StopPool stops this Client's pool
+// StopPool stops this Client's pool. No-op for handlers that don't own a
+// pool (e.g. user_router).
 func (c *Client) StopPool() {
-	c.handler.StopPool()
+	if pm, ok := c.handler.(types.PoolMechanism); ok {
+		pm.StopPool()
+	}
 }
 
 // Boilerplate Interface Functions (to EOF)

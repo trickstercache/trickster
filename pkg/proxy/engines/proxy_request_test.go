@@ -172,6 +172,7 @@ func TestDetermineCacheability(t *testing.T) {
 	}
 
 	caches := cr.LoadCachesFromConfig(conf)
+	defer cr.CloseCaches(caches)
 	cache, ok := caches["default"]
 	if !ok {
 		t.Error("could not load cache")
@@ -462,7 +463,7 @@ func TestPrepareUpstreamRequests(t *testing.T) {
 
 func TestStoreTrueContentType(t *testing.T) {
 	ts, _, r, _, _ := setupTestHarnessOPC("", "test", http.StatusOK, nil)
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	expected := "1234"
 

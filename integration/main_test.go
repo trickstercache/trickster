@@ -37,6 +37,14 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	// goleak is intentionally NOT enabled here: daemon.Start doesn't
+	// propagate ctx-cancel to all its background workers (healthcheck
+	// targets, ALB pools, health-page builder, ristretto, healthcheck
+	// HTTP transport keepalives). Each test boots a fresh trickster
+	// instance and dozens of net/http transport goroutines linger.
+	// Enable goleak once daemon.Stop is plumbed; until then it would
+	// either flake or require an ignore list broad enough to mask any
+	// real HTTP-client leak.
 	os.Exit(m.Run())
 }
 

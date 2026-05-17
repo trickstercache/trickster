@@ -29,10 +29,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
 )
 
-const (
-	ID   types.ID   = 0
-	Name types.Name = "round_robin"
-)
+const Name types.Name = "round_robin"
 
 type handler struct {
 	mech.PoolHolder
@@ -40,15 +37,11 @@ type handler struct {
 }
 
 func RegistryEntry() types.RegistryEntry {
-	return types.RegistryEntry{ID: ID, Name: Name, ShortName: names.MechanismRR, New: New}
+	return types.RegistryEntry{Name: Name, ShortName: names.MechanismRR, New: New}
 }
 
 func New(_ *options.Options, _ rt.Lookup) (types.Mechanism, error) {
 	return &handler{}, nil
-}
-
-func (h *handler) ID() types.ID {
-	return ID
 }
 
 func (h *handler) Name() types.Name {
@@ -75,7 +68,7 @@ func (h *handler) StopPool() {
 }
 
 func (h *handler) nextTarget(p pool.Pool) http.Handler {
-	targets := p.LiveTargets()
+	targets := p.Targets()
 	n := uint64(len(targets))
 	if n == 0 {
 		return nil

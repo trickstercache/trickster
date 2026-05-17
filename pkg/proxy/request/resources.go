@@ -56,36 +56,42 @@ type Resources struct {
 	TS                timeseries.Timeseries
 	TSReqestOptions   *timeseries.RequestOptions
 	TSMergeStrategy   int
-	Response          *http.Response
-	AuthResult        *auth.AuthResult
-	AlreadyEncoded    bool
-	Cancelable        bool
+	// TSDedupToleranceNanos is the tolerance window (in nanoseconds) for
+	// clustering near-duplicate samples produced by independent fan-out
+	// shards. Zero (default) preserves the legacy exact-epoch dedup behavior.
+	TSDedupToleranceNanos int64
+
+	Response       *http.Response
+	AuthResult     *auth.AuthResult
+	AlreadyEncoded bool
+	Cancelable     bool
 }
 
 // Clone returns an exact copy of the subject Resources collection
 func (r *Resources) Clone() *Resources {
 	return &Resources{
-		BackendOptions:    r.BackendOptions,
-		PathConfig:        r.PathConfig,
-		CacheConfig:       r.CacheConfig,
-		CacheClient:       r.CacheClient,
-		BackendClient:     r.BackendClient,
-		AlternateCacheTTL: r.AlternateCacheTTL,
-		TimeRangeQuery:    r.TimeRangeQuery,
-		Tracer:            r.Tracer,
-		IsMergeMember:     r.IsMergeMember,
-		RequestBody:       slices.Clone(r.RequestBody),
-		MergeFunc:         r.MergeFunc,
-		MergeRespondFunc:  r.MergeRespondFunc,
-		TSUnmarshaler:     r.TSUnmarshaler,
-		TSMarshaler:       r.TSMarshaler,
-		TSTransformer:     r.TSTransformer,
-		TS:                r.TS,
-		TSReqestOptions:   r.TSReqestOptions,
-		TSMergeStrategy:   r.TSMergeStrategy,
-		AuthResult:        r.AuthResult, // shallow copy of the auth result
-		AlreadyEncoded:    r.AlreadyEncoded,
-		Cancelable:        r.Cancelable,
+		BackendOptions:        r.BackendOptions,
+		PathConfig:            r.PathConfig,
+		CacheConfig:           r.CacheConfig,
+		CacheClient:           r.CacheClient,
+		BackendClient:         r.BackendClient,
+		AlternateCacheTTL:     r.AlternateCacheTTL,
+		TimeRangeQuery:        r.TimeRangeQuery,
+		Tracer:                r.Tracer,
+		IsMergeMember:         r.IsMergeMember,
+		RequestBody:           slices.Clone(r.RequestBody),
+		MergeFunc:             r.MergeFunc,
+		MergeRespondFunc:      r.MergeRespondFunc,
+		TSUnmarshaler:         r.TSUnmarshaler,
+		TSMarshaler:           r.TSMarshaler,
+		TSTransformer:         r.TSTransformer,
+		TS:                    r.TS,
+		TSReqestOptions:       r.TSReqestOptions,
+		TSMergeStrategy:       r.TSMergeStrategy,
+		TSDedupToleranceNanos: r.TSDedupToleranceNanos,
+		AuthResult:            r.AuthResult, // shallow copy of the auth result
+		AlreadyEncoded:        r.AlreadyEncoded,
+		Cancelable:            r.Cancelable,
 	}
 }
 

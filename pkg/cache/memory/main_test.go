@@ -14,44 +14,14 @@
  * limitations under the License.
  */
 
-package options
+package memory
 
-const testTOMLNoALB = `
-backends:
-  test:
- `
+import (
+	"testing"
 
-const testTOMLBadOutputFormat1 = `
-backends:
-  test:
-    alb:
-      mechanism: 'not-tsm'
-      output_format: invalid
- `
+	"go.uber.org/goleak"
+)
 
-const testTOMLBadOutputFormat2 = `
-backends:
-  test:
-    alb:
-      mechanism: tsm
-      output_format: invalid
-`
-
-const testTOML = `
-backends:
-  test:
-    alb:
-      mechanism: tsm
-      output_format: prometheus
-      healthy_floor: 1
-      pool: [ 'test' ]
-`
-
-const testFGR = `
-backends:
-  test:
-    alb:
-      mechanism: fgr
-      fgr:
-        status_codes: [200, 201]
-`
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
+}
