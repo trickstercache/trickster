@@ -378,7 +378,7 @@ func (pr *proxyRequest) stripConditionalHeaders() {
 
 func (pr *proxyRequest) writeResponseHeader() {
 	pr.mapLock.Lock()
-	headers.SetResultsHeader(pr.upstreamResponse.Header, "ObjectProxyCache", pr.cacheStatus.String(), "", nil)
+	headers.SetResultsHeader(pr.upstreamResponse.Header, "ObjectProxyCache", pr.cacheStatus.String(), "", nil, nil)
 	pr.mapLock.Unlock()
 }
 

@@ -565,6 +565,111 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 	}
 }
 
+// TestDeltaProxyCacheRequestPartialHitWithFailedExtents verifies that when
+// a partial hit occurs and the upstream request for the missing fragment fails,
+// the failed extents are properly tracked and reported in the response header.
+func TestDeltaProxyCacheRequestPartialHitWithFailedExtents(t *testing.T) {
+	ts, w, r, rsc, err := setupTestHarnessDPC()
+	if err != nil {
+		t.Error(err)
+	}
+	defer ts.Close()
+
+	client := rsc.BackendClient.(*TestClient)
+	o := rsc.BackendOptions
+	rsc.CacheConfig.Provider = "test"
+
+	client.RangeCacheKey = "test-range-key-phit-failed"
+	client.InstantCacheKey = "test-instant-key-phit-failed"
+
+	o.FastForwardDisable = true
+
+	step := time.Duration(300) * time.Second
+	now := time.Now()
+	end := now.Add(-time.Duration(12) * time.Hour)
+
+	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
+	extn := timeseries.Extent{Start: normalizeTime(extr.Start, step), End: normalizeTime(extr.End, step)}
+
+	// First request: populate cache with successful data
+	expected, _, _ := mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+
+	u := r.URL
+	u.Path = "/prometheus/api/v1/query_range"
+	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s&rk=%s&ik=%s", int(step.Seconds()),
+		extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency, client.RangeCacheKey, client.InstantCacheKey)
+
+	client.QueryRangeHandler(w, r)
+	resp := w.Result()
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStringMatch(string(bodyBytes), expected)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
+	if err != nil {
+		t.Error(err)
+	}
+
+	// Give time for the object to be written to cache
+	time.Sleep(time.Millisecond * 10)
+
+	// Second request: partial hit - extend the upper range
+	// This should cause a partial hit where we need to fetch the new upper fragment.
+	// But we'll use a query that fails (queryReturnsBadGateway) for this fragment.
+	phitStart := normalizeTime(extr.End.Add(step), step)
+	extr.End = extr.End.Add(time.Duration(1) * time.Hour)
+	extn.End = normalizeTime(extr.End, step)
+
+	// The extent that we should fetch for the partial hit
+	extentToFetch := timeseries.Extent{Start: phitStart, End: extn.End}
+	expectedFailed := "[" + timeseries.ExtentList{extentToFetch}.String() + "]"
+
+	// Use queryReturnsBadGateway which will return 502 for the upper fragment
+	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s&rk=%s&ik=%s", int(step.Seconds()),
+		extr.Start.Unix(), extr.End.Unix(), queryReturnsBadGateway, client.RangeCacheKey, client.InstantCacheKey)
+
+	r.URL = u
+	time.Sleep(time.Millisecond * 10)
+
+	w = httptest.NewRecorder()
+	client.QueryRangeHandler(w, r)
+	resp = w.Result()
+
+	// The response should be 502 because the partial fetch failed
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusBadGateway)
+	if err != nil {
+		t.Error(err)
+	}
+
+	// Check that we have a proxy-error status
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "proxy-error"})
+	if err != nil {
+		t.Error(err)
+	}
+
+	// Verify that failed extents are present in the header
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"failed": expectedFailed})
+	if err != nil {
+		t.Error(err)
+	}
+
+	// Log the header for debugging purposes
+	resultHdr := resp.Header.Get(headers.NameTricksterResult)
+	t.Logf("Result Header: %s", resultHdr)
+}
+
 func TestDeltayProxyCacheRequestDeltaFetchError(t *testing.T) {
 	ts, w, r, rsc, err := setupTestHarnessDPC()
 	if err != nil {

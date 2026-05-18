@@ -30,6 +30,7 @@ type ResultHeaderParts struct {
 	Engine            string
 	Status            string
 	Fetched           timeseries.ExtentList
+	FailedFetch       timeseries.ExtentList
 	FastForwardStatus string
 }
 
@@ -45,15 +46,18 @@ func (p ResultHeaderParts) String() string {
 	if p.FastForwardStatus != "" {
 		sb.WriteString("; ffstatus=" + p.FastForwardStatus)
 	}
+	if len(p.FailedFetch) > 0 {
+		sb.WriteString("; failed=[" + p.FailedFetch.String() + "]")
+	}
 	return sb.String()
 }
 
 // SetResultsHeader adds a response header summarizing Trickster's handling of the HTTP request
-func SetResultsHeader(headers http.Header, engine, status, ffstatus string, fetched timeseries.ExtentList) {
+func SetResultsHeader(headers http.Header, engine, status, ffstatus string, fetched timeseries.ExtentList, failedFetched timeseries.ExtentList) {
 	if headers == nil || engine == "" {
 		return
 	}
-	p := ResultHeaderParts{Engine: engine, Status: status, Fetched: fetched, FastForwardStatus: ffstatus}
+	p := ResultHeaderParts{Engine: engine, Status: status, Fetched: fetched, FailedFetch: failedFetched, FastForwardStatus: ffstatus}
 	headers.Set(NameTricksterResult, p.String())
 }
 
@@ -96,6 +100,16 @@ func MergeResultHeaderVals(h1, h2 string) string {
 		copy(merged[len(r1.Fetched):], r2.Fetched)
 		r1.Fetched = r1.Fetched.Compress(0)
 	}
+
+	if len(r1.FailedFetch) == 0 {
+		r1.FailedFetch = r2.FailedFetch
+	} else if len(r2.FailedFetch) > 0 {
+		merged := make(timeseries.ExtentList, len(r1.FailedFetch)+len(r2.FailedFetch))
+		copy(merged, r1.FailedFetch)
+		copy(merged[len(r1.FailedFetch):], r2.FailedFetch)
+		r1.FailedFetch = r1.FailedFetch.Compress(0)
+	}
+
 	return r1.String()
 }
 
@@ -120,7 +134,7 @@ func parseResultHeaderVals(h string) ResultHeaderParts {
 				if val != "" {
 					r.FastForwardStatus = val
 				}
-			case "fetched":
+			case "fetched", "failed":
 				val = strings.NewReplacer("[", "", "]", "").Replace(val)
 				fparts := strings.Split(val, ";")
 				el := make(timeseries.ExtentList, len(fparts))
@@ -142,7 +156,12 @@ func parseResultHeaderVals(h string) ResultHeaderParts {
 						k++
 					}
 				}
-				r.Fetched = el[:k]
+
+				if key == "fetched" {
+					r.Fetched = el[:k]
+				} else {
+					r.FailedFetch = el[:k]
+				}
 			}
 		}
 	}

@@ -139,7 +139,7 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 	if resp != nil && rsc != nil && (rsc.IsMergeMember || rsc.TSTransformer != nil) {
 		rsc.Response = resp
 		recordResults(r, "HTTPProxy", cacheStatusCode, resp.StatusCode,
-			r.URL.Path, "", elapsed.Seconds(), nil, resp.Header)
+			r.URL.Path, "", elapsed.Seconds(), nil, nil, resp.Header)
 	}
 
 	return resp
@@ -328,12 +328,18 @@ func setStatusHeader(httpStatus int, header http.Header) status.LookupStatus {
 	if httpStatus >= http.StatusBadRequest {
 		st = status.LookupStatusProxyError
 	}
-	headers.SetResultsHeader(header, "HTTPProxy", st.String(), "", nil)
+	headers.SetResultsHeader(header, "HTTPProxy", st.String(), "", nil, nil)
 	return st
 }
 
-func recordResults(r *http.Request, engine string, cacheStatus status.LookupStatus,
-	statusCode int, path, ffStatus string, elapsed float64, extents timeseries.ExtentList,
+func recordResults(
+	r *http.Request,
+	engine string,
+	cacheStatus status.LookupStatus,
+	statusCode int,
+	path, ffStatus string,
+	elapsed float64,
+	extents, failed timeseries.ExtentList,
 	header http.Header,
 ) {
 	rsc := request.GetResources(r)
@@ -349,5 +355,5 @@ func recordResults(r *http.Request, engine string, cacheStatus status.LookupStat
 			metrics.ProxyRequestDuration.WithLabelValues(lvs...).Observe(elapsed)
 		}
 	}
-	headers.SetResultsHeader(header, engine, s, ffStatus, extents)
+	headers.SetResultsHeader(header, engine, s, ffStatus, extents, failed)
 }

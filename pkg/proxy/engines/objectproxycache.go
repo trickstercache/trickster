@@ -587,6 +587,6 @@ func recordOPCResult(pr *proxyRequest, cacheStatus status.LookupStatus, httpStat
 	path string, elapsed float64, header http.Header,
 ) {
 	pr.mapLock.Lock()
-	recordResults(pr.Request, "ObjectProxyCache", cacheStatus, httpStatus, path, "", elapsed, nil, header)
+	recordResults(pr.Request, "ObjectProxyCache", cacheStatus, httpStatus, path, "", elapsed, nil, nil, header)
 	pr.mapLock.Unlock()
 }

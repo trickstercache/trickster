@@ -27,7 +27,7 @@ import (
 func TestSetResultsHeader(t *testing.T) {
 	h := http.Header{}
 	SetResultsHeader(h, "test-engine", "test-status", "test-ffstatus",
-		timeseries.ExtentList{timeseries.Extent{Start: time.Unix(1, 0), End: time.Unix(2, 0)}})
+		timeseries.ExtentList{timeseries.Extent{Start: time.Unix(1, 0), End: time.Unix(2, 0)}}, nil)
 	const expected = "engine=test-engine; status=test-status; fetched=[1000-2000]; ffstatus=test-ffstatus"
 	if h.Get(NameTricksterResult) != expected {
 		t.Errorf("expected %s got %s", expected, h.Get(NameTricksterResult))
@@ -37,7 +37,7 @@ func TestSetResultsHeader(t *testing.T) {
 func TestSetResultsHeaderEmtpy(t *testing.T) {
 	h := http.Header{}
 	SetResultsHeader(h, "", "test-status", "test-ffstatus",
-		timeseries.ExtentList{timeseries.Extent{Start: time.Unix(1, 0), End: time.Unix(2, 0)}})
+		timeseries.ExtentList{timeseries.Extent{Start: time.Unix(1, 0), End: time.Unix(2, 0)}}, nil)
 	if len(h) > 0 {
 		t.Errorf("Expected header length of %d", 0)
 	}
