@@ -24,142 +24,218 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 )
 
-func TestPickWinnerPrefersFirst2xx(t *testing.T) {
-	called := map[string]bool{}
-	mk := func(name string) merge.RespondFunc {
-		return func(_ http.ResponseWriter, _ *http.Request, _ *merge.Accumulator, _ int) {
-			called[name] = true
-		}
+func TestPickWinner(t *testing.T) {
+	type slot struct {
+		name       string
+		statusCode int
+		failed     bool
+		hdrSlot    string
 	}
-	results := []gatherResult{
-		{statusCode: 500, mergeFunc: mk("err0"), header: http.Header{"X-Slot": []string{"0"}}},
-		{statusCode: 200, mergeFunc: mk("ok1"), header: http.Header{"X-Slot": []string{"1"}}},
-		{statusCode: 200, mergeFunc: mk("ok2"), header: http.Header{"X-Slot": []string{"2"}}},
+	cases := []struct {
+		name        string
+		slots       []slot
+		wantNil     bool
+		wantCalled  string // name of mergeFunc expected to fire
+		wantHdrSlot string // expected X-Slot on returned headers
+	}{
+		{
+			name: "prefers first 2xx over earlier 5xx",
+			slots: []slot{
+				{name: "err0", statusCode: 500, hdrSlot: "0"},
+				{name: "ok1", statusCode: 200, hdrSlot: "1"},
+				{name: "ok2", statusCode: 200, hdrSlot: "2"},
+			},
+			wantCalled:  "ok1",
+			wantHdrSlot: "1",
+		},
+		{
+			name: "falls back to first non-2xx when no 2xx present",
+			slots: []slot{
+				{name: "err0", statusCode: 500, hdrSlot: "0"},
+				{name: "err1", statusCode: 502, hdrSlot: "1"},
+			},
+			wantCalled:  "err0",
+			wantHdrSlot: "0",
+		},
+		{
+			name: "no candidates returns nil winner and nil headers",
+			slots: []slot{
+				{statusCode: 0},
+				{failed: true},
+			},
+			wantNil: true,
+		},
 	}
-	mrf, hdrs := pickWinner(results)
-	if mrf == nil {
-		t.Fatal("expected a winner")
-	}
-	mrf(nil, nil, nil, 0)
-	if !called["ok1"] {
-		t.Errorf("expected first 2xx winner, got %v", called)
-	}
-	if hdrs.Get("X-Slot") != "1" {
-		t.Errorf("expected slot 1 headers, got %q", hdrs.Get("X-Slot"))
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			called := map[string]bool{}
+			mk := func(name string) merge.RespondFunc {
+				if name == "" {
+					return nil
+				}
+				return func(_ http.ResponseWriter, _ *http.Request, _ *merge.Accumulator, _ int) {
+					called[name] = true
+				}
+			}
+			results := make([]gatherResult, len(tc.slots))
+			for i, s := range tc.slots {
+				gr := gatherResult{
+					statusCode: s.statusCode,
+					mergeFunc:  mk(s.name),
+					failed:     s.failed,
+				}
+				if s.hdrSlot != "" {
+					gr.header = http.Header{"X-Slot": []string{s.hdrSlot}}
+				}
+				results[i] = gr
+			}
+
+			mrf, hdrs := pickWinner(results)
+			if tc.wantNil {
+				if mrf != nil || hdrs != nil {
+					t.Errorf("case=%q slots=%+v: expected nil winner and headers, got mrf=%v hdrs=%v",
+						tc.name, tc.slots, mrf, hdrs)
+				}
+				return
+			}
+			if mrf == nil {
+				t.Fatalf("case=%q slots=%+v: expected a winner, got nil", tc.name, tc.slots)
+			}
+			mrf(nil, nil, nil, 0)
+			if !called[tc.wantCalled] {
+				t.Errorf("case=%q slots=%+v: expected %q to be called, got called=%v",
+					tc.name, tc.slots, tc.wantCalled, called)
+			}
+			if got := hdrs.Get("X-Slot"); got != tc.wantHdrSlot {
+				t.Errorf("case=%q slots=%+v: expected X-Slot=%q, got %q",
+					tc.name, tc.slots, tc.wantHdrSlot, got)
+			}
+		})
 	}
 }
 
-func TestPickWinnerFallsBackToFirstNon2xx(t *testing.T) {
-	called := map[string]bool{}
-	mk := func(name string) merge.RespondFunc {
-		return func(_ http.ResponseWriter, _ *http.Request, _ *merge.Accumulator, _ int) {
-			called[name] = true
-		}
+func TestAggregateStatus(t *testing.T) {
+	cases := []struct {
+		name         string
+		results      []gatherResult
+		wantCode     int
+		checkSH      bool // original test asserted on statusHeader
+		wantSH       string
+		wantHas2xx   bool
+		wantHasNon2x bool
+	}{
+		{
+			name: "all 2xx picks min 2xx",
+			results: []gatherResult{
+				{statusCode: 200, header: http.Header{headers.NameTricksterResult: []string{"engine=A"}}},
+				{statusCode: 206, header: http.Header{headers.NameTricksterResult: []string{"engine=B"}}},
+			},
+			wantCode:   200,
+			wantHas2xx: true,
+		},
+		{
+			name: "mixed success and error still picks 200",
+			results: []gatherResult{
+				{statusCode: 500},
+				{statusCode: 200},
+				{statusCode: 502},
+			},
+			wantCode:     200,
+			wantHas2xx:   true,
+			wantHasNon2x: true,
+		},
+		{
+			// Before the fix this returned the min (400), hiding more severe 502s.
+			name: "all errors surfaces max status",
+			results: []gatherResult{
+				{statusCode: 400},
+				{statusCode: 502},
+				{statusCode: 502},
+			},
+			wantCode:     502,
+			wantHasNon2x: true,
+		},
+		{
+			name:    "empty input returns zero state",
+			results: nil,
+			checkSH: true,
+			wantSH:  "",
+		},
 	}
-	results := []gatherResult{
-		{statusCode: 500, mergeFunc: mk("err0"), header: http.Header{"X-Slot": []string{"0"}}},
-		{statusCode: 502, mergeFunc: mk("err1"), header: http.Header{"X-Slot": []string{"1"}}},
-	}
-	mrf, hdrs := pickWinner(results)
-	if mrf == nil {
-		t.Fatal("expected fallback winner")
-	}
-	mrf(nil, nil, nil, 0)
-	if !called["err0"] {
-		t.Errorf("expected first non-2xx winner, got %v", called)
-	}
-	if hdrs.Get("X-Slot") != "0" {
-		t.Errorf("expected slot 0 headers, got %q", hdrs.Get("X-Slot"))
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			code, sh, has2xx, hasNon2xx := aggregateStatus(tc.results)
+			if code != tc.wantCode {
+				t.Errorf("case=%q input=%+v: code got %d want %d", tc.name, tc.results, code, tc.wantCode)
+			}
+			if tc.checkSH && sh != tc.wantSH {
+				t.Errorf("case=%q input=%+v: statusHeader got %q want %q", tc.name, tc.results, sh, tc.wantSH)
+			}
+			if has2xx != tc.wantHas2xx {
+				t.Errorf("case=%q input=%+v: has2xx got %v want %v", tc.name, tc.results, has2xx, tc.wantHas2xx)
+			}
+			if hasNon2xx != tc.wantHasNon2x {
+				t.Errorf("case=%q input=%+v: hasNon2xx got %v want %v", tc.name, tc.results, hasNon2xx, tc.wantHasNon2x)
+			}
+		})
 	}
 }
 
-func TestPickWinnerNoneReturnsNil(t *testing.T) {
-	results := []gatherResult{{statusCode: 0, mergeFunc: nil}, {failed: true}}
-	mrf, hdrs := pickWinner(results)
-	if mrf != nil || hdrs != nil {
-		t.Errorf("expected nil winner and headers, got %v %v", mrf, hdrs)
+func TestMergeMultiValuedHeaders(t *testing.T) {
+	cases := []struct {
+		name              string
+		results           []gatherResult
+		winner            http.Header
+		wantSetCookies    []string
+		wantWinnerCleared bool
+	}{
+		{
+			name: "forwards winner Set-Cookie and clears winner copy",
+			results: []gatherResult{
+				{header: http.Header{headers.NameSetCookie: []string{"loser1=a"}}},
+				{header: http.Header{headers.NameSetCookie: []string{"loser2=b"}}},
+			},
+			winner:            http.Header{headers.NameSetCookie: []string{"winner=v1", "winner=v2"}},
+			wantSetCookies:    []string{"winner=v1", "winner=v2"},
+			wantWinnerCleared: true,
+		},
+		{
+			name: "drops all Set-Cookies when winner has none",
+			results: []gatherResult{
+				{header: http.Header{headers.NameSetCookie: []string{"loser=1"}}},
+			},
+			winner:         http.Header{},
+			wantSetCookies: nil,
+		},
+		{
+			name:           "nil winner drops all",
+			results:        []gatherResult{{header: http.Header{headers.NameSetCookie: []string{"loser=1"}}}},
+			winner:         nil,
+			wantSetCookies: nil,
+		},
 	}
-}
 
-func TestAggregateStatusAllSuccess(t *testing.T) {
-	results := []gatherResult{
-		{statusCode: 200, header: http.Header{headers.NameTricksterResult: []string{"engine=A"}}},
-		{statusCode: 206, header: http.Header{headers.NameTricksterResult: []string{"engine=B"}}},
-	}
-	code, _, has2xx, hasNon2xx := aggregateStatus(results)
-	if code != 200 {
-		t.Errorf("expected min 2xx (200), got %d", code)
-	}
-	if !has2xx || hasNon2xx {
-		t.Errorf("flags: has2xx=%v hasNon2xx=%v", has2xx, hasNon2xx)
-	}
-}
-
-func TestAggregateStatusMixedPrefers200(t *testing.T) {
-	results := []gatherResult{
-		{statusCode: 500},
-		{statusCode: 200},
-		{statusCode: 502},
-	}
-	code, _, has2xx, hasNon2xx := aggregateStatus(results)
-	if code != 200 {
-		t.Errorf("mixed-success should still pick 200, got %d", code)
-	}
-	if !has2xx || !hasNon2xx {
-		t.Errorf("expected both flags, got has2xx=%v hasNon2xx=%v", has2xx, hasNon2xx)
-	}
-}
-
-func TestAggregateStatusAllErrorPicksMax(t *testing.T) {
-	// Before this PR the aggregator returned the min, surfacing 400 and
-	// hiding the more severe 502s. The new behavior surfaces 502.
-	results := []gatherResult{
-		{statusCode: 400},
-		{statusCode: 502},
-		{statusCode: 502},
-	}
-	code, _, has2xx, hasNon2xx := aggregateStatus(results)
-	if code != 502 {
-		t.Errorf("all-error should pick max (502), got %d", code)
-	}
-	if has2xx || !hasNon2xx {
-		t.Errorf("flags: has2xx=%v hasNon2xx=%v", has2xx, hasNon2xx)
-	}
-}
-
-func TestAggregateStatusEmpty(t *testing.T) {
-	code, sh, has2xx, hasNon2xx := aggregateStatus(nil)
-	if code != 0 || sh != "" || has2xx || hasNon2xx {
-		t.Errorf("zero state: code=%d sh=%q has2xx=%v hasNon2xx=%v", code, sh, has2xx, hasNon2xx)
-	}
-}
-
-func TestMergeMultiValuedHeadersPreservesSetCookie(t *testing.T) {
-	results := []gatherResult{
-		{header: http.Header{headers.NameSetCookie: []string{"a=1", "b=2"}}},
-		{header: http.Header{headers.NameSetCookie: []string{"c=3"}}},
-	}
-	winner := http.Header{headers.NameSetCookie: []string{"winner=ignored"}}
-	dst := http.Header{}
-	mergeMultiValuedHeaders(dst, results, winner)
-	got := dst.Values(headers.NameSetCookie)
-	if len(got) != 3 {
-		t.Fatalf("expected 3 Set-Cookie values, got %d: %v", len(got), got)
-	}
-	if winner.Get(headers.NameSetCookie) != "" {
-		t.Errorf("winner should have Set-Cookie deleted to avoid double-merge, still has %q",
-			winner.Get(headers.NameSetCookie))
-	}
-}
-
-func TestMergeMultiValuedHeadersSkipsNilHeader(t *testing.T) {
-	results := []gatherResult{
-		{header: nil},
-		{header: http.Header{headers.NameSetCookie: []string{"only=1"}}},
-	}
-	dst := http.Header{}
-	mergeMultiValuedHeaders(dst, results, nil)
-	if got := dst.Values(headers.NameSetCookie); len(got) != 1 || got[0] != "only=1" {
-		t.Errorf("expected single Set-Cookie, got %v", got)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dst := http.Header{}
+			mergeMultiValuedHeaders(dst, tc.results, tc.winner)
+			got := dst.Values(headers.NameSetCookie)
+			if len(got) != len(tc.wantSetCookies) {
+				t.Fatalf("case=%q results=%+v: Set-Cookie count got %d (%v) want %d (%v)",
+					tc.name, tc.results, len(got), got, len(tc.wantSetCookies), tc.wantSetCookies)
+			}
+			for i, v := range tc.wantSetCookies {
+				if got[i] != v {
+					t.Errorf("case=%q results=%+v: Set-Cookie[%d] got %q want %q",
+						tc.name, tc.results, i, got[i], v)
+				}
+			}
+			if tc.wantWinnerCleared && tc.winner.Get(headers.NameSetCookie) != "" {
+				t.Errorf("case=%q: winner Set-Cookie should be cleared to avoid double-merge, still has %q",
+					tc.name, tc.winner.Get(headers.NameSetCookie))
+			}
+		})
 	}
 }

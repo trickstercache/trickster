@@ -420,16 +420,20 @@ func TestFinalizeWeightedAvg(t *testing.T) {
 		}
 	})
 
-	t.Run("missing epoch in countDS leaves sum value unchanged", func(t *testing.T) {
+	t.Run("missing epoch in countDS drops the unpaired sum point", func(t *testing.T) {
 		sumDS := makeDS(0, "m", Tags{}, ep{100, "50"}, ep{200, "80"})
 		countDS := makeDS(0, "m", Tags{}, ep{100, "5"}) // no epoch 200
 		sumDS.FinalizeWeightedAvg(countDS, "")
 		pts := sumDS.Results[0].SeriesList[0].Points
-		if pts[0].Values[0] != "10" { // 50/5
-			t.Errorf("epoch 100: got %v, want 10", pts[0].Values[0])
+		if len(pts) != 1 {
+			t.Fatalf("expected 1 paired point, got %d", len(pts))
 		}
-		if pts[1].Values[0] != "80" { // unchanged
-			t.Errorf("epoch 200: got %v, want 80 (unchanged)", pts[1].Values[0])
+		if pts[0].Epoch != 100 || pts[0].Values[0] != "10" {
+			t.Errorf("paired point: got epoch=%d value=%v, want epoch=100 value=10",
+				pts[0].Epoch, pts[0].Values[0])
+		}
+		if len(sumDS.Warnings) == 0 {
+			t.Error("expected a warning naming the affected series; got none")
 		}
 	})
 

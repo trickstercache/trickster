@@ -19,49 +19,27 @@ package mech_test
 import (
 	"testing"
 
-	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech"
-	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/albpool"
 )
 
 func TestRecoverFanoutPanicIncrementsMetric(t *testing.T) {
-	before := testutil.ToFloat64(metrics.ALBFanoutFailures.WithLabelValues("metric-test", "", "panic"))
-
-	func() {
+	albpool.RequireFanoutFailureDelta(t, "metric-test", "", "panic", 1, func() {
 		defer mech.RecoverFanoutPanic("metric-test", "", 0, nil)
 		panic("forced")
-	}()
-
-	after := testutil.ToFloat64(metrics.ALBFanoutFailures.WithLabelValues("metric-test", "", "panic"))
-	if after-before != 1 {
-		t.Errorf("expected counter to increment by 1, before=%v after=%v", before, after)
-	}
+	})
 }
 
 func TestRecoverFanoutPanicVariantLabel(t *testing.T) {
-	before := testutil.ToFloat64(metrics.ALBFanoutFailures.WithLabelValues("metric-test", "avg-sum", "panic"))
-
-	func() {
+	albpool.RequireFanoutFailureDelta(t, "metric-test", "avg-sum", "panic", 1, func() {
 		defer mech.RecoverFanoutPanic("metric-test", "avg-sum", 0, nil)
 		panic("forced")
-	}()
-
-	after := testutil.ToFloat64(metrics.ALBFanoutFailures.WithLabelValues("metric-test", "avg-sum", "panic"))
-	if after-before != 1 {
-		t.Errorf("expected variant-labeled counter to increment by 1, before=%v after=%v", before, after)
-	}
+	})
 }
 
 func TestRecoverFanoutPanicNoPanicNoIncrement(t *testing.T) {
-	before := testutil.ToFloat64(metrics.ALBFanoutFailures.WithLabelValues("metric-test-noop", "", "panic"))
-
-	func() {
+	albpool.RequireFanoutFailureDelta(t, "metric-test-noop", "", "panic", 0, func() {
 		defer mech.RecoverFanoutPanic("metric-test-noop", "", 0, nil)
 		// no panic
-	}()
-
-	after := testutil.ToFloat64(metrics.ALBFanoutFailures.WithLabelValues("metric-test-noop", "", "panic"))
-	if after != before {
-		t.Errorf("expected counter unchanged, before=%v after=%v", before, after)
-	}
+	})
 }

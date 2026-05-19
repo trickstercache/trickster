@@ -40,7 +40,7 @@ func (el ExtentList) String() string {
 	for i, e := range el {
 		lines[i] = e.String()
 	}
-	return strings.Join(lines, ",")
+	return strings.Join(lines, ";")
 }
 
 // Encompasses returns true if the provided extent is contained

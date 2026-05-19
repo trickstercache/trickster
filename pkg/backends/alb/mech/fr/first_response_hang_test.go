@@ -43,6 +43,7 @@ func TestFRDoesNotHangWhenAllTargetsAbort(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 	p, _, _ := albpool.New(-1, []http.Handler{never, never})
+	defer p.Stop()
 	p.SetHealthy([]http.Handler{never, never})
 
 	h := &handler{}

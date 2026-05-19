@@ -22,12 +22,8 @@ import (
 	"go.uber.org/goleak"
 )
 
-// Pool-side goroutines from albpool.New are ignored; they predate this file.
 // Mechanism-side leaks (TSM fanout that ignores ctx, panic recovery that
-// doesn't unwind) will still surface here.
+// doesn't unwind) surface here.
 func TestMain(m *testing.M) {
-	goleak.VerifyTestMain(m,
-		goleak.IgnoreAnyFunction("github.com/trickstercache/trickster/v2/pkg/backends/alb/pool.(*pool).checkHealth"),
-		goleak.IgnoreAnyFunction("github.com/trickstercache/trickster/v2/pkg/backends/alb/pool.(*pool).listenStatusUpdates"),
-	)
+	goleak.VerifyTestMain(m)
 }

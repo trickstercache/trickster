@@ -72,10 +72,10 @@ func TestURConcurrentReloadIsRaceFree(t *testing.T) {
 	wg.Wait()
 }
 
-// When a router entry sets ToUser but leaves ToCredential empty, the inbound
-// credential must be retained rather than overwritten with the empty string.
-// Before the fix, the AuthResult-driven path would call SetCredentials with
-// (ToUser, "") and silently break Basic auth on the backend.
+// When the AuthResult path is in use (cred is unextracted, "") and the router
+// entry leaves ToCredential empty, SetCredentials must NOT fire: writing
+// (ToUser, "") would emit Basic auth with an empty password and collapse
+// every SSO-mapped user to the same cache key.
 func TestURRetainsInboundCredWhenToCredentialEmpty(t *testing.T) {
 	auth := &mockAuth{}
 	okH := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -103,14 +103,10 @@ func TestURRetainsInboundCredWhenToCredentialEmpty(t *testing.T) {
 	r = request.SetResources(r, rsc)
 	h.ServeHTTP(httptest.NewRecorder(), r)
 
-	if len(auth.setCalls) != 1 {
-		t.Fatalf("expected one SetCredentials call, got %d", len(auth.setCalls))
+	if len(auth.setCalls) != 0 {
+		t.Fatalf("expected zero SetCredentials calls (cred and ToCredential both empty), got %d", len(auth.setCalls))
 	}
-	if auth.setCalls[0].user != "bob" {
-		t.Errorf("expected ToUser remap to bob, got %q", auth.setCalls[0].user)
+	if n := auth.sanitizeCalls.Load(); n != 0 {
+		t.Errorf("expected Sanitize not to fire when there is no replacement cred to write, got %d", n)
 	}
-	// On the AuthResult path the inbound cred wasn't extracted, so cred is "".
-	// The important guarantee is that we DIDN'T proactively read ToCredential
-	// (which would also be "") and stomp on a future inbound cred. Mostly this
-	// test pins the contract: ToUser remap fires without ToCredential.
 }

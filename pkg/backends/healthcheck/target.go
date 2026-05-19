@@ -33,6 +33,7 @@ import (
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
@@ -199,6 +200,22 @@ func (t *target) Stop() {
 }
 
 func (t *target) probeLoop(ctx context.Context) {
+	// runProbe isolates each probe invocation so a panic only kills this
+	// iteration; the ticker loop keeps running and the target's Status stays
+	// fresh. Without this, a single bad probe (nil deref, panicking transport,
+	// etc.) silently freezes Status at its last value.
+	runProbe := func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Error("healthcheck probe panic", logging.Pairs{
+					"target": t.Name(),
+					"panic":  fmt.Sprintf("%v", r),
+				})
+				metrics.HealthcheckProbePanicRecovered.WithLabelValues(t.Name()).Inc()
+			}
+		}()
+		t.probe(context.WithoutCancel(ctx))
+	}
 	t.wg.Go(func() {
 		// this prevents all health checks from always probing at the same time
 		jitter := time.NewTimer(randomJitter(10*time.Millisecond, time.Second))
@@ -211,7 +228,7 @@ func (t *target) probeLoop(ctx context.Context) {
 		// detach the probe request from the loop ctx so Stop waits for the
 		// in-flight probe to finish instead of cancelling it; this serializes
 		// Register-over-existing at the upstream level.
-		t.probe(context.WithoutCancel(ctx))
+		runProbe()
 		ticker := time.NewTicker(t.interval)
 		defer ticker.Stop()
 		for {
@@ -219,7 +236,7 @@ func (t *target) probeLoop(ctx context.Context) {
 			case <-ctx.Done():
 				return // probe complete, stop loop and prevent goroutine leak
 			case <-ticker.C:
-				t.probe(context.WithoutCancel(ctx))
+				runProbe()
 			}
 		}
 	})
@@ -227,13 +244,19 @@ func (t *target) probeLoop(ctx context.Context) {
 
 func (t *target) probe(ctx context.Context) {
 	r := t.baseRequest.Clone(ctx)
+	start := time.Now()
 	resp, err := t.httpClient.Do(r)
+	metrics.HealthcheckProbeLatency.WithLabelValues(t.Name()).Observe(time.Since(start).Seconds())
 	st := t.status.Get()
 	var errCnt, successCnt int
 	var passed bool
 	var detail string
 	switch {
 	case err != nil, resp == nil:
+		// CheckRedirect returns a non-nil resp alongside its error; close to release the conn.
+		if resp != nil && resp.Body != nil {
+			resp.Body.Close()
+		}
 		detail = fmt.Sprintf("error probing target: %v", err)
 		t.status.SetDetail(detail)
 		errCnt = int(t.failConsecutiveCnt.Add(1))

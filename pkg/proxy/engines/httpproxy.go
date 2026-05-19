@@ -103,17 +103,19 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 				// Blocks until server completes
 				grClose := reader != nil && closeResponse
 				closeResponse = false
-				go func() {
+				goWithRecover("doproxy.pcf.copy", func() {
+					defer func() {
+						if grClose {
+							reader.Close()
+						}
+					}()
+					defer reqs.Delete(key)
+					defer pcf.Close()
 					if _, err := io.Copy(pcf, reader); err != nil {
 						logger.Error("pcf upstream copy failed",
 							logging.Pairs{"error": err.Error()})
 					}
-					pcf.Close()
-					reqs.Delete(key)
-					if grClose {
-						reader.Close()
-					}
-				}()
+				})
 				if err := pcf.AddClient(writer); err != nil {
 					return nil
 				}
@@ -147,10 +149,18 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 
 // PrepareResponseWriter prepares a response and returns a destination io.Writer for the payload
 // Used in Respond.
+//
+// Hop-by-hop headers named in the upstream's Connection header (and the static
+// HopHeaders set) are stripped from the downstream response before write, per
+// RFC 7230 6.1. Without this, an upstream that emitted
+// `Connection: X-Internal-Auth` plus `X-Internal-Auth: ...` would leak the
+// hop-only header to the client. Mirrors the request-side strip applied by
+// PrepareFetchReader via headers.StripClientHeaders.
 func PrepareResponseWriter(w io.Writer, code int, header http.Header) io.Writer {
 	if rw, ok := w.(http.ResponseWriter); ok {
 		h := rw.Header()
 		headers.Merge(h, header)
+		headers.StripClientHeaders(h)
 		headers.AddResponseHeaders(h)
 		if code > 0 {
 			rw.WriteHeader(code)
@@ -342,8 +352,16 @@ func recordResults(r *http.Request, engine string, cacheStatus status.LookupStat
 	s := cacheStatus.String()
 
 	if pc != nil && !pc.NoMetrics {
+		// Use the matched PathConfig identifier so request URL.Path can't
+		// inflate label cardinality.
+		labelPath := path
+		if pc.HandlerName != "" {
+			labelPath = pc.HandlerName
+		} else if pc.Path != "" {
+			labelPath = pc.Path
+		}
 		httpStatus := strconv.Itoa(statusCode)
-		lvs := []string{o.Name, o.Provider, r.Method, s, httpStatus, path}
+		lvs := []string{o.Name, o.Provider, r.Method, s, httpStatus, labelPath}
 		metrics.ProxyRequestStatus.WithLabelValues(lvs...).Inc()
 		if elapsed > 0 {
 			metrics.ProxyRequestDuration.WithLabelValues(lvs...).Observe(elapsed)

@@ -20,6 +20,7 @@ package params
 import (
 	"bytes"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"strings"
@@ -102,9 +103,7 @@ func GetRequestValues(r *http.Request) (url.Values, []byte, bool) {
 		// any backend Trickster supports, and a single canonical value makes
 		// cache keys deterministic. See #969 follow-up.
 		merged := r.URL.Query()
-		for k, vs := range r.PostForm {
-			merged[k] = vs
-		}
+		maps.Copy(merged, r.PostForm)
 		return merged, []byte(merged.Encode()), true
 	default:
 		v := r.URL.Query()

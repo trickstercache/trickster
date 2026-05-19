@@ -37,8 +37,7 @@ import (
 // TE, Trailer, Transfer-Encoding, Upgrade, Proxy-Authorization,
 // Proxy-Authenticate, plus any header named in Connection.
 func TestALBRequestHeadersNoHopByHopLeak(t *testing.T) {
-	const healthyResp = `{"status":"success","data":{"resultType":"vector","result":[` +
-		`{"metric":{"__name__":"up","job":"a"},"value":[1700000000,"1"]}]}}`
+	healthyResp := albTestdata(t, "alb_request_headers/healthy.json")
 
 	type capture struct {
 		mu   sync.Mutex
@@ -70,49 +69,8 @@ func TestALBRequestHeadersNoHopByHopLeak(t *testing.T) {
 	metricsPort := 19101
 	mgmtPort := 19102
 
-	yaml := fmt.Sprintf(`
-frontend:
-  listen_port: %d
-metrics:
-  listen_port: %d
-mgmt:
-  listen_port: %d
-logging:
-  log_level: error
-caches:
-  mem1:
-    provider: memory
-backends:
-  prom-a:
-    provider: prometheus
-    origin_url: %s
-    cache_name: mem1
-    healthcheck:
-      path: /api/v1/status/buildinfo
-      query: ""
-      interval: 100ms
-      timeout: 500ms
-      failure_threshold: 1
-      recovery_threshold: 1
-  prom-b:
-    provider: prometheus
-    origin_url: %s
-    cache_name: mem1
-    healthcheck:
-      path: /api/v1/status/buildinfo
-      query: ""
-      interval: 100ms
-      timeout: 500ms
-      failure_threshold: 1
-      recovery_threshold: 1
-  alb-fr-hop:
-    provider: alb
-    alb:
-      mechanism: fr
-      pool:
-        - prom-a
-        - prom-b
-`, frontPort, metricsPort, mgmtPort, upA.URL, upB.URL)
+	yaml := fmt.Sprintf(albTestdata(t, "alb_request_headers/hop.yaml.tmpl"),
+		frontPort, metricsPort, mgmtPort, upA.URL, upB.URL)
 
 	cfgPath := filepath.Join(t.TempDir(), "trickster.yaml")
 	require.NoError(t, os.WriteFile(cfgPath, []byte(yaml), 0644))

@@ -153,6 +153,21 @@ func (p Points) findRange(startEpoch, endEpoch epoch.Epoch, s, e int) (int, int)
 // Set p to the call's return value, as in:   p = sortAndDedupe(p)
 // In the event of duplicates, the highest index wins.
 func sortAndDedupe(p Points) Points {
+	return sortAndDedupeTolerant(p, 0)
+}
+
+// sortAndDedupeTolerant sorts and deduplicates p in-place. When toleranceNanos
+// is 0, only points with bit-identical Epoch values collapse, and the
+// highest-index (latest-seen) value wins -- this preserves the legacy
+// sortAndDedupe semantics. When toleranceNanos is >0, adjacent points (after
+// stable sort) whose Epoch difference is within the window cluster together
+// and the FIRST point in the cluster wins; this matches Trickster's
+// first-seen idiom and produces deterministic output regardless of fanout
+// order. The boundary is inclusive (epoch_b - epoch_a <= toleranceNanos).
+func sortAndDedupeTolerant(p Points, toleranceNanos int64) Points {
+	if len(p) == 0 {
+		return p
+	}
 	// sort, keeping order between equal elements
 	slices.SortStableFunc(p, func(a, b Point) int {
 		if a.Epoch < b.Epoch {
@@ -162,21 +177,41 @@ func sortAndDedupe(p Points) Points {
 		}
 		return 0
 	})
+	if toleranceNanos <= 0 {
+		var k int
+		for i := range p {
+			if i == 0 {
+				continue // skip first iteration since there's nothing to compare
+			}
+			// if Epochs match, the higher-index (latest) version wins de-duplication
+			if p[k].Epoch == p[i].Epoch {
+				p[k] = p[i]
+			} else {
+				// at a new Epoch; advance the index
+				k++
+				// if previous points were deduped, this one must must shift forward
+				if k < i {
+					p[k] = p[i]
+				}
+			}
+		}
+		return p[:k+1]
+	}
+	// tolerance > 0: cluster runs whose successive deltas are within tolerance.
+	// First-seen wins so identical inputs always produce identical outputs
+	// regardless of which shard's response landed first.
 	var k int
 	for i := range p {
 		if i == 0 {
-			continue // skip first iteration since there's nothing to compare
+			continue
 		}
-		// if Epochs match, the higher-index (latest) version wins de-duplication
-		if p[k].Epoch == p[i].Epoch {
+		if int64(p[i].Epoch-p[k].Epoch) <= toleranceNanos {
+			// within the cluster: drop this point, keep the earlier (k) survivor
+			continue
+		}
+		k++
+		if k < i {
 			p[k] = p[i]
-		} else {
-			// at a new Epoch; advance the index
-			k++
-			// if previous points were deduped, this one must must shift forward
-			if k < i {
-				p[k] = p[i]
-			}
 		}
 	}
 	return p[:k+1]
@@ -185,31 +220,5 @@ func sortAndDedupe(p Points) Points {
 // Merge returns a new Points slice of p and p2 merged together. If sort is true
 // the new slice is sorted and dupe-killed before being returned
 func MergePoints(p, p2 Points, sortPoints bool) Points {
-	if p == nil && p2 == nil {
-		return nil
-	}
-	if len(p) == 0 && len(p2) == 0 {
-		return Points{}
-	}
-	// finalize will check if the output should be sorted+deduped, and if so
-	// do that before ultimately returning the output. From this point, all
-	// returns include calls to finalize
-	finalize := func(out Points) Points {
-		if sortPoints && len(out) > 1 {
-			out = sortAndDedupe(out)
-		}
-		return out
-	}
-	if len(p2) == 0 {
-		// if p2 has no items, return a clone of p
-		return finalize(p.Clone())
-	} else if len(p) == 0 {
-		// if p has no items, return a clone of p2
-		return finalize(p2.Clone())
-	}
-	// otherwise, merge the two Points slices
-	out := make(Points, len(p)+len(p2))
-	copy(out, p)
-	copy(out[len(p):], p2)
-	return finalize(out)
+	return MergePointsWithOpts(p, p2, MergeOpts{SortPoints: sortPoints})
 }

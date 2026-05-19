@@ -18,6 +18,20 @@ package dataset
 
 import "fmt"
 
+// MergeOpts controls a single merge invocation across the dataset package.
+// All fields have zero-value defaults that preserve historical behavior:
+// SortPoints=false leaves the output unsorted, Strategy=MergeStrategyDedup
+// applies last-value-wins, and ToleranceNanos=0 requires exact epoch matches
+// for deduplication. ToleranceNanos is a nanosecond window for clustering
+// near-duplicate samples from independent shards (Thanos-style); when >0 and
+// Strategy is MergeStrategyDedup, adjacent (sorted) points whose epoch
+// difference is <= ToleranceNanos collapse to a single survivor.
+type MergeOpts struct {
+	SortPoints     bool
+	Strategy       MergeStrategy
+	ToleranceNanos int64
+}
+
 // MergeStrategy defines how values from matching series (identical labels)
 // are combined when merging time-series data from multiple backends.
 type MergeStrategy int

@@ -28,6 +28,12 @@ import (
 // TimeseriesMergeFunc creates a MergeFunc for timeseries data
 // The returned function accepts a timeseries.Timeseries and merges it into the accumulator
 func TimeseriesMergeFunc(unmarshaler timeseries.UnmarshalerFunc) MergeFunc {
+	return TimeseriesMergeFuncTolerant(unmarshaler, 0)
+}
+
+// TimeseriesMergeFuncTolerant is TimeseriesMergeFunc with an opt-in dedup
+// tolerance window. toleranceNanos == 0 preserves legacy exact-epoch dedup.
+func TimeseriesMergeFuncTolerant(unmarshaler timeseries.UnmarshalerFunc, toleranceNanos int64) MergeFunc {
 	return func(accum *Accumulator, data any, idx int) error {
 		ts, ok := data.(timeseries.Timeseries)
 		if !ok {
@@ -46,9 +52,16 @@ func TimeseriesMergeFunc(unmarshaler timeseries.UnmarshalerFunc) MergeFunc {
 		defer accum.mu.Unlock()
 		if accum.tsdata == nil {
 			accum.tsdata = ts
-		} else {
-			accum.tsdata.Merge(false, ts)
+			return nil
 		}
+		if toleranceNanos > 0 {
+			if om, ok := accum.tsdata.(optsMerger); ok {
+				// strategy=0 == dataset.MergeStrategyDedup
+				om.MergeWithStrategyTolerant(true, 0, toleranceNanos, ts)
+				return nil
+			}
+		}
+		accum.tsdata.Merge(false, ts)
 		return nil
 	}
 }
@@ -58,6 +71,15 @@ func TimeseriesMergeFunc(unmarshaler timeseries.UnmarshalerFunc) MergeFunc {
 // package, which would create an import cycle.
 type strategyMerger interface {
 	MergeWithStrategy(sortPoints bool, strategy int, collection ...timeseries.Timeseries)
+}
+
+// optsMerger is the tolerance-aware extension of strategyMerger. Implementers
+// honor a sub-step tolerance window when collapsing dedup duplicates produced
+// by independent shards. Kept primitive-typed to avoid importing the dataset
+// package (which would form an import cycle).
+type optsMerger interface {
+	MergeWithStrategyTolerant(sortPoints bool, strategy int, toleranceNanos int64,
+		collection ...timeseries.Timeseries)
 }
 
 // These constants must match dataset.MergeStrategy* values. Duplicated here
@@ -74,6 +96,16 @@ const (
 // For avg, pairwise merges accumulate sums; the final division happens in the
 // RespondFunc via FinalizeAvg on the accumulator.
 func TimeseriesMergeFuncWithStrategy(unmarshaler timeseries.UnmarshalerFunc, strategy int) MergeFunc {
+	return TimeseriesMergeFuncWithStrategyTolerant(unmarshaler, strategy, 0)
+}
+
+// TimeseriesMergeFuncWithStrategyTolerant extends TimeseriesMergeFuncWithStrategy
+// with an opt-in dedup tolerance window (nanoseconds). When toleranceNanos > 0,
+// the underlying timeseries type, if it supports optsMerger, collapses
+// near-duplicate samples whose epochs differ by no more than the window.
+func TimeseriesMergeFuncWithStrategyTolerant(unmarshaler timeseries.UnmarshalerFunc,
+	strategy int, toleranceNanos int64,
+) MergeFunc {
 	// For avg, accumulate as sum during pairwise merges
 	pairwiseStrategy := strategy
 	if strategy == mergeStrategyAvg {
@@ -98,7 +130,15 @@ func TimeseriesMergeFuncWithStrategy(unmarshaler timeseries.UnmarshalerFunc, str
 			accum.tsdata = ts
 			accum.MergeCount = 1
 		} else {
-			if sm, ok := accum.tsdata.(strategyMerger); ok {
+			if toleranceNanos > 0 {
+				if om, ok := accum.tsdata.(optsMerger); ok {
+					om.MergeWithStrategyTolerant(true, pairwiseStrategy, toleranceNanos, ts)
+				} else if sm, ok := accum.tsdata.(strategyMerger); ok {
+					sm.MergeWithStrategy(true, pairwiseStrategy, ts)
+				} else {
+					accum.tsdata.Merge(false, ts)
+				}
+			} else if sm, ok := accum.tsdata.(strategyMerger); ok {
 				sm.MergeWithStrategy(true, pairwiseStrategy, ts)
 			} else {
 				accum.tsdata.Merge(false, ts)

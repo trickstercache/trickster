@@ -52,6 +52,11 @@ type Options struct {
 	// runaway upstreams faster). When 0, falls back to the parent Backend's
 	// max_capture_bytes, then to the package-level default (256 MiB).
 	MaxCaptureBytes int `yaml:"max_capture_bytes,omitempty"`
+	// MaxFanoutCaptureBytes, if > 0, caps the aggregate in-flight
+	// capture-buffer reservations across all slots in one ALB fanout call.
+	// When 0, falls back to the parent Backend's max_fanout_capture_bytes,
+	// which itself defaults to 0 (no aggregate cap).
+	MaxFanoutCaptureBytes int `yaml:"max_fanout_capture_bytes,omitempty"`
 	// OutputFormat accompanies the tsmerge Mechanism to indicate the provider output format
 	// options include any valid time seres backend like prometheus, influxdb or clickhouse
 	OutputFormat string `yaml:"output_format,omitempty"`
@@ -80,6 +85,13 @@ type FirstGoodResponseOptions struct {
 
 type TimeSeriesMergeOptions struct {
 	ConcurrencyOptions ConcurrencyOptions `yaml:",inline"`
+	// DedupToleranceMs is an opt-in tolerance window (milliseconds) for
+	// clustering near-duplicate samples produced by independent fan-out
+	// shards. When two shards sample the same metric at timestamps that
+	// differ by <= this many milliseconds, the cluster collapses to a single
+	// survivor (first-seen-after-sort wins). Nil or 0 preserves the legacy
+	// exact-epoch dedup behavior.
+	DedupToleranceMs *int `yaml:"dedup_tolerance_ms,omitempty"`
 }
 
 type NewestLastModifiedOptions struct {
@@ -213,6 +225,83 @@ func (o *Options) ValidatePool(backendName string, allBackends sets.Set[string])
 		}
 	}
 	return nil
+}
+
+// ValidateNoCycles walks the ALB reference graph and returns an error if any
+// ALB transitively references itself. The input maps ALB-backend name to its
+// Options; non-ALB targets are leaves and ignored. A back edge to a node
+// currently on the DFS stack is reported as a cycle.
+//
+// Edges considered: (a) every entry of o.Pool, and (b) for ALBs configured
+// with the user_router mechanism, o.UserRouter.DefaultBackend plus every
+// o.UserRouter.Users[*].ToBackend. Without the user_router edges, a config
+// like alb1.mechanism=user_router with user_router.default_backend=alb1
+// passes validation and exhausts the goroutine stack on the first request.
+func ValidateNoCycles(albs map[string]*Options) error {
+	const (
+		unseen   = 0
+		visiting = 1
+		done     = 2
+	)
+	state := make(map[string]int, len(albs))
+	var visit func(name string, path []string) error
+	visit = func(name string, path []string) error {
+		switch state[name] {
+		case visiting:
+			// back edge: cycle detected; render the cycle for the operator.
+			// slices.Index can return -1 if state is corrupt; clamp to 0.
+			start := max(slices.Index(path, name), 0)
+			cyc := append(slices.Clone(path[start:]), name)
+			return fmt.Errorf("cycle detected in alb pool references: %s "+
+				"(previously caused stack overflow at request time; "+
+				"now rejected at startup)",
+				strings.Join(cyc, " -> "))
+		case done:
+			return nil
+		}
+		o, ok := albs[name]
+		if !ok {
+			// not an ALB; leaf for cycle purposes
+			return nil
+		}
+		state[name] = visiting
+		path = append(path, name)
+		for _, target := range albEdges(o) {
+			if _, isALB := albs[target]; !isALB {
+				continue
+			}
+			if err := visit(target, path); err != nil {
+				return err
+			}
+		}
+		state[name] = done
+		return nil
+	}
+	for name := range albs {
+		if err := visit(name, nil); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// albEdges returns every backend name this ALB can dispatch to. For pool-
+// based mechanisms this is just o.Pool; for user_router-typed ALBs it also
+// includes UserRouter.DefaultBackend and every Users[*].ToBackend.
+func albEdges(o *Options) []string {
+	edges := make([]string, 0, len(o.Pool))
+	edges = append(edges, o.Pool...)
+	if o.UserRouter != nil {
+		if o.UserRouter.DefaultBackend != "" {
+			edges = append(edges, o.UserRouter.DefaultBackend)
+		}
+		for _, u := range o.UserRouter.Users {
+			if u != nil && u.ToBackend != "" {
+				edges = append(edges, u.ToBackend)
+			}
+		}
+	}
+	return edges
 }
 
 func (o *Options) UnmarshalYAML(unmarshal func(any) error) error {

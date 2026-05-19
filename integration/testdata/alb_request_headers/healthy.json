@@ -1,0 +1,1 @@
+{"status":"success","data":{"resultType":"vector","result":[{"metric":{"__name__":"up","job":"a"},"value":[1700000000,"1"]}]}}

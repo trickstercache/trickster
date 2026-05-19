@@ -17,15 +17,10 @@
 package fr
 
 import (
-	"io"
 	"net/http"
-	"net/http/httptest"
-	"strings"
-	"sync"
 	"testing"
-	"time"
 
-	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/albpool"
 )
 
@@ -35,39 +30,9 @@ import (
 // in the priming step.
 func TestFRPostBodyFanoutIsRaceFree(t *testing.T) {
 	const body = `{"query":"sum(rate(metric[5m]))","start":"2024-01-01T00:00:00Z","end":"2024-01-01T01:00:00Z","step":"15s"}`
-
-	mk := func(name string) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			b, _ := io.ReadAll(r.Body)
-			if string(b) != body {
-				t.Errorf("%s: truncated body, got %d bytes want %d", name, len(b), len(body))
-			}
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(name))
-		})
-	}
-
-	p, _, st := albpool.New(-1, []http.Handler{mk("a"), mk("b"), mk("c"), mk("d")})
-	for _, s := range st {
-		s.Set(healthcheck.StatusPassing)
-	}
-	time.Sleep(250 * time.Millisecond)
-
-	h := &handler{}
-	h.SetPool(p)
-
-	const callers = 16
-	var wg sync.WaitGroup
-	for range callers {
-		wg.Go(func() {
-			r, _ := http.NewRequest(http.MethodPost, "http://trickstercache.org/api/v1/query_range", strings.NewReader(body))
-			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-			w := httptest.NewRecorder()
-			h.ServeHTTP(w, r)
-			if w.Code != http.StatusOK {
-				t.Errorf("status %d", w.Code)
-			}
-		})
-	}
-	wg.Wait()
+	albpool.RunPostBodyFanoutRace(t, func(p pool.Pool) http.Handler {
+		h := &handler{}
+		h.SetPool(p)
+		return h
+	}, body, 4, 16, nil)
 }

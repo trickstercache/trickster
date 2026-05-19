@@ -1,0 +1,34 @@
+
+frontend:
+  listen_port: %d
+metrics:
+  listen_port: %d
+mgmt:
+  listen_port: %d
+logging:
+  log_level: error
+caches:
+  mem1:
+    provider: memory
+backends:
+  prom-labeled:
+    provider: prometheus
+    origin_url: %s
+    cache_name: mem1
+    prometheus:
+      labels:
+        region: us-east
+    healthcheck:
+      path: /api/v1/status/buildinfo
+      query: ""
+      interval: 100ms
+      timeout: 500ms
+      failure_threshold: 1
+      recovery_threshold: 1
+  alb-tsm-single:
+    provider: alb
+    alb:
+      mechanism: tsm
+      output_format: prometheus
+      pool:
+        - prom-labeled

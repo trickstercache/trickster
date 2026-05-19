@@ -199,14 +199,12 @@ func TestALB_TSM_Scale(t *testing.T) {
 		var wg sync.WaitGroup
 		errCh := make(chan error, clients)
 		for range clients {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				body, _, sc := doRaw(t, listenAddr, backendName, "/api/v1/query_range", params)
 				if sc != http.StatusOK {
 					errCh <- fmt.Errorf("status %d: %s", sc, body)
 				}
-			}()
+			})
 		}
 		wg.Wait()
 		close(errCh)
@@ -366,15 +364,13 @@ func TestALB_TSM_Scale(t *testing.T) {
 		var wg sync.WaitGroup
 		errCh := make(chan error, vars)
 		for i := range vars {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				path := fmt.Sprintf("/api/v1/label/var%d/values", i)
 				body, _, sc := doRaw(t, listenAddr, backendName, path, nil)
 				if sc != http.StatusOK {
 					errCh <- fmt.Errorf("var%d status %d: %s", i, sc, body)
 				}
-			}()
+			})
 		}
 		wg.Wait()
 		close(errCh)
@@ -395,9 +391,7 @@ func TestALB_TSM_Scale(t *testing.T) {
 		var wg sync.WaitGroup
 		errCh := make(chan error, clients)
 		for range clients {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				resp, err := http.Post(u, "application/x-www-form-urlencoded", strings.NewReader(form))
 				if err != nil {
 					errCh <- err
@@ -417,7 +411,7 @@ func TestALB_TSM_Scale(t *testing.T) {
 				if pr.Status != "success" {
 					errCh <- fmt.Errorf("non-success: %s", pr.Status)
 				}
-			}()
+			})
 		}
 		wg.Wait()
 		close(errCh)
@@ -583,11 +577,11 @@ func behaviorOversized(kb int) *promBehavior {
 func behaviorStatus(code int) *promBehavior {
 	return &promBehavior{mode: "status", status: code}
 }
-func behaviorBadShape() *promBehavior              { return &promBehavior{mode: "badshape"} }
-func behaviorTruncate() *promBehavior              { return &promBehavior{mode: "truncate"} }
-func behaviorSlow(d time.Duration) *promBehavior   { return &promBehavior{mode: "ok", delay: d} }
-func behaviorErrJSON() *promBehavior               { return &promBehavior{mode: "errjson"} }
-func behaviorBadEncoding() *promBehavior           { return &promBehavior{mode: "badencoding"} }
+func behaviorBadShape() *promBehavior            { return &promBehavior{mode: "badshape"} }
+func behaviorTruncate() *promBehavior            { return &promBehavior{mode: "truncate"} }
+func behaviorSlow(d time.Duration) *promBehavior { return &promBehavior{mode: "ok", delay: d} }
+func behaviorErrJSON() *promBehavior             { return &promBehavior{mode: "errjson"} }
+func behaviorBadEncoding() *promBehavior         { return &promBehavior{mode: "badencoding"} }
 func behaviorLabelValuesKB(kb int) *promBehavior {
 	return &promBehavior{mode: "labelvalues", seriesKB: kb}
 }
@@ -699,8 +693,8 @@ func (f *fakeProm) handleLabels(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write([]byte(fmt.Sprintf(
-		`{"status":"success","data":["__name__","job","instance","label_%s"]}`, f.label)))
+	_, _ = w.Write(fmt.Appendf(nil,
+		`{"status":"success","data":["__name__","job","instance","label_%s"]}`, f.label))
 }
 
 func (f *fakeProm) handleLabelValues(w http.ResponseWriter, r *http.Request) {
@@ -725,9 +719,9 @@ func (f *fakeProm) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 	}
 	name := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v1/label/"), "/values")
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write([]byte(fmt.Sprintf(
+	_, _ = w.Write(fmt.Appendf(nil,
 		`{"status":"success","data":["value-%s-%s-a","value-%s-%s-b"]}`,
-		name, f.label, name, f.label)))
+		name, f.label, name, f.label))
 }
 
 func (f *fakeProm) handleSeries(w http.ResponseWriter, _ *http.Request) {
@@ -747,13 +741,13 @@ func (f *fakeProm) handleSeries(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write([]byte(fmt.Sprintf(
-		`{"status":"success","data":[{"__name__":"up","job":"fake","instance":%q}]}`, f.label)))
+	_, _ = w.Write(fmt.Appendf(nil,
+		`{"status":"success","data":[{"__name__":"up","job":"fake","instance":%q}]}`, f.label))
 }
 
 func buildPromErrBody(errType, msg string) []byte {
-	return []byte(fmt.Sprintf(
-		`{"status":"error","errorType":%q,"error":%q}`, errType, msg))
+	return fmt.Appendf(nil,
+		`{"status":"error","errorType":%q,"error":%q}`, errType, msg)
 }
 
 func buildOversizedLabelValues(label string, targetKB int) []byte {
@@ -771,11 +765,11 @@ func buildOversizedLabelValues(label string, targetKB int) []byte {
 }
 
 func buildVectorBody(instance string) []byte {
-	return []byte(fmt.Sprintf(
+	return fmt.Appendf(nil,
 		`{"status":"success","data":{"resultType":"vector","result":[`+
 			`{"metric":{"__name__":"up","job":"fake","instance":%q},`+
 			`"value":[%d,"1"]}]}}`,
-		instance, time.Now().Unix()))
+		instance, time.Now().Unix())
 }
 
 func buildMatrixBody(instance string) []byte {
@@ -876,7 +870,7 @@ func writeScaleConfig(t *testing.T, fakes []*fakeProm,
 		fmt.Fprintf(&sb, "    origin_url: %s\n", f.URL())
 		sb.WriteString("    cache_name: mem\n")
 	}
-	for i := 0; i < labeledN; i++ {
+	for i := range labeledN {
 		fmt.Fprintf(&sb, "  prom-lab-%d:\n", i)
 		sb.WriteString("    provider: prometheus\n")
 		fmt.Fprintf(&sb, "    origin_url: %s\n", fakes[i].URL())
@@ -898,7 +892,7 @@ func writeScaleConfig(t *testing.T, fakes []*fakeProm,
 	sb.WriteString("    alb:\n")
 	sb.WriteString("      mechanism: tsm\n")
 	sb.WriteString("      pool:\n")
-	for i := 0; i < labeledN; i++ {
+	for i := range labeledN {
 		fmt.Fprintf(&sb, "        - prom-lab-%d\n", i)
 	}
 	for _, entry := range []struct{ name, mech string }{
@@ -929,7 +923,7 @@ func writeRealPromScaleConfig(t *testing.T, listenPort, metricsPort, mgmtPort in
 	sb.WriteString("logging:\n  log_level: info\n")
 	sb.WriteString("caches:\n  mem:\n    provider: memory\n")
 	sb.WriteString("backends:\n")
-	for i := 0; i < numShards; i++ {
+	for i := range numShards {
 		fmt.Fprintf(&sb, "  prom-real-%d:\n", i)
 		sb.WriteString("    provider: prometheus\n")
 		fmt.Fprintf(&sb, "    origin_url: http://%s\n", promAddr)
@@ -943,7 +937,7 @@ func writeRealPromScaleConfig(t *testing.T, listenPort, metricsPort, mgmtPort in
 	sb.WriteString("    alb:\n")
 	sb.WriteString("      mechanism: tsm\n")
 	sb.WriteString("      pool:\n")
-	for i := 0; i < numShards; i++ {
+	for i := range numShards {
 		fmt.Fprintf(&sb, "        - prom-real-%d\n", i)
 	}
 	path := filepath.Join(t.TempDir(), "alb-tsm-real-scale.yaml")

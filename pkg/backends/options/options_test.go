@@ -153,6 +153,8 @@ func TestValidateConfigMappings(t *testing.T) {
 	o.NegativeCacheName = ""
 	tpm := o.Clone()
 	tpm.Name = "test_pool_member"
+	tpm.Provider = "rp"
+	tpm.ALBOptions = nil
 	ol["test_pool_member"] = tpm
 
 	err = ol.ValidateConfigMappings(co.Lookup{"test": nil}, negative.Lookups{},

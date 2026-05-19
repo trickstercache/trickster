@@ -17,7 +17,11 @@
 package manager
 
 import (
+	"errors"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
@@ -98,4 +102,200 @@ type object struct {
 
 func (o *object) Size() int {
 	return len(o.field)
+}
+
+// blockingClient is a cache.MemoryCache stub whose Store/Retrieve/Remove
+// block on a per-test gate, and whose Close records its call. It lets tests
+// observe Manager.Close's drain semantics without racing on a real backend.
+type blockingClient struct {
+	gate     chan struct{} // closed to release in-flight ops
+	closed   atomic.Int32
+	closeErr error
+	storeCnt atomic.Int32
+}
+
+func newBlockingClient() *blockingClient {
+	return &blockingClient{gate: make(chan struct{})}
+}
+
+func (b *blockingClient) Connect() error { return nil }
+func (b *blockingClient) Store(_ string, _ []byte, _ time.Duration) error {
+	b.storeCnt.Add(1)
+	<-b.gate
+	return nil
+}
+
+func (b *blockingClient) Retrieve(_ string) ([]byte, status.LookupStatus, error) {
+	<-b.gate
+	return nil, status.LookupStatusKeyMiss, cache.ErrKNF
+}
+
+func (b *blockingClient) Remove(_ ...string) error {
+	<-b.gate
+	return nil
+}
+
+func (b *blockingClient) Close() error {
+	b.closed.Add(1)
+	return b.closeErr
+}
+
+func (b *blockingClient) StoreReference(_ string, _ cache.ReferenceObject, _ time.Duration) error {
+	<-b.gate
+	return nil
+}
+
+func (b *blockingClient) RetrieveReference(_ string) (any, status.LookupStatus, error) {
+	<-b.gate
+	return nil, status.LookupStatusKeyMiss, cache.ErrKNF
+}
+
+// TestManagerCloseRejectsAfterClose verifies that once Close() has begun
+// draining, further Store/Retrieve/Remove return ErrCacheClosed and never
+// invoke the underlying client. This is the reload-safety contract.
+func TestManagerCloseRejectsAfterClose(t *testing.T) {
+	t.Parallel()
+	bc := newBlockingClient()
+	cfg := &co.Options{Name: "n", Provider: "memory"}
+	cm := NewCache(bc, CacheOptions{}, cfg).(*Manager)
+
+	close(bc.gate) // never block real ops
+	require.NoError(t, cm.Close())
+
+	require.ErrorIs(t, cm.Store("k", []byte("v"), 0), ErrCacheClosed)
+	_, _, err := cm.Retrieve("k")
+	require.ErrorIs(t, err, ErrCacheClosed)
+	require.ErrorIs(t, cm.Remove("k"), ErrCacheClosed)
+	require.ErrorIs(t, cm.StoreReference("k", &object{}, 0), ErrCacheClosed)
+	_, _, err = cm.RetrieveReference("k")
+	require.ErrorIs(t, err, ErrCacheClosed)
+
+	// underlying client.Store must not have been invoked by any of the above
+	require.Zero(t, bc.storeCnt.Load(), "post-Close ops must not reach underlying client")
+}
+
+// TestManagerCloseWaitsForInflight verifies that Close blocks until in-flight
+// ops complete, then closes the underlying client.
+func TestManagerCloseWaitsForInflight(t *testing.T) {
+	t.Parallel()
+	bc := newBlockingClient()
+	cfg := &co.Options{Name: "n", Provider: "memory"}
+	cm := NewCache(bc, CacheOptions{}, cfg).(*Manager)
+
+	storeErr := make(chan error, 1)
+	go func() { storeErr <- cm.Store("k", []byte("v"), 0) }()
+
+	// Spin until acquire() has bumped inflight so Close races the in-flight
+	// op rather than running before it starts.
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for bc.storeCnt.Load() == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("in-flight Store never reached underlying client")
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	closeErr := make(chan error, 1)
+	go func() { closeErr <- cm.Close() }()
+
+	// Close must not have completed yet.
+	select {
+	case <-closeErr:
+		t.Fatal("Close returned before in-flight op released")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	close(bc.gate) // release the in-flight Store
+
+	require.NoError(t, <-storeErr)
+	require.NoError(t, <-closeErr)
+	require.Equal(t, int32(1), bc.closed.Load())
+}
+
+// TestManagerCloseTimeoutProceeds verifies that if inflight never drains,
+// Close still closes the underlying client after the timeout elapses.
+func TestManagerCloseTimeoutProceeds(t *testing.T) {
+	t.Parallel()
+	bc := newBlockingClient()
+	cfg := &co.Options{Name: "n", Provider: "memory"}
+	cm := NewCache(bc, CacheOptions{}, cfg).(*Manager)
+	cm.SetCloseDrainTimeout(50 * time.Millisecond)
+
+	// Launch a Store that will never release (gate stays open until test
+	// shutdown). Block its caller side too with the same channel.
+	go func() { _ = cm.Store("k", []byte("v"), 0) }()
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for bc.storeCnt.Load() == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("stuck Store never reached underlying client")
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	start := time.Now()
+	require.NoError(t, cm.Close())
+	elapsed := time.Since(start)
+	require.GreaterOrEqual(t, elapsed, 50*time.Millisecond,
+		"Close returned before drain timeout elapsed (%v)", elapsed)
+	require.Less(t, elapsed, 5*time.Second,
+		"Close exceeded reasonable upper bound (%v) -- did it ignore SetCloseDrainTimeout?", elapsed)
+	require.Equal(t, int32(1), bc.closed.Load(),
+		"underlying Close must run even when drain times out")
+
+	// Release the stuck goroutine so the test process exits cleanly.
+	close(bc.gate)
+}
+
+// TestManagerCloseIdempotent verifies that calling Close twice does not
+// re-drain, double-invoke the WaitGroup, or block on the second call.
+func TestManagerCloseIdempotent(t *testing.T) {
+	t.Parallel()
+	bc := newBlockingClient()
+	bc.closeErr = errors.New("first close")
+	cfg := &co.Options{Name: "n", Provider: "memory"}
+	cm := NewCache(bc, CacheOptions{}, cfg).(*Manager)
+
+	close(bc.gate)
+	require.EqualError(t, cm.Close(), "first close")
+	// second call short-circuits the drain and forwards to the client only
+	bc.closeErr = errors.New("second close")
+	require.EqualError(t, cm.Close(), "second close")
+	require.Equal(t, int32(2), bc.closed.Load())
+}
+
+// TestManagerCloseConcurrent verifies that concurrent callers racing with
+// Close all see a defined outcome -- either ErrCacheClosed or success -- and
+// that no in-flight Add fires after the WaitGroup has begun Wait. This is
+// the case the mu+closing pattern is meant to make safe; without it, a race
+// between acquire's Add(1) and Close's Wait can panic with
+// "sync: WaitGroup misuse: Add called concurrently with Wait".
+func TestManagerCloseConcurrent(t *testing.T) {
+	t.Parallel()
+	bc := newBlockingClient()
+	close(bc.gate) // ops complete immediately
+	cfg := &co.Options{Name: "n", Provider: "memory"}
+	cm := NewCache(bc, CacheOptions{}, cfg).(*Manager)
+
+	const N = 64
+	var wg sync.WaitGroup
+	errs := make(chan error, N)
+	wg.Add(N)
+	for range N {
+		go func() {
+			defer wg.Done()
+			errs <- cm.Store("k", []byte("v"), 0)
+		}()
+	}
+	// Fire Close in the middle of the storm.
+	closeErrCh := make(chan error, 1)
+	go func() { closeErrCh <- cm.Close() }()
+
+	wg.Wait()
+	close(errs)
+	require.NoError(t, <-closeErrCh)
+	for err := range errs {
+		if err != nil && !errors.Is(err, ErrCacheClosed) {
+			t.Fatalf("unexpected error from concurrent Store: %v", err)
+		}
+	}
 }

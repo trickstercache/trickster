@@ -20,7 +20,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
@@ -38,11 +37,12 @@ func TestHandleRoundRobin(t *testing.T) {
 
 	p, _, hsts := albpool.New(0,
 		[]http.Handler{http.HandlerFunc(tu.BasicHTTPHandler)})
+	defer p.Stop()
 
 	h.SetPool(p)
 
 	hsts[0].Set(0)
-	time.Sleep(250 * time.Millisecond)
+	albpool.WaitHealthy(t, p, 1)
 
 	w = httptest.NewRecorder()
 	h.ServeHTTP(w, nil)
@@ -50,12 +50,12 @@ func TestHandleRoundRobin(t *testing.T) {
 		t.Error("expected 200 got", w.Code)
 	}
 
-	var p2 pool.Pool
-	p2, _, hsts = albpool.New(0,
+	p2, _, hsts := albpool.New(0,
 		[]http.Handler{http.HandlerFunc(failures.HandleBadGateway)})
+	defer p2.Stop()
 	h.SetPool(p2)
 	hsts[0].Set(-1)
-	time.Sleep(250 * time.Millisecond)
+	albpool.WaitHealthy(t, p2, 0)
 	w = httptest.NewRecorder()
 	h.ServeHTTP(w, nil)
 	if w.Code != http.StatusBadGateway {
@@ -76,21 +76,13 @@ func TestNextTarget(t *testing.T) {
 }
 
 func TestRoundRobinProgression(t *testing.T) {
-	h0 := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Write([]byte("0"))
+	p, _, _ := albpool.NewHealthy([]http.Handler{
+		albpool.NamedHandler("0"),
+		albpool.NamedHandler("1"),
+		albpool.NamedHandler("2"),
 	})
-	h1 := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Write([]byte("1"))
-	})
-	h2 := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Write([]byte("2"))
-	})
-
-	p, _, st := albpool.New(-1, []http.Handler{h0, h1, h2})
-	st[0].Set(0)
-	st[1].Set(0)
-	st[2].Set(0)
-	time.Sleep(250 * time.Millisecond)
+	defer p.Stop()
+	albpool.WaitHealthy(t, p, 3)
 
 	rr := &handler{}
 	rr.SetPool(p)

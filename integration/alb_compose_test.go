@@ -32,24 +32,22 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/trickstercache/trickster/v2/integration/promstub"
 )
 
 func TestALBCompose(t *testing.T) {
-	const promResp = `{"status":"success","data":{"resultType":"vector","result":[` +
-		`{"metric":{"__name__":"up","job":"%s"},"value":[1700000000,"1"]}]}}`
+	promResp := albTestdata(t, "alb_compose/prom.json.tmpl")
 
 	mkLeaf := func(name string, hits *atomic.Int64) *httptest.Server {
 		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			switch r.URL.Path {
-			case "/api/v1/status/buildinfo":
-				w.WriteHeader(http.StatusOK)
-				fmt.Fprint(w, `{"status":"success","data":{"version":"2.0"}}`)
-			default:
-				hits.Add(1)
-				w.WriteHeader(http.StatusOK)
-				fmt.Fprintf(w, promResp, name)
+			if r.URL.Path == promstub.BuildInfoPath {
+				promstub.WriteBuildInfo(w)
+				return
 			}
+			w.Header().Set("Content-Type", "application/json")
+			hits.Add(1)
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprintf(w, promResp, name)
 		}))
 	}
 
@@ -63,108 +61,8 @@ func TestALBCompose(t *testing.T) {
 	metricsPort := 18701
 	mgmtPort := 18702
 
-	yaml := fmt.Sprintf(`
-frontend:
-  listen_port: %d
-metrics:
-  listen_port: %d
-mgmt:
-  listen_port: %d
-logging:
-  log_level: error
-caches:
-  mem1:
-    provider: memory
-authenticators:
-  alb-ur-users:
-    provider: basic
-    proxy_preserve: true
-    users:
-      bob: bobpw
-backends:
-  prom-leaf:
-    provider: prometheus
-    origin_url: %s
-    cache_name: mem1
-  prom-leaf-b:
-    provider: prometheus
-    origin_url: %s
-    cache_name: mem1
-  alb-inner:
-    provider: alb
-    alb:
-      mechanism: fr
-      pool:
-        - prom-leaf
-  alb-outer:
-    provider: alb
-    alb:
-      mechanism: fr
-      pool:
-        - alb-inner
-  rule-to-leafB:
-    provider: rule
-    rule_name: route-all-to-leafB
-  alb-with-rule:
-    provider: alb
-    alb:
-      mechanism: fr
-      pool:
-        - rule-to-leafB
-  rule-bob:
-    provider: rule
-    rule_name: route-all-to-leaf
-  alb-ur:
-    provider: alb
-    authenticator_name: alb-ur-users
-    alb:
-      mechanism: ur
-      user_router:
-        default_backend: prom-leaf
-        users:
-          bob:
-            to_backend: rule-bob
-  alb-fr-leaf:
-    provider: alb
-    alb:
-      mechanism: fr
-      pool:
-        - prom-leaf
-  rule-to-alb:
-    provider: rule
-    rule_name: route-all-to-alb
-rules:
-  route-all-to-leaf:
-    input_source: header
-    input_key: X-Never-Set
-    input_type: string
-    operation: eq
-    next_route: prom-leaf
-    cases:
-      - matches:
-          - 'never-matches'
-        next_route: prom-leaf
-  route-all-to-leafB:
-    input_source: header
-    input_key: X-Never-Set
-    input_type: string
-    operation: eq
-    next_route: prom-leaf-b
-    cases:
-      - matches:
-          - 'never-matches'
-        next_route: prom-leaf-b
-  route-all-to-alb:
-    input_source: header
-    input_key: X-Never-Set
-    input_type: string
-    operation: eq
-    next_route: alb-fr-leaf
-    cases:
-      - matches:
-          - 'never-matches'
-        next_route: alb-fr-leaf
-`, frontPort, metricsPort, mgmtPort, leafA.URL, leafB.URL)
+	yaml := fmt.Sprintf(albTestdata(t, "alb_compose/compose.yaml.tmpl"),
+		frontPort, metricsPort, mgmtPort, leafA.URL, leafB.URL)
 
 	cfgPath := filepath.Join(t.TempDir(), "trickster.yaml")
 	require.NoError(t, os.WriteFile(cfgPath, []byte(yaml), 0644))

@@ -60,7 +60,7 @@ func TestPoolNilTargetDoesNotPanicOnNew(t *testing.T) {
 			}
 			p.RefreshHealthy()
 
-			live := p.LiveTargets()
+			live := p.Targets()
 			if len(live) != tc.wantValid {
 				t.Errorf("LiveTargets: expected %d valid, got %d", tc.wantValid, len(live))
 			}

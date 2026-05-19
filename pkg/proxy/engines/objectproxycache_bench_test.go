@@ -41,7 +41,7 @@ func BenchmarkObjectProxyCache(b *testing.B) {
 	if err != nil {
 		b.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	r.Header.Add(headers.NameRange, "bytes=0-10000")
 
@@ -69,7 +69,7 @@ func BenchmarkObjectProxyCacheChunks(b *testing.B) {
 		b.Error(err)
 	}
 	rsc.CacheConfig.UseCacheChunking = true
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	r.Header.Add(headers.NameRange, "bytes=0-10000")
 

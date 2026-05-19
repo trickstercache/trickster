@@ -32,31 +32,12 @@ import (
 	"go.uber.org/goleak"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
-	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/albpool"
 )
 
 func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m)
-}
-
-func mkTarget(_ string, h http.HandlerFunc) *pool.Target {
-	return pool.NewTarget(h, &healthcheck.Status{}, nil)
-}
-
-func newParentGET(t *testing.T) *http.Request {
-	t.Helper()
-	r, err := http.NewRequest(http.MethodGet, "http://trickstercache.org/", nil)
-	require.NoError(t, err)
-	return r
-}
-
-func newParentPOST(t *testing.T, body string) *http.Request {
-	t.Helper()
-	r, err := http.NewRequest(http.MethodPost, "http://trickstercache.org/api/v1/query_range", strings.NewReader(body))
-	require.NoError(t, err)
-	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	return r
 }
 
 func TestAllOrderedResults(t *testing.T) {
@@ -64,12 +45,12 @@ func TestAllOrderedResults(t *testing.T) {
 	targets := make(pool.Targets, n)
 	for i := range n {
 		body := fmt.Sprintf("slot-%d", i)
-		targets[i] = mkTarget(body, func(w http.ResponseWriter, _ *http.Request) {
+		targets[i], _ = albpool.Target(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(body))
-		})
+		}))
 	}
-	parent := newParentGET(t)
+	parent := albpool.NewParentGET(t)
 	results, _ := All(context.Background(), parent, targets, Config{Mechanism: "test"})
 	require.Len(t, results, n)
 	for i := range n {
@@ -84,14 +65,15 @@ func TestAllCtxCancelPropagation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	started := make(chan struct{}, 3)
 	mk := func() *pool.Target {
-		return mkTarget("block", func(w http.ResponseWriter, r *http.Request) {
+		tg, _ := albpool.Target(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			started <- struct{}{}
 			<-r.Context().Done()
 			w.WriteHeader(http.StatusGatewayTimeout)
-		})
+		}))
+		return tg
 	}
 	targets := pool.Targets{mk(), mk(), mk()}
-	parent := newParentGET(t)
+	parent := albpool.NewParentGET(t)
 
 	done := make(chan []Result, 1)
 	go func() {
@@ -115,18 +97,17 @@ func TestAllCtxCancelPropagation(t *testing.T) {
 }
 
 func TestAllPanicRecovered(t *testing.T) {
-	targets := pool.Targets{
-		mkTarget("ok-0", func(w http.ResponseWriter, _ *http.Request) {
-			_, _ = w.Write([]byte("ok-0"))
-		}),
-		mkTarget("panic", func(_ http.ResponseWriter, _ *http.Request) {
-			panic("boom")
-		}),
-		mkTarget("ok-2", func(w http.ResponseWriter, _ *http.Request) {
-			_, _ = w.Write([]byte("ok-2"))
-		}),
-	}
-	parent := newParentGET(t)
+	t0, _ := albpool.Target(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("ok-0"))
+	}))
+	t1, _ := albpool.Target(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		panic("boom")
+	}))
+	t2, _ := albpool.Target(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("ok-2"))
+	}))
+	targets := pool.Targets{t0, t1, t2}
+	parent := albpool.NewParentGET(t)
 	results, _ := All(context.Background(), parent, targets, Config{Mechanism: "test"})
 	require.Len(t, results, 3)
 	require.False(t, results[0].Failed)
@@ -144,7 +125,7 @@ func TestAllConcurrencyLimit(t *testing.T) {
 	var maxSeen atomic.Int32
 	targets := make(pool.Targets, n)
 	for i := range n {
-		targets[i] = mkTarget("x", func(w http.ResponseWriter, _ *http.Request) {
+		targets[i], _ = albpool.Target(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			cur := inFlight.Add(1)
 			for {
 				prev := maxSeen.Load()
@@ -155,9 +136,9 @@ func TestAllConcurrencyLimit(t *testing.T) {
 			time.Sleep(10 * time.Millisecond)
 			inFlight.Add(-1)
 			w.WriteHeader(http.StatusOK)
-		})
+		}))
 	}
-	parent := newParentGET(t)
+	parent := albpool.NewParentGET(t)
 	results, _ := All(context.Background(), parent, targets, Config{Mechanism: "test", ConcurrencyLimit: limit})
 	require.Len(t, results, n)
 	require.LessOrEqual(t, int(maxSeen.Load()), limit, "max in-flight exceeded limit")
@@ -167,12 +148,11 @@ func TestAllConcurrencyLimit(t *testing.T) {
 func TestAllCaptureBound(t *testing.T) {
 	const max = 1024
 	big := bytes.Repeat([]byte("a"), 100*1024)
-	targets := pool.Targets{
-		mkTarget("big", func(w http.ResponseWriter, _ *http.Request) {
-			_, _ = w.Write(big)
-		}),
-	}
-	parent := newParentGET(t)
+	t0, _ := albpool.Target(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(big)
+	}))
+	targets := pool.Targets{t0}
+	parent := albpool.NewParentGET(t)
 	results, _ := All(context.Background(), parent, targets, Config{Mechanism: "test", MaxCaptureBytes: max})
 	require.Len(t, results, 1)
 	require.True(t, results[0].Failed, "truncation must surface as failure")
@@ -186,11 +166,11 @@ func TestAllResourcesPerSlot(t *testing.T) {
 	targets := make(pool.Targets, n)
 	for i := range n {
 		idx := i
-		targets[i] = mkTarget("x", func(_ http.ResponseWriter, r *http.Request) {
+		targets[i], _ = albpool.Target(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 			mu.Lock()
 			seen[idx] = request.GetResources(r)
 			mu.Unlock()
-		})
+		}))
 	}
 	created := make([]*request.Resources, n)
 	cfg := Config{
@@ -201,7 +181,7 @@ func TestAllResourcesPerSlot(t *testing.T) {
 			return rsc
 		},
 	}
-	parent := newParentGET(t)
+	parent := albpool.NewParentGET(t)
 	_, _ = All(context.Background(), parent, targets, cfg)
 
 	for i := range n {
@@ -218,22 +198,23 @@ func TestAllResourcesPerSlot(t *testing.T) {
 
 func TestAllContextTransform(t *testing.T) {
 	type ctxK struct{}
-	targets := pool.Targets{
-		mkTarget("ctx", func(_ http.ResponseWriter, r *http.Request) {
-			v, _ := r.Context().Value(ctxK{}).(string)
-			require.Equal(t, "wrapped", v)
-		}),
-	}
+	var seenInHandler atomic.Value
+	t0, _ := albpool.Target(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		v, _ := r.Context().Value(ctxK{}).(string)
+		seenInHandler.Store(v)
+	}))
+	targets := pool.Targets{t0}
 	cfg := Config{
 		Mechanism: "test",
 		Context: func(parent context.Context) context.Context {
 			return context.WithValue(parent, ctxK{}, "wrapped")
 		},
 	}
-	parent := newParentGET(t)
+	parent := albpool.NewParentGET(t)
 	results, _ := All(context.Background(), parent, targets, cfg)
 	require.Len(t, results, 1)
 	require.False(t, results[0].Failed)
+	require.Equal(t, "wrapped", seenInHandler.Load())
 	v, _ := results[0].Request.Context().Value(ctxK{}).(string)
 	require.Equal(t, "wrapped", v)
 }
@@ -244,9 +225,9 @@ func TestAllOnResultRunsInGoroutine(t *testing.T) {
 	targets := make(pool.Targets, n)
 	for i := range n {
 		body := fmt.Sprintf("b-%d", i)
-		targets[i] = mkTarget(body, func(w http.ResponseWriter, _ *http.Request) {
+		targets[i], _ = albpool.Target(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			_, _ = w.Write([]byte(body))
-		})
+		}))
 	}
 	cfg := Config{
 		Mechanism: "test",
@@ -257,7 +238,7 @@ func TestAllOnResultRunsInGoroutine(t *testing.T) {
 			calls.Add(1)
 		},
 	}
-	parent := newParentGET(t)
+	parent := albpool.NewParentGET(t)
 	results, _ := All(context.Background(), parent, targets, cfg)
 	require.Len(t, results, n)
 	require.Equal(t, int32(n), calls.Load())
@@ -269,9 +250,9 @@ func TestAllOnResultThreadSafety(t *testing.T) {
 	got := make([]int, 0, n)
 	targets := make(pool.Targets, n)
 	for i := range n {
-		targets[i] = mkTarget("x", func(w http.ResponseWriter, _ *http.Request) {
+		targets[i], _ = albpool.Target(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
-		})
+		}))
 	}
 	cfg := Config{
 		Mechanism: "test",
@@ -281,7 +262,7 @@ func TestAllOnResultThreadSafety(t *testing.T) {
 			mu.Unlock()
 		},
 	}
-	parent := newParentGET(t)
+	parent := albpool.NewParentGET(t)
 	_, _ = All(context.Background(), parent, targets, cfg)
 	mu.Lock()
 	defer mu.Unlock()
@@ -294,16 +275,14 @@ func TestAllOnResultThreadSafety(t *testing.T) {
 }
 
 func TestAllNilTarget(t *testing.T) {
-	targets := pool.Targets{
-		mkTarget("ok-0", func(w http.ResponseWriter, _ *http.Request) {
-			_, _ = w.Write([]byte("ok-0"))
-		}),
-		nil,
-		mkTarget("ok-2", func(w http.ResponseWriter, _ *http.Request) {
-			_, _ = w.Write([]byte("ok-2"))
-		}),
-	}
-	parent := newParentGET(t)
+	t0, _ := albpool.Target(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("ok-0"))
+	}))
+	t2, _ := albpool.Target(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("ok-2"))
+	}))
+	targets := pool.Targets{t0, nil, t2}
+	parent := albpool.NewParentGET(t)
 	results, _ := All(context.Background(), parent, targets, Config{Mechanism: "test"})
 	require.Len(t, results, 3)
 	require.False(t, results[0].Failed)
@@ -315,7 +294,7 @@ func TestAllNilTarget(t *testing.T) {
 }
 
 func TestPrimeBodyForGET(t *testing.T) {
-	parent := newParentGET(t)
+	parent := albpool.NewParentGET(t)
 	out, err := PrimeBody(parent)
 	require.NoError(t, err)
 	require.NotNil(t, out)
@@ -326,7 +305,7 @@ func TestPrimeBodyForGET(t *testing.T) {
 
 func TestPrimeBodyForPOST(t *testing.T) {
 	const body = `{"q":"up"}`
-	parent := newParentPOST(t, body)
+	parent := albpool.NewParentPOST(t, strings.NewReader(body))
 	out, err := PrimeBody(parent)
 	require.NoError(t, err)
 	require.NotNil(t, out)
@@ -349,7 +328,7 @@ func TestPrimeBodyForPOST(t *testing.T) {
 
 func TestPrimeBodyConcurrentClonesAreRaceFree(t *testing.T) {
 	const body = `{"query":"sum(rate(metric[5m]))","start":"2024-01-01T00:00:00Z","end":"2024-01-01T01:00:00Z","step":"15s"}`
-	parent := newParentPOST(t, body)
+	parent := albpool.NewParentPOST(t, strings.NewReader(body))
 	primed, err := PrimeBody(parent)
 	require.NoError(t, err)
 
@@ -385,7 +364,7 @@ func TestPrimeBodyConcurrentClonesAreRaceFree(t *testing.T) {
 
 func TestPrepareCloneRespectsMaxBytes(t *testing.T) {
 	const max = 64
-	parent := newParentGET(t)
+	parent := albpool.NewParentGET(t)
 	r2, crw, err := PrepareClone(context.Background(), parent, 0, Config{Mechanism: "test", MaxCaptureBytes: max})
 	require.NoError(t, err)
 	require.NotNil(t, r2)
@@ -399,7 +378,7 @@ func TestPrepareCloneRespectsMaxBytes(t *testing.T) {
 }
 
 func TestPrepareCloneNilResources(t *testing.T) {
-	parent := newParentGET(t)
+	parent := albpool.NewParentGET(t)
 	cfg := Config{
 		Mechanism: "test",
 		Resources: func(_ int) *request.Resources { return nil },
@@ -413,18 +392,18 @@ func TestAllNoLeaksOnNormalCompletion(t *testing.T) {
 	const n = 4
 	targets := make(pool.Targets, n)
 	for i := range n {
-		targets[i] = mkTarget("x", func(w http.ResponseWriter, _ *http.Request) {
+		targets[i], _ = albpool.Target(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte("ok"))
-		})
+		}))
 	}
-	parent := newParentGET(t)
+	parent := albpool.NewParentGET(t)
 	results, _ := All(context.Background(), parent, targets, Config{Mechanism: "test"})
 	require.Len(t, results, n)
 }
 
 func TestAllEmptyTargets(t *testing.T) {
-	parent := newParentGET(t)
+	parent := albpool.NewParentGET(t)
 	results, _ := All(context.Background(), parent, pool.Targets{}, Config{Mechanism: "test"})
 	require.Empty(t, results)
 }
@@ -436,12 +415,11 @@ func (errReader) Read(_ []byte) (int, error) { return 0, fmt.Errorf("read failed
 func TestAllCloneErrorSurfaces(t *testing.T) {
 	parent, err := http.NewRequest(http.MethodPost, "http://trickstercache.org/", errReader{})
 	require.NoError(t, err)
-	targets := pool.Targets{
-		mkTarget("unreached", func(w http.ResponseWriter, _ *http.Request) {
-			t.Fatal("handler should not run when clone fails")
-			w.WriteHeader(http.StatusOK)
-		}),
-	}
+	t0, _ := albpool.Target(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Error("handler should not run when clone fails")
+		w.WriteHeader(http.StatusOK)
+	}))
+	targets := pool.Targets{t0}
 	results, _ := All(context.Background(), parent, targets, Config{Mechanism: "test"})
 	require.Len(t, results, 1)
 	require.True(t, results[0].Failed)
@@ -468,13 +446,13 @@ func TestAllNoLeaksOnCtxCancel(t *testing.T) {
 	started := make(chan struct{}, n)
 	targets := make(pool.Targets, n)
 	for i := range n {
-		targets[i] = mkTarget("block", func(w http.ResponseWriter, r *http.Request) {
+		targets[i], _ = albpool.Target(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			started <- struct{}{}
 			<-r.Context().Done()
 			w.WriteHeader(http.StatusGatewayTimeout)
-		})
+		}))
 	}
-	parent := newParentGET(t)
+	parent := albpool.NewParentGET(t)
 	done := make(chan struct{})
 	go func() {
 		_, _ = All(ctx, parent, targets, Config{Mechanism: "test"})

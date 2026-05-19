@@ -412,6 +412,27 @@ backends:
 
 The ALB-level value takes precedence over the backend-level value, which in turn takes precedence over the 256 MiB default.
 
+### Bounding Aggregate In-Flight Captures
+
+`max_capture_bytes` caps each member's response individually; a fanout to N members can still buffer up to `N * max_capture_bytes` in flight. For deployments with large pools or low memory ceilings, set `max_fanout_capture_bytes` to cap the aggregate buffer across all in-flight slots in a single fanout call. Slots dispatched after the aggregate budget would go negative are fail-fasted (marked `Failed`, no capture buffer allocated) before the upstream handler runs; the merge sees them as partial failures and the existing fallback path handles it.
+
+```yaml
+backends:
+  prom-alb-tsm:
+    provider: alb
+    alb:
+      mechanism: tsm
+      max_capture_bytes: 16777216         # 16 MiB per member
+      max_fanout_capture_bytes: 67108864  # 64 MiB total across all in-flight slots
+      pool:
+        - prom01
+        - prom02
+        - prom03
+        - prom04
+```
+
+`max_fanout_capture_bytes` defaults to `0` (no aggregate cap). Pick a value matching what your trickster instance can afford to buffer per request, independent of pool size.
+
 ## Maintaining Healthy Pools With Automated Health Check Integrations
 
 Health Checks are configured per-Backend as described in the [Health documentation](./health.md). Each Backend's health checker will notify all ALB pools of which it is a member when its health status changes, so long as it has been configured with a [health check interval](./health#example+health+check+configuration+for+use+in+alb) for automated checking. When an ALB is notified that the state of a pool member has changed, the ALB will reconstruct its list of healthy pool members before serving the next request.

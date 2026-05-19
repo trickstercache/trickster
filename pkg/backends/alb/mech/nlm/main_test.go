@@ -22,12 +22,8 @@ import (
 	"go.uber.org/goleak"
 )
 
-// Pool-side goroutines are ignored because albpool.New() in test helpers
-// doesn't expose Stop(); those leaks predate this file. Mechanism-side leaks
-// (errgroup workers that ignore context cancellation) will still surface.
+// Mechanism-side leaks (errgroup workers that ignore context cancellation)
+// surface here.
 func TestMain(m *testing.M) {
-	goleak.VerifyTestMain(m,
-		goleak.IgnoreAnyFunction("github.com/trickstercache/trickster/v2/pkg/backends/alb/pool.(*pool).checkHealth"),
-		goleak.IgnoreAnyFunction("github.com/trickstercache/trickster/v2/pkg/backends/alb/pool.(*pool).listenStatusUpdates"),
-	)
+	goleak.VerifyTestMain(m)
 }

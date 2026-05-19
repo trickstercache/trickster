@@ -35,7 +35,7 @@ func TestDeltaProxyCacheRequestMissThenHitChunksChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -115,7 +115,7 @@ func TestDeltaProxyCacheRequestRemoveStaleChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -194,7 +194,7 @@ func TestDeltaProxyCacheRequestRemoveStaleChunks(t *testing.T) {
 // 	if err != nil {
 // 		t.Error(err)
 // 	}
-// 	defer ts.Close()
+// 	defer closeTestHarness(ts, r)
 
 // 	client := rsc.BackendClient.(*TestClient)
 // 	o := rsc.BackendOptions
@@ -270,7 +270,7 @@ func TestDeltaProxyCacheRequestMarshalFailureChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -314,7 +314,7 @@ func TestDeltaProxyCacheRequestPartialHitChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -460,7 +460,7 @@ func TestDeltaProxyCacheRequestPartialHitChunks(t *testing.T) {
 	extr.End = extr.End.Add(time.Duration(1) * time.Hour) // Extend the top by 1 hour to generate partial hit
 	extn.End = normalizeTime(extr.End, step)
 
-	expectedFetched = "[" + timeseries.ExtentList{timeseries.Extent{Start: extn.Start, End: phitEnd}}.String() + "," +
+	expectedFetched = "[" + timeseries.ExtentList{timeseries.Extent{Start: extn.Start, End: phitEnd}}.String() + ";" +
 		timeseries.ExtentList{timeseries.Extent{Start: phitStart, End: extn.End}}.String() + "]"
 
 	expected, _, _ = mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
@@ -507,7 +507,7 @@ func TestDeltayProxyCacheRequestDeltaFetchErrorChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -598,7 +598,7 @@ func TestDeltaProxyCacheRequestRangeMissChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -747,7 +747,7 @@ func TestDeltaProxyCacheRequestRangeMissChunks_CrossBucket(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -829,7 +829,7 @@ func TestDeltaProxyCacheRequestRangeMissChunks_CrossBucketPreservesPriorChunks(t
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -884,7 +884,7 @@ func TestDeltaProxyCacheRequestFastForwardChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 	rsc.CacheConfig.Provider = "test"
 
 	client := rsc.BackendClient.(*TestClient)
@@ -1007,7 +1007,7 @@ func TestDeltaProxyCacheRequestFastForwardUrlErrorChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -1066,7 +1066,7 @@ func TestDeltaProxyCacheRequestWithRefreshChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -1121,7 +1121,7 @@ func TestDeltaProxyCacheRequestWithRefreshErrorChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -1158,7 +1158,7 @@ func TestDeltaProxyCacheRequestWithUnmarshalAndUpstreamErrorsChunks(t *testing.T
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -1260,7 +1260,7 @@ func TestDeltaProxyCacheRequest_BadParamsChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -1300,7 +1300,7 @@ func TestDeltaProxyCacheRequestCacheMissUnmarshalFailedChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -1363,7 +1363,7 @@ func TestDeltaProxyCacheRequestOutOfWindowChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -1438,7 +1438,7 @@ func TestDeltaProxyCacheRequestBadGatewayChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -1475,7 +1475,7 @@ func TestDeltaProxyCacheRequest_BackfillToleranceChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -1556,7 +1556,7 @@ func TestDeltaProxyCacheRequestFFTTLBiggerThanStepChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -1614,7 +1614,7 @@ func TestDeltaProxyCacheRequestShardByPointsChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions

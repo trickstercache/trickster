@@ -24,13 +24,7 @@ import (
 
 // FR fanout spawns errgroup workers per request plus a detached eg.Wait()
 // drainer. A regression that fails to cancel on client disconnect would leak;
-// goleak surfaces it. The pool-side goroutines (checkHealth /
-// listenStatusUpdates) are ignored because the existing test helpers
-// (albpool.New) don't expose a Stop() call site; those leaks are pre-existing
-// test hygiene, not mechanism bugs.
+// goleak surfaces it.
 func TestMain(m *testing.M) {
-	goleak.VerifyTestMain(m,
-		goleak.IgnoreAnyFunction("github.com/trickstercache/trickster/v2/pkg/backends/alb/pool.(*pool).checkHealth"),
-		goleak.IgnoreAnyFunction("github.com/trickstercache/trickster/v2/pkg/backends/alb/pool.(*pool).listenStatusUpdates"),
-	)
+	goleak.VerifyTestMain(m)
 }

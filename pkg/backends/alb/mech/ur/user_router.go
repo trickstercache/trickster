@@ -24,17 +24,13 @@ import (
 	uropt "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/ur/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
-	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 	"github.com/trickstercache/trickster/v2/pkg/errors"
 	at "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/types"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 )
 
-const (
-	URID   types.ID   = 5
-	URName types.Name = "user_router"
-)
+const URName types.Name = "user_router"
 
 type Handler struct {
 	// mu guards options, authenticator, enableReplaceCreds against concurrent
@@ -48,8 +44,9 @@ type Handler struct {
 
 func RegistryEntry() types.RegistryEntry {
 	return types.RegistryEntry{
-		ID: URID, Name: URName,
-		ShortName: names.MechanismUR, New: New,
+		Name:      URName,
+		ShortName: names.MechanismUR,
+		New:       New,
 	}
 }
 
@@ -59,10 +56,6 @@ func New(o *options.Options, _ rt.Lookup) (types.Mechanism, error) {
 	}
 	out := &Handler{options: o.UserRouter}
 	return out, nil
-}
-
-func (h *Handler) ID() types.ID {
-	return URID
 }
 
 func (h *Handler) Name() types.Name {
@@ -115,12 +108,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if u.ToCredential != "" {
 				cred = string(u.ToCredential)
 			}
-			// strip the inbound Authorization before writing the new credential,
-			// since Sanitize unconditionally clears the header
-			auth.Sanitize(r)
-			if err := auth.SetCredentials(r, username, cred); err != nil {
-				h.handleDefault(w, r)
-				return
+			// Don't write empty creds: callers using AuthResult-only auth
+			// (SSO, etc.) have cred == "" with nothing to fall back on.
+			// SetCredentials(r, user, "") emits Basic auth with an empty
+			// password and collapses every such user into one cache key.
+			if cred != "" {
+				auth.Sanitize(r)
+				if err := auth.SetCredentials(r, username, cred); err != nil {
+					h.handleDefault(w, r)
+					return
+				}
 			}
 		}
 		// this passes the request to a user-specific route handler, if set
@@ -168,8 +165,3 @@ func (h *Handler) handleDefault(w http.ResponseWriter, r *http.Request) {
 	}
 	dh.ServeHTTP(w, r)
 }
-
-// stubs for unused interface functions
-func (h *Handler) SetPool(_ pool.Pool) {}
-func (h *Handler) StopPool()           {}
-func (h *Handler) Pool() pool.Pool     { return nil }

@@ -24,10 +24,10 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 )
 
-// LiveTargets must drop a target whose status flipped below the floor after
-// the cached HealthyTargets snapshot was last refreshed. HealthyTargets keeps
-// the snapshot intact; LiveTargets re-checks against the current atomic
-// status to close the race window.
+// Targets must drop a target whose status flipped below the floor after the
+// cached snapshot was last refreshed. The internal snapshot keeps the stale
+// view intact; Targets re-checks against the current atomic status to close
+// the race window.
 func TestLiveTargetsDropsStaleFailingTarget(t *testing.T) {
 	st1 := &healthcheck.Status{}
 	st2 := &healthcheck.Status{}
@@ -44,12 +44,12 @@ func TestLiveTargetsDropsStaleFailingTarget(t *testing.T) {
 	p.Stop()
 	st2.Set(healthcheck.StatusFailing)
 
-	if got := len(p.HealthyTargets()); got != 2 {
-		t.Fatalf("HealthyTargets snapshot: expected 2 (stale), got %d", got)
+	if got := len(p.(*pool).snapshot()); got != 2 {
+		t.Fatalf("snapshot: expected 2 (stale), got %d", got)
 	}
 
-	live := p.LiveTargets()
+	live := p.Targets()
 	if len(live) != 1 || live[0] != t1 {
-		t.Fatalf("LiveTargets: expected only t1, got %#v", live)
+		t.Fatalf("Targets: expected only t1, got %#v", live)
 	}
 }

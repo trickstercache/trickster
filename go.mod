@@ -1,6 +1,6 @@
 module github.com/trickstercache/trickster/v2
 
-go 1.26.2
+go 1.26.3
 
 require (
 	github.com/alicebob/miniredis/v2 v2.37.0
@@ -30,6 +30,7 @@ require (
 	golang.org/x/sync v0.20.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	gopkg.in/yaml.v2 v2.4.0
+	pgregory.net/rapid v1.3.0
 )
 
 require (
