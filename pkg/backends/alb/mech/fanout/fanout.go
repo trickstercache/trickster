@@ -32,6 +32,7 @@ import (
 	"net/http"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
@@ -206,22 +207,33 @@ func WaitForFirst(ctx context.Context, parent *http.Request, targets pool.Target
 	scatterDone := false
 	var scatterErr error
 	var winnerResult Result
+	// winnerClaimedAt is published outside mu so loser goroutines completing
+	// after winner-claim can read it lock-free to compute their drain latency.
+	var winnerClaimedAt atomic.Int64 // unix nanos; 0 means unclaimed
 
 	onComplete := func(i int, r *Result) {
-		if r.Failed || r.Capture == nil {
+		qualifies := !r.Failed && r.Capture != nil && predicate(r)
+		var claimedNow bool
+		if qualifies {
+			mu.Lock()
+			if claimed == -1 {
+				claimed = i
+				winnerResult = *r
+				winnerClaimedAt.Store(time.Now().UnixNano())
+				claimedNow = true
+				cancel()
+				cond.Broadcast()
+			}
+			mu.Unlock()
+		}
+		if claimedNow {
 			return
 		}
-		if !predicate(r) {
-			return
+		if claimedAt := winnerClaimedAt.Load(); claimedAt > 0 {
+			metrics.ALBFanoutLoserDrain.
+				WithLabelValues(cfg.Mechanism, cfg.Variant).
+				Observe(float64(time.Now().UnixNano()-claimedAt) / 1e9)
 		}
-		mu.Lock()
-		if claimed == -1 {
-			claimed = i
-			winnerResult = *r
-			cancel()
-			cond.Broadcast()
-		}
-		mu.Unlock()
 	}
 
 	go func() {

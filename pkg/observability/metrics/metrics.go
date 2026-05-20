@@ -354,6 +354,23 @@ var (
 		[]string{"mechanism", "variant"},
 	)
 
+	// ALBFanoutLoserDrain observes how long each losing slot in a
+	// fanout.WaitForFirst call takes to exit after the winner is claimed.
+	// WaitForFirst cancels raceCtx on winner-claim and returns immediately;
+	// losers drain in the background via ctx-cancel propagating through the
+	// HTTP transport. This histogram makes that drain observable so operators
+	// can distinguish "sub-ms healthy" from "upstream ignoring cancel."
+	ALBFanoutLoserDrain = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: metricNamespace,
+			Subsystem: albSubsystem,
+			Name:      "fanout_loser_drain_seconds",
+			Help:      "Time between winner-claim and each losing slot's goroutine exit, by mechanism and variant.",
+			Buckets:   []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30},
+		},
+		[]string{"mechanism", "variant"},
+	)
+
 	// ALBPoolRefreshPanicRecovered counts recovered panics in ALB pool refresh
 	// worker goroutines (checkHealth, listenStatusUpdates). A dead worker leaves
 	// the healthy-target snapshot stale; the per-call re-filter in Targets()
@@ -471,6 +488,7 @@ func init() {
 	prometheus.MustRegister(ProxyConnectionFailed)
 	prometheus.MustRegister(ALBFanoutFailures)
 	prometheus.MustRegister(ALBFanoutAttempts)
+	prometheus.MustRegister(ALBFanoutLoserDrain)
 	prometheus.MustRegister(ALBPoolRefreshPanicRecovered)
 	prometheus.MustRegister(HealthcheckProbePanicRecovered)
 	prometheus.MustRegister(HealthcheckProbeLatency)

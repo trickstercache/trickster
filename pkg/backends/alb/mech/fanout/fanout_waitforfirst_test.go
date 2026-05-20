@@ -24,11 +24,21 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/require"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
+	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/albpool"
 )
+
+func loserDrainCount(t testing.TB, mech, variant string) uint64 {
+	t.Helper()
+	m := &dto.Metric{}
+	require.NoError(t, metrics.ALBFanoutLoserDrain.WithLabelValues(mech, variant).(prometheus.Metric).Write(m))
+	return m.GetHistogram().GetSampleCount()
+}
 
 // TestWaitForFirstMatchingWinsAndCancelsLosers asserts that WaitForFirst
 // returns the first result whose predicate matches, even while other slots
@@ -171,6 +181,80 @@ func TestWaitForFirstTruncatedNotEligible(t *testing.T) {
 	require.Equal(t, 1, idx, "intact slot must win; truncated slot must not be eligible")
 	require.Equal(t, intactBody, string(results[1].Capture.Body()))
 	require.False(t, sawTruncatedCandidate.Load(), "truncated slot must not be offered to predicate")
+}
+
+// TestWaitForFirstObservesLoserDrain asserts that ALBFanoutLoserDrain records
+// one observation per losing slot once the winner is claimed, and skips the
+// winner itself. Loser exit timings are captured even when the loser ignores
+// ctx cancel until its own sleep finishes.
+func TestWaitForFirstObservesLoserDrain(t *testing.T) {
+	const variant = "loser-drain-test"
+	const mech = "test-loser-drain"
+	const loserDelay = 75 * time.Millisecond
+
+	release := make(chan struct{})
+	loser := func(_ http.ResponseWriter, _ *http.Request) {
+		select {
+		case <-release:
+		case <-time.After(2 * time.Second):
+		}
+	}
+	winner := func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte("winner"))
+	}
+
+	t0, _ := albpool.Target(http.HandlerFunc(loser))
+	t1, _ := albpool.Target(http.HandlerFunc(winner))
+	t2, _ := albpool.Target(http.HandlerFunc(loser))
+	targets := pool.Targets{t0, t1, t2}
+	parent := albpool.NewParentGET(t)
+
+	matches202 := func(r *Result) bool {
+		return r.Capture.StatusCode() == http.StatusAccepted
+	}
+
+	before := loserDrainCount(t, mech, variant)
+
+	idx, _, err := WaitForFirst(context.Background(), parent, targets,
+		Config{Mechanism: mech, Variant: variant}, matches202)
+	require.NoError(t, err)
+	require.Equal(t, 1, idx, "slot 1 must win")
+
+	// Give the losers a moment past winner-claim so the delta is visibly
+	// non-zero, then let them finish so onComplete can observe their drain.
+	time.Sleep(loserDelay)
+	close(release)
+
+	require.Eventuallyf(t, func() bool {
+		return loserDrainCount(t, mech, variant)-before == 2
+	}, 2*time.Second, 10*time.Millisecond,
+		"expected 2 loser-drain observations, got %d", loserDrainCount(t, mech, variant)-before)
+}
+
+// TestWaitForFirstNoMatchSkipsLoserDrain asserts that when no winner is ever
+// claimed (predicate never matches), no loser-drain observations are recorded.
+// The histogram is meaningless without a winner-claim reference point.
+func TestWaitForFirstNoMatchSkipsLoserDrain(t *testing.T) {
+	const variant = "no-winner-test"
+	const mech = "test-no-winner-drain"
+
+	handler := func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}
+	t0, _ := albpool.Target(http.HandlerFunc(handler))
+	t1, _ := albpool.Target(http.HandlerFunc(handler))
+	targets := pool.Targets{t0, t1}
+	parent := albpool.NewParentGET(t)
+	never := func(_ *Result) bool { return false }
+
+	before := loserDrainCount(t, mech, variant)
+	idx, _, err := WaitForFirst(context.Background(), parent, targets,
+		Config{Mechanism: mech, Variant: variant}, never)
+	require.NoError(t, err)
+	require.Equal(t, -1, idx)
+	require.Equal(t, before, loserDrainCount(t, mech, variant),
+		"no winner means no loser-drain observations")
 }
 
 // TestWaitForFirstNilPredicateBehavesLikeAll asserts that passing a nil
