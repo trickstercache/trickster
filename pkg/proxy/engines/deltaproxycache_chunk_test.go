@@ -29,32 +29,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
-// DeltaProxyCacheRequest rejects requests whose extent ends before
-// now - (step * TimeseriesRetention) by routing them straight through
-// DoProxy (engine=HTTPProxy, status=proxy-only). With default
-// TimeseriesRetention=1024 and step=1h that window is ~42.67d, measured
-// against real wallclock. The two helpers below anchor each test's
-// reference 'now' to a recent chunk bucket so the queries stay inside
-// that window regardless of when the test runs, while preserving the
-// in-bucket vs cross-bucket topologies the tests need to exercise.
-//
-// chunkSize = step * cache/options/defaults.DefaultTimeseriesChunkFactor (420).
-
-func chunkBucketAnchor(step time.Duration) time.Time {
-	chunkSize := step * 420
-	// midpoint of the most-recently-completed chunk bucket; queries within
-	// ±200h of this point stay inside one bucket.
-	return time.Now().Add(-chunkSize).Truncate(chunkSize).Add(chunkSize / 2)
-}
-
-func chunkBucketStraddle(step time.Duration) time.Time {
-	chunkSize := step * 420
-	// 11h after a chunk-bucket boundary; the Q1 (-30h..-12h) and
-	// Q2 (-10h..-8h) extents used by the cross-bucket tests fall on
-	// opposite sides of the boundary just before 'now'.
-	return time.Now().Add(-chunkSize).Truncate(chunkSize).Add(11 * time.Hour)
-}
-
 func TestDeltaProxyCacheRequestMissThenHitChunksChunks(t *testing.T) {
 	ts, w, r, rsc, err := setupTestHarnessDPC()
 	rsc.CacheConfig.UseCacheChunking = true
@@ -631,15 +605,12 @@ func TestDeltaProxyCacheRequestRangeMissChunks(t *testing.T) {
 	rsc.CacheConfig.Provider = "test"
 
 	o.FastForwardDisable = true
+	o.TimeseriesRetention = 1 << 20 // pin against wallclock drift on fixed fixture
 
 	step := time.Duration(3600) * time.Second
 
-	// anchor 'now' to the midpoint of a recently-completed 17.5d chunk bucket
-	// so all three queries land in the same bucket while staying inside the
-	// DPC eviction retention window (step * TimeseriesRetention = 42.67d at
-	// defaults). A fixed calendar date would eventually drift outside that
-	// window relative to wallclock and trip the proxy-only bypass.
-	now := chunkBucketAnchor(step)
+	// fixed to keep all three queries in the same 17.5d chunk bucket; see the _CrossBucket test
+	now := time.Date(2026, 4, 15, 12, 0, 0, 0, time.UTC)
 	end := now.Add(-time.Duration(12) * time.Hour)
 
 	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
@@ -783,14 +754,12 @@ func TestDeltaProxyCacheRequestRangeMissChunks_CrossBucket(t *testing.T) {
 	o := rsc.BackendOptions
 	rsc.CacheConfig.Provider = "test"
 	o.FastForwardDisable = true
+	o.TimeseriesRetention = 1 << 20 // pin against wallclock drift on fixed fixture
 
 	step := time.Duration(3600) * time.Second
 
-	// position 'now' 11h after a chunk-bucket boundary so the Q1 kmiss write
-	// (now-30h..now-12h) lands in the prior bucket and the Q2 high-end read
-	// (now-10h..now-8h) lands in the next bucket, exercising the cross-bucket
-	// recovery path while staying inside DPC eviction retention.
-	now := chunkBucketStraddle(step)
+	// kmiss write in bucket ending 2026-04-20T00:00Z; high-end read in next bucket
+	now := time.Date(2026, 4, 20, 11, 0, 0, 0, time.UTC)
 	end := now.Add(-time.Duration(12) * time.Hour)
 
 	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
@@ -868,9 +837,10 @@ func TestDeltaProxyCacheRequestRangeMissChunks_CrossBucketPreservesPriorChunks(t
 	o := rsc.BackendOptions
 	rsc.CacheConfig.Provider = "test"
 	o.FastForwardDisable = true
+	o.TimeseriesRetention = 1 << 20 // pin against wallclock drift on fixed fixture
 
 	step := time.Duration(3600) * time.Second
-	now := chunkBucketStraddle(step)
+	now := time.Date(2026, 4, 20, 11, 0, 0, 0, time.UTC)
 
 	runQuery := func(start, end time.Time) *http.Response {
 		u := r.URL
