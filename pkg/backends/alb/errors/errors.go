@@ -63,3 +63,14 @@ func NewErrInvalidUserRouterCreds(albName string) error {
 			albName),
 	}
 }
+
+// NewErrMissingHealthCheck reports a non-virtual ALB pool member that has no
+// registered healthcheck Status. Without this guard the pool would route
+// traffic to the member regardless of upstream health.
+func NewErrMissingHealthCheck(albName, poolMemberName string) error {
+	return &InvalidALBOptionsError{
+		error: fmt.Errorf("alb [%s] non-virtual pool member [%s] has no health check; "+
+			"configure healthcheck options on the backend",
+			albName, poolMemberName),
+	}
+}

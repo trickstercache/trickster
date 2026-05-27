@@ -171,7 +171,15 @@ func (c *Client) ValidateAndStartPool(clients backends.Backends, hcs healthcheck
 		}
 		hc, ok := hcs[n]
 		if !ok {
-			// virtual backends (rule, alb) have no health checks; treat as passing
+			// Only virtual backends (rule, alb) may legitimately be absent from
+			// the healthcheck registry. A non-virtual miss means the operator
+			// did not configure healthcheck on this backend and the upstream
+			// auto-apply path also declined to register a probe; fabricating a
+			// dummy Status here would silently route fanout traffic regardless
+			// of upstream health.
+			if !backends.IsVirtual(tc.Configuration().Provider) {
+				return alberr.NewErrMissingHealthCheck(c.Name(), n)
+			}
 			hc = healthcheck.NewStatus(n, "virtual", "", healthcheck.StatusPassing, time.Time{}, nil)
 		}
 		targets = append(targets, pool.NewTarget(tc.Router(), hc, tc))

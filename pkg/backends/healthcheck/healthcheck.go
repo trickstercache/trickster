@@ -32,8 +32,8 @@ type HealthChecker interface {
 	// Register a health check Target
 	Register(name string, description string, options *ho.Options, client *http.Client) (*Status, error)
 	// RegisterVirtual records a synthetic always-passing Status for a virtual
-	// backend (rule, alb) that has no upstream to probe. Without this,
-	// nested ALBs render as "nc" on the health page (issue #996).
+	// backend (rule, alb) that has no upstream to probe, so it surfaces in
+	// the health page and in outer ALB pool reporting.
 	RegisterVirtual(name, description string) *Status
 	// Remove a health check Target
 	Unregister(name string)

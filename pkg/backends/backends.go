@@ -21,8 +21,12 @@ import (
 	"net/http"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
+	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 )
 
 // Backends represents a map of Backends keyed by Name
@@ -40,20 +44,44 @@ func (b Backends) StartHealthChecks(knownStatuses healthcheck.StatusLookup) (hea
 		}
 		if IsVirtual(bo.Provider) {
 			// Virtual backends have no upstream to probe; register a synthetic
-			// passing status so nested ALBs surface in the health page and in
-			// outer pools' availablePoolMembers (issue #996).
+			// passing status so they surface in the health page and in outer
+			// ALB pool reporting.
 			hc.RegisterVirtual(k, bo.Provider)
 			continue
 		}
 		hco := bo.HealthCheck
-		if hco == nil {
+		def := c.DefaultHealthCheckConfig()
+		if hco == nil && def == nil {
+			// no probe possible for this provider; the ALB pool will reject
+			// this backend as a non-virtual member with no Status.
 			continue
 		}
-		bo.HealthCheck = c.DefaultHealthCheckConfig()
-		if bo.HealthCheck == nil {
-			bo.HealthCheck = hco
+		if def != nil {
+			bo.HealthCheck = def
+			if hco != nil {
+				bo.HealthCheck.Overlay(hco)
+			}
 		} else {
-			bo.HealthCheck.Overlay(hco)
+			bo.HealthCheck = hco
+		}
+		var autoApplied bool
+		if bo.HealthCheck.Interval <= 0 {
+			// The operator did not configure a probe interval. A registered
+			// target with Interval == 0 never ticks, so its Status sticks at
+			// StatusUnchecked and the ALB pool's dispatch-time filter keeps
+			// routing fanout traffic regardless of upstream health. Apply a
+			// fast auto-default and surface that we did so.
+			bo.HealthCheck.Interval = ho.DefaultAutoProbeInterval
+			if bo.HealthCheck.FailureThreshold <= 0 {
+				bo.HealthCheck.FailureThreshold = 1
+			}
+			if bo.HealthCheck.RecoveryThreshold <= 0 {
+				bo.HealthCheck.RecoveryThreshold = 1
+			}
+			autoApplied = true
+			metrics.BackendsDefaultHealthCheckApplied.WithLabelValues(k, bo.Provider).Inc()
+			logger.Warn("auto-applied default healthcheck for backend",
+				logging.Pairs{"backend_name": k, "provider": bo.Provider})
 		}
 		st, err := hc.Register(k, bo.Provider, bo.HealthCheck, c.HealthCheckHTTPClient())
 		if err != nil {
@@ -63,6 +91,13 @@ func (b Backends) StartHealthChecks(knownStatuses healthcheck.StatusLookup) (hea
 			if v := oldSt.Get(); v != healthcheck.StatusInitializing {
 				st.Set(v)
 			}
+		} else if autoApplied {
+			// Override the registration-time Initializing with Unchecked so the
+			// pool's dispatch filter accepts the target during the brief window
+			// before the first auto-probe completes. Targets the operator
+			// explicitly configured keep Initializing so they're held out
+			// until the probe confirms them.
+			st.Set(healthcheck.StatusUnchecked)
 		}
 		c.SetHealthCheckProbe(st.Prober())
 	}

@@ -453,6 +453,20 @@ var (
 		},
 		[]string{"backend_name"},
 	)
+
+	// BackendsDefaultHealthCheckApplied counts backends for which the provider's
+	// DefaultHealthCheckConfig was auto-installed by StartHealthChecks because
+	// the operator did not configure healthcheck options. A non-zero value
+	// flags configs that depended on an absent probe and benefit from auditing.
+	BackendsDefaultHealthCheckApplied = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: healthSubsystem,
+			Name:      "default_config_applied_total",
+			Help:      "Count of backends that received an auto-applied default healthcheck config because none was configured.",
+		},
+		[]string{"backend_name", "provider"},
+	)
 )
 
 func init() {
@@ -478,6 +492,7 @@ func init() {
 	prometheus.MustRegister(CacheIndexPanicRecovered)
 	prometheus.MustRegister(HealthHandlerPanicRecovered)
 	prometheus.MustRegister(HealthcheckStatusNotifyPanicRecovered)
+	prometheus.MustRegister(BackendsDefaultHealthCheckApplied)
 	prometheus.MustRegister(CacheObjectOperations)
 	prometheus.MustRegister(CacheByteOperations)
 	prometheus.MustRegister(CacheEvents)
