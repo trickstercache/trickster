@@ -467,6 +467,21 @@ var (
 		},
 		[]string{"backend_name", "provider"},
 	)
+
+	// ALBPoolAdmitsFailing flags ALB pools whose healthy_floor admits a Failing
+	// status (floor <= StatusFailing). Operators who set floor below 0 to keep
+	// traffic flowing during the Initializing window may not realize they're
+	// also admitting members the probe has confirmed broken; the gauge surfaces
+	// that misconfiguration without spamming logs.
+	ALBPoolAdmitsFailing = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: albSubsystem,
+			Name:      "pool_admits_failing",
+			Help:      "1 when an ALB pool's healthy_floor admits members in Failing state; 0 otherwise.",
+		},
+		[]string{"backend_name"},
+	)
 )
 
 func init() {
@@ -493,6 +508,7 @@ func init() {
 	prometheus.MustRegister(HealthHandlerPanicRecovered)
 	prometheus.MustRegister(HealthcheckStatusNotifyPanicRecovered)
 	prometheus.MustRegister(BackendsDefaultHealthCheckApplied)
+	prometheus.MustRegister(ALBPoolAdmitsFailing)
 	prometheus.MustRegister(CacheObjectOperations)
 	prometheus.MustRegister(CacheByteOperations)
 	prometheus.MustRegister(CacheEvents)

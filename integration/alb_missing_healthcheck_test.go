@@ -24,6 +24,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -114,4 +115,57 @@ func TestALBPoolMemberWithoutHealthcheckNotRouted(t *testing.T) {
 			"broken backend received %d data requests via the ALB after probe transitioned it to Failing",
 			dataDelta)
 	}, 3*time.Second, 200*time.Millisecond)
+}
+
+// TestALBHealthyFloorAdmitsFailingMetric verifies the warning surface for an
+// ALB whose healthy_floor admits Failing members. An operator who lowered
+// healthy_floor below 0 to keep traffic flowing during the Initializing
+// startup window also admits members the probe has confirmed broken; the
+// `trickster_alb_pool_admits_failing` gauge surfaces that misconfiguration.
+func TestALBHealthyFloorAdmitsFailingMetric(t *testing.T) {
+	healthy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, `{"status":"success","data":{"version":"2.0"}}`)
+	}))
+	t.Cleanup(healthy.Close)
+	broken := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(broken.Close)
+
+	ports, release := portutil.Reserve(t, 3)
+	frontPort, metricsPort, mgmtPort := ports[0], ports[1], ports[2]
+
+	yaml := fmt.Sprintf(albTestdata(t, "alb_missing_hc/floor_warn.yaml.tmpl"),
+		frontPort, metricsPort, mgmtPort, healthy.URL, broken.URL)
+	cfgPath := filepath.Join(t.TempDir(), "trickster.yaml")
+	require.NoError(t, os.WriteFile(cfgPath, []byte(yaml), 0644))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	release()
+	go startTrickster(t, ctx, expectedStartError{}, "-config", cfgPath)
+
+	metricsAddr := fmt.Sprintf("127.0.0.1:%d", metricsPort)
+	waitForTrickster(t, metricsAddr)
+
+	require.EventuallyWithT(t, func(collect *assert.CollectT) {
+		lines := checkTricksterMetrics(t, metricsAddr)
+		var admits, excludes string
+		for _, l := range lines {
+			if strings.HasPrefix(l, "trickster_alb_pool_admits_failing{") {
+				if strings.Contains(l, `backend_name="alb-admits-failing"`) {
+					admits = l
+				}
+				if strings.Contains(l, `backend_name="alb-excludes-failing"`) {
+					excludes = l
+				}
+			}
+		}
+		assert.True(collect, strings.HasSuffix(admits, " 1"),
+			"alb-admits-failing must report 1: %q", admits)
+		assert.True(collect, strings.HasSuffix(excludes, " 0"),
+			"alb-excludes-failing must report 0: %q", excludes)
+	}, 5*time.Second, 200*time.Millisecond)
 }

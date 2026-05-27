@@ -34,6 +34,9 @@ import (
 	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/errors"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	authopt "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	authreg "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/registry"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
@@ -186,6 +189,20 @@ func (c *Client) ValidateAndStartPool(clients backends.Backends, hcs healthcheck
 	}
 	if pm, ok := c.handler.(types.PoolMechanism); ok {
 		pm.SetPool(pool.New(targets, o.HealthyFloor))
+	}
+	if o.HealthyFloor <= int(healthcheck.StatusFailing) {
+		// floor admits members whose probe has confirmed them down; operators
+		// who lowered the floor to keep traffic flowing during the startup
+		// Initializing window may not realize Failing slips in too.
+		metrics.ALBPoolAdmitsFailing.WithLabelValues(c.Name()).Set(1)
+		logger.Warn("alb healthy_floor admits members in Failing state",
+			logging.Pairs{
+				"backend_name":  c.Name(),
+				"healthy_floor": o.HealthyFloor,
+				"hint":          "set healthy_floor: 0 to exclude probed-failing members",
+			})
+	} else {
+		metrics.ALBPoolAdmitsFailing.WithLabelValues(c.Name()).Set(0)
 	}
 	return nil
 }
