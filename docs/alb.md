@@ -447,6 +447,8 @@ Each ALB has a configurable `healthy_floor` value, which is the threshold for de
 
 Backends that do not have a [health check interval](./health#example+health+check+configuration+for+use+in+alb) configured will remain in a permanent state of `unknown`. Backends will also be in an `unknown` state from the time Trickster starts until the first of any configured automated health check is completed. Note that if an ALB is configured with `healthy_floor: 1`, any pool members that are not configured with an automated health check interval will never be included in the ALB's healthy pool, as their state is permanently `0`.
 
+Setting `healthy_floor` below `0` admits members the probe has confirmed `unavailable`, not just members in the transient `unknown` state. If your goal is to keep traffic flowing during the cold-start window before the first probes complete, lower the pool members' `recovery_threshold` so they transition out of `unknown` faster -- don't lower the floor. When `healthy_floor < 0` Trickster emits a startup warning and sets the `trickster_alb_pool_admits_failing{backend_name}` gauge to `1`.
+
 ### Example ALB Configuration Routing Only To Known Healthy Backends
 
 ```yaml

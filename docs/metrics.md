@@ -91,6 +91,10 @@ The following metrics are available for polling with any Trickster configuration
     * `operation` - the name of the operation being performed (read, write, etc.)
     * `status` - the result of the operation being performed
 
+* `trickster_alb_pool_admits_failing` (Gauge) - 1 when an ALB pool's `healthy_floor` admits members in the `unavailable` state, 0 otherwise. See [alb.md](./alb.md#health-based-backend-selection) for the recommended floor.
+  * labels:
+    * `backend_name` - the name of the configured ALB backend
+
 ---
 
 The following metrics are available only for Caches Types whose object lifecycle Trickster manages internally (Memory, Filesystem and bbolt):
