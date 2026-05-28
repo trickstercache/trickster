@@ -70,14 +70,6 @@ func engineSetup(t *testing.T) *engineFakeOrigin {
 		srv := &httptest.Server{
 			Listener: ln,
 			Config: &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				// auto-applied prometheus healthcheck probes `/api/v1/query?query=up`;
-				// short-circuit them so per-test counters only see data traffic
-				if r.URL.Path == "/api/v1/query" && r.URL.Query().Get("query") == "up" {
-					w.Header().Set("Content-Type", "application/json")
-					w.WriteHeader(http.StatusOK)
-					_, _ = io.WriteString(w, `{"status":"success","data":{"resultType":"vector","result":[]}}`)
-					return
-				}
 				o.mu.Lock()
 				h := o.handler
 				o.mu.Unlock()

@@ -11,7 +11,7 @@ caches:
   mem1:
     provider: memory
 backends:
-  prom-healthy:
+  prom-ok:
     provider: prometheus
     origin_url: %s
     cache_name: mem1
@@ -22,15 +22,22 @@ backends:
       timeout: 500ms
       failure_threshold: 1
       recovery_threshold: 1
-  prom-broken:
+  prom-bad:
     provider: prometheus
     origin_url: %s
     cache_name: mem1
-  alb-tsm-test:
+    healthcheck:
+      path: /api/v1/status/buildinfo
+      query: ""
+      interval: 100ms
+      timeout: 500ms
+      failure_threshold: 1
+      recovery_threshold: 1
+  alb-degrade:
     provider: alb
     alb:
       mechanism: tsm
       output_format: prometheus
       pool:
-        - prom-healthy
-        - prom-broken
+        - prom-ok
+        - prom-bad

@@ -23,10 +23,4 @@ import (
 const (
 	// DefaultHealthCheckTimeout is the default duration for health check probes to wait before timing out
 	DefaultHealthCheckTimeout = 3 * time.Second
-
-	// DefaultAutoProbeInterval is applied when StartHealthChecks auto-installs
-	// a provider's default health-check config because the operator did not
-	// configure one. The auto-applied probe must fire on a tick or the
-	// downstream pool filter will never see a status transition.
-	DefaultAutoProbeInterval = 5 * time.Second
 )

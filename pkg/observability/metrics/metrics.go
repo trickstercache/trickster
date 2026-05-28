@@ -454,20 +454,6 @@ var (
 		[]string{"backend_name"},
 	)
 
-	// BackendsDefaultHealthCheckApplied counts backends for which the provider's
-	// DefaultHealthCheckConfig was auto-installed by StartHealthChecks because
-	// the operator did not configure healthcheck options. A non-zero value
-	// flags configs that depended on an absent probe and benefit from auditing.
-	BackendsDefaultHealthCheckApplied = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Namespace: metricNamespace,
-			Subsystem: healthSubsystem,
-			Name:      "default_config_applied_total",
-			Help:      "Count of backends that received an auto-applied default healthcheck config because none was configured.",
-		},
-		[]string{"backend_name", "provider"},
-	)
-
 	// ALBPoolAdmitsFailing flags ALB pools whose healthy_floor admits a Failing
 	// status (floor <= StatusFailing). Operators who set floor below 0 to keep
 	// traffic flowing during the Initializing window may not realize they're
@@ -479,6 +465,20 @@ var (
 			Subsystem: albSubsystem,
 			Name:      "pool_admits_failing",
 			Help:      "1 when an ALB pool's healthy_floor admits members in Failing state; 0 otherwise.",
+		},
+		[]string{"backend_name"},
+	)
+
+	// ALBPoolFloorReset flags ALB pools whose healthy_floor was reset to 0 at
+	// startup because one or more pool members have no health check and could
+	// never reach the configured floor (>= Passing), which would otherwise
+	// empty the pool and 502 every request.
+	ALBPoolFloorReset = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: albSubsystem,
+			Name:      "pool_floor_reset",
+			Help:      "1 when an ALB pool's healthy_floor was reset to 0 because members lack health checks; 0 otherwise.",
 		},
 		[]string{"backend_name"},
 	)
@@ -507,8 +507,8 @@ func init() {
 	prometheus.MustRegister(CacheIndexPanicRecovered)
 	prometheus.MustRegister(HealthHandlerPanicRecovered)
 	prometheus.MustRegister(HealthcheckStatusNotifyPanicRecovered)
-	prometheus.MustRegister(BackendsDefaultHealthCheckApplied)
 	prometheus.MustRegister(ALBPoolAdmitsFailing)
+	prometheus.MustRegister(ALBPoolFloorReset)
 	prometheus.MustRegister(CacheObjectOperations)
 	prometheus.MustRegister(CacheByteOperations)
 	prometheus.MustRegister(CacheEvents)
