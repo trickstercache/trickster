@@ -176,15 +176,23 @@ func (el ExtentList) spliceByTimeAligned(step, maxRange, spliceStep time.Duratio
 	if step == 0 || maxRange == 0 || spliceStep == 0 {
 		return el.Clone()
 	}
-	out := make(ExtentList, len(el)*4)
-	var k int
+	// Upper-bound shard count for accurate pre-allocation; large ranges
+	// (e.g., 30d/1h = 720 shards) avoid reallocations and the original
+	// fixed hint's index-out-of-range panic.
+	maxShards := 1
+	for _, e := range el {
+		n := int(e.End.Sub(e.Start)/maxRange) + 3
+		if n > maxShards {
+			maxShards = n
+		}
+	}
+	out := make(ExtentList, 0, len(el)*maxShards)
 	for _, e := range el {
 		origStart := e.Start
 		origEnd := e.End
 		if origEnd.Sub(origStart) <= maxRange &&
 			origEnd.Truncate(spliceStep).Equal(origStart.Truncate(spliceStep)) {
-			out[k] = e
-			k++
+			out = append(out, e)
 			continue
 		}
 		t1 := origStart.Truncate(spliceStep)
@@ -198,14 +206,12 @@ func (el ExtentList) spliceByTimeAligned(step, maxRange, spliceStep time.Duratio
 			if end.Before(origStart) {
 				end = origStart
 			}
-			out[k] = Extent{Start: origStart, End: end, LastUsed: e.LastUsed}
-			k++
+			out = append(out, Extent{Start: origStart, End: end, LastUsed: e.LastUsed})
 			origStart = end.Add(step)
 		}
 		if origEnd.Sub(origStart) <= maxRange &&
 			origEnd.Truncate(spliceStep).Equal(origStart.Truncate(spliceStep)) {
-			out[k] = Extent{Start: origStart, End: origEnd, LastUsed: e.LastUsed}
-			k++
+			out = append(out, Extent{Start: origStart, End: origEnd, LastUsed: e.LastUsed})
 			continue
 		}
 		for i := origStart; !i.After(origEnd); {
@@ -216,13 +222,12 @@ func (el ExtentList) spliceByTimeAligned(step, maxRange, spliceStep time.Duratio
 			if end.After(origEnd) {
 				end = origEnd
 			}
-			out[k] = Extent{Start: i, End: end, LastUsed: e.LastUsed}
-			k++
+			out = append(out, Extent{Start: i, End: end, LastUsed: e.LastUsed})
 			i = end.Add(step)
 		}
 	}
 
-	return out[:k]
+	return out
 }
 
 // spliceByTime splices extents that are not aligned to any particular epoch cadence
@@ -230,12 +235,21 @@ func (el ExtentList) spliceByTime(step, maxRange time.Duration) ExtentList {
 	if step == 0 || maxRange == 0 {
 		return el.Clone()
 	}
-	out := make(ExtentList, len(el)*4)
-	var k int
+	// Compute upper-bound shard count to avoid reallocations on large
+	// ranges (e.g., 720 shards for 30d/1h). +2 covers partial shards
+	// at start/end. Fixed pre-allocation panicked when shards exceeded
+	// the hint; append() with accurate capacity now grows safely.
+	maxShards := 1
+	for _, e := range el {
+		n := int(e.End.Sub(e.Start)/maxRange) + 2
+		if n > maxShards {
+			maxShards = n
+		}
+	}
+	out := make(ExtentList, 0, len(el)*maxShards)
 	for _, e := range el {
 		if e.End.Sub(e.Start) <= maxRange {
-			out[k] = e
-			k++
+			out = append(out, e)
 			continue
 		}
 		for i := e.Start; !i.After(e.End); {
@@ -246,12 +260,11 @@ func (el ExtentList) spliceByTime(step, maxRange time.Duration) ExtentList {
 			if end.After(e.End) {
 				end = e.End
 			}
-			out[k] = Extent{Start: i, End: end, LastUsed: e.LastUsed}
-			k++
+			out = append(out, Extent{Start: i, End: end, LastUsed: e.LastUsed})
 			i = end.Add(step)
 		}
 	}
-	return out[:k]
+	return out
 }
 
 // spliceByTime splices by a given number of contiguous timestamps (points) per splice
