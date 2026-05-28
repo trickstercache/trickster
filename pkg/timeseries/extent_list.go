@@ -176,9 +176,6 @@ func (el ExtentList) spliceByTimeAligned(step, maxRange, spliceStep time.Duratio
 	if step == 0 || maxRange == 0 || spliceStep == 0 {
 		return el.Clone()
 	}
-	// Upper-bound shard count for accurate pre-allocation; large ranges
-	// (e.g., 30d/1h = 720 shards) avoid reallocations and the original
-	// fixed hint's index-out-of-range panic.
 	maxShards := 1
 	for _, e := range el {
 		n := int(e.End.Sub(e.Start)/maxRange) + 3
@@ -235,10 +232,6 @@ func (el ExtentList) spliceByTime(step, maxRange time.Duration) ExtentList {
 	if step == 0 || maxRange == 0 {
 		return el.Clone()
 	}
-	// Compute upper-bound shard count to avoid reallocations on large
-	// ranges (e.g., 720 shards for 30d/1h). +2 covers partial shards
-	// at start/end. Fixed pre-allocation panicked when shards exceeded
-	// the hint; append() with accurate capacity now grows safely.
 	maxShards := 1
 	for _, e := range el {
 		n := int(e.End.Sub(e.Start)/maxRange) + 2
