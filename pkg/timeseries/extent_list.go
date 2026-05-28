@@ -176,9 +176,13 @@ func (el ExtentList) spliceByTimeAligned(step, maxRange, spliceStep time.Duratio
 	if step == 0 || maxRange == 0 || spliceStep == 0 {
 		return el.Clone()
 	}
+	stride := maxRange
+	if step > stride {
+		stride = step
+	}
 	maxShards := 1
 	for _, e := range el {
-		n := int(e.End.Sub(e.Start)/maxRange) + 3
+		n := int(e.End.Sub(e.Start)/stride) + 3
 		if n > maxShards {
 			maxShards = n
 		}
@@ -232,9 +236,13 @@ func (el ExtentList) spliceByTime(step, maxRange time.Duration) ExtentList {
 	if step == 0 || maxRange == 0 {
 		return el.Clone()
 	}
+	stride := maxRange
+	if step > stride {
+		stride = step
+	}
 	maxShards := 1
 	for _, e := range el {
-		n := int(e.End.Sub(e.Start)/maxRange) + 2
+		n := int(e.End.Sub(e.Start)/stride) + 2
 		if n > maxShards {
 			maxShards = n
 		}
