@@ -66,13 +66,17 @@ type Listener struct {
 }
 
 type observedConnection struct {
-	*net.TCPConn
+	net.Conn
 }
 
 func (o *observedConnection) Close() error {
-	err := o.TCPConn.Close()
-	metrics.ProxyActiveConnections.Dec()
-	metrics.ProxyConnectionClosed.Inc()
+	err := o.Conn.Close()
+	// Only the first successful Close adjusts the gauge; a subsequent Close
+	// returns an error (net/http may close the same conn more than once).
+	if err == nil {
+		metrics.ProxyActiveConnections.Dec()
+		metrics.ProxyConnectionClosed.Inc()
+	}
 	return err
 }
 
@@ -88,12 +92,15 @@ func (l *Listener) Accept() (net.Conn, error) {
 
 	metrics.ProxyActiveConnections.Inc()
 	metrics.ProxyConnectionAccepted.Inc()
-	// this is necessary for HTTP/2 to work
-	if t, ok := c.(*net.TCPConn); ok {
-		return &observedConnection{t}, nil
+	// *tls.Conn is left unwrapped so http.Server can type-assert it for
+	// HTTP/2 (ALPN); every other conn -- including *net.TCPConn and the
+	// netutil.LimitListener wrapper -- is wrapped so Close decrements
+	// ProxyActiveConnections.
+	if _, ok := c.(*tls.Conn); ok {
+		return c, nil
 	}
 
-	return c, nil
+	return &observedConnection{Conn: c}, nil
 }
 
 // CertSwapper returns the CertSwapper reference from the Listener
