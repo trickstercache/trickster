@@ -36,6 +36,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	tspan "github.com/trickstercache/trickster/v2/pkg/observability/tracing/span"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/forwarding"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
@@ -223,6 +224,37 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 
 	if ep := profile.FromContext(r.Context()); ep != nil && ep.SupportedHeaderVal != "" {
 		r.Header.Set(headers.NameAcceptEncoding, ep.SupportedHeaderVal)
+	}
+
+	if r.Body != nil && r.GetBody == nil {
+		var body []byte
+		var err error
+		if o.MaxObjectSizeBytes > 0 {
+			body, err = request.GetBody(r, int64(o.MaxObjectSizeBytes))
+		} else {
+			body, err = request.GetBody(r)
+		}
+		if err != nil {
+			status := http.StatusBadGateway
+			if errors.Is(err, failures.ErrPayloadTooLarge) {
+				status = http.StatusRequestEntityTooLarge
+			}
+			logger.Error("error buffering request body for retry",
+				logging.Pairs{"url": r.URL.String(), "detail": err.Error()})
+			return nil, &http.Response{
+				StatusCode: status,
+				Request:    r, Header: make(http.Header),
+			}, 0
+		}
+		// request.GetBody bounds the read by MaxObjectSizeBytes, caches it on
+		// the request resources, and resets r.Body to a re-readable reader.
+		// Mirror it into GetBody so the transport can replay the body when it
+		// retries after an HTTP/2 GOAWAY.
+		if body != nil {
+			r.GetBody = func() (io.ReadCloser, error) {
+				return io.NopCloser(bytes.NewReader(body)), nil
+			}
+		}
 	}
 
 	resp, err := o.HTTPClient.Do(r)

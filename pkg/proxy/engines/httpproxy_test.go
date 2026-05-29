@@ -18,6 +18,7 @@ package engines
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -492,5 +493,186 @@ func TestPrepareFetchReaderErr(t *testing.T) {
 	_, _, i := PrepareFetchReader(r)
 	if i != 0 {
 		t.Errorf("expected 0 got %d", i)
+	}
+}
+
+type mockRoundTripper struct {
+	resp *http.Response
+	err  error
+	reqs []*http.Request
+}
+
+func (m *mockRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	m.reqs = append(m.reqs, req)
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.resp, nil
+}
+
+type mockRetryRoundTripper struct {
+	attempts int
+}
+
+func (m *mockRetryRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	m.attempts++
+	if m.attempts == 1 {
+		if req.Body != nil && req.GetBody == nil {
+			return nil, errors.New("http2: Transport: cannot retry err after Request.Body was written; define Request.GetBody to avoid this error")
+		}
+		if req.Body != nil {
+			_, _ = io.ReadAll(req.Body)
+			req.Body.Close()
+		}
+		newBody, err := req.GetBody()
+		if err != nil {
+			return nil, err
+		}
+		req.Body = newBody
+		return m.RoundTrip(req)
+	}
+
+	if req.Body == nil {
+		return nil, errors.New("retry attempt had nil Body")
+	}
+	bodyBytes, err := io.ReadAll(req.Body)
+	if err != nil {
+		return nil, err
+	}
+	if string(bodyBytes) != "test-body" {
+		return nil, errors.New("body mismatch on retry")
+	}
+
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(bytes.NewReader([]byte("retry-success"))),
+	}, nil
+}
+
+func TestPrepareFetchReader_GetBody(t *testing.T) {
+	logger.SetLogger(testLogger)
+	conf, err := config.Load([]string{
+		"-origin-url", "http://example.com/",
+		"-provider", "test", "-log-level", "debug",
+	})
+	if err != nil {
+		t.Fatalf("Could not load configuration: %s", err.Error())
+	}
+
+	o := conf.Backends["default"]
+	o.HTTPClient = &http.Client{
+		Transport: &mockRoundTripper{
+			resp: &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(bytes.NewReader([]byte("ok"))),
+			},
+		},
+	}
+
+	reqBody := []byte("hello-request-body")
+	r := httptest.NewRequest("POST", "http://example.com/", bytes.NewReader(reqBody))
+	r.GetBody = nil // Ensure it is nil initially under all Go versions
+	r = r.WithContext(tc.WithResources(r.Context(),
+		request.NewResources(o, nil, nil, nil, nil, tu.NewTestTracer())))
+
+	_, resp, _ := PrepareFetchReader(r)
+	if resp == nil || resp.StatusCode != http.StatusOK {
+		t.Errorf("expected 200 OK, got: %+v", resp)
+	}
+
+	mockRT := o.HTTPClient.Transport.(*mockRoundTripper)
+	if len(mockRT.reqs) == 0 {
+		t.Fatal("expected at least one request to be captured by mockRoundTripper")
+	}
+	sentReq := mockRT.reqs[0]
+
+	if sentReq.GetBody == nil {
+		t.Fatal("expected sentReq.GetBody to be populated by PrepareFetchReader")
+	}
+
+	for i := 0; i < 3; i++ {
+		rc, err := sentReq.GetBody()
+		if err != nil {
+			t.Fatalf("iteration %d: GetBody returned error: %v", i, err)
+		}
+		data, err := io.ReadAll(rc)
+		rc.Close()
+		if err != nil {
+			t.Fatalf("iteration %d: read failed: %v", i, err)
+		}
+		if !bytes.Equal(data, reqBody) {
+			t.Errorf("iteration %d: expected body %q, got %q", i, reqBody, data)
+		}
+	}
+}
+
+func TestHTTP2GOAWAYRetry(t *testing.T) {
+	logger.SetLogger(testLogger)
+	conf, err := config.Load([]string{
+		"-origin-url", "http://example.com/",
+		"-provider", "test", "-log-level", "debug",
+	})
+	if err != nil {
+		t.Fatalf("Could not load configuration: %s", err.Error())
+	}
+
+	o := conf.Backends["default"]
+	o.HTTPClient = &http.Client{
+		Transport: &mockRetryRoundTripper{},
+	}
+
+	r := httptest.NewRequest("POST", "http://example.com/", bytes.NewReader([]byte("test-body")))
+	r = r.WithContext(tc.WithResources(r.Context(),
+		request.NewResources(o, nil, nil, nil, nil, tu.NewTestTracer())))
+
+	_, resp, _ := PrepareFetchReader(r)
+	if resp == nil || resp.StatusCode != http.StatusOK {
+		t.Errorf("expected 200 OK, got: %+v", resp)
+	}
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(bodyBytes) != "retry-success" {
+		t.Errorf("expected retry-success, got %q", string(bodyBytes))
+	}
+}
+
+func TestPrepareFetchReader_GetBodyTooLarge(t *testing.T) {
+	logger.SetLogger(testLogger)
+	conf, err := config.Load([]string{
+		"-origin-url", "http://example.com/",
+		"-provider", "test", "-log-level", "debug",
+	})
+	if err != nil {
+		t.Fatalf("Could not load configuration: %s", err.Error())
+	}
+
+	o := conf.Backends["default"]
+	o.MaxObjectSizeBytes = 4
+	mockRT := &mockRoundTripper{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(bytes.NewReader([]byte("ok"))),
+		},
+	}
+	o.HTTPClient = &http.Client{Transport: mockRT}
+
+	r := httptest.NewRequest("POST", "http://example.com/",
+		bytes.NewReader([]byte("hello-request-body")))
+	r.GetBody = nil
+	r = r.WithContext(tc.WithResources(r.Context(),
+		request.NewResources(o, nil, nil, nil, nil, tu.NewTestTracer())))
+
+	_, resp, _ := PrepareFetchReader(r)
+	if resp == nil || resp.StatusCode != http.StatusRequestEntityTooLarge {
+		t.Errorf("expected 413 Request Entity Too Large, got: %+v", resp)
+	}
+	if len(mockRT.reqs) != 0 {
+		t.Errorf("upstream must not be called when the body exceeds MaxObjectSizeBytes; got %d requests", len(mockRT.reqs))
 	}
 }
