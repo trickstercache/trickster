@@ -1057,6 +1057,58 @@ func TestSplice(t *testing.T) {
 		}
 	})
 
+	// 4 full shards is the last size that the pre-patch len(el)*4 hint
+	// happened to accommodate; the +1 boundary tick brings the total to 5.
+	t.Run("spliceByTime 4-shard boundary", func(t *testing.T) {
+		el := ExtentList{Extent{Start: time.Unix(0, 0), End: time.Unix(4*3600, 0)}}
+		out := el.Splice(time.Minute, time.Hour, 0, 0)
+		if len(out) != 5 {
+			t.Errorf("expected 5 shards, got %d", len(out))
+		}
+	})
+
+	// 5 full shards was the smallest input that overflowed the pre-patch
+	// fixed allocation; the +1 boundary tick brings the total to 6.
+	t.Run("spliceByTime 5-shard boundary (first pre-patch overflow)", func(t *testing.T) {
+		el := ExtentList{Extent{Start: time.Unix(0, 0), End: time.Unix(5*3600, 0)}}
+		out := el.Splice(time.Minute, time.Hour, 0, 0)
+		if len(out) != 6 {
+			t.Errorf("expected 6 shards, got %d", len(out))
+		}
+	})
+
+	// spliceByTimeAligned shares the same capacity path; cover its stress case.
+	t.Run("spliceByTimeAligned stress 30d/1h", func(t *testing.T) {
+		start := time.Unix(0, 0)
+		end := time.Unix(int64(30*24*time.Hour/time.Second), 0)
+		el := ExtentList{Extent{Start: start, End: end}}
+		out := el.Splice(time.Minute, time.Hour, time.Hour, 0)
+		expectedShards := 720
+		if len(out) < expectedShards || len(out) > expectedShards+3 {
+			t.Errorf("expected ~%d shards, got %d", expectedShards, len(out))
+		}
+	})
+
+	// spliceByPoints used the same len(el)*4 anti-pattern; lock the fix in.
+	t.Run("spliceByPoints high shard count (regression)", func(t *testing.T) {
+		el := ExtentList{Extent{Start: time.Unix(0, 0), End: time.Unix(50*60, 0)}}
+		out := el.Splice(time.Minute, 0, 0, 10)
+		if len(out) < 5 {
+			t.Errorf("expected at least 5 shards, got %d", len(out))
+		}
+	})
+
+	// Pathological input (e.g. nanosecond step over a 1s range) would otherwise
+	// drive a multi-GB make(); the helpers must clamp to maxShardCount and
+	// return a Clone instead of trying to splice.
+	t.Run("spliceByTime clamps pathological input", func(t *testing.T) {
+		el := ExtentList{Extent{Start: time.Unix(0, 0), End: time.Unix(1, 0)}}
+		out := el.Splice(time.Nanosecond, time.Nanosecond, 0, 0)
+		if len(out) != 1 {
+			t.Errorf("expected Clone (1 extent) when capacity exceeds limit, got %d", len(out))
+		}
+	})
+
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			out := test.el.Splice(test.step, test.maxRange, test.spliceStep, test.maxPoints)
