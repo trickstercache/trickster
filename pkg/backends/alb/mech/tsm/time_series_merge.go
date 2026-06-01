@@ -17,6 +17,7 @@
 package tsm
 
 import (
+	"fmt"
 	"math"
 	"net/http"
 	"strconv"
@@ -64,6 +65,10 @@ type handler struct {
 	// poolVersion increments on every SetPool so cached pool-derived data
 	// (stripKeys) can be invalidated without locking.
 	poolVersion atomic.Uint64
+	// degradeActive is true while a configured-multi-member pool is dispatching
+	// with only one live member. It throttles the operator WARN to once per
+	// healthy->degraded transition instead of once per request.
+	degradeActive atomic.Bool
 	// cachedStripKeys memoizes the stripKeys slice across requests as long
 	// as the pool hasn't been replaced. Hot path is a single atomic load
 	// plus a uint64 compare.
@@ -320,16 +325,41 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		stripKeys = h.computeStripKeys(hl)
 	}
 
+	// A configured multi-member pool serving from a single live member is
+	// degraded: the merge has silently collapsed to one shard. Warn once per
+	// healthy->degraded transition (not per request) and route through the
+	// merge path so the warning reaches the response `warnings` field.
+	configured := p.ConfiguredLen()
+	degraded := configured > 1 && l == 1
+	if degraded {
+		if h.degradeActive.CompareAndSwap(false, true) {
+			bn := ""
+			if rsc.BackendOptions != nil {
+				bn = rsc.BackendOptions.Name
+			}
+			logger.Warn("alb tsm pool degraded to single live member",
+				logging.Pairs{"backend_name": bn, "configured": configured, "live": l})
+		}
+		dw := fmt.Sprintf("trickster: served from 1 of %d pool members; results may be incomplete", configured)
+		if warnMsg == "" {
+			warnMsg = dw
+		} else {
+			warnMsg += "; " + dw
+		}
+	} else {
+		h.degradeActive.Store(false)
+	}
+
 	// Single-live-member fast path: with one shard there is nothing to merge
 	// or dedup against, so the lone backend's response IS the answer. Skip
 	// only when label stripping or dual-query rewriting would still need to
 	// happen (D1 covers the strip case; weighted-avg covers the dual-query
-	// case). Otherwise the merge path's OnResult stripping handles solo pools
-	// correctly, and degraded N-pools where N-1 are unhealthy now return the
-	// surviving member's response directly instead of 502'ing on a one-shard
-	// merge that has no peer to dedup or cross-merge against.
-	// dual-query still needs merge even for one healthy target; one-shard fast path requires all three conditions
-	if l == 1 && len(stripKeys) == 0 && !needsDualQuery {
+	// case), or when the pool is degraded (configured > 1, one live) so the
+	// merge path can attach the degrade warning. Otherwise the merge path's
+	// OnResult stripping handles solo pools correctly, and genuinely
+	// single-member pools return the lone response directly instead of 502'ing
+	// on a one-shard merge that has no peer to dedup or cross-merge against.
+	if l == 1 && len(stripKeys) == 0 && !needsDualQuery && !degraded {
 		defaultHandler.ServeHTTP(w, r)
 		return
 	}

@@ -1,0 +1,25 @@
+
+frontend:
+  listen_port: %d
+metrics:
+  listen_port: %d
+mgmt:
+  listen_port: %d
+logging:
+  log_level: warn
+caches:
+  mem1:
+    provider: memory
+backends:
+  prom-noprobe:
+    provider: prometheus
+    origin_url: %s
+    cache_name: mem1
+  alb-floor1:
+    provider: alb
+    alb:
+      mechanism: tsm
+      output_format: prometheus
+      healthy_floor: 1
+      pool:
+        - prom-noprobe

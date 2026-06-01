@@ -605,6 +605,7 @@ func TestDeltaProxyCacheRequestRangeMissChunks(t *testing.T) {
 	rsc.CacheConfig.Provider = "test"
 
 	o.FastForwardDisable = true
+	o.TimeseriesRetention = 1 << 20 // pin against wallclock drift on fixed fixture
 
 	step := time.Duration(3600) * time.Second
 
@@ -753,6 +754,7 @@ func TestDeltaProxyCacheRequestRangeMissChunks_CrossBucket(t *testing.T) {
 	o := rsc.BackendOptions
 	rsc.CacheConfig.Provider = "test"
 	o.FastForwardDisable = true
+	o.TimeseriesRetention = 1 << 20 // pin against wallclock drift on fixed fixture
 
 	step := time.Duration(3600) * time.Second
 
@@ -835,6 +837,7 @@ func TestDeltaProxyCacheRequestRangeMissChunks_CrossBucketPreservesPriorChunks(t
 	o := rsc.BackendOptions
 	rsc.CacheConfig.Provider = "test"
 	o.FastForwardDisable = true
+	o.TimeseriesRetention = 1 << 20 // pin against wallclock drift on fixed fixture
 
 	step := time.Duration(3600) * time.Second
 	now := time.Date(2026, 4, 20, 11, 0, 0, 0, time.UTC)

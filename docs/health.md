@@ -102,6 +102,8 @@ backends:
       recovery_threshold: 3 # backend is healthy after 3 consecutive successes
 ```
 
+The Prometheus default probe is `/api/v1/query?query=up`. Some multi-tenant Prometheus gateways reject an unbounded `up` with `400 bad_data: "too many series found"`, which keeps the member out of any ALB pool it belongs to. Override `healthcheck.query` with a bounded expression the backend accepts (for example `query=vector(1)`) when probing such backends.
+
 ## Other Ways to Monitor Health
 
 In addition to the out-of-the-box health checks to determine up-or-down status, you may want to setup alarms and thresholds based on the metrics instrumented by Trickster. See [metrics.md](metrics.md) for collecting performance metrics about Trickster.

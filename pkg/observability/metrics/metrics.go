@@ -453,6 +453,35 @@ var (
 		},
 		[]string{"backend_name"},
 	)
+
+	// ALBPoolAdmitsFailing flags ALB pools whose healthy_floor admits a Failing
+	// status (floor <= StatusFailing). Operators who set floor below 0 to keep
+	// traffic flowing during the Initializing window may not realize they're
+	// also admitting members the probe has confirmed broken; the gauge surfaces
+	// that misconfiguration without spamming logs.
+	ALBPoolAdmitsFailing = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: albSubsystem,
+			Name:      "pool_admits_failing",
+			Help:      "1 when an ALB pool's healthy_floor admits members in Failing state; 0 otherwise.",
+		},
+		[]string{"backend_name"},
+	)
+
+	// ALBPoolFloorReset flags ALB pools whose healthy_floor was reset to 0 at
+	// startup because one or more pool members have no health check and could
+	// never reach the configured floor (>= Passing), which would otherwise
+	// empty the pool and 502 every request.
+	ALBPoolFloorReset = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: albSubsystem,
+			Name:      "pool_floor_reset",
+			Help:      "1 when an ALB pool's healthy_floor was reset to 0 because members lack health checks; 0 otherwise.",
+		},
+		[]string{"backend_name"},
+	)
 )
 
 func init() {
@@ -478,6 +507,8 @@ func init() {
 	prometheus.MustRegister(CacheIndexPanicRecovered)
 	prometheus.MustRegister(HealthHandlerPanicRecovered)
 	prometheus.MustRegister(HealthcheckStatusNotifyPanicRecovered)
+	prometheus.MustRegister(ALBPoolAdmitsFailing)
+	prometheus.MustRegister(ALBPoolFloorReset)
 	prometheus.MustRegister(CacheObjectOperations)
 	prometheus.MustRegister(CacheByteOperations)
 	prometheus.MustRegister(CacheEvents)
