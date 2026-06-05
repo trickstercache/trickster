@@ -38,12 +38,14 @@ type Options struct {
 	MechanismName string `yaml:"mechanism,omitempty"`
 	// Pool provides the list of backend names to be used by the load balancer
 	Pool []string `yaml:"pool,omitempty"`
-	// HealthyFloor is the minimum health check status value to be considered Available in the pool
-	// -1 : all pool members are Available regardless of health check status
-	//  0 (default) : pool members with status of unknown (0) or healthy (1) are Available
-	//  1 : only pool members with status of healthy (1) are Available
-	// unknown means the first hc hasn't returned yet,
-	// or (more likely) HealthCheck Interval on target backend is not set
+	// HealthyFloor is the minimum health check status value admitted to the pool.
+	// Values below 0 admit members the probe has confirmed Failing; only set
+	// this below 0 if you intend to route to known-broken upstreams.
+	// -1 : all pool members admitted, including Failing
+	//  0 (default) : Unknown (0) and Healthy (1) admitted, Failing rejected
+	//  1 : only Healthy (1) admitted
+	// Unknown means the first health check hasn't returned yet, or the target
+	// backend has no health check interval configured.
 	HealthyFloor int `yaml:"healthy_floor,omitempty"`
 	// MaxCaptureBytes overrides the backend-level max_capture_bytes for this
 	// ALB's fanout members. Set this when the ALB's expected response shape

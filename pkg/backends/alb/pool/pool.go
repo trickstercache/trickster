@@ -32,6 +32,10 @@ type Pool interface {
 	// between a status flip and the asynchronous healthy-list refresh, so it
 	// is the correct method for request dispatch.
 	Targets() Targets
+	// ConfiguredLen returns the number of pool members as configured, regardless
+	// of current health. Mechanisms compare this against len(Targets()) to
+	// detect a pool degraded to a subset of its configured members.
+	ConfiguredLen() int
 	// SetHealthy seeds the pool's healthy set from a handler list. Intended
 	// for tests and bootstrap paths that don't drive status updates through
 	// healthcheck subscribers.
@@ -103,6 +107,10 @@ func (p *pool) snapshot() Targets {
 		return *t
 	}
 	return nil
+}
+
+func (p *pool) ConfiguredLen() int {
+	return len(p.targets)
 }
 
 func (p *pool) Targets() Targets {

@@ -19,6 +19,7 @@ package alb
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
@@ -34,6 +35,9 @@ import (
 	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/errors"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	authopt "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	authreg "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/registry"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
@@ -164,6 +168,7 @@ func (c *Client) ValidateAndStartPool(clients backends.Backends, hcs healthcheck
 		return c.validateAndStartUserRouter(clients, hcs)
 	}
 	targets := make(pool.Targets, 0, len(o.Pool))
+	var unprobed []string
 	for _, n := range o.Pool {
 		tc, ok := clients[n]
 		if !ok {
@@ -174,10 +179,46 @@ func (c *Client) ValidateAndStartPool(clients backends.Backends, hcs healthcheck
 			// virtual backends (rule, alb) have no health checks; treat as passing
 			hc = healthcheck.NewStatus(n, "virtual", "", healthcheck.StatusPassing, time.Time{}, nil)
 		}
+		if mo := tc.Configuration(); !backends.IsVirtual(mo.Provider) &&
+			(mo.HealthCheck == nil || mo.HealthCheck.Interval <= 0) {
+			unprobed = append(unprobed, n)
+		}
 		targets = append(targets, pool.NewTarget(tc.Router(), hc, tc))
 	}
+	effectiveFloor := o.HealthyFloor
+	if o.HealthyFloor >= int(healthcheck.StatusPassing) && len(unprobed) > 0 {
+		// floor requires Passing, but these members have no probe interval and
+		// can never leave Unchecked, so they would be permanently excluded --
+		// which can empty the pool entirely and 502 every request. Reset to 0
+		// so unchecked members are admitted, and surface it loudly.
+		effectiveFloor = int(healthcheck.StatusUnchecked)
+		metrics.ALBPoolFloorReset.WithLabelValues(c.Name()).Set(1)
+		logger.Warn("alb healthy_floor reset to 0: pool members have no health check",
+			logging.Pairs{
+				"backend_name":  c.Name(),
+				"healthy_floor": o.HealthyFloor,
+				"members":       strings.Join(unprobed, ","),
+				"hint":          "configure healthcheck.interval on these members, or set healthy_floor: 0",
+			})
+	} else {
+		metrics.ALBPoolFloorReset.WithLabelValues(c.Name()).Set(0)
+	}
 	if pm, ok := c.handler.(types.PoolMechanism); ok {
-		pm.SetPool(pool.New(targets, o.HealthyFloor))
+		pm.SetPool(pool.New(targets, effectiveFloor))
+	}
+	if o.HealthyFloor <= int(healthcheck.StatusFailing) {
+		// floor admits members whose probe has confirmed them down; operators
+		// who lowered the floor to keep traffic flowing during the startup
+		// Initializing window may not realize Failing slips in too.
+		metrics.ALBPoolAdmitsFailing.WithLabelValues(c.Name()).Set(1)
+		logger.Warn("alb healthy_floor admits members in Failing state",
+			logging.Pairs{
+				"backend_name":  c.Name(),
+				"healthy_floor": o.HealthyFloor,
+				"hint":          "set healthy_floor: 0 to exclude probed-failing members",
+			})
+	} else {
+		metrics.ALBPoolAdmitsFailing.WithLabelValues(c.Name()).Set(0)
 	}
 	return nil
 }
