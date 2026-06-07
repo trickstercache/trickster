@@ -85,3 +85,96 @@ func TestGetInt(t *testing.T) {
 		t.Errorf("expected %d got %d", 1, i)
 	}
 }
+
+func TestEscapeQuotes(t *testing.T) {
+	cases := []struct {
+		input string
+		want  string
+	}{
+		{"hello", "hello"},
+		{`"test"`, `\"test\"`},
+		{`say "hi"`, `say \"hi\"`},
+		{`\\"x\\"`, `\\"x\\"`},
+		{`already\"escaped`, `already\"escaped`},
+	}
+	for _, c := range cases {
+		if got := EscapeQuotes(c.input); got != c.want {
+			t.Errorf("EscapeQuotes(%q) = %q; want %q", c.input, got, c.want)
+		}
+	}
+}
+
+func TestIsApparentSQLDateFormat(t *testing.T) {
+	cases := []struct {
+		input string
+		want  bool
+	}{
+		{"2024-01-15 12:30:45", true},
+		{"3928-31-28 88:73:95", true},
+		{"2024-01-15", false},
+		{"2024_01-15 12:30:45", false},
+		{"2024-01-15 12:3a:45", false},
+		{"2024-01-15T12:30:45", false},
+		{"2024-01-15 12-30:45", false},
+		{"2024-01-15 12:30-45", false},
+	}
+	for _, c := range cases {
+		if got := IsApparentSQLDateFormat(c.input); got != c.want {
+			t.Errorf("IsApparentSQLDateFormat(%q) = %t; want %t", c.input, got, c.want)
+		}
+	}
+}
+
+func TestPare(t *testing.T) {
+	cases := []struct {
+		name    string
+		s       []string
+		exclude []string
+		want    []string
+	}{
+		{
+			name:    "filters excluded values",
+			s:       []string{"GET", "POST", "PUT", "DELETE"},
+			exclude: []string{"POST", "DELETE"},
+			want:    []string{"GET", "PUT"},
+		},
+		{
+			name:    "empty exclude returns input order",
+			s:       []string{"a", "b", "c"},
+			exclude: nil,
+			want:    []string{"a", "b", "c"},
+		},
+		{
+			name:    "empty input",
+			s:       nil,
+			exclude: []string{"a"},
+			want:    nil,
+		},
+		{
+			name:    "all excluded",
+			s:       []string{"a", "b"},
+			exclude: []string{"a", "b"},
+			want:    nil,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := Pare(c.s, c.exclude)
+			if !stringSlicesEqual(got, c.want) {
+				t.Errorf("Pare(%v, %v) = %v; want %v", c.s, c.exclude, got, c.want)
+			}
+		})
+	}
+}
+
+func stringSlicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
