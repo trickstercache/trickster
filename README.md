@@ -106,7 +106,7 @@ See the 'deploy' Directory for Kube and deployment files and examples.
 
 ### Helm
 
-Trickster Helm Charts are located at <https://helm.tricksterproxy.io> for installation, and maintained at <https://github.com/trickstercache/helm-charts>. We welcome chart contributions.
+Trickster Helm Charts are located at <https://helm.trickstercache.org/> for installation, and maintained at <https://github.com/trickstercache/helm-charts>. We welcome chart contributions.
 
 ### Building from source
 
