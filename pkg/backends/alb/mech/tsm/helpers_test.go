@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/fanout"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 )
@@ -237,5 +238,22 @@ func TestMergeMultiValuedHeaders(t *testing.T) {
 					tc.name, tc.winner.Get(headers.NameSetCookie))
 			}
 		})
+	}
+}
+
+func TestAllFanoutFailed(t *testing.T) {
+	t.Parallel()
+
+	if allFanoutFailed(nil) {
+		t.Fatal("nil results should not be all failed")
+	}
+	if allFanoutFailed([]fanout.Result{}) {
+		t.Fatal("empty results should not be all failed")
+	}
+	if !allFanoutFailed([]fanout.Result{{Failed: true}, {Failed: true}}) {
+		t.Fatal("expected all failed when every slot failed")
+	}
+	if allFanoutFailed([]fanout.Result{{Failed: true}, {Failed: false}}) {
+		t.Fatal("expected not all failed when one slot succeeded")
 	}
 }
