@@ -29,6 +29,8 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+const cryptSaltAlphabet = "./0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+
 var ErrUnauthorized = errors.New("unauthorized")
 
 // VerifyPassword verifies a password against a stored hash
@@ -153,7 +155,7 @@ func verifySHACryptHash(
 	if len(parts) < 4 {
 		return errors.New("invalid SHA-Crypt hash format")
 	}
-	if parts[1] != strings.TrimPrefix(magicPrefix, "$") {
+	if parts[1] != strings.TrimSuffix(strings.TrimPrefix(magicPrefix, "$"), "$") {
 		return errors.New("hash magic prefix mismatch")
 	}
 	var salt string
@@ -308,7 +310,6 @@ func computeAndCompareSHACrypt(password, salt string, rounds int, expectedHash s
 
 // apr1Base64Encode encodes the MD5 hash using Apache's base64 variant (Hash64)
 func apr1Base64Encode(data []byte) string {
-	const alphabet = "./0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 	hashSize := (len(data) * 8) / 6
 	if (len(data)*8)%6 != 0 {
 		hashSize++
@@ -320,23 +321,23 @@ func apr1Base64Encode(data []byte) string {
 		switch len(src) {
 		default:
 			// Process 3 bytes -> 4 characters
-			dst[0] = alphabet[src[0]&0x3f]
-			dst[1] = alphabet[((src[0]>>6)|(src[1]<<2))&0x3f]
-			dst[2] = alphabet[((src[1]>>4)|(src[2]<<4))&0x3f]
-			dst[3] = alphabet[(src[2]>>2)&0x3f]
+			dst[0] = cryptSaltAlphabet[src[0]&0x3f]
+			dst[1] = cryptSaltAlphabet[((src[0]>>6)|(src[1]<<2))&0x3f]
+			dst[2] = cryptSaltAlphabet[((src[1]>>4)|(src[2]<<4))&0x3f]
+			dst[3] = cryptSaltAlphabet[(src[2]>>2)&0x3f]
 			src = src[3:]
 			dst = dst[4:]
 		case 2:
 			// Process 2 bytes -> 3 characters
-			dst[0] = alphabet[src[0]&0x3f]
-			dst[1] = alphabet[((src[0]>>6)|(src[1]<<2))&0x3f]
-			dst[2] = alphabet[(src[1]>>4)&0x3f]
+			dst[0] = cryptSaltAlphabet[src[0]&0x3f]
+			dst[1] = cryptSaltAlphabet[((src[0]>>6)|(src[1]<<2))&0x3f]
+			dst[2] = cryptSaltAlphabet[(src[1]>>4)&0x3f]
 			src = src[2:]
 			dst = dst[3:]
 		case 1:
 			// Process 1 byte -> 2 characters
-			dst[0] = alphabet[src[0]&0x3f]
-			dst[1] = alphabet[(src[0]>>6)&0x3f]
+			dst[0] = cryptSaltAlphabet[src[0]&0x3f]
+			dst[1] = cryptSaltAlphabet[(src[0]>>6)&0x3f]
 			src = src[1:]
 			dst = dst[2:]
 		}
