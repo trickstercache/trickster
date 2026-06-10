@@ -100,7 +100,6 @@ jobs:
           make data-race-test
           echo "::endgroup::"
           make data-race-test-inspect
-      - run: sed -i -e '/^.*_gen\.go:.*$/d' .coverprofile
       - run: go build -o /dev/null ./cmd/trickster
       - name: Send coverage
         if: github.repository_owner == 'trickstercache' # Skip for forked repositories
@@ -131,7 +130,6 @@ jobs:
         run: make integration-cover
       - name: Run integration tests (with race detection enabled)
         run: make -C integration data-race-test
-      - run: sed -i -e '/^.*_gen\.go:.*$/d' integration/.integration.coverprofile
       - name: Send integration coverage
         if: github.repository_owner == 'trickstercache'
         uses: shogo82148/actions-goveralls@v1
