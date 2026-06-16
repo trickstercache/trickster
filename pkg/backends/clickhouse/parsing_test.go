@@ -617,6 +617,75 @@ func TestSolveMathExpression(t *testing.T) {
 	}
 }
 
+func TestNewTimeBucketingFunctions(t *testing.T) {
+	tests := []struct {
+		name  string
+		query string
+		step  time.Duration
+	}{
+		{"toStartOfMonth", `SELECT toStartOfMonth(datetime) AS t, count() AS cnt FROM tbl WHERE datetime BETWEEN 1589904000 AND 1589997600 GROUP BY t FORMAT JSON`, 24 * time.Hour * 30},
+		{"toStartOfQuarter", `SELECT toStartOfQuarter(datetime) AS t, count() AS cnt FROM tbl WHERE datetime BETWEEN 1589904000 AND 1589997600 GROUP BY t FORMAT JSON`, 24 * time.Hour * 90},
+		{"toStartOfYear", `SELECT toStartOfYear(datetime) AS t, count() AS cnt FROM tbl WHERE datetime BETWEEN 1589904000 AND 1589997600 GROUP BY t FORMAT JSON`, 24 * time.Hour * 365},
+		{"toStartOfSecond", `SELECT toStartOfSecond(datetime) AS t, count() AS cnt FROM tbl WHERE datetime BETWEEN 1589904000 AND 1589997600 GROUP BY t FORMAT JSON`, time.Second},
+		{"toStartOfMillisecond", `SELECT toStartOfMillisecond(datetime) AS t, count() AS cnt FROM tbl WHERE datetime BETWEEN 1589904000 AND 1589997600 GROUP BY t FORMAT JSON`, time.Millisecond},
+		{"toStartOfMicrosecond", `SELECT toStartOfMicrosecond(datetime) AS t, count() AS cnt FROM tbl WHERE datetime BETWEEN 1589904000 AND 1589997600 GROUP BY t FORMAT JSON`, time.Microsecond},
+		{"toStartOfNanosecond", `SELECT toStartOfNanosecond(datetime) AS t, count() AS cnt FROM tbl WHERE datetime BETWEEN 1589904000 AND 1589997600 GROUP BY t FORMAT JSON`, time.Nanosecond},
+		{"date_trunc_hour", `SELECT date_trunc('hour', datetime) AS t, count() AS cnt FROM tbl WHERE datetime BETWEEN 1589904000 AND 1589997600 GROUP BY t FORMAT JSON`, time.Hour},
+		{"date_trunc_month", `SELECT date_trunc('month', datetime) AS t, count() AS cnt FROM tbl WHERE datetime BETWEEN 1589904000 AND 1589997600 GROUP BY t FORMAT JSON`, 24 * time.Hour * 30},
+		{"date_trunc_quarter", `SELECT date_trunc('quarter', datetime) AS t, count() AS cnt FROM tbl WHERE datetime BETWEEN 1589904000 AND 1589997600 GROUP BY t FORMAT JSON`, 24 * time.Hour * 90},
+		{"date_trunc_second", `SELECT date_trunc('second', datetime) AS t, count() AS cnt FROM tbl WHERE datetime BETWEEN 1589904000 AND 1589997600 GROUP BY t FORMAT JSON`, time.Second},
+		{"toStartOfInterval_month", `SELECT toStartOfInterval(datetime, INTERVAL 1 month) AS t, count() AS cnt FROM tbl WHERE datetime BETWEEN 1589904000 AND 1589997600 GROUP BY t FORMAT JSON`, 24 * time.Hour * 30},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			trq, _, _, err := parse(tc.query)
+			if err != nil {
+				t.Fatalf("parse error: %v", err)
+			}
+			if trq.Step != tc.step {
+				t.Errorf("expected step %v, got %v", tc.step, trq.Step)
+			}
+		})
+	}
+}
+
+func TestToDateTime64InWhere(t *testing.T) {
+	// Simulates the official Grafana ClickHouse plugin v4+ $__timeFilter expansion.
+	// Tests both integer and float epoch values inside toDateTime64().
+	q := `SELECT toStartOfFiveMinute(datetime) AS t, count() AS cnt FROM tbl ` +
+		`WHERE datetime >= toDateTime64(1589904000, 3) AND datetime <= toDateTime64(1589997600, 3) ` +
+		`GROUP BY t FORMAT JSON`
+	trq, _, _, err := parse(q)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if trq.Step != 5*time.Minute {
+		t.Errorf("expected step 5m, got %v", trq.Step)
+	}
+	if trq.Extent.Start.Unix() != 1589904000 {
+		t.Errorf("expected start 1589904000, got %d", trq.Extent.Start.Unix())
+	}
+	if trq.Extent.End.Unix() != 1589997600 {
+		t.Errorf("expected end 1589997600, got %d", trq.Extent.End.Unix())
+	}
+}
+
+func TestToDateTime64FloatEpoch(t *testing.T) {
+	q := `SELECT toStartOfFiveMinute(datetime) AS t, count() AS cnt FROM tbl ` +
+		`WHERE datetime >= toDateTime64(1589904000.123, 3) AND datetime <= toDateTime64(1589997600.456, 3) ` +
+		`GROUP BY t FORMAT JSON`
+	trq, _, _, err := parse(q)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if trq.Extent.Start.Unix() != 1589904000 {
+		t.Errorf("expected start 1589904000, got %d", trq.Extent.Start.Unix())
+	}
+	if trq.Extent.End.Unix() != 1589997600 {
+		t.Errorf("expected end 1589997600, got %d", trq.Extent.End.Unix())
+	}
+}
+
 func TestBadQueries(t *testing.T) {
 	tests := []struct {
 		query string

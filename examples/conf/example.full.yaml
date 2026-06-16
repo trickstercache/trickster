@@ -58,6 +58,18 @@ frontend:
 #  # Default: false
 #  # truncate_request_body_too_large: false
 
+#  # protocol_listeners configures raw TCP listeners for non-HTTP wire protocols
+#  # (e.g. the ClickHouse native binary protocol on port 9000). Each listener routes
+#  # all accepted connections to a single named backend. Supported protocols today:
+#  # clickhouse-native. See /docs/clickhouse.md for the ClickHouse flow.
+#  # protocol_listeners:
+#  #   - name: clickhouse-native       # human-readable identifier
+#  #     protocol: clickhouse-native   # wire protocol handler
+#  #     listen_address: ''            # bind all interfaces by default
+#  #     listen_port: 9000             # TCP port
+#  #     backend: click1               # name of a configured backend (below)
+#  #     connections_limit: 0          # 0 = unlimited
+
 # caches:
 #   default:
 #     # provider defines what kind of cache Trickster uses
@@ -254,6 +266,12 @@ backends:
     # origin_url is a required configuration value
     origin_url: http://prometheus:9090
 
+#     # protocol selects the upstream wire protocol used to communicate with the origin.
+#     # When empty (default), HTTP is used. Supported values are provider-specific:
+#     #   clickhouse: 'native' — speak the native binary protocol to an upstream on port 9000
+#     # (this is independent of frontend protocol_listeners, which accept non-HTTP clients.)
+#     protocol: ''
+
     # is_default describes whether this backend is the default backend considered when routing http requests
     # it is false, by default; but if you only have a single backend configured, is_default will be true unless explicitly set to false
     is_default: true
@@ -343,6 +361,12 @@ backends:
 #     max_capture_bytes: 268435456
 
 #     # These next 7 settings only apply to Time Series backends
+
+#     # dpc_fallback_warning, when true (default), logs a warning when a query cannot be parsed
+#     # as a time range query and falls back from DPC (Delta Proxy Cache) to OPC (Object Proxy Cache).
+#     # Set to false to suppress these warnings (they will still appear at debug level).
+#     # Applies to SQL-based TSDB backends like ClickHouse that may receive non-time-series queries.
+#     dpc_fallback_warning: true
 
 #     # backfill_tolerance prevents new datapoints that fall within the tolerance window (relative to time.Now) from being permanently
 #     # cached. Think of it as "the newest N milliseconds of real-time data are preliminary and subject to updates, so refresh them periodically"

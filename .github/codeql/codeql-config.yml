@@ -1,0 +1,11 @@
+name: "trickster CodeQL config"
+
+query-filters:
+  # trickster is a passthrough proxy; backends forward client SQL verbatim
+  # to the upstream. companion to the gosec G701 suppression in code.
+  - exclude:
+      id: go/sql-injection
+
+paths-ignore:
+  - vendor
+  - testdata
