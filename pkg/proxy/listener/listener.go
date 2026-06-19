@@ -66,13 +66,21 @@ type Listener struct {
 }
 
 type observedConnection struct {
-	*net.TCPConn
+	net.Conn
+	closeOnce sync.Once
 }
 
 func (o *observedConnection) Close() error {
-	err := o.TCPConn.Close()
-	metrics.ProxyActiveConnections.Dec()
-	metrics.ProxyConnectionClosed.Inc()
+	err := o.Conn.Close()
+	// Decrement the gauge (and bump the closed counter) at most once per
+	// connection. net/http may call Close more than once on the same conn
+	// (e.g. handler close followed by the server's shutdown sweep), and
+	// without this guard each extra Close double-decremented
+	// ProxyActiveConnections, drifting the gauge negative over time.
+	o.closeOnce.Do(func() {
+		metrics.ProxyActiveConnections.Dec()
+		metrics.ProxyConnectionClosed.Inc()
+	})
 	return err
 }
 
@@ -88,12 +96,19 @@ func (l *Listener) Accept() (net.Conn, error) {
 
 	metrics.ProxyActiveConnections.Inc()
 	metrics.ProxyConnectionAccepted.Inc()
-	// this is necessary for HTTP/2 to work
-	if t, ok := c.(*net.TCPConn); ok {
-		return &observedConnection{t}, nil
+	// Do not wrap *tls.Conn: the http.Server type-asserts it to negotiate
+	// HTTP/2 (ALPN), so wrapping would silently disable HTTP/2 over TLS.
+	// Wrap every other connection type -- including *net.TCPConn and the
+	// netutil.LimitListener wrapper used when frontend.connections_limit is
+	// set -- so Close decrements ProxyActiveConnections. Previously only
+	// *net.TCPConn was wrapped, so enabling connections_limit hid the
+	// connection behind *netutil.limitListenerConn and the active-connection
+	// gauge incremented on accept but never decremented on close.
+	if _, ok := c.(*tls.Conn); ok {
+		return c, nil
 	}
 
-	return c, nil
+	return &observedConnection{Conn: c}, nil
 }
 
 // CertSwapper returns the CertSwapper reference from the Listener

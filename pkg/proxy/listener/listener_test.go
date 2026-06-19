@@ -29,11 +29,13 @@ import (
 	"testing"
 	"time"
 
+	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/exporters/stdout"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
@@ -42,6 +44,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 	testutil "github.com/trickstercache/trickster/v2/pkg/testutil"
 	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
+	"golang.org/x/net/netutil"
 )
 
 func testListener() net.Listener {
@@ -347,10 +350,67 @@ func TestCloseObservedConnection(t *testing.T) {
 		t.Error("invalid connection type")
 	}
 	oconn := &observedConnection{
-		TCPConn: tconn,
+		Conn: tconn,
 	}
 	err = oconn.Close()
 	if err != nil {
 		t.Error(err)
+	}
+}
+
+// TestAcceptWrapsLimitListenerConn ensures Accept wraps connections in
+// *observedConnection even when the underlying listener is a
+// netutil.LimitListener (which is used when frontend.connections_limit is set).
+// Without the wrap, observedConnection.Close never runs, so
+// ProxyActiveConnections is incremented on accept but never decremented on
+// close, producing a monotonic gauge leak that ignores the configured limit.
+func TestAcceptWrapsLimitListenerConn(t *testing.T) {
+	inner, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer inner.Close()
+	l := &Listener{Listener: netutil.LimitListener(inner, 10)}
+
+	dialed := make(chan net.Conn, 1)
+	go func() {
+		c, derr := net.Dial("tcp", inner.Addr().String())
+		if derr != nil {
+			dialed <- nil
+			return
+		}
+		dialed <- c
+	}()
+
+	c, err := l.Accept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	if _, ok := c.(*observedConnection); !ok {
+		t.Errorf("expected *observedConnection so Close decrements the active gauge, got %T", c)
+	}
+
+	if dc := <-dialed; dc != nil {
+		dc.Close()
+	}
+}
+
+// TestObservedConnectionCloseIdempotent ensures Close decrements the
+// active-connections gauge at most once even when invoked multiple times.
+// net/http can call Close more than once per connection; without the
+// sync.Once guard each extra Close double-decremented the gauge, drifting
+// trickster_proxy_active_connections negative over time.
+func TestObservedConnectionCloseIdempotent(t *testing.T) {
+	_, client := net.Pipe()
+	oc := &observedConnection{Conn: client}
+	metrics.ProxyActiveConnections.Inc() // simulate the Inc performed in Accept
+	before := promtest.ToFloat64(metrics.ProxyActiveConnections)
+	_ = oc.Close()
+	_ = oc.Close()
+	_ = oc.Close()
+	after := promtest.ToFloat64(metrics.ProxyActiveConnections)
+	if before-after != 1 {
+		t.Errorf("Inc + triple Close changed gauge by %v; want net -1 (single Dec)", before-after)
 	}
 }
