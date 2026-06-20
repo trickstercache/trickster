@@ -19,6 +19,9 @@ package capture
 import (
 	"bytes"
 	"net/http"
+	"strconv"
+
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
 
 // DefaultMaxBytes is the per-writer cap applied by NewCaptureResponseWriterWithLimit
@@ -62,12 +65,26 @@ func (sw *CaptureResponseWriter) Header() http.Header {
 	return sw.header
 }
 
-// WriteHeader sets the status code
+// WriteHeader sets the status code and, when Content-Length is set and the
+// body has not yet been grown, presizes body to skip bytes.Buffer's
+// doubling-copies on large upstream responses. Bounded by maxBytes so a
+// misreported huge CL cannot blow the cap.
 func (sw *CaptureResponseWriter) WriteHeader(code int) {
 	if code == 0 {
 		code = http.StatusOK
 	}
 	sw.statusCode = code
+	if sw.body.Cap() != 0 {
+		return
+	}
+	n, err := strconv.Atoi(sw.header.Get(headers.NameContentLength))
+	if err != nil || n <= 0 {
+		return
+	}
+	if sw.maxBytes > 0 && n > sw.maxBytes {
+		n = sw.maxBytes
+	}
+	sw.body.Grow(n)
 }
 
 // Write appends data to the response body. Returns len(b) even after the cap
