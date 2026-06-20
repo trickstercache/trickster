@@ -70,14 +70,14 @@ type observedConnection struct {
 }
 
 func (o *observedConnection) Close() error {
-	err := o.Conn.Close()
+	if err := o.Conn.Close(); err != nil {
+		return err
+	}
 	// Only the first successful Close adjusts the gauge; a subsequent Close
 	// returns an error (net/http may close the same conn more than once).
-	if err == nil {
-		metrics.ProxyActiveConnections.Dec()
-		metrics.ProxyConnectionClosed.Inc()
-	}
-	return err
+	metrics.ProxyActiveConnections.Dec()
+	metrics.ProxyConnectionClosed.Inc()
+	return nil
 }
 
 // Accept implements Listener.Accept
