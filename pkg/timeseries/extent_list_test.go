@@ -1008,7 +1008,106 @@ func TestSplice(t *testing.T) {
 			step:     time.Second * 600,
 			maxRange: 100,
 		},
+		{
+			// Regression: pre-allocated buffer of len(el)*4 panicked when the
+			// range required more than 4 shards (e.g., 6h range with 1h
+			// maxRange produces 6 shards). Verifies dynamic append-based
+			// growth handles high shard counts without index-out-of-range.
+			name: "spliceByTime high shard count (6h/1h, regression)",
+			el: ExtentList{
+				Extent{Start: t0, End: time.Unix(21600, 0)},
+			},
+			expected: ExtentList{
+				Extent{Start: t0, End: time.Unix(3540, 0)},
+				Extent{Start: time.Unix(3600, 0), End: time.Unix(7140, 0)},
+				Extent{Start: time.Unix(7200, 0), End: time.Unix(10740, 0)},
+				Extent{Start: time.Unix(10800, 0), End: time.Unix(14340, 0)},
+				Extent{Start: time.Unix(14400, 0), End: time.Unix(17940, 0)},
+				Extent{Start: time.Unix(18000, 0), End: time.Unix(21540, 0)},
+				Extent{Start: time.Unix(21600, 0), End: time.Unix(21600, 0)},
+			},
+			step:     time.Second * 60,
+			maxRange: time.Hour,
+		},
 	}
+
+	// Stress test: 30-day range with 1h maxRange produces 720 shards.
+	// Real-world Grafana dashboards routinely span 7~30 days; without
+	// the dynamic capacity calculation, allocation panicked on shard 5.
+	t.Run("spliceByTime stress 30d/1h (720 shards)", func(t *testing.T) {
+		start := time.Unix(0, 0)
+		end := time.Unix(int64(30*24*time.Hour/time.Second), 0)
+		el := ExtentList{Extent{Start: start, End: end}}
+		out := el.Splice(time.Minute, time.Hour, 0, 0)
+		// 720 shards (one per hour) + 1 trailing shard for the boundary tick
+		expectedShards := 720
+		if len(out) < expectedShards || len(out) > expectedShards+2 {
+			t.Errorf("expected ~%d shards, got %d", expectedShards, len(out))
+		}
+	})
+
+	t.Run("spliceByTime stress 7d/1h (168 shards)", func(t *testing.T) {
+		start := time.Unix(0, 0)
+		end := time.Unix(int64(7*24*time.Hour/time.Second), 0)
+		el := ExtentList{Extent{Start: start, End: end}}
+		out := el.Splice(time.Minute, time.Hour, 0, 0)
+		expectedShards := 168
+		if len(out) < expectedShards || len(out) > expectedShards+2 {
+			t.Errorf("expected ~%d shards, got %d", expectedShards, len(out))
+		}
+	})
+
+	// 4 full shards is the last size that the pre-patch len(el)*4 hint
+	// happened to accommodate; the +1 boundary tick brings the total to 5.
+	t.Run("spliceByTime 4-shard boundary", func(t *testing.T) {
+		el := ExtentList{Extent{Start: time.Unix(0, 0), End: time.Unix(4*3600, 0)}}
+		out := el.Splice(time.Minute, time.Hour, 0, 0)
+		if len(out) != 5 {
+			t.Errorf("expected 5 shards, got %d", len(out))
+		}
+	})
+
+	// 5 full shards was the smallest input that overflowed the pre-patch
+	// fixed allocation; the +1 boundary tick brings the total to 6.
+	t.Run("spliceByTime 5-shard boundary (first pre-patch overflow)", func(t *testing.T) {
+		el := ExtentList{Extent{Start: time.Unix(0, 0), End: time.Unix(5*3600, 0)}}
+		out := el.Splice(time.Minute, time.Hour, 0, 0)
+		if len(out) != 6 {
+			t.Errorf("expected 6 shards, got %d", len(out))
+		}
+	})
+
+	// spliceByTimeAligned shares the same capacity path; cover its stress case.
+	t.Run("spliceByTimeAligned stress 30d/1h", func(t *testing.T) {
+		start := time.Unix(0, 0)
+		end := time.Unix(int64(30*24*time.Hour/time.Second), 0)
+		el := ExtentList{Extent{Start: start, End: end}}
+		out := el.Splice(time.Minute, time.Hour, time.Hour, 0)
+		expectedShards := 720
+		if len(out) < expectedShards || len(out) > expectedShards+3 {
+			t.Errorf("expected ~%d shards, got %d", expectedShards, len(out))
+		}
+	})
+
+	// spliceByPoints used the same len(el)*4 anti-pattern; lock the fix in.
+	t.Run("spliceByPoints high shard count (regression)", func(t *testing.T) {
+		el := ExtentList{Extent{Start: time.Unix(0, 0), End: time.Unix(50*60, 0)}}
+		out := el.Splice(time.Minute, 0, 0, 10)
+		if len(out) < 5 {
+			t.Errorf("expected at least 5 shards, got %d", len(out))
+		}
+	})
+
+	// Pathological input (e.g. nanosecond step over a 1s range) would otherwise
+	// drive a multi-GB make(); the helpers must clamp to maxShardCount and
+	// return a Clone instead of trying to splice.
+	t.Run("spliceByTime clamps pathological input", func(t *testing.T) {
+		el := ExtentList{Extent{Start: time.Unix(0, 0), End: time.Unix(1, 0)}}
+		out := el.Splice(time.Nanosecond, time.Nanosecond, 0, 0)
+		if len(out) != 1 {
+			t.Errorf("expected Clone (1 extent) when capacity exceeds limit, got %d", len(out))
+		}
+	})
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
