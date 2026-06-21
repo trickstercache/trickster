@@ -29,11 +29,13 @@ import (
 	"testing"
 	"time"
 
+	dto "github.com/prometheus/client_model/go"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/exporters/stdout"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
@@ -42,6 +44,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 	testutil "github.com/trickstercache/trickster/v2/pkg/testutil"
 	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
+	"golang.org/x/net/netutil"
 )
 
 func testListener() net.Listener {
@@ -347,10 +350,77 @@ func TestCloseObservedConnection(t *testing.T) {
 		t.Error("invalid connection type")
 	}
 	oconn := &observedConnection{
-		TCPConn: tconn,
+		Conn: tconn,
 	}
 	err = oconn.Close()
 	if err != nil {
 		t.Error(err)
+	}
+}
+
+func TestObservedConnectionIdempotentClose(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(testutil.BasicHTTPHandler))
+	defer s.Close()
+	address := s.URL[7:]
+	conn, err := net.Dial("tcp", address)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tconn, ok := conn.(*net.TCPConn)
+	if !ok {
+		t.Fatal("invalid connection type")
+	}
+	oconn := &observedConnection{
+		Conn: tconn,
+	}
+
+	metrics.ProxyActiveConnections.Set(10.0)
+
+	// First Close succeeds and decrements the gauge exactly once.
+	if err := oconn.Close(); err != nil {
+		t.Errorf("first Close: unexpected error: %v", err)
+	}
+
+	// Subsequent Closes return an error because the conn is already closed;
+	// that error is what prevents the gauge from being decremented again.
+	for i := 0; i < 5; i++ {
+		if err := oconn.Close(); err == nil {
+			t.Error("expected an error closing an already-closed connection")
+		}
+	}
+
+	var m dto.Metric
+	metrics.ProxyActiveConnections.Write(&m)
+	finalVal := m.GetGauge().GetValue()
+
+	if finalVal != 9.0 {
+		t.Errorf("expected ProxyActiveConnections metric to be 9.0 after idempotent close, got %f", finalVal)
+	}
+}
+
+func TestAcceptWrapsLimitListenerConn(t *testing.T) {
+	// With connections_limit set, the listener is wrapped by a
+	// netutil.LimitListener whose conns are not *net.TCPConn. Accept must
+	// still wrap them so Close decrements the active-connections gauge.
+	raw, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close()
+	l := &Listener{Listener: netutil.LimitListener(raw, 10)}
+
+	go func() {
+		if c, derr := net.Dial("tcp", raw.Addr().String()); derr == nil {
+			c.Close()
+		}
+	}()
+
+	conn, err := l.Accept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if _, ok := conn.(*observedConnection); !ok {
+		t.Errorf("Accept did not wrap LimitListener conn: got %T, want *observedConnection", conn)
 	}
 }
