@@ -11,7 +11,7 @@
 | Name | Contact | Company | Focus Areas |
 |---|---|---|---|
 |James Ranson ([@jranson](https://github.com/jranson)) | <james@ranson.org> | Virga | Core Functionality |
-|Chris Randles ([@crandles](https://github.com/crandles)) | <randles.chris@gmail.com> | WB Discovery | Core Functionality |
+|Chris Randles ([@crandles](https://github.com/crandles)) | <randles.chris@gmail.com> | Apple | Core Functionality |
 |Adam Ross ([@LimitlessEarth](https://github.com/LimitlessEarth)) | <adamross1126@gmail.com> | Amazon | Deployment & Artifacts (Makefile, Dockerfile, Helm Charts, etc) |
 
 You can contact the maintainers using the `@trickstercache/maintainers` handle in an Issue or PR, or via email at <cncf-trickster-maintainers@lists.cncf.io>.
