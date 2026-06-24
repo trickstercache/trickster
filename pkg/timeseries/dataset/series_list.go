@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"runtime"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 
@@ -219,7 +218,7 @@ func (sl SeriesList) SortPoints() {
 	eg.SetLimit(runtime.GOMAXPROCS(0))
 	for _, s := range sl {
 		eg.Go(func() error {
-			sort.Sort(s.Points)
+			slices.SortFunc(s.Points, pointCmp)
 			return nil
 		})
 	}

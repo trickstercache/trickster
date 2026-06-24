@@ -24,7 +24,6 @@ import (
 	"io"
 	"runtime"
 	"slices"
-	"sort"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -505,7 +504,7 @@ func (ds *DataSet) DefaultSizeCropper(sz int, t time.Time, lur timeseries.Extent
 	}
 	// Sort extents by LastUsed (ascending = least-recently-used first)
 	el := timeseries.ExtentListLRU(ds.ExtentList.Clone())
-	sort.Sort(el)
+	slices.SortFunc(el, timeseries.ExtentLRUCmp)
 	// Remove the least-recently-used extents until we're within budget,
 	// but never remove extents that overlap the current request (lur)
 	var remove timeseries.ExtentList

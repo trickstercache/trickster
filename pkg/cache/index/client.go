@@ -471,6 +471,10 @@ func (idx *IndexedClient) reap() {
 
 type objectsAtime []*Object
 
+func objectAtimeCmp(a, b *Object) int {
+	return a.LastAccess.Load().Compare(b.LastAccess.Load())
+}
+
 // Len returns the number of elements in the subject slice
 func (o objectsAtime) Len() int {
 	return len(o)

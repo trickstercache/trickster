@@ -18,7 +18,6 @@ package dataset
 
 import (
 	"slices"
-	"sort"
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
@@ -404,10 +403,10 @@ func TestSortPoints(t *testing.T) {
 	sl := SeriesList{s1, s2}
 	sl.SortPoints()
 
-	if !sort.IsSorted(sl[0].Points) {
+	if !slices.IsSortedFunc(sl[0].Points, pointCmp) {
 		t.Error("series 0 points not sorted")
 	}
-	if !sort.IsSorted(sl[1].Points) {
+	if !slices.IsSortedFunc(sl[1].Points, pointCmp) {
 		t.Error("series 1 points not sorted")
 	}
 }

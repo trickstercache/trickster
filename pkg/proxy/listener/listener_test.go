@@ -383,7 +383,7 @@ func TestObservedConnectionIdempotentClose(t *testing.T) {
 
 	// Subsequent Closes return an error because the conn is already closed;
 	// that error is what prevents the gauge from being decremented again.
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		if err := oconn.Close(); err == nil {
 			t.Error("expected an error closing an already-closed connection")
 		}

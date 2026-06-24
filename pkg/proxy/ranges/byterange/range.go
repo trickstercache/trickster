@@ -19,8 +19,9 @@
 package byterange
 
 import (
+	"cmp"
 	"errors"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -106,8 +107,8 @@ func (rs Ranges) CalculateDeltas(needs Ranges, fullContentLength int64) Ranges {
 		}
 		needs[i].End = fullContentLength - 1
 	}
-	sort.Sort(rs)
-	sort.Sort(needs)
+	slices.SortFunc(rs, rangeCmp)
+	slices.SortFunc(needs, rangeCmp)
 	out := Ranges(segments.Diff(rs, needs, int64(1), segments.Int64{}))
 	return out.Compress()
 }
@@ -123,7 +124,7 @@ func (rs Ranges) Clone() Ranges {
 // where all values within rs are set and all others are zero.
 // Use offset if b is part of a whole.
 func (rs Ranges) FilterByteSlice(b []byte) []byte {
-	sort.Sort(rs)
+	slices.SortFunc(rs, rangeCmp)
 	out := make([]byte, rs[len(rs)-1].End)
 	for _, r := range rs {
 		content, _ := r.CropByteSlice(b)
@@ -212,7 +213,7 @@ func ParseRangeHeader(input string) Ranges {
 		ranges[i].End = end
 	}
 
-	sort.Sort(ranges)
+	slices.SortFunc(ranges, rangeCmp)
 	return ranges
 }
 
@@ -231,6 +232,10 @@ func (rs Ranges) Equal(rs2 Ranges) bool {
 		}
 	}
 	return true
+}
+
+func rangeCmp(a, b Range) int {
+	return cmp.Compare(a.Start, b.Start)
 }
 
 // sort.Interface required functions for Ranges
@@ -283,7 +288,7 @@ func (rs Ranges) Compress() Ranges {
 		return Ranges{}
 	}
 	rs2 := rs.Clone()
-	sort.Sort(rs2)
+	slices.SortFunc(rs2, rangeCmp)
 	current := rs2[0]
 	if rs2[0].Start < 0 || rs2[0].End < 0 {
 		// don't compress Ranges that include suffix byte values

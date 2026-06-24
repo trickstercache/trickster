@@ -24,7 +24,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -304,7 +304,7 @@ func updateStatusText(now func() time.Time, hc healthcheck.HealthChecker, hd *he
 		if len(names) == 0 {
 			return nil
 		}
-		sort.Strings(names)
+		slices.Sort(names)
 		result := make([]backendStatus, len(names))
 		for i, k := range names {
 			d := cleanupDescription(st[k].Description())
@@ -319,7 +319,7 @@ func updateStatusText(now func() time.Time, hc healthcheck.HealthChecker, hd *he
 	status.Available = populateBasicBackendStatus(a)
 
 	if len(u) > 0 {
-		sort.Strings(u)
+		slices.Sort(u)
 		status.Unavailable = make([]backendStatus, len(u))
 		for i, k := range u {
 			v := st[k]
@@ -361,7 +361,7 @@ func updateStatusText(now func() time.Time, hc healthcheck.HealthChecker, hd *he
 			}
 		}
 		if len(uncheckedBackendNames) > 0 {
-			sort.Strings(uncheckedBackendNames)
+			slices.Sort(uncheckedBackendNames)
 			uncheckedBackends := make([]backendStatus, len(uncheckedBackendNames))
 			for i, name := range uncheckedBackendNames {
 				backend := backends[name]
@@ -385,7 +385,7 @@ func updateStatusText(now func() time.Time, hc healthcheck.HealthChecker, hd *he
 				albNames = append(albNames, name)
 			}
 		}
-		sort.Strings(albNames)
+		slices.Sort(albNames)
 
 		for _, albName := range albNames {
 			albBackend := backends[albName]
@@ -444,10 +444,10 @@ func updateStatusText(now func() time.Time, hc healthcheck.HealthChecker, hd *he
 					initializingMembers = append(initializingMembers, poolMemberName)
 				}
 			}
-			sort.Strings(availableMembers)
-			sort.Strings(unavailableMembers)
-			sort.Strings(uncheckedMembers)
-			sort.Strings(initializingMembers)
+			slices.Sort(availableMembers)
+			slices.Sort(unavailableMembers)
+			slices.Sort(uncheckedMembers)
+			slices.Sort(initializingMembers)
 
 			albStatus := backendStatus{
 				Name:                    albName,

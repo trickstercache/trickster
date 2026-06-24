@@ -307,9 +307,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 					return buildErrorResult(doc.StatusCode, doc.SafeHeaderClone(), doc.Body), nil
 				}
 			} else {
-				if doc == nil {
-					err = tpe.ErrEmptyDocumentBody
-				} else if doc.timeseries == nil {
+				if doc == nil || doc.timeseries == nil {
 					err = tpe.ErrEmptyDocumentBody
 				}
 				if err != nil {

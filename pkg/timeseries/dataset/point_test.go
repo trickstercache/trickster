@@ -17,7 +17,7 @@
 package dataset
 
 import (
-	"sort"
+	"slices"
 	"strconv"
 	"testing"
 	"time"
@@ -206,7 +206,7 @@ func BenchmarkPointsSize(b *testing.B) {
 func TestPointsSort(t *testing.T) {
 	pts := testPoints()
 	pts[0].Epoch = 100 * timeseries.Second
-	sort.Sort(pts)
+	slices.SortFunc(pts, pointCmp)
 	p := pts[0]
 	if p.Epoch != 10*timeseries.Second {
 		t.Error("sort mismatch")

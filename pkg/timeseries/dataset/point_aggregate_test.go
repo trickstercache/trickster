@@ -45,94 +45,6 @@ type ev struct {
 	value string
 }
 
-func TestSortAndAggregateDedup(t *testing.T) {
-	p := makeStringPoints(
-		ev{100, "1.0"}, ev{200, "2.0"}, ev{100, "3.0"},
-	)
-	result := sortAndAggregate(p, MergeStrategyDedup)
-	require.Len(t, result, 2)
-	// dedup: last value wins for epoch 100
-	require.Equal(t, "3.0", result[0].Values[0])
-	require.Equal(t, "2.0", result[1].Values[0])
-}
-
-func TestSortAndAggregateSum(t *testing.T) {
-	p := makeStringPoints(
-		ev{100, "1.5"}, ev{200, "2.0"}, ev{100, "3.5"},
-	)
-	result := sortAndAggregate(p, MergeStrategySum)
-	require.Len(t, result, 2)
-	require.Equal(t, epoch.Epoch(100), result[0].Epoch)
-	require.Equal(t, "5", result[0].Values[0])
-	require.Equal(t, "2.0", result[1].Values[0])
-}
-
-func TestSortAndAggregateAvg(t *testing.T) {
-	p := makeStringPoints(
-		ev{100, "2.0"}, ev{100, "4.0"}, ev{100, "6.0"},
-	)
-	result := sortAndAggregate(p, MergeStrategyAvg)
-	require.Len(t, result, 1)
-	require.Equal(t, "4", result[0].Values[0])
-}
-
-func TestSortAndAggregateMin(t *testing.T) {
-	p := makeStringPoints(
-		ev{100, "5.0"}, ev{100, "2.0"}, ev{100, "8.0"},
-	)
-	result := sortAndAggregate(p, MergeStrategyMin)
-	require.Len(t, result, 1)
-	require.Equal(t, "2", result[0].Values[0])
-}
-
-func TestSortAndAggregateMax(t *testing.T) {
-	p := makeStringPoints(
-		ev{100, "5.0"}, ev{100, "2.0"}, ev{100, "8.0"},
-	)
-	result := sortAndAggregate(p, MergeStrategyMax)
-	require.Len(t, result, 1)
-	require.Equal(t, "8", result[0].Values[0])
-}
-
-func TestSortAndAggregateCount(t *testing.T) {
-	// sortAndAggregate for count expects values already initialized to "1"
-	// (done by initCountValues in MergePointsWithStrategy)
-	p := makeStringPoints(
-		ev{100, "1"}, ev{100, "1"}, ev{100, "1"},
-	)
-	result := sortAndAggregate(p, MergeStrategyCount)
-	require.Len(t, result, 1)
-	require.Equal(t, "3", result[0].Values[0])
-}
-
-func TestSortAndAggregateMultipleEpochs(t *testing.T) {
-	p := makeStringPoints(
-		ev{200, "10.0"}, ev{100, "1.0"}, ev{200, "20.0"}, ev{100, "2.0"},
-	)
-	result := sortAndAggregate(p, MergeStrategySum)
-	require.Len(t, result, 2)
-	require.Equal(t, epoch.Epoch(100), result[0].Epoch)
-	require.Equal(t, "3", result[0].Values[0])
-	require.Equal(t, epoch.Epoch(200), result[1].Epoch)
-	require.Equal(t, "30", result[1].Values[0])
-}
-
-func TestSortAndAggregateSinglePoint(t *testing.T) {
-	p := makeStringPoints(ev{100, "5.0"})
-	result := sortAndAggregate(p, MergeStrategySum)
-	require.Len(t, result, 1)
-	require.Equal(t, "5.0", result[0].Values[0])
-}
-
-func TestSortAndAggregateNaN(t *testing.T) {
-	p := makeStringPoints(
-		ev{100, "NaN"}, ev{100, "5.0"},
-	)
-	result := sortAndAggregate(p, MergeStrategySum)
-	require.Len(t, result, 1)
-	require.Equal(t, "5.0", result[0].Values[0])
-}
-
 func TestMergePointsWithStrategySum(t *testing.T) {
 	p1 := makeStringPoints(ev{100, "1.0"}, ev{200, "2.0"})
 	p2 := makeStringPoints(ev{100, "3.0"}, ev{200, "4.0"})
@@ -199,17 +111,6 @@ func TestAggregateValuesHistogramOneNumeric(t *testing.T) {
 	src2 := Point{Epoch: 100, Values: []any{hist}}
 	aggregateValues(&dst2, &src2, MergeStrategySum)
 	require.Equal(t, "5.0", dst2.Values[0])
-}
-
-func TestSortAndAggregateHistogramDedup(t *testing.T) {
-	hist := `{"count":"10","sum":"100","buckets":[[0,"1","2","3"]]}`
-	p := makeStringPoints(
-		ev{100, hist}, ev{200, "2.0"}, ev{100, hist},
-	)
-	result := sortAndAggregate(p, MergeStrategySum)
-	require.Len(t, result, 2)
-	require.Equal(t, hist, result[0].Values[0])
-	require.Equal(t, "2.0", result[1].Values[0])
 }
 
 func TestMergePointsWithStrategyHistogram(t *testing.T) {

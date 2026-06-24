@@ -18,7 +18,7 @@ package tsm
 
 import (
 	"net/http"
-	"sort"
+	"slices"
 	"sync"
 	"testing"
 
@@ -47,7 +47,7 @@ func TestComputeStripKeysUnion(t *testing.T) {
 		mkStripKeysTarget(nil),
 	}
 	got := append([]string(nil), h.computeStripKeys(targets)...)
-	sort.Strings(got)
+	slices.Sort(got)
 	want := []string{"cluster", "region", "zone"}
 	if len(got) != len(want) {
 		t.Fatalf("len: got %d want %d (%v)", len(got), len(want), got)
@@ -86,7 +86,7 @@ func TestComputeStripKeysInvalidatesOnSetPool(t *testing.T) {
 	h.SetPool(p2)
 	defer p2.Stop()
 	v2 := h.computeStripKeys(p2.Targets())
-	sort.Strings(v2)
+	slices.Sort(v2)
 	if len(v2) != 2 || v2[0] != "cluster" || v2[1] != "zone" {
 		t.Fatalf("v2 unexpected after SetPool: %v", v2)
 	}
@@ -177,7 +177,7 @@ func TestComputeStripKeysUnpairedHealthyFlap(t *testing.T) {
 	}
 
 	v2 := append([]string(nil), h.computeStripKeys(live)...)
-	sort.Strings(v2)
+	slices.Sort(v2)
 	if len(v2) != 2 || v2[0] != "region" || v2[1] != "zone" {
 		t.Fatalf("v2 missing labels from late-healthy target: %v", v2)
 	}

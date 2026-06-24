@@ -30,7 +30,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -262,7 +262,7 @@ func Key(name string, labels map[string]string) string {
 	for k := range labels {
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 	var b strings.Builder
 	b.Grow(len(name) + 2 + len(labels)*16)
 	b.WriteString(name)
