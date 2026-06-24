@@ -24,6 +24,7 @@ import (
 	"net/url"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/require"
@@ -57,43 +58,38 @@ func (p *panicOnceTransport) RoundTrip(req *http.Request) (*http.Response, error
 // at StatusInitializing forever.
 func TestProbeLoopSurvivesPanic(t *testing.T) {
 	logger.SetLogger(testLogger)
+	synctest.Test(t, func(t *testing.T) {
+		tr := &panicOnceTransport{}
+		client := &http.Client{Transport: tr}
 
-	tr := &panicOnceTransport{}
-	client := &http.Client{Transport: tr}
+		u, err := url.Parse("http://probe-panic.invalid/")
+		require.NoError(t, err)
 
-	u, err := url.Parse("http://probe-panic.invalid/")
-	require.NoError(t, err)
+		const interval = 50 * time.Millisecond
+		tgt, err := newTarget(context.Background(), "panic-target", "panic-target", &ho.Options{
+			Verb:              "GET",
+			Scheme:            u.Scheme,
+			Host:              u.Host,
+			Path:              "/",
+			Interval:          interval,
+			ExpectedCodes:     []int{200},
+			FailureThreshold:  1,
+			RecoveryThreshold: 1,
+		}, client)
+		require.NoError(t, err)
 
-	const interval = 50 * time.Millisecond
-	tgt, err := newTarget(context.Background(), "panic-target", "panic-target", &ho.Options{
-		Verb:              "GET",
-		Scheme:            u.Scheme,
-		Host:              u.Host,
-		Path:              "/",
-		Interval:          interval,
-		ExpectedCodes:     []int{200},
-		FailureThreshold:  1,
-		RecoveryThreshold: 1,
-	}, client)
-	require.NoError(t, err)
+		tgt.Start(t.Context())
+		defer tgt.Stop()
 
-	ctx := t.Context()
-	tgt.Start(ctx)
-	defer tgt.Stop()
+		// Advance past the startup jitter and the first ticker fire. The first
+		// probe panics; the second one must still run and mark the target Passing.
+		time.Sleep(time.Second + interval)
+		synctest.Wait()
 
-	// Wait long enough for: jitter (up to ~1s) + first probe (panics) +
-	// several ticker fires (each returns 200, drives status -> Passing).
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		if tr.calls.Load() >= 3 && tgt.status.Get() == StatusPassing {
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-
-	require.GreaterOrEqual(t, tr.calls.Load(), int32(2),
-		"probe loop did not survive panic: only %d RoundTrip calls observed", tr.calls.Load())
-	require.Equal(t, StatusPassing, tgt.status.Get(),
-		"status did not transition to Passing after panic recovery (calls=%d, status=%d)",
-		tr.calls.Load(), tgt.status.Get())
+		require.GreaterOrEqual(t, tr.calls.Load(), int32(2),
+			"probe loop did not survive panic: only %d RoundTrip calls observed", tr.calls.Load())
+		require.Equal(t, StatusPassing, tgt.status.Get(),
+			"status did not transition to Passing after panic recovery (calls=%d, status=%d)",
+			tr.calls.Load(), tgt.status.Get())
+	})
 }
