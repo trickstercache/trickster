@@ -22,10 +22,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strconv"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/require"
@@ -33,6 +33,21 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+func okProbeResponse(req *http.Request) *http.Response {
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader("OK")),
+		Header:     http.Header{},
+		Request:    req,
+	}
+}
 
 func TestNewTarget(t *testing.T) {
 	_, err := newTarget(context.Background(), "", "", nil, nil)
@@ -249,30 +264,34 @@ func TestProbe(t *testing.T) {
 	})
 
 	t.Run("probe loop", func(t *testing.T) {
-		const intervalMS = 5
-		const windowMS = 1500
+		synctest.Test(t, func(t *testing.T) {
+			const intervalMS = 5
 
-		u, err := url.Parse(ts.URL)
-		require.NoError(t, err)
-		target, err := newTarget(context.Background(), "testprobe", "testprobe", &ho.Options{
-			Verb:          "GET",
-			Scheme:        u.Scheme,
-			Host:          u.Host,
-			Path:          "/",
-			Interval:      intervalMS * time.Millisecond,
-			ExpectedCodes: []int{200},
-		}, ts.Client())
-		require.NoError(t, err)
-		// start probe loop
-		ctx := t.Context()
-		target.Start(ctx)
-		time.Sleep((intervalMS + windowMS) * time.Millisecond)
-		// verify results
-		success := target.successConsecutiveCnt.Load()
-		fail := target.failConsecutiveCnt.Load()
-		require.Equal(t, int32(0), fail)
-		require.GreaterOrEqual(t, success, int32(90))
-		target.Stop()
+			client := &http.Client{
+				Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					return okProbeResponse(req), nil
+				}),
+			}
+			target, err := newTarget(context.Background(), "testprobe", "testprobe", &ho.Options{
+				Verb:          "GET",
+				Scheme:        "http",
+				Host:          "probe-loop.invalid",
+				Path:          "/",
+				Interval:      intervalMS * time.Millisecond,
+				ExpectedCodes: []int{200},
+			}, client)
+			require.NoError(t, err)
+			target.Start(t.Context())
+			defer target.Stop()
+
+			time.Sleep(time.Second + 100*intervalMS*time.Millisecond)
+			synctest.Wait()
+
+			success := target.successConsecutiveCnt.Load()
+			fail := target.failConsecutiveCnt.Load()
+			require.Equal(t, int32(0), fail)
+			require.GreaterOrEqual(t, success, int32(90))
+		})
 	})
 }
 

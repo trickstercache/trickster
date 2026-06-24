@@ -17,13 +17,13 @@
 package healthcheck
 
 import (
-	"net"
+	"io"
 	"net/http"
-	"net/http/httptest"
-	"net/url"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/require"
@@ -42,123 +42,111 @@ import (
 // in-handler lifetimes overlap.
 func TestHealthcheckReregisterNoOverlap(t *testing.T) {
 	logger.SetLogger(testLogger)
+	synctest.Test(t, func(t *testing.T) {
+		// handlerDelay must exceed the max randomJitter (1s) used by probeLoop so
+		// the in-flight pre-reregister probe is still occupying the upstream when
+		// an asynchronously-stopped old loop and a new loop could overlap.
+		const interval = 50 * time.Millisecond
+		const handlerDelay = 1500 * time.Millisecond
 
-	// handlerDelay must exceed the max randomJitter (1s) used by probeLoop so
-	// the in-flight pre-reregister probe is still occupying the upstream when
-	// the new loop's first probe fires.
-	const interval = 50 * time.Millisecond
-	const handlerDelay = 1500 * time.Millisecond
-
-	type probe struct {
-		start, end time.Time
-	}
-	var (
-		mu     sync.Mutex
-		probes []probe
-	)
-	first := make(chan struct{}, 1)
-
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		start := time.Now()
-		mu.Lock()
-		idx := len(probes)
-		probes = append(probes, probe{start: start})
-		mu.Unlock()
-		if idx == 0 {
-			select {
-			case first <- struct{}{}:
-			default:
-			}
+		type probe struct {
+			start, end time.Time
 		}
-		// Ignore cancellation so the upstream sees the full overlap window.
-		time.Sleep(handlerDelay)
-		end := time.Now()
-		mu.Lock()
-		probes[idx].end = end
-		mu.Unlock()
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer ts.Close()
-	u, err := url.Parse(ts.URL)
-	require.NoError(t, err)
+		var (
+			mu     sync.Mutex
+			probes []probe
+		)
+		first := make(chan struct{}, 1)
 
-	hc := New()
-	defer hc.Shutdown()
-
-	mkOpts := func() *ho.Options {
-		return &ho.Options{
-			Verb:          "GET",
-			Scheme:        u.Scheme,
-			Host:          u.Host,
-			Path:          "/",
-			Interval:      interval,
-			ExpectedCodes: []int{http.StatusOK},
-		}
-	}
-
-	// Default healthcheck client caps MaxConnsPerHost at 1, which serializes
-	// requests on the wire and hides any concurrency. Use an unbounded one.
-	mkClient := func() *http.Client {
-		return &http.Client{
-			Timeout: 5 * time.Second,
-			Transport: &http.Transport{
-				DialContext:         (&net.Dialer{Timeout: time.Second}).DialContext,
-				MaxConnsPerHost:     0,
-				MaxIdleConnsPerHost: 0,
-				DisableKeepAlives:   true,
-			},
-		}
-	}
-
-	_, err = hc.Register("x", "x", mkOpts(), mkClient())
-	require.NoError(t, err)
-
-	select {
-	case <-first:
-	case <-time.After(2 * time.Second):
-		t.Fatal("first probe never arrived")
-	}
-
-	mu.Lock()
-	boundary := time.Now()
-	mu.Unlock()
-
-	_, err = hc.Register("x", "x", mkOpts(), mkClient())
-	require.NoError(t, err)
-	// Allow new loop's jitter (10ms-1s) plus one handlerDelay window to land.
-	time.Sleep(handlerDelay + 1500*time.Millisecond)
-
-	mu.Lock()
-	snapshot := make([]probe, 0, len(probes))
-	for _, p := range probes {
-		if !p.end.IsZero() {
-			snapshot = append(snapshot, p)
-		}
-	}
-	mu.Unlock()
-	sort.Slice(snapshot, func(i, j int) bool { return snapshot[i].start.Before(snapshot[j].start) })
-
-	// Include in-flight probes whose lifetimes touched the post-reregister
-	// window so a leaked old loop's probe and the new loop's first probe
-	// would both appear here.
-	post := make([]probe, 0, len(snapshot))
-	for _, p := range snapshot {
-		if p.end.After(boundary) {
-			post = append(post, p)
-		}
-	}
-
-	for i := 0; i < len(post); i++ {
-		for j := i + 1; j < len(post); j++ {
-			if post[j].start.Before(post[i].end) {
-				offsets := make([][2]time.Duration, len(post))
-				for k, p := range post {
-					offsets[k] = [2]time.Duration{p.start.Sub(boundary), p.end.Sub(boundary)}
+		client := &http.Client{
+			Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				start := time.Now()
+				mu.Lock()
+				idx := len(probes)
+				probes = append(probes, probe{start: start})
+				mu.Unlock()
+				if idx == 0 {
+					select {
+					case first <- struct{}{}:
+					default:
+					}
 				}
-				t.Fatalf("overlapping probes: probe[%d] (%v..%v) overlaps probe[%d] (%v..%v); all probes: %v",
-					i, post[i].start.Sub(boundary), post[i].end.Sub(boundary),
-					j, post[j].start.Sub(boundary), post[j].end.Sub(boundary), offsets)
+
+				// Ignore cancellation so the upstream sees the full overlap window.
+				time.Sleep(handlerDelay)
+				end := time.Now()
+				mu.Lock()
+				probes[idx].end = end
+				mu.Unlock()
+
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader("OK")),
+					Header:     http.Header{},
+					Request:    req,
+				}, nil
+			}),
+		}
+
+		hc := New()
+		defer hc.Shutdown()
+
+		mkOpts := func() *ho.Options {
+			return &ho.Options{
+				Verb:          "GET",
+				Scheme:        "http",
+				Host:          "healthcheck-reregister.invalid",
+				Path:          "/",
+				Interval:      interval,
+				ExpectedCodes: []int{http.StatusOK},
 			}
 		}
-	}
+
+		_, err := hc.Register("x", "x", mkOpts(), client)
+		require.NoError(t, err)
+
+		<-first
+
+		boundary := time.Now()
+
+		_, err = hc.Register("x", "x", mkOpts(), client)
+		require.NoError(t, err)
+		// Allow new loop's jitter (10ms-1s) plus one handlerDelay window to land.
+		time.Sleep(handlerDelay + time.Second + interval)
+		synctest.Wait()
+
+		mu.Lock()
+		snapshot := make([]probe, 0, len(probes))
+		for _, p := range probes {
+			if !p.end.IsZero() {
+				snapshot = append(snapshot, p)
+			}
+		}
+		mu.Unlock()
+		sort.Slice(snapshot, func(i, j int) bool { return snapshot[i].start.Before(snapshot[j].start) })
+
+		// Include in-flight probes whose lifetimes touched the post-reregister
+		// window so a leaked old loop's probe and the new loop's first probe
+		// would both appear here.
+		post := make([]probe, 0, len(snapshot))
+		for _, p := range snapshot {
+			if p.end.After(boundary) {
+				post = append(post, p)
+			}
+		}
+
+		for i := 0; i < len(post); i++ {
+			for j := i + 1; j < len(post); j++ {
+				if post[j].start.Before(post[i].end) {
+					offsets := make([][2]time.Duration, len(post))
+					for k, p := range post {
+						offsets[k] = [2]time.Duration{p.start.Sub(boundary), p.end.Sub(boundary)}
+					}
+					t.Fatalf("overlapping probes: probe[%d] (%v..%v) overlaps probe[%d] (%v..%v); all probes: %v",
+						i, post[i].start.Sub(boundary), post[i].end.Sub(boundary),
+						j, post[j].start.Sub(boundary), post[j].end.Sub(boundary), offsets)
+				}
+			}
+		}
+	})
 }

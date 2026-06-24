@@ -22,6 +22,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
@@ -73,175 +74,151 @@ func TestRepro_H1_DeadRefreshWorker(t *testing.T) {
 // H1b: same as H1 but with a real pool. Mark target 0 Failing, then flip
 // target 1 to saturate the refresh path. Assert target 0 stays excluded.
 func TestRepro_H1b_RealPoolFlapStorm(t *testing.T) {
-	const n = 3
-	targets := make(Targets, n)
-	statuses := make([]*healthcheck.Status, n)
-	for i := range n {
-		st := &healthcheck.Status{}
-		st.Set(healthcheck.StatusPassing)
-		statuses[i] = st
-		targets[i] = NewTarget(http.NotFoundHandler(), st, nil)
-	}
-	p := New(targets, 1)
-	defer p.Stop()
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if len(p.Targets()) == n {
-			break
+	synctest.Test(t, func(t *testing.T) {
+		const n = 3
+		targets := make(Targets, n)
+		statuses := make([]*healthcheck.Status, n)
+		for i := range n {
+			st := &healthcheck.Status{}
+			st.Set(healthcheck.StatusPassing)
+			statuses[i] = st
+			targets[i] = NewTarget(http.NotFoundHandler(), st, nil)
 		}
-		time.Sleep(2 * time.Millisecond)
-	}
-	if len(p.Targets()) != n {
-		t.Fatalf("setup: expected %d healthy, got %d", n, len(p.Targets()))
-	}
-
-	statuses[0].Set(healthcheck.StatusFailing)
-	var wg sync.WaitGroup
-	wg.Go(func() {
-		for range 200 {
-			statuses[1].Set(healthcheck.StatusFailing)
-			statuses[1].Set(healthcheck.StatusPassing)
+		p := New(targets, 1)
+		defer p.Stop()
+		synctest.Wait()
+		if len(p.Targets()) != n {
+			t.Fatalf("setup: expected %d healthy, got %d", n, len(p.Targets()))
 		}
-	})
-	wg.Wait()
 
-	deadline = time.Now().Add(1 * time.Second)
-	for time.Now().Before(deadline) {
+		statuses[0].Set(healthcheck.StatusFailing)
+		var wg sync.WaitGroup
+		wg.Go(func() {
+			for range 200 {
+				statuses[1].Set(healthcheck.StatusFailing)
+				statuses[1].Set(healthcheck.StatusPassing)
+			}
+		})
+		wg.Wait()
+		synctest.Wait()
+
 		ts := p.Targets()
 		ok := !slices.Contains(ts, targets[0])
 		if ok && len(ts) == n-1 {
 			return
 		}
-		time.Sleep(time.Millisecond)
-	}
-	t.Fatalf("REPRO: Failing target still present 1s after flap storm")
+		t.Fatalf("REPRO: Failing target still present after flap storm")
+	})
 }
 
 // H2: saturate statusCh while refreshPending is being toggled, then flip
 // target 0 Failing and assert it propagates.
 func TestRepro_H2_ChannelDrop(t *testing.T) {
-	const n = 10
-	targets := make(Targets, n)
-	statuses := make([]*healthcheck.Status, n)
-	for i := range n {
-		st := &healthcheck.Status{}
-		st.Set(healthcheck.StatusPassing)
-		statuses[i] = st
-		targets[i] = NewTarget(http.NotFoundHandler(), st, nil)
-	}
-	p := New(targets, 1)
-	defer p.Stop()
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if len(p.Targets()) == n {
-			break
+	synctest.Test(t, func(t *testing.T) {
+		const n = 10
+		targets := make(Targets, n)
+		statuses := make([]*healthcheck.Status, n)
+		for i := range n {
+			st := &healthcheck.Status{}
+			st.Set(healthcheck.StatusPassing)
+			statuses[i] = st
+			targets[i] = NewTarget(http.NotFoundHandler(), st, nil)
 		}
-		time.Sleep(2 * time.Millisecond)
-	}
-	if len(p.Targets()) != n {
-		t.Fatalf("setup: %d", len(p.Targets()))
-	}
+		p := New(targets, 1)
+		defer p.Stop()
+		synctest.Wait()
+		if len(p.Targets()) != n {
+			t.Fatalf("setup: %d", len(p.Targets()))
+		}
 
-	var wg sync.WaitGroup
-	for i := range n {
-		wg.Add(1)
-		go func(idx int) {
-			defer wg.Done()
-			for range 50 {
-				statuses[idx].Set(healthcheck.StatusFailing)
-				statuses[idx].Set(healthcheck.StatusPassing)
-			}
-		}(i)
-	}
-	wg.Wait()
+		var wg sync.WaitGroup
+		for i := range n {
+			wg.Add(1)
+			go func(idx int) {
+				defer wg.Done()
+				for range 50 {
+					statuses[idx].Set(healthcheck.StatusFailing)
+					statuses[idx].Set(healthcheck.StatusPassing)
+				}
+			}(i)
+		}
+		wg.Wait()
 
-	statuses[0].Set(healthcheck.StatusFailing)
-	deadline = time.Now().Add(1 * time.Second)
-	for time.Now().Before(deadline) {
+		statuses[0].Set(healthcheck.StatusFailing)
+		synctest.Wait()
 		ts := p.Targets()
 		hasFailing := slices.Contains(ts, targets[0])
 		if !hasFailing && len(ts) == n-1 {
 			return
 		}
-		time.Sleep(time.Millisecond)
-	}
-	t.Fatalf("REPRO: channel-drop left Failing target in pool")
+		t.Fatalf("REPRO: channel-drop left Failing target in pool")
+	})
 }
 
 // H4: 50 targets, persistent failing subset + churn. Assert no Failing
 // target ever appears in Targets() output for 1 second.
 func TestRepro_H4_ScaleRace(t *testing.T) {
-	const n = 50
-	targets := make(Targets, n)
-	statuses := make([]*healthcheck.Status, n)
-	for i := range n {
-		st := &healthcheck.Status{}
-		st.Set(healthcheck.StatusPassing)
-		statuses[i] = st
-		targets[i] = NewTarget(http.NotFoundHandler(), st, nil)
-	}
-	p := New(targets, 1)
-	defer p.Stop()
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if len(p.Targets()) == n {
-			break
+	synctest.Test(t, func(t *testing.T) {
+		const n = 50
+		targets := make(Targets, n)
+		statuses := make([]*healthcheck.Status, n)
+		for i := range n {
+			st := &healthcheck.Status{}
+			st.Set(healthcheck.StatusPassing)
+			statuses[i] = st
+			targets[i] = NewTarget(http.NotFoundHandler(), st, nil)
 		}
-		time.Sleep(2 * time.Millisecond)
-	}
-	if len(p.Targets()) != n {
-		t.Fatalf("setup: %d", len(p.Targets()))
-	}
-
-	stop := make(chan struct{})
-	failingMask := make([]atomic.Bool, n)
-
-	var wg sync.WaitGroup
-	wg.Go(func() {
-		for i := 0; i < n; i += 3 {
-			statuses[i].Set(healthcheck.StatusFailing)
-			failingMask[i].Store(true)
+		p := New(targets, 1)
+		defer p.Stop()
+		synctest.Wait()
+		if len(p.Targets()) != n {
+			t.Fatalf("setup: %d", len(p.Targets()))
 		}
-		ticker := time.NewTicker(2 * time.Millisecond)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-stop:
-				return
-			case <-ticker.C:
-				for i := 1; i < n; i += 5 {
-					if failingMask[i].Load() {
-						continue
+
+		stop := make(chan struct{})
+		failingMask := make([]atomic.Bool, n)
+
+		var wg sync.WaitGroup
+		wg.Go(func() {
+			for i := 0; i < n; i += 3 {
+				statuses[i].Set(healthcheck.StatusFailing)
+				failingMask[i].Store(true)
+			}
+			ticker := time.NewTicker(2 * time.Millisecond)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-stop:
+					return
+				case <-ticker.C:
+					for i := 1; i < n; i += 5 {
+						if failingMask[i].Load() {
+							continue
+						}
+						statuses[i].Set(healthcheck.StatusPassing)
 					}
-					statuses[i].Set(healthcheck.StatusPassing)
+				}
+			}
+		})
+
+		time.Sleep(50 * time.Millisecond)
+		synctest.Wait()
+
+		var iterations atomic.Int64
+		for range 1000 {
+			time.Sleep(time.Millisecond)
+			ts := p.Targets()
+			iterations.Add(1)
+			for _, tt := range ts {
+				if tt.hcStatus.Get() == healthcheck.StatusFailing {
+					close(stop)
+					wg.Wait()
+					t.Fatalf("REPRO: Targets() returned Failing target after %d iters", iterations.Load())
 				}
 			}
 		}
+		close(stop)
+		wg.Wait()
+		t.Logf("H4: completed %d Targets() calls without seeing a Failing target", iterations.Load())
 	})
-
-	time.Sleep(50 * time.Millisecond)
-
-	var iterations atomic.Int64
-	asserter := time.NewTimer(1 * time.Second)
-	defer asserter.Stop()
-loop:
-	for {
-		select {
-		case <-asserter.C:
-			break loop
-		default:
-		}
-		ts := p.Targets()
-		iterations.Add(1)
-		for _, tt := range ts {
-			if tt.hcStatus.Get() == healthcheck.StatusFailing {
-				close(stop)
-				wg.Wait()
-				t.Fatalf("REPRO: Targets() returned Failing target after %d iters", iterations.Load())
-			}
-		}
-	}
-	close(stop)
-	wg.Wait()
-	t.Logf("H4: completed %d Targets() calls without seeing a Failing target", iterations.Load())
 }
