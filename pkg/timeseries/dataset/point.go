@@ -107,6 +107,16 @@ func (p Points) CloneRange(start, end int) Points {
 	return clone
 }
 
+func pointCmp(a, b Point) int {
+	if a.Epoch < b.Epoch {
+		return -1
+	}
+	if a.Epoch > b.Epoch {
+		return 1
+	}
+	return 0
+}
+
 // Len returns the length of a slice of time series data points
 func (p Points) Len() int {
 	return len(p)
@@ -146,14 +156,6 @@ func (p Points) findRange(startEpoch, endEpoch epoch.Epoch, s, e int) (int, int)
 		e-idxEnd+1, startPos,
 	)
 	return startPos, endPos
-}
-
-// sortAndDedupe sorts and deduplicates p in-place. Because deduplication can
-// shorten p, the version of p used to call sortAndDedupe is no longer valid.
-// Set p to the call's return value, as in:   p = sortAndDedupe(p)
-// In the event of duplicates, the highest index wins.
-func sortAndDedupe(p Points) Points {
-	return sortAndDedupeTolerant(p, 0)
 }
 
 // sortAndDedupeTolerant sorts and deduplicates p in-place. When toleranceNanos

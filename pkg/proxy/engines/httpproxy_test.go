@@ -592,7 +592,7 @@ func TestPrepareFetchReader_GetBody(t *testing.T) {
 		t.Fatal("expected sentReq.GetBody to be populated by PrepareFetchReader")
 	}
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		rc, err := sentReq.GetBody()
 		if err != nil {
 			t.Fatalf("iteration %d: GetBody returned error: %v", i, err)

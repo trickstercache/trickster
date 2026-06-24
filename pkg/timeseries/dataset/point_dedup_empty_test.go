@@ -40,15 +40,3 @@ func TestSortAndDedupeTolerantEmptyInput(t *testing.T) {
 		})
 	}
 }
-
-func TestSortAndDedupeEmptyInput(t *testing.T) {
-	defer func() {
-		if r := recover(); r != nil {
-			t.Fatalf("sortAndDedupe panicked on empty input: %v", r)
-		}
-	}()
-	out := sortAndDedupe(Points{})
-	if len(out) != 0 {
-		t.Fatalf("expected length 0, got %d", len(out))
-	}
-}

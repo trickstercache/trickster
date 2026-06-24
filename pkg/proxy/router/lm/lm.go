@@ -18,8 +18,9 @@
 package lm
 
 import (
+	"cmp"
 	"net/http"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/errors"
@@ -162,7 +163,9 @@ func (rt *lmRouter) sort() {
 			continue
 		}
 		prs := prefixRouteSets(hrc.PrefixMatchRoutes)
-		sort.Sort(prs)
+		slices.SortFunc(prs, func(a, b *route.PrefixRouteSet) int {
+			return cmp.Compare(b.PathLen, a.PathLen)
+		})
 		hrc.PrefixMatchRoutes = route.PrefixRouteSets(prs)
 	}
 }

@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
-	"sort"
 	"testing"
 	"time"
 )
@@ -569,7 +568,7 @@ func TestExtentListLRUSort(t *testing.T) {
 		Extent{Start: t600, End: t900, LastUsed: t900},
 		Extent{Start: t1100, End: t1300, LastUsed: t1100},
 	}
-	sort.Sort(el)
+	slices.SortFunc(el, ExtentLRUCmp)
 	if !reflect.DeepEqual(el, el2) {
 		t.Errorf("mismatch in sort: expected=%s got=%s", el2, el)
 	}

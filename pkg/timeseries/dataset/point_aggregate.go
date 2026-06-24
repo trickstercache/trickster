@@ -22,13 +22,6 @@ import (
 	"strconv"
 )
 
-// sortAndAggregate sorts points by epoch and aggregates values at matching
-// epochs using the specified strategy. For MergeStrategyDedup, it falls back
-// to the existing sortAndDedupe behavior.
-func sortAndAggregate(p Points, strategy MergeStrategy) Points {
-	return sortAndAggregateTolerant(p, strategy, 0)
-}
-
 // sortAndAggregateTolerant is sortAndAggregate with an opt-in tolerance window
 // for the dedup strategy; non-dedup strategies ignore tolerance since
 // aggregating across a multi-step window would change semantics that callers

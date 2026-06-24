@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -183,7 +183,7 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 		}
 	}
 	vals = vals[:k]
-	sort.Strings(vals)
+	slices.Sort(vals)
 	return md5.Checksum(pr.URL.Path + "." + strings.Join(vals, "") + extra)
 }
 

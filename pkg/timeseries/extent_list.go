@@ -20,7 +20,7 @@ package timeseries
 
 import (
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -117,7 +117,7 @@ func (el ExtentList) Merge(el2 ExtentList, step time.Duration) ExtentList {
 	out := make(ExtentList, len(el)+len(el2))
 	copy(out, el)
 	copy(out[len(el):], el2)
-	sort.Sort(out)
+	slices.SortFunc(out, extentCmp)
 	return out.Compress(step)
 }
 
@@ -127,7 +127,7 @@ func (el ExtentList) Compress(step time.Duration) ExtentList {
 	if len(el) == 0 {
 		return ExtentList{}
 	}
-	sort.Sort(el)
+	slices.SortFunc(el, extentCmp)
 	out := make(ExtentList, len(el))
 	var k int
 	current := el[0]
@@ -317,6 +317,14 @@ func (el ExtentList) spliceByPoints(step time.Duration, maxPoints int) ExtentLis
 	return out
 }
 
+func extentCmp(a, b Extent) int {
+	return a.Start.Compare(b.Start)
+}
+
+func ExtentLRUCmp(a, b Extent) int {
+	return a.LastUsed.Compare(b.LastUsed)
+}
+
 // Len returns the length of a slice of type ExtentList
 func (el ExtentList) Len() int {
 	return len(el)
@@ -427,8 +435,8 @@ func (el ExtentList) TimestampCount(d time.Duration) int64 {
 func (el ExtentList) CalculateDeltas(needs ExtentList,
 	step time.Duration,
 ) ExtentList {
-	sort.Sort(el)
-	sort.Sort(needs)
+	slices.SortFunc(el, extentCmp)
+	slices.SortFunc(needs, extentCmp)
 	out := ExtentList(segments.Diff(el, needs, step, segments.Time{}))
 	out.Compress(step)
 	return out
