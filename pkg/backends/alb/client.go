@@ -42,6 +42,7 @@ import (
 	authreg "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/registry"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/local"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
@@ -54,9 +55,17 @@ type Client struct {
 	handler types.Mechanism // this is the actual handler for all request to this backend
 }
 
-// Handlers returns a map of the HTTP Handlers the client has registered
+// Handlers returns a map of the HTTP Handlers the client has registered.
+// "localresponse" is exposed so operators can use the standard `paths:`
+// override to short-circuit non-mergeable endpoints (e.g. /api/v1/query_exemplars,
+// /api/v1/metadata) before they enter the ALB mechanism. Without this entry
+// the routing layer silently drops the path config because client.Handlers()
+// has no matching handler for the requested name.
 func (c *Client) Handlers() handlers.Lookup {
-	return handlers.Lookup{providers.ALB: c.handler}
+	return handlers.Lookup{
+		providers.ALB:   c.handler,
+		"localresponse": http.HandlerFunc(local.HandleLocalResponse),
+	}
 }
 
 var _ rt.NewBackendClientFunc = NewClient

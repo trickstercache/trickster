@@ -57,6 +57,10 @@ func TestHandlers(t *testing.T) {
 		t.Error("expected alb handler")
 	}
 
+	if _, ok := cl.Handlers()["localresponse"]; !ok {
+		t.Error("expected localresponse handler")
+	}
+
 	a.MechanismName = names.MechanismFGR
 	_, err = NewClient("test", o, nil, nil, nil, nil)
 	if err != nil {
