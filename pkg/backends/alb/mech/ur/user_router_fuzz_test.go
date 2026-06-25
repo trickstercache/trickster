@@ -64,23 +64,24 @@ func FuzzUserRouterCredentials(f *testing.F) {
 		w.WriteHeader(http.StatusOK)
 	})
 	h := &Handler{
-		authenticator: auth,
+		authenticator:  auth,
+		defaultHandler: okHandler,
 		options: &uropt.Options{
-			DefaultHandler: okHandler,
 			Users: uropt.UserMappingOptionsByUser{
-				"alice": {ToHandler: okHandler},
-				"":      {ToHandler: okHandler},
+				"alice": {},
+				"":      {},
 			},
 		},
+		userRoutes: UserRoutes{"alice": {Handler: okHandler}},
 	}
 
 	// any status outside this set means the router either misclassified an
 	// auth failure as success or invented a new code path; either is a
 	// regression.
 	validStatuses := map[int]struct{}{
-		http.StatusOK:          {},
+		http.StatusOK:           {},
 		http.StatusUnauthorized: {},
-		http.StatusBadGateway:  {},
+		http.StatusBadGateway:   {},
 	}
 
 	f.Fuzz(func(t *testing.T, raw string) {

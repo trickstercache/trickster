@@ -316,8 +316,8 @@ func TestValidateAndStartUserRouter(t *testing.T) {
 		albOpts.ALBOptions = ao.New()
 		albOpts.ALBOptions.MechanismName = names.MechanismUR
 		albOpts.ALBOptions.UserRouter = &uropt.Options{
-			DefaultBackend:   "tenant-a",
-			TargetProvider:   providers.ReverseProxyShort,
+			DefaultBackend: "tenant-a",
+			TargetProvider: providers.ReverseProxyShort,
 			Users: uropt.UserMappingOptionsByUser{
 				"alice": {ToBackend: "tenant-a", ToUser: "alice"},
 			},
@@ -373,6 +373,38 @@ func TestValidateAndStartUserRouter(t *testing.T) {
 		h.ServeHTTP(w, req)
 		if w.Code != http.StatusUnauthorized {
 			t.Fatalf("unauthenticated UR request status = %d, want 401", w.Code)
+		}
+	})
+
+	t.Run("effective no route status does not mutate options", func(t *testing.T) {
+		albOpts := bo.New()
+		albOpts.ALBOptions = ao.New()
+		albOpts.ALBOptions.MechanismName = names.MechanismUR
+		albOpts.ALBOptions.UserRouter = &uropt.Options{
+			TargetProvider:    providers.ReverseProxyShort,
+			NoRouteStatusCode: http.StatusOK,
+		}
+
+		albClient, err := NewClient("ur-edge", albOpts, nil, nil, nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cl := albClient.(*Client)
+		h := cl.handler.(*ur.Handler)
+
+		if err := cl.validateAndStartUserRouter(backends.Backends{}, nil); err != nil {
+			t.Fatalf("validateAndStartUserRouter: %v", err)
+		}
+		if got := albOpts.ALBOptions.UserRouter.NoRouteStatusCode; got != http.StatusOK {
+			t.Fatalf("NoRouteStatusCode mutated to %d, want original %d",
+				got, http.StatusOK)
+		}
+
+		req := httptest.NewRequest(http.MethodGet, "http://example/", nil)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if w.Code != http.StatusBadGateway {
+			t.Fatalf("unauthenticated UR request status = %d, want effective 502", w.Code)
 		}
 	})
 }
