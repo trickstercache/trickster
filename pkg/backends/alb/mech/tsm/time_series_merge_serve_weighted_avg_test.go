@@ -22,6 +22,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
@@ -63,6 +64,42 @@ func (b *weightedAvgStubBackend) RewriteForWeightedAvg(r *http.Request, query st
 	params.SetRequestValues(sumReq, sumQP)
 	params.SetRequestValues(countReq, countQP)
 	return sumReq, countReq
+}
+
+type weightedAvgRankStubBackend struct {
+	weightedAvgStubBackend
+	mu    sync.Mutex
+	query string
+}
+
+func (b *weightedAvgRankStubBackend) ClassifyMerge(query string) (int, bool, string) {
+	if strings.HasPrefix(query, "topk(") {
+		return int(dataset.MergeStrategySum), true, ""
+	}
+	return b.weightedAvgStubBackend.ClassifyMerge(query)
+}
+
+func (b *weightedAvgRankStubBackend) RewriteForWeightedAvg(r *http.Request, query string) (*http.Request, *http.Request) {
+	if strings.HasPrefix(query, "topk(") {
+		query = "avg(requests)"
+	}
+	return b.weightedAvgStubBackend.RewriteForWeightedAvg(r, query)
+}
+
+func (b *weightedAvgRankStubBackend) FinalizeTSMMerge(query string, ts timeseries.Timeseries) {
+	b.mu.Lock()
+	b.query = query
+	b.mu.Unlock()
+
+	if ds, ok := ts.(*dataset.DataSet); ok && ds != nil {
+		ds.Warnings = append(ds.Warnings, "rank-finalized")
+	}
+}
+
+func (b *weightedAvgRankStubBackend) Query() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.query
 }
 
 type weightedAvgMemberSpec struct {
@@ -188,6 +225,18 @@ func newWeightedAvgPool(handlers []http.Handler) pool.Pool {
 	targets := make(pool.Targets, len(handlers))
 	for i, h := range handlers {
 		targets[i] = newWeightedAvgTarget(h)
+	}
+	p := pool.New(targets, -1)
+	p.RefreshHealthy()
+	return p
+}
+
+func newWeightedAvgRankPool(handlers []http.Handler, be *weightedAvgRankStubBackend) pool.Pool {
+	targets := make(pool.Targets, len(handlers))
+	for i, h := range handlers {
+		st := &healthcheck.Status{}
+		st.Set(healthcheck.StatusPassing)
+		targets[i] = pool.NewTarget(h, st, be)
 	}
 	p := pool.New(targets, -1)
 	p.RefreshHealthy()
@@ -331,6 +380,37 @@ func TestServeWeightedAvg(t *testing.T) {
 		}
 		if !strings.Contains(w.Body.String(), "100=10") {
 			t.Fatalf("body: want weighted avg 100=10, got %q", w.Body.String())
+		}
+	})
+
+	t.Run("rank_wrapper_finalizes_after_weighted_average", func(t *testing.T) {
+		be := &weightedAvgRankStubBackend{}
+		p := newWeightedAvgRankPool([]http.Handler{
+			weightedAvgMemberHandler(weightedAvgMemberSpec{sumValue: "60", countValue: "3"}),
+			weightedAvgMemberHandler(weightedAvgMemberSpec{sumValue: "40", countValue: "1"}),
+		}, be)
+		defer p.Stop()
+		albpool.WaitHealthy(t, p, 2)
+
+		h := &handler{mergePaths: []string{"/"}}
+		h.SetPool(p)
+
+		const query = "topk(1, avg(requests))"
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, newWeightedAvgRequest(t, query))
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status: want 200 got %d body=%q", w.Code, w.Body.String())
+		}
+		body := w.Body.String()
+		if !strings.Contains(body, "100=25") {
+			t.Fatalf("body: want weighted avg 100=25, got %q", body)
+		}
+		if !strings.Contains(body, "rank-finalized") {
+			t.Fatalf("body: want finalizer warning, got %q", body)
+		}
+		if got := be.Query(); got != query {
+			t.Fatalf("finalizer query got %q want %q", got, query)
 		}
 	})
 }

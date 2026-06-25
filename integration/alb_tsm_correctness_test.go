@@ -232,6 +232,148 @@ func TestALBTSMCorrectness(t *testing.T) {
 			resp.StatusCode, resp.Header.Get("X-Trickster-Result"), string(body))
 	})
 
+	t.Run("R1 topk and bottomk trim globally across shards", func(t *testing.T) {
+		type vectorSeries struct {
+			Metric map[string]string `json:"metric"`
+			Value  []any             `json:"value"`
+		}
+		type vectorData struct {
+			ResultType string         `json:"resultType"`
+			Result     []vectorSeries `json:"result"`
+		}
+		type vectorResponse struct {
+			Status string     `json:"status"`
+			Data   vectorData `json:"data"`
+		}
+
+		writeVector := func(w http.ResponseWriter, series []vectorSeries) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(vectorResponse{
+				Status: "success",
+				Data: vectorData{
+					ResultType: "vector",
+					Result:     series,
+				},
+			})
+		}
+		mkSeries := func(job, value string) vectorSeries {
+			return vectorSeries{
+				Metric: map[string]string{"__name__": "up", "job": job},
+				Value:  []any{float64(1700000000), value},
+			}
+		}
+
+		var rankHits atomic.Int64
+		makeMock := func(hits *atomic.Int64, series []vectorSeries) *httptest.Server {
+			return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == promstub.BuildInfoPath {
+					promstub.WriteBuildInfo(w)
+					return
+				}
+				_ = r.ParseForm()
+				q := r.Form.Get("query")
+				if strings.Contains(q, "topk") || strings.Contains(q, "bottomk") {
+					rankHits.Add(1)
+					w.WriteHeader(http.StatusInternalServerError)
+					fmt.Fprintf(w, `{"status":"error","error":"rank wrapper was not unwrapped: %s"}`, q)
+					return
+				}
+				hits.Add(1)
+				writeVector(w, series)
+			}))
+		}
+
+		var m1Hits, m2Hits atomic.Int64
+		m1 := makeMock(&m1Hits, []vectorSeries{
+			mkSeries("east-low", "1"),
+			mkSeries("east-high", "9"),
+		})
+		t.Cleanup(m1.Close)
+		m2 := makeMock(&m2Hits, []vectorSeries{
+			mkSeries("west-low", "0.5"),
+			mkSeries("west-mid", "5"),
+		})
+		t.Cleanup(m2.Close)
+
+		frontPort := 18830
+		metricsPort := 18831
+		mgmtPort := 18832
+
+		yaml := fmt.Sprintf(albTestdata(t, "alb_tsm_correctness/d2.yaml.tmpl"),
+			frontPort, metricsPort, mgmtPort, m1.URL, m2.URL)
+
+		cfgPath := filepath.Join(t.TempDir(), "trickster.yaml")
+		require.NoError(t, os.WriteFile(cfgPath, []byte(yaml), 0644))
+
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
+		go startTrickster(t, ctx, expectedStartError{}, "-config", cfgPath)
+		waitForTrickster(t, fmt.Sprintf("127.0.0.1:%d", metricsPort))
+
+		queryRank := func(operator string) []vectorSeries {
+			t.Helper()
+			var series []vectorSeries
+			require.EventuallyWithT(t, func(c *assert.CollectT) {
+				beforeM1 := m1Hits.Load()
+				beforeM2 := m2Hits.Load()
+				query := fmt.Sprintf("%s(1, up + 0*%d)", operator, time.Now().UnixNano())
+				u := fmt.Sprintf("http://127.0.0.1:%d/alb-tsm-avg/api/v1/query?query=%s",
+					frontPort, url.QueryEscape(query))
+				r, err := http.Get(u)
+				if !assert.NoError(c, err) {
+					return
+				}
+				b, _ := io.ReadAll(r.Body)
+				r.Body.Close()
+				if !assert.Greater(c, m1Hits.Load(), beforeM1, "query=%s body=%s", query, string(b)) {
+					return
+				}
+				if !assert.Greater(c, m2Hits.Load(), beforeM2, "query=%s body=%s", query, string(b)) {
+					return
+				}
+				if !assert.Equal(c, http.StatusOK, r.StatusCode, "body=%s", string(b)) {
+					return
+				}
+				var pr promResponse
+				if !assert.NoError(c, json.Unmarshal(b, &pr)) {
+					return
+				}
+				if !assert.Equal(c, "success", pr.Status, "body=%s", string(b)) {
+					return
+				}
+				var qd promQueryData
+				if !assert.NoError(c, json.Unmarshal(pr.Data, &qd)) {
+					return
+				}
+				if !assert.Equal(c, "vector", qd.ResultType, "body=%s", string(b)) {
+					return
+				}
+				var got []vectorSeries
+				if !assert.NoError(c, json.Unmarshal(qd.Result, &got)) {
+					return
+				}
+				if !assert.Len(c, got, 1, "body=%s", string(b)) {
+					return
+				}
+				series = got
+			}, 5*time.Second, 100*time.Millisecond, "rank query never returned one globally trimmed series")
+			return series
+		}
+
+		top := queryRank("topk")
+		require.Equal(t, "east-high", top[0].Metric["job"])
+		require.Equal(t, "9", top[0].Value[1])
+
+		bottom := queryRank("bottomk")
+		require.Equal(t, "west-low", bottom[0].Metric["job"])
+		require.Equal(t, "0.5", bottom[0].Value[1])
+
+		require.GreaterOrEqual(t, m1Hits.Load()+m2Hits.Load(), int64(4),
+			"expected both topk and bottomk queries to fan out their inner expressions to both shards")
+		require.Zero(t, rankHits.Load(), "rank wrapper should not be sent to upstream shards")
+	})
+
 	t.Run("V2 partial failure surfaces in X-Trickster-Result", func(t *testing.T) {
 		okVector := albTestdata(t, "alb_tsm_correctness/v2_vector.json")
 
