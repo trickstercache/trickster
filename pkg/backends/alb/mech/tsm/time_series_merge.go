@@ -44,6 +44,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"golang.org/x/sync/errgroup"
 )
@@ -73,6 +74,14 @@ type handler struct {
 	// as the pool hasn't been replaced. Hot path is a single atomic load
 	// plus a uint64 compare.
 	cachedStripKeys atomic.Pointer[stripKeysSnapshot]
+}
+
+type mergeFinalizer interface {
+	FinalizeTSMMerge(query string, ts timeseries.Timeseries)
+}
+
+type mergeRequestRewriter interface {
+	RewriteForTSMMerge(r *http.Request, query string) (*http.Request, string)
 }
 
 // stripKeysSnapshot binds a computed stripKeys slice to the poolVersion it
@@ -304,12 +313,20 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var needsDualQuery bool
 	var warnMsg string
 	var mp backends.TSMMergeProvider
+	var finalizer mergeFinalizer
+	var rewriter mergeRequestRewriter
 	if hl[0] != nil {
 		if b := hl[0].Backend(); b != nil {
 			if p, ok := b.(backends.TSMMergeProvider); ok {
 				mp = p
 				strategyInt, dq, w := mp.ClassifyMerge(query)
 				mergeStrategy, needsDualQuery, warnMsg = dataset.MergeStrategy(strategyInt), dq, w
+			}
+			if f, ok := b.(mergeFinalizer); ok {
+				finalizer = f
+			}
+			if rw, ok := b.(mergeRequestRewriter); ok {
+				rewriter = rw
 			}
 			// backends that don't implement TSMMergeProvider default to dedup.
 		}
@@ -365,12 +382,17 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if needsDualQuery {
-		h.serveWeightedAvg(w, r, hl, rsc, mp, query, stripKeys)
+		h.serveWeightedAvg(w, r, hl, rsc, mp, query, stripKeys, finalizer)
 		return
 	}
 
+	fanoutReq := r
+	if rewriter != nil {
+		fanoutReq, _ = rewriter.RewriteForTSMMerge(r, query)
+	}
+
 	// Standard scatter/gather for all non-avg strategies.
-	h.serveStandard(w, r, hl, rsc, mergeStrategy, stripKeys, warnMsg)
+	h.serveStandard(w, fanoutReq, hl, rsc, mergeStrategy, stripKeys, query, finalizer, warnMsg)
 }
 
 // gatherResult captures the per-member fanout outcome used to assemble the
@@ -459,6 +481,8 @@ func (h *handler) serveStandard(
 	hl pool.Targets, rsc *request.Resources,
 	mergeStrategy dataset.MergeStrategy,
 	stripKeys []string,
+	query string,
+	finalizer mergeFinalizer,
 	warnMsg string,
 ) {
 	l := len(hl)
@@ -572,6 +596,10 @@ func (h *handler) serveStandard(
 				ds.Warnings = append(ds.Warnings, warnMsg)
 			}
 		}
+	}
+
+	if finalizer != nil {
+		finalizer.FinalizeTSMMerge(query, accumulator.GetTSData())
 	}
 
 	// If every fanout slot failed at the dispatch level (panics, transport
@@ -724,6 +752,7 @@ func (h *handler) serveWeightedAvg(
 	w http.ResponseWriter, r *http.Request,
 	hl pool.Targets, rsc *request.Resources,
 	mp backends.TSMMergeProvider, query string, stripKeys []string,
+	finalizer mergeFinalizer,
 ) {
 	l := len(hl)
 
@@ -871,6 +900,10 @@ func (h *handler) serveWeightedAvg(
 			countDS.Warnings = append(countDS.Warnings, warnSumFailed)
 		}
 		sumAccum.SetTSData(countTS)
+	}
+
+	if finalizer != nil {
+		finalizer.FinalizeTSMMerge(query, sumAccum.GetTSData())
 	}
 
 	// Aggregate status and headers from sum-query results (count results are

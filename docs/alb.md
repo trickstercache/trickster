@@ -100,12 +100,15 @@ For Federation use cases where backends hold different, non-overlapping data, Tr
 | `max` | Maximum value per unique label set + timestamp |
 | `group` | Deduplicate per unique label set + timestamp |
 | `avg` | Dual queries (avg→sum and avg→count); weighted arithmetic mean per unique label set + timestamp |
-| `stddev`, `stdvar`, `quantile`, `topk`, `bottomk`, `limitk`, `limit_ratio` | Deduplicate + inject a warning into the Prometheus response |
+| `topk`, `bottomk` | Query the inner expression across backends, merge it, then apply final top/bottom-k selection per timestamp and aggregation group |
+| `stddev`, `stdvar`, `quantile`, `limitk`, `limit_ratio` | Deduplicate + inject a warning into the Prometheus response |
 | _(none)_ | Deduplicate (default) |
 
 For `avg` queries, Trickster issues two concurrent sub-queries per backend shard — one rewriting the outer `avg` to `sum` and another to `count` — then computes a true weighted arithmetic mean (`sum_total / count_total`) per series per timestamp. This avoids the skew introduced by a naïve avg-of-averages when backends have different data cardinalities.
 
-For non-supportable aggregators (`stddev`, `stdvar`, `quantile`, `topk`, `bottomk`, `limitk`, `limit_ratio`), Trickster falls back to deduplication and injects a `warnings` entry in the Prometheus response body to alert the caller that results may be inaccurate.
+For `topk` and `bottomk`, Trickster sends the inner expression to each backend, merges those inner results using the inner expression's merge strategy, then applies the final rank-and-trim step per timestamp and aggregation group. This prevents each backend's local `topk`/`bottomk` result from being weighted equally during the merge. If the inner expression is `avg`, Trickster still uses the weighted `sum`/`count` rewrite before applying the final rank. This also applies when the rank aggregation is wrapped in `sort()` or `sort_desc()`.
+
+For non-supportable aggregators (`stddev`, `stdvar`, `quantile`, `limitk`, `limit_ratio`), Trickster falls back to deduplication and injects a `warnings` entry in the Prometheus response body to alert the caller that results may be inaccurate.
 
 When a non-dedup strategy is in effect and backends have [injected labels](./prometheus.md#injecting-labels) configured, those labels are automatically stripped before merging. This ensures series from different backends hash identically for aggregation, and the injected labels do not appear in the response.
 

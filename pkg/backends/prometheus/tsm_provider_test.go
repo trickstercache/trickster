@@ -51,12 +51,19 @@ func TestClassifyMerge(t *testing.T) {
 		// min / max
 		{"min(up)", int(dataset.MergeStrategyMin), false, ""},
 		{"max(up)", int(dataset.MergeStrategyMax), false, ""},
+		// rank aggregators are finalized after merge
+		{"topk(5, up)", int(dataset.MergeStrategyDedup), false, ""},
+		{"topk(5, sum by (service) (up))", int(dataset.MergeStrategySum), false, ""},
+		{"topk(5, avg by (service) (up))", int(dataset.MergeStrategySum), true, ""},
+		{"sort_desc(topk(5, max(up)))", int(dataset.MergeStrategyMax), false, ""},
+		{"bottomk(5, up)", int(dataset.MergeStrategyDedup), false, ""},
+		{"sort_desc(topk(5, up))", int(dataset.MergeStrategyDedup), false, ""},
 		// unsupported aggregators → dedup + warning containing the operator name
 		{"stddev(up)", int(dataset.MergeStrategyDedup), false, "stddev"},
 		{"stdvar(up)", int(dataset.MergeStrategyDedup), false, "stdvar"},
 		{"quantile(0.9, up)", int(dataset.MergeStrategyDedup), false, "quantile"},
-		{"topk(5, up)", int(dataset.MergeStrategyDedup), false, "topk"},
-		{"bottomk(5, up)", int(dataset.MergeStrategyDedup), false, "bottomk"},
+		{"topk(5, stddev(up))", int(dataset.MergeStrategyDedup), false, "stddev"},
+		{"topk(k, up)", int(dataset.MergeStrategyDedup), false, "topk"},
 		{"limitk(5, up)", int(dataset.MergeStrategyDedup), false, "limitk"},
 		{"limit_ratio(0.5, up)", int(dataset.MergeStrategyDedup), false, "limit_ratio"},
 		// group → default → dedup, no warning
@@ -209,6 +216,83 @@ func TestRewriteForWeightedAvgGET(t *testing.T) {
 					t.Errorf("expected empty rsc.RequestBody for GET, got %q",
 						string(gotRsc.RequestBody))
 				}
+			}
+		})
+	}
+}
+
+func TestRewriteForTSMMergeRankAggregationPOST(t *testing.T) {
+	const (
+		query    = "topk(5, sum(up))"
+		wantQ    = "sum(up)"
+		origBody = "query=topk%285%2C+sum%28up%29%29&start=1000&end=2000&step=15"
+	)
+	r, _ := http.NewRequest(http.MethodPost,
+		"http://example.com/api/v1/query_range",
+		io.NopCloser(bytes.NewBufferString(origBody)))
+	r.Header.Set(headers.NameContentType, headers.ValueXFormURLEncoded)
+	r = request.SetResources(r, &request.Resources{RequestBody: []byte(origBody)})
+
+	rewritten, rewrittenQuery := (&Client{}).RewriteForTSMMerge(r, query)
+	if rewrittenQuery != wantQ {
+		t.Fatalf("rewritten query got %q want %q", rewrittenQuery, wantQ)
+	}
+
+	gotURL, err := url.ParseQuery(rewritten.URL.RawQuery)
+	if err != nil {
+		t.Fatalf("parse URL RawQuery: %v", err)
+	}
+	if q := gotURL.Get("query"); q != wantQ {
+		t.Errorf("URL query param: got %q, want %q", q, wantQ)
+	}
+
+	bodyBytes, err := io.ReadAll(rewritten.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	gotBody, err := url.ParseQuery(string(bodyBytes))
+	if err != nil {
+		t.Fatalf("parse body: %v", err)
+	}
+	if q := gotBody.Get("query"); q != wantQ {
+		t.Errorf("body query param: got %q, want %q", q, wantQ)
+	}
+
+	gotRsc := request.GetResources(rewritten)
+	if gotRsc == nil {
+		t.Fatal("expected non-nil resources")
+	}
+	gotCache, err := url.ParseQuery(string(gotRsc.RequestBody))
+	if err != nil {
+		t.Fatalf("parse rsc.RequestBody: %v", err)
+	}
+	if q := gotCache.Get("query"); q != wantQ {
+		t.Errorf("rsc.RequestBody query param: got %q, want %q", q, wantQ)
+	}
+}
+
+func TestRewriteForWeightedAvgRankAggregationGET(t *testing.T) {
+	const query = "topk(5, avg by (service) (requests))"
+	r, _ := http.NewRequest(http.MethodGet,
+		"http://example.com/api/v1/query_range?query="+url.QueryEscape(query)+"&start=1000&end=2000&step=15",
+		nil)
+
+	sumReq, countReq := (&Client{}).RewriteForWeightedAvg(r, query)
+	for _, tc := range []struct {
+		name  string
+		req   *http.Request
+		wantQ string
+	}{
+		{"sum", sumReq, "sum by (service) (requests)"},
+		{"count", countReq, "count by (service) (requests)"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			gotURL, err := url.ParseQuery(tc.req.URL.RawQuery)
+			if err != nil {
+				t.Fatalf("parse URL RawQuery: %v", err)
+			}
+			if q := gotURL.Get("query"); q != tc.wantQ {
+				t.Errorf("URL query param: got %q, want %q", q, tc.wantQ)
 			}
 		})
 	}
