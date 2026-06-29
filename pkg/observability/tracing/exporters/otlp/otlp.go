@@ -61,6 +61,7 @@ func New(o *options.Options) (*tracing.Tracer, error) {
 	// this determines if the collector endpoint is a path, uri or url
 	// and calls the appropriate Options decorator
 	switch {
+	case o.Endpoint == "":
 	case strings.HasPrefix(o.Endpoint, "/"):
 		opts = append(opts, otlp.WithURLPath(o.Endpoint))
 	case strings.HasPrefix(o.Endpoint, "http"):
@@ -69,7 +70,7 @@ func New(o *options.Options) (*tracing.Tracer, error) {
 			opts = append(opts, otlp.WithInsecure())
 		}
 	default:
-		otlp.WithEndpoint(o.Endpoint)
+		opts = append(opts, otlp.WithEndpoint(o.Endpoint))
 	}
 
 	if o.Timeout > 0 {
