@@ -42,6 +42,7 @@ import (
 // setupSpanForRequest configures a request span with range detection and returns the modified request
 func setupSpanForRequest(req *http.Request, span trace.Span) *http.Request {
 	if span != nil {
+		setResourceSpanAttributes(request.GetResources(req), span)
 		if req.Header != nil {
 			if _, ok := req.Header[headers.NameRange]; ok {
 				span.SetAttributes(attribute.Bool("isRange", true))
@@ -215,6 +216,7 @@ func (pr *proxyRequest) prepareRevalidationRequest() {
 	pr.revalidationRequest = request.SetResources(pr.revalidationRequest, pr.rsc)
 	_, span := tspan.NewChildSpan(pr.revalidationRequest.Context(), pr.rsc.Tracer, "FetchRevlidation")
 	if span != nil {
+		setResourceSpanAttributes(pr.rsc, span)
 		pr.revalidationRequest = pr.revalidationRequest.WithContext(trace.ContextWithSpan(pr.revalidationRequest.Context(), span))
 		defer span.End()
 	}
@@ -303,6 +305,9 @@ func (pr *proxyRequest) makeSimpleUpstreamRequests(req *http.Request,
 		defer span.End()
 	}
 	reader, resp, _ := PrepareFetchReader(req)
+	if resp != nil {
+		setHTTPStatusSpanAttributes(tracer, resp.StatusCode, span)
+	}
 
 	return reader, resp
 }
@@ -322,17 +327,15 @@ func (pr *proxyRequest) makeUpstreamRequests() error {
 		wg.Go(func() {
 			req := pr.revalidationRequest
 			_, span := tspan.NewChildSpan(req.Context(), pr.rsc.Tracer, "FetchRevalidation")
+			pr.revalidationRequest = setupSpanForRequest(req, span)
 			if span != nil {
-				if req.Header != nil {
-					if _, ok := req.Header[headers.NameRange]; ok {
-						span.SetAttributes(attribute.Bool("isRange", true))
-					}
-				}
-				pr.revalidationRequest = req.WithContext(trace.ContextWithSpan(req.Context(), span))
 				defer span.End()
 			}
 			var contentLength int64
 			pr.revalidationReader, pr.revalidationResponse, contentLength = PrepareFetchReader(pr.revalidationRequest)
+			if pr.revalidationResponse != nil {
+				setHTTPStatusSpanAttributes(pr.rsc.Tracer, pr.revalidationResponse.StatusCode, span)
+			}
 			if pr.revalidationReader == nil {
 				logger.Error("revalidation upstream returned no reader",
 					logging.Pairs{
@@ -356,6 +359,9 @@ func (pr *proxyRequest) makeUpstreamRequests() error {
 				}
 				var contentLength int64
 				pr.originReaders[i], pr.originResponses[i], contentLength = PrepareFetchReader(req)
+				if pr.originResponses[i] != nil {
+					setHTTPStatusSpanAttributes(pr.rsc.Tracer, pr.originResponses[i].StatusCode, span)
+				}
 				if pr.originReaders[i] == nil {
 					logger.Error("origin upstream returned no reader",
 						logging.Pairs{

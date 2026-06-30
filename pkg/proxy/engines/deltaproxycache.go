@@ -97,6 +97,7 @@ func fetchFastForward(
 		ffReq = ffReq.WithContext(trace.ContextWithSpan(ffReq.Context(), ffSpan))
 		defer ffSpan.End()
 	}
+	setResourceSpanAttributes(rs, ffSpan)
 	body, resp, isHit := FetchViaObjectProxyCache(ffReq)
 	if resp == nil || resp.StatusCode != http.StatusOK || len(body) == 0 {
 		return statusErr
@@ -194,6 +195,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 	if span != nil {
 		defer span.End()
 	}
+	setResourceSpanAttributes(rsc, span)
 	r = r.WithContext(ctx)
 
 	pc := rsc.PathConfig
@@ -602,6 +604,7 @@ func fetchTimeseries(pr *proxyRequest, trq *timeseries.TimeRangeQuery,
 	if span != nil {
 		defer span.End()
 	}
+	setResourceSpanAttributes(rsc, span)
 
 	ctx = profile.ToContext(ctx, dpcEncodingProfile.Clone())
 	pr.upstreamRequest = request.SetResources(pr.upstreamRequest.WithContext(ctx), rsc)
@@ -610,6 +613,9 @@ func fetchTimeseries(pr *proxyRequest, trq *timeseries.TimeRangeQuery,
 	mts, _, resp, err := fetchExtents(timeseries.ExtentList{trq.Extent}.Splice(trq.Step,
 		o.MaxShardSizeTime, o.ShardStep, o.MaxShardSizePoints), rsc,
 		http.Header{}, client, pr, modeler.WireUnmarshalerReader, nil)
+	if resp != nil {
+		setHTTPStatusSpanAttributes(rsc.Tracer, resp.StatusCode, span)
+	}
 
 	// elaspsed measures only the time spent making origin requests
 	var elapsed time.Duration
@@ -726,8 +732,12 @@ func fetchExtents(el timeseries.ExtentList, rsc *request.Resources, h http.Heade
 				rq.upstreamRequest = rq.upstreamRequest.WithContext(ctxMR)
 				defer spanMR.End()
 			}
+			setResourceSpanAttributes(mrsc, spanMR)
 
 			body, resp, _, fetchErr := rq.Fetch()
+			if resp != nil {
+				setHTTPStatusSpanAttributes(rsc.Tracer, resp.StatusCode, spanMR)
+			}
 
 			respLock.Lock()
 			if resp.StatusCode > mresp.StatusCode {
