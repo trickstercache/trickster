@@ -49,12 +49,10 @@ func New(o *options.Options) (*tracing.Tracer, error) {
 		sampler = sdktrace.TraceIDRatioBased(*o.SampleRate)
 	}
 
-	var tags []attribute.KeyValue
-	if len(o.Tags) > 0 {
-		tags = make([]attribute.KeyValue, len(o.Tags))
-		for k, v := range o.Tags {
-			tags = append(tags, attribute.String(k, v))
-		}
+	tags := make([]attribute.KeyValue, 1, len(o.Tags)+1)
+	tags[0] = attribute.String("service.name", o.ServiceName)
+	for k, v := range o.Tags {
+		tags = append(tags, attribute.String(k, v))
 	}
 
 	opts := make([]otlp.Option, 0, 10)
@@ -92,10 +90,8 @@ func New(o *options.Options) (*tracing.Tracer, error) {
 
 	tracerOpts := make([]sdktrace.TracerProviderOption, 0, 3)
 	tracerOpts = append(tracerOpts, sdktrace.WithSampler(sampler))
-	if len(tags) > 0 {
-		tracerOpts = append(tracerOpts,
-			sdktrace.WithResource(resource.NewWithAttributes("", tags...)))
-	}
+	tracerOpts = append(tracerOpts,
+		sdktrace.WithResource(resource.NewWithAttributes("", tags...)))
 	tracerOpts = append(tracerOpts, sdktrace.WithBatcher(exporter))
 	tp = sdktrace.NewTracerProvider(tracerOpts...)
 	tracer := tp.Tracer(o.Name)
