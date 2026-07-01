@@ -28,13 +28,20 @@ import (
 
 	cr "github.com/trickstercache/trickster/v2/pkg/cache/registry"
 	"github.com/trickstercache/trickster/v2/pkg/config"
+	otracing "github.com/trickstercache/trickster/v2/pkg/observability/tracing"
+	tspan "github.com/trickstercache/trickster/v2/pkg/observability/tracing/span"
 	tc "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/baggage"
+	"go.opentelemetry.io/otel/propagation"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func TestCacheSpansIncludeResourceAttributesAndStatus(t *testing.T) {
@@ -139,6 +146,86 @@ func TestPrepareFetchReaderErrorSpansIncludeBadGatewayStatus(t *testing.T) {
 	tu.RequireSpanAttributes(t, sr, "ProxyRequest", want)
 }
 
+func TestPrepareFetchReaderPropagatesIncomingTraceContextToOrigin(t *testing.T) {
+	previous := otel.GetTextMapPropagator()
+	t.Cleanup(func() { otel.SetTextMapPropagator(previous) })
+	otracing.ConfigurePropagators()
+
+	rt := &mockRoundTripper{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(bytes.NewReader([]byte("ok"))),
+		},
+	}
+	r, rsc, sr := newTracingFetchRequest(t, rt)
+
+	incomingTraceID := trace.TraceID{1, 3, 5, 7, 9, 11, 13, 15, 2, 4, 6, 8, 10, 12, 14, 16}
+	incomingSpanID := trace.SpanID{8, 7, 6, 5, 4, 3, 2, 1}
+	r.Header.Set("traceparent", "00-"+incomingTraceID.String()+"-"+incomingSpanID.String()+"-01")
+	r.Header.Set("baggage", "tenant=alpha")
+
+	r, requestSpan := tspan.PrepareRequest(r, rsc.Tracer)
+	if requestSpan == nil {
+		t.Fatal("expected request span")
+	}
+	defer requestSpan.End()
+	r = request.SetResources(r, rsc)
+
+	reader, resp, _ := PrepareFetchReader(r)
+	if resp == nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status %d, got %#v", http.StatusOK, resp)
+	}
+	if reader != nil {
+		_, _ = io.ReadAll(reader)
+		reader.Close()
+	}
+
+	if len(rt.reqs) != 1 {
+		t.Fatalf("expected 1 upstream request, got %d", len(rt.reqs))
+	}
+	upstream := rt.reqs[0]
+	if got := upstream.Header.Get("traceparent"); got == "" {
+		t.Fatal("expected upstream traceparent header")
+	}
+	if got := upstream.Header.Get("baggage"); got != "tenant=alpha" {
+		t.Fatalf("expected upstream baggage %q, got %q", "tenant=alpha", got)
+	}
+
+	extracted := otracing.DefaultPropagators().Extract(
+		context.Background(),
+		propagation.HeaderCarrier(upstream.Header),
+	)
+	upstreamSpanCtx := trace.SpanContextFromContext(extracted)
+	if !upstreamSpanCtx.IsRemote() {
+		t.Fatal("expected propagated span context to extract as remote")
+	}
+	if upstreamSpanCtx.TraceID() != incomingTraceID {
+		t.Fatalf("upstream trace id = %s, want %s", upstreamSpanCtx.TraceID(), incomingTraceID)
+	}
+	if upstreamSpanCtx.SpanID() == incomingSpanID {
+		t.Fatal("upstream traceparent must use Trickster's outbound span, not the incoming parent span")
+	}
+	if got := baggage.FromContext(extracted).Member("tenant").Value(); got != "alpha" {
+		t.Fatalf("extracted baggage tenant: expected %q, got %q", "alpha", got)
+	}
+
+	proxySpan := latestEndedSpan(t, sr, "ProxyRequest")
+	if upstreamSpanCtx.SpanID() != proxySpan.SpanContext().SpanID() {
+		t.Fatalf("upstream parent span id = %s, want outbound ProxyRequest span id %s",
+			upstreamSpanCtx.SpanID(), proxySpan.SpanContext().SpanID())
+	}
+	if proxySpan.SpanContext().TraceID() != incomingTraceID {
+		t.Fatalf("ProxyRequest trace id = %s, want %s",
+			proxySpan.SpanContext().TraceID(), incomingTraceID)
+	}
+
+	if proxySpan.Parent().TraceID() != incomingTraceID {
+		t.Fatalf("ProxyRequest parent trace id = %s, want %s",
+			proxySpan.Parent().TraceID(), incomingTraceID)
+	}
+}
+
 func TestObjectProxyCacheRequestSpanIncludesResourceStatusAttributes(t *testing.T) {
 	hdrs := map[string]string{"Cache-Control": "max-age=60"}
 	ts, _, r, rsc, err := setupTestHarnessOPC("", "test", http.StatusPartialContent, hdrs)
@@ -195,4 +282,16 @@ func resourceAttributeStrings(rsc *request.Resources) map[string]string {
 		out[string(kv.Key)] = kv.Value.AsString()
 	}
 	return out
+}
+
+func latestEndedSpan(t testing.TB, sr *tracetest.SpanRecorder, name string) sdktrace.ReadOnlySpan {
+	t.Helper()
+	spans := sr.Ended()
+	for i := len(spans) - 1; i >= 0; i-- {
+		if spans[i].Name() == name {
+			return spans[i]
+		}
+	}
+	t.Fatalf("span %q not found in %d ended spans", name, len(spans))
+	return nil
 }

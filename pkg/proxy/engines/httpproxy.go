@@ -42,7 +42,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
-	othttptrace "go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -63,9 +62,10 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 
 	start := time.Now()
 
-	_, span := tspan.NewChildSpan(r.Context(), rsc.Tracer, "ProxyRequest")
+	ctx, span := tspan.NewChildSpan(r.Context(), rsc.Tracer, "ProxyRequest")
 	if span != nil {
 		defer span.End()
+		r = r.WithContext(ctx)
 	}
 	setResourceSpanAttributes(rsc, span)
 
@@ -216,18 +216,14 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 	r.Close = false
 	r.RequestURI = ""
 
-	if rsc.Tracer != nil {
-		// Processing traces for proxies
-		// https://www.w3.org/TR/trace-context-1/#alternative-processing
-		ctx, r = othttptrace.W3C(ctx, r)
-		othttptrace.Inject(ctx, r)
-	}
-
-	_, doSpan := tspan.NewChildSpan(r.Context(), rsc.Tracer, "ProxyRequest")
+	ctx, doSpan := tspan.NewChildSpan(r.Context(), rsc.Tracer, "ProxyRequest")
 	if doSpan != nil {
 		defer doSpan.End()
+		r = r.WithContext(ctx)
 	}
 	setResourceSpanAttributes(rsc, doSpan)
+
+	_, r = tspan.PrepareOutgoingRequest(r.Context(), r, rsc.Tracer)
 
 	if ep := profile.FromContext(r.Context()); ep != nil && ep.SupportedHeaderVal != "" {
 		r.Header.Set(headers.NameAcceptEncoding, ep.SupportedHeaderVal)

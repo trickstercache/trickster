@@ -17,12 +17,18 @@
 package tracing
 
 import (
+	"context"
 	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"testing"
 
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func TestHTTPToCode(t *testing.T) {
@@ -85,5 +91,63 @@ func TestTags(t *testing.T) {
 	attrs = t1.ToAttr()
 	if len(attrs) != 3 {
 		t.Errorf("expected %d got %d", 3, len(attrs))
+	}
+}
+
+func TestConfigurePropagatorsInstallsTraceContextAndBaggage(t *testing.T) {
+	previous := otel.GetTextMapPropagator()
+	t.Cleanup(func() { otel.SetTextMapPropagator(previous) })
+
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator())
+
+	traceID := trace.TraceID{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
+	spanID := trace.SpanID{17, 18, 19, 20, 21, 22, 23, 24}
+	spanCtx := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID:    traceID,
+		SpanID:     spanID,
+		TraceFlags: trace.FlagsSampled,
+	})
+	bg, err := baggage.Parse("tenant=alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := baggage.ContextWithBaggage(
+		trace.ContextWithSpanContext(context.Background(), spanCtx),
+		bg,
+	)
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
+	if got := req.Header.Get("traceparent"); got != "" {
+		t.Fatalf("expected empty traceparent before ConfigurePropagators, got %q", got)
+	}
+
+	ConfigurePropagators()
+
+	req = httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
+
+	wantTraceparent := "00-" + traceID.String() + "-" + spanID.String() + "-01"
+	if got := req.Header.Get("traceparent"); got != wantTraceparent {
+		t.Fatalf("traceparent: expected %q, got %q", wantTraceparent, got)
+	}
+	if got := req.Header.Get("baggage"); got != "tenant=alpha" {
+		t.Fatalf("baggage: expected %q, got %q", "tenant=alpha", got)
+	}
+
+	extracted := otel.GetTextMapPropagator().Extract(
+		context.Background(),
+		propagation.HeaderCarrier(req.Header),
+	)
+	gotSpanCtx := trace.SpanContextFromContext(extracted)
+	if !gotSpanCtx.IsRemote() {
+		t.Fatal("expected extracted span context to be remote")
+	}
+	if gotSpanCtx.TraceID() != traceID || gotSpanCtx.SpanID() != spanID {
+		t.Fatalf("extracted span context = %s/%s, want %s/%s",
+			gotSpanCtx.TraceID(), gotSpanCtx.SpanID(), traceID, spanID)
+	}
+	if got := baggage.FromContext(extracted).Member("tenant").Value(); got != "alpha" {
+		t.Fatalf("extracted baggage tenant: expected %q, got %q", "alpha", got)
 	}
 }
