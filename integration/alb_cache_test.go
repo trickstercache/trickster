@@ -376,4 +376,223 @@ func TestALBCache(t *testing.T) {
 			"mixed cache hit/miss across pool members did not surface phit in X-Trickster-Result=%q",
 			raw)
 	})
+
+	t.Run("V4 tsm merges proxy-only pool members", func(t *testing.T) {
+		var m1Hits, m2Hits atomic.Int64
+		mk := func(job string, hits *atomic.Int64) *httptest.Server {
+			return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == promstub.BuildInfoPath {
+					promstub.WriteBuildInfo(w)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_ = r.ParseForm()
+				start, _ := parseInt(r.Form.Get("start"))
+				end, _ := parseInt(r.Form.Get("end"))
+				step, _ := parseInt(r.Form.Get("step"))
+				if step == 0 {
+					step = 15
+				}
+				hits.Add(1)
+				var b strings.Builder
+				first := true
+				for ts := start; ts <= end; ts += step {
+					if !first {
+						b.WriteString(",")
+					}
+					first = false
+					fmt.Fprintf(&b, `[%d,"1"]`, ts)
+				}
+				w.WriteHeader(http.StatusOK)
+				fmt.Fprintf(w, `{"status":"success","data":{"resultType":"matrix","result":[`+
+					`{"metric":{"__name__":"up","job":%q},"values":[%s]}]}}`, job, b.String())
+			}))
+		}
+		up1 := mk("proxy-only-a", &m1Hits)
+		t.Cleanup(up1.Close)
+		up2 := mk("proxy-only-b", &m2Hits)
+		t.Cleanup(up2.Close)
+
+		frontPort := 18930
+		metricsPort := 18931
+		mgmtPort := 18932
+
+		yaml := fmt.Sprintf(albTestdata(t, "alb_cache/v4.yaml.tmpl"),
+			frontPort, metricsPort, mgmtPort, up1.URL, up2.URL)
+
+		cfgPath := filepath.Join(t.TempDir(), "trickster.yaml")
+		require.NoError(t, os.WriteFile(cfgPath, []byte(yaml), 0644))
+
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
+		go startTrickster(t, ctx, expectedStartError{}, "-config", cfgPath)
+		waitForTrickster(t, fmt.Sprintf("127.0.0.1:%d", metricsPort))
+
+		client := &http.Client{Transport: &http.Transport{DisableCompression: true}}
+		now := time.Now()
+		end := now.Truncate(15 * time.Second)
+		start := end.Add(-2 * time.Minute)
+		params := url.Values{
+			"query": {fmt.Sprintf("up + 0*%d", now.UnixNano())},
+			"start": {fmt.Sprintf("%d", start.Unix())},
+			"end":   {fmt.Sprintf("%d", end.Unix())},
+			"step":  {"15"},
+		}
+		u := fmt.Sprintf("http://127.0.0.1:%d/alb-tsm-proxy-only/api/v1/query_range?%s",
+			frontPort, params.Encode())
+
+		var resp *http.Response
+		var body []byte
+		require.EventuallyWithT(t, func(c *assert.CollectT) {
+			r, err := client.Get(u)
+			if !assert.NoError(c, err) {
+				return
+			}
+			b, _ := io.ReadAll(r.Body)
+			r.Body.Close()
+			resp, body = r, b
+			if !assert.Equal(c, http.StatusOK, r.StatusCode, "body=%s", string(b)) {
+				return
+			}
+			assert.GreaterOrEqual(c, m1Hits.Load(), int64(1),
+				"waiting for proxy-only member A to receive a request")
+			assert.GreaterOrEqual(c, m2Hits.Load(), int64(1),
+				"waiting for proxy-only member B to receive a request")
+		}, 10*time.Second, 250*time.Millisecond, "proxy-only TSM pool never merged both members")
+
+		t.Logf("status=%d X-Trickster-Result=%q m1Hits=%d m2Hits=%d body=%s",
+			resp.StatusCode, resp.Header.Get("X-Trickster-Result"), m1Hits.Load(), m2Hits.Load(), string(body))
+
+		var pr promResponse
+		require.NoError(t, json.Unmarshal(body, &pr),
+			"merged body must be valid prom JSON; status=%d body=%s", resp.StatusCode, string(body))
+		require.Equal(t, "success", pr.Status)
+		var qd promQueryData
+		require.NoError(t, json.Unmarshal(pr.Data, &qd))
+		var series []struct {
+			Metric map[string]string `json:"metric"`
+			Values [][]any           `json:"values"`
+		}
+		require.NoError(t, json.Unmarshal(qd.Result, &series))
+
+		jobs := map[string]bool{}
+		for _, s := range series {
+			jobs[s.Metric["job"]] = true
+			require.NotEmpty(t, s.Values, "series for job %q should include range points", s.Metric["job"])
+		}
+		require.True(t, jobs["proxy-only-a"], "merged body missing proxy-only member A: %s", string(body))
+		require.True(t, jobs["proxy-only-b"], "merged body missing proxy-only member B: %s", string(body))
+	})
+
+	t.Run("V5 tsm merges out-of-window proxy-only ranges without caching them", func(t *testing.T) {
+		var m1Hits, m2Hits atomic.Int64
+		mk := func(job string, hits *atomic.Int64) *httptest.Server {
+			return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == promstub.BuildInfoPath {
+					promstub.WriteBuildInfo(w)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_ = r.ParseForm()
+				start, _ := parseInt(r.Form.Get("start"))
+				end, _ := parseInt(r.Form.Get("end"))
+				step, _ := parseInt(r.Form.Get("step"))
+				if step == 0 {
+					step = 15
+				}
+				hits.Add(1)
+				var b strings.Builder
+				first := true
+				for ts := start; ts <= end; ts += step {
+					if !first {
+						b.WriteString(",")
+					}
+					first = false
+					fmt.Fprintf(&b, `[%d,"1"]`, ts)
+				}
+				w.WriteHeader(http.StatusOK)
+				fmt.Fprintf(w, `{"status":"success","data":{"resultType":"matrix","result":[`+
+					`{"metric":{"__name__":"up","job":%q},"values":[%s]}]}}`, job, b.String())
+			}))
+		}
+		up1 := mk("old-range-a", &m1Hits)
+		t.Cleanup(up1.Close)
+		up2 := mk("old-range-b", &m2Hits)
+		t.Cleanup(up2.Close)
+
+		frontPort := 18940
+		metricsPort := 18941
+		mgmtPort := 18942
+
+		yaml := fmt.Sprintf(albTestdata(t, "alb_cache/v5.yaml.tmpl"),
+			frontPort, metricsPort, mgmtPort, up1.URL, up2.URL)
+
+		cfgPath := filepath.Join(t.TempDir(), "trickster.yaml")
+		require.NoError(t, os.WriteFile(cfgPath, []byte(yaml), 0644))
+
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
+		go startTrickster(t, ctx, expectedStartError{}, "-config", cfgPath)
+		waitForTrickster(t, fmt.Sprintf("127.0.0.1:%d", metricsPort))
+
+		client := &http.Client{Transport: &http.Transport{DisableCompression: true}}
+		end := time.Now().Add(-10 * time.Minute).Truncate(15 * time.Second)
+		start := end.Add(-2 * time.Minute)
+		params := url.Values{
+			"query": {fmt.Sprintf("up + 0*%d", time.Now().UnixNano())},
+			"start": {fmt.Sprintf("%d", start.Unix())},
+			"end":   {fmt.Sprintf("%d", end.Unix())},
+			"step":  {"15"},
+		}
+		u := fmt.Sprintf("http://127.0.0.1:%d/alb-tsm-old-ranges/api/v1/query_range?%s",
+			frontPort, params.Encode())
+
+		var body []byte
+		require.EventuallyWithT(t, func(c *assert.CollectT) {
+			r, err := client.Get(u)
+			if !assert.NoError(c, err) {
+				return
+			}
+			b, _ := io.ReadAll(r.Body)
+			r.Body.Close()
+			body = b
+			if !assert.Equal(c, http.StatusOK, r.StatusCode, "body=%s", string(b)) {
+				return
+			}
+			assert.GreaterOrEqual(c, m1Hits.Load(), int64(1),
+				"waiting for old-range member A to receive a request")
+			assert.GreaterOrEqual(c, m2Hits.Load(), int64(1),
+				"waiting for old-range member B to receive a request")
+		}, 10*time.Second, 250*time.Millisecond, "out-of-window TSM query never merged both members")
+
+		var pr promResponse
+		require.NoError(t, json.Unmarshal(body, &pr),
+			"merged body must be valid prom JSON; body=%s", string(body))
+		require.Equal(t, "success", pr.Status)
+		var qd promQueryData
+		require.NoError(t, json.Unmarshal(pr.Data, &qd))
+		var series []struct {
+			Metric map[string]string `json:"metric"`
+			Values [][]any           `json:"values"`
+		}
+		require.NoError(t, json.Unmarshal(qd.Result, &series))
+		jobs := map[string]bool{}
+		for _, s := range series {
+			jobs[s.Metric["job"]] = true
+			require.NotEmpty(t, s.Values, "series for job %q should include range points", s.Metric["job"])
+		}
+		require.True(t, jobs["old-range-a"], "merged body missing old-range member A: %s", string(body))
+		require.True(t, jobs["old-range-b"], "merged body missing old-range member B: %s", string(body))
+
+		beforeA, beforeB := m1Hits.Load(), m2Hits.Load()
+		r, err := client.Get(u)
+		require.NoError(t, err)
+		_, _ = io.ReadAll(r.Body)
+		r.Body.Close()
+		require.Equal(t, http.StatusOK, r.StatusCode)
+		require.Greater(t, m1Hits.Load(), beforeA,
+			"out-of-window member A response should remain proxy-only, not cache hit")
+		require.Greater(t, m2Hits.Load(), beforeB,
+			"out-of-window member B response should remain proxy-only, not cache hit")
+	})
 }

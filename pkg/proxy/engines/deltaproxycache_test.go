@@ -1924,6 +1924,12 @@ func TestDPCProxyOnly(t *testing.T) {
 	if !strings.Contains(hdr, "engine=HTTPProxy") {
 		t.Errorf("expected HTTPProxy engine in result header, got %q", hdr)
 	}
+	if rsc.TimeRangeQuery == nil {
+		t.Fatal("expected proxy-only DPC metadata to include TimeRangeQuery")
+	}
+	if rsc.TSUnmarshaler == nil {
+		t.Fatal("expected proxy-only DPC metadata to include TSUnmarshaler")
+	}
 }
 
 // TestDPCNoCacheBypass verifies that requests with Cache-Control: no-cache

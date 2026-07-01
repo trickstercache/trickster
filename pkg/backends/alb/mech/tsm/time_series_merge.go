@@ -473,6 +473,46 @@ func aggregateStatus(results []gatherResult) (status int, statusHeader string, h
 	return
 }
 
+func mergeGatherContribution(accumulator *merge.Accumulator, rsc *request.Resources,
+	body []byte, member int, stripKeys []string,
+) bool {
+	if rsc == nil || rsc.MergeFunc == nil {
+		return false
+	}
+	ts := rsc.TS
+	if ts == nil && len(body) > 0 && rsc.TSUnmarshaler != nil && rsc.TimeRangeQuery != nil {
+		var err error
+		ts, err = rsc.TSUnmarshaler(body, rsc.TimeRangeQuery)
+		if err != nil {
+			logger.Warn("tsm gather timeseries decode failure", logging.Pairs{
+				"member": member, "error": err,
+			})
+			return false
+		}
+		rsc.TS = ts
+	}
+	if len(stripKeys) > 0 && ts != nil {
+		if ds, ok := ts.(*dataset.DataSet); ok {
+			ds.StripTags(stripKeys)
+		}
+	}
+	var data any
+	if ts != nil {
+		data = ts
+	} else if len(body) > 0 {
+		data = body
+	} else {
+		return false
+	}
+	if err := rsc.MergeFunc(accumulator, data, member); err != nil {
+		logger.Warn("tsm gather merge failure", logging.Pairs{
+			"member": member, "error": err,
+		})
+		return false
+	}
+	return true
+}
+
 // serveStandard handles the common scatter/gather path: each shard gets one
 // request, results are merged with mergeStrategy, and an optional warning is
 // appended to the accumulated dataset before writing the response.
@@ -523,16 +563,10 @@ func (h *handler) serveStandard(
 			if rsc2.MergeFunc == nil || rsc2.MergeRespondFunc == nil {
 				logger.Warn("tsm gather failed due to nil func", nil)
 			}
-			if len(stripKeys) > 0 && rsc2.TS != nil {
-				if ds, ok := rsc2.TS.(*dataset.DataSet); ok {
-					ds.StripTags(stripKeys)
-				}
-			}
 			var contributed bool
 			if rsc2.MergeFunc != nil {
 				if rsc2.TS != nil {
-					rsc2.MergeFunc(accumulator, rsc2.TS, i)
-					contributed = true
+					contributed = mergeGatherContribution(accumulator, rsc2, nil, i, stripKeys)
 				} else {
 					body, derr := encoding.DecompressResponseBody(
 						fr.Capture.Header().Get(headers.NameContentEncoding),
@@ -546,8 +580,7 @@ func (h *handler) serveStandard(
 						return
 					}
 					if len(body) > 0 {
-						rsc2.MergeFunc(accumulator, body, i)
-						contributed = true
+						contributed = mergeGatherContribution(accumulator, rsc2, body, i, stripKeys)
 					}
 				}
 			}
@@ -812,13 +845,22 @@ func (h *handler) serveWeightedAvg(
 					results[i].failed = true
 					return
 				}
-				if len(stripKeys) > 0 && rsc2.TS != nil {
-					if ds, ok := rsc2.TS.(*dataset.DataSet); ok {
-						ds.StripTags(stripKeys)
+				var contributed bool
+				if rsc2.TS != nil {
+					contributed = mergeGatherContribution(sumAccum, rsc2, nil, i, stripKeys)
+				} else if fr.Capture != nil {
+					body, derr := encoding.DecompressResponseBody(
+						fr.Capture.Header().Get(headers.NameContentEncoding),
+						fr.Capture.Body(),
+					)
+					if derr != nil {
+						logger.Warn("tsm avg sum gather decode failure", logging.Pairs{
+							"member": i, "error": derr,
+						})
+						results[i].failed = true
+						return
 					}
-				}
-				if rsc2.MergeFunc != nil && rsc2.TS != nil {
-					rsc2.MergeFunc(sumAccum, rsc2.TS, i)
+					contributed = mergeGatherContribution(sumAccum, rsc2, body, i, stripKeys)
 				}
 				sc := fr.Capture.StatusCode()
 				if rsc2.Response != nil && rsc2.Response.StatusCode > 0 {
@@ -828,6 +870,7 @@ func (h *handler) serveWeightedAvg(
 					statusCode: sc,
 					header:     fr.Capture.Header(),
 					mergeFunc:  rsc2.MergeRespondFunc,
+					failed:     !contributed,
 				}
 			},
 		})
@@ -852,13 +895,20 @@ func (h *handler) serveWeightedAvg(
 				if rsc2 == nil {
 					return
 				}
-				if len(stripKeys) > 0 && rsc2.TS != nil {
-					if ds, ok := rsc2.TS.(*dataset.DataSet); ok {
-						ds.StripTags(stripKeys)
+				if rsc2.TS != nil {
+					mergeGatherContribution(countAccum, rsc2, nil, i, stripKeys)
+				} else if fr.Capture != nil {
+					body, derr := encoding.DecompressResponseBody(
+						fr.Capture.Header().Get(headers.NameContentEncoding),
+						fr.Capture.Body(),
+					)
+					if derr != nil {
+						logger.Warn("tsm avg count gather decode failure", logging.Pairs{
+							"member": i, "error": derr,
+						})
+						return
 					}
-				}
-				if rsc2.MergeFunc != nil && rsc2.TS != nil {
-					rsc2.MergeFunc(countAccum, rsc2.TS, i)
+					mergeGatherContribution(countAccum, rsc2, body, i, stripKeys)
 				}
 			},
 		})
