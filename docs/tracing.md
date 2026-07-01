@@ -15,6 +15,10 @@ Trickster allows the operator to configure multiple tracing configurations, whic
 
 The [example config](https://github.com/trickstercache/trickster/blob/v1.1.2/examples/conf/example.full.yaml#L508) has exhaustive examples of configuring Trickster for distributed tracing.
 
+## Context Propagation
+
+When tracing is enabled for a Backend, Trickster uses the W3C Trace Context and Baggage propagators. It extracts incoming `traceparent`, `tracestate`, and `baggage` headers from client requests and injects the active outbound origin request span into the proxied request. This lets downstream Origins continue the same distributed trace instead of starting an unrelated trace.
+
 ## Span List
 
 Trickster can insert several spans to the traces that it captures, depending upon the type and cacheability of the inbound client request, as described in the table below.

@@ -81,6 +81,25 @@ func NewChildSpan(ctx context.Context, tr *tracing.Tracer,
 	return ctx, span
 }
 
+// PrepareOutgoingRequest attaches HTTP client tracing hooks and injects the
+// active trace context into an outbound request.
+func PrepareOutgoingRequest(ctx context.Context, r *http.Request,
+	tr *tracing.Tracer,
+) (context.Context, *http.Request) {
+	if r == nil || tr == nil || tr.Tracer == nil {
+		return ctx, r
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if tctx.HealthCheckFlag(ctx) {
+		return ctx, r
+	}
+	ctx, r = otelhttptrace.W3C(ctx, r)
+	otelhttptrace.Inject(ctx, r)
+	return ctx, r
+}
+
 // SetAttributes safely sets attributes on a span, unless they are in the omit list
 func SetAttributes(tr *tracing.Tracer, span trace.Span, kvs ...attribute.KeyValue) {
 	l := len(kvs)

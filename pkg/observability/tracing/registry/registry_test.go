@@ -17,6 +17,9 @@
 package registry
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/config"
@@ -24,6 +27,9 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func TestRegisterAll(t *testing.T) {
@@ -117,5 +123,40 @@ func TestGetTracer(t *testing.T) {
 	tr, _ := GetTracer(nil, true)
 	if tr != nil {
 		t.Error("expected nil tracer")
+	}
+}
+
+func TestGetTracerInstallsTraceContextPropagator(t *testing.T) {
+	previous := otel.GetTextMapPropagator()
+	t.Cleanup(func() { otel.SetTextMapPropagator(previous) })
+
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator())
+
+	opts := options.New()
+	opts.Name = "test"
+	opts.Provider = "stdout"
+	tracer, err := GetTracer(opts, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tracer == nil {
+		t.Fatal("expected tracer")
+	}
+
+	traceID := trace.TraceID{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}
+	spanID := trace.SpanID{2, 2, 2, 2, 2, 2, 2, 2}
+	ctx := trace.ContextWithSpanContext(context.Background(),
+		trace.NewSpanContext(trace.SpanContextConfig{
+			TraceID:    traceID,
+			SpanID:     spanID,
+			TraceFlags: trace.FlagsSampled,
+		}))
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
+
+	want := "00-" + traceID.String() + "-" + spanID.String() + "-01"
+	if got := req.Header.Get("traceparent"); got != want {
+		t.Fatalf("traceparent: expected %q, got %q", want, got)
 	}
 }

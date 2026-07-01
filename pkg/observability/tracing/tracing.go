@@ -23,8 +23,10 @@ import (
 	"net/http"
 
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -44,6 +46,21 @@ type Tracers map[string]*Tracer
 
 // Tags represents a collection of Tags
 type Tags map[string]string
+
+// ConfigurePropagators installs Trickster's default distributed-tracing
+// propagators for inbound extraction and outbound origin request injection.
+func ConfigurePropagators() {
+	otel.SetTextMapPropagator(DefaultPropagators())
+}
+
+// DefaultPropagators returns the W3C propagators Trickster uses for trace
+// context and baggage across proxy boundaries.
+func DefaultPropagators() propagation.TextMapPropagator {
+	return propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{},
+		propagation.Baggage{},
+	)
+}
 
 // HTTPToCode translates an HTTP status code into a GRPC code
 func HTTPToCode(status int) codes.Code {
