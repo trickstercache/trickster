@@ -67,6 +67,7 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 	if span != nil {
 		defer span.End()
 	}
+	setResourceSpanAttributes(rsc, span)
 
 	pc := rsc.PathConfig
 
@@ -144,6 +145,10 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 		recordResults(r, "HTTPProxy", cacheStatusCode, resp.StatusCode,
 			r.URL.Path, "", elapsed.Seconds(), nil, resp.Header)
 	}
+	if resp != nil {
+		tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", cacheStatusCode.String()))
+		setHTTPStatusSpanAttributes(rsc.Tracer, resp.StatusCode, span)
+	}
 
 	return resp
 }
@@ -185,6 +190,7 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 	if span != nil {
 		defer span.End()
 	}
+	setResourceSpanAttributes(rsc, span)
 
 	pc := rsc.PathConfig
 
@@ -221,6 +227,7 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 	if doSpan != nil {
 		defer doSpan.End()
 	}
+	setResourceSpanAttributes(rsc, doSpan)
 
 	if ep := profile.FromContext(r.Context()); ep != nil && ep.SupportedHeaderVal != "" {
 		r.Header.Set(headers.NameAcceptEncoding, ep.SupportedHeaderVal)
@@ -241,6 +248,7 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 			}
 			logger.Error("error buffering request body for retry",
 				logging.Pairs{"url": r.URL.String(), "detail": err.Error()})
+			setHTTPStatusSpanAttributes(rsc.Tracer, status, span, doSpan)
 			return nil, &http.Response{
 				StatusCode: status,
 				Request:    r, Header: make(http.Header),
@@ -285,6 +293,7 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 			headers.UpdateHeaders(resp.Header, pc.ResponseHeaders)
 		}
 
+		setHTTPStatusSpanAttributes(rsc.Tracer, resp.StatusCode, span, doSpan)
 		if doSpan != nil {
 			doSpan.AddEvent(
 				"Failure",
@@ -354,6 +363,7 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 		rc = resp.Body
 	}
 
+	setHTTPStatusSpanAttributes(rsc.Tracer, resp.StatusCode, span, doSpan)
 	return rc, resp, originalLen
 }
 

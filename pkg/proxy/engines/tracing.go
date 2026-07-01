@@ -14,26 +14,26 @@
  * limitations under the License.
  */
 
-package middleware
+package engines
 
 import (
-	"net/http"
-
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	tspan "github.com/trickstercache/trickster/v2/pkg/observability/tracing/span"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
-// Trace attaches a Tracer to an HTTP request
-func Trace(tr *tracing.Tracer, next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r, span := tspan.PrepareRequest(r, tr)
-		if span != nil {
-			defer span.End()
+func setResourceSpanAttributes(rsc *request.Resources, span trace.Span) {
+	if rsc == nil {
+		return
+	}
+	tspan.SetAttributes(rsc.Tracer, span, rsc.TracingAttributes()...)
+}
 
-			rsc := request.GetResources(r)
-			tspan.SetAttributes(tr, span, rsc.TracingAttributes()...)
-		}
-		next.ServeHTTP(w, r)
-	})
+func setHTTPStatusSpanAttributes(tr *tracing.Tracer, statusCode int, spans ...trace.Span) {
+	attr := attribute.Int("http.status_code", statusCode)
+	for _, span := range spans {
+		tspan.SetAttributes(tr, span, attr)
+	}
 }
