@@ -1,0 +1,48 @@
+frontend:
+  listen_port: %d
+metrics:
+  listen_port: %d
+mgmt:
+  listen_port: %d
+logging:
+  log_level: error
+caches:
+  mem1:
+    provider: memory
+  mem2:
+    provider: memory
+backends:
+  prom-old1:
+    provider: prometheus
+    origin_url: %s
+    cache_name: mem1
+    timeseries_retention_factor: 2
+    timeseries_eviction_method: oldest
+    healthcheck:
+      path: /api/v1/status/buildinfo
+      query: ""
+      interval: 100ms
+      timeout: 500ms
+      failure_threshold: 1
+      recovery_threshold: 1
+  prom-old2:
+    provider: prometheus
+    origin_url: %s
+    cache_name: mem2
+    timeseries_retention_factor: 2
+    timeseries_eviction_method: oldest
+    healthcheck:
+      path: /api/v1/status/buildinfo
+      query: ""
+      interval: 100ms
+      timeout: 500ms
+      failure_threshold: 1
+      recovery_threshold: 1
+  alb-tsm-old-ranges:
+    provider: alb
+    alb:
+      mechanism: tsm
+      output_format: prometheus
+      pool:
+        - prom-old1
+        - prom-old2

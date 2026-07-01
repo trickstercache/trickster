@@ -1,0 +1,46 @@
+frontend:
+  listen_port: %d
+metrics:
+  listen_port: %d
+mgmt:
+  listen_port: %d
+logging:
+  log_level: error
+caches:
+  mem1:
+    provider: memory
+  mem2:
+    provider: memory
+backends:
+  prom-po1:
+    provider: prometheus
+    origin_url: %s
+    cache_name: mem1
+    proxy_only: true
+    healthcheck:
+      path: /api/v1/status/buildinfo
+      query: ""
+      interval: 100ms
+      timeout: 500ms
+      failure_threshold: 1
+      recovery_threshold: 1
+  prom-po2:
+    provider: prometheus
+    origin_url: %s
+    cache_name: mem2
+    proxy_only: true
+    healthcheck:
+      path: /api/v1/status/buildinfo
+      query: ""
+      interval: 100ms
+      timeout: 500ms
+      failure_threshold: 1
+      recovery_threshold: 1
+  alb-tsm-proxy-only:
+    provider: alb
+    alb:
+      mechanism: tsm
+      output_format: prometheus
+      pool:
+        - prom-po1
+        - prom-po2

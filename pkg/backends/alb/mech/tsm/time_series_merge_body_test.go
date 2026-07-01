@@ -17,16 +17,20 @@
 package tsm
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
+	prommodel "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/model"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/albpool"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 )
 
@@ -176,4 +180,53 @@ func TestHandleResponseMergeBody(t *testing.T) {
 			t.Fatalf("status: want %d got %d body=%q", http.StatusBadGateway, w.Code, w.Body.String())
 		}
 	})
+}
+
+func TestTSMMergeProxyOnlyBodyUsesTimeRangeQuery(t *testing.T) {
+	logger.SetLogger(testLogger)
+
+	trq := &timeseries.TimeRangeQuery{
+		Extent: timeseries.Extent{
+			Start: time.Unix(1700000000, 0),
+			End:   time.Unix(1700000030, 0),
+		},
+		Step: 15 * time.Second,
+	}
+	m := prommodel.NewModeler()
+	bodyOnlyHandler := func(job string) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			rsc := request.GetResources(r)
+			if rsc != nil {
+				rsc.TimeRangeQuery = trq.Clone()
+				rsc.TSUnmarshaler = m.WireUnmarshaler
+				rsc.MergeFunc = merge.TimeseriesMergeFunc(m.WireUnmarshaler)
+				rsc.MergeRespondFunc = merge.TimeseriesRespondFunc(m.WireMarshalWriter, &timeseries.RequestOptions{})
+			}
+			w.Header().Set(headers.NameContentType, "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = fmt.Fprintf(w, `{"status":"success","data":{"resultType":"matrix","result":[`+
+				`{"metric":{"__name__":"up","job":%q},"values":[[%d,"1"],[%d,"1"]]}]}}`,
+				job, trq.Extent.Start.Unix(), trq.Extent.End.Unix())
+		})
+	}
+
+	p, _, _ := albpool.NewHealthy([]http.Handler{
+		bodyOnlyHandler("proxy-only-a"),
+		bodyOnlyHandler("proxy-only-b"),
+	})
+	defer p.Stop()
+	h := &handler{mergePaths: []string{"/"}}
+	h.SetPool(p)
+	p.RefreshHealthy()
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, newTestMergeRequest(t))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status: want %d got %d body=%q", http.StatusOK, w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "proxy-only-a") || !strings.Contains(body, "proxy-only-b") {
+		t.Fatalf("body: want both proxy-only member series, got %q", body)
+	}
 }
