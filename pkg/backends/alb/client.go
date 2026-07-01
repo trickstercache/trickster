@@ -40,6 +40,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	authopt "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	authreg "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/registry"
+	at "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/types"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/local"
@@ -239,6 +240,8 @@ func observeOnlyOpts() *authopt.Options {
 func (c *Client) validateAndStartUserRouter(clients backends.Backends, hcs healthcheck.StatusLookup) error {
 	conf := c.Configuration()
 	var canReplaceCreds bool
+	var authenticator at.Authenticator
+	var defaultHandler http.Handler
 	o := conf.ALBOptions.UserRouter
 	h, ok := c.handler.(*ur.Handler)
 	if !ok {
@@ -248,7 +251,7 @@ func (c *Client) validateAndStartUserRouter(clients backends.Backends, hcs healt
 		// credential replacement is only allowed if users will be positively
 		// authenticated and not just observed.
 		canReplaceCreds = !(conf.AuthOptions.Authenticator.IsObserveOnly())
-		h.SetAuthenticator(conf.AuthOptions.Authenticator, canReplaceCreds)
+		authenticator = conf.AuthOptions.Authenticator
 	} else {
 		a, err := authreg.NewObserverFromProviderName(o.TargetProvider,
 			map[string]any{"options": observeOnlyOpts()})
@@ -257,53 +260,61 @@ func (c *Client) validateAndStartUserRouter(clients backends.Backends, hcs healt
 		} else if a == nil {
 			return errors.ErrInvalidOptions
 		}
-		h.SetAuthenticator(a, false)
+		authenticator = a
 	}
+	noRouteStatusCode := o.NoRouteStatusCode
 	if o.DefaultBackend != "" {
 		bh, ok := clients[o.DefaultBackend]
 		if !ok || bh == nil {
 			return alberr.NewErrInvalidBackendName(c.Name(), o.DefaultBackend)
 		}
-		h.SetDefaultHandler(bh.Router())
+		defaultHandler = bh.Router()
 	} else {
-		if o.NoRouteStatusCode < http.StatusBadRequest || o.NoRouteStatusCode >= 600 {
-			o.NoRouteStatusCode = http.StatusBadGateway
+		if noRouteStatusCode < http.StatusBadRequest || noRouteStatusCode >= 600 {
+			noRouteStatusCode = http.StatusBadGateway
 		}
-		switch o.NoRouteStatusCode {
+		switch noRouteStatusCode {
 		case http.StatusUnauthorized:
-			h.SetDefaultHandler(http.HandlerFunc(failures.HandleUnauthorized))
+			defaultHandler = http.HandlerFunc(failures.HandleUnauthorized)
 		case http.StatusBadGateway:
-			h.SetDefaultHandler(http.HandlerFunc(failures.HandleBadGateway))
+			defaultHandler = http.HandlerFunc(failures.HandleBadGateway)
 		case http.StatusBadRequest:
-			h.SetDefaultHandler(http.HandlerFunc(failures.HandleBadRequestResponse))
+			defaultHandler = http.HandlerFunc(failures.HandleBadRequestResponse)
 		case http.StatusInternalServerError:
-			h.SetDefaultHandler(http.HandlerFunc(failures.HandleInternalServerError))
+			defaultHandler = http.HandlerFunc(failures.HandleInternalServerError)
 		case http.StatusNotFound:
-			h.SetDefaultHandler(http.HandlerFunc(failures.HandleNotFound))
+			defaultHandler = http.HandlerFunc(failures.HandleNotFound)
 		default:
-			h.SetDefaultHandler(http.HandlerFunc(func(w http.ResponseWriter,
+			defaultHandler = http.HandlerFunc(func(w http.ResponseWriter,
 				_ *http.Request,
 			) {
-				failures.HandleMiscFailure(o.NoRouteStatusCode, w)
-			}))
+				failures.HandleMiscFailure(noRouteStatusCode, w)
+			})
 		}
 	}
 
-	for _, m := range o.Users {
+	routes := make(ur.UserRoutes, len(o.Users))
+	for username, m := range o.Users {
 		if m.ToBackend != "" {
 			bh, ok := clients[m.ToBackend]
 			if !ok || bh == nil {
 				return alberr.NewErrInvalidBackendName(c.Name(), m.ToBackend)
 			}
-			m.ToHandler = bh.Router()
+			route := ur.UserRoute{Handler: bh.Router()}
 			if hc, ok := hcs[m.ToBackend]; ok {
-				m.ToStatus = hc
+				route.Status = hc
 			}
+			routes[username] = route
 		}
 		if !canReplaceCreds && m.ToCredential != "" {
 			return alberr.NewErrInvalidUserRouterCreds(c.Name())
 		}
 	}
+
+	h.SetAuthenticator(authenticator, canReplaceCreds)
+	h.SetDefaultHandler(defaultHandler)
+	h.SetNoRouteStatusCode(noRouteStatusCode)
+	h.SetUserRoutes(routes)
 
 	return nil
 }

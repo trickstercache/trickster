@@ -31,17 +31,16 @@ import (
 
 // Concurrent SetDefaultHandler / SetAuthenticator vs ServeHTTP. Run under
 // -race to catch any regression in the locking discipline. Without the mutex,
-// this races on h.options.DefaultHandler / h.authenticator fields.
+// this races on h.defaultHandler / h.authenticator fields.
 func TestURConcurrentReloadIsRaceFree(t *testing.T) {
 	okH := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 
 	h := &Handler{
-		options: &uropt.Options{
-			DefaultHandler:    okH,
-			NoRouteStatusCode: http.StatusUnauthorized,
-		},
+		defaultHandler:    okH,
+		noRouteStatusCode: http.StatusUnauthorized,
+		options:           &uropt.Options{},
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -84,16 +83,16 @@ func TestURRetainsInboundCredWhenToCredentialEmpty(t *testing.T) {
 
 	h := &Handler{
 		authenticator:      auth,
+		defaultHandler:     okH,
 		enableReplaceCreds: true,
 		options: &uropt.Options{
-			DefaultHandler: okH,
 			Users: uropt.UserMappingOptionsByUser{
 				"alice": {
-					ToUser:    "bob",
-					ToHandler: okH,
+					ToUser: "bob",
 				},
 			},
 		},
+		userRoutes: UserRoutes{"alice": {Handler: okH}},
 	}
 
 	r, _ := http.NewRequest("GET", "http://example.com/", nil)
