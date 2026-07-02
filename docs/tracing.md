@@ -19,6 +19,10 @@ The [example config](https://github.com/trickstercache/trickster/blob/v1.1.2/exa
 
 When tracing is enabled for a Backend, Trickster uses the W3C Trace Context and Baggage propagators. It extracts incoming `traceparent`, `tracestate`, and `baggage` headers from client requests and injects the active outbound origin request span into the proxied request. This lets downstream Origins continue the same distributed trace instead of starting an unrelated trace.
 
+## Sampling
+
+Trickster uses parent-based sampling for traced requests. The configured `sample_rate` controls root traces that Trickster starts when there is no sampled upstream trace context. When an incoming request already has a remote parent trace, Trickster follows the parent's sampling decision so sampled upstream traces continue across the proxy boundary and unsampled upstream traces remain unsampled.
+
 ## Span List
 
 Trickster can insert several spans to the traces that it captures, depending upon the type and cacheability of the inbound client request, as described in the table below.

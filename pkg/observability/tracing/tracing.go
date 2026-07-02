@@ -27,6 +27,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/propagation"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -60,6 +61,26 @@ func DefaultPropagators() propagation.TextMapPropagator {
 		propagation.TraceContext{},
 		propagation.Baggage{},
 	)
+}
+
+// Sampler returns a parent-based sampler for the provided tracing options.
+// SampleRate controls root traces started by Trickster, while sampled upstream
+// parent traces continue through Trickster's proxy boundary.
+func Sampler(o *options.Options) sdktrace.Sampler {
+	if o == nil {
+		return sdktrace.ParentBased(sdktrace.AlwaysSample())
+	}
+	o.SanitizeSampleRate()
+	var root sdktrace.Sampler
+	switch *o.SampleRate {
+	case 0:
+		root = sdktrace.NeverSample()
+	case 1:
+		root = sdktrace.AlwaysSample()
+	default:
+		root = sdktrace.TraceIDRatioBased(*o.SampleRate)
+	}
+	return sdktrace.ParentBased(root)
 }
 
 // HTTPToCode translates an HTTP status code into a GRPC code
