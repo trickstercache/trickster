@@ -181,15 +181,14 @@ func finalizeDPCResponse(
 // request while caching the results for subsequent requests of the same data
 func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *timeseries.Modeler) {
 	rsc := request.GetResources(r)
-	o := rsc.BackendOptions
-	if o == nil || o.ProxyOnly {
-		DoProxy(w, r, true)
-		return
-	}
-
 	if modeler != nil {
 		rsc.TSMarshaler = modeler.WireMarshalWriter
 		rsc.TSUnmarshaler = modeler.WireUnmarshaler
+	}
+	o := rsc.BackendOptions
+	if o == nil {
+		DoProxy(w, r, true)
+		return
 	}
 	ctx, span := tspan.NewChildSpan(r.Context(), rsc.Tracer, "DeltaProxyCacheRequest")
 	if span != nil {
@@ -209,6 +208,13 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 	rsc.TSReqestOptions = rlo
 	rsc.Unlock()
 	if err != nil {
+		if o.ProxyOnly {
+			if trq != nil && trq.OriginalBody != nil {
+				request.SetBody(r, trq.OriginalBody)
+			}
+			DoProxy(w, r, true)
+			return
+		}
 		if canOPC {
 			logger.Debug("could not parse time range query, using object proxy cache",
 				logging.Pairs{"error": err.Error()})
@@ -218,6 +224,13 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 		}
 		// err may simply mean incompatible query (e.g., non-select), so just proxy
 		if trq != nil && trq.OriginalBody != nil {
+			request.SetBody(r, trq.OriginalBody)
+		}
+		DoProxy(w, r, true)
+		return
+	}
+	if o.ProxyOnly {
+		if trq.OriginalBody != nil {
 			request.SetBody(r, trq.OriginalBody)
 		}
 		DoProxy(w, r, true)
