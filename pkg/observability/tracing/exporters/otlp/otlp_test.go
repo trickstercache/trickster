@@ -28,6 +28,7 @@ import (
 
 	errs "github.com/trickstercache/trickster/v2/pkg/observability/tracing/errors"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
+	"go.opentelemetry.io/otel/trace"
 	collectortracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	"google.golang.org/protobuf/proto"
 )
@@ -217,6 +218,68 @@ func TestNewAppliesResourceAttributes(t *testing.T) {
 	}
 }
 
+func TestNewContinuesSampledRemoteParent(t *testing.T) {
+	payloads := make(chan *collectortracepb.ExportTraceServiceRequest, 10)
+	handlerErrs := make(chan error, 10)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			handlerErrs <- err
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		var req collectortracepb.ExportTraceServiceRequest
+		if err := proto.Unmarshal(body, &req); err != nil {
+			handlerErrs <- err
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		payloads <- &req
+		w.Header().Set("Content-Type", "application/x-protobuf")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	t.Setenv("OTEL_BSP_MAX_EXPORT_BATCH_SIZE", "1")
+
+	sampleRate := 0.0
+	opt := options.New()
+	opt.Endpoint = srv.URL + "/v1/traces"
+	opt.SampleRate = &sampleRate
+	opt.DisableCompression = true
+	opt.Timeout = time.Second
+
+	tr, err := New(opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	traceID := trace.TraceID{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
+	parent := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID:    traceID,
+		SpanID:     trace.SpanID{17, 18, 19, 20, 21, 22, 23, 24},
+		TraceFlags: trace.FlagsSampled,
+		Remote:     true,
+	})
+	_, span := tr.Start(
+		trace.ContextWithRemoteSpanContext(context.Background(), parent),
+		"sampled-remote-child",
+	)
+	span.End()
+
+	req := waitForOTLPRequest(t, payloads, handlerErrs)
+	if !hasSpanName(req, "sampled-remote-child") {
+		t.Fatalf("expected sampled-remote-child span in OTLP request")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err = tr.ShutdownFunc(ctx); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func waitForOTLPRequest(t *testing.T, payloads <-chan *collectortracepb.ExportTraceServiceRequest,
 	handlerErrs <-chan error) *collectortracepb.ExportTraceServiceRequest {
 	t.Helper()
@@ -239,4 +302,17 @@ func resourceAttributeValues(req *collectortracepb.ExportTraceServiceRequest) ma
 		}
 	}
 	return out
+}
+
+func hasSpanName(req *collectortracepb.ExportTraceServiceRequest, name string) bool {
+	for _, rs := range req.GetResourceSpans() {
+		for _, ss := range rs.GetScopeSpans() {
+			for _, span := range ss.GetSpans() {
+				if span.GetName() == name {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }

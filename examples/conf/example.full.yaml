@@ -650,7 +650,8 @@ backends:
 #     # default is false
 #     disable_compression: false
 
-#     # sample_rate sets the probability that a span will be recorded.
+#     # sample_rate sets the probability that a root trace started by Trickster will be recorded.
+#     # when a request already has remote trace context, Trickster follows the parent's sampling decision.
 #     # A floating point value of 0.0 to 1.0 (inclusive) is permitted
 #     # default is 1.0 (meaning 100% of requests are recorded)
 #     sample_rate: 1.0

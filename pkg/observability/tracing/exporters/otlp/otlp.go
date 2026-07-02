@@ -38,16 +38,6 @@ func New(o *options.Options) (*tracing.Tracer, error) {
 	if o == nil {
 		return nil, errs.ErrNoTracerOptions
 	}
-	var sampler sdktrace.Sampler
-	o.SanitizeSampleRate()
-	switch *o.SampleRate {
-	case 0:
-		sampler = sdktrace.NeverSample()
-	case 1:
-		sampler = sdktrace.AlwaysSample()
-	default:
-		sampler = sdktrace.TraceIDRatioBased(*o.SampleRate)
-	}
 
 	tags := make([]attribute.KeyValue, 1, len(o.Tags)+1)
 	tags[0] = attribute.String("service.name", o.ServiceName)
@@ -89,7 +79,7 @@ func New(o *options.Options) (*tracing.Tracer, error) {
 	}
 
 	tracerOpts := make([]sdktrace.TracerProviderOption, 0, 3)
-	tracerOpts = append(tracerOpts, sdktrace.WithSampler(sampler))
+	tracerOpts = append(tracerOpts, sdktrace.WithSampler(tracing.Sampler(o)))
 	tracerOpts = append(tracerOpts,
 		sdktrace.WithResource(resource.NewWithAttributes("", tags...)))
 	tracerOpts = append(tracerOpts, sdktrace.WithBatcher(exporter))
