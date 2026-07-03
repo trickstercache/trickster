@@ -189,6 +189,7 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 	ctx, span := tspan.NewChildSpan(r.Context(), rsc.Tracer, "PrepareFetchReader")
 	if span != nil {
 		defer span.End()
+		r = r.WithContext(ctx)
 	}
 	setResourceSpanAttributes(rsc, span)
 
