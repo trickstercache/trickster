@@ -30,43 +30,40 @@ tracing:
     provider: stdout
     stdout:
       pretty_print: true
-  jc1:
-    provider: otlp # jaeger collector
-    endpoint: 'http://jaeger:14268/api/traces'
-  ja1:
-    provider: otlp # jaeger agent
-    endpoint: 'jaeger:6831'
+  otlp1:
+    provider: otlp
+    endpoint: 'http://jaeger:4318/v1/traces'
 backends:
   prom1: # prometheus cached with a memory cache, traces sent to stdout
     provider: prometheus
     origin_url: 'http://prometheus:9090'
     tracing_name: std1
     cache_name: mem1
-  prom2: # prometheus cached with a filesystem cache, traces sent to jaeger collector
+  prom2: # prometheus cached with a filesystem cache, traces sent to Jaeger via OTLP/HTTP
     provider: prometheus
     origin_url: 'http://prometheus:9090'
-    tracing_name: jc1
+    tracing_name: otlp1
     cache_name: fs1
-  influx1: # influxdb cached with a memory cache, traces sent to jaeger collector
+  influx1: # influxdb cached with a memory cache, traces sent to Jaeger via OTLP/HTTP
     provider: influxdb
     origin_url: 'http://influxdb:8086'
-    tracing_name: jc1
+    tracing_name: otlp1
     cache_name: mem1
     backfill_tolerance: 60s
-  sim1: # simulated prometheus cached with a memory cache, traces sent to jaeger agent
+  sim1: # simulated prometheus cached with a memory cache, traces sent to Jaeger via OTLP/HTTP
     provider: prometheus
     origin_url: 'http://mockster:8482/prometheus'
-    tracing_name: ja1
+    tracing_name: otlp1
     cache_name: mem1
-  sim2: # simulated prometheus cached with a Redis cache, traces sent to jaeger agent
+  sim2: # simulated prometheus cached with a Redis cache, traces sent to Jaeger via OTLP/HTTP
     provider: prometheus
     origin_url: 'http://mockster:8482/prometheus'
-    tracing_name: ja1
+    tracing_name: otlp1
     cache_name: rds1
-  rpc1: # memory reverse proxy cache of the byterange request simulation endpoint, traces sent to jager agent
+  rpc1: # memory reverse proxy cache of the byterange request simulation endpoint, traces sent to Jaeger via OTLP/HTTP
     provider: reverseproxycache
     origin_url: 'http://mockster:8482/byterange'
-    tracing_name: ja1
+    tracing_name: otlp1
     cache_name: mem1
     paths:
       - path: /
