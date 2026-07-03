@@ -68,11 +68,7 @@ func (m *mockAuth) Sanitize(r *http.Request) {
 func TestHandleDefaultNilHandler(t *testing.T) {
 	// Before the fix, this would panic with a nil pointer dereference
 	// because handleDefault did not return after calling HandleBadGateway.
-	h := &Handler{
-		options: &uropt.Options{
-			DefaultHandler: nil,
-		},
-	}
+	h := &Handler{}
 	w := httptest.NewRecorder()
 	r, _ := http.NewRequest("GET", "http://example.com/", nil)
 	h.handleDefault(w, r)
@@ -84,12 +80,10 @@ func TestHandleDefaultNilHandler(t *testing.T) {
 func TestHandleDefaultWithHandler(t *testing.T) {
 	called := false
 	h := &Handler{
-		options: &uropt.Options{
-			DefaultHandler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				called = true
-				w.WriteHeader(http.StatusOK)
-			}),
-		},
+		defaultHandler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			called = true
+			w.WriteHeader(http.StatusOK)
+		}),
 	}
 	w := httptest.NewRecorder()
 	r, _ := http.NewRequest("GET", "http://example.com/", nil)
@@ -109,9 +103,8 @@ func TestServeHTTP(t *testing.T) {
 
 	t.Run("no username falls through to default", func(t *testing.T) {
 		h := &Handler{
-			options: &uropt.Options{
-				DefaultHandler: okHandler,
-			},
+			defaultHandler: okHandler,
+			options:        &uropt.Options{},
 		}
 		w := httptest.NewRecorder()
 		r, _ := http.NewRequest("GET", "http://example.com/", nil)
@@ -128,12 +121,13 @@ func TestServeHTTP(t *testing.T) {
 			w.WriteHeader(http.StatusAccepted)
 		})
 		h := &Handler{
+			defaultHandler: okHandler,
 			options: &uropt.Options{
-				DefaultHandler: okHandler,
 				Users: uropt.UserMappingOptionsByUser{
-					"alice": {ToHandler: userHandler},
+					"alice": {},
 				},
 			},
+			userRoutes: UserRoutes{"alice": {Handler: userHandler}},
 		}
 		w := httptest.NewRecorder()
 		r, _ := http.NewRequest("GET", "http://example.com/", nil)
@@ -152,12 +146,13 @@ func TestServeHTTP(t *testing.T) {
 
 	t.Run("unknown user falls through to default", func(t *testing.T) {
 		h := &Handler{
+			defaultHandler: okHandler,
 			options: &uropt.Options{
-				DefaultHandler: okHandler,
 				Users: uropt.UserMappingOptionsByUser{
-					"alice": {ToHandler: okHandler},
+					"alice": {},
 				},
 			},
+			userRoutes: UserRoutes{"alice": {Handler: okHandler}},
 		}
 		w := httptest.NewRecorder()
 		r, _ := http.NewRequest("GET", "http://example.com/", nil)
@@ -178,13 +173,14 @@ func TestServeHTTP(t *testing.T) {
 			w.WriteHeader(http.StatusAccepted)
 		})
 		h := &Handler{
-			authenticator: &mockAuth{username: "carol", cred: "pass"},
+			authenticator:  &mockAuth{username: "carol", cred: "pass"},
+			defaultHandler: okHandler,
 			options: &uropt.Options{
-				DefaultHandler: okHandler,
 				Users: uropt.UserMappingOptionsByUser{
-					"carol": {ToHandler: userHandler},
+					"carol": {},
 				},
 			},
+			userRoutes: UserRoutes{"carol": {Handler: userHandler}},
 		}
 		w := httptest.NewRecorder()
 		r, _ := http.NewRequest("GET", "http://example.com/", nil)
@@ -198,17 +194,17 @@ func TestServeHTTP(t *testing.T) {
 		auth := &mockAuth{}
 		h := &Handler{
 			authenticator:      auth,
+			defaultHandler:     okHandler,
 			enableReplaceCreds: true,
 			options: &uropt.Options{
-				DefaultHandler: okHandler,
 				Users: uropt.UserMappingOptionsByUser{
 					"alice": {
 						ToUser:       "admin",
 						ToCredential: "secret",
-						ToHandler:    okHandler,
 					},
 				},
 			},
+			userRoutes: UserRoutes{"alice": {Handler: okHandler}},
 		}
 		w := httptest.NewRecorder()
 		r, _ := http.NewRequest("GET", "http://example.com/", nil)
@@ -226,17 +222,62 @@ func TestServeHTTP(t *testing.T) {
 		}
 	})
 
-	t.Run("user in map without ToHandler falls to default", func(t *testing.T) {
+	t.Run("credential remapping keeps inbound username for routing", func(t *testing.T) {
+		auth := &mockAuth{}
+		aliceHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusAccepted)
+		})
+		adminHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusTeapot)
+		})
+		h := &Handler{
+			authenticator:      auth,
+			defaultHandler:     okHandler,
+			enableReplaceCreds: true,
+			options: &uropt.Options{
+				Users: uropt.UserMappingOptionsByUser{
+					"alice": {
+						ToUser:       "admin",
+						ToCredential: "secret",
+					},
+				},
+			},
+			userRoutes: UserRoutes{
+				"alice": {Handler: aliceHandler},
+				"admin": {Handler: adminHandler},
+			},
+		}
+		w := httptest.NewRecorder()
+		r, _ := http.NewRequest("GET", "http://example.com/", nil)
+		r = request.SetResources(r, &request.Resources{
+			AuthResult: &at.AuthResult{Username: "alice", Status: at.AuthSuccess},
+		})
+
+		h.ServeHTTP(w, r)
+
+		if w.Code != http.StatusAccepted {
+			t.Fatalf("status = %d, want %d from alice route", w.Code, http.StatusAccepted)
+		}
+		if len(auth.setCalls) != 1 {
+			t.Fatalf("expected 1 SetCredentials call, got %d", len(auth.setCalls))
+		}
+		if auth.setCalls[0].user != "admin" || auth.setCalls[0].cred != "secret" {
+			t.Errorf("expected outbound admin/secret, got %s/%s",
+				auth.setCalls[0].user, auth.setCalls[0].cred)
+		}
+	})
+
+	t.Run("user in map without runtime route falls to default", func(t *testing.T) {
 		defaultCalled := false
 		defaultH := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			defaultCalled = true
 			w.WriteHeader(http.StatusOK)
 		})
 		h := &Handler{
+			defaultHandler: defaultH,
 			options: &uropt.Options{
-				DefaultHandler: defaultH,
 				Users: uropt.UserMappingOptionsByUser{
-					"alice": {}, // no ToHandler
+					"alice": {},
 				},
 			},
 		}
@@ -248,7 +289,7 @@ func TestServeHTTP(t *testing.T) {
 		r = request.SetResources(r, rsc)
 		h.ServeHTTP(w, r)
 		if !defaultCalled {
-			t.Error("expected default handler when user has no ToHandler")
+			t.Error("expected default handler when user has no runtime route")
 		}
 	})
 
@@ -264,17 +305,17 @@ func TestServeHTTP(t *testing.T) {
 		auth := &mockAuth{setErr: errors.New("boom")}
 		h := &Handler{
 			authenticator:      auth,
+			defaultHandler:     okHandler,
 			enableReplaceCreds: true,
 			options: &uropt.Options{
-				DefaultHandler: okHandler,
 				Users: uropt.UserMappingOptionsByUser{
 					"alice": {
 						ToUser:       "admin",
 						ToCredential: "secret",
-						ToHandler:    target,
 					},
 				},
 			},
+			userRoutes: UserRoutes{"alice": {Handler: target}},
 		}
 		w := httptest.NewRecorder()
 		r, _ := http.NewRequest("GET", "http://example.com/", nil)
@@ -293,9 +334,7 @@ func TestServeHTTP(t *testing.T) {
 	// and no DefaultHandler has been wired up by the client startup path.
 	t.Run("NoRouteStatusCode honored without DefaultHandler", func(t *testing.T) {
 		h := &Handler{
-			options: &uropt.Options{
-				NoRouteStatusCode: http.StatusNotFound,
-			},
+			noRouteStatusCode: http.StatusNotFound,
 		}
 		w := httptest.NewRecorder()
 		r, _ := http.NewRequest("GET", "http://example.com/", nil)
@@ -322,17 +361,17 @@ func TestServeHTTP(t *testing.T) {
 		}
 		h := &Handler{
 			authenticator:      auth,
+			defaultHandler:     okHandler,
 			enableReplaceCreds: true,
 			options: &uropt.Options{
-				DefaultHandler: okHandler,
 				Users: uropt.UserMappingOptionsByUser{
 					"alice": {
 						ToUser:       "admin",
 						ToCredential: "secret",
-						ToHandler:    target,
 					},
 				},
 			},
+			userRoutes: UserRoutes{"alice": {Handler: target}},
 		}
 		w := httptest.NewRecorder()
 		r, _ := http.NewRequest("GET", "http://example.com/", nil)

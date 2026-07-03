@@ -42,8 +42,6 @@ type Options struct {
 	NoRouteStatusCode int `yaml:"no_route_status_code,omitempty"`
 	// Users is a map of usernames to user-specific mapping options
 	Users UserMappingOptionsByUser `yaml:"users,omitempty"`
-	// DefaultHandler is the the HTTP Handler for DefaultBackend
-	DefaultHandler http.Handler `yaml:"-"`
 	// TargetProvider is the Provider name (e.g., 'rpc' or 'clickhouse') that
 	// the user router is handling. While a User Router can point to multiple
 	// ALBs, Rules and Backends, all non-virtual Backends (non-rule, non-ALB)
@@ -51,13 +49,6 @@ type Options struct {
 	// checked and the TargetProvider value is set based on the check results.
 	TargetProvider string `yaml:"-"`
 	albName        string
-}
-
-// HealthStatusGetter exposes the subset of *healthcheck.Status that the
-// router needs to gate dispatch. Declared here to avoid an import cycle
-// into pkg/backends/healthcheck.
-type HealthStatusGetter interface {
-	Get() int32
 }
 
 // UserMappingOptions holds per-user configurations that direct the User Router
@@ -68,12 +59,6 @@ type UserMappingOptions struct {
 	ToUser string `yaml:"to_user"`
 	// ToCredential is the Credential that will be substituted in the upstream request
 	ToCredential types.EnvString `yaml:"to_credential"`
-	// ToHandler is the the HTTP Handler for the Backend in ToBackend
-	ToHandler http.Handler `yaml:"-"`
-	// ToStatus is the Health Status of the routed Backend, when known. When set
-	// and the status is below StatusUnchecked (i.e., Failing or Initializing),
-	// the request falls through to the default handler.
-	ToStatus HealthStatusGetter `yaml:"-"`
 }
 
 type UserMappingOptionsByUser map[string]*UserMappingOptions

@@ -47,15 +47,13 @@ func TestServeHTTPSkipsUnhealthyUserTarget(t *testing.T) {
 	failing.Set(healthcheck.StatusFailing)
 
 	h := &Handler{
+		defaultHandler: defaultHandler,
 		options: &uropt.Options{
-			DefaultHandler: defaultHandler,
 			Users: uropt.UserMappingOptionsByUser{
-				"alice": {
-					ToHandler: userHandler,
-					ToStatus:  failing,
-				},
+				"alice": {},
 			},
 		},
+		userRoutes: UserRoutes{"alice": {Handler: userHandler, Status: failing}},
 	}
 
 	r, _ := http.NewRequest("GET", "http://example.com/", nil)
