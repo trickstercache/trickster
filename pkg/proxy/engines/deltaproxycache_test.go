@@ -615,7 +615,7 @@ func TestDeltaProxyCacheRequestPartialHitWithFailedExtents(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
