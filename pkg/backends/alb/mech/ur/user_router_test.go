@@ -222,6 +222,51 @@ func TestServeHTTP(t *testing.T) {
 		}
 	})
 
+	t.Run("credential remapping keeps inbound username for routing", func(t *testing.T) {
+		auth := &mockAuth{}
+		aliceHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusAccepted)
+		})
+		adminHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusTeapot)
+		})
+		h := &Handler{
+			authenticator:      auth,
+			defaultHandler:     okHandler,
+			enableReplaceCreds: true,
+			options: &uropt.Options{
+				Users: uropt.UserMappingOptionsByUser{
+					"alice": {
+						ToUser:       "admin",
+						ToCredential: "secret",
+					},
+				},
+			},
+			userRoutes: UserRoutes{
+				"alice": {Handler: aliceHandler},
+				"admin": {Handler: adminHandler},
+			},
+		}
+		w := httptest.NewRecorder()
+		r, _ := http.NewRequest("GET", "http://example.com/", nil)
+		r = request.SetResources(r, &request.Resources{
+			AuthResult: &at.AuthResult{Username: "alice", Status: at.AuthSuccess},
+		})
+
+		h.ServeHTTP(w, r)
+
+		if w.Code != http.StatusAccepted {
+			t.Fatalf("status = %d, want %d from alice route", w.Code, http.StatusAccepted)
+		}
+		if len(auth.setCalls) != 1 {
+			t.Fatalf("expected 1 SetCredentials call, got %d", len(auth.setCalls))
+		}
+		if auth.setCalls[0].user != "admin" || auth.setCalls[0].cred != "secret" {
+			t.Errorf("expected outbound admin/secret, got %s/%s",
+				auth.setCalls[0].user, auth.setCalls[0].cred)
+		}
+	})
+
 	t.Run("user in map without runtime route falls to default", func(t *testing.T) {
 		defaultCalled := false
 		defaultH := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

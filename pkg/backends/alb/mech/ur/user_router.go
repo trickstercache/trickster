@@ -120,9 +120,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if u, ok := opts.Users[username]; ok {
 		// this handles when username or credential is configured to be remapped
 		if enableReplaceCreds && (u.ToUser != "" || u.ToCredential != "") {
+			outboundUsername := username
 			// swap in the new user if configured
 			if u.ToUser != "" {
-				username = u.ToUser
+				outboundUsername = u.ToUser
 			}
 			// swap in the new credential if configured. When ToCredential is
 			// empty, retain the inbound credential rather than overwriting with
@@ -137,7 +138,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			// password and collapses every such user into one cache key.
 			if cred != "" {
 				auth.Sanitize(r)
-				if err := auth.SetCredentials(r, username, cred); err != nil {
+				if err := auth.SetCredentials(r, outboundUsername, cred); err != nil {
 					h.handleDefault(w, r)
 					return
 				}
