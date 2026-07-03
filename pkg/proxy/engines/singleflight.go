@@ -80,4 +80,5 @@ type dpcResult struct {
 	uncachedValueCount int64
 	cacheStatus        status.LookupStatus
 	missRanges         timeseries.ExtentList
+	failedExtents      timeseries.ExtentList // populated only is case of failed extents
 }
