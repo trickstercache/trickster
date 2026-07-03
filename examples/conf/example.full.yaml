@@ -632,8 +632,9 @@ backends:
 #     service_name: trickster
 
 #     # endpoint is the URL, URI or Path to the tracing backend
-#     # required for OTLP, unused for stdout
-#     endpoint: http://jaeger:14268/api/traces
+#     # required for OTLP, unused for stdout. For Jaeger OTLP/HTTP, use the
+#     # collector's OTLP HTTP endpoint, such as http://jaeger:4318/v1/traces.
+#     endpoint: http://jaeger:4318/v1/traces
 
 #     # timeout is the amount of time in arbitrary time units (ns, ms, s, h, d) for the tracing post
 #     # to wait for a response before timing out
@@ -662,7 +663,6 @@ backends:
     
 #       # tags will append these tags/attributes to each trace that is recorded
 #       # only string key/value tags are supported. numeric values, etc are not.
-#       # For Jaeger, these key/values are added to the "Process" section
 #       # default tags list is empty
 #     tags:
 #       key1: "value1"
@@ -674,10 +674,10 @@ backends:
 #       # default is false
 #       pretty_print: false
 
-#     # another example tracing config named example using otlp agent backend and a 50% sample rate
+#     # another example tracing config named example using OTLP/HTTP and a 50% sample rate
 #   example:
 #     provider: otlp
-#     endpoint: jaeger:6831
+#     endpoint: http://jaeger:4318/v1/traces
 #     sample_rate: 0.5
 
 # # Configuration Options for Authentication

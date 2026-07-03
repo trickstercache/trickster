@@ -515,8 +515,9 @@ data:
     #     service_name: trickster
 
     #     # endpoint is the URL, URI or Path to the tracing backend
-    #     # required for OTLP, unused for stdout
-    #     endpoint: http://jaeger:14268/api/traces
+    #     # required for OTLP, unused for stdout. For Jaeger OTLP/HTTP, use the
+    #     # collector's OTLP HTTP endpoint, such as http://jaeger:4318/v1/traces.
+    #     endpoint: http://jaeger:4318/v1/traces
 
     #     # timeout is the amount of time in milliseconds for the tracing post
     #     # to wait for a response before timing out
@@ -533,7 +534,8 @@ data:
     #     # default is false
     #     disable_compression: false
 
-    #     # sample_rate sets the probability that a span will be recorded.
+    #     # sample_rate sets the probability that a root trace started by Trickster will be recorded.
+    #     # when a request already has remote trace context, Trickster follows the parent's sampling decision.
     #     # A floating point value of 0.0 to 1.0 (inclusive) is permitted
     #     # default is 1.0 (meaning 100% of requests are recorded)
     #     sample_rate: 1.0
@@ -544,17 +546,10 @@ data:
         
     #       # tags will append these tags/attributes to each trace that is recorded
     #       # only string key/value tags are supported. numeric values, etc are not.
-    #       # For Jaeger, these key/values are added to the "Process" section
     #       # default tags list is empty
     #     tags:
     #       key1: "value1"
     #       key2: "value2"
-
-    #       # configurations for this tracer, specific to jaeger
-    #     jaeger:
-    #       # endpoint_type indicates whether the jaeger tracing backend is a collector or agent
-    #       # default is collector
-    #       endpoint_type: collector
 
     #       # configurations for this tracer, specific to stdout
     #     stdout:
@@ -562,13 +557,11 @@ data:
     #       # default is false
     #       pretty_print: false
 
-    #     # another example tracing config named example using jaeger agent backend and a 50% sample rate
+    #     # another example tracing config named example using OTLP/HTTP and a 50% sample rate
     #   example:
-    #     provider: jaeger
-    #     endpoint: jaeger:6831
+    #     provider: otlp
+    #     endpoint: http://jaeger:4318/v1/traces
     #     sample_rate: 0.5
-    #     jaeger:
-    #       endpoint_type: agent
 
     # # Configuration Options for Metrics Instrumentation
     # metrics:

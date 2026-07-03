@@ -9,11 +9,15 @@ As OpenTelemetry evolves to support additional exporter formats, we will work to
 - Jaeger (via OTLP)
 - Console/Stdout (printed locally by the Trickster process)
 
+Trickster's OTLP exporter uses OTLP over HTTP. For Jaeger, configure Trickster
+with the collector's OTLP HTTP endpoint, for example
+`http://jaeger:4318/v1/traces`.
+
 ## Configuration
 
 Trickster allows the operator to configure multiple tracing configurations, which can be associated into each Backend configuration by name.
 
-The [example config](https://github.com/trickstercache/trickster/blob/v1.1.2/examples/conf/example.full.yaml#L508) has exhaustive examples of configuring Trickster for distributed tracing.
+The [example config](../examples/conf/example.full.yaml) has exhaustive examples of configuring Trickster for distributed tracing.
 
 ## Context Propagation
 
@@ -45,7 +49,7 @@ Trickster can insert several spans to the traces that it captures, depending upo
 
 ## Tags / Attributes
 
-Trickster supports adding custom tags to every span via the configuration. Depending upon your preferred tracing backend, these may be referred to as attributes. See the [example config](https://github.com/trickstercache/trickster/blob/v1.1.2/examples/conf/example.full.yaml#L548) for examples of adding custom attributes.
+Trickster supports adding custom tags to every span via the configuration. Depending upon your preferred tracing backend, these may be referred to as attributes. See the [example config](../examples/conf/example.full.yaml) for examples of adding custom attributes.
 
 Trickster also supports omitting any tags that Trickster inserts by default. The list of default tags are below. For example on the "request" span, an `http.url` tag is attached with the current full URL. In deployments where that tag may introduce too much cardinality in your backend trace storage system, you may wish to omit that tag and rely on the more concise `path` tag. Each tracer config can be provided a string list of tags to omit from traces.
 
