@@ -20,9 +20,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
+	mtypes "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/tsm"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
@@ -105,9 +105,8 @@ func TestALB502WithMultiplePrometheusBackends(t *testing.T) {
 	})
 
 	t.Run("single_backend_baseline", func(t *testing.T) {
-		pool1, _, st1 := albpool.New(-1, []http.Handler{handler1})
-		st1[0].Set(1)
-		time.Sleep(250 * time.Millisecond)
+		pool1, _, _ := albpool.NewHealthy([]http.Handler{handler1})
+		albpool.WaitHealthy(t, pool1, 1)
 
 		albOpts := &ao.Options{
 			MechanismName: names.MechanismTSM,
@@ -116,8 +115,9 @@ func TestALB502WithMultiplePrometheusBackends(t *testing.T) {
 
 		tsmMech, err := tsm.New(albOpts, types.Lookup{providers.Prometheus: prometheus.NewClient})
 		require.NoError(t, err)
-		tsmMech.SetPool(pool1)
-		defer tsmMech.StopPool()
+		tsmPM := tsmMech.(mtypes.PoolMechanism)
+		tsmPM.SetPool(pool1)
+		defer tsmPM.StopPool()
 
 		req := httptest.NewRequest("GET", "http://alb/api/v1/query?query=up", nil)
 		rsc := request.NewResources(rsc1.BackendOptions, rsc1.PathConfig, rsc1.CacheConfig,
@@ -132,10 +132,8 @@ func TestALB502WithMultiplePrometheusBackends(t *testing.T) {
 	})
 
 	t.Run("multiple_backends_instant_query", func(t *testing.T) {
-		pool2, _, st2 := albpool.New(-1, []http.Handler{handler1, handler2})
-		st2[0].Set(1)
-		st2[1].Set(1)
-		time.Sleep(250 * time.Millisecond)
+		pool2, _, _ := albpool.NewHealthy([]http.Handler{handler1, handler2})
+		albpool.WaitHealthy(t, pool2, 2)
 
 		albOpts := &ao.Options{
 			MechanismName: names.MechanismTSM,
@@ -144,8 +142,9 @@ func TestALB502WithMultiplePrometheusBackends(t *testing.T) {
 
 		tsmMech, err := tsm.New(albOpts, types.Lookup{providers.Prometheus: prometheus.NewClient})
 		require.NoError(t, err)
-		tsmMech.SetPool(pool2)
-		defer tsmMech.StopPool()
+		tsmPM := tsmMech.(mtypes.PoolMechanism)
+		tsmPM.SetPool(pool2)
+		defer tsmPM.StopPool()
 
 		req := httptest.NewRequest("GET", "http://alb/api/v1/query?query=up", nil)
 		rsc := request.NewResources(rsc1.BackendOptions, rsc1.PathConfig, rsc1.CacheConfig,

@@ -175,11 +175,28 @@ func TestFormatForwardedAddress(t *testing.T) {
 }
 
 func TestStripMergeHeaders(t *testing.T) {
-	h := http.Header{NameContentLength: []string{"42"}, NameLocation: []string{"https://trickstercache.org/"}}
+	h := http.Header{
+		NameContentLength: []string{"42"},
+		NameLocation:      []string{"https://trickstercache.org/"},
+		NameCacheControl:  []string{"max-age=300"},
+		NameVary:          []string{"Accept-Encoding"},
+		NameAge:           []string{"7"},
+		NameETag:          []string{"abc123"},
+		NameExpires:       []string{"Thu, 01 Jan 2099 00:00:00 GMT"},
+	}
 	StripMergeHeaders(h)
 
-	if _, ok := h[NameContentLength]; ok {
-		t.Error("expected Content-Length Header to be missing")
+	for _, name := range []string{
+		NameContentLength,
+		NameCacheControl,
+		NameVary,
+		NameAge,
+		NameETag,
+		NameExpires,
+	} {
+		if _, ok := h[name]; ok {
+			t.Errorf("expected %s header to be stripped from merged response", name)
+		}
 	}
 
 	if _, ok := h[NameLocation]; !ok {

@@ -17,10 +17,15 @@
 package prometheus
 
 import (
+	"maps"
 	"net/http"
+	"net/url"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus/promql"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 )
 
@@ -34,6 +39,14 @@ const promQueryParam = "query"
 // weighted average is required, and an optional warning for operators whose
 // results cannot be correctly merged across shards.
 func (c *Client) ClassifyMerge(query string) (strategy int, needsDualQuery bool, warning string) {
+	if spec, ok := promql.ParseRankAggregation(query); ok {
+		query = spec.InnerQuery
+	}
+
+	return classifyPromMerge(query)
+}
+
+func classifyPromMerge(query string) (strategy int, needsDualQuery bool, warning string) {
 	agg, found := promql.OuterAggregator(query)
 	if !found {
 		return int(dataset.MergeStrategyDedup), false, ""
@@ -60,24 +73,47 @@ func (c *Client) ClassifyMerge(query string) (strategy int, needsDualQuery bool,
 	}
 }
 
+// RewriteForTSMMerge rewrites Prometheus rank aggregations before TSM fanout.
+// The shards receive the inner query; FinalizeTSMMerge later applies the
+// original topk/bottomk operation to the merged inner result.
+func (c *Client) RewriteForTSMMerge(r *http.Request, query string) (*http.Request, string) {
+	spec, ok := promql.ParseRankAggregation(query)
+	if !ok {
+		return r, query
+	}
+	return rewritePromQueryParam(r, spec.InnerQuery, "rank aggregation"), spec.InnerQuery
+}
+
 // RewriteForWeightedAvg implements backends.TSMMergeProvider for the Prometheus
 // backend. It returns two copies of r — one with the outer "avg" aggregator
 // replaced by "sum" and one by "count" — with the rewritten expression injected
 // into the Prometheus "query" parameter. Both GET (query string) and POST
 // (request body) encodings are handled transparently by params.SetRequestValues.
-func (c *Client) RewriteForWeightedAvg(r *http.Request, query string) (sumReq, countReq *http.Request) {
+func (c *Client) RewriteForWeightedAvg(r *http.Request, query string) (*http.Request, *http.Request) {
+	if spec, ok := promql.ParseRankAggregation(query); ok {
+		query = spec.InnerQuery
+	}
+
 	sumQuery := promql.ReplaceOuterAggregator(query, "avg", "sum")
 	countQuery := promql.ReplaceOuterAggregator(query, "avg", "count")
-
-	sumReq = r.Clone(r.Context())
-	qp, _, _ := params.GetRequestValues(sumReq)
-	qp.Set(promQueryParam, sumQuery)
-	params.SetRequestValues(sumReq, qp)
-
-	countReq = r.Clone(r.Context())
-	qp, _, _ = params.GetRequestValues(countReq)
-	qp.Set(promQueryParam, countQuery)
-	params.SetRequestValues(countReq, qp)
+	sumReq := rewritePromQueryParam(r, sumQuery, "avg aggregator sumReq")
+	countReq := rewritePromQueryParam(r, countQuery, "avg aggregator countReq")
 
 	return sumReq, countReq
+}
+
+func rewritePromQueryParam(r *http.Request, query, cloneName string) *http.Request {
+	qp, _, _ := params.GetRequestValues(r)
+	req, err := request.Clone(r)
+	if err != nil {
+		logger.Error("failed to clone "+cloneName, logging.Pairs{"error": err})
+		return r
+	}
+	nextQP := maps.Clone(qp)
+	if nextQP == nil {
+		nextQP = url.Values{}
+	}
+	nextQP.Set(promQueryParam, query)
+	params.SetRequestValues(req, nextQP)
+	return req
 }

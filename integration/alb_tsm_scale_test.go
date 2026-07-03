@@ -27,6 +27,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -46,6 +47,7 @@ func TestALB_TSM_Scale(t *testing.T) {
 		labeledBackendName = "alb-tsm-scale-labeled"
 		fgrBackendName     = "alb-fgr-scale"
 		nlmBackendName     = "alb-nlm-scale"
+		shardedBackendName = "prom-sharded"
 		numBackends        = 50
 		numLabeledBackends = 10
 	)
@@ -57,7 +59,7 @@ func TestALB_TSM_Scale(t *testing.T) {
 
 	cfgPath := writeScaleConfig(t, fakes, listenPort, metricsPort, mgmtPort,
 		backendName, labeledBackendName, numLabeledBackends,
-		fgrBackendName, nlmBackendName)
+		fgrBackendName, nlmBackendName, shardedBackendName)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -99,6 +101,51 @@ func TestALB_TSM_Scale(t *testing.T) {
 
 		_, hdr2 := queryTricksterProm(t, listenAddr, backendName, "/api/v1/query_range", params)
 		t.Logf("repeat: %s", hdr2.Get("X-Trickster-Result"))
+	})
+
+	t.Run("sharded_range_query_high_shard_count", func(t *testing.T) {
+		resetAll()
+		fakes[0].hits.Store(0)
+		fakes[0].setBehavior(behaviorRangeFromRequest())
+
+		step := 15 * time.Second
+		end := time.Now().Add(-10 * time.Minute).Truncate(time.Minute)
+		start := end.Add(-7 * time.Minute)
+		params := url.Values{
+			"query": {fmt.Sprintf("up + 0*%d", time.Now().UnixNano())},
+			"start": {fmt.Sprintf("%d", start.Unix())},
+			"end":   {fmt.Sprintf("%d", end.Unix())},
+			"step":  {fmt.Sprintf("%d", int(step.Seconds()))},
+		}
+
+		pr, hdr := queryTricksterProm(t, listenAddr, shardedBackendName, "/api/v1/query_range", params)
+		require.Equal(t, "success", pr.Status)
+		var qd promQueryData
+		require.NoError(t, json.Unmarshal(pr.Data, &qd))
+		require.Equal(t, "matrix", qd.ResultType)
+
+		var series []struct {
+			Metric map[string]string `json:"metric"`
+			Values [][]any           `json:"values"`
+		}
+		require.NoError(t, json.Unmarshal(qd.Result, &series))
+		require.Len(t, series, 1)
+		require.Equal(t, fakes[0].label, series[0].Metric["instance"])
+
+		expectedPoints := int(end.Sub(start)/step) + 1
+		require.Len(t, series[0].Values, expectedPoints)
+		for i, point := range series[0].Values {
+			require.Len(t, point, 2)
+			gotTS, ok := point[0].(float64)
+			require.True(t, ok, "timestamp should decode as a JSON number")
+			require.Equal(t, float64(start.Add(time.Duration(i)*step).Unix()), gotTS)
+			require.Equal(t, "1", point[1])
+		}
+
+		hits := fakes[0].hits.Load()
+		require.GreaterOrEqual(t, hits, int64(7))
+		t.Logf("%d points from %d sharded upstream fetches, %s",
+			expectedPoints, hits, hdr.Get("X-Trickster-Result"))
 	})
 
 	t.Run("50_backends_instant_query", func(t *testing.T) {
@@ -150,6 +197,22 @@ func TestALB_TSM_Scale(t *testing.T) {
 		t.Logf("%d bytes, %s", len(body), hdr.Get("X-Trickster-Result"))
 	})
 
+	t.Run("bad_encoding_advertised_as_gzip", func(t *testing.T) {
+		// Upstream claims gzip but sends plaintext; DecompressResponseBody
+		// fails. The merge surfaces the partial-failure marker but the
+		// remaining 49 backends still produce a successful merged response.
+		resetAll()
+		fakes[0].setBehavior(behaviorBadEncoding())
+		pr, hdr := queryTricksterProm(t, listenAddr, backendName, "/api/v1/query_range", rangeParams())
+		require.Equal(t, "success", pr.Status)
+		var qd promQueryData
+		require.NoError(t, json.Unmarshal(pr.Data, &qd))
+		var series []json.RawMessage
+		require.NoError(t, json.Unmarshal(qd.Result, &series))
+		require.NotEmpty(t, series)
+		t.Logf("%d series, %s", len(series), hdr.Get("X-Trickster-Result"))
+	})
+
 	t.Run("truncating_upstream_does_not_poison_cache", func(t *testing.T) {
 		resetAll()
 		params := rangeParams()
@@ -183,14 +246,12 @@ func TestALB_TSM_Scale(t *testing.T) {
 		var wg sync.WaitGroup
 		errCh := make(chan error, clients)
 		for range clients {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				body, _, sc := doRaw(t, listenAddr, backendName, "/api/v1/query_range", params)
 				if sc != http.StatusOK {
 					errCh <- fmt.Errorf("status %d: %s", sc, body)
 				}
-			}()
+			})
 		}
 		wg.Wait()
 		close(errCh)
@@ -350,15 +411,54 @@ func TestALB_TSM_Scale(t *testing.T) {
 		var wg sync.WaitGroup
 		errCh := make(chan error, vars)
 		for i := range vars {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				path := fmt.Sprintf("/api/v1/label/var%d/values", i)
 				body, _, sc := doRaw(t, listenAddr, backendName, path, nil)
 				if sc != http.StatusOK {
 					errCh <- fmt.Errorf("var%d status %d: %s", i, sc, body)
 				}
-			}()
+			})
+		}
+		wg.Wait()
+		close(errCh)
+		for err := range errCh {
+			t.Fatal(err)
+		}
+	})
+
+	t.Run("post_concurrent_clients_safe", func(t *testing.T) {
+		// POST query_range fans out N clones of the same parent request. The
+		// body must be re-readable per clone or the upstreams see truncated
+		// requests. Race the request body cache under -race to catch any
+		// unsynchronized r.Body mutation in the clone path.
+		resetAll()
+		form := rangeParams().Encode()
+		u := "http://" + listenAddr + "/" + backendName + "/api/v1/query_range"
+		const clients = 25
+		var wg sync.WaitGroup
+		errCh := make(chan error, clients)
+		for range clients {
+			wg.Go(func() {
+				resp, err := http.Post(u, "application/x-www-form-urlencoded", strings.NewReader(form))
+				if err != nil {
+					errCh <- err
+					return
+				}
+				defer resp.Body.Close()
+				if resp.StatusCode != http.StatusOK {
+					errCh <- fmt.Errorf("status %d", resp.StatusCode)
+					return
+				}
+				body, _ := io.ReadAll(resp.Body)
+				var pr promResponse
+				if err := json.Unmarshal(body, &pr); err != nil {
+					errCh <- fmt.Errorf("invalid json: %w", err)
+					return
+				}
+				if pr.Status != "success" {
+					errCh <- fmt.Errorf("non-success: %s", pr.Status)
+				}
+			})
 		}
 		wg.Wait()
 		close(errCh)
@@ -524,13 +624,15 @@ func behaviorOversized(kb int) *promBehavior {
 func behaviorStatus(code int) *promBehavior {
 	return &promBehavior{mode: "status", status: code}
 }
-func behaviorBadShape() *promBehavior              { return &promBehavior{mode: "badshape"} }
-func behaviorTruncate() *promBehavior              { return &promBehavior{mode: "truncate"} }
-func behaviorSlow(d time.Duration) *promBehavior   { return &promBehavior{mode: "ok", delay: d} }
-func behaviorErrJSON() *promBehavior               { return &promBehavior{mode: "errjson"} }
+func behaviorBadShape() *promBehavior            { return &promBehavior{mode: "badshape"} }
+func behaviorTruncate() *promBehavior            { return &promBehavior{mode: "truncate"} }
+func behaviorSlow(d time.Duration) *promBehavior { return &promBehavior{mode: "ok", delay: d} }
+func behaviorErrJSON() *promBehavior             { return &promBehavior{mode: "errjson"} }
+func behaviorBadEncoding() *promBehavior         { return &promBehavior{mode: "badencoding"} }
 func behaviorLabelValuesKB(kb int) *promBehavior {
 	return &promBehavior{mode: "labelvalues", seriesKB: kb}
 }
+func behaviorRangeFromRequest() *promBehavior { return &promBehavior{mode: "rangefromrequest"} }
 
 func newFakeProm(t *testing.T, label string) *fakeProm {
 	t.Helper()
@@ -554,7 +656,7 @@ func newFakeProm(t *testing.T, label string) *fakeProm {
 func (f *fakeProm) URL() string                 { return f.srv.URL }
 func (f *fakeProm) setBehavior(b *promBehavior) { f.behavior.Store(b) }
 
-func (f *fakeProm) handleRange(w http.ResponseWriter, _ *http.Request) {
+func (f *fakeProm) handleRange(w http.ResponseWriter, r *http.Request) {
 	f.hits.Add(1)
 	b := f.behavior.Load()
 	if b.delay > 0 {
@@ -586,6 +688,22 @@ func (f *fakeProm) handleRange(w http.ResponseWriter, _ *http.Request) {
 		if err == nil {
 			_ = conn.Close()
 		}
+		return
+	case "badencoding":
+		// Advertise gzip but send plaintext. The TSM gather path's
+		// DecompressResponseBody will fail, surfacing as a partial-failure.
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Encoding", "gzip")
+		_, _ = w.Write(buildMatrixBody(f.label))
+		return
+	case "rangefromrequest":
+		body, err := buildMatrixBodyFromRequest(f.label, r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(body)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -632,8 +750,8 @@ func (f *fakeProm) handleLabels(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write([]byte(fmt.Sprintf(
-		`{"status":"success","data":["__name__","job","instance","label_%s"]}`, f.label)))
+	_, _ = w.Write(fmt.Appendf(nil,
+		`{"status":"success","data":["__name__","job","instance","label_%s"]}`, f.label))
 }
 
 func (f *fakeProm) handleLabelValues(w http.ResponseWriter, r *http.Request) {
@@ -658,9 +776,9 @@ func (f *fakeProm) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 	}
 	name := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v1/label/"), "/values")
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write([]byte(fmt.Sprintf(
+	_, _ = w.Write(fmt.Appendf(nil,
 		`{"status":"success","data":["value-%s-%s-a","value-%s-%s-b"]}`,
-		name, f.label, name, f.label)))
+		name, f.label, name, f.label))
 }
 
 func (f *fakeProm) handleSeries(w http.ResponseWriter, _ *http.Request) {
@@ -680,13 +798,13 @@ func (f *fakeProm) handleSeries(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write([]byte(fmt.Sprintf(
-		`{"status":"success","data":[{"__name__":"up","job":"fake","instance":%q}]}`, f.label)))
+	_, _ = w.Write(fmt.Appendf(nil,
+		`{"status":"success","data":[{"__name__":"up","job":"fake","instance":%q}]}`, f.label))
 }
 
 func buildPromErrBody(errType, msg string) []byte {
-	return []byte(fmt.Sprintf(
-		`{"status":"error","errorType":%q,"error":%q}`, errType, msg))
+	return fmt.Appendf(nil,
+		`{"status":"error","errorType":%q,"error":%q}`, errType, msg)
 }
 
 func buildOversizedLabelValues(label string, targetKB int) []byte {
@@ -704,11 +822,11 @@ func buildOversizedLabelValues(label string, targetKB int) []byte {
 }
 
 func buildVectorBody(instance string) []byte {
-	return []byte(fmt.Sprintf(
+	return fmt.Appendf(nil,
 		`{"status":"success","data":{"resultType":"vector","result":[`+
 			`{"metric":{"__name__":"up","job":"fake","instance":%q},`+
 			`"value":[%d,"1"]}]}}`,
-		instance, time.Now().Unix()))
+		instance, time.Now().Unix())
 }
 
 func buildMatrixBody(instance string) []byte {
@@ -725,6 +843,55 @@ func buildMatrixBody(instance string) []byte {
 	}
 	sb.WriteString("]}]}}")
 	return []byte(sb.String())
+}
+
+func buildMatrixBodyFromRequest(instance string, r *http.Request) ([]byte, error) {
+	q := r.URL.Query()
+	start, err := parsePromTimeParam(q.Get("start"))
+	if err != nil {
+		return nil, err
+	}
+	end, err := parsePromTimeParam(q.Get("end"))
+	if err != nil {
+		return nil, err
+	}
+	step, err := parsePromStepParam(q.Get("step"))
+	if err != nil {
+		return nil, err
+	}
+	if step <= 0 {
+		return nil, fmt.Errorf("invalid non-positive step %q", q.Get("step"))
+	}
+
+	var sb strings.Builder
+	sb.WriteString(`{"status":"success","data":{"resultType":"matrix","result":[`)
+	sb.WriteString(fmt.Sprintf(
+		`{"metric":{"__name__":"up","job":"fake","instance":%q},"values":[`, instance))
+	for i, ts := 0, start; !ts.After(end); i, ts = i+1, ts.Add(step) {
+		if i > 0 {
+			sb.WriteString(",")
+		}
+		sb.WriteString(fmt.Sprintf(`[%d,"1"]`, ts.Unix()))
+	}
+	sb.WriteString("]}]}}")
+	return []byte(sb.String()), nil
+}
+
+func parsePromTimeParam(input string) (time.Time, error) {
+	if v, err := strconv.ParseInt(input, 10, 64); err == nil {
+		return time.Unix(v, 0), nil
+	}
+	if v, err := strconv.ParseFloat(input, 64); err == nil {
+		return time.Unix(0, int64(v*float64(time.Second))), nil
+	}
+	return time.Parse(time.RFC3339Nano, input)
+}
+
+func parsePromStepParam(input string) (time.Duration, error) {
+	if v, err := strconv.ParseFloat(input, 64); err == nil {
+		return time.Duration(v * float64(time.Second)), nil
+	}
+	return time.ParseDuration(input)
 }
 
 func buildOversizedMatrix(instance string, targetKB int) []byte {
@@ -794,7 +961,7 @@ func doRaw(t *testing.T, address, backend, path string, params url.Values) ([]by
 func writeScaleConfig(t *testing.T, fakes []*fakeProm,
 	listenPort, metricsPort, mgmtPort int,
 	albName, labeledAlbName string, labeledN int,
-	fgrAlbName, nlmAlbName string) string {
+	fgrAlbName, nlmAlbName, shardedBackendName string) string {
 	t.Helper()
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "frontend:\n  listen_port: %d\n", listenPort)
@@ -809,7 +976,13 @@ func writeScaleConfig(t *testing.T, fakes []*fakeProm,
 		fmt.Fprintf(&sb, "    origin_url: %s\n", f.URL())
 		sb.WriteString("    cache_name: mem\n")
 	}
-	for i := 0; i < labeledN; i++ {
+	fmt.Fprintf(&sb, "  %s:\n", shardedBackendName)
+	sb.WriteString("    provider: prometheus\n")
+	fmt.Fprintf(&sb, "    origin_url: %s\n", fakes[0].URL())
+	sb.WriteString("    cache_name: mem\n")
+	sb.WriteString("    shard_max_size_time: 1m\n")
+	sb.WriteString("    shard_step: 1m\n")
+	for i := range labeledN {
 		fmt.Fprintf(&sb, "  prom-lab-%d:\n", i)
 		sb.WriteString("    provider: prometheus\n")
 		fmt.Fprintf(&sb, "    origin_url: %s\n", fakes[i].URL())
@@ -831,7 +1004,7 @@ func writeScaleConfig(t *testing.T, fakes []*fakeProm,
 	sb.WriteString("    alb:\n")
 	sb.WriteString("      mechanism: tsm\n")
 	sb.WriteString("      pool:\n")
-	for i := 0; i < labeledN; i++ {
+	for i := range labeledN {
 		fmt.Fprintf(&sb, "        - prom-lab-%d\n", i)
 	}
 	for _, entry := range []struct{ name, mech string }{
@@ -862,7 +1035,7 @@ func writeRealPromScaleConfig(t *testing.T, listenPort, metricsPort, mgmtPort in
 	sb.WriteString("logging:\n  log_level: info\n")
 	sb.WriteString("caches:\n  mem:\n    provider: memory\n")
 	sb.WriteString("backends:\n")
-	for i := 0; i < numShards; i++ {
+	for i := range numShards {
 		fmt.Fprintf(&sb, "  prom-real-%d:\n", i)
 		sb.WriteString("    provider: prometheus\n")
 		fmt.Fprintf(&sb, "    origin_url: http://%s\n", promAddr)
@@ -876,7 +1049,7 @@ func writeRealPromScaleConfig(t *testing.T, listenPort, metricsPort, mgmtPort in
 	sb.WriteString("    alb:\n")
 	sb.WriteString("      mechanism: tsm\n")
 	sb.WriteString("      pool:\n")
-	for i := 0; i < numShards; i++ {
+	for i := range numShards {
 		fmt.Fprintf(&sb, "        - prom-real-%d\n", i)
 	}
 	path := filepath.Join(t.TempDir(), "alb-tsm-real-scale.yaml")

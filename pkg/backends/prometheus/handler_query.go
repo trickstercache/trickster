@@ -63,7 +63,8 @@ func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 				m := c.Modeler()
 				if m != nil {
 					if rsc.TSMergeStrategy != 0 {
-						rsc.MergeFunc = merge.TimeseriesMergeFuncWithStrategy(m.WireUnmarshaler, rsc.TSMergeStrategy)
+						rsc.MergeFunc = merge.TimeseriesMergeFuncWithStrategyTolerant(
+							m.WireUnmarshaler, rsc.TSMergeStrategy, rsc.TSDedupToleranceNanos)
 						// Instant queries marshal as vector, not matrix
 						// (WireMarshalWriter always emits matrix shape).
 						rsc.MergeRespondFunc = merge.TimeseriesRespondFuncWithStrategy(vectorInstantMarshalWriter, nil, rsc.TSMergeStrategy)
@@ -94,7 +95,7 @@ func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 	// we need to capture and unmarshal the response
 	if c.hasTransformations || (rsc != nil && rsc.IsMergeMember) {
 		// use a streaming response writer to capture the response body for transformation
-		sw := capture.NewCaptureResponseWriter()
+		sw := capture.NewCaptureResponseWriterWithLimit(captureLimit(c))
 		engines.ObjectProxyCacheRequest(sw, r)
 		// Propagate captured upstream headers (Content-Type, X-Trickster-Result,
 		// etc.) to the outer ResponseWriter. Without this, ALB mechanisms see a

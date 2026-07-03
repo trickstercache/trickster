@@ -65,7 +65,6 @@ Trickster 2.0 is a near-complete rewrite of the project with performance, durabi
 
 A future Trickster 2.0.x will include the following additional features that didn't quite make it to the finish line:
 - incorporate ALB examples into the docker-compose demo
-- the `lru` Time Series Cache Eviction Method is disabled, but will be added back in a future release. This feature has not yet been ported into the Common Time Series format
 
 ## Installing
 

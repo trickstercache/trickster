@@ -37,14 +37,20 @@ func New(targets Targets, healthyFloor int) Pool {
 	p := &pool{
 		targets:      targets,
 		done:         make(chan struct{}),
-		ch:           make(chan bool, 16),
+		statusCh:     make(chan bool, 1),
+		ch:           make(chan bool, 1),
 		healthyFloor: healthyFloor,
 	}
-	p.ch <- true
+	p.scheduleRefresh()
 
 	for _, t := range targets {
-		t.hcStatus.RegisterSubscriber(p.ch)
+		if t == nil || t.hcStatus == nil {
+			continue
+		}
+		t.hcStatus.RegisterSubscriber(p.statusCh)
 	}
+	p.workers.Add(2)
+	go p.listenStatusUpdates()
 	go p.checkHealth()
 	return p
 }

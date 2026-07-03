@@ -67,6 +67,7 @@ func TestMultiPartByteRange(t *testing.T) {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
 	caches := cr.LoadCachesFromConfig(conf)
+	defer cr.CloseCaches(caches)
 	cache, ok := caches["default"]
 	if !ok {
 		t.Error("could not load cache")
@@ -99,6 +100,7 @@ func TestCacheHitRangeRequest(t *testing.T) {
 	}
 
 	caches := cr.LoadCachesFromConfig(conf)
+	defer cr.CloseCaches(caches)
 	cache, ok := caches["default"]
 	if !ok {
 		t.Error("could not load cache")
@@ -138,6 +140,7 @@ func TestCacheHitRangeRequest2(t *testing.T) {
 	}
 
 	caches := cr.LoadCachesFromConfig(conf)
+	defer cr.CloseCaches(caches)
 	cache, ok := caches["default"]
 	if !ok {
 		t.Error("could not load cache")
@@ -182,6 +185,7 @@ func TestCacheHitRangeRequest3(t *testing.T) {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
 	caches := cr.LoadCachesFromConfig(conf)
+	defer cr.CloseCaches(caches)
 	cache, ok := caches["default"]
 	if !ok {
 		t.Error("could not load cache")
@@ -223,6 +227,7 @@ func TestPartialCacheMissRangeRequest(t *testing.T) {
 	}
 
 	caches := cr.LoadCachesFromConfig(conf)
+	defer cr.CloseCaches(caches)
 	cache, ok := caches["default"]
 	if !ok {
 		t.Error("could not load cache")
@@ -268,6 +273,7 @@ func TestFullCacheMissRangeRequest(t *testing.T) {
 	}
 
 	caches := cr.LoadCachesFromConfig(conf)
+	defer cr.CloseCaches(caches)
 	cache, ok := caches["default"]
 	if !ok {
 		t.Error("could not load cache")
@@ -310,8 +316,12 @@ func TestRangeRequestFromClient(t *testing.T) {
 	haves := byterange.Ranges{byterange.Range{Start: 10, End: 25}}
 
 	s := newRangeRequestTestServer()
-	defer s.Close()
-	client := &http.Client{}
+	transport := &http.Transport{}
+	client := &http.Client{Transport: transport}
+	t.Cleanup(func() {
+		transport.CloseIdleConnections()
+		s.Close()
+	})
 	req, err := http.NewRequest(http.MethodGet, s.URL, nil)
 	if err != nil {
 		log.Fatalln(err)
@@ -323,6 +333,7 @@ func TestRangeRequestFromClient(t *testing.T) {
 	}
 
 	bytes, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
 
 	//--------------------------------------
 	conf, err := config.Load([]string{"-origin-url", "http://1", "-provider", "test"})
@@ -331,6 +342,7 @@ func TestRangeRequestFromClient(t *testing.T) {
 	}
 
 	caches := cr.LoadCachesFromConfig(conf)
+	defer cr.CloseCaches(caches)
 	cache, ok := caches["default"]
 	if !ok {
 		t.Error("could not load cache")

@@ -38,9 +38,29 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
+	"github.com/trickstercache/trickster/v2/pkg/util/safego"
 )
 
 var mtx sync.Mutex
+
+// hupDelegate is the function newHupFunc forwards to. Indirected through a
+// package var so tests can swap it out without invoking the full reload path.
+// Initialized in init() to break the Hup -> newHupFunc -> hupDelegate -> Hup
+// initialization cycle.
+var hupDelegate func(si *instance.ServerInstance, source string, args ...string) (bool, error)
+
+func init() {
+	hupDelegate = Hup
+}
+
+// newHupFunc returns a reload.Reloader closed over args, so subsequent reloads
+// continue reading from the original -config path. Used for both the initial
+// registration and the re-registration performed after a successful reload.
+func newHupFunc(si *instance.ServerInstance, args []string) reload.Reloader {
+	return func(source string) (bool, error) {
+		return hupDelegate(si, source, args...)
+	}
+}
 
 func Start(ctx context.Context, args ...string) error {
 	var skipUnlock bool
@@ -77,9 +97,7 @@ func Start(ctx context.Context, args ...string) error {
 	si := &instance.ServerInstance{
 		Listeners: listener.NewGroup(),
 	}
-	var hupFunc reload.Reloader = func(source string) (bool, error) {
-		return Hup(si, source, args...)
-	}
+	hupFunc := newHupFunc(si, args)
 	// Serve with Config
 	err = setup.ApplyConfig(si, conf, clients, hupFunc, func() { os.Exit(1) }, si.Listeners)
 	if err != nil {
@@ -160,9 +178,7 @@ func Hup(si *instance.ServerInstance, source string, args ...string) (bool, erro
 	oldHealthChecker := si.HealthChecker
 	oldListeners := si.Listeners
 
-	hupFunc := func(source string) (bool, error) {
-		return Hup(si, source)
-	}
+	hupFunc := newHupFunc(si, args)
 
 	err = setup.ApplyConfig(si, newConf, newClients, hupFunc, nil, si.Listeners)
 	if err != nil {
@@ -195,12 +211,27 @@ func Hup(si *instance.ServerInstance, source string, args ...string) (bool, erro
 		if newConf.MgmtConfig != nil && newConf.MgmtConfig.ReloadDrainTimeout > 0 {
 			drainTimeout = newConf.MgmtConfig.ReloadDrainTimeout
 		}
-		go func() {
+		safego.Go(reloadGoroutinePanic("oldListeners.Shutdown", source), func() {
 			if err := oldListeners.Shutdown(drainTimeout); err != nil {
 				logger.Warn("error shutting down old listeners",
 					logging.Pairs{"error": err.Error(), "source": source})
 			}
-		}()
+		})
+	}
+
+	if oldClients != nil {
+		// close idle now, then again after drain so conns released by
+		// in-flight requests post-rotation also get reaped before the
+		// per-transport IdleConnTimeout (default 2m) elapses.
+		oldClients.CloseIdleConnections()
+		drainTimeout := 30 * time.Second
+		if newConf.MgmtConfig != nil && newConf.MgmtConfig.ReloadDrainTimeout > 0 {
+			drainTimeout = newConf.MgmtConfig.ReloadDrainTimeout
+		}
+		safego.Go(reloadGoroutinePanic("oldClients.CloseIdleConnections", source), func() {
+			time.Sleep(drainTimeout)
+			oldClients.CloseIdleConnections()
+		})
 	}
 
 	metrics.ReloadSuccessesTotal.Inc()
@@ -210,4 +241,15 @@ func Hup(si *instance.ServerInstance, source string, args ...string) (bool, erro
 
 	logger.Info(reload.ConfigReloadedText, logging.Pairs{"source": source})
 	return true, nil
+}
+
+func reloadGoroutinePanic(site, source string) safego.PanicHandler {
+	return func(r any, stack []byte) {
+		logger.Error("reload background goroutine panic", logging.Pairs{
+			"site":   site,
+			"source": source,
+			"panic":  r,
+			"stack":  string(stack),
+		})
+	}
 }

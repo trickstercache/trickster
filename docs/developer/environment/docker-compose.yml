@@ -39,7 +39,7 @@ services:
   # TSDBs
 
   prometheus:
-    image: prom/prometheus:v3.2.1
+    image: prom/prometheus:v3.11.3
     user: nobody
     volumes:
       - ./docker-compose-data/prometheus-config:/etc/prometheus
@@ -49,7 +49,6 @@ services:
       - '--storage.tsdb.path=/prometheus'
       - '--web.console.libraries=/usr/share/prometheus/console_libraries'
       - '--web.console.templates=/usr/share/prometheus/consoles'
-      - '--enable-feature=native-histograms'
     build:
       context: .
       network: host

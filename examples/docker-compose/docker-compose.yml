@@ -5,7 +5,7 @@ networks:
 services:
 
   prometheus:
-    image: prom/prometheus:v3.2.1
+    image: prom/prometheus:v3.11.3
     volumes:
       - ./docker-compose-data/prometheus-config:/etc/prometheus
     command:

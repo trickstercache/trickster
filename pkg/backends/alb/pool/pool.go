@@ -21,19 +21,28 @@ import (
 	"net/http"
 	"sync"
 	"sync/atomic"
+
+	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 )
 
 // Pool defines the interface for a load balancer pool
 type Pool interface {
-	// Healthy returns the full list of Healthy Targets as http.Handlers
-	Healthy() []http.Handler
-	// HealthyTargets returns the full list of Healthy Targets as *Targets
-	HealthyTargets() Targets
-	// SetHealthy sets the Healthy Targets List
+	// Targets returns the current set of dispatchable targets, re-filtered
+	// against each target's atomic hcStatus. This closes the race window
+	// between a status flip and the asynchronous healthy-list refresh, so it
+	// is the correct method for request dispatch.
+	Targets() Targets
+	// ConfiguredLen returns the number of pool members as configured, regardless
+	// of current health. Mechanisms compare this against len(Targets()) to
+	// detect a pool degraded to a subset of its configured members.
+	ConfiguredLen() int
+	// SetHealthy seeds the pool's healthy set from a handler list. Intended
+	// for tests and bootstrap paths that don't drive status updates through
+	// healthcheck subscribers.
 	SetHealthy([]http.Handler)
-	// Stop stops the pool and its health checker goroutines
+	// Stop stops the pool and its health checker goroutines.
 	Stop()
-	// RefreshHealthy forces a refresh of the pool's healthy handlers list
+	// RefreshHealthy forces a refresh of the pool's healthy handlers list.
 	RefreshHealthy()
 }
 
@@ -41,11 +50,27 @@ type Pool interface {
 type pool struct {
 	targets         Targets
 	healthyTargets  atomic.Pointer[Targets]
+	liveTargets     atomic.Pointer[Targets]
 	healthyHandlers atomic.Pointer[[]http.Handler]
+	refreshPending  atomic.Bool // sticky dirty flag indicating healthyTargets must be rebuilt
 	healthyFloor    int
 	done            chan struct{}
+	statusCh        chan bool // receives raw health status change notifications from targets
 	ch              chan bool
 	mtx             sync.Mutex
+	stopOnce        sync.Once
+	workers         sync.WaitGroup
+}
+
+// scheduleRefresh marks the healthy list as dirty and coalesces wakeups for
+// the refresh worker. The pending flag preserves refresh intent even when
+// bursty status changes saturate the channel.
+func (p *pool) scheduleRefresh() {
+	p.refreshPending.Store(true)
+	select {
+	case p.ch <- true:
+	default:
+	}
 }
 
 func (p *pool) RefreshHealthy() {
@@ -56,6 +81,9 @@ func (p *pool) RefreshHealthy() {
 
 	var k int
 	for _, t := range p.targets {
+		if t == nil || t.hcStatus == nil {
+			continue
+		}
 		if int(t.hcStatus.Get()) >= p.healthyFloor {
 			hh[k] = t.handler
 			ht[k] = t
@@ -66,9 +94,14 @@ func (p *pool) RefreshHealthy() {
 	ht = ht[:k]
 	p.healthyHandlers.Store(&hh)
 	p.healthyTargets.Store(&ht)
+	lt := ht
+	p.liveTargets.Store(&lt)
 }
 
-func (p *pool) HealthyTargets() Targets {
+// snapshot returns the eventually-consistent healthy-targets snapshot. Snapshots
+// can lag behind atomic status flips; only the refresh worker and internal tests
+// should read this directly. Dispatch callers must use Targets().
+func (p *pool) snapshot() Targets {
 	t := p.healthyTargets.Load()
 	if t != nil {
 		return *t
@@ -76,24 +109,60 @@ func (p *pool) HealthyTargets() Targets {
 	return nil
 }
 
-func (p *pool) Healthy() []http.Handler {
-	t := p.healthyHandlers.Load()
-	if t != nil {
-		return *t
+func (p *pool) ConfiguredLen() int {
+	return len(p.targets)
+}
+
+func (p *pool) Targets() Targets {
+	if lt := p.liveTargets.Load(); lt != nil && !p.refreshPending.Load() {
+		cached := *lt
+		allLive := true
+		for _, t := range cached {
+			if t == nil || t.hcStatus == nil || int(t.hcStatus.Get()) < p.healthyFloor {
+				allLive = false
+				break
+			}
+		}
+		if allLive {
+			return cached
+		}
 	}
-	return nil
+	hl := p.snapshot()
+	live := make(Targets, 0, len(hl))
+	for _, t := range hl {
+		if t == nil || t.hcStatus == nil || int(t.hcStatus.Get()) < p.healthyFloor {
+			continue
+		}
+		live = append(live, t)
+	}
+	return live
 }
 
 func (p *pool) SetHealthy(h []http.Handler) {
 	p.healthyHandlers.Store(&h)
+	// Materialize parallel Targets each backed by a synthetic Passing status
+	// so dispatch-time re-checks against HealthyFloor won't reject them.
 	t := make(Targets, len(h))
+	for i, hh := range h {
+		st := &healthcheck.Status{}
+		st.Set(healthcheck.StatusPassing)
+		t[i] = NewTarget(hh, st, nil)
+	}
 	p.healthyTargets.Store(&t)
+	lt := t
+	p.liveTargets.Store(&lt)
 }
 
 func (p *pool) Stop() {
-	select {
-	case <-p.done:
-	default:
+	p.stopOnce.Do(func() {
 		close(p.done)
-	}
+		for _, t := range p.targets {
+			if t != nil && t.hcStatus != nil {
+				t.hcStatus.UnregisterSubscriber(p.statusCh)
+			}
+		}
+		// Wait for refresh goroutines so SetHealthy after Stop cannot
+		// be overwritten by a late RefreshHealthy.
+		p.workers.Wait()
+	})
 }

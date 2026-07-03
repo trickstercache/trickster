@@ -24,7 +24,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -36,8 +36,12 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/contenttype"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/util/safego"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 	"gopkg.in/yaml.v2"
 )
@@ -160,8 +164,27 @@ func StatusHandler(now func() time.Time, hc healthcheck.HealthChecker, backends 
 	if now == nil {
 		now = time.Now
 	}
-	go builder(now, hc, hd, backends, ready) // listens for rebuild notifications and updates the texts
-	<-ready                                  // wait for the builder to be ready before returning the handler
+	safego.Go(func(r any, stack []byte) {
+		logger.Error("health status builder panic", logging.Pairs{
+			"panic": r,
+			"stack": string(stack),
+		})
+		metrics.HealthHandlerPanicRecovered.Inc()
+		// Seed an empty detail so handler reads after a first-cycle panic
+		// don't nil-deref on detail.lastModified.
+		if hd.detail.Load() == nil {
+			hd.detail.Store(&detail{})
+		}
+		// Unblock the wait below so a panic on the first builder cycle
+		// doesn't leave the handler hung forever.
+		select {
+		case ready <- true:
+		default:
+		}
+	}, func() {
+		builder(now, hc, hd, backends, ready)
+	})
+	<-ready // wait for the builder to be ready before returning the handler
 
 	// the handler, when requested, simply prints out the static text stored in the healthDetail
 	// which is being updated in real time by the builder.
@@ -246,6 +269,15 @@ func updateStatusText(now func() time.Time, hc healthcheck.HealthChecker, hd *he
 	var al, ul, il, ql int
 
 	for k, v := range st {
+		// Virtual backends (alb, rule) carry a synthetic status only so they
+		// surface in outer ALB pool reporting; they have their own per-ALB
+		// section below and would duplicate as plain entries here.
+		if b, ok := backends[k]; ok && b != nil && b.Configuration() != nil {
+			p := b.Configuration().Provider
+			if p == providers.ALB || p == providers.Rule {
+				continue
+			}
+		}
 		switch v.Get() {
 		case healthcheck.StatusPassing:
 			a[al] = k
@@ -272,7 +304,7 @@ func updateStatusText(now func() time.Time, hc healthcheck.HealthChecker, hd *he
 		if len(names) == 0 {
 			return nil
 		}
-		sort.Strings(names)
+		slices.Sort(names)
 		result := make([]backendStatus, len(names))
 		for i, k := range names {
 			d := cleanupDescription(st[k].Description())
@@ -287,7 +319,7 @@ func updateStatusText(now func() time.Time, hc healthcheck.HealthChecker, hd *he
 	status.Available = populateBasicBackendStatus(a)
 
 	if len(u) > 0 {
-		sort.Strings(u)
+		slices.Sort(u)
 		status.Unavailable = make([]backendStatus, len(u))
 		for i, k := range u {
 			v := st[k]
@@ -329,7 +361,7 @@ func updateStatusText(now func() time.Time, hc healthcheck.HealthChecker, hd *he
 			}
 		}
 		if len(uncheckedBackendNames) > 0 {
-			sort.Strings(uncheckedBackendNames)
+			slices.Sort(uncheckedBackendNames)
 			uncheckedBackends := make([]backendStatus, len(uncheckedBackendNames))
 			for i, name := range uncheckedBackendNames {
 				backend := backends[name]
@@ -353,7 +385,7 @@ func updateStatusText(now func() time.Time, hc healthcheck.HealthChecker, hd *he
 				albNames = append(albNames, name)
 			}
 		}
-		sort.Strings(albNames)
+		slices.Sort(albNames)
 
 		for _, albName := range albNames {
 			albBackend := backends[albName]
@@ -412,10 +444,10 @@ func updateStatusText(now func() time.Time, hc healthcheck.HealthChecker, hd *he
 					initializingMembers = append(initializingMembers, poolMemberName)
 				}
 			}
-			sort.Strings(availableMembers)
-			sort.Strings(unavailableMembers)
-			sort.Strings(uncheckedMembers)
-			sort.Strings(initializingMembers)
+			slices.Sort(availableMembers)
+			slices.Sort(unavailableMembers)
+			slices.Sort(uncheckedMembers)
+			slices.Sort(initializingMembers)
 
 			albStatus := backendStatus{
 				Name:                    albName,

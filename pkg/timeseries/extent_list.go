@@ -20,7 +20,7 @@ package timeseries
 
 import (
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -40,7 +40,7 @@ func (el ExtentList) String() string {
 	for i, e := range el {
 		lines[i] = e.String()
 	}
-	return strings.Join(lines, ",")
+	return strings.Join(lines, ";")
 }
 
 // Encompasses returns true if the provided extent is contained
@@ -117,7 +117,7 @@ func (el ExtentList) Merge(el2 ExtentList, step time.Duration) ExtentList {
 	out := make(ExtentList, len(el)+len(el2))
 	copy(out, el)
 	copy(out[len(el):], el2)
-	sort.Sort(out)
+	slices.SortFunc(out, extentCmp)
 	return out.Compress(step)
 }
 
@@ -127,7 +127,7 @@ func (el ExtentList) Compress(step time.Duration) ExtentList {
 	if len(el) == 0 {
 		return ExtentList{}
 	}
-	sort.Sort(el)
+	slices.SortFunc(el, extentCmp)
 	out := make(ExtentList, len(el))
 	var k int
 	current := el[0]
@@ -168,6 +168,13 @@ func (el ExtentList) Splice(step, maxRange, spliceStep time.Duration, maxPoints 
 	return el.spliceByPoints(step, maxPoints)
 }
 
+// maxShardCount caps the capacity hint used by Splice helpers. If the sum
+// of per-extent shard estimates exceeds this, the helper returns a Clone
+// of the input instead of splitting — protecting the process against
+// pathological inputs (very fine step combined with a very long range)
+// that would otherwise allocate multi-GB in a single make().
+const maxShardCount = 1 << 20
+
 // spliceByTimeAligned handles extents that must be spliced at a precise cadence divisible by
 // the epoch. step indicates the timeseries step, and spliceStep indicates the splicing interval
 // for aligning to the epoch. maxRange is the maximum width of a splice, and must be
@@ -176,15 +183,21 @@ func (el ExtentList) spliceByTimeAligned(step, maxRange, spliceStep time.Duratio
 	if step == 0 || maxRange == 0 || spliceStep == 0 {
 		return el.Clone()
 	}
-	out := make(ExtentList, len(el)*4)
-	var k int
+	stride := max(maxRange, step)
+	totalCap := 0
+	for _, e := range el {
+		totalCap += int(e.End.Sub(e.Start)/stride) + 3
+		if totalCap > maxShardCount {
+			return el.Clone()
+		}
+	}
+	out := make(ExtentList, 0, totalCap)
 	for _, e := range el {
 		origStart := e.Start
 		origEnd := e.End
 		if origEnd.Sub(origStart) <= maxRange &&
 			origEnd.Truncate(spliceStep).Equal(origStart.Truncate(spliceStep)) {
-			out[k] = e
-			k++
+			out = append(out, e)
 			continue
 		}
 		t1 := origStart.Truncate(spliceStep)
@@ -198,14 +211,12 @@ func (el ExtentList) spliceByTimeAligned(step, maxRange, spliceStep time.Duratio
 			if end.Before(origStart) {
 				end = origStart
 			}
-			out[k] = Extent{Start: origStart, End: end, LastUsed: e.LastUsed}
-			k++
+			out = append(out, Extent{Start: origStart, End: end, LastUsed: e.LastUsed})
 			origStart = end.Add(step)
 		}
 		if origEnd.Sub(origStart) <= maxRange &&
 			origEnd.Truncate(spliceStep).Equal(origStart.Truncate(spliceStep)) {
-			out[k] = Extent{Start: origStart, End: origEnd, LastUsed: e.LastUsed}
-			k++
+			out = append(out, Extent{Start: origStart, End: origEnd, LastUsed: e.LastUsed})
 			continue
 		}
 		for i := origStart; !i.After(origEnd); {
@@ -216,13 +227,12 @@ func (el ExtentList) spliceByTimeAligned(step, maxRange, spliceStep time.Duratio
 			if end.After(origEnd) {
 				end = origEnd
 			}
-			out[k] = Extent{Start: i, End: end, LastUsed: e.LastUsed}
-			k++
+			out = append(out, Extent{Start: i, End: end, LastUsed: e.LastUsed})
 			i = end.Add(step)
 		}
 	}
 
-	return out[:k]
+	return out
 }
 
 // spliceByTime splices extents that are not aligned to any particular epoch cadence
@@ -230,12 +240,18 @@ func (el ExtentList) spliceByTime(step, maxRange time.Duration) ExtentList {
 	if step == 0 || maxRange == 0 {
 		return el.Clone()
 	}
-	out := make(ExtentList, len(el)*4)
-	var k int
+	stride := max(maxRange, step)
+	totalCap := 0
+	for _, e := range el {
+		totalCap += int(e.End.Sub(e.Start)/stride) + 2
+		if totalCap > maxShardCount {
+			return el.Clone()
+		}
+	}
+	out := make(ExtentList, 0, totalCap)
 	for _, e := range el {
 		if e.End.Sub(e.Start) <= maxRange {
-			out[k] = e
-			k++
+			out = append(out, e)
 			continue
 		}
 		for i := e.Start; !i.After(e.End); {
@@ -246,32 +262,44 @@ func (el ExtentList) spliceByTime(step, maxRange time.Duration) ExtentList {
 			if end.After(e.End) {
 				end = e.End
 			}
-			out[k] = Extent{Start: i, End: end, LastUsed: e.LastUsed}
-			k++
+			out = append(out, Extent{Start: i, End: end, LastUsed: e.LastUsed})
 			i = end.Add(step)
 		}
 	}
-	return out[:k]
+	return out
 }
 
-// spliceByTime splices by a given number of contiguous timestamps (points) per splice
+// spliceByPoints splices by a given number of contiguous timestamps (points) per splice
 func (el ExtentList) spliceByPoints(step time.Duration, maxPoints int) ExtentList {
 	if maxPoints == 0 || step == 0 {
 		return el.Clone()
 	}
-	out := make(ExtentList, len(el)*4)
-	var k int
-	spliceSpan := step * time.Duration(maxPoints-1)
+	totalCap := 0
 	for _, e := range el {
 		if e.Start.IsZero() || e.End.IsZero() {
-			out[k] = e
-			k++
+			totalCap++
 			continue
 		}
 		numPoints := int(e.End.Sub(e.Start) / step)
 		if maxPoints > numPoints {
-			out[k] = e
-			k++
+			totalCap++
+			continue
+		}
+		totalCap += numPoints/maxPoints + 2
+		if totalCap > maxShardCount {
+			return el.Clone()
+		}
+	}
+	out := make(ExtentList, 0, totalCap)
+	spliceSpan := step * time.Duration(maxPoints-1)
+	for _, e := range el {
+		if e.Start.IsZero() || e.End.IsZero() {
+			out = append(out, e)
+			continue
+		}
+		numPoints := int(e.End.Sub(e.Start) / step)
+		if maxPoints > numPoints {
+			out = append(out, e)
 			continue
 		}
 		for i := e.Start; !i.After(e.End); {
@@ -282,12 +310,19 @@ func (el ExtentList) spliceByPoints(step time.Duration, maxPoints int) ExtentLis
 			if end.After(e.End) {
 				end = e.End
 			}
-			out[k] = Extent{Start: i, End: end, LastUsed: e.LastUsed}
-			k++
+			out = append(out, Extent{Start: i, End: end, LastUsed: e.LastUsed})
 			i = end.Add(step)
 		}
 	}
-	return out[:k]
+	return out
+}
+
+func extentCmp(a, b Extent) int {
+	return a.Start.Compare(b.Start)
+}
+
+func ExtentLRUCmp(a, b Extent) int {
+	return a.LastUsed.Compare(b.LastUsed)
 }
 
 // Len returns the length of a slice of type ExtentList
@@ -400,8 +435,8 @@ func (el ExtentList) TimestampCount(d time.Duration) int64 {
 func (el ExtentList) CalculateDeltas(needs ExtentList,
 	step time.Duration,
 ) ExtentList {
-	sort.Sort(el)
-	sort.Sort(needs)
+	slices.SortFunc(el, extentCmp)
+	slices.SortFunc(needs, extentCmp)
 	out := ExtentList(segments.Diff(el, needs, step, segments.Time{}))
 	out.Compress(step)
 	return out

@@ -30,7 +30,7 @@ func BenchmarkDeltaProxyCache(b *testing.B) {
 	if err != nil {
 		b.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -60,7 +60,7 @@ func BenchmarkDeltaProxyCacheChunks(b *testing.B) {
 		b.Error(err)
 	}
 	rsc.CacheConfig.UseCacheChunking = true
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions

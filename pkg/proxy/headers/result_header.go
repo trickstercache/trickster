@@ -98,7 +98,7 @@ func MergeResultHeaderVals(h1, h2 string) string {
 		merged := make(timeseries.ExtentList, len(r1.Fetched)+len(r2.Fetched))
 		copy(merged, r1.Fetched)
 		copy(merged[len(r1.Fetched):], r2.Fetched)
-		r1.Fetched = r1.Fetched.Compress(0)
+		r1.Fetched = merged.Compress(0)
 	}
 
 	if len(r1.FailedFetch) == 0 {
@@ -107,7 +107,7 @@ func MergeResultHeaderVals(h1, h2 string) string {
 		merged := make(timeseries.ExtentList, len(r1.FailedFetch)+len(r2.FailedFetch))
 		copy(merged, r1.FailedFetch)
 		copy(merged[len(r1.FailedFetch):], r2.FailedFetch)
-		r1.FailedFetch = r1.FailedFetch.Compress(0)
+		r1.FailedFetch = merged.Compress(0)
 	}
 
 	return r1.String()

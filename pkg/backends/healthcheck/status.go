@@ -26,7 +26,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/util/safego"
 )
 
 const (
@@ -75,7 +79,7 @@ func (s *Status) String() string {
 		fmt.Fprintf(sb, "detail: %s\n", s.Detail())
 	}
 	if st == StatusFailing {
-		fmt.Fprintf(sb, "since: %d", s.failingSince.Unix())
+		fmt.Fprintf(sb, "since: %d", s.FailingSince().Unix())
 	}
 	return sb.String()
 }
@@ -98,11 +102,26 @@ func (s *Status) Set(i int32) {
 	subs := slices.Clone(s.subscribers)
 	s.mtx.Unlock()
 	for _, ch := range subs {
+		s.notifySubscriber(ch)
+	}
+}
+
+// notifySubscriber sends a non-blocking notification to ch. Each send is
+// isolated by recover so a closed-channel panic on one subscriber does not
+// stop notifying the rest or propagate up to the probe loop caller.
+func (s *Status) notifySubscriber(ch chan bool) {
+	safego.Run(func(r any, _ []byte) {
+		logger.Error("healthcheck status notify panic", logging.Pairs{
+			"target": s.name,
+			"panic":  fmt.Sprintf("%v", r),
+		})
+		metrics.HealthcheckStatusNotifyPanicRecovered.WithLabelValues(s.name).Inc()
+	}, func() {
 		select {
 		case ch <- true:
 		default:
 		}
-	}
+	})
 }
 
 // Prober returns the Prober func
@@ -136,7 +155,17 @@ func (s *Status) Description() string {
 
 // FailingSince provides the failing since time
 func (s *Status) FailingSince() time.Time {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
 	return s.failingSince
+}
+
+// SetFailingSince updates the failing since time. Used by the probe loop
+// when it transitions a target into or out of the StatusFailing state.
+func (s *Status) SetFailingSince(t time.Time) {
+	s.mtx.Lock()
+	s.failingSince = t
+	s.mtx.Unlock()
 }
 
 // RegisterSubscriber registers a subscriber with the Status
@@ -147,4 +176,14 @@ func (s *Status) RegisterSubscriber(ch chan bool) {
 	}
 	s.subscribers = append(s.subscribers, ch)
 	s.mtx.Unlock()
+}
+
+// UnregisterSubscriber removes a previously-registered channel. No-op if ch
+// was not registered.
+func (s *Status) UnregisterSubscriber(ch chan bool) {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+	s.subscribers = slices.DeleteFunc(s.subscribers, func(c chan bool) bool {
+		return c == ch
+	})
 }

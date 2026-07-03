@@ -22,6 +22,7 @@ backends:
     max_ttl: 25h0m0s
     revalidation_factor: 2
     max_object_size_bytes: 524288
+    max_capture_bytes: 268435456
     compressible_types:
     - text/html
     - text/javascript
@@ -59,6 +60,7 @@ backends:
     max_ttl: 25h0m0s
     revalidation_factor: 2
     max_object_size_bytes: 524288
+    max_capture_bytes: 268435456
     compressible_types:
     - text/html
     - text/javascript
@@ -96,6 +98,7 @@ backends:
     max_ttl: 25h0m0s
     revalidation_factor: 2
     max_object_size_bytes: 524288
+    max_capture_bytes: 268435456
     compressible_types:
     - text/html
     - text/javascript
@@ -130,6 +133,7 @@ backends:
     max_ttl: 25h0m0s
     revalidation_factor: 2
     max_object_size_bytes: 524288
+    max_capture_bytes: 268435456
     compressible_types:
     - text/html
     - text/javascript

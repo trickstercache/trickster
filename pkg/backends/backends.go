@@ -35,7 +35,14 @@ func (b Backends) StartHealthChecks(knownStatuses healthcheck.StatusLookup) (hea
 	hc := healthcheck.New()
 	for k, c := range b {
 		bo := c.Configuration()
-		if IsVirtual(bo.Provider) || k == "frontend" {
+		if k == "frontend" {
+			continue
+		}
+		if IsVirtual(bo.Provider) {
+			// Virtual backends have no upstream to probe; register a synthetic
+			// passing status so they surface in the health page and in outer
+			// ALB pool reporting.
+			hc.RegisterVirtual(k, bo.Provider)
 			continue
 		}
 		hco := bo.HealthCheck
@@ -90,6 +97,30 @@ func (b Backends) GetRouter(backendName string) http.Handler {
 // make an outbound http request, but instead front to other backends)
 func IsVirtual(provider string) bool {
 	return provider == providers.ALB || provider == providers.Rule
+}
+
+// CloseIdleConnections closes idle keep-alive conns on each backend's web and
+// health-check transports. Reload replaces the backend map without closing the
+// old map's transports, leaking persistConn readLoop/writeLoop goroutines until
+// the per-transport IdleConnTimeout (default 2m) elapses.
+func (b Backends) CloseIdleConnections() {
+	for _, c := range b {
+		if c == nil {
+			continue
+		}
+		closeIdle(c.HTTPClient())
+		closeIdle(c.HealthCheckHTTPClient())
+	}
+}
+
+func closeIdle(c *http.Client) {
+	if c == nil {
+		return
+	}
+	type idleCloser interface{ CloseIdleConnections() }
+	if ic, ok := c.Transport.(idleCloser); ok {
+		ic.CloseIdleConnections()
+	}
 }
 
 // UsesCache returns true if the backend uses a cache

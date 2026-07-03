@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"runtime"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 
@@ -135,8 +134,17 @@ func (sl SeriesList) Clone() SeriesList {
 // MergeStrategy to combine values from series with identical headers.
 // For MergeStrategyDedup, this behaves identically to Merge.
 func (sl SeriesList) MergeWithStrategy(sl2 SeriesList, sortPoints bool, strategy MergeStrategy) SeriesList {
-	if strategy == MergeStrategyDedup {
-		return sl.Merge(sl2, sortPoints)
+	return sl.MergeWithOpts(sl2, MergeOpts{SortPoints: sortPoints, Strategy: strategy})
+}
+
+// MergeWithOpts is the MergeOpts-aware variant of MergeWithStrategy. The
+// dedup path with opts.ToleranceNanos > 0 collapses sub-step duplicates
+// produced by independent shards sampling the same metric at slightly
+// different timestamps.
+func (sl SeriesList) MergeWithOpts(sl2 SeriesList, opts MergeOpts) SeriesList {
+	if opts.Strategy == MergeStrategyDedup && opts.ToleranceNanos == 0 {
+		// fast path: legacy exact-match dedup
+		return sl.Merge(sl2, opts.SortPoints)
 	}
 	if len(sl2) == 0 {
 		return sl.Clone()
@@ -176,7 +184,7 @@ func (sl SeriesList) MergeWithStrategy(sl2 SeriesList, sortPoints bool, strategy
 			k++
 		} else {
 			wg.Go(func() {
-				cs.Points = MergePointsWithStrategy(cs.Points, s.Points, sortPoints, strategy)
+				cs.Points = MergePointsWithOpts(cs.Points, s.Points, opts)
 				cs.PointSize = cs.Points.Size()
 			})
 		}
@@ -210,7 +218,7 @@ func (sl SeriesList) SortPoints() {
 	eg.SetLimit(runtime.GOMAXPROCS(0))
 	for _, s := range sl {
 		eg.Go(func() error {
-			sort.Sort(s.Points)
+			slices.SortFunc(s.Points, pointCmp)
 			return nil
 		})
 	}

@@ -19,7 +19,7 @@ package byterange
 import (
 	"fmt"
 	"reflect"
-	"sort"
+	"slices"
 	"strconv"
 	"testing"
 )
@@ -245,7 +245,7 @@ func TestRangesEqual(t *testing.T) {
 
 func TestRangeSort(t *testing.T) {
 	r := Ranges{Range{Start: 10, End: 20}, Range{Start: 0, End: 8}}
-	sort.Sort(r)
+	slices.SortFunc(r, rangeCmp)
 	if r[0].Start != 0 || r[1].End != 20 {
 		t.Errorf("sort failed on %s", r.String())
 	}

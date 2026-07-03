@@ -116,6 +116,20 @@ type Options struct {
 	RevalidationFactor float64 `yaml:"revalidation_factor,omitempty"`
 	// MaxObjectSizeBytes specifies the max objectsize to be accepted for any given cache object
 	MaxObjectSizeBytes int `yaml:"max_object_size_bytes,omitempty"`
+	// MaxCaptureBytes caps the per-response in-memory capture buffer that
+	// Trickster's internal capture writer allocates when an ALB mechanism
+	// fans out to pool members or a backend handler transforms an upstream
+	// response. A member whose body exceeds the cap is treated as a
+	// partial-failure (the merge surfaces an X-Trickster-Result phit marker)
+	// rather than truncating the response silently. Defaults to 256 MiB.
+	MaxCaptureBytes int `yaml:"max_capture_bytes,omitempty"`
+	// MaxFanoutCaptureBytes, if > 0, caps the aggregate in-flight
+	// capture-buffer reservations across all slots in one ALB fanout call.
+	// Each slot reserves the per-slot MaxCaptureBytes worst case; slots
+	// dispatched after the budget is exhausted are fail-fasted so the
+	// merge sees them as failures and existing partial-merge / 502
+	// fallback paths handle them. Defaults to 0 (no aggregate cap).
+	MaxFanoutCaptureBytes int `yaml:"max_fanout_capture_bytes,omitempty"`
 	// CompressibleTypeList specifies the HTTP Object Content Types that will be compressed internally
 	// when stored in the Trickster cache or served to clients with a compatible 'Accept-Encoding' header
 	CompressibleTypeList []string `yaml:"compressible_types,omitempty"`
@@ -244,6 +258,8 @@ func New() *Options {
 		KeepAliveTimeout:             DefaultKeepAliveTimeout,
 		MaxIdleConns:                 DefaultMaxIdleConns,
 		MaxConcurrentConns:           DefaultMaxConcurrentConns,
+		MaxCaptureBytes:              DefaultMaxCaptureBytes,
+		MaxFanoutCaptureBytes:        DefaultMaxFanoutCaptureBytes,
 		MaxObjectSizeBytes:           DefaultMaxObjectSizeBytes,
 		MaxTTL:                       DefaultMaxTTL,
 		NegativeCache:                make(map[int]time.Duration),
@@ -487,6 +503,17 @@ func (l Lookup) ValidateConfigMappings(c co.Lookup, ncl negative.Lookups,
 			if _, ok := c[o.CacheName]; !ok {
 				return NewErrInvalidCacheName(o.CacheName, o.Name)
 			}
+		}
+	}
+	albs := make(map[string]*ao.Options)
+	for _, o := range l {
+		if o.Provider == providers.ALB && o.ALBOptions != nil {
+			albs[o.Name] = o.ALBOptions
+		}
+	}
+	if len(albs) > 0 {
+		if err := ao.ValidateNoCycles(albs); err != nil {
+			return err
 		}
 	}
 	return nil

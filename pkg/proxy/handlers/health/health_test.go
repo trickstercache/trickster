@@ -73,6 +73,12 @@ func (m *mockHealthChecker) Register(name string, description string, options *h
 	return &healthcheck.Status{}, nil
 }
 
+func (m *mockHealthChecker) RegisterVirtual(name, description string) *healthcheck.Status {
+	s := healthcheck.NewStatus(name, description, "", healthcheck.StatusPassing, time.Time{}, nil)
+	m.targets[name] = mockTarget{description: description, status: s}
+	return s
+}
+
 func (m *mockHealthChecker) Unregister(name string) {
 	delete(m.targets, name)
 }

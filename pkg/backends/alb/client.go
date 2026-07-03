@@ -19,6 +19,8 @@ package alb
 import (
 	"fmt"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	alberr "github.com/trickstercache/trickster/v2/pkg/backends/alb/errors"
@@ -33,10 +35,15 @@ import (
 	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/errors"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	authopt "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	authreg "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/registry"
+	at "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/types"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/local"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
@@ -49,9 +56,17 @@ type Client struct {
 	handler types.Mechanism // this is the actual handler for all request to this backend
 }
 
-// Handlers returns a map of the HTTP Handlers the client has registered
+// Handlers returns a map of the HTTP Handlers the client has registered.
+// "localresponse" is exposed so operators can use the standard `paths:`
+// override to short-circuit non-mergeable endpoints (e.g. /api/v1/query_exemplars,
+// /api/v1/metadata) before they enter the ALB mechanism. Without this entry
+// the routing layer silently drops the path config because client.Handlers()
+// has no matching handler for the requested name.
 func (c *Client) Handlers() handlers.Lookup {
-	return handlers.Lookup{providers.ALB: c.handler}
+	return handlers.Lookup{
+		providers.ALB:   c.handler,
+		"localresponse": http.HandlerFunc(local.HandleLocalResponse),
+	}
 }
 
 var _ rt.NewBackendClientFunc = NewClient
@@ -67,6 +82,12 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 	}
 	c.Backend = b
 	if o != nil && o.ALBOptions != nil {
+		if o.ALBOptions.MaxCaptureBytes == 0 {
+			o.ALBOptions.MaxCaptureBytes = o.MaxCaptureBytes
+		}
+		if o.ALBOptions.MaxFanoutCaptureBytes == 0 {
+			o.ALBOptions.MaxFanoutCaptureBytes = o.MaxFanoutCaptureBytes
+		}
 		m, err := registry.New(o.ALBOptions.MechanismName,
 			o.ALBOptions, factories)
 		if err != nil {
@@ -154,9 +175,10 @@ func (c *Client) ValidateAndStartPool(clients backends.Backends, hcs healthcheck
 		return err
 	}
 	if o.MechanismName == names.MechanismUR && o.UserRouter != nil {
-		return c.validateAndStartUserRouter(clients)
+		return c.validateAndStartUserRouter(clients, hcs)
 	}
 	targets := make(pool.Targets, 0, len(o.Pool))
+	var unprobed []string
 	for _, n := range o.Pool {
 		tc, ok := clients[n]
 		if !ok {
@@ -164,12 +186,49 @@ func (c *Client) ValidateAndStartPool(clients backends.Backends, hcs healthcheck
 		}
 		hc, ok := hcs[n]
 		if !ok {
-			continue // virtual backends (rule, alb) don't currently have health checks
+			// virtual backends (rule, alb) have no health checks; treat as passing
+			hc = healthcheck.NewStatus(n, "virtual", "", healthcheck.StatusPassing, time.Time{}, nil)
+		}
+		if mo := tc.Configuration(); !backends.IsVirtual(mo.Provider) &&
+			(mo.HealthCheck == nil || mo.HealthCheck.Interval <= 0) {
+			unprobed = append(unprobed, n)
 		}
 		targets = append(targets, pool.NewTarget(tc.Router(), hc, tc))
 	}
-	if c.handler != nil {
-		c.handler.SetPool(pool.New(targets, o.HealthyFloor))
+	effectiveFloor := o.HealthyFloor
+	if o.HealthyFloor >= int(healthcheck.StatusPassing) && len(unprobed) > 0 {
+		// floor requires Passing, but these members have no probe interval and
+		// can never leave Unchecked, so they would be permanently excluded --
+		// which can empty the pool entirely and 502 every request. Reset to 0
+		// so unchecked members are admitted, and surface it loudly.
+		effectiveFloor = int(healthcheck.StatusUnchecked)
+		metrics.ALBPoolFloorReset.WithLabelValues(c.Name()).Set(1)
+		logger.Warn("alb healthy_floor reset to 0: pool members have no health check",
+			logging.Pairs{
+				"backend_name":  c.Name(),
+				"healthy_floor": o.HealthyFloor,
+				"members":       strings.Join(unprobed, ","),
+				"hint":          "configure healthcheck.interval on these members, or set healthy_floor: 0",
+			})
+	} else {
+		metrics.ALBPoolFloorReset.WithLabelValues(c.Name()).Set(0)
+	}
+	if pm, ok := c.handler.(types.PoolMechanism); ok {
+		pm.SetPool(pool.New(targets, effectiveFloor))
+	}
+	if o.HealthyFloor <= int(healthcheck.StatusFailing) {
+		// floor admits members whose probe has confirmed them down; operators
+		// who lowered the floor to keep traffic flowing during the startup
+		// Initializing window may not realize Failing slips in too.
+		metrics.ALBPoolAdmitsFailing.WithLabelValues(c.Name()).Set(1)
+		logger.Warn("alb healthy_floor admits members in Failing state",
+			logging.Pairs{
+				"backend_name":  c.Name(),
+				"healthy_floor": o.HealthyFloor,
+				"hint":          "set healthy_floor: 0 to exclude probed-failing members",
+			})
+	} else {
+		metrics.ALBPoolAdmitsFailing.WithLabelValues(c.Name()).Set(0)
 	}
 	return nil
 }
@@ -178,9 +237,11 @@ func observeOnlyOpts() *authopt.Options {
 	return &authopt.Options{ObserveOnly: true}
 }
 
-func (c *Client) validateAndStartUserRouter(clients backends.Backends) error {
+func (c *Client) validateAndStartUserRouter(clients backends.Backends, hcs healthcheck.StatusLookup) error {
 	conf := c.Configuration()
 	var canReplaceCreds bool
+	var authenticator at.Authenticator
+	var defaultHandler http.Handler
 	o := conf.ALBOptions.UserRouter
 	h, ok := c.handler.(*ur.Handler)
 	if !ok {
@@ -190,7 +251,7 @@ func (c *Client) validateAndStartUserRouter(clients backends.Backends) error {
 		// credential replacement is only allowed if users will be positively
 		// authenticated and not just observed.
 		canReplaceCreds = !(conf.AuthOptions.Authenticator.IsObserveOnly())
-		h.SetAuthenticator(conf.AuthOptions.Authenticator, canReplaceCreds)
+		authenticator = conf.AuthOptions.Authenticator
 	} else {
 		a, err := authreg.NewObserverFromProviderName(o.TargetProvider,
 			map[string]any{"options": observeOnlyOpts()})
@@ -199,57 +260,71 @@ func (c *Client) validateAndStartUserRouter(clients backends.Backends) error {
 		} else if a == nil {
 			return errors.ErrInvalidOptions
 		}
-		h.SetAuthenticator(a, false)
+		authenticator = a
 	}
+	noRouteStatusCode := o.NoRouteStatusCode
 	if o.DefaultBackend != "" {
 		bh, ok := clients[o.DefaultBackend]
 		if !ok || bh == nil {
 			return alberr.NewErrInvalidBackendName(c.Name(), o.DefaultBackend)
 		}
-		h.SetDefaultHandler(bh.Router())
+		defaultHandler = bh.Router()
 	} else {
-		if o.NoRouteStatusCode < http.StatusBadRequest || o.NoRouteStatusCode >= 600 {
-			o.NoRouteStatusCode = http.StatusBadGateway
+		if noRouteStatusCode < http.StatusBadRequest || noRouteStatusCode >= 600 {
+			noRouteStatusCode = http.StatusBadGateway
 		}
-		switch o.NoRouteStatusCode {
+		switch noRouteStatusCode {
 		case http.StatusUnauthorized:
-			h.SetDefaultHandler(http.HandlerFunc(failures.HandleUnauthorized))
+			defaultHandler = http.HandlerFunc(failures.HandleUnauthorized)
 		case http.StatusBadGateway:
-			h.SetDefaultHandler(http.HandlerFunc(failures.HandleBadGateway))
+			defaultHandler = http.HandlerFunc(failures.HandleBadGateway)
 		case http.StatusBadRequest:
-			h.SetDefaultHandler(http.HandlerFunc(failures.HandleBadRequestResponse))
+			defaultHandler = http.HandlerFunc(failures.HandleBadRequestResponse)
 		case http.StatusInternalServerError:
-			h.SetDefaultHandler(http.HandlerFunc(failures.HandleInternalServerError))
+			defaultHandler = http.HandlerFunc(failures.HandleInternalServerError)
 		case http.StatusNotFound:
-			h.SetDefaultHandler(http.HandlerFunc(failures.HandleNotFound))
+			defaultHandler = http.HandlerFunc(failures.HandleNotFound)
 		default:
-			h.SetDefaultHandler(http.HandlerFunc(func(w http.ResponseWriter,
+			defaultHandler = http.HandlerFunc(func(w http.ResponseWriter,
 				_ *http.Request,
 			) {
-				failures.HandleMiscFailure(o.NoRouteStatusCode, w)
-			}))
+				failures.HandleMiscFailure(noRouteStatusCode, w)
+			})
 		}
 	}
 
-	for _, m := range o.Users {
+	routes := make(ur.UserRoutes, len(o.Users))
+	for username, m := range o.Users {
 		if m.ToBackend != "" {
 			bh, ok := clients[m.ToBackend]
 			if !ok || bh == nil {
 				return alberr.NewErrInvalidBackendName(c.Name(), m.ToBackend)
 			}
-			m.ToHandler = bh.Router()
+			route := ur.UserRoute{Handler: bh.Router()}
+			if hc, ok := hcs[m.ToBackend]; ok {
+				route.Status = hc
+			}
+			routes[username] = route
 		}
 		if !canReplaceCreds && m.ToCredential != "" {
 			return alberr.NewErrInvalidUserRouterCreds(c.Name())
 		}
 	}
 
+	h.SetAuthenticator(authenticator, canReplaceCreds)
+	h.SetDefaultHandler(defaultHandler)
+	h.SetNoRouteStatusCode(noRouteStatusCode)
+	h.SetUserRoutes(routes)
+
 	return nil
 }
 
-// StopPool stops this Client's pool
+// StopPool stops this Client's pool. No-op for handlers that don't own a
+// pool (e.g. user_router).
 func (c *Client) StopPool() {
-	c.handler.StopPool()
+	if pm, ok := c.handler.(types.PoolMechanism); ok {
+		pm.StopPool()
+	}
 }
 
 // Boilerplate Interface Functions (to EOF)

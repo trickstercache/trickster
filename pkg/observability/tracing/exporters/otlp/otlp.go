@@ -38,29 +38,18 @@ func New(o *options.Options) (*tracing.Tracer, error) {
 	if o == nil {
 		return nil, errs.ErrNoTracerOptions
 	}
-	var sampler sdktrace.Sampler
-	o.SanitizeSampleRate()
-	switch *o.SampleRate {
-	case 0:
-		sampler = sdktrace.NeverSample()
-	case 1:
-		sampler = sdktrace.AlwaysSample()
-	default:
-		sampler = sdktrace.TraceIDRatioBased(*o.SampleRate)
-	}
 
-	var tags []attribute.KeyValue
-	if len(o.Tags) > 0 {
-		tags = make([]attribute.KeyValue, len(o.Tags))
-		for k, v := range o.Tags {
-			tags = append(tags, attribute.String(k, v))
-		}
+	tags := make([]attribute.KeyValue, 1, len(o.Tags)+1)
+	tags[0] = attribute.String("service.name", o.ServiceName)
+	for k, v := range o.Tags {
+		tags = append(tags, attribute.String(k, v))
 	}
 
 	opts := make([]otlp.Option, 0, 10)
 	// this determines if the collector endpoint is a path, uri or url
 	// and calls the appropriate Options decorator
 	switch {
+	case o.Endpoint == "":
 	case strings.HasPrefix(o.Endpoint, "/"):
 		opts = append(opts, otlp.WithURLPath(o.Endpoint))
 	case strings.HasPrefix(o.Endpoint, "http"):
@@ -69,7 +58,7 @@ func New(o *options.Options) (*tracing.Tracer, error) {
 			opts = append(opts, otlp.WithInsecure())
 		}
 	default:
-		otlp.WithEndpoint(o.Endpoint)
+		opts = append(opts, otlp.WithEndpoint(o.Endpoint))
 	}
 
 	if o.Timeout > 0 {
@@ -90,11 +79,9 @@ func New(o *options.Options) (*tracing.Tracer, error) {
 	}
 
 	tracerOpts := make([]sdktrace.TracerProviderOption, 0, 3)
-	tracerOpts = append(tracerOpts, sdktrace.WithSampler(sampler))
-	if len(tags) > 0 {
-		tracerOpts = append(tracerOpts,
-			sdktrace.WithResource(resource.NewWithAttributes("", tags...)))
-	}
+	tracerOpts = append(tracerOpts, sdktrace.WithSampler(tracing.Sampler(o)))
+	tracerOpts = append(tracerOpts,
+		sdktrace.WithResource(resource.NewWithAttributes("", tags...)))
 	tracerOpts = append(tracerOpts, sdktrace.WithBatcher(exporter))
 	tp = sdktrace.NewTracerProvider(tracerOpts...)
 	tracer := tp.Tracer(o.Name)

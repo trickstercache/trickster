@@ -148,6 +148,8 @@ linters:
           disabled: true # disable 'switch must have a default case clause (revive)' checks
         - name: var-naming
           disabled: true # disable 'meaningless package names' (e.g., types, util, etc.) checks
+        - name: package-naming
+          disabled: true # disable 'bad package name' (e.g., types, util, etc.) checks
   exclusions:
     generated: lax
     presets:

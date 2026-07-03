@@ -14,11 +14,16 @@
  * limitations under the License.
  */
 
-package healthcheck
+package tsm
 
-import "net/http"
+import (
+	"testing"
 
-func DemandProbe(w http.ResponseWriter) {
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("{}"))
+	"go.uber.org/goleak"
+)
+
+// Mechanism-side leaks (TSM fanout that ignores ctx, panic recovery that
+// doesn't unwind) surface here.
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
 }

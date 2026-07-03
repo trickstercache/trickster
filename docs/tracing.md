@@ -15,6 +15,14 @@ Trickster allows the operator to configure multiple tracing configurations, whic
 
 The [example config](https://github.com/trickstercache/trickster/blob/v1.1.2/examples/conf/example.full.yaml#L508) has exhaustive examples of configuring Trickster for distributed tracing.
 
+## Context Propagation
+
+When tracing is enabled for a Backend, Trickster uses the W3C Trace Context and Baggage propagators. It extracts incoming `traceparent`, `tracestate`, and `baggage` headers from client requests and injects the active outbound origin request span into the proxied request. This lets downstream Origins continue the same distributed trace instead of starting an unrelated trace.
+
+## Sampling
+
+Trickster uses parent-based sampling for traced requests. The configured `sample_rate` controls root traces that Trickster starts when there is no sampled upstream trace context. When an incoming request already has a remote parent trace, Trickster follows the parent's sampling decision so sampled upstream traces continue across the proxy boundary and unsampled upstream traces remain unsampled.
+
 ## Span List
 
 Trickster can insert several spans to the traces that it captures, depending upon the type and cacheability of the inbound client request, as described in the table below.
@@ -25,7 +33,11 @@ Trickster can insert several spans to the traces that it captures, depending upo
 | QueryCache             | querying the cache for an object |
 | WriteCache             | writing an object to the cache |
 | DeltaProxyCacheRequest | handling a Time Series-based client request |
-| FastForward            | making a Fast Forward request for time series data |
+| FetchFastForward       | making a Fast Forward request for time series data |
+| FetchTimeSeries        | retrieving time series data from an Origin |
+| FetchRange             | retrieving one sharded time range from an Origin |
+| Fetch                  | retrieving one object or range from an Origin |
+| FetchRevalidation      | revalidating a stale cache object against its Origin |
 | ProxyRequest           | communicating with an Origin server to fulfill a client request |
 | PrepareFetchReader     | preparing a client response from a cached or Origin response |
 | CacheRevalidation      | revalidating a stale cache object against its Origin |
@@ -37,18 +49,28 @@ Trickster supports adding custom tags to every span via the configuration. Depen
 
 Trickster also supports omitting any tags that Trickster inserts by default. The list of default tags are below. For example on the "request" span, an `http.url` tag is attached with the current full URL. In deployments where that tag may introduce too much cardinality in your backend trace storage system, you may wish to omit that tag and rely on the more concise `path` tag. Each tracer config can be provided a string list of tags to omit from traces.
 
-### Attributes added to top level (request) span
+### Attributes added to request and core proxy/cache/fetch spans
 
-- `http.url` - the full HTTP request URL
 - `backend.name`
 - `backend.provider`
 - `cache.name`
 - `cache.provider`
 - `router.path` - request path trimmed to the route match path for the request (e.g., `/api/v1/query`), good for aggregating when there are large variations in the full URL path
+- `router.handler`
 
-### Attributes added to QueryCache span
+These resource attributes are attached when the corresponding backend, cache, or route configuration is available to the request flow.
 
-- `cache.status` - the lookup status of cache query. See the [cache status reference](./caches.md#cache-status) for a description of the attribute values.
+### Attributes added to top level (request) span
+
+- `http.url` - the full HTTP request URL
+
+### Attributes added to cache/proxy spans
+
+- `cache.status` - the lookup or proxy cache status where available. See the [cache status reference](./caches.md#cache-status) for a description of the attribute values.
+
+### Attributes added to proxy/fetch spans
+
+- `http.status_code` - the HTTP status returned by the Origin or generated proxy response, when available.
 
 ### Attributes added to the FetchRevalidation span
 

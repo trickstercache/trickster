@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -32,6 +32,16 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
+
+// ComposeCacheKey assembles a per-backend cache key. The name prefix isolates
+// keys when cache_name is shared across backends. engine is "" for plain HTTP
+// proxy, "opc" for object cache, "dpc" for delta proxy cache.
+func ComposeCacheKey(name, prefix, engine, suffix string) string {
+	if engine == "" {
+		return name + "." + prefix + "." + suffix
+	}
+	return name + "." + prefix + "." + engine + "." + suffix
+}
 
 // DeriveCacheKey calculates a query-specific keyname based on the user request
 func (pr *proxyRequest) DeriveCacheKey(extra string) string {
@@ -173,7 +183,7 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 		}
 	}
 	vals = vals[:k]
-	sort.Strings(vals)
+	slices.Sort(vals)
 	return md5.Checksum(pr.URL.Path + "." + strings.Join(vals, "") + extra)
 }
 

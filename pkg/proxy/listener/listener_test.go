@@ -29,11 +29,13 @@ import (
 	"testing"
 	"time"
 
+	dto "github.com/prometheus/client_model/go"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/exporters/stdout"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
@@ -42,6 +44,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 	testutil "github.com/trickstercache/trickster/v2/pkg/testutil"
 	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
+	"golang.org/x/net/netutil"
 )
 
 func testListener() net.Listener {
@@ -192,28 +195,24 @@ func TestListenerConnectionLimitWorks(t *testing.T) {
 
 	tt := []struct {
 		Name             string
-		ListenPort       int
 		ConnectionsLimit int
 		Clients          int
 		expectedErr      string
 	}{
 		{
 			"Without connection limit",
-			34001,
 			0,
 			1,
 			"",
 		},
 		{
 			"With connection limit of 10",
-			34002,
 			10,
 			10,
 			"",
 		},
 		{
 			"With connection limit of 1, but with 10 clients",
-			34003,
 			1,
 			10,
 			"(Client.Timeout exceeded while awaiting headers)",
@@ -224,19 +223,23 @@ func TestListenerConnectionLimitWorks(t *testing.T) {
 
 	for _, tc := range tt {
 		t.Run(tc.Name, func(t *testing.T) {
-			l, err := NewListener("", tc.ListenPort, tc.ConnectionsLimit, nil, 0)
+			// Bind to port 0 so the kernel picks a free ephemeral port;
+			// fixed ports flake on shared CI runners when the prior
+			// subtest's socket lingers in TIME_WAIT.
+			l, err := NewListener("", 0, tc.ConnectionsLimit, nil, 0)
 			if err != nil {
 				t.Fatal(err)
 			} else {
 				defer l.Close()
 			}
+			port := l.Addr().(*net.TCPAddr).Port
 			go func() {
 				http.Serve(l, lm.NewRouter())
 			}()
 
 			// poll until listener is up
 			for {
-				conn, err := net.Dial("tcp", fmt.Sprintf("localhost:%d", tc.ListenPort))
+				conn, err := net.Dial("tcp", fmt.Sprintf("localhost:%d", port))
 				if err == nil {
 					conn.Close()
 					break
@@ -245,7 +248,7 @@ func TestListenerConnectionLimitWorks(t *testing.T) {
 			}
 
 			for i := 0; i < tc.Clients; i++ {
-				r, err := http.NewRequest("GET", fmt.Sprintf("http://localhost:%d/", tc.ListenPort), nil)
+				r, err := http.NewRequest("GET", fmt.Sprintf("http://localhost:%d/", port), nil)
 				if err != nil {
 					t.Fatalf("failed to create request: %s", err)
 				}
@@ -347,10 +350,77 @@ func TestCloseObservedConnection(t *testing.T) {
 		t.Error("invalid connection type")
 	}
 	oconn := &observedConnection{
-		TCPConn: tconn,
+		Conn: tconn,
 	}
 	err = oconn.Close()
 	if err != nil {
 		t.Error(err)
+	}
+}
+
+func TestObservedConnectionIdempotentClose(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(testutil.BasicHTTPHandler))
+	defer s.Close()
+	address := s.URL[7:]
+	conn, err := net.Dial("tcp", address)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tconn, ok := conn.(*net.TCPConn)
+	if !ok {
+		t.Fatal("invalid connection type")
+	}
+	oconn := &observedConnection{
+		Conn: tconn,
+	}
+
+	metrics.ProxyActiveConnections.Set(10.0)
+
+	// First Close succeeds and decrements the gauge exactly once.
+	if err := oconn.Close(); err != nil {
+		t.Errorf("first Close: unexpected error: %v", err)
+	}
+
+	// Subsequent Closes return an error because the conn is already closed;
+	// that error is what prevents the gauge from being decremented again.
+	for range 5 {
+		if err := oconn.Close(); err == nil {
+			t.Error("expected an error closing an already-closed connection")
+		}
+	}
+
+	var m dto.Metric
+	metrics.ProxyActiveConnections.Write(&m)
+	finalVal := m.GetGauge().GetValue()
+
+	if finalVal != 9.0 {
+		t.Errorf("expected ProxyActiveConnections metric to be 9.0 after idempotent close, got %f", finalVal)
+	}
+}
+
+func TestAcceptWrapsLimitListenerConn(t *testing.T) {
+	// With connections_limit set, the listener is wrapped by a
+	// netutil.LimitListener whose conns are not *net.TCPConn. Accept must
+	// still wrap them so Close decrements the active-connections gauge.
+	raw, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close()
+	l := &Listener{Listener: netutil.LimitListener(raw, 10)}
+
+	go func() {
+		if c, derr := net.Dial("tcp", raw.Addr().String()); derr == nil {
+			c.Close()
+		}
+	}()
+
+	conn, err := l.Accept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if _, ok := conn.(*observedConnection); !ok {
+		t.Errorf("Accept did not wrap LimitListener conn: got %T, want *observedConnection", conn)
 	}
 }

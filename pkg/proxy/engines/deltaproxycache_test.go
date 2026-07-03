@@ -93,12 +93,54 @@ func setupTestHarnessDPC() (*httptest.Server, *httptest.ResponseRecorder, *http.
 	return ts, w, r, rsc, nil
 }
 
+// closeTestHarness releases resources held by the test harness fixtures
+// (cache client, upstream http server, transport idle conns). Use via
+// t.Cleanup or defer to keep tests from leaking ristretto background
+// goroutines and idle client connections across test runs.
+//
+// CloseClientConnections is needed alongside Close because Server.Close
+// only blocks for in-flight server handlers; it does not free the
+// client-side persistConn pool the proxy holds.
+func closeTestHarness(ts *httptest.Server, r *http.Request) {
+	if r != nil {
+		if rsc := request.GetResources(r); rsc != nil {
+			if rsc.BackendOptions != nil && rsc.BackendOptions.HTTPClient != nil {
+				rsc.BackendOptions.HTTPClient.CloseIdleConnections()
+				closeIdleTransport(rsc.BackendOptions.HTTPClient.Transport)
+			}
+			if rsc.CacheClient != nil {
+				_ = rsc.CacheClient.Close()
+			}
+		}
+	}
+	if ts != nil {
+		ts.CloseClientConnections()
+		ts.Close()
+	}
+}
+
+// closeIdleTransport walks RoundTripper wrappers (e.g. gatedTransport) to
+// find an underlying *http.Transport and close its idle connections.
+func closeIdleTransport(rt http.RoundTripper) {
+	for rt != nil {
+		switch t := rt.(type) {
+		case *http.Transport:
+			t.CloseIdleConnections()
+			return
+		case *gatedTransport:
+			rt = t.inner
+		default:
+			return
+		}
+	}
+}
+
 func TestDeltaProxyCacheRequestMissThenHit(t *testing.T) {
 	ts, w, r, rsc, err := setupTestHarnessDPC()
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -177,7 +219,7 @@ func TestDeltaProxyCacheRequestRemoveStale(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -255,7 +297,7 @@ func TestDeltaProxyCacheRequestRemoveStale(t *testing.T) {
 // 	if err != nil {
 // 		t.Error(err)
 // 	}
-// 	defer ts.Close()
+// 	defer closeTestHarness(ts, r)
 
 // 	client := rsc.BackendClient.(*TestClient)
 // 	o := rsc.BackendOptions
@@ -330,7 +372,7 @@ func TestDeltaProxyCacheRequestMarshalFailure(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -378,7 +420,7 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -524,7 +566,7 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 	extr.End = extr.End.Add(time.Duration(1) * time.Hour) // Extend the top by 1 hour to generate partial hit
 	extn.End = normalizeTime(extr.End, step)
 
-	expectedFetched = "[" + timeseries.ExtentList{timeseries.Extent{Start: extn.Start, End: phitEnd}}.String() + "," +
+	expectedFetched = "[" + timeseries.ExtentList{timeseries.Extent{Start: extn.Start, End: phitEnd}}.String() + ";" +
 		timeseries.ExtentList{timeseries.Extent{Start: phitStart, End: extn.End}}.String() + "]"
 
 	expected, _, _ = mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
@@ -675,7 +717,7 @@ func TestDeltayProxyCacheRequestDeltaFetchError(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -756,7 +798,7 @@ func TestDeltaProxyCacheRequestRangeMiss(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -900,7 +942,7 @@ func TestDeltaProxyCacheRequestFastForward(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 	rsc.CacheConfig.Provider = "test"
 
 	client := rsc.BackendClient.(*TestClient)
@@ -1022,7 +1064,7 @@ func TestDeltaProxyCacheRequestFastForwardUrlError(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -1080,7 +1122,7 @@ func TestDeltaProxyCacheRequestWithRefresh(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -1134,7 +1176,7 @@ func TestDeltaProxyCacheRequestWithRefreshError(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -1170,7 +1212,7 @@ func TestDeltaProxyCacheRequestWithUnmarshalAndUpstreamErrors(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -1218,7 +1260,7 @@ func TestDeltaProxyCacheRequestWithUnmarshalAndUpstreamErrors(t *testing.T) {
 	// Give time for the object to be written to cache in a separate goroutine from response
 	time.Sleep(time.Millisecond * 10)
 
-	key := o.Host + ".dpc.61a603af5b94ea305dc3fa35af4eed98"
+	key := o.Name + "." + o.CacheKeyPrefix + ".dpc.61a603af5b94ea305dc3fa35af4eed98"
 
 	cc := client.Cache()
 
@@ -1271,7 +1313,7 @@ func TestDeltaProxyCacheRequest_BadParams(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -1310,7 +1352,7 @@ func TestDeltaProxyCacheRequestCacheMissUnmarshalFailed(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -1372,7 +1414,7 @@ func TestDeltaProxyCacheRequestOutOfWindow(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -1446,7 +1488,7 @@ func TestDeltaProxyCacheRequestBadGateway(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -1482,7 +1524,7 @@ func TestDeltaProxyCacheRequest_BackfillTolerance(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -1562,7 +1604,7 @@ func TestDeltaProxyCacheRequestFFTTLBiggerThanStep(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -1619,7 +1661,7 @@ func TestDeltaProxyCacheRequestShardByPoints(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -1723,7 +1765,7 @@ func TestDPCSingleflightDedup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -1814,7 +1856,7 @@ func TestDPCSingleflightDifferentTimeRangesNotDeduped(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -1893,7 +1935,7 @@ func TestDPCSingleflightErrorPropagation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -1959,7 +2001,7 @@ func TestDPCProxyOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	rsc.BackendOptions.ProxyOnly = true
@@ -1987,6 +2029,12 @@ func TestDPCProxyOnly(t *testing.T) {
 	if !strings.Contains(hdr, "engine=HTTPProxy") {
 		t.Errorf("expected HTTPProxy engine in result header, got %q", hdr)
 	}
+	if rsc.TimeRangeQuery == nil {
+		t.Fatal("expected proxy-only DPC metadata to include TimeRangeQuery")
+	}
+	if rsc.TSUnmarshaler == nil {
+		t.Fatal("expected proxy-only DPC metadata to include TSUnmarshaler")
+	}
 }
 
 // TestDPCNoCacheBypass verifies that requests with Cache-Control: no-cache
@@ -1996,7 +2044,7 @@ func TestDPCNoCacheBypass(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -2038,7 +2086,7 @@ func TestDPCSingleflightBadPayload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -2131,7 +2179,7 @@ func TestFetchExtentsConcurrencyLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions

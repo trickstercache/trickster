@@ -96,16 +96,32 @@ func NewHTTPClient(o *bo.Options) (*http.Client, error) {
 			ExpectContinueTimeout: o.Timeout,
 			ResponseHeaderTimeout: o.Timeout,
 			TLSClientConfig:       TLSConfig,
+			// explicit: Go suppresses h2 auto-enable when Dial or TLSClientConfig is custom.
+			ForceAttemptHTTP2: true,
 		},
 	}
 
 	if o.SigV4 != nil {
-		var err error
-		client.Transport, err = sigv4.NewSigV4RoundTripper(o.SigV4, client.Transport)
+		inner, _ := client.Transport.(*http.Transport)
+		wrapped, err := sigv4.NewSigV4RoundTripper(o.SigV4, client.Transport)
 		if err != nil {
 			return nil, err
 		}
+		// sigV4RoundTripper does not satisfy idleCloser; wrap to keep
+		// CloseIdleConnections reachable on reload.
+		client.Transport = &idleClosingRoundTripper{RoundTripper: wrapped, inner: inner}
 	}
 
 	return client, nil
+}
+
+type idleClosingRoundTripper struct {
+	http.RoundTripper
+	inner *http.Transport
+}
+
+func (i *idleClosingRoundTripper) CloseIdleConnections() {
+	if i.inner != nil {
+		i.inner.CloseIdleConnections()
+	}
 }

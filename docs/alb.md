@@ -100,12 +100,15 @@ For Federation use cases where backends hold different, non-overlapping data, Tr
 | `max` | Maximum value per unique label set + timestamp |
 | `group` | Deduplicate per unique label set + timestamp |
 | `avg` | Dual queries (avg→sum and avg→count); weighted arithmetic mean per unique label set + timestamp |
-| `stddev`, `stdvar`, `quantile`, `topk`, `bottomk`, `limitk`, `limit_ratio` | Deduplicate + inject a warning into the Prometheus response |
+| `topk`, `bottomk` | Query the inner expression across backends, merge it, then apply final top/bottom-k selection per timestamp and aggregation group |
+| `stddev`, `stdvar`, `quantile`, `limitk`, `limit_ratio` | Deduplicate + inject a warning into the Prometheus response |
 | _(none)_ | Deduplicate (default) |
 
 For `avg` queries, Trickster issues two concurrent sub-queries per backend shard — one rewriting the outer `avg` to `sum` and another to `count` — then computes a true weighted arithmetic mean (`sum_total / count_total`) per series per timestamp. This avoids the skew introduced by a naïve avg-of-averages when backends have different data cardinalities.
 
-For non-supportable aggregators (`stddev`, `stdvar`, `quantile`, `topk`, `bottomk`, `limitk`, `limit_ratio`), Trickster falls back to deduplication and injects a `warnings` entry in the Prometheus response body to alert the caller that results may be inaccurate.
+For `topk` and `bottomk`, Trickster sends the inner expression to each backend, merges those inner results using the inner expression's merge strategy, then applies the final rank-and-trim step per timestamp and aggregation group. This prevents each backend's local `topk`/`bottomk` result from being weighted equally during the merge. If the inner expression is `avg`, Trickster still uses the weighted `sum`/`count` rewrite before applying the final rank. This also applies when the rank aggregation is wrapped in `sort()` or `sort_desc()`.
+
+For non-supportable aggregators (`stddev`, `stdvar`, `quantile`, `limitk`, `limit_ratio`), Trickster falls back to deduplication and injects a `warnings` entry in the Prometheus response body to alert the caller that results may be inaccurate.
 
 When a non-dedup strategy is in effect and backends have [injected labels](./prometheus.md#injecting-labels) configured, those labels are automatically stripped before merging. This ensures series from different backends hash identically for aggregation, and the injected labels do not appear in the response.
 
@@ -387,6 +390,52 @@ The User Router does not rotate through or fanout to a Pool of Backends like the
 
 You can configure a User Router ALB's backend destinations to be other ALBs with mechanisms that utilize healthchecked pools.
 
+## Bounding Per-Member Response Captures
+
+ALB mechanisms that fan out (TSM, FR, FGR, NLM) buffer each pool member's response in memory before merging or selecting a winner. Without a cap, one misbehaving upstream returning an oversized body can OOM the proxy -- an N-way fanout multiplies that by N.
+
+Trickster applies a default cap of **256 MiB** per response. A member whose body exceeds the cap is treated as a partial failure: the merged response carries an `X-Trickster-Result: phit` marker and the `trickster_alb_fanout_failures_total{mechanism, reason="truncated"}` metric increments.
+
+Override the cap at the backend or ALB level:
+
+```yaml
+backends:
+  default:
+    max_capture_bytes: 67108864  # 64 MiB, applies to all backends (Prometheus, ClickHouse, ALB members, etc.)
+
+  prom-alb-tsm:
+    provider: alb
+    alb:
+      mechanism: tsm
+      max_capture_bytes: 16777216  # 16 MiB, ALB-specific override
+      pool:
+        - prom01
+        - prom02
+```
+
+The ALB-level value takes precedence over the backend-level value, which in turn takes precedence over the 256 MiB default.
+
+### Bounding Aggregate In-Flight Captures
+
+`max_capture_bytes` caps each member's response individually; a fanout to N members can still buffer up to `N * max_capture_bytes` in flight. For deployments with large pools or low memory ceilings, set `max_fanout_capture_bytes` to cap the aggregate buffer across all in-flight slots in a single fanout call. Slots dispatched after the aggregate budget would go negative are fail-fasted (marked `Failed`, no capture buffer allocated) before the upstream handler runs; the merge sees them as partial failures and the existing fallback path handles it.
+
+```yaml
+backends:
+  prom-alb-tsm:
+    provider: alb
+    alb:
+      mechanism: tsm
+      max_capture_bytes: 16777216         # 16 MiB per member
+      max_fanout_capture_bytes: 67108864  # 64 MiB total across all in-flight slots
+      pool:
+        - prom01
+        - prom02
+        - prom03
+        - prom04
+```
+
+`max_fanout_capture_bytes` defaults to `0` (no aggregate cap). Pick a value matching what your trickster instance can afford to buffer per request, independent of pool size.
+
 ## Maintaining Healthy Pools With Automated Health Check Integrations
 
 Health Checks are configured per-Backend as described in the [Health documentation](./health.md). Each Backend's health checker will notify all ALB pools of which it is a member when its health status changes, so long as it has been configured with a [health check interval](./health#example+health+check+configuration+for+use+in+alb) for automated checking. When an ALB is notified that the state of a pool member has changed, the ALB will reconstruct its list of healthy pool members before serving the next request.
@@ -399,7 +448,9 @@ A backend will report one of three possible health states to its ALBs: `unavaila
 
 Each ALB has a configurable `healthy_floor` value, which is the threshold for determining which pool members are included in the healthy pool, based on their instantaneous health state. The `healthy_floor` represents the minimum acceptable health state value for inclusion in the healthy pool. The default `healthy_floor` value is `0`, meaning Backends in a state `>= 0` (`unknown` and `available`) are included in the healthy pool. Setting `healthy_floor: 1` would include only `available` Backends, while a value of `-1` will include all backends in the configured pool, including those marked as `unavailable`.
 
-Backends that do not have a [health check interval](./health#example+health+check+configuration+for+use+in+alb) configured will remain in a permanent state of `unknown`. Backends will also be in an `unknown` state from the time Trickster starts until the first of any configured automated health check is completed. Note that if an ALB is configured with `healthy_floor: 1`, any pool members that are not configured with an automated health check interval will never be included in the ALB's healthy pool, as their state is permanently `0`.
+Backends that do not have a [health check interval](./health#example+health+check+configuration+for+use+in+alb) configured will remain in a permanent state of `unknown`. Backends will also be in an `unknown` state from the time Trickster starts until the first of any configured automated health check is completed. A pool member in a permanent `unknown` state can never reach `available`, so a `healthy_floor: 1` ALB whose members lack health checks would have an empty pool and return `502` for every request. To avoid that, Trickster resets such an ALB's effective floor to `0` at startup, emits a warning naming the ALB and the un-probed members, and sets the `trickster_alb_pool_floor_reset{backend_name}` gauge to `1`. Configure a health check interval on those members if you want `healthy_floor: 1` to apply.
+
+Setting `healthy_floor` below `0` admits members the probe has confirmed `unavailable`, not just members in the transient `unknown` state. If your goal is to keep traffic flowing during the cold-start window before the first probes complete, lower the pool members' `recovery_threshold` so they transition out of `unknown` faster -- don't lower the floor. When `healthy_floor < 0` Trickster emits a startup warning and sets the `trickster_alb_pool_admits_failing{backend_name}` gauge to `1`.
 
 ### Example ALB Configuration Routing Only To Known Healthy Backends
 

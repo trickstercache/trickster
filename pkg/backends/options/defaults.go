@@ -35,6 +35,21 @@ const (
 	DefaultRevalidationFactor = 2
 	// DefaultMaxObjectSizeBytes is the default Max Size of any Cache Object
 	DefaultMaxObjectSizeBytes = 524288
+	// DefaultMaxCaptureBytes is the default per-response capture-buffer cap,
+	// applied to Trickster's internal response captures (ALB fanout, Prometheus
+	// label/transform handlers, etc.). Set to 256 MiB to protect against a
+	// single misbehaving upstream OOM'ing the proxy; an N-way ALB fanout would
+	// otherwise allocate O(N*M) on the heap if each member returned an
+	// M-byte body.
+	DefaultMaxCaptureBytes = 256 * 1024 * 1024
+	// DefaultMaxFanoutCaptureBytes is the default aggregate cap (sum of all
+	// in-flight per-slot capture reservations within a single ALB fanout
+	// call). 0 disables the aggregate cap and preserves the existing
+	// behavior where every slot reserves up to MaxCaptureBytes
+	// independently. Operators who want to bound the worst-case
+	// N*MaxCaptureBytes heap pressure of a wide fanout should set this
+	// explicitly.
+	DefaultMaxFanoutCaptureBytes = 0
 	// DefaultBackendTRF is the default Timeseries Retention Factor for Time Series-based Backends
 	DefaultBackendTRF = 1024
 	// DefaultBackendTEM is the default Timeseries Eviction Method for Time Series-based Backends

@@ -153,6 +153,8 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		false, metrics.Handler())
 	metricsRouter.RegisterRoute(conf.MgmtConfig.ConfigHandlerPath, nil, nil,
 		false, http.HandlerFunc(ch.HandlerFunc(conf)))
+	metricsRouter.RegisterRoute(ch.SanitizedHandlerPath(conf.MgmtConfig.ConfigHandlerPath), nil, nil,
+		false, http.HandlerFunc(ch.SanitizedHandlerFunc(conf)))
 	if conf.MgmtConfig.PprofServer == "both" || conf.MgmtConfig.PprofServer == "mgmt" {
 		pprof.RegisterRoutes("mgmt", metricsRouter)
 	}
@@ -172,6 +174,8 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 	mr := lm.NewRouter() // management router
 	mr.RegisterRoute(conf.MgmtConfig.ConfigHandlerPath, nil, nil,
 		false, http.HandlerFunc(ch.HandlerFunc(conf)))
+	mr.RegisterRoute(ch.SanitizedHandlerPath(conf.MgmtConfig.ConfigHandlerPath), nil, nil,
+		false, http.HandlerFunc(ch.SanitizedHandlerFunc(conf)))
 	mr.RegisterRoute(conf.MgmtConfig.ReloadHandlerPath, nil, nil,
 		false, reloadHandler)
 	mr.RegisterRoute(conf.MgmtConfig.PurgeByPathHandlerPath, nil, nil,

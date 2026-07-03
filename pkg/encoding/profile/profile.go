@@ -18,7 +18,7 @@ package profile
 
 import (
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/encoding/providers"
@@ -81,7 +81,7 @@ func (p *Profile) String() string {
 			vals[i] = `"` + l + `"`
 			i++
 		}
-		sort.Strings(vals)
+		slices.Sort(vals)
 		lines[k] = fmt.Sprintf(`"compressTypes":[%s]`, strings.Join(vals, ","))
 		k++
 	}

@@ -65,6 +65,24 @@ func TestMergeResultHeaderVals(t *testing.T) {
 	}
 }
 
+func TestMergeResultHeaderValsFetchedDisjoint(t *testing.T) {
+	const h1 = "engine=ObjectProxyCache; status=hit; fetched=[1000-2000]; ffstatus=hit"
+	const h2 = "engine=ObjectProxyCache; status=hit; fetched=[5000-6000]; ffstatus=hit"
+	const expected = "engine=ObjectProxyCache; status=hit; fetched=[1000-2000;5000-6000]; ffstatus=hit"
+	if res := MergeResultHeaderVals(h1, h2); res != expected {
+		t.Errorf("expected %q got %q", expected, res)
+	}
+}
+
+func TestMergeResultHeaderValsFailedDisjoint(t *testing.T) {
+	const h1 = "engine=DeltaProxyCache; status=proxy-error; failed=[1000-2000]"
+	const h2 = "engine=DeltaProxyCache; status=proxy-error; failed=[5000-6000]"
+	const expected = "engine=DeltaProxyCache; status=proxy-error; failed=[1000-2000;5000-6000]"
+	if res := MergeResultHeaderVals(h1, h2); res != expected {
+		t.Errorf("expected %q got %q", expected, res)
+	}
+}
+
 func TestParseResultHeaderVals(t *testing.T) {
 	const h1 = "engine=ObjectProxyCache; status=phit; fetched=[aaa-bbb]; ffstatus=hit"
 	const h2 = "engine=ObjectProxyCache; status=phit; fetched=[11-bbb]; ffstatus=hit"

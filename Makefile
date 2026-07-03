@@ -138,6 +138,9 @@ GO_TEST_PATH ?= $(shell $(GO) list ./... | grep -v v2/integration)
 .PHONY: gotest
 gotest:
 	$(GO) test -timeout=5m -v ${GO_TEST_FLAGS} $(GO_TEST_PATH)
+	@./hack/filter-coverprofile.sh .coverprofile
+	@echo
+	@./hack/coverprofile-summary.sh
 
 .PHONY: data-race-test
 data-race-test:

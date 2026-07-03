@@ -26,6 +26,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/checksum/md5"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	proxyengines "github.com/trickstercache/trickster/v2/pkg/proxy/engines"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
 
@@ -128,11 +129,11 @@ func PathHandler(pathPrefix string,
 			return
 		}
 
+		cfg := backend.Configuration()
 		for _, engine := range engines {
 			for _, method := range methods {
-				cache.Remove(fmt.Sprintf("%s.%s.%s",
-					backend.Configuration().CacheKeyPrefix, engine,
-					md5.Checksum(fmt.Sprintf("%s.method.%s.", purgePath, method))))
+				suffix := md5.Checksum(fmt.Sprintf("%s.method.%s.", purgePath, method))
+				cache.Remove(proxyengines.ComposeCacheKey(cfg.Name, cfg.CacheKeyPrefix, engine, suffix))
 			}
 		}
 
