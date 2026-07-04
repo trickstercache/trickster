@@ -20,6 +20,7 @@ package otlp
 import (
 	"context"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -30,6 +31,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
 	"go.opentelemetry.io/otel/trace"
 	collectortracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -58,6 +61,19 @@ func TestNew(t *testing.T) {
 	_, err = New(opt)
 	if err != nil {
 		t.Error(err)
+	}
+
+	opt.Protocol = "udp"
+	_, err = New(opt)
+	if err == nil {
+		t.Error("expected error for invalid protocol")
+	}
+
+	opt.Protocol = options.OTLPProtocolGRPC
+	opt.Endpoint = "/v1/traces"
+	_, err = New(opt)
+	if err != errGRPCPathOnlyEndpoint {
+		t.Errorf("expected invalid endpoint error, got %v", err)
 	}
 }
 
@@ -218,6 +234,71 @@ func TestNewAppliesResourceAttributes(t *testing.T) {
 	}
 }
 
+func TestNewAppliesGRPCProtocol(t *testing.T) {
+	payloads := make(chan *collectortracepb.ExportTraceServiceRequest, 10)
+	metadataCh := make(chan metadata.MD, 10)
+
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := grpc.NewServer()
+	collectortracepb.RegisterTraceServiceServer(srv, &recordingTraceService{
+		payloads: payloads,
+		metadata: metadataCh,
+	})
+	go func() {
+		_ = srv.Serve(lis)
+	}()
+	defer srv.Stop()
+
+	t.Setenv("OTEL_BSP_MAX_EXPORT_BATCH_SIZE", "1")
+
+	opt := options.New()
+	opt.Protocol = options.OTLPProtocolGRPC
+	opt.Endpoint = "http://" + lis.Addr().String()
+	opt.ServiceName = "trickster-grpc-test"
+	opt.Headers = map[string]string{"x-trickster-test": options.OTLPProtocolGRPC}
+	opt.Tags = map[string]string{"component": "proxy"}
+	opt.DisableCompression = true
+	opt.Timeout = time.Second
+
+	tr, err := New(opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, span := tr.Start(context.Background(), "grpc-span")
+	span.End()
+
+	req := waitForOTLPRequest(t, payloads, nil)
+	if !hasSpanName(req, "grpc-span") {
+		t.Fatal("expected grpc-span span in OTLP request")
+	}
+	attrs := resourceAttributeValues(req)
+	if got := attrs["service.name"]; got != "trickster-grpc-test" {
+		t.Errorf("expected service.name %q, got %q", "trickster-grpc-test", got)
+	}
+	if got := attrs["component"]; got != "proxy" {
+		t.Errorf("expected component tag %q, got %q", "proxy", got)
+	}
+
+	select {
+	case md := <-metadataCh:
+		if got := md.Get("x-trickster-test"); len(got) != 1 || got[0] != options.OTLPProtocolGRPC {
+			t.Errorf("expected gRPC metadata header %q, got %v", options.OTLPProtocolGRPC, got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("expected OTLP gRPC metadata")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err = tr.ShutdownFunc(ctx); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestNewContinuesSampledRemoteParent(t *testing.T) {
 	payloads := make(chan *collectortracepb.ExportTraceServiceRequest, 10)
 	handlerErrs := make(chan error, 10)
@@ -292,6 +373,22 @@ func waitForOTLPRequest(t *testing.T, payloads <-chan *collectortracepb.ExportTr
 		t.Fatal("expected OTLP request")
 	}
 	return nil
+}
+
+type recordingTraceService struct {
+	collectortracepb.UnimplementedTraceServiceServer
+	payloads chan<- *collectortracepb.ExportTraceServiceRequest
+	metadata chan<- metadata.MD
+}
+
+func (s *recordingTraceService) Export(ctx context.Context,
+	req *collectortracepb.ExportTraceServiceRequest,
+) (*collectortracepb.ExportTraceServiceResponse, error) {
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		s.metadata <- md.Copy()
+	}
+	s.payloads <- req
+	return &collectortracepb.ExportTraceServiceResponse{}, nil
 }
 
 func resourceAttributeValues(req *collectortracepb.ExportTraceServiceRequest) map[string]string {

@@ -17,15 +17,17 @@
 package validate
 
 import (
+	"strings"
 	"testing"
 
+	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/errors"
-	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
-	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	lo "github.com/trickstercache/trickster/v2/pkg/observability/logging/options"
 	mo "github.com/trickstercache/trickster/v2/pkg/observability/metrics/options"
-	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	to "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
 )
 
 func TestValidateNilConfig(t *testing.T) {
@@ -56,6 +58,25 @@ func TestValidateSubsectionsNilOrEmpty(t *testing.T) {
 	}
 	if err := NegativeCaches(nil); err != nil {
 		t.Fatalf("NegativeCaches(nil) = %v", err)
+	}
+}
+
+func TestTracersRejectsInvalidProtocol(t *testing.T) {
+	t.Parallel()
+
+	c := config.NewConfig()
+	c.TracingOptions = to.Lookup{
+		"default": {
+			Provider: to.DefaultTracerProvider,
+			Protocol: "udp",
+		},
+	}
+	err := Tracers(c)
+	if err == nil {
+		t.Fatal("expected invalid tracing protocol error")
+	}
+	if !strings.Contains(err.Error(), "invalid tracing protocol [udp]") {
+		t.Fatalf("Tracers(invalid protocol) = %v", err)
 	}
 }
 

@@ -47,12 +47,14 @@ rules:
 tracing:
   otlp1:
     provider: otlp
+    protocol: http
     endpoint: 'http://127.0.0.1:4318/v1/traces'
     tags:
       testTag: testTagValue
       testTag2: testTag2Value
   otlp2:
     provider: otlp
+    protocol: http
     endpoint: 'http://127.0.0.1:4318/v1/traces'
     omit_tags:
       - http.url

@@ -17,6 +17,7 @@
 package options
 
 import (
+	"fmt"
 	"maps"
 	"slices"
 	"time"
@@ -30,6 +31,7 @@ import (
 type Options struct {
 	Name               string            `yaml:"-"`
 	Provider           string            `yaml:"provider,omitempty"`
+	Protocol           string            `yaml:"protocol,omitempty"`
 	ServiceName        string            `yaml:"service_name,omitempty"`
 	Endpoint           string            `yaml:"endpoint,omitempty"`
 	Timeout            time.Duration     `yaml:"timeout,omitempty"`
@@ -85,6 +87,9 @@ func ProcessTracingOptions(mo Lookup) {
 		if v.Provider == "" {
 			v.Provider = DefaultTracerProvider
 		}
+		if v.Provider == ProviderOTLP && v.Protocol == "" {
+			v.Protocol = DefaultOTLPProtocol
+		}
 		v.generateOmitTags()
 	}
 }
@@ -103,7 +108,12 @@ func (o *Options) generateOmitTags() {
 }
 
 func (o *Options) Valdiate() error {
-	// placeholder for future validations (currently there are none for tracing)
+	switch o.Protocol {
+	case "", OTLPProtocolHTTP, OTLPProtocolGRPC:
+	default:
+		return fmt.Errorf("invalid tracing protocol [%s] for tracing config [%s]",
+			o.Protocol, o.Name)
+	}
 	return nil
 }
 

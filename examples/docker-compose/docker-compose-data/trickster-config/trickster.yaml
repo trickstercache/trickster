@@ -32,6 +32,7 @@ tracing:
       pretty_print: true
   otlp1:
     provider: otlp
+    protocol: http
     endpoint: 'http://jaeger:4318/v1/traces'
 backends:
   prom1: # prometheus cached with a memory cache, traces sent to stdout

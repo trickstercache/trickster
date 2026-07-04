@@ -61,6 +61,12 @@ func TestProcessTracingOptionsDefaults(t *testing.T) {
 	if o.SampleRate == nil || *o.SampleRate != 1.0 {
 		t.Fatalf("SampleRate = %v", o.SampleRate)
 	}
+
+	otlp := &Options{Provider: ProviderOTLP}
+	ProcessTracingOptions(Lookup{ProviderOTLP: otlp})
+	if otlp.Protocol != DefaultOTLPProtocol {
+		t.Fatalf("Protocol = %q", otlp.Protocol)
+	}
 }
 
 func TestCloneCopiesNestedFields(t *testing.T) {
@@ -69,11 +75,12 @@ func TestCloneCopiesNestedFields(t *testing.T) {
 	rate := 0.25
 	base := New()
 	o := &Options{
-		Endpoint:     "collector:4317",
-		Timeout:      2 * time.Second,
-		SampleRate:   &rate,
-		Tags:         map[string]string{"env": "test"},
-		OmitTagsList: []string{"drop-me"},
+		Endpoint:      "collector:4317",
+		Protocol:      OTLPProtocolGRPC,
+		Timeout:       2 * time.Second,
+		SampleRate:    &rate,
+		Tags:          map[string]string{"env": "test"},
+		OmitTagsList:  []string{"drop-me"},
 		StdOutOptions: base.StdOutOptions,
 	}
 	cl := o.Clone()
@@ -83,6 +90,9 @@ func TestCloneCopiesNestedFields(t *testing.T) {
 	cl.Tags["env"] = "changed"
 	if o.Tags["env"] != "test" {
 		t.Fatal("clone should not share tags map")
+	}
+	if cl.Protocol != OTLPProtocolGRPC {
+		t.Fatalf("Protocol = %q", cl.Protocol)
 	}
 }
 
@@ -98,13 +108,23 @@ func TestLookupValidate(t *testing.T) {
 	}
 }
 
+func TestLookupValidateRejectsInvalidProtocol(t *testing.T) {
+	t.Parallel()
+
+	l := Lookup{"default": &Options{Protocol: "udp"}}
+	if err := l.Validate(); err == nil {
+		t.Fatal("expected invalid protocol error")
+	}
+}
+
 func TestUnmarshalYAML(t *testing.T) {
 	t.Parallel()
 
 	const raw = `
 tracing:
   default:
-    provider: stdout
+    provider: otlp
+    protocol: grpc
     service_name: trickster-test
     sample_rate: 0.5
     omit_tags: [internal]
@@ -119,6 +139,9 @@ tracing:
 	o := d.Tracing["default"]
 	if o == nil || o.ServiceName != "trickster-test" {
 		t.Fatalf("unexpected tracing options: %+v", o)
+	}
+	if o.Protocol != OTLPProtocolGRPC {
+		t.Fatalf("Protocol = %q", o.Protocol)
 	}
 	if o.SampleRate == nil || *o.SampleRate != 0.5 {
 		t.Fatalf("SampleRate = %v", o.SampleRate)
