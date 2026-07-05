@@ -29,7 +29,7 @@ type Name = string
 
 // NewMechanismFunc defines a function that returns a new Mechanism from the
 // provided Options
-type NewMechanismFunc func(*options.Options, types.Lookup) (Mechanism, error)
+type NewMechanismFunc func(*options.ALBConfigs, types.Lookup) (Mechanism, error)
 
 // Mechanism represents a specific ALB Implementation (e.g., a Round Robiner).
 // Pool-aware mechanisms additionally implement PoolMechanism; callers that

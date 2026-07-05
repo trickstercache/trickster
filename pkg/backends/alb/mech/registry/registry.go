@@ -62,7 +62,8 @@ func New(name types.Name, opts *options.Options,
 	factories rt.Lookup,
 ) (types.Mechanism, error) {
 	if f, ok := registryByName[name]; ok && f != nil {
-		return f(opts, factories)
+		configs := options.NewALBConfigsFromOptions(opts)
+		return f(configs, factories)
 	}
 	return nil, errors.ErrUnsupportedMechanism
 }
