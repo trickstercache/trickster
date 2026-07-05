@@ -27,7 +27,7 @@ import (
 
 func TestCompileSupportedByNamePanicsOnDuplicate(t *testing.T) {
 	t.Parallel()
-	noop := func(_ *options.Options, _ rt.Lookup) (types.Mechanism, error) {
+	noop := func(_ *options.ALBConfigs, _ rt.Lookup) (types.Mechanism, error) {
 		return nil, nil
 	}
 	entries := []types.RegistryEntry{
@@ -49,7 +49,7 @@ func TestCompileSupportedByNamePanicsOnDuplicate(t *testing.T) {
 
 func TestCompileSupportedByNamePanicsOnNameShortNameCollision(t *testing.T) {
 	t.Parallel()
-	noop := func(_ *options.Options, _ rt.Lookup) (types.Mechanism, error) {
+	noop := func(_ *options.ALBConfigs, _ rt.Lookup) (types.Mechanism, error) {
 		return nil, nil
 	}
 	entries := []types.RegistryEntry{

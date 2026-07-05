@@ -22,8 +22,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	mtypes "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/tsm"
+	mtypes "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus"
@@ -108,12 +108,12 @@ func TestALB502WithMultiplePrometheusBackends(t *testing.T) {
 		pool1, _, _ := albpool.NewHealthy([]http.Handler{handler1})
 		albpool.WaitHealthy(t, pool1, 1)
 
-		albOpts := &ao.Options{
+		albConfigs := &ao.ALBConfigs{
 			MechanismName: names.MechanismTSM,
 			OutputFormat:  providers.Prometheus,
 		}
 
-		tsmMech, err := tsm.New(albOpts, types.Lookup{providers.Prometheus: prometheus.NewClient})
+		tsmMech, err := tsm.New(albConfigs, types.Lookup{providers.Prometheus: prometheus.NewClient})
 		require.NoError(t, err)
 		tsmPM := tsmMech.(mtypes.PoolMechanism)
 		tsmPM.SetPool(pool1)
@@ -135,12 +135,12 @@ func TestALB502WithMultiplePrometheusBackends(t *testing.T) {
 		pool2, _, _ := albpool.NewHealthy([]http.Handler{handler1, handler2})
 		albpool.WaitHealthy(t, pool2, 2)
 
-		albOpts := &ao.Options{
+		albConfigs := &ao.ALBConfigs{
 			MechanismName: names.MechanismTSM,
 			OutputFormat:  providers.Prometheus,
 		}
 
-		tsmMech, err := tsm.New(albOpts, types.Lookup{providers.Prometheus: prometheus.NewClient})
+		tsmMech, err := tsm.New(albConfigs, types.Lookup{providers.Prometheus: prometheus.NewClient})
 		require.NoError(t, err)
 		tsmPM := tsmMech.(mtypes.PoolMechanism)
 		tsmPM.SetPool(pool2)

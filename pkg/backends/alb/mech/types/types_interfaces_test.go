@@ -57,21 +57,21 @@ func TestPoolMechanismMembership(t *testing.T) {
 			return m
 		}, true},
 		{"nlm", func(t *testing.T) types.Mechanism {
-			m, err := nlm.New(&options.Options{}, nil)
+			m, err := nlm.New(&options.ALBConfigs{}, nil)
 			if err != nil {
 				t.Fatalf("nlm.New: %v", err)
 			}
 			return m
 		}, true},
 		{"ur", func(t *testing.T) types.Mechanism {
-			m, err := ur.New(&options.Options{UserRouter: &uropt.Options{}}, nil)
+			m, err := ur.New(&options.ALBConfigs{UserRouter: &uropt.Options{}}, nil)
 			if err != nil {
 				t.Fatalf("ur.New: %v", err)
 			}
 			return m
 		}, false},
 		{"tsm", func(t *testing.T) types.Mechanism {
-			o := &options.Options{OutputFormat: providers.Prometheus}
+			o := &options.ALBConfigs{OutputFormat: providers.Prometheus}
 			factories := rt.Lookup{providers.Prometheus: prometheus.NewClient}
 			m, err := tsm.New(o, factories)
 			if err != nil {

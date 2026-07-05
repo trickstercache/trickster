@@ -45,7 +45,7 @@ func TestNew(t *testing.T) {
 
 	t.Run("invalid output format", func(t *testing.T) {
 		t.Parallel()
-		_, err := New(&options.Options{OutputFormat: "not-a-provider"}, nil)
+		_, err := New(&options.ALBConfigs{OutputFormat: "not-a-provider"}, nil)
 		if !errors.Is(err, alberr.ErrInvalidTimeSeriesMergeProvider) {
 			t.Fatalf("New() error = %v, want ErrInvalidTimeSeriesMergeProvider", err)
 		}
@@ -53,7 +53,7 @@ func TestNew(t *testing.T) {
 
 	t.Run("missing factory", func(t *testing.T) {
 		t.Parallel()
-		_, err := New(&options.Options{OutputFormat: providers.Prometheus}, rt.Lookup{})
+		_, err := New(&options.ALBConfigs{OutputFormat: providers.Prometheus}, rt.Lookup{})
 		if !errors.Is(err, alberr.ErrInvalidTimeSeriesMergeProvider) {
 			t.Fatalf("New() error = %v, want ErrInvalidTimeSeriesMergeProvider", err)
 		}
@@ -62,7 +62,7 @@ func TestNew(t *testing.T) {
 	t.Run("valid prometheus provider", func(t *testing.T) {
 		t.Parallel()
 		m, err := New(
-			&options.Options{OutputFormat: providers.Prometheus},
+			&options.ALBConfigs{OutputFormat: providers.Prometheus},
 			rt.Lookup{providers.Prometheus: prometheus.NewClient},
 		)
 		if err != nil {
