@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	eso "github.com/trickstercache/trickster/v2/pkg/backends/elasticsearch/options"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	ro "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
@@ -379,6 +380,38 @@ func TestInitialize(t *testing.T) {
 	err = o2.Initialize("test")
 	if err != nil {
 		t.Error(err)
+	}
+}
+
+func TestInitializeElasticsearchOptions(t *testing.T) {
+	o := New()
+	o.Provider = providers.Elasticsearch
+	o.OriginURL = "http://elasticsearch:9200"
+	o.Elasticsearch = &eso.Options{}
+
+	if err := o.Initialize("test"); err != nil {
+		t.Fatal(err)
+	}
+	if got := o.Elasticsearch.TimestampField; got != eso.DefaultTimestampField {
+		t.Fatalf("timestamp_field = %q, want %q", got, eso.DefaultTimestampField)
+	}
+
+	o2, err := fromYAML(`
+backends:
+  test:
+    provider: elasticsearch
+    origin_url: http://elasticsearch:9200
+    elasticsearch:
+      timestamp_field: event_time
+`, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := o2.Initialize("test"); err != nil {
+		t.Fatal(err)
+	}
+	if got := o2.Elasticsearch.TimestampField; got != "event_time" {
+		t.Fatalf("timestamp_field = %q, want event_time", got)
 	}
 }
 

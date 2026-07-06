@@ -96,6 +96,14 @@ backends:
     cache_name: mem1
     backfill_tolerance: 60s
     timeseries_retention_factor: 2048
+  es1:
+    provider: elasticsearch
+    origin_url: 'http://127.0.0.1:9200'
+    cache_name: mem1
+    backfill_tolerance: 60s
+    timeseries_retention_factor: 2048
+    elasticsearch:
+      timestamp_field: '@timestamp'
   rp1:
     provider: proxy
     origin_url: 'http://127.0.0.1:9090'

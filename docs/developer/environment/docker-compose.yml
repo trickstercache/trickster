@@ -117,6 +117,54 @@ services:
     depends_on:
       - clickhouse
 
+  # elasticsearch
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.17.3
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - xpack.security.enrollment.enabled=false
+      - node.store.allow_mmap=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    ports:
+     - 9200:9200
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs 'http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=1s' >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: always
+
+  # elasticsearch seed data
+  elasticsearch_seed:
+    links:
+      - elasticsearch
+    image: curlimages/curl:8.11.1
+    environment:
+      - ES_URL=http://elasticsearch:9200
+    volumes:
+      - ./docker-compose-data/elasticsearch-config/seeding:/seeding
+    entrypoint: sh /seeding/seed.sh
+    restart: on-failure:10
+    depends_on:
+      - elasticsearch
+
+  # elasticsearch frontend
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.17.3
+    environment:
+      - ELASTICSEARCH_HOSTS=["http://host.docker.internal:8480/es1"]
+      - XPACK_SECURITY_ENABLED=false
+      - TELEMETRY_ENABLED=false
+      - SERVER_PUBLICBASEURL=http://127.0.0.1:5601
+    ports:
+     - 5601:5601
+    restart: always
+    depends_on:
+      - elasticsearch
+
   # Mocks
 
   mockster:
@@ -157,5 +205,6 @@ services:
       - influxdb2
 
 volumes:
+  elasticsearch-data:
   influxdbv2:
   prometheus-data:

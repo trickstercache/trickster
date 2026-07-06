@@ -240,7 +240,7 @@ backends:
   default:
 
     # provider identifies the backend provider.
-    # Valid options are: prometheus, influxdb, clickhouse, reverseproxycache (or just rpc)
+    # Valid options are: prometheus, influxdb, clickhouse, elasticsearch, reverseproxycache (or just rpc)
     # provider is a required configuration value
     provider: prometheus
 
@@ -248,6 +248,11 @@ backends:
     # prometheus:
     #   labels:
     #     labelname: value
+
+    # for elasticsearch backends, you can configure the timestamp field used
+    # for date_histogram acceleration. default is @timestamp:
+    # elasticsearch:
+    #   timestamp_field: '@timestamp'
 
     # origin_url provides the base upstream URL for all proxied requests to this origin.
     # it can be as simple as http://example.com or as complex as https://example.com:8443/path/prefix
