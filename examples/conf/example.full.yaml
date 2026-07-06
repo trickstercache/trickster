@@ -328,8 +328,10 @@ backends:
     listener_name: default
 
     # provider identifies the backend provider.
-    # Valid options are: prometheus, influxdb, clickhouse, mysql, rule, alb,
-    # reverseproxycache (or just rpc), or reverseproxy (or just rp)
+    # Valid options are: prometheus, influxdb, clickhouse, elasticsearch,
+    # mysql, rule, alb, reverseproxycache (or just rpc), or reverseproxy
+    # (or just rp)
+    # provider is a required configuration value
     provider: prometheus
 
     # replica_group identifies the logical shard represented by this backend in
@@ -343,6 +345,11 @@ backends:
     # prometheus:
     #   labels:
     #     labelname: value
+
+    # for elasticsearch backends, you can configure the timestamp field used
+    # for date_histogram acceleration. default is @timestamp:
+    # elasticsearch:
+    #   timestamp_field: '@timestamp'
 
     # origin_url provides the base upstream URL for all proxied requests to this origin.
     # it can be as simple as http://example.com or as complex as https://example.com:8443/path/prefix

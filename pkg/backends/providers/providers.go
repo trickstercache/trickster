@@ -42,6 +42,8 @@ const (
 	ClickHouseID
 	// MySQL represents the MySQL backend provider
 	MySQLID
+	// Elasticsearch represents the Elasticsearch backend provider
+	ElasticsearchID
 
 	Backends = "backends"
 
@@ -54,10 +56,11 @@ const (
 	Rule = "rule"
 	ALB  = "alb"
 
-	Prometheus = "prometheus"
-	ClickHouse = "clickhouse"
-	InfluxDB   = "influxdb"
-	MySQL      = "mysql"
+	Prometheus    = "prometheus"
+	ClickHouse    = "clickhouse"
+	InfluxDB      = "influxdb"
+	MySQL         = "mysql"
+	Elasticsearch = "elasticsearch"
 )
 
 // Names is a map of Providers keyed by string name
@@ -70,6 +73,7 @@ var Names = map[string]Provider{
 	InfluxDB:               InfluxDBID,
 	ClickHouse:             ClickHouseID,
 	MySQL:                  MySQLID,
+	Elasticsearch:          ElasticsearchID,
 	Proxy:                  RPID,
 	ReverseProxy:           RPID,
 	ReverseProxyShort:      RPID,
@@ -89,9 +93,10 @@ func init() {
 }
 
 var supportedTimeSeries = map[string]Provider{
-	Prometheus: PrometheusID,
-	InfluxDB:   InfluxDBID,
-	ClickHouse: ClickHouseID,
+	Prometheus:    PrometheusID,
+	InfluxDB:      InfluxDBID,
+	ClickHouse:    ClickHouseID,
+	Elasticsearch: ElasticsearchID,
 }
 
 // IsSupportedTimeSeriesProvider returns true if the provided time series is supported by Trickster

@@ -27,6 +27,7 @@ import (
 	"time"
 
 	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
+	eso "github.com/trickstercache/trickster/v2/pkg/backends/elasticsearch/options"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	mo "github.com/trickstercache/trickster/v2/pkg/backends/mysql/options"
 	prop "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/options"
@@ -175,6 +176,8 @@ type Options struct {
 	Prometheus *prop.Options `yaml:"prometheus,omitempty"`
 	// MySQL holds limits specific to MySQL origin result processing.
 	MySQL *mo.Options `yaml:"mysql,omitempty"`
+	// Elasticsearch holds options specific to elasticsearch backends
+	Elasticsearch *eso.Options `yaml:"elasticsearch,omitempty"`
 
 	// TLS is the TLS Configuration for the Frontend and Backend
 	TLS *to.Options `yaml:"tls,omitempty"`
@@ -340,6 +343,9 @@ func (o *Options) Clone() *Options {
 
 	if o.Prometheus != nil {
 		out.Prometheus = o.Prometheus.Clone()
+	}
+	if o.Elasticsearch != nil {
+		out.Elasticsearch = o.Elasticsearch.Clone()
 	}
 
 	if o.MySQL != nil {
@@ -661,6 +667,11 @@ func (o *Options) Initialize(name string) error {
 			if err := o.ALBOptions.Initialize(""); err != nil {
 				return err
 			}
+		}
+	}
+	if o.Elasticsearch != nil {
+		if err := o.Elasticsearch.Initialize(""); err != nil {
+			return err
 		}
 	}
 

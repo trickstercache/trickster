@@ -26,6 +26,12 @@ Trickster supports accelerating ClickHouse time series. Specify `'clickhouse'` a
 
 See the [ClickHouse Support Document](./clickhouse.md) for more information.
 
+### Elasticsearch
+
+Trickster supports accelerating Elasticsearch date histogram time series. Specify `'elasticsearch'` as the Provider when configuring Trickster.
+
+See the [Elasticsearch Support Document](./elasticsearch.md) for more information.
+
 ### MySQL
 
 Trickster supports protocol-aware acceleration for supported Oracle MySQL

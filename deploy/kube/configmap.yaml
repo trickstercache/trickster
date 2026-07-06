@@ -326,8 +326,9 @@ data:
         listener_name: default
 
         # provider identifies the backend provider.
-        # Valid options are: prometheus, influxdb, clickhouse, mysql, rule, alb,
-        # reverseproxycache (or just rpc), or reverseproxy (or just rp)
+        # Valid options are: prometheus, influxdb, clickhouse, elasticsearch,
+        # mysql, rule, alb, reverseproxycache (or just rpc), or reverseproxy
+        # (or just rp)
         # provider is a required configuration value
         provider: prometheus
 
