@@ -510,13 +510,18 @@ data:
     #     # options are: otlp, stdout or none.  none is the default
     #     provider: none
 
+    #     # protocol selects the OTLP transport. options are: http or grpc. http is the default
+    #     # protocol only applies when provider is otlp.
+    #     protocol: http
+
     #     # service_name specifies the service name under which the traces are registered by this tracer
     #     # default is trickster
     #     service_name: trickster
 
     #     # endpoint is the URL, URI or Path to the tracing backend
-    #     # required for OTLP, unused for stdout. For Jaeger OTLP/HTTP, use the
-    #     # collector's OTLP HTTP endpoint, such as http://jaeger:4318/v1/traces.
+    #     # required for OTLP, unused for stdout. For Jaeger OTLP/HTTP, use
+    #     # http://jaeger:4318/v1/traces. For Jaeger OTLP/gRPC, set protocol: grpc
+    #     # and use http://jaeger:4317 for a plaintext local collector.
     #     endpoint: http://jaeger:4318/v1/traces
 
     #     # timeout is the amount of time in milliseconds for the tracing post
@@ -560,7 +565,15 @@ data:
     #     # another example tracing config named example using OTLP/HTTP and a 50% sample rate
     #   example:
     #     provider: otlp
+    #     protocol: http
     #     endpoint: http://jaeger:4318/v1/traces
+    #     sample_rate: 0.5
+
+    #     # another example tracing config named example-grpc using OTLP/gRPC
+    #   example-grpc:
+    #     provider: otlp
+    #     protocol: grpc
+    #     endpoint: http://jaeger:4317
     #     sample_rate: 0.5
 
     # # Configuration Options for Metrics Instrumentation

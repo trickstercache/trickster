@@ -9,15 +9,23 @@ As OpenTelemetry evolves to support additional exporter formats, we will work to
 - Jaeger (via OTLP)
 - Console/Stdout (printed locally by the Trickster process)
 
-Trickster's OTLP exporter uses OTLP over HTTP. For Jaeger, configure Trickster
-with the collector's OTLP HTTP endpoint, for example
-`http://jaeger:4318/v1/traces`.
+Trickster's OTLP exporter supports OTLP over HTTP and gRPC. HTTP is the default
+for existing OTLP configs. For Jaeger over OTLP/HTTP, configure Trickster with
+the collector's HTTP endpoint, for example `http://jaeger:4318/v1/traces`. For
+Jaeger over OTLP/gRPC, set `protocol: grpc` and use the collector's gRPC
+endpoint, for example `http://jaeger:4317` from another Compose service or
+`http://127.0.0.1:4317` from the host when using the developer Compose
+environment.
 
 ## Configuration
 
 Trickster allows the operator to configure multiple tracing configurations, which can be associated into each Backend configuration by name.
 
 The [example config](../examples/conf/example.full.yaml) has exhaustive examples of configuring Trickster for distributed tracing.
+
+For OTLP tracing, `protocol` selects the exporter transport. Supported values
+are `http` and `grpc`; when omitted, Trickster uses `http` for backward
+compatibility with existing configs.
 
 ## Context Propagation
 

@@ -100,6 +100,7 @@ func GetTracer(options *options.Options,
 			logging.Pairs{
 				"name":        options.Name,
 				"provider":    options.Provider,
+				"protocol":    options.Protocol,
 				"serviceName": options.ServiceName,
 				"endpoint":    options.Endpoint,
 				"sampleRate":  options.SampleRate,
