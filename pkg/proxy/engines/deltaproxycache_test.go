@@ -1397,7 +1397,7 @@ func TestDeltaProxyCacheRequestCacheMissUnmarshalFailed(t *testing.T) {
 		t.Error(err)
 	}
 
-	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusInternalServerError)
 	if err != nil {
 		t.Error(err)
 	}
@@ -2136,12 +2136,14 @@ func TestDPCSingleflightBadPayload(t *testing.T) {
 		t.Errorf("expected 1 origin request, got %d", hits)
 	}
 
-	// all callers should get a proxy-error cache status (the unmarshaling failure
-	// triggers buildErrorResult inside the singleflight closure).
-	// the HTTP status is 200 because that's what the origin returned, but the
-	// Trickster-Result header indicates the error.
+	// all callers should get a proxy-error cache status and an Internal Server Error
+	// response (the unmarshaling failure triggers buildErrorResult inside the
+	// singleflight closure).
 	for i, rec := range recorders {
 		resp := rec.Result()
+		if resp.StatusCode != http.StatusInternalServerError {
+			t.Errorf("request %d: expected status 500, got %d", i, resp.StatusCode)
+		}
 		hdr := resp.Header.Get(headers.NameTricksterResult)
 		if !strings.Contains(hdr, "status=proxy-error") {
 			t.Errorf("request %d: expected proxy-error in result header, got %q", i, hdr)

@@ -62,6 +62,13 @@ const (
 	errorBodyCap = 1 << 20
 )
 
+func dpcProxyErrorStatusCode(statusCode int) int {
+	if statusCode == 0 || (statusCode >= http.StatusOK && statusCode < http.StatusMultipleChoices) {
+		return http.StatusInternalServerError
+	}
+	return statusCode
+}
+
 // fetchFastForward executes a fast-forward request and merges the result into rts.
 // Returns the fast-forward status string ("off", "hit", "miss", or "err").
 func fetchFastForward(
@@ -301,7 +308,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 			// buildErrorResult constructs a dpcResult for error responses.
 			buildErrorResult := func(sc int, h http.Header, body []byte, fext timeseries.ExtentList) *dpcResult {
 				return &dpcResult{
-					statusCode:    sc,
+					statusCode:    dpcProxyErrorStatusCode(sc),
 					headers:       h,
 					body:          body,
 					elapsed:       float64(time.Since(now).Seconds()),
@@ -577,9 +584,10 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 	cts, doc, elapsed, failedExts, severeFault = fetchTimeseries(pr, trq, client, modeler)
 	if len(failedExts) > 0 && severeFault {
 		h := doc.SafeHeaderClone()
-		recordDPCResult(r, status.LookupStatusProxyError, doc.StatusCode,
+		sc := dpcProxyErrorStatusCode(doc.StatusCode)
+		recordDPCResult(r, status.LookupStatusProxyError, sc,
 			r.URL.Path, "", elapsed.Seconds(), nil, failedExts, h)
-		Respond(w, doc.StatusCode, h, bytes.NewReader(doc.Body))
+		Respond(w, sc, h, bytes.NewReader(doc.Body))
 		return
 	}
 	rts = cts.Clone()
