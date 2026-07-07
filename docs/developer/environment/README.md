@@ -34,6 +34,10 @@ for verification purposes.
 Elasticsearch is seeded on startup with the `trickster-dev-logs` index. The seed
 data includes recent and older `@timestamp` values so developers can verify
 Elasticsearch date histogram caching through Trickster.
+After Kibana connects through Trickster, the Kibana seed container creates the
+`Trickster Dev Logs` data view, saved search, and dashboard for that index. The
+dashboard is available at
+<http://127.0.0.1:5601/app/dashboards#/view/trickster-dev-logs-dashboard>.
 
 You can stop the developer environment by running `make developer-stop`. To
 delete the developer environment, run `make developer-delete` which will destroy
