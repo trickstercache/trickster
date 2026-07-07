@@ -154,6 +154,8 @@ services:
   # elasticsearch frontend
   kibana:
     image: docker.elastic.co/kibana/kibana:8.17.3
+    extra_hosts:
+      - host.docker.internal:host-gateway
     environment:
       - ELASTICSEARCH_HOSTS=["http://host.docker.internal:8480/es1"]
       - XPACK_SECURITY_ENABLED=false
@@ -164,6 +166,20 @@ services:
     restart: always
     depends_on:
       - elasticsearch
+
+  # kibana saved objects for elasticsearch demo data
+  kibana_seed:
+    links:
+      - kibana
+    image: curlimages/curl:8.11.1
+    environment:
+      - KIBANA_URL=http://kibana:5601
+    volumes:
+      - ./docker-compose-data/kibana-config/seeding:/seeding
+    entrypoint: sh /seeding/seed.sh
+    restart: on-failure:10
+    depends_on:
+      - kibana
 
   # Mocks
 
