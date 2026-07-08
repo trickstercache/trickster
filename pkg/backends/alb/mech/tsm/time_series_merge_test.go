@@ -92,6 +92,30 @@ func TestHandleResponseMerge(t *testing.T) {
 	}
 }
 
+func TestTSMNonMergePathUsesFirstLiveMember(t *testing.T) {
+	p, _, _ := albpool.NewHealthy([]http.Handler{
+		albpool.NamedHandler("first"),
+		albpool.NamedHandler("second"),
+	})
+	defer p.Stop()
+	albpool.WaitHealthy(t, p, 2)
+
+	h := &handler{mergePaths: []string{"/api/v1/query_range"}}
+	h.SetPool(p)
+
+	for i := 0; i < 3; i++ {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "https://trickstercache.org/api/v1/query?query=up", nil)
+		h.ServeHTTP(w, r)
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+		}
+		if got := w.Body.String(); got != "first" {
+			t.Fatalf("body = %q, want first", got)
+		}
+	}
+}
+
 // A panicking pool member must not crash the request. RecoverFanoutPanic("tsm",
 // ...) at time_series_merge.go must catch it and mark the slot failed so the
 // merge surfaces the partial-failure (phit) signal.

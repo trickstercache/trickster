@@ -85,6 +85,8 @@ The recommended application for using the **Time Series Merge** mechanism is as 
 
 Separate from an HA use case, it is possible to use Time Series Merge as a Federation broker that merges responses from different, non-redundant tsdb endpoints; for example, to aggregate metrics from a solution running clusters in multiple regions, with separate, in-region-only tsdb deployments. In this use case, it is recommended to [inject labels](./prometheus.md#injecting-labels) into the responses to protect against data collisions across series. Label injection is demonstrated in the snippet below.
 
+For request paths that are not mergeable by the configured time series provider, TSM does not fan the request out. Those requests are dispatched directly to the first live pool target. The same first-live-target fallback is used when a request cannot be prepared for the merge path.
+
 #### Merge Strategy
 
 By default, TSM deduplicates values when merging series with identical labels — for each timestamp, only one value is kept. This works well for HA configurations where backends hold redundant copies of the same data.
