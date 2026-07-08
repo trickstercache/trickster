@@ -28,7 +28,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/errors"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/fanout"
-	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/rr"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
@@ -56,9 +55,8 @@ const (
 
 type handler struct {
 	mech.PoolHolder
-	mergePaths            []string            // paths handled by the alb client that are enabled for tsmerge
-	nonmergeHandler       types.PoolMechanism // when methodology is tsmerge, this handler is for non-mergeable paths
-	outputFormat          string              // the provider output format (e.g., "prometheus")
+	mergePaths            []string // paths handled by the alb client that are enabled for tsmerge
+	outputFormat          string   // the provider output format (e.g., "prometheus")
 	tsmOptions            options.TimeSeriesMergeOptions
 	maxCaptureBytes       int
 	maxFanoutCaptureBytes int
@@ -102,10 +100,7 @@ func RegistryEntry() types.RegistryEntry {
 }
 
 func New(o *options.Options, factories rt.Lookup) (types.Mechanism, error) {
-	nmh, _ := rr.New(nil, nil)
-	nmpm, _ := nmh.(types.PoolMechanism)
 	out := &handler{
-		nonmergeHandler:       nmpm,
 		tsmOptions:            o.TSMOptions,
 		maxCaptureBytes:       o.MaxCaptureBytes,
 		maxFanoutCaptureBytes: o.MaxFanoutCaptureBytes,
@@ -153,13 +148,10 @@ func (h *handler) Name() types.Name {
 	return ShortName
 }
 
-// SetPool overrides PoolHolder.SetPool to also propagate the pool to the
-// non-merge handler used for paths that bypass the TSM merge path.
+// SetPool overrides PoolHolder.SetPool so pool-derived caches can be
+// invalidated when the pool is replaced.
 func (h *handler) SetPool(p pool.Pool) {
 	h.PoolHolder.SetPool(p)
-	if h.nonmergeHandler != nil {
-		h.nonmergeHandler.SetPool(p)
-	}
 	h.poolVersion.Add(1)
 }
 

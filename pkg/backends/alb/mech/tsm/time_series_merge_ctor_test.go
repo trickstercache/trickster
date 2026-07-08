@@ -22,8 +22,6 @@ import (
 	"testing"
 
 	alberr "github.com/trickstercache/trickster/v2/pkg/backends/alb/errors"
-	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/rr"
-	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
@@ -87,24 +85,4 @@ func TestHandlerStopPool(t *testing.T) {
 	defer p.Stop()
 	h.SetPool(p)
 	h.StopPool()
-}
-
-func TestHandlerSetPoolPropagatesNonmergeHandler(t *testing.T) {
-	t.Parallel()
-
-	nmh, err := rr.New(nil, nil)
-	if err != nil {
-		t.Fatalf("rr.New: %v", err)
-	}
-	nmpm, ok := nmh.(types.PoolMechanism)
-	if !ok {
-		t.Fatal("rr mechanism should implement PoolMechanism")
-	}
-	h := &handler{nonmergeHandler: nmpm}
-	p, _, _ := albpool.NewHealthy([]http.Handler{http.NotFoundHandler()})
-	defer p.Stop()
-	h.SetPool(p)
-	if nmpm.Pool() != p {
-		t.Fatal("SetPool did not propagate pool to nonmergeHandler")
-	}
 }
