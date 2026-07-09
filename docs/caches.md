@@ -88,7 +88,7 @@ Stop the Trickster process and delete the configured BadgerDB path.
 
 ## Cache Status
 
-Trickster reports several cache statuses in metrics, logs, and tracing, which are listed and described in the table below.
+Trickster reports several cache statuses in metrics, logs, tracing, and the [`X-Trickster-Result`](./trickster-result.md) response header, which are listed and described in the table below.
 
 | Status | Description |
 | ----- | ----- |
@@ -98,5 +98,8 @@ Trickster reports several cache statuses in metrics, logs, and tracing, which ar
 | phit | The object was cached for some of the data requested, but not all |
 | nchit | The response was served from the [Negative Cache](./negative-caching.md) |
 | rhit | The object was served from cache to the client, after being revalidated for freshness against the origin |
+| purge | The cache key was purged as directed by a request or response header |
 | proxy-only | The request was proxied 1:1 to the origin and not cached |
 | proxy-error | The upstream request needed to fulfill an associated client request returned an error |
+| error | Trickster encountered a cache lookup or cache handling error |
+| proxy-hit | The request joined an existing in-flight origin fetch for the same cache key |
