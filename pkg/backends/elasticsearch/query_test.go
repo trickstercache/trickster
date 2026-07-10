@@ -19,6 +19,7 @@ package elasticsearch
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -122,6 +123,12 @@ func TestParseTimeRangeQuerySourceParam(t *testing.T) {
 	if !plan.SourceBody {
 		t.Fatal("expected source query parameter to be marked as source body")
 	}
+	if _, ok := trq.CacheKeyElements[queryParamSource]; !ok {
+		t.Fatalf("expected normalized %q cache key element: %v", queryParamSource, trq.CacheKeyElements)
+	}
+	if _, ok := trq.CacheKeyElements["query"]; ok {
+		t.Fatalf("source request must not retain a separate query cache key: %v", trq.CacheKeyElements)
+	}
 	next := &timeseries.Extent{
 		Start: trq.Extent.Start.Add(time.Minute),
 		End:   trq.Extent.Start.Add(2 * time.Minute),
@@ -180,6 +187,135 @@ func TestParseUnsupportedSearchFallsBackToObjectCache(t *testing.T) {
 	}
 }
 
+func TestUnsupportedSearchFallbackKeepsExactTimeRangeInCacheKey(t *testing.T) {
+	const bodyTemplate = `{"size":0,"query":{"range":{"@timestamp":` +
+		`{"gte":%d,"lte":%d,"format":"epoch_millis"}}}}`
+	c := &Client{}
+	parse := func(start, end int64) *timeseries.TimeRangeQuery {
+		t.Helper()
+		body := fmt.Sprintf(bodyTemplate, start, end)
+		r := httptest.NewRequest(http.MethodPost, "/logs/_search", strings.NewReader(body))
+		trq, _, canOPC, err := c.ParseTimeRangeQuery(r)
+		if err == nil || !canOPC {
+			t.Fatalf("expected object-cache fallback, canOPC=%v err=%v", canOPC, err)
+		}
+		if strings.Contains(trq.Statement, rangeStartToken) || strings.Contains(trq.Statement, rangeEndToken) {
+			t.Fatalf("fallback statement must retain exact range values: %s", trq.Statement)
+		}
+		return trq
+	}
+
+	first := parse(1704067200000, 1704067800000)
+	second := parse(1704067800000, 1704068400000)
+	if first.CacheKeyElements["query"] == second.CacheKeyElements["query"] {
+		t.Fatalf("different fallback time ranges share a cache key: %q", first.CacheKeyElements["query"])
+	}
+}
+
+func TestParseTimeRangeQueryRejectsLossyShapes(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(map[string]any)
+	}{
+		{
+			name: "search hits requested",
+			mutate: func(body map[string]any) {
+				body["size"] = json.Number("10")
+			},
+		},
+		{
+			name: "multiple timestamp ranges",
+			mutate: func(body map[string]any) {
+				filters := body["query"].(map[string]any)["bool"].(map[string]any)["filter"].([]any)
+				filters = append(filters, cloneValue(filters[0]))
+				body["query"].(map[string]any)["bool"].(map[string]any)["filter"] = filters
+			},
+		},
+		{
+			name: "exclusive range",
+			mutate: func(body map[string]any) {
+				rangeBody := firstTimestampRange(body)
+				rangeBody["gt"] = rangeBody["gte"]
+				delete(rangeBody, "gte")
+			},
+		},
+		{
+			name: "multiple top-level aggregations",
+			mutate: func(body map[string]any) {
+				aggs := body[aggKeyAggs].(map[string]any)
+				aggs["3"] = cloneValue(aggs["2"])
+			},
+		},
+		{
+			name: "calendar interval",
+			mutate: func(body map[string]any) {
+				dh := firstDateHistogram(body)
+				dh["calendar_interval"] = dh["fixed_interval"]
+				delete(dh, "fixed_interval")
+			},
+		},
+		{
+			name: "zero interval",
+			mutate: func(body map[string]any) {
+				firstDateHistogram(body)["fixed_interval"] = "0m"
+			},
+		},
+		{
+			name: "keyed buckets",
+			mutate: func(body map[string]any) {
+				firstDateHistogram(body)["keyed"] = true
+			},
+		},
+		{
+			name: "non-UTC bucket alignment",
+			mutate: func(body map[string]any) {
+				firstDateHistogram(body)["time_zone"] = "America/New_York"
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := decodedSearchBody(t)
+			tt.mutate(body)
+			encoded, err := json.Marshal(body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			r := httptest.NewRequest(http.MethodPost, "/metrics/_search", bytes.NewReader(encoded))
+			trq, _, canOPC, err := (&Client{}).ParseTimeRangeQuery(r)
+			if err == nil || !canOPC {
+				t.Fatalf("expected safe object-cache fallback, canOPC=%v err=%v", canOPC, err)
+			}
+			if trq == nil || trq.Statement == "" {
+				t.Fatal("fallback must retain an exact request statement for the object-cache key")
+			}
+		})
+	}
+}
+
+func TestUnsupportedMSearchFallbackUsesCompleteBody(t *testing.T) {
+	unsupported := `{"size":0,"query":{"match_all":{}}}`
+	build := func(index string) string {
+		return `{"index":"first"}` + "\n" + unsupported + "\n" +
+			fmt.Sprintf(`{"index":%q}`, index) + "\n" + unsupported + "\n"
+	}
+	parse := func(body string) *timeseries.TimeRangeQuery {
+		t.Helper()
+		r := httptest.NewRequest(http.MethodPost, "/_msearch", strings.NewReader(body))
+		trq, _, canOPC, err := (&Client{}).ParseTimeRangeQuery(r)
+		if err == nil || !canOPC {
+			t.Fatalf("expected object-cache fallback, canOPC=%v err=%v", canOPC, err)
+		}
+		return trq
+	}
+	first := parse(build("logs-a"))
+	second := parse(build("logs-b"))
+	if first.CacheKeyElements["query"] == second.CacheKeyElements["query"] {
+		t.Fatal("msearch fallback key omitted request pairs after the first unsupported search")
+	}
+}
+
 func TestParseMSearchPlan(t *testing.T) {
 	searchLine := compactJSON(t, searchBody)
 	body := bytes.NewBuffer(nil)
@@ -231,4 +367,26 @@ func compactJSON(t *testing.T, input string) string {
 		t.Fatal(err)
 	}
 	return buf.String()
+}
+
+func decodedSearchBody(t *testing.T) map[string]any {
+	t.Helper()
+	var body map[string]any
+	dec := json.NewDecoder(strings.NewReader(searchBody))
+	dec.UseNumber()
+	if err := dec.Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	return body
+}
+
+func firstTimestampRange(body map[string]any) map[string]any {
+	query := body["query"].(map[string]any)
+	boolQuery := query["bool"].(map[string]any)
+	filter := boolQuery["filter"].([]any)[0].(map[string]any)
+	return filter["range"].(map[string]any)["@timestamp"].(map[string]any)
+}
+
+func firstDateHistogram(body map[string]any) map[string]any {
+	return body[aggKeyAggs].(map[string]any)["2"].(map[string]any)["date_histogram"].(map[string]any)
 }
