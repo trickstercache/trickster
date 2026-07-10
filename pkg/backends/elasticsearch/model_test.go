@@ -110,6 +110,14 @@ func TestUnmarshalMarshalMSearchResponse(t *testing.T) {
 	}
 }
 
+func TestUnmarshalMSearchResponseRequiresOneResponsePerSearch(t *testing.T) {
+	trq, _ := parseMSearchForModelTest(t)
+	resp := `{"responses":[` + searchResponse + `]}`
+	if _, err := UnmarshalTimeseries([]byte(resp), trq); err == nil {
+		t.Fatal("expected response-count mismatch to fail instead of fabricating an empty search result")
+	}
+}
+
 func parseSearchForModelTest(t *testing.T) (*timeseries.TimeRangeQuery, *timeseries.RequestOptions) {
 	t.Helper()
 	c := &Client{}

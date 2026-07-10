@@ -141,11 +141,24 @@ func parseRequestPlan(body []byte, sourceBody, isMSearch bool, timestampField st
 	*timeseries.TimeRangeQuery, *timeseries.RequestOptions, error,
 ) {
 	if isMSearch {
-		return parseMSearchPlan(body, timestampField)
+		plan, trq, ro, err := parseMSearchPlan(body, timestampField)
+		if err != nil {
+			if plan == nil {
+				plan = &RequestPlan{Kind: requestKindMSearch}
+			}
+			trq = timeRangeQueryFromSearches(plan.Searches, exactRequestStatement(body))
+			ro = &timeseries.RequestOptions{ProviderRequest: plan}
+		}
+		return plan, trq, ro, err
 	}
 	sp, normalized, err := parseSearchPlan(nil, body, timestampField)
 	plan := &RequestPlan{Kind: requestKindSearch, Searches: []*SearchPlan{sp}, SourceBody: sourceBody}
-	trq := timeRangeQueryFromSearches(plan.Searches, normalized)
+	statement := normalized
+	if err != nil {
+		statement = exactRequestStatement(body)
+	}
+	trq := timeRangeQueryFromSearches(plan.Searches, statement)
+	setStatementCacheKey(trq, sourceBody)
 	ro := &timeseries.RequestOptions{ProviderRequest: plan}
 	if err != nil {
 		return plan, trq, ro, err
@@ -206,6 +219,9 @@ func parseSearchPlan(header map[string]any, body []byte, timestampField string) 
 		return nil, "", err
 	}
 	sp := &SearchPlan{Header: header, Body: m, TimestampField: timestampField}
+	if !isAggregationOnlySearch(m) {
+		return sp, normalizedBodyForCache(m, timestampField), errors.ErrNotTimeRangeQuery
+	}
 	extent, kind, ok := extractTimeRange(m, timestampField)
 	if !ok {
 		normalized := normalizedBodyForCache(m, timestampField)
@@ -258,6 +274,27 @@ func timeRangeQueryFromSearches(searches []*SearchPlan, statement string) *times
 	return trq
 }
 
+func exactRequestStatement(body []byte) string {
+	return string(bytes.TrimSpace(body))
+}
+
+func setStatementCacheKey(trq *timeseries.TimeRangeQuery, sourceBody bool) {
+	if trq == nil || !sourceBody {
+		return
+	}
+	delete(trq.CacheKeyElements, "query")
+	trq.CacheKeyElements[queryParamSource] = trq.Statement
+}
+
+func isAggregationOnlySearch(root map[string]any) bool {
+	size, ok := root["size"].(json.Number)
+	if !ok {
+		return false
+	}
+	n, err := strconv.ParseInt(size.String(), 10, 64)
+	return err == nil && n == 0
+}
+
 func validateCommonRange(searches []*SearchPlan) error {
 	if len(searches) == 0 || searches[0] == nil {
 		return errors.ErrNotTimeRangeQuery
@@ -276,7 +313,8 @@ func validateCommonRange(searches []*SearchPlan) error {
 func extractTimeRange(root map[string]any, timestampField string) (timeseries.Extent, timestampValueKind, bool) {
 	var out timeseries.Extent
 	var outKind timestampValueKind
-	var found bool
+	var count int
+	valid := true
 	walkMaps(root, func(m map[string]any) bool {
 		rangeNode, ok := m["range"].(map[string]any)
 		if !ok {
@@ -286,32 +324,42 @@ func extractTimeRange(root map[string]any, timestampField string) (timeseries.Ex
 		if !ok {
 			return true
 		}
-		start, kind, ok := parseRangeTime(firstPresent(fieldNode, "gte", "gt", "from"), fieldNode)
-		if !ok {
+		count++
+		if count > 1 || hasAnyKey(fieldNode, "gt", "lt", "from", "to") {
+			valid = false
 			return true
 		}
-		end, endKind, ok := parseRangeTime(firstPresent(fieldNode, "lte", "lt", "to"), fieldNode)
+		start, kind, ok := parseRangeTime(fieldNode["gte"], fieldNode)
 		if !ok {
+			valid = false
+			return true
+		}
+		end, endKind, ok := parseRangeTime(fieldNode["lte"], fieldNode)
+		if !ok {
+			valid = false
 			return true
 		}
 		if endKind != timestampValueRFC3339 {
 			kind = endKind
 		}
+		if start.After(end) {
+			valid = false
+			return true
+		}
 		out = timeseries.Extent{Start: start, End: end}
 		outKind = kind
-		found = true
-		return false
+		return true
 	})
-	return out, outKind, found
+	return out, outKind, count == 1 && valid
 }
 
-func firstPresent(m map[string]any, keys ...string) any {
+func hasAnyKey(m map[string]any, keys ...string) bool {
 	for _, key := range keys {
-		if v, ok := m[key]; ok {
-			return v
+		if _, ok := m[key]; ok {
+			return true
 		}
 	}
-	return nil
+	return false
 }
 
 func parseRangeTime(v any, fieldNode map[string]any) (time.Time, timestampValueKind, bool) {
@@ -350,8 +398,13 @@ func parseNumericTime(input, format string) (time.Time, timestampValueKind, bool
 }
 
 func extractDateHistogram(root map[string]any, timestampField string) (string, time.Duration, bool) {
+	_, hasAggs := root[aggKeyAggs]
+	_, hasAggregations := root[aggKeyAggregations]
+	if hasAggs && hasAggregations {
+		return "", 0, false
+	}
 	aggs, ok := aggregationMap(root)
-	if !ok {
+	if !ok || len(aggs) != 1 {
 		return "", 0, false
 	}
 	keys := make([]string, 0, len(aggs))
@@ -368,8 +421,20 @@ func extractDateHistogram(root map[string]any, timestampField string) (string, t
 		if !ok {
 			continue
 		}
-		if field, _ := dh["field"].(string); field != "" && field != timestampField {
+		if field, _ := dh["field"].(string); field != timestampField {
 			continue
+		}
+		if keyed, _ := dh["keyed"].(bool); keyed {
+			continue
+		}
+		if _, hasOffset := dh["offset"]; hasOffset {
+			continue
+		}
+		if tzValue, hasTimeZone := dh["time_zone"]; hasTimeZone {
+			tz, ok := tzValue.(string)
+			if !ok || !isUTCTimeZone(tz) {
+				continue
+			}
 		}
 		step, ok := parseHistogramInterval(dh)
 		if ok {
@@ -390,7 +455,19 @@ func aggregationMap(root map[string]any) (map[string]any, bool) {
 }
 
 func parseHistogramInterval(dh map[string]any) (time.Duration, bool) {
+	var intervalKeys int
 	for _, key := range []string{"fixed_interval", "calendar_interval", "interval"} {
+		if _, ok := dh[key]; ok {
+			intervalKeys++
+		}
+	}
+	if intervalKeys != 1 {
+		return 0, false
+	}
+	if _, ok := dh["calendar_interval"]; ok {
+		return 0, false
+	}
+	for _, key := range []string{"fixed_interval", "interval"} {
 		if v, ok := dh[key]; ok {
 			if d, ok := parseESDuration(fmt.Sprint(v)); ok {
 				return d, true
@@ -406,7 +483,7 @@ func parseESDuration(input string) (time.Duration, bool) {
 		return 0, false
 	}
 	if d, err := time.ParseDuration(input); err == nil {
-		return d, true
+		return d, d > 0
 	}
 	unit := input[len(input)-1]
 	n, err := strconv.Atoi(input[:len(input)-1])
@@ -415,17 +492,28 @@ func parseESDuration(input string) (time.Duration, bool) {
 	}
 	switch unit {
 	case 'd':
-		return time.Duration(n) * 24 * time.Hour, true
+		return checkedDuration(n, 24*time.Hour)
 	case 'w':
-		return time.Duration(n) * 7 * 24 * time.Hour, true
-	case 'M':
-		return time.Duration(n) * 30 * 24 * time.Hour, true
-	case 'q':
-		return time.Duration(n) * 90 * 24 * time.Hour, true
-	case 'y':
-		return time.Duration(n) * 365 * 24 * time.Hour, true
+		return checkedDuration(n, 7*24*time.Hour)
 	}
 	return 0, false
+}
+
+func checkedDuration(n int, unit time.Duration) (time.Duration, bool) {
+	if n <= 0 {
+		return 0, false
+	}
+	d := time.Duration(n) * unit
+	return d, d > 0 && d/time.Duration(n) == unit
+}
+
+func isUTCTimeZone(value string) bool {
+	switch strings.ToUpper(strings.TrimSpace(value)) {
+	case "UTC", "Z", "+00:00", "-00:00":
+		return true
+	default:
+		return false
+	}
 }
 
 func walkMaps(v any, fn func(map[string]any) bool) bool {
@@ -535,12 +623,14 @@ func replaceExtendedBounds(root map[string]any, timestampField string, start, en
 		if field, _ := dh["field"].(string); field != "" && field != timestampField {
 			continue
 		}
-		if bounds, ok := dh["extended_bounds"].(map[string]any); ok {
-			if _, ok := bounds["min"]; ok {
-				bounds["min"] = start
-			}
-			if _, ok := bounds["max"]; ok {
-				bounds["max"] = end
+		for _, key := range []string{"extended_bounds", "hard_bounds"} {
+			if bounds, ok := dh[key].(map[string]any); ok {
+				if _, ok := bounds["min"]; ok {
+					bounds["min"] = start
+				}
+				if _, ok := bounds["max"]; ok {
+					bounds["max"] = end
+				}
 			}
 		}
 	}

@@ -77,6 +77,9 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 func unmarshalSearchResponse(reader io.Reader, trq *timeseries.TimeRangeQuery,
 	plan *RequestPlan,
 ) (timeseries.Timeseries, error) {
+	if len(plan.Searches) != 1 || plan.Searches[0] == nil {
+		return nil, timeseries.ErrInvalidBody
+	}
 	var body map[string]json.RawMessage
 	if err := json.NewDecoder(reader).Decode(&body); err != nil {
 		return nil, err
@@ -98,6 +101,9 @@ func unmarshalMSearchResponse(reader io.Reader, trq *timeseries.TimeRangeQuery,
 	}
 	if err := json.NewDecoder(reader).Decode(&body); err != nil {
 		return nil, err
+	}
+	if len(body.Responses) != len(plan.Searches) {
+		return nil, timeseries.ErrInvalidBody
 	}
 	ds := newDataSet(trq)
 	ds.Results = make([]*dataset.Result, 0, len(body.Responses))
@@ -129,6 +135,9 @@ func newDataSet(trq *timeseries.TimeRangeQuery) *dataset.DataSet {
 func resultFromSearchBody(body map[string]json.RawMessage, trq *timeseries.TimeRangeQuery,
 	sp *SearchPlan, idx int,
 ) (*dataset.Result, error) {
+	if sp == nil {
+		return nil, timeseries.ErrInvalidBody
+	}
 	aggBody, err := aggregationResponse(body, sp.DateHistogramName)
 	if err != nil {
 		return nil, err
@@ -265,13 +274,22 @@ func MarshalTimeseriesWriter(ts timeseries.Timeseries, rlo *timeseries.RequestOp
 	case requestKindMSearch:
 		return marshalMSearchResponse(ds, plan, status, w)
 	default:
+		if len(plan.Searches) != 1 || plan.Searches[0] == nil {
+			return timeseries.ErrUnknownFormat
+		}
 		return marshalSearchResponse(ds, plan.Searches[0], 0, status, w)
 	}
 }
 
 func marshalMSearchResponse(ds *dataset.DataSet, plan *RequestPlan, status int, w io.Writer) error {
+	if len(plan.Searches) == 0 {
+		return timeseries.ErrUnknownFormat
+	}
 	responses := make([]json.RawMessage, 0, len(plan.Searches))
 	for i, sp := range plan.Searches {
+		if sp == nil {
+			return timeseries.ErrUnknownFormat
+		}
 		b, err := marshalSearchResponseBytes(ds, sp, i, status, true)
 		if err != nil {
 			return err
