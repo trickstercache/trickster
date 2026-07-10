@@ -30,6 +30,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/checksum/md5"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
 
 // memCache is a minimal in-memory cache.Cache used to assert key-format parity
@@ -82,6 +83,62 @@ type fakeBackend struct {
 
 func (f *fakeBackend) Configuration() *bo.Options { return f.cfg }
 func (f *fakeBackend) Cache() cache.Cache         { return f.cache }
+
+func TestWritePurgeResultEscapesReflectedValues(t *testing.T) {
+	w := httptest.NewRecorder()
+	writePurgeResult(w, "<backend>", "/<script>&")
+
+	if got, want := w.Body.String(), "purged: &lt;backend&gt; | /&lt;script&gt;&amp;\n"; got != want {
+		t.Fatalf("body = %q, want %q", got, want)
+	}
+	if got := w.Header().Get(headers.NameContentType); got != headers.ValueTextPlain {
+		t.Fatalf("Content-Type = %q, want %q", got, headers.ValueTextPlain)
+	}
+	if got := w.Header().Get(headers.NameCacheControl); got != headers.ValueNoCache {
+		t.Fatalf("Cache-Control = %q, want %q", got, headers.ValueNoCache)
+	}
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+}
+
+func TestValidationErrorsEscapeBackendName(t *testing.T) {
+	tests := []struct {
+		name     string
+		validate func(http.ResponseWriter) bool
+		wantBody string
+	}{
+		{
+			name: "missing backend",
+			validate: func(w http.ResponseWriter) bool {
+				return validateBackend(w, nil, "<backend>")
+			},
+			wantBody: "Backend &lt;backend&gt; doesn't exist.",
+		},
+		{
+			name: "missing cache",
+			validate: func(w http.ResponseWriter) bool {
+				return validateCache(w, nil, "<backend>")
+			},
+			wantBody: "Backend &lt;backend&gt; doesn't have a cache.",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			if tc.validate(w) {
+				t.Fatal("validation unexpectedly succeeded")
+			}
+			if got := w.Body.String(); got != tc.wantBody {
+				t.Fatalf("body = %q, want %q", got, tc.wantBody)
+			}
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
+			}
+		})
+	}
+}
 
 // TestPathHandler_KeyFormatMatchesEngines stores entries under the engine key
 // format for two backends sharing CacheKeyPrefix, then issues purges and
