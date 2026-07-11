@@ -44,10 +44,10 @@ func RegistryEntry() types.RegistryEntry {
 	return types.RegistryEntry{Name: Name, ShortName: names.MechanismNLM, New: New}
 }
 
-func New(conf *options.ALBConfigs, _ rt.Lookup) (types.Mechanism, error) {
+func New(o *options.Options, _ rt.Lookup) (types.Mechanism, error) {
 	return &handler{
-		options:         conf.NewestLastModifiedOptions,
-		maxCaptureBytes: conf.MaxCaptureBytes,
+		options:         o.NLMOptions,
+		maxCaptureBytes: o.MaxCaptureBytes,
 	}, nil
 }
 

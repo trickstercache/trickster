@@ -40,20 +40,34 @@ var registry = []types.RegistryEntry{
 
 var registryByName = compileSupportedByName(registry)
 
+type funcs struct {
+	tsmMechanismFunc types.NewTSMMechanismFunc
+	mechanismFunc    types.NewMechanismFunc
+}
+
 // compileSupportedByName indexes registry entries by both Name and ShortName.
 // Panics on duplicate registration: silently last-write-wins would mask a
 // configuration error that only surfaces at request time.
-func compileSupportedByName(entries []types.RegistryEntry) map[types.Name]types.NewMechanismFunc {
-	out := make(map[types.Name]types.NewMechanismFunc, len(entries)*2)
-	add := func(name types.Name, fn types.NewMechanismFunc) {
+func compileSupportedByName(entries []types.RegistryEntry) map[types.Name]*funcs {
+	out := make(map[types.Name]*funcs, len(entries)*2)
+	add := func(name types.Name, fns *funcs) {
 		if _, exists := out[name]; exists {
 			panic("alb/mech/registry: duplicate mechanism name " + name)
 		}
-		out[name] = fn
+		out[name] = fns
 	}
+
 	for _, entry := range entries {
-		add(entry.ShortName, entry.New)
-		add(entry.Name, entry.New)
+		if entry.New == nil && entry.NewTSM != nil {
+			fns := &funcs{tsmMechanismFunc: entry.NewTSM}
+			add(entry.ShortName, fns)
+			add(entry.Name, fns)
+			continue
+		}
+
+		fns := &funcs{mechanismFunc: entry.New}
+		add(entry.ShortName, fns)
+		add(entry.Name, fns)
 	}
 	return out
 }
@@ -62,9 +76,14 @@ func New(name types.Name, opts *options.Options,
 	factories rt.Lookup,
 ) (types.Mechanism, error) {
 	if f, ok := registryByName[name]; ok && f != nil {
-		configs := options.NewALBConfigsFromOptions(opts)
-		return f(configs, factories)
+		if name == tsm.Name || name == tsm.ShortName {
+			tsmConfigs := options.NewTSMConfigs(opts)
+			return f.tsmMechanismFunc(tsmConfigs, factories)
+		}
+
+		return f.mechanismFunc(opts, factories)
 	}
+
 	return nil, errors.ErrUnsupportedMechanism
 }
 

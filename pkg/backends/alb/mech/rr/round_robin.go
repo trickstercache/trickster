@@ -40,7 +40,7 @@ func RegistryEntry() types.RegistryEntry {
 	return types.RegistryEntry{Name: Name, ShortName: names.MechanismRR, New: New}
 }
 
-func New(_ *options.ALBConfigs, _ rt.Lookup) (types.Mechanism, error) {
+func New(_ *options.Options, _ rt.Lookup) (types.Mechanism, error) {
 	return &handler{}, nil
 }
 
