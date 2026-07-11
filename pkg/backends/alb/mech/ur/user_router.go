@@ -69,13 +69,13 @@ func RegistryEntry() types.RegistryEntry {
 	}
 }
 
-func New(conf *options.ALBConfigs, _ rt.Lookup) (types.Mechanism, error) {
-	if conf == nil || conf.UserRouter == nil {
+func New(o *options.Options, _ rt.Lookup) (types.Mechanism, error) {
+	if o == nil || o.UserRouter == nil {
 		return nil, errors.ErrInvalidOptions
 	}
 	out := &Handler{
-		noRouteStatusCode: conf.UserRouter.NoRouteStatusCode,
-		options:           conf.UserRouter,
+		noRouteStatusCode: o.UserRouter.NoRouteStatusCode,
+		options:           o.UserRouter,
 	}
 	return out, nil
 }

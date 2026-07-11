@@ -53,19 +53,19 @@ func RegistryEntryFGR() types.RegistryEntry {
 	return types.RegistryEntry{Name: FGRName, ShortName: names.MechanismFGR, New: NewFGR}
 }
 
-func NewFGR(conf *options.ALBConfigs, _ rt.Lookup) (types.Mechanism, error) {
+func NewFGR(o *options.Options, _ rt.Lookup) (types.Mechanism, error) {
 	return &handler{
 		fgr:             true,
-		fgrCodes:        conf.FgrCodesLookup,
-		options:         conf.FirstGoodResponseOptions,
-		maxCaptureBytes: conf.MaxCaptureBytes,
+		fgrCodes:        o.FgrCodesLookup,
+		options:         o.FGROptions,
+		maxCaptureBytes: o.MaxCaptureBytes,
 	}, nil
 }
 
-func New(conf *options.ALBConfigs, _ rt.Lookup) (types.Mechanism, error) {
+func New(o *options.Options, _ rt.Lookup) (types.Mechanism, error) {
 	h := &handler{}
-	if conf != nil {
-		h.maxCaptureBytes = conf.MaxCaptureBytes
+	if o != nil {
+		h.maxCaptureBytes = o.MaxCaptureBytes
 	}
 	return h, nil
 }

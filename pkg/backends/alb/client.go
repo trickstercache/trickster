@@ -93,6 +93,7 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 		if err != nil {
 			return nil, err
 		}
+
 		c.handler = m
 	}
 	return c, nil

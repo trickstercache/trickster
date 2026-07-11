@@ -96,10 +96,10 @@ type stripKeysSnapshot struct {
 }
 
 func RegistryEntry() types.RegistryEntry {
-	return types.RegistryEntry{Name: Name, ShortName: ShortName, New: New}
+	return types.RegistryEntry{Name: Name, ShortName: ShortName, NewTSM: New}
 }
 
-func New(conf *options.ALBConfigs, factories rt.Lookup) (types.Mechanism, error) {
+func New(conf *options.TSMConfigs, factories rt.Lookup) (types.Mechanism, error) {
 	out := &handler{
 		tsmOptions:            conf.TimeSeriesMergeOptions,
 		maxCaptureBytes:       conf.MaxCaptureBytes,

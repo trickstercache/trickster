@@ -108,7 +108,7 @@ func TestALB502WithMultiplePrometheusBackends(t *testing.T) {
 		pool1, _, _ := albpool.NewHealthy([]http.Handler{handler1})
 		albpool.WaitHealthy(t, pool1, 1)
 
-		albConfigs := &ao.ALBConfigs{
+		albConfigs := &ao.TSMConfigs{
 			MechanismName: names.MechanismTSM,
 			OutputFormat:  providers.Prometheus,
 		}
@@ -135,7 +135,7 @@ func TestALB502WithMultiplePrometheusBackends(t *testing.T) {
 		pool2, _, _ := albpool.NewHealthy([]http.Handler{handler1, handler2})
 		albpool.WaitHealthy(t, pool2, 2)
 
-		albConfigs := &ao.ALBConfigs{
+		albConfigs := &ao.TSMConfigs{
 			MechanismName: names.MechanismTSM,
 			OutputFormat:  providers.Prometheus,
 		}
