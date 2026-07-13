@@ -315,6 +315,9 @@ func (t *target) notifyStatus(st int32, detail string) {
 func (t *target) demandProbe(w http.ResponseWriter) {
 	r := t.baseRequest.Clone(context.Background())
 	resp, err := t.httpClient.Do(r)
+	if resp != nil && resp.Body != nil {
+		defer resp.Body.Close()
+	}
 	h := w.Header()
 	if err != nil {
 		if t.status != nil && t.status.Get() != StatusUnchecked {
