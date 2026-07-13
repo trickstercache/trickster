@@ -63,9 +63,11 @@ type RequestPlan struct {
 type SearchPlan struct {
 	Header             map[string]any
 	Body               map[string]any
+	AggregationMeta    map[string]any
 	DateHistogramName  string
 	TimestampField     string
 	TimestampValueKind timestampValueKind
+	RangeEndExclusive  bool
 	Statement          string
 	Extent             timeseries.Extent
 	Step               time.Duration
@@ -101,6 +103,10 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 
 	opts := c.elasticsearchOptions()
 	plan, trq, ro, err := parseRequestPlan(body, sourceBody, isMSearch, opts.TimestampField)
+	if err == nil && hasUnsafeSearchQueryParams(r, sourceBody) {
+		setFallbackCacheKey(trq, body, sourceBody)
+		err = errors.ErrNotTimeRangeQuery
+	}
 	if trq != nil {
 		trq.OriginalBody = body
 		trq.ParsedQuery = plan
@@ -203,10 +209,13 @@ func parseMSearchPlan(body []byte, timestampField string) (*RequestPlan,
 func splitNDJSON(body []byte) [][]byte {
 	raw := bytes.Split(body, []byte{'\n'})
 	out := make([][]byte, 0, len(raw))
-	for _, line := range raw {
+	for i, line := range raw {
 		line = bytes.TrimSpace(line)
 		if len(line) == 0 {
-			continue
+			if i == len(raw)-1 {
+				continue
+			}
+			return nil
 		}
 		out = append(out, line)
 	}
@@ -222,20 +231,27 @@ func parseSearchPlan(header map[string]any, body []byte, timestampField string) 
 	if !isAggregationOnlySearch(m) {
 		return sp, normalizedBodyForCache(m, timestampField), errors.ErrNotTimeRangeQuery
 	}
-	extent, kind, ok := extractTimeRange(m, timestampField)
+	documentExtent, kind, endExclusive, ok := extractTimeRange(m, timestampField)
 	if !ok {
 		normalized := normalizedBodyForCache(m, timestampField)
 		return sp, normalized, errors.ErrNotTimeRangeQuery
 	}
-	aggName, step, ok := extractDateHistogram(m, timestampField)
+	aggName, step, histogram, ok := extractDateHistogram(m, timestampField)
 	if !ok {
+		normalized := normalizedBodyForCache(m, timestampField)
+		return sp, normalized, errors.ErrNotTimeRangeQuery
+	}
+	extent, ok := completeBucketExtent(documentExtent, step, kind, endExclusive)
+	if !ok || !histogramSupportsIndependentExtents(histogram, extent, step) {
 		normalized := normalizedBodyForCache(m, timestampField)
 		return sp, normalized, errors.ErrNotTimeRangeQuery
 	}
 	sp.Extent = extent
 	sp.Step = step
 	sp.TimestampValueKind = kind
+	sp.RangeEndExclusive = endExclusive
 	sp.DateHistogramName = aggName
+	sp.AggregationMeta = aggregationMeta(m, aggName)
 	normalized := normalizedBodyForCache(m, timestampField)
 	sp.Statement = normalized
 	return sp, normalized, nil
@@ -249,6 +265,10 @@ func decodeObject(data []byte) (map[string]any, error) {
 		return nil, err
 	}
 	if m == nil {
+		return nil, timeseries.ErrInvalidBody
+	}
+	var trailing any
+	if err := dec.Decode(&trailing); err != io.EOF {
 		return nil, timeseries.ErrInvalidBody
 	}
 	return m, nil
@@ -278,6 +298,15 @@ func exactRequestStatement(body []byte) string {
 	return string(bytes.TrimSpace(body))
 }
 
+func setFallbackCacheKey(trq *timeseries.TimeRangeQuery, body []byte, sourceBody bool) {
+	if trq == nil {
+		return
+	}
+	trq.Statement = exactRequestStatement(body)
+	trq.CacheKeyElements = map[string]string{"query": trq.Statement}
+	setStatementCacheKey(trq, sourceBody)
+}
+
 func setStatementCacheKey(trq *timeseries.TimeRangeQuery, sourceBody bool) {
 	if trq == nil || !sourceBody {
 		return
@@ -292,7 +321,39 @@ func isAggregationOnlySearch(root map[string]any) bool {
 		return false
 	}
 	n, err := strconv.ParseInt(size.String(), 10, 64)
-	return err == nil && n == 0
+	if err != nil || n != 0 {
+		return false
+	}
+	for key := range root {
+		switch key {
+		case "size", "query", aggKeyAggs, aggKeyAggregations, "runtime_mappings":
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func hasUnsafeSearchQueryParams(r *http.Request, sourceBody bool) bool {
+	if r == nil || r.URL == nil {
+		return true
+	}
+	for key := range r.URL.Query() {
+		switch key {
+		case "allow_no_indices", "allow_partial_search_results", "batched_reduce_size",
+			"ccs_minimize_roundtrips", "error_trace", "expand_wildcards", "human",
+			"ignore_throttled", "ignore_unavailable", "max_concurrent_shard_requests",
+			"pre_filter_shard_size", "preference", "pretty", "request_cache", "routing",
+			"source_content_type":
+		case queryParamSource:
+			if !sourceBody {
+				return true
+			}
+		default:
+			return true
+		}
+	}
+	return false
 }
 
 func validateCommonRange(searches []*SearchPlan) error {
@@ -310,47 +371,162 @@ func validateCommonRange(searches []*SearchPlan) error {
 	return nil
 }
 
-func extractTimeRange(root map[string]any, timestampField string) (timeseries.Extent, timestampValueKind, bool) {
-	var out timeseries.Extent
-	var outKind timestampValueKind
+func extractTimeRange(root map[string]any, timestampField string) (timeseries.Extent,
+	timestampValueKind, bool, bool,
+) {
+	query, ok := root["query"]
+	if !ok {
+		return timeseries.Extent{}, timestampValueRFC3339, false, false
+	}
+	ranges := requiredTimestampRanges(query, timestampField)
+	if len(ranges) != 1 || countTimestampRanges(root, timestampField) != 1 {
+		return timeseries.Extent{}, timestampValueRFC3339, false, false
+	}
+	fieldNode := ranges[0]
+	if hasAnyKey(fieldNode, "gt", "from", "to", "time_zone", "relation") {
+		return timeseries.Extent{}, timestampValueRFC3339, false, false
+	}
+	_, hasLTE := fieldNode["lte"]
+	_, hasLT := fieldNode["lt"]
+	if hasLTE == hasLT {
+		return timeseries.Extent{}, timestampValueRFC3339, false, false
+	}
+	start, kind, ok := parseRangeTime(fieldNode["gte"], fieldNode)
+	if !ok {
+		return timeseries.Extent{}, timestampValueRFC3339, false, false
+	}
+	endValue := fieldNode["lte"]
+	if hasLT {
+		endValue = fieldNode["lt"]
+	}
+	end, endKind, ok := parseRangeTime(endValue, fieldNode)
+	if !ok || endKind != kind || !start.Before(end) {
+		return timeseries.Extent{}, timestampValueRFC3339, false, false
+	}
+	return timeseries.Extent{Start: start, End: end}, kind, hasLT, true
+}
+
+func requiredTimestampRanges(v any, timestampField string) []map[string]any {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return nil
+	}
+	if rangeNode, ok := m["range"].(map[string]any); ok {
+		if fieldNode, ok := rangeNode[timestampField].(map[string]any); ok {
+			return []map[string]any{fieldNode}
+		}
+		return nil
+	}
+	var out []map[string]any
+	if boolNode, ok := m["bool"].(map[string]any); ok {
+		for _, key := range []string{"filter", "must"} {
+			out = append(out, requiredTimestampRangesFromClauses(boolNode[key], timestampField)...)
+		}
+	}
+	if constantScore, ok := m["constant_score"].(map[string]any); ok {
+		out = append(out, requiredTimestampRanges(constantScore["filter"], timestampField)...)
+	}
+	if functionScore, ok := m["function_score"].(map[string]any); ok {
+		out = append(out, requiredTimestampRanges(functionScore["query"], timestampField)...)
+	}
+	return out
+}
+
+func requiredTimestampRangesFromClauses(v any, timestampField string) []map[string]any {
+	switch clauses := v.(type) {
+	case []any:
+		var out []map[string]any
+		for _, clause := range clauses {
+			out = append(out, requiredTimestampRanges(clause, timestampField)...)
+		}
+		return out
+	default:
+		return requiredTimestampRanges(v, timestampField)
+	}
+}
+
+func countTimestampRanges(root map[string]any, timestampField string) int {
 	var count int
-	valid := true
 	walkMaps(root, func(m map[string]any) bool {
 		rangeNode, ok := m["range"].(map[string]any)
 		if !ok {
 			return true
 		}
-		fieldNode, ok := rangeNode[timestampField].(map[string]any)
-		if !ok {
-			return true
+		if _, ok := rangeNode[timestampField].(map[string]any); ok {
+			count++
 		}
-		count++
-		if count > 1 || hasAnyKey(fieldNode, "gt", "lt", "from", "to") {
-			valid = false
-			return true
-		}
-		start, kind, ok := parseRangeTime(fieldNode["gte"], fieldNode)
-		if !ok {
-			valid = false
-			return true
-		}
-		end, endKind, ok := parseRangeTime(fieldNode["lte"], fieldNode)
-		if !ok {
-			valid = false
-			return true
-		}
-		if endKind != timestampValueRFC3339 {
-			kind = endKind
-		}
-		if start.After(end) {
-			valid = false
-			return true
-		}
-		out = timeseries.Extent{Start: start, End: end}
-		outKind = kind
 		return true
 	})
-	return out, outKind, count == 1 && valid
+	return count
+}
+
+func completeBucketExtent(documentExtent timeseries.Extent, step time.Duration,
+	kind timestampValueKind, endExclusive bool,
+) (timeseries.Extent, bool) {
+	if step < time.Millisecond || (24*time.Hour)%step != 0 ||
+		!documentExtent.Start.Equal(documentExtent.Start.Truncate(step)) {
+		return timeseries.Extent{}, false
+	}
+	if kind == timestampValueEpochSeconds && step%time.Second != 0 {
+		return timeseries.Extent{}, false
+	}
+	endBoundary := documentExtent.End
+	if !endExclusive {
+		endBoundary = endBoundary.Add(time.Millisecond)
+	}
+	if !endBoundary.Equal(endBoundary.Truncate(step)) || !endBoundary.After(documentExtent.Start) {
+		return timeseries.Extent{}, false
+	}
+	return timeseries.Extent{
+		Start: documentExtent.Start,
+		End:   endBoundary.Add(-step),
+	}, true
+}
+
+func histogramSupportsIndependentExtents(histogram map[string]any, extent timeseries.Extent,
+	step time.Duration,
+) bool {
+	minDocCount := int64(0)
+	if raw, exists := histogram["min_doc_count"]; exists {
+		n, ok := raw.(json.Number)
+		if !ok {
+			return false
+		}
+		var err error
+		minDocCount, err = strconv.ParseInt(n.String(), 10, 64)
+		if err != nil || minDocCount < 0 || minDocCount > 1 {
+			return false
+		}
+	}
+
+	for _, key := range []string{"extended_bounds", "hard_bounds"} {
+		raw, exists := histogram[key]
+		if !exists {
+			if key == "extended_bounds" && minDocCount == 0 {
+				return false
+			}
+			continue
+		}
+		bounds, ok := raw.(map[string]any)
+		if !ok {
+			return false
+		}
+		if key == "extended_bounds" && minDocCount == 0 &&
+			(!hasAnyKey(bounds, "min") || !hasAnyKey(bounds, "max")) {
+			return false
+		}
+		for bound, expected := range map[string]time.Time{"min": extent.Start, "max": extent.End} {
+			value, exists := bounds[bound]
+			if !exists {
+				continue
+			}
+			parsed, _, ok := parseRangeTime(value, histogram)
+			if !ok || !parsed.Truncate(step).Equal(expected) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func hasAnyKey(m map[string]any, keys ...string) bool {
@@ -388,24 +564,25 @@ func parseNumericTime(input, format string) (time.Time, timestampValueKind, bool
 	if err != nil {
 		return time.Time{}, timestampValueRFC3339, false
 	}
-	if strings.Contains(format, "epoch_second") {
+	secondPos := strings.Index(format, "epoch_second")
+	millisPos := strings.Index(format, "epoch_millis")
+	if secondPos >= 0 && (millisPos < 0 || secondPos < millisPos) {
 		return time.Unix(i, 0), timestampValueEpochSeconds, true
 	}
-	if strings.Contains(format, "epoch_millis") || len(input) >= 13 {
-		return time.UnixMilli(i), timestampValueEpochMillis, true
-	}
-	return time.Unix(i, 0), timestampValueEpochSeconds, true
+	return time.UnixMilli(i), timestampValueEpochMillis, true
 }
 
-func extractDateHistogram(root map[string]any, timestampField string) (string, time.Duration, bool) {
+func extractDateHistogram(root map[string]any, timestampField string) (string, time.Duration,
+	map[string]any, bool,
+) {
 	_, hasAggs := root[aggKeyAggs]
 	_, hasAggregations := root[aggKeyAggregations]
 	if hasAggs && hasAggregations {
-		return "", 0, false
+		return "", 0, nil, false
 	}
 	aggs, ok := aggregationMap(root)
 	if !ok || len(aggs) != 1 {
-		return "", 0, false
+		return "", 0, nil, false
 	}
 	keys := make([]string, 0, len(aggs))
 	for key := range aggs {
@@ -416,6 +593,11 @@ func extractDateHistogram(root map[string]any, timestampField string) (string, t
 		agg, ok := aggs[key].(map[string]any)
 		if !ok {
 			continue
+		}
+		if meta, exists := agg["meta"]; exists {
+			if _, ok := meta.(map[string]any); !ok {
+				continue
+			}
 		}
 		dh, ok := agg["date_histogram"].(map[string]any)
 		if !ok {
@@ -430,6 +612,12 @@ func extractDateHistogram(root map[string]any, timestampField string) (string, t
 		if _, hasOffset := dh["offset"]; hasOffset {
 			continue
 		}
+		if _, hasScript := dh["script"]; hasScript {
+			continue
+		}
+		if !hasAscendingKeyOrder(dh) || containsPipelineAggregation(agg) {
+			continue
+		}
 		if tzValue, hasTimeZone := dh["time_zone"]; hasTimeZone {
 			tz, ok := tzValue.(string)
 			if !ok || !isUTCTimeZone(tz) {
@@ -438,10 +626,70 @@ func extractDateHistogram(root map[string]any, timestampField string) (string, t
 		}
 		step, ok := parseHistogramInterval(dh)
 		if ok {
-			return key, step, true
+			return key, step, dh, true
 		}
 	}
-	return "", 0, false
+	return "", 0, nil, false
+}
+
+func aggregationMeta(root map[string]any, name string) map[string]any {
+	aggs, ok := aggregationMap(root)
+	if !ok {
+		return nil
+	}
+	agg, ok := aggs[name].(map[string]any)
+	if !ok {
+		return nil
+	}
+	meta, _ := agg["meta"].(map[string]any)
+	if meta == nil {
+		return nil
+	}
+	return cloneMap(meta)
+}
+
+func hasAscendingKeyOrder(histogram map[string]any) bool {
+	value, exists := histogram["order"]
+	if !exists {
+		return true
+	}
+	order, ok := value.(map[string]any)
+	if !ok || len(order) != 1 {
+		return false
+	}
+	direction, ok := order["_key"].(string)
+	return ok && strings.EqualFold(direction, "asc")
+}
+
+func containsPipelineAggregation(aggregation map[string]any) bool {
+	nested, ok := aggregationMap(aggregation)
+	if !ok {
+		return false
+	}
+	for _, raw := range nested {
+		definition, ok := raw.(map[string]any)
+		if !ok {
+			return true
+		}
+		if isPipelineAggregation(definition) || containsPipelineAggregation(definition) {
+			return true
+		}
+	}
+	return false
+}
+
+func isPipelineAggregation(definition map[string]any) bool {
+	for key := range definition {
+		switch key {
+		case "avg_bucket", "bucket_script", "bucket_selector", "bucket_sort",
+			"cumulative_cardinality", "cumulative_sum", "derivative",
+			"extended_stats_bucket", "inference", "max_bucket", "min_bucket",
+			"moving_avg", "moving_fn", "moving_percentiles", "normalize",
+			"percentiles_bucket", "serial_diff", "stats_bucket", "sum_bucket":
+			return true
+		}
+	}
+	return false
 }
 
 func aggregationMap(root map[string]any) (map[string]any, bool) {
@@ -455,26 +703,40 @@ func aggregationMap(root map[string]any) (map[string]any, bool) {
 }
 
 func parseHistogramInterval(dh map[string]any) (time.Duration, bool) {
-	var intervalKeys int
-	for _, key := range []string{"fixed_interval", "calendar_interval", "interval"} {
-		if _, ok := dh[key]; ok {
-			intervalKeys++
-		}
-	}
-	if intervalKeys != 1 {
+	value, hasFixed := dh["fixed_interval"]
+	calendarValue, hasCalendar := dh["calendar_interval"]
+	if hasFixed == hasCalendar || hasAnyKey(dh, "interval") {
 		return 0, false
 	}
-	if _, ok := dh["calendar_interval"]; ok {
-		return 0, false
+	if hasCalendar {
+		return parseFixedCalendarInterval(fmt.Sprint(calendarValue))
 	}
-	for _, key := range []string{"fixed_interval", "interval"} {
-		if v, ok := dh[key]; ok {
-			if d, ok := parseESDuration(fmt.Sprint(v)); ok {
-				return d, true
-			}
-		}
+	if d, ok := parseESDuration(fmt.Sprint(value)); ok {
+		return d, true
 	}
 	return 0, false
+}
+
+func parseFixedCalendarInterval(input string) (time.Duration, bool) {
+	input = strings.TrimSpace(input)
+	switch input {
+	case "1m":
+		return time.Minute, true
+	case "1h":
+		return time.Hour, true
+	case "1d":
+		return 24 * time.Hour, true
+	}
+	switch strings.ToLower(input) {
+	case "minute":
+		return time.Minute, true
+	case "hour":
+		return time.Hour, true
+	case "day":
+		return 24 * time.Hour, true
+	default:
+		return 0, false
+	}
 }
 
 func parseESDuration(input string) (time.Duration, bool) {
@@ -684,20 +946,68 @@ func (p *RequestPlan) bodyForExtent(extent *timeseries.Extent) []byte {
 
 func (sp *SearchPlan) bodyForExtent(extent *timeseries.Extent) map[string]any {
 	body := cloneMap(sp.Body)
-	start, end := sp.formatExtent(extent)
-	replaceRangeValues(body, sp.TimestampField, start, end)
-	replaceExtendedBounds(body, sp.TimestampField, start, end)
+	rangeStart, rangeEnd := sp.formatRangeExtent(extent)
+	replaceRangeValues(body, sp.TimestampField, rangeStart, rangeEnd)
+	rewriteHistogramBounds(body, sp.TimestampField, extent.Start, extent.End)
 	return body
 }
 
-func (sp *SearchPlan) formatExtent(extent *timeseries.Extent) (any, any) {
-	switch sp.TimestampValueKind {
+func (sp *SearchPlan) formatRangeExtent(extent *timeseries.Extent) (any, any) {
+	end := extent.End.Add(sp.Step)
+	if !sp.RangeEndExclusive {
+		end = end.Add(-time.Millisecond)
+	}
+	return sp.formatTimestamp(extent.Start), sp.formatTimestamp(end)
+}
+
+func (sp *SearchPlan) formatTimestamp(t time.Time) any {
+	return formatTimestamp(t, sp.TimestampValueKind)
+}
+
+func formatTimestamp(t time.Time, kind timestampValueKind) any {
+	switch kind {
 	case timestampValueEpochSeconds:
-		return extent.Start.Unix(), extent.End.Unix()
+		return t.Unix()
 	case timestampValueEpochMillis:
-		return extent.Start.UnixMilli(), extent.End.UnixMilli()
+		return t.UnixMilli()
 	default:
-		return extent.Start.UTC().Format(time.RFC3339Nano), extent.End.UTC().Format(time.RFC3339Nano)
+		return t.UTC().Format(time.RFC3339Nano)
+	}
+}
+
+func rewriteHistogramBounds(root map[string]any, timestampField string, start, end time.Time) {
+	aggs, ok := aggregationMap(root)
+	if !ok {
+		return
+	}
+	for _, value := range aggs {
+		agg, ok := value.(map[string]any)
+		if !ok {
+			continue
+		}
+		histogram, ok := agg["date_histogram"].(map[string]any)
+		if !ok {
+			continue
+		}
+		if field, _ := histogram["field"].(string); field != timestampField {
+			continue
+		}
+		for _, key := range []string{"extended_bounds", "hard_bounds"} {
+			bounds, ok := histogram[key].(map[string]any)
+			if !ok {
+				continue
+			}
+			for name, timestamp := range map[string]time.Time{"min": start, "max": end} {
+				original, exists := bounds[name]
+				if !exists {
+					continue
+				}
+				_, kind, ok := parseRangeTime(original, histogram)
+				if ok {
+					bounds[name] = formatTimestamp(timestamp, kind)
+				}
+			}
+		}
 	}
 }
 

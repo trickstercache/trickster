@@ -39,7 +39,7 @@ const searchBody = `{
           "range": {
             "@timestamp": {
               "gte": 1704067200000,
-              "lte": 1704067800000,
+              "lte": 1704067859999,
               "format": "epoch_millis"
             }
           }
@@ -49,6 +49,9 @@ const searchBody = `{
   },
   "aggs": {
     "2": {
+      "meta": {
+        "source": "query"
+      },
       "date_histogram": {
         "field": "@timestamp",
         "fixed_interval": "1m",
@@ -159,7 +162,7 @@ func TestSetExtentSearchBody(t *testing.T) {
 	if got, want := int64(rangeNode["gte"].(float64)), int64(1704067320000); got != want {
 		t.Fatalf("gte = %d, want %d", got, want)
 	}
-	if got, want := int64(rangeNode["lte"].(float64)), int64(1704067440000); got != want {
+	if got, want := int64(rangeNode["lte"].(float64)), int64(1704067499999); got != want {
 		t.Fatalf("lte = %d, want %d", got, want)
 	}
 	bounds := out["aggs"].(map[string]any)["2"].(map[string]any)["date_histogram"].(map[string]any)["extended_bounds"].(map[string]any)
@@ -247,10 +250,10 @@ func TestParseTimeRangeQueryRejectsLossyShapes(t *testing.T) {
 			},
 		},
 		{
-			name: "calendar interval",
+			name: "variable calendar interval",
 			mutate: func(body map[string]any) {
 				dh := firstDateHistogram(body)
-				dh["calendar_interval"] = dh["fixed_interval"]
+				dh["calendar_interval"] = "1M"
 				delete(dh, "fixed_interval")
 			},
 		},
@@ -270,6 +273,94 @@ func TestParseTimeRangeQueryRejectsLossyShapes(t *testing.T) {
 			name: "non-UTC bucket alignment",
 			mutate: func(body map[string]any) {
 				firstDateHistogram(body)["time_zone"] = "America/New_York"
+			},
+		},
+		{
+			name: "partial final bucket",
+			mutate: func(body map[string]any) {
+				firstTimestampRange(body)["lte"] = json.Number("1704067800000")
+			},
+		},
+		{
+			name: "optional timestamp range",
+			mutate: func(body map[string]any) {
+				rangeClause := body["query"].(map[string]any)["bool"].(map[string]any)["filter"].([]any)[0]
+				body["query"] = map[string]any{"bool": map[string]any{
+					"should": []any{rangeClause, map[string]any{"match_all": map[string]any{}}},
+				}}
+			},
+		},
+		{
+			name: "descending buckets",
+			mutate: func(body map[string]any) {
+				firstDateHistogram(body)["order"] = map[string]any{"_key": "desc"}
+			},
+		},
+		{
+			name: "pipeline aggregation",
+			mutate: func(body map[string]any) {
+				agg := body[aggKeyAggs].(map[string]any)["2"].(map[string]any)
+				agg[aggKeyAggs].(map[string]any)["rate"] = map[string]any{
+					"derivative": map[string]any{"buckets_path": "1"},
+				}
+			},
+		},
+		{
+			name: "mismatched extended bounds",
+			mutate: func(body map[string]any) {
+				bounds := firstDateHistogram(body)["extended_bounds"].(map[string]any)
+				bounds["max"] = json.Number("1704067860000")
+			},
+		},
+		{
+			name: "empty buckets without extended bounds",
+			mutate: func(body map[string]any) {
+				delete(firstDateHistogram(body), "extended_bounds")
+			},
+		},
+		{
+			name: "empty buckets with partial extended bounds",
+			mutate: func(body map[string]any) {
+				bounds := firstDateHistogram(body)["extended_bounds"].(map[string]any)
+				delete(bounds, "max")
+			},
+		},
+		{
+			name: "minimum document count above one",
+			mutate: func(body map[string]any) {
+				firstDateHistogram(body)["min_doc_count"] = json.Number("2")
+			},
+		},
+		{
+			name: "range time zone",
+			mutate: func(body map[string]any) {
+				firstTimestampRange(body)["time_zone"] = "+01:00"
+			},
+		},
+		{
+			name: "date range relation",
+			mutate: func(body map[string]any) {
+				firstTimestampRange(body)["relation"] = "intersects"
+			},
+		},
+		{
+			name: "scripted histogram",
+			mutate: func(body map[string]any) {
+				firstDateHistogram(body)["script"] = "emit(doc['@timestamp'].value.toInstant().toEpochMilli())"
+			},
+		},
+		{
+			name: "legacy interval",
+			mutate: func(body map[string]any) {
+				histogram := firstDateHistogram(body)
+				histogram["interval"] = histogram["fixed_interval"]
+				delete(histogram, "fixed_interval")
+			},
+		},
+		{
+			name: "response profile requested",
+			mutate: func(body map[string]any) {
+				body["profile"] = true
 			},
 		},
 	}
@@ -294,6 +385,178 @@ func TestParseTimeRangeQueryRejectsLossyShapes(t *testing.T) {
 	}
 }
 
+func TestParseTimeRangeQueryAcceptsExclusiveCompleteBuckets(t *testing.T) {
+	body := decodedSearchBody(t)
+	rangeBody := firstTimestampRange(body)
+	delete(rangeBody, "lte")
+	rangeBody["lt"] = json.Number("1704067860000")
+	encoded, err := json.Marshal(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest(http.MethodPost, "/metrics/_search", bytes.NewReader(encoded))
+	trq, _, _, err := (&Client{}).ParseTimeRangeQuery(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := trq.Extent.End.UnixMilli(), int64(1704067800000); got != want {
+		t.Fatalf("bucket extent end = %d, want %d", got, want)
+	}
+	(&Client{}).SetExtent(r, trq, &trq.Extent)
+	var rewritten map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&rewritten); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := firstTimestampRange(rewritten)["lt"].(float64), float64(1704067860000); got != want {
+		t.Fatalf("lt = %.0f, want %.0f", got, want)
+	}
+}
+
+func TestParseTimeRangeQueryAcceptsSafeHistogramVariants(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(map[string]any)
+	}{
+		{
+			name: "UTC calendar minute",
+			mutate: func(body map[string]any) {
+				histogram := firstDateHistogram(body)
+				histogram["calendar_interval"] = "1m"
+				delete(histogram, "fixed_interval")
+			},
+		},
+		{
+			name: "positive min doc count without bounds",
+			mutate: func(body map[string]any) {
+				histogram := firstDateHistogram(body)
+				histogram["min_doc_count"] = json.Number("1")
+				delete(histogram, "extended_bounds")
+			},
+		},
+		{
+			name: "bounds inside edge buckets",
+			mutate: func(body map[string]any) {
+				bounds := firstDateHistogram(body)["extended_bounds"].(map[string]any)
+				bounds["max"] = json.Number("1704067859999")
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := decodedSearchBody(t)
+			tt.mutate(body)
+			encoded, err := json.Marshal(body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			r := httptest.NewRequest(http.MethodPost, "/metrics/_search", bytes.NewReader(encoded))
+			if _, _, _, err := (&Client{}).ParseTimeRangeQuery(r); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestParseTimeRangeQueryNumericDateFormats(t *testing.T) {
+	t.Run("numeric dates default to epoch millis", func(t *testing.T) {
+		body := decodedSearchBody(t)
+		rangeBody := firstTimestampRange(body)
+		rangeBody["gte"] = json.Number("946684800000")
+		rangeBody["lte"] = json.Number("946685459999")
+		delete(rangeBody, "format")
+		bounds := firstDateHistogram(body)["extended_bounds"].(map[string]any)
+		bounds["min"] = json.Number("946684800000")
+		bounds["max"] = json.Number("946685400000")
+		encoded, err := json.Marshal(body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := httptest.NewRequest(http.MethodPost, "/metrics/_search", bytes.NewReader(encoded))
+		trq, _, _, err := (&Client{}).ParseTimeRangeQuery(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, want := trq.Extent.Start.UnixMilli(), int64(946684800000); got != want {
+			t.Fatalf("start = %d, want %d", got, want)
+		}
+	})
+
+	t.Run("epoch seconds use exclusive bucket boundary", func(t *testing.T) {
+		body := decodedSearchBody(t)
+		rangeBody := firstTimestampRange(body)
+		rangeBody["gte"] = json.Number("1704067200")
+		delete(rangeBody, "lte")
+		rangeBody["lt"] = json.Number("1704067860")
+		rangeBody["format"] = "epoch_second"
+		histogram := firstDateHistogram(body)
+		histogram["format"] = "epoch_second"
+		bounds := histogram["extended_bounds"].(map[string]any)
+		bounds["min"] = json.Number("1704067200")
+		bounds["max"] = json.Number("1704067800")
+		encoded, err := json.Marshal(body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := httptest.NewRequest(http.MethodPost, "/metrics/_search", bytes.NewReader(encoded))
+		trq, _, _, err := (&Client{}).ParseTimeRangeQuery(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		(&Client{}).SetExtent(r, trq, &trq.Extent)
+		var rewritten map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&rewritten); err != nil {
+			t.Fatal(err)
+		}
+		if got, want := firstTimestampRange(rewritten)["lt"].(float64), float64(1704067860); got != want {
+			t.Fatalf("lt = %.0f, want %.0f", got, want)
+		}
+	})
+}
+
+func TestSetExtentPreservesHistogramBoundRepresentation(t *testing.T) {
+	body := decodedSearchBody(t)
+	rangeBody := firstTimestampRange(body)
+	rangeBody["gte"] = "2024-01-01T00:00:00Z"
+	rangeBody["lte"] = "2024-01-01T00:10:59.999Z"
+	delete(rangeBody, "format")
+	encoded, err := json.Marshal(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest(http.MethodPost, "/metrics/_search", bytes.NewReader(encoded))
+	trq, _, _, err := (&Client{}).ParseTimeRangeQuery(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	next := &timeseries.Extent{
+		Start: time.UnixMilli(1704067320000),
+		End:   time.UnixMilli(1704067440000),
+	}
+	(&Client{}).SetExtent(r, trq, next)
+	var rewritten map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&rewritten); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := firstTimestampRange(rewritten)["gte"].(string); !ok {
+		t.Fatal("range boundary did not retain its RFC3339 representation")
+	}
+	bounds := firstDateHistogram(rewritten)["extended_bounds"].(map[string]any)
+	if _, ok := bounds["min"].(float64); !ok {
+		t.Fatal("histogram boundary did not retain its numeric representation")
+	}
+}
+
+func TestParseTimeRangeQueryRejectsUnsafeURLParameters(t *testing.T) {
+	r := httptest.NewRequest(http.MethodPost, "/metrics/_search?q=service:api", strings.NewReader(searchBody))
+	trq, _, canOPC, err := (&Client{}).ParseTimeRangeQuery(r)
+	if err == nil || !canOPC {
+		t.Fatalf("expected object-cache fallback, canOPC=%v err=%v", canOPC, err)
+	}
+	if trq == nil || strings.Contains(trq.Statement, rangeStartToken) {
+		t.Fatal("fallback must keep the exact request body in its cache key")
+	}
+}
+
 func TestUnsupportedMSearchFallbackUsesCompleteBody(t *testing.T) {
 	unsupported := `{"size":0,"query":{"match_all":{}}}`
 	build := func(index string) string {
@@ -313,6 +576,37 @@ func TestUnsupportedMSearchFallbackUsesCompleteBody(t *testing.T) {
 	second := parse(build("logs-b"))
 	if first.CacheKeyElements["query"] == second.CacheKeyElements["query"] {
 		t.Fatal("msearch fallback key omitted request pairs after the first unsupported search")
+	}
+}
+
+func TestMalformedSearchBodiesFallBackWithoutRewriting(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		body string
+	}{
+		{
+			name: "trailing search document",
+			path: "/_search",
+			body: compactJSON(t, searchBody) + ` {"extra":true}`,
+		},
+		{
+			name: "blank line inside msearch",
+			path: "/_msearch",
+			body: `{"index":"metrics"}` + "\n\n" + compactJSON(t, searchBody) + "\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodPost, tt.path, strings.NewReader(tt.body))
+			trq, _, canOPC, err := (&Client{}).ParseTimeRangeQuery(r)
+			if err == nil || !canOPC {
+				t.Fatalf("expected object-cache fallback, canOPC=%v err=%v", canOPC, err)
+			}
+			if trq == nil || trq.Statement != strings.TrimSpace(tt.body) {
+				t.Fatal("fallback cache key did not retain the malformed body exactly")
+			}
+		})
 	}
 }
 

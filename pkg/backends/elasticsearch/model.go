@@ -21,6 +21,7 @@ import (
 	"cmp"
 	"encoding/json"
 	"io"
+	"math"
 	"net/http"
 	"slices"
 	"strconv"
@@ -81,7 +82,7 @@ func unmarshalSearchResponse(reader io.Reader, trq *timeseries.TimeRangeQuery,
 		return nil, timeseries.ErrInvalidBody
 	}
 	var body map[string]json.RawMessage
-	if err := json.NewDecoder(reader).Decode(&body); err != nil {
+	if err := decodeSingleJSON(reader, &body); err != nil {
 		return nil, err
 	}
 	ds := newDataSet(trq)
@@ -99,7 +100,7 @@ func unmarshalMSearchResponse(reader io.Reader, trq *timeseries.TimeRangeQuery,
 	var body struct {
 		Responses []json.RawMessage `json:"responses"`
 	}
-	if err := json.NewDecoder(reader).Decode(&body); err != nil {
+	if err := decodeSingleJSON(reader, &body); err != nil {
 		return nil, err
 	}
 	if len(body.Responses) != len(plan.Searches) {
@@ -124,6 +125,18 @@ func unmarshalMSearchResponse(reader io.Reader, trq *timeseries.TimeRangeQuery,
 	return ds, nil
 }
 
+func decodeSingleJSON(reader io.Reader, value any) error {
+	dec := json.NewDecoder(reader)
+	if err := dec.Decode(value); err != nil {
+		return err
+	}
+	var trailing any
+	if err := dec.Decode(&trailing); err != io.EOF {
+		return timeseries.ErrInvalidBody
+	}
+	return nil
+}
+
 func newDataSet(trq *timeseries.TimeRangeQuery) *dataset.DataSet {
 	return &dataset.DataSet{
 		Status:         esStatusSuccess,
@@ -138,6 +151,9 @@ func resultFromSearchBody(body map[string]json.RawMessage, trq *timeseries.TimeR
 	if sp == nil {
 		return nil, timeseries.ErrInvalidBody
 	}
+	if !isCompleteSearchResponse(body) {
+		return nil, timeseries.ErrInvalidBody
+	}
 	aggBody, err := aggregationResponse(body, sp.DateHistogramName)
 	if err != nil {
 		return nil, err
@@ -149,11 +165,21 @@ func resultFromSearchBody(body map[string]json.RawMessage, trq *timeseries.TimeR
 		return nil, err
 	}
 	points := make(dataset.Points, 0, len(agg.Buckets))
+	seen := make(map[int64]struct{}, len(agg.Buckets))
 	for _, bucket := range agg.Buckets {
-		pt, err := pointFromBucket(bucket)
+		pt, timestamp, err := pointFromBucket(bucket)
 		if err != nil {
 			return nil, err
 		}
+		keyNs := timestamp.UnixNano()
+		if timestamp.Before(sp.Extent.Start) || timestamp.After(sp.Extent.End) ||
+			!timestamp.Equal(timestamp.Truncate(sp.Step)) {
+			return nil, timeseries.ErrInvalidBody
+		}
+		if _, exists := seen[keyNs]; exists {
+			return nil, timeseries.ErrInvalidBody
+		}
+		seen[keyNs] = struct{}{}
 		points = append(points, pt)
 	}
 	slices.SortFunc(points, func(a, b dataset.Point) int {
@@ -188,6 +214,79 @@ func resultFromSearchBody(body map[string]json.RawMessage, trq *timeseries.TimeR
 	}, nil
 }
 
+func isCompleteSearchResponse(body map[string]json.RawMessage) bool {
+	raw, ok := body["timed_out"]
+	if !ok {
+		return false
+	}
+	var timedOut bool
+	if json.Unmarshal(raw, &timedOut) != nil || timedOut {
+		return false
+	}
+	if raw, ok := body["terminated_early"]; ok {
+		var terminatedEarly bool
+		if json.Unmarshal(raw, &terminatedEarly) != nil || terminatedEarly {
+			return false
+		}
+	}
+	raw, ok = body["_shards"]
+	if !ok || !hasCompleteShards(raw) {
+		return false
+	}
+	if raw, ok := body["_clusters"]; ok && !hasCompleteClusters(raw) {
+		return false
+	}
+	if raw, ok := body["hits"]; !ok || !hasSearchHits(raw) {
+		return false
+	}
+	if raw, ok := body["error"]; ok && len(bytes.TrimSpace(raw)) > 0 &&
+		!bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return false
+	}
+	if raw, ok := body["status"]; ok {
+		var status int
+		if json.Unmarshal(raw, &status) != nil || status < http.StatusOK || status >= http.StatusMultipleChoices {
+			return false
+		}
+	}
+	return true
+}
+
+func hasCompleteShards(raw json.RawMessage) bool {
+	var shards struct {
+		Total      *int `json:"total"`
+		Successful *int `json:"successful"`
+		Failed     *int `json:"failed"`
+	}
+	return json.Unmarshal(raw, &shards) == nil && shards.Total != nil &&
+		shards.Successful != nil && shards.Failed != nil && *shards.Failed == 0 &&
+		*shards.Successful == *shards.Total
+}
+
+func hasCompleteClusters(raw json.RawMessage) bool {
+	var clusters struct {
+		Total      *int `json:"total"`
+		Successful *int `json:"successful"`
+		Skipped    int  `json:"skipped"`
+		Running    int  `json:"running"`
+		Partial    int  `json:"partial"`
+		Failed     int  `json:"failed"`
+	}
+	return json.Unmarshal(raw, &clusters) == nil && clusters.Total != nil &&
+		clusters.Successful != nil && clusters.Skipped == 0 && clusters.Running == 0 &&
+		clusters.Partial == 0 && clusters.Failed == 0 &&
+		*clusters.Successful == *clusters.Total
+}
+
+func hasSearchHits(raw json.RawMessage) bool {
+	var hits map[string]json.RawMessage
+	if json.Unmarshal(raw, &hits) != nil || hits == nil {
+		return false
+	}
+	var documents []json.RawMessage
+	return json.Unmarshal(hits["hits"], &documents) == nil
+}
+
 func aggregationResponse(body map[string]json.RawMessage, name string) (json.RawMessage, error) {
 	var aggs map[string]json.RawMessage
 	if raw, ok := body[aggKeyAggregations]; ok {
@@ -209,23 +308,23 @@ func aggregationResponse(body map[string]json.RawMessage, name string) (json.Raw
 	return raw, nil
 }
 
-func pointFromBucket(raw json.RawMessage) (dataset.Point, error) {
+func pointFromBucket(raw json.RawMessage) (dataset.Point, time.Time, error) {
 	var bucket map[string]any
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.UseNumber()
 	if err := dec.Decode(&bucket); err != nil {
-		return dataset.Point{}, err
+		return dataset.Point{}, time.Time{}, err
 	}
 	t, ok := bucketTime(bucket)
 	if !ok {
-		return dataset.Point{}, timeseries.ErrInvalidBody
+		return dataset.Point{}, time.Time{}, timeseries.ErrInvalidBody
 	}
 	s := string(raw)
 	return dataset.Point{
 		Epoch:  epoch.Epoch(t.UnixNano()),
 		Size:   len(s) + 32,
 		Values: []any{s},
-	}, nil
+	}, t, nil
 }
 
 func bucketTime(bucket map[string]any) (time.Time, bool) {
@@ -315,26 +414,53 @@ func marshalSearchResponseBytes(ds *dataset.DataSet, sp *SearchPlan, statementID
 	if err != nil {
 		return nil, err
 	}
+	total, err := totalDocCount(buckets)
+	if err != nil {
+		return nil, err
+	}
 	if status == 0 {
 		status = http.StatusOK
+	}
+	aggregation := map[string]any{"buckets": buckets}
+	if sp.AggregationMeta != nil {
+		aggregation["meta"] = sp.AggregationMeta
 	}
 	out := map[string]any{
 		"took":      0,
 		"timed_out": false,
 		"hits": map[string]any{
-			"total": map[string]any{"value": 0, "relation": "eq"},
-			"hits":  []any{},
+			"total":     map[string]any{"value": total, "relation": "eq"},
+			"max_score": nil,
+			"hits":      []any{},
 		},
 		"aggregations": map[string]any{
-			sp.DateHistogramName: map[string]any{
-				"buckets": buckets,
-			},
+			sp.DateHistogramName: aggregation,
 		},
 	}
 	if includeStatus || status != http.StatusOK {
 		out["status"] = status
 	}
 	return json.Marshal(out)
+}
+
+func totalDocCount(buckets []json.RawMessage) (int64, error) {
+	var total int64
+	for _, raw := range buckets {
+		var bucket struct {
+			DocCount json.Number `json:"doc_count"`
+		}
+		dec := json.NewDecoder(bytes.NewReader(raw))
+		dec.UseNumber()
+		if err := dec.Decode(&bucket); err != nil {
+			return 0, err
+		}
+		count, err := strconv.ParseInt(bucket.DocCount.String(), 10, 64)
+		if err != nil || count < 0 || total > math.MaxInt64-count {
+			return 0, timeseries.ErrInvalidBody
+		}
+		total += count
+	}
+	return total, nil
 }
 
 func bucketsForStatement(ds *dataset.DataSet, statementID int) ([]json.RawMessage, error) {
