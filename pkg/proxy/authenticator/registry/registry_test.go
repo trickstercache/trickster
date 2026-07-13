@@ -18,6 +18,8 @@ package registry
 
 import (
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	clickhouse "github.com/trickstercache/trickster/v2/pkg/backends/clickhouse/authenticator"
@@ -50,6 +52,7 @@ func TestNewObserverFromProviderName(t *testing.T) {
 	data := map[string]any{"options": &options.Options{Name: "test", ObserveOnly: true}}
 	for _, provider := range []string{
 		providers.Prometheus,
+		providers.Elasticsearch,
 		providers.ReverseProxy,
 		providers.Proxy,
 		providers.ReverseProxyCache,
@@ -68,5 +71,23 @@ func TestNewObserverFromProviderName(t *testing.T) {
 	}
 	if a, err := NewObserverFromProviderName(providers.Prometheus, nil); a != nil || err == nil {
 		t.Errorf("invalid options = %T, %v", a, err)
+	}
+}
+
+func TestNewObserverFromElasticsearchProvider(t *testing.T) {
+	a, err := NewObserverFromProviderName(providers.Elasticsearch, map[string]any{
+		"options": &options.Options{ObserveOnly: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.SetBasicAuth("alice", "secret")
+	result, err := a.Authenticate(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Username != "alice" || result.Status != types.AuthObserved {
+		t.Fatalf("Authenticate() = %+v, want observed user alice", result)
 	}
 }

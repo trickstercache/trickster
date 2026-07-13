@@ -59,7 +59,7 @@ func NewObserverFromProviderName(backendProvider string, data map[string]any) (t
 	var a types.Authenticator
 	var err error
 	switch backendProvider {
-	case providers.Prometheus, providers.ReverseProxy, providers.Proxy,
+	case providers.Prometheus, providers.Elasticsearch, providers.ReverseProxy, providers.Proxy,
 		providers.ReverseProxyCache, providers.ReverseProxyCacheShort,
 		providers.ReverseProxyShort:
 		a, err = basic.New(data)
