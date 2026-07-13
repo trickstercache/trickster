@@ -74,6 +74,45 @@ func TestUpdateHeaders(t *testing.T) {
 	}
 }
 
+func TestUpdateRequestHeadersPreservesHostUpdate(t *testing.T) {
+	for _, hostHeaderName := range []string{NameHost, "host"} {
+		t.Run(hostHeaderName, func(t *testing.T) {
+			updates := map[string]string{
+				hostHeaderName: "client.example.com",
+				"X-Test":       "value",
+			}
+			expectedUpdates := map[string]string{
+				hostHeaderName: "client.example.com",
+				"X-Test":       "value",
+			}
+
+			for i := 0; i < 2; i++ {
+				r := &http.Request{
+					Header: make(http.Header),
+					Host:   "origin.example.com",
+				}
+
+				UpdateRequestHeaders(r, updates)
+
+				if r.Host != "client.example.com" {
+					t.Errorf("request %d: expected Host %q, got %q", i+1,
+						"client.example.com", r.Host)
+				}
+				if got := r.Header.Get("X-Test"); got != "value" {
+					t.Errorf("request %d: expected X-Test %q, got %q", i+1, "value", got)
+				}
+				if got := r.Header.Get(NameHost); got != "" {
+					t.Errorf("request %d: Host was not promoted from Header: %q", i+1, got)
+				}
+				if !reflect.DeepEqual(updates, expectedUpdates) {
+					t.Fatalf("request %d mutated updates: expected %v, got %v",
+						i+1, expectedUpdates, updates)
+				}
+			}
+		})
+	}
+}
+
 func TestRemoveClientHeaders(t *testing.T) {
 	headers := http.Header{}
 	headers.Set(NameAcceptEncoding, "test")
