@@ -40,6 +40,16 @@ func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
 }
 
+type closeTrackingBody struct {
+	io.Reader
+	closed bool
+}
+
+func (b *closeTrackingBody) Close() error {
+	b.closed = true
+	return nil
+}
+
 func okProbeResponse(req *http.Request) *http.Response {
 	return &http.Response{
 		StatusCode: http.StatusOK,
@@ -331,6 +341,31 @@ func TestDemandProbe(t *testing.T) {
 	if w.Code != 500 {
 		t.Error("expected 500 got ", w.Code)
 	}
+}
+
+func TestDemandProbeClosesUpstreamBody(t *testing.T) {
+	body := &closeTrackingBody{Reader: strings.NewReader("OK")}
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{},
+			Body:       body,
+			Request:    req,
+		}, nil
+	})}
+	r, err := http.NewRequest(http.MethodGet, "http://healthcheck.invalid/", nil)
+	require.NoError(t, err)
+	target := &target{
+		status:      &Status{},
+		baseRequest: r,
+		httpClient:  client,
+	}
+	w := httptest.NewRecorder()
+
+	target.demandProbe(w)
+
+	require.True(t, body.closed, "demand probe must close the upstream response body")
+	require.Equal(t, "OK", w.Body.String())
 }
 
 func newTestServer(responseCode int, responseBody string,
