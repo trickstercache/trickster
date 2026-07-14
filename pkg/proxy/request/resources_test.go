@@ -104,6 +104,43 @@ func TestClone(t *testing.T) {
 		}
 	})
 
+	t.Run("preserves context values deadline and cancellation", func(t *testing.T) {
+		type contextKey struct{}
+		deadline := time.Now().Add(time.Hour)
+		ctx := context.WithValue(context.Background(), contextKey{}, "preserved")
+		ctx, deadlineCancel := context.WithDeadline(ctx, deadline)
+		defer deadlineCancel()
+		ctx, cancel := context.WithCancel(ctx)
+
+		r, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://127.0.0.1/", nil)
+		rsc := NewResources(nil, nil, nil, nil, nil, nil)
+		r = SetResources(r, rsc)
+		out, err := Clone(r)
+		if err != nil {
+			t.Fatal("unexpected error:", err)
+		}
+		if got := out.Context().Value(contextKey{}); got != "preserved" {
+			t.Fatalf("context value = %v, want preserved", got)
+		}
+		gotDeadline, ok := out.Context().Deadline()
+		if !ok || !gotDeadline.Equal(deadline) {
+			t.Fatalf("deadline = %v, %t; want %v, true", gotDeadline, ok, deadline)
+		}
+		if GetResources(out) == rsc {
+			t.Fatal("Clone should still use independent Resources while preserving context")
+		}
+
+		cancel()
+		select {
+		case <-out.Context().Done():
+			if err := out.Context().Err(); err != context.Canceled {
+				t.Fatalf("context error = %v, want %v", err, context.Canceled)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("clone did not observe source context cancellation")
+		}
+	})
+
 	t.Run("cloned resources are independent", func(t *testing.T) {
 		rsc := NewResources(nil, nil, nil, nil, nil, nil)
 		rsc.AlternateCacheTTL = time.Minute

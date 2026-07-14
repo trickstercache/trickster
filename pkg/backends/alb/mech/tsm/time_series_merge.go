@@ -17,6 +17,7 @@
 package tsm
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"net/http"
@@ -473,10 +474,10 @@ func aggregateStatus(results []gatherResult) (status int, statusHeader string, h
 	return
 }
 
-func prepareGatherContribution(rsc *request.Resources, body []byte, member int,
+func prepareGatherContribution(ctx context.Context, rsc *request.Resources, body []byte, member int,
 	stripKeys []string,
 ) *gatherContribution {
-	if rsc == nil || rsc.MergeFunc == nil {
+	if ctx.Err() != nil || rsc == nil || rsc.MergeFunc == nil {
 		return nil
 	}
 	ts := rsc.TS
@@ -490,6 +491,9 @@ func prepareGatherContribution(rsc *request.Resources, body []byte, member int,
 			return nil
 		}
 		rsc.TS = ts
+	}
+	if ctx.Err() != nil {
+		return nil
 	}
 	if len(stripKeys) > 0 && ts != nil {
 		if ds, ok := ts.(*dataset.DataSet); ok {
@@ -515,13 +519,16 @@ func prepareGatherContribution(rsc *request.Resources, body []byte, member int,
 // mergeGatherContributions preserves slot order and lets the backend-provided
 // batch function handle compatible inputs. Otherwise each contribution is
 // folded through its original MergeFunc.
-func mergeGatherContributions(accumulator *merge.Accumulator,
+func mergeGatherContributions(ctx context.Context, accumulator *merge.Accumulator,
 	contributions []*gatherContribution,
 ) []int {
 	items := make([]merge.BatchItem, 0, len(contributions))
 	batchCompatible := true
 	var batchMergeFunc merge.BatchMergeFunc
 	for _, contribution := range contributions {
+		if ctx.Err() != nil {
+			return nil
+		}
 		if contribution == nil {
 			continue
 		}
@@ -536,6 +543,9 @@ func mergeGatherContributions(accumulator *merge.Accumulator,
 		}
 	}
 	if batchCompatible && batchMergeFunc != nil {
+		if ctx.Err() != nil {
+			return nil
+		}
 		handled, err := mergeContributionBatch(accumulator, batchMergeFunc, items)
 		if err != nil {
 			logger.Warn("tsm gather batch merge failure", logging.Pairs{
@@ -554,6 +564,9 @@ func mergeGatherContributions(accumulator *merge.Accumulator,
 
 	failed := make([]int, 0)
 	for _, contribution := range contributions {
+		if ctx.Err() != nil {
+			return failed
+		}
 		if contribution == nil {
 			continue
 		}
@@ -611,9 +624,10 @@ func (h *handler) serveStandard(
 		failures.HandleBadGateway(w, r)
 		return
 	}
+	parentCtx := r.Context()
 
 	dedupToleranceNanos := h.dedupToleranceNanos()
-	fanoutResults, _ := fanout.All(r.Context(), r, hl, fanout.Config{
+	fanoutResults, _ := fanout.All(parentCtx, r, hl, fanout.Config{
 		Mechanism:             names.MechanismTSM,
 		ConcurrencyLimit:      h.tsmOptions.ConcurrencyOptions.GetQueryConcurrencyLimit(),
 		MaxCaptureBytes:       h.maxCaptureBytes,
@@ -627,6 +641,10 @@ func (h *handler) serveStandard(
 			}
 		},
 		OnResult: func(i int, fr *fanout.Result) {
+			if parentCtx.Err() != nil {
+				results[i].failed = true
+				return
+			}
 			if fr.Failed || fr.Request == nil || fr.Capture == nil {
 				results[i].failed = true
 				return
@@ -642,7 +660,7 @@ func (h *handler) serveStandard(
 			var contribution *gatherContribution
 			if rsc2.MergeFunc != nil {
 				if rsc2.TS != nil {
-					contribution = prepareGatherContribution(rsc2, nil, i, stripKeys)
+					contribution = prepareGatherContribution(parentCtx, rsc2, nil, i, stripKeys)
 				} else {
 					body, derr := encoding.DecompressResponseBody(
 						fr.Capture.Header().Get(headers.NameContentEncoding),
@@ -656,7 +674,7 @@ func (h *handler) serveStandard(
 						return
 					}
 					if len(body) > 0 {
-						contribution = prepareGatherContribution(rsc2, body, i, stripKeys)
+						contribution = prepareGatherContribution(parentCtx, rsc2, body, i, stripKeys)
 					}
 				}
 			}
@@ -673,6 +691,9 @@ func (h *handler) serveStandard(
 			}
 		},
 	})
+	if parentCtx.Err() != nil {
+		return
+	}
 
 	for i, fr := range fanoutResults {
 		if fr.Failed && !results[i].failed {
@@ -683,8 +704,11 @@ func (h *handler) serveStandard(
 	for i := range results {
 		contributions[i] = results[i].contrib
 	}
-	for _, member := range mergeGatherContributions(accumulator, contributions) {
+	for _, member := range mergeGatherContributions(parentCtx, accumulator, contributions) {
 		results[member].failed = true
+	}
+	if parentCtx.Err() != nil {
+		return
 	}
 
 	// Surface goroutine-level failures (e.g. unsupported Content-Encoding,
@@ -715,8 +739,14 @@ func (h *handler) serveStandard(
 		}
 	}
 
+	if parentCtx.Err() != nil {
+		return
+	}
 	if finalizer != nil {
 		finalizer.FinalizeTSMMerge(query, accumulator.GetTSData())
+	}
+	if parentCtx.Err() != nil {
+		return
 	}
 
 	// If every fanout slot failed at the dispatch level (panics, transport
@@ -922,6 +952,10 @@ func (h *handler) serveWeightedAvg(
 			MaxFanoutCaptureBytes: h.maxFanoutCaptureBytes,
 			Resources:             resourcesFn,
 			OnResult: func(i int, fr *fanout.Result) {
+				if parentCtx.Err() != nil {
+					results[i].failed = true
+					return
+				}
 				if fr.Failed || fr.Request == nil || fr.Capture == nil {
 					results[i].failed = true
 					return
@@ -933,7 +967,7 @@ func (h *handler) serveWeightedAvg(
 				}
 				var contribution *gatherContribution
 				if rsc2.TS != nil {
-					contribution = prepareGatherContribution(rsc2, nil, i, stripKeys)
+					contribution = prepareGatherContribution(parentCtx, rsc2, nil, i, stripKeys)
 				} else if fr.Capture != nil {
 					body, derr := encoding.DecompressResponseBody(
 						fr.Capture.Header().Get(headers.NameContentEncoding),
@@ -946,7 +980,7 @@ func (h *handler) serveWeightedAvg(
 						results[i].failed = true
 						return
 					}
-					contribution = prepareGatherContribution(rsc2, body, i, stripKeys)
+					contribution = prepareGatherContribution(parentCtx, rsc2, body, i, stripKeys)
 				}
 				sumContributions[i] = contribution
 				sc := fr.Capture.StatusCode()
@@ -976,7 +1010,7 @@ func (h *handler) serveWeightedAvg(
 				// Count-side intentionally does not touch results[i]: the
 				// sum-side owns the response envelope. Panics in this slot
 				// are already recovered + countered by fanout.All.
-				if fr.Failed || fr.Request == nil {
+				if parentCtx.Err() != nil || fr.Failed || fr.Request == nil {
 					return
 				}
 				rsc2 := request.GetResources(fr.Request)
@@ -984,7 +1018,7 @@ func (h *handler) serveWeightedAvg(
 					return
 				}
 				if rsc2.TS != nil {
-					countContributions[i] = prepareGatherContribution(rsc2, nil, i, stripKeys)
+					countContributions[i] = prepareGatherContribution(parentCtx, rsc2, nil, i, stripKeys)
 				} else if fr.Capture != nil {
 					body, derr := encoding.DecompressResponseBody(
 						fr.Capture.Header().Get(headers.NameContentEncoding),
@@ -996,19 +1030,28 @@ func (h *handler) serveWeightedAvg(
 						})
 						return
 					}
-					countContributions[i] = prepareGatherContribution(rsc2, body, i, stripKeys)
+					countContributions[i] = prepareGatherContribution(parentCtx, rsc2, body, i, stripKeys)
 				}
 			},
 		})
 		return err
 	})
-	if err := eg.Wait(); err != nil {
+	if err := eg.Wait(); err != nil && parentCtx.Err() == nil {
 		logger.Warn("tsm avg gather failure", logging.Pairs{"error": err})
 	}
-	for _, member := range mergeGatherContributions(sumAccum, sumContributions) {
+	if parentCtx.Err() != nil {
+		return
+	}
+	for _, member := range mergeGatherContributions(parentCtx, sumAccum, sumContributions) {
 		results[member].failed = true
 	}
-	mergeGatherContributions(countAccum, countContributions)
+	if parentCtx.Err() != nil {
+		return
+	}
+	mergeGatherContributions(parentCtx, countAccum, countContributions)
+	if parentCtx.Err() != nil {
+		return
+	}
 
 	// Finalize: divide sum totals by count totals to obtain the weighted
 	// average. If either side fanned out to zero usable responses the
@@ -1026,6 +1069,9 @@ func (h *handler) serveWeightedAvg(
 		if sumDS, ok := sumTS.(*dataset.DataSet); ok {
 			if countDS, ok := countTS.(*dataset.DataSet); ok {
 				pruneUnpairedWeightedAvgSeries(sumDS, countDS, query)
+				if parentCtx.Err() != nil {
+					return
+				}
 				sumDS.FinalizeWeightedAvg(countDS, query)
 			}
 		}
@@ -1044,8 +1090,14 @@ func (h *handler) serveWeightedAvg(
 		sumAccum.SetTSData(countTS)
 	}
 
+	if parentCtx.Err() != nil {
+		return
+	}
 	if finalizer != nil {
 		finalizer.FinalizeTSMMerge(query, sumAccum.GetTSData())
+	}
+	if parentCtx.Err() != nil {
+		return
 	}
 
 	// Aggregate status and headers from sum-query results (count results are
