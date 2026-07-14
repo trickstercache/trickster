@@ -397,7 +397,14 @@ type gatherResult struct {
 	statusCode int
 	header     http.Header
 	mergeFunc  merge.RespondFunc
+	contrib    *gatherContribution
 	failed     bool
+}
+
+type gatherContribution struct {
+	data      any
+	mergeFunc merge.MergeFunc
+	member    int
 }
 
 // pickWinner chooses which member's RespondFunc and headers feed the outbound
@@ -465,11 +472,11 @@ func aggregateStatus(results []gatherResult) (status int, statusHeader string, h
 	return
 }
 
-func mergeGatherContribution(accumulator *merge.Accumulator, rsc *request.Resources,
-	body []byte, member int, stripKeys []string,
-) bool {
+func prepareGatherContribution(rsc *request.Resources, body []byte, member int,
+	stripKeys []string,
+) *gatherContribution {
 	if rsc == nil || rsc.MergeFunc == nil {
-		return false
+		return nil
 	}
 	ts := rsc.TS
 	if ts == nil && len(body) > 0 && rsc.TSUnmarshaler != nil && rsc.TimeRangeQuery != nil {
@@ -479,7 +486,7 @@ func mergeGatherContribution(accumulator *merge.Accumulator, rsc *request.Resour
 			logger.Warn("tsm gather timeseries decode failure", logging.Pairs{
 				"member": member, "error": err,
 			})
-			return false
+			return nil
 		}
 		rsc.TS = ts
 	}
@@ -494,15 +501,104 @@ func mergeGatherContribution(accumulator *merge.Accumulator, rsc *request.Resour
 	} else if len(body) > 0 {
 		data = body
 	} else {
-		return false
+		return nil
 	}
-	if err := rsc.MergeFunc(accumulator, data, member); err != nil {
-		logger.Warn("tsm gather merge failure", logging.Pairs{
-			"member": member, "error": err,
-		})
-		return false
+	return &gatherContribution{data: data, mergeFunc: rsc.MergeFunc, member: member}
+}
+
+// mergeGatherContributions preserves slot order while batching DataSet
+// contributions into one merge. Other mergeable response types retain their
+// existing MergeFunc behavior and are folded sequentially.
+func mergeGatherContributions(accumulator *merge.Accumulator,
+	contributions []*gatherContribution, strategy dataset.MergeStrategy,
+	toleranceNanos int64,
+) []int {
+	datasets := make([]*dataset.DataSet, 0, len(contributions))
+	allDataSets := true
+	for _, contribution := range contributions {
+		if contribution == nil {
+			continue
+		}
+		ds, ok := contribution.data.(*dataset.DataSet)
+		if !ok {
+			allDataSets = false
+			break
+		}
+		datasets = append(datasets, ds)
 	}
-	return true
+	if allDataSets && len(datasets) > 0 {
+		if err := mergeDataSetContributions(accumulator, datasets, strategy,
+			toleranceNanos); err != nil {
+			logger.Warn("tsm gather batch merge failure", logging.Pairs{
+				"members": len(datasets), "error": err,
+			})
+			failed := make([]int, 0, len(datasets))
+			for _, contribution := range contributions {
+				if contribution != nil {
+					failed = append(failed, contribution.member)
+				}
+			}
+			return failed
+		}
+		return nil
+	}
+
+	failed := make([]int, 0)
+	for _, contribution := range contributions {
+		if contribution == nil {
+			continue
+		}
+		if err := mergeContribution(accumulator, contribution); err != nil {
+			logger.Warn("tsm gather merge failure", logging.Pairs{
+				"member": contribution.member, "error": err,
+			})
+			failed = append(failed, contribution.member)
+		}
+	}
+	return failed
+}
+
+func mergeDataSetContributions(accumulator *merge.Accumulator, datasets []*dataset.DataSet,
+	strategy dataset.MergeStrategy, toleranceNanos int64,
+) (err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("panic while merging datasets: %v", recovered)
+		}
+	}()
+
+	base := datasets[0]
+	if len(datasets) > 1 {
+		rest := make([]timeseries.Timeseries, len(datasets)-1)
+		for i := 1; i < len(datasets); i++ {
+			rest[i-1] = datasets[i]
+		}
+		switch {
+		case strategy == dataset.MergeStrategyDedup && toleranceNanos == 0:
+			base.Merge(false, rest...)
+		case strategy == dataset.MergeStrategyAvg:
+			base.MergeWithStrategyTolerant(true, int(dataset.MergeStrategySum),
+				toleranceNanos, rest...)
+		default:
+			base.MergeWithStrategyTolerant(true, int(strategy), toleranceNanos, rest...)
+		}
+	}
+	accumulator.SetTSData(base)
+	if strategy != dataset.MergeStrategyDedup {
+		accumulator.MergeCount = len(datasets)
+	}
+	return nil
+}
+
+func mergeContribution(accumulator *merge.Accumulator,
+	contribution *gatherContribution,
+) (err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("panic while merging member %d: %v", contribution.member, recovered)
+		}
+	}()
+	return contribution.mergeFunc(accumulator, contribution.data, contribution.member)
 }
 
 // serveStandard handles the common scatter/gather path: each shard gets one
@@ -555,10 +651,10 @@ func (h *handler) serveStandard(
 			if rsc2.MergeFunc == nil || rsc2.MergeRespondFunc == nil {
 				logger.Warn("tsm gather failed due to nil func", nil)
 			}
-			var contributed bool
+			var contribution *gatherContribution
 			if rsc2.MergeFunc != nil {
 				if rsc2.TS != nil {
-					contributed = mergeGatherContribution(accumulator, rsc2, nil, i, stripKeys)
+					contribution = prepareGatherContribution(rsc2, nil, i, stripKeys)
 				} else {
 					body, derr := encoding.DecompressResponseBody(
 						fr.Capture.Header().Get(headers.NameContentEncoding),
@@ -572,7 +668,7 @@ func (h *handler) serveStandard(
 						return
 					}
 					if len(body) > 0 {
-						contributed = mergeGatherContribution(accumulator, rsc2, body, i, stripKeys)
+						contribution = prepareGatherContribution(rsc2, body, i, stripKeys)
 					}
 				}
 			}
@@ -584,7 +680,8 @@ func (h *handler) serveStandard(
 				statusCode: sc,
 				header:     fr.Capture.Header(),
 				mergeFunc:  rsc2.MergeRespondFunc,
-				failed:     !contributed,
+				contrib:    contribution,
+				failed:     contribution == nil,
 			}
 		},
 	})
@@ -593,6 +690,14 @@ func (h *handler) serveStandard(
 		if fr.Failed && !results[i].failed {
 			results[i].failed = true
 		}
+	}
+	contributions := make([]*gatherContribution, l)
+	for i := range results {
+		contributions[i] = results[i].contrib
+	}
+	for _, member := range mergeGatherContributions(accumulator, contributions,
+		mergeStrategy, dedupToleranceNanos) {
+		results[member].failed = true
 	}
 
 	// Surface goroutine-level failures (e.g. unsupported Content-Encoding,
@@ -806,6 +911,8 @@ func (h *handler) serveWeightedAvg(
 	// (status, headers, RespondFunc) comes from the sum side; count results
 	// affect the arithmetic, not the envelope.
 	results := make([]gatherResult, l)
+	sumContributions := make([]*gatherContribution, l)
+	countContributions := make([]*gatherContribution, l)
 
 	dedupToleranceNanos := h.dedupToleranceNanos()
 	resourcesFn := func(int) *request.Resources {
@@ -837,9 +944,9 @@ func (h *handler) serveWeightedAvg(
 					results[i].failed = true
 					return
 				}
-				var contributed bool
+				var contribution *gatherContribution
 				if rsc2.TS != nil {
-					contributed = mergeGatherContribution(sumAccum, rsc2, nil, i, stripKeys)
+					contribution = prepareGatherContribution(rsc2, nil, i, stripKeys)
 				} else if fr.Capture != nil {
 					body, derr := encoding.DecompressResponseBody(
 						fr.Capture.Header().Get(headers.NameContentEncoding),
@@ -852,8 +959,9 @@ func (h *handler) serveWeightedAvg(
 						results[i].failed = true
 						return
 					}
-					contributed = mergeGatherContribution(sumAccum, rsc2, body, i, stripKeys)
+					contribution = prepareGatherContribution(rsc2, body, i, stripKeys)
 				}
+				sumContributions[i] = contribution
 				sc := fr.Capture.StatusCode()
 				if rsc2.Response != nil && rsc2.Response.StatusCode > 0 {
 					sc = rsc2.Response.StatusCode
@@ -862,7 +970,8 @@ func (h *handler) serveWeightedAvg(
 					statusCode: sc,
 					header:     fr.Capture.Header(),
 					mergeFunc:  rsc2.MergeRespondFunc,
-					failed:     !contributed,
+					contrib:    contribution,
+					failed:     contribution == nil,
 				}
 			},
 		})
@@ -888,7 +997,7 @@ func (h *handler) serveWeightedAvg(
 					return
 				}
 				if rsc2.TS != nil {
-					mergeGatherContribution(countAccum, rsc2, nil, i, stripKeys)
+					countContributions[i] = prepareGatherContribution(rsc2, nil, i, stripKeys)
 				} else if fr.Capture != nil {
 					body, derr := encoding.DecompressResponseBody(
 						fr.Capture.Header().Get(headers.NameContentEncoding),
@@ -900,7 +1009,7 @@ func (h *handler) serveWeightedAvg(
 						})
 						return
 					}
-					mergeGatherContribution(countAccum, rsc2, body, i, stripKeys)
+					countContributions[i] = prepareGatherContribution(rsc2, body, i, stripKeys)
 				}
 			},
 		})
@@ -909,6 +1018,12 @@ func (h *handler) serveWeightedAvg(
 	if err := eg.Wait(); err != nil {
 		logger.Warn("tsm avg gather failure", logging.Pairs{"error": err})
 	}
+	for _, member := range mergeGatherContributions(sumAccum, sumContributions,
+		dataset.MergeStrategySum, dedupToleranceNanos) {
+		results[member].failed = true
+	}
+	mergeGatherContributions(countAccum, countContributions,
+		dataset.MergeStrategySum, dedupToleranceNanos)
 
 	// Finalize: divide sum totals by count totals to obtain the weighted
 	// average. If either side fanned out to zero usable responses the

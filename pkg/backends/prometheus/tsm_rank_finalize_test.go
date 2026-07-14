@@ -17,6 +17,12 @@
 package prometheus
 
 import (
+	"cmp"
+	"math"
+	"reflect"
+	"slices"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
@@ -113,6 +119,61 @@ func TestFinalizeTSMMergeRankAggregation(t *testing.T) {
 	})
 }
 
+func TestRankCandidateHeapMatchesFullSort(t *testing.T) {
+	values := []float64{4, 1, math.NaN(), 9, 9, -2, math.Inf(1), math.Inf(-1), 4, 7}
+	candidates := make([]rankCandidate, len(values))
+	for i, value := range values {
+		candidates[i] = rankCandidate{
+			series: &dataset.Series{Header: dataset.SeriesHeader{Tags: dataset.Tags{
+				"rank": []string{"c", "a", "nan", "b", "a", "z", "inf", "ninf", "c", "d"}[i],
+			}}},
+			value: value,
+			order: i,
+		}
+	}
+
+	for _, operator := range []string{rankOperatorTopK, rankOperatorBottomK} {
+		for _, limit := range []int{0, 1, 3, len(candidates), len(candidates) + 2} {
+			name := operator + "/" + strconv.Itoa(limit)
+			t.Run(name, func(t *testing.T) {
+				wantCandidates := append([]rankCandidate(nil), candidates...)
+				sortRankCandidatesReference(wantCandidates, operator)
+				wantCandidates = wantCandidates[:min(limit, len(wantCandidates))]
+
+				h := &rankCandidateHeap{operator: operator}
+				for _, candidate := range candidates {
+					h.consider(candidate, limit)
+				}
+				gotCandidates := append([]rankCandidate(nil), h.items...)
+				sortRankCandidatesReference(gotCandidates, operator)
+
+				orders := func(input []rankCandidate) []int {
+					out := make([]int, len(input))
+					for i := range input {
+						out[i] = input[i].order
+					}
+					return out
+				}
+				if got, want := orders(gotCandidates), orders(wantCandidates); !reflect.DeepEqual(got, want) {
+					t.Fatalf("selected orders got %v want %v", got, want)
+				}
+			})
+		}
+	}
+}
+
+func sortRankCandidatesReference(candidates []rankCandidate, operator string) {
+	slices.SortStableFunc(candidates, func(a, b rankCandidate) int {
+		if c := compareRankCandidateValues(a, b, operator); c != 0 {
+			return c
+		}
+		if c := strings.Compare(a.series.Header.Tags.JSON(), b.series.Header.Tags.JSON()); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.order, b.order)
+	})
+}
+
 func rankDataSet(series ...*dataset.Series) *dataset.DataSet {
 	return &dataset.DataSet{
 		Results: dataset.Results{{
@@ -194,4 +255,18 @@ func equalStringSlicesByKey(a, b map[string][]string) bool {
 		}
 	}
 	return true
+}
+
+func BenchmarkFinalizeTSMMergeTopK(b *testing.B) {
+	for range b.N {
+		b.StopTimer()
+		series := make([]*dataset.Series, 64_000)
+		for i := range series {
+			name := strconv.Itoa(i)
+			series[i] = rankSeries(name, strconv.Itoa(i), 100)
+		}
+		ds := rankDataSet(series...)
+		b.StartTimer()
+		(&Client{}).FinalizeTSMMerge("sort_desc(topk(20, up))", ds)
+	}
 }

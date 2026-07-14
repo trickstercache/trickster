@@ -17,6 +17,8 @@
 package prometheus
 
 import (
+	"cmp"
+	"container/heap"
 	"math"
 	"slices"
 	"strconv"
@@ -41,7 +43,75 @@ type rankCandidate struct {
 	series   *dataset.Series
 	pointIdx int
 	value    float64
-	tagsJSON string
+	order    int
+}
+
+type rankCandidateHeap struct {
+	items    []rankCandidate
+	operator string
+	tagsJSON map[*dataset.Series]string
+}
+
+func (h *rankCandidateHeap) Len() int { return len(h.items) }
+
+// Less keeps the worst selected candidate at the root so a better incoming
+// candidate can replace it in O(log k).
+func (h *rankCandidateHeap) Less(i, j int) bool {
+	return h.compare(h.items[i], h.items[j]) > 0
+}
+
+func (h *rankCandidateHeap) Swap(i, j int) {
+	h.items[i], h.items[j] = h.items[j], h.items[i]
+}
+
+func (h *rankCandidateHeap) Push(value any) {
+	h.items = append(h.items, value.(rankCandidate))
+}
+
+func (h *rankCandidateHeap) Pop() any {
+	last := len(h.items) - 1
+	value := h.items[last]
+	h.items = h.items[:last]
+	return value
+}
+
+func (h *rankCandidateHeap) consider(candidate rankCandidate, limit int) {
+	if limit <= 0 {
+		return
+	}
+	if len(h.items) < limit {
+		heap.Push(h, candidate)
+		return
+	}
+	if h.compare(candidate, h.items[0]) < 0 {
+		h.items[0] = candidate
+		heap.Fix(h, 0)
+	}
+}
+
+func (h *rankCandidateHeap) compare(a, b rankCandidate) int {
+	if c := compareRankCandidateValues(a, b, h.operator); c != 0 {
+		return c
+	}
+	if c := strings.Compare(h.tags(a), h.tags(b)); c != 0 {
+		return c
+	}
+	return cmp.Compare(a.order, b.order)
+}
+
+func (h *rankCandidateHeap) tags(candidate rankCandidate) string {
+	if candidate.series == nil {
+		return ""
+	}
+	if tags, ok := h.tagsJSON[candidate.series]; ok {
+		return tags
+	}
+	if h.tagsJSON == nil {
+		h.tagsJSON = make(map[*dataset.Series]string)
+	}
+	tags := candidate.series.Header.Tags.JSON()
+	h.tagsJSON[candidate.series] = tags
+	return tags
 }
 
 // FinalizeTSMMerge applies Prometheus-only merge finalization after TSM fanout
@@ -67,33 +137,37 @@ func finalizeRankAggregation(ds *dataset.DataSet, spec promql.RankAggregation) {
 		if result == nil || len(result.SeriesList) == 0 {
 			continue
 		}
-		buckets := make(map[rankBucketKey][]rankCandidate)
+		buckets := make(map[rankBucketKey]*rankCandidateHeap)
+		var order int
 		for _, series := range result.SeriesList {
 			if series == nil {
 				continue
 			}
 			group := rankGroupKey(series.Header.Tags, spec.Grouping)
-			tagsJSON := series.Header.Tags.JSON()
 			for i, point := range series.Points {
 				value, ok := rankPointValue(point)
 				if !ok {
 					continue
 				}
 				key := rankBucketKey{epoch: int64(point.Epoch), group: group}
-				buckets[key] = append(buckets[key], rankCandidate{
+				bucket := buckets[key]
+				if bucket == nil {
+					bucket = &rankCandidateHeap{operator: spec.Operator}
+					buckets[key] = bucket
+				}
+				bucket.consider(rankCandidate{
 					series:   series,
 					pointIdx: i,
 					value:    value,
-					tagsJSON: tagsJSON,
-				})
+					order:    order,
+				}, spec.K)
+				order++
 			}
 		}
 
 		selected := make(map[*dataset.Series]map[int]struct{})
 		for _, candidates := range buckets {
-			sortRankCandidates(candidates, spec.Operator)
-			limit := min(spec.K, len(candidates))
-			for _, candidate := range candidates[:limit] {
+			for _, candidate := range candidates.items {
 				if selected[candidate.series] == nil {
 					selected[candidate.series] = make(map[int]struct{})
 				}
@@ -120,16 +194,14 @@ func rankPointValue(point dataset.Point) (float64, bool) {
 	return f, true
 }
 
-func sortRankCandidates(candidates []rankCandidate, operator string) {
-	slices.SortStableFunc(candidates, func(a, b rankCandidate) int {
-		if rankValueLess(a.value, b.value, operator) {
-			return -1
-		}
-		if rankValueLess(b.value, a.value, operator) {
-			return 1
-		}
-		return strings.Compare(a.tagsJSON, b.tagsJSON)
-	})
+func compareRankCandidateValues(a, b rankCandidate, operator string) int {
+	if rankValueLess(a.value, b.value, operator) {
+		return -1
+	}
+	if rankValueLess(b.value, a.value, operator) {
+		return 1
+	}
+	return 0
 }
 
 func rankValueLess(a, b float64, operator string) bool {
