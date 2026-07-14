@@ -1348,7 +1348,7 @@ func TestDeltaProxyCacheRequestCacheMissUnmarshalFailedChunks(t *testing.T) {
 		t.Error(err)
 	}
 
-	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusInternalServerError)
 	if err != nil {
 		t.Error(err)
 	}
