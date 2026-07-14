@@ -184,6 +184,8 @@ func weightedAvgMemberHandler(spec weightedAvgMemberSpec) http.Handler {
 		if rsc != nil {
 			rsc.TS = weightedAvgDataSet(val)
 			rsc.MergeFunc = merge.TimeseriesMergeFuncWithStrategy(nil, rsc.TSMergeStrategy)
+			rsc.BatchMergeFunc = merge.TimeseriesBatchMergeFuncWithStrategy(
+				rsc.TSMergeStrategy)
 			rsc.MergeRespondFunc = weightedAvgRespondFunc
 		}
 		w.Header().Set(headers.NameTricksterResult, "engine=none")
@@ -209,6 +211,8 @@ func weightedAvgEmptySideHandler(failCount bool) http.Handler {
 			}
 			rsc.TS = weightedAvgDataSet(val)
 			rsc.MergeFunc = merge.TimeseriesMergeFuncWithStrategy(nil, rsc.TSMergeStrategy)
+			rsc.BatchMergeFunc = merge.TimeseriesBatchMergeFuncWithStrategy(
+				rsc.TSMergeStrategy)
 		}
 		w.WriteHeader(http.StatusOK)
 	})

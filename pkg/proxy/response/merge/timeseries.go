@@ -66,6 +66,48 @@ func TimeseriesMergeFuncTolerant(unmarshaler timeseries.UnmarshalerFunc, toleran
 	}
 }
 
+// TimeseriesBatchMergeFunc creates a BatchMergeFunc for decoded timeseries
+// data. Inputs that still require unmarshaling are left to the sequential
+// MergeFunc fallback.
+func TimeseriesBatchMergeFunc() BatchMergeFunc {
+	return TimeseriesBatchMergeFuncTolerant(0)
+}
+
+// TimeseriesBatchMergeFuncTolerant is TimeseriesBatchMergeFunc with an opt-in
+// dedup tolerance window.
+func TimeseriesBatchMergeFuncTolerant(toleranceNanos int64) BatchMergeFunc {
+	return func(accum *Accumulator, items []BatchItem) (bool, error) {
+		collection, ok := batchTimeseries(items)
+		if !ok {
+			return false, nil
+		}
+
+		accum.mu.Lock()
+		defer accum.mu.Unlock()
+		base := accum.tsdata
+		start := 0
+		if base == nil {
+			base = collection[0]
+			start = 1
+		}
+		if start < len(collection) {
+			rest := collection[start:]
+			if toleranceNanos > 0 {
+				if om, ok := base.(optsMerger); ok {
+					// strategy=0 == dataset.MergeStrategyDedup
+					om.MergeWithStrategyTolerant(true, 0, toleranceNanos, rest...)
+				} else {
+					base.Merge(false, rest...)
+				}
+			} else {
+				base.Merge(false, rest...)
+			}
+		}
+		accum.tsdata = base
+		return true, nil
+	}
+}
+
 // strategyMerger is implemented by types that support strategy-aware merging
 // (e.g., *dataset.DataSet). Using an interface avoids importing the dataset
 // package, which would create an import cycle.
@@ -147,6 +189,76 @@ func TimeseriesMergeFuncWithStrategyTolerant(unmarshaler timeseries.UnmarshalerF
 		}
 		return nil
 	}
+}
+
+// TimeseriesBatchMergeFuncWithStrategy creates a strategy-aware BatchMergeFunc
+// for decoded timeseries data.
+func TimeseriesBatchMergeFuncWithStrategy(strategy int) BatchMergeFunc {
+	return TimeseriesBatchMergeFuncWithStrategyTolerant(strategy, 0)
+}
+
+// TimeseriesBatchMergeFuncWithStrategyTolerant batches the same strategy and
+// tolerance semantics as TimeseriesMergeFuncWithStrategyTolerant.
+func TimeseriesBatchMergeFuncWithStrategyTolerant(strategy int,
+	toleranceNanos int64,
+) BatchMergeFunc {
+	pairwiseStrategy := strategy
+	if strategy == mergeStrategyAvg {
+		pairwiseStrategy = mergeStrategySum
+	}
+	return func(accum *Accumulator, items []BatchItem) (bool, error) {
+		collection, ok := batchTimeseries(items)
+		if !ok {
+			return false, nil
+		}
+
+		accum.mu.Lock()
+		defer accum.mu.Unlock()
+		base := accum.tsdata
+		mergeCount := accum.MergeCount
+		start := 0
+		if base == nil {
+			base = collection[0]
+			mergeCount = 1
+			start = 1
+		}
+		if start < len(collection) {
+			rest := collection[start:]
+			if toleranceNanos > 0 {
+				if om, ok := base.(optsMerger); ok {
+					om.MergeWithStrategyTolerant(true, pairwiseStrategy,
+						toleranceNanos, rest...)
+				} else if sm, ok := base.(strategyMerger); ok {
+					sm.MergeWithStrategy(true, pairwiseStrategy, rest...)
+				} else {
+					base.Merge(false, rest...)
+				}
+			} else if sm, ok := base.(strategyMerger); ok {
+				sm.MergeWithStrategy(true, pairwiseStrategy, rest...)
+			} else {
+				base.Merge(false, rest...)
+			}
+			mergeCount += len(rest)
+		}
+		accum.tsdata = base
+		accum.MergeCount = mergeCount
+		return true, nil
+	}
+}
+
+func batchTimeseries(items []BatchItem) ([]timeseries.Timeseries, bool) {
+	if len(items) == 0 {
+		return nil, false
+	}
+	collection := make([]timeseries.Timeseries, len(items))
+	for i, item := range items {
+		ts, ok := item.Data.(timeseries.Timeseries)
+		if !ok || ts == nil {
+			return nil, false
+		}
+		collection[i] = ts
+	}
+	return collection, true
 }
 
 // TimeseriesMergeFuncFromBytes creates a MergeFunc that accepts []byte and unmarshals it

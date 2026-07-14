@@ -49,6 +49,7 @@ type Resources struct {
 	IsMergeMember     bool
 	RequestBody       []byte
 	MergeFunc         merge.MergeFunc
+	BatchMergeFunc    merge.BatchMergeFunc
 	MergeRespondFunc  merge.RespondFunc
 	TSUnmarshaler     timeseries.UnmarshalerFunc
 	TSMarshaler       timeseries.MarshalWriterFunc
@@ -81,6 +82,7 @@ func (r *Resources) Clone() *Resources {
 		IsMergeMember:         r.IsMergeMember,
 		RequestBody:           slices.Clone(r.RequestBody),
 		MergeFunc:             r.MergeFunc,
+		BatchMergeFunc:        r.BatchMergeFunc,
 		MergeRespondFunc:      r.MergeRespondFunc,
 		TSUnmarshaler:         r.TSUnmarshaler,
 		TSMarshaler:           r.TSMarshaler,
@@ -157,6 +159,7 @@ func (r *Resources) Merge(r2 *Resources) {
 	r.IsMergeMember = r.IsMergeMember || r2.IsMergeMember
 	r.AlreadyEncoded = r.AlreadyEncoded || r2.AlreadyEncoded
 	r.MergeFunc = r2.MergeFunc
+	r.BatchMergeFunc = r2.BatchMergeFunc
 	r.MergeRespondFunc = r2.MergeRespondFunc
 	r.Cancelable = r.Cancelable || r2.Cancelable
 }

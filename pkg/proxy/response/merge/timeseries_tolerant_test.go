@@ -185,3 +185,50 @@ func TestTimeseriesMergeFuncWithStrategyTolerant(t *testing.T) {
 		require.NotNil(t, accum.GetTSData())
 	})
 }
+
+func TestTimeseriesBatchMergeFuncTolerant(t *testing.T) {
+	t.Run("batches decoded timeseries with tolerance", func(t *testing.T) {
+		accum := NewAccumulator()
+		items := []BatchItem{
+			{Data: makeTestDataSet(0, "up", nil, []int64{1000}, []string{"1"}), Member: 0},
+			{Data: makeTestDataSet(0, "up", nil, []int64{1003}, []string{"2"}), Member: 1},
+		}
+
+		handled, err := TimeseriesBatchMergeFuncTolerant(5)(accum, items)
+		require.NoError(t, err)
+		require.True(t, handled)
+		ds, ok := accum.GetTSData().(*dataset.DataSet)
+		require.True(t, ok)
+		require.Len(t, ds.Results[0].SeriesList[0].Points, 1)
+	})
+
+	t.Run("incompatible input leaves accumulator untouched", func(t *testing.T) {
+		accum := NewAccumulator()
+		seed := makeTestDataSet(0, "up", nil, []int64{1000}, []string{"1"})
+		accum.SetTSData(seed)
+
+		handled, err := TimeseriesBatchMergeFunc()(accum, []BatchItem{{Data: []byte("wire")}})
+		require.NoError(t, err)
+		require.False(t, handled)
+		require.Same(t, seed, accum.GetTSData())
+		require.Len(t, seed.Results[0].SeriesList[0].Points, 1)
+	})
+}
+
+func TestTimeseriesBatchMergeFuncWithStrategyTolerant(t *testing.T) {
+	accum := NewAccumulator()
+	items := []BatchItem{
+		{Data: makeTestDataSet(0, "latency", nil, []int64{100}, []string{"10"}), Member: 0},
+		{Data: makeTestDataSet(0, "latency", nil, []int64{100}, []string{"30"}), Member: 1},
+		{Data: makeTestDataSet(0, "latency", nil, []int64{100}, []string{"20"}), Member: 2},
+	}
+
+	handled, err := TimeseriesBatchMergeFuncWithStrategyTolerant(
+		int(dataset.MergeStrategyAvg), 0)(accum, items)
+	require.NoError(t, err)
+	require.True(t, handled)
+	require.Equal(t, 3, accum.MergeCount)
+	ds, ok := accum.GetTSData().(*dataset.DataSet)
+	require.True(t, ok)
+	require.Equal(t, "60", ds.Results[0].SeriesList[0].Points[0].Values[0])
+}

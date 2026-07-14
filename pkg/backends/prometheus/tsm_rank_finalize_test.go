@@ -258,7 +258,7 @@ func equalStringSlicesByKey(a, b map[string][]string) bool {
 }
 
 func BenchmarkFinalizeTSMMergeTopK(b *testing.B) {
-	for range b.N {
+	for b.Loop() {
 		b.StopTimer()
 		series := make([]*dataset.Series, 64_000)
 		for i := range series {

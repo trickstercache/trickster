@@ -65,11 +65,14 @@ func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 					if rsc.TSMergeStrategy != 0 {
 						rsc.MergeFunc = merge.TimeseriesMergeFuncWithStrategyTolerant(
 							m.WireUnmarshaler, rsc.TSMergeStrategy, rsc.TSDedupToleranceNanos)
+						rsc.BatchMergeFunc = merge.TimeseriesBatchMergeFuncWithStrategyTolerant(
+							rsc.TSMergeStrategy, rsc.TSDedupToleranceNanos)
 						// Instant queries marshal as vector, not matrix
 						// (WireMarshalWriter always emits matrix shape).
 						rsc.MergeRespondFunc = merge.TimeseriesRespondFuncWithStrategy(vectorInstantMarshalWriter, nil, rsc.TSMergeStrategy)
 					} else {
 						rsc.MergeFunc = model.MergeAndWriteVectorMergeFunc(m.WireUnmarshaler)
+						rsc.BatchMergeFunc = merge.TimeseriesBatchMergeFunc()
 						rsc.MergeRespondFunc = model.MergeAndWriteVectorRespondFunc(m.WireMarshalWriter)
 					}
 				}

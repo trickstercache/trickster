@@ -89,6 +89,9 @@ func TestQueryHandler(t *testing.T) {
 
 	w = httptest.NewRecorder()
 	client.QueryHandler(w, r)
+	if rsc.BatchMergeFunc == nil {
+		t.Error("expected instant query merge member to configure BatchMergeFunc")
+	}
 
 	resp = w.Result()
 

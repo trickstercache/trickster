@@ -28,15 +28,22 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	tc "github.com/trickstercache/trickster/v2/pkg/proxy/context"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 )
 
 func TestNewAndCloneResources(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	r := NewResources(nil, nil, nil, nil, nil, nil)
 	r.AlternateCacheTTL = time.Duration(1) * time.Second
+	r.BatchMergeFunc = func(*merge.Accumulator, []merge.BatchItem) (bool, error) {
+		return true, nil
+	}
 	r2 := r.Clone()
 	if r2.AlternateCacheTTL != r.AlternateCacheTTL {
 		t.Errorf("expected %s got %s", r.AlternateCacheTTL.String(), r2.AlternateCacheTTL.String())
+	}
+	if r2.BatchMergeFunc == nil {
+		t.Error("expected clone to preserve BatchMergeFunc")
 	}
 }
 
@@ -194,8 +201,14 @@ func TestMergeResources(t *testing.T) {
 		t.Errorf("nil merge shouldn't set anything in subject resources")
 	}
 	r2 := NewResources(nil, nil, nil, nil, nil, nil)
+	r2.BatchMergeFunc = func(*merge.Accumulator, []merge.BatchItem) (bool, error) {
+		return true, nil
+	}
 	r1.Merge(r2)
 	if r1.AlternateCacheTTL != 0 {
 		t.Errorf("merge should override subject resources")
+	}
+	if r1.BatchMergeFunc == nil {
+		t.Error("merge should propagate BatchMergeFunc")
 	}
 }

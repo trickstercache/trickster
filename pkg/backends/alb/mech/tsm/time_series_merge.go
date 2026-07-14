@@ -402,9 +402,10 @@ type gatherResult struct {
 }
 
 type gatherContribution struct {
-	data      any
-	mergeFunc merge.MergeFunc
-	member    int
+	data           any
+	mergeFunc      merge.MergeFunc
+	batchMergeFunc merge.BatchMergeFunc
+	member         int
 }
 
 // pickWinner chooses which member's RespondFunc and headers feed the outbound
@@ -503,44 +504,52 @@ func prepareGatherContribution(rsc *request.Resources, body []byte, member int,
 	} else {
 		return nil
 	}
-	return &gatherContribution{data: data, mergeFunc: rsc.MergeFunc, member: member}
+	return &gatherContribution{
+		data:           data,
+		mergeFunc:      rsc.MergeFunc,
+		batchMergeFunc: rsc.BatchMergeFunc,
+		member:         member,
+	}
 }
 
-// mergeGatherContributions preserves slot order while batching DataSet
-// contributions into one merge. Other mergeable response types retain their
-// existing MergeFunc behavior and are folded sequentially.
+// mergeGatherContributions preserves slot order and lets the backend-provided
+// batch function handle compatible inputs. Otherwise each contribution is
+// folded through its original MergeFunc.
 func mergeGatherContributions(accumulator *merge.Accumulator,
-	contributions []*gatherContribution, strategy dataset.MergeStrategy,
-	toleranceNanos int64,
+	contributions []*gatherContribution,
 ) []int {
-	datasets := make([]*dataset.DataSet, 0, len(contributions))
-	allDataSets := true
+	items := make([]merge.BatchItem, 0, len(contributions))
+	batchCompatible := true
+	var batchMergeFunc merge.BatchMergeFunc
 	for _, contribution := range contributions {
 		if contribution == nil {
 			continue
 		}
-		ds, ok := contribution.data.(*dataset.DataSet)
-		if !ok {
-			allDataSets = false
-			break
+		items = append(items, merge.BatchItem{
+			Data:   contribution.data,
+			Member: contribution.member,
+		})
+		if contribution.batchMergeFunc == nil {
+			batchCompatible = false
+		} else if batchMergeFunc == nil {
+			batchMergeFunc = contribution.batchMergeFunc
 		}
-		datasets = append(datasets, ds)
 	}
-	if allDataSets && len(datasets) > 0 {
-		if err := mergeDataSetContributions(accumulator, datasets, strategy,
-			toleranceNanos); err != nil {
+	if batchCompatible && batchMergeFunc != nil {
+		handled, err := mergeContributionBatch(accumulator, batchMergeFunc, items)
+		if err != nil {
 			logger.Warn("tsm gather batch merge failure", logging.Pairs{
-				"members": len(datasets), "error": err,
+				"members": len(items), "error": err,
 			})
-			failed := make([]int, 0, len(datasets))
-			for _, contribution := range contributions {
-				if contribution != nil {
-					failed = append(failed, contribution.member)
-				}
+			failed := make([]int, len(items))
+			for i, item := range items {
+				failed[i] = item.Member
 			}
 			return failed
 		}
-		return nil
+		if handled {
+			return nil
+		}
 	}
 
 	failed := make([]int, 0)
@@ -558,36 +567,15 @@ func mergeGatherContributions(accumulator *merge.Accumulator,
 	return failed
 }
 
-func mergeDataSetContributions(accumulator *merge.Accumulator, datasets []*dataset.DataSet,
-	strategy dataset.MergeStrategy, toleranceNanos int64,
-) (err error) {
+func mergeContributionBatch(accumulator *merge.Accumulator,
+	batchMergeFunc merge.BatchMergeFunc, items []merge.BatchItem,
+) (handled bool, err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			err = fmt.Errorf("panic while merging datasets: %v", recovered)
+			err = fmt.Errorf("panic while batch merging contributions: %v", recovered)
 		}
 	}()
-
-	base := datasets[0]
-	if len(datasets) > 1 {
-		rest := make([]timeseries.Timeseries, len(datasets)-1)
-		for i := 1; i < len(datasets); i++ {
-			rest[i-1] = datasets[i]
-		}
-		switch {
-		case strategy == dataset.MergeStrategyDedup && toleranceNanos == 0:
-			base.Merge(false, rest...)
-		case strategy == dataset.MergeStrategyAvg:
-			base.MergeWithStrategyTolerant(true, int(dataset.MergeStrategySum),
-				toleranceNanos, rest...)
-		default:
-			base.MergeWithStrategyTolerant(true, int(strategy), toleranceNanos, rest...)
-		}
-	}
-	accumulator.SetTSData(base)
-	if strategy != dataset.MergeStrategyDedup {
-		accumulator.MergeCount = len(datasets)
-	}
-	return nil
+	return batchMergeFunc(accumulator, items)
 }
 
 func mergeContribution(accumulator *merge.Accumulator,
@@ -695,8 +683,7 @@ func (h *handler) serveStandard(
 	for i := range results {
 		contributions[i] = results[i].contrib
 	}
-	for _, member := range mergeGatherContributions(accumulator, contributions,
-		mergeStrategy, dedupToleranceNanos) {
+	for _, member := range mergeGatherContributions(accumulator, contributions) {
 		results[member].failed = true
 	}
 
@@ -1018,12 +1005,10 @@ func (h *handler) serveWeightedAvg(
 	if err := eg.Wait(); err != nil {
 		logger.Warn("tsm avg gather failure", logging.Pairs{"error": err})
 	}
-	for _, member := range mergeGatherContributions(sumAccum, sumContributions,
-		dataset.MergeStrategySum, dedupToleranceNanos) {
+	for _, member := range mergeGatherContributions(sumAccum, sumContributions) {
 		results[member].failed = true
 	}
-	mergeGatherContributions(countAccum, countContributions,
-		dataset.MergeStrategySum, dedupToleranceNanos)
+	mergeGatherContributions(countAccum, countContributions)
 
 	// Finalize: divide sum totals by count totals to obtain the weighted
 	// average. If either side fanned out to zero usable responses the

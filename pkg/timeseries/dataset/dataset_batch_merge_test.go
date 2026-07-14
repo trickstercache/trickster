@@ -192,7 +192,7 @@ func BenchmarkFanoutDataSetMerge(b *testing.B) {
 			name = "overlap"
 		}
 		b.Run(name+"/sequential", func(b *testing.B) {
-			for range b.N {
+			for b.Loop() {
 				b.StopTimer()
 				inputs := benchmarkMergeFixture(64, 1000, overlap)
 				b.StartTimer()
@@ -202,7 +202,7 @@ func BenchmarkFanoutDataSetMerge(b *testing.B) {
 			}
 		})
 		b.Run(name+"/batch", func(b *testing.B) {
-			for range b.N {
+			for b.Loop() {
 				b.StopTimer()
 				inputs := benchmarkMergeFixture(64, 1000, overlap)
 				collection := make([]timeseries.Timeseries, len(inputs)-1)

@@ -49,16 +49,20 @@ func batchContributionDataSet(value int) *dataset.DataSet {
 
 func TestMergeGatherContributionsBatchesDataSets(t *testing.T) {
 	mergeFunc := merge.TimeseriesMergeFuncWithStrategy(nil, int(dataset.MergeStrategySum))
+	batchMergeFunc := merge.TimeseriesBatchMergeFuncWithStrategy(
+		int(dataset.MergeStrategySum))
 	contributions := []*gatherContribution{
-		{data: batchContributionDataSet(1), mergeFunc: mergeFunc, member: 0},
+		{data: batchContributionDataSet(1), mergeFunc: mergeFunc,
+			batchMergeFunc: batchMergeFunc, member: 0},
 		nil,
-		{data: batchContributionDataSet(2), mergeFunc: mergeFunc, member: 2},
-		{data: batchContributionDataSet(3), mergeFunc: mergeFunc, member: 3},
+		{data: batchContributionDataSet(2), mergeFunc: mergeFunc,
+			batchMergeFunc: batchMergeFunc, member: 2},
+		{data: batchContributionDataSet(3), mergeFunc: mergeFunc,
+			batchMergeFunc: batchMergeFunc, member: 3},
 	}
 	accumulator := merge.NewAccumulator()
 
-	if failed := mergeGatherContributions(accumulator, contributions,
-		dataset.MergeStrategySum, 0); len(failed) != 0 {
+	if failed := mergeGatherContributions(accumulator, contributions); len(failed) != 0 {
 		t.Fatalf("unexpected merge failures: %v", failed)
 	}
 
@@ -79,6 +83,18 @@ func TestMergeGatherContributionsBatchesDataSets(t *testing.T) {
 }
 
 func TestMergeGatherContributionsFallbackReportsMember(t *testing.T) {
+	var batchMembers []int
+	batchMergeFunc := func(accumulator *merge.Accumulator,
+		items []merge.BatchItem,
+	) (bool, error) {
+		if accumulator.GetGeneric() != nil {
+			t.Fatal("batch fallback contract requires an untouched accumulator")
+		}
+		for _, item := range items {
+			batchMembers = append(batchMembers, item.Member)
+		}
+		return false, nil
+	}
 	mergeFunc := func(accumulator *merge.Accumulator, _ any, member int) error {
 		if member == 1 {
 			panic("merge panic")
@@ -91,20 +107,50 @@ func TestMergeGatherContributionsFallbackReportsMember(t *testing.T) {
 		return nil
 	}
 	contributions := []*gatherContribution{
-		{data: "first", mergeFunc: mergeFunc, member: 0},
-		{data: "panic", mergeFunc: mergeFunc, member: 1},
-		{data: "bad", mergeFunc: mergeFunc, member: 2},
-		{data: "last", mergeFunc: mergeFunc, member: 3},
+		{data: "first", mergeFunc: mergeFunc, batchMergeFunc: batchMergeFunc, member: 0},
+		{data: "panic", mergeFunc: mergeFunc, batchMergeFunc: batchMergeFunc, member: 1},
+		{data: "bad", mergeFunc: mergeFunc, batchMergeFunc: batchMergeFunc, member: 2},
+		{data: "last", mergeFunc: mergeFunc, batchMergeFunc: batchMergeFunc, member: 3},
 	}
 	accumulator := merge.NewAccumulator()
 
-	failed := mergeGatherContributions(accumulator, contributions,
-		dataset.MergeStrategyDedup, 0)
+	failed := mergeGatherContributions(accumulator, contributions)
+	if !reflect.DeepEqual(batchMembers, []int{0, 1, 2, 3}) {
+		t.Fatalf("batch member order got %v want [0 1 2 3]", batchMembers)
+	}
 	if !reflect.DeepEqual(failed, []int{1, 2}) {
 		t.Fatalf("failed members got %v want [1 2]", failed)
 	}
 	if got := accumulator.GetGeneric(); !reflect.DeepEqual(got, []int{0, 3}) {
 		t.Fatalf("merge order got %v want [0 3]", got)
+	}
+}
+
+func TestMergeGatherContributionsRequiresEveryBatchFunc(t *testing.T) {
+	var batchCalled bool
+	batchMergeFunc := func(*merge.Accumulator, []merge.BatchItem) (bool, error) {
+		batchCalled = true
+		return true, nil
+	}
+	mergeFunc := func(accumulator *merge.Accumulator, _ any, member int) error {
+		members, _ := accumulator.GetGeneric().([]int)
+		accumulator.SetGeneric(append(members, member))
+		return nil
+	}
+	contributions := []*gatherContribution{
+		{data: "first", mergeFunc: mergeFunc, batchMergeFunc: batchMergeFunc, member: 0},
+		{data: "second", mergeFunc: mergeFunc, member: 1},
+	}
+	accumulator := merge.NewAccumulator()
+
+	if failed := mergeGatherContributions(accumulator, contributions); len(failed) != 0 {
+		t.Fatalf("unexpected merge failures: %v", failed)
+	}
+	if batchCalled {
+		t.Fatal("batch merge must require every contribution to opt in")
+	}
+	if got := accumulator.GetGeneric(); !reflect.DeepEqual(got, []int{0, 1}) {
+		t.Fatalf("merge order got %v want [0 1]", got)
 	}
 }
 
@@ -114,14 +160,15 @@ func TestMergeGatherContributionsRecoversBatchPanic(t *testing.T) {
 		panic("dataset merge panic")
 	}
 	mergeFunc := merge.TimeseriesMergeFunc(nil)
+	batchMergeFunc := merge.TimeseriesBatchMergeFunc()
 	contributions := []*gatherContribution{
-		{data: first, mergeFunc: mergeFunc, member: 0},
-		{data: batchContributionDataSet(2), mergeFunc: mergeFunc, member: 1},
+		{data: first, mergeFunc: mergeFunc, batchMergeFunc: batchMergeFunc, member: 0},
+		{data: batchContributionDataSet(2), mergeFunc: mergeFunc,
+			batchMergeFunc: batchMergeFunc, member: 1},
 	}
 	accumulator := merge.NewAccumulator()
 
-	failed := mergeGatherContributions(accumulator, contributions,
-		dataset.MergeStrategyDedup, 0)
+	failed := mergeGatherContributions(accumulator, contributions)
 	if !reflect.DeepEqual(failed, []int{0, 1}) {
 		t.Fatalf("failed members got %v want [0 1]", failed)
 	}
