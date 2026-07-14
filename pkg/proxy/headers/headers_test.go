@@ -86,7 +86,7 @@ func TestUpdateRequestHeadersPreservesHostUpdate(t *testing.T) {
 				"X-Test":       "value",
 			}
 
-			for i := 0; i < 2; i++ {
+			for i := range 2 {
 				r := &http.Request{
 					Header: make(http.Header),
 					Host:   "origin.example.com",

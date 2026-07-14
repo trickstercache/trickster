@@ -337,7 +337,6 @@ func scatterInto(ctx context.Context, parent *http.Request, targets pool.Targets
 			case <-ctx.Done():
 				dispatchErr = ctx.Err()
 				markUndispatched(i, dispatchErr)
-				break
 			}
 			if dispatchErr != nil {
 				break
