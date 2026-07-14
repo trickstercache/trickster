@@ -34,7 +34,10 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 )
 
-var mergeFn = merge.TimeseriesMergeFunc(nil)
+var (
+	mergeFn      = merge.TimeseriesMergeFunc(nil)
+	batchMergeFn = merge.TimeseriesBatchMergeFunc()
+)
 
 func stubMergeHandler(marker string, status int) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -42,6 +45,7 @@ func stubMergeHandler(marker string, status int) http.Handler {
 		if rsc != nil {
 			rsc.TS = newMarkerDataSet(marker)
 			rsc.MergeFunc = mergeFn
+			rsc.BatchMergeFunc = batchMergeFn
 			rsc.MergeRespondFunc = markerRespondFunc
 		}
 		w.Header().Set(headers.NameTricksterResult, "engine=none")
@@ -200,6 +204,7 @@ func TestTSMMergeProxyOnlyBodyUsesTimeRangeQuery(t *testing.T) {
 				rsc.TimeRangeQuery = trq.Clone()
 				rsc.TSUnmarshaler = m.WireUnmarshaler
 				rsc.MergeFunc = merge.TimeseriesMergeFunc(m.WireUnmarshaler)
+				rsc.BatchMergeFunc = merge.TimeseriesBatchMergeFunc()
 				rsc.MergeRespondFunc = merge.TimeseriesRespondFunc(m.WireMarshalWriter, &timeseries.RequestOptions{})
 			}
 			w.Header().Set(headers.NameContentType, "application/json")

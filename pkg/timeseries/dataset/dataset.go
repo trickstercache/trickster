@@ -230,61 +230,7 @@ func (ds *DataSet) Merge(sortPoints bool, collection ...timeseries.Timeseries) {
 func (ds *DataSet) DefaultMerger(sortPoints bool, collection ...timeseries.Timeseries) {
 	ds.UpdateLock.Lock()
 	defer ds.UpdateLock.Unlock()
-
-	rl := make(ResultsLookup)
-	for _, r := range ds.Results {
-		if r == nil {
-			continue
-		}
-		rl[r.StatementID] = r
-	}
-	dl := make(DataSets, 0, 32)
-	k := len(ds.Results)
-	rlen := k
-	for _, ts := range collection {
-		if ts == nil {
-			continue
-		}
-		ds2, ok := ts.(*DataSet)
-		if !ok || ds2 == nil {
-			continue
-		}
-		dl = append(dl, ds2)
-		rlen += len(ds2.Results)
-	}
-	rs := make(Results, rlen)
-	copy(rs, ds.Results)
-	for _, ds2 := range dl {
-		ds.ExtentList = ds.ExtentList.Merge(ds2.ExtentList, ds.Step())
-		// Preserve per-shard Warnings: operators expect to see every warning
-		// emitted by any backend (e.g. Prometheus partial-result warnings).
-		if len(ds2.Warnings) > 0 {
-			ds.Warnings = append(ds.Warnings, ds2.Warnings...)
-		}
-		// Status priority mirrors prometheus model.Envelope.Merge: success wins
-		// over error (error text is already surfaced via Warnings on upgrade).
-		if ds.Status == "" || (ds.Status != "success" && ds2.Status == "success") {
-			ds.Status = ds2.Status
-		}
-		for _, r2 := range ds2.Results {
-			if r2 == nil || len(r2.SeriesList) == 0 {
-				continue
-			}
-			r1, ok := rl[r2.StatementID]
-			if !ok {
-				rl[r2.StatementID] = r2
-				rs[k] = r2
-				k++
-				continue
-			}
-			if len(r1.SeriesList) == 0 {
-				r1.SeriesList = r2.SeriesList.Clone()
-				continue
-			}
-			r1.SeriesList = r1.SeriesList.Merge(r2.SeriesList, sortPoints)
-		}
-	}
-	ds.Results = rs[:k]
+	ds.mergeDataSets(collection, MergeOpts{SortPoints: sortPoints}, true)
 }
 
 // MergeWithStrategy merges the provided Timeseries list into the base DataSet
@@ -318,7 +264,20 @@ func (ds *DataSet) MergeWithOpts(opts MergeOpts, collection ...timeseries.Timese
 	}
 	ds.UpdateLock.Lock()
 	defer ds.UpdateLock.Unlock()
+	ds.mergeDataSets(collection, opts, false)
+}
 
+type resultMergeGroup struct {
+	result *Result
+	lists  []SeriesList
+}
+
+// mergeDataSets merges all member datasets in one pass. The caller must hold
+// ds.UpdateLock. mergeEnvelope preserves DefaultMerger's warning and status
+// handling; strategy merges retain their existing data-only behavior.
+func (ds *DataSet) mergeDataSets(collection []timeseries.Timeseries, opts MergeOpts,
+	mergeEnvelope bool,
+) {
 	rl := make(ResultsLookup)
 	for _, r := range ds.Results {
 		if r == nil {
@@ -342,8 +301,22 @@ func (ds *DataSet) MergeWithOpts(opts MergeOpts, collection ...timeseries.Timese
 	}
 	rs := make(Results, rlen)
 	copy(rs, ds.Results)
+	groups := make([]resultMergeGroup, 0)
+	groupIndex := make(map[*Result]int)
 	for _, ds2 := range dl {
 		ds.ExtentList = ds.ExtentList.Merge(ds2.ExtentList, ds.Step())
+		if mergeEnvelope {
+			// Preserve per-shard Warnings: operators expect to see every warning
+			// emitted by any backend (e.g. Prometheus partial-result warnings).
+			if len(ds2.Warnings) > 0 {
+				ds.Warnings = append(ds.Warnings, ds2.Warnings...)
+			}
+			// Status priority mirrors prometheus model.Envelope.Merge: success wins
+			// over error (error text is already surfaced via Warnings on upgrade).
+			if ds.Status == "" || (ds.Status != "success" && ds2.Status == "success") {
+				ds.Status = ds2.Status
+			}
+		}
 		for _, r2 := range ds2.Results {
 			if r2 == nil || len(r2.SeriesList) == 0 {
 				continue
@@ -355,12 +328,17 @@ func (ds *DataSet) MergeWithOpts(opts MergeOpts, collection ...timeseries.Timese
 				k++
 				continue
 			}
-			if len(r1.SeriesList) == 0 {
-				r1.SeriesList = r2.SeriesList.Clone()
-				continue
+			gi, ok := groupIndex[r1]
+			if !ok {
+				gi = len(groups)
+				groupIndex[r1] = gi
+				groups = append(groups, resultMergeGroup{result: r1})
 			}
-			r1.SeriesList = r1.SeriesList.MergeWithOpts(r2.SeriesList, opts)
+			groups[gi].lists = append(groups[gi].lists, r2.SeriesList)
 		}
+	}
+	for _, group := range groups {
+		group.result.SeriesList = group.result.SeriesList.mergeCollection(group.lists, opts)
 	}
 	ds.Results = rs[:k]
 }

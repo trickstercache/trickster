@@ -145,7 +145,7 @@ type Config struct {
 	// OnResult, if non-nil, is called inside the fanout goroutine after
 	// the member's handler returns and before the goroutine exits. Use
 	// this for per-slot side effects that should run in parallel with
-	// other in-flight members (e.g. TSM merges into a shared accumulator).
+	// other in-flight members (e.g. TSM decodes and stores a slot result).
 	// OnResult must be safe for concurrent invocation. The supplied
 	// Result is the same one that will appear in the All return slice.
 	OnResult func(idx int, r *Result)

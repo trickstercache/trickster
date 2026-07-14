@@ -397,7 +397,15 @@ type gatherResult struct {
 	statusCode int
 	header     http.Header
 	mergeFunc  merge.RespondFunc
+	contrib    *gatherContribution
 	failed     bool
+}
+
+type gatherContribution struct {
+	data           any
+	mergeFunc      merge.MergeFunc
+	batchMergeFunc merge.BatchMergeFunc
+	member         int
 }
 
 // pickWinner chooses which member's RespondFunc and headers feed the outbound
@@ -465,11 +473,11 @@ func aggregateStatus(results []gatherResult) (status int, statusHeader string, h
 	return
 }
 
-func mergeGatherContribution(accumulator *merge.Accumulator, rsc *request.Resources,
-	body []byte, member int, stripKeys []string,
-) bool {
+func prepareGatherContribution(rsc *request.Resources, body []byte, member int,
+	stripKeys []string,
+) *gatherContribution {
 	if rsc == nil || rsc.MergeFunc == nil {
-		return false
+		return nil
 	}
 	ts := rsc.TS
 	if ts == nil && len(body) > 0 && rsc.TSUnmarshaler != nil && rsc.TimeRangeQuery != nil {
@@ -479,7 +487,7 @@ func mergeGatherContribution(accumulator *merge.Accumulator, rsc *request.Resour
 			logger.Warn("tsm gather timeseries decode failure", logging.Pairs{
 				"member": member, "error": err,
 			})
-			return false
+			return nil
 		}
 		rsc.TS = ts
 	}
@@ -494,15 +502,91 @@ func mergeGatherContribution(accumulator *merge.Accumulator, rsc *request.Resour
 	} else if len(body) > 0 {
 		data = body
 	} else {
-		return false
+		return nil
 	}
-	if err := rsc.MergeFunc(accumulator, data, member); err != nil {
-		logger.Warn("tsm gather merge failure", logging.Pairs{
-			"member": member, "error": err,
+	return &gatherContribution{
+		data:           data,
+		mergeFunc:      rsc.MergeFunc,
+		batchMergeFunc: rsc.BatchMergeFunc,
+		member:         member,
+	}
+}
+
+// mergeGatherContributions preserves slot order and lets the backend-provided
+// batch function handle compatible inputs. Otherwise each contribution is
+// folded through its original MergeFunc.
+func mergeGatherContributions(accumulator *merge.Accumulator,
+	contributions []*gatherContribution,
+) []int {
+	items := make([]merge.BatchItem, 0, len(contributions))
+	batchCompatible := true
+	var batchMergeFunc merge.BatchMergeFunc
+	for _, contribution := range contributions {
+		if contribution == nil {
+			continue
+		}
+		items = append(items, merge.BatchItem{
+			Data:   contribution.data,
+			Member: contribution.member,
 		})
-		return false
+		if contribution.batchMergeFunc == nil {
+			batchCompatible = false
+		} else if batchMergeFunc == nil {
+			batchMergeFunc = contribution.batchMergeFunc
+		}
 	}
-	return true
+	if batchCompatible && batchMergeFunc != nil {
+		handled, err := mergeContributionBatch(accumulator, batchMergeFunc, items)
+		if err != nil {
+			logger.Warn("tsm gather batch merge failure", logging.Pairs{
+				"members": len(items), "error": err,
+			})
+			failed := make([]int, len(items))
+			for i, item := range items {
+				failed[i] = item.Member
+			}
+			return failed
+		}
+		if handled {
+			return nil
+		}
+	}
+
+	failed := make([]int, 0)
+	for _, contribution := range contributions {
+		if contribution == nil {
+			continue
+		}
+		if err := mergeContribution(accumulator, contribution); err != nil {
+			logger.Warn("tsm gather merge failure", logging.Pairs{
+				"member": contribution.member, "error": err,
+			})
+			failed = append(failed, contribution.member)
+		}
+	}
+	return failed
+}
+
+func mergeContributionBatch(accumulator *merge.Accumulator,
+	batchMergeFunc merge.BatchMergeFunc, items []merge.BatchItem,
+) (handled bool, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("panic while batch merging contributions: %v", recovered)
+		}
+	}()
+	return batchMergeFunc(accumulator, items)
+}
+
+func mergeContribution(accumulator *merge.Accumulator,
+	contribution *gatherContribution,
+) (err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("panic while merging member %d: %v", contribution.member, recovered)
+		}
+	}()
+	return contribution.mergeFunc(accumulator, contribution.data, contribution.member)
 }
 
 // serveStandard handles the common scatter/gather path: each shard gets one
@@ -555,10 +639,10 @@ func (h *handler) serveStandard(
 			if rsc2.MergeFunc == nil || rsc2.MergeRespondFunc == nil {
 				logger.Warn("tsm gather failed due to nil func", nil)
 			}
-			var contributed bool
+			var contribution *gatherContribution
 			if rsc2.MergeFunc != nil {
 				if rsc2.TS != nil {
-					contributed = mergeGatherContribution(accumulator, rsc2, nil, i, stripKeys)
+					contribution = prepareGatherContribution(rsc2, nil, i, stripKeys)
 				} else {
 					body, derr := encoding.DecompressResponseBody(
 						fr.Capture.Header().Get(headers.NameContentEncoding),
@@ -572,7 +656,7 @@ func (h *handler) serveStandard(
 						return
 					}
 					if len(body) > 0 {
-						contributed = mergeGatherContribution(accumulator, rsc2, body, i, stripKeys)
+						contribution = prepareGatherContribution(rsc2, body, i, stripKeys)
 					}
 				}
 			}
@@ -584,7 +668,8 @@ func (h *handler) serveStandard(
 				statusCode: sc,
 				header:     fr.Capture.Header(),
 				mergeFunc:  rsc2.MergeRespondFunc,
-				failed:     !contributed,
+				contrib:    contribution,
+				failed:     contribution == nil,
 			}
 		},
 	})
@@ -593,6 +678,13 @@ func (h *handler) serveStandard(
 		if fr.Failed && !results[i].failed {
 			results[i].failed = true
 		}
+	}
+	contributions := make([]*gatherContribution, l)
+	for i := range results {
+		contributions[i] = results[i].contrib
+	}
+	for _, member := range mergeGatherContributions(accumulator, contributions) {
+		results[member].failed = true
 	}
 
 	// Surface goroutine-level failures (e.g. unsupported Content-Encoding,
@@ -806,6 +898,8 @@ func (h *handler) serveWeightedAvg(
 	// (status, headers, RespondFunc) comes from the sum side; count results
 	// affect the arithmetic, not the envelope.
 	results := make([]gatherResult, l)
+	sumContributions := make([]*gatherContribution, l)
+	countContributions := make([]*gatherContribution, l)
 
 	dedupToleranceNanos := h.dedupToleranceNanos()
 	resourcesFn := func(int) *request.Resources {
@@ -837,9 +931,9 @@ func (h *handler) serveWeightedAvg(
 					results[i].failed = true
 					return
 				}
-				var contributed bool
+				var contribution *gatherContribution
 				if rsc2.TS != nil {
-					contributed = mergeGatherContribution(sumAccum, rsc2, nil, i, stripKeys)
+					contribution = prepareGatherContribution(rsc2, nil, i, stripKeys)
 				} else if fr.Capture != nil {
 					body, derr := encoding.DecompressResponseBody(
 						fr.Capture.Header().Get(headers.NameContentEncoding),
@@ -852,8 +946,9 @@ func (h *handler) serveWeightedAvg(
 						results[i].failed = true
 						return
 					}
-					contributed = mergeGatherContribution(sumAccum, rsc2, body, i, stripKeys)
+					contribution = prepareGatherContribution(rsc2, body, i, stripKeys)
 				}
+				sumContributions[i] = contribution
 				sc := fr.Capture.StatusCode()
 				if rsc2.Response != nil && rsc2.Response.StatusCode > 0 {
 					sc = rsc2.Response.StatusCode
@@ -862,7 +957,8 @@ func (h *handler) serveWeightedAvg(
 					statusCode: sc,
 					header:     fr.Capture.Header(),
 					mergeFunc:  rsc2.MergeRespondFunc,
-					failed:     !contributed,
+					contrib:    contribution,
+					failed:     contribution == nil,
 				}
 			},
 		})
@@ -888,7 +984,7 @@ func (h *handler) serveWeightedAvg(
 					return
 				}
 				if rsc2.TS != nil {
-					mergeGatherContribution(countAccum, rsc2, nil, i, stripKeys)
+					countContributions[i] = prepareGatherContribution(rsc2, nil, i, stripKeys)
 				} else if fr.Capture != nil {
 					body, derr := encoding.DecompressResponseBody(
 						fr.Capture.Header().Get(headers.NameContentEncoding),
@@ -900,7 +996,7 @@ func (h *handler) serveWeightedAvg(
 						})
 						return
 					}
-					mergeGatherContribution(countAccum, rsc2, body, i, stripKeys)
+					countContributions[i] = prepareGatherContribution(rsc2, body, i, stripKeys)
 				}
 			},
 		})
@@ -909,6 +1005,10 @@ func (h *handler) serveWeightedAvg(
 	if err := eg.Wait(); err != nil {
 		logger.Warn("tsm avg gather failure", logging.Pairs{"error": err})
 	}
+	for _, member := range mergeGatherContributions(sumAccum, sumContributions) {
+		results[member].failed = true
+	}
+	mergeGatherContributions(countAccum, countContributions)
 
 	// Finalize: divide sum totals by count totals to obtain the weighted
 	// average. If either side fanned out to zero usable responses the
