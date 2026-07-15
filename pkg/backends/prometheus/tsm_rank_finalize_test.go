@@ -24,7 +24,9 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 )
@@ -114,6 +116,125 @@ func TestFinalizeTSMMergeRankAggregation(t *testing.T) {
 		got := seriesNames(ds)
 		want := []string{"b", "c"}
 		if !equalStrings(got, want) {
+			t.Fatalf("series got %v want %v", got, want)
+		}
+	})
+
+	t.Run("sort wrapper warns once for range query", func(t *testing.T) {
+		ds := rankDataSet(
+			rankSeries("a", "1", 100, "3", 200),
+			rankSeries("b", "2", 100, "4", 200),
+		)
+		ds.TimeRangeQuery = &timeseries.TimeRangeQuery{Step: time.Minute}
+		ds.Warnings = []string{"existing warning"}
+
+		client := &Client{}
+		client.FinalizeTSMMerge("sort(topk(1, up))", ds)
+		client.FinalizeTSMMerge("sort(topk(1, up))", ds)
+
+		want := []string{"existing warning", sortInRangeQueryWarning}
+		if !slices.Equal(ds.Warnings, want) {
+			t.Fatalf("warnings got %v want %v", ds.Warnings, want)
+		}
+	})
+
+	t.Run("unwrapped range query does not add sort warning", func(t *testing.T) {
+		ds := rankDataSet(
+			rankSeries("a", "1", 100, "3", 200),
+			rankSeries("b", "2", 100, "4", 200),
+		)
+		ds.TimeRangeQuery = &timeseries.TimeRangeQuery{Step: time.Minute}
+
+		(&Client{}).FinalizeTSMMerge("topk(1, up)", ds)
+
+		if slices.Contains(ds.Warnings, sortInRangeQueryWarning) {
+			t.Fatalf("unexpected sort warning: %v", ds.Warnings)
+		}
+	})
+}
+
+func TestFinalizeTSMMergeSortWrapper(t *testing.T) {
+	t.Run("sort orders merged instant vector ascending", func(t *testing.T) {
+		ds := rankDataSet(
+			rankSeries("a", "3", 100),
+			rankSeries("b", "1", 100),
+			rankSeries("c", "2", 100),
+		)
+
+		(&Client{}).FinalizeTSMMerge("sort(sum(up))", ds)
+
+		if got, want := seriesNames(ds), []string{"b", "c", "a"}; !equalStrings(got, want) {
+			t.Fatalf("series got %v want %v", got, want)
+		}
+	})
+
+	t.Run("sort_desc orders merged instant vector descending", func(t *testing.T) {
+		ds := rankDataSet(
+			rankSeries("a", "1", 100),
+			rankSeries("b", "3", 100),
+			rankSeries("c", "2", 100),
+		)
+
+		(&Client{}).FinalizeTSMMerge("sort_desc(count(up))", ds)
+
+		if got, want := seriesNames(ds), []string{"b", "c", "a"}; !equalStrings(got, want) {
+			t.Fatalf("series got %v want %v", got, want)
+		}
+	})
+
+	t.Run("native histograms are omitted", func(t *testing.T) {
+		histogram := rankSeries("histogram", `{"count":"2","sum":"2.5"}`, 100)
+		histogram.Header.ValueFieldsList = timeseries.FieldDefinitions{{Name: histogramFieldName}}
+		ds := rankDataSet(
+			histogram,
+			rankSeries("high", "4", 100),
+			rankSeries("low", "1", 100),
+		)
+
+		(&Client{}).FinalizeTSMMerge("sort(sum(up))", ds)
+
+		if got, want := seriesNames(ds), []string{"low", "high"}; !equalStrings(got, want) {
+			t.Fatalf("series got %v want %v", got, want)
+		}
+	})
+
+	t.Run("range vector omits histograms, preserves order, and warns once", func(t *testing.T) {
+		histogram := rankSeries(
+			"histogram",
+			`{"count":"2","sum":"2.5"}`, 100,
+			`{"count":"3","sum":"4.5"}`, 200,
+		)
+		histogram.Header.ValueFieldsList = timeseries.FieldDefinitions{{Name: histogramFieldName}}
+		ds := rankDataSet(
+			histogram,
+			rankSeries("a", "3", 100, "4", 200),
+			rankSeries("b", "1", 100, "2", 200),
+		)
+		ds.TimeRangeQuery = &timeseries.TimeRangeQuery{Step: time.Minute}
+		ds.Warnings = []string{"existing warning"}
+
+		client := &Client{}
+		client.FinalizeTSMMerge("sort(sum(up))", ds)
+		client.FinalizeTSMMerge("sort(sum(up))", ds)
+
+		if got, want := seriesNames(ds), []string{"a", "b"}; !equalStrings(got, want) {
+			t.Fatalf("series got %v want %v", got, want)
+		}
+		wantWarnings := []string{"existing warning", sortInRangeQueryWarning}
+		if !slices.Equal(ds.Warnings, wantWarnings) {
+			t.Fatalf("warnings got %v want %v", ds.Warnings, wantWarnings)
+		}
+	})
+
+	t.Run("non-aggregation sort is not finalized", func(t *testing.T) {
+		ds := rankDataSet(
+			rankSeries("a", "3", 100),
+			rankSeries("b", "1", 100),
+		)
+
+		(&Client{}).FinalizeTSMMerge("sort(up)", ds)
+
+		if got, want := seriesNames(ds), []string{"a", "b"}; !equalStrings(got, want) {
 			t.Fatalf("series got %v want %v", got, want)
 		}
 	})
