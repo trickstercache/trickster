@@ -30,9 +30,11 @@ import (
 )
 
 const (
-	histogramFieldName  = "histogram"
-	rankOperatorBottomK = "bottomk"
-	rankOperatorTopK    = "topk"
+	histogramFieldName      = "histogram"
+	rankOperatorBottomK     = "bottomk"
+	rankOperatorTopK        = "topk"
+	sortInRangeQueryWarning = "PromQL warning: sort is ineffective for range queries " +
+		"since results are always ordered by labels"
 )
 
 type rankBucketKey struct {
@@ -141,23 +143,41 @@ func (c *Client) FinalizeTSMMerge(query string, ts timeseries.Timeseries) {
 }
 
 func finalizeSortWrapper(ds *dataset.DataSet, descending bool) {
-	if ds.Step() > 0 {
-		return
-	}
+	isRangeQuery := ds.Step() > 0
 
 	ds.UpdateLock.Lock()
 	defer ds.UpdateLock.Unlock()
 
+	if isRangeQuery {
+		appendWarningOnce(ds, sortInRangeQueryWarning)
+	}
+
 	for _, result := range ds.Results {
-		if result != nil {
-			result.SeriesList = sortSeriesIfInstant(result.SeriesList, descending)
+		if result == nil {
+			continue
+		}
+		result.SeriesList = filterHistogramSeries(result.SeriesList)
+		if !isRangeQuery {
+			sortInstantSeries(result.SeriesList, descending)
 		}
 	}
 }
 
+func appendWarningOnce(ds *dataset.DataSet, warning string) {
+	if !slices.Contains(ds.Warnings, warning) {
+		ds.Warnings = append(ds.Warnings, warning)
+	}
+}
+
 func finalizeRankAggregation(ds *dataset.DataSet, spec promql.RankAggregation) {
+	isRangeQuery := ds.Step() > 0
+
 	ds.UpdateLock.Lock()
 	defer ds.UpdateLock.Unlock()
+
+	if isRangeQuery && spec.SortSet {
+		appendWarningOnce(ds, sortInRangeQueryWarning)
+	}
 
 	for _, result := range ds.Results {
 		if result == nil || len(result.SeriesList) == 0 {
@@ -205,8 +225,8 @@ func finalizeRankAggregation(ds *dataset.DataSet, spec promql.RankAggregation) {
 		if spec.SortSet {
 			descending = spec.SortDescending
 		}
-		if ds.Step() == 0 {
-			result.SeriesList = sortSeriesIfInstant(result.SeriesList, descending)
+		if !isRangeQuery {
+			sortInstantSeries(result.SeriesList, descending)
 		}
 	}
 }
@@ -312,10 +332,7 @@ func isHistogramSeries(series *dataset.Series) bool {
 		series.Header.ValueFieldsList[0].Name == histogramFieldName
 }
 
-func sortSeriesIfInstant(
-	seriesList dataset.SeriesList,
-	descending bool,
-) dataset.SeriesList {
+func filterHistogramSeries(seriesList dataset.SeriesList) dataset.SeriesList {
 	filtered := seriesList[:0]
 	for _, series := range seriesList {
 		if series == nil || isHistogramSeries(series) {
@@ -323,18 +340,20 @@ func sortSeriesIfInstant(
 		}
 		filtered = append(filtered, series)
 	}
-	seriesList = filtered
+	return filtered
+}
 
+func sortInstantSeries(seriesList dataset.SeriesList, descending bool) {
 	if len(seriesList) < 2 {
-		return seriesList
+		return
 	}
-	if len(seriesList[0].Points) != 1 {
-		return seriesList
+	if seriesList[0] == nil || len(seriesList[0].Points) != 1 {
+		return
 	}
 	epoch := seriesList[0].Points[0].Epoch
 	for _, series := range seriesList {
-		if len(series.Points) != 1 || series.Points[0].Epoch != epoch {
-			return seriesList
+		if series == nil || len(series.Points) != 1 || series.Points[0].Epoch != epoch {
+			return
 		}
 	}
 
@@ -368,5 +387,4 @@ func sortSeriesIfInstant(
 	for i := range items {
 		seriesList[i] = items[i].series
 	}
-	return seriesList
 }
