@@ -58,11 +58,19 @@ func TestClassifyMerge(t *testing.T) {
 		{"sort_desc(topk(5, max(up)))", int(dataset.MergeStrategyMax), false, ""},
 		{"bottomk(5, up)", int(dataset.MergeStrategyDedup), false, ""},
 		{"sort_desc(topk(5, up))", int(dataset.MergeStrategyDedup), false, ""},
+		// sort wrappers preserve the inner aggregation strategy
+		{"sort(sum(up))", int(dataset.MergeStrategySum), false, ""},
+		{"sort_desc(count by (service) (up))", int(dataset.MergeStrategySum), false, ""},
+		{"sort(avg by (service) (up))", int(dataset.MergeStrategySum), true, ""},
+		{"sort(min(up))", int(dataset.MergeStrategyMin), false, ""},
+		{"sort_desc(max(up))", int(dataset.MergeStrategyMax), false, ""},
+		{"sort(up)", int(dataset.MergeStrategyDedup), false, ""},
 		// unsupported aggregators → dedup + warning containing the operator name
 		{"stddev(up)", int(dataset.MergeStrategyDedup), false, "stddev"},
 		{"stdvar(up)", int(dataset.MergeStrategyDedup), false, "stdvar"},
 		{"quantile(0.9, up)", int(dataset.MergeStrategyDedup), false, "quantile"},
 		{"topk(5, stddev(up))", int(dataset.MergeStrategyDedup), false, "stddev"},
+		{"sort_desc(stddev(up))", int(dataset.MergeStrategyDedup), false, "stddev"},
 		{"topk(k, up)", int(dataset.MergeStrategyDedup), false, "topk"},
 		{"limitk(5, up)", int(dataset.MergeStrategyDedup), false, "limitk"},
 		{"limit_ratio(0.5, up)", int(dataset.MergeStrategyDedup), false, "limit_ratio"},
@@ -271,6 +279,54 @@ func TestRewriteForTSMMergeRankAggregationPOST(t *testing.T) {
 	}
 }
 
+func TestRewriteForTSMMergeSortWrapperPOST(t *testing.T) {
+	const (
+		query    = "sort_desc(sum by (service) (requests))"
+		wantQ    = "sum by (service) (requests)"
+		origBody = "query=sort_desc%28sum+by+%28service%29+%28requests%29%29&start=1000&end=2000&step=15"
+	)
+	r, _ := http.NewRequest(http.MethodPost,
+		"http://example.com/api/v1/query_range",
+		io.NopCloser(bytes.NewBufferString(origBody)))
+	r.Header.Set(headers.NameContentType, headers.ValueXFormURLEncoded)
+	r = request.SetResources(r, &request.Resources{RequestBody: []byte(origBody)})
+
+	rewritten, rewrittenQuery := (&Client{}).RewriteForTSMMerge(r, query)
+	if rewrittenQuery != wantQ {
+		t.Fatalf("rewritten query got %q want %q", rewrittenQuery, wantQ)
+	}
+
+	gotValues, _, _ := params.GetRequestValues(rewritten)
+	if q := gotValues.Get("query"); q != wantQ {
+		t.Fatalf("rewritten request query got %q want %q", q, wantQ)
+	}
+	gotRsc := request.GetResources(rewritten)
+	if gotRsc == nil {
+		t.Fatal("expected non-nil resources")
+	}
+	gotBody, err := url.ParseQuery(string(gotRsc.RequestBody))
+	if err != nil {
+		t.Fatalf("parse rsc.RequestBody: %v", err)
+	}
+	if q := gotBody.Get("query"); q != wantQ {
+		t.Fatalf("rsc.RequestBody query got %q want %q", q, wantQ)
+	}
+}
+
+func TestRewriteForTSMMergePreservesNonAggregationSort(t *testing.T) {
+	const query = "sort(up)"
+	r, _ := http.NewRequest(http.MethodGet,
+		"http://example.com/api/v1/query?query="+url.QueryEscape(query), nil)
+
+	rewritten, rewrittenQuery := (&Client{}).RewriteForTSMMerge(r, query)
+	if rewritten != r {
+		t.Fatal("non-aggregation sort unexpectedly cloned the request")
+	}
+	if rewrittenQuery != query {
+		t.Fatalf("rewritten query got %q want %q", rewrittenQuery, query)
+	}
+}
+
 func TestRewriteForWeightedAvgRankAggregationGET(t *testing.T) {
 	const query = "topk(5, avg by (service) (requests))"
 	r, _ := http.NewRequest(http.MethodGet,
@@ -293,6 +349,29 @@ func TestRewriteForWeightedAvgRankAggregationGET(t *testing.T) {
 			}
 			if q := gotURL.Get("query"); q != tc.wantQ {
 				t.Errorf("URL query param: got %q, want %q", q, tc.wantQ)
+			}
+		})
+	}
+}
+
+func TestRewriteForWeightedAvgSortWrapperGET(t *testing.T) {
+	const query = "sort_desc(avg by (service) (requests))"
+	r, _ := http.NewRequest(http.MethodGet,
+		"http://example.com/api/v1/query?query="+url.QueryEscape(query), nil)
+
+	sumReq, countReq := (&Client{}).RewriteForWeightedAvg(r, query)
+	for _, tc := range []struct {
+		name  string
+		req   *http.Request
+		wantQ string
+	}{
+		{"sum", sumReq, "sum by (service) (requests)"},
+		{"count", countReq, "count by (service) (requests)"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, _, _ := params.GetRequestValues(tc.req)
+			if q := got.Get("query"); q != tc.wantQ {
+				t.Fatalf("query got %q want %q", q, tc.wantQ)
 			}
 		})
 	}

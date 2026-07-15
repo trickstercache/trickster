@@ -24,7 +24,9 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 )
@@ -114,6 +116,77 @@ func TestFinalizeTSMMergeRankAggregation(t *testing.T) {
 		got := seriesNames(ds)
 		want := []string{"b", "c"}
 		if !equalStrings(got, want) {
+			t.Fatalf("series got %v want %v", got, want)
+		}
+	})
+}
+
+func TestFinalizeTSMMergeSortWrapper(t *testing.T) {
+	t.Run("sort orders merged instant vector ascending", func(t *testing.T) {
+		ds := rankDataSet(
+			rankSeries("a", "3", 100),
+			rankSeries("b", "1", 100),
+			rankSeries("c", "2", 100),
+		)
+
+		(&Client{}).FinalizeTSMMerge("sort(sum(up))", ds)
+
+		if got, want := seriesNames(ds), []string{"b", "c", "a"}; !equalStrings(got, want) {
+			t.Fatalf("series got %v want %v", got, want)
+		}
+	})
+
+	t.Run("sort_desc orders merged instant vector descending", func(t *testing.T) {
+		ds := rankDataSet(
+			rankSeries("a", "1", 100),
+			rankSeries("b", "3", 100),
+			rankSeries("c", "2", 100),
+		)
+
+		(&Client{}).FinalizeTSMMerge("sort_desc(count(up))", ds)
+
+		if got, want := seriesNames(ds), []string{"b", "c", "a"}; !equalStrings(got, want) {
+			t.Fatalf("series got %v want %v", got, want)
+		}
+	})
+
+	t.Run("native histograms sort by observation sum", func(t *testing.T) {
+		ds := rankDataSet(
+			rankSeries("high", "4", 100),
+			rankSeries("histogram", `{"count":"2","sum":"2.5"}`, 100),
+			rankSeries("low", "1", 100),
+		)
+
+		(&Client{}).FinalizeTSMMerge("sort(sum(up))", ds)
+
+		if got, want := seriesNames(ds), []string{"low", "histogram", "high"}; !equalStrings(got, want) {
+			t.Fatalf("series got %v want %v", got, want)
+		}
+	})
+
+	t.Run("range vector order is unchanged", func(t *testing.T) {
+		ds := rankDataSet(
+			rankSeries("a", "3", 100),
+			rankSeries("b", "1", 100),
+		)
+		ds.TimeRangeQuery = &timeseries.TimeRangeQuery{Step: time.Minute}
+
+		(&Client{}).FinalizeTSMMerge("sort(sum(up))", ds)
+
+		if got, want := seriesNames(ds), []string{"a", "b"}; !equalStrings(got, want) {
+			t.Fatalf("series got %v want %v", got, want)
+		}
+	})
+
+	t.Run("non-aggregation sort is not finalized", func(t *testing.T) {
+		ds := rankDataSet(
+			rankSeries("a", "3", 100),
+			rankSeries("b", "1", 100),
+		)
+
+		(&Client{}).FinalizeTSMMerge("sort(up)", ds)
+
+		if got, want := seriesNames(ds), []string{"a", "b"}; !equalStrings(got, want) {
 			t.Fatalf("series got %v want %v", got, want)
 		}
 	})

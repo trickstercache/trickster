@@ -19,6 +19,7 @@ package prometheus
 import (
 	"cmp"
 	"container/heap"
+	"encoding/json"
 	"math"
 	"slices"
 	"strconv"
@@ -114,19 +115,38 @@ func (h *rankCandidateHeap) tags(candidate rankCandidate) string {
 	return tags
 }
 
-// FinalizeTSMMerge applies Prometheus-only merge finalization after TSM fanout
-// has accumulated the rewritten inner-query responses. The rank step belongs
-// here so topk/bottomk operate on globally merged values, not per-backend ranks.
+// FinalizeTSMMerge applies Prometheus-only rank and sort finalization after TSM
+// fanout has accumulated the rewritten inner-query responses. These operations
+// belong here so they use globally merged values rather than per-backend data.
 func (c *Client) FinalizeTSMMerge(query string, ts timeseries.Timeseries) {
-	spec, ok := promql.ParseRankAggregation(query)
-	if !ok {
-		return
-	}
 	ds, ok := ts.(*dataset.DataSet)
 	if !ok || ds == nil {
 		return
 	}
-	finalizeRankAggregation(ds, spec)
+	if spec, found := promql.ParseRankAggregation(query); found {
+		finalizeRankAggregation(ds, spec)
+		return
+	}
+	if spec, found := promql.ParseSortWrapper(query); found {
+		if _, aggregationFound := promql.OuterAggregator(spec.InnerQuery); aggregationFound {
+			finalizeSortWrapper(ds, spec.Descending)
+		}
+	}
+}
+
+func finalizeSortWrapper(ds *dataset.DataSet, descending bool) {
+	if ds.Step() > 0 {
+		return
+	}
+
+	ds.UpdateLock.Lock()
+	defer ds.UpdateLock.Unlock()
+
+	for _, result := range ds.Results {
+		if result != nil {
+			sortSeriesIfInstant(result.SeriesList, descending)
+		}
+	}
 }
 
 func finalizeRankAggregation(ds *dataset.DataSet, spec promql.RankAggregation) {
@@ -175,7 +195,13 @@ func finalizeRankAggregation(ds *dataset.DataSet, spec promql.RankAggregation) {
 			}
 		}
 		result.SeriesList = keepSelectedRankPoints(result.SeriesList, selected)
-		sortRankSeriesIfInstant(result.SeriesList, spec)
+		descending := spec.Operator == rankOperatorTopK
+		if spec.SortSet {
+			descending = spec.SortDescending
+		}
+		if ds.Step() == 0 {
+			sortSeriesIfInstant(result.SeriesList, descending)
+		}
 	}
 }
 
@@ -192,6 +218,27 @@ func rankPointValue(point dataset.Point) (float64, bool) {
 		return 0, false
 	}
 	return f, true
+}
+
+func sortPointValue(point dataset.Point) (float64, bool) {
+	if value, ok := rankPointValue(point); ok {
+		return value, true
+	}
+	if len(point.Values) == 0 {
+		return 0, false
+	}
+	value, ok := point.Values[0].(string)
+	if !ok {
+		return 0, false
+	}
+	var histogram struct {
+		Sum string `json:"sum"`
+	}
+	if err := json.Unmarshal([]byte(value), &histogram); err != nil || histogram.Sum == "" {
+		return 0, false
+	}
+	result, err := strconv.ParseFloat(histogram.Sum, 64)
+	return result, err == nil
 }
 
 func compareRankCandidateValues(a, b rankCandidate, operator string) int {
@@ -274,7 +321,7 @@ func keepSelectedRankPoints(
 	return keptSeries
 }
 
-func sortRankSeriesIfInstant(seriesList dataset.SeriesList, spec promql.RankAggregation) {
+func sortSeriesIfInstant(seriesList dataset.SeriesList, descending bool) {
 	if len(seriesList) < 2 {
 		return
 	}
@@ -287,13 +334,9 @@ func sortRankSeriesIfInstant(seriesList dataset.SeriesList, spec promql.RankAggr
 			return
 		}
 	}
-	desc := spec.Operator == rankOperatorTopK
-	if spec.SortSet {
-		desc = spec.SortDescending
-	}
 	slices.SortStableFunc(seriesList, func(a, b *dataset.Series) int {
-		iv, iok := rankPointValue(a.Points[0])
-		jv, jok := rankPointValue(b.Points[0])
+		iv, iok := sortPointValue(a.Points[0])
+		jv, jok := sortPointValue(b.Points[0])
 		if !iok || !jok {
 			if iok {
 				return -1
@@ -304,7 +347,7 @@ func sortRankSeriesIfInstant(seriesList dataset.SeriesList, spec promql.RankAggr
 			return 0
 		}
 		op := rankOperatorBottomK
-		if desc {
+		if descending {
 			op = rankOperatorTopK
 		}
 		if rankValueLess(iv, jv, op) {
