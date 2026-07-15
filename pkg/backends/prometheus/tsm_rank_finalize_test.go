@@ -150,16 +150,18 @@ func TestFinalizeTSMMergeSortWrapper(t *testing.T) {
 		}
 	})
 
-	t.Run("native histograms sort by observation sum", func(t *testing.T) {
+	t.Run("native histograms are omitted", func(t *testing.T) {
+		histogram := rankSeries("histogram", `{"count":"2","sum":"2.5"}`, 100)
+		histogram.Header.ValueFieldsList = timeseries.FieldDefinitions{{Name: histogramFieldName}}
 		ds := rankDataSet(
+			histogram,
 			rankSeries("high", "4", 100),
-			rankSeries("histogram", `{"count":"2","sum":"2.5"}`, 100),
 			rankSeries("low", "1", 100),
 		)
 
 		(&Client{}).FinalizeTSMMerge("sort(sum(up))", ds)
 
-		if got, want := seriesNames(ds), []string{"low", "histogram", "high"}; !equalStrings(got, want) {
+		if got, want := seriesNames(ds), []string{"low", "high"}; !equalStrings(got, want) {
 			t.Fatalf("series got %v want %v", got, want)
 		}
 	})

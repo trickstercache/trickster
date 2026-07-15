@@ -19,7 +19,6 @@ package prometheus
 import (
 	"cmp"
 	"container/heap"
-	"encoding/json"
 	"math"
 	"slices"
 	"strconv"
@@ -31,6 +30,7 @@ import (
 )
 
 const (
+	histogramFieldName  = "histogram"
 	rankOperatorBottomK = "bottomk"
 	rankOperatorTopK    = "topk"
 )
@@ -45,6 +45,12 @@ type rankCandidate struct {
 	pointIdx int
 	value    float64
 	order    int
+}
+
+type sortItem struct {
+	series *dataset.Series
+	value  float64
+	tags   string
 }
 
 type rankCandidateHeap struct {
@@ -144,7 +150,7 @@ func finalizeSortWrapper(ds *dataset.DataSet, descending bool) {
 
 	for _, result := range ds.Results {
 		if result != nil {
-			sortSeriesIfInstant(result.SeriesList, descending)
+			result.SeriesList = sortSeriesIfInstant(result.SeriesList, descending)
 		}
 	}
 }
@@ -200,7 +206,7 @@ func finalizeRankAggregation(ds *dataset.DataSet, spec promql.RankAggregation) {
 			descending = spec.SortDescending
 		}
 		if ds.Step() == 0 {
-			sortSeriesIfInstant(result.SeriesList, descending)
+			result.SeriesList = sortSeriesIfInstant(result.SeriesList, descending)
 		}
 	}
 }
@@ -218,27 +224,6 @@ func rankPointValue(point dataset.Point) (float64, bool) {
 		return 0, false
 	}
 	return f, true
-}
-
-func sortPointValue(point dataset.Point) (float64, bool) {
-	if value, ok := rankPointValue(point); ok {
-		return value, true
-	}
-	if len(point.Values) == 0 {
-		return 0, false
-	}
-	value, ok := point.Values[0].(string)
-	if !ok {
-		return 0, false
-	}
-	var histogram struct {
-		Sum string `json:"sum"`
-	}
-	if err := json.Unmarshal([]byte(value), &histogram); err != nil || histogram.Sum == "" {
-		return 0, false
-	}
-	result, err := strconv.ParseFloat(histogram.Sum, 64)
-	return result, err == nil
 }
 
 func compareRankCandidateValues(a, b rankCandidate, operator string) int {
@@ -321,41 +306,67 @@ func keepSelectedRankPoints(
 	return keptSeries
 }
 
-func sortSeriesIfInstant(seriesList dataset.SeriesList, descending bool) {
-	if len(seriesList) < 2 {
-		return
+func isHistogramSeries(series *dataset.Series) bool {
+	return series != nil &&
+		len(series.Header.ValueFieldsList) > 0 &&
+		series.Header.ValueFieldsList[0].Name == histogramFieldName
+}
+
+func sortSeriesIfInstant(
+	seriesList dataset.SeriesList,
+	descending bool,
+) dataset.SeriesList {
+	filtered := seriesList[:0]
+	for _, series := range seriesList {
+		if series == nil || isHistogramSeries(series) {
+			continue
+		}
+		filtered = append(filtered, series)
 	}
-	if seriesList[0] == nil || len(seriesList[0].Points) != 1 {
-		return
+	seriesList = filtered
+
+	if len(seriesList) < 2 {
+		return seriesList
+	}
+	if len(seriesList[0].Points) != 1 {
+		return seriesList
 	}
 	epoch := seriesList[0].Points[0].Epoch
 	for _, series := range seriesList {
-		if series == nil || len(series.Points) != 1 || series.Points[0].Epoch != epoch {
-			return
+		if len(series.Points) != 1 || series.Points[0].Epoch != epoch {
+			return seriesList
 		}
 	}
-	slices.SortStableFunc(seriesList, func(a, b *dataset.Series) int {
-		iv, iok := sortPointValue(a.Points[0])
-		jv, jok := sortPointValue(b.Points[0])
-		if !iok || !jok {
-			if iok {
-				return -1
-			}
-			if jok {
-				return 1
-			}
-			return 0
+
+	items := make([]sortItem, 0, len(seriesList))
+	for _, series := range seriesList {
+		value, ok := rankPointValue(series.Points[0])
+		if !ok {
+			value = math.NaN()
 		}
-		op := rankOperatorBottomK
-		if descending {
-			op = rankOperatorTopK
-		}
-		if rankValueLess(iv, jv, op) {
+		items = append(items, sortItem{
+			series: series,
+			value:  value,
+			tags:   series.Header.Tags.JSON(),
+		})
+	}
+
+	operator := rankOperatorBottomK
+	if descending {
+		operator = rankOperatorTopK
+	}
+	slices.SortStableFunc(items, func(a, b sortItem) int {
+		if rankValueLess(a.value, b.value, operator) {
 			return -1
 		}
-		if rankValueLess(jv, iv, op) {
+		if rankValueLess(b.value, a.value, operator) {
 			return 1
 		}
-		return strings.Compare(a.Header.Tags.JSON(), b.Header.Tags.JSON())
+		return strings.Compare(a.tags, b.tags)
 	})
+
+	for i := range items {
+		seriesList[i] = items[i].series
+	}
+	return seriesList
 }
