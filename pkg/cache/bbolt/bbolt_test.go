@@ -32,8 +32,9 @@ import (
 )
 
 const (
-	cacheProvider = "bbolt"
-	cacheKey      = "cacheKey"
+	cacheProvider     = "bbolt"
+	cacheKey          = "cacheKey"
+	benchmarkKeyCount = 10
 )
 
 func newCacheConfig(dbPath string) co.Options {
@@ -42,7 +43,8 @@ func newCacheConfig(dbPath string) co.Options {
 	}, Index: &io.Options{ReapInterval: time.Second}}
 }
 
-func storeBenchmark(b *testing.B) CacheClient {
+func setupBenchmark(b *testing.B) *CacheClient {
+	b.Helper()
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	testDbPath := b.TempDir() + "/test.db"
 	cacheConfig := co.Options{
@@ -52,19 +54,15 @@ func storeBenchmark(b *testing.B) CacheClient {
 	}
 	bc := New(b.Name(), "", "", &cacheConfig)
 
-	err := bc.Connect()
-	if err != nil {
-		b.Error(err)
+	if err := bc.Connect(); err != nil {
+		b.Fatal(err)
 	}
-
-	// it should store a value
-	for n := 0; n < b.N; n++ {
-		err = bc.Store(cacheKey+strconv.Itoa(n), []byte("data"+strconv.Itoa(n)), time.Duration(60)*time.Second)
-		if err != nil {
+	b.Cleanup(func() {
+		if err := bc.Close(); err != nil {
 			b.Error(err)
 		}
-	}
-	return *bc
+	})
+	return bc
 }
 
 func TestBBoltCache_Connect(t *testing.T) {
@@ -133,8 +131,15 @@ func TestBBoltCache_Store(t *testing.T) {
 }
 
 func BenchmarkCache_Store(b *testing.B) {
-	bc := storeBenchmark(b)
-	defer bc.Close()
+	bc := setupBenchmark(b)
+	n := 0
+	for b.Loop() {
+		suffix := strconv.Itoa(n)
+		if err := bc.Store(cacheKey+suffix, []byte("data"+suffix), time.Minute); err != nil {
+			b.Fatal(err)
+		}
+		n++
+	}
 }
 
 func TestBBoltCache_Remove(t *testing.T) {
@@ -179,38 +184,15 @@ func TestBBoltCache_Remove(t *testing.T) {
 }
 
 func BenchmarkCache_Remove(b *testing.B) {
-	bc := storeBenchmark(b)
-	defer bc.Close()
-	for n := 0; n < b.N; n++ {
-		var data []byte
-		data, ls, err := bc.Retrieve(cacheKey + strconv.Itoa(n))
-		if err != nil {
-			b.Error(err)
+	bc := setupBenchmark(b)
+	for b.Loop() {
+		b.StopTimer()
+		if err := bc.Store(cacheKey, []byte("data"), time.Minute); err != nil {
+			b.Fatal(err)
 		}
-		if string(data) != "data"+strconv.Itoa(n) {
-			b.Errorf("wanted \"%s\". got \"%s\"", "data"+strconv.Itoa(n), data)
-		}
-		if ls != status.LookupStatusHit {
-			b.Errorf("expected %s got %s", status.LookupStatusHit, ls)
-		}
-
-		bc.Remove(cacheKey + strconv.Itoa(n))
-
-		// this should now return error
-		data, ls, err = bc.Retrieve(cacheKey + strconv.Itoa(n))
-		expectederr := `value for key [` + cacheKey + strconv.Itoa(n) + `] not in cache`
-		if err == nil {
-			b.Errorf("expected error for %s", expectederr)
-			bc.Close()
-		}
-		if err.Error() != expectederr {
-			b.Errorf("expected error '%s' got '%s'", expectederr, err.Error())
-		}
-		if ls != status.LookupStatusKeyMiss {
-			b.Errorf("expected %s got %s", status.LookupStatusKeyMiss, ls)
-		}
-		if string(data) != "" {
-			b.Errorf("wanted \"%s\". got \"%s\".", "data", data)
+		b.StartTimer()
+		if err := bc.Remove(cacheKey); err != nil {
+			b.Fatal(err)
 		}
 	}
 }
@@ -257,26 +239,28 @@ func TestBBoltCache_BulkRemove(t *testing.T) {
 }
 
 func BenchmarkCache_BulkRemove(b *testing.B) {
-	bc := storeBenchmark(b)
-	defer bc.Close()
-
-	var keyArray []string
-	for n := 0; n < b.N; n++ {
-		keyArray = append(keyArray, cacheKey+strconv.Itoa(n))
+	bc := setupBenchmark(b)
+	keys := make([]string, benchmarkKeyCount)
+	values := make([][]byte, benchmarkKeyCount)
+	for n := range benchmarkKeyCount {
+		suffix := strconv.Itoa(n)
+		keys[n] = cacheKey + suffix
+		values[n] = []byte("data" + suffix)
 	}
 
-	bc.Remove(keyArray...)
-
-	// it should be a cache miss
-	for n := 0; n < b.N; n++ {
-		_, ls, err := bc.Retrieve(cacheKey + strconv.Itoa(n))
-		if err == nil {
-			b.Errorf("expected key not found error for %s", cacheKey)
+	for b.Loop() {
+		b.StopTimer()
+		for n, key := range keys {
+			if err := bc.Store(key, values[n], time.Minute); err != nil {
+				b.Fatal(err)
+			}
 		}
-		if ls != status.LookupStatusKeyMiss {
-			b.Errorf("expected %s got %s", status.LookupStatusKeyMiss, ls)
+		b.StartTimer()
+		if err := bc.Remove(keys...); err != nil {
+			b.Fatal(err)
 		}
 	}
+	b.ReportMetric(benchmarkKeyCount, "keys/op")
 }
 
 func TestBBoltCache_Retrieve(t *testing.T) {
@@ -311,40 +295,21 @@ func TestBBoltCache_Retrieve(t *testing.T) {
 }
 
 func BenchmarkCache_Retrieve(b *testing.B) {
-	bc := storeBenchmark(b)
-	defer bc.Close()
+	bc := setupBenchmark(b)
+	if err := bc.Store(cacheKey, []byte("data"), time.Minute); err != nil {
+		b.Fatal(err)
+	}
 
-	for n := 0; n < b.N; n++ {
-		expected2 := `value for key [` + cacheKey + strconv.Itoa(n) + `] could not be deserialized from cache`
-
-		data, ls, err := bc.Retrieve(cacheKey + strconv.Itoa(n))
+	for b.Loop() {
+		data, ls, err := bc.Retrieve(cacheKey)
 		if err != nil {
-			b.Error(err)
+			b.Fatal(err)
 		}
-		if string(data) != "data"+strconv.Itoa(n) {
-			b.Errorf("wanted \"%s\". got \"%s\".", "data"+strconv.Itoa(n), data)
+		if string(data) != "data" {
+			b.Fatalf("wanted %q, got %q", "data", data)
 		}
 		if ls != status.LookupStatusHit {
-			b.Errorf("expected %s got %s", status.LookupStatusHit, ls)
-		}
-
-		// create a corrupted cache entry and expect an error
-		writeToBBolt(bc.dbh, bc.Config.BBolt.Bucket, cacheKey+strconv.Itoa(n), []byte("asdasdfasf"+strconv.Itoa(n)))
-
-		// it should fail to retrieve a value
-		data, ls, err = bc.Retrieve(cacheKey + strconv.Itoa(n))
-		if err == nil {
-			b.Errorf("expected error for %s", expected2)
-			bc.Close()
-		}
-		if err.Error() != expected2 {
-			b.Errorf("expected error '%s' got '%s'", expected2, err.Error())
-		}
-		if string(data) != "" {
-			b.Errorf("wanted \"%s\". got \"%s\".", "data"+strconv.Itoa(n), data)
-		}
-		if ls != status.LookupStatusKeyMiss {
-			b.Errorf("expected %s got %s", status.LookupStatusKeyMiss, ls)
+			b.Fatalf("expected %s, got %s", status.LookupStatusHit, ls)
 		}
 	}
 }

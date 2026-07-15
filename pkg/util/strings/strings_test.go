@@ -62,7 +62,7 @@ func TestUnique(t *testing.T) {
 
 func BenchmarkUnique(b *testing.B) {
 	initial := []string{"test", "test", "test1", "test2", "test2", "test", "test3"}
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		Unique(initial)
 	}
 }
