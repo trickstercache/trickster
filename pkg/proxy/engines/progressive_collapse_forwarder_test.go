@@ -387,15 +387,17 @@ func BenchmarkPCFWrite(b *testing.B) {
 	bufSize := 32
 
 	testBytes := make([]byte, bufSize*1024)
-	l := b.N * bufSize * 1024
 	resp := &http.Response{}
+	pcf := NewPCF(resp, int64(len(testBytes))).(*progressiveCollapseForwarder)
 
-	pcf := NewPCF(resp, int64(l))
 	b.SetBytes(int64(bufSize) * 1024)
 
-	b.ResetTimer()
-	for n := 0; n < b.N; n++ {
-		pcf.Write(testBytes)
+	for b.Loop() {
+		pcf.dataIndex = 0
+		pcf.rIndex.Store(0)
+		if _, err := pcf.Write(testBytes); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 
@@ -405,25 +407,17 @@ func BenchmarkPCFRead(b *testing.B) {
 	testBytes := make([]byte, bufSize*1024)
 	readBuf := make([]byte, bufSize*1024)
 
-	l := b.N * bufSize * 1024
 	resp := &http.Response{}
 
-	var readIndex uint64
-	var err error
-
-	pcf := NewPCF(resp, int64(l))
+	pcf := NewPCF(resp, int64(len(testBytes)))
 	b.SetBytes(int64(bufSize) * 1024)
-	for i := 0; i < b.N; i++ {
-		pcf.Write(testBytes)
+	if _, err := pcf.Write(testBytes); err != nil {
+		b.Fatal(err)
 	}
 
-	b.ResetTimer()
-
-	for n := 0; n < b.N; n++ {
-		_, err = pcf.IndexRead(readIndex, readBuf)
-		readIndex++
-		if err != nil {
-			break
+	for b.Loop() {
+		if _, err := pcf.IndexRead(0, readBuf); err != nil {
+			b.Fatal(err)
 		}
 	}
 }
@@ -434,23 +428,19 @@ func BenchmarkPCFWriteRead(b *testing.B) {
 	testBytes := make([]byte, bufSize*1024)
 	readBuf := make([]byte, bufSize*1024)
 
-	l := b.N * bufSize * 1024
 	resp := &http.Response{}
+	pcf := NewPCF(resp, int64(len(testBytes))).(*progressiveCollapseForwarder)
 
-	var readIndex uint64
-	var err error
-
-	pcf := NewPCF(resp, int64(l))
 	b.SetBytes(int64(bufSize) * 1024)
 
-	b.ResetTimer()
-
-	for n := 0; n < b.N; n++ {
-		pcf.Write(testBytes)
-		_, err = pcf.IndexRead(readIndex, readBuf)
-		readIndex++
-		if err != nil {
-			break
+	for b.Loop() {
+		pcf.dataIndex = 0
+		pcf.rIndex.Store(0)
+		if _, err := pcf.Write(testBytes); err != nil {
+			b.Fatal(err)
+		}
+		if _, err := pcf.IndexRead(0, readBuf); err != nil {
+			b.Fatal(err)
 		}
 	}
 }

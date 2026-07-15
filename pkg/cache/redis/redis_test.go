@@ -33,21 +33,25 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 )
 
-const cacheKey = `cacheKey`
+const (
+	cacheKey          = `cacheKey`
+	benchmarkKeyCount = 10
+)
 
-func storeBenchmark(b *testing.B) (*CacheClient, func()) {
-	rc, close := setupRedisCache(clientTypeStandard)
-	err := rc.Connect()
-	if err != nil {
-		b.Error(err)
+func setupBenchmark(b *testing.B) *CacheClient {
+	b.Helper()
+	rc, closeServer := setupRedisCache(clientTypeStandard)
+	if err := rc.Connect(); err != nil {
+		closeServer()
+		b.Fatal(err)
 	}
-	for n := 0; n < b.N; n++ {
-		err := rc.Store(cacheKey+strconv.Itoa(n), []byte("data"+strconv.Itoa(n)), time.Duration(60)*time.Second)
-		if err != nil {
+	b.Cleanup(func() {
+		if err := rc.Close(); err != nil {
 			b.Error(err)
 		}
-	}
-	return rc, close
+		closeServer()
+	})
+	return rc
 }
 
 func setupRedisCache(ct clientType) (*CacheClient, func()) {
@@ -235,11 +239,15 @@ func TestRedisCache_Store(t *testing.T) {
 }
 
 func BenchmarkCache_Store(b *testing.B) {
-	rc, close := storeBenchmark(b)
-	if rc == nil {
-		b.Error("Could not create the redis cache")
+	rc := setupBenchmark(b)
+	n := 0
+	for b.Loop() {
+		suffix := strconv.Itoa(n)
+		if err := rc.Store(cacheKey+suffix, []byte("data"+suffix), time.Minute); err != nil {
+			b.Fatal(err)
+		}
+		n++
 	}
-	defer close()
 }
 
 func TestRedisCache_Retrieve(t *testing.T) {
@@ -269,19 +277,21 @@ func TestRedisCache_Retrieve(t *testing.T) {
 }
 
 func BenchmarkCache_Retrieve(b *testing.B) {
-	rc, close := storeBenchmark(b)
-	defer close()
+	rc := setupBenchmark(b)
+	if err := rc.Store(cacheKey, []byte("data"), time.Minute); err != nil {
+		b.Fatal(err)
+	}
 
-	for n := 0; n < b.N; n++ {
-		data, ls, err := rc.Retrieve(cacheKey + strconv.Itoa(n))
+	for b.Loop() {
+		data, ls, err := rc.Retrieve(cacheKey)
 		if err != nil {
-			b.Error(err)
+			b.Fatal(err)
 		}
 		if ls != status.LookupStatusHit {
-			b.Errorf("expected %s got %s", status.LookupStatusHit, ls)
+			b.Fatalf("expected %s, got %s", status.LookupStatusHit, ls)
 		}
-		if string(data) != "data"+strconv.Itoa(n) {
-			b.Errorf("wanted \"%s\". got \"%s\".", "data"+strconv.Itoa(n), data)
+		if string(data) != "data" {
+			b.Fatalf("wanted %q, got %q", "data", data)
 		}
 	}
 }
@@ -343,30 +353,15 @@ func TestCache_Remove(t *testing.T) {
 }
 
 func BenchmarkCache_Remove(b *testing.B) {
-	rc, close := storeBenchmark(b)
-	defer close()
-
-	for n := 0; n < b.N; n++ {
-		var data []byte
-		data, ls, err := rc.Retrieve(cacheKey + strconv.Itoa(n))
-		if err != nil {
-			b.Error(err)
+	rc := setupBenchmark(b)
+	for b.Loop() {
+		b.StopTimer()
+		if err := rc.Store(cacheKey, []byte("data"), time.Minute); err != nil {
+			b.Fatal(err)
 		}
-		if string(data) != "data"+strconv.Itoa(n) {
-			b.Errorf("wanted \"%s\". got \"%s\"", "data"+strconv.Itoa(n), data)
-		}
-		if ls != status.LookupStatusHit {
-			b.Errorf("expected %s got %s", status.LookupStatusHit, ls)
-		}
-
-		rc.Remove(cacheKey + strconv.Itoa(n))
-
-		_, ls, err = rc.Retrieve(cacheKey + strconv.Itoa(n))
-		if err == nil {
-			b.Errorf("expected key not found error for %s", cacheKey+strconv.Itoa(n))
-		}
-		if ls != status.LookupStatusKeyMiss {
-			b.Errorf("expected %s got %s", status.LookupStatusKeyMiss, ls)
+		b.StartTimer()
+		if err := rc.Remove(cacheKey); err != nil {
+			b.Fatal(err)
 		}
 	}
 }
@@ -412,24 +407,26 @@ func TestCache_BulkRemove(t *testing.T) {
 }
 
 func BenchmarkCache_BulkRemove(b *testing.B) {
-	rc, close := storeBenchmark(b)
-	defer close()
-
-	var keyArray []string
-	for n := 0; n < b.N; n++ {
-		keyArray = append(keyArray, cacheKey+strconv.Itoa(n))
+	rc := setupBenchmark(b)
+	keys := make([]string, benchmarkKeyCount)
+	values := make([][]byte, benchmarkKeyCount)
+	for n := range benchmarkKeyCount {
+		suffix := strconv.Itoa(n)
+		keys[n] = cacheKey + suffix
+		values[n] = []byte("data" + suffix)
 	}
 
-	rc.Remove(keyArray...)
-
-	// it should be a cache miss
-	for n := 0; n < b.N; n++ {
-		_, ls, err := rc.Retrieve(cacheKey + strconv.Itoa(n))
-		if err == nil {
-			b.Errorf("expected key not found error for %s", cacheKey)
+	for b.Loop() {
+		b.StopTimer()
+		for n, key := range keys {
+			if err := rc.Store(key, values[n], time.Minute); err != nil {
+				b.Fatal(err)
+			}
 		}
-		if ls != status.LookupStatusKeyMiss {
-			b.Errorf("expected %s got %s", status.LookupStatusKeyMiss, ls)
+		b.StartTimer()
+		if err := rc.Remove(keys...); err != nil {
+			b.Fatal(err)
 		}
 	}
+	b.ReportMetric(benchmarkKeyCount, "keys/op")
 }
