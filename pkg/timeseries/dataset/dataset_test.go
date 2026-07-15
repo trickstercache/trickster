@@ -1017,7 +1017,9 @@ func BenchmarkCropToRange(b *testing.B) {
 	}
 
 	for b.Loop() {
+		b.StopTimer()
 		ds.Results[0].SeriesList = seriesList
+		b.StartTimer()
 		ds.CropToRange(bmExt)
 	}
 }

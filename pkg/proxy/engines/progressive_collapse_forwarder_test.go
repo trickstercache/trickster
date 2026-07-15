@@ -393,8 +393,10 @@ func BenchmarkPCFWrite(b *testing.B) {
 	b.SetBytes(int64(bufSize) * 1024)
 
 	for b.Loop() {
+		b.StopTimer()
 		pcf.dataIndex = 0
 		pcf.rIndex.Store(0)
+		b.StartTimer()
 		if _, err := pcf.Write(testBytes); err != nil {
 			b.Fatal(err)
 		}
@@ -434,8 +436,10 @@ func BenchmarkPCFWriteRead(b *testing.B) {
 	b.SetBytes(int64(bufSize) * 1024)
 
 	for b.Loop() {
+		b.StopTimer()
 		pcf.dataIndex = 0
 		pcf.rIndex.Store(0)
+		b.StartTimer()
 		if _, err := pcf.Write(testBytes); err != nil {
 			b.Fatal(err)
 		}
