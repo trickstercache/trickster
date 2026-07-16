@@ -34,12 +34,14 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	tc "github.com/trickstercache/trickster/v2/pkg/proxy/context"
+	corso "github.com/trickstercache/trickster/v2/pkg/proxy/cors/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/forwarding"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
+	"github.com/trickstercache/trickster/v2/pkg/util/middleware"
 )
 
 func setupTestHarnessOPC(file, body string, code int,
@@ -147,6 +149,88 @@ func TestObjectProxyCacheRequest(t *testing.T) {
 	_, e = testFetchOPC(r, http.StatusPartialContent, "test", map[string]string{"status": "hit"})
 	for _, err = range e {
 		t.Error(err)
+	}
+}
+
+func TestObjectProxyCacheCORSOnMissAndHit(t *testing.T) {
+	hdrs := map[string]string{
+		headers.NameCacheControl:           "max-age=60",
+		headers.NameAllowOrigin:            "https://origin.example.com",
+		"Access-Control-Allow-Credentials": "true",
+	}
+	ts, _, r, rsc, err := setupTestHarnessOPC("", "test", http.StatusOK, hdrs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeTestHarness(ts, r)
+
+	rsc.BackendOptions.CORS = &corso.Options{
+		Mode: corso.ModeReplace,
+		Headers: map[string]string{
+			headers.NameAllowOrigin: "https://trickster.example.com",
+		},
+	}
+	h := middleware.WithResourcesContext(rsc.BackendClient, rsc.BackendOptions,
+		rsc.CacheClient, rsc.PathConfig, rsc.Tracer, http.HandlerFunc(ObjectProxyCacheRequest))
+	base := request.ClearResources(r)
+
+	for i, wantStatus := range []string{"kmiss", "hit"} {
+		recorder := httptest.NewRecorder()
+		req := base.Clone(base.Context())
+		h.ServeHTTP(recorder, req)
+		resp := recorder.Result()
+		if got := resp.Header.Get(headers.NameAllowOrigin); got != "https://trickster.example.com" {
+			t.Errorf("request %d allow origin = %q", i+1, got)
+		}
+		if got := resp.Header.Get("Access-Control-Allow-Credentials"); got != "" {
+			t.Errorf("request %d retained origin credentials header: %q", i+1, got)
+		}
+		if err := testResultHeaderPartMatch(resp.Header, map[string]string{"status": wantStatus}); err != nil {
+			t.Errorf("request %d: %v", i+1, err)
+		}
+		resp.Body.Close()
+	}
+}
+
+func TestObjectProxyCachePreservedCORSVariesByOrigin(t *testing.T) {
+	hdrs := map[string]string{
+		headers.NameCacheControl: "max-age=60",
+		headers.NameAllowOrigin:  "https://origin.example.com",
+	}
+	ts, _, r, rsc, err := setupTestHarnessOPC("", "test", http.StatusOK, hdrs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeTestHarness(ts, r)
+
+	rsc.BackendOptions.CORS = &corso.Options{Mode: corso.ModePreserve}
+	h := middleware.WithResourcesContext(rsc.BackendClient, rsc.BackendOptions,
+		rsc.CacheClient, rsc.PathConfig, rsc.Tracer, http.HandlerFunc(ObjectProxyCacheRequest))
+	base := request.ClearResources(r)
+
+	requests := []struct {
+		origin string
+		status string
+	}{
+		{origin: "https://first.example.com", status: "kmiss"},
+		{origin: "https://second.example.com", status: "kmiss"},
+		{origin: "https://first.example.com", status: "hit"},
+	}
+
+	for i, tc := range requests {
+		recorder := httptest.NewRecorder()
+		req := base.Clone(base.Context())
+		req.Header = base.Header.Clone()
+		req.Header.Set(headers.NameOrigin, tc.origin)
+		h.ServeHTTP(recorder, req)
+		resp := recorder.Result()
+		if got := resp.Header.Get(headers.NameAllowOrigin); got != "https://origin.example.com" {
+			t.Errorf("request %d allow origin = %q", i+1, got)
+		}
+		if err := testResultHeaderPartMatch(resp.Header, map[string]string{"status": tc.status}); err != nil {
+			t.Errorf("request %d: %v", i+1, err)
+		}
+		resp.Body.Close()
 	}
 }
 

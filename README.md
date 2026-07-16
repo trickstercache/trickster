@@ -27,6 +27,7 @@ Trickster is a fully-featured HTTP Reverse Proxy Cache for HTTP applications lik
 * [Supports TLS](./docs/tls.md) and HTTP/2 for frontend termination and backend origination
 * Offers several options for a [caching layer](./docs/caches.md), including in-memory, filesystem, Redis and bbolt
 * [Highly customizable](./docs/configuring.md), using simple yaml configuration settings, [down to the HTTP Path](./docs/paths.md)
+* Per-backend and per-path [CORS response policies](./docs/cors.md)
 * Built-in Prometheus [metrics](./docs/metrics.md) and customizable [Health Check](./docs/health.md) Endpoints for end-to-end monitoring
 * [Negative Caching](./docs/negative-caching.md) to prevent domino effect outages
 * High-performance [Collapsed Forwarding](./docs/collapsed-forwarding.md)

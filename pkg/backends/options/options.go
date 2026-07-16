@@ -38,6 +38,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	tro "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
+	corso "github.com/trickstercache/trickster/v2/pkg/proxy/cors/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
@@ -166,6 +167,8 @@ type Options struct {
 
 	// ForwardedHeaders indicates the class of 'Forwarded' header to attach to upstream requests
 	ForwardedHeaders string `yaml:"forwarded_headers,omitempty"`
+	// CORS configures downstream CORS response headers for this backend
+	CORS *corso.Options `yaml:"cors,omitempty"`
 
 	// IsDefault indicates if this is the d.Default backend for any request not matching a configured route
 	IsDefault bool `yaml:"is_default,omitempty"`
@@ -300,6 +303,9 @@ func (o *Options) Clone() *Options {
 	if o.TLS != nil {
 		out.TLS = o.TLS.Clone()
 	}
+	if o.CORS != nil {
+		out.CORS = o.CORS.Clone()
+	}
 
 	if o.FastForwardPath != nil {
 		out.FastForwardPath = o.FastForwardPath.Clone()
@@ -350,6 +356,11 @@ func (o *Options) Validate() (bool, error) {
 
 	if len(o.Paths) > 0 {
 		if err := o.Paths.Validate(); err != nil {
+			return false, err
+		}
+	}
+	if o.CORS != nil {
+		if _, err := o.CORS.Validate(); err != nil {
 			return false, err
 		}
 	}
@@ -622,6 +633,11 @@ func (o *Options) Initialize(name string) error {
 	}
 	if o.TLS != nil {
 		if err := o.TLS.Initialize(""); err != nil {
+			return err
+		}
+	}
+	if o.CORS != nil {
+		if err := o.CORS.Initialize(""); err != nil {
 			return err
 		}
 	}

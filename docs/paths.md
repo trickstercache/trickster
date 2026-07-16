@@ -152,6 +152,9 @@ backends:
         # before replying to the client
         response_headers:
           Expires: '-1'
+        # a path-level CORS policy overrides the backend policy; see docs/cors.md
+        cors:
+          mode: preserve
       - path: /images/
         methods:
           - GET
