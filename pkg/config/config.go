@@ -183,6 +183,25 @@ func (c *Config) CheckFileLastModified() time.Time {
 	return file.ModTime()
 }
 
+// HasConfigChanged reports whether the configuration file has changed since it was loaded.
+// Unlike IsStale, it does not apply or update the reload rate limiter.
+func (c *Config) HasConfigChanged() bool {
+	if c == nil || c.Main == nil {
+		return false
+	}
+	c.Main.stalenessCheckLock.Lock()
+	defer c.Main.stalenessCheckLock.Unlock()
+	return c.hasConfigChanged()
+}
+
+func (c *Config) hasConfigChanged() bool {
+	if c.Main.configFilePath == "" {
+		return false
+	}
+	t := c.CheckFileLastModified()
+	return !t.IsZero() && !t.Equal(c.Main.configLastModified)
+}
+
 // Process converts various raw config options into internal data structures
 // as needed
 func (c *Config) Process() error {
@@ -284,10 +303,13 @@ func (c *Config) Clone() *Config {
 
 // IsStale returns true if the running config is stale versus the config on disk
 func (c *Config) IsStale() bool {
+	if c == nil || c.Main == nil {
+		return false
+	}
 	c.Main.stalenessCheckLock.Lock()
 	defer c.Main.stalenessCheckLock.Unlock()
 
-	if c.Main == nil || c.Main.configFilePath == "" ||
+	if c.Main.configFilePath == "" ||
 		time.Now().Before(c.Main.configRateLimitTime) {
 		return false
 	}
@@ -297,19 +319,18 @@ func (c *Config) IsStale() bool {
 	}
 
 	c.Main.configRateLimitTime = time.Now().Add(c.MgmtConfig.ReloadRateLimit)
-	t := c.CheckFileLastModified()
-	if t.IsZero() {
-		return false
-	}
-	return !t.Equal(c.Main.configLastModified)
+	return c.hasConfigChanged()
 }
 
 // CheckAndMarkReloadInProgress checks if the config is stale and
 // marks it as being reloaded to prevent duplicate reloads.
 func (c *Config) CheckAndMarkReloadInProgress() bool {
+	if c == nil || c.Main == nil {
+		return false
+	}
 	c.Main.stalenessCheckLock.Lock()
 	defer c.Main.stalenessCheckLock.Unlock()
-	if c.Main == nil || c.Main.configFilePath == "" ||
+	if c.Main.configFilePath == "" ||
 		time.Now().Before(c.Main.configRateLimitTime) {
 		return false
 	}

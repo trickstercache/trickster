@@ -63,7 +63,18 @@ Trickster can validate a configuration file by running `trickster -validate-conf
 
 Trickster can gracefully reload the configuration file from disk without impacting the uptime and responsiveness of the application.
 
-Trickster provides 2 ways to reload the Trickster configuration: by requesting an HTTP endpoint, or by sending a SIGHUP (e.g., `kill -1 $TRICKSTER_PID`) to the Trickster process. In both cases, the underlying running Configuration File must have been modified such that the last modified time of the file is different than from when it was previously loaded.
+Trickster supports manual reloads by requesting an HTTP endpoint or sending a SIGHUP (e.g., `kill -1 $TRICKSTER_PID`) to the Trickster process. It can also poll the file automatically. In all cases, the running configuration file must have been modified since it was loaded.
+
+### Automatic Config Reload
+
+Trickster can also poll the configuration file and reload it after a change. This is disabled by default. Set `mgmt.auto_reload_interval` to a positive duration to enable it:
+
+```yaml
+mgmt:
+  auto_reload_interval: 10s
+```
+
+Polling uses the same validation and graceful reload path as SIGHUP and the management endpoint. The interval itself is reloadable, so a successful configuration update can change or disable automatic reloads. Polling is suitable for Kubernetes ConfigMap projected volumes, whose atomic symlink updates are not reliably represented as writes to the mounted file by filesystem notification APIs.
 
 ### Config Reload via SIGHUP
 

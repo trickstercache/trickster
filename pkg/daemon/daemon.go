@@ -98,6 +98,8 @@ func Start(ctx context.Context, args ...string) error {
 		Listeners: listener.NewGroup(),
 	}
 	hupFunc := newHupFunc(si, args)
+	autoReloader := bindAutoReloader(ctx, si, hupFunc)
+	defer autoReloader.Close()
 	// Serve with Config
 	err = setup.ApplyConfig(si, conf, clients, hupFunc, func() { os.Exit(1) }, si.Listeners)
 	if err != nil {
@@ -116,10 +118,12 @@ func Start(ctx context.Context, args ...string) error {
 			logger.Info("all listeners ready", nil)
 		}
 	}
+	autoReloader.Update(conf)
 
 	skipUnlock = true
 	mtx.Unlock()
 	signaling.Wait(ctx, hupFunc)
+	autoReloader.Close()
 	if si.Listeners != nil {
 		si.Listeners.DrainAndClose("httpListener", 0)
 		si.Listeners.DrainAndClose("tlsListener", 0)
@@ -240,6 +244,7 @@ func Hup(si *instance.ServerInstance, source string, args ...string) (bool, erro
 	metrics.ReloadDurationSeconds.Observe(time.Since(startTime).Seconds())
 
 	logger.Info(reload.ConfigReloadedText, logging.Pairs{"source": source})
+	notifyAutoReloader(si)
 	return true, nil
 }
 

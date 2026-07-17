@@ -16,10 +16,19 @@
 
 package mgmt
 
-import "testing"
+import (
+	"errors"
+	"testing"
+	"time"
+
+	"gopkg.in/yaml.v2"
+)
 
 func TestValidate(t *testing.T) {
 	c := New()
+	if err := c.Validate(); err != nil {
+		t.Error(err)
+	}
 	c.PprofServer = ""
 
 	err := c.Validate()
@@ -36,5 +45,24 @@ func TestValidate(t *testing.T) {
 	err = c.Validate()
 	if err == nil {
 		t.Error("expected error for invalid pprof server name")
+	}
+
+	c = New()
+	c.AutoReloadInterval = -time.Second
+	if err := c.Validate(); !errors.Is(err, ErrInvalidAutoReloadInterval) {
+		t.Errorf("error = %v; want %v", err, ErrInvalidAutoReloadInterval)
+	}
+}
+
+func TestAutoReloadIntervalYAML(t *testing.T) {
+	o := New()
+	if err := yaml.Unmarshal([]byte("auto_reload_interval: 10s\n"), o); err != nil {
+		t.Fatal(err)
+	}
+	if o.AutoReloadInterval != 10*time.Second {
+		t.Errorf("auto reload interval = %v; want %v", o.AutoReloadInterval, 10*time.Second)
+	}
+	if got := o.Clone().AutoReloadInterval; got != o.AutoReloadInterval {
+		t.Errorf("cloned auto reload interval = %v; want %v", got, o.AutoReloadInterval)
 	}
 }

@@ -53,10 +53,17 @@ type Options struct {
 	// This prevents a bad actor from stating the config file with millions of concurrent requests
 	// The rate limit does not apply to SIGHUP-based reload requests
 	ReloadRateLimit time.Duration `yaml:"rate_limit,omitempty"`
+	// AutoReloadInterval controls how often Trickster checks the configuration file for
+	// changes. A zero value disables automatic reloads.
+	AutoReloadInterval time.Duration `yaml:"auto_reload_interval,omitempty"`
 }
 
-// ErrInvalidPprofServerName returns an error for invalid pprof server name
-var ErrInvalidPprofServerName = errors.New("invalid pprof server name")
+var (
+	// ErrInvalidPprofServerName returns an error for invalid pprof server name
+	ErrInvalidPprofServerName = errors.New("invalid pprof server name")
+	// ErrInvalidAutoReloadInterval indicates that the configured interval is negative.
+	ErrInvalidAutoReloadInterval = errors.New("auto reload interval cannot be negative")
+)
 
 // New returns a new Options references with Default Values set
 func New() *Options {
@@ -76,6 +83,9 @@ func New() *Options {
 }
 
 func (o *Options) Validate() error {
+	if o.AutoReloadInterval < 0 {
+		return ErrInvalidAutoReloadInterval
+	}
 	switch o.PprofServer {
 	case "metrics", "management", "off", "both":
 		return nil
