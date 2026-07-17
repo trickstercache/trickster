@@ -747,18 +747,18 @@ backends:
 #   # empty by default, listening on all interfaces
 #   listen_address: ''
 
-#   # handler_path defines the HTTP path where the Reload interface is available.
+#   # reload_handler_path defines the HTTP path where the Reload interface is available.
 #   # by default, this is /trickster/config/reload
-#   handler_path: /trickster/config/reload
-#   # drain_timeout defines how long old HTTP listeners will live to allow
+#   reload_handler_path: /trickster/config/reload
+#   # reload_drain_timeout defines how long old HTTP listeners will live to allow
 #   # outstanding connection to close organically, before the listener is forcefully closed
 #   # during a configuration reload
 #   # the default is 30s
-#   drain_timeout: 30s
-#   # rate_limit specifies the rate limit timeout duration to apply to the HTTP reload interface.
+#   reload_drain_timeout: 30s
+#   # reload_rate_limit specifies the rate limit timeout duration to apply to the HTTP reload interface.
 #   # The reload interface is disabled for this duration of time whenever a config reload request is
 #   # made that fails because the underlying config file is unmodified. default is 3s
-#   rate_limit: 3s
+#   reload_rate_limit: 3s
 #   # auto_reload_interval controls how often Trickster checks the configuration file for changes.
 #   # A zero value disables automatic reloads. default is 0s
 #   auto_reload_interval: 10s
