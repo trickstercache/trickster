@@ -30,8 +30,11 @@ import (
 )
 
 const (
-	rankOperatorBottomK = "bottomk"
-	rankOperatorTopK    = "topk"
+	histogramFieldName      = "histogram"
+	rankOperatorBottomK     = "bottomk"
+	rankOperatorTopK        = "topk"
+	sortInRangeQueryWarning = "PromQL warning: sort is ineffective for range queries " +
+		"since results are always ordered by labels"
 )
 
 type rankBucketKey struct {
@@ -44,6 +47,12 @@ type rankCandidate struct {
 	pointIdx int
 	value    float64
 	order    int
+}
+
+type sortItem struct {
+	series *dataset.Series
+	value  float64
+	tags   string
 }
 
 type rankCandidateHeap struct {
@@ -114,24 +123,61 @@ func (h *rankCandidateHeap) tags(candidate rankCandidate) string {
 	return tags
 }
 
-// FinalizeTSMMerge applies Prometheus-only merge finalization after TSM fanout
-// has accumulated the rewritten inner-query responses. The rank step belongs
-// here so topk/bottomk operate on globally merged values, not per-backend ranks.
+// FinalizeTSMMerge applies Prometheus-only rank and sort finalization after TSM
+// fanout has accumulated the rewritten inner-query responses. These operations
+// belong here so they use globally merged values rather than per-backend data.
 func (c *Client) FinalizeTSMMerge(query string, ts timeseries.Timeseries) {
-	spec, ok := promql.ParseRankAggregation(query)
-	if !ok {
-		return
-	}
 	ds, ok := ts.(*dataset.DataSet)
 	if !ok || ds == nil {
 		return
 	}
-	finalizeRankAggregation(ds, spec)
+	if spec, found := promql.ParseRankAggregation(query); found {
+		finalizeRankAggregation(ds, spec)
+		return
+	}
+	if spec, found := promql.ParseSortWrapper(query); found {
+		if _, aggregationFound := promql.OuterAggregator(spec.InnerQuery); aggregationFound {
+			finalizeSortWrapper(ds, spec.Descending)
+		}
+	}
+}
+
+func finalizeSortWrapper(ds *dataset.DataSet, descending bool) {
+	isRangeQuery := ds.Step() > 0
+
+	ds.UpdateLock.Lock()
+	defer ds.UpdateLock.Unlock()
+
+	if isRangeQuery {
+		appendWarningOnce(ds, sortInRangeQueryWarning)
+	}
+
+	for _, result := range ds.Results {
+		if result == nil {
+			continue
+		}
+		result.SeriesList = filterHistogramSeries(result.SeriesList)
+		if !isRangeQuery {
+			sortInstantSeries(result.SeriesList, descending)
+		}
+	}
+}
+
+func appendWarningOnce(ds *dataset.DataSet, warning string) {
+	if !slices.Contains(ds.Warnings, warning) {
+		ds.Warnings = append(ds.Warnings, warning)
+	}
 }
 
 func finalizeRankAggregation(ds *dataset.DataSet, spec promql.RankAggregation) {
+	isRangeQuery := ds.Step() > 0
+
 	ds.UpdateLock.Lock()
 	defer ds.UpdateLock.Unlock()
+
+	if isRangeQuery && spec.SortSet {
+		appendWarningOnce(ds, sortInRangeQueryWarning)
+	}
 
 	for _, result := range ds.Results {
 		if result == nil || len(result.SeriesList) == 0 {
@@ -175,7 +221,13 @@ func finalizeRankAggregation(ds *dataset.DataSet, spec promql.RankAggregation) {
 			}
 		}
 		result.SeriesList = keepSelectedRankPoints(result.SeriesList, selected)
-		sortRankSeriesIfInstant(result.SeriesList, spec)
+		descending := spec.Operator == rankOperatorTopK
+		if spec.SortSet {
+			descending = spec.SortDescending
+		}
+		if !isRangeQuery {
+			sortInstantSeries(result.SeriesList, descending)
+		}
 	}
 }
 
@@ -274,7 +326,24 @@ func keepSelectedRankPoints(
 	return keptSeries
 }
 
-func sortRankSeriesIfInstant(seriesList dataset.SeriesList, spec promql.RankAggregation) {
+func isHistogramSeries(series *dataset.Series) bool {
+	return series != nil &&
+		len(series.Header.ValueFieldsList) > 0 &&
+		series.Header.ValueFieldsList[0].Name == histogramFieldName
+}
+
+func filterHistogramSeries(seriesList dataset.SeriesList) dataset.SeriesList {
+	filtered := seriesList[:0]
+	for _, series := range seriesList {
+		if series == nil || isHistogramSeries(series) {
+			continue
+		}
+		filtered = append(filtered, series)
+	}
+	return filtered
+}
+
+func sortInstantSeries(seriesList dataset.SeriesList, descending bool) {
 	if len(seriesList) < 2 {
 		return
 	}
@@ -287,32 +356,35 @@ func sortRankSeriesIfInstant(seriesList dataset.SeriesList, spec promql.RankAggr
 			return
 		}
 	}
-	desc := spec.Operator == rankOperatorTopK
-	if spec.SortSet {
-		desc = spec.SortDescending
+
+	items := make([]sortItem, 0, len(seriesList))
+	for _, series := range seriesList {
+		value, ok := rankPointValue(series.Points[0])
+		if !ok {
+			value = math.NaN()
+		}
+		items = append(items, sortItem{
+			series: series,
+			value:  value,
+			tags:   series.Header.Tags.JSON(),
+		})
 	}
-	slices.SortStableFunc(seriesList, func(a, b *dataset.Series) int {
-		iv, iok := rankPointValue(a.Points[0])
-		jv, jok := rankPointValue(b.Points[0])
-		if !iok || !jok {
-			if iok {
-				return -1
-			}
-			if jok {
-				return 1
-			}
-			return 0
-		}
-		op := rankOperatorBottomK
-		if desc {
-			op = rankOperatorTopK
-		}
-		if rankValueLess(iv, jv, op) {
+
+	operator := rankOperatorBottomK
+	if descending {
+		operator = rankOperatorTopK
+	}
+	slices.SortStableFunc(items, func(a, b sortItem) int {
+		if rankValueLess(a.value, b.value, operator) {
 			return -1
 		}
-		if rankValueLess(jv, iv, op) {
+		if rankValueLess(b.value, a.value, operator) {
 			return 1
 		}
-		return strings.Compare(a.Header.Tags.JSON(), b.Header.Tags.JSON())
+		return strings.Compare(a.tags, b.tags)
 	})
+
+	for i := range items {
+		seriesList[i] = items[i].series
+	}
 }

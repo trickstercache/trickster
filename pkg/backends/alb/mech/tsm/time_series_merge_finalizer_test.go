@@ -18,6 +18,7 @@ package tsm
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -29,12 +30,15 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
+	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 )
 
 type finalizerStubBackend struct {
@@ -75,6 +79,12 @@ type rankRewriteFinalizerStubBackend struct {
 	innerQuery string
 }
 
+type prometheusSortBackend struct {
+	*prometheus.Client
+}
+
+func (b *prometheusSortBackend) Configuration() *bo.Options { return nil }
+
 func (b *rankRewriteFinalizerStubBackend) ClassifyMerge(string) (int, bool, string) {
 	return int(dataset.MergeStrategySum), false, ""
 }
@@ -113,6 +123,60 @@ func recordingMergeHandler(marker string, qr *queryRecorder) http.Handler {
 		qr.Append(qp.Get("query"))
 		stubMergeHandler(marker, http.StatusOK).ServeHTTP(w, r)
 	})
+}
+
+func aggregationMergeHandler(values map[string]string, qr *queryRecorder) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		qp, _, _ := params.GetRequestValues(r)
+		query := qp.Get("query")
+		qr.Append(query)
+
+		seriesList := make(dataset.SeriesList, 0, len(values))
+		for service, value := range values {
+			seriesList = append(seriesList, &dataset.Series{
+				Header: dataset.SeriesHeader{
+					Name:           "count",
+					Tags:           dataset.Tags{"service": service},
+					QueryStatement: query,
+				},
+				Points: dataset.Points{{
+					Epoch:  epoch.Epoch(100),
+					Values: []any{value},
+				}},
+			})
+		}
+
+		rsc := request.GetResources(r)
+		if rsc != nil {
+			rsc.TS = &dataset.DataSet{Results: dataset.Results{{SeriesList: seriesList}}}
+			rsc.MergeFunc = merge.TimeseriesMergeFuncWithStrategy(nil, rsc.TSMergeStrategy)
+			rsc.BatchMergeFunc = merge.TimeseriesBatchMergeFuncWithStrategy(rsc.TSMergeStrategy)
+			rsc.MergeRespondFunc = aggregationRespondFunc
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+}
+
+func aggregationRespondFunc(w http.ResponseWriter, _ *http.Request,
+	accum *merge.Accumulator, statusCode int,
+) {
+	if statusCode == 0 {
+		statusCode = http.StatusOK
+	}
+	w.WriteHeader(statusCode)
+	ds, _ := accum.GetTSData().(*dataset.DataSet)
+	if ds == nil || len(ds.Results) == 0 || ds.Results[0] == nil {
+		return
+	}
+	parts := make([]string, 0, len(ds.Results[0].SeriesList))
+	for _, series := range ds.Results[0].SeriesList {
+		if series == nil || len(series.Points) == 0 || len(series.Points[0].Values) == 0 {
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%s=%v", series.Header.Tags["service"],
+			series.Points[0].Values[0]))
+	}
+	_, _ = w.Write([]byte(strings.Join(parts, ",")))
 }
 
 func TestServeStandardCallsMergeFinalizer(t *testing.T) {
@@ -286,5 +350,55 @@ func TestServeStandardRankRewritePropagatesCancellationAndSkipsMerge(t *testing.
 	}
 	if got := be.Query(); got != "" {
 		t.Fatalf("finalizer ran after cancellation with query %q", got)
+	}
+}
+
+func TestServeStandardMergesThroughSortWrapper(t *testing.T) {
+	logger.SetLogger(testLogger)
+
+	const (
+		outerQuery = "sort_desc(count by (service) (requests))"
+		innerQuery = "count by (service) (requests)"
+	)
+	be := &prometheusSortBackend{Client: &prometheus.Client{}}
+	qr := &queryRecorder{}
+	targets := make(pool.Targets, 2)
+	for i, h := range []http.Handler{
+		aggregationMergeHandler(map[string]string{"api": "2", "worker": "10"}, qr),
+		aggregationMergeHandler(map[string]string{"api": "3", "worker": "1"}, qr),
+	} {
+		st := &healthcheck.Status{}
+		st.Set(healthcheck.StatusPassing)
+		targets[i] = pool.NewTarget(h, st, be)
+	}
+	p := pool.New(targets, -1)
+	defer p.Stop()
+	p.RefreshHealthy()
+
+	h := &handler{mergePaths: []string{"/"}}
+	h.SetPool(p)
+
+	req := newTestMergeRequest(t)
+	req.URL.RawQuery = "query=" + url.QueryEscape(outerQuery)
+	rsc := request.GetResources(req)
+	rsc.TimeRangeQuery = &timeseries.TimeRangeQuery{Statement: outerQuery}
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status got %d want %d body=%q", w.Code, http.StatusOK, w.Body.String())
+	}
+	if got, want := w.Body.String(), "worker=11,api=5"; got != want {
+		t.Fatalf("body got %q want %q", got, want)
+	}
+	queries := qr.Queries()
+	if len(queries) != 2 {
+		t.Fatalf("recorded queries got %v want two entries", queries)
+	}
+	for _, got := range queries {
+		if got != innerQuery {
+			t.Fatalf("fanout query got %q want %q (all queries: %v)", got, innerQuery, queries)
+		}
 	}
 }

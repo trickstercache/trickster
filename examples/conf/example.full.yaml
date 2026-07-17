@@ -272,6 +272,14 @@ backends:
 #     # Options are standard, x, both, or none; default is standard
 #     forwarded_headers: standard
 
+#     # cors controls Access-Control-* response headers for this backend. When omitted, Trickster retains
+#     # its legacy Access-Control-Allow-Origin: '*' behavior. Modes are preserve, merge, replace, and disable.
+#     # See /docs/cors.md for mode behavior, path overrides, and cache-key handling.
+#     cors:
+#       mode: replace
+#       headers:
+#         Access-Control-Allow-Origin: https://dashboard.example.com
+
 #     # cache_key_prefix defines the prefix this backend appends to cache keys. When using a shared cache like Redis,
 #     # this can help partition multiple trickster instances that may have the same same hostname or ip address (the default prefix)
 #     cache_key_prefix: example
@@ -468,6 +476,8 @@ backends:
 #         response_headers:
 #           Cache-Control: no-cache                  # attach these headers to the response down to the client
 #           Content-Type: text/plain
+#         cors:                                      # overrides the backend CORS policy for this path
+#           mode: disable                            # remove all Access-Control-* response headers
 #       - path: /example/
 #         methods: [ GET, POST ]
 #         collapsed_forwarding: progressive    # see /docs/collapsed_forwarding.md

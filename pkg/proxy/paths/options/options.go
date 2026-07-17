@@ -27,6 +27,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/key"
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
+	corso "github.com/trickstercache/trickster/v2/pkg/proxy/cors/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/forwarding"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
@@ -59,6 +60,8 @@ type Options struct {
 	RequestParams types.EnvStringMap `yaml:"request_params,omitempty"`
 	// ResponseHeaders is a map of http headers that will be added to responses to the downstream client
 	ResponseHeaders types.EnvStringMap `yaml:"response_headers,omitempty"`
+	// CORS overrides the backend CORS response-header policy for this path
+	CORS *corso.Options `yaml:"cors,omitempty"`
 	// ResponseCode sets a custom response code to be sent to downstream clients for this path.
 	ResponseCode int `yaml:"response_code,omitempty"`
 	// ResponseBody sets a custom response body to be sent to the donstream client for this path.
@@ -124,6 +127,9 @@ func (o *Options) Clone() *Options {
 	out.RequestHeaders = maps.Clone(o.RequestHeaders)
 	out.RequestParams = maps.Clone(o.RequestParams)
 	out.ResponseHeaders = maps.Clone(o.ResponseHeaders)
+	if o.CORS != nil {
+		out.CORS = o.CORS.Clone()
+	}
 	out.Methods = slices.Clone(o.Methods)
 	out.CacheKeyParams = slices.Clone(o.CacheKeyParams)
 	out.CacheKeyHeaders = slices.Clone(o.CacheKeyHeaders)
@@ -174,6 +180,11 @@ func (o *Options) Initialize(_ string) error {
 	if o.ResponseBody != nil && *o.ResponseBody != "" {
 		o.ResponseBodyBytes = []byte(*o.ResponseBody)
 	}
+	if o.CORS != nil {
+		if err := o.CORS.Initialize(""); err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
@@ -205,6 +216,11 @@ func (o *Options) Validate() (bool, error) {
 	}
 	if o.ResponseCode != 0 && (o.ResponseCode < 100 || o.ResponseCode >= 600) {
 		return false, fmt.Errorf("invalid response_code: %d (must be between 100 and 599)", o.ResponseCode)
+	}
+	if o.CORS != nil {
+		if _, err := o.CORS.Validate(); err != nil {
+			return false, err
+		}
 	}
 	return true, nil
 }

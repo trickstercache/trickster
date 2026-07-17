@@ -39,11 +39,20 @@ const promQueryParam = "query"
 // weighted average is required, and an optional warning for operators whose
 // results cannot be correctly merged across shards.
 func (c *Client) ClassifyMerge(query string) (strategy int, needsDualQuery bool, warning string) {
-	if spec, ok := promql.ParseRankAggregation(query); ok {
-		query = spec.InnerQuery
-	}
-
+	query, _ = tsmInnerQuery(query)
 	return classifyPromMerge(query)
+}
+
+func tsmInnerQuery(query string) (string, bool) {
+	if spec, ok := promql.ParseRankAggregation(query); ok {
+		return spec.InnerQuery, true
+	}
+	if spec, ok := promql.ParseSortWrapper(query); ok {
+		if _, found := promql.OuterAggregator(spec.InnerQuery); found {
+			return spec.InnerQuery, true
+		}
+	}
+	return query, false
 }
 
 func classifyPromMerge(query string) (strategy int, needsDualQuery bool, warning string) {
@@ -73,15 +82,15 @@ func classifyPromMerge(query string) (strategy int, needsDualQuery bool, warning
 	}
 }
 
-// RewriteForTSMMerge rewrites Prometheus rank aggregations before TSM fanout.
-// The shards receive the inner query; FinalizeTSMMerge later applies the
-// original topk/bottomk operation to the merged inner result.
+// RewriteForTSMMerge removes Prometheus operations that must run after TSM
+// fanout. The shards receive the inner query; FinalizeTSMMerge later applies
+// the original rank and/or sort operation to the merged result.
 func (c *Client) RewriteForTSMMerge(r *http.Request, query string) (*http.Request, string) {
-	spec, ok := promql.ParseRankAggregation(query)
+	innerQuery, ok := tsmInnerQuery(query)
 	if !ok {
 		return r, query
 	}
-	return rewritePromQueryParam(r, spec.InnerQuery, "rank aggregation"), spec.InnerQuery
+	return rewritePromQueryParam(r, innerQuery, "tsm finalizer"), innerQuery
 }
 
 // RewriteForWeightedAvg implements backends.TSMMergeProvider for the Prometheus
@@ -90,9 +99,7 @@ func (c *Client) RewriteForTSMMerge(r *http.Request, query string) (*http.Reques
 // into the Prometheus "query" parameter. Both GET (query string) and POST
 // (request body) encodings are handled transparently by params.SetRequestValues.
 func (c *Client) RewriteForWeightedAvg(r *http.Request, query string) (*http.Request, *http.Request) {
-	if spec, ok := promql.ParseRankAggregation(query); ok {
-		query = spec.InnerQuery
-	}
+	query, _ = tsmInnerQuery(query)
 
 	sumQuery := promql.ReplaceOuterAggregator(query, "avg", "sum")
 	countQuery := promql.ReplaceOuterAggregator(query, "avg", "count")

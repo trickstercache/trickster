@@ -40,19 +40,11 @@ var maxRankK = int(^uint(0) >> 1)
 
 func ParseRankAggregation(query string) (RankAggregation, bool) {
 	q := strings.TrimSpace(query)
-	if inner, ok := unwrapUnaryFunction(q, "sort_desc"); ok {
-		spec, found := ParseRankAggregation(inner)
+	if sortSpec, ok := ParseSortWrapper(q); ok {
+		spec, found := parseRankAggregation(sortSpec.InnerQuery)
 		if found {
 			spec.SortSet = true
-			spec.SortDescending = true
-		}
-		return spec, found
-	}
-	if inner, ok := unwrapUnaryFunction(q, "sort"); ok {
-		spec, found := ParseRankAggregation(inner)
-		if found {
-			spec.SortSet = true
-			spec.SortDescending = false
+			spec.SortDescending = sortSpec.Descending
 		}
 		return spec, found
 	}
@@ -187,11 +179,20 @@ func parseLabels(input string) []string {
 func unwrapUnaryFunction(query, name string) (string, bool) {
 	q := strings.TrimSpace(query)
 	ql := strings.ToLower(q)
-	prefix := name + "("
-	if !strings.HasPrefix(ql, prefix) {
+	if !strings.HasPrefix(ql, name) {
 		return "", false
 	}
 	openIdx := len(name)
+	for openIdx < len(q) {
+		c := q[openIdx]
+		if c != ' ' && c != '\t' && c != '\n' && c != '\r' {
+			break
+		}
+		openIdx++
+	}
+	if openIdx >= len(q) || q[openIdx] != '(' {
+		return "", false
+	}
 	closeIdx := findMatchingCloser(q, openIdx, '(', ')')
 	if closeIdx != len(q)-1 {
 		return "", false

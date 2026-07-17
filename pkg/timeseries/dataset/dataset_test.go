@@ -850,14 +850,11 @@ func TestStepNilTimeRangeQuery(t *testing.T) {
 }
 
 func BenchmarkMerge(b *testing.B) {
-	dss := make([]*DataSet, b.N*2)
-	for i := 0; i < b.N; i++ {
-		dss[i] = genBenchmarkDataset(10)
-		dss[i+1] = genBenchmarkDataset(10)
-	}
-	b.ResetTimer()
-	for i := 0; i < b.N; i += 2 {
-		dss[i].Merge(true, dss[i+1])
+	left := genBenchmarkDataset(10)
+	right := genBenchmarkDataset(10)
+
+	for b.Loop() {
+		left.Merge(true, right)
 	}
 }
 
@@ -1012,16 +1009,17 @@ func TestDefaultSizeCropper(t *testing.T) {
 }
 
 func BenchmarkCropToRange(b *testing.B) {
-	dss := make([]*DataSet, b.N)
-	for i := 0; i < b.N; i++ {
-		dss[i] = genBenchmarkDataset(10)
-	}
+	ds := genBenchmarkDataset(10)
+	seriesList := ds.Results[0].SeriesList
 	bmExt := timeseries.Extent{
 		Start: time.Now().Add(time.Second * -750),
 		End:   time.Now().Add(time.Second * -250),
 	}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		dss[i].CropToRange(bmExt)
+
+	for b.Loop() {
+		b.StopTimer()
+		ds.Results[0].SeriesList = seriesList
+		b.StartTimer()
+		ds.CropToRange(bmExt)
 	}
 }

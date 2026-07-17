@@ -80,6 +80,8 @@ const (
 	NameCacheControl = "Cache-Control"
 	// NameAllowOrigin represents the HTTP Header Name of "Access-Control-Allow-Origin"
 	NameAllowOrigin = "Access-Control-Allow-Origin"
+	// NameOrigin represents the HTTP Header Name of "Origin"
+	NameOrigin = "Origin"
 	// NameConnection represents the HTTP Header Name of "Connection"
 	NameConnection = "Connection"
 	// NameContentType represents the HTTP Header Name of "Content-Type"

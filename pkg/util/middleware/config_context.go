@@ -24,6 +24,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/context"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/cors"
+	corso "github.com/trickstercache/trickster/v2/pkg/proxy/cors/options"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 )
@@ -33,6 +35,14 @@ func WithResourcesContext(client backends.Backend, o *bo.Options,
 	c cache.Cache, p *po.Options, t *tracing.Tracer,
 	next http.Handler,
 ) http.Handler {
+	corsOptions := corso.Legacy()
+	if o != nil && o.CORS != nil {
+		corsOptions = o.CORS
+	}
+	if p != nil && p.CORS != nil {
+		corsOptions = p.CORS
+	}
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if o != nil && (o.LatencyMin > 0 || o.LatencyMax > 0) {
 			processSimulatedLatency(w, o.LatencyMin, o.LatencyMax)
@@ -44,14 +54,22 @@ func WithResourcesContext(client backends.Backend, o *bo.Options,
 		} else {
 			resources = request.NewResources(o, p, c.Configuration(), c, client, t)
 		}
+		resources.FrontendCORS = corsOptions
 		ctx := r.Context()
 		rsc, ok := context.Resources(ctx).(*request.Resources)
 		if !ok {
-			next.ServeHTTP(w, r.WithContext(context.WithResources(r.Context(), resources)))
+			cw := cors.Wrap(w, corsOptions)
+			defer cw.Finalize()
+			next.ServeHTTP(cw, r.WithContext(context.WithResources(r.Context(), resources)))
 			return
 		}
+		wrapResponse := rsc.FrontendCORS == nil
 		rsc.Merge(resources)
-
+		if wrapResponse {
+			cw := cors.Wrap(w, rsc.FrontendCORS)
+			defer cw.Finalize()
+			w = cw
+		}
 		next.ServeHTTP(w, r.WithContext(context.WithResources(r.Context(), rsc)))
 	})
 }

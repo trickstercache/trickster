@@ -31,6 +31,7 @@ import (
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	tro "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
+	corso "github.com/trickstercache/trickster/v2/pkg/proxy/cors/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
@@ -69,6 +70,50 @@ func TestNew(t *testing.T) {
 	if o.FetchConcurrencyLimit != DefaultFetchConcurrencyLimit {
 		t.Errorf("expected FetchConcurrencyLimit=%d, got %d",
 			DefaultFetchConcurrencyLimit, o.FetchConcurrencyLimit)
+	}
+}
+
+func TestCORSOptionsYAML(t *testing.T) {
+	o, err := fromYAML(`
+backends:
+  test:
+    provider: reverseproxycache
+    origin_url: http://example.com
+    cors:
+      mode: merge
+      headers:
+        Access-Control-Allow-Origin: https://trickster.example.com
+    paths:
+      - path: /private
+        cors:
+          mode: disable
+`, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := o.Initialize("test"); err != nil {
+		t.Fatal(err)
+	}
+	if o.CORS == nil || o.CORS.Mode != corso.ModeMerge {
+		t.Fatalf("backend CORS mode = %v, want %q", o.CORS, corso.ModeMerge)
+	}
+	if got := o.CORS.Headers[headers.NameAllowOrigin]; got != "https://trickster.example.com" {
+		t.Fatalf("backend allow origin = %q", got)
+	}
+	if len(o.Paths) != 1 || o.Paths[0].CORS == nil || o.Paths[0].CORS.Mode != corso.ModeDisable {
+		t.Fatalf("path CORS = %v, want disable policy", o.Paths)
+	}
+	if o.Paths[0].CORS.Headers != nil {
+		t.Fatalf("disabled path CORS headers = %v, want nil", o.Paths[0].CORS.Headers)
+	}
+	if ok, err := o.Validate(); !ok || err != nil {
+		t.Fatalf("Validate() = %v, %v", ok, err)
+	}
+
+	clone := o.Clone()
+	clone.CORS.Headers[headers.NameAllowOrigin] = "https://other.example.com"
+	if o.CORS.Headers[headers.NameAllowOrigin] != "https://trickster.example.com" {
+		t.Fatal("clone mutated backend CORS headers")
 	}
 }
 

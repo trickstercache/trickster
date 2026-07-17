@@ -167,7 +167,6 @@ func PrepareResponseWriter(w io.Writer, code int, header http.Header) io.Writer 
 		h := rw.Header()
 		headers.Merge(h, header)
 		headers.StripClientHeaders(h)
-		headers.AddResponseHeaders(h)
 		if code > 0 {
 			rw.WriteHeader(code)
 		}
