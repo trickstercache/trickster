@@ -17,6 +17,7 @@
 package tsm
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"reflect"
@@ -62,7 +63,7 @@ func TestMergeGatherContributionsBatchesDataSets(t *testing.T) {
 	}
 	accumulator := merge.NewAccumulator()
 
-	if failed := mergeGatherContributions(accumulator, contributions); len(failed) != 0 {
+	if failed := mergeGatherContributions(context.Background(), accumulator, contributions); len(failed) != 0 {
 		t.Fatalf("unexpected merge failures: %v", failed)
 	}
 
@@ -79,6 +80,30 @@ func TestMergeGatherContributionsBatchesDataSets(t *testing.T) {
 	}
 	if value := fmt.Sprint(got.Results[0].SeriesList[0].Points[0].Values[0]); value != "6" {
 		t.Fatalf("merged value got %q want 6", value)
+	}
+}
+
+func TestMergeGatherContributionsStopsAfterCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	var merged []int
+	mergeFunc := func(_ *merge.Accumulator, _ any, member int) error {
+		merged = append(merged, member)
+		if member == 0 {
+			cancel()
+		}
+		return nil
+	}
+	contributions := []*gatherContribution{
+		{data: "first", mergeFunc: mergeFunc, member: 0},
+		{data: "second", mergeFunc: mergeFunc, member: 1},
+	}
+
+	failed := mergeGatherContributions(ctx, merge.NewAccumulator(), contributions)
+	if len(failed) != 0 {
+		t.Fatalf("unexpected merge failures: %v", failed)
+	}
+	if !reflect.DeepEqual(merged, []int{0}) {
+		t.Fatalf("merged members got %v want [0]", merged)
 	}
 }
 
@@ -114,7 +139,7 @@ func TestMergeGatherContributionsFallbackReportsMember(t *testing.T) {
 	}
 	accumulator := merge.NewAccumulator()
 
-	failed := mergeGatherContributions(accumulator, contributions)
+	failed := mergeGatherContributions(context.Background(), accumulator, contributions)
 	if !reflect.DeepEqual(batchMembers, []int{0, 1, 2, 3}) {
 		t.Fatalf("batch member order got %v want [0 1 2 3]", batchMembers)
 	}
@@ -143,7 +168,7 @@ func TestMergeGatherContributionsRequiresEveryBatchFunc(t *testing.T) {
 	}
 	accumulator := merge.NewAccumulator()
 
-	if failed := mergeGatherContributions(accumulator, contributions); len(failed) != 0 {
+	if failed := mergeGatherContributions(context.Background(), accumulator, contributions); len(failed) != 0 {
 		t.Fatalf("unexpected merge failures: %v", failed)
 	}
 	if batchCalled {
@@ -168,7 +193,7 @@ func TestMergeGatherContributionsRecoversBatchPanic(t *testing.T) {
 	}
 	accumulator := merge.NewAccumulator()
 
-	failed := mergeGatherContributions(accumulator, contributions)
+	failed := mergeGatherContributions(context.Background(), accumulator, contributions)
 	if !reflect.DeepEqual(failed, []int{0, 1}) {
 		t.Fatalf("failed members got %v want [0 1]", failed)
 	}

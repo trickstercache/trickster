@@ -18,11 +18,13 @@ package prometheus
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
@@ -238,6 +240,8 @@ func TestRewriteForTSMMergeRankAggregationPOST(t *testing.T) {
 	r, _ := http.NewRequest(http.MethodPost,
 		"http://example.com/api/v1/query_range",
 		io.NopCloser(bytes.NewBufferString(origBody)))
+	ctx, cancel := context.WithCancel(r.Context())
+	r = r.WithContext(ctx)
 	r.Header.Set(headers.NameContentType, headers.ValueXFormURLEncoded)
 	r = request.SetResources(r, &request.Resources{RequestBody: []byte(origBody)})
 
@@ -276,6 +280,16 @@ func TestRewriteForTSMMergeRankAggregationPOST(t *testing.T) {
 	}
 	if q := gotCache.Get("query"); q != wantQ {
 		t.Errorf("rsc.RequestBody query param: got %q, want %q", q, wantQ)
+	}
+
+	cancel()
+	select {
+	case <-rewritten.Context().Done():
+		if err := rewritten.Context().Err(); err != context.Canceled {
+			t.Fatalf("rewritten context error got %v want %v", err, context.Canceled)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("rewritten request did not observe source cancellation")
 	}
 }
 

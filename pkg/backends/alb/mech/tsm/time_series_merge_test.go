@@ -103,7 +103,7 @@ func TestTSMNonMergePathUsesFirstLiveMember(t *testing.T) {
 	h := &handler{mergePaths: []string{"/api/v1/query_range"}}
 	h.SetPool(p)
 
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest(http.MethodGet, "https://trickstercache.org/api/v1/query?query=up", nil)
 		h.ServeHTTP(w, r)

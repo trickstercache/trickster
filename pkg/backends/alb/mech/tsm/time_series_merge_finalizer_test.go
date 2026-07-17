@@ -17,13 +17,16 @@
 package tsm
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
@@ -264,6 +267,89 @@ func TestServeStandardRewritesRankFanoutToInnerQuery(t *testing.T) {
 		if got != innerQuery {
 			t.Fatalf("fanout query got %q want %q (all queries: %v)", got, innerQuery, queries)
 		}
+	}
+}
+
+func TestServeStandardRankRewritePropagatesCancellationAndSkipsMerge(t *testing.T) {
+	logger.SetLogger(testLogger)
+
+	const (
+		outerQuery = "topk(1, sum by (service) (requests))"
+		innerQuery = "sum by (service) (requests)"
+	)
+	be := &rankRewriteFinalizerStubBackend{innerQuery: innerQuery}
+	started := make(chan struct{}, 2)
+	var canceled atomic.Int32
+	var merged atomic.Int32
+
+	blockingHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		started <- struct{}{}
+		<-r.Context().Done()
+		canceled.Add(1)
+
+		// Populate a valid contribution after cancellation. Fanout/TSM must
+		// discard it instead of doing result or finalizer work for a caller
+		// that is no longer present.
+		rsc := request.GetResources(r)
+		rsc.TS = newMarkerDataSet("late")
+		rsc.MergeFunc = func(*merge.Accumulator, any, int) error {
+			merged.Add(1)
+			return nil
+		}
+		rsc.MergeRespondFunc = markerRespondFunc
+		w.WriteHeader(http.StatusOK)
+	})
+
+	targets := make(pool.Targets, 2)
+	for i := range targets {
+		st := &healthcheck.Status{}
+		st.Set(healthcheck.StatusPassing)
+		targets[i] = pool.NewTarget(blockingHandler, st, be)
+	}
+	p := pool.New(targets, -1)
+	defer p.Stop()
+	p.RefreshHealthy()
+
+	limit := 2
+	h := &handler{mergePaths: []string{"/"}}
+	h.tsmOptions.ConcurrencyOptions.QueryConcurrencyLimit = &limit
+	h.SetPool(p)
+
+	req := newTestMergeRequest(t)
+	req.URL.RawQuery = "query=" + url.QueryEscape(outerQuery)
+	rsc := request.GetResources(req)
+	rsc.TimeRangeQuery = &timeseries.TimeRangeQuery{Statement: outerQuery}
+	ctx, cancel := context.WithCancel(req.Context())
+	req = req.WithContext(ctx)
+
+	done := make(chan struct{})
+	go func() {
+		h.ServeHTTP(httptest.NewRecorder(), req)
+		close(done)
+	}()
+
+	for range 2 {
+		select {
+		case <-started:
+		case <-time.After(2 * time.Second):
+			t.Fatal("fanout member did not start")
+		}
+	}
+	cancel()
+
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("TSM request did not return after caller cancellation")
+	}
+	if got := canceled.Load(); got != 2 {
+		t.Fatalf("canceled fanout members = %d, want 2", got)
+	}
+	if got := merged.Load(); got != 0 {
+		t.Fatalf("merge calls after cancellation = %d, want 0", got)
+	}
+	if got := be.Query(); got != "" {
+		t.Fatalf("finalizer ran after cancellation with query %q", got)
 	}
 }
 

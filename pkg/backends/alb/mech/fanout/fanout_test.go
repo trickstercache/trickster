@@ -96,6 +96,64 @@ func TestAllCtxCancelPropagation(t *testing.T) {
 	}
 }
 
+func TestAllCancellationStopsQueuedDispatchAndResultProcessing(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	firstStarted := make(chan struct{})
+	var queuedStarted atomic.Int32
+	var onResultCalls atomic.Int32
+
+	first, _ := albpool.Target(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		close(firstStarted)
+		<-r.Context().Done()
+	}))
+	queuedHandler := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		queuedStarted.Add(1)
+	})
+	second, _ := albpool.Target(queuedHandler)
+	third, _ := albpool.Target(queuedHandler)
+	targets := pool.Targets{first, second, third}
+	parent := albpool.NewParentGET(t)
+
+	type outcome struct {
+		results []Result
+		err     error
+	}
+	done := make(chan outcome, 1)
+	go func() {
+		results, err := All(ctx, parent, targets, Config{
+			Mechanism:        "test",
+			ConcurrencyLimit: 1,
+			OnResult: func(int, *Result) {
+				onResultCalls.Add(1)
+			},
+		})
+		done <- outcome{results: results, err: err}
+	}()
+
+	select {
+	case <-firstStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("first handler never started")
+	}
+	cancel()
+
+	select {
+	case got := <-done:
+		require.ErrorIs(t, got.err, context.Canceled)
+		require.Len(t, got.results, len(targets))
+		for i := range got.results {
+			require.Equal(t, i, got.results[i].Index)
+			require.True(t, got.results[i].Failed, "slot %d should be canceled", i)
+			require.ErrorIs(t, got.results[i].Err, context.Canceled)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("All did not return after context cancellation")
+	}
+
+	require.Zero(t, queuedStarted.Load(), "queued handlers started after cancellation")
+	require.Zero(t, onResultCalls.Load(), "OnResult ran after cancellation")
+}
+
 func TestAllPanicRecovered(t *testing.T) {
 	t0, _ := albpool.Target(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("ok-0"))
