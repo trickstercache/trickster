@@ -16,7 +16,15 @@
 
 package mgmt
 
-import "testing"
+import (
+	"errors"
+	"testing"
+	"time"
+
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+
+	"gopkg.in/yaml.v2"
+)
 
 func TestValidate(t *testing.T) {
 	c := New()
@@ -68,6 +76,25 @@ func TestValidatePprofListenerNames(t *testing.T) {
 		if err := c.Validate(); err != ErrInvalidPprofListenerName {
 			t.Errorf("expected pprof listener name %q to be invalid, got %v", name, err)
 		}
+	}
+
+	c := New()
+	c.AutoReloadInterval = timeconv.Duration(-time.Second)
+	if err := c.Validate(); !errors.Is(err, ErrInvalidAutoReloadInterval) {
+		t.Errorf("error = %v; want %v", err, ErrInvalidAutoReloadInterval)
+	}
+}
+
+func TestAutoReloadIntervalYAML(t *testing.T) {
+	o := New()
+	if err := yaml.Unmarshal([]byte("auto_reload_interval: 10s\n"), o); err != nil {
+		t.Fatal(err)
+	}
+	if o.AutoReloadInterval != timeconv.Duration(10*time.Second) {
+		t.Errorf("auto reload interval = %v; want %v", o.AutoReloadInterval, 10*time.Second)
+	}
+	if got := o.Clone().AutoReloadInterval; got != o.AutoReloadInterval {
+		t.Errorf("cloned auto reload interval = %v; want %v", got, o.AutoReloadInterval)
 	}
 }
 
