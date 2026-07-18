@@ -223,6 +223,14 @@ func runMatrixCell(t *testing.T, c matrixCell) {
 	}
 	go startTrickster(t, ctx, expectedStartError{}, "-config", cfgPath)
 	waitForTrickster(t, fmt.Sprintf("127.0.0.1:%d", c.metricsPort))
+	healthURL := fmt.Sprintf("http://127.0.0.1:%d/trickster/health", c.metricsPort)
+	for i := range stubs {
+		bucket := "available"
+		if i < down {
+			bucket = "unavailable"
+		}
+		requireHealthState(t, healthURL, fmt.Sprintf("prom%d", i), bucket, 10*time.Second)
+	}
 
 	// In flapping mode, oscillate the "down" stubs every ~150ms. Stop on
 	// test cleanup so a long-running goroutine doesn't bleed into the
@@ -245,12 +253,6 @@ func runMatrixCell(t *testing.T, c matrixCell) {
 			}
 		}()
 	}
-
-	// Let healthchecks converge before we sample metrics. With interval=100ms
-	// and failure_threshold=1 the broken stubs should be marked Failing inside
-	// ~300ms; budget 800ms to absorb scheduler jitter and pool-refresh lag
-	// (pool.Targets() is informer-cached and may trail the status flip).
-	time.Sleep(800 * time.Millisecond)
 
 	before := metricsutil.Scrape(t, c.metricsPort)
 

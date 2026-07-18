@@ -19,7 +19,7 @@ package pool
 import (
 	"net/http"
 	"testing"
-	"time"
+	"testing/synctest"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 )
@@ -29,27 +29,33 @@ import (
 // view intact; Targets re-checks against the current atomic status to close
 // the race window.
 func TestLiveTargetsDropsStaleFailingTarget(t *testing.T) {
-	st1 := &healthcheck.Status{}
-	st2 := &healthcheck.Status{}
-	t1 := NewTarget(http.NotFoundHandler(), st1, nil)
-	t2 := NewTarget(http.NotFoundHandler(), st2, nil)
+	synctest.Test(t, func(t *testing.T) {
+		st1 := &healthcheck.Status{}
+		st2 := &healthcheck.Status{}
+		t1 := NewTarget(http.NotFoundHandler(), st1, nil)
+		t2 := NewTarget(http.NotFoundHandler(), st2, nil)
 
-	p := New(Targets{t1, t2}, 1)
-	st1.Set(healthcheck.StatusPassing)
-	st2.Set(healthcheck.StatusPassing)
-	waitForHealthyTargetsLen(t, p, 2, 2*time.Second)
+		p := New(Targets{t1, t2}, 1)
+		defer p.Stop()
+		st1.Set(healthcheck.StatusPassing)
+		st2.Set(healthcheck.StatusPassing)
+		synctest.Wait()
+		if got := len(p.Targets()); got != 2 {
+			t.Fatalf("setup: expected 2 healthy targets, got %d", got)
+		}
 
-	// Pin the snapshot stale by stopping the pool's refresh goroutines, then
-	// flip t2 to Failing.
-	p.Stop()
-	st2.Set(healthcheck.StatusFailing)
+		// Pin the snapshot stale by stopping the pool's refresh goroutines, then
+		// flip t2 to Failing.
+		p.Stop()
+		st2.Set(healthcheck.StatusFailing)
 
-	if got := len(p.(*pool).snapshot()); got != 2 {
-		t.Fatalf("snapshot: expected 2 (stale), got %d", got)
-	}
+		if got := len(p.(*pool).snapshot()); got != 2 {
+			t.Fatalf("snapshot: expected 2 (stale), got %d", got)
+		}
 
-	live := p.Targets()
-	if len(live) != 1 || live[0] != t1 {
-		t.Fatalf("Targets: expected only t1, got %#v", live)
-	}
+		live := p.Targets()
+		if len(live) != 1 || live[0] != t1 {
+			t.Fatalf("Targets: expected only t1, got %#v", live)
+		}
+	})
 }

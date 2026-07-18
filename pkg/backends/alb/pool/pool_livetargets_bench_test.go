@@ -19,7 +19,6 @@ package pool
 import (
 	"net/http"
 	"testing"
-	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 )
@@ -32,16 +31,8 @@ func BenchmarkLiveTargets(b *testing.B) {
 		st.Set(healthcheck.StatusPassing)
 		targets[i] = NewTarget(http.NotFoundHandler(), st, nil)
 	}
-	p := New(targets, 1)
-	defer p.Stop()
-
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if len(p.Targets()) == n {
-			break
-		}
-		time.Sleep(2 * time.Millisecond)
-	}
+	p := &pool{targets: targets, healthyFloor: 1}
+	p.RefreshHealthy()
 	if got := len(p.Targets()); got != n {
 		b.Fatalf("setup: expected %d healthy targets, got %d", n, got)
 	}
