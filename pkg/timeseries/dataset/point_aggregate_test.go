@@ -22,6 +22,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
 )
 
 func makeStringPoints(vals ...struct {
@@ -48,7 +49,7 @@ type ev struct {
 func TestMergePointsWithStrategySum(t *testing.T) {
 	p1 := makeStringPoints(ev{100, "1.0"}, ev{200, "2.0"})
 	p2 := makeStringPoints(ev{100, "3.0"}, ev{200, "4.0"})
-	result := MergePointsWithStrategy(p1, p2, true, MergeStrategySum)
+	result := MergePointsWithStrategy(p1, p2, true, merge.StrategySum)
 	require.Len(t, result, 2)
 	require.Equal(t, "4", result[0].Values[0])
 	require.Equal(t, "6", result[1].Values[0])
@@ -57,19 +58,19 @@ func TestMergePointsWithStrategySum(t *testing.T) {
 func TestMergePointsWithStrategyDedup(t *testing.T) {
 	p1 := makeStringPoints(ev{100, "1.0"}, ev{200, "2.0"})
 	p2 := makeStringPoints(ev{100, "3.0"}, ev{300, "4.0"})
-	result := MergePointsWithStrategy(p1, p2, true, MergeStrategyDedup)
+	result := MergePointsWithStrategy(p1, p2, true, merge.StrategyDedup)
 	require.Len(t, result, 3)
 }
 
 func TestMergePointsWithStrategyNilInputs(t *testing.T) {
-	require.Nil(t, MergePointsWithStrategy(nil, nil, true, MergeStrategySum))
-	require.Len(t, MergePointsWithStrategy(Points{}, Points{}, true, MergeStrategySum), 0)
+	require.Nil(t, MergePointsWithStrategy(nil, nil, true, merge.StrategySum))
+	require.Len(t, MergePointsWithStrategy(Points{}, Points{}, true, merge.StrategySum), 0)
 }
 
 func TestMergePointsWithStrategyCount(t *testing.T) {
 	p1 := makeStringPoints(ev{100, "99.0"}, ev{200, "88.0"})
 	p2 := makeStringPoints(ev{100, "77.0"}, ev{200, "66.0"})
-	result := MergePointsWithStrategy(p1, p2, true, MergeStrategyCount)
+	result := MergePointsWithStrategy(p1, p2, true, merge.StrategyCount)
 	require.Len(t, result, 2)
 	require.Equal(t, "2", result[0].Values[0])
 	require.Equal(t, "2", result[1].Values[0])
@@ -78,7 +79,7 @@ func TestMergePointsWithStrategyCount(t *testing.T) {
 func TestMergePointsWithStrategyAvg(t *testing.T) {
 	p1 := makeStringPoints(ev{100, "10.0"}, ev{200, "20.0"})
 	p2 := makeStringPoints(ev{100, "30.0"}, ev{200, "40.0"})
-	result := MergePointsWithStrategy(p1, p2, true, MergeStrategyAvg)
+	result := MergePointsWithStrategy(p1, p2, true, merge.StrategyAvg)
 	require.Len(t, result, 2)
 	require.Equal(t, "20", result[0].Values[0])
 	require.Equal(t, "30", result[1].Values[0])
@@ -96,7 +97,7 @@ func TestAggregateValuesHistogramBothNonNumeric(t *testing.T) {
 	histB := `{"count":"20","sum":"200","buckets":[[0,"1","2","5"]]}`
 	dst := Point{Epoch: 100, Values: []any{histA}}
 	src := Point{Epoch: 100, Values: []any{histB}}
-	aggregateValues(&dst, &src, MergeStrategySum)
+	aggregateValues(&dst, &src, merge.StrategySum)
 	require.Equal(t, histA, dst.Values[0])
 }
 
@@ -104,12 +105,12 @@ func TestAggregateValuesHistogramOneNumeric(t *testing.T) {
 	hist := `{"count":"10","sum":"100","buckets":[[0,"1","2","3"]]}`
 	dst := Point{Epoch: 100, Values: []any{hist}}
 	src := Point{Epoch: 100, Values: []any{"5.0"}}
-	aggregateValues(&dst, &src, MergeStrategySum)
+	aggregateValues(&dst, &src, merge.StrategySum)
 	require.Equal(t, "5.0", dst.Values[0])
 
 	dst2 := Point{Epoch: 100, Values: []any{"5.0"}}
 	src2 := Point{Epoch: 100, Values: []any{hist}}
-	aggregateValues(&dst2, &src2, MergeStrategySum)
+	aggregateValues(&dst2, &src2, merge.StrategySum)
 	require.Equal(t, "5.0", dst2.Values[0])
 }
 
@@ -117,7 +118,7 @@ func TestMergePointsWithStrategyHistogram(t *testing.T) {
 	hist := `{"count":"10","sum":"100","buckets":[[0,"1","2","3"]]}`
 	p1 := makeStringPoints(ev{100, hist}, ev{200, "2.0"})
 	p2 := makeStringPoints(ev{100, hist}, ev{200, "4.0"})
-	result := MergePointsWithStrategy(p1, p2, true, MergeStrategySum)
+	result := MergePointsWithStrategy(p1, p2, true, merge.StrategySum)
 	require.Len(t, result, 2)
 	require.Equal(t, hist, result[0].Values[0])
 	require.Equal(t, "6", result[1].Values[0])

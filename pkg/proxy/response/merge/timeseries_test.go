@@ -19,10 +19,12 @@ package merge
 import (
 	"testing"
 
-	"github.com/stretchr/testify/require"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
+
+	"github.com/stretchr/testify/require"
 )
 
 func makeTestDataSet(stmtID int, name string, tags dataset.Tags, epochs []int64, values []string) *dataset.DataSet {
@@ -72,7 +74,7 @@ func TestTimeseriesMergeFuncWithStrategy_Sum(t *testing.T) {
 	unmarshaler := func([]byte, *timeseries.TimeRangeQuery) (timeseries.Timeseries, error) {
 		return nil, nil
 	}
-	mf := TimeseriesMergeFuncWithStrategy(unmarshaler, int(dataset.MergeStrategySum))
+	mf := TimeseriesMergeFuncWithStrategy(unmarshaler, int(merge.StrategySum))
 	require.NoError(t, mf(accum, ds1, 0))
 	require.NoError(t, mf(accum, ds2, 1))
 
@@ -96,7 +98,7 @@ func TestTimeseriesMergeFuncWithStrategy_Avg(t *testing.T) {
 	unmarshaler := func([]byte, *timeseries.TimeRangeQuery) (timeseries.Timeseries, error) {
 		return nil, nil
 	}
-	mf := TimeseriesMergeFuncWithStrategy(unmarshaler, int(dataset.MergeStrategyAvg))
+	mf := TimeseriesMergeFuncWithStrategy(unmarshaler, int(merge.StrategyAvg))
 	require.NoError(t, mf(accum, ds1, 0))
 	require.NoError(t, mf(accum, ds2, 1))
 	require.NoError(t, mf(accum, ds3, 2))
@@ -118,7 +120,7 @@ func TestTimeseriesMergeFuncWithStrategy_NonDataSet(t *testing.T) {
 	unmarshaler := func([]byte, *timeseries.TimeRangeQuery) (timeseries.Timeseries, error) {
 		return nil, nil
 	}
-	mf := TimeseriesMergeFuncWithStrategy(unmarshaler, int(dataset.MergeStrategySum))
+	mf := TimeseriesMergeFuncWithStrategy(unmarshaler, int(merge.StrategySum))
 	require.Error(t, mf(accum, 42, 0))
 	require.Nil(t, accum.GetTSData())
 }
@@ -134,7 +136,7 @@ func TestTimeseriesMergeFuncWithStrategy_ByteInput(t *testing.T) {
 		return ds1, nil
 	}
 
-	mf := TimeseriesMergeFuncWithStrategy(unmarshaler, int(dataset.MergeStrategySum))
+	mf := TimeseriesMergeFuncWithStrategy(unmarshaler, int(merge.StrategySum))
 	require.NoError(t, mf(accum, []byte("fake"), 0))
 	require.True(t, calledUnmarshal)
 	require.NotNil(t, accum.GetTSData())

@@ -31,8 +31,10 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
 	"github.com/trickstercache/trickster/v2/pkg/util/numbers"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
+
 	"golang.org/x/sync/errgroup"
 )
 
@@ -238,7 +240,7 @@ func (ds *DataSet) DefaultMerger(sortPoints bool, collection ...timeseries.Times
 func (ds *DataSet) MergeWithStrategy(sortPoints bool, strategy int, collection ...timeseries.Timeseries) {
 	ds.MergeWithOpts(MergeOpts{
 		SortPoints: sortPoints,
-		Strategy:   MergeStrategy(strategy),
+		Strategy:   merge.Strategy(strategy),
 	}, collection...)
 }
 
@@ -250,7 +252,7 @@ func (ds *DataSet) MergeWithStrategyTolerant(sortPoints bool, strategy int, tole
 ) {
 	ds.MergeWithOpts(MergeOpts{
 		SortPoints:     sortPoints,
-		Strategy:       MergeStrategy(strategy),
+		Strategy:       merge.Strategy(strategy),
 		ToleranceNanos: toleranceNanos,
 	}, collection...)
 }
@@ -258,7 +260,7 @@ func (ds *DataSet) MergeWithStrategyTolerant(sortPoints bool, strategy int, tole
 // MergeWithOpts merges the provided Timeseries list into the base DataSet
 // honoring every field of opts (including ToleranceNanos for sub-step dedup).
 func (ds *DataSet) MergeWithOpts(opts MergeOpts, collection ...timeseries.Timeseries) {
-	if opts.Strategy == MergeStrategyDedup && opts.ToleranceNanos == 0 {
+	if opts.Strategy == merge.StrategyDedup && opts.ToleranceNanos == 0 {
 		ds.Merge(opts.SortPoints, collection...)
 		return
 	}

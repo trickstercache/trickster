@@ -23,7 +23,6 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/fanout"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
@@ -36,33 +35,35 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
+	tsmerge "github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
+
 	"golang.org/x/sync/errgroup"
 )
 
-func defaultTSMMergePlan(r *http.Request, query string) *backends.TSMMergePlan {
-	return &backends.TSMMergePlan{
+func defaultTSMMergePlan(r *http.Request, query string) *tsmerge.TSMMergePlan {
+	return &tsmerge.TSMMergePlan{
 		OriginalQuery: query,
-		Variants: []backends.TSMQueryVariant{{
-			Name:              "primary",
+		Variants: []tsmerge.TSMQueryVariant{{
+			Name:              tsmerge.TSMVariantPrimary,
 			Request:           r,
-			MergeStrategy:     int(dataset.MergeStrategyDedup),
+			MergeStrategy:     int(tsmerge.StrategyDedup),
 			ResponseAuthority: true,
 		}},
-		Reduction: backends.TSMReductionSpec{
-			Kind:          backends.TSMReductionStandard,
-			InputVariants: []string{"primary"},
+		Reduction: tsmerge.TSMReductionSpec{
+			Kind:          tsmerge.TSMReductionStandard,
+			InputVariants: tsmerge.TSMReductionPrimaryVariant(),
 		},
-		Completeness:            backends.TSMCompletenessResponseAuthority,
+		Completeness:            tsmerge.TSMCompletenessResponseAuthority,
 		AllowSingleMemberBypass: true,
 	}
 }
 
-func planNeedsLabelStripping(plan *backends.TSMMergePlan) bool {
+func planNeedsLabelStripping(plan *tsmerge.TSMMergePlan) bool {
 	if plan == nil || len(plan.Variants) > 1 {
 		return plan != nil
 	}
 	for _, variant := range plan.Variants {
-		if dataset.MergeStrategy(variant.MergeStrategy) != dataset.MergeStrategyDedup {
+		if tsmerge.Strategy(variant.MergeStrategy) != tsmerge.StrategyDedup {
 			return true
 		}
 	}
@@ -74,18 +75,18 @@ func (h *handler) servePlan(
 	r *http.Request,
 	hl pool.Targets,
 	rsc *request.Resources,
-	plan *backends.TSMMergePlan,
+	plan *tsmerge.TSMMergePlan,
 	stripKeys []string,
 	finalizer mergeFinalizer,
 	warnMsg string,
 ) {
-	if plan.Reduction.Kind == backends.TSMReductionStandard {
+	if plan.Reduction.Kind == tsmerge.TSMReductionStandard {
 		variant := plan.Variants[0]
 		if !plan.Finalizer.Enabled {
 			finalizer = nil
 		}
 		h.serveStandard(w, variant.Request, hl, rsc,
-			dataset.MergeStrategy(variant.MergeStrategy), stripKeys,
+			tsmerge.Strategy(variant.MergeStrategy), stripKeys,
 			plan.Finalizer.Query, finalizer, warnMsg)
 		return
 	}
@@ -106,7 +107,7 @@ func (h *handler) serveMultiVariantPlan(
 	r *http.Request,
 	hl pool.Targets,
 	rsc *request.Resources,
-	plan *backends.TSMMergePlan,
+	plan *tsmerge.TSMMergePlan,
 	stripKeys []string,
 	finalizer mergeFinalizer,
 	warnMsg string,
@@ -326,7 +327,7 @@ func (h *handler) collectPlanResult(
 }
 
 func applyPlanCompleteness(
-	plan *backends.TSMMergePlan,
+	plan *tsmerge.TSMMergePlan,
 	executions []planVariantExecution,
 	memberCount int,
 ) ([]string, bool) {
@@ -352,7 +353,7 @@ func applyPlanCompleteness(
 				"trickster: tsm excluded pool member "+strconv.Itoa(member)+
 					": variant \""+plan.Variants[variantIndex].Name+"\" returned no usable response")
 		}
-		if plan.Completeness == backends.TSMCompletenessAllVariants {
+		if plan.Completeness == tsmerge.TSMCompletenessAllVariants {
 			for variantIndex := range executions {
 				executions[variantIndex].contributions[member] = nil
 			}
@@ -362,13 +363,13 @@ func applyPlanCompleteness(
 }
 
 func hasCompletePlanMember(
-	plan *backends.TSMMergePlan,
+	plan *tsmerge.TSMMergePlan,
 	executions []planVariantExecution,
 	memberCount int,
 ) bool {
 	authority, _ := plan.ResponseAuthority()
 	for member := range memberCount {
-		if plan.Completeness == backends.TSMCompletenessResponseAuthority {
+		if plan.Completeness == tsmerge.TSMCompletenessResponseAuthority {
 			if !executions[authority].results[member].failed &&
 				executions[authority].contributions[member] != nil {
 				return true
@@ -417,7 +418,7 @@ func emptyResponseSeed(contributions []*gatherContribution) *dataset.DataSet {
 
 func reducePlan(
 	ctx context.Context,
-	plan *backends.TSMMergePlan,
+	plan *tsmerge.TSMMergePlan,
 	accumulators []*merge.Accumulator,
 ) (*merge.Accumulator, error) {
 	if ctx.Err() != nil {
@@ -429,9 +430,9 @@ func reducePlan(
 	}
 
 	switch plan.Reduction.Kind {
-	case backends.TSMReductionStandard:
+	case tsmerge.TSMReductionStandard:
 		return accumulators[indexes[plan.Reduction.InputVariants[0]]], nil
-	case backends.TSMReductionWeightedAverage:
+	case tsmerge.TSMReductionWeightedAverage:
 		sumAccumulator := accumulators[indexes[plan.Reduction.InputVariants[0]]]
 		countAccumulator := accumulators[indexes[plan.Reduction.InputVariants[1]]]
 		sumTS, countTS := sumAccumulator.GetTSData(), countAccumulator.GetTSData()

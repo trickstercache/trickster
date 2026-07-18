@@ -25,6 +25,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
 )
 
 func testDataSet() *DataSet {
@@ -302,7 +303,7 @@ func TestMergeWithStrategy(t *testing.T) {
 	t.Run("sum across two datasets", func(t *testing.T) {
 		ds1 := makeDS(0, "up", Tags{}, ep{100, "1"}, ep{200, "2"})
 		ds2 := makeDS(0, "up", Tags{}, ep{100, "3"}, ep{200, "4"})
-		ds1.MergeWithStrategy(true, int(MergeStrategySum), ds2)
+		ds1.MergeWithStrategy(true, int(merge.StrategySum), ds2)
 		if ds1.SeriesCount() != 1 {
 			t.Fatalf("expected 1 series, got %d", ds1.SeriesCount())
 		}
@@ -321,7 +322,7 @@ func TestMergeWithStrategy(t *testing.T) {
 	t.Run("dedup delegates to Merge", func(t *testing.T) {
 		ds1 := makeDS(0, "up", Tags{}, ep{100, "1"})
 		ds2 := makeDS(0, "up", Tags{}, ep{100, "9"})
-		ds1.MergeWithStrategy(true, int(MergeStrategyDedup), ds2)
+		ds1.MergeWithStrategy(true, int(merge.StrategyDedup), ds2)
 		if ds1.SeriesCount() != 1 {
 			t.Fatalf("expected 1 series, got %d", ds1.SeriesCount())
 		}
@@ -334,7 +335,7 @@ func TestMergeWithStrategy(t *testing.T) {
 	t.Run("disjoint statement IDs append", func(t *testing.T) {
 		ds1 := makeDS(0, "up", Tags{}, ep{100, "1"})
 		ds2 := makeDS(1, "down", Tags{}, ep{100, "2"})
-		ds1.MergeWithStrategy(true, int(MergeStrategySum), ds2)
+		ds1.MergeWithStrategy(true, int(merge.StrategySum), ds2)
 		if len(ds1.Results) != 2 {
 			t.Errorf("expected 2 results, got %d", len(ds1.Results))
 		}
@@ -342,7 +343,7 @@ func TestMergeWithStrategy(t *testing.T) {
 
 	t.Run("nil collection skipped", func(t *testing.T) {
 		ds1 := makeDS(0, "up", Tags{}, ep{100, "1"})
-		ds1.MergeWithStrategy(true, int(MergeStrategySum), nil)
+		ds1.MergeWithStrategy(true, int(merge.StrategySum), nil)
 		if ds1.SeriesCount() != 1 {
 			t.Errorf("expected 1 series, got %d", ds1.SeriesCount())
 		}
@@ -357,7 +358,7 @@ func TestMergeWithStrategy(t *testing.T) {
 		ds2 := makeDS(0, "latency", Tags{}, ep{100, "20"})
 		ds3 := makeDS(0, "latency", Tags{}, ep{100, "30"})
 		// Use sum for pairwise accumulation (as the merge func does for avg)
-		ds1.MergeWithStrategy(true, int(MergeStrategySum), ds2, ds3)
+		ds1.MergeWithStrategy(true, int(merge.StrategySum), ds2, ds3)
 		ds1.FinalizeAvg(3) // 3 datasets total
 		pts := ds1.Results[0].SeriesList[0].Points
 		if pts[0].Values[0] != "20" {

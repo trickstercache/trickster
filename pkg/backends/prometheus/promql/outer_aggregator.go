@@ -17,39 +17,29 @@
 // Package promql provides utilities for parsing and rewriting PromQL queries.
 package promql
 
-import "strings"
+import (
+	"strings"
 
-// allAggregators lists all known PromQL aggregation operators, sorted with
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/aggregation"
+)
+
+// AllAggregators lists all known PromQL aggregation operators, sorted with
 // longer names first to avoid prefix collisions (e.g. count_values vs count).
-var allAggregators = []string{
-	"count_values",
-	"limit_ratio",
-	"bottomk",
-	"limitk",
-	"stddev",
-	"stdvar",
-	"quantile",
-	"topk",
-	"count",
-	"group",
-	"avg",
-	"sum",
-	"min",
-	"max",
-}
-
-// orderedAggregators is the deduplicated version of allAggregators, built at
-// init time. Longest names are checked first to avoid prefix collisions.
-var orderedAggregators []string
-
-func init() {
-	seen := make(map[string]bool)
-	for _, a := range allAggregators {
-		if !seen[a] {
-			seen[a] = true
-			orderedAggregators = append(orderedAggregators, a)
-		}
-	}
+var AllAggregators = []aggregation.Operator{
+	aggregation.CountValues,
+	aggregation.LimitRatio,
+	aggregation.BottomK,
+	aggregation.LimitK,
+	aggregation.StdDev,
+	aggregation.StdVar,
+	aggregation.Quantile,
+	aggregation.TopK,
+	aggregation.Count,
+	aggregation.Group,
+	aggregation.Average,
+	aggregation.Sum,
+	aggregation.Minimum,
+	aggregation.Maximum,
 }
 
 // OuterAggregator returns the name of the outermost PromQL aggregation
@@ -65,7 +55,7 @@ func init() {
 func OuterAggregator(query string) (string, bool) {
 	q := strings.TrimSpace(query)
 	ql := strings.ToLower(q)
-	for _, agg := range orderedAggregators {
+	for _, agg := range AllAggregators {
 		if !strings.HasPrefix(ql, agg) {
 			continue
 		}

@@ -28,6 +28,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
+	tsmerge "github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
 )
 
 func batchContributionDataSet(value int) *dataset.DataSet {
@@ -49,9 +50,9 @@ func batchContributionDataSet(value int) *dataset.DataSet {
 }
 
 func TestMergeGatherContributionsBatchesDataSets(t *testing.T) {
-	mergeFunc := merge.TimeseriesMergeFuncWithStrategy(nil, int(dataset.MergeStrategySum))
+	mergeFunc := merge.TimeseriesMergeFuncWithStrategy(nil, int(tsmerge.StrategySum))
 	batchMergeFunc := merge.TimeseriesBatchMergeFuncWithStrategy(
-		int(dataset.MergeStrategySum))
+		int(tsmerge.StrategySum))
 	contributions := []*gatherContribution{
 		{data: batchContributionDataSet(1), mergeFunc: mergeFunc,
 			batchMergeFunc: batchMergeFunc, member: 0},

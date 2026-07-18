@@ -367,7 +367,8 @@ func RunHealthFlipRace(
 				SucceededSlots: succeededSlots.Load(),
 			}
 		default:
-			if earlyExitFanouts > 0 && fanoutIters.Load() >= earlyExitFanouts {
+			if earlyExitFanouts > 0 && fanoutIters.Load() >= earlyExitFanouts &&
+				flipperIters.Load() > 0 {
 				close(stop)
 				wg.Wait()
 				return HealthFlipResult{

@@ -28,7 +28,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
@@ -40,6 +39,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
+	tsmerge "github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
 )
 
 type finalizerStubBackend struct {
@@ -48,9 +48,9 @@ type finalizerStubBackend struct {
 	query string
 }
 
-func (b *finalizerStubBackend) PlanTSMMerge(r *http.Request, query string) (*backends.TSMMergePlan, error) {
+func (b *finalizerStubBackend) PlanTSMMerge(r *http.Request, query string) (*tsmerge.TSMMergePlan, error) {
 	plan := defaultTSMMergePlan(r, query)
-	plan.Finalizer = backends.TSMFinalizerSpec{Enabled: true, Query: query}
+	plan.Finalizer = tsmerge.TSMFinalizerSpec{Enabled: true, Query: query}
 	plan.AllowSingleMemberBypass = false
 	return plan, nil
 }
@@ -87,26 +87,26 @@ func (b *prometheusSortBackend) Configuration() *bo.Options { return nil }
 
 func (b *rankRewriteFinalizerStubBackend) PlanTSMMerge(
 	r *http.Request, query string,
-) (*backends.TSMMergePlan, error) {
+) (*tsmerge.TSMMergePlan, error) {
 	next, err := request.Clone(r)
 	if err != nil {
 		return nil, err
 	}
 	params.SetRequestValues(next, url.Values{"query": {b.innerQuery}})
-	return &backends.TSMMergePlan{
+	return &tsmerge.TSMMergePlan{
 		OriginalQuery: query,
-		Variants: []backends.TSMQueryVariant{{
-			Name:              "primary",
+		Variants: []tsmerge.TSMQueryVariant{{
+			Name:              tsmerge.TSMVariantPrimary,
 			Request:           next,
-			MergeStrategy:     int(dataset.MergeStrategySum),
+			MergeStrategy:     int(tsmerge.StrategySum),
 			ResponseAuthority: true,
 		}},
-		Reduction: backends.TSMReductionSpec{
-			Kind:          backends.TSMReductionStandard,
-			InputVariants: []string{"primary"},
+		Reduction: tsmerge.TSMReductionSpec{
+			Kind:          tsmerge.TSMReductionStandard,
+			InputVariants: tsmerge.TSMReductionPrimaryVariant(),
 		},
-		Finalizer:    backends.TSMFinalizerSpec{Enabled: true, Query: query},
-		Completeness: backends.TSMCompletenessResponseAuthority,
+		Finalizer:    tsmerge.TSMFinalizerSpec{Enabled: true, Query: query},
+		Completeness: tsmerge.TSMCompletenessResponseAuthority,
 	}, nil
 }
 

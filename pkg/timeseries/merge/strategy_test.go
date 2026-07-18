@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package dataset
+package merge
 
 import (
 	"testing"
@@ -22,24 +22,24 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestParseMergeStrategy(t *testing.T) {
+func TestParseStrategy(t *testing.T) {
 	tests := []struct {
 		input    string
-		expected MergeStrategy
+		expected Strategy
 		hasErr   bool
 	}{
-		{"", MergeStrategyDedup, false},
-		{"dedup", MergeStrategyDedup, false},
-		{"sum", MergeStrategySum, false},
-		{"avg", MergeStrategyAvg, false},
-		{"min", MergeStrategyMin, false},
-		{"max", MergeStrategyMax, false},
-		{"count", MergeStrategyCount, false},
-		{"invalid", MergeStrategyDedup, true},
+		{"", StrategyDedup, false},
+		{Dedup, StrategyDedup, false},
+		{Sum, StrategySum, false},
+		{Average, StrategyAvg, false},
+		{Minimum, StrategyMin, false},
+		{Maximum, StrategyMax, false},
+		{Count, StrategyCount, false},
+		{"invalid", StrategyDedup, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			ms, err := ParseMergeStrategy(tt.input)
+			ms, err := ParseStrategy(tt.input)
 			if tt.hasErr {
 				require.Error(t, err)
 			} else {
@@ -51,10 +51,10 @@ func TestParseMergeStrategy(t *testing.T) {
 }
 
 func TestMergeStrategyString(t *testing.T) {
-	require.Equal(t, "dedup", MergeStrategyDedup.String())
-	require.Equal(t, "sum", MergeStrategySum.String())
-	require.Equal(t, "avg", MergeStrategyAvg.String())
-	require.Equal(t, "min", MergeStrategyMin.String())
-	require.Equal(t, "max", MergeStrategyMax.String())
-	require.Equal(t, "count", MergeStrategyCount.String())
+	require.Equal(t, Dedup, StrategyDedup.String())
+	require.Equal(t, Sum, StrategySum.String())
+	require.Equal(t, Average, StrategyAvg.String())
+	require.Equal(t, Minimum, StrategyMin.String())
+	require.Equal(t, Maximum, StrategyMax.String())
+	require.Equal(t, Count, StrategyCount.String())
 }

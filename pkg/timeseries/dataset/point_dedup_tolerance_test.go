@@ -21,6 +21,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
 )
 
 // makeNsPoints constructs Points using nanosecond epochs.
@@ -113,7 +114,7 @@ func TestMergePointsWithOptsTolerance(t *testing.T) {
 	)
 	out := MergePointsWithOpts(p1, p2, MergeOpts{
 		SortPoints:     true,
-		Strategy:       MergeStrategyDedup,
+		Strategy:       merge.StrategyDedup,
 		ToleranceNanos: tol,
 	})
 	require.Len(t, out, 2)
@@ -130,7 +131,7 @@ func TestMergePointsWithOptsToleranceZeroParity(t *testing.T) {
 	p2 := makeNsPoints(ev{100, "3"}, ev{300, "4"})
 	out := MergePointsWithOpts(p1, p2, MergeOpts{
 		SortPoints:     true,
-		Strategy:       MergeStrategyDedup,
+		Strategy:       merge.StrategyDedup,
 		ToleranceNanos: 0,
 	})
 	legacy := MergePoints(p1.Clone(), p2.Clone(), true)
