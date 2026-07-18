@@ -17,13 +17,14 @@
 package prometheus
 
 import (
+	"errors"
+	"fmt"
 	"maps"
 	"net/http"
 	"net/url"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus/promql"
-	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
-	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
@@ -33,14 +34,110 @@ import (
 // expression, used in both GET (query string) and POST (request body) requests.
 const promQueryParam = "query"
 
-// ClassifyMerge implements backends.TSMMergeProvider for the Prometheus backend.
-// It inspects the outermost PromQL aggregation operator and returns the merge
-// strategy (as the int value of dataset.MergeStrategy), whether a dual-query
-// weighted average is required, and an optional warning for operators whose
-// results cannot be correctly merged across shards.
-func (c *Client) ClassifyMerge(query string) (strategy int, needsDualQuery bool, warning string) {
-	query, _ = tsmInnerQuery(query)
-	return classifyPromMerge(query)
+// PlanTSMMerge constructs the complete TSM execution plan for a Prometheus
+// request. Query syntax and wire-format rewriting stay provider-owned; the ALB
+// executor only consumes variants and reduction metadata.
+func (c *Client) PlanTSMMerge(r *http.Request, query string) (*backends.TSMMergePlan, error) {
+	if r == nil {
+		return nil, errors.New("cannot plan a nil request")
+	}
+	fanoutQuery, rewritten := tsmInnerQuery(query)
+	finalizer := tsmFinalizer(query)
+
+	strategy := int(dataset.MergeStrategyDedup)
+	unsupportedWarning := ""
+	reduction := backends.TSMReductionSpec{
+		Kind:          backends.TSMReductionStandard,
+		InputVariants: []string{"primary"},
+	}
+	completeness := backends.TSMCompletenessResponseAuthority
+
+	agg, found := promql.OuterAggregator(fanoutQuery)
+	if found {
+		switch agg {
+		case "sum", "count", "count_values":
+			strategy = int(dataset.MergeStrategySum)
+		case "avg":
+			return weightedAveragePlan(r, query, fanoutQuery, finalizer)
+		case "min":
+			strategy = int(dataset.MergeStrategyMin)
+		case "max":
+			strategy = int(dataset.MergeStrategyMax)
+		case "stddev", "stdvar", "quantile", "topk", "bottomk", "limitk", "limit_ratio":
+			unsupportedWarning = `trickster: outer aggregator "` + agg + `" cannot be correctly ` +
+				`merged across fanout backends; results may be inaccurate`
+		}
+	}
+
+	variantRequest := r
+	var err error
+	if rewritten {
+		variantRequest, err = rewritePromQueryParam(r, fanoutQuery)
+		if err != nil {
+			return nil, fmt.Errorf("prepare tsm primary variant: %w", err)
+		}
+	}
+
+	plan := &backends.TSMMergePlan{
+		OriginalQuery: query,
+		Variants: []backends.TSMQueryVariant{{
+			Name:              "primary",
+			Request:           variantRequest,
+			MergeStrategy:     strategy,
+			ResponseAuthority: true,
+		}},
+		Reduction:          reduction,
+		Finalizer:          finalizer,
+		Completeness:       completeness,
+		UnsupportedWarning: unsupportedWarning,
+	}
+	plan.AllowSingleMemberBypass = !rewritten && !finalizer.Enabled && unsupportedWarning == ""
+	if err := plan.Validate(); err != nil {
+		return nil, err
+	}
+	return plan, nil
+}
+
+func weightedAveragePlan(r *http.Request, originalQuery, fanoutQuery string,
+	finalizer backends.TSMFinalizerSpec,
+) (*backends.TSMMergePlan, error) {
+	sumQuery := promql.ReplaceOuterAggregator(fanoutQuery, "avg", "sum")
+	countQuery := promql.ReplaceOuterAggregator(fanoutQuery, "avg", "count")
+	sumReq, err := rewritePromQueryParam(r, sumQuery)
+	if err != nil {
+		return nil, fmt.Errorf("prepare tsm avg-sum variant: %w", err)
+	}
+	countReq, err := rewritePromQueryParam(r, countQuery)
+	if err != nil {
+		return nil, fmt.Errorf("prepare tsm avg-count variant: %w", err)
+	}
+
+	plan := &backends.TSMMergePlan{
+		OriginalQuery: originalQuery,
+		Variants: []backends.TSMQueryVariant{
+			{
+				Name:              "avg-sum",
+				Request:           sumReq,
+				MergeStrategy:     int(dataset.MergeStrategySum),
+				ResponseAuthority: true,
+			},
+			{
+				Name:          "avg-count",
+				Request:       countReq,
+				MergeStrategy: int(dataset.MergeStrategySum),
+			},
+		},
+		Reduction: backends.TSMReductionSpec{
+			Kind:          backends.TSMReductionWeightedAverage,
+			InputVariants: []string{"avg-sum", "avg-count"},
+		},
+		Finalizer:    finalizer,
+		Completeness: backends.TSMCompletenessAllVariants,
+	}
+	if err := plan.Validate(); err != nil {
+		return nil, err
+	}
+	return plan, nil
 }
 
 func tsmInnerQuery(query string) (string, bool) {
@@ -55,66 +152,24 @@ func tsmInnerQuery(query string) (string, bool) {
 	return query, false
 }
 
-func classifyPromMerge(query string) (strategy int, needsDualQuery bool, warning string) {
-	agg, found := promql.OuterAggregator(query)
-	if !found {
-		return int(dataset.MergeStrategyDedup), false, ""
+func tsmFinalizer(query string) backends.TSMFinalizerSpec {
+	if _, ok := promql.ParseRankAggregation(query); ok {
+		return backends.TSMFinalizerSpec{Enabled: true, Query: query}
 	}
-	switch agg {
-	case "sum", "count", "count_values":
-		return int(dataset.MergeStrategySum), false, ""
-	case "avg":
-		// needsDualQuery=true: TSM fires two sub-queries (sum + count) per shard
-		// and calls FinalizeWeightedAvg(..., originalQuery) to compute the weighted mean.
-		// MergeStrategySum is used during accumulation; the final division happens
-		// after all shards have responded.
-		return int(dataset.MergeStrategySum), true, ""
-	case "min":
-		return int(dataset.MergeStrategyMin), false, ""
-	case "max":
-		return int(dataset.MergeStrategyMax), false, ""
-	case "stddev", "stdvar", "quantile", "topk", "bottomk", "limitk", "limit_ratio":
-		return int(dataset.MergeStrategyDedup), false,
-			`trickster: outer aggregator "` + agg + `" cannot be correctly ` +
-				`merged across fanout backends; results may be inaccurate`
-	default: // covers "group"
-		return int(dataset.MergeStrategyDedup), false, ""
+	if _, ok := promql.ParseSortWrapper(query); ok {
+		return backends.TSMFinalizerSpec{Enabled: true, Query: query}
 	}
+	return backends.TSMFinalizerSpec{}
 }
 
-// RewriteForTSMMerge removes Prometheus operations that must run after TSM
-// fanout. The shards receive the inner query; FinalizeTSMMerge later applies
-// the original rank and/or sort operation to the merged result.
-func (c *Client) RewriteForTSMMerge(r *http.Request, query string) (*http.Request, string) {
-	innerQuery, ok := tsmInnerQuery(query)
-	if !ok {
-		return r, query
-	}
-	return rewritePromQueryParam(r, innerQuery, "tsm finalizer"), innerQuery
-}
-
-// RewriteForWeightedAvg implements backends.TSMMergeProvider for the Prometheus
-// backend. It returns two copies of r — one with the outer "avg" aggregator
-// replaced by "sum" and one by "count" — with the rewritten expression injected
-// into the Prometheus "query" parameter. Both GET (query string) and POST
-// (request body) encodings are handled transparently by params.SetRequestValues.
-func (c *Client) RewriteForWeightedAvg(r *http.Request, query string) (*http.Request, *http.Request) {
-	query, _ = tsmInnerQuery(query)
-
-	sumQuery := promql.ReplaceOuterAggregator(query, "avg", "sum")
-	countQuery := promql.ReplaceOuterAggregator(query, "avg", "count")
-	sumReq := rewritePromQueryParam(r, sumQuery, "avg aggregator sumReq")
-	countReq := rewritePromQueryParam(r, countQuery, "avg aggregator countReq")
-
-	return sumReq, countReq
-}
-
-func rewritePromQueryParam(r *http.Request, query, cloneName string) *http.Request {
+func rewritePromQueryParam(r *http.Request, query string) (*http.Request, error) {
 	qp, _, _ := params.GetRequestValues(r)
 	req, err := request.Clone(r)
 	if err != nil {
-		logger.Error("failed to clone "+cloneName, logging.Pairs{"error": err})
-		return r
+		return nil, err
+	}
+	if req == nil {
+		return nil, errors.New("cannot rewrite a nil request")
 	}
 	nextQP := maps.Clone(qp)
 	if nextQP == nil {
@@ -122,5 +177,7 @@ func rewritePromQueryParam(r *http.Request, query, cloneName string) *http.Reque
 	}
 	nextQP.Set(promQueryParam, query)
 	params.SetRequestValues(req, nextQP)
-	return req
+	return req, nil
 }
+
+var _ backends.TSMMergeProvider = (*Client)(nil)
