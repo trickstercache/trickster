@@ -77,20 +77,20 @@ func (b *weightedAvgStubBackend) PlanTSMMerge(r *http.Request, query string) (*b
 		OriginalQuery: query,
 		Variants: []backends.TSMQueryVariant{
 			{
-				Name:              "avg-sum",
+				Name:              backends.TSMVariantWeightedAverageSum,
 				Request:           sumReq,
 				MergeStrategy:     int(dataset.MergeStrategySum),
 				ResponseAuthority: true,
 			},
 			{
-				Name:          "avg-count",
+				Name:          backends.TSMVariantWeightedAverageCount,
 				Request:       countReq,
 				MergeStrategy: int(dataset.MergeStrategySum),
 			},
 		},
 		Reduction: backends.TSMReductionSpec{
 			Kind:          backends.TSMReductionWeightedAverage,
-			InputVariants: []string{"avg-sum", "avg-count"},
+			InputVariants: backends.TSMReductionWeightedAverageVariants(),
 		},
 		Completeness: backends.TSMCompletenessAllVariants,
 	}, nil
@@ -310,10 +310,10 @@ func weightedAvgFailVariantHandler(spec weightedAvgMemberSpec, variant, mode str
 		qp, _, _ := params.GetRequestValues(r)
 		query := qp.Get("query")
 		isCount := strings.HasPrefix(query, "count(")
-		currentVariant := "avg-sum"
+		currentVariant := backends.TSMVariantWeightedAverageSum
 		value := spec.sumValue
 		if isCount {
-			currentVariant = "avg-count"
+			currentVariant = backends.TSMVariantWeightedAverageCount
 			value = spec.countValue
 		}
 		rsc := request.GetResources(r)
@@ -323,6 +323,15 @@ func weightedAvgFailVariantHandler(spec weightedAvgMemberSpec, variant, mode str
 		if currentVariant == variant {
 			switch mode {
 			case "status":
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			case "status-data":
+				if rsc != nil {
+					rsc.TS = weightedAvgDataSet(value)
+					rsc.MergeFunc = merge.TimeseriesMergeFuncWithStrategy(nil, rsc.TSMergeStrategy)
+					rsc.BatchMergeFunc = merge.TimeseriesBatchMergeFuncWithStrategy(
+						rsc.TSMergeStrategy)
+				}
 				w.WriteHeader(http.StatusServiceUnavailable)
 				return
 			case "parse":
@@ -445,11 +454,13 @@ func TestServeWeightedAvg(t *testing.T) {
 		h.SetPool(p)
 
 		w := httptest.NewRecorder()
-		albpool.RequireFanoutAttemptDelta(t, names.MechanismTSM, "avg-sum", 1, func() {
-			albpool.RequireFanoutAttemptDelta(t, names.MechanismTSM, "avg-count", 1, func() {
-				h.ServeHTTP(w, newWeightedAvgRequest(t, "avg(requests)"))
+		albpool.RequireFanoutAttemptDelta(t, names.MechanismTSM,
+			backends.TSMVariantWeightedAverageSum, 1, func() {
+				albpool.RequireFanoutAttemptDelta(t, names.MechanismTSM,
+					backends.TSMVariantWeightedAverageCount, 1, func() {
+						h.ServeHTTP(w, newWeightedAvgRequest(t, "avg(requests)"))
+					})
 			})
-		})
 
 		if w.Code != http.StatusOK {
 			t.Fatalf("status: want 200 got %d body=%q", w.Code, w.Body.String())
@@ -537,12 +548,14 @@ func TestServeWeightedAvg(t *testing.T) {
 		missingVariant string
 		mode           string
 	}{
-		{"count status failure", "avg-count", "status"},
-		{"count parse failure", "avg-count", "parse"},
-		{"count panic", "avg-count", "panic"},
-		{"count transport failure", "avg-count", "transport"},
-		{"count capture failure", "avg-count", "capture"},
-		{"sum status failure", "avg-sum", "status"},
+		{"count status failure", backends.TSMVariantWeightedAverageCount, "status"},
+		{"count status with data failure", backends.TSMVariantWeightedAverageCount, "status-data"},
+		{"count parse failure", backends.TSMVariantWeightedAverageCount, "parse"},
+		{"count panic", backends.TSMVariantWeightedAverageCount, "panic"},
+		{"count transport failure", backends.TSMVariantWeightedAverageCount, "transport"},
+		{"count capture failure", backends.TSMVariantWeightedAverageCount, "capture"},
+		{"sum status failure", backends.TSMVariantWeightedAverageSum, "status"},
+		{"sum status with data failure", backends.TSMVariantWeightedAverageSum, "status-data"},
 	} {
 		t.Run("member_completeness_"+strings.ReplaceAll(test.name, " ", "_"), func(t *testing.T) {
 			p := newWeightedAvgPool([]http.Handler{
@@ -579,6 +592,33 @@ func TestServeWeightedAvg(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("non_2xx_dataset_seeds_empty_error_response", func(t *testing.T) {
+		p := newWeightedAvgPool([]http.Handler{
+			weightedAvgFailVariantHandler(
+				weightedAvgMemberSpec{sumValue: "60", countValue: "3"},
+				backends.TSMVariantWeightedAverageSum, "status-data",
+			),
+		})
+		defer p.Stop()
+		albpool.WaitHealthy(t, p, 1)
+
+		h := &handler{mergePaths: []string{"/"}}
+		h.SetPool(p)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, newWeightedAvgRequest(t, "avg(requests)"))
+
+		if w.Code != http.StatusServiceUnavailable {
+			t.Fatalf("status: want 503 got %d body=%q", w.Code, w.Body.String())
+		}
+		body := w.Body.String()
+		if !strings.Contains(body, "MERGED:empty") || strings.Contains(body, "100=") {
+			t.Fatalf("body: error dataset entered reduction: %q", body)
+		}
+		if !strings.Contains(body, `variant "`+backends.TSMVariantWeightedAverageSum+`"`) {
+			t.Fatalf("body: missing failed-variant warning: %q", body)
+		}
+	})
 
 	t.Run("completion_order_does_not_change_reduction", func(t *testing.T) {
 		orders := []struct {
@@ -708,8 +748,10 @@ func TestServeWeightedAvg(t *testing.T) {
 
 	t.Run("all_authority_fanout_failures_return_bad_gateway", func(t *testing.T) {
 		p := newWeightedAvgPool([]http.Handler{
-			weightedAvgFailVariantHandler(weightedAvgMemberSpec{sumValue: "60", countValue: "3"}, "avg-sum", "panic"),
-			weightedAvgFailVariantHandler(weightedAvgMemberSpec{sumValue: "40", countValue: "1"}, "avg-sum", "panic"),
+			weightedAvgFailVariantHandler(weightedAvgMemberSpec{sumValue: "60", countValue: "3"},
+				backends.TSMVariantWeightedAverageSum, "panic"),
+			weightedAvgFailVariantHandler(weightedAvgMemberSpec{sumValue: "40", countValue: "1"},
+				backends.TSMVariantWeightedAverageSum, "panic"),
 		})
 		defer p.Stop()
 		albpool.WaitHealthy(t, p, 2)
@@ -778,7 +820,8 @@ func TestServeWeightedAvg(t *testing.T) {
 		if !strings.Contains(body, "MERGED:empty") {
 			t.Fatalf("body: want empty paired result, got %q", body)
 		}
-		if !strings.Contains(body, `variant "avg-count" returned no usable response`) {
+		if !strings.Contains(body, `variant "`+backends.TSMVariantWeightedAverageCount+
+			`" returned no usable response`) {
 			t.Fatalf("body: want missing avg-count warning, got %q", body)
 		}
 	})
@@ -804,7 +847,8 @@ func TestServeWeightedAvg(t *testing.T) {
 		if !strings.Contains(body, "MERGED:empty") {
 			t.Fatalf("body: want empty paired result, got %q", body)
 		}
-		if !strings.Contains(body, `variant "avg-sum" returned no usable response`) {
+		if !strings.Contains(body, `variant "`+backends.TSMVariantWeightedAverageSum+
+			`" returned no usable response`) {
 			t.Fatalf("body: want missing avg-sum warning, got %q", body)
 		}
 	})
@@ -827,8 +871,8 @@ func TestServeWeightedAvg(t *testing.T) {
 		if w.Code != http.StatusOK || !strings.Contains(body, "MERGED:empty") {
 			t.Fatalf("status=%d body=%q", w.Code, body)
 		}
-		if !strings.Contains(body, `variant "avg-sum"`) ||
-			!strings.Contains(body, `variant "avg-count"`) {
+		if !strings.Contains(body, `variant "`+backends.TSMVariantWeightedAverageSum+`"`) ||
+			!strings.Contains(body, `variant "`+backends.TSMVariantWeightedAverageCount+`"`) {
 			t.Fatalf("body: missing completeness warnings: %q", body)
 		}
 	})

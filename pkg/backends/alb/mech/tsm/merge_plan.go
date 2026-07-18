@@ -319,7 +319,8 @@ func (h *handler) collectPlanResult(
 		}
 	}
 	result.contrib = contribution
-	result.failed = contribution == nil
+	result.failed = contribution == nil || result.statusCode < http.StatusOK ||
+		result.statusCode >= http.StatusMultipleChoices
 	execution.contributions[member] = contribution
 	execution.results[member] = result
 }

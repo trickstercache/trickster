@@ -19,6 +19,8 @@ package backends
 import (
 	"net/http"
 	"testing"
+
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 )
 
 func testTSMRequest(path string) *http.Request {
@@ -32,7 +34,7 @@ func validStandardTSMPlan() *TSMMergePlan {
 		Variants: []TSMQueryVariant{{
 			Name:              "primary",
 			Request:           testTSMRequest("primary"),
-			MergeStrategy:     1,
+			MergeStrategy:     int(dataset.MergeStrategySum),
 			ResponseAuthority: true,
 		}},
 		Reduction: TSMReductionSpec{
@@ -49,20 +51,20 @@ func validWeightedAverageTSMPlan() *TSMMergePlan {
 		OriginalQuery: "avg(up)",
 		Variants: []TSMQueryVariant{
 			{
-				Name:              "avg-sum",
+				Name:              TSMVariantWeightedAverageSum,
 				Request:           testTSMRequest("sum"),
-				MergeStrategy:     1,
+				MergeStrategy:     int(dataset.MergeStrategySum),
 				ResponseAuthority: true,
 			},
 			{
-				Name:          "avg-count",
+				Name:          TSMVariantWeightedAverageCount,
 				Request:       testTSMRequest("count"),
-				MergeStrategy: 1,
+				MergeStrategy: int(dataset.MergeStrategySum),
 			},
 		},
 		Reduction: TSMReductionSpec{
 			Kind:          TSMReductionWeightedAverage,
-			InputVariants: []string{"avg-sum", "avg-count"},
+			InputVariants: TSMReductionWeightedAverageVariants(),
 		},
 		Completeness: TSMCompletenessAllVariants,
 	}
@@ -74,6 +76,11 @@ func TestTSMMergePlanValidate(t *testing.T) {
 	}
 	if err := validWeightedAverageTSMPlan().Validate(); err != nil {
 		t.Fatalf("valid weighted-average plan: %v", err)
+	}
+	maxStrategyPlan := validStandardTSMPlan()
+	maxStrategyPlan.Variants[0].MergeStrategy = int(dataset.MaxMergeStrategyValue)
+	if err := maxStrategyPlan.Validate(); err != nil {
+		t.Fatalf("maximum merge strategy: %v", err)
 	}
 	var nilPlan *TSMMergePlan
 	if err := nilPlan.Validate(); err == nil {
@@ -89,7 +96,9 @@ func TestTSMMergePlanValidate(t *testing.T) {
 		{"empty variant name", validStandardTSMPlan, func(p *TSMMergePlan) { p.Variants[0].Name = "" }},
 		{"nil request", validStandardTSMPlan, func(p *TSMMergePlan) { p.Variants[0].Request = nil }},
 		{"invalid low strategy", validStandardTSMPlan, func(p *TSMMergePlan) { p.Variants[0].MergeStrategy = -1 }},
-		{"invalid high strategy", validStandardTSMPlan, func(p *TSMMergePlan) { p.Variants[0].MergeStrategy = 6 }},
+		{"invalid high strategy", validStandardTSMPlan, func(p *TSMMergePlan) {
+			p.Variants[0].MergeStrategy = int(dataset.MaxMergeStrategyValue) + 1
+		}},
 		{"missing authority", validStandardTSMPlan, func(p *TSMMergePlan) { p.Variants[0].ResponseAuthority = false }},
 		{"standard missing reduction input", validStandardTSMPlan, func(p *TSMMergePlan) { p.Reduction.InputVariants = nil }},
 		{"standard wrong completeness", validStandardTSMPlan, func(p *TSMMergePlan) { p.Completeness = TSMCompletenessAllVariants }},
@@ -97,13 +106,29 @@ func TestTSMMergePlanValidate(t *testing.T) {
 		{"enabled finalizer missing query", validStandardTSMPlan, func(p *TSMMergePlan) { p.Finalizer.Enabled = true }},
 		{"disabled finalizer with query", validStandardTSMPlan, func(p *TSMMergePlan) { p.Finalizer.Query = "sum(up)" }},
 		{"bypass with warning", validStandardTSMPlan, func(p *TSMMergePlan) { p.UnsupportedWarning = "inexact" }},
-		{"duplicate variant name", validWeightedAverageTSMPlan, func(p *TSMMergePlan) { p.Variants[1].Name = "avg-sum" }},
+		{"duplicate variant name", validWeightedAverageTSMPlan, func(p *TSMMergePlan) {
+			p.Variants[1].Name = TSMVariantWeightedAverageSum
+		}},
 		{"shared variant request", validWeightedAverageTSMPlan, func(p *TSMMergePlan) { p.Variants[1].Request = p.Variants[0].Request }},
 		{"multiple authorities", validWeightedAverageTSMPlan, func(p *TSMMergePlan) { p.Variants[1].ResponseAuthority = true }},
-		{"weighted missing reduction input", validWeightedAverageTSMPlan, func(p *TSMMergePlan) { p.Reduction.InputVariants = []string{"avg-sum"} }},
+		{"weighted missing reduction input", validWeightedAverageTSMPlan, func(p *TSMMergePlan) {
+			p.Reduction.InputVariants = []string{TSMVariantWeightedAverageSum}
+		}},
 		{"weighted missing original query", validWeightedAverageTSMPlan, func(p *TSMMergePlan) { p.OriginalQuery = "" }},
-		{"weighted duplicate reduction input", validWeightedAverageTSMPlan, func(p *TSMMergePlan) { p.Reduction.InputVariants[1] = "avg-sum" }},
+		{"weighted reversed reduction inputs", validWeightedAverageTSMPlan, func(p *TSMMergePlan) {
+			p.Reduction.InputVariants[0], p.Reduction.InputVariants[1] =
+				p.Reduction.InputVariants[1], p.Reduction.InputVariants[0]
+		}},
+		{"weighted duplicate reduction input", validWeightedAverageTSMPlan, func(p *TSMMergePlan) {
+			p.Reduction.InputVariants[1] = TSMVariantWeightedAverageSum
+		}},
 		{"weighted unknown reduction input", validWeightedAverageTSMPlan, func(p *TSMMergePlan) { p.Reduction.InputVariants[1] = "missing" }},
+		{"weighted sum wrong merge strategy", validWeightedAverageTSMPlan, func(p *TSMMergePlan) {
+			p.Variants[0].MergeStrategy = int(dataset.MergeStrategyDedup)
+		}},
+		{"weighted count wrong merge strategy", validWeightedAverageTSMPlan, func(p *TSMMergePlan) {
+			p.Variants[1].MergeStrategy = int(dataset.MergeStrategyCount)
+		}},
 		{"weighted wrong completeness", validWeightedAverageTSMPlan, func(p *TSMMergePlan) { p.Completeness = TSMCompletenessResponseAuthority }},
 		{"weighted authority not first input", validWeightedAverageTSMPlan, func(p *TSMMergePlan) {
 			p.Variants[0].ResponseAuthority = false

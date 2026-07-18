@@ -168,8 +168,9 @@ func TestPlanTSMMergeContents(t *testing.T) {
 		if plan.OriginalQuery != query {
 			t.Fatalf("original query: got %q", plan.OriginalQuery)
 		}
-		if len(plan.Variants) != 2 || plan.Variants[0].Name != "avg-sum" ||
-			plan.Variants[1].Name != "avg-count" {
+		if len(plan.Variants) != 2 ||
+			plan.Variants[0].Name != backends.TSMVariantWeightedAverageSum ||
+			plan.Variants[1].Name != backends.TSMVariantWeightedAverageCount {
 			t.Fatalf("variants: %#v", plan.Variants)
 		}
 		if plan.Variants[0].Request == plan.Variants[1].Request ||
@@ -186,10 +187,12 @@ func TestPlanTSMMergeContents(t *testing.T) {
 			}
 		}
 		if !plan.Variants[0].ResponseAuthority || plan.Variants[1].ResponseAuthority {
-			t.Fatal("avg-sum must be the sole response authority")
+			t.Fatalf("%s must be the sole response authority",
+				backends.TSMVariantWeightedAverageSum)
 		}
 		if plan.Reduction.Kind != backends.TSMReductionWeightedAverage ||
-			strings.Join(plan.Reduction.InputVariants, ",") != "avg-sum,avg-count" {
+			strings.Join(plan.Reduction.InputVariants, ",") !=
+				strings.Join(backends.TSMReductionWeightedAverageVariants(), ",") {
 			t.Fatalf("reduction: %#v", plan.Reduction)
 		}
 		if plan.Completeness != backends.TSMCompletenessAllVariants {

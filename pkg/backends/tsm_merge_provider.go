@@ -20,6 +20,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 )
 
 // TSMReductionKind identifies how accumulated query variants are combined.
@@ -34,6 +36,19 @@ const (
 	TSMReductionWeightedAverage
 )
 
+const (
+	// TSMVariantWeightedAverageSum is the summed-value input to weighted average.
+	TSMVariantWeightedAverageSum = "avg-sum"
+	// TSMVariantWeightedAverageCount is the summed-count input to weighted average.
+	TSMVariantWeightedAverageCount = "avg-count"
+)
+
+// TSMReductionWeightedAverageVariants returns weighted-average input names in
+// the positional order required by the reducer: sum, then count.
+func TSMReductionWeightedAverageVariants() []string {
+	return []string{TSMVariantWeightedAverageSum, TSMVariantWeightedAverageCount}
+}
+
 // TSMCompletenessPolicy determines which per-member contributions may enter
 // global accumulation.
 type TSMCompletenessPolicy int
@@ -47,7 +62,8 @@ const (
 )
 
 // TSMReductionSpec describes the reduction performed after variant
-// accumulation.
+// accumulation. InputVariants is ordered according to the reduction kind's
+// positional contract; use its reduction-specific helper when available.
 type TSMReductionSpec struct {
 	Kind          TSMReductionKind
 	InputVariants []string
@@ -101,17 +117,17 @@ func (p *TSMMergePlan) Validate() error {
 		return errors.New("tsm merge plan has no query variants")
 	}
 
-	names := make(map[string]struct{}, len(p.Variants))
+	variantsByName := make(map[string]TSMQueryVariant, len(p.Variants))
 	requestPointers := make(map[*http.Request]struct{}, len(p.Variants))
 	authorities := 0
 	for i, variant := range p.Variants {
 		if variant.Name == "" {
 			return fmt.Errorf("tsm merge plan variant %d has no name", i)
 		}
-		if _, ok := names[variant.Name]; ok {
+		if _, ok := variantsByName[variant.Name]; ok {
 			return fmt.Errorf("tsm merge plan has duplicate variant name %q", variant.Name)
 		}
-		names[variant.Name] = struct{}{}
+		variantsByName[variant.Name] = variant
 		if variant.Request == nil {
 			return fmt.Errorf("tsm merge plan variant %q has no request", variant.Name)
 		}
@@ -119,10 +135,8 @@ func (p *TSMMergePlan) Validate() error {
 			return fmt.Errorf("tsm merge plan variants share request %q", variant.Name)
 		}
 		requestPointers[variant.Request] = struct{}{}
-		// dataset.MergeStrategy currently defines values 0 through 5. Keep the
-		// shallow backends package independent of dataset while rejecting values
-		// that the merge layer would otherwise silently treat as deduplication.
-		if variant.MergeStrategy < 0 || variant.MergeStrategy > 5 {
+		if variant.MergeStrategy < 0 ||
+			variant.MergeStrategy > int(dataset.MaxMergeStrategyValue) {
 			return fmt.Errorf("tsm merge plan variant %q has invalid merge strategy %d",
 				variant.Name, variant.MergeStrategy)
 		}
@@ -153,8 +167,19 @@ func (p *TSMMergePlan) Validate() error {
 		if p.OriginalQuery == "" {
 			return errors.New("weighted-average tsm reduction requires the original query")
 		}
-		if len(p.Reduction.InputVariants) != 2 {
+		expectedInputs := TSMReductionWeightedAverageVariants()
+		if len(p.Reduction.InputVariants) != len(expectedInputs) {
 			return errors.New("weighted-average tsm reduction requires two named inputs")
+		}
+		for i, expected := range expectedInputs {
+			if p.Reduction.InputVariants[i] != expected {
+				return fmt.Errorf("weighted-average tsm reduction input %d must be %q", i, expected)
+			}
+		}
+		for _, name := range expectedInputs {
+			if variantsByName[name].MergeStrategy != int(dataset.MergeStrategySum) {
+				return fmt.Errorf("weighted-average tsm variant %q must use sum merge strategy", name)
+			}
 		}
 		if p.Completeness != TSMCompletenessAllVariants {
 			return errors.New("weighted-average tsm reduction requires all-variant completeness")
@@ -168,7 +193,7 @@ func (p *TSMMergePlan) Validate() error {
 	}
 	seenInputs := make(map[string]struct{}, len(p.Reduction.InputVariants))
 	for _, name := range p.Reduction.InputVariants {
-		if _, ok := names[name]; !ok {
+		if _, ok := variantsByName[name]; !ok {
 			return fmt.Errorf("tsm merge plan reduction references unknown variant %q", name)
 		}
 		if _, ok := seenInputs[name]; ok {

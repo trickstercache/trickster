@@ -105,31 +105,33 @@ func weightedAveragePlan(r *http.Request, originalQuery, fanoutQuery string,
 	countQuery := promql.ReplaceOuterAggregator(fanoutQuery, "avg", "count")
 	sumReq, err := rewritePromQueryParam(r, sumQuery)
 	if err != nil {
-		return nil, fmt.Errorf("prepare tsm avg-sum variant: %w", err)
+		return nil, fmt.Errorf("prepare tsm %s variant: %w",
+			backends.TSMVariantWeightedAverageSum, err)
 	}
 	countReq, err := rewritePromQueryParam(r, countQuery)
 	if err != nil {
-		return nil, fmt.Errorf("prepare tsm avg-count variant: %w", err)
+		return nil, fmt.Errorf("prepare tsm %s variant: %w",
+			backends.TSMVariantWeightedAverageCount, err)
 	}
 
 	plan := &backends.TSMMergePlan{
 		OriginalQuery: originalQuery,
 		Variants: []backends.TSMQueryVariant{
 			{
-				Name:              "avg-sum",
+				Name:              backends.TSMVariantWeightedAverageSum,
 				Request:           sumReq,
 				MergeStrategy:     int(dataset.MergeStrategySum),
 				ResponseAuthority: true,
 			},
 			{
-				Name:          "avg-count",
+				Name:          backends.TSMVariantWeightedAverageCount,
 				Request:       countReq,
 				MergeStrategy: int(dataset.MergeStrategySum),
 			},
 		},
 		Reduction: backends.TSMReductionSpec{
 			Kind:          backends.TSMReductionWeightedAverage,
-			InputVariants: []string{"avg-sum", "avg-count"},
+			InputVariants: backends.TSMReductionWeightedAverageVariants(),
 		},
 		Finalizer:    finalizer,
 		Completeness: backends.TSMCompletenessAllVariants,
