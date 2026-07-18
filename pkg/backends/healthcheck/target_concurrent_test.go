@@ -18,9 +18,11 @@ package healthcheck
 
 import (
 	"context"
+	"net/http"
 	"net/url"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/require"
@@ -70,25 +72,28 @@ func TestTargetConcurrentStartStopRace(t *testing.T) {
 // has returned".
 func TestTargetRestartAfterStop(t *testing.T) {
 	logger.SetLogger(testLogger)
-	ts := newTestServer(200, "OK", map[string]string{})
-	defer ts.Close()
-	u, err := url.Parse(ts.URL)
-	require.NoError(t, err)
+	synctest.Test(t, func(t *testing.T) {
+		client := &http.Client{
+			Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				return okProbeResponse(req), nil
+			}),
+		}
+		tgt, err := newTarget(context.Background(), "restart", "restart", &ho.Options{
+			Verb:          "GET",
+			Scheme:        "http",
+			Host:          "restart.invalid",
+			Path:          "/",
+			Interval:      200 * time.Millisecond,
+			ExpectedCodes: []int{200},
+		}, client)
+		require.NoError(t, err)
 
-	tgt, err := newTarget(context.Background(), "restart", "restart", &ho.Options{
-		Verb:          "GET",
-		Scheme:        u.Scheme,
-		Host:          u.Host,
-		Path:          "/",
-		Interval:      200 * time.Millisecond,
-		ExpectedCodes: []int{200},
-	}, ts.Client())
-	require.NoError(t, err)
-
-	ctx := context.Background()
-	for range 10 {
-		tgt.Start(ctx)
-		time.Sleep(time.Millisecond)
-		tgt.Stop()
-	}
+		ctx := context.Background()
+		for range 10 {
+			tgt.Start(ctx)
+			time.Sleep(time.Second)
+			synctest.Wait()
+			tgt.Stop()
+		}
+	})
 }
