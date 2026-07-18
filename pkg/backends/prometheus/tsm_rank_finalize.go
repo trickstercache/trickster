@@ -26,13 +26,12 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus/promql"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/aggregation"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 )
 
 const (
 	histogramFieldName      = "histogram"
-	rankOperatorBottomK     = "bottomk"
-	rankOperatorTopK        = "topk"
 	sortInRangeQueryWarning = "PromQL warning: sort is ineffective for range queries " +
 		"since results are always ordered by labels"
 )
@@ -221,7 +220,7 @@ func finalizeRankAggregation(ds *dataset.DataSet, spec promql.RankAggregation) {
 			}
 		}
 		result.SeriesList = keepSelectedRankPoints(result.SeriesList, selected)
-		descending := spec.Operator == rankOperatorTopK
+		descending := spec.Operator == aggregation.TopK
 		if spec.SortSet {
 			descending = spec.SortDescending
 		}
@@ -264,7 +263,7 @@ func rankValueLess(a, b float64, operator string) bool {
 		}
 		return !aNaN
 	}
-	if operator == rankOperatorBottomK {
+	if operator == aggregation.BottomK {
 		return a < b
 	}
 	return a > b
@@ -370,9 +369,9 @@ func sortInstantSeries(seriesList dataset.SeriesList, descending bool) {
 		})
 	}
 
-	operator := rankOperatorBottomK
+	operator := aggregation.BottomK
 	if descending {
-		operator = rankOperatorTopK
+		operator = aggregation.TopK
 	}
 	slices.SortStableFunc(items, func(a, b sortItem) int {
 		if rankValueLess(a.value, b.value, operator) {

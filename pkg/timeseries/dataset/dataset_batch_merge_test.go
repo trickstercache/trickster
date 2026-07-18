@@ -25,6 +25,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
 )
 
 func batchMergeSeries(name, host string, values ...string) *Series {
@@ -99,14 +100,14 @@ func TestBatchMergeMatchesSequentialMerge(t *testing.T) {
 		name string
 		opts MergeOpts
 	}{
-		{name: "dedup", opts: MergeOpts{SortPoints: true}},
+		{name: merge.Dedup, opts: MergeOpts{SortPoints: true}},
 		{name: "dedup_with_tolerance", opts: MergeOpts{
-			SortPoints: true, Strategy: MergeStrategyDedup, ToleranceNanos: 1,
+			SortPoints: true, Strategy: merge.StrategyDedup, ToleranceNanos: 1,
 		}},
-		{name: "sum", opts: MergeOpts{SortPoints: true, Strategy: MergeStrategySum}},
-		{name: "min", opts: MergeOpts{SortPoints: true, Strategy: MergeStrategyMin}},
-		{name: "max", opts: MergeOpts{SortPoints: true, Strategy: MergeStrategyMax}},
-		{name: "avg", opts: MergeOpts{SortPoints: true, Strategy: MergeStrategyAvg}},
+		{name: merge.Sum, opts: MergeOpts{SortPoints: true, Strategy: merge.StrategySum}},
+		{name: merge.Minimum, opts: MergeOpts{SortPoints: true, Strategy: merge.StrategyMin}},
+		{name: merge.Maximum, opts: MergeOpts{SortPoints: true, Strategy: merge.StrategyMax}},
+		{name: merge.Average, opts: MergeOpts{SortPoints: true, Strategy: merge.StrategyAvg}},
 	}
 
 	for _, test := range tests {
@@ -131,7 +132,7 @@ func TestBatchMergeMatchesSequentialMerge(t *testing.T) {
 			if !reflect.DeepEqual(batch.ExtentList, sequential.ExtentList) {
 				t.Fatalf("extent list differs: got %v want %v", batch.ExtentList, sequential.ExtentList)
 			}
-			if test.opts.Strategy == MergeStrategyDedup && test.opts.ToleranceNanos == 0 {
+			if test.opts.Strategy == merge.StrategyDedup && test.opts.ToleranceNanos == 0 {
 				if batch.Status != sequential.Status {
 					t.Fatalf("status differs: got %q want %q", batch.Status, sequential.Status)
 				}
@@ -152,10 +153,10 @@ func TestBatchMergePreservesAliasedSeriesOrder(t *testing.T) {
 			&DataSet{Results: Results{{StatementID: 0, SeriesList: SeriesList{shared}}}},
 		}
 		if batch {
-			base.MergeWithStrategy(true, int(MergeStrategySum), members...)
+			base.MergeWithStrategy(true, int(merge.StrategySum), members...)
 		} else {
 			for _, member := range members {
-				base.MergeWithStrategy(true, int(MergeStrategySum), member)
+				base.MergeWithStrategy(true, int(merge.StrategySum), member)
 			}
 		}
 		return batchMergeSnapshot(base)
@@ -197,7 +198,7 @@ func BenchmarkFanoutDataSetMerge(b *testing.B) {
 				inputs := benchmarkMergeFixture(64, 1000, overlap)
 				b.StartTimer()
 				for _, next := range inputs[1:] {
-					inputs[0].MergeWithStrategy(true, int(MergeStrategySum), next)
+					inputs[0].MergeWithStrategy(true, int(merge.StrategySum), next)
 				}
 			}
 		})
@@ -210,7 +211,7 @@ func BenchmarkFanoutDataSetMerge(b *testing.B) {
 					collection[i-1] = inputs[i]
 				}
 				b.StartTimer()
-				inputs[0].MergeWithStrategy(true, int(MergeStrategySum), collection...)
+				inputs[0].MergeWithStrategy(true, int(merge.StrategySum), collection...)
 			}
 		})
 	}

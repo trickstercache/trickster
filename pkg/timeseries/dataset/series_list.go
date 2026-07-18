@@ -23,7 +23,9 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
+
 	"golang.org/x/sync/errgroup"
 )
 
@@ -133,7 +135,7 @@ func (sl SeriesList) Clone() SeriesList {
 // MergeWithStrategy merges sl2 into the subject SeriesList using the specified
 // MergeStrategy to combine values from series with identical headers.
 // For MergeStrategyDedup, this behaves identically to Merge.
-func (sl SeriesList) MergeWithStrategy(sl2 SeriesList, sortPoints bool, strategy MergeStrategy) SeriesList {
+func (sl SeriesList) MergeWithStrategy(sl2 SeriesList, sortPoints bool, strategy merge.Strategy) SeriesList {
 	return sl.MergeWithOpts(sl2, MergeOpts{SortPoints: sortPoints, Strategy: strategy})
 }
 
@@ -142,7 +144,7 @@ func (sl SeriesList) MergeWithStrategy(sl2 SeriesList, sortPoints bool, strategy
 // produced by independent shards sampling the same metric at slightly
 // different timestamps.
 func (sl SeriesList) MergeWithOpts(sl2 SeriesList, opts MergeOpts) SeriesList {
-	if opts.Strategy == MergeStrategyDedup && opts.ToleranceNanos == 0 {
+	if opts.Strategy == merge.StrategyDedup && opts.ToleranceNanos == 0 {
 		// fast path: legacy exact-match dedup
 		return sl.Merge(sl2, opts.SortPoints)
 	}

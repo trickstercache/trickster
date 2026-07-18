@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
 )
 
 // nonOptsMergerTS wraps timeseries.Timeseries via an embedded interface so
@@ -119,7 +120,7 @@ func TestTimeseriesMergeFuncWithStrategyTolerant(t *testing.T) {
 		ds1 := makeTestDataSet(0, "up", nil, []int64{1000}, []string{"1"})
 		ds2 := makeTestDataSet(0, "up", nil, []int64{1003}, []string{"2"})
 
-		mf := TimeseriesMergeFuncWithStrategyTolerant(unmarshaler, int(dataset.MergeStrategyDedup), 5)
+		mf := TimeseriesMergeFuncWithStrategyTolerant(unmarshaler, int(merge.StrategyDedup), 5)
 		require.NoError(t, mf(accum, ds1, 0))
 		require.NoError(t, mf(accum, ds2, 1))
 
@@ -136,7 +137,7 @@ func TestTimeseriesMergeFuncWithStrategyTolerant(t *testing.T) {
 		ds2 := makeTestDataSet(0, "latency", nil, []int64{100}, []string{"30"})
 		ds3 := makeTestDataSet(0, "latency", nil, []int64{100}, []string{"20"})
 
-		mf := TimeseriesMergeFuncWithStrategyTolerant(unmarshaler, int(dataset.MergeStrategyAvg), 0)
+		mf := TimeseriesMergeFuncWithStrategyTolerant(unmarshaler, int(merge.StrategyAvg), 0)
 		require.NoError(t, mf(accum, ds1, 0))
 		require.NoError(t, mf(accum, ds2, 1))
 		require.NoError(t, mf(accum, ds3, 2))
@@ -158,7 +159,7 @@ func TestTimeseriesMergeFuncWithStrategyTolerant(t *testing.T) {
 		accum.SetTSData(nonOptsMergerTS{Timeseries: seedDS})
 		next := makeTestDataSet(0, "up", nil, []int64{200}, []string{"7"})
 
-		mf := TimeseriesMergeFuncWithStrategyTolerant(unmarshaler, int(dataset.MergeStrategySum), 5)
+		mf := TimeseriesMergeFuncWithStrategyTolerant(unmarshaler, int(merge.StrategySum), 5)
 		require.NoError(t, mf(accum, next, 0))
 
 		got, ok := accum.GetTSData().(nonOptsMergerTS)
@@ -179,7 +180,7 @@ func TestTimeseriesMergeFuncWithStrategyTolerant(t *testing.T) {
 			return ds1, nil
 		}
 
-		mf := TimeseriesMergeFuncWithStrategyTolerant(unmarshalerCapture, int(dataset.MergeStrategyDedup), 5)
+		mf := TimeseriesMergeFuncWithStrategyTolerant(unmarshalerCapture, int(merge.StrategyDedup), 5)
 		require.NoError(t, mf(accum, []byte("fake"), 0))
 		require.True(t, called)
 		require.NotNil(t, accum.GetTSData())
@@ -224,7 +225,7 @@ func TestTimeseriesBatchMergeFuncWithStrategyTolerant(t *testing.T) {
 	}
 
 	handled, err := TimeseriesBatchMergeFuncWithStrategyTolerant(
-		int(dataset.MergeStrategyAvg), 0)(accum, items)
+		int(merge.StrategyAvg), 0)(accum, items)
 	require.NoError(t, err)
 	require.True(t, handled)
 	require.Equal(t, 3, accum.MergeCount)

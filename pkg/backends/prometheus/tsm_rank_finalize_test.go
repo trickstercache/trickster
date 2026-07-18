@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/aggregation"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 )
@@ -253,7 +254,7 @@ func TestRankCandidateHeapMatchesFullSort(t *testing.T) {
 		}
 	}
 
-	for _, operator := range []string{rankOperatorTopK, rankOperatorBottomK} {
+	for _, operator := range []string{aggregation.TopK, aggregation.BottomK} {
 		for _, limit := range []int{0, 1, 3, len(candidates), len(candidates) + 2} {
 			name := operator + "/" + strconv.Itoa(limit)
 			t.Run(name, func(t *testing.T) {

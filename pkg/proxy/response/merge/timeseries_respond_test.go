@@ -23,9 +23,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/stretchr/testify/require"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestTimeseriesMergeFuncErrors(t *testing.T) {
@@ -93,7 +95,7 @@ func TestTimeseriesRespondFuncWithStrategy(t *testing.T) {
 	accum := NewAccumulator()
 	ds1 := makeTestDataSet(0, "latency", nil, []int64{100}, []string{"10"})
 	ds2 := makeTestDataSet(0, "latency", nil, []int64{100}, []string{"30"})
-	mf := TimeseriesMergeFuncWithStrategy(nil, int(dataset.MergeStrategyAvg))
+	mf := TimeseriesMergeFuncWithStrategy(nil, int(merge.StrategyAvg))
 	require.NoError(t, mf(accum, ds1, 0))
 	require.NoError(t, mf(accum, ds2, 1))
 
@@ -105,7 +107,7 @@ func TestTimeseriesRespondFuncWithStrategy(t *testing.T) {
 			return nil
 		},
 		nil,
-		int(dataset.MergeStrategyAvg),
+		int(merge.StrategyAvg),
 	)
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/", nil)

@@ -14,17 +14,29 @@
  * limitations under the License.
  */
 
-package backends
+package aggregation
 
-import (
-	"net/http"
-
-	"github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
+type (
+	Operator  = string
+	Operators []Operator
 )
 
-// TSMMergeProvider prepares a validated execution plan for every TSM request.
-// Provider-specific query parsing, request cloning, and wire rewriting belong
-// in plan construction so the executor remains independent of query syntax.
-type TSMMergeProvider interface {
-	PlanTSMMerge(r *http.Request, query string) (*merge.TSMMergePlan, error)
-}
+const (
+	// Common time-series aggregations.
+	Sum         Operator = "sum"
+	Count       Operator = "count"
+	CountValues Operator = "count_values"
+	Average     Operator = "avg"
+	Minimum     Operator = "min"
+	Maximum     Operator = "max"
+	Group       Operator = "group"
+
+	// PromQL-specific aggregations.
+	TopK       Operator = "topk"
+	BottomK    Operator = "bottomk"
+	StdDev     Operator = "stddev"
+	StdVar     Operator = "stdvar"
+	Quantile   Operator = "quantile"
+	LimitK     Operator = "limitk"
+	LimitRatio Operator = "limit_ratio"
+)

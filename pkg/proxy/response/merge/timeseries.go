@@ -23,6 +23,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
 )
 
 // TimeseriesMergeFunc creates a MergeFunc for timeseries data
@@ -56,7 +57,7 @@ func TimeseriesMergeFuncTolerant(unmarshaler timeseries.UnmarshalerFunc, toleran
 		}
 		if toleranceNanos > 0 {
 			if om, ok := accum.tsdata.(optsMerger); ok {
-				// strategy=0 == dataset.MergeStrategyDedup
+				// strategy=0 == merge.StrategyDedup
 				om.MergeWithStrategyTolerant(true, 0, toleranceNanos, ts)
 				return nil
 			}
@@ -94,7 +95,7 @@ func TimeseriesBatchMergeFuncTolerant(toleranceNanos int64) BatchMergeFunc {
 			rest := collection[start:]
 			if toleranceNanos > 0 {
 				if om, ok := base.(optsMerger); ok {
-					// strategy=0 == dataset.MergeStrategyDedup
+					// strategy=0 == merge.StrategyDedup
 					om.MergeWithStrategyTolerant(true, 0, toleranceNanos, rest...)
 				} else {
 					base.Merge(false, rest...)
@@ -124,15 +125,8 @@ type optsMerger interface {
 		collection ...timeseries.Timeseries)
 }
 
-// These constants must match dataset.MergeStrategy* values. Duplicated here
-// to avoid importing dataset (which would create an import cycle).
-const (
-	mergeStrategySum = 1 // dataset.MergeStrategySum
-	mergeStrategyAvg = 2 // dataset.MergeStrategyAvg
-)
-
 // TimeseriesMergeFuncWithStrategy creates a MergeFunc that uses a merge strategy
-// (as an int matching dataset.MergeStrategy) to aggregate values from matching
+// (as an int matching merge.Strategy) to aggregate values from matching
 // series across backends, rather than deduplicating.
 //
 // For avg, pairwise merges accumulate sums; the final division happens in the
@@ -150,8 +144,8 @@ func TimeseriesMergeFuncWithStrategyTolerant(unmarshaler timeseries.UnmarshalerF
 ) MergeFunc {
 	// For avg, accumulate as sum during pairwise merges
 	pairwiseStrategy := strategy
-	if strategy == mergeStrategyAvg {
-		pairwiseStrategy = mergeStrategySum
+	if strategy == int(merge.StrategyAvg) {
+		pairwiseStrategy = int(merge.StrategySum)
 	}
 	return func(accum *Accumulator, data any, idx int) error {
 		ts, ok := data.(timeseries.Timeseries)
@@ -203,8 +197,8 @@ func TimeseriesBatchMergeFuncWithStrategyTolerant(strategy int,
 	toleranceNanos int64,
 ) BatchMergeFunc {
 	pairwiseStrategy := strategy
-	if strategy == mergeStrategyAvg {
-		pairwiseStrategy = mergeStrategySum
+	if strategy == int(merge.StrategyAvg) {
+		pairwiseStrategy = int(merge.StrategySum)
 	}
 	return func(accum *Accumulator, items []BatchItem) (bool, error) {
 		collection, ok := batchTimeseries(items)
@@ -292,7 +286,7 @@ func TimeseriesRespondFuncWithStrategy(marshaler timeseries.MarshalWriterFunc, r
 			return
 		}
 		// finalize avg: divide accumulated sums by merge count
-		if strategy == mergeStrategyAvg && mergeCount > 1 {
+		if strategy == int(merge.StrategyAvg) && mergeCount > 1 {
 			if af, ok := ts.(avgFinalizer); ok {
 				af.FinalizeAvg(mergeCount)
 			}

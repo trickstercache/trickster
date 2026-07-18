@@ -22,6 +22,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
 )
 
 func TestEqualHeader(t *testing.T) {
@@ -205,7 +206,7 @@ func TestListMergeWithStrategy(t *testing.T) {
 		// Two series with identical labels but different values at the same epoch
 		s1 := makeSeries("cpu", Tags{"host": "a"}, ev{100, "10"}, ev{200, "20"})
 		s2 := makeSeries("cpu", Tags{"host": "a"}, ev{100, "30"}, ev{200, "40"})
-		out := SeriesList{s1}.MergeWithStrategy(SeriesList{s2}, true, MergeStrategySum)
+		out := SeriesList{s1}.MergeWithStrategy(SeriesList{s2}, true, merge.StrategySum)
 		if len(out) != 1 {
 			t.Fatalf("expected 1 series, got %d", len(out))
 		}
@@ -223,7 +224,7 @@ func TestListMergeWithStrategy(t *testing.T) {
 	t.Run("different labels stay separate", func(t *testing.T) {
 		s1 := makeSeries("cpu", Tags{"host": "a"}, ev{100, "10"})
 		s2 := makeSeries("cpu", Tags{"host": "b"}, ev{100, "30"})
-		out := SeriesList{s1}.MergeWithStrategy(SeriesList{s2}, true, MergeStrategySum)
+		out := SeriesList{s1}.MergeWithStrategy(SeriesList{s2}, true, merge.StrategySum)
 		if len(out) != 2 {
 			t.Fatalf("expected 2 series (different labels), got %d", len(out))
 		}
@@ -232,7 +233,7 @@ func TestListMergeWithStrategy(t *testing.T) {
 	t.Run("avg divides by count", func(t *testing.T) {
 		s1 := makeSeries("mem", Tags{}, ev{100, "10"})
 		s2 := makeSeries("mem", Tags{}, ev{100, "30"})
-		out := SeriesList{s1}.MergeWithStrategy(SeriesList{s2}, true, MergeStrategyAvg)
+		out := SeriesList{s1}.MergeWithStrategy(SeriesList{s2}, true, merge.StrategyAvg)
 		if len(out) != 1 {
 			t.Fatalf("expected 1 series, got %d", len(out))
 		}
@@ -244,7 +245,7 @@ func TestListMergeWithStrategy(t *testing.T) {
 	t.Run("min takes minimum", func(t *testing.T) {
 		s1 := makeSeries("disk", Tags{}, ev{100, "50"})
 		s2 := makeSeries("disk", Tags{}, ev{100, "20"})
-		out := SeriesList{s1}.MergeWithStrategy(SeriesList{s2}, true, MergeStrategyMin)
+		out := SeriesList{s1}.MergeWithStrategy(SeriesList{s2}, true, merge.StrategyMin)
 		if out[0].Points[0].Values[0] != "20" {
 			t.Errorf("expected min 20, got %v", out[0].Points[0].Values[0])
 		}
@@ -253,7 +254,7 @@ func TestListMergeWithStrategy(t *testing.T) {
 	t.Run("max takes maximum", func(t *testing.T) {
 		s1 := makeSeries("disk", Tags{}, ev{100, "50"})
 		s2 := makeSeries("disk", Tags{}, ev{100, "20"})
-		out := SeriesList{s1}.MergeWithStrategy(SeriesList{s2}, true, MergeStrategyMax)
+		out := SeriesList{s1}.MergeWithStrategy(SeriesList{s2}, true, merge.StrategyMax)
 		if out[0].Points[0].Values[0] != "50" {
 			t.Errorf("expected max 50, got %v", out[0].Points[0].Values[0])
 		}
@@ -262,7 +263,7 @@ func TestListMergeWithStrategy(t *testing.T) {
 	t.Run("count counts observations", func(t *testing.T) {
 		s1 := makeSeries("req", Tags{}, ev{100, "999"})
 		s2 := makeSeries("req", Tags{}, ev{100, "888"})
-		out := SeriesList{s1}.MergeWithStrategy(SeriesList{s2}, true, MergeStrategyCount)
+		out := SeriesList{s1}.MergeWithStrategy(SeriesList{s2}, true, merge.StrategyCount)
 		if out[0].Points[0].Values[0] != "2" {
 			t.Errorf("expected count 2, got %v", out[0].Points[0].Values[0])
 		}
@@ -271,7 +272,7 @@ func TestListMergeWithStrategy(t *testing.T) {
 	t.Run("dedup strategy delegates to Merge", func(t *testing.T) {
 		s1 := makeSeries("cpu", Tags{"host": "a"}, ev{100, "10"})
 		s2 := makeSeries("cpu", Tags{"host": "a"}, ev{100, "30"})
-		out := SeriesList{s1}.MergeWithStrategy(SeriesList{s2}, true, MergeStrategyDedup)
+		out := SeriesList{s1}.MergeWithStrategy(SeriesList{s2}, true, merge.StrategyDedup)
 		if len(out) != 1 {
 			t.Fatalf("expected 1 series, got %d", len(out))
 		}
@@ -283,11 +284,11 @@ func TestListMergeWithStrategy(t *testing.T) {
 
 	t.Run("empty inputs", func(t *testing.T) {
 		s1 := makeSeries("cpu", Tags{}, ev{100, "10"})
-		out := SeriesList{s1}.MergeWithStrategy(SeriesList{}, true, MergeStrategySum)
+		out := SeriesList{s1}.MergeWithStrategy(SeriesList{}, true, merge.StrategySum)
 		if len(out) != 1 {
 			t.Errorf("expected 1, got %d", len(out))
 		}
-		out = SeriesList{}.MergeWithStrategy(SeriesList{s1}, true, MergeStrategySum)
+		out = SeriesList{}.MergeWithStrategy(SeriesList{s1}, true, merge.StrategySum)
 		if len(out) != 1 {
 			t.Errorf("expected 1, got %d", len(out))
 		}
@@ -296,7 +297,7 @@ func TestListMergeWithStrategy(t *testing.T) {
 	t.Run("non-overlapping epochs preserved", func(t *testing.T) {
 		s1 := makeSeries("cpu", Tags{}, ev{100, "10"})
 		s2 := makeSeries("cpu", Tags{}, ev{200, "20"})
-		out := SeriesList{s1}.MergeWithStrategy(SeriesList{s2}, true, MergeStrategySum)
+		out := SeriesList{s1}.MergeWithStrategy(SeriesList{s2}, true, merge.StrategySum)
 		if len(out) != 1 {
 			t.Fatalf("expected 1 series, got %d", len(out))
 		}

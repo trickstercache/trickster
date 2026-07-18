@@ -27,61 +27,61 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
-	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/aggregation"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
 )
 
 func TestPlanTSMMergeStrategies(t *testing.T) {
 	const (
-		standard = backends.TSMReductionStandard
-		weighted = backends.TSMReductionWeightedAverage
+		standard = merge.TSMReductionStandard
+		weighted = merge.TSMReductionWeightedAverage
 	)
 	tests := []struct {
 		query          string
 		wantStrategy   int
-		wantReduction  backends.TSMReductionKind
+		wantReduction  merge.TSMReductionKind
 		wantWarnSubstr string
 	}{
 		// Queries without an outer aggregation use deduplication.
-		{"up", int(dataset.MergeStrategyDedup), standard, ""},
-		{"rate(http_requests_total[5m])", int(dataset.MergeStrategyDedup), standard, ""},
+		{"up", int(merge.StrategyDedup), standard, ""},
+		{"rate(http_requests_total[5m])", int(merge.StrategyDedup), standard, ""},
 		// Sum, count, and count_values accumulate shard values.
-		{"sum(up)", int(dataset.MergeStrategySum), standard, ""},
-		{"sum by (job) (up)", int(dataset.MergeStrategySum), standard, ""},
-		{"count(up)", int(dataset.MergeStrategySum), standard, ""},
-		{"count_values(\"code\", http_requests_total)", int(dataset.MergeStrategySum), standard, ""},
+		{"sum(up)", int(merge.StrategySum), standard, ""},
+		{"sum by (job) (up)", int(merge.StrategySum), standard, ""},
+		{"count(up)", int(merge.StrategySum), standard, ""},
+		{"count_values(\"code\", http_requests_total)", int(merge.StrategySum), standard, ""},
 		// Average uses paired sum and count variants.
-		{"avg(up)", int(dataset.MergeStrategySum), weighted, ""},
-		{"avg by (region) (up)", int(dataset.MergeStrategySum), weighted, ""},
-		{"min(up)", int(dataset.MergeStrategyMin), standard, ""},
-		{"max(up)", int(dataset.MergeStrategyMax), standard, ""},
+		{"avg(up)", int(merge.StrategySum), weighted, ""},
+		{"avg by (region) (up)", int(merge.StrategySum), weighted, ""},
+		{"min(up)", int(merge.StrategyMin), standard, ""},
+		{"max(up)", int(merge.StrategyMax), standard, ""},
 		// Rank aggregations are rewritten and finalized after merge.
-		{"topk(5, up)", int(dataset.MergeStrategyDedup), standard, ""},
-		{"topk(5, sum by (service) (up))", int(dataset.MergeStrategySum), standard, ""},
-		{"topk(5, avg by (service) (up))", int(dataset.MergeStrategySum), weighted, ""},
-		{"sort_desc(topk(5, max(up)))", int(dataset.MergeStrategyMax), standard, ""},
-		{"bottomk(5, up)", int(dataset.MergeStrategyDedup), standard, ""},
-		{"sort_desc(topk(5, up))", int(dataset.MergeStrategyDedup), standard, ""},
+		{"topk(5, up)", int(merge.StrategyDedup), standard, ""},
+		{"topk(5, sum by (service) (up))", int(merge.StrategySum), standard, ""},
+		{"topk(5, avg by (service) (up))", int(merge.StrategySum), weighted, ""},
+		{"sort_desc(topk(5, max(up)))", int(merge.StrategyMax), standard, ""},
+		{"bottomk(5, up)", int(merge.StrategyDedup), standard, ""},
+		{"sort_desc(topk(5, up))", int(merge.StrategyDedup), standard, ""},
 		// Sort wrappers preserve the inner aggregation strategy.
-		{"sort(sum(up))", int(dataset.MergeStrategySum), standard, ""},
-		{"sort_desc(count by (service) (up))", int(dataset.MergeStrategySum), standard, ""},
-		{"sort(avg by (service) (up))", int(dataset.MergeStrategySum), weighted, ""},
-		{"sort(min(up))", int(dataset.MergeStrategyMin), standard, ""},
-		{"sort_desc(max(up))", int(dataset.MergeStrategyMax), standard, ""},
-		{"sort(up)", int(dataset.MergeStrategyDedup), standard, ""},
+		{"sort(sum(up))", int(merge.StrategySum), standard, ""},
+		{"sort_desc(count by (service) (up))", int(merge.StrategySum), standard, ""},
+		{"sort(avg by (service) (up))", int(merge.StrategySum), weighted, ""},
+		{"sort(min(up))", int(merge.StrategyMin), standard, ""},
+		{"sort_desc(max(up))", int(merge.StrategyMax), standard, ""},
+		{"sort(up)", int(merge.StrategyDedup), standard, ""},
 		// Unsupported aggregations fall back to deduplication with a warning.
-		{"stddev(up)", int(dataset.MergeStrategyDedup), standard, "stddev"},
-		{"stdvar(up)", int(dataset.MergeStrategyDedup), standard, "stdvar"},
-		{"quantile(0.9, up)", int(dataset.MergeStrategyDedup), standard, "quantile"},
-		{"topk(5, stddev(up))", int(dataset.MergeStrategyDedup), standard, "stddev"},
-		{"sort_desc(stddev(up))", int(dataset.MergeStrategyDedup), standard, "stddev"},
-		{"topk(k, up)", int(dataset.MergeStrategyDedup), standard, "topk"},
-		{"limitk(5, up)", int(dataset.MergeStrategyDedup), standard, "limitk"},
-		{"limit_ratio(0.5, up)", int(dataset.MergeStrategyDedup), standard, "limit_ratio"},
-		{"group(up)", int(dataset.MergeStrategyDedup), standard, ""},
+		{"stddev(up)", int(merge.StrategyDedup), standard, aggregation.StdDev},
+		{"stdvar(up)", int(merge.StrategyDedup), standard, aggregation.StdVar},
+		{"quantile(0.9, up)", int(merge.StrategyDedup), standard, aggregation.Quantile},
+		{"topk(5, stddev(up))", int(merge.StrategyDedup), standard, aggregation.StdDev},
+		{"sort_desc(stddev(up))", int(merge.StrategyDedup), standard, aggregation.StdDev},
+		{"topk(k, up)", int(merge.StrategyDedup), standard, aggregation.TopK},
+		{"limitk(5, up)", int(merge.StrategyDedup), standard, aggregation.LimitK},
+		{"limit_ratio(0.5, up)", int(merge.StrategyDedup), standard, aggregation.LimitRatio},
+		{"group(up)", int(merge.StrategyDedup), standard, ""},
 	}
 
 	c := &Client{}
@@ -124,7 +124,7 @@ func TestPlanTSMMergeStrategies(t *testing.T) {
 	}
 }
 
-func mustTSMMergePlan(t *testing.T, r *http.Request, query string) *backends.TSMMergePlan {
+func mustTSMMergePlan(t *testing.T, r *http.Request, query string) *merge.TSMMergePlan {
 	t.Helper()
 	plan, err := (&Client{}).PlanTSMMerge(r, query)
 	if err != nil {
@@ -139,7 +139,7 @@ func TestPlanTSMMergeContents(t *testing.T) {
 		r, _ := http.NewRequest(http.MethodGet,
 			"http://example.com/api/v1/query?query="+url.QueryEscape(query), nil)
 		plan := mustTSMMergePlan(t, r, query)
-		if len(plan.Variants) != 1 || plan.Variants[0].Name != "primary" {
+		if len(plan.Variants) != 1 || plan.Variants[0].Name != merge.TSMVariantPrimary {
 			t.Fatalf("variants: %#v", plan.Variants)
 		}
 		if plan.Variants[0].Request != r {
@@ -148,11 +148,12 @@ func TestPlanTSMMergeContents(t *testing.T) {
 		if !plan.Variants[0].ResponseAuthority {
 			t.Fatal("primary is not response authority")
 		}
-		if plan.Reduction.Kind != backends.TSMReductionStandard ||
-			len(plan.Reduction.InputVariants) != 1 || plan.Reduction.InputVariants[0] != "primary" {
+		if plan.Reduction.Kind != merge.TSMReductionStandard ||
+			len(plan.Reduction.InputVariants) != 1 ||
+			plan.Reduction.InputVariants[0] != merge.TSMVariantPrimary {
 			t.Fatalf("reduction: %#v", plan.Reduction)
 		}
-		if plan.Completeness != backends.TSMCompletenessResponseAuthority {
+		if plan.Completeness != merge.TSMCompletenessResponseAuthority {
 			t.Fatalf("completeness: %d", plan.Completeness)
 		}
 		if !plan.AllowSingleMemberBypass {
@@ -169,8 +170,8 @@ func TestPlanTSMMergeContents(t *testing.T) {
 			t.Fatalf("original query: got %q", plan.OriginalQuery)
 		}
 		if len(plan.Variants) != 2 ||
-			plan.Variants[0].Name != backends.TSMVariantWeightedAverageSum ||
-			plan.Variants[1].Name != backends.TSMVariantWeightedAverageCount {
+			plan.Variants[0].Name != merge.TSMVariantWeightedAverageSum ||
+			plan.Variants[1].Name != merge.TSMVariantWeightedAverageCount {
 			t.Fatalf("variants: %#v", plan.Variants)
 		}
 		if plan.Variants[0].Request == plan.Variants[1].Request ||
@@ -188,14 +189,14 @@ func TestPlanTSMMergeContents(t *testing.T) {
 		}
 		if !plan.Variants[0].ResponseAuthority || plan.Variants[1].ResponseAuthority {
 			t.Fatalf("%s must be the sole response authority",
-				backends.TSMVariantWeightedAverageSum)
+				merge.TSMVariantWeightedAverageSum)
 		}
-		if plan.Reduction.Kind != backends.TSMReductionWeightedAverage ||
+		if plan.Reduction.Kind != merge.TSMReductionWeightedAverage ||
 			strings.Join(plan.Reduction.InputVariants, ",") !=
-				strings.Join(backends.TSMReductionWeightedAverageVariants(), ",") {
+				strings.Join(merge.TSMReductionWeightedAverageVariants(), ",") {
 			t.Fatalf("reduction: %#v", plan.Reduction)
 		}
-		if plan.Completeness != backends.TSMCompletenessAllVariants {
+		if plan.Completeness != merge.TSMCompletenessAllVariants {
 			t.Fatalf("completeness: %d", plan.Completeness)
 		}
 		if !plan.Finalizer.Enabled || plan.Finalizer.Query != query {
@@ -211,10 +212,10 @@ func TestPlanTSMMergeContents(t *testing.T) {
 		r, _ := http.NewRequest(http.MethodGet,
 			"http://example.com/api/v1/query?query="+url.QueryEscape(query), nil)
 		plan := mustTSMMergePlan(t, r, query)
-		if plan.Variants[0].MergeStrategy != int(dataset.MergeStrategyDedup) {
+		if plan.Variants[0].MergeStrategy != int(merge.StrategyDedup) {
 			t.Fatalf("strategy: %d", plan.Variants[0].MergeStrategy)
 		}
-		if !strings.Contains(plan.UnsupportedWarning, "stddev") {
+		if !strings.Contains(plan.UnsupportedWarning, aggregation.StdDev) {
 			t.Fatalf("warning: %q", plan.UnsupportedWarning)
 		}
 		if plan.AllowSingleMemberBypass {
@@ -263,8 +264,8 @@ func TestPlanTSMMergeWeightedAveragePOST(t *testing.T) {
 		req   *http.Request
 		wantQ string
 	}{
-		{"sum", sumReq, "sum(up)"},
-		{"count", countReq, "count(up)"},
+		{merge.Sum, sumReq, "sum(up)"},
+		{merge.Count, countReq, "count(up)"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			// Verify the URL query string.
@@ -337,8 +338,8 @@ func TestPlanTSMMergeWeightedAverageGET(t *testing.T) {
 		req   *http.Request
 		wantQ string
 	}{
-		{"sum", sumReq, "sum(up)"},
-		{"count", countReq, "count(up)"},
+		{merge.Sum, sumReq, "sum(up)"},
+		{merge.Count, countReq, "count(up)"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			gotURL, err := url.ParseQuery(tc.req.URL.RawQuery)
@@ -503,8 +504,8 @@ func TestPlanTSMMergeWeightedAverageRankAggregationGET(t *testing.T) {
 		req   *http.Request
 		wantQ string
 	}{
-		{"sum", sumReq, "sum by (service) (requests)"},
-		{"count", countReq, "count by (service) (requests)"},
+		{merge.Sum, sumReq, "sum by (service) (requests)"},
+		{merge.Count, countReq, "count by (service) (requests)"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			gotURL, err := url.ParseQuery(tc.req.URL.RawQuery)
@@ -530,8 +531,8 @@ func TestPlanTSMMergeWeightedAverageSortWrapperGET(t *testing.T) {
 		req   *http.Request
 		wantQ string
 	}{
-		{"sum", sumReq, "sum by (service) (requests)"},
-		{"count", countReq, "count by (service) (requests)"},
+		{merge.Sum, sumReq, "sum by (service) (requests)"},
+		{merge.Count, countReq, "count by (service) (requests)"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, _, _ := params.GetRequestValues(tc.req)

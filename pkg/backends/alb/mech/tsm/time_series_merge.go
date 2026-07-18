@@ -46,6 +46,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
+	tsmerge "github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
 )
 
 const (
@@ -592,7 +593,7 @@ func mergeContribution(accumulator *merge.Accumulator,
 func (h *handler) serveStandard(
 	w http.ResponseWriter, r *http.Request,
 	hl pool.Targets, rsc *request.Resources,
-	mergeStrategy dataset.MergeStrategy,
+	mergeStrategy tsmerge.Strategy,
 	stripKeys []string,
 	query string,
 	finalizer mergeFinalizer,
@@ -785,9 +786,7 @@ func (h *handler) serveStandard(
 	if statusCode == 0 {
 		statusCode = http.StatusOK
 	}
-	if mrf != nil {
-		mrf(w, r, accumulator, statusCode)
-	}
+	mrf(w, r, accumulator, statusCode)
 }
 
 // mergeMultiValuedHeaders forwards Set-Cookie from the winning shard only

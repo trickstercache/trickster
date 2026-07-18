@@ -20,6 +20,8 @@ import (
 	"math/big"
 	"slices"
 	"strings"
+
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/aggregation"
 )
 
 type AggregationGrouping struct {
@@ -55,7 +57,7 @@ func parseRankAggregation(query string) (RankAggregation, bool) {
 	q := strings.TrimSpace(query)
 	ql := strings.ToLower(q)
 	var op string
-	for _, candidate := range []string{"bottomk", "topk"} {
+	for _, candidate := range []string{aggregation.BottomK, aggregation.TopK} {
 		if !strings.HasPrefix(ql, candidate) {
 			continue
 		}
