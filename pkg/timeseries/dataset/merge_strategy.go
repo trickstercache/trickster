@@ -49,6 +49,8 @@ const (
 	MergeStrategyMax
 	// MergeStrategyCount counts the number of values at matching epochs.
 	MergeStrategyCount
+	// MaxMergeStrategyValue is the largest valid MergeStrategy value.
+	MaxMergeStrategyValue = MergeStrategyCount
 )
 
 // ParseMergeStrategy converts a string to a MergeStrategy.

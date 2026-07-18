@@ -28,6 +28,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
@@ -47,12 +48,11 @@ type finalizerStubBackend struct {
 	query string
 }
 
-func (b *finalizerStubBackend) ClassifyMerge(string) (int, bool, string) {
-	return int(dataset.MergeStrategyDedup), false, ""
-}
-
-func (b *finalizerStubBackend) RewriteForWeightedAvg(r *http.Request, _ string) (*http.Request, *http.Request) {
-	return r, r
+func (b *finalizerStubBackend) PlanTSMMerge(r *http.Request, query string) (*backends.TSMMergePlan, error) {
+	plan := defaultTSMMergePlan(r, query)
+	plan.Finalizer = backends.TSMFinalizerSpec{Enabled: true, Query: query}
+	plan.AllowSingleMemberBypass = false
+	return plan, nil
 }
 
 func (b *finalizerStubBackend) FinalizeTSMMerge(query string, ts timeseries.Timeseries) {
@@ -85,19 +85,29 @@ type prometheusSortBackend struct {
 
 func (b *prometheusSortBackend) Configuration() *bo.Options { return nil }
 
-func (b *rankRewriteFinalizerStubBackend) ClassifyMerge(string) (int, bool, string) {
-	return int(dataset.MergeStrategySum), false, ""
-}
-
-func (b *rankRewriteFinalizerStubBackend) RewriteForTSMMerge(
-	r *http.Request, _ string,
-) (*http.Request, string) {
+func (b *rankRewriteFinalizerStubBackend) PlanTSMMerge(
+	r *http.Request, query string,
+) (*backends.TSMMergePlan, error) {
 	next, err := request.Clone(r)
 	if err != nil {
-		return r, b.innerQuery
+		return nil, err
 	}
 	params.SetRequestValues(next, url.Values{"query": {b.innerQuery}})
-	return next, b.innerQuery
+	return &backends.TSMMergePlan{
+		OriginalQuery: query,
+		Variants: []backends.TSMQueryVariant{{
+			Name:              "primary",
+			Request:           next,
+			MergeStrategy:     int(dataset.MergeStrategySum),
+			ResponseAuthority: true,
+		}},
+		Reduction: backends.TSMReductionSpec{
+			Kind:          backends.TSMReductionStandard,
+			InputVariants: []string{"primary"},
+		},
+		Finalizer:    backends.TSMFinalizerSpec{Enabled: true, Query: query},
+		Completeness: backends.TSMCompletenessResponseAuthority,
+	}, nil
 }
 
 type queryRecorder struct {

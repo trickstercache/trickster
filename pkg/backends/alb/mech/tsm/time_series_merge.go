@@ -46,7 +46,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
-	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -77,10 +76,6 @@ type handler struct {
 
 type mergeFinalizer interface {
 	FinalizeTSMMerge(query string, ts timeseries.Timeseries)
-}
-
-type mergeRequestRewriter interface {
-	RewriteForTSMMerge(r *http.Request, query string) (*http.Request, string)
 }
 
 // stripKeysSnapshot binds a computed stripKeys slice to the poolVersion it
@@ -286,7 +281,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// rejects requests without start/end/step, so classify directly off
 	// the `query` form parameter. Without this, the merge-strategy
 	// classifier sees an empty string on every instant query and always
-	// falls back to Dedup — which defeats the per-query strip-injected-
+	// falls back to Dedup, which defeats the per-query strip-injected-
 	// labels path for any PromQL aggregation issued as an instant query.
 	//
 	// Body safety for POST form requests: params.GetRequestValues reads
@@ -302,28 +297,35 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			query = qp.Get("query")
 		}
 	}
-	var mergeStrategy dataset.MergeStrategy
-	var needsDualQuery bool
-	var warnMsg string
-	var mp backends.TSMMergeProvider
+	plan := defaultTSMMergePlan(r, query)
 	var finalizer mergeFinalizer
-	var rewriter mergeRequestRewriter
 	if hl[0] != nil {
 		if b := hl[0].Backend(); b != nil {
-			if p, ok := b.(backends.TSMMergeProvider); ok {
-				mp = p
-				strategyInt, dq, w := mp.ClassifyMerge(query)
-				mergeStrategy, needsDualQuery, warnMsg = dataset.MergeStrategy(strategyInt), dq, w
+			if planner, ok := b.(backends.TSMMergeProvider); ok {
+				var err error
+				plan, err = planner.PlanTSMMerge(r, query)
+				if err != nil {
+					logger.Warn("tsm merge plan construction failure", logging.Pairs{"error": err})
+					failures.HandleBadGateway(w, r)
+					return
+				}
 			}
 			if f, ok := b.(mergeFinalizer); ok {
 				finalizer = f
 			}
-			if rw, ok := b.(mergeRequestRewriter); ok {
-				rewriter = rw
-			}
-			// backends that don't implement TSMMergeProvider default to dedup.
 		}
 	}
+	if err := plan.Validate(); err != nil {
+		logger.Warn("invalid tsm merge plan", logging.Pairs{"error": err})
+		failures.HandleBadGateway(w, r)
+		return
+	}
+	if plan.Finalizer.Enabled && finalizer == nil {
+		logger.Warn("tsm merge plan requires an unavailable finalizer", nil)
+		failures.HandleBadGateway(w, r)
+		return
+	}
+	warnMsg := plan.UnsupportedWarning
 
 	// Collect injected label keys from pool backends so they can be stripped
 	// before merging. This ensures series from different backends hash
@@ -331,7 +333,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Stripping is only needed when a non-dedup strategy is in play. The set
 	// is cached and reused across requests until the pool is replaced.
 	var stripKeys []string
-	if mergeStrategy != dataset.MergeStrategyDedup || needsDualQuery {
+	if planNeedsLabelStripping(plan) {
 		stripKeys = h.computeStripKeys(hl)
 	}
 
@@ -360,32 +362,14 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.degradeActive.Store(false)
 	}
 
-	// Single-live-member fast path: with one shard there is nothing to merge
-	// or dedup against, so the lone backend's response IS the answer. Skip
-	// only when label stripping or dual-query rewriting would still need to
-	// happen (D1 covers the strip case; weighted-avg covers the dual-query
-	// case), or when the pool is degraded (configured > 1, one live) so the
-	// merge path can attach the degrade warning. Otherwise the merge path's
-	// OnResult stripping handles solo pools correctly, and genuinely
-	// single-member pools return the lone response directly instead of 502'ing
-	// on a one-shard merge that has no peer to dedup or cross-merge against.
-	if l == 1 && len(stripKeys) == 0 && !needsDualQuery && !degraded {
+	// A plan may explicitly allow direct proxying when no planned rewrite,
+	// reduction, finalization, warning, or injected-label cleanup is needed.
+	if l == 1 && len(stripKeys) == 0 && plan.AllowSingleMemberBypass && !degraded {
 		defaultHandler.ServeHTTP(w, r)
 		return
 	}
 
-	if needsDualQuery {
-		h.serveWeightedAvg(w, r, hl, rsc, mp, query, stripKeys, finalizer)
-		return
-	}
-
-	fanoutReq := r
-	if rewriter != nil {
-		fanoutReq, _ = rewriter.RewriteForTSMMerge(r, query)
-	}
-
-	// Standard scatter/gather for all non-avg strategies.
-	h.serveStandard(w, fanoutReq, hl, rsc, mergeStrategy, stripKeys, query, finalizer, warnMsg)
+	h.servePlan(w, r, hl, rsc, plan, stripKeys, finalizer, warnMsg)
 }
 
 // gatherResult captures the per-member fanout outcome used to assemble the
@@ -883,253 +867,4 @@ func pruneUnpairedWeightedAvgSeries(sumDS, countDS *dataset.DataSet, pairingQuer
 				" series with no matching count side: "+strings.Join(dropped, ","))
 	}
 	sumDS.UpdateLock.Unlock()
-}
-
-// serveWeightedAvg implements the dual-query scatter/gather for outer avg
-// aggregators. For each shard it fires two concurrent requests:
-//   - a "sum" variant (avg → sum) to accumulate the total sum per series
-//   - a "count" variant (avg → count) to accumulate the total count per series
-//
-// After all shards respond, FinalizeWeightedAvg divides sum by count to
-// produce a true weighted arithmetic mean, avoiding the skew that
-// avg-of-averages produces when shards have different cardinalities.
-// The original query string is passed for pairing so sum/count rewrites
-// align with the same logical statement (see dataset.FinalizeWeightedAvg).
-func (h *handler) serveWeightedAvg(
-	w http.ResponseWriter, r *http.Request,
-	hl pool.Targets, rsc *request.Resources,
-	mp backends.TSMMergeProvider, query string, stripKeys []string,
-	finalizer mergeFinalizer,
-) {
-	l := len(hl)
-
-	// Rewrite the request once; the provider encapsulates both the query
-	// expression substitution and the wire-protocol injection (URL param,
-	// POST body, etc.).
-	sumBase, countBase := mp.RewriteForWeightedAvg(r, query)
-
-	sumBase, err := fanout.PrimeBody(sumBase)
-	if err != nil {
-		failures.HandleBadGateway(w, r)
-		return
-	}
-	countBase, err = fanout.PrimeBody(countBase)
-	if err != nil {
-		failures.HandleBadGateway(w, r)
-		return
-	}
-
-	sumAccum := merge.NewAccumulator()
-	countAccum := merge.NewAccumulator()
-
-	limit := h.tsmOptions.ConcurrencyOptions.GetQueryConcurrencyLimit()
-
-	// results captures sum-query outcomes only -- the response envelope
-	// (status, headers, RespondFunc) comes from the sum side; count results
-	// affect the arithmetic, not the envelope.
-	results := make([]gatherResult, l)
-	sumContributions := make([]*gatherContribution, l)
-	countContributions := make([]*gatherContribution, l)
-
-	dedupToleranceNanos := h.dedupToleranceNanos()
-	resourcesFn := func(int) *request.Resources {
-		return &request.Resources{
-			IsMergeMember:         true,
-			TSReqestOptions:       rsc.TSReqestOptions,
-			TSMergeStrategy:       int(dataset.MergeStrategySum),
-			TSDedupToleranceNanos: dedupToleranceNanos,
-		}
-	}
-
-	parentCtx := r.Context()
-	var eg errgroup.Group
-	eg.Go(func() error {
-		_, err := fanout.All(parentCtx, sumBase, hl, fanout.Config{
-			Mechanism:             names.MechanismTSM,
-			Variant:               "avg-sum",
-			ConcurrencyLimit:      limit,
-			MaxCaptureBytes:       h.maxCaptureBytes,
-			MaxFanoutCaptureBytes: h.maxFanoutCaptureBytes,
-			Resources:             resourcesFn,
-			OnResult: func(i int, fr *fanout.Result) {
-				if parentCtx.Err() != nil {
-					results[i].failed = true
-					return
-				}
-				if fr.Failed || fr.Request == nil || fr.Capture == nil {
-					results[i].failed = true
-					return
-				}
-				rsc2 := request.GetResources(fr.Request)
-				if rsc2 == nil {
-					results[i].failed = true
-					return
-				}
-				var contribution *gatherContribution
-				if rsc2.TS != nil {
-					contribution = prepareGatherContribution(parentCtx, rsc2, nil, i, stripKeys)
-				} else if fr.Capture != nil {
-					body, derr := encoding.DecompressResponseBody(
-						fr.Capture.Header().Get(headers.NameContentEncoding),
-						fr.Capture.Body(),
-					)
-					if derr != nil {
-						logger.Warn("tsm avg sum gather decode failure", logging.Pairs{
-							"member": i, "error": derr,
-						})
-						results[i].failed = true
-						return
-					}
-					contribution = prepareGatherContribution(parentCtx, rsc2, body, i, stripKeys)
-				}
-				sumContributions[i] = contribution
-				sc := fr.Capture.StatusCode()
-				if rsc2.Response != nil && rsc2.Response.StatusCode > 0 {
-					sc = rsc2.Response.StatusCode
-				}
-				results[i] = gatherResult{
-					statusCode: sc,
-					header:     fr.Capture.Header(),
-					mergeFunc:  rsc2.MergeRespondFunc,
-					contrib:    contribution,
-					failed:     contribution == nil,
-				}
-			},
-		})
-		return err
-	})
-	eg.Go(func() error {
-		_, err := fanout.All(parentCtx, countBase, hl, fanout.Config{
-			Mechanism:             names.MechanismTSM,
-			Variant:               "avg-count",
-			ConcurrencyLimit:      limit,
-			MaxCaptureBytes:       h.maxCaptureBytes,
-			MaxFanoutCaptureBytes: h.maxFanoutCaptureBytes,
-			Resources:             resourcesFn,
-			OnResult: func(i int, fr *fanout.Result) {
-				// Count-side intentionally does not touch results[i]: the
-				// sum-side owns the response envelope. Panics in this slot
-				// are already recovered + countered by fanout.All.
-				if parentCtx.Err() != nil || fr.Failed || fr.Request == nil {
-					return
-				}
-				rsc2 := request.GetResources(fr.Request)
-				if rsc2 == nil {
-					return
-				}
-				if rsc2.TS != nil {
-					countContributions[i] = prepareGatherContribution(parentCtx, rsc2, nil, i, stripKeys)
-				} else if fr.Capture != nil {
-					body, derr := encoding.DecompressResponseBody(
-						fr.Capture.Header().Get(headers.NameContentEncoding),
-						fr.Capture.Body(),
-					)
-					if derr != nil {
-						logger.Warn("tsm avg count gather decode failure", logging.Pairs{
-							"member": i, "error": derr,
-						})
-						return
-					}
-					countContributions[i] = prepareGatherContribution(parentCtx, rsc2, body, i, stripKeys)
-				}
-			},
-		})
-		return err
-	})
-	if err := eg.Wait(); err != nil && parentCtx.Err() == nil {
-		logger.Warn("tsm avg gather failure", logging.Pairs{"error": err})
-	}
-	if parentCtx.Err() != nil {
-		return
-	}
-	for _, member := range mergeGatherContributions(parentCtx, sumAccum, sumContributions) {
-		results[member].failed = true
-	}
-	if parentCtx.Err() != nil {
-		return
-	}
-	mergeGatherContributions(parentCtx, countAccum, countContributions)
-	if parentCtx.Err() != nil {
-		return
-	}
-
-	// Finalize: divide sum totals by count totals to obtain the weighted
-	// average. If either side fanned out to zero usable responses the
-	// surviving accumulator is unfinalized and not a true average — surface
-	// that to the client via a Prometheus warning rather than returning
-	// silently-wrong numbers (D2).
-	sumTS := sumAccum.GetTSData()
-	countTS := countAccum.GetTSData()
-	const (
-		warnCountFailed = "trickster: weighted-avg count fanout returned no usable responses; values are unfinalized sums and not a true average"
-		warnSumFailed   = "trickster: weighted-avg sum fanout returned no usable responses; values are unfinalized counts and not a true average"
-	)
-	switch {
-	case sumTS != nil && countTS != nil:
-		if sumDS, ok := sumTS.(*dataset.DataSet); ok {
-			if countDS, ok := countTS.(*dataset.DataSet); ok {
-				pruneUnpairedWeightedAvgSeries(sumDS, countDS, query)
-				if parentCtx.Err() != nil {
-					return
-				}
-				sumDS.FinalizeWeightedAvg(countDS, query)
-			}
-		}
-	case sumTS != nil && countTS == nil:
-		if sumDS, ok := sumTS.(*dataset.DataSet); ok {
-			sumDS.Warnings = append(sumDS.Warnings, warnCountFailed)
-		}
-	case sumTS == nil && countTS != nil:
-		// Promote countTS into the response slot so the client sees a body
-		// (with a warning) instead of nothing. The sum-side mrf still
-		// writes — it just marshals whichever DataSet the accumulator now
-		// holds.
-		if countDS, ok := countTS.(*dataset.DataSet); ok {
-			countDS.Warnings = append(countDS.Warnings, warnSumFailed)
-		}
-		sumAccum.SetTSData(countTS)
-	}
-
-	if parentCtx.Err() != nil {
-		return
-	}
-	if finalizer != nil {
-		finalizer.FinalizeTSMMerge(query, sumAccum.GetTSData())
-	}
-	if parentCtx.Err() != nil {
-		return
-	}
-
-	// Aggregate status and headers from sum-query results (count results are
-	// only used for the arithmetic and do not affect the response envelope).
-	mrf, winnerHeaders := pickWinner(results)
-	statusCode, statusHeader, has2xx, hasNon2xx := aggregateStatus(results)
-	if has2xx && hasNon2xx {
-		statusHeader = headers.MergeResultHeaderVals(statusHeader, "engine=ALB; status=phit")
-	}
-
-	// See serveStandard for the rationale -- carry the winner's custom
-	// response headers through the fanout so backend-set headers like
-	// `X-Test-Origin` survive the merge. (#970)
-	if mrf == nil {
-		failures.HandleBadGateway(w, r)
-		return
-	}
-	mergeMultiValuedHeaders(w.Header(), results, winnerHeaders)
-	if winnerHeaders != nil {
-		headers.Merge(w.Header(), winnerHeaders)
-	}
-
-	if statusHeader != "" {
-		w.Header().Set(headers.NameTricksterResult, statusHeader)
-	}
-
-	if statusCode == 0 {
-		statusCode = http.StatusOK
-	}
-	// Write the finalized sum accumulator (which now contains weighted averages)
-	// using the RespondFunc from the sum queries.
-	if mrf != nil {
-		mrf(w, r, sumAccum, statusCode)
-	}
 }

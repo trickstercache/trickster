@@ -120,6 +120,10 @@ type Config struct {
 	Variant string
 	// ConcurrencyLimit caps in-flight member calls. 0 means unlimited.
 	ConcurrencyLimit int
+	// ConcurrencyLimiter, when non-nil, shares one concurrency bound across
+	// multiple fanout calls. ConcurrencyLimit creates a call-local limiter when
+	// this field is nil.
+	ConcurrencyLimiter *ConcurrencyLimiter
 	// MaxCaptureBytes caps each member's response body capture. 0 uses
 	// capture.DefaultMaxBytes.
 	MaxCaptureBytes int
@@ -149,6 +153,39 @@ type Config struct {
 	// OnResult must be safe for concurrent invocation. The supplied Result
 	// is the same one that will appear in the All return slice.
 	OnResult func(idx int, r *Result)
+}
+
+// ConcurrencyLimiter bounds in-flight member calls across one or more fanouts.
+// A nil limiter means unlimited concurrency.
+type ConcurrencyLimiter struct {
+	slots chan struct{}
+}
+
+// NewConcurrencyLimiter returns a limiter for positive limits and nil when
+// concurrency is unlimited.
+func NewConcurrencyLimiter(limit int) *ConcurrencyLimiter {
+	if limit <= 0 {
+		return nil
+	}
+	return &ConcurrencyLimiter{slots: make(chan struct{}, limit)}
+}
+
+func (l *ConcurrencyLimiter) acquire(ctx context.Context) error {
+	if l == nil {
+		return nil
+	}
+	select {
+	case l.slots <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (l *ConcurrencyLimiter) release() {
+	if l != nil {
+		<-l.slots
+	}
 }
 
 // All scatters parent to every target and gathers slot-ordered Results.
@@ -291,9 +328,9 @@ func scatterInto(ctx context.Context, parent *http.Request, targets pool.Targets
 	}
 
 	var eg errgroup.Group
-	var slots chan struct{}
-	if cfg.ConcurrencyLimit > 0 {
-		slots = make(chan struct{}, cfg.ConcurrencyLimit)
+	limiter := cfg.ConcurrencyLimiter
+	if limiter == nil {
+		limiter = NewConcurrencyLimiter(cfg.ConcurrencyLimit)
 	}
 
 	// Aggregate capture-buffer budget across all slots. Each dispatched slot
@@ -331,28 +368,24 @@ func scatterInto(ctx context.Context, parent *http.Request, targets pool.Targets
 			metrics.ALBFanoutFailures.WithLabelValues(cfg.Mechanism, cfg.Variant, "aggregate_cap").Inc()
 			continue
 		}
-		if slots != nil {
-			select {
-			case slots <- struct{}{}:
-			case <-ctx.Done():
-				dispatchErr = ctx.Err()
-				markUndispatched(i, dispatchErr)
-			}
-			if dispatchErr != nil {
+		if limiter != nil {
+			if err := limiter.acquire(ctx); err != nil {
+				dispatchErr = err
+				markUndispatched(i, err)
 				break
 			}
 			// A slot and cancellation can become ready together. Do not start a
 			// handler after cancellation merely because select chose the slot.
 			if err := ctx.Err(); err != nil {
-				<-slots
+				limiter.release()
 				dispatchErr = err
 				markUndispatched(i, err)
 				break
 			}
 		}
 		eg.Go(func() error {
-			if slots != nil {
-				defer func() { <-slots }()
+			if limiter != nil {
+				defer limiter.release()
 			}
 			results[i].Index = i
 			defer mech.RecoverFanoutPanic(cfg.Mechanism, cfg.Variant, i, func() {
