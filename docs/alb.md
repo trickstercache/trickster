@@ -118,6 +118,10 @@ When a non-dedup strategy is in effect and backends have [injected labels](./pro
 
 Native histogram samples are preserved through the merge rather than being numerically aggregated. When a timestamp has a histogram on one backend and a float sample on another (or histograms on both), the histogram value is kept as-is — numeric aggregators like `sum` only apply across float samples. This prevents mixed-type series from being corrupted into garbage values when backends return a mix of float and histogram samples at the same timestamp.
 
+#### Max Query Range Limitation
+
+Trickster ALB supports enforcing a `max_query_range` duration on ALB backends. When configured (e.g. `max_query_range: 14d`), queries spanning a duration longer than allowed are rejected at the ALB entry point prior to fanout, returning an HTTP `400 Bad Request` status and incrementing the `query_range_rejections_total` metric.
+
 #### Providers Supporting Time Series Merge
 
 Trickster currently supports Time Series Merging for the following TSDB Providers:
@@ -147,9 +151,11 @@ backends:
       labels:
         region: us-east-1
 
-  # prom-alb-01 scatter/gathers to prom01a and prom01b and merges responses for the caller
+  # prom-alb-01 scatter/gathers to prom01a and prom01b and merges responses for the caller.
+  # Enforces a max 14-day time range limit on all incoming merge requests.
   prom-alb-01:
     provider: alb
+    max_query_range: 14d
     alb:
       mechanism: tsm # time series merge
       pool: 
