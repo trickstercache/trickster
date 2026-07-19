@@ -48,6 +48,7 @@ import (
 	to "github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
+	"github.com/trickstercache/trickster/v2/pkg/util/timeconv"
 	"gopkg.in/yaml.v2"
 )
 
@@ -205,6 +206,11 @@ type Options struct {
 	LatencyMin time.Duration `yaml:"latency_min"`
 	// LatencyMax is the maximum amount of simulated latency to apply to each incoming request
 	LatencyMax time.Duration `yaml:"latency_max"`
+
+	// MaxQueryRange specifies the maximum range for a query allowed on this backend (e.g., '14d')
+	MaxQueryRange string `yaml:"max_query_range,omitempty"`
+	// MaxQueryRangeDuration is the parsed time.Duration of MaxQueryRange
+	MaxQueryRangeDuration time.Duration `yaml:"-"`
 
 	// Synthesized Configurations
 	// These configurations are parsed versions of those defined above, and are what Trickster uses internally
@@ -588,6 +594,14 @@ func (o *Options) Initialize(name string) error {
 	o.Name = name
 	if o.ListenerName == "" {
 		o.ListenerName = listener.DefaultFrontendName
+	}
+
+	if o.MaxQueryRange != "" {
+		d, err := timeconv.ParseDuration(o.MaxQueryRange)
+		if err != nil {
+			return err
+		}
+		o.MaxQueryRangeDuration = d
 	}
 
 	if o.OriginURL != "" {

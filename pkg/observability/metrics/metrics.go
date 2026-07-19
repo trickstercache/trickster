@@ -320,6 +320,17 @@ var (
 		},
 	)
 
+	// ProxyQueryRangeRejections is a counter for requests rejected due to exceeding the max_query_range limit
+	ProxyQueryRangeRejections = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "query_range_rejections_total",
+			Help:      "Trickster total number of queries rejected due to exceeding the max_query_range limit.",
+		},
+		[]string{"backend_name"},
+	)
+
 	// ALBFanoutFailures counts per-shard failures during ALB fanout. The
 	// reason label distinguishes silent contribution failures (e.g. bad
 	// encoding, parse errors), explicit panics in the per-shard goroutine,
@@ -541,6 +552,7 @@ func init() {
 	prometheus.MustRegister(ReloadSuccessesTotal)
 	prometheus.MustRegister(ReloadFailuresTotal)
 	prometheus.MustRegister(ReloadDurationSeconds)
+	prometheus.MustRegister(ProxyQueryRangeRejections)
 }
 
 // Handler returns the http handler for the listener
