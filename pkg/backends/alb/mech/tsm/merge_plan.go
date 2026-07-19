@@ -198,7 +198,6 @@ func (h *handler) serveMultiVariantPlan(
 	applyPlanPointCompleteness(plan, executions, memberCount)
 	var warnings []string
 	var hasPlanFailure bool
-	accumulators := make([]*merge.Accumulator, len(plan.Variants))
 	for variantIndex := range plan.Variants {
 		logical, groupWarnings, groupFailure := coalesceReplicaContributions(
 			parentCtx, hl, configured, executions[variantIndex].contributions,
@@ -208,31 +207,47 @@ func (h *handler) serveMultiVariantPlan(
 		if variantIndex == authorityIndex {
 			hasPlanFailure = groupFailure
 		}
-		accumulators[variantIndex] = merge.NewAccumulator()
-		failedMembers := mergeGatherContributions(parentCtx, accumulators[variantIndex],
-			logical)
-		if len(failedMembers) > 0 {
-			for _, member := range failedMembers {
-				metrics.ALBFanoutFailures.WithLabelValues(
-					names.MechanismTSM, plan.Variants[variantIndex].Name, "merge",
-				).Inc()
-				logger.Warn("tsm plan contribution merge failure", logging.Pairs{
-					"variant": plan.Variants[variantIndex].Name,
-					"member":  member,
-				})
-			}
-			// Re-running a partially mutated generic accumulator is unsafe. Fail
-			// closed instead of reducing variants built from different members.
-			failures.HandleBadGateway(w, r)
-			return
+	}
+	var responseAccumulator *merge.Accumulator
+	var err error
+	if plan.Reduction.Kind == tsmerge.TSMReductionPooledVariance {
+		var reductionWarnings []string
+		responseAccumulator, reductionWarnings, err = reducePooledVariancePlan(parentCtx, plan, executions)
+		warnings = append(warnings, reductionWarnings...)
+		if len(reductionWarnings) > 0 {
+			hasPlanFailure = true
 		}
+	} else {
+		accumulators := make([]*merge.Accumulator, len(plan.Variants))
+		for variantIndex := range plan.Variants {
+			accumulators[variantIndex] = merge.NewAccumulator()
+			failedMembers := mergeGatherContributions(parentCtx, accumulators[variantIndex],
+				executions[variantIndex].contributions)
+			if len(failedMembers) > 0 {
+				for _, member := range failedMembers {
+					metrics.ALBFanoutFailures.WithLabelValues(
+						names.MechanismTSM, plan.Variants[variantIndex].Name, "merge",
+					).Inc()
+					logger.Warn("tsm plan contribution merge failure", logging.Pairs{
+						"variant": plan.Variants[variantIndex].Name,
+						"member":  member,
+					})
+				}
+				// Re-running a partially mutated generic accumulator is unsafe. Fail
+				// closed instead of reducing variants built from different members.
+				failures.HandleBadGateway(w, r)
+				return
+			}
+			if parentCtx.Err() != nil {
+				return
+			}
+		}
+		responseAccumulator, err = reducePlan(parentCtx, plan, accumulators)
+	}
+	if err != nil {
 		if parentCtx.Err() != nil {
 			return
 		}
-	}
-
-	responseAccumulator, err := reducePlan(parentCtx, plan, accumulators)
-	if err != nil {
 		logger.Warn("tsm plan reduction failure", logging.Pairs{"error": err})
 		failures.HandleBadGateway(w, r)
 		return
