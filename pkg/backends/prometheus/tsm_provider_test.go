@@ -27,6 +27,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus/promql"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
@@ -38,6 +39,7 @@ func TestPlanTSMMergeStrategies(t *testing.T) {
 	const (
 		standard = merge.TSMReductionStandard
 		weighted = merge.TSMReductionWeightedAverage
+		pooled   = merge.TSMReductionPooledVariance
 	)
 	tests := []struct {
 		query          string
@@ -83,12 +85,24 @@ func TestPlanTSMMergeStrategies(t *testing.T) {
 		{"sort(min(up))", int(merge.StrategyMin), standard, ""},
 		{"sort_desc(max(up))", int(merge.StrategyMax), standard, ""},
 		{"sort(up)", int(merge.StrategyDedup), standard, ""},
+		// Float-only stddev/stdvar use paired count, mean, and variance inputs.
+		{"stddev(up)", int(merge.StrategyDedup), pooled, ""},
+		{"stdvar without (instance) (rate(requests[5m]))", int(merge.StrategyDedup), pooled, ""},
+		{"sort_desc(stddev by (job) (up))", int(merge.StrategyDedup), pooled, ""},
+		// Numeric-compatible inner aggregations are completed globally before
+		// the outer variance aggregation is finalized.
+		{"stddev(count by (service) (requests))", int(merge.StrategySum), standard, ""},
+		{"stddev(min(requests))", int(merge.StrategyMin), standard, ""},
+		{"stdvar(max(requests))", int(merge.StrategyMax), standard, ""},
+		{"stddev(group by (service) (requests))", int(merge.StrategyDedup), standard, ""},
 		// Unsupported aggregations fall back to deduplication with a warning.
-		{"stddev(up)", int(merge.StrategyDedup), standard, aggregation.StdDev},
-		{"stdvar(up)", int(merge.StrategyDedup), standard, aggregation.StdVar},
+		{"stddev(sum by (service) (requests))", int(merge.StrategyDedup), standard, aggregation.StdDev},
+		{"stdvar(avg by (service) (requests))", int(merge.StrategyDedup), standard, aggregation.StdVar},
+		{"stddev(up + down)", int(merge.StrategyDedup), standard, aggregation.StdDev},
+		{"stdvar(rate(sum(up)[5m:]))", int(merge.StrategyDedup), standard, aggregation.StdVar},
+		{"stddev(stdvar(up))", int(merge.StrategyDedup), standard, aggregation.StdDev},
 		{"quantile(0.9, up)", int(merge.StrategyDedup), standard, aggregation.Quantile},
 		{"topk(5, stddev(up))", int(merge.StrategyDedup), standard, aggregation.StdDev},
-		{"sort_desc(stddev(up))", int(merge.StrategyDedup), standard, aggregation.StdDev},
 		{"topk(k, up)", int(merge.StrategyDedup), standard, aggregation.TopK},
 		{"limitk(5, up)", int(merge.StrategyDedup), standard, aggregation.LimitK},
 		{"limit_ratio(0.5, stddev(up))", int(merge.StrategyDedup), standard, aggregation.StdDev},
@@ -116,8 +130,11 @@ func TestPlanTSMMergeStrategies(t *testing.T) {
 				t.Fatalf("Validate: %v", err)
 			}
 			wantVariants := 1
-			if test.wantReduction == weighted {
+			switch test.wantReduction {
+			case weighted:
 				wantVariants = 2
+			case pooled:
+				wantVariants = 3
 			}
 			if len(plan.Variants) != wantVariants {
 				t.Fatalf("variant count: got %d want %d", len(plan.Variants), wantVariants)
@@ -227,7 +244,7 @@ func TestPlanTSMMergeContents(t *testing.T) {
 	})
 
 	t.Run("unsupported fallback", func(t *testing.T) {
-		const query = "stddev(up)"
+		const query = "stddev(up + down)"
 		r, _ := http.NewRequest(http.MethodGet,
 			"http://example.com/api/v1/query?query="+url.QueryEscape(query), nil)
 		plan := mustTSMMergePlan(t, r, query)
@@ -241,6 +258,155 @@ func TestPlanTSMMergeContents(t *testing.T) {
 			t.Fatal("unsupported fallback allowed a single-member bypass")
 		}
 	})
+}
+
+func TestPlanTSMMergeVarianceContents(t *testing.T) {
+	t.Run("pooled float-only variants", func(t *testing.T) {
+		const query = "sort_desc(stddev without (instance) (rate(requests[5m])))"
+		r, _ := http.NewRequest(http.MethodGet,
+			"http://example.com/api/v1/query?query="+url.QueryEscape(query), nil)
+		plan := mustTSMMergePlan(t, r, query)
+
+		if plan.Reduction.Kind != merge.TSMReductionPooledVariance || len(plan.Variants) != 3 {
+			t.Fatalf("pooled plan: %#v", plan)
+		}
+		spec, found := promql.ParseVarianceAggregation(query)
+		if !found {
+			t.Fatal("expected variance aggregation")
+		}
+		wantNames := merge.TSMReductionPooledVarianceVariants()
+		wantQueries := []string{
+			promql.VarianceVariantQuery(spec, aggregation.Count),
+			promql.VarianceVariantQuery(spec, aggregation.Average),
+			promql.VarianceVariantQuery(spec, aggregation.StdVar),
+		}
+		for i, variant := range plan.Variants {
+			values, _, _ := params.GetRequestValues(variant.Request)
+			if variant.Name != wantNames[i] || values.Get(promQueryParam) != wantQueries[i] {
+				t.Fatalf("variant %d: name=%q query=%q", i, variant.Name,
+					values.Get(promQueryParam))
+			}
+			if variant.MergeStrategy != int(merge.StrategyDedup) {
+				t.Fatalf("variant %d strategy: %d", i, variant.MergeStrategy)
+			}
+			if variant.ResponseAuthority != (i == 0) {
+				t.Fatalf("variant %d authority: %v", i, variant.ResponseAuthority)
+			}
+		}
+		if !plan.Finalizer.Enabled || plan.Finalizer.Query != query ||
+			plan.Completeness != merge.TSMCompletenessAllVariants ||
+			!plan.StripInjectedLabels || plan.AllowSingleMemberBypass {
+			t.Fatalf("pooled metadata: %#v", plan)
+		}
+	})
+
+	t.Run("metric name grouping survives float filter", func(t *testing.T) {
+		const query = "stdvar by (__name__, job) (up)"
+		r, _ := http.NewRequest(http.MethodGet,
+			"http://example.com/api/v1/query?query="+url.QueryEscape(query), nil)
+		plan := mustTSMMergePlan(t, r, query)
+		values, _, _ := params.GetRequestValues(plan.Variants[0].Request)
+		got := values.Get(promQueryParam)
+		for _, required := range []string{
+			"clamp(", "__trickster_tsm_name__", "label_replace(", "sum by (__name__, job)",
+		} {
+			if !strings.Contains(got, required) {
+				t.Fatalf("query %q does not contain %q", got, required)
+			}
+		}
+	})
+
+	t.Run("globally merged inner count", func(t *testing.T) {
+		const (
+			query = "stddev by (region) (count by (service) (requests))"
+			inner = "count by (service) (requests)"
+		)
+		r, _ := http.NewRequest(http.MethodGet,
+			"http://example.com/api/v1/query?query="+url.QueryEscape(query), nil)
+		plan := mustTSMMergePlan(t, r, query)
+		values, _, _ := params.GetRequestValues(plan.Variants[0].Request)
+		if got := values.Get(promQueryParam); got != inner {
+			t.Fatalf("fanout query got %q want %q", got, inner)
+		}
+		if plan.Reduction.Kind != merge.TSMReductionStandard ||
+			plan.Variants[0].MergeStrategy != int(merge.StrategySum) ||
+			!plan.Finalizer.Enabled || !plan.StripInjectedLabels {
+			t.Fatalf("inner count plan: %#v", plan)
+		}
+	})
+
+	t.Run("histogram-capable inner aggregations keep fallback", func(t *testing.T) {
+		for _, query := range []string{
+			"stddev(sum by (service) (requests))",
+			"stdvar(avg by (service) (requests))",
+		} {
+			t.Run(query, func(t *testing.T) {
+				r, _ := http.NewRequest(http.MethodGet,
+					"http://example.com/api/v1/query?query="+url.QueryEscape(query), nil)
+				plan := mustTSMMergePlan(t, r, query)
+				values, _, _ := params.GetRequestValues(plan.Variants[0].Request)
+				if got := values.Get(promQueryParam); got != query {
+					t.Fatalf("fallback query got %q want %q", got, query)
+				}
+				if plan.Reduction.Kind != merge.TSMReductionStandard ||
+					len(plan.Variants) != 1 ||
+					!strings.Contains(plan.UnsupportedWarning, "cannot be correctly merged") {
+					t.Fatalf("fallback plan: %#v", plan)
+				}
+			})
+		}
+	})
+
+	t.Run("unsupported sorted binary expression keeps fallback", func(t *testing.T) {
+		const query = "sort(stddev(up + down))"
+		r, _ := http.NewRequest(http.MethodGet,
+			"http://example.com/api/v1/query?query="+url.QueryEscape(query), nil)
+		plan := mustTSMMergePlan(t, r, query)
+		values, _, _ := params.GetRequestValues(plan.Variants[0].Request)
+		if got := values.Get(promQueryParam); got != "stddev(up + down)" {
+			t.Fatalf("fallback query got %q", got)
+		}
+		if plan.Reduction.Kind != merge.TSMReductionStandard ||
+			!strings.Contains(plan.UnsupportedWarning, aggregation.StdDev) ||
+			!plan.Finalizer.Enabled {
+			t.Fatalf("fallback plan: %#v", plan)
+		}
+	})
+}
+
+func TestPlanTSMMergeVariancePOST(t *testing.T) {
+	const (
+		query    = "stddev by (job) (rate(requests[5m]))"
+		origBody = "query=stddev+by+%28job%29+%28rate%28requests%5B5m%5D%29%29&time=1000"
+	)
+	r, _ := http.NewRequest(http.MethodPost, "http://example.com/api/v1/query",
+		io.NopCloser(bytes.NewBufferString(origBody)))
+	r.Header.Set(headers.NameContentType, headers.ValueXFormURLEncoded)
+	r = request.SetResources(r, &request.Resources{RequestBody: []byte(origBody)})
+
+	plan := mustTSMMergePlan(t, r, query)
+	want := []string{
+		"count by (job) (clamp(rate(requests[5m]), -Inf, +Inf))",
+		"avg by (job) (clamp(rate(requests[5m]), -Inf, +Inf))",
+		"stdvar by (job) (clamp(rate(requests[5m]), -Inf, +Inf))",
+	}
+	for i, variant := range plan.Variants {
+		values, _, _ := params.GetRequestValues(variant.Request)
+		if got := values.Get(promQueryParam); got != want[i] {
+			t.Fatalf("variant %d values query got %q want %q", i, got, want[i])
+		}
+		body, err := io.ReadAll(variant.Request.Body)
+		if err != nil {
+			t.Fatalf("variant %d read body: %v", i, err)
+		}
+		bodyValues, err := url.ParseQuery(string(body))
+		if err != nil {
+			t.Fatalf("variant %d parse body: %v", i, err)
+		}
+		if got := bodyValues.Get(promQueryParam); got != want[i] {
+			t.Fatalf("variant %d body query got %q want %q", i, got, want[i])
+		}
+	}
 }
 
 func TestPlanTSMMergeLimitRatioContents(t *testing.T) {

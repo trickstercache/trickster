@@ -32,6 +32,9 @@ const (
 	// TSMReductionWeightedAverage divides an accumulated sum variant by its
 	// paired count variant.
 	TSMReductionWeightedAverage
+	// TSMReductionPooledVariance combines per-member count, mean, and variance
+	// states before provider finalization.
+	TSMReductionPooledVariance
 )
 
 const (
@@ -41,6 +44,12 @@ const (
 	TSMVariantWeightedAverageSum = "avg-sum"
 	// TSMVariantWeightedAverageCount is the summed-count input to weighted average.
 	TSMVariantWeightedAverageCount = "avg-count"
+	// TSMVariantPooledVarianceCount is the sample-count input to pooled variance.
+	TSMVariantPooledVarianceCount = "variance-count"
+	// TSMVariantPooledVarianceMean is the arithmetic-mean input to pooled variance.
+	TSMVariantPooledVarianceMean = "variance-mean"
+	// TSMVariantPooledVarianceValue is the population-variance input to pooled variance.
+	TSMVariantPooledVarianceValue = "variance-value"
 )
 
 // TSMReductionPrimaryVariant returns default primary variant as a single-element slice
@@ -52,6 +61,16 @@ func TSMReductionPrimaryVariant() []string {
 // the positional order required by the reducer: sum, then count.
 func TSMReductionWeightedAverageVariants() []string {
 	return []string{TSMVariantWeightedAverageSum, TSMVariantWeightedAverageCount}
+}
+
+// TSMReductionPooledVarianceVariants returns pooled-variance input names in
+// the positional order required by the reducer: count, mean, then variance.
+func TSMReductionPooledVarianceVariants() []string {
+	return []string{
+		TSMVariantPooledVarianceCount,
+		TSMVariantPooledVarianceMean,
+		TSMVariantPooledVarianceValue,
+	}
 }
 
 // TSMCompletenessPolicy determines which per-member contributions may enter
@@ -195,6 +214,35 @@ func (p *TSMMergePlan) Validate() error {
 		authority, _ := p.ResponseAuthority()
 		if p.Reduction.InputVariants[0] != p.Variants[authority].Name {
 			return errors.New("weighted-average tsm reduction must use response authority as its first input")
+		}
+	case TSMReductionPooledVariance:
+		if len(p.Variants) != 3 {
+			return errors.New("pooled-variance tsm reduction requires exactly three variants")
+		}
+		if p.OriginalQuery == "" {
+			return errors.New("pooled-variance tsm reduction requires the original query")
+		}
+		expectedInputs := TSMReductionPooledVarianceVariants()
+		if len(p.Reduction.InputVariants) != len(expectedInputs) {
+			return errors.New("pooled-variance tsm reduction requires three named inputs")
+		}
+		for i, expected := range expectedInputs {
+			if p.Reduction.InputVariants[i] != expected {
+				return fmt.Errorf("pooled-variance tsm reduction input %d must be %q", i, expected)
+			}
+			if variantsByName[expected].MergeStrategy != int(StrategyDedup) {
+				return fmt.Errorf("pooled-variance tsm variant %q must use dedup merge strategy", expected)
+			}
+		}
+		if p.Completeness != TSMCompletenessAllVariants {
+			return errors.New("pooled-variance tsm reduction requires all-variant completeness")
+		}
+		authority, _ := p.ResponseAuthority()
+		if p.Reduction.InputVariants[0] != p.Variants[authority].Name {
+			return errors.New("pooled-variance tsm reduction must use response authority as its first input")
+		}
+		if !p.Finalizer.Enabled {
+			return errors.New("pooled-variance tsm reduction requires provider finalization")
 		}
 	default:
 		return fmt.Errorf("tsm merge plan has invalid reduction kind %d", p.Reduction.Kind)

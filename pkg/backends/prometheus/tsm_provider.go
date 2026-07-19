@@ -45,6 +45,11 @@ func (c *Client) PlanTSMMerge(r *http.Request, query string) (*merge.TSMMergePla
 	if spec, found := promql.ParseLimitRatioAggregation(query); found {
 		return c.planLimitRatio(r, query, spec)
 	}
+	if spec, found := promql.ParseVarianceAggregation(query); found {
+		if plan, handled, err := c.planVariance(r, query, spec); handled || err != nil {
+			return plan, err
+		}
+	}
 	fanoutQuery, rewritten := tsmInnerQuery(query)
 	finalizer := tsmFinalizer(query)
 
@@ -98,6 +103,117 @@ func (c *Client) PlanTSMMerge(r *http.Request, query string) (*merge.TSMMergePla
 		UnsupportedWarning: unsupportedWarning,
 	}
 	plan.AllowSingleMemberBypass = !rewritten && !finalizer.Enabled && unsupportedWarning == ""
+	if err := plan.Validate(); err != nil {
+		return nil, err
+	}
+	return plan, nil
+}
+
+func (c *Client) planVariance(r *http.Request, query string,
+	spec promql.VarianceAggregation,
+) (*merge.TSMMergePlan, bool, error) {
+	finalizer := merge.TSMFinalizerSpec{Enabled: true, Query: query}
+	if innerAggregation, aggregationInput, found := promql.CompleteOuterAggregation(spec.InnerQuery); found {
+		if promql.ContainsAggregator(aggregationInput) ||
+			promql.ContainsBinaryExpression(aggregationInput) {
+			return nil, false, nil
+		}
+		if _, found := promql.NonShardLocalFunction(aggregationInput); found {
+			return nil, false, nil
+		}
+
+		if innerAggregation == aggregation.Sum || innerAggregation == aggregation.Average {
+			// These aggregators may produce native histograms. The numeric TSM
+			// reducers cannot preserve their cross-shard semantics, even though
+			// the outer variance aggregation ultimately ignores histograms.
+			return nil, false, nil
+		}
+
+		strategy := int(merge.StrategyDedup)
+		switch innerAggregation {
+		case aggregation.Count, aggregation.CountValues:
+			strategy = int(merge.StrategySum)
+		case aggregation.Minimum:
+			strategy = int(merge.StrategyMin)
+		case aggregation.Maximum:
+			strategy = int(merge.StrategyMax)
+		case aggregation.Group:
+		default:
+			return nil, false, nil
+		}
+
+		variantRequest, err := rewritePromQueryParam(r, spec.InnerQuery)
+		if err != nil {
+			return nil, true, fmt.Errorf("prepare tsm primary variant: %w", err)
+		}
+		plan := &merge.TSMMergePlan{
+			OriginalQuery: query,
+			Variants: []merge.TSMQueryVariant{{
+				Name:              merge.TSMVariantPrimary,
+				Request:           variantRequest,
+				MergeStrategy:     strategy,
+				ResponseAuthority: true,
+			}},
+			Reduction: merge.TSMReductionSpec{
+				Kind:          merge.TSMReductionStandard,
+				InputVariants: merge.TSMReductionPrimaryVariant(),
+			},
+			Finalizer:           finalizer,
+			Completeness:        merge.TSMCompletenessResponseAuthority,
+			StripInjectedLabels: true,
+		}
+		if err := plan.Validate(); err != nil {
+			return nil, true, err
+		}
+		return plan, true, nil
+	}
+
+	if promql.ContainsAggregator(spec.InnerQuery) ||
+		promql.ContainsBinaryExpression(spec.InnerQuery) {
+		return nil, false, nil
+	}
+	if _, found := promql.NonShardLocalFunction(spec.InnerQuery); found {
+		return nil, false, nil
+	}
+
+	plan, err := pooledVariancePlan(r, query, spec)
+	return plan, true, err
+}
+
+func pooledVariancePlan(r *http.Request, originalQuery string,
+	spec promql.VarianceAggregation,
+) (*merge.TSMMergePlan, error) {
+	variantNames := merge.TSMReductionPooledVarianceVariants()
+	operators := []string{aggregation.Count, aggregation.Average, aggregation.StdVar}
+	variants := make([]merge.TSMQueryVariant, len(variantNames))
+	for i, name := range variantNames {
+		variantQuery := promql.VarianceVariantQuery(spec, operators[i])
+		variantRequest, err := rewritePromQueryParam(r, variantQuery)
+		if err != nil {
+			return nil, fmt.Errorf("prepare tsm %s variant: %w", name, err)
+		}
+		variants[i] = merge.TSMQueryVariant{
+			Name:              name,
+			Request:           variantRequest,
+			MergeStrategy:     int(merge.StrategyDedup),
+			ResponseAuthority: i == 0,
+		}
+	}
+
+	plan := &merge.TSMMergePlan{
+		OriginalQuery: originalQuery,
+		Variants:      variants,
+		Reduction: merge.TSMReductionSpec{
+			Kind:          merge.TSMReductionPooledVariance,
+			InputVariants: variantNames,
+		},
+		Finalizer: merge.TSMFinalizerSpec{
+			Enabled: true,
+			Query:   originalQuery,
+		},
+		Completeness:        merge.TSMCompletenessAllVariants,
+		StripInjectedLabels: true,
+	}
 	if err := plan.Validate(); err != nil {
 		return nil, err
 	}
