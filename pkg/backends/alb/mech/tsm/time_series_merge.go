@@ -93,23 +93,23 @@ type stripKeysSnapshot struct {
 }
 
 func RegistryEntry() types.RegistryEntry {
-	return types.RegistryEntry{Name: Name, ShortName: ShortName, New: New}
+	return types.RegistryEntry{Name: Name, ShortName: ShortName, NewTSM: New}
 }
 
-func New(o *options.Options, factories rt.Lookup) (types.Mechanism, error) {
+func New(conf *options.TSMConfigs, factories rt.Lookup) (types.Mechanism, error) {
 	out := &handler{
-		tsmOptions:            o.TSMOptions,
-		maxCaptureBytes:       o.MaxCaptureBytes,
-		maxFanoutCaptureBytes: o.MaxFanoutCaptureBytes,
+		tsmOptions:            conf.TimeSeriesMergeOptions,
+		maxCaptureBytes:       conf.MaxCaptureBytes,
+		maxFanoutCaptureBytes: conf.MaxFanoutCaptureBytes,
 	}
 	// this validates the merge configuration for the ALB client as it sets it up
 	// First, verify the output format is a support merge provider
-	if !providers.IsSupportedTimeSeriesMergeProvider(o.OutputFormat) {
+	if !providers.IsSupportedTimeSeriesMergeProvider(conf.OutputFormat) {
 		return nil, errors.ErrInvalidTimeSeriesMergeProvider
 	}
 
 	// next, get the factory function required to create a backend handler for the supplied format
-	f, ok := factories[o.OutputFormat]
+	f, ok := factories[conf.OutputFormat]
 	if !ok {
 		return nil, errors.ErrInvalidTimeSeriesMergeProvider
 	}
@@ -125,7 +125,7 @@ func New(o *options.Options, factories rt.Lookup) (types.Mechanism, error) {
 	}
 	// set the merge paths in the ALB client
 	out.mergePaths = mc2.MergeablePaths()
-	out.outputFormat = o.OutputFormat
+	out.outputFormat = conf.OutputFormat
 	return out, nil
 }
 

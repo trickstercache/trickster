@@ -31,6 +31,9 @@ type Name = string
 // provided Options
 type NewMechanismFunc func(*options.Options, types.Lookup) (Mechanism, error)
 
+// NewTSMMechanismFUn defines a function that returns a Time Series Merge mechanism
+type NewTSMMechanismFunc func(*options.TSMConfigs, types.Lookup) (Mechanism, error)
+
 // Mechanism represents a specific ALB Implementation (e.g., a Round Robiner).
 // Pool-aware mechanisms additionally implement PoolMechanism; callers that
 // need to drive a pool must type-assert before invoking pool methods.
@@ -54,4 +57,5 @@ type RegistryEntry struct {
 	Name      Name
 	ShortName Name
 	New       NewMechanismFunc
+	NewTSM    NewTSMMechanismFunc
 }
