@@ -271,6 +271,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				if tsb, ok := b.(backends.TimeseriesBackend); ok {
 					if parsedTrq, _, _, err := tsb.ParseTimeRangeQuery(r); err == nil && parsedTrq != nil {
 						trq = parsedTrq
+						rsc.TimeRangeQuery = parsedTrq
 					}
 				}
 			}
