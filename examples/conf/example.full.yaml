@@ -757,8 +757,11 @@ backends:
 #   reload_drain_timeout: 30s
 #   # reload_rate_limit specifies the rate limit timeout duration to apply to the HTTP reload interface.
 #   # The reload interface is disabled for this duration of time whenever a config reload request is
-#   # made that fails because the underlying config file is unmodified. default is 3
+#   # made that fails because the underlying config file is unmodified. default is 3s
 #   reload_rate_limit: 3s
+#   # auto_reload_interval controls how often Trickster checks the configuration file for changes.
+#   # A zero value disables automatic reloads. default is 0s
+#   auto_reload_interval: 10s
 
 #   # config_handler_path provides the HTTP path to view a read-only printout of the running configuration
 #   # which can be reached at http://your-trickster-endpoint:port/$config_handler_path

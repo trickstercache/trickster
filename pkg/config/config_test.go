@@ -244,6 +244,104 @@ func TestIsStale(t *testing.T) {
 	}
 }
 
+func TestHasConfigChangedDoesNotApplyRateLimit(t *testing.T) {
+	var nilConfig *Config
+	if nilConfig.HasConfigChanged() {
+		t.Error("nil config reported changed")
+	}
+	if NewConfig().HasConfigChanged() {
+		t.Error("config without a file path reported changed")
+	}
+	missingConfig := NewConfig()
+	missingConfig.Main.configFilePath = filepath.Join(t.TempDir(), "missing.yaml")
+	if missingConfig.HasConfigChanged() {
+		t.Error("missing config file reported changed")
+	}
+
+	testFile := filepath.Join(t.TempDir(), "trickster_test.conf")
+	_, yml := emptyTestConfig()
+	if err := os.WriteFile(testFile, []byte(yml), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	c, err := Load([]string{"-config", testFile})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.MgmtConfig.ReloadRateLimit = time.Hour
+	if c.HasConfigChanged() {
+		t.Fatal("freshly loaded config reported changed")
+	}
+
+	if err := os.WriteFile(testFile, []byte(yml+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	modified := c.Main.configLastModified.Add(time.Second)
+	if err := os.Chtimes(testFile, modified, modified); err != nil {
+		t.Fatal(err)
+	}
+	if !c.HasConfigChanged() || !c.HasConfigChanged() {
+		t.Error("read-only change check was unexpectedly rate limited")
+	}
+}
+
+func TestHasConfigChangedAfterProjectedVolumeSwap(t *testing.T) {
+	root := t.TempDir()
+	firstRevision := filepath.Join(root, "..2026_01")
+	secondRevision := filepath.Join(root, "..2026_02")
+	for _, dir := range []string{firstRevision, secondRevision} {
+		if err := os.Mkdir(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	const backendYAML = "backends:\n  test:\n    provider: test\n    origin_url: http://1\n"
+	const firstYAML = backendYAML + "frontend:\n  listen_port: 8480\n"
+	const secondYAML = backendYAML + "frontend:\n  listen_port: 8481\n"
+	firstConfig := filepath.Join(firstRevision, "trickster.yaml")
+	secondConfig := filepath.Join(secondRevision, "trickster.yaml")
+	if err := os.WriteFile(firstConfig, []byte(firstYAML), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(secondConfig, []byte(secondYAML), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	firstModified := time.Now().Add(-2 * time.Hour)
+	secondModified := firstModified.Add(time.Hour)
+	if err := os.Chtimes(firstConfig, firstModified, firstModified); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(secondConfig, secondModified, secondModified); err != nil {
+		t.Fatal(err)
+	}
+
+	dataLink := filepath.Join(root, "..data")
+	if err := os.Symlink(firstRevision, dataLink); err != nil {
+		t.Skipf("symlinks are unavailable: %v", err)
+	}
+	configPath := filepath.Join(root, "trickster.yaml")
+	if err := os.Symlink(filepath.Join("..data", "trickster.yaml"), configPath); err != nil {
+		t.Skipf("symlinks are unavailable: %v", err)
+	}
+
+	c, err := Load([]string{"-config", configPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.HasConfigChanged() {
+		t.Fatal("fresh projected config reported changed")
+	}
+	if err := os.Remove(dataLink); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(secondRevision, dataLink); err != nil {
+		t.Fatal(err)
+	}
+	if !c.HasConfigChanged() {
+		t.Error("projected volume symlink swap was not detected")
+	}
+}
+
 func TestConfigFilePath(t *testing.T) {
 	c, _ := emptyTestConfig()
 

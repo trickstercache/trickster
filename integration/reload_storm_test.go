@@ -99,7 +99,7 @@ metrics:
   listen_port: %d
 mgmt:
   listen_port: %d
-  drain_timeout: 250ms
+  reload_drain_timeout: 250ms
 logging:
   log_level: error
 caches:
