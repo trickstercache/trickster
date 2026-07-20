@@ -27,6 +27,7 @@ import (
 
 	"github.com/prometheus/common/sigv4"
 	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
+	eso "github.com/trickstercache/trickster/v2/pkg/backends/elasticsearch/options"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	prop "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
@@ -161,6 +162,8 @@ type Options struct {
 	ALBOptions *ao.Options `yaml:"alb,omitempty"`
 	// Prometheus holds options specific to prometheus backends
 	Prometheus *prop.Options `yaml:"prometheus,omitempty"`
+	// Elasticsearch holds options specific to elasticsearch backends
+	Elasticsearch *eso.Options `yaml:"elasticsearch,omitempty"`
 
 	// TLS is the TLS Configuration for the Frontend and Backend
 	TLS *to.Options `yaml:"tls,omitempty"`
@@ -321,6 +324,9 @@ func (o *Options) Clone() *Options {
 
 	if o.Prometheus != nil {
 		out.Prometheus = o.Prometheus.Clone()
+	}
+	if o.Elasticsearch != nil {
+		out.Elasticsearch = o.Elasticsearch.Clone()
 	}
 
 	if o.AuthOptions != nil {
@@ -623,6 +629,11 @@ func (o *Options) Initialize(name string) error {
 			if err := o.ALBOptions.Initialize(""); err != nil {
 				return err
 			}
+		}
+	}
+	if o.Elasticsearch != nil {
+		if err := o.Elasticsearch.Initialize(""); err != nil {
+			return err
 		}
 	}
 
