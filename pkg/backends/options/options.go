@@ -601,6 +601,9 @@ func (o *Options) Initialize(name string) error {
 		if err != nil {
 			return err
 		}
+		if d <= 0 {
+			return fmt.Errorf("invalid max_query_range %q: value must be greater than 0", o.MaxQueryRange)
+		}
 		o.MaxQueryRangeDuration = d
 	}
 

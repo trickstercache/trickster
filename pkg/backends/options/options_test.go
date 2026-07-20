@@ -396,6 +396,12 @@ func TestInitialize(t *testing.T) {
 		t.Error(err)
 	}
 
+	oInvalid := *o
+	oInvalid.MaxQueryRange = "-1h"
+	if err := oInvalid.Initialize("test_invalid"); err == nil {
+		t.Error("expected error for negative max_query_range, got nil")
+	}
+
 	o2, err := fromTestYAMLWithDefault()
 	if err != nil {
 		t.Error(err)
