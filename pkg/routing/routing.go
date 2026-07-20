@@ -259,6 +259,8 @@ func RegisterPathRoutes(r router.Router, conf *config.Config, handlers handlers.
 		// default base route is the path handler
 		maxBodySizeBytes, truncateOnly := getSizeLimits(frontendOptions(conf, o))
 		h := bodyfilter.Handler(maxBodySizeBytes, truncateOnly, po1.Handler)
+		// limit query time range if configured (inside auth and bodyfilter)
+		h = middleware.LimitQueryRange(h)
 		// attach distributed tracer
 		if tr != nil {
 			h = middleware.Trace(tr, h)
@@ -267,9 +269,7 @@ func RegisterPathRoutes(r router.Router, conf *config.Config, handlers handlers.
 		h = attachAuthenticator(h, po1, o)
 		// attach compression handler
 		h = encoding.HandleCompression(h, o.CompressibleTypes)
-		// limit query time range if configured
-		h = middleware.LimitQueryRange(h)
-		// add Backend, Cache, and Path Configs to the HTTP Request's context
+		// add Backend, Cache, and Path Configs to the HTTP Request's context (must wrap outer than LimitQueryRange)
 		h = middleware.WithResourcesContext(client, o, c, po1, tr, h)
 		// attach any request rewriters
 		if len(o.ReqRewriter) > 0 {
@@ -354,15 +354,15 @@ func registerDefaultBackendRoutes(routerFor func(*bo.Options) router.Router, con
 		// default base route is the path handler
 		maxBodySizeBytes, truncateOnly := getSizeLimits(frontendOptions(conf, o))
 		h := bodyfilter.Handler(maxBodySizeBytes, truncateOnly, po.Handler)
+		// limit query time range if configured (inside auth and bodyfilter)
+		h = middleware.LimitQueryRange(h)
 		// attach distributed tracer
 		if tr != nil {
 			h = middleware.Trace(tr, h)
 		}
 		// attach authenticator
 		h = attachAuthenticator(h, po, o)
-		// limit query time range if configured
-		h = middleware.LimitQueryRange(h)
-		// add Backend, Cache, and Path Configs to the HTTP Request's context
+		// add Backend, Cache, and Path Configs to the HTTP Request's context (must wrap outer than LimitQueryRange)
 		h = middleware.WithResourcesContext(client, o, c, po, tr, h)
 		// attach any request rewriters
 		if len(o.ReqRewriter) > 0 {
