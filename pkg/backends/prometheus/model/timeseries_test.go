@@ -22,11 +22,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/stretchr/testify/require"
 	"github.com/trickstercache/trickster/v2/pkg/errors"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
+
+	"github.com/stretchr/testify/require"
 )
 
 func FuzzUnmarshalMarshalTimeseries(f *testing.F) {
@@ -100,6 +101,15 @@ func TestUnmarshalTimeseriesReader(t *testing.T) {
 		require.Equal(t, epoch.Epoch(1435781430000000000), ds.Results[0].SeriesList[0].Points[0].Epoch)
 		require.Equal(t, epoch.Epoch(1435781445000000000), ds.Results[0].SeriesList[0].Points[1].Epoch)
 		require.Equal(t, epoch.Epoch(1435781460000000000), ds.Results[0].SeriesList[0].Points[2].Epoch)
+	})
+
+	t.Run("round trip preserves scalar wire shape", func(t *testing.T) {
+		const input = `{"status":"success","data":{"resultType":"scalar","result":[1435781430,"1"]}}`
+		ts, err := UnmarshalTimeseries([]byte(input), &timeseries.TimeRangeQuery{})
+		require.NoError(t, err)
+		var body strings.Builder
+		require.NoError(t, MarshalTSOrVectorWriter(ts, nil, 200, &body, true))
+		require.JSONEq(t, input, body.String())
 	})
 }
 
@@ -370,6 +380,7 @@ func TestUnmarshalScalar(t *testing.T) {
 			t.Fatal("expected *dataset.DataSet")
 		}
 		require.Len(t, ds.Results, 1)
+		require.Equal(t, string(Scalar), ds.SourceResultType)
 		require.Len(t, ds.Results[0].SeriesList, 1)
 		require.Len(t, ds.Results[0].SeriesList[0].Points, 1)
 		require.Equal(t, epoch.Epoch(1435781430000000000), ds.Results[0].SeriesList[0].Points[0].Epoch)

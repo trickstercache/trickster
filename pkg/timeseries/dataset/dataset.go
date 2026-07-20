@@ -42,6 +42,10 @@ import (
 // accelerate most of its supported TSDB backends
 // DataSet conforms to the Timeseries interface
 type DataSet struct {
+	// SourceResultType preserves the provider's response result type for the
+	// lifetime of an in-flight request. It is intentionally excluded from the
+	// provider-neutral cache representation.
+	SourceResultType string `msg:"-"`
 	// Status is the optional status indicator for the DataSet
 	Status string `msg:"status"`
 	// ExtentList is the list of Extents (time ranges) represented in the Results
@@ -96,12 +100,13 @@ func (ds *DataSet) CroppedClone(e timeseries.Extent) timeseries.Timeseries {
 	}
 
 	clone := &DataSet{
-		Error:        ds.Error,
-		Sorter:       ds.Sorter,
-		Merger:       ds.Merger,
-		SizeCropper:  ds.SizeCropper,
-		RangeCropper: ds.RangeCropper,
-		Results:      make([]*Result, len(ds.Results)),
+		SourceResultType: ds.SourceResultType,
+		Error:            ds.Error,
+		Sorter:           ds.Sorter,
+		Merger:           ds.Merger,
+		SizeCropper:      ds.SizeCropper,
+		RangeCropper:     ds.RangeCropper,
+		Results:          make([]*Result, len(ds.Results)),
 	}
 	ds.UpdateLock.Lock()
 	defer ds.UpdateLock.Unlock()
@@ -186,12 +191,13 @@ func (ds *DataSet) Clone() timeseries.Timeseries {
 	ds.UpdateLock.Lock()
 	defer ds.UpdateLock.Unlock()
 	clone := &DataSet{
-		Error:        ds.Error,
-		Sorter:       ds.Sorter,
-		Merger:       ds.Merger,
-		SizeCropper:  ds.SizeCropper,
-		RangeCropper: ds.RangeCropper,
-		Results:      make([]*Result, len(ds.Results)),
+		SourceResultType: ds.SourceResultType,
+		Error:            ds.Error,
+		Sorter:           ds.Sorter,
+		Merger:           ds.Merger,
+		SizeCropper:      ds.SizeCropper,
+		RangeCropper:     ds.RangeCropper,
+		Results:          make([]*Result, len(ds.Results)),
 	}
 	if ds.TimeRangeQuery != nil {
 		clone.TimeRangeQuery = ds.TimeRangeQuery.Clone()

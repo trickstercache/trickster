@@ -35,6 +35,7 @@ func TestParseStrategy(t *testing.T) {
 		{Minimum, StrategyMin, false},
 		{Maximum, StrategyMax, false},
 		{Count, StrategyCount, false},
+		{Scalar, StrategyScalar, false},
 		{"invalid", StrategyDedup, true},
 	}
 	for _, tt := range tests {
@@ -57,4 +58,5 @@ func TestMergeStrategyString(t *testing.T) {
 	require.Equal(t, Minimum, StrategyMin.String())
 	require.Equal(t, Maximum, StrategyMax.String())
 	require.Equal(t, Count, StrategyCount.String())
+	require.Equal(t, Scalar, StrategyScalar.String())
 }
