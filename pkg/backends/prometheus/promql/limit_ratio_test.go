@@ -91,6 +91,8 @@ func TestParseLimitRatioAggregation(t *testing.T) {
 		{name: "lower boundary", query: "limit_ratio(-1, up)", wantFound: true, wantRatio: -1, wantInner: "up", wantQuery: "limit_ratio(-1, up)"},
 		{name: "zero", query: "limit_ratio(0, up)", wantFound: true, wantInner: "up", wantQuery: "limit_ratio(0, up)"},
 		{name: "upper boundary", query: "limit_ratio(1, up)", wantFound: true, wantRatio: 1, wantInner: "up", wantQuery: "limit_ratio(1, up)"},
+		{name: "duration literal", query: "limit_ratio(500ms, up)", wantFound: true, wantRatio: 0.5, wantInner: "up", wantQuery: "limit_ratio(500ms, up)"},
+		{name: "negative duration literal", query: "limit_ratio(-500ms, up)", wantFound: true, wantRatio: -0.5, wantInner: "up", wantQuery: "limit_ratio(-500ms, up)"},
 		{name: "scalar parameter expression", query: "limit_ratio(scalar(ratio), up)"},
 		{name: "positive out of range", query: "limit_ratio(1.01, up)"},
 		{name: "negative out of range", query: "limit_ratio(-1.01, up)"},

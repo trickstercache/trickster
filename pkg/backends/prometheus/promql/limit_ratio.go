@@ -18,7 +18,6 @@ package promql
 
 import (
 	"math"
-	"strconv"
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/aggregation"
@@ -39,85 +38,28 @@ type LimitRatioAggregation struct {
 // optionally wrapped in sort or sort_desc. Scalar parameter expressions are
 // deliberately rejected because TSM cannot safely evaluate them per shard.
 func ParseLimitRatioAggregation(query string) (LimitRatioAggregation, bool) {
-	q := strings.TrimSpace(query)
-	if sortSpec, ok := ParseSortWrapper(q); ok {
-		spec, found := parseLimitRatioAggregation(sortSpec.InnerQuery)
-		if found {
-			spec.SortSet = true
-			spec.SortDescending = sortSpec.Descending
-		}
-		return spec, found
-	}
-	return parseLimitRatioAggregation(q)
-}
-
-func parseLimitRatioAggregation(query string) (LimitRatioAggregation, bool) {
-	const operator = aggregation.LimitRatio
-
-	q := strings.TrimSpace(query)
-	ql := strings.ToLower(q)
-	if !strings.HasPrefix(ql, operator) ||
-		(len(q) > len(operator) && !isPromQLBoundary(q[len(operator)])) {
+	spec, found := parseParameterizedAggregation(query, aggregation.LimitRatio)
+	if !found {
 		return LimitRatioAggregation{}, false
 	}
-	aggregationQuery := q
-	q = strings.TrimSpace(q[len(operator):])
-
-	var grouping AggregationGrouping
-	var hasGrouping bool
-	if g, rest, ok := parseGrouping(q); ok {
-		grouping = g
-		hasGrouping = true
-		q = rest
-	}
-
-	if q == "" || q[0] != '(' {
-		return LimitRatioAggregation{}, false
-	}
-	closeIdx := findMatchingCloser(q, 0, '(', ')')
-	if closeIdx < 0 {
-		return LimitRatioAggregation{}, false
-	}
-	args := q[1:closeIdx]
-	trailer := strings.TrimSpace(q[closeIdx+1:])
-	if !hasGrouping && trailer != "" {
-		if g, rest, ok := parseGrouping(trailer); ok {
-			grouping = g
-			hasGrouping = true
-			trailer = rest
-		}
-	}
-	if trailer != "" {
-		return LimitRatioAggregation{}, false
-	}
-
-	comma := findTopLevelComma(args)
-	if comma < 0 {
-		return LimitRatioAggregation{}, false
-	}
-	ratio, ok := parseLimitRatio(args[:comma])
+	ratio, ok := parseLimitRatio(spec.Parameter)
 	if !ok {
 		return LimitRatioAggregation{}, false
-	}
-	innerQuery := strings.TrimSpace(args[comma+1:])
-	if innerQuery == "" || findTopLevelComma(innerQuery) >= 0 {
-		return LimitRatioAggregation{}, false
-	}
-	if !hasGrouping {
-		grouping = AggregationGrouping{}
 	}
 
 	return LimitRatioAggregation{
 		Ratio:            ratio,
-		InnerQuery:       innerQuery,
-		AggregationQuery: aggregationQuery,
-		Grouping:         grouping,
+		InnerQuery:       spec.InnerQuery,
+		AggregationQuery: spec.AggregationQuery,
+		Grouping:         spec.Grouping,
+		SortSet:          spec.SortSet,
+		SortDescending:   spec.SortDescending,
 	}, true
 }
 
 func parseLimitRatio(input string) (float64, bool) {
-	ratio, err := strconv.ParseFloat(strings.TrimSpace(input), 64)
-	if err != nil || math.IsNaN(ratio) || math.IsInf(ratio, 0) || ratio < -1 || ratio > 1 {
+	ratio, ok := parsePromQLScalarLiteral(strings.TrimSpace(input))
+	if !ok || math.IsNaN(ratio) || math.IsInf(ratio, 0) || ratio < -1 || ratio > 1 {
 		return 0, false
 	}
 	return ratio, true
