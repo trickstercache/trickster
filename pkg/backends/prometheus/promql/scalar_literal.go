@@ -55,42 +55,27 @@ func parsePromQLScalarLiteral(input string) (float64, bool) {
 		}
 	}
 	unsignedLower := strings.ToLower(unsigned)
-	if strings.HasPrefix(unsignedLower, "0x") ||
+	if strings.HasPrefix(unsignedLower, "0b") ||
+		strings.HasPrefix(unsignedLower, "0o") ||
 		strings.Contains(lower, "infinity") {
 		return 0, false
 	}
-	normalized, ok := normalizePromQLNumericUnderscores(literal)
-	if !ok {
+	// Prometheus first parses integer tokens with base 0, which makes a
+	// leading zero octal and permits hexadecimal integers. Its lexer does not
+	// accept binary/octal prefixes or hexadecimal floating-point syntax.
+	if value, err := strconv.ParseInt(literal, 0, 64); err == nil {
+		return float64(value), true
+	}
+	if strings.HasPrefix(unsignedLower, "0x") {
 		return 0, false
 	}
-	if value, err := strconv.ParseFloat(normalized, 64); err == nil {
+	if value, err := strconv.ParseFloat(literal, 64); err == nil {
 		return value, true
 	}
-	normalizedUnsigned := normalized
-	if normalizedUnsigned[0] == '+' || normalizedUnsigned[0] == '-' {
-		normalizedUnsigned = normalizedUnsigned[1:]
-	}
-	duration, err := model.ParseDuration(normalizedUnsigned)
+	duration, err := model.ParseDuration(unsigned)
 	if err != nil {
 		return 0, false
 	}
 	seconds := float64(time.Duration(duration)) / float64(time.Second)
 	return sign * seconds, true
-}
-
-func normalizePromQLNumericUnderscores(literal string) (string, bool) {
-	if !strings.Contains(literal, "_") {
-		return literal, true
-	}
-	for i, char := range []byte(literal) {
-		if char != '_' {
-			continue
-		}
-		if i == 0 || i+1 == len(literal) ||
-			literal[i-1] < '0' || literal[i-1] > '9' ||
-			literal[i+1] < '0' || literal[i+1] > '9' {
-			return "", false
-		}
-	}
-	return strings.ReplaceAll(literal, "_", ""), true
 }
