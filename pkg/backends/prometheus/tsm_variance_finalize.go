@@ -131,12 +131,12 @@ func isCentralVarianceInput(ds *dataset.DataSet, spec promql.VarianceAggregation
 	// A supported nested plan fans out spec.InnerQuery. The legacy sorted
 	// fallback fans out the outer variance aggregation instead, so its statement
 	// must not be aggregated a second time.
-	candidates := map[string]struct{}{strings.TrimSpace(spec.InnerQuery): {}}
-	if ds.TimeRangeQuery != nil {
-		if _, found := candidates[strings.TrimSpace(ds.TimeRangeQuery.Statement)]; found {
-			return true
-		}
-	}
+	return dataSetContainsQueryStatement(ds, spec.InnerQuery)
+}
+
+func dataSetContainsQueryStatement(ds *dataset.DataSet, query string) bool {
+	candidate := strings.TrimSpace(query)
+	foundSeriesStatement := false
 	for _, result := range ds.Results {
 		if result == nil {
 			continue
@@ -145,12 +145,18 @@ func isCentralVarianceInput(ds *dataset.DataSet, spec promql.VarianceAggregation
 			if series == nil {
 				continue
 			}
-			if _, found := candidates[strings.TrimSpace(series.Header.QueryStatement)]; found {
+			statement := strings.TrimSpace(series.Header.QueryStatement)
+			if statement == "" {
+				continue
+			}
+			foundSeriesStatement = true
+			if statement == candidate {
 				return true
 			}
 		}
 	}
-	return false
+	return !foundSeriesStatement && ds.TimeRangeQuery != nil &&
+		strings.TrimSpace(ds.TimeRangeQuery.Statement) == candidate
 }
 
 func finalizeCentralVariance(ds *dataset.DataSet, spec promql.VarianceAggregation) {
@@ -164,7 +170,7 @@ func finalizeCentralVariance(ds *dataset.DataSet, spec promql.VarianceAggregatio
 			if series == nil || isHistogramSeries(series) {
 				continue
 			}
-			tags := varianceGroupingTags(series.Header.Tags, spec.Grouping)
+			tags := aggregationGroupingTags(series.Header.Tags, spec.Grouping)
 			key := tags.JSON()
 			group := groups[key]
 			if group == nil {
@@ -223,7 +229,7 @@ func finalizeCentralVariance(ds *dataset.DataSet, spec promql.VarianceAggregatio
 	}
 }
 
-func varianceGroupingTags(tags dataset.Tags, grouping promql.AggregationGrouping) dataset.Tags {
+func aggregationGroupingTags(tags dataset.Tags, grouping promql.AggregationGrouping) dataset.Tags {
 	if grouping.Without {
 		output := tags.Clone()
 		delete(output, "__name__")
