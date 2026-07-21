@@ -33,6 +33,12 @@ import (
 )
 
 func scalarMember(body string, instant bool, trq *timeseries.TimeRangeQuery) http.Handler {
+	return scalarMemberStatus(body, instant, trq, http.StatusOK)
+}
+
+func scalarMemberStatus(body string, instant bool, trq *timeseries.TimeRangeQuery,
+	status int,
+) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rsc := request.GetResources(r)
 		m := prommodel.NewModeler()
@@ -51,9 +57,35 @@ func scalarMember(body string, instant bool, trq *timeseries.TimeRangeQuery) htt
 				m.WireMarshalWriter, nil, int(tsmerge.StrategyScalar))
 		}
 		w.Header().Set(headers.NameContentType, "application/json")
-		w.WriteHeader(http.StatusOK)
+		w.WriteHeader(status)
 		_, _ = fmt.Fprint(w, body)
 	})
+}
+
+func TestServeStandardScalarInstantIgnoresErrorEnvelope(t *testing.T) {
+	trq := &timeseries.TimeRangeQuery{Statement: "(scalar(count(up)))"}
+	p, _, _ := albpool.NewHealthy([]http.Handler{
+		scalarMemberStatus(`{"status":"error","errorType":"bad_data","error":"boom"}`,
+			true, trq, http.StatusInternalServerError),
+		scalarMember(`{"status":"success","data":{"resultType":"scalar","result":[101,"42"]}}`,
+			true, trq),
+	})
+	defer p.Stop()
+	p.RefreshHealthy()
+
+	h := &handler{}
+	r := newTestMergeRequest(t)
+	w := httptest.NewRecorder()
+	h.serveStandard(w, r, p.Targets(), request.GetResources(r),
+		tsmerge.StrategyScalar, nil, trq.Statement, nil, "")
+
+	const want = `{"status":"success","data":{"resultType":"scalar","result":[101,"42"]}}`
+	if got := w.Body.String(); got != want {
+		t.Fatalf("body: got %s want %s", got, want)
+	}
+	if w.Code != http.StatusOK {
+		t.Fatalf("status: got %d want %d", w.Code, http.StatusOK)
+	}
 }
 
 func TestServeStandardScalarInstantPrefersFirstNonNaN(t *testing.T) {
@@ -109,5 +141,39 @@ func TestServeStandardScalarRangeCollapsesFanoutSamples(t *testing.T) {
 		`{"metric":{},"values":[[100,"42"],[115,"43"]]}]}}`
 	if got := w.Body.String(); got != want {
 		t.Fatalf("body: got %s want %s", got, want)
+	}
+}
+
+func TestServeStandardScalarRangeIgnoresErrorEnvelope(t *testing.T) {
+	trq := &timeseries.TimeRangeQuery{
+		Statement: "scalar(count(up)) + 1",
+		Extent: timeseries.Extent{
+			Start: time.Unix(100, 0),
+			End:   time.Unix(115, 0),
+		},
+		Step: 15 * time.Second,
+	}
+	p, _, _ := albpool.NewHealthy([]http.Handler{
+		scalarMemberStatus(`{"status":"error","errorType":"bad_data","error":"boom"}`,
+			false, trq, http.StatusInternalServerError),
+		scalarMember(`{"status":"success","data":{"resultType":"matrix","result":[`+
+			`{"metric":{},"values":[[100,"42"],[115,"43"]]}]}}`, false, trq),
+	})
+	defer p.Stop()
+	p.RefreshHealthy()
+
+	h := &handler{}
+	r := newTestMergeRequest(t)
+	w := httptest.NewRecorder()
+	h.serveStandard(w, r, p.Targets(), request.GetResources(r),
+		tsmerge.StrategyScalar, nil, trq.Statement, nil, "")
+
+	const want = `{"status":"success","data":{"resultType":"matrix","result":[` +
+		`{"metric":{},"values":[[100,"42"],[115,"43"]]}]}}`
+	if got := w.Body.String(); got != want {
+		t.Fatalf("body: got %s want %s", got, want)
+	}
+	if w.Code != http.StatusOK {
+		t.Fatalf("status: got %d want %d", w.Code, http.StatusOK)
 	}
 }

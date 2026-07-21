@@ -35,8 +35,18 @@ func MergeAndWriteVectorMergeFunc(unmarshaler timeseries.UnmarshalerFunc) merge.
 		if err != nil {
 			return err
 		}
-		candidate, scalar := ts.(*dataset.DataSet)
-		if !scalar || candidate.SourceResultType != string(Scalar) {
+		candidate, ok := ts.(*dataset.DataSet)
+		if !ok {
+			return standard(accum, ts, idx)
+		}
+		if isPrometheusErrorDataSet(candidate) {
+			if current, ok := accum.GetTSData().(*dataset.DataSet); ok &&
+				current.SourceResultType == string(Scalar) {
+				return nil
+			}
+			return standard(accum, ts, idx)
+		}
+		if candidate.SourceResultType != string(Scalar) {
 			return standard(accum, ts, idx)
 		}
 		accum.UpdateTSData(func(current timeseries.Timeseries) timeseries.Timeseries {
@@ -44,7 +54,13 @@ func MergeAndWriteVectorMergeFunc(unmarshaler timeseries.UnmarshalerFunc) merge.
 				return candidate
 			}
 			selected, ok := current.(*dataset.DataSet)
-			if !ok || selected.SourceResultType != string(Scalar) {
+			if !ok {
+				return current
+			}
+			if isPrometheusErrorDataSet(selected) {
+				return candidate
+			}
+			if selected.SourceResultType != string(Scalar) {
 				return current
 			}
 			return selectScalarDataSet(selected, candidate)
@@ -62,18 +78,37 @@ func MergeAndWriteVectorBatchMergeFunc() merge.BatchMergeFunc {
 		if len(items) == 0 {
 			return false, nil
 		}
-		candidates := make([]*dataset.DataSet, len(items))
-		for i, item := range items {
+		candidates := make([]*dataset.DataSet, 0, len(items))
+		for _, item := range items {
 			ds, ok := item.Data.(*dataset.DataSet)
-			if !ok || ds == nil || ds.SourceResultType != string(Scalar) {
+			if !ok || ds == nil {
 				return standard(accum, items)
 			}
-			candidates[i] = ds
+			if ds.SourceResultType == string(Scalar) {
+				candidates = append(candidates, ds)
+				continue
+			}
+			if !isPrometheusErrorDataSet(ds) {
+				return standard(accum, items)
+			}
+		}
+		if len(candidates) == 0 {
+			return standard(accum, items)
+		}
+		if currentTS := accum.GetTSData(); currentTS != nil {
+			current, ok := currentTS.(*dataset.DataSet)
+			if !ok || (current.SourceResultType != string(Scalar) &&
+				!isPrometheusErrorDataSet(current)) {
+				return standard(accum, items)
+			}
 		}
 		accum.UpdateTSData(func(current timeseries.Timeseries) timeseries.Timeseries {
 			var selected *dataset.DataSet
 			if current != nil {
 				selected, _ = current.(*dataset.DataSet)
+				if isPrometheusErrorDataSet(selected) {
+					selected = nil
+				}
 			}
 			for _, candidate := range candidates {
 				if selected == nil {
@@ -86,6 +121,10 @@ func MergeAndWriteVectorBatchMergeFunc() merge.BatchMergeFunc {
 		})
 		return true, nil
 	}
+}
+
+func isPrometheusErrorDataSet(ds *dataset.DataSet) bool {
+	return ds != nil && ds.Status == "error" && ds.SourceResultType == ""
 }
 
 func vectorTimeseries(data any, unmarshaler timeseries.UnmarshalerFunc) (timeseries.Timeseries, error) {

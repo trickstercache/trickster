@@ -18,21 +18,33 @@ package promql
 
 import "testing"
 
-func TestIsScalarCall(t *testing.T) {
+func TestIsScalarExpression(t *testing.T) {
 	tests := map[string]bool{
-		"scalar(count(up))":          true,
-		" SCALAR (sum(up)) ":         true,
-		`scalar(count({label="("}))`: true,
-		"scalar_value(up)":           false,
-		"scalar(up) + up":            false,
-		"scalar(up":                  false,
-		"vector(1)":                  false,
-		"sum(up)":                    false,
-		"scalar":                     false,
+		"scalar(count(up))":             true,
+		" SCALAR (sum(up)) ":            true,
+		`scalar(count({label="("}))`:    true,
+		"(scalar(count(up)))":           true,
+		"((scalar(count(up))))":         true,
+		"scalar(count(up)) + 1":         true,
+		"1 + scalar(count(up)) * 2":     true,
+		"-scalar(count(up))":            true,
+		"1e-3 + scalar(count(up))":      true,
+		"scalar(up) == bool 1":          true,
+		"time()":                        true,
+		"pi()":                          true,
+		"42":                            true,
+		"scalar_value(up)":              false,
+		"scalar(up) + up":               false,
+		"scalar(up) and scalar(down)":   false,
+		"scalar(up":                     false,
+		"vector(1)":                     false,
+		"sum(up)":                       false,
+		"scalar":                        false,
+		"rate(http_requests_total[5m])": false,
 	}
 	for query, want := range tests {
-		if got := IsScalarCall(query); got != want {
-			t.Errorf("IsScalarCall(%q) = %v, want %v", query, got, want)
+		if got := IsScalarExpression(query); got != want {
+			t.Errorf("IsScalarExpression(%q) = %v, want %v", query, got, want)
 		}
 	}
 }

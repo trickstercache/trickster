@@ -23,6 +23,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
 )
 
@@ -110,8 +111,7 @@ func TimeseriesBatchMergeFuncTolerant(toleranceNanos int64) BatchMergeFunc {
 }
 
 // strategyMerger is implemented by types that support strategy-aware merging
-// (e.g., *dataset.DataSet). Using an interface avoids importing the dataset
-// package, which would create an import cycle.
+// (e.g., *dataset.DataSet).
 type strategyMerger interface {
 	MergeWithStrategy(sortPoints bool, strategy int, collection ...timeseries.Timeseries)
 }
@@ -162,6 +162,18 @@ func TimeseriesMergeFuncWithStrategyTolerant(unmarshaler timeseries.UnmarshalerF
 		}
 		accum.mu.Lock()
 		defer accum.mu.Unlock()
+		if pairwiseStrategy == int(merge.StrategyScalar) {
+			candidateError := isErrorDataSet(ts)
+			currentError := isErrorDataSet(accum.tsdata)
+			switch {
+			case candidateError && accum.tsdata != nil && !currentError:
+				return nil
+			case !candidateError && currentError:
+				accum.tsdata = ts
+				accum.MergeCount = 1
+				return nil
+			}
+		}
 		if accum.tsdata == nil {
 			accum.tsdata = ts
 			accum.MergeCount = 1
@@ -205,11 +217,19 @@ func TimeseriesBatchMergeFuncWithStrategyTolerant(strategy int,
 		if !ok {
 			return false, nil
 		}
+		if pairwiseStrategy == int(merge.StrategyScalar) {
+			collection = preferSuccessfulDataSets(collection)
+		}
 
 		accum.mu.Lock()
 		defer accum.mu.Unlock()
 		base := accum.tsdata
 		mergeCount := accum.MergeCount
+		if pairwiseStrategy == int(merge.StrategyScalar) && isErrorDataSet(base) &&
+			len(collection) > 0 && !isErrorDataSet(collection[0]) {
+			base = nil
+			mergeCount = 0
+		}
 		start := 0
 		if base == nil {
 			base = collection[0]
@@ -238,6 +258,24 @@ func TimeseriesBatchMergeFuncWithStrategyTolerant(strategy int,
 		accum.MergeCount = mergeCount
 		return true, nil
 	}
+}
+
+func isErrorDataSet(ts timeseries.Timeseries) bool {
+	ds, ok := ts.(*dataset.DataSet)
+	return ok && ds != nil && ds.Status == "error"
+}
+
+func preferSuccessfulDataSets(collection []timeseries.Timeseries) []timeseries.Timeseries {
+	successful := make([]timeseries.Timeseries, 0, len(collection))
+	for _, ts := range collection {
+		if !isErrorDataSet(ts) {
+			successful = append(successful, ts)
+		}
+	}
+	if len(successful) == 0 {
+		return collection
+	}
+	return successful
 }
 
 func batchTimeseries(items []BatchItem) ([]timeseries.Timeseries, bool) {

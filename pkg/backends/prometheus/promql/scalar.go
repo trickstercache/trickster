@@ -16,54 +16,155 @@
 
 package promql
 
-import "strings"
+import (
+	"strconv"
+	"strings"
+)
 
-// IsScalarCall reports whether query is a top-level call to PromQL's scalar
-// conversion function. TSM uses this before fanout so range-query responses,
-// which Prometheus encodes as matrices, retain scalar selection semantics.
-func IsScalarCall(query string) bool {
+// IsScalarExpression reports whether query has a scalar result for the scalar
+// expression forms TSM can safely classify without a full PromQL parser:
+// scalar(), time(), pi(), numeric literals, grouping, unary signs, and binary
+// expressions composed entirely from those scalar forms.
+func IsScalarExpression(query string) bool {
 	q := strings.TrimSpace(query)
-	const name = "scalar"
-	if len(q) <= len(name) || !strings.EqualFold(q[:len(name)], name) {
+	if q == "" {
 		return false
 	}
-	rest := strings.TrimSpace(q[len(name):])
-	if len(rest) == 0 || rest[0] != '(' {
+	if inner, ok := unwrapGrouping(q); ok {
+		return IsScalarExpression(inner)
+	}
+	if inner, ok := unwrapUnaryFunction(q, "scalar"); ok {
+		return strings.TrimSpace(inner) != ""
+	}
+	for _, name := range []string{"time", "pi"} {
+		if inner, ok := unwrapUnaryFunction(q, name); ok {
+			return strings.TrimSpace(inner) == ""
+		}
+	}
+	if _, err := strconv.ParseFloat(q, 64); err == nil {
+		return true
+	}
+	if (q[0] == '+' || q[0] == '-') && IsScalarExpression(q[1:]) {
+		return true
+	}
+	left, right, operator, ok := splitScalarBinaryExpression(q)
+	if !ok || operator == "and" || operator == "or" || operator == "unless" {
 		return false
 	}
-	depth := 0
+	if isComparisonOperator(operator) {
+		right = trimBoolModifier(right)
+	}
+	return IsScalarExpression(left) && IsScalarExpression(right)
+}
+
+func isComparisonOperator(operator string) bool {
+	switch operator {
+	case "==", "!=", ">", "<", ">=", "<=":
+		return true
+	default:
+		return false
+	}
+}
+
+func trimBoolModifier(expression string) string {
+	q := strings.TrimSpace(expression)
+	const modifier = "bool"
+	if len(q) <= len(modifier) || !strings.EqualFold(q[:len(modifier)], modifier) {
+		return q
+	}
+	switch q[len(modifier)] {
+	case ' ', '\t', '\n', '\r':
+		return strings.TrimSpace(q[len(modifier):])
+	default:
+		return q
+	}
+}
+
+func unwrapGrouping(query string) (string, bool) {
+	q := strings.TrimSpace(query)
+	if len(q) < 2 || q[0] != '(' {
+		return "", false
+	}
+	closeIdx := findMatchingCloser(q, 0, '(', ')')
+	if closeIdx != len(q)-1 {
+		return "", false
+	}
+	return q[1:closeIdx], true
+}
+
+func splitScalarBinaryExpression(query string) (string, string, string, bool) {
+	var parens, brackets, braces int
 	var quote byte
 	var escaped bool
-	for i := range len(rest) {
-		ch := rest[i]
+	for i := range len(query) {
+		c := query[i]
 		if quote != 0 {
 			if escaped {
 				escaped = false
 				continue
 			}
-			if ch == '\\' && quote != '`' {
+			if c == '\\' && quote != '`' {
 				escaped = true
 				continue
 			}
-			if ch == quote {
+			if c == quote {
 				quote = 0
 			}
 			continue
 		}
-		switch ch {
-		case '\'', '"', '`':
-			quote = ch
+		switch c {
+		case '"', '\'', '`':
+			quote = c
+			continue
 		case '(':
-			depth++
+			parens++
+			continue
 		case ')':
-			depth--
-			if depth == 0 {
-				return strings.TrimSpace(rest[i+1:]) == ""
+			parens--
+			continue
+		case '[':
+			brackets++
+			continue
+		case ']':
+			brackets--
+			continue
+		case '{':
+			braces++
+			continue
+		case '}':
+			braces--
+			continue
+		}
+		if parens != 0 || brackets != 0 || braces != 0 {
+			continue
+		}
+		for _, op := range []string{"atan2", "unless", "and", "or", "==", "!=", ">=", "<=", "+", "-", "*", "/", "%", "^", ">", "<"} {
+			if !strings.HasPrefix(query[i:], op) || !binaryOperatorBoundary(query, i, op) {
+				continue
 			}
-			if depth < 0 {
-				return false
+			left := strings.TrimSpace(query[:i])
+			right := strings.TrimSpace(query[i+len(op):])
+			if left == "" || right == "" {
+				continue
 			}
+			return left, right, op, true
 		}
 	}
-	return false
+	return "", "", "", false
+}
+
+func binaryOperatorBoundary(query string, index int, operator string) bool {
+	if operator[0] >= 'a' && operator[0] <= 'z' {
+		before := index == 0 || isPromQLBoundary(query[index-1])
+		afterIndex := index + len(operator)
+		after := afterIndex == len(query) || isPromQLBoundary(query[afterIndex])
+		return before && after
+	}
+	if (operator == "+" || operator == "-") && index > 0 {
+		prev := query[index-1]
+		if prev == 'e' || prev == 'E' {
+			return false
+		}
+	}
+	return true
 }

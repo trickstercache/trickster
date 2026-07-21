@@ -125,3 +125,37 @@ func TestMergeAndWriteScalarPrefersFirstNonNaN(t *testing.T) {
 		t.Fatalf("body: got %s want %s", body, expected)
 	}
 }
+
+func TestMergeAndWriteScalarIgnoresErrorEnvelope(t *testing.T) {
+	decode := func(body string) timeseries.Timeseries {
+		t.Helper()
+		ts, err := UnmarshalTimeseries([]byte(body), &timeseries.TimeRangeQuery{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ts
+	}
+	for _, items := range [][]merge.BatchItem{
+		{
+			{Member: 0, Data: decode(`{"status":"error","errorType":"bad_data","error":"boom"}`)},
+			{Member: 1, Data: decode(`{"status":"success","data":{"resultType":"scalar","result":[101,"42"]}}`)},
+		},
+		{
+			{Member: 0, Data: decode(`{"status":"success","data":{"resultType":"scalar","result":[101,"42"]}}`)},
+			{Member: 1, Data: decode(`{"status":"error","errorType":"bad_data","error":"boom"}`)},
+		},
+	} {
+		accum := merge.NewAccumulator()
+		handled, err := MergeAndWriteVectorBatchMergeFunc()(accum, items)
+		if err != nil || !handled {
+			t.Fatalf("scalar batch merge: handled=%v err=%v", handled, err)
+		}
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/api/v1/query", nil)
+		MergeAndWriteVectorRespondFunc(MarshalTimeseriesWriter)(w, r, accum, http.StatusOK)
+		const want = `{"status":"success","data":{"resultType":"scalar","result":[101,"42"]}}`
+		if got := w.Body.String(); got != want {
+			t.Fatalf("body: got %s want %s", got, want)
+		}
+	}
+}

@@ -54,7 +54,7 @@ func (c *Client) PlanTSMMerge(r *http.Request, query string) (*merge.TSMMergePla
 	completeness := merge.TSMCompletenessResponseAuthority
 
 	agg, found := promql.OuterAggregator(fanoutQuery)
-	if promql.IsScalarCall(fanoutQuery) {
+	if promql.IsScalarExpression(fanoutQuery) {
 		strategy = int(merge.StrategyScalar)
 	} else if found {
 		switch agg {
