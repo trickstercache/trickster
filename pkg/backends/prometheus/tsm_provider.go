@@ -45,6 +45,9 @@ func (c *Client) PlanTSMMerge(r *http.Request, query string) (*merge.TSMMergePla
 	if spec, found := promql.ParseLimitRatioAggregation(query); found {
 		return c.planLimitRatio(r, query, spec)
 	}
+	if spec, found := promql.ParseLimitKAggregation(query); found {
+		return c.planLimitK(r, query, spec)
+	}
 	if spec, found := promql.ParseQuantileAggregation(query); found {
 		return c.planQuantile(r, query, spec)
 	}
@@ -110,6 +113,13 @@ func (c *Client) PlanTSMMerge(r *http.Request, query string) (*merge.TSMMergePla
 		return nil, err
 	}
 	return plan, nil
+}
+
+func (c *Client) planLimitK(r *http.Request, query string,
+	spec promql.LimitKAggregation,
+) (*merge.TSMMergePlan, error) {
+	return c.planGlobalParameterizedAggregation(r, query, aggregation.LimitK,
+		spec.InnerQuery, spec.AggregationQuery, spec.SortSet)
 }
 
 func (c *Client) planQuantile(r *http.Request, query string,

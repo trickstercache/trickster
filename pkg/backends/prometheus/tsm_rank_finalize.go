@@ -134,6 +134,10 @@ func (c *Client) FinalizeTSMMerge(query string, ts timeseries.Timeseries) {
 		finalizeLimitRatio(ds, spec)
 		return
 	}
+	if spec, found := promql.ParseLimitKAggregation(query); found {
+		finalizeLimitKAggregation(ds, spec)
+		return
+	}
 	if spec, found := promql.ParseQuantileAggregation(query); found {
 		finalizeQuantileAggregation(ds, spec)
 		return
@@ -284,29 +288,24 @@ func rankValueLess(a, b float64, operator string) bool {
 func rankGroupKey(tags dataset.Tags, grouping promql.AggregationGrouping) string {
 	if len(grouping.Labels) == 0 {
 		if grouping.Without {
-			return tags.String()
+			return tags.JSON()
 		}
 		return ""
 	}
-	labelSet := make(map[string]struct{}, len(grouping.Labels))
-	for _, label := range grouping.Labels {
-		labelSet[label] = struct{}{}
-	}
 	if grouping.Without {
-		keys := tags.Keys()
-		kept := make([]string, 0, len(keys))
-		for _, key := range keys {
-			if _, skip := labelSet[key]; !skip {
-				kept = append(kept, key+"="+tags[key])
-			}
+		kept := tags.Clone()
+		for _, label := range grouping.Labels {
+			delete(kept, label)
 		}
-		return strings.Join(kept, ";")
+		return kept.JSON()
 	}
-	parts := make([]string, 0, len(grouping.Labels))
+	kept := make(dataset.Tags, len(grouping.Labels))
 	for _, label := range grouping.Labels {
-		parts = append(parts, label+"="+tags[label])
+		if value := tags[label]; value != "" {
+			kept[label] = value
+		}
 	}
-	return strings.Join(parts, ";")
+	return kept.JSON()
 }
 
 func keepSelectedRankPoints(

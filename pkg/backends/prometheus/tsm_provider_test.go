@@ -111,7 +111,13 @@ func TestPlanTSMMergeStrategies(t *testing.T) {
 		{"quantile(scalar(phi), up)", int(merge.StrategyDedup), standard, aggregation.Quantile},
 		{"topk(5, stddev(up))", int(merge.StrategyDedup), standard, aggregation.StdDev},
 		{"topk(k, up)", int(merge.StrategyDedup), standard, aggregation.TopK},
-		{"limitk(5, up)", int(merge.StrategyDedup), standard, aggregation.LimitK},
+		{"limitk(5, up)", int(merge.StrategyDedup), standard, ""},
+		{"limitk(5, count by (service) (requests))", int(merge.StrategySum), standard, ""},
+		{"limitk(5, min(requests))", int(merge.StrategyMin), standard, ""},
+		{"limitk(5, max(requests))", int(merge.StrategyMax), standard, ""},
+		{"limitk(5, sum by (service) (requests))", int(merge.StrategyDedup), standard, "native-histogram-aware"},
+		{"limitk(5, up + down)", int(merge.StrategyDedup), standard, "cross-shard"},
+		{"limitk(scalar(k), up)", int(merge.StrategyDedup), standard, aggregation.LimitK},
 		{"limit_ratio(0.5, stddev(up))", int(merge.StrategyDedup), standard, aggregation.StdDev},
 		{"sort_desc(limit_ratio(0.5, stddev(up)))", int(merge.StrategyDedup), standard, aggregation.StdDev},
 		{"limit_ratio(0.5, rate(sum(up)[5m:]))", int(merge.StrategyDedup), standard, "nested"},
@@ -434,6 +440,120 @@ func TestPlanTSMMergeVariancePOST(t *testing.T) {
 		if got := bodyValues.Get(promQueryParam); got != want[i] {
 			t.Fatalf("variant %d body query got %q want %q", i, got, want[i])
 		}
+	}
+}
+
+func TestPlanTSMMergeLimitKContents(t *testing.T) {
+	t.Run("globally selected shard-local input", func(t *testing.T) {
+		const (
+			query = "sort_desc(limitk by (job) (5, rate(requests[5m])))"
+			inner = "rate(requests[5m])"
+		)
+		r, _ := http.NewRequest(http.MethodGet,
+			"http://example.com/api/v1/query?query="+url.QueryEscape(query), nil)
+		plan := mustTSMMergePlan(t, r, query)
+		values, _, _ := params.GetRequestValues(plan.Variants[0].Request)
+
+		if got := values.Get(promQueryParam); got != inner {
+			t.Fatalf("fanout query got %q want %q", got, inner)
+		}
+		if plan.Variants[0].MergeStrategy != int(merge.StrategyDedup) ||
+			!plan.Finalizer.Enabled || plan.Finalizer.Query != query ||
+			!plan.StripInjectedLabels || plan.UnsupportedWarning != "" ||
+			plan.AllowSingleMemberBypass {
+			t.Fatalf("limitk plan: %#v", plan)
+		}
+	})
+
+	t.Run("globally merged inner count", func(t *testing.T) {
+		const (
+			query = "limitk(2, count by (service, instance) (requests))"
+			inner = "count by (service, instance) (requests)"
+		)
+		r, _ := http.NewRequest(http.MethodGet,
+			"http://example.com/api/v1/query?query="+url.QueryEscape(query), nil)
+		plan := mustTSMMergePlan(t, r, query)
+		values, _, _ := params.GetRequestValues(plan.Variants[0].Request)
+
+		if got := values.Get(promQueryParam); got != inner {
+			t.Fatalf("fanout query got %q want %q", got, inner)
+		}
+		if plan.Variants[0].MergeStrategy != int(merge.StrategySum) ||
+			!plan.Finalizer.Enabled || plan.UnsupportedWarning != "" {
+			t.Fatalf("inner count plan: %#v", plan)
+		}
+	})
+
+	t.Run("unsupported sorted input applies limit only on shards", func(t *testing.T) {
+		const (
+			query       = "sort_desc(limitk(2, up + down))"
+			aggregation = "limitk(2, up + down)"
+		)
+		r, _ := http.NewRequest(http.MethodGet,
+			"http://example.com/api/v1/query?query="+url.QueryEscape(query), nil)
+		plan := mustTSMMergePlan(t, r, query)
+		values, _, _ := params.GetRequestValues(plan.Variants[0].Request)
+
+		if got := values.Get(promQueryParam); got != aggregation {
+			t.Fatalf("fanout query got %q want %q", got, aggregation)
+		}
+		if !plan.Finalizer.Enabled || !strings.Contains(plan.UnsupportedWarning, "cross-shard") {
+			t.Fatalf("fallback plan: %#v", plan)
+		}
+	})
+
+	t.Run("unsupported unsorted input remains unchanged", func(t *testing.T) {
+		const query = "limitk(2, sum(requests))"
+		r, _ := http.NewRequest(http.MethodGet,
+			"http://example.com/api/v1/query?query="+url.QueryEscape(query), nil)
+		plan := mustTSMMergePlan(t, r, query)
+
+		if plan.Variants[0].Request != r || plan.Finalizer.Enabled ||
+			!strings.Contains(plan.UnsupportedWarning, "native-histogram-aware") {
+			t.Fatalf("fallback plan: %#v", plan)
+		}
+	})
+}
+
+func TestPlanTSMMergeLimitKPOST(t *testing.T) {
+	const (
+		query    = "limitk(2, count by (service) (requests))"
+		wantQ    = "count by (service) (requests)"
+		origBody = "query=limitk%282%2C+count+by+%28service%29+%28requests%29%29&start=1000&end=2000&step=15"
+	)
+	r, _ := http.NewRequest(http.MethodPost,
+		"http://example.com/api/v1/query_range",
+		io.NopCloser(bytes.NewBufferString(origBody)))
+	r.Header.Set(headers.NameContentType, headers.ValueXFormURLEncoded)
+	r = request.SetResources(r, &request.Resources{RequestBody: []byte(origBody)})
+
+	plan := mustTSMMergePlan(t, r, query)
+	rewritten := plan.Variants[0].Request
+	values, _, _ := params.GetRequestValues(rewritten)
+	if got := values.Get(promQueryParam); got != wantQ {
+		t.Fatalf("rewritten query got %q want %q", got, wantQ)
+	}
+	body, err := io.ReadAll(rewritten.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	bodyValues, err := url.ParseQuery(string(body))
+	if err != nil {
+		t.Fatalf("parse body: %v", err)
+	}
+	if got := bodyValues.Get(promQueryParam); got != wantQ {
+		t.Fatalf("body query got %q want %q", got, wantQ)
+	}
+	rsc := request.GetResources(rewritten)
+	if rsc == nil {
+		t.Fatal("rewritten request has no resources")
+	}
+	cachedValues, err := url.ParseQuery(string(rsc.RequestBody))
+	if err != nil {
+		t.Fatalf("parse cached body: %v", err)
+	}
+	if got := cachedValues.Get(promQueryParam); got != wantQ {
+		t.Fatalf("cached body query got %q want %q", got, wantQ)
 	}
 }
 

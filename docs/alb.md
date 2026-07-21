@@ -106,7 +106,7 @@ For Federation use cases where backends hold different, non-overlapping data, Tr
 | `stddev`, `stdvar` | Pool shard-local count, mean, and variance states, then finalize the global population variance or standard deviation |
 | `quantile` | Query the inner expression, merge all float samples globally, then calculate the exact quantile per timestamp and aggregation group |
 | `limit_ratio` | Apply Prometheus-compatible label-hash sampling, globally finalizing a supported inner aggregation when necessary |
-| `limitk` | Deduplicate + inject a warning into the Prometheus response |
+| `limitk` | Query the inner expression, merge it globally, then retain the first k samples in stable TSM series order per timestamp and aggregation group |
 | _(none)_ | Deduplicate (default) |
 
 For `avg` queries, Trickster issues two concurrent sub-queries per backend shard — one rewriting the outer `avg` to `sum` and another to `count` — then computes a true weighted arithmetic mean (`sum_total / count_total`) per series per timestamp. This avoids the skew introduced by a naïve avg-of-averages when backends have different data cardinalities.
@@ -119,7 +119,11 @@ For `quantile`, Trickster sends the inner expression to every backend, globally 
 
 For `limit_ratio`, selection uses the same complete-label-set hash threshold as Prometheus. Supported inner aggregations are merged before the ratio is applied; shard-local expressions can be sampled by each backend because the hash decision for a given label set is independent of shard placement.
 
-For an unsupported inner expression, Trickster retains the established per-shard fallback and injects a `warnings` entry in the Prometheus response body to alert the caller that results may be inaccurate. `limitk` also retains this fallback until global first-visited selection is supported.
+For `limitk`, Trickster reproduces the current Prometheus evaluator's first-visited algorithm over TSM's stable merged-series order: lexicographic JSON serialization of the complete label set, followed by the series name. Selection is independent for every timestamp and aggregation group, retains complete labels and both float and native-histogram samples, and does not rank candidates by value or label hash.
+
+Prometheus does not define a canonical storage visitation order for `limitk`. A separate Prometheus deployment whose storage returns the same series in a different order may therefore select different labels. Trickster guarantees the requested cardinality, grouping, and repeatability for the same merged input, and fanout completion order does not affect the result. `limitk` remains an experimental PromQL operator, so this compatibility contract may change with Prometheus.
+
+For an unsupported inner expression, Trickster retains the established per-shard fallback and injects a `warnings` entry in the Prometheus response body to alert the caller that results may be inaccurate.
 
 When a non-dedup strategy is in effect and backends have [injected labels](./prometheus.md#injecting-labels) configured, those labels are automatically stripped before merging. This ensures series from different backends hash identically for aggregation, and the injected labels do not appear in the response.
 
