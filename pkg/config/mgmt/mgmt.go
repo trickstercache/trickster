@@ -31,6 +31,9 @@ type Options struct {
 	ListenPort int `yaml:"listen_port,omitempty"`
 	// ConfigHandlerPath provides the path to register the Config Handler for outputting the running configuration
 	ConfigHandlerPath string `yaml:"config_handler_path,omitempty"`
+	// ConfigHandlerServer provides the name of the HTTP listener that will host the config routes
+	// Options are: "metrics", "mgmt", "both", or "off"; default is mgmt
+	ConfigHandlerServer string `yaml:"config_handler_server,omitempty"`
 	// PingHandlerPath provides the path to register the Ping Handler for checking that Trickster is running
 	PingHandlerPath string `yaml:"ping_handler_path,omitempty"`
 	// HealthHandlerPath provides the base Health Check Handler path
@@ -58,12 +61,16 @@ type Options struct {
 // ErrInvalidPprofServerName returns an error for invalid pprof server name
 var ErrInvalidPprofServerName = errors.New("invalid pprof server name")
 
+// ErrInvalidConfigHandlerServerName returns an error for an invalid config handler server name
+var ErrInvalidConfigHandlerServerName = errors.New("invalid config handler server name")
+
 // New returns a new Options references with Default Values set
 func New() *Options {
 	return &Options{
 		ListenPort:             DefaultPort,
 		ListenAddress:          DefaultAddress,
 		ConfigHandlerPath:      DefaultConfigHandlerPath,
+		ConfigHandlerServer:    DefaultConfigHandlerServerName,
 		PingHandlerPath:        DefaultPingHandlerPath,
 		HealthHandlerPath:      DefaultHealthHandlerPath,
 		PurgeByKeyHandlerPath:  DefaultPurgeByKeyHandlerPath,
@@ -76,8 +83,16 @@ func New() *Options {
 }
 
 func (o *Options) Validate() error {
+	switch o.ConfigHandlerServer {
+	case ServerNameMetrics, ServerNameMgmt, ServerNameOff, ServerNameBoth:
+	case "":
+		o.ConfigHandlerServer = DefaultConfigHandlerServerName
+	default:
+		return ErrInvalidConfigHandlerServerName
+	}
+
 	switch o.PprofServer {
-	case "metrics", "management", "off", "both":
+	case ServerNameMetrics, ServerNameMgmt, ServerNameOff, ServerNameBoth:
 		return nil
 	case "":
 		o.PprofServer = DefaultPprofServerName

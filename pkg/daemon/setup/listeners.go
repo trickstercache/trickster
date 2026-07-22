@@ -23,6 +23,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/config"
+	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
@@ -151,12 +152,14 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 
 	metricsRouter.RegisterRoute("/metrics", nil, nil,
 		false, metrics.Handler())
-	metricsRouter.RegisterRoute(conf.MgmtConfig.ConfigHandlerPath, nil, nil,
-		false, http.HandlerFunc(ch.HandlerFunc(conf)))
-	metricsRouter.RegisterRoute(ch.SanitizedHandlerPath(conf.MgmtConfig.ConfigHandlerPath), nil, nil,
-		false, http.HandlerFunc(ch.SanitizedHandlerFunc(conf)))
-	if conf.MgmtConfig.PprofServer == "both" || conf.MgmtConfig.PprofServer == "mgmt" {
-		pprof.RegisterRoutes("mgmt", metricsRouter)
+	if serverEnabledOn(conf.MgmtConfig.ConfigHandlerServer, mgmt.ServerNameMetrics) {
+		metricsRouter.RegisterRoute(conf.MgmtConfig.ConfigHandlerPath, nil, nil,
+			false, http.HandlerFunc(ch.HandlerFunc(conf)))
+		metricsRouter.RegisterRoute(ch.SanitizedHandlerPath(conf.MgmtConfig.ConfigHandlerPath), nil, nil,
+			false, http.HandlerFunc(ch.SanitizedHandlerFunc(conf)))
+	}
+	if serverEnabledOn(conf.MgmtConfig.PprofServer, mgmt.ServerNameMetrics) {
+		pprof.RegisterRoutes(mgmt.ServerNameMetrics, metricsRouter)
 	}
 
 	// if the Metrics HTTP port is configured, then set up the http listener instance
@@ -172,16 +175,18 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 	}
 
 	mr := lm.NewRouter() // management router
-	mr.RegisterRoute(conf.MgmtConfig.ConfigHandlerPath, nil, nil,
-		false, http.HandlerFunc(ch.HandlerFunc(conf)))
-	mr.RegisterRoute(ch.SanitizedHandlerPath(conf.MgmtConfig.ConfigHandlerPath), nil, nil,
-		false, http.HandlerFunc(ch.SanitizedHandlerFunc(conf)))
+	if serverEnabledOn(conf.MgmtConfig.ConfigHandlerServer, mgmt.ServerNameMgmt) {
+		mr.RegisterRoute(conf.MgmtConfig.ConfigHandlerPath, nil, nil,
+			false, http.HandlerFunc(ch.HandlerFunc(conf)))
+		mr.RegisterRoute(ch.SanitizedHandlerPath(conf.MgmtConfig.ConfigHandlerPath), nil, nil,
+			false, http.HandlerFunc(ch.SanitizedHandlerFunc(conf)))
+	}
 	mr.RegisterRoute(conf.MgmtConfig.ReloadHandlerPath, nil, nil,
 		false, reloadHandler)
 	mr.RegisterRoute(conf.MgmtConfig.PurgeByPathHandlerPath, nil, nil,
 		true, http.HandlerFunc(ph.PathHandler(conf.MgmtConfig.PurgeByPathHandlerPath, &o)))
-	if conf.MgmtConfig.PprofServer == "both" || conf.MgmtConfig.PprofServer == "mgmt" {
-		pprof.RegisterRoutes("mgmt", mr)
+	if serverEnabledOn(conf.MgmtConfig.PprofServer, mgmt.ServerNameMgmt) {
+		pprof.RegisterRoutes(mgmt.ServerNameMgmt, mr)
 	}
 
 	// if the Management HTTP port is configured, then set up the http listener instance
@@ -195,4 +200,8 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 	} else {
 		lg.UpdateRouter("mgmtListener", mr)
 	}
+}
+
+func serverEnabledOn(configuredServer, listenerName string) bool {
+	return configuredServer == mgmt.ServerNameBoth || configuredServer == listenerName
 }

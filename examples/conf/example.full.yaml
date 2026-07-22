@@ -765,6 +765,10 @@ backends:
 #   # default is /trickster/config
 #   config_handler_path: /trickster/config
 
+#   # config_handler_server provides the HTTP listener that hosts the config endpoints
+#   # Options are: "metrics", "mgmt", "both", or "off"; default is mgmt
+#   config_handler_server: mgmt
+
 #   # ping_handler_path provides the HTTP path you will use to perform an uptime health check against Trickster
 #   # which can be reached at http://your-trickster-endpoint:port/$ping_handler_path
 #   # default is /trickster/ping

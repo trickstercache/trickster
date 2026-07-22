@@ -320,6 +320,7 @@ mgmt:
   listen_address: 127.0.0.1
   listen_port: 8484
   config_handler_path: /trickster/config
+  config_handler_server: mgmt
   ping_handler_path: /trickster/ping
   health_handler_path: /trickster/health
   purge_by_key_path: /trickster/purge/key/

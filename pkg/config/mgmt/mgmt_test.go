@@ -20,6 +20,11 @@ import "testing"
 
 func TestValidate(t *testing.T) {
 	c := New()
+	if c.ConfigHandlerServer != ServerNameMgmt {
+		t.Fatalf("expected config handler server to default to mgmt, got %s", c.ConfigHandlerServer)
+	}
+
+	c.ConfigHandlerServer = ""
 	c.PprofServer = ""
 
 	err := c.Validate()
@@ -30,11 +35,38 @@ func TestValidate(t *testing.T) {
 	if c.PprofServer != DefaultPprofServerName {
 		t.Errorf("expected %s got %s", DefaultPprofServerName, c.PprofServer)
 	}
+	if c.ConfigHandlerServer != DefaultConfigHandlerServerName {
+		t.Errorf("expected %s got %s", DefaultConfigHandlerServerName, c.ConfigHandlerServer)
+	}
+
+	c.ConfigHandlerServer = "x"
+	if err = c.Validate(); err != ErrInvalidConfigHandlerServerName {
+		t.Errorf("expected invalid config handler server error, got %v", err)
+	}
+	c.ConfigHandlerServer = DefaultConfigHandlerServerName
 
 	c.PprofServer = "x"
 
 	err = c.Validate()
 	if err == nil {
 		t.Error("expected error for invalid pprof server name")
+	}
+}
+
+func TestValidatePprofServerNames(t *testing.T) {
+	for _, name := range []string{ServerNameMetrics, ServerNameMgmt, ServerNameBoth, ServerNameOff} {
+		c := New()
+		c.PprofServer = name
+		if err := c.Validate(); err != nil {
+			t.Errorf("expected pprof server name %q to be valid, got %v", name, err)
+		}
+	}
+
+	for _, name := range []string{"reload", "management"} {
+		c := New()
+		c.PprofServer = name
+		if err := c.Validate(); err != ErrInvalidPprofServerName {
+			t.Errorf("expected pprof server name %q to be invalid, got %v", name, err)
+		}
 	}
 }
