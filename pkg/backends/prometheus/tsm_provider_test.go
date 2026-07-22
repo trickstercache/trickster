@@ -513,6 +513,18 @@ func TestPlanTSMMergeLimitKContents(t *testing.T) {
 			t.Fatalf("fallback plan: %#v", plan)
 		}
 	})
+
+	t.Run("invalid grouping remains unchanged", func(t *testing.T) {
+		const query = "limitk by (,job) (2, up)"
+		r, _ := http.NewRequest(http.MethodGet,
+			"http://example.com/api/v1/query?query="+url.QueryEscape(query), nil)
+		plan := mustTSMMergePlan(t, r, query)
+
+		if plan.Variants[0].Request != r || plan.Finalizer.Enabled ||
+			!strings.Contains(plan.UnsupportedWarning, aggregation.LimitK) {
+			t.Fatalf("invalid grouping plan: %#v", plan)
+		}
+	})
 }
 
 func TestPlanTSMMergeLimitKPOST(t *testing.T) {
