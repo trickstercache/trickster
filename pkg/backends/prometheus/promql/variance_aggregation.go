@@ -148,8 +148,12 @@ func parseGroupingAt(input string, pos int) (AggregationGrouping, int, bool) {
 		if closeIdx < 0 {
 			return AggregationGrouping{}, pos, false
 		}
+		labels, ok := parseLabels(input[openIdx+1 : closeIdx])
+		if !ok {
+			return AggregationGrouping{}, pos, false
+		}
 		return AggregationGrouping{
-			Labels:  parseLabels(input[openIdx+1 : closeIdx]),
+			Labels:  labels,
 			Without: keyword == "without",
 		}, closeIdx + 1, true
 	}

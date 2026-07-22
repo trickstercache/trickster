@@ -122,6 +122,27 @@ func TestFinalizeTSMMergeLimitKGrouping(t *testing.T) {
 	}
 }
 
+func TestFinalizeTSMMergeLimitKQuotedGroupingLabel(t *testing.T) {
+	const inner = "up"
+	ds := varianceFinalizeDataSet(inner,
+		varianceFinalizeSeries(dataset.Tags{"instance": "a", "zone.name": "east"}, inner,
+			"1", int64(100)),
+		varianceFinalizeSeries(dataset.Tags{"instance": "b", "zone.name": "west"}, inner,
+			"2", int64(100)),
+		varianceFinalizeSeries(dataset.Tags{"instance": "c", "zone.name": "east"}, inner,
+			"3", int64(100)),
+		varianceFinalizeSeries(dataset.Tags{"instance": "d", "zone.name": "west"}, inner,
+			"4", int64(100)),
+	)
+
+	(&Client{}).FinalizeTSMMerge(`limitk by ("zone.name") (1, up)`, ds)
+	got := ds.Results[0].SeriesList
+	if len(got) != 2 || got[0].Header.Tags["instance"] != "a" ||
+		got[1].Header.Tags["instance"] != "b" {
+		t.Fatalf("selected quoted-label groups: %#v", got)
+	}
+}
+
 func TestFinalizeTSMMergeLimitKSparseRangeChangesMembership(t *testing.T) {
 	const inner = "up"
 	ds := varianceFinalizeDataSet(inner,
