@@ -115,7 +115,8 @@ func TestPlanTSMMergeStrategies(t *testing.T) {
 		{"limitk(5, count by (service) (requests))", int(merge.StrategySum), standard, ""},
 		{"limitk(5, min(requests))", int(merge.StrategyMin), standard, ""},
 		{"limitk(5, max(requests))", int(merge.StrategyMax), standard, ""},
-		{"limitk(5, sum by (service) (requests))", int(merge.StrategyDedup), standard, "native-histogram-aware"},
+		{"limitk(5, sum by (service) (requests))", int(merge.StrategySum), standard, ""},
+		{"limitk(5, avg by (service) (requests))", int(merge.StrategySum), weighted, ""},
 		{"limitk(5, up + down)", int(merge.StrategyDedup), standard, "cross-shard"},
 		{"limitk(scalar(k), up)", int(merge.StrategyDedup), standard, aggregation.LimitK},
 		{"limit_ratio(0.5, stddev(up))", int(merge.StrategyDedup), standard, aggregation.StdDev},
@@ -502,15 +503,19 @@ func TestPlanTSMMergeLimitKContents(t *testing.T) {
 		}
 	})
 
-	t.Run("unsupported unsorted input remains unchanged", func(t *testing.T) {
+	t.Run("histogram-capable sum uses exact reduction", func(t *testing.T) {
 		const query = "limitk(2, sum(requests))"
 		r, _ := http.NewRequest(http.MethodGet,
 			"http://example.com/api/v1/query?query="+url.QueryEscape(query), nil)
 		plan := mustTSMMergePlan(t, r, query)
+		values, _, _ := params.GetRequestValues(plan.Variants[0].Request)
 
-		if plan.Variants[0].Request != r || plan.Finalizer.Enabled ||
-			!strings.Contains(plan.UnsupportedWarning, "native-histogram-aware") {
-			t.Fatalf("fallback plan: %#v", plan)
+		if got := values.Get(promQueryParam); got != "sum(requests)" {
+			t.Fatalf("fanout query got %q", got)
+		}
+		if plan.Variants[0].MergeStrategy != int(merge.StrategySum) ||
+			!plan.Finalizer.Enabled || plan.UnsupportedWarning != "" {
+			t.Fatalf("exact plan: %#v", plan)
 		}
 	})
 
