@@ -42,6 +42,17 @@ func (c *Client) PlanTSMMerge(r *http.Request, query string) (*merge.TSMMergePla
 	if r == nil {
 		return nil, errors.New("cannot plan a nil request")
 	}
+	if spec, found := promql.ParseLimitRatioAggregation(query); found {
+		return c.planLimitRatio(r, query, spec)
+	}
+	if spec, found := promql.ParseQuantileAggregation(query); found {
+		return c.planQuantile(r, query, spec)
+	}
+	if spec, found := promql.ParseVarianceAggregation(query); found {
+		if plan, handled, err := c.planVariance(r, query, spec); handled || err != nil {
+			return plan, err
+		}
+	}
 	fanoutQuery, rewritten := tsmInnerQuery(query)
 	finalizer := tsmFinalizer(query)
 
@@ -59,7 +70,7 @@ func (c *Client) PlanTSMMerge(r *http.Request, query string) (*merge.TSMMergePla
 		case aggregation.Sum, aggregation.Count, aggregation.CountValues:
 			strategy = int(merge.StrategySum)
 		case aggregation.Average:
-			return weightedAveragePlan(r, query, fanoutQuery, finalizer)
+			return weightedAveragePlan(r, query, fanoutQuery, finalizer, false)
 		case aggregation.Minimum:
 			strategy = int(merge.StrategyMin)
 		case aggregation.Maximum:
@@ -101,8 +112,327 @@ func (c *Client) PlanTSMMerge(r *http.Request, query string) (*merge.TSMMergePla
 	return plan, nil
 }
 
+func (c *Client) planQuantile(r *http.Request, query string,
+	spec promql.QuantileAggregation,
+) (*merge.TSMMergePlan, error) {
+	return c.planGlobalParameterizedAggregation(r, query, aggregation.Quantile,
+		spec.InnerQuery, spec.AggregationQuery, spec.SortSet)
+}
+
+func (c *Client) planGlobalParameterizedAggregation(r *http.Request, query, operator,
+	innerQuery, aggregationQuery string, sortSet bool,
+) (*merge.TSMMergePlan, error) {
+	strategy, warning, weightedAverage := globalInnerMergeStrategy(operator, innerQuery)
+	supported := warning == ""
+
+	fanoutQuery := innerQuery
+	rewritten := true
+	finalizer := merge.TSMFinalizerSpec{Enabled: true, Query: query}
+	if weightedAverage {
+		return weightedAveragePlan(r, query, innerQuery, finalizer, true)
+	}
+	if !supported {
+		fanoutQuery = aggregationQuery
+		rewritten = sortSet
+		if !sortSet {
+			finalizer = merge.TSMFinalizerSpec{}
+		}
+	}
+
+	variantRequest := r
+	var err error
+	if rewritten {
+		variantRequest, err = rewritePromQueryParam(r, fanoutQuery)
+		if err != nil {
+			return nil, fmt.Errorf("prepare tsm primary variant: %w", err)
+		}
+	}
+
+	plan := &merge.TSMMergePlan{
+		OriginalQuery: query,
+		Variants: []merge.TSMQueryVariant{{
+			Name:              merge.TSMVariantPrimary,
+			Request:           variantRequest,
+			MergeStrategy:     strategy,
+			ResponseAuthority: true,
+		}},
+		Reduction: merge.TSMReductionSpec{
+			Kind:          merge.TSMReductionStandard,
+			InputVariants: merge.TSMReductionPrimaryVariant(),
+		},
+		Finalizer:           finalizer,
+		Completeness:        merge.TSMCompletenessResponseAuthority,
+		UnsupportedWarning:  warning,
+		StripInjectedLabels: true,
+	}
+	plan.AllowSingleMemberBypass = !rewritten && !finalizer.Enabled && warning == ""
+	if err := plan.Validate(); err != nil {
+		return nil, err
+	}
+	return plan, nil
+}
+
+func globalInnerMergeStrategy(operator, innerQuery string) (int, string, bool) {
+	strategy := int(merge.StrategyDedup)
+	warningPrefix := "trickster: " + operator + " "
+
+	if innerAggregation, aggregationInput, found := promql.CompleteOuterAggregation(innerQuery); found {
+		if promql.ContainsAggregator(aggregationInput) {
+			return strategy, warningPrefix + "contains a nested aggregation that cannot be " +
+				"correctly merged across fanout backends; results may be inaccurate", false
+		}
+		if promql.ContainsBinaryExpression(aggregationInput) {
+			return strategy, warningPrefix + "contains a binary expression that may require " +
+				"cross-shard matching; results may be inaccurate", false
+		}
+		if globalFunction, found := promql.NonShardLocalFunction(aggregationInput); found {
+			return strategy, warningPrefix + `contains function "` + globalFunction +
+				`" that may require globally complete input; results may be inaccurate`, false
+		}
+
+		switch innerAggregation {
+		case aggregation.Sum, aggregation.Count, aggregation.CountValues:
+			return int(merge.StrategySum), "", false
+		case aggregation.Average:
+			return int(merge.StrategySum), "", true
+		case aggregation.Minimum:
+			return int(merge.StrategyMin), "", false
+		case aggregation.Maximum:
+			return int(merge.StrategyMax), "", false
+		case aggregation.Group:
+			return strategy, "", false
+		default:
+			return strategy, warningPrefix + `inner aggregator "` + innerAggregation +
+				`" cannot be correctly merged across fanout backends; results may be inaccurate`, false
+		}
+	}
+
+	if promql.ContainsAggregator(innerQuery) {
+		return strategy, warningPrefix + "contains a nested aggregation that cannot be " +
+			"correctly merged across fanout backends; results may be inaccurate", false
+	}
+	if promql.ContainsBinaryExpression(innerQuery) {
+		return strategy, warningPrefix + "contains a binary expression that may require " +
+			"cross-shard matching; results may be inaccurate", false
+	}
+	if globalFunction, found := promql.NonShardLocalFunction(innerQuery); found {
+		return strategy, warningPrefix + `contains function "` + globalFunction +
+			`" that may require globally complete input; results may be inaccurate`, false
+	}
+	return strategy, "", false
+}
+
+func (c *Client) planVariance(r *http.Request, query string,
+	spec promql.VarianceAggregation,
+) (*merge.TSMMergePlan, bool, error) {
+	finalizer := merge.TSMFinalizerSpec{Enabled: true, Query: query}
+	if innerAggregation, aggregationInput, found := promql.CompleteOuterAggregation(spec.InnerQuery); found {
+		if promql.ContainsAggregator(aggregationInput) ||
+			promql.ContainsBinaryExpression(aggregationInput) {
+			return nil, false, nil
+		}
+		if _, found := promql.NonShardLocalFunction(aggregationInput); found {
+			return nil, false, nil
+		}
+
+		strategy := int(merge.StrategyDedup)
+		switch innerAggregation {
+		case aggregation.Sum, aggregation.Count, aggregation.CountValues:
+			strategy = int(merge.StrategySum)
+		case aggregation.Average:
+			plan, err := weightedAveragePlan(r, query, spec.InnerQuery, finalizer, true)
+			return plan, true, err
+		case aggregation.Minimum:
+			strategy = int(merge.StrategyMin)
+		case aggregation.Maximum:
+			strategy = int(merge.StrategyMax)
+		case aggregation.Group:
+		default:
+			return nil, false, nil
+		}
+
+		variantRequest, err := rewritePromQueryParam(r, spec.InnerQuery)
+		if err != nil {
+			return nil, true, fmt.Errorf("prepare tsm primary variant: %w", err)
+		}
+		plan := &merge.TSMMergePlan{
+			OriginalQuery: query,
+			Variants: []merge.TSMQueryVariant{{
+				Name:              merge.TSMVariantPrimary,
+				Request:           variantRequest,
+				MergeStrategy:     strategy,
+				ResponseAuthority: true,
+			}},
+			Reduction: merge.TSMReductionSpec{
+				Kind:          merge.TSMReductionStandard,
+				InputVariants: merge.TSMReductionPrimaryVariant(),
+			},
+			Finalizer:           finalizer,
+			Completeness:        merge.TSMCompletenessResponseAuthority,
+			StripInjectedLabels: true,
+		}
+		if err := plan.Validate(); err != nil {
+			return nil, true, err
+		}
+		return plan, true, nil
+	}
+
+	if promql.ContainsAggregator(spec.InnerQuery) ||
+		promql.ContainsBinaryExpression(spec.InnerQuery) {
+		return nil, false, nil
+	}
+	if _, found := promql.NonShardLocalFunction(spec.InnerQuery); found {
+		return nil, false, nil
+	}
+
+	plan, err := pooledVariancePlan(r, query, spec)
+	return plan, true, err
+}
+
+func pooledVariancePlan(r *http.Request, originalQuery string,
+	spec promql.VarianceAggregation,
+) (*merge.TSMMergePlan, error) {
+	variantNames := merge.TSMReductionPooledVarianceVariants()
+	operators := []string{aggregation.Count, aggregation.Average, aggregation.StdVar}
+	variants := make([]merge.TSMQueryVariant, len(variantNames))
+	for i, name := range variantNames {
+		variantQuery := promql.VarianceVariantQuery(spec, operators[i])
+		variantRequest, err := rewritePromQueryParam(r, variantQuery)
+		if err != nil {
+			return nil, fmt.Errorf("prepare tsm %s variant: %w", name, err)
+		}
+		variants[i] = merge.TSMQueryVariant{
+			Name:              name,
+			Request:           variantRequest,
+			MergeStrategy:     int(merge.StrategyDedup),
+			ResponseAuthority: i == 0,
+		}
+	}
+
+	plan := &merge.TSMMergePlan{
+		OriginalQuery: originalQuery,
+		Variants:      variants,
+		Reduction: merge.TSMReductionSpec{
+			Kind:          merge.TSMReductionPooledVariance,
+			InputVariants: variantNames,
+		},
+		Finalizer: merge.TSMFinalizerSpec{
+			Enabled: true,
+			Query:   originalQuery,
+		},
+		Completeness:        merge.TSMCompletenessAllVariants,
+		StripInjectedLabels: true,
+	}
+	if err := plan.Validate(); err != nil {
+		return nil, err
+	}
+	return plan, nil
+}
+
+func (c *Client) planLimitRatio(r *http.Request, query string,
+	spec promql.LimitRatioAggregation,
+) (*merge.TSMMergePlan, error) {
+	fanoutQuery := spec.AggregationQuery
+	rewritten := spec.SortSet
+	strategy := int(merge.StrategyDedup)
+	unsupportedWarning := ""
+	finalizer := merge.TSMFinalizerSpec{}
+	if spec.SortSet {
+		finalizer = merge.TSMFinalizerSpec{Enabled: true, Query: query}
+	}
+
+	if agg, aggregationInput, found := promql.CompleteOuterAggregation(spec.InnerQuery); found {
+		candidateStrategy := int(merge.StrategyDedup)
+		weightedAverage := false
+		switch agg {
+		case aggregation.Sum, aggregation.Count, aggregation.CountValues:
+			candidateStrategy = int(merge.StrategySum)
+		case aggregation.Average:
+			weightedAverage = true
+		case aggregation.Minimum:
+			candidateStrategy = int(merge.StrategyMin)
+		case aggregation.Maximum:
+			candidateStrategy = int(merge.StrategyMax)
+		case aggregation.Group:
+			// Deduplication unions the per-shard groups, whose values are all one.
+		default:
+			unsupportedWarning = `trickster: limit_ratio inner aggregator "` + agg +
+				`" cannot be correctly merged across fanout backends; results may be inaccurate`
+		}
+		if unsupportedWarning == "" {
+			globalFunction, hasGlobalFunction := promql.NonShardLocalFunction(aggregationInput)
+			switch {
+			case promql.ContainsAggregator(aggregationInput):
+				unsupportedWarning = "trickster: limit_ratio contains a nested aggregation that " +
+					"cannot be correctly merged across fanout backends; results may be inaccurate"
+			case promql.ContainsBinaryExpression(aggregationInput):
+				unsupportedWarning = "trickster: limit_ratio contains a binary expression that " +
+					"may require cross-shard matching; results may be inaccurate"
+			case hasGlobalFunction:
+				unsupportedWarning = `trickster: limit_ratio contains function "` + globalFunction +
+					`" that may require globally complete input; results may be inaccurate`
+			case weightedAverage:
+				return weightedAveragePlan(r, query, spec.InnerQuery,
+					merge.TSMFinalizerSpec{Enabled: true, Query: query}, true)
+			default:
+				strategy = candidateStrategy
+				fanoutQuery = spec.InnerQuery
+				rewritten = true
+				finalizer = merge.TSMFinalizerSpec{Enabled: true, Query: query}
+			}
+		}
+	} else if promql.ContainsAggregator(spec.InnerQuery) {
+		unsupportedWarning = "trickster: limit_ratio contains a nested aggregation that " +
+			"cannot be correctly merged across fanout backends; results may be inaccurate"
+	} else if promql.ContainsBinaryExpression(spec.InnerQuery) {
+		unsupportedWarning = "trickster: limit_ratio contains a binary expression that " +
+			"may require cross-shard matching; results may be inaccurate"
+	} else if globalFunction, found := promql.NonShardLocalFunction(spec.InnerQuery); found {
+		unsupportedWarning = `trickster: limit_ratio contains function "` + globalFunction +
+			`" that may require globally complete input; results may be inaccurate`
+	}
+	if spec.SortSet {
+		// Global ordering already requires a finalizer. Always merge the
+		// unsampled inner vectors so finalization applies the ratio exactly once,
+		// including when the inner expression retains an inaccuracy warning.
+		fanoutQuery = spec.InnerQuery
+	}
+
+	variantRequest := r
+	var err error
+	if rewritten {
+		variantRequest, err = rewritePromQueryParam(r, fanoutQuery)
+		if err != nil {
+			return nil, fmt.Errorf("prepare tsm primary variant: %w", err)
+		}
+	}
+
+	plan := &merge.TSMMergePlan{
+		OriginalQuery: query,
+		Variants: []merge.TSMQueryVariant{{
+			Name:              merge.TSMVariantPrimary,
+			Request:           variantRequest,
+			MergeStrategy:     strategy,
+			ResponseAuthority: true,
+		}},
+		Reduction: merge.TSMReductionSpec{
+			Kind:          merge.TSMReductionStandard,
+			InputVariants: merge.TSMReductionPrimaryVariant(),
+		},
+		Finalizer:           finalizer,
+		Completeness:        merge.TSMCompletenessResponseAuthority,
+		UnsupportedWarning:  unsupportedWarning,
+		StripInjectedLabels: true,
+	}
+	plan.AllowSingleMemberBypass = !rewritten && !finalizer.Enabled && unsupportedWarning == ""
+	if err := plan.Validate(); err != nil {
+		return nil, err
+	}
+	return plan, nil
+}
+
 func weightedAveragePlan(r *http.Request, originalQuery, fanoutQuery string,
-	finalizer merge.TSMFinalizerSpec,
+	finalizer merge.TSMFinalizerSpec, stripInjectedLabels bool,
 ) (*merge.TSMMergePlan, error) {
 	sumQuery := promql.ReplaceOuterAggregator(fanoutQuery, aggregation.Average, aggregation.Sum)
 	countQuery := promql.ReplaceOuterAggregator(fanoutQuery, aggregation.Average, aggregation.Count)
@@ -136,8 +466,9 @@ func weightedAveragePlan(r *http.Request, originalQuery, fanoutQuery string,
 			Kind:          merge.TSMReductionWeightedAverage,
 			InputVariants: merge.TSMReductionWeightedAverageVariants(),
 		},
-		Finalizer:    finalizer,
-		Completeness: merge.TSMCompletenessAllVariants,
+		Finalizer:           finalizer,
+		Completeness:        merge.TSMCompletenessAllVariants,
+		StripInjectedLabels: stripInjectedLabels,
 	}
 	if err := plan.Validate(); err != nil {
 		return nil, err

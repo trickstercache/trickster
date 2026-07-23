@@ -68,12 +68,46 @@ func validWeightedAverageTSMPlan() *TSMMergePlan {
 	}
 }
 
+func validPooledVarianceTSMPlan() *TSMMergePlan {
+	variants := TSMReductionPooledVarianceVariants()
+	return &TSMMergePlan{
+		OriginalQuery: "stddev(up)",
+		Variants: []TSMQueryVariant{
+			{
+				Name:              variants[0],
+				Request:           testTSMRequest(variants[0]),
+				MergeStrategy:     int(StrategyDedup),
+				ResponseAuthority: true,
+			},
+			{
+				Name:          variants[1],
+				Request:       testTSMRequest(variants[1]),
+				MergeStrategy: int(StrategyDedup),
+			},
+			{
+				Name:          variants[2],
+				Request:       testTSMRequest(variants[2]),
+				MergeStrategy: int(StrategyDedup),
+			},
+		},
+		Reduction: TSMReductionSpec{
+			Kind:          TSMReductionPooledVariance,
+			InputVariants: variants,
+		},
+		Finalizer:    TSMFinalizerSpec{Enabled: true, Query: "stddev(up)"},
+		Completeness: TSMCompletenessAllVariants,
+	}
+}
+
 func TestTSMMergePlanValidate(t *testing.T) {
 	if err := validStandardTSMPlan().Validate(); err != nil {
 		t.Fatalf("valid standard plan: %v", err)
 	}
 	if err := validWeightedAverageTSMPlan().Validate(); err != nil {
 		t.Fatalf("valid weighted-average plan: %v", err)
+	}
+	if err := validPooledVarianceTSMPlan().Validate(); err != nil {
+		t.Fatalf("valid pooled-variance plan: %v", err)
 	}
 	maxStrategyPlan := validStandardTSMPlan()
 	maxStrategyPlan.Variants[0].MergeStrategy = int(MaxStrategyValue)
@@ -133,6 +167,35 @@ func TestTSMMergePlanValidate(t *testing.T) {
 			p.Variants[1].ResponseAuthority = true
 		}},
 		{"multi variant bypass", validWeightedAverageTSMPlan, func(p *TSMMergePlan) { p.AllowSingleMemberBypass = true }},
+		{"pooled missing variant", validPooledVarianceTSMPlan, func(p *TSMMergePlan) {
+			p.Variants = p.Variants[:2]
+		}},
+		{"pooled missing input", validPooledVarianceTSMPlan, func(p *TSMMergePlan) {
+			p.Reduction.InputVariants = p.Reduction.InputVariants[:2]
+		}},
+		{"pooled missing original query", validPooledVarianceTSMPlan, func(p *TSMMergePlan) {
+			p.OriginalQuery = ""
+		}},
+		{"pooled reversed inputs", validPooledVarianceTSMPlan, func(p *TSMMergePlan) {
+			p.Reduction.InputVariants[0], p.Reduction.InputVariants[1] =
+				p.Reduction.InputVariants[1], p.Reduction.InputVariants[0]
+		}},
+		{"pooled wrong merge strategy", validPooledVarianceTSMPlan, func(p *TSMMergePlan) {
+			p.Variants[2].MergeStrategy = int(StrategySum)
+		}},
+		{"pooled wrong completeness", validPooledVarianceTSMPlan, func(p *TSMMergePlan) {
+			p.Completeness = TSMCompletenessResponseAuthority
+		}},
+		{"pooled authority not first input", validPooledVarianceTSMPlan, func(p *TSMMergePlan) {
+			p.Variants[0].ResponseAuthority = false
+			p.Variants[1].ResponseAuthority = true
+		}},
+		{"pooled missing finalizer", validPooledVarianceTSMPlan, func(p *TSMMergePlan) {
+			p.Finalizer = TSMFinalizerSpec{}
+		}},
+		{"pooled bypass", validPooledVarianceTSMPlan, func(p *TSMMergePlan) {
+			p.AllowSingleMemberBypass = true
+		}},
 	}
 
 	for _, test := range tests {

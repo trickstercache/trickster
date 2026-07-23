@@ -70,6 +70,8 @@ type DataSet struct {
 	SizeCropper func(int, time.Time, timeseries.Extent) `msg:"-"`
 	// RangeCropper is the DataSet's CropToRange function, which defaults to DefaultRangeCropper
 	RangeCropper func(timeseries.Extent) `msg:"-"`
+	// ValueOperations provides wire-format-specific value reduction when present.
+	ValueOperations ValueMergeOperations `msg:"-"`
 }
 
 type DataSets []*DataSet
@@ -96,12 +98,13 @@ func (ds *DataSet) CroppedClone(e timeseries.Extent) timeseries.Timeseries {
 	}
 
 	clone := &DataSet{
-		Error:        ds.Error,
-		Sorter:       ds.Sorter,
-		Merger:       ds.Merger,
-		SizeCropper:  ds.SizeCropper,
-		RangeCropper: ds.RangeCropper,
-		Results:      make([]*Result, len(ds.Results)),
+		Error:           ds.Error,
+		Sorter:          ds.Sorter,
+		Merger:          ds.Merger,
+		SizeCropper:     ds.SizeCropper,
+		RangeCropper:    ds.RangeCropper,
+		ValueOperations: ds.ValueOperations,
+		Results:         make([]*Result, len(ds.Results)),
 	}
 	ds.UpdateLock.Lock()
 	defer ds.UpdateLock.Unlock()
@@ -186,12 +189,13 @@ func (ds *DataSet) Clone() timeseries.Timeseries {
 	ds.UpdateLock.Lock()
 	defer ds.UpdateLock.Unlock()
 	clone := &DataSet{
-		Error:        ds.Error,
-		Sorter:       ds.Sorter,
-		Merger:       ds.Merger,
-		SizeCropper:  ds.SizeCropper,
-		RangeCropper: ds.RangeCropper,
-		Results:      make([]*Result, len(ds.Results)),
+		Error:           ds.Error,
+		Sorter:          ds.Sorter,
+		Merger:          ds.Merger,
+		SizeCropper:     ds.SizeCropper,
+		RangeCropper:    ds.RangeCropper,
+		ValueOperations: ds.ValueOperations,
+		Results:         make([]*Result, len(ds.Results)),
 	}
 	if ds.TimeRangeQuery != nil {
 		clone.TimeRangeQuery = ds.TimeRangeQuery.Clone()
@@ -232,6 +236,7 @@ func (ds *DataSet) Merge(sortPoints bool, collection ...timeseries.Timeseries) {
 func (ds *DataSet) DefaultMerger(sortPoints bool, collection ...timeseries.Timeseries) {
 	ds.UpdateLock.Lock()
 	defer ds.UpdateLock.Unlock()
+	ds.inheritValueOperations(collection)
 	ds.mergeDataSets(collection, MergeOpts{SortPoints: sortPoints}, true)
 }
 
@@ -266,7 +271,47 @@ func (ds *DataSet) MergeWithOpts(opts MergeOpts, collection ...timeseries.Timese
 	}
 	ds.UpdateLock.Lock()
 	defer ds.UpdateLock.Unlock()
+	ds.inheritValueOperations(collection)
+	if opts.ValueOperations == nil {
+		opts.ValueOperations = ds.ValueOperations
+	}
 	ds.mergeDataSets(collection, opts, false)
+}
+
+func (ds *DataSet) inheritValueOperations(collection []timeseries.Timeseries) {
+	if ds.ValueOperations != nil {
+		return
+	}
+	for _, ts := range collection {
+		if candidate, ok := ts.(*DataSet); ok && candidate != nil &&
+			candidate.ValueOperations != nil {
+			ds.ValueOperations = candidate.ValueOperations
+			return
+		}
+	}
+}
+
+// FinalizeValueMerge applies provider-specific cross-series merge semantics
+// after all members for a strategy have been accumulated.
+func (ds *DataSet) FinalizeValueMerge(strategy int) {
+	if ds == nil || ds.ValueOperations == nil {
+		return
+	}
+	ds.UpdateLock.Lock()
+	defer ds.UpdateLock.Unlock()
+	ds.ValueOperations.FinalizeMerge(ds, merge.Strategy(strategy))
+}
+
+// PairingHash returns the provider-aware identity used to align related
+// reduction variants, falling back to the historical series-header hash.
+func (ds *DataSet) PairingHash(header *SeriesHeader, queryStatement string) Hash {
+	if ds != nil && ds.ValueOperations != nil {
+		return ds.ValueOperations.PairingHash(header, queryStatement)
+	}
+	if queryStatement == "" {
+		return header.CalculateHash()
+	}
+	return header.CalculateHashWithQueryStatement(queryStatement)
 }
 
 type resultMergeGroup struct {
@@ -365,10 +410,7 @@ func (ds *DataSet) FinalizeWeightedAvg(countDS *DataSet, pairingQueryStatement s
 		return
 	}
 	pairingHash := func(sh *SeriesHeader) Hash {
-		if pairingQueryStatement == "" {
-			return sh.CalculateHash()
-		}
-		return sh.CalculateHashWithQueryStatement(pairingQueryStatement)
+		return ds.PairingHash(sh, pairingQueryStatement)
 	}
 	// Build lookup: statementID → seriesHash → epoch → count value
 	type epochCounts = map[epoch.Epoch]float64
@@ -424,11 +466,21 @@ func (ds *DataSet) FinalizeWeightedAvg(countDS *DataSet, pairingQueryStatement s
 					dropped++
 					continue
 				}
+				if ds.ValueOperations != nil {
+					if value, handled := ds.ValueOperations.DivideValue(
+						s.Points[i].Values[0], cnt,
+					); handled {
+						setPointValue(&s.Points[i], 0, value)
+						kept = append(kept, s.Points[i])
+						continue
+					}
+				}
 				sum := parseFloat(s.Points[i].Values[0])
 				s.Points[i].Values[0] = strconv.FormatFloat(sum/cnt, 'f', -1, 64)
 				kept = append(kept, s.Points[i])
 			}
 			s.Points = kept
+			s.PointSize = kept.Size()
 			if dropped > 0 {
 				ds.Warnings = append(ds.Warnings,
 					"trickster: weighted-avg series "+s.Header.Name+
