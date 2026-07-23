@@ -116,7 +116,7 @@ func TestPrometheusSDK(t *testing.T) {
 	})
 
 	t.Run("rules", func(t *testing.T) {
-		rules, err := sdk.Rules(ctx)
+		rules, err := sdk.Rules(ctx, nil)
 		require.NoError(t, err)
 		t.Logf("rule groups: %d", len(rules.Groups))
 	})
