@@ -105,7 +105,8 @@ func TestPlanTSMMergeStrategies(t *testing.T) {
 		{"quantile(0.9, count by (service) (requests))", int(merge.StrategySum), standard, ""},
 		{"quantile(0.9, min(requests))", int(merge.StrategyMin), standard, ""},
 		{"quantile(0.9, max(requests))", int(merge.StrategyMax), standard, ""},
-		{"quantile(0.9, sum by (service) (requests))", int(merge.StrategyDedup), standard, "native-histogram-aware"},
+		{"quantile(0.9, sum by (service) (requests))", int(merge.StrategySum), standard, ""},
+		{"quantile(0.9, avg by (service) (requests))", int(merge.StrategySum), weighted, ""},
 		{"quantile(0.9, up + down)", int(merge.StrategyDedup), standard, "cross-shard"},
 		{"quantile(scalar(phi), up)", int(merge.StrategyDedup), standard, aggregation.Quantile},
 		{"topk(5, stddev(up))", int(merge.StrategyDedup), standard, aggregation.StdDev},
@@ -495,15 +496,19 @@ func TestPlanTSMMergeQuantileContents(t *testing.T) {
 		}
 	})
 
-	t.Run("unsupported unsorted input remains unchanged", func(t *testing.T) {
+	t.Run("histogram-capable sum uses exact reduction", func(t *testing.T) {
 		const query = "quantile(0.5, sum(requests))"
 		r, _ := http.NewRequest(http.MethodGet,
 			"http://example.com/api/v1/query?query="+url.QueryEscape(query), nil)
 		plan := mustTSMMergePlan(t, r, query)
+		values, _, _ := params.GetRequestValues(plan.Variants[0].Request)
 
-		if plan.Variants[0].Request != r || plan.Finalizer.Enabled ||
-			!strings.Contains(plan.UnsupportedWarning, "native-histogram-aware") {
-			t.Fatalf("fallback plan: %#v", plan)
+		if got := values.Get(promQueryParam); got != "sum(requests)" {
+			t.Fatalf("fanout query got %q", got)
+		}
+		if plan.Variants[0].MergeStrategy != int(merge.StrategySum) ||
+			!plan.Finalizer.Enabled || plan.UnsupportedWarning != "" {
+			t.Fatalf("exact plan: %#v", plan)
 		}
 	})
 }

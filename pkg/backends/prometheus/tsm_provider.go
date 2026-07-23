@@ -122,12 +122,15 @@ func (c *Client) planQuantile(r *http.Request, query string,
 func (c *Client) planGlobalParameterizedAggregation(r *http.Request, query, operator,
 	innerQuery, aggregationQuery string, sortSet bool,
 ) (*merge.TSMMergePlan, error) {
-	strategy, warning := globalInnerMergeStrategy(operator, innerQuery)
+	strategy, warning, weightedAverage := globalInnerMergeStrategy(operator, innerQuery)
 	supported := warning == ""
 
 	fanoutQuery := innerQuery
 	rewritten := true
 	finalizer := merge.TSMFinalizerSpec{Enabled: true, Query: query}
+	if weightedAverage {
+		return weightedAveragePlan(r, query, innerQuery, finalizer, true)
+	}
 	if !supported {
 		fanoutQuery = aggregationQuery
 		rewritten = sortSet
@@ -169,56 +172,54 @@ func (c *Client) planGlobalParameterizedAggregation(r *http.Request, query, oper
 	return plan, nil
 }
 
-func globalInnerMergeStrategy(operator, innerQuery string) (int, string) {
+func globalInnerMergeStrategy(operator, innerQuery string) (int, string, bool) {
 	strategy := int(merge.StrategyDedup)
 	warningPrefix := "trickster: " + operator + " "
 
 	if innerAggregation, aggregationInput, found := promql.CompleteOuterAggregation(innerQuery); found {
 		if promql.ContainsAggregator(aggregationInput) {
 			return strategy, warningPrefix + "contains a nested aggregation that cannot be " +
-				"correctly merged across fanout backends; results may be inaccurate"
+				"correctly merged across fanout backends; results may be inaccurate", false
 		}
 		if promql.ContainsBinaryExpression(aggregationInput) {
 			return strategy, warningPrefix + "contains a binary expression that may require " +
-				"cross-shard matching; results may be inaccurate"
+				"cross-shard matching; results may be inaccurate", false
 		}
 		if globalFunction, found := promql.NonShardLocalFunction(aggregationInput); found {
 			return strategy, warningPrefix + `contains function "` + globalFunction +
-				`" that may require globally complete input; results may be inaccurate`
+				`" that may require globally complete input; results may be inaccurate`, false
 		}
 
 		switch innerAggregation {
-		case aggregation.Count, aggregation.CountValues:
-			return int(merge.StrategySum), ""
+		case aggregation.Sum, aggregation.Count, aggregation.CountValues:
+			return int(merge.StrategySum), "", false
+		case aggregation.Average:
+			return int(merge.StrategySum), "", true
 		case aggregation.Minimum:
-			return int(merge.StrategyMin), ""
+			return int(merge.StrategyMin), "", false
 		case aggregation.Maximum:
-			return int(merge.StrategyMax), ""
+			return int(merge.StrategyMax), "", false
 		case aggregation.Group:
-			return strategy, ""
-		case aggregation.Sum, aggregation.Average:
-			return strategy, warningPrefix + `inner aggregator "` + innerAggregation +
-				`" cannot be correctly merged across fanout backends until ` +
-				`native-histogram-aware reduction is supported; results may be inaccurate`
+			return strategy, "", false
 		default:
 			return strategy, warningPrefix + `inner aggregator "` + innerAggregation +
-				`" cannot be correctly merged across fanout backends; results may be inaccurate`
+				`" cannot be correctly merged across fanout backends; results may be inaccurate`, false
 		}
 	}
 
 	if promql.ContainsAggregator(innerQuery) {
 		return strategy, warningPrefix + "contains a nested aggregation that cannot be " +
-			"correctly merged across fanout backends; results may be inaccurate"
+			"correctly merged across fanout backends; results may be inaccurate", false
 	}
 	if promql.ContainsBinaryExpression(innerQuery) {
 		return strategy, warningPrefix + "contains a binary expression that may require " +
-			"cross-shard matching; results may be inaccurate"
+			"cross-shard matching; results may be inaccurate", false
 	}
 	if globalFunction, found := promql.NonShardLocalFunction(innerQuery); found {
 		return strategy, warningPrefix + `contains function "` + globalFunction +
-			`" that may require globally complete input; results may be inaccurate`
+			`" that may require globally complete input; results may be inaccurate`, false
 	}
-	return strategy, ""
+	return strategy, "", false
 }
 
 func (c *Client) planVariance(r *http.Request, query string,
