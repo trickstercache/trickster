@@ -122,12 +122,20 @@ func (h *rankCandidateHeap) tags(candidate rankCandidate) string {
 	return tags
 }
 
-// FinalizeTSMMerge applies Prometheus-only rank and sort finalization after TSM
-// fanout has accumulated the rewritten inner-query responses. These operations
-// belong here so they use globally merged values rather than per-backend data.
+// FinalizeTSMMerge applies Prometheus-only aggregation and sort finalization
+// after TSM fanout has accumulated the rewritten inner-query responses. These
+// operations belong here so they use globally merged values.
 func (c *Client) FinalizeTSMMerge(query string, ts timeseries.Timeseries) {
 	ds, ok := ts.(*dataset.DataSet)
 	if !ok || ds == nil {
+		return
+	}
+	if spec, found := promql.ParseLimitRatioAggregation(query); found {
+		finalizeLimitRatio(ds, spec)
+		return
+	}
+	if spec, found := promql.ParseVarianceAggregation(query); found {
+		finalizeVarianceAggregation(ds, spec)
 		return
 	}
 	if spec, found := promql.ParseRankAggregation(query); found {

@@ -18,6 +18,7 @@
 package promql
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/aggregation"
@@ -71,6 +72,119 @@ func OuterAggregator(query string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// CompleteOuterAggregator returns the outer aggregation only when it consumes
+// the complete query. This lets callers distinguish sum(up) from shapes such
+// as sum(up) + vector(1), which cannot use the same cross-shard merge plan.
+func CompleteOuterAggregator(query string) (string, bool) {
+	agg, _, found := CompleteOuterAggregation(query)
+	return agg, found
+}
+
+// CompleteOuterAggregation returns the outer aggregation and its vector input
+// only when the aggregation consumes the complete query.
+func CompleteOuterAggregation(query string) (string, string, bool) {
+	q := strings.TrimSpace(query)
+	agg, found := OuterAggregator(q)
+	if !found {
+		return "", "", false
+	}
+	rest := strings.TrimSpace(q[len(agg):])
+
+	var hasGrouping bool
+	if _, next, ok := parseGrouping(rest); ok {
+		hasGrouping = true
+		rest = next
+	}
+	if rest == "" || rest[0] != '(' {
+		return "", "", false
+	}
+	closeIdx := findMatchingCloser(rest, 0, '(', ')')
+	if closeIdx < 0 {
+		return "", "", false
+	}
+	args := strings.TrimSpace(rest[1:closeIdx])
+	trailer := strings.TrimSpace(rest[closeIdx+1:])
+	if !hasGrouping && trailer != "" {
+		if _, next, ok := parseGrouping(trailer); ok {
+			trailer = next
+		}
+	}
+	if trailer != "" || args == "" {
+		return "", "", false
+	}
+
+	input := args
+	switch agg {
+	case aggregation.CountValues, aggregation.TopK, aggregation.BottomK,
+		aggregation.Quantile, aggregation.LimitK, aggregation.LimitRatio:
+		comma := findTopLevelComma(args)
+		if comma < 0 || strings.TrimSpace(args[:comma]) == "" {
+			return "", "", false
+		}
+		input = strings.TrimSpace(args[comma+1:])
+	}
+	if input == "" || findTopLevelComma(input) >= 0 {
+		return "", "", false
+	}
+	return agg, input, true
+}
+
+// ContainsAggregator reports whether query contains an aggregation expression,
+// including one nested below a function or parenthesized expression.
+func ContainsAggregator(query string) bool {
+	q := strings.ToLower(query)
+	var quote byte
+	var escaped bool
+	for i := 0; i < len(q); {
+		c := q[i]
+		if quote != 0 {
+			i++
+			if escaped {
+				escaped = false
+				continue
+			}
+			if c == '\\' && quote != '`' {
+				escaped = true
+				continue
+			}
+			if c == quote {
+				quote = 0
+			}
+			continue
+		}
+		if c == '"' || c == '\'' || c == '`' {
+			quote = c
+			i++
+			continue
+		}
+		if !isPromQLIdentifierStart(c) {
+			i++
+			continue
+		}
+		start := i
+		for i < len(q) && isPromQLIdentifierPart(q[i]) {
+			i++
+		}
+		operator := q[start:i]
+		if !slices.Contains(AllAggregators, operator) {
+			continue
+		}
+		for i < len(q) && isPromQLSpace(q[i]) {
+			i++
+		}
+		if i < len(q) && q[i] == '(' {
+			return true
+		}
+		for _, grouping := range []string{"by", "without"} {
+			if strings.HasPrefix(q[i:], grouping) &&
+				(i+len(grouping) == len(q) || !isPromQLIdentifierPart(q[i+len(grouping)])) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // ReplaceOuterAggregator substitutes the outermost aggregator keyword in
