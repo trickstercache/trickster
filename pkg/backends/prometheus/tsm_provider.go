@@ -122,17 +122,13 @@ func (c *Client) planVariance(r *http.Request, query string,
 			return nil, false, nil
 		}
 
-		if innerAggregation == aggregation.Sum || innerAggregation == aggregation.Average {
-			// These aggregators may produce native histograms. The numeric TSM
-			// reducers cannot preserve their cross-shard semantics, even though
-			// the outer variance aggregation ultimately ignores histograms.
-			return nil, false, nil
-		}
-
 		strategy := int(merge.StrategyDedup)
 		switch innerAggregation {
-		case aggregation.Count, aggregation.CountValues:
+		case aggregation.Sum, aggregation.Count, aggregation.CountValues:
 			strategy = int(merge.StrategySum)
+		case aggregation.Average:
+			plan, err := weightedAveragePlan(r, query, spec.InnerQuery, finalizer, true)
+			return plan, true, err
 		case aggregation.Minimum:
 			strategy = int(merge.StrategyMin)
 		case aggregation.Maximum:

@@ -96,8 +96,8 @@ func TestPlanTSMMergeStrategies(t *testing.T) {
 		{"stdvar(max(requests))", int(merge.StrategyMax), standard, ""},
 		{"stddev(group by (service) (requests))", int(merge.StrategyDedup), standard, ""},
 		// Unsupported aggregations fall back to deduplication with a warning.
-		{"stddev(sum by (service) (requests))", int(merge.StrategyDedup), standard, aggregation.StdDev},
-		{"stdvar(avg by (service) (requests))", int(merge.StrategyDedup), standard, aggregation.StdVar},
+		{"stddev(sum by (service) (requests))", int(merge.StrategySum), standard, ""},
+		{"stdvar(avg by (service) (requests))", int(merge.StrategySum), weighted, ""},
 		{"stddev(up + down)", int(merge.StrategyDedup), standard, aggregation.StdDev},
 		{"stdvar(rate(sum(up)[5m:]))", int(merge.StrategyDedup), standard, aggregation.StdVar},
 		{"stddev(stdvar(up))", int(merge.StrategyDedup), standard, aggregation.StdDev},
@@ -335,23 +335,44 @@ func TestPlanTSMMergeVarianceContents(t *testing.T) {
 		}
 	})
 
-	t.Run("histogram-capable inner aggregations keep fallback", func(t *testing.T) {
-		for _, query := range []string{
-			"stddev(sum by (service) (requests))",
-			"stdvar(avg by (service) (requests))",
-		} {
-			t.Run(query, func(t *testing.T) {
+	t.Run("histogram-capable inner aggregations use exact plans", func(t *testing.T) {
+		tests := []struct {
+			query       string
+			variants    int
+			reduction   merge.TSMReductionKind
+			wantQueries []string
+		}{
+			{
+				query:       "stddev(sum by (service) (requests))",
+				variants:    1,
+				reduction:   merge.TSMReductionStandard,
+				wantQueries: []string{"sum by (service) (requests)"},
+			},
+			{
+				query:       "stdvar(avg by (service) (requests))",
+				variants:    2,
+				reduction:   merge.TSMReductionWeightedAverage,
+				wantQueries: []string{"sum by (service) (requests)", "count by (service) (requests)"},
+			},
+		}
+		for _, test := range tests {
+			t.Run(test.query, func(t *testing.T) {
 				r, _ := http.NewRequest(http.MethodGet,
-					"http://example.com/api/v1/query?query="+url.QueryEscape(query), nil)
-				plan := mustTSMMergePlan(t, r, query)
-				values, _, _ := params.GetRequestValues(plan.Variants[0].Request)
-				if got := values.Get(promQueryParam); got != query {
-					t.Fatalf("fallback query got %q want %q", got, query)
+					"http://example.com/api/v1/query?query="+url.QueryEscape(test.query), nil)
+				plan := mustTSMMergePlan(t, r, test.query)
+				if len(plan.Variants) != test.variants ||
+					plan.Reduction.Kind != test.reduction ||
+					!plan.Finalizer.Enabled || plan.UnsupportedWarning != "" {
+					t.Fatalf("exact plan: %#v", plan)
 				}
-				if plan.Reduction.Kind != merge.TSMReductionStandard ||
-					len(plan.Variants) != 1 ||
-					!strings.Contains(plan.UnsupportedWarning, "cannot be correctly merged") {
-					t.Fatalf("fallback plan: %#v", plan)
+				for i, wantQuery := range test.wantQueries {
+					values, _, _ := params.GetRequestValues(plan.Variants[i].Request)
+					if got := values.Get(promQueryParam); got != wantQuery {
+						t.Fatalf("variant %d query got %q want %q", i, got, wantQuery)
+					}
+					if plan.Variants[i].MergeStrategy != int(merge.StrategySum) {
+						t.Fatalf("variant %d strategy: %d", i, plan.Variants[i].MergeStrategy)
+					}
 				}
 			})
 		}
