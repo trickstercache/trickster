@@ -822,10 +822,7 @@ func pruneUnpairedWeightedAvgSeries(sumDS, countDS *dataset.DataSet, pairingQuer
 		return
 	}
 	pairingHash := func(sh *dataset.SeriesHeader) dataset.Hash {
-		if pairingQueryStatement == "" {
-			return sh.CalculateHash()
-		}
-		return sh.CalculateHashWithQueryStatement(pairingQueryStatement)
+		return sumDS.PairingHash(sh, pairingQueryStatement)
 	}
 	countSeries := make(map[int]map[dataset.Hash]struct{}, len(countDS.Results))
 	for _, r := range countDS.Results {

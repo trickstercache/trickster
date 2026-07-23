@@ -73,9 +73,9 @@ func TestPlanTSMMergeStrategies(t *testing.T) {
 		{"limit_ratio(0.5, min(requests))", int(merge.StrategyMin), standard, ""},
 		{"limit_ratio(0.5, max(requests))", int(merge.StrategyMax), standard, ""},
 		{"limit_ratio(0.5, group by (service) (requests))", int(merge.StrategyDedup), standard, ""},
-		{"limit_ratio(0.5, sum by (service) (requests))", int(merge.StrategyDedup), standard, "native-histogram-aware"},
-		{"limit_ratio(0.5, avg by (service) (requests))", int(merge.StrategyDedup), standard, "native-histogram-aware"},
-		{"sort_desc(limit_ratio(0.5, sum(requests)))", int(merge.StrategyDedup), standard, "native-histogram-aware"},
+		{"limit_ratio(0.5, sum by (service) (requests))", int(merge.StrategySum), standard, ""},
+		{"limit_ratio(0.5, avg by (service) (requests))", int(merge.StrategySum), weighted, ""},
+		{"sort_desc(limit_ratio(0.5, sum(requests)))", int(merge.StrategySum), standard, ""},
 		// Sort wrappers preserve the inner aggregation strategy.
 		{"sort(sum(up))", int(merge.StrategySum), standard, ""},
 		{"sort_desc(count by (service) (up))", int(merge.StrategySum), standard, ""},
@@ -306,19 +306,28 @@ func TestPlanTSMMergeLimitRatioContents(t *testing.T) {
 		}
 	})
 
-	t.Run("histogram-capable inner aggregations retain fallback", func(t *testing.T) {
-		for _, operator := range []string{aggregation.Sum, aggregation.Average} {
-			query := "limit_ratio(-0.5, " + operator + " by (service) (requests))"
+	t.Run("histogram-capable inner aggregations use exact plans", func(t *testing.T) {
+		tests := []struct {
+			operator  string
+			reduction merge.TSMReductionKind
+			variants  int
+		}{
+			{aggregation.Sum, merge.TSMReductionStandard, 1},
+			{aggregation.Average, merge.TSMReductionWeightedAverage, 2},
+		}
+		for _, test := range tests {
+			query := "limit_ratio(-0.5, " + test.operator + " by (service) (requests))"
 			r, _ := http.NewRequest(http.MethodGet,
 				"http://example.com/api/v1/query?query="+url.QueryEscape(query), nil)
 			plan := mustTSMMergePlan(t, r, query)
 
-			if plan.Variants[0].Request != r || plan.Variants[0].MergeStrategy != int(merge.StrategyDedup) ||
-				plan.Reduction.Kind != merge.TSMReductionStandard || plan.Finalizer.Enabled {
-				t.Fatalf("%s fallback plan: %#v", operator, plan)
+			if len(plan.Variants) != test.variants ||
+				plan.Variants[0].MergeStrategy != int(merge.StrategySum) ||
+				plan.Reduction.Kind != test.reduction || !plan.Finalizer.Enabled {
+				t.Fatalf("%s exact plan: %#v", test.operator, plan)
 			}
-			if !strings.Contains(plan.UnsupportedWarning, "native-histogram-aware") {
-				t.Fatalf("%s warning: %q", operator, plan.UnsupportedWarning)
+			if plan.UnsupportedWarning != "" {
+				t.Fatalf("%s warning: %q", test.operator, plan.UnsupportedWarning)
 			}
 		}
 	})

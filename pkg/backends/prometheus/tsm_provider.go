@@ -118,12 +118,12 @@ func (c *Client) planLimitRatio(r *http.Request, query string,
 
 	if agg, aggregationInput, found := promql.CompleteOuterAggregation(spec.InnerQuery); found {
 		candidateStrategy := int(merge.StrategyDedup)
-		requiresHistogramAwareReduction := false
+		weightedAverage := false
 		switch agg {
-		case aggregation.Count, aggregation.CountValues:
+		case aggregation.Sum, aggregation.Count, aggregation.CountValues:
 			candidateStrategy = int(merge.StrategySum)
-		case aggregation.Sum, aggregation.Average:
-			requiresHistogramAwareReduction = true
+		case aggregation.Average:
+			weightedAverage = true
 		case aggregation.Minimum:
 			candidateStrategy = int(merge.StrategyMin)
 		case aggregation.Maximum:
@@ -146,11 +146,9 @@ func (c *Client) planLimitRatio(r *http.Request, query string,
 			case hasGlobalFunction:
 				unsupportedWarning = `trickster: limit_ratio contains function "` + globalFunction +
 					`" that may require globally complete input; results may be inaccurate`
-			case requiresHistogramAwareReduction:
-				unsupportedWarning = `trickster: limit_ratio inner aggregator "` + agg +
-					`" cannot be correctly merged across fanout backends until ` +
-					`native-histogram-aware reduction is supported; ` +
-					`results may be inaccurate`
+			case weightedAverage:
+				return weightedAveragePlan(r, query, spec.InnerQuery,
+					merge.TSMFinalizerSpec{Enabled: true, Query: query}, true)
 			default:
 				strategy = candidateStrategy
 				fanoutQuery = spec.InnerQuery

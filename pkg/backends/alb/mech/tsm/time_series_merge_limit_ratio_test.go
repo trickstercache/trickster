@@ -17,7 +17,9 @@
 package tsm
 
 import (
+	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -28,6 +30,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus"
+	prommodel "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/model"
 	prop "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/options"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
@@ -101,29 +104,23 @@ func limitRatioHistogramMemberHandler(histogram string, qr *queryRecorder) http.
 			qr.Append(query)
 		}
 
-		fieldName := "histogram"
-		value := histogram
+		resultValue := `"histogram":[100,` + histogram + `]`
 		if strings.HasPrefix(strings.TrimSpace(query), "count") {
-			fieldName = "value"
-			value = "1"
+			resultValue = `"value":[100,"1"]`
 		}
-		series := &dataset.Series{
-			Header: dataset.SeriesHeader{
-				Name:            "native_histogram",
-				Tags:            dataset.Tags{"service": "api"},
-				QueryStatement:  query,
-				ValueFieldsList: timeseries.FieldDefinitions{{Name: fieldName, DataType: timeseries.String}},
-			},
-			Points: dataset.Points{{
-				Epoch:  epoch.Epoch(100),
-				Size:   len(value) + 32,
-				Values: []any{value},
-			}},
+		body := `{"status":"success","data":{"resultType":"vector","result":[{` +
+			`"metric":{"service":"api"},` + resultValue + `}]}}`
+		ts, err := prommodel.UnmarshalTimeseries([]byte(body), &timeseries.TimeRangeQuery{
+			Statement: query,
+		})
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 
 		rsc := request.GetResources(r)
 		if rsc != nil {
-			rsc.TS = &dataset.DataSet{Results: dataset.Results{{SeriesList: dataset.SeriesList{series}}}}
+			rsc.TS = ts
 			rsc.MergeFunc = merge.TimeseriesMergeFuncWithStrategy(nil, rsc.TSMergeStrategy)
 			rsc.BatchMergeFunc = merge.TimeseriesBatchMergeFuncWithStrategy(rsc.TSMergeStrategy)
 			rsc.MergeRespondFunc = limitRatioRespondFunc
@@ -240,7 +237,39 @@ func TestTSMLimitRatioMergesInnerAggregationBeforeSampling(t *testing.T) {
 	}
 }
 
-func TestTSMLimitRatioHistogramInnerAggregationsRetainFallback(t *testing.T) {
+func TestTSMLimitRatioMergesInnerFloatSumBeforeSampling(t *testing.T) {
+	logger.SetLogger(testLogger)
+	const (
+		query = "limit_ratio(-1, sum by (service) (requests))"
+		inner = "sum by (service) (requests)"
+	)
+	qr := &queryRecorder{}
+	targets := pool.Targets{
+		newLimitRatioTarget(limitRatioMemberHandler(
+			map[string]string{"c": "2", "d": "10"}, nil, qr),
+			limitRatioBackend(nil)),
+		newLimitRatioTarget(limitRatioMemberHandler(
+			map[string]string{"c": "3", "d": "1"}, nil, qr),
+			limitRatioBackend(nil)),
+	}
+
+	w := serveLimitRatio(t, targets, query)
+
+	if got, want := w.Body.String(), "c=5,d=11|warnings="; got != want {
+		t.Fatalf("body got %q want %q", got, want)
+	}
+	queries := qr.Queries()
+	if len(queries) != 2 {
+		t.Fatalf("fanout queries got %v want two entries", queries)
+	}
+	for _, got := range queries {
+		if got != inner {
+			t.Fatalf("fanout query got %q want %q", got, inner)
+		}
+	}
+}
+
+func TestTSMLimitRatioHistogramInnerAggregationsUseExactReduction(t *testing.T) {
 	logger.SetLogger(testLogger)
 	histograms := []string{
 		`{"count":"10","sum":"3.14","schema":3,"zero_threshold":0.001,"zero_count":"2",` +
@@ -259,16 +288,48 @@ func TestTSMLimitRatioHistogramInnerAggregationsRetainFallback(t *testing.T) {
 
 			w := serveLimitRatio(t, targets, query)
 			body := w.Body.String()
-			if w.Code != http.StatusOK || strings.Contains(body, "NaN") ||
-				(!strings.Contains(body, histograms[0]) && !strings.Contains(body, histograms[1])) {
+			if w.Code != http.StatusOK || strings.Contains(body, "NaN") {
 				t.Fatalf("status=%d body=%q", w.Code, body)
 			}
-			if !strings.Contains(body, "native-histogram-aware") {
-				t.Fatalf("body missing compatibility warning: %q", body)
+			if strings.Contains(body, "warnings=PromQL") ||
+				strings.Contains(body, "native-histogram-aware") {
+				t.Fatalf("body has unexpected warning: %q", body)
 			}
+			value := strings.TrimSuffix(strings.TrimPrefix(body, "api="), "|warnings=")
+			var histogram struct {
+				Count   string  `json:"count"`
+				Sum     string  `json:"sum"`
+				Buckets [][]any `json:"buckets"`
+			}
+			if err := json.Unmarshal([]byte(value), &histogram); err != nil {
+				t.Fatalf("decode merged histogram %q: %v", value, err)
+			}
+			wantCount, wantSum := "30", "9.42"
+			wantZero, wantPositive := "6", "3"
+			if operator == "avg" {
+				wantCount, wantSum = "15", "4.71"
+				wantZero, wantPositive = "3", "1.5"
+			}
+			if histogram.Count != wantCount || histogram.Sum != wantSum ||
+				len(histogram.Buckets) != 2 ||
+				histogram.Buckets[0][3] != wantZero ||
+				histogram.Buckets[1][3] != wantPositive {
+				t.Fatalf("merged histogram got %#v", histogram)
+			}
+
 			queries := qr.Queries()
-			if len(queries) != 2 || queries[0] != query || queries[1] != query {
-				t.Fatalf("fanout queries got %v want two unchanged queries", queries)
+			wantQueries := map[string]int{
+				"sum by (service) (native_histogram)": 2,
+			}
+			if operator == "avg" {
+				wantQueries["count by (service) (native_histogram)"] = 2
+			}
+			gotQueries := make(map[string]int, len(wantQueries))
+			for _, got := range queries {
+				gotQueries[got]++
+			}
+			if !maps.Equal(gotQueries, wantQueries) {
+				t.Fatalf("fanout queries got %v want %v", gotQueries, wantQueries)
 			}
 		})
 	}

@@ -430,6 +430,9 @@ func reducePlan(
 	indexes := make(map[string]int, len(plan.Variants))
 	for i, variant := range plan.Variants {
 		indexes[variant.Name] = i
+		if ds, ok := accumulators[i].GetTSData().(*dataset.DataSet); ok && ds != nil {
+			ds.FinalizeValueMerge(variant.MergeStrategy)
+		}
 	}
 
 	switch plan.Reduction.Kind {
