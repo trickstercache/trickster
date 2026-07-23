@@ -41,7 +41,7 @@ func IsScalarExpression(query string) bool {
 			return strings.TrimSpace(inner) == ""
 		}
 	}
-	if _, err := strconv.ParseFloat(q, 64); err == nil {
+	if isScalarLiteral(q) {
 		return true
 	}
 	if (q[0] == '+' || q[0] == '-') && IsScalarExpression(q[1:]) {
@@ -55,6 +55,50 @@ func IsScalarExpression(query string) bool {
 		right = trimBoolModifier(right)
 	}
 	return IsScalarExpression(left) && IsScalarExpression(right)
+}
+
+func isScalarLiteral(value string) bool {
+	if _, err := strconv.ParseFloat(value, 64); err == nil {
+		return true
+	}
+	if len(value) > 2 && value[0] == '0' && (value[1] == 'x' || value[1] == 'X') {
+		for i := 2; i < len(value); i++ {
+			if !isHexDigit(value[i]) {
+				return false
+			}
+		}
+		return true
+	}
+	return isDurationLiteral(value)
+}
+
+func isHexDigit(c byte) bool {
+	return (c >= '0' && c <= '9') ||
+		(c >= 'a' && c <= 'f') ||
+		(c >= 'A' && c <= 'F')
+}
+
+func isDurationLiteral(value string) bool {
+	const units = "smhdwy"
+	for len(value) > 0 {
+		digits := 0
+		for digits < len(value) && value[digits] >= '0' && value[digits] <= '9' {
+			digits++
+		}
+		if digits == 0 || digits == len(value) {
+			return false
+		}
+		value = value[digits:]
+		if strings.HasPrefix(value, "ms") {
+			value = value[2:]
+			continue
+		}
+		if !strings.ContainsRune(units, rune(value[0])) {
+			return false
+		}
+		value = value[1:]
+	}
+	return true
 }
 
 func isComparisonOperator(operator string) bool {

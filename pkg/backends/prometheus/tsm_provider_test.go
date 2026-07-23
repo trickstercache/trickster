@@ -52,6 +52,8 @@ func TestPlanTSMMergeStrategies(t *testing.T) {
 		{"scalar(count(up))", int(merge.StrategyScalar), standard, ""},
 		{"(scalar(count(up)))", int(merge.StrategyScalar), standard, ""},
 		{"scalar(count(up)) + 1", int(merge.StrategyScalar), standard, ""},
+		{"scalar(count(up)) + 0x2", int(merge.StrategyScalar), standard, ""},
+		{"scalar(count(up)) + 1h", int(merge.StrategyScalar), standard, ""},
 		// Sum, count, and count_values accumulate shard values.
 		{"sum(up)", int(merge.StrategySum), standard, ""},
 		{"sum by (job) (up)", int(merge.StrategySum), standard, ""},

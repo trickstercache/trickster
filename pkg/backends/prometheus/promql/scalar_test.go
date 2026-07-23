@@ -29,6 +29,10 @@ func TestIsScalarExpression(t *testing.T) {
 		"1 + scalar(count(up)) * 2":     true,
 		"-scalar(count(up))":            true,
 		"1e-3 + scalar(count(up))":      true,
+		"scalar(count(up)) + 0x2":       true,
+		"scalar(count(up)) + 0XAf":      true,
+		"scalar(count(up)) + 1h":        true,
+		"scalar(count(up)) + 1h30m":     true,
 		"scalar(up) == bool 1":          true,
 		"time()":                        true,
 		"pi()":                          true,
@@ -40,6 +44,9 @@ func TestIsScalarExpression(t *testing.T) {
 		"vector(1)":                     false,
 		"sum(up)":                       false,
 		"scalar":                        false,
+		"scalar(count(up)) + 0x":        false,
+		"scalar(count(up)) + 0xg":       false,
+		"scalar(count(up)) + 1hour":     false,
 		"rate(http_requests_total[5m])": false,
 	}
 	for query, want := range tests {
