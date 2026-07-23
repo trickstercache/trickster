@@ -18,7 +18,6 @@ package promql
 
 import (
 	"math/big"
-	"slices"
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/aggregation"
@@ -147,35 +146,16 @@ func parseGrouping(input string) (AggregationGrouping, string, bool) {
 		if closeIdx < 0 {
 			return AggregationGrouping{}, input, false
 		}
-		labels := parseLabels(rest[1:closeIdx])
+		labels, ok := parseLabels(rest[1:closeIdx])
+		if !ok {
+			return AggregationGrouping{}, input, false
+		}
 		return AggregationGrouping{
 			Labels:  labels,
 			Without: kw == "without",
 		}, strings.TrimSpace(rest[closeIdx+1:]), true
 	}
 	return AggregationGrouping{}, input, false
-}
-
-func parseLabels(input string) []string {
-	if strings.TrimSpace(input) == "" {
-		return nil
-	}
-	parts := strings.Split(input, ",")
-	seen := make(map[string]struct{}, len(parts))
-	labels := make([]string, 0, len(parts))
-	for _, part := range parts {
-		label := strings.TrimSpace(part)
-		if label == "" {
-			continue
-		}
-		if _, ok := seen[label]; ok {
-			continue
-		}
-		seen[label] = struct{}{}
-		labels = append(labels, label)
-	}
-	slices.Sort(labels)
-	return labels
 }
 
 func unwrapUnaryFunction(query, name string) (string, bool) {

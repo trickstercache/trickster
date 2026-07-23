@@ -5,6 +5,7 @@ go 1.26.5
 require (
 	github.com/alicebob/miniredis/v2 v2.37.0
 	github.com/andybalholm/brotli v1.2.2
+	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/dgraph-io/badger/v4 v4.9.4
 	github.com/dgraph-io/ristretto/v2 v2.4.2
 	github.com/influxdata/influxdb v1.12.4
@@ -80,7 +81,6 @@ require (
 	github.com/catenacyber/perfsprint v0.10.1 // indirect
 	github.com/ccojocar/zxcvbn-go v1.0.4 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
-	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/charithe/durationcheck v0.0.11 // indirect
 	github.com/charmbracelet/colorprofile v0.2.3-0.20250311203215-f60798e515dc // indirect
 	github.com/charmbracelet/lipgloss v1.1.0 // indirect

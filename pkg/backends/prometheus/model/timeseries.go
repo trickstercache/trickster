@@ -117,12 +117,13 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 		wfd.Envelope = &Envelope{}
 	}
 	ds := &dataset.DataSet{
-		Status:         wfd.Status,
-		Error:          wfd.Error,
-		ErrorType:      wfd.ErrorType,
-		Warnings:       wfd.Warnings,
-		TimeRangeQuery: trq,
-		ExtentList:     timeseries.ExtentList{trq.Extent},
+		Status:          wfd.Status,
+		Error:           wfd.Error,
+		ErrorType:       wfd.ErrorType,
+		Warnings:        wfd.Warnings,
+		TimeRangeQuery:  trq,
+		ExtentList:      timeseries.ExtentList{trq.Extent},
+		ValueOperations: prometheusValueOperations,
 	}
 
 	switch wfd.Data.ResultType {

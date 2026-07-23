@@ -18,6 +18,15 @@ package dataset
 
 import "github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
 
+// ValueMergeOperations lets a wire-format provider extend numeric dataset
+// reduction for provider-specific values such as native histograms.
+type ValueMergeOperations interface {
+	MergeValues(dst, src any, strategy merge.Strategy) (any, bool)
+	DivideValue(value any, divisor float64) (any, bool)
+	PairingHash(header *SeriesHeader, queryStatement string) Hash
+	FinalizeMerge(ds *DataSet, strategy merge.Strategy)
+}
+
 // MergeOpts controls a single merge invocation across the dataset package.
 // All fields have zero-value defaults that preserve historical behavior:
 // SortPoints=false leaves the output unsorted, Strategy=StrategyDedup
@@ -27,7 +36,8 @@ import "github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
 // Strategy is StrategyDedup, adjacent (sorted) points whose epoch
 // difference is <= ToleranceNanos collapse to a single survivor.
 type MergeOpts struct {
-	SortPoints     bool
-	Strategy       merge.Strategy
-	ToleranceNanos int64
+	SortPoints      bool
+	Strategy        merge.Strategy
+	ToleranceNanos  int64
+	ValueOperations ValueMergeOperations
 }
