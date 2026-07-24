@@ -205,6 +205,7 @@ func TestLimitQueryRangeALB(t *testing.T) {
 	target := pool.NewTarget(http.HandlerFunc(tu.BasicHTTPHandler), status, mockMemberBackend)
 	p := pool.New([]*pool.Target{target}, 1)
 	defer p.Stop()
+	albpool.WaitHealthy(t, p, 1)
 
 	h := &handler{mergePaths: []string{"/"}}
 	h.SetPool(p)
