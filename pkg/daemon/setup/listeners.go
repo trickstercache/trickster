@@ -20,7 +20,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/http"
-	"sort"
+	"slices"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/config"
@@ -95,7 +95,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 	for key := range newListeners {
 		names = append(names, key)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	tracersAssigned := false
 	for _, key := range names {
 		desired := newListeners[key]
@@ -113,7 +113,8 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 			config, err := conf.TLSCertConfigForListener(desired.listenerName)
 			if err != nil {
 				logger.Error("unable to start TLS listener", logging.Pairs{
-					"listenerName": desired.listenerName, "error": err.Error()})
+					"listenerName": desired.listenerName, "error": err.Error(),
+				})
 				continue
 			}
 			tlsConfig = config
@@ -152,15 +153,19 @@ func desiredListeners(conf *config.Config, listenerRouters map[string]router.Rou
 		}
 		if options.ListenPort > 0 {
 			key := listenerKey(name, false)
-			out[key] = desiredListener{key: key, listenerName: name,
+			out[key] = desiredListener{
+				key: key, listenerName: name,
 				address: options.ListenAddress, port: options.ListenPort,
-				options: options, router: r}
+				options: options, router: r,
+			}
 		}
 		if options.ServeTLS && options.TLSListenPort > 0 {
 			key := listenerKey(name, true)
-			out[key] = desiredListener{key: key, listenerName: name,
+			out[key] = desiredListener{
+				key: key, listenerName: name,
 				address: options.TLSListenAddress, port: options.TLSListenPort,
-				tls: true, options: options, router: r}
+				tls: true, options: options, router: r,
+			}
 		}
 	}
 	return out
@@ -191,7 +196,8 @@ func updateListenerCertificates(conf *config.Config, desired desiredListener, lg
 	tlsConfig, err := conf.TLSCertConfigForListener(desired.listenerName)
 	if err != nil {
 		logger.Error("unable to update TLS listener certificates", logging.Pairs{
-			"listenerName": desired.listenerName, "error": err.Error()})
+			"listenerName": desired.listenerName, "error": err.Error(),
+		})
 		return
 	}
 	if tlsConfig == nil || len(tlsConfig.Certificates) == 0 {

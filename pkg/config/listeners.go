@@ -18,10 +18,12 @@ package config
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
 	frontend "github.com/trickstercache/trickster/v2/pkg/frontend/options"
+
 	"gopkg.in/yaml.v2"
 )
 
@@ -32,12 +34,12 @@ const (
 )
 
 func (c *Config) detectListenerSections(yml string) error {
-	raw := make(map[interface{}]interface{})
+	raw := make(map[any]any)
 	if err := yaml.Unmarshal([]byte(yml), &raw); err != nil {
 		return err
 	}
 	c.listenerOverrides = make(map[string][]byte)
-	if values, ok := raw["listeners"].(map[interface{}]interface{}); ok {
+	if values, ok := raw["listeners"].(map[any]any); ok {
 		for rawName, value := range values {
 			if name, ok := rawName.(string); ok {
 				data, err := yaml.Marshal(value)
@@ -50,7 +52,7 @@ func (c *Config) detectListenerSections(yml string) error {
 	}
 	_, c.legacyFrontendUsed = raw["frontend"]
 	_, c.legacyMetricsUsed = raw["metrics"]
-	if values, ok := raw["mgmt"].(map[interface{}]interface{}); ok {
+	if values, ok := raw["mgmt"].(map[any]any); ok {
 		_, hasAddress := values["listen_address"]
 		_, hasPort := values["listen_port"]
 		c.legacyMgmtUsed = hasAddress || hasPort
@@ -133,10 +135,8 @@ func inheritLegacyFrontendSettings(dst *listener.Options, src *frontend.Options)
 }
 
 func (c *Config) addLoaderWarning(warning string) {
-	for _, existing := range c.LoaderWarnings {
-		if existing == warning {
-			return
-		}
+	if slices.Contains(c.LoaderWarnings, warning) {
+		return
 	}
 	c.LoaderWarnings = append(c.LoaderWarnings, warning)
 }

@@ -19,7 +19,7 @@ package options
 import (
 	"fmt"
 	"maps"
-	"sort"
+	"slices"
 
 	ct "github.com/trickstercache/trickster/v2/pkg/config/types"
 	ae "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/errors"
@@ -65,7 +65,7 @@ func (o *Options) CloneYAMLSafe() *Options {
 	for userName := range out.Users {
 		userNames = append(userNames, userName)
 	}
-	sort.Strings(userNames)
+	slices.Sort(userNames)
 	out.Users = make(ct.EnvStringMap, len(userNames))
 	for i := range userNames {
 		out.Users[fmt.Sprintf("user%d", i+1)] = "*****"

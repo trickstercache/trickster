@@ -17,7 +17,9 @@
 package validate
 
 import (
+	stderrors "errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
@@ -75,10 +77,7 @@ func Validate(c *config.Config) error {
 	if err := Backends(c); err != nil {
 		return err
 	}
-	if err := Listeners(c); err != nil {
-		return err
-	}
-	return nil
+	return Listeners(c)
 }
 
 func Rewriters(c *config.Config) error {
@@ -152,7 +151,7 @@ func Backends(c *config.Config) error {
 // Listeners validates inbound listener definitions and backend mappings.
 func Listeners(c *config.Config) error {
 	if c == nil || len(c.Listeners) == 0 {
-		return fmt.Errorf("no listeners configured")
+		return stderrors.New("no listeners configured")
 	}
 
 	mapped := make(map[string]int, len(c.Listeners))
@@ -179,7 +178,7 @@ func Listeners(c *config.Config) error {
 	ports := make(map[string]string)
 	for name, options := range c.Listeners {
 		if name == "" || options == nil {
-			return fmt.Errorf("invalid empty listener configuration")
+			return stderrors.New("invalid empty listener configuration")
 		}
 		options.Protocol = strings.ToLower(options.Protocol)
 		if options.Protocol == "" {
@@ -232,10 +231,8 @@ func Listeners(c *config.Config) error {
 }
 
 func addWarning(c *config.Config, warning string) {
-	for _, existing := range c.LoaderWarnings {
-		if existing == warning {
-			return
-		}
+	if slices.Contains(c.LoaderWarnings, warning) {
+		return
 	}
 	c.LoaderWarnings = append(c.LoaderWarnings, warning)
 }
