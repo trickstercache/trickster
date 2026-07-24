@@ -19,6 +19,7 @@ package config
 import (
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
 	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
 )
@@ -165,5 +166,46 @@ func TestTLSCertConfig_MixedBackendsOnlyValidContribute(t *testing.T) {
 	if len(got.Certificates) != 1 {
 		t.Errorf("expected exactly 1 certificate (only the valid backend contributes), got %d",
 			len(got.Certificates))
+	}
+}
+
+func TestTLSCertConfigForListenerFiltersMappedBackends(t *testing.T) {
+	config := NewConfig()
+	config.Listeners["custom"] = listener.New("custom")
+	config.Listeners["custom"].ServeTLS = true
+	config.Listeners[listener.DefaultFrontendName].ServeTLS = true
+
+	defaultTLS, closeDefault, err := tlsConfig("")
+	if closeDefault != nil {
+		defer closeDefault()
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	customTLS, closeCustom, err := tlsConfig("")
+	if closeCustom != nil {
+		defer closeCustom()
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.Backends["default"].TLS = defaultTLS
+	customBackend := config.Backends["default"].Clone()
+	customBackend.ListenerName = "custom"
+	customBackend.TLS = customTLS
+	config.Backends["custom"] = customBackend
+
+	for _, listenerName := range []string{listener.DefaultFrontendName, "custom"} {
+		got, err := config.TLSCertConfigForListener(listenerName)
+		if err != nil {
+			t.Fatalf("server %q: %v", listenerName, err)
+		}
+		if got == nil {
+			t.Fatalf("server %q got no TLS configuration", listenerName)
+		}
+		if len(got.Certificates) != 1 {
+			t.Fatalf("server %q got %d certificates, want exactly one",
+				listenerName, len(got.Certificates))
+		}
 	}
 }

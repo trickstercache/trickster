@@ -121,10 +121,7 @@ func Start(ctx context.Context, args ...string) error {
 	mtx.Unlock()
 	signaling.Wait(ctx, hupFunc)
 	if si.Listeners != nil {
-		si.Listeners.DrainAndClose("httpListener", 0)
-		si.Listeners.DrainAndClose("tlsListener", 0)
-		si.Listeners.DrainAndClose("metricsListener", 0)
-		si.Listeners.DrainAndClose("mgmtListener", 0)
+		si.Listeners.Shutdown(0)
 	}
 	return nil
 }

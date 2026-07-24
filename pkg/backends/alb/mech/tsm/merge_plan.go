@@ -62,6 +62,9 @@ func planNeedsLabelStripping(plan *tsmerge.TSMMergePlan) bool {
 	if plan == nil || len(plan.Variants) > 1 {
 		return plan != nil
 	}
+	if plan.StripInjectedLabels {
+		return true
+	}
 	for _, variant := range plan.Variants {
 		if tsmerge.Strategy(variant.MergeStrategy) != tsmerge.StrategyDedup {
 			return true
@@ -427,6 +430,9 @@ func reducePlan(
 	indexes := make(map[string]int, len(plan.Variants))
 	for i, variant := range plan.Variants {
 		indexes[variant.Name] = i
+		if ds, ok := accumulators[i].GetTSData().(*dataset.DataSet); ok && ds != nil {
+			ds.FinalizeValueMerge(variant.MergeStrategy)
+		}
 	}
 
 	switch plan.Reduction.Kind {

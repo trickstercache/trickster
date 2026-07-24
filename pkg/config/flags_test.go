@@ -20,6 +20,8 @@ import (
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	"github.com/trickstercache/trickster/v2/pkg/config/listener"
+	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
 )
 
 func TestLoadFlags(t *testing.T) {
@@ -57,5 +59,19 @@ func TestLoadFlags(t *testing.T) {
 	}
 	if c.Metrics.ListenPort != 9092 {
 		t.Errorf("wanted \"%d\". got \"%d\".", 9092, c.Metrics.ListenPort)
+	}
+	if err := c.applyLegacyListenerOptions(); err != nil {
+		t.Fatal(err)
+	}
+	if c.Listeners[listener.DefaultFrontendName].ListenPort != 9091 {
+		t.Errorf("expected proxy flag port to map to default frontend")
+	}
+	if c.Listeners[mgmt.ListenerNameMetrics].ListenPort != 9092 {
+		t.Errorf("expected metrics flag port to map to metrics server")
+	}
+	for _, warning := range c.LoaderWarnings {
+		if warning == legacyFrontendWarning || warning == legacyMetricsWarning {
+			t.Errorf("supported port flag produced deprecation warning %q", warning)
+		}
 	}
 }

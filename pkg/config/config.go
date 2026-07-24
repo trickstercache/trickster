@@ -29,6 +29,7 @@ import (
 	rule "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/negative"
 	cache "github.com/trickstercache/trickster/v2/pkg/cache/options"
+	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
 	fropt "github.com/trickstercache/trickster/v2/pkg/frontend/options"
 	lo "github.com/trickstercache/trickster/v2/pkg/observability/logging/options"
@@ -51,7 +52,10 @@ type Config struct {
 	// Caches is a map of CacheConfigs
 	Caches cache.Lookup `yaml:"caches,omitempty"`
 	// Frontend provides configurations about the Proxy Front End
+	// Frontend is deprecated and will be phased out in a future release
 	Frontend *fropt.Options `yaml:"frontend,omitempty"`
+	// Listeners maps inbound listener names to their configurations.
+	Listeners listener.Lookup `yaml:"listeners,omitempty"`
 	// Logging provides configurations that affect logging behavior
 	Logging *lo.Options `yaml:"logging,omitempty"`
 	// Metrics provides configurations for collecting Metrics about the application
@@ -81,6 +85,11 @@ type Config struct {
 	providedProvider       string
 
 	LoaderWarnings []string `yaml:"-"`
+
+	listenerOverrides  map[string][]byte
+	legacyFrontendUsed bool
+	legacyMetricsUsed  bool
+	legacyMgmtUsed     bool
 }
 
 // MainConfig is a collection of general configuration values.
@@ -121,7 +130,8 @@ func NewConfig() *Config {
 		Backends: bo.Lookup{
 			defaultResourceName: bo.New(),
 		},
-		Frontend: fropt.New(),
+		Frontend:  fropt.New(),
+		Listeners: listener.NewLookup(),
 		NegativeCacheConfigs: negative.ConfigLookup{
 			defaultResourceName: negative.New(),
 		},
@@ -149,6 +159,9 @@ func (c *Config) loadFile(flags *Flags) error {
 
 // loadYAMLConfig loads application configuration from a YAML-formatted byte slice.
 func (c *Config) loadYAMLConfig(yml string) error {
+	if err := c.detectListenerSections(yml); err != nil {
+		return err
+	}
 	err := yaml.Unmarshal([]byte(yml), &c)
 	if err != nil {
 		return err
@@ -226,6 +239,16 @@ func (c *Config) Clone() *Config {
 	nc.Main.ServerName = c.Main.ServerName
 
 	nc.MgmtConfig = c.MgmtConfig.Clone()
+	nc.Listeners = c.Listeners.Clone()
+	if len(c.listenerOverrides) > 0 {
+		nc.listenerOverrides = make(map[string][]byte, len(c.listenerOverrides))
+		for name, data := range c.listenerOverrides {
+			nc.listenerOverrides[name] = append([]byte(nil), data...)
+		}
+	}
+	nc.legacyFrontendUsed = c.legacyFrontendUsed
+	nc.legacyMetricsUsed = c.legacyMetricsUsed
+	nc.legacyMgmtUsed = c.legacyMgmtUsed
 
 	nc.Main.configFilePath = c.Main.configFilePath
 	nc.Main.configLastModified = c.Main.configLastModified
@@ -333,6 +356,10 @@ func (c *Config) String() string {
 
 	for k, o := range cp.Backends {
 		cp.Backends[k] = o.CloneYAMLSafe()
+	}
+
+	for k, o := range cp.Authenticators {
+		cp.Authenticators[k] = o.CloneYAMLSafe()
 	}
 
 	// strip Redis password

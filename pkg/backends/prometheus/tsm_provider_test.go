@@ -71,6 +71,17 @@ func TestPlanTSMMergeStrategies(t *testing.T) {
 		{"sort_desc(topk(5, max(up)))", int(merge.StrategyMax), standard, ""},
 		{"bottomk(5, up)", int(merge.StrategyDedup), standard, ""},
 		{"sort_desc(topk(5, up))", int(merge.StrategyDedup), standard, ""},
+		// Literal limit_ratio uses a shard-local fast path or globally merges a
+		// compatible inner aggregation before applying the ratio.
+		{"limit_ratio(0.5, up)", int(merge.StrategyDedup), standard, ""},
+		{"limit_ratio by (job) (-0.5, rate(requests[5m]))", int(merge.StrategyDedup), standard, ""},
+		{"limit_ratio(0.5, count by (service) (requests))", int(merge.StrategySum), standard, ""},
+		{"limit_ratio(0.5, min(requests))", int(merge.StrategyMin), standard, ""},
+		{"limit_ratio(0.5, max(requests))", int(merge.StrategyMax), standard, ""},
+		{"limit_ratio(0.5, group by (service) (requests))", int(merge.StrategyDedup), standard, ""},
+		{"limit_ratio(0.5, sum by (service) (requests))", int(merge.StrategySum), standard, ""},
+		{"limit_ratio(0.5, avg by (service) (requests))", int(merge.StrategySum), weighted, ""},
+		{"sort_desc(limit_ratio(0.5, sum(requests)))", int(merge.StrategySum), standard, ""},
 		// Sort wrappers preserve the inner aggregation strategy.
 		{"sort(sum(up))", int(merge.StrategySum), standard, ""},
 		{"sort_desc(count by (service) (up))", int(merge.StrategySum), standard, ""},
@@ -86,7 +97,15 @@ func TestPlanTSMMergeStrategies(t *testing.T) {
 		{"sort_desc(stddev(up))", int(merge.StrategyDedup), standard, aggregation.StdDev},
 		{"topk(k, up)", int(merge.StrategyDedup), standard, aggregation.TopK},
 		{"limitk(5, up)", int(merge.StrategyDedup), standard, aggregation.LimitK},
-		{"limit_ratio(0.5, up)", int(merge.StrategyDedup), standard, aggregation.LimitRatio},
+		{"limit_ratio(0.5, stddev(up))", int(merge.StrategyDedup), standard, aggregation.StdDev},
+		{"sort_desc(limit_ratio(0.5, stddev(up)))", int(merge.StrategyDedup), standard, aggregation.StdDev},
+		{"limit_ratio(0.5, rate(sum(up)[5m:]))", int(merge.StrategyDedup), standard, "nested"},
+		{"limit_ratio(0.5, sum(sum(up)))", int(merge.StrategyDedup), standard, "nested"},
+		{"limit_ratio(0.5, sum(up + down))", int(merge.StrategyDedup), standard, "binary"},
+		{"limit_ratio(0.5, up + on (job) group_left down)", int(merge.StrategyDedup), standard, "binary"},
+		{"limit_ratio(0.5, absent(up))", int(merge.StrategyDedup), standard, "absent"},
+		{"limit_ratio(0.5, sum(absent(up)))", int(merge.StrategyDedup), standard, "absent"},
+		{"limit_ratio(scalar(ratio), up)", int(merge.StrategyDedup), standard, aggregation.LimitRatio},
 		{"group(up)", int(merge.StrategyDedup), standard, ""},
 	}
 
@@ -228,6 +247,193 @@ func TestPlanTSMMergeContents(t *testing.T) {
 			t.Fatal("unsupported fallback allowed a single-member bypass")
 		}
 	})
+}
+
+func TestPlanTSMMergeLimitRatioContents(t *testing.T) {
+	t.Run("shard-local fast path", func(t *testing.T) {
+		const query = "limit_ratio(0.5, rate(requests[5m]))"
+		r, _ := http.NewRequest(http.MethodGet,
+			"http://example.com/api/v1/query?query="+url.QueryEscape(query), nil)
+		plan := mustTSMMergePlan(t, r, query)
+
+		if plan.Variants[0].Request != r {
+			t.Fatal("fast path cloned the original request")
+		}
+		if plan.Finalizer.Enabled {
+			t.Fatalf("fast path enabled finalizer: %#v", plan.Finalizer)
+		}
+		if !plan.StripInjectedLabels {
+			t.Fatal("fast path did not request injected-label stripping")
+		}
+		if !plan.AllowSingleMemberBypass {
+			t.Fatal("fast path did not allow a safe single-member bypass")
+		}
+	})
+
+	t.Run("globally merged inner count", func(t *testing.T) {
+		const (
+			query = "limit_ratio(0.5, count by (service) (requests))"
+			inner = "count by (service) (requests)"
+		)
+		r, _ := http.NewRequest(http.MethodGet,
+			"http://example.com/api/v1/query?query="+url.QueryEscape(query), nil)
+		plan := mustTSMMergePlan(t, r, query)
+		values, _, _ := params.GetRequestValues(plan.Variants[0].Request)
+
+		if got := values.Get(promQueryParam); got != inner {
+			t.Fatalf("fanout query got %q want %q", got, inner)
+		}
+		if plan.Variants[0].MergeStrategy != int(merge.StrategySum) {
+			t.Fatalf("strategy got %d want sum", plan.Variants[0].MergeStrategy)
+		}
+		if !plan.Finalizer.Enabled || plan.Finalizer.Query != query {
+			t.Fatalf("finalizer: %#v", plan.Finalizer)
+		}
+		if !plan.StripInjectedLabels {
+			t.Fatal("global plan did not request injected-label stripping")
+		}
+	})
+
+	t.Run("sort wrapper moves sampling and ordering global", func(t *testing.T) {
+		const (
+			query = "sort_desc(limit_ratio(0.5, up))"
+			inner = "up"
+		)
+		r, _ := http.NewRequest(http.MethodGet,
+			"http://example.com/api/v1/query?query="+url.QueryEscape(query), nil)
+		plan := mustTSMMergePlan(t, r, query)
+		values, _, _ := params.GetRequestValues(plan.Variants[0].Request)
+
+		if got := values.Get(promQueryParam); got != inner {
+			t.Fatalf("fanout query got %q want %q", got, inner)
+		}
+		if !plan.Finalizer.Enabled || plan.Finalizer.Query != query {
+			t.Fatalf("finalizer: %#v", plan.Finalizer)
+		}
+	})
+
+	t.Run("histogram-capable inner aggregations use exact plans", func(t *testing.T) {
+		tests := []struct {
+			operator  string
+			reduction merge.TSMReductionKind
+			variants  int
+		}{
+			{aggregation.Sum, merge.TSMReductionStandard, 1},
+			{aggregation.Average, merge.TSMReductionWeightedAverage, 2},
+		}
+		for _, test := range tests {
+			query := "limit_ratio(-0.5, " + test.operator + " by (service) (requests))"
+			r, _ := http.NewRequest(http.MethodGet,
+				"http://example.com/api/v1/query?query="+url.QueryEscape(query), nil)
+			plan := mustTSMMergePlan(t, r, query)
+
+			if len(plan.Variants) != test.variants ||
+				plan.Variants[0].MergeStrategy != int(merge.StrategySum) ||
+				plan.Reduction.Kind != test.reduction || !plan.Finalizer.Enabled {
+				t.Fatalf("%s exact plan: %#v", test.operator, plan)
+			}
+			if plan.UnsupportedWarning != "" {
+				t.Fatalf("%s warning: %q", test.operator, plan.UnsupportedWarning)
+			}
+		}
+	})
+
+	t.Run("nested unsupported aggregation falls back with warning", func(t *testing.T) {
+		const query = "limit_ratio(0.5, rate(sum(up)[5m:]))"
+		r, _ := http.NewRequest(http.MethodGet,
+			"http://example.com/api/v1/query?query="+url.QueryEscape(query), nil)
+		plan := mustTSMMergePlan(t, r, query)
+
+		if plan.Variants[0].Request != r {
+			t.Fatal("unsupported fallback rewrote the request")
+		}
+		if !strings.Contains(plan.UnsupportedWarning, "nested") {
+			t.Fatalf("warning got %q", plan.UnsupportedWarning)
+		}
+		if plan.Finalizer.Enabled {
+			t.Fatalf("unsupported fallback enabled finalizer: %#v", plan.Finalizer)
+		}
+	})
+
+	t.Run("cross-shard binary expression falls back with warning", func(t *testing.T) {
+		const query = "limit_ratio(0.5, up + on (job) group_left down)"
+		r, _ := http.NewRequest(http.MethodGet,
+			"http://example.com/api/v1/query?query="+url.QueryEscape(query), nil)
+		plan := mustTSMMergePlan(t, r, query)
+
+		if plan.Variants[0].Request != r {
+			t.Fatal("binary fallback rewrote the request")
+		}
+		if !strings.Contains(plan.UnsupportedWarning, "cross-shard") {
+			t.Fatalf("warning got %q", plan.UnsupportedWarning)
+		}
+		if plan.Finalizer.Enabled {
+			t.Fatalf("binary fallback enabled finalizer: %#v", plan.Finalizer)
+		}
+	})
+
+	t.Run("sort wrapper samples unsupported inner expression once", func(t *testing.T) {
+		const (
+			query = "sort_desc(limit_ratio(0.5, stddev(up)))"
+			inner = "stddev(up)"
+		)
+		r, _ := http.NewRequest(http.MethodGet,
+			"http://example.com/api/v1/query?query="+url.QueryEscape(query), nil)
+		plan := mustTSMMergePlan(t, r, query)
+		values, _, _ := params.GetRequestValues(plan.Variants[0].Request)
+
+		if got := values.Get(promQueryParam); got != inner {
+			t.Fatalf("fanout query got %q want %q", got, inner)
+		}
+		if !plan.Finalizer.Enabled || plan.Finalizer.Query != query {
+			t.Fatalf("finalizer: %#v", plan.Finalizer)
+		}
+		if !strings.Contains(plan.UnsupportedWarning, aggregation.StdDev) {
+			t.Fatalf("warning got %q", plan.UnsupportedWarning)
+		}
+	})
+}
+
+func TestPlanTSMMergeLimitRatioPOST(t *testing.T) {
+	const (
+		query    = "limit_ratio(0.5, count by (service) (requests))"
+		wantQ    = "count by (service) (requests)"
+		origBody = "query=limit_ratio%280.5%2C+count+by+%28service%29+%28requests%29%29&start=1000&end=2000&step=15"
+	)
+	r, _ := http.NewRequest(http.MethodPost,
+		"http://example.com/api/v1/query_range",
+		io.NopCloser(bytes.NewBufferString(origBody)))
+	r.Header.Set(headers.NameContentType, headers.ValueXFormURLEncoded)
+	r = request.SetResources(r, &request.Resources{RequestBody: []byte(origBody)})
+
+	plan := mustTSMMergePlan(t, r, query)
+	rewritten := plan.Variants[0].Request
+	values, _, _ := params.GetRequestValues(rewritten)
+	if got := values.Get(promQueryParam); got != wantQ {
+		t.Fatalf("rewritten query got %q want %q", got, wantQ)
+	}
+	body, err := io.ReadAll(rewritten.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	bodyValues, err := url.ParseQuery(string(body))
+	if err != nil {
+		t.Fatalf("parse body: %v", err)
+	}
+	if got := bodyValues.Get(promQueryParam); got != wantQ {
+		t.Fatalf("body query got %q want %q", got, wantQ)
+	}
+	rsc := request.GetResources(rewritten)
+	if rsc == nil {
+		t.Fatal("rewritten request has no resources")
+	}
+	cachedValues, err := url.ParseQuery(string(rsc.RequestBody))
+	if err != nil {
+		t.Fatalf("parse cached body: %v", err)
+	}
+	if got := cachedValues.Get(promQueryParam); got != wantQ {
+		t.Fatalf("cached body query got %q want %q", got, wantQ)
+	}
 }
 
 type failingTSMRequestBody struct{}

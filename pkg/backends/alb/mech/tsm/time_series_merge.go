@@ -331,8 +331,9 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Collect injected label keys from pool backends so they can be stripped
 	// before merging. This ensures series from different backends hash
 	// identically despite having different injected labels (e.g., region tags).
-	// Stripping is only needed when a non-dedup strategy is in play. The set
-	// is cached and reused across requests until the pool is replaced.
+	// Stripping is needed for non-dedup strategies and plans that explicitly
+	// require routing labels to be removed before logical selection. The set is
+	// cached and reused across requests until the pool is replaced.
 	var stripKeys []string
 	if planNeedsLabelStripping(plan) {
 		stripKeys = h.computeStripKeys(hl)
@@ -821,10 +822,7 @@ func pruneUnpairedWeightedAvgSeries(sumDS, countDS *dataset.DataSet, pairingQuer
 		return
 	}
 	pairingHash := func(sh *dataset.SeriesHeader) dataset.Hash {
-		if pairingQueryStatement == "" {
-			return sh.CalculateHash()
-		}
-		return sh.CalculateHashWithQueryStatement(pairingQueryStatement)
+		return sumDS.PairingHash(sh, pairingQueryStatement)
 	}
 	countSeries := make(map[int]map[dataset.Hash]struct{}, len(countDS.Results))
 	for _, r := range countDS.Results {

@@ -75,6 +75,73 @@ func TestOuterAggregator(t *testing.T) {
 	}
 }
 
+func TestCompleteOuterAggregator(t *testing.T) {
+	tests := []struct {
+		query string
+		want  aggregation.Operator
+	}{
+		{"sum(up)", aggregation.Sum},
+		{"sum by (service) (rate(requests[5m]))", aggregation.Sum},
+		{"avg(requests) without (instance)", aggregation.Average},
+		{`count_values("code", requests)`, aggregation.CountValues},
+		{"sum(up) + vector(1)", ""},
+		{"sum by service (up)", ""},
+		{"sum()", ""},
+		{"rate(sum(up)[5m:])", ""},
+		{"up", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.query, func(t *testing.T) {
+			got, found := CompleteOuterAggregator(tt.query)
+			if got != tt.want || found != (tt.want != "") {
+				t.Fatalf("got (%q, %v) want (%q, %v)", got, found, tt.want, tt.want != "")
+			}
+		})
+	}
+}
+
+func TestCompleteOuterAggregationInput(t *testing.T) {
+	tests := []struct {
+		query string
+		agg   aggregation.Operator
+		input string
+	}{
+		{"sum by (job) (rate(up[5m]))", aggregation.Sum, "rate(up[5m])"},
+		{`count_values("code", requests)`, aggregation.CountValues, "requests"},
+		{"topk(5, up + down)", aggregation.TopK, "up + down"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.query, func(t *testing.T) {
+			gotAgg, gotInput, found := CompleteOuterAggregation(tt.query)
+			if !found || gotAgg != tt.agg || gotInput != tt.input {
+				t.Fatalf("got (%q, %q, %v) want (%q, %q, true)",
+					gotAgg, gotInput, found, tt.agg, tt.input)
+			}
+		})
+	}
+}
+
+func TestContainsAggregator(t *testing.T) {
+	tests := []struct {
+		query string
+		want  bool
+	}{
+		{"sum(up)", true},
+		{"rate(sum by (service) (requests)[5m:])", true},
+		{"(topk(2, up))", true},
+		{"rate(up[5m])", false},
+		{`label_replace(up, "note", "sum(up)", "src", ".*")`, false},
+		{`sum_total{operation="sum"}`, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.query, func(t *testing.T) {
+			if got := ContainsAggregator(tt.query); got != tt.want {
+				t.Fatalf("got %v want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestReplaceOuterAggregator(t *testing.T) {
 	tests := []struct {
 		query       string

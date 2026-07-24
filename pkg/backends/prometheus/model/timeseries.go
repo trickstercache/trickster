@@ -125,6 +125,7 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 		Warnings:         wfd.Warnings,
 		TimeRangeQuery:   trq,
 		ExtentList:       timeseries.ExtentList{trq.Extent},
+		ValueOperations:  prometheusValueOperations,
 	}
 
 	switch wfd.Data.ResultType {

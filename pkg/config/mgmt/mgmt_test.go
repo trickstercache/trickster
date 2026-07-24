@@ -20,21 +20,53 @@ import "testing"
 
 func TestValidate(t *testing.T) {
 	c := New()
-	c.PprofServer = ""
+	if c.ConfigHandlerListener != ListenerNameMgmt {
+		t.Fatalf("expected config handler listener to default to mgmt, got %s", c.ConfigHandlerListener)
+	}
+
+	c.ConfigHandlerListener = ""
+	c.PprofListener = ""
 
 	err := c.Validate()
 	if err != nil {
 		t.Error(err)
 	}
 
-	if c.PprofServer != DefaultPprofServerName {
-		t.Errorf("expected %s got %s", DefaultPprofServerName, c.PprofServer)
+	if c.PprofListener != DefaultPprofListenerName {
+		t.Errorf("expected %s got %s", DefaultPprofListenerName, c.PprofListener)
+	}
+	if c.ConfigHandlerListener != DefaultConfigHandlerListenerName {
+		t.Errorf("expected %s got %s", DefaultConfigHandlerListenerName, c.ConfigHandlerListener)
 	}
 
-	c.PprofServer = "x"
+	c.ConfigHandlerListener = "x"
+	if err = c.Validate(); err != ErrInvalidConfigHandlerListenerName {
+		t.Errorf("expected invalid config handler listener error, got %v", err)
+	}
+	c.ConfigHandlerListener = DefaultConfigHandlerListenerName
+
+	c.PprofListener = "x"
 
 	err = c.Validate()
 	if err == nil {
-		t.Error("expected error for invalid pprof server name")
+		t.Error("expected error for invalid pprof listener name")
+	}
+}
+
+func TestValidatePprofListenerNames(t *testing.T) {
+	for _, name := range []string{ListenerNameMetrics, ListenerNameMgmt, ListenerNameBoth, ListenerNameOff} {
+		c := New()
+		c.PprofListener = name
+		if err := c.Validate(); err != nil {
+			t.Errorf("expected pprof listener name %q to be valid, got %v", name, err)
+		}
+	}
+
+	for _, name := range []string{"reload", "management"} {
+		c := New()
+		c.PprofListener = name
+		if err := c.Validate(); err != ErrInvalidPprofListenerName {
+			t.Errorf("expected pprof listener name %q to be invalid, got %v", name, err)
+		}
 	}
 }
