@@ -208,9 +208,7 @@ type Options struct {
 	LatencyMax time.Duration `yaml:"latency_max"`
 
 	// MaxQueryRange specifies the maximum range for a query allowed on this backend (e.g., '14d')
-	MaxQueryRange string `yaml:"max_query_range,omitempty"`
-	// MaxQueryRangeDuration is the parsed time.Duration of MaxQueryRange
-	MaxQueryRangeDuration time.Duration `yaml:"-"`
+	MaxQueryRange timeconv.Duration `yaml:"max_query_range,omitempty"`
 
 	// Synthesized Configurations
 	// These configurations are parsed versions of those defined above, and are what Trickster uses internally
@@ -596,15 +594,8 @@ func (o *Options) Initialize(name string) error {
 		o.ListenerName = listener.DefaultFrontendName
 	}
 
-	if o.MaxQueryRange != "" {
-		d, err := timeconv.ParseDuration(o.MaxQueryRange)
-		if err != nil {
-			return err
-		}
-		if d <= 0 {
-			return fmt.Errorf("invalid max_query_range %q: value must be greater than 0", o.MaxQueryRange)
-		}
-		o.MaxQueryRangeDuration = d
+	if o.MaxQueryRange < 0 {
+		return fmt.Errorf("invalid max_query_range: value must be greater than or equal to 0")
 	}
 
 	if o.OriginURL != "" {

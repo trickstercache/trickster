@@ -28,6 +28,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	ro "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/negative"
+	"github.com/trickstercache/trickster/v2/pkg/util/timeconv"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	tro "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
@@ -397,7 +398,7 @@ func TestInitialize(t *testing.T) {
 	}
 
 	oInvalid := *o
-	oInvalid.MaxQueryRange = "-1h"
+	oInvalid.MaxQueryRange = timeconv.Duration(-1 * time.Hour)
 	if err := oInvalid.Initialize("test_invalid"); err == nil {
 		t.Error("expected error for negative max_query_range, got nil")
 	}

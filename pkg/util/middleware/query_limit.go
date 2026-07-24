@@ -18,6 +18,7 @@ package middleware
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
@@ -36,7 +37,7 @@ func LimitQueryRange(next http.Handler) http.Handler {
 			return
 		}
 
-		limit := rsc.BackendOptions.MaxQueryRangeDuration
+		limit := time.Duration(rsc.BackendOptions.MaxQueryRange)
 		if limit <= 0 {
 			next.ServeHTTP(w, r)
 			return
@@ -61,9 +62,9 @@ func LimitQueryRange(next http.Handler) http.Handler {
 							"start":       trq.Extent.Start.String(),
 							"end":         trq.Extent.End.String(),
 							"duration":    duration.String(),
-							"limit":       rsc.BackendOptions.MaxQueryRange,
+							"limit":       limit.String(),
 						})
-					http.Error(w, "query time range exceeds the allowed limit of "+rsc.BackendOptions.MaxQueryRange, http.StatusBadRequest)
+					http.Error(w, "query time range exceeds the allowed limit of "+limit.String(), http.StatusBadRequest)
 					return
 				}
 			}
