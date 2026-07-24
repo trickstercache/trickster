@@ -26,8 +26,12 @@ import (
 	"github.com/stretchr/testify/require"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	rule "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
+	ct "github.com/trickstercache/trickster/v2/pkg/config/types"
+	tracing "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
+	auth "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
+	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 	to "github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
@@ -87,11 +91,32 @@ func TestString(t *testing.T) {
 	c1.Backends["default"].Paths = append(c1.Backends["default"].Paths, &po.Options{Path: "test"})
 
 	c1.Caches["default"].Redis.Password = "plaintext-password"
+	c1.Authenticators = auth.Lookup{
+		"basic": {
+			Users: ct.EnvStringMap{
+				"alice": "alice-password",
+				"bob":   "bob-password",
+			},
+		},
+	}
 
 	s := c1.String()
 
 	if !strings.Contains(s, `password: '*****'`) {
 		t.Errorf("missing password mask: %s", "*****")
+	}
+	for _, want := range []string{"user1: '*****'", "user2: '*****'"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("missing redacted authenticator user %q in config:\n%s", want, s)
+		}
+	}
+	for _, sensitive := range []string{"alice", "alice-password", "bob", "bob-password"} {
+		if strings.Contains(s, sensitive) {
+			t.Errorf("config contains sensitive authenticator value %q:\n%s", sensitive, s)
+		}
+	}
+	if c1.Authenticators["basic"].Users["alice"] != "alice-password" {
+		t.Error("String mutated the original authenticator users")
 	}
 }
 
@@ -125,11 +150,89 @@ func TestCheckFileLastModified(t *testing.T) {
 }
 
 func TestConfigProcess(t *testing.T) {
-	c, _ := emptyTestConfig()
-	err := c.Process()
-	if err != nil {
-		t.Error(err)
-	}
+	t.Run("compiles and assigns rewriters", func(t *testing.T) {
+		c := NewConfig()
+		c.RequestRewriters = rwopts.Lookup{
+			"rewrite": {
+				Instructions: rwopts.RewriteList{{"path", "set", "/rewritten"}},
+			},
+		}
+		backend := c.Backends["default"]
+		backend.ReqRewriterName = "rewrite"
+		path := &po.Options{Path: "/", ReqRewriterName: "rewrite"}
+		backend.Paths = []*po.Options{path}
+
+		if err := c.Process(); err != nil {
+			t.Fatalf("Process returned an error: %v", err)
+		}
+		if c.CompiledRewriters["rewrite"] == nil {
+			t.Fatal("expected Process to compile the configured rewriter")
+		}
+		if backend.ReqRewriter == nil {
+			t.Error("expected Process to assign the backend rewriter")
+		}
+		if path.ReqRewriter == nil {
+			t.Error("expected Process to assign the path rewriter")
+		}
+	})
+
+	t.Run("rejects invalid rewriter instructions", func(t *testing.T) {
+		c := NewConfig()
+		c.RequestRewriters = rwopts.Lookup{
+			"invalid": {
+				Instructions: rwopts.RewriteList{{"invalid", "instruction"}},
+			},
+		}
+
+		if err := c.Process(); err == nil {
+			t.Fatal("expected invalid rewriter instructions to return an error")
+		}
+	})
+
+	t.Run("rejects missing backend rewriter", func(t *testing.T) {
+		c := NewConfig()
+		c.RequestRewriters = rwopts.Lookup{}
+		c.Backends["default"].ReqRewriterName = "missing"
+
+		err := c.Process()
+		if err == nil || !strings.Contains(err.Error(), "missing") {
+			t.Fatalf("expected missing backend rewriter error, got %v", err)
+		}
+	})
+
+	t.Run("rejects missing path rewriter", func(t *testing.T) {
+		c := NewConfig()
+		c.RequestRewriters = rwopts.Lookup{}
+		c.Backends["default"].Paths = []*po.Options{{
+			Path:            "/query",
+			ReqRewriterName: "missing",
+		}}
+
+		err := c.Process()
+		if err == nil || !strings.Contains(err.Error(), "path /query") {
+			t.Fatalf("expected missing path rewriter error, got %v", err)
+		}
+	})
+
+	t.Run("processes tracing defaults", func(t *testing.T) {
+		c := NewConfig()
+		c.RequestRewriters = nil
+		c.TracingOptions = tracing.Lookup{
+			"test": {},
+		}
+
+		if err := c.Process(); err != nil {
+			t.Fatalf("Process returned an error: %v", err)
+		}
+		if c.TracingOptions["test"].ServiceName != tracing.DefaultTracerServiceName {
+			t.Errorf("expected default tracing service name, got %q",
+				c.TracingOptions["test"].ServiceName)
+		}
+		if c.TracingOptions["test"].Provider != tracing.DefaultTracerProvider {
+			t.Errorf("expected default tracing provider, got %q",
+				c.TracingOptions["test"].Provider)
+		}
+	})
 }
 
 const testRewriter = `
@@ -241,6 +344,53 @@ func TestIsStale(t *testing.T) {
 
 	if c.IsStale() {
 		t.Error("expected non-stale config")
+	}
+}
+
+func TestCheckAndMarkReloadInProgress(t *testing.T) {
+	testFile := filepath.Join(t.TempDir(), "trickster.conf")
+	if err := os.WriteFile(testFile, []byte("test"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	initialModTime := time.Unix(1_700_000_000, 0)
+	if err := os.Chtimes(testFile, initialModTime, initialModTime); err != nil {
+		t.Fatal(err)
+	}
+
+	c := NewConfig()
+	c.Main.configFilePath = testFile
+	c.Main.configLastModified = initialModTime.Add(-time.Second)
+	c.MgmtConfig = nil
+
+	if !c.CheckAndMarkReloadInProgress() {
+		t.Fatal("expected modified config to be marked for reload")
+	}
+	if !c.Main.configLastModified.Equal(initialModTime) {
+		t.Errorf("expected last modified time %v, got %v",
+			initialModTime, c.Main.configLastModified)
+	}
+	if c.MgmtConfig == nil {
+		t.Fatal("expected default management config to be initialized")
+	}
+
+	// Bypass the rate limit to prove the recorded timestamp prevents a
+	// duplicate reload of the same file version.
+	c.Main.configRateLimitTime = time.Time{}
+	if c.CheckAndMarkReloadInProgress() {
+		t.Error("expected the same config version not to trigger another reload")
+	}
+
+	newModTime := initialModTime.Add(time.Second)
+	if err := os.Chtimes(testFile, newModTime, newModTime); err != nil {
+		t.Fatal(err)
+	}
+	c.Main.configRateLimitTime = time.Now().Add(time.Minute)
+	if c.CheckAndMarkReloadInProgress() {
+		t.Error("expected rate-limited check not to trigger a reload")
+	}
+	if !c.Main.configLastModified.Equal(initialModTime) {
+		t.Error("rate-limited check unexpectedly marked the newer file version")
 	}
 }
 

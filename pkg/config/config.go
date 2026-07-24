@@ -358,6 +358,10 @@ func (c *Config) String() string {
 		cp.Backends[k] = o.CloneYAMLSafe()
 	}
 
+	for k, o := range cp.Authenticators {
+		cp.Authenticators[k] = o.CloneYAMLSafe()
+	}
+
 	// strip Redis password
 	for k, v := range cp.Caches {
 		if v != nil && cp.Caches[k].Redis != nil && cp.Caches[k].Redis.Password != "" {

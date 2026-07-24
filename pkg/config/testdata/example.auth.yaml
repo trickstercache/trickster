@@ -241,8 +241,8 @@ authenticators:
     users_file: /path/to/user-manifest.csv
     users_file_format: csv
     users:
-      user1: red123
-      user2: ${USER2_PASS}
+      user1: '*****'
+      user2: '*****'
     config:
       realm: custom-realm-name
       showLoginForm: true
@@ -260,5 +260,5 @@ authenticators:
     users_file: ""
     users_file_format: ""
     users:
-      user1: $2y$asf;j2ihj0h8vabjkwdqbv29hq
+      user1: '*****'
     config: {}
