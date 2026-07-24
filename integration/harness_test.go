@@ -29,6 +29,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	tkconfig "github.com/trickstercache/trickster/v2/pkg/config"
+	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
 	"gopkg.in/yaml.v2"
 )
@@ -170,12 +171,30 @@ func writeTestConfig(t *testing.T, frontPort, metricsPort, mgmtPort int) string 
 	require.NoError(t, err)
 	var c tkconfig.Config
 	require.NoError(t, yaml.Unmarshal(b, &c))
-	c.Frontend.ListenPort = frontPort
-	c.Metrics.ListenPort = metricsPort
+	if c.Listeners == nil {
+		c.Listeners = make(listener.Lookup)
+	}
+	if _, ok := c.Listeners["default"]; !ok {
+		c.Listeners["default"] = &listener.Options{
+			ListenPort: 8480,
+		}
+	}
+	if _, ok := c.Listeners["metrics"]; !ok {
+		c.Listeners["metrics"] = &listener.Options{
+			ListenPort: 8481,
+		}
+	}
+	if _, ok := c.Listeners["mgmt"]; !ok {
+		c.Listeners["mgmt"] = &listener.Options{
+			ListenPort: 8484,
+		}
+	}
+	c.Listeners["default"].ListenPort = frontPort
+	c.Listeners["metrics"].ListenPort = metricsPort
+	c.Listeners["mgmt"].ListenPort = mgmtPort
 	if c.MgmtConfig == nil {
 		c.MgmtConfig = mgmt.New()
 	}
-	c.MgmtConfig.ListenPort = mgmtPort
 	out, err := yaml.Marshal(&c)
 	require.NoError(t, err)
 	path := filepath.Join(t.TempDir(), "trickster.yaml")
