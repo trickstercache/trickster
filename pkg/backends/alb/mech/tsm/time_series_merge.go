@@ -24,6 +24,7 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/errors"
@@ -262,7 +263,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// limit query time range if configured on the ALB backend
-	if rsc.BackendOptions != nil && rsc.BackendOptions.MaxQueryRangeDuration > 0 {
+	if rsc.BackendOptions != nil && rsc.BackendOptions.MaxQueryRange > 0 {
 		var trq *timeseries.TimeRangeQuery
 		if rsc.TimeRangeQuery != nil {
 			trq = rsc.TimeRangeQuery
@@ -279,7 +280,8 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		if trq != nil {
 			duration := trq.Extent.End.Sub(trq.Extent.Start)
-			if duration > rsc.BackendOptions.MaxQueryRangeDuration {
+			limit := time.Duration(rsc.BackendOptions.MaxQueryRange)
+			if duration > limit {
 				metrics.ProxyQueryRangeRejections.WithLabelValues(rsc.BackendOptions.Name).Inc()
 				clientIP := r.Header.Get("X-Forwarded-For")
 				if clientIP == "" {
@@ -294,9 +296,9 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 						"start":       trq.Extent.Start.String(),
 						"end":         trq.Extent.End.String(),
 						"duration":    duration.String(),
-						"limit":       rsc.BackendOptions.MaxQueryRange,
+						"limit":       limit.String(),
 					})
-				http.Error(w, "query time range exceeds the allowed limit of "+rsc.BackendOptions.MaxQueryRange, http.StatusBadRequest)
+				http.Error(w, "query time range exceeds the allowed limit of "+limit.String(), http.StatusBadRequest)
 				return
 			}
 		}
