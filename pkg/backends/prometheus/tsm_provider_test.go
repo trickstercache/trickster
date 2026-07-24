@@ -48,6 +48,12 @@ func TestPlanTSMMergeStrategies(t *testing.T) {
 		// Queries without an outer aggregation use deduplication.
 		{"up", int(merge.StrategyDedup), standard, ""},
 		{"rate(http_requests_total[5m])", int(merge.StrategyDedup), standard, ""},
+		// Top-level scalar conversion uses deterministic first-non-NaN selection.
+		{"scalar(count(up))", int(merge.StrategyScalar), standard, ""},
+		{"(scalar(count(up)))", int(merge.StrategyScalar), standard, ""},
+		{"scalar(count(up)) + 1", int(merge.StrategyScalar), standard, ""},
+		{"scalar(count(up)) + 0x2", int(merge.StrategyScalar), standard, ""},
+		{"scalar(count(up)) + 1h", int(merge.StrategyScalar), standard, ""},
 		// Sum, count, and count_values accumulate shard values.
 		{"sum(up)", int(merge.StrategySum), standard, ""},
 		{"sum by (job) (up)", int(merge.StrategySum), standard, ""},

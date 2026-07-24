@@ -31,6 +31,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
+
 	"golang.org/x/sync/errgroup"
 )
 
@@ -117,13 +118,14 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 		wfd.Envelope = &Envelope{}
 	}
 	ds := &dataset.DataSet{
-		Status:          wfd.Status,
-		Error:           wfd.Error,
-		ErrorType:       wfd.ErrorType,
-		Warnings:        wfd.Warnings,
-		TimeRangeQuery:  trq,
-		ExtentList:      timeseries.ExtentList{trq.Extent},
-		ValueOperations: prometheusValueOperations,
+		SourceResultType: string(wfd.Data.ResultType),
+		Status:           wfd.Status,
+		Error:            wfd.Error,
+		ErrorType:        wfd.ErrorType,
+		Warnings:         wfd.Warnings,
+		TimeRangeQuery:   trq,
+		ExtentList:       timeseries.ExtentList{trq.Extent},
+		ValueOperations:  prometheusValueOperations,
 	}
 
 	switch wfd.Data.ResultType {
@@ -219,6 +221,9 @@ func MarshalTSOrVectorWriter(ts timeseries.Timeseries, _ *timeseries.RequestOpti
 	if ds.Status == "" {
 		ds.Status = statusSuccess
 	}
+	if isVector && ds.SourceResultType == string(Scalar) {
+		return marshalScalarWriter(ds, status, w)
+	}
 
 	(&Envelope{ds.Status, ds.Error, ds.ErrorType, ds.Warnings}).StartMarshal(w, status)
 
@@ -258,6 +263,32 @@ func MarshalTSOrVectorWriter(ts timeseries.Timeseries, _ *timeseries.RequestOpti
 		w.Write([]byte("}"))
 	}
 	w.Write([]byte("]}}"))
+	return nil
+}
+
+func marshalScalarWriter(ds *dataset.DataSet, status int, w io.Writer) error {
+	(&Envelope{ds.Status, ds.Error, ds.ErrorType, ds.Warnings}).StartMarshal(w, status)
+	w.Write([]byte(`,"data":{"resultType":"scalar","result":`))
+	for _, result := range ds.Results {
+		if result == nil {
+			continue
+		}
+		for _, series := range result.SeriesList {
+			if series == nil || len(series.Points) == 0 || len(series.Points[0].Values) == 0 {
+				continue
+			}
+			point := series.Points[0]
+			var buf [64]byte
+			w.Write([]byte{'['})
+			w.Write(strconv.AppendFloat(buf[:0], float64(point.Epoch)/1e9, 'f', -1, 64))
+			w.Write([]byte{','})
+			value, _ := point.Values[0].(string)
+			w.Write(strconv.AppendQuote(buf[:0], value))
+			w.Write([]byte(`]}}`))
+			return nil
+		}
+	}
+	w.Write([]byte(`[]}}`))
 	return nil
 }
 

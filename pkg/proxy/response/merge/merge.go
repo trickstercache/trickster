@@ -91,6 +91,14 @@ func (a *Accumulator) SetTSData(data timeseries.Timeseries) {
 	a.tsdata = data
 }
 
+// UpdateTSData atomically replaces the accumulated timeseries with the value
+// returned by update.
+func (a *Accumulator) UpdateTSData(update func(timeseries.Timeseries) timeseries.Timeseries) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.tsdata = update(a.tsdata)
+}
+
 // GetGeneric returns the accumulated generic data (thread-safe)
 func (a *Accumulator) GetGeneric() any {
 	a.mu.Lock()

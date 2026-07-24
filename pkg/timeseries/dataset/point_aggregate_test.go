@@ -20,9 +20,10 @@ import (
 	"math"
 	"testing"
 
-	"github.com/stretchr/testify/require"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
+
+	"github.com/stretchr/testify/require"
 )
 
 func makeStringPoints(vals ...struct {
@@ -83,6 +84,24 @@ func TestMergePointsWithStrategyAvg(t *testing.T) {
 	require.Len(t, result, 2)
 	require.Equal(t, "20", result[0].Values[0])
 	require.Equal(t, "30", result[1].Values[0])
+}
+
+func TestMergePointsWithStrategyScalar(t *testing.T) {
+	t.Run("finite replaces NaN", func(t *testing.T) {
+		result := MergePointsWithStrategy(
+			makeStringPoints(ev{100, "NaN"}),
+			makeStringPoints(ev{100, "42"}), true, merge.StrategyScalar)
+		require.Len(t, result, 1)
+		require.Equal(t, "42", result[0].Values[0])
+	})
+
+	t.Run("first finite member wins", func(t *testing.T) {
+		result := MergePointsWithStrategy(
+			makeStringPoints(ev{100, "42"}),
+			makeStringPoints(ev{100, "99"}), true, merge.StrategyScalar)
+		require.Len(t, result, 1)
+		require.Equal(t, "42", result[0].Values[0])
+	})
 }
 
 func TestParseFloat(t *testing.T) {

@@ -118,6 +118,8 @@ func aggregateValuesWithOperations(dst, src *Point, strategy merge.Strategy,
 		result = math.Min(dv, sv)
 	case merge.StrategyMax:
 		result = math.Max(dv, sv)
+	case merge.StrategyScalar:
+		result = dv
 	default:
 		result = sv
 	}

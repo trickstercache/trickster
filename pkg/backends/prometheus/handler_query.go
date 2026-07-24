@@ -31,6 +31,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	tsmerge "github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
 )
 
 // vectorInstantMarshalWriter is a MarshalWriterFunc that forces vector
@@ -62,7 +63,8 @@ func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 			if rsc.IsMergeMember {
 				m := c.Modeler()
 				if m != nil {
-					if rsc.TSMergeStrategy != 0 {
+					if rsc.TSMergeStrategy != 0 &&
+						rsc.TSMergeStrategy != int(tsmerge.StrategyScalar) {
 						rsc.MergeFunc = merge.TimeseriesMergeFuncWithStrategyTolerant(
 							m.WireUnmarshaler, rsc.TSMergeStrategy, rsc.TSDedupToleranceNanos)
 						rsc.BatchMergeFunc = merge.TimeseriesBatchMergeFuncWithStrategyTolerant(
@@ -72,7 +74,7 @@ func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 						rsc.MergeRespondFunc = merge.TimeseriesRespondFuncWithStrategy(vectorInstantMarshalWriter, nil, rsc.TSMergeStrategy)
 					} else {
 						rsc.MergeFunc = model.MergeAndWriteVectorMergeFunc(m.WireUnmarshaler)
-						rsc.BatchMergeFunc = merge.TimeseriesBatchMergeFunc()
+						rsc.BatchMergeFunc = model.MergeAndWriteVectorBatchMergeFunc()
 						rsc.MergeRespondFunc = model.MergeAndWriteVectorRespondFunc(m.WireMarshalWriter)
 					}
 				}

@@ -32,6 +32,7 @@ const (
 	Average StrategyName = "avg"
 	Minimum StrategyName = "min"
 	Maximum StrategyName = "max"
+	Scalar  StrategyName = "scalar"
 )
 
 const (
@@ -47,8 +48,10 @@ const (
 	StrategyMax
 	// StrategyCount counts the number of values at matching epochs.
 	StrategyCount
+	// StrategyScalar selects the first non-NaN scalar at each matching epoch.
+	StrategyScalar
 	// MaxStrategyValue is the largest valid Strategy value.
-	MaxStrategyValue = StrategyCount
+	MaxStrategyValue = StrategyScalar
 )
 
 // ParseStrategy converts a string to a Strategy.
@@ -66,6 +69,8 @@ func ParseStrategy(s string) (Strategy, error) {
 		return StrategyMax, nil
 	case Count:
 		return StrategyCount, nil
+	case Scalar:
+		return StrategyScalar, nil
 	default:
 		return StrategyDedup, fmt.Errorf("unknown merge strategy: %q", s)
 	}
@@ -84,6 +89,8 @@ func (ms Strategy) String() string {
 		return Maximum
 	case StrategyCount:
 		return Count
+	case StrategyScalar:
+		return Scalar
 	default:
 		return Dedup
 	}
