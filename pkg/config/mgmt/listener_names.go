@@ -17,12 +17,12 @@
 package mgmt
 
 const (
-	// ServerNameMetrics identifies the metrics HTTP listener.
-	ServerNameMetrics = "metrics"
-	// ServerNameMgmt identifies the management HTTP listener.
-	ServerNameMgmt = "mgmt"
-	// ServerNameBoth selects both the metrics and management HTTP listeners.
-	ServerNameBoth = "both"
-	// ServerNameOff disables registration on both HTTP listeners.
-	ServerNameOff = "off"
+	// ListenerNameMetrics identifies the metrics HTTP listener.
+	ListenerNameMetrics = "metrics"
+	// ListenerNameMgmt identifies the management HTTP listener.
+	ListenerNameMgmt = "mgmt"
+	// ListenerNameBoth selects both the metrics and management HTTP listeners.
+	ListenerNameBoth = "both"
+	// ListenerNameOff disables registration on both HTTP listeners.
+	ListenerNameOff = "off"
 )

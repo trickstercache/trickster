@@ -30,6 +30,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/reverseproxycache"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/config"
+	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	encoding "github.com/trickstercache/trickster/v2/pkg/encoding/handler"
 	fopt "github.com/trickstercache/trickster/v2/pkg/frontend/options"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
@@ -67,10 +68,38 @@ func RegisterProxyRoutes(conf *config.Config, clients backends.Backends,
 	r router.Router, metricsRouter router.Router, caches cache.Lookup,
 	tracers tracing.Tracers, dryRun bool,
 ) error {
+	return registerProxyRoutes(conf, clients, r, func(*bo.Options) router.Router { return r },
+		metricsRouter, caches, tracers, dryRun)
+}
+
+// RegisterProxyRoutesForListeners registers each backend on its configured listener router.
+func RegisterProxyRoutesForListeners(conf *config.Config, clients backends.Backends,
+	listenerRouters map[string]router.Router, metricsRouter router.Router, caches cache.Lookup,
+	tracers tracing.Tracers, dryRun bool,
+) error {
+	defaultRouter := listenerRouters[listener.DefaultFrontendName]
+	if defaultRouter == nil {
+		for _, r := range listenerRouters {
+			defaultRouter = r
+			break
+		}
+	}
+	return registerProxyRoutes(conf, clients, defaultRouter, func(o *bo.Options) router.Router {
+		if o == nil {
+			return nil
+		}
+		return listenerRouters[o.ListenerName]
+	}, metricsRouter, caches, tracers, dryRun)
+}
+
+func registerProxyRoutes(conf *config.Config, clients backends.Backends,
+	defaultRouter router.Router, routerFor func(*bo.Options) router.Router,
+	metricsRouter router.Router, caches cache.Lookup, tracers tracing.Tracers, dryRun bool,
+) error {
 	// a fake "top-level" backend representing the main frontend, so rules can route
 	// to it via the clients map
 	var err error
-	clients["frontend"], err = reverseproxycache.NewClient("frontend", &bo.Options{}, r, nil, nil, nil)
+	clients["frontend"], err = reverseproxycache.NewClient("frontend", &bo.Options{}, defaultRouter, nil, nil, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create frontend client: %w", err)
 	}
@@ -104,12 +133,20 @@ func RegisterProxyRoutes(conf *config.Config, clients backends.Backends,
 			ndo = o
 			continue
 		}
+		r := routerFor(o)
+		if r == nil {
+			return fmt.Errorf("no router configured for listener %q", o.ListenerName)
+		}
 		if err := registerBackendRoutes(r, metricsRouter, conf,
 			k, o, clients, caches, tracers, dryRun); err != nil {
 			return err
 		}
 	}
 	if ndo != nil {
+		r := routerFor(ndo)
+		if r == nil {
+			return fmt.Errorf("no router configured for listener %q", ndo.ListenerName)
+		}
 		if cdo == nil {
 			ndo.IsDefault = true
 			cdo = ndo
@@ -122,6 +159,10 @@ func RegisterProxyRoutes(conf *config.Config, clients backends.Backends,
 		}
 	}
 	if cdo != nil {
+		r := routerFor(cdo)
+		if r == nil {
+			return fmt.Errorf("no router configured for listener %q", cdo.ListenerName)
+		}
 		if err := registerBackendRoutes(r, metricsRouter, conf,
 			defaultBackend, cdo, clients, caches, tracers, dryRun); err != nil {
 			return err
@@ -216,7 +257,7 @@ func RegisterPathRoutes(r router.Router, conf *config.Config, handlers handlers.
 
 	applyMiddleware := func(po1 *po.Options) http.Handler {
 		// default base route is the path handler
-		maxBodySizeBytes, truncateOnly := getSizeLimits(conf.Frontend)
+		maxBodySizeBytes, truncateOnly := getSizeLimits(frontendOptions(conf, o))
 		h := bodyfilter.Handler(maxBodySizeBytes, truncateOnly, po1.Handler)
 		// attach distributed tracer
 		if tr != nil {
@@ -287,11 +328,29 @@ func RegisterPathRoutes(r router.Router, conf *config.Config, handlers handlers.
 func RegisterDefaultBackendRoutes(r router.Router, conf *config.Config,
 	bknds backends.Backends, tracers tracing.Tracers,
 ) {
+	registerDefaultBackendRoutes(func(*bo.Options) router.Router { return r }, conf, bknds, tracers)
+}
+
+// RegisterDefaultBackendRoutesForListeners registers default routes on each backend's listener.
+func RegisterDefaultBackendRoutesForListeners(listenerRouters map[string]router.Router,
+	conf *config.Config, bknds backends.Backends, tracers tracing.Tracers,
+) {
+	registerDefaultBackendRoutes(func(o *bo.Options) router.Router {
+		if o == nil {
+			return nil
+		}
+		return listenerRouters[o.ListenerName]
+	}, conf, bknds, tracers)
+}
+
+func registerDefaultBackendRoutes(routerFor func(*bo.Options) router.Router, conf *config.Config,
+	bknds backends.Backends, tracers tracing.Tracers,
+) {
 	applyMiddleware := func(o *bo.Options, po *po.Options, tr *tracing.Tracer,
 		c cache.Cache, client backends.Backend,
 	) http.Handler {
 		// default base route is the path handler
-		maxBodySizeBytes, truncateOnly := getSizeLimits(conf.Frontend)
+		maxBodySizeBytes, truncateOnly := getSizeLimits(frontendOptions(conf, o))
 		h := bodyfilter.Handler(maxBodySizeBytes, truncateOnly, po.Handler)
 		// attach distributed tracer
 		if tr != nil {
@@ -318,6 +377,10 @@ func RegisterDefaultBackendRoutes(r router.Router, conf *config.Config,
 	for _, b := range bknds {
 		o := b.Configuration()
 		if o.IsDefault {
+			r := routerFor(o)
+			if r == nil {
+				continue
+			}
 			var tr *tracing.Tracer
 			if t, ok := tracers[o.TracingConfigName]; ok {
 				tr = t
@@ -345,6 +408,18 @@ func RegisterDefaultBackendRoutes(r router.Router, conf *config.Config,
 			}
 		}
 	}
+}
+
+func frontendOptions(conf *config.Config, o *bo.Options) *fopt.Options {
+	if conf != nil && o != nil {
+		if options := conf.FrontendOptionsForListener(o.ListenerName); options != nil {
+			return options
+		}
+	}
+	if conf == nil {
+		return nil
+	}
+	return conf.Frontend
 }
 
 func getSizeLimits(opt *fopt.Options) (int64, bool) {

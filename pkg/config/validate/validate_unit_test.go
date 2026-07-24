@@ -91,12 +91,12 @@ func TestBackendsRequiresEntries(t *testing.T) {
 
 	c.Backends = bo.Lookup{
 		"default": {
-			Name:                "default",
-			Provider:            providers.Prometheus,
-			OriginURL:           "http://example.com:9090",
-			CacheName:           "default",
-			TracingConfigName:   "",
-			NegativeCacheName:     "",
+			Name:              "default",
+			Provider:          providers.Prometheus,
+			OriginURL:         "http://example.com:9090",
+			CacheName:         "default",
+			TracingConfigName: "",
+			NegativeCacheName: "",
 		},
 	}
 	c.Caches = co.Lookup{"default": co.New()}
@@ -114,12 +114,12 @@ func TestValidateMinimalConfig(t *testing.T) {
 	c.Caches = co.Lookup{"default": co.New()}
 	c.Backends = bo.Lookup{
 		"default": {
-			Name:                "default",
-			Provider:            providers.Prometheus,
-			OriginURL:           "http://example.com:9090",
-			CacheName:           "default",
-			TracingConfigName:   "",
-			NegativeCacheName:     "",
+			Name:              "default",
+			Provider:          providers.Prometheus,
+			OriginURL:         "http://example.com:9090",
+			CacheName:         "default",
+			TracingConfigName: "",
+			NegativeCacheName: "",
 		},
 	}
 	if err := Validate(c); err != nil {

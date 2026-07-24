@@ -25,8 +25,8 @@ const (
 	DefaultAddress = "127.0.0.1"
 	// DefaultConfigHandlerPath is the default value for the Trickster Config Printout Handler path
 	DefaultConfigHandlerPath = "/trickster/config"
-	// DefaultConfigHandlerServerName defines the default server for the Trickster Config Handler
-	DefaultConfigHandlerServerName = ServerNameMgmt
+	// DefaultConfigHandlerListenerName defines the default listener for the Trickster Config Handler
+	DefaultConfigHandlerListenerName = ListenerNameMgmt
 	// DefaultPingHandlerPath is the default value for the Trickster Config Ping Handler path
 	DefaultPingHandlerPath = "/trickster/ping"
 	// DefaultHealthHandlerPath defines the default path for the Health Handler
@@ -35,8 +35,8 @@ const (
 	DefaultPurgeByKeyHandlerPath = "/trickster/purge/key/"
 	// DefaultPurgeByPathHandlerPath defines the default path for the Cache Purge (by Path) Handler
 	DefaultPurgeByPathHandlerPath = "/trickster/purge/path/"
-	// DefaultPprofServerName defines the default Pprof Server Name
-	DefaultPprofServerName = ServerNameBoth
+	// DefaultPprofListenerName defines the default Pprof Listener Name
+	DefaultPprofListenerName = ListenerNameBoth
 	// DefaultDrainTimeout is the default time that is allowed for an old configuration's requests to drain
 	// before its resources are closed
 	DefaultDrainTimeout = 30 * time.Second

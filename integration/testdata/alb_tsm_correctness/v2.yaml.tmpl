@@ -1,10 +1,12 @@
 
-frontend:
-  listen_port: %d
-metrics:
-  listen_port: %d
-mgmt:
-  listen_port: %d
+
+listeners:
+  default:
+    port: %d
+  metrics:
+    port: %d
+  mgmt:
+    port: %d
 logging:
   log_level: error
 caches:

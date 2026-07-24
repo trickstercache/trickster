@@ -55,6 +55,41 @@ Finally, Trickster will check for and evaluate the following Command Line Argume
 * `-proxy-port 8480` - Listener port for the HTTP Proxy Endpoint
 * `-metrics-port 8481` - Listener port for the Metrics and pprof debugging HTTP Endpoint
 
+## Inbound Listeners
+
+The top-level `listeners` map configures inbound listeners. Trickster always auto-defines three entries using the existing defaults: `default`, `metrics`, and `mgmt`.
+
+```yaml
+listeners:
+  default:
+    address: ""
+    port: 8480
+    tls_address: ""
+    tls_port: 8483
+    connections_limit: 0
+    read_header_timeout: 10s
+  private_api:
+    protocol: http
+    address: 127.0.0.1
+    port: 9080
+
+backends:
+  default:
+    listener_name: default
+    provider: prometheus
+    origin_url: http://prometheus:9090
+  private:
+    listener_name: private_api
+    provider: reverseproxy
+    origin_url: http://private-origin
+```
+
+Backends use `default` when `listener_name` is omitted. A backend cannot select the reserved `mgmt` or `metrics` listeners, and validation fails when a backend names an undefined listener.
+
+A user-defined listener with no mapped backend is not started and produces a warning. A configured TLS port is enabled only when at least one backend mapped to that listener provides a valid frontend certificate and key in its `tls` section; otherwise Trickster disables that TLS port and logs a warning.
+
+The top-level `frontend` section and listener address/port fields under `metrics` and `mgmt` remain supported during the compatibility period. Trickster logs deprecation warnings when those legacy listener settings are used. When the same built-in listener is present in `listeners`, its new configuration takes precedence.
+
 ## Configuration Validation
 
 Trickster can validate a configuration file by running `trickster -validate-config -config /path/to/config`. Trickster will load the configuration and exit with the validation result, without running the configuration.
@@ -77,10 +112,10 @@ The reload endpoint is configured by default to listen on address `127.0.0.1` an
 
 To reload the config, simply make a `GET` request to the reload endpoint. If the underlying configuration file has changed, the configuration will be reloaded, and the caller will receive a success response. If the underlying file has not changed, the caller will receive an unsuccessful response, and reloading will be disabled for the duration of the Reload Rate Limiter. By default, this is 3 seconds, but can be customized as demonstrated in the example config file. The Reload Rate Limiter applies to the HTTP interface only, and not SIGHUP.
 
-If an HTTP listener must spin down (e.g., the listen port is changed in the refreshed config), the old listener will remain alive for a period of time to allow existing connections to organically finish. This period is called the Drain Timeout and is configurable. Trickster uses 30 seconds by default. The Drain Timeout also applies to old log files, in the event that a new log filename has been provided.
+If a listener address or port changes, Trickster drains the old listener before starting its replacement. Listeners whose network settings do not change retain their open sockets and receive the refreshed router in place. Removed or newly unused listeners are drained and stopped, while newly mapped listeners are started. The drain period is configurable and defaults to 30 seconds. The Drain Timeout also applies to old log files when a new log filename is provided.
 
 ### View the Running Configuration
 
-Trickster also provides a `http://127.0.0.1:8484/trickster/config` endpoint, which returns the yaml output of the currently-running Trickster configuration. The YAML-formatted configuration will include all defaults populated, overlaid with any configuration file settings, command-line arguments and or applicable environment variables. By default, this interface is available only on the management listener. Set `mgmt.config_handler_server` to `metrics`, `both`, or `off` to change where it is exposed. This path is configurable as demonstrated in the example config file.
+Trickster also provides a `http://127.0.0.1:8484/trickster/config` endpoint, which returns the yaml output of the currently-running Trickster configuration. The YAML-formatted configuration will include all defaults populated, overlaid with any configuration file settings, command-line arguments and or applicable environment variables. By default, this interface is available only on the management listener. Set `mgmt.config_handler_listener` to `metrics`, `both`, or `off` to change where it is exposed. This path is configurable as demonstrated in the example config file.
 
-Trickster also provides a sanitized view of the running configuration at `http://127.0.0.1:8484/trickster/config/sanitized`. If the `config_handler_path` is customized, append `/sanitized` to the configured path. The sanitized output deep-copies the running configuration, renames cache, backend, and tracing resources by provider and sequence number (for example, `prom-1`, `prom-2`, `alb-1`, `memory-1`, `otlp-1`), renames authenticators as `auth1`, `auth2`, etc., updates references to those resources in backend, path, ALB, rule, cache, tracing, and authenticator mappings, replaces backend `origin_url`, Redis `endpoint` and `endpoints`, tracing `endpoint`, and Host-related request rewriter values with `example.com`, redacts per-path request and response header values, and replaces embedded authenticator users with `user1: redacted`, `user2: redacted`, etc. This endpoint is intended for sharing running configuration details in support requests without exposing private infrastructure names, origin endpoints, or user credentials.
+Trickster also provides a sanitized view of the running configuration at `http://127.0.0.1:8484/trickster/config/sanitized`. If the `config_handler_path` is customized, append `/sanitized` to the configured path. The sanitized output deep-copies the running configuration, renames cache, backend, listener, and tracing resources by provider and sequence number (for example, `prom-1`, `prom-2`, `alb-1`, `memory-1`, `listener-1`, `otlp-1`), renames authenticators as `auth1`, `auth2`, etc., updates references to those resources in backend, path, ALB, rule, cache, tracing, listener, and authenticator mappings, replaces backend `origin_url`, Redis `endpoint` and `endpoints`, tracing `endpoint`, and Host-related request rewriter values with `example.com`, redacts per-path request and response header values, and replaces embedded authenticator users with `user1: redacted`, `user2: redacted`, etc. This endpoint is intended for sharing running configuration details in support requests without exposing private infrastructure names, origin endpoints, or user credentials.

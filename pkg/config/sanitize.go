@@ -26,6 +26,8 @@ import (
 	rule "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
 	cache "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	cp "github.com/trickstercache/trickster/v2/pkg/cache/providers"
+	listenerconfig "github.com/trickstercache/trickster/v2/pkg/config/listener"
+	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
 	tracing "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
 	tp "github.com/trickstercache/trickster/v2/pkg/observability/tracing/providers"
 	auth "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
@@ -53,6 +55,7 @@ func (c *Config) SanitizedClone() *Config {
 
 	cacheNameMap := anonymizedCacheNames(cp.Caches)
 	backendNameMap := anonymizedBackendNames(cp.Backends)
+	listenerNameMap := anonymizedListenerNames(cp.Listeners)
 	authNameMap := anonymizedAuthenticatorNames(cp.Authenticators)
 	tracingNameMap := anonymizedTracingNames(cp.TracingOptions)
 
@@ -66,6 +69,12 @@ func (c *Config) SanitizedClone() *Config {
 		renamedCaches[newName] = opts
 	}
 	cp.Caches = renamedCaches
+
+	renamedListeners := make(listenerconfig.Lookup, len(cp.Listeners))
+	for oldName, opts := range cp.Listeners {
+		renamedListeners[listenerNameMap[oldName]] = opts
+	}
+	cp.Listeners = renamedListeners
 
 	renamedBackends := make(bo.Lookup, len(cp.Backends))
 	for oldName, opts := range cp.Backends {
@@ -86,6 +95,9 @@ func (c *Config) SanitizedClone() *Config {
 			}
 			if newTracingName, ok := tracingNameMap[opts.TracingConfigName]; ok {
 				opts.TracingConfigName = newTracingName
+			}
+			if newListenerName, ok := listenerNameMap[opts.ListenerName]; ok {
+				opts.ListenerName = newListenerName
 			}
 			sanitizePathAuthenticatorReferences(opts, authNameMap)
 			sanitizeBackendReferences(opts, backendNameMap)
@@ -126,6 +138,22 @@ func (c *Config) SanitizedClone() *Config {
 	}
 
 	return cp
+}
+
+func anonymizedListenerNames(listeners listenerconfig.Lookup) map[string]string {
+	names := sortedKeys(listeners)
+	out := make(map[string]string, len(listeners))
+	custom := 0
+	for _, name := range names {
+		switch name {
+		case listenerconfig.DefaultFrontendName, mgmt.ListenerNameMgmt, mgmt.ListenerNameMetrics:
+			out[name] = name
+		default:
+			custom++
+			out[name] = fmt.Sprintf("listener-%d", custom)
+		}
+	}
+	return out
 }
 
 func anonymizedCacheNames(caches cache.Lookup) map[string]string {

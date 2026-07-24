@@ -20,53 +20,53 @@ import "testing"
 
 func TestValidate(t *testing.T) {
 	c := New()
-	if c.ConfigHandlerServer != ServerNameMgmt {
-		t.Fatalf("expected config handler server to default to mgmt, got %s", c.ConfigHandlerServer)
+	if c.ConfigHandlerListener != ListenerNameMgmt {
+		t.Fatalf("expected config handler listener to default to mgmt, got %s", c.ConfigHandlerListener)
 	}
 
-	c.ConfigHandlerServer = ""
-	c.PprofServer = ""
+	c.ConfigHandlerListener = ""
+	c.PprofListener = ""
 
 	err := c.Validate()
 	if err != nil {
 		t.Error(err)
 	}
 
-	if c.PprofServer != DefaultPprofServerName {
-		t.Errorf("expected %s got %s", DefaultPprofServerName, c.PprofServer)
+	if c.PprofListener != DefaultPprofListenerName {
+		t.Errorf("expected %s got %s", DefaultPprofListenerName, c.PprofListener)
 	}
-	if c.ConfigHandlerServer != DefaultConfigHandlerServerName {
-		t.Errorf("expected %s got %s", DefaultConfigHandlerServerName, c.ConfigHandlerServer)
+	if c.ConfigHandlerListener != DefaultConfigHandlerListenerName {
+		t.Errorf("expected %s got %s", DefaultConfigHandlerListenerName, c.ConfigHandlerListener)
 	}
 
-	c.ConfigHandlerServer = "x"
-	if err = c.Validate(); err != ErrInvalidConfigHandlerServerName {
-		t.Errorf("expected invalid config handler server error, got %v", err)
+	c.ConfigHandlerListener = "x"
+	if err = c.Validate(); err != ErrInvalidConfigHandlerListenerName {
+		t.Errorf("expected invalid config handler listener error, got %v", err)
 	}
-	c.ConfigHandlerServer = DefaultConfigHandlerServerName
+	c.ConfigHandlerListener = DefaultConfigHandlerListenerName
 
-	c.PprofServer = "x"
+	c.PprofListener = "x"
 
 	err = c.Validate()
 	if err == nil {
-		t.Error("expected error for invalid pprof server name")
+		t.Error("expected error for invalid pprof listener name")
 	}
 }
 
-func TestValidatePprofServerNames(t *testing.T) {
-	for _, name := range []string{ServerNameMetrics, ServerNameMgmt, ServerNameBoth, ServerNameOff} {
+func TestValidatePprofListenerNames(t *testing.T) {
+	for _, name := range []string{ListenerNameMetrics, ListenerNameMgmt, ListenerNameBoth, ListenerNameOff} {
 		c := New()
-		c.PprofServer = name
+		c.PprofListener = name
 		if err := c.Validate(); err != nil {
-			t.Errorf("expected pprof server name %q to be valid, got %v", name, err)
+			t.Errorf("expected pprof listener name %q to be valid, got %v", name, err)
 		}
 	}
 
 	for _, name := range []string{"reload", "management"} {
 		c := New()
-		c.PprofServer = name
-		if err := c.Validate(); err != ErrInvalidPprofServerName {
-			t.Errorf("expected pprof server name %q to be invalid, got %v", name, err)
+		c.PprofListener = name
+		if err := c.Validate(); err != ErrInvalidPprofListenerName {
+			t.Errorf("expected pprof listener name %q to be invalid, got %v", name, err)
 		}
 	}
 }
