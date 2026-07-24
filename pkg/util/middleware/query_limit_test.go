@@ -29,6 +29,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
+	"github.com/trickstercache/trickster/v2/pkg/util/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
@@ -55,8 +56,7 @@ func TestLimitQueryRange(t *testing.T) {
 		rec := httptest.NewRecorder()
 
 		backendOpts := &bo.Options{
-			MaxQueryRange:         "",
-			MaxQueryRangeDuration: 0,
+			MaxQueryRange: 0,
 		}
 		resources := request.NewResources(backendOpts, nil, nil, nil, nil, nil)
 		r = r.WithContext(tctx.WithResources(r.Context(), resources))
@@ -73,8 +73,7 @@ func TestLimitQueryRange(t *testing.T) {
 		rec := httptest.NewRecorder()
 
 		backendOpts := &bo.Options{
-			MaxQueryRange:         "14d",
-			MaxQueryRangeDuration: 14 * 24 * time.Hour,
+			MaxQueryRange: timeconv.Duration(14 * 24 * time.Hour),
 		}
 
 		now := time.Now()
@@ -105,9 +104,8 @@ func TestLimitQueryRange(t *testing.T) {
 		rec := httptest.NewRecorder()
 
 		backendOpts := &bo.Options{
-			Name:                  "test",
-			MaxQueryRange:         "14d",
-			MaxQueryRangeDuration: 14 * 24 * time.Hour,
+			Name:          "test",
+			MaxQueryRange: timeconv.Duration(14 * 24 * time.Hour),
 		}
 
 		now := time.Now()
@@ -129,7 +127,7 @@ func TestLimitQueryRange(t *testing.T) {
 		h.ServeHTTP(rec, r)
 
 		assert.Equal(t, http.StatusBadRequest, rec.Code)
-		assert.Contains(t, rec.Body.String(), "query time range exceeds the allowed limit of 14d")
+		assert.Contains(t, rec.Body.String(), "query time range exceeds the allowed limit of 336h0m0s")
 
 		// Verify metric is incremented
 		val := testutil.ToFloat64(metrics.ProxyQueryRangeRejections.WithLabelValues("test"))

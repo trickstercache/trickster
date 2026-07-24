@@ -95,3 +95,26 @@ func TestParseDurationFailed(t *testing.T) {
 		t.Errorf("incorrect error message; got %s", err.Error())
 	}
 }
+
+func TestDurationYAML(t *testing.T) {
+	d := Duration(0)
+	unmarshal := func(v any) error {
+		*v.(*string) = "14d"
+		return nil
+	}
+	err := d.UnmarshalYAML(unmarshal)
+	if err != nil {
+		t.Error(err)
+	}
+	if time.Duration(d) != 14*24*time.Hour {
+		t.Errorf("expected 14 days, got %s", time.Duration(d))
+	}
+
+	val, err := d.MarshalYAML()
+	if err != nil {
+		t.Error(err)
+	}
+	if val.(string) != "336h0m0s" {
+		t.Errorf("expected 336h0m0s, got %s", val)
+	}
+}

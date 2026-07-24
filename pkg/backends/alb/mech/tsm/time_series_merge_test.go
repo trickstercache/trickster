@@ -34,6 +34,7 @@ import (
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/albpool"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/util/timeconv"
 )
 
 var testLogger = logging.NoopLogger()
@@ -213,8 +214,7 @@ func TestLimitQueryRangeALB(t *testing.T) {
 	t.Run("within limit", func(t *testing.T) {
 		r := albpool.NewParentGET(t)
 		rsc := request.NewResources(&bo.Options{
-			MaxQueryRange:         "14d",
-			MaxQueryRangeDuration: 14 * 24 * time.Hour,
+			MaxQueryRange: timeconv.Duration(14 * 24 * time.Hour),
 		}, nil, nil, nil, nil, nil)
 		rsc.IsMergeMember = true
 		r = request.SetResources(r, rsc)
@@ -231,9 +231,8 @@ func TestLimitQueryRangeALB(t *testing.T) {
 		r := albpool.NewParentGET(t)
 		r.Header.Set("X-Test-Range", "exceed")
 		rsc := request.NewResources(&bo.Options{
-			Name:                  "alb-test",
-			MaxQueryRange:         "14d",
-			MaxQueryRangeDuration: 14 * 24 * time.Hour,
+			Name:          "alb-test",
+			MaxQueryRange: timeconv.Duration(14 * 24 * time.Hour),
 		}, nil, nil, nil, nil, nil)
 		rsc.IsMergeMember = true
 		r = request.SetResources(r, rsc)
@@ -243,7 +242,7 @@ func TestLimitQueryRangeALB(t *testing.T) {
 		if w.Code != http.StatusBadRequest {
 			t.Errorf("expected 400, got %d", w.Code)
 		}
-		assertMsg := "query time range exceeds the allowed limit of 14d"
+		assertMsg := "query time range exceeds the allowed limit of 336h0m0s"
 		if w.Body.String() != assertMsg+"\n" && w.Body.String() != assertMsg {
 			t.Errorf("expected error message to contain %q, got %q", assertMsg, w.Body.String())
 		}

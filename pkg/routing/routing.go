@@ -258,9 +258,8 @@ func RegisterPathRoutes(r router.Router, conf *config.Config, handlers handlers.
 	applyMiddleware := func(po1 *po.Options) http.Handler {
 		// default base route is the path handler
 		maxBodySizeBytes, truncateOnly := getSizeLimits(frontendOptions(conf, o))
-		h := bodyfilter.Handler(maxBodySizeBytes, truncateOnly, po1.Handler)
-		// limit query time range if configured (inside auth and bodyfilter)
-		h = middleware.LimitQueryRange(h)
+		h := middleware.LimitQueryRange(po1.Handler)
+		h = bodyfilter.Handler(maxBodySizeBytes, truncateOnly, h)
 		// attach distributed tracer
 		if tr != nil {
 			h = middleware.Trace(tr, h)
@@ -353,9 +352,8 @@ func registerDefaultBackendRoutes(routerFor func(*bo.Options) router.Router, con
 	) http.Handler {
 		// default base route is the path handler
 		maxBodySizeBytes, truncateOnly := getSizeLimits(frontendOptions(conf, o))
-		h := bodyfilter.Handler(maxBodySizeBytes, truncateOnly, po.Handler)
-		// limit query time range if configured (inside auth and bodyfilter)
-		h = middleware.LimitQueryRange(h)
+		h := middleware.LimitQueryRange(po.Handler)
+		h = bodyfilter.Handler(maxBodySizeBytes, truncateOnly, h)
 		// attach distributed tracer
 		if tr != nil {
 			h = middleware.Trace(tr, h)
