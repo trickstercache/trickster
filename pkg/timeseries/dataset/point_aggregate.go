@@ -28,7 +28,9 @@ import (
 // for the dedup strategy; non-dedup strategies ignore tolerance since
 // aggregating across a multi-step window would change semantics that callers
 // don't expect (sum-of-cluster, not sum-at-epoch).
-func sortAndAggregateTolerant(p Points, strategy merge.Strategy, toleranceNanos int64) Points {
+func sortAndAggregateTolerant(p Points, strategy merge.Strategy, toleranceNanos int64,
+	valueOperations ValueMergeOperations,
+) Points {
 	if strategy == merge.StrategyDedup {
 		return sortAndDedupeTolerant(p, toleranceNanos)
 	}
@@ -53,13 +55,13 @@ func sortAndAggregateTolerant(p Points, strategy merge.Strategy, toleranceNanos 
 		}
 		if p[k].Epoch == p[i].Epoch {
 			// same epoch: aggregate values
-			aggregateValues(&p[k], &p[i], strategy)
+			aggregateValuesWithOperations(&p[k], &p[i], strategy, valueOperations)
 			count++
 			// for avg, we finalize after the run ends (see below)
 		} else {
 			// new epoch: finalize avg for previous run if needed
 			if strategy == merge.StrategyAvg && count > 1 {
-				finalizeAvg(&p[k], count)
+				finalizeAvgWithOperations(&p[k], count, valueOperations)
 			}
 			count = 1
 			k++
@@ -70,7 +72,7 @@ func sortAndAggregateTolerant(p Points, strategy merge.Strategy, toleranceNanos 
 	}
 	// finalize avg for the last run
 	if strategy == merge.StrategyAvg && count > 1 {
-		finalizeAvg(&p[k], count)
+		finalizeAvgWithOperations(&p[k], count, valueOperations)
 	}
 	return p[:k+1]
 }
@@ -78,6 +80,12 @@ func sortAndAggregateTolerant(p Points, strategy merge.Strategy, toleranceNanos 
 // aggregateValues combines the value from src into dst using the given strategy.
 // Both points are expected to have at least one value in Values[0] as a string-encoded float.
 func aggregateValues(dst, src *Point, strategy merge.Strategy) {
+	aggregateValuesWithOperations(dst, src, strategy, nil)
+}
+
+func aggregateValuesWithOperations(dst, src *Point, strategy merge.Strategy,
+	valueOperations ValueMergeOperations,
+) {
 	if len(dst.Values) == 0 || len(src.Values) == 0 {
 		return
 	}
@@ -86,6 +94,13 @@ func aggregateValues(dst, src *Point, strategy merge.Strategy) {
 	dNaN := math.IsNaN(dv)
 	sNaN := math.IsNaN(sv)
 	if dNaN && sNaN {
+		if valueOperations != nil {
+			if value, handled := valueOperations.MergeValues(
+				dst.Values[0], src.Values[0], strategy,
+			); handled {
+				setPointValue(dst, 0, value)
+			}
+		}
 		return // both non-numeric (e.g. histograms): keep dst as-is
 	}
 	if dNaN {
@@ -111,15 +126,39 @@ func aggregateValues(dst, src *Point, strategy merge.Strategy) {
 
 // finalizeAvg divides the accumulated sum in p by count.
 func finalizeAvg(p *Point, count int) {
+	finalizeAvgWithOperations(p, count, nil)
+}
+
+func finalizeAvgWithOperations(p *Point, count int,
+	valueOperations ValueMergeOperations,
+) {
 	if len(p.Values) == 0 || count <= 1 {
 		return
 	}
 	v := parseFloat(p.Values[0])
 	if math.IsNaN(v) {
+		if valueOperations != nil {
+			if value, handled := valueOperations.DivideValue(
+				p.Values[0], float64(count),
+			); handled {
+				setPointValue(p, 0, value)
+			}
+		}
 		return
 	}
 	v /= float64(count)
 	p.Values[0] = strconv.FormatFloat(v, 'f', -1, 64)
+}
+
+func setPointValue(point *Point, index int, value any) {
+	if point.Size > 0 {
+		oldString, oldOK := point.Values[index].(string)
+		newString, newOK := value.(string)
+		if oldOK && newOK {
+			point.Size += len(newString) - len(oldString)
+		}
+	}
+	point.Values[index] = value
 }
 
 // parseFloat extracts a float64 from a point value. Returns NaN if unparsable.
@@ -184,7 +223,8 @@ func MergePointsWithOpts(p, p2 Points, opts MergeOpts) Points {
 	}
 	finalize := func(out Points) Points {
 		if opts.SortPoints && len(out) > 1 {
-			out = sortAndAggregateTolerant(out, opts.Strategy, opts.ToleranceNanos)
+			out = sortAndAggregateTolerant(out, opts.Strategy, opts.ToleranceNanos,
+				opts.ValueOperations)
 		}
 		return out
 	}

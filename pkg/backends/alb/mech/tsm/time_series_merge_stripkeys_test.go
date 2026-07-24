@@ -26,7 +26,23 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	prop "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/options"
+	tsmerge "github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
 )
+
+func TestPlanNeedsLabelStrippingExplicitly(t *testing.T) {
+	plan := &tsmerge.TSMMergePlan{
+		Variants: []tsmerge.TSMQueryVariant{{
+			MergeStrategy: int(tsmerge.StrategyDedup),
+		}},
+	}
+	if planNeedsLabelStripping(plan) {
+		t.Fatal("plain dedup plan unexpectedly strips injected labels")
+	}
+	plan.StripInjectedLabels = true
+	if !planNeedsLabelStripping(plan) {
+		t.Fatal("explicit label stripping was ignored")
+	}
+}
 
 func mkStripKeysTarget(labels map[string]string) *pool.Target {
 	be := &stripKeysStubBackend{

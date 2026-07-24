@@ -90,12 +90,15 @@ type TSMQueryVariant struct {
 
 // TSMMergePlan is the complete execution plan for one TSM request.
 type TSMMergePlan struct {
-	OriginalQuery           string
-	Variants                []TSMQueryVariant
-	Reduction               TSMReductionSpec
-	Finalizer               TSMFinalizerSpec
-	Completeness            TSMCompletenessPolicy
-	UnsupportedWarning      string
+	OriginalQuery      string
+	Variants           []TSMQueryVariant
+	Reduction          TSMReductionSpec
+	Finalizer          TSMFinalizerSpec
+	Completeness       TSMCompletenessPolicy
+	UnsupportedWarning string
+	// StripInjectedLabels removes provider-configured routing labels before
+	// merge and finalization, even when the merge strategy is deduplication.
+	StripInjectedLabels     bool
 	AllowSingleMemberBypass bool
 }
 
