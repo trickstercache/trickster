@@ -17,6 +17,7 @@
 package options
 
 import (
+	"errors"
 	"fmt"
 	"maps"
 	"net/http"
@@ -595,7 +596,7 @@ func (o *Options) Initialize(name string) error {
 	}
 
 	if o.MaxQueryRange < 0 {
-		return fmt.Errorf("invalid max_query_range: value must be greater than or equal to 0")
+		return errors.New("invalid max_query_range: value must be greater than or equal to 0")
 	}
 
 	if o.OriginURL != "" {
