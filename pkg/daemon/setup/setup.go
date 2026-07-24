@@ -112,10 +112,6 @@ func LoadAndValidate(args ...string) (*config.Config, error) {
 		return cfg, nil
 	}
 
-	for _, w := range cfg.LoaderWarnings {
-		logger.Warn(w, nil)
-	}
-
 	err = cfg.Backends.Validate()
 	if err != nil {
 		return nil, err
@@ -132,6 +128,9 @@ func LoadAndValidate(args ...string) (*config.Config, error) {
 	if err = validate.Validate(cfg); err != nil {
 		logger.Error(err.Error(), nil)
 		return nil, err
+	}
+	for _, w := range cfg.LoaderWarnings {
+		logger.Warn(w, nil)
 	}
 	return cfg, nil
 }
@@ -168,18 +167,27 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 		return err
 	}
 
-	// every config (re)load is a new router
-	r := lm.NewRouter()
+	// every config (re)load gets a new router for each active proxy server
+	listenerRouters := make(map[string]router.Router)
+	for name, options := range newConf.Listeners {
+		if options == nil || !options.Active ||
+			name == mgmt.ListenerNameMgmt || name == mgmt.ListenerNameMetrics {
+			continue
+		}
+		listenerRouters[name] = lm.NewRouter()
+	}
 	mr := lm.NewRouter()
 	mr.SetMatchingScheme(router.MatchExactPath)
 
-	r.RegisterRoute(newConf.MgmtConfig.PingHandlerPath, nil,
-		[]string{http.MethodGet, http.MethodHead}, false,
-		http.HandlerFunc((pnh.HandlerFunc(newConf))))
+	for _, r := range listenerRouters {
+		r.RegisterRoute(newConf.MgmtConfig.PingHandlerPath, nil,
+			[]string{http.MethodGet, http.MethodHead}, false,
+			http.HandlerFunc((pnh.HandlerFunc(newConf))))
+	}
 
 	caches := applyCachingConfig(si, newConf)
 	rh := reload.HandlerFunc(hupFunc)
-	err = routing.RegisterProxyRoutes(newConf, clients, r, mr, caches, tracers, false)
+	err = routing.RegisterProxyRoutesForListeners(newConf, clients, listenerRouters, mr, caches, tracers, false)
 	if err != nil {
 		handleStartupIssue("route registration failed",
 			logging.Pairs{"detail": err.Error()}, errorFunc)
@@ -189,9 +197,11 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	if !strings.HasSuffix(newConf.MgmtConfig.PurgeByKeyHandlerPath, "/") {
 		newConf.MgmtConfig.PurgeByKeyHandlerPath += "/"
 	}
-	r.RegisterRoute(newConf.MgmtConfig.PurgeByKeyHandlerPath, nil,
-		[]string{http.MethodDelete}, true,
-		http.HandlerFunc(ph.KeyHandler(newConf.MgmtConfig.PurgeByKeyHandlerPath, clients)))
+	for _, r := range listenerRouters {
+		r.RegisterRoute(newConf.MgmtConfig.PurgeByKeyHandlerPath, nil,
+			[]string{http.MethodDelete}, true,
+			http.HandlerFunc(ph.KeyHandler(newConf.MgmtConfig.PurgeByKeyHandlerPath, clients)))
+	}
 
 	if si.Backends != nil {
 		alb.StopPools(si.Backends)
@@ -210,9 +220,9 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 		return err
 	}
 	alb.StartALBPools(clients, si.HealthChecker.Statuses())
-	routing.RegisterDefaultBackendRoutes(r, newConf, clients, tracers)
+	routing.RegisterDefaultBackendRoutesForListeners(listenerRouters, newConf, clients, tracers)
 	routing.RegisterHealthHandler(mr, newConf.MgmtConfig.HealthHandlerPath, si.HealthChecker, clients)
-	applyListenerConfigs(newConf, si.Config, r, rh, mr, tracers, clients, errorFunc, lg)
+	applyListenerConfigs(newConf, si.Config, listenerRouters, rh, mr, tracers, clients, errorFunc, lg)
 
 	metrics.LastReloadSuccessfulTimestamp.Set(float64(time.Now().Unix()))
 	metrics.LastReloadSuccessful.Set(1)

@@ -93,13 +93,15 @@ func TestReloadStormDoesNotLeak(t *testing.T) {
 	// which is the code under test.
 	makeYAML := func(cacheName string) string {
 		return fmt.Sprintf(`
-frontend:
-  listen_port: %d
-metrics:
-  listen_port: %d
+listeners:
+  default:
+    port: %d
+  metrics:
+    port: %d
+  mgmt:
+    port: %d
 mgmt:
-  listen_port: %d
-  drain_timeout: 250ms
+  reload_drain_timeout: 250ms
 logging:
   log_level: error
 caches:

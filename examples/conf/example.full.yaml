@@ -23,40 +23,48 @@
 #   # server_name defaults to os.Hostname() when left blank
 #   server_name: ''
 
-# Configuration options for the Trickster Frontend
-frontend:
-
-  # listen_port defines the port on which Tricksters Front-end HTTP Proxy server listens.
-  listen_port: 8480
-
-#   # listen_address defines the ip on which Tricksters Front-end HTTP Proxy server listens.
-#   # empty by default, listening on all interfaces
-#   listen_address: ''
-
-#   # tls_listen_address defines the ip on which Tricksters Front-end TLS Proxy server listens.
-#   # empty by default, listening on all interfaces
-#   tls_listen_address: ''
-
-#   # tls_listen_port defines the port on which Tricksters Front-end TLS Proxy server listens.
-#   # The default is 0, which means TLS is not used, even if certificates are configured below.
-#   tls_listen_port: 0
-
-#   # connections_limit defines the maximum number of concurrent connections
-#   # Tricksters Proxy server may handle at any time.
-#   # 0 by default, unlimited.
-#   connections_limit: 0
-
-#  # reader_header_timeout defines the amount of time allowed to read request headers by the frontend http proxy server
-#  # read_header_timeout: 10s
-
-#  # max_request_body_size_bytes indicates the maximum allowed size of the request body. If the body is too large,
-#  # Trickster responds with 413 Payload Too Large. Use 0 for no body allowed, and < 0 for no maximum. Default: 10MB
-#  # max_request_body_size_bytes: 10485760
-
-#  # truncate_request_body_too_large, when true, will truncate the request body to
-#  # max_request_body_size_bytes when larger, without returning a 413 Payload Too Large
-#  # Default: false
-#  # truncate_request_body_too_large: false
+# Configuration options for inbound listeners.
+# The legacy frontend section and listener ports under metrics and mgmt remain
+# supported for compatibility, but are deprecated. A matching listeners entry
+# takes precedence over those legacy values.
+#   # The default, metrics, and mgmt entries are built-in and can be customized here.
+# listeners:
+#   # default is built-in and the default frontend for all defined backends
+#   default:
+#     # protocol defines the protocol used by the listener, and defaults to http
+#     protocol: http
+#     # port is the port the listener uses. default uses 8480 by default
+#     port: 8480
+#     # address is empty by default, meaning listen on all interfaces.
+#     address: ''
+#     # tls_port value of 0 means disabled. A value > 0 starts only when a
+#     # mapped backend provides a certificate and key. default uses 8483 by default
+#     tls_port: 8483
+#     # tls_address is empty by default, meaning listen on all interfaces.
+#     tls_address: ''
+#     # connections_limit defines the maximum number of concurrent connections
+#     # the listener may handle at any time. 0 means unlimited
+#     connections_limit: 0
+#
+#     # read_header_timeout defines the amount of time allowed to read request headers.
+#     read_header_timeout: 10s
+#
+#     # max_request_body_size_bytes indicates the maximum allowed request body size.
+#     # Use 0 for no body allowed, and < 0 for no maximum. Default: 10MB.
+#     max_request_body_size_bytes: 10485760
+#
+#     # truncate_request_body_too_large truncates oversized bodies instead of returning 413.
+#     # Default: false.
+#     truncate_request_body_too_large: false
+#
+#   # metrics:
+#   # 8481 is the default port for metrics
+#     # port: 8481
+#     # address: ''
+#   # mgmt:
+#   # 8484 is the default management port
+#     # port: 8484
+#     # address: ''
 
 # caches:
 #   default:
@@ -115,13 +123,13 @@ frontend:
 #       # default is [redis:6379]
 #       endpoints:
 #       - redis:6379
-      
+
 #       ## Supported by Redis Sentinel #######################################
 #       ## These configurations are ignored by Redis (standard) and Redis Cluster
 #       ##
 #       # sentinel_master should be set when using Redis Sentinel to indicate the Master Node
 #       sentinel_master: ''
-      
+
 #       ## Supported by all Redis Client Types ###############################
 #       ## See the go-redis documentation at https://github.com/redis/go-redis/blob/master/options.go
 #       ## for more information on tuning these settings
@@ -148,13 +156,13 @@ frontend:
 #       # write_timeout is the timeout for socket writes. If reached, commands will fail with a timeout instead of blocking.
 #       write_timeout: 3s
 #       # pool_size is the maximum number of socket connections.
-#       pool_size: 20ms
+#       pool_size: 20
 #       # min_idle_conns is the minimum number of idle connections which is useful when establishing new connection is slow.
 #       min_idle_conns: 0
 #       # max_conn_age is the connection age at which client retires (closes) the connection.
 #       max_conn_age: 0ms
 #       # pool_timeout is the amount of time client waits for connection if all connections are busy before returning an error.
-#       pool_timeout: 4s
+#       pool_timeout: 4000ms
 #       # idle_timeout is the amount of time after which client closes idle connections.
 #       idle_timeout: 5m
 #       # use_tls indicates if the Redis server uses TLS encryption. default is false
@@ -196,7 +204,7 @@ frontend:
 #     byterange_chunk_size: 4096
 
 #   # Example of a second cache, sans comments, that backend configs below could use with: cache_name: bbolt_example
-  
+
 #   bolt_example:
 #     provider: bbolt
 #     bbolt:
@@ -238,6 +246,10 @@ backends:
   # example backend named default. default is always created with these settings unless a different backend is defined here.
   # access this backend via http[s]://trickster-fqdn/default/ unless path_routing_disabled is true
   default:
+
+    # listener_name maps this backend to an inbound listener. The default is default.
+    # mgmt and metrics are reserved and cannot be selected by a backend.
+    listener_name: default
 
     # provider identifies the backend provider.
     # Valid options are: prometheus, influxdb, clickhouse, reverseproxycache (or just rpc)
@@ -357,7 +369,7 @@ backends:
 #     # default is 0ms
 #     backfill_tolerance: 0ms
 
-#     # backfill_tolerance_points works like the  version, except the methodology is based on # of intervaled timestamps (points) in the series
+#     # backfill_tolerance_points works like the duration version, except the methodology is based on # of intervaled timestamps (points) in the series
 #     # instead of a relative time. You can set both values and the one impacting the most number of elements in the time series takes precedence
 #     backfill_tolerance_points: 0
 
@@ -404,7 +416,7 @@ backends:
 #     #
 #     # Each backend provider implements their own defaults for health checking
 #     # which can be overridden per backend configuration. See /docs/health.md for more information
-#     healthcheck: 
+#     healthcheck:
 
 #       ## Crafting a Heatlh Check
 
@@ -729,24 +741,8 @@ backends:
 #       # to the authenticator name (e.g., example_auth_1)
 #       realm: custom-realm-name
 
-# # Configuration Options for Metrics Instrumentation
-# metrics:
-#   # listen_port defines the port that Tricksters metrics server listens on at /metrics
-#   # 8481 is the default
-#   listen_port: 8481
-#   # listen_address defines the ip that Tricksters metrics server listens on at /metrics
-#   # empty by default, listening on all interfaces
-#   listen_address: ''
-
-# # Configuration Options for Trickster Management
+# # Trickster Management Options
 # mgmt:
-#   # listen_port defines the port where Trickster's management server listens
-#   # 8484 is the default 
-#   listen_port: 8484
-#   # listen_address defines the ip where Trickster's management server listens
-#   # empty by default, listening on all interfaces
-#   listen_address: ''
-
 #   # reload_handler_path defines the HTTP path where the Reload interface is available.
 #   # by default, this is /trickster/config/reload
 #   reload_handler_path: /trickster/config/reload
@@ -765,6 +761,10 @@ backends:
 #   # default is /trickster/config
 #   config_handler_path: /trickster/config
 
+#   # config_handler_listener provides the HTTP listener that hosts the config endpoints
+#   # Options are: "metrics", "mgmt", "both", or "off"; default is mgmt
+#   config_handler_listener: mgmt
+
 #   # ping_handler_path provides the HTTP path you will use to perform an uptime health check against Trickster
 #   # which can be reached at http://your-trickster-endpoint:port/$ping_handler_path
 #   # default is /trickster/ping
@@ -775,9 +775,9 @@ backends:
 #   # default is /trickster/health. Set to empty string to fully disable upstream health checking
 #   health_handler_path: /trickster/health
 
-#   # pprof_server provides the name of the http listener that will host the pprof debugging routes
+#   # pprof_listener provides the name of the http listener that will host the pprof debugging routes
 #   # Options are: "metrics", "mgmt", "both", or "off"; default is both
-#   pprof_server: both
+#   pprof_listener: both
 
 # # Configuration Options for Logging Instrumentation
 # logging:

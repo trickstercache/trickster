@@ -35,6 +35,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/evictionmethods"
 	"github.com/trickstercache/trickster/v2/pkg/cache/negative"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
+	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	tro "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
@@ -63,6 +64,8 @@ type Options struct {
 	Hosts []string `yaml:"hosts,omitempty"`
 	// Provider describes the type of backend (e.g., 'prometheus')
 	Provider string `yaml:"provider,omitempty"`
+	// ListenerName identifies the inbound listener that exposes this backend.
+	ListenerName string `yaml:"listener_name,omitempty"`
 	// OriginURL provides the base upstream URL for all proxied requests to this Backend.
 	// it can be as simple as http://example.com or as complex as https://example.com:8443/path/prefix
 	OriginURL string `yaml:"origin_url,omitempty"`
@@ -269,6 +272,7 @@ func New() *Options {
 		NegativeCacheName:            DefaultBackendNegativeCacheName,
 		Paths:                        make(po.List, 0, 10),
 		RevalidationFactor:           DefaultRevalidationFactor,
+		ListenerName:                 listener.DefaultFrontendName,
 		MaxShardSizePoints:           DefaultTimeseriesShardSize,
 		MaxShardSizeTime:             DefaultTimeseriesShardSize,
 		ShardStep:                    DefaultTimeseriesShardStep,
@@ -582,6 +586,9 @@ func (l Lookup) Initialize() error {
 // any values that were set during YAML unmarshaling
 func (o *Options) Initialize(name string) error {
 	o.Name = name
+	if o.ListenerName == "" {
+		o.ListenerName = listener.DefaultFrontendName
+	}
 
 	if o.OriginURL != "" {
 		parsedURL, err := url.Parse(o.OriginURL)

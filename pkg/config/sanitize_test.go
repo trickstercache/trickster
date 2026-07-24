@@ -55,6 +55,9 @@ tracing:
     endpoint: traces-b.private.example:4317
   traces-stdout:
     provider: stdout
+listeners:
+  private-listener:
+    port: 9000
 backends:
   alb-main:
     provider: alb
@@ -74,6 +77,7 @@ backends:
             to_credential: upstream-credential
   prom-a:
     provider: prometheus
+    listener_name: private-listener
     origin_url: http://prom-a.private.example:9090/private/path
     cache_name: cache-a
     authenticator_name: auth-z
@@ -93,6 +97,7 @@ backends:
         authenticator_name: none
   prom-b:
     provider: prometheus
+    listener_name: private-listener
     origin_url: http://prom-b.private.example:9090/private/path
     cache_name: cache-b
     tracing_name: traces-a
@@ -132,13 +137,15 @@ request_rewriters:
 		"memory-1:",
 		"memory-2:",
 		"redis-1:",
+		"listener-1:",
+		"listener_name: listener-1",
 		"auth1:",
 		"auth2:",
 		"authenticator_name: auth2",
 		"authenticator_name: auth1",
 		"authenticator_name: none",
-		"user1: redacted",
-		"user2: redacted",
+		"user1: '*****'",
+		"user2: '*****'",
 		"otlp-1:",
 		"otlp-2:",
 		"stdout-1:",
@@ -183,6 +190,7 @@ request_rewriters:
 		"cache-a",
 		"cache-b",
 		"redis-cache",
+		"private-listener",
 		"redis.private.example",
 		"redis-a.private.example",
 		"redis-b.private.example",
@@ -218,6 +226,9 @@ request_rewriters:
 
 	if conf.Backends["prom-a"].CacheName != "cache-a" {
 		t.Errorf("expected original backend cache name to remain unchanged")
+	}
+	if conf.Backends["prom-a"].ListenerName != "private-listener" {
+		t.Errorf("expected original backend listener reference to remain unchanged")
 	}
 	if conf.Backends["prom-a"].Paths[0].RequestHeaders["X-Org-ID"] != "private-org" {
 		t.Errorf("expected original path request header to remain unchanged")

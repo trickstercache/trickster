@@ -36,6 +36,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/rule"
 	"github.com/trickstercache/trickster/v2/pkg/cache/registry"
 	"github.com/trickstercache/trickster/v2/pkg/config"
+	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
@@ -46,6 +47,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 	testutil "github.com/trickstercache/trickster/v2/pkg/testutil"
 )
@@ -484,4 +486,40 @@ func TestRegisterDefaultBackendRoutes(t *testing.T) {
 
 	logger.SetLogger(logging.ConsoleLogger(level.Info))
 	l.Close()
+}
+
+func TestRegisterDefaultBackendRoutesForListeners(t *testing.T) {
+	conf := config.NewConfig()
+	o := conf.Backends["default"]
+	o.ListenerName = "custom"
+	o.IsDefault = true
+	p := po.New()
+	p.Path = "/"
+	p.Handler = http.HandlerFunc(testutil.BasicHTTPHandler)
+	p.Methods = methods.GetAndPost()
+	p.MatchType = matching.PathMatchTypePrefix
+	o.Paths = po.List{p}
+
+	client, err := reverseproxycache.NewClient("default", o, lm.NewRouter(), nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defaultRouter := lm.NewRouter()
+	customRouter := lm.NewRouter()
+	RegisterDefaultBackendRoutesForListeners(map[string]router.Router{
+		listener.DefaultFrontendName: defaultRouter,
+		"custom":                     customRouter,
+	}, conf, backends.Backends{"default": client}, nil)
+
+	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	customResponse := httptest.NewRecorder()
+	customRouter.ServeHTTP(customResponse, request)
+	if customResponse.Code != http.StatusOK {
+		t.Errorf("custom listener status = %d, want %d", customResponse.Code, http.StatusOK)
+	}
+	defaultResponse := httptest.NewRecorder()
+	defaultRouter.ServeHTTP(defaultResponse, request)
+	if defaultResponse.Code == http.StatusOK {
+		t.Errorf("backend route was also registered on default")
+	}
 }
