@@ -258,7 +258,8 @@ func RegisterPathRoutes(r router.Router, conf *config.Config, handlers handlers.
 	applyMiddleware := func(po1 *po.Options) http.Handler {
 		// default base route is the path handler
 		maxBodySizeBytes, truncateOnly := getSizeLimits(frontendOptions(conf, o))
-		h := bodyfilter.Handler(maxBodySizeBytes, truncateOnly, po1.Handler)
+		h := middleware.LimitQueryRange(po1.Handler)
+		h = bodyfilter.Handler(maxBodySizeBytes, truncateOnly, h)
 		// attach distributed tracer
 		if tr != nil {
 			h = middleware.Trace(tr, h)
@@ -267,7 +268,7 @@ func RegisterPathRoutes(r router.Router, conf *config.Config, handlers handlers.
 		h = attachAuthenticator(h, po1, o)
 		// attach compression handler
 		h = encoding.HandleCompression(h, o.CompressibleTypes)
-		// add Backend, Cache, and Path Configs to the HTTP Request's context
+		// add Backend, Cache, and Path Configs to the HTTP Request's context (must wrap outer than LimitQueryRange)
 		h = middleware.WithResourcesContext(client, o, c, po1, tr, h)
 		// attach any request rewriters
 		if len(o.ReqRewriter) > 0 {
@@ -351,14 +352,15 @@ func registerDefaultBackendRoutes(routerFor func(*bo.Options) router.Router, con
 	) http.Handler {
 		// default base route is the path handler
 		maxBodySizeBytes, truncateOnly := getSizeLimits(frontendOptions(conf, o))
-		h := bodyfilter.Handler(maxBodySizeBytes, truncateOnly, po.Handler)
+		h := middleware.LimitQueryRange(po.Handler)
+		h = bodyfilter.Handler(maxBodySizeBytes, truncateOnly, h)
 		// attach distributed tracer
 		if tr != nil {
 			h = middleware.Trace(tr, h)
 		}
 		// attach authenticator
 		h = attachAuthenticator(h, po, o)
-		// add Backend, Cache, and Path Configs to the HTTP Request's context
+		// add Backend, Cache, and Path Configs to the HTTP Request's context (must wrap outer than LimitQueryRange)
 		h = middleware.WithResourcesContext(client, o, c, po, tr, h)
 		// attach any request rewriters
 		if len(o.ReqRewriter) > 0 {

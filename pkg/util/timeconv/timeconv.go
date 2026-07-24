@@ -186,3 +186,28 @@ func SleepRandomMS(min, max int) {
 	}
 	time.Sleep(time.Duration(delay) * time.Millisecond)
 }
+
+// Duration is a custom time.Duration type that supports custom YAML marshalling
+type Duration time.Duration
+
+// UnmarshalYAML unmarshals a string into a timeconv.Duration
+func (d *Duration) UnmarshalYAML(unmarshal func(any) error) error {
+	var value string
+	if err := unmarshal(&value); err != nil {
+		return err
+	}
+
+	parsed, err := ParseDuration(value)
+	if err != nil {
+		return err
+	}
+
+	*d = Duration(parsed)
+	return nil
+}
+
+// MarshalYAML marshals a timeconv.Duration to string format
+func (d Duration) MarshalYAML() (any, error) {
+	return time.Duration(d).String(), nil
+}
+
