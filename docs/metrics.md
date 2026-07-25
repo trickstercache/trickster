@@ -77,6 +77,10 @@ The following metrics are available for polling with any Trickster configuration
 
 * `trickster_proxy_failed_connections_total` (Counter) - Trickster total number of failed client connections.
 
+* `trickster_proxy_query_range_rejected_total` (Counter) - Trickster total number of queries rejected due to exceeding the `max_query_range` limit.
+  * labels:
+    * `backend` - the name of the configured backend rejecting the query
+
 * `trickster_cache_operation_objects_total` (Counter) - The total number of objects upon which the Trickster cache has operated.
   * labels:
     * `cache_name` - the name of the configured cache performing the operation$
