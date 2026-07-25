@@ -28,6 +28,8 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+
 	"github.com/stretchr/testify/require"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
@@ -287,7 +289,7 @@ func TestProbe(t *testing.T) {
 				Scheme:        "http",
 				Host:          "probe-loop.invalid",
 				Path:          "/",
-				Interval:      intervalMS * time.Millisecond,
+				Interval:      timeconv.Duration(intervalMS * time.Millisecond),
 				ExpectedCodes: []int{200},
 			}, client)
 			require.NoError(t, err)

@@ -20,6 +20,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+
 	bao "github.com/trickstercache/trickster/v2/pkg/cache/badger/options"
 	bbo "github.com/trickstercache/trickster/v2/pkg/cache/bbolt/options"
 	flo "github.com/trickstercache/trickster/v2/pkg/cache/filesystem/options"
@@ -93,8 +95,8 @@ func newCacheConfig(t *testing.T, cacheProvider string) *co.Options {
 		BBolt:      &bbo.Options{Filename: "/tmp/test.db", Bucket: "trickster_test"},
 		Badger:     &bao.Options{Directory: bd, ValueDirectory: bd},
 		Index: &io.Options{
-			ReapInterval:          3 * time.Millisecond,
-			FlushInterval:         5 * time.Millisecond,
+			ReapInterval:          timeconv.Duration(3 * time.Millisecond),
+			FlushInterval:         timeconv.Duration(5 * time.Millisecond),
 			MaxSizeBytes:          536870912,
 			MaxSizeBackoffBytes:   16777216,
 			MaxSizeObjects:        0,

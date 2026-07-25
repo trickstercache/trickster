@@ -29,6 +29,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+
 	"github.com/trickstercache/mockster/pkg/mocks/byterange"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
@@ -138,7 +140,7 @@ func TestObjectProxyCacheRequest(t *testing.T) {
 	r.Header.Add(headers.NameRange, "bytes=0-3")
 
 	o := rsc.BackendOptions
-	o.MaxTTL = time.Duration(15000) * time.Millisecond
+	o.MaxTTL = timeconv.Duration(time.Duration(15000) * time.Millisecond)
 
 	_, e := testFetchOPC(r, http.StatusPartialContent, "test", map[string]string{"status": "kmiss"})
 	for _, err = range e {
@@ -634,7 +636,7 @@ func TestObjectProxyCacheRequestWithPCF(t *testing.T) {
 	defer closeTestHarness(ts, r)
 
 	o := rsc.BackendOptions
-	o.MaxTTL = time.Duration(15000) * time.Millisecond
+	o.MaxTTL = timeconv.Duration(time.Duration(15000) * time.Millisecond)
 
 	r.Header.Set("testHeaderName", "testHeaderValue")
 

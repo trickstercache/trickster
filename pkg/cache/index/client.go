@@ -95,7 +95,7 @@ func NewIndexedClient(
 					logging.Pairs{"cacheName": cacheName, "bytes": len(b), "max": maxIndexBytes})
 			} else {
 				idx.UnmarshalMsg(b)
-				if time.Since(idx.LastFlush.Load()) > indexExpiry {
+				if time.Since(idx.LastFlush.Load()) > time.Duration(indexExpiry) {
 					idx.Clear()
 				}
 			}
@@ -330,7 +330,7 @@ func (idx *IndexedClient) flusher(ctx context.Context) {
 			select {
 			case <-ctx.Done():
 				break FLUSHER
-			case <-time.After(fi):
+			case <-time.After(time.Duration(fi)):
 				if idx.lastWrite.Load().Before(idx.LastFlush.Load()) {
 					continue
 				}
@@ -388,7 +388,7 @@ func (idx *IndexedClient) flushOnce() {
 			logging.Pairs{"cacheName": idx.name, "detail": err.Error()})
 		return
 	}
-	idx.Client.Store(IndexKey, bytes, idx.options.Load().(*options.Options).IndexExpiry)
+	idx.Client.Store(IndexKey, bytes, time.Duration(idx.options.Load().(*options.Options).IndexExpiry))
 }
 
 // reaper continually iterates through the cache to find expired elements and removes them
@@ -401,7 +401,7 @@ func (idx *IndexedClient) reaper(ctx context.Context) {
 			select {
 			case <-ctx.Done():
 				break REAPER
-			case <-time.After(ri):
+			case <-time.After(time.Duration(ri)):
 			case <-idx.forceReap:
 			}
 			idx.reap()

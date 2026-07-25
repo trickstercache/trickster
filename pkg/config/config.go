@@ -319,7 +319,7 @@ func (c *Config) IsStale() bool {
 		c.MgmtConfig = mgmt.New()
 	}
 
-	c.Main.configRateLimitTime = time.Now().Add(c.MgmtConfig.ReloadRateLimit)
+	c.Main.configRateLimitTime = time.Now().Add(time.Duration(c.MgmtConfig.ReloadRateLimit))
 	t := c.CheckFileLastModified()
 	if t.IsZero() {
 		return false
@@ -339,7 +339,7 @@ func (c *Config) CheckAndMarkReloadInProgress() bool {
 	if c.MgmtConfig == nil {
 		c.MgmtConfig = mgmt.New()
 	}
-	c.Main.configRateLimitTime = time.Now().Add(c.MgmtConfig.ReloadRateLimit)
+	c.Main.configRateLimitTime = time.Now().Add(time.Duration(c.MgmtConfig.ReloadRateLimit))
 	t := c.CheckFileLastModified()
 	if t.IsZero() {
 		return false

@@ -18,15 +18,15 @@ package options
 
 import (
 	"maps"
-	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 )
 
 // Options stores information about Prometheus Options
 type Options struct {
 	Labels       map[string]string `yaml:"labels,omitempty"`
-	InstantRound time.Duration     `yaml:"instant_round,omitempty"`
+	InstantRound timeconv.Duration `yaml:"instant_round,omitempty"`
 }
 
 // New returns a new Prometheus Options with default values

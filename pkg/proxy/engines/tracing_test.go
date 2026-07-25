@@ -26,6 +26,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+
 	cr "github.com/trickstercache/trickster/v2/pkg/cache/registry"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	otracing "github.com/trickstercache/trickster/v2/pkg/observability/tracing"
@@ -236,7 +238,7 @@ func TestObjectProxyCacheRequestSpanIncludesResourceStatusAttributes(t *testing.
 
 	tr, sr := tu.NewRecordingTracer(t)
 	rsc.Tracer = tr
-	rsc.BackendOptions.MaxTTL = 15 * time.Second
+	rsc.BackendOptions.MaxTTL = timeconv.Duration(15 * time.Second)
 	r.Header.Add(headers.NameRange, "bytes=0-3")
 	r = request.SetResources(r, rsc)
 

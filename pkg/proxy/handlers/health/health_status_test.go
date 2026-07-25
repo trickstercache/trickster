@@ -23,6 +23,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb"
 	uropt "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/ur/options"
@@ -135,7 +137,7 @@ func TestUpdateStatusTextBackendsAndALB(t *testing.T) {
 	rpOpts := bo.New()
 	rpOpts.Provider = providers.ReverseProxyShort
 	rpOpts.OriginURL = "http://example.com"
-	rpOpts.HealthCheck = &ho.Options{Interval: time.Minute}
+	rpOpts.HealthCheck = &ho.Options{Interval: timeconv.Duration(time.Minute)}
 
 	noProbeOpts := bo.New()
 	noProbeOpts.Provider = providers.ReverseProxyShort

@@ -18,7 +18,7 @@ package mgmt
 
 import (
 	"errors"
-	"time"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 )
@@ -53,12 +53,12 @@ type Options struct {
 	ReloadHandlerPath string `yaml:"reload_handler_path,omitempty"`
 	// ReloadDrainTimeout provides the duration to wait for all sessions to drain before closing
 	// old resources following a reload
-	ReloadDrainTimeout time.Duration `yaml:"reload_drain_timeout,omitempty"`
+	ReloadDrainTimeout timeconv.Duration `yaml:"reload_drain_timeout,omitempty"`
 	// ReloadRateLimit limits the # of handled config reload HTTP requests to 1 per CheckRateMS
 	// if multiple HTTP requests are received in the rate limit window, only the first is handled
 	// This prevents a bad actor from stating the config file with millions of concurrent requests
 	// The rate limit does not apply to SIGHUP-based reload requests
-	ReloadRateLimit time.Duration `yaml:"reload_rate_limit,omitempty"`
+	ReloadRateLimit timeconv.Duration `yaml:"reload_rate_limit,omitempty"`
 }
 
 // ErrInvalidPprofListenerName returns an error for invalid pprof listener name
@@ -80,8 +80,8 @@ func New() *Options {
 		PurgeByPathHandlerPath: DefaultPurgeByPathHandlerPath,
 		PprofListener:          DefaultPprofListenerName,
 		ReloadHandlerPath:      DefaultReloadHandlerPath,
-		ReloadDrainTimeout:     DefaultDrainTimeout,
-		ReloadRateLimit:        DefaultRateLimit,
+		ReloadDrainTimeout:     timeconv.Duration(DefaultDrainTimeout),
+		ReloadRateLimit:        timeconv.Duration(DefaultRateLimit),
 	}
 }
 
