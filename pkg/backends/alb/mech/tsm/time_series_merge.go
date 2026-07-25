@@ -24,6 +24,7 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/errors"
@@ -61,6 +62,7 @@ type handler struct {
 	tsmOptions            options.TimeSeriesMergeOptions
 	maxCaptureBytes       int
 	maxFanoutCaptureBytes int
+	queryParser           backends.TimeseriesBackend
 
 	// poolVersion increments on every SetPool so cached pool-derived data
 	// (stripKeys) can be invalidated without locking.
@@ -119,6 +121,12 @@ func New(o *options.Options, factories rt.Lookup) (types.Mechanism, error) {
 		return nil, err
 	}
 	// convert the new time series handler to a mergeable timeseries handler to get the merge paths
+	tsb, ok := mc1.(backends.TimeseriesBackend)
+	if !ok {
+		return nil, errors.ErrInvalidTimeSeriesMergeProvider
+	}
+	out.queryParser = tsb
+
 	mc2, ok := mc1.(backends.MergeableTimeseriesBackend)
 	if !ok {
 		return nil, errors.ErrInvalidTimeSeriesMergeProvider
@@ -259,6 +267,45 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if rsc == nil {
 		defaultHandler.ServeHTTP(w, r)
 		return
+	}
+
+	// limit query time range if configured on the ALB backend
+	if rsc.BackendOptions != nil && rsc.BackendOptions.MaxQueryRange > 0 {
+		var trq *timeseries.TimeRangeQuery
+		if rsc.TimeRangeQuery != nil {
+			trq = rsc.TimeRangeQuery
+		} else if h.queryParser != nil {
+			parsedTrq, _, _, err := h.queryParser.ParseTimeRangeQuery(r)
+			if err == nil && parsedTrq != nil {
+				trq = parsedTrq
+				rsc.TimeRangeQuery = parsedTrq
+			}
+		}
+
+		if trq != nil {
+			duration := trq.Extent.End.Sub(trq.Extent.Start)
+			limit := time.Duration(rsc.BackendOptions.MaxQueryRange)
+			if duration > limit {
+				metrics.ProxyQueryRangeRejections.WithLabelValues(rsc.BackendOptions.Name).Inc()
+				clientIP := r.Header.Get("X-Forwarded-For")
+				if clientIP == "" {
+					clientIP = r.RemoteAddr
+				}
+				logger.Warn("query rejected due to max_query_range limit",
+					logging.Pairs{
+						"backendName": rsc.BackendOptions.Name,
+						"clientIP":    clientIP,
+						"path":        r.URL.Path,
+						"statement":   trq.Statement,
+						"start":       trq.Extent.Start.String(),
+						"end":         trq.Extent.End.String(),
+						"duration":    duration.String(),
+						"limit":       limit.String(),
+					})
+				http.Error(w, "query time range exceeds the allowed limit of "+limit.String(), http.StatusBadRequest)
+				return
+			}
+		}
 	}
 
 	// Determine the correct merge strategy for this query. We ask the first
