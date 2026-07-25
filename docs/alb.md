@@ -83,6 +83,12 @@ Here is the visual representation of this configuration:
 
 The **Time Series Merge** mechanism supports both High Availability and federation. Each physical backend represents one logical data shard. Set the backend-level `replica_group` option to the same value on physical backends that are HA replicas of that shard. TSM first coalesces those replicas, using configured pool order to resolve overlapping points and later replicas to fill gaps, and then reduces the distinct logical shards.
 
+When a TSM pool member is itself an ALB (for example, a round-robin ALB over
+Prometheus backends), set `replica_group` on that immediate nested ALB. Trickster
+uses the wrapper as the replica-group boundary while delegating TSM planning and
+finalization to its terminal Prometheus provider. Other ALBs and non-TSM
+providers cannot set an explicit replica group.
+
 When `replica_group` is omitted, it defaults to the backend name, so existing configurations continue to treat every backend as a distinct shard. Explicitly set it for HA pools that use non-idempotent aggregations such as `sum`, `count`, or `avg`; otherwise replicas will be counted as separate data.
 
 Replica grouping is backend-global, not ALB-specific. A backend cannot be a replica in one ALB and a disjoint shard in another; define a second backend entry if both views are required. Partially overlapping datasets are not representable: one backend belongs to one logical shard for all TSM queries. Injected labels remain useful output and routing metadata, but they do not establish replica provenance.

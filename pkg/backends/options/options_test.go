@@ -174,6 +174,20 @@ backends:
 	if out := unset.ToYAML(); strings.Contains(out, "replica_group:") {
 		t.Fatalf("implicit replica group should not be exported:\n%s", out)
 	}
+
+	nested := New()
+	nested.Provider = providers.ALB
+	nested.ReplicaGroup = "shard-a"
+	if err := nested.Initialize("nested-a"); err != nil {
+		t.Fatalf("nested ALB replica group rejected: %v", err)
+	}
+
+	unsupported := New()
+	unsupported.Provider = providers.ReverseProxyShort
+	unsupported.ReplicaGroup = "shard-a"
+	if err := unsupported.Initialize("proxy-a"); err == nil {
+		t.Fatal("expected replica group on reverse proxy backend to be rejected")
+	}
 }
 
 func TestValidateBackendName(t *testing.T) {

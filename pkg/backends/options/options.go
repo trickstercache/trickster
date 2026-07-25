@@ -597,8 +597,9 @@ func (o *Options) Initialize(name string) error {
 	o.Name = name
 	o.ReplicaGroup = strings.TrimSpace(o.ReplicaGroup)
 	if !providers.IsSupportedTimeSeriesMergeProvider(o.Provider) &&
+		o.Provider != providers.ALB &&
 		o.ReplicaGroup != "" && o.ReplicaGroup != name {
-		return errors.New("replica_group is only permitted on TSM-compatible backends")
+		return errors.New("replica_group is only permitted on TSM-compatible backends or nested ALBs")
 	}
 	if o.ReplicaGroup == "" {
 		o.ReplicaGroup = name

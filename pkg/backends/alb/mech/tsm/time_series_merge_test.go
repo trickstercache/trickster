@@ -25,8 +25,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
-	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
+	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
@@ -169,6 +169,10 @@ func TestTSMPanicAllMembersDoesNotCrashRequest(t *testing.T) {
 type mockTimeseriesBackend struct {
 	backends.TimeseriesBackend
 	parseTRQFunc func(*http.Request) (*timeseries.TimeRangeQuery, *timeseries.RequestOptions, bool, error)
+}
+
+func (m *mockTimeseriesBackend) Configuration() *bo.Options {
+	return &bo.Options{Name: "mock-timeseries"}
 }
 
 func (m *mockTimeseriesBackend) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery, *timeseries.RequestOptions, bool, error) {

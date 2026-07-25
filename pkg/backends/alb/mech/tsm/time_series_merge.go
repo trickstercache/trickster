@@ -772,10 +772,7 @@ func (h *handler) serveStandard(
 	// parse error) where a member produced no contribution but no HTTP
 	// status reached this layer. Without this, the merged response would
 	// silently look identical to a fully-successful fanout.
-	logicalResults := results
-	if mergeStrategy != tsmerge.StrategyScalar {
-		logicalResults = coalesceReplicaResults(hl, configuredTargets, results)
-	}
+	logicalResults := coalesceReplicaResults(hl, configuredTargets, results)
 	hasGatherFailure := groupFailure
 	for _, res := range logicalResults {
 		if res.failed {

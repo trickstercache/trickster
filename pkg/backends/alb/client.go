@@ -47,6 +47,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	tsmerge "github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
@@ -126,13 +128,32 @@ func StopPools(clients backends.Backends) error {
 
 // ValidateClients iterates the backends and validates ALB backends
 func ValidateClients(clients backends.Backends) error {
-	backends := sets.MapKeysToStringSet(clients)
+	backendNames := sets.MapKeysToStringSet(clients)
+	nestedTSMMembers := sets.NewStringSet()
+	for _, client := range clients {
+		if client == nil || client.Configuration() == nil {
+			continue
+		}
+		cfg := client.Configuration()
+		if cfg.Provider == providers.ALB && cfg.ALBOptions != nil &&
+			cfg.ALBOptions.MechanismName == names.MechanismTSM {
+			for _, member := range cfg.ALBOptions.Pool {
+				nestedTSMMembers.Set(member)
+			}
+		}
+	}
 	for _, v := range clients {
 		if v == nil || v.Configuration().Provider != providers.ALB {
 			continue
 		}
+		cfg := v.Configuration()
+		if cfg.ReplicaGroup != "" && cfg.ReplicaGroup != cfg.Name &&
+			!nestedTSMMembers.Contains(cfg.Name) {
+			return fmt.Errorf("replica_group on ALB backend %q is only valid when it is a direct TSM pool member",
+				cfg.Name)
+		}
 		if c, ok := v.(*Client); ok {
-			err := c.Validate(backends)
+			err := c.Validate(backendNames)
 			if err != nil {
 				return err
 			}
@@ -270,6 +291,71 @@ func validateTSMPoolMemberProvider(name string, clients backends.Backends,
 		}
 	}
 	return nil
+}
+
+// PlanTSMMerge delegates planning through a virtual ALB wrapper to its
+// configured-first terminal TSM provider. This lets an outer TSM use nested
+// mechanisms such as round-robin without losing provider-specific PromQL
+// planning.
+func (c *Client) PlanTSMMerge(r *http.Request, query string) (*tsmerge.TSMMergePlan, error) {
+	backend, err := c.terminalTSMBackend(sets.NewStringSet())
+	if err != nil {
+		return nil, err
+	}
+	planner, ok := backend.(backends.TSMMergeProvider)
+	if !ok {
+		return nil, fmt.Errorf("%w: backend %q does not provide a merge planner",
+			alberr.ErrInvalidTimeSeriesMergeProvider, backend.Name())
+	}
+	return planner.PlanTSMMerge(r, query)
+}
+
+// FinalizeTSMMerge delegates provider-specific finalization through nested ALB
+// wrappers. The selected terminal backend is the same one used for planning.
+func (c *Client) FinalizeTSMMerge(query string, ts timeseries.Timeseries) {
+	backend, err := c.terminalTSMBackend(sets.NewStringSet())
+	if err != nil {
+		return
+	}
+	if finalizer, ok := backend.(interface {
+		FinalizeTSMMerge(string, timeseries.Timeseries)
+	}); ok {
+		finalizer.FinalizeTSMMerge(query, ts)
+	}
+}
+
+func (c *Client) terminalTSMBackend(visited sets.Set[string]) (backends.Backend, error) {
+	if c == nil || c.Configuration() == nil {
+		return nil, fmt.Errorf("%w: nested ALB is not configured",
+			alberr.ErrInvalidTimeSeriesMergeProvider)
+	}
+	name := c.Name()
+	if visited.Contains(name) {
+		return nil, fmt.Errorf("%w: cycle encountered at backend %q",
+			alberr.ErrInvalidTimeSeriesMergeProvider, name)
+	}
+	nextVisited := visited.Clone()
+	nextVisited.Set(name)
+
+	pm, ok := c.handler.(types.PoolMechanism)
+	if !ok || pm.Pool() == nil {
+		return nil, fmt.Errorf("%w: nested ALB %q has no available pool",
+			alberr.ErrInvalidTimeSeriesMergeProvider, name)
+	}
+	for _, target := range pm.Pool().ConfiguredTargets() {
+		if target == nil || target.Backend() == nil {
+			continue
+		}
+		backend := target.Backend()
+		if nested, ok := backend.(*Client); ok {
+			return nested.terminalTSMBackend(nextVisited)
+		}
+		if _, ok := backend.(backends.TSMMergeProvider); ok {
+			return backend, nil
+		}
+	}
+	return nil, fmt.Errorf("%w: nested ALB %q has no terminal merge provider",
+		alberr.ErrInvalidTimeSeriesMergeProvider, name)
 }
 
 func observeOnlyOpts() *authopt.Options {
