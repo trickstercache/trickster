@@ -195,9 +195,13 @@ func (h *handler) serveMultiVariantPlan(
 		}
 	}
 	applyPlanCompleteness(plan, executions, memberCount)
-	applyPlanPointCompleteness(plan, executions, memberCount)
+	pointCompleteness := applyPlanPointCompleteness(plan, executions, memberCount)
 	var warnings []string
-	var hasPlanFailure bool
+	if plan.Reduction.Kind == tsmerge.TSMReductionPooledVariance {
+		warnings = pooledVarianceCompletenessWarnings(
+			pointCompleteness, hl, configured)
+	}
+	hasPlanFailure := len(warnings) > 0
 	for variantIndex := range plan.Variants {
 		logical, groupWarnings, groupFailure := coalesceReplicaContributions(
 			parentCtx, hl, configured, executions[variantIndex].contributions,
@@ -205,7 +209,7 @@ func (h *handler) serveMultiVariantPlan(
 		executions[variantIndex].contributions = logical
 		warnings = append(warnings, groupWarnings...)
 		if variantIndex == authorityIndex {
-			hasPlanFailure = groupFailure
+			hasPlanFailure = hasPlanFailure || groupFailure
 		}
 	}
 	var responseAccumulator *merge.Accumulator

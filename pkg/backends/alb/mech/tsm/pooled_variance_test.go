@@ -105,7 +105,7 @@ func TestReducePooledVariancePlan(t *testing.T) {
 	members := [][3]any{
 		member("2", "2", "1"),
 		member("3", "7", "2.6666666666666665"),
-		member("2", "2", "1"), // exact HA replica of member 0
+		member("2", "2", "1"), // independent shard with the same state as member 0
 	}
 	members[0][0].(*dataset.DataSet).ExtentList = timeseries.ExtentList{{
 		Start: time.Unix(0, 0), End: time.Unix(10, 0),
@@ -132,11 +132,11 @@ func TestReducePooledVariancePlan(t *testing.T) {
 	if !ok {
 		t.Fatalf("point value type: %T", series.Points[0].Values[0])
 	}
-	if got, want := state.PopulationVariance(), 8.0; math.Abs(got-want) > 1e-12 {
+	if got, want := state.PopulationVariance(), 384.0/49.0; math.Abs(got-want) > 1e-12 {
 		t.Fatalf("variance got %.17g want %.17g", got, want)
 	}
-	if state.Count != 5 {
-		t.Fatalf("deduplicated count got %v want 5", state.Count)
+	if state.Count != 7 {
+		t.Fatalf("pooled count got %v want 7", state.Count)
 	}
 	if series.Header.QueryStatement != pooledVarianceTestPlan().OriginalQuery {
 		t.Fatalf("query statement: %q", series.Header.QueryStatement)

@@ -22,7 +22,9 @@ import (
 	"math"
 	"slices"
 	"strconv"
+	"strings"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	responsemerge "github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
@@ -61,17 +63,6 @@ type pooledVarianceMemberPoint struct {
 	state  dataset.PooledVarianceState
 }
 
-type pooledVarianceStateBits struct {
-	count uint64
-	mean  uint64
-	m2    uint64
-}
-
-type pooledVarianceSeenStates struct {
-	first  pooledVarianceStateBits
-	others map[pooledVarianceStateBits]struct{}
-}
-
 type pooledVariancePointRef struct {
 	series *dataset.Series
 	index  int
@@ -108,7 +99,6 @@ func reducePooledVariancePlan(
 	if len(orderedExecutions) > 0 {
 		memberCount = len(orderedExecutions[0].contributions)
 	}
-	seenStates := make(map[pooledVariancePointKey]pooledVarianceSeenStates)
 	var output *pooledVarianceOutput
 	var warnings []string
 
@@ -158,24 +148,6 @@ func reducePooledVariancePlan(
 					" incomplete pooled-variance point(s) from pool member "+strconv.Itoa(member))
 		}
 		for _, point := range memberPoints {
-			bits := pooledVarianceBits(point.state)
-			seen, found := seenStates[point.key]
-			if !found {
-				seenStates[point.key] = pooledVarianceSeenStates{first: bits}
-			} else {
-				if bits == seen.first {
-					continue
-				}
-				if seen.others == nil {
-					capacity := min(memberCount-1, 8)
-					seen.others = make(map[pooledVarianceStateBits]struct{}, capacity)
-					seenStates[point.key] = seen
-				}
-				if _, duplicate := seen.others[bits]; duplicate {
-					continue
-				}
-				seen.others[bits] = struct{}{}
-			}
 			output.mergePoint(point.key, point.header, point.state)
 		}
 	}
@@ -186,6 +158,49 @@ func reducePooledVariancePlan(
 		accumulator.SetTSData(output.dataset)
 	}
 	return accumulator, warnings, nil
+}
+
+func pooledVarianceCompletenessWarnings(
+	members []planPointCompleteness,
+	live, configured pool.Targets,
+) []string {
+	var warnings []string
+	for _, group := range replicaTopology(live, configured) {
+		present := make(map[replicaPointKey]struct{})
+		complete := make(map[replicaPointKey]struct{})
+		for _, member := range group.live {
+			if member >= len(members) {
+				continue
+			}
+			for key := range members[member].present {
+				present[key] = struct{}{}
+			}
+			for key := range members[member].complete {
+				complete[key] = struct{}{}
+			}
+		}
+		dropped := 0
+		for key := range present {
+			if _, ok := complete[key]; !ok {
+				dropped++
+			}
+		}
+		if dropped > 0 {
+			warnings = append(warnings, pooledVarianceIncompleteWarning(group, dropped))
+		}
+	}
+	return warnings
+}
+
+func pooledVarianceIncompleteWarning(group replicaGroup, count int) string {
+	scope := "replica group " + group.id
+	if member, ok := strings.CutPrefix(group.id, "\x00member-"); ok {
+		if _, err := strconv.Atoi(member); err == nil {
+			scope = "pool member " + member
+		}
+	}
+	return "trickster: tsm excluded " + strconv.Itoa(count) +
+		" incomplete pooled-variance point(s) from " + scope
 }
 
 func indexPooledVariancePoints(
@@ -353,14 +368,6 @@ func pooledVarianceFloat(point dataset.Point) (float64, bool) {
 		return float64(value), true
 	default:
 		return 0, false
-	}
-}
-
-func pooledVarianceBits(state dataset.PooledVarianceState) pooledVarianceStateBits {
-	return pooledVarianceStateBits{
-		count: math.Float64bits(state.Count),
-		mean:  math.Float64bits(state.Mean),
-		m2:    math.Float64bits(state.M2),
 	}
 }
 

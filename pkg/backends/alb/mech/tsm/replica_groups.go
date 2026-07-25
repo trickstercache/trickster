@@ -265,6 +265,11 @@ type replicaPointKey struct {
 	epoch     int64
 }
 
+type planPointCompleteness struct {
+	present  map[replicaPointKey]struct{}
+	complete map[replicaPointKey]struct{}
+}
+
 // applyPlanPointCompleteness intersects all variants for each physical member
 // before replica selection. This prevents a sum point from one replica from
 // being paired with a count point from another replica merely because both
@@ -272,10 +277,11 @@ type replicaPointKey struct {
 func applyPlanPointCompleteness(plan *tsmerge.TSMMergePlan,
 	executions []planVariantExecution,
 	memberCount int,
-) {
+) []planPointCompleteness {
+	memberSets := make([]planPointCompleteness, memberCount)
 	if plan == nil || plan.Completeness != tsmerge.TSMCompletenessAllVariants ||
 		len(executions) < 2 {
-		return
+		return memberSets
 	}
 	for member := range memberCount {
 		variantSets := make([]map[replicaPointKey]struct{}, len(executions))
@@ -305,6 +311,12 @@ func applyPlanPointCompleteness(plan *tsmerge.TSMMergePlan,
 			}
 			continue
 		}
+		present := make(map[replicaPointKey]struct{})
+		for _, variantSet := range variantSets {
+			for key := range variantSet {
+				present[key] = struct{}{}
+			}
+		}
 		complete := variantSets[0]
 		for key := range complete {
 			for variantIndex := 1; variantIndex < len(variantSets); variantIndex++ {
@@ -314,11 +326,15 @@ func applyPlanPointCompleteness(plan *tsmerge.TSMMergePlan,
 				}
 			}
 		}
+		memberSets[member] = planPointCompleteness{
+			present: present, complete: complete,
+		}
 		for variantIndex := range executions {
 			ds := executions[variantIndex].contributions[member].data.(*dataset.DataSet)
 			pruneDataSetPoints(ds, plan.OriginalQuery, complete)
 		}
 	}
+	return memberSets
 }
 
 func dataSetPointKeys(ds *dataset.DataSet, pairingQuery string) map[replicaPointKey]struct{} {

@@ -58,6 +58,7 @@ type pooledVarianceMemberSpec struct {
 	mean           string
 	variance       string
 	tags           dataset.Tags
+	replicaGroup   string
 	failVariant    string
 	missingMeanAt2 bool
 }
@@ -108,7 +109,11 @@ func newPooledVariancePool(specs []pooledVarianceMemberSpec, stripLabel string) 
 		}
 		backend := &pooledVarianceBackend{
 			stripKeysStubBackend: stripKeysStubBackend{
-				cfg: &bo.Options{Prometheus: &prop.Options{Labels: labels}},
+				cfg: &bo.Options{
+					Name:         "member-" + strconv.Itoa(i),
+					ReplicaGroup: spec.replicaGroup,
+					Prometheus:   &prop.Options{Labels: labels},
+				},
 			},
 		}
 		targets[i] = pool.NewTarget(pooledVarianceMemberHandler(spec), status, backend)
@@ -123,9 +128,12 @@ func TestServePooledVariance(t *testing.T) {
 
 	t.Run("unequal members and HA replica", func(t *testing.T) {
 		specs := []pooledVarianceMemberSpec{
-			{count: "2", mean: "2", variance: "1", tags: dataset.Tags{"job": "api", "replica": "a"}},
-			{count: "3", mean: "7", variance: "2.6666666666666665", tags: dataset.Tags{"job": "api", "replica": "b"}},
-			{count: "2", mean: "2", variance: "1", tags: dataset.Tags{"job": "api", "replica": "c"}},
+			{count: "2", mean: "2", variance: "1", replicaGroup: "shard-a",
+				tags: dataset.Tags{"job": "api", "replica": "a"}},
+			{count: "3", mean: "7", variance: "2.6666666666666665", replicaGroup: "shard-b",
+				tags: dataset.Tags{"job": "api", "replica": "b"}},
+			{count: "2", mean: "2", variance: "1", replicaGroup: "shard-a",
+				tags: dataset.Tags{"job": "api", "replica": "c"}},
 		}
 		p := newPooledVariancePool(specs, "replica")
 		defer p.Stop()
@@ -148,6 +156,53 @@ func TestServePooledVariance(t *testing.T) {
 		if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "100=8;") ||
 			!strings.Contains(w.Body.String(), "200=8;") {
 			t.Fatalf("status=%d body=%q", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("identical disjoint shards remain independently weighted", func(t *testing.T) {
+		specs := []pooledVarianceMemberSpec{
+			{count: "2", mean: "2", variance: "1", tags: dataset.Tags{"job": "api"}},
+			{count: "3", mean: "7", variance: "2.6666666666666665",
+				tags: dataset.Tags{"job": "api"}},
+			{count: "2", mean: "2", variance: "1", tags: dataset.Tags{"job": "api"}},
+		}
+		p := newPooledVariancePool(specs, "")
+		defer p.Stop()
+		albpool.WaitHealthy(t, p, len(specs))
+		h := &handler{mergePaths: []string{"/"}}
+		h.SetPool(p)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, newWeightedAvgRequest(t, "stdvar by (job) (requests)"))
+
+		if w.Code != http.StatusOK ||
+			!strings.Contains(w.Body.String(), "100=7.836734693877552;") ||
+			!strings.Contains(w.Body.String(), "200=7.836734693877552;") {
+			t.Fatalf("status=%d body=%q", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("complete replica fills an incomplete primary point", func(t *testing.T) {
+		specs := []pooledVarianceMemberSpec{
+			{count: "2", mean: "3", variance: "1", replicaGroup: "shard-a",
+				tags: dataset.Tags{"job": "api"}, missingMeanAt2: true},
+			{count: "2", mean: "3", variance: "1", replicaGroup: "shard-a",
+				tags: dataset.Tags{"job": "api"}},
+		}
+		p := newPooledVariancePool(specs, "")
+		defer p.Stop()
+		albpool.WaitHealthy(t, p, len(specs))
+		h := &handler{mergePaths: []string{"/"}}
+		h.SetPool(p)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, newWeightedAvgRequest(t, "stdvar by (job) (requests)"))
+
+		body := w.Body.String()
+		if w.Code != http.StatusOK || !strings.Contains(body, "100=1;") ||
+			!strings.Contains(body, "200=1;") || strings.Contains(body, "incomplete") {
+			t.Fatalf("status=%d body=%q", w.Code, body)
+		}
+		if got := w.Header().Get(headers.NameTricksterResult); strings.Contains(got, "status=phit") {
+			t.Fatalf("result header: %q", got)
 		}
 	})
 
