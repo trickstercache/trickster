@@ -73,3 +73,7 @@ backends:
 ### Interaction with ALB Merge Strategy
 
 When using label injection with an ALB configured for [Time Series Merge](./alb.md#time-series-merge), injected labels are automatically stripped from responses before merging. This ensures that series from different backends are aggregated correctly, and the injected labels do not appear in the final response to the caller. See the [ALB Merge Strategy documentation](./alb.md#merge-strategy) for details.
+
+## Max Query Range Limitation
+
+Trickster supports enforcing a `max_query_range` limit on Prometheus backends. For details on how to configure and use query range limits, see the [Query Range Limits](./query-range-limits.md) documentation.

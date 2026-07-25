@@ -209,6 +209,7 @@ func TestLimitQueryRangeALB(t *testing.T) {
 	albpool.WaitHealthy(t, p, 1)
 
 	h := &handler{mergePaths: []string{"/"}}
+	h.queryParser = mockMemberBackend
 	h.SetPool(p)
 
 	t.Run("within limit", func(t *testing.T) {

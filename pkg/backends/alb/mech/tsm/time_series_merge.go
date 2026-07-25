@@ -62,6 +62,7 @@ type handler struct {
 	tsmOptions            options.TimeSeriesMergeOptions
 	maxCaptureBytes       int
 	maxFanoutCaptureBytes int
+	queryParser           backends.TimeseriesBackend
 
 	// poolVersion increments on every SetPool so cached pool-derived data
 	// (stripKeys) can be invalidated without locking.
@@ -120,6 +121,12 @@ func New(o *options.Options, factories rt.Lookup) (types.Mechanism, error) {
 		return nil, err
 	}
 	// convert the new time series handler to a mergeable timeseries handler to get the merge paths
+	tsb, ok := mc1.(backends.TimeseriesBackend)
+	if !ok {
+		return nil, errors.ErrInvalidTimeSeriesMergeProvider
+	}
+	out.queryParser = tsb
+
 	mc2, ok := mc1.(backends.MergeableTimeseriesBackend)
 	if !ok {
 		return nil, errors.ErrInvalidTimeSeriesMergeProvider
@@ -267,14 +274,11 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		var trq *timeseries.TimeRangeQuery
 		if rsc.TimeRangeQuery != nil {
 			trq = rsc.TimeRangeQuery
-		} else if hl[0] != nil {
-			if b := hl[0].Backend(); b != nil {
-				if tsb, ok := b.(backends.TimeseriesBackend); ok {
-					if parsedTrq, _, _, err := tsb.ParseTimeRangeQuery(r); err == nil && parsedTrq != nil {
-						trq = parsedTrq
-						rsc.TimeRangeQuery = parsedTrq
-					}
-				}
+		} else if h.queryParser != nil {
+			parsedTrq, _, _, err := h.queryParser.ParseTimeRangeQuery(r)
+			if err == nil && parsedTrq != nil {
+				trq = parsedTrq
+				rsc.TimeRangeQuery = parsedTrq
 			}
 		}
 

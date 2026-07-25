@@ -270,6 +270,11 @@ backends:
     # it is false, by default; but if you only have a single backend configured, is_default will be true unless explicitly set to false
     is_default: true
 
+    # max_query_range specifies the maximum allowed query range duration for this backend (e.g. 1h, 1d, 14d).
+    # Setting this value restricts clients from making oversized queries.
+    # default is empty (disabled)
+    # max_query_range: 14d
+
 #     # hosts indicates which FQDNs requested by the client should route to this Origin (in addition to path-based routing)
 #     # if you are using TLS, all FQDNs should be included in the certfiicate common names to avoid insecure warnings to clients
 #     # default setting is empty list. List format is: hosts: [ 1.example.com, 2.example.com ]

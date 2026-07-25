@@ -120,7 +120,7 @@ Native histogram samples are preserved through the merge rather than being numer
 
 #### Max Query Range Limitation
 
-Trickster ALB supports enforcing a `max_query_range` duration on ALB backends. When configured (e.g. `max_query_range: 14d`), queries spanning a duration longer than allowed are rejected at the ALB entry point prior to fanout, returning an HTTP `400 Bad Request` status and incrementing the `query_range_rejections_total` metric.
+Trickster ALB supports enforcing a `max_query_range` duration on ALB backends. For details on how to configure and use query range limits, see the [Query Range Limits](./query-range-limits.md) documentation.
 
 #### Providers Supporting Time Series Merge
 
