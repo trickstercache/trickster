@@ -20,6 +20,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+
 	ct "github.com/trickstercache/trickster/v2/pkg/config/types"
 )
 
@@ -31,7 +33,7 @@ func TestValidateSuccess(t *testing.T) {
 		Scheme:            "https",
 		Host:              "hc.example.com",
 		Path:              "/health",
-		Timeout:           2 * time.Second,
+		Timeout:           timeconv.Duration(2 * time.Second),
 		ExpectedCodes:     []int{200, 204},
 		FailureThreshold:  1,
 		RecoveryThreshold: 2,
@@ -59,11 +61,11 @@ func TestValidateErrors(t *testing.T) {
 		},
 		{
 			name: "timeout too low",
-			o:    &Options{Timeout: MinProbeWait - 1},
+			o:    &Options{Timeout: timeconv.Duration(MinProbeWait - 1)},
 		},
 		{
 			name: "timeout too high",
-			o:    &Options{Timeout: MaxProbeWait + time.Second},
+			o:    &Options{Timeout: timeconv.Duration(MaxProbeWait + time.Second)},
 		},
 		{
 			name: "invalid expected code",

@@ -92,7 +92,7 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 		// 60-second default backfill tolerance for ClickHouse
 		bf = time.Minute
 	} else {
-		bf = res.BackendOptions.BackfillTolerance
+		bf = time.Duration(res.BackendOptions.BackfillTolerance)
 	}
 	if trq.BackfillTolerance == 0 {
 		trq.BackfillTolerance = bf

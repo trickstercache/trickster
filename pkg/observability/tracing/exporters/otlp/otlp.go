@@ -21,6 +21,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	errs "github.com/trickstercache/trickster/v2/pkg/observability/tracing/errors"
@@ -96,8 +97,8 @@ func newHTTPExporter(ctx context.Context, o *options.Options) (*otlptrace.Export
 		opts = append(opts, otlphttp.WithEndpoint(o.Endpoint))
 	}
 
-	if o.Timeout > 0 {
-		opts = append(opts, otlphttp.WithTimeout(o.Timeout))
+	if time.Duration(o.Timeout) > 0 {
+		opts = append(opts, otlphttp.WithTimeout(time.Duration(o.Timeout)))
 	}
 
 	if len(o.Headers) > 0 {
@@ -123,8 +124,8 @@ func newGRPCExporter(ctx context.Context, o *options.Options) (*otlptrace.Export
 		opts = append(opts, otlpgrpc.WithEndpoint(o.Endpoint))
 	}
 
-	if o.Timeout > 0 {
-		opts = append(opts, otlpgrpc.WithTimeout(o.Timeout))
+	if time.Duration(o.Timeout) > 0 {
+		opts = append(opts, otlpgrpc.WithTimeout(time.Duration(o.Timeout)))
 	}
 
 	if len(o.Headers) > 0 {

@@ -28,7 +28,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	ro "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/negative"
-	"github.com/trickstercache/trickster/v2/pkg/util/timeconv"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	tro "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
@@ -221,9 +221,9 @@ func testStringValueValidationError(to *testOptions, location *string, testValue
 }
 
 type durationSwapper struct {
-	location   *time.Duration
-	restoreVal time.Duration
-	testValue  time.Duration
+	location   *timeconv.Duration
+	restoreVal timeconv.Duration
+	testValue  timeconv.Duration
 }
 
 func testDurationValueValidationError(to *testOptions, sws []durationSwapper) error {
@@ -335,7 +335,7 @@ func TestValidate(t *testing.T) {
 			sw: []durationSwapper{
 				{
 					location:  &o.ShardStep,
-					testValue: 1,
+					testValue: timeconv.Duration(1),
 				},
 			},
 			expected: nil,
@@ -345,11 +345,11 @@ func TestValidate(t *testing.T) {
 			sw: []durationSwapper{
 				{
 					location:  &o.MaxShardSizeTime,
-					testValue: 10,
+					testValue: timeconv.Duration(10),
 				},
 				{
 					location:  &o.ShardStep,
-					testValue: 32,
+					testValue: timeconv.Duration(32),
 				},
 			},
 			expected: ErrInvalidMaxShardSizeTime,
@@ -379,7 +379,7 @@ func TestValidate(t *testing.T) {
 
 	t.Run("maxShard edge cases", func(t *testing.T) {
 		opts := *o
-		opts.MaxShardSizeTime = 1 * time.Millisecond
+		opts.MaxShardSizeTime = timeconv.Duration(1 * time.Millisecond)
 		opts.MaxShardSizePoints = 1
 		to := &testOptions{Backends: Lookup{o.Name: &opts}}
 		require.ErrorIs(t, Lookup(to.Backends).Validate(), ErrInvalidMaxShardSize)

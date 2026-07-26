@@ -22,6 +22,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+
 	"github.com/stretchr/testify/require"
 	flo "github.com/trickstercache/trickster/v2/pkg/cache/filesystem/options"
 	io "github.com/trickstercache/trickster/v2/pkg/cache/index/options"
@@ -44,7 +46,7 @@ func setupBenchmark(b *testing.B) *CacheClient {
 	dir := b.TempDir() + "/cache/" + cacheProvider
 	cacheConfig := co.Options{
 		Provider:   cacheProvider,
-		Filesystem: &flo.Options{CachePath: dir}, Index: &io.Options{ReapInterval: time.Second},
+		Filesystem: &flo.Options{CachePath: dir}, Index: &io.Options{ReapInterval: timeconv.Duration(time.Second)},
 	}
 	fc := NewCache(b.Name(), &cacheConfig)
 
@@ -63,7 +65,7 @@ func newCacheConfig(t *testing.T) co.Options {
 	dir := t.TempDir() + "/cache/" + cacheProvider
 	return co.Options{
 		Provider: cacheProvider, Filesystem: &flo.Options{CachePath: dir},
-		Index: &io.Options{ReapInterval: time.Second},
+		Index: &io.Options{ReapInterval: timeconv.Duration(time.Second)},
 	}
 }
 

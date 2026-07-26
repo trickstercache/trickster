@@ -34,7 +34,7 @@ import (
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/albpool"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
-	"github.com/trickstercache/trickster/v2/pkg/util/timeconv"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 )
 
 var testLogger = logging.NoopLogger()

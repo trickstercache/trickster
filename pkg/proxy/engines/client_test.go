@@ -39,7 +39,7 @@ import (
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	tst "github.com/trickstercache/trickster/v2/pkg/testutil/timeseries/model"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
-	tt "github.com/trickstercache/trickster/v2/pkg/util/timeconv"
+	tt "github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 )
 
 // Prometheus API

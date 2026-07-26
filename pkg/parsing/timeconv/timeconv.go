@@ -142,18 +142,24 @@ func isIntAtPos(s string, i int) (v int64, is bool, inc int) {
 // Parse a literal duration.
 // Durations are formatted as [signed int][unit]..., with each int-unit pair representing a number of those units of duration.
 func ParseDuration(s string) (time.Duration, error) {
+	if s == "0" {
+		return 0, nil
+	}
 	if len(s) <= 1 {
 		return 0, ErrInvalidDurationFormat(0, "value of at least length 2", s)
 	}
 	var d time.Duration
 	var currentMult int64
+	var hasMult bool
+	var hasUnits bool
 	for i := 0; i < len(s); {
-		if currentMult == 0 {
+		if !hasMult {
 			v, is, inc := isIntAtPos(s, i)
 			if !is {
 				return 0, ErrInvalidDurationFormat(i, "valid integer value", s)
 			}
 			currentMult = v
+			hasMult = true
 			i += inc
 		} else {
 			u, is, inc := isUnitAtPos(s, i)
@@ -162,16 +168,15 @@ func ParseDuration(s string) (time.Duration, error) {
 			}
 			d += time.Duration(currentMult) * Durations[u]
 			currentMult = 0
+			hasMult = false
+			hasUnits = true
 			i += inc
 		}
 	}
-	// If we don't have a duration at this point, catch-all with ErrUnableToParse
-	if d == 0 {
-		return d, ErrInvalidDurationFormat(0, "valid duration string", s)
+	if !hasUnits {
+		return 0, ErrInvalidDurationFormat(0, "valid duration string", s)
 	}
-	// Multiplier should be set to zero at this point; if there isn't, it means there was a trailing
-	// multiplier without a unit.
-	if currentMult != 0 {
+	if hasMult {
 		return 0, ErrInvalidDurationFormat(len(s), "valid duration unit", s)
 	}
 	return d, nil

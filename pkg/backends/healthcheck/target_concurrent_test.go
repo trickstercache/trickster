@@ -25,6 +25,8 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+
 	"github.com/stretchr/testify/require"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
@@ -44,7 +46,7 @@ func TestTargetConcurrentStartStopRace(t *testing.T) {
 		Scheme:        u.Scheme,
 		Host:          u.Host,
 		Path:          "/",
-		Interval:      50 * time.Millisecond,
+		Interval:      timeconv.Duration(50 * time.Millisecond),
 		ExpectedCodes: []int{200},
 	}, ts.Client())
 	require.NoError(t, err)
@@ -83,7 +85,7 @@ func TestTargetRestartAfterStop(t *testing.T) {
 			Scheme:        "http",
 			Host:          "restart.invalid",
 			Path:          "/",
-			Interval:      200 * time.Millisecond,
+			Interval:      timeconv.Duration(200 * time.Millisecond),
 			ExpectedCodes: []int{200},
 		}, client)
 		require.NoError(t, err)
