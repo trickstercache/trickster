@@ -19,6 +19,7 @@ package alb
 import (
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -321,6 +322,47 @@ func (c *Client) FinalizeTSMMerge(query string, ts timeseries.Timeseries) {
 		FinalizeTSMMerge(string, timeseries.Timeseries)
 	}); ok {
 		finalizer.FinalizeTSMMerge(query, ts)
+	}
+}
+
+// TSMInjectedLabelKeys returns the union of labels injected by every terminal
+// time-series backend beneath this ALB wrapper.
+func (c *Client) TSMInjectedLabelKeys() []string {
+	seen := make(map[string]struct{})
+	c.collectTSMInjectedLabelKeys(sets.NewStringSet(), seen)
+	keys := sets.MapKeysToStringSet(seen).Keys()
+	slices.Sort(keys)
+	return keys
+}
+
+func (c *Client) collectTSMInjectedLabelKeys(visited sets.Set[string],
+	seen map[string]struct{},
+) {
+	if c == nil || c.Configuration() == nil || visited.Contains(c.Name()) {
+		return
+	}
+	nextVisited := visited.Clone()
+	nextVisited.Set(c.Name())
+	pm, ok := c.handler.(types.PoolMechanism)
+	if !ok || pm.Pool() == nil {
+		return
+	}
+	for _, target := range pm.Pool().ConfiguredTargets() {
+		if target == nil || target.Backend() == nil {
+			continue
+		}
+		backend := target.Backend()
+		if nested, ok := backend.(*Client); ok {
+			nested.collectTSMInjectedLabelKeys(nextVisited, seen)
+			continue
+		}
+		cfg := backend.Configuration()
+		if cfg == nil || cfg.Prometheus == nil {
+			continue
+		}
+		for key := range cfg.Prometheus.Labels {
+			seen[key] = struct{}{}
+		}
 	}
 }
 

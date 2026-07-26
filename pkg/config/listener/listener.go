@@ -19,11 +19,11 @@ package listener
 
 import (
 	"fmt"
-	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 
 	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
 	frontend "github.com/trickstercache/trickster/v2/pkg/frontend/options"
 	metrics "github.com/trickstercache/trickster/v2/pkg/observability/metrics/options"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"gopkg.in/yaml.v2"
 )
 

@@ -39,6 +39,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	tro "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	corso "github.com/trickstercache/trickster/v2/pkg/proxy/cors/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
@@ -49,7 +50,6 @@ import (
 	to "github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
-	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"gopkg.in/yaml.v2"
 )
 

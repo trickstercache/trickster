@@ -27,9 +27,9 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/iofmt"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
-	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 )
 
 const fqAbsoluteTimeMS string = `from("test-bucket")

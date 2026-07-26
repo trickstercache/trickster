@@ -197,6 +197,26 @@ func (h *handler) computeStripKeys(hl pool.Targets) []string {
 		if b == nil {
 			continue
 		}
+		if provider, ok := b.(backends.TSMInjectedLabelProvider); ok {
+			for _, key := range provider.TSMInjectedLabelKeys() {
+				if _, ok := seen[key]; ok {
+					continue
+				}
+				if !grew {
+					// Copy-on-write: existing snapshot may be observed by other
+					// goroutines, so we cannot mutate seen/keys in place.
+					seen = make(map[string]struct{}, len(baseSeen)+1)
+					for seenKey := range baseSeen {
+						seen[seenKey] = struct{}{}
+					}
+					keys = append([]string(nil), baseKeys...)
+					grew = true
+				}
+				seen[key] = struct{}{}
+				keys = append(keys, key)
+			}
+			continue
+		}
 		cfg := b.Configuration()
 		if cfg == nil || cfg.Prometheus == nil {
 			continue

@@ -20,9 +20,9 @@ import (
 	"testing"
 	"time"
 
-	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
-	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	uropt "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/ur/options"
+	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
+	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	ro "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/negative"

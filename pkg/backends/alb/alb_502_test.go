@@ -21,9 +21,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/stretchr/testify/require"
-	mtypes "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/tsm"
+	mtypes "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus"
@@ -34,6 +33,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/albpool"
+
+	"github.com/stretchr/testify/require"
 )
 
 // TestALB502WithMultiplePrometheusBackends ensure that multiple backends are supported by the ALB mechanism, and that a 502 is not returned

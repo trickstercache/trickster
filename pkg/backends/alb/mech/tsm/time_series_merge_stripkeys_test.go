@@ -53,6 +53,32 @@ func mkStripKeysTarget(labels map[string]string) *pool.Target {
 	return pool.NewTarget(http.NotFoundHandler(), st, be)
 }
 
+type nestedStripKeysStubBackend struct {
+	stripKeysStubBackend
+	keys []string
+}
+
+func (b *nestedStripKeysStubBackend) TSMInjectedLabelKeys() []string {
+	return b.keys
+}
+
+func TestComputeStripKeysUsesNestedProvider(t *testing.T) {
+	h := &handler{}
+	h.poolVersion.Add(1)
+	st := &healthcheck.Status{}
+	st.Set(healthcheck.StatusPassing)
+	nested := &nestedStripKeysStubBackend{
+		stripKeysStubBackend: stripKeysStubBackend{cfg: &bo.Options{Name: "nested"}},
+		keys:                 []string{"route", "tenant"},
+	}
+	target := pool.NewTarget(http.NotFoundHandler(), st, nested)
+	got := append([]string(nil), h.computeStripKeys(pool.Targets{target})...)
+	slices.Sort(got)
+	if !slices.Equal(got, []string{"route", "tenant"}) {
+		t.Fatalf("nested strip keys = %v", got)
+	}
+}
+
 func TestComputeStripKeysUnion(t *testing.T) {
 	h := &handler{}
 	h.poolVersion.Add(1)

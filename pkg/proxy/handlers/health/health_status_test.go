@@ -23,17 +23,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
-
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb"
 	uropt "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/ur/options"
-	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
+	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
 
@@ -48,8 +47,8 @@ func (s *stubHealthChecker) Register(string, string, *ho.Options, *http.Client) 
 func (s *stubHealthChecker) RegisterVirtual(string, string) *healthcheck.Status {
 	return &healthcheck.Status{}
 }
-func (s *stubHealthChecker) Unregister(string) {}
-func (s *stubHealthChecker) Status(string) *healthcheck.Status { return nil }
+func (s *stubHealthChecker) Unregister(string)                  {}
+func (s *stubHealthChecker) Status(string) *healthcheck.Status  { return nil }
 func (s *stubHealthChecker) Statuses() healthcheck.StatusLookup { return s.statuses }
 func (s *stubHealthChecker) Shutdown() {
 	if s.subCh != nil {
@@ -156,19 +155,19 @@ func TestUpdateStatusTextBackendsAndALB(t *testing.T) {
 	}
 
 	hc := &stubHealthChecker{statuses: healthcheck.StatusLookup{
-		"rp-up":      passing,
-		"rp-down":    failing,
-		"member-up":  passing,
+		"rp-up":       passing,
+		"rp-down":     failing,
+		"member-up":   passing,
 		"member-down": failing,
-		"member-nc":  unchecked,
+		"member-nc":   unchecked,
 		"member-init": init,
 	}}
 	hd := &healthDetail{}
 	bes := backends.Backends{
-		"rp-up":   &configBackend{mockBackend: mockBackend{name: "rp-up"}, cfg: rpOpts},
-		"rp-down": &configBackend{mockBackend: mockBackend{name: "rp-down"}, cfg: rpOpts},
+		"rp-up":    &configBackend{mockBackend: mockBackend{name: "rp-up"}, cfg: rpOpts},
+		"rp-down":  &configBackend{mockBackend: mockBackend{name: "rp-down"}, cfg: rpOpts},
 		"no-probe": &configBackend{mockBackend: mockBackend{name: "no-probe"}, cfg: noProbeOpts},
-		"edge":    albClient,
+		"edge":     albClient,
 		"virtual-alb": &configBackend{
 			mockBackend: mockBackend{name: "virtual-alb"},
 			cfg:         &bo.Options{Provider: providers.ALB},

@@ -32,11 +32,11 @@ import (
 	po "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
+	tt "github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/capture"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
-	tt "github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 )
 
 var (
@@ -46,16 +46,16 @@ var (
 
 // Prometheus API
 const (
-	APIPath         = "/api/v1/"
-	mnQueryRange    = "query_range"
-	mnQuery         = "query"
-	mnLabels        = "labels"
-	mnLabel         = "label"
-	mnSeries        = "series"
-	mnTargets       = "targets"
-	mnTargetsMeta   = "targets/metadata"
-	mnRules         = "rules"
-	mnAlerts        = "alerts"
+	APIPath           = "/api/v1/"
+	mnQueryRange      = "query_range"
+	mnQuery           = "query"
+	mnLabels          = "labels"
+	mnLabel           = "label"
+	mnSeries          = "series"
+	mnTargets         = "targets"
+	mnTargetsMeta     = "targets/metadata"
+	mnRules           = "rules"
+	mnAlerts          = "alerts"
 	mnAlertManagers   = "alertmanagers"
 	mnStatus          = "status"
 	mnQueryExemplars  = "query_exemplars"

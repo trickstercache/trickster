@@ -196,9 +196,9 @@ func TestValidateNoCycles(t *testing.T) {
 			// nor inflate path/visiting state.
 			name: "user_router nil + empty edges treated as no edge",
 			albs: map[string]*Options{
-				"alb_pool":      {Pool: []string{"prom1"}},
-				"alb_ur_nil":    {MechanismName: "user_router", UserRouter: nil},
-				"alb_ur_empty":  {MechanismName: "user_router", UserRouter: &ur.Options{}},
+				"alb_pool":     {Pool: []string{"prom1"}},
+				"alb_ur_nil":   {MechanismName: "user_router", UserRouter: nil},
+				"alb_ur_empty": {MechanismName: "user_router", UserRouter: &ur.Options{}},
 				"alb_ur_user0": {
 					MechanismName: "user_router",
 					UserRouter: &ur.Options{

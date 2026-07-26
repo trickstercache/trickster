@@ -170,12 +170,21 @@ backends:
   prom-a1:
     provider: prometheus
     origin_url: %s
+    prometheus:
+      labels:
+        route: a1
   prom-a2:
     provider: prometheus
     origin_url: %s
+    prometheus:
+      labels:
+        route: a2
   prom-b:
     provider: prometheus
     origin_url: %s
+    prometheus:
+      labels:
+        route: b
   rr-a1:
     provider: alb
     replica_group: shard-a
@@ -210,7 +219,7 @@ backends:
 	waitForTrickster(t, fmt.Sprintf("127.0.0.1:%d", metricsPort))
 
 	u := fmt.Sprintf("http://127.0.0.1:%d/alb-outer/api/v1/query?query=%s",
-		frontPort, url.QueryEscape("sum(requests)"))
+		frontPort, url.QueryEscape("sum by (job) (requests)"))
 	resp, err := http.Get(u)
 	require.NoError(t, err)
 	defer resp.Body.Close()
@@ -222,7 +231,8 @@ backends:
 		Status string `json:"status"`
 		Data   struct {
 			Result []struct {
-				Value []json.RawMessage `json:"value"`
+				Metric map[string]string `json:"metric"`
+				Value  []json.RawMessage `json:"value"`
 			} `json:"result"`
 		} `json:"data"`
 	}
@@ -230,6 +240,8 @@ backends:
 	require.Equal(t, "success", result.Status)
 	require.Len(t, result.Data.Result, 1, "body=%s", body)
 	require.Len(t, result.Data.Result[0].Value, 2, "body=%s", body)
+	require.Equal(t, map[string]string{"job": "api"}, result.Data.Result[0].Metric,
+		"terminal injected labels must be stripped before merging")
 	var value string
 	require.NoError(t, json.Unmarshal(result.Data.Result[0].Value[1], &value))
 	require.Equal(t, "2", value,

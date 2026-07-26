@@ -17,9 +17,8 @@
 package options
 
 import (
-	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
-
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 )
 
 // Options is a collection of Configurations for Connecting to Redis

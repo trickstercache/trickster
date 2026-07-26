@@ -20,6 +20,7 @@ import (
 	goerrors "errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
@@ -32,6 +33,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus"
+	prop "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 	pkgerrors "github.com/trickstercache/trickster/v2/pkg/errors"
@@ -272,6 +274,9 @@ func TestValidateTSMPoolMemberProviderResolvesNestedALB(t *testing.T) {
 func TestNestedALBDelegatesTSMProvider(t *testing.T) {
 	leafOptions := bo.New()
 	leafOptions.Provider = providers.Prometheus
+	leafOptions.Prometheus = &prop.Options{Labels: map[string]string{
+		"route": "a",
+	}}
 	leafBackend, err := backends.New("leaf", leafOptions, nil,
 		http.NotFoundHandler(), nil)
 	if err != nil {
@@ -308,6 +313,9 @@ func TestNestedALBDelegatesTSMProvider(t *testing.T) {
 	inner.FinalizeTSMMerge("sum(up)", nil)
 	if !leaf.finalized {
 		t.Fatal("nested finalizer did not reach terminal provider")
+	}
+	if got := inner.TSMInjectedLabelKeys(); !slices.Equal(got, []string{"route"}) {
+		t.Fatalf("nested injected label keys = %v", got)
 	}
 }
 
