@@ -20,9 +20,10 @@ package metrics
 import (
 	"net/http"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 )
 
 const (

@@ -19,9 +19,10 @@ package prometheus
 import (
 	"math"
 
-	"github.com/cespare/xxhash/v2"
 	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus/promql"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
+
+	"github.com/cespare/xxhash/v2"
 )
 
 func finalizeLimitRatio(ds *dataset.DataSet, spec promql.LimitRatioAggregation) {

@@ -23,7 +23,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/influxdata/influxql"
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/iofmt"
 	te "github.com/trickstercache/trickster/v2/pkg/errors"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
@@ -33,6 +32,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+
+	"github.com/influxdata/influxql"
 )
 
 var epochToFlag = map[string]byte{

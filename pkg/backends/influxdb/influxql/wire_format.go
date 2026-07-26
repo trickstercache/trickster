@@ -17,9 +17,10 @@
 package influxql
 
 import (
-	"github.com/influxdata/influxdb/models"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
+
+	"github.com/influxdata/influxdb/models"
 )
 
 // WFDocument the Wire Format Document for the timeseries

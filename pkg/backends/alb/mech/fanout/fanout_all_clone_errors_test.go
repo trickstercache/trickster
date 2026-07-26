@@ -23,10 +23,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/albpool"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestAllAllSlotsCloneError(t *testing.T) {

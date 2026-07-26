@@ -21,9 +21,10 @@ import (
 	"os"
 	"testing"
 
-	"github.com/stretchr/testify/require"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
+
+	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
 )
 

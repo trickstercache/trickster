@@ -22,9 +22,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
+
+	"github.com/stretchr/testify/require"
 )
 
 func testPoints() Points {

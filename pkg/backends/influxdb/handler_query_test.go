@@ -22,12 +22,13 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/stretchr/testify/require"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/errors"
 	pe "github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestQueryHandlerWithSelect(t *testing.T) {

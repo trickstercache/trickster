@@ -21,11 +21,12 @@ package memory
 import (
 	"time"
 
-	"github.com/dgraph-io/ristretto/v2"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	memoryopts "github.com/trickstercache/trickster/v2/pkg/cache/memory/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
+
+	"github.com/dgraph-io/ristretto/v2"
 )
 
 var (

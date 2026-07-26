@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
+
 	"gopkg.in/yaml.v2"
 )
 

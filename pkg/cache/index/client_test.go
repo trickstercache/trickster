@@ -22,15 +22,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
-
-	"github.com/stretchr/testify/require"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/filesystem"
 	fso "github.com/trickstercache/trickster/v2/pkg/cache/filesystem/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/index/options"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestIndexedClient(t *testing.T) {

@@ -19,8 +19,9 @@ package zstd
 import (
 	"io"
 
-	"github.com/klauspost/compress/zstd"
 	"github.com/trickstercache/trickster/v2/pkg/encoding/reader"
+
+	"github.com/klauspost/compress/zstd"
 )
 
 var (
