@@ -24,6 +24,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+
 	mockprom "github.com/trickstercache/mockster/pkg/mocks/prometheus"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
@@ -901,7 +903,7 @@ func TestDeltaProxyCacheRequestFastForwardChunks(t *testing.T) {
 	step := time.Duration(300) * time.Second
 
 	now := time.Now()
-	client.fftime = now.Truncate(o.FastForwardTTL)
+	client.fftime = now.Truncate(time.Duration(o.FastForwardTTL))
 
 	extr := timeseries.Extent{Start: now.Add(-time.Duration(12) * time.Hour), End: now}
 	extn := timeseries.Extent{Start: extr.Start.Truncate(step), End: extr.End.Truncate(step)}
@@ -1483,7 +1485,7 @@ func TestDeltaProxyCacheRequest_BackfillToleranceChunks(t *testing.T) {
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
 
-	o.BackfillTolerance = time.Duration(300) * time.Second
+	o.BackfillTolerance = timeconv.Duration(time.Duration(300) * time.Second)
 	o.FastForwardDisable = true
 
 	query := "some_query_here{}"
@@ -1567,7 +1569,7 @@ func TestDeltaProxyCacheRequestFFTTLBiggerThanStepChunks(t *testing.T) {
 	o.FastForwardDisable = false
 
 	step := time.Duration(300) * time.Second
-	o.FastForwardTTL = step + 1
+	o.FastForwardTTL = timeconv.Duration(step + 1)
 
 	now := time.Now()
 	end := now.Add(-time.Duration(12) * time.Hour)
@@ -1627,7 +1629,7 @@ func TestDeltaProxyCacheRequestShardByPointsChunks(t *testing.T) {
 	client.InstantCacheKey = "test-instant-key-phit"
 
 	o.FastForwardDisable = true
-	o.ShardStep = 3 * time.Hour
+	o.ShardStep = timeconv.Duration(3 * time.Hour)
 	o.DoesShard = true
 
 	step := time.Duration(300) * time.Second

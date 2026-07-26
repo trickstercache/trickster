@@ -18,6 +18,7 @@ package middleware
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
@@ -45,7 +46,7 @@ func WithResourcesContext(client backends.Backend, o *bo.Options,
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if o != nil && (o.LatencyMin > 0 || o.LatencyMax > 0) {
-			processSimulatedLatency(w, o.LatencyMin, o.LatencyMax)
+			processSimulatedLatency(w, time.Duration(o.LatencyMin), time.Duration(o.LatencyMax))
 		}
 
 		var resources *request.Resources

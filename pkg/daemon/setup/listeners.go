@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/config"
@@ -88,7 +89,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		if ok && !listenerNeedsRestart(old, current) {
 			continue
 		}
-		_ = lg.DrainAndClose(key, drainTimeout)
+		_ = lg.DrainAndClose(key, time.Duration(drainTimeout))
 	}
 
 	names := make([]string, 0, len(newListeners))
@@ -127,7 +128,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		}
 		go lg.StartListener(key, desired.address, desired.port,
 			desired.options.ConnectionsLimit, tlsConfig, desired.router,
-			listenerTracers, errorFunc, drainTimeout, desired.options.ReadHeaderTimeout)
+			listenerTracers, errorFunc, time.Duration(drainTimeout), time.Duration(desired.options.ReadHeaderTimeout))
 	}
 }
 

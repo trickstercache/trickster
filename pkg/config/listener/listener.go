@@ -19,7 +19,7 @@ package listener
 
 import (
 	"fmt"
-	"time"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 
 	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
 	frontend "github.com/trickstercache/trickster/v2/pkg/frontend/options"
@@ -55,7 +55,7 @@ type Options struct {
 	// TruncateRequestBodyTooLarge truncates oversized bodies instead of returning an error.
 	TruncateRequestBodyTooLarge bool `yaml:"truncate_request_body_too_large"`
 	// ReadHeaderTimeout is the amount of time allowed to read request headers.
-	ReadHeaderTimeout time.Duration `yaml:"read_header_timeout,omitempty"`
+	ReadHeaderTimeout timeconv.Duration `yaml:"read_header_timeout,omitempty"`
 	// Protocol selects the protocol served by this listener.
 	Protocol string `yaml:"protocol,omitempty"`
 	// ServeTLS indicates that this listener has at least one usable certificate.

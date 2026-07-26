@@ -22,6 +22,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+
 	"github.com/stretchr/testify/require"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/filesystem"
@@ -45,13 +47,13 @@ func TestIndexedClient(t *testing.T) {
 		fsc := filesystem.NewCache("test", &cacheConfig)
 		// init indexed client
 		ic := NewIndexedClient("test", provider, &options.Options{
-			ReapInterval:          time.Second * time.Duration(10),
-			FlushInterval:         time.Second * time.Duration(10),
+			ReapInterval:          timeconv.Duration(time.Second * time.Duration(10)),
+			FlushInterval:         timeconv.Duration(time.Second * time.Duration(10)),
 			MaxSizeObjects:        5,
 			MaxSizeBackoffObjects: 3,
 			MaxSizeBytes:          100,
 			MaxSizeBackoffBytes:   30,
-			IndexExpiry:           1 * time.Hour,
+			IndexExpiry:           timeconv.Duration(1 * time.Hour),
 		}, fsc)
 		t.Log("basic")
 		state := getIndexedClientState(ic)
@@ -111,13 +113,13 @@ func TestIndexedClient(t *testing.T) {
 		fsc := filesystem.NewCache("test", &cacheConfig)
 		// init indexed client
 		ic := NewIndexedClient("test", provider, &options.Options{
-			ReapInterval:          time.Second * time.Duration(10),
-			FlushInterval:         time.Second * time.Duration(10),
+			ReapInterval:          timeconv.Duration(time.Second * time.Duration(10)),
+			FlushInterval:         timeconv.Duration(time.Second * time.Duration(10)),
 			MaxSizeObjects:        5,
 			MaxSizeBackoffObjects: 3,
 			MaxSizeBytes:          100,
 			MaxSizeBackoffBytes:   30,
-			IndexExpiry:           1 * time.Hour,
+			IndexExpiry:           timeconv.Duration(1 * time.Hour),
 		}, fsc)
 		t.Cleanup(func() { _ = ic.Close() })
 
@@ -155,13 +157,13 @@ func TestIndexedClient(t *testing.T) {
 		}
 		fs := filesystem.NewCache("test", &cacheConfig)
 		ic := NewIndexedClient("test", provider, &options.Options{
-			ReapInterval:          time.Second * time.Duration(10),
-			FlushInterval:         time.Second * time.Duration(10),
+			ReapInterval:          timeconv.Duration(time.Second * time.Duration(10)),
+			FlushInterval:         timeconv.Duration(time.Second * time.Duration(10)),
 			MaxSizeObjects:        5,
 			MaxSizeBackoffObjects: 3,
 			MaxSizeBytes:          100,
 			MaxSizeBackoffBytes:   30,
-			IndexExpiry:           1 * time.Hour,
+			IndexExpiry:           timeconv.Duration(1 * time.Hour),
 		}, fs, func(ico *IndexedClientOptions) {
 			ico.NeedsFlushInterval = true
 			ico.NeedsReapInterval = true
@@ -187,13 +189,13 @@ func TestIndexedClient(t *testing.T) {
 
 		// start a new cache, verify it reuses the index
 		ic = NewIndexedClient("test", provider, &options.Options{
-			ReapInterval:          time.Second * time.Duration(10),
-			FlushInterval:         time.Second * time.Duration(10),
+			ReapInterval:          timeconv.Duration(time.Second * time.Duration(10)),
+			FlushInterval:         timeconv.Duration(time.Second * time.Duration(10)),
 			MaxSizeObjects:        5,
 			MaxSizeBackoffObjects: 3,
 			MaxSizeBytes:          100,
 			MaxSizeBackoffBytes:   30,
-			IndexExpiry:           1 * time.Hour,
+			IndexExpiry:           timeconv.Duration(1 * time.Hour),
 		}, fs, func(ico *IndexedClientOptions) {
 			ico.NeedsFlushInterval = true
 			ico.NeedsReapInterval = true
@@ -230,13 +232,13 @@ func TestIndexedClient(t *testing.T) {
 			freshFs := filesystem.NewCache("flushTest", &freshCacheConfig)
 			ttl := 60 * time.Second
 			ic1 := NewIndexedClient("flushTest", provider, &options.Options{
-				ReapInterval:          time.Second * 60 * 60 * 24,
-				FlushInterval:         time.Second * 60 * 60 * 24,
+				ReapInterval:          timeconv.Duration(time.Second * 60 * 60 * 24),
+				FlushInterval:         timeconv.Duration(time.Second * 60 * 60 * 24),
 				MaxSizeObjects:        5,
 				MaxSizeBackoffObjects: 3,
 				MaxSizeBytes:          100,
 				MaxSizeBackoffBytes:   30,
-				IndexExpiry:           1 * time.Hour,
+				IndexExpiry:           timeconv.Duration(1 * time.Hour),
 			}, freshFs)
 			defer ic1.Close()
 			for i := range 5 {
@@ -269,13 +271,13 @@ func TestIndexedClient(t *testing.T) {
 			freshFs := filesystem.NewCache("reapTest", &freshCacheConfig)
 			ttl := 60 * time.Second
 			ic2 := NewIndexedClient("reapTest", provider, &options.Options{
-				ReapInterval:          time.Second * 60 * 60 * 24,
-				FlushInterval:         time.Second * 60 * 60 * 24,
+				ReapInterval:          timeconv.Duration(time.Second * 60 * 60 * 24),
+				FlushInterval:         timeconv.Duration(time.Second * 60 * 60 * 24),
 				MaxSizeObjects:        5,
 				MaxSizeBackoffObjects: 5,
 				MaxSizeBytes:          10000,
 				MaxSizeBackoffBytes:   300,
-				IndexExpiry:           1 * time.Hour,
+				IndexExpiry:           timeconv.Duration(1 * time.Hour),
 			}, freshFs)
 			defer ic2.Close()
 
@@ -326,13 +328,13 @@ func TestIndexedClient(t *testing.T) {
 		fsc := filesystem.NewCache("test", &cacheConfig)
 		// init indexed client
 		ic := NewIndexedClient("test", provider, &options.Options{
-			ReapInterval:          time.Second * time.Duration(10),
-			FlushInterval:         time.Second * time.Duration(10),
+			ReapInterval:          timeconv.Duration(time.Second * time.Duration(10)),
+			FlushInterval:         timeconv.Duration(time.Second * time.Duration(10)),
 			MaxSizeObjects:        5,
 			MaxSizeBackoffObjects: 3,
 			MaxSizeBytes:          100,
 			MaxSizeBackoffBytes:   30,
-			IndexExpiry:           1 * time.Hour,
+			IndexExpiry:           timeconv.Duration(1 * time.Hour),
 		}, fsc, func(ico *IndexedClientOptions) {
 			ico.NeedsFlushInterval = true
 			ico.NeedsReapInterval = true

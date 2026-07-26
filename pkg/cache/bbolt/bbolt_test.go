@@ -22,6 +22,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+
 	bo "github.com/trickstercache/trickster/v2/pkg/cache/bbolt/options"
 	io "github.com/trickstercache/trickster/v2/pkg/cache/index/options"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
@@ -40,7 +42,7 @@ const (
 func newCacheConfig(dbPath string) co.Options {
 	return co.Options{Provider: cacheProvider, BBolt: &bo.Options{
 		Filename: dbPath, Bucket: "trickster_test",
-	}, Index: &io.Options{ReapInterval: time.Second}}
+	}, Index: &io.Options{ReapInterval: timeconv.Duration(time.Second)}}
 }
 
 func setupBenchmark(b *testing.B) *CacheClient {
@@ -50,7 +52,7 @@ func setupBenchmark(b *testing.B) *CacheClient {
 	cacheConfig := co.Options{
 		Provider: cacheProvider,
 		BBolt:    &bo.Options{Filename: testDbPath, Bucket: "trickster_test"},
-		Index:    &io.Options{ReapInterval: time.Second},
+		Index:    &io.Options{ReapInterval: timeconv.Duration(time.Second)},
 	}
 	bc := New(b.Name(), "", "", &cacheConfig)
 

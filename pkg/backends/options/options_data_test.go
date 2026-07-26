@@ -39,7 +39,7 @@ backends:
     origin_url: 'scheme://test_host/test_path_prefix'
     api_path: test_api_path
     max_idle_conns: 23
-    keep_alive_timeout: 7000
+    keep_alive_timeout: 7000ms
     ignore_caching_headers: true
     timeseries_retention_factor: 666
     timeseries_eviction_method: lru

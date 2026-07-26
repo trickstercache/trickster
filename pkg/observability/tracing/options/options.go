@@ -20,8 +20,8 @@ import (
 	"fmt"
 	"maps"
 	"slices"
-	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	stdoutopts "github.com/trickstercache/trickster/v2/pkg/observability/tracing/exporters/stdout/options"
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
@@ -34,7 +34,7 @@ type Options struct {
 	Protocol           string            `yaml:"protocol,omitempty"`
 	ServiceName        string            `yaml:"service_name,omitempty"`
 	Endpoint           string            `yaml:"endpoint,omitempty"`
-	Timeout            time.Duration     `yaml:"timeout,omitempty"`
+	Timeout            timeconv.Duration `yaml:"timeout,omitempty"`
 	Headers            map[string]string `yaml:"headers,omitempty"`
 	DisableCompression bool              `yaml:"disable_compression,omitempty"`
 	SampleRate         *float64          `yaml:"sample_rate,omitempty"`

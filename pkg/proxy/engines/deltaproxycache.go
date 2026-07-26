@@ -83,7 +83,7 @@ func fetchFastForward(
 		return statusOff
 	}
 	// if the step resolution <= Fast Forward TTL, then no need to even try Fast Forward
-	if trq.Step <= o.FastForwardTTL {
+	if trq.Step <= time.Duration(o.FastForwardTTL) {
 		return statusOff
 	}
 	ffReq, err := client.FastForwardRequest(r)
@@ -96,7 +96,7 @@ func fetchFastForward(
 	}
 	ffReq = ffReq.WithContext(profile.ToContext(ffReq.Context(), dpcEncodingProfile.Clone()))
 	rs := request.NewResources(o, o.FastForwardPath, cc, cache, client, rsc.Tracer)
-	rs.AlternateCacheTTL = o.FastForwardTTL
+	rs.AlternateCacheTTL = time.Duration(o.FastForwardTTL)
 	ffReq = ffReq.WithContext(tctx.WithResources(ffReq.Context(), rs))
 
 	_, ffSpan := tspan.NewChildSpan(ctx, rsc.Tracer, "FetchFastForward")
@@ -253,12 +253,12 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 	rsc.TimeRangeQuery = trq
 	rsc.Unlock()
 	now := time.Now()
-	bt := trq.GetBackfillTolerance(o.BackfillTolerance, o.BackfillTolerancePoints)
+	bt := trq.GetBackfillTolerance(time.Duration(o.BackfillTolerance), o.BackfillTolerancePoints)
 	bfs := now.Add(-bt).Truncate(trq.Step) // start of the backfill tolerance window
 
 	OldestRetainedTimestamp := time.Time{}
 	if o.TimeseriesEvictionMethod == evictionmethods.EvictionMethodOldest {
-		OldestRetainedTimestamp = now.Truncate(trq.Step).Add(-(trq.Step * o.TimeseriesRetention))
+		OldestRetainedTimestamp = now.Truncate(trq.Step).Add(-(trq.Step * time.Duration(o.TimeseriesRetention)))
 		if trq.Extent.End.Before(OldestRetainedTimestamp) {
 			logger.Debug("timerange end is too old to consider caching",
 				logging.Pairs{
@@ -396,7 +396,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 			// this concurrently fetches all missing ranges from the origin
 			if cacheStatus != status.LookupStatusHit && len(missRanges) > 0 {
 				if o.DoesShard {
-					missRanges = missRanges.Splice(trq.Step, o.MaxShardSizeTime, o.ShardStep, o.MaxShardSizePoints)
+					missRanges = missRanges.Splice(trq.Step, time.Duration(o.MaxShardSizeTime), time.Duration(o.ShardStep), o.MaxShardSizePoints)
 				}
 				frsc := request.NewResources(o, pc, cc, cache, client, rsc.Tracer)
 				frsc.TimeRangeQuery = trq
@@ -479,7 +479,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 				// (everything was cropped so there is nothing to cache)
 				if len(cts.Extents()) > 0 {
 					doc.timeseries = cts
-					if werr := WriteCache(ctx, cache, key, doc, o.TimeseriesTTL,
+					if werr := WriteCache(ctx, cache, key, doc, time.Duration(o.TimeseriesTTL),
 						o.CompressibleTypes, modeler.CacheMarshaler); werr != nil {
 						logger.Error("error writing object to cache",
 							logging.Pairs{
@@ -642,7 +642,7 @@ func fetchTimeseries(
 
 	start := time.Now()
 	mts, _, resp, failedExts, faultStatus := fetchExtents(timeseries.ExtentList{trq.Extent}.Splice(trq.Step,
-		o.MaxShardSizeTime, o.ShardStep, o.MaxShardSizePoints), rsc,
+		time.Duration(o.MaxShardSizeTime), time.Duration(o.ShardStep), o.MaxShardSizePoints), rsc,
 		http.Header{}, client, pr, modeler.WireUnmarshalerReader, nil)
 	if resp != nil {
 		setHTTPStatusSpanAttributes(rsc.Tracer, resp.StatusCode, span)

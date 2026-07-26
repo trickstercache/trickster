@@ -36,7 +36,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/capture"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
-	tt "github.com/trickstercache/trickster/v2/pkg/util/timeconv"
+	tt "github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 )
 
 var (
@@ -172,17 +172,17 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 		cache, modelprom.NewModeler())
 	c.TimeseriesBackend = b
 
-	rounder := po.DefaultInstantRound
+	rounder := tt.Duration(po.DefaultInstantRound)
 	if o != nil {
 		if o.Prometheus == nil {
-			o.Prometheus = &po.Options{InstantRound: po.DefaultInstantRound}
+			o.Prometheus = &po.Options{InstantRound: tt.Duration(po.DefaultInstantRound)}
 		} else {
 			rounder = o.Prometheus.InstantRound
 			c.injectLabels = o.Prometheus.Labels
 			c.hasTransformations = len(c.injectLabels) > 0
 		}
 	}
-	c.instantRounder = rounder
+	c.instantRounder = time.Duration(rounder)
 
 	return c, err
 }
