@@ -21,12 +21,24 @@ You can combine these make actions `make developer-start serve-dev` if you want.
 
 Once you have the Docker Compose running, and Trickster running locally, visit
 the Grafana Dashboard at <http://127.0.0.1:3000/d/uAJ8w1wZz/trickster-status>.
+The Kibana frontend is available at <http://127.0.0.1:5601> and is configured
+to use Trickster's `es1` Elasticsearch backend at
+`http://host.docker.internal:8480/es1`.
 
 The data in this dashboard is polled by Prometheus from your local Trickster
 dev instance. So the longer you keep this dashboard up and refreshing, the more
 you can test out Trickster acceleration features. You can change the Data Source
 selector to go between various Trickster configs, or bypass Trickster altogether
 for verification purposes.
+
+Elasticsearch is seeded on startup with the `trickster-dev-logs` index. The seed
+data includes recent and older `@timestamp` values so developers can verify
+Elasticsearch date histogram caching through Trickster.
+After Kibana connects through Trickster, the Kibana seed container creates the
+`Trickster Dev Logs` data view, saved search, and dashboard for that index. The
+dashboard includes a minute-aligned log-volume histogram that exercises Delta
+Proxy Cache requests, followed by the generated log documents. It is available at
+<http://127.0.0.1:5601/app/dashboards#/view/trickster-dev-logs-dashboard>.
 
 You can stop the developer environment by running `make developer-stop`. To
 delete the developer environment, run `make developer-delete` which will destroy

@@ -25,3 +25,9 @@ See the [InfluxDB Support Document](./influxdb.md) for more information.
 Trickster supports accelerating ClickHouse time series. Specify `'clickhouse'` as the Provider when configuring Trickster.
 
 See the [ClickHouse Support Document](./clickhouse.md) for more information.
+
+### Elasticsearch
+
+Trickster supports accelerating Elasticsearch date histogram time series. Specify `'elasticsearch'` as the Provider when configuring Trickster.
+
+See the [Elasticsearch Support Document](./elasticsearch.md) for more information.

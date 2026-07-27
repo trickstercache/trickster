@@ -49,6 +49,7 @@ func TestIsValidProvider(t *testing.T) {
 		{"", false},
 		{"invalid", false},
 		{InfluxDB, true},
+		{Elasticsearch, true},
 	}
 
 	for i, test := range tests {
@@ -69,6 +70,12 @@ func TestIsSupportedTimeSeriesProvider(t *testing.T) {
 	}
 
 	name = Prometheus
+	ok = IsSupportedTimeSeriesProvider(name)
+	if !ok {
+		t.Error("expected true")
+	}
+
+	name = Elasticsearch
 	ok = IsSupportedTimeSeriesProvider(name)
 	if !ok {
 		t.Error("expected true")
