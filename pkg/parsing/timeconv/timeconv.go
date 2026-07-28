@@ -19,6 +19,7 @@ package timeconv
 
 import (
 	"crypto/rand"
+	"math"
 	"math/big"
 	"strconv"
 	"time"
@@ -133,8 +134,34 @@ func isIntAtPos(s string, i int) (v int64, is bool, inc int) {
 		return 0, false, 1
 	}
 	token := s[i:j]
-	v, _ = strconv.ParseInt(token, 10, 64)
+	v, err := strconv.ParseInt(token, 10, 64)
+	if err != nil {
+		return 0, false, j - i
+	}
 	return v, true, j - i
+}
+
+func addDurationComponent(d time.Duration, multiplier int64, unit DurationUnit) (time.Duration, bool) {
+	unitDuration := int64(Durations[unit])
+	if unitDuration <= 0 {
+		return 0, false
+	}
+	if multiplier > 0 && multiplier > math.MaxInt64/unitDuration {
+		return 0, false
+	}
+	if multiplier < 0 && multiplier < math.MinInt64/unitDuration {
+		return 0, false
+	}
+
+	component := multiplier * unitDuration
+	total := int64(d)
+	if component > 0 && total > math.MaxInt64-component {
+		return 0, false
+	}
+	if component < 0 && total < math.MinInt64-component {
+		return 0, false
+	}
+	return time.Duration(total + component), true
 }
 
 // ParseDuration returns a duration from a string. Slightly improved over the builtin,
@@ -142,8 +169,10 @@ func isIntAtPos(s string, i int) (v int64, is bool, inc int) {
 // Parse a literal duration.
 // Durations are formatted as [signed int][unit]..., with each int-unit pair representing a number of those units of duration.
 func ParseDuration(s string) (time.Duration, error) {
-	if s == "0" {
-		return 0, nil
+	// Preserve the complete standard-library grammar, including fractional
+	// values, before trying Trickster's larger duration units.
+	if d, err := time.ParseDuration(s); err == nil {
+		return d, nil
 	}
 	if len(s) <= 1 {
 		return 0, ErrInvalidDurationFormat(0, "value of at least length 2", s)
@@ -166,7 +195,11 @@ func ParseDuration(s string) (time.Duration, error) {
 			if !is {
 				return 0, ErrInvalidDurationFormat(i, "valid duration unit", s)
 			}
-			d += time.Duration(currentMult) * Durations[u]
+			var ok bool
+			d, ok = addDurationComponent(d, currentMult, u)
+			if !ok {
+				return 0, ErrInvalidDurationFormat(i, "duration within int64 range", s)
+			}
 			currentMult = 0
 			hasMult = false
 			hasUnits = true
@@ -215,4 +248,3 @@ func (d *Duration) UnmarshalYAML(unmarshal func(any) error) error {
 func (d Duration) MarshalYAML() (any, error) {
 	return time.Duration(d).String(), nil
 }
-

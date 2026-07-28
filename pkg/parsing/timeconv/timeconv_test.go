@@ -19,6 +19,8 @@ package timeconv
 import (
 	"testing"
 	"time"
+
+	"gopkg.in/yaml.v2"
 )
 
 func TestIsIntAtPost(t *testing.T) {
@@ -40,13 +42,40 @@ func TestIsIntAtPost(t *testing.T) {
 }
 
 func TestParseDuration(t *testing.T) {
-	expected := time.Duration(1) * time.Hour
-	d, err := ParseDuration("1h")
-	if err != nil {
-		t.Error(err)
+	tests := map[string]time.Duration{
+		"0":      0,
+		"1.5s":   1500 * time.Millisecond,
+		"-1h30m": -90 * time.Minute,
+		"1d2h":   26 * time.Hour,
+		"2w3d":   17 * 24 * time.Hour,
 	}
-	if d != expected {
-		t.Errorf("expected %d got %d", expected, d)
+	for input, expected := range tests {
+		t.Run(input, func(t *testing.T) {
+			d, err := ParseDuration(input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if d != expected {
+				t.Errorf("expected %s got %s", expected, d)
+			}
+		})
+	}
+}
+
+func TestParseDurationOverflow(t *testing.T) {
+	tests := []string{
+		"9223372036854775808ns",
+		"9223372036854775807ns1ns",
+		"9223372036854775807d",
+		"-9223372036854775808d",
+		"-9223372036854775808ns-1ns",
+	}
+	for _, input := range tests {
+		t.Run(input, func(t *testing.T) {
+			if d, err := ParseDuration(input); err == nil {
+				t.Errorf("expected overflow error, got %s", d)
+			}
+		})
 	}
 }
 
@@ -97,24 +126,33 @@ func TestParseDurationFailed(t *testing.T) {
 }
 
 func TestDurationYAML(t *testing.T) {
-	d := Duration(0)
-	unmarshal := func(v any) error {
-		*v.(*string) = "14d"
-		return nil
+	tests := []struct {
+		input    string
+		expected time.Duration
+		output   string
+	}{
+		{input: "1.5s", expected: 1500 * time.Millisecond, output: "1.5s"},
+		{input: "14d", expected: 14 * 24 * time.Hour, output: "336h0m0s"},
 	}
-	err := d.UnmarshalYAML(unmarshal)
-	if err != nil {
-		t.Error(err)
-	}
-	if time.Duration(d) != 14*24*time.Hour {
-		t.Errorf("expected 14 days, got %s", time.Duration(d))
-	}
-
-	val, err := d.MarshalYAML()
-	if err != nil {
-		t.Error(err)
-	}
-	if val.(string) != "336h0m0s" {
-		t.Errorf("expected 336h0m0s, got %s", val)
+	for _, test := range tests {
+		t.Run(test.input, func(t *testing.T) {
+			value := struct {
+				Timeout Duration `yaml:"timeout"`
+			}{}
+			if err := yaml.Unmarshal([]byte("timeout: "+test.input+"\n"), &value); err != nil {
+				t.Fatal(err)
+			}
+			if time.Duration(value.Timeout) != test.expected {
+				t.Errorf("expected %s, got %s", test.expected, time.Duration(value.Timeout))
+			}
+			out, err := yaml.Marshal(value)
+			if err != nil {
+				t.Fatal(err)
+			}
+			expectedOutput := "timeout: " + test.output + "\n"
+			if string(out) != expectedOutput {
+				t.Errorf("expected %q, got %q", expectedOutput, out)
+			}
+		})
 	}
 }
