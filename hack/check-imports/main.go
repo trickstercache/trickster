@@ -37,7 +37,9 @@ const (
 func main() {
 	root, err := os.Getwd()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		if _, err2 := fmt.Fprintln(os.Stderr, err); err2 != nil {
+			fmt.Printf("failed to print error to STDERR: %s (%s)", err, err2)
+		}
 		os.Exit(2)
 	}
 
@@ -52,7 +54,8 @@ func main() {
 			}
 			return nil
 		}
-		if filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_gen.go") {
+		if filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_gen.go") ||
+			strings.Contains(path, "/vendor/") {
 			return nil
 		}
 
@@ -65,16 +68,39 @@ func main() {
 			if err != nil {
 				return err
 			}
+			if !found {
+				fmt.Print("Incorrect import ordering in the files below.\n" +
+					"Use 3 distinct sections: standard/builtin, github.com/trickstercache/*, external\n\n" +
+					"Example:" + `
+
+import (
+    "fmt"
+    "os"
+
+    "github.com/trickstercache/trickster/v2/pkg/cache"
+    "github.com/trickstercache/trickster/v2/pkg/proxy"
+
+    "github.com/stretchr/testify/assert"
+    "github.com/stretchr/testify/require"
+)
+
+--------------------------------------------------------------------
+
+`)
+			}
 			fmt.Println(relativePath)
 			found = true
 		}
 		return nil
 	})
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		if _, err2 := fmt.Fprintln(os.Stderr, err); err2 != nil {
+			fmt.Printf("failed to print error to STDERR: %s (%s)", err, err2)
+		}
 		os.Exit(2)
 	}
 	if found {
+		fmt.Println()
 		os.Exit(1)
 	}
 }

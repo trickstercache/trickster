@@ -32,8 +32,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
 	"github.com/trickstercache/trickster/v2/integration/promstub"
+
+	"github.com/stretchr/testify/require"
 )
 
 // Mid-fanout client disconnects are hardened in fanout.All (PR #1001). The FR

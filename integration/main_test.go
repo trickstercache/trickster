@@ -30,10 +30,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/daemon"
+
 	"github.com/klauspost/compress/gzip"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/trickstercache/trickster/v2/pkg/daemon"
 )
 
 func TestMain(m *testing.M) {

@@ -31,9 +31,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/integration/internal/portutil"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/trickstercache/trickster/v2/integration/internal/portutil"
 )
 
 // TestALBHealthyFloorAdmitsFailingMetric verifies the warning surface for an
