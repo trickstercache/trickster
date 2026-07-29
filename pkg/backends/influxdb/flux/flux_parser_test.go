@@ -50,9 +50,19 @@ func TestParseStep(t *testing.T) {
 		t.Fatalf("parseStep = (%v, %v)", d, err)
 	}
 
+	d, err = parseStep(`|> window(every: 5m)`)
+	if err != nil || d != 5*time.Minute {
+		t.Fatalf("parseStep trailing paren = (%v, %v)", d, err)
+	}
+
 	_, err = parseStep("|> aggregateWindow(fn: mean)")
 	if err != ErrTimeRangeParsingFailed {
 		t.Fatalf("parseStep error = %v", err)
+	}
+
+	_, err = parseStep("|> window(every: 1m")
+	if err != ErrTimeRangeParsingFailed {
+		t.Fatalf("parseStep missing closer = %v", err)
 	}
 }
 
@@ -70,6 +80,26 @@ func TestParseRange(t *testing.T) {
 	_, err = parseRange("|> range(start: bad, stop: 1)")
 	if err == nil {
 		t.Fatal("expected parse error")
+	}
+
+	_, err = parseRange("|> range(stop: 1)")
+	if err != ErrTimeRangeParsingFailed {
+		t.Fatalf("missing start = %v", err)
+	}
+
+	_, err = parseRange("|> range(start: 1)")
+	if err != ErrTimeRangeParsingFailed {
+		t.Fatalf("missing stop = %v", err)
+	}
+
+	_, err = parseRange("|> range(start: 1, stop: 2, stop: 3)")
+	if err != ErrTimeRangeParsingFailed {
+		t.Fatalf("too many parts = %v", err)
+	}
+
+	_, err = parseRange("|> range(start: 1, stop: not-a-time)")
+	if err == nil {
+		t.Fatal("expected end parse error")
 	}
 }
 
@@ -106,6 +136,11 @@ func TestTokenizeRangeLine(t *testing.T) {
 	if out != `from("bucket") |> range(<TIMERANGE_TOKEN>)` {
 		t.Fatalf("tokenizeRangeLine = %q", out)
 	}
+
+	unclosed := `from("bucket") |> range(start: -7d, stop: -6d`
+	if got := tokenizeRangeLine(unclosed, start); got != unclosed {
+		t.Fatalf("unclosed tokenizeRangeLine = %q", got)
+	}
 }
 
 func TestParseQueryErrors(t *testing.T) {
@@ -115,6 +150,12 @@ func TestParseQueryErrors(t *testing.T) {
 |> aggregateWindow(every: not-a-duration, fn: mean)`)
 	if err == nil {
 		t.Fatal("expected parse step error")
+	}
+
+	_, _, _, err = ParseQuery(`from("bucket")
+|> range(start: bad, stop: also-bad)`)
+	if err == nil {
+		t.Fatal("expected parse range error")
 	}
 
 	_, e, _, err := ParseQuery(`from("bucket")

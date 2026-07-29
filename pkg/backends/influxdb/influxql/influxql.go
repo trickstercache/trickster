@@ -203,9 +203,6 @@ func SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
 		rb := url.Values{ParamQuery: []string{q.String()}}.Encode()
 		request.SetBody(r, []byte(rb))
 		v = r.URL.Query()
-		if v == nil {
-			v = make(url.Values)
-		}
 	default:
 		logger.Error("unuspported method in influxql.SetExtent",
 			logging.Pairs{"method": r.Method})

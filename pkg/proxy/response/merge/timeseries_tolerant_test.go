@@ -17,6 +17,7 @@
 package merge
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
@@ -26,6 +27,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var errUnmarshal = errors.New("unmarshal failed")
+
 // nonOptsMergerTS wraps timeseries.Timeseries via an embedded interface so
 // only the interface methods are reachable; the underlying *DataSet's
 // MergeWithStrategyTolerant and MergeWithStrategy are not promoted. This
@@ -33,6 +36,18 @@ import (
 // merge adapters.
 type nonOptsMergerTS struct {
 	timeseries.Timeseries
+}
+
+// strategyOnlyTS exposes MergeWithStrategy but not MergeWithStrategyTolerant,
+// covering the strategyMerger fallback when tolerance > 0.
+type strategyOnlyTS struct {
+	timeseries.Timeseries
+}
+
+func (s strategyOnlyTS) MergeWithStrategy(sortPoints bool, strategy int, collection ...timeseries.Timeseries) {
+	if ds, ok := s.Timeseries.(*dataset.DataSet); ok {
+		ds.MergeWithStrategy(sortPoints, strategy, collection...)
+	}
 }
 
 func TestTimeseriesMergeFuncTolerant(t *testing.T) {
@@ -186,6 +201,36 @@ func TestTimeseriesMergeFuncWithStrategyTolerant(t *testing.T) {
 		require.True(t, called)
 		require.NotNil(t, accum.GetTSData())
 	})
+
+	t.Run("unmarshal error is returned", func(t *testing.T) {
+		accum := NewAccumulator()
+		mf := TimeseriesMergeFuncWithStrategyTolerant(
+			func([]byte, *timeseries.TimeRangeQuery) (timeseries.Timeseries, error) {
+				return nil, errUnmarshal
+			},
+			int(merge.StrategySum),
+			5,
+		)
+		err := mf(accum, []byte("bad"), 0)
+		require.ErrorIs(t, err, errUnmarshal)
+	})
+
+	t.Run("strategyOnly falls back to MergeWithStrategy", func(t *testing.T) {
+		accum := NewAccumulator()
+		seed := makeTestDataSet(0, "up", nil, []int64{100}, []string{"5"})
+		accum.SetTSData(strategyOnlyTS{Timeseries: seed})
+		next := makeTestDataSet(0, "up", nil, []int64{100}, []string{"7"})
+
+		mf := TimeseriesMergeFuncWithStrategyTolerant(unmarshaler, int(merge.StrategySum), 5)
+		require.NoError(t, mf(accum, next, 0))
+		require.Equal(t, 1, accum.MergeCount)
+
+		got, ok := accum.GetTSData().(strategyOnlyTS)
+		require.True(t, ok)
+		gotDS, ok := got.Timeseries.(*dataset.DataSet)
+		require.True(t, ok)
+		require.Equal(t, "12", gotDS.Results[0].SeriesList[0].Points[0].Values[0])
+	})
 }
 
 func TestTimeseriesBatchMergeFuncTolerant(t *testing.T) {
@@ -215,22 +260,138 @@ func TestTimeseriesBatchMergeFuncTolerant(t *testing.T) {
 		require.Same(t, seed, accum.GetTSData())
 		require.Len(t, seed.Results[0].SeriesList[0].Points, 1)
 	})
+
+	t.Run("empty items is not handled", func(t *testing.T) {
+		handled, err := TimeseriesBatchMergeFunc()(NewAccumulator(), nil)
+		require.NoError(t, err)
+		require.False(t, handled)
+	})
+
+	t.Run("non-optsMerger falls back to plain Merge", func(t *testing.T) {
+		accum := NewAccumulator()
+		seed := makeTestDataSet(0, "up", nil, []int64{1000}, []string{"1"})
+		accum.SetTSData(nonOptsMergerTS{Timeseries: seed})
+		next := makeTestDataSet(0, "up", nil, []int64{1003}, []string{"2"})
+
+		handled, err := TimeseriesBatchMergeFuncTolerant(5)(accum, []BatchItem{
+			{Data: next, Member: 0},
+		})
+		require.NoError(t, err)
+		require.True(t, handled)
+
+		got, ok := accum.GetTSData().(nonOptsMergerTS)
+		require.True(t, ok)
+		gotDS, ok := got.Timeseries.(*dataset.DataSet)
+		require.True(t, ok)
+		require.Len(t, gotDS.Results[0].SeriesList[0].Points, 2)
+	})
+
+	t.Run("zero tolerance merges without tolerant path", func(t *testing.T) {
+		accum := NewAccumulator()
+		items := []BatchItem{
+			{Data: makeTestDataSet(0, "up", nil, []int64{1000}, []string{"1"}), Member: 0},
+			{Data: makeTestDataSet(0, "up", nil, []int64{2000}, []string{"2"}), Member: 1},
+		}
+
+		handled, err := TimeseriesBatchMergeFuncTolerant(0)(accum, items)
+		require.NoError(t, err)
+		require.True(t, handled)
+		ds, ok := accum.GetTSData().(*dataset.DataSet)
+		require.True(t, ok)
+		require.Len(t, ds.Results[0].SeriesList[0].Points, 2)
+	})
 }
 
 func TestTimeseriesBatchMergeFuncWithStrategyTolerant(t *testing.T) {
-	accum := NewAccumulator()
-	items := []BatchItem{
-		{Data: makeTestDataSet(0, "latency", nil, []int64{100}, []string{"10"}), Member: 0},
-		{Data: makeTestDataSet(0, "latency", nil, []int64{100}, []string{"30"}), Member: 1},
-		{Data: makeTestDataSet(0, "latency", nil, []int64{100}, []string{"20"}), Member: 2},
-	}
+	t.Run("avg accumulates sums", func(t *testing.T) {
+		accum := NewAccumulator()
+		items := []BatchItem{
+			{Data: makeTestDataSet(0, "latency", nil, []int64{100}, []string{"10"}), Member: 0},
+			{Data: makeTestDataSet(0, "latency", nil, []int64{100}, []string{"30"}), Member: 1},
+			{Data: makeTestDataSet(0, "latency", nil, []int64{100}, []string{"20"}), Member: 2},
+		}
 
-	handled, err := TimeseriesBatchMergeFuncWithStrategyTolerant(
-		int(merge.StrategyAvg), 0)(accum, items)
-	require.NoError(t, err)
-	require.True(t, handled)
-	require.Equal(t, 3, accum.MergeCount)
-	ds, ok := accum.GetTSData().(*dataset.DataSet)
-	require.True(t, ok)
-	require.Equal(t, "60", ds.Results[0].SeriesList[0].Points[0].Values[0])
+		handled, err := TimeseriesBatchMergeFuncWithStrategyTolerant(
+			int(merge.StrategyAvg), 0)(accum, items)
+		require.NoError(t, err)
+		require.True(t, handled)
+		require.Equal(t, 3, accum.MergeCount)
+		ds, ok := accum.GetTSData().(*dataset.DataSet)
+		require.True(t, ok)
+		require.Equal(t, "60", ds.Results[0].SeriesList[0].Points[0].Values[0])
+	})
+
+	t.Run("incompatible input is not handled", func(t *testing.T) {
+		handled, err := TimeseriesBatchMergeFuncWithStrategyTolerant(
+			int(merge.StrategySum), 0)(NewAccumulator(), []BatchItem{{Data: []byte("wire")}})
+		require.NoError(t, err)
+		require.False(t, handled)
+	})
+
+	t.Run("tolerant optsMerger path", func(t *testing.T) {
+		accum := NewAccumulator()
+		items := []BatchItem{
+			{Data: makeTestDataSet(0, "up", nil, []int64{1000}, []string{"1"}), Member: 0},
+			{Data: makeTestDataSet(0, "up", nil, []int64{1003}, []string{"2"}), Member: 1},
+		}
+
+		handled, err := TimeseriesBatchMergeFuncWithStrategyTolerant(
+			int(merge.StrategyDedup), 5)(accum, items)
+		require.NoError(t, err)
+		require.True(t, handled)
+		ds, ok := accum.GetTSData().(*dataset.DataSet)
+		require.True(t, ok)
+		require.Len(t, ds.Results[0].SeriesList[0].Points, 1)
+	})
+
+	t.Run("strategyOnly falls back to MergeWithStrategy", func(t *testing.T) {
+		accum := NewAccumulator()
+		seed := makeTestDataSet(0, "up", nil, []int64{100}, []string{"5"})
+		accum.SetTSData(strategyOnlyTS{Timeseries: seed})
+		next := makeTestDataSet(0, "up", nil, []int64{100}, []string{"7"})
+
+		handled, err := TimeseriesBatchMergeFuncWithStrategyTolerant(
+			int(merge.StrategySum), 5)(accum, []BatchItem{{Data: next, Member: 0}})
+		require.NoError(t, err)
+		require.True(t, handled)
+		require.Equal(t, 1, accum.MergeCount)
+
+		got, ok := accum.GetTSData().(strategyOnlyTS)
+		require.True(t, ok)
+		gotDS, ok := got.Timeseries.(*dataset.DataSet)
+		require.True(t, ok)
+		require.Equal(t, "12", gotDS.Results[0].SeriesList[0].Points[0].Values[0])
+	})
+
+	t.Run("non-optsMerger falls back to plain Merge", func(t *testing.T) {
+		accum := NewAccumulator()
+		seed := makeTestDataSet(0, "up", nil, []int64{100}, []string{"1"})
+		accum.SetTSData(nonOptsMergerTS{Timeseries: seed})
+		next := makeTestDataSet(0, "up", nil, []int64{200}, []string{"2"})
+
+		handled, err := TimeseriesBatchMergeFuncWithStrategyTolerant(
+			int(merge.StrategySum), 5)(accum, []BatchItem{{Data: next, Member: 0}})
+		require.NoError(t, err)
+		require.True(t, handled)
+		require.Equal(t, 1, accum.MergeCount)
+
+		got, ok := accum.GetTSData().(nonOptsMergerTS)
+		require.True(t, ok)
+		gotDS, ok := got.Timeseries.(*dataset.DataSet)
+		require.True(t, ok)
+		require.Len(t, gotDS.Results[0].SeriesList[0].Points, 2)
+	})
+
+	t.Run("zero tolerance non-strategyMerger falls back to Merge", func(t *testing.T) {
+		accum := NewAccumulator()
+		seed := makeTestDataSet(0, "up", nil, []int64{100}, []string{"1"})
+		accum.SetTSData(nonOptsMergerTS{Timeseries: seed})
+		next := makeTestDataSet(0, "up", nil, []int64{200}, []string{"2"})
+
+		handled, err := TimeseriesBatchMergeFuncWithStrategyTolerant(
+			int(merge.StrategySum), 0)(accum, []BatchItem{{Data: next, Member: 0}})
+		require.NoError(t, err)
+		require.True(t, handled)
+		require.Equal(t, 1, accum.MergeCount)
+	})
 }

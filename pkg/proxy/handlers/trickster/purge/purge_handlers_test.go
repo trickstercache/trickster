@@ -122,4 +122,16 @@ func TestPathHandlerValidation(t *testing.T) {
 			t.Fatalf("status = %d body=%s", w.Code, w.Body.String())
 		}
 	})
+
+	t.Run("missing cache", func(t *testing.T) {
+		local := backends.Backends{
+			"no-cache": &fakeBackend{cfg: &bo.Options{Name: "no-cache"}, cache: nil},
+		}
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, pathPrefix+"no-cache/path", nil)
+		PathHandler(pathPrefix, &local)(w, r)
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d body=%s", w.Code, w.Body.String())
+		}
+	})
 }

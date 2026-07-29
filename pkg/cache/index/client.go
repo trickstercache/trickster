@@ -49,7 +49,8 @@ var (
 
 // maxIndexBytes caps the index blob read from the backing cache at startup so
 // a poisoned shared backend can't drive unbounded msgpack decode allocation.
-const maxIndexBytes = 256 << 20
+// Exposed as a var so tests can lower the threshold without allocating hundreds of MiB.
+var maxIndexBytes = 256 << 20
 
 // IndexedClientOptions modify an IndexedClient's behavior.
 type IndexedClientOptions struct {

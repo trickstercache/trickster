@@ -30,6 +30,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+
+	"go.etcd.io/bbolt"
 )
 
 const (
@@ -324,5 +326,75 @@ func TestClose(t *testing.T) {
 	err := bc.Close()
 	if err != nil {
 		t.Error(err)
+	}
+}
+
+func TestBBoltCache_NewDefaultsAndOverrides(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
+
+	bc := New(t.Name(), "", "", nil)
+	if bc.Config == nil || bc.Config.BBolt == nil {
+		t.Fatal("expected default config with bbolt options")
+	}
+	if bc.Config.BBolt.Filename != bo.DefaultBBoltFile {
+		t.Errorf("expected default filename %q, got %q", bo.DefaultBBoltFile, bc.Config.BBolt.Filename)
+	}
+	if bc.Config.BBolt.Bucket != bo.DefaultBBoltBucket {
+		t.Errorf("expected default bucket %q, got %q", bo.DefaultBBoltBucket, bc.Config.BBolt.Bucket)
+	}
+
+	testDbPath := t.TempDir() + "/override.db"
+	cacheConfig := newCacheConfig(t.TempDir() + "/base.db")
+	bc2 := New(t.Name(), testDbPath, "override_bucket", &cacheConfig)
+	if bc2.Config.BBolt.Filename != testDbPath {
+		t.Errorf("expected filename override %q, got %q", testDbPath, bc2.Config.BBolt.Filename)
+	}
+	if bc2.Config.BBolt.Bucket != "override_bucket" {
+		t.Errorf("expected bucket override override_bucket, got %q", bc2.Config.BBolt.Bucket)
+	}
+}
+
+func TestBBoltCache_ClosedClientErrors(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
+	testDbPath := t.TempDir() + "/test.db"
+	cacheConfig := newCacheConfig(testDbPath)
+	bc := New(t.Name(), "", "", &cacheConfig)
+	if err := bc.Connect(); err != nil {
+		t.Fatal(err)
+	}
+	if err := bc.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := bc.Store(cacheKey, []byte("data"), time.Minute); err == nil {
+		t.Error("expected error storing to closed client")
+	}
+	if err := bc.Remove(cacheKey); err == nil {
+		t.Error("expected error removing from closed client")
+	}
+}
+
+func TestBBoltCache_RemoveNestedBucketKey(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
+	testDbPath := t.TempDir() + "/test.db"
+	cacheConfig := newCacheConfig(testDbPath)
+	bc := New(t.Name(), "", "", &cacheConfig)
+	if err := bc.Connect(); err != nil {
+		t.Fatal(err)
+	}
+	defer bc.Close()
+
+	const nested = "nested_bucket"
+	err := bc.dbh.Update(func(tx *bbolt.Tx) error {
+		b := tx.Bucket([]byte(bc.Config.BBolt.Bucket))
+		_, err := b.CreateBucket([]byte(nested))
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := bc.Remove(nested); err == nil {
+		t.Error("expected error removing nested bucket key")
 	}
 }

@@ -19,6 +19,7 @@ package cors
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
@@ -63,6 +64,13 @@ func TestApply(t *testing.T) {
 			wantOrigin: "https://trickster.example.com",
 		},
 		{
+			name: "empty mode defaults to replace",
+			options: &corso.Options{Headers: types.EnvStringMap{
+				headers.NameAllowOrigin: "https://trickster.example.com",
+			}},
+			wantOrigin: "https://trickster.example.com",
+		},
+		{
 			name:    "replace empty disables cors",
 			options: &corso.Options{Mode: corso.ModeReplace},
 		},
@@ -93,6 +101,38 @@ func TestApply(t *testing.T) {
 				t.Errorf("X-Unrelated = %q, want keep", got)
 			}
 		})
+	}
+}
+
+func TestApplyAppendHeader(t *testing.T) {
+	h := http.Header{
+		"access-control-expose-headers": {"X-Origin-Expose"},
+	}
+	Apply(h, &corso.Options{Mode: corso.ModeMerge, Headers: types.EnvStringMap{
+		"+Access-Control-Expose-Headers": "X-Trickster-Result",
+	}})
+	got := strings.Join(h.Values("Access-Control-Expose-Headers"), ",")
+	if got != "X-Origin-Expose,X-Trickster-Result" {
+		t.Fatalf("Access-Control-Expose-Headers = %q, want X-Origin-Expose,X-Trickster-Result", got)
+	}
+}
+
+func TestApplyNilHeader(t *testing.T) {
+	Apply(nil, &corso.Options{Mode: corso.ModeReplace})
+}
+
+func TestApplySkipsInvalidHeaderNames(t *testing.T) {
+	h := http.Header{
+		headers.NameAllowOrigin: {"https://origin.example.com"},
+	}
+	Apply(h, &corso.Options{Mode: corso.ModeMerge, Headers: types.EnvStringMap{
+		"":                      "ignored",
+		"+":                     "ignored",
+		"-":                     "ignored",
+		headers.NameAllowOrigin: "https://trickster.example.com",
+	}})
+	if got := h.Get(headers.NameAllowOrigin); got != "https://trickster.example.com" {
+		t.Fatalf("Access-Control-Allow-Origin = %q, want https://trickster.example.com", got)
 	}
 }
 
@@ -170,5 +210,38 @@ func TestResponseWriterUnwrap(t *testing.T) {
 	unwrapper, ok := w.(interface{ Unwrap() http.ResponseWriter })
 	if !ok || unwrapper.Unwrap() != recorder {
 		t.Fatal("wrapped response writer must expose its underlying writer")
+	}
+}
+
+func TestResponseWriterIgnoresDuplicateWriteHeader(t *testing.T) {
+	w := &statusResponseWriter{header: make(http.Header)}
+	cw := Wrap(w, &corso.Options{Mode: corso.ModeReplace, Headers: types.EnvStringMap{
+		headers.NameAllowOrigin: "https://trickster.example.com",
+	}})
+	cw.WriteHeader(http.StatusOK)
+	cw.WriteHeader(http.StatusInternalServerError)
+	if len(w.codes) != 1 || w.codes[0] != http.StatusOK {
+		t.Fatalf("status codes = %v, want [%d]", w.codes, http.StatusOK)
+	}
+}
+
+func TestResponseWriterFinalizeThenWriteHeader(t *testing.T) {
+	w := &statusResponseWriter{header: make(http.Header)}
+	cw := Wrap(w, &corso.Options{Mode: corso.ModeReplace, Headers: types.EnvStringMap{
+		headers.NameAllowOrigin: "https://trickster.example.com",
+	}})
+	w.header.Set(headers.NameAllowOrigin, "https://origin.example.com")
+	cw.Finalize()
+	if got := w.header.Get(headers.NameAllowOrigin); got != "https://trickster.example.com" {
+		t.Fatalf("after Finalize Access-Control-Allow-Origin = %q", got)
+	}
+	// A later WriteHeader must not re-apply or change the finalized policy.
+	w.header.Set(headers.NameAllowOrigin, "https://mutated.example.com")
+	cw.WriteHeader(http.StatusOK)
+	if got := w.header.Get(headers.NameAllowOrigin); got != "https://mutated.example.com" {
+		t.Fatalf("after WriteHeader Access-Control-Allow-Origin = %q", got)
+	}
+	if len(w.codes) != 1 || w.codes[0] != http.StatusOK {
+		t.Fatalf("status codes = %v, want [%d]", w.codes, http.StatusOK)
 	}
 }
