@@ -20,9 +20,104 @@ import (
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
+	frontend "github.com/trickstercache/trickster/v2/pkg/frontend/options"
 
 	"gopkg.in/yaml.v2"
 )
+
+func TestIsSupportedProtocol(t *testing.T) {
+	t.Parallel()
+	if !IsSupportedProtocol(ProtocolHTTP) {
+		t.Fatal("http should be supported")
+	}
+	if IsSupportedProtocol("grpc") {
+		t.Fatal("grpc should not be supported")
+	}
+	if IsSupportedProtocol("") {
+		t.Fatal("empty protocol should not be supported")
+	}
+}
+
+func TestFrontendOptions(t *testing.T) {
+	t.Parallel()
+	if (*Options)(nil).FrontendOptions() != nil {
+		t.Fatal("nil Options should return nil FrontendOptions")
+	}
+
+	size := int64(4096)
+	o := &Options{
+		ListenAddress:               "127.0.0.1",
+		ListenPort:                  9000,
+		TLSListenAddress:            "127.0.0.1",
+		TLSListenPort:               9443,
+		ConnectionsLimit:            10,
+		MaxRequestBodySizeBytes:     &size,
+		TruncateRequestBodyTooLarge: true,
+		ServeTLS:                    true,
+	}
+	fopt := o.FrontendOptions()
+	if fopt == nil {
+		t.Fatal("expected non-nil frontend options")
+	}
+	if fopt.ListenPort != 9000 || fopt.TLSListenPort != 9443 ||
+		fopt.ConnectionsLimit != 10 || !fopt.TruncateRequestBodyTooLarge || !fopt.ServeTLS {
+		t.Fatalf("unexpected frontend options: %#v", fopt)
+	}
+	if fopt.MaxRequestBodySizeBytes == nil || *fopt.MaxRequestBodySizeBytes != size {
+		t.Fatalf("unexpected max body size: %#v", fopt.MaxRequestBodySizeBytes)
+	}
+	*fopt.MaxRequestBodySizeBytes = 1
+	if *o.MaxRequestBodySizeBytes != size {
+		t.Fatal("FrontendOptions should deep-copy MaxRequestBodySizeBytes")
+	}
+
+	o.MaxRequestBodySizeBytes = nil
+	fopt = o.FrontendOptions()
+	if fopt.MaxRequestBodySizeBytes != nil {
+		t.Fatal("nil MaxRequestBodySizeBytes should remain nil")
+	}
+}
+
+func TestFromFrontendAndCloneEqual(t *testing.T) {
+	t.Parallel()
+	if FromFrontend(nil).ListenPort != 0 {
+		t.Fatal("FromFrontend(nil) should return zero options")
+	}
+
+	size := int64(2048)
+	src := frontend.New()
+	src.ListenPort = 9100
+	src.MaxRequestBodySizeBytes = &size
+	src.TruncateRequestBodyTooLarge = true
+	src.ServeTLS = true
+	o := FromFrontend(src)
+	if o.ListenPort != 9100 || o.MaxRequestBodySizeBytes == nil ||
+		*o.MaxRequestBodySizeBytes != size || !o.TruncateRequestBodyTooLarge || !o.ServeTLS {
+		t.Fatalf("unexpected FromFrontend result: %#v", o)
+	}
+
+	if (*Options)(nil).Clone() != nil {
+		t.Fatal("Clone(nil) should return nil")
+	}
+	clone := o.Clone()
+	if !o.Equal(clone) {
+		t.Fatal("clone should equal original")
+	}
+	*clone.MaxRequestBodySizeBytes = 1
+	if o.Equal(clone) {
+		t.Fatal("differing MaxRequestBodySizeBytes should not compare equal")
+	}
+	clone.MaxRequestBodySizeBytes = nil
+	if o.Equal(clone) {
+		t.Fatal("nil vs non-nil MaxRequestBodySizeBytes should not compare equal")
+	}
+	if (*Options)(nil).Equal(nil) != true {
+		t.Fatal("nil should equal nil")
+	}
+	if o.Equal(nil) {
+		t.Fatal("non-nil should not equal nil")
+	}
+}
 
 func TestNewLookupDefaults(t *testing.T) {
 	l := NewLookup()

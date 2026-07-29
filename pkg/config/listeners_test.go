@@ -87,3 +87,52 @@ func TestLegacyNegativePortDisablesServerPort(t *testing.T) {
 		t.Errorf("legacy disabled management port = %d, want 0", got)
 	}
 }
+
+func TestFrontendOptionsForListener(t *testing.T) {
+	if (*Config)(nil).FrontendOptionsForListener(listener.DefaultFrontendName) != nil {
+		t.Fatal("nil config should return nil")
+	}
+	c := NewConfig()
+	c.Listeners = nil
+	if c.FrontendOptionsForListener(listener.DefaultFrontendName) != nil {
+		t.Fatal("nil listeners should return nil")
+	}
+
+	c = NewConfig()
+	c.Listeners[listener.DefaultFrontendName].ListenPort = 9123
+	got := c.FrontendOptionsForListener(listener.DefaultFrontendName)
+	if got == nil || got.ListenPort != 9123 {
+		t.Fatalf("unexpected frontend options: %#v", got)
+	}
+	if c.FrontendOptionsForListener("missing") != nil {
+		t.Fatal("missing listener should return nil")
+	}
+	c.Listeners["nil"] = nil
+	if c.FrontendOptionsForListener("nil") != nil {
+		t.Fatal("nil listener entry should return nil")
+	}
+}
+
+func TestRequireListener(t *testing.T) {
+	if _, err := (*Config)(nil).RequireListener("default"); err == nil {
+		t.Fatal("nil config should error")
+	}
+	c := NewConfig()
+	o, err := c.RequireListener(listener.DefaultFrontendName)
+	if err != nil || o == nil {
+		t.Fatalf("RequireListener(default) = (%v, %v)", o, err)
+	}
+	if _, err := c.RequireListener("missing"); err == nil {
+		t.Fatal("missing listener should error")
+	}
+}
+
+func TestAddLoaderWarningDedupes(t *testing.T) {
+	c := NewConfig()
+	c.addLoaderWarning("warn-a")
+	c.addLoaderWarning("warn-a")
+	c.addLoaderWarning("warn-b")
+	if len(c.LoaderWarnings) != 2 {
+		t.Fatalf("LoaderWarnings = %v, want 2 unique entries", c.LoaderWarnings)
+	}
+}

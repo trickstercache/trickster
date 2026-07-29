@@ -22,12 +22,17 @@ import (
 
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	rule "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/errors"
 	lo "github.com/trickstercache/trickster/v2/pkg/observability/logging/options"
 	mo "github.com/trickstercache/trickster/v2/pkg/observability/metrics/options"
 	to "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
+	auth "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
+	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
+	tlsopts "github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
+	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
 )
 
 func TestValidateNilConfig(t *testing.T) {
@@ -58,6 +63,73 @@ func TestValidateSubsectionsNilOrEmpty(t *testing.T) {
 	}
 	if err := NegativeCaches(nil); err != nil {
 		t.Fatalf("NegativeCaches(nil) = %v", err)
+	}
+	if err := Backends(nil); err != errors.ErrNoValidBackends {
+		t.Fatalf("Backends(nil) = %v, want ErrNoValidBackends", err)
+	}
+}
+
+func TestValidateRejectsInvalidSubsections(t *testing.T) {
+	t.Parallel()
+
+	c := config.NewConfig()
+	c.MgmtConfig.PprofListener = "invalid"
+	if err := Validate(c); err == nil {
+		t.Fatal("expected invalid mgmt config error")
+	}
+
+	c = config.NewConfig()
+	c.Logging = &lo.Options{LogLevel: "trace"}
+	if err := Validate(c); err == nil {
+		t.Fatal("expected invalid log level error")
+	}
+
+	c = config.NewConfig()
+	c.Metrics = &mo.Options{ListenPort: -1}
+	if err := Validate(c); err == nil {
+		t.Fatal("expected invalid metrics listen port error")
+	}
+}
+
+func TestRewritersRulesAndAuthenticators(t *testing.T) {
+	t.Parallel()
+
+	c := config.NewConfig()
+	c.RequestRewriters = rwopts.Lookup{
+		"example": {Instructions: [][]string{{"header", "set", "X-Test", "1"}}},
+	}
+	if err := Rewriters(c); err != nil {
+		t.Fatalf("Rewriters(valid) = %v", err)
+	}
+	c.RequestRewriters = rwopts.Lookup{"none": {}}
+	if err := Rewriters(c); err == nil {
+		t.Fatal("expected invalid rewriter name error")
+	}
+
+	c = config.NewConfig()
+	c.Rules = rule.Lookup{
+		"example": rule.New(),
+	}
+	if err := Rules(c); err != nil {
+		t.Fatalf("Rules(valid) = %v", err)
+	}
+	c.Rules = rule.Lookup{"none": rule.New()}
+	if err := Rules(c); err == nil {
+		t.Fatal("expected invalid rule name error")
+	}
+
+	c = config.NewConfig()
+	c.Authenticators = auth.Lookup{
+		"example": {Provider: "basic"},
+	}
+	if err := Authenticators(c); err != nil {
+		t.Fatalf("Authenticators(valid) = %v", err)
+	}
+	c.Authenticators = auth.Lookup{
+		"example": {Provider: "not-a-provider"},
+	}
+	if err := Authenticators(c); err == nil {
+		t.Fatal("expected invalid authenticator provider error")
 	}
 }
 
@@ -102,6 +174,44 @@ func TestBackendsRequiresEntries(t *testing.T) {
 	c.Caches = co.Lookup{"default": co.New()}
 	if err := Backends(c); err != nil {
 		t.Fatalf("Backends(valid) = %v", err)
+	}
+}
+
+func TestBackendsMarksFrontendServeTLS(t *testing.T) {
+	t.Parallel()
+
+	caFile := t.TempDir() + "/ca.pem"
+	keyFile := t.TempDir() + "/key.pem"
+	certFile := t.TempDir() + "/cert.pem"
+	if err := tlstest.WriteTestKeyAndCert(true, "", caFile); err != nil {
+		t.Fatal(err)
+	}
+	if err := tlstest.WriteTestKeyAndCert(false, keyFile, certFile); err != nil {
+		t.Fatal(err)
+	}
+
+	c := config.NewConfig()
+	c.Caches = co.Lookup{"default": co.New()}
+	c.Backends = bo.Lookup{
+		"default": {
+			Name:              "default",
+			Provider:          providers.Prometheus,
+			OriginURL:         "http://example.com:9090",
+			CacheName:         "default",
+			TracingConfigName: "",
+			NegativeCacheName: "",
+			TLS: &tlsopts.Options{
+				CertificateAuthorityPaths: []string{caFile},
+				FullChainCertPath:         certFile,
+				PrivateKeyPath:            keyFile,
+			},
+		},
+	}
+	if err := Backends(c); err != nil {
+		t.Fatalf("Backends(tls) = %v", err)
+	}
+	if !c.Frontend.ServeTLS {
+		t.Fatal("expected Frontend.ServeTLS to be set when backends present TLS certs")
 	}
 }
 
