@@ -172,3 +172,10 @@ formatters:
       - third_party$
       - builtin$
       - examples$
+  settings:
+    gci:
+      custom-order: true
+      sections:
+        - standard
+        - prefix(github.com/trickstercache) 
+        - default
