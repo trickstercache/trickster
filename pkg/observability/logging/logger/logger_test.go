@@ -22,10 +22,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestSetLoggerNilIsNoop(t *testing.T) {

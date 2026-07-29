@@ -22,9 +22,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestNew(t *testing.T) {
