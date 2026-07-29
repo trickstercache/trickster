@@ -37,7 +37,9 @@ const (
 func main() {
 	root, err := os.Getwd()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		if _, err2 := fmt.Fprintln(os.Stderr, err); err2 != nil {
+			fmt.Printf("failed to print error to STDERR: %s (%s)", err, err2)
+		}
 		os.Exit(2)
 	}
 
@@ -92,7 +94,9 @@ import (
 		return nil
 	})
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		if _, err2 := fmt.Fprintln(os.Stderr, err); err2 != nil {
+			fmt.Printf("failed to print error to STDERR: %s (%s)", err, err2)
+		}
 		os.Exit(2)
 	}
 	if found {
