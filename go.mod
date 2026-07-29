@@ -6,12 +6,12 @@ require (
 	github.com/alicebob/miniredis/v2 v2.37.0
 	github.com/andybalholm/brotli v1.2.2
 	github.com/cespare/xxhash/v2 v2.3.0
-	github.com/dgraph-io/badger/v4 v4.9.4
+	github.com/dgraph-io/badger/v4 v4.9.5
 	github.com/dgraph-io/ristretto/v2 v2.4.2
 	github.com/influxdata/influxdb v1.12.4
 	github.com/influxdata/influxql v1.4.1
 	github.com/klauspost/compress v1.19.1
-	github.com/prometheus/client_golang v1.24.0
+	github.com/prometheus/client_golang v1.24.1
 	github.com/prometheus/client_model v0.6.2
 	github.com/prometheus/common/sigv4 v0.1.0
 	github.com/redis/go-redis/v9 v9.21.0
@@ -256,8 +256,8 @@ require (
 	golang.org/x/text v0.40.0 // indirect
 	golang.org/x/tools v0.47.0 // indirect
 	golang.org/x/vuln v1.2.0 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20260720211330-0afa2a65878a // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260720211330-0afa2a65878a // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20260727163830-6c54dddc4772 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260727163830-6c54dddc4772 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	honnef.co/go/tools v0.7.0 // indirect
