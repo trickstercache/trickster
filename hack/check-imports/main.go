@@ -103,6 +103,7 @@ import (
 		fmt.Println()
 		os.Exit(1)
 	}
+	fmt.Print("\n\033[1;32m✓\033[0m All code files have the correct import structuring.\n\n")
 }
 
 func importsConform(path string) (bool, error) {

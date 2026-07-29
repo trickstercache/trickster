@@ -70,3 +70,20 @@ func TestValidatePprofListenerNames(t *testing.T) {
 		}
 	}
 }
+
+func TestClone(t *testing.T) {
+	o := New()
+	o.ListenPort = 9999
+	o.ConfigHandlerPath = "/custom"
+	clone := o.Clone()
+	if clone == o {
+		t.Fatal("Clone should return a distinct pointer")
+	}
+	if clone.ListenPort != 9999 || clone.ConfigHandlerPath != "/custom" {
+		t.Fatalf("unexpected clone: %#v", clone)
+	}
+	clone.ListenPort = 1
+	if o.ListenPort != 9999 {
+		t.Fatal("mutating clone should not affect original")
+	}
+}

@@ -209,3 +209,19 @@ func TestTLSCertConfigForListenerFiltersMappedBackends(t *testing.T) {
 		}
 	}
 }
+
+func TestTLSCertConfigForListenerEdgeCases(t *testing.T) {
+	c := NewConfig()
+	if _, err := c.TLSCertConfigForListener("missing"); err == nil {
+		t.Fatal("missing listener should error")
+	}
+
+	c.Listeners[listener.DefaultFrontendName].ServeTLS = false
+	got, err := c.TLSCertConfigForListener(listener.DefaultFrontendName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != nil {
+		t.Fatal("ServeTLS=false should return nil tls config")
+	}
+}

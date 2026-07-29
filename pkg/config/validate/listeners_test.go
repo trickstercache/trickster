@@ -24,6 +24,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
+	tlsopts "github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
 )
 
 func TestListenersBackendMappings(t *testing.T) {
@@ -75,6 +76,14 @@ func TestListenersWarningsAndProtocolValidation(t *testing.T) {
 		if !warningsContain(c.LoaderWarnings, `listener "unused" is unused`) {
 			t.Errorf("missing unused listener warning: %v", c.LoaderWarnings)
 		}
+		// duplicate warnings should be ignored
+		before := len(c.LoaderWarnings)
+		if err := Listeners(c); err != nil {
+			t.Fatal(err)
+		}
+		if len(c.LoaderWarnings) != before {
+			t.Fatalf("duplicate unused warning was appended: %v", c.LoaderWarnings)
+		}
 	})
 
 	t.Run("tls_without_certificate", func(t *testing.T) {
@@ -125,6 +134,93 @@ func TestListenersWarningsAndProtocolValidation(t *testing.T) {
 		c.Backends = bo.Lookup{"first": first, "second": second}
 		if err := Listeners(c); err == nil || !strings.Contains(err.Error(), "only one backend") {
 			t.Fatalf("expected single-backend protocol error, got %v", err)
+		}
+	})
+}
+
+func TestListenersEdgeCases(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil_config", func(t *testing.T) {
+		if err := Listeners(nil); err == nil || !strings.Contains(err.Error(), "no listeners") {
+			t.Fatalf("Listeners(nil) = %v", err)
+		}
+	})
+
+	t.Run("empty_listeners", func(t *testing.T) {
+		c := config.NewConfig()
+		c.Listeners = nil
+		if err := Listeners(c); err == nil || !strings.Contains(err.Error(), "no listeners") {
+			t.Fatalf("Listeners(empty) = %v", err)
+		}
+	})
+
+	t.Run("nil_listener_entry", func(t *testing.T) {
+		c := config.NewConfig()
+		c.Listeners["broken"] = nil
+		if err := Listeners(c); err == nil || !strings.Contains(err.Error(), "invalid empty listener") {
+			t.Fatalf("expected empty listener error, got %v", err)
+		}
+	})
+
+	t.Run("invalid_port", func(t *testing.T) {
+		c := config.NewConfig()
+		c.Backends = bo.Lookup{"test": bo.New()}
+		c.Listeners[listener.DefaultFrontendName].ListenPort = -5
+		if err := Listeners(c); err == nil || !strings.Contains(err.Error(), "invalid listen port") {
+			t.Fatalf("expected invalid port error, got %v", err)
+		}
+	})
+
+	t.Run("port_conflict", func(t *testing.T) {
+		c := config.NewConfig()
+		c.Listeners["custom"] = listener.New("custom")
+		c.Listeners["custom"].ListenPort = c.Listeners[listener.DefaultFrontendName].ListenPort
+		c.Listeners["custom"].ListenAddress = c.Listeners[listener.DefaultFrontendName].ListenAddress
+		first, second := bo.New(), bo.New()
+		first.ListenerName = listener.DefaultFrontendName
+		second.ListenerName = "custom"
+		c.Backends = bo.Lookup{"first": first, "second": second}
+		if err := Listeners(c); err == nil || !strings.Contains(err.Error(), "both use") {
+			t.Fatalf("expected port conflict error, got %v", err)
+		}
+	})
+
+	t.Run("no_enabled_ports", func(t *testing.T) {
+		c := config.NewConfig()
+		c.Listeners[listener.DefaultFrontendName].ListenPort = 0
+		c.Listeners[listener.DefaultFrontendName].TLSListenPort = 0
+		c.Backends = bo.Lookup{"test": bo.New()}
+		if err := Listeners(c); err != nil {
+			t.Fatal(err)
+		}
+		if !warningsContain(c.LoaderWarnings, "has no enabled ports") {
+			t.Fatalf("missing no-ports warning: %v", c.LoaderWarnings)
+		}
+	})
+
+	t.Run("skips_nil_backend", func(t *testing.T) {
+		c := config.NewConfig()
+		c.Backends = bo.Lookup{"gone": nil, "test": bo.New()}
+		if err := Listeners(c); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	t.Run("tls_with_certificate", func(t *testing.T) {
+		c := config.NewConfig()
+		backend := bo.New()
+		backend.TLS = &tlsopts.Options{ServeTLS: true}
+		c.Backends = bo.Lookup{"test": backend}
+		c.Listeners[listener.DefaultFrontendName].TLSListenPort = 9443
+		if err := Listeners(c); err != nil {
+			t.Fatal(err)
+		}
+		if !c.Listeners[listener.DefaultFrontendName].ServeTLS {
+			t.Fatal("listener should serve TLS when a mapped backend provides a cert")
+		}
+		if c.Listeners[listener.DefaultFrontendName].TLSListenPort != 9443 {
+			t.Fatal("TLS port should remain enabled with a mapped certificate")
 		}
 	})
 }

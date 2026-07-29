@@ -46,3 +46,24 @@ func TestMergeSlices(t *testing.T) {
 		t.Errorf("expected merged slice to be independent of inputs, got %q", got)
 	}
 }
+
+func TestMergeSlicesOverflow(t *testing.T) {
+	prev := maxMergeLen
+	t.Cleanup(func() { maxMergeLen = prev })
+
+	t.Run("a exceeds max", func(t *testing.T) {
+		maxMergeLen = 2
+		got := MergeSlices([]byte("abcd"), []byte("ef"))
+		if string(got) != "ab" {
+			t.Errorf("wanted %q got %q", "ab", got)
+		}
+	})
+
+	t.Run("b truncated to remaining", func(t *testing.T) {
+		maxMergeLen = 5
+		got := MergeSlices([]byte("trick"), []byte("ster"))
+		if string(got) != "trick" {
+			t.Errorf("wanted %q got %q", "trickster", got)
+		}
+	})
+}
