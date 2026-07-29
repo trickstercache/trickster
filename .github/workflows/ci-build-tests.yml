@@ -130,6 +130,14 @@ jobs:
         run: make integration-cover
       - name: Run integration tests (with race detection enabled)
         run: make -C integration data-race-test
+      - name: Send integration coverage
+        if: github.repository_owner == 'trickstercache'
+        uses: shogo82148/actions-goveralls@v1
+        continue-on-error: true
+        with:
+          path-to-profile: integration/.integration.coverprofile
+          flag-name: integration
+          parallel: true
   finish:
     needs:
       - build
