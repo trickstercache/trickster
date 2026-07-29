@@ -27,6 +27,8 @@ PROFILE="${1:?usage: $0 <coverprofile>}"
 EXCLUDE_PATTERNS=(
   '_gen\.go:'
   '^github\.com/trickstercache/trickster/v2/cmd/'
+  '^github\.com/trickstercache/trickster/v2/hack/'
+  '^github\.com/trickstercache/trickster/v2/integration/'
   '^github\.com/trickstercache/trickster/v2/examples/'
   '^github\.com/trickstercache/trickster/v2/pkg/testutil/'
 )
