@@ -22,9 +22,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
+
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
-	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 )
 
 func counterValue(t *testing.T, vec *prometheus.CounterVec, labels ...string) float64 {

@@ -62,18 +62,18 @@ func TestUnmarshalTimeseriesReaderErrors(t *testing.T) {
 
 func TestTypeToFieldDataType(t *testing.T) {
 	tests := map[string]timeseries.FieldDataType{
-		"String":    timeseries.String,
-		"UUID":      timeseries.String,
+		"String":          timeseries.String,
+		"UUID":            timeseries.String,
 		"FixedString(16)": timeseries.String,
-		"Int64":     timeseries.Int64,
-		"UInt64":    timeseries.Uint64,
-		"Float64":   timeseries.Float64,
-		"Decimal128(18)": timeseries.Float64,
-		"DateTime":  timeseries.DateTimeSQL,
-		"DateTime64(3)": timeseries.DateTimeSQL,
-		"Date":      timeseries.DateSQL,
-		"Nothing":   timeseries.Null,
-		"UnknownType": timeseries.Unknown,
+		"Int64":           timeseries.Int64,
+		"UInt64":          timeseries.Uint64,
+		"Float64":         timeseries.Float64,
+		"Decimal128(18)":  timeseries.Float64,
+		"DateTime":        timeseries.DateTimeSQL,
+		"DateTime64(3)":   timeseries.DateTimeSQL,
+		"Date":            timeseries.DateSQL,
+		"Nothing":         timeseries.Null,
+		"UnknownType":     timeseries.Unknown,
 	}
 	for input, want := range tests {
 		if got := typeToFieldDataType(input); got != want {

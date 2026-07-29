@@ -33,6 +33,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/trickstercache/trickster/v2/integration/internal/portutil"
 	"github.com/trickstercache/trickster/v2/integration/promstub"
 )
 
@@ -133,6 +134,118 @@ func TestALBNestedPoolAvailable(t *testing.T) {
 			"waiting for nested alb to fan traffic to a leaf")
 	}, 10*time.Second, 200*time.Millisecond,
 		"alb-outer never routed traffic through alb-inner to leaf upstreams")
+}
+
+func TestALBNestedReplicaGroupsUseTerminalTSMPlanner(t *testing.T) {
+	leaf := func() *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == promstub.BuildInfoPath {
+				promstub.WriteBuildInfo(w)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w,
+				`{"status":"success","data":{"resultType":"vector","result":[`+
+					`{"metric":{"job":"api"},"value":[100,"1"]}]}}`)
+		}))
+	}
+	leafA1 := leaf()
+	t.Cleanup(leafA1.Close)
+	leafA2 := leaf()
+	t.Cleanup(leafA2.Close)
+	leafB := leaf()
+	t.Cleanup(leafB.Close)
+
+	ports, release := portutil.Reserve(t, 3)
+	frontPort, metricsPort, mgmtPort := ports[0], ports[1], ports[2]
+	yaml := fmt.Sprintf(`
+listeners:
+  default:
+    port: %d
+  metrics:
+    port: %d
+  mgmt:
+    port: %d
+backends:
+  prom-a1:
+    provider: prometheus
+    origin_url: %s
+    prometheus:
+      labels:
+        route: a1
+  prom-a2:
+    provider: prometheus
+    origin_url: %s
+    prometheus:
+      labels:
+        route: a2
+  prom-b:
+    provider: prometheus
+    origin_url: %s
+    prometheus:
+      labels:
+        route: b
+  rr-a1:
+    provider: alb
+    replica_group: shard-a
+    alb:
+      mechanism: round_robin
+      pool: [prom-a1]
+  rr-a2:
+    provider: alb
+    replica_group: shard-a
+    alb:
+      mechanism: round_robin
+      pool: [prom-a2]
+  rr-b:
+    provider: alb
+    replica_group: shard-b
+    alb:
+      mechanism: round_robin
+      pool: [prom-b]
+  alb-outer:
+    provider: alb
+    alb:
+      mechanism: tsm
+      pool: [rr-a1, rr-a2, rr-b]
+`, frontPort, metricsPort, mgmtPort, leafA1.URL, leafA2.URL, leafB.URL)
+	cfgPath := filepath.Join(t.TempDir(), "trickster.yaml")
+	require.NoError(t, os.WriteFile(cfgPath, []byte(yaml), 0o644))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	release()
+	go startTrickster(t, ctx, expectedStartError{}, "-config", cfgPath)
+	waitForTrickster(t, fmt.Sprintf("127.0.0.1:%d", metricsPort))
+
+	u := fmt.Sprintf("http://127.0.0.1:%d/alb-outer/api/v1/query?query=%s",
+		frontPort, url.QueryEscape("sum by (job) (requests)"))
+	resp, err := http.Get(u)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode, "body=%s", body)
+
+	var result struct {
+		Status string `json:"status"`
+		Data   struct {
+			Result []struct {
+				Metric map[string]string `json:"metric"`
+				Value  []json.RawMessage `json:"value"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(body, &result))
+	require.Equal(t, "success", result.Status)
+	require.Len(t, result.Data.Result, 1, "body=%s", body)
+	require.Len(t, result.Data.Result[0].Value, 2, "body=%s", body)
+	require.Equal(t, map[string]string{"job": "api"}, result.Data.Result[0].Metric,
+		"terminal injected labels must be stripped before merging")
+	var value string
+	require.NoError(t, json.Unmarshal(result.Data.Result[0].Value[1], &value))
+	require.Equal(t, "2", value,
+		"nested planner must sum two logical shards while deduplicating shard-a replicas")
 }
 
 // requireALBMemberNotIn asserts the named member does not appear in the given

@@ -23,6 +23,7 @@ import (
 	"net/http"
 
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
+
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"

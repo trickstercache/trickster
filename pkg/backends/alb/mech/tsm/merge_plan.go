@@ -21,7 +21,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strconv"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/fanout"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
@@ -82,6 +81,7 @@ func (h *handler) servePlan(
 	stripKeys []string,
 	finalizer mergeFinalizer,
 	warnMsg string,
+	configured pool.Targets,
 ) {
 	if plan.Reduction.Kind == tsmerge.TSMReductionStandard {
 		variant := plan.Variants[0]
@@ -90,10 +90,11 @@ func (h *handler) servePlan(
 		}
 		h.serveStandard(w, variant.Request, hl, rsc,
 			tsmerge.Strategy(variant.MergeStrategy), stripKeys,
-			plan.Finalizer.Query, finalizer, warnMsg)
+			plan.Finalizer.Query, finalizer, warnMsg, configured)
 		return
 	}
-	h.serveMultiVariantPlan(w, r, hl, rsc, plan, stripKeys, finalizer, warnMsg)
+	h.serveMultiVariantPlan(w, r, hl, rsc, plan, stripKeys, finalizer, warnMsg,
+		configured)
 }
 
 type planVariantExecution struct {
@@ -114,6 +115,7 @@ func (h *handler) serveMultiVariantPlan(
 	stripKeys []string,
 	finalizer mergeFinalizer,
 	warnMsg string,
+	configured pool.Targets,
 ) {
 	parentCtx := r.Context()
 	memberCount := len(hl)
@@ -192,12 +194,23 @@ func (h *handler) serveMultiVariantPlan(
 			}
 		}
 	}
-	warnings, hasPlanFailure := applyPlanCompleteness(plan, executions, memberCount)
+	applyPlanCompleteness(plan, executions, memberCount)
+	applyPlanPointCompleteness(plan, executions, memberCount)
+	var warnings []string
+	var hasPlanFailure bool
 	accumulators := make([]*merge.Accumulator, len(plan.Variants))
 	for variantIndex := range plan.Variants {
+		logical, groupWarnings, groupFailure := coalesceReplicaContributions(
+			parentCtx, hl, configured, executions[variantIndex].contributions,
+			plan.Variants[variantIndex].Name, dedupToleranceNanos)
+		executions[variantIndex].contributions = logical
+		warnings = append(warnings, groupWarnings...)
+		if variantIndex == authorityIndex {
+			hasPlanFailure = groupFailure
+		}
 		accumulators[variantIndex] = merge.NewAccumulator()
 		failedMembers := mergeGatherContributions(parentCtx, accumulators[variantIndex],
-			executions[variantIndex].contributions)
+			logical)
 		if len(failedMembers) > 0 {
 			for _, member := range failedMembers {
 				metrics.ALBFanoutFailures.WithLabelValues(
@@ -244,7 +257,8 @@ func (h *handler) serveMultiVariantPlan(
 		return
 	}
 
-	authorityResults := executions[authorityIndex].results
+	authorityResults := coalesceReplicaResults(hl, configured,
+		executions[authorityIndex].results)
 	mrf, winnerHeaders := pickWinner(authorityResults)
 	statusCode, statusHeader, has2xx, hasNon2xx := aggregateStatus(authorityResults)
 	if (has2xx && hasNon2xx) || (hasPlanFailure && has2xx) {
@@ -323,8 +337,9 @@ func (h *handler) collectPlanResult(
 		}
 	}
 	result.contrib = contribution
-	result.failed = contribution == nil || result.statusCode < http.StatusOK ||
-		result.statusCode >= http.StatusMultipleChoices
+	result.failed = contribution == nil || (result.statusCode != 0 &&
+		(result.statusCode < http.StatusOK ||
+			result.statusCode >= http.StatusMultipleChoices))
 	execution.contributions[member] = contribution
 	execution.results[member] = result
 }
@@ -333,9 +348,7 @@ func applyPlanCompleteness(
 	plan *tsmerge.TSMMergePlan,
 	executions []planVariantExecution,
 	memberCount int,
-) ([]string, bool) {
-	var warnings []string
-	var hasFailure bool
+) {
 	for member := range memberCount {
 		missing := make([]int, 0, len(plan.Variants))
 		for variantIndex := range plan.Variants {
@@ -350,19 +363,16 @@ func applyPlanCompleteness(
 		if len(missing) == 0 {
 			continue
 		}
-		hasFailure = true
-		for _, variantIndex := range missing {
-			warnings = append(warnings,
-				"trickster: tsm excluded pool member "+strconv.Itoa(member)+
-					": variant \""+plan.Variants[variantIndex].Name+"\" returned no usable response")
-		}
 		if plan.Completeness == tsmerge.TSMCompletenessAllVariants {
 			for variantIndex := range executions {
 				executions[variantIndex].contributions[member] = nil
 			}
+		} else {
+			for _, variantIndex := range missing {
+				executions[variantIndex].contributions[member] = nil
+			}
 		}
 	}
-	return warnings, hasFailure
 }
 
 func hasCompletePlanMember(

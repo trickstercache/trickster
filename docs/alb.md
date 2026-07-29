@@ -81,15 +81,25 @@ Here is the visual representation of this configuration:
 
 ### Time Series Merge
 
-The recommended application for using the **Time Series Merge** mechanism is as a High Availability solution. In this application, Trickster fans the client request out to multiple redundant tsdb endpoints and merges the responses back into a single document for the client. If any of the endpoints are down, or have gaps in their response (due to prior downtime), the Trickster cache along with the data from the healthy endpoints will ensure the client receives the most complete response possible. Instantaneous downtime of any Backend will result in a warning being injected in the client response.
+The **Time Series Merge** mechanism supports both High Availability and federation. Each physical backend represents one logical data shard. Set the backend-level `replica_group` option to the same value on physical backends that are HA replicas of that shard. TSM first coalesces those replicas, using configured pool order to resolve overlapping points and later replicas to fill gaps, and then reduces the distinct logical shards.
 
-Separate from an HA use case, it is possible to use Time Series Merge as a Federation broker that merges responses from different, non-redundant tsdb endpoints; for example, to aggregate metrics from a solution running clusters in multiple regions, with separate, in-region-only tsdb deployments. In this use case, it is recommended to [inject labels](./prometheus.md#injecting-labels) into the responses to protect against data collisions across series. Label injection is demonstrated in the snippet below.
+When a TSM pool member is itself an ALB (for example, a round-robin ALB over
+Prometheus backends), set `replica_group` on that immediate nested ALB. Trickster
+uses the wrapper as the replica-group boundary while delegating TSM planning and
+finalization to its terminal Prometheus provider. Other ALBs and non-TSM
+providers cannot set an explicit replica group.
+
+When `replica_group` is omitted, it defaults to the backend name, so existing configurations continue to treat every backend as a distinct shard. Explicitly set it for HA pools that use non-idempotent aggregations such as `sum`, `count`, or `avg`; otherwise replicas will be counted as separate data.
+
+Replica grouping is backend-global, not ALB-specific. A backend cannot be a replica in one ALB and a disjoint shard in another; define a second backend entry if both views are required. Partially overlapping datasets are not representable: one backend belongs to one logical shard for all TSM queries. Injected labels remain useful output and routing metadata, but they do not establish replica provenance.
+
+If replicas disagree at the same logical point, the first configured member wins deterministically and Trickster records a conflict metric and warning log. A failed replica does not make a response partial when another replica covers its group. If an entire logical group is unavailable, the response is marked partial and includes a warning.
 
 For request paths that are not mergeable by the configured time series provider, TSM does not fan the request out. Those requests are dispatched directly to the first live pool target. The same first-live-target fallback is used when a request cannot be prepared for the merge path.
 
 #### Merge Strategy
 
-By default, TSM deduplicates values when merging series with identical labels — for each timestamp, only one value is kept. This works well for HA configurations where backends hold redundant copies of the same data.
+Within each configured replica group, TSM deduplicates values when merging series with identical labels — for each timestamp, only one replica value is kept. Across different groups it uses the query's merge strategy.
 
 For Federation use cases where backends hold different, non-overlapping data, Trickster **automatically selects a merge strategy per query** by inspecting the outermost PromQL aggregation operator. No configuration is required. This is particularly important for PromQL aggregation queries like `sum()` or `avg()`, which strip labels from results and cause series from different backends to appear identical.
 
@@ -140,6 +150,7 @@ backends:
   # prom01a and prom01b are redundant and poll the same targets
   prom01a:
     provider: prometheus
+    replica_group: prom01
     origin_url: http://prom01a.example.com:9090
     prometheus:
       labels:
@@ -147,6 +158,7 @@ backends:
 
   prom01b:
     provider: prometheus
+    replica_group: prom01
     origin_url: http://prom01b.example.com:9090
       labels:
         region: us-east-1
@@ -178,7 +190,9 @@ backends:
   # prom-alb-all scatter/gathers prom01a/b, prom02 and prom03 and merges their responses
   # for the caller. The merge strategy is automatically selected per-query based on the
   # outer PromQL aggregation operator. Injected labels are automatically stripped before
-  # merging so that series from different backends are combined correctly.
+  # merging so that series from different backends are combined correctly. Because prom01a
+  # and prom01b are in the same replica_group, their values are de-duplicated before being
+  # merged/reduced with prom02 and prom03.
   prom-alb-all:
     provider: alb
     alb:

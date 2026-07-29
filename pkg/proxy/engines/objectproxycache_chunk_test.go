@@ -24,16 +24,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
-
-	"github.com/stretchr/testify/require"
 	"github.com/trickstercache/mockster/pkg/mocks/byterange"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	tc "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestObjectProxyCacheRequestChunks(t *testing.T) {

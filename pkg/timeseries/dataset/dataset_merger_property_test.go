@@ -20,9 +20,9 @@ import (
 	"slices"
 	"testing"
 
-	"pgregory.net/rapid"
-
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+
+	"pgregory.net/rapid"
 )
 
 // Invariant: merged Warnings == multiset(receiver + each input).

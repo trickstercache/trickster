@@ -77,6 +77,7 @@ backends:
             to_credential: upstream-credential
   prom-a:
     provider: prometheus
+    replica_group: private-ha-shard
     listener_name: private-listener
     origin_url: http://prom-a.private.example:9090/private/path
     cache_name: cache-a
@@ -97,6 +98,7 @@ backends:
         authenticator_name: none
   prom-b:
     provider: prometheus
+    replica_group: private-ha-shard
     listener_name: private-listener
     origin_url: http://prom-b.private.example:9090/private/path
     cache_name: cache-b
@@ -126,7 +128,12 @@ request_rewriters:
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
 
-	out := conf.SanitizedString()
+	sanitized := conf.SanitizedClone()
+	out := sanitized.String()
+	if sanitized.Backends["prom-1"].ReplicaGroup == "" ||
+		sanitized.Backends["prom-1"].ReplicaGroup != sanitized.Backends["prom-2"].ReplicaGroup {
+		t.Fatalf("equal replica groups were not preserved during sanitization")
+	}
 
 	for _, want := range []string{
 		"alb-1:",
@@ -218,6 +225,7 @@ request_rewriters:
 		"prom-b.private.example",
 		"private-org",
 		"private-env",
+		"private-ha-shard",
 	} {
 		if strings.Contains(out, privateValue) {
 			t.Errorf("expected sanitized config not to contain %q; got:\n%s", privateValue, out)

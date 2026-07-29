@@ -22,6 +22,7 @@ import (
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
+
 	"go.opentelemetry.io/otel/attribute"
 )
 

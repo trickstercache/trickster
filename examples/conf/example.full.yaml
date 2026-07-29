@@ -256,6 +256,13 @@ backends:
     # provider is a required configuration value
     provider: prometheus
 
+    # replica_group identifies the logical shard represented by this backend in
+    # Time Series Merge pools. Backends with the same value are HA replicas.
+    # When omitted, it defaults to this backend's name, making it a unique shard.
+    # Replica Groups can only be set on TSM-compatible backends (currently
+    # Prometheus) or nested ALBs used directly as members of a TSM pool.
+    # replica_group: shard-a
+
     # for prometheus backends, you can configure label injection as follows:
     # prometheus:
     #   labels:

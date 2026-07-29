@@ -28,3 +28,10 @@ import (
 type TSMMergeProvider interface {
 	PlanTSMMerge(r *http.Request, query string) (*merge.TSMMergePlan, error)
 }
+
+// TSMInjectedLabelProvider exposes provider-injected label keys that must be
+// removed before TSM hashes and merges series. Virtual backends implement this
+// by returning the union from their terminal time-series leaves.
+type TSMInjectedLabelProvider interface {
+	TSMInjectedLabelKeys() []string
+}

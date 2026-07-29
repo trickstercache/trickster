@@ -19,9 +19,10 @@ package dataset
 import (
 	"testing"
 
-	"github.com/stretchr/testify/require"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
+
+	"github.com/stretchr/testify/require"
 )
 
 // makeNsPoints constructs Points using nanosecond epochs.

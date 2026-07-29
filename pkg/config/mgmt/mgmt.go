@@ -18,8 +18,8 @@ package mgmt
 
 import (
 	"errors"
-	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 )
 

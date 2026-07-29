@@ -20,9 +20,10 @@ package metrics
 import (
 	"net/http"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 )
 
 const (
@@ -365,6 +366,20 @@ var (
 		[]string{"mechanism", "variant"},
 	)
 
+	// ALBTSMReplicaEvents counts logical replica-group activity without using
+	// configured group names as labels. "group_attempted" and "group_failed"
+	// describe logical availability; "fallback", "conflict", and "suppressed"
+	// describe replica selection within an available group.
+	ALBTSMReplicaEvents = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: albSubsystem,
+			Name:      "tsm_replica_events_total",
+			Help:      "Count of TSM logical replica-group selection events, by event and variant.",
+		},
+		[]string{"event", "variant"},
+	)
+
 	// ALBFanoutLoserDrain observes how long each losing slot in a
 	// fanout.WaitForFirst call takes to exit after the winner is claimed.
 	// WaitForFirst cancels raceCtx on winner-claim and returns immediately;
@@ -528,6 +543,7 @@ func init() {
 	prometheus.MustRegister(ProxyConnectionFailed)
 	prometheus.MustRegister(ALBFanoutFailures)
 	prometheus.MustRegister(ALBFanoutAttempts)
+	prometheus.MustRegister(ALBTSMReplicaEvents)
 	prometheus.MustRegister(ALBFanoutLoserDrain)
 	prometheus.MustRegister(ALBPoolRefreshPanicRecovered)
 	prometheus.MustRegister(HealthcheckProbePanicRecovered)

@@ -21,10 +21,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/stretchr/testify/require"
 	"github.com/trickstercache/trickster/v2/pkg/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/route"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/writer"
+
+	"github.com/stretchr/testify/require"
 )
 
 const (

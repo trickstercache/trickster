@@ -21,8 +21,8 @@ import (
 	"maps"
 	"slices"
 
-	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	stdoutopts "github.com/trickstercache/trickster/v2/pkg/observability/tracing/exporters/stdout/options"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )

@@ -26,8 +26,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/prometheus/common/sigv4"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+
+	"github.com/prometheus/common/sigv4"
 )
 
 const connectTimeout = time.Second * 10

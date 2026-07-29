@@ -20,6 +20,7 @@ import (
 	goerrors "errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
@@ -32,13 +33,46 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus"
+	prop "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 	pkgerrors "github.com/trickstercache/trickster/v2/pkg/errors"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	tsmerge "github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
 const invalidPoolMemberCheck = "invalid pool member name [invalid] provided for alb [test]"
+
+type nestedTSMProviderStub struct {
+	backends.Backend
+	planned   bool
+	finalized bool
+}
+
+func (s *nestedTSMProviderStub) PlanTSMMerge(r *http.Request,
+	query string,
+) (*tsmerge.TSMMergePlan, error) {
+	s.planned = true
+	return &tsmerge.TSMMergePlan{
+		OriginalQuery: query,
+		Variants: []tsmerge.TSMQueryVariant{{
+			Name:              tsmerge.TSMVariantPrimary,
+			Request:           r,
+			MergeStrategy:     int(tsmerge.StrategySum),
+			ResponseAuthority: true,
+		}},
+		Reduction: tsmerge.TSMReductionSpec{
+			Kind:          tsmerge.TSMReductionStandard,
+			InputVariants: tsmerge.TSMReductionPrimaryVariant(),
+		},
+		Completeness: tsmerge.TSMCompletenessResponseAuthority,
+	}, nil
+}
+
+func (s *nestedTSMProviderStub) FinalizeTSMMerge(string, timeseries.Timeseries) {
+	s.finalized = true
+}
 
 func TestHandlers(t *testing.T) {
 	a := &ao.Options{
@@ -180,6 +214,156 @@ func TestValidateAndStartPool(t *testing.T) {
 	err = cl.ValidateAndStartPool(b, hcs)
 	if err != nil {
 		t.Error(err)
+	}
+}
+
+func TestValidateAndStartTSMPoolRejectsIncompatibleProvider(t *testing.T) {
+	memberOptions := bo.New()
+	memberOptions.Provider = providers.ReverseProxyShort
+	memberOptions.OriginURL = "http://example.com"
+	member, err := backends.New("member", memberOptions, nil, http.NotFoundHandler(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	albOptions := bo.New()
+	albOptions.Provider = providers.ALB
+	albOptions.ALBOptions = ao.New()
+	albOptions.ALBOptions.MechanismName = names.MechanismTSM
+	albOptions.ALBOptions.Pool = []string{"member"}
+	base, err := backends.New("edge", albOptions, nil, http.NotFoundHandler(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &Client{Backend: base}
+
+	err = client.ValidateAndStartPool(backends.Backends{
+		"edge": client, "member": member,
+	}, healthcheck.StatusLookup{"member": &healthcheck.Status{}})
+	if !goerrors.Is(err, errors.ErrInvalidTimeSeriesMergeProvider) {
+		t.Fatalf("error = %v, want ErrInvalidTimeSeriesMergeProvider", err)
+	}
+}
+
+func TestValidateTSMPoolMemberProviderResolvesNestedALB(t *testing.T) {
+	leafOptions := bo.New()
+	leafOptions.Provider = providers.Prometheus
+	leafOptions.OriginURL = "http://example.com"
+	leaf, err := backends.New("leaf", leafOptions, nil, http.NotFoundHandler(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	innerOptions := bo.New()
+	innerOptions.Name = "inner"
+	innerOptions.Provider = providers.ALB
+	innerOptions.ALBOptions = ao.New()
+	innerOptions.ALBOptions.MechanismName = names.MechanismRR
+	innerOptions.ALBOptions.Pool = []string{"leaf"}
+	inner, err := backends.New("inner", innerOptions, nil, http.NotFoundHandler(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	clients := backends.Backends{"inner": inner, "leaf": leaf}
+	if err := validateTSMPoolMemberProvider("inner", clients, sets.NewStringSet()); err != nil {
+		t.Fatalf("nested Prometheus ALB rejected: %v", err)
+	}
+}
+
+func TestNestedALBDelegatesTSMProvider(t *testing.T) {
+	leafOptions := bo.New()
+	leafOptions.Provider = providers.Prometheus
+	leafOptions.Prometheus = &prop.Options{Labels: map[string]string{
+		"route": "a",
+	}}
+	leafBackend, err := backends.New("leaf", leafOptions, nil,
+		http.NotFoundHandler(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaf := &nestedTSMProviderStub{Backend: leafBackend}
+
+	innerOptions := bo.New()
+	innerOptions.Provider = providers.ALB
+	innerOptions.ALBOptions = ao.New()
+	innerOptions.ALBOptions.MechanismName = names.MechanismRR
+	innerOptions.ALBOptions.Pool = []string{"leaf"}
+	innerBackend, err := NewClient("inner", innerOptions, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inner := innerBackend.(*Client)
+	if err := inner.ValidateAndStartPool(backends.Backends{
+		"inner": inner,
+		"leaf":  leaf,
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+	defer inner.StopPool()
+
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/query?query=sum(up)", nil)
+	plan, err := inner.PlanTSMMerge(r, "sum(up)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !leaf.planned || plan.Variants[0].MergeStrategy != int(tsmerge.StrategySum) {
+		t.Fatalf("nested plan = %+v, terminal provider was not used", plan)
+	}
+	inner.FinalizeTSMMerge("sum(up)", nil)
+	if !leaf.finalized {
+		t.Fatal("nested finalizer did not reach terminal provider")
+	}
+	if got := inner.TSMInjectedLabelKeys(); !slices.Equal(got, []string{"route"}) {
+		t.Fatalf("nested injected label keys = %v", got)
+	}
+}
+
+func TestValidateClientsAllowsReplicaGroupOnNestedTSMMember(t *testing.T) {
+	leafOptions := bo.New()
+	leafOptions.Provider = providers.Prometheus
+	leaf, err := backends.New("leaf", leafOptions, nil, http.NotFoundHandler(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	innerOptions := bo.New()
+	innerOptions.Name = "inner"
+	innerOptions.Provider = providers.ALB
+	innerOptions.ReplicaGroup = "shard-a"
+	innerOptions.ALBOptions = ao.New()
+	innerOptions.ALBOptions.MechanismName = names.MechanismRR
+	innerOptions.ALBOptions.Pool = []string{"leaf"}
+	innerBackend, err := NewClient("inner", innerOptions, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	outerOptions := bo.New()
+	outerOptions.Name = "outer"
+	outerOptions.Provider = providers.ALB
+	outerOptions.ALBOptions = ao.New()
+	outerOptions.ALBOptions.MechanismName = names.MechanismTSM
+	outerOptions.ALBOptions.OutputFormat = providers.Prometheus
+	outerOptions.ALBOptions.Pool = []string{"inner"}
+	outerBackend, err := NewClient("outer", outerOptions, nil, nil, nil,
+		types.Lookup{providers.Prometheus: prometheus.NewClient})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	clients := backends.Backends{
+		"leaf":  leaf,
+		"inner": innerBackend,
+		"outer": outerBackend,
+	}
+	if err := ValidateClients(clients); err != nil {
+		t.Fatalf("nested TSM replica group rejected: %v", err)
+	}
+
+	outerOptions.ALBOptions.Pool = []string{"leaf"}
+	if err := ValidateClients(clients); err == nil {
+		t.Fatal("expected custom replica group on non-TSM-member ALB to be rejected")
 	}
 }
 

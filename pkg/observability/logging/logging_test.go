@@ -22,10 +22,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/options"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestConsoleLogger(t *testing.T) {

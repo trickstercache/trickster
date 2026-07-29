@@ -23,9 +23,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
-
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"

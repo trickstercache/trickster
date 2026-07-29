@@ -20,9 +20,13 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
+	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
+	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	prommodel "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/model"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
@@ -85,6 +89,52 @@ func TestServeStandardScalarInstantIgnoresErrorEnvelope(t *testing.T) {
 	}
 	if w.Code != http.StatusOK {
 		t.Fatalf("status: got %d want %d", w.Code, http.StatusOK)
+	}
+}
+
+func TestServeStandardScalarReplicaFallbackIsNotPartial(t *testing.T) {
+	trq := &timeseries.TimeRangeQuery{Statement: "scalar(count(up))"}
+	statuses := []*healthcheck.Status{{}, {}}
+	for _, status := range statuses {
+		status.Set(healthcheck.StatusPassing)
+	}
+	targets := pool.Targets{
+		pool.NewTarget(
+			scalarMemberStatus(`{"status":"error","errorType":"bad_data","error":"boom"}`,
+				true, trq, http.StatusInternalServerError),
+			statuses[0],
+			&stripKeysStubBackend{cfg: &bo.Options{
+				Name: "primary", ReplicaGroup: "shard-a",
+			}},
+		),
+		pool.NewTarget(
+			scalarMember(`{"status":"success","data":{"resultType":"scalar","result":[101,"42"]}}`,
+				true, trq),
+			statuses[1],
+			&stripKeysStubBackend{cfg: &bo.Options{
+				Name: "replica", ReplicaGroup: "shard-a",
+			}},
+		),
+	}
+	p := pool.New(targets, -1)
+	defer p.Stop()
+	p.RefreshHealthy()
+
+	h := &handler{}
+	r := newTestMergeRequest(t)
+	w := httptest.NewRecorder()
+	h.serveStandard(w, r, p.Targets(), request.GetResources(r),
+		tsmerge.StrategyScalar, nil, trq.Statement, nil, "",
+		p.ConfiguredTargets())
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status: got %d want %d", w.Code, http.StatusOK)
+	}
+	if got := w.Body.String(); !strings.Contains(got, `"42"`) {
+		t.Fatalf("body = %s, want replica scalar", got)
+	}
+	if got := w.Header().Get(headers.NameTricksterResult); strings.Contains(got, "status=phit") {
+		t.Fatalf("covered replica failure reported as partial hit: %q", got)
 	}
 }
 

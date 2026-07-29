@@ -20,8 +20,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
-
 	bao "github.com/trickstercache/trickster/v2/pkg/cache/badger/options"
 	bbo "github.com/trickstercache/trickster/v2/pkg/cache/bbolt/options"
 	flo "github.com/trickstercache/trickster/v2/pkg/cache/filesystem/options"
@@ -30,6 +28,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/providers"
 	ro "github.com/trickstercache/trickster/v2/pkg/cache/redis/options"
 	"github.com/trickstercache/trickster/v2/pkg/config"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 )
 
 func TestLoadCachesFromConfig(t *testing.T) {

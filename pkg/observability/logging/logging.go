@@ -31,6 +31,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	tstr "github.com/trickstercache/trickster/v2/pkg/util/strings"
+
 	lumberjack "gopkg.in/natefinch/lumberjack.v2"
 )
 

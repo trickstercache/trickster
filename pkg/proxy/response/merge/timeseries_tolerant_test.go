@@ -19,10 +19,11 @@ package merge
 import (
 	"testing"
 
-	"github.com/stretchr/testify/require"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
+
+	"github.com/stretchr/testify/require"
 )
 
 // nonOptsMergerTS wraps timeseries.Timeseries via an embedded interface so

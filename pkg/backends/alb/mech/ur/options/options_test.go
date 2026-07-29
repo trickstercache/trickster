@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+
 	"gopkg.in/yaml.v2"
 )
 

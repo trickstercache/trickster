@@ -88,8 +88,8 @@ type FirstGoodResponseOptions struct {
 type TimeSeriesMergeOptions struct {
 	ConcurrencyOptions ConcurrencyOptions `yaml:",inline"`
 	// DedupToleranceMs is an opt-in tolerance window (milliseconds) for
-	// clustering near-duplicate samples produced by independent fan-out
-	// shards. When two shards sample the same metric at timestamps that
+	// clustering near-duplicate samples produced by replicas in the same
+	// replica group. When two replicas sample the same metric at timestamps that
 	// differ by <= this many milliseconds, the cluster collapses to a single
 	// survivor (first-seen-after-sort wins). Nil or 0 preserves the legacy
 	// exact-epoch dedup behavior.

@@ -505,7 +505,7 @@ func TestServeWeightedAvg(t *testing.T) {
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, newWeightedAvgRequest(t, "avg(requests)"))
 		if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "100=20") ||
-			!strings.Contains(w.Body.String(), "served from 1 of 2 pool members") {
+			!strings.Contains(w.Body.String(), "served from 1 of 2 replica groups") {
 			t.Fatalf("status=%d body=%q", w.Code, w.Body.String())
 		}
 	})

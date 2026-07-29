@@ -26,6 +26,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	errs "github.com/trickstercache/trickster/v2/pkg/observability/tracing/errors"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
+
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
 	otlpgrpc "go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"

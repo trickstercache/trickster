@@ -55,6 +55,7 @@ func (c *Config) SanitizedClone() *Config {
 
 	cacheNameMap := anonymizedCacheNames(cp.Caches)
 	backendNameMap := anonymizedBackendNames(cp.Backends)
+	replicaGroupMap := anonymizedReplicaGroupNames(cp.Backends, backendNameMap)
 	listenerNameMap := anonymizedListenerNames(cp.Listeners)
 	authNameMap := anonymizedAuthenticatorNames(cp.Authenticators)
 	tracingNameMap := anonymizedTracingNames(cp.TracingOptions)
@@ -81,6 +82,9 @@ func (c *Config) SanitizedClone() *Config {
 		newName := backendNameMap[oldName]
 		if opts != nil {
 			opts.Name = newName
+			if newReplicaGroup, ok := replicaGroupMap[opts.ReplicaGroup]; ok {
+				opts.ReplicaGroup = newReplicaGroup
+			}
 			if opts.OriginURL != "" {
 				opts.OriginURL = sanitizedEndpoint
 			}
@@ -138,6 +142,29 @@ func (c *Config) SanitizedClone() *Config {
 	}
 
 	return cp
+}
+
+func anonymizedReplicaGroupNames(backends bo.Lookup,
+	backendNames map[string]string,
+) map[string]string {
+	groups := make(map[string]struct{})
+	for _, opts := range backends {
+		if opts != nil && opts.ReplicaGroup != "" {
+			groups[opts.ReplicaGroup] = struct{}{}
+		}
+	}
+	names := sortedKeys(groups)
+	out := make(map[string]string, len(names))
+	custom := 0
+	for _, name := range names {
+		if backendName, ok := backendNames[name]; ok {
+			out[name] = backendName
+			continue
+		}
+		custom++
+		out[name] = fmt.Sprintf("replica-group-%d", custom)
+	}
+	return out
 }
 
 func anonymizedListenerNames(listeners listenerconfig.Lookup) map[string]string {

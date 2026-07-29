@@ -21,11 +21,11 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/albpool"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestScatterShortReadDisqualifies(t *testing.T) {

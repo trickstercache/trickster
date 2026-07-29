@@ -23,14 +23,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	ro "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/negative"
-	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	tro "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	corso "github.com/trickstercache/trickster/v2/pkg/proxy/cors/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
@@ -38,6 +37,8 @@ import (
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
+
+	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
 )
 
@@ -129,9 +130,63 @@ func TestClone(t *testing.T) {
 	o.HealthCheck = &ho.Options{}
 	o.FastForwardPath = p
 	o.RuleOptions = &ro.Options{}
+	o.ReplicaGroup = "replicas-a"
 	o2 := o.Clone()
 	if o2.CacheName != "test" {
 		t.Error("clone failed")
+	}
+	if o2.ReplicaGroup != o.ReplicaGroup {
+		t.Errorf("clone replica group = %q, want %q", o2.ReplicaGroup, o.ReplicaGroup)
+	}
+}
+
+func TestReplicaGroupYAMLCloneAndInitialization(t *testing.T) {
+	o, err := fromYAML(`
+backends:
+  prom-a:
+    provider: prometheus
+    origin_url: http://example.com
+    replica_group: "  shard-a  "
+`, "prom-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := o.Initialize("prom-a"); err != nil {
+		t.Fatal(err)
+	}
+	if o.ReplicaGroup != "shard-a" {
+		t.Fatalf("replica group = %q, want shard-a", o.ReplicaGroup)
+	}
+	if clone := o.CloneYAMLSafe(); clone.ReplicaGroup != "shard-a" {
+		t.Fatalf("YAML-safe clone replica group = %q", clone.ReplicaGroup)
+	}
+	if out := o.ToYAML(); !strings.Contains(out, "replica_group: shard-a") {
+		t.Fatalf("round-trip YAML missing replica_group:\n%s", out)
+	}
+
+	unset := New()
+	if err := unset.Initialize("prom-b"); err != nil {
+		t.Fatal(err)
+	}
+	if unset.ReplicaGroup != "prom-b" {
+		t.Fatalf("default replica group = %q, want prom-b", unset.ReplicaGroup)
+	}
+	if out := unset.ToYAML(); strings.Contains(out, "replica_group:") {
+		t.Fatalf("implicit replica group should not be exported:\n%s", out)
+	}
+
+	nested := New()
+	nested.Provider = providers.ALB
+	nested.ReplicaGroup = "shard-a"
+	if err := nested.Initialize("nested-a"); err != nil {
+		t.Fatalf("nested ALB replica group rejected: %v", err)
+	}
+
+	unsupported := New()
+	unsupported.Provider = providers.ReverseProxyShort
+	unsupported.ReplicaGroup = "shard-a"
+	if err := unsupported.Initialize("proxy-a"); err == nil {
+		t.Fatal("expected replica group on reverse proxy backend to be rejected")
 	}
 }
 

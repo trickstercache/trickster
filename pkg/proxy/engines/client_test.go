@@ -31,6 +31,7 @@ import (
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
+	tt "github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
@@ -39,7 +40,6 @@ import (
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	tst "github.com/trickstercache/trickster/v2/pkg/testutil/timeseries/model"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
-	tt "github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 )
 
 // Prometheus API

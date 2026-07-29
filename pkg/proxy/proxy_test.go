@@ -28,11 +28,11 @@ import (
 	"testing"
 	"time"
 
+	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
 
 	"github.com/prometheus/common/sigv4"
-	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
-	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
 )
 
 func TestNewHTTPClient(t *testing.T) {

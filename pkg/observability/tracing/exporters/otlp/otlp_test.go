@@ -27,10 +27,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
-
 	errs "github.com/trickstercache/trickster/v2/pkg/observability/tracing/errors"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+
 	"go.opentelemetry.io/otel/trace"
 	collectortracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	"google.golang.org/grpc"
