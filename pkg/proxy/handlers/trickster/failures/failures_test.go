@@ -50,3 +50,42 @@ func TestHandleBadGateway(t *testing.T) {
 		t.Errorf("expected %d got %d", 502, w.Result().StatusCode)
 	}
 }
+
+func TestHandleUnauthorized(t *testing.T) {
+	HandleUnauthorized(nil, nil)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "http://0/trickster/", nil)
+	HandleUnauthorized(w, r)
+	if w.Result().StatusCode != 401 {
+		t.Errorf("expected %d got %d", 401, w.Result().StatusCode)
+	}
+	if body := w.Body.String(); body != "Unauthorized" {
+		t.Errorf("expected body %q got %q", "Unauthorized", body)
+	}
+}
+
+func TestHandleNotFound(t *testing.T) {
+	HandleNotFound(nil, nil)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "http://0/trickster/", nil)
+	HandleNotFound(w, r)
+	if w.Result().StatusCode != 404 {
+		t.Errorf("expected %d got %d", 404, w.Result().StatusCode)
+	}
+	if body := w.Body.String(); body != "Resource Not Found" {
+		t.Errorf("expected body %q got %q", "Resource Not Found", body)
+	}
+}
+
+func TestHandlePayloadTooLarge(t *testing.T) {
+	HandlePayloadTooLarge(nil, nil)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "http://0/trickster/", nil)
+	HandlePayloadTooLarge(w, r)
+	if w.Result().StatusCode != 413 {
+		t.Errorf("expected %d got %d", 413, w.Result().StatusCode)
+	}
+	if body := w.Body.String(); body != PayloadTooLargeText {
+		t.Errorf("expected body %q got %q", PayloadTooLargeText, body)
+	}
+}

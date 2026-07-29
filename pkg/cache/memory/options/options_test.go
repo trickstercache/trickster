@@ -20,8 +20,6 @@ import (
 	"errors"
 	"testing"
 
-	d "github.com/trickstercache/trickster/v2/pkg/cache/options/defaults"
-
 	"gopkg.in/yaml.v2"
 )
 
@@ -30,11 +28,11 @@ func TestNew(t *testing.T) {
 	if o == nil {
 		t.Fatal("expected non-nil options")
 	}
-	if o.Directory != d.DefaultCachePath {
-		t.Errorf("expected Directory %q, got %q", d.DefaultCachePath, o.Directory)
+	if o.MaxSizeBytes != DefaultMaxSizeBytes {
+		t.Errorf("expected MaxSizeBytes %d, got %d", DefaultMaxSizeBytes, o.MaxSizeBytes)
 	}
-	if o.ValueDirectory != d.DefaultCachePath {
-		t.Errorf("expected ValueDirectory %q, got %q", d.DefaultCachePath, o.ValueDirectory)
+	if o.NumCounters != DefaultNumCounters {
+		t.Errorf("expected NumCounters %d, got %d", DefaultNumCounters, o.NumCounters)
 	}
 }
 
@@ -50,40 +48,34 @@ func TestEqual(t *testing.T) {
 	if !o.Equal(New()) {
 		t.Error("expected default options to be equal")
 	}
-	if !(*Options)(nil).Equal(nil) {
-		t.Error("expected nil receivers to be equal")
-	}
-	if (*Options)(nil).Equal(o) {
-		t.Error("expected nil receiver unequal to non-nil")
-	}
 
 	o2 := New()
-	o2.Directory = "/other"
+	o2.MaxSizeBytes = 1
 	if o.Equal(o2) {
-		t.Error("expected Directory difference to make options unequal")
+		t.Error("expected MaxSizeBytes difference to make options unequal")
 	}
 
 	o3 := New()
-	o3.ValueDirectory = "/other"
+	o3.NumCounters = 1
 	if o.Equal(o3) {
-		t.Error("expected ValueDirectory difference to make options unequal")
+		t.Error("expected NumCounters difference to make options unequal")
 	}
 }
 
 func TestUnmarshalYAML(t *testing.T) {
 	const raw = `
-directory: /tmp/badger-dir
-value_directory: /tmp/badger-val
+max_size_bytes: 1048576
+num_counters: 1000
 `
 	o := &Options{}
 	if err := yaml.Unmarshal([]byte(raw), o); err != nil {
 		t.Fatalf("yaml.Unmarshal: %v", err)
 	}
-	if o.Directory != "/tmp/badger-dir" {
-		t.Errorf("expected Directory /tmp/badger-dir, got %q", o.Directory)
+	if o.MaxSizeBytes != 1048576 {
+		t.Errorf("expected MaxSizeBytes 1048576, got %d", o.MaxSizeBytes)
 	}
-	if o.ValueDirectory != "/tmp/badger-val" {
-		t.Errorf("expected ValueDirectory /tmp/badger-val, got %q", o.ValueDirectory)
+	if o.NumCounters != 1000 {
+		t.Errorf("expected NumCounters 1000, got %d", o.NumCounters)
 	}
 
 	// Empty YAML should retain defaults applied by UnmarshalYAML.
@@ -97,14 +89,14 @@ value_directory: /tmp/badger-val
 
 	// Partial YAML should overlay provided fields onto defaults.
 	o3 := &Options{}
-	if err := yaml.Unmarshal([]byte("directory: /custom"), o3); err != nil {
+	if err := yaml.Unmarshal([]byte("max_size_bytes: 42"), o3); err != nil {
 		t.Fatalf("yaml.Unmarshal partial: %v", err)
 	}
-	if o3.Directory != "/custom" {
-		t.Errorf("expected Directory /custom, got %q", o3.Directory)
+	if o3.MaxSizeBytes != 42 {
+		t.Errorf("expected MaxSizeBytes 42, got %d", o3.MaxSizeBytes)
 	}
-	if o3.ValueDirectory != d.DefaultCachePath {
-		t.Errorf("expected default ValueDirectory %q, got %q", d.DefaultCachePath, o3.ValueDirectory)
+	if o3.NumCounters != DefaultNumCounters {
+		t.Errorf("expected default NumCounters %d, got %d", DefaultNumCounters, o3.NumCounters)
 	}
 }
 

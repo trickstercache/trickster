@@ -141,3 +141,122 @@ func TestTimeseriesMergeFuncWithStrategy_ByteInput(t *testing.T) {
 	require.True(t, calledUnmarshal)
 	require.NotNil(t, accum.GetTSData())
 }
+
+func TestTimeseriesMergeFuncWithStrategy_ScalarErrorPreference(t *testing.T) {
+	unmarshaler := func([]byte, *timeseries.TimeRangeQuery) (timeseries.Timeseries, error) {
+		return nil, nil
+	}
+	mf := TimeseriesMergeFuncWithStrategy(unmarshaler, int(merge.StrategyScalar))
+
+	t.Run("keeps success when candidate is error", func(t *testing.T) {
+		accum := NewAccumulator()
+		okDS := makeTestDataSet(0, "scalar", nil, []int64{100}, []string{"1"})
+		errDS := makeTestDataSet(0, "scalar", nil, []int64{100}, []string{"err"})
+		errDS.Status = "error"
+
+		require.NoError(t, mf(accum, okDS, 0))
+		require.NoError(t, mf(accum, errDS, 1))
+		require.Same(t, okDS, accum.GetTSData())
+		require.Equal(t, 1, accum.MergeCount)
+	})
+
+	t.Run("replaces error with success", func(t *testing.T) {
+		accum := NewAccumulator()
+		errDS := makeTestDataSet(0, "scalar", nil, []int64{100}, []string{"err"})
+		errDS.Status = "error"
+		okDS := makeTestDataSet(0, "scalar", nil, []int64{100}, []string{"1"})
+
+		require.NoError(t, mf(accum, errDS, 0))
+		require.NoError(t, mf(accum, okDS, 1))
+		require.Same(t, okDS, accum.GetTSData())
+		require.Equal(t, 1, accum.MergeCount)
+	})
+}
+
+func TestTimeseriesMergeFuncWithStrategy_NonStrategyMergerFallback(t *testing.T) {
+	unmarshaler := func([]byte, *timeseries.TimeRangeQuery) (timeseries.Timeseries, error) {
+		return nil, nil
+	}
+	accum := NewAccumulator()
+	seed := makeTestDataSet(0, "up", nil, []int64{100}, []string{"1"})
+	accum.SetTSData(nonOptsMergerTS{Timeseries: seed})
+	next := makeTestDataSet(0, "up", nil, []int64{200}, []string{"2"})
+
+	mf := TimeseriesMergeFuncWithStrategy(unmarshaler, int(merge.StrategySum))
+	require.NoError(t, mf(accum, next, 0))
+	require.Equal(t, 1, accum.MergeCount)
+
+	got, ok := accum.GetTSData().(nonOptsMergerTS)
+	require.True(t, ok)
+	gotDS, ok := got.Timeseries.(*dataset.DataSet)
+	require.True(t, ok)
+	require.Len(t, gotDS.Results[0].SeriesList[0].Points, 2)
+}
+
+func TestTimeseriesBatchMergeFuncWithStrategy(t *testing.T) {
+	accum := NewAccumulator()
+	items := []BatchItem{
+		{Data: makeTestDataSet(0, "up", nil, []int64{100}, []string{"1"}), Member: 0},
+		{Data: makeTestDataSet(0, "up", nil, []int64{100}, []string{"3"}), Member: 1},
+	}
+
+	handled, err := TimeseriesBatchMergeFuncWithStrategy(int(merge.StrategySum))(accum, items)
+	require.NoError(t, err)
+	require.True(t, handled)
+	require.Equal(t, 2, accum.MergeCount)
+	ds, ok := accum.GetTSData().(*dataset.DataSet)
+	require.True(t, ok)
+	require.Equal(t, "4", ds.Results[0].SeriesList[0].Points[0].Values[0])
+}
+
+func TestTimeseriesBatchMergeFuncWithStrategy_ScalarErrorPreference(t *testing.T) {
+	t.Run("filters error members when successes exist", func(t *testing.T) {
+		accum := NewAccumulator()
+		errDS := makeTestDataSet(0, "scalar", nil, []int64{100}, []string{"err"})
+		errDS.Status = "error"
+		okDS := makeTestDataSet(0, "scalar", nil, []int64{100}, []string{"42"})
+
+		handled, err := TimeseriesBatchMergeFuncWithStrategy(int(merge.StrategyScalar))(accum, []BatchItem{
+			{Data: errDS, Member: 0},
+			{Data: okDS, Member: 1},
+		})
+		require.NoError(t, err)
+		require.True(t, handled)
+		require.Same(t, okDS, accum.GetTSData())
+		require.Equal(t, 1, accum.MergeCount)
+	})
+
+	t.Run("replaces error accumulator base with success", func(t *testing.T) {
+		accum := NewAccumulator()
+		errBase := makeTestDataSet(0, "scalar", nil, []int64{100}, []string{"err"})
+		errBase.Status = "error"
+		accum.SetTSData(errBase)
+		accum.MergeCount = 1
+		okDS := makeTestDataSet(0, "scalar", nil, []int64{100}, []string{"7"})
+
+		handled, err := TimeseriesBatchMergeFuncWithStrategy(int(merge.StrategyScalar))(accum, []BatchItem{
+			{Data: okDS, Member: 0},
+		})
+		require.NoError(t, err)
+		require.True(t, handled)
+		require.Same(t, okDS, accum.GetTSData())
+		require.Equal(t, 1, accum.MergeCount)
+	})
+
+	t.Run("keeps errors when all members failed", func(t *testing.T) {
+		accum := NewAccumulator()
+		err1 := makeTestDataSet(0, "scalar", nil, []int64{100}, []string{"e1"})
+		err1.Status = "error"
+		err2 := makeTestDataSet(0, "scalar", nil, []int64{100}, []string{"e2"})
+		err2.Status = "error"
+
+		handled, err := TimeseriesBatchMergeFuncWithStrategy(int(merge.StrategyScalar))(accum, []BatchItem{
+			{Data: err1, Member: 0},
+			{Data: err2, Member: 1},
+		})
+		require.NoError(t, err)
+		require.True(t, handled)
+		require.NotNil(t, accum.GetTSData())
+		require.Equal(t, 2, accum.MergeCount)
+	})
+}
