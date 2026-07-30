@@ -316,8 +316,14 @@ func applyCachingConfig(si *instance.ServerInstance,
 				v.ProviderID == providers.MemoryID {
 				// Note: this is only necessary for the memory cache as all other providers will be closed and reopened with the newest config
 				if v.Index != nil {
-					mc := w.(*manager.Manager).Client.(*index.IndexedClient)
-					mc.UpdateOptions(v.Index)
+					// only index-backed clients carry index options; the memory
+					// cache manages its own sizing, so a failed assertion here
+					// is expected and simply means there is nothing to update
+					if m, ok := w.(*manager.Manager); ok {
+						if mc, ok := m.Client.(*index.IndexedClient); ok {
+							mc.UpdateOptions(v.Index)
+						}
+					}
 				}
 				caches[k] = w
 				continue
