@@ -134,6 +134,10 @@ func (c *Client) FinalizeTSMMerge(query string, ts timeseries.Timeseries) {
 		finalizeLimitRatio(ds, spec)
 		return
 	}
+	if spec, found := promql.ParseQuantileAggregation(query); found {
+		finalizeQuantileAggregation(ds, spec)
+		return
+	}
 	if spec, found := promql.ParseVarianceAggregation(query); found {
 		finalizeVarianceAggregation(ds, spec)
 		return
