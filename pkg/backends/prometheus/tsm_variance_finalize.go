@@ -131,11 +131,18 @@ func isCentralVarianceInput(ds *dataset.DataSet, spec promql.VarianceAggregation
 	// A supported nested plan fans out spec.InnerQuery. The legacy sorted
 	// fallback fans out the outer variance aggregation instead, so its statement
 	// must not be aggregated a second time.
-	return dataSetContainsQueryStatement(ds, spec.InnerQuery)
+	return dataSetContainsFinalizerInput(ds, spec.InnerQuery)
 }
 
-func dataSetContainsQueryStatement(ds *dataset.DataSet, query string) bool {
-	candidate := strings.TrimSpace(query)
+func dataSetContainsFinalizerInput(ds *dataset.DataSet, logicalQuery string) bool {
+	query := strings.TrimSpace(logicalQuery)
+	candidates := map[string]struct{}{query: {}}
+	if operator, found := promql.CompleteOuterAggregator(query); found &&
+		operator == aggregation.Average {
+		sumQuery := promql.ReplaceOuterAggregator(query, aggregation.Average, aggregation.Sum)
+		candidates[strings.TrimSpace(sumQuery)] = struct{}{}
+	}
+
 	foundSeriesStatement := false
 	for _, result := range ds.Results {
 		if result == nil {
@@ -150,13 +157,16 @@ func dataSetContainsQueryStatement(ds *dataset.DataSet, query string) bool {
 				continue
 			}
 			foundSeriesStatement = true
-			if statement == candidate {
+			if _, found := candidates[statement]; found {
 				return true
 			}
 		}
 	}
-	return !foundSeriesStatement && ds.TimeRangeQuery != nil &&
-		strings.TrimSpace(ds.TimeRangeQuery.Statement) == candidate
+	if foundSeriesStatement || ds.TimeRangeQuery == nil {
+		return false
+	}
+	_, found := candidates[strings.TrimSpace(ds.TimeRangeQuery.Statement)]
+	return found
 }
 
 func finalizeCentralVariance(ds *dataset.DataSet, spec promql.VarianceAggregation) {

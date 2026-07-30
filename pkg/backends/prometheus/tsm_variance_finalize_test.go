@@ -146,6 +146,31 @@ func TestFinalizeTSMMergeCentralVariance(t *testing.T) {
 	}
 }
 
+func TestFinalizeTSMMergeVarianceAfterWeightedAverage(t *testing.T) {
+	const (
+		inner     = "avg by (service) (requests)"
+		statement = "sum by (service) (requests)"
+	)
+	tests := map[string]string{
+		"stddev": "3",
+		"stdvar": "9",
+	}
+	for operator, want := range tests {
+		t.Run(operator, func(t *testing.T) {
+			ds := varianceFinalizeDataSet(statement,
+				varianceFinalizeSeries(dataset.Tags{"service": "api"}, statement, "2", int64(100)),
+				varianceFinalizeSeries(dataset.Tags{"service": "worker"}, statement, "8", int64(100)),
+			)
+
+			(&Client{}).FinalizeTSMMerge(operator+"("+inner+")", ds)
+			got := ds.Results[0].SeriesList
+			if len(got) != 1 || len(got[0].Points) != 1 || got[0].Points[0].Values[0] != want {
+				t.Fatalf("result: %#v", got)
+			}
+		})
+	}
+}
+
 func TestFinalizeTSMMergeVarianceGroupingAndSort(t *testing.T) {
 	const inner = "count without (shard) (requests)"
 	series := []*dataset.Series{

@@ -63,7 +63,11 @@ func TestPrometheusValueQuantile(t *testing.T) {
 				}
 				return
 			}
-			if got != tt.want {
+			if got == tt.want {
+				return
+			}
+			tolerance := 1e-12 * math.Max(1, math.Abs(tt.want))
+			if math.IsNaN(got) || math.IsInf(got, 0) || math.Abs(got-tt.want) > tolerance {
 				t.Fatalf("got %v want %v", got, tt.want)
 			}
 		})
@@ -109,6 +113,23 @@ func TestFinalizeTSMMergeQuantileGlobalGroupsAndSparseRange(t *testing.T) {
 	}
 	if len(west.Points) != 1 || west.Points[0].Values[0] != "1500" {
 		t.Fatalf("west points: %#v", west.Points)
+	}
+}
+
+func TestFinalizeTSMMergeQuantileAfterWeightedAverage(t *testing.T) {
+	const (
+		inner     = "avg by (service) (requests)"
+		statement = "sum by (service) (requests)"
+	)
+	ds := varianceFinalizeDataSet(statement,
+		varianceFinalizeSeries(dataset.Tags{"service": "api"}, statement, "2", int64(100)),
+		varianceFinalizeSeries(dataset.Tags{"service": "worker"}, statement, "8", int64(100)),
+	)
+
+	(&Client{}).FinalizeTSMMerge("quantile(0.5, "+inner+")", ds)
+	got := ds.Results[0].SeriesList
+	if len(got) != 1 || len(got[0].Points) != 1 || got[0].Points[0].Values[0] != "5" {
+		t.Fatalf("result: %#v", got)
 	}
 }
 
