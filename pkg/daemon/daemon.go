@@ -173,7 +173,6 @@ func Hup(si *instance.ServerInstance, source string, args ...string) (bool, erro
 	oldClients := si.Backends
 	oldCaches := si.Caches
 	oldHealthChecker := si.HealthChecker
-	oldListeners := si.Listeners
 
 	hupFunc := newHupFunc(si, args)
 
@@ -185,7 +184,6 @@ func Hup(si *instance.ServerInstance, source string, args ...string) (bool, erro
 		si.Backends = oldClients
 		si.Caches = oldCaches
 		si.HealthChecker = oldHealthChecker
-		si.Listeners = oldListeners
 		metrics.ReloadFailuresTotal.Inc()
 		metrics.LastReloadSuccessful.Set(0)
 		metrics.ReloadDurationSeconds.Observe(time.Since(startTime).Seconds())
@@ -201,19 +199,6 @@ func Hup(si *instance.ServerInstance, source string, args ...string) (bool, erro
 			logger.Warn("reload completed but some listeners not ready",
 				logging.Pairs{"error": err.Error(), "source": source})
 		}
-	}
-
-	if oldListeners != nil && oldListeners != si.Listeners {
-		drainTimeout := 30 * time.Second
-		if newConf.MgmtConfig != nil && newConf.MgmtConfig.ReloadDrainTimeout > 0 {
-			drainTimeout = time.Duration(newConf.MgmtConfig.ReloadDrainTimeout)
-		}
-		safego.Go(reloadGoroutinePanic("oldListeners.Shutdown", source), func() {
-			if err := oldListeners.Shutdown(drainTimeout); err != nil {
-				logger.Warn("error shutting down old listeners",
-					logging.Pairs{"error": err.Error(), "source": source})
-			}
-		})
 	}
 
 	if oldClients != nil {
