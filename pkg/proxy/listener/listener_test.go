@@ -25,6 +25,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -287,9 +289,11 @@ func TestRouteSwapper(t *testing.T) {
 
 func TestGet(t *testing.T) {
 	lg := NewGroup()
-	lg.members["testing"] = &Listener{exitOnError: true}
+	l0 := &Listener{}
+	l0.exitOnError.Store(true)
+	lg.members["testing"] = l0
 	l := lg.Get("testing")
-	if !l.exitOnError {
+	if !l.exitOnError.Load() {
 		t.Error("expected true")
 	}
 	l = lg.Get("invalid")
@@ -397,6 +401,315 @@ func TestObservedConnectionIdempotentClose(t *testing.T) {
 	if finalVal != 9.0 {
 		t.Errorf("expected ProxyActiveConnections metric to be 9.0 after idempotent close, got %f", finalVal)
 	}
+}
+
+func TestListenerState(t *testing.T) {
+	l := &Listener{}
+	if l.State() != StateStopped {
+		t.Errorf("State() = %v, want %v", l.State(), StateStopped)
+	}
+	l.setState(StateReady)
+	if l.State() != StateReady {
+		t.Errorf("State() = %v, want %v", l.State(), StateReady)
+	}
+}
+
+func TestListenerWaitForReadyNilChannel(t *testing.T) {
+	l := &Listener{}
+	if l.WaitForReady(0) {
+		t.Error("expected false when state is not ready and readyCh is nil")
+	}
+	l.setState(StateReady)
+	if !l.WaitForReady(0) {
+		t.Error("expected true when state is ready and readyCh is nil")
+	}
+}
+
+func TestListenerWaitForReadyBlocksUntilReady(t *testing.T) {
+	l := &Listener{readyCh: make(chan struct{})}
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		l.markReady()
+	}()
+	done := make(chan bool, 1)
+	go func() { done <- l.WaitForReady(0) }()
+	select {
+	case ok := <-done:
+		if !ok {
+			t.Error("expected WaitForReady(0) to return true once ready")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("WaitForReady(0) did not return after the listener became ready")
+	}
+}
+
+func TestListenerWaitForReadyTimeoutSuccess(t *testing.T) {
+	l := &Listener{readyCh: make(chan struct{})}
+	l.markReady()
+	if !l.WaitForReady(time.Second) {
+		t.Error("expected true when already ready before the timeout")
+	}
+}
+
+func TestListenerWaitForReadyTimeoutExpires(t *testing.T) {
+	l := &Listener{readyCh: make(chan struct{})}
+	t.Cleanup(l.markReady)
+	if l.WaitForReady(20 * time.Millisecond) {
+		t.Error("expected false when the listener never becomes ready")
+	}
+}
+
+func TestGroupWaitForReadyEmpty(t *testing.T) {
+	lg := NewGroup()
+	if err := lg.WaitForReady(time.Second); err != nil {
+		t.Errorf("err = %v, want nil for an empty group", err)
+	}
+}
+
+func TestGroupWaitForReadySkipsNilMembers(t *testing.T) {
+	lg := NewGroup()
+	lg.members["nil-member"] = nil
+	l := &Listener{readyCh: make(chan struct{})}
+	l.markReady()
+	lg.members["ready-member"] = l
+	if err := lg.WaitForReady(time.Second); err != nil {
+		t.Errorf("err = %v, want nil", err)
+	}
+}
+
+func TestGroupWaitForReadyNoTimeoutBlocksUntilReady(t *testing.T) {
+	lg := NewGroup()
+	l := &Listener{readyCh: make(chan struct{})}
+	lg.members["member"] = l
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		l.markReady()
+	}()
+	done := make(chan error, 1)
+	go func() { done <- lg.WaitForReady(0) }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("err = %v, want nil", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("WaitForReady(0) did not return after the listener became ready")
+	}
+}
+
+func TestGroupWaitForReadyTimeoutExpires(t *testing.T) {
+	lg := NewGroup()
+	l := &Listener{readyCh: make(chan struct{})}
+	t.Cleanup(l.markReady)
+	lg.members["never-ready"] = l
+	if err := lg.WaitForReady(20 * time.Millisecond); err == nil {
+		t.Error("expected a timeout error when a listener never becomes ready")
+	}
+}
+
+func TestGroupShutdownAggregatesErrorsAndClosesDone(t *testing.T) {
+	lg := NewGroup()
+	lg.members["nil-listener"] = &Listener{}
+	lg.members["ok-listener"] = &Listener{Listener: testListener(), server: &http.Server{}}
+
+	if err := lg.Shutdown(0); !stderrors.Is(err, errors.ErrNilListener) {
+		t.Errorf("err = %v, want %v", err, errors.ErrNilListener)
+	}
+	select {
+	case <-lg.done:
+	default:
+		t.Error("expected the done channel to be closed")
+	}
+
+	// Shutdown must be idempotent: a second call must not panic closing an
+	// already-closed done channel, and an empty group shuts down cleanly.
+	if err := lg.Shutdown(0); err != nil {
+		t.Errorf("second Shutdown err = %v, want nil", err)
+	}
+}
+
+func TestDrainAndCloseServerShutdownError(t *testing.T) {
+	logger.SetLogger(logging.NoopLogger())
+	inHandler := make(chan struct{})
+	release := make(chan struct{})
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		close(inHandler)
+		<-release
+		w.WriteHeader(http.StatusOK)
+	})
+
+	lg := NewGroup()
+	errs := make(chan error, 1)
+	go func() {
+		errs <- lg.StartListener("blocking", "127.0.0.1", 0, 0, nil, handler, nil, nil, 0, 0)
+	}()
+
+	var l *Listener
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if l = lg.Get("blocking"); l != nil && l.State() == StateReady {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if l == nil {
+		t.Fatal("listener did not become ready")
+	}
+
+	go func() {
+		resp, err := http.Get(fmt.Sprintf("http://%s/", l.Addr().String()))
+		if err == nil {
+			resp.Body.Close()
+		}
+	}()
+
+	select {
+	case <-inHandler:
+	case <-time.After(5 * time.Second):
+		t.Fatal("request never reached the handler")
+	}
+
+	// A drainWait of 0 means the shutdown context is already expired. With
+	// an in-flight (non-idle) connection, Shutdown must observe ctx.Done()
+	// rather than waiting indefinitely for the handler to finish.
+	if err := lg.DrainAndClose("blocking", 0); err == nil {
+		t.Error("expected an error from a shutdown that outlives its drain deadline")
+	}
+
+	close(release)
+	if err := <-errs; err != nil && !stderrors.Is(err, http.ErrServerClosed) {
+		t.Errorf("StartListener returned unexpected error: %v", err)
+	}
+}
+
+func TestHandleTracerShutdowns(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
+	var called bool
+	trs := tracing.Tracers{
+		"nil-tracer":        nil,
+		"nil-shutdown-func": {},
+		"errors": {
+			ShutdownFunc: func(context.Context) error {
+				called = true
+				return stderrors.New("shutdown failed")
+			},
+		},
+	}
+	handleTracerShutdowns(trs)
+	if !called {
+		t.Error("expected the tracer's ShutdownFunc to be invoked")
+	}
+}
+
+func TestAcceptUnwrapsTLSConn(t *testing.T) {
+	keyPEM, certPEM, err := tlstest.GetTestKeyAndCert(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, err := tls.X509KeyPair(certPEM, keyPEM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := tls.Listen("tcp", "127.0.0.1:0", &tls.Config{Certificates: []tls.Certificate{cert}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close()
+	l := &Listener{Listener: raw}
+
+	go func() {
+		if c, derr := net.Dial("tcp", raw.Addr().String()); derr == nil {
+			defer c.Close()
+			// hold the raw connection open briefly; a completed handshake
+			// is not required for the server side to hand back a *tls.Conn
+			time.Sleep(100 * time.Millisecond)
+		}
+	}()
+
+	conn, err := l.Accept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if _, ok := conn.(*tls.Conn); !ok {
+		t.Errorf("Accept did not return a *tls.Conn unwrapped: got %T", conn)
+	}
+}
+
+func TestStartListenerCallsFOnBindFailure(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
+	var called bool
+	lg := NewGroup()
+	err := lg.StartListener("testBadPort", "", -31, 0, nil, http.NewServeMux(),
+		nil, func() { called = true }, 0, 0)
+	if err == nil {
+		t.Error("expected an error for an invalid port")
+	}
+	if !called {
+		t.Error("expected f to be called when the listener fails to bind")
+	}
+}
+
+// TestStartListenerExitOnServeError verifies that a listener created with a
+// non-nil f treats a post-startup Serve() failure as fatal to the whole
+// process, for both the HTTP and HTTPS code paths. This calls os.Exit(1)
+// directly, so it must run in a subprocess.
+func TestStartListenerExitOnServeError(t *testing.T) {
+	scenarios := []struct {
+		name string
+		tls  bool
+	}{
+		{"http", false},
+		{"https", true},
+	}
+	for _, sc := range scenarios {
+		t.Run(sc.name, func(t *testing.T) {
+			if os.Getenv("LISTENER_EXIT_TEST") == sc.name {
+				runExitOnServeErrorChild(sc.tls)
+				return
+			}
+			cmd := exec.Command(os.Args[0], "-test.run=^TestStartListenerExitOnServeError/"+sc.name+"$", "-test.v")
+			cmd.Env = append(os.Environ(), "LISTENER_EXIT_TEST="+sc.name)
+			err := cmd.Run()
+			var ee *exec.ExitError
+			if !stderrors.As(err, &ee) {
+				t.Fatalf("expected an ExitError, got %v", err)
+			}
+			if ee.ExitCode() != 1 {
+				t.Fatalf("exit code = %d, want 1", ee.ExitCode())
+			}
+		})
+	}
+}
+
+// runExitOnServeErrorChild starts a listener with a non-nil f (so
+// exitOnError is set), then forces Serve() to fail by closing the raw
+// socket out from under it. StartListener should then call os.Exit(1)
+// itself; if it doesn't within the deadline, exit non-zero so the parent's
+// exit-code assertion fails loudly instead of hanging.
+func runExitOnServeErrorChild(useTLS bool) {
+	logger.SetLogger(logging.NoopLogger())
+	lg := NewGroup()
+	var tc *tls.Config
+	if useTLS {
+		tc = &tls.Config{Certificates: make([]tls.Certificate, 1)}
+	}
+	go func() {
+		_ = lg.StartListener("child", "", 0, 0, tc, http.NewServeMux(), nil,
+			func() {}, 0, 0)
+	}()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if l := lg.Get("child"); l != nil && l.State() == StateReady {
+			l.Close()
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	time.Sleep(2 * time.Second)
+	os.Exit(2)
 }
 
 func TestAcceptWrapsLimitListenerConn(t *testing.T) {
