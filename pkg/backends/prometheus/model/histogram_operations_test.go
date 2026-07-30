@@ -17,6 +17,7 @@
 package model
 
 import (
+	"encoding/json"
 	"math"
 	"testing"
 
@@ -196,4 +197,172 @@ func TestPrometheusHistogramOperationsDropMixedSamples(t *testing.T) {
 
 	ds.FinalizeValueMerge(int(merge.StrategySum))
 	require.Equal(t, []string{mixedFloatHistogramWarning}, ds.Warnings)
+}
+
+func TestPrometheusHistogramOperationsRejectsInvalidInputs(t *testing.T) {
+	ops := prometheusHistogramOperations{}
+
+	_, handled := ops.MergeValues(`{"count":"1","sum":"1"}`, `{"count":"1","sum":"1"}`, merge.StrategyDedup)
+	require.False(t, handled)
+	_, handled = ops.MergeValues(1, `{"count":"1","sum":"1"}`, merge.StrategySum)
+	require.False(t, handled)
+	_, handled = ops.MergeValues(`{"count":"1","sum":"1"}`, `{`, merge.StrategySum)
+	require.False(t, handled)
+
+	_, handled = ops.DivideValue(`{"count":"1","sum":"1"}`, 0)
+	require.False(t, handled)
+	_, handled = ops.DivideValue(nil, 2)
+	require.False(t, handled)
+
+	ops.FinalizeMerge(&dataset.DataSet{}, merge.StrategyDedup)
+}
+
+func TestParseNormalizedHistogramEdgeCases(t *testing.T) {
+	_, err := parseNormalizedHistogram(123)
+	require.Error(t, err)
+
+	_, err = parseNormalizedHistogram(`{`)
+	require.Error(t, err)
+
+	_, err = parseNormalizedHistogram(`{"count":"x","sum":"1"}`)
+	require.Error(t, err)
+
+	_, err = parseNormalizedHistogram(`{"count":"1","sum":"x"}`)
+	require.Error(t, err)
+
+	_, err = parseNormalizedHistogram(`{"count":"1","sum":"1","buckets":[[0,"0","1"]]}`)
+	require.Error(t, err)
+
+	_, err = parseNormalizedHistogram(`{"count":"1","sum":"1","buckets":[[9,"0","1","1"]]}`)
+	require.Error(t, err)
+
+	_, err = parseNormalizedHistogram(`{"count":"1","sum":"1","buckets":[[0,"x","1","1"]]}`)
+	require.Error(t, err)
+
+	_, err = parseNormalizedHistogram(`{"count":"1","sum":"1","buckets":[[0,"0","x","1"]]}`)
+	require.Error(t, err)
+
+	_, err = parseNormalizedHistogram(`{"count":"1","sum":"1","buckets":[[0,"0","1","x"]]}`)
+	require.Error(t, err)
+
+	_, err = parseNormalizedHistogram(`{"count":"1","sum":"1","buckets":[[0,"2","1","1"]]}`)
+	require.Error(t, err)
+
+	_, err = parseNormalizedHistogram(`{"count":"1","sum":"1","zero_count":"x"}`)
+	require.Error(t, err)
+
+	_, err = parseNormalizedHistogram(`{"count":"1","sum":"1","schema":0,` +
+		`"positive_spans":[{"offset":0,"length":1}],"positive_deltas":[1,2]}`)
+	require.Error(t, err)
+
+	_, err = parseNormalizedHistogram(`{"count":"1","sum":"1","schema":0,` +
+		`"positive_spans":[{"offset":0,"length":1}],"positive_counts":["1","2"]}`)
+	require.Error(t, err)
+
+	_, err = parseNormalizedHistogram(`{"count":"1","sum":"1","schema":99,` +
+		`"positive_spans":[{"offset":0,"length":1}],"positive_deltas":[1]}`)
+	require.Error(t, err)
+
+	hist, err := parseNormalizedHistogram(`{"count":"3","sum":"4","schema":0,"zero_threshold":0.5,` +
+		`"zero_count":"","positive_spans":[{"offset":0,"length":1}],"positive_counts":["2"],` +
+		`"negative_spans":[{"offset":0,"length":1}],"negative_deltas":[1]}`)
+	require.NoError(t, err)
+	require.Equal(t, 3.0, hist.count)
+	require.GreaterOrEqual(t, len(hist.buckets), 2)
+
+	// Clamp span bucket edges that fall inside the zero threshold.
+	hist, err = parseNormalizedHistogram(`{"count":"2","sum":"3","schema":0,"zero_threshold":2,` +
+		`"positive_spans":[{"offset":0,"length":1}],"positive_deltas":[1],` +
+		`"negative_spans":[{"offset":0,"length":1}],"negative_deltas":[1]}`)
+	require.NoError(t, err)
+	for _, bucket := range hist.buckets {
+		if bucket.lower > 0 {
+			require.GreaterOrEqual(t, bucket.lower, 2.0)
+		}
+		if bucket.upper < 0 {
+			require.LessOrEqual(t, bucket.upper, -2.0)
+		}
+	}
+
+	_, err = parseNormalizedHistogram(`{"count":"1","sum":"1","schema":0,` +
+		`"positive_spans":[{"offset":0,"length":1}],"positive_counts":["x"]}`)
+	require.Error(t, err)
+
+	_, err = parseNormalizedHistogram(`{"count":"1","sum":"1","schema":-53,"custom_values":[1],` +
+		`"positive_spans":[{"offset":5,"length":1}],"positive_deltas":[1]}`)
+	require.Error(t, err)
+
+	// Inclusive boundary modes and zero-count bucket omission.
+	value, err := marshalNormalizedHistogram(normalizedHistogram{
+		count: 1,
+		sum:   1,
+		buckets: []normalizedHistogramBucket{
+			{lower: 0, upper: 1, count: 0, upperInclusive: true},
+			{lower: 1, upper: 2, count: 1, lowerInclusive: true},
+			{lower: 2, upper: 3, count: 1, lowerInclusive: true, upperInclusive: true},
+			{lower: 3, upper: 4, count: 1},
+		},
+	})
+	require.NoError(t, err)
+	require.Contains(t, value, `[1,`)
+	require.Contains(t, value, `[3,`)
+	require.Contains(t, value, `[2,`)
+	require.NotContains(t, value, `"0","1","0"`)
+}
+
+func TestHistogramNumberHelpers(t *testing.T) {
+	v, err := parseHistogramNumber("", true)
+	require.NoError(t, err)
+	require.Equal(t, 0.0, v)
+
+	_, err = parseHistogramNumber("", false)
+	require.Error(t, err)
+
+	for _, in := range []any{"1.5", float64(2), float32(3), 4, int32(5), int64(6), json.Number("7")} {
+		got, err := histogramNumber(in)
+		require.NoError(t, err, "%T", in)
+		require.NotZero(t, got, "%T", in)
+	}
+	_, err = histogramNumber(true)
+	require.Error(t, err)
+
+	require.Equal(t, "0.000001", formatHistogramNumber(1e-6))
+	require.Contains(t, formatHistogramNumber(1e-7), "e")
+	require.Contains(t, formatHistogramNumber(1e21), "e")
+}
+
+func TestHistogramBucketBoundCustomSchema(t *testing.T) {
+	negInf, err := histogramBucketBound(-1, -53, []float64{1, 2, 4})
+	require.NoError(t, err)
+	require.True(t, math.IsInf(negInf, -1))
+
+	got, err := histogramBucketBound(1, -53, []float64{1, 2, 4})
+	require.NoError(t, err)
+	require.Equal(t, 2.0, got)
+
+	posInf, err := histogramBucketBound(3, -53, []float64{1, 2, 4})
+	require.NoError(t, err)
+	require.True(t, math.IsInf(posInf, 1))
+
+	_, err = histogramBucketBound(-2, -53, []float64{1, 2, 4})
+	require.Error(t, err)
+	_, err = histogramBucketBound(4, -53, []float64{1, 2, 4})
+	require.Error(t, err)
+
+	bucket, err := spanHistogramBucket(0, 2, true, -53, []float64{1, 2, 4})
+	require.NoError(t, err)
+	require.True(t, bucket.lowerInclusive)
+	require.True(t, bucket.upperInclusive)
+
+	bucket, err = spanHistogramBucket(1, 3, false, 0, nil)
+	require.NoError(t, err)
+	require.True(t, bucket.lowerInclusive)
+	require.False(t, bucket.upperInclusive)
+	require.Less(t, bucket.lower, 0.0)
+}
+
+func TestCoarsenHistogramBucketsSmall(t *testing.T) {
+	require.Empty(t, coarsenHistogramBuckets(nil, nil))
+	one := []normalizedHistogramBucket{{lower: 0, upper: 1, count: 1}}
+	require.Equal(t, one, coarsenHistogramBuckets(one, nil))
 }
