@@ -98,8 +98,7 @@ func TestWaitContextCancel(t *testing.T) {
 
 func TestWaitSIGHUPReloadsThenSIGTERMReturns(t *testing.T) {
 	guardSignals(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	var sources atomic.Value
 	sources.Store("")
@@ -143,8 +142,7 @@ func TestWaitSIGHUPReloadsThenSIGTERMReturns(t *testing.T) {
 
 func TestWaitSIGINTReturns(t *testing.T) {
 	guardSignals(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	done := make(chan struct{})
 	go func() {
