@@ -423,14 +423,17 @@ func TestApplyLoggingConfigNoOps(t *testing.T) {
 }
 
 func TestApplyLoggingConfigInitial(t *testing.T) {
-	t.Cleanup(func() { logger.SetLogger(logging.NoopLogger()) })
+	dir := t.TempDir()
+	t.Cleanup(func() {
+		logger.Logger().Close()
+		logger.SetLogger(logging.NoopLogger())
+	})
 	c := config.NewConfig()
-	c.Logging.LogFile = filepath.Join(t.TempDir(), "trickster.log")
+	c.Logging.LogFile = filepath.Join(dir, "trickster.log")
 	applyLoggingConfig(c, nil)
 	if logger.Logger() == nil {
 		t.Fatal("expected a logger")
 	}
-	logger.Logger().Close()
 }
 
 func TestApplyLoggingConfigUnchanged(t *testing.T) {
@@ -457,8 +460,11 @@ func TestApplyLoggingConfigLevelChangeOnly(t *testing.T) {
 }
 
 func TestApplyLoggingConfigFileChange(t *testing.T) {
-	t.Cleanup(func() { logger.SetLogger(logging.NoopLogger()) })
 	dir := t.TempDir()
+	t.Cleanup(func() {
+		logger.Logger().Close()
+		logger.SetLogger(logging.NoopLogger())
+	})
 	old := config.NewConfig()
 	old.Logging.LogFile = filepath.Join(dir, "old.log")
 	old.MgmtConfig.ReloadDrainTimeout = 0
@@ -475,8 +481,7 @@ func TestApplyLoggingConfigFileChange(t *testing.T) {
 	if nc.MgmtConfig == nil {
 		t.Error("expected a default mgmt config to be created")
 	}
-	logger.Logger().Close()
-	// let the delayed closer for the old logger run
+	// let the delayed closer for the old logger run before TempDir cleanup
 	time.Sleep(20 * time.Millisecond)
 }
 
@@ -618,12 +623,15 @@ func TestHandleStartupIssue(t *testing.T) {
 }
 
 func TestInitLogger(t *testing.T) {
-	t.Cleanup(func() { logger.SetLogger(logging.NoopLogger()) })
+	dir := t.TempDir()
+	t.Cleanup(func() {
+		logger.Logger().Close()
+		logger.SetLogger(logging.NoopLogger())
+	})
 	c := config.NewConfig()
-	c.Logging.LogFile = filepath.Join(t.TempDir(), "init.log")
+	c.Logging.LogFile = filepath.Join(dir, "init.log")
 	l := initLogger(c)
 	if l == nil {
 		t.Fatal("expected a logger")
 	}
-	l.Close()
 }
