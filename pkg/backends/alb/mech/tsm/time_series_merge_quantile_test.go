@@ -38,9 +38,10 @@ import (
 )
 
 type quantileMemberSpec struct {
-	replica string
-	values  map[string]string
-	fail    bool
+	replica      string
+	replicaGroup string
+	values       map[string]string
+	fail         bool
 }
 
 func quantileMemberHandler(spec quantileMemberSpec, recorder *queryRecorder) http.Handler {
@@ -119,9 +120,12 @@ func newQuantilePool(specs []quantileMemberSpec, recorder *queryRecorder) pool.P
 		status.Set(healthcheck.StatusPassing)
 		backend := &pooledVarianceBackend{
 			stripKeysStubBackend: stripKeysStubBackend{
-				cfg: &bo.Options{Prometheus: &prop.Options{
-					Labels: map[string]string{"replica": spec.replica},
-				}},
+				cfg: &bo.Options{
+					ReplicaGroup: spec.replicaGroup,
+					Prometheus: &prop.Options{
+						Labels: map[string]string{"replica": spec.replica},
+					},
+				},
 			},
 		}
 		targets[i] = pool.NewTarget(quantileMemberHandler(spec, recorder), status, backend)
@@ -136,10 +140,12 @@ func TestServeQuantileGloballyFinalizesMergedInnerVector(t *testing.T) {
 	const query = "quantile by (job) (0.5, up)"
 	recorder := &queryRecorder{}
 	p := newQuantilePool([]quantileMemberSpec{
-		{replica: "a", values: map[string]string{"one": "1", "three": "3"}},
-		{replica: "b", values: map[string]string{"hundred": "100"}},
-		// This exact HA copy must be deduplicated after its routing label is stripped.
-		{replica: "c", values: map[string]string{"one": "1", "three": "3"}},
+		{replica: "a1", replicaGroup: "shard-a", values: map[string]string{"one": "1"}},
+		{replica: "b", replicaGroup: "shard-b", values: map[string]string{
+			"three": "3", "hundred": "100",
+		}},
+		// Without coalescing this HA copy, the duplicate 1 changes the median to 2.
+		{replica: "a2", replicaGroup: "shard-a", values: map[string]string{"one": "1"}},
 	}, recorder)
 	defer p.Stop()
 	albpool.WaitHealthy(t, p, 3)
