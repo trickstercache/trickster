@@ -114,6 +114,79 @@ func TestReplicaGroupTolerantDedupKeepsConfiguredFirst(t *testing.T) {
 	}
 }
 
+func TestReplicaGroupKeepsConfiguredFirstEnvelope(t *testing.T) {
+	tests := []struct {
+		name           string
+		toleranceNanos int64
+		replicaEpoch   int64
+		wantWarnings   []string
+	}{
+		{
+			name:         "exact dedup",
+			replicaEpoch: 100,
+			wantWarnings: []string{
+				"primary warning",
+				"replica warning",
+			},
+		},
+		{
+			name:           "tolerant dedup",
+			toleranceNanos: 5,
+			replicaEpoch:   103,
+			wantWarnings:   []string{"primary warning"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			primary := replicaContribution(0, map[int64]string{100: "primary"})
+			primaryData := primary.data.(*dataset.DataSet)
+			primaryData.Status = "error"
+			primaryData.Error = "primary error"
+			primaryData.ErrorType = "primary_type"
+			primaryData.SourceResultType = "primary_result_type"
+			primaryData.Warnings = []string{"primary warning"}
+
+			replica := replicaContribution(1, map[int64]string{
+				test.replicaEpoch: "replica",
+			})
+			replicaData := replica.data.(*dataset.DataSet)
+			replicaData.Status = "error"
+			replicaData.Error = "replica error"
+			replicaData.ErrorType = "replica_type"
+			replicaData.SourceResultType = "replica_result_type"
+			replicaData.Warnings = []string{"replica warning"}
+
+			logical := coalesceReplicaGroup(
+				[]*gatherContribution{primary, replica}, test.toleranceNanos)
+			got := logical.data.(*dataset.DataSet)
+
+			if got.Status != primaryData.Status ||
+				got.Error != primaryData.Error ||
+				got.ErrorType != primaryData.ErrorType ||
+				got.SourceResultType != primaryData.SourceResultType {
+				t.Fatalf("envelope = (%q, %q, %q, %q), want configured-first (%q, %q, %q, %q)",
+					got.Status, got.Error, got.ErrorType, got.SourceResultType,
+					primaryData.Status, primaryData.Error, primaryData.ErrorType,
+					primaryData.SourceResultType)
+			}
+
+			warnings := make(map[string]bool, len(got.Warnings))
+			for _, warning := range got.Warnings {
+				warnings[warning] = true
+			}
+			if len(got.Warnings) != len(test.wantWarnings) {
+				t.Fatalf("warnings = %v, want %v", got.Warnings, test.wantWarnings)
+			}
+			for _, warning := range test.wantWarnings {
+				if !warnings[warning] {
+					t.Fatalf("warnings = %v, want %v", got.Warnings, test.wantWarnings)
+				}
+			}
+		})
+	}
+}
+
 func TestReplicaTopologyDefaultsToDistinctMembers(t *testing.T) {
 	targets := pool.Targets{
 		replicaTarget("a", "a"),
