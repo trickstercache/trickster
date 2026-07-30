@@ -207,6 +207,12 @@ func coalesceReplicaGroup(contributions []*gatherContribution,
 				toleranceNanos, dataSets[i])
 		}
 	}
+	// Restore the configured-first replica's response envelope while retaining
+	// warnings aggregated from every replica.
+	base.Status = dataSets[0].Status
+	base.Error = dataSets[0].Error
+	base.ErrorType = dataSets[0].ErrorType
+	base.SourceResultType = dataSets[0].SourceResultType
 	return &gatherContribution{
 		data:           base,
 		mergeFunc:      first.mergeFunc,
