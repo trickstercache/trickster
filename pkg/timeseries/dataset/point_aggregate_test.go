@@ -155,3 +155,202 @@ func TestFinalizeAvgNumeric(t *testing.T) {
 	finalizeAvg(&p, 3)
 	require.Equal(t, "4", p.Values[0])
 }
+
+type stubValueOps struct {
+	mergeHandled  bool
+	divideHandled bool
+	merged        any
+	divided       any
+}
+
+func (s *stubValueOps) MergeValues(dst, src any, _ merge.Strategy) (any, bool) {
+	if !s.mergeHandled {
+		return nil, false
+	}
+	return s.merged, true
+}
+
+func (s *stubValueOps) DivideValue(value any, _ float64) (any, bool) {
+	if !s.divideHandled {
+		return nil, false
+	}
+	return s.divided, true
+}
+
+func (s *stubValueOps) PairingHash(_ *SeriesHeader, _ string) Hash { return 0 }
+
+func (s *stubValueOps) FinalizeMerge(_ *DataSet, _ merge.Strategy) {}
+
+func TestSortAndAggregateTolerantEdges(t *testing.T) {
+	t.Run("dedup delegates", func(t *testing.T) {
+		p := makeStringPoints(ev{100, "1"}, ev{100, "2"}, ev{200, "3"})
+		out := sortAndAggregateTolerant(p, merge.StrategyDedup, 0, nil)
+		require.Len(t, out, 2)
+		require.Equal(t, "2", out[0].Values[0])
+	})
+
+	t.Run("single point early return", func(t *testing.T) {
+		p := makeStringPoints(ev{100, "1"})
+		out := sortAndAggregateTolerant(p, merge.StrategySum, 0, nil)
+		require.Len(t, out, 1)
+		require.Equal(t, "1", out[0].Values[0])
+	})
+
+	t.Run("empty early return", func(t *testing.T) {
+		out := sortAndAggregateTolerant(Points{}, merge.StrategySum, 0, nil)
+		require.Empty(t, out)
+	})
+}
+
+func TestAggregateValuesWithOperationsEdges(t *testing.T) {
+	t.Run("empty values no-op", func(t *testing.T) {
+		dst := Point{Epoch: 1, Values: nil}
+		src := Point{Epoch: 1, Values: []any{"1"}}
+		aggregateValuesWithOperations(&dst, &src, merge.StrategySum, nil)
+		require.Nil(t, dst.Values)
+
+		dst = Point{Epoch: 1, Values: []any{"1"}}
+		src = Point{Epoch: 1, Values: nil}
+		aggregateValuesWithOperations(&dst, &src, merge.StrategySum, nil)
+		require.Equal(t, "1", dst.Values[0])
+	})
+
+	t.Run("both non-numeric with ops", func(t *testing.T) {
+		ops := &stubValueOps{mergeHandled: true, merged: "merged-hist"}
+		dst := Point{Epoch: 1, Size: 40, Values: []any{"hist-a"}}
+		src := Point{Epoch: 1, Values: []any{"hist-b"}}
+		aggregateValuesWithOperations(&dst, &src, merge.StrategySum, ops)
+		require.Equal(t, "merged-hist", dst.Values[0])
+		require.Equal(t, 40+len("merged-hist")-len("hist-a"), dst.Size)
+	})
+
+	t.Run("both non-numeric ops not handled", func(t *testing.T) {
+		ops := &stubValueOps{mergeHandled: false}
+		dst := Point{Epoch: 1, Values: []any{"hist-a"}}
+		src := Point{Epoch: 1, Values: []any{"hist-b"}}
+		aggregateValuesWithOperations(&dst, &src, merge.StrategySum, ops)
+		require.Equal(t, "hist-a", dst.Values[0])
+	})
+
+	t.Run("min max and default strategies", func(t *testing.T) {
+		dst := Point{Epoch: 1, Values: []any{"5"}}
+		src := Point{Epoch: 1, Values: []any{"2"}}
+		aggregateValues(&dst, &src, merge.StrategyMin)
+		require.Equal(t, "2", dst.Values[0])
+
+		dst = Point{Epoch: 1, Values: []any{"5"}}
+		src = Point{Epoch: 1, Values: []any{"9"}}
+		aggregateValues(&dst, &src, merge.StrategyMax)
+		require.Equal(t, "9", dst.Values[0])
+
+		dst = Point{Epoch: 1, Values: []any{"5"}}
+		src = Point{Epoch: 1, Values: []any{"9"}}
+		aggregateValues(&dst, &src, merge.Strategy(255))
+		require.Equal(t, "9", dst.Values[0])
+	})
+}
+
+func TestFinalizeAvgWithOperationsEdges(t *testing.T) {
+	t.Run("count le 1 or empty", func(t *testing.T) {
+		p := Point{Epoch: 1, Values: []any{"10"}}
+		finalizeAvgWithOperations(&p, 1, nil)
+		require.Equal(t, "10", p.Values[0])
+
+		p = Point{Epoch: 1, Values: nil}
+		finalizeAvgWithOperations(&p, 3, nil)
+		require.Nil(t, p.Values)
+	})
+
+	t.Run("nan with ops", func(t *testing.T) {
+		ops := &stubValueOps{divideHandled: true, divided: "avg-hist"}
+		p := Point{Epoch: 1, Size: 30, Values: []any{"hist"}}
+		finalizeAvgWithOperations(&p, 2, ops)
+		require.Equal(t, "avg-hist", p.Values[0])
+		require.Equal(t, 30+len("avg-hist")-len("hist"), p.Size)
+	})
+
+	t.Run("nan ops not handled", func(t *testing.T) {
+		ops := &stubValueOps{divideHandled: false}
+		p := Point{Epoch: 1, Values: []any{"hist"}}
+		finalizeAvgWithOperations(&p, 2, ops)
+		require.Equal(t, "hist", p.Values[0])
+	})
+}
+
+func TestSetPointValue(t *testing.T) {
+	p := Point{Size: 10, Values: []any{"abc"}}
+	setPointValue(&p, 0, "abcdef")
+	require.Equal(t, "abcdef", p.Values[0])
+	require.Equal(t, 13, p.Size)
+
+	p = Point{Size: 0, Values: []any{"abc"}}
+	setPointValue(&p, 0, "xyz")
+	require.Equal(t, "xyz", p.Values[0])
+	require.Equal(t, 0, p.Size)
+
+	p = Point{Size: 5, Values: []any{1}}
+	setPointValue(&p, 0, 2)
+	require.Equal(t, 2, p.Values[0])
+	require.Equal(t, 5, p.Size)
+}
+
+func TestMergePointsWithOptsNonDedupEdges(t *testing.T) {
+	t.Run("nil both", func(t *testing.T) {
+		require.Nil(t, MergePointsWithOpts(nil, nil, MergeOpts{Strategy: merge.StrategySum}))
+	})
+
+	t.Run("empty both", func(t *testing.T) {
+		out := MergePointsWithOpts(Points{}, Points{}, MergeOpts{Strategy: merge.StrategySum})
+		require.NotNil(t, out)
+		require.Empty(t, out)
+	})
+
+	t.Run("only p2 empty sorts", func(t *testing.T) {
+		p1 := makeStringPoints(ev{200, "2"}, ev{100, "1"}, ev{100, "3"})
+		out := MergePointsWithOpts(p1, Points{}, MergeOpts{
+			SortPoints: true,
+			Strategy:   merge.StrategySum,
+		})
+		require.Len(t, out, 2)
+		require.Equal(t, epoch.Epoch(100), out[0].Epoch)
+		require.Equal(t, "4", out[0].Values[0])
+	})
+
+	t.Run("only p1 empty sorts", func(t *testing.T) {
+		p2 := makeStringPoints(ev{200, "2"}, ev{100, "1"})
+		out := MergePointsWithOpts(Points{}, p2, MergeOpts{
+			SortPoints: true,
+			Strategy:   merge.StrategyMin,
+		})
+		require.Len(t, out, 2)
+		require.Equal(t, epoch.Epoch(100), out[0].Epoch)
+	})
+
+	t.Run("count with empty values", func(t *testing.T) {
+		p1 := Points{{Epoch: 100, Values: nil}, {Epoch: 100, Values: []any{"9"}}}
+		p2 := Points{}
+		out := MergePointsWithOpts(p1, p2, MergeOpts{
+			SortPoints: true,
+			Strategy:   merge.StrategyCount,
+		})
+		require.Len(t, out, 1)
+		// The empty-values point is kept as-is during initCountValues; when it
+		// is the aggregate destination, aggregateValues no-ops on empty Values.
+		if len(out[0].Values) > 0 {
+			require.Equal(t, "1", out[0].Values[0])
+		}
+	})
+
+	t.Run("avg with value operations", func(t *testing.T) {
+		ops := &stubValueOps{mergeHandled: true, merged: "h", divideHandled: true, divided: "h/2"}
+		p1 := makeStringPoints(ev{100, "hist-a"})
+		p2 := makeStringPoints(ev{100, "hist-b"})
+		out := MergePointsWithOpts(p1, p2, MergeOpts{
+			SortPoints:      true,
+			Strategy:        merge.StrategyAvg,
+			ValueOperations: ops,
+		})
+		require.Len(t, out, 1)
+		require.Equal(t, "h/2", out[0].Values[0])
+	})
+}

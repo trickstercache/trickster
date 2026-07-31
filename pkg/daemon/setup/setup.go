@@ -316,8 +316,14 @@ func applyCachingConfig(si *instance.ServerInstance,
 				v.ProviderID == providers.MemoryID {
 				// Note: this is only necessary for the memory cache as all other providers will be closed and reopened with the newest config
 				if v.Index != nil {
-					mc := w.(*manager.Manager).Client.(*index.IndexedClient)
-					mc.UpdateOptions(v.Index)
+					// only index-backed clients carry index options; the memory
+					// cache manages its own sizing, so a failed assertion here
+					// is expected and simply means there is nothing to update
+					if m, ok := w.(*manager.Manager); ok {
+						if mc, ok := m.Client.(*index.IndexedClient); ok {
+							mc.UpdateOptions(v.Index)
+						}
+					}
 				}
 				caches[k] = w
 				continue
@@ -363,7 +369,7 @@ func closeOldCache(name string, w cache.Cache, drainTimeout time.Duration) {
 
 func initLogger(c *config.Config) logging.Logger {
 	logger.SetLogger(logging.New(c))
-	logger.Info("application loaded from configuration",
+	logger.InfoSynchronous("application loaded from configuration",
 		logging.Pairs{
 			"name":      appinfo.Name,
 			"version":   appinfo.Version,

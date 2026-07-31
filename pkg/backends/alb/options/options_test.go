@@ -21,6 +21,7 @@ import (
 	"os"
 	"testing"
 
+	ur "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/ur/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 
@@ -141,4 +142,103 @@ func TestErrInvalidALBOptions(t *testing.T) {
 	if !ok {
 		t.Error("invalid type assertion")
 	}
+}
+
+func TestCloneWithUserRouter(t *testing.T) {
+	o := New()
+	o.Pool = []string{"a", "b"}
+	o.UserRouter = &ur.Options{DefaultBackend: "prom1"}
+	co := o.Clone()
+	require.NotNil(t, co.UserRouter)
+	require.Equal(t, "prom1", co.UserRouter.DefaultBackend)
+	co.UserRouter.DefaultBackend = "changed"
+	require.Equal(t, "prom1", o.UserRouter.DefaultBackend)
+}
+
+func TestInitializeDeprecatedFGRAndDefaultOutputFormat(t *testing.T) {
+	o := New()
+	o.MechanismName = names.MechanismFGR
+	o.FGRStatusCodes = []int{200, 204}
+	require.NoError(t, o.Initialize(""))
+	require.Equal(t, []int{200, 204}, o.FGROptions.StatusCodes)
+	require.True(t, o.FgrCodesLookup.Contains(200))
+	require.True(t, o.FgrCodesLookup.Contains(204))
+
+	o = New()
+	o.MechanismName = names.MechanismTSM
+	require.NoError(t, o.Initialize(""))
+	require.Equal(t, "prometheus", o.OutputFormat)
+}
+
+func TestValidate(t *testing.T) {
+	t.Run("user router required", func(t *testing.T) {
+		o := New()
+		o.MechanismName = names.MechanismUR
+		ok, err := o.Validate()
+		require.False(t, ok)
+		require.ErrorIs(t, err, ErrUserRouterRequired)
+	})
+
+	t.Run("user router ok", func(t *testing.T) {
+		o := New()
+		o.MechanismName = names.MechanismUR
+		o.UserRouter = &ur.Options{DefaultBackend: "prom1"}
+		ok, err := o.Validate()
+		require.True(t, ok)
+		require.NoError(t, err)
+	})
+
+	t.Run("invalid tsm output format", func(t *testing.T) {
+		o := New()
+		o.MechanismName = names.MechanismTSM
+		o.OutputFormat = "not-a-provider"
+		ok, err := o.Validate()
+		require.False(t, ok)
+		require.ErrorIs(t, err, ErrInvalidOutputFormat)
+	})
+
+	t.Run("valid tsm output format", func(t *testing.T) {
+		o := New()
+		o.MechanismName = names.MechanismTSM
+		o.OutputFormat = "prometheus"
+		ok, err := o.Validate()
+		require.True(t, ok)
+		require.NoError(t, err)
+	})
+
+	t.Run("output format only for tsm", func(t *testing.T) {
+		o := New()
+		o.MechanismName = names.MechanismRR
+		o.OutputFormat = "prometheus"
+		ok, err := o.Validate()
+		require.False(t, ok)
+		require.ErrorIs(t, err, ErrOutputFormatOnlyForTSM)
+	})
+
+	t.Run("rr without output format", func(t *testing.T) {
+		o := New()
+		o.MechanismName = names.MechanismRR
+		ok, err := o.Validate()
+		require.True(t, ok)
+		require.NoError(t, err)
+	})
+}
+
+func TestValidatePool(t *testing.T) {
+	o := New()
+	o.Pool = []string{"prom1", "prom2"}
+	err := o.ValidatePool("alb1", sets.New([]string{"prom1", "prom2", "prom3"}))
+	require.NoError(t, err)
+
+	err = o.ValidatePool("alb1", sets.New([]string{"prom1"}))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "prom2")
+	require.Contains(t, err.Error(), "alb1")
+}
+
+func TestUnmarshalYAMLError(t *testing.T) {
+	o := New()
+	want := errors.New("boom")
+	err := o.UnmarshalYAML(func(any) error { return want })
+	require.ErrorIs(t, err, want)
 }

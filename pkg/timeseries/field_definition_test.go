@@ -114,4 +114,55 @@ func TestFieldDefinitionsString(t *testing.T) {
 			t.Errorf("expected [] got %s", s)
 		}
 	})
+
+	t.Run("full fields", func(t *testing.T) {
+		fd := FieldDefinitions{
+			{
+				Name:           "ts",
+				DataType:       DateTimeUnixMilli,
+				SDataType:      "UInt64",
+				OutputPosition: 0,
+				DefaultValue:   "0",
+				Role:           RoleTimestamp,
+				ProviderData1:  1,
+			},
+			{
+				Name:           "val",
+				DataType:       Float64,
+				SDataType:      "Float64",
+				OutputPosition: 1,
+				Role:           RoleValue,
+			},
+		}
+		s := fd.String()
+		if s == "" || s == "[]" {
+			t.Fatalf("unexpected empty serialization: %s", s)
+		}
+		lookup := fd.ToLookup()
+		if lookup["ts"].Role != RoleTimestamp {
+			t.Error("expected timestamp role in lookup")
+		}
+		if lookup["val"].DataType != Float64 {
+			t.Error("expected float64 value field")
+		}
+	})
+}
+
+func TestFieldDefinitionStringFull(t *testing.T) {
+	fd := FieldDefinition{
+		Name:           "metric",
+		DataType:       Float64,
+		SDataType:      "Float64",
+		OutputPosition: 2,
+		DefaultValue:   "NaN",
+		Role:           RoleValue,
+		ProviderData1:  3,
+	}
+	s := fd.String()
+	if s == "" {
+		t.Fatal("expected non-empty string")
+	}
+	if size := fd.Size(); size <= 0 {
+		t.Errorf("expected positive size, got %d", size)
+	}
 }

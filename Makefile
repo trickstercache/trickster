@@ -114,14 +114,21 @@ docker-release:
 style:
 	! gofmt -d $$(find . -path ./vendor -prune -o -name '*.go' -print) | grep '^'
 
+.PHONY: check-imports
 check-imports:
 	@go run hack/check-imports/main.go
 
-LINT_FLAGS ?= 
-.PHONY: lint
-lint: check-imports spelling vulncheck
+.PHONY: gofix-diff
+gofix-diff:
 	@go fix -diff ./...
+
+LINT_FLAGS ?= 
+.PHONY: golangci-lint
+golangci-lint:
 	@go tool golangci-lint run $(LINT_FLAGS) -c .golangci.yml
+
+.PHONY: lint
+lint: check-imports spelling vulncheck gofix-diff golangci-lint
 
 .PHONY: vulncheck
 vulncheck:
