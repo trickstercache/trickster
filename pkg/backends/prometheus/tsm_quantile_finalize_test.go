@@ -270,9 +270,9 @@ func BenchmarkFinalizeTSMMergeQuantile(b *testing.B) {
 		pointCount  = 120
 	)
 	series := make([]*dataset.Series, 0, seriesCount)
-	for i := 0; i < seriesCount; i++ {
+	for i := range seriesCount {
 		valuesAndEpochs := make([]any, 0, pointCount*2)
-		for j := 0; j < pointCount; j++ {
+		for j := range pointCount {
 			valuesAndEpochs = append(valuesAndEpochs,
 				strconv.FormatFloat(float64(i*j+1), 'f', -1, 64), int64(j+1))
 		}

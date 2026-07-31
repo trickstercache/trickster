@@ -338,7 +338,7 @@ func BenchmarkFinalizeTSMMergeLimitK(b *testing.B) {
 		pointCount  = 120
 	)
 	series := make([]*dataset.Series, 0, seriesCount)
-	for i := 0; i < seriesCount; i++ {
+	for i := range seriesCount {
 		points := make(dataset.Points, 0, pointCount)
 		for j := 0; j < pointCount; j++ {
 			value := strconv.Itoa(i*pointCount + j)
