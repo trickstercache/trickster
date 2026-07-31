@@ -47,6 +47,24 @@ func TestFinalizeTSMMergeLimitKUsesStableFirstVisitedOrder(t *testing.T) {
 	}
 }
 
+func TestFinalizeTSMMergeLimitKAfterWeightedAverage(t *testing.T) {
+	const (
+		inner     = "avg by (service) (requests)"
+		statement = "sum by (service) (requests)"
+	)
+	ds := varianceFinalizeDataSet(statement,
+		varianceFinalizeSeries(dataset.Tags{"service": "api"}, statement, "2", int64(100)),
+		varianceFinalizeSeries(dataset.Tags{"service": "worker"}, statement, "8", int64(100)),
+	)
+
+	(&Client{}).FinalizeTSMMerge("limitk(1, "+inner+")", ds)
+	got := ds.Results[0].SeriesList
+	if len(got) != 1 || got[0].Header.Tags["service"] != "api" ||
+		got[0].Points[0].Values[0] != "2" {
+		t.Fatalf("selected series: %#v", got)
+	}
+}
+
 func TestFinalizeTSMMergeLimitKDoesNotRankByValueOrHash(t *testing.T) {
 	const inner = "up"
 	aTags := dataset.Tags{"__name__": "up", "instance": "a"}

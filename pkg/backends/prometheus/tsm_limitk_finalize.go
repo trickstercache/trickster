@@ -32,7 +32,7 @@ func finalizeLimitKAggregation(ds *dataset.DataSet, spec promql.LimitKAggregatio
 	ds.UpdateLock.Lock()
 	defer ds.UpdateLock.Unlock()
 
-	if dataSetContainsQueryStatement(ds, spec.InnerQuery) {
+	if dataSetContainsFinalizerInput(ds, spec.InnerQuery) {
 		for _, result := range ds.Results {
 			if result != nil {
 				finalizeLimitKResult(result, spec)
