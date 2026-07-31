@@ -77,12 +77,6 @@ func sortAndAggregateTolerant(p Points, strategy merge.Strategy, toleranceNanos 
 	return p[:k+1]
 }
 
-// aggregateValues combines the value from src into dst using the given strategy.
-// Both points are expected to have at least one value in Values[0] as a string-encoded float.
-func aggregateValues(dst, src *Point, strategy merge.Strategy) {
-	aggregateValuesWithOperations(dst, src, strategy, nil)
-}
-
 func aggregateValuesWithOperations(dst, src *Point, strategy merge.Strategy,
 	valueOperations ValueMergeOperations,
 ) {

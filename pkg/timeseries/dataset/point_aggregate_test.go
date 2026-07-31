@@ -111,28 +111,6 @@ func TestParseFloat(t *testing.T) {
 	require.True(t, math.IsNaN(parseFloat(42))) // int, not float64 or string
 }
 
-func TestAggregateValuesHistogramBothNonNumeric(t *testing.T) {
-	histA := `{"count":"10","sum":"100","buckets":[[0,"1","2","3"]]}`
-	histB := `{"count":"20","sum":"200","buckets":[[0,"1","2","5"]]}`
-	dst := Point{Epoch: 100, Values: []any{histA}}
-	src := Point{Epoch: 100, Values: []any{histB}}
-	aggregateValues(&dst, &src, merge.StrategySum)
-	require.Equal(t, histA, dst.Values[0])
-}
-
-func TestAggregateValuesHistogramOneNumeric(t *testing.T) {
-	hist := `{"count":"10","sum":"100","buckets":[[0,"1","2","3"]]}`
-	dst := Point{Epoch: 100, Values: []any{hist}}
-	src := Point{Epoch: 100, Values: []any{"5.0"}}
-	aggregateValues(&dst, &src, merge.StrategySum)
-	require.Equal(t, "5.0", dst.Values[0])
-
-	dst2 := Point{Epoch: 100, Values: []any{"5.0"}}
-	src2 := Point{Epoch: 100, Values: []any{hist}}
-	aggregateValues(&dst2, &src2, merge.StrategySum)
-	require.Equal(t, "5.0", dst2.Values[0])
-}
-
 func TestMergePointsWithStrategyHistogram(t *testing.T) {
 	hist := `{"count":"10","sum":"100","buckets":[[0,"1","2","3"]]}`
 	p1 := makeStringPoints(ev{100, hist}, ev{200, "2.0"})
@@ -230,23 +208,6 @@ func TestAggregateValuesWithOperationsEdges(t *testing.T) {
 		src := Point{Epoch: 1, Values: []any{"hist-b"}}
 		aggregateValuesWithOperations(&dst, &src, merge.StrategySum, ops)
 		require.Equal(t, "hist-a", dst.Values[0])
-	})
-
-	t.Run("min max and default strategies", func(t *testing.T) {
-		dst := Point{Epoch: 1, Values: []any{"5"}}
-		src := Point{Epoch: 1, Values: []any{"2"}}
-		aggregateValues(&dst, &src, merge.StrategyMin)
-		require.Equal(t, "2", dst.Values[0])
-
-		dst = Point{Epoch: 1, Values: []any{"5"}}
-		src = Point{Epoch: 1, Values: []any{"9"}}
-		aggregateValues(&dst, &src, merge.StrategyMax)
-		require.Equal(t, "9", dst.Values[0])
-
-		dst = Point{Epoch: 1, Values: []any{"5"}}
-		src = Point{Epoch: 1, Values: []any{"9"}}
-		aggregateValues(&dst, &src, merge.Strategy(255))
-		require.Equal(t, "9", dst.Values[0])
 	})
 }
 
