@@ -39,12 +39,13 @@ import (
 )
 
 type limitKMemberSpec struct {
-	replica    string
-	values     map[string]string
-	histograms map[string]string
-	delay      time.Duration
-	fail       bool
-	capture    bool
+	backendName  string
+	replicaGroup string
+	values       map[string]string
+	histograms   map[string]string
+	delay        time.Duration
+	fail         bool
+	capture      bool
 }
 
 func limitKMemberHandler(spec limitKMemberSpec, recorder *queryRecorder) http.Handler {
@@ -75,7 +76,7 @@ func limitKMemberHandler(spec limitKMemberSpec, recorder *queryRecorder) http.Ha
 			seriesList = append(seriesList, &dataset.Series{
 				Header: dataset.SeriesHeader{
 					Name:           "up",
-					Tags:           dataset.Tags{"__name__": "up", "instance": instance, "replica": spec.replica},
+					Tags:           dataset.Tags{"__name__": "up", "instance": instance, "replica": spec.backendName},
 					QueryStatement: query,
 					ValueFieldsList: timeseries.FieldDefinitions{{
 						Name: "value", DataType: timeseries.String,
@@ -90,7 +91,7 @@ func limitKMemberHandler(spec limitKMemberSpec, recorder *queryRecorder) http.Ha
 			seriesList = append(seriesList, &dataset.Series{
 				Header: dataset.SeriesHeader{
 					Name:           "up",
-					Tags:           dataset.Tags{"__name__": "up", "instance": instance, "replica": spec.replica},
+					Tags:           dataset.Tags{"__name__": "up", "instance": instance, "replica": spec.backendName},
 					QueryStatement: query,
 					ValueFieldsList: timeseries.FieldDefinitions{{
 						Name: "histogram", DataType: timeseries.String,
@@ -153,9 +154,13 @@ func newLimitKPool(specs []limitKMemberSpec, recorder *queryRecorder) pool.Pool 
 		status.Set(healthcheck.StatusPassing)
 		backend := &pooledVarianceBackend{
 			stripKeysStubBackend: stripKeysStubBackend{
-				cfg: &bo.Options{Prometheus: &prop.Options{
-					Labels: map[string]string{"replica": spec.replica},
-				}},
+				cfg: &bo.Options{
+					Name:         spec.backendName,
+					ReplicaGroup: spec.replicaGroup,
+					Prometheus: &prop.Options{
+						Labels: map[string]string{"replica": spec.backendName},
+					},
+				},
 			},
 		}
 		targets[i] = pool.NewTarget(limitKMemberHandler(spec, recorder), status, backend)
@@ -174,18 +179,24 @@ func TestServeLimitKGloballySelectsInStableOrder(t *testing.T) {
 		{
 			name: "first pool member completes last",
 			specs: []limitKMemberSpec{
-				{replica: "a", values: map[string]string{"d": "4", "a": "1"}, delay: 30 * time.Millisecond},
-				{replica: "b", values: map[string]string{"c": "3", "b": "2"}},
+				{backendName: "a-primary", replicaGroup: "shard-a",
+					values: map[string]string{"d": "4", "a": "1"}, delay: 30 * time.Millisecond},
+				{backendName: "b-primary", replicaGroup: "shard-b",
+					values: map[string]string{"c": "3", "b": "2"}},
 				// This faster HA copy must not consume either global slot twice.
-				{replica: "c", values: map[string]string{"d": "4", "a": "1"}},
+				{backendName: "a-replica", replicaGroup: "shard-a",
+					values: map[string]string{"d": "4", "a": "1"}},
 			},
 		},
 		{
 			name: "pool and completion order change",
 			specs: []limitKMemberSpec{
-				{replica: "c", values: map[string]string{"d": "4", "a": "1"}},
-				{replica: "a", values: map[string]string{"d": "4", "a": "1"}},
-				{replica: "b", values: map[string]string{"c": "3", "b": "2"}, delay: 30 * time.Millisecond},
+				{backendName: "a-replica", replicaGroup: "shard-a",
+					values: map[string]string{"d": "4", "a": "1"}},
+				{backendName: "a-primary", replicaGroup: "shard-a",
+					values: map[string]string{"d": "4", "a": "1"}},
+				{backendName: "b-primary", replicaGroup: "shard-b",
+					values: map[string]string{"c": "3", "b": "2"}, delay: 30 * time.Millisecond},
 			},
 		},
 	}
@@ -217,12 +228,88 @@ func TestServeLimitKGloballySelectsInStableOrder(t *testing.T) {
 	}
 }
 
+func TestServeLimitKReplicaGroupTopologies(t *testing.T) {
+	logger.SetLogger(testLogger)
+	const (
+		query = "limitk(2, count by (instance) (requests))"
+		inner = "count by (instance) (requests)"
+	)
+	tests := []struct {
+		name  string
+		specs []limitKMemberSpec
+	}{
+		{
+			name: "replicas are collapsed before shards are summed",
+			specs: []limitKMemberSpec{
+				{backendName: "a-primary", replicaGroup: "shard-a",
+					values: map[string]string{"a": "2", "b": "10"}, delay: 30 * time.Millisecond},
+				{backendName: "b-primary", replicaGroup: "shard-b",
+					values: map[string]string{"a": "3", "c": "1"}},
+				{backendName: "a-replica", replicaGroup: "shard-a",
+					values: map[string]string{"a": "2", "b": "10"}},
+			},
+		},
+		{
+			name: "multiple replicated shards in mixed order",
+			specs: []limitKMemberSpec{
+				{backendName: "b-replica", replicaGroup: "shard-b",
+					values: map[string]string{"a": "3", "c": "1"}},
+				{backendName: "a-primary", replicaGroup: "shard-a",
+					values: map[string]string{"a": "2", "b": "10"}, delay: 30 * time.Millisecond},
+				{backendName: "a-replica", replicaGroup: "shard-a",
+					values: map[string]string{"a": "2", "b": "10"}},
+				{backendName: "b-primary", replicaGroup: "shard-b",
+					values: map[string]string{"a": "3", "c": "1"}},
+			},
+		},
+		{
+			name: "failed member falls back within its replica group",
+			specs: []limitKMemberSpec{
+				{backendName: "a-primary", replicaGroup: "shard-a", fail: true},
+				{backendName: "a-replica", replicaGroup: "shard-a",
+					values: map[string]string{"a": "2", "b": "10"}},
+				{backendName: "b-primary", replicaGroup: "shard-b",
+					values: map[string]string{"a": "3", "c": "1"}},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			recorder := &queryRecorder{}
+			p := newLimitKPool(tt.specs, recorder)
+			defer p.Stop()
+			albpool.WaitHealthy(t, p, len(tt.specs))
+
+			h := &handler{mergePaths: []string{"/"}}
+			h.SetPool(p)
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, newWeightedAvgRequest(t, query))
+
+			const want = "MERGED:a=5,b=10|warnings="
+			if w.Code != http.StatusOK || w.Body.String() != want {
+				t.Fatalf("status=%d body=%q want=%q", w.Code, w.Body.String(), want)
+			}
+			queries := recorder.Queries()
+			if len(queries) != len(tt.specs) {
+				t.Fatalf("fanout queries got %v want %d", queries, len(tt.specs))
+			}
+			for _, got := range queries {
+				if got != inner {
+					t.Fatalf("fanout query got %q want %q (all: %v)", got, inner, queries)
+				}
+			}
+		})
+	}
+}
+
 func TestServeLimitKPreservesNativeHistograms(t *testing.T) {
 	logger.SetLogger(testLogger)
 	const histogram = `{"count":"2","sum":"3"}`
 	p := newLimitKPool([]limitKMemberSpec{
-		{replica: "a", values: map[string]string{"a": "1", "d": "4"}},
-		{replica: "b", histograms: map[string]string{"b": histogram}, values: map[string]string{"c": "3"}},
+		{backendName: "a", replicaGroup: "shard-a",
+			values: map[string]string{"a": "1", "d": "4"}},
+		{backendName: "b", replicaGroup: "shard-b",
+			histograms: map[string]string{"b": histogram}, values: map[string]string{"c": "3"}},
 	}, &queryRecorder{})
 	defer p.Stop()
 	albpool.WaitHealthy(t, p, 2)
@@ -246,8 +333,10 @@ func TestServeLimitKMergesInnerCountBeforeSelection(t *testing.T) {
 	)
 	recorder := &queryRecorder{}
 	p := newLimitKPool([]limitKMemberSpec{
-		{replica: "a", values: map[string]string{"a": "2", "b": "10"}},
-		{replica: "b", values: map[string]string{"a": "3", "b": "1"}},
+		{backendName: "a", replicaGroup: "shard-a",
+			values: map[string]string{"a": "2", "b": "10"}},
+		{backendName: "b", replicaGroup: "shard-b",
+			values: map[string]string{"a": "3", "b": "1"}},
 	}, recorder)
 	defer p.Stop()
 	albpool.WaitHealthy(t, p, 2)
@@ -273,15 +362,18 @@ func TestServeLimitKPartialFanoutIsMarked(t *testing.T) {
 		failed    limitKMemberSpec
 		configure func(*handler)
 	}{
-		{name: "status", failed: limitKMemberSpec{replica: "b", fail: true}},
-		{name: "capture", failed: limitKMemberSpec{replica: "b", capture: true},
+		{name: "status", failed: limitKMemberSpec{
+			backendName: "b", replicaGroup: "shard-b", fail: true}},
+		{name: "capture", failed: limitKMemberSpec{
+			backendName: "b", replicaGroup: "shard-b", capture: true},
 			configure: func(h *handler) { h.maxCaptureBytes = 32 }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			recorder := &queryRecorder{}
 			p := newLimitKPool([]limitKMemberSpec{
-				{replica: "a", values: map[string]string{"a": "1"}}, tt.failed,
+				{backendName: "a", replicaGroup: "shard-a",
+					values: map[string]string{"a": "1"}}, tt.failed,
 			}, recorder)
 			defer p.Stop()
 			albpool.WaitHealthy(t, p, 2)
@@ -296,7 +388,7 @@ func TestServeLimitKPartialFanoutIsMarked(t *testing.T) {
 
 			body := w.Body.String()
 			if w.Code != http.StatusOK || !strings.Contains(body, "MERGED:a=1") ||
-				!strings.Contains(body, "partial failure") {
+				!strings.Contains(body, "logical replica group shard-b returned no usable response") {
 				t.Fatalf("status=%d body=%q", w.Code, body)
 			}
 			if got := w.Header().Get(headers.NameTricksterResult); !strings.Contains(got, "phit") {
