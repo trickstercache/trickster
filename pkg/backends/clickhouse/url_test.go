@@ -73,7 +73,7 @@ func TestSetExtentWithBody(t *testing.T) {
 	}
 	rendered := string(body)
 	if !strings.Contains(rendered, "ts >= '2020-01-01 00:10:00'") ||
-		!strings.Contains(rendered, "ts < '2020-01-01 00:20:00'") {
+		!strings.Contains(rendered, "ts < '2020-01-01 00:21:00'") {
 		t.Errorf("SQL datetime extent was not rendered: %s", rendered)
 	}
 }

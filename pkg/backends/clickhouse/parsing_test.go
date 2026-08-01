@@ -153,6 +153,40 @@ func TestSupportedCorpusFormatIsStable(t *testing.T) {
 	}
 }
 
+func TestBucketOutputUnits(t *testing.T) {
+	tests := []struct {
+		name  string
+		query string
+		want  timeseries.FieldDataType
+	}{
+		{"fixed DateTime bucket", tq01, timeseries.DateTimeSQL},
+		{"interval DateTime bucket", tq02, timeseries.DateTimeSQL},
+		{
+			"Date bucket",
+			`SELECT toMonday(datetime) AS t, count() FROM events ` +
+				`WHERE datetime >= 1589904000 AND datetime < 1590508800 GROUP BY t`,
+			timeseries.DateSQL,
+		},
+		{
+			"integer cast",
+			`SELECT toInt32(toStartOfFiveMinute(datetime)) AS t, count() FROM events ` +
+				`WHERE datetime >= 1589904000 AND datetime < 1589997600 GROUP BY t`,
+			timeseries.DateTimeUnixSecs,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			analysis := dialectAnalyzer.Analyze(test.query, time.Unix(1_700_000_000, 0))
+			if analysis.Err != nil {
+				t.Fatal(analysis.Err)
+			}
+			if analysis.Plan.OutputUnit != test.want {
+				t.Errorf("output unit = %v, want %v", analysis.Plan.OutputUnit, test.want)
+			}
+		})
+	}
+}
+
 func TestParseBuildsTricksterArtifacts(t *testing.T) {
 	trq, options, canObjectCache, err := parse(tq03)
 	if err != nil {
@@ -222,7 +256,7 @@ func TestOutputAliasRangeUsesBucketUnit(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !strings.Contains(rendered, "t >= 1516669200000") ||
-		!strings.Contains(rendered, "t < 1516672800000") {
+		!strings.Contains(rendered, "t < 1516673100000") {
 		t.Errorf("millisecond bounds were not preserved: %s", rendered)
 	}
 }
@@ -243,7 +277,7 @@ func TestRenderExtentPreservesPredicateTopology(t *testing.T) {
 	if !strings.Contains(rendered, "tenant_start = 100") {
 		t.Errorf("unrelated literal was modified: %s", rendered)
 	}
-	if !strings.Contains(rendered, "ts >= 120") || !strings.Contains(rendered, "ts < 180") {
+	if !strings.Contains(rendered, "ts >= 120") || !strings.Contains(rendered, "ts < 240") {
 		t.Errorf("comparators were not preserved: %s", rendered)
 	}
 	if strings.Contains(strings.ToUpper(rendered), " BETWEEN ") {
@@ -266,8 +300,20 @@ func TestOpenEndedRangeAddsSafeUpperConjunct(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !strings.Contains(rendered, "datetime > 1589904300") ||
-		!strings.Contains(rendered, "datetime < 1589904600") {
+		!strings.Contains(rendered, "datetime < 1589904900") {
 		t.Errorf("open range was not safely bounded: %s", rendered)
+	}
+}
+
+func TestExclusiveUpperBoundUsesInclusiveInternalExtent(t *testing.T) {
+	query := `SELECT toStartOfMinute(ts) AS t, count() FROM events ` +
+		`WHERE ts >= 120 AND ts < 240 GROUP BY t`
+	trq, _, _, err := parse(query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := trq.Extent.End.Unix(); got != 180 {
+		t.Errorf("internal upper extent = %d, want final included bucket 180", got)
 	}
 }
 

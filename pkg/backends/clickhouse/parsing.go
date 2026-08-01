@@ -145,7 +145,7 @@ func (analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis {
 		return objectAnalysis(sqlanalyzer.ReasonUnsupportedFormat, err)
 	}
 
-	canonical, renderer := buildQueryArtifacts(selectQuery, ranges)
+	canonical, renderer := buildQueryArtifacts(selectQuery, ranges, bucket.step)
 	plan := &sqlanalyzer.QueryPlan{
 		CanonicalSQL: canonical,
 		TimeColumn:   bucket.timeColumn,
@@ -207,6 +207,9 @@ func parse(statement string) (*timeseries.TimeRangeQuery, *timeseries.RequestOpt
 		trq.Extent.End = now
 	} else {
 		trq.Extent.End = plan.UpperBound.Value
+		if !plan.UpperBound.Inclusive {
+			trq.Extent.End = trq.Extent.End.Add(-plan.Step)
+		}
 	}
 	trq.TimestampDefinition = timeseries.FieldDefinition{
 		Name:          plan.OutputColumn,
@@ -232,21 +235,27 @@ func parse(statement string) (*timeseries.TimeRangeQuery, *timeseries.RequestOpt
 type clickHouseRenderer struct {
 	template string
 	bounds   []rendererBound
+	step     time.Duration
 }
 
 func (r *clickHouseRenderer) RenderExtent(extent timeseries.Extent) (string, error) {
 	statement := r.template
 	for _, bound := range r.bounds {
-		replacement := chast.Format(boundExpression(bound.endpoint, bound.style, extent))
+		boundExtent := extent
+		if bound.endpoint == endpointUpper && !bound.inclusive {
+			boundExtent.End = boundExtent.End.Add(r.step)
+		}
+		replacement := chast.Format(boundExpression(bound.endpoint, bound.style, boundExtent))
 		statement = strings.ReplaceAll(statement, bound.token, replacement)
 	}
 	return statement, nil
 }
 
 type rendererBound struct {
-	token    string
-	endpoint endpoint
-	style    boundStyle
+	token     string
+	endpoint  endpoint
+	style     boundStyle
+	inclusive bool
 }
 
 const (
@@ -332,8 +341,10 @@ func matchBucket(expression chast.Expr, constants map[string]int64) (bucketSpec,
 			if !ok {
 				return bucketSpec{}, false
 			}
-			unit := timeseries.Unknown
-			if converted {
+			unit := timeseries.DateTimeSQL
+			if name == "tomonday" {
+				unit = timeseries.DateSQL
+			} else if converted {
 				unit = timeseries.DateTimeUnixSecs
 			}
 			phase := time.Duration(0)
@@ -362,7 +373,11 @@ func matchBucket(expression chast.Expr, constants map[string]int64) (bucketSpec,
 			if !countOK || !unitOK || count <= 0 {
 				return bucketSpec{}, false
 			}
-			return bucketSpec{timeColumn: column, step: time.Duration(count) * unit}, true
+			return bucketSpec{
+				timeColumn: column,
+				step:       time.Duration(count) * unit,
+				outputUnit: timeseries.DateTimeSQL,
+			}, true
 		}
 	}
 	return matchIntDivBucket(expression, constants)
@@ -618,9 +633,10 @@ const (
 )
 
 type boundTarget struct {
-	endpoint endpoint
-	style    boundStyle
-	set      func(chast.Expr)
+	endpoint  endpoint
+	style     boundStyle
+	inclusive bool
+	set       func(chast.Expr)
 }
 
 type analyzedBound struct {
@@ -815,10 +831,10 @@ func analyzePredicate(
 		if !ok {
 			return predicateBound{}, false, nil
 		}
-		lower.target = &boundTarget{endpoint: endpointLower, style: lower.style, set: func(expr chast.Expr) {
+		lower.target = &boundTarget{endpoint: endpointLower, style: lower.style, inclusive: true, set: func(expr chast.Expr) {
 			value.Between = expr
 		}}
-		upper.target = &boundTarget{endpoint: endpointUpper, style: upper.style, set: func(expr chast.Expr) {
+		upper.target = &boundTarget{endpoint: endpointUpper, style: upper.style, inclusive: true, set: func(expr chast.Expr) {
 			value.And = expr
 		}}
 		return predicateBound{field: field, lower: &lower, upper: &upper}, true, nil
@@ -848,10 +864,10 @@ func analyzePredicate(
 		}
 		predicate := predicateBound{field: field}
 		if operator == ">" || operator == ">=" {
-			bound.target = &boundTarget{endpoint: endpointLower, style: bound.style, set: setBound}
+			bound.target = &boundTarget{endpoint: endpointLower, style: bound.style, inclusive: inclusive, set: setBound}
 			predicate.lower = &bound
 		} else {
-			bound.target = &boundTarget{endpoint: endpointUpper, style: bound.style, set: setBound}
+			bound.target = &boundTarget{endpoint: endpointUpper, style: bound.style, inclusive: inclusive, set: setBound}
 			predicate.upper = &bound
 		}
 		return predicate, true, nil
@@ -1010,10 +1026,10 @@ func analyzeFormat(format *chast.FormatClause) (byte, error) {
 	return outputFormat, nil
 }
 
-func buildQueryArtifacts(query *chast.SelectQuery, ranges rangeAnalysis) (string, *clickHouseRenderer) {
+func buildQueryArtifacts(query *chast.SelectQuery, ranges rangeAnalysis, step time.Duration) (string, *clickHouseRenderer) {
 	occupied := chast.Format(query)
 	bounds := make([]rendererBound, 0, len(ranges.targets)+1)
-	addBound := func(target endpoint, style boundStyle) chast.Expr {
+	addBound := func(target endpoint, style boundStyle, inclusive bool) chast.Expr {
 		index := len(bounds)
 		token := fmt.Sprintf("<$TRICKSTER_TS%d_%d$>", target+1, index)
 		for strings.Contains(occupied, token) {
@@ -1021,17 +1037,19 @@ func buildQueryArtifacts(query *chast.SelectQuery, ranges rangeAnalysis) (string
 			token = fmt.Sprintf("<$TRICKSTER_TS%d_%d$>", target+1, index)
 		}
 		occupied += token
-		bounds = append(bounds, rendererBound{token: token, endpoint: target, style: style})
+		bounds = append(bounds, rendererBound{
+			token: token, endpoint: target, style: style, inclusive: inclusive,
+		})
 		return &chast.PlaceHolder{Type: token}
 	}
 	for _, target := range ranges.targets {
-		target.set(addBound(target.endpoint, target.style))
+		target.set(addBound(target.endpoint, target.style, target.inclusive))
 	}
 	if ranges.addSynthetic != nil {
 		ranges.addSynthetic(&chast.BinaryOperation{
 			LeftExpr:  identifierExpression(ranges.timeColumn),
 			Operation: chast.TokenKindLT,
-			RightExpr: addBound(endpointUpper, ranges.lowerStyle),
+			RightExpr: addBound(endpointUpper, ranges.lowerStyle, false),
 		})
 	}
 
@@ -1040,7 +1058,7 @@ func buildQueryArtifacts(query *chast.SelectQuery, ranges rangeAnalysis) (string
 		canonical = strings.ReplaceAll(canonical, bound.token, placeholderFor(bound.endpoint))
 	}
 	query.Format = &chast.FormatClause{Format: &chast.Ident{Name: "TSVWithNamesAndTypes"}}
-	return canonical, &clickHouseRenderer{template: chast.Format(query), bounds: bounds}
+	return canonical, &clickHouseRenderer{template: chast.Format(query), bounds: bounds, step: step}
 }
 
 func placeholderFor(target endpoint) string {
