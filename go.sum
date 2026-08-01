@@ -49,6 +49,8 @@ github.com/Abirdcfly/dupword v0.1.7 h1:2j8sInznrje4I0CMisSL6ipEBkeJUJAmK1/lfoNGW
 github.com/Abirdcfly/dupword v0.1.7/go.mod h1:K0DkBeOebJ4VyOICFdppB23Q0YMOgVafM0zYW0n9lF4=
 github.com/AdminBenni/iota-mixing v1.0.0 h1:Os6lpjG2dp/AE5fYBPAA1zfa2qMdCAWwPMCgpwKq7wo=
 github.com/AdminBenni/iota-mixing v1.0.0/go.mod h1:i4+tpAaB+qMVIV9OK3m4/DAynOd5bQFaOu+2AhtBCNY=
+github.com/AfterShip/clickhouse-sql-parser v0.5.3 h1:6iap8XGjuSjD3w7r1UNrg66ljBugcv2P39s4eo/ZLRw=
+github.com/AfterShip/clickhouse-sql-parser v0.5.3/go.mod h1:Qi3qvPTfZb/aFwI5V4WFOahgjsLJa4MzVijIAfwOhDw=
 github.com/AlwxSin/noinlineerr v1.0.5 h1:RUjt63wk1AYWTXtVXbSqemlbVTb23JOSRiNsshj7TbY=
 github.com/AlwxSin/noinlineerr v1.0.5/go.mod h1:+QgkkoYrMH7RHvcdxdlI7vYYEdgeoFOVjU9sUhw/rQc=
 github.com/Antonboom/errname v1.1.1 h1:bllB7mlIbTVzO9jmSWVWLjxTEbGBVQ1Ff/ClQgtPw9Q=
@@ -578,6 +580,8 @@ github.com/sashamelentyev/interfacebloat v1.1.0 h1:xdRdJp0irL086OyW1H/RTZTr1h/tM
 github.com/sashamelentyev/interfacebloat v1.1.0/go.mod h1:+Y9yU5YdTkrNvoX0xHc84dxiN1iBi9+G8zZIhPVoNjQ=
 github.com/sashamelentyev/usestdlibvars v1.29.0 h1:8J0MoRrw4/NAXtjQqTHrbW9NN+3iMf7Knkq057v4XOQ=
 github.com/sashamelentyev/usestdlibvars v1.29.0/go.mod h1:8PpnjHMk5VdeWlVb4wCdrB8PNbLqZ3wBZTZWkrpZZL8=
+github.com/sebdah/goldie/v2 v2.5.3 h1:9ES/mNN+HNUbNWpVAlrzuZ7jE+Nrczbj8uFRjM7624Y=
+github.com/sebdah/goldie/v2 v2.5.3/go.mod h1:oZ9fp0+se1eapSRjfYbsV/0Hqhbuu3bJVvKI/NNtssI=
 github.com/securego/gosec/v2 v2.24.8-0.20260309165252-619ce2117e08 h1:AoLtJX4WUtZkhhUUMFy3GgecAALp/Mb4S1iyQOA2s0U=
 github.com/securego/gosec/v2 v2.24.8-0.20260309165252-619ce2117e08/go.mod h1:+XLCJiRE95ga77XInNELh2M6zQP+PdqiT9Zpm0D9Wpk=
 github.com/sergi/go-diff v1.2.0 h1:XU+rvMAioB0UC3q1MFrIQy4Vo5/4VsRDQQXHsEya6xQ=

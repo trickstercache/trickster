@@ -14,12 +14,21 @@
  * limitations under the License.
  */
 
-package sql
+package sqlanalyzer
 
-import "errors"
+import (
+	"errors"
+	"testing"
 
-// ErrInvalidGroupByClause indicates the GROUP BY clause of the query is not properly formatted
-var ErrInvalidGroupByClause = errors.New("invalid GROUP BY expression list")
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+)
 
-// ErrInvalidInputLength indicates the input length was invalid
-var ErrInvalidInputLength = errors.New("invalid input length")
+func TestQueryPlanRenderExtentRequiresRenderer(t *testing.T) {
+	var nilPlan *QueryPlan
+	if _, err := nilPlan.RenderExtent(timeseries.Extent{}); !errors.Is(err, ErrMissingRenderer) {
+		t.Errorf("nil plan error = %v, want %v", err, ErrMissingRenderer)
+	}
+	if _, err := (&QueryPlan{}).RenderExtent(timeseries.Extent{}); !errors.Is(err, ErrMissingRenderer) {
+		t.Errorf("missing renderer error = %v, want %v", err, ErrMissingRenderer)
+	}
+}

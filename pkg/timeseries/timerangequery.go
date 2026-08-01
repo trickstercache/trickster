@@ -37,6 +37,8 @@ type TimeRangeQuery struct {
 	Extent Extent `msg:"ex"`
 	// Step indicates the amount of time in seconds between each datapoint in a TimeRangeQuery's resulting timeseries
 	Step time.Duration `msg:"-"`
+	// Phase is the bucket offset from the Unix epoch
+	Phase time.Duration `msg:"-"`
 	// TemplateURL is used by some Backend providers for templatization of url parameters containing timestamps
 	TemplateURL *url.URL `msg:"-"`
 	// IsOffset is true if the query uses a relative offset modifier
@@ -64,10 +66,12 @@ func (trq *TimeRangeQuery) Clone() *TimeRangeQuery {
 	t := &TimeRangeQuery{
 		Statement:           trq.Statement,
 		Step:                trq.Step,
+		Phase:               trq.Phase,
 		StepNS:              trq.StepNS,
 		Extent:              Extent{Start: trq.Extent.Start, End: trq.Extent.End},
 		IsOffset:            trq.IsOffset,
 		TimestampDefinition: trq.TimestampDefinition,
+		ParsedQuery:         trq.ParsedQuery,
 	}
 
 	if trq.TagFieldDefintions != nil {
@@ -97,9 +101,20 @@ func (trq *TimeRangeQuery) NormalizeExtent() {
 		if !trq.IsOffset && trq.Extent.End.After(time.Now()) {
 			trq.Extent.End = time.Now()
 		}
-		trq.Extent.Start = trq.Extent.Start.Truncate(trq.Step)
-		trq.Extent.End = trq.Extent.End.Truncate(trq.Step)
+		trq.Extent.Start = truncateToPhase(trq.Extent.Start, trq.Step, trq.Phase)
+		trq.Extent.End = truncateToPhase(trq.Extent.End, trq.Step, trq.Phase)
 	}
+}
+
+func truncateToPhase(value time.Time, step, phase time.Duration) time.Time {
+	stepNS := step.Nanoseconds()
+	phaseNS := phase.Nanoseconds()
+	shifted := value.UnixNano() - phaseNS
+	quotient := shifted / stepNS
+	if shifted < 0 && shifted%stepNS != 0 {
+		quotient--
+	}
+	return time.Unix(0, quotient*stepNS+phaseNS).In(value.Location())
 }
 
 func (trq *TimeRangeQuery) String() string {
@@ -148,7 +163,7 @@ func (trq *TimeRangeQuery) GetBackfillTolerance(def time.Duration, points int) t
 
 // Size returns the memory usage in bytes of the TimeRangeQuery
 func (trq *TimeRangeQuery) Size() int {
-	return len(trq.Statement) + 24 + 8 + trq.TimestampDefinition.Size() + // Extent=24 + Step=8
+	return len(trq.Statement) + 24 + 16 + trq.TimestampDefinition.Size() + // Extent=24 + Step=8 + Phase=8
 		urls.Size(trq.TemplateURL) + 11 // FFwDisable=1 IsOffset=1 StepNS=8 CustomData=1
 }
 

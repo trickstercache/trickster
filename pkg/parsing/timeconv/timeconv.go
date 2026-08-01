@@ -28,6 +28,27 @@ import (
 )
 
 const (
+	// SQLDateLayout is the go-formatted date representation of a SQL Basic Date
+	SQLDateLayout = "2006-01-02"
+
+	// SQLTimeLayout is the go-formatted date representation of a SQL Basic Date
+	SQLTimeLayout = "15:04:05"
+
+	// SQLDateTimeLayout is the go-formatted date representation of a SQL Basic DateTime
+	SQLDateTimeLayout = SQLDateLayout + " " + SQLTimeLayout
+
+	SQLDateTimeSubSec1Layout = SQLDateTimeLayout + ".0"
+	SQLDateTimeSubSec2Layout = SQLDateTimeLayout + ".00"
+	SQLDateTimeSubSec3Layout = SQLDateTimeLayout + ".000"
+	SQLDateTimeSubSec4Layout = SQLDateTimeLayout + ".0000"
+	SQLDateTimeSubSec5Layout = SQLDateTimeLayout + ".00000"
+	SQLDateTimeSubSec6Layout = SQLDateTimeLayout + ".000000"
+	SQLDateTimeSubSec7Layout = SQLDateTimeLayout + ".0000000"
+	SQLDateTimeSubSec8Layout = SQLDateTimeLayout + ".00000000"
+	SQLDateTimeSubSec9Layout = SQLDateTimeLayout + ".000000000"
+)
+
+const (
 	UnitMonth         = DurationUnit("mo")
 	UnitMillisecond   = DurationUnit("ms")
 	UnitMicrosecond   = DurationUnit("us")

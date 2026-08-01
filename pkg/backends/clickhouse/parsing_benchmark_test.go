@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
@@ -39,20 +40,41 @@ func BenchmarkClickHouseParseAndTokenize(b *testing.B) {
 	}
 }
 
-// BenchmarkClickHouseRenderExtent measures the legacy cache-miss interpolation
-// path independently from parsing, matching the generated-AST render benchmark.
+// BenchmarkClickHouseAnalyze measures AfterShip parsing and semantic analysis
+// without adapting the result to TimeRangeQuery.
+func BenchmarkClickHouseAnalyze(b *testing.B) {
+	analyzer := analyzer{}
+	now := time.Unix(1_700_000_000, 0)
+	b.ReportAllocs()
+	for b.Loop() {
+		analysis := analyzer.Analyze(tq03, now)
+		if analysis.Err != nil {
+			b.Fatal(analysis.Err)
+		}
+	}
+}
+
+// BenchmarkClickHouseRenderExtent measures immutable cache-miss template
+// rendering independently from initial parsing and analysis.
 func BenchmarkClickHouseRenderExtent(b *testing.B) {
 	trq, _, _, err := parse(tq03)
 	if err != nil {
 		b.Fatal(err)
 	}
-	extent := &timeseries.Extent{
+	plan, ok := trq.ParsedQuery.(*sqlanalyzer.QueryPlan)
+	if !ok {
+		b.Fatal("missing query plan")
+	}
+	extent := timeseries.Extent{
 		Start: time.Unix(1516665600, 0),
 		End:   time.Unix(1516687200, 0),
 	}
 	b.ReportAllocs()
 	for b.Loop() {
-		rendered := interpolateTimeQuery(trq.Statement, trq.TimestampDefinition, extent)
+		rendered, err := plan.RenderExtent(extent)
+		if err != nil {
+			b.Fatal(err)
+		}
 		if rendered == "" {
 			b.Fatal("empty rendered statement")
 		}

@@ -17,12 +17,9 @@
 package clickhouse
 
 import (
-	"fmt"
 	"net/http"
-	"strconv"
-	"strings"
 
-	"github.com/trickstercache/trickster/v2/pkg/parsing/lex/sql"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
@@ -33,58 +30,26 @@ const (
 	upQuery = "query"
 )
 
-// SetExtent will change the upstream request query to use the provided Extent
+// SetExtent changes the upstream request query to the provided cache-miss extent.
 func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
 	extent *timeseries.Extent,
 ) {
 	if extent == nil || r == nil || trq == nil {
 		return
 	}
-	qi := r.URL.Query()
-	isBody := methods.HasBody(r.Method)
-	q := interpolateTimeQuery(trq.Statement, trq.TimestampDefinition, extent)
-	if isBody {
-		request.SetBody(r, []byte(q))
-	} else {
-		qi.Set(upQuery, q)
-		r.URL.RawQuery = qi.Encode()
+	plan, ok := trq.ParsedQuery.(*sqlanalyzer.QueryPlan)
+	if !ok {
+		return
 	}
-}
-
-// formatTimestampValues formats start and end timestamps based on the data type
-func formatTimestampValues(dataType timeseries.FieldDataType, extent *timeseries.Extent) (start, end string) {
-	switch dataType {
-	case timeseries.DateTimeUnixMilli: // epoch millisecs
-		start = strconv.FormatInt(extent.Start.UnixMilli(), 10)
-		end = strconv.FormatInt(extent.End.UnixMilli(), 10)
-	case timeseries.DateTimeUnixNano: // epoch nanosecs
-		start = strconv.FormatInt(extent.Start.UnixNano(), 10)
-		end = strconv.FormatInt(extent.End.UnixNano(), 10)
-	case timeseries.DateTimeSQL: // '2025-05-01 11:39:18'
-		start = "'" + extent.Start.Format(sql.SQLDateTimeLayout) + "'"
-		end = "'" + extent.End.Format(sql.SQLDateTimeLayout) + "'"
-	default: // epoch secs
-		start = strconv.FormatInt(extent.Start.Unix(), 10)
-		end = strconv.FormatInt(extent.End.Unix(), 10)
+	query, err := plan.RenderExtent(*extent)
+	if err != nil {
+		return
 	}
-	return start, end
-}
-
-func interpolateTimeQuery(template string, tfd timeseries.FieldDefinition,
-	extent *timeseries.Extent,
-) string {
-	// tfd.DataType holds the database internal format for the timestamp used
-	// when setting extents
-	start, end := formatTimestampValues(tfd.DataType, extent)
-
-	// ProviderData1 holds the format of a secondary time field
-	tStart, tEnd := formatTimestampValues(timeseries.FieldDataType(tfd.ProviderData1), extent)
-	trange := fmt.Sprintf("%s BETWEEN %s AND %s", tfd.Name, start, end)
-	out := strings.NewReplacer(
-		tkRange, trange,
-		tkTS1, tStart,
-		tkTS2, tEnd,
-		tkFormat, "TSVWithNamesAndTypes",
-	).Replace(template)
-	return out
+	if methods.HasBody(r.Method) {
+		request.SetBody(r, []byte(query))
+		return
+	}
+	parameters := r.URL.Query()
+	parameters.Set(upQuery, query)
+	r.URL.RawQuery = parameters.Encode()
 }

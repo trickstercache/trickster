@@ -3,6 +3,7 @@ module github.com/trickstercache/trickster/v2
 go 1.26.5
 
 require (
+	github.com/AfterShip/clickhouse-sql-parser v0.5.3
 	github.com/alicebob/miniredis/v2 v2.37.0
 	github.com/andybalholm/brotli v1.2.2
 	github.com/cespare/xxhash/v2 v2.3.0
