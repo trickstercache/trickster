@@ -35,6 +35,7 @@ const (
 	frontendSubsystem = "frontend"
 	albSubsystem      = "alb"
 	healthSubsystem   = "healthcheck"
+	sqlSubsystem      = "sql"
 )
 
 // Default histogram buckets used by trickster
@@ -332,6 +333,32 @@ var (
 		[]string{"backend_name"},
 	)
 
+	// SQLQueryAnalysis counts SQL analyzer classifications using bounded mode,
+	// dialect, and reason labels. Parse failures and OPC fallback are represented
+	// by the invalid_sql reason and object cache mode respectively.
+	SQLQueryAnalysis = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: sqlSubsystem,
+			Name:      "query_analysis_total",
+			Help:      "Count of SQL query cache-eligibility classifications.",
+		},
+		[]string{"backend_name", "dialect", "cache_mode", "reason"},
+	)
+
+	// SQLQueryRewriteFailures counts failures to render a SQL origin request for
+	// a cache-miss extent. The reason label is a fixed internal category and
+	// never contains query text or parser errors.
+	SQLQueryRewriteFailures = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: sqlSubsystem,
+			Name:      "query_rewrite_failures_total",
+			Help:      "Count of SQL cache-miss extent rewrite failures.",
+		},
+		[]string{"backend_name", "dialect", "reason"},
+	)
+
 	// ALBFanoutFailures counts per-shard failures during ALB fanout. The
 	// reason label distinguishes silent contribution failures (e.g. bad
 	// encoding, parse errors), explicit panics in the per-shard goroutine,
@@ -569,6 +596,8 @@ func init() {
 	prometheus.MustRegister(ReloadFailuresTotal)
 	prometheus.MustRegister(ReloadDurationSeconds)
 	prometheus.MustRegister(ProxyQueryRangeRejections)
+	prometheus.MustRegister(SQLQueryAnalysis)
+	prometheus.MustRegister(SQLQueryRewriteFailures)
 }
 
 // Handler returns the http handler for the listener

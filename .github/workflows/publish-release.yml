@@ -49,7 +49,7 @@ jobs:
         with:
           go-version-file: go.mod
         #
-      - name: Build project
+      - name: Build project and package third-party licenses
         run: |
           TAGVER=${{ steps.baretag.outputs.baretag }} make release
         #

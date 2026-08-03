@@ -30,6 +30,7 @@ release-artifacts: clean
 	mkdir -p $(PACKAGE_DIR)
 	mkdir -p $(BIN_DIR)
 	mkdir -p $(CONF_DIR)
+	$(MAKE) THIRD_PARTY_LICENSES_DIR=$(PACKAGE_DIR)/third-party-licenses third-party-licenses
 
 	cp -r ./docs $(PACKAGE_DIR)
 	cp -r ./deploy $(PACKAGE_DIR)

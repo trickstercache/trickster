@@ -34,6 +34,7 @@ BIN_DIR        := $(PACKAGE_DIR)/bin
 CONF_DIR       := $(PACKAGE_DIR)/conf
 CGO_ENABLED    ?= 0
 BUMPER_FILE    := ./testdata/license_header_template.txt
+THIRD_PARTY_LICENSES_DIR  := $(BUILD_SUBDIR)/third-party-licenses
 
 .PHONY: go-mod-vendor
 go-mod-vendor:
@@ -46,6 +47,21 @@ go-mod-tidy:
 .PHONY: test-go-mod
 test-go-mod:
 	@git diff --quiet --exit-code go.mod go.sum || echo "There are changes to go.mod and go.sum which needs to be committed"
+
+# go-jmespath ships an abbreviated Apache-2.0 license notice that go-licenses
+# cannot classify. The target excludes it from automatic classification only,
+# then copies its original license notice into the generated distribution.
+.PHONY: third-party-licenses
+third-party-licenses:
+	$(GO) tool go-licenses save ./cmd/trickster \
+		--force \
+		--save_path=$(THIRD_PARTY_LICENSES_DIR) \
+		--ignore=github.com/trickstercache/trickster/v2 \
+		--ignore=github.com/jmespath/go-jmespath
+	@jmespath_dir="$$($(GO) list -m -f '{{.Dir}}' github.com/jmespath/go-jmespath)"; \
+		mkdir -p "$(THIRD_PARTY_LICENSES_DIR)/github.com/jmespath/go-jmespath"; \
+		cp "$$jmespath_dir/LICENSE" \
+			"$(THIRD_PARTY_LICENSES_DIR)/github.com/jmespath/go-jmespath/LICENSE"
 
 BUILD_FLAGS ?= -a -v
 .PHONY: build

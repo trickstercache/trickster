@@ -81,6 +81,19 @@ The following metrics are available for polling with any Trickster configuration
   * labels:
     * `backend` - the name of the configured backend rejecting the query
 
+* `trickster_sql_query_analysis_total` (Counter) - Count of SQL query cache-eligibility classifications. Labels never include query text.
+  * labels:
+    * `backend_name` - the name of the configured backend analyzing the query
+    * `dialect` - the SQL dialect of the analyzing backend (e.g., `clickhouse`)
+    * `cache_mode` - the strongest cache mode supported by the query (`delta`, `object`, or `none`)
+    * `reason` - the stable classification reason code (e.g., `delta_cacheable`, `unsafe_predicate`, `unsupported_bucket`)
+
+* `trickster_sql_query_rewrite_failures_total` (Counter) - Count of SQL cache-miss extent rewrite failures. Labels never include query text.
+  * labels:
+    * `backend_name` - the name of the configured backend rendering the query
+    * `dialect` - the SQL dialect of the rendering backend
+    * `reason` - the fixed internal failure category
+
 * `trickster_cache_operation_objects_total` (Counter) - The total number of objects upon which the Trickster cache has operated.
   * labels:
     * `cache_name` - the name of the configured cache performing the operation$

@@ -215,6 +215,44 @@ func TestDeltaProxyCacheRequestMissThenHit(t *testing.T) {
 	}
 }
 
+func TestDeltaProxyCacheRequestExtentRewriteFailureStopsOriginRequest(t *testing.T) {
+	tests := []struct {
+		name      string
+		failAfter int64
+		wantCalls int64
+	}{
+		{name: "initial rewrite", failAfter: 0, wantCalls: 1},
+		{name: "cache-miss rewrite", failAfter: 1},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ts, w, r, rsc, err := setupTestHarnessDPC()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer closeTestHarness(ts, r)
+
+			client := rsc.BackendClient.(*TestClient)
+			client.setExtentErr = fmt.Errorf("intentional extent rewrite failure")
+			client.setExtentErrorAfter = test.failAfter
+			rsc.BackendOptions.FastForwardDisable = true
+			step := 5 * time.Minute
+			end := time.Now().Add(-12 * time.Hour).Truncate(step)
+			r.URL.Path = "/prometheus/api/v1/query_range"
+			r.URL.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
+				int(step.Seconds()), end.Add(-time.Hour).Unix(), end.Unix(), queryReturnsOKNoLatency)
+
+			client.QueryRangeHandler(w, r)
+			if got := w.Result().StatusCode; got != http.StatusInternalServerError {
+				t.Errorf("status = %d, want %d", got, http.StatusInternalServerError)
+			}
+			if test.wantCalls > 0 && client.setExtentCalls.Load() != test.wantCalls {
+				t.Errorf("SetExtent calls = %d, want %d", client.setExtentCalls.Load(), test.wantCalls)
+			}
+		})
+	}
+}
+
 func TestDeltaProxyCacheRequestRemoveStale(t *testing.T) {
 	ts, w, r, rsc, err := setupTestHarnessDPC()
 	if err != nil {
