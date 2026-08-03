@@ -17,6 +17,8 @@
 package clickhouse
 
 import (
+	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
@@ -30,26 +32,40 @@ const (
 	upQuery = "query"
 )
 
+var (
+	errInvalidRewriteInput   = errors.New("invalid ClickHouse extent rewrite input")
+	errMissingQueryPlan      = errors.New("ClickHouse query plan is missing")
+	errInvalidRewriteRequest = errors.New("ClickHouse extent rewrite request has no URL")
+)
+
 // SetExtent changes the upstream request query to the provided cache-miss extent.
 func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
 	extent *timeseries.Extent,
-) {
+) error {
 	if extent == nil || r == nil || trq == nil {
-		return
+		c.observeRewriteFailure("invalid_input")
+		return errInvalidRewriteInput
 	}
 	plan, ok := trq.ParsedQuery.(*sqlanalyzer.QueryPlan)
 	if !ok {
-		return
+		c.observeRewriteFailure("missing_plan")
+		return errMissingQueryPlan
 	}
 	query, err := plan.RenderExtent(*extent)
 	if err != nil {
-		return
+		c.observeRewriteFailure("render_error")
+		return fmt.Errorf("render ClickHouse extent: %w", err)
 	}
 	if methods.HasBody(r.Method) {
 		request.SetBody(r, []byte(query))
-		return
+		return nil
+	}
+	if r.URL == nil {
+		c.observeRewriteFailure("invalid_request")
+		return errInvalidRewriteRequest
 	}
 	parameters := r.URL.Query()
 	parameters.Set(upQuery, query)
 	r.URL.RawQuery = parameters.Encode()
+	return nil
 }

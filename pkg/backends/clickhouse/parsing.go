@@ -126,7 +126,7 @@ func (analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis {
 	if err != nil {
 		return objectAnalysis(sqlanalyzer.ReasonUnsupportedBucket, err)
 	}
-	groups, err := analyzeGroupBy(selectQuery.GroupBy)
+	groups, err := analyzeGroupBy(selectQuery.GroupBy, selectQuery.SelectItems, bucket)
 	if err != nil {
 		return objectAnalysis(sqlanalyzer.ReasonUnsupportedGrouping, err)
 	}
@@ -181,9 +181,23 @@ func hasSetOperation(query *chast.SelectQuery) bool {
 
 // parse adapts the dialect-independent plan to Trickster's backend interface.
 // A non-delta SELECT remains eligible for the object proxy cache.
-func parse(statement string) (*timeseries.TimeRangeQuery, *timeseries.RequestOptions, bool, error) {
+func parse(
+	statement string,
+	observe func(sqlanalyzer.Analysis),
+) (*timeseries.TimeRangeQuery, *timeseries.RequestOptions, bool, error) {
 	now := time.Now()
 	analysis := dialectAnalyzer.Analyze(statement, now)
+	if observe != nil {
+		observe(analysis)
+	}
+	return parseAnalysis(statement, now, analysis)
+}
+
+func parseAnalysis(
+	statement string,
+	now time.Time,
+	analysis sqlanalyzer.Analysis,
+) (*timeseries.TimeRangeQuery, *timeseries.RequestOptions, bool, error) {
 	canObjectCache := analysis.Mode >= sqlanalyzer.CacheModeObject
 	trq := &timeseries.TimeRangeQuery{
 		Statement:        statement,
@@ -203,6 +217,9 @@ func parse(statement string) (*timeseries.TimeRangeQuery, *timeseries.RequestOpt
 	trq.StepNS = plan.Step.Nanoseconds()
 	trq.Phase = plan.Phase
 	trq.Extent.Start = plan.LowerBound.Value
+	if !plan.LowerBound.Inclusive {
+		trq.Extent.Start = trq.Extent.Start.Add(plan.Step)
+	}
 	if plan.UpperBound == nil {
 		trq.Extent.End = now
 	} else {
@@ -235,15 +252,16 @@ func parse(statement string) (*timeseries.TimeRangeQuery, *timeseries.RequestOpt
 type clickHouseRenderer struct {
 	template string
 	bounds   []rendererBound
-	step     time.Duration
 }
 
 func (r *clickHouseRenderer) RenderExtent(extent timeseries.Extent) (string, error) {
 	statement := r.template
 	for _, bound := range r.bounds {
 		boundExtent := extent
-		if bound.endpoint == endpointUpper && !bound.inclusive {
-			boundExtent.End = boundExtent.End.Add(r.step)
+		if bound.endpoint == endpointLower {
+			boundExtent.Start = boundExtent.Start.Add(bound.offset)
+		} else {
+			boundExtent.End = boundExtent.End.Add(bound.offset)
 		}
 		replacement := chast.Format(boundExpression(bound.endpoint, bound.style, boundExtent))
 		statement = strings.ReplaceAll(statement, bound.token, replacement)
@@ -252,10 +270,10 @@ func (r *clickHouseRenderer) RenderExtent(extent timeseries.Extent) (string, err
 }
 
 type rendererBound struct {
-	token     string
-	endpoint  endpoint
-	style     boundStyle
-	inclusive bool
+	token    string
+	endpoint endpoint
+	style    boundStyle
+	offset   time.Duration
 }
 
 const (
@@ -373,9 +391,15 @@ func matchBucket(expression chast.Expr, constants map[string]int64) (bucketSpec,
 			if !countOK || !unitOK || count <= 0 {
 				return bucketSpec{}, false
 			}
+			phase := time.Duration(0)
+			if strings.EqualFold(interval.Unit.Name, "week") {
+				// ClickHouse anchors interval weeks on Monday, 1970-01-05.
+				phase = 4 * day
+			}
 			return bucketSpec{
 				timeColumn: column,
 				step:       time.Duration(count) * unit,
+				phase:      phase,
 				outputUnit: timeseries.DateTimeSQL,
 			}, true
 		}
@@ -512,9 +536,14 @@ func sourceColumn(expression chast.Expr) (string, bool) {
 		return identifier.Name, true
 	case *chast.NestedIdentifier:
 		return chast.Format(identifier), true
+	case *chast.Path:
+		if len(identifier.Fields) > 0 {
+			return chast.Format(identifier), true
+		}
 	default:
 		return "", false
 	}
+	return "", false
 }
 
 func unwrapColumnExpr(expression chast.Expr) chast.Expr {
@@ -586,23 +615,99 @@ func evalInteger(expression chast.Expr, constants map[string]int64) (int64, bool
 	return 0, false
 }
 
-func analyzeGroupBy(clause *chast.GroupByClause) ([]string, error) {
+func analyzeGroupBy(
+	clause *chast.GroupByClause,
+	selectItems []*chast.SelectItem,
+	bucket bucketSpec,
+) ([]string, error) {
 	if clause == nil || clause.Expr == nil || clause.AggregateType != "" || clause.WithCube || clause.WithRollup {
 		return nil, ErrInvalidGroupByClause
 	}
+
+	timestampKeys := make(map[string]struct{}, 2)
+	tagOutputs := make(map[string]string)
+	requiredTags := make(map[string]struct{})
+	for _, item := range selectItems {
+		if item == nil || item.Expr == nil {
+			continue
+		}
+		if (item.Alias != nil && identifierKey(item.Alias.Name) == identifierKey(bucket.outputColumn)) ||
+			expressionKey(item.Expr) == identifierKey(bucket.outputColumn) {
+			if item.Alias != nil {
+				timestampKeys[identifierKey(item.Alias.Name)] = struct{}{}
+			}
+			timestampKeys[expressionKey(item.Expr)] = struct{}{}
+			continue
+		}
+		name, ok := simpleColumn(item.Expr)
+		if !ok {
+			continue
+		}
+		output := name
+		if item.Alias != nil {
+			output = item.Alias.Name
+			tagOutputs[identifierKey(item.Alias.Name)] = output
+		}
+		tagOutputs[identifierKey(name)] = output
+		tagOutputs[expressionKey(item.Expr)] = output
+		requiredTags[output] = struct{}{}
+	}
+
 	items := expressionItems(clause.Expr)
 	groups := make([]string, 0, len(items))
+	seenTags := make(map[string]struct{}, len(items))
+	timestampGrouped := false
 	for _, item := range items {
-		name, ok := sourceColumn(item)
+		key := expressionKey(item)
+		if _, ok := timestampKeys[key]; ok {
+			timestampGrouped = true
+			continue
+		}
+		if name, ok := simpleColumn(item); ok {
+			key = identifierKey(name)
+			if _, timestamp := timestampKeys[key]; timestamp {
+				timestampGrouped = true
+				continue
+			}
+		}
+		output, ok := tagOutputs[key]
 		if !ok {
 			return nil, ErrInvalidGroupByClause
 		}
-		groups = append(groups, name)
+		if _, duplicate := seenTags[output]; !duplicate {
+			groups = append(groups, output)
+			seenTags[output] = struct{}{}
+		}
 	}
-	if len(groups) == 0 {
+	if !timestampGrouped || len(seenTags) != len(requiredTags) {
 		return nil, ErrInvalidGroupByClause
 	}
 	return groups, nil
+}
+
+func simpleColumn(expression chast.Expr) (string, bool) {
+	expression = unwrapColumnExpr(expression)
+	switch identifier := expression.(type) {
+	case *chast.Ident:
+		return identifier.Name, true
+	case *chast.NestedIdentifier:
+		return chast.Format(identifier), true
+	case *chast.Path:
+		if len(identifier.Fields) > 0 {
+			return chast.Format(identifier), true
+		}
+	default:
+		return "", false
+	}
+	return "", false
+}
+
+func expressionKey(expression chast.Expr) string {
+	return chast.Format(unwrapColumnExpr(expression))
+}
+
+func identifierKey(name string) string {
+	return name
 }
 
 func expressionItems(expression chast.Expr) []chast.Expr {
@@ -633,10 +738,11 @@ const (
 )
 
 type boundTarget struct {
-	endpoint  endpoint
-	style     boundStyle
-	inclusive bool
-	set       func(chast.Expr)
+	endpoint endpoint
+	style    boundStyle
+	field    string
+	offset   time.Duration
+	set      func(chast.Expr)
 }
 
 type analyzedBound struct {
@@ -749,7 +855,74 @@ func analyzeRanges(
 			result.targets = append(result.targets, predicate.upper.target)
 		}
 	}
+	if err := normalizePrimaryBounds(&result, bucket); err != nil {
+		return result, err
+	}
 	return result, nil
+}
+
+// normalizePrimaryBounds converts SQL predicates into Trickster's inclusive
+// bucket extent convention. Raw timestamp predicates must describe complete
+// buckets; otherwise a partial aggregate could be cached as a complete bucket.
+// Predicates on the bucket output are discrete and can safely move by one
+// cadence for strict comparisons.
+func normalizePrimaryBounds(result *rangeAnalysis, bucket bucketSpec) error {
+	lowerOnOutput := result.lower.target != nil && result.lower.target.field == bucket.outputColumn
+	if lowerOnOutput {
+		if result.lower.inclusive {
+			result.lower.value = ceilBucket(result.lower.value, bucket)
+		} else {
+			result.lower.value = floorBucket(result.lower.value, bucket)
+			result.lower.target.offset = -bucket.step
+		}
+	} else if !result.lower.inclusive || !alignedToBucket(result.lower.value, bucket) {
+		return ErrUnsafePredicate
+	}
+
+	if result.upper == nil {
+		return nil
+	}
+	upperOnOutput := result.upper.target != nil && result.upper.target.field == bucket.outputColumn
+	if upperOnOutput {
+		if result.upper.inclusive {
+			result.upper.value = floorBucket(result.upper.value, bucket)
+		} else {
+			result.upper.value = ceilBucket(result.upper.value, bucket)
+			result.upper.target.offset = bucket.step
+		}
+		return nil
+	}
+	if result.upper.inclusive || !alignedToBucket(result.upper.value, bucket) {
+		return ErrUnsafePredicate
+	}
+	result.upper.target.offset = bucket.step
+	return nil
+}
+
+func alignedToBucket(value time.Time, bucket bucketSpec) bool {
+	if bucket.step <= 0 {
+		return false
+	}
+	return (value.UnixNano()-bucket.phase.Nanoseconds())%bucket.step.Nanoseconds() == 0
+}
+
+func floorBucket(value time.Time, bucket bucketSpec) time.Time {
+	step := bucket.step.Nanoseconds()
+	phase := bucket.phase.Nanoseconds()
+	epochNs := value.UnixNano()
+	remainder := (epochNs - phase) % step
+	if remainder < 0 {
+		remainder += step
+	}
+	return time.Unix(0, epochNs-remainder)
+}
+
+func ceilBucket(value time.Time, bucket bucketSpec) time.Time {
+	floor := floorBucket(value, bucket)
+	if floor.Equal(value) {
+		return floor
+	}
+	return floor.Add(bucket.step)
 }
 
 func flattenConjunction(expression chast.Expr, out []chast.Expr) ([]chast.Expr, error) {
@@ -831,10 +1004,10 @@ func analyzePredicate(
 		if !ok {
 			return predicateBound{}, false, nil
 		}
-		lower.target = &boundTarget{endpoint: endpointLower, style: lower.style, inclusive: true, set: func(expr chast.Expr) {
+		lower.target = &boundTarget{endpoint: endpointLower, style: lower.style, field: field, set: func(expr chast.Expr) {
 			value.Between = expr
 		}}
-		upper.target = &boundTarget{endpoint: endpointUpper, style: upper.style, inclusive: true, set: func(expr chast.Expr) {
+		upper.target = &boundTarget{endpoint: endpointUpper, style: upper.style, field: field, set: func(expr chast.Expr) {
 			value.And = expr
 		}}
 		return predicateBound{field: field, lower: &lower, upper: &upper}, true, nil
@@ -864,10 +1037,17 @@ func analyzePredicate(
 		}
 		predicate := predicateBound{field: field}
 		if operator == ">" || operator == ">=" {
-			bound.target = &boundTarget{endpoint: endpointLower, style: bound.style, inclusive: inclusive, set: setBound}
+			bound.target = &boundTarget{
+				endpoint: endpointLower, style: bound.style, field: field, set: setBound,
+			}
 			predicate.lower = &bound
 		} else {
-			bound.target = &boundTarget{endpoint: endpointUpper, style: bound.style, inclusive: inclusive, set: setBound}
+			bound.target = &boundTarget{
+				endpoint: endpointUpper, style: bound.style, field: field, set: setBound,
+			}
+			if !inclusive {
+				bound.target.offset = bucket.step
+			}
 			predicate.upper = &bound
 		}
 		return predicate, true, nil
@@ -1029,7 +1209,7 @@ func analyzeFormat(format *chast.FormatClause) (byte, error) {
 func buildQueryArtifacts(query *chast.SelectQuery, ranges rangeAnalysis, step time.Duration) (string, *clickHouseRenderer) {
 	occupied := chast.Format(query)
 	bounds := make([]rendererBound, 0, len(ranges.targets)+1)
-	addBound := func(target endpoint, style boundStyle, inclusive bool) chast.Expr {
+	addBound := func(target endpoint, style boundStyle, offset time.Duration) chast.Expr {
 		index := len(bounds)
 		token := fmt.Sprintf("<$TRICKSTER_TS%d_%d$>", target+1, index)
 		for strings.Contains(occupied, token) {
@@ -1037,19 +1217,17 @@ func buildQueryArtifacts(query *chast.SelectQuery, ranges rangeAnalysis, step ti
 			token = fmt.Sprintf("<$TRICKSTER_TS%d_%d$>", target+1, index)
 		}
 		occupied += token
-		bounds = append(bounds, rendererBound{
-			token: token, endpoint: target, style: style, inclusive: inclusive,
-		})
+		bounds = append(bounds, rendererBound{token: token, endpoint: target, style: style, offset: offset})
 		return &chast.PlaceHolder{Type: token}
 	}
 	for _, target := range ranges.targets {
-		target.set(addBound(target.endpoint, target.style, target.inclusive))
+		target.set(addBound(target.endpoint, target.style, target.offset))
 	}
 	if ranges.addSynthetic != nil {
 		ranges.addSynthetic(&chast.BinaryOperation{
 			LeftExpr:  identifierExpression(ranges.timeColumn),
 			Operation: chast.TokenKindLT,
-			RightExpr: addBound(endpointUpper, ranges.lowerStyle, false),
+			RightExpr: addBound(endpointUpper, ranges.lowerStyle, step),
 		})
 	}
 
@@ -1058,7 +1236,7 @@ func buildQueryArtifacts(query *chast.SelectQuery, ranges rangeAnalysis, step ti
 		canonical = strings.ReplaceAll(canonical, bound.token, placeholderFor(bound.endpoint))
 	}
 	query.Format = &chast.FormatClause{Format: &chast.Ident{Name: "TSVWithNamesAndTypes"}}
-	return canonical, &clickHouseRenderer{template: chast.Format(query), bounds: bounds, step: step}
+	return canonical, &clickHouseRenderer{template: chast.Format(query), bounds: bounds}
 }
 
 func placeholderFor(target endpoint) string {

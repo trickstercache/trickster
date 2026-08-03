@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"net/url"
 	"testing"
+	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
@@ -99,8 +100,9 @@ func TestParseTimeRangeQuery(t *testing.T) {
 		if res.Step.Seconds() != 60 {
 			t.Errorf("expected 60 got %f", res.Step.Seconds())
 		}
-		if res.Extent.End.Sub(res.Extent.Start).Hours() != 6 {
-			t.Errorf("expected 6 got %f", res.Extent.End.Sub(res.Extent.Start).Hours())
+		want := 6*time.Hour - time.Minute
+		if res.Extent.End.Sub(res.Extent.Start) != want {
+			t.Errorf("expected %s got %s", want, res.Extent.End.Sub(res.Extent.Start))
 		}
 	}
 

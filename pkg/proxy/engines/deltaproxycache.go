@@ -41,6 +41,7 @@ import (
 	tspan "github.com/trickstercache/trickster/v2/pkg/observability/tracing/span"
 	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	tpe "github.com/trickstercache/trickster/v2/pkg/proxy/errors"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
@@ -274,7 +275,12 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 		}
 	}
 
-	client.SetExtent(pr.upstreamRequest, trq, &trq.Extent)
+	if err := client.SetExtent(pr.upstreamRequest, trq, &trq.Extent); err != nil {
+		logger.Error("could not rewrite time range query",
+			logging.Pairs{"error": err.Error(), "backend": client.Name()})
+		failures.HandleInternalServerError(w, r)
+		return
+	}
 	key := ComposeCacheKey(o.Name, o.CacheKeyPrefix, "dpc", pr.DeriveCacheKey(""))
 
 	coReq := GetRequestCachingPolicy(r.Header)
@@ -766,7 +772,18 @@ func fetchExtents(
 				mrsc))
 			rq.upstreamRequest = rq.upstreamRequest.WithContext(profile.ToContext(rq.upstreamRequest.Context(),
 				dpcEncodingProfile.Clone()))
-			client.SetExtent(rq.upstreamRequest, rsc.TimeRangeQuery, e)
+			if err := client.SetExtent(rq.upstreamRequest, rsc.TimeRangeQuery, e); err != nil {
+				logger.Error("could not rewrite cache-miss time range query",
+					logging.Pairs{"error": err.Error(), "backend": client.Name()})
+				errTs[i] = el[i]
+				respLock.Lock()
+				if mresp.StatusCode < http.StatusInternalServerError {
+					mresp.Status = "500 Internal Server Error"
+					mresp.StatusCode = http.StatusInternalServerError
+				}
+				respLock.Unlock()
+				return nil
+			}
 
 			ctxMR, spanMR := tspan.NewChildSpan(rq.upstreamRequest.Context(), rsc.Tracer, "FetchRange")
 			if spanMR != nil {

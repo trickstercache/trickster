@@ -32,7 +32,7 @@ var (
 	// ErrInvalidGroupByClause indicates that GROUP BY is unsafe for delta caching.
 	ErrInvalidGroupByClause = errors.New("invalid or unsupported GROUP BY clause")
 	// ErrUnsafePredicate indicates that a time predicate cannot be safely rewritten.
-	ErrUnsafePredicate = errors.New("time predicate has unsupported boolean topology")
+	ErrUnsafePredicate = errors.New("time predicate cannot be safely rewritten")
 	// ErrAmbiguousTimeAxis indicates that more than one primary time range was found.
 	ErrAmbiguousTimeAxis = errors.New("query has multiple or ambiguous time axes")
 	// ErrUnsupportedStatement indicates a SELECT shape outside the analyzer subset.

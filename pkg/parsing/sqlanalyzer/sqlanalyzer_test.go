@@ -32,3 +32,20 @@ func TestQueryPlanRenderExtentRequiresRenderer(t *testing.T) {
 		t.Errorf("missing renderer error = %v, want %v", err, ErrMissingRenderer)
 	}
 }
+
+func TestCacheModeString(t *testing.T) {
+	tests := []struct {
+		mode CacheMode
+		want string
+	}{
+		{CacheModeNone, "none"},
+		{CacheModeObject, "object"},
+		{CacheModeDelta, "delta"},
+		{CacheMode(255), "unknown"},
+	}
+	for _, test := range tests {
+		if got := test.mode.String(); got != test.want {
+			t.Errorf("CacheMode(%d).String() = %q, want %q", test.mode, got, test.want)
+		}
+	}
+}

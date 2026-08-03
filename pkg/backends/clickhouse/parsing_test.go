@@ -32,38 +32,38 @@ import (
 const tq00 = `/* this tests a multi-line comment at the front, where the query continues after` +
 	`, and on the same line as, the comment closing delimiter
   also, here we test: trickster-backfill-tolerance:30 */ WITH  'igor * 31 + \' dks( k )'  as  igor, 3600 as x ` +
-	` SELECT (  intDiv(toUInt32(datetime), x) * x) * 1000 as t,` +
+	` SELECT (  intDiv(toUInt32(datetime), x) * x) * 1000 as t, apple,` +
 	` count() as cnt FROM test_db.test_table PREWHERE some_column = 'myvalue' WHERE datetime >= 1589904000 AND datetime < 1589997600` +
 	` GROUP BY t, apple ORDER BY  t DESC FORMAT TabSeparatedWithNamesAndTypes // test comment
 	// test 2 comment`
 
 const tq01 = `SELECT toStartOfFiveMinute(datetime) AS t, count() AS cnt ` +
-	`FROM test_db.test_table WHERE datetime > 1589904000 ` +
+	`FROM test_db.test_table WHERE datetime >= 1589904000 ` +
 	`GROUP BY t ORDER BY t DESC FORMAT TabSeparatedWithNamesAndTypes`
 
-const tq02 = `SELECT toStartOfInterval(datetime, INTERVAL 60 second) AS t, count() AS cnt ` +
-	`FROM test_db.test_table WHERE datetime BETWEEN 1589904000 AND 1589997600 ` +
+const tq02 = `SELECT toStartOfInterval(datetime, INTERVAL 60 second) AS t, x, count() AS cnt ` +
+	`FROM test_db.test_table WHERE datetime >= 1589904000 AND datetime < 1589997600 ` +
 	`GROUP BY t, x ORDER BY t DESC FORMAT TabSeparatedWithNamesAndTypes`
 
 const tq03 = `SELECT (intDiv(toUInt32(time_column), 60) * 60) * 1000 AS t, countMerge(some_count) AS cnt, field1, field2 ` +
-	`FROM testdb.test_table WHERE time_column BETWEEN toDateTime(1516665600) AND toDateTime(1516687200) ` +
+	`FROM testdb.test_table WHERE time_column >= toDateTime(1516665600) AND time_column < toDateTime(1516687200) ` +
 	`AND date_column >= toDate(1516665600) AND date_column <= toDate(1516687200) ` +
 	`AND field1 > 0 AND field2 = 'some_value' GROUP BY t, field1, field2 ORDER BY t, field1 FORMAT JSON`
 
 const tq04 = `SELECT toStartOfFiveMinute(datetime) AS t, count() AS cnt, testfield1, testfield2 ` +
-	`FROM (SELECT * FROM test_db.test_table WHERE x = 1) WHERE datetime > 1589904000 ` +
+	`FROM (SELECT * FROM test_db.test_table WHERE x = 1) WHERE datetime >= 1589904000 ` +
 	`GROUP BY t, testfield1, testfield2 ORDER BY t DESC FORMAT TabSeparatedWithNamesAndTypes`
 
 const tq05 = `SELECT toStartOfFiveMinute(datetime) AS t, count() AS cnt FROM test_db.test_table ` +
-	`WHERE datetime > '2020-01-01 00:00:00' AND datetime < now() - 300 ` +
+	`WHERE t > '2020-01-01 00:00:00' AND t < now() - 300 ` +
 	`GROUP BY t ORDER BY t FORMAT JSON`
 
 const tq07 = `SELECT (intDiv(toUInt32(datetime), 300) * 300) * 1000 AS t, count() AS cnt ` +
-	`FROM test_db.test_table WHERE datetime BETWEEN 1589904000 AND 1589997600 ` +
+	`FROM test_db.test_table WHERE datetime >= 1589904000 AND datetime < 1589997600 ` +
 	`GROUP BY t ORDER BY t DESC FORMAT JSON`
 
 const tq08 = `SELECT (intDiv(toUInt32(datetime), 300) * 300) * 1000 AS t, count() AS cnt ` +
-	`FROM test_db.test_table WHERE datetime >= now() - 900 ` +
+	`FROM test_db.test_table WHERE datetime >= 1699999200 ` +
 	`GROUP BY t ORDER BY t DESC FORMAT JSON`
 
 func TestAnalyzeSupportedCorpus(t *testing.T) {
@@ -84,7 +84,7 @@ func TestAnalyzeSupportedCorpus(t *testing.T) {
 		{
 			"bucket output alias in range",
 			`SELECT toStartOfFiveMinute(datetime) AS t, count() AS cnt FROM test_db.test_table ` +
-				`WHERE t > '2020-05-30 11:00:00' AND t < now() - 300 GROUP BY t, cnt FORMAT JSON`,
+				`WHERE t > '2020-05-30 11:00:00' AND t < now() - 300 GROUP BY t FORMAT JSON`,
 			5 * time.Minute,
 			0,
 		},
@@ -92,21 +92,21 @@ func TestAnalyzeSupportedCorpus(t *testing.T) {
 			"nonconstant WITH expression",
 			`WITH dictGetString('test_cache', server, xxHash64(server)) AS server_name ` +
 				`SELECT toStartOfFiveMinute(datetime) AS t, count() AS cnt FROM test_db.test_table ` +
-				`WHERE t > '2020-05-30 11:00:00' AND t < now() - 300 GROUP BY t, cnt FORMAT JSON`,
+				`WHERE t > '2020-05-30 11:00:00' AND t < now() - 300 GROUP BY t FORMAT JSON`,
 			5 * time.Minute,
 			0,
 		},
 		{
 			"cast around bucket",
 			`SELECT toInt32(toStartOfFiveMinute(datetime)) AS t, count() AS cnt FROM test_db.test_table ` +
-				`WHERE datetime > '2020-05-30 11:00:00' AND datetime < now() - 300 GROUP BY t, cnt FORMAT JSON`,
+				`WHERE t > '2020-05-30 11:00:00' AND t < now() - 300 GROUP BY t FORMAT JSON`,
 			5 * time.Minute,
 			0,
 		},
 		{
 			"monday phase",
 			`SELECT toMonday(datetime) AS t, count() FROM events ` +
-				`WHERE datetime >= 1589904000 AND datetime < 1590508800 GROUP BY t`,
+				`WHERE datetime >= 1589760000 AND datetime < 1590364800 GROUP BY t`,
 			week,
 			4 * day,
 		},
@@ -164,7 +164,7 @@ func TestBucketOutputUnits(t *testing.T) {
 		{
 			"Date bucket",
 			`SELECT toMonday(datetime) AS t, count() FROM events ` +
-				`WHERE datetime >= 1589904000 AND datetime < 1590508800 GROUP BY t`,
+				`WHERE datetime >= 1589760000 AND datetime < 1590364800 GROUP BY t`,
 			timeseries.DateSQL,
 		},
 		{
@@ -188,7 +188,7 @@ func TestBucketOutputUnits(t *testing.T) {
 }
 
 func TestParseBuildsTricksterArtifacts(t *testing.T) {
-	trq, options, canObjectCache, err := parse(tq03)
+	trq, options, canObjectCache, err := parse(tq03, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,8 +213,8 @@ func TestParseBuildsTricksterArtifacts(t *testing.T) {
 	if strings.Contains(trq.Statement, "1516665600") || strings.Contains(trq.Statement, "1516687200") {
 		t.Errorf("cache identity retains extent: %s", trq.Statement)
 	}
-	if len(trq.TagFieldDefintions) != 3 {
-		t.Errorf("group fields = %d, want 3", len(trq.TagFieldDefintions))
+	if len(trq.TagFieldDefintions) != 2 {
+		t.Errorf("group fields = %d, want 2", len(trq.TagFieldDefintions))
 	}
 }
 
@@ -223,16 +223,28 @@ func TestCanonicalCacheIdentityIgnoresExtent(t *testing.T) {
 		return `SELECT toStartOfMinute(ts) AS t, count() FROM events WHERE ts >= ` +
 			strconv.Itoa(lower) + ` AND ts < ` + strconv.Itoa(upper) + ` GROUP BY t FORMAT JSON`
 	}
-	first, _, _, err := parse(query(100, 200))
+	first, _, _, err := parse(query(120, 240), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, _, _, err := parse(query(300, 400))
+	second, _, _, err := parse(query(300, 420), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if first.Statement != second.Statement {
 		t.Errorf("different ranges produced different identities:\n%s\n%s", first.Statement, second.Statement)
+	}
+	if first.CacheKeyElements["query"] != second.CacheKeyElements["query"] ||
+		first.CacheKeyElements["query"] != first.Statement {
+		t.Errorf("different ranges produced different cache-key query elements:\n%s\n%s",
+			first.CacheKeyElements["query"], second.CacheKeyElements["query"])
+	}
+	third, _, _, err := parse(strings.Replace(query(120, 240), "WHERE ts", "WHERE tenant = 'other' AND ts", 1), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.CacheKeyElements["query"] == third.CacheKeyElements["query"] {
+		t.Error("a non-time predicate did not change the canonical cache-key element")
 	}
 }
 
@@ -263,7 +275,7 @@ func TestOutputAliasRangeUsesBucketUnit(t *testing.T) {
 
 func TestRenderExtentPreservesPredicateTopology(t *testing.T) {
 	query := `SELECT toStartOfMinute(ts) AS t, count() FROM events ` +
-		`WHERE tenant_start = 100 AND ts >= 100 AND ts < 200 GROUP BY t FORMAT JSON`
+		`WHERE tenant_start = 100 AND ts >= 120 AND ts < 240 GROUP BY t FORMAT JSON`
 	analysis := dialectAnalyzer.Analyze(query, time.Unix(500, 0))
 	if analysis.Err != nil {
 		t.Fatal(analysis.Err)
@@ -299,7 +311,7 @@ func TestOpenEndedRangeAddsSafeUpperConjunct(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(rendered, "datetime > 1589904300") ||
+	if !strings.Contains(rendered, "datetime >= 1589904300") ||
 		!strings.Contains(rendered, "datetime < 1589904900") {
 		t.Errorf("open range was not safely bounded: %s", rendered)
 	}
@@ -308,7 +320,7 @@ func TestOpenEndedRangeAddsSafeUpperConjunct(t *testing.T) {
 func TestExclusiveUpperBoundUsesInclusiveInternalExtent(t *testing.T) {
 	query := `SELECT toStartOfMinute(ts) AS t, count() FROM events ` +
 		`WHERE ts >= 120 AND ts < 240 GROUP BY t`
-	trq, _, _, err := parse(query)
+	trq, _, _, err := parse(query, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -330,7 +342,7 @@ func TestUnsafeAndUnsupportedQueriesUseObjectCache(t *testing.T) {
 		{"unsupported interval", `SELECT toStartOfInterval(ts, INTERVAL 1 year) AS t, count() FROM events WHERE ts >= 100 AND ts < 200 GROUP BY t FORMAT JSON`, sqlanalyzer.ReasonUnsupportedBucket},
 		{"unsupported week mode", `SELECT toStartOfWeek(ts, 1) AS t, count() FROM events WHERE ts >= 100 AND ts < 200 GROUP BY t`, sqlanalyzer.ReasonUnsupportedBucket},
 		{"missing group by", `SELECT toStartOfMinute(ts) AS t, count() FROM events WHERE ts >= 100 AND ts < 200 FORMAT JSON`, sqlanalyzer.ReasonUnsupportedGrouping},
-		{"unsupported format", `SELECT toStartOfMinute(ts) AS t, count() FROM events WHERE ts >= 100 AND ts < 200 GROUP BY t FORMAT Parquet`, sqlanalyzer.ReasonUnsupportedFormat},
+		{"unsupported format", `SELECT toStartOfMinute(ts) AS t, count() FROM events WHERE ts >= 120 AND ts < 240 GROUP BY t FORMAT Parquet`, sqlanalyzer.ReasonUnsupportedFormat},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -338,7 +350,7 @@ func TestUnsafeAndUnsupportedQueriesUseObjectCache(t *testing.T) {
 			if analysis.Mode != sqlanalyzer.CacheModeObject || analysis.Reason != test.reason {
 				t.Errorf("unexpected analysis: %+v", analysis)
 			}
-			_, _, canObjectCache, err := parse(test.query)
+			_, _, canObjectCache, err := parse(test.query, nil)
 			if !canObjectCache || err == nil {
 				t.Errorf("parse classification = (OPC %t, err %v)", canObjectCache, err)
 			}
@@ -372,7 +384,7 @@ func TestStatementClassification(t *testing.T) {
 
 func TestDirectivesAreExtractedBeforeCanonicalization(t *testing.T) {
 	query := `/* trickster-backfill-tolerance:30 trickster-fast-forward:off */ ` + tq02
-	trq, options, _, err := parse(query)
+	trq, options, _, err := parse(query, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

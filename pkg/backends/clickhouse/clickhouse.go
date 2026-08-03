@@ -79,7 +79,7 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 		sqlQuery = p[0]
 	}
 
-	trq, ro, canOPC, err := parse(sqlQuery)
+	trq, ro, canOPC, err := parse(sqlQuery, c.observeAnalysis)
 	if err != nil {
 		return trq, ro, canOPC, err
 	}

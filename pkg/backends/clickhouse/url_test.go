@@ -28,7 +28,7 @@ import (
 )
 
 func TestSetExtent(t *testing.T) {
-	trq, _, _, err := parse(tq03)
+	trq, _, _, err := parse(tq03, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,9 +38,12 @@ func TestSetExtent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	(&Client{}).SetExtent(r, trq, extent)
+	if err := (&Client{}).SetExtent(r, trq, extent); err != nil {
+		t.Fatal(err)
+	}
 	rendered := r.URL.Query().Get(upQuery)
-	if !strings.Contains(rendered, "time_column BETWEEN toDateTime(1516669200) AND toDateTime(1516672800)") {
+	if !strings.Contains(rendered, "time_column >= toDateTime(1516669200)") ||
+		!strings.Contains(rendered, "time_column < toDateTime(1516672860)") {
 		t.Errorf("primary extent was not rendered: %s", rendered)
 	}
 	if !strings.Contains(rendered, "date_column >= toDate(1516669200)") ||
@@ -55,7 +58,7 @@ func TestSetExtent(t *testing.T) {
 func TestSetExtentWithBody(t *testing.T) {
 	query := `SELECT toStartOfMinute(ts) AS t, count() FROM events ` +
 		`WHERE ts >= '2020-01-01 00:00:00' AND ts < '2020-01-01 01:00:00' GROUP BY t FORMAT JSON`
-	trq, _, _, err := parse(query)
+	trq, _, _, err := parse(query, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,10 +66,12 @@ func TestSetExtentWithBody(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	(&Client{}).SetExtent(r, trq, &timeseries.Extent{
+	if err := (&Client{}).SetExtent(r, trq, &timeseries.Extent{
 		Start: time.Date(2020, 1, 1, 0, 10, 0, 0, time.UTC),
 		End:   time.Date(2020, 1, 1, 0, 20, 0, 0, time.UTC),
-	})
+	}); err != nil {
+		t.Fatal(err)
+	}
 	body, err := request.GetBody(r)
 	if err != nil {
 		t.Fatal(err)

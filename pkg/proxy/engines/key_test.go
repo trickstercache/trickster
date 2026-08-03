@@ -205,6 +205,35 @@ func TestDeriveCacheKey(t *testing.T) {
 	}
 }
 
+func TestDeriveCacheKeyUsesCanonicalTimeRangeQuery(t *testing.T) {
+	canonical := func(tenant string) string {
+		return "SELECT toStartOfMinute(ts) AS t, count() FROM events WHERE tenant = '" + tenant +
+			"' AND ts >= <$TS1$> AND ts < <$TS2$> GROUP BY t"
+	}
+	derive := func(original, identity string) string {
+		t.Helper()
+		path := po.New()
+		path.CacheKeyParams = []string{"query"}
+		rsc := request.NewResources(&bo.Options{}, path, nil, nil, nil, nil)
+		rsc.TimeRangeQuery = &timeseries.TimeRangeQuery{
+			CacheKeyElements: map[string]string{"query": identity},
+		}
+		r := httptest.NewRequest(http.MethodGet, "http://trickster.example.com/?query="+url.QueryEscape(original), nil)
+		r = request.SetResources(r, rsc)
+		return newProxyRequest(r, nil).DeriveCacheKey("")
+	}
+
+	first := derive("SELECT ... WHERE tenant = 'a' AND ts >= 100 AND ts < 200", canonical("a"))
+	second := derive("SELECT ... WHERE tenant = 'a' AND ts >= 300 AND ts < 400", canonical("a"))
+	if first != second {
+		t.Errorf("different time ranges produced different keys: %s != %s", first, second)
+	}
+	third := derive("SELECT ... WHERE tenant = 'b' AND ts >= 100 AND ts < 200", canonical("b"))
+	if first == third {
+		t.Errorf("different non-time predicates produced the same key: %s", first)
+	}
+}
+
 func exampleKeyHasher(path string, params url.Values, headers http.Header,
 	body []byte, trq *timeseries.TimeRangeQuery, extra string,
 ) string {

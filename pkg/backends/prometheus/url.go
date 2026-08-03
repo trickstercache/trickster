@@ -29,11 +29,12 @@ import (
 // SetExtent will change the upstream request query to use the provided Extent
 func (c *Client) SetExtent(r *http.Request, _ *timeseries.TimeRangeQuery,
 	extent *timeseries.Extent,
-) {
+) error {
 	v, _, _ := params.GetRequestValues(r)
 	v.Set(upStart, strconv.FormatInt(extent.Start.Unix(), 10))
 	v.Set(upEnd, strconv.FormatInt(extent.End.Unix(), 10))
 	params.SetRequestValues(r, v)
+	return nil
 }
 
 // FastForwardRequest returns an *http.Request crafted to collect Fast Forward

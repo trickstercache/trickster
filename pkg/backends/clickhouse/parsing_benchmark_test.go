@@ -30,7 +30,7 @@ import (
 func BenchmarkClickHouseParseAndTokenize(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
-		trq, _, _, err := parse(tq03)
+		trq, _, _, err := parse(tq03, nil)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -57,7 +57,7 @@ func BenchmarkClickHouseAnalyze(b *testing.B) {
 // BenchmarkClickHouseRenderExtent measures immutable cache-miss template
 // rendering independently from initial parsing and analysis.
 func BenchmarkClickHouseRenderExtent(b *testing.B) {
-	trq, _, _, err := parse(tq03)
+	trq, _, _, err := parse(tq03, nil)
 	if err != nil {
 		b.Fatal(err)
 	}
