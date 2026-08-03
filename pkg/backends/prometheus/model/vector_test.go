@@ -17,6 +17,7 @@
 package model
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -84,4 +85,77 @@ func TestMergeAndWriteVector(t *testing.T) {
 			t.Errorf("expected %d got %d", http.StatusOK, w.Code)
 		}
 	})
+}
+
+func TestMergeAndWriteScalarPrefersFirstNonNaN(t *testing.T) {
+	unmarshaler := func(data []byte, trq *timeseries.TimeRangeQuery) (timeseries.Timeseries, error) {
+		if trq == nil {
+			trq = &timeseries.TimeRangeQuery{}
+		}
+		return UnmarshalTimeseries(data, trq)
+	}
+	decode := func(body string) timeseries.Timeseries {
+		t.Helper()
+		ts, err := unmarshaler([]byte(body), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ts
+	}
+	items := []merge.BatchItem{
+		{Member: 0, Data: decode(`{"status":"success","data":{"resultType":"scalar","result":[100,"NaN"]}}`)},
+		{Member: 1, Data: decode(`{"status":"success","data":{"resultType":"scalar","result":[101,"42"]}}`)},
+		{Member: 2, Data: decode(`{"status":"success","data":{"resultType":"scalar","result":[102,"99"]}}`)},
+	}
+	accum := merge.NewAccumulator()
+	handled, err := MergeAndWriteVectorBatchMergeFunc()(accum, items)
+	if err != nil || !handled {
+		t.Fatalf("scalar batch merge: handled=%v err=%v", handled, err)
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/query", nil)
+	MergeAndWriteVectorRespondFunc(MarshalTimeseriesWriter)(w, r, accum, http.StatusOK)
+	body, err := io.ReadAll(w.Result().Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const expected = `{"status":"success","data":{"resultType":"scalar","result":[101,"42"]}}`
+	if string(body) != expected {
+		t.Fatalf("body: got %s want %s", body, expected)
+	}
+}
+
+func TestMergeAndWriteScalarIgnoresErrorEnvelope(t *testing.T) {
+	decode := func(body string) timeseries.Timeseries {
+		t.Helper()
+		ts, err := UnmarshalTimeseries([]byte(body), &timeseries.TimeRangeQuery{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ts
+	}
+	for _, items := range [][]merge.BatchItem{
+		{
+			{Member: 0, Data: decode(`{"status":"error","errorType":"bad_data","error":"boom"}`)},
+			{Member: 1, Data: decode(`{"status":"success","data":{"resultType":"scalar","result":[101,"42"]}}`)},
+		},
+		{
+			{Member: 0, Data: decode(`{"status":"success","data":{"resultType":"scalar","result":[101,"42"]}}`)},
+			{Member: 1, Data: decode(`{"status":"error","errorType":"bad_data","error":"boom"}`)},
+		},
+	} {
+		accum := merge.NewAccumulator()
+		handled, err := MergeAndWriteVectorBatchMergeFunc()(accum, items)
+		if err != nil || !handled {
+			t.Fatalf("scalar batch merge: handled=%v err=%v", handled, err)
+		}
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/api/v1/query", nil)
+		MergeAndWriteVectorRespondFunc(MarshalTimeseriesWriter)(w, r, accum, http.StatusOK)
+		const want = `{"status":"success","data":{"resultType":"scalar","result":[101,"42"]}}`
+		if got := w.Body.String(); got != want {
+			t.Fatalf("body: got %s want %s", got, want)
+		}
+	}
 }

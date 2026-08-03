@@ -107,7 +107,7 @@ func Start(ctx context.Context, args ...string) error {
 	if si.Listeners != nil {
 		readinessTimeout := 30 * time.Second
 		if conf.MgmtConfig != nil && conf.MgmtConfig.ReloadDrainTimeout > 0 {
-			readinessTimeout = conf.MgmtConfig.ReloadDrainTimeout * 2
+			readinessTimeout = time.Duration(conf.MgmtConfig.ReloadDrainTimeout) * 2
 		}
 		if err := si.Listeners.WaitForReady(readinessTimeout); err != nil {
 			logger.Warn("startup completed but some listeners not ready",
@@ -121,10 +121,7 @@ func Start(ctx context.Context, args ...string) error {
 	mtx.Unlock()
 	signaling.Wait(ctx, hupFunc)
 	if si.Listeners != nil {
-		si.Listeners.DrainAndClose("httpListener", 0)
-		si.Listeners.DrainAndClose("tlsListener", 0)
-		si.Listeners.DrainAndClose("metricsListener", 0)
-		si.Listeners.DrainAndClose("mgmtListener", 0)
+		si.Listeners.Shutdown(0)
 	}
 	return nil
 }
@@ -176,7 +173,6 @@ func Hup(si *instance.ServerInstance, source string, args ...string) (bool, erro
 	oldClients := si.Backends
 	oldCaches := si.Caches
 	oldHealthChecker := si.HealthChecker
-	oldListeners := si.Listeners
 
 	hupFunc := newHupFunc(si, args)
 
@@ -188,7 +184,6 @@ func Hup(si *instance.ServerInstance, source string, args ...string) (bool, erro
 		si.Backends = oldClients
 		si.Caches = oldCaches
 		si.HealthChecker = oldHealthChecker
-		si.Listeners = oldListeners
 		metrics.ReloadFailuresTotal.Inc()
 		metrics.LastReloadSuccessful.Set(0)
 		metrics.ReloadDurationSeconds.Observe(time.Since(startTime).Seconds())
@@ -198,25 +193,12 @@ func Hup(si *instance.ServerInstance, source string, args ...string) (bool, erro
 	if si.Listeners != nil {
 		readinessTimeout := 30 * time.Second
 		if newConf.MgmtConfig != nil && newConf.MgmtConfig.ReloadDrainTimeout > 0 {
-			readinessTimeout = newConf.MgmtConfig.ReloadDrainTimeout * 2
+			readinessTimeout = time.Duration(newConf.MgmtConfig.ReloadDrainTimeout) * 2
 		}
 		if err := si.Listeners.WaitForReady(readinessTimeout); err != nil {
 			logger.Warn("reload completed but some listeners not ready",
 				logging.Pairs{"error": err.Error(), "source": source})
 		}
-	}
-
-	if oldListeners != nil && oldListeners != si.Listeners {
-		drainTimeout := 30 * time.Second
-		if newConf.MgmtConfig != nil && newConf.MgmtConfig.ReloadDrainTimeout > 0 {
-			drainTimeout = newConf.MgmtConfig.ReloadDrainTimeout
-		}
-		safego.Go(reloadGoroutinePanic("oldListeners.Shutdown", source), func() {
-			if err := oldListeners.Shutdown(drainTimeout); err != nil {
-				logger.Warn("error shutting down old listeners",
-					logging.Pairs{"error": err.Error(), "source": source})
-			}
-		})
 	}
 
 	if oldClients != nil {
@@ -226,7 +208,7 @@ func Hup(si *instance.ServerInstance, source string, args ...string) (bool, erro
 		oldClients.CloseIdleConnections()
 		drainTimeout := 30 * time.Second
 		if newConf.MgmtConfig != nil && newConf.MgmtConfig.ReloadDrainTimeout > 0 {
-			drainTimeout = newConf.MgmtConfig.ReloadDrainTimeout
+			drainTimeout = time.Duration(newConf.MgmtConfig.ReloadDrainTimeout)
 		}
 		safego.Go(reloadGoroutinePanic("oldClients.CloseIdleConnections", source), func() {
 			time.Sleep(drainTimeout)

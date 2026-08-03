@@ -81,15 +81,25 @@ Here is the visual representation of this configuration:
 
 ### Time Series Merge
 
-The recommended application for using the **Time Series Merge** mechanism is as a High Availability solution. In this application, Trickster fans the client request out to multiple redundant tsdb endpoints and merges the responses back into a single document for the client. If any of the endpoints are down, or have gaps in their response (due to prior downtime), the Trickster cache along with the data from the healthy endpoints will ensure the client receives the most complete response possible. Instantaneous downtime of any Backend will result in a warning being injected in the client response.
+The **Time Series Merge** mechanism supports both High Availability and federation. Each physical backend represents one logical data shard. Set the backend-level `replica_group` option to the same value on physical backends that are HA replicas of that shard. TSM first coalesces those replicas, using configured pool order to resolve overlapping points and later replicas to fill gaps, and then reduces the distinct logical shards.
 
-Separate from an HA use case, it is possible to use Time Series Merge as a Federation broker that merges responses from different, non-redundant tsdb endpoints; for example, to aggregate metrics from a solution running clusters in multiple regions, with separate, in-region-only tsdb deployments. In this use case, it is recommended to [inject labels](./prometheus.md#injecting-labels) into the responses to protect against data collisions across series. Label injection is demonstrated in the snippet below.
+When a TSM pool member is itself an ALB (for example, a round-robin ALB over
+Prometheus backends), set `replica_group` on that immediate nested ALB. Trickster
+uses the wrapper as the replica-group boundary while delegating TSM planning and
+finalization to its terminal Prometheus provider. Other ALBs and non-TSM
+providers cannot set an explicit replica group.
+
+When `replica_group` is omitted, it defaults to the backend name, so existing configurations continue to treat every backend as a distinct shard. Explicitly set it for HA pools that use non-idempotent aggregations such as `sum`, `count`, or `avg`; otherwise replicas will be counted as separate data.
+
+Replica grouping is backend-global, not ALB-specific. A backend cannot be a replica in one ALB and a disjoint shard in another; define a second backend entry if both views are required. Partially overlapping datasets are not representable: one backend belongs to one logical shard for all TSM queries. Injected labels remain useful output and routing metadata, but they do not establish replica provenance.
+
+If replicas disagree at the same logical point, the first configured member wins deterministically and Trickster records a conflict metric and warning log. A failed replica does not make a response partial when another replica covers its group. If an entire logical group is unavailable, the response is marked partial and includes a warning.
 
 For request paths that are not mergeable by the configured time series provider, TSM does not fan the request out. Those requests are dispatched directly to the first live pool target. The same first-live-target fallback is used when a request cannot be prepared for the merge path.
 
 #### Merge Strategy
 
-By default, TSM deduplicates values when merging series with identical labels — for each timestamp, only one value is kept. This works well for HA configurations where backends hold redundant copies of the same data.
+Within each configured replica group, TSM deduplicates values when merging series with identical labels — for each timestamp, only one replica value is kept. Across different groups it uses the query's merge strategy.
 
 For Federation use cases where backends hold different, non-overlapping data, Trickster **automatically selects a merge strategy per query** by inspecting the outermost PromQL aggregation operator. No configuration is required. This is particularly important for PromQL aggregation queries like `sum()` or `avg()`, which strip labels from results and cause series from different backends to appear identical.
 
@@ -103,20 +113,37 @@ For Federation use cases where backends hold different, non-overlapping data, Tr
 | `group` | Deduplicate per unique label set + timestamp |
 | `avg` | Dual queries (avg→sum and avg→count); weighted arithmetic mean per unique label set + timestamp |
 | `topk`, `bottomk` | Query the inner expression across backends, merge it, then apply final top/bottom-k selection per timestamp and aggregation group |
-| `stddev`, `stdvar`, `quantile`, `limitk`, `limit_ratio` | Deduplicate + inject a warning into the Prometheus response |
+| `stddev`, `stdvar` | Pool shard-local count, mean, and variance states, then finalize the global population variance or standard deviation |
+| `quantile` | Query the inner expression, merge all float samples globally, then calculate the exact quantile per timestamp and aggregation group |
+| `limit_ratio` | Apply Prometheus-compatible label-hash sampling, globally finalizing a supported inner aggregation when necessary |
+| `limitk` | Query the inner expression, merge it globally, then retain the first k samples in stable TSM series order per timestamp and aggregation group |
 | _(none)_ | Deduplicate (default) |
 
 For `avg` queries, Trickster issues two concurrent sub-queries per backend shard — one rewriting the outer `avg` to `sum` and another to `count` — then computes a true weighted arithmetic mean (`sum_total / count_total`) per series per timestamp. This avoids the skew introduced by a naïve avg-of-averages when backends have different data cardinalities.
 
 For `topk` and `bottomk`, Trickster sends the inner expression to each backend, merges those inner results using the inner expression's merge strategy, then applies the final rank-and-trim step per timestamp and aggregation group. This prevents each backend's local `topk`/`bottomk` result from being weighted equally during the merge. If the inner expression is `avg`, Trickster still uses the weighted `sum`/`count` rewrite before applying the final rank. This also applies when the rank aggregation is wrapped in `sort()` or `sort_desc()`.
 
-For non-supportable aggregators (`stddev`, `stdvar`, `quantile`, `limitk`, `limit_ratio`), Trickster falls back to deduplication and injects a `warnings` entry in the Prometheus response body to alert the caller that results may be inaccurate.
+For `stddev` and `stdvar`, Trickster requests the shard-local count, mean, and population variance and pools those states before finalizing the requested global value. Native histograms are excluded from this float-only calculation. Supported already-aggregated inner expressions such as `count`, `min`, `max`, and `group` are merged globally before the outer variance aggregation.
+
+For `quantile`, Trickster sends the inner expression to every backend, globally merges supported inner aggregations, ignores native-histogram samples, and calculates Prometheus's exact sort-and-interpolate value independently for each timestamp and group. Exact quantiles require every relevant float sample, so their fanout responses can be substantially larger than shard-local quantiles and remain subject to the configured response-capture limits. A capture-limit failure is returned rather than silently substituting an approximate result.
+
+For `limit_ratio`, selection uses the same complete-label-set hash threshold as Prometheus. Supported inner aggregations are merged before the ratio is applied; shard-local expressions can be sampled by each backend because the hash decision for a given label set is independent of shard placement.
+
+For `limitk`, Trickster reproduces the current Prometheus evaluator's first-visited algorithm over TSM's stable merged-series order: lexicographic JSON serialization of the complete label set, followed by the series name. Selection is independent for every timestamp and aggregation group, retains complete labels and both float and native-histogram samples, and does not rank candidates by value or label hash.
+
+Prometheus does not define a canonical storage visitation order for `limitk`. A separate Prometheus deployment whose storage returns the same series in a different order may therefore select different labels. Trickster guarantees the requested cardinality, grouping, and repeatability for the same merged input, and fanout completion order does not affect the result. `limitk` remains an experimental PromQL operator, so this compatibility contract may change with Prometheus.
+
+For an unsupported inner expression, Trickster retains the established per-shard fallback and injects a `warnings` entry in the Prometheus response body to alert the caller that results may be inaccurate.
 
 When a non-dedup strategy is in effect and backends have [injected labels](./prometheus.md#injecting-labels) configured, those labels are automatically stripped before merging. This ensures series from different backends hash identically for aggregation, and the injected labels do not appear in the response.
 
 #### Native Histograms
 
 Native histogram samples are preserved through the merge rather than being numerically aggregated. When a timestamp has a histogram on one backend and a float sample on another (or histograms on both), the histogram value is kept as-is — numeric aggregators like `sum` only apply across float samples. This prevents mixed-type series from being corrupted into garbage values when backends return a mix of float and histogram samples at the same timestamp.
+
+#### Max Query Range Limitation
+
+Trickster ALB supports enforcing a `max_query_range` duration on ALB backends. For details on how to configure and use query range limits, see the [Query Range Limits](./query-range-limits.md) documentation.
 
 #### Providers Supporting Time Series Merge
 
@@ -136,6 +163,7 @@ backends:
   # prom01a and prom01b are redundant and poll the same targets
   prom01a:
     provider: prometheus
+    replica_group: prom01
     origin_url: http://prom01a.example.com:9090
     prometheus:
       labels:
@@ -143,13 +171,16 @@ backends:
 
   prom01b:
     provider: prometheus
+    replica_group: prom01
     origin_url: http://prom01b.example.com:9090
       labels:
         region: us-east-1
 
-  # prom-alb-01 scatter/gathers to prom01a and prom01b and merges responses for the caller
+  # prom-alb-01 scatter/gathers to prom01a and prom01b and merges responses for the caller.
+  # Enforces a max 14-day time range limit on all incoming merge requests.
   prom-alb-01:
     provider: alb
+    max_query_range: 14d
     alb:
       mechanism: tsm # time series merge
       pool: 
@@ -172,7 +203,9 @@ backends:
   # prom-alb-all scatter/gathers prom01a/b, prom02 and prom03 and merges their responses
   # for the caller. The merge strategy is automatically selected per-query based on the
   # outer PromQL aggregation operator. Injected labels are automatically stripped before
-  # merging so that series from different backends are combined correctly.
+  # merging so that series from different backends are combined correctly. Because prom01a
+  # and prom01b are in the same replica_group, their values are de-duplicated before being
+  # merged/reduced with prom02 and prom03.
   prom-alb-all:
     provider: alb
     alb:

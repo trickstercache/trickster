@@ -20,9 +20,10 @@ package metrics
 import (
 	"net/http"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 )
 
 const (
@@ -320,6 +321,17 @@ var (
 		},
 	)
 
+	// ProxyQueryRangeRejections is a counter for requests rejected due to exceeding the max_query_range limit
+	ProxyQueryRangeRejections = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "query_range_rejections_total",
+			Help:      "Trickster total number of queries rejected due to exceeding the max_query_range limit.",
+		},
+		[]string{"backend_name"},
+	)
+
 	// ALBFanoutFailures counts per-shard failures during ALB fanout. The
 	// reason label distinguishes silent contribution failures (e.g. bad
 	// encoding, parse errors), explicit panics in the per-shard goroutine,
@@ -352,6 +364,20 @@ var (
 			Help:      "Count of ALB fanout invocations, by mechanism and variant.",
 		},
 		[]string{"mechanism", "variant"},
+	)
+
+	// ALBTSMReplicaEvents counts logical replica-group activity without using
+	// configured group names as labels. "group_attempted" and "group_failed"
+	// describe logical availability; "fallback", "conflict", and "suppressed"
+	// describe replica selection within an available group.
+	ALBTSMReplicaEvents = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: albSubsystem,
+			Name:      "tsm_replica_events_total",
+			Help:      "Count of TSM logical replica-group selection events, by event and variant.",
+		},
+		[]string{"event", "variant"},
 	)
 
 	// ALBFanoutLoserDrain observes how long each losing slot in a
@@ -517,6 +543,7 @@ func init() {
 	prometheus.MustRegister(ProxyConnectionFailed)
 	prometheus.MustRegister(ALBFanoutFailures)
 	prometheus.MustRegister(ALBFanoutAttempts)
+	prometheus.MustRegister(ALBTSMReplicaEvents)
 	prometheus.MustRegister(ALBFanoutLoserDrain)
 	prometheus.MustRegister(ALBPoolRefreshPanicRecovered)
 	prometheus.MustRegister(HealthcheckProbePanicRecovered)
@@ -541,6 +568,7 @@ func init() {
 	prometheus.MustRegister(ReloadSuccessesTotal)
 	prometheus.MustRegister(ReloadFailuresTotal)
 	prometheus.MustRegister(ReloadDurationSeconds)
+	prometheus.MustRegister(ProxyQueryRangeRejections)
 }
 
 // Handler returns the http handler for the listener

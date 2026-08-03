@@ -19,6 +19,7 @@ package alb
 import (
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -47,6 +48,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	tsmerge "github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
@@ -127,13 +130,32 @@ func StopPools(clients backends.Backends) error {
 
 // ValidateClients iterates the backends and validates ALB backends
 func ValidateClients(clients backends.Backends) error {
-	backends := sets.MapKeysToStringSet(clients)
+	backendNames := sets.MapKeysToStringSet(clients)
+	nestedTSMMembers := sets.NewStringSet()
+	for _, client := range clients {
+		if client == nil || client.Configuration() == nil {
+			continue
+		}
+		cfg := client.Configuration()
+		if cfg.Provider == providers.ALB && cfg.ALBOptions != nil &&
+			cfg.ALBOptions.MechanismName == names.MechanismTSM {
+			for _, member := range cfg.ALBOptions.Pool {
+				nestedTSMMembers.Set(member)
+			}
+		}
+	}
 	for _, v := range clients {
 		if v == nil || v.Configuration().Provider != providers.ALB {
 			continue
 		}
+		cfg := v.Configuration()
+		if cfg.ReplicaGroup != "" && cfg.ReplicaGroup != cfg.Name &&
+			!nestedTSMMembers.Contains(cfg.Name) {
+			return fmt.Errorf("replica_group on ALB backend %q is only valid when it is a direct TSM pool member",
+				cfg.Name)
+		}
 		if c, ok := v.(*Client); ok {
-			err := c.Validate(backends)
+			err := c.Validate(backendNames)
 			if err != nil {
 				return err
 			}
@@ -185,6 +207,11 @@ func (c *Client) ValidateAndStartPool(clients backends.Backends, hcs healthcheck
 		if !ok {
 			return alberr.NewErrInvalidPoolMemberName(c.Name(), n)
 		}
+		if o.MechanismName == names.MechanismTSM {
+			if err := validateTSMPoolMemberProvider(n, clients, sets.NewStringSet()); err != nil {
+				return err
+			}
+		}
 		hc, ok := hcs[n]
 		if !ok {
 			// virtual backends (rule, alb) have no health checks; treat as passing
@@ -232,6 +259,146 @@ func (c *Client) ValidateAndStartPool(clients backends.Backends, hcs healthcheck
 		metrics.ALBPoolAdmitsFailing.WithLabelValues(c.Name()).Set(0)
 	}
 	return nil
+}
+
+// validateTSMPoolMemberProvider resolves virtual ALB members to their terminal
+// pool leaves. A nested ALB is compatible with TSM when every leaf produces a
+// supported time-series format; checking only the immediate provider would
+// incorrectly reject topologies such as TSM -> round-robin ALB -> Prometheus.
+func validateTSMPoolMemberProvider(name string, clients backends.Backends,
+	visited sets.Set[string],
+) error {
+	if visited.Contains(name) {
+		return fmt.Errorf("%w: cycle encountered at backend %q",
+			alberr.ErrInvalidTimeSeriesMergeProvider, name)
+	}
+	client, ok := clients[name]
+	if !ok || client == nil || client.Configuration() == nil {
+		return alberr.NewErrInvalidPoolMemberName("", name)
+	}
+	cfg := client.Configuration()
+	if providers.IsSupportedTimeSeriesMergeProvider(cfg.Provider) {
+		return nil
+	}
+	if cfg.Provider != providers.ALB || cfg.ALBOptions == nil ||
+		len(cfg.ALBOptions.Pool) == 0 {
+		return fmt.Errorf("%w: backend %q uses provider %q",
+			alberr.ErrInvalidTimeSeriesMergeProvider, name, cfg.Provider)
+	}
+	nextVisited := visited.Clone()
+	nextVisited.Set(name)
+	for _, child := range cfg.ALBOptions.Pool {
+		if err := validateTSMPoolMemberProvider(child, clients, nextVisited); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// PlanTSMMerge delegates planning through a virtual ALB wrapper to its
+// configured-first terminal TSM provider. This lets an outer TSM use nested
+// mechanisms such as round-robin without losing provider-specific PromQL
+// planning.
+func (c *Client) PlanTSMMerge(r *http.Request, query string) (*tsmerge.TSMMergePlan, error) {
+	backend, err := c.terminalTSMBackend(sets.NewStringSet())
+	if err != nil {
+		return nil, err
+	}
+	planner, ok := backend.(backends.TSMMergeProvider)
+	if !ok {
+		return nil, fmt.Errorf("%w: backend %q does not provide a merge planner",
+			alberr.ErrInvalidTimeSeriesMergeProvider, backend.Name())
+	}
+	return planner.PlanTSMMerge(r, query)
+}
+
+// FinalizeTSMMerge delegates provider-specific finalization through nested ALB
+// wrappers. The selected terminal backend is the same one used for planning.
+func (c *Client) FinalizeTSMMerge(query string, ts timeseries.Timeseries) {
+	backend, err := c.terminalTSMBackend(sets.NewStringSet())
+	if err != nil {
+		return
+	}
+	if finalizer, ok := backend.(interface {
+		FinalizeTSMMerge(string, timeseries.Timeseries)
+	}); ok {
+		finalizer.FinalizeTSMMerge(query, ts)
+	}
+}
+
+// TSMInjectedLabelKeys returns the union of labels injected by every terminal
+// time-series backend beneath this ALB wrapper.
+func (c *Client) TSMInjectedLabelKeys() []string {
+	seen := make(map[string]struct{})
+	c.collectTSMInjectedLabelKeys(sets.NewStringSet(), seen)
+	keys := sets.MapKeysToStringSet(seen).Keys()
+	slices.Sort(keys)
+	return keys
+}
+
+func (c *Client) collectTSMInjectedLabelKeys(visited sets.Set[string],
+	seen map[string]struct{},
+) {
+	if c == nil || c.Configuration() == nil || visited.Contains(c.Name()) {
+		return
+	}
+	nextVisited := visited.Clone()
+	nextVisited.Set(c.Name())
+	pm, ok := c.handler.(types.PoolMechanism)
+	if !ok || pm.Pool() == nil {
+		return
+	}
+	for _, target := range pm.Pool().ConfiguredTargets() {
+		if target == nil || target.Backend() == nil {
+			continue
+		}
+		backend := target.Backend()
+		if nested, ok := backend.(*Client); ok {
+			nested.collectTSMInjectedLabelKeys(nextVisited, seen)
+			continue
+		}
+		cfg := backend.Configuration()
+		if cfg == nil || cfg.Prometheus == nil {
+			continue
+		}
+		for key := range cfg.Prometheus.Labels {
+			seen[key] = struct{}{}
+		}
+	}
+}
+
+func (c *Client) terminalTSMBackend(visited sets.Set[string]) (backends.Backend, error) {
+	if c == nil || c.Configuration() == nil {
+		return nil, fmt.Errorf("%w: nested ALB is not configured",
+			alberr.ErrInvalidTimeSeriesMergeProvider)
+	}
+	name := c.Name()
+	if visited.Contains(name) {
+		return nil, fmt.Errorf("%w: cycle encountered at backend %q",
+			alberr.ErrInvalidTimeSeriesMergeProvider, name)
+	}
+	nextVisited := visited.Clone()
+	nextVisited.Set(name)
+
+	pm, ok := c.handler.(types.PoolMechanism)
+	if !ok || pm.Pool() == nil {
+		return nil, fmt.Errorf("%w: nested ALB %q has no available pool",
+			alberr.ErrInvalidTimeSeriesMergeProvider, name)
+	}
+	for _, target := range pm.Pool().ConfiguredTargets() {
+		if target == nil || target.Backend() == nil {
+			continue
+		}
+		backend := target.Backend()
+		if nested, ok := backend.(*Client); ok {
+			return nested.terminalTSMBackend(nextVisited)
+		}
+		if _, ok := backend.(backends.TSMMergeProvider); ok {
+			return backend, nil
+		}
+	}
+	return nil, fmt.Errorf("%w: nested ALB %q has no terminal merge provider",
+		alberr.ErrInvalidTimeSeriesMergeProvider, name)
 }
 
 func observeOnlyOpts() *authopt.Options {

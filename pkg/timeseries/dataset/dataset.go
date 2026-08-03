@@ -31,8 +31,10 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
 	"github.com/trickstercache/trickster/v2/pkg/util/numbers"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
+
 	"golang.org/x/sync/errgroup"
 )
 
@@ -40,6 +42,10 @@ import (
 // accelerate most of its supported TSDB backends
 // DataSet conforms to the Timeseries interface
 type DataSet struct {
+	// SourceResultType preserves the provider's response result type for the
+	// lifetime of an in-flight request. It is intentionally excluded from the
+	// provider-neutral cache representation.
+	SourceResultType string `msg:"-"`
 	// Status is the optional status indicator for the DataSet
 	Status string `msg:"status"`
 	// ExtentList is the list of Extents (time ranges) represented in the Results
@@ -68,6 +74,8 @@ type DataSet struct {
 	SizeCropper func(int, time.Time, timeseries.Extent) `msg:"-"`
 	// RangeCropper is the DataSet's CropToRange function, which defaults to DefaultRangeCropper
 	RangeCropper func(timeseries.Extent) `msg:"-"`
+	// ValueOperations provides wire-format-specific value reduction when present.
+	ValueOperations ValueMergeOperations `msg:"-"`
 }
 
 type DataSets []*DataSet
@@ -94,12 +102,14 @@ func (ds *DataSet) CroppedClone(e timeseries.Extent) timeseries.Timeseries {
 	}
 
 	clone := &DataSet{
-		Error:        ds.Error,
-		Sorter:       ds.Sorter,
-		Merger:       ds.Merger,
-		SizeCropper:  ds.SizeCropper,
-		RangeCropper: ds.RangeCropper,
-		Results:      make([]*Result, len(ds.Results)),
+		SourceResultType: ds.SourceResultType,
+		Error:            ds.Error,
+		Sorter:           ds.Sorter,
+		Merger:           ds.Merger,
+		SizeCropper:      ds.SizeCropper,
+		RangeCropper:     ds.RangeCropper,
+		ValueOperations:  ds.ValueOperations,
+		Results:          make([]*Result, len(ds.Results)),
 	}
 	ds.UpdateLock.Lock()
 	defer ds.UpdateLock.Unlock()
@@ -184,12 +194,14 @@ func (ds *DataSet) Clone() timeseries.Timeseries {
 	ds.UpdateLock.Lock()
 	defer ds.UpdateLock.Unlock()
 	clone := &DataSet{
-		Error:        ds.Error,
-		Sorter:       ds.Sorter,
-		Merger:       ds.Merger,
-		SizeCropper:  ds.SizeCropper,
-		RangeCropper: ds.RangeCropper,
-		Results:      make([]*Result, len(ds.Results)),
+		SourceResultType: ds.SourceResultType,
+		Error:            ds.Error,
+		Sorter:           ds.Sorter,
+		Merger:           ds.Merger,
+		SizeCropper:      ds.SizeCropper,
+		RangeCropper:     ds.RangeCropper,
+		ValueOperations:  ds.ValueOperations,
+		Results:          make([]*Result, len(ds.Results)),
 	}
 	if ds.TimeRangeQuery != nil {
 		clone.TimeRangeQuery = ds.TimeRangeQuery.Clone()
@@ -230,61 +242,8 @@ func (ds *DataSet) Merge(sortPoints bool, collection ...timeseries.Timeseries) {
 func (ds *DataSet) DefaultMerger(sortPoints bool, collection ...timeseries.Timeseries) {
 	ds.UpdateLock.Lock()
 	defer ds.UpdateLock.Unlock()
-
-	rl := make(ResultsLookup)
-	for _, r := range ds.Results {
-		if r == nil {
-			continue
-		}
-		rl[r.StatementID] = r
-	}
-	dl := make(DataSets, 0, 32)
-	k := len(ds.Results)
-	rlen := k
-	for _, ts := range collection {
-		if ts == nil {
-			continue
-		}
-		ds2, ok := ts.(*DataSet)
-		if !ok || ds2 == nil {
-			continue
-		}
-		dl = append(dl, ds2)
-		rlen += len(ds2.Results)
-	}
-	rs := make(Results, rlen)
-	copy(rs, ds.Results)
-	for _, ds2 := range dl {
-		ds.ExtentList = ds.ExtentList.Merge(ds2.ExtentList, ds.Step())
-		// Preserve per-shard Warnings: operators expect to see every warning
-		// emitted by any backend (e.g. Prometheus partial-result warnings).
-		if len(ds2.Warnings) > 0 {
-			ds.Warnings = append(ds.Warnings, ds2.Warnings...)
-		}
-		// Status priority mirrors prometheus model.Envelope.Merge: success wins
-		// over error (error text is already surfaced via Warnings on upgrade).
-		if ds.Status == "" || (ds.Status != "success" && ds2.Status == "success") {
-			ds.Status = ds2.Status
-		}
-		for _, r2 := range ds2.Results {
-			if r2 == nil || len(r2.SeriesList) == 0 {
-				continue
-			}
-			r1, ok := rl[r2.StatementID]
-			if !ok {
-				rl[r2.StatementID] = r2
-				rs[k] = r2
-				k++
-				continue
-			}
-			if len(r1.SeriesList) == 0 {
-				r1.SeriesList = r2.SeriesList.Clone()
-				continue
-			}
-			r1.SeriesList = r1.SeriesList.Merge(r2.SeriesList, sortPoints)
-		}
-	}
-	ds.Results = rs[:k]
+	ds.inheritValueOperations(collection)
+	ds.mergeDataSets(collection, MergeOpts{SortPoints: sortPoints}, true)
 }
 
 // MergeWithStrategy merges the provided Timeseries list into the base DataSet
@@ -292,7 +251,7 @@ func (ds *DataSet) DefaultMerger(sortPoints bool, collection ...timeseries.Times
 func (ds *DataSet) MergeWithStrategy(sortPoints bool, strategy int, collection ...timeseries.Timeseries) {
 	ds.MergeWithOpts(MergeOpts{
 		SortPoints: sortPoints,
-		Strategy:   MergeStrategy(strategy),
+		Strategy:   merge.Strategy(strategy),
 	}, collection...)
 }
 
@@ -304,7 +263,7 @@ func (ds *DataSet) MergeWithStrategyTolerant(sortPoints bool, strategy int, tole
 ) {
 	ds.MergeWithOpts(MergeOpts{
 		SortPoints:     sortPoints,
-		Strategy:       MergeStrategy(strategy),
+		Strategy:       merge.Strategy(strategy),
 		ToleranceNanos: toleranceNanos,
 	}, collection...)
 }
@@ -312,13 +271,66 @@ func (ds *DataSet) MergeWithStrategyTolerant(sortPoints bool, strategy int, tole
 // MergeWithOpts merges the provided Timeseries list into the base DataSet
 // honoring every field of opts (including ToleranceNanos for sub-step dedup).
 func (ds *DataSet) MergeWithOpts(opts MergeOpts, collection ...timeseries.Timeseries) {
-	if opts.Strategy == MergeStrategyDedup && opts.ToleranceNanos == 0 {
+	if opts.Strategy == merge.StrategyDedup && opts.ToleranceNanos == 0 {
 		ds.Merge(opts.SortPoints, collection...)
 		return
 	}
 	ds.UpdateLock.Lock()
 	defer ds.UpdateLock.Unlock()
+	ds.inheritValueOperations(collection)
+	if opts.ValueOperations == nil {
+		opts.ValueOperations = ds.ValueOperations
+	}
+	ds.mergeDataSets(collection, opts, false)
+}
 
+func (ds *DataSet) inheritValueOperations(collection []timeseries.Timeseries) {
+	if ds.ValueOperations != nil {
+		return
+	}
+	for _, ts := range collection {
+		if candidate, ok := ts.(*DataSet); ok && candidate != nil &&
+			candidate.ValueOperations != nil {
+			ds.ValueOperations = candidate.ValueOperations
+			return
+		}
+	}
+}
+
+// FinalizeValueMerge applies provider-specific cross-series merge semantics
+// after all members for a strategy have been accumulated.
+func (ds *DataSet) FinalizeValueMerge(strategy int) {
+	if ds == nil || ds.ValueOperations == nil {
+		return
+	}
+	ds.UpdateLock.Lock()
+	defer ds.UpdateLock.Unlock()
+	ds.ValueOperations.FinalizeMerge(ds, merge.Strategy(strategy))
+}
+
+// PairingHash returns the provider-aware identity used to align related
+// reduction variants, falling back to the historical series-header hash.
+func (ds *DataSet) PairingHash(header *SeriesHeader, queryStatement string) Hash {
+	if ds != nil && ds.ValueOperations != nil {
+		return ds.ValueOperations.PairingHash(header, queryStatement)
+	}
+	if queryStatement == "" {
+		return header.CalculateHash()
+	}
+	return header.CalculateHashWithQueryStatement(queryStatement)
+}
+
+type resultMergeGroup struct {
+	result *Result
+	lists  []SeriesList
+}
+
+// mergeDataSets merges all member datasets in one pass. The caller must hold
+// ds.UpdateLock. mergeEnvelope preserves DefaultMerger's warning and status
+// handling; strategy merges retain their existing data-only behavior.
+func (ds *DataSet) mergeDataSets(collection []timeseries.Timeseries, opts MergeOpts,
+	mergeEnvelope bool,
+) {
 	rl := make(ResultsLookup)
 	for _, r := range ds.Results {
 		if r == nil {
@@ -342,8 +354,22 @@ func (ds *DataSet) MergeWithOpts(opts MergeOpts, collection ...timeseries.Timese
 	}
 	rs := make(Results, rlen)
 	copy(rs, ds.Results)
+	groups := make([]resultMergeGroup, 0)
+	groupIndex := make(map[*Result]int)
 	for _, ds2 := range dl {
 		ds.ExtentList = ds.ExtentList.Merge(ds2.ExtentList, ds.Step())
+		if mergeEnvelope {
+			// Preserve per-shard Warnings: operators expect to see every warning
+			// emitted by any backend (e.g. Prometheus partial-result warnings).
+			if len(ds2.Warnings) > 0 {
+				ds.Warnings = append(ds.Warnings, ds2.Warnings...)
+			}
+			// Status priority mirrors prometheus model.Envelope.Merge: success wins
+			// over error (error text is already surfaced via Warnings on upgrade).
+			if ds.Status == "" || (ds.Status != "success" && ds2.Status == "success") {
+				ds.Status = ds2.Status
+			}
+		}
 		for _, r2 := range ds2.Results {
 			if r2 == nil || len(r2.SeriesList) == 0 {
 				continue
@@ -355,12 +381,17 @@ func (ds *DataSet) MergeWithOpts(opts MergeOpts, collection ...timeseries.Timese
 				k++
 				continue
 			}
-			if len(r1.SeriesList) == 0 {
-				r1.SeriesList = r2.SeriesList.Clone()
-				continue
+			gi, ok := groupIndex[r1]
+			if !ok {
+				gi = len(groups)
+				groupIndex[r1] = gi
+				groups = append(groups, resultMergeGroup{result: r1})
 			}
-			r1.SeriesList = r1.SeriesList.MergeWithOpts(r2.SeriesList, opts)
+			groups[gi].lists = append(groups[gi].lists, r2.SeriesList)
 		}
+	}
+	for _, group := range groups {
+		group.result.SeriesList = group.result.SeriesList.mergeCollection(group.lists, opts)
 	}
 	ds.Results = rs[:k]
 }
@@ -385,10 +416,7 @@ func (ds *DataSet) FinalizeWeightedAvg(countDS *DataSet, pairingQueryStatement s
 		return
 	}
 	pairingHash := func(sh *SeriesHeader) Hash {
-		if pairingQueryStatement == "" {
-			return sh.CalculateHash()
-		}
-		return sh.CalculateHashWithQueryStatement(pairingQueryStatement)
+		return ds.PairingHash(sh, pairingQueryStatement)
 	}
 	// Build lookup: statementID → seriesHash → epoch → count value
 	type epochCounts = map[epoch.Epoch]float64
@@ -444,11 +472,21 @@ func (ds *DataSet) FinalizeWeightedAvg(countDS *DataSet, pairingQueryStatement s
 					dropped++
 					continue
 				}
+				if ds.ValueOperations != nil {
+					if value, handled := ds.ValueOperations.DivideValue(
+						s.Points[i].Values[0], cnt,
+					); handled {
+						setPointValue(&s.Points[i], 0, value)
+						kept = append(kept, s.Points[i])
+						continue
+					}
+				}
 				sum := parseFloat(s.Points[i].Values[0])
 				s.Points[i].Values[0] = strconv.FormatFloat(sum/cnt, 'f', -1, 64)
 				kept = append(kept, s.Points[i])
 			}
 			s.Points = kept
+			s.PointSize = kept.Size()
 			if dropped > 0 {
 				ds.Warnings = append(ds.Warnings,
 					"trickster: weighted-avg series "+s.Header.Name+

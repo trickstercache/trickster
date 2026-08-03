@@ -26,9 +26,11 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/stretchr/testify/require"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+
+	"github.com/stretchr/testify/require"
 )
 
 // Register on an existing name fires `go t2.Stop()` then immediately starts
@@ -97,7 +99,7 @@ func TestHealthcheckReregisterNoOverlap(t *testing.T) {
 				Scheme:        "http",
 				Host:          "healthcheck-reregister.invalid",
 				Path:          "/",
-				Interval:      interval,
+				Interval:      timeconv.Duration(interval),
 				ExpectedCodes: []int{http.StatusOK},
 			}
 		}

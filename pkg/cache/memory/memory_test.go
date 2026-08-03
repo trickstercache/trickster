@@ -30,8 +30,9 @@ import (
 )
 
 const (
-	provider = "memory"
-	cacheKey = "cacheKey"
+	provider          = "memory"
+	cacheKey          = "cacheKey"
+	benchmarkKeyCount = 10
 )
 
 type testReferenceObject struct{}
@@ -40,22 +41,20 @@ func (r *testReferenceObject) Size() int {
 	return 1
 }
 
-func storeBenchmark(b *testing.B) *Cache {
+func setupBenchmark(b *testing.B) *Cache {
+	b.Helper()
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	cacheConfig := co.Options{Provider: provider, Index: &io.Options{ReapInterval: 0}}
 	mc := New(b.Name(), &cacheConfig)
 
-	err := mc.Connect()
-	if err != nil {
-		b.Error(err)
+	if err := mc.Connect(); err != nil {
+		b.Fatal(err)
 	}
-	// Note: don't close the cache here, callers use the cache after this for testing purposes
-	for n := 0; n < b.N; n++ {
-		err = mc.Store(cacheKey+strconv.Itoa(n), []byte("data"+strconv.Itoa(n)), time.Duration(60)*time.Second)
-		if err != nil {
+	b.Cleanup(func() {
+		if err := mc.Close(); err != nil {
 			b.Error(err)
 		}
-	}
+	})
 	return mc
 }
 
@@ -135,7 +134,15 @@ func TestCache_Store(t *testing.T) {
 }
 
 func BenchmarkCache_Store(b *testing.B) {
-	storeBenchmark(b)
+	mc := setupBenchmark(b)
+	n := 0
+	for b.Loop() {
+		suffix := strconv.Itoa(n)
+		if err := mc.Store(cacheKey+suffix, []byte("data"+suffix), time.Minute); err != nil {
+			b.Fatal(err)
+		}
+		n++
+	}
 }
 
 func TestCache_Retrieve(t *testing.T) {
@@ -172,19 +179,21 @@ func TestCache_Retrieve(t *testing.T) {
 }
 
 func BenchmarkCache_Retrieve(b *testing.B) {
-	mc := storeBenchmark(b)
+	mc := setupBenchmark(b)
+	if err := mc.Store(cacheKey, []byte("data"), time.Minute); err != nil {
+		b.Fatal(err)
+	}
 
-	for n := 0; n < b.N; n++ {
-		var data []byte
-		data, ls, err := mc.Retrieve(cacheKey + strconv.Itoa(n))
+	for b.Loop() {
+		data, ls, err := mc.Retrieve(cacheKey)
 		if err != nil {
-			b.Error(err)
+			b.Fatal(err)
 		}
-		if string(data) != "data"+strconv.Itoa(n) {
-			b.Errorf("wanted \"%s\". got \"%s\"", "data"+strconv.Itoa(n), data)
+		if string(data) != "data" {
+			b.Fatalf("wanted %q, got %q", "data", data)
 		}
 		if ls != status.LookupStatusHit {
-			b.Errorf("expected %s got %s", status.LookupStatusHit, ls)
+			b.Fatalf("expected %s, got %s", status.LookupStatusHit, ls)
 		}
 	}
 }
@@ -238,39 +247,15 @@ func TestCache_Remove(t *testing.T) {
 }
 
 func BenchmarkCache_Remove(b *testing.B) {
-	mc := storeBenchmark(b)
-
-	for n := 0; n < b.N; n++ {
-		var data []byte
-		data, ls, err := mc.Retrieve(cacheKey + strconv.Itoa(n))
-		if err != nil {
-			b.Error(err)
+	mc := setupBenchmark(b)
+	for b.Loop() {
+		b.StopTimer()
+		if err := mc.Store(cacheKey, []byte("data"), time.Minute); err != nil {
+			b.Fatal(err)
 		}
-		if string(data) != "data"+strconv.Itoa(n) {
-			b.Errorf("wanted \"%s\". got \"%s\"", "data"+strconv.Itoa(n), data)
-		}
-		if ls != status.LookupStatusHit {
-			b.Errorf("expected %s got %s", status.LookupStatusHit, ls)
-		}
-
-		mc.Remove(cacheKey + strconv.Itoa(n))
-
-		// this should now return error
-		data, ls, err = mc.Retrieve(cacheKey + strconv.Itoa(n))
-		expectederr := `key not found in cache` // cache.ErrKNF
-		if err == nil {
-			b.Errorf("expected error for %s", expectederr)
-			mc.Close()
-		}
-		if err.Error() != expectederr {
-			b.Errorf("expected error '%s' got '%s'", expectederr, err.Error())
-		}
-		if ls != status.LookupStatusKeyMiss {
-			b.Errorf("expected %s got %s", status.LookupStatusKeyMiss, ls)
-		}
-
-		if string(data) != "" {
-			b.Errorf("wanted \"%s\". got \"%s\".", "data", data)
+		b.StartTimer()
+		if err := mc.Remove(cacheKey); err != nil {
+			b.Fatal(err)
 		}
 	}
 }
@@ -317,23 +302,26 @@ func TestCache_BulkRemove(t *testing.T) {
 }
 
 func BenchmarkCache_BulkRemove(b *testing.B) {
-	var keyArray []string
-	for n := 0; n < b.N; n++ {
-		keyArray = append(keyArray, cacheKey+strconv.Itoa(n))
+	mc := setupBenchmark(b)
+	keys := make([]string, benchmarkKeyCount)
+	values := make([][]byte, benchmarkKeyCount)
+	for n := range benchmarkKeyCount {
+		suffix := strconv.Itoa(n)
+		keys[n] = cacheKey + suffix
+		values[n] = []byte("data" + suffix)
 	}
 
-	mc := storeBenchmark(b)
-
-	mc.Remove(keyArray...)
-
-	// it should be a cache miss
-	for n := 0; n < b.N; n++ {
-		_, ls, err := mc.Retrieve(cacheKey + strconv.Itoa(n))
-		if err == nil {
-			b.Errorf("expected key not found error for %s", cacheKey)
+	for b.Loop() {
+		b.StopTimer()
+		for n, key := range keys {
+			if err := mc.Store(key, values[n], time.Minute); err != nil {
+				b.Fatal(err)
+			}
 		}
-		if ls != status.LookupStatusKeyMiss {
-			b.Errorf("expected %s got %s", status.LookupStatusKeyMiss, ls)
+		b.StartTimer()
+		if err := mc.Remove(keys...); err != nil {
+			b.Fatal(err)
 		}
 	}
+	b.ReportMetric(benchmarkKeyCount, "keys/op")
 }

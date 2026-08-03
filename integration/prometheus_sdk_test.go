@@ -73,9 +73,9 @@ func TestPrometheusSDK(t *testing.T) {
 		labels, warnings, err := sdk.LabelNames(ctx, nil, time.Now().Add(-5*time.Minute), time.Now())
 		require.NoError(t, err)
 		t.Logf("warnings: %v", warnings)
-		require.Contains(t, labels, "__name__")
-		require.Contains(t, labels, "job")
-		require.Contains(t, labels, "instance")
+		require.Contains(t, labels, model.LabelName("__name__"))
+		require.Contains(t, labels, model.LabelName("job"))
+		require.Contains(t, labels, model.LabelName("instance"))
 	})
 
 	t.Run("label_values", func(t *testing.T) {
@@ -116,7 +116,7 @@ func TestPrometheusSDK(t *testing.T) {
 	})
 
 	t.Run("rules", func(t *testing.T) {
-		rules, err := sdk.Rules(ctx)
+		rules, err := sdk.Rules(ctx, nil)
 		require.NoError(t, err)
 		t.Logf("rule groups: %d", len(rules.Groups))
 	})

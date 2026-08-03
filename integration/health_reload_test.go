@@ -73,12 +73,13 @@ func TestHealthPageAfterReload(t *testing.T) {
 	)
 
 	yaml := fmt.Sprintf(`
-frontend:
-  listen_port: %d
-metrics:
-  listen_port: %d
-mgmt:
-  listen_port: %d
+listeners:
+  default:
+    port: %d
+  metrics:
+    port: %d
+  mgmt:
+    port: %d
 logging:
   log_level: error
 caches:
@@ -122,12 +123,13 @@ backends:
 	// Trigger reload via the mgmt port. Rewrite the config file first so
 	// the daemon detects a non-stale change (logging level toggle is enough).
 	yaml2 := fmt.Sprintf(`
-frontend:
-  listen_port: %d
-metrics:
-  listen_port: %d
-mgmt:
-  listen_port: %d
+listeners:
+  default:
+    port: %d
+  metrics:
+    port: %d
+  mgmt:
+    port: %d
 logging:
   log_level: warn
 caches:

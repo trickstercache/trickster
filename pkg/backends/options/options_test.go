@@ -23,19 +23,22 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	ro "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/negative"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	tro "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
+	corso "github.com/trickstercache/trickster/v2/pkg/proxy/cors/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
+
+	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
 )
 
@@ -72,6 +75,50 @@ func TestNew(t *testing.T) {
 	}
 }
 
+func TestCORSOptionsYAML(t *testing.T) {
+	o, err := fromYAML(`
+backends:
+  test:
+    provider: reverseproxycache
+    origin_url: http://example.com
+    cors:
+      mode: merge
+      headers:
+        Access-Control-Allow-Origin: https://trickster.example.com
+    paths:
+      - path: /private
+        cors:
+          mode: disable
+`, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := o.Initialize("test"); err != nil {
+		t.Fatal(err)
+	}
+	if o.CORS == nil || o.CORS.Mode != corso.ModeMerge {
+		t.Fatalf("backend CORS mode = %v, want %q", o.CORS, corso.ModeMerge)
+	}
+	if got := o.CORS.Headers[headers.NameAllowOrigin]; got != "https://trickster.example.com" {
+		t.Fatalf("backend allow origin = %q", got)
+	}
+	if len(o.Paths) != 1 || o.Paths[0].CORS == nil || o.Paths[0].CORS.Mode != corso.ModeDisable {
+		t.Fatalf("path CORS = %v, want disable policy", o.Paths)
+	}
+	if o.Paths[0].CORS.Headers != nil {
+		t.Fatalf("disabled path CORS headers = %v, want nil", o.Paths[0].CORS.Headers)
+	}
+	if ok, err := o.Validate(); !ok || err != nil {
+		t.Fatalf("Validate() = %v, %v", ok, err)
+	}
+
+	clone := o.Clone()
+	clone.CORS.Headers[headers.NameAllowOrigin] = "https://other.example.com"
+	if o.CORS.Headers[headers.NameAllowOrigin] != "https://trickster.example.com" {
+		t.Fatal("clone mutated backend CORS headers")
+	}
+}
+
 func TestClone(t *testing.T) {
 	p := po.New()
 	o := New()
@@ -83,9 +130,63 @@ func TestClone(t *testing.T) {
 	o.HealthCheck = &ho.Options{}
 	o.FastForwardPath = p
 	o.RuleOptions = &ro.Options{}
+	o.ReplicaGroup = "replicas-a"
 	o2 := o.Clone()
 	if o2.CacheName != "test" {
 		t.Error("clone failed")
+	}
+	if o2.ReplicaGroup != o.ReplicaGroup {
+		t.Errorf("clone replica group = %q, want %q", o2.ReplicaGroup, o.ReplicaGroup)
+	}
+}
+
+func TestReplicaGroupYAMLCloneAndInitialization(t *testing.T) {
+	o, err := fromYAML(`
+backends:
+  prom-a:
+    provider: prometheus
+    origin_url: http://example.com
+    replica_group: "  shard-a  "
+`, "prom-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := o.Initialize("prom-a"); err != nil {
+		t.Fatal(err)
+	}
+	if o.ReplicaGroup != "shard-a" {
+		t.Fatalf("replica group = %q, want shard-a", o.ReplicaGroup)
+	}
+	if clone := o.CloneYAMLSafe(); clone.ReplicaGroup != "shard-a" {
+		t.Fatalf("YAML-safe clone replica group = %q", clone.ReplicaGroup)
+	}
+	if out := o.ToYAML(); !strings.Contains(out, "replica_group: shard-a") {
+		t.Fatalf("round-trip YAML missing replica_group:\n%s", out)
+	}
+
+	unset := New()
+	if err := unset.Initialize("prom-b"); err != nil {
+		t.Fatal(err)
+	}
+	if unset.ReplicaGroup != "prom-b" {
+		t.Fatalf("default replica group = %q, want prom-b", unset.ReplicaGroup)
+	}
+	if out := unset.ToYAML(); strings.Contains(out, "replica_group:") {
+		t.Fatalf("implicit replica group should not be exported:\n%s", out)
+	}
+
+	nested := New()
+	nested.Provider = providers.ALB
+	nested.ReplicaGroup = "shard-a"
+	if err := nested.Initialize("nested-a"); err != nil {
+		t.Fatalf("nested ALB replica group rejected: %v", err)
+	}
+
+	unsupported := New()
+	unsupported.Provider = providers.ReverseProxyShort
+	unsupported.ReplicaGroup = "shard-a"
+	if err := unsupported.Initialize("proxy-a"); err == nil {
+		t.Fatal("expected replica group on reverse proxy backend to be rejected")
 	}
 }
 
@@ -175,9 +276,9 @@ func testStringValueValidationError(to *testOptions, location *string, testValue
 }
 
 type durationSwapper struct {
-	location   *time.Duration
-	restoreVal time.Duration
-	testValue  time.Duration
+	location   *timeconv.Duration
+	restoreVal timeconv.Duration
+	testValue  timeconv.Duration
 }
 
 func testDurationValueValidationError(to *testOptions, sws []durationSwapper) error {
@@ -289,7 +390,7 @@ func TestValidate(t *testing.T) {
 			sw: []durationSwapper{
 				{
 					location:  &o.ShardStep,
-					testValue: 1,
+					testValue: timeconv.Duration(1),
 				},
 			},
 			expected: nil,
@@ -299,11 +400,11 @@ func TestValidate(t *testing.T) {
 			sw: []durationSwapper{
 				{
 					location:  &o.MaxShardSizeTime,
-					testValue: 10,
+					testValue: timeconv.Duration(10),
 				},
 				{
 					location:  &o.ShardStep,
-					testValue: 32,
+					testValue: timeconv.Duration(32),
 				},
 			},
 			expected: ErrInvalidMaxShardSizeTime,
@@ -333,7 +434,7 @@ func TestValidate(t *testing.T) {
 
 	t.Run("maxShard edge cases", func(t *testing.T) {
 		opts := *o
-		opts.MaxShardSizeTime = 1 * time.Millisecond
+		opts.MaxShardSizeTime = timeconv.Duration(1 * time.Millisecond)
 		opts.MaxShardSizePoints = 1
 		to := &testOptions{Backends: Lookup{o.Name: &opts}}
 		require.ErrorIs(t, Lookup(to.Backends).Validate(), ErrInvalidMaxShardSize)
@@ -349,6 +450,12 @@ func TestInitialize(t *testing.T) {
 	err = o.Initialize("test")
 	if err != nil {
 		t.Error(err)
+	}
+
+	oInvalid := *o
+	oInvalid.MaxQueryRange = timeconv.Duration(-1 * time.Hour)
+	if err := oInvalid.Initialize("test_invalid"); err == nil {
+		t.Error("expected error for negative max_query_range, got nil")
 	}
 
 	o2, err := fromTestYAMLWithDefault()

@@ -19,6 +19,8 @@ package promql
 import (
 	"slices"
 	"testing"
+
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/aggregation"
 )
 
 func TestParseRankAggregation(t *testing.T) {
@@ -26,7 +28,7 @@ func TestParseRankAggregation(t *testing.T) {
 		name        string
 		query       string
 		wantFound   bool
-		wantOp      string
+		wantOp      aggregation.Operator
 		wantK       int
 		wantInner   string
 		wantLabels  []string
@@ -38,7 +40,7 @@ func TestParseRankAggregation(t *testing.T) {
 			name:      "topk direct",
 			query:     "topk(5, up)",
 			wantFound: true,
-			wantOp:    "topk",
+			wantOp:    aggregation.TopK,
 			wantK:     5,
 			wantInner: "up",
 		},
@@ -46,7 +48,7 @@ func TestParseRankAggregation(t *testing.T) {
 			name:      "bottomk direct",
 			query:     "bottomk(2, rate(http_requests_total[5m]))",
 			wantFound: true,
-			wantOp:    "bottomk",
+			wantOp:    aggregation.BottomK,
 			wantK:     2,
 			wantInner: "rate(http_requests_total[5m])",
 		},
@@ -54,7 +56,7 @@ func TestParseRankAggregation(t *testing.T) {
 			name:       "topk with pre by grouping",
 			query:      "topk by (job, region) (3, up)",
 			wantFound:  true,
-			wantOp:     "topk",
+			wantOp:     aggregation.TopK,
 			wantK:      3,
 			wantInner:  "up",
 			wantLabels: []string{"job", "region"},
@@ -63,7 +65,7 @@ func TestParseRankAggregation(t *testing.T) {
 			name:        "topk with post without grouping",
 			query:       "topk(4, up) without (instance)",
 			wantFound:   true,
-			wantOp:      "topk",
+			wantOp:      aggregation.TopK,
 			wantK:       4,
 			wantInner:   "up",
 			wantLabels:  []string{"instance"},
@@ -73,7 +75,7 @@ func TestParseRankAggregation(t *testing.T) {
 			name:        "sort_desc wrapper",
 			query:       "sort_desc(topk(7, up))",
 			wantFound:   true,
-			wantOp:      "topk",
+			wantOp:      aggregation.TopK,
 			wantK:       7,
 			wantInner:   "up",
 			wantSortSet: true,
@@ -83,7 +85,7 @@ func TestParseRankAggregation(t *testing.T) {
 			name:        "sort wrapper",
 			query:       "sort(bottomk(8, up))",
 			wantFound:   true,
-			wantOp:      "bottomk",
+			wantOp:      aggregation.BottomK,
 			wantK:       8,
 			wantInner:   "up",
 			wantSortSet: true,
@@ -92,7 +94,7 @@ func TestParseRankAggregation(t *testing.T) {
 			name:      "inner expression contains commas",
 			query:     `topk(5, label_replace(up, "dst", "$1", "src", "(.*)"))`,
 			wantFound: true,
-			wantOp:    "topk",
+			wantOp:    aggregation.TopK,
 			wantK:     5,
 			wantInner: `label_replace(up, "dst", "$1", "src", "(.*)")`,
 		},

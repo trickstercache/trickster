@@ -29,12 +29,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-
 	"github.com/trickstercache/trickster/v2/integration/internal/chaos"
 	"github.com/trickstercache/trickster/v2/integration/internal/portutil"
 	"github.com/trickstercache/trickster/v2/integration/promstub"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestALBChaosBehaviors(t *testing.T) {
@@ -84,8 +84,9 @@ func runChaosCell(t *testing.T, mech, behavior string, chaosData http.HandlerFun
 	}
 	go startTrickster(t, ctx, expectedStartError{}, "-config", cfgPath)
 	waitForTrickster(t, fmt.Sprintf("127.0.0.1:%d", metricsPort))
-
-	time.Sleep(800 * time.Millisecond)
+	healthURL := fmt.Sprintf("http://127.0.0.1:%d/trickster/health", metricsPort)
+	requireHealthState(t, healthURL, "prom0", "available", 10*time.Second)
+	requireHealthState(t, healthURL, "prom1", "available", 10*time.Second)
 
 	cli := &http.Client{
 		Timeout: 5 * time.Second,

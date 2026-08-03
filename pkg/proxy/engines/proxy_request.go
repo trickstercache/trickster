@@ -35,6 +35,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ranges/byterange"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
+
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -538,7 +539,7 @@ func (pr *proxyRequest) store() error {
 
 	d.CachingPolicy = pr.cachingPolicy
 	err := WriteCache(pr.upstreamRequest.Context(), pr.rsc.CacheClient, pr.key, d,
-		pr.cachingPolicy.TTL(rf, o.MaxTTL), o.CompressibleTypes, nil)
+		pr.cachingPolicy.TTL(rf, time.Duration(o.MaxTTL)), o.CompressibleTypes, nil)
 	if err != nil {
 		return err
 	}

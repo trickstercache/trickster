@@ -25,8 +25,8 @@ import (
 	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 )
 
-// Clone wraps the builtin Clone to use a deep clone of both the request body
-// reader (when present) and the Trickster context data
+// Clone wraps the builtin Clone, preserving the source request's context while
+// deep-cloning both the body reader (when present) and Trickster Resources.
 func Clone(r *http.Request) (*http.Request, error) {
 	if r == nil {
 		return nil, nil
@@ -35,7 +35,7 @@ func Clone(r *http.Request) (*http.Request, error) {
 	if rsc != nil {
 		rsc = rsc.Clone()
 	}
-	ctx := context.Background()
+	ctx := r.Context()
 	if rsc != nil {
 		ctx = tctx.WithResources(ctx, rsc)
 	}

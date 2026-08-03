@@ -33,6 +33,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	ct "github.com/trickstercache/trickster/v2/pkg/proxy/context"
+	corso "github.com/trickstercache/trickster/v2/pkg/proxy/cors/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
@@ -208,6 +209,48 @@ func exampleKeyHasher(path string, params url.Values, headers http.Header,
 	body []byte, trq *timeseries.TimeRangeQuery, extra string,
 ) string {
 	return "test-key"
+}
+
+func TestDeriveCacheKeyVariesByCORSOrigin(t *testing.T) {
+	makeKey := func(policy *corso.Options, origin string, customHasher bool) string {
+		t.Helper()
+		pc := po.New()
+		if customHasher {
+			pc.KeyHasher = exampleKeyHasher
+		}
+		rsc := request.NewResources(&bo.Options{}, pc, nil, nil, nil, nil)
+		rsc.FrontendCORS = policy
+		r := httptest.NewRequest(http.MethodGet, "http://trickster.example.com/data", nil)
+		r.Header.Set(headers.NameOrigin, origin)
+		r = request.SetResources(r, rsc)
+		return newProxyRequest(r, nil).DeriveCacheKey("")
+	}
+
+	tests := []struct {
+		name          string
+		policy        *corso.Options
+		customHasher  bool
+		wantDifferent bool
+	}{
+		{name: "preserve", policy: &corso.Options{Mode: corso.ModePreserve}, wantDifferent: true},
+		{name: "merge", policy: &corso.Options{Mode: corso.ModeMerge}, wantDifferent: true},
+		{name: "replace", policy: &corso.Options{Mode: corso.ModeReplace}},
+		{name: "disable", policy: &corso.Options{Mode: corso.ModeDisable}},
+		{name: "legacy", policy: corso.Legacy()},
+		{name: "custom hasher preserve", policy: &corso.Options{Mode: corso.ModePreserve},
+			customHasher: true, wantDifferent: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			first := makeKey(tc.policy, "https://first.example.com", tc.customHasher)
+			second := makeKey(tc.policy, "https://second.example.com", tc.customHasher)
+			if got := first != second; got != tc.wantDifferent {
+				t.Fatalf("cache keys differ = %v, want %v (%q, %q)",
+					got, tc.wantDifferent, first, second)
+			}
+		})
+	}
 }
 
 // TestDeriveCacheKey_MultiValueParams is a comprehensive test for multi-value

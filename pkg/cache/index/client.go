@@ -49,7 +49,8 @@ var (
 
 // maxIndexBytes caps the index blob read from the backing cache at startup so
 // a poisoned shared backend can't drive unbounded msgpack decode allocation.
-const maxIndexBytes = 256 << 20
+// Exposed as a var so tests can lower the threshold without allocating hundreds of MiB.
+var maxIndexBytes = 256 << 20
 
 // IndexedClientOptions modify an IndexedClient's behavior.
 type IndexedClientOptions struct {
@@ -95,7 +96,7 @@ func NewIndexedClient(
 					logging.Pairs{"cacheName": cacheName, "bytes": len(b), "max": maxIndexBytes})
 			} else {
 				idx.UnmarshalMsg(b)
-				if time.Since(idx.LastFlush.Load()) > indexExpiry {
+				if time.Since(idx.LastFlush.Load()) > time.Duration(indexExpiry) {
 					idx.Clear()
 				}
 			}
@@ -330,7 +331,7 @@ func (idx *IndexedClient) flusher(ctx context.Context) {
 			select {
 			case <-ctx.Done():
 				break FLUSHER
-			case <-time.After(fi):
+			case <-time.After(time.Duration(fi)):
 				if idx.lastWrite.Load().Before(idx.LastFlush.Load()) {
 					continue
 				}
@@ -388,7 +389,7 @@ func (idx *IndexedClient) flushOnce() {
 			logging.Pairs{"cacheName": idx.name, "detail": err.Error()})
 		return
 	}
-	idx.Client.Store(IndexKey, bytes, idx.options.Load().(*options.Options).IndexExpiry)
+	idx.Client.Store(IndexKey, bytes, time.Duration(idx.options.Load().(*options.Options).IndexExpiry))
 }
 
 // reaper continually iterates through the cache to find expired elements and removes them
@@ -401,7 +402,7 @@ func (idx *IndexedClient) reaper(ctx context.Context) {
 			select {
 			case <-ctx.Done():
 				break REAPER
-			case <-time.After(ri):
+			case <-time.After(time.Duration(ri)):
 			case <-idx.forceReap:
 			}
 			idx.reap()

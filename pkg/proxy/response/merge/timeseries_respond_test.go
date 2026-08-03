@@ -23,9 +23,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/stretchr/testify/require"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestTimeseriesMergeFuncErrors(t *testing.T) {
@@ -52,6 +54,16 @@ func TestTimeseriesMergeFuncFromBytes(t *testing.T) {
 	})
 	require.NoError(t, fromBytes(accum, []byte("payload"), 0))
 	require.NotNil(t, accum.GetTSData())
+}
+
+func TestTimeseriesMergeFuncFromBytes_UnmarshalError(t *testing.T) {
+	t.Parallel()
+
+	fromBytes := TimeseriesMergeFuncFromBytes(func([]byte, *timeseries.TimeRangeQuery) (timeseries.Timeseries, error) {
+		return nil, errors.New("unmarshal failed")
+	})
+	err := fromBytes(NewAccumulator(), []byte("bad"), 0)
+	require.ErrorContains(t, err, "unmarshal failed")
 }
 
 func TestTimeseriesRespondFunc(t *testing.T) {
@@ -90,25 +102,41 @@ func TestTimeseriesRespondFunc(t *testing.T) {
 func TestTimeseriesRespondFuncWithStrategy(t *testing.T) {
 	t.Parallel()
 
-	accum := NewAccumulator()
-	ds1 := makeTestDataSet(0, "latency", nil, []int64{100}, []string{"10"})
-	ds2 := makeTestDataSet(0, "latency", nil, []int64{100}, []string{"30"})
-	mf := TimeseriesMergeFuncWithStrategy(nil, int(dataset.MergeStrategyAvg))
-	require.NoError(t, mf(accum, ds1, 0))
-	require.NoError(t, mf(accum, ds2, 1))
+	t.Run("finalizes avg", func(t *testing.T) {
+		accum := NewAccumulator()
+		ds1 := makeTestDataSet(0, "latency", nil, []int64{100}, []string{"10"})
+		ds2 := makeTestDataSet(0, "latency", nil, []int64{100}, []string{"30"})
+		mf := TimeseriesMergeFuncWithStrategy(nil, int(merge.StrategyAvg))
+		require.NoError(t, mf(accum, ds1, 0))
+		require.NoError(t, mf(accum, ds2, 1))
 
-	var finalized string
-	rf := TimeseriesRespondFuncWithStrategy(
-		func(ts timeseries.Timeseries, _ *timeseries.RequestOptions, _ int, _ io.Writer) error {
-			ds := ts.(*dataset.DataSet)
-			finalized = ds.Results[0].SeriesList[0].Points[0].Values[0].(string)
-			return nil
-		},
-		nil,
-		int(dataset.MergeStrategyAvg),
-	)
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodGet, "/", nil)
-	rf(w, r, accum, 0)
-	require.Equal(t, "20", finalized)
+		var finalized string
+		rf := TimeseriesRespondFuncWithStrategy(
+			func(ts timeseries.Timeseries, _ *timeseries.RequestOptions, _ int, _ io.Writer) error {
+				ds := ts.(*dataset.DataSet)
+				finalized = ds.Results[0].SeriesList[0].Points[0].Values[0].(string)
+				return nil
+			},
+			nil,
+			int(merge.StrategyAvg),
+		)
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		rf(w, r, accum, 0)
+		require.Equal(t, "20", finalized)
+	})
+
+	t.Run("nil data returns bad gateway", func(t *testing.T) {
+		rf := TimeseriesRespondFuncWithStrategy(
+			func(timeseries.Timeseries, *timeseries.RequestOptions, int, io.Writer) error {
+				return nil
+			},
+			nil,
+			int(merge.StrategyAvg),
+		)
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		rf(w, r, NewAccumulator(), 0)
+		require.Equal(t, http.StatusBadGateway, w.Code)
+	})
 }

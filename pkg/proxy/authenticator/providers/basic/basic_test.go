@@ -30,6 +30,7 @@ import (
 	authopt "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/types"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+
 	"golang.org/x/crypto/bcrypt"
 )
 

@@ -19,7 +19,7 @@ Each configured backend's health check path is `/trickster/health/BACKEND_NAME`.
 The backend health path prefix `/trickster/health/` is customizable. See the [example.full.yaml](../examples/conf/example.full.yaml) for more info about setting the `health_handler_path` configuration, or refer to this example:
 
 ```yaml
-frontend:
+mgmt:
   # this overrides the default '/trickster/health' to '/-/trickster/health'
   health_handler_path: /-/trickster/health
 ```

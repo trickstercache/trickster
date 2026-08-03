@@ -29,6 +29,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	auth "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/types"
 	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
+	corso "github.com/trickstercache/trickster/v2/pkg/proxy/cors/options"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
@@ -40,6 +41,7 @@ type Resources struct {
 	sync.Mutex
 	BackendOptions    *bo.Options
 	PathConfig        *po.Options
+	FrontendCORS      *corso.Options
 	CacheConfig       *co.Options
 	CacheClient       cache.Cache
 	BackendClient     backends.Backend
@@ -49,6 +51,7 @@ type Resources struct {
 	IsMergeMember     bool
 	RequestBody       []byte
 	MergeFunc         merge.MergeFunc
+	BatchMergeFunc    merge.BatchMergeFunc
 	MergeRespondFunc  merge.RespondFunc
 	TSUnmarshaler     timeseries.UnmarshalerFunc
 	TSMarshaler       timeseries.MarshalWriterFunc
@@ -72,6 +75,7 @@ func (r *Resources) Clone() *Resources {
 	return &Resources{
 		BackendOptions:        r.BackendOptions,
 		PathConfig:            r.PathConfig,
+		FrontendCORS:          r.FrontendCORS,
 		CacheConfig:           r.CacheConfig,
 		CacheClient:           r.CacheClient,
 		BackendClient:         r.BackendClient,
@@ -81,6 +85,7 @@ func (r *Resources) Clone() *Resources {
 		IsMergeMember:         r.IsMergeMember,
 		RequestBody:           slices.Clone(r.RequestBody),
 		MergeFunc:             r.MergeFunc,
+		BatchMergeFunc:        r.BatchMergeFunc,
 		MergeRespondFunc:      r.MergeRespondFunc,
 		TSUnmarshaler:         r.TSUnmarshaler,
 		TSMarshaler:           r.TSMarshaler,
@@ -145,6 +150,9 @@ func (r *Resources) Merge(r2 *Resources) {
 	}
 	r.BackendOptions = r2.BackendOptions
 	r.PathConfig = r2.PathConfig
+	if r.FrontendCORS == nil {
+		r.FrontendCORS = r2.FrontendCORS
+	}
 	r.CacheConfig = r2.CacheConfig
 	r.CacheClient = r2.CacheClient
 	r.BackendClient = r2.BackendClient
@@ -157,6 +165,7 @@ func (r *Resources) Merge(r2 *Resources) {
 	r.IsMergeMember = r.IsMergeMember || r2.IsMergeMember
 	r.AlreadyEncoded = r.AlreadyEncoded || r2.AlreadyEncoded
 	r.MergeFunc = r2.MergeFunc
+	r.BatchMergeFunc = r2.BatchMergeFunc
 	r.MergeRespondFunc = r2.MergeRespondFunc
 	r.Cancelable = r.Cancelable || r2.Cancelable
 }

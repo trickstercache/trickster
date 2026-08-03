@@ -34,6 +34,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/albpool"
+
+	"github.com/stretchr/testify/require"
 )
 
 // TestALB502WithMultiplePrometheusBackends ensure that multiple backends are supported by the ALB mechanism, and that a 502 is not returned

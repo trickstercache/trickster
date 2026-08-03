@@ -17,6 +17,7 @@
 package options
 
 import (
+	"errors"
 	"fmt"
 	"maps"
 	"net/http"
@@ -25,7 +26,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/prometheus/common/sigv4"
 	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	prop "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/options"
@@ -35,9 +35,12 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/evictionmethods"
 	"github.com/trickstercache/trickster/v2/pkg/cache/negative"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
+	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	tro "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
+	corso "github.com/trickstercache/trickster/v2/pkg/proxy/cors/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
@@ -46,6 +49,8 @@ import (
 	to "github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
+
+	"github.com/prometheus/common/sigv4"
 	"gopkg.in/yaml.v2"
 )
 
@@ -62,13 +67,19 @@ type Options struct {
 	Hosts []string `yaml:"hosts,omitempty"`
 	// Provider describes the type of backend (e.g., 'prometheus')
 	Provider string `yaml:"provider,omitempty"`
+	// ReplicaGroup identifies the logical data shard represented by this backend
+	// when it participates in a Time Series Merge pool.
+	// An empty value is initialized to the backend name.
+	ReplicaGroup string `yaml:"replica_group,omitempty"`
+	// ListenerName identifies the inbound listener that exposes this backend.
+	ListenerName string `yaml:"listener_name,omitempty"`
 	// OriginURL provides the base upstream URL for all proxied requests to this Backend.
 	// it can be as simple as http://example.com or as complex as https://example.com:8443/path/prefix
 	OriginURL string `yaml:"origin_url,omitempty"`
 	// Timeout defines how long the HTTP request will wait for a response before timing out
-	Timeout time.Duration `yaml:"timeout,omitempty"`
+	Timeout timeconv.Duration `yaml:"timeout,omitempty"`
 	// KeepAliveTimeout defines how long an open keep-alive HTTP connection remains idle before closing
-	KeepAliveTimeout time.Duration `yaml:"keep_alive_timeout,omitempty"`
+	KeepAliveTimeout timeconv.Duration `yaml:"keep_alive_timeout,omitempty"`
 	// MaxConcurrentConns defines maximum number of open concurrent connections to maintain to the backend
 	MaxConcurrentConns int `yaml:"max_concurrent_conns,omitempty"`
 	// MaxIdleConns defines maximum number of open keep-alive connections to maintain
@@ -96,7 +107,7 @@ type Options struct {
 	// BackfillTolerance prevents values with timestamps newer than the provided number of
 	// milliseconds from being cached. this allows propagation of upstream backfill operations
 	// that modify recently-cached data
-	BackfillTolerance time.Duration `yaml:"backfill_tolerance,omitempty"`
+	BackfillTolerance timeconv.Duration `yaml:"backfill_tolerance,omitempty"`
 	// BackfillTolerancePoints is similar to the MS version, except that it's final value is dependent
 	// on the query step value to determine the relative duration of backfill tolerance per-query
 	// When both are set, the higher of the two values is used
@@ -106,11 +117,11 @@ type Options struct {
 	// NegativeCacheName provides the name of the Negative Cache Config to be used by this Backend
 	NegativeCacheName string `yaml:"negative_cache_name,omitempty"`
 	// TimeseriesTTL specifies the cache TTL of timeseries objects
-	TimeseriesTTL time.Duration `yaml:"timeseries_ttl,omitempty"`
+	TimeseriesTTL timeconv.Duration `yaml:"timeseries_ttl,omitempty"`
 	// TimeseriesTTLMS specifies the cache TTL of fast forward data
-	FastForwardTTL time.Duration `yaml:"fastforward_ttl,omitempty"`
+	FastForwardTTL timeconv.Duration `yaml:"fastforward_ttl,omitempty"`
 	// MaxTTL specifies the maximum allowed TTL for any cache object
-	MaxTTL time.Duration `yaml:"max_ttl,omitempty"`
+	MaxTTL timeconv.Duration `yaml:"max_ttl,omitempty"`
 	// RevalidationFactor specifies how many times to multiply the object freshness lifetime
 	// by to calculate an absolute cache TTL
 	RevalidationFactor float64 `yaml:"revalidation_factor,omitempty"`
@@ -148,11 +159,11 @@ type Options struct {
 	// MaxShardSizeTime defines the max size of a timeseries request,
 	// before sharding into multiple requests of this denomination and reconsitituting the results.
 	// If MaxShardSizePoints and MaxShardSizeTime are both > 0, the configuration is invalid
-	MaxShardSizeTime time.Duration `yaml:"shard_max_size_time,omitempty"`
+	MaxShardSizeTime timeconv.Duration `yaml:"shard_max_size_time,omitempty"`
 	// ShardStep defines the epoch-aligned cadence to use when creating shards. When set to 0,
 	// shards are not aligned to the epoch at a specific step. MaxShardSizeMS must be perfectly
 	// divisible by ShardStep when both are > 0, or the configuration is invalid
-	ShardStep time.Duration `yaml:"shard_step,omitempty"`
+	ShardStep timeconv.Duration `yaml:"shard_step,omitempty"`
 	// ProxyOnly, when true, will cause this backend to bypass caching while handling the request
 	ProxyOnly bool `yaml:"proxy_only,omitempty"`
 
@@ -166,6 +177,8 @@ type Options struct {
 
 	// ForwardedHeaders indicates the class of 'Forwarded' header to attach to upstream requests
 	ForwardedHeaders string `yaml:"forwarded_headers,omitempty"`
+	// CORS configures downstream CORS response headers for this backend
+	CORS *corso.Options `yaml:"cors,omitempty"`
 
 	// IsDefault indicates if this is the d.Default backend for any request not matching a configured route
 	IsDefault bool `yaml:"is_default,omitempty"`
@@ -196,9 +209,13 @@ type Options struct {
 	// latency between the two values will be applied to the request
 	//
 	// LatencyMin is the minimum amount of simulated latency to apply to each incoming request
-	LatencyMin time.Duration `yaml:"latency_min"`
+	// LatencyMin is the minimum amount of simulated latency to apply to each incoming request
+	LatencyMin timeconv.Duration `yaml:"latency_min"`
 	// LatencyMax is the maximum amount of simulated latency to apply to each incoming request
-	LatencyMax time.Duration `yaml:"latency_max"`
+	LatencyMax timeconv.Duration `yaml:"latency_max"`
+
+	// MaxQueryRange specifies the maximum range for a query allowed on this backend (e.g., '14d')
+	MaxQueryRange timeconv.Duration `yaml:"max_query_range,omitempty"`
 
 	// Synthesized Configurations
 	// These configurations are parsed versions of those defined above, and are what Trickster uses internally
@@ -219,7 +236,7 @@ type Options struct {
 	NegativeCache negative.Lookup `yaml:"-"`
 	// TimeseriesRetention when subtracted from time.Now() represents the oldest allowable timestamp in a
 	// timeseries when EvictionMethod is 'oldest'
-	TimeseriesRetention time.Duration `yaml:"-"`
+	TimeseriesRetention timeconv.Duration `yaml:"-"`
 	// TimeseriesEvictionMethod is the parsed value of TimeseriesEvictionMethodName
 	TimeseriesEvictionMethod evictionmethods.TimeseriesEvictionMethod `yaml:"-"`
 	// FastForwardPath is the paths.Options to use for upstream Fast Forward Requests
@@ -244,7 +261,7 @@ var _ types.ConfigOptions[Options] = &Options{}
 // New will return a pointer to a Backend Options with the default configuration settings
 func New() *Options {
 	return &Options{
-		BackfillTolerance:            DefaultBackfillTolerance,
+		BackfillTolerance:            timeconv.Duration(DefaultBackfillTolerance),
 		BackfillTolerancePoints:      DefaultBackfillTolerancePoints,
 		CacheKeyPrefix:               "",
 		CacheName:                    DefaultBackendCacheName,
@@ -252,30 +269,31 @@ func New() *Options {
 		ChunkReadConcurrencyLimit:    DefaultChunkReadConcurrencyLimit,
 		ChunkWriteConcurrencyLimit:   DefaultChunkWriteConcurrencyLimit,
 		FetchConcurrencyLimit:        DefaultFetchConcurrencyLimit,
-		FastForwardTTL:               DefaultFastForwardTTL,
+		FastForwardTTL:               timeconv.Duration(DefaultFastForwardTTL),
 		ForwardedHeaders:             DefaultForwardedHeaders,
 		HealthCheck:                  ho.New(),
-		KeepAliveTimeout:             DefaultKeepAliveTimeout,
+		KeepAliveTimeout:             timeconv.Duration(DefaultKeepAliveTimeout),
 		MaxIdleConns:                 DefaultMaxIdleConns,
 		MaxConcurrentConns:           DefaultMaxConcurrentConns,
 		MaxCaptureBytes:              DefaultMaxCaptureBytes,
 		MaxFanoutCaptureBytes:        DefaultMaxFanoutCaptureBytes,
 		MaxObjectSizeBytes:           DefaultMaxObjectSizeBytes,
-		MaxTTL:                       DefaultMaxTTL,
+		MaxTTL:                       timeconv.Duration(DefaultMaxTTL),
 		NegativeCache:                make(map[int]time.Duration),
 		NegativeCacheName:            DefaultBackendNegativeCacheName,
 		Paths:                        make(po.List, 0, 10),
 		RevalidationFactor:           DefaultRevalidationFactor,
+		ListenerName:                 listener.DefaultFrontendName,
 		MaxShardSizePoints:           DefaultTimeseriesShardSize,
-		MaxShardSizeTime:             DefaultTimeseriesShardSize,
-		ShardStep:                    DefaultTimeseriesShardStep,
+		MaxShardSizeTime:             timeconv.Duration(DefaultTimeseriesShardSize),
+		ShardStep:                    timeconv.Duration(DefaultTimeseriesShardStep),
 		TLS:                          &to.Options{},
-		Timeout:                      DefaultBackendTimeout,
+		Timeout:                      timeconv.Duration(DefaultBackendTimeout),
 		TimeseriesEvictionMethod:     DefaultBackendTEM,
 		TimeseriesEvictionMethodName: DefaultBackendTEMName,
-		TimeseriesRetention:          DefaultBackendTRF,
+		TimeseriesRetention:          timeconv.Duration(DefaultBackendTRF),
 		TimeseriesRetentionFactor:    DefaultBackendTRF,
-		TimeseriesTTL:                DefaultTimeseriesTTL,
+		TimeseriesTTL:                timeconv.Duration(DefaultTimeseriesTTL),
 		TracingConfigName:            DefaultTracingConfigName,
 	}
 }
@@ -299,6 +317,9 @@ func (o *Options) Clone() *Options {
 	}
 	if o.TLS != nil {
 		out.TLS = o.TLS.Clone()
+	}
+	if o.CORS != nil {
+		out.CORS = o.CORS.Clone()
 	}
 
 	if o.FastForwardPath != nil {
@@ -350,6 +371,11 @@ func (o *Options) Validate() (bool, error) {
 
 	if len(o.Paths) > 0 {
 		if err := o.Paths.Validate(); err != nil {
+			return false, err
+		}
+	}
+	if o.CORS != nil {
+		if _, err := o.CORS.Validate(); err != nil {
 			return false, err
 		}
 	}
@@ -571,6 +597,22 @@ func (l Lookup) Initialize() error {
 // any values that were set during YAML unmarshaling
 func (o *Options) Initialize(name string) error {
 	o.Name = name
+	o.ReplicaGroup = strings.TrimSpace(o.ReplicaGroup)
+	if !providers.IsSupportedTimeSeriesMergeProvider(o.Provider) &&
+		o.Provider != providers.ALB &&
+		o.ReplicaGroup != "" && o.ReplicaGroup != name {
+		return errors.New("replica_group is only permitted on TSM-compatible backends or nested ALBs")
+	}
+	if o.ReplicaGroup == "" {
+		o.ReplicaGroup = name
+	}
+	if o.ListenerName == "" {
+		o.ListenerName = listener.DefaultFrontendName
+	}
+
+	if o.MaxQueryRange < 0 {
+		return errors.New("invalid max_query_range: value must be greater than or equal to 0")
+	}
 
 	if o.OriginURL != "" {
 		parsedURL, err := url.Parse(o.OriginURL)
@@ -585,7 +627,7 @@ func (o *Options) Initialize(name string) error {
 	if o.CacheKeyPrefix == "" {
 		o.CacheKeyPrefix = o.Host
 	}
-	o.TimeseriesRetention = time.Duration(o.TimeseriesRetentionFactor)
+	o.TimeseriesRetention = timeconv.Duration(o.TimeseriesRetentionFactor)
 	o.DoesShard = o.MaxShardSizePoints > 0 || o.MaxShardSizeTime > 0 || o.ShardStep > 0
 	if o.ShardStep > 0 && o.MaxShardSizeTime == 0 {
 		o.MaxShardSizeTime = o.ShardStep
@@ -625,6 +667,11 @@ func (o *Options) Initialize(name string) error {
 			return err
 		}
 	}
+	if o.CORS != nil {
+		if err := o.CORS.Initialize(""); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -632,6 +679,12 @@ func (o *Options) Initialize(name string) error {
 // exposing credentials (by masking known credential fields with "*****")
 func (o *Options) CloneYAMLSafe() *Options {
 	co := o.Clone()
+	// The runtime default is the backend name, but exporting that implicit
+	// value is noisy and suggests replica_group is relevant to every provider.
+	// Preserve only operator-supplied groupings that differ from the name.
+	if co.ReplicaGroup == co.Name {
+		co.ReplicaGroup = ""
+	}
 	for _, w := range co.Paths {
 		w.Handler = nil
 		w.KeyHasher = nil

@@ -32,11 +32,11 @@ import (
 	po "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
+	tt "github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/capture"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
-	tt "github.com/trickstercache/trickster/v2/pkg/util/timeconv"
 )
 
 var (
@@ -46,16 +46,16 @@ var (
 
 // Prometheus API
 const (
-	APIPath         = "/api/v1/"
-	mnQueryRange    = "query_range"
-	mnQuery         = "query"
-	mnLabels        = "labels"
-	mnLabel         = "label"
-	mnSeries        = "series"
-	mnTargets       = "targets"
-	mnTargetsMeta   = "targets/metadata"
-	mnRules         = "rules"
-	mnAlerts        = "alerts"
+	APIPath           = "/api/v1/"
+	mnQueryRange      = "query_range"
+	mnQuery           = "query"
+	mnLabels          = "labels"
+	mnLabel           = "label"
+	mnSeries          = "series"
+	mnTargets         = "targets"
+	mnTargetsMeta     = "targets/metadata"
+	mnRules           = "rules"
+	mnAlerts          = "alerts"
 	mnAlertManagers   = "alertmanagers"
 	mnStatus          = "status"
 	mnQueryExemplars  = "query_exemplars"
@@ -172,17 +172,17 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 		cache, modelprom.NewModeler())
 	c.TimeseriesBackend = b
 
-	rounder := po.DefaultInstantRound
+	rounder := tt.Duration(po.DefaultInstantRound)
 	if o != nil {
 		if o.Prometheus == nil {
-			o.Prometheus = &po.Options{InstantRound: po.DefaultInstantRound}
+			o.Prometheus = &po.Options{InstantRound: tt.Duration(po.DefaultInstantRound)}
 		} else {
 			rounder = o.Prometheus.InstantRound
 			c.injectLabels = o.Prometheus.Labels
 			c.hasTransformations = len(c.injectLabels) > 0
 		}
 	}
-	c.instantRounder = rounder
+	c.instantRounder = time.Duration(rounder)
 
 	return c, err
 }

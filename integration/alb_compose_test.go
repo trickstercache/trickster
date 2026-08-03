@@ -30,9 +30,10 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/integration/promstub"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/trickstercache/trickster/v2/integration/promstub"
 )
 
 func TestALBCompose(t *testing.T) {

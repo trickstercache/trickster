@@ -14,14 +14,13 @@
 #   - three rule-provider backends (rule1, rule-ua, rule-default), one
 #     for each rule, all exposed through the same data listener.
 
-frontend:
-  listen_port: 8550
-
-metrics:
-  listen_port: 8551
-
-mgmt:
-  listen_port: 8552
+listeners:
+  default:
+    port: 8550
+  metrics:
+    port: 8551
+  mgmt:
+    port: 8552
 
 logging:
   log_level: info

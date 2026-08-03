@@ -28,9 +28,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/common/sigv4"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
+
+	"github.com/prometheus/common/sigv4"
 )
 
 func TestNewHTTPClient(t *testing.T) {
@@ -126,7 +128,7 @@ func contains(s []string, v string) bool {
 func newInsecureClient(t *testing.T, timeout time.Duration) *http.Client {
 	t.Helper()
 	o := bo.New()
-	o.Timeout = timeout
+	o.Timeout = timeconv.Duration(timeout)
 	o.TLS.InsecureSkipVerify = true
 	c, err := NewHTTPClient(o)
 	if err != nil {

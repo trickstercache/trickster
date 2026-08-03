@@ -82,9 +82,9 @@ func newTarget(_ context.Context, name, description string, o *ho.Options,
 	if len(o.Headers) > 0 {
 		r.Header = headers.Lookup(o.Headers).ToHeader()
 	}
-	interval := o.Interval
+	interval := time.Duration(o.Interval)
 	if client == nil {
-		client = newHTTPClient(ho.CalibrateTimeout(o.Timeout))
+		client = newHTTPClient(ho.CalibrateTimeout(time.Duration(o.Timeout)))
 	}
 	if o.FailureThreshold < 1 {
 		o.FailureThreshold = 3 // default to 3
@@ -315,6 +315,9 @@ func (t *target) notifyStatus(st int32, detail string) {
 func (t *target) demandProbe(w http.ResponseWriter) {
 	r := t.baseRequest.Clone(context.Background())
 	resp, err := t.httpClient.Do(r)
+	if resp != nil && resp.Body != nil {
+		defer resp.Body.Close()
+	}
 	h := w.Header()
 	if err != nil {
 		if t.status != nil && t.status.Get() != StatusUnchecked {

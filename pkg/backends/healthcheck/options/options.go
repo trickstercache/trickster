@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
@@ -41,7 +42,7 @@ var ErrNoOptionsProvided = errors.New("no health check options provided")
 // Options defines Health Checking Options
 type Options struct {
 	// Interval defines the interval at which the target will be probed
-	Interval time.Duration `yaml:"interval,omitempty"`
+	Interval timeconv.Duration `yaml:"interval,omitempty"`
 	// FailureThreshold indicates the number of consecutive failed probes required to
 	// mark an available target as unavailable
 	FailureThreshold int `yaml:"failure_threshold,omitempty"`
@@ -66,7 +67,7 @@ type Options struct {
 	Body string `yaml:"body,omitempty"`
 	// Timeout is the amount of time a health check probe should wait for a response
 	// before timing out
-	Timeout time.Duration `yaml:"timeout,omitempty"`
+	Timeout timeconv.Duration `yaml:"timeout,omitempty"`
 	// Target Probe Response Options
 	// ExpectedCodes is the list of Status Codes that positively indicate a Healthy status
 	ExpectedCodes []int `yaml:"expected_codes,omitempty"`
@@ -99,11 +100,11 @@ func (o *Options) Validate() (bool, error) {
 	if o.Scheme != "" && o.Scheme != "http" && o.Scheme != "https" {
 		return false, fmt.Errorf("invalid health check scheme: %s (must be http or https)", o.Scheme)
 	}
-	if o.Timeout > 0 {
-		if o.Timeout < MinProbeWait {
+	if time.Duration(o.Timeout) > 0 {
+		if time.Duration(o.Timeout) < MinProbeWait {
 			return false, fmt.Errorf("health check timeout %v is less than minimum %v", o.Timeout, MinProbeWait)
 		}
-		if o.Timeout > MaxProbeWait {
+		if time.Duration(o.Timeout) > MaxProbeWait {
 			return false, fmt.Errorf("health check timeout %v is greater than maximum %v", o.Timeout, MaxProbeWait)
 		}
 	}

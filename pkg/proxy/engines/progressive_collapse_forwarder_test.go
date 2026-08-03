@@ -22,7 +22,6 @@ import (
 	"net/http"
 	"reflect"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -136,79 +135,95 @@ func TestPCFWaits(t *testing.T) {
 	r := strings.NewReader(testStringLong.String())
 	l := len(testStringLong.String())
 	resp := &http.Response{}
-	allComplete := uint64(0)
-	serverComplete := uint64(0)
 
-	pcf := NewPCF(resp, int64(l))
+	pcf := NewPCF(resp, int64(l)).(*progressiveCollapseForwarder)
 
+	// Pace the origin write so Wait*Complete must block while work is in flight.
 	go func() {
 		buf := make([]byte, HTTPBlockSize)
-		var n int
-		var err error
 		for {
-			n, err = r.Read(buf)
-			if err != nil && n != 0 {
-				break
+			n, err := r.Read(buf)
+			if n > 0 {
+				time.Sleep(50 * time.Millisecond)
+				if _, werr := pcf.Write(buf[:n]); werr != nil {
+					break
+				}
 			}
-			time.Sleep(50 * time.Millisecond)
-			n, err = pcf.Write(buf)
-			if err != nil && n == 0 {
+			if err != nil {
 				break
 			}
 		}
 		pcf.Close()
 	}()
+
+	// AddClient increments clientCount before blocking on IndexRead. Wait for
+	// that registration before starting WaitAllComplete — otherwise
+	// WaitAllComplete sees clientCount==0 and returns immediately.
 	go pcf.AddClient(w)
+	deadline := time.Now().Add(2 * time.Second)
+	for pcf.clientCount.Load() == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for AddClient to register")
+		}
+		time.Sleep(time.Millisecond)
+	}
 
+	allDone := make(chan struct{})
+	serverDone := make(chan struct{})
 	go func() {
 		pcf.WaitAllComplete()
-		atomic.StoreUint64(&allComplete, 1)
+		close(allDone)
 	}()
-
 	go func() {
 		pcf.WaitServerComplete()
-		atomic.StoreUint64(&serverComplete, 1)
+		close(serverDone)
 	}()
 
-	if a := atomic.LoadUint64(&serverComplete); a != 0 {
-		t.Errorf("WaitServerComplete returned too quickly, expected wait got finished")
+	// Waiters should still be blocked while the paced write is in progress.
+	select {
+	case <-serverDone:
+		t.Fatal("WaitServerComplete returned too quickly, expected wait got finished")
+	case <-time.After(20 * time.Millisecond):
+	}
+	select {
+	case <-allDone:
+		t.Fatal("WaitAllComplete returned too quickly, expected wait got finished")
+	case <-time.After(20 * time.Millisecond):
 	}
 
-	if a := atomic.LoadUint64(&allComplete); a != 0 {
-		t.Errorf("WaitAllComplete returned too quickly, expected wait got finished")
+	// Wait for both conditions to unblock after the paced write finishes.
+	waitTimeout := time.Duration(100*(l/HTTPBlockSize+1)) * time.Millisecond
+	select {
+	case <-serverDone:
+	case <-time.After(waitTimeout):
+		t.Fatal("Expected WaitServerComplete to have finished with pcf finish")
+	}
+	select {
+	case <-allDone:
+	case <-time.After(waitTimeout):
+		t.Fatal("Expected WaitAllComplete to have finished with pcf finish")
 	}
 
-	// Wait for pcf to finish in goroutine
-	sleepDur := time.Duration(65*(l/HTTPBlockSize) + 1)
-	time.Sleep(sleepDur * time.Millisecond)
-
-	if a := atomic.LoadUint64(&serverComplete); a != 1 {
-		t.Errorf("Expected WaitServerComplete to have finished with pcf finish")
-	}
-
-	if a := atomic.LoadUint64(&allComplete); a != 1 {
-		t.Errorf("Expected WaitAllComplete to have finished with pcf finish")
-	}
-
+	// After completion, Wait*Complete must return without blocking.
+	allDone2 := make(chan struct{})
+	serverDone2 := make(chan struct{})
 	go func() {
 		pcf.WaitAllComplete()
-		atomic.StoreUint64(&allComplete, 2)
+		close(allDone2)
 	}()
-
 	go func() {
 		pcf.WaitServerComplete()
-		atomic.StoreUint64(&serverComplete, 2)
+		close(serverDone2)
 	}()
-
-	// Give time for goroutines to  initialize and try to wait
-	time.Sleep(20 * time.Millisecond)
-
-	if a := atomic.LoadUint64(&serverComplete); a != 2 {
-		t.Errorf("Expected WaitServerComplete to not block after pcf completion")
+	select {
+	case <-serverDone2:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Expected WaitServerComplete to not block after pcf completion")
 	}
-
-	if a := atomic.LoadUint64(&allComplete); a != 2 {
-		t.Errorf("Expected WaitAllComplete to not block after pcf completion")
+	select {
+	case <-allDone2:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Expected WaitAllComplete to not block after pcf completion")
 	}
 }
 
@@ -387,15 +402,19 @@ func BenchmarkPCFWrite(b *testing.B) {
 	bufSize := 32
 
 	testBytes := make([]byte, bufSize*1024)
-	l := b.N * bufSize * 1024
 	resp := &http.Response{}
+	pcf := NewPCF(resp, int64(len(testBytes))).(*progressiveCollapseForwarder)
 
-	pcf := NewPCF(resp, int64(l))
 	b.SetBytes(int64(bufSize) * 1024)
 
-	b.ResetTimer()
-	for n := 0; n < b.N; n++ {
-		pcf.Write(testBytes)
+	for b.Loop() {
+		b.StopTimer()
+		pcf.dataIndex = 0
+		pcf.rIndex.Store(0)
+		b.StartTimer()
+		if _, err := pcf.Write(testBytes); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 
@@ -405,25 +424,17 @@ func BenchmarkPCFRead(b *testing.B) {
 	testBytes := make([]byte, bufSize*1024)
 	readBuf := make([]byte, bufSize*1024)
 
-	l := b.N * bufSize * 1024
 	resp := &http.Response{}
 
-	var readIndex uint64
-	var err error
-
-	pcf := NewPCF(resp, int64(l))
+	pcf := NewPCF(resp, int64(len(testBytes)))
 	b.SetBytes(int64(bufSize) * 1024)
-	for i := 0; i < b.N; i++ {
-		pcf.Write(testBytes)
+	if _, err := pcf.Write(testBytes); err != nil {
+		b.Fatal(err)
 	}
 
-	b.ResetTimer()
-
-	for n := 0; n < b.N; n++ {
-		_, err = pcf.IndexRead(readIndex, readBuf)
-		readIndex++
-		if err != nil {
-			break
+	for b.Loop() {
+		if _, err := pcf.IndexRead(0, readBuf); err != nil {
+			b.Fatal(err)
 		}
 	}
 }
@@ -434,23 +445,21 @@ func BenchmarkPCFWriteRead(b *testing.B) {
 	testBytes := make([]byte, bufSize*1024)
 	readBuf := make([]byte, bufSize*1024)
 
-	l := b.N * bufSize * 1024
 	resp := &http.Response{}
+	pcf := NewPCF(resp, int64(len(testBytes))).(*progressiveCollapseForwarder)
 
-	var readIndex uint64
-	var err error
-
-	pcf := NewPCF(resp, int64(l))
 	b.SetBytes(int64(bufSize) * 1024)
 
-	b.ResetTimer()
-
-	for n := 0; n < b.N; n++ {
-		pcf.Write(testBytes)
-		_, err = pcf.IndexRead(readIndex, readBuf)
-		readIndex++
-		if err != nil {
-			break
+	for b.Loop() {
+		b.StopTimer()
+		pcf.dataIndex = 0
+		pcf.rIndex.Store(0)
+		b.StartTimer()
+		if _, err := pcf.Write(testBytes); err != nil {
+			b.Fatal(err)
+		}
+		if _, err := pcf.IndexRead(0, readBuf); err != nil {
+			b.Fatal(err)
 		}
 	}
 }

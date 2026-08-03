@@ -64,6 +64,8 @@ Trickster exposes a `/ping` endpoint that returns a health check response, match
 
 ### Normalization and "Fast Forwarding"
 
-Trickster will always normalize the calculated time range to fit the step size, so small variations in the time range will still result in actual queries for
-the entire time "bucket".  In addition, Trickster will not cache the results for the portion of the query that is still active -- i.e., within the current bucket
-or within the configured backfill tolerance setting (whichever is greater) 
+Trickster will always normalize the calculated time range to fit the step size, so small variations in the time range will still result in actual queries for the entire time "bucket". In addition, Trickster will not cache the results for the portion of the query that is still active -- i.e., within the current bucket or within the configured backfill tolerance setting (whichever is greater).
+
+## Max Query Range Limitation
+
+Trickster supports enforcing a `max_query_range` limit on ClickHouse backends. For details on how to configure and use query range limits, see the [Query Range Limits](./query-range-limits.md) documentation.

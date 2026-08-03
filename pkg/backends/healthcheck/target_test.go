@@ -28,16 +28,28 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/stretchr/testify/require"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+
+	"github.com/stretchr/testify/require"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
+}
+
+type closeTrackingBody struct {
+	io.Reader
+	closed bool
+}
+
+func (b *closeTrackingBody) Close() error {
+	b.closed = true
+	return nil
 }
 
 func okProbeResponse(req *http.Request) *http.Response {
@@ -277,7 +289,7 @@ func TestProbe(t *testing.T) {
 				Scheme:        "http",
 				Host:          "probe-loop.invalid",
 				Path:          "/",
-				Interval:      intervalMS * time.Millisecond,
+				Interval:      timeconv.Duration(intervalMS * time.Millisecond),
 				ExpectedCodes: []int{200},
 			}, client)
 			require.NoError(t, err)
@@ -331,6 +343,31 @@ func TestDemandProbe(t *testing.T) {
 	if w.Code != 500 {
 		t.Error("expected 500 got ", w.Code)
 	}
+}
+
+func TestDemandProbeClosesUpstreamBody(t *testing.T) {
+	body := &closeTrackingBody{Reader: strings.NewReader("OK")}
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{},
+			Body:       body,
+			Request:    req,
+		}, nil
+	})}
+	r, err := http.NewRequest(http.MethodGet, "http://healthcheck.invalid/", nil)
+	require.NoError(t, err)
+	target := &target{
+		status:      &Status{},
+		baseRequest: r,
+		httpClient:  client,
+	}
+	w := httptest.NewRecorder()
+
+	target.demandProbe(w)
+
+	require.True(t, body.closed, "demand probe must close the upstream response body")
+	require.Equal(t, "OK", w.Body.String())
 }
 
 func newTestServer(responseCode int, responseBody string,

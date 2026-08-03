@@ -110,6 +110,12 @@ func Load(args []string) (*Config, error) {
 		}
 	}
 
+	// Normalize legacy listener settings only after their existing defaulting
+	// behavior has run. Explicit entries in servers still take precedence.
+	if err := c.applyLegacyListenerOptions(); err != nil {
+		return nil, err
+	}
+
 	if len(c.Authenticators) > 0 {
 		for _, ao := range c.Authenticators {
 			if err := ao.Initialize(); err != nil {

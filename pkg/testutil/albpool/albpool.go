@@ -32,11 +32,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
 // New constructs a pool with the given healthyFloor and one target per handler.
@@ -367,7 +368,8 @@ func RunHealthFlipRace(
 				SucceededSlots: succeededSlots.Load(),
 			}
 		default:
-			if earlyExitFanouts > 0 && fanoutIters.Load() >= earlyExitFanouts {
+			if earlyExitFanouts > 0 && fanoutIters.Load() >= earlyExitFanouts &&
+				flipperIters.Load() > 0 {
 				close(stop)
 				wg.Wait()
 				return HealthFlipResult{

@@ -49,7 +49,7 @@ func BenchmarkDeltaProxyCache(b *testing.B) {
 		int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
 
 	w := httptest.NewRecorder()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		client.QueryRangeHandler(w, r)
 	}
 }
@@ -79,7 +79,7 @@ func BenchmarkDeltaProxyCacheChunks(b *testing.B) {
 		int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
 
 	w := httptest.NewRecorder()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		client.QueryRangeHandler(w, r)
 	}
 }

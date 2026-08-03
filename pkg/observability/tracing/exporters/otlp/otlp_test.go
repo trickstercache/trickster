@@ -29,6 +29,8 @@ import (
 
 	errs "github.com/trickstercache/trickster/v2/pkg/observability/tracing/errors"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+
 	"go.opentelemetry.io/otel/trace"
 	collectortracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	"google.golang.org/grpc"
@@ -138,7 +140,7 @@ func TestNewAppliesEndpointOptions(t *testing.T) {
 			opt := options.New()
 			opt.Endpoint = tc.endpoint(srv)
 			opt.Headers = map[string]string{"X-Trickster-Test": tc.name}
-			opt.Timeout = time.Second
+			opt.Timeout = timeconv.Duration(time.Second)
 
 			tr, err := New(opt)
 			if err != nil {
@@ -202,7 +204,7 @@ func TestNewAppliesResourceAttributes(t *testing.T) {
 		"deployment.environment": "test",
 	}
 	opt.DisableCompression = true
-	opt.Timeout = time.Second
+	opt.Timeout = timeconv.Duration(time.Second)
 
 	tr, err := New(opt)
 	if err != nil {
@@ -261,7 +263,7 @@ func TestNewAppliesGRPCProtocol(t *testing.T) {
 	opt.Headers = map[string]string{"x-trickster-test": options.OTLPProtocolGRPC}
 	opt.Tags = map[string]string{"component": "proxy"}
 	opt.DisableCompression = true
-	opt.Timeout = time.Second
+	opt.Timeout = timeconv.Duration(time.Second)
 
 	tr, err := New(opt)
 	if err != nil {
@@ -329,7 +331,7 @@ func TestNewContinuesSampledRemoteParent(t *testing.T) {
 	opt.Endpoint = srv.URL + "/v1/traces"
 	opt.SampleRate = &sampleRate
 	opt.DisableCompression = true
-	opt.Timeout = time.Second
+	opt.Timeout = timeconv.Duration(time.Second)
 
 	tr, err := New(opt)
 	if err != nil {

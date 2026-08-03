@@ -29,7 +29,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -85,16 +84,12 @@ func TestALBUnavailableMemberNotQueried(t *testing.T) {
 	metricsAddr := fmt.Sprintf("127.0.0.1:%d", metricsPort)
 	waitForTrickster(t, metricsAddr)
 
-	// Wait for the broken backend to record at least one healthcheck miss.
-	// failure_threshold: 1 + interval: 100ms means it should be marked
-	// unavailable within ~300ms.
-	require.EventuallyWithT(t, func(collect *assert.CollectT) {
-		assert.Greater(collect, brokenHCHits.Load(), int64(0),
-			"waiting for first healthcheck probe to broken backend")
-	}, 5*time.Second, 50*time.Millisecond)
-
-	// Give the pool a beat to refresh after the status flip.
-	time.Sleep(300 * time.Millisecond)
+	healthURL := "http://" + metricsAddr + "/trickster/health"
+	requireHealthState(t, healthURL, "prom-broken", "unavailable", 10*time.Second)
+	requireALBMemberState(t, healthURL, "alb-fr-test", "prom-broken", "unavailable", 10*time.Second)
+	requireALBMemberState(t, healthURL, "alb-tsm-test", "prom-broken", "unavailable", 10*time.Second)
+	require.Greater(t, brokenHCHits.Load(), int64(0),
+		"expected at least one healthcheck probe to the broken backend")
 
 	// Snapshot the counter just before issuing user traffic; subsequent growth
 	// is what we attribute to fanout from the ALB.

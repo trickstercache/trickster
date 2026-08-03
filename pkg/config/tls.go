@@ -20,22 +20,43 @@ import (
 	"crypto/tls"
 
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 )
 
 // TLSCertConfig returns the crypto/tls configuration object with a list of name-bound
 // certs derived from the running config
 func (c *Config) TLSCertConfig() (*tls.Config, error) {
-	var err error
 	if !c.Frontend.ServeTLS {
 		return nil, nil
 	}
+	return c.tlsCertConfig(listener.DefaultFrontendName)
+}
+
+// TLSCertConfigForListener returns a TLS configuration containing certificates
+// from backends mapped to listenerName.
+func (c *Config) TLSCertConfigForListener(listenerName string) (*tls.Config, error) {
+	o, err := c.RequireListener(listenerName)
+	if err != nil {
+		return nil, err
+	}
+	if !o.ServeTLS {
+		return nil, nil
+	}
+	return c.tlsCertConfig(listenerName)
+}
+
+func (c *Config) tlsCertConfig(listenerName string) (*tls.Config, error) {
+	var err error
 	to := []*bo.Options{}
 	for _, o := range c.Backends {
 		// Only include backends that actually present a server cert+key.
 		// A CA-only TLS block (certificate_authority_paths with no
 		// FullChainCertPath/PrivateKeyPath) is for outbound verification
 		// and must not feed LoadX509KeyPair. See #940.
-		if o.TLS != nil && o.TLS.ServeTLS &&
+		if o.ListenerName == "" {
+			o.ListenerName = listener.DefaultFrontendName
+		}
+		if o.ListenerName == listenerName && o.TLS != nil && o.TLS.ServeTLS &&
 			o.TLS.FullChainCertPath != "" && o.TLS.PrivateKeyPath != "" {
 			to = append(to, o)
 		}

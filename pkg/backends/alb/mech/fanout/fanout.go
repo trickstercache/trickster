@@ -43,6 +43,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/capture"
+
 	"golang.org/x/sync/errgroup"
 )
 
@@ -98,11 +99,11 @@ type Result struct {
 	Capture *capture.CaptureResponseWriter
 	// Failed is true when the slot did not produce a usable response.
 	// Reasons: clone error, panic in the member's handler, or capture
-	// truncation (the upstream exceeded MaxCaptureBytes). Mechanism code
-	// uses this to surface partial-failure signals.
+	// truncation (the upstream exceeded MaxCaptureBytes), or parent-context
+	// cancellation. Mechanism code uses this to surface partial-failure signals.
 	Failed bool
-	// Err carries a clone or transport error, if any. A recovered panic
-	// is reflected only in Failed; the panic value is logged + metered
+	// Err carries a clone, transport, or context error, if any. A recovered
+	// panic is reflected only in Failed; the panic value is logged + metered
 	// inside the fanout goroutine.
 	Err error
 }
@@ -120,6 +121,10 @@ type Config struct {
 	Variant string
 	// ConcurrencyLimit caps in-flight member calls. 0 means unlimited.
 	ConcurrencyLimit int
+	// ConcurrencyLimiter, when non-nil, shares one concurrency bound across
+	// multiple fanout calls. ConcurrencyLimit creates a call-local limiter when
+	// this field is nil.
+	ConcurrencyLimiter *ConcurrencyLimiter
 	// MaxCaptureBytes caps each member's response body capture. 0 uses
 	// capture.DefaultMaxBytes.
 	MaxCaptureBytes int
@@ -143,12 +148,45 @@ type Config struct {
 	// most mechanisms can leave it nil.
 	Context func(parent context.Context) context.Context
 	// OnResult, if non-nil, is called inside the fanout goroutine after
-	// the member's handler returns and before the goroutine exits. Use
-	// this for per-slot side effects that should run in parallel with
-	// other in-flight members (e.g. TSM merges into a shared accumulator).
-	// OnResult must be safe for concurrent invocation. The supplied
-	// Result is the same one that will appear in the All return slice.
+	// the member's handler returns and before the goroutine exits. It is
+	// skipped when the handler returns after the fanout context is canceled.
+	// Use this for per-slot side effects that run with other in-flight members.
+	// OnResult must be safe for concurrent invocation. The supplied Result
+	// is the same one that will appear in the All return slice.
 	OnResult func(idx int, r *Result)
+}
+
+// ConcurrencyLimiter bounds in-flight member calls across one or more fanouts.
+// A nil limiter means unlimited concurrency.
+type ConcurrencyLimiter struct {
+	slots chan struct{}
+}
+
+// NewConcurrencyLimiter returns a limiter for positive limits and nil when
+// concurrency is unlimited.
+func NewConcurrencyLimiter(limit int) *ConcurrencyLimiter {
+	if limit <= 0 {
+		return nil
+	}
+	return &ConcurrencyLimiter{slots: make(chan struct{}, limit)}
+}
+
+func (l *ConcurrencyLimiter) acquire(ctx context.Context) error {
+	if l == nil {
+		return nil
+	}
+	select {
+	case l.slots <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (l *ConcurrencyLimiter) release() {
+	if l != nil {
+		<-l.slots
+	}
 }
 
 // All scatters parent to every target and gathers slot-ordered Results.
@@ -167,10 +205,11 @@ type Config struct {
 //
 // All returns when every spawned goroutine has finished. The returned
 // slice has len(targets) entries; results[i].Index == i. The error is the
-// first non-nil error from any goroutine (typically a clone failure); per-
-// slot errors are also recorded in results[i].Err. The primitive logs +
-// meters every failure regardless; callers can use the returned error to
-// propagate through their own errgroup, render a fatal response, etc.
+// first non-nil error from any goroutine (typically a clone failure), or the
+// parent context error when fanout is canceled; per-slot errors are also
+// recorded in results[i].Err. The primitive logs + meters non-cancellation
+// failures regardless; callers can use the returned error to propagate
+// through their own errgroup, render a fatal response, etc.
 func All(ctx context.Context, parent *http.Request, targets pool.Targets, cfg Config) ([]Result, error) {
 	return scatter(ctx, parent, targets, cfg, nil)
 }
@@ -290,8 +329,9 @@ func scatterInto(ctx context.Context, parent *http.Request, targets pool.Targets
 	}
 
 	var eg errgroup.Group
-	if cfg.ConcurrencyLimit > 0 {
-		eg.SetLimit(cfg.ConcurrencyLimit)
+	limiter := cfg.ConcurrencyLimiter
+	if limiter == nil {
+		limiter = NewConcurrencyLimiter(cfg.ConcurrencyLimit)
 	}
 
 	// Aggregate capture-buffer budget across all slots. Each dispatched slot
@@ -307,7 +347,19 @@ func scatterInto(ctx context.Context, parent *http.Request, targets pool.Targets
 	}
 	perSlotReserve := perSlotReserveBytes(cfg)
 
+	var dispatchErr error
+	markUndispatched := func(start int, err error) {
+		for i := start; i < l; i++ {
+			results[i] = Result{Index: i, Failed: true, Err: err}
+		}
+	}
+
 	for i := range l {
+		if err := ctx.Err(); err != nil {
+			dispatchErr = err
+			markUndispatched(i, err)
+			break
+		}
 		if targets[i] == nil {
 			results[i] = Result{Index: i, Failed: true}
 			continue
@@ -317,7 +369,25 @@ func scatterInto(ctx context.Context, parent *http.Request, targets pool.Targets
 			metrics.ALBFanoutFailures.WithLabelValues(cfg.Mechanism, cfg.Variant, "aggregate_cap").Inc()
 			continue
 		}
+		if limiter != nil {
+			if err := limiter.acquire(ctx); err != nil {
+				dispatchErr = err
+				markUndispatched(i, err)
+				break
+			}
+			// A slot and cancellation can become ready together. Do not start a
+			// handler after cancellation merely because select chose the slot.
+			if err := ctx.Err(); err != nil {
+				limiter.release()
+				dispatchErr = err
+				markUndispatched(i, err)
+				break
+			}
+		}
 		eg.Go(func() error {
+			if limiter != nil {
+				defer limiter.release()
+			}
 			results[i].Index = i
 			defer mech.RecoverFanoutPanic(cfg.Mechanism, cfg.Variant, i, func() {
 				results[i].Failed = true
@@ -335,6 +405,14 @@ func scatterInto(ctx context.Context, parent *http.Request, targets pool.Targets
 			results[i].Capture = crw
 
 			targets[i].Handler().ServeHTTP(crw, r2)
+			if err := ctx.Err(); err != nil {
+				results[i].Failed = true
+				results[i].Err = err
+				if perSlot != nil {
+					perSlot(i, &results[i])
+				}
+				return nil
+			}
 			// short_read wins over truncated; both can be true for the same
 			// slot and double-counting distorts dashboards.
 			if capt := request.GetUpstreamShortReadCapture(r2.Context()); capt != nil && capt.Tripped() {
@@ -357,7 +435,13 @@ func scatterInto(ctx context.Context, parent *http.Request, targets pool.Targets
 	}
 
 	err := eg.Wait()
-	if err != nil {
+	if err == nil {
+		err = dispatchErr
+	}
+	if err == nil {
+		err = ctx.Err()
+	}
+	if err != nil && ctx.Err() == nil {
 		logger.Warn("alb fanout gather failure", logging.Pairs{
 			"mech": cfg.Mechanism, "error": err,
 		})

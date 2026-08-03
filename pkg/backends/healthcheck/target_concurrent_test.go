@@ -18,14 +18,18 @@ package healthcheck
 
 import (
 	"context"
+	"net/http"
 	"net/url"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
-	"github.com/stretchr/testify/require"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+
+	"github.com/stretchr/testify/require"
 )
 
 // target.cancel is written in Start and read in Stop without a lock.
@@ -42,7 +46,7 @@ func TestTargetConcurrentStartStopRace(t *testing.T) {
 		Scheme:        u.Scheme,
 		Host:          u.Host,
 		Path:          "/",
-		Interval:      50 * time.Millisecond,
+		Interval:      timeconv.Duration(50 * time.Millisecond),
 		ExpectedCodes: []int{200},
 	}, ts.Client())
 	require.NoError(t, err)
@@ -70,25 +74,28 @@ func TestTargetConcurrentStartStopRace(t *testing.T) {
 // has returned".
 func TestTargetRestartAfterStop(t *testing.T) {
 	logger.SetLogger(testLogger)
-	ts := newTestServer(200, "OK", map[string]string{})
-	defer ts.Close()
-	u, err := url.Parse(ts.URL)
-	require.NoError(t, err)
+	synctest.Test(t, func(t *testing.T) {
+		client := &http.Client{
+			Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				return okProbeResponse(req), nil
+			}),
+		}
+		tgt, err := newTarget(context.Background(), "restart", "restart", &ho.Options{
+			Verb:          "GET",
+			Scheme:        "http",
+			Host:          "restart.invalid",
+			Path:          "/",
+			Interval:      timeconv.Duration(200 * time.Millisecond),
+			ExpectedCodes: []int{200},
+		}, client)
+		require.NoError(t, err)
 
-	tgt, err := newTarget(context.Background(), "restart", "restart", &ho.Options{
-		Verb:          "GET",
-		Scheme:        u.Scheme,
-		Host:          u.Host,
-		Path:          "/",
-		Interval:      200 * time.Millisecond,
-		ExpectedCodes: []int{200},
-	}, ts.Client())
-	require.NoError(t, err)
-
-	ctx := context.Background()
-	for range 10 {
-		tgt.Start(ctx)
-		time.Sleep(time.Millisecond)
-		tgt.Stop()
-	}
+		ctx := context.Background()
+		for range 10 {
+			tgt.Start(ctx)
+			time.Sleep(time.Second)
+			synctest.Wait()
+			tgt.Stop()
+		}
+	})
 }

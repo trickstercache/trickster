@@ -42,6 +42,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -167,7 +168,6 @@ func PrepareResponseWriter(w io.Writer, code int, header http.Header) io.Writer 
 		h := rw.Header()
 		headers.Merge(h, header)
 		headers.StripClientHeaders(h)
-		headers.AddResponseHeaders(h)
 		if code > 0 {
 			rw.WriteHeader(code)
 		}

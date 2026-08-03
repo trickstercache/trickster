@@ -17,7 +17,9 @@
 package options
 
 import (
+	"fmt"
 	"maps"
+	"slices"
 
 	ct "github.com/trickstercache/trickster/v2/pkg/config/types"
 	ae "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/errors"
@@ -53,6 +55,21 @@ func (o *Options) Clone() *Options {
 	out := pointers.Clone(o)
 	out.Users = maps.Clone(o.Users)
 	out.ProviderData = maps.Clone(o.ProviderData)
+	return out
+}
+
+// CloneYAMLSafe returns a clone with user names and credentials redacted.
+func (o *Options) CloneYAMLSafe() *Options {
+	out := o.Clone()
+	userNames := make([]string, 0, len(out.Users))
+	for userName := range out.Users {
+		userNames = append(userNames, userName)
+	}
+	slices.Sort(userNames)
+	out.Users = make(ct.EnvStringMap, len(userNames))
+	for i := range userNames {
+		out.Users[fmt.Sprintf("user%d", i+1)] = "*****"
+	}
 	return out
 }
 

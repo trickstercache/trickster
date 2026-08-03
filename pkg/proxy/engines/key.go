@@ -48,7 +48,7 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 	pc := pr.rsc.PathConfig
 
 	if pc == nil {
-		return md5.Checksum(pr.URL.Path + extra)
+		return md5.Checksum(pr.URL.Path + pr.corsCacheKeyPart(pr.Request) + extra)
 	}
 
 	var qp url.Values
@@ -79,7 +79,11 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 	}
 
 	if pc.KeyHasher != nil {
-		return pc.KeyHasher(r.URL.Path, qp, r.Header, b, trq, extra)
+		key := pc.KeyHasher(r.URL.Path, qp, r.Header, b, trq, extra)
+		if corsPart := pr.corsCacheKeyPart(r); corsPart != "" {
+			return md5.Checksum(key + corsPart)
+		}
+		return key
 	}
 
 	var k int
@@ -184,7 +188,16 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 	}
 	vals = vals[:k]
 	slices.Sort(vals)
-	return md5.Checksum(pr.URL.Path + "." + strings.Join(vals, "") + extra)
+	return md5.Checksum(pr.URL.Path + "." + strings.Join(vals, "") +
+		pr.corsCacheKeyPart(r) + extra)
+}
+
+func (pr *proxyRequest) corsCacheKeyPart(r *http.Request) string {
+	if pr == nil || pr.rsc == nil || pr.rsc.FrontendCORS == nil ||
+		!pr.rsc.FrontendCORS.PreservesOrigin() || r == nil {
+		return ""
+	}
+	return ".origin." + r.Header.Get(headers.NameOrigin)
 }
 
 func deepSearch(document map[string]any, key string) (string, error) {

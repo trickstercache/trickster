@@ -20,6 +20,8 @@ import (
 	"encoding/json"
 	"testing"
 	"unicode/utf8"
+
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
 )
 
 func FuzzTagsJSON(f *testing.F) {
@@ -229,7 +231,7 @@ func TestStripTags(t *testing.T) {
 		ds2.StripTags([]string{"region"})
 
 		// Now merge with sum — should aggregate since hashes match
-		ds1.MergeWithStrategy(true, int(MergeStrategySum), ds2)
+		ds1.MergeWithStrategy(true, int(merge.StrategySum), ds2)
 		if ds1.SeriesCount() != 1 {
 			t.Fatalf("expected 1 series after strip+merge, got %d", ds1.SeriesCount())
 		}

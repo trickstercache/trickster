@@ -36,6 +36,9 @@ type Pool interface {
 	// of current health. Mechanisms compare this against len(Targets()) to
 	// detect a pool degraded to a subset of its configured members.
 	ConfiguredLen() int
+	// ConfiguredTargets returns the configured target topology in pool order.
+	// The returned slice is a shallow copy and is safe for callers to retain.
+	ConfiguredTargets() Targets
 	// SetHealthy seeds the pool's healthy set from a handler list. Intended
 	// for tests and bootstrap paths that don't drive status updates through
 	// healthcheck subscribers.
@@ -111,6 +114,10 @@ func (p *pool) snapshot() Targets {
 
 func (p *pool) ConfiguredLen() int {
 	return len(p.targets)
+}
+
+func (p *pool) ConfiguredTargets() Targets {
+	return append(Targets(nil), p.targets...)
 }
 
 func (p *pool) Targets() Targets {

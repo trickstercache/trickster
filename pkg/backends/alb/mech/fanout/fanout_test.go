@@ -28,12 +28,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
-	"go.uber.org/goleak"
-
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/albpool"
+
+	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 )
 
 func TestMain(m *testing.M) {
@@ -94,6 +94,64 @@ func TestAllCtxCancelPropagation(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("All did not return after ctx cancel")
 	}
+}
+
+func TestAllCancellationStopsQueuedDispatchAndResultProcessing(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	firstStarted := make(chan struct{})
+	var queuedStarted atomic.Int32
+	var onResultCalls atomic.Int32
+
+	first, _ := albpool.Target(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		close(firstStarted)
+		<-r.Context().Done()
+	}))
+	queuedHandler := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		queuedStarted.Add(1)
+	})
+	second, _ := albpool.Target(queuedHandler)
+	third, _ := albpool.Target(queuedHandler)
+	targets := pool.Targets{first, second, third}
+	parent := albpool.NewParentGET(t)
+
+	type outcome struct {
+		results []Result
+		err     error
+	}
+	done := make(chan outcome, 1)
+	go func() {
+		results, err := All(ctx, parent, targets, Config{
+			Mechanism:        "test",
+			ConcurrencyLimit: 1,
+			OnResult: func(int, *Result) {
+				onResultCalls.Add(1)
+			},
+		})
+		done <- outcome{results: results, err: err}
+	}()
+
+	select {
+	case <-firstStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("first handler never started")
+	}
+	cancel()
+
+	select {
+	case got := <-done:
+		require.ErrorIs(t, got.err, context.Canceled)
+		require.Len(t, got.results, len(targets))
+		for i := range got.results {
+			require.Equal(t, i, got.results[i].Index)
+			require.True(t, got.results[i].Failed, "slot %d should be canceled", i)
+			require.ErrorIs(t, got.results[i].Err, context.Canceled)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("All did not return after context cancellation")
+	}
+
+	require.Zero(t, queuedStarted.Load(), "queued handlers started after cancellation")
+	require.Zero(t, onResultCalls.Load(), "OnResult ran after cancellation")
 }
 
 func TestAllPanicRecovered(t *testing.T) {

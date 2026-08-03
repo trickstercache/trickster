@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/parsing/token"
-	testutil "github.com/trickstercache/trickster/v2/pkg/testutil"
 )
 
 func TestIsKeyword(t *testing.T) {
@@ -107,7 +106,12 @@ func TestIsVerb(t *testing.T) {
 	}
 }
 
-var zeroTime = time.Time{}
+const tokenTestEpoch2020 int64 = 1577836800
+
+var (
+	zeroTime      = time.Time{}
+	tokenTime2020 = time.Unix(tokenTestEpoch2020, 0)
+)
 
 func TestTokenToTime(t *testing.T) {
 	tests := []struct {
@@ -117,8 +121,8 @@ func TestTokenToTime(t *testing.T) {
 		variance time.Duration
 	}{
 		{&token.Token{Typ: token.String, Val: "invalid time"}, zeroTime, ErrInvalidInputLength, 0},
-		{&token.Token{Typ: token.String, Val: "2020-01-01 00:00:00"}, testutil.Time2020, nil, 0},
-		{&token.Token{Typ: token.Number, Val: strconv.FormatInt(testutil.Epoch2020, 10)}, testutil.Time2020, nil, 0},
+		{&token.Token{Typ: token.String, Val: "2020-01-01 00:00:00"}, tokenTime2020, nil, 0},
+		{&token.Token{Typ: token.Number, Val: strconv.FormatInt(tokenTestEpoch2020, 10)}, tokenTime2020, nil, 0},
 		{&token.Token{Typ: token.Number, Val: "not a number"}, zeroTime, strconv.ErrSyntax, 0},
 		{&token.Token{Typ: token.Identifier, Val: "x"}, time.Now(), nil, time.Second},
 	}

@@ -37,10 +37,17 @@ func TestAllRacesPerTargetHealthFlip(t *testing.T) {
 	for i := range numTargets {
 		targets[i], _ = albpool.HealthyTarget(albpool.StatusHandler(http.StatusOK, ""))
 	}
+	// Force one slot through failureReason so fanout reads its live health
+	// status while the flipper mutates it. Keep the remaining slots successful
+	// so the test can still assert that health flapping does not starve every
+	// dispatch.
+	targets[0], _ = albpool.HealthyTarget(
+		albpool.SizedBodyHandler(http.StatusOK, 1024),
+	)
 
 	parent := albpool.NewParentGET(t)
 	ctx := context.Background()
-	cfg := Config{Mechanism: "test"}
+	cfg := Config{Mechanism: "test", MaxCaptureBytes: 16}
 
 	res := albpool.RunHealthFlipRace(t, targets, func() int {
 		results, _ := All(ctx, parent, targets, cfg)

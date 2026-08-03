@@ -55,6 +55,9 @@ tracing:
     endpoint: traces-b.private.example:4317
   traces-stdout:
     provider: stdout
+listeners:
+  private-listener:
+    port: 9000
 backends:
   alb-main:
     provider: alb
@@ -74,6 +77,8 @@ backends:
             to_credential: upstream-credential
   prom-a:
     provider: prometheus
+    replica_group: private-ha-shard
+    listener_name: private-listener
     origin_url: http://prom-a.private.example:9090/private/path
     cache_name: cache-a
     authenticator_name: auth-z
@@ -93,6 +98,8 @@ backends:
         authenticator_name: none
   prom-b:
     provider: prometheus
+    replica_group: private-ha-shard
+    listener_name: private-listener
     origin_url: http://prom-b.private.example:9090/private/path
     cache_name: cache-b
     tracing_name: traces-a
@@ -122,6 +129,11 @@ request_rewriters:
 	}
 
 	out := conf.SanitizedString()
+	sanitized := conf.SanitizedClone()
+	if sanitized.Backends["prom-1"].ReplicaGroup == "" ||
+		sanitized.Backends["prom-1"].ReplicaGroup != sanitized.Backends["prom-2"].ReplicaGroup {
+		t.Fatalf("equal replica groups were not preserved during sanitization")
+	}
 
 	for _, want := range []string{
 		"alb-1:",
@@ -132,13 +144,15 @@ request_rewriters:
 		"memory-1:",
 		"memory-2:",
 		"redis-1:",
+		"listener-1:",
+		"listener_name: listener-1",
 		"auth1:",
 		"auth2:",
 		"authenticator_name: auth2",
 		"authenticator_name: auth1",
 		"authenticator_name: none",
-		"user1: redacted",
-		"user2: redacted",
+		"user1: '*****'",
+		"user2: '*****'",
 		"otlp-1:",
 		"otlp-2:",
 		"stdout-1:",
@@ -183,6 +197,7 @@ request_rewriters:
 		"cache-a",
 		"cache-b",
 		"redis-cache",
+		"private-listener",
 		"redis.private.example",
 		"redis-a.private.example",
 		"redis-b.private.example",
@@ -210,6 +225,7 @@ request_rewriters:
 		"prom-b.private.example",
 		"private-org",
 		"private-env",
+		"private-ha-shard",
 	} {
 		if strings.Contains(out, privateValue) {
 			t.Errorf("expected sanitized config not to contain %q; got:\n%s", privateValue, out)
@@ -218,6 +234,9 @@ request_rewriters:
 
 	if conf.Backends["prom-a"].CacheName != "cache-a" {
 		t.Errorf("expected original backend cache name to remain unchanged")
+	}
+	if conf.Backends["prom-a"].ListenerName != "private-listener" {
+		t.Errorf("expected original backend listener reference to remain unchanged")
 	}
 	if conf.Backends["prom-a"].Paths[0].RequestHeaders["X-Org-ID"] != "private-org" {
 		t.Errorf("expected original path request header to remain unchanged")
@@ -248,5 +267,71 @@ request_rewriters:
 	}
 	if conf.Rules["route-rule"].CaseOptions[0].NextRoute != "prom-b" {
 		t.Errorf("expected original rule case backend reference to remain unchanged")
+	}
+}
+
+func TestSanitizedCloneEdgeCases(t *testing.T) {
+	conf := NewConfig()
+	err := conf.loadYAMLConfig(`
+caches:
+  empty-provider:
+    provider: ""
+  unknown-cache:
+    provider: custom-cache
+tracing:
+  empty-provider:
+    provider: ""
+  unknown-tracer:
+    provider: custom-tracer
+backends:
+  empty-provider:
+    provider: ""
+    origin_url: http://example.com
+    paths:
+      - path: /ok
+        authenticator_name: missing-auth
+  unknown-backend:
+    provider: custom-backend
+    origin_url: http://example.com
+    alb:
+      pool:
+        - missing-backend
+      user_router:
+        default_backend: missing-backend
+        users:
+          u1:
+            to_backend: missing-backend
+rules:
+  route-rule:
+    next_route: missing-backend
+    cases:
+      - matches: [a]
+        next_route: missing-backend
+request_rewriters:
+  short:
+    instructions:
+      - [host]
+      - [host, set, keep.example]
+      - [header, set, X-Other, keep.example]
+`)
+	if err != nil {
+		t.Fatalf("Could not load configuration: %s", err.Error())
+	}
+
+	out := conf.SanitizedString()
+	for _, want := range []string{
+		"cache-1:",
+		"custom-cache-1:",
+		"tracing-1:",
+		"custom-tracer-1:",
+		"backend-1:",
+		"custom-backend-1:",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected sanitized config to contain %q; got:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "empty-provider") || strings.Contains(out, "unknown-cache") {
+		t.Errorf("expected empty/unknown names to be anonymized; got:\n%s", out)
 	}
 }

@@ -35,6 +35,7 @@ import (
 	trerr "github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/switcher"
 	sw "github.com/trickstercache/trickster/v2/pkg/proxy/tls"
+
 	"golang.org/x/net/netutil"
 )
 
@@ -59,7 +60,7 @@ type Listener struct {
 	tlsSwapper   sw.CertSwapper
 	routeSwapper *switcher.SwitchHandler
 	server       *http.Server
-	exitOnError  bool
+	exitOnError  atomic.Bool
 	state        int32
 	readyCh      chan struct{}
 	readyOnce    sync.Once
@@ -232,9 +233,9 @@ func (lg *Group) StartListener(listenerName, address string, port int, connectio
 ) error {
 	l := &Listener{
 		routeSwapper: switcher.NewSwitchHandler(router),
-		exitOnError:  f != nil,
 		readyCh:      make(chan struct{}),
 	}
+	l.exitOnError.Store(f != nil)
 	l.setState(StateStarting)
 
 	if tlsConfig != nil && len(tlsConfig.Certificates) > 0 {
@@ -260,6 +261,15 @@ func (lg *Group) StartListener(listenerName, address string, port int, connectio
 	logger.Info("http listener starting",
 		logging.Pairs{"listenerName": listenerName, "port": port, "address": address})
 
+	// the server is assigned before the listener is published to the group, so
+	// a DrainAndClose racing this startup always observes a server to shut down
+	svr := &http.Server{
+		Handler:           l.routeSwapper,
+		TLSConfig:         tlsConfig,
+		ReadHeaderTimeout: readHeaderTimeout,
+	}
+	l.server = svr
+
 	lg.listenersLock.Lock()
 	lg.members[listenerName] = l
 	lg.listenersLock.Unlock()
@@ -271,40 +281,21 @@ func (lg *Group) StartListener(listenerName, address string, port int, connectio
 	// defer the tracer flush here where the listener connection ends
 	defer handleTracerShutdowns(tracers)
 
-	if tlsConfig != nil {
-		svr := &http.Server{
-			Handler:           l.routeSwapper,
-			TLSConfig:         tlsConfig,
-			ReadHeaderTimeout: readHeaderTimeout,
-		}
-		l.server = svr
-		err = svr.Serve(l)
-		if err != nil {
-			logger.ErrorSynchronous(
-				"https listener stopping", logging.Pairs{"listenerName": listenerName, "detail": err})
-			if l.exitOnError {
-				defer func() {
-					os.Exit(1) // exit via defer to allow prior defers to run
-				}()
-				return nil
-			}
-		}
-		return err
-	}
-
-	svr := &http.Server{
-		Handler:           l.routeSwapper,
-		ReadHeaderTimeout: readHeaderTimeout,
-	}
-	l.server = svr
 	err = svr.Serve(l)
 	if err != nil {
-		logger.ErrorSynchronous("http listener stopping",
+		event := "http listener stopping"
+		if tlsConfig != nil {
+			event = "https listener stopping"
+		}
+		logger.ErrorSynchronous(event,
 			logging.Pairs{"listenerName": listenerName, "detail": err})
-		if l.exitOnError {
+		if l.exitOnError.Load() {
 			defer func() {
 				os.Exit(1) // exit via defer to allow prior defers to run
 			}()
+			if tlsConfig != nil {
+				return nil
+			}
 		}
 	}
 	return err
@@ -342,7 +333,7 @@ func (lg *Group) DrainAndClose(listenerName string, drainWait time.Duration) err
 		lg.listenersLock.Unlock()
 		return trerr.ErrNoSuchListener
 	}
-	l.exitOnError = false
+	l.exitOnError.Store(false)
 	l.setState(StateStopping)
 	delete(lg.members, listenerName)
 	lg.listenersLock.Unlock()

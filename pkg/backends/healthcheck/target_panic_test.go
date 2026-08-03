@@ -27,9 +27,11 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/stretchr/testify/require"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+
+	"github.com/stretchr/testify/require"
 )
 
 // panicOnceTransport panics on its first RoundTrip call and returns a 200 OK
@@ -71,7 +73,7 @@ func TestProbeLoopSurvivesPanic(t *testing.T) {
 			Scheme:            u.Scheme,
 			Host:              u.Host,
 			Path:              "/",
-			Interval:          interval,
+			Interval:          timeconv.Duration(interval),
 			ExpectedCodes:     []int{200},
 			FailureThreshold:  1,
 			RecoveryThreshold: 1,

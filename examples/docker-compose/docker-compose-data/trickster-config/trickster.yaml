@@ -1,5 +1,3 @@
-frontend:
-  listen_port: 8480
 negative_caches:
   default:
     '400': 3s
@@ -73,5 +71,3 @@ backends:
         collapsed_forwarding: progressive
 logging:
   log_level: info
-metrics:
-  listen_port: 8481

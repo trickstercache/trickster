@@ -19,6 +19,8 @@ package options
 import (
 	"testing"
 	"time"
+
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 )
 
 // User-supplied threshold/timeout values must overlay onto the provider
@@ -30,7 +32,7 @@ func TestOverlayCarriesThresholdsAndTimeout(t *testing.T) {
 	custom := &Options{
 		FailureThreshold:  1,
 		RecoveryThreshold: 2,
-		Timeout:           3 * time.Second,
+		Timeout:           timeconv.Duration(3 * time.Second),
 	}
 	base.Overlay(custom)
 
@@ -40,7 +42,7 @@ func TestOverlayCarriesThresholdsAndTimeout(t *testing.T) {
 	if base.RecoveryThreshold != 2 {
 		t.Errorf("RecoveryThreshold: expected 2 got %d", base.RecoveryThreshold)
 	}
-	if base.Timeout != 3*time.Second {
+	if base.Timeout != timeconv.Duration(3*time.Second) {
 		t.Errorf("Timeout: expected 3s got %v", base.Timeout)
 	}
 }
@@ -67,7 +69,7 @@ func TestOverlayPreservesBaseWhenCustomZero(t *testing.T) {
 	base := &Options{
 		FailureThreshold:  5,
 		RecoveryThreshold: 6,
-		Timeout:           7 * time.Second,
+		Timeout:           timeconv.Duration(7 * time.Second),
 	}
 	base.Overlay(&Options{})
 
@@ -77,7 +79,7 @@ func TestOverlayPreservesBaseWhenCustomZero(t *testing.T) {
 	if base.RecoveryThreshold != 6 {
 		t.Errorf("RecoveryThreshold: expected 6 got %d", base.RecoveryThreshold)
 	}
-	if base.Timeout != 7*time.Second {
+	if base.Timeout != timeconv.Duration(7*time.Second) {
 		t.Errorf("Timeout: expected 7s got %v", base.Timeout)
 	}
 }

@@ -31,6 +31,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
@@ -956,7 +957,7 @@ func TestDeltaProxyCacheRequestFastForward(t *testing.T) {
 	step := time.Duration(300) * time.Second
 
 	now := time.Now()
-	client.fftime = now.Truncate(o.FastForwardTTL)
+	client.fftime = now.Truncate(time.Duration(o.FastForwardTTL))
 
 	extr := timeseries.Extent{Start: now.Add(-time.Duration(12) * time.Hour), End: now}
 	extn := timeseries.Extent{Start: extr.Start.Truncate(step), End: extr.End.Truncate(step)}
@@ -1397,7 +1398,7 @@ func TestDeltaProxyCacheRequestCacheMissUnmarshalFailed(t *testing.T) {
 		t.Error(err)
 	}
 
-	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusInternalServerError)
 	if err != nil {
 		t.Error(err)
 	}
@@ -1529,7 +1530,7 @@ func TestDeltaProxyCacheRequest_BackfillTolerance(t *testing.T) {
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
 
-	o.BackfillTolerance = time.Duration(300) * time.Second
+	o.BackfillTolerance = timeconv.Duration(time.Duration(300) * time.Second)
 	o.FastForwardDisable = true
 
 	query := "some_query_here{}"
@@ -1612,7 +1613,7 @@ func TestDeltaProxyCacheRequestFFTTLBiggerThanStep(t *testing.T) {
 	o.FastForwardDisable = false
 
 	step := time.Duration(300) * time.Second
-	o.FastForwardTTL = step + 1
+	o.FastForwardTTL = timeconv.Duration(step + 1)
 
 	now := time.Now()
 	end := now.Add(-time.Duration(12) * time.Hour)
@@ -1671,7 +1672,7 @@ func TestDeltaProxyCacheRequestShardByPoints(t *testing.T) {
 	client.InstantCacheKey = "test-instant-key-phit"
 
 	o.FastForwardDisable = true
-	o.ShardStep = 3 * time.Hour
+	o.ShardStep = timeconv.Duration(3 * time.Hour)
 	o.DoesShard = true
 
 	step := time.Duration(300) * time.Second
@@ -2136,12 +2137,14 @@ func TestDPCSingleflightBadPayload(t *testing.T) {
 		t.Errorf("expected 1 origin request, got %d", hits)
 	}
 
-	// all callers should get a proxy-error cache status (the unmarshaling failure
-	// triggers buildErrorResult inside the singleflight closure).
-	// the HTTP status is 200 because that's what the origin returned, but the
-	// Trickster-Result header indicates the error.
+	// all callers should get a proxy-error cache status and an Internal Server Error
+	// response (the unmarshaling failure triggers buildErrorResult inside the
+	// singleflight closure).
 	for i, rec := range recorders {
 		resp := rec.Result()
+		if resp.StatusCode != http.StatusInternalServerError {
+			t.Errorf("request %d: expected status 500, got %d", i, resp.StatusCode)
+		}
 		hdr := resp.Header.Get(headers.NameTricksterResult)
 		if !strings.Contains(hdr, "status=proxy-error") {
 			t.Errorf("request %d: expected proxy-error in result header, got %q", i, hdr)

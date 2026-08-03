@@ -20,9 +20,9 @@ import (
 	"net/http"
 	"testing"
 
-	"pgregory.net/rapid"
-
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
+
+	"pgregory.net/rapid"
 )
 
 // Invariant: p.Targets() never returns a target whose current hcStatus

@@ -26,8 +26,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/prometheus/common/sigv4"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+
+	"github.com/prometheus/common/sigv4"
 )
 
 const connectTimeout = time.Second * 10
@@ -79,22 +80,22 @@ func NewHTTPClient(o *bo.Options) (*http.Client, error) {
 	}
 
 	client := &http.Client{
-		Timeout: o.Timeout,
+		Timeout: time.Duration(o.Timeout),
 		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
 		Transport: &http.Transport{
 			Dial: (&net.Dialer{
-				KeepAlive: o.KeepAliveTimeout,
+				KeepAlive: time.Duration(o.KeepAliveTimeout),
 				Timeout:   connectTimeout,
 			}).Dial,
 			MaxIdleConns:          o.MaxIdleConns,
 			MaxIdleConnsPerHost:   o.MaxIdleConns,
 			MaxConnsPerHost:       o.MaxConcurrentConns,
-			IdleConnTimeout:       o.KeepAliveTimeout,
+			IdleConnTimeout:       time.Duration(o.KeepAliveTimeout),
 			TLSHandshakeTimeout:   connectTimeout,
-			ExpectContinueTimeout: o.Timeout,
-			ResponseHeaderTimeout: o.Timeout,
+			ExpectContinueTimeout: time.Duration(o.Timeout),
+			ResponseHeaderTimeout: time.Duration(o.Timeout),
 			TLSClientConfig:       TLSConfig,
 			// explicit: Go suppresses h2 auto-enable when Dial or TLSClientConfig is custom.
 			ForceAttemptHTTP2: true,

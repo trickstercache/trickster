@@ -21,8 +21,9 @@ import (
 	"io"
 	"sync"
 
-	"github.com/andybalholm/brotli"
 	"github.com/trickstercache/trickster/v2/pkg/encoding/reader"
+
+	"github.com/andybalholm/brotli"
 )
 
 var writerPool sync.Pool

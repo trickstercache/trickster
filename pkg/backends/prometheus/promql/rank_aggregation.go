@@ -18,8 +18,9 @@ package promql
 
 import (
 	"math/big"
-	"slices"
 	"strings"
+
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/aggregation"
 )
 
 type AggregationGrouping struct {
@@ -40,19 +41,11 @@ var maxRankK = int(^uint(0) >> 1)
 
 func ParseRankAggregation(query string) (RankAggregation, bool) {
 	q := strings.TrimSpace(query)
-	if inner, ok := unwrapUnaryFunction(q, "sort_desc"); ok {
-		spec, found := ParseRankAggregation(inner)
+	if sortSpec, ok := ParseSortWrapper(q); ok {
+		spec, found := parseRankAggregation(sortSpec.InnerQuery)
 		if found {
 			spec.SortSet = true
-			spec.SortDescending = true
-		}
-		return spec, found
-	}
-	if inner, ok := unwrapUnaryFunction(q, "sort"); ok {
-		spec, found := ParseRankAggregation(inner)
-		if found {
-			spec.SortSet = true
-			spec.SortDescending = false
+			spec.SortDescending = sortSpec.Descending
 		}
 		return spec, found
 	}
@@ -63,7 +56,7 @@ func parseRankAggregation(query string) (RankAggregation, bool) {
 	q := strings.TrimSpace(query)
 	ql := strings.ToLower(q)
 	var op string
-	for _, candidate := range []string{"bottomk", "topk"} {
+	for _, candidate := range []string{aggregation.BottomK, aggregation.TopK} {
 		if !strings.HasPrefix(ql, candidate) {
 			continue
 		}
@@ -153,7 +146,10 @@ func parseGrouping(input string) (AggregationGrouping, string, bool) {
 		if closeIdx < 0 {
 			return AggregationGrouping{}, input, false
 		}
-		labels := parseLabels(rest[1:closeIdx])
+		labels, ok := parseLabels(rest[1:closeIdx])
+		if !ok {
+			return AggregationGrouping{}, input, false
+		}
 		return AggregationGrouping{
 			Labels:  labels,
 			Without: kw == "without",
@@ -162,36 +158,23 @@ func parseGrouping(input string) (AggregationGrouping, string, bool) {
 	return AggregationGrouping{}, input, false
 }
 
-func parseLabels(input string) []string {
-	if strings.TrimSpace(input) == "" {
-		return nil
-	}
-	parts := strings.Split(input, ",")
-	seen := make(map[string]struct{}, len(parts))
-	labels := make([]string, 0, len(parts))
-	for _, part := range parts {
-		label := strings.TrimSpace(part)
-		if label == "" {
-			continue
-		}
-		if _, ok := seen[label]; ok {
-			continue
-		}
-		seen[label] = struct{}{}
-		labels = append(labels, label)
-	}
-	slices.Sort(labels)
-	return labels
-}
-
 func unwrapUnaryFunction(query, name string) (string, bool) {
 	q := strings.TrimSpace(query)
 	ql := strings.ToLower(q)
-	prefix := name + "("
-	if !strings.HasPrefix(ql, prefix) {
+	if !strings.HasPrefix(ql, name) {
 		return "", false
 	}
 	openIdx := len(name)
+	for openIdx < len(q) {
+		c := q[openIdx]
+		if c != ' ' && c != '\t' && c != '\n' && c != '\r' {
+			break
+		}
+		openIdx++
+	}
+	if openIdx >= len(q) || q[openIdx] != '(' {
+		return "", false
+	}
 	closeIdx := findMatchingCloser(q, openIdx, '(', ')')
 	if closeIdx != len(q)-1 {
 		return "", false

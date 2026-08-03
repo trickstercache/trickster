@@ -184,6 +184,29 @@ func TestAggregateStatus(t *testing.T) {
 	}
 }
 
+func TestUsableGatherContributionsRetainsErrorsOnlyWithoutSuccess(t *testing.T) {
+	success := &gatherContribution{member: 0}
+	failure := &gatherContribution{member: 1}
+	results := []gatherResult{
+		{statusCode: http.StatusOK, contrib: success},
+		{statusCode: http.StatusBadRequest, contrib: failure, failed: true},
+	}
+	got := usableGatherContributions(results)
+	if got[0] != success || got[1] != nil {
+		t.Fatalf("mixed contributions = %v, want success only", got)
+	}
+
+	results[0] = gatherResult{
+		statusCode: http.StatusInternalServerError,
+		contrib:    success,
+		failed:     true,
+	}
+	got = usableGatherContributions(results)
+	if got[0] != success || got[1] != failure {
+		t.Fatalf("all-error contributions = %v, want both error envelopes", got)
+	}
+}
+
 func TestMergeMultiValuedHeaders(t *testing.T) {
 	cases := []struct {
 		name              string

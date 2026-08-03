@@ -50,6 +50,8 @@ func tolerantStubHandler(epochNs int64, value, marker string) http.Handler {
 				}},
 			}
 			rsc.MergeFunc = merge.TimeseriesMergeFuncTolerant(nil, rsc.TSDedupToleranceNanos)
+			rsc.BatchMergeFunc = merge.TimeseriesBatchMergeFuncTolerant(
+				rsc.TSDedupToleranceNanos)
 			rsc.MergeRespondFunc = tolerantRespondFunc(marker)
 		}
 		w.Header().Set(headers.NameTricksterResult, "engine=none")

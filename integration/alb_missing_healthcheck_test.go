@@ -31,9 +31,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/integration/internal/portutil"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/trickstercache/trickster/v2/integration/internal/portutil"
 )
 
 // TestALBHealthyFloorAdmitsFailingMetric verifies the warning surface for an
@@ -138,10 +139,10 @@ func TestALBHealthyFloorResetWhenMemberHasNoHealthcheck(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
-// TestALBPoolDegradeWarnsInResponse covers thinker0's silent single-member
-// degrade: a 2-member TSM pool where one member's probe fails drops to one live
-// member. TSM still serves 200 from the survivor, but the response must carry a
-// `warnings` entry so the caller knows the merge collapsed to a single shard.
+// TestALBPoolDegradeWarnsInResponse covers thinker0's silent single-group
+// degrade: a 2-group TSM pool where one group's member probe fails drops to one
+// live replica group. TSM still serves 200 from the survivor, but the response
+// must carry a `warnings` entry so the caller knows a logical shard is missing.
 func TestALBPoolDegradeWarnsInResponse(t *testing.T) {
 	vector := albTestdata(t, "alb_unavail/healthy.json")
 	ok := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -198,7 +199,7 @@ func TestALBPoolDegradeWarnsInResponse(t *testing.T) {
 		}
 		var found bool
 		for _, wn := range pr.Warnings {
-			if strings.Contains(wn, "1 of 2 pool members") {
+			if strings.Contains(wn, "served from 1 of 2 replica groups") {
 				found = true
 			}
 		}

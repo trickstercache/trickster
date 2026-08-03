@@ -330,9 +330,8 @@ func parseXForwardHeaders(h http.Header) Hops {
 	return nil
 }
 
-// AddResponseHeaders injects standard Trickster headers into downstream HTTP responses
+// AddResponseHeaders applies Trickster's legacy wildcard CORS response header.
 func AddResponseHeaders(h http.Header) {
-	// We're read only and a harmless API, so allow all CORS
 	h.Set(NameAllowOrigin, "*")
 }
 

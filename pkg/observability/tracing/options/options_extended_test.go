@@ -20,6 +20,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+
 	"gopkg.in/yaml.v2"
 )
 
@@ -77,7 +79,7 @@ func TestCloneCopiesNestedFields(t *testing.T) {
 	o := &Options{
 		Endpoint:      "collector:4317",
 		Protocol:      OTLPProtocolGRPC,
-		Timeout:       2 * time.Second,
+		Timeout:       timeconv.Duration(2 * time.Second),
 		SampleRate:    &rate,
 		Tags:          map[string]string{"env": "test"},
 		OmitTagsList:  []string{"drop-me"},

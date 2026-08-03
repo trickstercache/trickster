@@ -26,7 +26,23 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	prop "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/options"
+	tsmerge "github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
 )
+
+func TestPlanNeedsLabelStrippingExplicitly(t *testing.T) {
+	plan := &tsmerge.TSMMergePlan{
+		Variants: []tsmerge.TSMQueryVariant{{
+			MergeStrategy: int(tsmerge.StrategyDedup),
+		}},
+	}
+	if planNeedsLabelStripping(plan) {
+		t.Fatal("plain dedup plan unexpectedly strips injected labels")
+	}
+	plan.StripInjectedLabels = true
+	if !planNeedsLabelStripping(plan) {
+		t.Fatal("explicit label stripping was ignored")
+	}
+}
 
 func mkStripKeysTarget(labels map[string]string) *pool.Target {
 	be := &stripKeysStubBackend{
@@ -35,6 +51,32 @@ func mkStripKeysTarget(labels map[string]string) *pool.Target {
 	st := &healthcheck.Status{}
 	st.Set(healthcheck.StatusPassing)
 	return pool.NewTarget(http.NotFoundHandler(), st, be)
+}
+
+type nestedStripKeysStubBackend struct {
+	stripKeysStubBackend
+	keys []string
+}
+
+func (b *nestedStripKeysStubBackend) TSMInjectedLabelKeys() []string {
+	return b.keys
+}
+
+func TestComputeStripKeysUsesNestedProvider(t *testing.T) {
+	h := &handler{}
+	h.poolVersion.Add(1)
+	st := &healthcheck.Status{}
+	st.Set(healthcheck.StatusPassing)
+	nested := &nestedStripKeysStubBackend{
+		stripKeysStubBackend: stripKeysStubBackend{cfg: &bo.Options{Name: "nested"}},
+		keys:                 []string{"route", "tenant"},
+	}
+	target := pool.NewTarget(http.NotFoundHandler(), st, nested)
+	got := append([]string(nil), h.computeStripKeys(pool.Targets{target})...)
+	slices.Sort(got)
+	if !slices.Equal(got, []string{"route", "tenant"}) {
+		t.Fatalf("nested strip keys = %v", got)
+	}
 }
 
 func TestComputeStripKeysUnion(t *testing.T) {
