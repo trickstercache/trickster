@@ -29,6 +29,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ranges/byterange"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+
 	"golang.org/x/sync/errgroup"
 )
 
@@ -84,6 +85,7 @@ func executeChunkQuery(ctx context.Context, c cache.Cache, iterator ChunkQueryIt
 		eg.Go(func() error {
 			qr := queryConcurrent(ctx, c, subkey)
 			if qr.lookupStatus != status.LookupStatusHit &&
+				qr.lookupStatus != status.LookupStatusProxyHit &&
 				(qr.err == nil || errors.Is(qr.err, cache.ErrKNF)) {
 				return nil
 			}

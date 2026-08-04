@@ -1,5 +1,3 @@
-frontend:
-  listen_port: 8480
 negative_caches:
   default:
     '400': 3s
@@ -8,20 +6,17 @@ negative_caches:
     '502': 3s
 caches:
   mem1:
-    cache_type: memory
     provider: memory
-    index:
-      max_size_objects: 512
-      max_size_backoff_objects: 128
   mem2:
-    cache_type: memory
     provider: memory
-    index:
-      max_size_objects: 1024
-      max_size_backoff_objects: 128
   fs1:
-    cache_type: filesystem
     provider: filesystem
+  redis:
+    provider: redis
+    redis:
+      client_type: standard
+      endpoint: localhost:6379
+      protocol: tcp
 request_rewriters:
   remove-accept-encoding:
     instructions:
@@ -48,15 +43,17 @@ rules:
           - 'trickster:'
         next_route: sim1
 tracing:
-  jc1:
+  otlp1:
     provider: otlp
-    endpoint: 'http://127.0.0.1:14268/api/traces'
+    protocol: http
+    endpoint: 'http://127.0.0.1:4318/v1/traces'
     tags:
       testTag: testTagValue
       testTag2: testTag2Value
-  ja1:
+  otlp2:
     provider: otlp
-    endpoint: '127.0.0.1:6831'
+    protocol: http
+    endpoint: 'http://127.0.0.1:4318/v1/traces'
     omit_tags:
       - http.url
 backends:
@@ -114,6 +111,10 @@ backends:
     provider: prometheus
     origin_url: 'http://127.0.0.1:9090'
     cache_name: fs1
+  prom3:
+    provider: prometheus
+    origin_url: 'http://127.0.0.1:9090'
+    cache_name: redis
   flux1:
     provider: influxdb
     origin_url: 'http://127.0.0.1:8186/'
@@ -182,5 +183,3 @@ backends:
         handler: proxycache
 logging:
   log_level: info
-metrics:
-  listen_port: 8481

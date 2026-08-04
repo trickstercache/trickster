@@ -57,3 +57,21 @@ func TestNewEncoder(t *testing.T) {
 		t.Error("expected non-nil encoder")
 	}
 }
+
+func TestPooledEncoderRoundtrip(t *testing.T) {
+	for i := range 3 {
+		var buf bytes.Buffer
+		enc := NewEncoder(&buf, 4)
+		data := []byte("trickster pooled encoder test")
+		enc.Write(data)
+		enc.Close() // returns encoder to pool
+
+		decoded, err := Decode(buf.Bytes())
+		if err != nil {
+			t.Fatalf("iteration %d: decode error: %v", i, err)
+		}
+		if string(decoded) != string(data) {
+			t.Fatalf("iteration %d: expected %q got %q", i, data, decoded)
+		}
+	}
+}

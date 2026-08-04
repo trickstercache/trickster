@@ -34,6 +34,7 @@ BIN_DIR        := $(PACKAGE_DIR)/bin
 CONF_DIR       := $(PACKAGE_DIR)/conf
 CGO_ENABLED    ?= 0
 BUMPER_FILE    := ./testdata/license_header_template.txt
+THIRD_PARTY_LICENSES_DIR  := $(BUILD_SUBDIR)/third-party-licenses
 
 .PHONY: go-mod-vendor
 go-mod-vendor:
@@ -46,6 +47,21 @@ go-mod-tidy:
 .PHONY: test-go-mod
 test-go-mod:
 	@git diff --quiet --exit-code go.mod go.sum || echo "There are changes to go.mod and go.sum which needs to be committed"
+
+# go-jmespath ships an abbreviated Apache-2.0 license notice that go-licenses
+# cannot classify. The target excludes it from automatic classification only,
+# then copies its original license notice into the generated distribution.
+.PHONY: third-party-licenses
+third-party-licenses:
+	$(GO) tool go-licenses save ./cmd/trickster \
+		--force \
+		--save_path=$(THIRD_PARTY_LICENSES_DIR) \
+		--ignore=github.com/trickstercache/trickster/v2 \
+		--ignore=github.com/jmespath/go-jmespath
+	@jmespath_dir="$$($(GO) list -m -f '{{.Dir}}' github.com/jmespath/go-jmespath)"; \
+		mkdir -p "$(THIRD_PARTY_LICENSES_DIR)/github.com/jmespath/go-jmespath"; \
+		cp "$$jmespath_dir/LICENSE" \
+			"$(THIRD_PARTY_LICENSES_DIR)/github.com/jmespath/go-jmespath/LICENSE"
 
 BUILD_FLAGS ?= -a -v
 .PHONY: build
@@ -114,23 +130,43 @@ docker-release:
 style:
 	! gofmt -d $$(find . -path ./vendor -prune -o -name '*.go' -print) | grep '^'
 
+.PHONY: check-imports
+check-imports:
+	@go run hack/check-imports/main.go
+
+.PHONY: gofix-diff
+gofix-diff:
+	@go fix -diff ./...
+
 LINT_FLAGS ?= 
+.PHONY: golangci-lint
+golangci-lint:
+	@go tool golangci-lint run $(LINT_FLAGS) -c .golangci.yml
+
 .PHONY: lint
-lint:
-	@golangci-lint run $(LINT_FLAGS) -c .golangci.yml
+lint: check-imports spelling vulncheck gofix-diff golangci-lint
+
+.PHONY: vulncheck
+vulncheck:
+	@go tool govulncheck ./...
 
 .PHONY: lint-fix
 lint-fix:
+	@go fix ./...
 	@LINT_FLAGS="--fix" $(MAKE) lint
-	@golangci-lint fmt -c .golangci.yml
+	@go tool golangci-lint fmt -c .golangci.yml
 
 GO_TEST_FLAGS ?= -coverprofile=.coverprofile
 .PHONY: test
 test: check-license-headers check-codegen gotest check-fmtprints check-todos
 
+GO_TEST_PATH ?= $(shell $(GO) list ./... | grep -v v2/integration)
 .PHONY: gotest
 gotest:
-	go test -timeout=5m -v ${GO_TEST_FLAGS} ./...
+	$(GO) test -timeout=5m -v ${GO_TEST_FLAGS} $(GO_TEST_PATH)
+	@./hack/filter-coverprofile.sh .coverprofile
+	@echo
+	@./hack/coverprofile-summary.sh
 
 .PHONY: data-race-test
 data-race-test:
@@ -139,6 +175,27 @@ data-race-test:
 .PHONY: data-race-test-inspect
 data-race-test-inspect:
 	./hack/inspect-race-output.sh race-output.log
+
+.PHONY: integration-test
+integration-test:
+	$(MAKE) -C integration test
+	$(MAKE) -C integration data-race-test
+
+.PHONY: integration-cover
+integration-cover:
+	$(MAKE) -C integration cover
+
+FUZZ_TIME ?= 30s
+
+.PHONY: fuzz
+fuzz:
+	@for pkg in $$($(GO) list ./... | grep -v /vendor/); do \
+		fuzz_funcs=$$($(GO) test -list 'Fuzz.*' $$pkg 2>/dev/null | grep '^Fuzz'); \
+		for fn in $$fuzz_funcs; do \
+			echo "fuzzing $$fn in $$pkg ($(FUZZ_TIME))"; \
+			$(GO) test -fuzz=$$fn -fuzztime=$(FUZZ_TIME) $$pkg || exit 1; \
+		done; \
+	done
 
 .PHONY: bench
 bench:
@@ -158,10 +215,11 @@ generate: perform-generate insert-license-headers
 .PHONY: perform-generate
 perform-generate:
 	$(GO) generate ./pkg/... ./cmd/...
+	cd integration && $(GO) generate ./...
 
 .PHONY: insert-license-headers
 insert-license-headers:
-	@for file in $$(find ./pkg ./cmd -name '*.go') ; \
+	@for file in $$(find ./pkg ./cmd ./integration -name '*.go') ; \
 	do \
 		output=$$(grep 'Licensed under the Apache License' $$file) ; \
 		if [ "$$?" != "0" ]; then \
@@ -238,6 +296,20 @@ check-todos: # there are 11 known "TODO"s in the codebase. This check fails if m
 	fi ; \
 	echo "" ; echo "\033[1;32m✓\033[0m No new TODOs found." ; echo ""
 
+.PHONY: install-codespell
+install-codespell:
+	# if brew is available, use it to install codespell
+	@which codespell ; \
+	if [ "$$?" != "0" ]; then \
+		if which brew ; then \
+			brew install codespell ; \
+		else \
+			echo "codespell is not installed and brew is not available to install it" ; \
+		fi ; \
+	else \
+		echo "codespell is already installed" ; \
+	fi
+
 .PHONY: spelling
 spelling:
 	@which mdspell ; \
@@ -269,20 +341,23 @@ serve-info:
 serve-cli:
 	@cd cmd/trickster && go run . -origin-url http://127.0.0.1:9090/ -provider prometheus
 
-GOLANG_CI_LINT_VERSION ?= v2.7.2
+GOLANG_CI_LINT_VERSION ?= v2.11.4
 .PHONY: get-tools
 get-tools: get-msgpack
 	@echo "Installing tools..."
-	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANG_CI_LINT_VERSION)
-	go install honnef.co/go/tools/cmd/staticcheck@2025.1.1
+	go get -tool github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANG_CI_LINT_VERSION)
 
 .PHONY: get-msgpack
 get-msgpack:
-	$(GO) get -tool github.com/tinylib/msgp@v1.4.0
+	$(GO) get -tool github.com/tinylib/msgp@$(shell go list -m github.com/tinylib/msgp | cut -d' ' -f2)
 
 .PHONY: developer-start
 developer-start:
 	@cd docs/developer/environment && docker compose up -d
+	@echo "Waiting for Redis to be ready..."
+	@timeout 30 sh -c 'until printf "PING\r\n" | nc 127.0.0.1 6379 2>/dev/null | grep -q PONG; do sleep 1; done'
+	@echo "Waiting for Prometheus to be ready..."
+	@timeout 120 sh -c 'until curl -sf http://127.0.0.1:9090/-/ready >/dev/null 2>&1; do sleep 2; done'
 	
 .PHONY: developer-stop
 developer-stop:
@@ -306,4 +381,4 @@ serve-dev:
 	@go run $(RUN_FLAGS) cmd/trickster/main.go -config $(if $(TRK_CONFIG),$(TRK_CONFIG),docs/developer/environment/trickster-config/trickster.yaml)
 
 serve-dev-data-race:
-	RUN_FLAGS=-race $(MAKE) serve-dev | tee race-output.log
+	RUN_FLAGS=-race $(MAKE) serve-dev 2>&1 | tee race-output.log

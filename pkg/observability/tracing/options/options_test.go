@@ -76,14 +76,3 @@ func TestGenerateOmitTags(t *testing.T) {
 		t.Error("expected map entry")
 	}
 }
-
-func TestAttachTagsToSpan(t *testing.T) {
-	o := &Options{Provider: "zipkin", Tags: map[string]string{"test": "test"}}
-	if o.AttachTagsToSpan() {
-		t.Error("expected false")
-	}
-	o.setAttachTags()
-	if !o.AttachTagsToSpan() {
-		t.Error("expected true")
-	}
-}

@@ -18,7 +18,9 @@ package request
 
 import (
 	"context"
+	"io"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -26,15 +28,22 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	tc "github.com/trickstercache/trickster/v2/pkg/proxy/context"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 )
 
 func TestNewAndCloneResources(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	r := NewResources(nil, nil, nil, nil, nil, nil)
 	r.AlternateCacheTTL = time.Duration(1) * time.Second
+	r.BatchMergeFunc = func(*merge.Accumulator, []merge.BatchItem) (bool, error) {
+		return true, nil
+	}
 	r2 := r.Clone()
 	if r2.AlternateCacheTTL != r.AlternateCacheTTL {
 		t.Errorf("expected %s got %s", r.AlternateCacheTTL.String(), r2.AlternateCacheTTL.String())
+	}
+	if r2.BatchMergeFunc == nil {
+		t.Error("expected clone to preserve BatchMergeFunc")
 	}
 }
 
@@ -70,17 +79,173 @@ func TestGetAndSetResources(t *testing.T) {
 	}
 }
 
+func TestClone(t *testing.T) {
+	t.Run("nil request", func(t *testing.T) {
+		out, err := Clone(nil)
+		if err != nil {
+			t.Fatal("unexpected error:", err)
+		}
+		if out != nil {
+			t.Fatal("expected nil, got non-nil request")
+		}
+	})
+
+	t.Run("request without resources", func(t *testing.T) {
+		r, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
+		out, err := Clone(r)
+		if err != nil {
+			t.Fatal("unexpected error:", err)
+		}
+		if out == r {
+			t.Fatal("Clone should return a different request pointer")
+		}
+		if GetResources(out) != nil {
+			t.Error("expected nil resources on clone of request without resources")
+		}
+	})
+
+	t.Run("preserves context values deadline and cancellation", func(t *testing.T) {
+		type contextKey struct{}
+		deadline := time.Now().Add(time.Hour)
+		ctx := context.WithValue(context.Background(), contextKey{}, "preserved")
+		ctx, deadlineCancel := context.WithDeadline(ctx, deadline)
+		defer deadlineCancel()
+		ctx, cancel := context.WithCancel(ctx)
+
+		r, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://127.0.0.1/", nil)
+		rsc := NewResources(nil, nil, nil, nil, nil, nil)
+		r = SetResources(r, rsc)
+		out, err := Clone(r)
+		if err != nil {
+			t.Fatal("unexpected error:", err)
+		}
+		if got := out.Context().Value(contextKey{}); got != "preserved" {
+			t.Fatalf("context value = %v, want preserved", got)
+		}
+		gotDeadline, ok := out.Context().Deadline()
+		if !ok || !gotDeadline.Equal(deadline) {
+			t.Fatalf("deadline = %v, %t; want %v, true", gotDeadline, ok, deadline)
+		}
+		if GetResources(out) == rsc {
+			t.Fatal("Clone should still use independent Resources while preserving context")
+		}
+
+		cancel()
+		select {
+		case <-out.Context().Done():
+			if err := out.Context().Err(); err != context.Canceled {
+				t.Fatalf("context error = %v, want %v", err, context.Canceled)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("clone did not observe source context cancellation")
+		}
+	})
+
+	t.Run("cloned resources are independent", func(t *testing.T) {
+		rsc := NewResources(nil, nil, nil, nil, nil, nil)
+		rsc.AlternateCacheTTL = time.Minute
+		rsc.RequestBody = []byte("original")
+		r, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
+		r = SetResources(r, rsc)
+
+		out, err := Clone(r)
+		if err != nil {
+			t.Fatal("unexpected error:", err)
+		}
+		rsc2 := GetResources(out)
+		if rsc2 == nil {
+			t.Fatal("expected resources on cloned request")
+		}
+		if rsc2 == rsc {
+			t.Fatal("Clone should return independent Resources pointer")
+		}
+		if rsc2.AlternateCacheTTL != time.Minute {
+			t.Error("cloned resources should preserve AlternateCacheTTL")
+		}
+		// mutating the clone must not affect the original
+		rsc2.AlternateCacheTTL = time.Hour
+		rsc2.RequestBody[0] = 'X'
+		if rsc.AlternateCacheTTL != time.Minute {
+			t.Error("mutating clone affected original AlternateCacheTTL")
+		}
+		if rsc.RequestBody[0] != 'o' {
+			t.Error("mutating clone affected original RequestBody")
+		}
+	})
+
+	t.Run("POST body is cloned", func(t *testing.T) {
+		r, _ := http.NewRequest(http.MethodPost, "http://127.0.0.1/", nil)
+		SetBody(r, []byte("post-body"))
+		r.Body = io.NopCloser(strings.NewReader("post-body"))
+		out, err := Clone(r)
+		if err != nil {
+			t.Fatal("unexpected error:", err)
+		}
+		b, _ := io.ReadAll(out.Body)
+		if string(b) != "post-body" {
+			t.Errorf("expected 'post-body' got %q", string(b))
+		}
+	})
+}
+
+func TestCloneBare(t *testing.T) {
+	t.Run("nil request", func(t *testing.T) {
+		out, err := CloneWithoutResources(nil)
+		if err != nil {
+			t.Fatal("unexpected error:", err)
+		}
+		if out != nil {
+			t.Fatal("expected nil, got non-nil request")
+		}
+	})
+
+	t.Run("strips resources", func(t *testing.T) {
+		rsc := NewResources(nil, nil, nil, nil, nil, nil)
+		rsc.AlternateCacheTTL = time.Minute
+		r, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
+		r = SetResources(r, rsc)
+
+		out, err := CloneWithoutResources(r)
+		if err != nil {
+			t.Fatal("unexpected error:", err)
+		}
+		if GetResources(out) != nil {
+			t.Error("CloneBare should not carry Resources")
+		}
+	})
+
+	t.Run("POST body is cloned", func(t *testing.T) {
+		r, _ := http.NewRequest(http.MethodPost, "http://127.0.0.1/", nil)
+		SetBody(r, []byte("post-body"))
+		r.Body = io.NopCloser(strings.NewReader("post-body"))
+		out, err := CloneWithoutResources(r)
+		if err != nil {
+			t.Fatal("unexpected error:", err)
+		}
+		b, _ := io.ReadAll(out.Body)
+		if string(b) != "post-body" {
+			t.Errorf("expected 'post-body' got %q", string(b))
+		}
+	})
+}
+
 func TestMergeResources(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	r1 := NewResources(nil, nil, nil, nil, nil, nil)
-	r1.NoLock = true
+	r1.AlternateCacheTTL = time.Minute
 	r1.Merge(nil)
-	if !r1.NoLock {
+	if r1.AlternateCacheTTL != time.Minute {
 		t.Errorf("nil merge shouldn't set anything in subject resources")
 	}
 	r2 := NewResources(nil, nil, nil, nil, nil, nil)
+	r2.BatchMergeFunc = func(*merge.Accumulator, []merge.BatchItem) (bool, error) {
+		return true, nil
+	}
 	r1.Merge(r2)
-	if r1.NoLock {
+	if r1.AlternateCacheTTL != 0 {
 		t.Errorf("merge should override subject resources")
+	}
+	if r1.BatchMergeFunc == nil {
+		t.Error("merge should propagate BatchMergeFunc")
 	}
 }

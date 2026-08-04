@@ -38,8 +38,8 @@ func TestWebProviders(t *testing.T) {
 
 func TestProviders(t *testing.T) {
 	p := Providers()
-	if len(p) != 5 {
-		t.Errorf("expected %d got %d", 5, len(p))
+	if len(p) != 4 {
+		t.Errorf("expected %d got %d", 4, len(p))
 	}
 }
 

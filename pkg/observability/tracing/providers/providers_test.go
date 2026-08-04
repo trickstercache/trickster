@@ -22,18 +22,13 @@ import (
 
 func TestString(t *testing.T) {
 	t1 := None
-	t2 := Zipkin
-	var t3 Provider = 13
+	var t2 Provider = 13
 
 	if t1.String() != "none" {
 		t.Errorf("expected %s got %s", "none", t1.String())
 	}
 
-	if t2.String() != "zipkin" {
-		t.Errorf("expected %s got %s", "zipkin", t2.String())
-	}
-
-	if t3.String() != "13" {
-		t.Errorf("expected %s got %s", "13", t3.String())
+	if t2.String() != "13" {
+		t.Errorf("expected %s got %s", "13", t2.String())
 	}
 }

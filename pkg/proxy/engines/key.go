@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -30,17 +30,25 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
+// ComposeCacheKey assembles a per-backend cache key. The name prefix isolates
+// keys when cache_name is shared across backends. engine is "" for plain HTTP
+// proxy, "opc" for object cache, "dpc" for delta proxy cache.
+func ComposeCacheKey(name, prefix, engine, suffix string) string {
+	if engine == "" {
+		return name + "." + prefix + "." + suffix
+	}
+	return name + "." + prefix + "." + engine + "." + suffix
+}
+
 // DeriveCacheKey calculates a query-specific keyname based on the user request
 func (pr *proxyRequest) DeriveCacheKey(extra string) string {
-	rsc := request.GetResources(pr.Request)
-	pc := rsc.PathConfig
+	pc := pr.rsc.PathConfig
 
 	if pc == nil {
-		return md5.Checksum(pr.URL.Path + extra)
+		return md5.Checksum(pr.URL.Path + pr.corsCacheKeyPart(pr.Request) + extra)
 	}
 
 	var qp url.Values
@@ -59,7 +67,7 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 	var b []byte
 	var ckeCnt int
 
-	trq := rsc.TimeRangeQuery
+	trq := pr.rsc.TimeRangeQuery
 	if trq != nil {
 		ckeCnt = len(trq.CacheKeyElements)
 		if trq.TemplateURL != nil {
@@ -71,7 +79,11 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 	}
 
 	if pc.KeyHasher != nil {
-		return pc.KeyHasher(r.URL.Path, qp, r.Header, b, trq, extra)
+		key := pc.KeyHasher(r.URL.Path, qp, r.Header, b, trq, extra)
+		if corsPart := pr.corsCacheKeyPart(r); corsPart != "" {
+			return md5.Checksum(key + corsPart)
+		}
+		return key
 	}
 
 	var k int
@@ -100,7 +112,7 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 				vals[k] = fmt.Sprintf("%s.%s.", p, v)
 				used.Set(p)
 			} else {
-				vals[k] = fmt.Sprintf("%s.%s.", p, qp.Get(p))
+				vals[k] = fmt.Sprintf("%s.%s.", p, strings.Join(qp[p], ","))
 			}
 			k++
 		}
@@ -112,8 +124,8 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 				k++
 				continue
 			}
-			if v := qp.Get(p); v != "" {
-				vals[k] = fmt.Sprintf("%s.%s.", p, v)
+			if vv := qp[p]; len(vv) > 0 {
+				vals[k] = fmt.Sprintf("%s.%s.", p, strings.Join(vv, ","))
 				k++
 			}
 		}
@@ -130,8 +142,9 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 	if methods.HasBody(r.Method) && pc.CacheKeyFormFields != nil && len(pc.CacheKeyFormFields) > 0 {
 		ct := strings.ToLower(r.Header.Get(headers.NameContentType))
 		if strings.HasPrefix(ct, headers.ValueMultipartFormData) {
-			pr.ParseMultipartForm(1024 * 1024)
-			bodyWasProcessed = true
+			if err := pr.ParseMultipartForm(1024 * 1024); err == nil {
+				bodyWasProcessed = true
+			}
 		} else if strings.HasPrefix(ct, headers.ValueApplicationJSON) {
 			var document map[string]any
 			if err := json.Unmarshal(b, &document); err == nil {
@@ -174,8 +187,17 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 		}
 	}
 	vals = vals[:k]
-	sort.Strings(vals)
-	return md5.Checksum(pr.URL.Path + "." + strings.Join(vals, "") + extra)
+	slices.Sort(vals)
+	return md5.Checksum(pr.URL.Path + "." + strings.Join(vals, "") +
+		pr.corsCacheKeyPart(r) + extra)
+}
+
+func (pr *proxyRequest) corsCacheKeyPart(r *http.Request) string {
+	if pr == nil || pr.rsc == nil || pr.rsc.FrontendCORS == nil ||
+		!pr.rsc.FrontendCORS.PreservesOrigin() || r == nil {
+		return ""
+	}
+	return ".origin." + r.Header.Get(headers.NameOrigin)
 }
 
 func deepSearch(document map[string]any, key string) (string, error) {
@@ -207,7 +229,7 @@ func deepSearch(document map[string]any, key string) (string, error) {
 		}
 
 		if b, ok := v.(bool); ok {
-			return fmt.Sprintf("%t", b), nil
+			return strconv.FormatBool(b), nil
 		}
 	}
 	return "", errors.CouldNotFindKey(key)

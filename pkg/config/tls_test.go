@@ -19,6 +19,7 @@ package config
 import (
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
 	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
 )
@@ -103,4 +104,124 @@ func tlsConfig(condition string) (*options.Options, func(), error) {
 		PrivateKeyPath:    kf,
 		ServeTLS:          true,
 	}, closer, nil
+}
+
+// TestTLSCertConfig_CAOnlyBackendExcluded locks in the #940 guard in
+// TLSCertConfig: a backend whose TLS block has ServeTLS=true (e.g. set by
+// an older config load or test harness) but no server cert/key paths must
+// NOT be fed to tls.LoadX509KeyPair("", "") — it must be silently excluded.
+// This is the unit-level analogue of the listeners.go reload-failure path:
+// a misconfigured backend cannot crash the whole TLS setup func.
+func TestTLSCertConfig_CAOnlyBackendExcluded(t *testing.T) {
+	config := NewConfig()
+	config.Frontend.ServeTLS = true
+
+	// CA-only: ServeTLS flipped true but no cert+key paths. Pre-#940 this
+	// would trip LoadX509KeyPair("","") with "open : no such file".
+	config.Backends["default"].TLS = &options.Options{
+		CertificateAuthorityPaths: []string{"/some/ca.pem"},
+		ServeTLS:                  true,
+	}
+	got, err := config.TLSCertConfig()
+	if err != nil {
+		t.Errorf("CA-only backend must not produce an error; got %v", err)
+	}
+	if got != nil {
+		t.Errorf("CA-only backend must contribute 0 certs; got %d", len(got.Certificates))
+	}
+}
+
+// TestTLSCertConfig_MixedBackendsOnlyValidContribute verifies that a mix of
+// a CA-only backend and a valid cert+key backend yields a tls.Config with
+// exactly the valid backend's certificate — the CA-only one is skipped
+// without error.
+func TestTLSCertConfig_MixedBackendsOnlyValidContribute(t *testing.T) {
+	config := NewConfig()
+	config.Frontend.ServeTLS = true
+
+	validTLS, closer, err := tlsConfig("")
+	if closer != nil {
+		defer closer()
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Reuse the "default" backend for the valid cert+key, add a second
+	// backend with only a CA path.
+	config.Backends["default"].TLS = validTLS
+	config.Backends["ca-only"] = config.Backends["default"].Clone()
+	config.Backends["ca-only"].TLS = &options.Options{
+		CertificateAuthorityPaths: []string{"/some/ca.pem"},
+		ServeTLS:                  true,
+	}
+
+	got, err := config.TLSCertConfig()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got == nil {
+		t.Fatal("expected non-nil tls.Config")
+	}
+	if len(got.Certificates) != 1 {
+		t.Errorf("expected exactly 1 certificate (only the valid backend contributes), got %d",
+			len(got.Certificates))
+	}
+}
+
+func TestTLSCertConfigForListenerFiltersMappedBackends(t *testing.T) {
+	config := NewConfig()
+	config.Listeners["custom"] = listener.New("custom")
+	config.Listeners["custom"].ServeTLS = true
+	config.Listeners[listener.DefaultFrontendName].ServeTLS = true
+
+	defaultTLS, closeDefault, err := tlsConfig("")
+	if closeDefault != nil {
+		defer closeDefault()
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	customTLS, closeCustom, err := tlsConfig("")
+	if closeCustom != nil {
+		defer closeCustom()
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.Backends["default"].TLS = defaultTLS
+	customBackend := config.Backends["default"].Clone()
+	customBackend.ListenerName = "custom"
+	customBackend.TLS = customTLS
+	config.Backends["custom"] = customBackend
+
+	for _, listenerName := range []string{listener.DefaultFrontendName, "custom"} {
+		got, err := config.TLSCertConfigForListener(listenerName)
+		if err != nil {
+			t.Fatalf("server %q: %v", listenerName, err)
+		}
+		if got == nil {
+			t.Fatalf("server %q got no TLS configuration", listenerName)
+		}
+		if len(got.Certificates) != 1 {
+			t.Fatalf("server %q got %d certificates, want exactly one",
+				listenerName, len(got.Certificates))
+		}
+	}
+}
+
+func TestTLSCertConfigForListenerEdgeCases(t *testing.T) {
+	c := NewConfig()
+	if _, err := c.TLSCertConfigForListener("missing"); err == nil {
+		t.Fatal("missing listener should error")
+	}
+
+	c.Listeners[listener.DefaultFrontendName].ServeTLS = false
+	got, err := c.TLSCertConfigForListener(listener.DefaultFrontendName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != nil {
+		t.Fatal("ServeTLS=false should return nil tls config")
+	}
 }

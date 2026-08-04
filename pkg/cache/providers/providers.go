@@ -68,5 +68,5 @@ func (p Provider) String() string {
 // UsesIndex returns true if the providerName uses an index
 // providerName is expected to already be lowercase/no-space
 func UsesIndex(providerName string) bool {
-	return providerName != BadgerDB && providerName != Redis
+	return providerName != BadgerDB && providerName != Redis && providerName != Memory
 }

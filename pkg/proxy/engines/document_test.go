@@ -235,6 +235,66 @@ func TestLoadRangeParts(t *testing.T) {
 	}
 }
 
+func TestGetByteRanges(t *testing.T) {
+	tests := []struct {
+		name      string
+		doc       *HTTPDocument
+		wantStart int64
+		wantEnd   int64
+		wantLen   int
+	}{
+		{
+			name: "returns stored ranges when present",
+			doc: &HTTPDocument{
+				ContentLength: 100,
+				Ranges:        byterange.Ranges{{Start: 10, End: 20}},
+			},
+			wantStart: 10,
+			wantEnd:   20,
+			wantLen:   1,
+		},
+		{
+			name: "returns range parts ranges when no stored ranges",
+			doc: &HTTPDocument{
+				ContentLength: 100,
+				RangeParts: byterange.MultipartByteRanges{
+					byterange.Range{Start: 5, End: 15}: &byterange.MultipartByteRange{
+						Range:   byterange.Range{Start: 5, End: 15},
+						Content: make([]byte, 11),
+					},
+				},
+			},
+			wantStart: 5,
+			wantEnd:   15,
+			wantLen:   1,
+		},
+		{
+			name: "returns full content range with inclusive end",
+			doc: &HTTPDocument{
+				ContentLength: 100,
+			},
+			wantStart: 0,
+			wantEnd:   99, // ContentLength - 1, not ContentLength
+			wantLen:   1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ranges := tt.doc.getByteRanges()
+			if len(ranges) != tt.wantLen {
+				t.Fatalf("expected %d ranges, got %d", tt.wantLen, len(ranges))
+			}
+			if ranges[0].Start != tt.wantStart {
+				t.Errorf("expected Start=%d, got %d", tt.wantStart, ranges[0].Start)
+			}
+			if ranges[0].End != tt.wantEnd {
+				t.Errorf("expected End=%d, got %d", tt.wantEnd, ranges[0].End)
+			}
+		})
+	}
+}
+
 func TestGetByterangeChunkBody(t *testing.T) {
 	d := &HTTPDocument{
 		Body: []byte{0, 1, 2, 3, 4, 5},

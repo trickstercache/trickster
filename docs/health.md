@@ -19,7 +19,7 @@ Each configured backend's health check path is `/trickster/health/BACKEND_NAME`.
 The backend health path prefix `/trickster/health/` is customizable. See the [example.full.yaml](../examples/conf/example.full.yaml) for more info about setting the `health_handler_path` configuration, or refer to this example:
 
 ```yaml
-frontend:
+mgmt:
   # this overrides the default '/trickster/health' to '/-/trickster/health'
   health_handler_path: /-/trickster/health
 ```
@@ -101,6 +101,8 @@ backends:
       failure_threshold: 3  # backend is unhealthy after 3 consecutive failures
       recovery_threshold: 3 # backend is healthy after 3 consecutive successes
 ```
+
+The Prometheus default probe is `/api/v1/query?query=up`. Some multi-tenant Prometheus gateways reject an unbounded `up` with `400 bad_data: "too many series found"`, which keeps the member out of any ALB pool it belongs to. Override `healthcheck.query` with a bounded expression the backend accepts (for example `query=vector(1)`) when probing such backends.
 
 ## Other Ways to Monitor Health
 

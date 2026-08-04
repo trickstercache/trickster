@@ -43,17 +43,44 @@ func TestNewPool(t *testing.T) {
 		t.Error("expected non-nil")
 	}
 
-	if len(p.Healthy()) != 0 {
-		t.Error("expected 0 healthy target", len(p.Healthy()))
+	p2 := p.(*pool)
+	if got := len(p2.snapshot()); got != 0 {
+		t.Error("expected 0 healthy target", got)
 	}
 
 	p.Stop()
 
-	p2 := p.(*pool)
-	hl := []http.Handler{http.NotFoundHandler()}
-	p2.healthyHandlers.Store(&hl)
+	ht := Targets{tgt}
+	p2.healthyTargets.Store(&ht)
+	lt := ht
+	p2.liveTargets.Store(&lt)
 
-	if len(p.Healthy()) != 1 {
-		t.Error("expected 1 healthy target", len(p.Healthy()))
+	if got := len(p2.snapshot()); got != 1 {
+		t.Error("expected 1 healthy target", got)
 	}
+}
+
+func TestSetHealthyUpdatesTargets(t *testing.T) {
+	s := &healthcheck.Status{}
+	tgt := NewTarget(http.NotFoundHandler(), s, nil)
+	p := New(Targets{tgt}, 1)
+	p.Stop()
+
+	h := []http.Handler{http.NotFoundHandler(), http.NotFoundHandler()}
+	p.SetHealthy(h)
+
+	if got := len(p.Targets()); got != 2 {
+		t.Errorf("Targets: expected 2 got %d", got)
+	}
+	if got := len(p.(*pool).snapshot()); got != 2 {
+		t.Errorf("snapshot: expected 2 got %d", got)
+	}
+}
+
+func TestStopIdempotent(t *testing.T) {
+	s := &healthcheck.Status{}
+	tgt := NewTarget(http.NotFoundHandler(), s, nil)
+	p := New(Targets{tgt}, 1)
+	p.Stop()
+	p.Stop() // must not panic
 }

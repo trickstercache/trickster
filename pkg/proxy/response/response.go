@@ -17,7 +17,6 @@
 package response
 
 import (
-	"fmt"
 	"io"
 	"net/http"
 
@@ -25,9 +24,9 @@ import (
 )
 
 var contentTypeHints = map[byte]string{
-	0: fmt.Sprintf("%s; charset=UTF-8", headers.ValueApplicationJSON),
-	1: fmt.Sprintf("%s; charset=UTF-8", headers.ValueApplicationJSON),
-	2: fmt.Sprintf("%s; charset=UTF-8", headers.ValueApplicationCSV),
+	0: headers.ValueApplicationJSON + "; charset=UTF-8",
+	1: headers.ValueApplicationJSON + "; charset=UTF-8",
+	2: headers.ValueApplicationCSV + "; charset=UTF-8",
 }
 
 func WriteResponseHeader(w io.Writer, statusCode int, contentTypeHint byte,

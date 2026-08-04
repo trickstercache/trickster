@@ -20,7 +20,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
@@ -38,11 +37,12 @@ func TestHandleRoundRobin(t *testing.T) {
 
 	p, _, hsts := albpool.New(0,
 		[]http.Handler{http.HandlerFunc(tu.BasicHTTPHandler)})
+	defer p.Stop()
 
-	h.pool = p
+	h.SetPool(p)
 
 	hsts[0].Set(0)
-	time.Sleep(250 * time.Millisecond)
+	albpool.WaitHealthy(t, p, 1)
 
 	w = httptest.NewRecorder()
 	h.ServeHTTP(w, nil)
@@ -50,10 +50,12 @@ func TestHandleRoundRobin(t *testing.T) {
 		t.Error("expected 200 got", w.Code)
 	}
 
-	h.pool, _, hsts = albpool.New(0,
+	p2, _, hsts := albpool.New(0,
 		[]http.Handler{http.HandlerFunc(failures.HandleBadGateway)})
+	defer p2.Stop()
+	h.SetPool(p2)
 	hsts[0].Set(-1)
-	time.Sleep(250 * time.Millisecond)
+	albpool.WaitHealthy(t, p2, 0)
 	w = httptest.NewRecorder()
 	h.ServeHTTP(w, nil)
 	if w.Code != http.StatusBadGateway {
@@ -62,13 +64,46 @@ func TestHandleRoundRobin(t *testing.T) {
 }
 
 func TestNextTarget(t *testing.T) {
-	h := &handler{
-		pool: pool.New(nil, -1),
-	}
+	p := pool.New(nil, -1)
+	h := &handler{}
+	h.SetPool(p)
 	h.StopPool()
-	h.pool.SetHealthy([]http.Handler{http.NotFoundHandler()})
-	n := h.nextTarget()
+	p.SetHealthy([]http.Handler{http.NotFoundHandler()})
+	n := h.nextTarget(p)
 	if n == nil {
 		t.Error("expected non-nil target")
+	}
+}
+
+func TestRoundRobinProgression(t *testing.T) {
+	p, _, _ := albpool.NewHealthy([]http.Handler{
+		albpool.NamedHandler("0"),
+		albpool.NamedHandler("1"),
+		albpool.NamedHandler("2"),
+	})
+	defer p.Stop()
+	albpool.WaitHealthy(t, p, 3)
+
+	rr := &handler{}
+	rr.SetPool(p)
+
+	// Fire 6 requests and verify rotation through all 3 backends.
+	// Each backend must appear exactly twice.
+	seen := make([]string, 6)
+	for i := range 6 {
+		w := httptest.NewRecorder()
+		rr.ServeHTTP(w, nil)
+		seen[i] = w.Body.String()
+	}
+
+	counts := map[string]int{}
+	for _, s := range seen {
+		counts[s]++
+	}
+	for _, id := range []string{"0", "1", "2"} {
+		if counts[id] != 2 {
+			t.Errorf("backend %s called %d times (expected 2); sequence: %v",
+				id, counts[id], seen)
+		}
 	}
 }

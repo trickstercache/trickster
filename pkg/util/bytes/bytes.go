@@ -16,15 +16,16 @@
 
 package bytes
 
-const maxInt = int(^uint(0) >> 1)
+// maxMergeLen caps merged slice size (overridable in tests).
+var maxMergeLen = int(^uint(0) >> 1)
 
 func MergeSlices(a, b []byte) []byte {
 	lenA := len(a)
 	lenB := len(b)
-	if lenA > maxInt {
-		return a[:maxInt]
+	if lenA > maxMergeLen {
+		return a[:maxMergeLen]
 	}
-	remaining := maxInt - lenA
+	remaining := maxMergeLen - lenA
 	if lenB > remaining {
 		b = b[:remaining]
 	}

@@ -25,6 +25,7 @@ import (
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 )
 
 var testLogger = logging.NoopLogger()
@@ -62,7 +63,7 @@ func TestRegister(t *testing.T) {
 	logger.SetLogger(testLogger)
 	hc := New().(*healthChecker)
 	o := ho.New()
-	o.Interval = 500 * time.Millisecond
+	o.Interval = timeconv.Duration(500 * time.Millisecond)
 	_, err := hc.Register("test", "test", o, http.DefaultClient)
 	if err != nil {
 		t.Error(err)
@@ -90,7 +91,7 @@ func TestUnregister(t *testing.T) {
 	hc := New().(*healthChecker)
 	logger.SetLogger(testLogger)
 	o := ho.New()
-	o.Interval = 500 * time.Millisecond
+	o.Interval = timeconv.Duration(500 * time.Millisecond)
 	_, err := hc.Register("test", "test", o, http.DefaultClient)
 	if err != nil {
 		t.Error(err)
@@ -106,7 +107,7 @@ func TestStatus(t *testing.T) {
 	logger.SetLogger(testLogger)
 	hc := New().(*healthChecker)
 	o := ho.New()
-	o.Interval = 500 * time.Millisecond
+	o.Interval = timeconv.Duration(500 * time.Millisecond)
 	_, err := hc.Register("test", "test", o, http.DefaultClient)
 	if err != nil {
 		t.Error(err)
@@ -132,7 +133,7 @@ func TestStatuses(t *testing.T) {
 	logger.SetLogger(testLogger)
 	hc := New().(*healthChecker)
 	o := ho.New()
-	o.Interval = 500 * time.Millisecond
+	o.Interval = timeconv.Duration(500 * time.Millisecond)
 	_, err := hc.Register("test", "test", o, http.DefaultClient)
 	if err != nil {
 		t.Error(err)

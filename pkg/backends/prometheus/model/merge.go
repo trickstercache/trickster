@@ -18,6 +18,7 @@ package model
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
@@ -41,12 +42,11 @@ func MakeMergeFunc[T any, PT merge.Mergeable[T]](errorType string,
 			instance = newInstance()
 			if err := json.Unmarshal(body, instance); err != nil {
 				logger.Error(errorType+" unmarshaling error",
-					logging.Pairs{"provider": providers.Prometheus, "detail": err.Error()})
+					logging.Pairs{"provider": providers.Prometheus, "detail": err.Error(), "body": string(body)})
 				return err
 			}
 		} else {
-			// Not the expected type and not []byte
-			return nil
+			return fmt.Errorf("%s merge received unexpected data type %T", errorType, data)
 		}
 		accum.Lock()
 		defer accum.Unlock()

@@ -17,11 +17,12 @@
 package options
 
 import (
+	"fmt"
 	"maps"
 	"slices"
-	"time"
 
 	stdoutopts "github.com/trickstercache/trickster/v2/pkg/observability/tracing/exporters/stdout/options"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
@@ -30,9 +31,10 @@ import (
 type Options struct {
 	Name               string            `yaml:"-"`
 	Provider           string            `yaml:"provider,omitempty"`
+	Protocol           string            `yaml:"protocol,omitempty"`
 	ServiceName        string            `yaml:"service_name,omitempty"`
 	Endpoint           string            `yaml:"endpoint,omitempty"`
-	Timeout            time.Duration     `yaml:"timeout,omitempty"`
+	Timeout            timeconv.Duration `yaml:"timeout,omitempty"`
 	Headers            map[string]string `yaml:"headers,omitempty"`
 	DisableCompression bool              `yaml:"disable_compression,omitempty"`
 	SampleRate         *float64          `yaml:"sample_rate,omitempty"`
@@ -42,8 +44,6 @@ type Options struct {
 	StdOutOptions *stdoutopts.Options `yaml:"stdout,omitempty"`
 
 	OmitTags sets.Set[string] `yaml:"-"`
-	// for tracers that don't support WithProcess (e.g., Zipkin)
-	attachTagsToSpan bool
 }
 
 // Lookup is a map of Options keyed by Options Name
@@ -69,7 +69,7 @@ func (o *Options) Clone() *Options {
 	out.Tags = maps.Clone(o.Tags)
 	out.OmitTagsList = slices.Clone(o.OmitTagsList)
 	if o.SampleRate != nil {
-		out.SampleRate = pointers.New(*o.SampleRate)
+		out.SampleRate = new(*o.SampleRate)
 	}
 	return out
 }
@@ -87,17 +87,19 @@ func ProcessTracingOptions(mo Lookup) {
 		if v.Provider == "" {
 			v.Provider = DefaultTracerProvider
 		}
+		if v.Provider == ProviderOTLP && v.Protocol == "" {
+			v.Protocol = DefaultOTLPProtocol
+		}
 		v.generateOmitTags()
-		v.setAttachTags()
 	}
 }
 
 func (o *Options) SanitizeSampleRate() {
 	switch {
 	case o.SampleRate == nil || *o.SampleRate > 1:
-		o.SampleRate = pointers.New(1.0)
+		o.SampleRate = new(1.0)
 	case *o.SampleRate < 0:
-		o.SampleRate = pointers.New(0.0)
+		o.SampleRate = new(0.0)
 	}
 }
 
@@ -105,19 +107,13 @@ func (o *Options) generateOmitTags() {
 	o.OmitTags = sets.New(o.OmitTagsList)
 }
 
-// AttachTagsToSpan indicates that Tags should be attached to the span
-func (o *Options) AttachTagsToSpan() bool {
-	return o.attachTagsToSpan
-}
-
-func (o *Options) setAttachTags() {
-	if o.Provider == "zipkin" && o.Tags != nil && len(o.Tags) > 0 {
-		o.attachTagsToSpan = true
-	}
-}
-
 func (o *Options) Valdiate() error {
-	// placeholder for future validations (currently there are none for tracing)
+	switch o.Protocol {
+	case "", OTLPProtocolHTTP, OTLPProtocolGRPC:
+	default:
+		return fmt.Errorf("invalid tracing protocol [%s] for tracing config [%s]",
+			o.Protocol, o.Name)
+	}
 	return nil
 }
 

@@ -1,4 +1,7 @@
 version: "2"
+issues:
+  new-from-rev: origin/main
+  fix: true
 run:
   tests: false
 linters:
@@ -24,6 +27,9 @@ linters:
     - errorlint
     - gocheckcompilerdirectives
     - goconst
+    - mirror
+    - importas
+    - perfsprint
   disable:
     - errcheck
   settings:
@@ -50,6 +56,8 @@ linters:
       - G401 # MD5 & SHA1 adequate for non-cryptographic use cases
       - G501 # MD5 & SHA1, again
       - G505 # MD5 & SHA1, again
+      - G704 # False positive: trickster is a proxy and must interact with configured backends, so it must be able to make requests to arbitrary URLs
+      - G705 # XSS checks are not helpful for trickster's carefully constructed responses, this has many false positives at this time; revisit later
     revive:
       enable-all-rules: true
       rules:
@@ -75,9 +83,9 @@ linters:
           - mime/multipart.Writer.Close
           - mime/multipart.Writer.SetBoundary
           - net/http.Request.ParseForm
-          - compress/gzip.Writer.Close
-          - compress/flate.Writer.Write
-          - compress/flate.Writer.Close
+          - github.com/klauspost/compress/gzip.Writer.Close
+          - github.com/klauspost/compress/flate.Writer.Write 
+          - github.com/klauspost/compress/flate.Writer.Close
           - net/http.Request.ParseMultipartForm
           - handler.ResponseEncoder.Close
           - config.Config.setDefaults
@@ -140,6 +148,8 @@ linters:
           disabled: true # disable 'switch must have a default case clause (revive)' checks
         - name: var-naming
           disabled: true # disable 'meaningless package names' (e.g., types, util, etc.) checks
+        - name: package-naming
+          disabled: true # disable 'bad package name' (e.g., types, util, etc.) checks
   exclusions:
     generated: lax
     presets:
@@ -162,3 +172,10 @@ formatters:
       - third_party$
       - builtin$
       - examples$
+  settings:
+    gci:
+      custom-order: true
+      sections:
+        - standard
+        - prefix(github.com/trickstercache) 
+        - default

@@ -79,9 +79,9 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 		sqlQuery = p[0]
 	}
 
-	trq, ro, canOPC, err := parse(sqlQuery)
+	trq, ro, canOPC, err := parse(sqlQuery, c.observeAnalysis)
 	if err != nil {
-		return nil, nil, canOPC, err
+		return trq, ro, canOPC, err
 	}
 	if isBody && trq != nil {
 		trq.OriginalBody = originalBody
@@ -92,7 +92,7 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 		// 60-second default backfill tolerance for ClickHouse
 		bf = time.Minute
 	} else {
-		bf = res.BackendOptions.BackfillTolerance
+		bf = time.Duration(res.BackendOptions.BackfillTolerance)
 	}
 	if trq.BackfillTolerance == 0 {
 		trq.BackfillTolerance = bf

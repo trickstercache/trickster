@@ -24,49 +24,40 @@ import (
 // SwitchHandler is an HTTP Wrapper that allows users to update the underlying handler in-place
 // once associated with a net.Listener
 type SwitchHandler struct {
-	router    http.Handler
-	oldRouter http.Handler
-	reloading atomic.Int32
+	router atomic.Pointer[http.Handler]
 }
 
 // NewSwitchHandler returns a New *SwitchHandler
 func NewSwitchHandler(router http.Handler) *SwitchHandler {
-	return &SwitchHandler{router: router, oldRouter: router}
+	s := &SwitchHandler{}
+	s.router.Store(&router)
+	return s
 }
 
 // ServeHTTP serves an HTTP Request
 func (s *SwitchHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if s.isReloading() {
-		s.oldRouter.ServeHTTP(w, r)
+	if h := s.load(); h != nil {
+		h.ServeHTTP(w, r)
 		return
 	}
-	s.router.ServeHTTP(w, r)
+	http.Error(w, "service unavailable", http.StatusServiceUnavailable)
 }
 
 // Update atomically changes the underlying handler without impacting user requests or uptime
 func (s *SwitchHandler) Update(h http.Handler) {
-	s.oldRouter = s.router
-	s.setReloading(true)
-	s.router = h
-	s.setReloading(false)
+	// swap is non-blocking by design; do not add an in-flight drain here, it reintroduces the deadlock the atomic.Pointer fixed
+	s.router.Store(&h)
 }
 
 // Handler returns the current router
 func (s *SwitchHandler) Handler() http.Handler {
-	if s.isReloading() {
-		return s.oldRouter
-	}
-	return s.router
+	return s.load()
 }
 
-func (s *SwitchHandler) isReloading() bool {
-	return s.reloading.Load() != 0
-}
-
-func (s *SwitchHandler) setReloading(isReloading bool) {
-	if isReloading {
-		s.reloading.Store(1)
-		return
+// load returns the currently published handler, or nil if none has been set.
+func (s *SwitchHandler) load() http.Handler {
+	if p := s.router.Load(); p != nil {
+		return *p
 	}
-	s.reloading.Store(0)
+	return nil
 }

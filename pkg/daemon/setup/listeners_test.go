@@ -1,0 +1,348 @@
+/*
+ * Copyright 2026 The Trickster Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package setup
+
+import (
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/trickstercache/trickster/v2/pkg/config"
+	listenerconfig "github.com/trickstercache/trickster/v2/pkg/config/listener"
+	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
+	to "github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
+	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
+)
+
+func TestListenerEnabledOn(t *testing.T) {
+	tests := []struct {
+		configuredListener string
+		listenerName       string
+		want               bool
+	}{
+		{mgmt.ListenerNameMgmt, mgmt.ListenerNameMgmt, true},
+		{mgmt.ListenerNameMgmt, mgmt.ListenerNameMetrics, false},
+		{mgmt.ListenerNameMetrics, mgmt.ListenerNameMgmt, false},
+		{mgmt.ListenerNameMetrics, mgmt.ListenerNameMetrics, true},
+		{mgmt.ListenerNameBoth, mgmt.ListenerNameMgmt, true},
+		{mgmt.ListenerNameBoth, mgmt.ListenerNameMetrics, true},
+		{mgmt.ListenerNameOff, mgmt.ListenerNameMgmt, false},
+		{mgmt.ListenerNameOff, mgmt.ListenerNameMetrics, false},
+	}
+
+	for _, test := range tests {
+		if got := listenerEnabledOn(test.configuredListener, test.listenerName); got != test.want {
+			t.Errorf("listenerEnabledOn(%q, %q) = %t, want %t",
+				test.configuredListener, test.listenerName, got, test.want)
+		}
+	}
+}
+
+func TestDesiredListeners(t *testing.T) {
+	c := config.NewConfig()
+	c.Listeners["custom"] = listenerconfig.New("custom")
+	c.Listeners["custom"].ListenPort = 9000
+	c.Listeners["custom"].Active = true
+	routers := map[string]router.Router{
+		listenerconfig.DefaultFrontendName: lm.NewRouter(),
+		"custom":                           lm.NewRouter(),
+	}
+
+	got := desiredListeners(c, routers, lm.NewRouter(), lm.NewRouter())
+	for _, key := range []string{
+		listenerKey(listenerconfig.DefaultFrontendName, false),
+		listenerKey(mgmt.ListenerNameMetrics, false),
+		listenerKey(mgmt.ListenerNameMgmt, false),
+		listenerKey("custom", false),
+	} {
+		if _, ok := got[key]; !ok {
+			t.Errorf("missing desired listener %q", key)
+		}
+	}
+	if _, ok := got[listenerKey(listenerconfig.DefaultFrontendName, true)]; ok {
+		t.Errorf("TLS listener should not be desired until ServeTLS is enabled")
+	}
+}
+
+func TestListenerNeedsRestart(t *testing.T) {
+	o := listenerconfig.New("custom")
+	o.ListenPort = 9000
+	old := desiredListener{address: "127.0.0.1", port: 9000, options: o}
+	current := old
+	current.router = lm.NewRouter()
+	if listenerNeedsRestart(old, current) {
+		t.Errorf("router-only update should not restart a listener")
+	}
+	current.port = 9001
+	if !listenerNeedsRestart(old, current) {
+		t.Errorf("port change should restart a listener")
+	}
+}
+
+func TestApplyListenerConfigsReloadReconciliation(t *testing.T) {
+	firstPort := availablePort(t)
+	secondPort := availablePort(t)
+	group := listener.NewGroup()
+	t.Cleanup(func() { _ = group.Shutdown(0) })
+
+	conf := config.NewConfig()
+	for _, name := range []string{listenerconfig.DefaultFrontendName, mgmt.ListenerNameMgmt, mgmt.ListenerNameMetrics} {
+		conf.Listeners[name].ListenPort = 0
+		conf.Listeners[name].TLSListenPort = 0
+		conf.Listeners[name].Active = false
+	}
+	conf.Listeners["custom"] = listenerconfig.New("custom")
+	conf.Listeners["custom"].ListenAddress = "127.0.0.1"
+	conf.Listeners["custom"].ListenPort = firstPort
+	conf.Listeners["custom"].Active = true
+
+	firstRouter := markerRouter("first")
+	applyListenerConfigs(conf, nil, map[string]router.Router{"custom": firstRouter},
+		http.NotFoundHandler(), lm.NewRouter(), nil, nil, nil, group)
+	key := listenerKey("custom", false)
+	waitForListener(t, group, key)
+	original := group.Get(key)
+	assertResponseBody(t, firstPort, "first")
+
+	// A router-only reload must retain the socket and atomically swap handlers.
+	secondConf := conf.Clone()
+	secondRouter := markerRouter("second")
+	applyListenerConfigs(secondConf, conf, map[string]router.Router{"custom": secondRouter},
+		http.NotFoundHandler(), lm.NewRouter(), nil, nil, nil, group)
+	if group.Get(key) != original {
+		t.Errorf("unchanged listener socket was restarted")
+	}
+	assertResponseBody(t, firstPort, "second")
+
+	// A port change drains the old socket and starts the replacement.
+	thirdConf := secondConf.Clone()
+	thirdConf.Listeners["custom"].ListenPort = secondPort
+	applyListenerConfigs(thirdConf, secondConf, map[string]router.Router{"custom": secondRouter},
+		http.NotFoundHandler(), lm.NewRouter(), nil, nil, nil, group)
+	waitForListener(t, group, key)
+	if group.Get(key) == original {
+		t.Errorf("changed listener port did not restart the socket")
+	}
+	assertResponseBody(t, secondPort, "second")
+	client := &http.Client{Timeout: 200 * time.Millisecond}
+	if response, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d/", firstPort)); err == nil {
+		response.Body.Close()
+		t.Errorf("old listener port is still accepting requests")
+	}
+}
+
+func markerRouter(marker string) router.Router {
+	r := lm.NewRouter()
+	r.RegisterRoute("/", nil, nil, true, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(marker))
+	}))
+	return r
+}
+
+func availablePort(t *testing.T) int {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	return l.Addr().(*net.TCPAddr).Port
+}
+
+func waitForListener(t *testing.T, group *listener.Group, key string) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if l := group.Get(key); l != nil && l.State() == listener.StateReady {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("listener %q did not become ready", key)
+}
+
+func assertResponseBody(t *testing.T, port int, want string) {
+	t.Helper()
+	response, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/", port))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != want {
+		t.Errorf("response body = %q, want %q", body, want)
+	}
+}
+
+func TestApplyListenerConfigsNoListeners(t *testing.T) {
+	group := listener.NewGroup()
+	t.Cleanup(func() { _ = group.Shutdown(0) })
+	// nil and empty configs are no-ops
+	applyListenerConfigs(nil, nil, nil, nil, nil, nil, nil, nil, group)
+	conf := config.NewConfig()
+	conf.Listeners = nil
+	applyListenerConfigs(conf, nil, nil, nil, nil, nil, nil, nil, group)
+}
+
+// TestApplyListenerConfigsManagementRoutes covers the config-handler and pprof
+// route registration on both the mgmt and metrics routers.
+func TestApplyListenerConfigsManagementRoutes(t *testing.T) {
+	group := listener.NewGroup()
+	t.Cleanup(func() { _ = group.Shutdown(0) })
+
+	conf := config.NewConfig()
+	deactivateBuiltinListeners(conf)
+	conf.MgmtConfig.ConfigHandlerListener = mgmt.ListenerNameBoth
+	conf.MgmtConfig.PprofListener = mgmt.ListenerNameBoth
+
+	metricsRouter := lm.NewRouter()
+	applyListenerConfigs(conf, nil, nil, http.NotFoundHandler(), metricsRouter,
+		nil, nil, nil, group)
+
+	for _, path := range []string{"/metrics", conf.MgmtConfig.ConfigHandlerPath} {
+		r := httptest.NewRequest(http.MethodGet, path, nil)
+		w := httptest.NewRecorder()
+		metricsRouter.ServeHTTP(w, r)
+		if w.Code == http.StatusNotFound {
+			t.Errorf("expected %s to be registered on the metrics router", path)
+		}
+	}
+}
+
+func TestApplyListenerConfigsTLS(t *testing.T) {
+	dir := t.TempDir()
+	keyPath := filepath.Join(dir, "test.key.pem")
+	certPath := filepath.Join(dir, "test.cert.pem")
+	if err := tlstest.WriteTestKeyAndCert(false, keyPath, certPath); err != nil {
+		t.Fatal(err)
+	}
+
+	group := listener.NewGroup()
+	t.Cleanup(func() { _ = group.Shutdown(0) })
+
+	port := availablePort(t)
+	conf := tlsTestConfig(t, keyPath, certPath, port)
+	key := listenerKey(listenerconfig.DefaultFrontendName, true)
+
+	routers := map[string]router.Router{listenerconfig.DefaultFrontendName: markerRouter("tls")}
+	applyListenerConfigs(conf, nil, routers, http.NotFoundHandler(), lm.NewRouter(),
+		nil, nil, nil, group)
+	waitForListener(t, group, key)
+	l := group.Get(key)
+	if l == nil {
+		t.Fatal("expected a TLS listener")
+	}
+
+	// An unchanged TLS listener is not restarted; its certificates are
+	// refreshed in place instead.
+	second := conf.Clone()
+	second.Listeners[listenerconfig.DefaultFrontendName].ServeTLS = true
+	applyListenerConfigs(second, conf, routers, http.NotFoundHandler(), lm.NewRouter(),
+		nil, nil, nil, group)
+	if group.Get(key) != l {
+		t.Error("an unchanged TLS listener should not be restarted")
+	}
+}
+
+func TestApplyListenerConfigsTLSCertError(t *testing.T) {
+	group := listener.NewGroup()
+	t.Cleanup(func() { _ = group.Shutdown(0) })
+
+	dir := t.TempDir()
+	keyPath := filepath.Join(dir, "bad.key.pem")
+	certPath := filepath.Join(dir, "bad.cert.pem")
+	if err := os.WriteFile(keyPath, []byte("not a key\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(certPath, []byte("not a cert\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	conf := tlsTestConfig(t, keyPath, certPath, availablePort(t))
+	key := listenerKey(listenerconfig.DefaultFrontendName, true)
+	routers := map[string]router.Router{listenerconfig.DefaultFrontendName: lm.NewRouter()}
+
+	// an unloadable key pair is logged and the listener is skipped
+	applyListenerConfigs(conf, nil, routers, http.NotFoundHandler(), lm.NewRouter(),
+		nil, nil, nil, group)
+	if group.Get(key) != nil {
+		t.Error("a listener with unloadable certificates should not start")
+	}
+
+	// the same failure on the update path is also non-fatal
+	updateListenerCertificates(conf, desiredListener{
+		key: key, listenerName: listenerconfig.DefaultFrontendName, tls: true,
+	}, group)
+}
+
+// TestUpdateListenerCertificatesNoCerts covers the early return taken when a
+// listener resolves to an empty TLS configuration.
+func TestUpdateListenerCertificatesNoCerts(t *testing.T) {
+	group := listener.NewGroup()
+	t.Cleanup(func() { _ = group.Shutdown(0) })
+	conf := config.NewConfig()
+	updateListenerCertificates(conf, desiredListener{
+		key:          listenerKey(listenerconfig.DefaultFrontendName, true),
+		listenerName: listenerconfig.DefaultFrontendName,
+		tls:          true,
+	}, group)
+}
+
+// deactivateBuiltinListeners prevents the well-known ports from being bound.
+func deactivateBuiltinListeners(conf *config.Config) {
+	for _, name := range []string{
+		listenerconfig.DefaultFrontendName,
+		mgmt.ListenerNameMgmt,
+		mgmt.ListenerNameMetrics,
+	} {
+		conf.Listeners[name].ListenPort = 0
+		conf.Listeners[name].TLSListenPort = 0
+		conf.Listeners[name].Active = false
+	}
+}
+
+// tlsTestConfig returns a config whose default listener serves TLS on port
+// using the supplied key pair.
+func tlsTestConfig(t *testing.T, keyPath, certPath string, port int) *config.Config {
+	t.Helper()
+	conf := config.NewConfig()
+	deactivateBuiltinListeners(conf)
+	conf.Backends["default"].ListenerName = listenerconfig.DefaultFrontendName
+	conf.Backends["default"].TLS = &to.Options{
+		ServeTLS:          true,
+		FullChainCertPath: certPath,
+		PrivateKeyPath:    keyPath,
+	}
+	o := conf.Listeners[listenerconfig.DefaultFrontendName]
+	o.Active = true
+	o.ServeTLS = true
+	o.TLSListenAddress = "127.0.0.1"
+	o.TLSListenPort = port
+	return conf
+}

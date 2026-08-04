@@ -19,13 +19,29 @@ package level
 import "testing"
 
 func TestGetID(t *testing.T) {
-	id := GetID("invalid")
-	if id != 0 {
-		t.Errorf("expected %d got %d", 0, id)
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		level Level
+		want  ID
+	}{
+		{name: "debug", level: Debug, want: DebugID},
+		{name: "info", level: Info, want: InfoID},
+		{name: "warn", level: Warn, want: WarnID},
+		{name: "error", level: Error, want: ErrorID},
+		{name: "fatal", level: Fatal, want: TraceID},
+		{name: "invalid", level: "invalid", want: 0},
+		{name: "empty", level: "", want: 0},
+		{name: "uppercase", level: "INFO", want: 0},
 	}
-	id = GetID(Info)
-	if id != InfoID {
-		t.Errorf("expected %d got %d", InfoID, id)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := GetID(tc.level); got != tc.want {
+				t.Errorf("GetID(%q) = %d, want %d", tc.level, got, tc.want)
+			}
+		})
 	}
 }
 

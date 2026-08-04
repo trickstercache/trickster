@@ -5,7 +5,7 @@ networks:
 services:
 
   prometheus:
-    image: prom/prometheus:v3.2.1
+    image: prom/prometheus:v3.11.3
     volumes:
       - ./docker-compose-data/prometheus-config:/etc/prometheus
     command:
@@ -98,7 +98,8 @@ services:
      - 6832:6832/udp
      - 5778:5778
      - 16686:16686
-     - 14268:14268
+     - 4317:4317
+     - 4318:4318
      - 14250:14250
     networks:
       - trk-ex-back-tier

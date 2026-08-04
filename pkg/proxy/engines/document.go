@@ -18,10 +18,11 @@ package engines
 
 import (
 	"bytes"
+	"cmp"
 	"errors"
 	"io"
 	"net/http"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -126,7 +127,9 @@ func (d *HTTPDocument) GetByterangeChunk(chunkRange byterange.Range, _ int64) *H
 		ddbi -= chunkRange.Start
 		dd.Body = dd.Body[:ddbi]
 		dd.Ranges = dd.Ranges[:ddri]
-		sort.Sort(dd.Ranges)
+		slices.SortFunc(dd.Ranges, func(a, b byterange.Range) int {
+			return cmp.Compare(a.Start, b.Start)
+		})
 	}
 	return dd
 }
@@ -137,7 +140,32 @@ func (d *HTTPDocument) getByteRanges() byterange.Ranges {
 	} else if ranges := d.RangeParts.Ranges(); len(ranges) > 0 {
 		return ranges
 	}
-	return byterange.Ranges{byterange.Range{Start: 0, End: d.ContentLength}}
+	return byterange.Ranges{byterange.Range{Start: 0, End: d.ContentLength - 1}}
+}
+
+// ShallowCopy returns a shallow copy of the HTTPDocument with a fresh headerLock.
+func (d *HTTPDocument) ShallowCopy() *HTTPDocument {
+	d.headerLock.Lock()
+	h := d.Headers
+	d.headerLock.Unlock()
+	return &HTTPDocument{
+		IsMeta:           d.IsMeta,
+		IsChunk:          d.IsChunk,
+		StatusCode:       d.StatusCode,
+		Status:           d.Status,
+		Headers:          h,
+		Body:             d.Body,
+		ContentLength:    d.ContentLength,
+		ContentType:      d.ContentType,
+		CachingPolicy:    d.CachingPolicy,
+		Ranges:           d.Ranges,
+		RangeParts:       d.RangeParts,
+		StoredRangeParts: d.StoredRangeParts,
+		rangePartsLoaded: d.rangePartsLoaded,
+		isFulfillment:    d.isFulfillment,
+		isLoaded:         d.isLoaded,
+		timeseries:       d.timeseries,
+	}
 }
 
 // SafeHeaderClone returns a threadsafe copy of the Document Header

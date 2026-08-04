@@ -28,12 +28,12 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/iofmt"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	te "github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
-	"github.com/trickstercache/trickster/v2/pkg/util/timeconv"
 )
 
 const (
@@ -240,7 +240,11 @@ func SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
 	rb.Dialect = JSONRequestBodyDialect{
 		Annotations: DefaultAnnotations(),
 	}
-	b, _ = json.Marshal(rb)
+	b, err = json.Marshal(rb)
+	if err != nil {
+		logger.Error(setExtentErrorLogEvent, logging.Pairs{"error": err})
+		return
+	}
 	request.SetBody(r, b)
 }
 

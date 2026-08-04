@@ -10,16 +10,13 @@
 # Copyright 2018 The Trickster Authors
 #
 
-frontend:
-  listen_port: 8480
-
 backends:
 
   # a Prometheus time series merge alb
   promalb:
     provider: alb
     alb:
-      pool: [ prom1, prom1 ]
+      pool: [ prom1, prom2 ]
       mechanism: tsm
 
   # a reverse proxy cache round-robin alb

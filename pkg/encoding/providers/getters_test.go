@@ -52,11 +52,6 @@ func TestGetEncoderInitializer(t *testing.T) {
 			false,
 			DeflateValue,
 		},
-		{
-			SnappyValue,
-			false,
-			"",
-		},
 	}
 
 	for i, test := range tests {
@@ -104,10 +99,6 @@ func TestGetDecoderInitializer(t *testing.T) {
 		},
 		{
 			DeflateValue,
-			false,
-		},
-		{
-			SnappyValue,
 			false,
 		},
 	}

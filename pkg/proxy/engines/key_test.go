@@ -33,6 +33,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	ct "github.com/trickstercache/trickster/v2/pkg/proxy/context"
+	corso "github.com/trickstercache/trickster/v2/pkg/proxy/cors/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
@@ -75,46 +76,41 @@ func TestDeepSearch(t *testing.T) {
 	var document map[string]any
 	err := json.Unmarshal([]byte(testJSONDocument), &document)
 	if err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 
-	val, err := deepSearch(document, "query/table")
-	if err != nil {
-		t.Error(err)
+	tests := []struct {
+		name    string
+		key     string
+		wantVal string
+		wantErr bool
+	}{
+		{"top-level string value", "requestType", "query", false},
+		{"nested string value", "query/table", "movies", false},
+		{"empty key", "", "", true},
+		{"missing top-level key", "missingKey", "", true},
+		{"intermediate not a map", "query/filter/nottamap", "", true},
+		{"nested float value", "query/options/batchSize", "20.0000", false},
+		{"nested boolean value", "query/options/booleanHere", "true", false},
+		{"array terminal (unsupported)", "query/options/someArray", "", true},
 	}
 
-	if val != "movies" {
-		t.Errorf("expected %s got %s", "movies", val)
-	}
-
-	_, err = deepSearch(document, "")
-	if err == nil {
-		t.Errorf("expected error: %s", "could not find key")
-	}
-
-	_, err = deepSearch(document, "missingKey")
-	if err == nil {
-		t.Errorf("expected error: %s", "could not find key")
-	}
-
-	_, err = deepSearch(document, "query/filter/nottamap")
-	if err == nil {
-		t.Errorf("expected error: %s", "could not find key")
-	}
-
-	_, err = deepSearch(document, "query/options/batchSize")
-	if err != nil {
-		t.Error(err)
-	}
-
-	_, err = deepSearch(document, "query/options/booleanHere")
-	if err != nil {
-		t.Error(err)
-	}
-
-	_, err = deepSearch(document, "query/options/someArray")
-	if err == nil {
-		t.Errorf("expected error: %s", "could not find key")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			val, err := deepSearch(document, tt.key)
+			if tt.wantErr {
+				if err == nil {
+					t.Error("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if val != tt.wantVal {
+				t.Errorf("expected %s got %s", tt.wantVal, val)
+			}
+		})
 	}
 }
 
@@ -209,10 +205,193 @@ func TestDeriveCacheKey(t *testing.T) {
 	}
 }
 
+func TestDeriveCacheKeyUsesCanonicalTimeRangeQuery(t *testing.T) {
+	canonical := func(tenant string) string {
+		return "SELECT toStartOfMinute(ts) AS t, count() FROM events WHERE tenant = '" + tenant +
+			"' AND ts >= <$TS1$> AND ts < <$TS2$> GROUP BY t"
+	}
+	derive := func(original, identity string) string {
+		t.Helper()
+		path := po.New()
+		path.CacheKeyParams = []string{"query"}
+		rsc := request.NewResources(&bo.Options{}, path, nil, nil, nil, nil)
+		rsc.TimeRangeQuery = &timeseries.TimeRangeQuery{
+			CacheKeyElements: map[string]string{"query": identity},
+		}
+		r := httptest.NewRequest(http.MethodGet, "http://trickster.example.com/?query="+url.QueryEscape(original), nil)
+		r = request.SetResources(r, rsc)
+		return newProxyRequest(r, nil).DeriveCacheKey("")
+	}
+
+	first := derive("SELECT ... WHERE tenant = 'a' AND ts >= 100 AND ts < 200", canonical("a"))
+	second := derive("SELECT ... WHERE tenant = 'a' AND ts >= 300 AND ts < 400", canonical("a"))
+	if first != second {
+		t.Errorf("different time ranges produced different keys: %s != %s", first, second)
+	}
+	third := derive("SELECT ... WHERE tenant = 'b' AND ts >= 100 AND ts < 200", canonical("b"))
+	if first == third {
+		t.Errorf("different non-time predicates produced the same key: %s", first)
+	}
+}
+
 func exampleKeyHasher(path string, params url.Values, headers http.Header,
 	body []byte, trq *timeseries.TimeRangeQuery, extra string,
 ) string {
 	return "test-key"
+}
+
+func TestDeriveCacheKeyVariesByCORSOrigin(t *testing.T) {
+	makeKey := func(policy *corso.Options, origin string, customHasher bool) string {
+		t.Helper()
+		pc := po.New()
+		if customHasher {
+			pc.KeyHasher = exampleKeyHasher
+		}
+		rsc := request.NewResources(&bo.Options{}, pc, nil, nil, nil, nil)
+		rsc.FrontendCORS = policy
+		r := httptest.NewRequest(http.MethodGet, "http://trickster.example.com/data", nil)
+		r.Header.Set(headers.NameOrigin, origin)
+		r = request.SetResources(r, rsc)
+		return newProxyRequest(r, nil).DeriveCacheKey("")
+	}
+
+	tests := []struct {
+		name          string
+		policy        *corso.Options
+		customHasher  bool
+		wantDifferent bool
+	}{
+		{name: "preserve", policy: &corso.Options{Mode: corso.ModePreserve}, wantDifferent: true},
+		{name: "merge", policy: &corso.Options{Mode: corso.ModeMerge}, wantDifferent: true},
+		{name: "replace", policy: &corso.Options{Mode: corso.ModeReplace}},
+		{name: "disable", policy: &corso.Options{Mode: corso.ModeDisable}},
+		{name: "legacy", policy: corso.Legacy()},
+		{name: "custom hasher preserve", policy: &corso.Options{Mode: corso.ModePreserve},
+			customHasher: true, wantDifferent: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			first := makeKey(tc.policy, "https://first.example.com", tc.customHasher)
+			second := makeKey(tc.policy, "https://second.example.com", tc.customHasher)
+			if got := first != second; got != tc.wantDifferent {
+				t.Fatalf("cache keys differ = %v, want %v (%q, %q)",
+					got, tc.wantDifferent, first, second)
+			}
+		})
+	}
+}
+
+// TestDeriveCacheKey_MultiValueParams is a comprehensive test for multi-value
+// query parameter handling in cache key derivation.
+// Regression tests for https://github.com/trickstercache/trickster/issues/858
+func TestDeriveCacheKey_MultiValueParams(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
+
+	makeKey := func(path string, ckp []string, rawURL string) string {
+		t.Helper()
+		pc := &po.Options{Path: path, CacheKeyParams: ckp}
+		cfg := &bo.Options{Paths: po.List{pc}}
+		rsc := request.NewResources(cfg, cfg.Paths[0], nil, nil, nil, nil)
+		r := httptest.NewRequest("GET", rawURL, nil)
+		r = r.WithContext(ct.WithResources(context.Background(), rsc))
+		return newProxyRequest(r, nil).DeriveCacheKey("")
+	}
+
+	t.Run("empty CacheKeyParams ignores all params", func(t *testing.T) {
+		// This was the root cause of #858: label endpoints had empty
+		// CacheKeyParams so different match[] filters shared one cache entry.
+		k1 := makeKey("/api/v1/label/job/values", []string{},
+			`http://h/api/v1/label/job/values?match[]={__name__="a"}`)
+		k2 := makeKey("/api/v1/label/job/values", []string{},
+			`http://h/api/v1/label/job/values?match[]={__name__="b"}`)
+		if k1 != k2 {
+			t.Error("empty CacheKeyParams should ignore query params")
+		}
+	})
+
+	t.Run("label endpoint different match selectors", func(t *testing.T) {
+		ckp := []string{"match[]", "start", "end"}
+		k1 := makeKey("/api/v1/label/job/values", ckp,
+			`http://h/api/v1/label/job/values?match[]={__name__="vm_rows"}&start=1000&end=2000`)
+		k2 := makeKey("/api/v1/label/job/values", ckp,
+			`http://h/api/v1/label/job/values?match[]={__name__="node_cpu_seconds_total"}&start=1000&end=2000`)
+		if k1 == k2 {
+			t.Errorf("different match[] must produce different keys, both got %s", k1)
+		}
+	})
+
+	t.Run("labels endpoint different match selectors", func(t *testing.T) {
+		ckp := []string{"match[]", "start", "end"}
+		k1 := makeKey("/api/v1/labels", ckp,
+			`http://h/api/v1/labels?match[]={__name__="vm_rows"}`)
+		k2 := makeKey("/api/v1/labels", ckp,
+			`http://h/api/v1/labels?match[]={__name__="node_cpu"}`)
+		if k1 == k2 {
+			t.Errorf("different match[] must produce different keys, both got %s", k1)
+		}
+	})
+
+	t.Run("different label names produce different keys", func(t *testing.T) {
+		ckp := []string{"match[]", "start", "end"}
+		k1 := makeKey("/api/v1/label/job/values", ckp,
+			`http://h/api/v1/label/job/values?match[]={__name__="up"}`)
+		k2 := makeKey("/api/v1/label/instance/values", ckp,
+			`http://h/api/v1/label/instance/values?match[]={__name__="up"}`)
+		if k1 == k2 {
+			t.Errorf("different label paths must produce different keys, both got %s", k1)
+		}
+	})
+
+	t.Run("multi-value match vs single-value match", func(t *testing.T) {
+		ckp := []string{"match[]", "start", "end"}
+		k1 := makeKey("/api/v1/series", ckp,
+			`http://h/api/v1/series?match[]={__name__="up"}&match[]={__name__="down"}&start=0&end=0`)
+		k2 := makeKey("/api/v1/series", ckp,
+			`http://h/api/v1/series?match[]={__name__="up"}&start=0&end=0`)
+		if k1 == k2 {
+			t.Errorf("different match[] count must produce different keys, both got %s", k1)
+		}
+	})
+
+	t.Run("wildcard CacheKeyParams includes all multi-value params", func(t *testing.T) {
+		k1 := makeKey("/api/v1/series", []string{"*"},
+			`http://h/api/v1/series?match[]={__name__="up"}&match[]={__name__="down"}&start=0&end=0`)
+		k2 := makeKey("/api/v1/series", []string{"*"},
+			`http://h/api/v1/series?match[]={__name__="up"}&start=0&end=0`)
+		if k1 == k2 {
+			t.Errorf("wildcard mode: different match[] count must produce different keys, both got %s", k1)
+		}
+	})
+
+	t.Run("single-value params unchanged", func(t *testing.T) {
+		// Ensure the multi-value change doesn't alter keys for single-value params.
+		// This uses the same config as TestDeriveCacheKey to confirm stability.
+		rpath := &po.Options{
+			Path:           "/",
+			CacheKeyParams: []string{"query", "step", "time"},
+		}
+		cfg := &bo.Options{Paths: po.List{rpath}}
+		rsc := request.NewResources(cfg, cfg.Paths[0], nil, nil, nil, nil)
+		r := httptest.NewRequest("GET",
+			"http://127.0.0.1/?query=12345&start=0&end=0&step=300&time=0", nil)
+		r = r.WithContext(ct.WithResources(context.Background(), rsc))
+		k := newProxyRequest(r, nil).DeriveCacheKey("extra")
+		if k != "52dc11456c84506d3444e53ee4c99777" {
+			t.Errorf("single-value param key changed: got %s, want 52dc11456c84506d3444e53ee4c99777", k)
+		}
+	})
+
+	t.Run("no match param vs with match param", func(t *testing.T) {
+		ckp := []string{"match[]", "start", "end"}
+		k1 := makeKey("/api/v1/label/job/values", ckp,
+			`http://h/api/v1/label/job/values?start=1000&end=2000`)
+		k2 := makeKey("/api/v1/label/job/values", ckp,
+			`http://h/api/v1/label/job/values?match[]={__name__="up"}&start=1000&end=2000`)
+		if k1 == k2 {
+			t.Errorf("presence vs absence of match[] must produce different keys, both got %s", k1)
+		}
+	})
 }
 
 func TestDeriveCacheKeyAuthHeader(t *testing.T) {
@@ -280,4 +459,62 @@ func TestDeriveCacheKeyNilURL(t *testing.T) {
 	if k != "c04284eb2c269dd939d54437d4efb071" {
 		t.Errorf("unexpected cache key: %s", k)
 	}
+}
+
+// TestCacheKey_BackendNamePrefixIsolatesPoolMembers asserts that two backends
+// sharing CacheKeyPrefix and the same cache produce distinct cache keys per
+// engine, with the backend name as the leading segment.
+func TestCacheKey_BackendNamePrefixIsolatesPoolMembers(t *testing.T) {
+	const sharedPrefix = "shared"
+	derived := "abc123"
+
+	cases := []struct {
+		engine string
+		want   func(name string) string
+	}{
+		{"opc", func(n string) string { return n + "." + sharedPrefix + ".opc." + derived }},
+		{"dpc", func(n string) string { return n + "." + sharedPrefix + ".dpc." + derived }},
+		{"http", func(n string) string { return n + "." + sharedPrefix + "." + derived }},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.engine, func(t *testing.T) {
+			a := &bo.Options{Name: "a", CacheKeyPrefix: sharedPrefix}
+			b := &bo.Options{Name: "b", CacheKeyPrefix: sharedPrefix}
+
+			ka := composeKey(tc.engine, a, derived)
+			kb := composeKey(tc.engine, b, derived)
+
+			if ka == kb {
+				t.Fatalf("backends %q and %q produced colliding key %q", a.Name, b.Name, ka)
+			}
+			if !strings.HasPrefix(ka, "a.") {
+				t.Errorf("expected key to start with %q, got %q", "a.", ka)
+			}
+			if !strings.HasPrefix(kb, "b.") {
+				t.Errorf("expected key to start with %q, got %q", "b.", kb)
+			}
+			if ka != tc.want("a") {
+				t.Errorf("unexpected key for backend a: got %q want %q", ka, tc.want("a"))
+			}
+			if kb != tc.want("b") {
+				t.Errorf("unexpected key for backend b: got %q want %q", kb, tc.want("b"))
+			}
+		})
+	}
+}
+
+// composeKey mirrors the per-engine cache key composition. Keep this in sync
+// with the call sites in objectproxycache.go, deltaproxycache.go, httpproxy.go
+// and the purge handler in pkg/proxy/handlers/trickster/purge/purge.go.
+func composeKey(engine string, o *bo.Options, derived string) string {
+	switch engine {
+	case "opc":
+		return o.Name + "." + o.CacheKeyPrefix + ".opc." + derived
+	case "dpc":
+		return o.Name + "." + o.CacheKeyPrefix + ".dpc." + derived
+	case "http":
+		return o.Name + "." + o.CacheKeyPrefix + "." + derived
+	}
+	return ""
 }

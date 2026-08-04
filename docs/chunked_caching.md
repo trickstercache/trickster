@@ -16,7 +16,6 @@ Chunked caching can be enabled and disabled using `use_cache_chunking`:
 
 ```yaml
 fs1:
-    cache_type: filesystem
     provider: filesystem
     use_cache_chunking: true
     timeseries_chunk_factor: 420
@@ -53,12 +52,8 @@ Byterange chunking splits the byterange into pieces with the same literal size. 
 This example has one Prometheus backend with a memory cache that has chunking enabled. The memory cache uses 380 as its timeseries chunk factor, and doesn't define a byterange chunk size, so the default of 4096 will be used.
 
 ```yaml
-frontend:
-  listen_port: 8480
-
 caches:
   mem1:
-    cache_type: memory
     provider: memory
     index:
       max_size_objects: 512
@@ -76,7 +71,4 @@ backends:
 
 logging:
   log_level: warn
-
-metrics:
-  listen_port: 8481
 ```

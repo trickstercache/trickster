@@ -50,9 +50,9 @@ type WFAlert struct {
 // CalculateHash sums the FNV64a hash for the Header and stores it to the Hash member
 func (a *WFAlert) CalculateHash() uint64 {
 	hash := fnv.NewInlineFNV64a()
-	hash.Write([]byte(dataset.Tags(a.Labels).String()))
+	hash.Write([]byte(dataset.Tags(a.Labels).JSON()))
 	hash.Write([]byte("||"))
-	hash.Write([]byte(dataset.Tags(a.Annotations).String()))
+	hash.Write([]byte(dataset.Tags(a.Annotations).JSON()))
 	return hash.Sum64()
 }
 
@@ -103,13 +103,13 @@ func MergeAndWriteAlertsRespondFunc() merge.RespondFunc {
 			return
 		}
 		a.StartMarshal(w, statusCode)
-		var sep string
 		w.Write([]byte(`,"data":{"alerts":[`))
 		if a.Data != nil && len(a.Data.Alerts) > 0 {
+			var sep string
 			for _, alert := range a.Data.Alerts {
 				fmt.Fprintf(w,
-					`{"state":"%s","labels":%s,"annotations":%s`,
-					alert.State, dataset.Tags(alert.Labels).JSON(),
+					`%s{"state":"%s","labels":%s,"annotations":%s`,
+					sep, alert.State, dataset.Tags(alert.Labels).JSON(),
 					dataset.Tags(alert.Annotations).JSON(),
 				)
 				if alert.Value != "" {
@@ -118,7 +118,7 @@ func MergeAndWriteAlertsRespondFunc() merge.RespondFunc {
 				if alert.ActiveAt != "" {
 					fmt.Fprintf(w, `,"activeAt":"%s"`, alert.ActiveAt)
 				}
-				w.Write([]byte("}" + sep))
+				w.Write([]byte("}"))
 				sep = ","
 			}
 		}

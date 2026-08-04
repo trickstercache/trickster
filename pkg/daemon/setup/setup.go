@@ -28,6 +28,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/appinfo/usage"
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb"
+	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/index"
 	"github.com/trickstercache/trickster/v2/pkg/cache/manager"
@@ -52,21 +53,19 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 	"github.com/trickstercache/trickster/v2/pkg/routing"
+	"github.com/trickstercache/trickster/v2/pkg/util/safego"
 )
 
 // mtx guards the config loading and validation process,
 // to ensure only one operation can occur at a time.
 // There is no race-related reason for this mutex, it simply prevents overlapping config operations.
-var (
-	mtx sync.Mutex
-	lg  = listener.NewGroup()
-)
+var mtx sync.Mutex
 
 // BootstrapConfig loads, validates, processes and prepares a configuration
 // along with its backend clients. This centralizes the common initialization
 // logic used by both startup and reload operations.
-func BootstrapConfig() (*config.Config, backends.Backends, error) {
-	conf, err := LoadAndValidate()
+func BootstrapConfig(args ...string) (*config.Config, backends.Backends, error) {
+	conf, err := LoadAndValidate(args...)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -94,11 +93,11 @@ func BootstrapConfig() (*config.Config, backends.Backends, error) {
 	return conf, clients, nil
 }
 
-func LoadAndValidate() (*config.Config, error) {
+func LoadAndValidate(args ...string) (*config.Config, error) {
 	mtx.Lock()
 	defer mtx.Unlock()
 	// Load Config
-	cfg, err := config.Load(os.Args[1:])
+	cfg, err := config.Load(args)
 	if err != nil {
 		logger.Error("Could not load configuration:", logging.Pairs{"error": err.Error()})
 		if cfg != nil && cfg.Flags != nil && cfg.Flags.ValidateConfig {
@@ -111,10 +110,6 @@ func LoadAndValidate() (*config.Config, error) {
 	}
 	if cfg.Flags != nil && (cfg.Flags.PrintVersion) {
 		return cfg, nil
-	}
-
-	for _, w := range cfg.LoaderWarnings {
-		logger.Warn(w, nil)
 	}
 
 	err = cfg.Backends.Validate()
@@ -134,11 +129,15 @@ func LoadAndValidate() (*config.Config, error) {
 		logger.Error(err.Error(), nil)
 		return nil, err
 	}
+	for _, w := range cfg.LoaderWarnings {
+		logger.Warn(w, nil)
+	}
 	return cfg, nil
 }
 
 func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	clients backends.Backends, hupFunc dr.Reloader, errorFunc func(),
+	lg *listener.Group,
 ) error {
 	if si == nil || newConf == nil {
 		return nil
@@ -168,18 +167,27 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 		return err
 	}
 
-	// every config (re)load is a new router
-	r := lm.NewRouter()
+	// every config (re)load gets a new router for each active proxy server
+	listenerRouters := make(map[string]router.Router)
+	for name, options := range newConf.Listeners {
+		if options == nil || !options.Active ||
+			name == mgmt.ListenerNameMgmt || name == mgmt.ListenerNameMetrics {
+			continue
+		}
+		listenerRouters[name] = lm.NewRouter()
+	}
 	mr := lm.NewRouter()
 	mr.SetMatchingScheme(router.MatchExactPath)
 
-	r.RegisterRoute(newConf.MgmtConfig.PingHandlerPath, nil,
-		[]string{http.MethodGet, http.MethodHead}, false,
-		http.HandlerFunc((pnh.HandlerFunc(newConf))))
+	for _, r := range listenerRouters {
+		r.RegisterRoute(newConf.MgmtConfig.PingHandlerPath, nil,
+			[]string{http.MethodGet, http.MethodHead}, false,
+			http.HandlerFunc((pnh.HandlerFunc(newConf))))
+	}
 
 	caches := applyCachingConfig(si, newConf)
 	rh := reload.HandlerFunc(hupFunc)
-	err = routing.RegisterProxyRoutes(newConf, clients, r, mr, caches, tracers, false)
+	err = routing.RegisterProxyRoutesForListeners(newConf, clients, listenerRouters, mr, caches, tracers, false)
 	if err != nil {
 		handleStartupIssue("route registration failed",
 			logging.Pairs{"detail": err.Error()}, errorFunc)
@@ -189,9 +197,11 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	if !strings.HasSuffix(newConf.MgmtConfig.PurgeByKeyHandlerPath, "/") {
 		newConf.MgmtConfig.PurgeByKeyHandlerPath += "/"
 	}
-	r.RegisterRoute(newConf.MgmtConfig.PurgeByKeyHandlerPath, nil,
-		[]string{http.MethodDelete}, true,
-		http.HandlerFunc(ph.KeyHandler(newConf.MgmtConfig.PurgeByKeyHandlerPath, clients)))
+	for _, r := range listenerRouters {
+		r.RegisterRoute(newConf.MgmtConfig.PurgeByKeyHandlerPath, nil,
+			[]string{http.MethodDelete}, true,
+			http.HandlerFunc(ph.KeyHandler(newConf.MgmtConfig.PurgeByKeyHandlerPath, clients)))
+	}
 
 	if si.Backends != nil {
 		alb.StopPools(si.Backends)
@@ -199,14 +209,20 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	if si.HealthChecker != nil {
 		si.HealthChecker.Shutdown()
 	}
-	si.HealthChecker, err = clients.StartHealthChecks()
+	var oldStatuses healthcheck.StatusLookup
+	if si.HealthChecker != nil {
+		oldStatuses = si.HealthChecker.Statuses()
+	}
+	si.HealthChecker, err = clients.StartHealthChecks(oldStatuses)
 	if err != nil {
+		// logs the error (no status code or target name)
+		healthcheck.LogHealthCheckError("", err, 0)
 		return err
 	}
 	alb.StartALBPools(clients, si.HealthChecker.Statuses())
-	routing.RegisterDefaultBackendRoutes(r, newConf, clients, tracers)
+	routing.RegisterDefaultBackendRoutesForListeners(listenerRouters, newConf, clients, tracers)
 	routing.RegisterHealthHandler(mr, newConf.MgmtConfig.HealthHandlerPath, si.HealthChecker, clients)
-	applyListenerConfigs(newConf, si.Config, r, rh, mr, tracers, clients, errorFunc, lg)
+	applyListenerConfigs(newConf, si.Config, listenerRouters, rh, mr, tracers, clients, errorFunc, lg)
 
 	metrics.LastReloadSuccessfulTimestamp.Set(float64(time.Now().Unix()))
 	metrics.LastReloadSuccessful.Set(1)
@@ -251,7 +267,7 @@ func applyLoggingConfig(c, o *config.Config) {
 			if o.Logging.LogFile != "" {
 				// if we're changing from file1 -> console or file1 -> file2, close file1 handle
 				// the extra 1s allows HTTP listeners to close first and finish their log writes
-				go delayedLogCloser(oldLogger, c.MgmtConfig.ReloadDrainTimeout+(1*time.Millisecond))
+				go delayedLogCloser(oldLogger, time.Duration(c.MgmtConfig.ReloadDrainTimeout)+(1*time.Millisecond))
 			}
 			initLogger(c)
 			return
@@ -300,29 +316,60 @@ func applyCachingConfig(si *instance.ServerInstance,
 				v.ProviderID == providers.MemoryID {
 				// Note: this is only necessary for the memory cache as all other providers will be closed and reopened with the newest config
 				if v.Index != nil {
-					mc := w.(*manager.Manager).Client.(*index.IndexedClient)
-					mc.UpdateOptions(v.Index)
+					// only index-backed clients carry index options; the memory
+					// cache manages its own sizing, so a failed assertion here
+					// is expected and simply means there is nothing to update
+					if m, ok := w.(*manager.Manager); ok {
+						if mc, ok := m.Client.(*index.IndexedClient); ok {
+							mc.UpdateOptions(v.Index)
+						}
+					}
 				}
 				caches[k] = w
 				continue
 			}
 
-			// if we got to this point, the cache won't be used, so lets close it
-			go func() {
-				time.Sleep(newConf.MgmtConfig.ReloadDrainTimeout)
-				w.Close()
-			}()
+			// if we got to this point, the cache won't be used, so close it.
+			closeOldCache(k, w, time.Duration(newConf.MgmtConfig.ReloadDrainTimeout))
 		}
 
 		// the newly-named cache is not in the old config or couldn't be reused, so make it anew
 		caches[k] = registry.NewCache(k, v)
 	}
+
+	// close caches that existed in the old config but are absent from the new
+	// config; without this, renaming a cache leaks the old cache's goroutines.
+	for k, w := range si.Caches {
+		if _, ok := newConf.Caches[k]; ok {
+			continue
+		}
+		closeOldCache(k, w, time.Duration(newConf.MgmtConfig.ReloadDrainTimeout))
+	}
 	return caches
+}
+
+func closeOldCache(name string, w cache.Cache, drainTimeout time.Duration) {
+	if m, ok := w.(*manager.Manager); ok {
+		m.SetCloseDrainTimeout(drainTimeout)
+	}
+	safego.Go(func(r any, stack []byte) {
+		logger.Error("reload background goroutine panic", logging.Pairs{
+			"site":  "closeOldCache",
+			"cache": name,
+			"panic": r,
+			"stack": string(stack),
+		})
+	}, func() {
+		if err := w.Close(); err != nil {
+			logger.Warn("error closing old cache during reload",
+				logging.Pairs{"cache": name, "error": err.Error()})
+		}
+	})
 }
 
 func initLogger(c *config.Config) logging.Logger {
 	logger.SetLogger(logging.New(c))
-	logger.Info("application loaded from configuration",
+	logger.InfoSynchronous("application loaded from configuration",
 		logging.Pairs{
 			"name":      appinfo.Name,
 			"version":   appinfo.Version,

@@ -21,9 +21,19 @@ import (
 )
 
 func TestExtractFastForwardDisabled(t *testing.T) {
-	ro := &RequestOptions{}
-	ro.ExtractFastForwardDisabled("test query trickster-fast-forward:off ")
-	if !ro.FastForwardDisable {
-		t.Error("expected true")
-	}
+	t.Run("flag present", func(t *testing.T) {
+		ro := &RequestOptions{}
+		ro.ExtractFastForwardDisabled("test query trickster-fast-forward:off ")
+		if !ro.FastForwardDisable {
+			t.Error("expected true")
+		}
+	})
+
+	t.Run("flag not present", func(t *testing.T) {
+		ro := &RequestOptions{}
+		ro.ExtractFastForwardDisabled("test query without flag")
+		if ro.FastForwardDisable {
+			t.Error("expected false")
+		}
+	})
 }

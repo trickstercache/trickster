@@ -30,21 +30,30 @@ import (
 
 // this slice is the one and only place to aggregate all registered Mechanisms
 var registry = []types.RegistryEntry{
-	rr.RegistryEntry(),    // ID 0
-	fr.RegistryEntry(),    // ID 1
-	fr.RegistryEntryFGR(), // ID 2
-	nlm.RegistryEntry(),   // ID 3
-	tsm.RegistryEntry(),   // ID 4
-	ur.RegistryEntry(),    // ID 5
+	rr.RegistryEntry(),
+	fr.RegistryEntry(),
+	fr.RegistryEntryFGR(),
+	nlm.RegistryEntry(),
+	tsm.RegistryEntry(),
+	ur.RegistryEntry(),
 }
 
-var registryByName = compileSupportedByName()
+var registryByName = compileSupportedByName(registry)
 
-func compileSupportedByName() map[types.Name]types.NewMechanismFunc {
-	out := make(map[types.Name]types.NewMechanismFunc, len(registry)*2)
-	for _, entry := range registry {
-		out[entry.ShortName] = entry.New
-		out[entry.Name] = entry.New
+// compileSupportedByName indexes registry entries by both Name and ShortName.
+// Panics on duplicate registration: silently last-write-wins would mask a
+// configuration error that only surfaces at request time.
+func compileSupportedByName(entries []types.RegistryEntry) map[types.Name]types.NewMechanismFunc {
+	out := make(map[types.Name]types.NewMechanismFunc, len(entries)*2)
+	add := func(name types.Name, fn types.NewMechanismFunc) {
+		if _, exists := out[name]; exists {
+			panic("alb/mech/registry: duplicate mechanism name " + name)
+		}
+		out[name] = fn
+	}
+	for _, entry := range entries {
+		add(entry.ShortName, entry.New)
+		add(entry.Name, entry.New)
 	}
 	return out
 }

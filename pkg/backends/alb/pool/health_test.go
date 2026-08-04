@@ -17,39 +17,66 @@
 package pool
 
 import (
-	"context"
+	"net/http"
 	"testing"
-	"time"
+	"testing/synctest"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 )
 
 func TestCheckHealth(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	synctest.Test(t, func(t *testing.T) {
+		tgt := &Target{
+			hcStatus: &healthcheck.Status{},
+		}
 
-	tgt := &Target{
-		hcStatus: &healthcheck.Status{},
-	}
+		tgt.hcStatus.Set(healthcheck.StatusPassing)
 
-	tgt.hcStatus.Set(healthcheck.StatusPassing)
+		p := &pool{ch: make(chan bool, 1), done: make(chan struct{}), targets: []*Target{tgt}, healthyFloor: -1}
+		p.workers.Add(1)
+		go p.checkHealth()
+		defer p.Stop()
+		p.scheduleRefresh()
+		synctest.Wait()
 
-	p := &pool{ch: make(chan bool), ctx: ctx, targets: []*Target{tgt}, healthyFloor: -1}
-	go func() {
-		p.checkHealth()
-	}()
-	time.Sleep(150 * time.Millisecond)
-	p.ch <- true
-	time.Sleep(150 * time.Millisecond)
-	cancel()
-	time.Sleep(10 * time.Millisecond)
+		h := p.healthyHandlers.Load()
+		if h == nil {
+			t.Fatal("expected non-nil healthy list")
+		}
+		if got := len(*h); got != 1 {
+			t.Errorf("expected %d got %d", 1, got)
+		}
+	})
+}
 
-	h := p.healthyHandlers.Load()
-	if h == nil {
-		t.Error("expected non-nil healthy list")
-		return
-	}
-	l := len(*h)
-	if l != 1 {
-		t.Errorf("expected %d got %d", 1, l)
-	}
+func TestBurstUpdatesEvictFailingTarget(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		st1 := &healthcheck.Status{}
+		st2 := &healthcheck.Status{}
+		t1 := NewTarget(http.NotFoundHandler(), st1, nil)
+		t2 := NewTarget(http.NotFoundHandler(), st2, nil)
+		p := New(Targets{t1, t2}, 1)
+		defer p.Stop()
+
+		st1.Set(healthcheck.StatusPassing)
+		st2.Set(healthcheck.StatusPassing)
+		synctest.Wait()
+		if got := len(p.Targets()); got != 2 {
+			t.Fatalf("setup: expected 2 healthy targets, got %d", got)
+		}
+
+		// Emit a burst of updates that may overrun subscriber channel buffers and
+		// drop intermediate notifications. Final state is failing.
+		for range 256 {
+			st1.Set(healthcheck.StatusPassing)
+			st1.Set(healthcheck.StatusFailing)
+		}
+		st1.Set(healthcheck.StatusFailing)
+		synctest.Wait()
+
+		got := p.Targets()
+		if len(got) != 1 || got[0] != t2 {
+			t.Fatalf("expected only target 2 to remain healthy, got: %#v", got)
+		}
+	})
 }

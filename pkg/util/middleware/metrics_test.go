@@ -21,9 +21,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
+
 	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/require"
-	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 )
 
 func expectCounter(backendName, providerName, method, statusCode string, value float64) func(t *testing.T, basepath string, route string) {

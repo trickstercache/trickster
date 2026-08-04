@@ -19,8 +19,8 @@ package options
 import (
 	"crypto/tls"
 	"errors"
-	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 )
 
@@ -45,7 +45,7 @@ type Options struct {
 	// MaxRequestBodySizeBytes when larger, without returning a 413 Payload Too Large
 	TruncateRequestBodyTooLarge bool `yaml:"truncate_request_body_too_large"`
 	// ReadHeaderTimeout is the amount of time allowed to read request headers.
-	ReadHeaderTimeout time.Duration `yaml:"read_header_timeout,omitempty"`
+	ReadHeaderTimeout timeconv.Duration `yaml:"read_header_timeout,omitempty"`
 	// ServeTLS indicates whether to listen and serve on the TLS port, meaning
 	// at least one backend options has a valid certificate and key file configured.
 	ServeTLS bool `yaml:"-"`
@@ -60,8 +60,8 @@ func New() *Options {
 		ListenAddress:           DefaultProxyListenAddress,
 		TLSListenPort:           DefaultTLSProxyListenPort,
 		TLSListenAddress:        DefaultTLSProxyListenAddress,
-		ReadHeaderTimeout:       DefaultReadHeaderTimeout,
-		MaxRequestBodySizeBytes: pointers.New(DefaultMaxRequestBodySizeBytes),
+		ReadHeaderTimeout:       timeconv.Duration(DefaultReadHeaderTimeout),
+		MaxRequestBodySizeBytes: new(DefaultMaxRequestBodySizeBytes),
 	}
 }
 
@@ -74,14 +74,14 @@ func (o *Options) Equal(o2 *Options) bool {
 func (o *Options) Clone() *Options {
 	out := pointers.Clone(o)
 	if o.MaxRequestBodySizeBytes != nil {
-		out.MaxRequestBodySizeBytes = pointers.New(*o.MaxRequestBodySizeBytes)
+		out.MaxRequestBodySizeBytes = new(*o.MaxRequestBodySizeBytes)
 	}
 	return out
 }
 
 func (o *Options) Initialize() error {
 	if o.MaxRequestBodySizeBytes == nil {
-		o.MaxRequestBodySizeBytes = pointers.New(DefaultMaxRequestBodySizeBytes)
+		o.MaxRequestBodySizeBytes = new(DefaultMaxRequestBodySizeBytes)
 	}
 	return nil
 }

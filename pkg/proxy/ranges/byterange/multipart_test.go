@@ -36,7 +36,7 @@ const (
 	testPart2Body     = `{ "body": "ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJ" }`
 )
 
-var content = []byte(fmt.Sprintf(`--%s
+var content = fmt.Appendf(nil, `--%s
 Content-Type: %s
 Content-Range: bytes %s/%s
 
@@ -48,7 +48,7 @@ Content-Range: bytes %s/%s
 %s
 --%s--`, testSeparator, testContentType1, testRange1, testContentLength,
 	testPart1Body, testSeparator, testContentType1, testRange2, testContentLength,
-	testPart2Body, testSeparator))
+	testPart2Body, testSeparator)
 
 func TestParseMultipartRangeResponseBody(t *testing.T) {
 	reader := io.NopCloser(bytes.NewBuffer(content))

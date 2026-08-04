@@ -113,8 +113,8 @@ func TestWriteDecoded(t *testing.T) {
 		t.Error(err)
 	}
 	i, err := ew.writeDecoded(b)
-	if i != 33 {
-		t.Errorf("expected %d got %d", 33, i)
+	if i != 34 {
+		t.Errorf("expected %d got %d", 34, i)
 	}
 	if err != nil {
 		t.Error(err)
@@ -129,8 +129,8 @@ func TestWriteDecoded(t *testing.T) {
 	ew.ResponseWriter = w
 
 	i, err = ew.writeDecoded(b)
-	if i != 33 {
-		t.Errorf("expected %d got %d", 33, i)
+	if i != 34 {
+		t.Errorf("expected %d got %d", 34, i)
 	}
 	if err != nil {
 		t.Error(err)
@@ -154,8 +154,8 @@ func TestWriteTranscoded(t *testing.T) {
 		t.Error(err)
 	}
 	i, err := ew.writeTranscoded(b)
-	if i != 33 {
-		t.Errorf("expected %d got %d", 33, i)
+	if i != 34 {
+		t.Errorf("expected %d got %d", 34, i)
 	}
 	if err != nil {
 		t.Error(err)
@@ -170,8 +170,8 @@ func TestWriteTranscoded(t *testing.T) {
 	ew.encoder = NewEncoder(w, nil)
 
 	i, err = ew.writeTranscoded(b)
-	if i != 33 {
-		t.Errorf("expected %d got %d", 33, i)
+	if i != 34 {
+		t.Errorf("expected %d got %d", 34, i)
 	}
 	if err != nil {
 		t.Error(err)

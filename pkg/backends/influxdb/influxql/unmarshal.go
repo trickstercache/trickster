@@ -21,14 +21,16 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"sort"
-	"sync"
+	"runtime"
+	"slices"
 	"sync/atomic"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
+
+	"golang.org/x/sync/errgroup"
 )
 
 // Unmarshal performs a standard unmarshal of the bytes into the InfluxDB Wire Format Document,
@@ -97,17 +99,18 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 			sh.CalculateSize()
 			pts := make(dataset.Points, len(wfd.Results[i].SeriesList[j].Values))
 			var sz int64
-			var wg sync.WaitGroup
+			var eg errgroup.Group
+			eg.SetLimit(runtime.GOMAXPROCS(0))
 			errs := make([]error, len(wfd.Results[i].SeriesList[j].Values))
 			for vi, v := range wfd.Results[i].SeriesList[j].Values {
-				wg.Go(func() {
+				eg.Go(func() error {
 					pt, cols, err := pointFromValues(v, sh.TimestampField.OutputPosition)
 					if err != nil {
 						errs[vi] = err
-						return
+						return err
 					}
 					if pt.Epoch == 0 {
-						return
+						return nil
 					}
 					if vi == 0 {
 						for x := range cols {
@@ -117,13 +120,22 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 					pts[vi] = pt
 					atomic.AddInt64(&sz, int64(pt.Size))
 					wfd.Results[i].SeriesList[j].Values[vi] = nil
+					return nil
 				})
 			}
-			wg.Wait()
+			eg.Wait()
 			if err := errors.Join(errs...); err != nil {
 				return nil, err
 			}
-			sort.Sort(pts)
+			slices.SortFunc(pts, func(a, b dataset.Point) int {
+				if a.Epoch < b.Epoch {
+					return -1
+				}
+				if a.Epoch > b.Epoch {
+					return 1
+				}
+				return 0
+			})
 			s := &dataset.Series{
 				Header:    sh,
 				Points:    pts,

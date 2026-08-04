@@ -28,8 +28,6 @@ const (
 	Stdout
 	// OTLP indicates OTLP tracing
 	OTLP
-	// Zipkin indicates Zipkin tracing
-	Zipkin
 )
 
 type (
@@ -42,7 +40,6 @@ var Names = ProviderLookup{
 	"none":   None,
 	"stdout": Stdout,
 	"otlp":   OTLP,
-	"zipkin": Zipkin,
 }
 
 // Values is a map of tracing providers keyed by internal id

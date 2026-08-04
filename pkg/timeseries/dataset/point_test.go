@@ -17,15 +17,15 @@
 package dataset
 
 import (
-	"fmt"
-	"sort"
+	"slices"
 	"strconv"
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
+
+	"github.com/stretchr/testify/require"
 )
 
 func testPoints() Points {
@@ -75,7 +75,7 @@ func testPoints3() Points {
 
 func genTestPoints(baseEpoch, n int) Points {
 	points := make(Points, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		points[i] = Point{
 			Epoch:  epoch.Epoch((i * 10 * timeseries.Second) + baseEpoch),
 			Size:   27,
@@ -109,7 +109,7 @@ func TestPointEqual(t *testing.T) {
 func BenchmarkPointsAreEqual(b *testing.B) {
 	p1 := testPoints()[0]
 	p2 := testPoints()[1]
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		PointsAreEqual(p1, p2)
 	}
 }
@@ -132,7 +132,7 @@ func BenchmarkPointClone(b *testing.B) {
 		Size:   27,
 		Values: []any{1},
 	}
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		p.Clone()
 	}
 }
@@ -196,10 +196,8 @@ func TestPointsSize(t *testing.T) {
 }
 
 func BenchmarkPointsSize(b *testing.B) {
-	for i := range b.N {
-		b.StopTimer()
-		pts := genTestPoints(i, 1000)
-		b.StartTimer()
+	pts := genTestPoints(0, 1000)
+	for b.Loop() {
 		pts.Size()
 	}
 }
@@ -207,7 +205,7 @@ func BenchmarkPointsSize(b *testing.B) {
 func TestPointsSort(t *testing.T) {
 	pts := testPoints()
 	pts[0].Epoch = 100 * timeseries.Second
-	sort.Sort(pts)
+	slices.SortFunc(pts, pointCmp)
 	p := pts[0]
 	if p.Epoch != 10*timeseries.Second {
 		t.Error("sort mismatch")
@@ -301,97 +299,114 @@ func BenchmarkFindRange(b *testing.B) {
 	pts := genTestPoints(0, 10000) // Create a large dataset for meaningful benchmarks
 	startEpoch := epoch.Epoch(2500 * time.Second)
 	endEpoch := epoch.Epoch(7500 * time.Second)
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = pts.findRange(startEpoch, endEpoch, 0, len(pts)-1)
 	}
 }
 
 func TestMergePoints(t *testing.T) {
 	tests := []struct {
+		name             string
 		p1, p2, expected Points
+		sortPoints       bool
 	}{
 		{
-			p1: testPoints(),
-			p2: testPoints2(),
+			name: "p1 shorter, p2 has overlap and extension",
+			p1:   testPoints(),
+			p2:   testPoints2(),
 			expected: Points{
-				Point{
-					Epoch:  epoch.Epoch(5 * timeseries.Second),
-					Size:   27,
-					Values: []any{1, 37},
-				},
-				Point{
-					Epoch:  epoch.Epoch(10 * timeseries.Second),
-					Size:   27,
-					Values: []any{1, 25},
-				},
-				Point{
-					Epoch:  epoch.Epoch(15 * timeseries.Second),
-					Size:   27,
-					Values: []any{1, 34},
-				},
+				{Epoch: epoch.Epoch(5 * timeseries.Second), Size: 27, Values: []any{1, 37}},
+				{Epoch: epoch.Epoch(10 * timeseries.Second), Size: 27, Values: []any{1, 25}},
+				{Epoch: epoch.Epoch(15 * timeseries.Second), Size: 27, Values: []any{1, 34}},
 			},
+			sortPoints: true,
 		},
 		{
-			p1: testPoints2(),
-			p2: testPoints(),
+			name: "p2 shorter, p1 has overlap and extension",
+			p1:   testPoints2(),
+			p2:   testPoints(),
 			expected: Points{
-				Point{
-					Epoch:  epoch.Epoch(5 * timeseries.Second),
-					Size:   27,
-					Values: []any{1, 37},
-				},
-				Point{
-					Epoch:  epoch.Epoch(10 * timeseries.Second),
-					Size:   27,
-					Values: []any{1, 24},
-				},
-				Point{
-					Epoch:  epoch.Epoch(15 * timeseries.Second),
-					Size:   27,
-					Values: []any{1, 34},
-				},
+				{Epoch: epoch.Epoch(5 * timeseries.Second), Size: 27, Values: []any{1, 37}},
+				{Epoch: epoch.Epoch(10 * timeseries.Second), Size: 27, Values: []any{1, 24}},
+				{Epoch: epoch.Epoch(15 * timeseries.Second), Size: 27, Values: []any{1, 34}},
 			},
+			sortPoints: true,
 		},
 		{
-			p1:       testPoints(),
-			p2:       nil,
-			expected: testPoints(),
+			name:       "p1 non-nil, p2 nil",
+			p1:         testPoints(),
+			p2:         nil,
+			expected:   testPoints(),
+			sortPoints: true,
 		},
 		{
-			p1:       nil,
-			p2:       testPoints(),
-			expected: testPoints(),
+			name:       "p1 nil, p2 non-nil",
+			p1:         nil,
+			p2:         testPoints(),
+			expected:   testPoints(),
+			sortPoints: true,
 		},
 		{
-			p1:       testPoints3(),
-			p2:       testPoints2(),
-			expected: testPoints2(),
+			name:       "p1 subset of p2",
+			p1:         testPoints3(),
+			p2:         testPoints2(),
+			expected:   testPoints2(),
+			sortPoints: true,
 		},
 		{
-			p1: testPoints2(),
-			p2: testPoints3(),
+			name: "p2 subset of p1",
+			p1:   testPoints2(),
+			p2:   testPoints3(),
 			expected: Points{
-				Point{
-					Epoch:  epoch.Epoch(5 * timeseries.Second),
-					Size:   27,
-					Values: []any{1, 37},
-				},
-				Point{
-					Epoch:  epoch.Epoch(10 * timeseries.Second),
-					Size:   27,
-					Values: []any{1, 24},
-				},
-				Point{
-					Epoch:  epoch.Epoch(15 * timeseries.Second),
-					Size:   27,
-					Values: []any{1, 34},
-				},
+				{Epoch: epoch.Epoch(5 * timeseries.Second), Size: 27, Values: []any{1, 37}},
+				{Epoch: epoch.Epoch(10 * timeseries.Second), Size: 27, Values: []any{1, 24}},
+				{Epoch: epoch.Epoch(15 * timeseries.Second), Size: 27, Values: []any{1, 34}},
 			},
+			sortPoints: true,
+		},
+		{
+			name:       "both nil",
+			p1:         nil,
+			p2:         nil,
+			expected:   nil,
+			sortPoints: true,
+		},
+		{
+			name:       "both empty",
+			p1:         Points{},
+			p2:         Points{},
+			expected:   Points{},
+			sortPoints: true,
+		},
+		{
+			name: "no sort — concatenated order preserved",
+			p1: Points{
+				{Epoch: epoch.Epoch(10 * timeseries.Second), Size: 27, Values: []any{1}},
+			},
+			p2: Points{
+				{Epoch: epoch.Epoch(5 * timeseries.Second), Size: 27, Values: []any{2}},
+			},
+			// without sorting, p2 comes after p1 in concatenation order
+			expected: Points{
+				{Epoch: epoch.Epoch(10 * timeseries.Second), Size: 27, Values: []any{1}},
+				{Epoch: epoch.Epoch(5 * timeseries.Second), Size: 27, Values: []any{2}},
+			},
+			sortPoints: false,
+		},
+		{
+			name: "identical points deduped",
+			p1:   testPoints(),
+			p2:   testPoints(),
+			expected: Points{
+				{Epoch: epoch.Epoch(5 * timeseries.Second), Size: 27, Values: []any{1, 37}},
+				{Epoch: epoch.Epoch(10 * timeseries.Second), Size: 27, Values: []any{1, 24}},
+			},
+			sortPoints: true,
 		},
 	}
-	for i, test := range tests {
-		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
-			out := MergePoints(test.p1, test.p2, true)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			out := MergePoints(test.p1, test.p2, test.sortPoints)
 			if !out.Equal(test.expected) {
 				t.Errorf("expected:\n%v\ngot:\n%v\n", test.expected, out)
 			}

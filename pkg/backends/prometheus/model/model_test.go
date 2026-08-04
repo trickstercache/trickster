@@ -17,7 +17,9 @@
 package model
 
 import (
+	"encoding/json"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
@@ -29,6 +31,33 @@ const testMatrix = `{"status":"success","data":{"resultType":"matrix","result":[
 	`:[[1435781430,"1"],[1435781445,"1"],[1435781460,"1"]]},{"metric":` +
 	`{"__name__":"up","instance":"localhost:9091","job":"node"},"values":` +
 	`[[1435781430,"0"],[1435781445,"0"],[1435781460,"1"]]}]}}`
+
+func FuzzEnvelopeStartMarshal(f *testing.F) {
+	f.Add("success", "", "", "")
+	f.Add("error", `err with "quotes"`, `bad\type`, `warn: "tricky" \n value`)
+	f.Add("error", "null\x00byte", "back\\slash", "héllo\nwörld")
+	f.Fuzz(func(t *testing.T, status, errMsg, errType, warning string) {
+		e := &Envelope{
+			Status:    status,
+			Error:     errMsg,
+			ErrorType: errType,
+		}
+		if warning != "" {
+			e.Warnings = []string{warning}
+		}
+		w := httptest.NewRecorder()
+		e.StartMarshal(w, 200)
+		w.Write([]byte("}"))
+		body := w.Body.Bytes()
+		if !json.Valid(body) {
+			t.Fatalf("StartMarshal produced invalid JSON: %s", string(body))
+		}
+		var generic map[string]any
+		if err := json.Unmarshal(body, &generic); err != nil {
+			t.Fatalf("StartMarshal JSON unmarshal failed: %v\nbody: %s", err, string(body))
+		}
+	})
+}
 
 func TestUnmarshalTimeseries(t *testing.T) {
 	b := []byte(testMatrix)
@@ -53,28 +82,226 @@ func TestUnmarshalTimeseries(t *testing.T) {
 	}
 }
 
+func TestMarshalTimeseries_EscapesTagValues(t *testing.T) {
+	ds := &dataset.DataSet{
+		Results: dataset.Results{{
+			SeriesList: dataset.SeriesList{{
+				Header: dataset.SeriesHeader{
+					Name: "up",
+					Tags: dataset.Tags{
+						"__name__": "up",
+						"path":     `/api/v1/query?q="a"`,
+					},
+				},
+				Points: dataset.Points{{
+					Epoch:  1435781430000000000,
+					Size:   33,
+					Values: []any{"1"},
+				}},
+			}},
+		}},
+	}
+	b, err := MarshalTimeseries(ds, nil, 200)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var env map[string]any
+	if err := json.Unmarshal(b, &env); err != nil {
+		t.Fatalf("invalid JSON: %v (body=%s)", err, string(b))
+	}
+}
+
 func TestUnmarshalInstantaneous(t *testing.T) {
 	trq := &timeseries.TimeRangeQuery{}
 	bytes := []byte(`{"status":"success","data":{"resultType":"vector","result":[` +
 		`{"metric":{"__name__":"up","instance":"localhost:9090","job":"prometheus"},` +
 		`"value":[1554730772.113,"1"]}]}}`)
-	_, err := UnmarshalTimeseries(bytes, trq)
+	ts, err := UnmarshalTimeseries(bytes, trq)
 	if err != nil {
 		t.Error(err)
 		return
 	}
+	ds, ok := ts.(*dataset.DataSet)
+	if !ok {
+		t.Fatal("expected *dataset.DataSet")
+	}
+	if len(ds.Results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(ds.Results))
+	}
+	if len(ds.Results[0].SeriesList) != 1 {
+		t.Fatalf("expected 1 series, got %d", len(ds.Results[0].SeriesList))
+	}
+	s := ds.Results[0].SeriesList[0]
+	if len(s.Points) != 1 {
+		t.Fatalf("expected 1 point, got %d", len(s.Points))
+	}
+	got := int64(s.Points[0].Epoch)
+	want := int64(1554730772113000000)
+	if diff := got - want; diff < -1000 || diff > 1000 {
+		t.Errorf("expected epoch ~%d, got %d (diff=%d)", want, got, diff)
+	}
+	if s.Header.Tags["job"] != "prometheus" {
+		t.Errorf("expected tag job=prometheus, got %q", s.Header.Tags["job"])
+	}
 }
 
 func TestStartMarshal(t *testing.T) {
+	t.Run("with error and errorType", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		e := &Envelope{
+			Status:    "error",
+			Error:     "test error",
+			ErrorType: "test type",
+		}
+		e.StartMarshal(w, 400)
+		if w.Code != 400 {
+			t.Errorf("expected %d got %d", 400, w.Code)
+		}
+		body := w.Body.String()
+		if !strings.Contains(body, `"error":"test error"`) {
+			t.Errorf("expected error field in body: %s", body)
+		}
+		if !strings.Contains(body, `"errorType":"test type"`) {
+			t.Errorf("expected errorType field in body: %s", body)
+		}
+	})
+
+	t.Run("with warnings", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		e := &Envelope{
+			Status:   "success",
+			Warnings: []string{"w1", "w2"},
+		}
+		e.StartMarshal(w, 200)
+		body := w.Body.String()
+		if !strings.Contains(body, `"warnings":["w1","w2"]`) {
+			t.Errorf("expected warnings in body: %s", body)
+		}
+	})
+
+	t.Run("nil writer no panic", func(t *testing.T) {
+		e := &Envelope{Status: "success"}
+		e.StartMarshal(nil, 200) // should not panic
+	})
+
+	t.Run("zero status defaults to 200", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		e := &Envelope{Status: "success"}
+		e.StartMarshal(w, 0)
+		if w.Code != 200 {
+			t.Errorf("expected 200 got %d", w.Code)
+		}
+	})
+}
+
+func TestStartMarshal_EscapesSpecialChars(t *testing.T) {
 	w := httptest.NewRecorder()
 	e := &Envelope{
-		Status:    "test status",
-		Error:     "test error",
-		ErrorType: "test type",
-		Warnings:  []string{"test_warning1", "test_warning2"},
+		Status:    "error",
+		Error:     `parse error: unexpected "}"`,
+		ErrorType: `bad_data`,
+		Warnings:  []string{`warning with "quotes"`, `back\slash`},
 	}
 	e.StartMarshal(w, 400)
-	if w.Code != 400 {
-		t.Errorf("expected %d got %d", 400, w.Code)
+	w.Write([]byte("}"))
+
+	var env map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &env); err != nil {
+		t.Fatalf("invalid JSON: %v (body=%s)", err, w.Body.String())
+	}
+	if env["error"] != `parse error: unexpected "}"` {
+		t.Errorf("error not escaped, got %q", env["error"])
+	}
+}
+
+func TestEnvelopeMerge(t *testing.T) {
+	tests := []struct {
+		name           string
+		e1Status       string
+		e1Error        string
+		e2Status       string
+		e2Error        string
+		e2Warnings     []string
+		expectStatus   string
+		expectError    string
+		expectWarnings []string
+	}{
+		{
+			name:           "success + success",
+			e1Status:       "success",
+			e2Status:       "success",
+			expectStatus:   "success",
+			expectError:    "",
+			expectWarnings: nil,
+		},
+		{
+			name:           "error + success promotes",
+			e1Status:       "error",
+			e1Error:        "err1",
+			e2Status:       "success",
+			expectStatus:   "success",
+			expectError:    "",
+			expectWarnings: []string{"err1"},
+		},
+		{
+			name:           "success + error keeps success",
+			e1Status:       "success",
+			e2Status:       "error",
+			e2Error:        "err2",
+			expectStatus:   "success",
+			expectError:    "",
+			expectWarnings: []string{"err2"},
+		},
+		{
+			name:           "both errors stays error",
+			e1Status:       "error",
+			e1Error:        "err1",
+			e2Status:       "error",
+			e2Error:        "err2",
+			expectStatus:   "error",
+			expectError:    "err1",
+			expectWarnings: []string{"err2"},
+		},
+		{
+			name:           "warnings accumulate",
+			e1Status:       "success",
+			e2Status:       "success",
+			e2Warnings:     []string{"w1"},
+			expectStatus:   "success",
+			expectError:    "",
+			expectWarnings: []string{"w1"},
+		},
+		{
+			name:           "error with warnings",
+			e1Status:       "success",
+			e2Status:       "error",
+			e2Error:        "err",
+			e2Warnings:     []string{"w1"},
+			expectStatus:   "success",
+			expectError:    "",
+			expectWarnings: []string{"err", "w1"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			e1 := &Envelope{Status: test.e1Status, Error: test.e1Error}
+			e2 := &Envelope{Status: test.e2Status, Error: test.e2Error, Warnings: test.e2Warnings}
+			e1.Merge(e2)
+			if e1.Status != test.expectStatus {
+				t.Errorf("status: expected %q got %q", test.expectStatus, e1.Status)
+			}
+			if e1.Error != test.expectError {
+				t.Errorf("error: expected %q got %q", test.expectError, e1.Error)
+			}
+			if len(e1.Warnings) != len(test.expectWarnings) {
+				t.Fatalf("warnings count: expected %d got %d (%v)",
+					len(test.expectWarnings), len(e1.Warnings), e1.Warnings)
+			}
+			for i, w := range test.expectWarnings {
+				if e1.Warnings[i] != w {
+					t.Errorf("warning[%d]: expected %q got %q", i, w, e1.Warnings[i])
+				}
+			}
+		})
 	}
 }

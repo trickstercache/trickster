@@ -32,7 +32,6 @@ import (
 	cr "github.com/trickstercache/trickster/v2/pkg/cache/registry"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/config"
-	"github.com/trickstercache/trickster/v2/pkg/locks"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	tc "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
@@ -68,6 +67,7 @@ func TestMultiPartByteRange(t *testing.T) {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
 	caches := cr.LoadCachesFromConfig(conf)
+	defer cr.CloseCaches(caches)
 	cache, ok := caches["default"]
 	if !ok {
 		t.Error("could not load cache")
@@ -100,6 +100,7 @@ func TestCacheHitRangeRequest(t *testing.T) {
 	}
 
 	caches := cr.LoadCachesFromConfig(conf)
+	defer cr.CloseCaches(caches)
 	cache, ok := caches["default"]
 	if !ok {
 		t.Error("could not load cache")
@@ -139,6 +140,7 @@ func TestCacheHitRangeRequest2(t *testing.T) {
 	}
 
 	caches := cr.LoadCachesFromConfig(conf)
+	defer cr.CloseCaches(caches)
 	cache, ok := caches["default"]
 	if !ok {
 		t.Error("could not load cache")
@@ -183,6 +185,7 @@ func TestCacheHitRangeRequest3(t *testing.T) {
 		t.Errorf("Could not load configuration: %s", err.Error())
 	}
 	caches := cr.LoadCachesFromConfig(conf)
+	defer cr.CloseCaches(caches)
 	cache, ok := caches["default"]
 	if !ok {
 		t.Error("could not load cache")
@@ -224,6 +227,7 @@ func TestPartialCacheMissRangeRequest(t *testing.T) {
 	}
 
 	caches := cr.LoadCachesFromConfig(conf)
+	defer cr.CloseCaches(caches)
 	cache, ok := caches["default"]
 	if !ok {
 		t.Error("could not load cache")
@@ -269,6 +273,7 @@ func TestFullCacheMissRangeRequest(t *testing.T) {
 	}
 
 	caches := cr.LoadCachesFromConfig(conf)
+	defer cr.CloseCaches(caches)
 	cache, ok := caches["default"]
 	if !ok {
 		t.Error("could not load cache")
@@ -311,8 +316,12 @@ func TestRangeRequestFromClient(t *testing.T) {
 	haves := byterange.Ranges{byterange.Range{Start: 10, End: 25}}
 
 	s := newRangeRequestTestServer()
-	defer s.Close()
-	client := &http.Client{}
+	transport := &http.Transport{}
+	client := &http.Client{Transport: transport}
+	t.Cleanup(func() {
+		transport.CloseIdleConnections()
+		s.Close()
+	})
 	req, err := http.NewRequest(http.MethodGet, s.URL, nil)
 	if err != nil {
 		log.Fatalln(err)
@@ -324,6 +333,7 @@ func TestRangeRequestFromClient(t *testing.T) {
 	}
 
 	bytes, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
 
 	//--------------------------------------
 	conf, err := config.Load([]string{"-origin-url", "http://1", "-provider", "test"})
@@ -332,6 +342,7 @@ func TestRangeRequestFromClient(t *testing.T) {
 	}
 
 	caches := cr.LoadCachesFromConfig(conf)
+	defer cr.CloseCaches(caches)
 	cache, ok := caches["default"]
 	if !ok {
 		t.Error("could not load cache")
@@ -446,7 +457,6 @@ func TestQueryCache(t *testing.T) {
 // Mock Cache for testing error conditions
 type testCache struct {
 	configuration *co.Options
-	locker        locks.NamedLocker
 }
 
 func (tc *testCache) Connect() error {
@@ -467,5 +477,71 @@ func (tc *testCache) SetTTL(cacheKey string, ttl time.Duration) {}
 func (tc *testCache) Remove(cacheKey ...string) error           { return nil }
 func (tc *testCache) Close() error                              { return errTest }
 func (tc *testCache) Configuration() *co.Options                { return tc.configuration }
-func (tc *testCache) Locker() locks.NamedLocker                 { return tc.locker }
-func (tc *testCache) SetLocker(l locks.NamedLocker)             { tc.locker = l }
+
+// spyCache captures stored bytes for inspection
+type spyCache struct {
+	stored map[string][]byte
+	config *co.Options
+}
+
+func newSpyCache() *spyCache {
+	return &spyCache{
+		stored: make(map[string][]byte),
+		config: &co.Options{Provider: "filesystem"},
+	}
+}
+
+func (sc *spyCache) Connect() error { return nil }
+func (sc *spyCache) Store(key string, data []byte, _ time.Duration) error {
+	sc.stored[key] = data
+	return nil
+}
+
+func (sc *spyCache) Retrieve(key string) ([]byte, status.LookupStatus, error) {
+	if b, ok := sc.stored[key]; ok {
+		return b, status.LookupStatusHit, nil
+	}
+	return nil, status.LookupStatusKeyMiss, nil
+}
+func (sc *spyCache) SetTTL(string, time.Duration) {}
+func (sc *spyCache) Remove(...string) error       { return nil }
+func (sc *spyCache) Close() error                 { return nil }
+func (sc *spyCache) Configuration() *co.Options   { return sc.config }
+
+func TestWriteConcurrentCompressionThreshold(t *testing.T) {
+	t.Run("small payload not compressed", func(t *testing.T) {
+		sc := newSpyCache()
+		d := &HTTPDocument{StatusCode: 200, Body: []byte("small")}
+		err := writeConcurrent(context.Background(), sc, "k1", d, true, time.Minute)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b := sc.stored["k1"]
+		if len(b) == 0 {
+			t.Fatal("expected stored data")
+		}
+		if b[0] != 0 {
+			t.Error("small payload should not be compressed (first byte should be 0)")
+		}
+	})
+
+	t.Run("large payload compressed", func(t *testing.T) {
+		sc := newSpyCache()
+		body := make([]byte, 1024)
+		for i := range body {
+			body[i] = byte(i % 256)
+		}
+		d := &HTTPDocument{StatusCode: 200, Body: body}
+		err := writeConcurrent(context.Background(), sc, "k2", d, true, time.Minute)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b := sc.stored["k2"]
+		if len(b) == 0 {
+			t.Fatal("expected stored data")
+		}
+		if b[0] != 1 {
+			t.Error("large payload should be compressed (first byte should be 1)")
+		}
+	})
+}

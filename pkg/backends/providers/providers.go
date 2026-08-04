@@ -100,7 +100,8 @@ var supportedTimeSeriesMerge = map[string]Provider{
 	Prometheus: PrometheusID,
 }
 
-// IsSupportedTimeSeriesProvider returns true if the provided time series is supported by Trickster
+// IsSupportedTimeSeriesMergeProvider returns true if the provided time series is
+// supported by the Time Series Merge ALB mechanism
 func IsSupportedTimeSeriesMergeProvider(name string) bool {
 	_, ok := supportedTimeSeriesMerge[name]
 	return ok

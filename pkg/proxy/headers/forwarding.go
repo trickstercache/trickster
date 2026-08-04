@@ -17,7 +17,6 @@
 package headers
 
 import (
-	"fmt"
 	"net"
 	"net/http"
 	"strings"
@@ -88,13 +87,21 @@ var ForwardingHeaders = []string{
 	NameVia,
 }
 
-// MergeRemoveHeaders defines a list of headers that should be removed when Merging time series results
+// MergeRemoveHeaders defines a list of headers that should be removed when Merging time series results.
+// Cache-related fields (Cache-Control, Vary, Age, Etag, Expires) are stripped because the merged body
+// is by definition not equivalent to any single shard's response; carrying one shard's cache directives
+// onto the merged response can poison downstream HTTP caches with hybrid policies.
 var MergeRemoveHeaders = []string{
 	NameLastModified,
 	NameDate,
 	NameContentLength,
 	NameContentType,
 	NameTransferEncoding,
+	NameCacheControl,
+	NameVary,
+	NameAge,
+	NameETag,
+	NameExpires,
 }
 
 var forwardingFuncs = map[string]func(*http.Request, *Hop){
@@ -131,19 +138,19 @@ func (hop *Hop) String(expand ...bool) string {
 	parts := make([]string, 4)
 	var k int
 	if hop.Server != "" {
-		parts[k] = fmt.Sprintf("by=%s", formatForwardedAddress(hop.Server))
+		parts[k] = "by=" + formatForwardedAddress(hop.Server)
 		k++
 	}
 	if hop.RemoteAddr != "" {
-		parts[k] = fmt.Sprintf("for=%s", formatForwardedAddress(hop.RemoteAddr))
+		parts[k] = "for=" + formatForwardedAddress(hop.RemoteAddr)
 		k++
 	}
 	if hop.Host != "" {
-		parts[k] = fmt.Sprintf("host=%s", formatForwardedAddress(hop.Host))
+		parts[k] = "host=" + formatForwardedAddress(hop.Host)
 		k++
 	}
 	if hop.Scheme != "" {
-		parts[k] = fmt.Sprintf("proto=%s", formatForwardedAddress(hop.Scheme))
+		parts[k] = "proto=" + formatForwardedAddress(hop.Scheme)
 		k++
 	}
 	currentHop := strings.Join(parts[:k], ";")
@@ -212,9 +219,9 @@ func SetVia(r *http.Request, hop *Hop) {
 		return
 	}
 	if hop.Via != "" {
-		r.Header.Set(NameVia, hop.Via+", "+hop.Protocol+" "+appinfo.Server)
+		r.Header.Set(NameVia, hop.Via+", "+hop.Protocol+" "+appinfo.Server())
 	} else {
-		r.Header.Set(NameVia, hop.Protocol+" "+appinfo.Server)
+		r.Header.Set(NameVia, hop.Protocol+" "+appinfo.Server())
 	}
 }
 
@@ -323,14 +330,24 @@ func parseXForwardHeaders(h http.Header) Hops {
 	return nil
 }
 
-// AddResponseHeaders injects standard Trickster headers into downstream HTTP responses
+// AddResponseHeaders applies Trickster's legacy wildcard CORS response header.
 func AddResponseHeaders(h http.Header) {
-	// We're read only and a harmless API, so allow all CORS
 	h.Set(NameAllowOrigin, "*")
 }
 
 // StripClientHeaders strips certain headers from the HTTP request to facililate acceleration
 func StripClientHeaders(h http.Header) {
+	// RFC 7230 6.1: headers named in Connection are hop-by-hop. Strip these
+	// before the static list, which removes Connection itself.
+	for _, conn := range h.Values(NameConnection) {
+		for name := range strings.SplitSeq(conn, ",") {
+			name = strings.TrimSpace(name)
+			if name == "" {
+				continue
+			}
+			h.Del(name)
+		}
+	}
 	for _, k := range HopHeaders {
 		h.Del(k)
 	}

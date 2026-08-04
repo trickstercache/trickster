@@ -73,6 +73,16 @@ datasources:
   editable: true
   jsonData:
     httpMethod: POST
+- name: "8: Trickster | Redis | GET"
+  type: prometheus
+  access: proxy
+  orgId: 1
+  uid: ds_prom_trickster_redis_get
+  url: http://host.docker.internal:8480/prom3
+  version: 1
+  editable: true
+  jsonData:
+    httpMethod: GET
 
 # Mockster (Prom API Simulator)
 - name: sim-direct

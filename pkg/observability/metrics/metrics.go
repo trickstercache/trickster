@@ -20,9 +20,10 @@ package metrics
 import (
 	"net/http"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 )
 
 const (
@@ -32,6 +33,9 @@ const (
 	configSubsystem   = "config"
 	buildSubsystem    = "build"
 	frontendSubsystem = "frontend"
+	albSubsystem      = "alb"
+	healthSubsystem   = "healthcheck"
+	sqlSubsystem      = "sql"
 )
 
 // Default histogram buckets used by trickster
@@ -39,85 +43,8 @@ var (
 	defaultBuckets = []float64{0.05, 0.1, 0.5, 1, 5, 10, 20}
 )
 
-// BuildInfo is a Gauge representing the Trickster binary build information of the running server instance
-var BuildInfo *prometheus.GaugeVec
-
-// LastReloadSuccessful gauge will be set to 1 if Trickster's last config reload succeeded else 0
-var LastReloadSuccessful prometheus.Gauge
-
-// LastReloadSuccessfulTimestamp gauge is the epoch time of the most recent successful config load
-var LastReloadSuccessfulTimestamp prometheus.Gauge
-
-// ReloadAttemptsTotal is a Counter of total configuration reload attempts
-var ReloadAttemptsTotal prometheus.Counter
-
-// ReloadSuccessesTotal is a Counter of successful configuration reloads
-var ReloadSuccessesTotal prometheus.Counter
-
-// ReloadFailuresTotal is a Counter of failed configuration reloads
-var ReloadFailuresTotal prometheus.Counter
-
-// ReloadDurationSeconds is a Histogram of configuration reload duration in seconds
-var ReloadDurationSeconds prometheus.Histogram
-
-// FrontendRequestStatus is a Counter of front end requests that have been processed with their status
-var FrontendRequestStatus *prometheus.CounterVec
-
-// FrontendRequestDuration is a histogram that tracks the time it takes to process a request
-var FrontendRequestDuration *prometheus.HistogramVec
-
-// FrontendRequestWrittenBytes is a Counter of bytes written for front end requests
-var FrontendRequestWrittenBytes *prometheus.CounterVec
-
-// ProxyRequestStatus is a Counter of downstream client requests handled by Trickster
-var ProxyRequestStatus *prometheus.CounterVec
-
-// ProxyRequestElements is a Counter of data points in the timeseries returned to the requesting client
-var ProxyRequestElements *prometheus.CounterVec
-
-// ProxyRequestDuration is a Histogram of time required in seconds to proxy a given Prometheus query
-var ProxyRequestDuration *prometheus.HistogramVec
-
-// CacheObjectOperations is a Counter of operations (in # of objects) performed on a Trickster cache
-var CacheObjectOperations *prometheus.CounterVec
-
-// CacheByteOperations is a Counter of operations (in # of bytes) performed on a Trickster cache
-var CacheByteOperations *prometheus.CounterVec
-
-// CacheEvents is a Counter of events performed on a Trickster cache
-var CacheEvents *prometheus.CounterVec
-
-// CacheObjects is a Gauge representing the number of objects in a Trickster cache
-var CacheObjects *prometheus.GaugeVec
-
-// CacheBytes is a Gauge representing the number of bytes in a Trickster cache
-var CacheBytes *prometheus.GaugeVec
-
-// CacheMaxObjects is a Gauge for the Trickster cache's Max Object Threshold for triggering an eviction exercise
-var CacheMaxObjects *prometheus.GaugeVec
-
-// CacheMaxBytes is a Gauge for the Trickster cache's Max Object Threshold for triggering an eviction exercise
-var CacheMaxBytes *prometheus.GaugeVec
-
-// ProxyMaxConnections is a Gauge representing the max number of active concurrent connections in the server
-var ProxyMaxConnections prometheus.Gauge
-
-// ProxyActiveConnections is a Gauge representing the number of active connections in the server
-var ProxyActiveConnections prometheus.Gauge
-
-// ProxyConnectionRequested is a counter representing the total number of connections requested by clients to the Proxy
-var ProxyConnectionRequested prometheus.Counter
-
-// ProxyConnectionAccepted is a counter representing the total number of connections accepted by the Proxy
-var ProxyConnectionAccepted prometheus.Counter
-
-// ProxyConnectionClosed is a counter representing the total number of connections closed by the Proxy
-var ProxyConnectionClosed prometheus.Counter
-
-// ProxyConnectionFailed is a counter for the total number of connections failed to connect for whatever reason
-var ProxyConnectionFailed prometheus.Counter
-
-func init() {
+var (
+	// BuildInfo is a Gauge representing the Trickster binary build information of the running server instance
 	BuildInfo = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: metricNamespace,
@@ -129,15 +56,7 @@ func init() {
 		[]string{"goversion", "revision", "version"},
 	)
 
-	LastReloadSuccessfulTimestamp = prometheus.NewGauge(
-		prometheus.GaugeOpts{
-			Namespace: metricNamespace,
-			Subsystem: configSubsystem,
-			Name:      "last_reload_success_time_seconds",
-			Help:      "Timestamp of the last successful configuration reload.",
-		},
-	)
-
+	// LastReloadSuccessful gauge will be set to 1 if Trickster's last config reload succeeded else 0
 	LastReloadSuccessful = prometheus.NewGauge(
 		prometheus.GaugeOpts{
 			Namespace: metricNamespace,
@@ -147,6 +66,17 @@ func init() {
 		},
 	)
 
+	// LastReloadSuccessfulTimestamp gauge is the epoch time of the most recent successful config load
+	LastReloadSuccessfulTimestamp = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: configSubsystem,
+			Name:      "last_reload_success_time_seconds",
+			Help:      "Timestamp of the last successful configuration reload.",
+		},
+	)
+
+	// ReloadAttemptsTotal is a Counter of total configuration reload attempts
 	ReloadAttemptsTotal = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Namespace: metricNamespace,
@@ -156,6 +86,7 @@ func init() {
 		},
 	)
 
+	// ReloadSuccessesTotal is a Counter of successful configuration reloads
 	ReloadSuccessesTotal = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Namespace: metricNamespace,
@@ -165,6 +96,7 @@ func init() {
 		},
 	)
 
+	// ReloadFailuresTotal is a Counter of failed configuration reloads
 	ReloadFailuresTotal = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Namespace: metricNamespace,
@@ -174,6 +106,7 @@ func init() {
 		},
 	)
 
+	// ReloadDurationSeconds is a Histogram of configuration reload duration in seconds
 	ReloadDurationSeconds = prometheus.NewHistogram(
 		prometheus.HistogramOpts{
 			Namespace: metricNamespace,
@@ -184,6 +117,7 @@ func init() {
 		},
 	)
 
+	// FrontendRequestStatus is a Counter of front end requests that have been processed with their status
 	FrontendRequestStatus = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: metricNamespace,
@@ -194,6 +128,7 @@ func init() {
 		[]string{"backend_name", "provider", "method", "path", "http_status"},
 	)
 
+	// FrontendRequestDuration is a histogram that tracks the time it takes to process a request
 	FrontendRequestDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Namespace: metricNamespace,
@@ -205,6 +140,7 @@ func init() {
 		[]string{"backend_name", "provider", "method", "path", "http_status"},
 	)
 
+	// FrontendRequestWrittenBytes is a Counter of bytes written for front end requests
 	FrontendRequestWrittenBytes = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: metricNamespace,
@@ -212,8 +148,10 @@ func init() {
 			Name:      "written_bytes_total",
 			Help:      "Count of bytes written in front end requests handled by Trickster",
 		},
-		[]string{"backend_name", "provider", "method", "path", "http_status"})
+		[]string{"backend_name", "provider", "method", "path", "http_status"},
+	)
 
+	// ProxyRequestStatus is a Counter of downstream client requests handled by Trickster
 	ProxyRequestStatus = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: metricNamespace,
@@ -224,6 +162,7 @@ func init() {
 		[]string{"backend_name", "provider", "method", "cache_status", "http_status", "path"},
 	)
 
+	// ProxyRequestElements is a Counter of data points in the timeseries returned to the requesting client
 	ProxyRequestElements = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: metricNamespace,
@@ -234,6 +173,7 @@ func init() {
 		[]string{"backend_name", "provider", "cache_status", "path"},
 	)
 
+	// ProxyRequestDuration is a Histogram of time required in seconds to proxy a given Prometheus query
 	ProxyRequestDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Namespace: metricNamespace,
@@ -245,59 +185,7 @@ func init() {
 		[]string{"backend_name", "provider", "method", "status", "http_status", "path"},
 	)
 
-	ProxyMaxConnections = prometheus.NewGauge(
-		prometheus.GaugeOpts{
-			Namespace: metricNamespace,
-			Subsystem: proxySubsystem,
-			Name:      "max_connections",
-			Help:      "Trickster max number of active connections.",
-		},
-	)
-
-	ProxyActiveConnections = prometheus.NewGauge(
-		prometheus.GaugeOpts{
-			Namespace: metricNamespace,
-			Subsystem: proxySubsystem,
-			Name:      "active_connections",
-			Help:      "Trickster number of active connections.",
-		},
-	)
-
-	ProxyConnectionRequested = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Namespace: metricNamespace,
-			Subsystem: proxySubsystem,
-			Name:      "requested_connections_total",
-			Help:      "Trickster total number of connections requested by clients.",
-		},
-	)
-	ProxyConnectionAccepted = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Namespace: metricNamespace,
-			Subsystem: proxySubsystem,
-			Name:      "accepted_connections_total",
-			Help:      "Trickster total number of accepted connections.",
-		},
-	)
-
-	ProxyConnectionClosed = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Namespace: metricNamespace,
-			Subsystem: proxySubsystem,
-			Name:      "closed_connections_total",
-			Help:      "Trickster total number of closed connections.",
-		},
-	)
-
-	ProxyConnectionFailed = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Namespace: metricNamespace,
-			Subsystem: proxySubsystem,
-			Name:      "failed_connections_total",
-			Help:      "Trickster total number of failed connections.",
-		},
-	)
-
+	// CacheObjectOperations is a Counter of operations (in # of objects) performed on a Trickster cache
 	CacheObjectOperations = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: metricNamespace,
@@ -308,6 +196,7 @@ func init() {
 		[]string{"cache_name", "provider", "operation", "status"},
 	)
 
+	// CacheByteOperations is a Counter of operations (in # of bytes) performed on a Trickster cache
 	CacheByteOperations = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: metricNamespace,
@@ -318,6 +207,7 @@ func init() {
 		[]string{"cache_name", "provider", "operation", "status"},
 	)
 
+	// CacheEvents is a Counter of events performed on a Trickster cache
 	CacheEvents = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: metricNamespace,
@@ -328,6 +218,7 @@ func init() {
 		[]string{"cache_name", "provider", "event", "reason"},
 	)
 
+	// CacheObjects is a Gauge representing the number of objects in a Trickster cache
 	CacheObjects = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: metricNamespace,
@@ -338,6 +229,7 @@ func init() {
 		[]string{"cache_name", "provider"},
 	)
 
+	// CacheBytes is a Gauge representing the number of bytes in a Trickster cache
 	CacheBytes = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: metricNamespace,
@@ -348,6 +240,7 @@ func init() {
 		[]string{"cache_name", "provider"},
 	)
 
+	// CacheMaxObjects is a Gauge for the Trickster cache's Max Object Threshold for triggering an eviction exercise
 	CacheMaxObjects = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: metricNamespace,
@@ -358,6 +251,7 @@ func init() {
 		[]string{"cache_name", "provider"},
 	)
 
+	// CacheMaxBytes is a Gauge for the Trickster cache's Max Object Threshold for triggering an eviction exercise
 	CacheMaxBytes = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: metricNamespace,
@@ -368,6 +262,299 @@ func init() {
 		[]string{"cache_name", "provider"},
 	)
 
+	// ProxyMaxConnections is a Gauge representing the max number of active concurrent connections in the server
+	ProxyMaxConnections = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "max_connections",
+			Help:      "Trickster max number of active connections.",
+		},
+	)
+
+	// ProxyActiveConnections is a Gauge representing the number of active connections in the server
+	ProxyActiveConnections = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "active_connections",
+			Help:      "Trickster number of active connections.",
+		},
+	)
+
+	// ProxyConnectionRequested is a counter representing the total number of connections requested by clients to the Proxy
+	ProxyConnectionRequested = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "requested_connections_total",
+			Help:      "Trickster total number of connections requested by clients.",
+		},
+	)
+
+	// ProxyConnectionAccepted is a counter representing the total number of connections accepted by the Proxy
+	ProxyConnectionAccepted = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "accepted_connections_total",
+			Help:      "Trickster total number of accepted connections.",
+		},
+	)
+
+	// ProxyConnectionClosed is a counter representing the total number of connections closed by the Proxy
+	ProxyConnectionClosed = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "closed_connections_total",
+			Help:      "Trickster total number of closed connections.",
+		},
+	)
+
+	// ProxyConnectionFailed is a counter for the total number of connections failed to connect for whatever reason
+	ProxyConnectionFailed = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "failed_connections_total",
+			Help:      "Trickster total number of failed connections.",
+		},
+	)
+
+	// ProxyQueryRangeRejections is a counter for requests rejected due to exceeding the max_query_range limit
+	ProxyQueryRangeRejections = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "query_range_rejections_total",
+			Help:      "Trickster total number of queries rejected due to exceeding the max_query_range limit.",
+		},
+		[]string{"backend_name"},
+	)
+
+	// SQLQueryAnalysis counts SQL analyzer classifications using bounded mode,
+	// dialect, and reason labels. Parse failures and OPC fallback are represented
+	// by the invalid_sql reason and object cache mode respectively.
+	SQLQueryAnalysis = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: sqlSubsystem,
+			Name:      "query_analysis_total",
+			Help:      "Count of SQL query cache-eligibility classifications.",
+		},
+		[]string{"backend_name", "dialect", "cache_mode", "reason"},
+	)
+
+	// SQLQueryRewriteFailures counts failures to render a SQL origin request for
+	// a cache-miss extent. The reason label is a fixed internal category and
+	// never contains query text or parser errors.
+	SQLQueryRewriteFailures = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: sqlSubsystem,
+			Name:      "query_rewrite_failures_total",
+			Help:      "Count of SQL cache-miss extent rewrite failures.",
+		},
+		[]string{"backend_name", "dialect", "reason"},
+	)
+
+	// ALBFanoutFailures counts per-shard failures during ALB fanout. The
+	// reason label distinguishes silent contribution failures (e.g. bad
+	// encoding, parse errors), explicit panics in the per-shard goroutine,
+	// capture-buffer truncation, and routing flap (target was healthy at
+	// snapshot time but failing by the time the response was observed).
+	// The variant label distinguishes sub-fanouts within a mechanism
+	// (e.g. TSM's paired avg-sum / avg-count queries); empty when the
+	// mechanism has only one fanout path.
+	ALBFanoutFailures = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: albSubsystem,
+			Name:      "fanout_failures_total",
+			Help:      "Count of per-shard failures during ALB fanout, by mechanism, variant, and reason.",
+		},
+		[]string{"mechanism", "variant", "reason"},
+	)
+
+	// ALBFanoutAttempts counts ALB fanout calls (one increment per All/Race
+	// invocation, not per shard). Paired with ALBFanoutFailures so dashboards
+	// can compute a failure rate as failures_total / attempts_total. The
+	// variant label distinguishes sub-fanouts within a mechanism (e.g. TSM's
+	// paired avg-sum / avg-count queries); empty when the mechanism has only
+	// one fanout path.
+	ALBFanoutAttempts = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: albSubsystem,
+			Name:      "fanout_attempts_total",
+			Help:      "Count of ALB fanout invocations, by mechanism and variant.",
+		},
+		[]string{"mechanism", "variant"},
+	)
+
+	// ALBTSMReplicaEvents counts logical replica-group activity without using
+	// configured group names as labels. "group_attempted" and "group_failed"
+	// describe logical availability; "fallback", "conflict", and "suppressed"
+	// describe replica selection within an available group.
+	ALBTSMReplicaEvents = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: albSubsystem,
+			Name:      "tsm_replica_events_total",
+			Help:      "Count of TSM logical replica-group selection events, by event and variant.",
+		},
+		[]string{"event", "variant"},
+	)
+
+	// ALBFanoutLoserDrain observes how long each losing slot in a
+	// fanout.WaitForFirst call takes to exit after the winner is claimed.
+	// WaitForFirst cancels raceCtx on winner-claim and returns immediately;
+	// losers drain in the background via ctx-cancel propagating through the
+	// HTTP transport. This histogram makes that drain observable so operators
+	// can distinguish "sub-ms healthy" from "upstream ignoring cancel."
+	ALBFanoutLoserDrain = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: metricNamespace,
+			Subsystem: albSubsystem,
+			Name:      "fanout_loser_drain_seconds",
+			Help:      "Time between winner-claim and each losing slot's goroutine exit, by mechanism and variant.",
+			Buckets:   []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30},
+		},
+		[]string{"mechanism", "variant"},
+	)
+
+	// ALBPoolRefreshPanicRecovered counts recovered panics in ALB pool refresh
+	// worker goroutines (checkHealth, listenStatusUpdates). A dead worker leaves
+	// the healthy-target snapshot stale; the per-call re-filter in Targets()
+	// still produces correct dispatch, but operator-visible gauges drift.
+	ALBPoolRefreshPanicRecovered = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: albSubsystem,
+			Name:      "pool_refresh_panic_recovered_total",
+			Help:      "Count of recovered panics in ALB pool refresh worker goroutines, by worker.",
+		},
+		[]string{"worker"},
+	)
+
+	// HealthcheckProbePanicRecovered counts recovered panics in the per-target
+	// health-probe ticker goroutine. Without recovery, a single panicking probe
+	// would kill the loop and freeze the target's Status at its last value,
+	// silently masking real upstream failures from operators and ALB pools.
+	HealthcheckProbePanicRecovered = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: healthSubsystem,
+			Name:      "probe_panic_recovered_total",
+			Help:      "Count of recovered panics in the per-target health-probe ticker, by backend.",
+		},
+		[]string{"backend_name"},
+	)
+
+	// HealthcheckProbeLatency records wall-clock duration of each per-target
+	// health probe (both successful and failing). Lets ALB routing dashboards
+	// distinguish a slow-but-healthy backend from a fast-and-healthy one;
+	// without this, only binary healthy/unhealthy state is visible.
+	HealthcheckProbeLatency = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: metricNamespace,
+			Subsystem: healthSubsystem,
+			Name:      "probe_latency_seconds",
+			Help:      "Latency of per-target health-check probes, in seconds, by backend.",
+			Buckets:   []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10},
+		},
+		[]string{"backend_name"},
+	)
+
+	// ProxyEnginesPanicRecovered counts recovered panics in fire-and-forget
+	// goroutines spawned by the proxy/engines layer (DPC cache.Remove, upstream
+	// access-log emission, PCF io.Copy pumps). A panic in any of these would
+	// otherwise crash the entire trickster process, since the goroutine has no
+	// recover above it. The site label identifies which call site recovered.
+	ProxyEnginesPanicRecovered = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "engines_panic_recovered_total",
+			Help:      "Count of recovered panics in proxy/engines fire-and-forget goroutines, by call site.",
+		},
+		[]string{"site"},
+	)
+
+	// CacheIndexPanicRecovered counts recovered panics in the cache index
+	// flusher and reaper goroutines. Without recovery, a panicking flusher
+	// leaves the on-disk index stale (cold-start drops the cache); a panicking
+	// reaper lets expired entries accumulate until the cache outgrows its
+	// configured ceiling. The worker label distinguishes flusher from reaper.
+	CacheIndexPanicRecovered = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: cacheSubsystem,
+			Name:      "index_panic_recovered_total",
+			Help:      "Count of recovered panics in cache index worker goroutines, by worker.",
+		},
+		[]string{"worker"},
+	)
+
+	// HealthHandlerPanicRecovered counts recovered panics in the status-page
+	// builder goroutine spawned by the /trickster/health handler. A panic in
+	// the builder would freeze the status page at its last rendered text;
+	// recovery keeps the handler serving updated state.
+	HealthHandlerPanicRecovered = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: healthSubsystem,
+			Name:      "handler_panic_recovered_total",
+			Help:      "Count of recovered panics in the health status-page builder goroutine.",
+		},
+	)
+
+	// HealthcheckStatusNotifyPanicRecovered counts recovered panics while
+	// notifying a Status subscriber (e.g. a closed channel send). The per-
+	// subscriber recover ensures a single bad subscriber cannot kill the probe
+	// loop or block notifying the remaining subscribers.
+	HealthcheckStatusNotifyPanicRecovered = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: healthSubsystem,
+			Name:      "status_notify_panic_recovered_total",
+			Help:      "Count of recovered panics while notifying a healthcheck Status subscriber, by backend.",
+		},
+		[]string{"backend_name"},
+	)
+
+	// ALBPoolAdmitsFailing flags ALB pools whose healthy_floor admits a Failing
+	// status (floor <= StatusFailing). Operators who set floor below 0 to keep
+	// traffic flowing during the Initializing window may not realize they're
+	// also admitting members the probe has confirmed broken; the gauge surfaces
+	// that misconfiguration without spamming logs.
+	ALBPoolAdmitsFailing = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: albSubsystem,
+			Name:      "pool_admits_failing",
+			Help:      "1 when an ALB pool's healthy_floor admits members in Failing state; 0 otherwise.",
+		},
+		[]string{"backend_name"},
+	)
+
+	// ALBPoolFloorReset flags ALB pools whose healthy_floor was reset to 0 at
+	// startup because one or more pool members have no health check and could
+	// never reach the configured floor (>= Passing), which would otherwise
+	// empty the pool and 502 every request.
+	ALBPoolFloorReset = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: albSubsystem,
+			Name:      "pool_floor_reset",
+			Help:      "1 when an ALB pool's healthy_floor was reset to 0 because members lack health checks; 0 otherwise.",
+		},
+		[]string{"backend_name"},
+	)
+)
+
+func init() {
 	// Register Metrics
 	prometheus.MustRegister(FrontendRequestStatus)
 	prometheus.MustRegister(FrontendRequestDuration)
@@ -381,6 +568,19 @@ func init() {
 	prometheus.MustRegister(ProxyConnectionAccepted)
 	prometheus.MustRegister(ProxyConnectionClosed)
 	prometheus.MustRegister(ProxyConnectionFailed)
+	prometheus.MustRegister(ALBFanoutFailures)
+	prometheus.MustRegister(ALBFanoutAttempts)
+	prometheus.MustRegister(ALBTSMReplicaEvents)
+	prometheus.MustRegister(ALBFanoutLoserDrain)
+	prometheus.MustRegister(ALBPoolRefreshPanicRecovered)
+	prometheus.MustRegister(HealthcheckProbePanicRecovered)
+	prometheus.MustRegister(HealthcheckProbeLatency)
+	prometheus.MustRegister(ProxyEnginesPanicRecovered)
+	prometheus.MustRegister(CacheIndexPanicRecovered)
+	prometheus.MustRegister(HealthHandlerPanicRecovered)
+	prometheus.MustRegister(HealthcheckStatusNotifyPanicRecovered)
+	prometheus.MustRegister(ALBPoolAdmitsFailing)
+	prometheus.MustRegister(ALBPoolFloorReset)
 	prometheus.MustRegister(CacheObjectOperations)
 	prometheus.MustRegister(CacheByteOperations)
 	prometheus.MustRegister(CacheEvents)
@@ -395,6 +595,9 @@ func init() {
 	prometheus.MustRegister(ReloadSuccessesTotal)
 	prometheus.MustRegister(ReloadFailuresTotal)
 	prometheus.MustRegister(ReloadDurationSeconds)
+	prometheus.MustRegister(ProxyQueryRangeRejections)
+	prometheus.MustRegister(SQLQueryAnalysis)
+	prometheus.MustRegister(SQLQueryRewriteFailures)
 }
 
 // Handler returns the http handler for the listener

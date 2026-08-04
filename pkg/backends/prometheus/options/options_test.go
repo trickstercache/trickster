@@ -16,10 +16,14 @@
 
 package options
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+)
 
 func TestClone(t *testing.T) {
-	const expectedMS = 87
+	const expectedMS = timeconv.Duration(87)
 	const expectedLen = 1
 
 	o := &Options{

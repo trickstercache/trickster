@@ -55,3 +55,144 @@ func TestSeriesHeaderString(t *testing.T) {
 		t.Errorf("expected %s got %s", expected, s)
 	}
 }
+
+func TestSeriesHeaderFieldDefinitions(t *testing.T) {
+	t.Run("all field types with output positions", func(t *testing.T) {
+		sh := SeriesHeader{
+			TimestampField: timeseries.FieldDefinition{
+				Name: "time", DataType: timeseries.Int64, OutputPosition: 0,
+			},
+			TagFieldsList: timeseries.FieldDefinitions{
+				{Name: "host", DataType: timeseries.String, OutputPosition: 1},
+			},
+			ValueFieldsList: timeseries.FieldDefinitions{
+				{Name: "value", DataType: timeseries.Float64, OutputPosition: 2},
+			},
+			UntrackedFieldsList: timeseries.FieldDefinitions{
+				{Name: "extra", DataType: timeseries.String, OutputPosition: 3},
+			},
+		}
+		fds := sh.FieldDefinitions()
+		if len(fds) != 4 {
+			t.Fatalf("expected 4 fields, got %d", len(fds))
+		}
+		// verify sorted by OutputPosition
+		for i := 1; i < len(fds); i++ {
+			if fds[i].OutputPosition < fds[i-1].OutputPosition {
+				t.Errorf("not sorted by OutputPosition at index %d", i)
+			}
+		}
+		if fds[0].Name != "time" || fds[1].Name != "host" ||
+			fds[2].Name != "value" || fds[3].Name != "extra" {
+			t.Errorf("unexpected field order: %v", fds)
+		}
+	})
+
+	t.Run("empty header returns timestamp field", func(t *testing.T) {
+		// even an empty header has a zero-value TimestampField with OutputPosition 0,
+		// which passes the position filter
+		sh := SeriesHeader{}
+		fds := sh.FieldDefinitions()
+		if len(fds) != 1 {
+			t.Errorf("expected 1 field (default timestamp), got %d", len(fds))
+		}
+	})
+
+	t.Run("negative output position filtered", func(t *testing.T) {
+		sh := SeriesHeader{
+			TimestampField: timeseries.FieldDefinition{
+				Name: "time", OutputPosition: -1, // filtered out
+			},
+			ValueFieldsList: timeseries.FieldDefinitions{
+				{Name: "good", DataType: timeseries.Int64, OutputPosition: 0},
+				{Name: "bad", DataType: timeseries.Int64, OutputPosition: -1},
+			},
+		}
+		fds := sh.FieldDefinitions()
+		if len(fds) != 1 {
+			t.Errorf("expected 1 field (negatives filtered), got %d", len(fds))
+		}
+		if len(fds) > 0 && fds[0].Name != "good" {
+			t.Errorf("expected 'good', got %q", fds[0].Name)
+		}
+	})
+}
+
+func TestCalculateHashCaching(t *testing.T) {
+	t.Run("deterministic", func(t *testing.T) {
+		sh1 := testSeriesHeader()
+		sh2 := testSeriesHeader()
+		if sh1.CalculateHash() != sh2.CalculateHash() {
+			t.Error("same header should produce same hash")
+		}
+	})
+
+	t.Run("different names produce different hashes", func(t *testing.T) {
+		sh1 := testSeriesHeader()
+		sh2 := testSeriesHeader()
+		sh2.Name = "different"
+		if sh1.CalculateHash() == sh2.CalculateHash(true) {
+			t.Error("different names should produce different hashes")
+		}
+	})
+
+	t.Run("cached hash returned without rehash", func(t *testing.T) {
+		sh := testSeriesHeader()
+		h1 := sh.CalculateHash()
+		h2 := sh.CalculateHash() // should return cached value
+		if h1 != h2 {
+			t.Error("cached hash should be stable")
+		}
+	})
+
+	t.Run("clone preserves cached hash", func(t *testing.T) {
+		sh := testSeriesHeader()
+		h1 := sh.CalculateHash()
+		clone := sh.Clone()
+		// mutate the clone's fields — if hash was cached by Clone,
+		// CalculateHash() without rehash still returns the old value
+		clone.Name = "mutated-clone"
+		h2 := clone.CalculateHash() // should return cached h1, not recompute
+		if h1 != h2 {
+			t.Error("clone should return cached hash even after field mutation")
+		}
+		// with rehash, the mutated name should produce a different hash
+		h3 := clone.CalculateHash(true)
+		if h1 == h3 {
+			t.Error("rehash after mutation should produce different hash")
+		}
+	})
+
+	t.Run("rehash forces recalculation", func(t *testing.T) {
+		sh := testSeriesHeader()
+		h1 := sh.CalculateHash()
+		sh.Name = "changed"
+		// without rehash, still returns cached value
+		h2 := sh.CalculateHash()
+		if h1 != h2 {
+			t.Error("without rehash, should return cached value")
+		}
+		// with rehash=true, recalculates
+		h3 := sh.CalculateHash(true)
+		if h1 == h3 {
+			t.Error("rehash should produce different hash after name change")
+		}
+	})
+}
+
+func TestCalculateHashWithQueryStatement(t *testing.T) {
+	sh1 := testSeriesHeader()
+	sh2 := testSeriesHeader()
+	sh1.QueryStatement = "sum(rate(http_requests_total[5m]))"
+	sh2.QueryStatement = "count(rate(http_requests_total[5m]))"
+	if sh1.CalculateHash(true) == sh2.CalculateHash(true) {
+		t.Error("full header hash must differ when QueryStatement differs")
+	}
+	logical := "avg(rate(http_requests_total[5m]))"
+	if sh1.CalculateHashWithQueryStatement(logical) != sh2.CalculateHashWithQueryStatement(logical) {
+		t.Error("pairing hash with shared logical statement must match across sum/count rewrites")
+	}
+	if sh1.CalculateHashWithQueryStatement(logical) == sh1.CalculateHashWithQueryStatement("other") {
+		t.Error("different pairing statements must yield different hashes")
+	}
+}

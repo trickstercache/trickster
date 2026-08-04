@@ -25,6 +25,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
+
 	"go.opentelemetry.io/otel/attribute"
 )
 
@@ -41,7 +42,7 @@ func TestNewChildSpan(t *testing.T) {
 	tr.Options.Tags = map[string]string{"testTagName": "testTagValue"}
 
 	// force coverage of tags attachment
-	tr.Options.Provider = "zipkin"
+	tr.Options.Provider = "stdout"
 	options.ProcessTracingOptions(options.Lookup{"default": tr.Options})
 
 	ctx, span := NewChildSpan(stdcontext.Background(), tr, "test")
@@ -83,7 +84,7 @@ func TestPrepareRequest(t *testing.T) {
 		t.Error("expected non-nill span")
 	}
 
-	tr.Options.Provider = "zipkin"
+	tr.Options.Provider = "stdout"
 	options.ProcessTracingOptions(options.Lookup{"default": tr.Options})
 
 	_, sp = PrepareRequest(r, tr)

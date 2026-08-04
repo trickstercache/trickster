@@ -18,6 +18,8 @@ package engines
 
 import (
 	"bytes"
+	"errors"
+	"io"
 	"net/http"
 	"sync"
 	"testing"
@@ -36,10 +38,49 @@ import (
 )
 
 func TestCheckCacheFreshness(t *testing.T) {
-	// CachingPolicy should be nil and will return false
-	pr := proxyRequest{}
-	if pr.checkCacheFreshness() {
-		t.Errorf("got %t expected %t", pr.checkCacheFreshness(), false)
+	tests := []struct {
+		name      string
+		policy    *CachingPolicy
+		wantFresh bool
+	}{
+		{
+			name:      "nil policy",
+			policy:    nil,
+			wantFresh: false,
+		},
+		{
+			name: "fresh — lifetime not expired",
+			policy: &CachingPolicy{
+				LocalDate:         time.Now(),
+				FreshnessLifetime: 3600,
+			},
+			wantFresh: true,
+		},
+		{
+			name: "stale — lifetime expired",
+			policy: &CachingPolicy{
+				LocalDate:         time.Now().Add(-2 * time.Hour),
+				FreshnessLifetime: 3600,
+			},
+			wantFresh: false,
+		},
+		{
+			name: "zero lifetime — stale immediately",
+			policy: &CachingPolicy{
+				LocalDate:         time.Now().Add(-time.Second),
+				FreshnessLifetime: 0,
+			},
+			wantFresh: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pr := proxyRequest{cachingPolicy: tt.policy}
+			if got := pr.checkCacheFreshness(); got != tt.wantFresh {
+				t.Errorf("expected %t got %t", tt.wantFresh, got)
+			}
+		})
 	}
 }
 
@@ -53,6 +94,7 @@ func TestParseRequestRanges(t *testing.T) {
 
 	pr := proxyRequest{
 		Request:         r,
+		rsc:             request.GetResources(r),
 		upstreamRequest: r,
 	}
 	pr.parseRequestRanges()
@@ -130,6 +172,7 @@ func TestDetermineCacheability(t *testing.T) {
 	}
 
 	caches := cr.LoadCachesFromConfig(conf)
+	defer cr.CloseCaches(caches)
 	cache, ok := caches["default"]
 	if !ok {
 		t.Error("could not load cache")
@@ -142,6 +185,7 @@ func TestDetermineCacheability(t *testing.T) {
 
 	pr := proxyRequest{
 		Request:       r,
+		rsc:           request.GetResources(r),
 		cachingPolicy: &CachingPolicy{NoCache: true, LastModified: time.Unix(1, 0)},
 		writeToCache:  true,
 		cacheDocument: &HTTPDocument{
@@ -190,6 +234,7 @@ func TestPrepareResponse(t *testing.T) {
 
 	pr := proxyRequest{
 		Request:          r,
+		rsc:              request.GetResources(r),
 		cachingPolicy:    &CachingPolicy{},
 		upstreamResponse: &http.Response{StatusCode: http.StatusOK},
 		cacheDocument:    &HTTPDocument{},
@@ -225,6 +270,59 @@ func TestPrepareResponse(t *testing.T) {
 	pr.prepareResponse()
 }
 
+type truncatingReader struct {
+	partial []byte
+	err     error
+	done    bool
+}
+
+func (r *truncatingReader) Read(p []byte) (int, error) {
+	if r.done {
+		return 0, r.err
+	}
+	n := copy(p, r.partial)
+	r.done = true
+	return n, nil
+}
+
+func TestPrepareResponse_UpstreamReadErrorSkipsCache(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
+	r, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
+	r.Header.Set(headers.NameRange, "bytes=0-10")
+
+	o := &bo.Options{}
+	r = request.SetResources(r, request.NewResources(o, nil, nil, nil, nil, nil))
+
+	pr := proxyRequest{
+		Request:          r,
+		rsc:              request.GetResources(r),
+		cachingPolicy:    &CachingPolicy{},
+		upstreamResponse: &http.Response{StatusCode: http.StatusOK},
+		cacheDocument:    &HTTPDocument{},
+	}
+	pr.parseRequestRanges()
+	pr.cacheDocument.Ranges = pr.wantedRanges
+
+	pr.cacheStatus = status.LookupStatusKeyMiss
+	pr.writeToCache = true
+	pr.upstreamReader = &truncatingReader{
+		partial: []byte("trunc"),
+		err:     io.ErrUnexpectedEOF,
+	}
+	headers.Merge(pr.upstreamResponse.Header, http.Header{
+		headers.NameContentRange: {"bytes 0-99"},
+	})
+
+	pr.prepareResponse()
+
+	if pr.writeToCache {
+		t.Error("writeToCache must be cleared after upstream read error")
+	}
+	if pr.cacheDocument != nil && pr.cacheDocument.isLoaded {
+		t.Error("cacheDocument.isLoaded must not be true when upstream read errored")
+	}
+}
+
 func TestPrepareResponsePreconditionFailed(t *testing.T) {
 	r, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
 	pr := proxyRequest{
@@ -257,6 +355,7 @@ func TestPrepareRevalidationRequest(t *testing.T) {
 
 	pr := proxyRequest{
 		Request:          r,
+		rsc:              request.GetResources(r),
 		upstreamRequest:  r,
 		cachingPolicy:    &CachingPolicy{},
 		upstreamResponse: &http.Response{},
@@ -284,6 +383,7 @@ func TestPrepareRevalidationRequestNoRange(t *testing.T) {
 
 	pr := proxyRequest{
 		Request:          r,
+		rsc:              request.GetResources(r),
 		upstreamRequest:  r,
 		cachingPolicy:    &CachingPolicy{},
 		upstreamResponse: &http.Response{},
@@ -299,6 +399,38 @@ func TestPrepareRevalidationRequestNoRange(t *testing.T) {
 	}
 }
 
+func TestPrepareRevalidationRequestDefaultRangeInclusiveEnd(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
+	r, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
+
+	o := &bo.Options{DearticulateUpstreamRanges: true}
+	r = request.SetResources(r, request.NewResources(o, nil, nil, nil, nil, nil))
+
+	pr := proxyRequest{
+		Request:          r,
+		rsc:              request.GetResources(r),
+		upstreamRequest:  r,
+		cachingPolicy:    &CachingPolicy{},
+		upstreamResponse: &http.Response{},
+		cacheDocument: &HTTPDocument{
+			ContentLength: 100,
+			Ranges:        byterange.Ranges{byterange.Range{Start: 30, End: 40}},
+		},
+		cacheStatus: status.LookupStatusPartialHit,
+		// no wantedRanges — triggers default range using ContentLength
+	}
+	pr.prepareRevalidationRequest()
+
+	// with no wantedRanges, the default wanted range is 0 to ContentLength-1 (99)
+	// revalRanges = neededRanges.CalculateDeltas(wr, cl) with nil neededRanges gives wr back
+	// that's 1 range so rh = revalRanges.String() = "bytes=0-99"
+	v := pr.revalidationRequest.Header.Get(headers.NameRange)
+	expected := "bytes=0-99"
+	if v != expected {
+		t.Errorf("expected %s got %s", expected, v)
+	}
+}
+
 func TestPrepareUpstreamRequests(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	r, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
@@ -309,6 +441,7 @@ func TestPrepareUpstreamRequests(t *testing.T) {
 
 	pr := proxyRequest{
 		Request:          r,
+		rsc:              request.GetResources(r),
 		upstreamRequest:  r,
 		cachingPolicy:    &CachingPolicy{},
 		upstreamResponse: &http.Response{},
@@ -330,7 +463,7 @@ func TestPrepareUpstreamRequests(t *testing.T) {
 
 func TestStoreTrueContentType(t *testing.T) {
 	ts, _, r, _, _ := setupTestHarnessOPC("", "test", http.StatusOK, nil)
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	expected := "1234"
 
@@ -359,5 +492,91 @@ func TestReconstituteResponses(t *testing.T) {
 	pr.reconstituteResponses()
 	if len(pr.originRequests) != 0 {
 		t.Errorf("expected %d got %d", 0, len(pr.originRequests))
+	}
+}
+
+// errReader is an io.ReadCloser that always returns an error
+type errReader struct{ err error }
+
+func (e *errReader) Read([]byte) (int, error) { return 0, e.err }
+func (e *errReader) Close() error             { return nil }
+
+func TestReconstituteResponsesReadError(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
+
+	r1, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
+	r2, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
+	baseReq, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
+	baseReq = request.SetResources(baseReq, request.NewResources(&bo.Options{}, nil, nil, nil, nil, nil))
+
+	readErr := errors.New("simulated read error")
+
+	pr := &proxyRequest{
+		mapLock:        &sync.Mutex{},
+		rsc:            request.GetResources(baseReq),
+		cachingPolicy:  &CachingPolicy{},
+		originRequests: []*http.Request{r1, r2},
+		originResponses: []*http.Response{
+			{
+				StatusCode: http.StatusPartialContent,
+				Header:     http.Header{headers.NameContentRange: []string{"bytes 0-3/10"}},
+				Body:       &errReader{err: readErr},
+			},
+			{
+				StatusCode: http.StatusPartialContent,
+				Header:     http.Header{headers.NameContentRange: []string{"bytes 4-9/10"}},
+				Body:       io.NopCloser(bytes.NewReader([]byte("456789"))),
+			},
+		},
+		cacheDocument: &HTTPDocument{ContentLength: 10},
+	}
+	pr.Request = baseReq
+
+	// should not panic; the error reader's goroutine logs and returns
+	pr.reconstituteResponses()
+
+	// the second response should still have been processed
+	if pr.upstreamResponse == nil {
+		t.Error("expected upstream response to be set")
+	}
+}
+
+func TestReconstituteResponsesRevalidationReadError(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
+
+	r1, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
+	reval, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
+	baseReq, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
+	baseReq = request.SetResources(baseReq, request.NewResources(&bo.Options{}, nil, nil, nil, nil, nil))
+
+	readErr := errors.New("simulated revalidation read error")
+
+	pr := &proxyRequest{
+		mapLock:             &sync.Mutex{},
+		rsc:                 request.GetResources(baseReq),
+		cachingPolicy:       &CachingPolicy{},
+		revalidationRequest: reval,
+		revalidationResponse: &http.Response{
+			StatusCode: http.StatusPartialContent,
+			Header:     http.Header{headers.NameContentRange: []string{"bytes 0-4/10"}},
+			Body:       &errReader{err: readErr},
+		},
+		originRequests: []*http.Request{r1},
+		originResponses: []*http.Response{
+			{
+				StatusCode: http.StatusPartialContent,
+				Header:     http.Header{headers.NameContentRange: []string{"bytes 5-9/10"}},
+				Body:       io.NopCloser(bytes.NewReader([]byte("56789"))),
+			},
+		},
+		cacheDocument: &HTTPDocument{ContentLength: 10},
+	}
+	pr.Request = baseReq
+
+	// should not panic; the revalidation error reader's goroutine logs and returns
+	pr.reconstituteResponses()
+
+	if pr.upstreamResponse == nil {
+		t.Error("expected upstream response to be set")
 	}
 }

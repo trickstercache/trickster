@@ -80,6 +80,8 @@ const (
 	NameCacheControl = "Cache-Control"
 	// NameAllowOrigin represents the HTTP Header Name of "Access-Control-Allow-Origin"
 	NameAllowOrigin = "Access-Control-Allow-Origin"
+	// NameOrigin represents the HTTP Header Name of "Origin"
+	NameOrigin = "Origin"
 	// NameConnection represents the HTTP Header Name of "Connection"
 	NameConnection = "Connection"
 	// NameContentType represents the HTTP Header Name of "Content-Type"
@@ -145,6 +147,11 @@ const (
 	// NameWWWAuthenticate represents the HTTP Header Name of "WWW-Authenticate"
 	NameWWWAuthenticate = "WWW-Authenticate"
 
+	// NameVary represents the HTTP Header Name of "Vary"
+	NameVary = "Vary"
+	// NameAge represents the HTTP Header Name of "Age"
+	NameAge = "Age"
+
 	// NameTrkHCStatus represents the HTTP Header Name of "Trk-HC-Status"
 	NameTrkHCStatus = "Trk-HC-Status"
 	// NameTrkHCDetail represents the HTTP Header Name of "Trk-HC-Detail"
@@ -194,21 +201,23 @@ func UpdateHeaders(headers http.Header, updates map[string]string) {
 		return
 	}
 	for k, v := range updates {
-		if k == "" {
-			continue
-		}
-		if k[0:1] == "-" {
-			k = k[1:]
-			headers.Del(k)
-			continue
-		}
-		if k[0:1] == "+" {
-			k = k[1:]
-			headers.Add(k, v)
-			continue
-		}
-		headers.Set(k, v)
+		updateHeader(headers, k, v)
 	}
+}
+
+func updateHeader(headers http.Header, name, value string) {
+	if name == "" {
+		return
+	}
+	if name[0:1] == "-" {
+		headers.Del(name[1:])
+		return
+	}
+	if name[0:1] == "+" {
+		headers.Add(name[1:], value)
+		return
+	}
+	headers.Set(name, value)
 }
 
 // UpdateRequestHeaders updates r's headers with the provided updates
@@ -229,9 +238,13 @@ func UpdateRequestHeaders(r *http.Request, updates map[string]string) {
 	// promote Host header from r.Header to r.Host if present
 	if hhVal != "" {
 		r.Host = hhVal
-		delete(updates, hhName)
 	}
-	UpdateHeaders(r.Header, updates)
+	for k, v := range updates {
+		if hhVal != "" && k == hhName {
+			continue
+		}
+		updateHeader(r.Header, k, v)
+	}
 }
 
 // ExtractHeader returns the value for the provided header name, and a boolean indicating if the header was present

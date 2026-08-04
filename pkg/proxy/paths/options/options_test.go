@@ -21,8 +21,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/stretchr/testify/require"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestNew(t *testing.T) {

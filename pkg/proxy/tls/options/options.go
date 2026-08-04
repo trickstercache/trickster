@@ -74,8 +74,12 @@ func (o *Options) Equal(o2 *Options) bool {
 }
 
 func (o *Options) Initialize(_ string) error {
-	if (o.FullChainCertPath != "" && o.PrivateKeyPath != "") ||
-		len(o.CertificateAuthorityPaths) > 0 {
+	// ServeTLS indicates this backend participates in the frontend's TLS
+	// listener by presenting a server certificate. Only a full server
+	// cert+key pair enables that. CertificateAuthorityPaths alone is used
+	// for verifying peers on outbound connections (mTLS) and must NOT
+	// cascade into flipping Frontend.ServeTLS — see #940.
+	if o.FullChainCertPath != "" && o.PrivateKeyPath != "" {
 		o.ServeTLS = true
 	}
 	return nil
@@ -87,21 +91,29 @@ func (o *Options) Validate() (bool, error) {
 		len(o.CertificateAuthorityPaths) == 0 {
 		return false, nil
 	}
-	_, err := os.ReadFile(o.FullChainCertPath)
-	if err != nil {
-		return false, err
+	if o.FullChainCertPath != "" && o.PrivateKeyPath != "" {
+		if _, err := os.ReadFile(o.FullChainCertPath); err != nil {
+			return false, err
+		}
+		if _, err := os.ReadFile(o.PrivateKeyPath); err != nil {
+			return false, err
+		}
 	}
-	_, err = os.ReadFile(o.PrivateKeyPath)
-	if err != nil {
-		return false, err
-	}
-	// Verify CA Paths
 	if len(o.CertificateAuthorityPaths) > 0 {
 		for _, path := range o.CertificateAuthorityPaths {
-			_, err = os.ReadFile(path)
-			if err != nil {
+			if _, err := os.ReadFile(path); err != nil {
 				return false, err
 			}
+		}
+	}
+	if o.ClientCertPath != "" {
+		if _, err := os.ReadFile(o.ClientCertPath); err != nil {
+			return false, err
+		}
+	}
+	if o.ClientKeyPath != "" {
+		if _, err := os.ReadFile(o.ClientKeyPath); err != nil {
+			return false, err
 		}
 	}
 	return true, nil

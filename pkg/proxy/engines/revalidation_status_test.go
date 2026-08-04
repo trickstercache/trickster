@@ -19,19 +19,24 @@ package engines
 import "testing"
 
 func TestRevalidationStatusString(t *testing.T) {
-	t1 := RevalStatusNone
-	t2 := RevalStatusInProgress
-	var t3 RevalidationStatus = 10
-
-	if t1.String() != "none" {
-		t.Errorf("expected %s got %s", "none", t1.String())
+	tests := []struct {
+		name   string
+		status RevalidationStatus
+		want   string
+	}{
+		{"None", RevalStatusNone, "none"},
+		{"InProgress", RevalStatusInProgress, "revalidating"},
+		{"Local", RevalStatusLocal, "local"},
+		{"OK", RevalStatusOK, "revalidated"},
+		{"Failed", RevalStatusFailed, "failed"},
+		{"Unknown", RevalidationStatus(99), "99"},
 	}
 
-	if t2.String() != "revalidating" {
-		t.Errorf("expected %s got %s", "revalidating", t2.String())
-	}
-
-	if t3.String() != "10" {
-		t.Errorf("expected %s got %s", "10", t3.String())
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.status.String(); got != tt.want {
+				t.Errorf("expected %s got %s", tt.want, got)
+			}
+		})
 	}
 }

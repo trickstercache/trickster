@@ -43,6 +43,19 @@ func TestTime(t *testing.T) {
 	require.True(t, at.Load().IsZero(), "expected %v, got %v", time.Time{}, at.Load())
 	require.True(t, at.Load().IsZero())
 
+	t.Run("nil pointer load and marshal", func(t *testing.T) {
+		at := &Time{}
+		require.True(t, at.Load().IsZero())
+		buf := make([]byte, at.Len())
+		require.NoError(t, at.MarshalBinaryTo(buf))
+	})
+
+	t.Run("extension metadata", func(t *testing.T) {
+		at := NewTime(time.Unix(0, 0))
+		require.Equal(t, int8(TimeExtensionType), at.ExtensionType())
+		require.Equal(t, 15, at.Len())
+	})
+
 	t.Run("msgp.extension", func(t *testing.T) {
 		// init with zero value and marshal
 		ts := time.Unix(0, 0)
@@ -64,5 +77,12 @@ func TestTime(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, at2.Load().Equal(at.Load()), "expected %v, got %v", ts, at2.Load())
 		require.True(t, at2.Load().Equal(now), "expected %v, got %v", now, at2.Load())
+	})
+
+	t.Run("unmarshal binary error", func(t *testing.T) {
+		at := &Time{}
+		err := at.UnmarshalBinary([]byte{0x01, 0x02})
+		require.Error(t, err)
+		require.True(t, at.Load().IsZero())
 	})
 }

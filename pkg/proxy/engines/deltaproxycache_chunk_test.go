@@ -25,6 +25,7 @@ import (
 	"time"
 
 	mockprom "github.com/trickstercache/mockster/pkg/mocks/prometheus"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
@@ -35,7 +36,7 @@ func TestDeltaProxyCacheRequestMissThenHitChunksChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -115,7 +116,7 @@ func TestDeltaProxyCacheRequestRemoveStaleChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -194,7 +195,7 @@ func TestDeltaProxyCacheRequestRemoveStaleChunks(t *testing.T) {
 // 	if err != nil {
 // 		t.Error(err)
 // 	}
-// 	defer ts.Close()
+// 	defer closeTestHarness(ts, r)
 
 // 	client := rsc.BackendClient.(*TestClient)
 // 	o := rsc.BackendOptions
@@ -270,7 +271,7 @@ func TestDeltaProxyCacheRequestMarshalFailureChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -314,7 +315,7 @@ func TestDeltaProxyCacheRequestPartialHitChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -460,7 +461,7 @@ func TestDeltaProxyCacheRequestPartialHitChunks(t *testing.T) {
 	extr.End = extr.End.Add(time.Duration(1) * time.Hour) // Extend the top by 1 hour to generate partial hit
 	extn.End = normalizeTime(extr.End, step)
 
-	expectedFetched = "[" + timeseries.ExtentList{timeseries.Extent{Start: extn.Start, End: phitEnd}}.String() + "," +
+	expectedFetched = "[" + timeseries.ExtentList{timeseries.Extent{Start: extn.Start, End: phitEnd}}.String() + ";" +
 		timeseries.ExtentList{timeseries.Extent{Start: phitStart, End: extn.End}}.String() + "]"
 
 	expected, _, _ = mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
@@ -507,7 +508,7 @@ func TestDeltayProxyCacheRequestDeltaFetchErrorChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -598,17 +599,19 @@ func TestDeltaProxyCacheRequestRangeMissChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
 	rsc.CacheConfig.Provider = "test"
 
 	o.FastForwardDisable = true
+	o.TimeseriesRetention = 1 << 20 // pin against wallclock drift on fixed fixture
 
 	step := time.Duration(3600) * time.Second
 
-	now := time.Now()
+	// fixed to keep all three queries in the same 17.5d chunk bucket; see the _CrossBucket test
+	now := time.Date(2026, 4, 15, 12, 0, 0, 0, time.UTC)
 	end := now.Add(-time.Duration(12) * time.Hour)
 
 	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
@@ -737,13 +740,155 @@ func TestDeltaProxyCacheRequestRangeMissChunks(t *testing.T) {
 	}
 }
 
+// Regression: when the kmiss write and a later query land in different 17.5d
+// chunk buckets, all chunk reads miss and the recovery path must report kmiss,
+// not the cache's pre-recovery Hit.
+func TestDeltaProxyCacheRequestRangeMissChunks_CrossBucket(t *testing.T) {
+	ts, w, r, rsc, err := setupTestHarnessDPC()
+	rsc.CacheConfig.UseCacheChunking = true
+	if err != nil {
+		t.Error(err)
+	}
+	defer closeTestHarness(ts, r)
+
+	client := rsc.BackendClient.(*TestClient)
+	o := rsc.BackendOptions
+	rsc.CacheConfig.Provider = "test"
+	o.FastForwardDisable = true
+	o.TimeseriesRetention = 1 << 20 // pin against wallclock drift on fixed fixture
+
+	step := time.Duration(3600) * time.Second
+
+	// kmiss write in bucket ending 2026-04-20T00:00Z; high-end read in next bucket
+	now := time.Date(2026, 4, 20, 11, 0, 0, 0, time.UTC)
+	end := now.Add(-time.Duration(12) * time.Hour)
+
+	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
+	extn := timeseries.Extent{Start: extr.Start.Truncate(step), End: extr.End.Truncate(step)}
+
+	expected, _, _ := mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+
+	u := r.URL
+	u.Path = "/prometheus/api/v1/query_range"
+	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
+		int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
+
+	client.QueryRangeHandler(w, r)
+	resp := w.Result()
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+	if err = testStringMatch(string(bodyBytes), expected); err != nil {
+		t.Error(err)
+	}
+	if err = testStatusCodeMatch(resp.StatusCode, http.StatusOK); err != nil {
+		t.Error(err)
+	}
+	if err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"}); err != nil {
+		t.Error(err)
+	}
+
+	time.Sleep(time.Millisecond * 10)
+
+	// high-end query in next bucket: meta hits, all chunks miss, recovery must report kmiss
+	extr.Start = now.Add(time.Duration(-10) * time.Hour)
+	extn.Start = extr.Start.Truncate(step)
+	extr.End = now.Add(time.Duration(-8) * time.Hour)
+	extn.End = extr.End.Truncate(step)
+
+	expected, _, _ = mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
+		int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
+	r.URL = u
+
+	w = httptest.NewRecorder()
+	client.QueryRangeHandler(w, r)
+	resp = w.Result()
+
+	if err = testStatusCodeMatch(resp.StatusCode, http.StatusOK); err != nil {
+		t.Error(err)
+	}
+	bodyBytes, err = io.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+	if err = testStringMatch(string(bodyBytes), expected); err != nil {
+		t.Error(err)
+	}
+	if err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"}); err != nil {
+		t.Error(err)
+	}
+}
+
+// Recovery calls cache.Remove(key) on the meta, but chunks are keyed by
+// deterministic subkey (not via the meta), and the recovery's refetch
+// rewrites the meta. A later query for a still-cached sibling bucket must
+// still hit, not refetch from origin.
+func TestDeltaProxyCacheRequestRangeMissChunks_CrossBucketPreservesPriorChunks(t *testing.T) {
+	ts, w, r, rsc, err := setupTestHarnessDPC()
+	rsc.CacheConfig.UseCacheChunking = true
+	if err != nil {
+		t.Error(err)
+	}
+	defer closeTestHarness(ts, r)
+
+	client := rsc.BackendClient.(*TestClient)
+	o := rsc.BackendOptions
+	rsc.CacheConfig.Provider = "test"
+	o.FastForwardDisable = true
+	o.TimeseriesRetention = 1 << 20 // pin against wallclock drift on fixed fixture
+
+	step := time.Duration(3600) * time.Second
+	now := time.Date(2026, 4, 20, 11, 0, 0, 0, time.UTC)
+
+	runQuery := func(start, end time.Time) *http.Response {
+		u := r.URL
+		u.Path = "/prometheus/api/v1/query_range"
+		u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
+			int(step.Seconds()), start.Unix(), end.Unix(), queryReturnsOKNoLatency)
+		r.URL = u
+		w = httptest.NewRecorder()
+		client.QueryRangeHandler(w, r)
+		return w.Result()
+	}
+
+	// Q1: warm bucket N
+	q1Start := now.Add(-30 * time.Hour).Truncate(step)
+	q1End := now.Add(-12 * time.Hour).Truncate(step)
+	resp := runQuery(q1Start, q1End)
+	_, _ = io.ReadAll(resp.Body)
+	if err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"}); err != nil {
+		t.Error(err)
+	}
+	time.Sleep(10 * time.Millisecond)
+
+	// Q2: cross-bucket query triggers recovery (meta hit, chunks miss, re-fetch + rewrite)
+	q2Start := now.Add(-10 * time.Hour).Truncate(step)
+	q2End := now.Add(-8 * time.Hour).Truncate(step)
+	resp = runQuery(q2Start, q2End)
+	_, _ = io.ReadAll(resp.Body)
+	if err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"}); err != nil {
+		t.Error(err)
+	}
+	time.Sleep(10 * time.Millisecond)
+
+	// Q3: re-query Q1's range. chunk N must still be there.
+	resp = runQuery(q1Start, q1End)
+	_, _ = io.ReadAll(resp.Body)
+	if err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "hit"}); err != nil {
+		t.Error(err)
+	}
+}
+
 func TestDeltaProxyCacheRequestFastForwardChunks(t *testing.T) {
 	ts, w, r, rsc, err := setupTestHarnessDPC()
 	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 	rsc.CacheConfig.Provider = "test"
 
 	client := rsc.BackendClient.(*TestClient)
@@ -757,7 +902,7 @@ func TestDeltaProxyCacheRequestFastForwardChunks(t *testing.T) {
 	step := time.Duration(300) * time.Second
 
 	now := time.Now()
-	client.fftime = now.Truncate(o.FastForwardTTL)
+	client.fftime = now.Truncate(time.Duration(o.FastForwardTTL))
 
 	extr := timeseries.Extent{Start: now.Add(-time.Duration(12) * time.Hour), End: now}
 	extn := timeseries.Extent{Start: extr.Start.Truncate(step), End: extr.End.Truncate(step)}
@@ -866,7 +1011,7 @@ func TestDeltaProxyCacheRequestFastForwardUrlErrorChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -925,7 +1070,7 @@ func TestDeltaProxyCacheRequestWithRefreshChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -980,7 +1125,7 @@ func TestDeltaProxyCacheRequestWithRefreshErrorChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -1017,7 +1162,7 @@ func TestDeltaProxyCacheRequestWithUnmarshalAndUpstreamErrorsChunks(t *testing.T
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -1065,7 +1210,7 @@ func TestDeltaProxyCacheRequestWithUnmarshalAndUpstreamErrorsChunks(t *testing.T
 	// Give time for the object to be written to cache in a separate goroutine from response
 	time.Sleep(time.Millisecond * 10)
 
-	key := o.Host + ".dpc.61a603af5b94ea305dc3fa35af4eed98"
+	key := o.Name + "." + o.CacheKeyPrefix + ".dpc.61a603af5b94ea305dc3fa35af4eed98"
 
 	cc := client.Cache()
 
@@ -1119,7 +1264,7 @@ func TestDeltaProxyCacheRequest_BadParamsChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -1159,7 +1304,7 @@ func TestDeltaProxyCacheRequestCacheMissUnmarshalFailedChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -1204,7 +1349,7 @@ func TestDeltaProxyCacheRequestCacheMissUnmarshalFailedChunks(t *testing.T) {
 		t.Error(err)
 	}
 
-	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusInternalServerError)
 	if err != nil {
 		t.Error(err)
 	}
@@ -1222,7 +1367,7 @@ func TestDeltaProxyCacheRequestOutOfWindowChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -1297,7 +1442,7 @@ func TestDeltaProxyCacheRequestBadGatewayChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -1334,12 +1479,12 @@ func TestDeltaProxyCacheRequest_BackfillToleranceChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
 
-	o.BackfillTolerance = time.Duration(300) * time.Second
+	o.BackfillTolerance = timeconv.Duration(time.Duration(300) * time.Second)
 	o.FastForwardDisable = true
 
 	query := "some_query_here{}"
@@ -1415,7 +1560,7 @@ func TestDeltaProxyCacheRequestFFTTLBiggerThanStepChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -1423,7 +1568,7 @@ func TestDeltaProxyCacheRequestFFTTLBiggerThanStepChunks(t *testing.T) {
 	o.FastForwardDisable = false
 
 	step := time.Duration(300) * time.Second
-	o.FastForwardTTL = step + 1
+	o.FastForwardTTL = timeconv.Duration(step + 1)
 
 	now := time.Now()
 	end := now.Add(-time.Duration(12) * time.Hour)
@@ -1473,7 +1618,7 @@ func TestDeltaProxyCacheRequestShardByPointsChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -1483,7 +1628,7 @@ func TestDeltaProxyCacheRequestShardByPointsChunks(t *testing.T) {
 	client.InstantCacheKey = "test-instant-key-phit"
 
 	o.FastForwardDisable = true
-	o.ShardStep = 3 * time.Hour
+	o.ShardStep = timeconv.Duration(3 * time.Hour)
 	o.DoesShard = true
 
 	step := time.Duration(300) * time.Second

@@ -1,0 +1,25 @@
+{
+  "results": [
+    {
+      "statement_id": 0,
+      "series": [
+        {
+          "name": "rps",
+          "tags": {
+            "region": "us-east-1"
+          },
+          "query": "count(rps)",
+          "points": [
+            {
+              "epoch": 100,
+              "size": 32,
+              "values": [
+                "4"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

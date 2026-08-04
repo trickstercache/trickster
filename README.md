@@ -4,7 +4,7 @@
 [![Coverage Status](https://coveralls.io/repos/github/trickstercache/trickster/badge.svg)](https://coveralls.io/github/trickstercache/trickster)
 [![build status](https://github.com/trickstercache/trickster/actions/workflows/ci-build-tests.yml/badge.svg)](https://github.com/trickstercache/trickster/actions/workflows/ci-build-tests.yml)
 [![CII Best Practices](https://bestpractices.coreinfrastructure.org/projects/2518/badge)](https://bestpractices.coreinfrastructure.org/en/projects/2518)
-[![GoDoc](https://godoc.org/github.com/trickstercache/trickster?status.svg)](https://godoc.org/github.com/trickstercache/trickster)
+[![GoDoc](https://godoc.org/github.com/trickstercache/trickster/v2?status.svg)](https://godoc.org/github.com/trickstercache/trickster/v2)
 [![Docker Pulls](https://img.shields.io/docker/pulls/tricksterio/trickster.svg?maxAge=86400)](https://hub.docker.com/r/tricksterio/trickster)
 
 Trickster is an HTTP reverse proxy/cache for http applications and a dashboard query accelerator for time series databases.
@@ -27,11 +27,12 @@ Trickster is a fully-featured HTTP Reverse Proxy Cache for HTTP applications lik
 * [Supports TLS](./docs/tls.md) and HTTP/2 for frontend termination and backend origination
 * Offers several options for a [caching layer](./docs/caches.md), including in-memory, filesystem, Redis and bbolt
 * [Highly customizable](./docs/configuring.md), using simple yaml configuration settings, [down to the HTTP Path](./docs/paths.md)
+* Per-backend and per-path [CORS response policies](./docs/cors.md)
 * Built-in Prometheus [metrics](./docs/metrics.md) and customizable [Health Check](./docs/health.md) Endpoints for end-to-end monitoring
 * [Negative Caching](./docs/negative-caching.md) to prevent domino effect outages
 * High-performance [Collapsed Forwarding](./docs/collapsed-forwarding.md)
 * Best-in-class [Byte Range Request caching and acceleration](./docs/range_request.md).
-* [Distributed Tracing](./docs/tracing.md) via OpenTelemetry, supporting OTLP and Zipkin
+* [Distributed Tracing](./docs/tracing.md) via OpenTelemetry, supporting OTLP protocol.
 * Rules engine for custom request routing and rewriting
 * Configurable [maximum request body size](./docs/body.md).
 
@@ -106,12 +107,12 @@ See the 'deploy' Directory for Kube and deployment files and examples.
 
 ### Helm
 
-Trickster Helm Charts are located at <https://helm.tricksterproxy.io> for installation, and maintained at <https://github.com/trickstercache/helm-charts>. We welcome chart contributions.
+Trickster Helm Charts are located at <https://helm.trickstercache.org/> for installation, and maintained at <https://github.com/trickstercache/helm-charts>. We welcome chart contributions.
 
 ### Building from source
 
 To build Trickster from the source code yourself you need to have a working
-Go environment with [version 1.25 or greater installed](http://golang.org/doc/install).
+Go environment with [version 1.26 or greater installed](http://golang.org/doc/install).
 
 You can directly use the `go` tool to download and install the `trickster`
 binary into your `GOPATH`:

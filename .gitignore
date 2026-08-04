@@ -24,6 +24,7 @@ trips_*.gz
 
 # Test Coverage Profile Output
 .coverprofile
+.integration.coverprofile
 
 # output path
 OPATH
@@ -63,3 +64,7 @@ tags
 
 # for local notes that should not be made part of the project
 notes.txt
+
+# Local AI Agent Files & Directories
+AGENTS.md
+.claude

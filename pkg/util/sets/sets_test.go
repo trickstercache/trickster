@@ -18,6 +18,7 @@ package sets
 
 import (
 	"fmt"
+	"math"
 	"testing"
 )
 
@@ -148,6 +149,109 @@ func TestIntSet(t *testing.T) {
 				t.Errorf("Sorted() = %v; want %v", gotSorted, test.expectSorted)
 			}
 		})
+	}
+}
+
+func TestMapKeysToStringSet(t *testing.T) {
+	if got := MapKeysToStringSet(map[string]int(nil)); got != nil {
+		t.Errorf("MapKeysToStringSet(nil) = %v; want nil", got)
+	}
+
+	input := map[string]int{"a": 1, "b": 2}
+	got := MapKeysToStringSet(input)
+	if len(got) != 2 || !got.Contains("a") || !got.Contains("b") {
+		t.Errorf("MapKeysToStringSet() = %v; want keys a and b", got.Keys())
+	}
+}
+
+func TestSetConstructors(t *testing.T) {
+	if len(NewInt64Set()) != 0 {
+		t.Error("expected empty NewInt64Set")
+	}
+	if len(NewIntSet()) != 0 {
+		t.Error("expected empty NewIntSet")
+	}
+	if len(NewStringSet()) != 0 {
+		t.Error("expected empty NewStringSet")
+	}
+	if len(NewByteSet()) != 0 {
+		t.Error("expected empty NewByteSet")
+	}
+}
+
+func TestSetAddCloneMerge(t *testing.T) {
+	s := New([]string{"a"})
+	if !s.Add("b") {
+		t.Error("expected Add to return true for new value")
+	}
+	if s.Add("b") {
+		t.Error("expected Add to return false for existing value")
+	}
+
+	clone := s.Clone()
+	clone.Remove("a")
+	if !s.Contains("a") {
+		t.Error("expected original set to be unchanged after clone modification")
+	}
+
+	other := New([]string{"c", "d"})
+	s.Merge(other)
+	for _, key := range []string{"a", "b", "c", "d"} {
+		if !s.Contains(key) {
+			t.Errorf("expected merged set to contain %q", key)
+		}
+	}
+}
+
+func TestCounterSet(t *testing.T) {
+	cs := NewStringCounterSet()
+
+	old, newVal, existed := cs.Increment("hits", 3)
+	if old != 0 || newVal != 3 || existed {
+		t.Errorf("new key Increment() = (%d, %d, %t); want (0, 3, false)", old, newVal, existed)
+	}
+
+	old, newVal, existed = cs.Increment("hits", 2)
+	if old != 3 || newVal != 5 || !existed {
+		t.Errorf("existing key Increment() = (%d, %d, %t); want (3, 5, true)", old, newVal, existed)
+	}
+
+	old, newVal, existed = cs.Increment("hits", -2)
+	if old != 5 || newVal != 3 || !existed {
+		t.Errorf("decrement Increment() = (%d, %d, %t); want (5, 3, true)", old, newVal, existed)
+	}
+
+	key := "overflow"
+	cs[key] = math.MaxInt
+	old, newVal, existed = cs.Increment(key, 1)
+	if old != math.MaxInt || newVal != math.MaxInt || !existed {
+		t.Errorf("overflow Increment() = (%d, %d, %t); want (%d, %d, true)",
+			old, newVal, existed, math.MaxInt, math.MaxInt)
+	}
+
+	cs.Reset("hits")
+	if val, ok := cs.Value("hits"); !ok || val != 0 {
+		t.Errorf("Reset() value = (%d, %t); want (0, true)", val, ok)
+	}
+
+	cs.Reset("new")
+	if val, ok := cs.Value("new"); !ok || val != 0 {
+		t.Errorf("Reset() on missing key = (%d, %t); want (0, true)", val, ok)
+	}
+
+	if val, ok := cs.Value("missing"); ok || val != -1 {
+		t.Errorf("Value() on missing key = (%d, %t); want (-1, false)", val, ok)
+	}
+}
+
+func TestStringCounterSetCap(t *testing.T) {
+	cs := NewStringCounterSetCap(4)
+	if cs == nil {
+		t.Fatal("expected non-nil counter set")
+	}
+	cs.Increment("a", 1)
+	if val, ok := cs.Value("a"); !ok || val != 1 {
+		t.Errorf("Value() = (%d, %t); want (1, true)", val, ok)
 	}
 }
 

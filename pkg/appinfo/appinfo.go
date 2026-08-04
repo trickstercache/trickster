@@ -17,7 +17,10 @@
 // Package app holds application build information
 package appinfo
 
-import "os"
+import (
+	"os"
+	"sync/atomic"
+)
 
 // Name is the name of the Application
 var Name string
@@ -31,9 +34,21 @@ var BuildTime string
 // GitCommitID holds the Git Commit ID of the current binary/build
 var GitCommitID string
 
-// Server is the name, hostname or ip of the server as advertised in HTTP Headers
-// By default uses the hostname reported by the kernel
-var Server, _ = os.Hostname()
+var server atomic.Pointer[string]
+
+func init() {
+	hn, _ := os.Hostname()
+	server.Store(&hn)
+}
+
+// Server returns the name, hostname or IP of the server as advertised in
+// HTTP headers. Defaults to the kernel-reported hostname.
+func Server() string {
+	if p := server.Load(); p != nil {
+		return *p
+	}
+	return ""
+}
 
 func Set(name, version, buildTime, gitCommitID string) {
 	Name = name
@@ -42,6 +57,6 @@ func Set(name, version, buildTime, gitCommitID string) {
 	GitCommitID = gitCommitID
 }
 
-func SetServer(server string) {
-	Server = server
+func SetServer(s string) {
+	server.Store(&s)
 }

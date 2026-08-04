@@ -30,6 +30,7 @@ import (
 	rule "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/negative"
 	cache "github.com/trickstercache/trickster/v2/pkg/cache/options"
+	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
 	fropt "github.com/trickstercache/trickster/v2/pkg/frontend/options"
 	lo "github.com/trickstercache/trickster/v2/pkg/observability/logging/options"
@@ -38,7 +39,8 @@ import (
 	auth "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
-	"go.yaml.in/yaml/v2"
+
+	"gopkg.in/yaml.v2"
 )
 
 const defaultResourceName = "default"
@@ -52,7 +54,10 @@ type Config struct {
 	// Caches is a map of CacheConfigs
 	Caches cache.Lookup `yaml:"caches,omitempty"`
 	// Frontend provides configurations about the Proxy Front End
+	// Frontend is deprecated and will be phased out in a future release
 	Frontend *fropt.Options `yaml:"frontend,omitempty"`
+	// Listeners maps inbound listener names to their configurations.
+	Listeners listener.Lookup `yaml:"listeners,omitempty"`
 	// Logging provides configurations that affect logging behavior
 	Logging *lo.Options `yaml:"logging,omitempty"`
 	// Metrics provides configurations for collecting Metrics about the application
@@ -82,6 +87,11 @@ type Config struct {
 	providedProvider       string
 
 	LoaderWarnings []string `yaml:"-"`
+
+	listenerOverrides  map[string][]byte
+	legacyFrontendUsed bool
+	legacyMetricsUsed  bool
+	legacyMgmtUsed     bool
 }
 
 // MainConfig is a collection of general configuration values.
@@ -126,7 +136,8 @@ func NewConfig() *Config {
 		Backends: bo.Lookup{
 			defaultResourceName: bo.New(),
 		},
-		Frontend: fropt.New(),
+		Frontend:  fropt.New(),
+		Listeners: listener.NewLookup(),
 		NegativeCacheConfigs: negative.ConfigLookup{
 			defaultResourceName: negative.New(),
 		},
@@ -205,6 +216,9 @@ func (c *Config) isDir(flags *Flags) (bool, error) {
 
 // loadYAMLConfig loads application configuration from a YAML-formatted byte slice.
 func (c *Config) loadYAMLConfig(yml string) error {
+	if err := c.detectListenerSections(yml); err != nil {
+		return err
+	}
 	err := yaml.Unmarshal([]byte(yml), &c)
 	if err != nil {
 		return err
@@ -291,6 +305,16 @@ func (c *Config) Clone() *Config {
 	nc.Main.ServerName = c.Main.ServerName
 
 	nc.MgmtConfig = c.MgmtConfig.Clone()
+	nc.Listeners = c.Listeners.Clone()
+	if len(c.listenerOverrides) > 0 {
+		nc.listenerOverrides = make(map[string][]byte, len(c.listenerOverrides))
+		for name, data := range c.listenerOverrides {
+			nc.listenerOverrides[name] = append([]byte(nil), data...)
+		}
+	}
+	nc.legacyFrontendUsed = c.legacyFrontendUsed
+	nc.legacyMetricsUsed = c.legacyMetricsUsed
+	nc.legacyMgmtUsed = c.legacyMgmtUsed
 
 	nc.Main.configFilePath = c.Main.configFilePath
 	nc.Main.configFilesPath = c.Main.configFilesPath
@@ -365,21 +389,8 @@ func (c *Config) IsStale() bool {
 		c.MgmtConfig = mgmt.New()
 	}
 
-	c.Main.configRateLimitTime = time.Now().Add(c.MgmtConfig.ReloadRateLimit)
-	if len(c.Main.configFilesPath) > 0 {
-		for index, file := range c.Main.configFilesPath {
-			t := c.CheckFileLastModified(file)
-			if t.IsZero() {
-				continue
-			}
-			if !t.Equal(c.Main.configFilesLastMod[index]) {
-				return true
-			}
-		}
-		return false
-	}
-
-	t := c.CheckFileLastModified("")
+	c.Main.configRateLimitTime = time.Now().Add(time.Duration(c.MgmtConfig.ReloadRateLimit))
+	t := c.CheckFileLastModified()
 	if t.IsZero() {
 		return false
 	}
@@ -399,23 +410,8 @@ func (c *Config) CheckAndMarkReloadInProgress() bool {
 	if c.MgmtConfig == nil {
 		c.MgmtConfig = mgmt.New()
 	}
-	c.Main.configRateLimitTime = time.Now().Add(c.MgmtConfig.ReloadRateLimit)
-
-	if len(c.Main.configFilesPath) > 0 {
-		for index, file := range c.Main.configFilesPath {
-			t := c.CheckFileLastModified(file)
-			if t.IsZero() {
-				continue
-			}
-			if !t.Equal(c.Main.configFilesLastMod[index]) {
-				c.Main.configFilesLastMod[index] = t
-				return true
-			}
-		}
-		return false
-	}
-
-	t := c.CheckFileLastModified("")
+	c.Main.configRateLimitTime = time.Now().Add(time.Duration(c.MgmtConfig.ReloadRateLimit))
+	t := c.CheckFileLastModified()
 	if t.IsZero() {
 		return false
 	}
@@ -431,6 +427,10 @@ func (c *Config) String() string {
 
 	for k, o := range cp.Backends {
 		cp.Backends[k] = o.CloneYAMLSafe()
+	}
+
+	for k, o := range cp.Authenticators {
+		cp.Authenticators[k] = o.CloneYAMLSafe()
 	}
 
 	// strip Redis password

@@ -20,6 +20,7 @@ package params
 import (
 	"bytes"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"strings"
@@ -85,12 +86,25 @@ func GetRequestValues(r *http.Request) (url.Values, []byte, bool) {
 	case !methods.HasBody(r.Method):
 		return r.URL.Query(), []byte(r.URL.RawQuery), false
 	case isMultipartOrForm(r):
-		// r.ParseMultipartForm doesn't reset the request body, so this handles:
-		b, _ := request.GetBody(r)
+		b, err := request.GetBody(r)
+		if err != nil {
+			return r.URL.Query(), nil, false
+		}
 		r.ParseMultipartForm(10 * 1024 * 1024)
 		r.Body.Close()
 		r.Body = io.NopCloser(bytes.NewReader(b))
-		return r.PostForm, []byte(r.PostForm.Encode()), true
+		// Merge URL query with form body: the caller may have split params
+		// across `?step=15` and the form body, and cache-key generation must
+		// see the full parameter space. Body values REPLACE URL values on
+		// key conflict (single-valued merge, not append) to stay consistent
+		// with SetRequestValues, which writes the same encoded blob to both
+		// URL RawQuery and body. Go stdlib r.Form appends conflicting values;
+		// we deliberately differ because multi-valued params aren't used by
+		// any backend Trickster supports, and a single canonical value makes
+		// cache keys deterministic. See #969 follow-up.
+		merged := r.URL.Query()
+		maps.Copy(merged, r.PostForm)
+		return merged, []byte(merged.Encode()), true
 	default:
 		v := r.URL.Query()
 		b, err := request.GetBody(r)
@@ -119,14 +133,25 @@ func GetRequestValues(r *http.Request) (url.Values, []byte, bool) {
 // regardless of method
 func SetRequestValues(r *http.Request, v url.Values) {
 	s := v.Encode()
-	if !methods.HasBody(r.Method) {
-		r.URL.RawQuery = s
-	} else {
-		// reset the body
+	r.URL.RawQuery = s
+	if r.MultipartForm != nil {
+		// prevents temp file leakage before clearing the pointer
+		_ = r.MultipartForm.RemoveAll()
+	}
+	r.Form = nil
+	r.PostForm = nil
+	r.MultipartForm = nil
+	if methods.HasBody(r.Method) {
+		// also reset the body so the upstream request carries the updated params
 		if r.Body != nil {
 			r.Body.Close()
 		}
-		r.ContentLength = int64(len(s))
-		r.Body = io.NopCloser(strings.NewReader(s))
+		b := []byte(s)
+		r.ContentLength = int64(len(b))
+		r.Body = io.NopCloser(bytes.NewReader(b))
+		// keep the resource body cache in sync
+		if rsc := request.GetResources(r); rsc != nil {
+			rsc.RequestBody = b
+		}
 	}
 }

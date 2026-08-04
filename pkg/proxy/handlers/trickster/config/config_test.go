@@ -62,3 +62,46 @@ func TestConfigHandler(t *testing.T) {
 		t.Errorf("response is not yaml format")
 	}
 }
+
+func TestSanitizedConfigHandler(t *testing.T) {
+	conf, err := config.Load([]string{
+		"-origin-url", "http://private.example",
+		"-provider", providers.Prometheus,
+	})
+	if err != nil {
+		t.Fatalf("Could not load configuration: %s", err.Error())
+	}
+	configHandler := SanitizedHandlerFunc(conf)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "http://0/trickster/config/sanitized", nil)
+
+	configHandler(w, r)
+	resp := w.Result()
+
+	if resp.StatusCode != 200 {
+		t.Errorf("expected 200 got %d.", resp.StatusCode)
+	}
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	body := string(bodyBytes)
+	if !strings.Contains(body, "prom-1:") {
+		t.Errorf("expected sanitized backend name in response")
+	}
+	if strings.Contains(body, "private.example") {
+		t.Errorf("expected sanitized response not to contain private origin")
+	}
+}
+
+func TestSanitizedHandlerPath(t *testing.T) {
+	if got, want := SanitizedHandlerPath("/trickster/config"), "/trickster/config/sanitized"; got != want {
+		t.Errorf("expected %s got %s", want, got)
+	}
+	if got, want := SanitizedHandlerPath("/trickster/config/"), "/trickster/config/sanitized"; got != want {
+		t.Errorf("expected %s got %s", want, got)
+	}
+}
