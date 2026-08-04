@@ -48,9 +48,13 @@ func (c *Client) FastForwardRequest(r *http.Request) (*http.Request, error) {
 		nr.URL.Path = nr.URL.Path[0 : len(nr.URL.Path)-6]
 	}
 	v, _, _ := params.GetRequestValues(nr)
+	evaluationTime := v.Get(upEnd)
 	v.Del(upStart)
 	v.Del(upEnd)
 	v.Del(upStep)
+	if evaluationTime != "" {
+		v.Set(upTime, evaluationTime)
+	}
 	params.SetRequestValues(nr, v)
 	return nr, nil
 }
