@@ -165,6 +165,23 @@ func TestClone(t *testing.T) {
 	})
 }
 
+func TestCachePolicyStep(t *testing.T) {
+	trq := &TimeRangeQuery{Step: time.Millisecond}
+	if got := trq.CachePolicyStep(); got != time.Millisecond {
+		t.Fatalf("policy step = %s", got)
+	}
+	trq.PolicyStep = 15 * time.Second
+	if got := trq.CachePolicyStep(); got != 15*time.Second {
+		t.Fatalf("policy step = %s", got)
+	}
+	if got := trq.Clone().PolicyStep; got != trq.PolicyStep {
+		t.Fatalf("cloned policy step = %s", got)
+	}
+	if got := trq.GetBackfillTolerance(0, 2); got != 30*time.Second {
+		t.Fatalf("backfill tolerance = %s", got)
+	}
+}
+
 func TestSizeTRQ(t *testing.T) {
 	u, _ := url.Parse("http://127.0.0.1/")
 	trq := &TimeRangeQuery{Statement: "1234", Extent: Extent{
@@ -172,8 +189,8 @@ func TestSizeTRQ(t *testing.T) {
 		End:   time.Unix(10, 0),
 	}, Step: time.Duration(5) * time.Second, TemplateURL: u}
 	size := trq.Size()
-	if size != 127 {
-		t.Errorf("expected %d got %d", 127, size)
+	if size != 135 {
+		t.Errorf("expected %d got %d", 135, size)
 	}
 }
 

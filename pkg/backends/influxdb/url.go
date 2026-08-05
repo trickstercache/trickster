@@ -23,6 +23,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/flux"
 	ti "github.com/trickstercache/trickster/v2/pkg/backends/influxdb/influxql"
+	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/promremote"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 
 	"github.com/influxdata/influxql"
@@ -50,6 +51,9 @@ func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
 			return errors.New("parse InfluxDB query for extent rewrite returned no query")
 		}
 		trq.ParsedQuery = t2.ParsedQuery
+	}
+	if promremote.IsParsedQuery(trq.ParsedQuery) {
+		return promremote.SetExtent(r, trq, extent)
 	}
 	switch q := trq.ParsedQuery.(type) {
 	case *influxql.Query:

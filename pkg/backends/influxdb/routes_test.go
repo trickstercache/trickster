@@ -17,9 +17,11 @@
 package influxdb
 
 import (
+	"net/http"
 	"slices"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/promremote"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
@@ -65,8 +67,15 @@ func TestDefaultPathConfigs(t *testing.T) {
 		t.Errorf("expected to find path named: %s", "/")
 	}
 
-	const expectedLen = 3
+	const expectedLen = 4
 	if len(rsc.BackendOptions.Paths) != expectedLen {
 		t.Errorf("expected ordered length to be: %d, got: %d", expectedLen, len(rsc.BackendOptions.Paths))
+	}
+	if !slices.ContainsFunc([]*po.Options(rsc.BackendOptions.Paths),
+		func(pathConfig *po.Options) bool {
+			return pathConfig.Path == promremote.Path && pathConfig.HandlerName == mnQuery &&
+				len(pathConfig.Methods) == 1 && pathConfig.Methods[0] == http.MethodPost
+		}) {
+		t.Errorf("expected remote-read path named: %s", promremote.Path)
 	}
 }
