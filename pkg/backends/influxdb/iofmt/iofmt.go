@@ -35,6 +35,7 @@ const (
 	isFlux                  // 4
 	isFluxInputJSON         // 8
 	isFluxOutputJSON        // 16
+	isPromRemoteRead        // 32
 
 	InfluxqlGet  = isInfluxql
 	InfluxqlPost = isInfluxql + isInfluxqlPost
@@ -44,6 +45,8 @@ const (
 
 	FluxRawJSON = isFlux + isFluxOutputJSON
 	FluxRawCsv  = isFlux
+
+	PromRemoteRead = isPromRemoteRead
 )
 
 var ErrSupportedQueryLanguage = errors.New("unsupported query language")
@@ -62,6 +65,10 @@ func (f Format) IsFluxInputJSON() bool {
 
 func (f Format) IsFluxOutputJSON() bool {
 	return f&isFluxOutputJSON == isFluxOutputJSON
+}
+
+func (f Format) IsPromRemoteRead() bool {
+	return f&isPromRemoteRead == isPromRemoteRead
 }
 
 func (f Format) IsPost() bool {

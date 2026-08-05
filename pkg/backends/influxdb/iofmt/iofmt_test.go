@@ -65,6 +65,15 @@ func TestIsFluxOutputJSON(t *testing.T) {
 	}
 }
 
+func TestIsPromRemoteRead(t *testing.T) {
+	if !PromRemoteRead.IsPromRemoteRead() {
+		t.Fatal("expected remote-read format")
+	}
+	if FluxRawCsv.IsPromRemoteRead() {
+		t.Fatal("flux must not be detected as remote read")
+	}
+}
+
 func TestDetect(t *testing.T) {
 	emptyHeader := make(http.Header)
 	fluxHeader := http.Header{

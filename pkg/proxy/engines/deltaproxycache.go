@@ -260,12 +260,13 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 
 	OldestRetainedTimestamp := time.Time{}
 	if o.TimeseriesEvictionMethod == evictionmethods.EvictionMethodOldest {
-		OldestRetainedTimestamp = now.Truncate(trq.Step).Add(-(trq.Step * time.Duration(o.TimeseriesRetention)))
+		retentionStep := trq.CachePolicyStep()
+		OldestRetainedTimestamp = now.Truncate(retentionStep).Add(-(retentionStep * time.Duration(o.TimeseriesRetention)))
 		if trq.Extent.End.Before(OldestRetainedTimestamp) {
 			logger.Debug("timerange end is too old to consider caching",
 				logging.Pairs{
 					"oldestRetainedTimestamp": OldestRetainedTimestamp,
-					"step":                    trq.Step, "retention": o.TimeseriesRetention,
+					"step":                    retentionStep, "retention": o.TimeseriesRetention,
 				})
 			if trq.OriginalBody != nil {
 				request.SetBody(r, trq.OriginalBody)
