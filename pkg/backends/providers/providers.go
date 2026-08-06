@@ -40,6 +40,8 @@ const (
 	InfluxDBID
 	// ClickHouse represents the ClickHouse backend provider
 	ClickHouseID
+	// Grafana represents the Grafana origin backend provider
+	GrafanaID
 
 	Backends = "backends"
 
@@ -55,6 +57,7 @@ const (
 	Prometheus = "prometheus"
 	ClickHouse = "clickhouse"
 	InfluxDB   = "influxdb"
+	Grafana    = "grafana"
 )
 
 // Names is a map of Providers keyed by string name
@@ -66,6 +69,7 @@ var Names = map[string]Provider{
 	Prometheus:             PrometheusID,
 	InfluxDB:               InfluxDBID,
 	ClickHouse:             ClickHouseID,
+	Grafana:                GrafanaID,
 	Proxy:                  RPID,
 	ReverseProxy:           RPID,
 	ReverseProxyShort:      RPID,

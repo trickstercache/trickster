@@ -8,6 +8,14 @@ Trickster operates as a fully-featured and highly-customizable reverse proxy cac
 
 ---
 
+## Dashboard Origins
+
+### Grafana
+
+Trickster can transparently proxy Grafana and dynamically dispatch supported Grafana-proxied data sources through its time series accelerators. Specify `'grafana'` as the Provider when configuring Trickster. See the [Grafana Origin Support Document](./grafana.md) for supported paths, data source types, and authentication behavior.
+
+---
+
 ## Time Series Databases
 
 ### <img src="./images/external/prom_logo_60.png" width=16 /> Prometheus
