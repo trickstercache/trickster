@@ -141,6 +141,24 @@ var (
 	ErrOutputFormatOnlyForTSM = errors.New("'output_format' option is only valid for provider 'alb' and mechanism 'tsmerge'")
 )
 
+type TSMConfigs struct {
+	TimeSeriesMergeOptions
+	MaxCaptureBytes       int
+	MaxFanoutCaptureBytes int
+	OutputFormat          string
+	MechanismName         string
+}
+
+func NewTSMConfigs(o *Options) *TSMConfigs {
+	return &TSMConfigs{
+		TimeSeriesMergeOptions: o.TSMOptions,
+		MaxCaptureBytes:        o.MaxCaptureBytes,
+		MaxFanoutCaptureBytes:  o.MaxFanoutCaptureBytes,
+		OutputFormat:           o.OutputFormat,
+		MechanismName:          o.MechanismName,
+	}
+}
+
 // NewErrInvalidALBOptions returns an invalid ALB Options error
 func NewErrInvalidALBOptions(backendName string) error {
 	return &InvalidALBOptionsError{
