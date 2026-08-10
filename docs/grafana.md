@@ -17,7 +17,7 @@ See [`simple.grafana.yaml`](../examples/conf/simple.grafana.yaml) for a runnable
 
 ## Data Source Discovery
 
-At startup, Trickster makes a best-effort request to Grafana's `/api/datasources` endpoint. When it receives an unrecognized data source proxy path later, it looks up that data source by numeric ID or UID and remembers the result for subsequent requests.
+At startup, Trickster makes a best-effort request to Grafana's `/api/datasources` endpoint. When it receives an unrecognized data source proxy path later, it looks up a UID through `/api/datasources/uid/:uid`, or refreshes the data source list to resolve a legacy numeric ID, and remembers the result for subsequent requests.
 
 Trickster recognizes both Grafana data source proxy path forms:
 
@@ -51,6 +51,8 @@ Grafana-proxied data sources using the following types are dispatched through th
 | `vertamedia-clickhouse-datasource` | ClickHouse |
 
 Only data sources configured with Grafana's `proxy` access mode are accelerated. Unsupported data source types, browser-access data sources, and all other Grafana UI and API traffic are transparently proxied without caching.
+
+Grafana Live WebSocket connections require a separate WebSocket-capable route; Trickster's HTTP proxy does not tunnel protocol upgrades.
 
 Grafana's `/api/ds/query` endpoint is also transparently proxied. That endpoint can contain multiple queries and data sources in a Grafana data-frame envelope, so it cannot safely reuse a single Trickster time series provider without a dedicated request and response modeler.
 

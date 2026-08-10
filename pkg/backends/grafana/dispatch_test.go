@@ -36,6 +36,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/memory"
 	cacheoptions "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 )
@@ -140,6 +141,50 @@ func TestDataSourceBackendIdentityIncludesProviderAndConfiguration(t *testing.T)
 	}
 }
 
+func TestGetDispatcherSeparatesParentPathOptions(t *testing.T) {
+	client, cache := newGrafanaTestClient(t, "http://127.0.0.1")
+	defer cache.Close()
+	ds := &dataSource{
+		ID: 1, UID: "prom-main", OrgID: 1,
+		Type: providers.Prometheus, Access: "proxy",
+	}
+	ref := dataSourceRef{
+		kind: dataSourceRefUID, value: ds.UID,
+		proxyPrefix: "/api/datasources/proxy/uid/" + ds.UID,
+	}
+	firstPath := po.New()
+	firstPath.Path = "/"
+	firstPath.RequestHeaders = map[string]string{"X-Tenant": "first"}
+	secondPath := firstPath.Clone()
+	secondPath.RequestHeaders["X-Tenant"] = "second"
+
+	first, err := client.getDispatcher(ref, ds, providers.Prometheus, firstPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := client.getDispatcher(ref, ds, providers.Prometheus, secondPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first == second {
+		t.Fatal("different parent path options reused the same dispatcher")
+	}
+	if first.options.HTTPClient != client.HTTPClient() || second.options.HTTPClient != client.HTTPClient() {
+		t.Fatal("data source dispatchers did not reuse the Grafana HTTP client")
+	}
+	firstRoute := first.match("/api/v1/query_range", http.MethodGet)
+	secondRoute := second.match("/api/v1/query_range", http.MethodGet)
+	if firstRoute == nil || secondRoute == nil {
+		t.Fatal("Prometheus query range route was not configured")
+	}
+	if got := firstRoute.options.RequestHeaders["X-Tenant"]; got != "first" {
+		t.Fatalf("first dispatcher tenant = %q, want first", got)
+	}
+	if got := secondRoute.options.RequestHeaders["X-Tenant"]; got != "second" {
+		t.Fatalf("second dispatcher tenant = %q, want second", got)
+	}
+}
+
 func TestGrafanaHandlerCachesPrometheusPerIdentity(t *testing.T) {
 	var metadataRequests atomic.Int32
 	var queryRequests atomic.Int32
@@ -200,12 +245,28 @@ func TestGrafanaHandlerCachesPrometheusPerIdentity(t *testing.T) {
 	if got := sixth.Header().Get(headers.NameTricksterResult); !strings.Contains(got, "kmiss") {
 		t.Fatalf("different auth-proxy user result header = %q, want kmiss", got)
 	}
-
-	if got := queryRequests.Load(); got != 4 {
-		t.Fatalf("Grafana data proxy requests = %d, want 4", got)
+	bearerUserA := make(http.Header)
+	bearerUserA.Set(headers.NameAuthorization, "Bearer user-a")
+	seventh := serveGrafanaRequestWithHeaders(t, client, cache, http.MethodGet, path, bearerUserA, "")
+	if got := seventh.Header().Get(headers.NameTricksterResult); !strings.Contains(got, "kmiss") {
+		t.Fatalf("first bearer user result header = %q, want kmiss", got)
 	}
-	if got := metadataRequests.Load(); got != 4 {
-		t.Fatalf("Grafana metadata requests = %d, want 4", got)
+	eighth := serveGrafanaRequestWithHeaders(t, client, cache, http.MethodGet, path, bearerUserA, "")
+	if got := eighth.Header().Get(headers.NameTricksterResult); !strings.Contains(got, "hit") {
+		t.Fatalf("second bearer user result header = %q, want hit", got)
+	}
+	bearerUserB := make(http.Header)
+	bearerUserB.Set(headers.NameAuthorization, "Bearer user-b")
+	ninth := serveGrafanaRequestWithHeaders(t, client, cache, http.MethodGet, path, bearerUserB, "")
+	if got := ninth.Header().Get(headers.NameTricksterResult); !strings.Contains(got, "kmiss") {
+		t.Fatalf("different bearer user result header = %q, want kmiss", got)
+	}
+
+	if got := queryRequests.Load(); got != 6 {
+		t.Fatalf("Grafana data proxy requests = %d, want 6", got)
+	}
+	if got := metadataRequests.Load(); got != 6 {
+		t.Fatalf("Grafana metadata requests = %d, want 6", got)
 	}
 	client.mu.RLock()
 	dispatcherCount := len(client.dispatchers)

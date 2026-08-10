@@ -76,16 +76,17 @@ func TestDiscoveryHeadersApplyConfiguredIdentityHeaders(t *testing.T) {
 	}
 }
 
-func TestResolveDataSourceSingleflightsNumericLookup(t *testing.T) {
+func TestResolveDataSourceSingleflightsNumericListLookup(t *testing.T) {
 	var requests atomic.Int32
 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/datasources/7" {
+		if r.URL.Path != "/api/datasources" {
 			http.NotFound(w, r)
 			return
 		}
 		requests.Add(1)
 		time.Sleep(20 * time.Millisecond)
-		fmt.Fprint(w, `{"id":7,"uid":"prom-seven","orgId":2,"type":"prometheus","access":"proxy"}`)
+		fmt.Fprint(w, `[{"id":3,"uid":"prom-three","orgId":2,"type":"prometheus","access":"proxy"},`+
+			`{"id":7,"uid":"prom-seven","orgId":2,"type":"prometheus","access":"proxy"}]`)
 	}))
 	defer origin.Close()
 

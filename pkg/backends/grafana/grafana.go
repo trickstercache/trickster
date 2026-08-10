@@ -44,7 +44,7 @@ type Client struct {
 
 	mu          sync.RWMutex
 	dataSources map[string]dataSourceCacheEntry
-	dispatchers map[string]*dataSourceDispatcher
+	dispatchers map[dataSourceDispatcherKey]*dataSourceDispatcher
 	lookupGroup singleflight.Group
 	preloadOnce sync.Once
 }
@@ -57,7 +57,7 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 		clients:     clients,
 		factories:   factories,
 		dataSources: make(map[string]dataSourceCacheEntry),
-		dispatchers: make(map[string]*dataSourceDispatcher),
+		dispatchers: make(map[dataSourceDispatcherKey]*dataSourceDispatcher),
 	}
 	b, err := backends.New(name, o, c.RegisterHandlers, router, cache)
 	c.Backend = b

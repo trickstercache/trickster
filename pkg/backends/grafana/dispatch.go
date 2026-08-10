@@ -77,6 +77,12 @@ type dataSourceDispatcher struct {
 	routes  []*dispatchRoute
 }
 
+type dataSourceDispatcherKey struct {
+	dataSource string
+	proxyPath  string
+	parentPath *po.Options
+}
+
 // GrafanaHandler accelerates supported Grafana data source proxy calls and
 // transparently proxies every other Grafana request.
 func (c *Client) GrafanaHandler(w http.ResponseWriter, r *http.Request) {
@@ -186,11 +192,11 @@ func providerForDataSource(ds *dataSource) (string, bool) {
 func (c *Client) getDispatcher(ref dataSourceRef, ds *dataSource,
 	provider string, parentPath *po.Options,
 ) (*dataSourceDispatcher, error) {
-	parentPathKey := ""
-	if parentPath != nil {
-		parentPathKey = parentPath.Path
+	key := dataSourceDispatcherKey{
+		dataSource: dataSourceIdentity(provider, ds),
+		proxyPath:  ref.proxyPrefix,
+		parentPath: parentPath,
 	}
-	key := dataSourceIdentity(provider, ds) + "|" + ref.proxyPrefix + "|" + parentPathKey
 	c.mu.RLock()
 	dispatcher := c.dispatchers[key]
 	c.mu.RUnlock()
@@ -206,6 +212,12 @@ func (c *Client) getDispatcher(ref dataSourceRef, ds *dataSource,
 	dispatcher, err := c.newDispatcher(ref, ds, provider, parentPath)
 	if err != nil {
 		return nil, err
+	}
+	if len(c.dispatchers) >= maxDataSourceDispatchers {
+		for existingKey := range c.dispatchers {
+			delete(c.dispatchers, existingKey)
+			break
+		}
 	}
 	c.dispatchers[key] = dispatcher
 	return dispatcher, nil
@@ -251,7 +263,9 @@ func (c *Client) newDispatcher(ref dataSourceRef, ds *dataSource, provider strin
 	if err != nil {
 		return nil, err
 	}
-	o.HTTPClient = backend.HTTPClient()
+	// Every dynamic backend still calls Grafana, so share the parent transport
+	// instead of retaining one connection pool per discovered data source.
+	o.HTTPClient = c.HTTPClient()
 	paths := backend.DefaultPathConfigs(o)
 	for _, path := range paths {
 		configureDataSourcePath(path, parentPath)

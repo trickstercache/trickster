@@ -37,13 +37,14 @@ import (
 )
 
 const (
-	dataSourceResponseLimit = 4 * 1024 * 1024
-	metadataRequestTimeout  = 10 * time.Second
-	dataSourceCacheTTL      = 5 * time.Minute
-	maxDataSourceCacheKeys  = 4096
-	grafanaOrgHeader        = "X-Grafana-Org-Id"
-	grafanaAuthProxyHeader  = "X-WEBAUTH-USER"
-	grafanaJWTHeader        = "X-JWT-Assertion"
+	dataSourceResponseLimit  = 4 * 1024 * 1024
+	metadataRequestTimeout   = 10 * time.Second
+	dataSourceCacheTTL       = 5 * time.Minute
+	maxDataSourceCacheKeys   = 4096
+	maxDataSourceDispatchers = 4096
+	grafanaOrgHeader         = "X-Grafana-Org-Id"
+	grafanaAuthProxyHeader   = "X-WEBAUTH-USER"
+	grafanaJWTHeader         = "X-JWT-Assertion"
 )
 
 var errInvalidDataSourceResponse = errors.New("invalid Grafana data source response")
@@ -56,7 +57,7 @@ var grafanaDiscoveryIdentityHeaders = []string{
 	grafanaJWTHeader,
 }
 
-var grafanaCacheIdentityHeaders = grafanaDiscoveryIdentityHeaders[1:]
+var grafanaCacheIdentityHeaders = slices.Clone(grafanaDiscoveryIdentityHeaders)
 
 type dataSource struct {
 	ID        int64          `json:"id"`
@@ -99,8 +100,8 @@ func (c *Client) metadataTimeout() time.Duration {
 }
 
 func (c *Client) preloadDataSources(ctx context.Context, headers http.Header) error {
-	var dataSources []*dataSource
-	if err := c.getJSON(ctx, "/api/datasources", headers, &dataSources); err != nil {
+	dataSources, err := c.listDataSources(ctx, headers)
+	if err != nil {
 		return err
 	}
 	identity := discoveryIdentity(headers)
@@ -131,13 +132,23 @@ func (c *Client) resolveDataSource(ctx context.Context, ref dataSourceRef,
 			return ds, nil
 		}
 
-		endpoint := "/api/datasources/" + ref.value
+		var ds *dataSource
 		if ref.kind == dataSourceRefUID {
-			endpoint = "/api/datasources/uid/" + ref.value
-		}
-		ds := &dataSource{}
-		if err := c.getJSON(ctx, endpoint, headers, ds); err != nil {
-			return nil, err
+			ds = &dataSource{}
+			if err := c.getJSON(ctx, "/api/datasources/uid/"+ref.value, headers, ds); err != nil {
+				return nil, err
+			}
+		} else {
+			dataSources, err := c.listDataSources(ctx, headers)
+			if err != nil {
+				return nil, err
+			}
+			for _, candidate := range dataSources {
+				if validDataSource(candidate) && ref.matches(candidate) {
+					ds = candidate
+					break
+				}
+			}
 		}
 		if !validDataSource(ds) || !ref.matches(ds) {
 			return nil, errInvalidDataSourceResponse
@@ -153,6 +164,14 @@ func (c *Client) resolveDataSource(ctx context.Context, ref dataSourceRef,
 		return nil, errInvalidDataSourceResponse
 	}
 	return ds, nil
+}
+
+func (c *Client) listDataSources(ctx context.Context, headers http.Header) ([]*dataSource, error) {
+	var dataSources []*dataSource
+	if err := c.getJSON(ctx, "/api/datasources", headers, &dataSources); err != nil {
+		return nil, err
+	}
+	return dataSources, nil
 }
 
 func (c *Client) getJSON(ctx context.Context, endpoint string, headers http.Header, out any) error {
