@@ -402,7 +402,7 @@ func TestNilRequestGetters(t *testing.T) {
 }
 
 func TestMiscRequestGetters(t *testing.T) {
-	r := &http.Request{Method: "GET", URL: testURL}
+	r := &http.Request{Method: "GET", URL: urls.Clone(testURL)}
 	fm := scalarGets["method"]
 	fh := scalarGets["hostname"]
 
@@ -418,7 +418,7 @@ func TestMiscRequestGetters(t *testing.T) {
 }
 
 func TestMiscRequestSetters(t *testing.T) {
-	r := &http.Request{Method: "GET", URL: testURL}
+	r := &http.Request{Method: "GET", URL: urls.Clone(testURL)}
 	fp := scalarSets["port"]
 	fh := scalarSets["hostname"]
 

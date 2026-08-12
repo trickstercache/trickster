@@ -37,6 +37,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
+	proxyurls "github.com/trickstercache/trickster/v2/pkg/proxy/urls"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
@@ -202,6 +203,106 @@ func TestDeriveCacheKey(t *testing.T) {
 	ck = pr.DeriveCacheKey("extra")
 	if ck != "test-key" {
 		t.Errorf("expected %s got %s", expected, ck)
+	}
+}
+
+func TestDeriveCacheKeySeparatesRewrittenUpstreams(t *testing.T) {
+	path := po.New()
+	path.CacheKeyParams = []string{"query"}
+
+	derive := func(host string, rewritten bool) string {
+		t.Helper()
+		rsc := request.NewResources(&bo.Options{
+			Scheme: "http",
+			Host:   "origin.example.com:9090",
+		}, path, nil, nil, nil, nil)
+		r := httptest.NewRequest(http.MethodGet,
+			"http://"+host+"/data?query=value", nil)
+		r = request.SetResources(r, rsc)
+		if rewritten {
+			proxyurls.SetUpstreamHost(r, host)
+		}
+		return newProxyRequest(r, nil).DeriveCacheKey("")
+	}
+
+	unmarkedA := derive("one.example.com", false)
+	unmarkedB := derive("two.example.com", false)
+	if unmarkedA != unmarkedB {
+		t.Errorf("inbound hosts unexpectedly changed cache key: %s != %s", unmarkedA, unmarkedB)
+	}
+
+	markedA := derive("one.example.com", true)
+	markedB := derive("two.example.com", true)
+	if markedA == markedB {
+		t.Errorf("rewritten upstreams share cache key %s", markedA)
+	}
+	if markedA == unmarkedA {
+		t.Errorf("rewritten and default upstream share cache key %s", markedA)
+	}
+	if got := derive("one.example.com", true); got != markedA {
+		t.Errorf("same rewritten upstream produced unstable keys: %s != %s", got, markedA)
+	}
+
+	path.KeyHasher = exampleKeyHasher
+	customA := derive("one.example.com", true)
+	customB := derive("two.example.com", true)
+	if customA == customB {
+		t.Errorf("custom hasher reused a key across rewritten upstreams: %s", customA)
+	}
+	if got := derive("one.example.com", false); got != "test-key" {
+		t.Errorf("unrewritten custom key = %q, want %q", got, "test-key")
+	}
+
+	deriveWithoutPath := func(host string) string {
+		rsc := request.NewResources(&bo.Options{
+			Scheme: "http",
+			Host:   "origin.example.com:9090",
+		}, nil, nil, nil, nil, nil)
+		r := httptest.NewRequest(http.MethodGet, "http://frontend.example.com/data", nil)
+		r = request.SetResources(r, rsc)
+		proxyurls.SetUpstreamHost(r, host)
+		return newProxyRequest(r, nil).DeriveCacheKey("")
+	}
+	if first, second := deriveWithoutPath("one.example.com"),
+		deriveWithoutPath("two.example.com"); first == second {
+		t.Errorf("nil path config reused a key across rewritten upstreams: %s", first)
+	}
+}
+
+func TestDeriveCacheKeyUsesFinalRewrittenUpstream(t *testing.T) {
+	path := po.New()
+	path.CacheKeyParams = []string{"query"}
+	backendOptions := &bo.Options{
+		Scheme: "http",
+		Host:   "origin.example.com:9090",
+	}
+
+	derive := func(frontendURL string, rewrite func(*http.Request)) string {
+		t.Helper()
+		rsc := request.NewResources(backendOptions, path, nil, nil, nil, nil)
+		r := httptest.NewRequest(http.MethodGet, frontendURL+"/data?query=value", nil)
+		r = request.SetResources(r, rsc)
+		if rewrite != nil {
+			rewrite(r)
+		}
+		return newProxyRequest(r, nil).DeriveCacheKey("")
+	}
+
+	setTenant := func(r *http.Request) {
+		proxyurls.SetUpstreamHostname(r, "tenant.example.com")
+	}
+	first := derive("http://frontend.example.com:8480", setTenant)
+	second := derive("https://other-frontend.example.com:443", setTenant)
+	if first != second {
+		t.Errorf("same final upstream produced different keys: %s != %s", first, second)
+	}
+
+	defaultKey := derive("http://frontend.example.com:8480", nil)
+	noOpRewrite := derive("http://frontend.example.com:8480", func(r *http.Request) {
+		proxyurls.SetUpstreamHost(r, backendOptions.Host)
+	})
+	if defaultKey != noOpRewrite {
+		t.Errorf("no-op upstream rewrite changed key: %s != %s", defaultKey, noOpRewrite)
 	}
 }
 
