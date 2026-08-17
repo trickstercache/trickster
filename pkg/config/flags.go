@@ -56,7 +56,7 @@ func parseFlags(arguments []string) (*Flags, error) {
 	flagSet.BoolVar(&flags.ValidateConfig, cfValidate, false,
 		"Validates a Trickster config and exits without running the server")
 	flagSet.StringVar(&flags.ConfigPath, cfConfig, "",
-		"Path to Trickster Config File")
+		"Path to a Trickster config file or directory")
 	flagSet.StringVar(&flags.LogLevel, cfLogLevel, "",
 		"Level of Logging to use (debug, info, warn, error)")
 	flagSet.IntVar(&flags.InstanceID, cfInstanceID, 0,
