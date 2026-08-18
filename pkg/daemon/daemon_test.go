@@ -318,6 +318,49 @@ func TestHupSuccess(t *testing.T) {
 	waitForPort(t, secondPort)
 }
 
+func TestHupConfigDirectoryAfterAddingSource(t *testing.T) {
+	dir := t.TempDir()
+	firstPort := availablePort(t)
+	if err := os.WriteFile(filepath.Join(dir, "10-base.yaml"),
+		[]byte(runnableConfig(firstPort)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	conf, clients, err := setup.BootstrapConfig("-config", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	group := listener.NewGroup()
+	t.Cleanup(func() { _ = group.Shutdown(0) })
+	si := &instance.ServerInstance{Listeners: group}
+	if err := setup.ApplyConfig(si, conf, clients, nil, nil, group); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if si.HealthChecker != nil {
+			si.HealthChecker.Shutdown()
+		}
+	})
+	waitForPort(t, firstPort)
+
+	secondPort := availablePort(t)
+	override := fmt.Sprintf("listeners:\n  default:\n    port: %d\n", secondPort)
+	if err := os.WriteFile(filepath.Join(dir, "20-listener.yaml"), []byte(override), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ok, err := Hup(si, "test", "-config", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("expected the added directory source to trigger a reload")
+	}
+	if si.Config == conf {
+		t.Error("expected the instance to hold the reloaded directory config")
+	}
+	waitForPort(t, secondPort)
+}
+
 func TestReloadGoroutinePanicHandler(t *testing.T) {
 	// the handler only logs; it must tolerate any panic value
 	reloadGoroutinePanic("test-site", "test-source")("boom", []byte("stack"))

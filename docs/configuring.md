@@ -12,13 +12,35 @@ Note that while the Configuration file provides a very robust number of knobs yo
 
 Internal Defaults are set for all configuration values, and are overridden by the configuration methods described below. All Internal Defaults are described in [examples/conf/example.full.yaml](../examples/conf/example.full.yaml) comments.
 
-## Configuration File
+## Configuration Files
 
-Trickster accepts a `-config /path/to/trickster.yaml` command line argument to specify a custom path to a Trickster configuration file. If the provided path cannot be accessed by Trickster, it will exit with a fatal error.
+Trickster accepts a `-config /path/to/trickster.yaml` command line argument to specify a custom configuration file. The path can also name a directory containing configuration files. If a provided path cannot be accessed by Trickster, it will exit with a fatal error.
 
 When a `-config` parameter is not provided, Trickster will check for the presence of a config file at `/etc/trickster/trickster.yaml` and load it if present, or proceed with the Internal Defaults if not present.
 
 Refer to [examples/conf/example.full.yaml](../examples/conf/example.full.yaml) for full documentation on format of a configuration file.
+
+### Multiple Configuration Files
+
+When `-config` names a file, Trickster loads that file first and then loads supported files from a sibling `conf.d` directory, if the directory exists. The primary file can select a different include directory:
+
+```yaml
+main:
+  config_include_directory: config-parts
+```
+
+A relative `config_include_directory` is resolved from the directory containing the primary file. An explicitly configured include directory must exist. Only the primary file can set this option; included files cannot redirect configuration discovery.
+
+When `-config` names a directory, Trickster loads supported files directly from that directory. The directory must contain at least one supported file, and files in this mode cannot set `main.config_include_directory`.
+
+In both modes, Trickster:
+
+* Loads only direct regular files whose names do not start with `.`, with `.conf`, `.yaml`, or `.yml` extensions matched case-insensitively.
+* Loads directory entries in ascending lexical filename order. The primary file, when present, always comes first.
+* Recursively merges mappings. A later scalar or sequence replaces the earlier value, while a later mapping adds to or overrides individual keys in the earlier mapping.
+* Requires each file participating in a multi-source configuration to have a mapping root, one YAML document, and no duplicate keys.
+
+For example, a fragment containing only `backends.prometheus.origin_url` can change that field without removing the other fields under the `prometheus` backend. Use `null`, rather than an empty mapping, when a later file must clear an earlier mapping value.
 
 ### Configuring Secrets or Sensitive Information
 
@@ -49,7 +71,7 @@ Trickster will then check for and evaluate the following Environment Variables:
 Finally, Trickster will check for and evaluate the following Command Line Arguments:
 
 * `-log-level INFO` - Level of Logging that Trickster will output
-* `-config /path/to/trickster.yaml` - See [Configuration File](#configuration-file) section above
+* `-config /path/to/trickster.yaml` - See [Configuration Files](#configuration-files) section above
 * `-origin-url http://prometheus.example.com:9090` - The default origin URL for proxying all http requests
 * `-provider prometheus` - The type of [supported backend server](./supported-origin-types.md)
 * `-proxy-port 8480` - Listener port for the HTTP Proxy Endpoint
@@ -92,13 +114,13 @@ The top-level `frontend` section and listener address/port fields under `metrics
 
 ## Configuration Validation
 
-Trickster can validate a configuration file by running `trickster -validate-config -config /path/to/config`. Trickster will load the configuration and exit with the validation result, without running the configuration.
+Trickster can validate configuration files by running `trickster -validate-config -config /path/to/config`. Trickster will load the file or directory and exit with the validation result, without running the configuration.
 
 ## Reloading the Configuration
 
-Trickster can gracefully reload the configuration file from disk without impacting the uptime and responsiveness of the application.
+Trickster can gracefully reload its configuration sources from disk without impacting the uptime and responsiveness of the application.
 
-Trickster provides 2 ways to reload the Trickster configuration: by requesting an HTTP endpoint, or by sending a SIGHUP (e.g., `kill -1 $TRICKSTER_PID`) to the Trickster process. In both cases, the underlying running Configuration File must have been modified such that the last modified time of the file is different than from when it was previously loaded.
+Trickster provides 2 ways to reload the Trickster configuration: by requesting an HTTP endpoint, or by sending a SIGHUP (e.g., `kill -1 $TRICKSTER_PID`) to the Trickster process. In both cases, at least one effective configuration source must have changed since the configuration was loaded.
 
 ### Config Reload via SIGHUP
 
@@ -110,7 +132,7 @@ Trickster provides an HTTP Endpoint for viewing the running Configuration, as we
 
 The reload endpoint is configured by default to listen on address `127.0.0.1` and port `8484`, at `/trickster/config/reload`. These values can be customized, as demonstrated in the example.full.yaml The examples in this section will assume the defaults. Set the port to `-1` to disable the reload HTTP interface altogether.
 
-To reload the config, simply make a `GET` request to the reload endpoint. If the underlying configuration file has changed, the configuration will be reloaded, and the caller will receive a success response. If the underlying file has not changed, the caller will receive an unsuccessful response, and reloading will be disabled for the duration of the Reload Rate Limiter. By default, this is 3 seconds, but can be customized as demonstrated in the example config file. The Reload Rate Limiter applies to the HTTP interface only, and not SIGHUP.
+To reload the config, simply make a `GET` request to the reload endpoint. If an underlying configuration source has changed, or a supported file has been added to or removed from a configured directory, the configuration will be reloaded and the caller will receive a success response. If the configuration sources have not changed, the caller will receive an unsuccessful response, and reloading will be disabled for the duration of the Reload Rate Limiter. By default, this is 3 seconds, but can be customized as demonstrated in the example config file.
 
 If a listener address or port changes, Trickster drains the old listener before starting its replacement. Listeners whose network settings do not change retain their open sockets and receive the refreshed router in place. Removed or newly unused listeners are drained and stopped, while newly mapped listeners are started. The drain period is configurable and defaults to 30 seconds. The Drain Timeout also applies to old log files when a new log filename is provided.
 

@@ -6,11 +6,15 @@ If you would like to contribute to this project you can do so through GitHub by 
 
 * If you have a trivial fix or improvement, go ahead and create a pull request and the Maintainers will review it.
 
+* If you want to work on an [open Issue](https://github.com/trickstercache/trickster/issues), leave a comment on the issue asking to be made the assignee. Do not start work on an issue until it has been assigned to you. Issue assignments are determined by the Maintainers on a case-by-case basis. Do not expect to be assigned every issue you request.
+
 * If you plan to do something more involved, first discuss your ideas on our slack channel, #trickster, on the CNCF Slack Instance. This will avoid unnecessary work and surely give you and us a good deal of inspiration.
 
 * Relevant coding style guidelines are the [Go Code Review Comments](https://code.google.com/p/go-wiki/wiki/CodeReviewComments) and the _Formatting and style_ section of Peter Bourgon's [Go: Best Practices for Production Environments](http://peter.bourgon.org/go-in-production/#formatting-and-style).
 
 * Before your contribution can be accepted, you must sign off your commits to signify acceptance of the [DCO](https://github.com/probot/dco#how-it-works).
+
+* To keep the reviewer backlog in check, no contributor should have more than five (5) open pull requests (per-contributor) at any time without prior discussion with the maintainers.
 
 ## Use of AI-Assisted Development Tools
 

@@ -22,6 +22,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -81,7 +82,7 @@ func TestSetExtent(t *testing.T) {
 }
 
 func TestFastForwardURL(t *testing.T) {
-	expected := "q=up"
+	expected := "q=up&time=1"
 
 	conf, err := config.Load([]string{
 		"-origin-url", "none:9090", "-provider",
@@ -120,6 +121,111 @@ func TestFastForwardURL(t *testing.T) {
 	_, err = pc.FastForwardRequest(r)
 	if err != nil {
 		t.Error(err)
+	}
+}
+
+func TestFastForwardRequestPromotesEndToTime(t *testing.T) {
+	conf, err := config.Load([]string{
+		"-origin-url", "none:9090", "-provider",
+		providers.Prometheus, "-log-level", "debug",
+	})
+	if err != nil {
+		t.Fatalf("Could not load configuration: %s", err.Error())
+	}
+
+	client, err := NewClient("default", conf.Backends["default"], nil, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pc := client.(*Client)
+
+	tests := []struct {
+		name        string
+		method      string
+		target      string
+		body        string
+		contentType string
+		wantTime    string
+	}{
+		{
+			name:     "GET Unix timestamp",
+			method:   http.MethodGet,
+			target:   "/api/v1/query_range?query=up&start=1&end=1785801280&step=60",
+			wantTime: "1785801280",
+		},
+		{
+			name:     "GET fractional Unix timestamp",
+			method:   http.MethodGet,
+			target:   "/api/v1/query_range?query=up&start=1&end=1785801280.25&step=60",
+			wantTime: "1785801280.25",
+		},
+		{
+			name:     "GET RFC3339 timestamp",
+			method:   http.MethodGet,
+			target:   "/api/v1/query_range?query=up&start=1&end=2026-08-03T23%3A54%3A40Z&step=60",
+			wantTime: "2026-08-03T23:54:40Z",
+		},
+		{
+			name:        "POST form timestamp",
+			method:      http.MethodPost,
+			target:      "/api/v1/query_range?stats=all",
+			body:        "query=up&start=1&end=1785801280.5&step=60",
+			contentType: "application/x-www-form-urlencoded",
+			wantTime:    "1785801280.5",
+		},
+		{
+			name:     "range end replaces irrelevant time",
+			method:   http.MethodGet,
+			target:   "/api/v1/query_range?query=up&start=1&end=1785801280&step=60&time=old",
+			wantTime: "1785801280",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var body io.Reader
+			if test.body != "" {
+				body = strings.NewReader(test.body)
+			}
+			r, err := http.NewRequest(test.method, test.target, body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if test.contentType != "" {
+				r.Header.Set("Content-Type", test.contentType)
+			}
+			r = request.SetResources(r, &request.Resources{})
+
+			got, err := pc.FastForwardRequest(r)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.URL.Path != "/api/v1/query" {
+				t.Fatalf("path got %q want %q", got.URL.Path, "/api/v1/query")
+			}
+			values := got.URL.Query()
+			if gotTime := values.Get(upTime); gotTime != test.wantTime {
+				t.Errorf("time got %q want %q", gotTime, test.wantTime)
+			}
+			for _, name := range []string{upStart, upEnd, upStep} {
+				if values.Has(name) {
+					t.Errorf("unexpected range parameter %q=%q", name, values.Get(name))
+				}
+			}
+			if got.Method == http.MethodPost {
+				b, err := io.ReadAll(got.Body)
+				if err != nil {
+					t.Fatal(err)
+				}
+				form, err := url.ParseQuery(string(b))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if gotTime := form.Get(upTime); gotTime != test.wantTime {
+					t.Errorf("POST body time got %q want %q", gotTime, test.wantTime)
+				}
+			}
+		})
 	}
 }
 

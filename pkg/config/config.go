@@ -21,7 +21,6 @@ package config
 
 import (
 	"fmt"
-	"io/fs"
 	"os"
 	"sync"
 	"time"
@@ -101,18 +100,22 @@ type MainConfig struct {
 	// ServerName represents the server name that is conveyed in Via headers to upstream origins
 	// defaults to os.Hostname
 	ServerName string `yaml:"server_name,omitempty"`
+	// ConfigIncludeDirectory optionally overrides the default sibling conf.d directory.
+	ConfigIncludeDirectory string `yaml:"config_include_directory,omitempty"`
 
-	configFilePath      string
-	configFilesPath     []string
-	configLastModified  time.Time
-	configFilesLastMod  []time.Time
-	configRateLimitTime time.Time
-	stalenessCheckLock  sync.Mutex
+	configFilePath          string
+	configSourcePlan        configSourcePlan
+	configSourceFingerprint string
+	configLastModified      time.Time
+	configRateLimitTime     time.Time
+	stalenessCheckLock      sync.Mutex
 }
 
 func (mc *MainConfig) SetStalenessInfo(fp string, lm, rlt time.Time) {
 	mc.stalenessCheckLock.Lock()
 	mc.configFilePath = fp
+	mc.configSourcePlan = configSourcePlan{}
+	mc.configSourceFingerprint = ""
 	mc.configLastModified = lm
 	mc.configRateLimitTime = rlt
 	mc.stalenessCheckLock.Unlock()
@@ -127,9 +130,7 @@ func NewConfig() *Config {
 		},
 		Logging: lo.New(),
 		Main: &MainConfig{
-			ServerName:         hn,
-			configFilesPath:    make([]string, 0),
-			configFilesLastMod: make([]time.Time, 0),
+			ServerName: hn,
 		},
 		MgmtConfig: mgmt.New(),
 		Metrics:    mo.New(),
@@ -148,70 +149,31 @@ func NewConfig() *Config {
 	}
 }
 
-func (c *Config) loadConfigs(flags *Flags) error {
-	ok, err := c.isDir(flags)
-	if err != nil {
-		return err
-	}
-
-	if !ok {
-		return c.loadFile(flags)
-	}
-	return c.loadAndMergeFiles(flags)
-}
-
-// loadFile loads application configuration from a YAML-formatted file.
+// loadFile loads application configuration from a YAML-formatted file or directory.
 func (c *Config) loadFile(flags *Flags) error {
-	b, err := os.ReadFile(flags.ConfigPath)
+	plan, sources, err := loadConfigSources(flags.ConfigPath)
 	if err != nil {
 		return err
 	}
-	err = c.loadYAMLConfig(string(b))
-	if err != nil {
-		return err
-	}
-	c.Main.configFilePath = flags.ConfigPath
-	c.Main.configLastModified = c.CheckFileLastModified("")
-	return nil
-}
-
-// loadAndMergeFiles loads application configuration from multiple YAML files
-func (c *Config) loadAndMergeFiles(flags *Flags) error {
-	files, err := fs.Glob(os.DirFS(flags.ConfigPath), "*.yaml")
-	if err != nil {
-		return err
-	}
-
-	for _, file := range files {
-		path := flags.ConfigPath + "/" + file
-		data, err := os.ReadFile(path)
+	configData := sources[0].data
+	if plan.mode == configSourceModeDirectory || len(sources) > 1 {
+		configData, err = mergeConfigSources(plan, sources)
 		if err != nil {
 			return err
 		}
-
-		if err = c.loadYAMLConfig(string(data)); err != nil {
-			return err
-		}
-
-		c.Main.configFilesPath = append(
-			c.Main.configFilesPath,
-			path,
-		)
-		c.Main.configFilesLastMod = append(
-			c.Main.configFilesLastMod,
-			c.CheckFileLastModified(path),
-		)
 	}
+	if err := c.loadYAMLConfig(string(configData)); err != nil {
+		return err
+	}
+	if c.Main == nil {
+		c.Main = &MainConfig{}
+	}
+	snapshot := snapshotConfigSources(plan, sources, nil)
+	c.Main.configFilePath = flags.ConfigPath
+	c.Main.configSourcePlan = plan
+	c.Main.configSourceFingerprint = snapshot.fingerprint
+	c.Main.configLastModified = snapshot.lastModified
 	return nil
-}
-
-func (c *Config) isDir(flags *Flags) (bool, error) {
-	finfo, err := os.Stat(flags.ConfigPath)
-	if err != nil {
-		return false, err
-	}
-
-	return finfo.IsDir(), nil
 }
 
 // loadYAMLConfig loads application configuration from a YAML-formatted byte slice.
@@ -241,25 +203,20 @@ func (c *Config) loadYAMLConfig(yml string) error {
 	return nil
 }
 
-// CheckFileLastModified returns the last modified date of the running config file, if present
-func (c *Config) CheckFileLastModified(confFile string) time.Time {
-	if c.Main == nil {
+// CheckFileLastModified returns the latest modification time among the running config sources.
+func (c *Config) CheckFileLastModified() time.Time {
+	if c.Main == nil || c.Main.configFilePath == "" {
 		return time.Time{}
 	}
-
-	path := confFile
-	if path == "" {
-		path = c.Main.configFilePath
-		if path == "" {
-			return time.Time{}
-		}
+	if c.Main.configSourcePlan.mode != 0 &&
+		c.Main.configSourcePlan.rootPath == c.Main.configFilePath {
+		return inspectConfigSources(c.Main.configSourcePlan).lastModified
 	}
-
-	fInfo, err := os.Stat(path)
+	file, err := os.Stat(c.Main.configFilePath)
 	if err != nil {
 		return time.Time{}
 	}
-	return fInfo.ModTime()
+	return file.ModTime()
 }
 
 // Process converts various raw config options into internal data structures
@@ -303,6 +260,7 @@ func (c *Config) Clone() *Config {
 
 	nc.Main.InstanceID = c.Main.InstanceID
 	nc.Main.ServerName = c.Main.ServerName
+	nc.Main.ConfigIncludeDirectory = c.Main.ConfigIncludeDirectory
 
 	nc.MgmtConfig = c.MgmtConfig.Clone()
 	nc.Listeners = c.Listeners.Clone()
@@ -316,11 +274,13 @@ func (c *Config) Clone() *Config {
 	nc.legacyMetricsUsed = c.legacyMetricsUsed
 	nc.legacyMgmtUsed = c.legacyMgmtUsed
 
+	c.Main.stalenessCheckLock.Lock()
 	nc.Main.configFilePath = c.Main.configFilePath
-	nc.Main.configFilesPath = c.Main.configFilesPath
+	nc.Main.configSourcePlan = c.Main.configSourcePlan
+	nc.Main.configSourceFingerprint = c.Main.configSourceFingerprint
 	nc.Main.configLastModified = c.Main.configLastModified
-	nc.Main.configFilesLastMod = c.Main.configFilesLastMod
 	nc.Main.configRateLimitTime = c.Main.configRateLimitTime
+	c.Main.stalenessCheckLock.Unlock()
 
 	nc.Metrics.ListenAddress = c.Metrics.ListenAddress
 	nc.Metrics.ListenPort = c.Metrics.ListenPort
@@ -373,15 +333,16 @@ func (c *Config) Clone() *Config {
 	return nc
 }
 
-// IsStale returns true if the running config is stale versus the config on disk
+// IsStale returns true if the running config is stale versus its sources on disk.
 func (c *Config) IsStale() bool {
+	if c == nil || c.Main == nil {
+		return false
+	}
 	c.Main.stalenessCheckLock.Lock()
 	defer c.Main.stalenessCheckLock.Unlock()
 
-	if c.Main == nil ||
-		(len(c.Main.configFilesPath) == 0 &&
-			(c.Main.configFilePath == "" ||
-				time.Now().Before(c.Main.configRateLimitTime))) {
+	if c.Main.configFilePath == "" ||
+		time.Now().Before(c.Main.configRateLimitTime) {
 		return false
 	}
 
@@ -390,6 +351,11 @@ func (c *Config) IsStale() bool {
 	}
 
 	c.Main.configRateLimitTime = time.Now().Add(time.Duration(c.MgmtConfig.ReloadRateLimit))
+	if c.Main.configSourcePlan.mode != 0 &&
+		c.Main.configSourcePlan.rootPath == c.Main.configFilePath {
+		snapshot := inspectConfigSources(c.Main.configSourcePlan)
+		return snapshot.fingerprint != c.Main.configSourceFingerprint
+	}
 	t := c.CheckFileLastModified()
 	if t.IsZero() {
 		return false
@@ -400,10 +366,12 @@ func (c *Config) IsStale() bool {
 // CheckAndMarkReloadInProgress checks if the config is stale and
 // marks it as being reloaded to prevent duplicate reloads.
 func (c *Config) CheckAndMarkReloadInProgress() bool {
+	if c == nil || c.Main == nil {
+		return false
+	}
 	c.Main.stalenessCheckLock.Lock()
 	defer c.Main.stalenessCheckLock.Unlock()
-	if c.Main == nil ||
-		(c.Main.configFilePath == "" && len(c.Main.configFilesPath) == 0) ||
+	if c.Main.configFilePath == "" ||
 		time.Now().Before(c.Main.configRateLimitTime) {
 		return false
 	}
@@ -411,6 +379,16 @@ func (c *Config) CheckAndMarkReloadInProgress() bool {
 		c.MgmtConfig = mgmt.New()
 	}
 	c.Main.configRateLimitTime = time.Now().Add(time.Duration(c.MgmtConfig.ReloadRateLimit))
+	if c.Main.configSourcePlan.mode != 0 &&
+		c.Main.configSourcePlan.rootPath == c.Main.configFilePath {
+		snapshot := inspectConfigSources(c.Main.configSourcePlan)
+		isStale := snapshot.fingerprint != c.Main.configSourceFingerprint
+		if isStale {
+			c.Main.configSourceFingerprint = snapshot.fingerprint
+			c.Main.configLastModified = snapshot.lastModified
+		}
+		return isStale
+	}
 	t := c.CheckFileLastModified()
 	if t.IsZero() {
 		return false
@@ -448,13 +426,10 @@ func (c *Config) String() string {
 	return ""
 }
 
-// ConfigFilePath returns the file path from which this configuration is based
+// ConfigFilePath returns the file or directory path from which this configuration is based.
 func (c *Config) ConfigFilePath() string {
 	if c.Main != nil {
-		if len(c.Main.configFilesPath) == 0 {
-			return c.Main.configFilePath
-		}
-		return c.Flags.ConfigPath
+		return c.Main.configFilePath
 	}
 	return ""
 }
