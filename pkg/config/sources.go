@@ -71,7 +71,12 @@ type configMetadata struct {
 func loadConfigSources(configPath string) (configSourcePlan, []configSource, error) {
 	info, err := os.Stat(configPath)
 	if err != nil {
-		return configSourcePlan{}, nil, fmt.Errorf("stat config path %q: %w", configPath, err)
+		// Preserve the error shape returned by the previous single-file loader.
+		pathError := &os.PathError{}
+		if errors.As(err, &pathError) {
+			err = &os.PathError{Op: "open", Path: configPath, Err: pathError.Err}
+		}
+		return configSourcePlan{}, nil, err
 	}
 
 	if info.IsDir() {

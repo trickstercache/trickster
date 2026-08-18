@@ -17,6 +17,7 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -168,6 +169,27 @@ backends:
 	}
 	if time.Duration(config.Backends["secondary"].Timeout) != 2*time.Minute {
 		t.Errorf("aliased timeout = %s; want 2m", time.Duration(config.Backends["secondary"].Timeout))
+	}
+}
+
+func TestLoadConfigMissingPathError(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "missing.yaml")
+	_, err := Load([]string{"-config", path})
+	if err == nil {
+		t.Fatal("expected an error for a missing config path")
+	}
+	var pathError *os.PathError
+	if !errors.As(err, &pathError) {
+		t.Fatalf("error = %T %v; want *os.PathError", err, err)
+	}
+	if pathError.Op != "open" {
+		t.Errorf("error operation = %q; want %q", pathError.Op, "open")
+	}
+	if pathError.Path != path {
+		t.Errorf("error path = %q; want %q", pathError.Path, path)
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("error = %v; want os.ErrNotExist", err)
 	}
 }
 
