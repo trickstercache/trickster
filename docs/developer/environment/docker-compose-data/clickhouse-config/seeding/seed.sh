@@ -30,7 +30,9 @@
 # So developers can run this once every 2 months to always have "real-time" data
 # in their local dev environment.
 
-cd seeding
+set -eu
+
+cd /seeding
 
 if date -v1d >/dev/null 2>&1; then
     # MacOS
@@ -62,6 +64,20 @@ download_file_if_uncached() {
     fi
 }
 
+wait_for_clickhouse() {
+    attempts=30
+    until clickhouse-client --host "${CH_SERVER_ADDR:-clickhouse}" --port 9000 \
+        --user default --query "SELECT 1" >/dev/null 2>&1; do
+        attempts=$((attempts - 1))
+        if [ "$attempts" -eq 0 ]; then
+            echo "ClickHouse did not become ready" >&2
+            return 1
+        fi
+        echo "waiting for ClickHouse to become ready..."
+        sleep 2
+    done
+}
+
 create_truncate_table_clickhouse() {
     echo "truncating trips table"
     clickhouse-client --host "${CH_SERVER_ADDR:-clickhouse}" --port 9000 \
@@ -83,6 +99,7 @@ mkdir -p data
 download_file_if_uncached "$FILE1" "$URL1"
 download_file_if_uncached "$FILE2" "$URL2"
 
+wait_for_clickhouse
 create_truncate_table_clickhouse
 
 load_file_transform_to_clickhouse "$FILE1"

@@ -355,7 +355,14 @@ get-msgpack:
 developer-start:
 	@cd docs/developer/environment && docker compose up -d
 	@echo "Waiting for Redis to be ready..."
-	@timeout 30 sh -c 'until printf "PING\r\n" | nc 127.0.0.1 6379 2>/dev/null | grep -q PONG; do sleep 1; done'
+	@cd docs/developer/environment && if ! timeout 30 sh -c \
+		'until response=$$(docker compose exec -T redis redis-cli ping 2>&1); do \
+			echo "PING -> $${response:-no response}"; \
+			sleep 1; \
+		done; \
+		echo "PING -> $$response"'; then \
+		echo "WARNING: timed out waiting for Redis readiness; continuing anyway"; \
+	fi
 	@echo "Waiting for Prometheus to be ready..."
 	@timeout 120 sh -c 'until curl -sf http://127.0.0.1:9090/-/ready >/dev/null 2>&1; do sleep 2; done'
 	

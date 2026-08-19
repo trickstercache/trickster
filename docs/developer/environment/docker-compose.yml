@@ -3,12 +3,12 @@ services:
   # caches
 
   redis:
-    image: redis:7-alpine
+    image: redis:8-alpine
     restart: always
     ports:
      - 6379:6379
     volumes:
-     - ./docker-compose-data/redis-data:/data
+     - redis-data:/data
     command: redis-server --appendonly yes --stop-writes-on-bgsave-error no
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -19,7 +19,7 @@ services:
   # ui's
 
   grafana:
-    image: grafana/grafana:11.6.0
+    image: grafana/grafana:13.1.3
     user: nobody
     environment:
       - GF_INSTALL_PLUGINS=vertamedia-clickhouse-datasource
@@ -39,7 +39,7 @@ services:
   # TSDBs
 
   prometheus:
-    image: prom/prometheus:v3.11.3
+    image: prom/prometheus:v3.13.2
     user: nobody
     volumes:
       - ./docker-compose-data/prometheus-config:/etc/prometheus
@@ -58,11 +58,11 @@ services:
 
   # influxdb 2.x
   influxdb2:
-    image: influxdb:2.7
+    image: influxdb:2.9
     volumes:
       # Mount for influxdb data directory and configuration
       - ./docker-compose-data/influxdb2-config/config.yml:/etc/influxdb2/config.yml
-      - influxdbv2:/.influxdbv2
+      - influxdbv2:/var/lib/influxdb2
     build:
       context: .
       network: host
@@ -76,7 +76,7 @@ services:
   influxdb2_seed:
     links:
       - influxdb2
-    image: influxdb:2.7
+    image: influxdb:2.9
     volumes:
       - ./docker-compose-data/influxdb2-config/setup-influxdb2.sh:/bin/setup-influxdb2.sh
   # Use these same configurations parameters in your telegraf configuration, mytelegraf.conf.
@@ -92,7 +92,7 @@ services:
 
   # clickhouse
   clickhouse:
-    image: clickhouse/clickhouse-server:25.3
+    image: clickhouse/clickhouse-server:26.7
     ports:
      - 9000:9000
      - 8123:8123
@@ -101,13 +101,19 @@ services:
       network: host
     volumes:
       - ./docker-compose-data/clickhouse-config/users/default-user.xml:/etc/clickhouse-server/users.d/default-user.xml
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+      start_period: 5s
     restart: always
 
   # clickouse-client, for seeding clickhouse on startup
   clickhouse_seed:
     links:
       - clickhouse
-    image: clickhouse/clickhouse-server:25.3
+    image: clickhouse/clickhouse-server:26.7
     volumes:
       - ./docker-compose-data/clickhouse-config/seeding:/seeding
     entrypoint: /seeding/seed.sh
@@ -115,7 +121,8 @@ services:
       context: .
       network: host
     depends_on:
-      - clickhouse
+      clickhouse:
+        condition: service_healthy
 
   # Mocks
 
@@ -131,9 +138,8 @@ services:
   # Tracing
 
   jaeger:
-    image: jaegertracing/all-in-one:1.67.0
+    image: jaegertracing/jaeger:2.20.0
     ports:
-     - 5775:5775/udp
      - 6831:6831/udp
      - 6832:6832/udp
      - 5778:5778
@@ -149,7 +155,7 @@ services:
   # polling
 
   telegraf:
-    image: telegraf:1.34-alpine
+    image: telegraf:1.39-alpine
     restart: always
     volumes:
       - ./docker-compose-data/telegraf-config/telegraf.conf:/etc/telegraf/telegraf.conf
@@ -159,3 +165,4 @@ services:
 volumes:
   influxdbv2:
   prometheus-data:
+  redis-data:
