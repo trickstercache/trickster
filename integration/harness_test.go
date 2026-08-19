@@ -224,7 +224,7 @@ func writeTestConfig(t *testing.T, configPath string,
 	c.Listeners["mgmt"].ListenPort = mgmtPort
 	c.Listeners["mgmt"].ListenAddress = "127.0.0.1"
 	if mysqlListener := c.Listeners["mysql1"]; mysqlListener != nil {
-		mysqlListener.ListenAddress = "127.0.0.1"
+		mysqlListener.ListenAddress = "0.0.0.0"
 		mysqlListener.ListenPort = mysqlPort
 	}
 	if c.MgmtConfig == nil {

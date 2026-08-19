@@ -21,6 +21,8 @@ services:
   grafana:
     image: grafana/grafana:13.1.3
     user: nobody
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       - GF_INSTALL_PLUGINS=vertamedia-clickhouse-datasource
     volumes:
@@ -45,6 +47,8 @@ services:
   prometheus:
     image: prom/prometheus:v3.13.2
     user: nobody
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./docker-compose-data/prometheus-config:/etc/prometheus
       - prometheus-data:/prometheus
@@ -144,6 +148,8 @@ services:
   # mysql
   mysql:
     image: mysql:8.4
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     command:
       - '--local-infile=1'
       - '--default-time-zone=+00:00'
