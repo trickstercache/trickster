@@ -60,6 +60,20 @@ load_seed_metadata() {
     TARGET_DROPOFF_MAX_EPOCH=$((SOURCE_DROPOFF_MAX_EPOCH + SHIFT_SECONDS))
 }
 
+wait_for_clickhouse() {
+    attempts=30
+    until clickhouse-client --host "${CH_SERVER_ADDR:-clickhouse}" --port 9000 \
+        --user default --query "SELECT 1" >/dev/null 2>&1; do
+        attempts=$((attempts - 1))
+        if [ "$attempts" -eq 0 ]; then
+            echo "ClickHouse did not become ready" >&2
+            return 1
+        fi
+        echo "waiting for ClickHouse to become ready..."
+        sleep 2
+    done
+}
+
 create_truncate_table_clickhouse() {
     echo "truncating trips table"
     clickhouse_cmd < create_truncate_trips_table.sql
@@ -136,6 +150,7 @@ validate_seed() {
 mkdir -p data
 load_seed_metadata
 
+wait_for_clickhouse
 create_truncate_table_clickhouse
 
 load_file_transform_to_clickhouse "$FILE1"

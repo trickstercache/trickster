@@ -647,9 +647,7 @@ func TestDeltaProxyCacheRequestRangeMissChunks(t *testing.T) {
 		t.Error(err)
 	}
 
-	// Give time for the object to be written to cache in a separate goroutine from response
-	time.Sleep(time.Millisecond * 10)
-
+	// Issue the next request immediately: the prior cache write must complete before the handler returns.
 	// Test Range Miss Low End
 
 	extr.Start = extr.Start.Add(time.Duration(-3) * time.Hour)

@@ -129,7 +129,7 @@ jobs:
         run: |
           cd docs/developer/environment
           docker compose ps
-          docker compose logs prometheus mysql grafana --tail=30
+          docker compose logs --tail=30 redis prometheus mysql grafana 
       - name: Run integration tests (with coverage)
         run: make integration-cover
       - name: Run integration tests (with race detection enabled)
