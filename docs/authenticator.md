@@ -6,6 +6,10 @@ Authenticator resources are defined globally by name, and then mapped into any B
 
 Authenticators work with all Backend provider types. Requests are handled by their respective Authenticators before all other Handlers (e.g., Caches, Rules, Request Rewrites, ALB Routes, etc.).
 
+Native MySQL listeners terminate `mysql_native_password` authentication and
+have stricter credential-source requirements than HTTP authenticators. See the
+[MySQL Provider Guide](mysql.md#direct-backend-configuration).
+
 If a request is routed via a Trickster ALB or Rule Backend through to multiple other Backends - each having different Authenticator configurations - the authentication behavior is currently undefined. In an upcoming Beta release, we will define this use case to either use the Authenticator config (if set) of the very first Backend that handled the request; or to use the first defined Authenticator regardless of how deep into the Backend chain it is.
 
 By default, when an Authenticator handles and successfully authenticates a request, the request's Auth credentials (e.g., Authorization Header for Basic Auth) are stripped before the request is cloned for any necessary proxying. Setting `proxy_preserve: true` will preserve these headers instead of stripping them.

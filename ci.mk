@@ -37,6 +37,7 @@ release-artifacts: clean
 	cp ./README.md $(PACKAGE_DIR)
 	cp ./CONTRIBUTING.md $(PACKAGE_DIR)
 	cp ./LICENSE $(PACKAGE_DIR)
+	cp ./NOTICE $(PACKAGE_DIR)
 	cp ./examples/conf/*.yaml $(CONF_DIR)
 
 	GOOS=darwin  GOARCH=amd64 CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(TAGVER).darwin-amd64  -v $(TRICKSTER_MAIN)/*.go

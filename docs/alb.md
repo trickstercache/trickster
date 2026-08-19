@@ -333,6 +333,13 @@ Here is the visual representation of this configuration:
 
 The User Router mechanism is used to control a Request's destination Backend based on the username in the request. A default Backend (for no-user and users not in the manifest) can be configured, as well as a Backend per-user.
 
+Native MySQL listeners use a deliberately narrower User Router topology than
+HTTP backends: one authenticated listener-facing User Router may select only
+direct terminal MySQL backends, selection is sticky for the session, and
+`to_user`/`to_credential` remapping is rejected. See the
+[MySQL Provider Guide](mysql.md#protocol-aware-user-router) for the complete
+authentication, routing, health, cache-identity, and no-route contract.
+
 When a User Router ALB is configured to use an [Authenticator](./authenticator.md), the ALB can also modify a Request's credentials before passing it off to the destination Backend. In the graphic below, user `casey` will be routed to the `readersBackend`, which proxies to a read-only database server with the `dbreader` credentials; while user `taylor` will be routed to the `writersBackend`, which proxies to a read-write database server with the `dbwriter` credentials. Here is the example configuration corresponding to the graphic:
 
 ```yaml

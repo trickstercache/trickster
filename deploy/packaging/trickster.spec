@@ -29,10 +29,14 @@ echo rm -rf %{buildroot}
 %{__install} -d %{buildroot}%{_localstatedir}/log/%{name}
 %{__install} -d %{buildroot}%{_localstatedir}/run/%{name}
 %{__install} -d %{buildroot}%{_unitdir}
+%{__install} -d %{buildroot}%{_licensedir}/%{name}
 
 %{__install} -p $RPM_SOURCE_DIR/%{name} %{buildroot}%{_bindir}
 %{__install} -p $RPM_SOURCE_DIR/%{name}.service %{buildroot}%{_unitdir}/%{name}.service
 %{__install} -p $RPM_SOURCE_DIR/%{name}.yaml %{buildroot}%{_sysconfdir}/%{name}/%{name}.yaml
+%{__install} -p $RPM_SOURCE_DIR/LICENSE %{buildroot}%{_licensedir}/%{name}/LICENSE
+%{__install} -p $RPM_SOURCE_DIR/NOTICE %{buildroot}%{_licensedir}/%{name}/NOTICE
+%{__cp} -a $RPM_SOURCE_DIR/third-party-licenses %{buildroot}%{_licensedir}/%{name}/
 
 %files
 %defattr(644, root, root, 755)
@@ -43,6 +47,10 @@ echo rm -rf %{buildroot}
 
 %dir %{_sysconfdir}/%{name}
 %config %{_sysconfdir}/%{name}/%{name}.yaml
+
+%license %{_licensedir}/%{name}/LICENSE
+%license %{_licensedir}/%{name}/NOTICE
+%license %{_licensedir}/%{name}/third-party-licenses
 
 %dir %attr(755, %{name}, %{name}) %{_localstatedir}/log/%{name}
 %dir %attr(755, %{name}, %{name}) %{_localstatedir}/run/%{name}
