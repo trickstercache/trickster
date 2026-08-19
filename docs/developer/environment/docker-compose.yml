@@ -8,7 +8,7 @@ services:
     ports:
      - 6379:6379
     volumes:
-     - ./docker-compose-data/redis-data:/data
+     - redis-data:/data
     command: redis-server --appendonly yes --stop-writes-on-bgsave-error no
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -165,3 +165,4 @@ services:
 volumes:
   influxdbv2:
   prometheus-data:
+  redis-data:
