@@ -53,13 +53,19 @@ const (
 	StateStopping
 )
 
+// server is the common surface of http.Server and tcpProxyServer needed for
+// graceful shutdown of a Listener.
+type server interface {
+	Shutdown(context.Context) error
+}
+
 // Listener is the Trickster net.Listener implmementation
 type Listener struct {
 	net.Listener
 	tlsConfig    *tls.Config
 	tlsSwapper   sw.CertSwapper
 	routeSwapper *switcher.SwitchHandler
-	server       *http.Server
+	server       server
 	exitOnError  atomic.Bool
 	state        int32
 	readyCh      chan struct{}
@@ -439,7 +445,7 @@ func (lg *Group) UpdateFrontendRouters(mainRouter http.Handler, adminRouter http
 // UpdateRouter will swap out the router for the Group with the provided name
 func (lg *Group) UpdateRouter(routerName string, router http.Handler) {
 	lg.listenersLock.Lock()
-	if r, ok := lg.members[routerName]; ok {
+	if r, ok := lg.members[routerName]; ok && r.routeSwapper != nil {
 		r.routeSwapper.Update(router)
 	}
 	defer lg.listenersLock.Unlock()

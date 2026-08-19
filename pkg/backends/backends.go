@@ -25,6 +25,10 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 )
 
+type protocolHealthProber interface {
+	HealthCheckProbe() healthcheck.Probe
+}
+
 // Backends represents a map of Backends keyed by Name
 type Backends map[string]Backend
 
@@ -33,6 +37,7 @@ type Backends map[string]Backend
 // sets the initial status of the provided targets (e.g., after a config reload)
 func (b Backends) StartHealthChecks(knownStatuses healthcheck.StatusLookup) (healthcheck.HealthChecker, error) {
 	hc := healthcheck.New()
+	registrar := hc.(healthcheck.Registrar)
 	for k, c := range b {
 		bo := c.Configuration()
 		if k == "frontend" {
@@ -55,7 +60,13 @@ func (b Backends) StartHealthChecks(knownStatuses healthcheck.StatusLookup) (hea
 		} else {
 			bo.HealthCheck.Overlay(hco)
 		}
-		st, err := hc.Register(k, bo.Provider, bo.HealthCheck, c.HealthCheckHTTPClient())
+		var st *healthcheck.Status
+		var err error
+		if prober, ok := c.(protocolHealthProber); ok {
+			st, err = registrar.RegisterProbe(k, bo.Provider, bo.HealthCheck, prober.HealthCheckProbe())
+		} else {
+			st, err = hc.Register(k, bo.Provider, bo.HealthCheck, c.HealthCheckHTTPClient())
+		}
 		if err != nil {
 			return nil, err
 		}

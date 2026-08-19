@@ -47,6 +47,13 @@ type HealthChecker interface {
 	Subscribe(chan bool)
 }
 
+// Registrar extends the health-check lifecycle with protocol-neutral target
+// registration. Status consumers can continue to depend on HealthChecker.
+type Registrar interface {
+	HealthChecker
+	RegisterProbe(name, description string, options *ho.Options, probe Probe) (*Status, error)
+}
+
 // Lookup is a map of named Target references
 type Lookup map[string]*target
 
@@ -105,8 +112,22 @@ func (hc *healthChecker) Register(name, description string, o *ho.Options,
 	if err != nil {
 		return nil, err
 	}
+	return hc.registerTarget(t), nil
+}
+
+func (hc *healthChecker) RegisterProbe(name, description string, o *ho.Options,
+	probe Probe,
+) (*Status, error) {
+	t, err := newProbeTarget(name, description, o, probe)
+	if err != nil {
+		return nil, err
+	}
+	return hc.registerTarget(t), nil
+}
+
+func (hc *healthChecker) registerTarget(t *target) *Status {
 	hc.mtx.Lock()
-	if t2, ok := hc.targets[name]; ok && t2 != nil {
+	if t2, ok := hc.targets[t.name]; ok && t2 != nil {
 		// synchronous stop so the old probe loop exits before the new one starts
 		t2.Stop()
 	}
@@ -116,7 +137,7 @@ func (hc *healthChecker) Register(name, description string, o *ho.Options,
 	if t.interval > 0 {
 		t.Start(context.Background())
 	}
-	return t.status, nil
+	return t.status
 }
 
 func (hc *healthChecker) RegisterVirtual(name, description string) *Status {

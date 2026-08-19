@@ -17,8 +17,11 @@
 package backends
 
 import (
+	"context"
+	"net/http/httptest"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
@@ -112,6 +115,18 @@ func TestStartHealthChecks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
+
+	c2p := &protocolTestBackend{testBackend: testBackend{Backend: c2}}
+	b = Backends{"test2": c2p}
+	hc, err := b.StartHealthChecks(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	hc.Status("test2").Prober()(w)
+	if c2p.calls != 1 || w.Code != 200 {
+		t.Fatalf("protocol health probe calls = %d, status = %d", c2p.calls, w.Code)
+	}
 }
 
 type testBackend struct {
@@ -120,6 +135,18 @@ type testBackend struct {
 
 func (tb *testBackend) DefaultHealthCheckConfig() *ho.Options {
 	return ho.New()
+}
+
+type protocolTestBackend struct {
+	testBackend
+	calls int
+}
+
+func (tb *protocolTestBackend) HealthCheckProbe() healthcheck.Probe {
+	return func(context.Context) error {
+		tb.calls++
+		return nil
+	}
 }
 
 func TestUsesCache(t *testing.T) {

@@ -18,6 +18,7 @@ package healthcheck
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"testing"
 	"time"
@@ -83,6 +84,35 @@ func TestRegister(t *testing.T) {
 	_, err = hc.Register("test", "test", nil, http.DefaultClient)
 	if err != ho.ErrNoOptionsProvided {
 		t.Errorf("expected %v got %v", ho.ErrNoOptionsProvided, err)
+	}
+}
+
+func TestRegisterProbe(t *testing.T) {
+	hc := New().(*healthChecker)
+	o := ho.New()
+	probeErr := errors.New("native probe failed")
+	status, err := hc.RegisterProbe("native", "mysql", o, func(context.Context) error {
+		return probeErr
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status == nil || status.Prober() == nil || hc.Status("native") != status {
+		t.Fatal("protocol probe was not registered with a demand prober")
+	}
+	if _, err := hc.RegisterProbe("nil-options", "mysql", nil, func(context.Context) error {
+		return nil
+	}); !errors.Is(err, ho.ErrNoOptionsProvided) {
+		t.Fatalf("nil options error = %v", err)
+	}
+	if _, err := hc.RegisterProbe("nil-probe", "mysql", o, nil); err == nil {
+		t.Fatal("nil protocol probe was accepted")
+	}
+	httpOptions := ho.New()
+	httpOptions.Path = "/health"
+	if _, err := hc.RegisterProbe("http-options", "mysql", httpOptions,
+		func(context.Context) error { return nil }); err == nil {
+		t.Fatal("HTTP-only options were accepted for a protocol probe")
 	}
 }
 
