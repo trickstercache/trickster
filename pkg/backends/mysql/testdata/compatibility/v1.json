@@ -1,0 +1,173 @@
+{
+  "schema_version": 1,
+  "corpus_version": "mysql-grafana-v1",
+  "minimum_interval": "1m",
+  "omissions": [
+    "dashboard-query-inspector-capture",
+    "builder-and-code-mode-pairs"
+  ],
+  "cases": [
+    {
+      "name": "grafana_time_projection",
+      "macro_source": ["$__time(ts)"],
+      "query_origin": "Grafana MySQL built-in macro expansion",
+      "grafana_version": "11.6.0",
+      "expanded_sql": "SELECT UNIX_TIMESTAMP(ts) AS time_sec, value FROM telemetry WHERE ts BETWEEN FROM_UNIXTIME(1785542400) AND FROM_UNIXTIME(1785628800) ORDER BY ts",
+      "expected": {"cache_mode": "object", "analysis_reason": "unsupported_bucket", "canonical_policy": "none", "extent_rendering": false},
+      "rationale": "A timestamp projection without a fixed grouping cadence is safe only for whole-object caching."
+    },
+    {
+      "name": "grafana_time_epoch_projection",
+      "macro_source": ["$__timeEpoch(ts)"],
+      "query_origin": "Grafana MySQL built-in macro expansion",
+      "grafana_version": "11.6.0",
+      "expanded_sql": "SELECT UNIX_TIMESTAMP(ts) AS time_sec, SUM(value) AS total FROM telemetry WHERE tenant_id = 42 AND ts BETWEEN FROM_UNIXTIME(1785542400) AND FROM_UNIXTIME(1785628800) GROUP BY ts ORDER BY ts",
+      "expected": {"cache_mode": "object", "analysis_reason": "unsupported_bucket", "canonical_policy": "none", "extent_rendering": false},
+      "rationale": "The epoch projection does not establish reusable complete buckets."
+    },
+    {
+      "name": "grafana_time_filter_between",
+      "macro_source": ["$__timeGroupAlias(ts,'5m')", "$__timeFilter(ts)"],
+      "query_origin": "Grafana MySQL built-in macro expansion",
+      "grafana_version": "11.6.0",
+      "expanded_sql": "SELECT CAST(CAST(UNIX_TIMESTAMP(ts)/(300) AS SIGNED)*300 AS SIGNED) AS time, COUNT(*) AS samples FROM telemetry WHERE ts BETWEEN FROM_UNIXTIME(1785542400) AND FROM_UNIXTIME(1785628800) GROUP BY time ORDER BY time",
+      "expected": {"cache_mode": "object", "analysis_reason": "unsafe_predicate", "canonical_policy": "none", "extent_rendering": false},
+      "rationale": "Grafana's inclusive BETWEEN upper bound may select a partial final bucket, so DPC fails closed to OPC."
+    },
+    {
+      "name": "grafana_time_from_to_fixed_interval",
+      "macro_source": ["$__timeGroupAlias(ts,'1m')", "$__timeFrom()", "$__timeTo()"],
+      "query_origin": "Grafana macros composed into a half-open predicate",
+      "grafana_version": "11.6.0",
+      "expanded_sql": "SELECT CAST(CAST(UNIX_TIMESTAMP(ts)/(60) AS SIGNED)*60 AS SIGNED) AS time, AVG(value) AS mean_value FROM telemetry WHERE site = 'denver' AND ts >= FROM_UNIXTIME(1785542400) AND ts < FROM_UNIXTIME(1785628800) GROUP BY time ORDER BY time",
+      "expected": {
+        "cache_mode": "delta", "analysis_reason": "delta_cacheable", "cadence": "1m", "phase": "0s",
+        "input_unit": "datetime_sql", "output_unit": "unix_seconds",
+        "lower_bound": "2026-08-01T00:00:00Z", "lower_inclusive": true,
+        "upper_bound": "2026-08-02T00:00:00Z", "upper_inclusive": false,
+        "output_column": "time", "group_columns": [], "canonical_policy": "range_independent", "extent_rendering": true,
+        "canonical_contains": [":__trickster_mysql_lower", ":__trickster_mysql_upper", "site = 'denver'"],
+        "canonical_excludes": ["1785542400", "1785628800"]
+      },
+      "rationale": "A fixed cadence with an inclusive lower and exclusive upper raw-time range is DPC-safe."
+    },
+    {
+      "name": "grafana_time_group_interval_variable",
+      "macro_source": ["$__timeGroup(ts,$__interval)", "$__timeFrom()", "$__timeTo()"],
+      "query_origin": "Grafana $__interval expanded using the corpus 1m minimum",
+      "grafana_version": "11.6.0",
+      "expanded_sql": "SELECT CAST(CAST(UNIX_TIMESTAMP(ts)/(60) AS SIGNED)*60 AS SIGNED) AS bucket, MAX(value) AS peak FROM telemetry WHERE ts >= FROM_UNIXTIME(1785542400) AND ts < FROM_UNIXTIME(1785628800) GROUP BY bucket ORDER BY bucket",
+      "expected": {
+        "cache_mode": "delta", "analysis_reason": "delta_cacheable", "cadence": "1m", "phase": "0s",
+        "input_unit": "datetime_sql", "output_unit": "unix_seconds",
+        "lower_bound": "2026-08-01T00:00:00Z", "lower_inclusive": true,
+        "upper_bound": "2026-08-02T00:00:00Z", "upper_inclusive": false,
+        "output_column": "bucket", "group_columns": [], "canonical_policy": "range_independent", "extent_rendering": true,
+        "canonical_contains": [":__trickster_mysql_lower", ":__trickster_mysql_upper"],
+        "canonical_excludes": ["1785542400", "1785628800"]
+      },
+      "rationale": "After $__interval becomes the documented 1m literal, the query has a deterministic DPC cadence."
+    },
+    {
+      "name": "grafana_unix_epoch_filter",
+      "macro_source": ["$__unixEpochGroupAlias(epoch_seconds,'5m')", "$__unixEpochFilter(epoch_seconds)"],
+      "query_origin": "Grafana MySQL built-in macro expansion",
+      "grafana_version": "11.6.0",
+      "expanded_sql": "SELECT CAST(CAST(epoch_seconds/(300) AS SIGNED)*300 AS SIGNED) AS time, COUNT(*) AS samples FROM telemetry WHERE epoch_seconds > 1785542400 AND epoch_seconds < 1785628800 GROUP BY time ORDER BY time",
+      "expected": {"cache_mode": "object", "analysis_reason": "unsafe_predicate", "canonical_policy": "none", "extent_rendering": false},
+      "rationale": "Grafana's strict lower comparison omits the first boundary and is not a reusable half-open DPC range."
+    },
+    {
+      "name": "grafana_unix_epoch_from_to",
+      "macro_source": ["$__unixEpochGroupAlias(epoch_seconds,'5m')", "$__unixEpochFrom()", "$__unixEpochTo()"],
+      "query_origin": "Grafana epoch macros composed into a half-open predicate",
+      "grafana_version": "11.6.0",
+      "expanded_sql": "SELECT CAST(CAST(epoch_seconds/(300) AS SIGNED)*300 AS SIGNED) AS time, SUM(requests) AS requests FROM service_rollups WHERE region = 'us-west' AND epoch_seconds >= 1785542400 AND epoch_seconds < 1785628800 GROUP BY time ORDER BY time",
+      "expected": {
+        "cache_mode": "delta", "analysis_reason": "delta_cacheable", "cadence": "5m", "phase": "0s",
+        "input_unit": "unix_seconds", "output_unit": "unix_seconds",
+        "lower_bound": "2026-08-01T00:00:00Z", "lower_inclusive": true,
+        "upper_bound": "2026-08-02T00:00:00Z", "upper_inclusive": false,
+        "output_column": "time", "group_columns": [], "canonical_policy": "range_independent", "extent_rendering": true,
+        "canonical_contains": [":__trickster_mysql_lower", ":__trickster_mysql_upper", "region = 'us-west'"],
+        "canonical_excludes": ["1785542400", "1785628800"]
+      },
+      "rationale": "Epoch-second bounds and a fixed five-minute cadence are DPC-safe when expressed half-open."
+    },
+    {
+      "name": "grafana_unix_epoch_group_manual_alias",
+      "macro_source": ["$__unixEpochGroup(epoch_seconds,'5m')", "$__unixEpochFrom()", "$__unixEpochTo()"],
+      "query_origin": "Grafana grouping macro with caller-provided alias",
+      "grafana_version": "11.6.0",
+      "expanded_sql": "SELECT CAST(CAST(epoch_seconds/(300) AS SIGNED)*300 AS SIGNED) AS bucket, COUNT(*) AS events FROM service_events WHERE epoch_seconds >= 1785542400 AND epoch_seconds < 1785628800 GROUP BY bucket ORDER BY bucket",
+      "expected": {
+        "cache_mode": "delta", "analysis_reason": "delta_cacheable", "cadence": "5m", "phase": "0s",
+        "input_unit": "unix_seconds", "output_unit": "unix_seconds",
+        "lower_bound": "2026-08-01T00:00:00Z", "lower_inclusive": true,
+        "upper_bound": "2026-08-02T00:00:00Z", "upper_inclusive": false,
+        "output_column": "bucket", "group_columns": [], "canonical_policy": "range_independent", "extent_rendering": true,
+        "canonical_contains": [":__trickster_mysql_lower", ":__trickster_mysql_upper"],
+        "canonical_excludes": ["1785542400", "1785628800"]
+      },
+      "rationale": "The non-alias macro is DPC-safe when the query supplies a stable output alias."
+    },
+    {
+      "name": "native_timestamp_half_open",
+      "macro_source": ["$__timeGroupAlias(recorded_at,'15m')", "$__timeFrom()", "$__timeTo()"],
+      "query_origin": "Production-shaped TIMESTAMP query",
+      "grafana_version": "11.6.0",
+      "expanded_sql": "SELECT CAST(CAST(UNIX_TIMESTAMP(recorded_at)/(900) AS SIGNED)*900 AS SIGNED) AS time, datacenter, AVG(cpu_percent) AS cpu FROM host_metrics WHERE environment = 'production' AND recorded_at >= FROM_UNIXTIME(1785542400) AND recorded_at < FROM_UNIXTIME(1785628800) GROUP BY time, datacenter ORDER BY time, datacenter",
+      "expected": {
+        "cache_mode": "delta", "analysis_reason": "delta_cacheable", "cadence": "15m", "phase": "0s",
+        "input_unit": "datetime_sql", "output_unit": "unix_seconds",
+        "lower_bound": "2026-08-01T00:00:00Z", "lower_inclusive": true,
+        "upper_bound": "2026-08-02T00:00:00Z", "upper_inclusive": false,
+        "output_column": "time", "group_columns": ["datacenter"], "canonical_policy": "range_independent", "extent_rendering": true,
+        "canonical_contains": [":__trickster_mysql_lower", ":__trickster_mysql_upper", "environment = 'production'", "datacenter"],
+        "canonical_excludes": ["1785542400", "1785628800"]
+      },
+      "rationale": "A realistic filtered and dimensioned TIMESTAMP aggregation retains complete-bucket DPC semantics."
+    },
+    {
+      "name": "epoch_nanoseconds_half_open",
+      "macro_source": ["custom nanosecond grouping adaptation"],
+      "query_origin": "Production nanosecond event table",
+      "expanded_sql": "SELECT CAST(CAST(observed_ns/(300000000000) AS SIGNED)*300000000000 AS SIGNED) AS time, sensor_type, MAX(reading) AS peak FROM sensor_events WHERE customer_id = 17 AND observed_ns >= 1785542400000000000 AND observed_ns < 1785628800000000000 GROUP BY time, sensor_type ORDER BY time, sensor_type",
+      "expected": {
+        "cache_mode": "delta", "analysis_reason": "delta_cacheable", "cadence": "5m", "phase": "0s",
+        "input_unit": "unix_nanoseconds", "output_unit": "unix_nanoseconds",
+        "lower_bound": "2026-08-01T00:00:00Z", "lower_inclusive": true,
+        "upper_bound": "2026-08-02T00:00:00Z", "upper_inclusive": false,
+        "output_column": "time", "group_columns": ["sensor_type"], "canonical_policy": "range_independent", "extent_rendering": true,
+        "canonical_contains": [":__trickster_mysql_lower", ":__trickster_mysql_upper", "customer_id = 17"],
+        "canonical_excludes": ["1785542400000000000", "1785628800000000000"]
+      },
+      "rationale": "Nanosecond integer storage is DPC-safe when cadence and half-open bounds use the same unit."
+    },
+    {
+      "name": "epoch_between_is_opc",
+      "macro_source": ["$__unixEpochGroupAlias(epoch_seconds,'5m')", "inclusive BETWEEN"],
+      "query_origin": "Inclusive epoch range regression",
+      "grafana_version": "11.6.0",
+      "expanded_sql": "SELECT CAST(CAST(epoch_seconds/(300) AS SIGNED)*300 AS SIGNED) AS time, COUNT(*) AS samples FROM telemetry WHERE epoch_seconds BETWEEN 1785542400 AND 1785628800 GROUP BY time ORDER BY time",
+      "expected": {"cache_mode": "object", "analysis_reason": "unsafe_predicate", "canonical_policy": "none", "extent_rendering": false},
+      "rationale": "Inclusive BETWEEN remains OPC because the upper boundary can expose a partial final bucket."
+    },
+    {
+      "name": "floor_qualified_zero_phase",
+      "macro_source": ["initial FLOOR bucket support"],
+      "query_origin": "Production query using explicit FLOOR grouping",
+      "expanded_sql": "SELECT FLOOR(UNIX_TIMESTAMP(m.`when`) / 300) * 300 AS bucket, m.cab_type AS metric, COUNT(*) AS trips, AVG(m.fare) AS mean_fare FROM `analytics`.`metrics` AS m WHERE m.`when` >= FROM_UNIXTIME(1785542400) AND m.`when` < FROM_UNIXTIME(1785628800) GROUP BY 1, 2 ORDER BY 1, 2",
+      "expected": {
+        "cache_mode": "delta", "analysis_reason": "delta_cacheable", "cadence": "5m", "phase": "0s",
+        "input_unit": "datetime_sql", "output_unit": "unix_seconds",
+        "lower_bound": "2026-08-01T00:00:00Z", "lower_inclusive": true,
+        "upper_bound": "2026-08-02T00:00:00Z", "upper_inclusive": false,
+        "output_column": "bucket", "group_columns": ["metric"], "canonical_policy": "range_independent", "extent_rendering": true,
+        "canonical_contains": [":__trickster_mysql_lower", ":__trickster_mysql_upper", "FLOOR(UNIX_TIMESTAMP(m.`when`) / 300) * 300", "analytics.metrics"],
+        "canonical_excludes": ["1785542400", "1785628800"]
+      },
+      "rationale": "Initial FLOOR support is limited to a positive equal literal divisor/multiplier and therefore has a compile-time cadence and Unix-epoch-zero phase."
+    }
+  ]
+}

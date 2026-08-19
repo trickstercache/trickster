@@ -74,3 +74,9 @@ func TestIsSupportedTimeSeriesProvider(t *testing.T) {
 		t.Error("expected true")
 	}
 }
+
+func TestMySQLUsesCache(t *testing.T) {
+	if NonCacheBackends().Contains(MySQL) {
+		t.Fatal("MySQL must be initialized and validated with a cache")
+	}
+}

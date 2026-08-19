@@ -270,6 +270,36 @@ request_rewriters:
 	}
 }
 
+func TestConfigStringsRedactDSNAndAuthenticatorPasswords(t *testing.T) {
+	conf := NewConfig()
+	err := conf.loadYAMLConfig(`
+authenticators:
+  mysql-clients:
+    provider: basic
+    users:
+      grafana: authenticator-super-secret
+backends:
+  mysql:
+    provider: mysql
+    origin_url: mysql://origin:dsn-super-secret@mysql.internal.example/database
+    authenticator_name: mysql-clients
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for name, output := range map[string]string{
+		"String":          conf.String(),
+		"SanitizedString": conf.SanitizedString(),
+	} {
+		for _, secret := range []string{"dsn-super-secret", "authenticator-super-secret"} {
+			if strings.Contains(output, secret) {
+				t.Errorf("%s exposed %q:\n%s", name, secret, output)
+			}
+		}
+	}
+}
+
 func TestSanitizedCloneEdgeCases(t *testing.T) {
 	conf := NewConfig()
 	err := conf.loadYAMLConfig(`

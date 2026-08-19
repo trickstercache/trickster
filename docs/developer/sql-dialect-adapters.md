@@ -1,11 +1,18 @@
 # Adding a SQL Dialect Adapter
 
-Trickster accelerates SQL-based time series backends (currently ClickHouse) by
+Trickster accelerates SQL-based time series backends (currently ClickHouse and
+MySQL) by
 parsing each query into a dialect-native abstract syntax tree, analyzing it
 for delta-cache eligibility, and rendering cache-miss origin requests from an
 immutable query plan. This document describes the architecture and the
-requirements a new SQL dialect adapter (for example, MySQL) must satisfy. The
-ClickHouse implementation in `pkg/backends/clickhouse` is the reference.
+requirements a new SQL dialect adapter must satisfy. The ClickHouse and MySQL
+implementations in `pkg/backends/clickhouse` and `pkg/backends/mysql` are the
+references for HTTP and native-protocol backends, respectively.
+
+The initial MySQL compatibility and safety boundaries are normative in
+[`mysql-release-contract.md`](mysql-release-contract.md). Changes that broaden
+MySQL protocol, authentication, TLS, session-state, caching, or routing behavior
+must update that contract and its test evidence.
 
 ## The Parser–Adapter–Plan–Renderer Lifecycle
 
@@ -77,11 +84,15 @@ metric label values.
 
 Fail-closed rules that apply to every dialect:
 
-- Predicates on the **raw timestamp column** are delta-eligible only when
-  they describe complete buckets: an aligned inclusive lower bound and an
-  aligned exclusive upper bound. Anything else (strict lower, inclusive
-  upper, `BETWEEN`, unaligned values) risks caching a partial aggregate as a
-  complete bucket and must fall back to the object cache.
+- Predicates on the **raw timestamp column** use an inclusive lower bound and
+  an exclusive upper bound. Aligned bounds describe complete buckets directly.
+  An adapter may accelerate unaligned half-open ranges by rounding the lower
+  bound up and the upper bound down to the query cadence when the client
+  consumes only complete buckets, or by proving equivalent partial-edge
+  handling. When no complete bucket remains, both bounds normalize to the
+  rounded-up lower boundary. Strict lower bounds, inclusive upper bounds, and
+  `BETWEEN` remain object-cache fallbacks unless an adapter proves equivalent
+  handling.
 - Predicates on the **bucket output** are discrete and may be normalized
   from any comparator to the first and last included buckets.
 - A query that cannot be delta-cached should remain object-cacheable
