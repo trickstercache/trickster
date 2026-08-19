@@ -35,23 +35,18 @@ func TestTrickster(t *testing.T) {
 		startTrickster(t, ctx, expected, "-config", "testdata/cfg-notfound.yaml")
 	})
 
-	cfg := writeTestConfig(t, 8578, 8579, 8586)
-	h := tricksterHarness{
-		ConfigPath:  cfg,
-		BaseAddr:    "127.0.0.1:8578",
-		MetricsAddr: "127.0.0.1:8579",
-	}
+	h := configHarness(t)
 	h.start(t)
 
 	t.Run("start and stop", func(t *testing.T) {
-		metrics := checkTricksterMetrics(t, "127.0.0.1:8579")
+		metrics := checkTricksterMetrics(t, h.MetricsAddr)
 		t.Log("Trickster metrics count:", len(metrics))
 	})
 
 	t.Run("health endpoint", func(t *testing.T) {
-		waitForTrickster(t, "127.0.0.1:8579", "/trickster/health")
+		waitForTrickster(t, h.MetricsAddr, "/trickster/health")
 
-		req, err := http.NewRequest("GET", "http://127.0.0.1:8579/trickster/health", nil)
+		req, err := http.NewRequest("GET", "http://"+h.MetricsAddr+"/trickster/health", nil)
 		require.NoError(t, err)
 		req.Header.Set("Accept", "application/json")
 		resp, err := http.DefaultClient.Do(req)
@@ -64,7 +59,7 @@ func TestTrickster(t *testing.T) {
 		t.Logf("health response: %s", string(body))
 
 		var health struct {
-			Title       string `json:"title"`
+			Title       string                  `json:"title"`
 			Available   []struct{ Name string } `json:"available"`
 			Unavailable []struct{ Name string } `json:"unavailable"`
 		}

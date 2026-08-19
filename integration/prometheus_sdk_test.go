@@ -36,7 +36,7 @@ func newPromSDKClient(t *testing.T, address, backend string) v1.API {
 }
 
 func TestPrometheusSDK(t *testing.T) {
-	h := developerHarness()
+	h := developerHarness(t)
 	h.start(t)
 	waitForPrometheusData(t, "127.0.0.1:9090")
 
@@ -149,7 +149,7 @@ func TestPrometheusSDK(t *testing.T) {
 }
 
 func TestPrometheusSDK_ALB(t *testing.T) {
-	h := albHarness()
+	h := albHarness(t)
 	h.start(t)
 	waitForPrometheusData(t, "127.0.0.1:9090")
 
