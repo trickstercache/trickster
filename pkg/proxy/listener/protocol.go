@@ -39,7 +39,10 @@ type protocolRestartKeyer interface {
 	ProtocolRestartKey() string
 }
 
-type protocolServer interface {
+// ProtocolServer is the lifecycle surface implemented by native protocol
+// servers. Protocol adapters construct these without exposing provider details
+// to listener setup.
+type ProtocolServer interface {
 	server
 	Serve(net.Listener) error
 }
@@ -47,7 +50,7 @@ type protocolServer interface {
 // StartProtocolListener starts a protocol-terminating server on a Trickster
 // listener, preserving the common connection limit, metrics, and drain lifecycle.
 func (lg *Group) StartProtocolListener(listenerName, protocol, address string,
-	port, connectionsLimit int, svr protocolServer, f func(), drainTimeout time.Duration,
+	port, connectionsLimit int, svr ProtocolServer, f func(), drainTimeout time.Duration,
 ) error {
 	l := &Listener{readyCh: make(chan struct{}), server: svr}
 	l.exitOnError.Store(f != nil)

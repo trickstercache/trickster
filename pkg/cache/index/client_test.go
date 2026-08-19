@@ -31,9 +31,11 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/memory"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
+	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/util/atomicx"
 
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -311,11 +313,15 @@ func TestIndexedClient(t *testing.T) {
 			require.Equal(t, int64(10), state.ObjectCount)
 			require.Equal(t, len(state.Objects), 10)
 			// force reap, expect some evictions (back to the MaxSizeObjects count)
+			evictions := metrics.CacheEvents.WithLabelValues("reapTest", provider,
+				"eviction", "size_objects")
+			evictionsBefore := testutil.ToFloat64(evictions)
 			ic2.forceReap <- true
 			<-ic2.hasReaped
 			state = getIndexedClientState(ic2)
 			require.Equal(t, int64(5), state.ObjectCount)
 			require.Equal(t, len(state.Objects), 5)
+			require.Equal(t, evictionsBefore+1, testutil.ToFloat64(evictions))
 		})
 	})
 

@@ -39,7 +39,7 @@ func (c *Config) TLSCertConfigForListener(listenerName string) (*tls.Config, err
 	if err != nil {
 		return nil, err
 	}
-	if !o.ServeTLS {
+	if !o.ServeTLS && o.Protocol == listener.ProtocolHTTP {
 		return nil, nil
 	}
 	return c.tlsCertConfig(listenerName)

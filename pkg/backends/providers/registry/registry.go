@@ -26,6 +26,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/reverseproxy"
 	"github.com/trickstercache/trickster/v2/pkg/backends/reverseproxycache"
 	"github.com/trickstercache/trickster/v2/pkg/backends/rule"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/native"
 )
 
 func SupportedProviders() types.Lookup {
@@ -41,4 +42,11 @@ func SupportedProviders() types.Lookup {
 		providers.ReverseProxyCacheShort: reverseproxycache.NewClient,
 		providers.ReverseProxyCache:      reverseproxycache.NewClient,
 	}
+}
+
+// NativeListeners returns the provider-owned adapters for non-HTTP listener
+// protocols. Adding another native protocol requires registration here, not a
+// protocol branch in daemon setup or configuration validation.
+func NativeListeners() native.Registry {
+	return native.Registry{}
 }

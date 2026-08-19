@@ -420,7 +420,7 @@ func (c *Client) validateAndStartUserRouter(clients backends.Backends, hcs healt
 		// authenticated and not just observed.
 		canReplaceCreds = !(conf.AuthOptions.Authenticator.IsObserveOnly())
 		authenticator = conf.AuthOptions.Authenticator
-	} else if o.TargetProvider != providers.MySQL {
+	} else {
 		a, err := authreg.NewObserverFromProviderName(o.TargetProvider,
 			map[string]any{"options": observeOnlyOpts()})
 		if err != nil {

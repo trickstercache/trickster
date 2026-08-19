@@ -24,6 +24,8 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	providerregistry "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry"
 	"github.com/trickstercache/trickster/v2/pkg/backends/rule"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/config"
@@ -32,6 +34,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/errors"
 	tr "github.com/trickstercache/trickster/v2/pkg/observability/tracing/registry"
 	ar "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/registry"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/native"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 	"github.com/trickstercache/trickster/v2/pkg/routing"
@@ -156,9 +159,29 @@ func Listeners(c *config.Config) error {
 
 	mapped := make(map[string]int, len(c.Listeners))
 	tlsMapped := make(map[string]bool, len(c.Listeners))
+	mappedProviders := make(map[string]map[string]string, len(c.Listeners))
+	nativeListeners := providerregistry.NativeListeners()
+	nativeTargets := nativeUserRouterTargets(c, nativeListeners)
 	for backendName, backend := range c.Backends {
 		if backend == nil {
 			continue
+		}
+		if adapter := nativeListeners.Get(strings.ToLower(backend.Provider)); adapter != nil {
+			if err := adapter.ValidateBackend(backend); err != nil {
+				return fmt.Errorf("%s backend %q: %w", adapter.Protocol(), backendName, err)
+			}
+			if nativeTargets[backendName] {
+				continue
+			}
+		}
+		if backend.Provider == providers.ALB && backend.ALBOptions != nil &&
+			backend.ALBOptions.UserRouter != nil {
+			targetProtocol := strings.ToLower(backend.ALBOptions.UserRouter.TargetProvider)
+			if adapter := nativeListeners.Get(targetProtocol); adapter != nil {
+				if err := adapter.ValidateUserRouter(c, backendName, backend); err != nil {
+					return err
+				}
+			}
 		}
 		if backend.ListenerName == "" {
 			backend.ListenerName = listener.DefaultFrontendName
@@ -170,6 +193,10 @@ func Listeners(c *config.Config) error {
 			return fmt.Errorf("backend %q references undefined listener %q", backendName, backend.ListenerName)
 		}
 		mapped[backend.ListenerName]++
+		if mappedProviders[backend.ListenerName] == nil {
+			mappedProviders[backend.ListenerName] = make(map[string]string)
+		}
+		mappedProviders[backend.ListenerName][backendName] = strings.ToLower(backend.Provider)
 		if backend.TLS != nil && backend.TLS.ServeTLS {
 			tlsMapped[backend.ListenerName] = true
 		}
@@ -190,8 +217,37 @@ func Listeners(c *config.Config) error {
 		if options.Protocol != listener.ProtocolHTTP && mapped[name] > 1 {
 			return fmt.Errorf("listener %q with protocol %q can map to only one backend", name, options.Protocol)
 		}
-		if !listener.IsSupportedProtocol(options.Protocol) {
+		nativeAdapter := nativeListeners.Get(options.Protocol)
+		if options.Protocol != listener.ProtocolHTTP && nativeAdapter == nil {
 			return fmt.Errorf("listener %q uses unsupported protocol %q", name, options.Protocol)
+		}
+		if nativeAdapter != nil {
+			if err := nativeAdapter.ValidateListener(options); err != nil {
+				return fmt.Errorf("listener %q: %w", name, err)
+			}
+		}
+		mismatchedProtocol := nativeListeners.ConfiguredProtocol(options, options.Protocol)
+		if mismatchedProtocol != "" {
+			return fmt.Errorf("listener %q configures %s limits for protocol %q",
+				name, mismatchedProtocol, options.Protocol)
+		}
+		// Native listeners accept either a backend of the same protocol or a
+		// User Router ALB whose validated terminal provider matches it.
+		for backendName, provider := range mappedProviders[name] {
+			backend := c.Backends[backendName]
+			targetProvider := provider
+			if provider == providers.ALB && backend != nil && backend.ALBOptions != nil &&
+				backend.ALBOptions.UserRouter != nil {
+				targetProvider = strings.ToLower(backend.ALBOptions.UserRouter.TargetProvider)
+			}
+			if options.Protocol != listener.ProtocolHTTP && targetProvider != options.Protocol {
+				return fmt.Errorf("listener %q with protocol %q cannot map to backend %q with provider %q",
+					name, options.Protocol, backendName, provider)
+			}
+			if options.Protocol == listener.ProtocolHTTP && nativeListeners.Get(targetProvider) != nil {
+				return fmt.Errorf("backend %q with provider %q requires a listener with protocol %q",
+					backendName, provider, targetProvider)
+			}
 		}
 		if options.ListenPort < 0 || options.TLSListenPort < 0 {
 			return fmt.Errorf("listener %q has an invalid listen port", name)
@@ -228,6 +284,29 @@ func Listeners(c *config.Config) error {
 		}
 	}
 	return nil
+}
+
+func nativeUserRouterTargets(c *config.Config, nativeListeners native.Registry) map[string]bool {
+	targets := make(map[string]bool)
+	if c == nil {
+		return targets
+	}
+	for _, backend := range c.Backends {
+		if backend == nil || backend.Provider != providers.ALB || backend.ALBOptions == nil ||
+			backend.ALBOptions.UserRouter == nil ||
+			nativeListeners.Get(strings.ToLower(backend.ALBOptions.UserRouter.TargetProvider)) == nil {
+			continue
+		}
+		if name := backend.ALBOptions.UserRouter.DefaultBackend; name != "" {
+			targets[name] = true
+		}
+		for _, mapping := range backend.ALBOptions.UserRouter.Users {
+			if mapping != nil && mapping.ToBackend != "" {
+				targets[mapping.ToBackend] = true
+			}
+		}
+	}
+	return targets
 }
 
 func addWarning(c *config.Config, warning string) {
