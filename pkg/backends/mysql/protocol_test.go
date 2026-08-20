@@ -469,7 +469,7 @@ func TestProtocolServerProxiesTextQueries(t *testing.T) {
 	}
 	originHandler := &testOriginHandler{env: vtenv.NewTestEnv()}
 	origin, err := vtmysql.NewFromListener(originListener,
-		newCredentialAuth(map[string]string{"origin": "origin-password"}), originHandler,
+		newCredentialAuth(map[string]string{"origin": "origin-password"}, "", nil), originHandler,
 		0, 0, false, false, 0, 0, false)
 	if err != nil {
 		t.Fatal(err)
@@ -595,7 +595,7 @@ func TestRoutedProtocolServerSelectsNativeTargetPerConnection(t *testing.T) {
 			testOriginHandler: &testOriginHandler{env: vtenv.NewTestEnv()}, marker: marker,
 		}
 		server, err := vtmysql.NewFromListener(listener,
-			newCredentialAuth(map[string]string{username: password}), handler,
+			newCredentialAuth(map[string]string{username: password}, "", nil), handler,
 			0, 0, false, false, 0, 0, false)
 		if err != nil {
 			t.Fatal(err)
@@ -764,7 +764,7 @@ func TestProtocolServerRequiredInBandTLS(t *testing.T) {
 	}
 	originHandler := &testOriginHandler{env: vtenv.NewTestEnv()}
 	origin, err := vtmysql.NewFromListener(originListener,
-		newCredentialAuth(map[string]string{"origin": "origin-password"}), originHandler,
+		newCredentialAuth(map[string]string{"origin": "origin-password"}, "", nil), originHandler,
 		0, 0, false, false, 0, 0, false)
 	if err != nil {
 		t.Fatal(err)
@@ -926,7 +926,7 @@ func TestOriginQueryTimeoutDiscardsUpstream(t *testing.T) {
 		testOriginHandler: testOriginHandler{env: vtenv.NewTestEnv()}, release: release,
 	}
 	origin, err := vtmysql.NewFromListener(originListener,
-		newCredentialAuth(map[string]string{"origin": "origin-password"}), originHandler,
+		newCredentialAuth(map[string]string{"origin": "origin-password"}, "", nil), originHandler,
 		0, 0, false, false, 0, 0, false)
 	if err != nil {
 		t.Fatal(err)
@@ -990,7 +990,7 @@ func TestClientDisconnectDuringOriginExecutionReleasesSession(t *testing.T) {
 		release:           release, started: started,
 	}
 	origin, err := vtmysql.NewFromListener(originListener,
-		newCredentialAuth(map[string]string{"origin": "origin-password"}), originHandler,
+		newCredentialAuth(map[string]string{"origin": "origin-password"}, "", nil), originHandler,
 		0, 0, false, false, 0, 0, false)
 	if err != nil {
 		t.Fatal(err)
@@ -1070,7 +1070,7 @@ func TestOriginDisconnectConnectionState(t *testing.T) {
 				testOriginHandler: testOriginHandler{env: vtenv.NewTestEnv()}, partial: tc.partial,
 			}
 			origin, err := vtmysql.NewFromListener(originListener,
-				newCredentialAuth(map[string]string{"origin": "origin-password"}), originHandler,
+				newCredentialAuth(map[string]string{"origin": "origin-password"}, "", nil), originHandler,
 				0, 0, false, false, 0, 0, false)
 			if err != nil {
 				t.Fatal(err)
@@ -1139,7 +1139,7 @@ func TestProtocolServerDeltaCachesMissingExtent(t *testing.T) {
 	}
 	originHandler := &deltaOriginHandler{testOriginHandler: testOriginHandler{env: vtenv.NewTestEnv()}}
 	origin, err := vtmysql.NewFromListener(originListener,
-		newCredentialAuth(map[string]string{"origin": "origin-password"}), originHandler,
+		newCredentialAuth(map[string]string{"origin": "origin-password"}, "", nil), originHandler,
 		0, 0, false, false, 0, 0, false)
 	if err != nil {
 		t.Fatal(err)
@@ -1228,7 +1228,7 @@ func TestProtocolServerDeltaCachesMovingUnalignedRange(t *testing.T) {
 	}
 	originHandler := &deltaOriginHandler{testOriginHandler: testOriginHandler{env: vtenv.NewTestEnv()}}
 	origin, err := vtmysql.NewFromListener(originListener,
-		newCredentialAuth(map[string]string{"origin": "origin-password"}), originHandler,
+		newCredentialAuth(map[string]string{"origin": "origin-password"}, "", nil), originHandler,
 		0, 0, false, false, 0, 0, false)
 	if err != nil {
 		t.Fatal(err)

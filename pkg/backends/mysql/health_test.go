@@ -149,7 +149,7 @@ func TestMySQLHealthProbeExecutesNativePing(t *testing.T) {
 		t.Fatal(err)
 	}
 	origin, err := vtmysql.NewFromListener(originListener,
-		newCredentialAuth(map[string]string{"origin": "origin-password"}),
+		newCredentialAuth(map[string]string{"origin": "origin-password"}, "", nil),
 		&testOriginHandler{env: vtenv.NewTestEnv()}, 0, 0, false, false, 0, 0, false)
 	if err != nil {
 		t.Fatal(err)

@@ -751,7 +751,7 @@ func TestProtocolResultLimitHelperBranches(t *testing.T) {
 
 func TestCredentialAndRouteFailureBranches(t *testing.T) {
 	salt := []byte("12345678901234567890")
-	auth := newCredentialAuth(map[string]string{"client": "password"}, "mysql-router")
+	auth := newCredentialAuth(map[string]string{"client": "password"}, "mysql-router", nil)
 	if _, err := auth.UserEntryWithHash(&vtmysql.Conn{}, salt, "missing", nil, nil); err == nil {
 		t.Fatal("missing user authenticated")
 	}
@@ -919,7 +919,7 @@ func startCoverageOrigin(t *testing.T, handler vtmysql.Handler) vtmysql.ConnPara
 		t.Fatal(err)
 	}
 	server, err := vtmysql.NewFromListener(listener,
-		newCredentialAuth(map[string]string{"origin": "password"}), handler,
+		newCredentialAuth(map[string]string{"origin": "password"}, "", nil), handler,
 		0, 0, false, false, 0, 0, false)
 	if err != nil {
 		t.Fatal(err)

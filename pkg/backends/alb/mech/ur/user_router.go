@@ -55,6 +55,17 @@ type Handler struct {
 	userRoutes         UserRoutes
 }
 
+type handlerSnapshot struct {
+	authenticator      at.Authenticator
+	routerName         string
+	defaultTarget      backends.RouteTarget
+	defaultHandler     http.Handler
+	enableReplaceCreds bool
+	noRouteStatusCode  int
+	options            *uropt.Options
+	userRoutes         UserRoutes
+}
+
 func RegistryEntry() types.RegistryEntry {
 	return types.RegistryEntry{
 		Name:      URName,
@@ -79,10 +90,7 @@ func (h *Handler) Name() types.Name {
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	h.mu.RLock()
-	auth := h.authenticator
-	routerName := h.routerName
-	h.mu.RUnlock()
+	state := h.snapshot()
 
 	var username, cred string
 	var authenticated bool
@@ -94,31 +102,32 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if rsc != nil && rsc.AuthResult != nil && rsc.AuthResult.Username != "" {
 		username = rsc.AuthResult.Username
 		authenticated = rsc.AuthResult.Status == at.AuthSuccess
-	} else if auth != nil {
-		u, c, err := auth.ExtractCredentials(r)
+	} else if state.authenticator != nil {
+		u, c, err := state.authenticator.ExtractCredentials(r)
 		if err == nil && u != "" {
 			username = u
 			cred = c
-			// enableReplaceCreds remains false since credentials were not verified
+			// authenticated remains false since credentials were not verified.
 		}
 	}
-	decision, ok := h.ResolveRoute(backends.RouteInput{
-		RouterName: routerName, Username: username, Credential: cred, Authenticated: authenticated,
-	})
+	decision, ok := resolveRoute(backends.RouteInput{
+		RouterName: state.routerName, Username: username, Credential: cred,
+		Authenticated: authenticated,
+	}, state)
 	if !ok {
-		h.handleDefault(w, r)
+		handleDefault(w, r, state)
 		return
 	}
-	if decision.ReplaceCredentials && auth != nil {
-		auth.Sanitize(r)
-		if err := auth.SetCredentials(r, decision.OutboundUsername,
+	if decision.ReplaceCredentials && state.authenticator != nil {
+		state.authenticator.Sanitize(r)
+		if err := state.authenticator.SetCredentials(r, decision.OutboundUsername,
 			decision.OutboundCredential); err != nil {
-			h.handleDefault(w, r)
+			handleDefault(w, r, state)
 			return
 		}
 	}
 	if decision.Target.Backend == nil || decision.Target.Backend.Router() == nil {
-		h.handleDefault(w, r)
+		handleDefault(w, r, state)
 		return
 	}
 	decision.Target.Backend.Router().ServeHTTP(w, r)
@@ -127,36 +136,23 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // ResolveRoute selects a backend without assuming an HTTP request or native
 // protocol session. It is safe to call concurrently with configuration reload.
 func (h *Handler) ResolveRoute(input backends.RouteInput) (backends.RouteDecision, bool) {
-	h.mu.RLock()
-	opts := h.options
-	routes := h.userRoutes
-	defaultTarget := h.defaultTarget
-	replaceAllowed := h.enableReplaceCreds
-	h.mu.RUnlock()
+	return resolveRoute(input, h.snapshot())
+}
 
-	useDefault := func() (backends.RouteDecision, bool) {
-		if !defaultTarget.Available() {
-			outcome := backends.RouteOutcomeNoRoute
-			if defaultTarget.Backend != nil {
-				outcome = backends.RouteOutcomeUnavailable
-			}
-			return backends.RouteDecision{Outcome: outcome}, false
-		}
-		return backends.RouteDecision{Target: defaultTarget, Outcome: backends.RouteOutcomeDefault}, true
+func resolveRoute(input backends.RouteInput, state handlerSnapshot) (backends.RouteDecision, bool) {
+	if input.Username == "" || state.options == nil || len(state.options.Users) == 0 {
+		return defaultRouteDecision(state.defaultTarget)
 	}
-	if input.Username == "" || opts == nil || len(opts.Users) == 0 {
-		return useDefault()
-	}
-	mapping, ok := opts.Users[input.Username]
+	mapping, ok := state.options.Users[input.Username]
 	if !ok || mapping == nil {
-		return useDefault()
+		return defaultRouteDecision(state.defaultTarget)
 	}
-	target, ok := routes[input.Username]
+	target, ok := state.userRoutes[input.Username]
 	if !ok || !target.Available() {
-		return useDefault()
+		return defaultRouteDecision(state.defaultTarget)
 	}
 	decision := backends.RouteDecision{Target: target, Outcome: backends.RouteOutcomeSelected}
-	if replaceAllowed && input.Authenticated &&
+	if state.enableReplaceCreds && input.Authenticated &&
 		(mapping.ToUser != "" || mapping.ToCredential != "") {
 		decision.OutboundUsername = input.Username
 		if mapping.ToUser != "" {
@@ -169,6 +165,29 @@ func (h *Handler) ResolveRoute(input backends.RouteInput) (backends.RouteDecisio
 		decision.ReplaceCredentials = decision.OutboundCredential != ""
 	}
 	return decision, true
+}
+
+func defaultRouteDecision(target backends.RouteTarget) (backends.RouteDecision, bool) {
+	if !target.Available() {
+		outcome := backends.RouteOutcomeNoRoute
+		if target.Backend != nil {
+			outcome = backends.RouteOutcomeUnavailable
+		}
+		return backends.RouteDecision{Outcome: outcome}, false
+	}
+	return backends.RouteDecision{Target: target, Outcome: backends.RouteOutcomeDefault}, true
+}
+
+func (h *Handler) snapshot() handlerSnapshot {
+	h.mu.RLock()
+	state := handlerSnapshot{
+		authenticator: h.authenticator, routerName: h.routerName,
+		defaultTarget: h.defaultTarget, defaultHandler: h.defaultHandler,
+		enableReplaceCreds: h.enableReplaceCreds, noRouteStatusCode: h.noRouteStatusCode,
+		options: h.options, userRoutes: h.userRoutes,
+	}
+	h.mu.RUnlock()
+	return state
 }
 
 // SetRouterName identifies this resolver without exposing protocol-specific
@@ -212,19 +231,20 @@ func (h *Handler) SetUserRoutes(routes UserRoutes) {
 }
 
 func (h *Handler) handleDefault(w http.ResponseWriter, r *http.Request) {
-	h.mu.RLock()
-	dh := h.defaultHandler
-	code := h.noRouteStatusCode
-	if code == 0 && h.options != nil {
-		code = h.options.NoRouteStatusCode
+	handleDefault(w, r, h.snapshot())
+}
+
+func handleDefault(w http.ResponseWriter, r *http.Request, state handlerSnapshot) {
+	code := state.noRouteStatusCode
+	if code == 0 && state.options != nil {
+		code = state.options.NoRouteStatusCode
 	}
-	h.mu.RUnlock()
-	if dh == nil {
+	if state.defaultHandler == nil {
 		if code < 100 || code >= 600 {
 			code = http.StatusBadGateway
 		}
 		w.WriteHeader(code)
 		return
 	}
-	dh.ServeHTTP(w, r)
+	state.defaultHandler.ServeHTTP(w, r)
 }

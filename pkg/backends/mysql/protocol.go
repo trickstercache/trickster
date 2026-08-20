@@ -516,17 +516,9 @@ type credentialAuth struct {
 	resolver backends.RouteResolver
 }
 
-func newCredentialAuth(users map[string]string, args ...any) *credentialAuth {
-	backend := ""
-	var resolver backends.RouteResolver
-	for _, arg := range args {
-		switch value := arg.(type) {
-		case string:
-			backend = value
-		case backends.RouteResolver:
-			resolver = value
-		}
-	}
+func newCredentialAuth(users map[string]string, backend string,
+	resolver backends.RouteResolver,
+) *credentialAuth {
 	credentials := make(map[string][]byte, len(users))
 	for username, password := range users {
 		credentials[username] = []byte(password)

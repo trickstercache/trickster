@@ -27,7 +27,7 @@ import (
 func FuzzNativeAuthentication(f *testing.F) {
 	f.Add([]byte("12345678901234567890"), "client", []byte{1, 2, 3})
 	f.Add([]byte{}, "", []byte{})
-	auth := newCredentialAuth(map[string]string{"client": "password"})
+	auth := newCredentialAuth(map[string]string{"client": "password"}, "", nil)
 	f.Fuzz(func(t *testing.T, salt []byte, user string, response []byte) {
 		if len(salt) != 20 {
 			return

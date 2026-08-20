@@ -309,6 +309,49 @@ func TestServeHTTP(t *testing.T) {
 		}
 	})
 
+	t.Run("default fallback retains inbound credentials", func(t *testing.T) {
+		const inboundAuthorization = "Basic YWxpY2U6aW5ib3VuZA=="
+		var observedAuthorization string
+		defaultTarget := testRoute(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			observedAuthorization = r.Header.Get("Authorization")
+			w.WriteHeader(http.StatusOK)
+		}))
+		unavailableTarget := testRoute(http.NotFoundHandler())
+		unavailableTarget.Status = fixedRouteStatus(-1)
+		auth := &mockAuth{}
+		h := &Handler{
+			authenticator:      auth,
+			enableReplaceCreds: true,
+			defaultTarget:      defaultTarget,
+			options: &uropt.Options{Users: uropt.UserMappingOptionsByUser{
+				"alice": {
+					ToBackend: "unavailable", ToUser: "origin-user", ToCredential: "origin-password",
+				},
+			}},
+			userRoutes: UserRoutes{"alice": unavailableTarget},
+		}
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+		r.Header.Set("Authorization", inboundAuthorization)
+		r = request.SetResources(r, &request.Resources{
+			AuthResult: &at.AuthResult{Username: "alice", Status: at.AuthSuccess},
+		})
+
+		h.ServeHTTP(w, r)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+		}
+		if observedAuthorization != inboundAuthorization {
+			t.Fatalf("default backend authorization = %q, want inbound credentials",
+				observedAuthorization)
+		}
+		if len(auth.setCalls) != 0 || auth.sanitizeCalls.Load() != 0 {
+			t.Fatalf("fallback rewrote credentials: set calls = %d, sanitize calls = %d",
+				len(auth.setCalls), auth.sanitizeCalls.Load())
+		}
+	})
+
 	// SetCredentials returning an error must not be silently ignored. Dispatch
 	// to the mapped target with stale or partial credentials risks leaking the
 	// inbound user's credentials to the downstream backend.
@@ -438,6 +481,16 @@ func TestResolveRouteProtocolNeutral(t *testing.T) {
 	decision, ok = h.ResolveRoute(backends.RouteInput{Username: "unknown", Authenticated: true})
 	if !ok || decision.Outcome != backends.RouteOutcomeDefault {
 		t.Fatalf("default ResolveRoute() = %+v, %t", decision, ok)
+	}
+
+	unavailableTarget := target
+	unavailableTarget.Status = fixedRouteStatus(-1)
+	h.userRoutes["alice"] = unavailableTarget
+	decision, ok = h.ResolveRoute(backends.RouteInput{
+		Username: "alice", Credential: "inbound", Authenticated: true,
+	})
+	if !ok || decision.Outcome != backends.RouteOutcomeDefault || decision.ReplaceCredentials {
+		t.Fatalf("fallback ResolveRoute() = %+v, %t", decision, ok)
 	}
 
 	h.defaultTarget.Status = fixedRouteStatus(-1)
