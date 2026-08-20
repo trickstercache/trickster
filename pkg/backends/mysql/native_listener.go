@@ -20,12 +20,16 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
+	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
+	uropt "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/ur/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	mo "github.com/trickstercache/trickster/v2/pkg/backends/mysql/options"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	checksum "github.com/trickstercache/trickster/v2/pkg/checksum/md5"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	listenerconfig "github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
@@ -180,7 +184,7 @@ func nativeProtocolConfig(c *config.Config, listenerName string) (*ProtocolConfi
 			if listenerOptions := c.Listeners[listenerName]; listenerOptions != nil {
 				protocolConfig.ApplyListenerOptions(listenerOptions.MySQL)
 			}
-			protocolConfig.RestartKey = routedRestartKey(c, o)
+			protocolConfig.RestartKey = routedRestartKey(c, o, users)
 			return &protocolConfig, true, nil
 		}
 		protocolConfig, err := ProtocolConfigFromOptions(o)
@@ -272,14 +276,46 @@ func routeTargetNames(o *bo.Options) []string {
 	return result
 }
 
-func routedRestartKey(c *config.Config, router *bo.Options) string {
-	parts := []any{router.ALBOptions.UserRouter, router.RequireTLS, router.TLS}
+func routedRestartKey(c *config.Config, router *bo.Options, users map[string]string) string {
+	var identity strings.Builder
+	appendRestartIdentityField(&identity, userRouterRestartIdentity(router.ALBOptions.UserRouter))
+	appendRestartIdentityField(&identity, strconv.FormatBool(router.RequireTLS))
+	appendRestartIdentityField(&identity, tlsRestartIdentity(router))
+	appendRestartIdentityField(&identity, credentialRestartIdentity(users))
 	for _, name := range routeTargetNames(router) {
 		if target := c.Backends[name]; target != nil {
 			if protocolConfig, err := ProtocolConfigFromOptions(target); err == nil {
-				parts = append(parts, name, protocolConfig.RestartKey)
+				appendRestartIdentityField(&identity, name)
+				appendRestartIdentityField(&identity, protocolConfig.RestartKey)
 			}
 		}
 	}
-	return fmt.Sprintf("%v", parts)
+	return checksum.Checksum(identity.String())
+}
+
+func userRouterRestartIdentity(o *uropt.Options) string {
+	if o == nil {
+		return ""
+	}
+	var identity strings.Builder
+	appendRestartIdentityField(&identity, o.DefaultBackend)
+	appendRestartIdentityField(&identity, strconv.Itoa(o.NoRouteStatusCode))
+	appendRestartIdentityField(&identity, o.TargetProvider)
+	usernames := make([]string, 0, len(o.Users))
+	for username := range o.Users {
+		usernames = append(usernames, username)
+	}
+	slices.Sort(usernames)
+	for _, username := range usernames {
+		appendRestartIdentityField(&identity, username)
+		mapping := o.Users[username]
+		if mapping == nil {
+			appendRestartIdentityField(&identity, "")
+			continue
+		}
+		appendRestartIdentityField(&identity, mapping.ToBackend)
+		appendRestartIdentityField(&identity, mapping.ToUser)
+		appendRestartIdentityField(&identity, string(mapping.ToCredential))
+	}
+	return identity.String()
 }

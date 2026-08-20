@@ -250,8 +250,7 @@ func listenerNeedsRestart(old, current desiredListener) bool {
 	return old.address != current.address || old.port != current.port || old.tls != current.tls ||
 		old.origin != current.origin ||
 		old.options.ConnectionsLimit != current.options.ConnectionsLimit ||
-		old.options.ReadHeaderTimeout != current.options.ReadHeaderTimeout ||
-		!old.options.Equal(current.options)
+		old.options.ReadHeaderTimeout != current.options.ReadHeaderTimeout
 }
 
 func runtimeListenerNeedsRestart(lg *listener.Group, key string, old, current desiredListener) bool {

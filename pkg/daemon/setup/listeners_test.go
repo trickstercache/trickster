@@ -157,6 +157,23 @@ func TestListenerNeedsRestart(t *testing.T) {
 	if !listenerNeedsRestart(old, current) {
 		t.Errorf("port change should restart a listener")
 	}
+
+	hotSwap := o.Clone()
+	maxBodySize := int64(1024)
+	hotSwap.MaxRequestBodySizeBytes = &maxBodySize
+	hotSwap.TruncateRequestBodyTooLarge = !o.TruncateRequestBodyTooLarge
+	current = old
+	current.options = hotSwap
+	if listenerNeedsRestart(old, current) {
+		t.Error("HTTP request middleware change should not restart a listener")
+	}
+
+	current = old
+	current.options = o.Clone()
+	current.options.ConnectionsLimit++
+	if !listenerNeedsRestart(old, current) {
+		t.Error("connection limit change should restart a listener")
+	}
 }
 
 func TestApplyListenerConfigsReloadReconciliation(t *testing.T) {
@@ -194,10 +211,22 @@ func TestApplyListenerConfigsReloadReconciliation(t *testing.T) {
 	}
 	assertResponseBody(t, firstPort, "second")
 
-	// A port change drains the old socket and starts the replacement.
+	// Request middleware is carried by the swapped router and must not drain
+	// the HTTP socket when its listener-facing configuration changes.
 	thirdConf := secondConf.Clone()
-	thirdConf.Listeners["custom"].ListenPort = secondPort
+	maxBodySize := int64(2048)
+	thirdConf.Listeners["custom"].MaxRequestBodySizeBytes = &maxBodySize
+	thirdConf.Listeners["custom"].TruncateRequestBodyTooLarge = true
 	applyListenerConfigs(thirdConf, secondConf, map[string]router.Router{"custom": secondRouter},
+		http.NotFoundHandler(), lm.NewRouter(), nil, nil, nil, group)
+	if group.Get(key) != original {
+		t.Error("HTTP request middleware change restarted the listener socket")
+	}
+
+	// A port change drains the old socket and starts the replacement.
+	fourthConf := thirdConf.Clone()
+	fourthConf.Listeners["custom"].ListenPort = secondPort
+	applyListenerConfigs(fourthConf, thirdConf, map[string]router.Router{"custom": secondRouter},
 		http.NotFoundHandler(), lm.NewRouter(), nil, nil, nil, group)
 	waitForListener(t, group, key)
 	if group.Get(key) == original {

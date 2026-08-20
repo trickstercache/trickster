@@ -49,7 +49,11 @@ func SupportedProviders() types.Lookup {
 // NativeListeners returns the provider-owned adapters for non-HTTP listener
 // protocols. Adding another native protocol requires registration here, not a
 // protocol branch in daemon setup or configuration validation.
-func NativeListeners() native.Registry {
+var nativeListeners = func() native.Registry {
 	mysqlAdapter := mysql.NativeListenerAdapter()
 	return native.Registry{mysqlAdapter.Protocol(): mysqlAdapter}
+}()
+
+func NativeListeners() native.Registry {
+	return nativeListeners
 }

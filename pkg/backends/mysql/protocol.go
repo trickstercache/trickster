@@ -203,27 +203,11 @@ func upstreamConnParamsFromOptions(o *bo.Options) (vtmysql.ConnParams, error) {
 }
 
 func protocolRestartKey(o *bo.Options, users map[string]string) string {
-	names := make([]string, 0, len(users))
-	for name := range users {
-		names = append(names, name)
-	}
-	slices.Sort(names)
-	var credentials strings.Builder
-	for _, name := range names {
-		credentials.WriteString(name)
-		credentials.WriteByte(0)
-		credentials.WriteString(users[name])
-		credentials.WriteByte(0)
-	}
-	tlsIdentity := ""
-	if o.TLS != nil {
-		identityPaths := append([]string{o.TLS.FullChainCertPath, o.TLS.PrivateKeyPath},
-			o.TLS.CertificateAuthorityPaths...)
-		identityPaths = append(identityPaths, o.TLS.ClientCertPath, o.TLS.ClientKeyPath)
-		tlsIdentity = fmt.Sprintf("%s|%s|%t|%s|%s|%s|%s", o.TLS.FullChainCertPath,
-			o.TLS.PrivateKeyPath, o.TLS.InsecureSkipVerify,
-			strings.Join(o.TLS.CertificateAuthorityPaths, "\x00"),
-			o.TLS.ClientCertPath, o.TLS.ClientKeyPath, tlsFileIdentity(identityPaths...))
+	tlsIdentity := tlsRestartIdentity(o)
+	credentials := credentialRestartIdentity(users)
+	mysqlIdentity := ""
+	if o.MySQL != nil {
+		mysqlIdentity = fmt.Sprintf("%v", *o.MySQL)
 	}
 	value := fmt.Sprintf("%s|%d|%d|%s|%s|%d|%d|%d|%d|%d|%d|%d|%d|%t|%t|%t|%s|%s|%v", o.OriginURL,
 		o.Timeout,
@@ -231,8 +215,41 @@ func protocolRestartKey(o *bo.Options, users map[string]string) string {
 		o.CacheName, o.CacheKeyPrefix, o.TimeseriesTTL, o.MaxObjectSizeBytes,
 		o.TimeseriesRetentionFactor, o.BackfillTolerance, o.BackfillTolerancePoints,
 		o.MaxShardSizeTime, o.ShardStep, o.MaxShardSizePoints, o.DoesShard,
-		o.ProxyOnly, o.RequireTLS, tlsIdentity, credentials.String(), o.MySQL)
+		o.ProxyOnly, o.RequireTLS, tlsIdentity, credentials, mysqlIdentity)
 	return checksum.Checksum(value)
+}
+
+func credentialRestartIdentity(users map[string]string) string {
+	names := make([]string, 0, len(users))
+	for name := range users {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	var identity strings.Builder
+	for _, name := range names {
+		appendRestartIdentityField(&identity, name)
+		appendRestartIdentityField(&identity, users[name])
+	}
+	return identity.String()
+}
+
+func tlsRestartIdentity(o *bo.Options) string {
+	if o == nil || o.TLS == nil {
+		return ""
+	}
+	identityPaths := append([]string{o.TLS.FullChainCertPath, o.TLS.PrivateKeyPath},
+		o.TLS.CertificateAuthorityPaths...)
+	identityPaths = append(identityPaths, o.TLS.ClientCertPath, o.TLS.ClientKeyPath)
+	return fmt.Sprintf("%s|%s|%t|%s|%s|%s|%s", o.TLS.FullChainCertPath,
+		o.TLS.PrivateKeyPath, o.TLS.InsecureSkipVerify,
+		strings.Join(o.TLS.CertificateAuthorityPaths, "\x00"),
+		o.TLS.ClientCertPath, o.TLS.ClientKeyPath, tlsFileIdentity(identityPaths...))
+}
+
+func appendRestartIdentityField(identity *strings.Builder, value string) {
+	identity.WriteString(strconv.Itoa(len(value)))
+	identity.WriteByte(':')
+	identity.WriteString(value)
 }
 
 func tlsFileIdentity(paths ...string) string {
