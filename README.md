@@ -50,6 +50,8 @@ Trickster works with virtually any Dashboard application that makes queries to a
 
 <img src="./docs/images/external/influx_logo_60.png" width=16 /> InfluxDB
 
+Trickster can also use [Grafana as an origin](./docs/grafana.md), automatically dispatching supported Grafana-proxied data sources through the matching time series accelerator.
+
 See the [Supported TSDB Providers](./docs/supported-backend-providers.md) document for full details
 
 ### How Trickster Accelerates Time Series

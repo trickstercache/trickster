@@ -24,6 +24,7 @@ import (
 func TestProviderString(t *testing.T) {
 	t1 := RPCID
 	t2 := PrometheusID
+	tGrafana := GrafanaID
 	var t3 Provider = 13
 
 	if t1.String() != ReverseProxyCacheShort {
@@ -32,6 +33,10 @@ func TestProviderString(t *testing.T) {
 
 	if t2.String() != Prometheus {
 		t.Errorf("expected %s got %s", Prometheus, t2.String())
+	}
+
+	if tGrafana.String() != Grafana {
+		t.Errorf("expected %s got %s", Grafana, tGrafana.String())
 	}
 
 	if t3.String() != "13" {
@@ -49,6 +54,7 @@ func TestIsValidProvider(t *testing.T) {
 		{"", false},
 		{"invalid", false},
 		{InfluxDB, true},
+		{Grafana, true},
 	}
 
 	for i, test := range tests {

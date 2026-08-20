@@ -1,0 +1,23 @@
+#
+# Trickster 2.0 Example Configuration File - Example Grafana Origin
+#
+# To use this, run: trickster -config /path/to/simple.grafana.yaml
+#
+# Copyright 2018 The Trickster Authors
+#
+
+listeners:
+  grafana_port:
+    protocol: http
+    address: ""
+    port: 8480
+
+backends:
+  default:
+    # Update the FQDN and port to match your Grafana instance.
+    origin_url: 'http://grafana:3000'
+    provider: 'grafana'
+    listener_name: grafana_port
+
+logging:
+  log_level: 'info'
