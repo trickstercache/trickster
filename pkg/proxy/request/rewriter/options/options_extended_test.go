@@ -86,7 +86,7 @@ func TestUnmarshalYAML(t *testing.T) {
 request_rewriters:
   rewrite-host:
     instructions:
-      - [set, Host, example.com]
+      - [hostname, set, '${tenant}.example.com']
 `
 	type doc struct {
 		Rewriters Lookup `yaml:"request_rewriters"`
@@ -96,7 +96,7 @@ request_rewriters:
 		t.Fatalf("yaml.Unmarshal: %v", err)
 	}
 	o := d.Rewriters["rewrite-host"]
-	if o == nil || len(o.Instructions) != 1 || o.Instructions[0][2] != "example.com" {
+	if o == nil || len(o.Instructions) != 1 || o.Instructions[0][2] != "${tenant}.example.com" {
 		t.Fatalf("unexpected rewriter: %+v", o)
 	}
 }

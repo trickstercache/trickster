@@ -30,6 +30,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
+	proxyurls "github.com/trickstercache/trickster/v2/pkg/proxy/urls"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
@@ -46,9 +47,11 @@ func ComposeCacheKey(name, prefix, engine, suffix string) string {
 // DeriveCacheKey calculates a query-specific keyname based on the user request
 func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 	pc := pr.rsc.PathConfig
+	upstreamKeyPart := pr.upstreamURLRewriteCacheKey()
 
 	if pc == nil {
-		return md5.Checksum(pr.URL.Path + pr.corsCacheKeyPart(pr.Request) + extra)
+		return md5.Checksum(pr.URL.Path + upstreamKeyPart +
+			pr.corsCacheKeyPart(pr.Request) + extra)
 	}
 
 	var qp url.Values
@@ -80,8 +83,9 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 
 	if pc.KeyHasher != nil {
 		key := pc.KeyHasher(r.URL.Path, qp, r.Header, b, trq, extra)
-		if corsPart := pr.corsCacheKeyPart(r); corsPart != "" {
-			return md5.Checksum(key + corsPart)
+		keyPart := upstreamKeyPart + pr.corsCacheKeyPart(r)
+		if keyPart != "" {
+			return md5.Checksum(key + keyPart)
 		}
 		return key
 	}
@@ -189,7 +193,17 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 	vals = vals[:k]
 	slices.Sort(vals)
 	return md5.Checksum(pr.URL.Path + "." + strings.Join(vals, "") +
+		upstreamKeyPart +
 		pr.corsCacheKeyPart(r) + extra)
+}
+
+func (pr *proxyRequest) upstreamURLRewriteCacheKey() string {
+	if pr == nil || pr.rsc == nil || pr.rsc.BackendOptions == nil {
+		return ""
+	}
+	o := pr.rsc.BackendOptions
+	base := proxyurls.FromParts(o.Scheme, o.Host, "", "", "")
+	return proxyurls.UpstreamURLRewriteCacheKey(pr.Request, base)
 }
 
 func (pr *proxyRequest) corsCacheKeyPart(r *http.Request) string {
