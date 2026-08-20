@@ -21,22 +21,21 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"slices"
 	"strings"
 )
 
 type upstreamURLComponent uint8
 
 const (
-	upstreamScheme upstreamURLComponent = iota
+	upstreamScheme upstreamURLComponent = 1 << iota
 	upstreamHost
 	upstreamHostname
 	upstreamPort
 )
 
 type upstreamURLRewrite struct {
-	component upstreamURLComponent
-	value     string
+	components                   upstreamURLComponent
+	scheme, host, hostname, port string
 }
 
 type upstreamURLRewritesKey struct{}
@@ -65,31 +64,48 @@ func setUpstreamURLRewrite(r *http.Request, component upstreamURLComponent, valu
 	if r == nil {
 		return
 	}
-	rewrites, _ := r.Context().Value(upstreamURLRewritesKey{}).([]upstreamURLRewrite)
-	rewrites = append(slices.Clone(rewrites), upstreamURLRewrite{
-		component: component,
-		value:     value,
-	})
+	rewrites, _ := r.Context().Value(upstreamURLRewritesKey{}).(upstreamURLRewrite)
+	switch component {
+	case upstreamScheme:
+		rewrites.scheme = value
+	case upstreamHost:
+		rewrites.host = value
+		rewrites.hostname = ""
+		rewrites.port = ""
+		rewrites.components &^= upstreamHostname | upstreamPort
+	case upstreamHostname:
+		rewrites.hostname = value
+	case upstreamPort:
+		rewrites.port = value
+	}
+	rewrites.components |= component
 	*r = *r.WithContext(context.WithValue(r.Context(), upstreamURLRewritesKey{}, rewrites))
+}
+
+func (rewrites upstreamURLRewrite) apply(u *url.URL) {
+	if u == nil {
+		return
+	}
+	if rewrites.components&upstreamScheme != 0 {
+		u.Scheme = rewrites.scheme
+	}
+	if rewrites.components&upstreamHost != 0 {
+		u.Host = rewrites.host
+	}
+	if rewrites.components&upstreamHostname != 0 {
+		u.Host = replaceHostname(u.Host, rewrites.hostname)
+	}
+	if rewrites.components&upstreamPort != 0 {
+		u.Host = replacePort(u.Host, rewrites.port)
+	}
 }
 
 func applyUpstreamURLRewrites(r *http.Request, u *url.URL) {
 	if r == nil || u == nil {
 		return
 	}
-	rewrites, _ := r.Context().Value(upstreamURLRewritesKey{}).([]upstreamURLRewrite)
-	for _, rewrite := range rewrites {
-		switch rewrite.component {
-		case upstreamScheme:
-			u.Scheme = rewrite.value
-		case upstreamHost:
-			u.Host = rewrite.value
-		case upstreamHostname:
-			u.Host = replaceHostname(u.Host, rewrite.value)
-		case upstreamPort:
-			u.Host = replacePort(u.Host, rewrite.value)
-		}
-	}
+	rewrites, _ := r.Context().Value(upstreamURLRewritesKey{}).(upstreamURLRewrite)
+	rewrites.apply(u)
 }
 
 // UpstreamURLRewriteCacheKey returns a cache key component when a request
@@ -98,12 +114,12 @@ func UpstreamURLRewriteCacheKey(r *http.Request, base *url.URL) string {
 	if r == nil || base == nil {
 		return ""
 	}
-	rewrites, _ := r.Context().Value(upstreamURLRewritesKey{}).([]upstreamURLRewrite)
-	if len(rewrites) == 0 {
+	rewrites, _ := r.Context().Value(upstreamURLRewritesKey{}).(upstreamURLRewrite)
+	if rewrites.components == 0 {
 		return ""
 	}
 	rewritten := Clone(base)
-	applyUpstreamURLRewrites(r, rewritten)
+	rewrites.apply(rewritten)
 	if rewritten.Scheme == base.Scheme && rewritten.Host == base.Host {
 		return ""
 	}

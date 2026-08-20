@@ -106,11 +106,17 @@ func (r *rule) EvaluateOpArg(hr *http.Request) (http.Handler, *http.Request, err
 
 	h := r.defaultRouter
 	input := r.extractionFunc(hr, r.extractionArg)
-	res := r.operationFunc(input, r.operationArg, r.negateOpResult)
 	var captureTokens map[string]string
+	var res string
 	if r.regex != nil && r.hasCaptureTokens {
 		matches := r.regex.FindStringSubmatch(input)
+		res = falseValue
+		if len(matches) > 0 {
+			res = trueValue
+		}
 		captureTokens = regexCaptureTokens(r.regex, matches)
+	} else {
+		res = r.operationFunc(input, r.operationArg, r.negateOpResult)
 	}
 	var nonDefault bool
 

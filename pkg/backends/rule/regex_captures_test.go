@@ -114,6 +114,25 @@ func TestRegexCaptureTokensIncludeOptionalGroups(t *testing.T) {
 	}
 }
 
+func TestRegexCaptureRuleDoesNotRepeatRegexEvaluation(t *testing.T) {
+	rule := newRegexCaptureRule(t)
+	originalOperation := rule.operationFunc
+	var operationCalls int
+	rule.operationFunc = func(input, arg string, negate bool) string {
+		operationCalls++
+		return originalOperation(input, arg, negate)
+	}
+
+	req := httptest.NewRequest(http.MethodGet,
+		`/query/%7Bmylabel%3D%22abc%22%7D`, nil)
+	if _, _, err := rule.EvaluateOpArg(req); err != nil {
+		t.Fatal(err)
+	}
+	if operationCalls != 0 {
+		t.Errorf("operation calls = %d; want 0", operationCalls)
+	}
+}
+
 func TestRegexCapturesRewriteRequest(t *testing.T) {
 	rule := newRegexCaptureRule(t)
 	req := httptest.NewRequest(http.MethodGet,
