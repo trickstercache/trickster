@@ -17,7 +17,6 @@
 package options
 
 import (
-	"errors"
 	"testing"
 
 	d "github.com/trickstercache/trickster/v2/pkg/cache/options/defaults"
@@ -110,9 +109,9 @@ value_directory: /tmp/badger-val
 
 func TestUnmarshalYAMLError(t *testing.T) {
 	o := &Options{}
-	want := errors.New("boom")
-	err := o.UnmarshalYAML(func(any) error { return want })
-	if !errors.Is(err, want) {
-		t.Fatalf("expected %v, got %v", want, err)
+	// a sequence cannot be decoded into the options struct
+	err := yaml.Unmarshal([]byte("- boom"), o)
+	if err == nil {
+		t.Fatal("expected an error")
 	}
 }

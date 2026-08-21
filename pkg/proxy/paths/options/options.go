@@ -34,6 +34,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 	strutil "github.com/trickstercache/trickster/v2/pkg/util/strings"
+
+	"go.yaml.in/yaml/v3"
 )
 
 // Options defines a URL Path that is associated with an HTTP Handler
@@ -321,10 +323,10 @@ func (l List) Overlay(l2 List) List {
 	return out
 }
 
-func (o *Options) UnmarshalYAML(unmarshal func(any) error) error {
+func (o *Options) UnmarshalYAML(value *yaml.Node) error {
 	type loadOptions Options
 	lo := loadOptions(*(New()))
-	if err := unmarshal(&lo); err != nil {
+	if err := value.Decode(&lo); err != nil {
 		return err
 	}
 	*o = Options(lo)

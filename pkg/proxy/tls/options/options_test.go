@@ -20,6 +20,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"go.yaml.in/yaml/v3"
 )
 
 func writeTempFile(t *testing.T, dir, name, content string) string {
@@ -127,12 +129,26 @@ func TestInitialize(t *testing.T) {
 }
 
 func TestUnmarshalYAML(t *testing.T) {
-	o := New()
-	err := o.UnmarshalYAML(func(v any) error {
-		return nil
-	})
-	if err != nil {
+	o := &Options{}
+	if err := yaml.Unmarshal([]byte("full_chain_cert_path: /cert"), o); err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	if o.FullChainCertPath != "/cert" {
+		t.Errorf("expected FullChainCertPath /cert, got %q", o.FullChainCertPath)
+	}
+
+	// an empty mapping retains the defaults applied by UnmarshalYAML
+	o2 := &Options{}
+	if err := yaml.Unmarshal([]byte("{}"), o2); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !o2.Equal(New()) {
+		t.Errorf("expected defaults, got %+v", o2)
+	}
+
+	// a sequence cannot be decoded into the options struct
+	if err := yaml.Unmarshal([]byte("- boom"), &Options{}); err == nil {
+		t.Error("expected an error")
 	}
 }
 
