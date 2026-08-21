@@ -217,6 +217,30 @@ func (c *Config) CheckFileLastModified() time.Time {
 	return file.ModTime()
 }
 
+// HasConfigChanged reports whether the configuration sources have changed since they were loaded.
+// Unlike IsStale, it does not apply or update the reload rate limiter.
+func (c *Config) HasConfigChanged() bool {
+	if c == nil || c.Main == nil {
+		return false
+	}
+	c.Main.stalenessCheckLock.Lock()
+	defer c.Main.stalenessCheckLock.Unlock()
+	return c.hasConfigChanged()
+}
+
+func (c *Config) hasConfigChanged() bool {
+	if c.Main.configFilePath == "" {
+		return false
+	}
+	if c.Main.configSourcePlan.mode != 0 &&
+		c.Main.configSourcePlan.rootPath == c.Main.configFilePath {
+		snapshot := inspectConfigSources(c.Main.configSourcePlan)
+		return snapshot.fingerprint != c.Main.configSourceFingerprint
+	}
+	t := c.CheckFileLastModified()
+	return !t.IsZero() && !t.Equal(c.Main.configLastModified)
+}
+
 // Process converts various raw config options into internal data structures
 // as needed
 func (c *Config) Process() error {
@@ -350,28 +374,18 @@ func (c *Config) IsStale() bool {
 	}
 
 	c.Main.configRateLimitTime = time.Now().Add(time.Duration(c.MgmtConfig.ReloadRateLimit))
-	if c.Main.configSourcePlan.mode != 0 &&
-		c.Main.configSourcePlan.rootPath == c.Main.configFilePath {
-		snapshot := inspectConfigSources(c.Main.configSourcePlan)
-		return snapshot.fingerprint != c.Main.configSourceFingerprint
-	}
-	t := c.CheckFileLastModified()
-	if t.IsZero() {
-		return false
-	}
-	return !t.Equal(c.Main.configLastModified)
+	return c.hasConfigChanged()
 }
 
 // CheckAndMarkReloadInProgress checks if the config is stale and
 // marks it as being reloaded to prevent duplicate reloads.
 func (c *Config) CheckAndMarkReloadInProgress() bool {
-	if c == nil || c.Main == nil {
+	if c == nil || c.Main == nil || c.Main.configFilePath == "" {
 		return false
 	}
 	c.Main.stalenessCheckLock.Lock()
 	defer c.Main.stalenessCheckLock.Unlock()
-	if c.Main.configFilePath == "" ||
-		time.Now().Before(c.Main.configRateLimitTime) {
+	if time.Now().Before(c.Main.configRateLimitTime) {
 		return false
 	}
 	if c.MgmtConfig == nil {
