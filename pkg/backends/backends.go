@@ -18,6 +18,7 @@
 package backends
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
@@ -37,7 +38,11 @@ type Backends map[string]Backend
 // sets the initial status of the provided targets (e.g., after a config reload)
 func (b Backends) StartHealthChecks(knownStatuses healthcheck.StatusLookup) (healthcheck.HealthChecker, error) {
 	hc := healthcheck.New()
-	registrar := hc.(healthcheck.Registrar)
+	registrar, ok := hc.(healthcheck.Registrar)
+	if !ok {
+		hc.Shutdown()
+		return nil, errors.New("health checker does not support protocol probe registration")
+	}
 	for k, c := range b {
 		bo := c.Configuration()
 		if k == "frontend" {

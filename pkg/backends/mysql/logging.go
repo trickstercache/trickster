@@ -21,17 +21,22 @@ import (
 	"io"
 	"log/slog"
 	"strings"
+	"sync"
 
 	vtlog "vitess.io/vitess/go/vt/log"
 )
 
-func init() {
-	// Vitess's unknown-command diagnostic includes the complete raw command
-	// packet. COM_CHANGE_USER and protocol extensions can contain credentials or
-	// parameters, so wrap its default logger before accepting untrusted traffic.
-	placeholder := slog.New(slog.NewTextHandler(io.Discard, nil))
-	previous := vtlog.SwapLogger(placeholder)
-	vtlog.SwapLogger(slog.New(redactingVitessHandler{next: previous.Handler()}))
+var installVitessLoggerOnce sync.Once
+
+func installVitessLogger() {
+	installVitessLoggerOnce.Do(func() {
+		// Vitess's unknown-command diagnostic includes the complete raw command
+		// packet. COM_CHANGE_USER and protocol extensions can contain credentials
+		// or parameters, so this sanitizes traffic at the time it is logged.
+		placeholder := slog.New(slog.NewTextHandler(io.Discard, nil))
+		previous := vtlog.SwapLogger(placeholder)
+		vtlog.SwapLogger(slog.New(redactingVitessHandler{next: previous.Handler()}))
+	})
 }
 
 type redactingVitessHandler struct {

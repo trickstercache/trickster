@@ -147,6 +147,7 @@ func (nativeListenerAdapter) Build(request native.BuildRequest) (listener.Protoc
 	if err != nil {
 		return nil, err
 	}
+	installVitessLogger()
 	if !routed {
 		return NewProtocolServer(*protocolConfig)
 	}

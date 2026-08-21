@@ -972,7 +972,7 @@ func (h *protocolHandler) ComQuery(c *vtmysql.Conn, query string,
 	h.observeAnalysis(query, analysis)
 	if h.cacheEligible(session) && analysis.Mode != sqlanalyzer.CacheModeNone {
 		cacheStarted := time.Now()
-		result, warnings, cacheStatus, cacheErr := h.executeCached(c, session, query, analysis)
+		result, cacheStatus, cacheErr := h.executeCached(c, session, query, analysis)
 		if cacheErr != nil {
 			h.observeCache(analysis.Mode, cachestatus.LookupStatusProxyError, 0,
 				time.Since(cacheStarted))
@@ -983,7 +983,9 @@ func (h *protocolHandler) ComQuery(c *vtmysql.Conn, query string,
 				time.Since(cacheStarted))
 			return limitErr
 		}
-		h.setWarnings(session, warnings)
+		// Reset explicitly so warnings from a prior statement cannot leak
+		// into a cached result's terminating EOF/OK packet.
+		h.setWarnings(session, 0)
 		h.observeCache(analysis.Mode, cacheStatus, len(result.Rows), time.Since(cacheStarted))
 		return callback(result)
 	}
@@ -1109,8 +1111,10 @@ func (h *protocolHandler) proxyResultSet(session *upstreamSession, upstream *vtm
 		}
 		if row == nil {
 			if len(batch.Rows) > 0 || batch.Fields != nil {
-				if err := callback(batch); err != nil && session.downstream != nil {
-					session.downstream.MarkForClose()
+				if err := callback(batch); err != nil {
+					if session.downstream != nil {
+						session.downstream.MarkForClose()
+					}
 					return err
 				}
 				return nil

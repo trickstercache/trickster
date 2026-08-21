@@ -47,7 +47,6 @@ func TestCachedQueryResultRoundTrip(t *testing.T) {
 			Rows:        [][]sqltypes.Value{{sqltypes.NewInt64(42)}},
 			StatusFlags: 2,
 		},
-		warnings: 3,
 		extents: timeseries.ExtentList{{
 			Start: time.Unix(60, 0), End: time.Unix(120, 0),
 		}},
@@ -56,11 +55,17 @@ func TestCachedQueryResultRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if data[5] != 0 || data[6] != 0 {
+		t.Fatalf("reserved warning bytes were not zero: %v", data[5:7])
+	}
+	// Version-1 entries that populated the former warning field remain
+	// readable; the unavailable value is deliberately ignored.
+	data[5], data[6] = 0, 3
 	got, err := unmarshalCachedQueryResult(data)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.warnings != 3 || got.result.StatusFlags != 2 ||
+	if got.result.StatusFlags != 2 ||
 		len(got.result.Rows) != 1 || got.result.Rows[0][0].ToString() != "42" ||
 		len(got.extents) != 1 || !got.extents[0].Start.Equal(time.Unix(60, 0)) {
 		t.Fatalf("round trip mismatch: %+v", got)

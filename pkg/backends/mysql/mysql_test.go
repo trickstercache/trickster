@@ -448,7 +448,7 @@ func TestCacheExecutionGuardBranches(t *testing.T) {
 		{Mode: sqlanalyzer.CacheModeNone},
 		{Mode: sqlanalyzer.CacheModeDelta},
 	} {
-		if _, _, _, err := h.executeCached(&vtmysql.Conn{}, session, "SELECT 1", analysis); err == nil {
+		if _, _, err := h.executeCached(&vtmysql.Conn{}, session, "SELECT 1", analysis); err == nil {
 			t.Fatalf("executeCached(%v) unexpectedly succeeded", analysis.Mode)
 		}
 	}
@@ -691,13 +691,13 @@ func TestCacheOriginFallbackBranches(t *testing.T) {
 	h := newProtocolHandler(ProtocolConfig{BackendName: "mysql-fallback", Cache: newTestCache()}, nil)
 	c := &vtmysql.Conn{}
 	session := &upstreamSession{}
-	if _, _, _, err := h.executeCached(c, session, "SELECT 1", sqlanalyzer.Analysis{
+	if _, _, err := h.executeCached(c, session, "SELECT 1", sqlanalyzer.Analysis{
 		Mode: sqlanalyzer.CacheModeObject,
 	}); err == nil {
 		t.Fatal("object fallback without a session succeeded")
 	}
 	invalidPlan := &sqlanalyzer.QueryPlan{}
-	if _, _, _, err := h.executeDelta(c, session, "SELECT 1", invalidPlan); err == nil {
+	if _, _, err := h.executeDelta(c, session, "SELECT 1", invalidPlan); err == nil {
 		t.Fatal("invalid delta fallback without a session succeeded")
 	}
 	window := deltaRequestWindow{empty: true, lower: time.Unix(0, 0), upper: time.Unix(60, 0)}
@@ -705,12 +705,53 @@ func TestCacheOriginFallbackBranches(t *testing.T) {
 		extentOnlyRenderer{}, emptyRangeRenderer{err: errors.New("render failure")}, emptyRangeRenderer{},
 	} {
 		plan := &sqlanalyzer.QueryPlan{Renderer: renderer}
-		if _, _, _, err := h.executeEmptyDelta(c, session, "SELECT 1", plan, window); err == nil {
+		if _, _, err := h.executeEmptyDelta(c, session, "SELECT 1", plan, window); err == nil {
 			t.Fatal("empty delta fallback without a session succeeded")
 		}
 	}
-	if _, _, err := h.executeOrigin(nil, "SELECT 1"); err == nil {
+	if _, err := h.executeOrigin(nil, "SELECT 1"); err == nil {
 		t.Fatal("origin execution without a session succeeded")
+	}
+}
+
+func TestCachedQueryClearsPriorWarningCount(t *testing.T) {
+	h := newProtocolHandler(ProtocolConfig{
+		BackendName: "mysql-warning-reset", Cache: newTestCache(),
+	}, nil)
+	c := &vtmysql.Conn{User: "client"}
+	session := &upstreamSession{database: "trickster", warnings: 7}
+	h.sessions[c] = session
+	query := "SELECT 42"
+	key := h.queryCacheKey(c, session, "opc", query)
+	h.storeCached(key, &cachedQueryResult{result: &sqltypes.Result{
+		Fields: []*querypb.Field{{Name: "answer", Type: querypb.Type_INT64}},
+		Rows:   [][]sqltypes.Value{{sqltypes.NewInt64(42)}},
+	}})
+
+	if err := h.ComQuery(c, query, func(*sqltypes.Result) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if warnings := h.WarningCount(c); warnings != 0 {
+		t.Fatalf("cached query warning count = %d, want 0", warnings)
+	}
+}
+
+func TestProxyResultSetReturnsFinalCallbackErrorWithoutDownstream(t *testing.T) {
+	origin := &testOriginHandler{env: vtenv.NewTestEnv()}
+	params := startCoverageOrigin(t, origin)
+	upstream, err := vtmysql.Connect(context.Background(), &params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(upstream.Close)
+	h := newProtocolHandler(ProtocolConfig{
+		BackendName: "mysql-final-callback", MaxResultRows: 10, MaxResultSizeBytes: 1024,
+	}, nil)
+	want := errors.New("final callback failed")
+	err = h.proxyResultSet(&upstreamSession{}, upstream, "SELECT 42",
+		func(*sqltypes.Result) error { return want })
+	if !errors.Is(err, want) {
+		t.Fatalf("proxyResultSet() error = %v, want %v", err, want)
 	}
 }
 
@@ -806,18 +847,18 @@ func TestDeltaCacheHitAndInvalidEntryBranches(t *testing.T) {
 	}}
 	extent := timeseries.Extent{Start: start, End: time.Unix(60, 0)}
 	key := h.queryCacheKey(c, session, "dpc", plan.CanonicalSQL, plan.IdentitySuffix)
-	h.storeCached(key, &cachedQueryResult{result: result, warnings: 3,
+	h.storeCached(key, &cachedQueryResult{result: result,
 		extents: timeseries.ExtentList{extent}})
-	got, warnings, status, err := h.executeDelta(c, session, "SELECT delta", plan)
-	if err != nil || warnings != 3 || status != cachestatus.LookupStatusHit || len(got.Rows) != 2 {
-		t.Fatalf("delta hit = %+v/%d/%v/%v", got, warnings, status, err)
+	got, status, err := h.executeDelta(c, session, "SELECT delta", plan)
+	if err != nil || status != cachestatus.LookupStatusHit || len(got.Rows) != 2 {
+		t.Fatalf("delta hit = %+v/%v/%v", got, status, err)
 	}
 
 	invalid := &sqltypes.Result{Fields: fields, Rows: [][]sqltypes.Value{
 		{sqltypes.NewVarChar("bad-time"), sqltypes.NewInt64(1)},
 	}}
 	h.storeCached(key, &cachedQueryResult{result: invalid, extents: timeseries.ExtentList{extent}})
-	if _, _, _, err := h.executeDelta(c, session, "SELECT delta", plan); err == nil {
+	if _, _, err := h.executeDelta(c, session, "SELECT delta", plan); err == nil {
 		t.Fatal("invalid cached time axis did not fall back to the unavailable origin")
 	}
 	if _, found := h.retrieveCached(key); found {
@@ -947,7 +988,7 @@ func TestShardedDeltaAndMergeFallback(t *testing.T) {
 	}, nil)
 	c := &vtmysql.Conn{User: "client"}
 	session := &upstreamSession{database: "trickster", downstream: c}
-	result, _, status, err := h.executeDelta(c, session, query, analysis.Plan)
+	result, status, err := h.executeDelta(c, session, query, analysis.Plan)
 	if err != nil || status != cachestatus.LookupStatusKeyMiss || len(result.Rows) != 5 ||
 		deltaOrigin.queryCount.Load() < 2 {
 		t.Fatalf("sharded delta = %d rows/%v/%v, origin queries=%d", len(result.Rows), status, err,
@@ -962,7 +1003,7 @@ func TestShardedDeltaAndMergeFallback(t *testing.T) {
 		MaxResultRows: 100, MaxResultSizeBytes: 1 << 20,
 	}, nil)
 	fallbackSession := &upstreamSession{database: "trickster", downstream: c}
-	if _, _, status, err := fallback.executeDelta(c, fallbackSession, query, analysis.Plan); err == nil ||
+	if _, status, err := fallback.executeDelta(c, fallbackSession, query, analysis.Plan); err == nil ||
 		status != cachestatus.LookupStatusProxyOnly {
 		t.Fatalf("merge fallback = %v/%v, want proxy-only origin failure", status, err)
 	}
