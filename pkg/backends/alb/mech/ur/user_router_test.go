@@ -81,37 +81,6 @@ func (m *mockAuth) Sanitize(r *http.Request) {
 	}
 }
 
-func TestHandleDefaultNilHandler(t *testing.T) {
-	// Before the fix, this would panic with a nil pointer dereference
-	// because handleDefault did not return after calling HandleBadGateway.
-	h := &Handler{}
-	w := httptest.NewRecorder()
-	r, _ := http.NewRequest("GET", "http://example.com/", nil)
-	h.handleDefault(w, r)
-	if w.Code != http.StatusBadGateway {
-		t.Errorf("expected %d got %d", http.StatusBadGateway, w.Code)
-	}
-}
-
-func TestHandleDefaultWithHandler(t *testing.T) {
-	called := false
-	h := &Handler{
-		defaultHandler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			called = true
-			w.WriteHeader(http.StatusOK)
-		}),
-	}
-	w := httptest.NewRecorder()
-	r, _ := http.NewRequest("GET", "http://example.com/", nil)
-	h.handleDefault(w, r)
-	if !called {
-		t.Error("expected DefaultHandler to be called")
-	}
-	if w.Code != http.StatusOK {
-		t.Errorf("expected %d got %d", http.StatusOK, w.Code)
-	}
-}
-
 func TestServeHTTP(t *testing.T) {
 	okHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)

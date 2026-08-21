@@ -233,10 +233,6 @@ func (h *Handler) SetUserRoutes(routes UserRoutes) {
 	h.mu.Unlock()
 }
 
-func (h *Handler) handleDefault(w http.ResponseWriter, r *http.Request) {
-	handleDefault(w, r, h.snapshot())
-}
-
 func handleDefault(w http.ResponseWriter, r *http.Request, state handlerSnapshot) {
 	code := state.noRouteStatusCode
 	if code == 0 && state.options != nil {
