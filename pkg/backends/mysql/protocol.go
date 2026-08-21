@@ -590,13 +590,24 @@ type upstreamSession struct {
 	collation           collations.ID // effective upstream collation
 	inTx                bool
 	cacheUnsafe         bool
-	downstream          *vtmysql.Conn
-	control             *phaseConn
-	ready               bool
-	forced              bool
-	upstreamCounted     bool
-	traceContext        context.Context
-	connectSpan         trace.Span
+	// stateful marks session state that replaySessionState cannot reproduce on
+	// a replacement connection: user variables, advisory locks, temporary
+	// objects, table locks, and the diagnostics a write leaves behind. Only the
+	// database and time zone are replayable. Every statement that sets this
+	// currently also sets cacheUnsafe, but the two answer different questions —
+	// cache correctness for this session's reads versus reconnect safety — and
+	// are tracked apart so neither policy silently moves the other.
+	stateful bool
+	// terminal marks a session whose upstream was lost while it held state a
+	// reconnect cannot reproduce. It refuses a later transparent reconnect.
+	terminal        bool
+	downstream      *vtmysql.Conn
+	control         *phaseConn
+	ready           bool
+	forced          bool
+	upstreamCounted bool
+	traceContext    context.Context
+	connectSpan     trace.Span
 }
 
 // routedConnection records the one-time outcome of route activation for a
@@ -943,6 +954,13 @@ func (h *protocolHandler) connectSession(session *upstreamSession) error {
 	}
 	session.mtx.Lock()
 	defer session.mtx.Unlock()
+	if session.terminal {
+		// Reconnecting here would silently move the client's remaining
+		// statements onto a fresh autocommit connection that has none of the
+		// transaction, temporary-object, lock, or variable state it expects.
+		return sqlerror.NewSQLError(sqlerror.CRServerGone, sqlerror.SSUnknownSQLState,
+			"Trickster lost MySQL origin session state that cannot be restored")
+	}
 	if !session.upstreamParamsReady {
 		session.upstream = h.config.Upstream
 		session.upstreamParamsReady = true
@@ -1195,17 +1213,18 @@ func (h *protocolHandler) proxyQuery(session *upstreamSession, query string, par
 	upstream := session.conn
 	session.mtx.Unlock()
 	if returnsResultSet(parsed.statementType) {
-		err := h.runOriginQuery(session, upstream, func() error {
+		err := h.runOriginQuery(session, upstream, parsed, func() error {
 			return h.proxyResultSet(session, upstream, query, callback)
 		})
-		if err == nil {
-			h.updateSessionStateParsed(session, parsed)
+		if err != nil {
+			return err
 		}
-		return err
+		h.updateSessionStateParsed(session, parsed)
+		return nil
 	}
 	var result *sqltypes.Result
 	var warnings uint16
-	err := h.runOriginQuery(session, upstream, func() error {
+	err := h.runOriginQuery(session, upstream, parsed, func() error {
 		var executeErr error
 		result, warnings, executeErr = upstream.ExecuteFetchWithWarningCount(query, 1, true)
 		return executeErr
@@ -1262,9 +1281,27 @@ func (h *protocolHandler) proxyResultSet(session *upstreamSession, upstream *vtm
 	callback func(*sqltypes.Result) error,
 ) error {
 	if err := upstream.ExecuteStreamFetch(query); err != nil {
+		// The origin rejected the statement before opening a result stream, so
+		// it answered with a complete ERR packet and stayed synchronized.
 		return err
 	}
-	defer upstream.CloseResult()
+	// Every failure from here on leaves a result stream the origin is still
+	// sending. CloseResult drains what it can but reports nothing, so Trickster
+	// cannot prove the connection resynchronized and must not reuse it.
+	if err := h.streamResultSet(session, upstream, callback); err != nil {
+		// The stream is abandoned partway through, and CloseResult would
+		// keep reading until the origin sends a remainder it may never send.
+		// The connection is already unusable, so close it instead of draining.
+		upstream.Close()
+		return upstreamFatal{err: err}
+	}
+	upstream.CloseResult()
+	return nil
+}
+
+func (h *protocolHandler) streamResultSet(session *upstreamSession, upstream *vtmysql.Conn,
+	callback func(*sqltypes.Result) error,
+) error {
 	fields, err := upstream.Fields()
 	if err != nil {
 		return err
@@ -1334,8 +1371,12 @@ func (h *protocolHandler) proxyResultSet(session *upstreamSession, upstream *vtm
 	}
 }
 
+// runOriginQuery executes operation against upstream, then decides whether the
+// connection survived. parsed describes the statement so any state a failure
+// may have left behind is recorded before abandonUpstream weighs whether the
+// session can still be reconnected.
 func (h *protocolHandler) runOriginQuery(session *upstreamSession, upstream *vtmysql.Conn,
-	operation func() error,
+	parsed parsedQuery, operation func() error,
 ) error {
 	ctx := session.traceContext
 	var span trace.Span
@@ -1363,16 +1404,109 @@ func (h *protocolHandler) runOriginQuery(session *upstreamSession, upstream *vtm
 		timerDone.Wait()
 	}
 	if timedOut.Load() {
-		h.discardUpstream(session, upstream)
-		metrics.MySQLConnectionErrors.WithLabelValues(h.config.BackendName, "query_timeout").Inc()
+		h.updateSessionStateFailed(session, parsed)
+		h.abandonUpstream(session, upstream, "query_timeout")
 		return sqlerror.NewSQLError(sqlerror.ERQueryInterrupted, sqlerror.SSQueryInterrupted,
 			"MySQL origin query exceeded Trickster's configured timeout")
 	}
 	if err != nil {
-		h.discardUpstream(session, upstream)
-		metrics.MySQLConnectionErrors.WithLabelValues(h.config.BackendName, "origin_query").Inc()
+		h.updateSessionStateFailed(session, parsed)
+		if upstreamRetainable(upstream, err) {
+			// An ordinary server error is a complete, synchronized response.
+			// Keeping the connection preserves the transaction, temporary
+			// objects, locks, and variables the client still expects.
+			metrics.MySQLConnectionErrors.WithLabelValues(h.config.BackendName,
+				"origin_statement").Inc()
+			return err
+		}
+		h.abandonUpstream(session, upstream, "origin_query")
+		// The fatality marker is internal bookkeeping; the client still needs
+		// the origin's own SQL error so Vitess can encode its errno.
+		return originError(err)
+	}
+	return nil
+}
+
+func originError(err error) error {
+	if fatal, ok := errors.AsType[upstreamFatal](err); ok {
+		return fatal.err
 	}
 	return err
+}
+
+// upstreamFatal marks an error that left the origin connection unusable: a
+// stream Trickster abandoned before the origin finished sending it, or any
+// other locally known desynchronization.
+type upstreamFatal struct{ err error }
+
+func (e upstreamFatal) Error() string { return e.err.Error() }
+
+func (e upstreamFatal) Unwrap() error { return e.err }
+
+// upstreamRetainable reports whether err left the origin connection usable and
+// synchronized, which is true only for an ordinary server SQL error.
+func upstreamRetainable(upstream *vtmysql.Conn, err error) bool {
+	if err == nil {
+		return true
+	}
+	if upstream == nil || upstream.IsClosed() {
+		return false
+	}
+	if _, ok := errors.AsType[upstreamFatal](err); ok {
+		return false
+	}
+	var sqlErr *sqlerror.SQLError
+	if !errors.As(err, &sqlErr) {
+		// A non-protocol error carries no proof the exchange completed.
+		return false
+	}
+	return !originConnectionFatal(sqlErr)
+}
+
+// originConnectionFatal reports whether err means the origin connection can no
+// longer serve commands. Vitess's sqlerror.IsConnErr answers a different
+// question and cannot be used directly: it counts ER_QUERY_INTERRUPTED, which
+// KILL QUERY delivers as a complete ERR packet on a connection that stays
+// usable, and it omits the server-terminal codes below.
+func originConnectionFatal(err *sqlerror.SQLError) bool {
+	switch err.Number() {
+	case sqlerror.ERQueryInterrupted:
+		// KILL QUERY ends the statement, not the connection.
+		return false
+	case sqlerror.ERServerShutdown, sqlerror.ERForcingClose, sqlerror.ERAbortingConnection:
+		// The origin announced that it is dropping this connection.
+		return true
+	}
+	return sqlerror.IsConnErr(err)
+}
+
+// abandonUpstream drops an origin connection Trickster can no longer use. A
+// session whose state a reconnect cannot reproduce becomes terminal, so the
+// client is told its session is gone instead of silently continuing on a fresh
+// autocommit connection.
+func (h *protocolHandler) abandonUpstream(session *upstreamSession, upstream *vtmysql.Conn,
+	class string,
+) {
+	h.discardUpstream(session, upstream)
+	metrics.MySQLConnectionErrors.WithLabelValues(h.config.BackendName, class).Inc()
+	if session == nil {
+		return
+	}
+	session.mtx.Lock()
+	lost := session.inTx || session.stateful
+	if lost {
+		session.terminal = true
+	}
+	downstream := session.downstream
+	session.mtx.Unlock()
+	if !lost {
+		return
+	}
+	if downstream != nil {
+		downstream.MarkForClose()
+	}
+	metrics.MySQLConnectionErrors.WithLabelValues(h.config.BackendName,
+		"session_state_lost").Inc()
 }
 
 func resultFieldsSize(fields []*querypb.Field, limit int64) (int64, bool) {

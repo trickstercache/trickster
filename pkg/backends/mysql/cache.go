@@ -422,11 +422,12 @@ func (h *protocolHandler) executeOrigin(session *upstreamSession,
 	upstream := session.conn
 	session.mtx.Unlock()
 	var result *sqltypes.Result
-	err := h.runOriginQuery(session, upstream, func() error {
-		var fetchErr error
-		result, fetchErr = h.collectOriginResult(session, upstream, query)
-		return fetchErr
-	})
+	err := h.runOriginQuery(session, upstream, parsedQuery{statementType: sqlparser.StmtSelect},
+		func() error {
+			var fetchErr error
+			result, fetchErr = h.collectOriginResult(session, upstream, query)
+			return fetchErr
+		})
 	return result, err
 }
 
@@ -434,9 +435,27 @@ func (h *protocolHandler) collectOriginResult(session *upstreamSession, upstream
 	query string,
 ) (*sqltypes.Result, error) {
 	if err := upstream.ExecuteStreamFetch(query); err != nil {
+		// The origin rejected the statement before opening a result stream, so
+		// it answered with a complete ERR packet and stayed synchronized.
 		return nil, err
 	}
-	defer upstream.CloseResult()
+	// Every failure from here on abandons a stream the origin is still
+	// sending, which leaves the connection desynchronized.
+	result, err := h.collectStreamedResult(session, upstream)
+	if err != nil {
+		// The stream is abandoned partway through, and CloseResult would
+		// keep reading until the origin sends a remainder it may never send.
+		// The connection is already unusable, so close it instead of draining.
+		upstream.Close()
+		return nil, upstreamFatal{err: err}
+	}
+	upstream.CloseResult()
+	return result, nil
+}
+
+func (h *protocolHandler) collectStreamedResult(session *upstreamSession,
+	upstream *vtmysql.Conn,
+) (*sqltypes.Result, error) {
 	fields, err := upstream.Fields()
 	if err != nil {
 		return nil, err
@@ -1099,7 +1118,10 @@ func (h *protocolHandler) updateSessionStateParsed(session *upstreamSession, par
 	defer session.mtx.Unlock()
 	if parsed.statementType == sqlparser.StmtSelect && parsed.err == nil {
 		if selectChangesSessionState(parsed.statement) {
+			// SELECT ... INTO, user-variable assignment, and the advisory lock
+			// functions all leave connection-scoped state behind.
 			session.cacheUnsafe = true
+			session.stateful = true
 		}
 	}
 	switch parsed.statementType {
@@ -1122,20 +1144,58 @@ func (h *protocolHandler) updateSessionStateParsed(session *upstreamSession, par
 		if timeZone, ok := cacheSafeTimeZone(parsed.statement); parsed.err == nil && ok {
 			session.timeZone = timeZone
 		} else {
+			// The time zone is the only SET replaySessionState reproduces.
 			session.cacheUnsafe = true
+			session.stateful = true
 		}
+	// The rows are durable at the origin, but the write also updates
+	// connection-scoped diagnostics — LAST_INSERT_ID above all — that a
+	// replacement connection reports differently.
 	case sqlparser.StmtInsert, sqlparser.StmtReplace,
-		sqlparser.StmtUpdate, sqlparser.StmtDelete, sqlparser.StmtDDL,
-		sqlparser.StmtLockTables, sqlparser.StmtUnlockTables:
+		sqlparser.StmtUpdate, sqlparser.StmtDelete,
+		// Or Table locks are connection-scoped, and the analyzer does not parse
+		// DDL closely enough to rule out CREATE TEMPORARY TABLE.
+		sqlparser.StmtDDL, sqlparser.StmtLockTables, sqlparser.StmtUnlockTables:
 		session.cacheUnsafe = true
+		session.stateful = true
 	default:
 		switch parsed.statementType {
 		case sqlparser.StmtSelect, sqlparser.StmtShow, sqlparser.StmtExplain,
 			sqlparser.StmtAnalyze, sqlparser.StmtComment, sqlparser.StmtCommentOnly:
 		default:
 			session.cacheUnsafe = true
+			session.stateful = true
 		}
 	}
+}
+
+// updateSessionStateFailed records state a failed statement may still have left
+// on the connection. MySQL applies a multi-assignment SET left to right and can
+// abort partway, and DDL is not transactional, so an error is not proof that
+// nothing changed. Values the origin definitely did not apply — the database,
+// the time zone, and the transaction flag — are deliberately left alone.
+func (h *protocolHandler) updateSessionStateFailed(session *upstreamSession, parsed parsedQuery) {
+	switch parsed.statementType {
+	case sqlparser.StmtSelect:
+		// A failed read leaves nothing behind unless its own AST assigns a
+		// variable, selects INTO, or takes an advisory lock. A read with no
+		// recorded AST has nothing to inspect.
+		if parsed.statement == nil || parsed.err != nil ||
+			!selectChangesSessionState(parsed.statement) {
+			return
+		}
+	case sqlparser.StmtShow, sqlparser.StmtExplain, sqlparser.StmtAnalyze,
+		sqlparser.StmtComment, sqlparser.StmtCommentOnly, sqlparser.StmtUse,
+		sqlparser.StmtBegin, sqlparser.StmtCommit, sqlparser.StmtRollback,
+		sqlparser.StmtSavepoint, sqlparser.StmtSRollback, sqlparser.StmtRelease:
+		return
+	}
+	// Everything else — SET, DDL, table locks, and unrecognized statements —
+	// may have applied part of its work before the origin reported the error.
+	session.mtx.Lock()
+	session.cacheUnsafe = true
+	session.stateful = true
+	session.mtx.Unlock()
 }
 
 func selectChangesSessionState(stmt sqlparser.Statement) bool {
