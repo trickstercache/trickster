@@ -21,6 +21,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -32,13 +33,24 @@ import (
 // Trickster handler deliberately rejects.
 type phaseConn struct {
 	net.Conn
-	ready           atomic.Bool
-	awaitingCommand atomic.Bool
-	readTimeout     time.Duration
-	idleTimeout     time.Duration
-	writeTimeout    time.Duration
-	firstWrite      atomic.Bool
+	ready            atomic.Bool
+	awaitingCommand  atomic.Bool
+	readTimeout      time.Duration
+	idleTimeout      time.Duration
+	writeTimeout     time.Duration
+	firstWrite       atomic.Bool
+	readDeadlineMtx  sync.Mutex
+	readDeadline     atomic.Pointer[phaseDeadline]
+	writeDeadlineMtx sync.Mutex
+	writeDeadline    atomic.Pointer[phaseDeadline]
 }
+
+type phaseDeadline struct {
+	timeout  time.Duration
+	deadline time.Time
+}
+
+const maxDeadlineRefreshSlack = time.Second
 
 func newPhaseConn(conn net.Conn, handshake, read, write, idle time.Duration) *phaseConn {
 	c := &phaseConn{
@@ -52,6 +64,8 @@ func newPhaseConn(conn net.Conn, handshake, read, write, idle time.Duration) *ph
 
 func (c *phaseConn) setReady() {
 	_ = c.Conn.SetDeadline(time.Time{})
+	c.readDeadline.Store(nil)
+	c.writeDeadline.Store(nil)
 	c.ready.Store(true)
 	c.awaitingCommand.Store(true)
 	c.setIdleReadDeadline()
@@ -62,7 +76,7 @@ func (c *phaseConn) Read(p []byte) (int, error) {
 	if idleRead {
 		c.setIdleReadDeadline()
 	} else if c.ready.Load() && c.readTimeout > 0 {
-		_ = c.Conn.SetReadDeadline(time.Now().Add(c.readTimeout))
+		c.setReadDeadline(c.readTimeout)
 	}
 	n, err := c.Conn.Read(p)
 	if n > 0 && idleRead {
@@ -80,7 +94,7 @@ func (c *phaseConn) Write(p []byte) (int, error) {
 		p = maskUnsupportedCapabilities(p)
 	}
 	if c.ready.Load() && c.writeTimeout > 0 {
-		_ = c.Conn.SetWriteDeadline(time.Now().Add(c.writeTimeout))
+		c.setWriteDeadline(c.writeTimeout)
 	}
 	n, err := c.Conn.Write(p)
 	if n > 0 && c.ready.Load() {
@@ -92,8 +106,52 @@ func (c *phaseConn) Write(p []byte) (int, error) {
 
 func (c *phaseConn) setIdleReadDeadline() {
 	if c.idleTimeout > 0 {
-		_ = c.Conn.SetReadDeadline(time.Now().Add(c.idleTimeout))
+		c.setReadDeadline(c.idleTimeout)
 	}
+}
+
+func (c *phaseConn) setReadDeadline(timeout time.Duration) {
+	if deadlineReusable(c.readDeadline.Load(), timeout, time.Now()) {
+		return
+	}
+	c.readDeadlineMtx.Lock()
+	defer c.readDeadlineMtx.Unlock()
+	now := time.Now()
+	if deadlineReusable(c.readDeadline.Load(), timeout, now) {
+		return
+	}
+	deadline := &phaseDeadline{timeout: timeout, deadline: coalescedDeadline(now, timeout)}
+	if c.Conn.SetReadDeadline(deadline.deadline) == nil {
+		c.readDeadline.Store(deadline)
+	}
+}
+
+func (c *phaseConn) setWriteDeadline(timeout time.Duration) {
+	if deadlineReusable(c.writeDeadline.Load(), timeout, time.Now()) {
+		return
+	}
+	c.writeDeadlineMtx.Lock()
+	defer c.writeDeadlineMtx.Unlock()
+	now := time.Now()
+	if deadlineReusable(c.writeDeadline.Load(), timeout, now) {
+		return
+	}
+	deadline := &phaseDeadline{timeout: timeout, deadline: coalescedDeadline(now, timeout)}
+	if c.Conn.SetWriteDeadline(deadline.deadline) == nil {
+		c.writeDeadline.Store(deadline)
+	}
+}
+
+func deadlineReusable(current *phaseDeadline, timeout time.Duration, now time.Time) bool {
+	return current != nil && current.timeout == timeout && current.deadline.After(now.Add(timeout))
+}
+
+// coalescedDeadline adds a bounded refresh interval to the configured timeout.
+// Repeated packet reads and writes can therefore reuse the installed deadline
+// without ever shortening the configured period after the most recent I/O.
+func coalescedDeadline(now time.Time, timeout time.Duration) time.Time {
+	slack := min(timeout/8, maxDeadlineRefreshSlack)
+	return now.Add(timeout + slack)
 }
 
 func isTimeout(err error) bool {

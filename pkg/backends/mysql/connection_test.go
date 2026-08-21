@@ -37,22 +37,42 @@ func TestPhaseConnSeparatesIdleAndActiveReadTimeouts(t *testing.T) {
 	conn := newPhaseConn(underlying, 0, readTimeout, time.Minute, idleTimeout)
 	conn.setReady()
 	assertPhaseDeadline(t, underlying.readDeadline, idleTimeout)
+	if underlying.readDeadlineCalls != 1 {
+		t.Fatalf("idle deadline calls = %d, want 1", underlying.readDeadlineCalls)
+	}
 
 	buffer := make([]byte, 1)
 	if n, err := conn.Read(buffer); n != 1 || err != nil {
 		t.Fatalf("first command read = %d, %v", n, err)
 	}
 	assertPhaseDeadline(t, underlying.readDeadline, idleTimeout)
+	if underlying.readDeadlineCalls != 1 {
+		t.Fatalf("repeated idle deadline calls = %d, want 1", underlying.readDeadlineCalls)
+	}
 
 	if _, err := conn.Read(buffer); !isTimeout(err) {
 		t.Fatalf("in-progress command read error = %v, want timeout", err)
 	}
 	assertPhaseDeadline(t, underlying.readDeadline, readTimeout)
+	if underlying.readDeadlineCalls != 2 {
+		t.Fatalf("active deadline calls = %d, want 2", underlying.readDeadlineCalls)
+	}
 
 	if _, err := conn.Write([]byte{2}); err != nil {
 		t.Fatal(err)
 	}
 	assertPhaseDeadline(t, underlying.readDeadline, idleTimeout)
+	if underlying.readDeadlineCalls != 3 || underlying.writeDeadlineCalls != 1 {
+		t.Fatalf("post-write deadline calls = read %d, write %d, want 3 and 1",
+			underlying.readDeadlineCalls, underlying.writeDeadlineCalls)
+	}
+	if _, err := conn.Write([]byte{3}); err != nil {
+		t.Fatal(err)
+	}
+	if underlying.readDeadlineCalls != 3 || underlying.writeDeadlineCalls != 1 {
+		t.Fatalf("coalesced deadline calls = read %d, write %d, want 3 and 1",
+			underlying.readDeadlineCalls, underlying.writeDeadlineCalls)
+	}
 	if _, err := conn.Read(buffer); !errors.Is(err, io.EOF) {
 		t.Fatalf("idle command read error = %v, want EOF", err)
 	}
@@ -62,7 +82,7 @@ func TestPhaseConnSeparatesIdleAndActiveReadTimeouts(t *testing.T) {
 func assertPhaseDeadline(t *testing.T, deadline time.Time, want time.Duration) {
 	t.Helper()
 	remaining := time.Until(deadline)
-	if remaining < want-time.Second || remaining > want {
+	if remaining < want-time.Second || remaining > want+maxDeadlineRefreshSlack {
 		t.Fatalf("read deadline remaining = %s, want approximately %s", remaining, want)
 	}
 }
@@ -73,8 +93,10 @@ type scriptedRead struct {
 }
 
 type scriptedPhaseConn struct {
-	reads        []scriptedRead
-	readDeadline time.Time
+	reads              []scriptedRead
+	readDeadline       time.Time
+	readDeadlineCalls  int
+	writeDeadlineCalls int
 }
 
 func (c *scriptedPhaseConn) Read(p []byte) (int, error) {
@@ -93,9 +115,13 @@ func (*scriptedPhaseConn) RemoteAddr() net.Addr        { return phaseTestAddr("r
 func (*scriptedPhaseConn) SetDeadline(time.Time) error { return nil }
 func (c *scriptedPhaseConn) SetReadDeadline(deadline time.Time) error {
 	c.readDeadline = deadline
+	c.readDeadlineCalls++
 	return nil
 }
-func (*scriptedPhaseConn) SetWriteDeadline(time.Time) error { return nil }
+func (c *scriptedPhaseConn) SetWriteDeadline(time.Time) error {
+	c.writeDeadlineCalls++
+	return nil
+}
 
 type phaseTestAddr string
 

@@ -29,6 +29,11 @@ import (
 	"vitess.io/vitess/go/vt/sqlparser"
 )
 
+const (
+	fromUnixTimeFunction  = "from_unixtime"
+	unixTimestampFunction = "unix_timestamp"
+)
+
 var (
 	// ErrInvalidSQL indicates that Vitess could not parse the statement.
 	ErrInvalidSQL = errors.New("invalid MySQL SQL")
@@ -222,9 +227,9 @@ func isNondeterministic(stmt sqlparser.SQLNode) bool {
 				"database", "found_rows", "get_lock", "is_free_lock",
 				"is_used_lock", "last_insert_id", "now", "rand",
 				"release_all_locks", "release_lock", "row_count", "sysdate",
-				"unix_timestamp", "user", "uuid", "uuid_short":
+				unixTimestampFunction, "user", "uuid", "uuid_short":
 				// UNIX_TIMESTAMP(column) is deterministic; its zero-argument form is not.
-				if name != "unix_timestamp" || len(n.Exprs) == 0 {
+				if name != unixTimestampFunction || len(n.Exprs) == 0 {
 					unsafe = true
 					return false, nil
 				}
@@ -574,7 +579,7 @@ func hasSecondaryTimeAxis(parts []sqlparser.Expr, bucket bucketInfo) bool {
 
 func plausibleTimeBound(expr sqlparser.Expr) bool {
 	if f, ok := expr.(*sqlparser.FuncExpr); ok &&
-		strings.EqualFold(f.Name.String(), "from_unixtime") {
+		strings.EqualFold(f.Name.String(), fromUnixTimeFunction) {
 		return true
 	}
 	value, ok := intLiteral(expr)
@@ -600,7 +605,8 @@ func sameTimeAxis(expr sqlparser.Expr, bucket bucketInfo) bool {
 }
 
 func parseBound(expr sqlparser.Expr, inclusive bool) (*mysqlBound, error) {
-	if f, ok := expr.(*sqlparser.FuncExpr); ok && strings.EqualFold(f.Name.String(), "from_unixtime") && len(f.Exprs) == 1 {
+	if f, ok := expr.(*sqlparser.FuncExpr); ok &&
+		strings.EqualFold(f.Name.String(), fromUnixTimeFunction) && len(f.Exprs) == 1 {
 		seconds, ok := intLiteral(f.Exprs[0])
 		if !ok {
 			return nil, ErrUnsafePredicate
@@ -658,7 +664,11 @@ func analyzeResultShape(stmt *sqlparser.Select, bucket bucketInfo) ([]string, []
 	if stmt.GroupBy == nil || stmt.GroupBy.WithRollup {
 		return nil, nil, ErrUnsupportedResultShape
 	}
-	groups := make([]string, 0, len(stmt.GroupBy.Exprs)-1)
+	groupCapacity := len(stmt.GroupBy.Exprs)
+	if groupCapacity > 0 {
+		groupCapacity--
+	}
+	groups := make([]string, 0, groupCapacity)
 	groupIndexes := make(map[int]struct{}, len(stmt.GroupBy.Exprs))
 	foundTime := false
 	for _, expr := range stmt.GroupBy.Exprs {
@@ -860,7 +870,7 @@ func columnReference(expr sqlparser.Expr) (string, string, bool) {
 
 func unixTimestampColumn(expr sqlparser.Expr) (string, string, bool) {
 	f, ok := expr.(*sqlparser.FuncExpr)
-	if !ok || !strings.EqualFold(f.Name.String(), "unix_timestamp") || len(f.Exprs) != 1 {
+	if !ok || !strings.EqualFold(f.Name.String(), unixTimestampFunction) || len(f.Exprs) != 1 {
 		return "", "", false
 	}
 	return columnReference(f.Exprs[0])

@@ -32,11 +32,13 @@ import (
 	cachestatus "github.com/trickstercache/trickster/v2/pkg/cache/status"
 	checksum "github.com/trickstercache/trickster/v2/pkg/checksum/md5"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 
+	"github.com/prometheus/client_golang/prometheus"
 	vtmysql "vitess.io/vitess/go/mysql"
 	"vitess.io/vitess/go/sqltypes"
 	querypb "vitess.io/vitess/go/vt/proto/query"
@@ -44,12 +46,60 @@ import (
 )
 
 const (
-	cacheEnvelopeVersion byte = 1
-	cacheIdentityVersion byte = 1
-	mysqlDialect              = "mysql"
+	cacheEnvelopeVersion          byte = 1
+	cacheIdentityVersion          byte = 1
+	mysqlDialect                       = "mysql"
+	cacheModeOPC                       = "opc"
+	cacheModeDPC                       = "dpc"
+	cacheModeDPCEmpty                  = "dpc-empty"
+	cacheFailureDecode                 = "decode_failure"
+	cacheFailureOversized              = "oversized_cached_object"
+	logKeyBackendName                  = "backend_name"
+	metricMethodQuery                  = "QUERY"
+	metricPathQuery                    = "query"
+	metricHTTPStatusOK                 = "200"
+	metricHTTPStatusInternalError      = "500"
 )
 
 var cacheEnvelopeMagic = [4]byte{'T', 'M', 'Y', 'Q'}
+
+type analysisMetricKey struct {
+	mode   sqlanalyzer.CacheMode
+	reason string
+}
+
+var analysisMetricKeys = [...]analysisMetricKey{
+	{sqlanalyzer.CacheModeNone, string(sqlanalyzer.ReasonNondeterministic)},
+	{sqlanalyzer.CacheModeObject, string(sqlanalyzer.ReasonInvalidSQL)},
+	{sqlanalyzer.CacheModeObject, string(sqlanalyzer.ReasonUnsupportedStatement)},
+	{sqlanalyzer.CacheModeObject, string(sqlanalyzer.ReasonNotTimeRange)},
+	{sqlanalyzer.CacheModeObject, string(sqlanalyzer.ReasonUnsupportedBucket)},
+	{sqlanalyzer.CacheModeObject, string(sqlanalyzer.ReasonUnsafePredicate)},
+	{sqlanalyzer.CacheModeObject, string(sqlanalyzer.ReasonAmbiguousTimeAxis)},
+	{sqlanalyzer.CacheModeObject, string(sqlanalyzer.ReasonUnsupportedGrouping)},
+	{sqlanalyzer.CacheModeObject, string(sqlanalyzer.ReasonUnsupportedFormat)},
+	{sqlanalyzer.CacheModeObject, string(sqlanalyzer.ReasonUnsupportedLimit)},
+	{sqlanalyzer.CacheModeDelta, string(sqlanalyzer.ReasonDeltaCacheable)},
+}
+
+type cacheMetricKey struct {
+	mode   sqlanalyzer.CacheMode
+	status cachestatus.LookupStatus
+}
+
+type cacheMetricHandles struct {
+	native   prometheus.Counter
+	requests prometheus.Counter
+	elements prometheus.Counter
+	duration prometheus.Observer
+}
+
+type protocolMetricHandles struct {
+	connectLatency prometheus.Observer
+	queryLatency   prometheus.Observer
+	analysis       map[analysisMetricKey]prometheus.Counter
+	cache          map[cacheMetricKey]cacheMetricHandles
+}
 
 type cachedQueryResult struct {
 	result  *sqltypes.Result
@@ -157,7 +207,7 @@ func (h *protocolHandler) executeCached(c *vtmysql.Conn, session *upstreamSessio
 func (h *protocolHandler) executeObject(c *vtmysql.Conn, session *upstreamSession,
 	query string,
 ) (*sqltypes.Result, cachestatus.LookupStatus, error) {
-	key := h.queryCacheKey(c, session, "opc", strings.TrimSpace(query))
+	key := h.queryCacheKey(c, session, cacheModeOPC, strings.TrimSpace(query))
 	value, err, _ := h.opcGroup.Do(key, func() (any, error) {
 		if cached, ok := h.retrieveCached(key); ok {
 			return cacheExecution{
@@ -183,7 +233,7 @@ func (h *protocolHandler) executeObject(c *vtmysql.Conn, session *upstreamSessio
 func (h *protocolHandler) executeDelta(c *vtmysql.Conn, session *upstreamSession,
 	query string, plan *sqlanalyzer.QueryPlan,
 ) (*sqltypes.Result, cachestatus.LookupStatus, error) {
-	key := h.queryCacheKey(c, session, "dpc", plan.CanonicalSQL, plan.IdentitySuffix)
+	key := h.queryCacheKey(c, session, cacheModeDPC, plan.CanonicalSQL, plan.IdentitySuffix)
 	lock := h.lockDPC(key)
 	defer h.unlockDPC(key, lock)
 
@@ -252,11 +302,11 @@ func (h *protocolHandler) executeDelta(c *vtmysql.Conn, session *upstreamSession
 	merged, mergeErr := mergeResults(parts, plan)
 	if mergeErr != nil {
 		logger.Warn("mysql delta result could not be modeled; using object result", logging.Pairs{
-			"backend_name": h.config.BackendName, "detail": mergeErr.Error(),
+			logKeyBackendName: h.config.BackendName, "detail": mergeErr.Error(),
 		})
 		result, fetchErr := h.executeOrigin(session, query)
 		if fetchErr == nil {
-			h.storeCached(h.queryCacheKey(c, session, "opc", strings.TrimSpace(query)),
+			h.storeCached(h.queryCacheKey(c, session, cacheModeOPC, strings.TrimSpace(query)),
 				&cachedQueryResult{result: result})
 		}
 		return result, cachestatus.LookupStatusProxyOnly, fetchErr
@@ -315,7 +365,7 @@ func (h *protocolHandler) executeEmptyDelta(c *vtmysql.Conn, session *upstreamSe
 		result, fetchErr := h.executeOrigin(session, originalQuery)
 		return result, cachestatus.LookupStatusProxyOnly, fetchErr
 	}
-	key := h.queryCacheKey(c, session, "dpc-empty", plan.CanonicalSQL, plan.IdentitySuffix)
+	key := h.queryCacheKey(c, session, cacheModeDPCEmpty, plan.CanonicalSQL, plan.IdentitySuffix)
 	if cached, found := h.retrieveCached(key); found {
 		return cached.result, cachestatus.LookupStatusHit, nil
 	}
@@ -426,20 +476,20 @@ func (h *protocolHandler) retrieveCached(key string) (*cachedQueryResult, bool) 
 			if !errors.Is(err, cache.ErrKNF) {
 				h.observeCacheFailure("retrieve_failure")
 				logger.Error("mysql cache retrieval failed", logging.Pairs{
-					"backend_name": h.config.BackendName, "detail": err.Error(),
+					logKeyBackendName: h.config.BackendName, "detail": err.Error(),
 				})
 			}
 			return nil, false
 		}
 		result, valid := value.(*cachedQueryResult)
 		if !valid || result == nil || result.result == nil {
-			h.observeCacheFailure("decode_failure")
-			h.removeCached(key, "decode_failure")
+			h.observeCacheFailure(cacheFailureDecode)
+			h.removeCached(key, cacheFailureDecode)
 			return nil, false
 		}
 		if h.config.MaxObjectSize > 0 && int64(result.Size()) > h.config.MaxObjectSize {
-			h.observeCacheFailure("oversized_cached_object")
-			h.removeCached(key, "oversized_cached_object")
+			h.observeCacheFailure(cacheFailureOversized)
+			h.removeCached(key, cacheFailureOversized)
 			return nil, false
 		}
 		return result, true
@@ -449,20 +499,20 @@ func (h *protocolHandler) retrieveCached(key string) (*cachedQueryResult, bool) 
 		if !errors.Is(err, cache.ErrKNF) {
 			h.observeCacheFailure("retrieve_failure")
 			logger.Error("mysql cache retrieval failed", logging.Pairs{
-				"backend_name": h.config.BackendName, "detail": err.Error(),
+				logKeyBackendName: h.config.BackendName, "detail": err.Error(),
 			})
 		}
 		return nil, false
 	}
 	if h.config.MaxObjectSize > 0 && int64(len(data)) > h.config.MaxObjectSize {
-		h.observeCacheFailure("oversized_cached_object")
-		h.removeCached(key, "oversized_cached_object")
+		h.observeCacheFailure(cacheFailureOversized)
+		h.removeCached(key, cacheFailureOversized)
 		return nil, false
 	}
 	result, err := unmarshalCachedQueryResult(data)
 	if err != nil {
-		h.observeCacheFailure("decode_failure")
-		h.removeCached(key, "decode_failure")
+		h.observeCacheFailure(cacheFailureDecode)
+		h.removeCached(key, cacheFailureDecode)
 		return nil, false
 	}
 	return result, true
@@ -472,7 +522,7 @@ func (h *protocolHandler) storeCached(key string, result *cachedQueryResult) {
 	if result == nil || result.result == nil {
 		h.observeCacheFailure("encode_failure")
 		logger.Error("mysql cache result encoding failed", logging.Pairs{
-			"backend_name": h.config.BackendName, "detail": "nil MySQL cache result",
+			logKeyBackendName: h.config.BackendName, "detail": "nil MySQL cache result",
 		})
 		return
 	}
@@ -484,15 +534,17 @@ func (h *protocolHandler) storeCached(key string, result *cachedQueryResult) {
 		result.size = estimateCachedQueryResultSize(result)
 		if h.config.MaxObjectSize > 0 && int64(result.size) > h.config.MaxObjectSize {
 			h.observeCacheFailure("max_object_size")
-			logger.Debug("mysql cache result exceeds max object size", logging.Pairs{
-				"backend_name": h.config.BackendName, "size": result.size,
-			})
+			if logger.Level() == level.Debug {
+				logger.Debug("mysql cache result exceeds max object size", logging.Pairs{
+					logKeyBackendName: h.config.BackendName, "size": result.size,
+				})
+			}
 			return
 		}
 		if err := memoryCache.StoreReference(key, result, h.config.CacheTTL); err != nil {
 			h.observeCacheFailure("store_failure")
 			logger.Error("mysql cache storage failed", logging.Pairs{
-				"backend_name": h.config.BackendName, "detail": err.Error(),
+				logKeyBackendName: h.config.BackendName, "detail": err.Error(),
 			})
 		}
 		return
@@ -501,22 +553,24 @@ func (h *protocolHandler) storeCached(key string, result *cachedQueryResult) {
 	if err != nil {
 		h.observeCacheFailure("encode_failure")
 		logger.Error("mysql cache result encoding failed", logging.Pairs{
-			"backend_name": h.config.BackendName, "detail": err.Error(),
+			logKeyBackendName: h.config.BackendName, "detail": err.Error(),
 		})
 		return
 	}
 	if h.config.MaxObjectSize > 0 && int64(len(data)) > h.config.MaxObjectSize {
 		h.observeCacheFailure("max_object_size")
-		logger.Debug("mysql cache result exceeds max object size", logging.Pairs{
-			"backend_name": h.config.BackendName, "size": len(data),
-		})
+		if logger.Level() == level.Debug {
+			logger.Debug("mysql cache result exceeds max object size", logging.Pairs{
+				logKeyBackendName: h.config.BackendName, "size": len(data),
+			})
+		}
 		return
 	}
 	result.size = len(data)
 	if err := cacheClient.Store(key, data, h.config.CacheTTL); err != nil {
 		h.observeCacheFailure("store_failure")
 		logger.Error("mysql cache storage failed", logging.Pairs{
-			"backend_name": h.config.BackendName, "detail": err.Error(),
+			logKeyBackendName: h.config.BackendName, "detail": err.Error(),
 		})
 	}
 }
@@ -542,7 +596,7 @@ func (h *protocolHandler) removeCached(key, reason string) {
 	if err := cacheClient.Remove(key); err != nil {
 		h.observeCacheFailure("remove_failure")
 		logger.Error("mysql cache removal failed", logging.Pairs{
-			"backend_name": h.config.BackendName, "reason": reason, "detail": err.Error(),
+			logKeyBackendName: h.config.BackendName, "reason": reason, "detail": err.Error(),
 		})
 	}
 }
@@ -1102,43 +1156,66 @@ func (h *protocolHandler) observeAnalysis(statementType sqlparser.StatementType,
 	if reason == "" {
 		reason = "unknown"
 	}
-	metrics.SQLQueryAnalysis.WithLabelValues(h.config.BackendName, mysqlDialect,
-		analysis.Mode.String(), reason).Inc()
-	logger.Debug("mysql query analyzed", logging.Pairs{
-		"backend_name": h.config.BackendName, "cache_mode": analysis.Mode.String(),
-		"analysis_reason": reason, "statement_type": statementType.String(),
-	})
+	key := analysisMetricKey{mode: analysis.Mode, reason: reason}
+	if h.metricHandles != nil {
+		if counter := h.metricHandles.analysis[key]; counter != nil {
+			counter.Inc()
+		} else {
+			metrics.SQLQueryAnalysis.WithLabelValues(h.config.BackendName, mysqlDialect,
+				analysis.Mode.String(), reason).Inc()
+		}
+	} else {
+		metrics.SQLQueryAnalysis.WithLabelValues(h.config.BackendName, mysqlDialect,
+			analysis.Mode.String(), reason).Inc()
+	}
+	if logger.Level() == level.Debug {
+		logger.Debug("mysql query analyzed", logging.Pairs{
+			logKeyBackendName: h.config.BackendName, "cache_mode": analysis.Mode.String(),
+			"analysis_reason": reason, "statement_type": statementType.String(),
+		})
+	}
 }
 
 func (h *protocolHandler) observeRewriteFailure(reason string) {
 	metrics.SQLQueryRewriteFailures.WithLabelValues(h.config.BackendName, mysqlDialect, reason).Inc()
 	logger.Error("mysql query extent rewrite failed", logging.Pairs{
-		"backend_name": h.config.BackendName, "reason": reason,
+		logKeyBackendName: h.config.BackendName, "reason": reason,
 	})
 }
 
 func (h *protocolHandler) observeCache(mode sqlanalyzer.CacheMode,
 	status cachestatus.LookupStatus, points int, elapsed time.Duration,
 ) {
-	httpStatus := "200"
-	if status == cachestatus.LookupStatusProxyError || status == cachestatus.LookupStatusError {
-		httpStatus = "500"
+	handles, ok := cacheMetricHandles{}, false
+	if h.metricHandles != nil {
+		handles, ok = h.metricHandles.cache[cacheMetricKey{mode: mode, status: status}]
 	}
-	metrics.SQLQueryCache.WithLabelValues(h.config.BackendName, mysqlDialect,
-		mode.String(), status.String()).Inc()
-	metrics.ProxyRequestStatus.WithLabelValues(h.config.BackendName, mysqlDialect,
-		"QUERY", status.String(), httpStatus, "query").Inc()
-	metrics.ProxyRequestElements.WithLabelValues(h.config.BackendName, mysqlDialect,
-		status.String(), "query").Add(float64(points))
-	metrics.ProxyRequestDuration.WithLabelValues(h.config.BackendName, mysqlDialect,
-		"QUERY", status.String(), httpStatus, "query").Observe(elapsed.Seconds())
-	logger.Debug("mysql query cache completed", logging.Pairs{
-		"backend_name": h.config.BackendName, "cache_mode": mode.String(),
-		"cache_status": status.String(),
-	})
+	if !ok {
+		handles = resolveCacheMetricHandles(h.config.BackendName, mode, status)
+	}
+	handles.native.Inc()
+	handles.requests.Inc()
+	handles.elements.Add(float64(points))
+	handles.duration.Observe(elapsed.Seconds())
+	if logger.Level() == level.Debug {
+		logger.Debug("mysql query cache completed", logging.Pairs{
+			logKeyBackendName: h.config.BackendName, "cache_mode": mode.String(),
+			"cache_status": status.String(),
+		})
+	}
 }
 
-func initializeCacheOutcomeMetrics(backendName string) {
+func newProtocolMetricHandles(backendName string) *protocolMetricHandles {
+	handles := &protocolMetricHandles{
+		connectLatency: metrics.MySQLCommandLatency.WithLabelValues(backendName, "connect"),
+		queryLatency:   metrics.MySQLCommandLatency.WithLabelValues(backendName, metricPathQuery),
+		analysis:       make(map[analysisMetricKey]prometheus.Counter, len(analysisMetricKeys)),
+		cache:          make(map[cacheMetricKey]cacheMetricHandles, 10),
+	}
+	for _, key := range analysisMetricKeys {
+		handles.analysis[key] = metrics.SQLQueryAnalysis.WithLabelValues(backendName, mysqlDialect,
+			key.mode.String(), key.reason)
+	}
 	statuses := map[sqlanalyzer.CacheMode][]cachestatus.LookupStatus{
 		sqlanalyzer.CacheModeObject: {
 			cachestatus.LookupStatusHit,
@@ -1157,14 +1234,29 @@ func initializeCacheOutcomeMetrics(backendName string) {
 	}
 	for mode, values := range statuses {
 		for _, status := range values {
-			httpStatus := "200"
-			if status == cachestatus.LookupStatusProxyError {
-				httpStatus = "500"
-			}
-			metrics.SQLQueryCache.WithLabelValues(backendName, mysqlDialect,
-				mode.String(), status.String()).Add(0)
-			metrics.ProxyRequestStatus.WithLabelValues(backendName, mysqlDialect,
-				"QUERY", status.String(), httpStatus, "query").Add(0)
+			key := cacheMetricKey{mode: mode, status: status}
+			handles.cache[key] = resolveCacheMetricHandles(backendName, mode, status)
 		}
+	}
+	return handles
+}
+
+func resolveCacheMetricHandles(backendName string, mode sqlanalyzer.CacheMode,
+	status cachestatus.LookupStatus,
+) cacheMetricHandles {
+	httpStatus := metricHTTPStatusOK
+	if status == cachestatus.LookupStatusProxyError || status == cachestatus.LookupStatusError {
+		httpStatus = metricHTTPStatusInternalError
+	}
+	statusLabel := status.String()
+	return cacheMetricHandles{
+		native: metrics.SQLQueryCache.WithLabelValues(backendName, mysqlDialect,
+			mode.String(), statusLabel),
+		requests: metrics.ProxyRequestStatus.WithLabelValues(backendName, mysqlDialect,
+			metricMethodQuery, statusLabel, httpStatus, metricPathQuery),
+		elements: metrics.ProxyRequestElements.WithLabelValues(backendName, mysqlDialect,
+			statusLabel, metricPathQuery),
+		duration: metrics.ProxyRequestDuration.WithLabelValues(backendName, mysqlDialect,
+			metricMethodQuery, statusLabel, httpStatus, metricPathQuery),
 	}
 }

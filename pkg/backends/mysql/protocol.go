@@ -36,6 +36,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	mo "github.com/trickstercache/trickster/v2/pkg/backends/mysql/options"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	cachestatus "github.com/trickstercache/trickster/v2/pkg/cache/status"
 	checksum "github.com/trickstercache/trickster/v2/pkg/checksum/md5"
@@ -60,6 +61,10 @@ import (
 const protocolVersion = "8.0.0-trickster"
 
 const resultBatchSize = 256
+
+var passwordHashPrefixes = [...]string{
+	"$apr1$", "$1$", "$2a$", "$2b$", "$2y$", "$5$", "$6$",
+}
 
 // ProtocolConfig contains MySQL protocol settings derived from a backend.
 // Socket admission limits remain listener settings; these fields describe the
@@ -158,7 +163,7 @@ func upstreamConnParamsFromOptions(o *bo.Options) (vtmysql.ConnParams, error) {
 	if err != nil {
 		return vtmysql.ConnParams{}, fmt.Errorf("parse MySQL origin URL: %w", err)
 	}
-	if u.Scheme != "mysql" {
+	if u.Scheme != providers.MySQL {
 		return vtmysql.ConnParams{}, fmt.Errorf("unsupported MySQL origin scheme %q", u.Scheme)
 	}
 	host := u.Hostname()
@@ -319,7 +324,7 @@ func DownstreamCredentialsFromOptions(o *bo.Options) (map[string]string, error) 
 }
 
 func isPasswordHash(password string) bool {
-	for _, prefix := range []string{"$apr1$", "$1$", "$2a$", "$2b$", "$2y$", "$5$", "$6$"} {
+	for _, prefix := range passwordHashPrefixes {
 		if strings.HasPrefix(password, prefix) {
 			return true
 		}
@@ -422,12 +427,10 @@ func NewRoutedProtocolServer(config ProtocolConfig, resolver backends.RouteResol
 }
 
 func newProtocolHandler(config ProtocolConfig, env *vtenv.Environment) *protocolHandler {
-	if !config.ProxyOnly {
-		initializeCacheOutcomeMetrics(config.BackendName)
-	}
 	return &protocolHandler{
 		config: config, env: env, sessions: make(map[*vtmysql.Conn]*upstreamSession),
 		controls: make(map[uint32]*phaseConn), dpcLocks: make(map[string]*dpcLock),
+		metricHandles: newProtocolMetricHandles(config.BackendName),
 	}
 }
 
@@ -779,6 +782,7 @@ type protocolHandler struct {
 	opcGroup        singleflight.Group
 	dpcLockMtx      sync.Mutex
 	dpcLocks        map[string]*dpcLock
+	metricHandles   *protocolMetricHandles
 }
 
 type dpcLock struct {
@@ -872,7 +876,12 @@ func (h *protocolHandler) sessionState(c *vtmysql.Conn) (*upstreamSession, error
 func (h *protocolHandler) connectSession(session *upstreamSession) error {
 	started := time.Now()
 	defer func() {
-		metrics.MySQLCommandLatency.WithLabelValues(h.config.BackendName, "connect").Observe(time.Since(started).Seconds())
+		if h.metricHandles != nil {
+			h.metricHandles.connectLatency.Observe(time.Since(started).Seconds())
+			return
+		}
+		metrics.MySQLCommandLatency.WithLabelValues(h.config.BackendName,
+			"connect").Observe(time.Since(started).Seconds())
 	}()
 	if session == nil {
 		return sqlerror.NewSQLError(sqlerror.CRServerGone, sqlerror.SSUnknownSQLState,
@@ -945,7 +954,12 @@ func (h *protocolHandler) ComQuery(c *vtmysql.Conn, query string,
 ) error {
 	started := time.Now()
 	defer func() {
-		metrics.MySQLCommandLatency.WithLabelValues(h.config.BackendName, "query").Observe(time.Since(started).Seconds())
+		if h.metricHandles != nil {
+			h.metricHandles.queryLatency.Observe(time.Since(started).Seconds())
+			return
+		}
+		metrics.MySQLCommandLatency.WithLabelValues(h.config.BackendName,
+			metricPathQuery).Observe(time.Since(started).Seconds())
 	}()
 	if h.config.MaxQuerySizeBytes > 0 && len(query) > h.config.MaxQuerySizeBytes {
 		metrics.MySQLConnectionErrors.WithLabelValues(h.config.BackendName, "query_size").Inc()

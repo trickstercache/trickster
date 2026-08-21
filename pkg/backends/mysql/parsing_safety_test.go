@@ -17,6 +17,7 @@
 package mysql
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -26,6 +27,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 
 	vtmysql "vitess.io/vitess/go/mysql"
+	"vitess.io/vitess/go/vt/sqlparser"
 )
 
 func TestAnalyzerPredicateSafetyAdversarial(t *testing.T) {
@@ -185,6 +187,23 @@ func TestAnalyzerRangeEdges(t *testing.T) {
 		if got := a.Analyze(query, time.Time{}); got.Mode == sqlanalyzer.CacheModeDelta {
 			t.Fatalf("open range was DPC: %+v", got.Plan)
 		}
+	}
+}
+
+func TestAnalyzeResultShapeRejectsEmptyGroupByWithoutPanicking(t *testing.T) {
+	statement, err := defaultAnalyzer.parser.Parse(safeDateTimeQuery)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selectStatement := statement.(*sqlparser.Select)
+	bucket, err := analyzeBucket(selectStatement)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selectStatement.GroupBy.Exprs = nil
+	if _, _, err = analyzeResultShape(selectStatement, bucket); !errors.Is(err,
+		ErrUnsupportedResultShape) {
+		t.Fatalf("empty GROUP BY error = %v, want %v", err, ErrUnsupportedResultShape)
 	}
 }
 
