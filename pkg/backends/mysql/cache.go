@@ -46,7 +46,7 @@ import (
 )
 
 const (
-	cacheEnvelopeVersion          byte = 2
+	cacheEnvelopeVersion          byte = 1
 	cacheIdentityVersion          byte = 1
 	mysqlDialect                       = "mysql"
 	cacheModeOPC                       = "opc"
@@ -623,11 +623,12 @@ func (h *protocolHandler) queryCacheKey(c *vtmysql.Conn, session *upstreamSessio
 	session.mtx.Lock()
 	database := session.database
 	timeZone := session.timeZone
+	collation := session.collation
 	session.mtx.Unlock()
 	var identity strings.Builder
 	identitySize := 1 + len(h.config.BackendName) + len(h.config.CacheKeyPrefix) +
 		len(c.User) + len(database) + len(timeZone) + len(engine) +
-		(6+len(statementIdentity))*binary.MaxVarintLen64
+		(7+len(statementIdentity))*binary.MaxVarintLen64
 	for _, part := range statementIdentity {
 		identitySize += len(part)
 	}
@@ -638,6 +639,7 @@ func (h *protocolHandler) queryCacheKey(c *vtmysql.Conn, session *upstreamSessio
 	appendCacheIdentityField(&identity, c.User)
 	appendCacheIdentityField(&identity, database)
 	appendCacheIdentityField(&identity, timeZone)
+	appendCacheIdentityUint(&identity, uint64(collation))
 	appendCacheIdentityField(&identity, engine)
 	for _, part := range statementIdentity {
 		appendCacheIdentityField(&identity, part)
@@ -651,6 +653,12 @@ func appendCacheIdentityField(identity *strings.Builder, value string) {
 	n := binary.PutUvarint(length[:], uint64(len(value)))
 	_, _ = identity.Write(length[:n])
 	_, _ = identity.WriteString(value)
+}
+
+func appendCacheIdentityUint(identity *strings.Builder, value uint64) {
+	var encoded [binary.MaxVarintLen64]byte
+	n := binary.PutUvarint(encoded[:], value)
+	_, _ = identity.Write(encoded[:n])
 }
 
 func (h *protocolHandler) lockDPC(key string) *dpcLock {
@@ -695,9 +703,9 @@ func marshalCachedQueryResult(cached *cachedQueryResult) ([]byte, error) {
 	out := make([]byte, headerSize+len(resultBytes))
 	copy(out, cacheEnvelopeMagic[:])
 	out[4] = cacheEnvelopeVersion
-	// Bytes 5:7 previously stored an unavailable warning count. Keep them
-	// reserved and zeroed so existing version-1 cache entries remain readable.
-	// A future version of Vitess will pass the accurate warning count in 5:7
+	// Bytes 5:7 are reserved and zeroed. Vitess does not currently expose a
+	// streamed result's warning count; a future version can place it there
+	// without moving any other field.
 	binary.BigEndian.PutUint16(out[7:9], cached.result.StatusFlags)
 	// #nosec G115 -- both lengths were bounded by math.MaxUint32 above.
 	binary.BigEndian.PutUint32(out[9:13], uint32(len(cached.extents)))

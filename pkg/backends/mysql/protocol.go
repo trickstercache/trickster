@@ -49,6 +49,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/singleflight"
 	vtmysql "vitess.io/vitess/go/mysql"
+	"vitess.io/vitess/go/mysql/collations"
 	"vitess.io/vitess/go/mysql/replication"
 	"vitess.io/vitess/go/mysql/sqlerror"
 	"vitess.io/vitess/go/sqltypes"
@@ -586,6 +587,7 @@ type upstreamSession struct {
 	warnings            uint16
 	database            string
 	timeZone            string
+	collation           collations.ID // effective upstream collation
 	inTx                bool
 	cacheUnsafe         bool
 	downstream          *vtmysql.Conn
@@ -597,6 +599,10 @@ type upstreamSession struct {
 	connectSpan         trace.Span
 }
 
+// routedConnection records the one-time outcome of route activation for a
+// downstream connection. A non-nil routedConnection with no target marks the
+// activation as permanently failed, so no later callback can select a second
+// target for the same connection.
 type routedConnection struct {
 	target *protocolHandler
 }
@@ -642,27 +648,56 @@ func (h *routedProtocolHandler) NewConnection(c *vtmysql.Conn) {
 	c.StatusFlags = vtmysql.ServerStatusAutocommit
 }
 
-func (h *routedProtocolHandler) ConnectionReady(c *vtmysql.Conn) {
-	decision, ok := c.ClientData.(backends.RouteDecision)
-	if !ok || decision.Target.Backend == nil {
-		c.MarkForClose()
-		return
+// activate consumes the route decision that authentication left on the
+// connection and initializes the selected target exactly once. Vitess
+// dispatches the initial USE of a CLIENT_CONNECT_WITH_DB handshake before it
+// reports the connection as ready, so that command activates the route and
+// ConnectionReady only completes the handshake on an already-activated target.
+func (h *routedProtocolHandler) activate(c *vtmysql.Conn) (*protocolHandler, error) {
+	if c == nil {
+		return nil, errNoRoute()
 	}
-	target := h.targets[decision.Target.Backend.Name()]
+	if routed, ok := c.ClientData.(*routedConnection); ok {
+		if routed.target == nil {
+			return nil, errNoRoute()
+		}
+		return routed.target, nil
+	}
+	var target *protocolHandler
+	if decision, ok := c.ClientData.(backends.RouteDecision); ok && decision.Target.Backend != nil {
+		target = h.targets[decision.Target.Backend.Name()]
+	}
+	control := h.takeControl(c.ConnectionID)
 	if target == nil {
+		// Activation failure is terminal for the connection. Recording it
+		// releases the pending control and blocks a second target selection.
+		c.ClientData = &routedConnection{}
 		c.MarkForClose()
-		return
+		return nil, errNoRoute()
 	}
-	h.mtx.Lock()
-	control := h.controls[c.ConnectionID]
-	delete(h.controls, c.ConnectionID)
-	h.mtx.Unlock()
 	if control != nil {
 		target.setControl(c.ConnectionID, control)
 	}
 	c.ClientData = &routedConnection{target: target}
 	target.NewConnection(c)
+	return target, nil
+}
+
+func (h *routedProtocolHandler) ConnectionReady(c *vtmysql.Conn) {
+	target, err := h.activate(c)
+	if err != nil {
+		c.MarkForClose()
+		return
+	}
 	target.ConnectionReady(c)
+}
+
+func (h *routedProtocolHandler) takeControl(connectionID uint32) *phaseConn {
+	h.mtx.Lock()
+	control := h.controls[connectionID]
+	delete(h.controls, connectionID)
+	h.mtx.Unlock()
+	return control
 }
 
 func (h *routedProtocolHandler) target(c *vtmysql.Conn) (*protocolHandler, error) {
@@ -671,7 +706,11 @@ func (h *routedProtocolHandler) target(c *vtmysql.Conn) (*protocolHandler, error
 			return routed.target, nil
 		}
 	}
-	return nil, sqlerror.NewSQLError(sqlerror.CRServerGone, sqlerror.SSUnknownSQLState,
+	return nil, errNoRoute()
+}
+
+func errNoRoute() error {
+	return sqlerror.NewSQLError(sqlerror.CRServerGone, sqlerror.SSUnknownSQLState,
 		"Trickster has no MySQL route for this connection")
 }
 
@@ -695,7 +734,9 @@ func (h *routedProtocolHandler) ComResetConnection(c *vtmysql.Conn) {
 func (h *routedProtocolHandler) ComQuery(c *vtmysql.Conn, query string,
 	callback func(*sqltypes.Result) error,
 ) error {
-	target, err := h.target(c)
+	// ComQuery is the only callback Vitess can dispatch before ConnectionReady,
+	// so it activates the route rather than requiring one to already exist.
+	target, err := h.activate(c)
 	if err != nil {
 		return err
 	}
@@ -843,7 +884,7 @@ func (h *protocolHandler) ConnectionReady(c *vtmysql.Conn) {
 		session.control.setReady()
 	}
 	session.mtx.Lock()
-	h.applyDownstreamCapabilitiesLocked(session, c)
+	h.applyDownstreamHandshakeLocked(session, c)
 	session.ready = true
 	connectionSpan := session.connectSpan
 	session.connectSpan = nil
@@ -863,10 +904,14 @@ func (h *protocolHandler) ComResetConnection(c *vtmysql.Conn) {
 	c.StatusFlags = vtmysql.ServerStatusAutocommit
 	h.mtx.Lock()
 	if !h.closed.Load() {
-		h.sessions[c] = &upstreamSession{
+		session := &upstreamSession{
 			database: h.config.Upstream.DbName, upstream: h.config.Upstream, upstreamParamsReady: true,
 			downstream: c, ready: true, traceContext: context.Background(),
 		}
+		// The reset session restarts from the connection's original handshake
+		// state, not from whatever collation the closed session last used.
+		h.applyDownstreamHandshakeLocked(session, c)
+		h.sessions[c] = session
 	}
 	h.mtx.Unlock()
 }
@@ -902,7 +947,7 @@ func (h *protocolHandler) connectSession(session *upstreamSession) error {
 		session.upstream = h.config.Upstream
 		session.upstreamParamsReady = true
 	}
-	h.applyDownstreamCapabilitiesLocked(session, session.downstream)
+	h.applyDownstreamHandshakeLocked(session, session.downstream)
 	if session.conn != nil {
 		return nil
 	}
@@ -954,7 +999,11 @@ func (h *protocolHandler) connectSession(session *upstreamSession) error {
 	return nil
 }
 
-func (h *protocolHandler) applyDownstreamCapabilitiesLocked(session *upstreamSession,
+// applyDownstreamHandshakeLocked copies the state Vitess negotiated with the
+// downstream client onto the session's private upstream parameters. Both the
+// capability flags and the collation ID are fixed for the connection's
+// lifetime, so a later upstream reconnect reproduces the same origin session.
+func (h *protocolHandler) applyDownstreamHandshakeLocked(session *upstreamSession,
 	downstream *vtmysql.Conn,
 ) {
 	if session == nil || downstream == nil {
@@ -962,6 +1011,15 @@ func (h *protocolHandler) applyDownstreamCapabilitiesLocked(session *upstreamSes
 	}
 	session.upstream.Flags &^= uint64(vtmysql.CapabilityClientFoundRows)
 	session.upstream.Flags |= uint64(downstream.Capabilities & vtmysql.CapabilityClientFoundRows)
+	// A client that sends collation 0 asks for the server default, which leaves
+	// the configured upstream collation in place.
+	if downstream.CharacterSet != collations.Unknown {
+		session.upstream.Charset = downstream.CharacterSet
+	}
+	// The cache identity tracks the collation the origin will actually use, so
+	// a client that defers to the configured default is not split into its own
+	// key space.
+	session.collation = session.upstream.Charset
 }
 
 func (h *protocolHandler) replaySessionState(conn *vtmysql.Conn, timeZone string) error {
