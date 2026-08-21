@@ -20,6 +20,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -109,6 +110,15 @@ frontend:
 	}
 	if config.ConfigFilePath() != configPath {
 		t.Errorf("config path = %q; want %q", config.ConfigFilePath(), configPath)
+	}
+	wantPaths := []string{
+		configPath,
+		filepath.Join(includePath, "10-secondary.yaml"),
+		filepath.Join(includePath, "20-primary.conf"),
+		filepath.Join(includePath, "30-frontend.yml"),
+	}
+	if got := config.ConfigFilePaths(); !slices.Equal(got, wantPaths) {
+		t.Errorf("config paths = %v; want %v", got, wantPaths)
 	}
 	if config.Main.configSourcePlan.includeDirectoryPath != includePath {
 		t.Errorf("include path = %q; want %q",
@@ -223,6 +233,40 @@ frontend:
 	}
 }
 
+func TestLoadConfigIncludeDirectoryFromRootMerge(t *testing.T) {
+	directoryPath := t.TempDir()
+	configPath := filepath.Join(directoryPath, "trickster.yaml")
+	includePath := filepath.Join(directoryPath, "pieces")
+	if err := os.Mkdir(includePath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeConfigSourceTestFile(t, configPath, `
+defaults: &defaults
+  main:
+    config_include_directory: pieces
+<<: *defaults
+backends:
+  primary:
+    provider: prometheus
+    origin_url: http://primary:9090
+`)
+	writeConfigSourceTestFile(t, filepath.Join(includePath, "frontend.yaml"), `
+frontend:
+  listen_port: 9124
+`)
+
+	config, err := Load([]string{"-config", configPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.Main.ConfigIncludeDirectory != "pieces" {
+		t.Errorf("include setting = %q; want %q", config.Main.ConfigIncludeDirectory, "pieces")
+	}
+	if config.Frontend.ListenPort != 9124 {
+		t.Errorf("frontend port = %d; want 9124", config.Frontend.ListenPort)
+	}
+}
+
 func TestLoadConfigSourcesFailures(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -322,6 +366,46 @@ func TestLoadConfigSourcesFailures(t *testing.T) {
 	}
 }
 
+func TestLoadSingleConfigUsesStrictParsing(t *testing.T) {
+	tests := []struct {
+		name       string
+		contents   string
+		errorMatch string
+	}{
+		{
+			name:       "multiple documents",
+			contents:   "frontend: {}\n---\nmetrics: {}\n",
+			errorMatch: "multiple YAML documents",
+		},
+		{
+			name:       "non-mapping document",
+			contents:   "- frontend\n",
+			errorMatch: "root must be a mapping",
+		},
+		{
+			name:       "duplicate key",
+			contents:   "frontend:\n  listen_port: 1\n  listen_port: 2\n",
+			errorMatch: "listen_port",
+		},
+		{
+			name:       "cyclic alias",
+			contents:   "cycle: &cycle [*cycle]\n",
+			errorMatch: "YAML alias cycle",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "trickster.yaml")
+			writeConfigSourceTestFile(t, path, test.contents)
+			_, err := Load([]string{"-config", path})
+			if err == nil || !strings.Contains(err.Error(), test.errorMatch) {
+				t.Fatalf("error = %v; want text %q", err, test.errorMatch)
+			}
+		})
+	}
+}
+
 func TestConfigSourceChangesAreStale(t *testing.T) {
 	t.Run("file and include directory", func(t *testing.T) {
 		configPath, includePath := makeConfigSourceTestDirectory(t)
@@ -407,6 +491,13 @@ func TestConfigSourceRateLimitAndClone(t *testing.T) {
 		clone.Main.configSourceFingerprint != config.Main.configSourceFingerprint ||
 		clone.Main.configSourcePlan != config.Main.configSourcePlan {
 		t.Fatal("clone did not retain config source state")
+	}
+	if !slices.Equal(clone.ConfigFilePaths(), config.ConfigFilePaths()) {
+		t.Fatal("clone did not retain config source paths")
+	}
+	clone.Main.configSourcePaths[0] = "changed"
+	if config.Main.configSourcePaths[0] == "changed" {
+		t.Fatal("clone shares config source paths with original")
 	}
 
 	clone.Main.configRateLimitTime = time.Now().Add(time.Minute)

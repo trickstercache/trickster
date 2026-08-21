@@ -31,6 +31,7 @@ import (
 	cache "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
+	yamlencoding "github.com/trickstercache/trickster/v2/pkg/encoding/yaml"
 	fropt "github.com/trickstercache/trickster/v2/pkg/frontend/options"
 	lo "github.com/trickstercache/trickster/v2/pkg/observability/logging/options"
 	mo "github.com/trickstercache/trickster/v2/pkg/observability/metrics/options"
@@ -39,7 +40,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v3"
 )
 
 const defaultResourceName = "default"
@@ -105,20 +106,11 @@ type MainConfig struct {
 
 	configFilePath          string
 	configSourcePlan        configSourcePlan
+	configSourcePaths       []string
 	configSourceFingerprint string
 	configLastModified      time.Time
 	configRateLimitTime     time.Time
 	stalenessCheckLock      sync.Mutex
-}
-
-func (mc *MainConfig) SetStalenessInfo(fp string, lm, rlt time.Time) {
-	mc.stalenessCheckLock.Lock()
-	mc.configFilePath = fp
-	mc.configSourcePlan = configSourcePlan{}
-	mc.configSourceFingerprint = ""
-	mc.configLastModified = lm
-	mc.configRateLimitTime = rlt
-	mc.stalenessCheckLock.Unlock()
 }
 
 // NewConfig returns a Config initialized with default values.
@@ -161,6 +153,8 @@ func (c *Config) loadFile(flags *Flags) error {
 		if err != nil {
 			return err
 		}
+	} else if _, err = parseConfigDocument(configData); err != nil {
+		return fmt.Errorf("parse config source %q: %w", sources[0].path, err)
 	}
 	if err := c.loadYAMLConfig(string(configData)); err != nil {
 		return err
@@ -171,6 +165,10 @@ func (c *Config) loadFile(flags *Flags) error {
 	snapshot := snapshotConfigSources(plan, sources, nil)
 	c.Main.configFilePath = flags.ConfigPath
 	c.Main.configSourcePlan = plan
+	c.Main.configSourcePaths = make([]string, len(sources))
+	for i, source := range sources {
+		c.Main.configSourcePaths[i] = source.path
+	}
 	c.Main.configSourceFingerprint = snapshot.fingerprint
 	c.Main.configLastModified = snapshot.lastModified
 	return nil
@@ -277,6 +275,7 @@ func (c *Config) Clone() *Config {
 	c.Main.stalenessCheckLock.Lock()
 	nc.Main.configFilePath = c.Main.configFilePath
 	nc.Main.configSourcePlan = c.Main.configSourcePlan
+	nc.Main.configSourcePaths = append([]string(nil), c.Main.configSourcePaths...)
 	nc.Main.configSourceFingerprint = c.Main.configSourceFingerprint
 	nc.Main.configLastModified = c.Main.configLastModified
 	nc.Main.configRateLimitTime = c.Main.configRateLimitTime
@@ -418,7 +417,7 @@ func (c *Config) String() string {
 		}
 	}
 
-	bytes, err := yaml.Marshal(cp)
+	bytes, err := yamlencoding.Marshal(cp)
 	if err == nil {
 		return string(bytes)
 	}
@@ -432,4 +431,20 @@ func (c *Config) ConfigFilePath() string {
 		return c.Main.configFilePath
 	}
 	return ""
+}
+
+// ConfigFilePaths returns the configuration files in application order.
+func (c *Config) ConfigFilePaths() []string {
+	if c == nil || c.Main == nil {
+		return nil
+	}
+	c.Main.stalenessCheckLock.Lock()
+	defer c.Main.stalenessCheckLock.Unlock()
+	if len(c.Main.configSourcePaths) > 0 {
+		return append([]string(nil), c.Main.configSourcePaths...)
+	}
+	if c.Main.configFilePath != "" {
+		return []string{c.Main.configFilePath}
+	}
+	return nil
 }

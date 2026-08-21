@@ -22,7 +22,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
 	frontend "github.com/trickstercache/trickster/v2/pkg/frontend/options"
 
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v3"
 )
 
 func TestIsSupportedProtocol(t *testing.T) {
@@ -174,5 +174,27 @@ func TestLookupUnmarshalAndClone(t *testing.T) {
 	clone["custom"].ListenPort++
 	if wrapped.Listeners["custom"].Equal(clone["custom"]) {
 		t.Errorf("different options should not compare equal")
+	}
+}
+
+func TestLookupUnmarshalYAMLMerge(t *testing.T) {
+	var wrapped struct {
+		Listeners Lookup `yaml:"listeners"`
+	}
+	err := yaml.Unmarshal([]byte(`
+listener_defaults: &listener_defaults
+  address: 127.0.0.2
+  port: 9001
+listeners:
+  custom:
+    <<: *listener_defaults
+    port: 9002
+`), &wrapped)
+	if err != nil {
+		t.Fatal(err)
+	}
+	custom := wrapped.Listeners["custom"]
+	if custom == nil || custom.ListenAddress != "127.0.0.2" || custom.ListenPort != 9002 {
+		t.Fatalf("unexpected merged listener: %#v", custom)
 	}
 }

@@ -29,8 +29,9 @@ import (
 	"strings"
 	"time"
 
-	yamlv3 "go.yaml.in/yaml/v3"
-	yamlv2 "gopkg.in/yaml.v2"
+	yamlencoding "github.com/trickstercache/trickster/v2/pkg/encoding/yaml"
+
+	"go.yaml.in/yaml/v3"
 )
 
 const defaultConfigIncludeDirectory = "conf.d"
@@ -126,8 +127,15 @@ func loadConfigSources(configPath string) (configSourcePlan, []configSource, err
 }
 
 func configIncludeDirectoryFromYAML(data []byte) (*string, error) {
+	document := &yaml.Node{}
+	if err := yaml.Unmarshal(data, document); err != nil {
+		return nil, err
+	}
+	if len(document.Content) != 1 || document.Content[0].Kind != yaml.MappingNode {
+		return nil, nil
+	}
 	metadata := configMetadata{}
-	if err := yamlv2.Unmarshal(data, &metadata); err != nil {
+	if err := document.Decode(&metadata); err != nil {
 		return nil, err
 	}
 	if metadata.Main == nil {
@@ -251,53 +259,53 @@ func mergeConfigSources(plan configSourcePlan, sources []configSource) ([]byte, 
 		}
 		mergeConfigMapping(merged.Content[0], document.Content[0])
 	}
-	data, err := yamlv3.Marshal(merged)
+	data, err := yamlencoding.Marshal(merged)
 	if err != nil {
 		return nil, fmt.Errorf("marshal merged configuration: %w", err)
 	}
 	return data, nil
 }
 
-func emptyConfigDocument() *yamlv3.Node {
-	return &yamlv3.Node{
-		Kind: yamlv3.DocumentNode,
-		Content: []*yamlv3.Node{{
-			Kind: yamlv3.MappingNode,
+func emptyConfigDocument() *yaml.Node {
+	return &yaml.Node{
+		Kind: yaml.DocumentNode,
+		Content: []*yaml.Node{{
+			Kind: yaml.MappingNode,
 			Tag:  "!!map",
 		}},
 	}
 }
 
-func parseConfigDocument(data []byte) (*yamlv3.Node, error) {
-	document := &yamlv3.Node{}
-	decoder := yamlv3.NewDecoder(bytes.NewReader(data))
+func parseConfigDocument(data []byte) (*yaml.Node, error) {
+	document := &yaml.Node{}
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	if err := decoder.Decode(document); err != nil {
 		if errors.Is(err, io.EOF) {
 			return emptyConfigDocument(), nil
 		}
 		return nil, err
 	}
-	extra := &yamlv3.Node{}
+	extra := &yaml.Node{}
 	if err := decoder.Decode(extra); !errors.Is(err, io.EOF) {
 		if err != nil {
 			return nil, err
 		}
 		return nil, errors.New("multiple YAML documents are not supported")
 	}
-	if len(document.Content) != 1 || document.Content[0].Kind != yamlv3.MappingNode {
+	if len(document.Content) != 1 || document.Content[0].Kind != yaml.MappingNode {
 		return nil, errors.New("configuration document root must be a mapping")
 	}
 	if err := validateConfigMappingKeys(document.Content[0]); err != nil {
 		return nil, err
 	}
-	expanded, err := cloneConfigNodeWithoutAliases(document, make(map[*yamlv3.Node]bool))
+	expanded, err := cloneConfigNodeWithoutAliases(document, make(map[*yaml.Node]bool))
 	if err != nil {
 		return nil, err
 	}
 	return expanded, nil
 }
 
-func cloneConfigNodeWithoutAliases(node *yamlv3.Node, active map[*yamlv3.Node]bool) (*yamlv3.Node, error) {
+func cloneConfigNodeWithoutAliases(node *yaml.Node, active map[*yaml.Node]bool) (*yaml.Node, error) {
 	if node == nil {
 		return nil, errors.New("YAML alias does not reference a node")
 	}
@@ -307,13 +315,13 @@ func cloneConfigNodeWithoutAliases(node *yamlv3.Node, active map[*yamlv3.Node]bo
 	active[node] = true
 	defer delete(active, node)
 
-	if node.Kind == yamlv3.AliasNode {
+	if node.Kind == yaml.AliasNode {
 		return cloneConfigNodeWithoutAliases(node.Alias, active)
 	}
 	clone := *node
 	clone.Anchor = ""
 	clone.Alias = nil
-	clone.Content = make([]*yamlv3.Node, 0, len(node.Content))
+	clone.Content = make([]*yaml.Node, 0, len(node.Content))
 	for _, child := range node.Content {
 		childClone, err := cloneConfigNodeWithoutAliases(child, active)
 		if err != nil {
@@ -324,13 +332,13 @@ func cloneConfigNodeWithoutAliases(node *yamlv3.Node, active map[*yamlv3.Node]bo
 	return &clone, nil
 }
 
-func validateConfigMappingKeys(node *yamlv3.Node) error {
+func validateConfigMappingKeys(node *yaml.Node) error {
 	switch node.Kind {
-	case yamlv3.MappingNode:
+	case yaml.MappingNode:
 		seen := make(map[string]struct{}, len(node.Content)/2)
 		for index := 0; index < len(node.Content); index += 2 {
 			key := node.Content[index]
-			if key.Kind != yamlv3.ScalarNode {
+			if key.Kind != yaml.ScalarNode {
 				return fmt.Errorf("configuration mapping key at line %d must be a scalar", key.Line)
 			}
 			if _, ok := seen[key.Value]; ok {
@@ -341,7 +349,7 @@ func validateConfigMappingKeys(node *yamlv3.Node) error {
 				return err
 			}
 		}
-	case yamlv3.SequenceNode, yamlv3.DocumentNode:
+	case yaml.SequenceNode, yaml.DocumentNode:
 		for _, child := range node.Content {
 			if err := validateConfigMappingKeys(child); err != nil {
 				return err
@@ -351,7 +359,7 @@ func validateConfigMappingKeys(node *yamlv3.Node) error {
 	return nil
 }
 
-func mergeConfigMapping(destination, overlay *yamlv3.Node) {
+func mergeConfigMapping(destination, overlay *yaml.Node) {
 	for index := 0; index < len(overlay.Content); index += 2 {
 		key := overlay.Content[index]
 		value := overlay.Content[index+1]
@@ -361,7 +369,7 @@ func mergeConfigMapping(destination, overlay *yamlv3.Node) {
 			continue
 		}
 		destinationValue := destination.Content[destinationValueIndex]
-		if destinationValue.Kind == yamlv3.MappingNode && value.Kind == yamlv3.MappingNode {
+		if destinationValue.Kind == yaml.MappingNode && value.Kind == yaml.MappingNode {
 			mergeConfigMapping(destinationValue, value)
 			continue
 		}
@@ -369,7 +377,7 @@ func mergeConfigMapping(destination, overlay *yamlv3.Node) {
 	}
 }
 
-func configMappingValueIndex(mapping *yamlv3.Node, key string) int {
+func configMappingValueIndex(mapping *yaml.Node, key string) int {
 	for index := len(mapping.Content) - 2; index >= 0; index -= 2 {
 		if mapping.Content[index].Value == key {
 			return index + 1

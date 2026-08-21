@@ -379,7 +379,7 @@ func initLogger(c *config.Config) logging.Logger {
 			"commitID":  appinfo.GitCommitID,
 			"buildTime": appinfo.BuildTime,
 			"logLevel":  c.Logging.LogLevel,
-			"config":    c.ConfigFilePath(),
+			"config":    strings.Join(c.ConfigFilePaths(), ","),
 			"pid":       os.Getpid(),
 		},
 	)

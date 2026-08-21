@@ -179,6 +179,38 @@ backends:
 	}
 }
 
+func TestInitLoggerIncludesAllConfigFiles(t *testing.T) {
+	directory := t.TempDir()
+	basePath := filepath.Join(directory, "10-base.yaml")
+	fragmentPath := filepath.Join(directory, "20-logging.yaml")
+	if err := os.WriteFile(basePath, []byte(minimalConfig), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(fragmentPath, []byte("logging:\n  log_level: info\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	conf, err := LoadAndValidate("-config", directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	logPath := filepath.Join(t.TempDir(), "trickster.log")
+	conf.Logging.LogFile = logPath
+	conf.Logging.LogLevel = string(level.Info)
+	activeLogger := initLogger(conf)
+	activeLogger.Close()
+	logger.SetLogger(logging.NoopLogger())
+
+	contents, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "config=" + basePath + "," + fragmentPath
+	if !strings.Contains(string(contents), want) {
+		t.Errorf("log does not contain ordered config files %q: %s", want, contents)
+	}
+}
+
 func TestBootstrapConfig(t *testing.T) {
 	conf, clients, err := BootstrapConfig("-config", writeConfig(t, minimalConfig))
 	if err != nil {
