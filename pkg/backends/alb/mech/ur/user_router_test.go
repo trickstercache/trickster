@@ -489,8 +489,15 @@ func TestResolveRouteProtocolNeutral(t *testing.T) {
 	decision, ok = h.ResolveRoute(backends.RouteInput{
 		Username: "alice", Credential: "inbound", Authenticated: true,
 	})
+	if ok || decision.Outcome != backends.RouteOutcomeUnavailable || decision.ReplaceCredentials {
+		t.Fatalf("isolated ResolveRoute() = %+v, %t", decision, ok)
+	}
+	decision, ok = h.ResolveRoute(backends.RouteInput{
+		Username: "alice", Credential: "inbound", Authenticated: true,
+		FallbackOnMappedUnavailable: true,
+	})
 	if !ok || decision.Outcome != backends.RouteOutcomeDefault || decision.ReplaceCredentials {
-		t.Fatalf("fallback ResolveRoute() = %+v, %t", decision, ok)
+		t.Fatalf("HTTP fallback ResolveRoute() = %+v, %t", decision, ok)
 	}
 
 	h.defaultTarget.Status = fixedRouteStatus(-1)

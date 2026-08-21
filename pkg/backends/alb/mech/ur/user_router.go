@@ -112,7 +112,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	decision, ok := resolveRoute(backends.RouteInput{
 		RouterName: state.routerName, Username: username, Credential: cred,
-		Authenticated: authenticated,
+		Authenticated: authenticated, FallbackOnMappedUnavailable: true,
 	}, state)
 	if !ok {
 		handleDefault(w, r, state)
@@ -149,7 +149,10 @@ func resolveRoute(input backends.RouteInput, state handlerSnapshot) (backends.Ro
 	}
 	target, ok := state.userRoutes[input.Username]
 	if !ok || !target.Available() {
-		return defaultRouteDecision(state.defaultTarget)
+		if input.FallbackOnMappedUnavailable {
+			return defaultRouteDecision(state.defaultTarget)
+		}
+		return backends.RouteDecision{Outcome: backends.RouteOutcomeUnavailable}, false
 	}
 	decision := backends.RouteDecision{Target: target, Outcome: backends.RouteOutcomeSelected}
 	if state.enableReplaceCreds && input.Authenticated &&

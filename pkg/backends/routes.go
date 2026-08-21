@@ -42,6 +42,9 @@ type RouteInput struct {
 	Username      string
 	Credential    string
 	Authenticated bool
+	// FallbackOnMappedUnavailable preserves HTTP User Router availability
+	// semantics. Session protocols leave it false to prevent cross-target failover.
+	FallbackOnMappedUnavailable bool
 }
 
 // RouteOutcome is a bounded route-selection result suitable for diagnostics

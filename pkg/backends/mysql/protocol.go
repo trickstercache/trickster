@@ -577,20 +577,22 @@ func (a *credentialAuth) UserEntryWithHash(c *vtmysql.Conn, salt []byte, user st
 }
 
 type upstreamSession struct {
-	mtx             sync.Mutex
-	conn            *vtmysql.Conn
-	warnings        uint16
-	database        string
-	timeZone        string
-	inTx            bool
-	cacheUnsafe     bool
-	downstream      *vtmysql.Conn
-	control         *phaseConn
-	ready           bool
-	forced          bool
-	upstreamCounted bool
-	traceContext    context.Context
-	connectSpan     trace.Span
+	mtx                 sync.Mutex
+	conn                *vtmysql.Conn
+	upstream            vtmysql.ConnParams
+	upstreamParamsReady bool
+	warnings            uint16
+	database            string
+	timeZone            string
+	inTx                bool
+	cacheUnsafe         bool
+	downstream          *vtmysql.Conn
+	control             *phaseConn
+	ready               bool
+	forced              bool
+	upstreamCounted     bool
+	traceContext        context.Context
+	connectSpan         trace.Span
 }
 
 type routedConnection struct {
@@ -809,7 +811,7 @@ func (h *protocolHandler) NewConnection(c *vtmysql.Conn) {
 	h.mtx.Lock()
 	if !h.closed.Load() {
 		h.sessions[c] = &upstreamSession{
-			database:   h.config.Upstream.DbName,
+			database: h.config.Upstream.DbName, upstream: h.config.Upstream, upstreamParamsReady: true,
 			downstream: c, control: h.controls[c.ConnectionID], traceContext: ctx,
 			connectSpan: connectionSpan,
 		}
@@ -855,7 +857,7 @@ func (h *protocolHandler) ComResetConnection(c *vtmysql.Conn) {
 	h.mtx.Lock()
 	if !h.closed.Load() {
 		h.sessions[c] = &upstreamSession{
-			database:   h.config.Upstream.DbName,
+			database: h.config.Upstream.DbName, upstream: h.config.Upstream, upstreamParamsReady: true,
 			downstream: c, ready: true, traceContext: context.Background(),
 		}
 	}
@@ -892,6 +894,12 @@ func (h *protocolHandler) connectSession(session *upstreamSession) error {
 	if session.conn != nil {
 		return nil
 	}
+	if !session.upstreamParamsReady {
+		session.upstream = h.config.Upstream
+		session.upstreamParamsReady = true
+	}
+	params := session.upstream
+	timeZone := session.timeZone
 	if !h.reserveUpstream() {
 		metrics.MySQLConnectionErrors.WithLabelValues(h.config.BackendName, "upstream_admission").Inc()
 		return sqlerror.NewSQLError(sqlerror.ERTooManyUserConnections, sqlerror.SSClientError,
@@ -915,11 +923,17 @@ func (h *protocolHandler) connectSession(session *upstreamSession) error {
 		ctx, cancel = context.WithTimeout(ctx, h.config.ConnectTimeout)
 		defer cancel()
 	}
-	conn, err := vtmysql.Connect(ctx, &h.config.Upstream)
+	conn, err := vtmysql.Connect(ctx, &params)
 	if err != nil {
 		metrics.MySQLConnectionErrors.WithLabelValues(h.config.BackendName, "upstream_connect").Inc()
 		return sqlerror.NewSQLError(sqlerror.CRServerGone, sqlerror.SSNetError,
 			"Trickster could not connect to the MySQL origin")
+	}
+	if err = h.replaySessionState(conn, timeZone); err != nil {
+		conn.Close()
+		metrics.MySQLConnectionErrors.WithLabelValues(h.config.BackendName, "session_replay").Inc()
+		return sqlerror.NewSQLError(sqlerror.CRServerGone, sqlerror.SSNetError,
+			"Trickster could not restore the MySQL origin session")
 	}
 	if h.closed.Load() {
 		conn.Close()
@@ -930,6 +944,23 @@ func (h *protocolHandler) connectSession(session *upstreamSession) error {
 	session.upstreamCounted = true
 	reserved = false
 	return nil
+}
+
+func (h *protocolHandler) replaySessionState(conn *vtmysql.Conn, timeZone string) error {
+	if conn == nil || timeZone == "" {
+		return nil
+	}
+	raw := conn.GetRawConn()
+	timeout := h.config.QueryTimeout
+	if timeout <= 0 {
+		timeout = h.config.ConnectTimeout
+	}
+	if raw != nil && timeout > 0 {
+		_ = raw.SetDeadline(time.Now().Add(timeout))
+		defer func() { _ = raw.SetDeadline(time.Time{}) }()
+	}
+	_, err := conn.ExecuteFetch("SET time_zone = "+sqltypes.EncodeStringSQL(timeZone), 1, false)
+	return err
 }
 
 func (h *protocolHandler) reserveUpstream() bool {

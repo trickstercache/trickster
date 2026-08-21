@@ -1090,6 +1090,11 @@ func (h *protocolHandler) updateSessionStateParsed(session *upstreamSession, par
 	case sqlparser.StmtUse:
 		if use, ok := parsed.statement.(*sqlparser.Use); parsed.err == nil && ok {
 			session.database = use.DBName.String()
+			if !session.upstreamParamsReady {
+				session.upstream = h.config.Upstream
+				session.upstreamParamsReady = true
+			}
+			session.upstream.DbName = session.database
 		}
 	case sqlparser.StmtSet:
 		if timeZone, ok := cacheSafeTimeZone(parsed.statement); parsed.err == nil && ok {

@@ -436,6 +436,11 @@ mapped target is unavailable, the request uses the healthy `default_backend`
 without applying the mapped target's credential replacement. If neither target
 is available, the router uses its configured no-route response.
 
+That fallback applies to HTTP requests. A native MySQL session whose username
+has an explicit mapping fails with a MySQL availability error when that mapped
+terminal is unavailable; it is never redirected to `default_backend`. Only an
+unmapped MySQL username may use the configured default terminal.
+
 You can configure a User Router ALB's backend destinations to be other ALBs with mechanisms that utilize healthchecked pools.
 
 ## Bounding Per-Member Response Captures

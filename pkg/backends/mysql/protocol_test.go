@@ -369,7 +369,8 @@ func TestSessionCacheSafetyContract(t *testing.T) {
 
 	session := &upstreamSession{database: "initial"}
 	h.updateSessionStateParsed(session, parseQuery("USE reporting"))
-	if session.database != "reporting" || session.cacheUnsafe {
+	if session.database != "reporting" || session.upstream.DbName != "reporting" ||
+		!session.upstreamParamsReady || session.cacheUnsafe {
 		t.Fatalf("USE state = %+v", session)
 	}
 	h.updateSessionStateParsed(session, parseQuery("SET SESSION time_zone = '+00:00'"))
@@ -979,6 +980,96 @@ func TestOriginQueryTimeoutDiscardsUpstream(t *testing.T) {
 	}
 }
 
+func TestReconnectReplaysTrackedDatabaseAndTimeZone(t *testing.T) {
+	originListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	originHandler := &recordingOriginHandler{
+		testOriginHandler: testOriginHandler{env: vtenv.NewTestEnv()},
+	}
+	origin, err := vtmysql.NewFromListener(originListener,
+		newCredentialAuth(map[string]string{"origin": "origin-password"}, "", nil), originHandler,
+		0, 0, false, false, 0, 0, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go origin.Accept()
+	defer origin.Shutdown()
+
+	proxyListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	originAddr := originListener.Addr().(*net.TCPAddr)
+	server, err := NewProtocolServer(ProtocolConfig{
+		BackendName: "mysql-replay-test", ProxyOnly: true,
+		Upstream: vtmysql.ConnParams{Host: "127.0.0.1", Port: originAddr.Port,
+			Uname: "origin", Pass: "origin-password", DbName: "analytics"},
+		DownstreamUsers: map[string]string{"client": "client-password"},
+		ConnectTimeout:  time.Second, QueryTimeout: time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	serveDone := make(chan error, 1)
+	go func() { serveDone <- server.Serve(proxyListener) }()
+	proxyAddr := proxyListener.Addr().(*net.TCPAddr)
+	client, err := vtmysql.Connect(context.Background(), &vtmysql.ConnParams{
+		Host: "127.0.0.1", Port: proxyAddr.Port, Uname: "client", Pass: "client-password",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	if _, err = client.ExecuteFetch("USE reporting", vtmysql.FETCH_ALL_ROWS, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = client.ExecuteFetch("SET time_zone = '+00:00'", vtmysql.FETCH_ALL_ROWS, true); err != nil {
+		t.Fatal(err)
+	}
+
+	server.handler.mtx.Lock()
+	var session *upstreamSession
+	for _, candidate := range server.handler.sessions {
+		session = candidate
+		break
+	}
+	server.handler.mtx.Unlock()
+	if session == nil {
+		t.Fatal("proxy session was not registered")
+	}
+	session.mtx.Lock()
+	oldUpstream := session.conn
+	session.mtx.Unlock()
+	if oldUpstream == nil {
+		t.Fatal("proxy session had no upstream to discard")
+	}
+	queryOffset := originHandler.queryLen()
+	server.handler.discardUpstream(session, oldUpstream)
+	if _, err = client.ExecuteFetch("select 42", vtmysql.FETCH_ALL_ROWS, true); err != nil {
+		t.Fatal(err)
+	}
+
+	queries := originHandler.queriesFrom(queryOffset)
+	if len(queries) < 3 || !strings.EqualFold(queries[0], "use `reporting`") ||
+		!strings.EqualFold(queries[1], "SET time_zone = '+00:00'") ||
+		!strings.EqualFold(queries[2], "select 42") {
+		t.Fatalf("reconnect query sequence = %q, want database and time-zone replay before query",
+			queries)
+	}
+
+	client.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := server.Shutdown(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-serveDone; err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestClientDisconnectDuringOriginExecutionReleasesSession(t *testing.T) {
 	originListener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -1322,6 +1413,33 @@ type testOriginHandler struct {
 	vtmysql.UnimplementedHandler
 	env        *vtenv.Environment
 	queryCount atomic.Int64
+}
+
+type recordingOriginHandler struct {
+	testOriginHandler
+	mtx     sync.Mutex
+	queries []string
+}
+
+func (h *recordingOriginHandler) ComQuery(c *vtmysql.Conn, query string,
+	callback func(*sqltypes.Result) error,
+) error {
+	h.mtx.Lock()
+	h.queries = append(h.queries, query)
+	h.mtx.Unlock()
+	return h.testOriginHandler.ComQuery(c, query, callback)
+}
+
+func (h *recordingOriginHandler) queryLen() int {
+	h.mtx.Lock()
+	defer h.mtx.Unlock()
+	return len(h.queries)
+}
+
+func (h *recordingOriginHandler) queriesFrom(index int) []string {
+	h.mtx.Lock()
+	defer h.mtx.Unlock()
+	return append([]string(nil), h.queries[index:]...)
 }
 
 type routeOriginHandler struct {
