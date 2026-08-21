@@ -204,12 +204,6 @@ func TestHupNotStale(t *testing.T) {
 	}
 }
 
-// markStale gives conf a backing file path with a zero last-modified time, so
-// the next staleness check sees the file as changed.
-func markStale(conf *config.Config, path string) {
-	conf.Main.SetStalenessInfo(path, time.Time{}, time.Time{})
-}
-
 func TestHupBootstrapFailure(t *testing.T) {
 	dir := t.TempDir()
 	path := writeConfig(t, dir, runnableConfig(0))
@@ -217,8 +211,6 @@ func TestHupBootstrapFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	markStale(conf, path)
-
 	si := &instance.ServerInstance{Config: conf}
 	// the reload reads from a path that no longer parses
 	if err := os.WriteFile(path, []byte("\tnot: [valid yaml"), 0o600); err != nil {
@@ -255,8 +247,6 @@ func TestHupApplyConfigFailureRollsBack(t *testing.T) {
 	oldBackends := si.Backends
 	oldCaches := si.Caches
 	oldHealthChecker := si.HealthChecker
-	markStale(si.Config, path)
-
 	// the replacement config validates but cannot be applied
 	writeConfig(t, dir, unapplyableConfig(t, dir))
 	ok, err := Hup(si, "test", "-config", path)
@@ -301,8 +291,6 @@ func TestHupSuccess(t *testing.T) {
 		}
 	})
 	waitForPort(t, firstPort)
-	markStale(si.Config, path)
-
 	secondPort := availablePort(t)
 	writeConfig(t, dir, runnableConfig(secondPort))
 	ok, err := Hup(si, "test", "-config", path)
@@ -314,6 +302,49 @@ func TestHupSuccess(t *testing.T) {
 	}
 	if si.Config == conf {
 		t.Error("expected the instance to hold the reloaded config")
+	}
+	waitForPort(t, secondPort)
+}
+
+func TestHupConfigDirectoryAfterAddingSource(t *testing.T) {
+	dir := t.TempDir()
+	firstPort := availablePort(t)
+	if err := os.WriteFile(filepath.Join(dir, "10-base.yaml"),
+		[]byte(runnableConfig(firstPort)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	conf, clients, err := setup.BootstrapConfig("-config", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	group := listener.NewGroup()
+	t.Cleanup(func() { _ = group.Shutdown(0) })
+	si := &instance.ServerInstance{Listeners: group}
+	if err := setup.ApplyConfig(si, conf, clients, nil, nil, group); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if si.HealthChecker != nil {
+			si.HealthChecker.Shutdown()
+		}
+	})
+	waitForPort(t, firstPort)
+
+	secondPort := availablePort(t)
+	override := fmt.Sprintf("listeners:\n  default:\n    port: %d\n", secondPort)
+	if err := os.WriteFile(filepath.Join(dir, "20-listener.yaml"), []byte(override), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ok, err := Hup(si, "test", "-config", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("expected the added directory source to trigger a reload")
+	}
+	if si.Config == conf {
+		t.Error("expected the instance to hold the reloaded directory config")
 	}
 	waitForPort(t, secondPort)
 }

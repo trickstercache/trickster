@@ -30,6 +30,11 @@ data:
     #   # server_name defaults to os.Hostname() when left blank
     #   server_name: ''
 
+    #   # config_include_directory overrides the default conf.d directory next to this file.
+    #   # Relative paths are resolved from the directory containing the primary config file.
+    #   # This option is valid only in the primary file, not in included files or directory mode.
+    #   config_include_directory: ''
+
     # Configuration options for inbound listeners.
     #   # The default, metrics, and mgmt entries are built-in and can be customized here.
     # listeners:

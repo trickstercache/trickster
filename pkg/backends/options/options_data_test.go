@@ -110,11 +110,12 @@ func fromTestYAMLWithReqRewriter() (*Options, error) {
 }
 
 func fromTestYAMLWithALB() (*Options, error) {
-	conf := strings.ReplaceAll(strings.ReplaceAll(testYAML, "    rule_name: ''", `
-    rule_name: ''
-    alb:
+	conf := strings.ReplaceAll(testYAML, "    provider: test_type", "    provider: 'alb'")
+	conf = strings.ReplaceAll(conf, `    alb:
+      methodology: rr
+      pool: [ 'test_pool_member' ]`, `    alb:
       output_format: prometheus
       mechanism: tsmerge
-        `), "    provider: test_type", "    provider: 'alb'")
+      pool: [ 'test_pool_member' ]`)
 	return fromYAML(conf, "test")
 }
