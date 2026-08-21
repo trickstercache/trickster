@@ -62,6 +62,8 @@ const protocolVersion = "8.0.0-trickster"
 
 const resultBatchSize = 256
 
+const warningCountQuery = "SHOW COUNT(*) WARNINGS"
+
 var passwordHashPrefixes = [...]string{
 	"$apr1$", "$1$", "$2a$", "$2b$", "$2y$", "$5$", "$6$",
 }
@@ -636,7 +638,9 @@ func (h *routedProtocolHandler) setControl(connectionID uint32, control *phaseCo
 	h.mtx.Unlock()
 }
 
-func (h *routedProtocolHandler) NewConnection(*vtmysql.Conn) {}
+func (h *routedProtocolHandler) NewConnection(c *vtmysql.Conn) {
+	c.StatusFlags = vtmysql.ServerStatusAutocommit
+}
 
 func (h *routedProtocolHandler) ConnectionReady(c *vtmysql.Conn) {
 	decision, ok := c.ClientData.(backends.RouteDecision)
@@ -801,6 +805,7 @@ func (h *protocolHandler) setControl(connectionID uint32, control *phaseConn) {
 }
 
 func (h *protocolHandler) NewConnection(c *vtmysql.Conn) {
+	c.StatusFlags = vtmysql.ServerStatusAutocommit
 	metrics.MySQLConnections.WithLabelValues(h.config.BackendName, "accepted").Inc()
 	ctx := context.Background()
 	var connectionSpan trace.Span
@@ -838,6 +843,7 @@ func (h *protocolHandler) ConnectionReady(c *vtmysql.Conn) {
 		session.control.setReady()
 	}
 	session.mtx.Lock()
+	h.applyDownstreamCapabilitiesLocked(session, c)
 	session.ready = true
 	connectionSpan := session.connectSpan
 	session.connectSpan = nil
@@ -854,6 +860,7 @@ func (h *protocolHandler) ConnectionClosed(c *vtmysql.Conn) {
 
 func (h *protocolHandler) ComResetConnection(c *vtmysql.Conn) {
 	h.closeSession(c, false)
+	c.StatusFlags = vtmysql.ServerStatusAutocommit
 	h.mtx.Lock()
 	if !h.closed.Load() {
 		h.sessions[c] = &upstreamSession{
@@ -891,12 +898,13 @@ func (h *protocolHandler) connectSession(session *upstreamSession) error {
 	}
 	session.mtx.Lock()
 	defer session.mtx.Unlock()
-	if session.conn != nil {
-		return nil
-	}
 	if !session.upstreamParamsReady {
 		session.upstream = h.config.Upstream
 		session.upstreamParamsReady = true
+	}
+	h.applyDownstreamCapabilitiesLocked(session, session.downstream)
+	if session.conn != nil {
+		return nil
 	}
 	params := session.upstream
 	timeZone := session.timeZone
@@ -944,6 +952,16 @@ func (h *protocolHandler) connectSession(session *upstreamSession) error {
 	session.upstreamCounted = true
 	reserved = false
 	return nil
+}
+
+func (h *protocolHandler) applyDownstreamCapabilitiesLocked(session *upstreamSession,
+	downstream *vtmysql.Conn,
+) {
+	if session == nil || downstream == nil {
+		return
+	}
+	session.upstream.Flags &^= uint64(vtmysql.CapabilityClientFoundRows)
+	session.upstream.Flags |= uint64(downstream.Capabilities & vtmysql.CapabilityClientFoundRows)
 }
 
 func (h *protocolHandler) replaySessionState(conn *vtmysql.Conn, timeZone string) error {
@@ -1035,9 +1053,9 @@ func (h *protocolHandler) ComQuery(c *vtmysql.Conn, query string,
 				time.Since(cacheStarted))
 			return limitErr
 		}
-		// Reset explicitly so warnings from a prior statement cannot leak
-		// into a cached result's terminating EOF/OK packet.
-		h.setWarnings(session, 0)
+		// Cached results deliberately report no origin warnings, but retain
+		// the status flags captured with the cached result.
+		h.setProtocolState(session, result.StatusFlags, 0)
 		h.observeCache(analysis.Mode, cacheStatus, len(result.Rows), time.Since(cacheStarted))
 		return callback(result)
 	}
@@ -1137,15 +1155,40 @@ func (h *protocolHandler) proxyQuery(session *upstreamSession, query string, par
 	if err != nil {
 		return err
 	}
-	h.setWarnings(session, warnings)
+	h.setProtocolState(session, result.StatusFlags, warnings)
 	h.updateSessionStateParsed(session, parsed)
 	return callback(result)
 }
 
-func (h *protocolHandler) setWarnings(session *upstreamSession, warnings uint16) {
+func (h *protocolHandler) setProtocolState(session *upstreamSession, statusFlags,
+	warnings uint16,
+) {
 	session.mtx.Lock()
 	session.warnings = warnings
+	if session.downstream != nil {
+		session.downstream.StatusFlags = statusFlags
+	}
 	session.mtx.Unlock()
+}
+
+func originProtocolState(upstream *vtmysql.Conn) (uint16, uint16, error) {
+	// FetchNext consumes but does not expose a streamed result's terminal EOF
+	// metadata, so recover the connection status and diagnostic warning count.
+	result, err := upstream.ExecuteFetch(warningCountQuery, 1, true)
+	if err != nil {
+		return 0, 0, err
+	}
+	if result == nil || len(result.Rows) != 1 || len(result.Rows[0]) != 1 {
+		return 0, 0, errors.New("invalid MySQL warning-count result")
+	}
+	warningCount, err := result.Rows[0][0].ToUint64()
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid MySQL warning count: %w", err)
+	}
+	if warningCount > uint64(^uint16(0)) {
+		return result.StatusFlags, ^uint16(0), nil
+	}
+	return result.StatusFlags, uint16(warningCount), nil //nolint:gosec // range checked above
 }
 
 func returnsResultSet(statementType vtparser.StatementType) bool {
@@ -1169,6 +1212,11 @@ func (h *protocolHandler) proxyResultSet(session *upstreamSession, upstream *vtm
 		return err
 	}
 	if len(fields) == 0 {
+		statusFlags, warnings, stateErr := originProtocolState(upstream)
+		if stateErr != nil {
+			return stateErr
+		}
+		h.setProtocolState(session, statusFlags, warnings)
 		return callback(&sqltypes.Result{})
 	}
 	size, overflow := resultFieldsSize(fields, h.config.MaxResultSizeBytes)
@@ -1187,6 +1235,14 @@ func (h *protocolHandler) proxyResultSet(session *upstreamSession, upstream *vtm
 			return fetchErr
 		}
 		if row == nil {
+			statusFlags, warnings, stateErr := originProtocolState(upstream)
+			if stateErr != nil {
+				if emitted && session.downstream != nil {
+					session.downstream.MarkForClose()
+				}
+				return stateErr
+			}
+			h.setProtocolState(session, statusFlags, warnings)
 			if len(batch.Rows) > 0 || batch.Fields != nil {
 				if err := callback(batch); err != nil {
 					if session.downstream != nil {

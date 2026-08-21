@@ -253,9 +253,12 @@ type benchmarkOriginHandler struct {
 	result *sqltypes.Result
 }
 
-func (h *benchmarkOriginHandler) ComQuery(_ *vtmysql.Conn, _ string,
+func (h *benchmarkOriginHandler) ComQuery(_ *vtmysql.Conn, query string,
 	callback func(*sqltypes.Result) error,
 ) error {
+	if isWarningCountQuery(query) {
+		return callback(warningCountResult(0))
+	}
 	return callback(h.result)
 }
 

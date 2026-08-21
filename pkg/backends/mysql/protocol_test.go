@@ -442,6 +442,49 @@ func TestSessionCacheSafetyContract(t *testing.T) {
 	}
 }
 
+func TestDownstreamFoundRowsCapabilityControlsSessionUpstream(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		capability uint32
+		want       bool
+	}{
+		{name: "set", capability: vtmysql.CapabilityClientFoundRows, want: true},
+		{name: "unset"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newProtocolHandler(ProtocolConfig{Upstream: vtmysql.ConnParams{
+				Flags: uint64(vtmysql.CapabilityClientFoundRows | vtmysql.CapabilityClientLongFlag),
+			}}, nil)
+			c := &vtmysql.Conn{Capabilities: tc.capability}
+			h.NewConnection(c)
+			h.ConnectionReady(c)
+			h.mtx.Lock()
+			session := h.sessions[c]
+			h.mtx.Unlock()
+			session.mtx.Lock()
+			flags := session.upstream.Flags
+			session.mtx.Unlock()
+			got := flags&uint64(vtmysql.CapabilityClientFoundRows) != 0
+			if got != tc.want {
+				t.Fatalf("upstream CLIENT_FOUND_ROWS = %t, want %t", got, tc.want)
+			}
+			if flags&uint64(vtmysql.CapabilityClientLongFlag) == 0 {
+				t.Fatal("unrelated configured upstream flag was cleared")
+			}
+			if c.StatusFlags != vtmysql.ServerStatusAutocommit {
+				t.Fatalf("initial downstream status = %#x, want autocommit", c.StatusFlags)
+			}
+			h.ConnectionClosed(c)
+		})
+	}
+	routed := &routedProtocolHandler{}
+	c := &vtmysql.Conn{}
+	routed.NewConnection(c)
+	if c.StatusFlags != vtmysql.ServerStatusAutocommit {
+		t.Fatalf("routed initial downstream status = %#x, want autocommit", c.StatusFlags)
+	}
+}
+
 func TestProtocolConfigRejectsMissingCredentials(t *testing.T) {
 	o := bo.New()
 	o.OriginURL = "mysql://db.example/database"
@@ -1083,6 +1126,75 @@ func TestReconnectReplaysTrackedDatabaseAndTimeZone(t *testing.T) {
 	}
 }
 
+func TestLiveQueriesPreserveOriginStatusFlagsAndWarnings(t *testing.T) {
+	const (
+		originFlags    = vtmysql.ServerStatusAutocommit | vtmysql.ServerStatusNoBackslashEscapes
+		originWarnings = 7
+	)
+	originListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	originHandler := &protocolStateOriginHandler{
+		testOriginHandler: testOriginHandler{env: vtenv.NewTestEnv()},
+		statusFlags:       originFlags,
+		warnings:          originWarnings,
+	}
+	origin, err := vtmysql.NewFromListener(originListener,
+		newCredentialAuth(map[string]string{"origin": "origin-password"}, "", nil), originHandler,
+		0, 0, false, false, 0, 0, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go origin.Accept()
+	defer origin.Shutdown()
+
+	proxyListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	originAddr := originListener.Addr().(*net.TCPAddr)
+	server, err := NewProtocolServer(ProtocolConfig{
+		BackendName: "mysql-protocol-state", ProxyOnly: true,
+		Upstream: vtmysql.ConnParams{Host: "127.0.0.1", Port: originAddr.Port,
+			Uname: "origin", Pass: "origin-password"},
+		DownstreamUsers: map[string]string{"client": "client-password"},
+		ConnectTimeout:  time.Second, QueryTimeout: time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	serveDone := make(chan error, 1)
+	go func() { serveDone <- server.Serve(proxyListener) }()
+	proxyAddr := proxyListener.Addr().(*net.TCPAddr)
+	client, err := vtmysql.Connect(context.Background(), &vtmysql.ConnParams{
+		Host: "127.0.0.1", Port: proxyAddr.Port, Uname: "client", Pass: "client-password",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, query := range []string{"UPDATE events SET value = value", "SELECT value FROM events"} {
+		result, warnings, queryErr := client.ExecuteFetchWithWarningCount(query,
+			vtmysql.FETCH_ALL_ROWS, true)
+		if queryErr != nil {
+			t.Fatalf("%s: %v", query, queryErr)
+		}
+		if result.StatusFlags != originFlags || warnings != originWarnings {
+			t.Fatalf("%s protocol state = flags %#x, warnings %d; want %#x, %d",
+				query, result.StatusFlags, warnings, originFlags, originWarnings)
+		}
+	}
+	client.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := server.Shutdown(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-serveDone; err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestClientDisconnectDuringOriginExecutionReleasesSession(t *testing.T) {
 	originListener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -1434,6 +1546,36 @@ type recordingOriginHandler struct {
 	queries []string
 }
 
+type protocolStateOriginHandler struct {
+	testOriginHandler
+	statusFlags uint16
+	warnings    uint16
+}
+
+func (h *protocolStateOriginHandler) NewConnection(c *vtmysql.Conn) {
+	c.StatusFlags = h.statusFlags
+}
+
+func (h *protocolStateOriginHandler) ComQuery(c *vtmysql.Conn, query string,
+	callback func(*sqltypes.Result) error,
+) error {
+	c.StatusFlags = h.statusFlags
+	if isWarningCountQuery(query) {
+		return callback(warningCountResult(h.warnings))
+	}
+	if strings.HasPrefix(strings.ToUpper(strings.TrimSpace(query)), "SELECT") {
+		return callback(&sqltypes.Result{
+			Fields: []*querypb.Field{{Name: "value", Type: querypb.Type_INT64}},
+			Rows:   [][]sqltypes.Value{{sqltypes.NewInt64(42)}},
+		})
+	}
+	return callback(&sqltypes.Result{RowsAffected: 3})
+}
+
+func (h *protocolStateOriginHandler) WarningCount(*vtmysql.Conn) uint16 {
+	return h.warnings
+}
+
 func (h *recordingOriginHandler) ComQuery(c *vtmysql.Conn, query string,
 	callback func(*sqltypes.Result) error,
 ) error {
@@ -1460,9 +1602,12 @@ type routeOriginHandler struct {
 	marker string
 }
 
-func (h *routeOriginHandler) ComQuery(_ *vtmysql.Conn, _ string,
+func (h *routeOriginHandler) ComQuery(_ *vtmysql.Conn, query string,
 	callback func(*sqltypes.Result) error,
 ) error {
+	if isWarningCountQuery(query) {
+		return callback(warningCountResult(0))
+	}
 	return callback(&sqltypes.Result{
 		Fields: []*querypb.Field{{Name: "route", Type: querypb.Type_VARCHAR}},
 		Rows:   [][]sqltypes.Value{{sqltypes.NewVarChar(h.marker)}},
@@ -1517,6 +1662,9 @@ func (h *blockingOriginHandler) ComQuery(c *vtmysql.Conn, query string,
 func (h *deltaOriginHandler) ComQuery(_ *vtmysql.Conn, query string,
 	callback func(*sqltypes.Result) error,
 ) error {
+	if isWarningCountQuery(query) {
+		return callback(warningCountResult(0))
+	}
 	h.queryCount.Add(1)
 	analysis := defaultAnalyzer.Analyze(query, time.Time{})
 	if analysis.Mode != sqlanalyzer.CacheModeDelta || analysis.Plan == nil {
@@ -1544,6 +1692,9 @@ func (h *testOriginHandler) Env() *vtenv.Environment { return h.env }
 func (h *testOriginHandler) ComQuery(_ *vtmysql.Conn, query string,
 	callback func(*sqltypes.Result) error,
 ) error {
+	if isWarningCountQuery(query) {
+		return callback(warningCountResult(0))
+	}
 	h.queryCount.Add(1)
 	if strings.EqualFold(strings.TrimSpace(query), "select 42") {
 		return callback(&sqltypes.Result{
@@ -1552,6 +1703,17 @@ func (h *testOriginHandler) ComQuery(_ *vtmysql.Conn, query string,
 		})
 	}
 	return callback(&sqltypes.Result{})
+}
+
+func isWarningCountQuery(query string) bool {
+	return strings.EqualFold(strings.TrimSpace(query), warningCountQuery)
+}
+
+func warningCountResult(count uint16) *sqltypes.Result {
+	return &sqltypes.Result{
+		Fields: []*querypb.Field{{Name: "@@session.warning_count", Type: querypb.Type_UINT64}},
+		Rows:   [][]sqltypes.Value{{sqltypes.NewUint64(uint64(count))}},
+	}
 }
 
 func (h *testOriginHandler) ComQueryMulti(_ *vtmysql.Conn, _ string,

@@ -761,13 +761,14 @@ func TestCachedQueryClearsPriorWarningCount(t *testing.T) {
 		BackendName: "mysql-warning-reset", Cache: newTestCache(),
 	}, nil)
 	c := &vtmysql.Conn{User: "client"}
-	session := &upstreamSession{database: "trickster", warnings: 7}
+	session := &upstreamSession{database: "trickster", warnings: 7, downstream: c}
 	h.sessions[c] = session
 	query := "SELECT 42"
 	key := h.queryCacheKey(c, session, "opc", query)
 	h.storeCached(key, &cachedQueryResult{result: &sqltypes.Result{
-		Fields: []*querypb.Field{{Name: "answer", Type: querypb.Type_INT64}},
-		Rows:   [][]sqltypes.Value{{sqltypes.NewInt64(42)}},
+		Fields:      []*querypb.Field{{Name: "answer", Type: querypb.Type_INT64}},
+		Rows:        [][]sqltypes.Value{{sqltypes.NewInt64(42)}},
+		StatusFlags: vtmysql.ServerStatusAutocommit,
 	}})
 
 	if err := h.ComQuery(c, query, func(*sqltypes.Result) error { return nil }); err != nil {
@@ -775,6 +776,9 @@ func TestCachedQueryClearsPriorWarningCount(t *testing.T) {
 	}
 	if warnings := h.WarningCount(c); warnings != 0 {
 		t.Fatalf("cached query warning count = %d, want 0", warnings)
+	}
+	if c.StatusFlags != vtmysql.ServerStatusAutocommit {
+		t.Fatalf("cached query status flags = %#x, want autocommit", c.StatusFlags)
 	}
 }
 
@@ -1045,9 +1049,10 @@ func TestShardedDeltaAndMergeFallback(t *testing.T) {
 		MaxResultRows: 100, MaxResultSizeBytes: 1 << 20,
 	}, nil)
 	fallbackSession := &upstreamSession{database: "trickster", downstream: c}
-	if _, status, err := fallback.executeDelta(c, fallbackSession, query, analysis.Plan); err == nil ||
-		status != cachestatus.LookupStatusProxyOnly {
-		t.Fatalf("merge fallback = %v/%v, want proxy-only origin failure", status, err)
+	if result, status, err := fallback.executeDelta(c, fallbackSession, query,
+		analysis.Plan); err != nil || status != cachestatus.LookupStatusProxyOnly || result == nil {
+		t.Fatalf("merge fallback = %v/%v/%v, want successful proxy-only result",
+			result, status, err)
 	}
 	fallback.discardUpstream(fallbackSession, fallbackSession.conn)
 }

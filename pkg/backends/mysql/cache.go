@@ -46,7 +46,7 @@ import (
 )
 
 const (
-	cacheEnvelopeVersion          byte = 1
+	cacheEnvelopeVersion          byte = 2
 	cacheIdentityVersion          byte = 1
 	mysqlDialect                       = "mysql"
 	cacheModeOPC                       = "opc"
@@ -436,6 +436,7 @@ func (h *protocolHandler) collectOriginResult(session *upstreamSession, upstream
 	if err := upstream.ExecuteStreamFetch(query); err != nil {
 		return nil, err
 	}
+	defer upstream.CloseResult()
 	fields, err := upstream.Fields()
 	if err != nil {
 		return nil, err
@@ -452,6 +453,11 @@ func (h *protocolHandler) collectOriginResult(session *upstreamSession, upstream
 			return nil, fetchErr
 		}
 		if row == nil {
+			statusFlags, _, stateErr := originProtocolState(upstream)
+			if stateErr != nil {
+				return nil, stateErr
+			}
+			result.StatusFlags = statusFlags
 			return result, nil
 		}
 		if len(result.Rows) >= h.config.MaxResultRows {
