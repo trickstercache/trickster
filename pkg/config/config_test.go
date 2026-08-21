@@ -401,24 +401,17 @@ func TestConfigFilePath(t *testing.T) {
 	if c.ConfigFilePath() != emptyFilePath {
 		t.Errorf("expected %s got %s", emptyFilePath, c.ConfigFilePath())
 	}
+	paths := c.ConfigFilePaths()
+	if len(paths) != 1 || paths[0] != emptyFilePath {
+		t.Errorf("expected [%s] got %v", emptyFilePath, paths)
+	}
 
 	c.Main = nil
 	if c.ConfigFilePath() != "" {
 		t.Errorf("expected %s got %s", "", c.ConfigFilePath())
 	}
-}
-
-func TestSetStalenessInfo(t *testing.T) {
-	fp := "trickster"
-	t1 := time.Now()
-	t2 := t1.Add(-1 * time.Minute)
-
-	mc := &MainConfig{}
-	mc.SetStalenessInfo(fp, t1, t2)
-
-	if fp != mc.configFilePath || !t1.Equal(mc.configLastModified) ||
-		!t2.Equal(mc.configRateLimitTime) {
-		t.Error("mismatch")
+	if c.ConfigFilePaths() != nil {
+		t.Errorf("expected nil paths got %v", c.ConfigFilePaths())
 	}
 }
 

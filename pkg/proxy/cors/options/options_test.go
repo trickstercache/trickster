@@ -21,7 +21,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
 
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v3"
 )
 
 func TestOptionsInitialize(t *testing.T) {

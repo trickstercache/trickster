@@ -25,6 +25,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
+
+	"go.yaml.in/yaml/v3"
 )
 
 // Options defines the options for a Rule
@@ -205,20 +207,20 @@ func (l Lookup) Validate() error {
 	return nil
 }
 
-func (o *Options) UnmarshalYAML(unmarshal func(any) error) error {
+func (o *Options) UnmarshalYAML(value *yaml.Node) error {
 	type loadOptions Options
 	lo := loadOptions(*(New()))
-	if err := unmarshal(&lo); err != nil {
+	if err := value.Decode(&lo); err != nil {
 		return err
 	}
 	*o = Options(lo)
 	return nil
 }
 
-func (o *CaseOptions) UnmarshalYAML(unmarshal func(any) error) error {
+func (o *CaseOptions) UnmarshalYAML(value *yaml.Node) error {
 	type loadOptions CaseOptions
 	lo := loadOptions(CaseOptions{})
-	if err := unmarshal(&lo); err != nil {
+	if err := value.Decode(&lo); err != nil {
 		return err
 	}
 	*o = CaseOptions(lo)

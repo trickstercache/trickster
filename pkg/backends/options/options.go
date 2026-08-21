@@ -38,6 +38,7 @@ import (
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
+	yamlencoding "github.com/trickstercache/trickster/v2/pkg/encoding/yaml"
 	tro "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
@@ -52,7 +53,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 
 	"github.com/prometheus/common/sigv4"
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v3"
 )
 
 var restrictedOriginNames = sets.New([]string{"", "frontend"})
@@ -713,14 +714,14 @@ func (o *Options) CloneYAMLSafe() *Options {
 // ToYAML prints the Options as a YAML representation
 func (o *Options) ToYAML() string {
 	co := o.CloneYAMLSafe()
-	b, _ := yaml.Marshal(co)
+	b, _ := yamlencoding.Marshal(co)
 	return string(b)
 }
 
-func (o *Options) UnmarshalYAML(unmarshal func(any) error) error {
+func (o *Options) UnmarshalYAML(value *yaml.Node) error {
 	type loadOptions Options
 	lo := loadOptions(*(New()))
-	if err := unmarshal(&lo); err != nil {
+	if err := value.Decode(&lo); err != nil {
 		return err
 	}
 	*o = Options(lo)

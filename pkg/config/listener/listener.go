@@ -26,7 +26,7 @@ import (
 	metrics "github.com/trickstercache/trickster/v2/pkg/observability/metrics/options"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v3"
 )
 
 const (
@@ -190,19 +190,15 @@ func (o *Options) Equal(other *Options) bool {
 }
 
 // UnmarshalYAML overlays configured listeners onto the built-in defaults.
-func (l *Lookup) UnmarshalYAML(unmarshal func(any) error) error {
-	raw := make(map[string]yaml.MapSlice)
-	if err := unmarshal(&raw); err != nil {
+func (l *Lookup) UnmarshalYAML(value *yaml.Node) error {
+	raw := make(map[string]yaml.Node)
+	if err := value.Decode(&raw); err != nil {
 		return err
 	}
 	out := NewLookup()
 	for name, values := range raw {
 		o := New(name)
-		data, err := yaml.Marshal(values)
-		if err != nil {
-			return fmt.Errorf("marshal listener %q: %w", name, err)
-		}
-		if err := yaml.Unmarshal(data, o); err != nil {
+		if err := values.Decode(o); err != nil {
 			return fmt.Errorf("unmarshal listener %q: %w", name, err)
 		}
 		if o.Protocol == "" {

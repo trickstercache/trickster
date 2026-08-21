@@ -18,6 +18,8 @@ package options
 
 import (
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+
+	"go.yaml.in/yaml/v3"
 )
 
 // Options defines the operation of the Cache Indexer
@@ -70,10 +72,10 @@ func (o *Options) Equal(o2 *Options) bool {
 		o.MaxSizeBackoffObjects == o2.MaxSizeBackoffObjects
 }
 
-func (o *Options) UnmarshalYAML(unmarshal func(any) error) error {
+func (o *Options) UnmarshalYAML(value *yaml.Node) error {
 	type loadOptions Options
 	lo := loadOptions(*(New()))
-	if err := unmarshal(&lo); err != nil {
+	if err := value.Decode(&lo); err != nil {
 		return err
 	}
 	*o = Options(lo)

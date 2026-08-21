@@ -22,9 +22,10 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
+	yamlencoding "github.com/trickstercache/trickster/v2/pkg/encoding/yaml"
 	frontend "github.com/trickstercache/trickster/v2/pkg/frontend/options"
 
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v3"
 )
 
 const (
@@ -34,28 +35,35 @@ const (
 )
 
 func (c *Config) detectListenerSections(yml string) error {
-	raw := make(map[any]any)
+	raw := struct {
+		Listeners map[string]yaml.Node `yaml:"listeners"`
+		Frontend  yaml.Node            `yaml:"frontend"`
+		Metrics   yaml.Node            `yaml:"metrics"`
+		Mgmt      yaml.Node            `yaml:"mgmt"`
+	}{}
 	if err := yaml.Unmarshal([]byte(yml), &raw); err != nil {
 		return err
 	}
 	c.listenerOverrides = make(map[string][]byte)
-	if values, ok := raw["listeners"].(map[any]any); ok {
-		for rawName, value := range values {
-			if name, ok := rawName.(string); ok {
-				data, err := yaml.Marshal(value)
-				if err != nil {
-					return fmt.Errorf("marshal listener %q override: %w", name, err)
-				}
-				c.listenerOverrides[name] = data
-			}
+	for name, value := range raw.Listeners {
+		data, err := yamlencoding.Marshal(value)
+		if err != nil {
+			return fmt.Errorf("marshal listener %q override: %w", name, err)
 		}
+		c.listenerOverrides[name] = data
 	}
-	_, c.legacyFrontendUsed = raw["frontend"]
-	_, c.legacyMetricsUsed = raw["metrics"]
-	if values, ok := raw["mgmt"].(map[any]any); ok {
+	c.legacyFrontendUsed = raw.Frontend.Kind != 0
+	c.legacyMetricsUsed = raw.Metrics.Kind != 0
+	if raw.Mgmt.Kind != 0 {
+		values := make(map[string]yaml.Node)
+		if err := raw.Mgmt.Decode(&values); err != nil {
+			return err
+		}
 		_, hasAddress := values["listen_address"]
 		_, hasPort := values["listen_port"]
 		c.legacyMgmtUsed = hasAddress || hasPort
+	} else {
+		c.legacyMgmtUsed = false
 	}
 	return nil
 }

@@ -17,10 +17,9 @@
 package options
 
 import (
-	"errors"
 	"testing"
 
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v3"
 )
 
 func TestNew(t *testing.T) {
@@ -108,9 +107,9 @@ bucket: custom_bucket
 
 func TestUnmarshalYAMLError(t *testing.T) {
 	o := &Options{}
-	want := errors.New("boom")
-	err := o.UnmarshalYAML(func(any) error { return want })
-	if !errors.Is(err, want) {
-		t.Fatalf("expected %v, got %v", want, err)
+	// a sequence cannot be decoded into the options struct
+	err := yaml.Unmarshal([]byte("- boom"), o)
+	if err == nil {
+		t.Fatal("expected an error")
 	}
 }

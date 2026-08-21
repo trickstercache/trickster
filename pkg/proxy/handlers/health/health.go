@@ -36,6 +36,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	yamlencoding "github.com/trickstercache/trickster/v2/pkg/encoding/yaml"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
@@ -43,8 +44,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/util/safego"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
-
-	"gopkg.in/yaml.v2"
 )
 
 type detail struct {
@@ -92,7 +91,7 @@ func (hs *healthStatus) JSON() string {
 }
 
 func (hs *healthStatus) YAML() string {
-	b, err := yaml.Marshal(hs)
+	b, err := yamlencoding.Marshal(hs)
 	if err != nil {
 		return "---"
 	}

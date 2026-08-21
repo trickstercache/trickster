@@ -18,6 +18,7 @@ package rewriter
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"slices"
@@ -26,6 +27,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
+	proxyurls "github.com/trickstercache/trickster/v2/pkg/proxy/urls"
 )
 
 type rewriteInstruction interface {
@@ -131,6 +133,7 @@ var scalarSets = map[string]scalarSetFunc{
 	"scheme": func(r *http.Request, v string) {
 		if r != nil && r.URL != nil {
 			r.URL.Scheme = v
+			proxyurls.SetUpstreamScheme(r, v)
 		}
 	},
 	"params": func(r *http.Request, v string) {
@@ -146,32 +149,33 @@ var scalarSets = map[string]scalarSetFunc{
 	"host": func(r *http.Request, v string) {
 		if r != nil && r.URL != nil {
 			r.URL.Host = v
+			proxyurls.SetUpstreamHost(r, v)
 		}
 	},
 	"hostname": func(r *http.Request, v string) {
 		if r != nil && r.URL != nil {
-			h := r.URL.Host
-			var port string
-			if i := strings.Index(h, ":"); i > 0 {
-				port = h[i:]
-			}
-			r.URL.Host = v + port
+			r.URL.Host = joinHostnamePort(v, r.URL.Port())
+			proxyurls.SetUpstreamHostname(r, v)
 		}
 	},
 	"port": func(r *http.Request, v string) {
 		if r == nil || r.URL == nil {
 			return
 		}
-		h := r.URL.Host
-		var port string
-		if i := strings.Index(h, ":"); i > 0 {
-			h = h[:i]
-		}
-		if v != "" {
-			port = ":" + v
-		}
-		r.URL.Host = h + port
+		r.URL.Host = joinHostnamePort(r.URL.Hostname(), v)
+		proxyurls.SetUpstreamPort(r, v)
 	},
+}
+
+func joinHostnamePort(hostname, port string) string {
+	hostname = strings.TrimPrefix(strings.TrimSuffix(hostname, "]"), "[")
+	if port != "" {
+		return net.JoinHostPort(hostname, port)
+	}
+	if strings.Contains(hostname, ":") {
+		return "[" + hostname + "]"
+	}
+	return hostname
 }
 
 func (ris RewriteInstructions) String() string {
@@ -189,12 +193,19 @@ func (ris RewriteInstructions) Execute(r *http.Request) {
 	}
 }
 
-func checkTokens(input string) bool {
-	i := strings.Index(input, "${")
-	if i > -1 && strings.Index(input, "}") > i {
-		return true
+// HasTokens returns true when an instruction consumes rewrite tokens.
+func (ris RewriteInstructions) HasTokens() bool {
+	for _, instr := range ris {
+		if instr.HasTokens() {
+			return true
+		}
 	}
 	return false
+}
+
+func checkTokens(input string) bool {
+	_, after, ok := strings.Cut(input, "${")
+	return ok && strings.IndexByte(after, '}') > -1
 }
 
 // parseKeyBasedInstruction parses a 4-part key-based instruction
@@ -229,7 +240,11 @@ func (ri *rwiKeyBasedSetter) Parse(parts []string) error {
 
 func (ri *rwiKeyBasedSetter) Execute(r *http.Request) {
 	dict := ri.dict(r)
-	dict.Set(ri.key, ri.value)
+	value := ri.value
+	if ri.hasTokens {
+		value = expandTokens(r, value)
+	}
+	dict.Set(ri.key, value)
 	if qp, ok := dict.(url.Values); ok {
 		r.URL.RawQuery = qp.Encode()
 	}
@@ -258,6 +273,10 @@ type mappable map[string][]string
 
 func (ri *rwiKeyBasedAppender) Execute(r *http.Request) {
 	dict := ri.dict(r)
+	value := ri.value
+	if ri.hasTokens {
+		value = expandTokens(r, value)
+	}
 	var m mappable
 	var ok bool
 	var h http.Header
@@ -276,7 +295,7 @@ func (ri *rwiKeyBasedAppender) Execute(r *http.Request) {
 	vals, ok = m[ri.key]
 	// key does not exist, so set value instead of appending
 	if !ok {
-		dict.Set(ri.key, ri.value)
+		dict.Set(ri.key, value)
 		if q != nil {
 			r.URL.RawQuery = q.Encode()
 		}
@@ -285,11 +304,11 @@ func (ri *rwiKeyBasedAppender) Execute(r *http.Request) {
 
 	// appending to url param value
 	if q != nil {
-		if slices.Contains(vals, ri.value) {
+		if slices.Contains(vals, value) {
 			// the desired value is already in the query, do nothing
 			return
 		}
-		m[ri.key] = append(vals, ri.value)
+		m[ri.key] = append(vals, value)
 		r.URL.RawQuery = q.Encode()
 		return
 	}
@@ -297,11 +316,11 @@ func (ri *rwiKeyBasedAppender) Execute(r *http.Request) {
 	// appending to header value
 
 	var subkey string
-	j := strings.Index(ri.value, "=")
+	j := strings.Index(value, "=")
 	if j > 0 {
-		subkey = ri.value[:j]
+		subkey = value[:j]
 	} else {
-		subkey = ri.value
+		subkey = value
 	}
 
 	// this might look redundant, but it normalizes something like:
@@ -311,19 +330,19 @@ func (ri *rwiKeyBasedAppender) Execute(r *http.Request) {
 
 	var found bool
 	for i, part := range parts {
-		if part == ri.value {
+		if part == value {
 			// value exists in header already, nothing to do
 			return
 		}
 		if strings.HasPrefix(part, subkey+"=") {
 			// a right-subkey=wrong-value exists, set it to the right value
-			parts[i] = ri.value
+			parts[i] = value
 			found = true
 		}
 	}
 
 	if !found {
-		parts = append(parts, ri.value)
+		parts = append(parts, value)
 	}
 
 	h.Set(ri.key, strings.Join(parts, ", "))
@@ -361,8 +380,15 @@ func (ri *rwiKeyBasedReplacer) Parse(parts []string) error {
 }
 
 func (ri *rwiKeyBasedReplacer) Execute(r *http.Request) {
-	if ri.depth == 0 {
-		ri.depth = -1
+	key, search, replacement := ri.key, ri.search, ri.replacement
+	if ri.hasTokens {
+		key = expandTokens(r, key)
+		search = expandTokens(r, search)
+		replacement = expandTokens(r, replacement)
+	}
+	depth := ri.depth
+	if depth == 0 {
+		depth = -1
 	}
 
 	dict := ri.dict(r)
@@ -381,15 +407,15 @@ func (ri *rwiKeyBasedReplacer) Execute(r *http.Request) {
 		m = mappable(q)
 	}
 
-	vals, ok = m[ri.key]
+	vals, ok = m[key]
 	if !ok {
 		return
 	}
 
 	for i := range vals {
-		vals[i] = strings.Replace(vals[i], ri.search, ri.replacement, ri.depth)
+		vals[i] = strings.Replace(vals[i], search, replacement, depth)
 	}
-	m[ri.key] = vals
+	m[key] = vals
 
 	if q != nil {
 		r.URL.RawQuery = q.Encode()
@@ -431,9 +457,14 @@ func (ri *rwiKeyBasedDeleter) Parse(parts []string) error {
 
 func (ri *rwiKeyBasedDeleter) Execute(r *http.Request) {
 	dict := ri.dict(r)
+	key, value := ri.key, ri.value
+	if ri.hasTokens {
+		key = expandTokens(r, key)
+		value = expandTokens(r, value)
+	}
 
-	if ri.value == "" {
-		dict.Del(ri.key)
+	if value == "" {
+		dict.Del(key)
 		if qp, ok := dict.(url.Values); ok {
 			r.URL.RawQuery = qp.Encode()
 		}
@@ -443,15 +474,15 @@ func (ri *rwiKeyBasedDeleter) Execute(r *http.Request) {
 	found := -1
 	// url params
 	if qp, ok := dict.(url.Values); ok {
-		if vals, ok1 := qp[ri.key]; ok1 {
+		if vals, ok1 := qp[key]; ok1 {
 			for i, v := range vals {
-				if v == ri.value {
+				if v == value {
 					found = i
 					break
 				}
 			}
 			if found > -1 {
-				qp[ri.key] = append(vals[:found], vals[found+1:]...)
+				qp[key] = append(vals[:found], vals[found+1:]...)
 				r.URL.RawQuery = qp.Encode()
 			}
 		}
@@ -459,10 +490,10 @@ func (ri *rwiKeyBasedDeleter) Execute(r *http.Request) {
 	}
 
 	// headers
-	val := dict.Get(ri.key)
+	val := dict.Get(key)
 	parts := strings.Split(val, ", ")
 	for i, part := range parts {
-		if strings.HasPrefix(part, ri.value+"=") || part == ri.value {
+		if strings.HasPrefix(part, value+"=") || part == value {
 			found = i
 			break
 		}
@@ -470,7 +501,7 @@ func (ri *rwiKeyBasedDeleter) Execute(r *http.Request) {
 
 	if found > -1 {
 		parts = append(parts[:found], parts[found+1:]...)
-		dict.Set(ri.key, strings.Join(parts, ", "))
+		dict.Set(key, strings.Join(parts, ", "))
 	}
 }
 
@@ -514,21 +545,25 @@ func (ri *rwiPathSetter) HasTokens() bool {
 }
 
 func (ri *rwiPathSetter) Execute(r *http.Request) {
+	value := ri.value
+	if ri.hasTokens {
+		value = expandTokens(r, value)
+	}
 	if ri.depth > -1 {
 		r.URL.Path = strings.TrimPrefix(r.URL.Path, "/")
 		parts := strings.Split(r.URL.Path, "/")
 		if len(parts) >= ri.depth {
-			parts[ri.depth] = ri.value
+			parts[ri.depth] = value
 			r.URL.Path = "/" + strings.Join(parts, "/")
 		}
 		return
 	}
 
-	if !strings.HasPrefix(ri.value, "/") {
-		ri.value = "/" + ri.value
+	if !strings.HasPrefix(value, "/") {
+		value = "/" + value
 	}
 
-	r.URL.Path = ri.value
+	r.URL.Path = value
 }
 
 type rwiPathReplacer struct {
@@ -564,7 +599,12 @@ func (ri *rwiPathReplacer) Parse(parts []string) error {
 }
 
 func (ri *rwiPathReplacer) Execute(r *http.Request) {
-	r.URL.Path = strings.Replace(r.URL.Path, ri.search, ri.replacement, ri.depth)
+	search, replacement := ri.search, ri.replacement
+	if ri.hasTokens {
+		search = expandTokens(r, search)
+		replacement = expandTokens(r, replacement)
+	}
+	r.URL.Path = strings.Replace(r.URL.Path, search, replacement, ri.depth)
 }
 
 func (ri *rwiPathReplacer) HasTokens() bool {
@@ -599,7 +639,11 @@ func (ri *rwiBasicSetter) Parse(parts []string) error {
 }
 
 func (ri *rwiBasicSetter) Execute(r *http.Request) {
-	ri.setter(r, ri.value)
+	value := ri.value
+	if ri.hasTokens {
+		value = expandTokens(r, value)
+	}
+	ri.setter(r, value)
 }
 
 func (ri *rwiBasicSetter) HasTokens() bool {
@@ -648,9 +692,16 @@ func (ri *rwiBasicReplacer) Parse(parts []string) error {
 }
 
 func (ri *rwiBasicReplacer) Execute(r *http.Request) {
-	val := ri.getter(r)
-	val = strings.Replace(val, ri.search, ri.replacement, ri.depth)
-	ri.setter(r, val)
+	search, replacement := ri.search, ri.replacement
+	if ri.hasTokens {
+		search = expandTokens(r, search)
+		replacement = expandTokens(r, replacement)
+	}
+	current := ri.getter(r)
+	value := strings.Replace(current, search, replacement, ri.depth)
+	if value != current {
+		ri.setter(r, value)
+	}
 }
 
 func (ri *rwiBasicReplacer) HasTokens() bool {
@@ -669,11 +720,8 @@ func (ri *rwiPortDeleter) Parse([]string) error {
 
 func (ri *rwiPortDeleter) Execute(r *http.Request) {
 	if r != nil && r.URL != nil {
-		h := r.URL.Host
-		if i := strings.Index(h, ":"); i > 0 {
-			h = h[:i]
-		}
-		r.URL.Host = h
+		r.URL.Host = joinHostnamePort(r.URL.Hostname(), "")
+		proxyurls.SetUpstreamPort(r, "")
 	}
 }
 
@@ -684,6 +732,7 @@ func (ri *rwiPortDeleter) HasTokens() bool {
 type rwiChainExecutor struct {
 	rewriterName string
 	rewriter     RewriteInstructions
+	hasTokens    bool
 }
 
 func (ri *rwiChainExecutor) String() string {
@@ -715,5 +764,5 @@ func (ri *rwiChainExecutor) Execute(r *http.Request) {
 }
 
 func (ri *rwiChainExecutor) HasTokens() bool {
-	return false
+	return ri.hasTokens
 }

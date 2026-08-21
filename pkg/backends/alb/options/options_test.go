@@ -26,7 +26,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v3"
 )
 
 type testOptions1 struct {
@@ -238,7 +238,7 @@ func TestValidatePool(t *testing.T) {
 
 func TestUnmarshalYAMLError(t *testing.T) {
 	o := New()
-	want := errors.New("boom")
-	err := o.UnmarshalYAML(func(any) error { return want })
-	require.ErrorIs(t, err, want)
+	// a sequence cannot be decoded into the options struct
+	err := yaml.Unmarshal([]byte("- boom"), o)
+	require.Error(t, err)
 }
