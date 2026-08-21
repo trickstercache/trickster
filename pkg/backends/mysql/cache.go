@@ -62,6 +62,7 @@ const (
 	cacheFailureDecode                 = "decode_failure"
 	cacheFailureOversized              = "oversized_cached_object"
 	logKeyBackendName                  = "backend_name"
+	logKeyDetail                       = "detail"
 	metricMethodQuery                  = "QUERY"
 	metricPathQuery                    = "query"
 	metricHTTPStatusOK                 = "200"
@@ -319,7 +320,7 @@ func (h *protocolHandler) executeDelta(c *vtmysql.Conn, session *upstreamSession
 	merged, mergeErr := h.mergeResults(parts, plan)
 	if mergeErr != nil {
 		logger.Warn("mysql delta result could not be modeled; using object cache", logging.Pairs{
-			logKeyBackendName: h.config.BackendName, "detail": mergeErr.Error(),
+			logKeyBackendName: h.config.BackendName, logKeyDetail: mergeErr.Error(),
 		})
 		// Drop the delta entry: a stale part is one of the things that can make
 		// a merge fail, and the retry after the marker expires should start
@@ -522,7 +523,7 @@ func (h *protocolHandler) retrieveCached(key string) (*cachedQueryResult, bool) 
 			if !errors.Is(err, cache.ErrKNF) {
 				h.observeCacheFailure("retrieve_failure")
 				logger.Error("mysql cache retrieval failed", logging.Pairs{
-					logKeyBackendName: h.config.BackendName, "detail": err.Error(),
+					logKeyBackendName: h.config.BackendName, logKeyDetail: err.Error(),
 				})
 			}
 			return nil, false
@@ -545,7 +546,7 @@ func (h *protocolHandler) retrieveCached(key string) (*cachedQueryResult, bool) 
 		if !errors.Is(err, cache.ErrKNF) {
 			h.observeCacheFailure("retrieve_failure")
 			logger.Error("mysql cache retrieval failed", logging.Pairs{
-				logKeyBackendName: h.config.BackendName, "detail": err.Error(),
+				logKeyBackendName: h.config.BackendName, logKeyDetail: err.Error(),
 			})
 		}
 		return nil, false
@@ -568,7 +569,7 @@ func (h *protocolHandler) storeCached(key string, result *cachedQueryResult) {
 	if result == nil || result.result == nil {
 		h.observeCacheFailure("encode_failure")
 		logger.Error("mysql cache result encoding failed", logging.Pairs{
-			logKeyBackendName: h.config.BackendName, "detail": "nil MySQL cache result",
+			logKeyBackendName: h.config.BackendName, logKeyDetail: "nil MySQL cache result",
 		})
 		return
 	}
@@ -590,7 +591,7 @@ func (h *protocolHandler) storeCached(key string, result *cachedQueryResult) {
 		if err := memoryCache.StoreReference(key, result, h.config.CacheTTL); err != nil {
 			h.observeCacheFailure("store_failure")
 			logger.Error("mysql cache storage failed", logging.Pairs{
-				logKeyBackendName: h.config.BackendName, "detail": err.Error(),
+				logKeyBackendName: h.config.BackendName, logKeyDetail: err.Error(),
 			})
 		}
 		return
@@ -599,7 +600,7 @@ func (h *protocolHandler) storeCached(key string, result *cachedQueryResult) {
 	if err != nil {
 		h.observeCacheFailure("encode_failure")
 		logger.Error("mysql cache result encoding failed", logging.Pairs{
-			logKeyBackendName: h.config.BackendName, "detail": err.Error(),
+			logKeyBackendName: h.config.BackendName, logKeyDetail: err.Error(),
 		})
 		return
 	}
@@ -616,7 +617,7 @@ func (h *protocolHandler) storeCached(key string, result *cachedQueryResult) {
 	if err := cacheClient.Store(key, data, h.config.CacheTTL); err != nil {
 		h.observeCacheFailure("store_failure")
 		logger.Error("mysql cache storage failed", logging.Pairs{
-			logKeyBackendName: h.config.BackendName, "detail": err.Error(),
+			logKeyBackendName: h.config.BackendName, logKeyDetail: err.Error(),
 		})
 	}
 }
@@ -642,7 +643,7 @@ func (h *protocolHandler) removeCached(key, reason string) {
 	if err := cacheClient.Remove(key); err != nil {
 		h.observeCacheFailure("remove_failure")
 		logger.Error("mysql cache removal failed", logging.Pairs{
-			logKeyBackendName: h.config.BackendName, "reason": reason, "detail": err.Error(),
+			logKeyBackendName: h.config.BackendName, "reason": reason, logKeyDetail: err.Error(),
 		})
 	}
 }

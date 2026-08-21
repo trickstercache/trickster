@@ -60,7 +60,7 @@ func (lg *Group) StartProtocolListener(listenerName, protocol, address string,
 	l.Listener, err = NewListener(address, port, connectionsLimit, nil, drainTimeout)
 	if err != nil {
 		logger.ErrorSynchronous(protocol+" listener startup failed", logging.Pairs{
-			"listenerName": listenerName, "detail": err,
+			logKeyListenerName: listenerName, logKeyDetail: err,
 		})
 		l.setState(StateStopped)
 		if f != nil {
@@ -69,7 +69,7 @@ func (lg *Group) StartProtocolListener(listenerName, protocol, address string,
 		return err
 	}
 	logger.Info(protocol+" listener starting", logging.Pairs{
-		"listenerName": listenerName, "port": port, "address": address,
+		logKeyListenerName: listenerName, logKeyPort: port, logKeyAddress: address,
 	})
 
 	lg.listenersLock.Lock()
@@ -81,7 +81,7 @@ func (lg *Group) StartProtocolListener(listenerName, protocol, address string,
 	err = svr.Serve(l)
 	if err != nil {
 		logger.ErrorSynchronous(protocol+" listener stopping", logging.Pairs{
-			"listenerName": listenerName, "detail": err,
+			logKeyListenerName: listenerName, logKeyDetail: err,
 		})
 		if l.exitOnError.Load() {
 			os.Exit(1)

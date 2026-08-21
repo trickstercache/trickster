@@ -438,7 +438,7 @@ func matchBucketExpr(expr sqlparser.Expr) (string, string, time.Duration,
 	}
 
 	if col, axis, ok := unixTimestampColumn(div.Left); ok {
-		if factor > int64((time.Duration(1<<63-1))/time.Second) {
+		if factor > int64(time.Duration(1<<63-1)/time.Second) {
 			return "", "", 0, 0, false
 		}
 		return col, axis, time.Duration(factor) * time.Second,
@@ -454,7 +454,7 @@ func matchBucketExpr(expr sqlparser.Expr) (string, string, time.Duration,
 	if factor >= int64(time.Second) {
 		return col, axis, time.Duration(factor), timeseries.DateTimeUnixNano, true
 	}
-	if factor > int64((time.Duration(1<<63-1))/time.Second) {
+	if factor > int64(time.Duration(1<<63-1)/time.Second) {
 		return "", "", 0, 0, false
 	}
 	return col, axis, time.Duration(factor) * time.Second,
