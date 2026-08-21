@@ -23,6 +23,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/flux"
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/influxql"
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/iofmt"
+	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/promremote"
 	"github.com/trickstercache/trickster/v2/pkg/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/engines"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
@@ -58,6 +59,9 @@ func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery,
 	*timeseries.RequestOptions, bool, error,
 ) {
+	if promremote.IsRequest(r) {
+		return promremote.ParseTimeRangeQuery(r)
+	}
 	f := iofmt.Detect(r)
 	switch {
 	case f.IsInfluxQL():

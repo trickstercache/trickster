@@ -10,6 +10,32 @@ Trickster uses InfluxDB-provided packages to parse and normalize queries for cac
 
 Trickster supports integrations with InfluxDB 1.x and 2.0.
 
+### Prometheus Remote Read
+
+For InfluxDB 1.x, Trickster accelerates Prometheus remote-read requests sent to
+`POST /api/v1/prom/read`. Point Prometheus at the same endpoint on Trickster and
+retain the InfluxDB query parameters, for example:
+
+```yaml
+remote_read:
+  - url: http://trickster:8480/api/v1/prom/read?db=metrics&rp=autogen
+```
+
+The InfluxDB endpoint supports one query per request and the Prometheus
+`SAMPLES` response type. Trickster delta-caches requests with that shape. Other
+request shapes continue through the normal proxy path so that InfluxDB remains
+responsible for its response and error behavior.
+
+Raw remote-read samples do not advertise a guaranteed interval, so point-count
+sharding cannot split their extents without risking gaps. Requests use the
+normal proxy path when `shard_max_size_points` is enabled; time-based sharding
+remains supported. Point-based backfill tolerance uses a positive
+`hints.step_ms`; a request without that hint also uses the normal proxy path.
+
+The `db`, `rp`, `u`, and `p` query parameters and the `Authorization` header are
+part of the cache identity. They are forwarded unchanged unless a path-level
+request rewrite or header configuration overrides them.
+
 ### A note on Flux Language Support:
 
 Trickster supports the Flux Query Language for general/basic usage. Trickster does not support advanced union-style queries (e.g., with multiple `from` clauses). In this rare use case, these responses will currently provide invalid data, however, a subsequent beta will proxy unsupported requests.

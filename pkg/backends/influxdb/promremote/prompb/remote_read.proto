@@ -1,0 +1,86 @@
+// Copyright 2016 Prometheus Team
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package prometheus;
+
+option go_package = "github.com/trickstercache/trickster/v2/pkg/backends/influxdb/promremote/prompb";
+
+// This is the SAMPLES subset of Prometheus' remote-read protocol used by
+// InfluxDB 1.x. Field numbers and enum values are wire-compatible with the
+// upstream Prometheus schema.
+
+message ReadRequest {
+  repeated Query queries = 1;
+
+  enum ResponseType {
+    SAMPLES = 0;
+    STREAMED_XOR_CHUNKS = 1;
+  }
+
+  repeated ResponseType accepted_response_types = 2;
+}
+
+message ReadResponse {
+  repeated QueryResult results = 1;
+}
+
+message Query {
+  int64 start_timestamp_ms = 1;
+  int64 end_timestamp_ms = 2;
+  repeated LabelMatcher matchers = 3;
+  ReadHints hints = 4;
+}
+
+message QueryResult {
+  repeated TimeSeries timeseries = 1;
+}
+
+message Sample {
+  double value = 1;
+  int64 timestamp = 2;
+}
+
+message TimeSeries {
+  repeated Label labels = 1;
+  repeated Sample samples = 2;
+}
+
+message Label {
+  string name = 1;
+  string value = 2;
+}
+
+message LabelMatcher {
+  enum Type {
+    EQ = 0;
+    NEQ = 1;
+    RE = 2;
+    NRE = 3;
+  }
+
+  Type type = 1;
+  string name = 2;
+  string value = 3;
+}
+
+message ReadHints {
+  int64 step_ms = 1;
+  string func = 2;
+  int64 start_ms = 3;
+  int64 end_ms = 4;
+  repeated string grouping = 5;
+  bool by = 6;
+  int64 range_ms = 7;
+}
