@@ -38,7 +38,12 @@ import (
 	vtmysql "vitess.io/vitess/go/mysql"
 	"vitess.io/vitess/go/sqltypes"
 	querypb "vitess.io/vitess/go/vt/proto/query"
+	"vitess.io/vitess/go/vt/vtenv"
 )
+
+// dpcTestHandler supplies the collation environment DPC result ordering needs:
+// group columns are compared with MySQL's own rules, which requires one.
+var dpcTestHandler = &protocolHandler{env: vtenv.NewTestEnv()}
 
 func TestCachedQueryResultRoundTrip(t *testing.T) {
 	original := &cachedQueryResult{
@@ -146,7 +151,7 @@ func TestMergeAndCropDeltaResults(t *testing.T) {
 		OutputColumn: "time", GroupColumns: []string{"metric"},
 		OutputUnit: timeseries.DateTimeUnixSecs,
 	}
-	merged, err := mergeResults(parts, plan)
+	merged, err := dpcTestHandler.mergeResults(parts, plan)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +159,7 @@ func TestMergeAndCropDeltaResults(t *testing.T) {
 		merged.Rows[2][2].ToString() != "4" {
 		t.Fatalf("unexpected merged rows: %+v", merged.Rows)
 	}
-	cropped, err := cropAndSortResult(merged, plan,
+	cropped, err := dpcTestHandler.cropAndSortResult(merged, plan,
 		timeseries.Extent{Start: time.Unix(60, 0), End: time.Unix(120, 0)})
 	if err != nil {
 		t.Fatal(err)
@@ -180,7 +185,7 @@ func TestMergeResultsPreservesNullAndEmptyGroupValues(t *testing.T) {
 		OutputColumn: "time", GroupColumns: []string{"metric"},
 		OutputUnit: timeseries.DateTimeUnixSecs,
 	}
-	merged, err := mergeResults([]*sqltypes.Result{
+	merged, err := dpcTestHandler.mergeResults([]*sqltypes.Result{
 		result(sqltypes.NULL, 1), result(sqltypes.NewVarChar(""), 2),
 	}, plan)
 	if err != nil {
@@ -501,7 +506,7 @@ func TestDeltaCoveragePlansExpectedOriginSQLAndMergedResult(t *testing.T) {
 		}
 		parts = append(parts, &sqltypes.Result{Fields: fields, Rows: rows})
 	}
-	merged, err := mergeResults(parts, plan)
+	merged, err := dpcTestHandler.mergeResults(parts, plan)
 	if err != nil {
 		t.Fatal(err)
 	}

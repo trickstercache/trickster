@@ -531,29 +531,29 @@ func TestDeltaResultValidationMatrix(t *testing.T) {
 		{Name: "metric", Type: querypb.Type_VARCHAR},
 		{Name: "value", Type: querypb.Type_INT64},
 	}
-	if _, err := mergeResults(nil, plan); err == nil {
+	if _, err := dpcTestHandler.mergeResults(nil, plan); err == nil {
 		t.Fatal("empty merge succeeded")
 	}
-	if _, err := mergeResults([]*sqltypes.Result{{Fields: fields}, nil}, plan); err == nil {
+	if _, err := dpcTestHandler.mergeResults([]*sqltypes.Result{{Fields: fields}, nil}, plan); err == nil {
 		t.Fatal("merge accepted nil part")
 	}
 	badFields := []*querypb.Field{{Name: "time", Type: querypb.Type_INT64}}
-	if _, err := mergeResults([]*sqltypes.Result{{Fields: fields}, {Fields: badFields}}, plan); err == nil {
+	if _, err := dpcTestHandler.mergeResults([]*sqltypes.Result{{Fields: fields}, {Fields: badFields}}, plan); err == nil {
 		t.Fatal("merge accepted incompatible fields")
 	}
-	if _, err := mergeResults([]*sqltypes.Result{{Fields: fields, Rows: [][]sqltypes.Value{{sqltypes.NewInt64(1)}}}}, plan); err == nil {
+	if _, err := dpcTestHandler.mergeResults([]*sqltypes.Result{{Fields: fields, Rows: [][]sqltypes.Value{{sqltypes.NewInt64(1)}}}}, plan); err == nil {
 		t.Fatal("merge accepted short row")
 	}
 	badTime := &sqltypes.Result{Fields: fields, Rows: [][]sqltypes.Value{{
 		sqltypes.NewVarChar("bad"), sqltypes.NewVarChar("m"), sqltypes.NewInt64(1),
 	}}}
-	if _, err := mergeResults([]*sqltypes.Result{badTime}, plan); err == nil {
+	if _, err := dpcTestHandler.mergeResults([]*sqltypes.Result{badTime}, plan); err == nil {
 		t.Fatal("merge accepted invalid time")
 	}
-	if _, err := cropAndSortResult(nil, plan, timeseries.Extent{}); err == nil {
+	if _, err := dpcTestHandler.cropAndSortResult(nil, plan, timeseries.Extent{}); err == nil {
 		t.Fatal("nil crop succeeded")
 	}
-	if _, err := cropAndSortResult(&sqltypes.Result{Fields: fields, Rows: [][]sqltypes.Value{{}}}, plan,
+	if _, err := dpcTestHandler.cropAndSortResult(&sqltypes.Result{Fields: fields, Rows: [][]sqltypes.Value{{}}}, plan,
 		timeseries.Extent{}); err == nil {
 		t.Fatal("crop accepted short row")
 	}
@@ -1049,10 +1049,20 @@ func TestShardedDeltaAndMergeFallback(t *testing.T) {
 		MaxResultRows: 100, MaxResultSizeBytes: 1 << 20,
 	}, nil)
 	fallbackSession := &upstreamSession{database: "trickster", downstream: c}
+	// A plan whose results cannot be merged degrades to the object cache.
 	if result, status, err := fallback.executeDelta(c, fallbackSession, query,
-		analysis.Plan); err != nil || status != cachestatus.LookupStatusProxyOnly || result == nil {
-		t.Fatalf("merge fallback = %v/%v/%v, want successful proxy-only result",
-			result, status, err)
+		analysis.Plan); err != nil || status != cachestatus.LookupStatusKeyMiss || result == nil {
+		t.Fatalf("merge fallback = %v/%v/%v, want an object-cache miss", result, status, err)
+	}
+	before := emptyOrigin.queryCount.Load()
+	// The recorded fallback makes the next execution skip the delta attempt and
+	// read the object entry the first one stored.
+	if result, status, err := fallback.executeDelta(c, fallbackSession, query,
+		analysis.Plan); err != nil || status != cachestatus.LookupStatusHit || result == nil {
+		t.Fatalf("repeat merge fallback = %v/%v/%v, want an object-cache hit", result, status, err)
+	}
+	if got := emptyOrigin.queryCount.Load(); got != before {
+		t.Fatalf("origin queries after the recorded fallback = %d, want %d", got, before)
 	}
 	fallback.discardUpstream(fallbackSession, fallbackSession.conn)
 }

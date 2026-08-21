@@ -52,6 +52,14 @@ type lifecycleOriginHandler struct {
 	statements  []lifecycleStatement
 	connections int
 	release     <-chan struct{}
+	respond     func(string) *sqltypes.Result
+}
+
+// setResponder overrides the result the origin returns for ordinary queries.
+func (h *lifecycleOriginHandler) setResponder(respond func(string) *sqltypes.Result) {
+	h.mtx.Lock()
+	h.respond = respond
+	h.mtx.Unlock()
 }
 
 type lifecycleStatement struct {
@@ -74,6 +82,7 @@ func (h *lifecycleOriginHandler) ComQuery(c *vtmysql.Conn, query string,
 	h.mtx.Lock()
 	h.statements = append(h.statements,
 		lifecycleStatement{connectionID: c.ConnectionID, query: query})
+	respond := h.respond
 	h.mtx.Unlock()
 	switch {
 	case strings.Contains(query, markerStatementError):
@@ -106,6 +115,9 @@ func (h *lifecycleOriginHandler) ComQuery(c *vtmysql.Conn, query string,
 	case strings.Contains(query, markerStall):
 		<-h.release
 		return io.EOF
+	}
+	if respond != nil {
+		return callback(respond(query))
 	}
 	if strings.HasPrefix(strings.ToUpper(strings.TrimSpace(query)), "SELECT") {
 		return callback(&sqltypes.Result{

@@ -17,6 +17,8 @@
 package mysql
 
 import (
+	"bytes"
+	"cmp"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -24,6 +26,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unsafe"
 
@@ -40,6 +43,9 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	vtmysql "vitess.io/vitess/go/mysql"
+	"vitess.io/vitess/go/mysql/collations"
+	"vitess.io/vitess/go/mysql/collations/colldata"
+	"vitess.io/vitess/go/mysql/decimal"
 	"vitess.io/vitess/go/sqltypes"
 	querypb "vitess.io/vitess/go/vt/proto/query"
 	"vitess.io/vitess/go/vt/sqlparser"
@@ -52,6 +58,7 @@ const (
 	cacheModeOPC                       = "opc"
 	cacheModeDPC                       = "dpc"
 	cacheModeDPCEmpty                  = "dpc-empty"
+	cacheModeDPCFallback               = "dpc-fallback"
 	cacheFailureDecode                 = "decode_failure"
 	cacheFailureOversized              = "oversized_cached_object"
 	logKeyBackendName                  = "backend_name"
@@ -237,6 +244,16 @@ func (h *protocolHandler) executeDelta(c *vtmysql.Conn, session *upstreamSession
 	lock := h.lockDPC(key)
 	defer h.unlockDPC(key, lock)
 
+	// A previous execution of this plan may have proven that its results cannot
+	// be delta-merged — an unorderable group column, for instance. The marker is
+	// keyed on the plan rather than on the literal statement, because the
+	// statement's time bounds move with every request.
+	fallbackKey := h.queryCacheKey(c, session, cacheModeDPCFallback,
+		plan.CanonicalSQL, plan.IdentitySuffix)
+	if _, blocked := h.retrieveCached(fallbackKey); blocked {
+		return h.executeObject(c, session, query)
+	}
+
 	window, windowErr := buildDeltaRequestWindow(plan)
 	if windowErr != nil {
 		result, fetchErr := h.executeOrigin(session, query)
@@ -259,7 +276,7 @@ func (h *protocolHandler) executeDelta(c *vtmysql.Conn, session *upstreamSession
 		missing = covered.CalculateDeltas(window.cacheable, plan.Step)
 	}
 	if len(missing) == 0 && found {
-		cropped, cropErr := cropAndSortResult(cached.result, plan, requested)
+		cropped, cropErr := h.cropAndSortResult(cached.result, plan, requested)
 		if cropErr == nil {
 			return cropped, cachestatus.LookupStatusHit, nil
 		}
@@ -299,17 +316,21 @@ func (h *protocolHandler) executeDelta(c *vtmysql.Conn, session *upstreamSession
 		}
 		parts = append(parts, result)
 	}
-	merged, mergeErr := mergeResults(parts, plan)
+	merged, mergeErr := h.mergeResults(parts, plan)
 	if mergeErr != nil {
-		logger.Warn("mysql delta result could not be modeled; using object result", logging.Pairs{
+		logger.Warn("mysql delta result could not be modeled; using object cache", logging.Pairs{
 			logKeyBackendName: h.config.BackendName, "detail": mergeErr.Error(),
 		})
-		result, fetchErr := h.executeOrigin(session, query)
-		if fetchErr == nil {
-			h.storeCached(h.queryCacheKey(c, session, cacheModeOPC, strings.TrimSpace(query)),
-				&cachedQueryResult{result: result})
+		// Drop the delta entry: a stale part is one of the things that can make
+		// a merge fail, and the retry after the marker expires should start
+		// from a clean slate.
+		if found {
+			h.removeCached(key, "unmergeable_delta_result")
 		}
-		return result, cachestatus.LookupStatusProxyOnly, fetchErr
+		// Record the failure against the plan so later requests skip the delta
+		// fetch entirely instead of repeating it and discarding the result.
+		h.storeCached(fallbackKey, &cachedQueryResult{result: &sqltypes.Result{}})
+		return h.executeObject(c, session, query)
 	}
 	allExtents := covered.Merge(missing, plan.Step)
 	response, retained, cacheExtents, finalizeErr := h.finalizeDeltaResult(
@@ -781,7 +802,9 @@ func unmarshalCachedQueryResult(data []byte) (*cachedQueryResult, error) {
 	return &cachedQueryResult{result: result, extents: extents}, nil
 }
 
-func mergeResults(parts []*sqltypes.Result, plan *sqlanalyzer.QueryPlan) (*sqltypes.Result, error) {
+func (h *protocolHandler) mergeResults(parts []*sqltypes.Result,
+	plan *sqlanalyzer.QueryPlan,
+) (*sqltypes.Result, error) {
 	if len(parts) == 0 || parts[0] == nil {
 		return nil, errors.New("empty MySQL delta result")
 	}
@@ -792,8 +815,11 @@ func mergeResults(parts []*sqltypes.Result, plan *sqlanalyzer.QueryPlan) (*sqlty
 	}
 	type keyedRow struct {
 		epoch int64
-		group string
 		row   []sqltypes.Value
+	}
+	comparator, err := h.newGroupComparator(fields, groupIndexes)
+	if err != nil {
+		return nil, err
 	}
 	rows := make([]keyedRow, 0, totalRows(parts))
 	positions := make(map[string]int, cap(rows))
@@ -805,29 +831,40 @@ func mergeResults(parts []*sqltypes.Result, plan *sqlanalyzer.QueryPlan) (*sqlty
 			if len(row) != len(fields) {
 				return nil, errors.New("invalid MySQL delta result row")
 			}
+			if validateErr := comparator.validateRow(row); validateErr != nil {
+				return nil, validateErr
+			}
 			epoch, parseErr := resultEpoch(row[timeIndex], plan.OutputUnit)
 			if parseErr != nil {
 				return nil, parseErr
 			}
-			group := rowGroupKey(row, groupIndexes)
-			key := strconv.FormatInt(epoch, 10) + "\x00" + group
+			// rowGroupKey identifies a group; it does not order one.
+			key := strconv.FormatInt(epoch, 10) + "\x00" + rowGroupKey(row, groupIndexes)
 			if position, exists := positions[key]; exists {
 				rows[position].row = row
 				continue
 			}
 			positions[key] = len(rows)
-			rows = append(rows, keyedRow{epoch: epoch, group: group, row: row})
+			rows = append(rows, keyedRow{epoch: epoch, row: row})
 		}
 	}
+	var compareErr error
 	slices.SortStableFunc(rows, func(a, b keyedRow) int {
-		if a.epoch < b.epoch {
-			return -1
+		if a.epoch != b.epoch {
+			return cmp.Compare(a.epoch, b.epoch)
 		}
-		if a.epoch > b.epoch {
-			return 1
+		if compareErr != nil {
+			return 0
 		}
-		return strings.Compare(a.group, b.group)
+		order, err := comparator.compare(a.row, b.row)
+		if err != nil {
+			compareErr = err
+		}
+		return order
 	})
+	if compareErr != nil {
+		return nil, compareErr
+	}
 	out := cloneResultMetadata(parts[len(parts)-1])
 	out.Fields = fields
 	out.Rows = make([][]sqltypes.Value, len(rows))
@@ -837,8 +874,8 @@ func mergeResults(parts []*sqltypes.Result, plan *sqlanalyzer.QueryPlan) (*sqlty
 	return out, nil
 }
 
-func cropAndSortResult(result *sqltypes.Result, plan *sqlanalyzer.QueryPlan,
-	extent timeseries.Extent,
+func (h *protocolHandler) cropAndSortResult(result *sqltypes.Result,
+	plan *sqlanalyzer.QueryPlan, extent timeseries.Extent,
 ) (*sqltypes.Result, error) {
 	if result == nil {
 		return nil, errors.New("nil MySQL delta result")
@@ -847,10 +884,13 @@ func cropAndSortResult(result *sqltypes.Result, plan *sqlanalyzer.QueryPlan,
 	if err != nil {
 		return nil, err
 	}
+	comparator, err := h.newGroupComparator(result.Fields, groupIndexes)
+	if err != nil {
+		return nil, err
+	}
 	start, end := extent.Start.UnixNano(), extent.End.UnixNano()
 	type timedRow struct {
 		epoch int64
-		group string
 		row   []sqltypes.Value
 	}
 	rows := make([]timedRow, 0, len(result.Rows))
@@ -862,19 +902,31 @@ func cropAndSortResult(result *sqltypes.Result, plan *sqlanalyzer.QueryPlan,
 		if parseErr != nil {
 			return nil, parseErr
 		}
-		if epoch >= start && epoch <= end {
-			rows = append(rows, timedRow{epoch: epoch, group: rowGroupKey(row, groupIndexes), row: row})
+		if epoch < start || epoch > end {
+			continue
 		}
+		if validateErr := comparator.validateRow(row); validateErr != nil {
+			return nil, validateErr
+		}
+		rows = append(rows, timedRow{epoch: epoch, row: row})
 	}
+	var compareErr error
 	slices.SortStableFunc(rows, func(a, b timedRow) int {
-		if a.epoch < b.epoch {
-			return -1
+		if a.epoch != b.epoch {
+			return cmp.Compare(a.epoch, b.epoch)
 		}
-		if a.epoch > b.epoch {
-			return 1
+		if compareErr != nil {
+			return 0
 		}
-		return strings.Compare(a.group, b.group)
+		order, err := comparator.compare(a.row, b.row)
+		if err != nil {
+			compareErr = err
+		}
+		return order
 	})
+	if compareErr != nil {
+		return nil, compareErr
+	}
 	out := cloneResultMetadata(result)
 	out.Rows = make([][]sqltypes.Value, len(rows))
 	for i := range rows {
@@ -995,6 +1047,11 @@ func resultEpoch(value sqltypes.Value, unit timeseries.FieldDataType) (int64, er
 	return 0, fmt.Errorf("unsupported MySQL time unit %d", unit)
 }
 
+// rowGroupKey builds a collision-safe identity for a row's group columns. It is
+// used only to deduplicate rows across delta parts. It deliberately cannot
+// order them: the length prefix that makes it collision-safe would sort binary
+// "z" before "aa", and raw bytes ignore a text field's collation. Ordering is
+// groupComparator's job.
 func rowGroupKey(row []sqltypes.Value, indexes []int) string {
 	if len(indexes) == 0 {
 		return ""
@@ -1017,6 +1074,201 @@ func rowGroupKey(row []sqltypes.Value, indexes []int) string {
 	return builder.String()
 }
 
+// groupCompareKind names the one MySQL comparison rule that orders a group
+// column. Every rule is chosen from the field's declared type when the
+// comparator is built, so the sort itself performs no lookups.
+type groupCompareKind uint8
+
+const (
+	compareCollatedText groupCompareKind = iota
+	compareBytes
+	compareSigned
+	compareUnsigned
+	compareFloat
+	compareDecimal
+)
+
+// groupColumn describes how to order one group column.
+type groupColumn struct {
+	index     int
+	name      string
+	fieldType querypb.Type
+	kind      groupCompareKind
+	collation colldata.Collation
+}
+
+// groupComparator orders rows by their group columns using MySQL's own rules:
+// NULLs first in ascending order, numeric ordering for numbers, exact decimal
+// ordering, and each text field's declared collation. Types it cannot order
+// exactly are rejected outright, which costs DPC optimization rather than
+// correctness because the caller falls back to the object cache.
+type groupComparator struct {
+	columns []groupColumn
+}
+
+func (h *protocolHandler) newGroupComparator(fields []*querypb.Field,
+	indexes []int,
+) (*groupComparator, error) {
+	c := &groupComparator{columns: make([]groupColumn, len(indexes))}
+	for i, index := range indexes {
+		// resultIndexes has already proven every group index addresses a field.
+		field := fields[index]
+		column := groupColumn{index: index, name: field.Name, fieldType: field.Type}
+		switch {
+		case sqltypes.IsEnum(field.Type), sqltypes.IsSet(field.Type):
+			// MySQL orders these by ordinal and bitmask, which live in the
+			// column's declaration. A result header does not carry them, so
+			// every value would otherwise compare equal.
+			return nil, fmt.Errorf("MySQL group column %q of type %v needs declaration "+
+				"values that the result metadata does not carry", field.Name, field.Type)
+		case sqltypes.IsSigned(field.Type):
+			column.kind = compareSigned
+		case sqltypes.IsUnsigned(field.Type):
+			column.kind = compareUnsigned
+		case sqltypes.IsFloat(field.Type):
+			column.kind = compareFloat
+		case sqltypes.IsDecimal(field.Type):
+			column.kind = compareDecimal
+		case sqltypes.IsBinary(field.Type), sqltypes.IsDate(field.Type):
+			// Binary strings order by raw bytes by definition, and MySQL renders
+			// DATE, DATETIME, and TIMESTAMP zero-padded at a fixed width. TIME is
+			// deliberately absent: it can be negative, which byte order gets wrong.
+			column.kind = compareBytes
+		case sqltypes.IsText(field.Type):
+			if field.Charset > math.MaxUint16 {
+				return nil, fmt.Errorf("MySQL group column %q uses collation %d, "+
+					"which Trickster cannot order", field.Name, field.Charset)
+			}
+			collationID := collations.ID(field.Charset) //nolint:gosec // range checked above
+			if collationID == collations.Unknown {
+				collationID = h.collationEnv().DefaultConnectionCharset()
+			}
+			if collationID == collations.CollationBinaryID {
+				column.kind = compareBytes
+				break
+			}
+			column.collation = colldata.Lookup(collationID)
+			if column.collation == nil {
+				return nil, fmt.Errorf("MySQL group column %q uses collation %d, "+
+					"which Trickster cannot order", field.Name, collationID)
+			}
+			column.kind = compareCollatedText
+		default:
+			return nil, fmt.Errorf("MySQL group column %q has type %v, "+
+				"which Trickster cannot order", field.Name, field.Type)
+		}
+		c.columns[i] = column
+	}
+	return c, nil
+}
+
+// validateRow rejects a row whose group values do not carry their field's
+// declared type. Each comparison rule was chosen from the field, so a value of
+// some other type would be ordered by the wrong rule. Rows are validated once
+// on the way in rather than on every comparison.
+func (c *groupComparator) validateRow(row []sqltypes.Value) error {
+	for i := range c.columns {
+		column := &c.columns[i]
+		value := row[column.index]
+		if value.IsNull() || value.Type() == column.fieldType {
+			continue
+		}
+		return fmt.Errorf("MySQL group column %q holds a %v value, want %v",
+			column.name, value.Type(), column.fieldType)
+	}
+	return nil
+}
+
+// compare orders left before right by each group column in turn. Failures
+// propagate rather than falling back to a byte order that would not match what
+// the origin returned.
+func (c *groupComparator) compare(left, right []sqltypes.Value) (int, error) {
+	for i := range c.columns {
+		column := &c.columns[i]
+		l, r := left[column.index], right[column.index]
+		// MySQL sorts NULL before every value in ascending order.
+		switch {
+		case l.IsNull() && r.IsNull():
+			continue
+		case l.IsNull():
+			return -1, nil
+		case r.IsNull():
+			return 1, nil
+		}
+		order, err := column.compareValues(l, r)
+		if err != nil {
+			return 0, err
+		}
+		if order != 0 {
+			return order, nil
+		}
+	}
+	return 0, nil
+}
+
+func (g *groupColumn) compareValues(left, right sqltypes.Value) (int, error) {
+	switch g.kind {
+	case compareCollatedText:
+		return g.collation.Collate(left.Raw(), right.Raw(), false), nil
+	case compareBytes:
+		return bytes.Compare(left.Raw(), right.Raw()), nil
+	case compareSigned:
+		l, r, err := twoValues(g, left, right, sqltypes.Value.ToInt64)
+		return cmp.Compare(l, r), err
+	case compareUnsigned:
+		l, r, err := twoValues(g, left, right, sqltypes.Value.ToUint64)
+		return cmp.Compare(l, r), err
+	case compareFloat:
+		l, r, err := twoValues(g, left, right, sqltypes.Value.ToFloat64)
+		return cmp.Compare(l, r), err
+	case compareDecimal:
+		l, err := decimal.NewFromMySQL(left.Raw())
+		if err != nil {
+			return 0, g.valueError(err)
+		}
+		r, err := decimal.NewFromMySQL(right.Raw())
+		if err != nil {
+			return 0, g.valueError(err)
+		}
+		return l.Cmp(r), nil
+	}
+	return 0, fmt.Errorf("MySQL group column %q has no comparison rule", g.name)
+}
+
+func twoValues[T any](g *groupColumn, left, right sqltypes.Value,
+	convert func(sqltypes.Value) (T, error),
+) (T, T, error) {
+	l, err := convert(left)
+	if err != nil {
+		var zero T
+		return zero, zero, g.valueError(err)
+	}
+	r, err := convert(right)
+	if err != nil {
+		var zero T
+		return zero, zero, g.valueError(err)
+	}
+	return l, r, nil
+}
+
+func (g *groupColumn) valueError(err error) error {
+	return fmt.Errorf("compare MySQL group column %q: %w", g.name, err)
+}
+
+// collationEnv returns the environment used to order text group columns. A
+// handler built without a Vitess environment falls back to the protocol's own
+// advertised server version.
+func (h *protocolHandler) collationEnv() *collations.Environment {
+	if h.env != nil {
+		return h.env.CollationEnv()
+	}
+	return defaultCollationEnv()
+}
+
+var defaultCollationEnv = sync.OnceValue(func() *collations.Environment {
+	return collations.NewEnvironment(protocolVersion)
+})
+
 func compatibleFields(left, right []*querypb.Field) bool {
 	if len(left) != len(right) {
 		return false
@@ -1028,7 +1280,10 @@ func compatibleFields(left, right []*querypb.Field) bool {
 			}
 			continue
 		}
-		if left[i].Name != right[i].Name || left[i].Type != right[i].Type {
+		// Charset carries the collation that orders a text column. Parts that
+		// disagree would all be ordered by the first part's collation.
+		if left[i].Name != right[i].Name || left[i].Type != right[i].Type ||
+			left[i].Charset != right[i].Charset {
 			return false
 		}
 	}

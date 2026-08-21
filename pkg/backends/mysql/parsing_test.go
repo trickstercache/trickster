@@ -269,12 +269,12 @@ GROUP BY time, cab_type ORDER BY time, metric`
 			sqltypes.NewInt64(1785542400), sqltypes.NewVarChar("yellow"), sqltypes.NewInt64(4),
 		}},
 	}
-	if _, err := mergeResults([]*sqltypes.Result{result}, analysis.Plan); err != nil {
+	if _, err := dpcTestHandler.mergeResults([]*sqltypes.Result{result}, analysis.Plan); err != nil {
 		t.Fatalf("aliased dimension could not be modeled: %v", err)
 	}
 	result.Fields[2] = &querypb.Field{Name: "trips", Type: querypb.Type_VARCHAR}
 	result.Rows[0][2] = sqltypes.NewVarChar("not numeric")
-	if _, err := mergeResults([]*sqltypes.Result{result}, analysis.Plan); err == nil {
+	if _, err := dpcTestHandler.mergeResults([]*sqltypes.Result{result}, analysis.Plan); err == nil {
 		t.Fatal("non-numeric value field was accepted for DPC merging")
 	}
 }

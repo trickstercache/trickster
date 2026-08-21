@@ -78,6 +78,30 @@ func benchmarkPlan() *sqlanalyzer.QueryPlan {
 	}
 }
 
+// benchmarkGroupedPlan exercises the collation-aware group comparator, which
+// benchmarkPlan skips entirely by declaring no group columns.
+func benchmarkGroupedPlan() *sqlanalyzer.QueryPlan {
+	plan := benchmarkPlan()
+	plan.GroupColumns = []string{"label"}
+	return plan
+}
+
+// benchmarkGroupedResult repeats each timestamp across several label values.
+// benchmarkResult gives every row a unique timestamp, which short-circuits the
+// group comparison before it ever runs.
+func benchmarkGroupedResult(rowCount int) *sqltypes.Result {
+	const groupsPerBucket = 8
+	result := benchmarkResult(rowCount)
+	rows := make([][]sqltypes.Value, len(result.Rows))
+	for i, row := range result.Rows {
+		clone := slices.Clone(row)
+		clone[0] = sqltypes.NewInt64(int64(i/groupsPerBucket) * 60)
+		clone[2] = sqltypes.NewVarChar(fmt.Sprintf("series-%04d", i%groupsPerBucket))
+		rows[i] = clone
+	}
+	return &sqltypes.Result{Fields: result.Fields, Rows: rows}
+}
+
 func BenchmarkMySQLResultHandling(b *testing.B) {
 	for _, rowCount := range []int{10, 100, 1000, 10000} {
 		result := benchmarkResult(rowCount)
@@ -125,7 +149,7 @@ func BenchmarkMySQLResultHandling(b *testing.B) {
 		b.Run(name+"/Merge", func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
-				if _, err := mergeResults(parts, plan); err != nil {
+				if _, err := dpcTestHandler.mergeResults(parts, plan); err != nil {
 					b.Fatal(err)
 				}
 			}
@@ -139,7 +163,36 @@ func BenchmarkMySQLResultHandling(b *testing.B) {
 		b.Run(name+"/CropSort", func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
-				if _, err := cropAndSortResult(reversed, plan, extent); err != nil {
+				if _, err := dpcTestHandler.cropAndSortResult(reversed, plan, extent); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+		groupedPlan := benchmarkGroupedPlan()
+		grouped := benchmarkGroupedResult(rowCount)
+		groupedParts := []*sqltypes.Result{
+			{Fields: grouped.Fields, Rows: grouped.Rows[:rowCount/2]},
+			{Fields: grouped.Fields, Rows: grouped.Rows[rowCount/2:]},
+		}
+		groupedReversed := &sqltypes.Result{Fields: grouped.Fields, Rows: slices.Clone(grouped.Rows)}
+		slices.Reverse(groupedReversed.Rows)
+		groupedExtent := timeseries.Extent{
+			Start: time.Unix(0, 0),
+			End:   time.Unix(int64(rowCount/8*60), 0),
+		}
+		b.Run(name+"/GroupedMerge", func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				if _, err := dpcTestHandler.mergeResults(groupedParts, groupedPlan); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+		b.Run(name+"/GroupedCropSort", func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				if _, err := dpcTestHandler.cropAndSortResult(groupedReversed, groupedPlan,
+					groupedExtent); err != nil {
 					b.Fatal(err)
 				}
 			}
