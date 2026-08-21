@@ -52,6 +52,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 
 	"github.com/prometheus/common/sigv4"
+	"go.yaml.in/yaml/v3"
 )
 
 var restrictedOriginNames = sets.New([]string{"", "frontend"})
@@ -705,10 +706,10 @@ func (o *Options) ToYAML() string {
 	return string(b)
 }
 
-func (o *Options) UnmarshalYAML(unmarshal func(any) error) error {
+func (o *Options) UnmarshalYAML(value *yaml.Node) error {
 	type loadOptions Options
 	lo := loadOptions(*(New()))
-	if err := unmarshal(&lo); err != nil {
+	if err := value.Decode(&lo); err != nil {
 		return err
 	}
 	*o = Options(lo)

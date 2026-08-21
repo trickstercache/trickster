@@ -238,7 +238,7 @@ func TestValidatePool(t *testing.T) {
 
 func TestUnmarshalYAMLError(t *testing.T) {
 	o := New()
-	want := errors.New("boom")
-	err := o.UnmarshalYAML(func(any) error { return want })
-	require.ErrorIs(t, err, want)
+	// a sequence cannot be decoded into the options struct
+	err := yaml.Unmarshal([]byte("- boom"), o)
+	require.Error(t, err)
 }

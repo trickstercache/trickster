@@ -26,6 +26,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 
+	"go.yaml.in/yaml/v3"
 	"golang.org/x/net/http/httpguts"
 )
 
@@ -160,10 +161,10 @@ func (o *Options) IsLegacy() bool {
 }
 
 // UnmarshalYAML applies defaults before decoding a CORS configuration block.
-func (o *Options) UnmarshalYAML(unmarshal func(any) error) error {
+func (o *Options) UnmarshalYAML(value *yaml.Node) error {
 	type loadOptions Options
 	lo := loadOptions(*(New()))
-	if err := unmarshal(&lo); err != nil {
+	if err := value.Decode(&lo); err != nil {
 		return err
 	}
 	*o = Options(lo)

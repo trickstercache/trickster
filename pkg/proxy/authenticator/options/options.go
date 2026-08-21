@@ -27,6 +27,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/util/files"
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
+
+	"go.yaml.in/yaml/v3"
 )
 
 var restrictedNames = sets.New([]string{"", "none"})
@@ -102,10 +104,10 @@ func (l Lookup) Validate(f types.IsRegisteredFunc) error {
 	return nil
 }
 
-func (o *Options) UnmarshalYAML(unmarshal func(any) error) error {
+func (o *Options) UnmarshalYAML(value *yaml.Node) error {
 	type loadOptions Options
 	lo := loadOptions(*(New()))
-	if err := unmarshal(&lo); err != nil {
+	if err := value.Decode(&lo); err != nil {
 		return err
 	}
 	*o = Options(lo)

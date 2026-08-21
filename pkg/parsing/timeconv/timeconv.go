@@ -25,6 +25,8 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/util/strings"
+
+	"go.yaml.in/yaml/v3"
 )
 
 const (
@@ -250,13 +252,13 @@ func SleepRandomMS(min, max int) {
 type Duration time.Duration
 
 // UnmarshalYAML unmarshals a string into a timeconv.Duration
-func (d *Duration) UnmarshalYAML(unmarshal func(any) error) error {
-	var value string
-	if err := unmarshal(&value); err != nil {
+func (d *Duration) UnmarshalYAML(value *yaml.Node) error {
+	var s string
+	if err := value.Decode(&s); err != nil {
 		return err
 	}
 
-	parsed, err := ParseDuration(value)
+	parsed, err := ParseDuration(s)
 	if err != nil {
 		return err
 	}
