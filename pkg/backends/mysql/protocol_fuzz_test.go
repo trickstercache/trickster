@@ -56,6 +56,7 @@ func FuzzCommandDispatchClassification(f *testing.F) {
 	f.Add("PREPARE s FROM 'SELECT ?'")
 	f.Add("SELECT 1; SELECT 2")
 	f.Add("/*!80000 SET @tenant = 1 */")
+	f.Add("\"\\;0")
 	f.Fuzz(func(t *testing.T, query string) {
 		_ = unsupportedTextFeature(query)
 		_, _ = hasMultipleStatements(query)

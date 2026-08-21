@@ -20,6 +20,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -297,6 +298,18 @@ func TestHasMultipleStatements(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("hasMultipleStatements(%q) = %t, want %t", tc.query, got, tc.want)
 		}
+	}
+}
+
+func TestStatementBoundaryParserPanicReturnsParseError(t *testing.T) {
+	query := "\"\\;0"
+	if multiple, err := hasMultipleStatements(query); multiple || !errors.Is(err, ErrInvalidSQL) {
+		t.Fatalf("hasMultipleStatements(%q) = %t, %v; want bounded invalid-SQL error",
+			query, multiple, err)
+	}
+	err := (&protocolHandler{}).ComQuery(&vtmysql.Conn{}, query, nil)
+	if err == nil || !strings.Contains(err.Error(), "cannot parse MySQL statement boundaries") {
+		t.Fatalf("ComQuery(%q) error = %v, want statement-boundary parse error", query, err)
 	}
 }
 

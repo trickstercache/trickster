@@ -1058,7 +1058,13 @@ func (h *protocolHandler) ComQuery(c *vtmysql.Conn, query string,
 	return err
 }
 
-func hasMultipleStatements(query string) (bool, error) {
+func hasMultipleStatements(query string) (multiple bool, err error) {
+	defer func() {
+		if recover() != nil {
+			multiple = false
+			err = fmt.Errorf("%w: statement boundary parsing failed", ErrInvalidSQL)
+		}
+	}()
 	pieces, err := defaultAnalyzer.parser.SplitStatementToPieces(query)
 	return len(pieces) > 1, err
 }
