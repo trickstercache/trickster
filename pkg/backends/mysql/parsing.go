@@ -126,23 +126,15 @@ func (a *Analyzer) analyzeParsed(statement string, stmt sqlparser.Statement,
 		}
 	}
 	if parseErr != nil {
-		mode := sqlanalyzer.CacheModeNone
-		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(statement)), "select") {
-			mode = sqlanalyzer.CacheModeObject
-		}
 		return sqlanalyzer.Analysis{
-			Mode: mode, Reason: sqlanalyzer.ReasonInvalidSQL,
+			Mode: sqlanalyzer.CacheModeNone, Reason: sqlanalyzer.ReasonInvalidSQL,
 			Err: fmt.Errorf("%w: %w", ErrInvalidSQL, parseErr),
 		}
 	}
 	selectStmt, ok := stmt.(*sqlparser.Select)
 	if !ok {
-		mode := sqlanalyzer.CacheModeNone
-		if _, readOnly := stmt.(sqlparser.SelectStatement); readOnly {
-			mode = sqlanalyzer.CacheModeObject
-		}
 		return sqlanalyzer.Analysis{
-			Mode:   mode,
+			Mode:   sqlanalyzer.CacheModeNone,
 			Reason: sqlanalyzer.ReasonUnsupportedStatement, Err: ErrUnsupportedStatement,
 		}
 	}

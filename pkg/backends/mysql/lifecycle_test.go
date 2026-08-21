@@ -122,6 +122,19 @@ func (h *lifecycleOriginHandler) connectionCount() int {
 	return h.connections
 }
 
+// statementCount reports how many statements matching substr reached the origin.
+func (h *lifecycleOriginHandler) statementCount(substr string) int {
+	h.mtx.Lock()
+	defer h.mtx.Unlock()
+	count := 0
+	for _, statement := range h.statements {
+		if strings.Contains(statement.query, substr) {
+			count++
+		}
+	}
+	return count
+}
+
 // statementConnections returns the distinct origin connections that served
 // statements matching substr, in first-seen order.
 func (h *lifecycleOriginHandler) statementConnections(substr string) []uint32 {

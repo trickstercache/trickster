@@ -1116,8 +1116,12 @@ func (h *protocolHandler) stableExtents(extents timeseries.ExtentList,
 func (h *protocolHandler) updateSessionStateParsed(session *upstreamSession, parsed parsedQuery) {
 	session.mtx.Lock()
 	defer session.mtx.Unlock()
-	if parsed.statementType == sqlparser.StmtSelect && parsed.err == nil {
-		if selectChangesSessionState(parsed.statement) {
+	if parsed.statementType == sqlparser.StmtSelect {
+		switch {
+		case parsed.err != nil || parsed.statement == nil:
+			session.cacheUnsafe = true
+			session.stateful = true
+		case selectChangesSessionState(parsed.statement):
 			// SELECT ... INTO, user-variable assignment, and the advisory lock
 			// functions all leave connection-scoped state behind.
 			session.cacheUnsafe = true

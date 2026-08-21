@@ -59,6 +59,99 @@ FROM events WHERE %s GROUP BY time ORDER BY time`
 	}
 }
 
+// TestAnalyzerFailsClosedForUninspectableReads covers the two shapes the
+// analyzer cannot reason about: text it could not parse, and read-only ASTs
+// that are not a plain *sqlparser.Select. Both must reach CacheModeNone before
+// any of the per-statement safety checks, which only inspect a plain SELECT.
+func TestAnalyzerFailsClosedForUninspectableReads(t *testing.T) {
+	a := mustNewAnalyzer()
+	for name, query := range map[string]string{
+		// A union is uncacheable even when every branch is deterministic,
+		// because nothing proves that over the whole AST today.
+		"deterministic union":     "SELECT 1 UNION SELECT 2",
+		"deterministic union all": "SELECT 1 UNION ALL SELECT 2",
+		// These are the cases the old leading-token and read-only-AST
+		// shortcuts admitted: the nondeterminism sits in a branch the
+		// analyzer never reached.
+		"nondeterministic union":    "SELECT 1 UNION ALL SELECT RAND()",
+		"union with session read":   "SELECT 1 UNION SELECT @@sql_mode",
+		"union with user variable":  "SELECT 1 UNION SELECT @report_id",
+		"union with advisory lock":  "SELECT 1 UNION ALL SELECT GET_LOCK('reporting', 1)",
+		"union of time-range reads": safeDateTimeQuery + " UNION ALL " + safeDateTimeQuery,
+		"parenthesized union":       "(SELECT 1) UNION (SELECT RAND())",
+		// Parser-rejected text that begins with SELECT proves nothing about
+		// what the origin would execute.
+		"parser-rejected select":      "SELECT FROM trips",
+		"parser-rejected select list": "SELECT , FROM trips",
+		"parser-rejected lowercase":   "select count(* from trips",
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := a.Analyze(query, time.Time{})
+			if got.Mode != sqlanalyzer.CacheModeNone {
+				t.Fatalf("Analyze() = %s/%s, want %s", got.Mode, got.Reason,
+					sqlanalyzer.CacheModeNone)
+			}
+			if got.Reason == "" {
+				t.Fatal("uninspectable statement has no stable analysis reason")
+			}
+		})
+	}
+}
+
+// TestProxiedParserSkewMakesSessionCacheUnsafe covers the session-level half of
+// the same rule: a read the analyzer could not parse but the origin executed
+// must not leave later statements cacheable.
+func TestProxiedParserSkewMakesSessionCacheUnsafe(t *testing.T) {
+	h := &protocolHandler{config: ProtocolConfig{Cache: newTestCache()}}
+	session := &upstreamSession{}
+	if !h.cacheEligible(session) {
+		t.Fatal("a fresh session was not cache-eligible")
+	}
+	h.updateSessionStateParsed(session, parseQuery("SELECT count(*) FROM trips"))
+	if !h.cacheEligible(session) {
+		t.Fatal("an ordinary read made the session cache-ineligible")
+	}
+	h.updateSessionStateParsed(session, parseQuery("SELECT FROM trips"))
+	if h.cacheEligible(session) {
+		t.Fatal("a proxied parser-skew read left the session cache-eligible")
+	}
+}
+
+// TestParserSkewDoesNotPoisonLaterCacheEntries proves the session rule end to
+// end: once a read the analyzer could not parse has been proxied successfully,
+// later reads on that session are served from the origin rather than the cache.
+func TestParserSkewDoesNotPoisonLaterCacheEntries(t *testing.T) {
+	origin, _, client := startLifecycleProxy(t, "mysql-parser-skew", time.Second,
+		func(config *ProtocolConfig) {
+			config.ProxyOnly = false
+			config.Cache = newTestCache()
+			config.CacheTTL = time.Hour
+		})
+
+	const cacheable = "select 42"
+	for range 2 {
+		if _, err := client.ExecuteFetch(cacheable, vtmysql.FETCH_ALL_ROWS, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := origin.statementCount(cacheable); got != 1 {
+		t.Fatalf("origin saw %q %d times before the parser-skew read, want 1", cacheable, got)
+	}
+
+	// The origin accepts syntax Vitess cannot parse, so the analyzer never saw
+	// what this statement did.
+	if _, err := client.ExecuteFetch("SELECT FROM metrics", vtmysql.FETCH_ALL_ROWS, true); err != nil {
+		t.Fatalf("the parser-skew read was not proxied: %v", err)
+	}
+	if _, err := client.ExecuteFetch(cacheable, vtmysql.FETCH_ALL_ROWS, true); err != nil {
+		t.Fatal(err)
+	}
+	if got := origin.statementCount(cacheable); got != 2 {
+		t.Fatalf("origin saw %q %d times after the parser-skew read, want 2: the cache was still trusted",
+			cacheable, got)
+	}
+}
+
 func TestAnalyzerRejectsComplexStatementShapes(t *testing.T) {
 	a := mustNewAnalyzer()
 	tests := map[string]string{
