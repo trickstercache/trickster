@@ -119,6 +119,12 @@ func (a *Analyzer) Analyze(statement string, _ time.Time) sqlanalyzer.Analysis {
 func (a *Analyzer) analyzeParsed(statement string, stmt sqlparser.Statement,
 	parseErr error,
 ) sqlanalyzer.Analysis {
+	if strings.Contains(statement, "/*!") {
+		return sqlanalyzer.Analysis{
+			Mode:   sqlanalyzer.CacheModeNone,
+			Reason: sqlanalyzer.ReasonNondeterministic, Err: ErrUnsupportedStatement,
+		}
+	}
 	if parseErr != nil {
 		mode := sqlanalyzer.CacheModeNone
 		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(statement)), "select") {
@@ -140,7 +146,7 @@ func (a *Analyzer) analyzeParsed(statement string, stmt sqlparser.Statement,
 			Reason: sqlanalyzer.ReasonUnsupportedStatement, Err: ErrUnsupportedStatement,
 		}
 	}
-	if selectStmt.Lock != sqlparser.NoLock || selectStmt.SQLCalcFoundRows ||
+	if selectStmt.Cache != nil || selectStmt.Lock != sqlparser.NoLock || selectStmt.SQLCalcFoundRows ||
 		selectStmt.Into != nil || isNondeterministic(selectStmt) {
 		return sqlanalyzer.Analysis{
 			Mode:   sqlanalyzer.CacheModeNone,
@@ -223,16 +229,18 @@ func isNondeterministic(stmt sqlparser.SQLNode) bool {
 		case *sqlparser.FuncExpr:
 			name := strings.ToLower(n.Name.String())
 			switch name {
-			case "connection_id", "current_timestamp", "curdate", "curtime",
-				"database", "found_rows", "get_lock", "is_free_lock",
-				"is_used_lock", "last_insert_id", "now", "rand",
-				"release_all_locks", "release_lock", "row_count", "sysdate",
-				unixTimestampFunction, "user", "uuid", "uuid_short":
+			case fromUnixTimeFunction, "coalesce", "floor", "ifnull", "round":
+				// These are the deterministic general functions used by supported
+				// cache plans. Function calls fail closed unless listed here.
+			case unixTimestampFunction:
 				// UNIX_TIMESTAMP(column) is deterministic; its zero-argument form is not.
-				if name != unixTimestampFunction || len(n.Exprs) == 0 {
+				if len(n.Exprs) == 0 {
 					unsafe = true
 					return false, nil
 				}
+			default:
+				unsafe = true
+				return false, nil
 			}
 		case *sqlparser.CurTimeFuncExpr, *sqlparser.LockingFunc, *sqlparser.Variable:
 			unsafe = true

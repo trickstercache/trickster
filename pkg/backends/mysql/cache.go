@@ -974,10 +974,18 @@ func rowGroupKey(row []sqltypes.Value, indexes []int) string {
 	}
 	var builder strings.Builder
 	for _, index := range indexes {
-		value := row[index].Raw()
-		builder.WriteString(strconv.Itoa(len(value)))
+		value := row[index]
+		if value.IsNull() {
+			builder.WriteString("n:")
+			continue
+		}
+		builder.WriteString("v:")
+		builder.WriteString(strconv.Itoa(int(value.Type())))
 		builder.WriteByte(':')
-		builder.Write(value)
+		raw := value.Raw()
+		builder.WriteString(strconv.Itoa(len(raw)))
+		builder.WriteByte(':')
+		builder.Write(raw)
 	}
 	return builder.String()
 }

@@ -165,6 +165,37 @@ func TestMergeAndCropDeltaResults(t *testing.T) {
 	}
 }
 
+func TestMergeResultsPreservesNullAndEmptyGroupValues(t *testing.T) {
+	fields := []*querypb.Field{
+		{Name: "time", Type: querypb.Type_INT64},
+		{Name: "metric", Type: querypb.Type_VARCHAR},
+		{Name: "value", Type: querypb.Type_INT64},
+	}
+	result := func(group sqltypes.Value, value int64) *sqltypes.Result {
+		return &sqltypes.Result{Fields: fields, Rows: [][]sqltypes.Value{{
+			sqltypes.NewInt64(0), group, sqltypes.NewInt64(value),
+		}}}
+	}
+	plan := &sqlanalyzer.QueryPlan{
+		OutputColumn: "time", GroupColumns: []string{"metric"},
+		OutputUnit: timeseries.DateTimeUnixSecs,
+	}
+	merged, err := mergeResults([]*sqltypes.Result{
+		result(sqltypes.NULL, 1), result(sqltypes.NewVarChar(""), 2),
+	}, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(merged.Rows) != 2 || !merged.Rows[0][1].IsNull() ||
+		merged.Rows[1][1].IsNull() || merged.Rows[1][1].ToString() != "" {
+		t.Fatalf("NULL and empty group values were not preserved: %+v", merged.Rows)
+	}
+	if rowGroupKey([]sqltypes.Value{sqltypes.NewInt64(1)}, []int{0}) ==
+		rowGroupKey([]sqltypes.Value{sqltypes.NewVarChar("1")}, []int{0}) {
+		t.Fatal("group key does not include the SQL value type")
+	}
+}
+
 func TestDeltaRetentionDoesNotTruncateCurrentResponse(t *testing.T) {
 	const points = 6
 	fields := []*querypb.Field{
