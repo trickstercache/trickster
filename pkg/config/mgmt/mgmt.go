@@ -59,8 +59,8 @@ type Options struct {
 	// This prevents a bad actor from stating the config file with millions of concurrent requests
 	// The rate limit does not apply to SIGHUP-based reload requests
 	ReloadRateLimit timeconv.Duration `yaml:"reload_rate_limit,omitempty"`
-	// AutoReloadInterval controls how often Trickster checks the configuration file for
-	// changes. A zero value disables automatic reloads.
+	// AutoReloadInterval controls how often Trickster checks its effective configuration
+	// sources for changes. A zero value disables automatic reloads.
 	AutoReloadInterval timeconv.Duration `yaml:"auto_reload_interval,omitempty"`
 }
 
