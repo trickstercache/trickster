@@ -652,8 +652,7 @@ func TestValidateAndStartUserRouterErrors(t *testing.T) {
 		t.Fatal(err)
 	}
 	err = cl.validateAndStartUserRouter(backends.Backends{"tenant-a": member}, nil)
-	var credErr *errors.InvalidALBOptionsError
-	if !goerrors.As(err, &credErr) {
+	if _, ok := goerrors.AsType[*errors.InvalidALBOptionsError](err); !ok {
 		t.Fatalf("validateAndStartUserRouter() = %v, want InvalidALBOptionsError", err)
 	}
 	want := errors.NewErrInvalidUserRouterCreds("ur-edge")

@@ -24,11 +24,11 @@ import (
 
 func TestEntriesValidate(t *testing.T) {
 	tests := []struct {
-		name           string
-		entries        Entries
-		wantErr        bool
-		errContains    string
-		wantTarget     map[string]string // entry name -> expected TargetProvider
+		name        string
+		entries     Entries
+		wantErr     bool
+		errContains string
+		wantTarget  map[string]string // entry name -> expected TargetProvider
 	}{
 		{
 			name: "valid no cycles",
@@ -39,7 +39,7 @@ func TestEntriesValidate(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "empty entries",
+			name:    "empty entries",
 			entries: Entries{},
 			wantErr: false,
 		},
@@ -205,8 +205,7 @@ func TestEntriesValidate(t *testing.T) {
 				if !strings.Contains(err.Error(), tt.errContains) {
 					t.Errorf("Validate() error = %v, want containing %q", err, tt.errContains)
 				}
-				var ibre *InvalidBackendRoutingError
-				if !errors.As(err, &ibre) {
+				if _, ok := errors.AsType[*InvalidBackendRoutingError](err); !ok {
 					t.Errorf("Validate() error type = %T, want *InvalidBackendRoutingError", err)
 				}
 			}
@@ -234,8 +233,7 @@ func findEntry(entries Entries, name string) *Entry {
 
 func TestNewErrInvalidBackendRouting(t *testing.T) {
 	err := NewErrInvalidBackendRouting("entry '%s' bad", "x")
-	var ibre *InvalidBackendRoutingError
-	if !errors.As(err, &ibre) {
+	if _, ok := errors.AsType[*InvalidBackendRoutingError](err); !ok {
 		t.Fatalf("expected *InvalidBackendRoutingError, got %T", err)
 	}
 	if got := err.Error(); got != "entry 'x' bad" {

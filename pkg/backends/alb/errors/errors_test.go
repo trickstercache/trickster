@@ -25,8 +25,7 @@ import (
 func TestNewErrInvalidALBOptions(t *testing.T) {
 	t.Parallel()
 	err := NewErrInvalidALBOptions("backend1")
-	var e *InvalidALBOptionsError
-	if !errors.As(err, &e) {
+	if _, ok := errors.AsType[*InvalidALBOptionsError](err); !ok {
 		t.Fatalf("expected *InvalidALBOptionsError, got %T", err)
 	}
 	if !strings.Contains(err.Error(), "backend1") {
@@ -37,8 +36,7 @@ func TestNewErrInvalidALBOptions(t *testing.T) {
 func TestNewErrInvalidPoolMemberName(t *testing.T) {
 	t.Parallel()
 	err := NewErrInvalidPoolMemberName("alb1", "missing")
-	var e *InvalidALBOptionsError
-	if !errors.As(err, &e) {
+	if _, ok := errors.AsType[*InvalidALBOptionsError](err); !ok {
 		t.Fatalf("expected *InvalidALBOptionsError, got %T", err)
 	}
 	msg := err.Error()
@@ -50,8 +48,7 @@ func TestNewErrInvalidPoolMemberName(t *testing.T) {
 func TestNewErrInvalidBackendName(t *testing.T) {
 	t.Parallel()
 	err := NewErrInvalidBackendName("alb1", "bad")
-	var e *InvalidALBOptionsError
-	if !errors.As(err, &e) {
+	if _, ok := errors.AsType[*InvalidALBOptionsError](err); !ok {
 		t.Fatalf("expected *InvalidALBOptionsError, got %T", err)
 	}
 	msg := err.Error()
@@ -63,8 +60,7 @@ func TestNewErrInvalidBackendName(t *testing.T) {
 func TestNewErrInvalidUserRouterCreds(t *testing.T) {
 	t.Parallel()
 	err := NewErrInvalidUserRouterCreds("alb1")
-	var e *InvalidALBOptionsError
-	if !errors.As(err, &e) {
+	if _, ok := errors.AsType[*InvalidALBOptionsError](err); !ok {
 		t.Fatalf("expected *InvalidALBOptionsError, got %T", err)
 	}
 	if !strings.Contains(err.Error(), "alb1") {
