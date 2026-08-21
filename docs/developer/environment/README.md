@@ -46,7 +46,8 @@ disagreement, so the setup is documented here in some detail.
 | carbon plaintext ingest | `127.0.0.1:2003` |
 | schema / aggregation config | `docker-compose-data/graphite-config/storage-{schemas,aggregation}.conf` |
 | data generator | `docker-compose-data/graphite-config/generator.py` |
-| Grafana datasource | `graphite-direct` (uid `ds_graphite_direct`) |
+| Grafana datasources | `graphite-direct` (uid `ds_graphite_direct`) → origin; `graphite-trickster` (uid `ds_graphite_trickster`) → `http://host.docker.internal:8480/graphite1` |
+| Trickster backend | `graphite1` in `trickster-config/trickster.yaml` (provider `graphite`, dedicated `graphite_mem` cache); health at <http://127.0.0.1:8481/trickster/health/graphite1> |
 | Grafana dashboard | <http://127.0.0.1:3000/d/trk_graphite/graphite> |
 | Whisper files | docker volume `graphite-data`, under `/opt/graphite/storage/whisper/` |
 
@@ -123,8 +124,27 @@ in whatever is missing. The generator's state lives in
 behavior before it is written: an archive-boundary query, a beyond-`maxRetention`
 query, the drift namespace, functions that will not be on the delta-cache
 allowlist, and a multi-target render whose targets resolve to different steps.
-Today every panel reads through `graphite-direct`. Later stages add a
-`graphite-trickster` datasource to the `Data Source` selector and Trickster-side
-panels; those panels are expected to be empty until the phases that emit their
-metrics land and must not be "fixed" by editing the dashboard.
+The `Datasource` selector switches between `graphite-direct` (origin) and
+`graphite-trickster` (through the local `make serve-dev` Trickster). Both
+selections must render every data and edge-case panel identically — that
+equivalence is the standing correctness check for every phase of the provider.
+
+The final row, **Trickster — graphite1 provider**, is pinned to the
+`1: Prom | Direct | GET` datasource (the Prometheus that scrapes your local
+Trickster) and to the `graphite1` backend / `graphite_mem` cache; it does not
+follow the selector. Each panel title names the phase of
+`trickster-data/todos/graphite-backend-implementation.md` that makes it
+non-empty:
+
+| Panel | Lights up in |
+|---|---|
+| Frontend requests by path & status; frontend latency p50/p99 | **live now** (Phase 2, proxy-only) |
+| DPC/OPC outcomes, cache hit ratio, returned points, origin latency, cache operations / storage / evictions, step mispredictions | Phase 7 (Delta Proxy Cache integration) |
+| Probe rate + distinct ladders, registry entries by layer | Phase 5 (resolution registry) |
+| Resolution confidence breakdown, fallback reasons | Phase 8 (confidence router) |
+
+The dashboard is final as of Stage B. **An empty panel before its phase is
+expected and is that phase's acceptance criterion — do not "fix" it by editing
+the dashboard.** The metric names and label values those panels query are
+frozen in todo item 3.4 and must be implemented unchanged in Phase 9.
 

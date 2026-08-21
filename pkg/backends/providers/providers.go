@@ -40,6 +40,8 @@ const (
 	InfluxDBID
 	// ClickHouse represents the ClickHouse backend provider
 	ClickHouseID
+	// Graphite represents the Graphite backend provider
+	GraphiteID
 
 	Backends = "backends"
 
@@ -55,6 +57,7 @@ const (
 	Prometheus = "prometheus"
 	ClickHouse = "clickhouse"
 	InfluxDB   = "influxdb"
+	Graphite   = "graphite"
 )
 
 // Names is a map of Providers keyed by string name
@@ -66,6 +69,7 @@ var Names = map[string]Provider{
 	Prometheus:             PrometheusID,
 	InfluxDB:               InfluxDBID,
 	ClickHouse:             ClickHouseID,
+	Graphite:               GraphiteID,
 	Proxy:                  RPID,
 	ReverseProxy:           RPID,
 	ReverseProxyShort:      RPID,
@@ -88,6 +92,7 @@ var supportedTimeSeries = map[string]Provider{
 	Prometheus: PrometheusID,
 	InfluxDB:   InfluxDBID,
 	ClickHouse: ClickHouseID,
+	Graphite:   GraphiteID,
 }
 
 // IsSupportedTimeSeriesProvider returns true if the provided time series is supported by Trickster

@@ -112,7 +112,7 @@ SPIKE_SALT = 0x5A17C0DE
 
 
 def diurnal(t):
-    """1.0 +/- 0.5, peaking at 15:00 UTC, trough at 03:00 UTC."""
+    """1.0 +/- 0.5, peaking at 15:00 UTC, lowest at 03:00 UTC."""
     return 1.0 + 0.5 * math.sin(TWO_PI * (t / 86400.0 - 0.375))
 
 

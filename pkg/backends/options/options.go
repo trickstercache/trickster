@@ -27,6 +27,7 @@ import (
 	"time"
 
 	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
+	gro "github.com/trickstercache/trickster/v2/pkg/backends/graphite/options"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	prop "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
@@ -172,6 +173,8 @@ type Options struct {
 	ALBOptions *ao.Options `yaml:"alb,omitempty"`
 	// Prometheus holds options specific to prometheus backends
 	Prometheus *prop.Options `yaml:"prometheus,omitempty"`
+	// Graphite holds options specific to graphite backends
+	Graphite *gro.Options `yaml:"graphite,omitempty"`
 
 	// TLS is the TLS Configuration for the Frontend and Backend
 	TLS *to.Options `yaml:"tls,omitempty"`
@@ -337,6 +340,10 @@ func (o *Options) Clone() *Options {
 
 	if o.Prometheus != nil {
 		out.Prometheus = o.Prometheus.Clone()
+	}
+
+	if o.Graphite != nil {
+		out.Graphite = o.Graphite.Clone()
 	}
 
 	if o.AuthOptions != nil {

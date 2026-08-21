@@ -11,6 +11,8 @@ caches:
     provider: memory
   fs1:
     provider: filesystem
+  graphite_mem:
+    provider: memory
   redis:
     provider: redis
     redis:
@@ -94,6 +96,12 @@ backends:
     cache_name: mem1
     backfill_tolerance: 60s
     timeseries_retention_factor: 2048
+  graphite1:
+    provider: graphite
+    origin_url: 'http://127.0.0.1:8081'
+    # dedicated cache so graphite's cache metrics stay separable from the
+    # other backends on the Graphite dashboard
+    cache_name: graphite_mem
   rp1:
     provider: proxy
     origin_url: 'http://127.0.0.1:9090'

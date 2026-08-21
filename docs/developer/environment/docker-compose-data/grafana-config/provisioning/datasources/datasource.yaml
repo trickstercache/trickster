@@ -246,3 +246,15 @@ datasources:
   jsonData:
     graphiteVersion: "1.1"
     graphiteType: default
+
+- name: graphite-trickster
+  type: graphite
+  access: proxy
+  orgId: 1
+  uid: ds_graphite_trickster
+  url: http://host.docker.internal:8480/graphite1
+  editable: true
+  isDefault: false
+  jsonData:
+    graphiteVersion: "1.1"
+    graphiteType: default

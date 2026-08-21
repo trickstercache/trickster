@@ -1,0 +1,103 @@
+/*
+ * Copyright 2018 The Trickster Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package graphite
+
+import (
+	"net/http"
+	"testing"
+
+	"github.com/trickstercache/trickster/v2/pkg/backends"
+	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	cr "github.com/trickstercache/trickster/v2/pkg/cache/registry"
+	"github.com/trickstercache/trickster/v2/pkg/config"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+)
+
+func TestGraphiteClientInterfacing(t *testing.T) {
+	// this test ensures the client will properly conform to the
+	// Backend and TimeseriesBackend interfaces
+	c, err := NewClient("test", nil, nil, nil, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+	var oc backends.Backend = c
+	var tc backends.TimeseriesBackend = c.(*Client)
+	if oc.Name() != "test" {
+		t.Errorf("expected %s got %s", "test", oc.Name())
+	}
+	if tc.Name() != "test" {
+		t.Errorf("expected %s got %s", "test", tc.Name())
+	}
+	if _, ok := oc.(backends.MergeableTimeseriesBackend); ok {
+		t.Error("graphite must not register as a mergeable timeseries backend (D9)")
+	}
+}
+
+func TestNewClient(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
+
+	conf, err := config.Load([]string{
+		"-origin-url", "http://1",
+		"-provider", "test",
+	})
+	if err != nil {
+		t.Fatalf("Could not load configuration: %s", err.Error())
+	}
+
+	caches := cr.LoadCachesFromConfig(conf)
+	defer cr.CloseCaches(caches)
+	cache, ok := caches["default"]
+	if !ok {
+		t.Errorf("Could not find default configuration")
+	}
+
+	o := &bo.Options{Provider: "TEST_CLIENT"}
+	c, err := NewClient("default", o, nil, cache, nil, nil)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if c.Name() != "default" {
+		t.Errorf("expected %s got %s", "default", c.Name())
+	}
+
+	if c.Cache().Configuration().Provider != "memory" {
+		t.Errorf("expected %s got %s", "memory", c.Cache().Configuration().Provider)
+	}
+
+	if c.Configuration().Provider != "TEST_CLIENT" {
+		t.Errorf("expected %s got %s", "TEST_CLIENT", c.Configuration().Provider)
+	}
+
+	if !o.FastForwardDisable {
+		t.Error("expected fast forward to be disabled")
+	}
+
+	if o.Graphite == nil {
+		t.Error("expected graphite options to be initialized")
+	}
+
+	// proxy-only: the inherited default must decline to parse a time range
+	// so that nothing reaches the Delta Proxy Cache
+	r, _ := http.NewRequest(http.MethodGet, "http://1/render?target=a.b&from=-1h", nil)
+	trq, rlo, canOPC, err := c.(*Client).ParseTimeRangeQuery(r)
+	if trq != nil || rlo != nil || canOPC || err != nil {
+		t.Errorf("expected (nil, nil, false, nil) got (%v, %v, %t, %v)", trq, rlo, canOPC, err)
+	}
+}
