@@ -19,7 +19,7 @@
 // This is the proxy-only scaffolding: every Graphite endpoint is reverse
 // proxied to the origin through the "/" prefix path. Render request parsing,
 // resolution prediction, and the Delta Proxy Cache integration land in later
-// phases of trickster-data/todos/graphite-backend-implementation.md. Until
+// phases of the Graphite implementation plan (trickster-data). Until
 // then the inherited ParseTimeRangeQuery returns (nil, nil, false, nil), so no
 // request reaches the DPC.
 package graphite

@@ -27,9 +27,13 @@ func TestNewAndClone(t *testing.T) {
 	if o == nil {
 		t.Fatal("expected non-nil options")
 	}
+	if o.TimeZone != DefaultTimeZone || o.PassthroughMaxDataPoints {
+		t.Errorf("unexpected defaults %+v", o)
+	}
+	o.PassthroughMaxDataPoints = true
 	o2 := o.Clone()
-	if o2 == nil || o2 == o {
-		t.Error("expected a distinct non-nil clone")
+	if o2 == nil || o2 == o || o2.TimeZone != DefaultTimeZone || !o2.PassthroughMaxDataPoints {
+		t.Error("expected a distinct, equal clone")
 	}
 }
 
@@ -37,6 +41,15 @@ func TestUnmarshalYAML(t *testing.T) {
 	var o Options
 	if err := yaml.Unmarshal([]byte("{}"), &o); err != nil {
 		t.Error(err)
+	}
+	if o.TimeZone != DefaultTimeZone {
+		t.Errorf("expected the default time zone to apply, got %q", o.TimeZone)
+	}
+	if err := yaml.Unmarshal([]byte("time_zone: Europe/Berlin\npassthrough_max_data_points: true"), &o); err != nil {
+		t.Error(err)
+	}
+	if o.TimeZone != "Europe/Berlin" || !o.PassthroughMaxDataPoints {
+		t.Errorf("unexpected options %+v", o)
 	}
 	if err := yaml.Unmarshal([]byte("- not a mapping"), &o); err == nil {
 		t.Error("expected a decode error for a sequence node")

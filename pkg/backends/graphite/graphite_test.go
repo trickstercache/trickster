@@ -17,6 +17,7 @@
 package graphite
 
 import (
+	"errors"
 	"net/http"
 	"testing"
 
@@ -93,11 +94,11 @@ func TestNewClient(t *testing.T) {
 		t.Error("expected graphite options to be initialized")
 	}
 
-	// proxy-only: the inherited default must decline to parse a time range
-	// so that nothing reaches the Delta Proxy Cache
+	// a render with no series format (graphite-web defaults to png) must be
+	// declined with canOPC so the DPC hands it to the Object Proxy Cache
 	r, _ := http.NewRequest(http.MethodGet, "http://1/render?target=a.b&from=-1h", nil)
 	trq, rlo, canOPC, err := c.(*Client).ParseTimeRangeQuery(r)
-	if trq != nil || rlo != nil || canOPC || err != nil {
-		t.Errorf("expected (nil, nil, false, nil) got (%v, %v, %t, %v)", trq, rlo, canOPC, err)
+	if trq == nil || rlo != nil || !canOPC || !errors.Is(err, ErrNotAccelerable) {
+		t.Errorf("expected (trq, nil, true, ErrNotAccelerable) got (%v, %v, %t, %v)", trq, rlo, canOPC, err)
 	}
 }
