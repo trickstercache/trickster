@@ -25,6 +25,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unsafe"
 
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	cacheproviders "github.com/trickstercache/trickster/v2/pkg/cache/providers"
@@ -61,6 +62,48 @@ func (c *cachedQueryResult) Size() int {
 		return 0
 	}
 	return c.size
+}
+
+// estimateCachedQueryResultSize approximates the heap retained by a typed
+// memory-cache entry. Slice capacities are intentional: the cache retains the
+// backing arrays, not just their populated elements.
+func estimateCachedQueryResultSize(cached *cachedQueryResult) int {
+	if cached == nil {
+		return 0
+	}
+	size := uint64(unsafe.Sizeof(*cached))
+	size += uint64(cap(cached.extents)) * uint64(unsafe.Sizeof(timeseries.Extent{}))
+	result := cached.result
+	if result == nil {
+		return saturatedSize(size)
+	}
+	size += uint64(unsafe.Sizeof(*result))
+	size += uint64(cap(result.Fields)) * uint64(unsafe.Sizeof((*querypb.Field)(nil)))
+	for _, field := range result.Fields {
+		if field == nil {
+			continue
+		}
+		size += uint64(unsafe.Sizeof(*field))
+		size += uint64(len(field.Name) + len(field.Table) + len(field.OrgTable) +
+			len(field.Database) + len(field.OrgName) + len(field.ColumnType))
+	}
+	size += uint64(cap(result.Rows)) * uint64(unsafe.Sizeof(sqltypes.Row(nil)))
+	for _, row := range result.Rows {
+		size += uint64(cap(row)) * uint64(unsafe.Sizeof(sqltypes.Value{}))
+		for _, value := range row {
+			// #nosec G115 -- Value.Len reports the nonnegative length of its byte slice.
+			size += uint64(value.Len())
+		}
+	}
+	size += uint64(len(result.SessionStateChanges) + len(result.Info))
+	return saturatedSize(size)
+}
+
+func saturatedSize(size uint64) int {
+	if size > uint64(math.MaxInt) {
+		return math.MaxInt
+	}
+	return int(size)
 }
 
 type cacheExecution struct {
@@ -416,6 +459,34 @@ func (h *protocolHandler) retrieveCached(key string) (*cachedQueryResult, bool) 
 }
 
 func (h *protocolHandler) storeCached(key string, result *cachedQueryResult) {
+	if result == nil || result.result == nil {
+		h.observeCacheFailure("encode_failure")
+		logger.Error("mysql cache result encoding failed", logging.Pairs{
+			"backend_name": h.config.BackendName, "detail": "nil MySQL cache result",
+		})
+		return
+	}
+	cacheClient := h.cacheClient()
+	if cacheClient == nil {
+		return
+	}
+	if memoryCache, ok := memoryCacheClient(cacheClient); ok {
+		result.size = estimateCachedQueryResultSize(result)
+		if h.config.MaxObjectSize > 0 && int64(result.size) > h.config.MaxObjectSize {
+			h.observeCacheFailure("max_object_size")
+			logger.Debug("mysql cache result exceeds max object size", logging.Pairs{
+				"backend_name": h.config.BackendName, "size": result.size,
+			})
+			return
+		}
+		if err := memoryCache.StoreReference(key, result, h.config.CacheTTL); err != nil {
+			h.observeCacheFailure("store_failure")
+			logger.Error("mysql cache storage failed", logging.Pairs{
+				"backend_name": h.config.BackendName, "detail": err.Error(),
+			})
+		}
+		return
+	}
 	data, err := marshalCachedQueryResult(result)
 	if err != nil {
 		h.observeCacheFailure("encode_failure")
@@ -431,20 +502,7 @@ func (h *protocolHandler) storeCached(key string, result *cachedQueryResult) {
 		})
 		return
 	}
-	cacheClient := h.cacheClient()
-	if cacheClient == nil {
-		return
-	}
 	result.size = len(data)
-	if memoryCache, ok := memoryCacheClient(cacheClient); ok {
-		if err := memoryCache.StoreReference(key, result, h.config.CacheTTL); err != nil {
-			h.observeCacheFailure("store_failure")
-			logger.Error("mysql cache storage failed", logging.Pairs{
-				"backend_name": h.config.BackendName, "detail": err.Error(),
-			})
-		}
-		return
-	}
 	if err := cacheClient.Store(key, data, h.config.CacheTTL); err != nil {
 		h.observeCacheFailure("store_failure")
 		logger.Error("mysql cache storage failed", logging.Pairs{

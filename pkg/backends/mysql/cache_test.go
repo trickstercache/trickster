@@ -72,6 +72,47 @@ func TestCachedQueryResultRoundTrip(t *testing.T) {
 	}
 }
 
+func TestCachedQueryResultSizeEstimateTracksRetainedMemory(t *testing.T) {
+	if estimateCachedQueryResultSize(nil) != 0 {
+		t.Fatal("nil cached result had a size")
+	}
+	base := &cachedQueryResult{result: &sqltypes.Result{
+		Fields: []*querypb.Field{{Name: "value", Table: "events", OrgTable: "events",
+			Database: "analytics", OrgName: "value", ColumnType: "varchar(255)"}},
+		Rows:                [][]sqltypes.Value{{sqltypes.NewVarChar("payload")}},
+		Info:                "info",
+		SessionStateChanges: "state",
+	}}
+	baseSize := estimateCachedQueryResultSize(base)
+	if baseSize <= len("payload") {
+		t.Fatalf("estimated size = %d, want structural overhead included", baseSize)
+	}
+
+	rows := make([][]sqltypes.Value, 1, 16)
+	rows[0] = make([]sqltypes.Value, 1, 8)
+	rows[0][0] = sqltypes.NewVarChar("payload")
+	extents := make(timeseries.ExtentList, 1, 8)
+	retained := &cachedQueryResult{result: &sqltypes.Result{
+		Fields: base.result.Fields, Rows: rows,
+	}, extents: extents}
+	if retainedSize := estimateCachedQueryResultSize(retained); retainedSize <= baseSize {
+		t.Fatalf("retained-capacity size = %d, want greater than %d", retainedSize, baseSize)
+	}
+}
+
+func TestByteCacheUsesEncodedSize(t *testing.T) {
+	cacheClient := newTestCache()
+	h := &protocolHandler{config: ProtocolConfig{Cache: cacheClient}}
+	result := &cachedQueryResult{result: &sqltypes.Result{
+		Fields: []*querypb.Field{{Name: "value", Type: querypb.Type_VARCHAR}},
+		Rows:   [][]sqltypes.Value{{sqltypes.NewVarChar("payload")}},
+	}}
+	h.storeCached("key", result)
+	if len(cacheClient.data["key"]) == 0 || result.Size() != len(cacheClient.data["key"]) {
+		t.Fatalf("byte-cache size = %d/%d", result.Size(), len(cacheClient.data["key"]))
+	}
+}
+
 func TestUnmarshalCachedQueryResultRejectsInvalidData(t *testing.T) {
 	for _, data := range [][]byte{nil, []byte("not-a-cache-entry"),
 		append(cacheEnvelopeMagic[:], cacheEnvelopeVersion)} {
@@ -595,9 +636,17 @@ func TestMemoryProviderRetainsTypedCacheResult(t *testing.T) {
 	}}
 	h.storeCached("key", original)
 	got, found := h.retrieveCached("key")
-	if !found || got != original || got.Size() == 0 {
-		t.Fatalf("typed memory result = %p/%d, want %p with nonzero size", got, got.Size(), original)
+	wantSize := estimateCachedQueryResultSize(original)
+	if !found || got != original || got.Size() != wantSize {
+		t.Fatalf("typed memory result = %p/%d, want %p/%d", got, got.Size(), original, wantSize)
 	}
+	rejected := &cachedQueryResult{result: original.result}
+	h.config.MaxObjectSize = int64(estimateCachedQueryResultSize(rejected) - 1)
+	h.storeCached("rejected", rejected)
+	if _, _, err := memoryClient.RetrieveReference("rejected"); !errors.Is(err, tcache.ErrKNF) {
+		t.Fatalf("oversized reference was stored: %v", err)
+	}
+	h.config.MaxObjectSize = 0
 
 	invalid := &cachedQueryResult{size: 10}
 	if err := memoryClient.StoreReference("invalid", invalid, time.Minute); err != nil {
