@@ -231,3 +231,18 @@ datasources:
     username: default
     password: ""
     usePOST: true
+
+# Graphite
+# The uid is fixed on purpose: the trickster-graphite dashboard's datasource
+# variable defaults to it, and later stages add a graphite-trickster peer.
+- name: graphite-direct
+  type: graphite
+  access: proxy
+  orgId: 1
+  uid: ds_graphite_direct
+  url: http://graphite:80
+  editable: true
+  isDefault: false
+  jsonData:
+    graphiteVersion: "1.1"
+    graphiteType: default

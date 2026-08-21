@@ -365,6 +365,8 @@ developer-start:
 	fi
 	@echo "Waiting for Prometheus to be ready..."
 	@timeout 120 sh -c 'until curl -sf http://127.0.0.1:9090/-/ready >/dev/null 2>&1; do sleep 2; done'
+	@echo "Waiting for Graphite to be ready..."
+	@timeout 120 sh -c 'until curl -sf "http://127.0.0.1:8081/metrics/find?query=carbon" >/dev/null 2>&1; do sleep 2; done'
 	
 .PHONY: developer-stop
 developer-stop:
@@ -381,6 +383,9 @@ developer-recreate: developer-delete
 .PHONY: developer-seed-data
 developer-seed-data:
 	@cd docs/developer/environment && docker compose run --rm clickhouse_seed
+	@cd docs/developer/environment && docker compose stop graphite_generator && \
+		docker compose run --rm -e GRAPHITE_SEED_FORCE=1 graphite_seed && \
+		docker compose up -d graphite_generator
 
 RUN_FLAGS ?=
 .PHONY: serve-dev
