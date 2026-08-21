@@ -615,11 +615,11 @@ func TestCacheProviderFailureBranches(t *testing.T) {
 	}
 	h.storeCached("nil", nil)
 	h.storeCached("valid-without-cache", &cachedQueryResult{result: &sqltypes.Result{}})
-	h.observeAnalysis("SELECT 1", sqlanalyzer.Analysis{})
+	h.observeAnalysis(sqlparser.StmtSelect, sqlanalyzer.Analysis{})
 }
 
 func TestParserExpressionHelperMatrix(t *testing.T) {
-	parser := defaultAnalyzer.(*Analyzer).parser
+	parser := defaultAnalyzer.parser
 	parse := func(source string) sqlparser.Expr {
 		t.Helper()
 		expr, err := parser.ParseExpr(source)
@@ -673,6 +673,48 @@ func TestParserExpressionHelperMatrix(t *testing.T) {
 		if _, ok := resolveOutputReference(parse(expression), outputs); ok {
 			t.Fatalf("invalid output reference %q resolved", expression)
 		}
+	}
+}
+
+func TestParsedQueryAnalysisReusesUnmodifiedAST(t *testing.T) {
+	parsed := parseQuery(safeDateTimeQuery)
+	if parsed.err != nil || parsed.statement == nil {
+		t.Fatalf("parseQuery() = %+v", parsed)
+	}
+	before := sqlparser.String(parsed.statement)
+	analysis := defaultAnalyzer.analyzeParsed(safeDateTimeQuery, parsed.statement, parsed.err)
+	if analysis.Mode != sqlanalyzer.CacheModeDelta || analysis.Plan == nil {
+		t.Fatalf("analyzeParsed() = %+v", analysis)
+	}
+	if after := sqlparser.String(parsed.statement); after != before {
+		t.Fatalf("analysis mutated parsed AST:\nbefore: %s\nafter:  %s", before, after)
+	}
+
+	session := &upstreamSession{}
+	stateful := parseQuery("SELECT @tenant")
+	(&protocolHandler{}).updateSessionStateParsed(session, stateful)
+	if !session.cacheUnsafe {
+		t.Fatal("parsed state-changing SELECT remained cache-safe")
+	}
+}
+
+func TestColumnReferenceUsesStructuralAxis(t *testing.T) {
+	parser := defaultAnalyzer.parser
+	qualified, err := parser.ParseExpr("Analytics.Events.TS")
+	if err != nil {
+		t.Fatal(err)
+	}
+	name, axis, ok := columnReference(qualified)
+	if !ok || name != "TS" || axis != "analytics\x00events\x00ts" {
+		t.Fatalf("qualified column = %q/%q/%t", name, axis, ok)
+	}
+	quoted, err := parser.ParseExpr("`Analytics.Events.TS`")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, quotedAxis, ok := columnReference(quoted)
+	if !ok || quotedAxis == axis {
+		t.Fatalf("structurally distinct column axes collided: %q", quotedAxis)
 	}
 }
 

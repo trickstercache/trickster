@@ -423,7 +423,7 @@ func TestCharacterSetAndCollationStateBypassesCache(t *testing.T) {
 	} {
 		t.Run(query, func(t *testing.T) {
 			session := &upstreamSession{}
-			h.updateSessionState(session, query)
+			h.updateSessionStateParsed(session, parseQuery(query))
 			if h.cacheEligible(session) {
 				t.Fatalf("%q remained cache-eligible", query)
 			}

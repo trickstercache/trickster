@@ -884,18 +884,15 @@ func (h *protocolHandler) stableExtents(extents timeseries.ExtentList,
 	return extents.Remove(volatile, plan.Step)
 }
 
-func (h *protocolHandler) updateSessionState(session *upstreamSession, query string) {
-	statementType := sqlparser.Preview(query)
+func (h *protocolHandler) updateSessionStateParsed(session *upstreamSession, parsed parsedQuery) {
 	session.mtx.Lock()
 	defer session.mtx.Unlock()
-	if statementType == sqlparser.StmtSelect {
-		if stmt, err := defaultAnalyzer.(*Analyzer).parser.Parse(query); err == nil {
-			if selectChangesSessionState(stmt) {
-				session.cacheUnsafe = true
-			}
+	if parsed.statementType == sqlparser.StmtSelect && parsed.err == nil {
+		if selectChangesSessionState(parsed.statement) {
+			session.cacheUnsafe = true
 		}
 	}
-	switch statementType {
+	switch parsed.statementType {
 	// Rolling back to or releasing a savepoint does not end its transaction.
 	case sqlparser.StmtBegin, sqlparser.StmtSavepoint,
 		sqlparser.StmtSRollback, sqlparser.StmtRelease:
@@ -903,13 +900,11 @@ func (h *protocolHandler) updateSessionState(session *upstreamSession, query str
 	case sqlparser.StmtCommit, sqlparser.StmtRollback:
 		session.inTx = false
 	case sqlparser.StmtUse:
-		if stmt, err := defaultAnalyzer.(*Analyzer).parser.Parse(query); err == nil {
-			if use, ok := stmt.(*sqlparser.Use); ok {
-				session.database = use.DBName.String()
-			}
+		if use, ok := parsed.statement.(*sqlparser.Use); parsed.err == nil && ok {
+			session.database = use.DBName.String()
 		}
 	case sqlparser.StmtSet:
-		if timeZone, ok := cacheSafeTimeZone(query); ok {
+		if timeZone, ok := cacheSafeTimeZone(parsed.statement); parsed.err == nil && ok {
 			session.timeZone = timeZone
 		} else {
 			session.cacheUnsafe = true
@@ -919,7 +914,7 @@ func (h *protocolHandler) updateSessionState(session *upstreamSession, query str
 		sqlparser.StmtLockTables, sqlparser.StmtUnlockTables:
 		session.cacheUnsafe = true
 	default:
-		switch statementType {
+		switch parsed.statementType {
 		case sqlparser.StmtSelect, sqlparser.StmtShow, sqlparser.StmtExplain,
 			sqlparser.StmtAnalyze, sqlparser.StmtComment, sqlparser.StmtCommentOnly:
 		default:
@@ -949,11 +944,7 @@ func selectChangesSessionState(stmt sqlparser.Statement) bool {
 	return unsafe
 }
 
-func cacheSafeTimeZone(query string) (string, bool) {
-	stmt, err := defaultAnalyzer.(*Analyzer).parser.Parse(query)
-	if err != nil {
-		return "", false
-	}
+func cacheSafeTimeZone(stmt sqlparser.Statement) (string, bool) {
 	set, ok := stmt.(*sqlparser.Set)
 	if !ok || len(set.Exprs) != 1 || set.Exprs[0].Var == nil {
 		return "", false
@@ -970,7 +961,9 @@ func cacheSafeTimeZone(query string) (string, bool) {
 	return literal.Val, true
 }
 
-func (h *protocolHandler) observeAnalysis(query string, analysis sqlanalyzer.Analysis) {
+func (h *protocolHandler) observeAnalysis(statementType sqlparser.StatementType,
+	analysis sqlanalyzer.Analysis,
+) {
 	reason := string(analysis.Reason)
 	if reason == "" {
 		reason = "unknown"
@@ -979,7 +972,7 @@ func (h *protocolHandler) observeAnalysis(query string, analysis sqlanalyzer.Ana
 		analysis.Mode.String(), reason).Inc()
 	logger.Debug("mysql query analyzed", logging.Pairs{
 		"backend_name": h.config.BackendName, "cache_mode": analysis.Mode.String(),
-		"analysis_reason": reason, "statement_type": sqlparser.Preview(query).String(),
+		"analysis_reason": reason, "statement_type": statementType.String(),
 	})
 }
 

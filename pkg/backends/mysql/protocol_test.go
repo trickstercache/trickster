@@ -311,6 +311,7 @@ func TestUnsupportedTextFeature(t *testing.T) {
 		{query: "PREPARE statement FROM 'SELECT 1'", want: "prepared statements"},
 		{query: "EXECUTE statement", want: "prepared statements"},
 		{query: "DEALLOCATE PREPARE statement", want: "prepared statements"},
+		{query: "\t\nEXECUTE\tstatement", want: "prepared statements"},
 		{query: "CALL report()", want: "stored procedures and multi-results"},
 		{query: "LOAD DATA LOCAL INFILE '/tmp/data' INTO TABLE events", want: "LOAD DATA and local-file operations"},
 	} {
@@ -367,11 +368,11 @@ func TestSessionCacheSafetyContract(t *testing.T) {
 	h := &protocolHandler{}
 
 	session := &upstreamSession{database: "initial"}
-	h.updateSessionState(session, "USE reporting")
+	h.updateSessionStateParsed(session, parseQuery("USE reporting"))
 	if session.database != "reporting" || session.cacheUnsafe {
 		t.Fatalf("USE state = %+v", session)
 	}
-	h.updateSessionState(session, "SET SESSION time_zone = '+00:00'")
+	h.updateSessionStateParsed(session, parseQuery("SET SESSION time_zone = '+00:00'"))
 	if session.timeZone != "+00:00" || session.cacheUnsafe {
 		t.Fatalf("time-zone state = %+v", session)
 	}
@@ -394,7 +395,7 @@ func TestSessionCacheSafetyContract(t *testing.T) {
 	} {
 		t.Run(query, func(t *testing.T) {
 			session := &upstreamSession{}
-			h.updateSessionState(session, query)
+			h.updateSessionStateParsed(session, parseQuery(query))
 			if !session.cacheUnsafe {
 				t.Fatalf("%q did not make the session cache-unsafe", query)
 			}
@@ -402,26 +403,26 @@ func TestSessionCacheSafetyContract(t *testing.T) {
 	}
 
 	transaction := &upstreamSession{}
-	h.updateSessionState(transaction, "BEGIN")
+	h.updateSessionStateParsed(transaction, parseQuery("BEGIN"))
 	if !transaction.inTx || transaction.cacheUnsafe {
 		t.Fatalf("BEGIN state = %+v", transaction)
 	}
-	h.updateSessionState(transaction, "COMMIT")
+	h.updateSessionStateParsed(transaction, parseQuery("COMMIT"))
 	if transaction.inTx || transaction.cacheUnsafe {
 		t.Fatalf("COMMIT state = %+v", transaction)
 	}
 
-	h.updateSessionState(transaction, "START TRANSACTION")
-	h.updateSessionState(transaction, "SAVEPOINT before_report")
-	h.updateSessionState(transaction, "ROLLBACK TO SAVEPOINT before_report")
+	h.updateSessionStateParsed(transaction, parseQuery("START TRANSACTION"))
+	h.updateSessionStateParsed(transaction, parseQuery("SAVEPOINT before_report"))
+	h.updateSessionStateParsed(transaction, parseQuery("ROLLBACK TO SAVEPOINT before_report"))
 	if !transaction.inTx || transaction.cacheUnsafe {
 		t.Fatalf("ROLLBACK TO SAVEPOINT state = %+v", transaction)
 	}
-	h.updateSessionState(transaction, "RELEASE SAVEPOINT before_report")
+	h.updateSessionStateParsed(transaction, parseQuery("RELEASE SAVEPOINT before_report"))
 	if !transaction.inTx || transaction.cacheUnsafe {
 		t.Fatalf("RELEASE SAVEPOINT state = %+v", transaction)
 	}
-	h.updateSessionState(transaction, "ROLLBACK")
+	h.updateSessionStateParsed(transaction, parseQuery("ROLLBACK"))
 	if transaction.inTx || transaction.cacheUnsafe {
 		t.Fatalf("ROLLBACK state = %+v", transaction)
 	}

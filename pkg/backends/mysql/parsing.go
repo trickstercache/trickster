@@ -63,7 +63,9 @@ func NewAnalyzer() (*Analyzer, error) {
 	return &Analyzer{parser: p}, nil
 }
 
-var defaultAnalyzer sqlanalyzer.DialectAnalyzer = mustNewAnalyzer()
+var defaultAnalyzer = mustNewAnalyzer()
+
+var _ sqlanalyzer.DialectAnalyzer = (*Analyzer)(nil)
 
 func mustNewAnalyzer() *Analyzer {
 	a, err := NewAnalyzer()
@@ -106,14 +108,20 @@ func (a *Analyzer) Analyze(statement string, _ time.Time) sqlanalyzer.Analysis {
 		return sqlanalyzer.Analysis{Reason: sqlanalyzer.ReasonInvalidSQL, Err: ErrInvalidSQL}
 	}
 	stmt, err := a.parser.Parse(statement)
-	if err != nil {
+	return a.analyzeParsed(statement, stmt, err)
+}
+
+func (a *Analyzer) analyzeParsed(statement string, stmt sqlparser.Statement,
+	parseErr error,
+) sqlanalyzer.Analysis {
+	if parseErr != nil {
 		mode := sqlanalyzer.CacheModeNone
 		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(statement)), "select") {
 			mode = sqlanalyzer.CacheModeObject
 		}
 		return sqlanalyzer.Analysis{
 			Mode: mode, Reason: sqlanalyzer.ReasonInvalidSQL,
-			Err: fmt.Errorf("%w: %w", ErrInvalidSQL, err),
+			Err: fmt.Errorf("%w: %w", ErrInvalidSQL, parseErr),
 		}
 	}
 	selectStmt, ok := stmt.(*sqlparser.Select)
@@ -205,19 +213,18 @@ func containsSubquery(stmt sqlparser.SQLNode) bool {
 
 func isNondeterministic(stmt sqlparser.SQLNode) bool {
 	unsafe := false
-	names := map[string]struct{}{
-		"connection_id": {}, "current_timestamp": {}, "curdate": {}, "curtime": {},
-		"database": {}, "found_rows": {}, "get_lock": {}, "is_free_lock": {},
-		"is_used_lock": {}, "last_insert_id": {}, "now": {}, "rand": {},
-		"release_all_locks": {}, "release_lock": {}, "row_count": {}, "sysdate": {},
-		"unix_timestamp": {}, "user": {}, "uuid": {}, "uuid_short": {},
-	}
 	_ = sqlparser.Walk(func(node sqlparser.SQLNode) (bool, error) {
 		switch n := node.(type) {
 		case *sqlparser.FuncExpr:
-			if _, found := names[strings.ToLower(n.Name.String())]; found {
+			name := strings.ToLower(n.Name.String())
+			switch name {
+			case "connection_id", "current_timestamp", "curdate", "curtime",
+				"database", "found_rows", "get_lock", "is_free_lock",
+				"is_used_lock", "last_insert_id", "now", "rand",
+				"release_all_locks", "release_lock", "row_count", "sysdate",
+				"unix_timestamp", "user", "uuid", "uuid_short":
 				// UNIX_TIMESTAMP(column) is deterministic; its zero-argument form is not.
-				if !strings.EqualFold(n.Name.String(), "unix_timestamp") || len(n.Exprs) == 0 {
+				if name != "unix_timestamp" || len(n.Exprs) == 0 {
 					unsafe = true
 					return false, nil
 				}
@@ -838,7 +845,17 @@ func columnReference(expr sqlparser.Expr) (string, string, bool) {
 	if !ok {
 		return "", "", false
 	}
-	return col.Name.String(), strings.ToLower(sqlparser.String(col)), true
+	name := col.Name.String()
+	database := col.Qualifier.Qualifier.String()
+	table := col.Qualifier.Name.String()
+	var axis strings.Builder
+	axis.Grow(len(database) + len(table) + len(name) + 2)
+	axis.WriteString(strings.ToLower(database))
+	axis.WriteByte(0)
+	axis.WriteString(strings.ToLower(table))
+	axis.WriteByte(0)
+	axis.WriteString(strings.ToLower(name))
+	return name, axis.String(), true
 }
 
 func unixTimestampColumn(expr sqlparser.Expr) (string, string, bool) {
@@ -894,35 +911,21 @@ type mysqlRenderer struct {
 }
 
 func buildArtifacts(stmt *sqlparser.Select, rng rangeInfo, step time.Duration) (string, *mysqlRenderer, error) {
-	template := sqlparser.CloneSQLNode(stmt).(*sqlparser.Select)
-	// Re-analyze the clone so replacements use AST node identity. Matching
-	// formatted text could accidentally replace an equal literal elsewhere.
-	bucket, err := analyzeBucket(template)
-	if err != nil {
-		return "", nil, err
-	}
-	cloneRange, err := analyzeRange(template.Where, bucket)
-	if err != nil {
-		return "", nil, err
-	}
-	lowerName, upperName := uniqueTokens(template)
+	lowerName, upperName := uniqueTokens(stmt)
 	replaced := 0
-	template = sqlparser.Rewrite(template, func(cursor *sqlparser.Cursor) bool {
+	template := sqlparser.CopyOnRewrite(stmt, nil, func(cursor *sqlparser.CopyOnWriteCursor) {
 		expr, ok := cursor.Node().(sqlparser.Expr)
 		if !ok {
-			return true
+			return
 		}
 		switch expr {
-		case cloneRange.lower.node:
+		case rng.lower.node:
 			cursor.Replace(sqlparser.NewArgument(lowerName))
 			replaced++
-			return false
-		case cloneRange.upper.node:
+		case rng.upper.node:
 			cursor.Replace(sqlparser.NewArgument(upperName))
 			replaced++
-			return false
 		}
-		return true
 	}, nil).(*sqlparser.Select)
 	if replaced != 2 {
 		return "", nil, ErrUnsafePredicate

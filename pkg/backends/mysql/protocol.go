@@ -961,15 +961,16 @@ func (h *protocolHandler) ComQuery(c *vtmysql.Conn, query string,
 	if err != nil {
 		return err
 	}
+	parsed := parseQuery(query)
 	// Only SELECT statements enter SQL cache analysis. Session commands and
 	// mutations must still be proxied and tracked, but reporting them as
 	// uncacheable query analyses obscures the classification of the SELECT
 	// that follows (Grafana sends SET time_zone when opening a connection).
-	if vtparser.Preview(query) != vtparser.StmtSelect {
-		return h.proxyQuery(session, query, callback)
+	if parsed.statementType != vtparser.StmtSelect {
+		return h.proxyQuery(session, query, parsed, callback)
 	}
-	analysis := defaultAnalyzer.Analyze(query, time.Now())
-	h.observeAnalysis(query, analysis)
+	analysis := defaultAnalyzer.analyzeParsed(query, parsed.statement, parsed.err)
+	h.observeAnalysis(parsed.statementType, analysis)
 	if h.cacheEligible(session) && analysis.Mode != sqlanalyzer.CacheModeNone {
 		cacheStarted := time.Now()
 		result, cacheStatus, cacheErr := h.executeCached(c, session, query, analysis)
@@ -990,11 +991,11 @@ func (h *protocolHandler) ComQuery(c *vtmysql.Conn, query string,
 		return callback(result)
 	}
 	if analysis.Mode == sqlanalyzer.CacheModeNone {
-		return h.proxyQuery(session, query, callback)
+		return h.proxyQuery(session, query, parsed, callback)
 	}
 	proxyStarted := time.Now()
 	points := 0
-	err = h.proxyQuery(session, query, func(result *sqltypes.Result) error {
+	err = h.proxyQuery(session, query, parsed, func(result *sqltypes.Result) error {
 		points += len(result.Rows)
 		return callback(result)
 	})
@@ -1007,32 +1008,51 @@ func (h *protocolHandler) ComQuery(c *vtmysql.Conn, query string,
 }
 
 func hasMultipleStatements(query string) (bool, error) {
-	pieces, err := defaultAnalyzer.(*Analyzer).parser.SplitStatementToPieces(query)
+	pieces, err := defaultAnalyzer.parser.SplitStatementToPieces(query)
 	return len(pieces) > 1, err
 }
 
+type parsedQuery struct {
+	statementType vtparser.StatementType
+	statement     vtparser.Statement
+	err           error
+}
+
+func parseQuery(query string) parsedQuery {
+	parsed := parsedQuery{statementType: vtparser.Preview(query)}
+	switch parsed.statementType {
+	case vtparser.StmtSelect, vtparser.StmtUse, vtparser.StmtSet:
+		parsed.statement, parsed.err = defaultAnalyzer.parser.Parse(query)
+	}
+	return parsed
+}
+
 func unsupportedTextFeature(query string) string {
-	trimmed := vtparser.StripLeadingComments(query)
-	if strings.HasPrefix(strings.TrimSpace(trimmed), "/*!") {
+	trimmed := strings.TrimSpace(vtparser.StripLeadingComments(query))
+	if strings.HasPrefix(trimmed, "/*!") {
 		return "versioned executable comments"
 	}
-	fields := strings.Fields(trimmed)
-	if len(fields) == 0 {
+	if trimmed == "" {
 		return ""
 	}
-	switch strings.ToLower(fields[0]) {
-	case "prepare", "execute", "deallocate":
+	keyword := trimmed
+	if end := strings.IndexAny(keyword, " \t\r\n\f\v"); end >= 0 {
+		keyword = keyword[:end]
+	}
+	switch {
+	case strings.EqualFold(keyword, "prepare"), strings.EqualFold(keyword, "execute"),
+		strings.EqualFold(keyword, "deallocate"):
 		return "prepared statements"
-	case "call":
+	case strings.EqualFold(keyword, "call"):
 		return "stored procedures and multi-results"
-	case "load":
+	case strings.EqualFold(keyword, "load"):
 		return "LOAD DATA and local-file operations"
 	default:
 		return ""
 	}
 }
 
-func (h *protocolHandler) proxyQuery(session *upstreamSession, query string,
+func (h *protocolHandler) proxyQuery(session *upstreamSession, query string, parsed parsedQuery,
 	callback func(*sqltypes.Result) error,
 ) error {
 	if err := h.connectSession(session); err != nil {
@@ -1041,12 +1061,12 @@ func (h *protocolHandler) proxyQuery(session *upstreamSession, query string,
 	session.mtx.Lock()
 	upstream := session.conn
 	session.mtx.Unlock()
-	if returnsResultSet(query) {
+	if returnsResultSet(parsed.statementType) {
 		err := h.runOriginQuery(session, upstream, func() error {
 			return h.proxyResultSet(session, upstream, query, callback)
 		})
 		if err == nil {
-			h.updateSessionState(session, query)
+			h.updateSessionStateParsed(session, parsed)
 		}
 		return err
 	}
@@ -1061,7 +1081,7 @@ func (h *protocolHandler) proxyQuery(session *upstreamSession, query string,
 		return err
 	}
 	h.setWarnings(session, warnings)
-	h.updateSessionState(session, query)
+	h.updateSessionStateParsed(session, parsed)
 	return callback(result)
 }
 
@@ -1071,8 +1091,8 @@ func (h *protocolHandler) setWarnings(session *upstreamSession, warnings uint16)
 	session.mtx.Unlock()
 }
 
-func returnsResultSet(query string) bool {
-	switch vtparser.Preview(query) {
+func returnsResultSet(statementType vtparser.StatementType) bool {
+	switch statementType {
 	case vtparser.StmtSelect, vtparser.StmtShow, vtparser.StmtExplain, vtparser.StmtAnalyze:
 		return true
 	default:
