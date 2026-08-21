@@ -146,7 +146,9 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 	if methods.HasBody(r.Method) && pc.CacheKeyFormFields != nil && len(pc.CacheKeyFormFields) > 0 {
 		ct := strings.ToLower(r.Header.Get(headers.NameContentType))
 		if strings.HasPrefix(ct, headers.ValueMultipartFormData) {
-			if err := pr.ParseMultipartForm(1024 * 1024); err == nil {
+			const maxMultipartFormBytes = 1024 * 1024
+			pr.Body = http.MaxBytesReader(nil, pr.Body, maxMultipartFormBytes)
+			if err := pr.ParseMultipartForm(maxMultipartFormBytes); err == nil { // #nosec G120 -- body bounded by MaxBytesReader above; gosec taint does not track Body field
 				bodyWasProcessed = true
 			}
 		} else if strings.HasPrefix(ct, headers.ValueApplicationJSON) {

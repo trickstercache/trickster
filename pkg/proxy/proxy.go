@@ -85,10 +85,10 @@ func NewHTTPClient(o *bo.Options) (*http.Client, error) {
 			return http.ErrUseLastResponse
 		},
 		Transport: &http.Transport{
-			Dial: (&net.Dialer{
+			DialContext: (&net.Dialer{
 				KeepAlive: time.Duration(o.KeepAliveTimeout),
 				Timeout:   connectTimeout,
-			}).Dial,
+			}).DialContext,
 			MaxIdleConns:          o.MaxIdleConns,
 			MaxIdleConnsPerHost:   o.MaxIdleConns,
 			MaxConnsPerHost:       o.MaxConcurrentConns,
@@ -97,7 +97,7 @@ func NewHTTPClient(o *bo.Options) (*http.Client, error) {
 			ExpectContinueTimeout: time.Duration(o.Timeout),
 			ResponseHeaderTimeout: time.Duration(o.Timeout),
 			TLSClientConfig:       TLSConfig,
-			// explicit: Go suppresses h2 auto-enable when Dial or TLSClientConfig is custom.
+			// explicit: Go suppresses h2 auto-enable when DialContext or TLSClientConfig is custom.
 			ForceAttemptHTTP2: true,
 		},
 	}
