@@ -148,7 +148,10 @@ func BenchmarkMySQLResultHandling(b *testing.B) {
 		b.Run(name+"/Retention", func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
-				retained, _ := h.applyRetention(result, cached.extents, plan)
+				retained, _, err := h.applyRetentionSorted(result, cached.extents, plan, 0)
+				if err != nil {
+					b.Fatal(err)
+				}
 				if len(retained.Rows) == 0 {
 					b.Fatal("retention removed all rows")
 				}
@@ -196,7 +199,10 @@ func BenchmarkMySQLLargeResultRetention(b *testing.B) {
 	}
 	b.ReportAllocs()
 	for b.Loop() {
-		retained, retainedExtents := h.applyRetention(result, extents, plan)
+		retained, retainedExtents, err := h.applyRetentionSorted(result, extents, plan, 0)
+		if err != nil {
+			b.Fatal(err)
+		}
 		if len(retained.Rows) != 5000 || len(retainedExtents) != 1 {
 			b.Fatal("unexpected retained result")
 		}

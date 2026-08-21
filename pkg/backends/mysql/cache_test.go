@@ -203,6 +203,120 @@ func TestDeltaRetentionDoesNotTruncateCurrentResponse(t *testing.T) {
 	}
 }
 
+func TestSortedDeltaFinalizationPreservesGroupedBoundaries(t *testing.T) {
+	fields := []*querypb.Field{
+		{Name: "time", Type: querypb.Type_INT64},
+		{Name: "metric", Type: querypb.Type_VARCHAR},
+		{Name: "value", Type: querypb.Type_INT64},
+	}
+	rows := make([][]sqltypes.Value, 0, 12)
+	for _, epoch := range []int64{0, 60, 120} {
+		for _, metric := range []string{"a", "b"} {
+			rows = append(rows, []sqltypes.Value{
+				sqltypes.NewInt64(epoch), sqltypes.NewVarChar(metric), sqltypes.NewInt64(epoch),
+			})
+		}
+	}
+	merged := &sqltypes.Result{Fields: fields, Rows: rows}
+	plan := &sqlanalyzer.QueryPlan{
+		Step: time.Minute, OutputColumn: "time", GroupColumns: []string{"metric"},
+		OutputUnit: timeseries.DateTimeUnixSecs,
+	}
+	h := &protocolHandler{config: ProtocolConfig{RetentionPoints: 2}}
+	response, retained, extents, err := h.finalizeDeltaResult(merged,
+		timeseries.ExtentList{{Start: time.Unix(0, 0), End: time.Unix(120, 0)}},
+		plan, timeseries.Extent{Start: time.Unix(60, 0), End: time.Unix(60, 0)},
+		time.Unix(3600, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Rows) != 2 || response.Rows[0][0].ToString() != "60" ||
+		response.Rows[1][1].ToString() != "b" {
+		t.Fatalf("cropped grouped response = %+v", response.Rows)
+	}
+	if len(retained.Rows) != 4 || retained.Rows[0][0].ToString() != "60" ||
+		retained.Rows[3][0].ToString() != "120" || &retained.Rows[0] == &merged.Rows[2] {
+		t.Fatalf("retained grouped result = len/cap %d/%d, rows %+v",
+			len(retained.Rows), cap(retained.Rows), retained.Rows)
+	}
+	if len(extents) != 1 || !extents[0].Start.Equal(time.Unix(60, 0)) {
+		t.Fatalf("retained extents = %v", extents)
+	}
+}
+
+func TestDPCLocksOnlySerializeMatchingKeys(t *testing.T) {
+	left, right := collidingLockKeys()
+	h := &protocolHandler{}
+	leftLock := h.lockDPC(left)
+	rightDone := make(chan struct{})
+	go func() {
+		lock := h.lockDPC(right)
+		h.unlockDPC(right, lock)
+		close(rightDone)
+	}()
+	select {
+	case <-rightDone:
+	case <-time.After(time.Second):
+		h.unlockDPC(left, leftLock)
+		t.Fatalf("distinct colliding keys %q and %q blocked each other", left, right)
+	}
+
+	sameDone := make(chan struct{})
+	go func() {
+		lock := h.lockDPC(left)
+		h.unlockDPC(left, lock)
+		close(sameDone)
+	}()
+	deadline := time.Now().Add(time.Second)
+	for {
+		h.dpcLockMtx.Lock()
+		references := leftLock.references
+		h.dpcLockMtx.Unlock()
+		if references == 2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			h.unlockDPC(left, leftLock)
+			t.Fatal("matching-key waiter did not register")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	select {
+	case <-sameDone:
+		t.Fatal("matching keys did not serialize")
+	default:
+	}
+	h.unlockDPC(left, leftLock)
+	select {
+	case <-sameDone:
+	case <-time.After(time.Second):
+		t.Fatal("matching-key waiter remained blocked")
+	}
+	h.dpcLockMtx.Lock()
+	remaining := len(h.dpcLocks)
+	h.dpcLockMtx.Unlock()
+	if remaining != 0 {
+		t.Fatalf("DPC lock registry retained %d entries", remaining)
+	}
+}
+
+func collidingLockKeys() (string, string) {
+	var keys [64]string
+	for i := 0; ; i++ {
+		key := fmt.Sprintf("key-%d", i)
+		var hash uint64 = 14695981039346656037
+		for j := range len(key) {
+			hash ^= uint64(key[j])
+			hash *= 1099511628211
+		}
+		bucket := hash % uint64(len(keys))
+		if keys[bucket] != "" {
+			return keys[bucket], key
+		}
+		keys[bucket] = key
+	}
+}
+
 func TestStableExtentsExcludesBackfillWindow(t *testing.T) {
 	h := &protocolHandler{config: ProtocolConfig{BackfillPoints: 2}}
 	plan := &sqlanalyzer.QueryPlan{Step: time.Minute}

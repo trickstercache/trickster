@@ -184,9 +184,8 @@ func (h *protocolHandler) executeDelta(c *vtmysql.Conn, session *upstreamSession
 	query string, plan *sqlanalyzer.QueryPlan,
 ) (*sqltypes.Result, cachestatus.LookupStatus, error) {
 	key := h.queryCacheKey(c, session, "dpc", plan.CanonicalSQL, plan.IdentitySuffix)
-	lock := &h.dpcLocks[cacheLockIndex(key)]
-	lock.Lock()
-	defer lock.Unlock()
+	lock := h.lockDPC(key)
+	defer h.unlockDPC(key, lock)
 
 	window, windowErr := buildDeltaRequestWindow(plan)
 	if windowErr != nil {
@@ -281,11 +280,22 @@ func (h *protocolHandler) finalizeDeltaResult(merged *sqltypes.Result,
 	allExtents timeseries.ExtentList, plan *sqlanalyzer.QueryPlan,
 	requested timeseries.Extent, now time.Time,
 ) (*sqltypes.Result, *sqltypes.Result, timeseries.ExtentList, error) {
-	response, err := cropAndSortResult(merged, plan, requested)
+	if merged == nil {
+		return nil, nil, nil, errors.New("nil MySQL delta result")
+	}
+	timeIndex, _, err := resultIndexes(merged.Fields, plan)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	retained, retainedExtents := h.applyRetention(merged, allExtents, plan)
+	response, err := cropSortedResult(merged, timeIndex, plan.OutputUnit, requested)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	retained, retainedExtents, err := h.applyRetentionSorted(
+		merged, allExtents, plan, timeIndex)
+	if err != nil {
+		return nil, nil, nil, err
+	}
 	cacheExtents := h.stableExtents(retainedExtents, plan, now)
 	return response, retained, cacheExtents, nil
 }
@@ -583,13 +593,30 @@ func appendCacheIdentityField(identity *strings.Builder, value string) {
 	_, _ = identity.WriteString(value)
 }
 
-func cacheLockIndex(key string) uint64 {
-	var hash uint64 = 14695981039346656037
-	for i := range len(key) {
-		hash ^= uint64(key[i])
-		hash *= 1099511628211
+func (h *protocolHandler) lockDPC(key string) *dpcLock {
+	h.dpcLockMtx.Lock()
+	if h.dpcLocks == nil {
+		h.dpcLocks = make(map[string]*dpcLock)
 	}
-	return hash % 64
+	lock := h.dpcLocks[key]
+	if lock == nil {
+		lock = &dpcLock{}
+		h.dpcLocks[key] = lock
+	}
+	lock.references++
+	h.dpcLockMtx.Unlock()
+	lock.Lock()
+	return lock
+}
+
+func (h *protocolHandler) unlockDPC(key string, lock *dpcLock) {
+	lock.Unlock()
+	h.dpcLockMtx.Lock()
+	lock.references--
+	if lock.references == 0 && h.dpcLocks[key] == lock {
+		delete(h.dpcLocks, key)
+	}
+	h.dpcLockMtx.Unlock()
 }
 
 func marshalCachedQueryResult(cached *cachedQueryResult) ([]byte, error) {
@@ -769,6 +796,49 @@ func cropAndSortResult(result *sqltypes.Result, plan *sqlanalyzer.QueryPlan,
 	return out, nil
 }
 
+// cropSortedResult crops a result already ordered by (epoch, group), as
+// guaranteed by mergeResults, without rebuilding group keys or sorting again.
+func cropSortedResult(result *sqltypes.Result, timeIndex int,
+	unit timeseries.FieldDataType, extent timeseries.Extent,
+) (*sqltypes.Result, error) {
+	start, err := sortedRowBoundary(result.Rows, timeIndex, unit, extent.Start.UnixNano(), false)
+	if err != nil {
+		return nil, err
+	}
+	end, err := sortedRowBoundary(result.Rows, timeIndex, unit, extent.End.UnixNano(), true)
+	if err != nil {
+		return nil, err
+	}
+	if start > end {
+		return nil, errors.New("invalid MySQL delta result extent")
+	}
+	out := cloneResultMetadata(result)
+	out.Rows = slices.Clone(result.Rows[start:end])
+	return out, nil
+}
+
+func sortedRowBoundary(rows [][]sqltypes.Value, timeIndex int,
+	unit timeseries.FieldDataType, target int64, after bool,
+) (int, error) {
+	low, high := 0, len(rows)
+	for low < high {
+		middle := low + (high-low)/2
+		if len(rows[middle]) <= timeIndex {
+			return 0, errors.New("invalid MySQL delta result row")
+		}
+		epoch, err := resultEpoch(rows[middle][timeIndex], unit)
+		if err != nil {
+			return 0, err
+		}
+		if epoch > target || (!after && epoch == target) {
+			high = middle
+		} else {
+			low = middle + 1
+		}
+	}
+	return low, nil
+}
+
 func resultIndexes(fields []*querypb.Field,
 	plan *sqlanalyzer.QueryPlan,
 ) (int, []int, error) {
@@ -889,38 +959,44 @@ func totalRows(results []*sqltypes.Result) int {
 	return total
 }
 
-func (h *protocolHandler) applyRetention(result *sqltypes.Result,
-	extents timeseries.ExtentList, plan *sqlanalyzer.QueryPlan,
-) (*sqltypes.Result, timeseries.ExtentList) {
+func (h *protocolHandler) applyRetentionSorted(result *sqltypes.Result,
+	extents timeseries.ExtentList, plan *sqlanalyzer.QueryPlan, timeIndex int,
+) (*sqltypes.Result, timeseries.ExtentList, error) {
 	limit := h.config.RetentionPoints
 	if limit <= 0 || result == nil || len(result.Rows) <= limit || len(extents) == 0 {
-		return result, extents
+		return result, extents, nil
 	}
-	timeIndex, _, err := resultIndexes(result.Fields, plan)
-	if err != nil {
-		return result, extents
-	}
-	timestamps := make([]int64, 0, len(result.Rows))
-	for _, row := range result.Rows {
-		epoch, parseErr := resultEpoch(row[timeIndex], plan.OutputUnit)
-		if parseErr == nil {
-			timestamps = append(timestamps, epoch)
+	unique := 0
+	start := 0
+	var cutoff, previous int64
+	havePrevious := false
+	for i, row := range slices.Backward(result.Rows) {
+		if len(row) <= timeIndex {
+			return nil, nil, errors.New("invalid MySQL delta result row")
+		}
+		epoch, err := resultEpoch(row[timeIndex], plan.OutputUnit)
+		if err != nil {
+			return nil, nil, err
+		}
+		if !havePrevious || epoch != previous {
+			unique++
+			if unique > limit {
+				start = i + 1
+				break
+			}
+			cutoff = epoch
+			previous = epoch
+			havePrevious = true
 		}
 	}
-	slices.Sort(timestamps)
-	timestamps = slices.Compact(timestamps)
-	if len(timestamps) <= limit {
-		return result, extents
+	if unique <= limit {
+		return result, extents, nil
 	}
-	cutoff := timestamps[len(timestamps)-limit]
-	retained, err := cropAndSortResult(result, plan,
-		timeseries.Extent{Start: time.Unix(0, cutoff), End: time.Unix(0, timestamps[len(timestamps)-1])})
-	if err != nil {
-		return result, extents
-	}
+	retained := cloneResultMetadata(result)
+	retained.Rows = slices.Clone(result.Rows[start:])
 	return retained, extents.Crop(timeseries.Extent{
 		Start: time.Unix(0, cutoff), End: extents[len(extents)-1].End,
-	})
+	}), nil
 }
 
 func (h *protocolHandler) stableExtents(extents timeseries.ExtentList,

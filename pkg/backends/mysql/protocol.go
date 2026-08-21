@@ -427,7 +427,7 @@ func newProtocolHandler(config ProtocolConfig, env *vtenv.Environment) *protocol
 	}
 	return &protocolHandler{
 		config: config, env: env, sessions: make(map[*vtmysql.Conn]*upstreamSession),
-		controls: make(map[uint32]*phaseConn),
+		controls: make(map[uint32]*phaseConn), dpcLocks: make(map[string]*dpcLock),
 	}
 }
 
@@ -777,7 +777,13 @@ type protocolHandler struct {
 	closed          atomic.Bool
 	activeUpstreams atomic.Int64
 	opcGroup        singleflight.Group
-	dpcLocks        [64]sync.Mutex
+	dpcLockMtx      sync.Mutex
+	dpcLocks        map[string]*dpcLock
+}
+
+type dpcLock struct {
+	sync.Mutex
+	references int
 }
 
 func (h *protocolHandler) Env() *vtenv.Environment { return h.env }

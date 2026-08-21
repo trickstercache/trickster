@@ -918,12 +918,12 @@ func TestRetentionAndStableExtentGuardBranches(t *testing.T) {
 	extents := timeseries.ExtentList{{Start: time.Unix(0, 0), End: time.Unix(600, 0)}}
 	result := &sqltypes.Result{Fields: []*querypb.Field{{Name: "other", Type: querypb.Type_INT64}},
 		Rows: [][]sqltypes.Value{{sqltypes.NewInt64(1)}, {sqltypes.NewInt64(2)}}}
-	if got, _ := h.applyRetention(result, extents, plan); got != result {
+	if got, _, err := h.applyRetentionSorted(result, extents, plan, 0); err != nil || got != result {
 		t.Fatal("disabled retention changed the result")
 	}
 	h.config.RetentionPoints = 1
-	if got, _ := h.applyRetention(result, extents, plan); got != result {
-		t.Fatal("invalid retention shape changed the result")
+	if _, _, err := h.applyRetentionSorted(result, extents, plan, 1); err == nil {
+		t.Fatal("invalid retention row was accepted")
 	}
 	if got := h.stableExtents(extents, plan, time.Unix(1200, 0)); len(got) != 1 {
 		t.Fatal("disabled backfill changed extents")
