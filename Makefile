@@ -35,6 +35,7 @@ CONF_DIR       := $(PACKAGE_DIR)/conf
 CGO_ENABLED    ?= 0
 BUMPER_FILE    := ./testdata/license_header_template.txt
 THIRD_PARTY_LICENSES_DIR  := $(BUILD_SUBDIR)/third-party-licenses
+GOLANG_CI_LINT_VERSION ?= v2.13.1
 
 .PHONY: go-mod-vendor
 go-mod-vendor:
@@ -363,7 +364,6 @@ serve-info:
 serve-cli:
 	@cd cmd/trickster && go run . -origin-url http://127.0.0.1:9090/ -provider prometheus
 
-GOLANG_CI_LINT_VERSION ?= v2.11.4
 .PHONY: get-tools
 get-tools: get-msgpack
 	@echo "Installing tools..."
