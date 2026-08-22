@@ -20,6 +20,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -27,6 +28,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/integration/internal/portutil"
 	tkconfig "github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
@@ -36,39 +38,35 @@ import (
 )
 
 type tricksterHarness struct {
-	ConfigPath  string // path to YAML config passed to the daemon
-	BaseAddr    string // host:port of the data listener (e.g. "127.0.0.1:8480")
-	MetricsAddr string // host:port of the metrics/health listener
+	ConfigPath   string // path to YAML config passed to the daemon
+	BaseAddr     string // host:port of the data listener (e.g. "127.0.0.1:8480")
+	MetricsAddr  string // host:port of the metrics/health listener
+	MySQLAddr    string // host:port of the MySQL protocol listener, when configured
+	releasePorts func() // releases ports reserved while the config is prepared
 }
 
-func developerHarness() tricksterHarness {
-	return tricksterHarness{
-		ConfigPath:  "../docs/developer/environment/trickster-config/trickster.yaml",
-		BaseAddr:    "127.0.0.1:8480",
-		MetricsAddr: "127.0.0.1:8481",
-	}
+func developerHarness(t *testing.T) tricksterHarness {
+	t.Helper()
+	return configHarness(t)
 }
 
-func albHarness() tricksterHarness {
-	return tricksterHarness{
-		ConfigPath:  "testdata/alb.yaml",
-		BaseAddr:    "127.0.0.1:8490",
-		MetricsAddr: "127.0.0.1:8491",
-	}
+func albHarness(t *testing.T) tricksterHarness {
+	t.Helper()
+	return staticConfigHarness(t, "testdata/alb.yaml")
 }
 
-func rewriterHarness() tricksterHarness {
-	return tricksterHarness{
-		ConfigPath:  "testdata/rewriter.yaml",
-		BaseAddr:    "127.0.0.1:8493",
-		MetricsAddr: "127.0.0.1:8494",
-	}
+func rewriterHarness(t *testing.T) tricksterHarness {
+	t.Helper()
+	return staticConfigHarness(t, "testdata/rewriter.yaml")
 }
 
 func (h tricksterHarness) start(t *testing.T) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
+	if h.releasePorts != nil {
+		h.releasePorts()
+	}
 	go startTrickster(t, ctx, expectedStartError{}, "-config", h.ConfigPath)
 	waitForTrickster(t, h.MetricsAddr)
 }
@@ -166,9 +164,38 @@ type cacheProviderCase struct {
 	Backend string // backend id, e.g. "prom1"
 }
 
-func writeTestConfig(t *testing.T, frontPort, metricsPort, mgmtPort int) string {
+func configHarness(t *testing.T) tricksterHarness {
 	t.Helper()
-	b, err := os.ReadFile("../docs/developer/environment/trickster-config/trickster.yaml")
+	ports, release := portutil.Reserve(t, 4)
+	frontPort, metricsPort, mgmtPort, mysqlPort := ports[0], ports[1], ports[2], ports[3]
+	return tricksterHarness{
+		ConfigPath: writeTestConfig(t,
+			"../docs/developer/environment/trickster-config/trickster.yaml",
+			frontPort, metricsPort, mgmtPort, mysqlPort),
+		BaseAddr:     fmt.Sprintf("127.0.0.1:%d", frontPort),
+		MetricsAddr:  fmt.Sprintf("127.0.0.1:%d", metricsPort),
+		MySQLAddr:    fmt.Sprintf("127.0.0.1:%d", mysqlPort),
+		releasePorts: release,
+	}
+}
+
+func staticConfigHarness(t *testing.T, configPath string) tricksterHarness {
+	t.Helper()
+	ports, release := portutil.Reserve(t, 3)
+	frontPort, metricsPort, mgmtPort := ports[0], ports[1], ports[2]
+	return tricksterHarness{
+		ConfigPath:   writeTestConfig(t, configPath, frontPort, metricsPort, mgmtPort, 0),
+		BaseAddr:     fmt.Sprintf("127.0.0.1:%d", frontPort),
+		MetricsAddr:  fmt.Sprintf("127.0.0.1:%d", metricsPort),
+		releasePorts: release,
+	}
+}
+
+func writeTestConfig(t *testing.T, configPath string,
+	frontPort, metricsPort, mgmtPort, mysqlPort int,
+) string {
+	t.Helper()
+	b, err := os.ReadFile(configPath)
 	require.NoError(t, err)
 	var c tkconfig.Config
 	require.NoError(t, yaml.Unmarshal(b, &c))
@@ -191,8 +218,15 @@ func writeTestConfig(t *testing.T, frontPort, metricsPort, mgmtPort int) string 
 		}
 	}
 	c.Listeners["default"].ListenPort = frontPort
+	c.Listeners["default"].ListenAddress = "127.0.0.1"
 	c.Listeners["metrics"].ListenPort = metricsPort
+	c.Listeners["metrics"].ListenAddress = "127.0.0.1"
 	c.Listeners["mgmt"].ListenPort = mgmtPort
+	c.Listeners["mgmt"].ListenAddress = "127.0.0.1"
+	if mysqlListener := c.Listeners["mysql1"]; mysqlListener != nil {
+		mysqlListener.ListenAddress = "0.0.0.0"
+		mysqlListener.ListenPort = mysqlPort
+	}
 	if c.MgmtConfig == nil {
 		c.MgmtConfig = mgmt.New()
 	}

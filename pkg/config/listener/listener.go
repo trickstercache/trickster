@@ -20,6 +20,7 @@ package listener
 import (
 	"fmt"
 
+	mo "github.com/trickstercache/trickster/v2/pkg/backends/mysql/options"
 	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
 	frontend "github.com/trickstercache/trickster/v2/pkg/frontend/options"
 	metrics "github.com/trickstercache/trickster/v2/pkg/observability/metrics/options"
@@ -33,11 +34,9 @@ const (
 	DefaultFrontendName = "default"
 	// ProtocolHTTP is the HTTP listener protocol.
 	ProtocolHTTP = "http"
+	// ProtocolMySQL is the MySQL wire-protocol listener protocol.
+	ProtocolMySQL = "mysql"
 )
-
-var supportedProtocols = map[string]struct{}{
-	ProtocolHTTP: {},
-}
 
 // Options describes one inbound listener.
 type Options struct {
@@ -59,6 +58,8 @@ type Options struct {
 	ReadHeaderTimeout timeconv.Duration `yaml:"read_header_timeout,omitempty"`
 	// Protocol selects the protocol served by this listener.
 	Protocol string `yaml:"protocol,omitempty"`
+	// MySQL contains downstream limits when protocol is mysql.
+	MySQL *mo.ListenerOptions `yaml:"mysql,omitempty"`
 	// ServeTLS indicates that this listener has at least one usable certificate.
 	ServeTLS bool `yaml:"-"`
 	// Active indicates whether the listener has a configured purpose.
@@ -67,12 +68,6 @@ type Options struct {
 
 // Lookup maps listener names to their options.
 type Lookup map[string]*Options
-
-// IsSupportedProtocol reports whether protocol is currently supported.
-func IsSupportedProtocol(protocol string) bool {
-	_, ok := supportedProtocols[protocol]
-	return ok
-}
 
 // New returns default options for name.
 func New(name string) *Options {
@@ -165,6 +160,7 @@ func (o *Options) Clone() *Options {
 		return nil
 	}
 	out := *o
+	out.MySQL = o.MySQL.Clone()
 	if o.MaxRequestBodySizeBytes != nil {
 		out.MaxRequestBodySizeBytes = new(*o.MaxRequestBodySizeBytes)
 	}
@@ -182,6 +178,9 @@ func (o *Options) Equal(other *Options) bool {
 		o.ConnectionsLimit != other.ConnectionsLimit ||
 		o.TruncateRequestBodyTooLarge != other.TruncateRequestBodyTooLarge ||
 		o.ReadHeaderTimeout != other.ReadHeaderTimeout || o.ServeTLS != other.ServeTLS {
+		return false
+	}
+	if (o.MySQL == nil) != (other.MySQL == nil) || o.MySQL != nil && *o.MySQL != *other.MySQL {
 		return false
 	}
 	if o.MaxRequestBodySizeBytes == nil || other.MaxRequestBodySizeBytes == nil {

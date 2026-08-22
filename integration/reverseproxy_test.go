@@ -25,9 +25,8 @@ import (
 )
 
 func TestReverseProxyCache(t *testing.T) {
-	cfg := writeTestConfig(t, 8574, 8575, 8584)
-	rpcAddr := "127.0.0.1:8574"
-	h := tricksterHarness{ConfigPath: cfg, BaseAddr: rpcAddr, MetricsAddr: "127.0.0.1:8575"}
+	h := configHarness(t)
+	rpcAddr := h.BaseAddr
 	h.start(t)
 
 	t.Run("full object cache", func(t *testing.T) {

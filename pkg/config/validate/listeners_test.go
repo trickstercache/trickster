@@ -20,12 +20,29 @@ import (
 	"strings"
 	"testing"
 
+	uropt "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/ur/options"
+	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
+	configtypes "github.com/trickstercache/trickster/v2/pkg/config/types"
+	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	tlsopts "github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
 )
+
+func mysqlBackend(listenerName string) *bo.Options {
+	backend := bo.New()
+	backend.Provider = providers.MySQL
+	backend.ListenerName = listenerName
+	backend.OriginURL = "mysql://user:password@example.com/database"
+	backend.AuthenticatorName = "mysql-auth"
+	backend.AuthOptions = &autho.Options{
+		Users: configtypes.EnvStringMap{"client": "password"},
+	}
+	return backend
+}
 
 func TestListenersBackendMappings(t *testing.T) {
 	t.Run("default", func(t *testing.T) {
@@ -134,6 +151,159 @@ func TestListenersWarningsAndProtocolValidation(t *testing.T) {
 		c.Backends = bo.Lookup{"first": first, "second": second}
 		if err := Listeners(c); err == nil || !strings.Contains(err.Error(), "only one backend") {
 			t.Fatalf("expected single-backend protocol error, got %v", err)
+		}
+	})
+
+	t.Run("mysql_listener_single_backend", func(t *testing.T) {
+		c := config.NewConfig()
+		c.Listeners["mysql1"] = listener.New("mysql1")
+		c.Listeners["mysql1"].Protocol = listener.ProtocolMySQL
+		c.Listeners["mysql1"].ListenPort = 8486
+		backend := mysqlBackend("mysql1")
+		c.Backends = bo.Lookup{"mysql1": backend}
+		if err := Listeners(c); err != nil {
+			t.Fatal(err)
+		}
+		if !c.Listeners["mysql1"].Active {
+			t.Fatal("mysql listener with one mapped backend should be active")
+		}
+	})
+
+	t.Run("mysql_listener_multiple_backends", func(t *testing.T) {
+		c := config.NewConfig()
+		c.Listeners["mysql1"] = listener.New("mysql1")
+		c.Listeners["mysql1"].Protocol = listener.ProtocolMySQL
+		c.Listeners["mysql1"].ListenPort = 8486
+		first, second := mysqlBackend("mysql1"), mysqlBackend("mysql1")
+		c.Backends = bo.Lookup{"first": first, "second": second}
+		if err := Listeners(c); err == nil || !strings.Contains(err.Error(), "only one backend") {
+			t.Fatalf("expected single-backend protocol error, got %v", err)
+		}
+	})
+
+	t.Run("mysql_listener_wrong_provider", func(t *testing.T) {
+		c := config.NewConfig()
+		c.Listeners["mysql1"] = listener.New("mysql1")
+		c.Listeners["mysql1"].Protocol = listener.ProtocolMySQL
+		c.Listeners["mysql1"].ListenPort = 8486
+		backend := bo.New()
+		backend.Provider = providers.Prometheus
+		backend.ListenerName = "mysql1"
+		c.Backends = bo.Lookup{"prom1": backend}
+		if err := Listeners(c); err == nil || !strings.Contains(err.Error(), "cannot map to backend") {
+			t.Fatalf("expected provider/protocol mismatch error, got %v", err)
+		}
+	})
+
+	t.Run("mysql_listener_accepts_user_router_alb", func(t *testing.T) {
+		c := config.NewConfig()
+		c.Listeners["mysql1"] = listener.New("mysql1")
+		c.Listeners["mysql1"].Protocol = listener.ProtocolMySQL
+		c.Listeners["mysql1"].ListenPort = 8486
+		backend := bo.New()
+		backend.Provider = providers.ALB
+		backend.ListenerName = "mysql1"
+		backend.ALBOptions = ao.New()
+		backend.ALBOptions.MechanismName = "ur"
+		backend.ALBOptions.UserRouter = &uropt.Options{
+			TargetProvider: providers.MySQL,
+			Users: uropt.UserMappingOptionsByUser{
+				"client": {ToBackend: "mysql-a"},
+			},
+		}
+		backend.AuthenticatorName = "mysql-listener-clients"
+		backend.AuthOptions = &autho.Options{
+			Users: configtypes.EnvStringMap{"client": "password"},
+		}
+		target := mysqlBackend("")
+		c.Backends = bo.Lookup{"mysql-users": backend, "mysql-a": target}
+		if err := Listeners(c); err != nil {
+			t.Fatalf("expected MySQL User Router ALB to be accepted, got %v", err)
+		}
+		if !c.Listeners["mysql1"].Active {
+			t.Fatal("MySQL User Router listener should be active")
+		}
+	})
+
+	for _, tc := range []struct {
+		name      string
+		configure func(*bo.Options, *uropt.Options, bo.Lookup)
+		want      string
+	}{
+		{
+			name: "mysql_user_router_rejects_credential_remapping",
+			configure: func(_ *bo.Options, o *uropt.Options, _ bo.Lookup) {
+				o.Users["client"].ToUser = "origin-user"
+			},
+			want: "does not support to_user or to_credential",
+		},
+		{
+			name: "mysql_user_router_rejects_nested_target",
+			configure: func(_ *bo.Options, o *uropt.Options, lookup bo.Lookup) {
+				nested := bo.New()
+				nested.Provider = providers.ALB
+				lookup["nested"] = nested
+				o.Users["client"].ToBackend = "nested"
+			},
+			want: "must be a direct mysql backend",
+		},
+		{
+			name: "mysql_user_router_requires_listener_authenticator",
+			configure: func(backend *bo.Options, _ *uropt.Options, _ bo.Lookup) {
+				backend.AuthenticatorName = ""
+				backend.AuthOptions = nil
+			},
+			want: "requires an authenticator_name",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := config.NewConfig()
+			c.Listeners["mysql1"] = listener.New("mysql1")
+			c.Listeners["mysql1"].Protocol = listener.ProtocolMySQL
+			c.Listeners["mysql1"].ListenPort = 8486
+			routerBackend := bo.New()
+			routerBackend.Provider = providers.ALB
+			routerBackend.ListenerName = "mysql1"
+			routerBackend.AuthenticatorName = "mysql-listener-clients"
+			routerBackend.AuthOptions = &autho.Options{
+				Users: configtypes.EnvStringMap{"client": "password"},
+			}
+			routerBackend.ALBOptions = ao.New()
+			routerBackend.ALBOptions.MechanismName = "ur"
+			routerOptions := &uropt.Options{
+				TargetProvider: providers.MySQL,
+				Users: uropt.UserMappingOptionsByUser{
+					"client": {ToBackend: "mysql-a"},
+				},
+			}
+			routerBackend.ALBOptions.UserRouter = routerOptions
+			c.Backends = bo.Lookup{"mysql-users": routerBackend, "mysql-a": mysqlBackend("")}
+			tc.configure(routerBackend, routerOptions, c.Backends)
+			if err := Listeners(c); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("Listeners() error = %v, want %q", err, tc.want)
+			}
+		})
+	}
+
+	t.Run("mysql_backend_on_http_listener", func(t *testing.T) {
+		c := config.NewConfig()
+		backend := mysqlBackend("")
+		c.Backends = bo.Lookup{"mysql1": backend}
+		if err := Listeners(c); err == nil || !strings.Contains(err.Error(), "requires a listener") {
+			t.Fatalf("expected mysql-on-http error, got %v", err)
+		}
+	})
+
+	t.Run("mysql_listener_tls_port", func(t *testing.T) {
+		c := config.NewConfig()
+		c.Listeners["mysql1"] = listener.New("mysql1")
+		c.Listeners["mysql1"].Protocol = listener.ProtocolMySQL
+		c.Listeners["mysql1"].ListenPort = 8486
+		c.Listeners["mysql1"].TLSListenPort = 9443
+		backend := mysqlBackend("mysql1")
+		c.Backends = bo.Lookup{"mysql1": backend}
+		if err := Listeners(c); err == nil || !strings.Contains(err.Error(), "cannot configure a TLS port") {
+			t.Fatalf("expected non-HTTP TLS error, got %v", err)
 		}
 	})
 }

@@ -28,6 +28,7 @@ import (
 
 	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
+	mo "github.com/trickstercache/trickster/v2/pkg/backends/mysql/options"
 	prop "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	ro "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
@@ -172,6 +173,8 @@ type Options struct {
 	ALBOptions *ao.Options `yaml:"alb,omitempty"`
 	// Prometheus holds options specific to prometheus backends
 	Prometheus *prop.Options `yaml:"prometheus,omitempty"`
+	// MySQL holds limits specific to MySQL origin result processing.
+	MySQL *mo.Options `yaml:"mysql,omitempty"`
 
 	// TLS is the TLS Configuration for the Frontend and Backend
 	TLS *to.Options `yaml:"tls,omitempty"`
@@ -337,6 +340,10 @@ func (o *Options) Clone() *Options {
 
 	if o.Prometheus != nil {
 		out.Prometheus = o.Prometheus.Clone()
+	}
+
+	if o.MySQL != nil {
+		out.MySQL = o.MySQL.Clone()
 	}
 
 	if o.AuthOptions != nil {
@@ -610,7 +617,6 @@ func (o *Options) Initialize(name string) error {
 	if o.ListenerName == "" {
 		o.ListenerName = listener.DefaultFrontendName
 	}
-
 	if o.MaxQueryRange < 0 {
 		return errors.New("invalid max_query_range: value must be greater than or equal to 0")
 	}
@@ -680,6 +686,12 @@ func (o *Options) Initialize(name string) error {
 // exposing credentials (by masking known credential fields with "*****")
 func (o *Options) CloneYAMLSafe() *Options {
 	co := o.Clone()
+	if parsed, err := url.Parse(co.OriginURL); err == nil && parsed.User != nil {
+		if _, hasPassword := parsed.User.Password(); hasPassword {
+			parsed.User = url.UserPassword(parsed.User.Username(), "*****")
+			co.OriginURL = parsed.String()
+		}
+	}
 	// The runtime default is the backend name, but exporting that implicit
 	// value is noisy and suggests replica_group is relevant to every provider.
 	// Preserve only operator-supplied groupings that differ from the name.

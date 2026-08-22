@@ -53,6 +53,13 @@ jobs:
         run: |
           TAGVER=${{ steps.baretag.outputs.baretag }} make release
         #
+      - name: Verify release third-party license material
+        run: |
+          tar -tzf ./bin/trickster-${{ steps.baretag.outputs.baretag }}.tar.gz \
+            | grep -q '/third-party-licenses/'
+          tar -tzf ./bin/trickster-${{ steps.baretag.outputs.baretag }}.tar.gz \
+            | grep -q '/third-party-licenses/vitess.io/vitess/go/LICENSE'
+        #
       - name: Create Release
         env:
           GH_TOKEN: ${{ github.token }}

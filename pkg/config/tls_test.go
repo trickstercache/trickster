@@ -225,3 +225,29 @@ func TestTLSCertConfigForListenerEdgeCases(t *testing.T) {
 		t.Fatal("ServeTLS=false should return nil tls config")
 	}
 }
+
+func TestTLSCertConfigForMySQLInBandTLS(t *testing.T) {
+	c := NewConfig()
+	c.Listeners["mysql1"] = listener.New("mysql1")
+	c.Listeners["mysql1"].Protocol = listener.ProtocolMySQL
+	tlsOptions, closeTLS, err := tlsConfig("")
+	if closeTLS != nil {
+		defer closeTLS()
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend := c.Backends["default"].Clone()
+	backend.ListenerName = "mysql1"
+	backend.TLS = tlsOptions
+	delete(c.Backends, "default")
+	c.Backends["mysql1"] = backend
+
+	got, err := c.TLSCertConfigForListener("mysql1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || len(got.Certificates) != 1 {
+		t.Fatalf("MySQL in-band TLS config = %#v", got)
+	}
+}

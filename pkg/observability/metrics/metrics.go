@@ -36,6 +36,7 @@ const (
 	albSubsystem      = "alb"
 	healthSubsystem   = "healthcheck"
 	sqlSubsystem      = "sql"
+	mysqlSubsystem    = "mysql"
 )
 
 // Default histogram buckets used by trickster
@@ -359,6 +360,76 @@ var (
 		[]string{"backend_name", "dialect", "reason"},
 	)
 
+	// SQLQueryCache counts native SQL protocol cache outcomes. Unlike the HTTP
+	// proxy metrics, this does not manufacture HTTP method or status labels.
+	SQLQueryCache = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: sqlSubsystem,
+			Name:      "query_cache_total",
+			Help:      "Count of SQL query cache outcomes.",
+		},
+		[]string{"backend_name", "dialect", "cache_mode", "cache_status"},
+	)
+
+	// MySQLConnections tracks bounded connection lifecycle outcomes.
+	MySQLConnections = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: mysqlSubsystem,
+			Name:      "connections_total",
+			Help:      "Count of MySQL connection lifecycle events.",
+		},
+		[]string{"backend_name", "event"},
+	)
+
+	// MySQLActiveConnections is the current authenticated-or-handshaking count.
+	MySQLActiveConnections = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: mysqlSubsystem,
+			Name:      "active_connections",
+			Help:      "Current MySQL downstream connections.",
+		},
+		[]string{"backend_name"},
+	)
+
+	// MySQLConnectionErrors tracks handshake, authentication, protocol, and
+	// upstream failures without including user-controlled text in labels.
+	MySQLConnectionErrors = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: mysqlSubsystem,
+			Name:      "errors_total",
+			Help:      "Count of MySQL protocol and origin failures.",
+		},
+		[]string{"backend_name", "class"},
+	)
+
+	// MySQLRouteSelections tracks bounded native User Router outcomes. Backend
+	// and router names come from configuration; usernames are never labels.
+	MySQLRouteSelections = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: mysqlSubsystem,
+			Name:      "route_selections_total",
+			Help:      "Count of native MySQL route-selection outcomes.",
+		},
+		[]string{"router_name", "backend_name", "outcome"},
+	)
+
+	// MySQLCommandLatency measures a fixed set of protocol operations.
+	MySQLCommandLatency = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: metricNamespace,
+			Subsystem: mysqlSubsystem,
+			Name:      "command_duration_seconds",
+			Help:      "Duration of bounded MySQL protocol operations.",
+			Buckets:   defaultBuckets,
+		},
+		[]string{"backend_name", "operation"},
+	)
+
 	// ALBFanoutFailures counts per-shard failures during ALB fanout. The
 	// reason label distinguishes silent contribution failures (e.g. bad
 	// encoding, parse errors), explicit panics in the per-shard goroutine,
@@ -598,6 +669,12 @@ func init() {
 	prometheus.MustRegister(ProxyQueryRangeRejections)
 	prometheus.MustRegister(SQLQueryAnalysis)
 	prometheus.MustRegister(SQLQueryRewriteFailures)
+	prometheus.MustRegister(SQLQueryCache)
+	prometheus.MustRegister(MySQLConnections)
+	prometheus.MustRegister(MySQLActiveConnections)
+	prometheus.MustRegister(MySQLConnectionErrors)
+	prometheus.MustRegister(MySQLRouteSelections)
+	prometheus.MustRegister(MySQLCommandLatency)
 }
 
 // Handler returns the http handler for the listener

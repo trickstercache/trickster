@@ -72,7 +72,7 @@ func FuzzUserRouterCredentials(f *testing.F) {
 				"":      {},
 			},
 		},
-		userRoutes: UserRoutes{"alice": {Handler: okHandler}},
+		userRoutes: UserRoutes{"alice": testRoute(okHandler)},
 	}
 
 	// any status outside this set means the router either misclassified an

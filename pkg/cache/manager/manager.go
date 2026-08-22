@@ -258,3 +258,12 @@ func (cm *Manager) Connect() error {
 func (cm *Manager) Configuration() *options.Options {
 	return cm.config
 }
+
+// SupportsReferences reports whether the configured client can retain typed
+// in-memory objects without serialization. Callers must check this before the
+// optional MemoryCache methods because Manager exposes those methods for
+// memory providers while still wrapping byte-only providers.
+func (cm *Manager) SupportsReferences() bool {
+	_, ok := cm.Client.(cache.MemoryCache)
+	return ok
+}

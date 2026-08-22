@@ -409,6 +409,7 @@ func (c *Client) validateAndStartUserRouter(clients backends.Backends, hcs healt
 	var canReplaceCreds bool
 	var authenticator at.Authenticator
 	var defaultHandler http.Handler
+	var defaultTarget backends.RouteTarget
 	o := conf.ALBOptions.UserRouter
 	h, ok := c.handler.(*ur.Handler)
 	if !ok {
@@ -435,7 +436,7 @@ func (c *Client) validateAndStartUserRouter(clients backends.Backends, hcs healt
 		if !ok || bh == nil {
 			return alberr.NewErrInvalidBackendName(c.Name(), o.DefaultBackend)
 		}
-		defaultHandler = bh.Router()
+		defaultTarget = backends.RouteTarget{Backend: bh}
 	} else {
 		if noRouteStatusCode < http.StatusBadRequest || noRouteStatusCode >= 600 {
 			noRouteStatusCode = http.StatusBadGateway
@@ -467,7 +468,7 @@ func (c *Client) validateAndStartUserRouter(clients backends.Backends, hcs healt
 			if !ok || bh == nil {
 				return alberr.NewErrInvalidBackendName(c.Name(), m.ToBackend)
 			}
-			route := ur.UserRoute{Handler: bh.Router()}
+			route := ur.UserRoute{Backend: bh}
 			if hc, ok := hcs[m.ToBackend]; ok {
 				route.Status = hc
 			}
@@ -479,10 +480,21 @@ func (c *Client) validateAndStartUserRouter(clients backends.Backends, hcs healt
 	}
 
 	h.SetAuthenticator(authenticator, canReplaceCreds)
+	h.SetRouterName(c.Name())
+	h.SetDefaultTarget(defaultTarget)
 	h.SetDefaultHandler(defaultHandler)
 	h.SetNoRouteStatusCode(noRouteStatusCode)
 	h.SetUserRoutes(routes)
 
+	return nil
+}
+
+// RouteResolver returns the protocol-neutral resolver implemented by a User
+// Router ALB. Other ALB mechanisms do not select routes by authenticated user.
+func (c *Client) RouteResolver() backends.RouteResolver {
+	if h, ok := c.handler.(backends.RouteResolver); ok {
+		return h
+	}
 	return nil
 }
 

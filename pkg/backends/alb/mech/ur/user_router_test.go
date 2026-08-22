@@ -18,15 +18,31 @@ package ur
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends"
 	uropt "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/ur/options"
+	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	at "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/types"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 )
+
+func testRoute(handler http.Handler) UserRoute {
+	opts := bo.New()
+	opts.Name = "test-route"
+	opts.Provider = providers.ReverseProxyShort
+	opts.OriginURL = "http://example.com"
+	backend, err := backends.New(opts.Name, opts, nil, handler, nil)
+	if err != nil {
+		panic(err)
+	}
+	return UserRoute{Backend: backend}
+}
 
 // mockAuth implements at.Authenticator for testing
 type mockAuth struct {
@@ -65,37 +81,6 @@ func (m *mockAuth) Sanitize(r *http.Request) {
 	}
 }
 
-func TestHandleDefaultNilHandler(t *testing.T) {
-	// Before the fix, this would panic with a nil pointer dereference
-	// because handleDefault did not return after calling HandleBadGateway.
-	h := &Handler{}
-	w := httptest.NewRecorder()
-	r, _ := http.NewRequest("GET", "http://example.com/", nil)
-	h.handleDefault(w, r)
-	if w.Code != http.StatusBadGateway {
-		t.Errorf("expected %d got %d", http.StatusBadGateway, w.Code)
-	}
-}
-
-func TestHandleDefaultWithHandler(t *testing.T) {
-	called := false
-	h := &Handler{
-		defaultHandler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			called = true
-			w.WriteHeader(http.StatusOK)
-		}),
-	}
-	w := httptest.NewRecorder()
-	r, _ := http.NewRequest("GET", "http://example.com/", nil)
-	h.handleDefault(w, r)
-	if !called {
-		t.Error("expected DefaultHandler to be called")
-	}
-	if w.Code != http.StatusOK {
-		t.Errorf("expected %d got %d", http.StatusOK, w.Code)
-	}
-}
-
 func TestServeHTTP(t *testing.T) {
 	okHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -127,7 +112,7 @@ func TestServeHTTP(t *testing.T) {
 					"alice": {},
 				},
 			},
-			userRoutes: UserRoutes{"alice": {Handler: userHandler}},
+			userRoutes: UserRoutes{"alice": testRoute(userHandler)},
 		}
 		w := httptest.NewRecorder()
 		r, _ := http.NewRequest("GET", "http://example.com/", nil)
@@ -152,7 +137,7 @@ func TestServeHTTP(t *testing.T) {
 					"alice": {},
 				},
 			},
-			userRoutes: UserRoutes{"alice": {Handler: okHandler}},
+			userRoutes: UserRoutes{"alice": testRoute(okHandler)},
 		}
 		w := httptest.NewRecorder()
 		r, _ := http.NewRequest("GET", "http://example.com/", nil)
@@ -180,7 +165,7 @@ func TestServeHTTP(t *testing.T) {
 					"carol": {},
 				},
 			},
-			userRoutes: UserRoutes{"carol": {Handler: userHandler}},
+			userRoutes: UserRoutes{"carol": testRoute(userHandler)},
 		}
 		w := httptest.NewRecorder()
 		r, _ := http.NewRequest("GET", "http://example.com/", nil)
@@ -204,7 +189,7 @@ func TestServeHTTP(t *testing.T) {
 					},
 				},
 			},
-			userRoutes: UserRoutes{"alice": {Handler: okHandler}},
+			userRoutes: UserRoutes{"alice": testRoute(okHandler)},
 		}
 		w := httptest.NewRecorder()
 		r, _ := http.NewRequest("GET", "http://example.com/", nil)
@@ -243,8 +228,8 @@ func TestServeHTTP(t *testing.T) {
 				},
 			},
 			userRoutes: UserRoutes{
-				"alice": {Handler: aliceHandler},
-				"admin": {Handler: adminHandler},
+				"alice": testRoute(aliceHandler),
+				"admin": testRoute(adminHandler),
 			},
 		}
 		w := httptest.NewRecorder()
@@ -293,6 +278,49 @@ func TestServeHTTP(t *testing.T) {
 		}
 	})
 
+	t.Run("default fallback retains inbound credentials", func(t *testing.T) {
+		const inboundAuthorization = "Basic YWxpY2U6aW5ib3VuZA=="
+		var observedAuthorization string
+		defaultTarget := testRoute(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			observedAuthorization = r.Header.Get("Authorization")
+			w.WriteHeader(http.StatusOK)
+		}))
+		unavailableTarget := testRoute(http.NotFoundHandler())
+		unavailableTarget.Status = fixedRouteStatus(-1)
+		auth := &mockAuth{}
+		h := &Handler{
+			authenticator:      auth,
+			enableReplaceCreds: true,
+			defaultTarget:      defaultTarget,
+			options: &uropt.Options{Users: uropt.UserMappingOptionsByUser{
+				"alice": {
+					ToBackend: "unavailable", ToUser: "origin-user", ToCredential: "origin-password",
+				},
+			}},
+			userRoutes: UserRoutes{"alice": unavailableTarget},
+		}
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+		r.Header.Set("Authorization", inboundAuthorization)
+		r = request.SetResources(r, &request.Resources{
+			AuthResult: &at.AuthResult{Username: "alice", Status: at.AuthSuccess},
+		})
+
+		h.ServeHTTP(w, r)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+		}
+		if observedAuthorization != inboundAuthorization {
+			t.Fatalf("default backend authorization = %q, want inbound credentials",
+				observedAuthorization)
+		}
+		if len(auth.setCalls) != 0 || auth.sanitizeCalls.Load() != 0 {
+			t.Fatalf("fallback rewrote credentials: set calls = %d, sanitize calls = %d",
+				len(auth.setCalls), auth.sanitizeCalls.Load())
+		}
+	})
+
 	// SetCredentials returning an error must not be silently ignored. Dispatch
 	// to the mapped target with stale or partial credentials risks leaking the
 	// inbound user's credentials to the downstream backend.
@@ -315,7 +343,7 @@ func TestServeHTTP(t *testing.T) {
 					},
 				},
 			},
-			userRoutes: UserRoutes{"alice": {Handler: target}},
+			userRoutes: UserRoutes{"alice": testRoute(target)},
 		}
 		w := httptest.NewRecorder()
 		r, _ := http.NewRequest("GET", "http://example.com/", nil)
@@ -371,7 +399,7 @@ func TestServeHTTP(t *testing.T) {
 					},
 				},
 			},
-			userRoutes: UserRoutes{"alice": {Handler: target}},
+			userRoutes: UserRoutes{"alice": testRoute(target)},
 		}
 		w := httptest.NewRecorder()
 		r, _ := http.NewRequest("GET", "http://example.com/", nil)
@@ -390,3 +418,102 @@ func TestServeHTTP(t *testing.T) {
 		}
 	})
 }
+
+func TestResolveRouteProtocolNeutral(t *testing.T) {
+	target := testRoute(http.NotFoundHandler())
+	h := &Handler{
+		enableReplaceCreds: true,
+		options: &uropt.Options{Users: uropt.UserMappingOptionsByUser{
+			"alice": {ToBackend: "mysql-a", ToUser: "origin-a", ToCredential: "secret"},
+		}},
+		userRoutes: UserRoutes{"alice": target},
+	}
+
+	decision, ok := h.ResolveRoute(backends.RouteInput{
+		Username: "alice", Credential: "inbound", Authenticated: true,
+	})
+	if !ok {
+		t.Fatal("ResolveRoute() did not select configured target")
+	}
+	if decision.Target.Backend != target.Backend {
+		t.Fatal("ResolveRoute() selected a different backend")
+	}
+	if decision.Outcome != backends.RouteOutcomeSelected {
+		t.Fatalf("ResolveRoute() outcome = %q", decision.Outcome)
+	}
+	if !decision.ReplaceCredentials || decision.OutboundUsername != "origin-a" ||
+		decision.OutboundCredential != "secret" {
+		t.Fatalf("ResolveRoute() decision = %+v", decision)
+	}
+
+	h.defaultTarget = target
+	decision, ok = h.ResolveRoute(backends.RouteInput{Username: "unknown", Authenticated: true})
+	if !ok || decision.Outcome != backends.RouteOutcomeDefault {
+		t.Fatalf("default ResolveRoute() = %+v, %t", decision, ok)
+	}
+
+	unavailableTarget := target
+	unavailableTarget.Status = fixedRouteStatus(-1)
+	h.userRoutes["alice"] = unavailableTarget
+	decision, ok = h.ResolveRoute(backends.RouteInput{
+		Username: "alice", Credential: "inbound", Authenticated: true,
+	})
+	if ok || decision.Outcome != backends.RouteOutcomeUnavailable || decision.ReplaceCredentials {
+		t.Fatalf("isolated ResolveRoute() = %+v, %t", decision, ok)
+	}
+	decision, ok = h.ResolveRoute(backends.RouteInput{
+		Username: "alice", Credential: "inbound", Authenticated: true,
+		FallbackOnMappedUnavailable: true,
+	})
+	if !ok || decision.Outcome != backends.RouteOutcomeDefault || decision.ReplaceCredentials {
+		t.Fatalf("HTTP fallback ResolveRoute() = %+v, %t", decision, ok)
+	}
+
+	h.defaultTarget.Status = fixedRouteStatus(-1)
+	decision, ok = h.ResolveRoute(backends.RouteInput{Username: "unknown", Authenticated: true})
+	if ok || decision.Outcome != backends.RouteOutcomeUnavailable {
+		t.Fatalf("unavailable ResolveRoute() = %+v, %t", decision, ok)
+	}
+}
+
+func BenchmarkResolveRouteProtocolNeutral(b *testing.B) {
+	target := testRoute(http.NotFoundHandler())
+	for _, userCount := range []int{10, 1000, 10000} {
+		users := make(uropt.UserMappingOptionsByUser, userCount)
+		routes := make(UserRoutes, userCount)
+		for i := range userCount {
+			username := fmt.Sprintf("user-%05d", i)
+			users[username] = &uropt.UserMappingOptions{ToBackend: "mysql-a"}
+			routes[username] = target
+		}
+		h := &Handler{options: &uropt.Options{Users: users}, userRoutes: routes}
+		username := fmt.Sprintf("user-%05d", userCount/2)
+		b.Run(fmt.Sprintf("users_%d/mapped", userCount), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				decision, ok := h.ResolveRoute(backends.RouteInput{
+					Username: username, Authenticated: true,
+				})
+				if !ok || decision.Outcome != backends.RouteOutcomeSelected {
+					b.Fatal("mapped route was not selected")
+				}
+			}
+		})
+		h.defaultTarget = target
+		b.Run(fmt.Sprintf("users_%d/default", userCount), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				decision, ok := h.ResolveRoute(backends.RouteInput{
+					Username: "unknown", Authenticated: true,
+				})
+				if !ok || decision.Outcome != backends.RouteOutcomeDefault {
+					b.Fatal("default route was not selected")
+				}
+			}
+		})
+	}
+}
+
+type fixedRouteStatus int32
+
+func (s fixedRouteStatus) Get() int32 { return int32(s) }

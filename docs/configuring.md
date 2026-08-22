@@ -81,6 +81,10 @@ Finally, Trickster will check for and evaluate the following Command Line Argume
 
 The top-level `listeners` map configures inbound listeners. Trickster always auto-defines three entries using the existing defaults: `default`, `metrics`, and `mgmt`.
 
+Native MySQL listeners have additional protocol, authentication, TLS, and
+session-lifecycle requirements. See the [MySQL Provider Guide](mysql.md) before
+configuring `protocol: mysql`.
+
 ```yaml
 listeners:
   default:

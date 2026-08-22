@@ -231,3 +231,40 @@ datasources:
     username: default
     password: ""
     usePOST: true
+
+# MySQL (Grafana built-in mysql data source)
+- name: mysql-direct
+  type: mysql
+  access: proxy
+  orgId: 1
+  uid: ds_mysql_direct
+  url: mysql:3306
+  user: grafana_ro
+  editable: true
+  isDefault: false
+  jsonData:
+    database: trickster
+    timezone: "UTC"
+    maxOpenConns: 5
+    maxIdleConns: 2
+    connMaxLifetime: 14400
+  secureJsonData:
+    password: trickster-dev-grafana
+
+- name: mysql-trickster
+  type: mysql
+  access: proxy
+  orgId: 1
+  uid: ds_mysql_trickster
+  url: host.docker.internal:8486
+  user: grafana_ro
+  editable: true
+  isDefault: false
+  jsonData:
+    database: trickster
+    timezone: "UTC"
+    maxOpenConns: 5
+    maxIdleConns: 2
+    connMaxLifetime: 14400
+  secureJsonData:
+    password: trickster-dev-grafana

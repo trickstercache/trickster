@@ -53,13 +53,26 @@ const (
 	StateStopping
 )
 
+const (
+	logKeyDetail       = "detail"
+	logKeyAddress      = "address"
+	logKeyListenerName = "listenerName"
+	logKeyPort         = "port"
+)
+
+// server is the common surface of http.Server and tcpProxyServer needed for
+// graceful shutdown of a Listener.
+type server interface {
+	Shutdown(context.Context) error
+}
+
 // Listener is the Trickster net.Listener implmementation
 type Listener struct {
 	net.Listener
 	tlsConfig    *tls.Config
 	tlsSwapper   sw.CertSwapper
 	routeSwapper *switcher.SwitchHandler
-	server       *http.Server
+	server       server
 	exitOnError  atomic.Bool
 	state        int32
 	readyCh      chan struct{}
@@ -208,8 +221,8 @@ func NewListener(listenAddress string, listenPort, connectionsLimit int,
 	logger.Debug("starting proxy listener", logging.Pairs{
 		"connectionsLimit": connectionsLimit,
 		"scheme":           listenerType,
-		"address":          listenAddress,
-		"port":             listenPort,
+		logKeyAddress:      listenAddress,
+		logKeyPort:         listenPort,
 	})
 
 	return listener, nil
@@ -251,7 +264,7 @@ func (lg *Group) StartListener(listenerName, address string, port int, connectio
 	l.Listener, err = NewListener(address, port, connectionsLimit, tlsConfig, drainTimeout)
 	if err != nil {
 		logger.ErrorSynchronous(
-			"http listener startup failed", logging.Pairs{"listenerName": listenerName, "detail": err})
+			"http listener startup failed", logging.Pairs{logKeyListenerName: listenerName, logKeyDetail: err})
 		l.setState(StateStopped)
 		if f != nil {
 			f()
@@ -259,7 +272,7 @@ func (lg *Group) StartListener(listenerName, address string, port int, connectio
 		return err
 	}
 	logger.Info("http listener starting",
-		logging.Pairs{"listenerName": listenerName, "port": port, "address": address})
+		logging.Pairs{logKeyListenerName: listenerName, logKeyPort: port, logKeyAddress: address})
 
 	// the server is assigned before the listener is published to the group, so
 	// a DrainAndClose racing this startup always observes a server to shut down
@@ -288,7 +301,7 @@ func (lg *Group) StartListener(listenerName, address string, port int, connectio
 			event = "https listener stopping"
 		}
 		logger.ErrorSynchronous(event,
-			logging.Pairs{"listenerName": listenerName, "detail": err})
+			logging.Pairs{logKeyListenerName: listenerName, logKeyDetail: err})
 		if l.exitOnError.Load() {
 			defer func() {
 				os.Exit(1) // exit via defer to allow prior defers to run
@@ -309,7 +322,7 @@ func handleTracerShutdowns(tracers tracing.Tracers) {
 		err := v.ShutdownFunc(context.Background())
 		if err != nil {
 			logger.Error("tracer shutdown failed",
-				logging.Pairs{"detail": err.Error()})
+				logging.Pairs{logKeyDetail: err.Error()})
 		}
 	}
 }
@@ -439,7 +452,7 @@ func (lg *Group) UpdateFrontendRouters(mainRouter http.Handler, adminRouter http
 // UpdateRouter will swap out the router for the Group with the provided name
 func (lg *Group) UpdateRouter(routerName string, router http.Handler) {
 	lg.listenersLock.Lock()
-	if r, ok := lg.members[routerName]; ok {
+	if r, ok := lg.members[routerName]; ok && r.routeSwapper != nil {
 		r.routeSwapper.Update(router)
 	}
 	defer lg.listenersLock.Unlock()

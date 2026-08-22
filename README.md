@@ -44,11 +44,13 @@ Trickster dramatically improves dashboard chart rendering times for end users by
 
 Trickster works with virtually any Dashboard application that makes queries to any of these TSDB's:
 
-<img src="./docs/images/external/prom_logo_60.png" width=16 /> Prometheus
+<img src="./docs/images/external/prom_logo_60.png" width=24 /> [Prometheus](docs/prometheus.md)
 
-<img src="./docs/images/external/clickhouse_logo.png" width=16 /> ClickHouse
+<img src="./docs/images/external/clickhouse_logo.png" width=24 /> [ClickHouse](docs/clickhouse.md)
 
-<img src="./docs/images/external/influx_logo_60.png" width=16 /> InfluxDB
+<img src="./docs/images/external/influx_logo_60.png" width=24 /> [InfluxDB](docs/influxdb.md)
+
+<img src="./docs/images/external/mysql_logo_60.png" width=24 /> [MySQL](docs/mysql.md)
 
 See the [Supported TSDB Providers](./docs/supported-backend-providers.md) document for full details
 

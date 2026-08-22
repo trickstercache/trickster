@@ -74,6 +74,30 @@ data:
     #   # 8484 is the default management port
     #     # port: 8484
     #     # address: ''
+    #
+    #   # A listener with protocol mysql accepts MySQL wire-protocol connections
+    #   # and requires exactly one backend with provider mysql mapped to it via
+    #   # the backend's listener_name. TLS ports are not supported on mysql
+    #   # listeners (MySQL negotiates TLS in-band on the same port).
+    #   mysql1:
+    #     protocol: mysql
+    #     port: 8486
+    #     # address: ''
+    #     # connections_limit: 0
+    #     # mysql:
+    #       # The complete authentication exchange must finish within this timeout.
+    #       handshake_timeout: 10s
+    #       # read_timeout bounds an in-progress command read.
+    #       read_timeout: 30s
+    #       write_timeout: 30s
+    #       # idle_timeout independently bounds waiting for the next command.
+    #       idle_timeout: 5m
+    #       # MySQL packet framing is currently fixed at the protocol ceiling.
+    #       max_packet_size_bytes: 16777215
+    #       max_query_size_bytes: 1048576
+    #     # Keep MySQL origin and downstream credentials in a Secret, not in
+    #     # this ConfigMap. See mysql-user-router-secret.yaml and
+    #     # mysql-deployment-patch.yaml for a focused routed deployment.
 
     # caches:
     #   default:
@@ -252,6 +276,47 @@ data:
     # Configuration options for mapping Origin(s)
     backends:
 
+      # # example mysql backend, exposed by a listener with protocol mysql (see the
+      # # listeners section). MySQL client connections to the listener are proxied
+      # # to the origin. Exactly one mysql backend may map to a mysql listener.
+      # mysql1:
+      #   provider: mysql
+      #   # origin_url uses the mysql scheme; the port defaults to 3306 if omitted
+      #   origin_url: 'mysql://readonly:REDACTED@mysql-origin.example.com:3306/database'
+      #   # listener_name must reference a listener whose protocol is mysql
+      #   listener_name: mysql1
+      #   # MySQL listeners require a named authenticator. The authenticator's
+      #   # users are used for downstream MySQL native-password authentication.
+      #   authenticator_name: example_auth_1
+      #   cache_name: default
+      #   # timeout bounds both origin connect and query execution. Origin connection
+      #   # admission remains one connection per downstream session.
+      #   timeout: 1m
+      #   max_concurrent_conns: 20
+      #   max_object_size_bytes: 524288
+      #   mysql:
+      #     max_result_rows: 100000
+      #     max_result_size_bytes: 67108864
+      #   # Native health checks connect with the origin credentials and TLS
+      #   # settings above, then execute COM_PING. HTTP matching options do not apply.
+      #   healthcheck:
+      #     interval: 5s
+      #     timeout: 3s
+      #   # Plaintext is accepted by default. When a full_chain_cert_path and
+      #   # private_key_path are configured below, clients may upgrade in-band to
+      #   # TLS. Set require_tls to reject plaintext downstream clients.
+      #   require_tls: true
+      #   tls:
+      #     # Mount these files from a Kubernetes TLS/opaque Secret.
+      #     full_chain_cert_path: /etc/trickster/mysql-tls/server.crt
+      #     private_key_path: /etc/trickster/mysql-tls/server.key
+      #     certificate_authority_paths:
+      #       - /etc/trickster/mysql-tls/origin-ca.crt
+      #   # Deterministic SELECTs use OPC; supported cadence-aligned time-series
+      #   # SELECTs use DPC. The common cache_name, timeseries_ttl,
+      #   # timeseries_retention_factor, backfill_tolerance, and
+      #   # max_object_size_bytes backend settings apply.
+
       # example backend named default. default is always created with these settings unless a different backend is defined here.
       # access this backend via http[s]://trickster-fqdn/default/ unless path_routing_disabled is true
       default:
@@ -261,7 +326,8 @@ data:
         listener_name: default
 
         # provider identifies the backend provider.
-        # Valid options are: prometheus, influxdb, clickhouse, reverseproxycache (or just rpc)
+        # Valid options are: prometheus, influxdb, clickhouse, mysql, rule, alb,
+        # reverseproxycache (or just rpc), or reverseproxy (or just rp)
         # provider is a required configuration value
         provider: prometheus
 
@@ -438,6 +504,10 @@ data:
     #     # Each backend provider implements their own defaults for health checking
     #     # which can be overridden per backend configuration. See /docs/health.md for more information
     #     healthcheck:
+
+    #       # interval, timeout, failure_threshold, and recovery_threshold apply to
+    #       # HTTP and native-protocol probes. The remaining options in this section
+    #       # apply only to HTTP health checks.
 
     #       ## Crafting a Heatlh Check
 
