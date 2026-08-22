@@ -595,18 +595,59 @@ func TestTerminalSessionRefusesReconnect(t *testing.T) {
 }
 
 func TestParsedQueryStatementTypesUsedByLifecycleRules(t *testing.T) {
-	// The classification switches key off Preview's statement type, so a
-	// Vitess upgrade that reclassifies these would silently change behavior.
+	// Most classifications come from Preview; leading WITH statements require
+	// the parsed AST because Preview reports them as unknown.
 	for query, want := range map[string]sqlparser.StatementType{
-		"SET @report_id = 7":                sqlparser.StmtSet,
-		"CREATE TEMPORARY TABLE t (id int)": sqlparser.StmtDDL,
-		"LOCK TABLES trips READ":            sqlparser.StmtLockTables,
-		"UPDATE trips SET fare = 1":         sqlparser.StmtUpdate,
-		"SELECT GET_LOCK('report', 1)":      sqlparser.StmtSelect,
-		"BEGIN":                             sqlparser.StmtBegin,
+		"SET @report_id = 7":                                  sqlparser.StmtSet,
+		"CREATE TEMPORARY TABLE t (id int)":                   sqlparser.StmtDDL,
+		"LOCK TABLES trips READ":                              sqlparser.StmtLockTables,
+		"UPDATE trips SET fare = 1":                           sqlparser.StmtUpdate,
+		"SELECT GET_LOCK('report', 1)":                        sqlparser.StmtSelect,
+		"WITH source AS (SELECT 1) SELECT * FROM source":      sqlparser.StmtSelect,
+		"WITH source AS (SELECT 1) UPDATE trips SET fare = 1": sqlparser.StmtUpdate,
+		"BEGIN": sqlparser.StmtBegin,
 	} {
 		if got := parseQuery(query).statementType; got != want {
 			t.Fatalf("%q statement type = %v, want %v", query, got, want)
 		}
+	}
+}
+
+// TestResponseDispatchUsesParsedShape covers statements whose leading keyword
+// does not describe their packet shape, plus SELECT ... INTO, whose SELECT
+// keyword suggests rows even though MySQL returns an OK packet.
+func TestResponseDispatchUsesParsedShape(t *testing.T) {
+	origin, _, client := startLifecycleProxy(t, "mysql-response-shape", time.Second)
+	origin.setResponder(func(query string) *sqltypes.Result {
+		if strings.HasPrefix(strings.ToUpper(strings.TrimSpace(query)), "WITH") {
+			return &sqltypes.Result{
+				Fields: []*querypb.Field{{Name: "value", Type: querypb.Type_INT64}},
+				Rows: [][]sqltypes.Value{
+					{sqltypes.NewInt64(1)},
+					{sqltypes.NewInt64(2)},
+				},
+			}
+		}
+		return &sqltypes.Result{RowsAffected: 2, InsertID: 17, InsertIDChanged: true}
+	})
+
+	cte := "WITH source AS (SELECT 1 UNION ALL SELECT 2) SELECT * FROM source"
+	result, err := client.ExecuteFetch(cte, vtmysql.FETCH_ALL_ROWS, true)
+	if err != nil {
+		t.Fatalf("multi-row CTE failed: %v", err)
+	}
+	if len(result.Rows) != 2 || result.Rows[0][0].ToString() != "1" ||
+		result.Rows[1][0].ToString() != "2" {
+		t.Fatalf("multi-row CTE result = %+v, want rows 1 and 2", result.Rows)
+	}
+
+	result, err = client.ExecuteFetch("SELECT 42 INTO @answer", vtmysql.FETCH_ALL_ROWS, true)
+	if err != nil {
+		t.Fatalf("SELECT INTO failed: %v", err)
+	}
+	if len(result.Fields) != 0 || len(result.Rows) != 0 || result.RowsAffected != 2 ||
+		result.InsertID != 17 || !result.InsertIDChanged {
+		t.Fatalf("SELECT INTO result = %+v, want OK metadata with 2 affected rows and insert ID 17",
+			result)
 	}
 }

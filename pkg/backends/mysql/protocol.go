@@ -1172,8 +1172,14 @@ type parsedQuery struct {
 func parseQuery(query string) parsedQuery {
 	parsed := parsedQuery{statementType: vtparser.Preview(query)}
 	switch parsed.statementType {
-	case vtparser.StmtSelect, vtparser.StmtUse, vtparser.StmtSet:
+	case vtparser.StmtSelect, vtparser.StmtUse, vtparser.StmtSet, vtparser.StmtUnknown:
 		parsed.statement, parsed.err = defaultAnalyzer.parser.Parse(query)
+		if parsed.err == nil && parsed.statementType == vtparser.StmtUnknown {
+			// Preview classifies statements by their leading keyword, so WITH
+			// statements need the full AST to distinguish a row-producing CTE
+			// from an UPDATE, DELETE, or other OK-producing statement.
+			parsed.statementType = vtparser.ASTToStatementType(parsed.statement)
+		}
 	}
 	return parsed
 }
@@ -1212,7 +1218,7 @@ func (h *protocolHandler) proxyQuery(session *upstreamSession, query string, par
 	session.mtx.Lock()
 	upstream := session.conn
 	session.mtx.Unlock()
-	if returnsResultSet(parsed.statementType) {
+	if returnsResultSet(parsed) {
 		err := h.runOriginQuery(session, upstream, parsed, func() error {
 			return h.proxyResultSet(session, upstream, query, callback)
 		})
@@ -1268,8 +1274,18 @@ func originProtocolState(upstream *vtmysql.Conn) (uint16, uint16, error) {
 	return result.StatusFlags, uint16(warningCount), nil //nolint:gosec // range checked above
 }
 
-func returnsResultSet(statementType vtparser.StatementType) bool {
-	switch statementType {
+func returnsResultSet(parsed parsedQuery) bool {
+	// SELECT ... INTO produces an OK packet rather than a result set. Vitess's
+	// streaming API recognizes that packet but does not expose its affected-row,
+	// insert-ID, or session metadata, so dispatch from the parsed shape whenever
+	// it is available.
+	switch statement := parsed.statement.(type) {
+	case *vtparser.Select:
+		return statement.Into == nil
+	case *vtparser.Union:
+		return statement.Into == nil
+	}
+	switch parsed.statementType {
 	case vtparser.StmtSelect, vtparser.StmtShow, vtparser.StmtExplain, vtparser.StmtAnalyze:
 		return true
 	default:
