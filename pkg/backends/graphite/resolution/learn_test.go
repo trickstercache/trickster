@@ -147,7 +147,7 @@ func TestLearnDiscoversEveryLadder(t *testing.T) {
 			before = h.obs.total()
 			for _, age := range []time.Duration{time.Minute, 6 * time.Hour, 6*time.Hour + time.Second,
 				7 * 24 * time.Hour, 40 * 24 * time.Hour, 10 * 365 * 24 * time.Hour} {
-				r := h.resolver.Resolve(context.Background(), []string{leaf}, 0, age)
+				r := h.resolver.Resolve(context.Background(), []string{leaf}, 0, age, false)
 				s, _ := want.StepFor(age)
 				if r.Confidence != resolution.Exact || r.Step != s || r.MaxRetention != want.MaxRetention() {
 					t.Errorf("age %v: got %+v want step %v", age, r, s)
@@ -169,7 +169,7 @@ func TestResolveUnknownThenLearned(t *testing.T) {
 	h.addAll()
 	leaf := "dev.fast.cpu.host01.percent"
 	// cold: unknown, learning scheduled, nothing speculative recorded
-	r := h.resolver.Resolve(context.Background(), []string{leaf}, 0, time.Hour)
+	r := h.resolver.Resolve(context.Background(), []string{leaf}, 0, time.Hour, false)
 	if r.Confidence != resolution.Unknown || r.Reason != "unknown_step" || r.Step != 0 {
 		t.Fatalf("cold resolve: %+v", r)
 	}
@@ -177,7 +177,7 @@ func TestResolveUnknownThenLearned(t *testing.T) {
 	if _, conf, ok := h.registry.Leaf(leaf); !ok || conf != resolution.Exact {
 		t.Fatalf("expected the leaf to be learned, got %v %t", conf, ok)
 	}
-	r = h.resolver.Resolve(context.Background(), []string{leaf}, 0, time.Hour)
+	r = h.resolver.Resolve(context.Background(), []string{leaf}, 0, time.Hour, false)
 	if r.Confidence != resolution.Exact || r.Step != 10*time.Second || r.Source != resolution.SourceRegistry {
 		t.Errorf("warm resolve: %+v", r)
 	}
@@ -197,13 +197,13 @@ func TestStaticConfirmAndDrift(t *testing.T) {
 	h.addAll()
 	ctx := context.Background()
 	// a correct static ladder is Configured before confirmation...
-	r := h.resolver.Resolve(ctx, []string{"dev.fast.cpu.host01.percent"}, 0, time.Hour)
+	r := h.resolver.Resolve(ctx, []string{"dev.fast.cpu.host01.percent"}, 0, time.Hour, false)
 	if r.Confidence != resolution.Configured || r.Step != 10*time.Second || r.Source != resolution.SourceStatic {
 		t.Fatalf("configured resolve: %+v", r)
 	}
 	h.learner.Wait()
 	// ...and Exact after, having been confirmed cheaply
-	r = h.resolver.Resolve(ctx, []string{"dev.fast.cpu.host01.percent"}, 0, time.Hour)
+	r = h.resolver.Resolve(ctx, []string{"dev.fast.cpu.host01.percent"}, 0, time.Hour, false)
 	if r.Confidence != resolution.Exact || r.Step != 10*time.Second {
 		t.Errorf("confirmed resolve: %+v", r)
 	}
@@ -215,12 +215,12 @@ func TestStaticConfirmAndDrift(t *testing.T) {
 	h2 := newHarness(t, [][2]string{{`^dev\.drift\.`, "60s:2d,5m:30d,1h:2y"}})
 	h2.addAll()
 	leaf := "dev.drift.temperature.sensor01.celsius"
-	r = h2.resolver.Resolve(ctx, []string{leaf}, 0, time.Hour)
+	r = h2.resolver.Resolve(ctx, []string{leaf}, 0, time.Hour, false)
 	if r.Confidence != resolution.Configured || r.Step != time.Minute {
 		t.Fatalf("drift configured resolve: %+v", r)
 	}
 	h2.learner.Wait()
-	r = h2.resolver.Resolve(ctx, []string{leaf}, 0, time.Hour)
+	r = h2.resolver.Resolve(ctx, []string{leaf}, 0, time.Hour, false)
 	if r.Confidence != resolution.Exact || r.Step != 30*time.Second || r.MaxRetention != 365*24*time.Hour {
 		t.Errorf("the probe must win over static config: %+v", r)
 	}
@@ -240,29 +240,35 @@ func TestWildcardsAndLCM(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	r := h.resolver.Resolve(ctx, []string{"dev.fast.cpu.*.percent"}, 0, time.Hour)
+	r := h.resolver.Resolve(ctx, []string{"dev.fast.cpu.*.percent"}, 0, time.Hour, false)
 	if r.Confidence != resolution.Derived || r.Step != 10*time.Second || len(r.Leaves) != 2 || r.ExpansionID == "" {
 		t.Fatalf("wildcard: %+v", r)
 	}
 	id := r.ExpansionID
 	// mixed steps normalize to the LCM
-	r2 := h.resolver.Resolve(ctx, []string{"dev.fast.cpu.host01.percent", "odd.two"}, 0, 30*time.Minute)
+	r2 := h.resolver.Resolve(ctx, []string{"dev.fast.cpu.host01.percent", "odd.two"}, 0, 30*time.Minute, true)
 	if r2.Confidence != resolution.Derived || r2.Step != 30*time.Second || r2.MaxRetention != 24*time.Hour {
 		t.Errorf("lcm: %+v", r2)
 	}
+	// a bare expression over mixed ladders is not predictable: graphite
+	// returns each series at its native step
+	r2 = h.resolver.Resolve(ctx, []string{"dev.fast.cpu.host01.percent", "odd.two"}, 0, 30*time.Minute, false)
+	if r2.Confidence != resolution.Unknown || r2.Reason != "unknown_step" {
+		t.Errorf("bare mixed: %+v", r2)
+	}
 	// a fixed step (summarize) is Derived from the function
-	r3 := h.resolver.Resolve(ctx, []string{"dev.fast.cpu.host01.percent"}, time.Hour, time.Hour)
+	r3 := h.resolver.Resolve(ctx, []string{"dev.fast.cpu.host01.percent"}, time.Hour, time.Hour, false)
 	if r3.Confidence != resolution.Derived || r3.Step != time.Hour || r3.Source != resolution.SourceFunction {
 		t.Errorf("fixed: %+v", r3)
 	}
 	// a new leaf under the wildcard changes the expansion token once the
 	// cached expansion expires
 	h.stub.Add("dev.fast.cpu.host03.percent", "10s:6h,60s:7d,10m:5y")
-	if r := h.resolver.Resolve(ctx, []string{"dev.fast.cpu.*.percent"}, 0, time.Hour); r.ExpansionID != id {
+	if r := h.resolver.Resolve(ctx, []string{"dev.fast.cpu.*.percent"}, 0, time.Hour, false); r.ExpansionID != id {
 		t.Error("expansion must be cached within its TTL")
 	}
 	h.registry.SetTarget("dev.fast.cpu.*.percent", nil, -time.Second) // expire it
-	r4 := h.resolver.Resolve(ctx, []string{"dev.fast.cpu.*.percent"}, 0, time.Hour)
+	r4 := h.resolver.Resolve(ctx, []string{"dev.fast.cpu.*.percent"}, 0, time.Hour, false)
 	if r4.ExpansionID == id || len(r4.Leaves) != 3 {
 		t.Errorf("expansion token must change with the leaf set: %+v", r4)
 	}
@@ -274,13 +280,13 @@ func TestWildcardsAndLCM(t *testing.T) {
 		t.Error("no speculative leaf entry")
 	}
 	// no match at all
-	r5 := h.resolver.Resolve(ctx, []string{"nothing.here.*"}, 0, time.Hour)
+	r5 := h.resolver.Resolve(ctx, []string{"nothing.here.*"}, 0, time.Hour, false)
 	if r5.Confidence != resolution.Unknown || r5.Reason != "missing_target" {
 		t.Errorf("missing: %+v", r5)
 	}
 	// expansion failure is Unknown, not an error
 	h.stub.Fail.Store(503)
-	r6 := h.resolver.Resolve(ctx, []string{"dev.medium.*.*.count"}, 0, time.Hour)
+	r6 := h.resolver.Resolve(ctx, []string{"dev.medium.*.*.count"}, 0, time.Hour, false)
 	if r6.Confidence != resolution.Unknown || r6.Reason != "unknown_step" {
 		t.Errorf("expansion failure: %+v", r6)
 	}
@@ -312,7 +318,7 @@ func TestLearnFailures(t *testing.T) {
 	}
 	// the resolver honors the negative entry: no new run is scheduled
 	before := h.stub.Renders.Load()
-	r := h.resolver.Resolve(ctx, []string{"no.such.metric"}, 0, time.Hour)
+	r := h.resolver.Resolve(ctx, []string{"no.such.metric"}, 0, time.Hour, false)
 	h.learner.Wait()
 	if r.Confidence != resolution.Unknown || h.stub.Renders.Load() != before {
 		t.Errorf("negative-cached leaf must not be re-probed: %+v renders=%d", r, h.stub.Renders.Load()-before)
@@ -336,11 +342,11 @@ func TestLearnFailures(t *testing.T) {
 	if s, ok := l.StepFor(time.Second); !ok || s != 10*time.Second {
 		t.Errorf("partial ladder must answer observed ages: %v %t", s, ok)
 	}
-	r = h3.resolver.Resolve(ctx, []string{"dev.fast.cpu.host01.percent"}, 0, time.Second)
+	r = h3.resolver.Resolve(ctx, []string{"dev.fast.cpu.host01.percent"}, 0, time.Second, false)
 	if r.Confidence != resolution.Exact || r.Step != 10*time.Second || r.MaxRetention != -1 {
 		t.Errorf("partial resolve: %+v", r)
 	}
-	if r := h3.resolver.Resolve(ctx, []string{"dev.fast.cpu.host01.percent"}, 0, 10*24*time.Hour); r.Confidence != resolution.Unknown {
+	if r := h3.resolver.Resolve(ctx, []string{"dev.fast.cpu.host01.percent"}, 0, 10*24*time.Hour, false); r.Confidence != resolution.Unknown {
 		t.Errorf("partial ladder must not answer unobserved ages: %+v", r)
 	}
 	// context cancellation
@@ -386,15 +392,15 @@ func TestObserveLearnsOnFirstResponse(t *testing.T) {
 	leaf := "dev.medium.orders.us-east.count"
 	// a captured response at age 1h reported a 60s step
 	h.resolver.Observe([]string{leaf}, time.Hour, time.Minute)
-	r := h.resolver.Resolve(ctx, []string{leaf}, 0, time.Hour)
+	r := h.resolver.Resolve(ctx, []string{leaf}, 0, time.Hour, false)
 	if r.Confidence != resolution.Exact || r.Step != time.Minute {
 		t.Errorf("observed age must resolve exactly: %+v", r)
 	}
-	if r := h.resolver.Resolve(ctx, []string{leaf}, 0, 10*24*time.Hour); r.Confidence == resolution.Exact && r.Step == time.Minute {
+	if r := h.resolver.Resolve(ctx, []string{leaf}, 0, 10*24*time.Hour, false); r.Confidence == resolution.Exact && r.Step == time.Minute {
 		t.Errorf("an unobserved age must not be guessed: %+v", r)
 	}
 	h.learner.Wait() // full discovery was scheduled by Observe
-	r = h.resolver.Resolve(ctx, []string{leaf}, 0, 10*24*time.Hour)
+	r = h.resolver.Resolve(ctx, []string{leaf}, 0, 10*24*time.Hour, false)
 	if r.Confidence != resolution.Exact || r.Step != 5*time.Minute {
 		t.Errorf("after discovery: %+v", r)
 	}

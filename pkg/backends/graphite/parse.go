@@ -20,9 +20,11 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/graphite/model"
 	"github.com/trickstercache/trickster/v2/pkg/backends/graphite/parsing"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
@@ -78,6 +80,27 @@ type RenderQuery struct {
 	Location *time.Location
 	// Now is the reference time the extent was computed against
 	Now time.Time
+}
+
+// RenderOptions exposes the marshal-time parameters to the modeler
+func (rq *RenderQuery) RenderOptions() model.RenderOptions {
+	ro := model.RenderOptions{
+		Format:        rq.Params.Format,
+		MaxDataPoints: rq.Params.MaxDataPoints,
+		NoNullPoints:  rq.Params.NoNullPoints,
+		JSONP:         rq.Params.JSONP,
+		Pretty:        rq.Params.Pretty,
+		Location:      rq.Location,
+	}
+	if rq.Params.XFilesFactor != "" {
+		if f, err := strconv.ParseFloat(rq.Params.XFilesFactor, 64); err == nil {
+			ro.XFilesFactor = f
+		}
+	}
+	for _, t := range rq.Targets {
+		ro.PathExpressions = append(ro.PathExpressions, t.Source)
+	}
+	return ro
 }
 
 // ParseTimeRangeQuery parses the key parts of a TimeRangeQuery from the

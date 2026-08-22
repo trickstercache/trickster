@@ -60,14 +60,19 @@ const (
 // leafExprs, queried at the given `now - from` age. fixedStep is non-zero
 // when the target's function chain fixes the output step (summarize), in
 // which case the step is Derived and the leaves are resolved only for
-// their retention.
+// their retention. normalized is true when the target wraps its leaves in
+// a function: graphite-web then normalizes mixed steps to their LCM, while
+// a bare path expression returns every series at its own native step,
+// which one query cannot model, so mixed steps are Unknown there.
 //
 // Strategy: expand wildcards; look every leaf up in the registry (learned
 // ladders answer Exact); fall back to the static layer (Configured,
 // scheduling a confirming probe); schedule learning for anything still
 // unknown and return Unknown. Nothing here blocks on the origin except
 // wildcard expansion, which is cached.
-func (r *Resolver) Resolve(ctx context.Context, leafExprs []string, fixedStep, age time.Duration) Resolution {
+func (r *Resolver) Resolve(ctx context.Context, leafExprs []string, fixedStep, age time.Duration,
+	normalized bool,
+) Resolution {
 	res := Resolution{Confidence: Unknown, Source: SourceNone}
 	var leaves []string
 	var ids []string
@@ -146,9 +151,27 @@ func (r *Resolver) Resolve(ctx context.Context, leafExprs []string, fixedStep, a
 	}
 	res.Step = LCM(steps)
 	res.Confidence, res.Source = conf, source
-	if len(leaves) > 1 && conf == Exact {
-		// an LCM over several leaves is computed, not read from one response
-		res.Confidence = Derived
+	if len(leaves) > 1 {
+		mixed := false
+		for _, s := range steps {
+			if s != res.Step {
+				mixed = true
+				break
+			}
+		}
+		if mixed && !normalized {
+			// bare wildcard across ladders: the origin returns each
+			// series at its own step
+			res.Step, res.Confidence, res.Source = 0, Unknown, SourceNone
+			res.Reason = reasonUnknownStep
+			r.observe(res)
+			return res
+		}
+		if conf == Exact {
+			// an LCM over several leaves is computed, not read from one
+			// response
+			res.Confidence = Derived
+		}
 	}
 	r.observe(res)
 	return res

@@ -24,6 +24,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/graphite/model"
 	"github.com/trickstercache/trickster/v2/pkg/backends/graphite/parsing"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 )
@@ -246,5 +247,29 @@ func TestFallbackErrorUnwrap(t *testing.T) {
 	}
 	if !errors.Is(fe, ErrNotAccelerable) {
 		t.Error("expected sentinel match")
+	}
+}
+
+func TestRenderOptions(t *testing.T) {
+	c := newTestClient(t, nil)
+	r := getReq("target=a.b&target=sumSeries(c.*)&from=-1h&format=csv&maxDataPoints=50&noNullPoints=1&jsonp=cb&pretty=1&xFilesFactor=0.5&tz=America/New_York")
+	_, rlo, _, err := c.ParseTimeRangeQuery(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, ok := rlo.ProviderRequest.(model.RenderOptionsProvider)
+	if !ok {
+		t.Fatal("provider request must expose render options")
+	}
+	ro := p.RenderOptions()
+	if ro.Format != "csv" || ro.MaxDataPoints != 50 || !ro.NoNullPoints || ro.JSONP != "cb" || !ro.Pretty ||
+		ro.XFilesFactor != 0.5 || ro.Location.String() != "America/New_York" ||
+		len(ro.PathExpressions) != 2 || ro.PathExpressions[1] != "sumSeries(c.*)" {
+		t.Errorf("unexpected render options %+v", ro)
+	}
+	// an unparsable xFilesFactor is ignored
+	_, rlo, _, _ = c.ParseTimeRangeQuery(getReq("target=a.b&format=json&xFilesFactor=x"))
+	if rlo.ProviderRequest.(model.RenderOptionsProvider).RenderOptions().XFilesFactor != 0 {
+		t.Error("bad xFilesFactor")
 	}
 }

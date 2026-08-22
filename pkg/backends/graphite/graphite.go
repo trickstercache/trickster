@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
+	"github.com/trickstercache/trickster/v2/pkg/backends/graphite/model"
 	gro "github.com/trickstercache/trickster/v2/pkg/backends/graphite/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/graphite/resolution"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
@@ -77,10 +78,8 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 		}
 	}
 	c := &Client{}
-	// the modeler is nil until the timeseries model lands (Phase 6); nothing
-	// routes to the DPC before then, so it is never dereferenced.
 	b, err := backends.NewTimeseriesBackend(name, o, c.RegisterHandlers, router,
-		cache, nil)
+		cache, model.NewModeler())
 	c.TimeseriesBackend = b
 	if err != nil {
 		return c, err
