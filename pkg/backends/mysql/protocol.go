@@ -1324,10 +1324,10 @@ func classifyResponseShape(query string, parsed parsedQuery) (queryResponseShape
 }
 
 func unsupportedTextFeature(query string) string {
-	trimmed := strings.TrimSpace(vtparser.StripLeadingComments(query))
-	if strings.HasPrefix(trimmed, "/*!") {
+	if hasExecutableComment(query) {
 		return "versioned executable comments"
 	}
+	trimmed := strings.TrimSpace(vtparser.StripLeadingComments(query))
 	if trimmed == "" {
 		return ""
 	}
@@ -1345,6 +1345,26 @@ func unsupportedTextFeature(query string) string {
 		return "LOAD DATA and local-file operations"
 	default:
 		return ""
+	}
+}
+
+func hasExecutableComment(query string) bool {
+	// Keep the common path allocation-free; only text containing the executable
+	// comment opener needs tokenization to distinguish comments from literals.
+	if !strings.Contains(query, "/*!") {
+		return false
+	}
+	tokenizer := defaultAnalyzer.parser.NewStringTokenizer(query)
+	tokenizer.SkipSpecialComments = true
+	for {
+		tokenType, value := tokenizer.Scan()
+		if (tokenType == vtparser.COMMENT || tokenType == vtparser.LEX_ERROR) &&
+			strings.HasPrefix(value, "/*!") {
+			return true
+		}
+		if tokenType == 0 || tokenType == ';' || tokenType == vtparser.LEX_ERROR {
+			return false
+		}
 	}
 }
 

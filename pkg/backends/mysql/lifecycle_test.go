@@ -708,6 +708,8 @@ func TestObscureAdministrativeResponseShapesAreRejected(t *testing.T) {
 		"XA RECOVER",
 		"HANDLER trips READ FIRST LIMIT 2",
 		"CACHE INDEX trips IN hot_cache",
+		"SELECT 1 /*!80400 INTO @answer */",
+		"SELECT /*!80400 @tenant := 1, */ 1",
 	} {
 		if _, err := client.ExecuteFetch(query, vtmysql.FETCH_ALL_ROWS, true); err == nil {
 			t.Fatalf("%s was not rejected", query)
