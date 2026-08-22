@@ -195,10 +195,6 @@ func TestMergeResultsPreservesNullAndEmptyGroupValues(t *testing.T) {
 		merged.Rows[1][1].IsNull() || merged.Rows[1][1].ToString() != "" {
 		t.Fatalf("NULL and empty group values were not preserved: %+v", merged.Rows)
 	}
-	if rowGroupKey([]sqltypes.Value{sqltypes.NewInt64(1)}, []int{0}) ==
-		rowGroupKey([]sqltypes.Value{sqltypes.NewVarChar("1")}, []int{0}) {
-		t.Fatal("group key does not include the SQL value type")
-	}
 }
 
 func TestDeltaRetentionDoesNotTruncateCurrentResponse(t *testing.T) {

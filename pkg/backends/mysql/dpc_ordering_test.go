@@ -72,8 +72,7 @@ func groupOrder(rows [][]sqltypes.Value) []string {
 }
 
 // TestGroupOrderingUsesMySQLComparison pins the ordering of rows that share a
-// timestamp. rowGroupKey cannot express any of these orders: it length-prefixes
-// each value for collision safety and compares the raw bytes.
+// timestamp. Raw serialized identity cannot express these MySQL orders.
 func TestGroupOrderingUsesMySQLComparison(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
@@ -192,26 +191,63 @@ func equalStrings(got, want []string) bool {
 	return true
 }
 
-// TestRowGroupKeyRemainsCollisionSafe guards the identity half of the split:
-// rowGroupKey must keep distinguishing values that the comparator considers
-// equal, so deduplication does not merge distinct groups.
-func TestRowGroupKeyRemainsCollisionSafe(t *testing.T) {
+func TestMergeDeduplicatesUsingMySQLEquality(t *testing.T) {
 	for _, tc := range []struct {
-		name        string
-		left, right sqltypes.Value
+		name      string
+		groupType querypb.Type
+		charset   collations.ID
+		old, new  sqltypes.Value
 	}{
-		{name: "type", left: sqltypes.NewInt64(1), right: sqltypes.NewVarChar("1")},
-		{name: "case", left: sqltypes.NewVarChar("a"), right: sqltypes.NewVarChar("A")},
-		{name: "null versus empty", left: sqltypes.NULL, right: sqltypes.NewVarChar("")},
-		{name: "boundary", left: sqltypes.NewVarChar("a:b"), right: sqltypes.NewVarChar("a")},
+		{
+			name: "case-insensitive text", groupType: querypb.Type_VARCHAR,
+			charset: utf8mb40900AICI,
+			old:     sqltypes.NewVarChar("a"), new: sqltypes.NewVarChar("A"),
+		},
+		{
+			name: "equivalent decimals", groupType: querypb.Type_DECIMAL,
+			charset: collations.CollationBinaryID,
+			old:     sqltypes.NewDecimal("1.0"), new: sqltypes.NewDecimal("1.00"),
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			left := rowGroupKey([]sqltypes.Value{tc.left}, []int{0})
-			right := rowGroupKey([]sqltypes.Value{tc.right}, []int{0})
-			if left == right {
-				t.Fatalf("rowGroupKey collided for %v and %v", tc.left, tc.right)
+			oldPart := dpcOrderingResult(tc.groupType, tc.charset,
+				[]sqltypes.Value{tc.old})
+			newPart := dpcOrderingResult(tc.groupType, tc.charset,
+				[]sqltypes.Value{tc.new})
+			oldPart.Rows[0][2] = sqltypes.NewInt64(1)
+			newPart.Rows[0][2] = sqltypes.NewInt64(2)
+
+			merged, err := dpcTestHandler.mergeResults(
+				[]*sqltypes.Result{oldPart, newPart}, dpcOrderingPlan())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(merged.Rows) != 1 {
+				t.Fatalf("mergeResults returned %d rows, want 1", len(merged.Rows))
+			}
+			if got := merged.Rows[0][1].ToString(); got != tc.new.ToString() {
+				t.Fatalf("representative group = %q, want newest %q", got, tc.new.ToString())
+			}
+			if got := merged.Rows[0][2].ToString(); got != "2" {
+				t.Fatalf("representative value = %q, want newest value 2", got)
 			}
 		})
+	}
+}
+
+func TestMergeKeepsMySQLDistinctGroups(t *testing.T) {
+	oldPart := dpcOrderingResult(querypb.Type_VARBINARY, collations.CollationBinaryID,
+		[]sqltypes.Value{sqltypes.NewVarBinary("a")})
+	newPart := dpcOrderingResult(querypb.Type_VARBINARY, collations.CollationBinaryID,
+		[]sqltypes.Value{sqltypes.NewVarBinary("A")})
+
+	merged, err := dpcTestHandler.mergeResults(
+		[]*sqltypes.Result{oldPart, newPart}, dpcOrderingPlan())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(merged.Rows) != 2 {
+		t.Fatalf("mergeResults returned %d rows, want 2", len(merged.Rows))
 	}
 }
 

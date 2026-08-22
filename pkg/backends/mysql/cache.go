@@ -823,7 +823,6 @@ func (h *protocolHandler) mergeResults(parts []*sqltypes.Result,
 		return nil, err
 	}
 	rows := make([]keyedRow, 0, totalRows(parts))
-	positions := make(map[string]int, cap(rows))
 	for _, part := range parts {
 		if part == nil || !compatibleFields(fields, part.Fields) {
 			return nil, errors.New("incompatible MySQL delta result fields")
@@ -839,13 +838,6 @@ func (h *protocolHandler) mergeResults(parts []*sqltypes.Result,
 			if parseErr != nil {
 				return nil, parseErr
 			}
-			// rowGroupKey identifies a group; it does not order one.
-			key := strconv.FormatInt(epoch, 10) + "\x00" + rowGroupKey(row, groupIndexes)
-			if position, exists := positions[key]; exists {
-				rows[position].row = row
-				continue
-			}
-			positions[key] = len(rows)
 			rows = append(rows, keyedRow{epoch: epoch, row: row})
 		}
 	}
@@ -866,6 +858,27 @@ func (h *protocolHandler) mergeResults(parts []*sqltypes.Result,
 	if compareErr != nil {
 		return nil, compareErr
 	}
+	// MySQL equality is defined by the group columns' types and collations, not
+	// by their serialized bytes. Stable sorting preserves part order among
+	// equal rows, so replacing the prior representative retains the latest row.
+	compacted := rows[:0]
+	for _, candidate := range rows {
+		last := len(compacted) - 1
+		if last < 0 || compacted[last].epoch != candidate.epoch {
+			compacted = append(compacted, candidate)
+			continue
+		}
+		order, err := comparator.compare(compacted[last].row, candidate.row)
+		if err != nil {
+			return nil, err
+		}
+		if order == 0 {
+			compacted[last] = candidate
+			continue
+		}
+		compacted = append(compacted, candidate)
+	}
+	rows = compacted
 	out := cloneResultMetadata(parts[len(parts)-1])
 	out.Fields = fields
 	out.Rows = make([][]sqltypes.Value, len(rows))
@@ -1046,33 +1059,6 @@ func resultEpoch(value sqltypes.Value, unit timeseries.FieldDataType) (int64, er
 		return n, nil
 	}
 	return 0, fmt.Errorf("unsupported MySQL time unit %d", unit)
-}
-
-// rowGroupKey builds a collision-safe identity for a row's group columns. It is
-// used only to deduplicate rows across delta parts. It deliberately cannot
-// order them: the length prefix that makes it collision-safe would sort binary
-// "z" before "aa", and raw bytes ignore a text field's collation. Ordering is
-// groupComparator's job.
-func rowGroupKey(row []sqltypes.Value, indexes []int) string {
-	if len(indexes) == 0 {
-		return ""
-	}
-	var builder strings.Builder
-	for _, index := range indexes {
-		value := row[index]
-		if value.IsNull() {
-			builder.WriteString("n:")
-			continue
-		}
-		builder.WriteString("v:")
-		builder.WriteString(strconv.Itoa(int(value.Type())))
-		builder.WriteByte(':')
-		raw := value.Raw()
-		builder.WriteString(strconv.Itoa(len(raw)))
-		builder.WriteByte(':')
-		builder.Write(raw)
-	}
-	return builder.String()
 }
 
 // groupCompareKind names the one MySQL comparison rule that orders a group
