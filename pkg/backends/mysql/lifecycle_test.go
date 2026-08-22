@@ -481,6 +481,7 @@ func TestSessionStatefulClassification(t *testing.T) {
 		stateful bool
 	}{
 		{query: "SELECT count(*) FROM trips"},
+		{query: "VALUES ROW(1), ROW(2)"},
 		{query: "SHOW TABLES"},
 		{query: "USE analytics"},
 		{query: "SET time_zone = '+00:00'"},
@@ -605,7 +606,8 @@ func TestParsedQueryStatementTypesUsedByLifecycleRules(t *testing.T) {
 		"SELECT GET_LOCK('report', 1)":                        sqlparser.StmtSelect,
 		"WITH source AS (SELECT 1) SELECT * FROM source":      sqlparser.StmtSelect,
 		"WITH source AS (SELECT 1) UPDATE trips SET fare = 1": sqlparser.StmtUpdate,
-		"BEGIN": sqlparser.StmtBegin,
+		"VALUES ROW(1), ROW(2)":                               sqlparser.StmtSelect,
+		"BEGIN":                                               sqlparser.StmtBegin,
 	} {
 		if got := parseQuery(query).statementType; got != want {
 			t.Fatalf("%q statement type = %v, want %v", query, got, want)
@@ -619,7 +621,8 @@ func TestParsedQueryStatementTypesUsedByLifecycleRules(t *testing.T) {
 func TestResponseDispatchUsesParsedShape(t *testing.T) {
 	origin, _, client := startLifecycleProxy(t, "mysql-response-shape", time.Second)
 	origin.setResponder(func(query string) *sqltypes.Result {
-		if strings.HasPrefix(strings.ToUpper(strings.TrimSpace(query)), "WITH") {
+		keyword := strings.ToUpper(strings.TrimSpace(query))
+		if strings.HasPrefix(keyword, "WITH") || strings.HasPrefix(keyword, "VALUES") {
 			return &sqltypes.Result{
 				Fields: []*querypb.Field{{Name: "value", Type: querypb.Type_INT64}},
 				Rows: [][]sqltypes.Value{
@@ -639,6 +642,15 @@ func TestResponseDispatchUsesParsedShape(t *testing.T) {
 	if len(result.Rows) != 2 || result.Rows[0][0].ToString() != "1" ||
 		result.Rows[1][0].ToString() != "2" {
 		t.Fatalf("multi-row CTE result = %+v, want rows 1 and 2", result.Rows)
+	}
+
+	result, err = client.ExecuteFetch("VALUES ROW(1), ROW(2)", vtmysql.FETCH_ALL_ROWS, true)
+	if err != nil {
+		t.Fatalf("multi-row VALUES failed: %v", err)
+	}
+	if len(result.Rows) != 2 || result.Rows[0][0].ToString() != "1" ||
+		result.Rows[1][0].ToString() != "2" {
+		t.Fatalf("multi-row VALUES result = %+v, want rows 1 and 2", result.Rows)
 	}
 
 	result, err = client.ExecuteFetch("SELECT 42 INTO @answer", vtmysql.FETCH_ALL_ROWS, true)

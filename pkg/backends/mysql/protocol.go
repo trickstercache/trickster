@@ -1175,10 +1175,14 @@ func parseQuery(query string) parsedQuery {
 	case vtparser.StmtSelect, vtparser.StmtUse, vtparser.StmtSet, vtparser.StmtUnknown:
 		parsed.statement, parsed.err = defaultAnalyzer.parser.Parse(query)
 		if parsed.err == nil && parsed.statementType == vtparser.StmtUnknown {
-			// Preview classifies statements by their leading keyword, so WITH
-			// statements need the full AST to distinguish a row-producing CTE
-			// from an UPDATE, DELETE, or other OK-producing statement.
+			// Preview classifies statements by their leading keyword, so WITH and
+			// VALUES statements need the full AST to determine their behavior.
 			parsed.statementType = vtparser.ASTToStatementType(parsed.statement)
+			if _, ok := parsed.statement.(*vtparser.ValuesStatement); ok {
+				// Vitess leaves a standalone VALUES statement unknown even though
+				// MySQL treats it as a read that returns a result set.
+				parsed.statementType = vtparser.StmtSelect
+			}
 		}
 	}
 	return parsed
@@ -1284,6 +1288,8 @@ func returnsResultSet(parsed parsedQuery) bool {
 		return statement.Into == nil
 	case *vtparser.Union:
 		return statement.Into == nil
+	case *vtparser.ValuesStatement:
+		return true
 	}
 	switch parsed.statementType {
 	case vtparser.StmtSelect, vtparser.StmtShow, vtparser.StmtExplain, vtparser.StmtAnalyze:
