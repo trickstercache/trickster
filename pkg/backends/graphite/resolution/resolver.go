@@ -231,6 +231,23 @@ func (r *Resolver) Observe(leaves []string, age, step time.Duration) {
 	r.Learner.Schedule(leaf, nil)
 }
 
+// Mispredict records that an origin response for the given leaves carried a
+// step other than the predicted one: the ladder the prediction came from is
+// wrong (it changed, or was learned incorrectly), so every learned entry is
+// invalidated and the leaves are relearned. The caller must not cache the
+// response under the predicted key.
+func (r *Resolver) Mispredict(leaves []string, predicted, observed time.Duration) {
+	if r.Observer != nil {
+		r.Observer.Misprediction()
+	}
+	r.Registry.BumpGeneration()
+	for _, leaf := range leaves {
+		r.Learner.Schedule(leaf, nil)
+	}
+	_ = predicted
+	_ = observed
+}
+
 func (r *Resolver) observe(res Resolution) {
 	if r.Observer == nil {
 		return

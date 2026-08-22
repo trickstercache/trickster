@@ -26,8 +26,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trickstercache/trickster/v2/pkg/backends/graphite/graphitestub"
 	"github.com/trickstercache/trickster/v2/pkg/backends/graphite/resolution"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/graphite/mockserver"
 )
 
 // counter is an Observer that counts events
@@ -56,6 +56,12 @@ func (c *counter) Probe(kind, result string) {
 }
 
 func (c *counter) Ladders(n int) { c.mu.Lock(); c.ladders = n; c.mu.Unlock() }
+func (c *counter) Fallback(reason string) {
+	c.mu.Lock()
+	c.lookups["fallback/"+reason]++
+	c.mu.Unlock()
+}
+func (c *counter) Misprediction() { c.mu.Lock(); c.lookups["misprediction"]++; c.mu.Unlock() }
 func (c *counter) RegistryEntries(layer string, n int) {
 	c.mu.Lock()
 	c.layers[layer] = n
@@ -75,7 +81,7 @@ func (c *counter) total() int {
 }
 
 type harness struct {
-	stub     *graphitestub.Server
+	stub     *mockserver.Server
 	registry *resolution.Registry
 	learner  *resolution.Learner
 	resolver *resolution.Resolver
@@ -86,11 +92,11 @@ type harness struct {
 
 func newHarness(t *testing.T, static [][2]string) *harness {
 	t.Helper()
-	stub := graphitestub.New()
-	t.Cleanup(stub.Close)
+	srv := mockserver.New()
+	t.Cleanup(srv.Close)
 	now := time.Unix(1_787_350_000, 0)
-	stub.Now = func() time.Time { return now }
-	base, _ := url.Parse(stub.URL)
+	srv.Now = func() time.Time { return now }
+	base, _ := url.Parse(srv.URL)
 	origin := &resolution.Origin{Base: base, Client: http.DefaultClient, Timeout: 5 * time.Second}
 	obs := newCounter()
 	reg := resolution.NewRegistry(resolution.RegistryOptions{TTL: time.Hour, NegativeTTL: time.Second,
@@ -106,7 +112,7 @@ func newHarness(t *testing.T, static [][2]string) *harness {
 	t.Cleanup(learner.Close)
 	res := &resolution.Resolver{Registry: reg, Expander: exp, Learner: learner, Static: st,
 		Observer: obs}
-	return &harness{stub: stub, registry: reg, learner: learner, resolver: res, expander: exp, obs: obs, now: now}
+	return &harness{stub: srv, registry: reg, learner: learner, resolver: res, expander: exp, obs: obs, now: now}
 }
 
 var ladders = map[string]string{
@@ -162,6 +168,42 @@ func TestLearnDiscoversEveryLadder(t *testing.T) {
 		// six leaves, two share a ladder: five distinct fingerprints
 		t.Errorf("expected 5 distinct ladders, got %+v", st)
 	}
+}
+
+func TestLearnConfirmsKnownLadders(t *testing.T) {
+	h := newHarness(t, nil)
+	h.addAll()
+	ctx := context.Background()
+	if _, err := h.learner.Learn(ctx, "dev.fast.cpu.host01.percent", nil); err != nil {
+		t.Fatal(err)
+	}
+	full := h.obs.total()
+	// a second leaf on the same ladder is confirmed, not rediscovered
+	before := h.obs.total()
+	l, err := h.learner.Learn(ctx, "dev.fast.cpu.host02.percent", nil)
+	if err != nil || l.String() != "10s:6h,1m:1w,10m:5y" {
+		t.Fatalf("learned %v err %v", l, err)
+	}
+	confirm := h.obs.total() - before
+	if confirm >= full/3 {
+		t.Errorf("confirming a known ladder took %d probes vs %d for discovery", confirm, full)
+	}
+	if st := h.registry.Stats(); st.CompleteLadders != 1 || st.Leaves != 2 {
+		t.Errorf("expected one shared ladder for two leaves, got %+v", st)
+	}
+	// a leaf on a different ladder fails the confirmation and is discovered
+	before = h.obs.total()
+	l, err = h.learner.Learn(ctx, "dev.coarse.users.active", nil)
+	if err != nil || l.String() != "5m:90d" {
+		t.Fatalf("learned %v err %v", l, err)
+	}
+	if st := h.registry.Stats(); st.CompleteLadders != 2 {
+		t.Errorf("expected two ladders, got %+v", st)
+	}
+	if kl := h.registry.KnownLadders(); len(kl) != 2 || kl[0].String() != "10s:6h,1m:1w,10m:5y" {
+		t.Errorf("known ladders must list the most-bound first: %v", kl)
+	}
+	t.Logf("discovery %d probes, confirmation %d, failed confirmation + discovery %d", full, confirm, h.obs.total()-before)
 }
 
 func TestResolveUnknownThenLearned(t *testing.T) {
@@ -411,6 +453,16 @@ func TestObserveLearnsOnFirstResponse(t *testing.T) {
 		t.Error("contradiction must bump the generation")
 	}
 	h.learner.Wait()
+	// a misprediction also bumps the generation and relearns the leaf
+	g = h.registry.Generation()
+	h.resolver.Mispredict([]string{leaf}, time.Minute, 10*time.Second)
+	if h.registry.Generation() != g+1 || h.obs.lookups["misprediction"] != 1 {
+		t.Error("misprediction must bump the generation and be observed")
+	}
+	h.learner.Wait()
+	if _, _, ok := h.registry.Leaf(leaf); !ok {
+		t.Error("misprediction must relearn the leaf")
+	}
 	// consistent observations on a complete ladder are a no-op
 	g = h.registry.Generation()
 	h.resolver.Observe([]string{leaf}, time.Hour, time.Minute)

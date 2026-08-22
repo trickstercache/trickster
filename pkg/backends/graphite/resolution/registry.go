@@ -355,6 +355,39 @@ func (r *Registry) ClearNegative(key string) {
 	r.mu.Unlock()
 }
 
+// KnownLadders returns the complete ladders currently known, the ones
+// bound to the most leaves first. A new leaf is confirmed against these
+// before being discovered from scratch (design note §5.6): a deployment
+// has a handful of ladders, and confirming one costs a fifth of the probes.
+func (r *Registry) KnownLadders() []*Ladder {
+	now := r.now()
+	gen := r.gen.Load()
+	r.mu.RLock()
+	counts := make(map[string]int, len(r.ladders))
+	for _, e := range r.leaves {
+		if e.Gen == gen && e.Expires.After(now) {
+			counts[e.Key]++
+		}
+	}
+	type kl struct {
+		l *Ladder
+		n int
+	}
+	out := make([]kl, 0, len(r.ladders))
+	for key, e := range r.ladders {
+		if e.Ladder.State == StateComplete && e.Gen == gen && e.Expires.After(now) {
+			out = append(out, kl{e.Ladder, counts[key]})
+		}
+	}
+	r.mu.RUnlock()
+	slices.SortStableFunc(out, func(a, b kl) int { return cmp.Compare(b.n, a.n) })
+	ladders := make([]*Ladder, len(out))
+	for i := range out {
+		ladders[i] = out[i].l
+	}
+	return ladders
+}
+
 // Stats is the size of each layer
 type Stats struct {
 	Leaves, Ladders, Targets, Negatives int

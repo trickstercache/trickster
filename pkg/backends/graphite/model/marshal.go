@@ -121,6 +121,9 @@ func flatten(ds *dataset.DataSet) []*series {
 				continue
 			}
 			sr := &series{name: s.Header.Name, tags: s.Header.Tags, step: step, valuesPerPoint: 1}
+			if ss := seriesStep(&s.Header); ss > 0 {
+				sr.step = ss
+			}
 			if len(s.Points) > 0 {
 				sr.start = int64(s.Points[0].Epoch) / int64(time.Second)
 				if len(s.Points) > 1 {

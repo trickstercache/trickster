@@ -158,7 +158,7 @@ func TestRegistryEvictionExpiredLayers(t *testing.T) {
 	r.SetNegative("n")
 	c.advance(2 * time.Hour)
 	// inserting beyond capacity evicts the expired entries of each layer
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		ll, _ := ParseRetentions(time.Duration(20+i*10).String() + "s:6h")
 		_, _ = r.SetLadder("x", ll)
 		r.SetTarget("t"+time.Duration(i).String()+".*", []string{"a"}, time.Hour)

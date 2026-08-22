@@ -48,6 +48,13 @@ func (e *StepMismatchError) Error() string {
 
 func (e *StepMismatchError) Is(target error) bool { return target == ErrStepMismatch }
 
+// StepMismatchNoter is implemented by a TimeRangeQuery.ParsedQuery that
+// wants to be told when a response contradicted the predicted step, so the
+// handler can act on it after the cache engine returns
+type StepMismatchNoter interface {
+	NoteStepMismatch(target string, predicted, observed time.Duration)
+}
+
 // wire JSON shape: [{"target": ..., "tags": {...}, "datapoints": [[v, ts], ...]}]
 type wireSeries struct {
 	Target     string            `json:"target"`
@@ -171,6 +178,26 @@ func unmarshalRaw(body []byte, trq *timeseries.TimeRangeQuery) ([]*dataset.Serie
 	return out, nil
 }
 
+// StepField is the timestamp field definition of a series; its
+// DefaultValue carries the series' native step in seconds, so that a
+// series with fewer than two points still renders with the right step
+func StepField(step time.Duration) timeseries.FieldDefinition {
+	fd := timeseries.FieldDefinition{Name: TimestampFieldName, DataType: timeseries.Int64, Role: timeseries.RoleTimestamp}
+	if step > 0 {
+		fd.DefaultValue = strconv.FormatInt(int64(step/time.Second), 10)
+	}
+	return fd
+}
+
+// seriesStep reads the native step recorded by StepField (0 if none)
+func seriesStep(sh *dataset.SeriesHeader) int64 {
+	if sh.TimestampField.DefaultValue == "" {
+		return 0
+	}
+	n, _ := strconv.ParseInt(sh.TimestampField.DefaultValue, 10, 64)
+	return n
+}
+
 func newPoint(e epoch.Epoch, v *float64) dataset.Point {
 	p := dataset.Point{Epoch: e, Values: []any{nil}, Size: 24}
 	if v != nil {
@@ -185,6 +212,7 @@ func newPoint(e epoch.Epoch, v *float64) dataset.Point {
 func newSeries(name string, tags map[string]string, pts dataset.Points,
 	trq *timeseries.TimeRangeQuery,
 ) (*dataset.Series, error) {
+	step := trq.Step
 	if len(pts) >= 2 {
 		observed := time.Duration(pts[1].Epoch-pts[0].Epoch) * time.Nanosecond
 		if observed <= 0 {
@@ -194,8 +222,12 @@ func newSeries(name string, tags map[string]string, pts dataset.Points,
 		case trq.Step == 0:
 			trq.Step = observed
 		case observed != trq.Step:
+			if n, ok := trq.ParsedQuery.(StepMismatchNoter); ok && n != nil {
+				n.NoteStepMismatch(name, trq.Step, observed)
+			}
 			return nil, &StepMismatchError{Predicted: trq.Step, Observed: observed, Target: name}
 		}
+		step = observed
 	}
 	if tags == nil {
 		tags = map[string]string{"name": name}
@@ -204,7 +236,7 @@ func newSeries(name string, tags map[string]string, pts dataset.Points,
 		Name:            name,
 		Tags:            dataset.Tags(tags),
 		QueryStatement:  trq.Statement,
-		TimestampField:  timeseries.FieldDefinition{Name: TimestampFieldName, DataType: timeseries.Int64, Role: timeseries.RoleTimestamp},
+		TimestampField:  StepField(step),
 		ValueFieldsList: timeseries.FieldDefinitions{{Name: ValueFieldName, DataType: timeseries.Float64, Role: timeseries.RoleValue, OutputPosition: 1}},
 	}
 	sh.CalculateSize()

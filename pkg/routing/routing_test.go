@@ -267,16 +267,19 @@ func TestRegisterProxyRoutesGraphite(t *testing.T) {
 		t.Error(err)
 	}
 
-	// the proxy-only provider registers exactly one path: "/" -> proxy
-	if len(o.Paths) != 1 {
-		t.Fatalf("expected %d path, got %d", 1, len(o.Paths))
+	// /render goes to the render handler; the catch-all "/" proxies
+	if len(o.Paths) < 2 {
+		t.Fatalf("expected the full graphite path list, got %d", len(o.Paths))
 	}
-	if o.Paths[0].Path != "/" || o.Paths[0].HandlerName != providers.Proxy {
-		t.Errorf("expected path / to use the %s handler, got %s -> %s", providers.Proxy,
-			o.Paths[0].Path, o.Paths[0].HandlerName)
+	if o.Paths[0].Path != "/render" || o.Paths[0].HandlerName != "render" {
+		t.Errorf("expected /render -> render first, got %s -> %s", o.Paths[0].Path, o.Paths[0].HandlerName)
+	}
+	if last := o.Paths[len(o.Paths)-1]; last.Path != "/" || last.HandlerName != providers.Proxy {
+		t.Errorf("expected path / to use the %s handler, got %s -> %s", providers.Proxy, last.Path, last.HandlerName)
 	}
 
-	// every graphite endpoint proxies to the origin, including /render
+	// every graphite endpoint reaches the origin, including an unaccelerable
+	// /render (the static origin body is not a learnable response)
 	for _, path := range []string{
 		"/default/render?target=dev.fast.cpu.host01.percent&from=-1h&format=json",
 		"/default/metrics/find?query=dev.*",

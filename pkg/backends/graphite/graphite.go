@@ -48,6 +48,7 @@ type Client struct {
 	resolver *resolution.Resolver
 	learner  *resolution.Learner
 	registry *resolution.Registry
+	observer resolution.Observer
 }
 
 // Resolver returns the step resolver for this backend
@@ -138,6 +139,7 @@ func (c *Client) initResolution(name string, o *bo.Options, cache cache.Cache) e
 	}
 	origin := &resolution.Origin{Base: c.BaseUpstreamURL(), Client: c.HTTPClient(), Timeout: timeout}
 	obs := resolution.NopObserver{}
+	c.observer = obs
 	expander := &resolution.Expander{
 		Origin: origin, Registry: c.registry, Observer: obs,
 		TTL: time.Duration(g.FindCacheTTL),

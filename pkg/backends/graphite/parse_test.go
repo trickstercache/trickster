@@ -25,19 +25,42 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/graphite/model"
+	gro "github.com/trickstercache/trickster/v2/pkg/backends/graphite/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/graphite/parsing"
+	"github.com/trickstercache/trickster/v2/pkg/backends/graphite/resolution"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/graphite/mockserver"
 )
 
+// newTestClient builds a client whose resolver answers every leaf from a
+// static ladder (Configured) and expands wildcards against a stub origin,
+// so parsing can be tested deterministically
 func newTestClient(t *testing.T, o *bo.Options) *Client {
 	t.Helper()
 	if o == nil {
 		o = bo.New()
 	}
+	if o.Graphite == nil {
+		o.Graphite = gro.New()
+	}
+	if o.Graphite.StaticRetentions == nil {
+		o.Graphite.StaticRetentions = []gro.StaticRetention{{Pattern: `.`, Retentions: "10s:6h,60s:7d,10m:5y"}}
+	}
+	origin := mockserver.New()
+	t.Cleanup(origin.Close)
+	for _, m := range []string{"a.b", "c.d", "dev.fast.requests.api.count", "dev.fast.requests.web.count", "c.e"} {
+		origin.Add(m, "10s:6h,60s:7d,10m:5y")
+	}
+	u, _ := url.Parse(origin.URL)
+	o.Scheme, o.Host = u.Scheme, u.Host
 	c, err := NewClient("test", o, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
+	// keep the confirming probes from running: a negative cap refuses
+	// every Schedule
+	c.(*Client).learner.Concurrency = -1
+	t.Cleanup(c.(*Client).Close)
 	return c.(*Client)
 }
 
@@ -66,13 +89,22 @@ func TestParseTimeRangeQuery(t *testing.T) {
 	if trq.Statement != "aliasByNode(dev.fast.requests.*.count, 3)" {
 		t.Errorf("unexpected statement %q", trq.Statement)
 	}
-	if trq.Step != 0 {
-		t.Errorf("step must not be set by the parser, got %v", trq.Step)
+	if trq.Step != 10*time.Second {
+		t.Errorf("expected the resolved 10s step, got %v", trq.Step)
 	}
-	if d := trq.Extent.End.Sub(trq.Extent.Start); d != 6*time.Hour {
+	if trq.CacheKeyElements["target"] != trq.Statement || trq.CacheKeyElements["step"] != "10s" ||
+		trq.CacheKeyElements["gen"] != "0" || trq.CacheKeyElements["leaves"] == "" {
+		t.Errorf("unexpected cache key elements %v", trq.CacheKeyElements)
+	}
+	if trq.BackfillTolerance != DefaultBackfillTolerance {
+		t.Errorf("expected the default backfill tolerance, got %v", trq.BackfillTolerance)
+	}
+	// the extent is the buckets whisper returns: (from, until] step-aligned
+	if d := trq.Extent.End.Sub(trq.Extent.Start); d != 6*time.Hour-10*time.Second {
 		t.Errorf("unexpected extent width %v", d)
 	}
-	if trq.Extent.End.Before(before.Truncate(time.Second)) || trq.Extent.End.After(time.Now()) {
+	if trq.Extent.End.After(time.Now()) || trq.Extent.End.Before(before.Add(-10*time.Second).Truncate(10*time.Second)) ||
+		trq.Extent.Start.Unix()%10 != 0 {
 		t.Errorf("unexpected extent end %v", trq.Extent.End)
 	}
 	if !rlo.FastForwardDisable {
@@ -83,8 +115,12 @@ func TestParseTimeRangeQuery(t *testing.T) {
 		t.Fatalf("expected RenderQuery on both trq and rlo, got %T / %T", trq.ParsedQuery, rlo.ProviderRequest)
 	}
 	if len(rq.Targets) != 1 || rq.Targets[0].Source != "aliasByNode(dev.fast.requests.*.count, 3)" ||
-		rq.Targets[0].Class.Step != parsing.StepInherit || len(rq.Targets[0].Class.Leaves) != 1 {
+		rq.Targets[0].Class.Step != parsing.StepInherit || len(rq.Targets[0].Class.Leaves) != 1 ||
+		rq.Targets[0].Resolution.Confidence != resolution.Configured {
 		t.Errorf("unexpected targets %+v", rq.Targets)
+	}
+	if rq.Age != 6*time.Hour || rq.EffectiveAge != 6*time.Hour || rq.Fallback != "" {
+		t.Errorf("unexpected age %v/%v fallback %q", rq.Age, rq.EffectiveAge, rq.Fallback)
 	}
 	if rq.Params.MaxDataPoints != 743 || rq.Params.Format != "json" {
 		t.Errorf("unexpected params %+v", rq.Params)
@@ -113,8 +149,10 @@ func TestParseTimeRangeQueryPOST(t *testing.T) {
 	if trq.Statement != want {
 		t.Errorf("unexpected statement %q", trq.Statement)
 	}
-	if trq.Extent.Start.Unix() != 1787322096 || trq.Extent.End.Unix() != 1787343696 {
-		t.Errorf("unexpected extent %v", trq.Extent)
+	// absolute epochs far in the past resolve to the coarse rung and align
+	first, afterLast := resolution.AlignInterval(time.Unix(1787322096, 0), time.Unix(1787343696, 0), trq.Step)
+	if !trq.Extent.Start.Equal(first) || !trq.Extent.End.Equal(afterLast.Add(-trq.Step)) || trq.Step < time.Minute {
+		t.Errorf("unexpected extent %v (step %v)", trq.Extent, trq.Step)
 	}
 	if len(trq.ParsedQuery.(*RenderQuery).Targets) != 2 {
 		t.Error("expected 2 targets")
@@ -130,9 +168,23 @@ func TestParseTimeRangeQueryFixedStep(t *testing.T) {
 	if trq.Step != time.Hour {
 		t.Errorf("expected a 1h fixed step, got %v", trq.Step)
 	}
-	// absent from/until default to -1d..now
-	if d := trq.Extent.End.Sub(trq.Extent.Start); d != 24*time.Hour {
+	if rq := trq.ParsedQuery.(*RenderQuery); rq.Targets[0].Resolution.Source != resolution.SourceFunction {
+		t.Errorf("expected the step to come from the function, got %+v", rq.Targets[0].Resolution)
+	}
+	// absent from/until default to -1d..now, then align to the fixed 1h step
+	if d := trq.Extent.End.Sub(trq.Extent.Start); d != 23*time.Hour {
 		t.Errorf("unexpected default extent width %v", d)
+	}
+	// a from beyond maxRetention is clamped to the oldest point
+	trq, _, _, err = c.ParseTimeRangeQuery(getReq("target=a.b&from=-10y&until=now&format=json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rq := trq.ParsedQuery.(*RenderQuery)
+	oldest := rq.Now.Add(-5 * 365 * 24 * time.Hour)
+	if rq.Age <= 5*365*24*time.Hour || rq.EffectiveAge != 5*365*24*time.Hour ||
+		trq.Extent.Start.Before(oldest) || trq.Extent.Start.Sub(oldest) > trq.Step {
+		t.Errorf("expected a clamp to maxRetention, got age %v effective %v start %v", rq.Age, rq.EffectiveAge, trq.Extent.Start)
 	}
 }
 
@@ -160,7 +212,8 @@ func TestParseTimeRangeQueryFallbacks(t *testing.T) {
 		{"second target not allowlisted", c, getReq("target=a.b&target=highestMax(a.*,1)&format=json"), parsing.ReasonFunctionNotAllowlisted, "highestMax"},
 		{"template", c, getReq("target=template(a.$1,'x')&format=json"), parsing.ReasonFunctionNotAllowlisted, "template"},
 		{"generator", c, getReq("target=constantLine(1)&format=json"), parsing.ReasonFunctionNotAllowlisted, "constantLine"},
-		{"mixed fixed steps", c, getReq("target=summarize(a.b,'1h')&target=summarize(c.d,'1d')&format=json"), parsing.ReasonMultiTargetMismatch, "summarize"},
+		{"mixed fixed steps", c, getReq("target=summarize(a.b,'1h')&target=summarize(c.d,'1d')&format=json"), parsing.ReasonMultiTargetMismatch, "summarize(c.d,'1d')"},
+		{"beyond retention", c, getReq("target=a.b&from=-10y&until=-9y&format=json"), parsing.ReasonUnknownStep, "beyond maxRetention"},
 		{"passthrough maxDataPoints", ptc, getReq("target=a.b&format=json&maxDataPoints=100"), parsing.ReasonPassthroughMaxPoints, "maxDataPoints"},
 	}
 	for _, tc := range tests {
@@ -178,6 +231,13 @@ func TestParseTimeRangeQueryFallbacks(t *testing.T) {
 			}
 			if fe.Reason != tc.reason || fe.Detail != tc.detail {
 				t.Errorf("got reason=%s detail=%s want %s/%s", fe.Reason, fe.Detail, tc.reason, tc.detail)
+			}
+			if rq, ok := trq.ParsedQuery.(*RenderQuery); !ok || rq.Fallback != tc.reason {
+				t.Errorf("the render query must record the fallback reason: %+v", trq.ParsedQuery)
+			}
+			// an object-cached fallback is keyed on every parameter
+			if _, ok := trq.CacheKeyElements["from"]; !ok && tc.r.URL.Query().Get("from") != "" {
+				t.Errorf("fallback key must include the window: %v", trq.CacheKeyElements)
 			}
 			if !strings.Contains(fe.Error(), fe.Reason) {
 				t.Errorf("error text should name the reason: %s", fe.Error())
@@ -205,8 +265,9 @@ func TestParseTimeRangeQueryTimeZone(t *testing.T) {
 		t.Fatal(err)
 	}
 	y, m, d := time.Now().In(ny).Date()
-	if !trq.Extent.Start.Equal(time.Date(y, m, d, 0, 0, 0, 0, ny)) {
-		t.Errorf("expected New York midnight, got %v", trq.Extent.Start)
+	midnight := time.Date(y, m, d, 0, 0, 0, 0, ny)
+	if trq.Extent.Start.Before(midnight) || trq.Extent.Start.Sub(midnight) > trq.Step {
+		t.Errorf("expected the first bucket after New York midnight, got %v (step %v)", trq.Extent.Start, trq.Step)
 	}
 	// a valid tz parameter overrides it
 	trq, _, _, err = c.ParseTimeRangeQuery(getReq("target=a.b&from=midnight&until=now&format=json&tz=UTC"))
@@ -234,7 +295,7 @@ func TestParseTimeRangeQueryTimeZone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if trq.Extent.End.Unix() != 1787343600 || trq.Extent.Start.Unix() != 1787340000 {
+	if trq.Extent.End.Unix() != 1787343600 || trq.Extent.Start.Unix() != 1787340000+int64(trq.Step/time.Second) {
 		t.Errorf("unexpected extent %v", trq.Extent)
 	}
 }

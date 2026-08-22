@@ -26,10 +26,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tinylib/msgp/msgp"
-
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
+
+	"github.com/tinylib/msgp/msgp"
 )
 
 // captured from graphite-web 1.1.10 in the developer environment with
@@ -219,7 +219,7 @@ func TestMarshalFormats(t *testing.T) {
 		t.Errorf("msgpack name: %s %s", key, name)
 	}
 	got := map[string]any{}
-	for i := 0; i < 8; i++ {
+	for range 8 {
 		key, b, _ = msgp.ReadStringBytes(b)
 		var v any
 		v, b, err = msgp.ReadIntfBytes(b)
@@ -294,7 +294,7 @@ func TestConsolidation(t *testing.T) {
 		t.Errorf("xFilesFactor: %s", got)
 	}
 	// every consolidation function
-	vals := []*float64{f(1), f(4), nil, f(2)}
+	vals := []*float64{new(float64(1)), new(float64(4)), nil, new(float64(2))}
 	for cf, want := range map[string]float64{"sum": 7, "average": 7.0 / 3, "avg": 7.0 / 3, "max": 4, "min": 1,
 		"first": 1, "last": 2, "avg_zero": 7.0 / 4} {
 		out := consolidate(vals, 4, cf, 0)
@@ -320,8 +320,6 @@ func TestConsolidation(t *testing.T) {
 		t.Errorf("empty raw: %q", got)
 	}
 }
-
-func f(v float64) *float64 { return &v }
 
 func TestPyFloat(t *testing.T) {
 	for in, want := range map[float64]string{
@@ -366,7 +364,7 @@ func TestPyJSONString(t *testing.T) {
 	// infinities in JSON
 	ds := &dataset.DataSet{TimeRangeQuery: trq(10 * time.Second), Results: []*dataset.Result{{SeriesList: []*dataset.Series{{
 		Header: dataset.SeriesHeader{Name: "i", Tags: dataset.Tags{"name": "i"}},
-		Points: dataset.Points{newPoint(100e9, f(math.Inf(1))), newPoint(110e9, f(math.Inf(-1))), newPoint(120e9, f(math.NaN()))},
+		Points: dataset.Points{newPoint(100e9, new(math.Inf(1))), newPoint(110e9, new(math.Inf(-1))), newPoint(120e9, new(math.NaN()))},
 	}}}}}
 	if got := render(t, ds, RenderOptions{}); got != `[{"target": "i", "tags": {"name": "i"}, "datapoints": [[1e9999, 100], [-Infinity, 110], [null, 120]]}]` {
 		t.Errorf("infinities: %s", got)

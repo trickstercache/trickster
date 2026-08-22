@@ -14,18 +14,16 @@
  * limitations under the License.
  */
 
-// Package graphitestub is an in-process stand-in for graphite-web backed by
+// Package mockserver is an in-process mock of graphite-web backed by
 // Whisper, for tests that exercise resolution prediction without Docker.
 // It honors the fetch semantics the design note depends on (archive
 // selection by now-from, interval alignment, range clamping, the empty
 // response beyond maxRetention, the `now` parameter) as measured against
 // graphite-web 1.1.10 in §9 of the design note.
-package graphitestub
+package mockserver
 
 import (
 	"encoding/json"
-	"fmt"
-	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -37,8 +35,12 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/graphite/model"
 	"github.com/trickstercache/trickster/v2/pkg/backends/graphite/parsing"
 	"github.com/trickstercache/trickster/v2/pkg/backends/graphite/resolution"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 )
 
 // Metric is one Whisper file
@@ -49,7 +51,7 @@ type Metric struct {
 	Created time.Time
 }
 
-// Server is the stub origin
+// Server is the mock origin
 type Server struct {
 	*httptest.Server
 	mu      sync.RWMutex
@@ -69,7 +71,7 @@ type Server struct {
 	log []string
 }
 
-// New starts a stub with no metrics
+// New starts a mock origin with no metrics
 func New() *Server {
 	s := &Server{metrics: make(map[string]*Metric), Now: time.Now}
 	mux := http.NewServeMux()
@@ -185,7 +187,7 @@ type series struct {
 func (s *Server) render(w http.ResponseWriter, r *http.Request) {
 	s.Renders.Add(1)
 	if f := s.Fail.Load(); f != 0 {
-		http.Error(w, "stub failure", int(f))
+		http.Error(w, "mock origin failure", int(f))
 		return
 	}
 	s.mu.Lock()
@@ -202,62 +204,60 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid parameters ("+err.Error()+")", http.StatusBadRequest)
 		return
 	}
-	maxPoints := 0
-	if m := v.Get("maxDataPoints"); m != "" {
-		maxPoints, _ = strconv.Atoi(m)
+	ro := model.RenderOptions{
+		Format: v.Get("format"), Pretty: v.Get("pretty") != "", JSONP: v.Get("jsonp"),
+		Location: time.UTC,
 	}
-	var out []series
+	if ro.Format == "" {
+		ro.Format = model.FormatJSON
+	}
+	if m := v.Get("maxDataPoints"); m != "" {
+		ro.MaxDataPoints, _ = strconv.Atoi(m)
+	}
+	_, ro.NoNullPoints = v["noNullPoints"]
+	if x := v.Get("xFilesFactor"); x != "" {
+		ro.XFilesFactor, _ = strconv.ParseFloat(x, 64)
+	}
+	if tz := v.Get("tz"); tz != "" {
+		if loc, err := time.LoadLocation(tz); err == nil {
+			ro.Location = loc
+		}
+	}
+	ds := &dataset.DataSet{TimeRangeQuery: &timeseries.TimeRangeQuery{}, Results: []*dataset.Result{{}}}
 	for _, target := range v["target"] {
 		for _, m := range s.matches(target) {
 			if sr, ok := fetch(m, ext.Start, ext.End, now); ok {
-				if maxPoints > 0 && len(sr.values) > maxPoints {
-					sr = consolidate(sr, int(math.Ceil(float64(len(sr.values))/float64(maxPoints))))
-					if skew := s.StartSkew.Load(); skew != 0 {
-						sr.start = sr.start.Add(time.Duration(skew))
-					}
+				if skew := s.StartSkew.Load(); skew != 0 && ro.MaxDataPoints > 0 {
+					// simulate an origin whose consolidation aligns differently
+					sr.start = sr.start.Add(time.Duration(skew))
 				}
-				out = append(out, sr)
+				ds.Results[0].SeriesList = append(ds.Results[0].SeriesList, sr.toSeries())
+				ro.PathExpressions = append(ro.PathExpressions, target)
 			}
 		}
 	}
-	switch v.Get("format") {
-	case "raw":
-		w.Header().Set("Content-Type", "text/plain")
-		for _, sr := range out {
-			fmt.Fprintf(w, "%s,%d,%d,%d|", sr.target, sr.start.Unix(), sr.end.Unix(), int64(sr.step/time.Second))
-			for i, val := range sr.values {
-				if i > 0 {
-					w.Write([]byte{','})
-				}
-				if val == nil {
-					w.Write([]byte("None"))
-				} else {
-					fmt.Fprintf(w, "%g", *val)
-				}
-			}
-			w.Write([]byte{'\n'})
-		}
-	default:
-		w.Header().Set("Content-Type", "application/json")
-		type js struct {
-			Target     string   `json:"target"`
-			Datapoints [][2]any `json:"datapoints"`
-		}
-		res := make([]js, 0, len(out))
-		for _, sr := range out {
-			j := js{Target: sr.target, Datapoints: make([][2]any, len(sr.values))}
-			for i, val := range sr.values {
-				ts := sr.start.Unix() + int64(i)*int64(sr.step/time.Second)
-				if val == nil {
-					j.Datapoints[i] = [2]any{nil, ts}
-				} else {
-					j.Datapoints[i] = [2]any{*val, ts}
-				}
-			}
-			res = append(res, j)
-		}
-		_ = json.NewEncoder(w).Encode(res)
+	if err := model.MarshalTimeseriesWriter(ds, &timeseries.RequestOptions{ProviderRequest: ro}, http.StatusOK, w); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 	}
+}
+
+// toSeries converts a fetched series to the DataSet form the model renders
+func (sr series) toSeries() *dataset.Series {
+	pts := make(dataset.Points, len(sr.values))
+	for i, val := range sr.values {
+		p := dataset.Point{
+			Epoch:  epoch.FromSecs(sr.start.Unix() + int64(i)*int64(sr.step/time.Second)),
+			Values: []any{nil}, Size: 24,
+		}
+		if val != nil {
+			p.Values[0] = *val
+		}
+		pts[i] = p
+	}
+	return &dataset.Series{Header: dataset.SeriesHeader{
+		Name: sr.target, Tags: dataset.Tags{"name": sr.target},
+		TimestampField: model.StepField(sr.step),
+	}, Points: pts, PointSize: int64(len(pts)) * 24}
 }
 
 // fetch reproduces whisper.file_fetch + __archive_fetch
@@ -285,38 +285,17 @@ func fetch(m *Metric, from, until, now time.Time) (series, bool) {
 	return sr, true
 }
 
-// Value is the deterministic point value the stub serves for a metric at a
+// Value is the deterministic point value the mock serves for a metric at a
 // timestamp, so tests can assert on content
 func Value(metric string, ts time.Time) float64 {
 	return float64(ts.Unix()%86400) + float64(len(metric))
-}
-
-func consolidate(sr series, factor int) series {
-	out := series{target: sr.target, start: sr.start, step: sr.step * time.Duration(factor)}
-	for i := 0; i < len(sr.values); i += factor {
-		sum, cnt := 0.0, 0
-		for j := i; j < len(sr.values) && j < i+factor; j++ {
-			if sr.values[j] != nil {
-				sum += *sr.values[j]
-				cnt++
-			}
-		}
-		if cnt == 0 {
-			out.values = append(out.values, nil)
-		} else {
-			avg := sum / float64(cnt)
-			out.values = append(out.values, &avg)
-		}
-	}
-	out.end = out.start.Add(time.Duration(len(out.values)) * out.step)
-	return out
 }
 
 // find implements /metrics/find (treejson)
 func (s *Server) find(w http.ResponseWriter, r *http.Request) {
 	s.Finds.Add(1)
 	if f := s.Fail.Load(); f != 0 {
-		http.Error(w, "stub failure", int(f))
+		http.Error(w, "mock origin failure", int(f))
 		return
 	}
 	s.mu.Lock()

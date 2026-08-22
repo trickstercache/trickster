@@ -217,7 +217,7 @@ func TestRegistryTargetsAndNegative(t *testing.T) {
 	if d := r.SetNegative("x"); d != 20*time.Second {
 		t.Errorf("second backoff %v", d)
 	}
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		r.SetNegative("x")
 	}
 	if d := r.SetNegative("x"); d != time.Minute {
@@ -247,7 +247,7 @@ func TestRegistryTargetsAndNegative(t *testing.T) {
 func TestRegistryEviction(t *testing.T) {
 	r, c := newTestRegistry(nil)
 	l, _ := ParseRetentions("10s:6h")
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		_ = r.SetLeaf(fmt.Sprintf("leaf%d", i), l.Fingerprint(), Exact)
 		c.advance(time.Second)
 	}
@@ -261,7 +261,7 @@ func TestRegistryEviction(t *testing.T) {
 	if _, _, ok := r.Leaf("leaf0"); ok {
 		t.Error("least recent leaf retained")
 	}
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		ll, _ := ParseRetentions(fmt.Sprintf("%ds:6h", 10+i*10))
 		_, _ = r.SetLadder("x", ll)
 		r.SetTarget(fmt.Sprintf("t%d.*", i), []string{"a"}, time.Hour)
@@ -276,7 +276,7 @@ func TestRegistryEviction(t *testing.T) {
 	r2, c2 := newTestRegistry(nil)
 	_ = r2.SetLeaf("old", "fp", Exact)
 	c2.advance(2 * time.Hour)
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		_ = r2.SetLeaf(fmt.Sprintf("new%d", i), "fp", Exact)
 	}
 	if _, _, ok := r2.Leaf("old"); ok {
@@ -287,7 +287,7 @@ func TestRegistryEviction(t *testing.T) {
 	}
 	// unbounded registry never evicts
 	r3 := NewRegistry(RegistryOptions{TTL: time.Hour, NegativeTTL: time.Second}, nil)
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		_ = r3.SetLeaf(fmt.Sprintf("l%d", i), "fp", Exact)
 	}
 	if r3.Stats().Leaves != 50 {

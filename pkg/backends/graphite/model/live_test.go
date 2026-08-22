@@ -19,6 +19,7 @@ package model
 import (
 	"errors"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
@@ -72,9 +73,7 @@ func TestAgainstGraphiteWeb(t *testing.T) {
 				params.Add("target", tg)
 			}
 			q := url.Values{}
-			for k, v := range params {
-				q[k] = v
-			}
+			maps.Copy(q, params)
 			q.Set("format", "json")
 			upstream := get(q)
 			q0 := &timeseries.TimeRangeQuery{Step: tc.step}
@@ -93,12 +92,8 @@ func TestAgainstGraphiteWeb(t *testing.T) {
 			check := func(label string, extra url.Values, ro RenderOptions) {
 				t.Helper()
 				q := url.Values{}
-				for k, v := range params {
-					q[k] = v
-				}
-				for k, v := range extra {
-					q[k] = v
-				}
+				maps.Copy(q, params)
+				maps.Copy(q, extra)
 				want := get(q)
 				got, err := MarshalTimeseries(ts, &timeseries.RequestOptions{ProviderRequest: ro}, 200)
 				if err != nil {

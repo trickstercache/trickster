@@ -11,8 +11,8 @@ caches:
     provider: memory
   fs1:
     provider: filesystem
-  graphite_mem:
-    provider: memory
+  graphite_fs:
+    provider: filesystem
   redis:
     provider: redis
     redis:
@@ -100,8 +100,19 @@ backends:
     provider: graphite
     origin_url: 'http://127.0.0.1:8081'
     # dedicated cache so graphite's cache metrics stay separable from the
-    # other backends on the Graphite dashboard
-    cache_name: graphite_mem
+    # other backends on the Graphite dashboard; filesystem, because the
+    # memory provider exports no usage/eviction gauges for the storage panels
+    cache_name: graphite_fs
+    # the delta cache fetches at native resolution (maxDataPoints is
+    # stripped upstream, decision D3), so a wide window on a fine rung is
+    # large: the 120d storage panel is ~1.6MB of JSON. The 512KB default
+    # would reject it on every refresh and fall back to plain proxy.
+    max_object_size_bytes: 67108864
+    # the cache keeps timeseries_retention_factor points per series (default
+    # 1024, which is only 3.5 days at a 5m step), cropping anything older and
+    # refetching it on the next request. Size it for the widest window at the
+    # finest step it will be served at (120d at 5m is 34,560 points).
+    timeseries_retention_factor: 1000000
   rp1:
     provider: proxy
     origin_url: 'http://127.0.0.1:9090'

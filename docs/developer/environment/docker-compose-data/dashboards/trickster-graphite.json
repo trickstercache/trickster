@@ -2067,13 +2067,13 @@
             "uid": "ds_prom_direct"
           },
           "refId": "A",
-          "expr": "sum(delta(trickster_cache_operation_objects_total{job=\"trickster\",cache_name=\"graphite_mem\"}[$__rate_interval])) by (operation, status)",
+          "expr": "sum(delta(trickster_cache_operation_objects_total{job=\"trickster\",cache_name=\"graphite_fs\"}[$__rate_interval])) by (operation, status)",
           "legendFormat": "{{operation}} {{status}}",
           "range": true,
           "editorMode": "code"
         }
       ],
-      "title": "Cache operations \u2014 graphite_mem (Phase 7)",
+      "title": "Cache operations \u2014 graphite_fs (Phase 7)",
       "type": "timeseries"
     },
     {
@@ -2081,7 +2081,7 @@
         "type": "prometheus",
         "uid": "ds_prom_direct"
       },
-      "description": "Per design note \u00a77 / D7 the same metric is cached once per rung it is queried at, so storage grows with distinct (target, step) pairs, not with distinct targets.\n\nEmpty before its phase is EXPECTED and is the acceptance criterion for that phase. Do not edit this panel to make it non-empty; land the phase that emits the metric.",
+      "description": "Bytes and objects in graphite1's dedicated filesystem cache (the memory provider exports no usage gauges, which is why the dev env uses filesystem here). Per design note \u00a77 / D7 the same metric is cached once per rung it is queried at, so storage grows with distinct (target, step) pairs, not with distinct targets.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2182,7 +2182,7 @@
             "uid": "ds_prom_direct"
           },
           "refId": "A",
-          "expr": "sum(trickster_cache_usage_bytes{job=\"trickster\",cache_name=\"graphite_mem\"})",
+          "expr": "sum(trickster_cache_usage_bytes{job=\"trickster\",cache_name=\"graphite_fs\"})",
           "legendFormat": "bytes",
           "range": true,
           "editorMode": "code"
@@ -2193,13 +2193,13 @@
             "uid": "ds_prom_direct"
           },
           "refId": "B",
-          "expr": "sum(trickster_cache_usage_objects{job=\"trickster\",cache_name=\"graphite_mem\"})",
+          "expr": "sum(trickster_cache_usage_objects{job=\"trickster\",cache_name=\"graphite_fs\"})",
           "legendFormat": "objects",
           "range": true,
           "editorMode": "code"
         }
       ],
-      "title": "Cache storage \u2014 graphite_mem (Phase 7)",
+      "title": "Cache storage \u2014 graphite_fs (Phase 7)",
       "type": "timeseries"
     },
     {
@@ -2291,13 +2291,13 @@
             "uid": "ds_prom_direct"
           },
           "refId": "A",
-          "expr": "sum(delta(trickster_cache_events_total{job=\"trickster\",cache_name=\"graphite_mem\",event=\"eviction\"}[$__rate_interval])) by (reason)",
+          "expr": "(sum(delta(trickster_cache_events_total{job=\"trickster\",cache_name=\"graphite_fs\",event=\"eviction\"}[$__rate_interval])) by (reason)) or vector(0)",
           "legendFormat": "{{reason}}",
           "range": true,
           "editorMode": "code"
         }
       ],
-      "title": "Cache evictions \u2014 graphite_mem (Phase 7)",
+      "title": "Cache evictions \u2014 graphite_fs (Phase 7)",
       "type": "timeseries"
     },
     {
@@ -2305,7 +2305,7 @@
         "type": "prometheus",
         "uid": "ds_prom_direct"
       },
-      "description": "trickster_graphite_resolution_lookups_total by confidence: exact | derived | configured | unknown (label values frozen in todo 3.4). Expected steady state: almost everything exact; unknown only for the D4 edge panel's targets; the drift namespace must land in exact (via probe), never configured.\n\nEmpty before its phase is EXPECTED and is the acceptance criterion for that phase. Do not edit this panel to make it non-empty; land the phase that emits the metric.",
+      "description": "trickster_graphite_resolution_lookups_total by confidence: exact | derived | configured | unknown (label values frozen in todo 3.4). Expected steady state: almost everything exact; unknown only for the D4 edge panel's targets; the drift namespace must land in exact (via probe), never configured.\n\nThe metric family itself ships in Phase 9 (the behavior it observes lands earlier). Empty before then is EXPECTED and is the acceptance criterion for that phase. Do not edit this panel to make it non-empty; land the phase that emits the metric.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2395,7 +2395,7 @@
           "editorMode": "code"
         }
       ],
-      "title": "Resolution confidence breakdown (Phase 8)",
+      "title": "Resolution confidence breakdown (Phase 9)",
       "type": "timeseries"
     },
     {
@@ -2403,7 +2403,7 @@
         "type": "prometheus",
         "uid": "ds_prom_direct"
       },
-      "description": "kind: narrow | wide | find. result: step | empty | error. The probe rate must spike at cold start and collapse toward zero while the ladder count flattens at a handful (4 for this environment). If probing never quiets, the registry is not converging.\n\nEmpty before its phase is EXPECTED and is the acceptance criterion for that phase. Do not edit this panel to make it non-empty; land the phase that emits the metric.",
+      "description": "kind: narrow | wide | find. result: step | empty | error. The probe rate must spike at cold start and collapse toward zero while the ladder count flattens at a handful (4 for this environment). If probing never quiets, the registry is not converging.\n\nThe metric family itself ships in Phase 9 (the behavior it observes lands earlier). Empty before then is EXPECTED and is the acceptance criterion for that phase. Do not edit this panel to make it non-empty; land the phase that emits the metric.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2525,7 +2525,7 @@
           "editorMode": "code"
         }
       ],
-      "title": "Probe rate by kind/result + distinct ladders (Phase 5)",
+      "title": "Probe rate by kind/result + distinct ladders (Phase 9)",
       "type": "timeseries"
     },
     {
@@ -2533,7 +2533,7 @@
         "type": "prometheus",
         "uid": "ds_prom_direct"
       },
-      "description": "layer: leaf | ladder | target | negative. leaf is the large cheap map (24 here), ladder the small one (4), target the short-TTL expansion cache, negative the unknown-verdict backoff entries.\n\nEmpty before its phase is EXPECTED and is the acceptance criterion for that phase. Do not edit this panel to make it non-empty; land the phase that emits the metric.",
+      "description": "layer: leaf | ladder | target | negative. leaf is the large cheap map (24 here), ladder the small one (4), target the short-TTL expansion cache, negative the unknown-verdict backoff entries.\n\nThe metric family itself ships in Phase 9 (the behavior it observes lands earlier). Empty before then is EXPECTED and is the acceptance criterion for that phase. Do not edit this panel to make it non-empty; land the phase that emits the metric.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2623,7 +2623,7 @@
           "editorMode": "code"
         }
       ],
-      "title": "Registry entries by layer (Phase 5)",
+      "title": "Registry entries by layer (Phase 9)",
       "type": "timeseries"
     },
     {
@@ -2631,7 +2631,7 @@
         "type": "prometheus",
         "uid": "ds_prom_direct"
       },
-      "description": "Why a /render request was routed to the unaccelerated lane. reason values are frozen in todo 3.4. The D4 edge panel should show function_not_allowlisted; the D5 panel multi_target_step_mismatch (until 12.3); nothing else should appear in steady state.\n\nEmpty before its phase is EXPECTED and is the acceptance criterion for that phase. Do not edit this panel to make it non-empty; land the phase that emits the metric.",
+      "description": "Why a /render request was routed to the unaccelerated lane. reason values are frozen in todo 3.4. The D4 edge panel should show function_not_allowlisted; the D5 panel multi_target_step_mismatch (until 12.3); nothing else should appear in steady state.\n\nThe metric family itself ships in Phase 9 (the behavior it observes lands earlier). Empty before then is EXPECTED and is the acceptance criterion for that phase. Do not edit this panel to make it non-empty; land the phase that emits the metric.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2721,7 +2721,7 @@
           "editorMode": "code"
         }
       ],
-      "title": "Fallback reasons (Phase 8)",
+      "title": "Fallback reasons (Phase 9)",
       "type": "timeseries"
     },
     {
@@ -2729,7 +2729,7 @@
         "type": "prometheus",
         "uid": "ds_prom_direct"
       },
-      "description": "A predicted step that disagreed with the step the origin actually returned. Any non-zero value is a bug in resolution prediction (design note \u00a78: never return incorrect data). Empty (no series) before Phase 7; zero thereafter.\n\nEmpty before its phase is EXPECTED and is the acceptance criterion for that phase. Do not edit this panel to make it non-empty; land the phase that emits the metric.",
+      "description": "A predicted step that disagreed with the step the origin actually returned. Any non-zero value is a bug in resolution prediction (design note \u00a78: never return incorrect data). Empty (no series) before Phase 7; zero thereafter.\n\nThe metric family itself ships in Phase 9 (the behavior it observes lands earlier). Empty before then is EXPECTED and is the acceptance criterion for that phase. Do not edit this panel to make it non-empty; land the phase that emits the metric.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2833,13 +2833,13 @@
             "uid": "ds_prom_direct"
           },
           "refId": "A",
-          "expr": "sum(increase(trickster_graphite_step_mispredictions_total{job=\"trickster\",backend_name=\"graphite1\"}[$__rate_interval]))",
+          "expr": "(sum(increase(trickster_graphite_step_mispredictions_total{job=\"trickster\",backend_name=\"graphite1\"}[$__rate_interval]))) or vector(0)",
           "legendFormat": "mispredictions",
           "range": true,
           "editorMode": "code"
         }
       ],
-      "title": "Step mispredictions \u2014 MUST stay flat at zero (Phase 7)",
+      "title": "Step mispredictions \u2014 MUST stay flat at zero (Phase 9)",
       "type": "timeseries"
     }
   ],
@@ -2877,5 +2877,5 @@
   "timezone": "browser",
   "title": "Graphite",
   "uid": "trk_graphite",
-  "version": 3
+  "version": 4
 }

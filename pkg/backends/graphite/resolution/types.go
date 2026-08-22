@@ -115,6 +115,12 @@ type Observer interface {
 	Ladders(n int)
 	// RegistryEntries reports the size of one registry layer
 	RegistryEntries(layer string, n int)
+	// Fallback is called once per render request routed to the
+	// unaccelerated lane, with the frozen reason value
+	Fallback(reason string)
+	// Misprediction is called when an origin response contradicts a
+	// predicted step
+	Misprediction()
 }
 
 // NopObserver discards every event
@@ -124,3 +130,5 @@ func (NopObserver) Lookup(string, string)       {}
 func (NopObserver) Probe(string, string)        {}
 func (NopObserver) Ladders(int)                 {}
 func (NopObserver) RegistryEntries(string, int) {}
+func (NopObserver) Fallback(string)             {}
+func (NopObserver) Misprediction()              {}

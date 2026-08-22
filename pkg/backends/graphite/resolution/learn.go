@@ -107,8 +107,12 @@ func (l *Learner) Wait() {
 // Schedule starts learning a leaf in the background unless a run for it is
 // already in flight or the concurrency cap is reached. hint, when non-nil,
 // is a static-config ladder to confirm before falling back to discovery.
-// It returns false when nothing was started.
+// It returns false when nothing was started. A negative Concurrency
+// disables background learning entirely (synchronous Learn still works).
 func (l *Learner) Schedule(leaf string, hint *Ladder) bool {
+	if l.Concurrency < 0 {
+		return false
+	}
 	l.init()
 	l.mu.Lock()
 	if _, ok := l.inflight[leaf]; ok || (l.Concurrency > 0 && int(l.active.Load()) >= l.Concurrency) {
@@ -156,7 +160,26 @@ func (l *Learner) Learn(ctx context.Context, leaf string, hint *Ladder) (*Ladder
 				logging.Pairs{"backendName": l.Name, "leaf": leaf, "static": hint.String()})
 		}
 	}
+	// a deployment has a handful of ladders: before discovering from
+	// scratch, try to confirm the ones already known (most used first)
+	for _, known := range l.Registry.KnownLadders() {
+		if ladder != nil || err != nil {
+			break
+		}
+		if hint != nil && known.Fingerprint() == hint.Fingerprint() {
+			continue
+		}
+		run.partial = NewPartial() // observations from a failed confirm may mislead the next
+		ok, cerr := run.confirm(known)
+		switch {
+		case ok:
+			ladder = known.Clone()
+		case cerr != nil && !errors.Is(cerr, ErrInconsistent):
+			err = cerr
+		}
+	}
 	if ladder == nil && err == nil {
+		run.partial = NewPartial()
 		ladder, err = run.discover()
 	}
 	if err != nil {
