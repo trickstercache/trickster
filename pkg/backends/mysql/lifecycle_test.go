@@ -482,6 +482,9 @@ func TestSessionStatefulClassification(t *testing.T) {
 	}{
 		{query: "SELECT count(*) FROM trips"},
 		{query: "VALUES ROW(1), ROW(2)"},
+		{query: "TABLE trips"},
+		{query: "CHECK TABLE trips"},
+		{query: "CHECKSUM TABLE trips"},
 		{query: "SHOW TABLES"},
 		{query: "USE analytics"},
 		{query: "SET time_zone = '+00:00'"},
@@ -494,6 +497,8 @@ func TestSessionStatefulClassification(t *testing.T) {
 		{query: "SELECT @@sql_mode", stateful: true},
 		{query: "CREATE TEMPORARY TABLE staging (id int)", stateful: true},
 		{query: "LOCK TABLES trips READ", stateful: true},
+		{query: "OPTIMIZE TABLE trips", stateful: true},
+		{query: "EXPLAIN FORMAT=JSON INTO @plan SELECT * FROM trips", stateful: true},
 	} {
 		t.Run(tc.query, func(t *testing.T) {
 			h := &protocolHandler{}
@@ -622,7 +627,12 @@ func TestResponseDispatchUsesParsedShape(t *testing.T) {
 	origin, _, client := startLifecycleProxy(t, "mysql-response-shape", time.Second)
 	origin.setResponder(func(query string) *sqltypes.Result {
 		keyword := strings.ToUpper(strings.TrimSpace(query))
-		if strings.HasPrefix(keyword, "WITH") || strings.HasPrefix(keyword, "VALUES") {
+		rowResponse := strings.HasPrefix(keyword, "WITH") ||
+			strings.HasPrefix(keyword, "VALUES") || strings.HasPrefix(keyword, "TABLE") ||
+			strings.HasPrefix(keyword, "CHECK ") || strings.HasPrefix(keyword, "CHECKSUM ") ||
+			strings.HasPrefix(keyword, "OPTIMIZE ") || strings.HasPrefix(keyword, "REPAIR ") ||
+			strings.Contains(keyword, " CHECK PARTITION ")
+		if rowResponse {
 			return &sqltypes.Result{
 				Fields: []*querypb.Field{{Name: "value", Type: querypb.Type_INT64}},
 				Rows: [][]sqltypes.Value{
@@ -653,6 +663,23 @@ func TestResponseDispatchUsesParsedShape(t *testing.T) {
 		t.Fatalf("multi-row VALUES result = %+v, want rows 1 and 2", result.Rows)
 	}
 
+	for _, query := range []string{
+		"TABLE trips",
+		"CHECK TABLE trips, fares",
+		"CHECKSUM TABLE trips, fares",
+		"OPTIMIZE TABLE trips",
+		"REPAIR TABLE trips",
+		"ALTER TABLE trips CHECK PARTITION p0",
+	} {
+		result, err = client.ExecuteFetch(query, vtmysql.FETCH_ALL_ROWS, true)
+		if err != nil {
+			t.Fatalf("%s failed: %v", query, err)
+		}
+		if len(result.Rows) != 2 {
+			t.Fatalf("%s returned %d rows, want 2", query, len(result.Rows))
+		}
+	}
+
 	result, err = client.ExecuteFetch("SELECT 42 INTO @answer", vtmysql.FETCH_ALL_ROWS, true)
 	if err != nil {
 		t.Fatalf("SELECT INTO failed: %v", err)
@@ -661,5 +688,32 @@ func TestResponseDispatchUsesParsedShape(t *testing.T) {
 		result.InsertID != 17 || !result.InsertIDChanged {
 		t.Fatalf("SELECT INTO result = %+v, want OK metadata with 2 affected rows and insert ID 17",
 			result)
+	}
+
+	result, err = client.ExecuteFetch(
+		"EXPLAIN FORMAT=JSON INTO @plan SELECT * FROM trips", vtmysql.FETCH_ALL_ROWS, true)
+	if err != nil {
+		t.Fatalf("EXPLAIN INTO failed: %v", err)
+	}
+	if len(result.Fields) != 0 || len(result.Rows) != 0 || result.RowsAffected != 2 ||
+		result.InsertID != 17 || !result.InsertIDChanged {
+		t.Fatalf("EXPLAIN INTO result = %+v, want complete OK metadata", result)
+	}
+}
+
+func TestObscureAdministrativeResponseShapesAreRejected(t *testing.T) {
+	origin, _, client := startLifecycleProxy(t, "mysql-obscure-shapes", time.Second)
+	for _, query := range []string{
+		"HELP 'SELECT'",
+		"XA RECOVER",
+		"HANDLER trips READ FIRST LIMIT 2",
+		"CACHE INDEX trips IN hot_cache",
+	} {
+		if _, err := client.ExecuteFetch(query, vtmysql.FETCH_ALL_ROWS, true); err == nil {
+			t.Fatalf("%s was not rejected", query)
+		}
+		if got := origin.statementCount(query); got != 0 {
+			t.Fatalf("%s reached the origin %d times", query, got)
+		}
 	}
 }

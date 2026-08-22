@@ -1370,6 +1370,12 @@ func (h *protocolHandler) updateSessionStateParsed(session *upstreamSession, par
 			session.stateful = true
 		}
 	}
+	if parsed.statementType == sqlparser.StmtExplain && parsed.responseShape == responseShapeOK {
+		// EXPLAIN ... INTO stores its result in a user variable instead of
+		// returning rows, so the successful statement creates unreplayable state.
+		session.cacheUnsafe = true
+		session.stateful = true
+	}
 	switch parsed.statementType {
 	// Rolling back to or releasing a savepoint does not end its transaction.
 	case sqlparser.StmtBegin, sqlparser.StmtSavepoint,
@@ -1408,6 +1414,13 @@ func (h *protocolHandler) updateSessionStateParsed(session *upstreamSession, par
 		switch parsed.statementType {
 		case sqlparser.StmtSelect, sqlparser.StmtShow, sqlparser.StmtExplain,
 			sqlparser.StmtAnalyze, sqlparser.StmtComment, sqlparser.StmtCommentOnly:
+		case sqlparser.StmtUnknown:
+			// AST-less row producers admitted by the response classifier are
+			// read-only TABLE, CHECK TABLE, and CHECKSUM TABLE statements.
+			if parsed.responseShape != responseShapeRows {
+				session.cacheUnsafe = true
+				session.stateful = true
+			}
 		default:
 			session.cacheUnsafe = true
 			session.stateful = true
@@ -1421,6 +1434,9 @@ func (h *protocolHandler) updateSessionStateParsed(session *upstreamSession, par
 // nothing changed. Values the origin definitely did not apply — the database,
 // the time zone, and the transaction flag — are deliberately left alone.
 func (h *protocolHandler) updateSessionStateFailed(session *upstreamSession, parsed parsedQuery) {
+	if parsed.statementType == sqlparser.StmtUnknown && parsed.responseShape == responseShapeRows {
+		return
+	}
 	switch parsed.statementType {
 	case sqlparser.StmtSelect:
 		// A failed read leaves nothing behind unless its own AST assigns a

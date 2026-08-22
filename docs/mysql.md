@@ -184,9 +184,10 @@ command opens a fresh origin connection.
 The initial release rejects binary prepared statements; SQL `PREPARE`,
 `EXECUTE`, and `DEALLOCATE`; server cursors; binary results; compression;
 `LOCAL INFILE` and all `LOAD` statements; multi-statements; stored-procedure
-`CALL`; executable version comments; `COM_CHANGE_USER`; replica registration;
-and binlog commands. Connection attributes may be syntactically accepted but
-are ignored for authentication, routing, cache identity, and query semantics.
+`CALL`; `HELP`, `XA`, `HANDLER`, and `CACHE INDEX`; executable version comments;
+unclassified text response shapes; `COM_CHANGE_USER`; replica registration; and
+binlog commands. Connection attributes may be syntactically accepted but are
+ignored for authentication, routing, cache identity, and query semantics.
 Malformed, oversized, timed-out, or partially streamed commands close the
 connection. A fully consumed unsupported command normally leaves it usable.
 

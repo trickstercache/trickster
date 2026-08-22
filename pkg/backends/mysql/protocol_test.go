@@ -334,6 +334,55 @@ func TestUnsupportedTextFeature(t *testing.T) {
 	}
 }
 
+func TestResponseShapeClassification(t *testing.T) {
+	for _, tc := range []struct {
+		query       string
+		wantShape   queryResponseShape
+		unsupported string
+	}{
+		{query: "SELECT 1", wantShape: responseShapeRows},
+		{query: "SELECT 'INTO'", wantShape: responseShapeRows},
+		{query: "SELECT 1 INTO @answer", wantShape: responseShapeOK},
+		{query: "VALUES ROW(1), ROW(2)", wantShape: responseShapeRows},
+		{query: "TABLE trips", wantShape: responseShapeRows},
+		{query: "TABLE trips ORDER BY 'INTO'", wantShape: responseShapeRows},
+		{query: "TABLE trips LIMIT 1 INTO @trip", wantShape: responseShapeOK},
+		{query: "ANALYZE TABLE trips", wantShape: responseShapeRows},
+		{query: "CHECK TABLE trips", wantShape: responseShapeRows},
+		{query: "CHECKSUM TABLE trips, fares", wantShape: responseShapeRows},
+		{query: "OPTIMIZE TABLE trips", wantShape: responseShapeRows},
+		{query: "REPAIR TABLE trips", wantShape: responseShapeRows},
+		{query: "ALTER TABLE trips CHECK PARTITION p0", wantShape: responseShapeRows},
+		{query: "ALTER TABLE trips ANALYZE PARTITION p0", wantShape: responseShapeRows},
+		{query: "ALTER TABLE trips OPTIMIZE PARTITION p0", wantShape: responseShapeRows},
+		{query: "ALTER TABLE trips REPAIR PARTITION p0", wantShape: responseShapeRows},
+		{query: "ALTER TABLE trips ADD COLUMN fare int", wantShape: responseShapeOK},
+		{query: "EXPLAIN SELECT 'INTO'", wantShape: responseShapeRows},
+		{query: "EXPLAIN INSERT INTO trips VALUES (1)", wantShape: responseShapeRows},
+		{query: "EXPLAIN FORMAT=JSON INTO @plan SELECT * FROM trips", wantShape: responseShapeOK},
+		{query: "DO 1", wantShape: responseShapeOK},
+		{query: "PURGE BINARY LOGS BEFORE '2026-01-01'", wantShape: responseShapeOK},
+		{query: "HELP 'SELECT'", wantShape: responseShapeUnsupported,
+			unsupported: "HELP statements"},
+		{query: "XA RECOVER", wantShape: responseShapeUnsupported,
+			unsupported: "XA statements"},
+		{query: "HANDLER trips READ FIRST LIMIT 2", wantShape: responseShapeUnsupported,
+			unsupported: "HANDLER statements"},
+		{query: "CACHE INDEX trips IN hot_cache", wantShape: responseShapeUnsupported,
+			unsupported: "CACHE INDEX statements"},
+		{query: "RESET REPLICA", wantShape: responseShapeUnsupported,
+			unsupported: "unclassified statements"},
+	} {
+		t.Run(tc.query, func(t *testing.T) {
+			parsed := parseQuery(tc.query)
+			if parsed.responseShape != tc.wantShape || parsed.unsupported != tc.unsupported {
+				t.Fatalf("parseQuery() shape = %d, %q; want %d, %q",
+					parsed.responseShape, parsed.unsupported, tc.wantShape, tc.unsupported)
+			}
+		})
+	}
+}
+
 func TestCacheIdentityIncludesAuthorizationAndSafeSessionState(t *testing.T) {
 	h := &protocolHandler{config: ProtocolConfig{
 		BackendName: "mysql1", CacheKeyPrefix: "release-contract",

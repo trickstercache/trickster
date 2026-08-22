@@ -50,6 +50,10 @@ the next command creates a fresh one.
   `CALL`, which can produce multiple results, is also rejected. Trickster emits
   one text-protocol result only. MySQL versioned executable comments (`/*! */`)
   are rejected because they can hide unsupported or state-changing commands.
+- `HELP`, `XA`, `HANDLER`, and `CACHE INDEX` statements are rejected because
+  their response or session shape varies within the statement family. Valid
+  text statements whose response shape cannot be classified are likewise
+  rejected instead of being guessed as an OK packet.
 - `COM_CHANGE_USER` is rejected. Session reset is supported only through
   `COM_RESET_CONNECTION` or reconnect.
 - Replica registration and binlog dump commands are rejected with

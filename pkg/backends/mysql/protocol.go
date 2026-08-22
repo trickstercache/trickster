@@ -1107,6 +1107,9 @@ func (h *protocolHandler) ComQuery(c *vtmysql.Conn, query string,
 		return err
 	}
 	parsed := parseQuery(query)
+	if parsed.responseShape == responseShapeUnsupported {
+		return h.unsupported(parsed.unsupported)
+	}
 	// Only SELECT statements enter SQL cache analysis. Session commands and
 	// mutations must still be proxied and tracked, but reporting them as
 	// uncacheable query analyses obscures the classification of the SELECT
@@ -1167,7 +1170,18 @@ type parsedQuery struct {
 	statementType vtparser.StatementType
 	statement     vtparser.Statement
 	err           error
+	responseShape queryResponseShape
+	unsupported   string
 }
+
+type queryResponseShape uint8
+
+const (
+	responseShapeUnknown queryResponseShape = iota
+	responseShapeOK
+	responseShapeRows
+	responseShapeUnsupported
+)
 
 func parseQuery(query string) parsedQuery {
 	parsed := parsedQuery{statementType: vtparser.Preview(query)}
@@ -1185,7 +1199,128 @@ func parseQuery(query string) parsedQuery {
 			}
 		}
 	}
+	parsed.responseShape, parsed.unsupported = classifyResponseShape(query, parsed)
 	return parsed
+}
+
+type queryTokenSummary struct {
+	firstValue           string
+	hasInto              bool
+	explainInto          bool
+	maintenancePartition bool
+}
+
+func summarizeQueryTokens(query string) queryTokenSummary {
+	tokenizer := defaultAnalyzer.parser.NewStringTokenizer(query)
+	var summary queryTokenSummary
+	maintenance := false
+	explainBody := false
+	for {
+		tokenType, value := tokenizer.Scan()
+		if tokenType == 0 || tokenType == ';' || tokenType == vtparser.LEX_ERROR {
+			return summary
+		}
+		if tokenType == vtparser.COMMENT {
+			continue
+		}
+		if summary.firstValue == "" {
+			summary.firstValue = strings.ToLower(value)
+		}
+		if tokenType == vtparser.INTO {
+			summary.hasInto = true
+			if !explainBody {
+				summary.explainInto = true
+			}
+		}
+		if tokenType == vtparser.PARTITION && maintenance {
+			summary.maintenancePartition = true
+		}
+		switch tokenType {
+		case vtparser.ANALYZE, vtparser.CHECK, vtparser.OPTIMIZE, vtparser.REPAIR:
+			maintenance = true
+		default:
+			maintenance = false
+		}
+		switch tokenType {
+		case vtparser.SELECT, vtparser.TABLE, vtparser.DELETE, vtparser.INSERT,
+			vtparser.REPLACE, vtparser.UPDATE:
+			explainBody = true
+		}
+	}
+}
+
+func classifyResponseShape(query string, parsed parsedQuery) (queryResponseShape, string) {
+	// Prefer the AST whenever Vitess models the response distinction exactly.
+	switch statement := parsed.statement.(type) {
+	case *vtparser.Select:
+		if statement.Into != nil {
+			return responseShapeOK, ""
+		}
+		return responseShapeRows, ""
+	case *vtparser.Union:
+		if statement.Into != nil {
+			return responseShapeOK, ""
+		}
+		return responseShapeRows, ""
+	case *vtparser.ValuesStatement:
+		return responseShapeRows, ""
+	case *vtparser.PurgeBinaryLogs:
+		return responseShapeOK, ""
+	}
+
+	switch parsed.statementType {
+	case vtparser.StmtSelect:
+		// A parser-rejected SELECT still has a predictable packet shape when
+		// MySQL accepts syntax newer than Vitess's grammar.
+		if summarizeQueryTokens(query).hasInto {
+			return responseShapeOK, ""
+		}
+		return responseShapeRows, ""
+	case vtparser.StmtShow, vtparser.StmtAnalyze:
+		return responseShapeRows, ""
+	case vtparser.StmtExplain:
+		if summarizeQueryTokens(query).explainInto {
+			return responseShapeOK, ""
+		}
+		return responseShapeRows, ""
+	case vtparser.StmtOther:
+		switch summarizeQueryTokens(query).firstValue {
+		case "repair", "optimize":
+			return responseShapeRows, ""
+		case "do":
+			return responseShapeOK, ""
+		default:
+			return responseShapeUnsupported, "unclassified administrative statements"
+		}
+	case vtparser.StmtDDL:
+		if summarizeQueryTokens(query).maintenancePartition {
+			return responseShapeRows, ""
+		}
+		return responseShapeOK, ""
+	case vtparser.StmtUnknown:
+		summary := summarizeQueryTokens(query)
+		switch summary.firstValue {
+		case "table":
+			if summary.hasInto {
+				return responseShapeOK, ""
+			}
+			return responseShapeRows, ""
+		case "check", "checksum":
+			return responseShapeRows, ""
+		case "help":
+			return responseShapeUnsupported, "HELP statements"
+		case "xa":
+			return responseShapeUnsupported, "XA statements"
+		case "handler":
+			return responseShapeUnsupported, "HANDLER statements"
+		case "cache":
+			return responseShapeUnsupported, "CACHE INDEX statements"
+		default:
+			return responseShapeUnsupported, "unclassified statements"
+		}
+	default:
+		return responseShapeOK, ""
+	}
 }
 
 func unsupportedTextFeature(query string) string {
@@ -1222,7 +1357,7 @@ func (h *protocolHandler) proxyQuery(session *upstreamSession, query string, par
 	session.mtx.Lock()
 	upstream := session.conn
 	session.mtx.Unlock()
-	if returnsResultSet(parsed) {
+	if parsed.responseShape == responseShapeRows {
 		err := h.runOriginQuery(session, upstream, parsed, func() error {
 			return h.proxyResultSet(session, upstream, query, callback)
 		})
@@ -1276,27 +1411,6 @@ func originProtocolState(upstream *vtmysql.Conn) (uint16, uint16, error) {
 		return result.StatusFlags, ^uint16(0), nil
 	}
 	return result.StatusFlags, uint16(warningCount), nil //nolint:gosec // range checked above
-}
-
-func returnsResultSet(parsed parsedQuery) bool {
-	// SELECT ... INTO produces an OK packet rather than a result set. Vitess's
-	// streaming API recognizes that packet but does not expose its affected-row,
-	// insert-ID, or session metadata, so dispatch from the parsed shape whenever
-	// it is available.
-	switch statement := parsed.statement.(type) {
-	case *vtparser.Select:
-		return statement.Into == nil
-	case *vtparser.Union:
-		return statement.Into == nil
-	case *vtparser.ValuesStatement:
-		return true
-	}
-	switch parsed.statementType {
-	case vtparser.StmtSelect, vtparser.StmtShow, vtparser.StmtExplain, vtparser.StmtAnalyze:
-		return true
-	default:
-		return false
-	}
 }
 
 func (h *protocolHandler) proxyResultSet(session *upstreamSession, upstream *vtmysql.Conn, query string,
