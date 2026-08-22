@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
+	gro "github.com/trickstercache/trickster/v2/pkg/backends/graphite/options"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	cr "github.com/trickstercache/trickster/v2/pkg/cache/registry"
 	"github.com/trickstercache/trickster/v2/pkg/config"
@@ -100,5 +101,66 @@ func TestNewClient(t *testing.T) {
 	trq, rlo, canOPC, err := c.(*Client).ParseTimeRangeQuery(r)
 	if trq == nil || rlo != nil || !canOPC || !errors.Is(err, ErrNotAccelerable) {
 		t.Errorf("expected (trq, nil, true, ErrNotAccelerable) got (%v, %v, %t, %v)", trq, rlo, canOPC, err)
+	}
+}
+
+func TestResolutionWiring(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
+	conf, err := config.Load([]string{"-origin-url", "http://1", "-provider", "graphite"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	caches := cr.LoadCachesFromConfig(conf)
+	defer cr.CloseCaches(caches)
+	cache := caches["default"]
+
+	o := bo.New()
+	o.Graphite = gro.New()
+	o.Graphite.StaticRetentions = []gro.StaticRetention{{Pattern: `^dev\.fast\.`, Retentions: "10s:6h,1m:7d"}}
+	b, err := NewClient("g1", o, nil, cache, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := b.(*Client)
+	if c.Resolver() == nil || c.Registry() == nil || c.Resolver().Static.Len() != 1 {
+		t.Fatal("resolver not wired")
+	}
+	gen := c.Registry().Generation()
+	// the same configuration does not bump the persisted generation
+	b2, _ := NewClient("g1", o, nil, cache, nil, nil)
+	if b2.(*Client).Registry().Generation() != gen {
+		t.Error("unchanged static_retentions must not bump the generation")
+	}
+	// a changed static_retentions does
+	o2 := bo.New()
+	o2.Graphite = gro.New()
+	o2.Graphite.StaticRetentions = []gro.StaticRetention{{Pattern: `^dev\.`, Retentions: "1m:1d"}}
+	b3, _ := NewClient("g1", o2, nil, cache, nil, nil)
+	if b3.(*Client).Registry().Generation() != gen+1 {
+		t.Errorf("changed static_retentions must bump the generation: %d -> %d", gen, b3.(*Client).Registry().Generation())
+	}
+	c.Close()
+	b2.(*Client).Close()
+	b3.(*Client).Close()
+
+	// persistence off, zero TTLs fall back to defaults, nil options tolerated
+	o3 := bo.New()
+	o3.Graphite = gro.New()
+	o3.Graphite.ResolutionRegistry.Persist = false
+	o3.Graphite.ResolutionRegistry.TTL = 0
+	o3.Graphite.ResolutionRegistry.NegativeTTL = 0
+	o3.Graphite.FindCacheTTL = 0
+	if _, err := NewClient("g2", o3, nil, cache, nil, nil); err != nil {
+		t.Error(err)
+	}
+	if b, err := NewClient("g3", nil, nil, nil, nil, nil); err != nil || b.(*Client).Resolver() == nil {
+		t.Error("nil options must still wire a resolver")
+	}
+	// an invalid static rule is a configuration error
+	o4 := bo.New()
+	o4.Graphite = gro.New()
+	o4.Graphite.StaticRetentions = []gro.StaticRetention{{Pattern: `(`, Retentions: "10s:6h"}}
+	if _, err := NewClient("g4", o4, nil, cache, nil, nil); err == nil {
+		t.Error("expected an error for an invalid static_retentions pattern")
 	}
 }

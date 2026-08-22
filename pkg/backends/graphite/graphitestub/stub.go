@@ -1,0 +1,361 @@
+/*
+ * Copyright 2018 The Trickster Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+// Package graphitestub is an in-process stand-in for graphite-web backed by
+// Whisper, for tests that exercise resolution prediction without Docker.
+// It honors the fetch semantics the design note depends on (archive
+// selection by now-from, interval alignment, range clamping, the empty
+// response beyond maxRetention, the `now` parameter) as measured against
+// graphite-web 1.1.10 in §9 of the design note.
+package graphitestub
+
+import (
+	"encoding/json"
+	"fmt"
+	"math"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"path"
+	"slices"
+	"strconv"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/trickstercache/trickster/v2/pkg/backends/graphite/parsing"
+	"github.com/trickstercache/trickster/v2/pkg/backends/graphite/resolution"
+)
+
+// Metric is one Whisper file
+type Metric struct {
+	Path   string
+	Ladder *resolution.Ladder
+	// Created, when set, makes points older than it null (a young metric)
+	Created time.Time
+}
+
+// Server is the stub origin
+type Server struct {
+	*httptest.Server
+	mu      sync.RWMutex
+	metrics map[string]*Metric
+	// Now is the wall clock when a request carries no `now` parameter
+	Now func() time.Time
+	// Renders and Finds count requests by endpoint
+	Renders, Finds atomic.Int64
+	// Fail, when non-zero, makes every request return that status
+	Fail atomic.Int32
+	// StartSkew, when non-zero, shifts the reported start of responses
+	// that carry maxDataPoints, to simulate an origin whose consolidation
+	// aligns differently; it exercises the learner's retention-edge
+	// fallbacks
+	StartSkew atomic.Int64
+	// Log keeps the query string of every request, oldest first
+	log []string
+}
+
+// New starts a stub with no metrics
+func New() *Server {
+	s := &Server{metrics: make(map[string]*Metric), Now: time.Now}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/render", s.render)
+	mux.HandleFunc("/metrics/find", s.find)
+	s.Server = httptest.NewServer(mux)
+	return s
+}
+
+// Add registers a metric with a storage-schemas.conf retention list
+func (s *Server) Add(metric, retentions string) *Metric {
+	l, err := resolution.ParseRetentions(retentions)
+	if err != nil {
+		panic(err)
+	}
+	m := &Metric{Path: metric, Ladder: l}
+	s.mu.Lock()
+	s.metrics[metric] = m
+	s.mu.Unlock()
+	return m
+}
+
+// Remove deletes a metric
+func (s *Server) Remove(metric string) {
+	s.mu.Lock()
+	delete(s.metrics, metric)
+	s.mu.Unlock()
+}
+
+// Requests returns the logged request query strings
+func (s *Server) Requests() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return append([]string(nil), s.log...)
+}
+
+// ResetCounters clears the counters and log
+func (s *Server) ResetCounters() {
+	s.Renders.Store(0)
+	s.Finds.Store(0)
+	s.mu.Lock()
+	s.log = nil
+	s.mu.Unlock()
+}
+
+// matches returns the metrics matching a path expression, segment by
+// segment, with * ? [..] and {a,b}
+func (s *Server) matches(expr string) []*Metric {
+	qs := strings.Split(expr, ".")
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var out []*Metric
+	for p, m := range s.metrics {
+		segs := strings.Split(p, ".")
+		if len(segs) == len(qs) && segmentsMatch(qs, segs) {
+			out = append(out, m)
+		}
+	}
+	slices.SortFunc(out, func(a, b *Metric) int { return strings.Compare(a.Path, b.Path) })
+	return out
+}
+
+func segmentsMatch(qs, segs []string) bool {
+	for i, q := range qs {
+		if !segmentMatch(q, segs[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func segmentMatch(q, seg string) bool {
+	for _, alt := range expandBraces(q) {
+		if ok, _ := path.Match(alt, seg); ok {
+			return true
+		}
+	}
+	return false
+}
+
+func expandBraces(q string) []string {
+	i := strings.IndexByte(q, '{')
+	if i < 0 {
+		return []string{q}
+	}
+	j := strings.IndexByte(q[i:], '}')
+	if j < 0 {
+		return []string{q}
+	}
+	var out []string
+	for alt := range strings.SplitSeq(q[i+1:i+j], ",") {
+		out = append(out, expandBraces(q[:i]+alt+q[i+j+1:])...)
+	}
+	return out
+}
+
+func (s *Server) now(v url.Values) (time.Time, error) {
+	now := s.Now().Truncate(time.Second)
+	if n := v.Get("now"); n != "" {
+		return parsing.ParseATTime(n, time.UTC, now)
+	}
+	return now, nil
+}
+
+type series struct {
+	target     string
+	start, end time.Time
+	step       time.Duration
+	values     []*float64
+}
+
+// render implements /render for format=raw and format=json
+func (s *Server) render(w http.ResponseWriter, r *http.Request) {
+	s.Renders.Add(1)
+	if f := s.Fail.Load(); f != 0 {
+		http.Error(w, "stub failure", int(f))
+		return
+	}
+	s.mu.Lock()
+	s.log = append(s.log, r.URL.Path+"?"+r.URL.RawQuery)
+	s.mu.Unlock()
+	v := r.URL.Query()
+	now, err := s.now(v)
+	if err != nil {
+		http.Error(w, "Invalid parameters ("+err.Error()+")", http.StatusBadRequest)
+		return
+	}
+	ext, err := parsing.ParseTimeRange(v.Get("from"), v.Get("until"), time.UTC, now)
+	if err != nil {
+		http.Error(w, "Invalid parameters ("+err.Error()+")", http.StatusBadRequest)
+		return
+	}
+	maxPoints := 0
+	if m := v.Get("maxDataPoints"); m != "" {
+		maxPoints, _ = strconv.Atoi(m)
+	}
+	var out []series
+	for _, target := range v["target"] {
+		for _, m := range s.matches(target) {
+			if sr, ok := fetch(m, ext.Start, ext.End, now); ok {
+				if maxPoints > 0 && len(sr.values) > maxPoints {
+					sr = consolidate(sr, int(math.Ceil(float64(len(sr.values))/float64(maxPoints))))
+					if skew := s.StartSkew.Load(); skew != 0 {
+						sr.start = sr.start.Add(time.Duration(skew))
+					}
+				}
+				out = append(out, sr)
+			}
+		}
+	}
+	switch v.Get("format") {
+	case "raw":
+		w.Header().Set("Content-Type", "text/plain")
+		for _, sr := range out {
+			fmt.Fprintf(w, "%s,%d,%d,%d|", sr.target, sr.start.Unix(), sr.end.Unix(), int64(sr.step/time.Second))
+			for i, val := range sr.values {
+				if i > 0 {
+					w.Write([]byte{','})
+				}
+				if val == nil {
+					w.Write([]byte("None"))
+				} else {
+					fmt.Fprintf(w, "%g", *val)
+				}
+			}
+			w.Write([]byte{'\n'})
+		}
+	default:
+		w.Header().Set("Content-Type", "application/json")
+		type js struct {
+			Target     string   `json:"target"`
+			Datapoints [][2]any `json:"datapoints"`
+		}
+		res := make([]js, 0, len(out))
+		for _, sr := range out {
+			j := js{Target: sr.target, Datapoints: make([][2]any, len(sr.values))}
+			for i, val := range sr.values {
+				ts := sr.start.Unix() + int64(i)*int64(sr.step/time.Second)
+				if val == nil {
+					j.Datapoints[i] = [2]any{nil, ts}
+				} else {
+					j.Datapoints[i] = [2]any{*val, ts}
+				}
+			}
+			res = append(res, j)
+		}
+		_ = json.NewEncoder(w).Encode(res)
+	}
+}
+
+// fetch reproduces whisper.file_fetch + __archive_fetch
+func fetch(m *Metric, from, until, now time.Time) (series, bool) {
+	var sr series
+	maxRet := m.Ladder.MaxRetention()
+	from, until, ok := resolution.Clamp(from, until, now, maxRet)
+	if !ok {
+		return sr, false
+	}
+	age := now.Sub(from)
+	step, _ := m.Ladder.StepFor(age)
+	start, end := resolution.AlignInterval(from, until, step)
+	n := int(end.Sub(start) / step)
+	sr = series{target: m.Path, start: start, end: end, step: step, values: make([]*float64, n)}
+	oldest := now.Add(-maxRet)
+	for i := range sr.values {
+		ts := start.Add(time.Duration(i) * step)
+		if ts.Before(oldest) || ts.After(now) || (!m.Created.IsZero() && ts.Before(m.Created)) {
+			continue
+		}
+		f := Value(m.Path, ts)
+		sr.values[i] = &f
+	}
+	return sr, true
+}
+
+// Value is the deterministic point value the stub serves for a metric at a
+// timestamp, so tests can assert on content
+func Value(metric string, ts time.Time) float64 {
+	return float64(ts.Unix()%86400) + float64(len(metric))
+}
+
+func consolidate(sr series, factor int) series {
+	out := series{target: sr.target, start: sr.start, step: sr.step * time.Duration(factor)}
+	for i := 0; i < len(sr.values); i += factor {
+		sum, cnt := 0.0, 0
+		for j := i; j < len(sr.values) && j < i+factor; j++ {
+			if sr.values[j] != nil {
+				sum += *sr.values[j]
+				cnt++
+			}
+		}
+		if cnt == 0 {
+			out.values = append(out.values, nil)
+		} else {
+			avg := sum / float64(cnt)
+			out.values = append(out.values, &avg)
+		}
+	}
+	out.end = out.start.Add(time.Duration(len(out.values)) * out.step)
+	return out
+}
+
+// find implements /metrics/find (treejson)
+func (s *Server) find(w http.ResponseWriter, r *http.Request) {
+	s.Finds.Add(1)
+	if f := s.Fail.Load(); f != 0 {
+		http.Error(w, "stub failure", int(f))
+		return
+	}
+	s.mu.Lock()
+	s.log = append(s.log, r.URL.Path+"?"+r.URL.RawQuery)
+	s.mu.Unlock()
+	q := r.URL.Query().Get("query")
+	qs := strings.Split(q, ".")
+	type node struct {
+		Text          string `json:"text"`
+		ID            string `json:"id"`
+		AllowChildren int    `json:"allowChildren"`
+		Expandable    int    `json:"expandable"`
+		Leaf          int    `json:"leaf"`
+	}
+	seen := make(map[string]*node)
+	s.mu.RLock()
+	for p := range s.metrics {
+		segs := strings.Split(p, ".")
+		if len(segs) < len(qs) || !segmentsMatch(qs, segs[:len(qs)]) {
+			continue
+		}
+		id := strings.Join(segs[:len(qs)], ".")
+		n, ok := seen[id]
+		if !ok {
+			n = &node{Text: segs[len(qs)-1], ID: id}
+			seen[id] = n
+		}
+		if len(segs) == len(qs) {
+			n.Leaf = 1
+		} else {
+			n.AllowChildren, n.Expandable = 1, 1
+		}
+	}
+	s.mu.RUnlock()
+	out := make([]*node, 0, len(seen))
+	for _, n := range seen {
+		out = append(out, n)
+	}
+	slices.SortFunc(out, func(a, b *node) int { return strings.Compare(a.ID, b.ID) })
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
+}

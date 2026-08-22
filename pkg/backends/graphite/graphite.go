@@ -25,13 +25,18 @@
 package graphite
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
 	"net/http"
+	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	gro "github.com/trickstercache/trickster/v2/pkg/backends/graphite/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/graphite/resolution"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
+	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 )
 
 var _ backends.TimeseriesBackend = (*Client)(nil)
@@ -39,6 +44,22 @@ var _ backends.TimeseriesBackend = (*Client)(nil)
 // Client Implements the Proxy Client Interface
 type Client struct {
 	backends.TimeseriesBackend
+	resolver *resolution.Resolver
+	learner  *resolution.Learner
+	registry *resolution.Registry
+}
+
+// Resolver returns the step resolver for this backend
+func (c *Client) Resolver() *resolution.Resolver { return c.resolver }
+
+// Registry returns the resolution registry for this backend
+func (c *Client) Registry() *resolution.Registry { return c.registry }
+
+// Close stops background ladder learning
+func (c *Client) Close() {
+	if c.learner != nil {
+		c.learner.Close()
+	}
 }
 
 var _ types.NewBackendClientFunc = NewClient
@@ -61,5 +82,98 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 	b, err := backends.NewTimeseriesBackend(name, o, c.RegisterHandlers, router,
 		cache, nil)
 	c.TimeseriesBackend = b
+	if err != nil {
+		return c, err
+	}
+	err = c.initResolution(name, o, cache)
 	return c, err
+}
+
+// initResolution assembles the resolution registry, probe engine and
+// resolver from the backend's options
+func (c *Client) initResolution(name string, o *bo.Options, cache cache.Cache) error {
+	var g *gro.Options
+	if o != nil {
+		g = o.Graphite
+	}
+	if g == nil {
+		g = gro.New()
+	}
+	static, err := resolution.NewStatic(staticRules(g))
+	if err != nil {
+		return err
+	}
+	var store resolution.Store
+	if g.ResolutionRegistry.Persist && cache != nil {
+		store = cache
+	}
+	ro := resolution.RegistryOptions{
+		TTL:            time.Duration(g.ResolutionRegistry.TTL),
+		NegativeTTL:    time.Duration(g.ResolutionRegistry.NegativeTTL),
+		NegativeTTLMax: gro.DefaultNegativeTTLMax,
+		MaxEntries:     g.ResolutionRegistry.MaxEntries,
+		KeyPrefix:      name + ".",
+	}
+	if ro.TTL <= 0 {
+		ro.TTL = gro.DefaultRegistryTTL
+	}
+	if ro.NegativeTTL <= 0 {
+		ro.NegativeTTL = gro.DefaultNegativeTTL
+	}
+	c.registry = resolution.NewRegistry(ro, store)
+	// a change in static_retentions across a reload or restart invalidates
+	// everything learned under the previous configuration
+	if store != nil {
+		key := name + ".graphite.resolution.config"
+		h := configHash(g)
+		if b, st, err := store.Retrieve(key); err != nil || st != status.LookupStatusHit || string(b) != h {
+			if st == status.LookupStatusHit {
+				c.registry.BumpGeneration()
+			}
+			_ = store.Store(key, []byte(h), 0)
+		}
+	}
+	var timeout time.Duration
+	if o != nil {
+		timeout = time.Duration(o.Timeout)
+	}
+	origin := &resolution.Origin{Base: c.BaseUpstreamURL(), Client: c.HTTPClient(), Timeout: timeout}
+	obs := resolution.NopObserver{}
+	expander := &resolution.Expander{
+		Origin: origin, Registry: c.registry, Observer: obs,
+		TTL: time.Duration(g.FindCacheTTL),
+	}
+	if expander.TTL <= 0 {
+		expander.TTL = gro.DefaultFindCacheTTL
+	}
+	prober := &resolution.Prober{Origin: origin, Observer: obs}
+	c.learner = &resolution.Learner{
+		Prober: prober, Expander: expander, Registry: c.registry,
+		Observer: obs, Concurrency: g.ResolutionRegistry.ProbeConcurrency,
+		Budget: g.ResolutionRegistry.ProbeBudget, Name: name,
+	}
+	c.resolver = &resolution.Resolver{
+		Registry: c.registry, Expander: expander,
+		Learner: c.learner, Static: static, Observer: obs,
+	}
+	return nil
+}
+
+func staticRules(g *gro.Options) [][2]string {
+	rules := make([][2]string, len(g.StaticRetentions))
+	for i, r := range g.StaticRetentions {
+		rules[i] = [2]string{r.Pattern, r.Retentions}
+	}
+	return rules
+}
+
+func configHash(g *gro.Options) string {
+	h := sha1.New()
+	for _, r := range g.StaticRetentions {
+		h.Write([]byte(r.Pattern))
+		h.Write([]byte{0})
+		h.Write([]byte(r.Retentions))
+		h.Write([]byte{0})
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }

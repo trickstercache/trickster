@@ -35,6 +35,18 @@ func TestNewAndClone(t *testing.T) {
 	if o2 == nil || o2 == o || o2.TimeZone != DefaultTimeZone || !o2.PassthroughMaxDataPoints {
 		t.Error("expected a distinct, equal clone")
 	}
+	if o2.StaticRetentions != nil {
+		t.Error("nil static retentions must clone as nil")
+	}
+	o.StaticRetentions = []StaticRetention{{Pattern: "a", Retentions: "10s:6h"}}
+	o3 := o.Clone()
+	o3.StaticRetentions[0].Pattern = "b"
+	if o.StaticRetentions[0].Pattern != "a" || len(o3.StaticRetentions) != 1 {
+		t.Error("static retentions must be deep-copied")
+	}
+	if o.ResolutionRegistry.TTL == 0 || !o.ResolutionRegistry.Persist || o.FindCacheTTL == 0 {
+		t.Error("registry defaults")
+	}
 }
 
 func TestUnmarshalYAML(t *testing.T) {
