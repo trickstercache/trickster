@@ -186,9 +186,3 @@ and explicitly verifies the Vitess license used by the native protocol/parser.
 Release archives include that tree. Container images install the project
 `LICENSE`, `NOTICE`, and third-party tree under `/licenses`; RPMs install the
 same material under the platform license directory.
-
-Maintainer approval is recorded using
-[`mysql-release-approval.md`](mysql-release-approval.md). The checked-in file
-is intentionally a pending template until a named maintainer reviews the final
-server, client, SQL, protocol, authentication, TLS, caching, deployment,
-benchmark, and artifact evidence for a specific commit.
