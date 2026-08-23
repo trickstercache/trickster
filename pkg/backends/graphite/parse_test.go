@@ -44,13 +44,20 @@ func newTestClient(t *testing.T, o *bo.Options) *Client {
 		o.Graphite = gro.New()
 	}
 	if o.Graphite.StaticRetentions == nil {
-		o.Graphite.StaticRetentions = []gro.StaticRetention{{Pattern: `.`, Retentions: "10s:6h,60s:7d,10m:5y"}}
+		o.Graphite.StaticRetentions = []gro.StaticRetention{
+			// ordered, first match wins: slow.* sits on a coarser ladder so
+			// that a multi-target request can disagree on the step
+			{Pattern: `^slow\.`, Retentions: "5m:90d"},
+			{Pattern: `.`, Retentions: "10s:6h,60s:7d,10m:5y"},
+		}
 	}
 	origin := mockserver.New()
 	t.Cleanup(origin.Close)
 	for _, m := range []string{"a.b", "c.d", "dev.fast.requests.api.count", "dev.fast.requests.web.count", "c.e"} {
 		origin.Add(m, "10s:6h,60s:7d,10m:5y")
 	}
+	// a metric on a different ladder, for the multi-target mismatch row
+	origin.Add("slow.a", "5m:90d")
 	u, _ := url.Parse(origin.URL)
 	o.Scheme, o.Host = u.Scheme, u.Host
 	c, err := NewClient("test", o, nil, nil, nil, nil)
@@ -159,24 +166,11 @@ func TestParseTimeRangeQueryPOST(t *testing.T) {
 	}
 }
 
-func TestParseTimeRangeQueryFixedStep(t *testing.T) {
+func TestParseTimeRangeQueryClamp(t *testing.T) {
 	c := newTestClient(t, nil)
-	trq, _, _, err := c.ParseTimeRangeQuery(getReq("target=summarize(a.b,'1h')&target=summarize(c.d,'1h','max')&format=json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if trq.Step != time.Hour {
-		t.Errorf("expected a 1h fixed step, got %v", trq.Step)
-	}
-	if rq := trq.ParsedQuery.(*RenderQuery); rq.Targets[0].Resolution.Source != resolution.SourceFunction {
-		t.Errorf("expected the step to come from the function, got %+v", rq.Targets[0].Resolution)
-	}
-	// absent from/until default to -1d..now, then align to the fixed 1h step
-	if d := trq.Extent.End.Sub(trq.Extent.Start); d != 23*time.Hour {
-		t.Errorf("unexpected default extent width %v", d)
-	}
-	// a from beyond maxRetention is clamped to the oldest point
-	trq, _, _, err = c.ParseTimeRangeQuery(getReq("target=a.b&from=-10y&until=now&format=json"))
+	// a from beyond maxRetention is clamped to the oldest point the origin
+	// holds, and the effective age pins every upstream fetch to that edge
+	trq, _, _, err := c.ParseTimeRangeQuery(getReq("target=a.b&from=-10y&until=now&format=json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,6 +179,14 @@ func TestParseTimeRangeQueryFixedStep(t *testing.T) {
 	if rq.Age <= 5*365*24*time.Hour || rq.EffectiveAge != 5*365*24*time.Hour ||
 		trq.Extent.Start.Before(oldest) || trq.Extent.Start.Sub(oldest) > trq.Step {
 		t.Errorf("expected a clamp to maxRetention, got age %v effective %v start %v", rq.Age, rq.EffectiveAge, trq.Extent.Start)
+	}
+	// absent from/until default to -1d..now
+	trq, _, _, err = c.ParseTimeRangeQuery(getReq("target=a.b&format=json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d := trq.Extent.End.Sub(trq.Extent.Start); d != 24*time.Hour-trq.Step {
+		t.Errorf("unexpected default extent width %v (step %v)", d, trq.Step)
 	}
 }
 
@@ -212,7 +214,7 @@ func TestParseTimeRangeQueryFallbacks(t *testing.T) {
 		{"second target not allowlisted", c, getReq("target=a.b&target=highestMax(a.*,1)&format=json"), parsing.ReasonFunctionNotAllowlisted, "highestMax"},
 		{"template", c, getReq("target=template(a.$1,'x')&format=json"), parsing.ReasonFunctionNotAllowlisted, "template"},
 		{"generator", c, getReq("target=constantLine(1)&format=json"), parsing.ReasonFunctionNotAllowlisted, "constantLine"},
-		{"mixed fixed steps", c, getReq("target=summarize(a.b,'1h')&target=summarize(c.d,'1d')&format=json"), parsing.ReasonMultiTargetMismatch, "summarize(c.d,'1d')"},
+		{"targets on different ladders", c, getReq("target=a.b&target=slow.a&from=-1h&format=json"), parsing.ReasonMultiTargetMismatch, "slow.a"},
 		{"beyond retention", c, getReq("target=a.b&from=-10y&until=-9y&format=json"), parsing.ReasonUnknownStep, "beyond maxRetention"},
 		{"passthrough maxDataPoints", ptc, getReq("target=a.b&format=json&maxDataPoints=100"), parsing.ReasonPassthroughMaxPoints, "maxDataPoints"},
 	}

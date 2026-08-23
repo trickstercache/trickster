@@ -118,8 +118,9 @@ var (
 
 // allowlist is the v1 two-property table. Anything absent is unknown and
 // fails closed. Per D4 the list starts deliberately boring: cross-series
-// aggregation, per-point arithmetic, naming/cosmetics, and summarize with
-// absolute bucket alignment. Time-windowed functions (movingAverage,
+// aggregation, per-point arithmetic and naming/cosmetics, all of which are
+// per-timestamp and so decompose over any range. Time-windowed functions
+// (movingAverage,
 // derivative, integral, holtWinters*, timeShift), whole-range selectors
 // (highest*, lowest*, sortBy*, limit, *Percentile, *Above, *Below),
 // generators (constantLine, timeFunction, ...), tag finders (seriesByTag) and
@@ -198,10 +199,17 @@ var allowlist = map[string]funcSpec{
 	"secondYAxis":    inherit,
 	"stacked":        inherit,
 	"areaBetween":    inherit,
-	// step-fixing
-	"summarize": {step: StepFixed, conditional: classifySummarize, seriesArgs: 1},
-	"hitcount":  {step: StepFixed, conditional: classifyHitcount, seriesArgs: 1},
-	// step-fixing but window-relative: never decomposable
+	// step-fixing, and none of them decomposable: a bucket is summarized
+	// over the points that were fetched, so a bucket at the edge of the
+	// requested window holds a partial value. Measured against graphite-web
+	// 1.1.10: summarize(...,'1h') reported 134885.899, 302921.880 and
+	// 307388.038 for the same absolute bucket over three different windows.
+	// Caching such a value and reusing it for another window returns
+	// incorrect data, so these take the unaccelerated lane until Trickster
+	// evaluates them itself over cached native-resolution leaves (plan
+	// item 12.1).
+	"summarize":      {step: StepFixed, conditional: classifySummarize, seriesArgs: 1},
+	"hitcount":       {step: StepFixed, conditional: classifyHitcount, seriesArgs: 1},
 	"smartSummarize": {step: StepFixed, conditional: classifySmartSummarize, seriesArgs: 1},
 	// time-shifting: step inherits, fetch window moves; not decomposable in v1
 	"timeShift": {step: StepShift, conditional: classifyTimeShift, seriesArgs: 1},
@@ -359,33 +367,33 @@ func boolArg(n Node, def bool) (bool, bool) {
 	return false, false
 }
 
-// summarize(series, interval, func='sum', alignToFrom=False): buckets align
-// to absolute interval boundaries unless alignToFrom, in which case they
-// align to the query's from and are not decomposable
+// summarize(series, interval, func='sum', alignToFrom=False) fixes the
+// output step to the interval, and is never decomposable: the bucket
+// covering an edge of the requested window summarizes only the points
+// inside that window, so its value changes with the window. The arguments
+// are still parsed, so a malformed interval is a parse error rather than an
+// unrecognized function.
 func classifySummarize(c *Call) (StepEffect, time.Duration, bool) {
 	d, ok := intervalArg(argValue(c, 1, "intervalString"))
 	if !ok {
 		return StepUnknown, 0, false
 	}
-	alignToFrom, ok := boolArg(argValue(c, 3, "alignToFrom"), false)
-	if !ok {
+	if _, ok := boolArg(argValue(c, 3, "alignToFrom"), false); !ok {
 		return StepUnknown, 0, false
 	}
-	return StepFixed, d, !alignToFrom
+	return StepFixed, d, false
 }
 
-// hitcount(series, interval, alignToInterval=False): the inverse flag —
-// buckets start at the query's from unless alignToInterval
+// hitcount(series, interval, alignToInterval=False) buckets like summarize
 func classifyHitcount(c *Call) (StepEffect, time.Duration, bool) {
 	d, ok := intervalArg(argValue(c, 1, "intervalString"))
 	if !ok {
 		return StepUnknown, 0, false
 	}
-	alignToInterval, ok := boolArg(argValue(c, 2, "alignToInterval"), false)
-	if !ok {
+	if _, ok := boolArg(argValue(c, 2, "alignToInterval"), false); !ok {
 		return StepUnknown, 0, false
 	}
-	return StepFixed, d, alignToInterval
+	return StepFixed, d, false
 }
 
 // smartSummarize aligns relative to the window: step is known, never

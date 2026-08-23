@@ -92,6 +92,11 @@ type RenderQuery struct {
 	Age, EffectiveAge time.Duration
 	// Fallback is the frozen reason when the request was declined, or empty
 	Fallback string
+	// Confidence is the weakest resolution confidence across the request's
+	// targets, and Source where it came from; both are the frozen label
+	// values of trickster_graphite_resolution_lookups_total
+	Confidence resolution.Confidence
+	Source     string
 
 	mismatch atomic.Pointer[stepMismatch]
 }
@@ -162,97 +167,31 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	rp := parsing.ParseRenderParams(qp)
 	rq := &RenderQuery{Params: rp, Location: c.location(rp.TZ), Now: time.Now().Truncate(time.Second)}
 	trq.ParsedQuery = rq
-	if len(rp.Targets) == 0 {
-		return trq, nil, true, c.decline(rq, trq, qp, parsing.ReasonMissingTarget, upTarget, nil)
-	}
-	if rp.Declined != "" {
-		return trq, nil, true, c.decline(rq, trq, qp, rp.Declined, rp.DeclinedParam, nil)
-	}
-	if o := c.Configuration(); o != nil && o.Graphite != nil &&
-		o.Graphite.PassthroughMaxDataPoints && rp.MaxDataPoints > 0 {
-		return trq, nil, true, c.decline(rq, trq, qp, parsing.ReasonPassthroughMaxPoints, "maxDataPoints", nil)
-	}
-	if rp.Now != "" {
-		n, err := parsing.ParseATTime(rp.Now, rq.Location, rq.Now)
-		if err != nil {
-			return trq, nil, true, c.decline(rq, trq, qp, parsing.ReasonParseError, "now", err)
-		}
-		rq.Now = n
-	}
-	ext, err := parsing.ParseTimeRange(rp.From, rp.Until, rq.Location, rq.Now)
-	if err != nil {
-		return trq, nil, true, c.decline(rq, trq, qp, parsing.ReasonParseError, "from/until", err)
-	}
-	trq.Extent = ext
-	rq.Age = rq.Now.Sub(ext.Start)
-	rq.EffectiveAge = rq.Age
 
-	rq.Targets = make([]Target, len(rp.Targets))
-	canonical := make([]string, len(rp.Targets))
-	for i, src := range rp.Targets {
-		ast, err := parsing.ParseTarget(src)
-		if err != nil {
-			return trq, nil, true, c.decline(rq, trq, qp, parsing.ReasonParseError, upTarget, err)
-		}
-		cl := parsing.Classify(ast)
-		if !cl.Accelerable() {
-			return trq, nil, true, c.decline(rq, trq, qp, cl.Reason, cl.Offender, nil)
-		}
-		canonical[i] = parsing.Format(ast)
-		rq.Targets[i] = Target{Source: src, Canonical: canonical[i], AST: ast, Class: cl}
+	// one decision, from the confidence routing table (design note §6)
+	d := c.route(r.Context(), rq)
+	rq.Confidence, rq.Source = d.Confidence, d.Source
+	if d.Lane == LaneObject {
+		return trq, nil, true, c.decline(rq, trq, qp, d.Reason, d.Detail, d.Err)
 	}
+
 	// targets cannot contain a newline (the grammar admits printable ASCII
 	// only), so it is a safe separator for the statement
+	canonical := make([]string, len(rq.Targets))
+	keys := make([]string, len(rq.Targets))
+	for i, t := range rq.Targets {
+		canonical[i], keys[i] = t.Canonical, t.Resolution.ExpansionID
+	}
 	trq.Statement = strings.Join(canonical, "\n")
-
-	// resolve the step of every target (design note §6.1); one query has
-	// one step, so a multi-target request whose targets resolve differently
-	// is declined here and split per target by the render handler (D5)
-	var step, maxRet time.Duration
-	for i := range rq.Targets {
-		t := &rq.Targets[i]
-		_, normalized := t.AST.(*parsing.Call)
-		t.Resolution = c.resolver.Resolve(r.Context(), t.Class.Leaves, t.Class.FixedStep, rq.Age, normalized)
-		if t.Resolution.Confidence == resolution.Unknown {
-			return trq, nil, true, c.decline(rq, trq, qp, t.Resolution.Reason, t.Source, nil)
-		}
-		if step != 0 && t.Resolution.Step != step {
-			return trq, nil, true, c.decline(rq, trq, qp, parsing.ReasonMultiTargetMismatch, t.Source, nil)
-		}
-		step = t.Resolution.Step
-		if mr := t.Resolution.MaxRetention; mr > 0 && (maxRet == 0 || mr < maxRet) {
-			maxRet = mr
-		}
-	}
-	trq.Step = step
-
-	// whisper's range clamp (§2.3): a window wholly beyond retention has no
-	// data to cache; a from beyond retention is moved to the oldest point
-	if maxRet > 0 {
-		start, end, ok := resolution.Clamp(ext.Start, ext.End, rq.Now, maxRet)
-		if !ok {
-			return trq, nil, true, c.decline(rq, trq, qp, parsing.ReasonUnknownStep, "beyond maxRetention", nil)
-		}
-		trq.Extent.Start, trq.Extent.End = start, end
-		rq.EffectiveAge = min(rq.Age, maxRet)
-	}
-	// the extent is the set of buckets the origin returns for this window
-	// (§2.2): the first bucket strictly after from and the last at or
-	// before until, both step-aligned; SetExtent inverts this per fetch
-	first, afterLast := resolution.AlignInterval(trq.Extent.Start, trq.Extent.End, step)
-	trq.Extent.Start, trq.Extent.End = first, afterLast.Add(-step)
+	trq.Extent, trq.Step = d.Extent, d.Step
 
 	// cache key (7.2): the canonical target, the resolved leaf set, the
 	// effective step and the registry generation; a relearned ladder or a
 	// changed wildcard expansion therefore misses rather than collides
-	keys := make([]string, 0, len(rq.Targets))
-	for _, t := range rq.Targets {
-		keys = append(keys, t.Resolution.ExpansionID)
-	}
 	trq.CacheKeyElements = map[string]string{
 		upTarget: trq.Statement,
 		"leaves": strings.Join(keys, ","),
-		"step":   step.String(),
+		"step":   d.Step.String(),
 		"gen":    strconv.FormatUint(c.registry.Generation(), 10),
 	}
 
@@ -260,7 +199,7 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	// newest rung is fine-grained, so unless configured, tolerate two steps
 	// and at least thirty seconds of recent data being rewritten
 	if o := c.Configuration(); o != nil && o.BackfillTolerance == 0 && o.BackfillTolerancePoints == 0 {
-		trq.BackfillTolerance = max(2*step, DefaultBackfillTolerance)
+		trq.BackfillTolerance = max(2*d.Step, DefaultBackfillTolerance)
 	}
 
 	// maxDataPoints, format, noNullPoints, jsonp, pretty and tz are applied

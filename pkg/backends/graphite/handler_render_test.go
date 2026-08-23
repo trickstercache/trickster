@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -49,8 +50,12 @@ type harness struct {
 	client *Client
 	o      *bo.Options
 	now    time.Time
-	// fetches is the number of origin renders the last handler call made
+	// fetches is the number of origin renders the last handler call made,
+	// and lastRQ the render query it produced
 	fetches int64
+	lastRQ  *RenderQuery
+	// originURL is where direct() sends its comparison requests
+	originURL string
 }
 
 var harnessLadders = map[string]string{
@@ -60,7 +65,7 @@ var harnessLadders = map[string]string{
 	"dev.coarse.users.active":         "5m:90d",
 }
 
-func newHarness(t *testing.T) *harness {
+func newHarness(t *testing.T, mods ...func(*bo.Options)) *harness {
 	t.Helper()
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	origin := mockserver.New()
@@ -80,6 +85,13 @@ func newHarness(t *testing.T) *harness {
 	}
 	// learn synchronously in tests: no background runs
 	o.Graphite.ResolutionRegistry.Persist = false
+	// the delta path buffers a whole response to model it, and graphite
+	// fetches at native resolution: size this as a real deployment must
+	o.MaxObjectSizeBytes = 64 * 1024 * 1024
+	o.TimeseriesRetentionFactor = 1000000
+	for _, mod := range mods {
+		mod(o)
+	}
 	b, err := NewClient("default", o, nil, caches["default"], nil, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -89,8 +101,42 @@ func newHarness(t *testing.T) *harness {
 	t.Cleanup(c.Close)
 	o.HTTPClient = c.HTTPClient()
 	o.Paths = c.DefaultPathConfigs(o)
-	return &harness{t: t, stub: origin, client: c, o: o,
+	return &harness{t: t, stub: origin, client: c, o: o, originURL: origin.URL,
 		now: time.Now().Truncate(10 * time.Second)}
+}
+
+// newLiveHarness points the same harness at a real graphite-web, skipping
+// the test when GRAPHITE_WEB_URL is unset (the dev env exposes it on
+// http://127.0.0.1:8081)
+func newLiveHarness(t *testing.T) *harness {
+	t.Helper()
+	base := os.Getenv("GRAPHITE_WEB_URL")
+	if base == "" {
+		t.Skip("GRAPHITE_WEB_URL not set")
+	}
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
+	conf, err := config.Load([]string{"-origin-url", base, "-provider", "graphite"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	caches := cr.LoadCachesFromConfig(conf)
+	t.Cleanup(func() { cr.CloseCaches(caches) })
+	o := conf.Backends["default"]
+	if o.Graphite == nil {
+		o.Graphite = gro.New()
+	}
+	o.Graphite.ResolutionRegistry.Persist = false
+	o.MaxObjectSizeBytes = 64 * 1024 * 1024
+	b, err := NewClient("default", o, nil, caches["default"], nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := b.(*Client)
+	t.Cleanup(c.Close)
+	o.HTTPClient = c.HTTPClient()
+	o.Paths = c.DefaultPathConfigs(o)
+	return &harness{t: t, client: c, o: o, originURL: base,
+		now: time.Now().Add(-time.Minute).Truncate(10 * time.Second)}
 }
 
 // learn learns every stub ladder synchronously
@@ -121,9 +167,15 @@ func (h *harness) serve(r *http.Request) *httptest.ResponseRecorder {
 	rsc := request.NewResources(h.o, h.o.Paths[0], h.client.Cache().Configuration(), h.client.Cache(), h.client, nil)
 	r = request.SetResources(r, rsc)
 	w := httptest.NewRecorder()
-	before := h.stub.Renders.Load()
+	var before int64
+	if h.stub != nil {
+		before = h.stub.Renders.Load()
+	}
 	h.client.RenderHandler(w, r)
-	h.fetches = h.stub.Renders.Load() - before
+	if h.stub != nil {
+		h.fetches = h.stub.Renders.Load() - before
+	}
+	h.lastRQ = h.client.renderQueryOf(rsc)
 	return w
 }
 
@@ -138,7 +190,7 @@ func (h *harness) expectFetches(label string, n int64) {
 // direct renders the same query at the stub origin
 func (h *harness) direct(q url.Values) string {
 	h.t.Helper()
-	resp, err := http.Get(h.stub.URL + "/render?" + q.Encode())
+	resp, err := http.Get(h.originURL + "/render?" + q.Encode())
 	if err != nil {
 		h.t.Fatal(err)
 	}
@@ -388,5 +440,57 @@ func TestRenderConcurrentRenderingVariants(t *testing.T) {
 		if want := h.direct(queries[i]); got[i] != want {
 			t.Errorf("%s got another request's rendering\n got: %.200s\nwant: %.200s", v.label, got[i], want)
 		}
+	}
+}
+
+// TestLearnOnlyFromTransparentTargets: learn-on-first-response may only
+// take a step from a response that actually states the leaf's native step.
+// smartSummarize is not allowlisted (its buckets are window-relative), so
+// the request is unaccelerated and its response is summarized -- recording
+// its step would be the speculative write design note §4.5 forbids. An
+// empty response teaches nothing either.
+func TestLearnOnlyFromTransparentTargets(t *testing.T) {
+	h := newHarness(t)
+	const leaf = "dev.medium.orders.us-east.count"
+	// a summarized response: the fallback reason is function_not_allowlisted,
+	// not unknown_step, so it never reaches the learner
+	h.same("smartSummarize", h.query(url.Values{"target": {"smartSummarize(" + leaf + ", '1h')"}, "from": {"-6h"}}))
+	if key, conf, ok := h.client.Registry().Leaf(leaf); ok {
+		t.Errorf("a summarized response must not teach a step (learned %q at %v)", key, conf)
+	}
+	// an empty response (here: the mock does not evaluate functions, so the
+	// target matches nothing) states no step and must teach nothing
+	h.same("empty", h.query(url.Values{"target": {"aliasByNode(dev.fast.cpu.host02.percent, 3)"}, "from": {"-90min"}}))
+	if _, _, ok := h.client.Registry().Leaf("dev.fast.cpu.host02.percent"); ok {
+		t.Error("an empty response must not teach a step")
+	}
+	// a bare path does teach it
+	h.same("bare path", h.query(url.Values{"target": {"dev.fast.cpu.host01.percent"}, "from": {"-90min"}}))
+	if _, _, ok := h.client.Registry().Leaf("dev.fast.cpu.host01.percent"); !ok {
+		t.Error("a step-bearing response must teach the step")
+	}
+}
+
+// TestRenderOversizeDegrades: a response the origin serves happily but that
+// exceeds max_object_size_bytes cannot be modeled by the delta cache, which
+// must buffer it. The client must still get the origin's answer, from the
+// object lane, rather than a 500.
+func TestRenderOversizeDegrades(t *testing.T) {
+	h := newHarness(t, func(o *bo.Options) { o.MaxObjectSizeBytes = 2048 })
+	h.learn("dev.fast.cpu.host01.percent")
+	// a window whose native-resolution response is far larger than 2KB
+	q := h.query(url.Values{"target": {"dev.fast.cpu.host01.percent"}, "from": {"-3h"}})
+	w := h.render(q)
+	if w.Code != http.StatusOK {
+		t.Fatalf("an oversize response must degrade, not fail: status %d", w.Code)
+	}
+	if want := h.direct(q); w.Body.String() != want {
+		t.Errorf("degraded response differs from the origin\n got: %.200s\nwant: %.200s", w.Body.String(), want)
+	}
+	// and a small window on the same target is still accelerated
+	small := h.query(url.Values{"target": {"dev.fast.cpu.host01.percent"}, "from": {"-6min"}})
+	h.same("small window", small)
+	if h.lastRQ.Fallback != "" {
+		t.Errorf("a small response must still be accelerated, got fallback %q", h.lastRQ.Fallback)
 	}
 }

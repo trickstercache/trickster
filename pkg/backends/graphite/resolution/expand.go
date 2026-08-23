@@ -17,8 +17,11 @@
 package resolution
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/url"
 	"slices"
 	"strings"
@@ -47,10 +50,11 @@ type Expander struct {
 	TTL time.Duration
 }
 
-type findNode struct {
-	ID   string `json:"id"`
-	Text string `json:"text"`
-	Leaf int    `json:"leaf"`
+// expandResult is one document of a /metrics/expand response. graphite-web
+// emits one document per top-level brace alternative, concatenated, so the
+// body is a stream of these rather than a single value.
+type expandResult struct {
+	Results []string `json:"results"`
 }
 
 // IsWildcard reports whether a path expression needs expansion
@@ -69,7 +73,7 @@ func (e *Expander) Expand(ctx context.Context, expr string) ([]string, string, e
 	if leaves, id, ok := e.Registry.Target(expr); ok {
 		return leaves, id, nil
 	}
-	leaves, err := e.find(ctx, expr, true)
+	leaves, err := e.find(ctx, expr)
 	if err != nil {
 		return nil, "", err
 	}
@@ -79,7 +83,7 @@ func (e *Expander) Expand(ctx context.Context, expr string) ([]string, string, e
 
 // Exists reports whether a leaf path exists at the origin
 func (e *Expander) Exists(ctx context.Context, path string) Existence {
-	leaves, err := e.find(ctx, path, true)
+	leaves, err := e.find(ctx, path)
 	if err != nil {
 		return ExistsUnknown
 	}
@@ -89,28 +93,48 @@ func (e *Expander) Exists(ctx context.Context, path string) Existence {
 	return NotExists
 }
 
-// find calls /metrics/find and returns the matching ids; leafOnly drops
-// branch nodes
-func (e *Expander) find(ctx context.Context, query string, leafOnly bool) ([]string, error) {
-	body, err := e.Origin.Get(ctx, "/metrics/find", url.Values{"query": {query}, "format": {"treejson"}})
+// find expands a path expression to the concrete leaf paths it matches.
+//
+// It uses /metrics/expand rather than /metrics/find: find is a tree browser
+// that answers one level at a time, and given a pattern with a wildcard at
+// an interior level it returns a single node echoing the pattern back
+// (measured on graphite-web 1.1.10: dev.fast.cpu.*.percent yields one node
+// with id "dev.fast.cpu.*.percent"). Keying the registry on that pattern
+// would reintroduce exactly the staleness the design note's §5.5 warns
+// about, because a new metric under the wildcard would not change the key.
+// /metrics/expand?leavesOnly=1 enumerates the concrete leaves instead.
+func (e *Expander) find(ctx context.Context, query string) ([]string, error) {
+	body, err := e.Origin.Get(ctx, "/metrics/expand",
+		url.Values{"query": {query}, "leavesOnly": {"1"}, "format": {"json"}})
 	if err != nil {
 		e.observe(ResultError)
 		return nil, err
 	}
-	var nodes []findNode
-	if err := json.Unmarshal(body, &nodes); err != nil {
-		e.observe(ResultError)
-		return nil, err
-	}
-	out := make([]string, 0, len(nodes))
-	for _, n := range nodes {
-		if leafOnly && n.Leaf == 0 {
-			continue
+	// one document per top-level brace alternative, concatenated
+	dec := json.NewDecoder(bytes.NewReader(body))
+	seen := make(map[string]struct{})
+	out := make([]string, 0, 8)
+	for {
+		var res expandResult
+		if err := dec.Decode(&res); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			e.observe(ResultError)
+			return nil, err
 		}
-		if n.ID != "" {
-			out = append(out, n.ID)
+		for _, p := range res.Results {
+			if p == "" {
+				continue
+			}
+			if _, dup := seen[p]; dup {
+				continue
+			}
+			seen[p] = struct{}{}
+			out = append(out, p)
 		}
 	}
+	slices.Sort(out)
 	if len(out) == 0 {
 		e.observe(ResultEmpty)
 	} else {

@@ -86,6 +86,20 @@ func (c *Client) renderOne(w http.ResponseWriter, r *http.Request) {
 		if rq.Fallback == parsing.ReasonUnknownStep && cw.StatusCode() == http.StatusOK {
 			c.learnFromResponse(rq, cw)
 		}
+		if c.unmodelable(rq, cw) {
+			// the origin answered, but the delta cache could not model the
+			// response -- most often because it exceeded
+			// max_object_size_bytes, which the delta path must buffer to
+			// model but the object path can stream. Degrade rather than
+			// turn a working query into a 500.
+			logger.Warn("graphite response could not be modeled; serving unaccelerated",
+				logging.Pairs{
+					"backendName": c.Name(), "statusCode": cw.StatusCode(),
+					"detail": "if this repeats, raise max_object_size_bytes for this backend",
+				})
+			c.fallback(w, r, rsc)
+			return
+		}
 	}
 	headers.Merge(w.Header(), cw.Header())
 	w.WriteHeader(cw.StatusCode())
@@ -162,6 +176,9 @@ func (c *Client) renderSplit(w http.ResponseWriter, r *http.Request, qp url.Valu
 	_ = eg.Wait()
 
 	merged := &dataset.DataSet{Results: []*dataset.Result{{}}}
+	// msgpack reports the target expression a series came from, so record
+	// which target produced each merged series
+	var paths []string
 	for i := range members {
 		m := &members[i]
 		if !m.ok {
@@ -181,6 +198,9 @@ func (c *Client) renderSplit(w http.ResponseWriter, r *http.Request, qp url.Valu
 		}
 		if len(ds.Results) > 0 && ds.Results[0] != nil {
 			merged.Results[0].SeriesList = append(merged.Results[0].SeriesList, ds.Results[0].SeriesList...)
+			for range ds.Results[0].SeriesList {
+				paths = append(paths, targets[i])
+			}
 		}
 	}
 	h := w.Header()
@@ -193,6 +213,11 @@ func (c *Client) renderSplit(w http.ResponseWriter, r *http.Request, qp url.Valu
 				h[k] = v
 			}
 		}
+	}
+	if rq := c.renderQueryOf(rsc); rq != nil {
+		ro := rq.RenderOptions()
+		ro.PathExpressions = paths
+		rlo = &timeseries.RequestOptions{ProviderRequest: ro}
 	}
 	if err := c.Modeler().WireMarshalWriter(merged, rlo, http.StatusOK, w); err != nil {
 		logger.Error("graphite render marshal failed", logging.Pairs{"backendName": c.Name(), "error": err.Error()})
@@ -223,6 +248,15 @@ func (c *Client) retract(rq *RenderQuery, target string, predicted, observed tim
 		"target":      target, "predicted": predicted.String(), "observed": observed.String(),
 	})
 	c.resolver.Mispredict(rq.Leaves(), predicted, observed)
+}
+
+// unmodelable reports whether an accelerated request failed inside
+// Trickster rather than at the origin: the delta cache reports its own
+// failures as a bodyless 500, while an origin error is relayed with the
+// origin's status and body
+func (c *Client) unmodelable(rq *RenderQuery, cw *capture.CaptureResponseWriter) bool {
+	return rq.Fallback == "" && cw.StatusCode() == http.StatusInternalServerError &&
+		len(cw.Body()) == 0
 }
 
 // reproxy serves the original request unaccelerated after a misprediction

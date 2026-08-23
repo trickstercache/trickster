@@ -19,7 +19,15 @@
 // It honors the fetch semantics the design note depends on (archive
 // selection by now-from, interval alignment, range clamping, the empty
 // response beyond maxRetention, the `now` parameter) as measured against
-// graphite-web 1.1.10 in §9 of the design note.
+// graphite-web 1.1.10 in §9 of the design note, and renders every output
+// format through the provider's own model package.
+//
+// It does NOT evaluate target functions: a target is matched as a path
+// expression (with *, ?, [a-z] and {a,b}), so aliasByNode(...) and friends
+// match nothing and return an empty response. Tests that need function
+// evaluation must run against a real graphite-web (the GRAPHITE_WEB_URL
+// live tests), and tests that compare bodies should assert the response is
+// non-empty so they cannot pass vacuously.
 package mockserver
 
 import (
@@ -81,6 +89,7 @@ func New() *Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/render", s.render)
 	mux.HandleFunc("/metrics/find", s.find)
+	mux.HandleFunc("/metrics/expand", s.expand)
 	s.Server = httptest.NewServer(mux)
 	return s
 }
@@ -296,6 +305,26 @@ func fetch(m *Metric, from, until, now time.Time) (series, bool) {
 // timestamp, so tests can assert on content
 func Value(metric string, ts time.Time) float64 {
 	return float64(ts.Unix()%86400) + float64(len(metric))
+}
+
+// expand implements /metrics/expand, which enumerates the concrete leaf
+// paths a pattern matches (graphite-web emits one document per top-level
+// brace alternative; this emits one, which the expander also accepts)
+func (s *Server) expand(w http.ResponseWriter, r *http.Request) {
+	s.Finds.Add(1)
+	if f := s.Fail.Load(); f != 0 {
+		http.Error(w, "mock origin failure", int(f))
+		return
+	}
+	s.mu.Lock()
+	s.log = append(s.log, r.URL.Path+"?"+r.URL.RawQuery)
+	s.mu.Unlock()
+	out := []string{}
+	for _, m := range s.matches(r.URL.Query().Get("query")) {
+		out = append(out, m.Path)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string][]string{"results": out})
 }
 
 // find implements /metrics/find (treejson)

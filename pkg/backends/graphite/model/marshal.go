@@ -575,8 +575,15 @@ func renderMsgPack(all []*series, ro RenderOptions) ([]byte, error) {
 			}
 		}
 		b = msgp.AppendString(b, "pathExpression")
+		// graphite-web reports the target expression that produced a series,
+		// which for a wildcard covers several series. One entry applies to
+		// them all; a per-series list (built by the multi-target handler)
+		// is indexed by position.
 		path := s.name
-		if i < len(ro.PathExpressions) && ro.PathExpressions[i] != "" {
+		switch {
+		case len(ro.PathExpressions) == 1 && ro.PathExpressions[0] != "":
+			path = ro.PathExpressions[0]
+		case i < len(ro.PathExpressions) && ro.PathExpressions[i] != "":
 			path = ro.PathExpressions[i]
 		}
 		b = msgp.AppendString(b, path)
