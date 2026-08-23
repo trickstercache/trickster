@@ -249,6 +249,9 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 
 	pr := newProxyRequest(r, w)
 	rlo.FastForwardDisable = o.FastForwardDisable || rlo.FastForwardDisable
+	// providers whose marshaling depends on parameters outside the cache key
+	// must not share one pre-marshaled body across singleflight waiters
+	marshalVaries := rlo.MarshalVariesByRequest
 	// republish trq after normalize so concurrent readers see the normalized extent atomically
 	rsc.Lock()
 	trq.NormalizeExtent()
@@ -505,13 +508,19 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 			ffStatus := fetchFastForward(ctx, r, o, cc, cache, client, rsc,
 				rlo, trq, normalizedNow, modeler, rts)
 
-			// marshal the response timeseries to wire format
+			// marshal the response timeseries to wire format, unless the
+			// provider renders per request (see MarshalVariesByRequest), in
+			// which case each caller marshals the shared timeseries itself
 			rts.SetExtents(nil) // so they are not included in the client response json
-			var buf bytes.Buffer
-			modeler.WireMarshalWriter(rts, rlo, doc.StatusCode, &buf)
+			var wireBody []byte
+			if !marshalVaries {
+				var buf bytes.Buffer
+				modeler.WireMarshalWriter(rts, rlo, doc.StatusCode, &buf)
+				wireBody = buf.Bytes()
+			}
 
 			return &dpcResult{
-				wireBody:           buf.Bytes(),
+				wireBody:           wireBody,
 				rts:                rts,
 				headers:            doc.SafeHeaderClone(),
 				statusCode:         doc.StatusCode,
@@ -562,8 +571,10 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 		rh := result.headers.Clone()
 		sc := result.statusCode
 
-		// for merge members or requests with a TSTransformer, provide the timeseries
-		if rsc.IsMergeMember || rsc.TSTransformer != nil {
+		// for merge members, requests with a TSTransformer, and providers
+		// that render per request, provide the timeseries rather than the
+		// executor's pre-marshaled body
+		if rsc.IsMergeMember || rsc.TSTransformer != nil || marshalVaries {
 			rts := result.rts.Clone()
 			finalizeDPCResponse(w, r, rsc, rts, rh, sc,
 				cacheStatus, result.ffStatus, result.elapsed, result.missRanges,

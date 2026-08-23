@@ -263,7 +263,14 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 		trq.BackfillTolerance = max(2*step, DefaultBackfillTolerance)
 	}
 
-	rlo := &timeseries.RequestOptions{FastForwardDisable: true, ProviderRequest: rq}
+	// maxDataPoints, format, noNullPoints, jsonp, pretty and tz are applied
+	// at marshal time and are deliberately not in the cache key (D3, plan
+	// item 4.6), so concurrent requests differing only in those must each be
+	// rendered for themselves rather than sharing one marshaled body
+	rlo := &timeseries.RequestOptions{
+		FastForwardDisable: true, ProviderRequest: rq,
+		MarshalVariesByRequest: true,
+	}
 	return trq, rlo, true, nil
 }
 

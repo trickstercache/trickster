@@ -25,6 +25,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -329,5 +330,67 @@ func TestRenderLearnOnFirstResponse(t *testing.T) {
 	h.same("consolidated cold", h.query(url.Values{"target": {"dev.coarse.users.active"}, "from": {"-1d"}, "maxDataPoints": {"10"}}))
 	if _, _, ok := h.client.Registry().Leaf("dev.coarse.users.active"); ok {
 		t.Error("a consolidated response must not be learned from")
+	}
+}
+
+// TestRenderConcurrentRenderingVariants is the regression test for
+// rendering options leaking between concurrent requests. maxDataPoints,
+// format and noNullPoints are applied at marshal time and are deliberately
+// not in the cache key, so the delta cache collapses these requests into a
+// single upstream fetch; each must still be rendered for itself
+// (timeseries.RequestOptions.MarshalVariesByRequest).
+func TestRenderConcurrentRenderingVariants(t *testing.T) {
+	h := newHarness(t)
+	h.learn("dev.fast.cpu.host01.percent")
+	// hold each origin response so the requests below overlap in flight
+	h.stub.Delay.Store(int64(300 * time.Millisecond))
+
+	variants := []struct {
+		label string
+		extra url.Values
+	}{
+		{"maxDataPoints=10", url.Values{"maxDataPoints": {"10"}}},
+		{"maxDataPoints=1000", url.Values{"maxDataPoints": {"1000"}}},
+		{"format=csv", url.Values{"format": {"csv"}}},
+		{"noNullPoints", url.Values{"noNullPoints": {"1"}}},
+		{"plain", nil},
+	}
+	queries := make([]url.Values, len(variants))
+	for i, v := range variants {
+		q := h.query(url.Values{"target": {"dev.fast.cpu.host01.percent"}, "from": {"-3h"}})
+		for k, vals := range v.extra {
+			q[k] = vals
+		}
+		queries[i] = q
+	}
+
+	got := make([]string, len(variants))
+	before := h.stub.Renders.Load()
+	var wg sync.WaitGroup
+	for i := range variants {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			r := httptest.NewRequest(http.MethodGet, "http://trickster/render?"+queries[i].Encode(), nil)
+			rsc := request.NewResources(h.o, h.o.Paths[0], h.client.Cache().Configuration(),
+				h.client.Cache(), h.client, nil)
+			r = request.SetResources(r, rsc)
+			w := httptest.NewRecorder()
+			h.client.RenderHandler(w, r)
+			got[i] = w.Body.String()
+		}()
+	}
+	wg.Wait()
+	fetches := h.stub.Renders.Load() - before
+	h.stub.Delay.Store(0)
+
+	// the test is only meaningful if the requests really did collapse
+	if fetches > 2 {
+		t.Errorf("expected the requests to collapse into one upstream fetch, got %d", fetches)
+	}
+	for i, v := range variants {
+		if want := h.direct(queries[i]); got[i] != want {
+			t.Errorf("%s got another request's rendering\n got: %.200s\nwant: %.200s", v.label, got[i], want)
+		}
 	}
 }

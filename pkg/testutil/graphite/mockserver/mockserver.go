@@ -62,6 +62,10 @@ type Server struct {
 	Renders, Finds atomic.Int64
 	// Fail, when non-zero, makes every request return that status
 	Fail atomic.Int32
+	// Delay, when non-zero, is how long each response is held before being
+	// written; it widens the window in which concurrent requests collapse
+	// into one upstream fetch
+	Delay atomic.Int64
 	// StartSkew, when non-zero, shifts the reported start of responses
 	// that carry maxDataPoints, to simulate an origin whose consolidation
 	// aligns differently; it exercises the learner's retention-edge
@@ -186,6 +190,9 @@ type series struct {
 // render implements /render for format=raw and format=json
 func (s *Server) render(w http.ResponseWriter, r *http.Request) {
 	s.Renders.Add(1)
+	if d := s.Delay.Load(); d > 0 {
+		time.Sleep(time.Duration(d))
+	}
 	if f := s.Fail.Load(); f != 0 {
 		http.Error(w, "mock origin failure", int(f))
 		return
