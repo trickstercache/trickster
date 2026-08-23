@@ -29,6 +29,7 @@ import (
 
 	"vitess.io/vitess/go/sqltypes"
 	querypb "vitess.io/vitess/go/vt/proto/query"
+	"vitess.io/vitess/go/vt/sqlparser"
 )
 
 const grafanaDateTimeQuery = `SELECT
@@ -121,6 +122,7 @@ func TestAnalyzerClassifiesUnsupportedQueries(t *testing.T) {
 		{"embedded executable comment", "SELECT /*!80000 SQL_NO_CACHE */ count(*) FROM trips", sqlanalyzer.CacheModeNone, sqlanalyzer.ReasonNondeterministic},
 		{"locking select", "SELECT * FROM trips FOR UPDATE", sqlanalyzer.CacheModeNone, sqlanalyzer.ReasonNondeterministic},
 		{"session found rows", "SELECT SQL_CALC_FOUND_ROWS * FROM trips LIMIT 10", sqlanalyzer.CacheModeNone, sqlanalyzer.ReasonNondeterministic},
+		{"current unix timestamp", "SELECT UNIX_TIMESTAMP()", sqlanalyzer.CacheModeNone, sqlanalyzer.ReasonNondeterministic},
 		{"select into", "SELECT count(*) INTO @n FROM trips", sqlanalyzer.CacheModeNone, sqlanalyzer.ReasonNondeterministic},
 		{"advisory lock", "SELECT GET_LOCK('reporting', 1)", sqlanalyzer.CacheModeNone, sqlanalyzer.ReasonNondeterministic},
 		{"advisory unlock", "SELECT RELEASE_LOCK('reporting')", sqlanalyzer.CacheModeNone, sqlanalyzer.ReasonNondeterministic},
@@ -134,6 +136,69 @@ func TestAnalyzerClassifiesUnsupportedQueries(t *testing.T) {
 					got.Reason, got.Err, test.mode, test.reason)
 			}
 		})
+	}
+}
+
+func TestSQLCommentText(t *testing.T) {
+	tests := []struct {
+		name, statement, want string
+	}{
+		{"block", "SELECT '/* ignored */', \"# ignored\", `-- ignored` /* block */", " block  "},
+		{"escaped quote", `SELECT 'can\'t # comment' /* after */`, " after  "},
+		{"doubled quote", "SELECT 'it''s -- data' # tail", " tail"},
+		{"unterminated block", "SELECT 1 /* partial", ""},
+		{"hash line", "SELECT 1 # first\n# second", " first  second"},
+		{"dash line", "SELECT 1 -- first\n-- second", " first  second"},
+		{"operators", "SELECT 6/2, 3-1, 2--1", ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := sqlCommentText(tc.statement); got != tc.want {
+				t.Errorf("sqlCommentText() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestParseCacheModes(t *testing.T) {
+	if query, cacheable, err := Parse("DELETE FROM trips", time.Time{}); query != nil || cacheable || err == nil {
+		t.Errorf("non-cacheable Parse = %+v/%t/%v", query, cacheable, err)
+	}
+	query, cacheable, err := Parse("SELECT COUNT(*) FROM trips", time.Time{})
+	if query == nil || !cacheable || err == nil || query.Statement != "SELECT COUNT(*) FROM trips" {
+		t.Errorf("object-cache Parse = %+v/%t/%v", query, cacheable, err)
+	}
+}
+
+func TestParserDefensiveBranches(t *testing.T) {
+	parse := func(source string) sqlparser.Expr {
+		t.Helper()
+		expr, err := defaultAnalyzer.parser.ParseExpr(source)
+		if err != nil {
+			t.Fatalf("ParseExpr(%q): %v", source, err)
+		}
+		return expr
+	}
+
+	if _, err := analyzeBucket(&sqlparser.Select{}); err == nil {
+		t.Error("analyzeBucket accepted an empty select list")
+	}
+	for _, source := range []string{"1", "1 * 60", "ts / 60 * 60", "unknown() DIV 60 * 60"} {
+		if _, _, _, _, ok := matchBucketExpr(parse(source)); ok {
+			t.Errorf("matchBucketExpr(%q) succeeded", source)
+		}
+	}
+	if _, ok := unwrapSignedCasts(parse("CAST(1 AS CHAR)")); ok {
+		t.Error("unwrapSignedCasts accepted a non-SIGNED cast")
+	}
+	for _, source := range []string{
+		"FROM_UNIXTIME(epoch)",
+		"FROM_UNIXTIME(9223372037)",
+		"'not an epoch'",
+	} {
+		if _, err := parseBound(parse(source), true); err == nil {
+			t.Errorf("parseBound(%q) succeeded", source)
+		}
 	}
 }
 
