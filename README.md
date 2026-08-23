@@ -15,8 +15,6 @@ Learn more below, and check out our [roadmap](./docs/roadmap.md) to find out wha
 
 Trickster is hosted by the [Cloud Native Computing Foundation](https://cncf.io) (CNCF) as a sandbox level project. If you are a company that wants to help shape the evolution of technologies that are container-packaged, dynamically-scheduled and microservices-oriented, consider joining the CNCF.
 
-Note: Trickster v1.1 is the production release, sourced from the [v1.1.x](https://github.com/trickstercache/trickster/tree/v1.1.x) branch. The `main` branch sources Trickster 2.0, which is currently in beta.
-
 ## HTTP Reverse Proxy Cache
 
 Trickster is a fully-featured HTTP Reverse Proxy Cache for HTTP applications like static file servers and web API's.
@@ -44,11 +42,13 @@ Trickster dramatically improves dashboard chart rendering times for end users by
 
 Trickster works with virtually any Dashboard application that makes queries to any of these TSDB's:
 
-<img src="./docs/images/external/prom_logo_60.png" width=16 /> Prometheus
+<img src="./docs/images/external/prom_logo_60.png" width=24 /> [Prometheus](docs/prometheus.md)
 
-<img src="./docs/images/external/clickhouse_logo.png" width=16 /> ClickHouse
+<img src="./docs/images/external/clickhouse_logo.png" width=24 /> [ClickHouse](docs/clickhouse.md)
 
-<img src="./docs/images/external/influx_logo_60.png" width=16 /> InfluxDB
+<img src="./docs/images/external/influx_logo_60.png" width=24 /> [InfluxDB](docs/influxdb.md)
+
+<img src="./docs/images/external/mysql_logo_60.png" width=24 /> [MySQL](docs/mysql.md)
 
 See the [Supported TSDB Providers](./docs/supported-backend-providers.md) document for full details
 

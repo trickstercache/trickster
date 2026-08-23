@@ -333,7 +333,16 @@ Here is the visual representation of this configuration:
 
 The User Router mechanism is used to control a Request's destination Backend based on the username in the request. A default Backend (for no-user and users not in the manifest) can be configured, as well as a Backend per-user.
 
+Native MySQL listeners use a deliberately narrower User Router topology than
+HTTP backends: one authenticated listener-facing User Router may select only
+direct terminal MySQL backends, selection is sticky for the session, and
+`to_user`/`to_credential` remapping is rejected. See the
+[MySQL Provider Guide](mysql.md#protocol-aware-user-router) for the complete
+authentication, routing, health, cache-identity, and no-route contract.
+
 When a User Router ALB is configured to use an [Authenticator](./authenticator.md), the ALB can also modify a Request's credentials before passing it off to the destination Backend. In the graphic below, user `casey` will be routed to the `readersBackend`, which proxies to a read-only database server with the `dbreader` credentials; while user `taylor` will be routed to the `writersBackend`, which proxies to a read-write database server with the `dbwriter` credentials. Here is the example configuration corresponding to the graphic:
+
+Credential replacement is applied only when the user's configured `to_backend` target is selected. When a request instead uses `default_backend` - because the username has no mapping, the mapping does not name a usable runtime target, or the mapped target is unavailable - the request retains its inbound credentials. If a user should receive replacement credentials when routed to the same Backend that also serves as the default, set that Backend explicitly as the user's `to_backend`.
 
 ```yaml
 backends:
@@ -356,7 +365,7 @@ backends:
           casey:
             to_user: dbreader # replaces user casey with dbreader in the request's Authorization header
             to_credential: ${DB_READER_PW} # replaces credential in the Authorization header with this env
-            # casey is sent to the default backend (readers) since to_backend is not set here
+            to_backend: readersBackend # explicit selection applies casey's credential replacement
           taylor:
             to_user: dbwriter # replaces user taylor with dbwriter in the request's Authorization header
             to_credential: ${DB_WRITER_PW} # replaces credential in the Authorization header with this env
@@ -421,7 +430,16 @@ backends:
 
 ### User Router ALB Backend Pool and Health Checking
 
-The User Router does not rotate through or fanout to a Pool of Backends like the other ALB mechanisms. It also does not consider whether a destination backend is considered healthy or not. Users are blindly routed their configured (or default) backends regardless of health status.
+The User Router does not rotate through or fan out to a pool of Backends like
+the other ALB mechanisms. A healthy mapped target is selected directly. When a
+mapped target is unavailable, the request uses the healthy `default_backend`
+without applying the mapped target's credential replacement. If neither target
+is available, the router uses its configured no-route response.
+
+That fallback applies to HTTP requests. A native MySQL session whose username
+has an explicit mapping fails with a MySQL availability error when that mapped
+terminal is unavailable; it is never redirected to `default_backend`. Only an
+unmapped MySQL username may use the configured default terminal.
 
 You can configure a User Router ALB's backend destinations to be other ALBs with mechanisms that utilize healthchecked pools.
 

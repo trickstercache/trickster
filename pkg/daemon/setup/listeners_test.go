@@ -27,9 +27,16 @@ import (
 	"testing"
 	"time"
 
+	uropt "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/ur/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
+	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
+	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	listenerconfig "github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
+	configtypes "github.com/trickstercache/trickster/v2/pkg/config/types"
+	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
@@ -73,17 +80,67 @@ func TestDesiredListeners(t *testing.T) {
 
 	got := desiredListeners(c, routers, lm.NewRouter(), lm.NewRouter())
 	for _, key := range []string{
-		listenerKey(listenerconfig.DefaultFrontendName, false),
-		listenerKey(mgmt.ListenerNameMetrics, false),
-		listenerKey(mgmt.ListenerNameMgmt, false),
-		listenerKey("custom", false),
+		listenerKey(listenerconfig.DefaultFrontendName, listenerconfig.ProtocolHTTP, false),
+		listenerKey(mgmt.ListenerNameMetrics, listenerconfig.ProtocolHTTP, false),
+		listenerKey(mgmt.ListenerNameMgmt, listenerconfig.ProtocolHTTP, false),
+		listenerKey("custom", listenerconfig.ProtocolHTTP, false),
 	} {
 		if _, ok := got[key]; !ok {
 			t.Errorf("missing desired listener %q", key)
 		}
 	}
-	if _, ok := got[listenerKey(listenerconfig.DefaultFrontendName, true)]; ok {
+	if _, ok := got[listenerKey(listenerconfig.DefaultFrontendName, listenerconfig.ProtocolHTTP, true)]; ok {
 		t.Errorf("TLS listener should not be desired until ServeTLS is enabled")
+	}
+}
+
+func TestDesiredRoutedMySQLListener(t *testing.T) {
+	c := config.NewConfig()
+	deactivateBuiltinListeners(c)
+	c.Listeners["mysql-users"] = listenerconfig.New("mysql-users")
+	c.Listeners["mysql-users"].Protocol = listenerconfig.ProtocolMySQL
+	c.Listeners["mysql-users"].ListenPort = 8486
+	c.Listeners["mysql-users"].Active = true
+	router := bo.New()
+	router.Name = "mysql-users"
+	router.Provider = providers.ALB
+	router.ListenerName = "mysql-users"
+	router.ALBOptions = ao.New()
+	router.ALBOptions.MechanismName = names.MechanismUR
+	router.ALBOptions.UserRouter = &uropt.Options{
+		TargetProvider: providers.MySQL,
+		Users: uropt.UserMappingOptionsByUser{
+			"alice": {ToBackend: "mysql-a"},
+		},
+	}
+	router.AuthenticatorName = "mysql-listener-clients"
+	router.AuthOptions = &autho.Options{
+		Users: configtypes.EnvStringMap{"alice": "alice-password"},
+	}
+	target := bo.New()
+	target.Name = "mysql-a"
+	target.Provider = providers.MySQL
+	target.OriginURL = "mysql://origin:password@127.0.0.1/database"
+	target.AuthenticatorName = "mysql-clients"
+	target.AuthOptions = &autho.Options{
+		Users: configtypes.EnvStringMap{"alice": "alice-password"},
+	}
+	c.Backends = bo.Lookup{"mysql-users": router, "mysql-a": target}
+
+	got := desiredListeners(c, nil, nil, nil)
+	key := listenerKey("mysql-users", listenerconfig.ProtocolMySQL, false)
+	desired, ok := got[key]
+	if !ok {
+		t.Fatalf("missing routed MySQL listener %q", key)
+	}
+	if desired.native == nil {
+		t.Fatalf("desired listener = %+v, want a native protocol adapter", desired)
+	}
+	if desired.native.Protocol() != listenerconfig.ProtocolMySQL {
+		t.Fatalf("native protocol = %q, want mysql", desired.native.Protocol())
+	}
+	if desired.origin == "" {
+		t.Fatal("native listener restart identity is empty")
 	}
 }
 
@@ -99,6 +156,23 @@ func TestListenerNeedsRestart(t *testing.T) {
 	current.port = 9001
 	if !listenerNeedsRestart(old, current) {
 		t.Errorf("port change should restart a listener")
+	}
+
+	hotSwap := o.Clone()
+	maxBodySize := int64(1024)
+	hotSwap.MaxRequestBodySizeBytes = &maxBodySize
+	hotSwap.TruncateRequestBodyTooLarge = !o.TruncateRequestBodyTooLarge
+	current = old
+	current.options = hotSwap
+	if listenerNeedsRestart(old, current) {
+		t.Error("HTTP request middleware change should not restart a listener")
+	}
+
+	current = old
+	current.options = o.Clone()
+	current.options.ConnectionsLimit++
+	if !listenerNeedsRestart(old, current) {
+		t.Error("connection limit change should restart a listener")
 	}
 }
 
@@ -122,7 +196,7 @@ func TestApplyListenerConfigsReloadReconciliation(t *testing.T) {
 	firstRouter := markerRouter("first")
 	applyListenerConfigs(conf, nil, map[string]router.Router{"custom": firstRouter},
 		http.NotFoundHandler(), lm.NewRouter(), nil, nil, nil, group)
-	key := listenerKey("custom", false)
+	key := listenerKey("custom", listenerconfig.ProtocolHTTP, false)
 	waitForListener(t, group, key)
 	original := group.Get(key)
 	assertResponseBody(t, firstPort, "first")
@@ -137,10 +211,22 @@ func TestApplyListenerConfigsReloadReconciliation(t *testing.T) {
 	}
 	assertResponseBody(t, firstPort, "second")
 
-	// A port change drains the old socket and starts the replacement.
+	// Request middleware is carried by the swapped router and must not drain
+	// the HTTP socket when its listener-facing configuration changes.
 	thirdConf := secondConf.Clone()
-	thirdConf.Listeners["custom"].ListenPort = secondPort
+	maxBodySize := int64(2048)
+	thirdConf.Listeners["custom"].MaxRequestBodySizeBytes = &maxBodySize
+	thirdConf.Listeners["custom"].TruncateRequestBodyTooLarge = true
 	applyListenerConfigs(thirdConf, secondConf, map[string]router.Router{"custom": secondRouter},
+		http.NotFoundHandler(), lm.NewRouter(), nil, nil, nil, group)
+	if group.Get(key) != original {
+		t.Error("HTTP request middleware change restarted the listener socket")
+	}
+
+	// A port change drains the old socket and starts the replacement.
+	fourthConf := thirdConf.Clone()
+	fourthConf.Listeners["custom"].ListenPort = secondPort
+	applyListenerConfigs(fourthConf, thirdConf, map[string]router.Router{"custom": secondRouter},
 		http.NotFoundHandler(), lm.NewRouter(), nil, nil, nil, group)
 	waitForListener(t, group, key)
 	if group.Get(key) == original {
@@ -151,6 +237,52 @@ func TestApplyListenerConfigsReloadReconciliation(t *testing.T) {
 	if response, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d/", firstPort)); err == nil {
 		response.Body.Close()
 		t.Errorf("old listener port is still accepting requests")
+	}
+}
+
+func TestApplyMySQLListenerRestartsWhenTLSFileContentsRotate(t *testing.T) {
+	group := listener.NewGroup()
+	t.Cleanup(func() { _ = group.Shutdown(0) })
+	conf := config.NewConfig()
+	deactivateBuiltinListeners(conf)
+	port := availablePort(t)
+	conf.Listeners["mysql1"] = listenerconfig.New("mysql1")
+	conf.Listeners["mysql1"].Protocol = listenerconfig.ProtocolMySQL
+	conf.Listeners["mysql1"].ListenAddress = "127.0.0.1"
+	conf.Listeners["mysql1"].ListenPort = port
+	conf.Listeners["mysql1"].Active = true
+	tlsDir := t.TempDir()
+	keyPath := filepath.Join(tlsDir, "server-key.pem")
+	certPath := filepath.Join(tlsDir, "server-cert.pem")
+	if err := tlstest.WriteTestKeyAndCert(false, keyPath, certPath); err != nil {
+		t.Fatal(err)
+	}
+	backend := bo.New()
+	backend.Name = "mysql1"
+	backend.Provider = providers.MySQL
+	backend.ListenerName = "mysql1"
+	backend.OriginURL = "mysql://origin:password@127.0.0.1/database"
+	backend.AuthenticatorName = "mysql-clients"
+	backend.AuthOptions = &autho.Options{
+		Users: configtypes.EnvStringMap{"client": "client-password"},
+	}
+	backend.TLS.ServeTLS = true
+	backend.TLS.FullChainCertPath = certPath
+	backend.TLS.PrivateKeyPath = keyPath
+	conf.Backends = bo.Lookup{"mysql1": backend}
+
+	applyListenerConfigs(conf, nil, nil, http.NotFoundHandler(), lm.NewRouter(), nil, nil, nil, group)
+	key := listenerKey("mysql1", listenerconfig.ProtocolMySQL, false)
+	waitForListener(t, group, key)
+	original := group.Get(key)
+	if err := tlstest.WriteTestKeyAndCert(false, keyPath, certPath); err != nil {
+		t.Fatal(err)
+	}
+	next := conf.Clone()
+	applyListenerConfigs(next, conf, nil, http.NotFoundHandler(), lm.NewRouter(), nil, nil, nil, group)
+	waitForListener(t, group, key)
+	if group.Get(key) == original {
+		t.Fatal("MySQL listener did not restart after TLS file content rotation")
 	}
 }
 
@@ -248,7 +380,7 @@ func TestApplyListenerConfigsTLS(t *testing.T) {
 
 	port := availablePort(t)
 	conf := tlsTestConfig(t, keyPath, certPath, port)
-	key := listenerKey(listenerconfig.DefaultFrontendName, true)
+	key := listenerKey(listenerconfig.DefaultFrontendName, listenerconfig.ProtocolHTTP, true)
 
 	routers := map[string]router.Router{listenerconfig.DefaultFrontendName: markerRouter("tls")}
 	applyListenerConfigs(conf, nil, routers, http.NotFoundHandler(), lm.NewRouter(),
@@ -285,7 +417,7 @@ func TestApplyListenerConfigsTLSCertError(t *testing.T) {
 	}
 
 	conf := tlsTestConfig(t, keyPath, certPath, availablePort(t))
-	key := listenerKey(listenerconfig.DefaultFrontendName, true)
+	key := listenerKey(listenerconfig.DefaultFrontendName, listenerconfig.ProtocolHTTP, true)
 	routers := map[string]router.Router{listenerconfig.DefaultFrontendName: lm.NewRouter()}
 
 	// an unloadable key pair is logged and the listener is skipped
@@ -308,7 +440,7 @@ func TestUpdateListenerCertificatesNoCerts(t *testing.T) {
 	t.Cleanup(func() { _ = group.Shutdown(0) })
 	conf := config.NewConfig()
 	updateListenerCertificates(conf, desiredListener{
-		key:          listenerKey(listenerconfig.DefaultFrontendName, true),
+		key:          listenerKey(listenerconfig.DefaultFrontendName, listenerconfig.ProtocolHTTP, true),
 		listenerName: listenerconfig.DefaultFrontendName,
 		tls:          true,
 	}, group)

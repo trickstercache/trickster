@@ -28,10 +28,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const tricksterAddr = "127.0.0.1:8480"
-
 func TestPrometheus(t *testing.T) {
-	h := developerHarness()
+	h := developerHarness(t)
+	tricksterAddr := h.BaseAddr
 	h.start(t)
 	waitForPrometheusData(t, "127.0.0.1:9090")
 

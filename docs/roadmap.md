@@ -4,38 +4,22 @@ The roadmap for Trickster in 2025 focuses on delivering Trickster versions 2.0 a
 
 ## Timeline
 
-### May 2025
-
-- [x] Trickster v2.0 Beta 3 Release
-  - [x] Common Time Series Format used internally for all TSDBs
-  - [x] Universal HTTP Health Checker Package
-  - [x] YAML config support
-  - [x] Purge object from cache by path or key
-  - [x] Short-term caching of non-timeseries read-only queries (e.g., generic SELECT statements)
-  - [x] Support Zstd and Brotli encoding over the wire and as a cache compression format
-  - [x] Ability to parallelize large timerange queries by scatter/gathering smaller sections of the main timerange.
-  - [x] Cache Chunking
-  - [x] Application Load Balancer
-  - [x] Performant HTTP Router designed specifically for Proxies
-  - [x] Resolve all known Race Conditions
-  - [X] Docker & Helm Charts overhauled for Trickster 2.0
-  - [X] Additional Rules Engine capabilities for more complex request routing
-  - [x] Extended support for ClickHouse
-  - [x] Support for InfluxDB 2.0 and Flux query syntax / payloads
-
 ### Q1 2026
 
 - [x] Trickster v2.0 GA Release
-  - [ ] Overhaul Documentation for Trickster 2.0
+  - [x] Overhaul Documentation for Trickster 2.0
   - [ ] Updated Grafana Dashboard for Trickster Metrics
 
-- [ ] Trickster v2.1 Beta Release
-  - [ ] Kube Gateway API support
-  - [ ] More easily-importable Trickster packages by other projects
-  - [ ] Support for MySQL as Time Series
+### Q3 2026
+
+- [ ] Trickster v2.1 Release
+  - [x] Support for MySQL as Time Series
+  - [x] Auto-reload config + `conf.d` directory support
+  - [ ] Support for Graphite
   - [ ] Support for InfluxDB 3.0
   - [ ] Support for Autodiscovery (e.g., Kubernetes Pod Annotations)
-  - [ ] Object Pooling where possible to improve memory management
+  - [ ] Kube Gateway API support
+  - [ ] More easily-importable Trickster packages by other projects
 
 ## Get Involved
 

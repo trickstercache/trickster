@@ -358,9 +358,7 @@ func TestRenderConcurrentRenderingVariants(t *testing.T) {
 	queries := make([]url.Values, len(variants))
 	for i, v := range variants {
 		q := h.query(url.Values{"target": {"dev.fast.cpu.host01.percent"}, "from": {"-3h"}})
-		for k, vals := range v.extra {
-			q[k] = vals
-		}
+		maps.Copy(q, v.extra)
 		queries[i] = q
 	}
 
@@ -368,9 +366,7 @@ func TestRenderConcurrentRenderingVariants(t *testing.T) {
 	before := h.stub.Renders.Load()
 	var wg sync.WaitGroup
 	for i := range variants {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			r := httptest.NewRequest(http.MethodGet, "http://trickster/render?"+queries[i].Encode(), nil)
 			rsc := request.NewResources(h.o, h.o.Paths[0], h.client.Cache().Configuration(),
 				h.client.Cache(), h.client, nil)
@@ -378,7 +374,7 @@ func TestRenderConcurrentRenderingVariants(t *testing.T) {
 			w := httptest.NewRecorder()
 			h.client.RenderHandler(w, r)
 			got[i] = w.Body.String()
-		}()
+		})
 	}
 	wg.Wait()
 	fetches := h.stub.Renders.Load() - before

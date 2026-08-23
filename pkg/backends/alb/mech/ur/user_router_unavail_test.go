@@ -53,7 +53,11 @@ func TestServeHTTPSkipsUnhealthyUserTarget(t *testing.T) {
 				"alice": {},
 			},
 		},
-		userRoutes: UserRoutes{"alice": {Handler: userHandler, Status: failing}},
+		userRoutes: UserRoutes{"alice": func() UserRoute {
+			route := testRoute(userHandler)
+			route.Status = failing
+			return route
+		}()},
 	}
 
 	r, _ := http.NewRequest("GET", "http://example.com/", nil)

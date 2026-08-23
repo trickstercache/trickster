@@ -24,6 +24,7 @@ import (
 	"time"
 
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
+	mo "github.com/trickstercache/trickster/v2/pkg/backends/mysql/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	ro "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/negative"
@@ -72,6 +73,32 @@ func TestNew(t *testing.T) {
 	if o.FetchConcurrencyLimit != DefaultFetchConcurrencyLimit {
 		t.Errorf("expected FetchConcurrencyLimit=%d, got %d",
 			DefaultFetchConcurrencyLimit, o.FetchConcurrencyLimit)
+	}
+}
+
+func TestMySQLLimitsYAMLDefaultsCloneAndValidation(t *testing.T) {
+	o, err := fromYAML(`
+backends:
+  mysql1:
+    provider: mysql
+    origin_url: mysql://user:password@example.com/database
+    mysql:
+      max_result_rows: 42
+`, "mysql1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := o.Initialize("mysql1"); err != nil {
+		t.Fatal(err)
+	}
+	if o.MySQL == nil || o.MySQL.MaxResultRows != 42 ||
+		o.MySQL.MaxResultSizeBytes != mo.DefaultMaxResultSizeBytes {
+		t.Fatalf("unexpected MySQL options: %#v", o.MySQL)
+	}
+	clone := o.Clone()
+	clone.MySQL.MaxResultRows++
+	if o.MySQL.MaxResultRows != 42 {
+		t.Fatal("clone mutated original MySQL options")
 	}
 }
 
@@ -570,6 +597,18 @@ func TestCloneYAMLSafe(t *testing.T) {
 	}
 
 	p2.RequestHeaders = map[string]string{headers.NameAuthorization: "trickster"}
+}
+
+func TestCloneYAMLSafeMasksOriginCredentials(t *testing.T) {
+	o := New()
+	o.OriginURL = "mysql://origin:origin-secret@example.com/database"
+	got := o.CloneYAMLSafe()
+	if strings.Contains(got.OriginURL, "origin-secret") {
+		t.Fatalf("CloneYAMLSafe exposed MySQL credentials: %+v", got)
+	}
+	if !strings.Contains(o.OriginURL, "origin-secret") {
+		t.Fatal("CloneYAMLSafe mutated the source options")
+	}
 }
 
 func TestToYAML(t *testing.T) {

@@ -1,3 +1,14 @@
+listeners:
+  # mysql1 accepts MySQL wire-protocol connections and proxies them to the
+  # single backend that maps to this listener (backends -> mysql1)
+  mysql1:
+    protocol: mysql
+    port: 8486
+authenticators:
+  mysql-grafana:
+    provider: basic
+    users:
+      grafana_ro: trickster-dev-grafana
 negative_caches:
   default:
     '400': 3s
@@ -90,6 +101,15 @@ backends:
         - prom1
         - prom1
         - sim1
+  mysql1:
+    provider: mysql
+    origin_url: 'mysql://trickster:trickster-dev-upstream@127.0.0.1:3306/trickster'
+    listener_name: mysql1
+    authenticator_name: mysql-grafana
+    cache_name: mem1
+    healthcheck:
+      interval: 5s
+      timeout: 3s
   click1:
     provider: clickhouse
     origin_url: 'http://127.0.0.1:8123'

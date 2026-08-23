@@ -420,6 +420,9 @@ func TestConfigSourceChangesAreStale(t *testing.T) {
 		if config.CheckAndMarkReloadInProgress() {
 			t.Fatal("freshly loaded config reported stale")
 		}
+		if config.HasConfigChanged() {
+			t.Fatal("freshly loaded config sources reported changed")
+		}
 
 		info, err := os.Stat(fragmentPath)
 		if err != nil {
@@ -429,6 +432,9 @@ func TestConfigSourceChangesAreStale(t *testing.T) {
 		if err := os.Chtimes(fragmentPath, info.ModTime(), info.ModTime()); err != nil {
 			t.Fatal(err)
 		}
+		if !config.HasConfigChanged() || !config.HasConfigChanged() {
+			t.Error("same-timestamp content change was not detected without marking")
+		}
 		if !config.CheckAndMarkReloadInProgress() {
 			t.Error("same-timestamp content change did not make config stale")
 		}
@@ -437,16 +443,25 @@ func TestConfigSourceChangesAreStale(t *testing.T) {
 		}
 
 		writeConfigSourceTestFile(t, filepath.Join(includePath, "ignored.txt"), "ignored")
+		if config.HasConfigChanged() {
+			t.Error("unsupported file was detected as a config source change")
+		}
 		if config.CheckAndMarkReloadInProgress() {
 			t.Error("unsupported file made config stale")
 		}
 		addedPath := filepath.Join(includePath, "20-metrics.yml")
 		writeConfigSourceTestFile(t, addedPath, "metrics:\n  listen_port: 9191\n")
+		if !config.HasConfigChanged() {
+			t.Error("added config source was not detected without marking")
+		}
 		if !config.CheckAndMarkReloadInProgress() {
 			t.Error("added config source did not make config stale")
 		}
 		if err := os.Remove(addedPath); err != nil {
 			t.Fatal(err)
+		}
+		if !config.HasConfigChanged() {
+			t.Error("removed config source was not detected without marking")
 		}
 		if !config.CheckAndMarkReloadInProgress() {
 			t.Error("removed config source did not make config stale")
@@ -464,6 +479,9 @@ func TestConfigSourceChangesAreStale(t *testing.T) {
 
 		addedPath := filepath.Join(directoryPath, "20-frontend.yaml")
 		writeConfigSourceTestFile(t, addedPath, "frontend:\n  listen_port: 9001\n")
+		if !config.HasConfigChanged() {
+			t.Error("added directory source was not detected without marking")
+		}
 		if !config.IsStale() {
 			t.Error("added directory source did not make config stale")
 		}
@@ -473,6 +491,9 @@ func TestConfigSourceChangesAreStale(t *testing.T) {
 		}
 		if err := os.Remove(addedPath); err != nil {
 			t.Fatal(err)
+		}
+		if !config.HasConfigChanged() {
+			t.Error("removed directory source was not detected without marking")
 		}
 		if !config.CheckAndMarkReloadInProgress() {
 			t.Error("removed directory source did not make config stale")

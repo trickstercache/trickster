@@ -32,6 +32,7 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
+          version: v2.13.1
           args: --timeout 5m
           only-new-issues: true
   docker:
@@ -115,7 +116,8 @@ jobs:
 
   integration:
     runs-on: ubuntu-latest
-    continue-on-error: true
+    env:
+      TRICKSTER_MYSQL_CLI_TEST: "1"
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
@@ -125,7 +127,10 @@ jobs:
         run: make developer-start
       - name: Show container status
         if: always()
-        run: cd docs/developer/environment && docker compose ps && docker compose logs --tail=30 redis prometheus
+        run: |
+          cd docs/developer/environment
+          docker compose ps
+          docker compose logs --tail=30 redis prometheus mysql grafana 
       - name: Run integration tests (with coverage)
         run: make integration-cover
       - name: Run integration tests (with race detection enabled)

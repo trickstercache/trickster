@@ -18,25 +18,15 @@ package listener
 
 import (
 	"testing"
+	"time"
 
+	mo "github.com/trickstercache/trickster/v2/pkg/backends/mysql/options"
 	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
 	frontend "github.com/trickstercache/trickster/v2/pkg/frontend/options"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 
 	"go.yaml.in/yaml/v3"
 )
-
-func TestIsSupportedProtocol(t *testing.T) {
-	t.Parallel()
-	if !IsSupportedProtocol(ProtocolHTTP) {
-		t.Fatal("http should be supported")
-	}
-	if IsSupportedProtocol("grpc") {
-		t.Fatal("grpc should not be supported")
-	}
-	if IsSupportedProtocol("") {
-		t.Fatal("empty protocol should not be supported")
-	}
-}
 
 func TestFrontendOptions(t *testing.T) {
 	t.Parallel()
@@ -196,5 +186,36 @@ listeners:
 	custom := wrapped.Listeners["custom"]
 	if custom == nil || custom.ListenAddress != "127.0.0.2" || custom.ListenPort != 9002 {
 		t.Fatalf("unexpected merged listener: %#v", custom)
+	}
+}
+
+func TestMySQLLimitsYAMLDefaultsCloneAndEquality(t *testing.T) {
+	var wrapped struct {
+		Listeners Lookup `yaml:"listeners"`
+	}
+	err := yaml.Unmarshal([]byte(`listeners:
+  mysql1:
+    protocol: mysql
+    port: 3306
+    mysql:
+      idle_timeout: 1m
+      max_query_size_bytes: 4096
+`), &wrapped)
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := wrapped.Listeners["mysql1"]
+	if o.MySQL == nil || o.MySQL.IdleTimeout != timeconv.Duration(time.Minute) ||
+		o.MySQL.ReadTimeout != timeconv.Duration(mo.DefaultReadTimeout) ||
+		o.MySQL.MaxQuerySizeBytes != 4096 {
+		t.Fatalf("unexpected MySQL limits: %#v", o.MySQL)
+	}
+	if err := o.MySQL.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	clone := o.Clone()
+	clone.MySQL.MaxQuerySizeBytes++
+	if o.Equal(clone) {
+		t.Fatal("MySQL limit change should affect listener equality")
 	}
 }

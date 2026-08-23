@@ -81,6 +81,10 @@ Finally, Trickster will check for and evaluate the following Command Line Argume
 
 The top-level `listeners` map configures inbound listeners. Trickster always auto-defines three entries using the existing defaults: `default`, `metrics`, and `mgmt`.
 
+Native MySQL listeners have additional protocol, authentication, TLS, and
+session-lifecycle requirements. See the [MySQL Provider Guide](mysql.md) before
+configuring `protocol: mysql`.
+
 ```yaml
 listeners:
   default:
@@ -120,7 +124,18 @@ Trickster can validate configuration files by running `trickster -validate-confi
 
 Trickster can gracefully reload its configuration sources from disk without impacting the uptime and responsiveness of the application.
 
-Trickster provides 2 ways to reload the Trickster configuration: by requesting an HTTP endpoint, or by sending a SIGHUP (e.g., `kill -1 $TRICKSTER_PID`) to the Trickster process. In both cases, at least one effective configuration source must have changed since the configuration was loaded.
+Trickster supports manual reloads by requesting an HTTP endpoint or sending a SIGHUP (e.g., `kill -1 $TRICKSTER_PID`) to the Trickster process. It can also poll the effective configuration sources automatically. In all cases, at least one effective configuration source must have changed since the configuration was loaded.
+
+### Automatic Config Reload
+
+Trickster can poll its effective configuration sources and reload after a change. This is disabled by default. Set `mgmt.auto_reload_interval` to a positive duration to enable it:
+
+```yaml
+mgmt:
+  auto_reload_interval: 10s
+```
+
+Polling uses the same validation and graceful reload path as SIGHUP and the management endpoint. The interval itself is reloadable, so a successful configuration update can change or disable automatic reloads. Polling is suitable for Kubernetes ConfigMap projected volumes, whose atomic symlink updates are not reliably represented as writes to the mounted file by filesystem notification APIs.
 
 ### Config Reload via SIGHUP
 

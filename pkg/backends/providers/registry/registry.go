@@ -21,12 +21,14 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/clickhouse"
 	"github.com/trickstercache/trickster/v2/pkg/backends/graphite"
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb"
+	"github.com/trickstercache/trickster/v2/pkg/backends/mysql"
 	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 	"github.com/trickstercache/trickster/v2/pkg/backends/reverseproxy"
 	"github.com/trickstercache/trickster/v2/pkg/backends/reverseproxycache"
 	"github.com/trickstercache/trickster/v2/pkg/backends/rule"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/native"
 )
 
 func SupportedProviders() types.Lookup {
@@ -35,6 +37,7 @@ func SupportedProviders() types.Lookup {
 		providers.ClickHouse:             clickhouse.NewClient,
 		providers.Graphite:               graphite.NewClient,
 		providers.InfluxDB:               influxdb.NewClient,
+		providers.MySQL:                  mysql.NewClient,
 		providers.Prometheus:             prometheus.NewClient,
 		providers.Rule:                   rule.NewClient,
 		providers.Proxy:                  reverseproxy.NewClient,
@@ -43,4 +46,16 @@ func SupportedProviders() types.Lookup {
 		providers.ReverseProxyCacheShort: reverseproxycache.NewClient,
 		providers.ReverseProxyCache:      reverseproxycache.NewClient,
 	}
+}
+
+// NativeListeners returns the provider-owned adapters for non-HTTP listener
+// protocols. Adding another native protocol requires registration here, not a
+// protocol branch in daemon setup or configuration validation.
+var nativeListeners = func() native.Registry {
+	mysqlAdapter := mysql.NativeListenerAdapter()
+	return native.Registry{mysqlAdapter.Protocol(): mysqlAdapter}
+}()
+
+func NativeListeners() native.Registry {
+	return nativeListeners
 }

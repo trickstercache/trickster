@@ -10,6 +10,14 @@ spec:
   ports:
     - port: 8480
       targetPort: 8480
+      name: http
+    - port: 8481
+      targetPort: 8481
       name: metrics
+    # Optional native MySQL listener. Remove this entry when MySQL support is
+    # not enabled in the mounted Trickster configuration.
+    - port: 8486
+      targetPort: 8486
+      name: mysql
   selector:
     name: trickster

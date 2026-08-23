@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
+	providerregistry "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	listenerconfig "github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
@@ -35,8 +36,15 @@ import (
 	ch "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/config"
 	ph "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/purge"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/native"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
+)
+
+const (
+	logKeyError        = "error"
+	logKeyDetail       = "detail"
+	logKeyListenerName = "listenerName"
 )
 
 type desiredListener struct {
@@ -47,11 +55,14 @@ type desiredListener struct {
 	tls          bool
 	options      *listenerconfig.Options
 	router       router.Router
+	// origin identifies native protocol configuration for restart detection.
+	origin string
+	native native.Adapter
 }
 
 func applyListenerConfigs(conf, oldConf *config.Config,
 	listenerRouters map[string]router.Router, reloadHandler http.Handler,
-	metricsRouter router.Router, tracers tracing.Tracers, backends backends.Backends,
+	metricsRouter router.Router, tracers tracing.Tracers, clients backends.Backends,
 	errorFunc func(), lg *listener.Group,
 ) {
 	if conf == nil || len(conf.Listeners) == 0 {
@@ -73,7 +84,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 	managementRouter.RegisterRoute(conf.MgmtConfig.ReloadHandlerPath, nil, nil,
 		false, reloadHandler)
 	managementRouter.RegisterRoute(conf.MgmtConfig.PurgeByPathHandlerPath, nil, nil,
-		true, http.HandlerFunc(ph.PathHandler(conf.MgmtConfig.PurgeByPathHandlerPath, &backends)))
+		true, http.HandlerFunc(ph.PathHandler(conf.MgmtConfig.PurgeByPathHandlerPath, &clients)))
 	if listenerEnabledOn(conf.MgmtConfig.PprofListener, mgmt.ListenerNameMgmt) {
 		pprof.RegisterRoutes(mgmt.ListenerNameMgmt, managementRouter)
 	}
@@ -86,7 +97,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 	// swaps while leaving every unchanged endpoint serving on its existing socket.
 	for key, old := range oldListeners {
 		current, ok := newListeners[key]
-		if ok && !listenerNeedsRestart(old, current) {
+		if ok && !runtimeListenerNeedsRestart(lg, key, old, current) {
 			continue
 		}
 		_ = lg.DrainAndClose(key, time.Duration(drainTimeout))
@@ -101,11 +112,39 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 	for _, key := range names {
 		desired := newListeners[key]
 		old, existed := oldListeners[key]
-		if existed && !listenerNeedsRestart(old, desired) && lg.Get(key) != nil {
+		if existed && !runtimeListenerNeedsRestart(lg, key, old, desired) && lg.Get(key) != nil {
 			lg.UpdateRouter(key, desired.router)
+			if desired.native != nil {
+				request := nativeBuildRequest(conf, desired, tracers, clients)
+				if resolver := desired.native.RouteResolver(request); resolver != nil {
+					lg.UpdateProtocolRouteResolver(key, resolver)
+				}
+				if tlsConfig, err := conf.TLSCertConfigForListener(desired.listenerName); err == nil {
+					lg.UpdateProtocolTLSConfig(key, tlsConfig)
+				} else {
+					logger.Error("unable to rotate native listener TLS", logging.Pairs{
+						logKeyListenerName: desired.listenerName, logKeyError: err.Error(),
+					})
+				}
+			}
 			if desired.tls {
 				updateListenerCertificates(conf, desired, lg)
 			}
+			continue
+		}
+
+		if desired.native != nil {
+			svr, err := desired.native.Build(nativeBuildRequest(conf, desired, tracers, clients))
+			if err != nil {
+				logger.Error("unable to configure native protocol server", logging.Pairs{
+					logKeyListenerName: desired.listenerName, "protocol": desired.options.Protocol,
+					logKeyError: err.Error(),
+				})
+				continue
+			}
+			go lg.StartProtocolListener(key, desired.options.Protocol,
+				desired.address, desired.port, desired.options.ConnectionsLimit,
+				svr, errorFunc, time.Duration(drainTimeout))
 			continue
 		}
 
@@ -114,7 +153,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 			config, err := conf.TLSCertConfigForListener(desired.listenerName)
 			if err != nil {
 				logger.Error("unable to start TLS listener", logging.Pairs{
-					"listenerName": desired.listenerName, "error": err.Error(),
+					logKeyListenerName: desired.listenerName, logKeyError: err.Error(),
 				})
 				continue
 			}
@@ -139,8 +178,29 @@ func desiredListeners(conf *config.Config, listenerRouters map[string]router.Rou
 	if conf == nil {
 		return out
 	}
+	nativeListeners := providerregistry.NativeListeners()
 	for name, options := range conf.Listeners {
 		if options == nil || !options.Active {
+			continue
+		}
+		if adapter := nativeListeners.Get(options.Protocol); adapter != nil {
+			descriptor, err := adapter.Describe(conf, name)
+			if err != nil {
+				logger.Error("native listener has no usable backend configuration",
+					logging.Pairs{
+						logKeyListenerName: name, "protocol": options.Protocol,
+						logKeyDetail: err.Error(),
+					})
+				continue
+			}
+			if options.ListenPort > 0 {
+				key := listenerKey(name, options.Protocol, false)
+				out[key] = desiredListener{
+					key: key, listenerName: name,
+					address: options.ListenAddress, port: options.ListenPort,
+					options: options, origin: descriptor.RestartKey, native: adapter,
+				}
+			}
 			continue
 		}
 		var r router.Router
@@ -153,7 +213,7 @@ func desiredListeners(conf *config.Config, listenerRouters map[string]router.Rou
 			r = listenerRouters[name]
 		}
 		if options.ListenPort > 0 {
-			key := listenerKey(name, false)
+			key := listenerKey(name, options.Protocol, false)
 			out[key] = desiredListener{
 				key: key, listenerName: name,
 				address: options.ListenAddress, port: options.ListenPort,
@@ -161,7 +221,7 @@ func desiredListeners(conf *config.Config, listenerRouters map[string]router.Rou
 			}
 		}
 		if options.ServeTLS && options.TLSListenPort > 0 {
-			key := listenerKey(name, true)
+			key := listenerKey(name, options.Protocol, true)
 			out[key] = desiredListener{
 				key: key, listenerName: name,
 				address: options.TLSListenAddress, port: options.TLSListenPort,
@@ -172,8 +232,20 @@ func desiredListeners(conf *config.Config, listenerRouters map[string]router.Rou
 	return out
 }
 
-func listenerKey(listenerName string, tls bool) string {
-	scheme := listenerconfig.ProtocolHTTP
+func nativeBuildRequest(conf *config.Config, desired desiredListener, tracers tracing.Tracers,
+	clients backends.Backends,
+) native.BuildRequest {
+	return native.BuildRequest{
+		Config: conf, ListenerName: desired.listenerName, Listener: desired.options,
+		Tracers: tracers, BackendClients: clients,
+	}
+}
+
+func listenerKey(listenerName, protocol string, tls bool) string {
+	scheme := protocol
+	if scheme == "" {
+		scheme = listenerconfig.ProtocolHTTP
+	}
 	if tls {
 		scheme = "https"
 	}
@@ -182,8 +254,21 @@ func listenerKey(listenerName string, tls bool) string {
 
 func listenerNeedsRestart(old, current desiredListener) bool {
 	return old.address != current.address || old.port != current.port || old.tls != current.tls ||
+		old.origin != current.origin ||
 		old.options.ConnectionsLimit != current.options.ConnectionsLimit ||
 		old.options.ReadHeaderTimeout != current.options.ReadHeaderTimeout
+}
+
+func runtimeListenerNeedsRestart(lg *listener.Group, key string, old, current desiredListener) bool {
+	if listenerNeedsRestart(old, current) {
+		return true
+	}
+	if current.native != nil {
+		if runningKey, ok := lg.ProtocolRestartKey(key); ok {
+			return runningKey != current.origin
+		}
+	}
+	return false
 }
 
 func registerConfigRoutes(conf *config.Config, r router.Router) {
@@ -197,7 +282,7 @@ func updateListenerCertificates(conf *config.Config, desired desiredListener, lg
 	tlsConfig, err := conf.TLSCertConfigForListener(desired.listenerName)
 	if err != nil {
 		logger.Error("unable to update TLS listener certificates", logging.Pairs{
-			"listenerName": desired.listenerName, "error": err.Error(),
+			logKeyListenerName: desired.listenerName, logKeyError: err.Error(),
 		})
 		return
 	}

@@ -18,6 +18,7 @@ package healthcheck
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -368,6 +369,55 @@ func TestDemandProbeClosesUpstreamBody(t *testing.T) {
 
 	require.True(t, body.closed, "demand probe must close the upstream response body")
 	require.Equal(t, "OK", w.Body.String())
+}
+
+func TestProtocolProbeTransitionsAndDemand(t *testing.T) {
+	probeErr := error(nil)
+	target, err := newProbeTarget("mysql", "mysql", &ho.Options{
+		FailureThreshold:  1,
+		RecoveryThreshold: 1,
+		Timeout:           timeconv.Duration(time.Second),
+	}, func(context.Context) error {
+		return probeErr
+	})
+	require.NoError(t, err)
+
+	target.probe(context.Background())
+	require.Equal(t, StatusPassing, target.status.Get())
+	require.Equal(t, int32(1), target.successConsecutiveCnt.Load())
+
+	probeErr = errors.New("mysql origin refused the connection")
+	target.probe(context.Background())
+	require.Equal(t, StatusFailing, target.status.Get())
+	require.Contains(t, target.status.Detail(), "connection")
+
+	w := httptest.NewRecorder()
+	target.demandProbe(w)
+	require.Equal(t, http.StatusInternalServerError, w.Code)
+	require.Contains(t, w.Body.String(), "mysql origin refused the connection")
+
+	probeErr = nil
+	w = httptest.NewRecorder()
+	target.demandProbe(w)
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, "health check passed", w.Body.String())
+}
+
+func TestProtocolProbeTimeout(t *testing.T) {
+	target, err := newProbeTarget("mysql", "mysql", &ho.Options{
+		FailureThreshold: 1,
+		Timeout:          timeconv.Duration(ho.MinProbeWait),
+	}, func(ctx context.Context) error {
+		<-ctx.Done()
+		return ctx.Err()
+	})
+	require.NoError(t, err)
+
+	started := time.Now()
+	target.probe(context.Background())
+	require.Less(t, time.Since(started), time.Second)
+	require.Equal(t, StatusFailing, target.status.Get())
+	require.Contains(t, target.status.Detail(), context.DeadlineExceeded.Error())
 }
 
 func newTestServer(responseCode int, responseBody string,

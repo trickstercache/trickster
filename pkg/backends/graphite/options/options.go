@@ -132,7 +132,7 @@ func (o *Options) Clone() *Options {
 // UnmarshalYAML decodes the Options over a set of defaults
 func (o *Options) UnmarshalYAML(value *yaml.Node) error {
 	type loadOptions Options
-	lo := loadOptions(*(New()))
+	lo := loadOptions(*New())
 	if err := value.Decode(&lo); err != nil {
 		return err
 	}
