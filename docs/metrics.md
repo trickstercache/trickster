@@ -81,6 +81,30 @@ The following metrics are available for polling with any Trickster configuration
   * labels:
     * `backend` - the name of the configured backend rejecting the query
 
+* `trickster_graphite_resolution_lookups_total` (Counter) - Count of Graphite step-resolution lookups. Labels never include a metric path or target expression.
+  * labels:
+    * `backend_name` - the name of the configured Graphite backend
+    * `confidence` - how the step was established: `exact` (read from an origin response for this leaf set and age), `derived` (computed from known leaf ladders), `configured` (from `static_retentions`, not yet probe-confirmed), or `unknown` (no usable step; the request is served unaccelerated)
+    * `source` - where it came from: `registry`, `response`, `probe`, `static`, `function`, or `none`
+* `trickster_graphite_probes_total` (Counter) - Count of synthetic requests issued to learn a metric's archive ladder. Expect a spike at startup that collapses toward zero as ladders are learned.
+  * labels:
+    * `backend_name` - the name of the configured Graphite backend
+    * `kind` - `narrow` (a one-second window that also discovers the retention edge), `wide` (what a real query at that age receives), or `find` (a `/metrics/expand` lookup)
+    * `result` - `step` (a stepped series came back), `empty` (no series: beyond retention, or no such metric), or `error`
+* `trickster_graphite_ladders` (Gauge) - Number of distinct archive ladders known to the resolution registry. Ladders come from `storage-schemas.conf` patterns, so this should flatten at a small number.
+  * labels:
+    * `backend_name` - the name of the configured Graphite backend
+* `trickster_graphite_registry_entries` (Gauge) - Number of entries in each layer of the resolution registry.
+  * labels:
+    * `backend_name` - the name of the configured Graphite backend
+    * `layer` - `leaf` (metric path to ladder), `ladder` (the ladders themselves), `target` (cached wildcard expansions), or `negative` (paths in resolution backoff)
+* `trickster_graphite_step_mispredictions_total` (Counter) - Count of origin responses whose step differed from the predicted step. **This should always be zero.** A non-zero value means a cached ladder was wrong; Trickster discards the prediction, relearns and re-serves the request unaccelerated, so clients still receive correct data.
+  * labels:
+    * `backend_name` - the name of the configured Graphite backend
+* `trickster_graphite_fallbacks_total` (Counter) - Count of render requests served without delta caching. Labels never include a target expression.
+  * labels:
+    * `backend_name` - the name of the configured Graphite backend
+    * `reason` - `parse_error`, `non_series_format`, `function_not_allowlisted`, `unknown_step`, `missing_target`, `multi_target_step_mismatch`, `passthrough_max_data_points`, or `misprediction`
 * `trickster_sql_query_analysis_total` (Counter) - Count of SQL query cache-eligibility classifications. Labels never include query text.
   * labels:
     * `backend_name` - the name of the configured backend analyzing the query

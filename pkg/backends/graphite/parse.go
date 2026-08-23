@@ -29,7 +29,10 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/graphite/model"
 	"github.com/trickstercache/trickster/v2/pkg/backends/graphite/parsing"
 	"github.com/trickstercache/trickster/v2/pkg/backends/graphite/resolution"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
@@ -168,9 +171,17 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	rq := &RenderQuery{Params: rp, Location: c.location(rp.TZ), Now: time.Now().Truncate(time.Second)}
 	trq.ParsedQuery = rq
 
+	// the resolution components outlive any single request but a tracer only
+	// exists per request; publish the first one seen so probe and learning
+	// spans can use it
+	if rsc := request.GetResources(r); rsc != nil {
+		c.tracers.Set(rsc.Tracer)
+	}
+
 	// one decision, from the confidence routing table (design note §6)
 	d := c.route(r.Context(), rq)
 	rq.Confidence, rq.Source = d.Confidence, d.Source
+	c.logDecision(rq, d)
 	if d.Lane == LaneObject {
 		return trq, nil, true, c.decline(rq, trq, qp, d.Reason, d.Detail, d.Err)
 	}
@@ -211,6 +222,60 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 		MarshalVariesByRequest: true,
 	}
 	return trq, rlo, true, nil
+}
+
+// logDecision records one resolution decision (plan item 9.2). The age is
+// bucketed rather than logged raw, so that repeated decisions for the same
+// rung read alike.
+func (c *Client) logDecision(rq *RenderQuery, d RouteDecision) {
+	var target string
+	if len(rq.Params.Targets) > 0 {
+		target = rq.Params.Targets[0]
+	}
+	pairs := logging.Pairs{
+		"backendName": c.Name(),
+		"target":      target,
+		"targets":     len(rq.Params.Targets),
+		"ageBucket":   ageBucket(rq.Age),
+		"lane":        d.Lane.String(),
+		"confidence":  d.Confidence.String(),
+		"source":      d.Source,
+	}
+	if d.Lane == LaneDelta {
+		pairs["step"] = d.Step.String()
+		if d.MaxRetention > 0 {
+			pairs["maxRetention"] = d.MaxRetention.String()
+		}
+		logger.Debug("graphite resolution", pairs)
+		return
+	}
+	pairs["reason"] = d.Reason
+	pairs["detail"] = d.Detail
+	if d.Err != nil {
+		pairs["error"] = d.Err.Error()
+	}
+	logger.Debug("graphite resolution declined", pairs)
+}
+
+// ageBucket coarsens a query age to the boundaries whisper ladders are
+// usually built on, so decisions group legibly in logs
+func ageBucket(age time.Duration) string {
+	for _, b := range []struct {
+		limit time.Duration
+		name  string
+	}{
+		{time.Hour, "<=1h"},
+		{6 * time.Hour, "<=6h"},
+		{24 * time.Hour, "<=1d"},
+		{7 * 24 * time.Hour, "<=7d"},
+		{30 * 24 * time.Hour, "<=30d"},
+		{365 * 24 * time.Hour, "<=1y"},
+	} {
+		if age <= b.limit {
+			return b.name
+		}
+	}
+	return ">1y"
 }
 
 // DefaultBackfillTolerance is the minimum backfill tolerance applied when

@@ -27,7 +27,10 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	tspan "github.com/trickstercache/trickster/v2/pkg/observability/tracing/span"
 	"github.com/trickstercache/trickster/v2/pkg/util/safego"
+
+	"go.opentelemetry.io/otel/attribute"
 )
 
 // Learner discovers a leaf's complete archive ladder with probes and writes
@@ -44,6 +47,8 @@ type Learner struct {
 	Budget      int
 	// Name labels log lines with the backend
 	Name string
+	// Tracers carries the backend's tracer, when a request has published one
+	Tracers *Tracers
 	// Now is the clock (tests override it)
 	Now func() time.Time
 
@@ -147,6 +152,10 @@ func (l *Learner) Schedule(leaf string, hint *Ladder) bool {
 func (l *Learner) Learn(ctx context.Context, leaf string, hint *Ladder) (*Ladder, error) {
 	l.init()
 	start := l.now()
+	ctx, span := tspan.NewChildSpan(ctx, l.Tracers.Get(), "GraphiteLearnLadder")
+	if span != nil {
+		defer span.End()
+	}
 	run := &learnRun{l: l, ctx: ctx, leaf: leaf, now: start.Truncate(time.Second), partial: NewPartial()}
 	var ladder *Ladder
 	var err error
@@ -189,9 +198,9 @@ func (l *Learner) Learn(ctx context.Context, leaf string, hint *Ladder) (*Ladder
 			}
 		}
 		backoff := l.Registry.SetNegative(leaf)
-		logger.Warn("graphite ladder learning failed", logging.Pairs{
+		logger.Warn("graphite ladder learning failed; negative-cached", logging.Pairs{
 			"backendName": l.Name,
-			"leaf":        leaf, "probes": run.probes, "error": err.Error(), "backoff": backoff.String(),
+			"leaf":        leaf, "probes": run.probes, "error": err.Error(), "negativeCacheBackoff": backoff.String(),
 			"partial": run.partial.String(),
 		})
 		return run.partial, err
@@ -212,6 +221,10 @@ func (l *Learner) Learn(ctx context.Context, leaf string, hint *Ladder) (*Ladder
 		"ladder": ladder.String(), "fingerprint": key, "probes": run.probes,
 		"duration": l.now().Sub(start).String(),
 	})
+	tspan.SetAttributes(l.Tracers.Get(), span,
+		attribute.String("graphite.ladder", ladder.String()),
+		attribute.Int("graphite.probes", run.probes),
+	)
 	return ladder, nil
 }
 

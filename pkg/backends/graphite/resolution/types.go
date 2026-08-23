@@ -23,7 +23,12 @@
 // comes from operator configuration and is labeled as such.
 package resolution
 
-import "errors"
+import (
+	"errors"
+	"sync/atomic"
+
+	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
+)
 
 // Confidence is the resolver's verdict on a predicted step. The String
 // values are the frozen `confidence` label values of
@@ -121,6 +126,29 @@ type Observer interface {
 	// Misprediction is called when an origin response contradicts a
 	// predicted step
 	Misprediction()
+}
+
+// Tracers carries the tracer a backend was configured with. The resolution
+// components are built before any request arrives, and a tracer only exists
+// per request, so the first request that carries one publishes it here for
+// probe and learning spans to use.
+type Tracers struct {
+	p atomic.Pointer[tracing.Tracer]
+}
+
+// Set publishes a tracer the first time one is seen
+func (t *Tracers) Set(tr *tracing.Tracer) {
+	if t != nil && tr != nil {
+		t.p.CompareAndSwap(nil, tr)
+	}
+}
+
+// Get returns the published tracer, or nil
+func (t *Tracers) Get() *tracing.Tracer {
+	if t == nil {
+		return nil
+	}
+	return t.p.Load()
 }
 
 // NopObserver discards every event

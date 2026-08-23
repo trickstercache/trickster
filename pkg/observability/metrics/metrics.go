@@ -37,6 +37,7 @@ const (
 	healthSubsystem   = "healthcheck"
 	sqlSubsystem      = "sql"
 	mysqlSubsystem    = "mysql"
+	graphiteSubsystem = providers.Graphite
 )
 
 // Default histogram buckets used by trickster
@@ -406,6 +407,84 @@ var (
 		[]string{"backend_name", "class"},
 	)
 
+	// GraphiteResolutionLookups counts step-resolution outcomes. confidence
+	// is exact | derived | configured | unknown and source is registry |
+	// response | probe | static | function | none; both label sets are
+	// closed, and neither ever contains a metric path or query text.
+	GraphiteResolutionLookups = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: graphiteSubsystem,
+			Name:      "resolution_lookups_total",
+			Help:      "Count of Graphite step-resolution lookups by confidence and source.",
+		},
+		[]string{"backend_name", "confidence", "source"},
+	)
+
+	// GraphiteProbes counts synthetic requests issued to learn an archive
+	// ladder. kind is narrow | wide | find and result is step | empty | error.
+	GraphiteProbes = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: graphiteSubsystem,
+			Name:      "probes_total",
+			Help:      "Count of Graphite resolution probes by kind and result.",
+		},
+		[]string{"backend_name", "kind", "result"},
+	)
+
+	// GraphiteLadders is the number of distinct complete archive ladders the
+	// resolution registry knows. It should spike during warmup and then flatten
+	// at roughly the number of storage-schemas.conf patterns in use.
+	GraphiteLadders = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: graphiteSubsystem,
+			Name:      "ladders",
+			Help:      "Number of distinct Graphite archive ladders known to the resolution registry.",
+		},
+		[]string{"backend_name"},
+	)
+
+	// GraphiteRegistryEntries is the size of each resolution registry layer:
+	// leaf | ladder | target | negative.
+	GraphiteRegistryEntries = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: graphiteSubsystem,
+			Name:      "registry_entries",
+			Help:      "Number of entries in each layer of the Graphite resolution registry.",
+		},
+		[]string{"backend_name", "layer"},
+	)
+
+	// GraphiteStepMispredictions counts responses whose step contradicted the
+	// predicted one. Any non-zero value is a defect: the prediction is
+	// discarded and the request re-served unaccelerated, but the ladder that
+	// produced it was wrong.
+	GraphiteStepMispredictions = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: graphiteSubsystem,
+			Name:      "step_mispredictions_total",
+			Help:      "Count of Graphite responses whose step differed from the predicted step.",
+		},
+		[]string{"backend_name"},
+	)
+
+	// GraphiteFallbacks counts render requests routed to the unaccelerated
+	// lane. reason is a closed set of internal categories and never contains
+	// a target expression.
+	GraphiteFallbacks = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: graphiteSubsystem,
+			Name:      "fallbacks_total",
+			Help:      "Count of Graphite render requests served without delta caching, by reason.",
+		},
+		[]string{"backend_name", "reason"},
+	)
+
 	// MySQLRouteSelections tracks bounded native User Router outcomes. Backend
 	// and router names come from configuration; usernames are never labels.
 	MySQLRouteSelections = prometheus.NewCounterVec(
@@ -673,6 +752,12 @@ func init() {
 	prometheus.MustRegister(MySQLConnections)
 	prometheus.MustRegister(MySQLActiveConnections)
 	prometheus.MustRegister(MySQLConnectionErrors)
+	prometheus.MustRegister(GraphiteResolutionLookups)
+	prometheus.MustRegister(GraphiteProbes)
+	prometheus.MustRegister(GraphiteLadders)
+	prometheus.MustRegister(GraphiteRegistryEntries)
+	prometheus.MustRegister(GraphiteStepMispredictions)
+	prometheus.MustRegister(GraphiteFallbacks)
 	prometheus.MustRegister(MySQLRouteSelections)
 	prometheus.MustRegister(MySQLCommandLatency)
 }

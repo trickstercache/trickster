@@ -24,6 +24,10 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	tspan "github.com/trickstercache/trickster/v2/pkg/observability/tracing/span"
+
+	"go.opentelemetry.io/otel/attribute"
 )
 
 // ProbeResult is the outcome of one probe
@@ -46,6 +50,7 @@ type ProbeResult struct {
 type Prober struct {
 	Origin   *Origin
 	Observer Observer
+	Tracers  *Tracers
 }
 
 // narrowWindow is the narrow probe's until - from. Whisper always returns
@@ -83,6 +88,10 @@ func (p *Prober) run(ctx context.Context, kind, leaf string, from, until, now ti
 		"format": {"raw"},
 	}
 	maps.Copy(q, extra)
+	ctx, span := tspan.NewChildSpan(ctx, p.Tracers.Get(), "GraphiteProbe")
+	if span != nil {
+		defer span.End()
+	}
 	res := ProbeResult{Kind: kind}
 	body, err := p.Origin.Get(ctx, "/render", q)
 	if err != nil {
@@ -100,6 +109,11 @@ func (p *Prober) run(ctx context.Context, kind, leaf string, from, until, now ti
 		res.Result, res.Step, res.Start, res.End = ResultStep, r.step, r.start, r.end
 	}
 	p.observe(kind, res.Result)
+	tspan.SetAttributes(p.Tracers.Get(), span,
+		attribute.String("graphite.probe.kind", kind),
+		attribute.String("graphite.probe.result", res.Result),
+		attribute.String("graphite.probe.step", res.Step.String()),
+	)
 	return res
 }
 

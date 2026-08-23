@@ -26,6 +26,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	tspan "github.com/trickstercache/trickster/v2/pkg/observability/tracing/span"
 )
 
 // Existence is the outcome of an existence check (design note §4.5 table)
@@ -46,6 +48,7 @@ type Expander struct {
 	Origin   *Origin
 	Registry *Registry
 	Observer Observer
+	Tracers  *Tracers
 	// TTL is how long an expansion is reused
 	TTL time.Duration
 }
@@ -104,6 +107,10 @@ func (e *Expander) Exists(ctx context.Context, path string) Existence {
 // about, because a new metric under the wildcard would not change the key.
 // /metrics/expand?leavesOnly=1 enumerates the concrete leaves instead.
 func (e *Expander) find(ctx context.Context, query string) ([]string, error) {
+	ctx, span := tspan.NewChildSpan(ctx, e.Tracers.Get(), "GraphiteExpand")
+	if span != nil {
+		defer span.End()
+	}
 	body, err := e.Origin.Get(ctx, "/metrics/expand",
 		url.Values{"query": {query}, "leavesOnly": {"1"}, "format": {"json"}})
 	if err != nil {
