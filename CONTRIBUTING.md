@@ -73,7 +73,7 @@ We offer a Docker Compose to help bootstrap your developer environment. See
 
 ## Reviewing Pull Requests
 
-Project Maintainers and designated Reviewers have the ability to approve Pull Requests to be merged into the `main` repo branch. However, we invite any user to unofficially review other user's pull requests for feedback, within the following guidelines:
+Project Maintainers and designated Reviewers have the ability to approve Pull Requests to be merged into the `main` repo branch. However, we invite any user to unofficially review other users' pull requests for feedback, within the following guidelines:
 
 * Non-Maintainer/Reviewer pull request reviews are unofficial and non-binding.
 
