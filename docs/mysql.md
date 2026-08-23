@@ -1,7 +1,7 @@
 # MySQL Provider
 
 Trickster can accept native MySQL client connections, proxy each authenticated
-session to an Oracle MySQL origin, and cache eligible text-protocol query
+session to a MySQL origin, and cache eligible text-protocol query
 results. This guide describes the initial supported contract. Behavior not
 listed here is rejected or proxied without caching; cache eligibility always
 fails closed.
@@ -11,14 +11,16 @@ fails closed.
 The supported matrix is:
 
 - Oracle MySQL 8.4 LTS through 9.7 LTS;
-- Grafana 11.0 through 11.6 using Grafana's built-in MySQL data source; and
+- Grafana 11.0 and above using Grafana's built-in MySQL data source; and
 - native clients that use `mysql_native_password` and the supported commands
   below.
 
 MariaDB, Percona Server, Aurora MySQL, other MySQL-compatible products, older
 Grafana releases, and third-party Grafana MySQL data sources are not part of
-the initial compatibility claim. The developer environment pins MySQL 8.4 and
-Grafana 11.6.
+the initial compatibility claim, but should work without problems. File an
+issue if you discover a compatibility issue.
+
+The developer environment pins MySQL 8.4 and Grafana 13.
 
 ## Direct backend configuration
 
@@ -546,6 +548,5 @@ The initial release does not claim support for:
 - nested/mixed MySQL User Router topologies or origin credential remapping.
 
 The executable SQL contract is
-[`pkg/backends/mysql/testdata/compatibility/v1.json`](../pkg/backends/mysql/testdata/compatibility/v1.json).
-The maintainer-facing frozen release matrix is in
+[`pkg/backends/mysql/testdata/compatibility/v1.json`](../pkg/backends/mysql/testdata/compatibility/v1.json). The maintainer-facing frozen release matrix is in
 [`docs/developer/mysql-release-contract.md`](developer/mysql-release-contract.md).

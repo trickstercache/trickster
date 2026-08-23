@@ -15,8 +15,6 @@ Learn more below, and check out our [roadmap](./docs/roadmap.md) to find out wha
 
 Trickster is hosted by the [Cloud Native Computing Foundation](https://cncf.io) (CNCF) as a sandbox level project. If you are a company that wants to help shape the evolution of technologies that are container-packaged, dynamically-scheduled and microservices-oriented, consider joining the CNCF.
 
-Note: Trickster v1.1 is the production release, sourced from the [v1.1.x](https://github.com/trickstercache/trickster/tree/v1.1.x) branch. The `main` branch sources Trickster 2.0, which is currently in beta.
-
 ## HTTP Reverse Proxy Cache
 
 Trickster is a fully-featured HTTP Reverse Proxy Cache for HTTP applications like static file servers and web API's.

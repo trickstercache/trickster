@@ -70,3 +70,15 @@ We offer a Docker Compose to help bootstrap your developer environment. See
 * If your patch is not getting reviewed or you need a specific person to review it, you can @-reply a reviewer asking for a review in the pull request or a comment, or you can ask for a review on slack channel #trickster.
 
 * All new code must include accompanying unit tests for as near to 100% coverage as possible. Our coverage rate for the project is approximately 90%, so all contributions should attain that level or higher. We may ask you to commit additional tests as required to ensure coverage is maintained before we merge the PR.
+
+## Reviewing Pull Requests
+
+Project Maintainers and designated Reviewers have the ability to approve Pull Requests to be merged into the `main` repo branch. However, we invite any user to unofficially review other user's pull requests for feedback, within the following guidelines:
+
+* Non-Maintainer/Reviewer pull request reviews are unofficial and non-binding.
+
+* Unofficial reviews can point out issues, bugs, best practices and other concerns, but should not directly ask the PR author make changes.
+  * Good: "I found a few issues that might warrant further review:"
+  * Bad: "Please make the following changes:"
+
+* Unofficial reviews should not include priority designations on any findings (e.g., P1, P2, etc.). Official reviews may or may not include this guidance.
