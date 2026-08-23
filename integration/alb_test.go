@@ -36,13 +36,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const albAddr = "127.0.0.1:8490"
-
 func TestALB(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	go startTrickster(t, ctx, expectedStartError{}, "-config", "testdata/alb.yaml")
-	waitForTrickster(t, "127.0.0.1:8491")
+	h := albHarness(t)
+	h.start(t)
+	albAddr := h.BaseAddr
 	waitForPrometheusData(t, "127.0.0.1:9090")
 
 	rangeParams := func() url.Values {

@@ -50,4 +50,7 @@ ENGINE = MergeTree
 PARTITION BY toYYYYMM(pickup_date)
 ORDER BY pickup_datetime;
 
-truncate table trips;
+CREATE TABLE IF NOT EXISTS trips_seed AS trips;
+
+TRUNCATE TABLE trips;
+TRUNCATE TABLE trips_seed;

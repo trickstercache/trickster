@@ -99,7 +99,7 @@ func LoadAndValidate(args ...string) (*config.Config, error) {
 	// Load Config
 	cfg, err := config.Load(args)
 	if err != nil {
-		logger.Error("Could not load configuration:", logging.Pairs{"error": err.Error()})
+		logger.Error("Could not load configuration:", logging.Pairs{logKeyError: err.Error()})
 		if cfg != nil && cfg.Flags != nil && cfg.Flags.ValidateConfig {
 			usage.PrintUsage()
 		}
@@ -162,7 +162,7 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	tracers, err := tr.RegisterAll(newConf, false)
 	if err != nil {
 		handleStartupIssue("tracing registration failed",
-			logging.Pairs{"detail": err.Error()},
+			logging.Pairs{logKeyDetail: err.Error()},
 			errorFunc)
 		return err
 	}
@@ -190,7 +190,7 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	err = routing.RegisterProxyRoutesForListeners(newConf, clients, listenerRouters, mr, caches, tracers, false)
 	if err != nil {
 		handleStartupIssue("route registration failed",
-			logging.Pairs{"detail": err.Error()}, errorFunc)
+			logging.Pairs{logKeyDetail: err.Error()}, errorFunc)
 		return err
 	}
 
@@ -362,7 +362,7 @@ func closeOldCache(name string, w cache.Cache, drainTimeout time.Duration) {
 	}, func() {
 		if err := w.Close(); err != nil {
 			logger.Warn("error closing old cache during reload",
-				logging.Pairs{"cache": name, "error": err.Error()})
+				logging.Pairs{"cache": name, logKeyError: err.Error()})
 		}
 	})
 }

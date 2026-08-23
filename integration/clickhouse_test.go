@@ -29,9 +29,8 @@ import (
 )
 
 func TestClickHouse(t *testing.T) {
-	cfg := writeTestConfig(t, 8570, 8571, 8582)
-	clickAddr := "127.0.0.1:8570"
-	h := tricksterHarness{ConfigPath: cfg, BaseAddr: clickAddr, MetricsAddr: "127.0.0.1:8571"}
+	h := configHarness(t)
+	clickAddr := h.BaseAddr
 	h.start(t)
 	waitForClickHouseData(t, "127.0.0.1:8123")
 	fiveMinuteEnd := time.Now().Truncate(5 * time.Minute).Unix()

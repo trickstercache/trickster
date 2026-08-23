@@ -26,9 +26,8 @@ import (
 )
 
 func TestClickHouseNativeSDK(t *testing.T) {
-	cfg := writeTestConfig(t, 8580, 8581, 8587)
-	clickAddr := "127.0.0.1:8580"
-	h := tricksterHarness{ConfigPath: cfg, BaseAddr: clickAddr, MetricsAddr: "127.0.0.1:8581"}
+	h := configHarness(t)
+	clickAddr := h.BaseAddr
 	h.start(t)
 	waitForClickHouseData(t, "127.0.0.1:8123")
 

@@ -88,7 +88,7 @@ func NewTestWebClient() *http.Client {
 			return http.ErrUseLastResponse
 		},
 		Transport: &http.Transport{
-			Dial:                (&net.Dialer{KeepAlive: 5 * time.Minute}).Dial,
+			DialContext:         (&net.Dialer{KeepAlive: 5 * time.Minute}).DialContext,
 			MaxIdleConns:        20,
 			MaxIdleConnsPerHost: 20,
 		},

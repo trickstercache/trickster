@@ -78,6 +78,7 @@ func RegisterProxyRoutesForListeners(conf *config.Config, clients backends.Backe
 	tracers tracing.Tracers, dryRun bool,
 ) error {
 	defaultRouter := listenerRouters[listener.DefaultFrontendName]
+	nativeRouters := make(map[string]router.Router)
 	if defaultRouter == nil {
 		for _, r := range listenerRouters {
 			defaultRouter = r
@@ -88,7 +89,18 @@ func RegisterProxyRoutesForListeners(conf *config.Config, clients backends.Backe
 		if o == nil {
 			return nil
 		}
-		return listenerRouters[o.ListenerName]
+		if r := listenerRouters[o.ListenerName]; r != nil {
+			return r
+		}
+		// Native route targets still need an internal router to satisfy the
+		// Backend interface, but it is never attached to an HTTP listener.
+		if registry.NativeListeners().Get(strings.ToLower(o.Provider)) != nil {
+			if nativeRouters[o.Name] == nil {
+				nativeRouters[o.Name] = lm.NewRouter()
+			}
+			return nativeRouters[o.Name]
+		}
+		return nil
 	}, metricsRouter, caches, tracers, dryRun)
 }
 
