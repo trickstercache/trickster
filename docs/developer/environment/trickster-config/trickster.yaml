@@ -123,16 +123,13 @@ backends:
     # other backends on the Graphite dashboard; filesystem, because the
     # memory provider exports no usage/eviction gauges for the storage panels
     cache_name: graphite_fs
-    # the delta cache fetches at native resolution (maxDataPoints is
-    # stripped upstream, decision D3), so a wide window on a fine rung is
-    # large: the 120d storage panel is ~1.6MB of JSON. The 512KB default
-    # would reject it on every refresh and fall back to plain proxy.
-    max_object_size_bytes: 67108864
-    # the cache keeps timeseries_retention_factor points per series (default
-    # 1024, which is only 3.5 days at a 5m step), cropping anything older and
-    # refetching it on the next request. Size it for the widest window at the
-    # finest step it will be served at (120d at 5m is 34,560 points).
-    timeseries_retention_factor: 1000000
+    # max_object_size_bytes and timeseries_retention_factor are deliberately
+    # not set: the graphite provider defaults them to 64MB and 524288 points
+    # (pkg/backends/graphite/options/defaults.go), which the dashboard's
+    # widest panel needs and this environment therefore exercises. The
+    # generic backend defaults of 512KB and 1024 points would reject the
+    # 120d storage panel (~1.6MB of JSON) on every refresh and crop
+    # everything past ~3.5 days at a 5m step.
   rp1:
     provider: proxy
     origin_url: 'http://127.0.0.1:9090'

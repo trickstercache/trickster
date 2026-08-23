@@ -1,0 +1,70 @@
+# Adds an in-cluster graphite-web/carbon pair alongside Trickster, so the
+# Graphite provider can be demonstrated without an external origin.
+#
+# Apply after creating the schema ConfigMap:
+#
+#   kubectl create -f deploy/kube/graphite-configmap.yaml
+#   kubectl patch deployment trickster --type strategic --patch-file \
+#     deploy/kube/graphite-deployment-patch.yaml
+#
+# The containers share a network namespace, so Trickster reaches Graphite at
+# http://127.0.0.1:80. Configure the backend in the mounted Trickster
+# configuration (see the graphite1 example in configmap.yaml) with:
+#
+#   backends:
+#     graphite1:
+#       provider: graphite
+#       origin_url: 'http://127.0.0.1:80'
+#
+# Feed it by writing to carbon's plaintext port, which service.yaml exposes
+# as `carbon` when that entry is uncommented:
+#
+#   echo "dev.fast.cpu.host01.percent 42 $(date +%s)" | nc <node> 2003
+#
+# This is a demonstration, not a production Graphite: storage is an
+# emptyDir, so the Whisper files are lost when the pod is replaced.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trickster
+spec:
+  template:
+    spec:
+      containers:
+        - name: graphite
+          image: graphiteapp/graphite-statsd:1.1.10-5
+          env:
+            # statsd is not part of this demonstration
+            - name: STATSD_DISABLED
+              value: "1"
+            # graphite-web caches render responses itself; Trickster is the
+            # cache here, so leave the origin uncached to keep the two from
+            # disagreeing about freshness
+            - name: GRAPHITE_DEFAULT_CACHE_DURATION
+              value: "0"
+          ports:
+            - containerPort: 80
+              name: graphite-web
+            - containerPort: 2003
+              name: carbon
+          readinessProbe:
+            httpGet:
+              path: /metrics/find?query=carbon
+              port: graphite-web
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          volumeMounts:
+            - name: graphite-conf-volume
+              mountPath: /opt/graphite/conf/storage-schemas.conf
+              subPath: storage-schemas.conf
+            - name: graphite-conf-volume
+              mountPath: /opt/graphite/conf/storage-aggregation.conf
+              subPath: storage-aggregation.conf
+            - name: graphite-storage
+              mountPath: /opt/graphite/storage
+      volumes:
+        - name: graphite-conf-volume
+          configMap:
+            name: graphite-conf
+        - name: graphite-storage
+          emptyDir: {}

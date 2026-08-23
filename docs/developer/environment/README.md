@@ -47,7 +47,7 @@ disagreement, so the setup is documented here in some detail.
 | schema / aggregation config | `docker-compose-data/graphite-config/storage-{schemas,aggregation}.conf` |
 | data generator | `docker-compose-data/graphite-config/generator.py` |
 | Grafana datasources | `graphite-direct` (uid `ds_graphite_direct`) → origin; `graphite-trickster` (uid `ds_graphite_trickster`) → `http://host.docker.internal:8480/graphite1` |
-| Trickster backend | `graphite1` in `trickster-config/trickster.yaml` (provider `graphite`, dedicated `graphite_fs` cache, `max_object_size_bytes` raised because native-resolution fetches of wide windows exceed the 512KB default); health at <http://127.0.0.1:8481/trickster/health/graphite1> |
+| Trickster backend | `graphite1` in `trickster-config/trickster.yaml` (provider `graphite`, dedicated `graphite_fs` cache; the sizing it needs comes from the provider's own defaults, which this environment deliberately does not override); health at <http://127.0.0.1:8481/trickster/health/graphite1> |
 | Grafana dashboard | <http://127.0.0.1:3000/d/trk_graphite/graphite> |
 | Whisper files | docker volume `graphite-data`, under `/opt/graphite/storage/whisper/` |
 

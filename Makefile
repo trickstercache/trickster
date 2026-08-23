@@ -167,6 +167,11 @@ benchmark-mysql:
 	@go test ./pkg/backends/mysql -run '^$$' -bench '^BenchmarkMySQL' -benchmem -count=5
 	@go test ./pkg/backends/alb/mech/ur -run '^$$' -bench '^BenchmarkResolveRouteProtocolNeutral$$' -benchmem -count=5
 
+.PHONY: benchmark-graphite
+benchmark-graphite:
+	@go test ./pkg/backends/graphite/resolution -run '^$$' -bench '^BenchmarkResolverRegistryHit$$' \
+		-benchmem -count=5
+
 .PHONY: benchmark-mysql-acceptance
 benchmark-mysql-acceptance:
 	@go test ./pkg/backends/mysql -run '^$$' -bench '^BenchmarkMySQLCompatibilityCorpus$$' \
