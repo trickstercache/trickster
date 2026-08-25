@@ -23,7 +23,6 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/tsm"
 	mtypes "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
-	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
@@ -110,8 +109,7 @@ func TestALB502WithMultiplePrometheusBackends(t *testing.T) {
 		albpool.WaitHealthy(t, pool1, 1)
 
 		albConfigs := &ao.TSMConfigs{
-			MechanismName: names.MechanismTSM,
-			OutputFormat:  providers.Prometheus,
+			OutputFormat: providers.Prometheus,
 		}
 
 		tsmMech, err := tsm.New(albConfigs, types.Lookup{providers.Prometheus: prometheus.NewClient})
@@ -137,8 +135,7 @@ func TestALB502WithMultiplePrometheusBackends(t *testing.T) {
 		albpool.WaitHealthy(t, pool2, 2)
 
 		albConfigs := &ao.TSMConfigs{
-			MechanismName: names.MechanismTSM,
-			OutputFormat:  providers.Prometheus,
+			OutputFormat: providers.Prometheus,
 		}
 
 		tsmMech, err := tsm.New(albConfigs, types.Lookup{providers.Prometheus: prometheus.NewClient})

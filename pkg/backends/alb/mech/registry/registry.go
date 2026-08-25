@@ -58,14 +58,19 @@ func compileSupportedByName(entries []types.RegistryEntry) map[types.Name]*funcs
 	}
 
 	for _, entry := range entries {
-		if entry.New == nil && entry.NewTSM != nil {
-			fns := &funcs{tsmMechanismFunc: entry.NewTSM}
-			add(entry.ShortName, fns)
-			add(entry.Name, fns)
-			continue
+		var fns *funcs
+		switch {
+		case entry.New != nil && entry.NewTSM != nil:
+			panic("alb/mech/registry: mechanism " + entry.Name +
+				" sets both New and NewTSM; exactly one is required")
+		case entry.NewTSM != nil:
+			fns = &funcs{tsmMechanismFunc: entry.NewTSM}
+		case entry.New != nil:
+			fns = &funcs{mechanismFunc: entry.New}
+		default:
+			panic("alb/mech/registry: mechanism " + entry.Name +
+				" sets neither New nor NewTSM")
 		}
-
-		fns := &funcs{mechanismFunc: entry.New}
 		add(entry.ShortName, fns)
 		add(entry.Name, fns)
 	}
