@@ -80,15 +80,17 @@ func compileSupportedByName(entries []types.RegistryEntry) map[types.Name]*funcs
 func New(name types.Name, opts *options.Options,
 	factories rt.Lookup,
 ) (types.Mechanism, error) {
-	if f, ok := registryByName[name]; ok && f != nil {
-		if name == tsm.Name || name == tsm.ShortName {
-			tsmConfigs := options.NewTSMConfigs(opts)
-			return f.tsmMechanismFunc(tsmConfigs, factories)
-		}
-
+	f, ok := registryByName[name]
+	if !ok {
+		return nil, errors.ErrUnsupportedMechanism
+	}
+	if f.tsmMechanismFunc != nil {
+		tsmConfigs := options.NewTSMConfigs(opts)
+		return f.tsmMechanismFunc(tsmConfigs, factories)
+	}
+	if f.mechanismFunc != nil {
 		return f.mechanismFunc(opts, factories)
 	}
-
 	return nil, errors.ErrUnsupportedMechanism
 }
 
