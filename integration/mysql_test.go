@@ -41,6 +41,7 @@ import (
 	gomysql "github.com/go-sql-driver/mysql"
 	"github.com/stretchr/testify/require"
 	vtmysql "vitess.io/vitess/go/mysql"
+	"vitess.io/vitess/go/mysql/sqlerror"
 )
 
 const (
@@ -172,6 +173,38 @@ func TestMySQLRealServerCompatibility(t *testing.T) {
 			require.ErrorAs(t, proxyErr, &proxyMySQL)
 			require.Equal(t, directMySQL.Number, proxyMySQL.Number)
 		}
+	})
+
+	t.Run("no-backslash-escapes preserves executable comment policy", func(t *testing.T) {
+		const modeSensitiveQuery = `SELECT 'x\' /*!80400 INTO @answer */`
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+
+		directConn, err := direct.Conn(ctx)
+		require.NoError(t, err)
+		defer directConn.Close()
+		_, err = directConn.ExecContext(ctx, "SET SESSION sql_mode = 'NO_BACKSLASH_ESCAPES'")
+		require.NoError(t, err)
+		_, err = directConn.ExecContext(ctx, modeSensitiveQuery)
+		require.NoError(t, err)
+		var directAnswer string
+		require.NoError(t, directConn.QueryRowContext(ctx, "SELECT @answer").Scan(&directAnswer))
+		require.Equal(t, `x\`, directAnswer)
+
+		proxyConn, err := proxied.Conn(ctx)
+		require.NoError(t, err)
+		defer proxyConn.Close()
+		_, err = proxyConn.ExecContext(ctx, "SET SESSION sql_mode = 'NO_BACKSLASH_ESCAPES'")
+		require.NoError(t, err)
+		_, err = proxyConn.ExecContext(ctx, modeSensitiveQuery)
+		require.Error(t, err)
+		var mysqlErr *gomysql.MySQLError
+		require.ErrorAs(t, err, &mysqlErr)
+		require.Equal(t, uint16(sqlerror.ERNotSupportedYet), mysqlErr.Number)
+
+		var proxyAnswer sql.NullString
+		require.NoError(t, proxyConn.QueryRowContext(ctx, "SELECT @answer").Scan(&proxyAnswer))
+		require.False(t, proxyAnswer.Valid)
 	})
 
 	t.Run("reset and quit preserve synchronization", func(t *testing.T) {

@@ -58,7 +58,8 @@ func FuzzCommandDispatchClassification(f *testing.F) {
 	f.Add("/*!80000 SET @tenant = 1 */")
 	f.Add("\"\\;0")
 	f.Fuzz(func(t *testing.T, query string) {
-		_ = unsupportedTextFeature(query)
+		_ = unsupportedTextFeature(query, false)
+		_ = unsupportedTextFeature(query, true)
 		_, _ = hasMultipleStatements(query)
 	})
 }
