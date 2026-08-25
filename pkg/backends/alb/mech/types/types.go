@@ -31,7 +31,7 @@ type Name = string
 // provided Options
 type NewMechanismFunc func(*options.Options, types.Lookup) (Mechanism, error)
 
-// NewTSMMechanismFUn defines a function that returns a Time Series Merge mechanism
+// NewTSMMechanismFunc defines a function that returns a Time Series Merge mechanism
 type NewTSMMechanismFunc func(*options.TSMConfigs, types.Lookup) (Mechanism, error)
 
 // Mechanism represents a specific ALB Implementation (e.g., a Round Robiner).
