@@ -148,7 +148,6 @@ type TSMConfigs struct {
 	MaxCaptureBytes       int
 	MaxFanoutCaptureBytes int
 	OutputFormat          string
-	MechanismName         string
 }
 
 func NewTSMConfigs(o *Options) *TSMConfigs {
@@ -157,7 +156,6 @@ func NewTSMConfigs(o *Options) *TSMConfigs {
 		MaxCaptureBytes:        o.MaxCaptureBytes,
 		MaxFanoutCaptureBytes:  o.MaxFanoutCaptureBytes,
 		OutputFormat:           o.OutputFormat,
-		MechanismName:          o.MechanismName,
 	}
 }
 
