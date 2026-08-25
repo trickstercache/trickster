@@ -36,7 +36,7 @@ func TestRegistryEntry(t *testing.T) {
 		t.Fatalf("RegistryEntry = %+v, want Name=%q ShortName=%q", entry, Name, ShortName)
 	}
 	if entry.NewTSM == nil {
-		t.Fatal("RegistryEntry.New is nil")
+		t.Fatal("RegistryEntry.NewTSM is nil")
 	}
 }
 
