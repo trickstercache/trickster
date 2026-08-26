@@ -138,7 +138,7 @@ func TestValidateConfigMappingsALBAndCycles(t *testing.T) {
 	edge.NegativeCacheName = ""
 	edge.ALBOptions = ao.New()
 	edge.ALBOptions.MechanismName = "rr"
-	edge.ALBOptions.Pool = []string{"member"}
+	edge.ALBOptions.Pool = ao.Members("member")
 
 	l := Lookup{"member": member, "edge": edge}
 	err := l.ValidateConfigMappings(co.Lookup{"default": nil}, negative.Lookups{},
@@ -147,7 +147,7 @@ func TestValidateConfigMappingsALBAndCycles(t *testing.T) {
 		t.Fatalf("ValidateConfigMappings for ALB pool: %v", err)
 	}
 
-	edge.ALBOptions.Pool = []string{"edge"}
+	edge.ALBOptions.Pool = ao.Members("edge")
 	err = l.ValidateConfigMappings(co.Lookup{"default": nil}, negative.Lookups{},
 		ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{})
 	if err == nil {

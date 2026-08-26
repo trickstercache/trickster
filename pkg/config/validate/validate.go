@@ -77,6 +77,9 @@ func Validate(c *config.Config) error {
 	if err := NegativeCaches(c); err != nil {
 		return err
 	}
+	if err := Discoverers(c); err != nil {
+		return err
+	}
 	if err := Backends(c); err != nil {
 		return err
 	}
@@ -111,6 +114,14 @@ func Caches(c *config.Config) error {
 	return c.Caches.Validate()
 }
 
+// Discoverers validates the top-level discovery section
+func Discoverers(c *config.Config) error {
+	if c == nil || len(c.Discovery) == 0 {
+		return nil
+	}
+	return c.Discovery.Validate()
+}
+
 func NegativeCaches(c *config.Config) error {
 	if c == nil || len(c.NegativeCacheConfigs) == 0 {
 		return nil
@@ -141,6 +152,9 @@ func Backends(c *config.Config) error {
 		c.Rules, c.RequestRewriters, c.Authenticators, c.TracingOptions); err != nil {
 		return err
 	}
+	if err := c.Backends.ValidateDiscovery(c.Discovery); err != nil {
+		return err
+	}
 	serveTLS, err := c.Backends.ValidateTLSConfigs()
 	if err != nil {
 		return err
@@ -163,7 +177,8 @@ func Listeners(c *config.Config) error {
 	nativeListeners := providerregistry.NativeListeners()
 	nativeTargets := nativeUserRouterTargets(c, nativeListeners)
 	for backendName, backend := range c.Backends {
-		if backend == nil {
+		if backend == nil || backend.IsTemplate {
+			// templates are never routed, so they map to no listener
 			continue
 		}
 		if adapter := nativeListeners.Get(strings.ToLower(backend.Provider)); adapter != nil {

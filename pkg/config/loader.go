@@ -92,6 +92,12 @@ func Load(args []string) (*Config, error) {
 		}
 	}
 
+	if len(c.Discovery) > 0 {
+		if err := c.Discovery.Initialize(); err != nil {
+			return nil, err
+		}
+	}
+
 	if c.Frontend != nil {
 		if err := c.Frontend.Initialize(); err != nil {
 			return nil, err
