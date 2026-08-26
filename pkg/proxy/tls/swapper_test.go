@@ -21,7 +21,7 @@ import (
 	"testing"
 )
 
-func getSwapper(t *testing.T) (*certSwapper, *tls.Config, func()) {
+func getSwapper(t *testing.T) (*certStore, *tls.Config, func()) {
 	options, closer, err := tlsConfig("")
 	if closer != nil {
 		defer closer()
@@ -37,7 +37,7 @@ func getSwapper(t *testing.T) (*certSwapper, *tls.Config, func()) {
 		t.Fatal(err)
 	}
 
-	sw := NewSwapper(tlscfg1.Certificates).(*certSwapper)
+	sw := NewSwapper(tlscfg1.Certificates).(*certStore)
 	return sw, tlscfg1, closer
 }
 
@@ -56,8 +56,7 @@ func TestGetSetCert(t *testing.T) {
 	if closer2 != nil {
 		defer closer2()
 	}
-	certs := sw.Certificates.Load().([]tls.Certificate)
-	certs = append(certs, cfg2.Certificates...)
+	certs := append(cfg.Certificates, cfg2.Certificates...)
 	sw.SetCerts(certs)
 	_, err = sw.GetCert(chi)
 	if err != nil {

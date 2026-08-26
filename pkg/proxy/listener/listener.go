@@ -24,6 +24,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -74,7 +75,7 @@ type Listener struct {
 	routeSwapper *switcher.SwitchHandler
 	server       server
 	exitOnError  atomic.Bool
-	state        int32
+	state        atomic.Int32
 	readyCh      chan struct{}
 	readyOnce    sync.Once
 }
@@ -144,12 +145,12 @@ func NewGroup() *Group {
 
 // State returns the current state of the listener
 func (l *Listener) State() ListenerState {
-	return ListenerState(atomic.LoadInt32(&l.state))
+	return ListenerState(l.state.Load())
 }
 
 // setState atomically sets the listener state
 func (l *Listener) setState(state ListenerState) {
-	atomic.StoreInt32(&l.state, int32(state))
+	l.state.Store(int32(state))
 }
 
 // markReady signals that the listener is ready to accept connections
@@ -226,6 +227,30 @@ func NewListener(listenAddress string, listenPort, connectionsLimit int,
 	})
 
 	return listener, nil
+}
+
+// GroupKey returns the Group membership key for a listener endpoint
+func GroupKey(listenerName, protocol string, isTLS bool) string {
+	scheme := protocol
+	if scheme == "" {
+		scheme = "http"
+	}
+	if isTLS {
+		scheme = "https"
+	}
+	return fmt.Sprintf("listener.%s.%s", listenerName, scheme)
+}
+
+// Keys returns the keys of all current group members
+func (lg *Group) Keys() []string {
+	lg.listenersLock.Lock()
+	out := make([]string, 0, len(lg.members))
+	for name := range lg.members {
+		out = append(out, name)
+	}
+	lg.listenersLock.Unlock()
+	slices.Sort(out)
+	return out
 }
 
 // Get returns the listener if it exists

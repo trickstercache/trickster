@@ -18,7 +18,6 @@ package setup
 
 import (
 	"crypto/tls"
-	"fmt"
 	"net/http"
 	"slices"
 	"time"
@@ -33,6 +32,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/observability/pprof"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
+	certs "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/certificates"
 	ch "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/config"
 	ph "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/purge"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
@@ -71,7 +71,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 
 	metricsRouter.RegisterRoute("/metrics", nil, nil, false, metrics.Handler())
 	if listenerEnabledOn(conf.MgmtConfig.ConfigHandlerListener, mgmt.ListenerNameMetrics) {
-		registerConfigRoutes(conf, metricsRouter)
+		registerConfigRoutes(conf, metricsRouter, lg)
 	}
 	if listenerEnabledOn(conf.MgmtConfig.PprofListener, mgmt.ListenerNameMetrics) {
 		pprof.RegisterRoutes(mgmt.ListenerNameMetrics, metricsRouter)
@@ -79,7 +79,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 
 	managementRouter := lm.NewRouter()
 	if listenerEnabledOn(conf.MgmtConfig.ConfigHandlerListener, mgmt.ListenerNameMgmt) {
-		registerConfigRoutes(conf, managementRouter)
+		registerConfigRoutes(conf, managementRouter, lg)
 	}
 	managementRouter.RegisterRoute(conf.MgmtConfig.ReloadHandlerPath, nil, nil,
 		false, reloadHandler)
@@ -242,14 +242,7 @@ func nativeBuildRequest(conf *config.Config, desired desiredListener, tracers tr
 }
 
 func listenerKey(listenerName, protocol string, tls bool) string {
-	scheme := protocol
-	if scheme == "" {
-		scheme = listenerconfig.ProtocolHTTP
-	}
-	if tls {
-		scheme = "https"
-	}
-	return fmt.Sprintf("listener.%s.%s", listenerName, scheme)
+	return listener.GroupKey(listenerName, protocol, tls)
 }
 
 func listenerNeedsRestart(old, current desiredListener) bool {
@@ -271,11 +264,15 @@ func runtimeListenerNeedsRestart(lg *listener.Group, key string, old, current de
 	return false
 }
 
-func registerConfigRoutes(conf *config.Config, r router.Router) {
+func registerConfigRoutes(conf *config.Config, r router.Router, lg *listener.Group) {
 	r.RegisterRoute(conf.MgmtConfig.ConfigHandlerPath, nil, nil,
 		false, http.HandlerFunc(ch.HandlerFunc(conf)))
 	r.RegisterRoute(ch.SanitizedHandlerPath(conf.MgmtConfig.ConfigHandlerPath), nil, nil,
 		false, http.HandlerFunc(ch.SanitizedHandlerFunc(conf)))
+	if conf.MgmtConfig.CertificatesHandlerPath != "" {
+		r.RegisterRoute(conf.MgmtConfig.CertificatesHandlerPath, nil, nil,
+			false, http.HandlerFunc(certs.HandlerFunc(lg)))
+	}
 }
 
 func updateListenerCertificates(conf *config.Config, desired desiredListener, lg *listener.Group) {

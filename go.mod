@@ -9,6 +9,7 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/dgraph-io/badger/v4 v4.9.6
 	github.com/dgraph-io/ristretto/v2 v2.4.2
+	github.com/fsnotify/fsnotify v1.9.0
 	github.com/influxdata/influxdb v1.12.4
 	github.com/influxdata/influxql v1.4.1
 	github.com/klauspost/compress v1.19.2
@@ -108,7 +109,6 @@ require (
 	github.com/fatih/color v1.19.0 // indirect
 	github.com/fatih/structtag v1.2.0 // indirect
 	github.com/firefart/nonamedreturns v1.0.8 // indirect
-	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/fzipp/gocyclo v0.6.0 // indirect
 	github.com/ghostiam/protogetter v0.3.21 // indirect
 	github.com/go-critic/go-critic v0.14.4 // indirect

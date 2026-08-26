@@ -37,6 +37,7 @@ const (
 	healthSubsystem   = "healthcheck"
 	sqlSubsystem      = "sql"
 	mysqlSubsystem    = "mysql"
+	tlsSubsystem      = "tls"
 )
 
 // Default histogram buckets used by trickster
@@ -610,6 +611,79 @@ var (
 		[]string{"backend_name"},
 	)
 
+	// TLSCertificateNotAfter is a Gauge of each serving certificate's
+	// NotAfter (expiration) time as unix seconds, by listener and entry.
+	TLSCertificateNotAfter = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: tlsSubsystem,
+			Name:      "certificate_expiration_time_seconds",
+			Help:      "NotAfter time of a serving TLS certificate, as unix seconds.",
+		},
+		[]string{"listener", "entry"},
+	)
+
+	// TLSCertificateLastLoad is a Gauge of the time each serving certificate
+	// was last successfully loaded from its source, as unix seconds.
+	TLSCertificateLastLoad = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: tlsSubsystem,
+			Name:      "certificate_last_load_time_seconds",
+			Help:      "Time a serving TLS certificate was last loaded from its source, as unix seconds.",
+		},
+		[]string{"listener", "entry"},
+	)
+
+	// TLSCertificateSwapsTotal counts hot swaps of a rotated certificate into
+	// a live listener.
+	TLSCertificateSwapsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: tlsSubsystem,
+			Name:      "certificate_swaps_total",
+			Help:      "Count of TLS certificates hot-swapped into a live listener.",
+		},
+		[]string{"listener", "entry"},
+	)
+
+	// TLSCertificateValidationFailures counts detected certificate source
+	// changes that failed pair validation (e.g. a mid-rotation partial write)
+	// and were not swapped in; the last-good certificate keeps serving.
+	TLSCertificateValidationFailures = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: tlsSubsystem,
+			Name:      "certificate_validation_failures_total",
+			Help:      "Count of TLS certificate source changes that failed validation.",
+		},
+		[]string{"entry"},
+	)
+
+	// TLSWatcherErrors counts errors reading watched TLS certificate source
+	// files; the last-good certificate keeps serving.
+	TLSWatcherErrors = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: tlsSubsystem,
+			Name:      "watcher_errors_total",
+			Help:      "Count of errors reading watched TLS certificate source files.",
+		},
+		[]string{"entry"},
+	)
+
+	// TLSCertificateStoreSize is a Gauge of the number of certificates in
+	// each listener's certificate store.
+	TLSCertificateStoreSize = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: tlsSubsystem,
+			Name:      "certificate_store_size",
+			Help:      "Number of certificates in a listener's TLS certificate store.",
+		},
+		[]string{"listener"},
+	)
+
 	// ALBPoolFloorReset flags ALB pools whose healthy_floor was reset to 0 at
 	// startup because one or more pool members have no health check and could
 	// never reach the configured floor (>= Passing), which would otherwise
@@ -675,6 +749,12 @@ func init() {
 	prometheus.MustRegister(MySQLConnectionErrors)
 	prometheus.MustRegister(MySQLRouteSelections)
 	prometheus.MustRegister(MySQLCommandLatency)
+	prometheus.MustRegister(TLSCertificateNotAfter)
+	prometheus.MustRegister(TLSCertificateLastLoad)
+	prometheus.MustRegister(TLSCertificateSwapsTotal)
+	prometheus.MustRegister(TLSCertificateValidationFailures)
+	prometheus.MustRegister(TLSWatcherErrors)
+	prometheus.MustRegister(TLSCertificateStoreSize)
 }
 
 // Handler returns the http handler for the listener
