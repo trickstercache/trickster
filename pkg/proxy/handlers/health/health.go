@@ -418,7 +418,8 @@ func updateStatusText(now func() time.Time, hc healthcheck.HealthChecker, hd *he
 				}
 				pool = urPool.Keys()
 			} else {
-				pool = albConfig.ALBOptions.Pool
+				pool = albConfig.ALBOptions.Pool.Names()
+				pool = append(pool, albClient.DynamicPoolNames()...)
 			}
 
 			seen := sets.NewStringSet()
