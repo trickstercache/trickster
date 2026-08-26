@@ -392,6 +392,36 @@ backends:
 #     # default is false
 #     path_routing_disabled: false
 
+#     # access_log configures per-backend HTTP access and error logging. Both logs are off by default and
+#     # are each enabled by setting their filename. See docs/access-logs.md for all options and format tokens
+#     access_log:
+#       # filename enables the access log (one line per request served by this backend)
+#       filename: /var/log/trickster/example.access.log
+#       # format is a named preset (common, combined, extended, json) or a custom Apache-style
+#       # %-token format string. default is combined
+#       format: combined
+#       # rotation controls when the log is rotated; a rotation occurs when either threshold is reached
+#       rotation:
+#         # size rotates the log when the live file would exceed this size. default is 256MB
+#         size: 256MB
+#         # interval rotates the log when the live file is older than this. default is 0 (off)
+#         interval: 1d
+#       # retention controls how many rotated archives (example.access.log.1.gz, .2.gz, ...) are kept
+#       retention:
+#         # count is the maximum number of archives kept. default is 80
+#         count: 3
+#         # age prunes archives older than this. default is 7d
+#         age: 7d
+#       # compress gzips rotated archives. default is true
+#       compress: true
+#       # error_filename enables the error log, receiving requests whose response status is >= error_threshold
+#       error_filename: /var/log/trickster/example.error.log
+#       # error_threshold is the minimum response status code written to the error log. default is 400
+#       error_threshold: 400
+#       # error_format, error_rotation, error_retention and error_compress override the error log's
+#       # behaviors; each inherits from the corresponding access log option above when unset
+#       error_format: ''
+
 #     # rule_name provides the name of the rule config to be used by this backend.
 #     # This is only effective if the provider is rule
 #     rule_name: example-rule
@@ -888,3 +918,21 @@ backends:
 #   # log_file defines the file location to store logs. These will be auto-rolled and maintained for you.
 #   # not specifying a log_file (this is the default behavior) will print logs to STDOUT
 #   log_file: /some/path/to/trickster.log
+
+#   # rotation controls when the log file is rotated; a rotation occurs when either threshold is reached.
+#   # rotated archives are kept alongside the live file as trickster.log.1.gz, .2.gz, etc.
+#   rotation:
+#     # size rotates the log when the live file would exceed this size. default is 256MB
+#     size: 256MB
+#     # interval rotates the log when the live file is older than this. default is 0 (off)
+#     interval: 1d
+
+#   # retention controls how many rotated archives are kept
+#   retention:
+#     # count is the maximum number of archives kept. default is 80
+#     count: 80
+#     # age prunes archives older than this. default is 7d
+#     age: 7d
+
+#   # compress gzips rotated archives. default is true
+#   compress: true
