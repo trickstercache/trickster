@@ -484,10 +484,10 @@ KIND_CLUSTER := trickster-it
 .PHONY: kind-integration-start
 kind-integration-start:
 	kind create cluster --config integration/kind/kind-config.yaml
-	docker build -f deploy/Dockerfile -t trickster:integration .
+	docker build -t trickster:integration .
 	kind load docker-image trickster:integration --name $(KIND_CLUSTER)
 	kubectl --context kind-$(KIND_CLUSTER) apply -f integration/kind/manifests.yaml
-	kubectl --context kind-$(KIND_CLUSTER) -n $(KIND_CLUSTER) rollout status \
+	kubectl --context kind-$(KIND_CLUSTER) -n trickster-it rollout status \
 		deployment/webecho deployment/trickster --timeout=180s
 
 .PHONY: kind-integration-stop
