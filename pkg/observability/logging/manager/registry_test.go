@@ -148,6 +148,21 @@ func TestGetWriterWaitsForPriorClose(t *testing.T) {
 	<-started
 	closed := make(chan error, 1)
 	go func() { closed <- h.Close() }()
+	// ensure Close has marked the entry closing before racing GetWriter against it
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		registry.Lock()
+		e, ok := registry.writers[h.key]
+		closing := ok && e.closing
+		registry.Unlock()
+		if closing {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("close never marked the registry entry as closing")
+		}
+		time.Sleep(time.Millisecond)
+	}
 	acquired := make(chan *Handle, 1)
 	go func() {
 		next, getErr := GetWriter(o)
