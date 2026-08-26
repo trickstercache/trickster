@@ -17,6 +17,7 @@
 package manager
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -118,6 +119,28 @@ func TestGetWriterAfterRelease(t *testing.T) {
 	if s := readFile(t, o.Filename); s != "first\nsecond\n" {
 		t.Errorf("unexpected content: %q", s)
 	}
+}
+
+func TestGetWriterRejectsConflictingOptions(t *testing.T) {
+	o := testOptions(t)
+	h, err := GetWriter(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer h.Close()
+	conflict := o.Clone()
+	conflict.RetentionCount++
+	if _, err = GetWriter(conflict); !errors.Is(err, ErrConflictingOptions) {
+		t.Fatalf("expected conflicting options error, got %v", err)
+	}
+	if err = Reconfigure(conflict); err != nil {
+		t.Fatal(err)
+	}
+	h2, err := GetWriter(conflict)
+	if err != nil {
+		t.Fatalf("get after reconfiguration failed: %v", err)
+	}
+	h2.Close()
 }
 
 func mustAbs(t *testing.T, path string) string {

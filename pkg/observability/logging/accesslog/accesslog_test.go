@@ -26,7 +26,9 @@ import (
 	"time"
 
 	alo "github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog/options"
+	authtypes "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/types"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 )
 
 func testLoggerOptions(t *testing.T) *alo.Options {
@@ -92,6 +94,10 @@ func TestMiddlewareAccessAndErrorLogs(t *testing.T) {
 		t.Fatal(err)
 	}
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/fail" {
+			request.GetResources(r).AuthResult = &authtypes.AuthResult{
+				Status: authtypes.AuthSuccess, Username: "frank"}
+		}
 		w.Header().Set(headers.NameTricksterResult, "engine=HTTPProxy; status=hit")
 		if r.URL.Path == "/fail" {
 			w.WriteHeader(http.StatusBadGateway)
@@ -189,6 +195,59 @@ func TestMiddlewareNilLogger(t *testing.T) {
 	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
 	if !called {
 		t.Error("expected next handler to be called")
+	}
+}
+
+func TestMiddlewareUsesAuthenticatedUsername(t *testing.T) {
+	o := testLoggerOptions(t)
+	o.ErrorFilename = ""
+	o.Format = "%u"
+	l, err := NewLogger(o, 0, "b", "p")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := Middleware(l, "/", http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/verified" {
+				request.GetResources(r).AuthResult = &authtypes.AuthResult{
+					Status: authtypes.AuthSuccess, Username: "verified"}
+			}
+			w.WriteHeader(http.StatusNoContent)
+		}))
+	unverified := httptest.NewRequest(http.MethodGet, "/unverified", nil)
+	unverified.SetBasicAuth("asserted", "wrong")
+	h.ServeHTTP(httptest.NewRecorder(), unverified)
+	h.ServeHTTP(httptest.NewRecorder(),
+		httptest.NewRequest(http.MethodGet, "/verified", nil))
+	l.Close()
+	if s := readFile(t, o.Filename); s != "-\nverified\n" {
+		t.Errorf("unexpected authenticated users: %q", s)
+	}
+}
+
+type flushRecorder struct {
+	*httptest.ResponseRecorder
+	flushed bool
+}
+
+func (r *flushRecorder) Flush() {
+	r.flushed = true
+}
+
+func TestRecorderUnwrap(t *testing.T) {
+	base := &flushRecorder{ResponseRecorder: httptest.NewRecorder()}
+	rec := &recorder{ResponseWriter: base, status: http.StatusOK}
+	if err := http.NewResponseController(rec).Flush(); err != nil {
+		t.Fatal(err)
+	}
+	if !base.flushed {
+		t.Error("expected flush to reach the underlying writer")
+	}
+	rec2 := &recorder{ResponseWriter: httptest.NewRecorder(), status: http.StatusOK}
+	rec2.WriteHeader(http.StatusCreated)
+	rec2.WriteHeader(http.StatusInternalServerError)
+	if rec2.status != http.StatusCreated {
+		t.Errorf("recorded status = %d, want %d", rec2.status, http.StatusCreated)
 	}
 }
 

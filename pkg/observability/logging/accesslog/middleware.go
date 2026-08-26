@@ -23,7 +23,9 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog/format"
+	authtypes "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/types"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 )
 
 // Middleware wraps next with a recorder that writes an access log line to
@@ -33,6 +35,11 @@ func Middleware(l *Logger, pathConfig string, next http.Handler) http.Handler {
 		return next
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rsc := request.GetResources(r)
+		if rsc == nil {
+			rsc = &request.Resources{}
+			r = request.SetResources(r, rsc)
+		}
 		f := &format.Fields{
 			StartTime:  time.Now(),
 			Method:     r.Method,
@@ -45,9 +52,6 @@ func Middleware(l *Logger, pathConfig string, next http.Handler) http.Handler {
 			ReqHeader:  r.Header,
 		}
 		f.ClientIP = clientIP(r.RemoteAddr)
-		if u, _, ok := r.BasicAuth(); ok {
-			f.User = u
-		}
 		if la, ok := r.Context().Value(http.LocalAddrContextKey).(net.Addr); ok {
 			f.LocalIP, f.LocalPort = splitAddr(la.String())
 		}
@@ -56,6 +60,9 @@ func Middleware(l *Logger, pathConfig string, next http.Handler) http.Handler {
 		f.Duration = time.Since(f.StartTime)
 		f.Status = rec.status
 		f.BytesWritten = rec.bytes
+		if rsc.AuthResult != nil && rsc.AuthResult.Status == authtypes.AuthSuccess {
+			f.User = rsc.AuthResult.Username
+		}
 		f.RespHeader = w.Header()
 		f.Engine, f.CacheStatus = parseResultHeader(
 			w.Header().Get(headers.NameTricksterResult))
@@ -65,19 +72,30 @@ func Middleware(l *Logger, pathConfig string, next http.Handler) http.Handler {
 
 type recorder struct {
 	http.ResponseWriter
-	status int
-	bytes  int64
+	status      int
+	bytes       int64
+	wroteHeader bool
 }
 
 func (r *recorder) WriteHeader(statusCode int) {
+	if r.wroteHeader {
+		return
+	}
+	r.wroteHeader = true
 	r.ResponseWriter.WriteHeader(statusCode)
 	r.status = statusCode
 }
 
 func (r *recorder) Write(b []byte) (int, error) {
+	r.wroteHeader = true
 	n, err := r.ResponseWriter.Write(b)
 	r.bytes += int64(n)
 	return n, err
+}
+
+// Unwrap exposes the underlying writer to http.ResponseController.
+func (r *recorder) Unwrap() http.ResponseWriter {
+	return r.ResponseWriter
 }
 
 func clientIP(remoteAddr string) string {

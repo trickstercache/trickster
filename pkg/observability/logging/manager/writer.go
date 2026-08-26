@@ -30,17 +30,23 @@ import (
 // Writer is a rotating, retention-managed log file writer. The live file is
 // opened lazily on first Write. Implements io.WriteCloser.
 type Writer struct {
-	opts        Options
-	mtx         sync.Mutex
-	f           *os.File
-	size        int64
-	openedAt    time.Time
-	wg          sync.WaitGroup
-	millPending bool
-	millAgain   bool
-	closed      bool
-	now         func() time.Time
+	opts          Options
+	mtx           sync.Mutex
+	archiveMtx    sync.Mutex
+	f             *os.File
+	fileInfo      os.FileInfo
+	size          int64
+	openedAt      time.Time
+	nextPathCheck time.Time
+	wg            sync.WaitGroup
+	millPending   bool
+	millAgain     bool
+	closed        bool
+	now           func() time.Time
+	compress      func(string)
 }
+
+const pathCheckInterval = time.Second
 
 // NewWriter returns a Writer for the provided Options
 func NewWriter(o *Options) (*Writer, error) {
@@ -51,7 +57,7 @@ func NewWriter(o *Options) (*Writer, error) {
 	if opts.FileMode == 0 {
 		opts.FileMode = DefaultFileMode
 	}
-	return &Writer{opts: opts, now: time.Now}, nil
+	return &Writer{opts: opts, now: time.Now, compress: compressArchive}, nil
 }
 
 // Filename returns the path to the live log file
@@ -88,6 +94,9 @@ func (w *Writer) Write(p []byte) (int, error) {
 			return 0, err
 		}
 	}
+	if err := w.ensureCurrentFile(); err != nil {
+		return 0, err
+	}
 	if w.shouldRotate(int64(len(p))) {
 		if err := w.rotate(); err != nil {
 			return 0, err
@@ -99,6 +108,7 @@ func (w *Writer) Write(p []byte) (int, error) {
 		// (e.g., by logrotate); reopen and retry the write once
 		w.f.Close()
 		w.f = nil
+		w.fileInfo = nil
 		if err = w.open(); err != nil {
 			return n, err
 		}
@@ -136,6 +146,7 @@ func (w *Writer) Close() error {
 	if w.f != nil {
 		err = w.f.Close()
 		w.f = nil
+		w.fileInfo = nil
 	}
 	w.mtx.Unlock()
 	w.wg.Wait()
@@ -163,16 +174,45 @@ func (w *Writer) open() error {
 	if err != nil {
 		return err
 	}
+	fi, err := f.Stat()
+	if err != nil {
+		_ = f.Close()
+		return err
+	}
+	now := w.now()
 	w.f = f
-	w.size = 0
-	w.openedAt = w.now()
-	if fi, err2 := f.Stat(); err2 == nil {
-		w.size = fi.Size()
-		if fi.Size() > 0 {
-			w.openedAt = fi.ModTime()
-		}
+	w.fileInfo = fi
+	w.size = fi.Size()
+	w.openedAt = now
+	w.nextPathCheck = now.Add(pathCheckInterval)
+	if fi.Size() > 0 {
+		w.openedAt = fi.ModTime()
 	}
 	return nil
+}
+
+// ensureCurrentFile periodically detects external removal or replacement.
+// It is called with the mutex held.
+func (w *Writer) ensureCurrentFile() error {
+	now := w.now()
+	if now.Before(w.nextPathCheck) {
+		return nil
+	}
+	w.nextPathCheck = now.Add(pathCheckInterval)
+	fi, err := os.Stat(w.opts.Filename)
+	if err == nil && w.fileInfo != nil && os.SameFile(w.fileInfo, fi) {
+		w.size = fi.Size()
+		return nil
+	}
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if w.f != nil {
+		_ = w.f.Close()
+		w.f = nil
+	}
+	w.fileInfo = nil
+	return w.open()
 }
 
 // rotate is called with the mutex held. It closes the live file, shifts the
@@ -182,7 +222,10 @@ func (w *Writer) rotate() error {
 	if w.f != nil {
 		w.f.Close()
 		w.f = nil
+		w.fileInfo = nil
 	}
+	w.archiveMtx.Lock()
+	defer w.archiveMtx.Unlock()
 	if w.opts.RetentionCount < 1 {
 		os.Remove(w.opts.Filename)
 	} else {
@@ -235,13 +278,16 @@ func (w *Writer) mill() {
 	w.mtx.Lock()
 	opts := w.opts
 	w.mtx.Unlock()
+	w.archiveMtx.Lock()
+	defer w.archiveMtx.Unlock()
 	archives := listArchives(opts.Filename)
 	if opts.Compress {
 		for _, a := range archives {
 			if !a.compressed {
-				compressArchive(a.path)
+				w.compress(a.path)
 			}
 		}
+		archives = listArchives(opts.Filename)
 	}
 	now := w.now()
 	for _, a := range archives {

@@ -54,10 +54,32 @@ func TestNew(t *testing.T) {
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 0}
 	conf.Logging = &options.Options{LogLevel: "info"}
-	logger := New(conf)
-	if logger.Level() != level.Info {
-		t.Errorf("expected %s got %s", "info", logger.Level())
+	log := New(conf)
+	if log.Level() != level.Info {
+		t.Errorf("expected %s got %s", "info", log.Level())
 	}
+	if log.(*logger).closer != nil {
+		t.Error("console logger must not own stdout")
+	}
+}
+
+func TestNewConflictFallbackDoesNotOwnStdout(t *testing.T) {
+	conf := config.NewConfig()
+	conf.Logging.LogFile = t.TempDir() + "/shared.log"
+	first := New(conf)
+	defer first.Close()
+
+	conflict := conf.Clone()
+	count := manager.DefaultRetentionCount - 1
+	conflict.Logging.Retention = &manager.RetentionOptions{Count: &count}
+	second := New(conflict).(*logger)
+	if second.writer != os.Stdout {
+		t.Fatal("expected conflicting writer to fall back to stdout")
+	}
+	if second.closer != nil {
+		t.Error("stdout fallback must not be owned by the logger")
+	}
+	second.Close()
 }
 
 func TestNewLogger_LogFile(t *testing.T) {

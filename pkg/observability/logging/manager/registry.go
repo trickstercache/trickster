@@ -18,7 +18,6 @@ package manager
 
 import (
 	"io"
-	"path/filepath"
 	"sync"
 )
 
@@ -31,6 +30,7 @@ var registry = struct {
 
 type regEntry struct {
 	w    *Writer
+	opts Options
 	refs int
 }
 
@@ -84,28 +84,42 @@ var _ io.WriteCloser = &Handle{}
 // GetWriter returns a Handle to the shared Writer for the filename in the
 // provided Options, creating the Writer if one does not exist
 func GetWriter(o *Options) (*Handle, error) {
-	if o == nil || o.Filename == "" {
-		return nil, ErrNoFilename
-	}
-	key, err := filepath.Abs(o.Filename)
+	opts, err := normalizeOptions(o)
 	if err != nil {
 		return nil, err
 	}
+	key := opts.Filename
 	registry.Lock()
 	defer registry.Unlock()
 	e, ok := registry.writers[key]
 	if !ok {
-		w, err := NewWriter(o)
+		w, err := NewWriter(&opts)
 		if err != nil {
 			return nil, err
 		}
-		e = &regEntry{w: w}
+		e = &regEntry{w: w, opts: opts}
 		registry.writers[key] = e
-	} else {
-		// an existing writer adopts the most recently provided settings
-		// (e.g., rotation changes applied by a config reload)
-		e.w.SetOptions(o)
+	} else if !optionsEqual(e.opts, opts) {
+		return nil, ErrConflictingOptions
 	}
 	e.refs++
 	return &Handle{w: e.w, key: key}, nil
+}
+
+// Reconfigure updates an existing shared Writer during a validated reload.
+// It is a no-op when the filename does not currently have a Writer.
+func Reconfigure(o *Options) error {
+	opts, err := normalizeOptions(o)
+	if err != nil {
+		return err
+	}
+	registry.Lock()
+	defer registry.Unlock()
+	e, ok := registry.writers[opts.Filename]
+	if !ok {
+		return nil
+	}
+	e.w.SetOptions(&opts)
+	e.opts = opts
+	return nil
 }

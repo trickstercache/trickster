@@ -95,12 +95,10 @@ func New(conf *config.Config) Logger {
 			conf.Main.InstanceID)
 		if w, err := manager.GetWriter(mo); err == nil {
 			l.writer = w
+			l.closer = w
 		} else {
 			l.writer = os.Stdout
 		}
-	}
-	if c, ok := l.writer.(io.Closer); ok && c != nil {
-		l.closer = c
 	}
 	l.SetLogLevel(level.Level(conf.Logging.LogLevel))
 	return l

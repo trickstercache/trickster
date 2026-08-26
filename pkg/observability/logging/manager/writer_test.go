@@ -227,6 +227,24 @@ func TestAgePruning(t *testing.T) {
 	}
 }
 
+func TestCompressedAgePruning(t *testing.T) {
+	o := testOptions(t)
+	o.MaxSizeBytes = 4
+	o.RetentionAge = time.Hour
+	o.Compress = true
+	w, err := NewWriter(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, w, "aaaa")
+	w.now = func() time.Time { return time.Now().Add(2 * time.Hour) }
+	mustWrite(t, w, "bbbb")
+	w.Close()
+	if fileExists(o.Filename+".1") || fileExists(o.Filename+".1.gz") {
+		t.Error("expected compressed aged archive to be pruned")
+	}
+}
+
 func TestTimeRotation(t *testing.T) {
 	o := testOptions(t)
 	o.MaxSizeBytes = 0
@@ -296,14 +314,82 @@ func TestReopenAfterExternalRemoval(t *testing.T) {
 		t.Fatal(err)
 	}
 	mustWrite(t, w, "aaaa")
-	// close the handle out from under the writer to force a write error
-	w.f.Close()
-	os.Remove(o.Filename)
+	if err = os.Remove(o.Filename); err != nil {
+		t.Fatal(err)
+	}
+	w.now = func() time.Time { return time.Now().Add(2 * pathCheckInterval) }
 	mustWrite(t, w, "bbbb")
 	w.Close()
 	if s := readFile(t, o.Filename); s != "bbbb" {
 		t.Errorf("unexpected content after reopen: %q", s)
 	}
+}
+
+func TestRotationWaitsForCompression(t *testing.T) {
+	o := testOptions(t)
+	o.MaxSizeBytes = 4
+	o.RetentionCount = 3
+	o.Compress = true
+	w, err := NewWriter(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var startedOnce sync.Once
+	w.compress = func(path string) {
+		startedOnce.Do(func() { close(started) })
+		<-release
+		compressArchive(path)
+	}
+	mustWrite(t, w, "aaaa")
+	mustWrite(t, w, "bbbb")
+	<-started
+	done := make(chan error, 1)
+	go func() {
+		_, err := w.Write([]byte("cccc"))
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		t.Fatalf("rotation completed during compression: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(release)
+	if err = <-done; err != nil {
+		t.Fatal(err)
+	}
+	if err = w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if s := readFile(t, o.Filename); s != "cccc" {
+		t.Errorf("unexpected live content: %q", s)
+	}
+	if s := readGzipFile(t, o.Filename+".1.gz"); s != "bbbb" {
+		t.Errorf("unexpected .1 content: %q", s)
+	}
+	if s := readGzipFile(t, o.Filename+".2.gz"); s != "aaaa" {
+		t.Errorf("unexpected .2 content: %q", s)
+	}
+}
+
+func readGzipFile(t *testing.T, path string) string {
+	t.Helper()
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	zr, err := gzip.NewReader(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer zr.Close()
+	b, err := io.ReadAll(zr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
 }
 
 func TestOpenFailure(t *testing.T) {
@@ -476,7 +562,7 @@ func TestSetOptions(t *testing.T) {
 	}
 }
 
-func TestGetWriterUpdatesOptions(t *testing.T) {
+func TestReconfigureUpdatesSharedWriter(t *testing.T) {
 	o := testOptions(t)
 	h1, err := GetWriter(o)
 	if err != nil {
@@ -484,6 +570,9 @@ func TestGetWriterUpdatesOptions(t *testing.T) {
 	}
 	o2 := o.Clone()
 	o2.MaxSizeBytes = 42
+	if err = Reconfigure(o2); err != nil {
+		t.Fatal(err)
+	}
 	h2, err := GetWriter(o2)
 	if err != nil {
 		t.Fatal(err)

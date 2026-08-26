@@ -16,7 +16,11 @@
 
 package manager
 
-import "testing"
+import (
+	"errors"
+	"path/filepath"
+	"testing"
+)
 
 func TestNewOptions(t *testing.T) {
 	o := NewOptions()
@@ -54,5 +58,19 @@ func TestInstanceFilename(t *testing.T) {
 		if s := InstanceFilename(test.name, test.id); s != test.expected {
 			t.Errorf("expected %s, got %s", test.expected, s)
 		}
+	}
+}
+
+func TestValidateOptionsConflicts(t *testing.T) {
+	name := filepath.Join(t.TempDir(), "test.log")
+	a := NewOptions()
+	a.Filename = name
+	b := a.Clone()
+	if err := ValidateOptions(a, b); err != nil {
+		t.Fatalf("matching options failed validation: %v", err)
+	}
+	b.RetentionCount++
+	if err := ValidateOptions(a, b); !errors.Is(err, ErrConflictingOptions) {
+		t.Fatalf("expected conflicting options error, got %v", err)
 	}
 }

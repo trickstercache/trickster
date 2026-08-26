@@ -19,7 +19,9 @@ package manager
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -42,6 +44,9 @@ const (
 
 // ErrNoFilename is returned when a Writer is requested without a Filename
 var ErrNoFilename = errors.New("log filename is required")
+
+// ErrConflictingOptions is returned when one file has incompatible managers
+var ErrConflictingOptions = errors.New("conflicting log manager options")
 
 // Options configures a managed log file
 type Options struct {
@@ -76,6 +81,47 @@ func NewOptions() *Options {
 func (o *Options) Clone() *Options {
 	out := *o
 	return &out
+}
+
+func normalizeOptions(o *Options) (Options, error) {
+	if o == nil || o.Filename == "" {
+		return Options{}, ErrNoFilename
+	}
+	out := *o
+	name, err := filepath.Abs(out.Filename)
+	if err != nil {
+		return Options{}, err
+	}
+	out.Filename = name
+	if out.FileMode == 0 {
+		out.FileMode = DefaultFileMode
+	}
+	return out, nil
+}
+
+func optionsEqual(a, b Options) bool {
+	return a == b
+}
+
+// ValidateOptions rejects incompatible manager settings for the same file.
+func ValidateOptions(options ...*Options) error {
+	seen := make(map[string]Options, len(options))
+	for _, o := range options {
+		if o == nil || o.Filename == "" {
+			continue
+		}
+		resolved, err := normalizeOptions(o)
+		if err != nil {
+			return err
+		}
+		if prior, ok := seen[resolved.Filename]; ok &&
+			!optionsEqual(prior, resolved) {
+			return fmt.Errorf("%w for %s", ErrConflictingOptions,
+				resolved.Filename)
+		}
+		seen[resolved.Filename] = resolved
+	}
+	return nil
 }
 
 // InstanceFilename returns the filename adjusted to include the provided

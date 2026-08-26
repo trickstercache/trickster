@@ -32,6 +32,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
 	"github.com/trickstercache/trickster/v2/pkg/errors"
+	logmanager "github.com/trickstercache/trickster/v2/pkg/observability/logging/manager"
 	tr "github.com/trickstercache/trickster/v2/pkg/observability/tracing/registry"
 	ar "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/registry"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/native"
@@ -80,7 +81,43 @@ func Validate(c *config.Config) error {
 	if err := Backends(c); err != nil {
 		return err
 	}
+	if err := LoggingFiles(c); err != nil {
+		return err
+	}
 	return Listeners(c)
+}
+
+// LoggingFiles validates shared rotation settings across all configured logs.
+func LoggingFiles(c *config.Config) error {
+	if c == nil {
+		return nil
+	}
+	var instanceID int
+	if c.Main != nil {
+		instanceID = c.Main.InstanceID
+	}
+	options := make([]*logmanager.Options, 0, 1+len(c.Backends)*2)
+	if c.Logging != nil && c.Logging.LogFile != "" {
+		o := c.Logging.ManagerOptions()
+		o.Filename = logmanager.InstanceFilename(o.Filename, instanceID)
+		options = append(options, o)
+	}
+	for _, backend := range c.Backends {
+		if backend == nil || backend.AccessLog == nil {
+			continue
+		}
+		if backend.AccessLog.Filename != "" {
+			o := backend.AccessLog.AccessManagerOptions()
+			o.Filename = logmanager.InstanceFilename(o.Filename, instanceID)
+			options = append(options, o)
+		}
+		if backend.AccessLog.ErrorFilename != "" {
+			o := backend.AccessLog.ErrorManagerOptions()
+			o.Filename = logmanager.InstanceFilename(o.Filename, instanceID)
+			options = append(options, o)
+		}
+	}
+	return logmanager.ValidateOptions(options...)
 }
 
 func Rewriters(c *config.Config) error {

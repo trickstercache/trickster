@@ -44,6 +44,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	logmanager "github.com/trickstercache/trickster/v2/pkg/observability/logging/manager"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	tr "github.com/trickstercache/trickster/v2/pkg/observability/tracing/registry"
 	ar "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/registry"
@@ -157,6 +158,11 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 		return err
 	}
 
+	if err := reconfigureLogWriters(newConf); err != nil {
+		handleStartupIssue("log writer reconfiguration failed",
+			logging.Pairs{logKeyDetail: err.Error()}, errorFunc)
+		return err
+	}
 	applyLoggingConfig(newConf, si.Config)
 
 	// Register Tracing Configurations
@@ -240,6 +246,41 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	return nil
 }
 
+func reconfigureLogWriters(c *config.Config) error {
+	if c == nil {
+		return nil
+	}
+	var instanceID int
+	if c.Main != nil {
+		instanceID = c.Main.InstanceID
+	}
+	reconfigure := func(o *logmanager.Options) error {
+		o.Filename = logmanager.InstanceFilename(o.Filename, instanceID)
+		return logmanager.Reconfigure(o)
+	}
+	if c.Logging != nil && c.Logging.LogFile != "" {
+		if err := reconfigure(c.Logging.ManagerOptions()); err != nil {
+			return err
+		}
+	}
+	for _, backend := range c.Backends {
+		if backend == nil || backend.AccessLog == nil {
+			continue
+		}
+		if backend.AccessLog.Filename != "" {
+			if err := reconfigure(backend.AccessLog.AccessManagerOptions()); err != nil {
+				return err
+			}
+		}
+		if backend.AccessLog.ErrorFilename != "" {
+			if err := reconfigure(backend.AccessLog.ErrorManagerOptions()); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func buildAuthenticators(c *config.Config) error {
 	if c == nil || len(c.Authenticators) == 0 {
 		return nil
@@ -284,6 +325,11 @@ func applyLoggingConfig(c, o *config.Config) {
 		if rotationChanged {
 			// same file with new rotation settings: rebuild the logger so the
 			// shared writer picks up the new settings, and release the old handle
+			if err := reconfigureApplicationLog(c); err != nil {
+				logger.Error("log writer reconfiguration failed",
+					logging.Pairs{logKeyError: err.Error()})
+				return
+			}
 			go delayedLogCloser(oldLogger, time.Duration(c.MgmtConfig.ReloadDrainTimeout)+(1*time.Millisecond))
 			initLogger(c)
 			return
@@ -295,6 +341,19 @@ func applyLoggingConfig(c, o *config.Config) {
 		}
 	}
 	initLogger(c)
+}
+
+func reconfigureApplicationLog(c *config.Config) error {
+	if c == nil || c.Logging == nil || c.Logging.LogFile == "" {
+		return nil
+	}
+	var instanceID int
+	if c.Main != nil {
+		instanceID = c.Main.InstanceID
+	}
+	o := c.Logging.ManagerOptions()
+	o.Filename = logmanager.InstanceFilename(o.Filename, instanceID)
+	return logmanager.Reconfigure(o)
 }
 
 func applyCachingConfig(si *instance.ServerInstance,
