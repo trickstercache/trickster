@@ -266,6 +266,28 @@ scheme comes from `query.scheme` if set; otherwise a declared
 annotation on the watched Service/Pod, selects `https`; the default is
 `http`.
 
+### Zero-Error Rolling Deploys
+
+Terminating endpoints are removed from the discovered membership as soon
+as the change is observed, so members drain out ahead of pod deletion.
+One piece belongs to the workload, though: Kubernetes marks an endpoint
+`terminating` and signals the container at the same moment, so — as with
+any EndpointSlice consumer, kube-proxy included — the pod must keep
+serving briefly while its removal propagates. Give discovered workloads a
+short `preStop` delay (a few seconds comfortably covers Trickster's
+sub-second pickup):
+
+```yaml
+lifecycle:
+  preStop:
+    sleep:         # native sleep action (Kubernetes >= 1.30); images with
+      seconds: 5   # a shell can use exec with command: ["sleep", "5"]
+```
+
+Without it, an instantly-exiting container can produce a brief window of
+connection errors during rollouts — regardless of what is consuming the
+EndpointSlices.
+
 ### RBAC
 
 The provider needs only **list** and **watch** on the resources your query

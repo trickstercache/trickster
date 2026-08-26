@@ -52,13 +52,23 @@ spec:
       labels:
         app: webecho
     spec:
-      terminationGracePeriodSeconds: 5
+      terminationGracePeriodSeconds: 10
       containers:
         - name: webecho
           image: traefik/whoami:v1.10.2
           ports:
             - name: web
               containerPort: 80
+          # Keep serving briefly after termination begins: kubelet marks
+          # the endpoint terminating and signals the container at the same
+          # moment, so every EndpointSlice consumer needs the removal to
+          # propagate before the process exits (zero-error rolling
+          # deploys). The native sleep action is used because the image
+          # has no shell.
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: 5
           readinessProbe:
             httpGet:
               path: /
