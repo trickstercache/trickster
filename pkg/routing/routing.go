@@ -126,6 +126,11 @@ func registerProxyRoutes(conf *config.Config, clients backends.Backends,
 			return fmt.Errorf(`unknown backend provider in backend options. backendName: %s, backendProvider: %s`,
 				k, o.Provider)
 		}
+		// template backends are cloned per discovered ALB pool member and
+		// are never routed directly
+		if o.IsTemplate {
+			continue
+		}
 		// Ensure only one default backend exists
 		if o.IsDefault {
 			if cdo != nil {

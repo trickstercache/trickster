@@ -18,9 +18,11 @@ package instance
 
 import (
 	"github.com/trickstercache/trickster/v2/pkg/backends"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/dynamic"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/config"
+	"github.com/trickstercache/trickster/v2/pkg/discovery"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
 )
 
@@ -31,4 +33,10 @@ type ServerInstance struct {
 	Backends         backends.Backends
 	Listeners        *listener.Group
 	OnConfigReloaded func(*config.Config)
+	// Discoverers holds the running autodiscovery provider instances,
+	// keyed by discoverer name; rebuilt on each config (re)load
+	Discoverers map[string]discovery.Discoverer
+	// PoolManagers holds the dynamic pool manager for each
+	// discovery-backed ALB, keyed by ALB backend name
+	PoolManagers map[string]*dynamic.Manager
 }
