@@ -39,11 +39,26 @@ import (
 // shared helpers for the ALB autodiscovery integration scenarios
 // ---------------------------------------------------------------------------
 
-// metricValue scrapes the named metric (with the given label fragment) from
-// the metrics endpoint; returns the value and whether it was found
+// discoveryHTTPClient bounds every request the discovery scenarios make,
+// so a frozen endpoint (e.g. a paused container) fails an assertion
+// quickly instead of hanging the test until the suite timeout
+var discoveryHTTPClient = &http.Client{Timeout: 15 * time.Second}
+
+// metricValue silently scrapes the named metric (with the given label
+// fragment) from the metrics endpoint; returns the value and whether it
+// was found
 func metricValue(t *testing.T, metricsAddr, name, labelFragment string) (float64, bool) {
 	t.Helper()
-	for _, line := range checkTricksterMetrics(t, metricsAddr) {
+	resp, err := discoveryHTTPClient.Get("http://" + metricsAddr + "/metrics")
+	if err != nil {
+		return 0, false
+	}
+	defer resp.Body.Close()
+	b, err := io.ReadAll(resp.Body)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		return 0, false
+	}
+	for line := range strings.Lines(string(b)) {
 		if !strings.HasPrefix(line, name) {
 			continue
 		}
@@ -64,9 +79,16 @@ func metricValue(t *testing.T, metricsAddr, name, labelFragment string) (float64
 }
 
 // waitDiscoveredMembers polls the trickster_alb_discovery_members gauge for
-// the named ALB until it reaches want
-func waitDiscoveredMembers(t *testing.T, metricsAddr, albName string, want float64) {
+// the named ALB until it reaches want, within the optional timeout
+// (default 20s)
+func waitDiscoveredMembers(t *testing.T, metricsAddr, albName string,
+	want float64, timeout ...time.Duration,
+) {
 	t.Helper()
+	limit := 20 * time.Second
+	if len(timeout) > 0 {
+		limit = timeout[0]
+	}
 	require.EventuallyWithT(t, func(collect *assert.CollectT) {
 		v, ok := metricValue(t, metricsAddr,
 			"trickster_alb_discovery_members", `alb_name="`+albName+`"`)
@@ -74,7 +96,7 @@ func waitDiscoveredMembers(t *testing.T, metricsAddr, albName string, want float
 			return
 		}
 		assert.Equal(collect, want, v)
-	}, 20*time.Second, 100*time.Millisecond,
+	}, limit, 100*time.Millisecond,
 		"ALB %s never reached %v discovered members", albName, want)
 }
 
@@ -152,10 +174,10 @@ func startDiscoveryTrickster(t *testing.T, cfg string) string {
 	return cfgPath
 }
 
-// getBody GETs the URL and returns status and body
+// getBody GETs the URL (with a bounded timeout) and returns status and body
 func getBody(t *testing.T, url string) (int, string) {
 	t.Helper()
-	resp, err := http.Get(url)
+	resp, err := discoveryHTTPClient.Get(url)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	b, err := io.ReadAll(resp.Body)

@@ -37,8 +37,11 @@ import (
 // kind/README.md) discovers its ALB pool from the webecho Service's
 // EndpointSlices. The test scales the target Deployment up and down,
 // performs a rolling restart under sustained load asserting zero client
-// errors, and pauses the kind control-plane container to sever the API
-// connection, asserting the last-good pool keeps serving.
+// errors, and pauses the kind control-plane node's container to sever the
+// API connection, asserting the last-good pool keeps serving. The cluster
+// has a separate worker node hosting the workloads (and the host port
+// mappings), so pausing the control plane freezes only the API, not the
+// data plane.
 //
 // Gated on TRICKSTER_KIND_TEST=1: it requires the kind cluster, kubectl,
 // and docker on the host, and is run by the integration-kind CI job.
@@ -108,7 +111,7 @@ func TestALBDiscoveryKind(t *testing.T) {
 					return
 				default:
 				}
-				resp, err := http.Get(frontURL)
+				resp, err := discoveryHTTPClient.Get(frontURL)
 				requests.Add(1)
 				if err != nil {
 					errors.Add(1)
@@ -135,7 +138,9 @@ func TestALBDiscoveryKind(t *testing.T) {
 		"rolling restart under load must produce zero client errors")
 
 	// sever the API-server connection: pause the kind control-plane
-	// container. The last-good pool keeps serving and membership holds.
+	// node's container. The workloads live on the worker node, so the
+	// data plane keeps running; the last-good pool keeps serving and
+	// membership holds.
 	require.NoError(t,
 		exec.Command("docker", "pause", cpContainer).Run())
 	unpaused := false
@@ -159,7 +164,17 @@ func TestALBDiscoveryKind(t *testing.T) {
 		exec.Command("docker", "unpause", cpContainer).Run())
 	unpaused = true
 
-	// after the API returns, discovery converges again
-	scaleWebecho(3)
-	scaleWebecho(2)
+	// after the API returns, discovery converges again. The API server
+	// needs a beat to accept connections post-unpause, and Trickster's
+	// informer re-establishes its watch on client-go's retry backoff, so
+	// these waits get generous windows.
+	require.EventuallyWithT(t, func(collect *assert.CollectT) {
+		out, err := exec.Command("kubectl", "--context", "kind-trickster-it",
+			"-n", namespace, "get", "deployment", "webecho").CombinedOutput()
+		assert.NoError(collect, err, "%s", out)
+	}, 60*time.Second, time.Second, "API server did not recover after unpause")
+	kubectl("scale", "deployment/webecho", "--replicas=3")
+	waitDiscoveredMembers(t, metricsAddr, "disco-alb", 3, 3*time.Minute)
+	kubectl("scale", "deployment/webecho", "--replicas=2")
+	waitDiscoveredMembers(t, metricsAddr, "disco-alb", 2, time.Minute)
 }
