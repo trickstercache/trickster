@@ -22,6 +22,8 @@ import (
 
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
@@ -34,6 +36,7 @@ const (
 	healthPath  = "/metrics/find"
 	healthQuery = "query=*"
 	renderPath  = "/render"
+	expandPath  = "/metrics/expand"
 )
 
 // Handler names
@@ -55,12 +58,9 @@ func (c *Client) RegisterHandlers(handlers.Lookup) {
 	)
 }
 
-// DefaultPathConfigs returns the default PathConfigs for the given Provider
-// (implementation plan item 7.8): /render to the render handler; the
-// metadata endpoints, which also back the resolver's existence checks, to
-// the object cache with a short TTL; the static endpoints with a long one;
-// everything else proxied.
-func (c *Client) DefaultPathConfigs(_ *bo.Options) po.List {
+// DefaultPathConfigs returns the default PathConfigs for the given Provider:
+// /render accelerated, metadata object-cached with TTLs, all else proxied
+func (c *Client) DefaultPathConfigs(o *bo.Options) po.List {
 	short := map[string]string{headers.NameCacheControl: fmt.Sprintf("%s=%d", headers.ValueSharedMaxAge, 30)}
 	long := map[string]string{headers.NameCacheControl: fmt.Sprintf("%s=%d", headers.ValueSharedMaxAge, 3600)}
 	paths := po.List{
@@ -68,15 +68,14 @@ func (c *Client) DefaultPathConfigs(_ *bo.Options) po.List {
 			Path:        renderPath,
 			HandlerName: handlerRender,
 			Methods:     methods.GetAndPost(),
-			// from/until/now/format are deliberately absent: the extent is
-			// the DPC's concern and the output format is applied at marshal
-			// time; target is overridden by its canonical form
+			// from/until/now/format are absent by design: the extent is the
+			// DPC's concern and the output format is applied at marshal time
 			CacheKeyParams: []string{upTarget, "xFilesFactor", "local"},
 			MatchType:      matching.PathMatchTypeExact,
 			MatchTypeName:  matching.PathMatchNameExact,
 		},
 	}
-	for _, p := range []string{"/metrics/find", "/metrics/expand", "/metrics/index.json", "/tags"} {
+	for _, p := range []string{healthPath, expandPath, "/metrics/index.json", "/tags"} {
 		paths = append(paths, &po.Options{
 			Path: p, HandlerName: handlerProxyCache, Methods: methods.GetAndPost(),
 			CacheKeyParams: []string{"*"}, ResponseHeaders: short,
@@ -99,5 +98,14 @@ func (c *Client) DefaultPathConfigs(_ *bo.Options) po.List {
 		Path: "/", HandlerName: providers.Proxy, Methods: methods.GetAndPost(),
 		MatchType: matching.PathMatchTypePrefix, MatchTypeName: matching.PathMatchNamePrefix,
 	})
+	if o != nil {
+		if auth, err := originAuthHeader(o.Graphite); err == nil {
+			if err = injectOriginAuth(paths, auth); err != nil {
+				logger.Error("failed to inject origin auth", logging.Pairs{
+					"detail": err.Error(),
+				})
+			}
+		}
+	}
 	return paths
 }

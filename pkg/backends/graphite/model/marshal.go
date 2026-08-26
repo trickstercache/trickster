@@ -97,21 +97,33 @@ type series struct {
 	start  int64 // epoch seconds of the first point
 	end    int64 // epoch seconds one step past the last point
 	step   int64
-	values []*float64
+	values []float64
+	valid  []uint64 // validity bitmap: bit (i + bitOff) covers values[i]
+	bitOff int      // consumed by consolidateFor's leading drop
 	// consolidation state, JSON only
 	valuesPerPoint int
 }
 
-// flatten turns the DataSet into graphite-web series, in DataSet order.
-// Points are the buckets the origin returned (nulls included), so start,
-// end and step are recovered from them; a series with fewer than two points
-// takes the query's step.
+// true when values[i] holds a real datapoint; false means null
+func (s *series) isValid(i int) bool {
+	i += s.bitOff
+	return s.valid[i>>6]&(1<<(uint(i)&63)) != 0 //nolint:gosec // i is a bounded slice index
+}
+
+// Points are the buckets the origin returned (nulls included), so start, end
+// and step come from them; a series with fewer than two points takes the query's step.
 func flatten(ds *dataset.DataSet) []*series {
 	var step int64
 	if ds.TimeRangeQuery != nil {
 		step = int64(ds.TimeRangeQuery.Step / time.Second)
 	}
-	var out []*series
+	n := 0
+	for _, r := range ds.Results {
+		if r != nil {
+			n += len(r.SeriesList)
+		}
+	}
+	out := make([]*series, 0, n)
 	for _, r := range ds.Results {
 		if r == nil {
 			continue
@@ -133,12 +145,13 @@ func flatten(ds *dataset.DataSet) []*series {
 					sr.step = 1
 				}
 				sr.end = int64(s.Points[len(s.Points)-1].Epoch)/int64(time.Second) + sr.step
-				sr.values = make([]*float64, len(s.Points))
+				sr.values = make([]float64, len(s.Points))
+				sr.valid = make([]uint64, (len(s.Points)+63)/64)
 				for i, p := range s.Points {
 					if len(p.Values) > 0 {
 						if f, ok := p.Values[0].(float64); ok {
-							v := f
-							sr.values[i] = &v
+							sr.values[i] = f
+							sr.valid[i>>6] |= 1 << (uint(i) & 63) //nolint:gosec // bounded index
 						}
 					}
 				}
@@ -153,7 +166,13 @@ func flatten(ds *dataset.DataSet) []*series {
 // JSON (renderViewJson)
 
 func renderJSON(all []*series, ro RenderOptions) ([]byte, error) {
-	var buf strings.Builder
+	var buf bytes.Buffer
+	n := 0
+	for _, s := range all {
+		n += len(s.values)
+	}
+	// ~26 bytes per rendered point plus per-series framing
+	buf.Grow(n*26 + len(all)*128 + 2)
 	buf.WriteByte('[')
 	first := true
 	if len(all) > 0 {
@@ -167,10 +186,31 @@ func renderJSON(all []*series, ro RenderOptions) ([]byte, error) {
 			if ro.MaxDataPoints > 0 {
 				s.consolidateFor(ro.MaxDataPoints, timeRange, ro.XFilesFactor)
 			}
-			dps := s.datapoints(ro.XFilesFactor)
+			vals, validAt := s.values, s.isValid
+			if s.valuesPerPoint > 1 {
+				cv, cb := s.consolidate(consolidationFunc(s.tags), ro.XFilesFactor)
+				vals = cv
+				validAt = func(i int) bool { return cb[i>>6]&(1<<(uint(i)&63)) != 0 } //nolint:gosec // bounded index
+			}
+			span := s.step * int64(s.valuesPerPoint)
+			if span <= 0 {
+				span = 1
+			}
+			n := 0
+			if s.end >= s.start {
+				n = int((s.end-s.start)/span) + 1
+			}
+			n = min(n, len(vals))
+			isNull := func(i int) bool { return !validAt(i) || math.IsNaN(vals[i]) }
 			if ro.NoNullPoints {
-				dps = slices.DeleteFunc(dps, func(d datapoint) bool { return d.v == nil || math.IsNaN(*d.v) })
-				if len(dps) == 0 {
+				any := false
+				for i := range n {
+					if !isNull(i) {
+						any = true
+						break
+					}
+				}
+				if !any {
 					continue
 				}
 			}
@@ -183,32 +223,43 @@ func renderJSON(all []*series, ro RenderOptions) ([]byte, error) {
 			buf.WriteString(`, "tags": `)
 			writeTags(&buf, s.tags)
 			buf.WriteString(`, "datapoints": [`)
-			for i, d := range dps {
-				if i > 0 {
+			var num []byte
+			wrote := false
+			for i := range n {
+				null := isNull(i)
+				if ro.NoNullPoints && null {
+					continue
+				}
+				if wrote {
 					buf.WriteString(", ")
 				}
+				wrote = true
 				buf.WriteByte('[')
-				if d.v == nil || math.IsNaN(*d.v) {
+				if null {
+					// graphite-web's JSON renders both a null datapoint
+					// and a stored NaN as null
 					buf.WriteString("null")
-				} else if math.IsInf(*d.v, 0) {
+				} else if math.IsInf(vals[i], 0) {
 					// graphite-web emits Infinity and then rewrites it
-					if *d.v > 0 {
+					if vals[i] > 0 {
 						buf.WriteString("1e9999")
 					} else {
 						buf.WriteString("-Infinity")
 					}
 				} else {
-					buf.WriteString(PyFloat(*d.v))
+					num = appendPyFloat(num[:0], vals[i])
+					buf.Write(num)
 				}
 				buf.WriteString(", ")
-				buf.WriteString(strconv.FormatInt(d.ts, 10))
+				num = strconv.AppendInt(num[:0], s.start+int64(i)*span, 10)
+				buf.Write(num)
 				buf.WriteByte(']')
 			}
 			buf.WriteString("]}")
 		}
 	}
 	buf.WriteByte(']')
-	out := []byte(buf.String())
+	out := buf.Bytes()
 	if ro.Pretty {
 		var pretty bytes.Buffer
 		if err := json.Indent(&pretty, out, "", "  "); err != nil {
@@ -222,14 +273,8 @@ func renderJSON(all []*series, ro RenderOptions) ([]byte, error) {
 	return out, nil
 }
 
-type datapoint struct {
-	v  *float64
-	ts int64
-}
-
-// consolidateFor reproduces renderViewJson's maxDataPoints handling,
-// including the start "nudge" that aligns consolidation bands across
-// refreshes and its off-by-one (it drops valuesToLose-1 values)
+// reproduces renderViewJson's maxDataPoints handling, including the start
+// "nudge" that aligns bands across refreshes and its off-by-one (drops valuesToLose-1)
 func (s *series) consolidateFor(maxDataPoints int, timeRange int64, _ float64) {
 	if maxDataPoints == 1 {
 		s.valuesPerPoint = max(len(s.values), 1)
@@ -246,14 +291,15 @@ func (s *series) consolidateFor(maxDataPoints int, timeRange int64, _ float64) {
 	secondsPerPoint := int64(valuesPerPoint) * s.step
 	nudge := secondsPerPoint + pyMod(s.start, s.step) - pyMod(s.start, secondsPerPoint)
 	s.start += nudge
-	valuesToLose := int(nudge / s.step)
-	for r := 1; r < valuesToLose && len(s.values) > 0; r++ {
-		s.values = s.values[1:]
+	if drop := int(nudge/s.step) - 1; drop > 0 {
+		d := min(drop, len(s.values))
+		s.values = s.values[d:]
+		s.bitOff += d // the bitmap is addressed by original index
 	}
 	s.valuesPerPoint = valuesPerPoint
 }
 
-// pyMod is Python's % for int64 (result has the divisor's sign)
+// Python's % for int64 (result has the divisor's sign)
 func pyMod(a, b int64) int64 {
 	m := a % b
 	if m != 0 && (m < 0) != (b < 0) {
@@ -262,32 +308,7 @@ func pyMod(a, b int64) int64 {
 	return m
 }
 
-// datapoints reproduces TimeSeries.datapoints(): the (possibly
-// consolidated) values zipped with timestamps from start to end inclusive
-// at step*valuesPerPoint, truncated to the shorter
-func (s *series) datapoints(xff float64) []datapoint {
-	vals := s.values
-	if s.valuesPerPoint > 1 {
-		vals = consolidate(s.values, s.valuesPerPoint, consolidationFunc(s.tags), xff)
-	}
-	span := s.step * int64(s.valuesPerPoint)
-	if span <= 0 {
-		span = 1
-	}
-	n := 0
-	if s.end >= s.start {
-		n = int((s.end-s.start)/span) + 1
-	}
-	n = min(n, len(vals))
-	out := make([]datapoint, n)
-	for i := range out {
-		out[i] = datapoint{v: vals[i], ts: s.start + int64(i)*span}
-	}
-	return out
-}
-
-// consolidationFunc is the series' consolidation function: the
-// consolidateBy tag graphite-web sets, else average
+// the series' consolidation function: the consolidateBy tag graphite-web sets, else average
 func consolidationFunc(tags dataset.Tags) string {
 	if cf, ok := tags["consolidateBy"]; ok && cf != "" {
 		return cf
@@ -295,27 +316,31 @@ func consolidationFunc(tags dataset.Tags) string {
 	return DefaultConsolidationFunc
 }
 
-// consolidate reproduces TimeSeries.__consolidatingGenerator
-func consolidate(values []*float64, perPoint int, cf string, xff float64) []*float64 {
+// reproduces graphite-web's TimeSeries.__consolidatingGenerator
+func (s *series) consolidate(cf string, xff float64) ([]float64, []uint64) {
 	if cf == "avg" {
 		cf = "average"
 	}
-	var out []*float64
+	perPoint := s.valuesPerPoint
+	n := (len(s.values) + perPoint - 1) / perPoint
+	out := make([]float64, 0, n)
+	bits := make([]uint64, (n+63)/64)
 	buf := make([]float64, 0, perPoint)
 	valcnt, nonNull := 0, 0
 	flush := func() {
 		if nonNull > 0 && float64(nonNull)/float64(perPoint) >= xff {
-			v := applyCF(cf, buf)
-			out = append(out, &v)
+			i := len(out)
+			bits[i>>6] |= 1 << (uint(i) & 63) //nolint:gosec // bounded index
+			out = append(out, applyCF(cf, buf))
 		} else {
-			out = append(out, nil)
+			out = append(out, 0)
 		}
 		buf, valcnt, nonNull = buf[:0], 0, 0
 	}
-	for _, x := range values {
+	for i, x := range s.values {
 		valcnt++
-		if x != nil {
-			buf = append(buf, *x)
+		if s.isValid(i) {
+			buf = append(buf, x)
 			nonNull++
 		} else if cf == "avg_zero" {
 			buf = append(buf, 0)
@@ -327,7 +352,7 @@ func consolidate(values []*float64, perPoint int, cf string, xff float64) []*flo
 	if valcnt > 0 {
 		flush()
 	}
-	return out
+	return out, bits
 }
 
 func applyCF(cf string, usable []float64) float64 {
@@ -355,11 +380,9 @@ func applyCF(cf string, usable []float64) float64 {
 	return s / float64(len(usable))
 }
 
-// writeTags renders the tags object: "name" first (graphite-web inserts it
-// first), then the remaining keys sorted, which is the one place Trickster's
-// output can differ from graphite-web's (Python preserves the order in which
-// functions added their tags)
-func writeTags(buf *strings.Builder, tags dataset.Tags) {
+// renders the tags object: "name" first, then the rest sorted — the one place
+// output can differ from graphite-web, which keeps Python tag-insertion order
+func writeTags(buf *bytes.Buffer, tags dataset.Tags) {
 	buf.WriteByte('{')
 	keys := make([]string, 0, len(tags))
 	for k := range tags {
@@ -382,11 +405,9 @@ func writeTags(buf *strings.Builder, tags dataset.Tags) {
 	buf.WriteByte('}')
 }
 
-// writePyJSONString encodes a string as Python's json.dumps does with
-// ensure_ascii=True: non-ASCII as \uXXXX (surrogate pairs above the BMP),
-// control characters as \n \r \t \b \f or \u00XX, and no escaping of <, >
-// or &
-func writePyJSONString(buf *strings.Builder, s string) {
+// encodes a string as Python json.dumps with ensure_ascii=True: non-ASCII as
+// \uXXXX (surrogate pairs above the BMP), control chars escaped, no escaping of < > &
+func writePyJSONString(buf *bytes.Buffer, s string) {
 	buf.WriteByte('"')
 	for i := 0; i < len(s); {
 		c := s[i]
@@ -431,7 +452,7 @@ func writePyJSONString(buf *strings.Builder, s string) {
 	buf.WriteByte('"')
 }
 
-func writeU(buf *strings.Builder, r rune) {
+func writeU(buf *bytes.Buffer, r rune) {
 	const hex = "0123456789abcdef"
 	buf.WriteString(`\u`)
 	buf.WriteByte(hex[(r>>12)&0xf])
@@ -440,54 +461,78 @@ func writeU(buf *strings.Builder, r rune) {
 	buf.WriteByte(hex[r&0xf])
 }
 
-// PyFloat formats a float the way Python's repr() does: the shortest
-// round-tripping digits, in fixed notation for decimal exponents in
-// [-4, 16) with a trailing ".0" for integral values, otherwise scientific
-// with a signed two-digit-minimum exponent (1e+16, 3.3164e-06)
+// PyFloat formats a float as Python's repr() does: shortest round-tripping digits,
+// fixed notation for exponents in [-4, 16) with a trailing ".0", else scientific (1e+16)
 func PyFloat(f float64) string {
+	return string(appendPyFloat(nil, f))
+}
+
+func appendPyFloat(dst []byte, f float64) []byte {
 	switch {
 	case math.IsNaN(f):
-		return "nan"
+		return append(dst, "nan"...)
 	case math.IsInf(f, 1):
-		return "inf"
+		return append(dst, "inf"...)
 	case math.IsInf(f, -1):
-		return "-inf"
+		return append(dst, "-inf"...)
 	case f == 0:
 		if math.Signbit(f) {
-			return "-0.0"
+			return append(dst, "-0.0"...)
 		}
-		return "0.0"
+		return append(dst, "0.0"...)
 	}
-	e := strconv.FormatFloat(f, 'e', -1, 64) // [-]d[.ddd]e±XX
-	neg := e[0] == '-'
-	if neg {
+	var scratch [32]byte
+	e := strconv.AppendFloat(scratch[:0], f, 'e', -1, 64) // [-]d[.ddd]e±XX
+	if e[0] == '-' {
+		dst = append(dst, '-')
 		e = e[1:]
 	}
-	mant, expStr, _ := strings.Cut(e, "e")
-	exp, _ := strconv.Atoi(expStr)
-	digits := strings.Replace(mant, ".", "", 1)
-	var out string
+	cut := bytes.IndexByte(e, 'e')
+	mant, expStr := e[:cut], e[cut+1:]
+	exp, _ := strconv.Atoi(string(expStr))
+	// digits is the mantissa without its decimal point
+	var dbuf [24]byte
+	digits := dbuf[:0]
+	for _, c := range mant {
+		if c != '.' {
+			digits = append(digits, c)
+		}
+	}
 	switch {
 	case exp < -4 || exp >= 16:
-		out = mant + "e" + expStr
+		dst = append(dst, mant...)
+		dst = append(dst, 'e')
+		dst = append(dst, expStr...)
 	case exp < 0:
-		out = "0." + strings.Repeat("0", -exp-1) + digits
+		dst = append(dst, "0."...)
+		for range -exp - 1 {
+			dst = append(dst, '0')
+		}
+		dst = append(dst, digits...)
 	case len(digits) <= exp+1:
-		out = digits + strings.Repeat("0", exp+1-len(digits)) + ".0"
+		dst = append(dst, digits...)
+		for range exp + 1 - len(digits) {
+			dst = append(dst, '0')
+		}
+		dst = append(dst, ".0"...)
 	default:
-		out = digits[:exp+1] + "." + digits[exp+1:]
+		dst = append(dst, digits[:exp+1]...)
+		dst = append(dst, '.')
+		dst = append(dst, digits[exp+1:]...)
 	}
-	if neg {
-		return "-" + out
-	}
-	return out
+	return dst
 }
 
 // ---------------------------------------------------------------------------
 // raw (renderViewRaw): <name>,<start>,<end>,<step>|repr,repr,None\n
 
 func renderRaw(all []*series) []byte {
-	var buf strings.Builder
+	var buf bytes.Buffer
+	n := 0
+	for _, s := range all {
+		n += len(s.values)
+	}
+	buf.Grow(n*9 + len(all)*96)
 	for _, s := range all {
 		buf.WriteString(s.name)
 		buf.WriteByte(',')
@@ -497,19 +542,21 @@ func renderRaw(all []*series) []byte {
 		buf.WriteByte(',')
 		buf.WriteString(strconv.FormatInt(s.step, 10))
 		buf.WriteByte('|')
+		var num []byte
 		for i, v := range s.values {
 			if i > 0 {
 				buf.WriteByte(',')
 			}
-			if v == nil {
+			if !s.isValid(i) {
 				buf.WriteString("None")
 			} else {
-				buf.WriteString(PyFloat(*v))
+				num = appendPyFloat(num[:0], v)
+				buf.Write(num)
 			}
 		}
 		buf.WriteByte('\n')
 	}
-	return []byte(buf.String())
+	return buf.Bytes()
 }
 
 // ---------------------------------------------------------------------------
@@ -520,24 +567,32 @@ func renderCSV(all []*series, ro RenderOptions) []byte {
 	if loc == nil {
 		loc = time.UTC
 	}
-	var buf strings.Builder
+	var buf bytes.Buffer
+	n := 0
+	for _, s := range all {
+		n += len(s.values) * (len(s.name) + 34)
+	}
+	buf.Grow(n)
+	var num []byte
 	for _, s := range all {
 		for i, v := range s.values {
 			csvField(&buf, s.name)
 			buf.WriteByte(',')
-			buf.WriteString(time.Unix(s.start+int64(i)*s.step, 0).In(loc).Format("2006-01-02 15:04:05"))
+			num = time.Unix(s.start+int64(i)*s.step, 0).In(loc).AppendFormat(num[:0], "2006-01-02 15:04:05")
+			buf.Write(num)
 			buf.WriteByte(',')
-			if v != nil {
-				buf.WriteString(PyFloat(*v))
+			if s.isValid(i) {
+				num = appendPyFloat(num[:0], v)
+				buf.Write(num)
 			}
 			buf.WriteString("\r\n")
 		}
 	}
-	return []byte(buf.String())
+	return buf.Bytes()
 }
 
-// csvField quotes a field as Python's csv excel dialect does
-func csvField(buf *strings.Builder, s string) {
+// quotes a field as Python's csv excel dialect does
+func csvField(buf *bytes.Buffer, s string) {
 	if !strings.ContainsAny(s, ",\"\r\n") {
 		buf.WriteString(s)
 		return
@@ -551,7 +606,11 @@ func csvField(buf *strings.Builder, s string) {
 // msgpack (renderViewMsgPack): [TimeSeries.getInfo(), ...]
 
 func renderMsgPack(all []*series, ro RenderOptions) ([]byte, error) {
-	var b []byte
+	n := 0
+	for _, s := range all {
+		n += 9*len(s.values) + len(s.name) + 160
+	}
+	b := make([]byte, 0, n+8)
 	b = appendArrayHeader(b, len(all))
 	for i, s := range all {
 		b = msgp.AppendMapHeader(b, 9)
@@ -567,18 +626,16 @@ func renderMsgPack(all []*series, ro RenderOptions) ([]byte, error) {
 		b = appendInt(b, s.step)
 		b = msgp.AppendString(b, "values")
 		b = appendArrayHeader(b, len(s.values))
-		for _, v := range s.values {
-			if v == nil {
+		for i, v := range s.values {
+			if !s.isValid(i) {
 				b = msgp.AppendNil(b)
 			} else {
-				b = msgp.AppendFloat64(b, *v)
+				b = msgp.AppendFloat64(b, v)
 			}
 		}
 		b = msgp.AppendString(b, "pathExpression")
-		// graphite-web reports the target expression that produced a series,
-		// which for a wildcard covers several series. One entry applies to
-		// them all; a per-series list (built by the multi-target handler)
-		// is indexed by position.
+		// pathExpression is the target expression that produced the series;
+		// a single entry covers every series, a per-series list is indexed by position
 		path := s.name
 		switch {
 		case len(ro.PathExpressions) == 1 && ro.PathExpressions[0] != "":
@@ -597,8 +654,7 @@ func renderMsgPack(all []*series, ro RenderOptions) ([]byte, error) {
 	return b, nil
 }
 
-// appendArrayHeader writes an array header for n elements; n is a slice
-// length and so never exceeds the uint32 range in practice
+// n is a slice length and so never exceeds the uint32 range in practice
 func appendArrayHeader(b []byte, n int) []byte {
 	if n < 0 || n > math.MaxUint32 {
 		n = math.MaxUint32

@@ -33,9 +33,8 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 )
 
-// Learner discovers a leaf's complete archive ladder with probes and writes
-// it to the registry. Runs are deduplicated per leaf, capped in number, and
-// never block an inbound request (decision D1, mode A).
+// Learner discovers a leaf's complete archive ladder with probes and writes it
+// to the registry. Runs are deduplicated per leaf and never block a request.
 type Learner struct {
 	Prober   *Prober
 	Expander *Expander
@@ -63,18 +62,15 @@ type Learner struct {
 // sweepFactor is the ratio between successive ages in the discovery sweep
 const sweepFactor = 4
 
-// minAge is the youngest age probed, which the finest rung always serves;
-// sweepStart is where the geometric sweep begins. A rung shorter than
-// sweepStart is found by the boundary search between the two.
+// minAge is the youngest age probed; sweepStart is where the geometric sweep
+// begins. A rung shorter than sweepStart is found by the boundary search.
 const (
 	minAge     = time.Second
 	sweepStart = 2 * time.Minute
 )
 
 // farPast is an age no Whisper retention reaches, used to discover
-// maxRetention from the clamped start of a wide probe. The probe's from is
-// never allowed before the Unix epoch: graphite-web rejects a negative
-// epoch (its parser reads the sign as an offset).
+// maxRetention; a probe's from never precedes the epoch (graphite-web rejects it).
 const farPast = 100 * 365 * 24 * time.Hour
 
 func (r *learnRun) farPastAge() time.Duration {
@@ -109,11 +105,8 @@ func (l *Learner) Wait() {
 	l.wg.Wait()
 }
 
-// Schedule starts learning a leaf in the background unless a run for it is
-// already in flight or the concurrency cap is reached. hint, when non-nil,
-// is a static-config ladder to confirm before falling back to discovery.
-// It returns false when nothing was started. A negative Concurrency
-// disables background learning entirely (synchronous Learn still works).
+// Schedule starts learning a leaf in the background, confirming a non-nil hint
+// first; false when already in flight, over the cap, or Concurrency is negative.
 func (l *Learner) Schedule(leaf string, hint *Ladder) bool {
 	if l.Concurrency < 0 {
 		return false
@@ -145,10 +138,8 @@ func (l *Learner) Schedule(leaf string, hint *Ladder) bool {
 	return true
 }
 
-// Learn discovers the ladder of one leaf synchronously, records it, and
-// returns it. On failure the leaf is negative-cached with backoff; a partial
-// ladder assembled from the probes that did succeed is recorded so that the
-// ages it covers can still be answered exactly.
+// Learn discovers the ladder of one leaf synchronously and records it. On
+// failure the leaf is negative-cached and any partial ladder is still recorded.
 func (l *Learner) Learn(ctx context.Context, leaf string, hint *Ladder) (*Ladder, error) {
 	l.init()
 	start := l.now()
@@ -238,8 +229,8 @@ type learnRun struct {
 	partial *Ladder
 }
 
-// step probes the step at an age with a narrow probe. ok is false beyond
-// maxRetention. Every successful probe is recorded as an observation.
+// probes the step at an age; ok is false beyond maxRetention, and every
+// successful probe is recorded as an observation
 func (r *learnRun) step(age time.Duration) (time.Duration, bool, error) {
 	if r.l.Budget > 0 && r.probes >= r.l.Budget {
 		return 0, false, ErrProbeBudget
@@ -261,9 +252,8 @@ func (r *learnRun) step(age time.Duration) (time.Duration, bool, error) {
 	return res.Step, true, nil
 }
 
-// confirm checks a static ladder against the origin with 2n+3 probes:
-// the finest step, both sides of every rung boundary, and both sides of
-// maxRetention. ok is false on any disagreement.
+// checks a ladder against the origin with 2n+3 probes: the finest step, both
+// sides of every rung boundary and of maxRetention; ok false on disagreement
 func (r *learnRun) confirm(h *Ladder) (bool, error) {
 	s, ok, err := r.step(minAge)
 	if err != nil || !ok || s != h.Rungs[0].Step {
@@ -297,18 +287,8 @@ func orInconsistent(err error, ok bool) error {
 	return ErrInconsistent
 }
 
-// discover learns the ladder from scratch:
-//
-//  1. the finest step, at minAge (an empty answer here means the metric
-//     does not exist, disambiguated with /metrics/find)
-//  2. a geometric sweep of ages collecting (age, step) until the first
-//     empty answer, which brackets maxRetention between the last age with
-//     data and the first without
-//  3. maxRetention, proposed by the clamped start of one wide probe and
-//     confirmed from both sides, else binary-searched within the bracket on
-//     multiples of the coarsest step
-//  4. a binary search, on multiples of the finer step, for every boundary
-//     between two consecutive sweep ages with different steps
+// learns the ladder from scratch: the finest step at minAge, a geometric sweep
+// that brackets maxRetention, then binary searches for the edge and boundaries
 func (r *learnRun) discover() (*Ladder, error) {
 	s0, ok, err := r.step(minAge)
 	if err != nil {
@@ -373,15 +353,10 @@ func (r *learnRun) discover() (*Ladder, error) {
 	return NewLadder(rungs)
 }
 
-// maxRetention finds the oldest age the leaf holds, known to lie in
-// [inside, outside). A wide probe far in the past has its from clamped to
-// now-maxRetention and reports the aligned start of the coarsest rung, so
-// maxRetention = floor((now-start)/step)*step + step; that candidate is
-// confirmed from both sides (inside at the candidate, empty just beyond),
-// and a binary search on multiples of the coarse step within the bracket is
-// the fallback. This is the one probe that sends maxDataPoints (=2): its
-// step is not used, only its start, and the alternative is reading the
-// whole coarsest archive.
+// finds the oldest age held, known to lie in [inside, outside): a wide probe's
+// clamped start proposes a candidate, confirmed from both sides, else binary
+// search. This is the one probe that sends maxDataPoints (=2): only its start
+// is used, and the alternative is reading the whole coarsest archive.
 func (r *learnRun) maxRetention(inside, outside, coarse time.Duration) (time.Duration, error) {
 	if r.l.Budget > 0 && r.probes >= r.l.Budget {
 		return 0, ErrProbeBudget
@@ -416,14 +391,13 @@ func (r *learnRun) maxRetention(inside, outside, coarse time.Duration) (time.Dur
 	return r.searchEdge(inside, outside, coarse)
 }
 
-// inside reports whether a narrow probe at age returns data
 func (r *learnRun) inside(age time.Duration) (bool, error) {
 	_, ok, err := r.step(age)
 	return ok, err
 }
 
-// searchEdge binary-searches maxRetention on multiples of the coarse step
-// between an age known to have data and one known not to
+// binary-searches maxRetention on multiples of the coarse step between an age
+// known to have data and one known not to
 func (r *learnRun) searchEdge(inside, outside, step time.Duration) (time.Duration, error) {
 	lo, hi := inside/step, (outside+step-1)/step // lo*step <= inside has data; hi*step >= outside has none
 	if hi <= lo {
@@ -456,9 +430,8 @@ func (r *learnRun) searchEdge(inside, outside, step time.Duration) (time.Duratio
 	return maxRet, nil
 }
 
-// boundary finds the largest multiple of fine in (lo, hi] still served at
-// the fine step; that multiple is the rung's MaxAge. It returns the step
-// observed one fine step beyond it, which is the next rung's step.
+// finds the largest multiple of fine in (lo, hi] still served at the fine step
+// (the rung's MaxAge), plus the step one fine step beyond it (the next rung's)
 func (r *learnRun) boundary(lo, hi, fine time.Duration) (time.Duration, time.Duration, error) {
 	lk, hk := lo/fine, hi/fine+1 // lk*fine <= lo is fine-stepped; hk*fine > hi is coarser
 	var next time.Duration

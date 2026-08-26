@@ -20,6 +20,7 @@ import (
 	"context"
 	"time"
 
+	gro "github.com/trickstercache/trickster/v2/pkg/backends/graphite/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/graphite/parsing"
 	"github.com/trickstercache/trickster/v2/pkg/backends/graphite/resolution"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
@@ -30,12 +31,10 @@ type Lane uint8
 
 const (
 	// LaneObject is the unaccelerated lane: the whole response is cached by
-	// request URL with a TTL (design note §6). It is always correct because
-	// it makes no claim about the response's internal structure.
+	// request URL with a TTL, making no claim about its internal structure
 	LaneObject Lane = iota
-	// LaneDelta is the Delta Proxy Cache: the response is modeled, cached
-	// per time range at the origin's native step, and stitched from cached
-	// and freshly fetched extents
+	// LaneDelta is the Delta Proxy Cache: the response is modeled, cached at
+	// the origin's native step, and stitched from cached and fetched extents
 	LaneDelta
 )
 
@@ -47,8 +46,7 @@ func (l Lane) String() string {
 }
 
 // RouteDecision is the confidence router's verdict for one render request:
-// which lane serves it, and — when it is the unaccelerated lane — the frozen
-// reason why, so that the fallback is a named value rather than an inference.
+// the lane, and — for the unaccelerated lane — the frozen reason why
 type RouteDecision struct {
 	Lane Lane
 	// Confidence is the weakest confidence across the request's targets;
@@ -71,7 +69,6 @@ type RouteDecision struct {
 	Err error
 }
 
-// object returns an unaccelerated verdict
 func object(reason, detail string, err error) RouteDecision {
 	return RouteDecision{
 		Lane: LaneObject, Confidence: resolution.Unknown,
@@ -79,8 +76,7 @@ func object(reason, detail string, err error) RouteDecision {
 	}
 }
 
-// confidenceRank orders confidences by how much they are trusted, so that
-// the weakest across a multi-target request is the one reported
+// ranks confidences by trust, so the weakest across a request is reported
 func confidenceRank(c resolution.Confidence) int {
 	switch c {
 	case resolution.Exact:
@@ -93,24 +89,8 @@ func confidenceRank(c resolution.Confidence) int {
 	return 0
 }
 
-// route applies the confidence routing table of design note §6 to a parsed
-// render request, one decision per row and in order. It fills in the
-// request's targets, age and effective age as it goes. Every row that
-// declines names one of the frozen `reason` label values (plan item 3.4),
-// so a fallback is never inferred from an absence.
-//
-//	row                                     lane    reason
-//	--------------------------------------- ------- ---------------------------
-//	no target parameter                     object  missing_target
-//	non-series format, graphType, maxStep   object  non_series_format/unknown_step
-//	maxDataPoints passthrough configured    object  passthrough_max_data_points
-//	unparsable now / from / until           object  parse_error
-//	unparsable target expression            object  parse_error
-//	function not on the D4 allowlist        object  function_not_allowlisted
-//	target's step not predictable           object  unknown_step / missing_target
-//	targets resolve to different steps      object  multi_target_step_mismatch
-//	window wholly beyond maxRetention       object  unknown_step
-//	otherwise                               delta   —
+// decides the lane for a parsed render request, filling in its targets, age
+// and effective age; every decline names a frozen `reason` label value
 func (c *Client) route(ctx context.Context, rq *RenderQuery) RouteDecision {
 	rp := rq.Params
 
@@ -121,9 +101,26 @@ func (c *Client) route(ctx context.Context, rq *RenderQuery) RouteDecision {
 	if rp.Declined != "" {
 		return object(rp.Declined, rp.DeclinedParam, nil)
 	}
-	if o := c.Configuration(); o != nil && o.Graphite != nil &&
-		o.Graphite.PassthroughMaxDataPoints && rp.MaxDataPoints > 0 {
+	g := c.graphiteOptions()
+	if g.PassthroughMaxDataPoints && rp.MaxDataPoints > 0 {
 		return object(parsing.ReasonPassthroughMaxPoints, "maxDataPoints", nil)
+	}
+
+	maxTargets := g.MaxTargetsPerRequest
+	if maxTargets <= 0 {
+		maxTargets = gro.DefaultMaxTargetsPerRequest
+	}
+	if len(rp.Targets) > maxTargets {
+		return object(parsing.ReasonParseError, "too many targets", nil)
+	}
+	maxTargetLen := g.MaxTargetLength
+	if maxTargetLen <= 0 {
+		maxTargetLen = gro.DefaultMaxTargetLength
+	}
+	for _, src := range rp.Targets {
+		if len(src) > maxTargetLen {
+			return object(parsing.ReasonParseError, "target exceeds max_target_length", nil)
+		}
 	}
 
 	// the reference time and the requested window
@@ -141,7 +138,7 @@ func (c *Client) route(ctx context.Context, rq *RenderQuery) RouteDecision {
 	rq.Age = rq.Now.Sub(ext.Start)
 	rq.EffectiveAge = rq.Age
 
-	// every target must parse and pass the two-property allowlist (D4)
+	// every target must parse and pass the classification allowlist
 	rq.Targets = make([]Target, len(rp.Targets))
 	for i, src := range rp.Targets {
 		ast, err := parsing.ParseTarget(src)
@@ -155,25 +152,24 @@ func (c *Client) route(ctx context.Context, rq *RenderQuery) RouteDecision {
 		rq.Targets[i] = Target{Source: src, Canonical: parsing.Format(ast), AST: ast, Class: cl}
 	}
 
-	// every target's step must be predictable, and they must agree: one
-	// TimeRangeQuery carries one step. A multi-target request whose targets
-	// resolve differently is declined here and split per target by the
-	// render handler (D5).
+	// every target's step must be predictable and all must agree (one
+	// TimeRangeQuery, one step); mismatches are split per target by the handler
 	d := RouteDecision{Lane: LaneDelta, Confidence: resolution.Exact, Source: resolution.SourceRegistry}
+	var mismatch string
 	for i := range rq.Targets {
 		t := &rq.Targets[i]
-		// graphite-web normalizes a mixed-step series list to its LCM only
-		// inside a function; a bare path expression returns each series at
-		// its own native step
+		// graphite-web normalizes a mixed-step series list to its LCM only in
+		// a function; a bare path returns each series at its own native step
 		_, normalized := t.AST.(*parsing.Call)
 		t.Resolution = c.resolver.Resolve(ctx, t.Class.Leaves, t.Class.FixedStep, rq.Age, normalized)
 		if t.Resolution.Confidence == resolution.Unknown {
 			return object(t.Resolution.Reason, t.Source, nil)
 		}
-		if d.Step != 0 && t.Resolution.Step != d.Step {
-			return object(parsing.ReasonMultiTargetMismatch, t.Source, nil)
+		if d.Step == 0 {
+			d.Step = t.Resolution.Step
+		} else if t.Resolution.Step != d.Step && mismatch == "" {
+			mismatch = t.Source
 		}
-		d.Step = t.Resolution.Step
 		if confidenceRank(t.Resolution.Confidence) < confidenceRank(d.Confidence) {
 			d.Confidence, d.Source = t.Resolution.Confidence, t.Resolution.Source
 		}
@@ -181,9 +177,12 @@ func (c *Client) route(ctx context.Context, rq *RenderQuery) RouteDecision {
 			d.MaxRetention = mr
 		}
 	}
+	if mismatch != "" {
+		return object(parsing.ReasonMultiTargetMismatch, mismatch, nil)
+	}
 
-	// whisper's range clamp (§2.3): a window wholly beyond retention holds
-	// nothing to cache; a from beyond retention is moved to the oldest point
+	// whisper's range clamp: a window wholly beyond retention holds nothing
+	// to cache; a from beyond retention is moved to the oldest point
 	d.Extent = ext
 	if d.MaxRetention > 0 {
 		start, end, ok := resolution.Clamp(ext.Start, ext.End, rq.Now, d.MaxRetention)
@@ -193,9 +192,8 @@ func (c *Client) route(ctx context.Context, rq *RenderQuery) RouteDecision {
 		d.Extent.Start, d.Extent.End = start, end
 		rq.EffectiveAge = min(rq.Age, d.MaxRetention)
 	}
-	// the extent is the set of buckets the origin returns for this window
-	// (§2.2): the first bucket strictly after from and the last at or before
-	// until, both step-aligned; SetExtent inverts this per fetch
+	// the origin returns the first bucket strictly after from and the last at
+	// or before until, both step-aligned; SetExtent inverts this per fetch
 	first, afterLast := resolution.AlignInterval(d.Extent.Start, d.Extent.End, d.Step)
 	d.Extent.Start, d.Extent.End = first, afterLast.Add(-d.Step)
 	return d

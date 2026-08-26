@@ -21,16 +21,21 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/url"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	tspan "github.com/trickstercache/trickster/v2/pkg/observability/tracing/span"
+	"github.com/trickstercache/trickster/v2/pkg/util/safego"
 )
 
-// Existence is the outcome of an existence check (design note §4.5 table)
+// Existence is the outcome of an existence check
 type Existence int
 
 const (
@@ -50,12 +55,71 @@ type Expander struct {
 	Observer Observer
 	Tracers  *Tracers
 	// TTL is how long an expansion is reused
-	TTL time.Duration
+	TTL          time.Duration
+	MaxLeaves    int
+	MaxLeafBytes int
+
+	mu       sync.Mutex
+	inflight map[string]*expandCall
 }
 
-// expandResult is one document of a /metrics/expand response. graphite-web
-// emits one document per top-level brace alternative, concatenated, so the
-// body is a stream of these rather than a single value.
+// expandCall is one in-progress expansion shared by coalesced callers
+type expandCall struct {
+	done   chan struct{}
+	cancel context.CancelFunc
+	// waiters and closed are guarded by Expander.mu: admission, zero-waiter
+	// abandonment, and inflight-map removal must be one atomic decision
+	waiters int
+	closed  bool
+	leaves  []string
+	id      string
+	err     error
+}
+
+// the last caller out of a still-open call closes and removes it before
+// canceling, so a later caller starts fresh instead of joining a canceled ctx
+func (e *Expander) leave(expr string, call *expandCall) {
+	e.mu.Lock()
+	call.waiters--
+	abandoned := call.waiters == 0 && !call.closed
+	if abandoned {
+		call.closed = true
+		if e.inflight[expr] == call {
+			delete(e.inflight, expr)
+		}
+	}
+	e.mu.Unlock()
+	if abandoned {
+		call.cancel()
+	}
+}
+
+// the call is closed and removed under the mutex before done is closed, so no
+// new caller can join once its shared context is about to be released
+func (e *Expander) complete(expr string, call *expandCall) {
+	e.mu.Lock()
+	call.closed = true
+	if e.inflight[expr] == call {
+		delete(e.inflight, expr)
+	}
+	e.mu.Unlock()
+	close(call.done)
+	call.cancel()
+}
+
+// Default expansion fan-out bounds, mirrored by the graphite options
+// package; these guard memory, not functionality.
+const (
+	DefaultMaxLeaves    = 4096
+	DefaultMaxLeafBytes = 2 * 1024 * 1024
+)
+
+// ErrExpansionTooLarge is returned when an expansion exceeds the
+// configured fan-out bounds; the request is served unaccelerated.
+var ErrExpansionTooLarge = errors.New("wildcard expansion exceeds the configured bounds")
+
+// expandResult is one document of a /metrics/expand response; graphite-web
+// emits one document per top-level brace alternative, concatenated.
 type expandResult struct {
 	Results []string `json:"results"`
 }
@@ -66,9 +130,7 @@ func IsWildcard(expr string) bool {
 }
 
 // Expand returns the leaf paths a path expression matches. A plain path
-// expands to itself without a round trip; existence is established later
-// by the probe (a present metric returns a stepped series even when young,
-// §9.3, and an absent one returns nothing).
+// expands to itself without a round trip; existence is established by probes.
 func (e *Expander) Expand(ctx context.Context, expr string) ([]string, string, error) {
 	if !IsWildcard(expr) {
 		return []string{expr}, ExpansionID([]string{expr}), nil
@@ -76,12 +138,50 @@ func (e *Expander) Expand(ctx context.Context, expr string) ([]string, string, e
 	if leaves, id, ok := e.Registry.Target(expr); ok {
 		return leaves, id, nil
 	}
-	leaves, err := e.find(ctx, expr)
-	if err != nil {
-		return nil, "", err
+	// an expression whose expansion recently exceeded the fan-out bounds
+	// is declined without another origin round trip
+	if _, neg := e.Registry.Negative("expand\x00" + expr); neg {
+		return nil, "", ErrExpansionTooLarge
 	}
-	id := e.Registry.SetTarget(expr, leaves, e.TTL)
-	return leaves, id, nil
+	// one shared origin call per expression, with its own lifecycle: canceled
+	// only when no callers remain, while each caller may return on its own ctx
+	e.mu.Lock()
+	if e.inflight == nil {
+		e.inflight = make(map[string]*expandCall)
+	}
+	call, running := e.inflight[expr]
+	if !running {
+		sctx, cancel := context.WithCancel(context.Background())
+		call = &expandCall{done: make(chan struct{}), cancel: cancel, waiters: 1}
+		e.inflight[expr] = call
+		safego.Go(func(r any, stack []byte) {
+			logger.Error("graphite expansion panicked", logging.Pairs{
+				"query": expr, "panic": fmt.Sprint(r), "stack": string(stack),
+			})
+			call.err = errors.New("graphite expansion panicked")
+			e.complete(expr, call)
+		}, func() {
+			call.leaves, call.err = e.find(sctx, expr)
+			if call.err == nil {
+				// find's slice is canonical; SetTarget takes ownership
+				call.id = e.Registry.SetTarget(expr, call.leaves, e.TTL)
+			} else if errors.Is(call.err, ErrExpansionTooLarge) {
+				e.Registry.SetNegative("expand\x00" + expr)
+			}
+			e.complete(expr, call)
+		})
+	} else {
+		call.waiters++
+	}
+	e.mu.Unlock()
+	select {
+	case <-call.done:
+		e.leave(expr, call)
+		return call.leaves, call.id, call.err
+	case <-ctx.Done():
+		e.leave(expr, call)
+		return nil, "", ctx.Err()
+	}
 }
 
 // Exists reports whether a leaf path exists at the origin
@@ -96,16 +196,9 @@ func (e *Expander) Exists(ctx context.Context, path string) Existence {
 	return NotExists
 }
 
-// find expands a path expression to the concrete leaf paths it matches.
-//
-// It uses /metrics/expand rather than /metrics/find: find is a tree browser
-// that answers one level at a time, and given a pattern with a wildcard at
-// an interior level it returns a single node echoing the pattern back
-// (measured on graphite-web 1.1.10: dev.fast.cpu.*.percent yields one node
-// with id "dev.fast.cpu.*.percent"). Keying the registry on that pattern
-// would reintroduce exactly the staleness the design note's §5.5 warns
-// about, because a new metric under the wildcard would not change the key.
-// /metrics/expand?leavesOnly=1 enumerates the concrete leaves instead.
+// expands a path expression to concrete leaves via /metrics/expand?leavesOnly=1:
+// /metrics/find echoes an interior wildcard back as a single node, which would
+// key the registry on the pattern and hide new metrics beneath it
 func (e *Expander) find(ctx context.Context, query string) ([]string, error) {
 	ctx, span := tspan.NewChildSpan(ctx, e.Tracers.Get(), "GraphiteExpand")
 	if span != nil {
@@ -117,10 +210,18 @@ func (e *Expander) find(ctx context.Context, query string) ([]string, error) {
 		e.observe(ResultError)
 		return nil, err
 	}
+	maxLeaves, maxBytes := e.MaxLeaves, e.MaxLeafBytes
+	if maxLeaves <= 0 {
+		maxLeaves = DefaultMaxLeaves
+	}
+	if maxBytes <= 0 {
+		maxBytes = DefaultMaxLeafBytes
+	}
 	// one document per top-level brace alternative, concatenated
 	dec := json.NewDecoder(bytes.NewReader(body))
 	seen := make(map[string]struct{})
 	out := make([]string, 0, 8)
+	nameBytes := 0
 	for {
 		var res expandResult
 		if err := dec.Decode(&res); err != nil {
@@ -137,8 +238,14 @@ func (e *Expander) find(ctx context.Context, query string) ([]string, error) {
 			if _, dup := seen[p]; dup {
 				continue
 			}
+			if len(out) >= maxLeaves || nameBytes+len(p) > maxBytes {
+				e.observe(ResultError)
+				return nil, fmt.Errorf("%w: %q matches more than %d leaves or %d bytes",
+					ErrExpansionTooLarge, query, maxLeaves, maxBytes)
+			}
 			seen[p] = struct{}{}
 			out = append(out, p)
+			nameBytes += len(p)
 		}
 	}
 	slices.Sort(out)

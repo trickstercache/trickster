@@ -261,6 +261,9 @@ type Options struct {
 	// DoesShard is true when sharding will be used with this origin, based on how the
 	// sharding options have been configured
 	DoesShard bool `yaml:"-"`
+
+	sizeExplicit      bool
+	retentionExplicit bool
 }
 
 var _ types.ConfigOptions[Options] = &Options{}
@@ -387,6 +390,11 @@ func (o *Options) Validate() (bool, error) {
 	if len(o.Paths) > 0 {
 		if err := o.Paths.Validate(); err != nil {
 			return false, err
+		}
+	}
+	if o.Graphite != nil {
+		if err := o.Graphite.ValidateWithPaths(o.Paths); err != nil {
+			return false, fmt.Errorf("backend %s: %w", o.Name, err)
 		}
 	}
 	if o.CORS != nil {
@@ -711,6 +719,14 @@ func (o *Options) CloneYAMLSafe() *Options {
 		headers.HideAuthorizationCredentials(w.RequestHeaders)
 		headers.HideAuthorizationCredentials(w.ResponseHeaders)
 	}
+	if co.Graphite != nil {
+		if co.Graphite.OriginPassword != "" {
+			co.Graphite.OriginPassword = "*****"
+		}
+		if co.Graphite.OriginAuthorization != "" {
+			co.Graphite.OriginAuthorization = "*****"
+		}
+	}
 	if co.HealthCheck != nil {
 		// also strip out potentially sensitive headers
 		headers.HideAuthorizationCredentials(co.HealthCheck.Headers)
@@ -732,5 +748,79 @@ func (o *Options) UnmarshalYAML(value *yaml.Node) error {
 		return err
 	}
 	*o = Options(lo)
+	o.sizeExplicit = yamlHasKey(value, "max_object_size_bytes")
+	o.retentionExplicit = yamlHasKey(value, "timeseries_retention_factor")
+	o.ApplyProviderSizingDefaults()
 	return nil
+}
+
+func yamlHasKey(node *yaml.Node, key string) bool {
+	return yamlNodeHasKey(node, key, make(map[*yaml.Node]bool))
+}
+
+func yamlNodeHasKey(node *yaml.Node, key string, visited map[*yaml.Node]bool) bool {
+	if node == nil || visited[node] {
+		return false
+	}
+	visited[node] = true
+	switch node.Kind {
+	case yaml.DocumentNode:
+		if len(node.Content) > 0 {
+			return yamlNodeHasKey(node.Content[0], key, visited)
+		}
+		return false
+	case yaml.AliasNode:
+		return yamlNodeHasKey(node.Alias, key, visited)
+	case yaml.MappingNode:
+	default:
+		return false
+	}
+	// local keys first; then any `<<` merge values, each of which may be a
+	// mapping, an alias to one, or a sequence of either
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		if node.Content[i] != nil && node.Content[i].Value == key {
+			return true
+		}
+	}
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		k, v := node.Content[i], node.Content[i+1]
+		// only a real merge directive counts: go-yaml merges `<<` only
+		// when the key carries the merge tag, while a quoted "<<" is an
+		// ordinary string key the decoder does not merge
+		if k == nil || v == nil || k.Value != "<<" || k.Tag != "!!merge" {
+			continue
+		}
+		if v.Kind == yaml.SequenceNode {
+			for _, item := range v.Content {
+				if yamlNodeHasKey(item, key, visited) {
+					return true
+				}
+			}
+			continue
+		}
+		if yamlNodeHasKey(v, key, visited) {
+			return true
+		}
+	}
+	return false
+}
+
+// ApplyProviderSizingDefaults sets max_object_size_bytes and
+// timeseries_retention_factor to the provider's defaults
+// (GetProviderDefaults) wherever the YAML did not name them itself. It is
+// part of configuration loading: UnmarshalYAML calls it once the file's
+// provider is known, and the config loader calls it again for a backend
+// whose provider arrives later from the -provider flag. It is deliberately
+// not part of Initialize, so an Options constructed in code — where these
+// flags are false but the builder's assignments are intentional — is never
+// re-defaulted.
+func (o *Options) ApplyProviderSizingDefaults() {
+	mos, trf := GetProviderDefaults(o.Provider)
+	if !o.sizeExplicit {
+		o.MaxObjectSizeBytes = mos
+	}
+	if !o.retentionExplicit {
+		o.TimeseriesRetentionFactor = trf
+	}
+	o.TimeseriesRetention = timeconv.Duration(o.TimeseriesRetentionFactor)
 }

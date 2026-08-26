@@ -17,7 +17,7 @@
 package resolution
 
 import (
-	"crypto/sha1"
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"slices"
@@ -26,9 +26,8 @@ import (
 	"time"
 )
 
-// Rung is one archive of a Whisper ladder: queries whose `now - from` is at
-// most MaxAge (and greater than the previous rung's MaxAge) are served at
-// Step. MaxAge is the archive's retention, always a multiple of Step.
+// Rung is one archive of a Whisper ladder: queries whose `now - from` age is
+// at most MaxAge are served at Step. MaxAge is always a multiple of Step.
 type Rung struct {
 	MaxAge time.Duration `json:"max_age"`
 	Step   time.Duration `json:"step"`
@@ -63,9 +62,8 @@ type Observation struct {
 	Step time.Duration `json:"step"`
 }
 
-// Ladder is a metric's archive ladder. A complete ladder answers any age;
-// a partial ladder answers only ages that lie between two observations
-// with the same step, which is sound because rungs are monotonic in age.
+// Ladder is a metric's archive ladder. A complete ladder answers any age; a
+// partial one only ages bracketed by same-step observations (rungs are monotonic).
 type Ladder struct {
 	Rungs        []Rung        `json:"rungs,omitempty"`
 	Observations []Observation `json:"observations,omitempty"`
@@ -74,8 +72,7 @@ type Ladder struct {
 }
 
 // NewLadder builds a complete ladder from rungs, validating Whisper's rules:
-// at least one rung, strictly increasing MaxAge and Step, each Step a
-// multiple of the previous, and each MaxAge a multiple of its Step.
+// increasing MaxAge and Step, each a multiple of its predecessor and its Step.
 func NewLadder(rungs []Rung) (*Ladder, error) {
 	if len(rungs) == 0 {
 		return nil, fmt.Errorf("%w: no rungs", ErrInvalidLadder)
@@ -94,7 +91,10 @@ func NewLadder(rungs []Rung) (*Ladder, error) {
 			}
 		}
 	}
-	return &Ladder{Rungs: r, State: StateComplete}, nil
+	l := &Ladder{Rungs: r, State: StateComplete}
+	h := sha256.Sum256([]byte(l.String()))
+	l.fp = hex.EncodeToString(h[:])[:16]
+	return l, nil
 }
 
 // NewPartial returns an empty partial ladder
@@ -102,9 +102,8 @@ func NewPartial() *Ladder {
 	return &Ladder{State: StatePartial}
 }
 
-// Observe records an (age, step) measurement on a partial ladder. It
-// returns ErrInconsistent when the observation contradicts an existing one
-// (a different step at the same age, or a step that decreases with age).
+// Observe records an (age, step) measurement, returning ErrInconsistent when
+// it contradicts an existing observation or a complete ladder's prediction.
 func (l *Ladder) Observe(age, step time.Duration) error {
 	if l.State == StateComplete {
 		if s, _ := l.StepFor(age); s != step {
@@ -135,10 +134,8 @@ func (l *Ladder) Observe(age, step time.Duration) error {
 	return nil
 }
 
-// StepFor returns the step a query with the given `now - from` age receives.
-// A complete ladder saturates at its coarsest rung beyond maxRetention, as
-// Whisper clamps `from`. A partial ladder answers only when the age is
-// bracketed by observations with the same step.
+// StepFor returns the step a query of the given age receives. A complete
+// ladder saturates at its coarsest rung; a partial one needs a same-step bracket.
 func (l *Ladder) StepFor(age time.Duration) (time.Duration, bool) {
 	switch l.State {
 	case StateComplete:
@@ -179,17 +176,11 @@ func (l *Ladder) Saturates(age time.Duration) bool {
 	return l.State == StateComplete && age > l.MaxRetention()
 }
 
-// Fingerprint is a stable hash of a complete ladder's rungs; empty for a
-// partial ladder. Equal ladders on different metrics share one fingerprint,
-// which is what keeps the registry small (design note §5.6).
+// Fingerprint is a stable hash of a complete ladder's rungs, computed once
+// in NewLadder; empty for a partial ladder.
 func (l *Ladder) Fingerprint() string {
 	if l.State != StateComplete {
 		return ""
-	}
-	if l.fp == "" {
-		h := sha1.New()
-		h.Write([]byte(l.String()))
-		l.fp = hex.EncodeToString(h.Sum(nil))[:16]
 	}
 	return l.fp
 }
@@ -233,7 +224,7 @@ func (l *Ladder) Clone() *Ladder {
 	}
 }
 
-// formatDur renders a duration in the largest whole Whisper unit
+// renders a duration in the largest whole Whisper unit
 func formatDur(d time.Duration) string {
 	s := int64(d / time.Second)
 	for _, u := range [...]struct {
@@ -248,9 +239,7 @@ func formatDur(d time.Duration) string {
 }
 
 // ParseRetentions parses a storage-schemas.conf retention list such as
-// "10s:6h,1m:7d,10m:5y" into a complete ladder, following whisper's
-// parseRetentionDef: precision[unit]:points-or-duration, units matched as
-// prefixes of seconds/minutes/hours/days/weeks/years (so "m" is minutes).
+// "10s:6h,1m:7d,10m:5y" into a complete ladder, per whisper's parseRetentionDef.
 func ParseRetentions(s string) (*Ladder, error) {
 	var rungs []Rung
 	for def := range strings.SplitSeq(s, ",") {
@@ -289,7 +278,7 @@ var whisperUnits = [...]struct {
 	secs int64
 }{{"seconds", 1}, {"minutes", 60}, {"hours", 3600}, {"days", 86400}, {"weeks", 604800}, {"years", 31536000}}
 
-// whisperDuration parses "10s", "6h", "1m" (minutes), "90" (seconds)
+// parses whisper durations: "10s", "6h", "1m" (minutes), "90" (seconds)
 func whisperDuration(s string) (time.Duration, error) {
 	i := 0
 	for i < len(s) && s[i] >= '0' && s[i] <= '9' {

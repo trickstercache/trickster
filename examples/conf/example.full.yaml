@@ -341,6 +341,15 @@ backends:
   #     # the origin's graphite-web TIME_ZONE. default is UTC
   #     time_zone: UTC
   #
+  #     # origin_username/origin_password supply a static HTTP Basic
+  #     # credential sent as the Authorization header of every upstream
+  #     # request (proxied, synthetic and health check alike). For non-Basic
+  #     # schemes, set origin_authorization to the verbatim header value
+  #     # (e.g., 'Bearer <token>') instead. unset by default
+  #     # origin_username: 'metrics'
+  #     # origin_password: '<the origin password>'
+  #     # origin_authorization: 'Bearer <token>'
+  #
   #     # passthrough_max_data_points forwards the client's maxDataPoints to
   #     # the origin instead of fetching at native resolution and
   #     # consolidating in Trickster. Requests carrying maxDataPoints are then
@@ -354,6 +363,19 @@ backends:
   #     # metric paths is reused before being refreshed from /metrics/expand.
   #     # Lower it if metrics appear and disappear frequently. default is 1m
   #     find_cache_ttl: 1m
+  #
+  #     # requests over either shape limit are served through the object
+  #     # cache untouched rather than accelerated: max_targets_per_request
+  #     # bounds the target count (default 128) and max_target_length one
+  #     # target expression's bytes (default 16384)
+  #     max_targets_per_request: 128
+  #     max_target_length: 16384
+  #
+  #     # a wildcard expansion matching more leaves than max_expanded_leaves,
+  #     # or more aggregate leaf-name bytes than max_expansion_bytes, is
+  #     # likewise served through the object cache untouched
+  #     max_expanded_leaves: 4096
+  #     max_expansion_bytes: 2097152
   #
   #     # the resolution registry remembers each metric's archive ladder, so
   #     # that a query's step can be predicted without asking the origin

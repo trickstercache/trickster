@@ -23,7 +23,6 @@ import (
 )
 
 // ParamClass says what Trickster does with a render URL parameter
-// (implementation plan item 4.6)
 type ParamClass int
 
 const (
@@ -33,9 +32,8 @@ const (
 	// ParamExtent parameters define the time range; the DPC rewrites them
 	// per gap extent and they are represented in the key by the extent
 	ParamExtent
-	// ParamMarshal parameters affect only how the cached DataSet is
-	// serialized to this client; they are applied at marshal time, never
-	// enter the key, and are never sent upstream
+	// ParamMarshal parameters affect only how the cached DataSet is serialized
+	// to this client; they never enter the key and are never sent upstream
 	ParamMarshal
 	// ParamUpstream parameters are passed to the origin but do not affect
 	// series values; not in the key
@@ -45,10 +43,7 @@ const (
 )
 
 // RenderParamClasses is the classification table for graphite-web's render
-// parameters (render/views.py parseOptions). Unknown parameters are treated
-// as ParamUpstream: forwarded, not keyed, on the assumption that graphite-web
-// ignores what it does not know; graph-rendering options only matter for
-// image formats, which are declined before this table is consulted.
+// parameters (render/views.py parseOptions); unknown parameters are ParamUpstream.
 var RenderParamClasses = map[string]ParamClass{
 	"target":   ParamKey,
 	"target[]": ParamKey,
@@ -78,14 +73,11 @@ var RenderParamClasses = map[string]ParamClass{
 }
 
 // UpstreamStripParams are never sent to the origin on the accelerated path:
-// maxDataPoints and noNullPoints would change the shape of the native-step
-// data being cached (D3, design note §4.3), and the output format is chosen
-// by Trickster (D8)
+// they would change the shape of the cached native-step data or its format
 var UpstreamStripParams = []string{"maxDataPoints", "noNullPoints", "jsonp", "pretty", "format", "rawData"}
 
 // SeriesFormats are the render output formats that carry time series data
-// Trickster can model. Everything else (png, svg, pdf, pickle, dygraph,
-// rickshaw, and the absent-format default of png) is declined.
+// Trickster can model; everything else (png, svg, pdf, pickle, ...) is declined
 var SeriesFormats = map[string]struct{}{"json": {}, "raw": {}, "csv": {}, "msgpack": {}}
 
 // DefaultFormat is what graphite-web renders when no format is given

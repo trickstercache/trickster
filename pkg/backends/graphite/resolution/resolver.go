@@ -40,7 +40,7 @@ type Resolution struct {
 	Reason string
 }
 
-// Resolver implements the ordered strategy chain of design note §6.1
+// Resolver implements the ordered resolution strategy chain
 type Resolver struct {
 	Registry *Registry
 	Expander *Expander
@@ -56,20 +56,10 @@ const (
 	reasonMissingTarget = "missing_target"
 )
 
-// Resolve predicts the step for a target whose leaf path expressions are
-// leafExprs, queried at the given `now - from` age. fixedStep is non-zero
-// when the target's function chain fixes the output step (summarize), in
-// which case the step is Derived and the leaves are resolved only for
-// their retention. normalized is true when the target wraps its leaves in
-// a function: graphite-web then normalizes mixed steps to their LCM, while
-// a bare path expression returns every series at its own native step,
-// which one query cannot model, so mixed steps are Unknown there.
-//
-// Strategy: expand wildcards; look every leaf up in the registry (learned
-// ladders answer Exact); fall back to the static layer (Configured,
-// scheduling a confirming probe); schedule learning for anything still
-// unknown and return Unknown. Nothing here blocks on the origin except
-// wildcard expansion, which is cached.
+// Resolve predicts the step for a target at the given `now - from` age.
+// fixedStep, when non-zero, fixes the output step (summarize). normalized
+// means a wrapping function normalizes mixed steps to their LCM; bare mixed
+// steps are Unknown. Nothing blocks on the origin except cached expansion.
 func (r *Resolver) Resolve(ctx context.Context, leafExprs []string, fixedStep, age time.Duration,
 	normalized bool,
 ) Resolution {
@@ -177,8 +167,8 @@ func (r *Resolver) Resolve(ctx context.Context, leafExprs []string, fixedStep, a
 	return res
 }
 
-// retention folds a ladder's maxRetention into the resolution: the
-// shortest wins, and an unknown one (partial ladder) makes it unknown
+// folds a ladder's maxRetention into the resolution: the shortest wins, and
+// an unknown one (partial ladder) makes it unknown
 func (r *Resolver) retention(res *Resolution, l *Ladder) {
 	mr := l.MaxRetention()
 	if mr == 0 {
@@ -190,10 +180,8 @@ func (r *Resolver) retention(res *Resolution, l *Ladder) {
 	}
 }
 
-// Observe records a step read from a captured origin response (decision D1,
-// learn on first response) as a partial-ladder observation for each leaf,
-// and schedules full discovery so that later requests at other ages can be
-// answered. It is never speculative: the step came from the origin.
+// Observe records a step read from a captured origin response as a
+// partial-ladder observation and schedules full discovery; never speculative.
 func (r *Resolver) Observe(leaves []string, age, step time.Duration) {
 	if step <= 0 || len(leaves) != 1 {
 		// a multi-leaf response reports the LCM, which says nothing certain
@@ -231,11 +219,17 @@ func (r *Resolver) Observe(leaves []string, age, step time.Duration) {
 	r.Learner.Schedule(leaf, nil)
 }
 
-// Mispredict records that an origin response for the given leaves carried a
-// step other than the predicted one: the ladder the prediction came from is
-// wrong (it changed, or was learned incorrectly), so every learned entry is
-// invalidated and the leaves are relearned. The caller must not cache the
-// response under the predicted key.
+// Ambiguous records that an accelerated response for these leaves carried
+// too little data to verify the predicted step
+func (r *Resolver) Ambiguous(leaves []string) {
+	for _, leaf := range leaves {
+		r.Registry.InvalidateLeaf(leaf)
+		r.Learner.Schedule(leaf, nil)
+	}
+}
+
+// Mispredict invalidates every learned entry and relearns the leaves after a
+// response contradicts the predicted step; do not cache under the predicted key.
 func (r *Resolver) Mispredict(leaves []string, predicted, observed time.Duration) {
 	if r.Observer != nil {
 		r.Observer.Misprediction()
@@ -253,9 +247,4 @@ func (r *Resolver) observe(res Resolution) {
 		return
 	}
 	r.Observer.Lookup(res.Confidence.String(), res.Source)
-	st := r.Registry.Stats()
-	r.Observer.RegistryEntries(LayerLeaf, st.Leaves)
-	r.Observer.RegistryEntries(LayerLadder, st.Ladders)
-	r.Observer.RegistryEntries(LayerTarget, st.Targets)
-	r.Observer.RegistryEntries(LayerNegative, st.Negatives)
 }

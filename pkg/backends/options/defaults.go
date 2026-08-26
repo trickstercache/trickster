@@ -20,6 +20,8 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
+	gro "github.com/trickstercache/trickster/v2/pkg/backends/graphite/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/cache/evictionmethods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
@@ -104,4 +106,15 @@ func DefaultCompressibleTypes() []string {
 		"application/javascript",
 		"application/xml",
 	}
+}
+
+// GetProviderDefaults returns the default max cache object size and
+// timeseries retention factor for a backend provider.
+// They are applied only where the configuration is silent, so an explicit
+// value in the file always wins.
+func GetProviderDefaults(provider string) (maxObjectSizeBytes, timeseriesRetentionFactor int) {
+	if provider == providers.Graphite {
+		return gro.DefaultMaxObjectSizeBytes, gro.DefaultTimeseriesRetentionFactor
+	}
+	return DefaultMaxObjectSizeBytes, DefaultBackendTRF
 }

@@ -29,10 +29,8 @@ type StaticRule struct {
 	PatternSt string
 }
 
-// Static is the storage-schemas.conf-shaped static layer: ordered rules,
-// first match wins (re.search semantics, as carbon applies them). It is a
-// seed and override only: a match yields Configured confidence and is
-// probe-confirmed before it is trusted as Exact (design note §3).
+// Static is the storage-schemas.conf-shaped static layer: ordered rules, first
+// match wins (re.search semantics); a match is Configured until probe-confirmed.
 type Static struct {
 	rules []StaticRule
 }

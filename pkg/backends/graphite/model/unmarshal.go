@@ -31,9 +31,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 )
 
-// ErrStepMismatch is returned when a response's timestamps disagree with
-// the step the TimeRangeQuery predicted: the prediction was wrong and the
-// response must not be cached under its key (implementation plan item 7.4)
+// ErrStepMismatch is returned when a response's timestamps disagree with the
+// TimeRangeQuery's predicted step; such a response must not be cached under its key
 var ErrStepMismatch = errors.New("graphite: response step differs from the predicted step")
 
 // StepMismatchError carries both steps
@@ -48,9 +47,30 @@ func (e *StepMismatchError) Error() string {
 
 func (e *StepMismatchError) Is(target error) bool { return target == ErrStepMismatch }
 
-// StepMismatchNoter is implemented by a TimeRangeQuery.ParsedQuery that
-// wants to be told when a response contradicted the predicted step, so the
-// handler can act on it after the cache engine returns
+// StepAmbiguityNoter is implemented by a TimeRangeQuery.ParsedQuery that
+// wants to know when a JSON response could not confirm the predicted step
+type StepAmbiguityNoter interface {
+	NoteAmbiguousStep(seriesName string, predicted time.Duration)
+}
+
+// ErrStepAmbiguous is returned for a predicted-step JSON fetch whose
+// response carries too little data to verify the prediction
+var ErrStepAmbiguous = errors.New("graphite: response cannot verify the predicted step")
+
+// StepAmbiguousError carries the series that failed verification
+type StepAmbiguousError struct {
+	Target string
+	Points int
+}
+
+func (e *StepAmbiguousError) Error() string {
+	return fmt.Sprintf("%s: %q returned %d points", ErrStepAmbiguous.Error(), e.Target, e.Points)
+}
+
+func (e *StepAmbiguousError) Is(target error) bool { return target == ErrStepAmbiguous }
+
+// StepMismatchNoter is implemented by a TimeRangeQuery.ParsedQuery that wants
+// to be told when a response contradicted the predicted step
 type StepMismatchNoter interface {
 	NoteStepMismatch(target string, predicted, observed time.Duration)
 }
@@ -59,7 +79,52 @@ type StepMismatchNoter interface {
 type wireSeries struct {
 	Target     string            `json:"target"`
 	Tags       map[string]string `json:"tags"`
-	Datapoints [][2]*float64     `json:"datapoints"`
+	Datapoints []wireDatapoint   `json:"datapoints"`
+}
+
+type wireDatapoint struct {
+	val  float64
+	ts   int64
+	null bool
+}
+
+func (d *wireDatapoint) UnmarshalJSON(b []byte) error {
+	b = bytes.TrimSpace(b)
+	if len(b) < 2 || b[0] != '[' || b[len(b)-1] != ']' {
+		return timeseries.ErrInvalidBody
+	}
+	inner := b[1 : len(b)-1]
+	comma := bytes.IndexByte(inner, ',')
+	if comma < 0 || bytes.IndexByte(inner[comma+1:], ',') >= 0 {
+		return timeseries.ErrInvalidBody
+	}
+	vs := string(bytes.TrimSpace(inner[:comma]))
+	if vs == "null" {
+		d.null = true
+	} else {
+		f, err := strconv.ParseFloat(vs, 64)
+		if err != nil {
+			return err
+		}
+		d.val = f
+	}
+	// graphite-web emits timestamps as integers, but a float here would
+	// have decoded before this custom decoder existed, so it still does
+	ts, err := strconv.ParseFloat(string(bytes.TrimSpace(inner[comma+1:])), 64)
+	if err != nil {
+		return err
+	}
+	d.ts = int64(ts)
+	return nil
+}
+
+func spacingViolation(trq *timeseries.TimeRangeQuery, predicted time.Duration, target string) error {
+	if predicted > 0 {
+		if n, ok := trq.ParsedQuery.(StepAmbiguityNoter); ok && n != nil {
+			n.NoteAmbiguousStep(target, predicted)
+		}
+	}
+	return timeseries.ErrInvalidBody
 }
 
 // UnmarshalTimeseries converts a graphite-web render response (format=json,
@@ -102,6 +167,7 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 }
 
 func unmarshalJSON(body []byte, trq *timeseries.TimeRangeQuery) ([]*dataset.Series, error) {
+	predicted := trq.Step
 	var wire []wireSeries
 	if err := json.Unmarshal(body, &wire); err != nil {
 		return nil, err
@@ -109,22 +175,44 @@ func unmarshalJSON(body []byte, trq *timeseries.TimeRangeQuery) ([]*dataset.Seri
 	out := make([]*dataset.Series, 0, len(wire))
 	for _, ws := range wire {
 		pts := make(dataset.Points, len(ws.Datapoints))
+		vals := make([]any, len(ws.Datapoints))
+		var stepSecs int64
 		for i, dp := range ws.Datapoints {
-			if dp[1] == nil {
-				return nil, timeseries.ErrInvalidBody
+			if i == 1 {
+				stepSecs = dp.ts - ws.Datapoints[0].ts
+				if stepSecs <= 0 {
+					return nil, spacingViolation(trq, predicted, ws.Target)
+				}
+			} else if i > 1 && dp.ts != ws.Datapoints[0].ts+int64(i)*stepSecs {
+				return nil, spacingViolation(trq, predicted, ws.Target)
 			}
-			pts[i] = newPoint(epoch.FromSecs(int64(*dp[1])), dp[0])
+			pts[i] = dataset.Point{Epoch: epoch.FromSecs(dp.ts), Values: vals[i : i+1 : i+1], Size: 24}
+			if !dp.null {
+				vals[i] = dp.val
+			}
 		}
 		s, err := newSeries(ws.Target, ws.Tags, pts, trq)
 		if err != nil {
 			return nil, err
 		}
+		if len(pts) < 2 && predicted > 0 {
+			if n, ok := trq.ParsedQuery.(StepAmbiguityNoter); ok && n != nil {
+				n.NoteAmbiguousStep(ws.Target, trq.Step)
+			}
+			return nil, &StepAmbiguousError{Target: ws.Target, Points: len(pts)}
+		}
 		out = append(out, s)
+	}
+	if len(out) == 0 && predicted > 0 {
+		if n, ok := trq.ParsedQuery.(StepAmbiguityNoter); ok && n != nil {
+			n.NoteAmbiguousStep("", trq.Step)
+		}
+		return nil, &StepAmbiguousError{Target: "", Points: 0}
 	}
 	return out, nil
 }
 
-// unmarshalRaw parses format=raw: <target>,<start>,<end>,<step>|v,v,None
+// parses format=raw: <target>,<start>,<end>,<step>|v,v,None
 func unmarshalRaw(body []byte, trq *timeseries.TimeRangeQuery) ([]*dataset.Series, error) {
 	var out []*dataset.Series
 	for line := range strings.SplitSeq(string(body), "\n") {
@@ -178,9 +266,8 @@ func unmarshalRaw(body []byte, trq *timeseries.TimeRangeQuery) ([]*dataset.Serie
 	return out, nil
 }
 
-// StepField is the timestamp field definition of a series; its
-// DefaultValue carries the series' native step in seconds, so that a
-// series with fewer than two points still renders with the right step
+// StepField is the timestamp field definition of a series; its DefaultValue carries
+// the native step in seconds so a series with fewer than two points renders correctly
 func StepField(step time.Duration) timeseries.FieldDefinition {
 	fd := timeseries.FieldDefinition{Name: TimestampFieldName, DataType: timeseries.Int64, Role: timeseries.RoleTimestamp}
 	if step > 0 {
@@ -189,7 +276,7 @@ func StepField(step time.Duration) timeseries.FieldDefinition {
 	return fd
 }
 
-// seriesStep reads the native step recorded by StepField (0 if none)
+// reads the native step recorded by StepField (0 if none)
 func seriesStep(sh *dataset.SeriesHeader) int64 {
 	if sh.TimestampField.DefaultValue == "" {
 		return 0
@@ -206,9 +293,8 @@ func newPoint(e epoch.Epoch, v *float64) dataset.Point {
 	return p
 }
 
-// newSeries builds a Series and verifies the observed step against the
-// TimeRangeQuery's predicted step; when the query has no step yet, the
-// observed one is adopted
+// builds a Series and verifies the observed step against the TimeRangeQuery's
+// predicted step; a query with no step yet adopts the observed one
 func newSeries(name string, tags map[string]string, pts dataset.Points,
 	trq *timeseries.TimeRangeQuery,
 ) (*dataset.Series, error) {

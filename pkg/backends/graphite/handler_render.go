@@ -17,9 +17,12 @@
 package graphite
 
 import (
+	"errors"
+	"io"
 	"net/http"
 	"net/url"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -29,6 +32,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/engines"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
@@ -40,19 +44,43 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// fallbackTTL is the object-cache TTL of an unaccelerated render response
 const fallbackTTL = time.Minute
 
-// RenderHandler serves /render. A single-target request goes through the
-// Delta Proxy Cache (which resolves the step via ParseTimeRangeQuery and
-// falls back to the Object Proxy Cache when the request is not
-// accelerable). A multi-target request is split into one DPC run per
-// target, and the results are merged in target order and rendered once
-// (decision D5, option B). A response whose step contradicts the predicted
-// one is never served from the accelerated path: the prediction is
-// discarded and the request is re-served by plain proxy (7.4).
+const maxRenderBodyBytes = 10 * 1024 * 1024
+
+// RenderHandler serves /render.
 func (c *Client) RenderHandler(w http.ResponseWriter, r *http.Request) {
 	r.URL = urls.BuildUpstreamURL(r, c.BaseUpstreamURL())
+	if r.ContentLength > maxRenderBodyBytes {
+		http.Error(w, "render request body exceeds the accepted size",
+			http.StatusRequestEntityTooLarge)
+		return
+	}
+	if _, err := request.GetBody(r, maxRenderBodyBytes); err != nil {
+		if errors.Is(err, failures.ErrPayloadTooLarge) {
+			http.Error(w, "render request body exceeds the accepted size",
+				http.StatusRequestEntityTooLarge)
+		} else {
+			http.Error(w, "unable to read the render request body", http.StatusBadRequest)
+		}
+		return
+	}
+	if r.Method == http.MethodGet && r.Body != nil && r.Body != http.NoBody && r.ContentLength != 0 {
+		n, err := io.Copy(io.Discard, io.LimitReader(r.Body, maxRenderBodyBytes+1))
+		r.Body.Close()
+		if err != nil {
+			http.Error(w, "unable to read the render request body", http.StatusBadRequest)
+			return
+		}
+		if n > maxRenderBodyBytes {
+			http.Error(w, "render request body exceeds the accepted size",
+				http.StatusRequestEntityTooLarge)
+			return
+		}
+		r.Body = http.NoBody
+		r.ContentLength = 0
+		r.Header.Del("Content-Length")
+	}
 	qp, body, isBody := params.GetRequestValues(r)
 	if isBody {
 		// the body is consumed by every clone below; keep it replayable
@@ -69,9 +97,8 @@ func (c *Client) RenderHandler(w http.ResponseWriter, r *http.Request) {
 	c.renderSplit(w, r, qp, targets)
 }
 
-// renderOne runs one request through the DPC, capturing the response so
-// that a misprediction can be retracted and an unaccelerated response can
-// be learned from
+// the DPC response is captured so a misprediction can be retracted and an
+// unaccelerated response learned from
 func (c *Client) renderOne(w http.ResponseWriter, r *http.Request) {
 	rsc := request.GetResources(r)
 	cw := capture.NewCaptureResponseWriterWithLimit(c.captureLimit())
@@ -83,15 +110,22 @@ func (c *Client) renderOne(w http.ResponseWriter, r *http.Request) {
 			c.reproxy(w, r, rsc)
 			return
 		}
+		if name, ambiguous := rq.AmbiguousStep(); ambiguous && rq.Fallback == "" {
+			logger.Debug("graphite response could not verify its step; invalidating and serving unaccelerated",
+				logging.Pairs{"backendName": c.Name(), "series": name})
+			c.resolver.Ambiguous(rq.Leaves())
+			if c.observer != nil {
+				c.observer.Fallback(parsing.ReasonUnknownStep)
+			}
+			c.fallback(w, r, rsc)
+			return
+		}
 		if rq.Fallback == parsing.ReasonUnknownStep && cw.StatusCode() == http.StatusOK {
 			c.learnFromResponse(rq, cw)
 		}
 		if c.unmodelable(rq, cw) {
-			// the origin answered, but the delta cache could not model the
-			// response -- most often because it exceeded
-			// max_object_size_bytes, which the delta path must buffer to
-			// model but the object path can stream. Degrade rather than
-			// turn a working query into a 500.
+			// the origin answered but the delta cache could not model the
+			// response (often too large to buffer); degrade rather than 500
 			logger.Warn("graphite response could not be modeled; serving unaccelerated",
 				logging.Pairs{
 					"backendName": c.Name(), "statusCode": cw.StatusCode(),
@@ -101,27 +135,35 @@ func (c *Client) renderOne(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if cw.Truncated() {
+		logger.Warn("graphite response exceeded the capture limit; re-serving unaccelerated",
+			logging.Pairs{
+				"backendName": c.Name(), "captureLimit": c.captureLimit(),
+				"detail": "raise max_capture_bytes for this backend if this repeats",
+			})
+		c.fallback(w, r, rsc)
+		return
+	}
 	headers.Merge(w.Header(), cw.Header())
 	w.WriteHeader(cw.StatusCode())
 	_, _ = w.Write(cw.Body())
 }
 
-// renderSplit serves a multi-target request as one DPC run per target
+// serves a multi-target request as one DPC run per target
 func (c *Client) renderSplit(w http.ResponseWriter, r *http.Request, qp url.Values, targets []string) {
 	rsc := request.GetResources(r)
-	// the client's render options come from the whole request; it is parsed
-	// as a whole first because a decline that splitting cannot fix (format,
-	// parse error, a function that is not allowlisted) means one
-	// unaccelerated request for everything
 	trq, rlo, _, err := c.ParseTimeRangeQuery(r)
 	if err != nil {
 		rq, _ := trq.ParsedQuery.(*RenderQuery)
-		if rq == nil || (rq.Fallback != parsing.ReasonUnknownStep &&
-			rq.Fallback != parsing.ReasonMultiTargetMismatch) {
+		if rq == nil || rq.Fallback != parsing.ReasonMultiTargetMismatch {
 			c.fallback(w, r, rsc)
 			return
 		}
 		rlo = &timeseries.RequestOptions{ProviderRequest: rq}
+	}
+	pinnedNow := ""
+	if prq, ok := trq.ParsedQuery.(*RenderQuery); ok && prq != nil && !prq.Now.IsZero() {
+		pinnedNow = strconv.FormatInt(prq.Now.Unix(), 10)
 	}
 
 	type member struct {
@@ -151,6 +193,9 @@ func (c *Client) renderSplit(w http.ResponseWriter, r *http.Request, qp url.Valu
 				v[k] = vals
 			}
 			v[upTarget] = []string{target}
+			if pinnedNow != "" {
+				v.Set("now", pinnedNow)
+			}
 			params.SetRequestValues(sub, v)
 			mrsc := request.GetResources(sub)
 			if mrsc == nil {
@@ -165,6 +210,8 @@ func (c *Client) renderSplit(w http.ResponseWriter, r *http.Request, qp url.Valu
 			if rq != nil {
 				if target, predicted, observed, ok := rq.Mispredicted(); ok {
 					c.retract(rq, target, predicted, observed)
+				} else if _, ambiguous := rq.AmbiguousStep(); ambiguous {
+					c.resolver.Ambiguous(rq.Leaves())
 				} else if rq.Fallback == "" && mrsc.TS != nil && cw.StatusCode() == http.StatusOK {
 					m.ok = true
 				}
@@ -182,9 +229,8 @@ func (c *Client) renderSplit(w http.ResponseWriter, r *http.Request, qp url.Valu
 	for i := range members {
 		m := &members[i]
 		if !m.ok {
-			// any target that could not be accelerated makes the whole
-			// request unaccelerated: the origin renders all targets
-			// consistently (consolidation spans every series)
+			// any unaccelerable target makes the whole request unaccelerated:
+			// the origin renders all targets consistently
 			c.fallback(w, r, rsc)
 			return
 		}
@@ -224,7 +270,7 @@ func (c *Client) renderSplit(w http.ResponseWriter, r *http.Request, qp url.Valu
 	}
 }
 
-// renderQueryOf returns the RenderQuery the DPC's parse attached, if any
+// returns the RenderQuery the DPC's parse attached, if any
 func (c *Client) renderQueryOf(rsc *request.Resources) *RenderQuery {
 	if rsc == nil {
 		return nil
@@ -239,9 +285,8 @@ func (c *Client) renderQueryOf(rsc *request.Resources) *RenderQuery {
 	return rq
 }
 
-// retract handles a verified step misprediction: it is counted, logged,
-// and the prediction discarded, so the response is never served from or
-// cached under the predicted key
+// a verified step misprediction is counted, logged, and its prediction
+// discarded, so the response is never cached under the predicted key
 func (c *Client) retract(rq *RenderQuery, target string, predicted, observed time.Duration) {
 	logger.Warn("graphite step misprediction", logging.Pairs{
 		"backendName": c.Name(),
@@ -250,16 +295,14 @@ func (c *Client) retract(rq *RenderQuery, target string, predicted, observed tim
 	c.resolver.Mispredict(rq.Leaves(), predicted, observed)
 }
 
-// unmodelable reports whether an accelerated request failed inside
-// Trickster rather than at the origin: the delta cache reports its own
-// failures as a bodyless 500, while an origin error is relayed with the
-// origin's status and body
+// the delta cache reports its own failures as a bodyless 500, while an
+// origin error is relayed with the origin's status and body
 func (c *Client) unmodelable(rq *RenderQuery, cw *capture.CaptureResponseWriter) bool {
 	return rq.Fallback == "" && cw.StatusCode() == http.StatusInternalServerError &&
 		len(cw.Body()) == 0
 }
 
-// reproxy serves the original request unaccelerated after a misprediction
+// serves the original request unaccelerated after a misprediction
 func (c *Client) reproxy(w http.ResponseWriter, r *http.Request, rsc *request.Resources) {
 	if c.observer != nil {
 		c.observer.Fallback(parsing.ReasonMisprediction)
@@ -267,8 +310,8 @@ func (c *Client) reproxy(w http.ResponseWriter, r *http.Request, rsc *request.Re
 	c.fallback(w, r, rsc)
 }
 
-// fallback serves the original, unmodified request through the Object
-// Proxy Cache lane, keyed on every parameter (see decline)
+// serves the original, unmodified request through the Object Proxy Cache
+// lane, keyed on every parameter (see decline)
 func (c *Client) fallback(w http.ResponseWriter, r *http.Request, rsc *request.Resources) {
 	qp, body, isBody := params.GetRequestValues(r)
 	if isBody {
@@ -276,17 +319,17 @@ func (c *Client) fallback(w http.ResponseWriter, r *http.Request, rsc *request.R
 	}
 	if rsc != nil {
 		rsc.Lock()
-		rsc.TimeRangeQuery = &timeseries.TimeRangeQuery{CacheKeyElements: OPCKeyElements(qp)}
+		rsc.TimeRangeQuery = &timeseries.TimeRangeQuery{
+			CacheKeyElements: OPCKeyElements(qp, rsc.PathConfig),
+		}
 		rsc.AlternateCacheTTL = fallbackTTL
 		rsc.Unlock()
 	}
 	engines.ObjectProxyCacheRequest(w, r)
 }
 
-// learnFromResponse implements learn-on-first-response (decision D1, mode
-// A): a single-leaf target served unaccelerated because its step was
-// unknown yields a JSON response whose timestamps state the step at this
-// age; record it and let the learner fill in the rest of the ladder
+// a single-leaf target served unaccelerated with an unknown step yields a
+// JSON response whose timestamps state the step at this age; record it
 func (c *Client) learnFromResponse(rq *RenderQuery, cw *capture.CaptureResponseWriter) {
 	if len(rq.Targets) != 1 || rq.Params.Format != model.FormatJSON || cw.Truncated() ||
 		rq.Params.MaxDataPoints > 0 {

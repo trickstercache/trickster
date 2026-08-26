@@ -30,18 +30,10 @@ import (
 
 var errNoRenderQuery = errors.New("graphite: time range query carries no render query")
 
-// SetExtent rewrites an upstream render request to fetch exactly the
-// buckets in the given extent (implementation plan item 7.3):
-//
-//   - from/until become absolute epoch seconds placed so that whisper's
-//     (t - t%step) + step rounding yields [extent.Start, extent.End]
-//   - the origin's reference time is pinned with `now` so that
-//     now - from equals the age the client's query resolved at: a gap in
-//     the middle of a long window would otherwise have a younger from,
-//     be served from a finer rung, and not stitch with the rest
-//   - maxDataPoints, noNullPoints and the output-format parameters are
-//     stripped (D3, §4.3) and format=json is requested (D8 as implemented)
-//   - one target only: the handler splits multi-target requests
+// SetExtent rewrites an upstream render request to fetch exactly the given
+// extent's buckets, pinning `now` so now-from equals the age the client's
+// query resolved at: a mid-window gap fetch would otherwise have a younger
+// from, be served from a finer rung, and not stitch with the rest.
 func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
 	extent *timeseries.Extent,
 ) error {
@@ -55,6 +47,9 @@ func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
 	from, until := resolution.RequestWindow(extent.Start, extent.End, trq.Step)
 	if !until.After(from) {
 		return errNoRenderQuery
+	}
+	if until.Sub(from) == trq.Step {
+		from = from.Add(-trq.Step)
 	}
 	v, _, _ := params.GetRequestValues(r)
 	for _, p := range parsing.UpstreamStripParams {

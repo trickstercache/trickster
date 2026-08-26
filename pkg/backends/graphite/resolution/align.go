@@ -18,10 +18,8 @@ package resolution
 
 import "time"
 
-// AlignInterval reproduces whisper's __archive_fetch rounding (design note
-// §2.2): both edges become (t - t%step) + step, and a zero-length result is
-// widened by one step. The returned range is half-open: the origin returns
-// the points with timestamps in [start, end).
+// AlignInterval reproduces whisper's __archive_fetch rounding: both edges
+// become (t - t%step) + step, zero-length widened by one step; range is [start, end).
 func AlignInterval(from, until time.Time, step time.Duration) (time.Time, time.Time) {
 	s := floorStep(from, step).Add(step)
 	e := floorStep(until, step).Add(step)
@@ -41,10 +39,8 @@ func floorStep(t time.Time, step time.Duration) time.Time {
 	return time.Unix(f, 0)
 }
 
-// Clamp applies whisper's range checks in order (design note §2.3):
-// from > now or until < now-maxRetention yields no data; from is raised to
-// now-maxRetention and until lowered to now. A maxRetention of 0 means
-// unknown and only the until clamp is applied.
+// Clamp applies whisper's range checks: from > now or until < now-maxRetention
+// yields no data; from and until are clamped. maxRetention 0 clamps only until.
 func Clamp(from, until, now time.Time, maxRetention time.Duration) (time.Time, time.Time, bool) {
 	if from.After(now) {
 		return from, until, false
@@ -64,17 +60,12 @@ func Clamp(from, until, now time.Time, maxRetention time.Duration) (time.Time, t
 	return from, until, true
 }
 
-// BucketPhase is the phase of Graphite's buckets relative to the Unix
-// epoch: zero. Whisper timestamps are multiples of the step; the +step in
-// AlignInterval shifts which buckets a request covers, not where their
-// boundaries lie, so TimeRangeQuery.Phase stays 0 and the shift is applied
-// when the upstream request window is built from an extent.
+// BucketPhase is zero: whisper timestamps are epoch-aligned multiples of the
+// step, and AlignInterval's +step shifts coverage, not bucket boundaries.
 const BucketPhase = time.Duration(0)
 
-// RequestWindow is the inverse of AlignInterval: the from/until to send so
-// that the origin returns exactly the buckets in [start, end] inclusive of
-// both step-aligned edges. from must be strictly before the first bucket
-// (the +step rounding), and until must land in the last bucket.
+// RequestWindow is the inverse of AlignInterval: the from/until to send so the
+// origin returns exactly the step-aligned buckets in [start, end] inclusive.
 func RequestWindow(start, end time.Time, step time.Duration) (time.Time, time.Time) {
 	return start.Add(-step), end
 }

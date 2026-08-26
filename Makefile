@@ -169,7 +169,7 @@ benchmark-mysql:
 
 .PHONY: benchmark-graphite
 benchmark-graphite:
-	@go test ./pkg/backends/graphite/resolution -run '^$$' -bench '^BenchmarkResolverRegistryHit$$' \
+	@go test ./pkg/backends/graphite/resolution -run '^$$' -bench '^BenchmarkResolver' \
 		-benchmem -count=5
 
 .PHONY: benchmark-mysql-acceptance

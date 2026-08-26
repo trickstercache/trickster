@@ -575,7 +575,10 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 		// that render per request, provide the timeseries rather than the
 		// executor's pre-marshaled body
 		if rsc.IsMergeMember || rsc.TSTransformer != nil || marshalVaries {
-			rts := result.rts.Clone()
+			rts := result.rts
+			if rsc.TSTransformer != nil || (rsc.IsMergeMember && !marshalVaries) {
+				rts = result.rts.Clone()
+			}
 			finalizeDPCResponse(w, r, rsc, rts, rh, sc,
 				cacheStatus, result.ffStatus, result.elapsed, result.missRanges,
 				result.failedExtents, result.uncachedValueCount, key, o, rlo, modeler, nil)

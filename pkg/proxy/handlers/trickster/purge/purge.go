@@ -24,7 +24,6 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
-	"github.com/trickstercache/trickster/v2/pkg/checksum/md5"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	proxyengines "github.com/trickstercache/trickster/v2/pkg/proxy/engines"
@@ -136,12 +135,22 @@ func PathHandler(pathPrefix string,
 		}
 
 		cfg := backend.Configuration()
+		keys := make([]string, 0, len(engines)*len(methods)*2)
 		for _, engine := range engines {
 			for _, method := range methods {
-				suffix := md5.Checksum(fmt.Sprintf("%s.method.%s.", purgePath, method))
-				cache.Remove(proxyengines.ComposeCacheKey(cfg.Name, cfg.CacheKeyPrefix, engine, suffix))
+				keys = append(keys, proxyengines.ComposeCacheKey(cfg.Name, cfg.CacheKeyPrefix,
+					engine, proxyengines.DerivePathCacheKey(purgePath, method, "")))
+				// a path config with request_headers/request_params keys its
+				// entries on that configured identity; remove those variants too
+				if pc := cfg.Paths.Match(purgePath, method); pc != nil {
+					if ik := pc.IdentityKeyPart(); ik != "" {
+						keys = append(keys, proxyengines.ComposeCacheKey(cfg.Name, cfg.CacheKeyPrefix,
+							engine, proxyengines.DerivePathCacheKey(purgePath, method, ik)))
+					}
+				}
 			}
 		}
+		cache.Remove(keys...)
 
 		writePurgeResult(w, backendName, purgePath)
 	}

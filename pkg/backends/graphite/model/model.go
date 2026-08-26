@@ -14,17 +14,8 @@
  * limitations under the License.
  */
 
-// Package model converts between Graphite's render wire formats and the
-// provider-neutral timeseries DataSet, and renders a DataSet the way
-// graphite-web 1.1.10's render/views.py does for each client format.
-//
-// Upstream, Trickster requests format=json: it is the only format that
-// carries the `tags` object graphite-web includes in JSON responses, and
-// the step, which JSON does not state, is known from resolution and verified
-// against the timestamps on every response. Downstream, json, raw, csv and
-// msgpack are produced from the cached native-step series; maxDataPoints
-// consolidation is applied at marshal time exactly as graphite-web applies
-// it (JSON only, with its start "nudge").
+// Package model converts between Graphite's render wire formats and the provider-neutral
+// DataSet, rendering each client format as graphite-web 1.1.10's render/views.py does.
 package model
 
 import (
@@ -51,9 +42,8 @@ const (
 // DefaultConsolidationFunc is graphite-web's default consolidation function
 const DefaultConsolidationFunc = "average"
 
-// RenderOptions are the marshal-time parameters of a render request
-// (implementation plan item 4.6): everything that affects how the cached
-// series is serialized to this client, none of which is in the cache key
+// RenderOptions are the marshal-time parameters of a render request: everything that
+// affects how the cached series is serialized to this client, none of it in the cache key
 type RenderOptions struct {
 	// Format is json (default), raw, csv or msgpack
 	Format string
@@ -80,8 +70,7 @@ type RenderOptionsProvider interface {
 	RenderOptions() RenderOptions
 }
 
-// renderOptions extracts the RenderOptions from a RequestOptions, defaulting
-// to compact JSON
+// extracts the RenderOptions from a RequestOptions, defaulting to compact JSON
 func renderOptions(rlo *timeseries.RequestOptions) RenderOptions {
 	if rlo != nil {
 		switch p := rlo.ProviderRequest.(type) {

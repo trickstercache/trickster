@@ -21,9 +21,8 @@ import (
 	"time"
 )
 
-// Fallback reasons: the frozen `reason` label values of
-// trickster_graphite_fallbacks_total (implementation plan item 3.4). Every path
-// that declines to accelerate a render request names exactly one of these.
+// Fallback reasons are the frozen `reason` label values of
+// trickster_graphite_fallbacks_total; every declined request names exactly one.
 const (
 	ReasonParseError             = "parse_error"
 	ReasonNonSeriesFormat        = "non_series_format"
@@ -33,6 +32,9 @@ const (
 	ReasonMultiTargetMismatch    = "multi_target_step_mismatch"
 	ReasonPassthroughMaxPoints   = "passthrough_max_data_points"
 	ReasonMisprediction          = "misprediction"
+	ReasonClientIdentity         = "client_identity"
+	ReasonTZUnavailable          = "tz_unavailable"
+	ReasonResolutionIdentity     = "resolution_identity"
 )
 
 // StepEffect describes what a function chain does to the step of the series
@@ -63,11 +65,8 @@ func (s StepEffect) String() string {
 	return "unknown"
 }
 
-// Classification is the two-property allowlist verdict for a target (D4).
-// A target is eligible for the Delta Proxy Cache only when its step is
-// predictable (Step != StepUnknown) AND every function in the chain is
-// range-decomposable: the values for [t1,t2] are identical whether fetched
-// alone or as part of a wider window.
+// Classification is the two-property allowlist verdict for a target: the DPC
+// requires a predictable step and a fully range-decomposable function chain.
 type Classification struct {
 	Step StepEffect
 	// FixedStep is the output step when Step == StepFixed
@@ -77,9 +76,8 @@ type Classification struct {
 	// Decomposable is true when every function in the chain is
 	// range-decomposable
 	Decomposable bool
-	// Leaves are the path expressions in series argument positions of the
-	// target, in source order; scalar positions (summarize's interval and
-	// function name) are excluded even when unquoted
+	// Leaves are the path expressions in series argument positions, in source
+	// order; scalar positions are excluded even when unquoted
 	Leaves []string
 	// Reason is the frozen fallback reason when the target is not
 	// accelerable, or empty
@@ -100,10 +98,8 @@ type funcSpec struct {
 	// evaluated against the call instead
 	decomposable bool
 	conditional  func(*Call) (StepEffect, time.Duration, bool)
-	// seriesArgs is the number of leading positional arguments that are
-	// series lists (0 means all of them). Only those positions contribute
-	// leaf paths: an unquoted scalar such as the 1h in summarize(a.b, 1h)
-	// parses as a path and must not be mistaken for a metric.
+	// seriesArgs is the number of leading positional args that are series lists
+	// (0 means all); only those contribute leaves, as unquoted scalars parse as paths
 	seriesArgs int
 }
 
@@ -116,16 +112,8 @@ var (
 	inherit2 = funcSpec{step: StepInherit, decomposable: true, seriesArgs: 2}
 )
 
-// allowlist is the v1 two-property table. Anything absent is unknown and
-// fails closed. Per D4 the list starts deliberately boring: cross-series
-// aggregation, per-point arithmetic and naming/cosmetics, all of which are
-// per-timestamp and so decompose over any range. Time-windowed functions
-// (movingAverage,
-// derivative, integral, holtWinters*, timeShift), whole-range selectors
-// (highest*, lowest*, sortBy*, limit, *Percentile, *Above, *Below),
-// generators (constantLine, timeFunction, ...), tag finders (seriesByTag) and
-// template() are intentionally absent until Phase 12 evaluates them in
-// Trickster over cached raw leaves.
+// allowlist maps function names to step effect and decomposability. Anything
+// absent (time-windowed, whole-range, generator, tag functions) fails closed.
 var allowlist = map[string]funcSpec{
 	// cross-series aggregation: one output point per input timestamp
 	"sumSeries":                   inheritAll,
@@ -199,15 +187,8 @@ var allowlist = map[string]funcSpec{
 	"secondYAxis":    inherit,
 	"stacked":        inherit,
 	"areaBetween":    inherit,
-	// step-fixing, and none of them decomposable: a bucket is summarized
-	// over the points that were fetched, so a bucket at the edge of the
-	// requested window holds a partial value. Measured against graphite-web
-	// 1.1.10: summarize(...,'1h') reported 134885.899, 302921.880 and
-	// 307388.038 for the same absolute bucket over three different windows.
-	// Caching such a value and reusing it for another window returns
-	// incorrect data, so these take the unaccelerated lane until Trickster
-	// evaluates them itself over cached native-resolution leaves (plan
-	// item 12.1).
+	// step-fixing, none decomposable: an edge bucket summarizes only the points
+	// inside the requested window, so its value changes with the window
 	"summarize":      {step: StepFixed, conditional: classifySummarize, seriesArgs: 1},
 	"hitcount":       {step: StepFixed, conditional: classifyHitcount, seriesArgs: 1},
 	"smartSummarize": {step: StepFixed, conditional: classifySmartSummarize, seriesArgs: 1},
@@ -215,9 +196,8 @@ var allowlist = map[string]funcSpec{
 	"timeShift": {step: StepShift, conditional: classifyTimeShift, seriesArgs: 1},
 }
 
-// seriesLeaves collects the path expressions that are series arguments of
-// allowlisted calls, ignoring scalar positions. It stops at the first call
-// that is not allowlisted; Classify reports that separately.
+// Collects the path expressions in series argument positions of allowlisted
+// calls; stops at the first non-allowlisted call, which Classify reports separately.
 func seriesLeaves(n Node, out []string) []string {
 	switch t := n.(type) {
 	case *Path:
@@ -274,9 +254,8 @@ func Classify(n Node) Classification {
 			}
 			switch step {
 			case StepFixed:
-				// a step-fixing call anywhere in the tree sets the output
-				// step (graphite normalizes mixed steps to their LCM, so two
-				// distinct fixed steps are not predictable: fail closed)
+				// graphite normalizes mixed steps to their LCM, so two
+				// distinct fixed steps are not predictable: fail closed
 				if fixedCount > 0 && d != fixed {
 					c.fail(ReasonUnknownStep, t.Func)
 					return false
@@ -318,8 +297,7 @@ func describe(n Node) string {
 	return "expression"
 }
 
-// argValue returns the i'th positional argument, or the keyword argument
-// named name, of a call
+// Returns the i'th positional argument, or the keyword argument named name
 func argValue(c *Call, i int, name string) Node {
 	if i < len(c.Args) {
 		return c.Args[i]
@@ -332,8 +310,8 @@ func argValue(c *Call, i int, name string) Node {
 	return nil
 }
 
-// intervalArg reads a graphite interval string argument (unquoted 1h or
-// quoted "1h"), as summarize and friends accept it
+// Reads a graphite interval argument (unquoted 1h or quoted "1h"), as
+// summarize and friends accept it
 func intervalArg(n Node) (time.Duration, bool) {
 	var s string
 	switch t := n.(type) {
@@ -351,8 +329,8 @@ func intervalArg(n Node) (time.Duration, bool) {
 	return d, true
 }
 
-// boolArg reads a boolean argument; graphite also accepts the unquoted
-// words true/false, which the grammar yields as Bool nodes
+// Reads a boolean argument; graphite also accepts the unquoted words
+// true/false, which the grammar yields as Bool nodes
 func boolArg(n Node, def bool) (bool, bool) {
 	switch t := n.(type) {
 	case nil:
@@ -367,12 +345,8 @@ func boolArg(n Node, def bool) (bool, bool) {
 	return false, false
 }
 
-// summarize(series, interval, func='sum', alignToFrom=False) fixes the
-// output step to the interval, and is never decomposable: the bucket
-// covering an edge of the requested window summarizes only the points
-// inside that window, so its value changes with the window. The arguments
-// are still parsed, so a malformed interval is a parse error rather than an
-// unrecognized function.
+// summarize fixes the output step to its interval and is never decomposable;
+// its arguments are still parsed, so a malformed interval is a parse error
 func classifySummarize(c *Call) (StepEffect, time.Duration, bool) {
 	d, ok := intervalArg(argValue(c, 1, "intervalString"))
 	if !ok {

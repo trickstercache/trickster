@@ -18,7 +18,7 @@ package resolution
 
 import (
 	"cmp"
-	"crypto/sha1"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"slices"
@@ -31,8 +31,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 )
 
-// Store is the subset of cache.Cache the registry persists through
-// (decision D6). A nil Store disables persistence.
+// Store is the subset of cache.Cache the registry persists through.
+// A nil Store disables persistence.
 type Store interface {
 	Store(cacheKey string, data []byte, ttl time.Duration) error
 	Retrieve(cacheKey string) ([]byte, status.LookupStatus, error)
@@ -54,15 +54,8 @@ type RegistryOptions struct {
 	Now func() time.Time
 }
 
-// Registry is the three-layer resolution registry (decision D2):
-//
-//	leaf path  -> ladder key (fingerprint, or ~path for a partial ladder)
-//	ladder key -> *Ladder
-//	target     -> expanded leaf set + expansion token
-//
-// plus a negative cache of keys that recently failed to resolve. Reads are
-// lock-free-ish (RWMutex read side) and the lookup path never blocks on I/O
-// or channels; persistence is a write-through and a read-through on miss.
+// Registry is the three-layer resolution registry (leaf -> ladder key ->
+// *Ladder, target -> leaf set) plus a negative cache; lookups never block on I/O.
 type Registry struct {
 	mu       sync.RWMutex
 	leaves   map[string]*leafEntry
@@ -71,8 +64,82 @@ type Registry struct {
 	negative map[string]*negEntry
 	gen      atomic.Uint64
 	o        RegistryOptions
-	store    Store
+	store    atomic.Pointer[Store]
 	now      func() time.Time
+	// complete tracks the number of complete ladders in r.ladders,
+	// maintained on every mutation. Written under mu; read under mu.RLock.
+	complete int
+	// Observer, when set, receives layer-size gauge updates from the mutation
+	// that changed them, keeping the resolution hot path free of gauge writes.
+	Observer Observer
+	// emitters publish layer sizes in mutation order without holding any
+	// lock across the Observer callback; see publish.
+	emitters [4]layerEmitter
+}
+
+// layerEmitter is a single-slot, latest-wins publisher for one layer.
+type layerEmitter struct {
+	next      uint64 // sequence counter, advanced under Registry.mu
+	latest    atomic.Pointer[pendingEmit]
+	busy      atomic.Bool
+	published atomic.Uint64
+}
+
+func layerIndex(layer string) int {
+	switch layer {
+	case LayerLeaf:
+		return 0
+	case LayerLadder:
+		return 1
+	case LayerTarget:
+		return 2
+	}
+	return 3
+}
+
+// pendingEmit is a captured (layer, size, sequence) triple to publish after
+// the registry lock is released
+type pendingEmit struct {
+	layer string
+	n     int
+	seq   uint64
+}
+
+// assigns the next publication sequence for a layer; called with mu held
+func (r *Registry) captureEmit(layer string, n int) pendingEmit {
+	e := &r.emitters[layerIndex(layer)]
+	e.next++
+	return pendingEmit{layer: layer, n: n, seq: e.next}
+}
+
+// Emits the newest captured size via a latest-wins slot and single drainer.
+// The callback runs with no lock held, so it may block or re-enter the registry.
+func (r *Registry) publish(p pendingEmit) {
+	if r.Observer == nil || p.seq == 0 {
+		return
+	}
+	e := &r.emitters[layerIndex(p.layer)]
+	for {
+		old := e.latest.Load()
+		if old != nil && old.seq >= p.seq {
+			break
+		}
+		if e.latest.CompareAndSwap(old, &p) {
+			break
+		}
+	}
+	for e.busy.CompareAndSwap(false, true) {
+		v := e.latest.Load()
+		if v != nil && v.seq > e.published.Load() {
+			e.published.Store(v.seq)
+			r.Observer.RegistryEntries(v.layer, v.n)
+		}
+		e.busy.Store(false)
+		// re-drain only if a newer value arrived while we were emitting
+		if n := e.latest.Load(); n == nil || n.seq <= e.published.Load() {
+			break
+		}
+	}
 }
 
 type leafEntry struct {
@@ -80,32 +147,31 @@ type leafEntry struct {
 	Confidence Confidence `json:"confidence"`
 	Expires    time.Time  `json:"expires"`
 	Gen        uint64     `json:"gen"`
-	lastUsed   int64
+	lastUsed   atomic.Int64
 }
 
 type ladderEntry struct {
 	Ladder   *Ladder   `json:"ladder"`
 	Expires  time.Time `json:"expires"`
 	Gen      uint64    `json:"gen"`
-	lastUsed int64
+	lastUsed atomic.Int64
 }
 
 type targetEntry struct {
 	Leaves      []string
 	ExpansionID string
 	Expires     time.Time
-	lastUsed    int64
+	lastUsed    atomic.Int64
 }
 
 type negEntry struct {
 	Until    time.Time
 	Failures int
-	lastUsed int64
+	lastUsed atomic.Int64
 }
 
-// NewRegistry returns an empty registry. When store is non-nil, the
-// generation counter is restored from it so that entries persisted before a
-// restart remain valid, and later writes go through to it.
+// NewRegistry returns an empty registry. A non-nil store restores the
+// generation counter and receives later writes.
 func NewRegistry(o RegistryOptions, store Store) *Registry {
 	if o.Now == nil {
 		o.Now = time.Now
@@ -118,16 +184,31 @@ func NewRegistry(o RegistryOptions, store Store) *Registry {
 		ladders:  make(map[string]*ladderEntry),
 		targets:  make(map[string]*targetEntry),
 		negative: make(map[string]*negEntry),
-		o:        o, store: store, now: o.Now,
+		o:        o, now: o.Now,
 	}
-	if store != nil {
-		if b, st, err := store.Retrieve(r.key("gen")); err == nil && st == status.LookupStatusHit {
-			if g, err := strconv.ParseUint(string(b), 10, 64); err == nil {
-				r.gen.Store(g)
-			}
+	r.SetStore(store)
+	return r
+}
+
+// SetStore attaches a persistence store after construction, restoring the
+// generation counter; called during startup, before anything has been learned.
+func (r *Registry) SetStore(store Store) {
+	if store == nil {
+		return
+	}
+	r.store.Store(&store)
+	if b, st, err := store.Retrieve(r.key("gen")); err == nil && st == status.LookupStatusHit {
+		if g, err := strconv.ParseUint(string(b), 10, 64); err == nil {
+			r.gen.Store(g)
 		}
 	}
-	return r
+}
+
+func (r *Registry) getStore() Store {
+	if p := r.store.Load(); p != nil {
+		return *p
+	}
+	return nil
 }
 
 func (r *Registry) key(parts ...string) string {
@@ -138,9 +219,8 @@ func (r *Registry) key(parts ...string) string {
 // generation are ignored
 func (r *Registry) Generation() uint64 { return r.gen.Load() }
 
-// BumpGeneration invalidates every learned entry, in memory and persisted.
-// Call it on config reload and whenever a ladder is observed to have
-// changed (a step misprediction).
+// BumpGeneration invalidates every learned entry, in memory and persisted;
+// called on config reload and when a ladder is observed to have changed.
 func (r *Registry) BumpGeneration() uint64 {
 	g := r.gen.Add(1)
 	r.mu.Lock()
@@ -148,9 +228,17 @@ func (r *Registry) BumpGeneration() uint64 {
 	clear(r.ladders)
 	clear(r.targets)
 	clear(r.negative)
+	r.complete = 0
+	var pends [4]pendingEmit
+	for i, layer := range []string{LayerLeaf, LayerLadder, LayerTarget, LayerNegative} {
+		pends[i] = r.captureEmit(layer, 0)
+	}
 	r.mu.Unlock()
-	if r.store != nil {
-		_ = r.store.Store(r.key("gen"), []byte(strconv.FormatUint(g, 10)), 0)
+	for _, p := range pends {
+		r.publish(p)
+	}
+	if store := r.getStore(); store != nil {
+		_ = store.Store(r.key("gen"), []byte(strconv.FormatUint(g, 10)), 0)
 	}
 	return g
 }
@@ -162,14 +250,15 @@ func (r *Registry) Leaf(path string) (string, Confidence, bool) {
 	e, ok := r.leaves[path]
 	r.mu.RUnlock()
 	if ok && e.Gen == r.gen.Load() && e.Expires.After(now) {
-		atomic.StoreInt64(&e.lastUsed, now.UnixNano())
+		e.lastUsed.Store(now.UnixNano())
 		return e.Key, e.Confidence, true
 	}
-	if r.store == nil {
+	store := r.getStore()
+	if store == nil {
 		return "", Unknown, false
 	}
 	// read-through
-	b, st, err := r.store.Retrieve(r.key("leaf", path))
+	b, st, err := store.Retrieve(r.key("leaf", path))
 	if err != nil || st != status.LookupStatusHit {
 		return "", Unknown, false
 	}
@@ -178,17 +267,18 @@ func (r *Registry) Leaf(path string) (string, Confidence, bool) {
 		pe.Confidence == Unknown {
 		return "", Unknown, false
 	}
-	pe.lastUsed = now.UnixNano()
+	pe.lastUsed.Store(now.UnixNano())
 	r.mu.Lock()
 	r.leaves[path] = &pe
 	r.evictLocked(LayerLeaf)
+	p := r.captureEmit(LayerLeaf, len(r.leaves))
 	r.mu.Unlock()
+	r.publish(p)
 	return pe.Key, pe.Confidence, true
 }
 
 // SetLeaf binds a leaf path to a ladder key. The confidence must be Exact,
-// Derived or Configured: recording Unknown is the speculative write the
-// design forbids (§4.5), and is refused.
+// Derived or Configured: recording Unknown is refused as speculative.
 func (r *Registry) SetLeaf(path, ladderKey string, c Confidence) error {
 	if c == Unknown || ladderKey == "" {
 		return ErrSpeculative
@@ -196,19 +286,43 @@ func (r *Registry) SetLeaf(path, ladderKey string, c Confidence) error {
 	now := r.now()
 	e := &leafEntry{
 		Key: ladderKey, Confidence: c, Expires: now.Add(r.o.TTL),
-		Gen: r.gen.Load(), lastUsed: now.UnixNano(),
+		Gen: r.gen.Load(),
 	}
+	e.lastUsed.Store(now.UnixNano())
 	r.mu.Lock()
 	r.leaves[path] = e
 	delete(r.negative, path)
 	r.evictLocked(LayerLeaf)
+	p1 := r.captureEmit(LayerLeaf, len(r.leaves))
+	p2 := r.captureEmit(LayerNegative, len(r.negative))
 	r.mu.Unlock()
-	if r.store != nil {
+	r.publish(p1)
+	r.publish(p2)
+	if store := r.getStore(); store != nil {
 		if b, err := json.Marshal(e); err == nil {
-			_ = r.store.Store(r.key("leaf", path), b, r.o.TTL)
+			_ = store.Store(r.key("leaf", path), b, r.o.TTL)
 		}
 	}
 	return nil
+}
+
+// InvalidateLeaf removes a leaf's ladder binding; the store has no delete, so
+// any persisted entry is overwritten with an already-expired one.
+func (r *Registry) InvalidateLeaf(path string) {
+	r.mu.Lock()
+	delete(r.leaves, path)
+	p := r.captureEmit(LayerLeaf, len(r.leaves))
+	r.mu.Unlock()
+	r.publish(p)
+	if store := r.getStore(); store != nil {
+		e := &leafEntry{
+			Key: "-", Confidence: Exact, Expires: r.now().Add(-time.Second),
+			Gen: r.gen.Load(),
+		}
+		if b, err := json.Marshal(e); err == nil {
+			_ = store.Store(r.key("leaf", path), b, time.Minute)
+		}
+	}
 }
 
 // Ladder returns the ladder stored under a key
@@ -218,13 +332,14 @@ func (r *Registry) Ladder(key string) (*Ladder, bool) {
 	e, ok := r.ladders[key]
 	r.mu.RUnlock()
 	if ok && e.Gen == r.gen.Load() && e.Expires.After(now) {
-		atomic.StoreInt64(&e.lastUsed, now.UnixNano())
+		e.lastUsed.Store(now.UnixNano())
 		return e.Ladder, true
 	}
-	if r.store == nil {
+	store := r.getStore()
+	if store == nil {
 		return nil, false
 	}
-	b, st, err := r.store.Retrieve(r.key("ladder", key))
+	b, st, err := store.Retrieve(r.key("ladder", key))
 	if err != nil || st != status.LookupStatusHit {
 		return nil, false
 	}
@@ -240,12 +355,39 @@ func (r *Registry) Ladder(key string) (*Ladder, bool) {
 		}
 		pe.Ladder = l
 	}
-	pe.lastUsed = now.UnixNano()
+	pe.lastUsed.Store(now.UnixNano())
 	r.mu.Lock()
-	r.ladders[key] = &pe
+	r.storeLadderLocked(key, &pe)
 	r.evictLocked(LayerLadder)
+	p := r.captureEmit(LayerLadder, len(r.ladders))
 	r.mu.Unlock()
+	r.publish(p)
 	return pe.Ladder, true
+}
+
+// inserts or replaces a ladder entry, keeping the complete-ladder count
+// current; callers hold the write lock
+func (r *Registry) storeLadderLocked(key string, e *ladderEntry) {
+	if prev, ok := r.ladders[key]; ok {
+		if prev.Ladder.State == StateComplete {
+			r.complete--
+		}
+	}
+	if e.Ladder.State == StateComplete {
+		r.complete++
+	}
+	r.ladders[key] = e
+}
+
+// removes a ladder entry, keeping the complete-ladder count current; callers
+// hold the write lock
+func (r *Registry) deleteLadderLocked(key string) {
+	if prev, ok := r.ladders[key]; ok {
+		if prev.Ladder.State == StateComplete {
+			r.complete--
+		}
+		delete(r.ladders, key)
+	}
 }
 
 // SetLadder stores a ladder and returns its key: the fingerprint of a
@@ -259,14 +401,17 @@ func (r *Registry) SetLadder(leaf string, l *Ladder) (string, error) {
 		key = l.Fingerprint()
 	}
 	now := r.now()
-	e := &ladderEntry{Ladder: l, Expires: now.Add(r.o.TTL), Gen: r.gen.Load(), lastUsed: now.UnixNano()}
+	e := &ladderEntry{Ladder: l, Expires: now.Add(r.o.TTL), Gen: r.gen.Load()}
+	e.lastUsed.Store(now.UnixNano())
 	r.mu.Lock()
-	r.ladders[key] = e
+	r.storeLadderLocked(key, e)
 	r.evictLocked(LayerLadder)
+	p := r.captureEmit(LayerLadder, len(r.ladders))
 	r.mu.Unlock()
-	if r.store != nil && l.State == StateComplete {
+	r.publish(p)
+	if store := r.getStore(); store != nil && l.State == StateComplete {
 		if b, err := json.Marshal(e); err == nil {
-			_ = r.store.Store(r.key("ladder", key), b, r.o.TTL)
+			_ = store.Store(r.key("ladder", key), b, r.o.TTL)
 		}
 	}
 	return key, nil
@@ -281,31 +426,30 @@ func (r *Registry) Target(expr string) ([]string, string, bool) {
 	if !ok || !e.Expires.After(now) {
 		return nil, "", false
 	}
-	atomic.StoreInt64(&e.lastUsed, now.UnixNano())
+	e.lastUsed.Store(now.UnixNano())
 	return e.Leaves, e.ExpansionID, true
 }
 
-// SetTarget caches an expansion and returns its expansion token: a hash of
-// the sorted leaf set, so that a new leaf under a wildcard changes the
-// token and therefore the cache key (design note §5.5)
+// SetTarget caches an expansion and returns its token, a hash of the leaf
+// set. It takes ownership of leaves, which must be sorted and deduplicated.
 func (r *Registry) SetTarget(expr string, leaves []string, ttl time.Duration) string {
 	now := r.now()
-	sorted := slices.Clone(leaves)
-	slices.Sort(sorted)
 	e := &targetEntry{
-		Leaves: sorted, ExpansionID: ExpansionID(sorted), Expires: now.Add(ttl),
-		lastUsed: now.UnixNano(),
+		Leaves: leaves, ExpansionID: ExpansionID(leaves), Expires: now.Add(ttl),
 	}
+	e.lastUsed.Store(now.UnixNano())
 	r.mu.Lock()
 	r.targets[expr] = e
 	r.evictLocked(LayerTarget)
+	p := r.captureEmit(LayerTarget, len(r.targets))
 	r.mu.Unlock()
+	r.publish(p)
 	return e.ExpansionID
 }
 
 // ExpansionID hashes a sorted leaf set
 func ExpansionID(sortedLeaves []string) string {
-	h := sha1.New()
+	h := sha256.New()
 	for _, l := range sortedLeaves {
 		h.Write([]byte(l))
 		h.Write([]byte{0})
@@ -342,9 +486,11 @@ func (r *Registry) SetNegative(key string) time.Duration {
 	}
 	d = min(d, r.o.NegativeTTLMax)
 	e.Until = now.Add(d)
-	e.lastUsed = now.UnixNano()
+	e.lastUsed.Store(now.UnixNano())
 	r.evictLocked(LayerNegative)
+	p := r.captureEmit(LayerNegative, len(r.negative))
 	r.mu.Unlock()
+	r.publish(p)
 	return d
 }
 
@@ -352,13 +498,13 @@ func (r *Registry) SetNegative(key string) time.Duration {
 func (r *Registry) ClearNegative(key string) {
 	r.mu.Lock()
 	delete(r.negative, key)
+	p := r.captureEmit(LayerNegative, len(r.negative))
 	r.mu.Unlock()
+	r.publish(p)
 }
 
-// KnownLadders returns the complete ladders currently known, the ones
-// bound to the most leaves first. A new leaf is confirmed against these
-// before being discovered from scratch (design note §5.6): a deployment
-// has a handful of ladders, and confirming one costs a fifth of the probes.
+// KnownLadders returns the complete ladders currently known, most-bound
+// first; a new leaf is confirmed against these before discovery from scratch.
 func (r *Registry) KnownLadders() []*Ladder {
 	now := r.now()
 	gen := r.gen.Load()
@@ -395,97 +541,105 @@ type Stats struct {
 	CompleteLadders int
 }
 
-// Stats returns the current layer sizes
+// Stats returns the current layer sizes; it is called on every resolution
+// lookup, so it must stay O(1) (the complete count is maintained on mutation).
 func (r *Registry) Stats() Stats {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	s := Stats{
+	return Stats{
 		Leaves: len(r.leaves), Ladders: len(r.ladders), Targets: len(r.targets),
-		Negatives: len(r.negative),
+		Negatives: len(r.negative), CompleteLadders: r.complete,
 	}
-	for _, e := range r.ladders {
-		if e.Ladder.State == StateComplete {
-			s.CompleteLadders++
-		}
-	}
-	return s
 }
 
-// evictLocked bounds a layer: expired entries go first, then the least
-// recently used tenth. Called with the write lock held, and only when a
-// layer has just grown, so the sort is rare.
+// evictSampleSize is how many entries a sampled eviction examines per removal;
+// map iteration's pseudo-random start makes a small sample approximate LRU.
+const evictSampleSize = 8
+
+// bounds a layer, with the write lock held, after it has grown: each removal
+// samples a few entries and evicts an expired one, else the least recently used
 func (r *Registry) evictLocked(layer string) {
 	max := r.o.MaxEntries
 	if max <= 0 {
 		return
 	}
 	now := r.now()
-	type item struct {
-		key      string
-		lastUsed int64
-	}
-	var items []item
 	switch layer {
 	case LayerLeaf:
-		if len(r.leaves) <= max {
-			return
-		}
-		for k, e := range r.leaves {
-			if !e.Expires.After(now) {
-				delete(r.leaves, k)
-				continue
+		for len(r.leaves) > max {
+			var victim string
+			var oldest int64
+			i := 0
+			for k, e := range r.leaves {
+				if !e.Expires.After(now) {
+					victim = k
+					break
+				}
+				if lu := e.lastUsed.Load(); victim == "" || lu < oldest {
+					victim, oldest = k, lu
+				}
+				if i++; i >= evictSampleSize {
+					break
+				}
 			}
-			items = append(items, item{k, e.lastUsed})
+			delete(r.leaves, victim)
 		}
 	case LayerLadder:
-		if len(r.ladders) <= max {
-			return
-		}
-		for k, e := range r.ladders {
-			if !e.Expires.After(now) {
-				delete(r.ladders, k)
-				continue
+		for len(r.ladders) > max {
+			var victim string
+			var oldest int64
+			i := 0
+			for k, e := range r.ladders {
+				if !e.Expires.After(now) {
+					victim = k
+					break
+				}
+				if lu := e.lastUsed.Load(); victim == "" || lu < oldest {
+					victim, oldest = k, lu
+				}
+				if i++; i >= evictSampleSize {
+					break
+				}
 			}
-			items = append(items, item{k, e.lastUsed})
+			r.deleteLadderLocked(victim)
 		}
 	case LayerTarget:
-		if len(r.targets) <= max {
-			return
-		}
-		for k, e := range r.targets {
-			if !e.Expires.After(now) {
-				delete(r.targets, k)
-				continue
+		for len(r.targets) > max {
+			var victim string
+			var oldest int64
+			i := 0
+			for k, e := range r.targets {
+				if !e.Expires.After(now) {
+					victim = k
+					break
+				}
+				if lu := e.lastUsed.Load(); victim == "" || lu < oldest {
+					victim, oldest = k, lu
+				}
+				if i++; i >= evictSampleSize {
+					break
+				}
 			}
-			items = append(items, item{k, e.lastUsed})
+			delete(r.targets, victim)
 		}
 	case LayerNegative:
-		if len(r.negative) <= max {
-			return
-		}
-		for k, e := range r.negative {
-			if !e.Until.After(now) {
-				delete(r.negative, k)
-				continue
+		for len(r.negative) > max {
+			var victim string
+			var oldest int64
+			i := 0
+			for k, e := range r.negative {
+				if !e.Until.After(now) {
+					victim = k
+					break
+				}
+				if lu := e.lastUsed.Load(); victim == "" || lu < oldest {
+					victim, oldest = k, lu
+				}
+				if i++; i >= evictSampleSize {
+					break
+				}
 			}
-			items = append(items, item{k, e.lastUsed})
-		}
-	}
-	if len(items) <= max {
-		return
-	}
-	slices.SortFunc(items, func(a, b item) int { return cmp.Compare(a.lastUsed, b.lastUsed) })
-	n := len(items) - max + max/10
-	for _, it := range items[:n] {
-		switch layer {
-		case LayerLeaf:
-			delete(r.leaves, it.key)
-		case LayerLadder:
-			delete(r.ladders, it.key)
-		case LayerTarget:
-			delete(r.targets, it.key)
-		case LayerNegative:
-			delete(r.negative, it.key)
+			delete(r.negative, victim)
 		}
 	}
 }

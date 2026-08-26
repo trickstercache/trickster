@@ -41,36 +41,28 @@ type ProbeResult struct {
 	Err        error
 }
 
-// Prober issues probes obeying design note §4.3: format=raw (step in the
-// header), never noNullPoints, never maxDataPoints (except the one documented
-// exception in Learner.maxRetention), and a narrow window where possible.
-// Every probe pins graphite-web's reference time with the `now` parameter
-// so that `now - from` is exactly the requested age, which is what makes
-// binary search on rung boundaries exact.
+// Prober issues format=raw probes (step in the header), never maxDataPoints
+// except Learner.maxRetention's one wide probe. Every probe pins graphite-web's
+// reference time with `now` so that `now - from` is exactly the requested age.
 type Prober struct {
 	Origin   *Origin
 	Observer Observer
 	Tracers  *Tracers
 }
 
-// narrowWindow is the narrow probe's until - from. Whisper always returns
-// at least one point for a non-empty window inside retention (a zero-length
-// interval is widened to the next point), and an empty response when the
-// whole window is beyond maxRetention (§9.1, §9.2), so one second is enough
-// for both the step and the retention-edge oracle.
+// narrowWindow is the narrow probe's until - from: whisper returns at least
+// one point inside retention and nothing beyond it, so 1s answers both.
 const narrowWindow = time.Second
 
-// Narrow probes from=now-age, until=from+1s. Inside retention it returns
-// the step of the rung serving that age; beyond maxRetention it returns
-// empty.
+// Narrow probes from=now-age, until=from+1s: the step of the rung serving
+// that age inside retention, or empty beyond maxRetention.
 func (p *Prober) Narrow(ctx context.Context, leaf string, age time.Duration, now time.Time) ProbeResult {
 	from := now.Add(-age)
 	return p.run(ctx, KindNarrow, leaf, from, from.Add(narrowWindow), now, nil)
 }
 
 // Wide probes from=now-age, until=now: the step a real query of that age
-// receives, and the clamped start when age exceeds maxRetention. extra
-// parameters are for Learner.maxRetention only.
+// receives, and the clamped start past maxRetention. extra is for maxRetention only.
 func (p *Prober) Wide(ctx context.Context, leaf string, age time.Duration, now time.Time,
 	extra url.Values,
 ) ProbeResult {
@@ -131,9 +123,8 @@ type rawHeader struct {
 
 var errBadRaw = errors.New("malformed raw render response")
 
-// parseRawHeader reads the first series header of a format=raw body:
-// <target>,<start>,<end>,<step>|<values>. ok is false for an empty body
-// (no target: beyond retention, or no such metric).
+// reads the first series header of a format=raw body:
+// <target>,<start>,<end>,<step>|<values>. ok is false for an empty body.
 func parseRawHeader(body []byte) (rawHeader, bool, error) {
 	s := strings.TrimSpace(string(body))
 	if s == "" {

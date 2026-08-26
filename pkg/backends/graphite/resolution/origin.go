@@ -26,15 +26,17 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
 )
 
 // maxProbeBody bounds what a probe or find response may return; a probe
 // asks for one or two points and a find for one level of the tree
 const maxProbeBody = 4 << 20
 
-// Origin issues synthetic requests to the Graphite origin on behalf of the
-// resolver. It is deliberately minimal: GET, a path under the backend's
-// base URL, query parameters, and the backend's HTTP client and timeout.
+// Origin issues synthetic GET requests to the Graphite origin on behalf of
+// the resolver, using the backend's base URL, HTTP client and timeout.
 type Origin struct {
 	// Base is the backend's upstream base URL
 	Base *url.URL
@@ -44,6 +46,9 @@ type Origin struct {
 	Timeout time.Duration
 	// Headers are added to every request (e.g., authorization)
 	Headers http.Header
+	// PathOptions, when set, returns the configured request_headers and
+	// request_params for the given upstream path
+	PathOptions func(path string) (hdrs map[string]string, qparams map[string]string)
 }
 
 // errStatus carries a non-2xx origin status
@@ -63,6 +68,15 @@ func (o *Origin) Get(ctx context.Context, path string, q url.Values) ([]byte, er
 	}
 	u := *o.Base
 	u.Path = strings.TrimSuffix(u.Path, "/") + path
+	var pathHeaders map[string]string
+	if o.PathOptions != nil {
+		var qparams map[string]string
+		pathHeaders, qparams = o.PathOptions(path)
+		if len(qparams) > 0 {
+			q = maps.Clone(q)
+			params.UpdateParams(q, qparams)
+		}
+	}
 	u.RawQuery = q.Encode()
 	if o.Timeout > 0 {
 		var cancel context.CancelFunc
@@ -74,14 +88,22 @@ func (o *Origin) Get(ctx context.Context, path string, q url.Values) ([]byte, er
 		return nil, err
 	}
 	maps.Copy(req.Header, o.Headers)
+	if len(pathHeaders) > 0 {
+		headers.UpdateHeaders(req.Header, pathHeaders)
+	}
 	resp, err := o.Client.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxProbeBody))
+	// read one byte past the cap: an exactly-at-cap body could otherwise be
+	// a silently truncated stream whose prefix still parses as complete
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxProbeBody+1))
 	if err != nil {
 		return nil, err
+	}
+	if len(body) > maxProbeBody {
+		return nil, fmt.Errorf("origin response exceeds %d bytes", maxProbeBody)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		if len(body) > 200 {

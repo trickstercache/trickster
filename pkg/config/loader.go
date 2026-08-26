@@ -78,6 +78,7 @@ func Load(args []string) (*Config, error) {
 
 		if c.providedProvider != "" {
 			d.Provider = c.providedProvider
+			d.ApplyProviderSizingDefaults()
 		}
 	}
 

@@ -14,24 +14,13 @@
  * limitations under the License.
  */
 
-// Package mockserver is an in-process mock of graphite-web backed by
-// Whisper, for tests that exercise resolution prediction without Docker.
-// It honors the fetch semantics the design note depends on (archive
-// selection by now-from, interval alignment, range clamping, the empty
-// response beyond maxRetention, the `now` parameter) as measured against
-// graphite-web 1.1.10 in §9 of the design note, and renders every output
-// format through the provider's own model package.
-//
-// It does NOT evaluate target functions: a target is matched as a path
-// expression (with *, ?, [a-z] and {a,b}), so aliasByNode(...) and friends
-// match nothing and return an empty response. Tests that need function
-// evaluation must run against a real graphite-web (the GRAPHITE_WEB_URL
-// live tests), and tests that compare bodies should assert the response is
-// non-empty so they cannot pass vacuously.
+// Package mockserver is an in-process mock of graphite-web's Whisper fetch
+// semantics; targets match as path expressions only, functions are not evaluated.
 package mockserver
 
 import (
 	"encoding/json"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -70,14 +59,11 @@ type Server struct {
 	Renders, Finds atomic.Int64
 	// Fail, when non-zero, makes every request return that status
 	Fail atomic.Int32
-	// Delay, when non-zero, is how long each response is held before being
-	// written; it widens the window in which concurrent requests collapse
-	// into one upstream fetch
+	// Delay, when non-zero, holds each response before writing, widening the
+	// window in which concurrent requests collapse into one upstream fetch
 	Delay atomic.Int64
-	// StartSkew, when non-zero, shifts the reported start of responses
-	// that carry maxDataPoints, to simulate an origin whose consolidation
-	// aligns differently; it exercises the learner's retention-edge
-	// fallbacks
+	// StartSkew, when non-zero, shifts the reported start of responses carrying
+	// maxDataPoints, simulating an origin whose consolidation aligns differently
 	StartSkew atomic.Int64
 	// Log keeps the query string of every request, oldest first
 	log []string
@@ -130,8 +116,8 @@ func (s *Server) ResetCounters() {
 	s.mu.Unlock()
 }
 
-// matches returns the metrics matching a path expression, segment by
-// segment, with * ? [..] and {a,b}
+// returns the metrics matching a path expression, segment by segment,
+// with * ? [..] and {a,b}
 func (s *Server) matches(expr string) []*Metric {
 	qs := strings.Split(expr, ".")
 	s.mu.RLock()
@@ -196,7 +182,7 @@ type series struct {
 	values     []*float64
 }
 
-// render implements /render for format=raw and format=json
+// serves /render for format=raw and format=json
 func (s *Server) render(w http.ResponseWriter, r *http.Request) {
 	s.Renders.Add(1)
 	if d := s.Delay.Load(); d > 0 {
@@ -210,6 +196,10 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request) {
 	s.log = append(s.log, r.URL.Path+"?"+r.URL.RawQuery)
 	s.mu.Unlock()
 	v := r.URL.Query()
+	if r.Method == http.MethodPost {
+		_ = r.ParseForm()
+		maps.Copy(v, r.PostForm)
+	}
 	now, err := s.now(v)
 	if err != nil {
 		http.Error(w, "Invalid parameters ("+err.Error()+")", http.StatusBadRequest)
@@ -257,7 +247,7 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// toSeries converts a fetched series to the DataSet form the model renders
+// converts a fetched series to the DataSet form the model renders
 func (sr series) toSeries() *dataset.Series {
 	pts := make(dataset.Points, len(sr.values))
 	for i, val := range sr.values {
@@ -276,7 +266,7 @@ func (sr series) toSeries() *dataset.Series {
 	}, Points: pts, PointSize: int64(len(pts)) * 24}
 }
 
-// fetch reproduces whisper.file_fetch + __archive_fetch
+// reproduces the semantics of whisper's file_fetch + __archive_fetch
 func fetch(m *Metric, from, until, now time.Time) (series, bool) {
 	var sr series
 	maxRet := m.Ladder.MaxRetention()
@@ -307,9 +297,8 @@ func Value(metric string, ts time.Time) float64 {
 	return float64(ts.Unix()%86400) + float64(len(metric))
 }
 
-// expand implements /metrics/expand, which enumerates the concrete leaf
-// paths a pattern matches (graphite-web emits one document per top-level
-// brace alternative; this emits one, which the expander also accepts)
+// serves /metrics/expand, enumerating the concrete leaf paths a pattern
+// matches, as one document where graphite-web may emit one per brace alternative
 func (s *Server) expand(w http.ResponseWriter, r *http.Request) {
 	s.Finds.Add(1)
 	if f := s.Fail.Load(); f != 0 {
@@ -327,7 +316,7 @@ func (s *Server) expand(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string][]string{"results": out})
 }
 
-// find implements /metrics/find (treejson)
+// serves /metrics/find (treejson)
 func (s *Server) find(w http.ResponseWriter, r *http.Request) {
 	s.Finds.Add(1)
 	if f := s.Fail.Load(); f != 0 {

@@ -56,8 +56,70 @@ Every common backend option applies (`cache_name`, `timeseries_ttl`,
 `timeseries_retention_factor`, `backfill_tolerance`, `max_object_size_bytes`,
 `timeout`, `healthcheck`, `paths`, TLS, authenticators); two of them,
 `max_object_size_bytes` and `timeseries_retention_factor`, take
-Graphite-specific defaults, as [Sizing](#sizing) explains. The `graphite`
-block adds provider-specific options:
+Graphite-specific defaults, as [Sizing](#sizing) explains.
+
+Per-path `request_headers` and `request_params` apply to the synthetic
+requests resolution makes (probes, wildcard expansion) as well as to proxied
+traffic, so an origin behind a static API key or one that needs `local=1`
+works for learning too. What cannot work is **per-client upstream identity**:
+resolution state (learned ladders, wildcard expansion tokens, the registry
+generation) is backend-wide, and synthetic requests carry only the backend's
+configured identity. Trickster therefore **declines acceleration** — the
+request is served correctly through the object cache, which keys on the
+client's `Authorization` and every declared result-affecting input —
+whenever a render request carries an `Authorization` header, a header named
+in the render path's `cache_key_headers`, or a parameter or form field
+named in its `cache_key_params`/`cache_key_form_fields` (such as `local`,
+which selects the clustered origin view) that the path's
+`request_headers`/`request_params` does not statically override, and
+whenever the render path or the backend itself has a request rewriter
+(`req_rewriter_name`) attached, since a rewriter can change the upstream
+host, path, headers, or parameters in ways synthetic requests do not see. The fallback is counted as
+`trickster_graphite_fallbacks_total{reason="client_identity"}`.
+
+If every client shares one upstream identity — Grafana with a configured
+datasource credential is the common case — supply it in the `graphite`
+block to re-enable acceleration:
+
+```yaml
+backends:
+  graphite1:
+    provider: graphite
+    origin_url: 'http://graphite.example.com:80'
+    graphite:
+      origin_username: 'metrics'
+      origin_password: '<the origin password>'
+```
+
+For origins using a non-Basic scheme, set `origin_authorization` to the
+verbatim header value (e.g., `'Bearer <token>'`) instead of the
+username/password pair.
+
+The credential becomes the `Authorization` request header of every path —
+proxied client traffic, synthetic resolution requests (probes, wildcard
+expansion) and the default health check alike — so the origin sees one
+static identity, a client-supplied `Authorization` header is replaced
+rather than forwarded, and requests accelerate regardless of what the
+client sent. Cached objects are keyed on the configured credential, so
+rotating it invalidates previously cached responses and learned resolution
+state rather than serving the old tenant's data. To authenticate
+Trickster's own clients as well, attach an
+[authenticator](./authenticator.md) via `authenticator_name`: the
+validated client credential is stripped before proxying and the origin
+credential is applied in its place.
+
+A path config that sets its own `Authorization` in `request_headers` (or
+removes it with `-Authorization`) overrides the origin credential for that
+path. Appending one with `+Authorization` alongside an origin credential is
+rejected at startup, since the effective header would be ambiguous. If
+per-path identities then diverge across the paths resolution
+uses — `/render` and `/metrics/expand` selecting different
+`request_headers`/`request_params` for synthetic GETs, or `GET` and `POST`
+`/render` pinned to different credentials — Trickster declines
+acceleration rather than mix upstream namespaces, counted as
+`trickster_graphite_fallbacks_total{reason="resolution_identity"}`.
+
+The `graphite` block adds provider-specific options:
 
 ```yaml
 backends:
@@ -83,8 +145,14 @@ backends:
 | Option | Default | Purpose |
 |---|---|---|
 | `time_zone` | `UTC` | Interprets date-anchored `from`/`until` values (`midnight`, `today`, `MM/DD/YY`) when the request has no `tz` parameter. Set it to the origin's graphite-web `TIME_ZONE`, or those queries resolve to different instants than the origin uses. |
+| `origin_username`, `origin_password` | unset | Static HTTP Basic credential sent as the `Authorization` header of every upstream request — proxied, synthetic and health check alike. See [Configuration](#configuration) above. |
+| `origin_authorization` | unset | Verbatim `Authorization` header value for non-Basic schemes (e.g., `Bearer <token>`); mutually exclusive with `origin_username`/`origin_password`. |
 | `passthrough_max_data_points` | `false` | Send the client's `maxDataPoints` upstream instead of consolidating in Trickster. See [maxDataPoints](#maxdatapoints-and-consolidation). |
 | `find_cache_ttl` | `1m` | How long a wildcard target's expansion to concrete metric paths is reused. Lower it where metrics appear and disappear frequently. |
+| `max_targets_per_request` | `128` | Renders carrying more targets than this are served through the object lane, untouched, before any parsing or per-target fan-out. |
+| `max_target_length` | `16384` | A render with a longer single target expression (in bytes) is likewise served through the object lane untouched. |
+| `max_expanded_leaves` | `4096` | A wildcard whose expansion matches more leaf paths than this is served through the object lane; the refusal is remembered for `find_cache_ttl`. |
+| `max_expansion_bytes` | `2097152` | Bounds one expansion's aggregate decoded leaf-name bytes the same way. |
 | `resolution_registry.ttl` | `24h` | How long a learned ladder is trusted. Whisper ladders change only when an operator runs `whisper-resize.py`, so this is deliberately long. |
 | `resolution_registry.negative_ttl` | `30s` | Initial backoff after a failed resolution. Doubles per consecutive failure, capped at 10m. |
 | `resolution_registry.max_entries` | `100000` | Bounds each registry layer; least-recently-used entries are evicted. |
@@ -98,6 +166,11 @@ backends:
 The default health check is `GET /metrics/find?query=*`, which every
 Graphite-protocol implementation serves. `/version` is not used because
 carbonapi and graphite-clickhouse answer it differently.
+
+A configured origin credential rides on the probe even when the
+`healthcheck` block declares custom `headers`. To override it, set your own
+`Authorization` value there; to send the probe unauthenticated, set
+`Authorization: ''`.
 
 ### Routed paths
 
@@ -182,6 +255,18 @@ Trickster:
 4. relearns the affected ladders, and
 5. re-serves the request through the object cache, so the client still gets the
    correct answer.
+
+One response shape cannot self-verify: JSON carries no explicit step, so a
+fetch that returns fewer than two points is consistent with any prediction.
+Trickster never trusts one. A delta fetch that would cover a single bucket —
+the tip fetch every steady-state refresh performs — is widened one bucket
+into the past, which cannot change the archive whisper selects (the pinned
+`now` keeps `now - from` identical) but makes the response two points, and
+therefore self-verifying, at no extra request cost. Any fetched response
+that still cannot prove its step — one point, or no series where the
+prediction promised data inside retention — is refused outright: nothing is
+cached, and the request is served through the object cache instead, while
+the background learner re-establishes the ladder.
 
 `trickster_graphite_step_mispredictions_total` should be flat at zero. A
 non-zero value is not a client-visible error, but it does mean something the
@@ -272,6 +357,9 @@ is recorded on `trickster_graphite_fallbacks_total`:
 | `multi_target_step_mismatch` | Targets resolve to different steps and could not be split |
 | `passthrough_max_data_points` | `passthrough_max_data_points` is on and the request carries `maxDataPoints` |
 | `misprediction` | A response contradicted the predicted step |
+| `tz_unavailable` | The request names a `tz` whose validity could not be verified within the timezone cold-load budget (a burst of unique hostile `tz` values can spend it); the request is served unaccelerated with the original `tz` forwarded, rather than being reinterpreted in the configured zone |
+| `client_identity` | The request carries a result-affecting identity or view selector — an `Authorization` header, a header named in the render path's `cache_key_headers`, or a parameter/form field it names in `cache_key_params`/`cache_key_form_fields` (`local` above all) — that the path's `request_headers`/`request_params` does not statically override, or the render path or backend has a request rewriter — see below |
+| `resolution_identity` | The configured path identities are mixed: `/render` and `/metrics/expand` select different `request_headers`/`request_params` for synthetic GETs, or the request's path config carries a different identity than the synthetic one (e.g., `GET` and `POST` `/render` pinned to different credentials) |
 
 Notable functions that are **not** accelerated, and why:
 

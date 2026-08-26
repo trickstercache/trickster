@@ -49,9 +49,8 @@ func TestSetExtent(t *testing.T) {
 	from, _ := strconv.ParseInt(v.Get("from"), 10, 64)
 	until, _ := strconv.ParseInt(v.Get("until"), 10, 64)
 	now, _ := strconv.ParseInt(v.Get("now"), 10, 64)
-	// from is one step before the first bucket so whisper's +step rounding
-	// lands on it; until is the last bucket; now is pinned so that
-	// now - from is the query's original age and the rung is unchanged
+	// from sits one step before the first bucket so whisper's +step rounding
+	// lands on it; now is pinned so now-from keeps the original age and rung
 	if from != gap.Start.Add(-time.Minute).Unix() || until != gap.End.Unix() {
 		t.Errorf("from/until: %d %d want %d %d", from, until, gap.Start.Add(-time.Minute).Unix(), gap.End.Unix())
 	}

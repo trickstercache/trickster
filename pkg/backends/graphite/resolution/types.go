@@ -14,13 +14,8 @@
  * limitations under the License.
  */
 
-// Package resolution predicts the step a Graphite origin will use to answer
-// a render request, by learning each metric's Whisper archive ladder
-// empirically and caching the result (design note §4–§6).
-//
-// Nothing in this package is ever speculative: a step is written to the
-// registry only when it was read from an origin response header, or when it
-// comes from operator configuration and is labeled as such.
+// Package resolution predicts the step a Graphite origin will use to answer a
+// render request, by learning each metric's Whisper archive ladder empirically.
 package resolution
 
 import (
@@ -30,9 +25,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 )
 
-// Confidence is the resolver's verdict on a predicted step. The String
-// values are the frozen `confidence` label values of
-// trickster_graphite_resolution_lookups_total.
+// Confidence is the resolver's verdict on a predicted step; the String values
+// are the frozen `confidence` label values of the resolution lookups metric.
 type Confidence uint8
 
 const (
@@ -109,8 +103,8 @@ var (
 	ErrInvalidLadder = errors.New("invalid ladder")
 )
 
-// Observer receives the resolution events that Phase 9 turns into metrics.
-// Label values passed here are the frozen values above.
+// Observer receives resolution events for metrics emission; label values
+// passed here are the frozen values above.
 type Observer interface {
 	// Lookup is called once per resolution with its confidence and source
 	Lookup(confidence, source string)
@@ -128,10 +122,8 @@ type Observer interface {
 	Misprediction()
 }
 
-// Tracers carries the tracer a backend was configured with. The resolution
-// components are built before any request arrives, and a tracer only exists
-// per request, so the first request that carries one publishes it here for
-// probe and learning spans to use.
+// Tracers carries the backend's tracer: resolution components are built before
+// any request exists, so the first request carrying a tracer publishes it here.
 type Tracers struct {
 	p atomic.Pointer[tracing.Tracer]
 }

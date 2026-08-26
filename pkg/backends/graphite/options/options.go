@@ -19,7 +19,6 @@ package options
 
 import (
 	"slices"
-	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
@@ -27,54 +26,42 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// DefaultTimeZone is the time zone assumed for date-anchored from/until
-// values (midnight, today, MM/DD/YY, ...) when the request has no tz
-// parameter. It should match the origin's graphite-web TIME_ZONE setting.
-const DefaultTimeZone = "UTC"
-
-// Resolution registry defaults
-const (
-	// DefaultRegistryTTL is how long a learned ladder is trusted. Whisper
-	// ladders only change by operator action (whisper-resize.py), so this is
-	// long; a misprediction bumps the registry generation regardless.
-	DefaultRegistryTTL = 24 * time.Hour
-	// DefaultNegativeTTL is the initial backoff after a failed resolution;
-	// it doubles per consecutive failure up to DefaultNegativeTTLMax
-	DefaultNegativeTTL    = 30 * time.Second
-	DefaultNegativeTTLMax = 10 * time.Minute
-	// DefaultMaxEntries bounds each registry layer
-	DefaultMaxEntries = 100000
-	// DefaultProbeConcurrency caps concurrent ladder-learning runs per backend
-	DefaultProbeConcurrency = 2
-	// DefaultProbeBudget caps the probes one learning run may issue
-	DefaultProbeBudget = 96
-	// DefaultFindCacheTTL is how long a wildcard expansion is reused
-	DefaultFindCacheTTL = time.Minute
-)
-
-// Options stores information about Graphite Options. Fields are added as the
-// decisions that shape them are recorded in
-// the Graphite implementation plan (trickster-data, Phase 0).
+// Options stores the Graphite-specific backend options
 type Options struct {
 	// TimeZone names the origin's TIME_ZONE, used to interpret date-anchored
 	// from/until values when the request carries no tz parameter
 	TimeZone string `yaml:"time_zone,omitempty"`
-	// PassthroughMaxDataPoints, when true, forwards the client's
-	// maxDataPoints to the origin instead of stripping it and consolidating
-	// in Trickster (decision D3). Requests carrying maxDataPoints are then
-	// not accelerated, so that origin consolidation is byte-identical.
+	// OriginUsername and OriginPassword form a static HTTP Basic credential
+	// every request to the origin carries, proxied and synthetic alike
+	OriginUsername string `yaml:"origin_username,omitempty"`
+	OriginPassword string `yaml:"origin_password,omitempty"`
+	// OriginAuthorization is a verbatim Authorization header value (e.g.,
+	// 'Bearer <token>'); mutually exclusive with OriginUsername/OriginPassword
+	OriginAuthorization string `yaml:"origin_authorization,omitempty"`
+	// PassthroughMaxDataPoints forwards the client's maxDataPoints to the origin
+	// instead of consolidating in Trickster; such requests are not accelerated
 	PassthroughMaxDataPoints bool `yaml:"passthrough_max_data_points,omitempty"`
 	// ResolutionRegistry configures the step-resolution registry and its
 	// probe engine
 	ResolutionRegistry RegistryOptions `yaml:"resolution_registry,omitempty"`
-	// StaticRetentions is an ordered, first-match-wins list of
-	// storage-schemas.conf-shaped retention rules used as a seed and
-	// override for resolution. It is never the sole source of truth: a
-	// static match is probed for confirmation, and the probe wins.
+	// StaticRetentions is an ordered, first-match-wins list of storage-schemas.conf-shaped
+	// retention rules seeding resolution; a static match is still probed, and the probe wins
 	StaticRetentions []StaticRetention `yaml:"static_retentions,omitempty"`
 	// FindCacheTTL is how long a wildcard expansion from /metrics/find is
 	// reused before being refreshed
 	FindCacheTTL timeconv.Duration `yaml:"find_cache_ttl,omitempty"`
+	// MaxTargetsPerRequest bounds how many targets one render request may carry and
+	// still be accelerated; over the limit it uses the object lane. 0 means the default.
+	MaxTargetsPerRequest int `yaml:"max_targets_per_request,omitempty"`
+	// MaxTargetLength bounds one target expression's length in bytes; a longer
+	// target is served through the object lane. 0 means the default.
+	MaxTargetLength int `yaml:"max_target_length,omitempty"`
+	// MaxExpandedLeaves bounds how many leaf paths one wildcard expansion may resolve
+	// to; over the limit the request uses the object lane. 0 means the default.
+	MaxExpandedLeaves int `yaml:"max_expanded_leaves,omitempty"`
+	// MaxExpansionBytes bounds the aggregate decoded leaf-name bytes of
+	// one wildcard expansion. 0 means the default.
+	MaxExpansionBytes int `yaml:"max_expansion_bytes,omitempty"`
 }
 
 // RegistryOptions configures the resolution registry
@@ -86,7 +73,7 @@ type RegistryOptions struct {
 	// MaxEntries bounds each layer of the registry
 	MaxEntries int `yaml:"max_entries,omitempty"`
 	// Persist writes learned ladders through to the backend's cache so a
-	// restart does not relearn them (decision D6)
+	// restart does not relearn them
 	Persist bool `yaml:"persist"`
 	// ProbeConcurrency caps concurrent ladder-learning runs
 	ProbeConcurrency int `yaml:"probe_concurrency,omitempty"`
@@ -116,7 +103,11 @@ func New() *Options {
 			ProbeConcurrency: DefaultProbeConcurrency,
 			ProbeBudget:      DefaultProbeBudget,
 		},
-		FindCacheTTL: timeconv.Duration(DefaultFindCacheTTL),
+		FindCacheTTL:         timeconv.Duration(DefaultFindCacheTTL),
+		MaxTargetsPerRequest: DefaultMaxTargetsPerRequest,
+		MaxTargetLength:      DefaultMaxTargetLength,
+		MaxExpandedLeaves:    DefaultMaxExpandedLeaves,
+		MaxExpansionBytes:    DefaultMaxExpansionBytes,
 	}
 }
 

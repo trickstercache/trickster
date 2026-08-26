@@ -19,21 +19,30 @@ package graphite
 import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/graphite/resolution"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
+
+	"github.com/prometheus/client_golang/prometheus"
 )
 
-// metricsObserver records resolution events into the Graphite metric
-// families frozen in implementation plan item 3.4. Every label value it
-// emits comes from the closed sets defined in the resolution package, so no
-// metric path, target expression or query text can reach a label.
+// records resolution events into the Graphite metric families; every label
+// value comes from a closed set, so no metric path or query text can leak
 type metricsObserver struct {
-	name string
+	name        string
+	layerGauges map[string]prometheus.Gauge
+	ladders     prometheus.Gauge
 }
 
 var _ resolution.Observer = &metricsObserver{}
 
-// newObserver returns an observer bound to a backend name
 func newObserver(name string) *metricsObserver {
-	return &metricsObserver{name: name}
+	o := &metricsObserver{name: name, layerGauges: make(map[string]prometheus.Gauge, 4)}
+	for _, layer := range []string{
+		resolution.LayerLeaf, resolution.LayerLadder,
+		resolution.LayerTarget, resolution.LayerNegative,
+	} {
+		o.layerGauges[layer] = metrics.GraphiteRegistryEntries.WithLabelValues(name, layer)
+	}
+	o.ladders = metrics.GraphiteLadders.WithLabelValues(name)
+	return o
 }
 
 // Lookup records one step-resolution outcome
@@ -48,12 +57,14 @@ func (o *metricsObserver) Probe(kind, result string) {
 
 // Ladders reports how many distinct complete ladders are known
 func (o *metricsObserver) Ladders(n int) {
-	metrics.GraphiteLadders.WithLabelValues(o.name).Set(float64(n))
+	o.ladders.Set(float64(n))
 }
 
 // RegistryEntries reports the size of one registry layer
 func (o *metricsObserver) RegistryEntries(layer string, n int) {
-	metrics.GraphiteRegistryEntries.WithLabelValues(o.name, layer).Set(float64(n))
+	if g, ok := o.layerGauges[layer]; ok {
+		g.Set(float64(n))
+	}
 }
 
 // Fallback records one render request routed to the unaccelerated lane

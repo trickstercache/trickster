@@ -104,7 +104,7 @@ The following metrics are available for polling with any Trickster configuration
 * `trickster_graphite_fallbacks_total` (Counter) - Count of render requests served without delta caching. Labels never include a target expression.
   * labels:
     * `backend_name` - the name of the configured Graphite backend
-    * `reason` - `parse_error`, `non_series_format`, `function_not_allowlisted`, `unknown_step`, `missing_target`, `multi_target_step_mismatch`, `passthrough_max_data_points`, or `misprediction`
+    * `reason` - `parse_error`, `non_series_format`, `function_not_allowlisted`, `unknown_step`, `missing_target`, `multi_target_step_mismatch`, `passthrough_max_data_points`, `misprediction`, `client_identity`, `tz_unavailable`, or `resolution_identity`
 * `trickster_sql_query_analysis_total` (Counter) - Count of SQL query cache-eligibility classifications. Labels never include query text.
   * labels:
     * `backend_name` - the name of the configured backend analyzing the query

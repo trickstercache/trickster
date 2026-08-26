@@ -14,14 +14,8 @@
  * limitations under the License.
  */
 
-// Package parsing implements the Graphite render API grammars: the from/until
-// time grammar (graphite-web's attime.py), the target expression grammar
-// (graphite-web's render/grammar.py), the delta-cache allowlist classifier
-// over the resulting AST, and the classification of render URL parameters.
-//
-// Everything here fails closed: input graphite-web would silently truncate or
-// reinterpret is an error, so that the request is routed to the unaccelerated
-// lane and the origin's own behavior is what the client sees.
+// Package parsing implements graphite-web's render API grammars and the
+// allowlist classifier; ambiguous input fails closed to the unaccelerated lane.
 package parsing
 
 import (
@@ -51,12 +45,8 @@ var months = [...]string{
 
 var weekdays = [...]string{"sun", "mon", "tue", "wed", "thu", "fri", "sat"}
 
-// ParseTimeRange resolves a render request's from/until parameters into an
-// Extent the way graphite-web's parseOptions does: an absent until is now, an
-// absent from is -1d, the two are ordered, and an empty range is an error.
-// Results are truncated to whole seconds, which is the precision Whisper
-// fetches at. now is the request's reference time (the `now` parameter when
-// present, wall-clock otherwise) and loc the effective time zone.
+// ParseTimeRange resolves from/until into an Extent as graphite-web does:
+// absent until is now, absent from is -1d, ordered, truncated to whole seconds.
 func ParseTimeRange(from, until string, loc *time.Location,
 	now time.Time,
 ) (timeseries.Extent, error) {
@@ -90,11 +80,8 @@ func ParseTimeRange(from, until string, loc *time.Location,
 	return ext, nil
 }
 
-// ParseATTime is a port of graphite-web's attime.parseATTime. It accepts
-// epoch seconds, relative offsets (-7d, -90min, -1mon, -2y), the references
-// now / midnight / noon / teatime / today / yesterday / tomorrow, HH:MM[am|pm]
-// prefixes, MM/DD/YY[YY], YYYYMMDD, month+day (jan15) and weekday names, and
-// reference+offset compounds such as "midnight yesterday" or "today-1d".
+// ParseATTime ports graphite-web's attime.parseATTime: epoch seconds, relative
+// offsets, references (now/midnight/...), date forms, and reference+offset compounds.
 func ParseATTime(s string, loc *time.Location, now time.Time) (time.Time, error) {
 	if loc == nil {
 		loc = time.UTC
@@ -128,8 +115,8 @@ func ParseATTime(s string, loc *time.Location, now time.Time) (time.Time, error)
 	return t.Add(d), nil
 }
 
-// normalizeATTime applies graphite-web's pre-parse cleanup: trim, lowercase,
-// and drop underscores, commas and spaces
+// Applies graphite-web's pre-parse cleanup: trim, lowercase, and drop
+// underscores, commas and spaces
 func normalizeATTime(s string) string {
 	s = strings.ToLower(strings.TrimSpace(s))
 	if !strings.ContainsAny(s, "_, ") {
@@ -159,7 +146,7 @@ func isDigits(s string) bool {
 	return true
 }
 
-// atoi parses a short all-digit string; callers guarantee the input
+// Parses a short all-digit string; callers guarantee the input
 func atoi(s string) int {
 	n := 0
 	for i := range len(s) {
@@ -168,8 +155,7 @@ func atoi(s string) int {
 	return n
 }
 
-// leadingDigits returns the index just past the run of ASCII digits at the
-// start of s
+// Returns the index just past the run of ASCII digits at the start of s
 func leadingDigits(s string) int {
 	i := 0
 	for i < len(s) && s[i] >= '0' && s[i] <= '9' {
@@ -186,7 +172,7 @@ func leadingAlphas(s string) int {
 	return i
 }
 
-// parseTimeReference ports attime.parseTimeReference
+// Ports graphite-web's attime.parseTimeReference
 func parseTimeReference(ref string, loc *time.Location, now time.Time) (time.Time, error) {
 	if ref == "" || ref == "now" {
 		return now, nil
@@ -296,8 +282,8 @@ func parseTimeReference(ref string, loc *time.Location, now time.Time) (time.Tim
 	return refDate, nil
 }
 
-// civilDate builds a date and rejects out-of-range fields the way Python's
-// datetime constructor does, rather than normalizing them like time.Date
+// Builds a date, rejecting out-of-range fields the way Python's datetime
+// constructor does rather than normalizing them like time.Date
 func civilDate(y, m, d, hour, minute int, loc *time.Location) (time.Time, error) {
 	if y < 1 || y > 9999 || m < 1 || m > 12 || d < 1 {
 		return time.Time{}, fmt.Errorf("invalid date %04d-%02d-%02d", y, m, d)
@@ -327,10 +313,8 @@ func weekdayIndex(s string) int {
 	return -1
 }
 
-// ParseTimeOffset ports attime.parseTimeOffset. An empty offset is zero; a
-// leading digit means positive; otherwise the first byte must be + or -.
-// Units are matched by prefix: s, min, h, d, w, mon (30 days), y (365 days).
-// Note that a bare "m" is not a valid unit, exactly as in graphite-web.
+// ParseTimeOffset ports attime.parseTimeOffset: units match by prefix (s, min,
+// h, d, w, mon=30d, y=365d); a bare "m" is invalid, exactly as in graphite-web.
 func ParseTimeOffset(s string) (time.Duration, error) {
 	if s == "" {
 		return 0, nil
@@ -369,7 +353,7 @@ func ParseTimeOffset(s string) (time.Duration, error) {
 	return time.Duration(sign*total) * time.Second, nil
 }
 
-// unitSeconds ports attime.getUnitString's prefix matching
+// Ports attime.getUnitString's prefix matching
 func unitSeconds(u string) (int64, bool) {
 	switch {
 	case strings.HasPrefix(u, "s"):

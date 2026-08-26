@@ -23,34 +23,14 @@ import (
 	"strings"
 )
 
-// This file implements graphite-web's target expression grammar
-// (webapp/graphite/render/grammar_unsafe.py, graphite-web 1.1.10) as a
-// scannerless recursive-descent parser producing an AST.
-//
-//	expression  := (template | call | path) ( "|" call )*
-//	call        := funcname "(" [ args [ "," kwargs ] ] ")"
-//	args        := arg ("," arg)*          -- while the next item is not  name "="
-//	kwargs      := argname "=" arg ("," argname "=" arg)*
-//	arg         := boolean | number | none | string | inf | expression
-//	template    := "template" "(" (call | path) [ "," (litargs | litkwargs) ] ")"
-//	path        := pathElement ("." pathElement)*
-//	pathElement := ( partial | "{" partial ("," partial)* "}" )+
-//	partial     := ( "\" symbol | metricChar+ )+
-//
-// Whitespace is skipped between tokens, as pyparsing does by default. Pipes
-// are desugared at parse time: `a.b | sumSeries | alias('x')` becomes
-// `alias(sumSeries(a.b), 'x')`, which is exactly how graphite-web's
-// evaluator treats a piped call (the piped value becomes the first positional
-// argument of each successive call).
-//
-// Departures from graphite-web, all in the fail-closed direction: the whole
-// input must be consumed (pyparsing's parseString silently ignores trailing
-// garbage, so `foo(bar` evaluates as the path `foo` there), and a keyword
-// such as `true` must be followed by a delimiter.
+// This file ports graphite-web 1.1.10's target grammar (render/grammar_unsafe.py)
+// as a scannerless recursive-descent parser. Pipes desugar at parse time as the
+// evaluator does: `a.b | alias('x')` becomes `alias(a.b, 'x')`. Departures fail
+// closed: unlike pyparsing, trailing garbage is an error rather than ignored.
 
 // Node is an element of a parsed target expression
 type Node interface {
-	// format appends the canonical form of the node to b
+	// appends the canonical form of the node to b
 	format(b *strings.Builder)
 }
 
@@ -81,9 +61,8 @@ type Number struct {
 	Text string
 }
 
-// String is a quoted string literal. Value is the text between the quotes,
-// not unescaped: graphite-web strips only the quotes, so `"\1 A"` is the
-// three characters \, 1, space, A. Quote records which quote was used.
+// String is a quoted string literal. Value is not unescaped, as graphite-web
+// strips only the quotes; Quote records which quote was used.
 type String struct {
 	Value string
 	Quote byte
@@ -146,11 +125,8 @@ func ParseTarget(s string) (Node, error) {
 	return n, nil
 }
 
-// rejectAmbiguousArgs fails any call with a positional path argument of the
-// form name=..., e.g. the piped `a=1 | f()`. `=` is a valid metric character,
-// but such an argument cannot be written positionally (graphite-web reads it
-// as a keyword argument and then fails the whole call), so it has no
-// canonical form. Fail closed rather than guess.
+// Fails any call with a positional path argument of the form name=..., which
+// graphite-web reads as a keyword argument and then rejects: fail closed.
 func rejectAmbiguousArgs(n Node) error {
 	var err error
 	Walk(n, func(n Node) bool {
@@ -180,13 +156,8 @@ func pathLooksLikeKwArg(s string) bool {
 	return i < len(s) && s[i] == '='
 }
 
-// Format returns the canonical text of a parsed expression: single-spaced
-// ", " separators and no other whitespace, lowercase keywords, single-quoted
-// strings where the content allows it, keyword arguments sorted by name, and
-// pipes rewritten as nested calls. Positional arguments are never reordered:
-// their order is semantically significant for every function that takes
-// more than one. Two targets with the same canonical form produce the same
-// response from graphite-web.
+// Format returns the canonical text of a parsed expression; two targets with
+// the same canonical form produce the same response from graphite-web.
 func Format(n Node) string {
 	var b strings.Builder
 	n.format(&b)
@@ -311,9 +282,12 @@ func LeafPaths(n Node) []string {
 // ---------------------------------------------------------------------------
 // parser
 
+const maxParseDepth = 64
+
 type parser struct {
-	s string
-	i int
+	s     string
+	i     int
+	depth int
 }
 
 func (p *parser) eof() bool { return p.i >= len(p.s) }
@@ -348,8 +322,8 @@ func isIdentChar(c byte) bool {
 	return isIdentStart(c) || (c >= '0' && c <= '9')
 }
 
-// isMetricChar reports whether c may appear unescaped in a path: any
-// printable ASCII character except the grammar symbols (){},.'"\|
+// True for characters that may appear unescaped in a path: any printable
+// ASCII character except the grammar symbols (){},.'"\|
 func isMetricChar(c byte) bool {
 	if c <= ' ' || c > '~' {
 		return false
@@ -361,7 +335,7 @@ func isMetricChar(c byte) bool {
 	return true
 }
 
-// isEscapable reports whether c may follow a backslash in a path
+// True for characters that may follow a backslash in a path
 func isEscapable(c byte) bool {
 	switch c {
 	case '(', ')', '{', '}', ',', '.', '\'', '"', '\\', '|', '=':
@@ -370,7 +344,7 @@ func isEscapable(c byte) bool {
 	return false
 }
 
-// isDelimiter reports whether c may directly follow a complete argument
+// True for characters that may directly follow a complete argument
 func isDelimiter(c byte) bool {
 	switch c {
 	case 0, ',', ')', '|', ' ', '\t', '\n', '\r':
@@ -379,7 +353,7 @@ func isDelimiter(c byte) bool {
 	return false
 }
 
-// ident scans an identifier at the cursor without consuming it
+// Scans an identifier at the cursor without consuming it
 func (p *parser) ident() string {
 	j := p.i
 	if j >= len(p.s) || !isIdentStart(p.s[j]) {
@@ -391,7 +365,7 @@ func (p *parser) ident() string {
 	return p.s[p.i:j]
 }
 
-// afterWS returns the index of the first non-whitespace byte at or after j
+// Returns the index of the first non-whitespace byte at or after j
 func (p *parser) afterWS(j int) int {
 	for j < len(p.s) {
 		switch p.s[j] {
@@ -404,7 +378,7 @@ func (p *parser) afterWS(j int) int {
 	return j
 }
 
-// looksLikeCall reports whether an identifier followed by "(" is at the cursor
+// Reports whether an identifier followed by "(" is at the cursor
 func (p *parser) looksLikeCall() bool {
 	id := p.ident()
 	if id == "" {
@@ -414,7 +388,7 @@ func (p *parser) looksLikeCall() bool {
 	return j < len(p.s) && p.s[j] == '('
 }
 
-// looksLikeKwArg reports whether an identifier followed by "=" is at the cursor
+// Reports whether an identifier followed by "=" is at the cursor
 func (p *parser) looksLikeKwArg() bool {
 	id := p.ident()
 	if id == "" {
@@ -437,6 +411,12 @@ func (p *parser) expect(c byte) error {
 }
 
 func (p *parser) expression() (Node, error) {
+	entryDepth := p.depth
+	p.depth++
+	defer func() { p.depth = entryDepth }()
+	if p.depth > maxParseDepth {
+		return nil, p.errorf("expression nests more than %d levels", maxParseDepth)
+	}
 	p.skipWS()
 	var n Node
 	var err error
@@ -451,11 +431,16 @@ func (p *parser) expression() (Node, error) {
 	if err != nil {
 		return nil, err
 	}
-	// pipes
+	// each pipe desugars into a Call nested around everything parsed so far,
+	// so a pipe chain spends the same depth budget as parenthesized nesting
 	for {
 		j := p.afterWS(p.i)
 		if j >= len(p.s) || p.s[j] != '|' {
 			return n, nil
+		}
+		p.depth++
+		if p.depth > maxParseDepth {
+			return nil, p.errorf("expression nests more than %d levels", maxParseDepth)
 		}
 		p.i = j + 1
 		p.skipWS()
@@ -481,10 +466,8 @@ func (p *parser) call() (*Call, error) {
 	c := &Call{Func: name}
 	p.skipWS()
 	if p.peek() != ')' {
-		// positional args until a kwarg or ')'. pyparsing's ~kwarg lookahead
-		// only fires when a complete kwarg parses, so `=` (a valid metric
-		// character) followed by something that is not an argument still
-		// yields a path, e.g. f(a=) is f with the positional path a=
+		// positional args until a kwarg or ')'; pyparsing's kwarg lookahead
+		// fires only on a complete kwarg, so f(a=) is f with the positional path a=
 		for {
 			if k, ok := p.tryKwArg(); ok {
 				c.KwArgs = append(c.KwArgs, k)
@@ -524,8 +507,8 @@ func (p *parser) call() (*Call, error) {
 	return c, nil
 }
 
-// tryKwArg attempts to parse name=arg at the cursor, restoring the cursor
-// and reporting false when a complete keyword argument is not present
+// Attempts to parse name=arg at the cursor, restoring the cursor and
+// reporting false when a complete keyword argument is not present
 func (p *parser) tryKwArg() (KwArg, bool) {
 	if !p.looksLikeKwArg() {
 		return KwArg{}, false
@@ -545,7 +528,7 @@ func (p *parser) tryKwArg() (KwArg, bool) {
 	return KwArg{Name: name, Value: v}, true
 }
 
-// arg parses one argument: boolean | number | none | string | inf | expression
+// Parses one argument: boolean | number | none | string | inf | expression
 func (p *parser) arg() (Node, error) {
 	p.skipWS()
 	if p.eof() {
@@ -564,8 +547,8 @@ func (p *parser) arg() (Node, error) {
 	return p.expression()
 }
 
-// keyword matches the case-insensitive literals true/false/none/inf when
-// followed by a delimiter
+// Matches the case-insensitive literals true/false/none/inf when followed
+// by a delimiter
 func (p *parser) keyword() (Node, bool) {
 	id := p.ident()
 	if id == "" || !isDelimiter(p.at(p.i+len(id))) {
@@ -595,9 +578,8 @@ func (p *parser) at(j int) byte {
 	return 0
 }
 
-// number matches -?\d+(\.\d+)?([eE]-?\d+)? when followed by , ) or end of
-// input (graphite-web's afterNumber rule); anything else, such as 1h or
-// 5min, is a path
+// Matches -?\d+(\.\d+)?([eE]-?\d+)? when followed by , ) or end of input
+// (graphite-web's afterNumber rule); anything else, such as 1h, is a path
 func (p *parser) number() (Node, bool) {
 	j := p.i
 	if p.at(j) == '-' {
@@ -636,8 +618,8 @@ func (p *parser) number() (Node, bool) {
 	return n, true
 }
 
-// str parses a quoted string; backslash escapes the next character but is
-// kept in the value, as graphite-web keeps it
+// Parses a quoted string; backslash escapes the next character but is kept
+// in the value, as graphite-web keeps it
 func (p *parser) str() (Node, error) {
 	q := p.s[p.i]
 	j := p.i + 1
@@ -658,8 +640,8 @@ func (p *parser) str() (Node, error) {
 	return nil, p.errorf("unterminated string literal")
 }
 
-// path parses a pathExpression: elements separated by '.', each a sequence
-// of partials and {a,b} enumerations
+// Parses a pathExpression: elements separated by '.', each a sequence of
+// partials and {a,b} enumerations
 func (p *parser) path() (Node, error) {
 	start := p.i
 	for {
@@ -696,8 +678,8 @@ func (p *parser) pathElement() error {
 	}
 }
 
-// partial consumes ( "\" symbol | metricChar+ )+ and reports whether
-// anything was consumed
+// Consumes ( "\" symbol | metricChar+ )+ and reports whether anything
+// was consumed
 func (p *parser) partial() bool {
 	start := p.i
 	for p.i < len(p.s) {
@@ -714,7 +696,7 @@ func (p *parser) partial() bool {
 	return p.i > start
 }
 
-// matchEnum parses "{" partial ("," partial)* "}"
+// Parses "{" partial ("," partial)* "}"
 func (p *parser) matchEnum() error {
 	p.i++ // {
 	for {
@@ -733,7 +715,7 @@ func (p *parser) matchEnum() error {
 	}
 }
 
-// template parses template( (call | path) [, litargs | litkwargs] )
+// Parses template( (call | path) [, litargs | litkwargs] )
 func (p *parser) template() (Node, error) {
 	p.i += len("template")
 	if err := p.expect('('); err != nil {
@@ -780,7 +762,7 @@ func (p *parser) template() (Node, error) {
 	return t, nil
 }
 
-// literal parses a number or string (template arguments)
+// Parses a number or string (template arguments)
 func (p *parser) literal() (Node, error) {
 	p.skipWS()
 	if c := p.peek(); c == '"' || c == '\'' {
