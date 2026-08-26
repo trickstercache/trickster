@@ -148,18 +148,31 @@ func (hc *healthChecker) RegisterVirtual(name, description string) *Status {
 	return s
 }
 
+// RegisterExternal records a caller-managed Status (e.g., one driven by a
+// discovery provider's readiness reporting) so it surfaces in the health
+// page and status lookups. The caller owns status transitions; no probe is
+// started. Remove it with Unregister.
+func (hc *healthChecker) RegisterExternal(name, description string, s *Status) {
+	if name == "" || s == nil {
+		return
+	}
+	hc.mtx.Lock()
+	hc.statuses[name] = s
+	hc.mtx.Unlock()
+}
+
 func (hc *healthChecker) Unregister(name string) {
 	if name == "" {
 		return
 	}
 	hc.mtx.Lock()
-	t, ok := hc.targets[name]
-	if ok && t != nil {
-		delete(hc.targets, t.name)
-		delete(hc.statuses, t.name)
-	}
+	t, hadTarget := hc.targets[name]
+	delete(hc.targets, name)
+	// virtual and external registrations have a status but no target;
+	// remove the status entry unconditionally so they don't linger
+	delete(hc.statuses, name)
 	hc.mtx.Unlock()
-	if ok && t != nil {
+	if hadTarget && t != nil {
 		t.Stop()
 	}
 }
