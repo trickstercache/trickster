@@ -81,6 +81,38 @@ pool:
     weight: 3
 ```
 
+### Discoverer Connection Options
+
+Each entry in the top-level `discovery` section declares a `provider` and
+that provider's connection-level block:
+
+| provider | block | options |
+| ----- | ----- | ----- |
+| `kubernetes` | `kubernetes` | `in_cluster` (default true) or `kubeconfig` path — mutually exclusive |
+| `dns_srv`, `dns_a` | `dns` | `resolver` (host:port; default: system resolver), `interval` (poll cadence, default 30s, min 1s; record TTLs act as a floor) |
+| `file` | `file` | `poll_interval` (stat-poll fallback cadence, default 30s, min 1s) |
+
+A block is only valid on its own provider's entries; anything else fails
+startup.
+
+### Template Backends
+
+The `template_backend` is an ordinary backend definition marked
+`is_template: true`. A discovered member overrides exactly the template's
+**name**, **origin_url** (and its derived scheme/host/path-prefix, with
+the member's path prefix falling back to the template's), and **replica
+group** (see below); the member's weight applies to its pool entry. Every
+other option — cache settings, TLS client configuration, healthcheck,
+paths, request rewriters, authenticator, timeouts, concurrency limits,
+tracing — is inherited from the template.
+
+Templates are excluded from everything that applies only to live
+backends: they are never routed, cannot be `is_default`, cannot appear in
+a static ALB pool, and do not require an `origin_url`. A template must
+use an origin-serving provider (not `alb` or `rule`), and a TSM-merged or
+`replica_group_label`-using ALB requires a time-series-merge-capable
+template provider.
+
 ### The `alb.discovery` Block
 
 | option | description | default |
@@ -428,3 +460,28 @@ per-discoverer refresh-error counters — are documented in
 each membership reconcile cycle is traced as an `alb.discovery.reconcile`
 span via the standard [tracing](./tracing.md) subsystem; the request hot
 path is never traced by discovery.
+
+## Notes for Followers of the Earlier Draft (PR #675)
+
+If you tracked the public autodiscovery draft branch
+([trickstercache/trickster#675](https://github.com/trickstercache/trickster/pull/675)),
+the shipped design differs from it in a few important ways:
+
+- **Continuous, not one-shot**: the draft resolved discovery exactly once
+  at route-registration time. Discovery is now a continuous watch/poll
+  with runtime pool updates and member teardown — no config reload or
+  listener restart on membership change.
+- **`template_backend` replaces the `targets` map**: the draft mapped
+  discovered names to templates through an `alb.discovery.targets` map
+  with a magic `"default"` key. Each ALB now names a single
+  `template_backend`; heterogeneous pools are expressed as multiple ALBs.
+- **Explicit query kinds replace the in/out-of-cluster split**: the
+  draft's in-cluster mode listed Pods and its out-of-cluster mode joined
+  Services against Ingress rules. Selection is now an explicit `query`
+  (`endpointslices` — the default, `service`, or `pods`), and in-cluster
+  vs kubeconfig is purely a connection setting on the discoverer.
+- **Connection settings moved to the top-level `discovery` section**: the
+  draft embedded kubernetes client settings in each ALB; discoverers are
+  now named, shared connections referenced by `discoverer_name`.
+- `is_template` survives from the draft with the same meaning, now with
+  fully-specified exclusion semantics (see Template Backends above).

@@ -17,7 +17,7 @@ The roadmap for Trickster in 2025 focuses on delivering Trickster versions 2.0 a
   - [x] Auto-reload config + `conf.d` directory support
   - [ ] Support for Graphite
   - [ ] Support for InfluxDB 3.0
-  - [ ] Support for Autodiscovery (e.g., Kubernetes Pod Annotations)
+  - [x] Support for [ALB Pool Autodiscovery](./alb-autodiscovery.md) (Kubernetes, DNS SRV/A, member file; consul/ec2/gce/etcd/docker planned via the provider interface)
   - [ ] Kube Gateway API support
   - [ ] More easily-importable Trickster packages by other projects
 

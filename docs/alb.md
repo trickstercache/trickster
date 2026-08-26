@@ -33,13 +33,24 @@ The Trickster ALB is intended to support stateless workloads, and currently does
 
 #### Weighted Round Robin
 
-Trickster supports Weighted Round Robin by permitting repeated pool member names in the same pool list. In this way, an operator can craft a desired apportionment based on the number of times a given backend appears in the pool list. We've provided an example in the snippet below.
+Trickster supports Weighted Round Robin with a first-class integer `weight` on pool entries. A pool entry may be a plain backend name (weight 1) or a mapping with an explicit weight:
 
-Trickster's round robiner cycles through the pool in the order it is defined in the Configuration file. Thus, when using Weighted Round Robin, it is recommended to use a non-sorted, staggered ordering pattern in the pool list configuration, so as to prevent routing bursts of consecutive requests to the same backend.
+```yaml
+pool:
+  - node01            # weight 1
+  - name: node02
+    weight: 3         # receives 3 of every 4 requests
+```
+
+Apportionment is exact: over any `totalWeight` consecutive requests against a stable healthy pool, each member is selected exactly `weight` times. Weights also carry through from autodiscovery sources that convey them (DNS SRV record weights, member-file `weight` fields); see [ALB Autodiscovery](./alb-autodiscovery.md).
+
+The legacy workaround of repeating a member name multiple times in the pool list still functions, but explicit weights replace it and are preferred.
+
+Weights apply to mechanisms that select a single member per request (round robin). Fan-out mechanisms (fr, fgr, nlm, tsm) dispatch to every healthy member regardless of weight.
 
 #### More About Our Round Robin Mechanism
 
-Trickster's Round Robin Mechanism works by maintaining an atomic uint64 counter that increments each time a request is received by the ALB. The ALB then performs a modulo operation on the request's counter value, with the denominator being the count of healthy backends in the pool. The resulting value, ranging from `0` to `len(healthy_pool) - 1` indicates the assigned backend based on the counter and current pool size.
+Trickster's Round Robin Mechanism works by maintaining an atomic uint64 counter that increments each time a request is received by the ALB. With uniform weights, the ALB performs a modulo operation on the request's counter value, with the denominator being the count of healthy backends in the pool; the resulting value, ranging from `0` to `len(healthy_pool) - 1`, indicates the assigned backend based on the counter and current pool size. With mixed weights, the modulo denominator becomes the pool's total weight, and each member owns a contiguous `weight`-sized span of that rotation. Selection remains lock- and allocation-free in both forms.
 
 #### Example Round Robin Configuration
 
@@ -70,11 +81,11 @@ backends:
     alb:
       mechanism: rr # round robin
       pool:
-        - node01 # as named above
+        - node01 # as named above; weight 1
         - node02
-        # - node02 # if this node were uncommented, weighting would change to 33/67
-        # add backends multiple times to establish a weighting protocol.
-        # when weighting, use a cycling list, rather than a sorted list.
+        # to weight the pool, use the mapping form on any entry:
+        # - name: node02
+        #   weight: 2 # node02 would receive 2 of every 3 requests
 ```
 
 Here is the visual representation of this configuration:
