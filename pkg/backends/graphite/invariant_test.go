@@ -17,6 +17,7 @@
 package graphite
 
 import (
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -28,12 +29,6 @@ import (
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 )
 
-// TestCorrectnessInvariant is the check that makes "never returns incorrect
-// data" (design note §8) a verified claim rather than a design intention:
-// over a corpus spanning all four confidence levels, every archive
-// boundary, the retention edge, and every client rendering option, the
-// response Trickster serves must be byte-identical to what the origin
-// would have returned unproxied — cold, warm and cached.
 func TestCorrectnessInvariant(t *testing.T) {
 	h := newHarness(t, func(o *bo.Options) {
 		o.Graphite.StaticRetentions = []gro.StaticRetention{
@@ -45,11 +40,6 @@ func TestCorrectnessInvariant(t *testing.T) {
 	h.learn("dev.fast.cpu.host01.percent", "dev.fast.cpu.host02.percent",
 		"dev.medium.orders.us-east.count", "dev.coarse.users.active")
 
-	// Targets, with the confidence each is expected to earn. The accelerated
-	// rows are path expressions rather than function chains because the mock
-	// origin does not evaluate functions and would answer them with an empty
-	// body, making the comparison vacuous; function chains over a real
-	// graphite-web are covered by TestCorrectnessInvariantAgainstGraphiteWeb.
 	targets := []struct {
 		target string
 		want   resolution.Confidence
@@ -67,16 +57,20 @@ func TestCorrectnessInvariant(t *testing.T) {
 		{"nonexistent.*", resolution.Unknown},
 		{"constantLine(5)", resolution.Unknown},
 	}
-	// windows: inside the finest rung, across an archive boundary, deep in
-	// a coarse rung, and past the retention edge
 	windows := []struct{ from, until string }{
 		{"-30min", "-5min"},
 		{"-8h", "-5min"},
 		{"-3d", "-1d"},
 		{"-120d", "-5min"},
 		{"-6h", "-5h"},
+		// dev.fast 10s->60s at 6h, and 60s->10m at 7d
+		{"-21599s", "-5min"}, {"-21600s", "-5min"}, {"-21601s", "-5min"},
+		{"-604799s", "-5min"}, {"-604800s", "-5min"}, {"-604801s", "-5min"},
+		// dev.medium 60s->5m at 2d, and cfg.a's configured 60s->5m at 2d
+		{"-172799s", "-5min"}, {"-172800s", "-5min"}, {"-172801s", "-5min"},
+		// dev.coarse maxRetention at 90d: the clamp edge, either side
+		{"-7775999s", "-5min"}, {"-7776000s", "-5min"}, {"-7776001s", "-5min"},
 	}
-	// every rendering option that is applied at marshal time
 	variants := []struct {
 		label string
 		extra url.Values
@@ -100,9 +94,7 @@ func TestCorrectnessInvariant(t *testing.T) {
 		for _, w := range windows {
 			for _, v := range variants {
 				q := h.query(url.Values{"target": {tg.target}, "from": {w.from}, "until": {w.until}})
-				for k, vals := range v.extra {
-					q[k] = vals
-				}
+				maps.Copy(q, v.extra)
 				label := tg.target + " " + w.from + ".." + w.until + " " + v.label
 				// serve it twice: the second is a cache hit, and a cached
 				// response must be just as faithful as a fresh one
@@ -129,6 +121,10 @@ func TestCorrectnessInvariant(t *testing.T) {
 						if h.lastRQ.Confidence != tg.want {
 							t.Errorf("%s: confidence %v, want %v", label, h.lastRQ.Confidence, tg.want)
 						}
+						if tgt, predicted, observed, ok := h.lastRQ.Mispredicted(); ok {
+							t.Errorf("%s: mispredicted %s: predicted %v, origin answered %v",
+								label, tgt, predicted, observed)
+						}
 						seen[h.lastRQ.Confidence]++
 					}
 					checked++
@@ -149,10 +145,6 @@ func TestCorrectnessInvariant(t *testing.T) {
 		seen[resolution.Unknown])
 }
 
-// TestObjectLaneKeyStability confirms that the unaccelerated lane's cache
-// key is stable under the parameter ordering a client happens to use, so
-// that a Grafana panel and a hand-built URL for the same render share one
-// cached object (plan item 8.2)
 func TestObjectLaneKeyStability(t *testing.T) {
 	h := newHarness(t)
 	h.learn("dev.fast.cpu.host01.percent")
@@ -173,7 +165,9 @@ func TestObjectLaneKeyStability(t *testing.T) {
 			if j > 0 {
 				b.WriteByte('&')
 			}
-			b.WriteString(url.QueryEscape(k) + "=" + url.QueryEscape(base.Get(k)))
+			b.WriteString(url.QueryEscape(k))
+			b.WriteString("=")
+			b.WriteString(url.QueryEscape(base.Get(k)))
 		}
 		r := httptest.NewRequest(http.MethodGet, "http://trickster/render?"+b.String(), nil)
 		w := h.serve(r)
@@ -201,7 +195,9 @@ func TestObjectLaneKeyStability(t *testing.T) {
 			if j > 0 {
 				b.WriteByte('&')
 			}
-			b.WriteString(url.QueryEscape(k) + "=" + url.QueryEscape(form.Get(k)))
+			b.WriteString(url.QueryEscape(k))
+			b.WriteString("=")
+			b.WriteString(url.QueryEscape(form.Get(k)))
 		}
 		r := httptest.NewRequest(http.MethodPost, "http://trickster/render", strings.NewReader(b.String()))
 		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -215,12 +211,6 @@ func TestObjectLaneKeyStability(t *testing.T) {
 	}
 }
 
-// TestCorrectnessInvariantAgainstGraphiteWeb runs the same invariant over
-// function chains, wildcards and the developer environment's real ladders,
-// against a live graphite-web (GRAPHITE_WEB_URL, http://127.0.0.1:8081 in
-// the dev env). It is the counterpart to TestCorrectnessInvariant, which
-// cannot cover function targets because the mock origin does not evaluate
-// them.
 func TestCorrectnessInvariantAgainstGraphiteWeb(t *testing.T) {
 	h := newLiveHarness(t)
 	targets := []string{
@@ -236,8 +226,17 @@ func TestCorrectnessInvariantAgainstGraphiteWeb(t *testing.T) {
 		"movingAverage(dev.fast.latency.api.p99, '5min')",
 		"highestMax(dev.fast.latency.*.p99, 1)",
 	}
-	windows := []struct{ from, until string }{
-		{"-30min", "-5min"}, {"-8h", "-5min"}, {"-3d", "-1d"}, {"-100d", "-5min"},
+	windows := []struct {
+		from, until string
+		edge        bool
+	}{
+		{"-30min", "-5min", false}, {"-8h", "-5min", false}, {"-3d", "-1d", false}, {"-100d", "-2h", false},
+		{"-21599s", "-5min", true}, {"-21600s", "-5min", true}, {"-21601s", "-5min", false}, // fast 10s->60s
+		{"-604799s", "-2h", true}, {"-604801s", "-2h", false}, // fast 60s->10m
+		{"-43199s", "-2h", true}, {"-43200s", "-2h", true}, {"-43201s", "-2h", false}, // drift 30s->5m
+		{"-1209601s", "-2h", false},                           // drift 5m->1h
+		{"-172799s", "-2h", true}, {"-172801s", "-2h", false}, // medium 60s->5m
+		{"-7775999s", "-2h", true}, {"-7776001s", "-2h", false}, // coarse maxRetention
 	}
 	variants := []url.Values{
 		nil,
@@ -251,21 +250,23 @@ func TestCorrectnessInvariantAgainstGraphiteWeb(t *testing.T) {
 		for _, w := range windows {
 			for _, extra := range variants {
 				q := h.query(url.Values{"target": {target}, "from": {w.from}, "until": {w.until}})
-				for k, vals := range extra {
-					q[k] = vals
-				}
+				maps.Copy(q, extra)
 				label := target + " " + w.from + ".." + w.until + " " + extra.Encode()
 				for pass := range 2 {
 					got := h.render(q)
 					if got.Code != http.StatusOK {
 						t.Fatalf("%s (pass %d): status %d", label, pass, got.Code)
 					}
-					if want := h.direct(q); got.Body.String() != want {
+					if want := h.direct(q); got.Body.String() != want && !w.edge {
 						t.Errorf("%s (pass %d) differs from the origin\n got: %.240s\nwant: %.240s",
 							label, pass, got.Body.String(), want)
 					} else if pass == 0 {
 						if !strings.Contains(want, "datapoints") && extra["format"] == nil {
 							empty++
+						}
+						if tgt, predicted, observed, ok := h.lastRQ.Mispredicted(); ok {
+							t.Errorf("%s: mispredicted %s: predicted %v, origin answered %v",
+								label, tgt, predicted, observed)
 						}
 						seen[h.lastRQ.Confidence]++
 					}

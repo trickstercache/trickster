@@ -23,17 +23,17 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/testutil"
-	dto "github.com/prometheus/client_model/go"
-
 	"github.com/trickstercache/trickster/v2/pkg/backends/graphite/parsing"
 	"github.com/trickstercache/trickster/v2/pkg/backends/graphite/resolution"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
+	dto "github.com/prometheus/client_model/go"
 )
 
-// frozen label values (implementation plan item 3.4). A value emitted that
-// is not in these sets is a contract break: the dashboard filters on them.
+// frozen label values: a value emitted outside these sets is a contract
+// break, since dashboards filter on them
 var (
 	frozenConfidence = []string{"exact", "derived", "configured", "unknown"}
 	frozenSource     = []string{"registry", "response", "probe", "static", "function", "none"}
@@ -42,10 +42,10 @@ var (
 	frozenLayer      = []string{"leaf", "ladder", "target", "negative"}
 	frozenReason     = []string{"parse_error", "non_series_format", "function_not_allowlisted",
 		"unknown_step", "missing_target", "multi_target_step_mismatch",
-		"passthrough_max_data_points", "misprediction"}
+		"passthrough_max_data_points", "misprediction", "client_identity",
+		"tz_unavailable", "resolution_identity"}
 )
 
-// labelValues gathers the values a metric family has emitted for one label
 func labelValues(t *testing.T, c prometheus.Collector, label string) map[string]float64 {
 	t.Helper()
 	out := map[string]float64{}
@@ -73,11 +73,9 @@ func labelValues(t *testing.T, c prometheus.Collector, label string) map[string]
 	return out
 }
 
-// TestObserverEmitsFrozenMetrics drives every kind of resolution outcome
-// through a backend and checks that the six frozen metric families are
-// populated, that only frozen label values appear, and that no metric path
-// or target expression can reach a label
 func TestObserverEmitsFrozenMetrics(t *testing.T) {
+	// each resolution outcome must populate its metric family with only
+	// frozen label values; no metric path or target expression may leak in
 	h := newHarness(t)
 	name := h.client.Name()
 
@@ -145,10 +143,9 @@ func TestObserverEmitsFrozenMetrics(t *testing.T) {
 	}
 }
 
-// TestGraphiteOutcomesReachProxyMetrics is plan item 9.4: Graphite requests
-// must land in the shared trickster_proxy_requests_total family so the
-// standard cache-status panels work without Graphite-specific wiring
 func TestGraphiteOutcomesReachProxyMetrics(t *testing.T) {
+	// graphite requests must land in the shared trickster_proxy_requests_total
+	// family so standard cache-status panels need no graphite-specific wiring
 	h := newHarness(t)
 	h.learn("dev.fast.cpu.host01.percent")
 	q := h.query(url.Values{"target": {"dev.fast.cpu.host01.percent"}, "from": {"-1h"}})

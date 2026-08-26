@@ -31,11 +31,9 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
-// TestAgainstGraphiteWeb fetches JSON from a live graphite-web
-// (GRAPHITE_WEB_URL, http://127.0.0.1:8081 in the dev env), models it, and
-// checks that every client format Trickster renders is byte-identical to
-// what the origin renders for the same parameters
 func TestAgainstGraphiteWeb(t *testing.T) {
+	// fetches JSON from a live graphite-web (GRAPHITE_WEB_URL), models it, and checks
+	// every client format Trickster renders is byte-identical to the origin's
 	base := os.Getenv("GRAPHITE_WEB_URL")
 	if base == "" {
 		t.Skip("GRAPHITE_WEB_URL not set")

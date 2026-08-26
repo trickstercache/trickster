@@ -17,12 +17,14 @@
 package setup
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	gro "github.com/trickstercache/trickster/v2/pkg/backends/graphite/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	cacheoptions "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/providers"
@@ -144,6 +146,49 @@ backends:
 `))
 	if err == nil {
 		t.Error("expected an error for an invalid cache index configuration")
+	}
+}
+
+func TestValidateConfigRejectsGraphiteOriginAuthConflicts(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		err  error
+	}{
+		{"authorization with username", `
+    graphite:
+      origin_authorization: 'Bearer tok'
+      origin_username: 'u'`, gro.ErrOriginAuthConflict},
+		{"password without username", `
+    graphite:
+      origin_password: 'p'`, gro.ErrOriginAuthNoUser},
+		{"credential with +Authorization path", `
+    graphite:
+      origin_username: 'u'
+      origin_password: 'p'
+    paths:
+      - path: /render
+        request_headers:
+          '+authorization': 'appended'`, gro.ErrOriginAuthAppend},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			path := writeConfig(t, `
+backends:
+  test:
+    provider: graphite
+    origin_url: 'http://example.com'`+tc.body)
+			// the -validate-config flow and ordinary startup must both reject
+			// it with the specific origin-auth error, not just any failure
+			_, err := LoadAndValidate("-validate-config", "-config", path)
+			if !errors.Is(err, tc.err) {
+				t.Errorf("-validate-config: expected %v, got %v", tc.err, err)
+			}
+			_, _, err = BootstrapConfig("-config", path)
+			if !errors.Is(err, tc.err) {
+				t.Errorf("startup: expected %v, got %v", tc.err, err)
+			}
+		})
 	}
 }
 

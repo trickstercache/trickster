@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -30,10 +31,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/testutil/graphite/mockserver"
 )
 
-// newRouterClient builds a client over a mock origin holding metrics on
-// three ladders, with `cfg.*` covered by static_retentions and the
-// `learned.*` and `short.*` namespaces learned synchronously, so that every
-// confidence level is reachable
 func newRouterClient(t *testing.T) *Client {
 	t.Helper()
 	o := bo.New()
@@ -67,9 +64,6 @@ func newRouterClient(t *testing.T) *Client {
 	return c
 }
 
-// TestRouteTable exercises the confidence routing table of design note §6,
-// one case per row. Every declined row must name a frozen `reason` value,
-// and every accelerated row must report the confidence it earned.
 func TestRouteTable(t *testing.T) {
 	c := newRouterClient(t)
 	tests := []struct {
@@ -90,7 +84,7 @@ func TestRouteTable(t *testing.T) {
 		{"bad now", "target=learned.a&now=bogus&format=json", LaneObject, parsing.ReasonParseError, resolution.Unknown, resolution.SourceNone, 0},
 		{"bad from", "target=learned.a&from=-5m&format=json", LaneObject, parsing.ReasonParseError, resolution.Unknown, resolution.SourceNone, 0},
 		{"empty range", "target=learned.a&from=now&until=now&format=json", LaneObject, parsing.ReasonParseError, resolution.Unknown, resolution.SourceNone, 0},
-		// declined on the target grammar and the D4 allowlist
+		// declined on the target grammar and the function allowlist
 		{"unparsable target", "target=sumSeries(&from=-1h&format=json", LaneObject, parsing.ReasonParseError, resolution.Unknown, resolution.SourceNone, 0},
 		{"movingAverage", "target=movingAverage(learned.a,'5min')&from=-1h&format=json", LaneObject, parsing.ReasonFunctionNotAllowlisted, resolution.Unknown, resolution.SourceNone, 0},
 		{"highestMax", "target=highestMax(learned.*,1)&from=-1h&format=json", LaneObject, parsing.ReasonFunctionNotAllowlisted, resolution.Unknown, resolution.SourceNone, 0},
@@ -166,7 +160,7 @@ func TestRoutePassthroughMaxDataPoints(t *testing.T) {
 	c := newRouterClient(t)
 	c.Configuration().Graphite.PassthroughMaxDataPoints = true
 	// with passthrough configured, a request carrying maxDataPoints is
-	// served by the origin so its consolidation is byte-identical (D3)
+	// served by the origin so its consolidation is byte-identical
 	trq, _, canOPC, err := c.ParseTimeRangeQuery(getReq("target=learned.a&from=-1h&format=json&maxDataPoints=100"))
 	var fe *FallbackError
 	if !errors.As(err, &fe) || fe.Reason != parsing.ReasonPassthroughMaxPoints || !canOPC {
@@ -189,5 +183,66 @@ func TestLaneString(t *testing.T) {
 		confidenceRank(resolution.Derived) <= confidenceRank(resolution.Configured) ||
 		confidenceRank(resolution.Configured) <= confidenceRank(resolution.Unknown) {
 		t.Error("confidence ranks must order Exact > Derived > Configured > Unknown")
+	}
+}
+
+func TestRouteRequestShapeLimits(t *testing.T) {
+	c := newTestClient(t, nil)
+	ctx := context.Background()
+
+	// too many targets: declined, and nothing was parsed or resolved
+	many := make([]string, gro.DefaultMaxTargetsPerRequest+1)
+	for i := range many {
+		many[i] = "a.b"
+	}
+	rq := &RenderQuery{Params: parsing.RenderParams{Targets: many, From: "-1h", Format: "json"},
+		Location: time.UTC, Now: time.Now()}
+	d := c.route(ctx, rq)
+	if d.Lane != LaneObject || d.Reason != parsing.ReasonParseError {
+		t.Fatalf("count limit: lane %v reason %q", d.Lane, d.Reason)
+	}
+	if len(rq.Targets) != 0 {
+		t.Fatal("targets must not be parsed once the limit is hit")
+	}
+
+	// an oversized single target: declined before ParseTarget sees it
+	huge := strings.Repeat("a", gro.DefaultMaxTargetLength+1)
+	rq = &RenderQuery{Params: parsing.RenderParams{Targets: []string{huge}, From: "-1h", Format: "json"},
+		Location: time.UTC, Now: time.Now()}
+	if d := c.route(ctx, rq); d.Lane != LaneObject || d.Reason != parsing.ReasonParseError {
+		t.Fatalf("length limit: lane %v reason %q", d.Lane, d.Reason)
+	}
+
+	// raised limits admit the same shapes
+	o := bo.New()
+	o.Graphite = gro.New()
+	o.Graphite.MaxTargetsPerRequest = len(many) + 1
+	o.Graphite.MaxTargetLength = len(huge) + 1
+	c2 := newTestClient(t, o)
+	rq = &RenderQuery{Params: parsing.RenderParams{Targets: many, From: "-1h", Format: "json"},
+		Location: time.UTC, Now: time.Now()}
+	if d := c2.route(ctx, rq); d.Reason == parsing.ReasonParseError && len(rq.Targets) == 0 {
+		t.Fatal("raised count limit still declined on shape")
+	}
+}
+
+func BenchmarkRouteMultiTarget(b *testing.B) {
+	c := newTestClient(b, nil)
+	targets := make([]string, 128)
+	for i := range targets {
+		targets[i] = "a.b"
+	}
+	ctx := context.Background()
+	// warm: resolve once so the registry answers every member
+	warm := &RenderQuery{Params: parsing.RenderParams{Targets: targets[:1], From: "-1h", Format: "json"},
+		Location: time.UTC, Now: time.Now()}
+	c.route(ctx, warm)
+	b.ReportAllocs()
+	for b.Loop() {
+		rq := &RenderQuery{Params: parsing.RenderParams{Targets: targets, From: "-1h", Format: "json"},
+			Location: time.UTC, Now: time.Now()}
+		if d := c.route(ctx, rq); d.Lane != LaneDelta {
+			b.Fatalf("lane %v reason %s", d.Lane, d.Reason)
+		}
 	}
 }

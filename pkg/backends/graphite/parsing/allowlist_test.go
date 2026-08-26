@@ -17,6 +17,9 @@
 package parsing
 
 import (
+	"fmt"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -96,6 +99,48 @@ func TestClassify(t *testing.T) {
 				c.Accelerable() != tc.accel || c.Reason != tc.reason || c.Offender != tc.offender ||
 				len(c.Leaves) != tc.leaves {
 				t.Errorf("got %+v", c)
+			}
+		})
+	}
+}
+
+func TestEveryAllowlistedFunctionClassifies(t *testing.T) {
+	// a typo'd name or a seriesArgs/arity mismatch would sit in the allowlist
+	// looking correct; conditional entries have their own cases in TestClassify
+	conditional := []string{"summarize", "hitcount", "smartSummarize", "timeShift"}
+	for name, spec := range allowlist {
+		t.Run(name, func(t *testing.T) {
+			if spec.conditional != nil {
+				if !slices.Contains(conditional, name) {
+					t.Fatalf("%s is conditional but is not one of %v: add a case for it", name, conditional)
+				}
+				return
+			}
+			// seriesArgs is the count of leading series arguments, and 0
+			// means every argument is one
+			n := max(spec.seriesArgs, 1)
+			args := make([]string, 0, n+1)
+			for i := range n {
+				args = append(args, fmt.Sprintf("l%d.leaf", i))
+			}
+			// a trailing scalar, which must never be counted as a leaf
+			if spec.seriesArgs > 0 {
+				args = append(args, "1")
+			}
+			expr := name + "(" + strings.Join(args, ", ") + ")"
+			node, err := ParseTarget(expr)
+			if err != nil {
+				t.Fatalf("%s: %v", expr, err)
+			}
+			c := Classify(node)
+			if !c.Accelerable() {
+				t.Fatalf("%s: not accelerable (%s / %s)", expr, c.Reason, c.Offender)
+			}
+			if c.Step != spec.step {
+				t.Errorf("%s: step %v, want %v", expr, c.Step, spec.step)
+			}
+			if len(c.Leaves) != n {
+				t.Errorf("%s: %d leaves %v, want %d", expr, len(c.Leaves), c.Leaves, n)
 			}
 		})
 	}

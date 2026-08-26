@@ -27,12 +27,9 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/graphite/resolution"
 )
 
-// TestLearnAgainstGraphiteWeb learns the developer environment's four
-// ladders from the real graphite-web when GRAPHITE_WEB_URL is set
-// (http://127.0.0.1:8081 in the dev env) and checks them against the seeded
-// schemas, including the drift namespace whose files disagree with
-// storage-schemas.conf.
 func TestLearnAgainstGraphiteWeb(t *testing.T) {
+	// learns the dev environment's ladders from real graphite-web when
+	// GRAPHITE_WEB_URL is set, checking them against the seeded schemas
 	base := os.Getenv("GRAPHITE_WEB_URL")
 	if base == "" {
 		t.Skip("GRAPHITE_WEB_URL not set")

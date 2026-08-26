@@ -72,14 +72,31 @@ func TestNewTarget(t *testing.T) {
 	o := ho.New()
 	o.FailureThreshold = -1
 	o.RecoveryThreshold = -1
-	o.Headers = map[string]string{"test-header": "test-header-value"}
+	o.Headers = map[string]string{"test-header": "test-header-value", "X-Probe-Flag": ""}
 	o.ExpectedHeaders = map[string]string{"test-header1": "test-header-value1"}
 	o.SetExpectedBody("expectedBody")
 	o.ExpectedCodes = nil
 
-	_, err = newTarget(ctx, "test", "test", o, nil)
+	var probed *http.Request
+	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		probed = r
+		return okProbeResponse(r), nil
+	})}
+	tgt, err := newTarget(ctx, "test", "test", o, client)
 	if err != nil {
 		t.Error(err)
+	}
+	tgt.probe(ctx)
+	if probed == nil {
+		t.Fatal("expected the probe to issue a request")
+	}
+	if v := probed.Header.Get("test-header"); v != "test-header-value" {
+		t.Errorf("expected test-header on the probe request, got %q", v)
+	}
+	// an explicitly configured empty value is still a present header: HTTP
+	// distinguishes absence from empty, and gateways may test membership
+	if vals, ok := probed.Header["X-Probe-Flag"]; !ok || len(vals) != 1 || vals[0] != "" {
+		t.Errorf("an empty-valued header must remain present on the wire, got %v ok=%t", vals, ok)
 	}
 
 	expected := `net/http: invalid method "INVALID METHOD"`

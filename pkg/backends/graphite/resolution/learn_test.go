@@ -90,7 +90,7 @@ type harness struct {
 	now      time.Time
 }
 
-func newHarness(t *testing.T, static [][2]string) *harness {
+func newHarness(t testing.TB, static [][2]string) *harness {
 	t.Helper()
 	srv := mockserver.New()
 	t.Cleanup(srv.Close)
@@ -101,6 +101,7 @@ func newHarness(t *testing.T, static [][2]string) *harness {
 	obs := newCounter()
 	reg := resolution.NewRegistry(resolution.RegistryOptions{TTL: time.Hour, NegativeTTL: time.Second,
 		NegativeTTLMax: 10 * time.Second, MaxEntries: 1000, Now: func() time.Time { return now }}, nil)
+	reg.Observer = obs
 	exp := &resolution.Expander{Origin: origin, Registry: reg, Observer: obs, TTL: time.Minute}
 	st, err := resolution.NewStatic(static)
 	if err != nil {
@@ -571,5 +572,30 @@ func TestShortFinestRung(t *testing.T) {
 	}
 	if s, _ := l.StepFor(30 * time.Second); s != 10*time.Second {
 		t.Error("a rung shorter than the sweep start must still be found")
+	}
+}
+
+func TestImmediatelySaturatingLadder(t *testing.T) {
+	// degenerate shape: one rung whose retention is shorter than the sweep's
+	// first step outward, so the first probe already falls past maxRetention
+	h := newHarness(t, nil)
+	h.stub.Add("tiny.one", "10s:1m")
+	l, err := h.learner.Learn(context.Background(), "tiny.one", nil)
+	if err != nil || l == nil {
+		t.Fatalf("learned %v err %v", l, err)
+	}
+	if l.State != resolution.StateComplete || l.String() != "10s:1m" {
+		t.Errorf("learned %v (%v), want a complete 10s:1m", l, l.State)
+	}
+	if s, ok := l.StepFor(30 * time.Second); !ok || s != 10*time.Second {
+		t.Errorf("inside retention: %v %t", s, ok)
+	}
+	// past maxRetention the ladder saturates: the origin answers at the
+	// coarsest rung's step over the clamped window
+	if s, ok := l.StepFor(2 * time.Minute); !ok || s != 10*time.Second {
+		t.Errorf("past maxRetention: %v %t, want the coarsest step", s, ok)
+	}
+	if l.MaxRetention() != time.Minute {
+		t.Errorf("maxRetention %v, want 1m", l.MaxRetention())
 	}
 }

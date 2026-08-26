@@ -19,8 +19,10 @@ package resolution
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -194,7 +196,9 @@ func TestRegistryLeavesAndLadders(t *testing.T) {
 
 func TestRegistryTargetsAndNegative(t *testing.T) {
 	r, c := newTestRegistry(nil)
-	id := r.SetTarget("a.*", []string{"a.b", "a.a"}, time.Minute)
+	// SetTarget takes ownership of an already canonical (sorted, deduped)
+	// slice, as the expander produces
+	id := r.SetTarget("a.*", []string{"a.a", "a.b"}, time.Minute)
 	leaves, id2, ok := r.Target("a.*")
 	if !ok || id != id2 || strings.Join(leaves, ",") != "a.a,a.b" {
 		t.Errorf("target: %v %q %t", leaves, id2, ok)
@@ -292,5 +296,147 @@ func TestRegistryEviction(t *testing.T) {
 	}
 	if r3.Stats().Leaves != 50 {
 		t.Error("unbounded registry evicted")
+	}
+}
+
+func TestRegistryConcurrentHitsAndEviction(t *testing.T) {
+	now := time.Now()
+	r := NewRegistry(RegistryOptions{TTL: time.Hour, NegativeTTL: time.Second,
+		MaxEntries: 8, Now: func() time.Time { return now }}, nil)
+	shared, err := NewLadder([]Rung{{Step: 10 * time.Second, MaxAge: 6 * time.Hour}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	for g := range 8 {
+		wg.Go(func() {
+			for i := range 200 {
+				leaf := fmt.Sprintf("m.%d.%d", g, i)
+				if _, err := r.SetLadder(leaf, shared); err != nil {
+					t.Error(err)
+					return
+				}
+				key := shared.Fingerprint()
+				if err := r.SetLeaf(leaf, key, Exact); err != nil {
+					t.Error(err)
+					return
+				}
+				r.Leaf(leaf)
+				r.Ladder(key)
+				r.SetTarget(leaf, []string{leaf}, time.Minute)
+				r.Target(leaf)
+				r.SetNegative("neg." + leaf)
+				r.Negative("neg." + leaf)
+				r.Stats()
+			}
+		})
+	}
+	wg.Wait()
+}
+
+func TestStatsCompleteLaddersStaysExact(t *testing.T) {
+	now := time.Now()
+	r := NewRegistry(RegistryOptions{TTL: time.Hour, NegativeTTL: time.Second,
+		MaxEntries: 16, Now: func() time.Time { return now }}, nil)
+	recount := func() int {
+		r.mu.RLock()
+		defer r.mu.RUnlock()
+		n := 0
+		for _, e := range r.ladders {
+			if e.Ladder.State == StateComplete {
+				n++
+			}
+		}
+		return n
+	}
+	check := func(label string) {
+		t.Helper()
+		if got, want := r.Stats().CompleteLadders, recount(); got != want {
+			t.Fatalf("%s: counter %d, recount %d", label, got, want)
+		}
+	}
+	// distinct complete ladders, enough to trigger LRU eviction at 16
+	for i := range 40 {
+		l, err := NewLadder([]Rung{{Step: 10 * time.Second, MaxAge: time.Duration(i+1) * time.Hour}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := r.SetLadder(fmt.Sprintf("m.%d", i), l); err != nil {
+			t.Fatal(err)
+		}
+		check("insert")
+	}
+	// partial ladders under their own keys, interleaved
+	for i := range 10 {
+		p := NewPartial()
+		if err := p.Observe(time.Minute, 10*time.Second); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := r.SetLadder(fmt.Sprintf("p.%d", i), p); err != nil {
+			t.Fatal(err)
+		}
+		check("partial insert")
+	}
+	// re-inserting an existing complete ladder replaces at the same key
+	l, _ := NewLadder([]Rung{{Step: 10 * time.Second, MaxAge: 39 * time.Hour}})
+	if _, err := r.SetLadder("m.re", l); err != nil {
+		t.Fatal(err)
+	}
+	check("replace")
+	r.BumpGeneration()
+	check("bump")
+	if r.Stats().CompleteLadders != 0 {
+		t.Fatal("bump must zero the count")
+	}
+}
+
+// reentrantObserver reads registry state from inside the callback: under-lock
+// emission would deadlock, since RegistryEntries would run holding Registry.mu.
+type reentrantObserver struct {
+	NopObserver
+	r    *Registry
+	seen atomic.Int64
+}
+
+func (o *reentrantObserver) RegistryEntries(layer string, _ int) {
+	o.r.Stats() // takes the registry read lock
+	if layer == LayerNegative && o.seen.Add(1) < 50 {
+		o.r.SetNegative("reenter." + strconv.FormatInt(o.seen.Load(), 10))
+	}
+}
+
+func TestRegistryObserverMayReenter(t *testing.T) {
+	// layer-size publication must happen outside Registry.mu and in mutation
+	// order; one layer is hammered concurrently under the race detector
+	now := time.Now()
+	r := NewRegistry(RegistryOptions{TTL: time.Hour, NegativeTTL: time.Second,
+		MaxEntries: 64, Now: func() time.Time { return now }}, nil)
+	obs := &reentrantObserver{r: r}
+	r.Observer = obs
+	l, err := NewLadder([]Rung{{Step: 10 * time.Second, MaxAge: 6 * time.Hour}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	for g := range 8 {
+		wg.Go(func() {
+			for i := range 100 {
+				leaf := fmt.Sprintf("m.%d.%d", g, i)
+				if _, err := r.SetLadder(leaf, l); err != nil {
+					t.Error(err)
+					return
+				}
+				r.SetNegative("neg." + leaf)
+				r.ClearNegative("neg." + leaf)
+			}
+		})
+	}
+	wg.Wait()
+	if obs.seen.Load() == 0 {
+		t.Fatal("vacuous: the observer was never called")
+	}
+	r.BumpGeneration()
+	if got := r.Stats(); got.Ladders != 0 {
+		t.Fatalf("bump left %d ladders", got.Ladders)
 	}
 }

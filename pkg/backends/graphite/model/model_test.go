@@ -32,8 +32,7 @@ import (
 	"github.com/tinylib/msgp/msgp"
 )
 
-// captured from graphite-web 1.1.10 in the developer environment with
-// now=1787350000 (see design note §9)
+// captured from graphite-web 1.1.10 with now=1787350000
 const (
 	sampleJSON = `[{"target": "dev.fast.cpu.host01.percent", "tags": {"name": "dev.fast.cpu.host01.percent"}, "datapoints": [[27.082, 1787349970], [31.115, 1787349980], [33.164, 1787349990], [32.952, 1787350000]]}, {"target": "dev.coarse.users.active", "tags": {"name": "dev.coarse.users.active"}, "datapoints": [[10819.906, 1787350200]]}]`
 	sampleRaw  = "dev.fast.cpu.host01.percent,1787349970,1787350010,10|27.082,31.115,33.164,32.952\ndev.coarse.users.active,1787350200,1787350500,300|10819.906\n"
@@ -97,8 +96,14 @@ func TestUnmarshalJSON(t *testing.T) {
 		mismatch.Observed != 10*time.Second || !strings.Contains(err.Error(), "predicted 1m0s") {
 		t.Errorf("expected a step mismatch, got %v", err)
 	}
-	// a single-point series cannot contradict the prediction
-	if _, err := UnmarshalTimeseries([]byte(`[{"target":"a","tags":{"name":"a"},"datapoints":[[1, 100]]}]`), trq(time.Minute)); err != nil {
+	_, err = UnmarshalTimeseries([]byte(`[{"target":"a","tags":{"name":"a"},"datapoints":[[1, 100]]}]`), trq(time.Minute))
+	if !errors.Is(err, ErrStepAmbiguous) {
+		t.Errorf("expected ErrStepAmbiguous for a one-point predicted fetch, got %v", err)
+	}
+	if _, err := UnmarshalTimeseries([]byte(`[]`), trq(time.Minute)); !errors.Is(err, ErrStepAmbiguous) {
+		t.Errorf("expected ErrStepAmbiguous for an empty predicted fetch, got %v", err)
+	}
+	if _, err := UnmarshalTimeseries([]byte(`[{"target":"a","tags":{"name":"a"},"datapoints":[[1, 100]]}]`), trq(0)); err != nil {
 		t.Error(err)
 	}
 	// empty and invalid bodies
@@ -293,20 +298,36 @@ func TestConsolidation(t *testing.T) {
 	if got := render(t, ds, RenderOptions{MaxDataPoints: 2, XFilesFactor: 0.9}); !strings.Contains(got, `[[null, 120], [null, 150]]`) {
 		t.Errorf("xFilesFactor: %s", got)
 	}
-	// every consolidation function
-	vals := []*float64{new(float64(1)), new(float64(4)), nil, new(float64(2))}
+	// every consolidation function (nulls carried as an explicit bitmap)
+	mkSeries := func(vals []float64, okv []bool, perPoint int) *series {
+		sr := &series{values: vals, valid: make([]uint64, (len(vals)+63)/64), valuesPerPoint: perPoint}
+		for i, ok := range okv {
+			if ok {
+				sr.valid[i>>6] |= 1 << (uint(i) & 63)
+			}
+		}
+		return sr
+	}
+	bit := func(b []uint64, i int) bool { return b[i>>6]&(1<<(uint(i)&63)) != 0 }
+	vals := []float64{1, 4, 0, 2}
+	okv := []bool{true, true, false, true}
 	for cf, want := range map[string]float64{"sum": 7, "average": 7.0 / 3, "avg": 7.0 / 3, "max": 4, "min": 1,
 		"first": 1, "last": 2, "avg_zero": 7.0 / 4} {
-		out := consolidate(vals, 4, cf, 0)
-		if len(out) != 1 || out[0] == nil || math.Abs(*out[0]-want) > 1e-12 {
-			t.Errorf("%s: got %v want %v", cf, out, want)
+		out, ok := mkSeries(vals, okv, 4).consolidate(cf, 0)
+		if len(out) != 1 || !bit(ok, 0) || math.Abs(out[0]-want) > 1e-12 {
+			t.Errorf("%s: got %v %v want %v", cf, out, ok, want)
 		}
 	}
-	if out := consolidate([]*float64{nil, nil}, 2, "sum", 0); len(out) != 1 || out[0] != nil {
+	if out, ok := mkSeries([]float64{0, 0}, []bool{false, false}, 2).consolidate("sum", 0); len(out) != 1 || bit(ok, 0) {
 		t.Error("all-null bucket must be null")
 	}
-	if out := consolidate(vals, 3, "sum", 0); len(out) != 2 || *out[1] != 2 {
-		t.Errorf("tail bucket: %v", out)
+	if out, ok := mkSeries(vals, okv, 3).consolidate("sum", 0); len(out) != 2 || !bit(ok, 1) || out[1] != 2 {
+		t.Errorf("tail bucket: %v %v", out, ok)
+	}
+	// a real NaN is a value, not a null: it participates and propagates
+	if out, ok := mkSeries([]float64{1, math.NaN()}, []bool{true, true}, 2).consolidate("sum", 0); len(out) != 1 ||
+		!bit(ok, 0) || !math.IsNaN(out[0]) {
+		t.Errorf("NaN must propagate through consolidation: %v %v", out, ok)
 	}
 	if pyMod(-7, 3) != 2 || pyMod(7, 3) != 1 || pyMod(6, 3) != 0 {
 		t.Error("pyMod")
@@ -344,14 +365,14 @@ func TestPyJSONString(t *testing.T) {
 		"nl\ntab\tcr\rbs\bff\f": `"nl\ntab\tcr\rbs\bff\f"`, "\x01\x7f": `"\u0001\u007f"`,
 		"<&>": `"<&>"`, "\u00e9": `"\u00e9"`, "\u65e5\u672c": `"\u65e5\u672c"`, "\U0001F600": `"\ud83d\ude00"`,
 	} {
-		var b strings.Builder
+		var b bytes.Buffer
 		writePyJSONString(&b, in)
 		if b.String() != want {
 			t.Errorf("%q: got %s want %s", in, b.String(), want)
 		}
 	}
 	// tags: name first, then sorted
-	var b strings.Builder
+	var b bytes.Buffer
 	writeTags(&b, dataset.Tags{"zeta": "1", "name": "n", "alpha": "2"})
 	if b.String() != `{"name": "n", "alpha": "2", "zeta": "1"}` {
 		t.Errorf("tags: %s", b.String())
@@ -371,5 +392,107 @@ func TestPyJSONString(t *testing.T) {
 	}
 	if NewModeler().WireUnmarshaler == nil || NewModeler().CacheMarshaler == nil {
 		t.Error("modeler")
+	}
+}
+
+func TestNaNVersusNull(t *testing.T) {
+	// one null, one NaN, one ordinary value
+	ds := mustUnmarshal(t, "a.b,100,130,10|None,nan,1.5\n", 0)
+	pts := ds.Results[0].SeriesList[0].Points
+	if pts[0].Values[0] != nil {
+		t.Fatal("None must decode as null")
+	}
+	if f, ok := pts[1].Values[0].(float64); !ok || !math.IsNaN(f) {
+		t.Fatalf("nan must decode as a real NaN, got %v", pts[1].Values[0])
+	}
+
+	// raw round-trips both states
+	if got := render(t, ds, RenderOptions{Format: FormatRaw}); got != "a.b,100,130,10|None,nan,1.5\n" {
+		t.Errorf("raw: %q", got)
+	}
+	// CSV: empty field for null, nan for NaN
+	csv := render(t, ds, RenderOptions{Format: FormatCSV})
+	if !strings.Contains(csv, "1970-01-01 00:01:40,\r\n") || !strings.Contains(csv, "1970-01-01 00:01:50,nan\r\n") {
+		t.Errorf("csv: %q", csv)
+	}
+	// msgpack: nil for null, a float64 NaN for NaN
+	mp := render(t, ds, RenderOptions{Format: FormatMsgPack})
+	rd := msgp.NewReader(strings.NewReader(mp))
+	sz, err := rd.ReadArrayHeader()
+	if err != nil || sz != 1 {
+		t.Fatalf("msgpack outer: %v %d", err, sz)
+	}
+	msz, _ := rd.ReadMapHeader()
+	var sawNil, sawNaN, sawVal bool
+	for range msz {
+		k, _ := rd.ReadString()
+		if k != "values" {
+			if err := rd.Skip(); err != nil {
+				t.Fatal(err)
+			}
+			continue
+		}
+		vsz, _ := rd.ReadArrayHeader()
+		for range vsz {
+			typ, _ := rd.NextType()
+			if typ == msgp.NilType {
+				_ = rd.ReadNil()
+				sawNil = true
+				continue
+			}
+			f, err := rd.ReadFloat64()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if math.IsNaN(f) {
+				sawNaN = true
+			} else if f == 1.5 {
+				sawVal = true
+			}
+		}
+	}
+	if !sawNil || !sawNaN || !sawVal {
+		t.Errorf("msgpack values: nil=%t nan=%t val=%t", sawNil, sawNaN, sawVal)
+	}
+	// JSON renders both null and NaN as null, as graphite-web does
+	js := render(t, ds, RenderOptions{Format: FormatJSON})
+	if !strings.Contains(js, "[[null, 100], [null, 110], [1.5, 120]]") {
+		t.Errorf("json: %q", js)
+	}
+}
+
+type ambiguityRecorder struct {
+	series string
+}
+
+func (a *ambiguityRecorder) NoteAmbiguousStep(name string, _ time.Duration) { a.series = name }
+
+func TestNonUniformTimestampsRejected(t *testing.T) {
+	for _, bad := range []string{
+		`[{"target":"a","datapoints":[[1, 100], [2, 110], [3, 125]]}]`,           // gap after the first interval
+		`[{"target":"a","datapoints":[[1, 100], [2, 110], [3, 110]]}]`,           // duplicate
+		`[{"target":"a","datapoints":[[1, 100], [2, 110], [3, 105]]}]`,           // reversal
+		`[{"target":"a","datapoints":[[1, 100], [2, 110], [3, 120], [4, 140]]}]`, // late step change
+	} {
+		// under a prediction the ambiguity noter must fire, so the handler
+		// invalidates the stale leaf binding instead of retrying forever
+		q := trq(10 * time.Second)
+		noter := &ambiguityRecorder{}
+		q.ParsedQuery = noter
+		if _, err := UnmarshalTimeseries([]byte(bad), q); err == nil {
+			t.Errorf("%s: expected an error", bad)
+		}
+		if noter.series == "" {
+			t.Errorf("%s: expected the ambiguity noter to fire", bad)
+		}
+		// with no prediction either: the malformation is the same
+		if _, err := UnmarshalTimeseries([]byte(bad), trq(0)); err == nil {
+			t.Errorf("%s (no prediction): expected an error", bad)
+		}
+	}
+	// a first-interval contradiction still reports a step mismatch
+	q := trq(time.Minute)
+	if _, err := UnmarshalTimeseries([]byte(`[{"target":"a","datapoints":[[1, 100], [2, 110], [3, 120]]}]`), q); !errors.Is(err, ErrStepMismatch) {
+		t.Errorf("expected a step mismatch, got %v", err)
 	}
 }

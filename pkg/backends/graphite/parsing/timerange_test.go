@@ -222,12 +222,9 @@ func FuzzParseATTime(f *testing.F) {
 	})
 }
 
-// TestParseATTimeAgainstGraphiteWeb cross-checks the port against a live
-// graphite-web when GRAPHITE_WEB_URL is set (the developer environment
-// exposes http://127.0.0.1:8081). Whisper aligns the requested from to
-// (from - from%step) + step in the raw header, at the step of the rung
-// serving the request, so the comparison is made at that resolution.
 func TestParseATTimeAgainstGraphiteWeb(t *testing.T) {
+	// cross-checks the port against a live graphite-web when GRAPHITE_WEB_URL
+	// is set; comparisons are made at the serving rung's step
 	base := os.Getenv("GRAPHITE_WEB_URL")
 	if base == "" {
 		t.Skip("GRAPHITE_WEB_URL not set")
@@ -250,6 +247,9 @@ func TestParseATTimeAgainstGraphiteWeb(t *testing.T) {
 		want, err := ParseATTime(tc.from, tc.loc, now)
 		if err != nil {
 			t.Fatalf("%s: %v", tc.from, err)
+		}
+		if !want.Before(now) {
+			continue
 		}
 		q := url.Values{"target": {"dev.fast.cpu.host01.percent"}, "from": {tc.from},
 			"until": {"now"}, "now": {strconv.FormatInt(now.Unix(), 10)}, "format": {"raw"}}

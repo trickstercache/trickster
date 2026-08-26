@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -133,4 +134,54 @@ func TestStub(t *testing.T) {
 		}
 	}()
 	s.Add("bad", "nonsense")
+}
+
+func TestExpand(t *testing.T) {
+	// /metrics/expand is the endpoint that turns a wildcard into concrete
+	// leaves; /metrics/find deliberately does not expand multi-level wildcards
+	s := New()
+	defer s.Close()
+	s.Add("a.b.c", "10s:6h")
+	s.Add("a.b.d", "10s:6h")
+	s.Add("a.x.y", "5m:90d")
+
+	code, body := get(t, s, "/metrics/expand?leavesOnly=1&query=a.b.*")
+	if code != 200 {
+		t.Fatalf("status %d: %s", code, body)
+	}
+	var out struct {
+		Results []string `json:"results"`
+	}
+	if err := json.Unmarshal([]byte(body), &out); err != nil {
+		t.Fatalf("%v: %s", err, body)
+	}
+	slices.Sort(out.Results)
+	if !slices.Equal(out.Results, []string{"a.b.c", "a.b.d"}) {
+		t.Errorf("a.b.*: %v", out.Results)
+	}
+	// multi-level and brace patterns, which is the whole point of expand
+	_, body = get(t, s, "/metrics/expand?leavesOnly=1&query=a.*.*")
+	if err := json.Unmarshal([]byte(body), &out); err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Results) != 3 {
+		t.Errorf("a.*.*: %v", out.Results)
+	}
+	_, body = get(t, s, "/metrics/expand?leavesOnly=1&query=a.{b,x}.c")
+	if err := json.Unmarshal([]byte(body), &out); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(out.Results, []string{"a.b.c"}) {
+		t.Errorf("brace: %v", out.Results)
+	}
+	// nothing matching is an empty list, not an error or a null
+	_, body = get(t, s, "/metrics/expand?leavesOnly=1&query=z.*")
+	if !strings.Contains(body, `"results":[]`) {
+		t.Errorf("no match: %q", body)
+	}
+	// a configured failure is reported as one
+	s.Fail.Store(503)
+	if code, _ = get(t, s, "/metrics/expand?query=a.b.*"); code != 503 {
+		t.Errorf("failure injection: %d", code)
+	}
 }

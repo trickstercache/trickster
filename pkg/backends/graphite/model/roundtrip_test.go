@@ -26,9 +26,9 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 )
 
-// TestRoundTrip: wire -> DataSet -> cache -> DataSet -> wire, byte-equal
-// for every client format, from both upstream formats
 func TestRoundTrip(t *testing.T) {
+	// wire -> DataSet -> cache -> DataSet -> wire must be byte-equal for every
+	// client format, from both upstream formats
 	m := NewModeler()
 	for name, body := range map[string]string{"json": sampleJSON, "raw": sampleRaw, "nulls": sampleNulls} {
 		t.Run(name, func(t *testing.T) {

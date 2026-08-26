@@ -18,6 +18,8 @@ package graphite
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"io"
 	"maps"
 	"net/http"
@@ -27,10 +29,12 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	gro "github.com/trickstercache/trickster/v2/pkg/backends/graphite/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/graphite/parsing"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	cr "github.com/trickstercache/trickster/v2/pkg/cache/registry"
 	"github.com/trickstercache/trickster/v2/pkg/config"
@@ -41,11 +45,10 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/testutil/graphite/mockserver"
 )
 
-// harness is a graphite backend in front of a stub origin with a real
-// memory cache, driven through the render handler exactly as the router
-// would drive it
+// a graphite backend in front of a stub origin with a real memory cache,
+// driven through the render handler exactly as the router would drive it
 type harness struct {
-	t      *testing.T
+	t      testing.TB
 	stub   *mockserver.Server
 	client *Client
 	o      *bo.Options
@@ -65,7 +68,7 @@ var harnessLadders = map[string]string{
 	"dev.coarse.users.active":         "5m:90d",
 }
 
-func newHarness(t *testing.T, mods ...func(*bo.Options)) *harness {
+func newHarness(t testing.TB, mods ...func(*bo.Options)) *harness {
 	t.Helper()
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	origin := mockserver.New()
@@ -105,9 +108,6 @@ func newHarness(t *testing.T, mods ...func(*bo.Options)) *harness {
 		now: time.Now().Truncate(10 * time.Second)}
 }
 
-// newLiveHarness points the same harness at a real graphite-web, skipping
-// the test when GRAPHITE_WEB_URL is unset (the dev env exposes it on
-// http://127.0.0.1:8081)
 func newLiveHarness(t *testing.T) *harness {
 	t.Helper()
 	base := os.Getenv("GRAPHITE_WEB_URL")
@@ -126,7 +126,6 @@ func newLiveHarness(t *testing.T) *harness {
 		o.Graphite = gro.New()
 	}
 	o.Graphite.ResolutionRegistry.Persist = false
-	o.MaxObjectSizeBytes = 64 * 1024 * 1024
 	b, err := NewClient("default", o, nil, caches["default"], nil, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -139,7 +138,6 @@ func newLiveHarness(t *testing.T) *harness {
 		now: time.Now().Add(-time.Minute).Truncate(10 * time.Second)}
 }
 
-// learn learns every stub ladder synchronously
 func (h *harness) learn(leaves ...string) {
 	h.t.Helper()
 	for _, l := range leaves {
@@ -155,7 +153,6 @@ func (h *harness) query(extra url.Values) url.Values {
 	return q
 }
 
-// render drives the handler with a GET and returns the recorder
 func (h *harness) render(q url.Values) *httptest.ResponseRecorder {
 	h.t.Helper()
 	r := httptest.NewRequest(http.MethodGet, "http://trickster/render?"+q.Encode(), nil)
@@ -179,7 +176,6 @@ func (h *harness) serve(r *http.Request) *httptest.ResponseRecorder {
 	return w
 }
 
-// expectFetches asserts how many origin renders the last handler call made
 func (h *harness) expectFetches(label string, n int64) {
 	h.t.Helper()
 	if h.fetches != n {
@@ -187,7 +183,6 @@ func (h *harness) expectFetches(label string, n int64) {
 	}
 }
 
-// direct renders the same query at the stub origin
 func (h *harness) direct(q url.Values) string {
 	h.t.Helper()
 	resp, err := http.Get(h.originURL + "/render?" + q.Encode())
@@ -199,7 +194,7 @@ func (h *harness) direct(q url.Values) string {
 	return string(b)
 }
 
-// same asserts the handler's response equals the origin's
+// renders through the handler and requires the body to equal the origin's
 func (h *harness) same(label string, q url.Values) *httptest.ResponseRecorder {
 	h.t.Helper()
 	w := h.render(q)
@@ -216,9 +211,8 @@ func (h *harness) same(label string, q url.Values) *httptest.ResponseRecorder {
 func TestRenderColdThenAccelerated(t *testing.T) {
 	h := newHarness(t)
 	q := h.query(url.Values{"target": {"dev.fast.cpu.host01.percent"}, "from": {"-1h"}})
-	// cold: unknown step, served through the object cache lane, identical
-	// to the origin; the response teaches the step at this age (mode A)
-	// while background discovery is refused in tests
+	// cold: unknown step, served through the object cache lane identical to
+	// the origin; the response itself teaches the step at this age
 	h.same("cold", q)
 	key, _, ok := h.client.Registry().Leaf("dev.fast.cpu.host01.percent")
 	if !ok || !strings.HasPrefix(key, "~") {
@@ -248,9 +242,8 @@ func TestRenderDeltaFetchAndRungPinning(t *testing.T) {
 	h := newHarness(t)
 	h.learn("dev.fast.cpu.host01.percent")
 	target := url.Values{"target": {"dev.fast.cpu.host01.percent"}}
-	// a window older than 6h is served from the 60s rung; widening it
-	// fetches only the gaps, which must come back at the same rung even
-	// though the gap's own from is young enough for the 10s rung
+	// a window older than 6h serves from the 60s rung; widening fetches only
+	// the gaps, which must stay on that rung despite their younger from
 	h.same("8h", h.query(url.Values{"target": target["target"], "from": {"-8h"}}))
 	h.expectFetches("8h", 1)
 	h.same("9h", h.query(url.Values{"target": target["target"], "from": {"-9h"}}))
@@ -264,9 +257,9 @@ func TestRenderDeltaFetchAndRungPinning(t *testing.T) {
 	// a narrower window inside the cached range is a pure hit
 	h.same("inside", h.query(url.Values{"target": target["target"], "from": {"-7h"}, "until": {"-5h"}}))
 	h.expectFetches("inside", 0)
-	// consolidation of a stitched range equals the origin's (7.6)
+	// consolidation of a stitched range equals the origin's
 	h.same("stitched+consolidated", h.query(url.Values{"target": target["target"], "from": {"-9h"}, "maxDataPoints": {"37"}}))
-	// the 10s rung is a separate cache entry (7.5): no cross-resolution reuse
+	// the 10s rung is a separate cache entry: no cross-resolution reuse
 	h.same("1h", h.query(url.Values{"target": target["target"], "from": {"-1h"}}))
 	h.expectFetches("1h (different rung)", 1)
 	h.same("8h again", h.query(url.Values{"target": target["target"], "from": {"-8h"}}))
@@ -297,8 +290,8 @@ func TestRenderMultiTarget(t *testing.T) {
 	// consolidation spans every series, as at the origin
 	q.Set("maxDataPoints", "11")
 	h.same("split consolidated", q)
-	// a wildcard that expands to both
 	h.same("wildcard", h.query(url.Values{"target": {"aliasByNode(dev.fast.cpu.*.percent, 3)"}, "from": {"-30min"}}))
+	h.learn("dev.fast.cpu.host01.percent", "dev.fast.cpu.host02.percent")
 	// targets on different ladders cannot share a step: the whole request
 	// is served unaccelerated, still identical to the origin
 	mixed := h.query(url.Values{"target": {"dev.fast.cpu.host01.percent", "dev.coarse.users.active"}, "from": {"-30min"}})
@@ -364,7 +357,7 @@ func TestRenderLearnOnFirstResponse(t *testing.T) {
 	h := newHarness(t)
 	q := h.query(url.Values{"target": {"dev.medium.orders.us-east.count"}, "from": {"-90min"}})
 	// cold: served unaccelerated, but the response teaches the step at
-	// this age (decision D1, mode A)
+	// this age
 	h.same("cold", q)
 	key, conf, ok := h.client.Registry().Leaf("dev.medium.orders.us-east.count")
 	if !ok || conf.String() != "exact" {
@@ -385,12 +378,6 @@ func TestRenderLearnOnFirstResponse(t *testing.T) {
 	}
 }
 
-// TestRenderConcurrentRenderingVariants is the regression test for
-// rendering options leaking between concurrent requests. maxDataPoints,
-// format and noNullPoints are applied at marshal time and are deliberately
-// not in the cache key, so the delta cache collapses these requests into a
-// single upstream fetch; each must still be rendered for itself
-// (timeseries.RequestOptions.MarshalVariesByRequest).
 func TestRenderConcurrentRenderingVariants(t *testing.T) {
 	h := newHarness(t)
 	h.learn("dev.fast.cpu.host01.percent")
@@ -443,12 +430,6 @@ func TestRenderConcurrentRenderingVariants(t *testing.T) {
 	}
 }
 
-// TestLearnOnlyFromTransparentTargets: learn-on-first-response may only
-// take a step from a response that actually states the leaf's native step.
-// smartSummarize is not allowlisted (its buckets are window-relative), so
-// the request is unaccelerated and its response is summarized -- recording
-// its step would be the speculative write design note §4.5 forbids. An
-// empty response teaches nothing either.
 func TestLearnOnlyFromTransparentTargets(t *testing.T) {
 	h := newHarness(t)
 	const leaf = "dev.medium.orders.us-east.count"
@@ -471,10 +452,6 @@ func TestLearnOnlyFromTransparentTargets(t *testing.T) {
 	}
 }
 
-// TestRenderOversizeDegrades: a response the origin serves happily but that
-// exceeds max_object_size_bytes cannot be modeled by the delta cache, which
-// must buffer it. The client must still get the origin's answer, from the
-// object lane, rather than a 500.
 func TestRenderOversizeDegrades(t *testing.T) {
 	h := newHarness(t, func(o *bo.Options) { o.MaxObjectSizeBytes = 2048 })
 	h.learn("dev.fast.cpu.host01.percent")
@@ -492,5 +469,421 @@ func TestRenderOversizeDegrades(t *testing.T) {
 	h.same("small window", small)
 	if h.lastRQ.Fallback != "" {
 		t.Errorf("a small response must still be accelerated, got fallback %q", h.lastRQ.Fallback)
+	}
+}
+
+func TestRenderTruncatedCaptureNotServed(t *testing.T) {
+	h := newHarness(t, func(o *bo.Options) {
+		// far below the size of a 6h window at 10s resolution (~2160 points)
+		o.MaxCaptureBytes = 512
+	})
+	h.learn("dev.fast.cpu.host01.percent")
+	q := h.query(url.Values{"target": {"dev.fast.cpu.host01.percent"}, "from": {"-6h"}})
+	for pass := range 2 {
+		got := h.render(q)
+		if got.Code != http.StatusOK {
+			t.Fatalf("pass %d: status %d", pass, got.Code)
+		}
+		want := h.direct(q)
+		if len(want) <= 512 {
+			t.Fatalf("vacuous: origin body is only %d bytes", len(want))
+		}
+		if got.Body.String() != want {
+			t.Errorf("pass %d: truncated capture leaked: got %d bytes, want %d",
+				pass, got.Body.Len(), len(want))
+		}
+		if cl := got.Header().Get("Content-Length"); cl != "" {
+			if n, _ := strconv.Atoi(cl); n != got.Body.Len() {
+				t.Errorf("pass %d: Content-Length %s does not match body %d", pass, cl, got.Body.Len())
+			}
+		}
+	}
+}
+
+func TestRenderSplitColdIsOneFallback(t *testing.T) {
+	h := newHarness(t)
+	// one target learned, one cold: the request is not fully accelerable
+	h.learn("dev.fast.cpu.host01.percent")
+	q := h.query(url.Values{
+		"target": {"dev.fast.cpu.host01.percent", "dev.fast.cpu.host02.percent"},
+		"from":   {"-30min"},
+	})
+	w := h.same("cold split", q)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status %d", w.Code)
+	}
+	h.expectFetches("cold split", 1)
+	// entirely cold is also one fetch
+	h2 := newHarness(t)
+	q2 := h2.query(url.Values{
+		"target": {"dev.fast.cpu.host01.percent", "dev.fast.cpu.host02.percent"},
+		"from":   {"-30min"},
+	})
+	h2.same("all cold", q2)
+	h2.expectFetches("all cold", 1)
+}
+
+func TestRenderSplitSharesReferenceTime(t *testing.T) {
+	h := newHarness(t)
+	h.learn("dev.fast.cpu.host01.percent", "dev.fast.cpu.host02.percent")
+	// each clock reading advances a full step, so an unpinned member parse
+	// lands in a different newest bucket than the preflight
+	base := h.now
+	var reads atomic.Int64
+	h.client.timeNow = func() time.Time {
+		return base.Add(time.Duration(reads.Add(1)-1) * 10 * time.Second)
+	}
+	q := h.query(url.Values{
+		"target": {"dev.fast.cpu.host01.percent", "dev.fast.cpu.host02.percent"},
+		"from":   {"-10min"}, "until": {"now"},
+	})
+	q.Del("now") // relative resolution is the case under test
+	w := h.render(q)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", w.Code, w.Body.String())
+	}
+	var series []struct {
+		Target     string        `json:"target"`
+		Datapoints [][2]*float64 `json:"datapoints"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &series); err != nil {
+		t.Fatal(err)
+	}
+	if len(series) != 2 {
+		t.Fatalf("expected 2 series, got %d", len(series))
+	}
+	for i, s := range series {
+		if len(s.Datapoints) == 0 {
+			t.Fatalf("series %d empty", i)
+		}
+	}
+	firstStart, firstEnd := *series[0].Datapoints[0][1], *series[0].Datapoints[len(series[0].Datapoints)-1][1]
+	secondStart, secondEnd := *series[1].Datapoints[0][1], *series[1].Datapoints[len(series[1].Datapoints)-1][1]
+	if firstStart != secondStart || firstEnd != secondEnd {
+		t.Errorf("members resolved different extents: [%v..%v] vs [%v..%v] after %d clock reads",
+			firstStart, firstEnd, secondStart, secondEnd, reads.Load())
+	}
+	if reads.Load() < 2 {
+		t.Fatal("vacuous: the clock was not read by multiple parses")
+	}
+}
+
+func TestRenderBodyLimits(t *testing.T) {
+	h := newHarness(t)
+	// declared oversized: rejected on Content-Length alone
+	r := httptest.NewRequest(http.MethodPost, "http://trickster/render",
+		strings.NewReader("target=a.b"))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r.ContentLength = maxRenderBodyBytes + 1
+	w := h.serve(r)
+	if w.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("declared oversize: status %d", w.Code)
+	}
+	// chunked oversized: no Content-Length, the reader is bounded instead
+	big := strings.NewReader("target=" + strings.Repeat("a", maxRenderBodyBytes+1024))
+	r = httptest.NewRequest(http.MethodPost, "http://trickster/render", big)
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r.ContentLength = -1
+	w = h.serve(r)
+	if w.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("chunked oversize: status %d", w.Code)
+	}
+	r = httptest.NewRequest(http.MethodPost, "http://trickster/render",
+		strings.NewReader("target=a.b"))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rsc := request.NewResources(h.o, h.o.Paths[0], h.client.Cache().Configuration(),
+		h.client.Cache(), h.client, nil)
+	rsc.RequestBody = []byte("target=" + strings.Repeat("a", maxRenderBodyBytes+1024))
+	r = request.SetResources(r, rsc)
+	w = httptest.NewRecorder()
+	h.client.RenderHandler(w, r)
+	if w.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("cached oversize: status %d", w.Code)
+	}
+	r = httptest.NewRequest(http.MethodGet, "http://trickster/render?target=a.b",
+		strings.NewReader(strings.Repeat("a", maxRenderBodyBytes+1024)))
+	r.ContentLength = -1
+	w = h.serve(r)
+	if w.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("chunked GET oversize: status %d", w.Code)
+	}
+	r = httptest.NewRequest(http.MethodGet, "http://trickster/render?"+url.Values{
+		"target": {"dev.fast.cpu.host01.percent"}, "from": {"-30min"},
+		"format": {"json"}, "now": {strconv.FormatInt(h.now.Unix(), 10)},
+	}.Encode(), strings.NewReader("ignored"))
+	r.ContentLength = -1
+	rsc = request.NewResources(h.o, h.o.Paths[0], h.client.Cache().Configuration(),
+		h.client.Cache(), h.client, nil)
+	r = request.SetResources(r, rsc) // handler sees this exact request
+	w = httptest.NewRecorder()
+	h.client.RenderHandler(w, r)
+	if w.Code != http.StatusOK {
+		t.Errorf("GET with a small body: status %d: %.200s", w.Code, w.Body.String())
+	}
+	if r.Body != http.NoBody || r.ContentLength != 0 {
+		t.Error("a GET body must be discarded, not forwarded")
+	}
+
+	// an ordinary POST still works
+	r = postReq(url.Values{"target": {"dev.fast.cpu.host01.percent"}, "from": {"-30min"},
+		"format": {"json"}, "now": {strconv.FormatInt(h.now.Unix(), 10)}})
+	if w := h.serve(r); w.Code != http.StatusOK {
+		t.Errorf("ordinary POST: status %d: %.200s", w.Code, w.Body.String())
+	}
+}
+
+func TestRenderOnePointStepSafety(t *testing.T) {
+	const leaf = "dev.fast.cpu.host01.percent"
+
+	t.Run("resize detected on a one-bucket gap", func(t *testing.T) {
+		h := newHarness(t)
+		h.learn(leaf)
+		q := h.query(url.Values{"target": {leaf}, "from": {"-30min"}})
+		h.same("warm", q)
+		h.stub.Remove(leaf)
+		h.stub.Add(leaf, "60s:2d,5m:30d")
+		wide := h.query(url.Values{"target": {leaf}, "from": {"-30min"}})
+		until := h.now.Add(-5 * time.Minute).Add(10 * time.Second)
+		wide.Set("until", strconv.FormatInt(until.Unix(), 10))
+
+		w := h.render(wide)
+		if w.Code != http.StatusOK {
+			t.Fatalf("status %d: %.200s", w.Code, w.Body.String())
+		}
+		if got, want := w.Body.String(), h.direct(wide); got != want {
+			t.Errorf("post-resize response differs from the origin\n got: %.200s\nwant: %.200s", got, want)
+		}
+		// the retraction bumped the generation; relearned, the metric is
+		// accelerated again at its new step
+		h.learn(leaf)
+		fresh := h.query(url.Values{"target": {leaf}, "from": {"-30min"}})
+		h.same("relearned", fresh)
+		if h.lastRQ == nil || h.lastRQ.Fallback != "" {
+			t.Errorf("relearned render must be accelerated, got fallback %q", h.lastRQ.Fallback)
+		}
+	})
+
+	t.Run("one-bucket gap stays accelerated at no extra cost", func(t *testing.T) {
+		h := newHarness(t)
+		h.learn(leaf)
+		q := h.query(url.Values{"target": {leaf}, "from": {"-30min"}})
+		h.same("warm", q)
+
+		grow := func(offset time.Duration) url.Values {
+			v := h.query(url.Values{"target": {leaf}, "from": {"-30min"}})
+			v.Set("until", strconv.FormatInt(h.now.Add(-5*time.Minute).Add(offset).Unix(), 10))
+			return v
+		}
+		// the widened fetch is one origin request, not a fetch plus any
+		// verification traffic, and the result is delta-cached
+		h.same("first gap", grow(10*time.Second))
+		h.expectFetches("first gap", 1)
+		if h.lastRQ == nil || h.lastRQ.Fallback != "" {
+			t.Fatalf("gap fill must stay accelerated, got fallback %q", h.lastRQ.Fallback)
+		}
+		h.same("gap hit", grow(10*time.Second))
+		h.expectFetches("gap hit", 0)
+		h.same("second gap", grow(20*time.Second))
+		h.expectFetches("second gap", 1)
+	})
+
+	t.Run("unprovable response is refused and served unaccelerated", func(t *testing.T) {
+		h := newHarness(t)
+		h.learn(leaf)
+		q := h.query(url.Values{"target": {leaf}, "from": {"-30min"}})
+		h.same("warm", q)
+		h.stub.Remove(leaf)
+		wide := h.query(url.Values{"target": {leaf}, "from": {"-30min"}})
+		wide.Set("until", strconv.FormatInt(h.now.Add(-5*time.Minute).Add(10*time.Second).Unix(), 10))
+		w := h.render(wide)
+		if w.Code != http.StatusOK {
+			t.Fatalf("status %d: %.200s", w.Code, w.Body.String())
+		}
+		if got, want := w.Body.String(), h.direct(wide); got != want {
+			t.Errorf("refused-fetch response differs from the origin\n got: %.200s\nwant: %.200s", got, want)
+		}
+	})
+}
+
+func BenchmarkRenderCacheHit(b *testing.B) {
+	for _, tc := range []struct {
+		name string
+		from string
+	}{
+		{"6h_2160pts", "-6h"},
+		{"7d_60480pts", "-168h"},
+		{"4y_210kpts", "-35040h"},
+	} {
+		b.Run(tc.name, func(b *testing.B) {
+			h := newHarness(b)
+			h.learn("dev.fast.cpu.host01.percent")
+			q := h.query(url.Values{"target": {"dev.fast.cpu.host01.percent"}, "from": {tc.from}})
+			// warm the cache
+			w := h.render(q)
+			if w.Code != http.StatusOK {
+				b.Fatalf("warm: status %d", w.Code)
+			}
+			before := h.stub.Renders.Load()
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				w := h.render(q)
+				if w.Code != http.StatusOK {
+					b.Fatalf("status %d", w.Code)
+				}
+			}
+			b.StopTimer()
+			if h.stub.Renders.Load() != before {
+				b.Fatalf("cache hits must not fetch: %d origin renders", h.stub.Renders.Load()-before)
+			}
+		})
+	}
+}
+
+func TestAmbiguityInvalidatesAndRelearns(t *testing.T) {
+	const leaf = "dev.fast.cpu.host01.percent"
+	h := newHarness(t)
+	h.learn(leaf)
+	q := h.query(url.Values{"target": {leaf}, "from": {"-30min"}})
+	h.same("warm", q)
+
+	// the metric disappears; the widened gap fetch returns an empty body
+	h.stub.Remove(leaf)
+	gap := func(offset time.Duration) url.Values {
+		v := h.query(url.Values{"target": {leaf}, "from": {"-30min"}})
+		v.Set("until", strconv.FormatInt(h.now.Add(-5*time.Minute).Add(offset).Unix(), 10))
+		return v
+	}
+	// first request: one doomed accelerated fetch, then the object-lane
+	// fetch — and the leaf binding is invalidated
+	h.same("first ambiguous", gap(10*time.Second))
+	h.expectFetches("first ambiguous", 2)
+	if _, _, ok := h.client.registry.Leaf(leaf); ok {
+		t.Fatal("the leaf binding must be invalidated on ambiguity")
+	}
+	h.same("second request", gap(20*time.Second))
+	h.expectFetches("second request", 1)
+	if h.lastRQ == nil || h.lastRQ.Fallback != parsing.ReasonUnknownStep {
+		t.Fatalf("expected an unknown_step fallback, got %q", h.lastRQ.Fallback)
+	}
+
+	// and the state recovers: the metric returns, a relearn re-establishes
+	// the ladder, and acceleration resumes
+	h.stub.Add(leaf, "10s:6h,60s:7d,10m:5y")
+	h.learn(leaf)
+	h.same("recovered", h.query(url.Values{"target": {leaf}, "from": {"-30min"}}))
+	if h.lastRQ == nil || h.lastRQ.Fallback != "" {
+		t.Fatalf("recovered render must be accelerated, got %q", h.lastRQ.Fallback)
+	}
+}
+
+func TestLocalParamDeclinesAcceleration(t *testing.T) {
+	h := newHarness(t)
+	h.learn("dev.fast.cpu.host01.percent", "dev.fast.cpu.host02.percent")
+	// two origin views, same step, different leaves: local=1 hides host02
+	inner := h.stub.Server.Config.Handler
+	h.stub.Server.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		if r.Form.Get("local") == "1" {
+			for _, tgt := range r.Form["target"] {
+				if strings.Contains(tgt, "host02") {
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = w.Write([]byte("[]"))
+					return
+				}
+			}
+		}
+		inner.ServeHTTP(w, r)
+	})
+
+	wild := h.query(url.Values{"target": {"dev.fast.cpu.*.percent"}, "from": {"-30min"}})
+	// the global view accelerates
+	h.same("global view", wild)
+	if h.lastRQ == nil || h.lastRQ.Fallback != "" {
+		t.Fatalf("global view must accelerate, got %q", h.lastRQ.Fallback)
+	}
+	// the local view declines — and is still byte-identical to its origin
+	local := h.query(url.Values{"target": {"dev.fast.cpu.host02.percent"}, "from": {"-30min"}})
+	local.Set("local", "1")
+	h.same("local view", local)
+	if h.lastRQ == nil || h.lastRQ.Fallback != parsing.ReasonClientIdentity {
+		t.Fatalf("local view must decline as client_identity, got %q", h.lastRQ.Fallback)
+	}
+	// the pin must cover the synthetic resolution paths too, or the mixed
+	// identities would decline acceleration as resolution_identity
+	for _, pc := range h.o.Paths {
+		if pc.Path == "/render" || pc.Path == "/metrics/expand" {
+			pc.RequestParams = map[string]string{"local": "1"}
+			pc.RefreshIdentityKeyPart()
+		}
+	}
+	h.client.synthIDs.Store(nil)
+	pinned := h.query(url.Values{"target": {"dev.fast.cpu.host01.percent"}, "from": {"-30min"}})
+	pinned.Set("local", "1")
+	w := h.render(pinned)
+	if w.Code != http.StatusOK {
+		t.Fatalf("pinned: status %d", w.Code)
+	}
+	if h.lastRQ == nil {
+		t.Fatal("no render query recorded for the pinned request")
+	}
+	if h.lastRQ.Fallback != "" {
+		t.Fatalf("statically pinned local must accelerate, got %q", h.lastRQ.Fallback)
+	}
+
+	// every variant of the replaced parameter shares the pinned request's
+	// cache entry, so after the one origin fetch each is a zero-fetch hit
+	for _, v := range []string{"1", "0", "2", "junk", ""} {
+		vq := h.query(url.Values{"target": {"dev.fast.cpu.host01.percent"}, "from": {"-30min"}})
+		if v != "" {
+			vq.Set("local", v)
+		}
+		h.same("pinned variant local="+v, vq)
+		h.expectFetches("pinned variant local="+v, 0)
+		if h.lastRQ == nil || h.lastRQ.Fallback != "" {
+			t.Fatalf("pinned variant local=%s must accelerate, got %q", v, h.lastRQ.Fallback)
+		}
+	}
+}
+
+func TestRenderTZBudgetFailsClosed(t *testing.T) {
+	h := newHarness(t)
+	const leaf = "dev.fast.cpu.host01.percent"
+	h.learn(leaf)
+
+	// freeze the token bucket's clock so the budget cannot refill mid-test,
+	// then spend it all on distinct hostile names
+	frozen := time.Now()
+	h.client.tzCache.mu.Lock()
+	h.client.tzCache.now = func() time.Time { return frozen }
+	h.client.tzCache.mu.Unlock()
+	for i := range tzLoadBurst + 8 {
+		h.client.tzCache.get(fmt.Sprintf("Not/Hostile%d", i))
+	}
+
+	// the next request for a valid uncached zone, with a date-anchored
+	// range, is served through the object lane byte-identical to the origin
+	q := h.query(url.Values{"target": {leaf}, "from": {"midnight"},
+		"tz": {"America/Chicago"}})
+	h.same("post-exhaustion date-anchored render", q)
+	h.expectFetches("post-exhaustion date-anchored render", 1)
+	if h.lastRQ == nil || h.lastRQ.Fallback != parsing.ReasonTZUnavailable {
+		t.Fatalf("expected a %s fallback, got %q",
+			parsing.ReasonTZUnavailable, h.lastRQ.Fallback)
+	}
+	// the undetermined zone was not cached as invalid
+	if _, res := h.client.tzCache.get("America/Chicago"); res != tzUnavailable {
+		t.Fatalf("an undetermined zone must not be cached, got %v", res)
+	}
+
+	// once the budget refills, the zone loads and the request accelerates
+	h.client.tzCache.mu.Lock()
+	h.client.tzCache.now = func() time.Time { return frozen.Add(time.Minute) }
+	h.client.tzCache.mu.Unlock()
+	q2 := h.query(url.Values{"target": {leaf}, "from": {"-30min"},
+		"tz": {"America/Chicago"}})
+	h.same("post-refill render", q2)
+	if h.lastRQ == nil || h.lastRQ.Fallback != "" {
+		t.Fatalf("a refilled budget must restore acceleration, got %q", h.lastRQ.Fallback)
 	}
 }

@@ -19,6 +19,7 @@ package parsing
 import (
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -233,4 +234,44 @@ func FuzzParseTarget(f *testing.F) {
 		}
 		Classify(n)
 	})
+}
+
+func TestParseTargetDepthLimit(t *testing.T) {
+	nest := func(depth int) string {
+		return strings.Repeat("absolute(", depth) + "a.b" + strings.Repeat(")", depth)
+	}
+	if _, err := ParseTarget(nest(20)); err != nil {
+		t.Fatalf("20 levels must parse: %v", err)
+	}
+	if _, err := ParseTarget(nest(maxParseDepth + 10)); err == nil {
+		t.Fatal("expected a depth error")
+	}
+	// far beyond the cap: this is the input that would overflow the stack
+	if _, err := ParseTarget(nest(200_000)); err == nil {
+		t.Fatal("expected a depth error for a pathological input")
+	}
+
+	// pipes desugar into the same nesting and must spend the same budget:
+	// every downstream walk recurses one AST level per pipe
+	pipes := func(depth int) string {
+		return "a.b" + strings.Repeat("|absolute()", depth)
+	}
+	n, err := ParseTarget(pipes(20))
+	if err != nil {
+		t.Fatalf("20 pipes must parse: %v", err)
+	}
+	// the walks that recurse over the piped AST stay usable at legal depth
+	Classify(n)
+	_ = Format(n)
+	if _, err := ParseTarget(pipes(maxParseDepth + 10)); err == nil {
+		t.Fatal("expected a depth error for a long pipe chain")
+	}
+	if _, err := ParseTarget(pipes(200_000)); err == nil {
+		t.Fatal("expected a depth error for a pathological pipe chain")
+	}
+	// mixing the two constructions cannot evade the cap either
+	mixed := strings.Repeat("absolute(", 40) + pipes(40) + strings.Repeat(")", 40)
+	if _, err := ParseTarget(mixed); err == nil {
+		t.Fatal("expected a depth error for mixed nesting and pipes")
+	}
 }

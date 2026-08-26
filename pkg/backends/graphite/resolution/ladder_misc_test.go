@@ -31,6 +31,8 @@ func TestAlignInterval(t *testing.T) {
 		{1000, 1020, 1010, 1030}, // aligned inputs still shift by one step
 		{1005, 1006, 1010, 1020}, // zero-length result widened by one step
 		{-15, -5, -10, 0},        // negative timestamps floor toward -inf
+		{-10, 0, 0, 10},          // the epoch itself is a bucket boundary
+		{0, 10, 10, 20},          // and from the other side of it
 	}
 	for _, tc := range tests {
 		s, e := AlignInterval(time.Unix(tc.from, 0), time.Unix(tc.until, 0), step)

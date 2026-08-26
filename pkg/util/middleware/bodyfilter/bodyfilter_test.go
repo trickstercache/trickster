@@ -69,7 +69,7 @@ func TestHandler(t *testing.T) {
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("too-large"))
 		Handler(3, false, next).ServeHTTP(rec, req)
-		require.Equal(t, http.StatusBadRequest, rec.Code)
+		require.Equal(t, http.StatusRequestEntityTooLarge, rec.Code)
 	})
 
 	t.Run("too large truncate", func(t *testing.T) {
@@ -104,9 +104,17 @@ func TestHandler(t *testing.T) {
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/", nil)
 		rsc := request.NewResources(nil, nil, nil, nil, nil, nil)
-		rsc.RequestBody = []byte("cached-too-large")
+		rsc.RequestBody = []byte("1234-too-large")
 		req = request.SetResources(req, rsc)
-		Handler(4, true, next).ServeHTTP(rec, req)
+		verify := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			b, _ := io.ReadAll(r.Body)
+			require.Equal(t, "1234", string(b), "body not truncated")
+			require.Equal(t, []byte("1234"), request.GetResources(r).RequestBody, "cache not truncated")
+			require.Equal(t, int64(4), r.ContentLength)
+			require.Equal(t, "4", r.Header.Get("Content-Length"))
+			w.WriteHeader(http.StatusOK)
+		})
+		Handler(4, true, verify).ServeHTTP(rec, req)
 		require.Equal(t, http.StatusOK, rec.Code)
 	})
 }

@@ -29,8 +29,9 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
-	"github.com/trickstercache/trickster/v2/pkg/checksum/md5"
+	proxyengines "github.com/trickstercache/trickster/v2/pkg/proxy/engines"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 )
 
 // memCache is a minimal in-memory cache.Cache used to assert key-format parity
@@ -149,11 +150,19 @@ func TestPathHandler_KeyFormatMatchesEngines(t *testing.T) {
 		purgePath    = "/api/v1/query"
 	)
 
+	// backend "a" carries a configured identity on the purged path, so its
+	// entries are stored under the identity-keyed variant as well
+	pathA := &po.Options{Path: purgePath, Methods: methods,
+		RequestHeaders: map[string]string{"Authorization": "Basic pinned"}}
+	if err := pathA.Initialize(""); err != nil {
+		t.Fatal(err)
+	}
+
 	cacheA := newMemCache()
 	cacheB := newMemCache()
 	bes := backends.Backends{
 		"a": &fakeBackend{
-			cfg:   &bo.Options{Name: "a", CacheKeyPrefix: sharedPrefix},
+			cfg:   &bo.Options{Name: "a", CacheKeyPrefix: sharedPrefix, Paths: po.List{pathA}},
 			cache: cacheA,
 		},
 		"b": &fakeBackend{
@@ -169,9 +178,13 @@ func TestPathHandler_KeyFormatMatchesEngines(t *testing.T) {
 		c := be.Configuration()
 		for _, engine := range engines {
 			for _, method := range methods {
+				var identity string
+				if pc := c.Paths.Match(purgePath, method); pc != nil {
+					identity = pc.IdentityKeyPart()
+				}
 				k := fmt.Sprintf("%s.%s.%s.%s",
 					c.Name, c.CacheKeyPrefix, engine,
-					md5.Checksum(fmt.Sprintf("%s.method.%s.", purgePath, method)))
+					proxyengines.DerivePathCacheKey(purgePath, method, identity))
 				if err := be.Cache().Store(k, []byte("v"), time.Minute); err != nil {
 					t.Fatal(err)
 				}

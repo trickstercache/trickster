@@ -29,13 +29,14 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/graphite/parsing"
 	"github.com/trickstercache/trickster/v2/pkg/backends/graphite/resolution"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
+	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/graphite/mockserver"
 )
 
-// newTestClient builds a client whose resolver answers every leaf from a
-// static ladder (Configured) and expands wildcards against a stub origin,
-// so parsing can be tested deterministically
-func newTestClient(t *testing.T, o *bo.Options) *Client {
+func newTestClient(t testing.TB, o *bo.Options) *Client {
 	t.Helper()
 	if o == nil {
 		o = bo.New()
@@ -259,8 +260,9 @@ func TestParseTimeRangeQueryFallbacks(t *testing.T) {
 func TestParseTimeRangeQueryTimeZone(t *testing.T) {
 	ny, _ := time.LoadLocation("America/New_York")
 	o := bo.New()
-	c := newTestClient(t, o)
+	o.Graphite = gro.New()
 	o.Graphite.TimeZone = "America/New_York"
+	c := newTestClient(t, o)
 	// configured zone applies to date-anchored values
 	trq, _, _, err := c.ParseTimeRangeQuery(getReq("target=a.b&from=midnight&until=now&format=json"))
 	if err != nil {
@@ -287,10 +289,25 @@ func TestParseTimeRangeQueryTimeZone(t *testing.T) {
 	if trq.ParsedQuery.(*RenderQuery).Location.String() != ny.String() {
 		t.Error("expected the configured zone when tz is unknown")
 	}
-	// an unknown configured zone falls back to UTC
-	o.Graphite.TimeZone = "Not/AZone"
-	if c.location("") != time.UTC {
-		t.Error("expected UTC fallback")
+	// an unknown tz is cached as a miss and still resolves to the
+	// configured zone on repetition
+	trq, _, _, err = c.ParseTimeRangeQuery(getReq("target=a.b&from=midnight&until=now&format=json&tz=Not/AZone"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if trq.ParsedQuery.(*RenderQuery).Location.String() != ny.String() {
+		t.Error("expected the configured zone on a cached tz miss")
+	}
+	// an unknown configured zone is a construction error
+	bad := bo.New()
+	bad.Graphite = gro.New()
+	bad.Graphite.TimeZone = "Not/AZone"
+	if _, err := NewClient("bad-tz", bad, nil, nil, nil, nil); err == nil {
+		t.Error("expected an error for an invalid configured time_zone")
+	}
+	// an oversized tz value is not searched for
+	if loc, ok := c.location(strings.Repeat("A/", 100)); !ok || loc.String() != ny.String() {
+		t.Error("expected the configured zone for an oversized tz")
 	}
 	// the now parameter anchors relative ranges
 	trq, _, _, err = c.ParseTimeRangeQuery(getReq("target=a.b&from=-1h&now=1787343600&format=json"))
@@ -334,5 +351,212 @@ func TestRenderOptions(t *testing.T) {
 	_, rlo, _, _ = c.ParseTimeRangeQuery(getReq("target=a.b&format=json&xFilesFactor=x"))
 	if rlo.ProviderRequest.(model.RenderOptionsProvider).RenderOptions().XFilesFactor != 0 {
 		t.Error("bad xFilesFactor")
+	}
+}
+
+func TestClientIdentityDeclinesAcceleration(t *testing.T) {
+	c := newTestClient(t, nil)
+	pc := &po.Options{Path: "/render", RequestHeaders: map[string]string{}, CacheKeyHeaders: []string{"X-Tenant"}}
+	serve := func(hdrs map[string]string, pathConfig *po.Options) (*RenderQuery, bool, error) {
+		r := getReq("target=a.b&from=-1h&format=json")
+		for k, v := range hdrs {
+			r.Header.Set(k, v)
+		}
+		rsc := request.NewResources(nil, pathConfig, nil, nil, nil, nil)
+		r = request.SetResources(r, rsc)
+		trq, rlo, canOPC, err := c.ParseTimeRangeQuery(r)
+		rq, _ := trq.ParsedQuery.(*RenderQuery)
+		_ = rlo
+		return rq, canOPC, err
+	}
+
+	// no identity: accelerated
+	rq, _, err := serve(nil, pc)
+	if err != nil || rq.Fallback != "" {
+		t.Fatalf("plain request must accelerate: %v %q", err, rq.Fallback)
+	}
+	// a client Authorization declines to the object lane
+	rq, canOPC, err := serve(map[string]string{"Authorization": "Bearer tenant-a"}, pc)
+	if err == nil || !canOPC || rq.Fallback != parsing.ReasonClientIdentity {
+		t.Fatalf("client auth must decline: err=%v canOPC=%t fallback=%q", err, canOPC, rq.Fallback)
+	}
+	// so does a header the path declares result-affecting
+	rq, _, err = serve(map[string]string{"X-Tenant": "a"}, pc)
+	if err == nil || rq.Fallback != parsing.ReasonClientIdentity {
+		t.Fatalf("cache_key_headers must decline: %v %q", err, rq.Fallback)
+	}
+	// a static override pins the upstream identity and lifts the decline,
+	// provided the synthetic resolution paths carry the same identity
+	hdrs := map[string]string{"Authorization": "Basic static", "X-Tenant": "static"}
+	pinned := &po.Options{Path: "/render", Methods: methods.GetAndPost(),
+		RequestHeaders: hdrs, CacheKeyHeaders: []string{"X-Tenant"}}
+	pinnedExpand := &po.Options{Path: "/metrics/expand", Methods: methods.GetAndPost(),
+		RequestHeaders: hdrs}
+	c2 := newTestClient(t, nil)
+	c2.Configuration().Paths = po.List{pinned, pinnedExpand}
+	r := getReq("target=a.b&from=-1h&format=json")
+	r.Header.Set("Authorization", "Bearer tenant-a")
+	r.Header.Set("X-Tenant", "a")
+	r = request.SetResources(r, request.NewResources(nil, pinned, nil, nil, nil, nil))
+	trq, _, _, err := c2.ParseTimeRangeQuery(r)
+	rq, _ = trq.ParsedQuery.(*RenderQuery)
+	if err != nil || rq.Fallback != "" {
+		t.Fatalf("statically pinned identity must accelerate: %v %q", err, rq.Fallback)
+	}
+	// a request rewriter on the path declines outright
+	rewriting := &po.Options{Path: "/render",
+		ReqRewriter: rewriter.RewriteInstructions{nil}}
+	rq, _, err = serve(nil, rewriting)
+	if err == nil || rq.Fallback != parsing.ReasonClientIdentity {
+		t.Fatalf("a rewriter must decline: %v %q", err, rq.Fallback)
+	}
+}
+
+func TestBackendRewriterDeclinesAcceleration(t *testing.T) {
+	origin := mockserver.New()
+	t.Cleanup(origin.Close)
+	origin.Add("a.b", "10s:6h,60s:7d")
+	u, _ := url.Parse(origin.URL)
+	o := bo.New()
+	o.Scheme, o.Host = u.Scheme, u.Host
+	// a backend-level rewriter can retarget host/path/headers/params for live
+	// requests only, so acceleration must fail closed to the object lane
+	o.ReqRewriter = rewriter.RewriteInstructions{nil}
+	b, err := NewClient("test", o, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := b.(*Client)
+	t.Cleanup(c.Close)
+
+	r := getReq("target=a.b&from=-1h&format=json")
+	r = request.SetResources(r, request.NewResources(o, nil, nil, nil, nil, nil))
+	trq, _, canOPC, err := c.ParseTimeRangeQuery(r)
+	rq, _ := trq.ParsedQuery.(*RenderQuery)
+	if err == nil || !canOPC || rq.Fallback != parsing.ReasonClientIdentity {
+		t.Fatalf("a backend rewriter must decline: err=%v canOPC=%t fallback=%q",
+			err, canOPC, rq.Fallback)
+	}
+	if reqs := origin.Requests(); len(reqs) != 0 {
+		t.Errorf("declined request must trigger no probe or expansion, got %v", reqs)
+	}
+}
+
+func TestResolutionIdentityMismatchDeclines(t *testing.T) {
+	serve := func(c *Client, r *http.Request, pc *po.Options) (*RenderQuery, error) {
+		r = request.SetResources(r, request.NewResources(nil, pc, nil, nil, nil, nil))
+		trq, _, _, err := c.ParseTimeRangeQuery(r)
+		rq, _ := trq.ParsedQuery.(*RenderQuery)
+		return rq, err
+	}
+
+	// GET and POST /render pinned to different tenants: probes are GETs under
+	// tenant A, so a POST render under tenant B must not accelerate
+	getRender := &po.Options{Path: "/render", Methods: []string{http.MethodGet},
+		RequestHeaders: map[string]string{"Authorization": "Basic tenant-a"}}
+	postRender := &po.Options{Path: "/render", Methods: []string{http.MethodPost},
+		RequestHeaders: map[string]string{"Authorization": "Basic tenant-b"}}
+	expand := &po.Options{Path: "/metrics/expand", Methods: methods.GetAndPost(),
+		RequestHeaders: map[string]string{"Authorization": "Basic tenant-a"}}
+	c := newTestClient(t, nil)
+	c.Configuration().Paths = po.List{getRender, postRender, expand}
+
+	rq, err := serve(c, postReq(url.Values{
+		"target": {"a.b"}, "from": {"-1h"}, "format": {"json"}}), postRender)
+	if err == nil || rq.Fallback != parsing.ReasonResolutionIdentity {
+		t.Fatalf("POST under a different identity must decline: %v %q", err, rq.Fallback)
+	}
+	rq, err = serve(c, getReq("target=a.b&from=-1h&format=json"), getRender)
+	if err != nil || rq.Fallback != "" {
+		t.Fatalf("GET under the synthetic identity must accelerate: %v %q", err, rq.Fallback)
+	}
+
+	// /render and /metrics/expand pinned to different tenants: probes and
+	// expansion would mix namespaces, so no render accelerates
+	render2 := &po.Options{Path: "/render", Methods: methods.GetAndPost(),
+		RequestHeaders: map[string]string{"Authorization": "Basic tenant-a"}}
+	expand2 := &po.Options{Path: "/metrics/expand", Methods: methods.GetAndPost(),
+		RequestHeaders: map[string]string{"Authorization": "Basic tenant-b"}}
+	c2 := newTestClient(t, nil)
+	c2.Configuration().Paths = po.List{render2, expand2}
+	rq, err = serve(c2, getReq("target=a.b&from=-1h&format=json"), render2)
+	if err == nil || rq.Fallback != parsing.ReasonResolutionIdentity {
+		t.Fatalf("render/expand identity mismatch must decline: %v %q", err, rq.Fallback)
+	}
+}
+
+func TestWildcardCacheKeyParamsDecline(t *testing.T) {
+	c := newTestClient(t, nil)
+	pc := &po.Options{Path: "/render", CacheKeyParams: []string{"*"}}
+	serve := func(q string) (*RenderQuery, error) {
+		r := getReq(q)
+		rsc := request.NewResources(nil, pc, nil, nil, nil, nil)
+		r = request.SetResources(r, rsc)
+		trq, _, _, err := c.ParseTimeRangeQuery(r)
+		rq, _ := trq.ParsedQuery.(*RenderQuery)
+		return rq, err
+	}
+	// delta-owned params under "*" do not decline
+	rq, err := serve("target=a.b&from=-1h&format=json&maxDataPoints=100")
+	if err != nil || rq.Fallback != "" {
+		t.Fatalf("owned params must accelerate: %v %q", err, rq.Fallback)
+	}
+	// a view selector or arbitrary tenant param under "*" declines
+	for _, q := range []string{
+		"target=a.b&from=-1h&local=1",
+		"target=a.b&from=-1h&tenant=acme",
+	} {
+		rq, err = serve(q)
+		if err == nil || rq.Fallback != parsing.ReasonClientIdentity {
+			t.Fatalf("%s: expected a client_identity decline, got %v %q", q, err, rq.Fallback)
+		}
+	}
+	// a static request_params pin lifts it when the synthetic resolution
+	// paths are pinned identically
+	pinned := &po.Options{Path: "/render", CacheKeyParams: []string{"*"},
+		Methods:       methods.GetAndPost(),
+		RequestParams: map[string]string{"local": "1"}}
+	pinnedExpand := &po.Options{Path: "/metrics/expand", Methods: methods.GetAndPost(),
+		RequestParams: map[string]string{"local": "1"}}
+	c2 := newTestClient(t, nil)
+	c2.Configuration().Paths = po.List{pinned, pinnedExpand}
+	r := getReq("target=a.b&from=-1h&format=json&local=1")
+	rsc := request.NewResources(nil, pinned, nil, nil, nil, nil)
+	r = request.SetResources(r, rsc)
+	trq, _, _, err := c2.ParseTimeRangeQuery(r)
+	rq, _ = trq.ParsedQuery.(*RenderQuery)
+	if err != nil || rq.Fallback != "" {
+		t.Fatalf("pinned local under \"*\" must accelerate: %v %q", err, rq.Fallback)
+	}
+}
+
+func TestOPCKeyElementsEffectiveValues(t *testing.T) {
+	qp := url.Values{
+		"target": {"a.b"},
+		"local":  {"junk"},
+		"secret": {"c1"},
+		"extra":  {"v1", "v2"},
+	}
+	pc := &po.Options{RequestParams: map[string]string{
+		"local":   "1",
+		"-secret": "",
+		"+extra":  "cfg",
+	}}
+	out := OPCKeyElements(qp, pc)
+	if _, ok := out["local"]; ok {
+		t.Error("a replaced parameter must not contribute the discarded client value")
+	}
+	if _, ok := out["secret"]; ok {
+		t.Error("a removed parameter must not contribute the discarded client value")
+	}
+	if v, ok := out["extra"]; !ok || v != "v1\x00v2" {
+		t.Errorf("an appended parameter must key the client values, got %q", v)
+	}
+	if v, ok := out["target"]; !ok || v != "a.b" {
+		t.Errorf("an untouched parameter must be keyed, got %q", v)
+	}
+	// nil path config keys everything
+	if out := OPCKeyElements(qp, nil); len(out) != len(qp) {
+		t.Errorf("nil path config must key all parameters, got %v", out)
 	}
 }
