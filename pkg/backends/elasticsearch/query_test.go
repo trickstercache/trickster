@@ -19,6 +19,7 @@ package elasticsearch
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -136,7 +137,9 @@ func TestParseTimeRangeQuerySourceParam(t *testing.T) {
 		Start: trq.Extent.Start.Add(time.Minute),
 		End:   trq.Extent.Start.Add(2 * time.Minute),
 	}
-	c.SetExtent(r, trq, next)
+	if err := c.SetExtent(r, trq, next); err != nil {
+		t.Fatal(err)
+	}
 	if got := r.URL.Query().Get(queryParamSource); !strings.Contains(got, "1704067260000") {
 		t.Fatalf("rewritten source query does not include new start: %s", got)
 	}
@@ -153,7 +156,9 @@ func TestSetExtentSearchBody(t *testing.T) {
 		Start: time.UnixMilli(1704067320000),
 		End:   time.UnixMilli(1704067440000),
 	}
-	c.SetExtent(r, trq, next)
+	if err := c.SetExtent(r, trq, next); err != nil {
+		t.Fatal(err)
+	}
 	var out map[string]any
 	if err := json.NewDecoder(r.Body).Decode(&out); err != nil {
 		t.Fatal(err)
@@ -171,6 +176,44 @@ func TestSetExtentSearchBody(t *testing.T) {
 	}
 	if got, want := int64(bounds["max"].(float64)), int64(1704067440000); got != want {
 		t.Fatalf("extended max = %d, want %d", got, want)
+	}
+}
+
+func TestSetExtentRejectsUnsafeRewrites(t *testing.T) {
+	c := &Client{}
+	r := httptest.NewRequest(http.MethodPost, "/metrics/_search", strings.NewReader(searchBody))
+	extent := &timeseries.Extent{}
+	trq := &timeseries.TimeRangeQuery{}
+
+	for _, test := range []struct {
+		name string
+		err  error
+	}{
+		{name: "nil request", err: c.SetExtent(nil, trq, extent)},
+		{name: "nil query", err: c.SetExtent(r, nil, extent)},
+		{name: "nil extent", err: c.SetExtent(r, trq, nil)},
+	} {
+		if !errors.Is(test.err, errInvalidExtentRewriteInput) {
+			t.Errorf("%s error = %v, want %v", test.name, test.err, errInvalidExtentRewriteInput)
+		}
+	}
+
+	if err := c.SetExtent(r, trq, extent); !errors.Is(err, errMissingRequestPlan) {
+		t.Errorf("missing plan error = %v, want %v", err, errMissingRequestPlan)
+	}
+
+	trq.ParsedQuery = &RequestPlan{Kind: requestKindSearch, SourceBody: true,
+		Searches: []*SearchPlan{{Body: map[string]any{}}}}
+	r.URL = nil
+	if err := c.SetExtent(r, trq, extent); !errors.Is(err, errInvalidExtentRewriteRequest) {
+		t.Errorf("missing URL error = %v, want %v", err, errInvalidExtentRewriteRequest)
+	}
+
+	r = httptest.NewRequest(http.MethodPost, "/metrics/_search", strings.NewReader(searchBody))
+	trq.ParsedQuery = &RequestPlan{Kind: requestKindSearch,
+		Searches: []*SearchPlan{{Body: map[string]any{"unsupported": make(chan struct{})}}}}
+	if err := c.SetExtent(r, trq, extent); err == nil {
+		t.Fatal("non-serializable request plan was accepted")
 	}
 }
 
@@ -402,7 +445,9 @@ func TestParseTimeRangeQueryAcceptsExclusiveCompleteBuckets(t *testing.T) {
 	if got, want := trq.Extent.End.UnixMilli(), int64(1704067800000); got != want {
 		t.Fatalf("bucket extent end = %d, want %d", got, want)
 	}
-	(&Client{}).SetExtent(r, trq, &trq.Extent)
+	if err := (&Client{}).SetExtent(r, trq, &trq.Extent); err != nil {
+		t.Fatal(err)
+	}
 	var rewritten map[string]any
 	if err := json.NewDecoder(r.Body).Decode(&rewritten); err != nil {
 		t.Fatal(err)
@@ -502,7 +547,9 @@ func TestParseTimeRangeQueryNumericDateFormats(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		(&Client{}).SetExtent(r, trq, &trq.Extent)
+		if err := (&Client{}).SetExtent(r, trq, &trq.Extent); err != nil {
+			t.Fatal(err)
+		}
 		var rewritten map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&rewritten); err != nil {
 			t.Fatal(err)
@@ -532,7 +579,9 @@ func TestSetExtentPreservesHistogramBoundRepresentation(t *testing.T) {
 		Start: time.UnixMilli(1704067320000),
 		End:   time.UnixMilli(1704067440000),
 	}
-	(&Client{}).SetExtent(r, trq, next)
+	if err := (&Client{}).SetExtent(r, trq, next); err != nil {
+		t.Fatal(err)
+	}
 	var rewritten map[string]any
 	if err := json.NewDecoder(r.Body).Decode(&rewritten); err != nil {
 		t.Fatal(err)
@@ -635,7 +684,9 @@ func TestParseMSearchPlan(t *testing.T) {
 		Start: trq.Extent.Start.Add(2 * time.Minute),
 		End:   trq.Extent.Start.Add(3 * time.Minute),
 	}
-	c.SetExtent(r, trq, next)
+	if err := c.SetExtent(r, trq, next); err != nil {
+		t.Fatal(err)
+	}
 	lines := splitNDJSONFromString(t, r.Body)
 	if len(lines) != 4 {
 		t.Fatalf("rewritten msearch lines = %d, want 4", len(lines))

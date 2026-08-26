@@ -45,6 +45,12 @@ const (
 	rangeEndToken   = "<$END$>"
 )
 
+var (
+	errInvalidExtentRewriteInput   = stderrors.New("invalid Elasticsearch extent rewrite input")
+	errMissingRequestPlan          = stderrors.New("elasticsearch request plan is missing")
+	errInvalidExtentRewriteRequest = stderrors.New("elasticsearch extent rewrite request has no URL")
+)
+
 type requestKind byte
 
 const (
@@ -901,46 +907,70 @@ func replaceExtendedBounds(root map[string]any, timestampField string, start, en
 // SetExtent rewrites the Elasticsearch search body to request the provided extent.
 func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
 	extent *timeseries.Extent,
-) {
+) error {
 	if r == nil || trq == nil || extent == nil {
-		return
+		return errInvalidExtentRewriteInput
 	}
 	plan, ok := trq.ParsedQuery.(*RequestPlan)
 	if !ok || plan == nil {
-		return
+		return errMissingRequestPlan
 	}
-	out := plan.bodyForExtent(extent)
+	if plan.SourceBody && r.URL == nil {
+		return errInvalidExtentRewriteRequest
+	}
+	out, err := plan.bodyForExtent(extent)
+	if err != nil {
+		return fmt.Errorf("render Elasticsearch extent: %w", err)
+	}
 	if plan.SourceBody {
 		q := r.URL.Query()
 		q.Set(queryParamSource, string(out))
 		r.URL.RawQuery = q.Encode()
-		return
+		return nil
 	}
 	request.SetBody(r, out)
+	return nil
 }
 
-func (p *RequestPlan) bodyForExtent(extent *timeseries.Extent) []byte {
+func (p *RequestPlan) bodyForExtent(extent *timeseries.Extent) ([]byte, error) {
 	if p == nil {
-		return nil
+		return nil, errMissingRequestPlan
 	}
 	switch p.Kind {
 	case requestKindMSearch:
+		if len(p.Searches) == 0 {
+			return nil, errMissingRequestPlan
+		}
 		var buf bytes.Buffer
 		for _, sp := range p.Searches {
-			hb, _ := json.Marshal(sp.Header)
-			bb, _ := json.Marshal(sp.bodyForExtent(extent))
+			if sp == nil {
+				return nil, errMissingRequestPlan
+			}
+			hb, err := json.Marshal(sp.Header)
+			if err != nil {
+				return nil, fmt.Errorf("marshal msearch header: %w", err)
+			}
+			bb, err := json.Marshal(sp.bodyForExtent(extent))
+			if err != nil {
+				return nil, fmt.Errorf("marshal msearch body: %w", err)
+			}
 			buf.Write(hb)
 			_ = buf.WriteByte('\n')
 			buf.Write(bb)
 			_ = buf.WriteByte('\n')
 		}
-		return buf.Bytes()
-	default:
-		if len(p.Searches) == 0 {
-			return nil
+		return buf.Bytes(), nil
+	case requestKindSearch:
+		if len(p.Searches) == 0 || p.Searches[0] == nil {
+			return nil, errMissingRequestPlan
 		}
-		b, _ := json.Marshal(p.Searches[0].bodyForExtent(extent))
-		return b
+		b, err := json.Marshal(p.Searches[0].bodyForExtent(extent))
+		if err != nil {
+			return nil, fmt.Errorf("marshal search body: %w", err)
+		}
+		return b, nil
+	default:
+		return nil, fmt.Errorf("unsupported Elasticsearch request kind %d", p.Kind)
 	}
 }
 

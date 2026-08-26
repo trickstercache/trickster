@@ -99,6 +99,8 @@ func TestQueryHandlerFallbackCacheSeparatesTimeRanges(t *testing.T) {
 
 	base := request.GetResources(baseRequest)
 	base.BackendOptions.OriginURL = origin.URL
+	// Reset the derived group before renaming the initialized fixture.
+	base.BackendOptions.ReplicaGroup = ""
 	if err := base.BackendOptions.Initialize("test"); err != nil {
 		t.Fatal(err)
 	}
@@ -193,6 +195,8 @@ func TestQueryHandlerCachesOnlyCompleteHistogramBuckets(t *testing.T) {
 
 	base := request.GetResources(baseRequest)
 	base.BackendOptions.OriginURL = origin.URL
+	// Reset the derived group before renaming the initialized fixture.
+	base.BackendOptions.ReplicaGroup = ""
 	if err := base.BackendOptions.Initialize("test"); err != nil {
 		t.Fatal(err)
 	}
