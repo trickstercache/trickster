@@ -30,9 +30,8 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/manager"
 	tstr "github.com/trickstercache/trickster/v2/pkg/util/strings"
-
-	lumberjack "gopkg.in/natefinch/lumberjack.v2"
 )
 
 var (
@@ -91,17 +90,13 @@ func New(conf *config.Config) Logger {
 	if conf.Logging.LogFile == "" {
 		l.writer = os.Stdout
 	} else {
-		logFile := conf.Logging.LogFile
-		if conf.Main.InstanceID > 0 {
-			logFile = strings.Replace(logFile, ".log",
-				"."+strconv.Itoa(conf.Main.InstanceID)+".log", 1)
-		}
-		l.writer = &lumberjack.Logger{
-			Filename:   logFile,
-			MaxSize:    256,  // megabytes
-			MaxBackups: 80,   // 256 megs @ 80 backups is 20GB of Logs
-			MaxAge:     7,    // days
-			Compress:   true, // Compress Rolled Backups
+		mo := manager.NewOptions()
+		mo.Filename = manager.InstanceFilename(conf.Logging.LogFile,
+			conf.Main.InstanceID)
+		if w, err := manager.GetWriter(mo); err == nil {
+			l.writer = w
+		} else {
+			l.writer = os.Stdout
 		}
 	}
 	if c, ok := l.writer.(io.Closer); ok && c != nil {
