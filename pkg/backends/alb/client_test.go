@@ -149,7 +149,7 @@ func TestValidateClients(t *testing.T) {
 	o := bo.New()
 	a := ao.New()
 	a.MechanismName = "rx"
-	a.Pool = []string{"invalid"}
+	a.Pool = ao.Members("invalid")
 
 	o.ALBOptions = a
 	o.Provider = providers.ALB
@@ -171,7 +171,7 @@ func TestValidateClients(t *testing.T) {
 		t.Errorf("expected %s got %s", invalidPoolMemberCheck, err)
 	}
 
-	a.Pool = []string{"test"}
+	a.Pool = ao.Members("test")
 	err = ValidateClients(b)
 	if err != nil {
 		t.Error(err)
@@ -200,7 +200,7 @@ func TestValidateAndStartPool(t *testing.T) {
 	b := backends.Backends{"test": cl}
 
 	a.MechanismName = names.MechanismRR
-	a.Pool = []string{"invalid"}
+	a.Pool = ao.Members("invalid")
 	err = cl.ValidateAndStartPool(b, nil)
 	if err == nil || err.Error() != invalidPoolMemberCheck {
 		t.Error("expected error for invalid pool member name, got", err)
@@ -210,7 +210,7 @@ func TestValidateAndStartPool(t *testing.T) {
 		"test": &healthcheck.Status{},
 	}
 
-	a.Pool = []string{"test"}
+	a.Pool = ao.Members("test")
 	err = cl.ValidateAndStartPool(b, hcs)
 	if err != nil {
 		t.Error(err)
@@ -230,7 +230,7 @@ func TestValidateAndStartTSMPoolRejectsIncompatibleProvider(t *testing.T) {
 	albOptions.Provider = providers.ALB
 	albOptions.ALBOptions = ao.New()
 	albOptions.ALBOptions.MechanismName = names.MechanismTSM
-	albOptions.ALBOptions.Pool = []string{"member"}
+	albOptions.ALBOptions.Pool = ao.Members("member")
 	base, err := backends.New("edge", albOptions, nil, http.NotFoundHandler(), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -259,7 +259,7 @@ func TestValidateTSMPoolMemberProviderResolvesNestedALB(t *testing.T) {
 	innerOptions.Provider = providers.ALB
 	innerOptions.ALBOptions = ao.New()
 	innerOptions.ALBOptions.MechanismName = names.MechanismRR
-	innerOptions.ALBOptions.Pool = []string{"leaf"}
+	innerOptions.ALBOptions.Pool = ao.Members("leaf")
 	inner, err := backends.New("inner", innerOptions, nil, http.NotFoundHandler(), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -288,7 +288,7 @@ func TestNestedALBDelegatesTSMProvider(t *testing.T) {
 	innerOptions.Provider = providers.ALB
 	innerOptions.ALBOptions = ao.New()
 	innerOptions.ALBOptions.MechanismName = names.MechanismRR
-	innerOptions.ALBOptions.Pool = []string{"leaf"}
+	innerOptions.ALBOptions.Pool = ao.Members("leaf")
 	innerBackend, err := NewClient("inner", innerOptions, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -333,7 +333,7 @@ func TestValidateClientsAllowsReplicaGroupOnNestedTSMMember(t *testing.T) {
 	innerOptions.ReplicaGroup = "shard-a"
 	innerOptions.ALBOptions = ao.New()
 	innerOptions.ALBOptions.MechanismName = names.MechanismRR
-	innerOptions.ALBOptions.Pool = []string{"leaf"}
+	innerOptions.ALBOptions.Pool = ao.Members("leaf")
 	innerBackend, err := NewClient("inner", innerOptions, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -345,7 +345,7 @@ func TestValidateClientsAllowsReplicaGroupOnNestedTSMMember(t *testing.T) {
 	outerOptions.ALBOptions = ao.New()
 	outerOptions.ALBOptions.MechanismName = names.MechanismTSM
 	outerOptions.ALBOptions.OutputFormat = providers.Prometheus
-	outerOptions.ALBOptions.Pool = []string{"inner"}
+	outerOptions.ALBOptions.Pool = ao.Members("inner")
 	outerBackend, err := NewClient("outer", outerOptions, nil, nil, nil,
 		types.Lookup{providers.Prometheus: prometheus.NewClient})
 	if err != nil {
@@ -361,7 +361,7 @@ func TestValidateClientsAllowsReplicaGroupOnNestedTSMMember(t *testing.T) {
 		t.Fatalf("nested TSM replica group rejected: %v", err)
 	}
 
-	outerOptions.ALBOptions.Pool = []string{"leaf"}
+	outerOptions.ALBOptions.Pool = ao.Members("leaf")
 	if err := ValidateClients(clients); err == nil {
 		t.Fatal("expected custom replica group on non-TSM-member ALB to be rejected")
 	}
@@ -391,7 +391,7 @@ func TestStopPoolsAndStopPool(t *testing.T) {
 	o := bo.New()
 	o.ALBOptions = ao.New()
 	o.ALBOptions.MechanismName = names.MechanismRR
-	o.ALBOptions.Pool = []string{"test"}
+	o.ALBOptions.Pool = ao.Members("test")
 
 	cl, err := NewClient("test", o, nil, nil, nil, nil)
 	if err != nil {
@@ -438,7 +438,7 @@ func TestValidateAndStartPoolUnprobedMembersResetFloor(t *testing.T) {
 	albOpts.ALBOptions = ao.New()
 	albOpts.ALBOptions.MechanismName = names.MechanismRR
 	albOpts.ALBOptions.HealthyFloor = int(healthcheck.StatusPassing)
-	albOpts.ALBOptions.Pool = []string{"member"}
+	albOpts.ALBOptions.Pool = ao.Members("member")
 
 	albClient, err := NewClient("edge", albOpts, nil, nil, nil, nil)
 	if err != nil {
@@ -469,7 +469,7 @@ func TestValidateAndStartPoolAdmitsFailingFloor(t *testing.T) {
 	albOpts.ALBOptions = ao.New()
 	albOpts.ALBOptions.MechanismName = names.MechanismRR
 	albOpts.ALBOptions.HealthyFloor = int(healthcheck.StatusFailing)
-	albOpts.ALBOptions.Pool = []string{"member"}
+	albOpts.ALBOptions.Pool = ao.Members("member")
 
 	albClient, err := NewClient("edge", albOpts, nil, nil, nil, nil)
 	if err != nil {

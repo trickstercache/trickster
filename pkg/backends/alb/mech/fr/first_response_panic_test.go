@@ -38,7 +38,12 @@ func TestFRPanicMemberDoesNotCrashRequest(t *testing.T) {
 	h := &handler{}
 	h.SetPool(p)
 	w := httptest.NewRecorder()
+	base := albpool.FanoutFailureCount("fr", "", "panic")
 	albpool.ServeAndWait(t, h, w, albpool.NewParentGET(t))
+	// fr returns on the first (healthy) response while the panicking member
+	// may still be in flight; drain its failure count before the test ends
+	// so it can't bleed into a later test's counter-delta window
+	albpool.WaitFanoutFailureDelta(t, "fr", "", "panic", base, 1)
 
 	// either outcome is acceptable: 200 from the healthy member, or a 5xx if
 	// the mech surfaces the failure as a gateway error. the bar is no panic.
