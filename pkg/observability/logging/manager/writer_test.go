@@ -452,3 +452,51 @@ func TestMillPrunesStrayArchives(t *testing.T) {
 		t.Error("expected .1 archive to be retained")
 	}
 }
+
+func TestSetOptions(t *testing.T) {
+	o := testOptions(t)
+	w, err := NewWriter(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.SetOptions(nil) // no-op
+	mustWrite(t, w, "aaaa")
+	// lower the rotation threshold; the next write must rotate
+	o2 := o.Clone()
+	o2.MaxSizeBytes = 4
+	o2.RetentionCount = 2
+	w.SetOptions(o2)
+	mustWrite(t, w, "bbbb")
+	w.Close()
+	if s := readFile(t, o.Filename+".1"); s != "aaaa" {
+		t.Errorf("expected rotation under updated options, got %q", s)
+	}
+	if w.opts.FileMode != DefaultFileMode {
+		t.Errorf("unexpected file mode: %v", w.opts.FileMode)
+	}
+}
+
+func TestGetWriterUpdatesOptions(t *testing.T) {
+	o := testOptions(t)
+	h1, err := GetWriter(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	o2 := o.Clone()
+	o2.MaxSizeBytes = 42
+	h2, err := GetWriter(o2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h1.w != h2.w {
+		t.Fatal("expected shared writer")
+	}
+	h1.w.mtx.Lock()
+	size := h1.w.opts.MaxSizeBytes
+	h1.w.mtx.Unlock()
+	if size != 42 {
+		t.Errorf("expected updated max size, got %d", size)
+	}
+	h1.Close()
+	h2.Close()
+}

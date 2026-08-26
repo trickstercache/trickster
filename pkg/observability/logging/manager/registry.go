@@ -101,6 +101,10 @@ func GetWriter(o *Options) (*Handle, error) {
 		}
 		e = &regEntry{w: w}
 		registry.writers[key] = e
+	} else {
+		// an existing writer adopts the most recently provided settings
+		// (e.g., rotation changes applied by a config reload)
+		e.w.SetOptions(o)
 	}
 	e.refs++
 	return &Handle{w: e.w, key: key}, nil

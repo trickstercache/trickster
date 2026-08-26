@@ -59,6 +59,24 @@ func (w *Writer) Filename() string {
 	return w.opts.Filename
 }
 
+// SetOptions updates the Writer's rotation, retention and compression
+// settings in place; the filename cannot be changed
+func (w *Writer) SetOptions(o *Options) {
+	if o == nil {
+		return
+	}
+	w.mtx.Lock()
+	w.opts.MaxSizeBytes = o.MaxSizeBytes
+	w.opts.Interval = o.Interval
+	w.opts.RetentionCount = o.RetentionCount
+	w.opts.RetentionAge = o.RetentionAge
+	w.opts.Compress = o.Compress
+	if o.FileMode != 0 {
+		w.opts.FileMode = o.FileMode
+	}
+	w.mtx.Unlock()
+}
+
 func (w *Writer) Write(p []byte) (int, error) {
 	w.mtx.Lock()
 	defer w.mtx.Unlock()
@@ -214,8 +232,11 @@ func (w *Writer) millRun() {
 // retention count or age. Errors are ignored: the writer cannot usefully
 // report failures of its own log maintenance.
 func (w *Writer) mill() {
-	archives := listArchives(w.opts.Filename)
-	if w.opts.Compress {
+	w.mtx.Lock()
+	opts := w.opts
+	w.mtx.Unlock()
+	archives := listArchives(opts.Filename)
+	if opts.Compress {
 		for _, a := range archives {
 			if !a.compressed {
 				compressArchive(a.path)
@@ -224,13 +245,13 @@ func (w *Writer) mill() {
 	}
 	now := w.now()
 	for _, a := range archives {
-		if a.n > w.opts.RetentionCount {
+		if a.n > opts.RetentionCount {
 			os.Remove(a.path)
 			continue
 		}
-		if w.opts.RetentionAge > 0 {
+		if opts.RetentionAge > 0 {
 			if fi, err := os.Stat(a.path); err == nil &&
-				now.Sub(fi.ModTime()) > w.opts.RetentionAge {
+				now.Sub(fi.ModTime()) > opts.RetentionAge {
 				os.Remove(a.path)
 			}
 		}
