@@ -55,6 +55,15 @@ backends:
     cache_key_prefix: test-prefix
     path_routing_disabled: false
     forwarded_headers: x
+    access_log:
+      filename: /tmp/test.access.log
+      format: combined
+      rotation:
+        size: 64MB
+      retention:
+        count: 3
+      error_filename: /tmp/test.error.log
+      error_threshold: 500
     negative_cache_name: test
     rule_name: ''
     shard_max_size_time: 0ms

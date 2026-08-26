@@ -24,7 +24,9 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/manager"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/options"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/sizeconv"
 
 	"github.com/stretchr/testify/require"
 )
@@ -85,6 +87,31 @@ func TestNewLogger_LogFile(t *testing.T) {
 	b, err := os.ReadFile(instanceFileName)
 	require.NoError(t, err)
 	require.Equal(t, `time=0001-01-01T00:00:00Z app=trickster level=info event=testEntry testKey="test Val" testKey2=testValue2 testKey3=testValue3`+"\n", string(b))
+}
+
+func TestNewLogger_RotationOptions(t *testing.T) {
+	fileName := t.TempDir() + "/out.log"
+	size := sizeconv.Size(16)
+	count := 2
+	compress := false
+	conf := config.NewConfig()
+	conf.Main = &config.MainConfig{InstanceID: 0}
+	conf.Logging = &options.Options{
+		LogFile:   fileName,
+		LogLevel:  "info",
+		Rotation:  &manager.RotationOptions{Size: &size},
+		Retention: &manager.RetentionOptions{Count: &count},
+		Compress:  &compress,
+	}
+	log := New(conf)
+	log.SetLogAsynchronous(false)
+	// each line exceeds 16 bytes, so the second write must rotate the file
+	log.Info("first entry", nil)
+	log.Info("second entry", nil)
+	log.Close()
+	if _, err := os.Stat(fileName + ".1"); err != nil {
+		t.Errorf("expected a rotated archive per configured rotation: %v", err)
+	}
 }
 
 func TestNewLoggerDebug_LogFile(t *testing.T) {

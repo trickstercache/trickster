@@ -32,6 +32,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	logmgr "github.com/trickstercache/trickster/v2/pkg/observability/logging/manager"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/providers/basic"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
@@ -512,6 +513,42 @@ func TestApplyLoggingConfigFileChange(t *testing.T) {
 	}
 	if nc.MgmtConfig == nil {
 		t.Error("expected a default mgmt config to be created")
+	}
+	// let the delayed closer for the old logger run before TempDir cleanup
+	time.Sleep(20 * time.Millisecond)
+}
+
+func TestApplyLoggingConfigRotationChange(t *testing.T) {
+	dir := t.TempDir()
+	t.Cleanup(func() {
+		logger.Logger().Close()
+		logger.SetLogger(logging.NoopLogger())
+	})
+	old := config.NewConfig()
+	old.Logging.LogFile = filepath.Join(dir, "trickster.log")
+	old.MgmtConfig.ReloadDrainTimeout = 0
+	logger.SetLogger(logging.New(old))
+
+	// same file and level with new rotation settings must install a new logger
+	nc := config.NewConfig()
+	nc.Logging.LogFile = old.Logging.LogFile
+	nc.MgmtConfig.ReloadDrainTimeout = 0
+	count := 5
+	nc.Logging.Retention = &logmgr.RetentionOptions{Count: &count}
+	before := logger.Logger()
+	applyLoggingConfig(nc, old)
+	if logger.Logger() == before {
+		t.Error("a rotation change should install a new logger")
+	}
+
+	// an identical rotation config must retain the existing logger
+	nc2 := config.NewConfig()
+	nc2.Logging.LogFile = nc.Logging.LogFile
+	nc2.Logging.Retention = &logmgr.RetentionOptions{Count: &count}
+	before = logger.Logger()
+	applyLoggingConfig(nc2, nc)
+	if logger.Logger() != before {
+		t.Error("an equivalent rotation config should retain the existing logger")
 	}
 	// let the delayed closer for the old logger run before TempDir cleanup
 	time.Sleep(20 * time.Millisecond)
