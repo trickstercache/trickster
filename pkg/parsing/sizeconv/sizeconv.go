@@ -20,6 +20,7 @@ package sizeconv
 
 import (
 	"errors"
+	"math"
 	"strconv"
 	"strings"
 
@@ -71,7 +72,7 @@ func ParseSize(input string) (Size, error) {
 	}
 	if !strings.Contains(num, ".") {
 		v, err := strconv.ParseInt(num, 10, 64)
-		if err != nil || v < 0 {
+		if err != nil || v < 0 || v > math.MaxInt64/mult {
 			return 0, ErrInvalidSizeFormat
 		}
 		return Size(v * mult), nil
@@ -80,7 +81,11 @@ func ParseSize(input string) (Size, error) {
 	if err != nil || f < 0 {
 		return 0, ErrInvalidSizeFormat
 	}
-	return Size(f * float64(mult)), nil
+	result := f * float64(mult)
+	if math.IsInf(result, 0) || result >= float64(math.MaxInt64) {
+		return 0, ErrInvalidSizeFormat
+	}
+	return Size(result), nil
 }
 
 func (s Size) String() string {

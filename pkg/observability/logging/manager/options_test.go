@@ -51,8 +51,9 @@ func TestInstanceFilename(t *testing.T) {
 		{"/var/log/trickster.log", 0, "/var/log/trickster.log"},
 		{"/var/log/trickster.log", -1, "/var/log/trickster.log"},
 		{"/var/log/trickster.log", 2, "/var/log/trickster.2.log"},
-		{"/var/log/trickster.txt", 2, "/var/log/trickster.txt"},
-		{"/var/log/a.log.d/trickster.log", 3, "/var/log/a.3.log.d/trickster.log"},
+		{"/var/log/trickster.txt", 2, "/var/log/trickster.2.txt"},
+		{"/var/log/trickster", 2, "/var/log/trickster.2"},
+		{"/var/log/a.log.d/trickster.log", 3, "/var/log/a.log.d/trickster.3.log"},
 	}
 	for _, test := range tests {
 		if s := InstanceFilename(test.name, test.id); s != test.expected {

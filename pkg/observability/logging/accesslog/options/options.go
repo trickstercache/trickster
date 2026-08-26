@@ -33,10 +33,8 @@ const DefaultErrorThreshold = http.StatusBadRequest
 var ErrInvalidErrorThreshold = errors.New(
 	"error_threshold must be a valid http status code (100-599)")
 
-// Options is a collection of per-backend access and error logging options.
-// The access log is written only when Filename is set; the error log is
-// written only when ErrorFilename is set. Error* fields inherit from their
-// access log counterparts when unset.
+// Options configures per-backend access and error logging. Error settings
+// inherit their access-log counterparts when unset.
 type Options struct {
 	// Filename is the path to the access log; empty disables access logging
 	Filename string `yaml:"filename,omitempty"`

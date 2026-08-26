@@ -20,7 +20,9 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestGetWriterErrors(t *testing.T) {
@@ -119,6 +121,58 @@ func TestGetWriterAfterRelease(t *testing.T) {
 	if s := readFile(t, o.Filename); s != "first\nsecond\n" {
 		t.Errorf("unexpected content: %q", s)
 	}
+}
+
+func TestGetWriterWaitsForPriorClose(t *testing.T) {
+	o := testOptions(t)
+	o.MaxSizeBytes = 4
+	o.Compress = true
+	h, err := GetWriter(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var once sync.Once
+	h.w.compress = func(path string) {
+		once.Do(func() { close(started) })
+		<-release
+		compressArchive(path)
+	}
+	if _, err = h.Write([]byte("aaaa")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = h.Write([]byte("bbbb")); err != nil {
+		t.Fatal(err)
+	}
+	<-started
+	closed := make(chan error, 1)
+	go func() { closed <- h.Close() }()
+	acquired := make(chan *Handle, 1)
+	go func() {
+		next, getErr := GetWriter(o)
+		if getErr != nil {
+			t.Error(getErr)
+		}
+		acquired <- next
+	}()
+	select {
+	case next := <-acquired:
+		if next != nil {
+			next.Close()
+		}
+		t.Fatal("writer was reacquired before the prior close completed")
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(release)
+	if err = <-closed; err != nil {
+		t.Fatal(err)
+	}
+	next := <-acquired
+	if next == nil || next.w == h.w {
+		t.Fatal("expected a fresh writer after the prior close")
+	}
+	next.Close()
 }
 
 func TestGetWriterRejectsConflictingOptions(t *testing.T) {

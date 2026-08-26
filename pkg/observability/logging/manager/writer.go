@@ -21,6 +21,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -35,18 +36,33 @@ type Writer struct {
 	archiveMtx    sync.Mutex
 	f             *os.File
 	fileInfo      os.FileInfo
+	buf           []byte
 	size          int64
 	openedAt      time.Time
 	nextPathCheck time.Time
+	flushTimer    *time.Timer
+	flushActive   bool
+	pendingSeq    uint64
+	droppedLines  uint64
 	wg            sync.WaitGroup
 	millPending   bool
 	millAgain     bool
+	epochPending  bool
+	epochAgain    bool
 	closed        bool
 	now           func() time.Time
 	compress      func(string)
+	write         func(*os.File, []byte) (int, error)
 }
 
-const pathCheckInterval = time.Second
+const (
+	pathCheckInterval   = time.Second
+	bufferFlushInterval = time.Second
+	writeBufferSize     = 64 * 1024
+	maxWriteBufferSize  = 4 * writeBufferSize
+	rotationEpochSuffix = ".rotation"
+	pendingMarker       = ".pending."
+)
 
 // NewWriter returns a Writer for the provided Options
 func NewWriter(o *Options) (*Writer, error) {
@@ -57,7 +73,17 @@ func NewWriter(o *Options) (*Writer, error) {
 	if opts.FileMode == 0 {
 		opts.FileMode = DefaultFileMode
 	}
-	return &Writer{opts: opts, now: time.Now, compress: compressArchive}, nil
+	w := &Writer{
+		opts: opts, now: time.Now, compress: compressArchive,
+		buf: make([]byte, 0, writeBufferSize),
+		write: func(f *os.File, p []byte) (int, error) {
+			return f.Write(p)
+		},
+	}
+	if len(listPending(opts.Filename)) > 0 {
+		w.requestMill()
+	}
+	return w, nil
 }
 
 // Filename returns the path to the live log file
@@ -98,24 +124,46 @@ func (w *Writer) Write(p []byte) (int, error) {
 		return 0, err
 	}
 	if w.shouldRotate(int64(len(p))) {
+		if err := w.flushLocked(); err != nil {
+			return 0, err
+		}
 		if err := w.rotate(); err != nil {
 			return 0, err
 		}
 	}
-	n, err := w.f.Write(p)
-	if err != nil {
-		// the live file may have been removed or invalidated externally
-		// (e.g., by logrotate); reopen and retry the write once
-		w.f.Close()
-		w.f = nil
-		w.fileInfo = nil
-		if err = w.open(); err != nil {
-			return n, err
-		}
-		n, err = w.f.Write(p)
+	if len(p) > maxWriteBufferSize-len(w.buf) {
+		w.droppedLines++
+		w.scheduleFlush(0)
+		return 0, ErrBufferFull
 	}
-	w.size += int64(n)
-	return n, err
+	wasEmpty := len(w.buf) == 0
+	w.buf = append(w.buf, p...)
+	w.size += int64(len(p))
+	if len(w.buf) >= writeBufferSize {
+		w.scheduleFlush(0)
+		return len(p), nil
+	}
+	if wasEmpty {
+		w.scheduleFlush(bufferFlushInterval)
+	}
+	return len(p), nil
+}
+
+// DroppedLines returns writes rejected because the bounded buffer was full.
+func (w *Writer) DroppedLines() uint64 {
+	w.mtx.Lock()
+	defer w.mtx.Unlock()
+	return w.droppedLines
+}
+
+// Flush writes buffered log data to the live file.
+func (w *Writer) Flush() error {
+	w.mtx.Lock()
+	defer w.mtx.Unlock()
+	if w.closed {
+		return os.ErrClosed
+	}
+	return w.flushLocked()
 }
 
 // Rotate forces an immediate rotation of the live log file
@@ -130,6 +178,9 @@ func (w *Writer) Rotate() error {
 			return err
 		}
 	}
+	if err := w.flushLocked(); err != nil {
+		return err
+	}
 	return w.rotate()
 }
 
@@ -142,9 +193,12 @@ func (w *Writer) Close() error {
 		return nil
 	}
 	w.closed = true
-	var err error
+	w.stopFlushTimer()
+	err := w.flushLocked()
 	if w.f != nil {
-		err = w.f.Close()
+		if closeErr := w.f.Close(); err == nil {
+			err = closeErr
+		}
 		w.f = nil
 		w.fileInfo = nil
 	}
@@ -153,7 +207,85 @@ func (w *Writer) Close() error {
 	return err
 }
 
-// shouldRotate is called with the mutex held
+func (w *Writer) scheduleFlush(delay time.Duration) {
+	if w.closed || len(w.buf) == 0 {
+		return
+	}
+	if w.flushActive {
+		if delay == 0 {
+			w.flushTimer.Reset(0)
+		}
+		return
+	}
+	w.flushActive = true
+	if w.flushTimer != nil {
+		w.flushTimer.Reset(delay)
+		return
+	}
+	w.flushTimer = time.AfterFunc(delay, func() {
+		w.mtx.Lock()
+		if !w.flushActive {
+			w.mtx.Unlock()
+			return
+		}
+		w.flushActive = false
+		if !w.closed {
+			_ = w.flushLocked()
+		}
+		w.mtx.Unlock()
+	})
+}
+
+func (w *Writer) stopFlushTimer() {
+	if w.flushTimer != nil {
+		w.flushTimer.Stop()
+	}
+	w.flushActive = false
+}
+
+func (w *Writer) flushLocked() error {
+	w.stopFlushTimer()
+	if len(w.buf) == 0 {
+		return nil
+	}
+	if w.f == nil {
+		if err := w.open(); err != nil {
+			w.scheduleFlush(bufferFlushInterval)
+			return err
+		}
+	}
+	err := w.writeBufferOnce()
+	if err != nil && len(w.buf) > 0 {
+		_ = w.f.Close()
+		w.f = nil
+		w.fileInfo = nil
+		if openErr := w.open(); openErr != nil {
+			w.scheduleFlush(bufferFlushInterval)
+			return openErr
+		}
+		err = w.writeBufferOnce()
+	}
+	if len(w.buf) > 0 {
+		w.scheduleFlush(bufferFlushInterval)
+	}
+	return err
+}
+
+func (w *Writer) writeBufferOnce() error {
+	n, err := w.write(w.f, w.buf)
+	if n > len(w.buf) {
+		n = len(w.buf)
+	}
+	if n > 0 {
+		copy(w.buf, w.buf[n:])
+		w.buf = w.buf[:len(w.buf)-n]
+	}
+	if err == nil && len(w.buf) > 0 {
+		return io.ErrShortWrite
+	}
+	return err
+}
+
 func (w *Writer) shouldRotate(incoming int64) bool {
 	if w.opts.MaxSizeBytes > 0 && w.size+incoming > w.opts.MaxSizeBytes {
 		return w.size > 0
@@ -164,8 +296,11 @@ func (w *Writer) shouldRotate(incoming int64) bool {
 	return false
 }
 
-// open is called with the mutex held
 func (w *Writer) open() error {
+	return w.openAt(time.Time{})
+}
+
+func (w *Writer) openAt(epoch time.Time) error {
 	if err := os.MkdirAll(filepath.Dir(w.opts.Filename), DefaultDirMode); err != nil {
 		return err
 	}
@@ -182,17 +317,50 @@ func (w *Writer) open() error {
 	now := w.now()
 	w.f = f
 	w.fileInfo = fi
-	w.size = fi.Size()
-	w.openedAt = now
-	w.nextPathCheck = now.Add(pathCheckInterval)
-	if fi.Size() > 0 {
-		w.openedAt = fi.ModTime()
+	w.size = fi.Size() + int64(len(w.buf))
+	if epoch.IsZero() {
+		epoch = readRotationEpoch(w.opts.Filename)
 	}
+	if epoch.IsZero() {
+		epoch = now
+		if fi.Size() > 0 {
+			epoch = fi.ModTime()
+		}
+	}
+	w.openedAt = epoch
+	w.nextPathCheck = now.Add(pathCheckInterval)
+	w.requestEpochWrite()
 	return nil
 }
 
-// ensureCurrentFile periodically detects external removal or replacement.
-// It is called with the mutex held.
+func (w *Writer) requestEpochWrite() {
+	if w.epochPending {
+		w.epochAgain = true
+		return
+	}
+	w.epochPending = true
+	w.wg.Add(1)
+	go w.epochWriteRun()
+}
+
+func (w *Writer) epochWriteRun() {
+	defer w.wg.Done()
+	for {
+		w.mtx.Lock()
+		filename, epoch, mode := w.opts.Filename, w.openedAt, w.opts.FileMode
+		w.mtx.Unlock()
+		writeRotationEpoch(filename, epoch, mode)
+		w.mtx.Lock()
+		if !w.epochAgain {
+			w.epochPending = false
+			w.mtx.Unlock()
+			return
+		}
+		w.epochAgain = false
+		w.mtx.Unlock()
+	}
+}
+
 func (w *Writer) ensureCurrentFile() error {
 	now := w.now()
 	if now.Before(w.nextPathCheck) {
@@ -201,7 +369,7 @@ func (w *Writer) ensureCurrentFile() error {
 	w.nextPathCheck = now.Add(pathCheckInterval)
 	fi, err := os.Stat(w.opts.Filename)
 	if err == nil && w.fileInfo != nil && os.SameFile(w.fileInfo, fi) {
-		w.size = fi.Size()
+		w.size = fi.Size() + int64(len(w.buf))
 		return nil
 	}
 	if err != nil && !os.IsNotExist(err) {
@@ -212,40 +380,33 @@ func (w *Writer) ensureCurrentFile() error {
 		w.f = nil
 	}
 	w.fileInfo = nil
-	return w.open()
+	_ = os.Remove(rotationEpochName(w.opts.Filename))
+	return w.openAt(now)
 }
 
-// rotate is called with the mutex held. It closes the live file, shifts the
-// numbered archives, reopens a fresh live file, and requests background
-// compression/pruning.
 func (w *Writer) rotate() error {
+	now := w.now()
 	if w.f != nil {
-		w.f.Close()
+		if err := w.f.Close(); err != nil {
+			return err
+		}
 		w.f = nil
 		w.fileInfo = nil
 	}
-	w.archiveMtx.Lock()
-	defer w.archiveMtx.Unlock()
-	if w.opts.RetentionCount < 1 {
-		os.Remove(w.opts.Filename)
-	} else {
-		removeArchive(w.opts.Filename, w.opts.RetentionCount)
-		for n := w.opts.RetentionCount - 1; n >= 1; n-- {
-			shiftArchive(w.opts.Filename, n)
-		}
-		err := os.Rename(w.opts.Filename, archiveName(w.opts.Filename, 1, false))
-		if err != nil && !os.IsNotExist(err) {
-			return err
-		}
+	w.pendingSeq++
+	pending := pendingName(w.opts.Filename, now, w.pendingSeq)
+	err := os.Rename(w.opts.Filename, pending)
+	if err != nil && !os.IsNotExist(err) {
+		_ = w.open()
+		return err
 	}
-	if err := w.open(); err != nil {
+	if err := w.openAt(now); err != nil {
 		return err
 	}
 	w.requestMill()
 	return nil
 }
 
-// requestMill is called with the mutex held
 func (w *Writer) requestMill() {
 	if w.millPending {
 		w.millAgain = true
@@ -271,15 +432,16 @@ func (w *Writer) millRun() {
 	}
 }
 
-// mill compresses uncompressed archives and prunes archives beyond the
-// retention count or age. Errors are ignored: the writer cannot usefully
-// report failures of its own log maintenance.
 func (w *Writer) mill() {
 	w.mtx.Lock()
 	opts := w.opts
 	w.mtx.Unlock()
 	w.archiveMtx.Lock()
 	defer w.archiveMtx.Unlock()
+	for _, pending := range listPending(opts.Filename) {
+		shiftArchives(opts.Filename, opts.RetentionCount)
+		_ = os.Rename(pending.path, archiveName(opts.Filename, 1, false))
+	}
 	archives := listArchives(opts.Filename)
 	if opts.Compress {
 		for _, a := range archives {
@@ -291,7 +453,7 @@ func (w *Writer) mill() {
 	}
 	now := w.now()
 	for _, a := range archives {
-		if a.n > opts.RetentionCount {
+		if opts.RetentionCount > 0 && a.n > opts.RetentionCount {
 			os.Remove(a.path)
 			continue
 		}
@@ -323,16 +485,73 @@ func removeArchive(filename string, n int) {
 	os.Remove(archiveName(filename, n, true))
 }
 
-// shiftArchive best-effort renames archive n to n+1, preferring the
-// compressed form
+func shiftArchives(filename string, retentionCount int) {
+	if retentionCount > 0 {
+		removeArchive(filename, retentionCount)
+		for n := retentionCount - 1; n >= 1; n-- {
+			shiftArchive(filename, n)
+		}
+		return
+	}
+	maxArchive := 0
+	for _, a := range listArchives(filename) {
+		if a.n > maxArchive {
+			maxArchive = a.n
+		}
+	}
+	for n := maxArchive; n >= 1; n-- {
+		shiftArchive(filename, n)
+	}
+}
+
 func shiftArchive(filename string, n int) {
 	if p := archiveName(filename, n, true); fileExists(p) {
 		_ = os.Rename(p, archiveName(filename, n+1, true))
-		return
 	}
 	if p := archiveName(filename, n, false); fileExists(p) {
 		_ = os.Rename(p, archiveName(filename, n+1, false))
 	}
+}
+
+type pendingArchive struct {
+	path    string
+	name    string
+	modTime time.Time
+}
+
+func pendingName(filename string, now time.Time, seq uint64) string {
+	return filename + pendingMarker + strconv.FormatInt(now.UnixNano(), 10) + "." +
+		strconv.FormatUint(seq, 10)
+}
+
+func listPending(filename string) []pendingArchive {
+	dir := filepath.Dir(filename)
+	prefix := filepath.Base(filename) + pendingMarker
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	out := make([]pendingArchive, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasPrefix(entry.Name(), prefix) {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		out = append(out, pendingArchive{
+			path: filepath.Join(dir, entry.Name()), name: entry.Name(),
+			modTime: info.ModTime(),
+		})
+	}
+	slices.SortFunc(out, func(a, b pendingArchive) int {
+		if order := a.modTime.Compare(b.modTime); order != 0 {
+			return order
+		}
+		return strings.Compare(a.name, b.name)
+	})
+	return out
 }
 
 func fileExists(path string) bool {
@@ -340,7 +559,6 @@ func fileExists(path string) bool {
 	return err == nil
 }
 
-// listArchives returns the numbered archives for the provided live filename
 func listArchives(filename string) []archive {
 	dir := filepath.Dir(filename)
 	base := filepath.Base(filename) + "."
@@ -367,8 +585,6 @@ func listArchives(filename string) []archive {
 	return out
 }
 
-// compressArchive gzips the file at path to path.gz, preserving its
-// modification time, and removes the original on success
 func compressArchive(path string) {
 	src, err := os.Open(path)
 	if err != nil {
@@ -400,4 +616,25 @@ func compressArchive(path string) {
 	}
 	_ = os.Chtimes(dstPath, fi.ModTime(), fi.ModTime())
 	os.Remove(path)
+}
+
+func rotationEpochName(filename string) string {
+	return filename + rotationEpochSuffix
+}
+
+func readRotationEpoch(filename string) time.Time {
+	b, err := os.ReadFile(rotationEpochName(filename))
+	if err != nil {
+		return time.Time{}
+	}
+	nanos, err := strconv.ParseInt(strings.TrimSpace(string(b)), 10, 64)
+	if err != nil {
+		return time.Time{}
+	}
+	return time.Unix(0, nanos)
+}
+
+func writeRotationEpoch(filename string, epoch time.Time, mode os.FileMode) {
+	b := strconv.AppendInt(nil, epoch.UnixNano(), 10)
+	_ = os.WriteFile(rotationEpochName(filename), b, mode)
 }

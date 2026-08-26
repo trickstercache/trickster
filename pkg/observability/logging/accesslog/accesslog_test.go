@@ -29,6 +29,7 @@ import (
 	authtypes "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/types"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
+	utilmiddleware "github.com/trickstercache/trickster/v2/pkg/util/middleware"
 )
 
 func testLoggerOptions(t *testing.T) *alo.Options {
@@ -106,7 +107,7 @@ func TestMiddlewareAccessAndErrorLogs(t *testing.T) {
 		}
 		w.Write([]byte("hello"))
 	})
-	h := Middleware(l, "/api", inner)
+	h := Middleware(l, "/api", true, inner)
 
 	r := httptest.NewRequest(http.MethodGet, "/api?q=1", nil)
 	r.RemoteAddr = "203.0.113.9:51234"
@@ -148,8 +149,11 @@ func TestMiddlewareAccessOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := Middleware(l, "/", http.HandlerFunc(
-		func(w http.ResponseWriter, _ *http.Request) {
+	h := Middleware(l, "/", false, http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			if request.GetResources(r) != nil {
+				t.Error("access logging seeded resources without an authenticator")
+			}
 			w.WriteHeader(http.StatusNotFound)
 		}))
 	h.ServeHTTP(httptest.NewRecorder(),
@@ -169,7 +173,7 @@ func TestMiddlewareErrorOnlyWithThreshold(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := Middleware(l, "/", http.HandlerFunc(
+	h := Middleware(l, "/", false, http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path == "/404" {
 				w.WriteHeader(http.StatusNotFound)
@@ -191,7 +195,7 @@ func TestMiddlewareNilLogger(t *testing.T) {
 	inner := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		called = true
 	})
-	h := Middleware(nil, "/", inner)
+	h := Middleware(nil, "/", false, inner)
 	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
 	if !called {
 		t.Error("expected next handler to be called")
@@ -206,7 +210,7 @@ func TestMiddlewareUsesAuthenticatedUsername(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := Middleware(l, "/", http.HandlerFunc(
+	h := Middleware(l, "/", true, http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path == "/verified" {
 				request.GetResources(r).AuthResult = &authtypes.AuthResult{
@@ -236,34 +240,35 @@ func (r *flushRecorder) Flush() {
 
 func TestRecorderUnwrap(t *testing.T) {
 	base := &flushRecorder{ResponseRecorder: httptest.NewRecorder()}
-	rec := &recorder{ResponseWriter: base, status: http.StatusOK}
+	rec := utilmiddleware.NewResponseObserver(base)
 	if err := http.NewResponseController(rec).Flush(); err != nil {
 		t.Fatal(err)
 	}
 	if !base.flushed {
 		t.Error("expected flush to reach the underlying writer")
 	}
-	rec2 := &recorder{ResponseWriter: httptest.NewRecorder(), status: http.StatusOK}
+	rec2 := utilmiddleware.NewResponseObserver(httptest.NewRecorder())
+	rec2.WriteHeader(http.StatusEarlyHints)
 	rec2.WriteHeader(http.StatusCreated)
 	rec2.WriteHeader(http.StatusInternalServerError)
-	if rec2.status != http.StatusCreated {
-		t.Errorf("recorded status = %d, want %d", rec2.status, http.StatusCreated)
+	if rec2.StatusCode() != http.StatusCreated {
+		t.Errorf("recorded status = %d, want %d", rec2.StatusCode(), http.StatusCreated)
 	}
 }
 
 func TestParseResultHeader(t *testing.T) {
-	engine, status := parseResultHeader(
+	result := headers.ParseResultHeader(
 		"engine=DeltaProxyCache; status=phit; fetched=[1-2]; ffstatus=hit")
-	if engine != "DeltaProxyCache" || status != "phit" {
-		t.Errorf("unexpected parse result: %s, %s", engine, status)
+	if result.Engine != "DeltaProxyCache" || result.Status != "phit" {
+		t.Errorf("unexpected parse result: %s, %s", result.Engine, result.Status)
 	}
-	engine, status = parseResultHeader("")
-	if engine != "" || status != "" {
-		t.Errorf("expected empty results, got %s, %s", engine, status)
+	result = headers.ParseResultHeader("")
+	if result.Engine != "" || result.Status != "" {
+		t.Errorf("expected empty results, got %s, %s", result.Engine, result.Status)
 	}
-	engine, status = parseResultHeader("junk; status=hit")
-	if engine != "" || status != "hit" {
-		t.Errorf("unexpected parse result: %s, %s", engine, status)
+	result = headers.ParseResultHeader("junk; status=hit")
+	if result.Engine != "" || result.Status != "hit" {
+		t.Errorf("unexpected parse result: %s, %s", result.Engine, result.Status)
 	}
 }
 

@@ -22,12 +22,18 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
+
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
 
-// clfTimeLayout is the NCSA Common Log Format timestamp layout
 const clfTimeLayout = "02/Jan/2006:15:04:05 -0700"
 
-const dash = "-"
+const (
+	dash          = "-"
+	headerCookie  = "Cookie"
+	headerReferer = "Referer"
+)
 
 // Named format presets; "combined" is the default
 const (
@@ -50,7 +56,8 @@ type emitter func(b []byte, f *Fields) []byte
 
 // Formatter renders a compiled access log format for a request's Fields
 type Formatter struct {
-	emitters []emitter
+	emitters          []emitter
+	needsResultHeader bool
 }
 
 // Render appends the formatted log line, including a trailing newline, to b
@@ -68,7 +75,7 @@ func ParseFormat(input string) (*Formatter, error) {
 		input = DefaultFormatName
 	}
 	if input == JSON {
-		return &Formatter{emitters: jsonEmitters()}, nil
+		return &Formatter{emitters: jsonEmitters(), needsResultHeader: true}, nil
 	}
 	if p, ok := presets[input]; ok {
 		input = p
@@ -124,10 +131,18 @@ func ParseFormat(input string) (*Formatter, error) {
 		}
 		flushLiteral()
 		fm.emitters = append(fm.emitters, e)
+		if hasArg && input[i] == 'x' && (arg == "engine" || arg == "cache-status") {
+			fm.needsResultHeader = true
+		}
 		i++
 	}
 	flushLiteral()
 	return fm, nil
+}
+
+// NeedsResultHeader reports whether this format emits result-header fields.
+func (fm *Formatter) NeedsResultHeader() bool {
+	return fm != nil && fm.needsResultHeader
 }
 
 func compileToken(token byte, arg string, hasArg bool) (emitter, error) {
@@ -332,7 +347,7 @@ func appendHeader(b []byte, h http.Header, key string) []byte {
 
 func appendCookie(b []byte, h http.Header, name string) []byte {
 	if h != nil {
-		if cookies, err := http.ParseCookie(h.Get("Cookie")); err == nil {
+		if cookies, err := http.ParseCookie(h.Get(headerCookie)); err == nil {
 			for _, c := range cookies {
 				if c.Name == name {
 					return appendEscapedOrDash(b, c.Value)
@@ -343,8 +358,6 @@ func appendCookie(b []byte, h http.Header, name string) []byte {
 	return append(b, dash...)
 }
 
-// appendEscaped appends s, backslash-escaping quotes, backslashes and
-// control bytes so untrusted values cannot corrupt the log line structure
 func appendEscaped(b []byte, s string) []byte {
 	if !needsEscape(s) {
 		return append(b, s...)
@@ -380,7 +393,6 @@ func needsEscape(s string) bool {
 	return false
 }
 
-// jsonEmitters returns the emitter chain for the fixed-field json preset
 func jsonEmitters() []emitter {
 	fields := []struct {
 		key  string
@@ -422,10 +434,10 @@ func jsonEmitters() []emitter {
 			return appendJSONString(b, f.Host)
 		}},
 		{"referer", func(b []byte, f *Fields) []byte {
-			return appendJSONHeader(b, f.ReqHeader, "Referer")
+			return appendJSONHeader(b, f.ReqHeader, headerReferer)
 		}},
 		{"user_agent", func(b []byte, f *Fields) []byte {
-			return appendJSONHeader(b, f.ReqHeader, "User-Agent")
+			return appendJSONHeader(b, f.ReqHeader, headers.NameUserAgent)
 		}},
 		{"backend", func(b []byte, f *Fields) []byte {
 			return appendJSONString(b, f.Backend)
@@ -461,12 +473,72 @@ func jsonEmitters() []emitter {
 }
 
 func appendJSONString(b []byte, s string) []byte {
-	return strconv.AppendQuote(b, s)
+	b = append(b, '"')
+	if !needsJSONEscape(s) {
+		b = append(b, s...)
+		return append(b, '"')
+	}
+	for len(s) > 0 {
+		c := s[0]
+		if c < utf8.RuneSelf {
+			s = s[1:]
+			switch c {
+			case '"', '\\':
+				b = append(b, '\\', c)
+			case '\b':
+				b = append(b, `\b`...)
+			case '\f':
+				b = append(b, `\f`...)
+			case '\n':
+				b = append(b, `\n`...)
+			case '\r':
+				b = append(b, `\r`...)
+			case '\t':
+				b = append(b, `\t`...)
+			default:
+				if c < 0x20 {
+					const hex = "0123456789abcdef"
+					b = append(b, '\\', 'u', '0', '0', hex[c>>4], hex[c&0xf])
+				} else {
+					b = append(b, c)
+				}
+			}
+			continue
+		}
+		_, size := utf8.DecodeRuneInString(s)
+		if size == 1 {
+			b = append(b, `\ufffd`...)
+			s = s[1:]
+			continue
+		}
+		b = append(b, s[:size]...)
+		s = s[size:]
+	}
+	return append(b, '"')
+}
+
+func needsJSONEscape(s string) bool {
+	for i := 0; i < len(s); {
+		c := s[i]
+		if c < utf8.RuneSelf {
+			if c < 0x20 || c == '"' || c == '\\' {
+				return true
+			}
+			i++
+			continue
+		}
+		_, size := utf8.DecodeRuneInString(s[i:])
+		if size == 1 {
+			return true
+		}
+		i += size
+	}
+	return false
 }
 
 func appendJSONHeader(b []byte, h http.Header, key string) []byte {
 	if h == nil {
 		return append(b, `""`...)
 	}
-	return strconv.AppendQuote(b, h.Get(key))
+	return appendJSONString(b, h.Get(key))
 }

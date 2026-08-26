@@ -36,7 +36,7 @@ type RotationOptions struct {
 // RetentionOptions is the YAML-facing configuration for how many rotated
 // archives are kept; nil fields inherit defaults, explicit zeros disable
 type RetentionOptions struct {
-	// Count is the maximum number of archived files kept
+	// Count is the maximum archived files kept; zero disables count pruning
 	Count *int `yaml:"count,omitempty"`
 	// Age prunes archived files older than this
 	Age *timeconv.Duration `yaml:"age,omitempty"`

@@ -19,6 +19,7 @@ package logging
 import (
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -292,10 +293,17 @@ func TestNewLoggerFatal_LogFile(t *testing.T) {
 	conf.Main = &config.MainConfig{InstanceID: 0}
 	conf.Logging = &options.Options{LogFile: fileName, LogLevel: "debug"}
 	logger := New(conf)
-	logger.SetLogAsynchronous(false)
+	logger.Info("before fatal", nil)
 	logger.Fatal(-1, "test entry", Pairs{"testKey": "testVal"})
-	if _, err := os.Stat(fileName); err != nil {
-		t.Error(err)
+	b, err := os.ReadFile(fileName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "test entry") {
+		t.Errorf("fatal line was not flushed: %q", string(b))
+	}
+	if !strings.Contains(string(b), "before fatal") {
+		t.Errorf("preceding asynchronous line was not flushed: %q", string(b))
 	}
 	logger.Close()
 }

@@ -121,8 +121,24 @@ most recent archive, `.2.gz` the next, and so on).
   threshold is reached. Setting both to `0` disables rotation.
 - Sizes accept `KB`, `MB`, `GB` and `TB` suffixes (binary multiples), or a
   plain byte count.
-- `retention.count: 0` deletes the live file's content at rotation without
-  keeping an archive.
+- `retention.count: 0` disables count-based pruning and keeps all archives.
+- Writes are buffered for up to one second or 64 KiB. A process or machine
+  crash can lose the buffered tail; an orderly shutdown flushes it.
+- Interval rotation keeps its epoch in a `<filename>.rotation` sidecar so a
+  restart does not reset the interval clock.
+
+Archives created by older Trickster releases use timestamped lumberjack
+names and are not included in numbered-archive retention. They form a bounded
+legacy set and may be removed manually after upgrading.
+
+When upgrading from the original logging implementation, note these filename
+and retention changes:
+
+- `retention.count: 0` now keeps all archives; configure a positive count to
+  bound archive retention.
+- With `main.instance_id` enabled, filenames without a `.log` suffix now also
+  include the instance ID (`trickster.out` becomes `trickster.2.out`). Update
+  log shippers that still follow the unsuffixed filename.
 
 The same `rotation`, `retention` and `compress` options are also available
 in the main `logging:` config section to control rotation of the Trickster

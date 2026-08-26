@@ -45,6 +45,8 @@ var bufPool = sync.Pool{
 	},
 }
 
+const maxPooledBufferSize = 64 * 1024
+
 // NewLogger returns a Logger for the provided options, or nil when neither
 // an access log nor an error log filename is configured
 func NewLogger(o *alo.Options, instanceID int,
@@ -96,12 +98,20 @@ func (l *Logger) Log(f *format.Fields) {
 	}
 }
 
+// NeedsResultHeader reports whether either configured log emits result fields.
+func (l *Logger) NeedsResultHeader() bool {
+	return l != nil && (l.access != nil && l.accessFmt.NeedsResultHeader() ||
+		l.errlog != nil && l.errFmt.NeedsResultHeader())
+}
+
 func (l *Logger) render(w *manager.Handle, fm *format.Formatter, f *format.Fields) {
 	bp := bufPool.Get().(*[]byte)
 	b := fm.Render((*bp)[:0], f)
 	w.Write(b)
-	*bp = b
-	bufPool.Put(bp)
+	if cap(b) <= maxPooledBufferSize {
+		*bp = b
+		bufPool.Put(bp)
+	}
 }
 
 // Close releases the Logger's log file handles

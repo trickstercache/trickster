@@ -381,12 +381,23 @@ func TestApplyConfigTracingError(t *testing.T) {
 		t.Fatal(err)
 	}
 	quietListeners(conf)
+	old := conf.Clone()
+	old.Logging.LogFile = filepath.Join(t.TempDir(), "reload.log")
+	conf.Logging.LogFile = old.Logging.LogFile
+	count := 5
+	conf.Logging.Retention = &logmgr.RetentionOptions{Count: &count}
+	oldOptions := old.Logging.ManagerOptions()
+	h, err := logmgr.GetWriter(oldOptions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer h.Close()
 	// a backend pointing at a tracing config that does not exist fails
 	// tracer registration
 	conf.Backends["test"].TracingConfigName = "nonexistent"
 
 	var errorFuncCalls int
-	si := &instance.ServerInstance{}
+	si := &instance.ServerInstance{Config: old}
 	err = ApplyConfig(si, conf, clients, nil, func() { errorFuncCalls++ }, listener.NewGroup())
 	if err == nil {
 		t.Fatal("expected a tracer registration error")
@@ -394,6 +405,11 @@ func TestApplyConfigTracingError(t *testing.T) {
 	if errorFuncCalls != 1 {
 		t.Errorf("errorFunc calls = %d, want 1", errorFuncCalls)
 	}
+	restored, err := logmgr.GetWriter(oldOptions)
+	if err != nil {
+		t.Fatalf("old log options were not restored: %v", err)
+	}
+	restored.Close()
 }
 
 func TestApplyConfigRouteRegistrationError(t *testing.T) {
@@ -402,17 +418,36 @@ func TestApplyConfigRouteRegistrationError(t *testing.T) {
 		t.Fatal(err)
 	}
 	quietListeners(conf)
+	logFile := filepath.Join(t.TempDir(), "startup.log")
+	conf.Logging.LogFile = logFile
 	// an unknown provider is rejected by route registration
 	conf.Backends["test"].Provider = "not-a-provider"
 
 	var errorFuncCalls int
+	var loggedBeforeExit bool
 	si := &instance.ServerInstance{}
-	err = ApplyConfig(si, conf, clients, nil, func() { errorFuncCalls++ }, listener.NewGroup())
+	err = ApplyConfig(si, conf, clients, nil, func() {
+		errorFuncCalls++
+		b, _ := os.ReadFile(logFile)
+		loggedBeforeExit = strings.Contains(string(b), "route registration failed")
+	}, listener.NewGroup())
 	if err == nil {
 		t.Fatal("expected a route registration error")
 	}
 	if errorFuncCalls != 1 {
 		t.Errorf("errorFunc calls = %d, want 1", errorFuncCalls)
+	}
+	if !loggedBeforeExit {
+		t.Error("startup failure was not flushed before the exit callback")
+	}
+	logger.Logger().Close()
+	logger.SetLogger(logging.NoopLogger())
+	b, readErr := os.ReadFile(logFile)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if !strings.Contains(string(b), "route registration failed") {
+		t.Errorf("startup failure missing from configured log: %q", string(b))
 	}
 }
 
@@ -529,16 +564,19 @@ func TestApplyLoggingConfigRotationChange(t *testing.T) {
 	old.MgmtConfig.ReloadDrainTimeout = 0
 	logger.SetLogger(logging.New(old))
 
-	// same file and level with new rotation settings must install a new logger
+	// the shared writer is reconfigured before applying the logging config
 	nc := config.NewConfig()
 	nc.Logging.LogFile = old.Logging.LogFile
 	nc.MgmtConfig.ReloadDrainTimeout = 0
 	count := 5
 	nc.Logging.Retention = &logmgr.RetentionOptions{Count: &count}
 	before := logger.Logger()
+	if err := reconfigureLogWriters(nc); err != nil {
+		t.Fatal(err)
+	}
 	applyLoggingConfig(nc, old)
-	if logger.Logger() == before {
-		t.Error("a rotation change should install a new logger")
+	if logger.Logger() != before {
+		t.Error("a rotation-only change should retain the existing logger")
 	}
 
 	// an identical rotation config must retain the existing logger
@@ -550,8 +588,6 @@ func TestApplyLoggingConfigRotationChange(t *testing.T) {
 	if logger.Logger() != before {
 		t.Error("an equivalent rotation config should retain the existing logger")
 	}
-	// let the delayed closer for the old logger run before TempDir cleanup
-	time.Sleep(20 * time.Millisecond)
 }
 
 func TestApplyCachingConfigNilArgs(t *testing.T) {

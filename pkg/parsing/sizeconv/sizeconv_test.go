@@ -43,6 +43,8 @@ func TestParseSize(t *testing.T) {
 		{"12XB", 0, true},
 		{"1.2.3MB", 0, true},
 		{"-5MB", 0, true},
+		{"9000000000GB", 0, true},
+		{"9000000000.5GB", 0, true},
 	}
 	for _, test := range tests {
 		v, err := ParseSize(test.input)

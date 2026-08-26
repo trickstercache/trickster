@@ -408,7 +408,7 @@ backends:
 #         interval: 1d
 #       # retention controls how many rotated archives (example.access.log.1.gz, .2.gz, ...) are kept
 #       retention:
-#         # count is the maximum number of archives kept. default is 80
+#         # count is the maximum archives kept; 0 is unlimited. default is 80
 #         count: 3
 #         # age prunes archives older than this. default is 7d
 #         age: 7d
@@ -929,7 +929,7 @@ backends:
 
 #   # retention controls how many rotated archives are kept
 #   retention:
-#     # count is the maximum number of archives kept. default is 80
+#     # count is the maximum archives kept; 0 is unlimited. default is 80
 #     count: 80
 #     # age prunes archives older than this. default is 7d
 #     age: 7d

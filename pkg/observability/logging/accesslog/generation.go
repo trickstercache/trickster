@@ -21,23 +21,19 @@ import (
 	"time"
 )
 
-// generations tracks the Loggers created during the current config
-// (re)load so that a reload can retire the previous config's Loggers
 var generations = struct {
 	sync.Mutex
 	current  []*Logger
 	previous []*Logger
 }{}
 
-// track is called by NewLogger to register l in the current generation
 func track(l *Logger) {
 	generations.Lock()
 	generations.current = append(generations.current, l)
 	generations.Unlock()
 }
 
-// BeginGeneration moves the current generation of Loggers to the previous
-// set; call before registering routes for a new or reloaded config
+// BeginGeneration starts tracking loggers for a new configuration.
 func BeginGeneration() {
 	generations.Lock()
 	generations.previous = append(generations.previous, generations.current...)
@@ -45,8 +41,7 @@ func BeginGeneration() {
 	generations.Unlock()
 }
 
-// CommitGeneration closes the previous generation of Loggers after the
-// provided drain delay; call after a successful config (re)load
+// CommitGeneration closes the previous logger generation after delay.
 func CommitGeneration(delay time.Duration) {
 	generations.Lock()
 	toClose := generations.previous
@@ -63,8 +58,7 @@ func CommitGeneration(delay time.Duration) {
 	}()
 }
 
-// AbortGeneration closes any Loggers created during a failed config
-// (re)load and restores the previous generation as current
+// AbortGeneration closes new loggers and restores the previous generation.
 func AbortGeneration() {
 	generations.Lock()
 	toClose := generations.current

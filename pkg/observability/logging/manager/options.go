@@ -23,7 +23,6 @@ import (
 	"io/fs"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -48,6 +47,9 @@ var ErrNoFilename = errors.New("log filename is required")
 // ErrConflictingOptions is returned when one file has incompatible managers
 var ErrConflictingOptions = errors.New("conflicting log manager options")
 
+// ErrBufferFull is returned when a log line exceeds the bounded write buffer.
+var ErrBufferFull = errors.New("log write buffer is full")
+
 // Options configures a managed log file
 type Options struct {
 	// Filename is the path to the live log file
@@ -56,7 +58,7 @@ type Options struct {
 	MaxSizeBytes int64
 	// Interval rotates the file when it has been open at least this long (0 disables)
 	Interval time.Duration
-	// RetentionCount is the max number of archived files kept (0 = delete on rotate)
+	// RetentionCount is the max archived files kept (0 disables count pruning)
 	RetentionCount int
 	// RetentionAge prunes archived files older than this (0 disables age pruning)
 	RetentionAge time.Duration
@@ -130,5 +132,7 @@ func InstanceFilename(name string, id int) string {
 	if id <= 0 {
 		return name
 	}
-	return strings.Replace(name, ".log", "."+strconv.Itoa(id)+".log", 1)
+	ext := filepath.Ext(filepath.Base(name))
+	stem := name[:len(name)-len(ext)]
+	return stem + "." + strconv.Itoa(id) + ext
 }

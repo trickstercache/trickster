@@ -218,6 +218,26 @@ func TestJSONPreset(t *testing.T) {
 	}
 }
 
+func TestJSONPresetEscapesInvalidInput(t *testing.T) {
+	f := testFields()
+	f.Path = "/\x01\xff\b\f"
+	f.ReqHeader.Set("User-Agent", "agent\x80\v")
+	out := render(t, JSON, f)
+	if !json.Valid([]byte(out)) {
+		t.Fatalf("json preset produced invalid JSON: %q", out)
+	}
+	var got map[string]any
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["path"] != "/\x01�\b\f" {
+		t.Errorf("unexpected escaped path: %q", got["path"])
+	}
+	if got["user_agent"] != "agent�\v" {
+		t.Errorf("unexpected escaped user agent: %q", got["user_agent"])
+	}
+}
+
 func TestEscaping(t *testing.T) {
 	f := testFields()
 	f.User = `fr"ank\`
@@ -250,6 +270,26 @@ func TestRenderReusesBuffer(t *testing.T) {
 	b2 := fm.Render(b[:0], f)
 	if string(b2) != "GET 200\n" {
 		t.Errorf("unexpected render output: %q", string(b2))
+	}
+}
+
+func TestNeedsResultHeader(t *testing.T) {
+	for _, tc := range []struct {
+		format string
+		want   bool
+	}{
+		{format: "%m %s"},
+		{format: "%{engine}x", want: true},
+		{format: "%{cache-status}x", want: true},
+		{format: JSON, want: true},
+	} {
+		fm, err := ParseFormat(tc.format)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := fm.NeedsResultHeader(); got != tc.want {
+			t.Errorf("format %q needs result = %t, want %t", tc.format, got, tc.want)
+		}
 	}
 }
 

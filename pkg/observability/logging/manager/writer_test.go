@@ -19,6 +19,7 @@ package manager
 import (
 	"bytes"
 	"compress/gzip"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -130,7 +131,7 @@ func TestRetentionCountPruning(t *testing.T) {
 	}
 }
 
-func TestRetentionCountZeroDeletesOnRotate(t *testing.T) {
+func TestRetentionCountZeroKeepsAllArchives(t *testing.T) {
 	o := testOptions(t)
 	o.MaxSizeBytes = 4
 	o.RetentionCount = 0
@@ -140,12 +141,16 @@ func TestRetentionCountZeroDeletesOnRotate(t *testing.T) {
 	}
 	mustWrite(t, w, "aaaa")
 	mustWrite(t, w, "bbbb")
+	mustWrite(t, w, "cccc")
 	w.Close()
-	if s := readFile(t, o.Filename); s != "bbbb" {
+	if s := readFile(t, o.Filename); s != "cccc" {
 		t.Errorf("unexpected live content: %q", s)
 	}
-	if fileExists(o.Filename + ".1") {
-		t.Error("expected no archives with zero retention count")
+	if s := readFile(t, o.Filename+".1"); s != "bbbb" {
+		t.Errorf("unexpected .1 content: %q", s)
+	}
+	if s := readFile(t, o.Filename+".2"); s != "aaaa" {
+		t.Errorf("unexpected .2 content: %q", s)
 	}
 }
 
@@ -314,6 +319,9 @@ func TestReopenAfterExternalRemoval(t *testing.T) {
 		t.Fatal(err)
 	}
 	mustWrite(t, w, "aaaa")
+	if err = w.Flush(); err != nil {
+		t.Fatal(err)
+	}
 	if err = os.Remove(o.Filename); err != nil {
 		t.Fatal(err)
 	}
@@ -325,7 +333,7 @@ func TestReopenAfterExternalRemoval(t *testing.T) {
 	}
 }
 
-func TestRotationWaitsForCompression(t *testing.T) {
+func TestRotationDoesNotWaitForCompression(t *testing.T) {
 	o := testOptions(t)
 	o.MaxSizeBytes = 4
 	o.RetentionCount = 3
@@ -352,13 +360,13 @@ func TestRotationWaitsForCompression(t *testing.T) {
 	}()
 	select {
 	case err := <-done:
-		t.Fatalf("rotation completed during compression: %v", err)
+		if err != nil {
+			t.Fatal(err)
+		}
 	case <-time.After(20 * time.Millisecond):
+		t.Fatal("rotation blocked on background compression")
 	}
 	close(release)
-	if err = <-done; err != nil {
-		t.Fatal(err)
-	}
 	if err = w.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -370,6 +378,184 @@ func TestRotationWaitsForCompression(t *testing.T) {
 	}
 	if s := readGzipFile(t, o.Filename+".2.gz"); s != "aaaa" {
 		t.Errorf("unexpected .2 content: %q", s)
+	}
+}
+
+func TestBufferedWriteFlush(t *testing.T) {
+	o := testOptions(t)
+	w, err := NewWriter(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, w, "buffered")
+	if s := readFile(t, o.Filename); s != "" {
+		t.Fatalf("write bypassed buffer: %q", s)
+	}
+	if err = w.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	if s := readFile(t, o.Filename); s != "buffered" {
+		t.Errorf("unexpected flushed content: %q", s)
+	}
+	w.Close()
+}
+
+func TestBufferedWriteThresholdAndTimer(t *testing.T) {
+	t.Run("threshold", func(t *testing.T) {
+		o := testOptions(t)
+		w, err := NewWriter(o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		payload := strings.Repeat("x", writeBufferSize)
+		mustWrite(t, w, payload)
+		deadline := time.Now().Add(bufferFlushInterval)
+		for time.Now().Before(deadline) {
+			if b, readErr := os.ReadFile(o.Filename); readErr == nil && string(b) == payload {
+				w.Close()
+				return
+			}
+			time.Sleep(time.Millisecond)
+		}
+		w.Close()
+		t.Error("threshold buffer was not flushed promptly")
+	})
+
+	t.Run("timer", func(t *testing.T) {
+		o := testOptions(t)
+		w, err := NewWriter(o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		mustWrite(t, w, "timer")
+		deadline := time.Now().Add(2 * bufferFlushInterval)
+		for time.Now().Before(deadline) {
+			if b, readErr := os.ReadFile(o.Filename); readErr == nil && string(b) == "timer" {
+				w.Close()
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		w.Close()
+		t.Error("buffer was not flushed by the timer")
+	})
+}
+
+func TestBufferLimitDropsWholeWrite(t *testing.T) {
+	o := testOptions(t)
+	w, err := NewWriter(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.mtx.Lock()
+	w.buf = append(w.buf, make([]byte, maxWriteBufferSize-1)...)
+	w.mtx.Unlock()
+	if n, writeErr := w.Write([]byte("line")); n != 0 || !errors.Is(writeErr, ErrBufferFull) {
+		t.Fatalf("write = %d, %v; want 0, ErrBufferFull", n, writeErr)
+	}
+	if w.DroppedLines() != 1 {
+		t.Errorf("dropped lines = %d, want 1", w.DroppedLines())
+	}
+	if err = w.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPartialWriteRetryDoesNotDuplicate(t *testing.T) {
+	o := testOptions(t)
+	w, err := NewWriter(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := true
+	w.write = func(f *os.File, p []byte) (int, error) {
+		if first {
+			first = false
+			n, writeErr := f.Write(p[:2])
+			if writeErr != nil {
+				return n, writeErr
+			}
+			return n, errors.New("injected partial write")
+		}
+		return f.Write(p)
+	}
+	mustWrite(t, w, "abcdef")
+	if err = w.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	if err = w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if got := readFile(t, o.Filename); got != "abcdef" {
+		t.Errorf("partial retry content = %q, want abcdef", got)
+	}
+}
+
+func TestFlushReopensRetainedBuffer(t *testing.T) {
+	o := testOptions(t)
+	w, err := NewWriter(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, w, "retained")
+	dir := filepath.Dir(o.Filename)
+	movedDir := dir + ".moved"
+	first := true
+	w.write = func(*os.File, []byte) (int, error) {
+		if first {
+			first = false
+			if renameErr := os.Rename(dir, movedDir); renameErr != nil {
+				t.Fatal(renameErr)
+			}
+			if writeErr := os.WriteFile(dir, []byte("blocker"), 0o600); writeErr != nil {
+				t.Fatal(writeErr)
+			}
+		}
+		return 0, errors.New("injected write failure")
+	}
+	if err = w.Flush(); err == nil {
+		t.Fatal("expected reopen failure")
+	}
+	if removeErr := os.Remove(dir); removeErr != nil {
+		t.Fatal(removeErr)
+	}
+	if renameErr := os.Rename(movedDir, dir); renameErr != nil {
+		t.Fatal(renameErr)
+	}
+	w.write = func(f *os.File, p []byte) (int, error) { return f.Write(p) }
+	if err = w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if got := readFile(t, o.Filename); got != "retained" {
+		t.Errorf("recovered content = %q, want retained", got)
+	}
+}
+
+func TestIntervalEpochSurvivesRestart(t *testing.T) {
+	o := testOptions(t)
+	o.MaxSizeBytes = 0
+	o.Interval = time.Hour
+	start := time.Now().Add(-2 * time.Hour)
+	w, err := NewWriter(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.now = func() time.Time { return start }
+	mustWrite(t, w, "old")
+	w.Close()
+
+	w, err = NewWriter(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.now = time.Now
+	mustWrite(t, w, "new")
+	w.Close()
+	if s := readFile(t, o.Filename); s != "new" {
+		t.Errorf("unexpected live content: %q", s)
+	}
+	if s := readFile(t, o.Filename+".1"); s != "old" {
+		t.Errorf("unexpected rotated content: %q", s)
 	}
 }
 

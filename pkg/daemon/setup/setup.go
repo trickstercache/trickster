@@ -17,6 +17,8 @@
 package setup
 
 import (
+	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	goruntime "runtime"
@@ -140,7 +142,7 @@ func LoadAndValidate(args ...string) (*config.Config, error) {
 func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	clients backends.Backends, hupFunc dr.Reloader, errorFunc func(),
 	lg *listener.Group,
-) error {
+) (retErr error) {
 	if si == nil || newConf == nil {
 		return nil
 	}
@@ -153,6 +155,10 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	if newConf.MgmtConfig == nil {
 		newConf.MgmtConfig = mgmt.New()
 	}
+	firstStartup := si.Config == nil
+	if firstStartup {
+		applyLoggingConfig(newConf, nil)
+	}
 
 	if err := buildAuthenticators(newConf); err != nil {
 		return err
@@ -163,7 +169,15 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 			logging.Pairs{logKeyDetail: err.Error()}, errorFunc)
 		return err
 	}
-	applyLoggingConfig(newConf, si.Config)
+	rollbackLogWriters := !firstStartup
+	defer func() {
+		if rollbackLogWriters {
+			if err := reconfigureLogWriters(si.Config); err != nil {
+				retErr = errors.Join(retErr,
+					fmt.Errorf("restore previous log writer options: %w", err))
+			}
+		}
+	}()
 
 	// Register Tracing Configurations
 	tracers, err := tr.RegisterAll(newConf, false)
@@ -230,6 +244,10 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 		healthcheck.LogHealthCheckError("", err, 0)
 		return err
 	}
+	rollbackLogWriters = false
+	if !firstStartup {
+		applyLoggingConfig(newConf, si.Config)
+	}
 	alb.StartALBPools(clients, si.HealthChecker.Statuses())
 	routing.RegisterDefaultBackendRoutesForListeners(listenerRouters, newConf, clients, tracers)
 	routing.RegisterHealthHandler(mr, newConf.MgmtConfig.HealthHandlerPath, si.HealthChecker, clients)
@@ -247,35 +265,9 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 }
 
 func reconfigureLogWriters(c *config.Config) error {
-	if c == nil {
-		return nil
-	}
-	var instanceID int
-	if c.Main != nil {
-		instanceID = c.Main.InstanceID
-	}
-	reconfigure := func(o *logmanager.Options) error {
-		o.Filename = logmanager.InstanceFilename(o.Filename, instanceID)
-		return logmanager.Reconfigure(o)
-	}
-	if c.Logging != nil && c.Logging.LogFile != "" {
-		if err := reconfigure(c.Logging.ManagerOptions()); err != nil {
+	for _, o := range c.LogManagerOptions() {
+		if err := logmanager.Reconfigure(o); err != nil {
 			return err
-		}
-	}
-	for _, backend := range c.Backends {
-		if backend == nil || backend.AccessLog == nil {
-			continue
-		}
-		if backend.AccessLog.Filename != "" {
-			if err := reconfigure(backend.AccessLog.AccessManagerOptions()); err != nil {
-				return err
-			}
-		}
-		if backend.AccessLog.ErrorFilename != "" {
-			if err := reconfigure(backend.AccessLog.ErrorManagerOptions()); err != nil {
-				return err
-			}
 		}
 	}
 	return nil
@@ -305,14 +297,6 @@ func applyLoggingConfig(c, o *config.Config) {
 		c.MgmtConfig = mgmt.New()
 	}
 	if isReload {
-		rotationChanged := c.Logging.LogFile != "" &&
-			!c.Logging.RotationEqual(o.Logging)
-		if c.Logging.LogFile == o.Logging.LogFile &&
-			c.Logging.LogLevel == o.Logging.LogLevel && !rotationChanged {
-			// no changes in logging config,
-			// so we keep the old logger intact
-			return
-		}
 		if c.Logging.LogFile != o.Logging.LogFile {
 			if o.Logging.LogFile != "" {
 				// if we're changing from file1 -> console or file1 -> file2, close file1 handle
@@ -322,38 +306,12 @@ func applyLoggingConfig(c, o *config.Config) {
 			initLogger(c)
 			return
 		}
-		if rotationChanged {
-			// same file with new rotation settings: rebuild the logger so the
-			// shared writer picks up the new settings, and release the old handle
-			if err := reconfigureApplicationLog(c); err != nil {
-				logger.Error("log writer reconfiguration failed",
-					logging.Pairs{logKeyError: err.Error()})
-				return
-			}
-			go delayedLogCloser(oldLogger, time.Duration(c.MgmtConfig.ReloadDrainTimeout)+(1*time.Millisecond))
-			initLogger(c)
-			return
-		}
 		if c.Logging.LogLevel != o.Logging.LogLevel {
-			// the only change is the log level, so update it and return the original logger
 			oldLogger.SetLogLevel(level.Level(c.Logging.LogLevel))
-			return
 		}
+		return
 	}
 	initLogger(c)
-}
-
-func reconfigureApplicationLog(c *config.Config) error {
-	if c == nil || c.Logging == nil || c.Logging.LogFile == "" {
-		return nil
-	}
-	var instanceID int
-	if c.Main != nil {
-		instanceID = c.Main.InstanceID
-	}
-	o := c.Logging.ManagerOptions()
-	o.Filename = logmanager.InstanceFilename(o.Filename, instanceID)
-	return logmanager.Reconfigure(o)
 }
 
 func applyCachingConfig(si *instance.ServerInstance,
@@ -476,7 +434,8 @@ func handleStartupIssue(event string, detail logging.Pairs, errorFunc func()) {
 	metrics.LastReloadSuccessful.Set(0)
 	if event != "" {
 		if errorFunc != nil {
-			logger.Error(event, detail)
+			logger.ErrorSynchronous(event, detail)
+			_ = logger.Flush()
 			errorFunc()
 		}
 		logger.Warn(event, detail)

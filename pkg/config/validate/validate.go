@@ -92,32 +92,7 @@ func LoggingFiles(c *config.Config) error {
 	if c == nil {
 		return nil
 	}
-	var instanceID int
-	if c.Main != nil {
-		instanceID = c.Main.InstanceID
-	}
-	options := make([]*logmanager.Options, 0, 1+len(c.Backends)*2)
-	if c.Logging != nil && c.Logging.LogFile != "" {
-		o := c.Logging.ManagerOptions()
-		o.Filename = logmanager.InstanceFilename(o.Filename, instanceID)
-		options = append(options, o)
-	}
-	for _, backend := range c.Backends {
-		if backend == nil || backend.AccessLog == nil {
-			continue
-		}
-		if backend.AccessLog.Filename != "" {
-			o := backend.AccessLog.AccessManagerOptions()
-			o.Filename = logmanager.InstanceFilename(o.Filename, instanceID)
-			options = append(options, o)
-		}
-		if backend.AccessLog.ErrorFilename != "" {
-			o := backend.AccessLog.ErrorManagerOptions()
-			o.Filename = logmanager.InstanceFilename(o.Filename, instanceID)
-			options = append(options, o)
-		}
-	}
-	return logmanager.ValidateOptions(options...)
+	return logmanager.ValidateOptions(c.LogManagerOptions()...)
 }
 
 func Rewriters(c *config.Config) error {

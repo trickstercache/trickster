@@ -61,6 +61,18 @@ func newPromClient() backends.Backend {
 
 var promClient = newPromClient()
 
+func TestShouldCaptureAuthForVirtualBackend(t *testing.T) {
+	path := po.New()
+	backend := &bo.Options{Provider: providers.Rule}
+	if !shouldCaptureAuth(path, backend) {
+		t.Error("rule backend must capture downstream authentication")
+	}
+	backend.Provider = providers.ReverseProxyShort
+	if shouldCaptureAuth(path, backend) {
+		t.Error("ordinary unauthenticated backend should not seed resources")
+	}
+}
+
 func TestRegisterHealthHandler(t *testing.T) {
 	router := lm.NewRouter()
 	path := "/test"
