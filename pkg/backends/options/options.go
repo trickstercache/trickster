@@ -26,6 +26,7 @@ import (
 	"strings"
 	"time"
 
+	albnames "github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	mo "github.com/trickstercache/trickster/v2/pkg/backends/mysql/options"
@@ -600,6 +601,16 @@ func (l Lookup) ValidateDiscovery(dl do.Lookup) error {
 		t, ok := l[d.TemplateBackend]
 		if !ok || t == nil || !t.IsTemplate {
 			return NewErrInvalidTemplateBackendName(d.TemplateBackend, o.Name)
+		}
+		// TSM-merged pools require members whose provider can be merged,
+		// and per-member replica groups (replica_group_label) are only
+		// meaningful -- and only accepted by backend initialization -- on
+		// TSM-mergeable providers
+		if (o.ALBOptions.MechanismName == albnames.MechanismTSM ||
+			d.Query.ReplicaGroupLabel != "") &&
+			!providers.IsSupportedTimeSeriesMergeProvider(t.Provider) {
+			return NewErrInvalidTemplateTSMProvider(t.Provider,
+				d.TemplateBackend, o.Name)
 		}
 	}
 	return nil

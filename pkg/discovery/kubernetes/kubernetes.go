@@ -24,7 +24,7 @@
 // RBAC: the service account needs only list and watch on the resources the
 // configured query kinds touch: endpointslices (discovery.k8s.io) for the
 // endpointslices kind, services for the service kind, and pods for the pods
-// kind. See docs/autodiscovery-rbac.md.
+// kind. See the RBAC section of docs/alb-autodiscovery.md.
 package kubernetes
 
 import (
@@ -37,15 +37,17 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/discovery"
 	do "github.com/trickstercache/trickster/v2/pkg/discovery/options"
+	"github.com/trickstercache/trickster/v2/pkg/discovery/providers"
 	"github.com/trickstercache/trickster/v2/pkg/kube"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
-	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 
 	discoveryv1 "k8s.io/api/discovery/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/informers"
+	corelisters "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 )
 
@@ -160,6 +162,13 @@ type subscription struct {
 	q       *do.Query
 	handler discovery.SnapshotHandler
 	factory informers.SharedInformerFactory
+	// podFactory is a second, selector-free informer factory joined in by
+	// the endpointslices kind when replica_group_label is set: endpoints
+	// carry no pod labels, so the target pod is consulted for the group
+	podFactory informers.SharedInformerFactory
+	// podLister resolves an endpoint's TargetRef pod for label lookups;
+	// nil unless podFactory is active
+	podLister corelisters.PodNamespaceLister
 	// build produces the current full-membership snapshot from the
 	// kind-specific informer's lister cache
 	build func() discovery.Snapshot
@@ -235,6 +244,11 @@ func (d *discoverer) newSubscription(q *do.Query, handler discovery.SnapshotHand
 	s.factory = informers.NewSharedInformerFactoryWithOptions(
 		d.kc.Clientset(), 0, opts...)
 
+	dirtyHandler := cache.ResourceEventHandlerFuncs{
+		AddFunc:    func(any) { s.markDirty() },
+		UpdateFunc: func(any, any) { s.markDirty() },
+		DeleteFunc: func(any) { s.markDirty() },
+	}
 	var informer cache.SharedIndexInformer
 	switch q.Kind {
 	case do.KindEndpointSlices:
@@ -242,6 +256,18 @@ func (d *discoverer) newSubscription(q *do.Query, handler discovery.SnapshotHand
 		informer = inf.Informer()
 		lister := inf.Lister().EndpointSlices(ns)
 		s.build = func() discovery.Snapshot { return s.buildEndpointSlices(lister) }
+		if q.ReplicaGroupLabel != "" {
+			// join the target pods so per-member replica groups can be
+			// read from pod labels; a separate factory because the slice
+			// factory's service-name label tweak must not filter pods
+			s.podFactory = informers.NewSharedInformerFactoryWithOptions(
+				d.kc.Clientset(), 0, informers.WithNamespace(ns))
+			podInf := s.podFactory.Core().V1().Pods()
+			if _, err := podInf.Informer().AddEventHandler(dirtyHandler); err != nil {
+				return nil, err
+			}
+			s.podLister = podInf.Lister().Pods(ns)
+		}
 	case do.KindService:
 		inf := s.factory.Core().V1().Services()
 		informer = inf.Informer()
@@ -253,11 +279,7 @@ func (d *discoverer) newSubscription(q *do.Query, handler discovery.SnapshotHand
 		lister := inf.Lister().Pods(ns)
 		s.build = func() discovery.Snapshot { return s.buildPods(lister) }
 	}
-	if _, err := informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    func(any) { s.markDirty() },
-		UpdateFunc: func(any, any) { s.markDirty() },
-		DeleteFunc: func(any) { s.markDirty() },
-	}); err != nil {
+	if _, err := informer.AddEventHandler(dirtyHandler); err != nil {
 		return nil, err
 	}
 	return s, nil
@@ -277,11 +299,19 @@ func (s *subscription) launch(ctx context.Context) {
 	s.cancel = cancel
 	s.mtx.Unlock()
 	s.factory.Start(subCtx.Done())
+	if s.podFactory != nil {
+		s.podFactory.Start(subCtx.Done())
+	}
 	go func() {
 		synced := s.factory.WaitForCacheSync(subCtx.Done())
+		if s.podFactory != nil {
+			maps.Copy(synced, s.podFactory.WaitForCacheSync(subCtx.Done()))
+		}
 		for typ, ok := range synced {
 			if !ok {
-				logger.Warn("kubernetes discovery cache did not sync",
+				metrics.DiscoveryRefreshErrors.WithLabelValues(
+					s.d.name, providers.Kubernetes).Inc()
+				discovery.LogWarn("kubernetes discovery cache did not sync",
 					logging.Pairs{"discoverer": s.d.name, "type": typ.String()})
 				return
 			}
@@ -314,6 +344,9 @@ func (s *subscription) stop() {
 		// informer goroutines exit on the cancelled context; Shutdown then
 		// joins them so no watch goroutine outlives the subscription
 		s.factory.Shutdown()
+		if s.podFactory != nil {
+			s.podFactory.Shutdown()
+		}
 	}
 }
 

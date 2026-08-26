@@ -18,6 +18,8 @@ package kube
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	do "github.com/trickstercache/trickster/v2/pkg/discovery/options"
@@ -82,5 +84,60 @@ func TestKlogSink(t *testing.T) {
 		if _, exists := p[k]; !exists {
 			t.Errorf("expected pair %q in %v", k, logging.Pairs(p))
 		}
+	}
+}
+
+const testKubeconfig = `
+apiVersion: v1
+kind: Config
+clusters:
+- cluster: {server: "https://127.0.0.1:6443"}
+  name: test
+contexts:
+- context: {cluster: test, user: test}
+  name: test
+current-context: test
+users:
+- name: test
+  user: {token: not-a-real-token}
+`
+
+func TestNewFromKubeconfig(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "kubeconfig")
+	if err := os.WriteFile(path, []byte(testKubeconfig), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// client construction succeeds without contacting the cluster
+	c, err := New(&do.KubernetesOptions{Kubeconfig: path})
+	if err != nil {
+		t.Fatalf("New with valid kubeconfig: %v", err)
+	}
+	if c.Clientset() == nil {
+		t.Fatal("expected a clientset")
+	}
+	// in-cluster construction outside a cluster errors cleanly
+	if _, err = New(&do.KubernetesOptions{InCluster: true}); err == nil {
+		t.Error("expected in-cluster construction to fail outside a cluster")
+	}
+}
+
+func TestDefaultNamespaceInCluster(t *testing.T) {
+	prev := inClusterNamespaceFile
+	defer func() { inClusterNamespaceFile = prev }()
+
+	path := filepath.Join(t.TempDir(), "namespace")
+	if err := os.WriteFile(path, []byte(" monitoring \n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	inClusterNamespaceFile = path
+	if ns := DefaultNamespace(); ns != "monitoring" {
+		t.Errorf("expected monitoring, got %q", ns)
+	}
+	// an empty namespace file falls back to default
+	if err := os.WriteFile(path, []byte("\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if ns := DefaultNamespace(); ns != metav1.NamespaceDefault {
+		t.Errorf("expected default, got %q", ns)
 	}
 }

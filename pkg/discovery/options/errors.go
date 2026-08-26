@@ -96,3 +96,11 @@ func NewErrInvalidQueryField(albName, fieldName, provider string) error {
 			albName, fieldName, provider),
 	}
 }
+
+// NewErrInvalidFileOptions returns an error for invalid file provider options
+func NewErrInvalidFileOptions(name, detail string) error {
+	return &InvalidDiscoveryOptionsError{
+		error: fmt.Errorf(`invalid file options for discoverer %q: %s`,
+			name, detail),
+	}
+}

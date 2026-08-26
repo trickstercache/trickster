@@ -73,6 +73,12 @@ type Member struct {
 	// Weight is the member's relative load-balancing weight. 0 means
 	// unweighted and is treated as 1.
 	Weight int
+	// ReplicaGroup optionally assigns the member to a TSM replica group
+	// (the logical data shard it replicates), as conveyed by the provider
+	// (e.g., a configured kubernetes label, or a member-file field). When
+	// empty, the member's group follows the template backend's
+	// replica_group semantics.
+	ReplicaGroup string
 	// Ready is the provider-reported readiness
 	Ready ReadyState
 	// Labels carries provider metadata (kubernetes labels, SRV priority,
@@ -100,8 +106,8 @@ func (m *Member) URL() string {
 func (m *Member) Equal(other *Member) bool {
 	return m.Name == other.Name && m.Scheme == other.Scheme &&
 		m.Address == other.Address && m.PathPrefix == other.PathPrefix &&
-		m.Weight == other.Weight && m.Ready == other.Ready &&
-		maps.Equal(m.Labels, other.Labels)
+		m.Weight == other.Weight && m.ReplicaGroup == other.ReplicaGroup &&
+		m.Ready == other.Ready && maps.Equal(m.Labels, other.Labels)
 }
 
 // Clone returns a perfect copy of the Member

@@ -49,8 +49,9 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/discovery"
 	do "github.com/trickstercache/trickster/v2/pkg/discovery/options"
+	"github.com/trickstercache/trickster/v2/pkg/discovery/providers"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
-	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 
 	"github.com/fsnotify/fsnotify"
 	"go.yaml.in/yaml/v3"
@@ -59,23 +60,31 @@ import (
 // ErrStopped is returned when subscribing to a stopped discoverer
 var ErrStopped = errors.New("file discoverer is stopped")
 
-const (
-	// changeDebounce coalesces bursts of filesystem events into one re-read
-	changeDebounce = 250 * time.Millisecond
-	// statPollInterval is the fallback change-detection cadence for
-	// filesystems whose notifications are unreliable
-	statPollInterval = 30 * time.Second
-)
+// changeDebounce coalesces bursts of filesystem events into one re-read
+const changeDebounce = 250 * time.Millisecond
+
+// newWatcher constructs the filesystem watcher; a var so tests can force
+// the poll-only fallback deterministically
+var newWatcher = fsnotify.NewWatcher
 
 // New constructs the file Discoverer; it satisfies
-// discovery.NewDiscovererFunc. The file provider has no connection-level
-// options; each subscription's query names the file to watch.
-func New(name string, _ *do.Options) (discovery.Discoverer, error) {
-	return &discoverer{name: name}, nil
+// discovery.NewDiscovererFunc. Each subscription's query names the file to
+// watch; the optional file options block tunes the stat-poll fallback
+// cadence (see options.FileOptions).
+func New(name string, o *do.Options) (discovery.Discoverer, error) {
+	poll := do.DefaultFilePollInterval
+	if o != nil && o.File != nil && o.File.PollInterval > 0 {
+		poll = time.Duration(o.File.PollInterval)
+	}
+	return &discoverer{name: name, pollInterval: poll}, nil
 }
 
 type discoverer struct {
 	name string
+	// pollInterval is the stat-poll fallback cadence; on filesystems
+	// without reliable change notification it is the effective update
+	// mechanism
+	pollInterval time.Duration
 
 	mtx     sync.Mutex
 	ctx     context.Context
@@ -155,6 +164,8 @@ type memberEntry struct {
 	Address    string `yaml:"address" json:"address"`
 	PathPrefix string `yaml:"path_prefix,omitempty" json:"path_prefix,omitempty"`
 	Weight     int    `yaml:"weight,omitempty" json:"weight,omitempty"`
+	// ReplicaGroup optionally assigns the member to a TSM replica group
+	ReplicaGroup string `yaml:"replica_group,omitempty" json:"replica_group,omitempty"`
 }
 
 // subscription watches one member-list file
@@ -199,30 +210,34 @@ func (s *subscription) stop() {
 	}
 }
 
-// run applies the initial file state, then re-reads on debounced filesystem
-// events from the parent directory (catching atomic renames and symlink
-// swaps) with a low-frequency stat poll as a fallback
+// run establishes the directory watch, applies the initial file state, and
+// then re-reads on debounced filesystem events from the parent directory
+// (catching atomic renames and symlink swaps) with a low-frequency stat
+// poll as a fallback. The watch is set up before the initial read so a
+// write landing between the two cannot fall into an unobserved gap.
 func (s *subscription) run(ctx context.Context) {
-	s.apply()
-
 	var events chan fsnotify.Event
-	watcher, err := fsnotify.NewWatcher()
+	var watchErrors chan error
+	watcher, err := newWatcher()
 	if err == nil {
 		if werr := watcher.Add(filepath.Dir(s.path)); werr == nil {
 			events = watcher.Events
+			watchErrors = watcher.Errors
 		} else {
 			err = werr
 		}
 		defer watcher.Close()
 	}
 	if events == nil {
-		logger.Warn("file discovery watch unavailable; falling back to polling",
+		discovery.LogWarn("file discovery watch unavailable; falling back to polling",
 			logging.Pairs{
 				"discoverer": s.d.name, "path": s.path, "error": err.Error(),
 			})
 	}
 
-	poll := time.NewTicker(statPollInterval)
+	s.apply()
+
+	poll := time.NewTicker(s.d.pollInterval)
 	defer poll.Stop()
 	var debounce *time.Timer
 	var debounceC <-chan time.Time
@@ -233,14 +248,19 @@ func (s *subscription) run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-events:
-			// any activity in the directory schedules one coalesced
-			// re-read; content comparison suppresses no-op emissions
+			// any activity in the directory arms one coalesced re-read.
+			// The armed timer is deliberately NOT reset by further events:
+			// a writer producing sustained sub-window activity would
+			// otherwise postpone the apply indefinitely. Content
+			// comparison suppresses no-op emissions.
 			if debounce == nil {
 				debounce = time.NewTimer(changeDebounce)
 				debounceC = debounce.C
-			} else {
-				debounce.Reset(changeDebounce)
 			}
+		case werr := <-watchErrors:
+			// the Errors channel must be drained: an unread error blocks
+			// the watcher's event loop and silently stops event delivery
+			s.warnRead(werr)
 		case <-debounceC:
 			debounce = nil
 			debounceC = nil
@@ -320,19 +340,22 @@ func (s *subscription) read() (discovery.Snapshot, error) {
 			name = e.Address
 		}
 		out = append(out, discovery.Member{
-			Name:       name,
-			Scheme:     scheme,
-			Address:    e.Address,
-			PathPrefix: e.PathPrefix,
-			Weight:     e.Weight,
-			Ready:      discovery.ReadyUnknown,
+			Name:         name,
+			Scheme:       scheme,
+			Address:      e.Address,
+			PathPrefix:   e.PathPrefix,
+			Weight:       e.Weight,
+			ReplicaGroup: e.ReplicaGroup,
+			Ready:        discovery.ReadyUnknown,
 		})
 	}
 	return out, nil
 }
 
-// warnRead logs a read/parse failure once per failure streak
+// warnRead counts a read/parse failure and logs it once per failure streak
 func (s *subscription) warnRead(err error) {
+	metrics.DiscoveryRefreshErrors.WithLabelValues(
+		s.d.name, providers.File).Inc()
 	s.mtx.Lock()
 	failing := s.failing
 	s.failing = true
@@ -340,7 +363,7 @@ func (s *subscription) warnRead(err error) {
 	if failing {
 		return
 	}
-	logger.Warn("file discovery read failed; keeping last-good members",
+	discovery.LogWarn("file discovery read failed; keeping last-good members",
 		logging.Pairs{
 			"discoverer": s.d.name, "path": s.path, "error": err.Error(),
 		})
@@ -351,7 +374,7 @@ func (s *subscription) clearWarn() {
 	if s.failing {
 		s.failing = false
 		s.mtx.Unlock()
-		logger.Info("file discovery read recovered",
+		discovery.LogInfo("file discovery read recovered",
 			logging.Pairs{"discoverer": s.d.name, "path": s.path})
 		return
 	}

@@ -272,3 +272,173 @@ func TestSubscribeStoppedAndLifecycle(t *testing.T) {
 	_, err = d.Subscribe(nil, nil)
 	require.Error(t, err)
 }
+
+func TestPodsReplicaGroupLabel(t *testing.T) {
+	pod := func(name, ip, replica string) *corev1.Pod {
+		return &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: name, Namespace: testNS,
+				Labels: map[string]string{
+					"app":                "prom",
+					"prometheus/replica": replica,
+				},
+			},
+			Spec: corev1.PodSpec{Containers: []corev1.Container{{
+				Ports: []corev1.ContainerPort{{Name: "web", ContainerPort: 9090}},
+			}}},
+			Status: corev1.PodStatus{
+				Phase: corev1.PodRunning, PodIP: ip,
+				Conditions: []corev1.PodCondition{
+					{Type: corev1.PodReady, Status: corev1.ConditionTrue}},
+			},
+		}
+	}
+	cs := fake.NewClientset(
+		pod("prom-shard0-a", "10.0.0.1", "shard-0"),
+		pod("prom-shard0-b", "10.0.0.2", "shard-0"),
+		pod("prom-shard1-a", "10.0.0.3", "shard-1"),
+	)
+	d := NewWithClient("test", kube.NewFromClientset(cs))
+	require.NoError(t, d.Start(t.Context()))
+	defer d.Stop()
+
+	col := newSnapCollector()
+	unsub, err := d.Subscribe(&do.Query{
+		Kind: do.KindPods, Namespace: testNS,
+		Selector:          map[string]string{"app": "prom"},
+		ReplicaGroupLabel: "prometheus/replica",
+	}, col.handle)
+	require.NoError(t, err)
+	defer unsub()
+
+	snap := col.next(t)
+	require.Len(t, snap, 3)
+	groups := map[string]string{}
+	for _, m := range snap {
+		groups[m.Name] = m.ReplicaGroup
+	}
+	require.Equal(t, "shard-0", groups["prom-shard0-a"])
+	require.Equal(t, "shard-0", groups["prom-shard0-b"])
+	require.Equal(t, "shard-1", groups["prom-shard1-a"])
+}
+
+func TestEndpointSlicesReplicaGroupLabel(t *testing.T) {
+	// the slice's endpoints reference target pods; groups come from the
+	// pods via the joined pod informer
+	mkPod := func(name, replica string) *corev1.Pod {
+		return &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+			Name: name, Namespace: testNS,
+			Labels: map[string]string{"prometheus/replica": replica},
+		}}
+	}
+	cs := fake.NewClientset(
+		newSlice("prom-abc", "prom", 9090,
+			endpoint("10.0.0.1", "prom-0", true, false),
+			endpoint("10.0.0.2", "prom-1", true, false),
+			endpoint("10.0.0.3", "prom-orphan", true, false),
+		),
+		mkPod("prom-0", "shard-0"),
+		mkPod("prom-1", "shard-1"),
+		// prom-orphan has no pod object: it joins without a group
+	)
+	d := NewWithClient("test", kube.NewFromClientset(cs))
+	require.NoError(t, d.Start(t.Context()))
+	defer d.Stop()
+
+	col := newSnapCollector()
+	unsub, err := d.Subscribe(&do.Query{
+		Namespace: testNS, Service: "prom", Port: "web",
+		ReplicaGroupLabel: "prometheus/replica",
+	}, col.handle)
+	require.NoError(t, err)
+	defer unsub()
+
+	snap := col.next(t)
+	require.Len(t, snap, 3)
+	groups := map[string]string{}
+	for _, m := range snap {
+		groups[m.Name] = m.ReplicaGroup
+	}
+	require.Equal(t, "shard-0", groups["prom-0"])
+	require.Equal(t, "shard-1", groups["prom-1"])
+	require.Empty(t, groups["prom-orphan"],
+		"an endpoint with no resolvable pod joins without a group")
+}
+
+func TestNewConstructorErrors(t *testing.T) {
+	_, err := New("d", nil)
+	require.Error(t, err, "nil options")
+	// nil kubernetes connection block
+	_, err = New("d", &do.Options{Provider: "kubernetes"})
+	require.Error(t, err)
+	// in-cluster outside a cluster
+	_, err = New("d", &do.Options{Provider: "kubernetes",
+		Kubernetes: &do.KubernetesOptions{InCluster: true}})
+	require.Error(t, err)
+}
+
+func TestAmbiguousPortSkipsObjects(t *testing.T) {
+	slice := newSlice("prom-abc", "prom", 9090,
+		endpoint("10.0.0.1", "prom-0", true, false))
+	slice.Ports = append(slice.Ports, discoveryv1.EndpointPort{
+		Name: ptr.To("metrics"), Port: ptr.To(int32(9091))})
+	cs := fake.NewClientset(slice)
+	d := NewWithClient("test", kube.NewFromClientset(cs))
+	require.NoError(t, d.Start(t.Context()))
+	defer d.Stop()
+
+	col := newSnapCollector()
+	// no port in the query, two declared ports: ambiguous; the slice is
+	// skipped (with a warn-once log) and the membership is empty
+	unsub, err := d.Subscribe(&do.Query{
+		Namespace: testNS, Service: "prom"}, col.handle)
+	require.NoError(t, err)
+	defer unsub()
+	require.Empty(t, col.next(t))
+}
+
+func TestServiceReplicaGroupLabel(t *testing.T) {
+	cs := fake.NewClientset(&corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "prom-a", Namespace: testNS,
+			Labels: map[string]string{"app": "prom", "shard": "s0"},
+		},
+		Spec: corev1.ServiceSpec{
+			ClusterIP: "10.96.0.10",
+			Ports:     []corev1.ServicePort{{Name: "web", Port: 9090}},
+		},
+	})
+	d := NewWithClient("test", kube.NewFromClientset(cs))
+	require.NoError(t, d.Start(t.Context()))
+	defer d.Stop()
+	col := newSnapCollector()
+	unsub, err := d.Subscribe(&do.Query{
+		Kind: do.KindService, Namespace: testNS,
+		Selector: map[string]string{"app": "prom"}, Port: "web",
+		ReplicaGroupLabel: "shard",
+	}, col.handle)
+	require.NoError(t, err)
+	defer unsub()
+	snap := col.next(t)
+	require.Len(t, snap, 1)
+	require.Equal(t, "s0", snap[0].ReplicaGroup)
+}
+
+func TestWarnBuildCountsError(t *testing.T) {
+	s := &subscription{d: &discoverer{name: "d"}, q: &do.Query{}}
+	// direct invocation: lister errors are unreachable with fakes
+	s.warnBuild("synthetic list error", context.DeadlineExceeded)
+}
+
+func TestStartAfterStop(t *testing.T) {
+	d := NewWithClient("test", kube.NewFromClientset(fake.NewClientset()))
+	require.NoError(t, d.Stop())
+	require.ErrorIs(t, d.Start(t.Context()), ErrStopped)
+}
+
+func TestSubscribeInvalidKind(t *testing.T) {
+	d := NewWithClient("test", kube.NewFromClientset(fake.NewClientset()))
+	_, err := d.Subscribe(&do.Query{Kind: "deployments"},
+		func(discovery.Snapshot) {})
+	require.Error(t, err)
+}

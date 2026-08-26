@@ -53,9 +53,14 @@ func Instantiate(name string, tmpl *bo.Options, m discovery.Member) (*bo.Options
 	// the template's implicit replica group (defaulted to its own name by
 	// Initialize) must not leak into members; clear it so Initialize
 	// re-defaults it to the member name. An operator-set group (differing
-	// from the template name) is inherited so TSM replica semantics hold.
+	// from the template name) is inherited so TSM replica semantics hold,
+	// and a provider-conveyed per-member group (e.g. from a configured
+	// kubernetes label) overrides both.
 	if out.ReplicaGroup == tmpl.Name {
 		out.ReplicaGroup = ""
+	}
+	if m.ReplicaGroup != "" {
+		out.ReplicaGroup = m.ReplicaGroup
 	}
 	mm := m.Clone()
 	if mm.PathPrefix == "" {

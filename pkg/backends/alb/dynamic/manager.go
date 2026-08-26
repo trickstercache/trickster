@@ -25,6 +25,7 @@
 package dynamic
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -46,12 +47,14 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/discovery"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/template"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
-	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 	"github.com/trickstercache/trickster/v2/pkg/routing"
 	"github.com/trickstercache/trickster/v2/pkg/util/safego"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Config carries the dependencies a Manager needs to instantiate and tear
@@ -108,6 +111,11 @@ type memberEntry struct {
 type Manager struct {
 	cfg     Config
 	albName string
+	// discoverer is the bound discoverer's name, for metrics/log labels
+	discoverer string
+	// tracer is the ALB's configured tracer (nil when tracing is not
+	// configured); it spans the reconcile cycle, never the request path
+	tracer *tracing.Tracer
 
 	mtx     sync.Mutex
 	members map[string]*memberEntry
@@ -126,11 +134,17 @@ type Manager struct {
 // New returns a new Manager for the provided Config. The Manager is inert
 // until ApplySnapshot is called (typically from a discoverer subscription).
 func New(cfg Config) *Manager {
-	return &Manager{
-		cfg:     cfg,
-		albName: cfg.ALB.Name(),
-		members: make(map[string]*memberEntry),
+	m := &Manager{
+		cfg:        cfg,
+		albName:    cfg.ALB.Name(),
+		discoverer: cfg.Options.DiscovererName,
+		members:    make(map[string]*memberEntry),
 	}
+	if albCfg := cfg.ALB.Configuration(); albCfg != nil &&
+		albCfg.TracingConfigName != "" {
+		m.tracer = cfg.Tracers[albCfg.TracingConfigName]
+	}
+	return m
 }
 
 // ApplySnapshot ingests a full-membership snapshot from the discoverer. It
@@ -174,13 +188,27 @@ func (m *Manager) applyPending() {
 }
 
 // applyLocked diffs the canonical snapshot against current membership and
-// applies it. Callers must hold m.mtx.
+// applies it, spanning the full reconcile cycle (snapshot -> diff -> apply)
+// when the ALB has a tracer configured. Callers must hold m.mtx.
 func (m *Manager) applyLocked(canonical discovery.Snapshot) {
 	m.lastApply = time.Now()
+	span := m.startReconcileSpan(len(canonical))
+	result := resultApplied
+	adds, removes := 0, 0
+	defer func() {
+		metrics.ALBDiscoverySnapshots.WithLabelValues(
+			m.albName, m.discoverer, result).Inc()
+		if result != resultRejected {
+			metrics.ALBDiscoveryLastRefresh.WithLabelValues(
+				m.albName, m.discoverer).Set(float64(time.Now().Unix()))
+		}
+		m.endReconcileSpan(span, result, adds, removes)
+	}()
 	// guardrail: reject a suspicious shrink below the configured floor and
 	// keep serving the last-good membership
 	if mm := m.cfg.Options.MinMembers; mm > 0 && len(canonical) < mm {
-		logger.Warn("alb discovery snapshot rejected by min_members floor; keeping last-good pool",
+		result = resultRejected
+		discovery.LogWarn("alb discovery snapshot rejected by min_members floor; keeping last-good pool",
 			logging.Pairs{
 				"albName":     m.albName,
 				"snapshot":    len(canonical),
@@ -190,6 +218,7 @@ func (m *Manager) applyLocked(canonical discovery.Snapshot) {
 		return
 	}
 	if m.applied != nil && canonical.Equal(m.applied) {
+		result = resultUnchanged
 		return
 	}
 
@@ -198,11 +227,14 @@ func (m *Manager) applyLocked(canonical discovery.Snapshot) {
 	incomplete := false
 
 	// pass 1: tear-down list = names absent from the new assignment, plus
-	// members whose identity (origin) changed under the same name; they are
-	// unlinked now so pass 2 can reuse a vacated name for a rebuilt member
+	// members whose identity (origin) or replica group changed under the
+	// same name (targets capture the group immutably, so a regroup is a
+	// rebuild); they are unlinked now so pass 2 can reuse a vacated name
+	// for a rebuilt member
 	for name, e := range m.members {
 		nm, ok := assigned[name]
-		if !ok || nm.Key() != e.member.Key() {
+		if !ok || nm.Key() != e.member.Key() ||
+			nm.ReplicaGroup != e.member.ReplicaGroup {
 			removed[name] = e
 			delete(m.members, name)
 		}
@@ -215,17 +247,22 @@ func (m *Manager) applyLocked(canonical discovery.Snapshot) {
 		}
 		e, err := m.instantiateMember(name, member)
 		if err != nil {
-			logger.Error("alb discovery member instantiation failed",
+			discovery.LogError("alb discovery member instantiation failed",
 				logging.Pairs{
 					"albName": m.albName, "member": name,
-					"origin": member.URL(), "error": err.Error(),
+					"origin": discovery.SanitizeURL(member.URL()),
+					"error":  err.Error(),
 				})
 			incomplete = true
 			continue
 		}
 		m.members[name] = e
-		logger.Info("alb discovery member added", logging.Pairs{
-			"albName": m.albName, "member": name, "origin": member.URL(),
+		adds++
+		metrics.ALBDiscoveryMemberChanges.WithLabelValues(
+			m.albName, m.discoverer, "add").Inc()
+		discovery.LogInfo("alb discovery member added", logging.Pairs{
+			"albName": m.albName, "member": name,
+			"origin": discovery.SanitizeURL(member.URL()),
 		})
 	}
 
@@ -242,18 +279,81 @@ func (m *Manager) applyLocked(canonical discovery.Snapshot) {
 		} else {
 			m.teardownMember(name, e)
 		}
-		logger.Info("alb discovery member removed", logging.Pairs{
-			"albName": m.albName, "member": name, "origin": e.member.URL(),
+		removes++
+		metrics.ALBDiscoveryMemberChanges.WithLabelValues(
+			m.albName, m.discoverer, "remove").Inc()
+		discovery.LogInfo("alb discovery member removed", logging.Pairs{
+			"albName": m.albName, "member": name,
+			"origin": discovery.SanitizeURL(e.member.URL()),
 		})
 	}
 
+	metrics.ALBDiscoveryMembers.WithLabelValues(
+		m.albName, m.discoverer).Set(float64(len(m.members)))
+	m.debugLogMembership()
+
 	if incomplete {
+		result = resultPartial
 		// leave applied unset so an identical follow-up snapshot retries
 		// the failed instantiations
 		m.applied = nil
 		return
 	}
 	m.applied = canonical
+}
+
+// debugLogMembership logs the full current membership at debug
+func (m *Manager) debugLogMembership() {
+	names := make([]string, 0, len(m.members))
+	for name, e := range m.members {
+		names = append(names,
+			name+"="+discovery.SanitizeURL(e.member.URL()))
+	}
+	slices.Sort(names)
+	discovery.LogDebug("alb discovery membership", logging.Pairs{
+		"albName":    m.albName,
+		"discoverer": m.discoverer,
+		"members":    strings.Join(names, " "),
+	})
+}
+
+// snapshot-processing results, mirrored in the
+// trickster_alb_discovery_snapshots_total result label
+const (
+	resultApplied   = "applied"
+	resultUnchanged = "unchanged"
+	resultRejected  = "rejected"
+	resultPartial   = "partial"
+)
+
+// startReconcileSpan opens a span over the reconcile cycle when the ALB
+// has a tracer configured; returns nil otherwise. Reconciliation runs on
+// the discovery control plane, never on the request hot path.
+func (m *Manager) startReconcileSpan(snapshotSize int) trace.Span {
+	if m.tracer == nil || m.tracer.Tracer == nil {
+		return nil
+	}
+	_, span := m.tracer.Start(context.Background(), "alb.discovery.reconcile",
+		trace.WithAttributes(
+			attribute.String("alb.name", m.albName),
+			attribute.String("discovery.discoverer", m.discoverer),
+			attribute.Int("discovery.snapshot.members", snapshotSize),
+		))
+	return span
+}
+
+func (m *Manager) endReconcileSpan(span trace.Span, result string,
+	adds, removes int,
+) {
+	if span == nil {
+		return
+	}
+	span.SetAttributes(
+		attribute.String("discovery.result", result),
+		attribute.Int("discovery.members.added", adds),
+		attribute.Int("discovery.members.removed", removes),
+	)
+	span.End()
 }
 
 // swapPoolLocked pushes the current member set into the ALB pool as
@@ -269,7 +369,7 @@ func (m *Manager) swapPoolLocked() {
 		targets = append(targets, m.members[name].target)
 	}
 	if !m.cfg.ALB.SetDynamicTargets(targets) {
-		logger.Debug("alb pool is stopped; discovery update discarded",
+		discovery.LogDebug("alb pool is stopped; discovery update discarded",
 			logging.Pairs{"albName": m.albName})
 	}
 }
@@ -312,10 +412,10 @@ func (m *Manager) instantiateMember(name string, member discovery.Member) (*memb
 	e := &memberEntry{member: member, client: client}
 	if m.cfg.Options.HealthMode == ao.HealthModeProvider {
 		e.external = true
-		e.status = healthcheck.NewStatus(name, "discovered", "",
-			statusForReadyState(member.Ready), time.Time{}, nil)
+		e.status = healthcheck.NewStatus(name, m.healthDescription(nb.Provider),
+			"", statusForReadyState(member.Ready), time.Time{}, nil)
 		if er, ok := m.cfg.HealthChecker.(externalRegistrar); ok {
-			er.RegisterExternal(name, nb.Provider, e.status)
+			er.RegisterExternal(name, m.healthDescription(nb.Provider), e.status)
 		}
 	} else if nb.HealthCheck != nil {
 		// mirror backends.StartHealthChecks: overlay the provider default
@@ -333,10 +433,12 @@ func (m *Manager) instantiateMember(name string, member discovery.Member) (*memb
 			if !rok {
 				return nil, errors.New("health checker does not support protocol probes")
 			}
-			st, err = registrar.RegisterProbe(name, nb.Provider, nb.HealthCheck,
+			st, err = registrar.RegisterProbe(name,
+				m.healthDescription(nb.Provider), nb.HealthCheck,
 				prober.HealthCheckProbe())
 		} else {
-			st, err = m.cfg.HealthChecker.Register(name, nb.Provider,
+			st, err = m.cfg.HealthChecker.Register(name,
+				m.healthDescription(nb.Provider),
 				nb.HealthCheck, client.HealthCheckHTTPClient())
 		}
 		if err != nil {
@@ -357,6 +459,13 @@ func (m *Manager) instantiateMember(name string, member discovery.Member) (*memb
 		e.target = e.target.WithExternalHealth()
 	}
 	return e, nil
+}
+
+// healthDescription tags a discovered member on the health status page
+// with its provider, owning ALB, and discoverer (plan step 27), so live
+// membership reads the same way static backends do
+func (m *Manager) healthDescription(provider string) string {
+	return fmt.Sprintf("%s (%s via %s)", provider, m.albName, m.discoverer)
 }
 
 // updateMember applies attribute-only changes (weight, readiness, labels)
@@ -396,7 +505,7 @@ func (m *Manager) releaseMemberConns(name string, e *memberEntry) {
 	client := e.client
 	drain := m.cfg.DrainTimeout
 	safego.Go(func(r any, stack []byte) {
-		logger.Error("alb discovery member teardown panic", logging.Pairs{
+		discovery.LogError("alb discovery member teardown panic", logging.Pairs{
 			"albName": m.albName, "member": name,
 			"panic": r, "stack": string(stack),
 		})
@@ -438,6 +547,7 @@ func (m *Manager) Stop() {
 		m.teardownMember(name, e)
 	}
 	m.members = make(map[string]*memberEntry)
+	metrics.DeleteALBDiscoverySeries(m.albName)
 }
 
 // AppliedSnapshot returns the canonical form of the last fully-applied

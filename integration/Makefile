@@ -10,6 +10,14 @@ developer-stop:
 developer-delete:
 	@$(MAKE) -C .. developer-delete
 
+# integration-start/stop also toggle the integration-only containers
+# (coredns) that stay commented out of the compose file for developers
+integration-start:
+	@$(MAKE) -C .. integration-start
+
+integration-stop:
+	@$(MAKE) -C .. integration-stop
+
 test:
 	$(GO) test -v --failfast
 	@../hack/filter-coverprofile.sh .integration.coverprofile

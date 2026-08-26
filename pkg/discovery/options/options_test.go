@@ -124,3 +124,38 @@ func TestClone(t *testing.T) {
 	require.Len(t, lc, 1)
 	require.Equal(t, o, lc["d"])
 }
+
+func TestFileOptions(t *testing.T) {
+	// defaults applied for the file provider
+	o := &Options{Provider: providers.File}
+	require.NoError(t, o.Initialize("f"))
+	require.NotNil(t, o.File)
+	require.Equal(t, timeconv.Duration(DefaultFilePollInterval),
+		o.File.PollInterval)
+	_, err := o.Validate()
+	require.NoError(t, err)
+
+	// explicit interval preserved
+	o = &Options{Provider: providers.File,
+		File: &FileOptions{PollInterval: timeconv.Duration(5 * time.Second)}}
+	require.NoError(t, o.Initialize("f"))
+	require.Equal(t, timeconv.Duration(5*time.Second), o.File.PollInterval)
+
+	// file block on a non-file provider is rejected
+	o = &Options{Provider: providers.Kubernetes, File: &FileOptions{}}
+	_, err = o.Validate()
+	require.Error(t, err)
+
+	// sub-minimum poll interval is rejected
+	o = &Options{Provider: providers.File,
+		File: &FileOptions{PollInterval: timeconv.Duration(time.Millisecond)}}
+	_, err = o.Validate()
+	require.Error(t, err)
+
+	// clone is deep
+	o = &Options{Provider: providers.File,
+		File: &FileOptions{PollInterval: timeconv.Duration(time.Minute)}}
+	c := o.Clone()
+	c.File.PollInterval = 0
+	require.Equal(t, timeconv.Duration(time.Minute), o.File.PollInterval)
+}

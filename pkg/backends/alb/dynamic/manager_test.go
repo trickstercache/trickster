@@ -27,6 +27,7 @@ import (
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	providerregistry "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry"
+	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/discovery"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
@@ -34,7 +35,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func newTestManager(t *testing.T, opts *ao.DiscoveryOptions) (*Manager, *alb.Client, healthcheck.HealthChecker) {
+func newTestManager(t testing.TB, opts *ao.DiscoveryOptions) (*Manager, *alb.Client, healthcheck.HealthChecker) {
 	t.Helper()
 	o := bo.New()
 	o.Provider = providers.ALB
@@ -184,4 +185,47 @@ func TestManagerInstantiationFailureRetries(t *testing.T) {
 	m.cfg.Template.IsTemplate = true
 	m.ApplySnapshot(s)
 	require.Equal(t, []string{"myalb-m1"}, m.MemberNames())
+}
+
+func TestManagerReplicaGroupChangeRebuildsMember(t *testing.T) {
+	m, _, _ := newTestManager(t, &ao.DiscoveryOptions{
+		DiscovererName: "d", TemplateBackend: "prom-template"})
+	// per-member replica groups require a TSM-capable template
+	m.cfg.Template = newPromTemplate(t)
+	m.cfg.Caches = cache.Lookup{"default": nil}
+
+	mem := member("m1", "10.0.0.1:9090")
+	mem.ReplicaGroup = "shard-0"
+	m.ApplySnapshot(discovery.Snapshot{mem})
+	require.Equal(t, []string{"myalb-m1"}, m.MemberNames())
+	require.Equal(t, "shard-0", m.memberReplicaGroup("myalb-m1"))
+
+	// a regroup under the same name and origin rebuilds the member with
+	// the new group
+	mem.ReplicaGroup = "shard-1"
+	m.ApplySnapshot(discovery.Snapshot{mem})
+	require.Equal(t, []string{"myalb-m1"}, m.MemberNames())
+	require.Equal(t, "shard-1", m.memberReplicaGroup("myalb-m1"))
+}
+
+// newPromTemplate returns a TSM-capable template for replica-group tests
+func newPromTemplate(t *testing.T) *bo.Options {
+	t.Helper()
+	tmpl := bo.New()
+	tmpl.Provider = providers.Prometheus
+	tmpl.IsTemplate = true
+	require.NoError(t, tmpl.Initialize("prom-template"))
+	return tmpl
+}
+
+// memberReplicaGroup returns the effective replica group of the named live
+// member's instantiated backend; empty when the member does not exist
+func (m *Manager) memberReplicaGroup(name string) string {
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+	e, ok := m.members[name]
+	if !ok || e.client == nil || e.client.Configuration() == nil {
+		return ""
+	}
+	return e.client.Configuration().ReplicaGroup
 }

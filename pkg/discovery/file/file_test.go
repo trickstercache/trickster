@@ -17,6 +17,7 @@
 package file
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -24,7 +25,11 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/discovery"
 	do "github.com/trickstercache/trickster/v2/pkg/discovery/options"
+	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 
+	"github.com/fsnotify/fsnotify"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -123,9 +128,14 @@ func TestFileDiscoveryPartialWriteKeepsLastGood(t *testing.T) {
 	require.Len(t, col.next(t), 2)
 
 	// a non-atomic writer's partial state: invalid YAML must not emit and
-	// must not clear the last-good membership
+	// must not clear the last-good membership; the failure counts in the
+	// refresh-errors metric
+	errs0 := testutil.ToFloat64(metrics.DiscoveryRefreshErrors.
+		WithLabelValues("test-file", "file"))
 	require.NoError(t, os.WriteFile(path, []byte("- name: [broken"), 0o644))
 	col.expectNone(t, 600*time.Millisecond)
+	require.Greater(t, testutil.ToFloat64(metrics.DiscoveryRefreshErrors.
+		WithLabelValues("test-file", "file")), errs0)
 
 	// the completed write is then applied
 	writeAtomic(t, path, "- address: 10.0.0.9:9090\n")
@@ -199,4 +209,66 @@ func writeTemp(t *testing.T, content string) string {
 	path := filepath.Join(t.TempDir(), "members.yaml")
 	require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
 	return path
+}
+
+func TestFileDiscoveryReplicaGroup(t *testing.T) {
+	var sub subscription
+	sub.path = writeTemp(t, `
+- name: prom-a
+  address: 10.0.0.1:9090
+  replica_group: shard-0
+- name: prom-b
+  address: 10.0.0.2:9090
+`)
+	snap, err := sub.read()
+	require.NoError(t, err)
+	require.Len(t, snap, 2)
+	require.Equal(t, "shard-0", snap[0].ReplicaGroup)
+	require.Empty(t, snap[1].ReplicaGroup)
+}
+
+func TestPollIntervalOption(t *testing.T) {
+	d, err := New("f", nil)
+	require.NoError(t, err)
+	require.Equal(t, do.DefaultFilePollInterval, d.(*discoverer).pollInterval)
+	d, err = New("f", &do.Options{Provider: "file",
+		File: &do.FileOptions{PollInterval: timeconv.Duration(2 * time.Second)}})
+	require.NoError(t, err)
+	require.Equal(t, 2*time.Second, d.(*discoverer).pollInterval)
+}
+
+// TestPollOnlyFallback forces the filesystem watcher to be unavailable and
+// verifies the operator-configurable stat poll alone detects member-file
+// changes -- the effective mechanism on filesystems without reliable
+// change notification (NFS-backed kubernetes volumes, some FUSE mounts)
+func TestPollOnlyFallback(t *testing.T) {
+	prev := newWatcher
+	newWatcher = func() (*fsnotify.Watcher, error) {
+		return nil, errors.New("synthetic: notification unavailable")
+	}
+	defer func() { newWatcher = prev }()
+
+	path := filepath.Join(t.TempDir(), "members.yaml")
+	require.NoError(t,
+		os.WriteFile(path, []byte("- address: 10.0.0.1:9090\n"), 0o644))
+
+	d, err := New("poll-only", &do.Options{Provider: "file",
+		File: &do.FileOptions{PollInterval: timeconv.Duration(50 * time.Millisecond)}})
+	require.NoError(t, err)
+	require.NoError(t, d.Start(t.Context()))
+	defer d.Stop()
+
+	col := newSnapCollector()
+	unsub, err := d.Subscribe(&do.Query{Path: path}, col.handle)
+	require.NoError(t, err)
+	defer unsub()
+
+	require.Len(t, col.next(t), 1)
+
+	// with no watcher, only the poll can see this change
+	require.NoError(t,
+		os.WriteFile(path, []byte("- address: 10.0.0.2:9090\n"), 0o644))
+	snap := col.next(t)
+	require.Len(t, snap, 1)
+	require.Equal(t, "10.0.0.2:9090", snap[0].Address)
 }

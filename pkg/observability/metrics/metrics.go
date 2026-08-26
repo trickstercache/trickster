@@ -725,3 +725,100 @@ func DeleteBackendSeries(backendName string) {
 		v.DeletePartialMatch(labels)
 	}
 }
+
+// ALB Autodiscovery metrics
+var (
+	// ALBDiscoveryMembers is the current count of discovered pool members
+	// per ALB and discoverer.
+	ALBDiscoveryMembers = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: albSubsystem,
+			Name:      "discovery_members",
+			Help:      "Current number of discovered ALB pool members.",
+		},
+		[]string{"alb_name", "discoverer"},
+	)
+
+	// ALBDiscoveryMemberChanges counts discovered-member lifecycle events;
+	// the event label is add or remove.
+	ALBDiscoveryMemberChanges = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: albSubsystem,
+			Name:      "discovery_member_changes_total",
+			Help:      "Count of discovered ALB pool member additions and removals.",
+		},
+		[]string{"alb_name", "discoverer", "event"},
+	)
+
+	// ALBDiscoverySnapshots counts membership snapshots processed per ALB.
+	// The result label is applied (membership updated), unchanged (no-op),
+	// rejected (guardrail-refused, e.g. a min_members violation), or
+	// partial (applied, but one or more member instantiations failed).
+	ALBDiscoverySnapshots = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: albSubsystem,
+			Name:      "discovery_snapshots_total",
+			Help:      "Count of ALB autodiscovery membership snapshots processed, by result.",
+		},
+		[]string{"alb_name", "discoverer", "result"},
+	)
+
+	// ALBDiscoveryLastRefresh is the unix timestamp of the last successfully
+	// processed (applied or unchanged) snapshot per ALB, for staleness
+	// alerting.
+	ALBDiscoveryLastRefresh = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: albSubsystem,
+			Name:      "discovery_last_refresh_success_time_seconds",
+			Help:      "Epoch timestamp of the last successfully processed autodiscovery snapshot.",
+		},
+		[]string{"alb_name", "discoverer"},
+	)
+
+	// DiscoveryRefreshErrors counts provider-side refresh and watch
+	// failures (DNS resolution errors, kubernetes list/sync failures, file
+	// read/parse failures), per discoverer.
+	DiscoveryRefreshErrors = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: "discovery",
+			Name:      "refresh_errors_total",
+			Help:      "Count of autodiscovery provider refresh/watch errors.",
+		},
+		[]string{"discoverer", "provider"},
+	)
+)
+
+func init() {
+	prometheus.MustRegister(ALBDiscoveryMembers)
+	prometheus.MustRegister(ALBDiscoveryMemberChanges)
+	prometheus.MustRegister(ALBDiscoverySnapshots)
+	prometheus.MustRegister(ALBDiscoveryLastRefresh)
+	prometheus.MustRegister(DiscoveryRefreshErrors)
+}
+
+// albDiscoveryVecs enumerates the vectors labeled by alb_name for
+// autodiscovery, so a torn-down (or reloaded-away) discovery-backed ALB's
+// series can be removed.
+var albDiscoveryVecs = []partialDeleter{
+	ALBDiscoveryMembers,
+	ALBDiscoveryMemberChanges,
+	ALBDiscoverySnapshots,
+	ALBDiscoveryLastRefresh,
+}
+
+// DeleteALBDiscoverySeries removes every autodiscovery metric series for
+// the provided ALB name; called when its dynamic pool manager stops.
+func DeleteALBDiscoverySeries(albName string) {
+	if albName == "" {
+		return
+	}
+	labels := prometheus.Labels{"alb_name": albName}
+	for _, v := range albDiscoveryVecs {
+		v.DeletePartialMatch(labels)
+	}
+}

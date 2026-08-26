@@ -61,6 +61,12 @@ type Query struct {
 	// number (default: the sole port, or error on ambiguity); for dns_a, a
 	// required port number
 	Port string `yaml:"port,omitempty"`
+	// ReplicaGroupLabel names a kubernetes label whose value assigns each
+	// discovered member to a TSM replica group: read from the Pod for the
+	// pods kind (and for endpointslices, via the endpoint's target pod),
+	// or from the Service for the service kind. Members without the label
+	// fall back to the template backend's replica_group semantics.
+	ReplicaGroupLabel string `yaml:"replica_group_label,omitempty"`
 	// SRVName is the SRV record name for the dns_srv provider
 	// (e.g. _prometheus._tcp.example.com)
 	SRVName string `yaml:"srv_name,omitempty"`
@@ -143,7 +149,8 @@ func (q *Query) validateDNSSRV(albName string) error {
 	if err := q.requireUnset(albName, providers.DNSSRV,
 		field{"kind", q.Kind}, field{"namespace", q.Namespace},
 		field{"service", q.Service}, field{"hostname", q.Hostname},
-		field{"path", q.Path}, field{"port", q.Port}); err != nil {
+		field{"path", q.Path}, field{"port", q.Port},
+		field{"replica_group_label", q.ReplicaGroupLabel}); err != nil {
 		return err
 	}
 	if len(q.Selector) > 0 {
@@ -160,7 +167,8 @@ func (q *Query) validateDNSA(albName string) error {
 	if err := q.requireUnset(albName, providers.DNSA,
 		field{"kind", q.Kind}, field{"namespace", q.Namespace},
 		field{"service", q.Service}, field{"srv_name", q.SRVName},
-		field{"path", q.Path}); err != nil {
+		field{"path", q.Path},
+		field{"replica_group_label", q.ReplicaGroupLabel}); err != nil {
 		return err
 	}
 	if len(q.Selector) > 0 {
@@ -186,7 +194,8 @@ func (q *Query) validateFile(albName string) error {
 		field{"kind", q.Kind}, field{"namespace", q.Namespace},
 		field{"service", q.Service}, field{"srv_name", q.SRVName},
 		field{"hostname", q.Hostname}, field{"port", q.Port},
-		field{"scheme", q.Scheme}); err != nil {
+		field{"scheme", q.Scheme},
+		field{"replica_group_label", q.ReplicaGroupLabel}); err != nil {
 		return err
 	}
 	if len(q.Selector) > 0 {

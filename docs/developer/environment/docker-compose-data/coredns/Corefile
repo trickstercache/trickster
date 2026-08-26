@@ -1,0 +1,6 @@
+trickster.test:53 {
+    file /zones/trickster.test.db {
+        reload 1s
+    }
+    errors
+}

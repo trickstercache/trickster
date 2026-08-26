@@ -43,8 +43,9 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/discovery"
 	do "github.com/trickstercache/trickster/v2/pkg/discovery/options"
+	"github.com/trickstercache/trickster/v2/pkg/discovery/providers"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
-	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 
 	"github.com/miekg/dns"
 )
@@ -307,9 +308,11 @@ func (s *subscription) deliver(snap discovery.Snapshot) {
 	s.handler(canonical)
 }
 
-// warnResolve logs a resolution failure once per failure streak; the
-// last-good membership keeps serving
+// warnResolve counts a resolution failure and logs it once per failure
+// streak; the last-good membership keeps serving
 func (s *subscription) warnResolve(err error) {
+	metrics.DiscoveryRefreshErrors.WithLabelValues(
+		s.d.name, s.d.providerName()).Inc()
 	s.mtx.Lock()
 	failing := s.failing
 	s.failing = true
@@ -317,7 +320,7 @@ func (s *subscription) warnResolve(err error) {
 	if failing {
 		return
 	}
-	logger.Warn("dns discovery resolution failed; keeping last-good members",
+	discovery.LogWarn("dns discovery resolution failed; keeping last-good members",
 		logging.Pairs{
 			"discoverer": s.d.name,
 			"query":      s.queryName(),
@@ -330,7 +333,7 @@ func (s *subscription) clearWarn() {
 	if s.failing {
 		s.failing = false
 		s.mtx.Unlock()
-		logger.Info("dns discovery resolution recovered",
+		discovery.LogInfo("dns discovery resolution recovered",
 			logging.Pairs{"discoverer": s.d.name, "query": s.queryName()})
 		return
 	}
@@ -342,6 +345,13 @@ func (s *subscription) queryName() string {
 		return s.q.SRVName
 	}
 	return s.q.Hostname
+}
+
+func (d *discoverer) providerName() string {
+	if d.mode == modeSRV {
+		return providers.DNSSRV
+	}
+	return providers.DNSA
 }
 
 func schemeOf(q *do.Query) string {

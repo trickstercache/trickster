@@ -48,6 +48,8 @@ type Options struct {
 	Kubernetes *KubernetesOptions `yaml:"kubernetes,omitempty"`
 	// DNS provides resolver settings when Provider is 'dns_srv' or 'dns_a'
 	DNS *DNSOptions `yaml:"dns,omitempty"`
+	// File provides change-detection settings when Provider is 'file'
+	File *FileOptions `yaml:"file,omitempty"`
 	//
 	// synthetic values
 	// Name is the name of the discoverer, taken from the key in the Lookup map
@@ -76,11 +78,29 @@ type DNSOptions struct {
 	Interval timeconv.Duration `yaml:"interval,omitempty"`
 }
 
+// FileOptions defines the change-detection settings for a discoverer with
+// the 'file' provider. The provider always watches the member-list file's
+// parent directory for filesystem change notifications AND stat-polls the
+// file as a fallback; poll_interval controls that fallback cadence. On
+// filesystems where change notification is unreliable or unavailable --
+// NFS-backed volumes, some FUSE/CSI mounts -- the poll is the effective
+// update mechanism, so lower it to the freshness the deployment needs.
+type FileOptions struct {
+	// PollInterval is the cadence of the stat-based change poll that
+	// backstops filesystem change notification
+	PollInterval timeconv.Duration `yaml:"poll_interval,omitempty"`
+}
+
 const (
 	// DefaultDNSInterval is the default DNS poll cadence
 	DefaultDNSInterval = 30 * time.Second
 	// MinimumDNSInterval is the lowest permitted DNS poll cadence
 	MinimumDNSInterval = time.Second
+	// DefaultFilePollInterval is the default member-file stat-poll cadence
+	DefaultFilePollInterval = 30 * time.Second
+	// MinimumFilePollInterval is the lowest permitted member-file
+	// stat-poll cadence
+	MinimumFilePollInterval = time.Second
 )
 
 var _ types.ConfigOptions[Options] = &Options{}
@@ -98,6 +118,9 @@ func (o *Options) Clone() *Options {
 	}
 	if o.DNS != nil {
 		out.DNS = pointers.Clone(o.DNS)
+	}
+	if o.File != nil {
+		out.File = pointers.Clone(o.File)
 	}
 	return out
 }
@@ -121,6 +144,13 @@ func (o *Options) Initialize(name string) error {
 		if o.DNS.Interval == 0 {
 			o.DNS.Interval = timeconv.Duration(DefaultDNSInterval)
 		}
+	case providers.File:
+		if o.File == nil {
+			o.File = &FileOptions{}
+		}
+		if o.File.PollInterval == 0 {
+			o.File.PollInterval = timeconv.Duration(DefaultFilePollInterval)
+		}
 	}
 	return nil
 }
@@ -138,6 +168,14 @@ func (o *Options) Validate() (bool, error) {
 	}
 	if o.DNS != nil && o.Provider != providers.DNSSRV && o.Provider != providers.DNSA {
 		return false, NewErrInvalidDiscoveryBlock("dns", o.Provider, o.Name)
+	}
+	if o.File != nil && o.Provider != providers.File {
+		return false, NewErrInvalidDiscoveryBlock("file", o.Provider, o.Name)
+	}
+	if o.File != nil && o.File.PollInterval != 0 &&
+		time.Duration(o.File.PollInterval) < MinimumFilePollInterval {
+		return false, NewErrInvalidFileOptions(o.Name,
+			"'poll_interval' must be at least 1s")
 	}
 	if o.Kubernetes != nil && o.Kubernetes.InCluster && o.Kubernetes.Kubeconfig != "" {
 		return false, NewErrInvalidKubernetesOptions(o.Name,

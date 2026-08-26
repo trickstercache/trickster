@@ -111,3 +111,20 @@ func TestQueryClone(t *testing.T) {
 	c.Selector["app"] = "other"
 	require.Equal(t, "prom", q.Selector["app"])
 }
+
+func TestQueryReplicaGroupLabelValidation(t *testing.T) {
+	// kubernetes accepts it on every kind
+	q := &Query{Service: "prom", ReplicaGroupLabel: "prometheus/replica"}
+	require.NoError(t, q.Validate("alb", providers.Kubernetes))
+	q = &Query{Kind: KindPods, Selector: map[string]string{"a": "b"},
+		ReplicaGroupLabel: "prometheus/replica"}
+	require.NoError(t, q.Validate("alb", providers.Kubernetes))
+
+	// non-kubernetes providers reject it
+	q = &Query{SRVName: "x", ReplicaGroupLabel: "l"}
+	require.Error(t, q.Validate("alb", providers.DNSSRV))
+	q = &Query{Hostname: "h", Port: "80", ReplicaGroupLabel: "l"}
+	require.Error(t, q.Validate("alb", providers.DNSA))
+	q = &Query{Path: "/x", ReplicaGroupLabel: "l"}
+	require.Error(t, q.Validate("alb", providers.File))
+}

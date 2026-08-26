@@ -143,3 +143,27 @@ func TestValidateTemplatePoolMember(t *testing.T) {
 	var tpm *ErrTemplatePoolMember
 	require.ErrorAs(t, err, &tpm)
 }
+
+func TestValidateDiscoveryTSMTemplateRules(t *testing.T) {
+	// an rp template is fine for non-TSM mechanisms without per-member groups
+	l := Lookup{"t1": newTestTemplate("t1"), "alb1": newTestDiscoveryALB("alb1")}
+	l["t1"].Provider = providers.ReverseProxyShort
+	require.NoError(t, l.ValidateDiscovery(testDiscoverers()))
+
+	// a tsmerge ALB requires a TSM-capable template provider
+	l["alb1"].ALBOptions.MechanismName = "tsm"
+	err := l.ValidateDiscovery(testDiscoverers())
+	var tsmErr *ErrInvalidTemplateTSMProvider
+	require.ErrorAs(t, err, &tsmErr)
+	l["t1"].Provider = providers.Prometheus
+	require.NoError(t, l.ValidateDiscovery(testDiscoverers()))
+
+	// replica_group_label likewise requires a TSM-capable template
+	l["alb1"].ALBOptions.MechanismName = "rr"
+	l["t1"].Provider = providers.ReverseProxyShort
+	l["alb1"].ALBOptions.Discovery.Query.ReplicaGroupLabel = "prometheus/replica"
+	err = l.ValidateDiscovery(testDiscoverers())
+	require.ErrorAs(t, err, &tsmErr)
+	l["t1"].Provider = providers.Prometheus
+	require.NoError(t, l.ValidateDiscovery(testDiscoverers()))
+}

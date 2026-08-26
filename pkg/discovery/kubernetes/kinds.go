@@ -21,8 +21,9 @@ import (
 	"strconv"
 
 	"github.com/trickstercache/trickster/v2/pkg/discovery"
+	"github.com/trickstercache/trickster/v2/pkg/discovery/providers"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
-	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
@@ -71,14 +72,17 @@ func (s *subscription) buildEndpointSlices(lister discoverylisters.EndpointSlice
 				state = discovery.Ready
 			}
 			name := ep.Addresses[0]
+			var group string
 			if ep.TargetRef != nil && ep.TargetRef.Name != "" {
 				name = ep.TargetRef.Name
+				group = s.podReplicaGroup(ep.TargetRef.Name)
 			}
 			out = append(out, discovery.Member{
-				Name:    name,
-				Scheme:  scheme,
-				Address: joinHostPort(ep.Addresses[0], port),
-				Ready:   state,
+				Name:         name,
+				Scheme:       scheme,
+				Address:      joinHostPort(ep.Addresses[0], port),
+				Ready:        state,
+				ReplicaGroup: group,
 				Labels: map[string]string{
 					"namespace": slice.Namespace,
 					"service":   s.q.Service,
@@ -111,11 +115,12 @@ func (s *subscription) buildServices(lister corelisters.ServiceNamespaceLister) 
 			continue
 		}
 		out = append(out, discovery.Member{
-			Name:    svc.Name,
-			Scheme:  resolveScheme(s.q.Scheme, appProto, svc.Annotations),
-			Address: joinHostPort(svc.Spec.ClusterIP, port),
-			Ready:   discovery.ReadyUnknown,
-			Labels:  map[string]string{"namespace": svc.Namespace},
+			Name:         svc.Name,
+			Scheme:       resolveScheme(s.q.Scheme, appProto, svc.Annotations),
+			Address:      joinHostPort(svc.Spec.ClusterIP, port),
+			Ready:        discovery.ReadyUnknown,
+			ReplicaGroup: s.labelReplicaGroup(svc.Labels),
+			Labels:       map[string]string{"namespace": svc.Namespace},
 		})
 	}
 	s.clearPortWarn()
@@ -155,15 +160,41 @@ func (s *subscription) buildPods(lister corelisters.PodNamespaceLister) discover
 			}
 		}
 		out = append(out, discovery.Member{
-			Name:    pod.Name,
-			Scheme:  resolveScheme(s.q.Scheme, "", pod.Annotations),
-			Address: joinHostPort(pod.Status.PodIP, port),
-			Ready:   state,
-			Labels:  map[string]string{"namespace": pod.Namespace},
+			Name:         pod.Name,
+			Scheme:       resolveScheme(s.q.Scheme, "", pod.Annotations),
+			Address:      joinHostPort(pod.Status.PodIP, port),
+			Ready:        state,
+			ReplicaGroup: s.labelReplicaGroup(pod.Labels),
+			Labels:       map[string]string{"namespace": pod.Namespace},
 		})
 	}
 	s.clearPortWarn()
 	return out
+}
+
+// labelReplicaGroup reads the member's TSM replica group from the watched
+// object's labels when the query configures replica_group_label; an absent
+// label yields no group (template semantics apply)
+func (s *subscription) labelReplicaGroup(objLabels map[string]string) string {
+	if s.q.ReplicaGroupLabel == "" {
+		return ""
+	}
+	return objLabels[s.q.ReplicaGroupLabel]
+}
+
+// podReplicaGroup resolves an endpoint's replica group from its target
+// pod's labels via the joined pod informer
+func (s *subscription) podReplicaGroup(podName string) string {
+	if s.q.ReplicaGroupLabel == "" || s.podLister == nil {
+		return ""
+	}
+	pod, err := s.podLister.Get(podName)
+	if err != nil || pod == nil {
+		// pod not (yet) in the cache: the member joins without a group and
+		// regroups on the pod informer's add event
+		return ""
+	}
+	return pod.Labels[s.q.ReplicaGroupLabel]
 }
 
 // resolveSlicePort selects the member port from an EndpointSlice's declared
@@ -301,7 +332,7 @@ func (s *subscription) warnPort(kind, objName string, declared int) {
 	if warned {
 		return
 	}
-	logger.Warn("kubernetes discovery could not resolve a member port; objects skipped",
+	discovery.LogWarn("kubernetes discovery could not resolve a member port; objects skipped",
 		logging.Pairs{
 			"discoverer": s.d.name, "kind": kind, "object": objName,
 			"queryPort": s.q.Port, "declaredPorts": declared,
@@ -316,7 +347,9 @@ func (s *subscription) clearPortWarn() {
 }
 
 func (s *subscription) warnBuild(event string, err error) {
-	logger.Warn(event, logging.Pairs{
+	metrics.DiscoveryRefreshErrors.WithLabelValues(
+		s.d.name, providers.Kubernetes).Inc()
+	discovery.LogWarn(event, logging.Pairs{
 		"discoverer": s.d.name, "error": err.Error(),
 	})
 }

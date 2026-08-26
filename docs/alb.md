@@ -19,6 +19,8 @@ All settings and functions configured for a Backend are applicable to traffic ro
 
 In Trickster configuration files, each ALB itself is a Backend, just like the pool members to which it routes. This makes it possible to configure infinite loops (e.g., where ALB1 has ALB2 in its pool, and ALB2 has ALB1 in its pool). However, at startup Trickster will validate ALB configurations by following all ALBs' possible paths, and exit with a startup failure if any infinite loops are detected.
 
+In addition to (or instead of) a static pool list, an ALB's pool membership can be discovered and kept current automatically at runtime — from Kubernetes, DNS records, or a watched member-list file. See [ALB Autodiscovery](./alb-autodiscovery.md).
+
 ## Mechanisms Deep Dive
 
 Each mechanism has its own use cases and pitfalls. Be sure to read about each one to understand how they might apply to your situation.

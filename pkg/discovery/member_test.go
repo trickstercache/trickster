@@ -104,3 +104,12 @@ func TestSnapshotBackendNamesCollision(t *testing.T) {
 	names2 := s2.BackendNames("alb")
 	require.Equal(t, names, names2)
 }
+
+func TestMemberReplicaGroupEquality(t *testing.T) {
+	a := Member{Name: "m1", Address: "10.0.0.1:80", ReplicaGroup: "shard-0"}
+	b := a.Clone()
+	require.True(t, a.Equal(&b))
+	b.ReplicaGroup = "shard-1"
+	require.False(t, a.Equal(&b),
+		"a replica-group change must register as a member change")
+}

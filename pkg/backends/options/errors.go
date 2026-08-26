@@ -221,3 +221,19 @@ func NewErrInvalidTemplateBackendName(templateBackendName, backendName string) e
 			templateBackendName, backendName),
 	}
 }
+
+// ErrInvalidTemplateTSMProvider is an error type for a discovery template
+// whose provider cannot participate in time-series merging
+type ErrInvalidTemplateTSMProvider struct {
+	error
+}
+
+// NewErrInvalidTemplateTSMProvider returns a new invalid TSM template
+// provider error
+func NewErrInvalidTemplateTSMProvider(provider, templateName, backendName string) error {
+	return &ErrInvalidTemplateTSMProvider{
+		error: fmt.Errorf(
+			`template_backend "%s" with provider "%s" in alb "%s" must use a time-series-merge-capable provider for tsmerge mechanisms or replica_group_label`,
+			templateName, provider, backendName),
+	}
+}

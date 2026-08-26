@@ -19,7 +19,10 @@ package alb
 import (
 	"net/http"
 	"net/http/httptest"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
@@ -40,7 +43,7 @@ func passingStatus() *healthcheck.Status {
 	return st
 }
 
-func newRRALB(t *testing.T, name string) *Client {
+func newRRALB(t testing.TB, name string) *Client {
 	t.Helper()
 	o := bo.New()
 	o.Provider = providers.ALB
@@ -90,5 +93,80 @@ func TestSetDynamicTargets(t *testing.T) {
 	c.StopPool()
 	if c.SetDynamicTargets(pool.Targets{target}) {
 		t.Fatal("expected swap after StopPool to be rejected")
+	}
+}
+
+// TestSetDynamicTargetsUnderLoad races runtime pool swaps and StopPool
+// against a sustained request load through the round-robin mechanism.
+// Under -race this is the step-29 "concurrent snapshot swaps during load"
+// check for the swap API: every request must land on a member or 502 --
+// never panic or dispatch to a torn-down pool's nil state.
+func TestSetDynamicTargetsUnderLoad(t *testing.T) {
+	c := newRRALB(t, "load-alb")
+	handler := c.Handlers()[providers.ALB]
+
+	// handlers must be concurrency-safe: 4 requesters dispatch into them
+	var served atomic.Int64
+	h := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		served.Add(1)
+	})
+	generations := make([]pool.Targets, 8)
+	for i := range generations {
+		generations[i] = pool.Targets{
+			pool.NewWeightedTarget(h, passingStatus(), nil, 1+i%3),
+			pool.NewWeightedTarget(h, passingStatus(), nil, 1),
+		}
+	}
+	if !c.SetDynamicTargets(generations[0]) {
+		t.Fatal("initial swap rejected")
+	}
+
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	// swapper: continuously replaces the member set
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		i := 0
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			c.SetDynamicTargets(generations[i%len(generations)])
+			i++
+		}
+	}()
+	// requesters: sustained dispatch during the swaps
+	for range 4 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			r := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				w := httptest.NewRecorder()
+				handler.ServeHTTP(w, r)
+				if w.Code != http.StatusOK && w.Code != http.StatusBadGateway {
+					t.Errorf("unexpected status %d", w.Code)
+					return
+				}
+			}
+		}()
+	}
+	time.Sleep(250 * time.Millisecond)
+	// stopping the pool mid-load must also be race-free; in-flight and
+	// subsequent requests degrade to 502, never panic
+	c.StopPool()
+	time.Sleep(50 * time.Millisecond)
+	close(stop)
+	wg.Wait()
+	if served.Load() == 0 {
+		t.Error("expected requests to reach pool members during the swaps")
 	}
 }

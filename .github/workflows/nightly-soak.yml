@@ -1,0 +1,29 @@
+name: Nightly Soak
+
+on:
+  schedule:
+    # 08:10 UTC daily
+    - cron: "10 8 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  autodiscovery-soak:
+    # hours-scale continuous membership churn asserting no goroutine/fd
+    # growth (autodiscovery plan step 37); also the baseline for the
+    # gateway controller's endpoint-mode soak
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      TRICKSTER_SOAK_TEST: "1"
+      TRICKSTER_SOAK_DURATION: "60m"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Run autodiscovery soak
+        working-directory: integration
+        run: go test -v -timeout 80m -run TestALBDiscoverySoak .

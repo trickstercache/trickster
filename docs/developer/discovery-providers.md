@@ -85,8 +85,8 @@ Fill `discovery.Member` as completely as your source allows:
 3. **Query fields**: extend `options.Query` only if an existing field
    cannot express your selection, then add a `validate<Provider>` method
    dispatched from `Query.Validate`, enforcing per-provider field usage so
-   misplaced fields fail startup. Update the config-shape table in
-   `docs/autodiscovery.md`.
+   misplaced fields fail startup. Update the provider documentation in
+   [docs/alb-autodiscovery.md](../alb-autodiscovery.md).
 4. **Implement** under `pkg/discovery/<provider>` with a constructor
    matching `discovery.NewDiscovererFunc`:
    `func New(name string, o *do.Options) (discovery.Discoverer, error)`.
@@ -99,9 +99,10 @@ Fill `discovery.Member` as completely as your source allows:
    failure-keeps-last-good path, emit-on-change suppression, and
    unsubscribe/Stop termination (no goroutine leaks — the shared suite in
    Section F's soak will catch stragglers).
-7. **Document** the provider in `docs/autodiscovery.md` (config reference
-   + worked example) and note any required upstream permissions (as
-   `docs/autodiscovery-rbac.md` does for kubernetes).
+7. **Document** the provider in
+   [docs/alb-autodiscovery.md](../alb-autodiscovery.md) (config reference
+   + worked example) and note any required upstream permissions (as its
+   RBAC section does for kubernetes).
 
 Dependencies: keep them lean and justify them in a decision record (see
 `trickster-data/decision-dependencies.md` for the pattern); the repo

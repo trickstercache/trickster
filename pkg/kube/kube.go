@@ -79,7 +79,8 @@ func (c *Client) Clientset() kubernetes.Interface {
 	return c.cs
 }
 
-const inClusterNamespaceFile = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
+// inClusterNamespaceFile is a var for test override
+var inClusterNamespaceFile = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
 
 // DefaultNamespace returns the namespace to use when a query does not name
 // one: the pod's own namespace when running in-cluster, else "default"

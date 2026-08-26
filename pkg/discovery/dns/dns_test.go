@@ -17,6 +17,7 @@
 package dns
 
 import (
+	"context"
 	"net"
 	"sync"
 	"testing"
@@ -24,9 +25,11 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/discovery"
 	do "github.com/trickstercache/trickster/v2/pkg/discovery/options"
+	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 
 	"github.com/miekg/dns"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -247,9 +250,14 @@ func TestResolutionFailureKeepsLastGood(t *testing.T) {
 	require.Len(t, col.next(t), 1)
 
 	// SERVFAIL responses must not emit anything: the last-good membership
-	// keeps serving through the outage
+	// keeps serving through the outage, and each failure counts in the
+	// refresh-errors metric
+	errs0 := testutil.ToFloat64(metrics.DiscoveryRefreshErrors.
+		WithLabelValues("test-dns", "dns_a"))
 	store.setFail(true)
 	col.expectNone(t, 300*time.Millisecond)
+	require.Greater(t, testutil.ToFloat64(metrics.DiscoveryRefreshErrors.
+		WithLabelValues("test-dns", "dns_a")), errs0)
 
 	// on recovery, the (changed) answer is emitted again
 	store.setFail(false)
@@ -298,4 +306,86 @@ func TestSubscribeLifecycle(t *testing.T) {
 	_, err = d.Subscribe(&do.Query{SRVName: "x"}, col.handle)
 	require.ErrorIs(t, err, ErrStopped)
 	require.NoError(t, d.Stop(), "Stop is idempotent")
+}
+
+// TestStdResolver exercises the stdlib-resolver fallback against the
+// in-process DNS server via a custom Dial
+func TestStdResolver(t *testing.T) {
+	store := &recordStore{}
+	store.set(dns.TypeSRV,
+		"_prom._tcp.example.com. 30 IN SRV 10 2 9090 prom-a.example.com.")
+	store.set(dns.TypeA, "prom.example.com. 30 IN A 10.0.0.1")
+	store.set(dns.TypeAAAA)
+	addr := startTestDNS(t, store)
+
+	r := &stdResolver{r: &net.Resolver{
+		PreferGo: true,
+		Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
+			var d net.Dialer
+			return d.DialContext(ctx, network, addr)
+		},
+	}}
+	srvs, ttl, err := r.lookupSRV(t.Context(), "_prom._tcp.example.com.")
+	require.NoError(t, err)
+	require.Len(t, srvs, 1)
+	require.Equal(t, "prom-a.example.com.", srvs[0].Target)
+	require.Equal(t, uint16(2), srvs[0].Weight)
+	require.Zero(t, ttl, "the stdlib resolver conveys no TTLs")
+
+	ips, ttl, err := r.lookupIP(t.Context(), "prom.example.com.")
+	require.NoError(t, err)
+	require.Equal(t, []string{"10.0.0.1"}, ips)
+	require.Zero(t, ttl)
+
+	// a NOERROR answer with no records: the stdlib surfaces empty IP
+	// answers as a lookup error, which the poll loop treats as a
+	// resolution failure (keep last-good)
+	store.set(dns.TypeA)
+	_, _, err = r.lookupIP(t.Context(), "prom.example.com.")
+	require.Error(t, err)
+}
+
+func TestNewResolverSelection(t *testing.T) {
+	r, err := newResolver("10.0.0.53:53")
+	require.NoError(t, err)
+	require.IsType(t, &directResolver{}, r)
+
+	// with no server configured, either the resolv.conf-backed direct
+	// resolver or the stdlib fallback is acceptable; it must not error
+	r, err = newResolver("")
+	require.NoError(t, err)
+	require.NotNil(t, r)
+}
+
+func TestModeAccessors(t *testing.T) {
+	dSRV := &discoverer{mode: modeSRV}
+	dA := &discoverer{mode: modeA}
+	require.Equal(t, "dns_srv", dSRV.providerName())
+	require.Equal(t, "dns_a", dA.providerName())
+	sSRV := &subscription{d: dSRV, q: &do.Query{SRVName: "s"}}
+	sA := &subscription{d: dA, q: &do.Query{Hostname: "h"}}
+	require.Equal(t, "s", sSRV.queryName())
+	require.Equal(t, "h", sA.queryName())
+}
+
+func TestDeliverSuppression(t *testing.T) {
+	col := newSnapCollector()
+	s := &subscription{d: &discoverer{}, q: &do.Query{}, handler: col.handle}
+	snap := discovery.Snapshot{{Name: "m", Address: "h:1"}}
+	s.deliver(snap)
+	require.Len(t, col.next(t), 1)
+	// identical membership is not re-delivered
+	s.deliver(snap.Clone())
+	col.expectNone(t, 50*time.Millisecond)
+	// a stopped subscription never delivers
+	s.stopped = true
+	s.deliver(discovery.Snapshot{{Name: "m2", Address: "h:2"}})
+	col.expectNone(t, 50*time.Millisecond)
+}
+
+func TestNewDiscovererIntervalDefault(t *testing.T) {
+	d, err := NewSRV("d", &do.Options{Provider: "dns_srv",
+		DNS: &do.DNSOptions{Resolver: "10.0.0.53:53"}})
+	require.NoError(t, err)
+	require.Equal(t, do.DefaultDNSInterval, d.(*discoverer).interval)
 }

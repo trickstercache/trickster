@@ -1,0 +1,13 @@
+# kind cluster for the ALB autodiscovery Kubernetes integration scenario
+# (TestALBDiscoveryKind). extraPortMappings expose the in-cluster
+# Trickster's NodePort front and metrics listeners on the host.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: trickster-it
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      - containerPort: 30080
+        hostPort: 30080
+      - containerPort: 30081
+        hostPort: 30081
