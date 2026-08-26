@@ -681,3 +681,47 @@ func init() {
 func Handler() http.Handler {
 	return promhttp.Handler()
 }
+
+// partialDeleter matches the prometheus vector types' DeletePartialMatch
+type partialDeleter interface {
+	DeletePartialMatch(prometheus.Labels) int
+}
+
+// backendSeriesVecs enumerates every metric vector labeled by backend_name,
+// so series for a torn-down backend can be removed. Update this list when
+// adding a new backend_name-labeled vector.
+var backendSeriesVecs = []partialDeleter{
+	FrontendRequestStatus,
+	FrontendRequestDuration,
+	FrontendRequestWrittenBytes,
+	ProxyRequestStatus,
+	ProxyRequestElements,
+	ProxyRequestDuration,
+	ProxyQueryRangeRejections,
+	SQLQueryAnalysis,
+	SQLQueryRewriteFailures,
+	SQLQueryCache,
+	MySQLConnections,
+	MySQLActiveConnections,
+	MySQLConnectionErrors,
+	MySQLRouteSelections,
+	MySQLCommandLatency,
+	HealthcheckProbePanicRecovered,
+	HealthcheckProbeLatency,
+	HealthcheckStatusNotifyPanicRecovered,
+	ALBPoolAdmitsFailing,
+	ALBPoolFloorReset,
+}
+
+// DeleteBackendSeries removes every metric series labeled with the provided
+// backend_name. It is called when a runtime-instantiated (discovered) backend
+// is torn down, so stale series don't accumulate as elastic members churn.
+func DeleteBackendSeries(backendName string) {
+	if backendName == "" {
+		return
+	}
+	labels := prometheus.Labels{"backend_name": backendName}
+	for _, v := range backendSeriesVecs {
+		v.DeletePartialMatch(labels)
+	}
+}

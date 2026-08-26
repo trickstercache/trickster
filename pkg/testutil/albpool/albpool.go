@@ -282,6 +282,40 @@ func RequireFanoutFailureDelta(t testing.TB, mech, variant, reason string, want 
 	RequireCounterDelta(t, metrics.ALBFanoutFailures, []string{mech, variant, reason}, want, fn)
 }
 
+// WaitFanoutFailureDelta polls the metrics.ALBFanoutFailures counter for
+// (mech, variant, reason) until it has advanced by at least want over the
+// provided baseline, or fails the test after 2s. Tests whose fanout leaves a
+// straggler member goroutine (e.g., a first-response winner returning while
+// a panicking sibling is still in flight) must drain the straggler's count
+// this way before returning, or it bleeds into the next test's counter
+// deltas.
+func WaitFanoutFailureDelta(t testing.TB, mech, variant, reason string, baseline, want float64) {
+	t.Helper()
+	const (
+		deadline = 2 * time.Second
+		interval = 2 * time.Millisecond
+	)
+	c := metrics.ALBFanoutFailures.WithLabelValues(mech, variant, reason)
+	end := time.Now().Add(deadline)
+	for {
+		if testutil.ToFloat64(c)-baseline >= want {
+			return
+		}
+		if time.Now().After(end) {
+			t.Fatalf("waited %s for fanout failure delta >= %v, got %v",
+				deadline, want, testutil.ToFloat64(c)-baseline)
+			return
+		}
+		time.Sleep(interval)
+	}
+}
+
+// FanoutFailureCount returns the current metrics.ALBFanoutFailures value for
+// (mech, variant, reason), for use as a WaitFanoutFailureDelta baseline
+func FanoutFailureCount(mech, variant, reason string) float64 {
+	return testutil.ToFloat64(metrics.ALBFanoutFailures.WithLabelValues(mech, variant, reason))
+}
+
 // RequireCounterDelta runs fn and asserts the named CounterVec advanced by
 // want for the given labels. Generalises the *FanoutDelta helpers for
 // callers that want to assert on any Prometheus counter.
