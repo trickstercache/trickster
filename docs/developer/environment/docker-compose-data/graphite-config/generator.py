@@ -437,10 +437,20 @@ def catch_up(plans, state, now, force):
 # Validation (seed only) -- through graphite-web, the way a client sees it
 # ---------------------------------------------------------------------------
 
-def http_get(path):
-    req = urllib.request.Request(WEB_URL + path)
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        return resp.read().decode()
+def http_get(path, tries=5):
+    # transient failures (truncated reads, resets, slow workers) retry with
+    # backoff so one bad response fails a check, not the whole seed
+    last = None
+    for i in range(tries):
+        try:
+            req = urllib.request.Request(WEB_URL + path)
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                return resp.read().decode()
+        except Exception as e:
+            last = e
+            log("retry %d/%d GET %s: %s", i + 1, tries, path, e)
+            time.sleep(i + 1)
+    raise last
 
 
 def render_raw(target, frm, until="now"):
@@ -484,7 +494,9 @@ def validate(plans, now):
             if age > plan.window - 3600:
                 log("skip %s from=-%ds (beyond seeded window %ds)", name, age, plan.window)
                 continue
-            r = render_raw(name, "-%ds" % age)
+            # absolute from/until anchor the window to the seeded timestamp,
+            # so a slow backfill cannot shift the newest buckets out of it
+            r = render_raw(name, now - age, now)
             check(r is not None, "%s from=-%ds returned a series", name, age)
             if r is None:
                 continue
@@ -501,14 +513,18 @@ def validate(plans, now):
     drift = next(p for p in plans if p.series.namespace == "drift")
     schemas = load_rules(os.path.join(CONF_DIR, "storage-schemas.conf"), ["retentions"])
     cfg = parse_retentions(first_match(schemas, drift.series.name)["retentions"])
-    r = render_raw(drift.series.name, "-1h")
+    r = render_raw(drift.series.name, now - 3600, now)
     check(r is not None and r[2] == drift.step and r[2] != cfg[0][0],
           "drift: %s observed step %s == disk %d != config %d",
           drift.series.name, r and r[2], drift.step, cfg[0][0])
 
     # maxRetention clamp on the coarse ladder
     coarse = next(p for p in plans if p.series.namespace == "coarse")
-    r = render_raw(coarse.series.name, "-%ds" % (coarse.max_retention + 30 * 86400))
+    # a narrow until keeps the response to a few points; the clamp is
+    # observable from where the returned series starts
+    r = render_raw(coarse.series.name,
+                   now - (coarse.max_retention + 30 * 86400),
+                   now - coarse.max_retention + 3600)
     if r is not None:
         start, end, step, vals = r
         check(abs((now - start) - coarse.max_retention) <= 2 * step,

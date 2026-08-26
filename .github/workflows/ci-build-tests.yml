@@ -130,7 +130,8 @@ jobs:
         run: |
           cd docs/developer/environment
           docker compose ps
-          docker compose logs --tail=30 redis prometheus mysql grafana 
+          docker compose logs --tail=30 redis prometheus mysql grafana
+          docker compose logs --tail=60 graphite graphite_seed graphite_generator
       - name: Run integration tests (with coverage)
         run: make integration-cover
       - name: Run integration tests (with race detection enabled)
