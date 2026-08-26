@@ -34,6 +34,7 @@ import (
 	encoding "github.com/trickstercache/trickster/v2/pkg/encoding/handler"
 	fopt "github.com/trickstercache/trickster/v2/pkg/frontend/options"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/handler"
@@ -267,6 +268,8 @@ func RegisterPathRoutes(r router.Router, conf *config.Config, handlers handlers.
 		}
 	}
 
+	al := newAccessLogger(conf, o)
+
 	applyMiddleware := func(po1 *po.Options) http.Handler {
 		// default base route is the path handler
 		maxBodySizeBytes, truncateOnly := getSizeLimits(frontendOptions(conf, o))
@@ -293,6 +296,8 @@ func RegisterPathRoutes(r router.Router, conf *config.Config, handlers handlers.
 		if !po1.NoMetrics {
 			h = middleware.Decorate(o.Name, o.Provider, po1.Path, h)
 		}
+		// attach access logging outermost so it observes the full request
+		h = accesslog.Middleware(al, po1.Path, h)
 		return h
 	}
 
@@ -360,7 +365,7 @@ func registerDefaultBackendRoutes(routerFor func(*bo.Options) router.Router, con
 	bknds backends.Backends, tracers tracing.Tracers,
 ) {
 	applyMiddleware := func(o *bo.Options, po *po.Options, tr *tracing.Tracer,
-		c cache.Cache, client backends.Backend,
+		c cache.Cache, client backends.Backend, al *accesslog.Logger,
 	) http.Handler {
 		// default base route is the path handler
 		maxBodySizeBytes, truncateOnly := getSizeLimits(frontendOptions(conf, o))
@@ -385,6 +390,8 @@ func registerDefaultBackendRoutes(routerFor func(*bo.Options) router.Router, con
 		if !po.NoMetrics {
 			h = middleware.Decorate(o.Name, o.Provider, po.Path, h)
 		}
+		// attach access logging outermost so it observes the full request
+		h = accesslog.Middleware(al, po.Path, h)
 		return h
 	}
 
@@ -402,6 +409,8 @@ func registerDefaultBackendRoutes(routerFor func(*bo.Options) router.Router, con
 			logger.Info("registering default backend handler paths",
 				logging.Pairs{"backendName": o.Name})
 
+			al := newAccessLogger(conf, o)
+
 			for _, p := range o.Paths {
 				if p.Handler != nil && len(p.Methods) > 0 {
 					logger.Debug(
@@ -414,14 +423,33 @@ func registerDefaultBackendRoutes(routerFor func(*bo.Options) router.Router, con
 
 					if p.MatchType == matching.PathMatchTypePrefix {
 						r.RegisterRoute(p.Path, nil, p.Methods,
-							true, applyMiddleware(o, p, tr, b.Cache(), b))
+							true, applyMiddleware(o, p, tr, b.Cache(), b, al))
 					}
 					r.RegisterRoute(p.Path, nil, p.Methods,
-						false, applyMiddleware(o, p, tr, b.Cache(), b))
+						false, applyMiddleware(o, p, tr, b.Cache(), b, al))
 				}
 			}
 		}
 	}
+}
+
+// newAccessLogger returns an access logger for the backend, or nil when
+// access logging is not configured or the logger cannot be created
+func newAccessLogger(conf *config.Config, o *bo.Options) *accesslog.Logger {
+	if o == nil || !o.AccessLog.IsEnabled() {
+		return nil
+	}
+	var instanceID int
+	if conf != nil && conf.Main != nil {
+		instanceID = conf.Main.InstanceID
+	}
+	al, err := accesslog.NewLogger(o.AccessLog, instanceID, o.Name, o.Provider)
+	if err != nil {
+		logger.Error("access logger creation failed; access logging disabled",
+			logging.Pairs{"backendName": o.Name, "error": err.Error()})
+		return nil
+	}
+	return al
 }
 
 func frontendOptions(conf *config.Config, o *bo.Options) *fopt.Options {

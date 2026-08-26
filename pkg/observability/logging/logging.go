@@ -90,8 +90,8 @@ func New(conf *config.Config) Logger {
 	if conf.Logging.LogFile == "" {
 		l.writer = os.Stdout
 	} else {
-		mo := manager.NewOptions()
-		mo.Filename = manager.InstanceFilename(conf.Logging.LogFile,
+		mo := conf.Logging.ManagerOptions()
+		mo.Filename = manager.InstanceFilename(mo.Filename,
 			conf.Main.InstanceID)
 		if w, err := manager.GetWriter(mo); err == nil {
 			l.writer = w

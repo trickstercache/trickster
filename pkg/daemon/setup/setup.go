@@ -41,6 +41,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/daemon/instance"
 	te "github.com/trickstercache/trickster/v2/pkg/errors"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
@@ -187,8 +188,11 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 
 	caches := applyCachingConfig(si, newConf)
 	rh := reload.HandlerFunc(hupFunc)
+	// retire the old config's access loggers once the new routes are live
+	accesslog.BeginGeneration()
 	err = routing.RegisterProxyRoutesForListeners(newConf, clients, listenerRouters, mr, caches, tracers, false)
 	if err != nil {
+		accesslog.AbortGeneration()
 		handleStartupIssue("route registration failed",
 			logging.Pairs{logKeyDetail: err.Error()}, errorFunc)
 		return err
@@ -215,6 +219,7 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	}
 	si.HealthChecker, err = clients.StartHealthChecks(oldStatuses)
 	if err != nil {
+		accesslog.AbortGeneration()
 		// logs the error (no status code or target name)
 		healthcheck.LogHealthCheckError("", err, 0)
 		return err
@@ -224,6 +229,8 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	routing.RegisterHealthHandler(mr, newConf.MgmtConfig.HealthHandlerPath, si.HealthChecker, clients)
 	applyListenerConfigs(newConf, si.Config, listenerRouters, rh, mr, tracers, clients, errorFunc, lg)
 
+	accesslog.CommitGeneration(
+		time.Duration(newConf.MgmtConfig.ReloadDrainTimeout) + time.Second)
 	metrics.LastReloadSuccessfulTimestamp.Set(float64(time.Now().Unix()))
 	metrics.LastReloadSuccessful.Set(1)
 	si.Config = newConf
@@ -257,8 +264,10 @@ func applyLoggingConfig(c, o *config.Config) {
 		c.MgmtConfig = mgmt.New()
 	}
 	if isReload {
+		rotationChanged := c.Logging.LogFile != "" &&
+			!c.Logging.RotationEqual(o.Logging)
 		if c.Logging.LogFile == o.Logging.LogFile &&
-			c.Logging.LogLevel == o.Logging.LogLevel {
+			c.Logging.LogLevel == o.Logging.LogLevel && !rotationChanged {
 			// no changes in logging config,
 			// so we keep the old logger intact
 			return
@@ -269,6 +278,13 @@ func applyLoggingConfig(c, o *config.Config) {
 				// the extra 1s allows HTTP listeners to close first and finish their log writes
 				go delayedLogCloser(oldLogger, time.Duration(c.MgmtConfig.ReloadDrainTimeout)+(1*time.Millisecond))
 			}
+			initLogger(c)
+			return
+		}
+		if rotationChanged {
+			// same file with new rotation settings: rebuild the logger so the
+			// shared writer picks up the new settings, and release the old handle
+			go delayedLogCloser(oldLogger, time.Duration(c.MgmtConfig.ReloadDrainTimeout)+(1*time.Millisecond))
 			initLogger(c)
 			return
 		}
