@@ -598,6 +598,13 @@ backends:
 #                                                               # while the - will remove the header
 #         request_params:
 #           +authToken: SomeTokenHere                 # manipulate request query parameters in the same way
+#       # regex path: a path starting with ^/ is auto-detected as a regular expression
+#       # (RE2 syntax); or set match_type: regex explicitly. Regex paths are evaluated
+#       # only after exact and prefix matching both miss, longest pattern first.
+#       # See the Regex Paths section of /docs/paths.md, including the catch-all caveat.
+#       - path: '^/api/[0-9]+/results'
+#         methods: [ GET ]
+#         handler: proxycache
 
 #         # the tls section configures the frontend and backend TLS operation for the backend
 #     tls:

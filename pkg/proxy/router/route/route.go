@@ -17,7 +17,10 @@
 // package route provides a Route data structure for Request Routing
 package route
 
-import "net/http"
+import (
+	"net/http"
+	"regexp"
+)
 
 type Route struct {
 	ExactMatch bool
@@ -45,10 +48,38 @@ type (
 	PrefixRouteSetLookup map[string]*PrefixRouteSet
 )
 
+// RegexRouteSet represents a regex path route, evaluated only after exact and
+// prefix matching both miss
+//
+// Capture-group design (not yet implemented): request rewriters (ingress-nginx
+// rewrite-target migration, Gateway API URLRewrite) will need submatch values
+// from the winning pattern. The router's hot path stays capture-free: the lm
+// router matches with MatchString only, which never allocates. When a path's
+// config declares it needs captures, registration wraps that route's handler
+// in a middleware that re-runs FindStringSubmatch (plus SubexpNames for named
+// groups) against the request path and stashes the results in the request
+// context for pkg/proxy/request/rewriter consumption. Because the wrapper is
+// attached per-route at registration time, no-capture routes and the router
+// itself require no changes, and extraction cost is paid only by routes that
+// opted in.
+type RegexRouteSet struct {
+	Pattern        string
+	PatternLen     int
+	Regexp         *regexp.Regexp
+	RoutesByMethod Lookup
+}
+
+type (
+	RegexRouteSets      []*RegexRouteSet
+	RegexRouteSetLookup map[string]*RegexRouteSet
+)
+
 type HostRouteSet struct {
 	ExactMatchRoutes     LookupLookup
 	PrefixMatchRoutes    PrefixRouteSets
 	PrefixMatchRoutesLkp PrefixRouteSetLookup
+	RegexMatchRoutes     RegexRouteSets
+	RegexMatchRoutesLkp  RegexRouteSetLookup
 }
 
 type HostRouteSetLookup map[string]*HostRouteSet

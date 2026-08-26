@@ -50,6 +50,7 @@ import (
 	ph "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/purge"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/reload"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 	"github.com/trickstercache/trickster/v2/pkg/routing"
@@ -181,7 +182,7 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 
 	for _, r := range listenerRouters {
 		r.RegisterRoute(newConf.MgmtConfig.PingHandlerPath, nil,
-			[]string{http.MethodGet, http.MethodHead}, false,
+			[]string{http.MethodGet, http.MethodHead}, matching.PathMatchTypeExact,
 			http.HandlerFunc((pnh.HandlerFunc(newConf))))
 	}
 
@@ -199,7 +200,7 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	}
 	for _, r := range listenerRouters {
 		r.RegisterRoute(newConf.MgmtConfig.PurgeByKeyHandlerPath, nil,
-			[]string{http.MethodDelete}, true,
+			[]string{http.MethodDelete}, matching.PathMatchTypePrefix,
 			http.HandlerFunc(ph.KeyHandler(newConf.MgmtConfig.PurgeByKeyHandlerPath, clients)))
 	}
 

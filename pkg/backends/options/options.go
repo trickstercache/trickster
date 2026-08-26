@@ -378,7 +378,7 @@ func (o *Options) Validate() (bool, error) {
 	}
 
 	if len(o.Paths) > 0 {
-		if err := o.Paths.Validate(); err != nil {
+		if err := o.Paths.Validate(o.Name); err != nil {
 			return false, err
 		}
 	}
