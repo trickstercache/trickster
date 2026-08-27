@@ -24,6 +24,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -103,7 +104,7 @@ func TestLoggerOnceAndSynchronousHelpers(t *testing.T) {
 func TestLoggerAsyncMode(t *testing.T) {
 	t.Parallel()
 
-	buf := &bytes.Buffer{}
+	buf := &syncBuffer{}
 	l := StreamLogger(buf, level.Info)
 	l.SetLogAsynchronous(true)
 	l.Info("async entry", nil)
@@ -114,6 +115,23 @@ func TestLoggerAsyncMode(t *testing.T) {
 	if buf.Len() == 0 {
 		t.Fatal("expected async log output")
 	}
+}
+
+type syncBuffer struct {
+	mtx sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mtx.Lock()
+	defer b.mtx.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) Len() int {
+	b.mtx.Lock()
+	defer b.mtx.Unlock()
+	return b.buf.Len()
 }
 
 func TestQuoteAsNeeded(t *testing.T) {

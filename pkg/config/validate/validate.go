@@ -32,6 +32,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
 	"github.com/trickstercache/trickster/v2/pkg/errors"
+	logmanager "github.com/trickstercache/trickster/v2/pkg/observability/logging/manager"
 	tr "github.com/trickstercache/trickster/v2/pkg/observability/tracing/registry"
 	ar "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/registry"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/native"
@@ -80,7 +81,18 @@ func Validate(c *config.Config) error {
 	if err := Backends(c); err != nil {
 		return err
 	}
+	if err := LoggingFiles(c); err != nil {
+		return err
+	}
 	return Listeners(c)
+}
+
+// LoggingFiles validates shared rotation settings across all configured logs.
+func LoggingFiles(c *config.Config) error {
+	if c == nil {
+		return nil
+	}
+	return logmanager.ValidateOptions(c.LogManagerOptions()...)
 }
 
 func Rewriters(c *config.Config) error {

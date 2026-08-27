@@ -74,7 +74,7 @@ type Listener struct {
 	routeSwapper *switcher.SwitchHandler
 	server       server
 	exitOnError  atomic.Bool
-	state        int32
+	state        atomic.Int32
 	readyCh      chan struct{}
 	readyOnce    sync.Once
 }
@@ -144,12 +144,12 @@ func NewGroup() *Group {
 
 // State returns the current state of the listener
 func (l *Listener) State() ListenerState {
-	return ListenerState(atomic.LoadInt32(&l.state))
+	return ListenerState(l.state.Load())
 }
 
 // setState atomically sets the listener state
 func (l *Listener) setState(state ListenerState) {
-	atomic.StoreInt32(&l.state, int32(state))
+	l.state.Store(int32(state))
 }
 
 // markReady signals that the listener is ready to accept connections

@@ -159,7 +159,9 @@ func (r *Resources) Merge(r2 *Resources) {
 	r.AlternateCacheTTL = r2.AlternateCacheTTL
 	r.TimeRangeQuery = r2.TimeRangeQuery
 	r.Tracer = r2.Tracer
-	r.AuthResult = r2.AuthResult
+	if r2.AuthResult != nil {
+		r.AuthResult = r2.AuthResult
+	}
 
 	r.RequestBody = slices.Clone(r2.RequestBody)
 	r.IsMergeMember = r.IsMergeMember || r2.IsMergeMember

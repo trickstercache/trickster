@@ -167,3 +167,28 @@ func parseResultHeaderVals(h string) ResultHeaderParts {
 	}
 	return r
 }
+
+// ParseResultHeader returns the structured values in X-Trickster-Result.
+func ParseResultHeader(h string) ResultHeaderParts {
+	return parseResultHeaderVals(h)
+}
+
+// ParseResultEngineStatus extracts only engine and status without extents.
+func ParseResultEngineStatus(h string) (engine, status string) {
+	for part := range strings.SplitSeq(h, ";") {
+		key, value, ok := strings.Cut(strings.TrimSpace(part), "=")
+		if !ok || value == "" {
+			continue
+		}
+		switch key {
+		case "engine":
+			engine = value
+		case "status":
+			status = value
+		}
+		if engine != "" && status != "" {
+			return engine, status
+		}
+	}
+	return engine, status
+}

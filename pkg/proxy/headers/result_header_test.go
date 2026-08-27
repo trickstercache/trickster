@@ -101,3 +101,11 @@ func TestParseResultHeaderVals(t *testing.T) {
 
 	// t.Error()
 }
+
+func TestParseResultEngineStatus(t *testing.T) {
+	engine, status := ParseResultEngineStatus(
+		"engine=DeltaProxyCache; status=phit; fetched=[1000-2000]; ffstatus=hit")
+	if engine != "DeltaProxyCache" || status != "phit" {
+		t.Errorf("engine/status = %q/%q", engine, status)
+	}
+}

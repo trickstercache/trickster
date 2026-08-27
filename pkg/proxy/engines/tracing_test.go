@@ -23,6 +23,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 	"time"
 
@@ -289,9 +290,9 @@ func resourceAttributeStrings(rsc *request.Resources) map[string]string {
 func latestEndedSpan(t testing.TB, sr *tracetest.SpanRecorder, name string) sdktrace.ReadOnlySpan {
 	t.Helper()
 	spans := sr.Ended()
-	for i := len(spans) - 1; i >= 0; i-- {
-		if spans[i].Name() == name {
-			return spans[i]
+	for _, span := range slices.Backward(spans) {
+		if span.Name() == name {
+			return span
 		}
 	}
 	t.Fatalf("span %q not found in %d ended spans", name, len(spans))
