@@ -57,97 +57,47 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// ErrStopped is returned when subscribing to a stopped discoverer
-var ErrStopped = errors.New("file discoverer is stopped")
+// ErrStopped aliases discovery.ErrStopped for callers of this package
+var ErrStopped = discovery.ErrStopped
+
+// provider carries the file provider's connection-level settings; the
+// shared discovery.Lifecycle owns Start/Stop/Subscribe
+type provider struct {
+	name string
+	// pollInterval is the content-comparing poll cadence; on filesystems
+	// without reliable change notification it is the effective update
+	// mechanism
+	pollInterval time.Duration
+}
 
 // New constructs the file Discoverer; it satisfies
 // discovery.NewDiscovererFunc. Each subscription's query names the file to
 // watch; the optional file options block tunes the change-detection poll
 // cadence (see options.FileOptions).
 func New(name string, o *do.Options) (discovery.Discoverer, error) {
-	poll := do.DefaultFilePollInterval
+	p := &provider{name: name, pollInterval: pollIntervalFor(o)}
+	return discovery.NewLifecycle(name, p.newSubscription), nil
+}
+
+// pollIntervalFor resolves the configured poll cadence with its default
+func pollIntervalFor(o *do.Options) time.Duration {
 	if o != nil && o.File != nil && o.File.PollInterval > 0 {
-		poll = time.Duration(o.File.PollInterval)
+		return time.Duration(o.File.PollInterval)
 	}
-	return &discoverer{name: name, pollInterval: poll}, nil
+	return do.DefaultFilePollInterval
 }
 
-type discoverer struct {
-	name string
-	// pollInterval is the content-comparing poll cadence; on filesystems
-	// without reliable change notification it is the effective update
-	// mechanism
-	pollInterval time.Duration
-
-	mtx     sync.Mutex
-	ctx     context.Context
-	cancel  context.CancelFunc
-	subs    map[*subscription]struct{}
-	started bool
-	stopped bool
-}
-
-func (d *discoverer) Start(ctx context.Context) error {
-	d.mtx.Lock()
-	defer d.mtx.Unlock()
-	if d.stopped {
-		return ErrStopped
-	}
-	if d.started {
-		return nil
-	}
-	d.ctx, d.cancel = context.WithCancel(ctx)
-	d.started = true
-	for s := range d.subs {
-		s.launch(d.ctx)
-	}
-	return nil
-}
-
-func (d *discoverer) Stop() error {
-	d.mtx.Lock()
-	defer d.mtx.Unlock()
-	if d.stopped {
-		return nil
-	}
-	d.stopped = true
-	if d.cancel != nil {
-		d.cancel()
-	}
-	for s := range d.subs {
-		s.stop()
-	}
-	d.subs = nil
-	return nil
-}
-
-func (d *discoverer) Subscribe(q *do.Query, handler discovery.SnapshotHandler) (func(), error) {
-	if q == nil || handler == nil {
-		return nil, errors.New("nil query or handler")
-	}
+// newSubscription validates the query and builds its runner; it satisfies
+// discovery.NewSubscriptionFunc
+func (p *provider) newSubscription(q *do.Query, handler discovery.SnapshotHandler) (discovery.SubscriptionRunner, error) {
 	if q.Path == "" {
 		return nil, errors.New("file discovery query requires a path")
 	}
-	d.mtx.Lock()
-	defer d.mtx.Unlock()
-	if d.stopped {
-		return nil, ErrStopped
-	}
-	s := &subscription{d: d, path: filepath.Clean(q.Path), handler: handler}
-	if d.subs == nil {
-		d.subs = make(map[*subscription]struct{})
-	}
-	d.subs[s] = struct{}{}
-	if d.started {
-		s.launch(d.ctx)
-	}
-	unsubscribe := func() {
-		d.mtx.Lock()
-		delete(d.subs, s)
-		d.mtx.Unlock()
-		s.stop()
-	}
-	return unsubscribe, nil
+	return &subscription{
+		p:       p,
+		path:    filepath.Clean(q.Path),
+		emitter: discovery.NewEmitter(handler),
+	}, nil
 }
 
 // memberEntry is one entry of the member-list file
@@ -162,36 +112,32 @@ type memberEntry struct {
 }
 
 // subscription binds one member-list file's filesystem Watcher to the
-// snapshot handler
+// snapshot handler; it implements discovery.SubscriptionRunner
 type subscription struct {
-	d       *discoverer
+	p       *provider
 	path    string
-	handler discovery.SnapshotHandler
+	emitter *discovery.Emitter
 
-	mtx      sync.Mutex
-	watcher  *filesystem.Watcher
-	stopCtx  func() bool
-	last     discovery.Snapshot
-	hasLast  bool
-	launched bool
-	stopped  bool
-	failing  bool
+	mtx     sync.Mutex
+	watcher *filesystem.Watcher
+	stopCtx func() bool
+	stopped bool
+	failing bool
 }
 
-// launch starts the subscription's filesystem Watcher; the Watcher owns
+// Launch starts the subscription's filesystem Watcher; the Watcher owns
 // event watching, debounce, and the content-comparing poll, and runs its
 // initial check (which may deliver the first snapshot) before returning
-func (s *subscription) launch(ctx context.Context) {
+func (s *subscription) Launch(ctx context.Context) {
 	s.mtx.Lock()
-	if s.launched || s.stopped {
+	if s.stopped {
 		s.mtx.Unlock()
 		return
 	}
-	s.launched = true
 	w, err := filesystem.New(&filesystem.Options{
-		Name:        s.d.name + ":" + s.path,
+		Name:        s.p.name + ":" + s.path,
 		Paths:       []string{s.path},
-		Interval:    s.d.pollInterval,
+		Interval:    s.p.pollInterval,
 		OnChange:    s.onChange,
 		OnReadError: s.warnRead,
 	})
@@ -201,18 +147,19 @@ func (s *subscription) launch(ctx context.Context) {
 		s.mtx.Unlock()
 		discovery.LogError("file discovery watcher construction failed",
 			logging.Pairs{
-				"discoverer": s.d.name, "path": s.path, "error": err.Error(),
+				"discoverer": s.p.name, "path": s.path, "error": err.Error(),
 			})
 		return
 	}
 	s.watcher = w
 	// the discoverer's Start context also terminates the subscription
-	s.stopCtx = context.AfterFunc(ctx, s.stop)
+	s.stopCtx = context.AfterFunc(ctx, s.Stop)
 	s.mtx.Unlock()
 	w.Start()
 }
 
-func (s *subscription) stop() {
+// Stop terminates the watcher and suppresses further emissions
+func (s *subscription) Stop() {
 	s.mtx.Lock()
 	if s.stopped {
 		s.mtx.Unlock()
@@ -222,6 +169,7 @@ func (s *subscription) stop() {
 	w := s.watcher
 	stopCtx := s.stopCtx
 	s.mtx.Unlock()
+	s.emitter.Stop()
 	if stopCtx != nil {
 		stopCtx()
 	}
@@ -241,24 +189,11 @@ func (s *subscription) onChange(contents [][]byte) error {
 		return err
 	}
 	s.clearWarn()
-	s.deliver(snap)
+	// the Watcher already suppresses byte-identical content; the Emitter
+	// additionally suppresses semantic no-ops (reordered or reformatted
+	// entries)
+	s.emitter.Emit(snap)
 	return nil
-}
-
-// deliver emits the snapshot when membership changed. The Watcher already
-// suppresses byte-identical content; canonical comparison additionally
-// suppresses semantic no-ops (reordered or reformatted entries).
-func (s *subscription) deliver(snap discovery.Snapshot) {
-	canonical := snap.Canonical()
-	s.mtx.Lock()
-	if s.stopped || (s.hasLast && canonical.Equal(s.last)) {
-		s.mtx.Unlock()
-		return
-	}
-	s.last = canonical
-	s.hasLast = true
-	s.mtx.Unlock()
-	s.handler(canonical)
 }
 
 // parseMembers converts member-list file content into a Snapshot
@@ -308,7 +243,7 @@ func parseMembers(b []byte) (discovery.Snapshot, error) {
 // warnRead counts a read/parse failure and logs it once per failure streak
 func (s *subscription) warnRead(err error) {
 	metrics.DiscoveryRefreshErrors.WithLabelValues(
-		s.d.name, providers.File).Inc()
+		s.p.name, providers.File).Inc()
 	s.mtx.Lock()
 	failing := s.failing
 	s.failing = true
@@ -318,7 +253,7 @@ func (s *subscription) warnRead(err error) {
 	}
 	discovery.LogWarn("file discovery read failed; keeping last-good members",
 		logging.Pairs{
-			"discoverer": s.d.name, "path": s.path, "error": err.Error(),
+			"discoverer": s.p.name, "path": s.path, "error": err.Error(),
 		})
 }
 
@@ -328,7 +263,7 @@ func (s *subscription) clearWarn() {
 		s.failing = false
 		s.mtx.Unlock()
 		discovery.LogInfo("file discovery read recovered",
-			logging.Pairs{"discoverer": s.d.name, "path": s.path})
+			logging.Pairs{"discoverer": s.p.name, "path": s.path})
 		return
 	}
 	s.mtx.Unlock()

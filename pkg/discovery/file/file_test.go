@@ -211,13 +211,13 @@ func TestFileDiscoveryReplicaGroup(t *testing.T) {
 }
 
 func TestPollIntervalOption(t *testing.T) {
-	d, err := New("f", nil)
-	require.NoError(t, err)
-	require.Equal(t, do.DefaultFilePollInterval, d.(*discoverer).pollInterval)
-	d, err = New("f", &do.Options{Provider: "file",
-		File: &do.FileOptions{PollInterval: timeconv.Duration(2 * time.Second)}})
-	require.NoError(t, err)
-	require.Equal(t, 2*time.Second, d.(*discoverer).pollInterval)
+	require.Equal(t, do.DefaultFilePollInterval, pollIntervalFor(nil))
+	require.Equal(t, do.DefaultFilePollInterval,
+		pollIntervalFor(&do.Options{Provider: "file"}))
+	require.Equal(t, 2*time.Second, pollIntervalFor(&do.Options{
+		Provider: "file",
+		File:     &do.FileOptions{PollInterval: timeconv.Duration(2 * time.Second)},
+	}))
 }
 
 // TestPollDetectsLateCreatedDirectory subscribes to a member file whose

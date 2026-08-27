@@ -20,6 +20,18 @@ type Discoverer interface {
 }
 ```
 
+**Do not implement Start/Stop/Subscribe by hand**: the shared
+`discovery.Lifecycle` owns that skeleton — subscription bookkeeping,
+launch-on-Start for early registrations, stop-everything teardown, and
+stopped-state guards (`discovery.ErrStopped`). A provider supplies only a
+`NewSubscriptionFunc` that validates one (already-cloned) query and
+returns a `SubscriptionRunner` (`Launch(ctx)`/`Stop()`), and its
+constructor returns `discovery.NewLifecycle(name, newSub)`. Deliver
+snapshots through a `discovery.Emitter` wrapping the handler: it
+canonicalizes, suppresses no-change emissions, serializes deliveries, and
+guarantees silence after `Stop`. All three in-tree providers are built
+this way; the `file` provider remains the smallest end-to-end example.
+
 Semantics your implementation must uphold:
 
 - **One Discoverer per named config entry.** A Discoverer is constructed
@@ -30,9 +42,9 @@ Semantics your implementation must uphold:
 - **Full snapshots, never deltas.** Each emission is the complete current
   membership for that query. Consumers diff successive snapshots
   themselves.
-- **Emit only on change.** Canonicalize with `Snapshot.Canonical()` and
-  compare with `Snapshot.Equal()` before delivering; redundant emissions
-  waste downstream work but are not errors.
+- **Emit only on change.** The `Emitter` enforces this (canonicalize +
+  compare) when you deliver through it; hand-rolled delivery paths must
+  replicate it.
 - **Keep last-good on failure.** A backend-source outage (API error,
   SERVFAIL, unreadable file) must not emit an empty snapshot — say nothing
   and let the last-good membership keep serving. An *authoritative* empty
@@ -43,14 +55,12 @@ Semantics your implementation must uphold:
   (the kubernetes provider uses 250ms). Per-ALB damping
   (`alb.discovery.debounce_window`) layers on top; your debounce protects
   against event storms, not policy flapping.
-- **Lifecycle.** `Subscribe` may be called before or after `Start`
-  (pre-Start subscriptions launch when `Start` runs). `Stop` and the
-  `Start` context both terminate everything; handlers must never be
-  called after `Stop` returns. The returned unsubscribe func must stop
-  that subscription's resources without affecting others — give each
-  subscription its own context derived from the discoverer's, and make
-  sure any blocking shutdown (e.g. client-go's `factory.Shutdown`) is
-  preceded by that context's cancellation.
+- **Lifecycle.** The `Lifecycle` handles subscribe-before/after-Start
+  ordering, teardown fan-out, and unsubscribe isolation; your runner's
+  obligations are that `Launch` honors its context, `Stop` is idempotent
+  and prevents further emission (stop your `Emitter`), and any blocking
+  shutdown (e.g. client-go's `factory.Shutdown`) is preceded by canceling
+  the context that its goroutines watch.
 - **Control plane only.** Goroutines, channels and callbacks are fine
   here; nothing in a provider may run on the request hot path. Handlers
   should be treated as non-blocking (the ALB manager just takes a mutex
@@ -89,7 +99,9 @@ Fill `discovery.Member` as completely as your source allows:
    [docs/alb-autodiscovery.md](../alb-autodiscovery.md).
 4. **Implement** under `pkg/discovery/<provider>` with a constructor
    matching `discovery.NewDiscovererFunc`:
-   `func New(name string, o *do.Options) (discovery.Discoverer, error)`.
+   `func New(name string, o *do.Options) (discovery.Discoverer, error)` —
+   typically a small provider struct holding connection state, whose
+   `newSubscription` method is handed to `discovery.NewLifecycle`.
 5. **Register** it in
    [pkg/discovery/registry](../../pkg/discovery/registry/registry.go)'s
    `SupportedProviders` map.

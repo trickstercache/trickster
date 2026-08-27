@@ -33,7 +33,6 @@ package dns
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"strconv"
@@ -50,8 +49,8 @@ import (
 	"github.com/miekg/dns"
 )
 
-// ErrStopped is returned when subscribing to a stopped discoverer
-var ErrStopped = errors.New("dns discoverer is stopped")
+// ErrStopped aliases discovery.ErrStopped for callers of this package
+var ErrStopped = discovery.ErrStopped
 
 type mode int8
 
@@ -73,6 +72,23 @@ func NewA(name string, o *do.Options) (discovery.Discoverer, error) {
 }
 
 func newDiscoverer(name string, o *do.Options, m mode) (discovery.Discoverer, error) {
+	p, err := newProvider(name, o, m)
+	if err != nil {
+		return nil, err
+	}
+	return discovery.NewLifecycle(name, p.newSubscription), nil
+}
+
+// provider carries the dns provider's connection-level settings; the
+// shared discovery.Lifecycle owns Start/Stop/Subscribe
+type provider struct {
+	name     string
+	mode     mode
+	res      resolver
+	interval time.Duration
+}
+
+func newProvider(name string, o *do.Options, m mode) (*provider, error) {
 	if o == nil || o.DNS == nil {
 		return nil, fmt.Errorf("no dns options provided for discoverer %q", name)
 	}
@@ -84,112 +100,43 @@ func newDiscoverer(name string, o *do.Options, m mode) (discovery.Discoverer, er
 	if err != nil {
 		return nil, err
 	}
-	return &discoverer{name: name, mode: m, res: r, interval: interval}, nil
+	return &provider{name: name, mode: m, res: r, interval: interval}, nil
 }
 
-type discoverer struct {
-	name     string
-	mode     mode
-	res      resolver
-	interval time.Duration
+// newSubscription builds a query's poll-loop runner; it satisfies
+// discovery.NewSubscriptionFunc
+func (p *provider) newSubscription(q *do.Query, handler discovery.SnapshotHandler) (discovery.SubscriptionRunner, error) {
+	return &subscription{p: p, q: q, emitter: discovery.NewEmitter(handler)}, nil
+}
+
+// subscription is one query's poll loop; it implements
+// discovery.SubscriptionRunner
+type subscription struct {
+	p       *provider
+	q       *do.Query
+	emitter *discovery.Emitter
 
 	mtx     sync.Mutex
-	ctx     context.Context
 	cancel  context.CancelFunc
-	subs    map[*subscription]struct{}
-	started bool
 	stopped bool
+	failing bool
 }
 
-func (d *discoverer) Start(ctx context.Context) error {
-	d.mtx.Lock()
-	defer d.mtx.Unlock()
-	if d.stopped {
-		return ErrStopped
-	}
-	if d.started {
-		return nil
-	}
-	d.ctx, d.cancel = context.WithCancel(ctx)
-	d.started = true
-	for s := range d.subs {
-		s.launch(d.ctx)
-	}
-	return nil
-}
-
-func (d *discoverer) Stop() error {
-	d.mtx.Lock()
-	defer d.mtx.Unlock()
-	if d.stopped {
-		return nil
-	}
-	d.stopped = true
-	if d.cancel != nil {
-		d.cancel()
-	}
-	for s := range d.subs {
-		s.stop()
-	}
-	d.subs = nil
-	return nil
-}
-
-func (d *discoverer) Subscribe(q *do.Query, handler discovery.SnapshotHandler) (func(), error) {
-	if q == nil || handler == nil {
-		return nil, errors.New("nil query or handler")
-	}
-	d.mtx.Lock()
-	defer d.mtx.Unlock()
-	if d.stopped {
-		return nil, ErrStopped
-	}
-	s := &subscription{d: d, q: q.Clone(), handler: handler}
-	if d.subs == nil {
-		d.subs = make(map[*subscription]struct{})
-	}
-	d.subs[s] = struct{}{}
-	if d.started {
-		s.launch(d.ctx)
-	}
-	unsubscribe := func() {
-		d.mtx.Lock()
-		delete(d.subs, s)
-		d.mtx.Unlock()
-		s.stop()
-	}
-	return unsubscribe, nil
-}
-
-// subscription is one query's poll loop
-type subscription struct {
-	d       *discoverer
-	q       *do.Query
-	handler discovery.SnapshotHandler
-
-	mtx      sync.Mutex
-	cancel   context.CancelFunc
-	last     discovery.Snapshot
-	hasLast  bool
-	launched bool
-	stopped  bool
-	failing  bool
-}
-
-func (s *subscription) launch(ctx context.Context) {
+// Launch starts the query's poll loop
+func (s *subscription) Launch(ctx context.Context) {
 	s.mtx.Lock()
-	if s.launched || s.stopped {
+	if s.stopped {
 		s.mtx.Unlock()
 		return
 	}
-	s.launched = true
 	subCtx, cancel := context.WithCancel(ctx)
 	s.cancel = cancel
 	s.mtx.Unlock()
 	go s.run(subCtx)
 }
 
-func (s *subscription) stop() {
+// Stop terminates the poll loop and suppresses further emissions
+func (s *subscription) Stop() {
 	s.mtx.Lock()
 	if s.stopped {
 		s.mtx.Unlock()
@@ -198,6 +145,7 @@ func (s *subscription) stop() {
 	s.stopped = true
 	cancel := s.cancel
 	s.mtx.Unlock()
+	s.emitter.Stop()
 	if cancel != nil {
 		cancel()
 	}
@@ -214,7 +162,7 @@ func (s *subscription) run(ctx context.Context) {
 			return
 		case <-timer.C:
 		}
-		wait := s.d.interval
+		wait := s.p.interval
 		snap, ttl, err := s.resolve(ctx)
 		if err != nil {
 			if ctx.Err() != nil {
@@ -223,7 +171,7 @@ func (s *subscription) run(ctx context.Context) {
 			s.warnResolve(err)
 		} else {
 			s.clearWarn()
-			s.deliver(snap)
+			s.emitter.Emit(snap)
 			if ttl > wait {
 				// TTL floor: the answer is authoritative until its shortest
 				// TTL expires; re-resolving sooner is wasted load
@@ -235,7 +183,7 @@ func (s *subscription) run(ctx context.Context) {
 }
 
 func (s *subscription) resolve(ctx context.Context) (discovery.Snapshot, time.Duration, error) {
-	switch s.d.mode {
+	switch s.p.mode {
 	case modeSRV:
 		return s.resolveSRV(ctx)
 	default:
@@ -245,7 +193,7 @@ func (s *subscription) resolve(ctx context.Context) (discovery.Snapshot, time.Du
 
 // resolveSRV maps the highest-priority tier of the SRV answer onto members
 func (s *subscription) resolveSRV(ctx context.Context) (discovery.Snapshot, time.Duration, error) {
-	answers, ttl, err := s.d.res.lookupSRV(ctx, dns.Fqdn(s.q.SRVName))
+	answers, ttl, err := s.p.res.lookupSRV(ctx, dns.Fqdn(s.q.SRVName))
 	if err != nil {
 		return nil, 0, err
 	}
@@ -278,7 +226,7 @@ func (s *subscription) resolveSRV(ctx context.Context) (discovery.Snapshot, time
 // resolveA maps each A/AAAA answer onto a member with the query's fixed
 // port and scheme
 func (s *subscription) resolveA(ctx context.Context) (discovery.Snapshot, time.Duration, error) {
-	ips, ttl, err := s.d.res.lookupIP(ctx, dns.Fqdn(s.q.Hostname))
+	ips, ttl, err := s.p.res.lookupIP(ctx, dns.Fqdn(s.q.Hostname))
 	if err != nil {
 		return nil, 0, err
 	}
@@ -294,25 +242,11 @@ func (s *subscription) resolveA(ctx context.Context) (discovery.Snapshot, time.D
 	return out, ttl, nil
 }
 
-// deliver emits the snapshot when membership changed
-func (s *subscription) deliver(snap discovery.Snapshot) {
-	canonical := snap.Canonical()
-	s.mtx.Lock()
-	if s.stopped || (s.hasLast && canonical.Equal(s.last)) {
-		s.mtx.Unlock()
-		return
-	}
-	s.last = canonical
-	s.hasLast = true
-	s.mtx.Unlock()
-	s.handler(canonical)
-}
-
 // warnResolve counts a resolution failure and logs it once per failure
 // streak; the last-good membership keeps serving
 func (s *subscription) warnResolve(err error) {
 	metrics.DiscoveryRefreshErrors.WithLabelValues(
-		s.d.name, s.d.providerName()).Inc()
+		s.p.name, s.p.providerName()).Inc()
 	s.mtx.Lock()
 	failing := s.failing
 	s.failing = true
@@ -322,7 +256,7 @@ func (s *subscription) warnResolve(err error) {
 	}
 	discovery.LogWarn("dns discovery resolution failed; keeping last-good members",
 		logging.Pairs{
-			"discoverer": s.d.name,
+			"discoverer": s.p.name,
 			"query":      s.queryName(),
 			"error":      err.Error(),
 		})
@@ -334,21 +268,21 @@ func (s *subscription) clearWarn() {
 		s.failing = false
 		s.mtx.Unlock()
 		discovery.LogInfo("dns discovery resolution recovered",
-			logging.Pairs{"discoverer": s.d.name, "query": s.queryName()})
+			logging.Pairs{"discoverer": s.p.name, "query": s.queryName()})
 		return
 	}
 	s.mtx.Unlock()
 }
 
 func (s *subscription) queryName() string {
-	if s.d.mode == modeSRV {
+	if s.p.mode == modeSRV {
 		return s.q.SRVName
 	}
 	return s.q.Hostname
 }
 
-func (d *discoverer) providerName() string {
-	if d.mode == modeSRV {
+func (p *provider) providerName() string {
+	if p.mode == modeSRV {
 		return providers.DNSSRV
 	}
 	return providers.DNSA

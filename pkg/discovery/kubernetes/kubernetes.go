@@ -29,7 +29,6 @@ package kubernetes
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"maps"
 	"sync"
@@ -57,8 +56,8 @@ import (
 // top of this.
 const SnapshotDebounce = 250 * time.Millisecond
 
-// ErrStopped is returned when subscribing to a stopped discoverer
-var ErrStopped = errors.New("kubernetes discoverer is stopped")
+// ErrStopped aliases discovery.ErrStopped for callers of this package
+var ErrStopped = discovery.ErrStopped
 
 // New constructs the kubernetes Discoverer for the provided discoverer
 // options; it satisfies discovery.NewDiscovererFunc
@@ -77,90 +76,23 @@ func New(name string, o *do.Options) (discovery.Discoverer, error) {
 // client; used by tests (client-go fakes) and embedders with their own
 // client stack
 func NewWithClient(name string, kc *kube.Client) discovery.Discoverer {
-	return &discoverer{name: name, kc: kc}
+	p := &provider{name: name, kc: kc}
+	return discovery.NewLifecycle(name, p.newSubscription)
 }
 
-type discoverer struct {
-	name   string
-	kc     *kube.Client
-	mtx    sync.Mutex
-	ctx    context.Context
-	cancel context.CancelFunc
-	subs   map[*subscription]struct{}
-	// started/stopped gate the lifecycle; subscriptions registered before
-	// Start are launched by Start
-	started bool
-	stopped bool
+// provider carries the kubernetes provider's shared client; the shared
+// discovery.Lifecycle owns Start/Stop/Subscribe
+type provider struct {
+	name string
+	kc   *kube.Client
 }
 
-func (d *discoverer) Start(ctx context.Context) error {
-	d.mtx.Lock()
-	defer d.mtx.Unlock()
-	if d.stopped {
-		return ErrStopped
-	}
-	if d.started {
-		return nil
-	}
-	d.ctx, d.cancel = context.WithCancel(ctx)
-	d.started = true
-	for s := range d.subs {
-		s.launch(d.ctx)
-	}
-	return nil
-}
-
-func (d *discoverer) Stop() error {
-	d.mtx.Lock()
-	defer d.mtx.Unlock()
-	if d.stopped {
-		return nil
-	}
-	d.stopped = true
-	if d.cancel != nil {
-		d.cancel()
-	}
-	for s := range d.subs {
-		s.stop()
-	}
-	d.subs = nil
-	return nil
-}
-
-func (d *discoverer) Subscribe(q *do.Query, handler discovery.SnapshotHandler) (func(), error) {
-	if q == nil || handler == nil {
-		return nil, errors.New("nil query or handler")
-	}
-	d.mtx.Lock()
-	defer d.mtx.Unlock()
-	if d.stopped {
-		return nil, ErrStopped
-	}
-	s, err := d.newSubscription(q, handler)
-	if err != nil {
-		return nil, err
-	}
-	if d.subs == nil {
-		d.subs = make(map[*subscription]struct{})
-	}
-	d.subs[s] = struct{}{}
-	if d.started {
-		s.launch(d.ctx)
-	}
-	unsubscribe := func() {
-		d.mtx.Lock()
-		delete(d.subs, s)
-		d.mtx.Unlock()
-		s.stop()
-	}
-	return unsubscribe, nil
-}
-
-// subscription is one query's informer set and snapshot emitter
+// subscription is one query's informer set and snapshot emitter; it
+// implements discovery.SubscriptionRunner
 type subscription struct {
-	d       *discoverer
+	p       *provider
 	q       *do.Query
-	handler discovery.SnapshotHandler
+	emitter *discovery.Emitter
 	factory informers.SharedInformerFactory
 	// podFactory is a second, selector-free informer factory joined in by
 	// the endpointslices kind when replica_group_label is set: endpoints
@@ -173,17 +105,11 @@ type subscription struct {
 	// kind-specific informer's lister cache
 	build func() discovery.Snapshot
 
-	// emitMtx serializes snapshot rebuild+delivery so handlers never see
-	// out-of-order membership
-	emitMtx sync.Mutex
-
 	mtx sync.Mutex
 	// cancel stops this subscription's informers independently of the
 	// discoverer (unsubscribe); it is derived from the discoverer context
 	// at launch, so factory.Shutdown can actually complete
 	cancel     context.CancelFunc
-	last       discovery.Snapshot
-	hasLast    bool
 	timer      *time.Timer
 	armed      bool
 	synced     bool
@@ -192,11 +118,11 @@ type subscription struct {
 	portWarned bool
 }
 
-// newSubscription builds the kind-appropriate informer set for the query.
-// The query is expected to have been validated (and kind-defaulted) by
-// config validation; kind is re-defaulted defensively for direct callers.
-func (d *discoverer) newSubscription(q *do.Query, handler discovery.SnapshotHandler) (*subscription, error) {
-	q = q.Clone()
+// newSubscription builds the kind-appropriate informer set for the query;
+// it satisfies discovery.NewSubscriptionFunc. The query is expected to
+// have been validated (and kind-defaulted) by config validation; kind is
+// re-defaulted defensively for direct callers.
+func (p *provider) newSubscription(q *do.Query, handler discovery.SnapshotHandler) (discovery.SubscriptionRunner, error) {
 	if q.Kind == "" {
 		q.Kind = do.KindEndpointSlices
 	}
@@ -204,7 +130,7 @@ func (d *discoverer) newSubscription(q *do.Query, handler discovery.SnapshotHand
 	if ns == "" {
 		ns = kube.DefaultNamespace()
 	}
-	s := &subscription{d: d, q: q, handler: handler}
+	s := &subscription{p: p, q: q, emitter: discovery.NewEmitter(handler)}
 
 	sel := labels.Set{}
 	maps.Copy(sel, q.Selector)
@@ -242,7 +168,7 @@ func (d *discoverer) newSubscription(q *do.Query, handler discovery.SnapshotHand
 			}))
 	}
 	s.factory = informers.NewSharedInformerFactoryWithOptions(
-		d.kc.Clientset(), 0, opts...)
+		p.kc.Clientset(), 0, opts...)
 
 	dirtyHandler := cache.ResourceEventHandlerFuncs{
 		AddFunc:    func(any) { s.markDirty() },
@@ -261,7 +187,7 @@ func (d *discoverer) newSubscription(q *do.Query, handler discovery.SnapshotHand
 			// read from pod labels; a separate factory because the slice
 			// factory's service-name label tweak must not filter pods
 			s.podFactory = informers.NewSharedInformerFactoryWithOptions(
-				d.kc.Clientset(), 0, informers.WithNamespace(ns))
+				p.kc.Clientset(), 0, informers.WithNamespace(ns))
 			podInf := s.podFactory.Core().V1().Pods()
 			if _, err := podInf.Informer().AddEventHandler(dirtyHandler); err != nil {
 				return nil, err
@@ -285,10 +211,10 @@ func (d *discoverer) newSubscription(q *do.Query, handler discovery.SnapshotHand
 	return s, nil
 }
 
-// launch starts the subscription's informers under its own context (derived
-// from the discoverer's) and emits the initial snapshot once caches sync.
-// Callers hold d.mtx.
-func (s *subscription) launch(ctx context.Context) {
+// Launch starts the subscription's informers under its own context
+// (derived from the discoverer's) and emits the initial snapshot once
+// caches sync
+func (s *subscription) Launch(ctx context.Context) {
 	s.mtx.Lock()
 	if s.launched || s.stopped {
 		s.mtx.Unlock()
@@ -310,9 +236,9 @@ func (s *subscription) launch(ctx context.Context) {
 		for typ, ok := range synced {
 			if !ok {
 				metrics.DiscoveryRefreshErrors.WithLabelValues(
-					s.d.name, providers.Kubernetes).Inc()
+					s.p.name, providers.Kubernetes).Inc()
 				discovery.LogWarn("kubernetes discovery cache did not sync",
-					logging.Pairs{"discoverer": s.d.name, "type": typ.String()})
+					logging.Pairs{"discoverer": s.p.name, "type": typ.String()})
 				return
 			}
 		}
@@ -324,7 +250,9 @@ func (s *subscription) launch(ctx context.Context) {
 	}()
 }
 
-func (s *subscription) stop() {
+// Stop terminates the subscription's informers and suppresses further
+// emissions
+func (s *subscription) Stop() {
 	s.mtx.Lock()
 	if s.stopped {
 		s.mtx.Unlock()
@@ -337,6 +265,7 @@ func (s *subscription) stop() {
 	launched := s.launched
 	cancel := s.cancel
 	s.mtx.Unlock()
+	s.emitter.Stop()
 	if cancel != nil {
 		cancel()
 	}
@@ -362,11 +291,10 @@ func (s *subscription) markDirty() {
 	s.timer = time.AfterFunc(SnapshotDebounce, s.emit)
 }
 
-// emit rebuilds the snapshot from the lister cache and delivers it to the
-// handler when membership actually changed
+// emit rebuilds the snapshot from the lister cache and delivers it via
+// the Emitter, which serializes deliveries and suppresses no-change
+// membership
 func (s *subscription) emit() {
-	s.emitMtx.Lock()
-	defer s.emitMtx.Unlock()
 	s.mtx.Lock()
 	if s.stopped {
 		s.mtx.Unlock()
@@ -374,14 +302,5 @@ func (s *subscription) emit() {
 	}
 	s.armed = false
 	s.mtx.Unlock()
-	snap := s.build().Canonical()
-	s.mtx.Lock()
-	if s.stopped || (s.hasLast && snap.Equal(s.last)) {
-		s.mtx.Unlock()
-		return
-	}
-	s.last = snap
-	s.hasLast = true
-	s.mtx.Unlock()
-	s.handler(snap)
+	s.emitter.Emit(s.build())
 }

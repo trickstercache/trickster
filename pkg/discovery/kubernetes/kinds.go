@@ -334,7 +334,7 @@ func (s *subscription) warnPort(kind, objName string, declared int) {
 	}
 	discovery.LogWarn("kubernetes discovery could not resolve a member port; objects skipped",
 		logging.Pairs{
-			"discoverer": s.d.name, "kind": kind, "object": objName,
+			"discoverer": s.p.name, "kind": kind, "object": objName,
 			"queryPort": s.q.Port, "declaredPorts": declared,
 			"hint": "set query.port to a port name or number",
 		})
@@ -348,8 +348,8 @@ func (s *subscription) clearPortWarn() {
 
 func (s *subscription) warnBuild(event string, err error) {
 	metrics.DiscoveryRefreshErrors.WithLabelValues(
-		s.d.name, providers.Kubernetes).Inc()
+		s.p.name, providers.Kubernetes).Inc()
 	discovery.LogWarn(event, logging.Pairs{
-		"discoverer": s.d.name, "error": err.Error(),
+		"discoverer": s.p.name, "error": err.Error(),
 	})
 }

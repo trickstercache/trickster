@@ -424,7 +424,7 @@ func TestServiceReplicaGroupLabel(t *testing.T) {
 }
 
 func TestWarnBuildCountsError(t *testing.T) {
-	s := &subscription{d: &discoverer{name: "d"}, q: &do.Query{}}
+	s := &subscription{p: &provider{name: "d"}, q: &do.Query{}}
 	// direct invocation: lister errors are unreachable with fakes
 	s.warnBuild("synthetic list error", context.DeadlineExceeded)
 }

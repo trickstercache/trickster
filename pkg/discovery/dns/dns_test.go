@@ -358,34 +358,19 @@ func TestNewResolverSelection(t *testing.T) {
 }
 
 func TestModeAccessors(t *testing.T) {
-	dSRV := &discoverer{mode: modeSRV}
-	dA := &discoverer{mode: modeA}
-	require.Equal(t, "dns_srv", dSRV.providerName())
-	require.Equal(t, "dns_a", dA.providerName())
-	sSRV := &subscription{d: dSRV, q: &do.Query{SRVName: "s"}}
-	sA := &subscription{d: dA, q: &do.Query{Hostname: "h"}}
+	pSRV := &provider{mode: modeSRV}
+	pA := &provider{mode: modeA}
+	require.Equal(t, "dns_srv", pSRV.providerName())
+	require.Equal(t, "dns_a", pA.providerName())
+	sSRV := &subscription{p: pSRV, q: &do.Query{SRVName: "s"}}
+	sA := &subscription{p: pA, q: &do.Query{Hostname: "h"}}
 	require.Equal(t, "s", sSRV.queryName())
 	require.Equal(t, "h", sA.queryName())
 }
 
-func TestDeliverSuppression(t *testing.T) {
-	col := newSnapCollector()
-	s := &subscription{d: &discoverer{}, q: &do.Query{}, handler: col.handle}
-	snap := discovery.Snapshot{{Name: "m", Address: "h:1"}}
-	s.deliver(snap)
-	require.Len(t, col.next(t), 1)
-	// identical membership is not re-delivered
-	s.deliver(snap.Clone())
-	col.expectNone(t, 50*time.Millisecond)
-	// a stopped subscription never delivers
-	s.stopped = true
-	s.deliver(discovery.Snapshot{{Name: "m2", Address: "h:2"}})
-	col.expectNone(t, 50*time.Millisecond)
-}
-
-func TestNewDiscovererIntervalDefault(t *testing.T) {
-	d, err := NewSRV("d", &do.Options{Provider: "dns_srv",
-		DNS: &do.DNSOptions{Resolver: "10.0.0.53:53"}})
+func TestNewProviderIntervalDefault(t *testing.T) {
+	p, err := newProvider("d", &do.Options{Provider: "dns_srv",
+		DNS: &do.DNSOptions{Resolver: "10.0.0.53:53"}}, modeSRV)
 	require.NoError(t, err)
-	require.Equal(t, do.DefaultDNSInterval, d.(*discoverer).interval)
+	require.Equal(t, do.DefaultDNSInterval, p.interval)
 }
