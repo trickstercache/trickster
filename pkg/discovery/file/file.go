@@ -28,12 +28,13 @@
 //     weight: 2               # optional; default 1
 //
 // (JSON works too — it is a subset of YAML.) Writers should replace the
-// file atomically (write to a temp file, then rename); the provider watches
-// the parent directory so renames are observed, coalesces change events,
-// and re-reads the whole file, so a snapshot is always one complete file
-// state. A file that fails to parse keeps the last-good membership. A
-// low-frequency stat poll backstops filesystems with unreliable change
-// notification (e.g. NFS).
+// file atomically (write to a temp file, then rename). Change detection is
+// delegated to watchers/filesystem: parent-directory event watching (so
+// renames and symlink swaps are observed) debounced into whole-file
+// re-reads, backed by a content-comparing poll (file.poll_interval) that
+// is the effective mechanism on filesystems without reliable change
+// notification. A file that fails to read or parse keeps the last-good
+// membership and is retried.
 package file
 
 import (
@@ -42,7 +43,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"os"
 	"path/filepath"
 	"sync"
 	"time"
@@ -52,24 +52,17 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/discovery/providers"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
+	"github.com/trickstercache/trickster/v2/pkg/watchers/filesystem"
 
-	"github.com/fsnotify/fsnotify"
 	"go.yaml.in/yaml/v3"
 )
 
 // ErrStopped is returned when subscribing to a stopped discoverer
 var ErrStopped = errors.New("file discoverer is stopped")
 
-// changeDebounce coalesces bursts of filesystem events into one re-read
-const changeDebounce = 250 * time.Millisecond
-
-// newWatcher constructs the filesystem watcher; a var so tests can force
-// the poll-only fallback deterministically
-var newWatcher = fsnotify.NewWatcher
-
 // New constructs the file Discoverer; it satisfies
 // discovery.NewDiscovererFunc. Each subscription's query names the file to
-// watch; the optional file options block tunes the stat-poll fallback
+// watch; the optional file options block tunes the change-detection poll
 // cadence (see options.FileOptions).
 func New(name string, o *do.Options) (discovery.Discoverer, error) {
 	poll := do.DefaultFilePollInterval
@@ -81,7 +74,7 @@ func New(name string, o *do.Options) (discovery.Discoverer, error) {
 
 type discoverer struct {
 	name string
-	// pollInterval is the stat-poll fallback cadence; on filesystems
+	// pollInterval is the content-comparing poll cadence; on filesystems
 	// without reliable change notification it is the effective update
 	// mechanism
 	pollInterval time.Duration
@@ -168,14 +161,16 @@ type memberEntry struct {
 	ReplicaGroup string `yaml:"replica_group,omitempty" json:"replica_group,omitempty"`
 }
 
-// subscription watches one member-list file
+// subscription binds one member-list file's filesystem Watcher to the
+// snapshot handler
 type subscription struct {
 	d       *discoverer
 	path    string
 	handler discovery.SnapshotHandler
 
 	mtx      sync.Mutex
-	cancel   context.CancelFunc
+	watcher  *filesystem.Watcher
+	stopCtx  func() bool
 	last     discovery.Snapshot
 	hasLast  bool
 	launched bool
@@ -183,6 +178,9 @@ type subscription struct {
 	failing  bool
 }
 
+// launch starts the subscription's filesystem Watcher; the Watcher owns
+// event watching, debounce, and the content-comparing poll, and runs its
+// initial check (which may deliver the first snapshot) before returning
 func (s *subscription) launch(ctx context.Context) {
 	s.mtx.Lock()
 	if s.launched || s.stopped {
@@ -190,10 +188,28 @@ func (s *subscription) launch(ctx context.Context) {
 		return
 	}
 	s.launched = true
-	subCtx, cancel := context.WithCancel(ctx)
-	s.cancel = cancel
+	w, err := filesystem.New(&filesystem.Options{
+		Name:        s.d.name + ":" + s.path,
+		Paths:       []string{s.path},
+		Interval:    s.d.pollInterval,
+		OnChange:    s.onChange,
+		OnReadError: s.warnRead,
+	})
+	if err != nil {
+		// unreachable with a validated subscription (non-empty path,
+		// positive interval), but never fail silently
+		s.mtx.Unlock()
+		discovery.LogError("file discovery watcher construction failed",
+			logging.Pairs{
+				"discoverer": s.d.name, "path": s.path, "error": err.Error(),
+			})
+		return
+	}
+	s.watcher = w
+	// the discoverer's Start context also terminates the subscription
+	s.stopCtx = context.AfterFunc(ctx, s.stop)
 	s.mtx.Unlock()
-	go s.run(subCtx)
+	w.Start()
 }
 
 func (s *subscription) stop() {
@@ -203,96 +219,36 @@ func (s *subscription) stop() {
 		return
 	}
 	s.stopped = true
-	cancel := s.cancel
+	w := s.watcher
+	stopCtx := s.stopCtx
 	s.mtx.Unlock()
-	if cancel != nil {
-		cancel()
+	if stopCtx != nil {
+		stopCtx()
+	}
+	if w != nil {
+		w.Close()
 	}
 }
 
-// run establishes the directory watch, applies the initial file state, and
-// then re-reads on debounced filesystem events from the parent directory
-// (catching atomic renames and symlink swaps) with a low-frequency stat
-// poll as a fallback. The watch is set up before the initial read so a
-// write landing between the two cannot fall into an unobserved gap.
-func (s *subscription) run(ctx context.Context) {
-	var events chan fsnotify.Event
-	var watchErrors chan error
-	watcher, err := newWatcher()
-	if err == nil {
-		if werr := watcher.Add(filepath.Dir(s.path)); werr == nil {
-			events = watcher.Events
-			watchErrors = watcher.Errors
-		} else {
-			err = werr
-		}
-		defer watcher.Close()
-	}
-	if events == nil {
-		discovery.LogWarn("file discovery watch unavailable; falling back to polling",
-			logging.Pairs{
-				"discoverer": s.d.name, "path": s.path, "error": err.Error(),
-			})
-	}
-
-	s.apply()
-
-	poll := time.NewTicker(s.d.pollInterval)
-	defer poll.Stop()
-	var debounce *time.Timer
-	var debounceC <-chan time.Time
-	lastInfo := s.statInfo()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-events:
-			// any activity in the directory arms one coalesced re-read.
-			// The armed timer is deliberately NOT reset by further events:
-			// a writer producing sustained sub-window activity would
-			// otherwise postpone the apply indefinitely. Content
-			// comparison suppresses no-op emissions.
-			if debounce == nil {
-				debounce = time.NewTimer(changeDebounce)
-				debounceC = debounce.C
-			}
-		case werr := <-watchErrors:
-			// the Errors channel must be drained: an unread error blocks
-			// the watcher's event loop and silently stops event delivery
-			s.warnRead(werr)
-		case <-debounceC:
-			debounce = nil
-			debounceC = nil
-			s.apply()
-			lastInfo = s.statInfo()
-		case <-poll.C:
-			if info := s.statInfo(); info != lastInfo {
-				lastInfo = info
-				s.apply()
-			}
-		}
-	}
-}
-
-// statInfo fingerprints the file for the poll fallback
-func (s *subscription) statInfo() string {
-	fi, err := os.Stat(s.path)
-	if err != nil {
-		return "absent"
-	}
-	return fmt.Sprintf("%d/%d", fi.Size(), fi.ModTime().UnixNano())
-}
-
-// apply reads and parses the member list and emits it when membership
-// changed; read or parse failures keep the last-good membership
-func (s *subscription) apply() {
-	snap, err := s.read()
+// onChange receives the watched file's contents from the Watcher whenever
+// they differ from the last accepted state; a parse or validation error
+// rejects the change (keeping the last-good membership) and the Watcher
+// retries it on subsequent checks
+func (s *subscription) onChange(contents [][]byte) error {
+	snap, err := parseMembers(contents[0])
 	if err != nil {
 		s.warnRead(err)
-		return
+		return err
 	}
 	s.clearWarn()
+	s.deliver(snap)
+	return nil
+}
+
+// deliver emits the snapshot when membership changed. The Watcher already
+// suppresses byte-identical content; canonical comparison additionally
+// suppresses semantic no-ops (reordered or reformatted entries).
+func (s *subscription) deliver(snap discovery.Snapshot) {
 	canonical := snap.Canonical()
 	s.mtx.Lock()
 	if s.stopped || (s.hasLast && canonical.Equal(s.last)) {
@@ -305,14 +261,11 @@ func (s *subscription) apply() {
 	s.handler(canonical)
 }
 
-func (s *subscription) read() (discovery.Snapshot, error) {
-	b, err := os.ReadFile(s.path)
-	if err != nil {
-		return nil, err
-	}
+// parseMembers converts member-list file content into a Snapshot
+func parseMembers(b []byte) (discovery.Snapshot, error) {
 	var entries []memberEntry
 	if len(bytes.TrimSpace(b)) > 0 {
-		if err = yaml.Unmarshal(b, &entries); err != nil {
+		if err := yaml.Unmarshal(b, &entries); err != nil {
 			return nil, err
 		}
 	}

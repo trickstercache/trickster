@@ -434,14 +434,16 @@ last-good membership; an empty file is a valid, empty membership.
 
 ### Change Detection
 
-The provider uses two mechanisms together, so updates are never missed:
+The provider uses two mechanisms together (via Trickster's shared
+filesystem watcher), so updates are never missed:
 
-1. **Filesystem notification** (fsnotify on the file's parent directory,
+1. **Filesystem notification** (on the file's parent directory,
    debounced): near-instant pickup of writes, atomic renames, and symlink
-   swaps on local filesystems.
-2. **A stat poll** of the file (`file.poll_interval`, default `30s`,
-   minimum `1s`): the guaranteed fallback wherever notification is
-   unreliable or unavailable.
+   swaps on local filesystems; a directory watch dropped by deletion or
+   recreation is automatically re-armed.
+2. **A content-comparing poll** of the file (`file.poll_interval`,
+   default `30s`, minimum `1s`): the guaranteed fallback wherever
+   notification is unreliable or unavailable.
 
 Guidance for Kubernetes-mounted member files:
 
@@ -460,10 +462,9 @@ Guidance for Kubernetes-mounted member files:
 - **`emptyDir`/`hostPath` written by a sidecar in the same pod**:
   notification works.
 
-The poll detects changes by file size and modification time; a writer that
-replaces content of identical length within the filesystem's mtime
-granularity (typically 1s) could evade it, which atomic rename-based
-writers naturally avoid.
+The poll compares file content (not timestamps), so any change is
+detected within one `poll_interval` regardless of filesystem timestamp
+granularity.
 
 ## Observing Discovered Members
 

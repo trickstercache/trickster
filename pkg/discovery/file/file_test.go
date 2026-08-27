@@ -17,7 +17,6 @@
 package file
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -28,7 +27,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 
-	"github.com/fsnotify/fsnotify"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 )
@@ -151,23 +149,17 @@ func TestFileDiscoveryEntryValidation(t *testing.T) {
 		"- address: 10.0.0.1:9090\n  scheme: gopher\n",
 		"- address: 10.0.0.1:9090\n  weight: -1\n",
 	} {
-		var sub subscription
-		sub.path = writeTemp(t, bad)
-		_, err := sub.read()
+		_, err := parseMembers([]byte(bad))
 		require.Error(t, err, "expected error for %q", bad)
 	}
-	var sub subscription
-	sub.path = writeTemp(t, "- address: 10.0.0.1:9090\n")
-	snap, err := sub.read()
+	snap, err := parseMembers([]byte("- address: 10.0.0.1:9090\n"))
 	require.NoError(t, err)
 	require.Len(t, snap, 1)
 }
 
 func TestFileDiscoveryJSON(t *testing.T) {
-	var sub subscription
-	sub.path = writeTemp(t,
-		`[{"name": "j1", "address": "10.0.0.1:9090", "weight": 2}]`)
-	snap, err := sub.read()
+	snap, err := parseMembers(
+		[]byte(`[{"name": "j1", "address": "10.0.0.1:9090", "weight": 2}]`))
 	require.NoError(t, err)
 	require.Len(t, snap, 1)
 	require.Equal(t, "j1", snap[0].Name)
@@ -204,23 +196,14 @@ func TestSubscribeErrors(t *testing.T) {
 	require.ErrorIs(t, err, ErrStopped)
 }
 
-func writeTemp(t *testing.T, content string) string {
-	t.Helper()
-	path := filepath.Join(t.TempDir(), "members.yaml")
-	require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
-	return path
-}
-
 func TestFileDiscoveryReplicaGroup(t *testing.T) {
-	var sub subscription
-	sub.path = writeTemp(t, `
+	snap, err := parseMembers([]byte(`
 - name: prom-a
   address: 10.0.0.1:9090
   replica_group: shard-0
 - name: prom-b
   address: 10.0.0.2:9090
-`)
-	snap, err := sub.read()
+`))
 	require.NoError(t, err)
 	require.Len(t, snap, 2)
 	require.Equal(t, "shard-0", snap[0].ReplicaGroup)
@@ -237,20 +220,15 @@ func TestPollIntervalOption(t *testing.T) {
 	require.Equal(t, 2*time.Second, d.(*discoverer).pollInterval)
 }
 
-// TestPollOnlyFallback forces the filesystem watcher to be unavailable and
-// verifies the operator-configurable stat poll alone detects member-file
-// changes -- the effective mechanism on filesystems without reliable
-// change notification (NFS-backed kubernetes volumes, some FUSE mounts)
-func TestPollOnlyFallback(t *testing.T) {
-	prev := newWatcher
-	newWatcher = func() (*fsnotify.Watcher, error) {
-		return nil, errors.New("synthetic: notification unavailable")
-	}
-	defer func() { newWatcher = prev }()
-
-	path := filepath.Join(t.TempDir(), "members.yaml")
-	require.NoError(t,
-		os.WriteFile(path, []byte("- address: 10.0.0.1:9090\n"), 0o644))
+// TestPollDetectsLateCreatedDirectory subscribes to a member file whose
+// parent directory does not exist yet, so event watching cannot arm; the
+// operator-configurable content-comparing poll (and the watcher's
+// directory re-arming) must pick the file up once a writer creates it --
+// the same fallback that carries filesystems without reliable change
+// notification (NFS-backed kubernetes volumes, some FUSE mounts)
+func TestPollDetectsLateCreatedDirectory(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "not-yet")
+	path := filepath.Join(dir, "members.yaml")
 
 	d, err := New("poll-only", &do.Options{Provider: "file",
 		File: &do.FileOptions{PollInterval: timeconv.Duration(50 * time.Millisecond)}})
@@ -263,12 +241,21 @@ func TestPollOnlyFallback(t *testing.T) {
 	require.NoError(t, err)
 	defer unsub()
 
-	require.Len(t, col.next(t), 1)
+	// nothing to deliver while the directory is absent
+	col.expectNone(t, 300*time.Millisecond)
 
-	// with no watcher, only the poll can see this change
+	// a writer creates the directory and file; the poll picks it up
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	require.NoError(t,
+		os.WriteFile(path, []byte("- address: 10.0.0.1:9090\n"), 0o644))
+	snap := col.next(t)
+	require.Len(t, snap, 1)
+	require.Equal(t, "10.0.0.1:9090", snap[0].Address)
+
+	// subsequent changes are also observed
 	require.NoError(t,
 		os.WriteFile(path, []byte("- address: 10.0.0.2:9090\n"), 0o644))
-	snap := col.next(t)
+	snap = col.next(t)
 	require.Len(t, snap, 1)
 	require.Equal(t, "10.0.0.2:9090", snap[0].Address)
 }
