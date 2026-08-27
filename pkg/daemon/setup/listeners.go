@@ -37,6 +37,7 @@ import (
 	ph "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/purge"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/native"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 )
@@ -69,7 +70,8 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		return
 	}
 
-	metricsRouter.RegisterRoute("/metrics", nil, nil, false, metrics.Handler())
+	metricsRouter.RegisterRoute("/metrics", nil, nil,
+		matching.PathMatchTypeExact, metrics.Handler())
 	if listenerEnabledOn(conf.MgmtConfig.ConfigHandlerListener, mgmt.ListenerNameMetrics) {
 		registerConfigRoutes(conf, metricsRouter, lg)
 	}
@@ -82,9 +84,10 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		registerConfigRoutes(conf, managementRouter, lg)
 	}
 	managementRouter.RegisterRoute(conf.MgmtConfig.ReloadHandlerPath, nil, nil,
-		false, reloadHandler)
+		matching.PathMatchTypeExact, reloadHandler)
 	managementRouter.RegisterRoute(conf.MgmtConfig.PurgeByPathHandlerPath, nil, nil,
-		true, http.HandlerFunc(ph.PathHandler(conf.MgmtConfig.PurgeByPathHandlerPath, &clients)))
+		matching.PathMatchTypePrefix,
+		http.HandlerFunc(ph.PathHandler(conf.MgmtConfig.PurgeByPathHandlerPath, &clients)))
 	if listenerEnabledOn(conf.MgmtConfig.PprofListener, mgmt.ListenerNameMgmt) {
 		pprof.RegisterRoutes(mgmt.ListenerNameMgmt, managementRouter)
 	}
@@ -266,12 +269,12 @@ func runtimeListenerNeedsRestart(lg *listener.Group, key string, old, current de
 
 func registerConfigRoutes(conf *config.Config, r router.Router, lg *listener.Group) {
 	r.RegisterRoute(conf.MgmtConfig.ConfigHandlerPath, nil, nil,
-		false, http.HandlerFunc(ch.HandlerFunc(conf)))
+		matching.PathMatchTypeExact, http.HandlerFunc(ch.HandlerFunc(conf)))
 	r.RegisterRoute(ch.SanitizedHandlerPath(conf.MgmtConfig.ConfigHandlerPath), nil, nil,
-		false, http.HandlerFunc(ch.SanitizedHandlerFunc(conf)))
+		matching.PathMatchTypeExact, http.HandlerFunc(ch.SanitizedHandlerFunc(conf)))
 	if conf.MgmtConfig.CertificatesHandlerPath != "" {
 		r.RegisterRoute(conf.MgmtConfig.CertificatesHandlerPath, nil, nil,
-			false, http.HandlerFunc(certs.HandlerFunc(lg)))
+			matching.PathMatchTypeExact, http.HandlerFunc(certs.HandlerFunc(lg)))
 	}
 }
 

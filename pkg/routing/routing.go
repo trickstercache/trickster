@@ -199,7 +199,8 @@ func registerProxyRoutes(conf *config.Config, clients backends.Backends,
 func RegisterHealthHandler(router router.Router, path string,
 	hc healthcheck.HealthChecker, backends backends.Backends,
 ) {
-	router.RegisterRoute(path, nil, nil, false, health.StatusHandler(nil, hc, backends))
+	router.RegisterRoute(path, nil, nil, matching.PathMatchTypeExact,
+		health.StatusHandler(nil, hc, backends))
 }
 
 func registerBackendRoutes(r router.Router, metricsRouter router.Router,
@@ -253,7 +254,7 @@ func registerBackendRoutes(r router.Router, metricsRouter router.Router,
 					"upstreamPath": o.HealthCheck.Path,
 					"upstreamVerb": o.HealthCheck.Verb,
 				})
-			metricsRouter.RegisterRoute(hp, nil, nil, false,
+			metricsRouter.RegisterRoute(hp, nil, nil, matching.PathMatchTypeExact,
 				middleware.WithResourcesContext(client, o, nil,
 					nil, nil, h))
 		}
@@ -315,6 +316,12 @@ func RegisterPathRoutes(r router.Router, conf *config.Config, handlers handlers.
 
 	or := client.Router().(router.Router)
 
+	if o.Paths.RegexShadowedByCatchAll() {
+		logger.Warn("regex paths are unreachable behind a catch-all prefix path;"+
+			" convert the catch-all to a regex (e.g., ^/.*) to make them reachable",
+			logging.Pairs{"backendName": o.Name})
+	}
+
 	for _, p := range o.Paths {
 		if p.Handler == nil && p.HandlerName != "" {
 			if h, ok := handlers[p.HandlerName]; ok && h != nil {
@@ -323,7 +330,17 @@ func RegisterPathRoutes(r router.Router, conf *config.Config, handlers handlers.
 		}
 
 		pathPrefix := "/" + o.Name
-		handledPath := pathPrefix + p.Path
+		var handledPath string
+		if p.MatchType == matching.PathMatchTypeRegex {
+			// splice the backend name between the pattern's leading ^ anchor
+			// (guaranteed by path Options Initialize) and the remainder, so
+			// ^/[^/]+/results becomes ^/backendName/[^/]+/results; this works
+			// for the escaped ^\/ form too, and StripPathPrefix is unaffected
+			// because the literal request path begins with /backendName
+			handledPath = "^/" + o.Name + strings.TrimPrefix(p.Path, "^")
+		} else {
+			handledPath = pathPrefix + p.Path
+		}
 
 		logger.Debug("registering backend handler path",
 			logging.Pairs{
@@ -339,15 +356,15 @@ func RegisterPathRoutes(r router.Router, conf *config.Config, handlers handlers.
 			}
 			if len(o.Hosts) > 0 {
 				r.RegisterRoute(p.Path, o.Hosts, p.Methods,
-					p.MatchType == matching.PathMatchTypePrefix, applyMiddleware(p))
+					p.MatchType, applyMiddleware(p))
 			}
 			if !o.PathRoutingDisabled {
 				r.RegisterRoute(handledPath, nil, p.Methods,
-					p.MatchType == matching.PathMatchTypePrefix,
+					p.MatchType,
 					middleware.StripPathPrefix(pathPrefix, applyMiddleware(p)))
 			}
 			or.RegisterRoute(p.Path, nil, p.Methods,
-				p.MatchType == matching.PathMatchTypePrefix, applyMiddleware(p))
+				p.MatchType, applyMiddleware(p))
 		}
 	}
 
@@ -434,12 +451,17 @@ func registerDefaultBackendRoutes(routerFor func(*bo.Options) router.Router, con
 							"matchType":   p.MatchType,
 						})
 
-					if p.MatchType == matching.PathMatchTypePrefix {
+					// a prefix path is also registered for exact matching so
+					// requests to the exact path route without a prefix scan
+					mt := p.MatchType
+					if mt == matching.PathMatchTypePrefix {
 						r.RegisterRoute(p.Path, nil, p.Methods,
-							true, applyMiddleware(o, p, tr, b.Cache(), b, al))
+							matching.PathMatchTypePrefix,
+							applyMiddleware(o, p, tr, b.Cache(), b, al))
+						mt = matching.PathMatchTypeExact
 					}
 					r.RegisterRoute(p.Path, nil, p.Methods,
-						false, applyMiddleware(o, p, tr, b.Cache(), b, al))
+						mt, applyMiddleware(o, p, tr, b.Cache(), b, al))
 				}
 			}
 		}

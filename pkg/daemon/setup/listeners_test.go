@@ -38,6 +38,7 @@ import (
 	configtypes "github.com/trickstercache/trickster/v2/pkg/config/types"
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 	to "github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
@@ -288,9 +289,10 @@ func TestApplyMySQLListenerRestartsWhenTLSFileContentsRotate(t *testing.T) {
 
 func markerRouter(marker string) router.Router {
 	r := lm.NewRouter()
-	r.RegisterRoute("/", nil, nil, true, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(marker))
-	}))
+	r.RegisterRoute("/", nil, nil, matching.PathMatchTypePrefix,
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte(marker))
+		}))
 	return r
 }
 
