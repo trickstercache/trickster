@@ -24,6 +24,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -226,6 +227,30 @@ func NewListener(listenAddress string, listenPort, connectionsLimit int,
 	})
 
 	return listener, nil
+}
+
+// GroupKey returns the Group membership key for a listener endpoint
+func GroupKey(listenerName, protocol string, isTLS bool) string {
+	scheme := protocol
+	if scheme == "" {
+		scheme = "http"
+	}
+	if isTLS {
+		scheme = "https"
+	}
+	return fmt.Sprintf("listener.%s.%s", listenerName, scheme)
+}
+
+// Keys returns the keys of all current group members
+func (lg *Group) Keys() []string {
+	lg.listenersLock.Lock()
+	out := make([]string, 0, len(lg.members))
+	for name := range lg.members {
+		out = append(out, name)
+	}
+	lg.listenersLock.Unlock()
+	slices.Sort(out)
+	return out
 }
 
 // Get returns the listener if it exists

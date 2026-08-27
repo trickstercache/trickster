@@ -38,6 +38,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/tls/monitor"
 	"github.com/trickstercache/trickster/v2/pkg/util/safego"
 )
 
@@ -95,7 +96,8 @@ func Start(ctx context.Context, args ...string) error {
 	}
 
 	si := &instance.ServerInstance{
-		Listeners: listener.NewGroup(),
+		Listeners:   listener.NewGroup(),
+		CertMonitor: monitor.New(),
 	}
 	hupFunc := newHupFunc(si, args)
 	autoReloader := bindAutoReloader(ctx, si, hupFunc)
@@ -119,11 +121,13 @@ func Start(ctx context.Context, args ...string) error {
 		}
 	}
 	autoReloader.Update(conf)
+	si.CertMonitor.Apply(conf, si.Listeners)
 
 	skipUnlock = true
 	mtx.Unlock()
 	signaling.Wait(ctx, hupFunc)
 	autoReloader.Close()
+	si.CertMonitor.Close()
 	if si.Listeners != nil {
 		si.Listeners.Shutdown(0)
 	}
@@ -203,6 +207,12 @@ func Hup(si *instance.ServerInstance, source string, args ...string) (bool, erro
 			logger.Warn("reload completed but some listeners not ready",
 				logging.Pairs{"error": err.Error(), "source": source})
 		}
+	}
+
+	if si.CertMonitor != nil {
+		// rebuild the cert stores from the new config while preserving watcher
+		// continuity for unchanged certificate file sets
+		si.CertMonitor.Apply(newConf, si.Listeners)
 	}
 
 	if oldClients != nil {

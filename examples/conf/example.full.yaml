@@ -47,6 +47,10 @@
 #     tls_port: 8483
 #     # tls_address is empty by default, meaning listen on all interfaces.
 #     tls_address: ''
+#     # tls_watch_interval is the backstop poll for out-of-band cert/key
+#     # rotation (e.g. certbot). FS events accelerate detection where supported.
+#     # Changes are hot-swapped without restart. default 30s; 0 disables
+#     tls_watch_interval: 30s
 #     # connections_limit defines the maximum number of concurrent connections
 #     # the listener may handle at any time. 0 means unlimited
 #     connections_limit: 0
@@ -894,6 +898,11 @@ backends:
 #   # config_handler_listener provides the HTTP listener that hosts the config endpoints
 #   # Options are: "metrics", "mgmt", "both", or "off"; default is mgmt
 #   config_handler_listener: mgmt
+
+#   # certificates_handler_path provides the HTTP path to view a read-only JSON inventory
+#   # of the TLS certificates served by each listener (metadata only; never key material)
+#   # default is /trickster/certificates
+#   certificates_handler_path: /trickster/certificates
 
 #   # ping_handler_path provides the HTTP path you will use to perform an uptime health check against Trickster
 #   # which can be reached at http://your-trickster-endpoint:port/$ping_handler_path

@@ -45,6 +45,9 @@ type Options struct {
 	PurgeByKeyHandlerPath string `yaml:"purge_by_key_path,omitempty"`
 	// PurgeByKeyHandlerPath provides the base Cache Purge-by-Path Handler path
 	PurgeByPathHandlerPath string `yaml:"purge_by_path_path,omitempty"`
+	// CertificatesHandlerPath provides the path to register the read-only TLS
+	// certificate inventory handler
+	CertificatesHandlerPath string `yaml:"certificates_handler_path,omitempty"`
 	// PprofListener provides the name of the http listener that will host the pprof debugging routes
 	// Options are: "metrics", "mgmt", "both", or "off"; default is both
 	PprofListener string `yaml:"pprof_listener,omitempty"`
@@ -76,18 +79,19 @@ var ErrInvalidAutoReloadInterval = errors.New("auto reload interval cannot be ne
 // New returns a new Options references with Default Values set
 func New() *Options {
 	return &Options{
-		ListenPort:             DefaultPort,
-		ListenAddress:          DefaultAddress,
-		ConfigHandlerPath:      DefaultConfigHandlerPath,
-		ConfigHandlerListener:  DefaultConfigHandlerListenerName,
-		PingHandlerPath:        DefaultPingHandlerPath,
-		HealthHandlerPath:      DefaultHealthHandlerPath,
-		PurgeByKeyHandlerPath:  DefaultPurgeByKeyHandlerPath,
-		PurgeByPathHandlerPath: DefaultPurgeByPathHandlerPath,
-		PprofListener:          DefaultPprofListenerName,
-		ReloadHandlerPath:      DefaultReloadHandlerPath,
-		ReloadDrainTimeout:     timeconv.Duration(DefaultDrainTimeout),
-		ReloadRateLimit:        timeconv.Duration(DefaultRateLimit),
+		ListenPort:              DefaultPort,
+		ListenAddress:           DefaultAddress,
+		ConfigHandlerPath:       DefaultConfigHandlerPath,
+		ConfigHandlerListener:   DefaultConfigHandlerListenerName,
+		PingHandlerPath:         DefaultPingHandlerPath,
+		HealthHandlerPath:       DefaultHealthHandlerPath,
+		PurgeByKeyHandlerPath:   DefaultPurgeByKeyHandlerPath,
+		PurgeByPathHandlerPath:  DefaultPurgeByPathHandlerPath,
+		CertificatesHandlerPath: DefaultCertificatesHandlerPath,
+		PprofListener:           DefaultPprofListenerName,
+		ReloadHandlerPath:       DefaultReloadHandlerPath,
+		ReloadDrainTimeout:      timeconv.Duration(DefaultDrainTimeout),
+		ReloadRateLimit:         timeconv.Duration(DefaultRateLimit),
 	}
 }
 
