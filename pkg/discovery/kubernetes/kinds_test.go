@@ -22,13 +22,12 @@ import (
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
-	"k8s.io/utils/ptr"
 )
 
 func TestResolveSlicePort(t *testing.T) {
 	ports := []discoveryv1.EndpointPort{
-		{Name: ptr.To("web"), Port: ptr.To(int32(8080)), AppProtocol: ptr.To("https")},
-		{Name: ptr.To("metrics"), Port: ptr.To(int32(9090))},
+		{Name: new("web"), Port: new(int32(8080)), AppProtocol: new("https")},
+		{Name: new("metrics"), Port: new(int32(9090))},
 	}
 	// named
 	p, app, ok := resolveSlicePort(ports, "web")
@@ -62,7 +61,7 @@ func TestResolveSlicePort(t *testing.T) {
 
 func TestResolveServicePort(t *testing.T) {
 	ports := []corev1.ServicePort{
-		{Name: "web", Port: 80, AppProtocol: ptr.To("https")},
+		{Name: "web", Port: 80, AppProtocol: new("https")},
 		{Name: "metrics", Port: 9090},
 	}
 	p, app, ok := resolveServicePort(ports, "web")

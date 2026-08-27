@@ -124,9 +124,7 @@ func TestSetDynamicTargetsUnderLoad(t *testing.T) {
 	stop := make(chan struct{})
 	var wg sync.WaitGroup
 	// swapper: continuously replaces the member set
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		i := 0
 		for {
 			select {
@@ -137,12 +135,10 @@ func TestSetDynamicTargetsUnderLoad(t *testing.T) {
 			c.SetDynamicTargets(generations[i%len(generations)])
 			i++
 		}
-	}()
+	})
 	// requesters: sustained dispatch during the swaps
 	for range 4 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			r := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
 			for {
 				select {
@@ -157,7 +153,7 @@ func TestSetDynamicTargetsUnderLoad(t *testing.T) {
 					return
 				}
 			}
-		}()
+		})
 	}
 	time.Sleep(250 * time.Millisecond)
 	// stopping the pool mid-load must also be race-free; in-flight and

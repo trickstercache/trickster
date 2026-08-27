@@ -30,7 +30,6 @@ import (
 	discoveryv1 "k8s.io/api/discovery/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
-	"k8s.io/utils/ptr"
 )
 
 const testNS = "monitoring"
@@ -77,7 +76,7 @@ func newSlice(name, svc string, port int32, eps ...discoveryv1.Endpoint) *discov
 		},
 		AddressType: discoveryv1.AddressTypeIPv4,
 		Ports: []discoveryv1.EndpointPort{
-			{Name: ptr.To("web"), Port: ptr.To(port)},
+			{Name: new("web"), Port: new(port)},
 		},
 		Endpoints: eps,
 	}
@@ -87,8 +86,8 @@ func endpoint(ip, podName string, ready, terminating bool) discoveryv1.Endpoint 
 	return discoveryv1.Endpoint{
 		Addresses: []string{ip},
 		Conditions: discoveryv1.EndpointConditions{
-			Ready:       ptr.To(ready),
-			Terminating: ptr.To(terminating),
+			Ready:       new(ready),
+			Terminating: new(terminating),
 		},
 		TargetRef: &corev1.ObjectReference{Kind: "Pod", Name: podName},
 	}
@@ -109,7 +108,7 @@ func TestEndpointSlicesDiscovery(t *testing.T) {
 			},
 			AddressType: discoveryv1.AddressTypeIPv4,
 			Ports: []discoveryv1.EndpointPort{
-				{Name: ptr.To("web"), Port: ptr.To(int32(9090))}},
+				{Name: new("web"), Port: new(int32(9090))}},
 			Endpoints: []discoveryv1.Endpoint{
 				endpoint("10.9.9.9", "prom-x", true, false)},
 		},
@@ -381,7 +380,7 @@ func TestAmbiguousPortSkipsObjects(t *testing.T) {
 	slice := newSlice("prom-abc", "prom", 9090,
 		endpoint("10.0.0.1", "prom-0", true, false))
 	slice.Ports = append(slice.Ports, discoveryv1.EndpointPort{
-		Name: ptr.To("metrics"), Port: ptr.To(int32(9091))})
+		Name: new("metrics"), Port: new(int32(9091))})
 	cs := fake.NewClientset(slice)
 	d := NewWithClient("test", kube.NewFromClientset(cs))
 	require.NoError(t, d.Start(t.Context()))
