@@ -315,8 +315,9 @@ func TestStatementBoundaryParserPanicReturnsParseError(t *testing.T) {
 
 func TestUnsupportedTextFeature(t *testing.T) {
 	for _, tc := range []struct {
-		query string
-		want  string
+		query              string
+		noBackslashEscapes bool
+		want               string
 	}{
 		{query: "SELECT 1"},
 		{query: "/* Grafana */ SELECT 1"},
@@ -325,6 +326,14 @@ func TestUnsupportedTextFeature(t *testing.T) {
 		{query: "SELECT /*!80400 @tenant := 1, */ 1", want: "versioned executable comments"},
 		{query: "SELECT '/*!80400 INTO @answer */'"},
 		{query: "SELECT \"/*!80400 INTO @answer */\""},
+		{query: `SELECT 'x\' /*!80400 INTO @answer */`},
+		{query: `SELECT 'x\' /*!80400 INTO @answer */`, noBackslashEscapes: true,
+			want: "versioned executable comments"},
+		{query: `SELECT 'it''s /*!80400 INTO @answer */'`, noBackslashEscapes: true},
+		{query: "SELECT `/*!80400 INTO @answer */`", noBackslashEscapes: true},
+		{query: "SELECT 1 /* ordinary /*!80400 INTO @answer */", noBackslashEscapes: true},
+		{query: "SELECT 1 # /*!80400 INTO @answer */", noBackslashEscapes: true},
+		{query: "SELECT 1 -- /*!80400 INTO @answer */", noBackslashEscapes: true},
 		{query: "PREPARE statement FROM 'SELECT 1'", want: "prepared statements"},
 		{query: "EXECUTE statement", want: "prepared statements"},
 		{query: "DEALLOCATE PREPARE statement", want: "prepared statements"},
@@ -332,9 +341,19 @@ func TestUnsupportedTextFeature(t *testing.T) {
 		{query: "CALL report()", want: "stored procedures and multi-results"},
 		{query: "LOAD DATA LOCAL INFILE '/tmp/data' INTO TABLE events", want: "LOAD DATA and local-file operations"},
 	} {
-		if got := unsupportedTextFeature(tc.query); got != tc.want {
+		if got := unsupportedTextFeature(tc.query, tc.noBackslashEscapes); got != tc.want {
 			t.Errorf("unsupportedTextFeature(%q) = %q, want %q", tc.query, got, tc.want)
 		}
+	}
+}
+
+func TestExecutableCommentDetectionHonorsNoBackslashEscapes(t *testing.T) {
+	const query = `SELECT 'x\' /*!80400 INTO @answer */`
+	c := &vtmysql.Conn{StatusFlags: vtmysql.ServerStatusAutocommit |
+		vtmysql.ServerStatusNoBackslashEscapes}
+	err := (&protocolHandler{}).ComQuery(c, query, nil)
+	if err == nil || !strings.Contains(err.Error(), "versioned executable comments") {
+		t.Fatalf("ComQuery() error = %v, want executable-comment rejection", err)
 	}
 }
 
@@ -1179,7 +1198,7 @@ func TestReconnectReplaysTrackedDatabaseAndTimeZone(t *testing.T) {
 	}
 }
 
-func TestLiveQueriesPreserveOriginStatusFlagsAndWarnings(t *testing.T) {
+func TestLiveQueriesPreserveAndHonorOriginStatusFlags(t *testing.T) {
 	const (
 		originFlags    = vtmysql.ServerStatusAutocommit | vtmysql.ServerStatusNoBackslashEscapes
 		originWarnings = 7
@@ -1226,7 +1245,10 @@ func TestLiveQueriesPreserveOriginStatusFlagsAndWarnings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, query := range []string{"UPDATE events SET value = value", "SELECT value FROM events"} {
+	for _, query := range []string{
+		"SET SESSION sql_mode = 'NO_BACKSLASH_ESCAPES'",
+		"SELECT value FROM events",
+	} {
 		result, warnings, queryErr := client.ExecuteFetchWithWarningCount(query,
 			vtmysql.FETCH_ALL_ROWS, true)
 		if queryErr != nil {
@@ -1236,6 +1258,15 @@ func TestLiveQueriesPreserveOriginStatusFlagsAndWarnings(t *testing.T) {
 			t.Fatalf("%s protocol state = flags %#x, warnings %d; want %#x, %d",
 				query, result.StatusFlags, warnings, originFlags, originWarnings)
 		}
+	}
+	originQueries := originHandler.queryCount.Load()
+	_, queryErr := client.ExecuteFetch(`SELECT 'x\' /*!80400 INTO @answer */`,
+		vtmysql.FETCH_ALL_ROWS, true)
+	if queryErr == nil || !strings.Contains(queryErr.Error(), "versioned executable comments") {
+		t.Fatalf("mode-sensitive query error = %v, want executable-comment rejection", queryErr)
+	}
+	if got := originHandler.queryCount.Load(); got != originQueries {
+		t.Fatalf("origin query count = %d, want %d after local rejection", got, originQueries)
 	}
 	client.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -1616,6 +1647,7 @@ func (h *protocolStateOriginHandler) ComQuery(c *vtmysql.Conn, query string,
 	if isWarningCountQuery(query) {
 		return callback(warningCountResult(h.warnings))
 	}
+	h.queryCount.Add(1)
 	if strings.HasPrefix(strings.ToUpper(strings.TrimSpace(query)), "SELECT") {
 		return callback(&sqltypes.Result{
 			Fields: []*querypb.Field{{Name: "value", Type: querypb.Type_INT64}},

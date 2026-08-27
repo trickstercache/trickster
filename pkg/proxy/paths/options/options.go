@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -84,6 +85,10 @@ type Options struct {
 	ResponseBodyBytes []byte `yaml:"-"`
 	// MatchType is the PathMatchType representation of MatchTypeName
 	MatchType matching.PathMatchType `yaml:"-"`
+	// Regexp is the compiled representation of Path when MatchType is
+	// PathMatchTypeRegex, compiled once at config load; compiled regexps are
+	// immutable and safe for concurrent use, so Clone copies the pointer
+	Regexp *regexp.Regexp `yaml:"-"`
 	// CollapsedForwardingType is the typed representation of CollapsedForwardingName
 	CollapsedForwardingType forwarding.CollapsedForwardingType `yaml:"-"`
 	// KeyHasher points to an optional function that hashes the cacheKey with a custom algorithm
@@ -160,7 +165,12 @@ func (o *Options) Initialize(_ string) error {
 		o.Methods = methods.AllHTTPMethods()
 	}
 
-	if o.MatchTypeName == "" {
+	if isRegexPath(o.Path) {
+		// a path starting with ^/ (or the escaped ^\/ form) is always treated
+		// as a regex path, regardless of the configured match_type
+		o.MatchTypeName = matching.PathMatchNameRegex
+		o.MatchType = matching.PathMatchTypeRegex
+	} else if o.MatchTypeName == "" {
 		o.MatchTypeName = matching.PathMatchNameExact
 		o.MatchType = matching.PathMatchTypeExact
 	} else {
@@ -170,6 +180,17 @@ func (o *Options) Initialize(_ string) error {
 		} else {
 			o.MatchType = matching.PathMatchTypeExact
 			o.MatchTypeName = matching.PathMatchNameExact
+		}
+	}
+
+	if o.MatchType == matching.PathMatchTypeRegex {
+		if !strings.HasPrefix(o.Path, "^") {
+			o.Path = "^" + o.Path
+		}
+		// compile errors are surfaced by Validate, which reports them with
+		// full config context
+		if re, err := regexp.Compile(o.Path); err == nil {
+			o.Regexp = re
 		}
 	}
 
@@ -201,10 +222,27 @@ func (l Lookup) Initialize() error {
 	return nil
 }
 
+// isRegexPath returns true if the path pattern indicates a regex path via the
+// auto-detection rule: a leading ^/ or the escaped ^\/ form
+func isRegexPath(path string) bool {
+	return strings.HasPrefix(path, "^/") || strings.HasPrefix(path, `^\/`)
+}
+
 func (o *Options) Validate() (bool, error) {
 	normalized := matching.PathMatchName(strings.ToLower(string(o.MatchTypeName)))
-	if _, ok := matching.Names[normalized]; !ok && o.MatchTypeName != "" {
+	if _, ok := matching.Names[normalized]; !ok && o.MatchTypeName != "" &&
+		!isRegexPath(o.Path) {
 		return false, fmt.Errorf("invalid match_type: %s", o.MatchTypeName)
+	}
+	if o.MatchType == matching.PathMatchTypeRegex ||
+		normalized == matching.PathMatchNameRegex || isRegexPath(o.Path) {
+		if o.Regexp == nil {
+			re, err := regexp.Compile(o.Path)
+			if err != nil {
+				return false, fmt.Errorf("invalid regex path %q: %s", o.Path, err)
+			}
+			o.Regexp = re
+		}
 	}
 	for _, method := range o.Methods {
 		if !methods.IsValidMethod(method) {
@@ -227,14 +265,41 @@ func (o *Options) Validate() (bool, error) {
 	return true, nil
 }
 
-func (l List) Validate() error {
+// Validate validates each path Options in the List; name is the name of the
+// backend the List belongs to, used to provide context in errors
+func (l List) Validate(name string) error {
 	for _, o := range l {
+		if o == nil {
+			continue
+		}
 		_, err := o.Validate()
 		if err != nil {
-			return err
+			return fmt.Errorf("backend %q: %s", name, err)
 		}
 	}
 	return nil
+}
+
+// RegexShadowedByCatchAll returns true if the List contains one or more regex
+// paths alongside a catch-all classic prefix path ("/"), which prefix-matches
+// every request and therefore precludes the regex tier (evaluated only after
+// exact and prefix both miss) from ever being reached
+func (l List) RegexShadowedByCatchAll() bool {
+	var hasRegex, hasCatchAll bool
+	for _, o := range l {
+		if o == nil {
+			continue
+		}
+		switch o.MatchType {
+		case matching.PathMatchTypeRegex:
+			hasRegex = true
+		case matching.PathMatchTypePrefix:
+			if o.Path == "/" {
+				hasCatchAll = true
+			}
+		}
+	}
+	return hasRegex && hasCatchAll
 }
 
 func (l List) Clone() List {
@@ -321,6 +386,89 @@ func (l List) Overlay(l2 List) List {
 		}
 	}
 	return out
+}
+
+// Match returns the path Options that the lm router would select for the
+// provided request method and path, mirroring router precedence exactly:
+// exact match first, then longest prefix, then regex (longest pattern string
+// first, ties broken by config order, first match wins). Within a tier, a
+// matched path whose Options do not permit the method returns nil (where the
+// router would respond 405 Method Not Allowed) rather than falling through to
+// the next tier. HEAD implicitly matches a GET entry unless HEAD is
+// explicitly configured for the same path. Returns nil when no path matches.
+func (l List) Match(method, path string) *Options {
+	method = strings.ToUpper(method)
+	// exact tier
+	if candidates := l.withPath(matching.PathMatchTypeExact, path); len(candidates) > 0 {
+		return matchMethod(candidates, method)
+	}
+	// prefix tier: the longest matching prefix wins regardless of method
+	var longest string
+	var matched bool
+	for _, o := range l {
+		if o == nil || o.MatchType != matching.PathMatchTypePrefix {
+			continue
+		}
+		if strings.HasPrefix(path, o.Path) && (!matched || len(o.Path) > len(longest)) {
+			longest = o.Path
+			matched = true
+		}
+	}
+	if matched {
+		return matchMethod(l.withPath(matching.PathMatchTypePrefix, longest), method)
+	}
+	// regex tier: longest pattern first, config order breaks ties,
+	// first match wins
+	regexes := make(List, 0, len(l))
+	for _, o := range l {
+		if o != nil && o.MatchType == matching.PathMatchTypeRegex && o.Regexp != nil {
+			regexes = append(regexes, o)
+		}
+	}
+	slices.SortStableFunc(regexes, func(a, b *Options) int {
+		return len(b.Path) - len(a.Path)
+	})
+	for _, o := range regexes {
+		if o.Regexp.MatchString(path) {
+			return matchMethod(l.withPath(matching.PathMatchTypeRegex, o.Path), method)
+		}
+	}
+	return nil
+}
+
+// withPath returns the members of the List having the provided MatchType and
+// exact Path string, in config order
+func (l List) withPath(t matching.PathMatchType, path string) List {
+	out := make(List, 0, len(l))
+	for _, o := range l {
+		if o != nil && o.MatchType == t && o.Path == path {
+			out = append(out, o)
+		}
+	}
+	return out
+}
+
+// matchMethod returns the first candidate permitting the method; a HEAD
+// request additionally matches a GET entry when no candidate explicitly
+// permits HEAD, mirroring the router's implicit HEAD-for-GET registration
+func matchMethod(candidates List, method string) *Options {
+	for _, o := range candidates {
+		if slices.ContainsFunc(o.Methods, func(m string) bool {
+			return strings.EqualFold(m, method)
+		}) {
+			return o
+		}
+	}
+	if method == http.MethodHead {
+		for _, o := range candidates {
+			if slices.ContainsFunc(o.Methods, func(m string) bool {
+				return strings.EqualFold(m, http.MethodGet)
+			}) {
+				return o
+			}
+		}
+	}
+	return nil
 }
 
 func (o *Options) UnmarshalYAML(value *yaml.Node) error {

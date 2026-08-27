@@ -123,3 +123,21 @@ func TestMiddleware(t *testing.T) {
 		})
 	}
 }
+
+func TestNamedMiddlewareScopesCachedResult(t *testing.T) {
+	a := &testAuthenticator{result: &types.AuthResult{Status: types.AuthSuccess}}
+	rsc := &request.Resources{AuthResult: &types.AuthResult{
+		AuthenticatorName: "outer", Status: types.AuthSuccess,
+	}}
+	req := request.SetResources(httptest.NewRequest(http.MethodGet, "/", nil), rsc)
+	recorder := httptest.NewRecorder()
+	NamedMiddleware("inner", a, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})).ServeHTTP(recorder, req)
+	if a.authCalls != 1 {
+		t.Fatalf("inner authenticator calls = %d, want 1", a.authCalls)
+	}
+	if rsc.AuthResult.AuthenticatorName != "inner" {
+		t.Errorf("cached authenticator = %q, want inner", rsc.AuthResult.AuthenticatorName)
+	}
+}

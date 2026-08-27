@@ -144,6 +144,32 @@ The following metrics are available when [ALB Autodiscovery](./alb-autodiscovery
   * labels:
     * `discoverer` - the name of the discoverer experiencing the error
     * `provider` - the discoverer's provider type
+* `trickster_tls_certificate_expiration_time_seconds` (Gauge) - NotAfter time of a serving TLS certificate, as unix seconds. See [tls.md](./tls.md).
+  * labels:
+    * `listener` - the name of the listener serving the certificate
+    * `entry` - the certificate's source identity
+
+* `trickster_tls_certificate_last_load_time_seconds` (Gauge) - Epoch timestamp a serving TLS certificate was last loaded from its source
+  * labels:
+    * `listener` - the name of the listener serving the certificate
+    * `entry` - the certificate's source identity
+
+* `trickster_tls_certificate_swaps_total` (Counter) - Count of TLS certificates hot-swapped into a live listener by rotation detection
+  * labels:
+    * `listener` - the name of the listener serving the certificate
+    * `entry` - the certificate's source identity
+
+* `trickster_tls_certificate_validation_failures_total` (Counter) - Count of detected TLS certificate source changes that failed pair validation (e.g. a mid-rotation partial write) and were not swapped in
+  * labels:
+    * `entry` - the certificate's source identity
+
+* `trickster_tls_watcher_errors_total` (Counter) - Count of errors reading watched TLS certificate source files
+  * labels:
+    * `entry` - the certificate's source identity
+
+* `trickster_tls_certificate_store_size` (Gauge) - Number of certificates in a listener's TLS certificate store
+  * labels:
+    * `listener` - the name of the listener
 
 ---
 

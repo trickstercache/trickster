@@ -24,6 +24,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/discovery"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/tls/monitor"
 )
 
 type ServerInstance struct {
@@ -39,4 +40,5 @@ type ServerInstance struct {
 	// PoolManagers holds the dynamic pool manager for each
 	// discovery-backed ALB, keyed by ALB backend name
 	PoolManagers map[string]*dynamic.Manager
+	CertMonitor  *monitor.Monitor
 }

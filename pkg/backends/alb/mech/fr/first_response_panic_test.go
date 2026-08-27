@@ -29,26 +29,24 @@ import (
 // kills the test goroutine running ServeHTTP.
 func TestFRPanicMemberDoesNotCrashRequest(t *testing.T) {
 	p, _, _ := albpool.NewHealthy([]http.Handler{
-		albpool.StatusHandler(http.StatusOK, "body-ok"),
 		albpool.PanicHandler(),
+		albpool.StatusHandler(http.StatusOK, "body-ok"),
 	})
 	defer p.Stop()
 	albpool.WaitHealthy(t, p, 2)
 
+	// Drain the panic before the winning response so its metric cannot leak into the next test.
+	limit := 1
 	h := &handler{}
+	h.options.ConcurrencyOptions.QueryConcurrencyLimit = &limit
 	h.SetPool(p)
 	w := httptest.NewRecorder()
-	base := albpool.FanoutFailureCount("fr", "", "panic")
-	albpool.ServeAndWait(t, h, w, albpool.NewParentGET(t))
-	// fr returns on the first (healthy) response while the panicking member
-	// may still be in flight; drain its failure count before the test ends
-	// so it can't bleed into a later test's counter-delta window
-	albpool.WaitFanoutFailureDelta(t, "fr", "", "panic", base, 1)
+	albpool.RequireFanoutFailureDelta(t, "fr", "", "panic", 1, func() {
+		albpool.ServeAndWait(t, h, w, albpool.NewParentGET(t))
+	})
 
-	// either outcome is acceptable: 200 from the healthy member, or a 5xx if
-	// the mech surfaces the failure as a gateway error. the bar is no panic.
-	if w.Code != http.StatusOK && w.Code < 500 {
-		t.Errorf("expected 200 or 5xx got %d", w.Code)
+	if w.Code != http.StatusOK {
+		t.Errorf("expected %d, got %d", http.StatusOK, w.Code)
 	}
 }
 
