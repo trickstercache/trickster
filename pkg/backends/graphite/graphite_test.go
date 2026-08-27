@@ -361,7 +361,7 @@ func TestDocumentedCredentialConfig(t *testing.T) {
 	// route registration; mirror that
 	o.Paths = c.DefaultPathConfigs(o).Overlay(o.Paths)
 
-	if detail, mismatched := c.resolutionIdentityMismatch(o.Paths.Match("/render", http.MethodGet)); mismatched {
+	if detail, mismatched := c.resolutionIdentityMismatch(o.Paths.Match(http.MethodGet, "/render")); mismatched {
 		t.Fatalf("the documented config must yield one resolution identity, got %s", detail)
 	}
 	if _, err := c.learner.Learn(context.Background(), "dev.fast.cpu.host01.percent", nil); err != nil {

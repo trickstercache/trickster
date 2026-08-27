@@ -43,7 +43,7 @@ func benchmarkParse(b *testing.B, extraPaths int) {
 	}
 	c := newTestClient(b, o)
 	o.Paths = c.DefaultPathConfigs(o).Overlay(o.Paths)
-	pc := o.Paths.Match(renderPath, http.MethodGet)
+	pc := o.Paths.Match(http.MethodGet, renderPath)
 	r := getReq("target=a.b&from=-6h&until=now&format=json")
 	r = request.SetResources(r, request.NewResources(nil, pc, nil, nil, nil, nil))
 	if _, _, _, err := c.ParseTimeRangeQuery(r); err != nil {

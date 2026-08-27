@@ -518,7 +518,7 @@ func TestOverlay(t *testing.T) {
 	}
 }
 
-func TestListMatch(t *testing.T) {
+func TestListMatchMethodSplit(t *testing.T) {
 	get := &Options{Path: "/render", MatchType: matching.PathMatchTypeExact,
 		Methods: []string{"GET"}}
 	post := &Options{Path: "/render", MatchType: matching.PathMatchTypeExact,
@@ -543,8 +543,8 @@ func TestListMatch(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := l.Match(tc.path, tc.method); got != tc.expected {
-				t.Errorf("Match(%s, %s) = %+v, want %+v", tc.path, tc.method, got, tc.expected)
+			if got := l.Match(tc.method, tc.path); got != tc.expected {
+				t.Errorf("Match(%s, %s) = %+v, want %+v", tc.method, tc.path, got, tc.expected)
 			}
 		})
 	}
@@ -553,10 +553,10 @@ func TestListMatch(t *testing.T) {
 	head := &Options{Path: "/render", MatchType: matching.PathMatchTypeExact,
 		Methods: []string{"HEAD"}}
 	l2 := List{get, head}
-	if got := l2.Match("/render", "HEAD"); got != head {
+	if got := l2.Match("HEAD", "/render"); got != head {
 		t.Errorf("explicit HEAD config must win, got %+v", got)
 	}
-	if List(nil).Match("/render", "GET") != nil {
+	if List(nil).Match("GET", "/render") != nil {
 		t.Error("nil list must not match")
 	}
 }

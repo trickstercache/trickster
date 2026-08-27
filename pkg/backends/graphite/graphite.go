@@ -105,7 +105,7 @@ func (c *Client) synthPathConfig(path string) *po.Options {
 	if o == nil {
 		return nil
 	}
-	return o.Paths.Match(path, http.MethodGet)
+	return o.Paths.Match(http.MethodGet, path)
 }
 
 func (c *Client) synthPathOptions(path string) (map[string]string, map[string]string) {

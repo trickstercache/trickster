@@ -100,7 +100,7 @@ func TestOriginAuthInjection(t *testing.T) {
 	// Authorization header still accelerates: the credential replaces it
 	r := getReq("target=a.b&from=-1h&format=json")
 	r.Header.Set("Authorization", "Bearer client-token")
-	r = request.SetResources(r, request.NewResources(nil, o.Paths.Match("/render", http.MethodGet),
+	r = request.SetResources(r, request.NewResources(nil, o.Paths.Match(http.MethodGet, "/render"),
 		nil, nil, nil, nil))
 	trq, _, _, err := c.ParseTimeRangeQuery(r)
 	rq, _ := trq.ParsedQuery.(*RenderQuery)
@@ -160,7 +160,7 @@ func TestOriginAuthDeterministicHeader(t *testing.T) {
 	o.Graphite.OriginAuthorization = "Bearer backend-token"
 	c := newTestClient(t, o)
 	o.Paths = c.DefaultPathConfigs(o).Overlay(o.Paths)
-	pc := o.Paths.Match("/render", http.MethodGet)
+	pc := o.Paths.Match(http.MethodGet, "/render")
 
 	// proxied and synthetic requests share the path's header map; repeated
 	// applications must always produce exactly one Authorization value

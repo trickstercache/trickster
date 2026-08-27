@@ -179,7 +179,7 @@ func TestPathHandler_KeyFormatMatchesEngines(t *testing.T) {
 		for _, engine := range engines {
 			for _, method := range methods {
 				var identity string
-				if pc := c.Paths.Match(purgePath, method); pc != nil {
+				if pc := c.Paths.Match(method, purgePath); pc != nil {
 					identity = pc.IdentityKeyPart()
 				}
 				k := fmt.Sprintf("%s.%s.%s.%s",

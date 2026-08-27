@@ -294,50 +294,6 @@ func (o *Options) computeIdentityKeyPart() string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// Match returns the path config the proxy router would select for a request
-// with the given path and method, or nil when none would: an exact-path config
-// wins over any prefix config, then the longest matching prefix; within the
-// winning path, the last config listing the method wins, and a config listing
-// GET also serves HEAD unless another config lists HEAD explicitly.
-func (l List) Match(path, method string) *Options {
-	var winner string
-	var exact bool
-	for _, o := range l {
-		if o == nil || len(o.Methods) == 0 {
-			continue
-		}
-		if o.MatchType == matching.PathMatchTypeExact {
-			if o.Path == path && !exact {
-				exact = true
-				winner = o.Path
-			}
-		} else if !exact && strings.HasPrefix(path, o.Path) && len(o.Path) > len(winner) {
-			winner = o.Path
-		}
-	}
-	if winner == "" {
-		return nil
-	}
-	var explicit, implicitHead *Options
-	for _, o := range l {
-		if o == nil || o.Path != winner || len(o.Methods) == 0 ||
-			exact != (o.MatchType == matching.PathMatchTypeExact) {
-			continue
-		}
-		if slices.Contains(o.Methods, method) {
-			explicit = o
-		}
-		if method == http.MethodHead && implicitHead == nil &&
-			slices.Contains(o.Methods, http.MethodGet) {
-			implicitHead = o
-		}
-	}
-	if explicit != nil {
-		return explicit
-	}
-	return implicitHead
-}
-
 // Initialize initializes all path options in the lookup
 func (l Lookup) Initialize() error {
 	for _, o := range l {

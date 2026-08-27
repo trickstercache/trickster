@@ -142,7 +142,7 @@ func PathHandler(pathPrefix string,
 					engine, proxyengines.DerivePathCacheKey(purgePath, method, "")))
 				// a path config with request_headers/request_params keys its
 				// entries on that configured identity; remove those variants too
-				if pc := cfg.Paths.Match(purgePath, method); pc != nil {
+				if pc := cfg.Paths.Match(method, purgePath); pc != nil {
 					if ik := pc.IdentityKeyPart(); ik != "" {
 						keys = append(keys, proxyengines.ComposeCacheKey(cfg.Name, cfg.CacheKeyPrefix,
 							engine, proxyengines.DerivePathCacheKey(purgePath, method, ik)))
