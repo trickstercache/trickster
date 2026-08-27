@@ -239,7 +239,7 @@ func (o *Options) Validate() (bool, error) {
 		if o.Regexp == nil {
 			re, err := regexp.Compile(o.Path)
 			if err != nil {
-				return false, fmt.Errorf("invalid regex path %q: %s", o.Path, err)
+				return false, fmt.Errorf("invalid regex path %q: %w", o.Path, err)
 			}
 			o.Regexp = re
 		}
@@ -274,7 +274,7 @@ func (l List) Validate(name string) error {
 		}
 		_, err := o.Validate()
 		if err != nil {
-			return fmt.Errorf("backend %q: %s", name, err)
+			return fmt.Errorf("backend %q: %w", name, err)
 		}
 	}
 	return nil
@@ -473,7 +473,7 @@ func matchMethod(candidates List, method string) *Options {
 
 func (o *Options) UnmarshalYAML(value *yaml.Node) error {
 	type loadOptions Options
-	lo := loadOptions(*(New()))
+	lo := loadOptions(*New())
 	if err := value.Decode(&lo); err != nil {
 		return err
 	}
