@@ -19,6 +19,7 @@ package listener
 
 import (
 	"fmt"
+	"time"
 
 	mo "github.com/trickstercache/trickster/v2/pkg/backends/mysql/options"
 	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
@@ -36,6 +37,9 @@ const (
 	ProtocolHTTP = "http"
 	// ProtocolMySQL is the MySQL wire-protocol listener protocol.
 	ProtocolMySQL = "mysql"
+	// DefaultTLSWatchInterval is the default poll interval for detecting
+	// out-of-band TLS certificate rotation.
+	DefaultTLSWatchInterval = timeconv.Duration(30 * time.Second)
 )
 
 // Options describes one inbound listener.
@@ -58,6 +62,9 @@ type Options struct {
 	ReadHeaderTimeout timeconv.Duration `yaml:"read_header_timeout,omitempty"`
 	// Protocol selects the protocol served by this listener.
 	Protocol string `yaml:"protocol,omitempty"`
+	// TLSWatchInterval is the backstop poll for out-of-band cert/key rotation
+	// (e.g. certbot). Changes are hot-swapped without restart. 0 disables.
+	TLSWatchInterval timeconv.Duration `yaml:"tls_watch_interval,omitempty"`
 	// MySQL contains downstream limits when protocol is mysql.
 	MySQL *mo.ListenerOptions `yaml:"mysql,omitempty"`
 	// ServeTLS indicates that this listener has at least one usable certificate.
@@ -73,6 +80,7 @@ type Lookup map[string]*Options
 func New(name string) *Options {
 	o := FromFrontend(frontend.New())
 	o.Protocol = ProtocolHTTP
+	o.TLSWatchInterval = DefaultTLSWatchInterval
 	switch name {
 	case DefaultFrontendName:
 		o.Active = true
@@ -177,7 +185,8 @@ func (o *Options) Equal(other *Options) bool {
 		o.TLSListenAddress != other.TLSListenAddress || o.TLSListenPort != other.TLSListenPort ||
 		o.ConnectionsLimit != other.ConnectionsLimit ||
 		o.TruncateRequestBodyTooLarge != other.TruncateRequestBodyTooLarge ||
-		o.ReadHeaderTimeout != other.ReadHeaderTimeout || o.ServeTLS != other.ServeTLS {
+		o.ReadHeaderTimeout != other.ReadHeaderTimeout || o.ServeTLS != other.ServeTLS ||
+		o.TLSWatchInterval != other.TLSWatchInterval {
 		return false
 	}
 	if (o.MySQL == nil) != (other.MySQL == nil) || o.MySQL != nil && *o.MySQL != *other.MySQL {

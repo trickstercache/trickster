@@ -142,6 +142,10 @@ style:
 check-imports:
 	@go run hack/check-imports/main.go
 
+.PHONY: gofix-apply
+gofix-apply:
+	@go fix ./...
+
 .PHONY: gofix-diff
 gofix-diff:
 	@go fix -diff ./...
