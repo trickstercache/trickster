@@ -47,6 +47,10 @@
 #     tls_port: 8483
 #     # tls_address is empty by default, meaning listen on all interfaces.
 #     tls_address: ''
+#     # tls_watch_interval is the backstop poll for out-of-band cert/key
+#     # rotation (e.g. certbot). FS events accelerate detection where supported.
+#     # Changes are hot-swapped without restart. default 30s; 0 disables
+#     tls_watch_interval: 30s
 #     # connections_limit defines the maximum number of concurrent connections
 #     # the listener may handle at any time. 0 means unlimited
 #     connections_limit: 0
@@ -485,6 +489,36 @@ backends:
 #     # default is false
 #     path_routing_disabled: false
 
+#     # access_log configures per-backend HTTP access and error logging. Both logs are off by default and
+#     # are each enabled by setting their filename. See docs/access-logs.md for all options and format tokens
+#     access_log:
+#       # filename enables the access log (one line per request served by this backend)
+#       filename: /var/log/trickster/example.access.log
+#       # format is a named preset (common, combined, extended, json) or a custom Apache-style
+#       # %-token format string. default is combined
+#       format: combined
+#       # rotation controls when the log is rotated; a rotation occurs when either threshold is reached
+#       rotation:
+#         # size rotates the log when the live file would exceed this size. default is 256MB
+#         size: 256MB
+#         # interval rotates the log when the live file is older than this. default is 0 (off)
+#         interval: 1d
+#       # retention controls how many rotated archives (example.access.log.1.gz, .2.gz, ...) are kept
+#       retention:
+#         # count is the maximum archives kept; 0 is unlimited. default is 80
+#         count: 3
+#         # age prunes archives older than this. default is 7d
+#         age: 7d
+#       # compress gzips rotated archives. default is true
+#       compress: true
+#       # error_filename enables the error log, receiving requests whose response status is >= error_threshold
+#       error_filename: /var/log/trickster/example.error.log
+#       # error_threshold is the minimum response status code written to the error log. default is 400
+#       error_threshold: 400
+#       # error_format, error_rotation, error_retention and error_compress override the error log's
+#       # behaviors; each inherits from the corresponding access log option above when unset
+#       error_format: ''
+
 #     # rule_name provides the name of the rule config to be used by this backend.
 #     # This is only effective if the provider is rule
 #     rule_name: example-rule
@@ -691,6 +725,13 @@ backends:
 #                                                               # while the - will remove the header
 #         request_params:
 #           +authToken: SomeTokenHere                 # manipulate request query parameters in the same way
+#       # regex path: a path starting with ^/ is auto-detected as a regular expression
+#       # (RE2 syntax); or set match_type: regex explicitly. Regex paths are evaluated
+#       # only after exact and prefix matching both miss, longest pattern first.
+#       # See the Regex Paths section of /docs/paths.md, including the catch-all caveat.
+#       - path: '^/api/[0-9]+/results'
+#         methods: [ GET ]
+#         handler: proxycache
 
 #         # the tls section configures the frontend and backend TLS operation for the backend
 #     tls:
@@ -958,6 +999,11 @@ backends:
 #   # Options are: "metrics", "mgmt", "both", or "off"; default is mgmt
 #   config_handler_listener: mgmt
 
+#   # certificates_handler_path provides the HTTP path to view a read-only JSON inventory
+#   # of the TLS certificates served by each listener (metadata only; never key material)
+#   # default is /trickster/certificates
+#   certificates_handler_path: /trickster/certificates
+
 #   # ping_handler_path provides the HTTP path you will use to perform an uptime health check against Trickster
 #   # which can be reached at http://your-trickster-endpoint:port/$ping_handler_path
 #   # default is /trickster/ping
@@ -981,3 +1027,21 @@ backends:
 #   # log_file defines the file location to store logs. These will be auto-rolled and maintained for you.
 #   # not specifying a log_file (this is the default behavior) will print logs to STDOUT
 #   log_file: /some/path/to/trickster.log
+
+#   # rotation controls when the log file is rotated; a rotation occurs when either threshold is reached.
+#   # rotated archives are kept alongside the live file as trickster.log.1.gz, .2.gz, etc.
+#   rotation:
+#     # size rotates the log when the live file would exceed this size. default is 256MB
+#     size: 256MB
+#     # interval rotates the log when the live file is older than this. default is 0 (off)
+#     interval: 1d
+
+#   # retention controls how many rotated archives are kept
+#   retention:
+#     # count is the maximum archives kept; 0 is unlimited. default is 80
+#     count: 80
+#     # age prunes archives older than this. default is 7d
+#     age: 7d
+
+#   # compress gzips rotated archives. default is true
+#   compress: true

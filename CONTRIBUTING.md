@@ -82,3 +82,5 @@ Project Maintainers and designated Reviewers have the ability to approve Pull Re
   * Bad: "Please make the following changes:"
 
 * Unofficial reviews should not include priority designations on any findings (e.g., P1, P2, etc.). Official reviews may or may not include this guidance.
+  
+* Reviews should not be left for draft PRs, as draft by definition indicates the contribution is not yet ready for review.

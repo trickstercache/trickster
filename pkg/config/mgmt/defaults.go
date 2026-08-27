@@ -44,4 +44,7 @@ const (
 	DefaultRateLimit = 3 * time.Second
 	// DefaultReloadHandlerPath defines the default path for the Reload Handler
 	DefaultReloadHandlerPath = "/trickster/config/reload"
+	// DefaultCertificatesHandlerPath defines the default path for the TLS
+	// certificate inventory handler
+	DefaultCertificatesHandlerPath = "/trickster/certificates"
 )

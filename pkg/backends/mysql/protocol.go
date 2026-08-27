@@ -1092,7 +1092,8 @@ func (h *protocolHandler) ComQuery(c *vtmysql.Conn, query string,
 		return sqlerror.NewSQLError(sqlerror.ERNetPacketTooLarge, sqlerror.SSNetError,
 			"MySQL query exceeds Trickster's configured limit")
 	}
-	if feature := unsupportedTextFeature(query); feature != "" {
+	noBackslashEscapes := c.StatusFlags&vtmysql.ServerStatusNoBackslashEscapes != 0
+	if feature := unsupportedTextFeature(query, noBackslashEscapes); feature != "" {
 		return h.unsupported(feature)
 	}
 	if multiple, err := hasMultipleStatements(query); err != nil {
@@ -1323,8 +1324,8 @@ func classifyResponseShape(query string, parsed parsedQuery) (queryResponseShape
 	}
 }
 
-func unsupportedTextFeature(query string) string {
-	if hasExecutableComment(query) {
+func unsupportedTextFeature(query string, noBackslashEscapes bool) string {
+	if hasExecutableComment(query, noBackslashEscapes) {
 		return "versioned executable comments"
 	}
 	trimmed := strings.TrimSpace(vtparser.StripLeadingComments(query))
@@ -1348,11 +1349,17 @@ func unsupportedTextFeature(query string) string {
 	}
 }
 
-func hasExecutableComment(query string) bool {
+func hasExecutableComment(query string, noBackslashEscapes bool) bool {
 	// Keep the common path allocation-free; only text containing the executable
 	// comment opener needs tokenization to distinguish comments from literals.
 	if !strings.Contains(query, "/*!") {
 		return false
+	}
+	if noBackslashEscapes && strings.Contains(query, `\`) {
+		// Vitess always treats backslashes as string escapes. Pairing each one
+		// makes it a literal for tokenization, matching NO_BACKSLASH_ESCAPES
+		// quote boundaries without changing the query sent to the origin.
+		query = strings.ReplaceAll(query, `\`, `\\`)
 	}
 	tokenizer := defaultAnalyzer.parser.NewStringTokenizer(query)
 	tokenizer.SkipSpecialComments = true
