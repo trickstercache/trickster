@@ -19,6 +19,7 @@ package listener
 import (
 	"crypto/tls"
 	"net"
+	"net/http"
 	"os"
 	"time"
 
@@ -130,4 +131,18 @@ func (lg *Group) ProtocolRestartKey(listenerName string) (string, bool) {
 		return "", false
 	}
 	return keyer.ProtocolRestartKey(), true
+}
+
+// UpdateProtocolHandler updates a native protocol bridge without replacing its listener.
+func (lg *Group) UpdateProtocolHandler(name string, h http.Handler) bool {
+	l := lg.Get(name)
+	if l == nil || l.server == nil {
+		return false
+	}
+	updater, ok := l.server.(interface{ UpdateHandler(http.Handler) })
+	if !ok {
+		return false
+	}
+	updater.UpdateHandler(h)
+	return true
 }

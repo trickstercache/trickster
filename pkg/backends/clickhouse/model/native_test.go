@@ -26,7 +26,9 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
@@ -628,4 +630,156 @@ func (s shortWriter) Write(p []byte) (int, error) {
 		return remaining, errors.New("write limit exceeded")
 	}
 	return n, nil
+}
+
+func writeEmptyNativeBlock(w io.Writer) error {
+	if err := writeNativeBlockInfo(w); err != nil {
+		return err
+	}
+	if err := writeUvarint(w, 0); err != nil {
+		return err
+	}
+	return writeUvarint(w, 0)
+}
+
+func writeNativeBlockInfo(w io.Writer) error {
+	// field 1: is_overflows = 0
+	if err := writeUvarint(w, 1); err != nil {
+		return err
+	}
+	if _, err := w.Write([]byte{0}); err != nil {
+		return err
+	}
+	// field 2: bucket_num = -1
+	if err := writeUvarint(w, 2); err != nil {
+		return err
+	}
+	var b [4]byte
+	binary.LittleEndian.PutUint32(b[:], uint32(0xFFFFFFFF)) //nolint:gosec
+	if _, err := w.Write(b[:]); err != nil {
+		return err
+	}
+	// end marker
+	return writeUvarint(w, 0)
+}
+
+func writeUvarint(w io.Writer, v uint64) error {
+	var buf [binary.MaxVarintLen64]byte
+	n := binary.PutUvarint(buf[:], v)
+	_, err := w.Write(buf[:n])
+	return err
+}
+
+func writeNativeString(w io.Writer, s string) error {
+	if err := writeUvarint(w, uint64(len(s))); err != nil {
+		return err
+	}
+	if len(s) > 0 {
+		_, err := w.Write([]byte(s))
+		return err
+	}
+	return nil
+}
+
+//nolint:gosec // intentional wire protocol conversions
+func writeNativeValue(w io.Writer, typ, val string) error {
+	switch typ {
+	case TypeUInt8, TypeBool:
+		v, _ := strconv.ParseUint(val, 10, 8)
+		_, err := w.Write([]byte{byte(v)})
+		return err
+	case TypeUInt16:
+		v, _ := strconv.ParseUint(val, 10, 16)
+		var b [2]byte
+		binary.LittleEndian.PutUint16(b[:], uint16(v))
+		_, err := w.Write(b[:])
+		return err
+	case TypeUInt32:
+		v, _ := strconv.ParseUint(val, 10, 32)
+		var b [4]byte
+		binary.LittleEndian.PutUint32(b[:], uint32(v))
+		_, err := w.Write(b[:])
+		return err
+	case TypeUInt64:
+		v, _ := strconv.ParseUint(val, 10, 64)
+		var b [8]byte
+		binary.LittleEndian.PutUint64(b[:], v)
+		_, err := w.Write(b[:])
+		return err
+	case TypeInt8:
+		v, _ := strconv.ParseInt(val, 10, 8)
+		_, err := w.Write([]byte{byte(v)})
+		return err
+	case TypeInt16:
+		v, _ := strconv.ParseInt(val, 10, 16)
+		var b [2]byte
+		binary.LittleEndian.PutUint16(b[:], uint16(v))
+		_, err := w.Write(b[:])
+		return err
+	case TypeInt32:
+		v, _ := strconv.ParseInt(val, 10, 32)
+		var b [4]byte
+		binary.LittleEndian.PutUint32(b[:], uint32(v))
+		_, err := w.Write(b[:])
+		return err
+	case TypeInt64:
+		v, _ := strconv.ParseInt(val, 10, 64)
+		var b [8]byte
+		binary.LittleEndian.PutUint64(b[:], uint64(v))
+		_, err := w.Write(b[:])
+		return err
+	case TypeFloat32:
+		v, _ := strconv.ParseFloat(val, 32)
+		var b [4]byte
+		binary.LittleEndian.PutUint32(b[:], math.Float32bits(float32(v)))
+		_, err := w.Write(b[:])
+		return err
+	case TypeFloat64:
+		v, _ := strconv.ParseFloat(val, 64)
+		var b [8]byte
+		binary.LittleEndian.PutUint64(b[:], math.Float64bits(v))
+		_, err := w.Write(b[:])
+		return err
+	case TypeDateTime:
+		t, err := time.Parse(timeconv.SQLDateTimeLayout, val)
+		if err != nil {
+			// Try as epoch seconds
+			v, _ := strconv.ParseInt(val, 10, 64)
+			t = time.Unix(v, 0)
+		}
+		var b [4]byte
+		binary.LittleEndian.PutUint32(b[:], uint32(t.Unix()))
+		_, err = w.Write(b[:])
+		return err
+	case TypeDate:
+		t, err := time.Parse("2006-01-02", val)
+		if err != nil {
+			return writeNativeString(w, val)
+		}
+		epoch := time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)
+		days := uint16(t.Sub(epoch).Hours() / 24)
+		var b [2]byte
+		binary.LittleEndian.PutUint16(b[:], days)
+		_, err = w.Write(b[:])
+		return err
+	case TypeString:
+		return writeNativeString(w, val)
+	default:
+		// DateTime64 variants
+		if strings.HasPrefix(typ, "DateTime64") {
+			t, err := parseClickHouseTimestamp("", val)
+			if err != nil {
+				v, _ := strconv.ParseInt(val, 10, 64)
+				var b [8]byte
+				binary.LittleEndian.PutUint64(b[:], uint64(v))
+				_, err = w.Write(b[:])
+				return err
+			}
+			var b [8]byte
+			binary.LittleEndian.PutUint64(b[:], uint64(t.UnixMilli()))
+			_, err = w.Write(b[:])
+			return err
+		}
+		return writeNativeString(w, val)
+	}
 }

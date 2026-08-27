@@ -812,11 +812,9 @@ func fetchExtents(
 			}
 
 			if resp.StatusCode == http.StatusOK && len(body) > 0 {
-				var dr io.Reader
-				if chFmt := resp.Header.Get("X-ClickHouse-Format"); chFmt != "" {
-					dr = timeseries.NewFormatHintReader(bytes.NewReader(body), chFmt)
-				} else {
-					dr = getDecoderReader(resp)
+				dr := getDecoderReader(resp)
+				if format := resp.Header.Get("X-ClickHouse-Format"); format != "" {
+					dr = timeseries.NewFormatHintReader(dr, format)
 				}
 				nts, ferr := wur(dr, rsc.TimeRangeQuery)
 				if ferr != nil {

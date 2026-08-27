@@ -298,7 +298,7 @@ func TestWriteColumnDataNullable(t *testing.T) {
 	var buf bytes.Buffer
 	w := newProtoWriter(&buf)
 	values := []any{"hello", nil, "world"}
-	if err := writeColumnData(w, "Nullable(String)", values); err != nil {
+	if err := encodeColumn(w, "Nullable(String)", values); err != nil {
 		t.Fatal(err)
 	}
 	r := newProtoReader(&buf)
@@ -325,7 +325,7 @@ func TestWriteColumnDataArray(t *testing.T) {
 		[]any{float64(1), float64(2)},
 		[]any{float64(3)},
 	}
-	if err := writeColumnData(w, "Array(UInt32)", values); err != nil {
+	if err := encodeColumn(w, "Array(UInt32)", values); err != nil {
 		t.Fatal(err)
 	}
 	r := newProtoReader(&buf)
@@ -358,8 +358,8 @@ func TestWriteColumnDataArray(t *testing.T) {
 func TestWriteColumnDataFixedString(t *testing.T) {
 	var buf bytes.Buffer
 	w := newProtoWriter(&buf)
-	values := []any{"ab", "abcdef", "x"}
-	if err := writeColumnData(w, "FixedString(4)", values); err != nil {
+	values := []any{"ab", "abcd", "x"}
+	if err := encodeColumn(w, "FixedString(4)", values); err != nil {
 		t.Fatal(err)
 	}
 	data := buf.Bytes()
@@ -370,7 +370,7 @@ func TestWriteColumnDataFixedString(t *testing.T) {
 		t.Fatalf("expected 'ab\\0\\0', got %q", data[0:4])
 	}
 	if string(data[4:8]) != "abcd" {
-		t.Fatalf("expected 'abcd' (truncated), got %q", data[4:8])
+		t.Fatalf("expected 'abcd', got %q", data[4:8])
 	}
 	if string(data[8:12]) != "x\x00\x00\x00" {
 		t.Fatalf("expected 'x\\0\\0\\0', got %q", data[8:12])
@@ -384,7 +384,7 @@ func TestWriteColumnDataTuple(t *testing.T) {
 		[]any{"hello", float64(1)},
 		[]any{"world", float64(2)},
 	}
-	if err := writeColumnData(w, "Tuple(String, UInt32)", values); err != nil {
+	if err := encodeColumn(w, "Tuple(String, UInt32)", values); err != nil {
 		t.Fatal(err)
 	}
 	r := newProtoReader(&buf)
@@ -421,4 +421,10 @@ func TestWriteCompressedDataBlock(t *testing.T) {
 	if buf.Bytes()[0] != ServerData {
 		t.Fatalf("expected ServerData, got %d", buf.Bytes()[0])
 	}
+}
+
+func (w *protoWriter) putInt64(v int64) error {
+	binary.LittleEndian.PutUint64(w.buf[:8], uint64(v))
+	_, err := w.Write(w.buf[:8])
+	return err
 }

@@ -14,132 +14,384 @@
  * limitations under the License.
  */
 
-// Package native provides a ClickHouse native protocol (port 9000) egress
-// adapter. It translates HTTP-shaped proxy requests into native protocol
-// queries via clickhouse-go and returns HTTP-shaped responses with JSON bodies
-// that the existing ClickHouse Modeler can consume.
+// Package native adapts HTTP proxy requests to ClickHouse native upstreams.
 package native
 
 import (
 	"bytes"
+	"crypto/tls"
 	"database/sql"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"maps"
+	"net"
 	"net/http"
+	"net/url"
+	"reflect"
+	"strconv"
 	"strings"
+	"sync"
+	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/clickhouse/native/server"
+	"github.com/trickstercache/trickster/v2/pkg/backends/clickhouse/sqlformat"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 )
 
-// NativeClient wraps a clickhouse-go native connection pool and exposes a
-// Fetcher compatible with bo.Options.Fetcher.
+type sessionKey struct{ database, username, password string }
+
+// NativeClient is an HTTP transport backed by bounded, per-identity native pools.
 type NativeClient struct {
-	db *sql.DB
+	db               *sql.DB
+	options          clickhouse.Options
+	defaults         sessionKey
+	settings         clickhouse.Settings
+	maxOpen, maxIdle int
+	idleTime         time.Duration
+	mu               sync.Mutex
+	pools            map[sessionKey]*sql.DB
+	closed           bool
 }
 
-// NewNativeClient creates a NativeClient from the backend options. The
-// origin URL host:port is used as the native protocol address.
+// ValidateOptions checks the upstream protocol before any listener starts.
+func ValidateOptions(o *bo.Options) error {
+	if o == nil {
+		return errors.New("nil ClickHouse backend options")
+	}
+	switch strings.ToLower(o.Protocol) {
+	case "", "http", "native":
+	default:
+		return fmt.Errorf("unsupported ClickHouse upstream protocol %q", o.Protocol)
+	}
+	if strings.EqualFold(o.Protocol, "native") && o.SigV4 != nil {
+		return errors.New("SigV4 is not supported for a native ClickHouse origin")
+	}
+	return nil
+}
+
+// NewNativeClient creates pools lazily; origin credentials and database are defaults.
 func NewNativeClient(o *bo.Options) (*NativeClient, error) {
-	addr := o.Host
-	if addr == "" {
+	if err := ValidateOptions(o); err != nil {
+		return nil, err
+	}
+	u, err := url.Parse(o.OriginURL)
+	if err != nil {
+		return nil, err
+	}
+	host := o.Host
+	if host == "" {
+		host = u.Host
+	}
+	if host == "" {
 		return nil, errors.New("clickhouse native: origin host is empty")
 	}
-	if !strings.Contains(addr, ":") {
-		addr += ":9000"
+	addr := &url.URL{Host: host}
+	if addr.Port() == "" {
+		host = net.JoinHostPort(strings.Trim(addr.Hostname(), "[]"), "9000")
 	}
-	db := clickhouse.OpenDB(&clickhouse.Options{
-		Addr:     []string{addr},
-		Protocol: clickhouse.Native,
-	})
-	return &NativeClient{db: db}, nil
+	c, err := proxy.NewHTTPClient(o)
+	if err != nil {
+		return nil, err
+	}
+	nc := &NativeClient{
+		options:  clickhouse.Options{Addr: []string{host}, Protocol: clickhouse.Native, DialTimeout: 10 * time.Second},
+		defaults: sessionKey{database: "default", username: "default"}, settings: make(clickhouse.Settings),
+		maxOpen: o.MaxConcurrentConns, maxIdle: o.MaxIdleConns, idleTime: time.Duration(o.KeepAliveTimeout), pools: make(map[sessionKey]*sql.DB),
+	}
+	if strings.EqualFold(u.Scheme, "https") || strings.EqualFold(o.Scheme, "https") {
+		if transport, ok := c.Transport.(*http.Transport); ok && transport.TLSClientConfig != nil {
+			nc.options.TLS = transport.TLSClientConfig.Clone()
+		}
+		if nc.options.TLS == nil {
+			nc.options.TLS = defaultTLSConfig()
+		}
+	}
+	if u.User != nil {
+		nc.defaults.username = u.User.Username()
+		nc.defaults.password, _ = u.User.Password()
+	}
+	for key, values := range u.Query() {
+		if key == "database" {
+			nc.defaults.database = values[len(values)-1]
+		} else {
+			nc.settings[key] = values[len(values)-1]
+		}
+	}
+	if o.Timeout > 0 {
+		nc.options.ReadTimeout = time.Duration(o.Timeout)
+	}
+	nc.db = nc.open(nc.defaults)
+	nc.pools[nc.defaults] = nc.db
+	return nc, nil
 }
 
-// Close closes the underlying connection pool.
+func (nc *NativeClient) open(key sessionKey) *sql.DB {
+	options := nc.options
+	options.Auth = clickhouse.Auth{Database: key.database, Username: key.username, Password: key.password}
+	db := clickhouse.OpenDB(&options)
+	db.SetMaxOpenConns(nc.maxOpen)
+	db.SetMaxIdleConns(nc.maxIdle)
+	db.SetConnMaxIdleTime(nc.idleTime)
+	return db
+}
+
+func (nc *NativeClient) pool(r *http.Request) (*sql.DB, error) {
+	key := nc.defaults
+	params := r.URL.Query()
+	if params.Has("database") {
+		key.database = params.Get("database")
+	}
+	if params.Has("user") {
+		key.username = params.Get("user")
+		key.password = params.Get("password")
+	}
+	if user := r.Header.Get("X-ClickHouse-User"); user != "" {
+		key.username = user
+		key.password = r.Header.Get("X-ClickHouse-Key")
+	}
+	if user, password, ok := r.BasicAuth(); ok {
+		key.username, key.password = user, password
+	}
+	nc.mu.Lock()
+	defer nc.mu.Unlock()
+	if nc.closed {
+		return nil, errors.New("native ClickHouse transport is closed")
+	}
+	if db := nc.pools[key]; db != nil {
+		return db, nil
+	}
+	if len(nc.pools) >= 64 {
+		return nil, errors.New("native ClickHouse session pool limit reached")
+	}
+	db := nc.open(key)
+	nc.pools[key] = db
+	return db, nil
+}
+
+// Close releases all native pools, allowing already-running queries to finish.
 func (nc *NativeClient) Close() error {
-	return nc.db.Close()
+	nc.mu.Lock()
+	defer nc.mu.Unlock()
+	nc.closed = true
+	var errs []error
+	for _, db := range nc.pools {
+		errs = append(errs, db.Close())
+	}
+	nc.pools = nil
+	return errors.Join(errs...)
 }
 
-// Fetch executes the SQL query embedded in the *http.Request (body or query
-// param) against ClickHouse using the native protocol, and returns a
-// synthetic *http.Response with a JSON body in ClickHouse WFDocument format:
-//
-//	{"meta":[{"name":"col","type":"Type"},...], "data":[{"col":"val",...},...], "rows":N}
-//
-// This matches what the existing HTTP path returns when FORMAT JSON is used.
+// CloseIdleConnections retires the transport when its backend generation is replaced.
+func (nc *NativeClient) CloseIdleConnections() { _ = nc.Close() }
+
+// RoundTrip implements http.RoundTripper for proxy and health-check requests.
+func (nc *NativeClient) RoundTrip(r *http.Request) (*http.Response, error) { return nc.Fetch(r) }
+
+// Fetch executes SQL and encodes the actual result format requested by the caller.
 func (nc *NativeClient) Fetch(r *http.Request) (*http.Response, error) {
-	sql, err := extractSQL(r)
+	if r.Body != nil {
+		defer r.Body.Close()
+	}
+	statement, err := extractSQL(r)
 	if err != nil {
 		return syntheticErrorResponse(http.StatusBadRequest, err), nil
 	}
-
-	rows, err := nc.db.QueryContext(r.Context(), sql) // #nosec G701 -- proxy passthrough; SQL is forwarded verbatim from client
+	fallback := r.URL.Query().Get("default_format")
+	if fallback == "" {
+		fallback = "TabSeparated"
+	}
+	statement, format, selectQuery, err := sqlformat.Split(statement, fallback)
+	if err != nil {
+		return syntheticErrorResponse(http.StatusBadRequest, err), nil
+	}
+	if selectQuery && !supportedFormat(format) {
+		return syntheticErrorResponse(http.StatusBadRequest, fmt.Errorf("unsupported native upstream output format %q", format)), nil
+	}
+	db, err := nc.pool(r)
+	if err != nil {
+		return syntheticErrorResponse(http.StatusServiceUnavailable, err), nil
+	}
+	settings := make(clickhouse.Settings, len(nc.settings))
+	maps.Copy(settings, nc.settings)
+	parameters := make(clickhouse.Parameters)
+	for key, values := range r.URL.Query() {
+		value := values[len(values)-1]
+		if name, ok := strings.CutPrefix(key, "param_"); ok {
+			parameters[name] = value
+			continue
+		}
+		switch key {
+		case "query", "database", "user", "password", "default_format", "query_id", "client_protocol_version", "compress", "decompress":
+		default:
+			settings[key] = value
+		}
+	}
+	ctx := clickhouse.Context(r.Context(), clickhouse.WithSettings(settings), clickhouse.WithParameters(parameters), clickhouse.WithQueryID(r.URL.Query().Get("query_id")))
+	rows, err := db.QueryContext(ctx, statement) // #nosec G701 -- forwards user SQL to the configured origin
 	if err != nil {
 		return syntheticErrorResponse(http.StatusBadGateway, err), nil
 	}
 	defer rows.Close()
-
-	colNames, err := rows.Columns()
+	names, err := rows.Columns()
 	if err != nil {
 		return syntheticErrorResponse(http.StatusBadGateway, err), nil
 	}
-	colTypes, err := rows.ColumnTypes()
+	types, err := rows.ColumnTypes()
 	if err != nil {
 		return syntheticErrorResponse(http.StatusBadGateway, err), nil
 	}
-
-	meta := make([]map[string]string, len(colNames))
-	for i, name := range colNames {
-		meta[i] = map[string]string{
-			"name": name,
-			"type": colTypes[i].DatabaseTypeName(),
-		}
+	columns := make([]server.Column, len(names))
+	values := make([][]any, len(names))
+	dest := make([]any, len(names))
+	pointers := make([]any, len(names))
+	for i, name := range names {
+		columns[i] = server.Column{Name: name, Type: types[i].DatabaseTypeName()}
+		pointers[i] = &dest[i]
 	}
-
-	data := make([]map[string]any, 0, 64)
+	count := 0
 	for rows.Next() {
-		scanDest := make([]any, len(colNames))
-		ptrs := make([]any, len(colNames))
-		for i := range scanDest {
-			ptrs[i] = &scanDest[i]
-		}
-		if err := rows.Scan(ptrs...); err != nil {
+		if err := rows.Scan(pointers...); err != nil {
 			return syntheticErrorResponse(http.StatusBadGateway, err), nil
 		}
-		row := make(map[string]any, len(colNames))
-		for i, name := range colNames {
-			row[name] = scanDest[i]
+		for i, value := range dest {
+			values[i] = append(values[i], value)
 		}
-		data = append(data, row)
+		count++
 	}
 	if err := rows.Err(); err != nil {
 		return syntheticErrorResponse(http.StatusBadGateway, err), nil
 	}
-
-	rowCount := len(data)
-	doc := map[string]any{
-		"meta": meta,
-		"data": data,
-		"rows": rowCount,
+	var body []byte
+	contentType := "text/plain; charset=utf-8"
+	if selectQuery || len(columns) > 0 {
+		body, contentType, err = encodeResult(columns, values, count, format, r.URL.Query().Get("client_protocol_version"))
 	}
-
-	body, err := json.Marshal(doc)
 	if err != nil {
-		return syntheticErrorResponse(http.StatusInternalServerError, err), nil
+		return syntheticErrorResponse(http.StatusBadGateway, err), nil
 	}
-
 	return &http.Response{
-		StatusCode:    http.StatusOK,
-		Status:        "200 OK",
-		Header:        http.Header{"Content-Type": {"application/json"}},
-		Body:          io.NopCloser(bytes.NewReader(body)),
-		ContentLength: int64(len(body)),
-		Request:       r,
+		StatusCode: http.StatusOK, Status: "200 OK", Header: http.Header{
+			"Content-Type": {contentType}, "X-Clickhouse-Format": {format},
+		},
+		Body: io.NopCloser(bytes.NewReader(body)), ContentLength: int64(len(body)), Request: r,
 	}, nil
+}
+
+func supportedFormat(format string) bool {
+	switch strings.ToLower(format) {
+	case "json", "native", "csv", "csvwithnames", "tabseparated", "tsv", "tabseparatedwithnames", "tsvwithnames", "tabseparatedwithnamesandtypes", "tsvwithnamesandtypes":
+		return true
+	}
+	return false
+}
+
+func encodeResult(columns []server.Column, values [][]any, count int, format, protocolVersion string) ([]byte, string, error) {
+	var out bytes.Buffer
+	lower := strings.ToLower(format)
+	if lower == "native" {
+		revision, err := strconv.ParseUint(protocolVersion, 10, 64)
+		if protocolVersion != "" && err != nil {
+			return nil, "", err
+		}
+		err = server.EncodeNativeFormat(&out, columns, values, uint64(count), revision) //nolint:gosec // count is the nonnegative number of scanned rows
+		return out.Bytes(), "application/octet-stream", err
+	}
+	if lower == "json" {
+		meta := make([]map[string]string, len(columns))
+		data := make([]map[string]any, count)
+		for i, col := range columns {
+			meta[i] = map[string]string{"name": col.Name, "type": col.Type}
+		}
+		for row := range count {
+			data[row] = make(map[string]any, len(columns))
+			for col, field := range columns {
+				data[row][field.Name] = jsonValue(values[col][row], field.Type)
+			}
+		}
+		err := json.NewEncoder(&out).Encode(map[string]any{"meta": meta, "data": data, "rows": count})
+		return out.Bytes(), "application/json", err
+	}
+	for _, col := range columns {
+		typ := scalarType(col.Type)
+		if strings.HasPrefix(typ, "Array(") || strings.HasPrefix(typ, "Map(") || strings.HasPrefix(typ, "Tuple(") {
+			return nil, "", fmt.Errorf("text output for %s is unsupported; use JSON or Native", col.Type)
+		}
+	}
+	csvFormat := strings.HasPrefix(lower, "csv")
+	writer := csv.NewWriter(&out)
+	writer.Comma = '\t'
+	if csvFormat {
+		writer.Comma = ','
+	}
+	row := make([]string, len(columns))
+	if strings.Contains(lower, "withnames") {
+		for i, c := range columns {
+			row[i] = c.Name
+		}
+		if err := writer.Write(row); err != nil {
+			return nil, "", err
+		}
+	}
+	if strings.HasSuffix(lower, "andtypes") {
+		for i, c := range columns {
+			row[i] = c.Type
+		}
+		if err := writer.Write(row); err != nil {
+			return nil, "", err
+		}
+	}
+	for i := range count {
+		for j, c := range columns {
+			row[j] = textValue(values[j][i], c.Type)
+		}
+		if err := writer.Write(row); err != nil {
+			return nil, "", err
+		}
+	}
+	writer.Flush()
+	return out.Bytes(), "text/plain; charset=utf-8", writer.Error()
+}
+
+func jsonValue(value any, typ string) any {
+	value = indirectValue(value)
+	if t, ok := value.(time.Time); ok {
+		return textValue(t, typ)
+	}
+	return value
+}
+
+func textValue(value any, typ string) string {
+	value = indirectValue(value)
+	typ = scalarType(typ)
+	if value == nil {
+		return "\\N"
+	}
+	if t, ok := value.(time.Time); ok {
+		if typ == "Date" || typ == "Date32" {
+			return t.UTC().Format("2006-01-02")
+		}
+		if after, ok0 := strings.CutPrefix(typ, "DateTime64("); ok0 {
+			precision, _ := strconv.Atoi(strings.TrimSpace(strings.Split(after, ",")[0]))
+			if precision == 0 {
+				precision, _ = strconv.Atoi(strings.TrimSuffix(strings.TrimPrefix(typ, "DateTime64("), ")"))
+			}
+			if precision > 0 && precision <= 9 {
+				return t.UTC().Format("2006-01-02 15:04:05." + strings.Repeat("0", precision))
+			}
+		}
+		return t.UTC().Format("2006-01-02 15:04:05")
+	}
+	if b, ok := value.([]byte); ok {
+		return string(b)
+	}
+	return fmt.Sprint(value)
 }
 
 func extractSQL(r *http.Request) (string, error) {
@@ -166,5 +418,35 @@ func syntheticErrorResponse(code int, err error) *http.Response {
 		Header:        http.Header{"Content-Type": {"text/plain"}},
 		Body:          io.NopCloser(bytes.NewReader(body)),
 		ContentLength: int64(len(body)),
+	}
+}
+
+func defaultTLSConfig() *tls.Config { return &tls.Config{MinVersion: tls.VersionTLS12} }
+
+func indirectValue(value any) any {
+	for value != nil {
+		rv := reflect.ValueOf(value)
+		if rv.Kind() != reflect.Pointer {
+			return value
+		}
+		if rv.IsNil() {
+			return nil
+		}
+		value = rv.Elem().Interface()
+	}
+	return nil
+}
+
+func scalarType(typ string) string {
+	for {
+		if inner, ok := strings.CutPrefix(typ, "Nullable("); ok {
+			typ = strings.TrimSuffix(inner, ")")
+			continue
+		}
+		if inner, ok := strings.CutPrefix(typ, "LowCardinality("); ok {
+			typ = strings.TrimSuffix(inner, ")")
+			continue
+		}
+		return typ
 	}
 }

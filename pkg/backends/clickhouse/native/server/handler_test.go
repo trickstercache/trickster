@@ -20,9 +20,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 )
@@ -297,4 +299,44 @@ func sendEmptyDataBlock(w *protoWriter) {
 	// num columns, num rows
 	w.putUvarint(0)
 	w.putUvarint(0)
+}
+
+func TestServerLifecycleAndHandlerUpdate(t *testing.T) {
+	first := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusAccepted) })
+	second := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusCreated) })
+	s := New(first, nil, false, "key")
+	if s.ProtocolRestartKey() != "key" {
+		t.Fatal("missing restart identity")
+	}
+	s.UpdateHandler(second)
+	rec := httptest.NewRecorder()
+	s.handler.QueryHandler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	if rec.Code != http.StatusCreated {
+		t.Fatal("handler was not updated")
+	}
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- s.Serve(l) }()
+	conn, err := net.Dial("tcp", l.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	err = s.Shutdown(ctx)
+	if err != nil && !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("server did not stop")
+	}
 }

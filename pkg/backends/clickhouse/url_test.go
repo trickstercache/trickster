@@ -89,8 +89,9 @@ func TestSetExtentNativeFormatPreserved(t *testing.T) {
 	end := time.Unix(1589997600, 0)
 	e := &timeseries.Extent{Start: start, End: end}
 
-	trq := &timeseries.TimeRangeQuery{
-		Statement: `SELECT toStartOfFiveMinute(datetime) AS t, count() AS cnt FROM tbl WHERE datetime BETWEEN <$TS1$> AND <$TS2$> GROUP BY t ORDER BY t FORMAT <$FORMAT$>`,
+	trq, _, _, err := parse(`SELECT toStartOfFiveMinute(datetime) AS t, count() AS cnt FROM tbl WHERE datetime >= 1589904000 AND datetime < 1589997900 GROUP BY t ORDER BY t`, nil)
+	if err != nil {
+		t.Fatal(err)
 	}
 
 	// GET request with default_format=Native (official Grafana plugin style)
@@ -103,7 +104,9 @@ func TestSetExtentNativeFormatPreserved(t *testing.T) {
 	r, _ := http.NewRequest(http.MethodGet, tu.String(), nil)
 	r.URL = tu
 
-	client.SetExtent(r, trq, e)
+	if err := client.SetExtent(r, trq, e); err != nil {
+		t.Fatal(err)
+	}
 
 	q := r.URL.Query()
 	if !q.Has("default_format") {
@@ -112,10 +115,10 @@ func TestSetExtentNativeFormatPreserved(t *testing.T) {
 	if !q.Has("database") {
 		t.Error("expected database param to be preserved")
 	}
-	// FORMAT clause should be removed from SQL when default_format=Native
+	// Origin requests use the analyzer's TSV format regardless of the client format.
 	sql := q.Get("query")
-	if strings.Contains(sql, "FORMAT") {
-		t.Errorf("expected FORMAT clause to be removed when default_format=Native, got: %s", sql)
+	if !strings.Contains(sql, "FORMAT TSVWithNamesAndTypes") {
+		t.Errorf("expected TSV origin format with Native client output, got: %s", sql)
 	}
 }
 
@@ -125,8 +128,9 @@ func TestSetExtentTSVFormatInjected(t *testing.T) {
 	end := time.Unix(1589997600, 0)
 	e := &timeseries.Extent{Start: start, End: end}
 
-	trq := &timeseries.TimeRangeQuery{
-		Statement: `SELECT toStartOfFiveMinute(datetime) AS t, count() AS cnt FROM tbl WHERE datetime BETWEEN <$TS1$> AND <$TS2$> GROUP BY t ORDER BY t FORMAT <$FORMAT$>`,
+	trq, _, _, err := parse(`SELECT toStartOfFiveMinute(datetime) AS t, count() AS cnt FROM tbl WHERE datetime >= 1589904000 AND datetime < 1589997900 GROUP BY t ORDER BY t`, nil)
+	if err != nil {
+		t.Fatal(err)
 	}
 
 	// GET request WITHOUT default_format (standard TSV path)
@@ -137,7 +141,9 @@ func TestSetExtentTSVFormatInjected(t *testing.T) {
 	r, _ := http.NewRequest(http.MethodGet, tu.String(), nil)
 	r.URL = tu
 
-	client.SetExtent(r, trq, e)
+	if err := client.SetExtent(r, trq, e); err != nil {
+		t.Fatal(err)
+	}
 
 	q := r.URL.Query()
 	sql := q.Get("query")

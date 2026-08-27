@@ -393,3 +393,35 @@ func TestDirectivesAreExtractedBeforeCanonicalization(t *testing.T) {
 			trq.BackfillTolerance, options.FastForwardDisable)
 	}
 }
+
+func TestNativeQueryCompatibility(t *testing.T) {
+	now := time.Unix(1800, 0)
+	for _, query := range []string{
+		"SELECT date_trunc('minute', ts) AS t, count() FROM events WHERE ts >= 120 AND ts < 240 GROUP BY t FORMAT Native",
+		"SELECT toStartOfMinute(ts) AS t, count() FROM events WHERE ts >= toDateTime64(120, 3) AND ts < toDateTime64(240, 3) GROUP BY t",
+		"SELECT timeSlot(ts) AS t, count() FROM events WHERE ts >= 0 AND ts < now64() GROUP BY t",
+		"SELECT toStartOfMillisecond(ts) AS t, count() FROM events WHERE ts >= 120 AND ts < 121 GROUP BY t",
+	} {
+		analysis := dialectAnalyzer.Analyze(query, now)
+		if analysis.Err != nil {
+			t.Fatalf("%s: %v", query, analysis.Err)
+		}
+		extent := timeseries.Extent{Start: time.Unix(120, 123000000), End: time.Unix(120, 456000000)}
+		rendered, err := analysis.Plan.RenderExtent(extent)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(query, "Millisecond") && !strings.Contains(rendered, ".123") {
+			t.Fatalf("lost subsecond bound: %s", rendered)
+		}
+	}
+	for _, query := range []string{
+		"SELECT toStartOfMonth(ts) AS t, count() FROM events WHERE ts >= 0 AND ts < 2678400 GROUP BY t",
+		"SELECT toStartOfMinute(ts) AS t, count() FROM events WHERE ts >= toDateTime64(120, 10) AND ts < 240 GROUP BY t",
+		"SELECT toStartOfInterval(ts, INTERVAL 9223372036854775807 SECOND) AS t, count() FROM events WHERE ts >= 0 AND ts < 240 GROUP BY t",
+	} {
+		if got := dialectAnalyzer.Analyze(query, now); got.Mode == sqlanalyzer.CacheModeDelta {
+			t.Fatalf("unsafe query accepted: %s", query)
+		}
+	}
+}

@@ -20,19 +20,17 @@ package clickhouse
 import (
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	modelch "github.com/trickstercache/trickster/v2/pkg/backends/clickhouse/model"
 	chnative "github.com/trickstercache/trickster/v2/pkg/backends/clickhouse/native"
-	chserver "github.com/trickstercache/trickster/v2/pkg/backends/clickhouse/native/server"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
-	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
-	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/connhandler"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
@@ -61,27 +59,24 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 	c := &Client{}
 	b, err := backends.NewTimeseriesBackend(name, o, c.RegisterHandlers, router, cache, modelch.NewModeler())
 	c.TimeseriesBackend = b
-	if err == nil && o != nil && o.Protocol == "native" {
-		nc, ncErr := chnative.NewNativeClient(o)
-		if ncErr != nil {
-			logger.Error("clickhouse native client setup failed",
-				logging.Pairs{"backend": name, "detail": ncErr.Error()})
-		} else {
+	if err != nil {
+		return c, err
+	}
+	if o != nil {
+		if err := chnative.ValidateOptions(o); err != nil {
+			return nil, err
+		}
+		if strings.EqualFold(o.Protocol, "native") {
+			nc, err := chnative.NewNativeClient(o)
+			if err != nil {
+				return nil, err
+			}
 			c.nativeClient = nc
-			o.Fetcher = nc.Fetch
+			c.HTTPClient().Transport = nc
+			c.HealthCheckHTTPClient().Transport = nc
 		}
 	}
-	return c, err
-}
-
-// ConnectionHandler implements backends.ConnectionHandlerProvider.
-func (c *Client) ConnectionHandler(protocol string) connhandler.ConnectionHandler {
-	if protocol != "clickhouse-native" {
-		return nil
-	}
-	return &chserver.Handler{
-		QueryHandler: c.Router(),
-	}
+	return c, nil
 }
 
 // ParseTimeRangeQuery parses the key parts of a TimeRangeQuery from the inbound HTTP Request
@@ -110,10 +105,25 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	if err != nil {
 		return trq, ro, canOPC, err
 	}
-	// When the client requests Native format via URL params (official Grafana
-	// plugin), set the output format so the marshaler returns Native binary.
-	if ro != nil && strings.EqualFold(r.URL.Query().Get("default_format"), "Native") {
-		ro.OutputFormat = modelch.OutputFormatNative
+	if ro != nil && r.URL != nil {
+		plan, _ := trq.ParsedQuery.(*sqlanalyzer.QueryPlan)
+		renderer, _ := plan.Renderer.(*clickHouseRenderer)
+		format := strings.ToLower(r.URL.Query().Get("default_format"))
+		if format != "" && renderer != nil && !renderer.explicitFormat {
+			output, ok := supportedFormats[format]
+			if !ok {
+				return trq, ro, true, ErrUnsupportedOutputFormat
+			}
+			ro.OutputFormat = output
+		}
+	}
+	if ro != nil && ro.OutputFormat == modelch.OutputFormatNative {
+		raw := r.URL.Query().Get("client_protocol_version")
+		revision, err := strconv.ParseUint(raw, 10, 64)
+		if raw != "" && err != nil {
+			return trq, ro, true, ErrUnsupportedOutputFormat
+		}
+		ro.ProviderRequest = modelch.NativeFormatOptions{Revision: revision}
 	}
 	if isBody && trq != nil {
 		trq.OriginalBody = originalBody

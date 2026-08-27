@@ -18,6 +18,7 @@ package server
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -27,19 +28,20 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"time"
+
+	"github.com/trickstercache/trickster/v2/pkg/backends/clickhouse/sqlformat"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
-// Handler implements connhandler.ConnectionHandler for the ClickHouse native
-// protocol. It accepts native connections, extracts SQL queries, routes them
-// through a standard http.Handler (which is the ClickHouse backend's query
-// handler), and transcodes the JSON response back to native data blocks.
+// Handler translates native requests into the backend's HTTP handler pipeline.
 type Handler struct {
 	// QueryHandler is the HTTP handler that processes ClickHouse queries
 	// (typically the backend's router or QueryHandler).
 	QueryHandler http.Handler
 }
 
-// HandleConnection implements connhandler.ConnectionHandler.
+// HandleConnection serves a ClickHouse native session.
 func (h *Handler) HandleConnection(ctx context.Context, conn net.Conn) error {
 	r := newProtoReader(conn)
 	bw := bufio.NewWriterSize(conn, 128*1024)
@@ -65,7 +67,7 @@ func (h *Handler) HandleConnection(ctx context.Context, conn net.Conn) error {
 		return fmt.Errorf("flush server hello: %w", err)
 	}
 
-	clientRevision := hello.ProtoRevision
+	clientRevision := min(hello.ProtoRevision, ServerRevision)
 
 	// After receiving ServerHello, clients with revision >= 54458 send an
 	// addendum (currently just a quota key string). Read and discard it.
@@ -106,19 +108,20 @@ func (h *Handler) HandleConnection(ctx context.Context, conn net.Conn) error {
 				return err
 			}
 
-			// After the query, the client sends an empty data block.
-			// For SELECT this is always empty; INSERT with inline data
-			// is not yet supported via the native protocol proxy.
+			// Only the empty post-query block is supported; inline INSERT data is rejected.
 			dataPkt, err := r.ReadByte()
 			if err != nil {
 				return fmt.Errorf("read post-query data: %w", err)
 			}
-			if dataPkt == ClientData {
-				if err := skipClientData(r, clientRevision); err != nil {
-					return fmt.Errorf("skip post-query data block: %w", err)
-				}
+			if dataPkt != ClientData {
+				return fmt.Errorf("expected post-query data packet, got %d", dataPkt)
+			}
+			if err := skipClientData(r, clientRevision); err != nil {
+				_ = writeQueryError(w, bw, err)
+				return err
 			}
 
+			q.Username, q.Password = hello.Username, hello.Password
 			if err := h.handleQuery(ctx, w, bw, q, hello.Database, q.Compression); err != nil {
 				return err
 			}
@@ -139,29 +142,44 @@ func (h *Handler) HandleConnection(ctx context.Context, conn net.Conn) error {
 	}
 }
 
-// handleQuery creates a synthetic HTTP request, invokes the QueryHandler,
-// parses the JSON response, and writes native protocol data blocks.
 func (h *Handler) handleQuery(ctx context.Context, w *protoWriter, bw *bufio.Writer, q *ClientQueryMsg, database string, compressed bool) error {
-	sql := q.SQL
-	upper := strings.ToUpper(strings.TrimSpace(sql))
-	isSelect := strings.HasPrefix(upper, "SELECT") || strings.HasPrefix(upper, "WITH")
-	// Ensure SELECT queries return JSON so the response can be transcoded
-	// to native data blocks. Non-SELECT (INSERT, CREATE, etc.) are proxied
-	// as-is without format modification.
-	if isSelect && !strings.Contains(upper, "FORMAT ") {
-		sql = strings.TrimRight(sql, "; \t\n") + " FORMAT JSON"
+	sql, _, isSelect, err := sqlformat.Split(q.SQL, "JSON")
+	if err != nil {
+		return writeQueryError(w, bw, err)
+	}
+	if isSelect {
+		sql += " FORMAT JSON"
+		trq := &timeseries.TimeRangeQuery{}
+		trq.ExtractBackfillTolerance(q.SQL)
+		if trq.BackfillTolerance > 0 {
+			sql += fmt.Sprintf(" /* trickster-backfill-tolerance:%d */", trq.BackfillTolerance/time.Second)
+		}
+		options := &timeseries.RequestOptions{}
+		options.ExtractFastForwardDisabled(q.SQL)
+		if options.FastForwardDisable {
+			sql += " /* trickster-fast-forward:off */"
+		}
 	}
 
-	// Use "/" as the path — the backend router handles paths relative to
-	// the backend, not the full frontend path (e.g. "/click1/").
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "/", strings.NewReader(sql))
 	if err != nil {
 		return writeQueryError(w, bw, err)
 	}
+	qp := req.URL.Query()
+	for key, value := range q.Settings {
+		qp.Set(key, value)
+	}
+	for key, value := range q.Parameters {
+		qp.Set("param_"+key, value)
+	}
 	if database != "" {
-		qp := req.URL.Query()
 		qp.Set("database", database)
-		req.URL.RawQuery = qp.Encode()
+	}
+	qp.Set("query_id", q.QueryID)
+	qp.Set("default_format", "JSON")
+	req.URL.RawQuery = qp.Encode()
+	if q.Username != "" {
+		req.SetBasicAuth(q.Username, q.Password)
 	}
 	req.Header.Set("Content-Type", "text/plain")
 
@@ -216,12 +234,16 @@ type wfDocument struct {
 // native protocol data blocks.
 func writeJSONAsNativeBlocks(w *protoWriter, body []byte, compressed bool) error {
 	var doc wfDocument
-	if err := json.Unmarshal(body, &doc); err != nil {
-		// Not JSON — might be a non-SELECT result. Send empty block.
+	if len(bytes.TrimSpace(body)) == 0 {
 		return writeEmptyBlock(w)
 	}
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.UseNumber()
+	if err := decoder.Decode(&doc); err != nil {
+		return fmt.Errorf("invalid ClickHouse JSON response: %w", err)
+	}
 
-	if len(doc.Meta) == 0 || len(doc.Data) == 0 {
+	if len(doc.Meta) == 0 {
 		return writeEmptyBlock(w)
 	}
 

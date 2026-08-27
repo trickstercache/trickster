@@ -17,6 +17,8 @@
 package setup
 
 import (
+	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"net"
@@ -24,9 +26,11 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends"
 	uropt "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/ur/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
@@ -36,6 +40,8 @@ import (
 	listenerconfig "github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
 	configtypes "github.com/trickstercache/trickster/v2/pkg/config/types"
+	"github.com/trickstercache/trickster/v2/pkg/config/validate"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
@@ -43,6 +49,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 	to "github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
 	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
+
+	chdriver "github.com/ClickHouse/clickhouse-go/v2"
 )
 
 func TestListenerEnabledOn(t *testing.T) {
@@ -105,7 +113,7 @@ func TestDesiredRoutedMySQLListener(t *testing.T) {
 	router := bo.New()
 	router.Name = "mysql-users"
 	router.Provider = providers.ALB
-	router.ListenerName = "mysql-users"
+	router.ListenerNames = []string{"mysql-users"}
 	router.ALBOptions = ao.New()
 	router.ALBOptions.MechanismName = names.MechanismUR
 	router.ALBOptions.UserRouter = &uropt.Options{
@@ -261,7 +269,7 @@ func TestApplyMySQLListenerRestartsWhenTLSFileContentsRotate(t *testing.T) {
 	backend := bo.New()
 	backend.Name = "mysql1"
 	backend.Provider = providers.MySQL
-	backend.ListenerName = "mysql1"
+	backend.ListenerNames = []string{"mysql1"}
 	backend.OriginURL = "mysql://origin:password@127.0.0.1/database"
 	backend.AuthenticatorName = "mysql-clients"
 	backend.AuthOptions = &autho.Options{
@@ -479,4 +487,115 @@ func tlsTestConfig(t *testing.T, keyPath, certPath string, port int) *config.Con
 	o.TLSListenAddress = "127.0.0.1"
 	o.TLSListenPort = port
 	return conf
+}
+
+func TestListenerBindingReloadPreservesExistingConnections(t *testing.T) {
+	group := listener.NewGroup()
+	t.Cleanup(func() { _ = group.Shutdown(0) })
+	conf := config.NewConfig()
+	deactivateBuiltinListeners(conf)
+	conf.MgmtConfig.ReloadDrainTimeout = timeconv.Duration(50 * time.Millisecond)
+	for _, name := range []string{"keep-http", "keep-native", "add-http", "add-native"} {
+		lo := listenerconfig.New(name)
+		lo.ListenAddress = "127.0.0.1"
+		lo.ListenPort = availablePort(t)
+		if strings.HasSuffix(name, "native") {
+			lo.Protocol = listenerconfig.ProtocolClickHouse
+		}
+		conf.Listeners[name] = lo
+	}
+	o := bo.New()
+	o.Name = "click"
+	o.Provider = providers.ClickHouse
+	o.ListenerNames = []string{"keep-http", "keep-native"}
+	conf.Backends = bo.Lookup{"click": o}
+	apply := func(current, old *config.Config, marker string) {
+		t.Helper()
+		if err := validate.Listeners(current); err != nil {
+			t.Fatal(err)
+		}
+		nativeRouter := lm.NewRouter()
+		nativeRouter.RegisterRoute("/", nil, []string{http.MethodPost}, matching.PathMatchTypeExact, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = fmt.Fprintf(w, `{"meta":[{"name":"value","type":"String"}],"data":[{"value":%q}],"rows":1}`, marker)
+		}))
+		client, err := backends.NewTimeseriesBackend("click", current.Backends["click"], nil, nativeRouter, nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		routers := map[string]router.Router{"keep-http": markerRouter(marker), "add-http": markerRouter(marker)}
+		applyListenerConfigs(current, old, routers, http.NotFoundHandler(), lm.NewRouter(), nil, backends.Backends{"click": client}, nil, group)
+		for _, name := range current.Backends["click"].ListenerNames {
+			waitForListener(t, group, listenerKey(name, current.Listeners[name].Protocol, false))
+		}
+	}
+	apply(conf, nil, "first")
+	httpKey := listenerKey("keep-http", listenerconfig.ProtocolHTTP, false)
+	nativeKey := listenerKey("keep-native", listenerconfig.ProtocolClickHouse, false)
+	originalHTTP, originalNative := group.Get(httpKey), group.Get(nativeKey)
+	address := fmt.Sprintf("127.0.0.1:%d", conf.Listeners["keep-http"].ListenPort)
+	conn, err := net.DialTimeout("tcp", address, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
+	reader := bufio.NewReader(conn)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	db := chdriver.OpenDB(&chdriver.Options{Addr: []string{fmt.Sprintf("127.0.0.1:%d", conf.Listeners["keep-native"].ListenPort)}, ReadTimeout: time.Second})
+	defer db.Close()
+	session, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	check := func(marker string) {
+		t.Helper()
+		req, _ := http.NewRequest(http.MethodGet, "http://"+address+"/", nil)
+		if err := req.Write(conn); err != nil {
+			t.Fatal(err)
+		}
+		response, err := http.ReadResponse(reader, req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, err := io.ReadAll(response.Body)
+		response.Body.Close()
+		if err != nil || string(body) != marker {
+			t.Fatalf("HTTP connection: %s %v", body, err)
+		}
+		var got string
+		if err := session.QueryRowContext(ctx, "SELECT 1").Scan(&got); err != nil || got != marker {
+			t.Fatalf("native connection: %s %v", got, err)
+		}
+		if group.Get(httpKey) != originalHTTP || group.Get(nativeKey) != originalNative {
+			t.Fatal("unchanged listener was replaced")
+		}
+	}
+	check("first")
+	for i, names := range [][]string{
+		{"keep-http", "keep-native", "add-http", "add-native"},
+		{"add-native", "keep-native", "keep-http", "add-http", "keep-native"},
+		{"keep-native", "keep-http"},
+	} {
+		next := conf.Clone()
+		next.Backends["click"].ListenerNames = names
+		next.Backends["click"].ListenerName = "keep-http"
+		marker := fmt.Sprintf("reload-%d", i)
+		apply(next, conf, marker)
+		check(marker)
+		conf = next
+	}
+	if group.Get(listenerKey("add-native", listenerconfig.ProtocolClickHouse, false)) != nil || group.Get(listenerKey("add-http", listenerconfig.ProtocolHTTP, false)) != nil {
+		t.Fatal("removed bindings still listen")
+	}
+	next := conf.Clone()
+	next.Backends["click"].ListenerNames = []string{"keep-http"}
+	apply(next, conf, "http-only")
+	if group.Get(nativeKey) != nil || group.Get(httpKey) != originalHTTP {
+		t.Fatal("removal affected the wrong listener")
+	}
+	if err := session.PingContext(ctx); err == nil {
+		t.Fatal("removed native binding retained its session")
+	}
 }

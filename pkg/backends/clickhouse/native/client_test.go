@@ -341,7 +341,7 @@ func TestFetchSuccessWithRows(t *testing.T) {
 
 func buildQueryRequest(t *testing.T, sql string) *http.Request {
 	t.Helper()
-	r := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(sql))
+	r := httptest.NewRequest(http.MethodPost, "/?default_format=JSON", strings.NewReader(sql))
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	t.Cleanup(cancel)
 	return r.WithContext(ctx)
@@ -388,4 +388,76 @@ func startNativeServer(t *testing.T, handler http.Handler) (string, func()) {
 		wg.Wait()
 	}
 	return lis.Addr().String(), stop
+}
+
+func TestNativeTransportFormatsAndIdentity(t *testing.T) {
+	requests := make(chan *http.Request, 8)
+	addr, stop := startNativeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests <- r.Clone(r.Context())
+		_, _ = io.WriteString(w, `{"meta":[{"name":"n","type":"UInt64"},{"name":"ts","type":"DateTime64(6)"}],"data":[{"n":"18446744073709551615","ts":"2020-01-01 00:00:00.123456"}],"rows":1}`)
+	}))
+	defer stop()
+	c, err := NewNativeClient(&bo.Options{Host: addr, MaxIdleConns: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	for _, format := range []string{"JSON", "TSVWithNamesAndTypes", "Native"} {
+		r := buildQueryRequest(t, "SELECT n, ts FROM events FORMAT "+format)
+		r.URL.RawQuery = url.Values{"database": {"analytics"}, "max_threads": {"2"}, "query_id": {"test-query"}}.Encode()
+		r.SetBasicAuth("alice", "secret")
+		resp, err := c.Fetch(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("%s: %s", format, body)
+		}
+		if resp.Header.Get("X-ClickHouse-Format") != format {
+			t.Fatalf("wrong format %v", resp.Header)
+		}
+		if format != "Native" && (!strings.Contains(string(body), "18446744073709551615") || !strings.Contains(string(body), ".123456")) {
+			t.Fatalf("lost precision: %s", body)
+		}
+		if format == "Native" && body[0] != 2 {
+			t.Fatalf("unexpected bare Native block: %x", body)
+		}
+		received := <-requests
+		user, password, ok := received.BasicAuth()
+		if !ok || user != "alice" || password != "secret" {
+			t.Fatal("credentials were not forwarded")
+		}
+		if received.URL.Query().Get("database") != "analytics" || received.URL.Query().Get("max_threads") != "2" {
+			t.Fatalf("missing settings: %s", received.URL)
+		}
+	}
+	c.CloseIdleConnections()
+	if _, err := c.pool(buildQueryRequest(t, "SELECT 1")); err == nil {
+		t.Fatal("retired transport accepted a new query")
+	}
+}
+
+func TestNativeTextValues(t *testing.T) {
+	n := uint64(18446744073709551615)
+	tm := time.Unix(1577836800, 123456000).UTC()
+	for _, test := range []struct {
+		value     any
+		typ, want string
+	}{
+		{&n, "Nullable(UInt64)", "18446744073709551615"},
+		{&tm, "Nullable(DateTime64(6))", "2020-01-01 00:00:00.123456"},
+		{(*uint64)(nil), "Nullable(UInt64)", "\\N"},
+	} {
+		if got := textValue(test.value, test.typ); got != test.want {
+			t.Fatalf("%s: got %q want %q", test.typ, got, test.want)
+		}
+	}
+	if _, _, err := encodeResult([]server.Column{{Name: "a", Type: "Array(UInt32)"}}, [][]any{{[]uint32{1, 2}}}, 1, "TSV", ""); err == nil {
+		t.Fatal("accepted unsupported compound text format")
+	}
 }

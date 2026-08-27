@@ -232,7 +232,7 @@ func TestBoundRenderingAndParsingHelpers(t *testing.T) {
 		{"milliseconds", endpointLower, boundUnixMilli, "1234"},
 		{"microseconds", endpointUpper, boundUnixMicro, "2987654"},
 		{"nanoseconds", endpointUpper, boundUnixNano, "2987654321"},
-		{"SQL datetime", endpointLower, boundSQLDateTime, "'1970-01-01 00:00:01'"},
+		{"SQL datetime", endpointLower, boundSQLDateTime, "'1970-01-01 00:00:01.23456789'"},
 		{"toDateTime", endpointUpper, boundToDateTime, "toDateTime(2)"},
 		{"toDate", endpointUpper, boundToDate, "toDate(2)"},
 	}

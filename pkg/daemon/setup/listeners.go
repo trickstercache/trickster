@@ -119,6 +119,15 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 			lg.UpdateRouter(key, desired.router)
 			if desired.native != nil {
 				request := nativeBuildRequest(conf, desired, tracers, clients)
+				if adapter, ok := desired.native.(native.HTTPHandlerAdapter); ok {
+					h, err := adapter.Handler(request)
+					if err != nil {
+						logger.Error("unable to update native handler", logging.Pairs{logKeyListenerName: desired.listenerName, logKeyError: err.Error()})
+					} else {
+						lg.UpdateProtocolHandler(key, h)
+					}
+				}
+
 				if resolver := desired.native.RouteResolver(request); resolver != nil {
 					lg.UpdateProtocolRouteResolver(key, resolver)
 				}
@@ -171,46 +180,6 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		go lg.StartListener(key, desired.address, desired.port,
 			desired.options.ConnectionsLimit, tlsConfig, desired.router,
 			listenerTracers, errorFunc, time.Duration(drainTimeout), time.Duration(desired.options.ReadHeaderTimeout))
-	}
-
-	applyProtocolListenerConfigs(conf, lg, clients, errorFunc, time.Duration(drainTimeout))
-}
-
-func applyProtocolListenerConfigs(conf *config.Config, lg *listener.Group,
-	o backends.Backends, errorFunc func(), drainTimeout time.Duration,
-) {
-	if conf.Frontend == nil || len(conf.Frontend.ProtocolListeners) == 0 {
-		return
-	}
-	for _, plo := range conf.Frontend.ProtocolListeners {
-		if err := plo.Validate(); err != nil {
-			logger.Error("invalid protocol listener config",
-				logging.Pairs{"detail": err.Error()})
-			continue
-		}
-		listenerName := "proto_" + plo.Name
-		bc := o.Get(plo.Backend)
-		if bc == nil {
-			logger.Error("protocol listener references unknown backend",
-				logging.Pairs{"listener": plo.Name, "backend": plo.Backend})
-			continue
-		}
-		chp, ok := bc.(backends.ConnectionHandlerProvider)
-		if !ok {
-			logger.Error("backend does not support protocol listeners",
-				logging.Pairs{"listener": plo.Name, "backend": plo.Backend})
-			continue
-		}
-		handler := chp.ConnectionHandler(plo.Protocol)
-		if handler == nil {
-			logger.Error("backend does not support requested protocol",
-				logging.Pairs{"listener": plo.Name, "protocol": plo.Protocol, "backend": plo.Backend})
-			continue
-		}
-		lg.DrainAndCloseProtocol(listenerName, drainTimeout)
-		go lg.StartLegacyProtocolListener(listenerName,
-			plo.ListenAddress, plo.ListenPort, plo.ConnectionsLimit,
-			handler, errorFunc)
 	}
 }
 

@@ -25,7 +25,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"math"
 )
 
 // Client-to-server packet types.
@@ -148,16 +147,6 @@ func (w *protoWriter) putInt32(v int32) error {
 	binary.LittleEndian.PutUint32(w.buf[:4], uint32(v)) //nolint:gosec // wire protocol reinterpret
 	_, err := w.Write(w.buf[:4])
 	return err
-}
-
-func (w *protoWriter) putInt64(v int64) error {
-	binary.LittleEndian.PutUint64(w.buf[:8], uint64(v)) //nolint:gosec // wire protocol reinterpret
-	_, err := w.Write(w.buf[:8])
-	return err
-}
-
-func (w *protoWriter) putFloat64(v float64) error {
-	return w.putInt64(int64(math.Float64bits(v))) //nolint:gosec // IEEE 754 bit cast
 }
 
 func (w *protoWriter) putBool(v bool) error {

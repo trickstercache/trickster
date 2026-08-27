@@ -100,6 +100,11 @@ func (c *Config) SanitizedClone() *Config {
 			if newTracingName, ok := tracingNameMap[opts.TracingConfigName]; ok {
 				opts.TracingConfigName = newTracingName
 			}
+			for i, name := range opts.ListenerNames {
+				if replacement, ok := listenerNameMap[name]; ok {
+					opts.ListenerNames[i] = replacement
+				}
+			}
 			if newListenerName, ok := listenerNameMap[opts.ListenerName]; ok {
 				opts.ListenerName = newListenerName
 			}

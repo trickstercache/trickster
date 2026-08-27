@@ -17,8 +17,10 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"strconv"
 )
 
 // ClientQueryMsg contains the relevant fields from a ClientQuery packet.
@@ -28,6 +30,10 @@ type ClientQueryMsg struct {
 	QueryID     string
 	SQL         string
 	Compression bool
+	Settings    map[string]string
+	Parameters  map[string]string
+	Username    string
+	Password    string
 }
 
 // readClientQuery reads a ClientQuery packet from the wire. The leading
@@ -45,7 +51,8 @@ func readClientQuery(r *protoReader, revision uint64) (*ClientQueryMsg, error) {
 	}
 
 	// --- settings ---
-	if err := skipSettings(r, revision); err != nil {
+	settings, err := readSettings(r, revision)
+	if err != nil {
 		return nil, fmt.Errorf("skip settings: %w", err)
 	}
 
@@ -75,14 +82,17 @@ func readClientQuery(r *protoReader, revision uint64) (*ClientQueryMsg, error) {
 	}
 
 	// parameters (revision >= 54459)
+	var parameters map[string]string
 	if revision >= RevisionParameters {
-		if err := skipKeyValuePairs(r); err != nil {
+		parameters, err = readSettings(r, revision)
+		if err != nil {
 			return nil, fmt.Errorf("skip parameters: %w", err)
 		}
 	}
 
 	return &ClientQueryMsg{
-		QueryID:     queryID,
+		QueryID:  queryID,
+		Settings: settings, Parameters: parameters,
 		SQL:         sql,
 		Compression: compBool,
 	}, nil
@@ -172,53 +182,32 @@ func skipClientInfo(r *protoReader, revision uint64) error {
 	return nil
 }
 
-// skipSettings reads and discards the settings key=value list.
-func skipSettings(r *protoReader, revision uint64) error {
+func readSettings(r *protoReader, revision uint64) (map[string]string, error) {
+	result := make(map[string]string)
 	for {
 		name, err := r.str()
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if name == "" {
-			break
+			return result, nil
 		}
-		if revision <= 54429 {
-			// old format: uvarint value
-			if _, err := r.uvarint(); err != nil {
-				return err
-			}
-		} else {
-			// new format: flags (uvarint) + string value
-			if _, err := r.uvarint(); err != nil {
-				return err
-			}
-			if _, err := r.str(); err != nil {
-				return err
-			}
+		if len(result) >= 1024 {
+			return nil, errors.New("too many query settings")
 		}
-	}
-	return nil
-}
-
-// skipKeyValuePairs reads string key/value pairs terminated by an empty key.
-func skipKeyValuePairs(r *protoReader) error {
-	for {
-		name, err := r.str()
+		value, err := r.uvarint()
 		if err != nil {
-			return err
+			return nil, err
 		}
-		if name == "" {
-			break
+		text := strconv.FormatUint(value, 10)
+		if revision > 54429 {
+			text, err = r.str()
+			if err != nil {
+				return nil, err
+			}
 		}
-		// flags + value
-		if _, err := r.uvarint(); err != nil {
-			return err
-		}
-		if _, err := r.str(); err != nil {
-			return err
-		}
+		result[name] = text
 	}
-	return nil
 }
 
 // skipClientData reads and discards a ClientData block (the empty data block
@@ -260,9 +249,8 @@ func skipClientData(r *protoReader, revision uint64) error {
 	if err != nil {
 		return err
 	}
-	_ = numCols
-	_ = numRows
-	// For the empty data block after query, both should be 0.
-	// If not, we'd need to read column data, but we don't support INSERT.
+	if numCols != 0 || numRows != 0 {
+		return errors.New("inline INSERT data and external tables are not supported")
+	}
 	return nil
 }

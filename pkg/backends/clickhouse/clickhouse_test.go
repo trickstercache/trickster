@@ -17,7 +17,9 @@
 package clickhouse
 
 import (
+	"context"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"testing"
 	"time"
@@ -27,6 +29,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	cr "github.com/trickstercache/trickster/v2/pkg/cache/registry"
 	"github.com/trickstercache/trickster/v2/pkg/config"
+	listenerconfig "github.com/trickstercache/trickster/v2/pkg/config/listener"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/native"
 )
 
 func TestClickhouseClientInterfacing(t *testing.T) {
@@ -132,5 +136,53 @@ func TestParseTimeRangeQuery(t *testing.T) {
 	_, _, _, err = client.ParseTimeRangeQuery(req)
 	if err == nil {
 		t.Errorf("expected error for: %s", "not a time range query")
+	}
+}
+
+func TestNativeListenerAdapterLifecycle(t *testing.T) {
+	a := nativeListenerAdapter{}
+	o := bo.New()
+	o.Provider = providers.ClickHouse
+	o.ListenerNames = []string{"default", "native"}
+	c := &config.Config{Backends: bo.Lookup{"ch": o}, Listeners: listenerconfig.Lookup{"native": listenerconfig.New("native")}}
+	before, err := a.Describe(c, "native")
+	if err != nil {
+		t.Fatal(err)
+	}
+	o.OriginURL = "http://localhost:9000"
+	after, err := a.Describe(c, "native")
+	if err != nil || before.RestartKey == after.RestartKey {
+		t.Fatalf("restart identity did not track origin: %v", err)
+	}
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusAccepted) })
+	client, err := backends.NewTimeseriesBackend("ch", o, nil, h, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := native.BuildRequest{Config: c, ListenerName: "native", Listener: listenerconfig.New("native"), BackendClients: backends.Backends{"ch": client}}
+	handler, err := a.Handler(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("handler status %d", rec.Code)
+	}
+	srv, err := a.Build(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	o.RequireTLS = true
+	if _, err := a.Describe(c, "native"); err == nil {
+		t.Fatal("accepted require_tls without certificates")
+	}
+	o.RequireTLS = false
+	c.Backends["other"] = o.Clone()
+	if _, err := a.Describe(c, "native"); err == nil {
+		t.Fatal("accepted multiple backend mappings")
 	}
 }

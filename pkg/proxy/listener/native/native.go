@@ -18,6 +18,7 @@
 package native
 
 import (
+	"net/http"
 	"slices"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
@@ -48,6 +49,7 @@ type BuildRequest struct {
 // protocol server, and expose a reloadable route resolver when applicable.
 type Adapter interface {
 	Protocol() string
+	SupportsHTTP() bool
 	Configured(*listenerconfig.Options) bool
 	ValidateListener(*listenerconfig.Options) error
 	ValidateBackend(*bo.Options) error
@@ -80,4 +82,9 @@ func (r Registry) ConfiguredProtocol(options *listenerconfig.Options, except str
 		}
 	}
 	return ""
+}
+
+// HTTPHandlerAdapter supplies reloadable HTTP routing for a protocol bridge.
+type HTTPHandlerAdapter interface {
+	Handler(BuildRequest) (http.Handler, error)
 }

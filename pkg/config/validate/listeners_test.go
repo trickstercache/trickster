@@ -17,6 +17,7 @@
 package validate
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -51,7 +52,7 @@ func TestListenersBackendMappings(t *testing.T) {
 		if err := Listeners(c); err != nil {
 			t.Fatal(err)
 		}
-		if c.Backends["test"].ListenerName != listener.DefaultFrontendName {
+		if !c.Backends["test"].UsesListener(listener.DefaultFrontendName) {
 			t.Errorf("backend did not use default frontend")
 		}
 	})
@@ -402,4 +403,113 @@ func warningsContain(warnings []string, substring string) bool {
 		}
 	}
 	return false
+}
+
+func TestClickHouseListenerBindings(t *testing.T) {
+	for _, protocol := range []string{"http", "native"} {
+		for _, names := range [][]string{{"default"}, {"ch"}, {"ch", "default"}} {
+			t.Run(protocol+strings.Join(names, "/"), func(t *testing.T) {
+				c := config.NewConfig()
+				c.Listeners["ch"] = &listener.Options{Protocol: listener.ProtocolClickHouse, ListenPort: 9000}
+				o := bo.New()
+				o.Provider = providers.ClickHouse
+				o.Protocol = protocol
+				o.OriginURL = "http://localhost:9000"
+				o.ListenerNames = names
+				c.Backends = bo.Lookup{"click": o}
+				if err := Listeners(c); err != nil {
+					t.Fatal(err)
+				}
+				for _, name := range names {
+					if !c.Listeners[name].Active {
+						t.Fatalf("listener %s inactive", name)
+					}
+				}
+				cloned := o.Clone()
+				cloned.ListenerNames[0] = "other"
+				if o.ListenerNames[0] == "other" {
+					t.Fatal("listener names were not cloned")
+				}
+			})
+		}
+	}
+	for _, names := range [][]string{{"missing"}, {"metrics"}, {""}} {
+		c := config.NewConfig()
+		c.Listeners["ch"] = &listener.Options{Protocol: listener.ProtocolClickHouse, ListenPort: 9000}
+		o := bo.New()
+		o.Provider = providers.ClickHouse
+		o.ListenerNames = names
+		c.Backends = bo.Lookup{"click": o}
+		if err := Listeners(c); err == nil {
+			t.Fatalf("accepted listener names %v", names)
+		}
+	}
+}
+
+func TestListenerNamesAreAdditiveAndProviderIndependent(t *testing.T) {
+	for _, test := range []struct {
+		name, provider, legacy string
+		names, want            []string
+		invalid                bool
+	}{
+		{"default", providers.Prometheus, "", nil, []string{"default"}, false},
+		{"legacy", providers.Prometheus, "http2", nil, []string{"http2"}, false},
+		{"additive", providers.Prometheus, "default", []string{"http2", "http2"}, []string{"default", "http2"}, false},
+		{"overlap", providers.ReverseProxyCacheShort, "http2", []string{"http2", "default"}, []string{"default", "http2"}, false},
+		{"mysql", providers.MySQL, "mysql1", []string{"mysql2", "mysql1"}, []string{"mysql1", "mysql2"}, false},
+		{"clickhouse", providers.ClickHouse, "http2", []string{"ch", "default"}, []string{"ch", "default", "http2"}, false},
+		{"prom cannot speak mysql", providers.Prometheus, "", []string{"default", "mysql1"}, nil, true},
+		{"mysql cannot speak http", providers.MySQL, "default", []string{"mysql1"}, nil, true},
+		{"clickhouse cannot speak mysql", providers.ClickHouse, "", []string{"ch", "mysql1"}, nil, true},
+		{"invalid legacy is not ignored", providers.Prometheus, "missing", []string{"default"}, nil, true},
+		{"empty name", providers.Prometheus, "", []string{""}, nil, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := config.NewConfig()
+			for i, name := range []string{"http2", "mysql1", "mysql2", "ch"} {
+				lo := listener.New(name)
+				lo.ListenPort = 9000 + i
+				switch name {
+				case "mysql1", "mysql2":
+					lo.Protocol = listener.ProtocolMySQL
+				case "ch":
+					lo.Protocol = listener.ProtocolClickHouse
+				}
+				c.Listeners[name] = lo
+			}
+			o := bo.New()
+			if test.provider == providers.MySQL {
+				o = mysqlBackend("")
+			}
+			o.Provider = test.provider
+			o.ListenerName = test.legacy
+			o.ListenerNames = test.names
+			c.Backends = bo.Lookup{"test": o}
+			err := Listeners(c)
+			if test.invalid {
+				if err == nil {
+					t.Fatal("accepted unsupported binding")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Equal(o.ListenerNames, test.want) || o.ListenerName != test.legacy {
+				t.Fatalf("bindings %v, legacy %q", o.ListenerNames, o.ListenerName)
+			}
+			if err := Listeners(c); err != nil || !slices.Equal(o.ListenerNames, test.want) {
+				t.Fatalf("normalization is not idempotent: %v %v", o.ListenerNames, err)
+			}
+			for _, name := range test.want {
+				if !c.Listeners[name].Active {
+					t.Fatalf("inactive binding %s", name)
+				}
+			}
+			o.ListenerName = "not-a-runtime-binding"
+			if o.UsesListener(o.ListenerName) {
+				t.Fatal("runtime reads legacy field")
+			}
+		})
+	}
 }

@@ -250,8 +250,9 @@ func parseAnalysis(
 }
 
 type clickHouseRenderer struct {
-	template string
-	bounds   []rendererBound
+	template       string
+	explicitFormat bool
+	bounds         []rendererBound
 }
 
 func (r *clickHouseRenderer) RenderExtent(extent timeseries.Extent) (string, error) {
@@ -287,20 +288,30 @@ var fixedBucketDurations = map[string]time.Duration{
 	"tostartofday":            day,
 	"tostartofhour":           time.Hour,
 	"tostartofminute":         time.Minute,
+	"tostartofsecond":         time.Second,
+	"tostartofmillisecond":    time.Millisecond,
+	"tostartofmicrosecond":    time.Microsecond,
+	"tostartofnanosecond":     time.Nanosecond,
+	"timeslot":                30 * time.Minute,
+	"tostartofweek":           week,
 	"tostartoffiveminute":     5 * time.Minute,
 	"tostartoftenminutes":     10 * time.Minute,
 	"tostartoffifteenminutes": 15 * time.Minute,
 }
 
 var intervalDurations = map[string]time.Duration{
-	"second": time.Second,
-	"minute": time.Minute,
-	"hour":   time.Hour,
-	"day":    day,
-	"week":   week,
+	"nanosecond":  time.Nanosecond,
+	"microsecond": time.Microsecond,
+	"millisecond": time.Millisecond,
+	"second":      time.Second,
+	"minute":      time.Minute,
+	"hour":        time.Hour,
+	"day":         day,
+	"week":        week,
 }
 
 var supportedFormats = map[string]byte{
+	"native":                        6,
 	contenttype.JSON:                0,
 	contenttype.CSV:                 1,
 	"csvwithnames":                  2,
@@ -359,8 +370,11 @@ func matchBucket(expression chast.Expr, constants map[string]int64) (bucketSpec,
 			if !ok {
 				return bucketSpec{}, false
 			}
+			if converted && step < time.Second {
+				return bucketSpec{}, false
+			}
 			unit := timeseries.DateTimeSQL
-			if name == "tomonday" {
+			if name == "tomonday" || name == "tostartofweek" {
 				unit = timeseries.DateSQL
 			} else if converted {
 				unit = timeseries.DateTimeUnixSecs
@@ -368,10 +382,35 @@ func matchBucket(expression chast.Expr, constants map[string]int64) (bucketSpec,
 			phase := time.Duration(0)
 			if name == "tomonday" {
 				phase = 4 * day
+			} else if name == "tostartofweek" {
+				phase = 3 * day
 			}
 			return bucketSpec{
 				timeColumn: column, step: step, phase: phase, outputUnit: unit,
 			}, true
+		}
+		if name == "date_trunc" || name == "datetrunc" {
+			args := functionArgs(function)
+			if len(args) != 2 {
+				return bucketSpec{}, false
+			}
+			unit, ok := unwrapColumnExpr(args[0]).(*chast.StringLiteral)
+			if !ok {
+				return bucketSpec{}, false
+			}
+			step, ok := intervalDurations[strings.ToLower(unit.Literal)]
+			if !ok {
+				return bucketSpec{}, false
+			}
+			column, ok := sourceColumn(args[1])
+			if !ok {
+				return bucketSpec{}, false
+			}
+			phase := time.Duration(0)
+			if strings.EqualFold(unit.Literal, "week") {
+				phase = 4 * day
+			}
+			return bucketSpec{timeColumn: column, step: step, phase: phase, outputUnit: timeseries.DateTimeSQL}, true
 		}
 		if name == "tostartofinterval" {
 			args := functionArgs(function)
@@ -388,7 +427,7 @@ func matchBucket(expression chast.Expr, constants map[string]int64) (bucketSpec,
 			}
 			count, countOK := evalInteger(interval.Expr, constants)
 			unit, unitOK := intervalDurations[strings.ToLower(interval.Unit.Name)]
-			if !countOK || !unitOK || count <= 0 {
+			if !countOK || !unitOK || count <= 0 || count > int64((1<<63-1)/unit) {
 				return bucketSpec{}, false
 			}
 			phase := time.Duration(0)
@@ -728,6 +767,7 @@ const (
 	boundSQLDateTime
 	boundToDateTime
 	boundToDate
+	boundToDateTime64
 )
 
 type endpoint uint8
@@ -867,6 +907,17 @@ func analyzeRanges(
 // Predicates on the bucket output are discrete and can safely move by one
 // cadence for strict comparisons.
 func normalizePrimaryBounds(result *rangeAnalysis, bucket bucketSpec) error {
+	if bucket.step < time.Second {
+		for _, target := range result.targets {
+			if target.style == boundUnixSeconds || target.style == boundToDateTime {
+				target.style = boundToDateTime64 + 9
+			}
+		}
+		if result.lowerStyle == boundUnixSeconds || result.lowerStyle == boundToDateTime {
+			result.lowerStyle = boundToDateTime64 + 9
+		}
+	}
+
 	lowerOnOutput := result.lower.target != nil && result.lower.target.field == bucket.outputColumn
 	if lowerOnOutput {
 		if result.lower.inclusive {
@@ -1140,6 +1191,41 @@ func evaluateBound(
 		if name == "now" && len(functionArgs(value)) == 0 {
 			return analyzedBound{value: now, inclusive: inclusive, style: boundUnixSeconds}, true
 		}
+		if name == "todatetime64" || name == "now64" {
+			args := functionArgs(value)
+			precision := int64(3)
+			if name == "now64" {
+				if len(args) > 1 {
+					return analyzedBound{}, false
+				}
+				if len(args) == 1 {
+					var ok bool
+					precision, ok = evalInteger(args[0], constants)
+					if !ok {
+						return analyzedBound{}, false
+					}
+				}
+				if precision < 0 || precision > 9 {
+					return analyzedBound{}, false
+				}
+				return analyzedBound{value: truncatePrecision(now, precision), inclusive: inclusive, style: boundToDateTime64 + boundStyle(precision)}, true
+			}
+			if len(args) != 2 {
+				return analyzedBound{}, false
+			}
+			var ok bool
+			precision, ok = evalInteger(args[1], constants)
+			if !ok || precision < 0 || precision > 9 {
+				return analyzedBound{}, false
+			}
+			inner, ok := evaluateBound(args[0], inclusive, boundUnixSeconds, constants, now)
+			if !ok {
+				return analyzedBound{}, false
+			}
+			inner.value = truncatePrecision(inner.value, precision)
+			inner.style = boundToDateTime64 + boundStyle(precision)
+			return inner, true
+		}
 		if name == toDateTimeFunction || name == "todate" {
 			args := functionArgs(value)
 			if len(args) != 1 {
@@ -1235,8 +1321,9 @@ func buildQueryArtifacts(query *chast.SelectQuery, ranges rangeAnalysis, step ti
 	for _, bound := range bounds {
 		canonical = strings.ReplaceAll(canonical, bound.token, placeholderFor(bound.endpoint))
 	}
+	explicitFormat := query.Format != nil
 	query.Format = &chast.FormatClause{Format: &chast.Ident{Name: "TSVWithNamesAndTypes"}}
-	return canonical, &clickHouseRenderer{template: chast.Format(query), bounds: bounds}
+	return canonical, &clickHouseRenderer{template: chast.Format(query), bounds: bounds, explicitFormat: explicitFormat}
 }
 
 func placeholderFor(target endpoint) string {
@@ -1251,6 +1338,10 @@ func boundExpression(target endpoint, style boundStyle, extent timeseries.Extent
 	if target == endpointUpper {
 		value = extent.End
 	}
+	if style >= boundToDateTime64 && style <= boundToDateTime64+9 {
+		return functionExpression("toDateTime64", &chast.StringLiteral{Literal: value.UTC().Format("2006-01-02 15:04:05.999999999")},
+			&chast.NumberLiteral{Literal: strconv.Itoa(int(style - boundToDateTime64)), Base: 10})
+	}
 	seconds := &chast.NumberLiteral{Literal: strconv.FormatInt(value.Unix(), 10), Base: 10}
 	switch style {
 	case boundUnixMilli:
@@ -1260,7 +1351,7 @@ func boundExpression(target endpoint, style boundStyle, extent timeseries.Extent
 	case boundUnixNano:
 		return &chast.NumberLiteral{Literal: strconv.FormatInt(value.UnixNano(), 10), Base: 10}
 	case boundSQLDateTime:
-		return &chast.StringLiteral{Literal: value.UTC().Format("2006-01-02 15:04:05")}
+		return &chast.StringLiteral{Literal: value.UTC().Format("2006-01-02 15:04:05.999999999")}
 	case boundToDateTime:
 		return functionExpression("toDateTime", seconds)
 	case boundToDate:
@@ -1307,4 +1398,12 @@ func inputTypeForBound(style boundStyle) timeseries.FieldDataType {
 func looksLikeTimeColumn(name string) bool {
 	name = strings.ToLower(name)
 	return strings.Contains(name, "time") || strings.Contains(name, "date")
+}
+
+func truncatePrecision(value time.Time, precision int64) time.Time {
+	quantum := time.Nanosecond
+	for i := precision; i < 9; i++ {
+		quantum *= 10
+	}
+	return value.Truncate(quantum)
 }

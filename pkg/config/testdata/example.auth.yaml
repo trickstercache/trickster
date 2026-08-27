@@ -3,7 +3,6 @@ main:
 backends:
   backend01:
     provider: reverseproxy
-    listener_name: default
     origin_url: https://example.com/
     timeout: 1m0s
     keep_alive_timeout: 2m0s
@@ -42,7 +41,6 @@ backends:
     latency_max: 0s
   backend02:
     provider: reverseproxy
-    listener_name: default
     origin_url: https://example.com/
     timeout: 1m0s
     keep_alive_timeout: 2m0s
@@ -81,7 +79,6 @@ backends:
     latency_max: 0s
   backend03:
     provider: reverseproxy
-    listener_name: default
     origin_url: https://example.com/
     timeout: 1m0s
     keep_alive_timeout: 2m0s
@@ -119,7 +116,6 @@ backends:
     latency_min: 0s
     latency_max: 0s
   default:
-    listener_name: default
     timeout: 1m0s
     keep_alive_timeout: 2m0s
     max_concurrent_conns: 20

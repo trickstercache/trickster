@@ -51,7 +51,8 @@ func SupportedProviders() types.Lookup {
 // protocol branch in daemon setup or configuration validation.
 var nativeListeners = func() native.Registry {
 	mysqlAdapter := mysql.NativeListenerAdapter()
-	return native.Registry{mysqlAdapter.Protocol(): mysqlAdapter}
+	clickhouseAdapter := clickhouse.NativeListenerAdapter()
+	return native.Registry{mysqlAdapter.Protocol(): mysqlAdapter, clickhouseAdapter.Protocol(): clickhouseAdapter}
 }()
 
 func NativeListeners() native.Registry {
