@@ -1,6 +1,6 @@
 # Trickster Roadmap
 
-The roadmap for Trickster in 2025 focuses on delivering Trickster versions 2.0 and 2.1, as well as supporting new time series applications and cloud native integrations. Additional details for Q3 and Q4 will be provided as the year progresses.
+The roadmap for Trickster in 2026 focuses on delivering Trickster versions 2.0 and 2.1, as well as supporting new time series applications and cloud native integrations. Additional details for Q3 and Q4 will be provided as the year progresses.
 
 ## Timeline
 
@@ -16,8 +16,9 @@ The roadmap for Trickster in 2025 focuses on delivering Trickster versions 2.0 a
   - [x] Support for MySQL as Time Series
   - [x] Auto-reload config + `conf.d` directory support
   - [ ] Support for Graphite
+  - [ ] Support for Druid
   - [ ] Support for InfluxDB 3.0
-  - [ ] Support for Autodiscovery (e.g., Kubernetes Pod Annotations)
+  - [ ] Support for ALB Pool Autodiscovery (e.g., Kubernetes Pod Annotations)
   - [ ] Kube Gateway API support
   - [ ] More easily-importable Trickster packages by other projects
 
