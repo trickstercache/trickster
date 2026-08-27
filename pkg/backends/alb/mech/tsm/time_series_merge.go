@@ -30,9 +30,9 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/errors"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/fanout"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/tsm/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
-	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
@@ -59,7 +59,7 @@ type handler struct {
 	mech.PoolHolder
 	mergePaths            []string // paths handled by the alb client that are enabled for tsmerge
 	outputFormat          string   // the provider output format (e.g., "prometheus")
-	tsmOptions            options.TimeSeriesMergeOptions
+	tsmOptions            options.Options
 	maxCaptureBytes       int
 	maxFanoutCaptureBytes int
 	queryParser           backends.TimeseriesBackend
@@ -94,24 +94,21 @@ type stripKeysSnapshot struct {
 	seen    map[string]struct{}
 }
 
-func RegistryEntry() types.RegistryEntry {
-	return types.RegistryEntry{Name: Name, ShortName: ShortName, New: New}
-}
-
-func New(o *options.Options, factories rt.Lookup) (types.Mechanism, error) {
+// New constructs a time-series merge mechanism from its resolved configuration.
+func New(c Config, factories rt.Lookup) (types.Mechanism, error) {
 	out := &handler{
-		tsmOptions:            o.TSMOptions,
-		maxCaptureBytes:       o.MaxCaptureBytes,
-		maxFanoutCaptureBytes: o.MaxFanoutCaptureBytes,
+		tsmOptions:            c.Options,
+		maxCaptureBytes:       c.MaxCaptureBytes,
+		maxFanoutCaptureBytes: c.MaxFanoutCaptureBytes,
 	}
 	// this validates the merge configuration for the ALB client as it sets it up
 	// First, verify the output format is a support merge provider
-	if !providers.IsSupportedTimeSeriesMergeProvider(o.TSMOptions.OutputFormat) {
+	if !providers.IsSupportedTimeSeriesMergeProvider(c.OutputFormat) {
 		return nil, errors.ErrInvalidTimeSeriesMergeProvider
 	}
 
 	// next, get the factory function required to create a backend handler for the supplied format
-	f, ok := factories[o.TSMOptions.OutputFormat]
+	f, ok := factories[c.OutputFormat]
 	if !ok {
 		return nil, errors.ErrInvalidTimeSeriesMergeProvider
 	}
@@ -133,7 +130,7 @@ func New(o *options.Options, factories rt.Lookup) (types.Mechanism, error) {
 	}
 	// set the merge paths in the ALB client
 	out.mergePaths = mc2.MergeablePaths()
-	out.outputFormat = o.TSMOptions.OutputFormat
+	out.outputFormat = c.OutputFormat
 	return out, nil
 }
 

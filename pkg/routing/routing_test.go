@@ -260,7 +260,7 @@ func TestRegisterProxyRoutesALB(t *testing.T) {
 	}
 
 	opts := &options.Options{MechanismName: names.MechanismTSM}
-	opts.TSMOptions.OutputFormat = providers.Prometheus
+	opts.OutputFormat = providers.Prometheus
 	conf.Backends["default"].ALBOptions = opts
 
 	caches := registry.LoadCachesFromConfig(conf)

@@ -27,10 +27,6 @@ func ptr[T any](v T) *T {
 	return p
 }
 
-// GetQueryConcurrencyLimit must clamp negative inputs to a non-negative value
-// before they are handed to errgroup.SetLimit. A negative value silently
-// disables the limit; a value of 0 here is treated by callers as "unlimited"
-// via the `if limit > 0` gate.
 func TestQueryConcurrencyLimitClampsNegatives(t *testing.T) {
 	cases := []struct {
 		name string

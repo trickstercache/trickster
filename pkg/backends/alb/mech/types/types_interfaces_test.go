@@ -71,10 +71,9 @@ func TestPoolMechanismMembership(t *testing.T) {
 			return m
 		}, false},
 		{"tsm", func(t *testing.T) types.Mechanism {
-			o := &options.Options{}
-			o.TSMOptions.OutputFormat = providers.Prometheus
+			c := tsm.Config{OutputFormat: providers.Prometheus}
 			factories := rt.Lookup{providers.Prometheus: prometheus.NewClient}
-			m, err := tsm.New(o, factories)
+			m, err := tsm.New(c, factories)
 			if err != nil {
 				t.Fatalf("tsm.New: %v", err)
 			}

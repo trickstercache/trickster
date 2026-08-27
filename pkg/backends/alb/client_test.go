@@ -78,7 +78,7 @@ func TestHandlers(t *testing.T) {
 	a := &ao.Options{
 		MechanismName: names.MechanismFR,
 	}
-	a.TSMOptions.OutputFormat = providers.Prometheus
+	a.OutputFormat = providers.Prometheus
 	o := bo.New()
 	o.ALBOptions = a
 
@@ -344,7 +344,7 @@ func TestValidateClientsAllowsReplicaGroupOnNestedTSMMember(t *testing.T) {
 	outerOptions.Provider = providers.ALB
 	outerOptions.ALBOptions = ao.New()
 	outerOptions.ALBOptions.MechanismName = names.MechanismTSM
-	outerOptions.ALBOptions.TSMOptions.OutputFormat = providers.Prometheus
+	outerOptions.ALBOptions.OutputFormat = providers.Prometheus
 	outerOptions.ALBOptions.Pool = []string{"inner"}
 	outerBackend, err := NewClient("outer", outerOptions, nil, nil, nil,
 		types.Lookup{providers.Prometheus: prometheus.NewClient})

@@ -108,7 +108,7 @@ func TestInitialize(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	if o.TSMOptions.OutputFormat != "prometheus" {
+	if o.OutputFormat != "prometheus" {
 		t.Error("expected output_format to be set to prometheus")
 	}
 
@@ -125,7 +125,7 @@ func TestInitialize(t *testing.T) {
 	// Test with tsmerge mechanism name (should be shortened to tsm)
 	o = New()
 	o.MechanismName = "tsmerge"
-	o.TSMOptions.OutputFormat = "prometheus"
+	o.OutputFormat = "prometheus"
 	err = o.Initialize("")
 	if err != nil {
 		t.Error(err)
@@ -167,7 +167,7 @@ func TestInitializeDeprecatedFGRAndDefaultOutputFormat(t *testing.T) {
 	o = New()
 	o.MechanismName = names.MechanismTSM
 	require.NoError(t, o.Initialize(""))
-	require.Equal(t, "prometheus", o.TSMOptions.OutputFormat)
+	require.Equal(t, "prometheus", o.OutputFormat)
 }
 
 func TestValidate(t *testing.T) {
@@ -191,7 +191,7 @@ func TestValidate(t *testing.T) {
 	t.Run("invalid tsm output format", func(t *testing.T) {
 		o := New()
 		o.MechanismName = names.MechanismTSM
-		o.TSMOptions.OutputFormat = "not-a-provider"
+		o.OutputFormat = "not-a-provider"
 		ok, err := o.Validate()
 		require.False(t, ok)
 		require.ErrorIs(t, err, ErrInvalidOutputFormat)
@@ -200,7 +200,7 @@ func TestValidate(t *testing.T) {
 	t.Run("valid tsm output format", func(t *testing.T) {
 		o := New()
 		o.MechanismName = names.MechanismTSM
-		o.TSMOptions.OutputFormat = "prometheus"
+		o.OutputFormat = "prometheus"
 		ok, err := o.Validate()
 		require.True(t, ok)
 		require.NoError(t, err)
@@ -209,7 +209,7 @@ func TestValidate(t *testing.T) {
 	t.Run("output format only for tsm", func(t *testing.T) {
 		o := New()
 		o.MechanismName = names.MechanismRR
-		o.TSMOptions.OutputFormat = "prometheus"
+		o.OutputFormat = "prometheus"
 		ok, err := o.Validate()
 		require.False(t, ok)
 		require.ErrorIs(t, err, ErrOutputFormatOnlyForTSM)
