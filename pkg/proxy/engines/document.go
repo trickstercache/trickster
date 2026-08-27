@@ -18,10 +18,11 @@ package engines
 
 import (
 	"bytes"
+	"cmp"
 	"errors"
 	"io"
 	"net/http"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -126,7 +127,9 @@ func (d *HTTPDocument) GetByterangeChunk(chunkRange byterange.Range, _ int64) *H
 		ddbi -= chunkRange.Start
 		dd.Body = dd.Body[:ddbi]
 		dd.Ranges = dd.Ranges[:ddri]
-		sort.Sort(dd.Ranges)
+		slices.SortFunc(dd.Ranges, func(a, b byterange.Range) int {
+			return cmp.Compare(a.Start, b.Start)
+		})
 	}
 	return dd
 }

@@ -24,7 +24,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/checksum/md5"
@@ -80,7 +80,7 @@ func (mbrs MultipartByteRanges) Body(fullContentLength int64, contentType string
 
 	// otherwise, we return a multipart response
 
-	sort.Sort(ranges)
+	slices.SortFunc(ranges, rangeCmp)
 
 	boundary := md5.Checksum(ranges.String())
 	bw := bytes.NewBuffer(make([]byte, 0))
@@ -118,7 +118,7 @@ func (mbrs MultipartByteRanges) Ranges() Ranges {
 		k++
 	}
 	ranges = ranges[:k]
-	sort.Sort(ranges)
+	slices.SortFunc(ranges, rangeCmp)
 	return ranges
 }
 

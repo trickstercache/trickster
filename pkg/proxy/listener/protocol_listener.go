@@ -28,6 +28,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/connhandler"
+
 	"golang.org/x/net/netutil"
 )
 
@@ -47,9 +48,9 @@ type ProtocolListener struct {
 	cancel      context.CancelFunc
 }
 
-// StartProtocolListener creates a raw TCP listener, registers it with the
+// StartLegacyProtocolListener creates a raw TCP listener, registers it with the
 // Group, and runs the accept loop. It blocks until the listener is closed.
-func (lg *Group) StartProtocolListener(
+func (lg *Group) StartLegacyProtocolListener(
 	name, address string, port, connectionsLimit int,
 	handler connhandler.ConnectionHandler, errorFunc func(),
 ) error {

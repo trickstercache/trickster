@@ -26,7 +26,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/andybalholm/brotli"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	tspan "github.com/trickstercache/trickster/v2/pkg/observability/tracing/span"
@@ -36,6 +35,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
+
+	"github.com/andybalholm/brotli"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -114,6 +115,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 	if span != nil {
 		defer span.End()
 	}
+	setResourceSpanAttributes(rsc, span)
 
 	var d *HTTPDocument
 	var lookupStatus status.LookupStatus
@@ -121,6 +123,7 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 	// Query document
 	qr := queryConcurrent(ctx, c, key)
 	if qr.err != nil {
+		tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", qr.lookupStatus.String()))
 		return qr.d, qr.lookupStatus, ranges, qr.err
 	}
 	if unmarshal != nil {
@@ -259,6 +262,7 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 	if span != nil {
 		defer span.End()
 	}
+	setResourceSpanAttributes(rsc, span)
 
 	d.headerLock.Lock()
 	h := http.Header(d.Headers)

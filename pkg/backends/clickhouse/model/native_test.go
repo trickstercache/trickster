@@ -416,7 +416,7 @@ func TestMarshalTimeseriesNative_EmptyDataSet(t *testing.T) {
 
 func TestMarshalTimeseriesNative_WriterError(t *testing.T) {
 	ds := testDataSet()
-	for i := 0; i < 40; i++ {
+	for i := range 40 {
 		err := marshalTimeseriesNative(shortWriter{max: i}, ds, &timeseries.RequestOptions{})
 		if err == nil {
 			// Once the short writer accepts enough bytes it should succeed.
@@ -519,14 +519,14 @@ func TestUnmarshalTimeseriesNativeReader_MultiBlock(t *testing.T) {
 		_ = writeNativeString(b, "t")
 		_ = writeNativeString(b, "UInt64")
 		_, _ = b.Write([]byte{0})
-		for i := 0; i < rows; i++ {
+		for i := range rows {
 			_ = writeNativeValue(b, "UInt64",
 				strconv.FormatInt(1577836800000+int64(i)*60000, 10))
 		}
 		_ = writeNativeString(b, "hostname")
 		_ = writeNativeString(b, "String")
 		_, _ = b.Write([]byte{0})
-		for i := 0; i < rows; i++ {
+		for range rows {
 			_ = writeNativeValue(b, "String", "localhost")
 		}
 	}
@@ -629,4 +629,3 @@ func (s shortWriter) Write(p []byte) (int, error) {
 	}
 	return n, nil
 }
-

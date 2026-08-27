@@ -3,14 +3,13 @@
 #
 # Config for TestLifecycle_ReloadPreservesHCStatus (regression #919)
 
-frontend:
-  listen_port: 8530
-
-metrics:
-  listen_port: 8531
-
-mgmt:
-  listen_port: 8532
+listeners:
+  default:
+    port: 8530
+  metrics:
+    port: 8531
+  mgmt:
+    port: 8532
 
 logging:
   log_level: info

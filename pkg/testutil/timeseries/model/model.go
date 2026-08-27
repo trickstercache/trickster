@@ -23,7 +23,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"sort"
+	"slices"
 	"strconv"
 	"time"
 
@@ -175,7 +175,15 @@ func MarshalTimeseriesWriter(ts timeseries.Timeseries,
 		}
 		w.Write([]byte(`},"values":[`))
 		sep = ""
-		sort.Sort(s.Points)
+		slices.SortFunc(s.Points, func(a, b dataset.Point) int {
+			if a.Epoch < b.Epoch {
+				return -1
+			}
+			if a.Epoch > b.Epoch {
+				return 1
+			}
+			return 0
+		})
 		for _, p := range s.Points {
 			fmt.Fprintf(w, `%s[%s,"%s"]`,
 				sep,

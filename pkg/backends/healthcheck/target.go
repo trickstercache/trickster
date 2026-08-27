@@ -18,8 +18,11 @@ package healthcheck
 
 import (
 	"context"
+	"crypto/rand"
+	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"net"
 	"net/http"
 	"slices"
@@ -31,9 +34,9 @@ import (
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
-	"github.com/trickstercache/trickster/v2/pkg/util/timeconv"
 )
 
 // target defines a Health Check target
@@ -42,19 +45,27 @@ type target struct {
 	description           string
 	baseRequest           *http.Request
 	httpClient            *http.Client
+	probeFunc             Probe
+	timeout               time.Duration
 	interval              time.Duration
 	status                *Status
 	failureThreshold      int
 	recoveryThreshold     int
 	failConsecutiveCnt    atomic.Int32
 	successConsecutiveCnt atomic.Int32
-	cancel                context.CancelFunc
-	wg                    sync.WaitGroup
-	ceb                   bool
-	eb                    string
-	eh                    http.Header
-	ec                    []int
+	// guards cancel and wg across Start/Stop cycles
+	mtx    sync.Mutex
+	cancel context.CancelFunc
+	wg     sync.WaitGroup
+	ceb    bool
+	eb     string
+	eh     http.Header
+	ec     []int
 }
+
+// Probe is a protocol-neutral health probe. Returned errors must be safe for
+// operator-facing health status, logs, and demand-probe responses.
+type Probe func(context.Context) error
 
 // DemandProbe defines a health check probe that makes an HTTP Request to the backend and writes the
 // response to the provided ResponseWriter
@@ -78,31 +89,14 @@ func newTarget(_ context.Context, name, description string, o *ho.Options,
 	if len(o.Headers) > 0 {
 		r.Header = headers.Lookup(o.Headers).ToHeader()
 	}
-	interval := o.Interval
 	if client == nil {
-		client = newHTTPClient(ho.CalibrateTimeout(o.Timeout))
+		client = newHTTPClient(ho.CalibrateTimeout(time.Duration(o.Timeout)))
 	}
-	if o.FailureThreshold < 1 {
-		o.FailureThreshold = 3 // default to 3
-	}
-	if o.RecoveryThreshold < 1 {
-		o.RecoveryThreshold = 3 // default to 3
-	}
-	isd := fmt.Sprintf("initializing (check interval: %dms)", interval.Milliseconds())
-	t := &target{
-		name:              name,
-		description:       description,
-		baseRequest:       r,
-		httpClient:        client,
-		failureThreshold:  o.FailureThreshold,
-		recoveryThreshold: o.RecoveryThreshold,
-		interval:          interval,
-	}
+	t := newBaseTarget(name, description, o)
+	t.baseRequest = r
+	t.httpClient = client
+	t.status.prober = t.demandProbe
 
-	t.status = &Status{name: name, detail: isd, description: description, prober: t.demandProbe}
-	if interval > 0 {
-		t.status.Set(StatusInitializing)
-	}
 	if len(o.ExpectedHeaders) > 0 {
 		t.eh = headers.Lookup(o.ExpectedHeaders).ToHeader()
 	}
@@ -116,6 +110,53 @@ func newTarget(_ context.Context, name, description string, o *ho.Options,
 		t.ec = []int{http.StatusOK}
 	}
 	return t, nil
+}
+
+func newProbeTarget(name, description string, o *ho.Options, probe Probe) (*target, error) {
+	if o == nil {
+		return nil, ho.ErrNoOptionsProvided
+	}
+	if probe == nil {
+		return nil, errors.New("no health check probe provided")
+	}
+	if hasHTTPProbeOptions(o) {
+		return nil, errors.New("protocol health checks do not accept HTTP request or response options")
+	}
+	t := newBaseTarget(name, description, o)
+	t.probeFunc = probe
+	t.status.prober = t.demandProbe
+	return t, nil
+}
+
+func newBaseTarget(name, description string, o *ho.Options) *target {
+	interval := time.Duration(o.Interval)
+	if o.FailureThreshold < 1 {
+		o.FailureThreshold = 3 // default to 3
+	}
+	if o.RecoveryThreshold < 1 {
+		o.RecoveryThreshold = 3 // default to 3
+	}
+	isd := fmt.Sprintf("initializing (check interval: %dms)", interval.Milliseconds())
+	t := &target{
+		name:              name,
+		description:       description,
+		failureThreshold:  o.FailureThreshold,
+		recoveryThreshold: o.RecoveryThreshold,
+		interval:          interval,
+		timeout:           ho.CalibrateTimeout(time.Duration(o.Timeout)),
+	}
+
+	t.status = &Status{name: name, detail: isd, description: description}
+	if interval > 0 {
+		t.status.Set(StatusInitializing)
+	}
+	return t
+}
+
+func hasHTTPProbeOptions(o *ho.Options) bool {
+	return o.Verb != "" || o.Scheme != "" || o.Host != "" || o.Path != "" ||
+		o.Query != "" || len(o.Headers) > 0 || o.Body != "" ||
+		len(o.ExpectedCodes) > 0 || len(o.ExpectedHeaders) > 0 || o.HasExpectedBody()
 }
 
 func (t *target) Name() string {
@@ -170,9 +211,14 @@ func (t *target) isGoodBody(r io.ReadCloser) bool {
 
 // Start begins health checking the target
 func (t *target) Start(ctx context.Context) {
+	t.mtx.Lock()
+	defer t.mtx.Unlock()
 	if t.cancel != nil {
-		t.Stop()
+		t.cancel()
+		t.wg.Wait()
+		t.cancel = nil
 	}
+	t.wg = sync.WaitGroup{}
 	ctx, cancel := context.WithCancel(tctx.WithHealthCheckFlag(ctx, true))
 	t.cancel = cancel
 	t.probeLoop(ctx)
@@ -180,18 +226,46 @@ func (t *target) Start(ctx context.Context) {
 
 // Stop stops healthchecking the target
 func (t *target) Stop() {
+	t.mtx.Lock()
+	defer t.mtx.Unlock()
 	if t.cancel == nil {
 		return
 	}
 	t.cancel()
 	t.wg.Wait()
+	t.cancel = nil
 }
 
 func (t *target) probeLoop(ctx context.Context) {
+	// runProbe isolates each probe invocation so a panic only kills this
+	// iteration; the ticker loop keeps running and the target's Status stays
+	// fresh. Without this, a single bad probe (nil deref, panicking transport,
+	// etc.) silently freezes Status at its last value.
+	runProbe := func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Error("healthcheck probe panic", logging.Pairs{
+					"target": t.Name(),
+					"panic":  fmt.Sprintf("%v", r),
+				})
+				metrics.HealthcheckProbePanicRecovered.WithLabelValues(t.Name()).Inc()
+			}
+		}()
+		t.probe(context.WithoutCancel(ctx))
+	}
 	t.wg.Go(func() {
 		// this prevents all health checks from always probing at the same time
-		timeconv.SleepRandomMS(10, 1000)
-		t.probe(ctx) // perform initial probe
+		jitter := time.NewTimer(randomJitter(10*time.Millisecond, time.Second))
+		select {
+		case <-ctx.Done():
+			jitter.Stop()
+			return
+		case <-jitter.C:
+		}
+		// detach the probe request from the loop ctx so Stop waits for the
+		// in-flight probe to finish instead of cancelling it; this serializes
+		// Register-over-existing at the upstream level.
+		runProbe()
 		ticker := time.NewTicker(t.interval)
 		defer ticker.Stop()
 		for {
@@ -199,40 +273,71 @@ func (t *target) probeLoop(ctx context.Context) {
 			case <-ctx.Done():
 				return // probe complete, stop loop and prevent goroutine leak
 			case <-ticker.C:
-				t.probe(ctx)
+				runProbe()
 			}
 		}
 	})
 }
 
 func (t *target) probe(ctx context.Context) {
+	if t.probeFunc != nil {
+		t.probeProtocol(ctx)
+		return
+	}
 	r := t.baseRequest.Clone(ctx)
+	start := time.Now()
 	resp, err := t.httpClient.Do(r)
-	var errCnt, successCnt int
+	metrics.HealthcheckProbeLatency.WithLabelValues(t.Name()).Observe(time.Since(start).Seconds())
 	var passed bool
 	var detail string
 	switch {
 	case err != nil, resp == nil:
+		// CheckRedirect returns a non-nil resp alongside its error; close to release the conn.
+		if resp != nil && resp.Body != nil {
+			resp.Body.Close()
+		}
 		detail = fmt.Sprintf("error probing target: %v", err)
+	case !t.isGoodCode(resp.StatusCode) || !t.isGoodHeader(resp.Header) || !t.isGoodBody(resp.Body):
+		detail = t.status.Detail()
+		resp.Body.Close()
+	default:
+		resp.Body.Close()
+		passed = true
+	}
+	statusCode := 0
+	if resp != nil && err == nil {
+		statusCode = resp.StatusCode
+	}
+	t.recordProbeResult(passed, detail, err, statusCode)
+}
+
+func (t *target) probeProtocol(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(ctx, t.timeout)
+	defer cancel()
+	start := time.Now()
+	err := t.probeFunc(ctx)
+	metrics.HealthcheckProbeLatency.WithLabelValues(t.Name()).Observe(time.Since(start).Seconds())
+	detail := ""
+	if err != nil {
+		detail = "error probing target: " + err.Error()
+	}
+	t.recordProbeResult(err == nil, detail, err, 0)
+}
+
+func (t *target) recordProbeResult(passed bool, detail string, err error, statusCode int) {
+	st := t.status.Get()
+	var errCnt, successCnt int
+	if passed {
+		successCnt = int(t.successConsecutiveCnt.Add(1))
+		t.failConsecutiveCnt.Store(0)
+	} else {
 		t.status.SetDetail(detail)
 		errCnt = int(t.failConsecutiveCnt.Add(1))
 		t.successConsecutiveCnt.Store(0)
-
-		LogHealthCheckError(t.Name(), err, 0)
-
-	case !t.isGoodCode(resp.StatusCode) || !t.isGoodHeader(resp.Header) || !t.isGoodBody(resp.Body):
-		errCnt = int(t.failConsecutiveCnt.Add(1))
-		t.successConsecutiveCnt.Store(0)
-		resp.Body.Close()
-
-		LogHealthCheckError(t.Name(), nil, resp.StatusCode)
-	default:
-		resp.Body.Close()
-		successCnt = int(t.successConsecutiveCnt.Add(1))
-		t.failConsecutiveCnt.Store(0)
-		passed = true
+		if st != StatusFailing {
+			LogHealthCheckError(t.Name(), err, statusCode)
+		}
 	}
-	st := t.status.Get()
 	nst := StatusFailing
 	if (passed && successCnt >= t.recoveryThreshold) ||
 		(st == StatusPassing && errCnt < t.failureThreshold) {
@@ -250,13 +355,13 @@ func (t *target) notifyStatus(st int32, detail string) {
 	pairs := logging.Pairs{"targetName": t.name}
 	switch st {
 	case StatusFailing:
-		t.status.failingSince = time.Now()
+		t.status.SetFailingSince(time.Now())
 		t.status.SetDetail(detail)
 		pairs["status"] = "unavailable"
 		pairs["detail"] = detail
 		pairs["threshold"] = t.failureThreshold
 	case StatusPassing:
-		t.status.failingSince = time.Time{}
+		t.status.SetFailingSince(time.Time{})
 		pairs["status"] = "available"
 		pairs["threshold"] = t.recoveryThreshold
 		t.status.SetDetail("")
@@ -266,8 +371,15 @@ func (t *target) notifyStatus(st int32, detail string) {
 }
 
 func (t *target) demandProbe(w http.ResponseWriter) {
+	if t.probeFunc != nil {
+		t.demandProtocolProbe(w)
+		return
+	}
 	r := t.baseRequest.Clone(context.Background())
 	resp, err := t.httpClient.Do(r)
+	if resp != nil && resp.Body != nil {
+		defer resp.Body.Close()
+	}
 	h := w.Header()
 	if err != nil {
 		if t.status != nil && t.status.Get() != StatusUnchecked {
@@ -297,6 +409,31 @@ func (t *target) demandProbe(w http.ResponseWriter) {
 	}
 }
 
+func (t *target) demandProtocolProbe(w http.ResponseWriter) {
+	ctx, cancel := context.WithTimeout(context.Background(), t.timeout)
+	defer cancel()
+	err := t.probeFunc(ctx)
+	t.copyStatusHeaders(w.Header())
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("error performing health check: " + err.Error()))
+		LogHealthCheckError(t.Name(), err, 0)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("health check passed"))
+}
+
+func (t *target) copyStatusHeaders(h http.Header) {
+	if t.status == nil || t.status.Get() == StatusUnchecked {
+		return
+	}
+	sh := t.status.Headers()
+	for k := range sh {
+		h.Set(k, sh.Get(k))
+	}
+}
+
 // LogHealthCheckError logs a failed health check by printing
 // the backend target name, error, and HTTP status. These parameters
 // are optional and can be omitted by passing their default values.
@@ -319,6 +456,17 @@ func LogHealthCheckError(targetName string, err error, status int) {
 	logger.Error(standardLogLine, pairs)
 }
 
+func randomJitter(min, max time.Duration) time.Duration {
+	if max <= min {
+		return min
+	}
+	n, err := rand.Int(rand.Reader, big.NewInt(int64(max-min)))
+	if err != nil {
+		return min
+	}
+	return min + time.Duration(n.Int64())
+}
+
 func newHTTPClient(timeout time.Duration) *http.Client {
 	return &http.Client{
 		Timeout: timeout,
@@ -326,10 +474,10 @@ func newHTTPClient(timeout time.Duration) *http.Client {
 			return http.ErrUseLastResponse
 		},
 		Transport: &http.Transport{
-			Dial: (&net.Dialer{
+			DialContext: (&net.Dialer{
 				Timeout:   timeout,
 				KeepAlive: time.Second * 30,
-			}).Dial,
+			}).DialContext,
 			MaxIdleConns:          1,
 			MaxIdleConnsPerHost:   1,
 			MaxConnsPerHost:       1,

@@ -22,6 +22,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
+
 	"go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/baggage"
@@ -79,6 +80,25 @@ func NewChildSpan(ctx context.Context, tr *tracing.Tracer,
 	)
 
 	return ctx, span
+}
+
+// PrepareOutgoingRequest attaches HTTP client tracing hooks and injects the
+// active trace context into an outbound request.
+func PrepareOutgoingRequest(ctx context.Context, r *http.Request,
+	tr *tracing.Tracer,
+) (context.Context, *http.Request) {
+	if r == nil || tr == nil || tr.Tracer == nil {
+		return ctx, r
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if tctx.HealthCheckFlag(ctx) {
+		return ctx, r
+	}
+	ctx, r = otelhttptrace.W3C(ctx, r)
+	otelhttptrace.Inject(ctx, r)
+	return ctx, r
 }
 
 // SetAttributes safely sets attributes on a span, unless they are in the omit list

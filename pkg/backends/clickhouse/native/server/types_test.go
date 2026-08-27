@@ -284,7 +284,7 @@ func TestWriteIPv6(t *testing.T) {
 	if got[15] != 1 {
 		t.Fatalf("last byte of ::1 should be 1, got %x", got[15])
 	}
-	for i := 0; i < 15; i++ {
+	for i := range 15 {
 		if got[i] != 0 {
 			t.Fatalf("byte %d of ::1 should be 0, got %x", i, got[i])
 		}

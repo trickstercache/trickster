@@ -19,11 +19,14 @@ package options
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
+
+	"go.yaml.in/yaml/v3"
 )
 
 // Options defines the options for a Rule
@@ -152,7 +155,22 @@ func (o *Options) Initialize(_ string) error {
 
 // Clone returns a perfect copy of the subject *Options
 func (o *Options) Clone() *Options {
-	return pointers.Clone(o)
+	out := pointers.Clone(o)
+	out.CaseOptions = o.CaseOptions.Clone()
+	return out
+}
+
+// Clone returns a perfect copy of the subject CaseOptionsList
+func (l CaseOptionsList) Clone() CaseOptionsList {
+	out := make(CaseOptionsList, len(l))
+	for i, c := range l {
+		if c == nil {
+			continue
+		}
+		out[i] = pointers.Clone(c)
+		out[i].Matches = slices.Clone(c.Matches)
+	}
+	return out
 }
 
 func (o *Options) Validate() (bool, error) {
@@ -189,20 +207,20 @@ func (l Lookup) Validate() error {
 	return nil
 }
 
-func (o *Options) UnmarshalYAML(unmarshal func(any) error) error {
+func (o *Options) UnmarshalYAML(value *yaml.Node) error {
 	type loadOptions Options
 	lo := loadOptions(*(New()))
-	if err := unmarshal(&lo); err != nil {
+	if err := value.Decode(&lo); err != nil {
 		return err
 	}
 	*o = Options(lo)
 	return nil
 }
 
-func (o *CaseOptions) UnmarshalYAML(unmarshal func(any) error) error {
+func (o *CaseOptions) UnmarshalYAML(value *yaml.Node) error {
 	type loadOptions CaseOptions
 	lo := loadOptions(CaseOptions{})
-	if err := unmarshal(&lo); err != nil {
+	if err := value.Decode(&lo); err != nil {
 		return err
 	}
 	*o = CaseOptions(lo)

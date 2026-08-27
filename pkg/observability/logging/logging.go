@@ -30,8 +30,8 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/manager"
 	tstr "github.com/trickstercache/trickster/v2/pkg/util/strings"
-	lumberjack "gopkg.in/natefinch/lumberjack.v2"
 )
 
 var (
@@ -90,21 +90,18 @@ func New(conf *config.Config) Logger {
 	if conf.Logging.LogFile == "" {
 		l.writer = os.Stdout
 	} else {
-		logFile := conf.Logging.LogFile
-		if conf.Main.InstanceID > 0 {
-			logFile = strings.Replace(logFile, ".log",
-				"."+strconv.Itoa(conf.Main.InstanceID)+".log", 1)
+		mo := conf.Logging.ManagerOptions()
+		mo.Filename = manager.InstanceFilename(mo.Filename,
+			conf.Main.InstanceID)
+		if w, err := manager.GetWriter(mo); err == nil {
+			l.writer = w
+			l.closer = w
+		} else {
+			_, _ = fmt.Fprintf(os.Stderr,
+				"trickster: unable to open log file %q; using stdout: %v\n",
+				mo.Filename, err)
+			l.writer = os.Stdout
 		}
-		l.writer = &lumberjack.Logger{
-			Filename:   logFile,
-			MaxSize:    256,  // megabytes
-			MaxBackups: 80,   // 256 megs @ 80 backups is 20GB of Logs
-			MaxAge:     7,    // days
-			Compress:   true, // Compress Rolled Backups
-		}
-	}
-	if c, ok := l.writer.(io.Closer); ok && c != nil {
-		l.closer = c
 	}
 	l.SetLogLevel(level.Level(conf.Logging.LogLevel))
 	return l
@@ -150,6 +147,9 @@ type logger struct {
 	writer         io.Writer
 	closer         io.Closer
 	mtx            sync.Mutex
+	asyncMtx       sync.Mutex
+	asyncWG        sync.WaitGroup
+	asyncClosed    bool
 	onceRanEntries sync.Map
 	logFunc        logFunc
 	now            func() time.Time
@@ -246,7 +246,9 @@ func (l *logger) ErrorSynchronous(event string, detail Pairs) {
 }
 
 func (l *logger) Fatal(code int, event string, detail Pairs) {
+	l.drainAsync()
 	l.log(level.Fatal, event, detail)
+	_ = l.Flush()
 	if code < 0 {
 		// tests will send a -1 code to avoid a panic during the test
 		return
@@ -320,7 +322,18 @@ func (l *logger) HasLoggedOnce(logLevel level.Level, key string) bool {
 }
 
 func (l *logger) logAsyncronous(logLevel level.Level, event string, detail Pairs) {
-	go l.logWithCaller(logLevel, event, detail, getCaller(1))
+	caller := getCaller(1)
+	l.asyncMtx.Lock()
+	if l.asyncClosed {
+		l.asyncMtx.Unlock()
+		return
+	}
+	l.asyncWG.Add(1)
+	l.asyncMtx.Unlock()
+	go func() {
+		defer l.asyncWG.Done()
+		l.logWithCaller(logLevel, event, detail, caller)
+	}()
 }
 
 type item struct {
@@ -433,8 +446,26 @@ func (l *logger) Level() level.Level {
 	return l.level
 }
 
+// Flush writes buffered log output to its destination when supported.
+func (l *logger) Flush() error {
+	l.mtx.Lock()
+	defer l.mtx.Unlock()
+	if flusher, ok := l.writer.(interface{ Flush() error }); ok {
+		return flusher.Flush()
+	}
+	return nil
+}
+
 func (l *logger) Close() {
+	l.drainAsync()
 	if l.closer != nil {
 		l.closer.Close()
 	}
+}
+
+func (l *logger) drainAsync() {
+	l.asyncMtx.Lock()
+	l.asyncClosed = true
+	l.asyncMtx.Unlock()
+	l.asyncWG.Wait()
 }

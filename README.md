@@ -4,7 +4,7 @@
 [![Coverage Status](https://coveralls.io/repos/github/trickstercache/trickster/badge.svg)](https://coveralls.io/github/trickstercache/trickster)
 [![build status](https://github.com/trickstercache/trickster/actions/workflows/ci-build-tests.yml/badge.svg)](https://github.com/trickstercache/trickster/actions/workflows/ci-build-tests.yml)
 [![CII Best Practices](https://bestpractices.coreinfrastructure.org/projects/2518/badge)](https://bestpractices.coreinfrastructure.org/en/projects/2518)
-[![GoDoc](https://godoc.org/github.com/trickstercache/trickster?status.svg)](https://godoc.org/github.com/trickstercache/trickster)
+[![GoDoc](https://godoc.org/github.com/trickstercache/trickster/v2?status.svg)](https://godoc.org/github.com/trickstercache/trickster/v2)
 [![Docker Pulls](https://img.shields.io/docker/pulls/tricksterio/trickster.svg?maxAge=86400)](https://hub.docker.com/r/tricksterio/trickster)
 
 Trickster is an HTTP reverse proxy/cache for http applications and a dashboard query accelerator for time series databases.
@@ -14,8 +14,6 @@ Trickster is an HTTP reverse proxy/cache for http applications and a dashboard q
 Learn more below, and check out our [roadmap](./docs/roadmap.md) to find out what else is in the works.
 
 Trickster is hosted by the [Cloud Native Computing Foundation](https://cncf.io) (CNCF) as a sandbox level project. If you are a company that wants to help shape the evolution of technologies that are container-packaged, dynamically-scheduled and microservices-oriented, consider joining the CNCF.
-
-Note: Trickster v1.1 is the production release, sourced from the [v1.1.x](https://github.com/trickstercache/trickster/tree/v1.1.x) branch. The `main` branch sources Trickster 2.0, which is currently in beta.
 
 ## HTTP Reverse Proxy Cache
 
@@ -27,11 +25,13 @@ Trickster is a fully-featured HTTP Reverse Proxy Cache for HTTP applications lik
 * [Supports TLS](./docs/tls.md) and HTTP/2 for frontend termination and backend origination
 * Offers several options for a [caching layer](./docs/caches.md), including in-memory, filesystem, Redis and bbolt
 * [Highly customizable](./docs/configuring.md), using simple yaml configuration settings, [down to the HTTP Path](./docs/paths.md)
+* Per-backend and per-path [CORS response policies](./docs/cors.md)
 * Built-in Prometheus [metrics](./docs/metrics.md) and customizable [Health Check](./docs/health.md) Endpoints for end-to-end monitoring
 * [Negative Caching](./docs/negative-caching.md) to prevent domino effect outages
 * High-performance [Collapsed Forwarding](./docs/collapsed-forwarding.md)
 * Best-in-class [Byte Range Request caching and acceleration](./docs/range_request.md).
 * [Distributed Tracing](./docs/tracing.md) via OpenTelemetry, supporting OTLP protocol.
+* Per-backend [Access and Error Logs](./docs/access-logs.md) with Apache-style customizable formats
 * Rules engine for custom request routing and rewriting
 * Configurable [maximum request body size](./docs/body.md).
 
@@ -43,11 +43,13 @@ Trickster dramatically improves dashboard chart rendering times for end users by
 
 Trickster works with virtually any Dashboard application that makes queries to any of these TSDB's:
 
-<img src="./docs/images/external/prom_logo_60.png" width=16 /> Prometheus
+<img src="./docs/images/external/prom_logo_60.png" width=24 /> [Prometheus](docs/prometheus.md)
 
-<img src="./docs/images/external/clickhouse_logo.png" width=16 /> ClickHouse
+<img src="./docs/images/external/clickhouse_logo.png" width=24 /> [ClickHouse](docs/clickhouse.md)
 
-<img src="./docs/images/external/influx_logo_60.png" width=16 /> InfluxDB
+<img src="./docs/images/external/influx_logo_60.png" width=24 /> [InfluxDB](docs/influxdb.md)
+
+<img src="./docs/images/external/mysql_logo_60.png" width=24 /> [MySQL](docs/mysql.md)
 
 See the [Supported TSDB Providers](./docs/supported-backend-providers.md) document for full details
 
@@ -106,7 +108,7 @@ See the 'deploy' Directory for Kube and deployment files and examples.
 
 ### Helm
 
-Trickster Helm Charts are located at <https://helm.tricksterproxy.io> for installation, and maintained at <https://github.com/trickstercache/helm-charts>. We welcome chart contributions.
+Trickster Helm Charts are located at <https://helm.trickstercache.org/> for installation, and maintained at <https://github.com/trickstercache/helm-charts>. We welcome chart contributions.
 
 ### Building from source
 

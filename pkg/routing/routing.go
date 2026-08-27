@@ -30,9 +30,11 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/reverseproxycache"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/config"
+	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	encoding "github.com/trickstercache/trickster/v2/pkg/encoding/handler"
 	fopt "github.com/trickstercache/trickster/v2/pkg/frontend/options"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/handler"
@@ -50,15 +52,26 @@ import (
 
 var noCacheBackends = providers.NonCacheBackends()
 
-// attachAuthenticator attaches authentication middleware to the handler based on path and backend options
 func attachAuthenticator(h http.Handler, pathOptions *po.Options, backendOptions *bo.Options) http.Handler {
 	if pathOptions.AuthOptions != nil && pathOptions.AuthOptions.Authenticator != nil {
-		h = handler.Middleware(pathOptions.AuthOptions.Authenticator, h)
+		h = handler.NamedMiddleware(pathOptions.AuthOptions.Name,
+			pathOptions.AuthOptions.Authenticator, h)
 	} else if pathOptions.AuthenticatorName != "none" && backendOptions.AuthOptions != nil &&
 		backendOptions.AuthOptions.Authenticator != nil {
-		h = handler.Middleware(backendOptions.AuthOptions.Authenticator, h)
+		h = handler.NamedMiddleware(backendOptions.AuthOptions.Name,
+			backendOptions.AuthOptions.Authenticator, h)
 	}
 	return h
+}
+
+func hasAuthenticator(pathOptions *po.Options, backendOptions *bo.Options) bool {
+	return pathOptions.AuthOptions != nil && pathOptions.AuthOptions.Authenticator != nil ||
+		pathOptions.AuthenticatorName != "none" && backendOptions.AuthOptions != nil &&
+			backendOptions.AuthOptions.Authenticator != nil
+}
+
+func shouldCaptureAuth(pathOptions *po.Options, backendOptions *bo.Options) bool {
+	return hasAuthenticator(pathOptions, backendOptions) || backends.IsVirtual(backendOptions.Provider)
 }
 
 // RegisterProxyRoutes iterates the Trickster Configuration and
@@ -67,10 +80,50 @@ func RegisterProxyRoutes(conf *config.Config, clients backends.Backends,
 	r router.Router, metricsRouter router.Router, caches cache.Lookup,
 	tracers tracing.Tracers, dryRun bool,
 ) error {
+	return registerProxyRoutes(conf, clients, r, func(*bo.Options) router.Router { return r },
+		metricsRouter, caches, tracers, dryRun)
+}
+
+// RegisterProxyRoutesForListeners registers each backend on its configured listener router.
+func RegisterProxyRoutesForListeners(conf *config.Config, clients backends.Backends,
+	listenerRouters map[string]router.Router, metricsRouter router.Router, caches cache.Lookup,
+	tracers tracing.Tracers, dryRun bool,
+) error {
+	defaultRouter := listenerRouters[listener.DefaultFrontendName]
+	nativeRouters := make(map[string]router.Router)
+	if defaultRouter == nil {
+		for _, r := range listenerRouters {
+			defaultRouter = r
+			break
+		}
+	}
+	return registerProxyRoutes(conf, clients, defaultRouter, func(o *bo.Options) router.Router {
+		if o == nil {
+			return nil
+		}
+		if r := listenerRouters[o.ListenerName]; r != nil {
+			return r
+		}
+		// Native route targets still need an internal router to satisfy the
+		// Backend interface, but it is never attached to an HTTP listener.
+		if registry.NativeListeners().Get(strings.ToLower(o.Provider)) != nil {
+			if nativeRouters[o.Name] == nil {
+				nativeRouters[o.Name] = lm.NewRouter()
+			}
+			return nativeRouters[o.Name]
+		}
+		return nil
+	}, metricsRouter, caches, tracers, dryRun)
+}
+
+func registerProxyRoutes(conf *config.Config, clients backends.Backends,
+	defaultRouter router.Router, routerFor func(*bo.Options) router.Router,
+	metricsRouter router.Router, caches cache.Lookup, tracers tracing.Tracers, dryRun bool,
+) error {
 	// a fake "top-level" backend representing the main frontend, so rules can route
 	// to it via the clients map
 	var err error
-	clients["frontend"], err = reverseproxycache.NewClient("frontend", &bo.Options{}, r, nil, nil, nil)
+	clients["frontend"], err = reverseproxycache.NewClient("frontend", &bo.Options{}, defaultRouter, nil, nil, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create frontend client: %w", err)
 	}
@@ -104,12 +157,20 @@ func RegisterProxyRoutes(conf *config.Config, clients backends.Backends,
 			ndo = o
 			continue
 		}
+		r := routerFor(o)
+		if r == nil {
+			return fmt.Errorf("no router configured for listener %q", o.ListenerName)
+		}
 		if err := registerBackendRoutes(r, metricsRouter, conf,
 			k, o, clients, caches, tracers, dryRun); err != nil {
 			return err
 		}
 	}
 	if ndo != nil {
+		r := routerFor(ndo)
+		if r == nil {
+			return fmt.Errorf("no router configured for listener %q", ndo.ListenerName)
+		}
 		if cdo == nil {
 			ndo.IsDefault = true
 			cdo = ndo
@@ -122,6 +183,10 @@ func RegisterProxyRoutes(conf *config.Config, clients backends.Backends,
 		}
 	}
 	if cdo != nil {
+		r := routerFor(cdo)
+		if r == nil {
+			return fmt.Errorf("no router configured for listener %q", cdo.ListenerName)
+		}
 		if err := registerBackendRoutes(r, metricsRouter, conf,
 			defaultBackend, cdo, clients, caches, tracers, dryRun); err != nil {
 			return err
@@ -134,7 +199,8 @@ func RegisterProxyRoutes(conf *config.Config, clients backends.Backends,
 func RegisterHealthHandler(router router.Router, path string,
 	hc healthcheck.HealthChecker, backends backends.Backends,
 ) {
-	router.RegisterRoute(path, nil, nil, false, health.StatusHandler(nil, hc, backends))
+	router.RegisterRoute(path, nil, nil, matching.PathMatchTypeExact,
+		health.StatusHandler(nil, hc, backends))
 }
 
 func registerBackendRoutes(r router.Router, metricsRouter router.Router,
@@ -188,7 +254,7 @@ func registerBackendRoutes(r router.Router, metricsRouter router.Router,
 					"upstreamPath": o.HealthCheck.Path,
 					"upstreamVerb": o.HealthCheck.Verb,
 				})
-			metricsRouter.RegisterRoute(hp, nil, nil, false,
+			metricsRouter.RegisterRoute(hp, nil, nil, matching.PathMatchTypeExact,
 				middleware.WithResourcesContext(client, o, nil,
 					nil, nil, h))
 		}
@@ -214,19 +280,23 @@ func RegisterPathRoutes(r router.Router, conf *config.Config, handlers handlers.
 		}
 	}
 
+	al := newAccessLogger(conf, o)
+
 	applyMiddleware := func(po1 *po.Options) http.Handler {
 		// default base route is the path handler
-		maxBodySizeBytes, truncateOnly := getSizeLimits(conf.Frontend)
-		h := bodyfilter.Handler(maxBodySizeBytes, truncateOnly, po1.Handler)
+		maxBodySizeBytes, truncateOnly := getSizeLimits(frontendOptions(conf, o))
+		h := middleware.LimitQueryRange(po1.Handler)
+		h = bodyfilter.Handler(maxBodySizeBytes, truncateOnly, h)
 		// attach distributed tracer
 		if tr != nil {
 			h = middleware.Trace(tr, h)
 		}
 		// attach authenticator
+		captureAuth := shouldCaptureAuth(po1, o)
 		h = attachAuthenticator(h, po1, o)
 		// attach compression handler
 		h = encoding.HandleCompression(h, o.CompressibleTypes)
-		// add Backend, Cache, and Path Configs to the HTTP Request's context
+		// add Backend, Cache, and Path Configs to the HTTP Request's context (must wrap outer than LimitQueryRange)
 		h = middleware.WithResourcesContext(client, o, c, po1, tr, h)
 		// attach any request rewriters
 		if len(o.ReqRewriter) > 0 {
@@ -239,10 +309,18 @@ func RegisterPathRoutes(r router.Router, conf *config.Config, handlers handlers.
 		if !po1.NoMetrics {
 			h = middleware.Decorate(o.Name, o.Provider, po1.Path, h)
 		}
+		// attach access logging outermost so it observes the full request
+		h = accesslog.Middleware(al, po1.Path, captureAuth, h)
 		return h
 	}
 
 	or := client.Router().(router.Router)
+
+	if o.Paths.RegexShadowedByCatchAll() {
+		logger.Warn("regex paths are unreachable behind a catch-all prefix path;"+
+			" convert the catch-all to a regex (e.g., ^/.*) to make them reachable",
+			logging.Pairs{"backendName": o.Name})
+	}
 
 	for _, p := range o.Paths {
 		if p.Handler == nil && p.HandlerName != "" {
@@ -252,7 +330,17 @@ func RegisterPathRoutes(r router.Router, conf *config.Config, handlers handlers.
 		}
 
 		pathPrefix := "/" + o.Name
-		handledPath := pathPrefix + p.Path
+		var handledPath string
+		if p.MatchType == matching.PathMatchTypeRegex {
+			// splice the backend name between the pattern's leading ^ anchor
+			// (guaranteed by path Options Initialize) and the remainder, so
+			// ^/[^/]+/results becomes ^/backendName/[^/]+/results; this works
+			// for the escaped ^\/ form too, and StripPathPrefix is unaffected
+			// because the literal request path begins with /backendName
+			handledPath = "^/" + o.Name + strings.TrimPrefix(p.Path, "^")
+		} else {
+			handledPath = pathPrefix + p.Path
+		}
 
 		logger.Debug("registering backend handler path",
 			logging.Pairs{
@@ -268,15 +356,15 @@ func RegisterPathRoutes(r router.Router, conf *config.Config, handlers handlers.
 			}
 			if len(o.Hosts) > 0 {
 				r.RegisterRoute(p.Path, o.Hosts, p.Methods,
-					p.MatchType == matching.PathMatchTypePrefix, applyMiddleware(p))
+					p.MatchType, applyMiddleware(p))
 			}
 			if !o.PathRoutingDisabled {
 				r.RegisterRoute(handledPath, nil, p.Methods,
-					p.MatchType == matching.PathMatchTypePrefix,
+					p.MatchType,
 					middleware.StripPathPrefix(pathPrefix, applyMiddleware(p)))
 			}
 			or.RegisterRoute(p.Path, nil, p.Methods,
-				p.MatchType == matching.PathMatchTypePrefix, applyMiddleware(p))
+				p.MatchType, applyMiddleware(p))
 		}
 	}
 
@@ -287,19 +375,39 @@ func RegisterPathRoutes(r router.Router, conf *config.Config, handlers handlers.
 func RegisterDefaultBackendRoutes(r router.Router, conf *config.Config,
 	bknds backends.Backends, tracers tracing.Tracers,
 ) {
+	registerDefaultBackendRoutes(func(*bo.Options) router.Router { return r }, conf, bknds, tracers)
+}
+
+// RegisterDefaultBackendRoutesForListeners registers default routes on each backend's listener.
+func RegisterDefaultBackendRoutesForListeners(listenerRouters map[string]router.Router,
+	conf *config.Config, bknds backends.Backends, tracers tracing.Tracers,
+) {
+	registerDefaultBackendRoutes(func(o *bo.Options) router.Router {
+		if o == nil {
+			return nil
+		}
+		return listenerRouters[o.ListenerName]
+	}, conf, bknds, tracers)
+}
+
+func registerDefaultBackendRoutes(routerFor func(*bo.Options) router.Router, conf *config.Config,
+	bknds backends.Backends, tracers tracing.Tracers,
+) {
 	applyMiddleware := func(o *bo.Options, po *po.Options, tr *tracing.Tracer,
-		c cache.Cache, client backends.Backend,
+		c cache.Cache, client backends.Backend, al *accesslog.Logger,
 	) http.Handler {
 		// default base route is the path handler
-		maxBodySizeBytes, truncateOnly := getSizeLimits(conf.Frontend)
-		h := bodyfilter.Handler(maxBodySizeBytes, truncateOnly, po.Handler)
+		maxBodySizeBytes, truncateOnly := getSizeLimits(frontendOptions(conf, o))
+		h := middleware.LimitQueryRange(po.Handler)
+		h = bodyfilter.Handler(maxBodySizeBytes, truncateOnly, h)
 		// attach distributed tracer
 		if tr != nil {
 			h = middleware.Trace(tr, h)
 		}
 		// attach authenticator
+		captureAuth := shouldCaptureAuth(po, o)
 		h = attachAuthenticator(h, po, o)
-		// add Backend, Cache, and Path Configs to the HTTP Request's context
+		// add Backend, Cache, and Path Configs to the HTTP Request's context (must wrap outer than LimitQueryRange)
 		h = middleware.WithResourcesContext(client, o, c, po, tr, h)
 		// attach any request rewriters
 		if len(o.ReqRewriter) > 0 {
@@ -312,18 +420,26 @@ func RegisterDefaultBackendRoutes(r router.Router, conf *config.Config,
 		if !po.NoMetrics {
 			h = middleware.Decorate(o.Name, o.Provider, po.Path, h)
 		}
+		// attach access logging outermost so it observes the full request
+		h = accesslog.Middleware(al, po.Path, captureAuth, h)
 		return h
 	}
 
 	for _, b := range bknds {
 		o := b.Configuration()
 		if o.IsDefault {
+			r := routerFor(o)
+			if r == nil {
+				continue
+			}
 			var tr *tracing.Tracer
 			if t, ok := tracers[o.TracingConfigName]; ok {
 				tr = t
 			}
 			logger.Info("registering default backend handler paths",
 				logging.Pairs{"backendName": o.Name})
+
+			al := newAccessLogger(conf, o)
 
 			for _, p := range o.Paths {
 				if p.Handler != nil && len(p.Methods) > 0 {
@@ -335,16 +451,50 @@ func RegisterDefaultBackendRoutes(r router.Router, conf *config.Config,
 							"matchType":   p.MatchType,
 						})
 
-					if p.MatchType == matching.PathMatchTypePrefix {
+					// a prefix path is also registered for exact matching so
+					// requests to the exact path route without a prefix scan
+					mt := p.MatchType
+					if mt == matching.PathMatchTypePrefix {
 						r.RegisterRoute(p.Path, nil, p.Methods,
-							true, applyMiddleware(o, p, tr, b.Cache(), b))
+							matching.PathMatchTypePrefix,
+							applyMiddleware(o, p, tr, b.Cache(), b, al))
+						mt = matching.PathMatchTypeExact
 					}
 					r.RegisterRoute(p.Path, nil, p.Methods,
-						false, applyMiddleware(o, p, tr, b.Cache(), b))
+						mt, applyMiddleware(o, p, tr, b.Cache(), b, al))
 				}
 			}
 		}
 	}
+}
+
+func newAccessLogger(conf *config.Config, o *bo.Options) *accesslog.Logger {
+	if o == nil || !o.AccessLog.IsEnabled() {
+		return nil
+	}
+	var instanceID int
+	if conf != nil && conf.Main != nil {
+		instanceID = conf.Main.InstanceID
+	}
+	al, err := accesslog.NewLogger(o.AccessLog, instanceID, o.Name, o.Provider)
+	if err != nil {
+		logger.Error("access logger creation failed; access logging disabled",
+			logging.Pairs{"backendName": o.Name, "error": err.Error()})
+		return nil
+	}
+	return al
+}
+
+func frontendOptions(conf *config.Config, o *bo.Options) *fopt.Options {
+	if conf != nil && o != nil {
+		if options := conf.FrontendOptionsForListener(o.ListenerName); options != nil {
+			return options
+		}
+	}
+	if conf == nil {
+		return nil
+	}
+	return conf.Frontend
 }
 
 func getSizeLimits(opt *fopt.Options) (int64, bool) {

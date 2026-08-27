@@ -38,9 +38,30 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/tls/monitor"
+	"github.com/trickstercache/trickster/v2/pkg/util/safego"
 )
 
 var mtx sync.Mutex
+
+// hupDelegate is the function newHupFunc forwards to. Indirected through a
+// package var so tests can swap it out without invoking the full reload path.
+// Initialized in init() to break the Hup -> newHupFunc -> hupDelegate -> Hup
+// initialization cycle.
+var hupDelegate func(si *instance.ServerInstance, source string, args ...string) (bool, error)
+
+func init() {
+	hupDelegate = Hup
+}
+
+// newHupFunc returns a reload.Reloader closed over args, so subsequent reloads
+// continue reading from the original -config path. Used for both the initial
+// registration and the re-registration performed after a successful reload.
+func newHupFunc(si *instance.ServerInstance, args []string) reload.Reloader {
+	return func(source string) (bool, error) {
+		return hupDelegate(si, source, args...)
+	}
+}
 
 func Start(ctx context.Context, args ...string) error {
 	var skipUnlock bool
@@ -75,11 +96,12 @@ func Start(ctx context.Context, args ...string) error {
 	}
 
 	si := &instance.ServerInstance{
-		Listeners: listener.NewGroup(),
+		Listeners:   listener.NewGroup(),
+		CertMonitor: monitor.New(),
 	}
-	var hupFunc reload.Reloader = func(source string) (bool, error) {
-		return Hup(si, source, args...)
-	}
+	hupFunc := newHupFunc(si, args)
+	autoReloader := bindAutoReloader(ctx, si, hupFunc)
+	defer autoReloader.Close()
 	// Serve with Config
 	err = setup.ApplyConfig(si, conf, clients, hupFunc, func() { os.Exit(1) }, si.Listeners)
 	if err != nil {
@@ -89,7 +111,7 @@ func Start(ctx context.Context, args ...string) error {
 	if si.Listeners != nil {
 		readinessTimeout := 30 * time.Second
 		if conf.MgmtConfig != nil && conf.MgmtConfig.ReloadDrainTimeout > 0 {
-			readinessTimeout = conf.MgmtConfig.ReloadDrainTimeout * 2
+			readinessTimeout = time.Duration(conf.MgmtConfig.ReloadDrainTimeout) * 2
 		}
 		if err := si.Listeners.WaitForReady(readinessTimeout); err != nil {
 			logger.Warn("startup completed but some listeners not ready",
@@ -98,15 +120,16 @@ func Start(ctx context.Context, args ...string) error {
 			logger.Info("all listeners ready", nil)
 		}
 	}
+	autoReloader.Update(conf)
+	si.CertMonitor.Apply(conf, si.Listeners)
 
 	skipUnlock = true
 	mtx.Unlock()
 	signaling.Wait(ctx, hupFunc)
+	autoReloader.Close()
+	si.CertMonitor.Close()
 	if si.Listeners != nil {
-		si.Listeners.DrainAndClose("httpListener", 0)
-		si.Listeners.DrainAndClose("tlsListener", 0)
-		si.Listeners.DrainAndClose("metricsListener", 0)
-		si.Listeners.DrainAndClose("mgmtListener", 0)
+		si.Listeners.Shutdown(0)
 	}
 	return nil
 }
@@ -158,11 +181,8 @@ func Hup(si *instance.ServerInstance, source string, args ...string) (bool, erro
 	oldClients := si.Backends
 	oldCaches := si.Caches
 	oldHealthChecker := si.HealthChecker
-	oldListeners := si.Listeners
 
-	hupFunc := func(source string) (bool, error) {
-		return Hup(si, source)
-	}
+	hupFunc := newHupFunc(si, args)
 
 	err = setup.ApplyConfig(si, newConf, newClients, hupFunc, nil, si.Listeners)
 	if err != nil {
@@ -172,7 +192,6 @@ func Hup(si *instance.ServerInstance, source string, args ...string) (bool, erro
 		si.Backends = oldClients
 		si.Caches = oldCaches
 		si.HealthChecker = oldHealthChecker
-		si.Listeners = oldListeners
 		metrics.ReloadFailuresTotal.Inc()
 		metrics.LastReloadSuccessful.Set(0)
 		metrics.ReloadDurationSeconds.Observe(time.Since(startTime).Seconds())
@@ -182,7 +201,7 @@ func Hup(si *instance.ServerInstance, source string, args ...string) (bool, erro
 	if si.Listeners != nil {
 		readinessTimeout := 30 * time.Second
 		if newConf.MgmtConfig != nil && newConf.MgmtConfig.ReloadDrainTimeout > 0 {
-			readinessTimeout = newConf.MgmtConfig.ReloadDrainTimeout * 2
+			readinessTimeout = time.Duration(newConf.MgmtConfig.ReloadDrainTimeout) * 2
 		}
 		if err := si.Listeners.WaitForReady(readinessTimeout); err != nil {
 			logger.Warn("reload completed but some listeners not ready",
@@ -190,17 +209,25 @@ func Hup(si *instance.ServerInstance, source string, args ...string) (bool, erro
 		}
 	}
 
-	if oldListeners != nil && oldListeners != si.Listeners {
+	if si.CertMonitor != nil {
+		// rebuild the cert stores from the new config while preserving watcher
+		// continuity for unchanged certificate file sets
+		si.CertMonitor.Apply(newConf, si.Listeners)
+	}
+
+	if oldClients != nil {
+		// close idle now, then again after drain so conns released by
+		// in-flight requests post-rotation also get reaped before the
+		// per-transport IdleConnTimeout (default 2m) elapses.
+		oldClients.CloseIdleConnections()
 		drainTimeout := 30 * time.Second
 		if newConf.MgmtConfig != nil && newConf.MgmtConfig.ReloadDrainTimeout > 0 {
-			drainTimeout = newConf.MgmtConfig.ReloadDrainTimeout
+			drainTimeout = time.Duration(newConf.MgmtConfig.ReloadDrainTimeout)
 		}
-		go func() {
-			if err := oldListeners.Shutdown(drainTimeout); err != nil {
-				logger.Warn("error shutting down old listeners",
-					logging.Pairs{"error": err.Error(), "source": source})
-			}
-		}()
+		safego.Go(reloadGoroutinePanic("oldClients.CloseIdleConnections", source), func() {
+			time.Sleep(drainTimeout)
+			oldClients.CloseIdleConnections()
+		})
 	}
 
 	metrics.ReloadSuccessesTotal.Inc()
@@ -209,5 +236,17 @@ func Hup(si *instance.ServerInstance, source string, args ...string) (bool, erro
 	metrics.ReloadDurationSeconds.Observe(time.Since(startTime).Seconds())
 
 	logger.Info(reload.ConfigReloadedText, logging.Pairs{"source": source})
+	notifyAutoReloader(si)
 	return true, nil
+}
+
+func reloadGoroutinePanic(site, source string) safego.PanicHandler {
+	return func(r any, stack []byte) {
+		logger.Error("reload background goroutine panic", logging.Pairs{
+			"site":   site,
+			"source": source,
+			"panic":  r,
+			"stack":  string(stack),
+		})
+	}
 }

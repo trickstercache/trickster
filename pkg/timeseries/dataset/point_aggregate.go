@@ -20,14 +20,19 @@ import (
 	"math"
 	"slices"
 	"strconv"
+
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
 )
 
-// sortAndAggregate sorts points by epoch and aggregates values at matching
-// epochs using the specified strategy. For MergeStrategyDedup, it falls back
-// to the existing sortAndDedupe behavior.
-func sortAndAggregate(p Points, strategy MergeStrategy) Points {
-	if strategy == MergeStrategyDedup {
-		return sortAndDedupe(p)
+// sortAndAggregateTolerant is sortAndAggregate with an opt-in tolerance window
+// for the dedup strategy; non-dedup strategies ignore tolerance since
+// aggregating across a multi-step window would change semantics that callers
+// don't expect (sum-of-cluster, not sum-at-epoch).
+func sortAndAggregateTolerant(p Points, strategy merge.Strategy, toleranceNanos int64,
+	valueOperations ValueMergeOperations,
+) Points {
+	if strategy == merge.StrategyDedup {
+		return sortAndDedupeTolerant(p, toleranceNanos)
 	}
 	if len(p) <= 1 {
 		return p
@@ -50,13 +55,13 @@ func sortAndAggregate(p Points, strategy MergeStrategy) Points {
 		}
 		if p[k].Epoch == p[i].Epoch {
 			// same epoch: aggregate values
-			aggregateValues(&p[k], &p[i], strategy)
+			aggregateValuesWithOperations(&p[k], &p[i], strategy, valueOperations)
 			count++
 			// for avg, we finalize after the run ends (see below)
 		} else {
 			// new epoch: finalize avg for previous run if needed
-			if strategy == MergeStrategyAvg && count > 1 {
-				finalizeAvg(&p[k], count)
+			if strategy == merge.StrategyAvg && count > 1 {
+				finalizeAvgWithOperations(&p[k], count, valueOperations)
 			}
 			count = 1
 			k++
@@ -66,15 +71,15 @@ func sortAndAggregate(p Points, strategy MergeStrategy) Points {
 		}
 	}
 	// finalize avg for the last run
-	if strategy == MergeStrategyAvg && count > 1 {
-		finalizeAvg(&p[k], count)
+	if strategy == merge.StrategyAvg && count > 1 {
+		finalizeAvgWithOperations(&p[k], count, valueOperations)
 	}
 	return p[:k+1]
 }
 
-// aggregateValues combines the value from src into dst using the given strategy.
-// Both points are expected to have at least one value in Values[0] as a string-encoded float.
-func aggregateValues(dst, src *Point, strategy MergeStrategy) {
+func aggregateValuesWithOperations(dst, src *Point, strategy merge.Strategy,
+	valueOperations ValueMergeOperations,
+) {
 	if len(dst.Values) == 0 || len(src.Values) == 0 {
 		return
 	}
@@ -83,6 +88,13 @@ func aggregateValues(dst, src *Point, strategy MergeStrategy) {
 	dNaN := math.IsNaN(dv)
 	sNaN := math.IsNaN(sv)
 	if dNaN && sNaN {
+		if valueOperations != nil {
+			if value, handled := valueOperations.MergeValues(
+				dst.Values[0], src.Values[0], strategy,
+			); handled {
+				setPointValue(dst, 0, value)
+			}
+		}
 		return // both non-numeric (e.g. histograms): keep dst as-is
 	}
 	if dNaN {
@@ -94,12 +106,14 @@ func aggregateValues(dst, src *Point, strategy MergeStrategy) {
 	}
 	var result float64
 	switch strategy {
-	case MergeStrategySum, MergeStrategyAvg, MergeStrategyCount:
+	case merge.StrategySum, merge.StrategyAvg, merge.StrategyCount:
 		result = dv + sv
-	case MergeStrategyMin:
+	case merge.StrategyMin:
 		result = math.Min(dv, sv)
-	case MergeStrategyMax:
+	case merge.StrategyMax:
 		result = math.Max(dv, sv)
+	case merge.StrategyScalar:
+		result = dv
 	default:
 		result = sv
 	}
@@ -108,15 +122,39 @@ func aggregateValues(dst, src *Point, strategy MergeStrategy) {
 
 // finalizeAvg divides the accumulated sum in p by count.
 func finalizeAvg(p *Point, count int) {
+	finalizeAvgWithOperations(p, count, nil)
+}
+
+func finalizeAvgWithOperations(p *Point, count int,
+	valueOperations ValueMergeOperations,
+) {
 	if len(p.Values) == 0 || count <= 1 {
 		return
 	}
 	v := parseFloat(p.Values[0])
 	if math.IsNaN(v) {
+		if valueOperations != nil {
+			if value, handled := valueOperations.DivideValue(
+				p.Values[0], float64(count),
+			); handled {
+				setPointValue(p, 0, value)
+			}
+		}
 		return
 	}
 	v /= float64(count)
 	p.Values[0] = strconv.FormatFloat(v, 'f', -1, 64)
+}
+
+func setPointValue(point *Point, index int, value any) {
+	if point.Size > 0 {
+		oldString, oldOK := point.Values[index].(string)
+		newString, newOK := value.(string)
+		if oldOK && newOK {
+			point.Size += len(newString) - len(oldString)
+		}
+	}
+	point.Values[index] = value
 }
 
 // parseFloat extracts a float64 from a point value. Returns NaN if unparsable.
@@ -136,10 +174,37 @@ func parseFloat(v any) float64 {
 }
 
 // MergePointsWithStrategy merges two Points slices using the specified strategy.
-// For MergeStrategyDedup, this behaves identically to MergePoints.
-func MergePointsWithStrategy(p, p2 Points, sortPoints bool, strategy MergeStrategy) Points {
-	if strategy == MergeStrategyDedup {
-		return MergePoints(p, p2, sortPoints)
+// For merge.StrategyDedup, this behaves identically to MergePoints.
+func MergePointsWithStrategy(p, p2 Points, sortPoints bool, strategy merge.Strategy) Points {
+	return MergePointsWithOpts(p, p2, MergeOpts{SortPoints: sortPoints, Strategy: strategy})
+}
+
+// MergePointsWithOpts is the MergeOpts-aware merge primitive. Tolerance > 0 is
+// only honored when opts.Strategy == merge.StrategyDedup (see
+// sortAndAggregateTolerant for the rationale).
+func MergePointsWithOpts(p, p2 Points, opts MergeOpts) Points {
+	if opts.Strategy == merge.StrategyDedup {
+		if p == nil && p2 == nil {
+			return nil
+		}
+		if len(p) == 0 && len(p2) == 0 {
+			return Points{}
+		}
+		finalize := func(out Points) Points {
+			if opts.SortPoints && len(out) > 1 {
+				out = sortAndDedupeTolerant(out, opts.ToleranceNanos)
+			}
+			return out
+		}
+		if len(p2) == 0 {
+			return finalize(p.Clone())
+		} else if len(p) == 0 {
+			return finalize(p2.Clone())
+		}
+		out := make(Points, len(p)+len(p2))
+		copy(out, p)
+		copy(out[len(p):], p2)
+		return finalize(out)
 	}
 	if p == nil && p2 == nil {
 		return nil
@@ -148,13 +213,14 @@ func MergePointsWithStrategy(p, p2 Points, sortPoints bool, strategy MergeStrate
 		return Points{}
 	}
 	// For count strategy, we need to initialize src values to 1 before merging
-	if strategy == MergeStrategyCount {
+	if opts.Strategy == merge.StrategyCount {
 		p = initCountValues(p)
 		p2 = initCountValues(p2)
 	}
 	finalize := func(out Points) Points {
-		if sortPoints && len(out) > 1 {
-			out = sortAndAggregate(out, strategy)
+		if opts.SortPoints && len(out) > 1 {
+			out = sortAndAggregateTolerant(out, opts.Strategy, opts.ToleranceNanos,
+				opts.ValueOperations)
 		}
 		return out
 	}

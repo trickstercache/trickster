@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"maps"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 )
@@ -82,13 +81,13 @@ func (t Tags) StringsWithSep(sep1, sep2 string) string {
 	if len(t) == 0 {
 		return ""
 	}
-	pairs := make(sort.StringSlice, len(t))
+	pairs := make([]string, len(t))
 	var i int
 	for k, v := range t {
 		pairs[i] = fmt.Sprintf("%s%s%s", k, sep1, v)
 		i++
 	}
-	sort.Sort(pairs)
+	slices.Sort(pairs)
 	return strings.Join(pairs, sep2)
 }
 

@@ -20,6 +20,7 @@ package params
 import (
 	"bytes"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"strings"
@@ -89,7 +90,9 @@ func GetRequestValues(r *http.Request) (url.Values, []byte, bool) {
 		if err != nil {
 			return r.URL.Query(), nil, false
 		}
-		r.ParseMultipartForm(10 * 1024 * 1024)
+		const maxMultipartFormBytes = 10 * 1024 * 1024
+		r.Body = http.MaxBytesReader(nil, r.Body, maxMultipartFormBytes)
+		r.ParseMultipartForm(maxMultipartFormBytes) // #nosec G120 -- body bounded by MaxBytesReader above; gosec taint does not track Body field
 		r.Body.Close()
 		r.Body = io.NopCloser(bytes.NewReader(b))
 		// Merge URL query with form body: the caller may have split params
@@ -102,9 +105,7 @@ func GetRequestValues(r *http.Request) (url.Values, []byte, bool) {
 		// any backend Trickster supports, and a single canonical value makes
 		// cache keys deterministic. See #969 follow-up.
 		merged := r.URL.Query()
-		for k, vs := range r.PostForm {
-			merged[k] = vs
-		}
+		maps.Copy(merged, r.PostForm)
 		return merged, []byte(merged.Encode()), true
 	default:
 		v := r.URL.Query()
@@ -135,12 +136,24 @@ func GetRequestValues(r *http.Request) (url.Values, []byte, bool) {
 func SetRequestValues(r *http.Request, v url.Values) {
 	s := v.Encode()
 	r.URL.RawQuery = s
+	if r.MultipartForm != nil {
+		// prevents temp file leakage before clearing the pointer
+		_ = r.MultipartForm.RemoveAll()
+	}
+	r.Form = nil
+	r.PostForm = nil
+	r.MultipartForm = nil
 	if methods.HasBody(r.Method) {
 		// also reset the body so the upstream request carries the updated params
 		if r.Body != nil {
 			r.Body.Close()
 		}
-		r.ContentLength = int64(len(s))
-		r.Body = io.NopCloser(strings.NewReader(s))
+		b := []byte(s)
+		r.ContentLength = int64(len(b))
+		r.Body = io.NopCloser(bytes.NewReader(b))
+		// keep the resource body cache in sync
+		if rsc := request.GetResources(r); rsc != nil {
+			rsc.RequestBody = b
+		}
 	}
 }

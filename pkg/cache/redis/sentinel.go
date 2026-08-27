@@ -18,6 +18,7 @@ package redis
 
 import (
 	"crypto/tls"
+	"time"
 
 	redis "github.com/redis/go-redis/v9"
 )
@@ -57,23 +58,23 @@ func (c *CacheClient) sentinelOpts() (*redis.FailoverOptions, error) {
 	}
 
 	if c.Config.Redis.MinRetryBackoff != 0 {
-		o.MinRetryBackoff = c.Config.Redis.MinRetryBackoff
+		o.MinRetryBackoff = time.Duration(c.Config.Redis.MinRetryBackoff)
 	}
 
 	if c.Config.Redis.MaxRetryBackoff != 0 {
-		o.MaxRetryBackoff = c.Config.Redis.MaxRetryBackoff
+		o.MaxRetryBackoff = time.Duration(c.Config.Redis.MaxRetryBackoff)
 	}
 
 	if c.Config.Redis.DialTimeout != 0 {
-		o.DialTimeout = c.Config.Redis.DialTimeout
+		o.DialTimeout = time.Duration(c.Config.Redis.DialTimeout)
 	}
 
 	if c.Config.Redis.ReadTimeout != 0 {
-		o.ReadTimeout = c.Config.Redis.ReadTimeout
+		o.ReadTimeout = time.Duration(c.Config.Redis.ReadTimeout)
 	}
 
 	if c.Config.Redis.WriteTimeout != 0 {
-		o.WriteTimeout = c.Config.Redis.WriteTimeout
+		o.WriteTimeout = time.Duration(c.Config.Redis.WriteTimeout)
 	}
 
 	if c.Config.Redis.PoolSize != 0 {
@@ -85,15 +86,15 @@ func (c *CacheClient) sentinelOpts() (*redis.FailoverOptions, error) {
 	}
 
 	if c.Config.Redis.ConnMaxLifetime != 0 {
-		o.ConnMaxLifetime = c.Config.Redis.ConnMaxLifetime
+		o.ConnMaxLifetime = time.Duration(c.Config.Redis.ConnMaxLifetime)
 	}
 
 	if c.Config.Redis.PoolTimeout != 0 {
-		o.PoolTimeout = c.Config.Redis.PoolTimeout
+		o.PoolTimeout = time.Duration(c.Config.Redis.PoolTimeout)
 	}
 
 	if c.Config.Redis.ConnMaxIdleTime != 0 {
-		o.ConnMaxIdleTime = c.Config.Redis.ConnMaxIdleTime
+		o.ConnMaxIdleTime = time.Duration(c.Config.Redis.ConnMaxIdleTime)
 	}
 
 	return o, nil

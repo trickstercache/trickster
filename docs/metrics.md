@@ -77,6 +77,23 @@ The following metrics are available for polling with any Trickster configuration
 
 * `trickster_proxy_failed_connections_total` (Counter) - Trickster total number of failed client connections.
 
+* `trickster_proxy_query_range_rejected_total` (Counter) - Trickster total number of queries rejected due to exceeding the `max_query_range` limit.
+  * labels:
+    * `backend` - the name of the configured backend rejecting the query
+
+* `trickster_sql_query_analysis_total` (Counter) - Count of SQL query cache-eligibility classifications. Labels never include query text.
+  * labels:
+    * `backend_name` - the name of the configured backend analyzing the query
+    * `dialect` - the SQL dialect of the analyzing backend (e.g., `clickhouse`)
+    * `cache_mode` - the strongest cache mode supported by the query (`delta`, `object`, or `none`)
+    * `reason` - the stable classification reason code (e.g., `delta_cacheable`, `unsafe_predicate`, `unsupported_bucket`)
+
+* `trickster_sql_query_rewrite_failures_total` (Counter) - Count of SQL cache-miss extent rewrite failures. Labels never include query text.
+  * labels:
+    * `backend_name` - the name of the configured backend rendering the query
+    * `dialect` - the SQL dialect of the rendering backend
+    * `reason` - the fixed internal failure category
+
 * `trickster_cache_operation_objects_total` (Counter) - The total number of objects upon which the Trickster cache has operated.
   * labels:
     * `cache_name` - the name of the configured cache performing the operation$
@@ -90,6 +107,41 @@ The following metrics are available for polling with any Trickster configuration
     * `provider` - the type of the configured cache performing the operation
     * `operation` - the name of the operation being performed (read, write, etc.)
     * `status` - the result of the operation being performed
+
+* `trickster_alb_pool_admits_failing` (Gauge) - 1 when an ALB pool's `healthy_floor` admits members in the `unavailable` state, 0 otherwise. See [alb.md](./alb.md#health-based-backend-selection) for the recommended floor.
+  * labels:
+    * `backend_name` - the name of the configured ALB backend
+
+* `trickster_alb_pool_floor_reset` (Gauge) - 1 when an ALB pool's `healthy_floor` was reset to 0 at startup because pool members have no health check and could never reach the configured floor, 0 otherwise. See [alb.md](./alb.md#health-based-backend-selection).
+  * labels:
+    * `backend_name` - the name of the configured ALB backend
+
+* `trickster_tls_certificate_expiration_time_seconds` (Gauge) - NotAfter time of a serving TLS certificate, as unix seconds. See [tls.md](./tls.md).
+  * labels:
+    * `listener` - the name of the listener serving the certificate
+    * `entry` - the certificate's source identity
+
+* `trickster_tls_certificate_last_load_time_seconds` (Gauge) - Epoch timestamp a serving TLS certificate was last loaded from its source
+  * labels:
+    * `listener` - the name of the listener serving the certificate
+    * `entry` - the certificate's source identity
+
+* `trickster_tls_certificate_swaps_total` (Counter) - Count of TLS certificates hot-swapped into a live listener by rotation detection
+  * labels:
+    * `listener` - the name of the listener serving the certificate
+    * `entry` - the certificate's source identity
+
+* `trickster_tls_certificate_validation_failures_total` (Counter) - Count of detected TLS certificate source changes that failed pair validation (e.g. a mid-rotation partial write) and were not swapped in
+  * labels:
+    * `entry` - the certificate's source identity
+
+* `trickster_tls_watcher_errors_total` (Counter) - Count of errors reading watched TLS certificate source files
+  * labels:
+    * `entry` - the certificate's source identity
+
+* `trickster_tls_certificate_store_size` (Gauge) - Number of certificates in a listener's TLS certificate store
+  * labels:
+    * `listener` - the name of the listener
 
 ---
 

@@ -5,7 +5,7 @@ networks:
 services:
 
   prometheus:
-    image: prom/prometheus:v3.2.1
+    image: prom/prometheus:v3.13.2
     volumes:
       - ./docker-compose-data/prometheus-config:/etc/prometheus
     command:
@@ -20,10 +20,10 @@ services:
     restart: always
 
   influxdb:
-    image: influxdb:2.7
+    image: influxdb:2.9
     volumes:
       - ./docker-compose-data/influxdb-config/config.yml:/etc/influxdb2/config.yml
-      - influxdbv2:/.influxdbv2
+      - influxdbv2:/var/lib/influxdb2
     networks:
       - trk-ex-back-tier
     restart: always
@@ -36,7 +36,7 @@ services:
   influxdb_cli:
     links:
       - influxdb
-    image: influxdb:2.7
+    image: influxdb:2.9
     volumes:
       - ./docker-compose-data/influxdb-config/setup-influxdb.sh:/bin/setup-influxdb.sh
     entrypoint: sh /bin/setup-influxdb.sh
@@ -49,7 +49,7 @@ services:
       - influxdb
 
   telegraf:
-    image: telegraf:1.34-alpine
+    image: telegraf:1.39-alpine
     volumes:
       - ./docker-compose-data/telegraf-config/telegraf.conf:/etc/telegraf/telegraf.conf
     depends_on:
@@ -59,7 +59,7 @@ services:
     restart: always
 
   grafana:
-    image: grafana/grafana:11.6.0
+    image: grafana/grafana:13.1.3
     user: nobody
     ports:
       - 3000:3000
@@ -91,14 +91,14 @@ services:
     command: redis-server --appendonly yes --stop-writes-on-bgsave-error no
 
   jaeger:
-    image: jaegertracing/all-in-one:1.67.0
+    image: jaegertracing/jaeger:2.20.0
     ports:
-     - 5775:5775/udp
      - 6831:6831/udp
      - 6832:6832/udp
      - 5778:5778
      - 16686:16686
-     - 14268:14268
+     - 4317:4317
+     - 4318:4318
      - 14250:14250
     networks:
       - trk-ex-back-tier

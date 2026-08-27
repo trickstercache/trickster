@@ -136,7 +136,7 @@ func TestWriteLowCardinalityUInt16Index(t *testing.T) {
 	var buf bytes.Buffer
 	w := newProtoWriter(&buf)
 	values := make([]any, 0, 300)
-	for i := 0; i < 300; i++ {
+	for i := range 300 {
 		values = append(values, int32(i))
 	}
 	if err := writeLowCardinality(w, "Int32", values); err != nil {
@@ -144,7 +144,7 @@ func TestWriteLowCardinalityUInt16Index(t *testing.T) {
 	}
 
 	r := newProtoReader(&buf)
-	_, _ = readInt64(r, t)       // version
+	_, _ = readInt64(r, t) // version
 	flags, _ := readInt64(r, t)
 	if flags&0x7 != 1 {
 		t.Fatalf("expected index type 1 (uint16), got %d", flags&0x7)
@@ -154,7 +154,7 @@ func TestWriteLowCardinalityUInt16Index(t *testing.T) {
 		t.Fatalf("dict len: want 300, got %d", dictLen)
 	}
 	// skip 300 Int32 dict entries
-	for i := 0; i < 300; i++ {
+	for range 300 {
 		if _, err := r.int32(); err != nil {
 			t.Fatal(err)
 		}
@@ -194,13 +194,13 @@ func TestWriteColumnDataMap(t *testing.T) {
 		t.Fatalf("second offset: want 3, got %d", binary.LittleEndian.Uint64(off[:]))
 	}
 	// keys: 3 strings (order within a map is not deterministic, so just count)
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if _, err := r.str(); err != nil {
 			t.Fatalf("reading key %d: %v", i, err)
 		}
 	}
 	// values: 3 UInt32
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if _, err := r.int32(); err != nil {
 			t.Fatalf("reading value %d: %v", i, err)
 		}

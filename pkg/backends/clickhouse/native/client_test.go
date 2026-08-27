@@ -360,9 +360,7 @@ func startNativeServer(t *testing.T, handler http.Handler) (string, func()) {
 		mu    sync.Mutex
 		conns []net.Conn
 	)
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		for {
 			conn, err := lis.Accept()
 			if err != nil {
@@ -378,7 +376,7 @@ func startNativeServer(t *testing.T, handler http.Handler) (string, func()) {
 				_ = h.HandleConnection(ctx, c)
 			}(conn)
 		}
-	}()
+	})
 	stop := func() {
 		cancel()
 		lis.Close()

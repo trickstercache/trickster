@@ -26,8 +26,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/prometheus/common/sigv4"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+
+	"github.com/prometheus/common/sigv4"
 )
 
 const connectTimeout = time.Second * 10
@@ -79,33 +80,49 @@ func NewHTTPClient(o *bo.Options) (*http.Client, error) {
 	}
 
 	client := &http.Client{
-		Timeout: o.Timeout,
+		Timeout: time.Duration(o.Timeout),
 		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
 		Transport: &http.Transport{
-			Dial: (&net.Dialer{
-				KeepAlive: o.KeepAliveTimeout,
+			DialContext: (&net.Dialer{
+				KeepAlive: time.Duration(o.KeepAliveTimeout),
 				Timeout:   connectTimeout,
-			}).Dial,
+			}).DialContext,
 			MaxIdleConns:          o.MaxIdleConns,
 			MaxIdleConnsPerHost:   o.MaxIdleConns,
 			MaxConnsPerHost:       o.MaxConcurrentConns,
-			IdleConnTimeout:       o.KeepAliveTimeout,
+			IdleConnTimeout:       time.Duration(o.KeepAliveTimeout),
 			TLSHandshakeTimeout:   connectTimeout,
-			ExpectContinueTimeout: o.Timeout,
-			ResponseHeaderTimeout: o.Timeout,
+			ExpectContinueTimeout: time.Duration(o.Timeout),
+			ResponseHeaderTimeout: time.Duration(o.Timeout),
 			TLSClientConfig:       TLSConfig,
+			// explicit: Go suppresses h2 auto-enable when DialContext or TLSClientConfig is custom.
+			ForceAttemptHTTP2: true,
 		},
 	}
 
 	if o.SigV4 != nil {
-		var err error
-		client.Transport, err = sigv4.NewSigV4RoundTripper(o.SigV4, client.Transport)
+		inner, _ := client.Transport.(*http.Transport)
+		wrapped, err := sigv4.NewSigV4RoundTripper(o.SigV4, client.Transport)
 		if err != nil {
 			return nil, err
 		}
+		// sigV4RoundTripper does not satisfy idleCloser; wrap to keep
+		// CloseIdleConnections reachable on reload.
+		client.Transport = &idleClosingRoundTripper{RoundTripper: wrapped, inner: inner}
 	}
 
 	return client, nil
+}
+
+type idleClosingRoundTripper struct {
+	http.RoundTripper
+	inner *http.Transport
+}
+
+func (i *idleClosingRoundTripper) CloseIdleConnections() {
+	if i.inner != nil {
+		i.inner.CloseIdleConnections()
+	}
 }

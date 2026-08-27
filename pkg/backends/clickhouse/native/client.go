@@ -30,9 +30,10 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/ClickHouse/clickhouse-go/v2"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
+
+	"github.com/ClickHouse/clickhouse-go/v2"
 )
 
 // NativeClient wraps a clickhouse-go native connection pool and exposes a

@@ -21,7 +21,9 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/yaml.v2"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+
+	"go.yaml.in/yaml/v3"
 )
 
 func TestNew(t *testing.T) {
@@ -99,9 +101,9 @@ func TestOverlay(t *testing.T) {
 	}
 
 	o2 := New()
-	o2.Interval = 5000 * time.Millisecond
+	o2.Interval = timeconv.Duration(5000 * time.Millisecond)
 	o.Overlay(o2)
-	if o.Interval != 5000*time.Millisecond {
+	if o.Interval != timeconv.Duration(5000*time.Millisecond) {
 		t.Error("expected 5000ms got ", o.Interval)
 	}
 }

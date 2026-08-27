@@ -49,7 +49,10 @@ func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 		sqlQuery = r.URL.Query().Get(upQuery)
 	}
 	if !isSelectQuery(sqlQuery) {
-		logger.Debug("request is not a SELECT query, proxying.", logging.Pairs{"query": sqlQuery})
+		logger.Debug("request is not a SELECT query, proxying", logging.Pairs{
+			"backend_name": c.observabilityBackendName(),
+			"dialect":      clickHouseDialect,
+		})
 		c.ProxyHandler(w, r)
 		return
 	}

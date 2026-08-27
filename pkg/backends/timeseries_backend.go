@@ -48,9 +48,10 @@ type TimeseriesBackend interface {
 	// POST/PUT/PATCH, a Content-Type header and non-nil body with the query parameters
 	// must be set, in lieu of updated url query values, in the returned request
 	FastForwardRequest(*http.Request) (*http.Request, error)
-	// SetExtent will update an upstream request's timerange
-	// parameters based on the provided timeseries.Extent
-	SetExtent(*http.Request, *timeseries.TimeRangeQuery, *timeseries.Extent)
+	// SetExtent updates an upstream request's timerange parameters based on the
+	// provided timeseries.Extent. It returns an error when the request cannot be
+	// rewritten safely; callers must not send that request to the origin.
+	SetExtent(*http.Request, *timeseries.TimeRangeQuery, *timeseries.Extent) error
 	// HTTPClient will return the HTTP Client for this Backend
 	HTTPClient() *http.Client
 	// SetCache sets the Cache object the Backend will use when caching origin content
@@ -112,7 +113,9 @@ func (b *timeseriesBackend) ParseTimeRangeQuery(_ *http.Request) (*timeseries.Ti
 
 // SetExtent is the default implementation for the Timeseries Backend interface
 func (b *timeseriesBackend) SetExtent(_ *http.Request, _ *timeseries.TimeRangeQuery,
-	_ *timeseries.Extent) {
+	_ *timeseries.Extent,
+) error {
+	return nil
 }
 
 // Modeler is the default implementation for the Timeseries Backend interface

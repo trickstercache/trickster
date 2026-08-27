@@ -18,72 +18,143 @@
 
 # seed.sh
 #
-# This downloads 2 large files of NYC taxi data from the ClickHouse S3 Bucket,
-# and loads them in to the local ClickHouse database. During loading, the rows
-# are transformed so that the dates in the file, which range from July 2015 to
-# October 2015, are adjusted to fall within 45 days of the current date at the
-# time of seeding. This ensures that relevant data is available to show on
-# dashboards and can take advantage of Trickster's caching protocols that favor
-# very recent data (not >10 years old).
+# This loads the two shared NYC taxi files into ClickHouse. The shared fetcher
+# derives one offset from the actual source pickup bounds; ClickHouse and MySQL
+# apply that exact offset to every pickup/dropoff date and datetime value.
 #
 # Every run of the script will truncate the trips table and re-seed.
 # So developers can run this once every 2 months to always have "real-time" data
 # in their local dev environment.
 
-cd seeding
-
-if date -v1d >/dev/null 2>&1; then
-    # MacOS
-    MONTH_LAST=$(date -v-1m +%Y-%m)
-    MONTH_CURR=$(date +%Y-%m)
-    MONTH_NEXT=$(date -v+1m +%Y-%m)
-    MONTH_2OUT=$(date -v+2m +%Y-%m)
-else
-    # Linux
-    MONTH_LAST=$(date -d "$(date +%Y-%m-01) -1 month" +%Y-%m)
-    MONTH_CURR=$(date +%Y-%m)
-    MONTH_NEXT=$(date -d "$(date +%Y-%m-01) +1 month" +%Y-%m)
-    MONTH_2OUT=$(date -d "$(date +%Y-%m-01) +2 month" +%Y-%m)
-fi
+set -e
+cd /seeding
 
 FILE1="data/trips_1.gz"
 FILE2="data/trips_2.gz"
-URL1="https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_1.gz"
-URL2="https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_2.gz"
+SEED_METADATA="data/seed-window.env"
+CH_HOST="${CH_SERVER_ADDR:-clickhouse}"
 
-LC_CTYPE=C # allows sed to play nice with TSV files that have some binary data
+clickhouse_cmd() {
+    clickhouse-client --host "$CH_HOST" --port 9000 --user default "$@"
+}
 
-download_file_if_uncached() {
-    if [ ! -f "$1" ]; then
-        echo "$1 not found. Downloading from $2..."
-        wget -q -O "$1" "$2"
-    else
-        echo "$1 already exists. Skipping download."
+load_seed_metadata() {
+    gzip -t "$FILE1"
+    gzip -t "$FILE2"
+    if [ ! -s "$SEED_METADATA" ]; then
+        echo "seed metadata is missing; run the seed_data_fetch service first"
+        exit 1
     fi
+    # shellcheck disable=SC1090
+    . "$SEED_METADATA"
+    for value in SOURCE_ROWS SOURCE_PICKUP_MIN_EPOCH SOURCE_PICKUP_MAX_EPOCH \
+        SOURCE_DROPOFF_MIN_EPOCH SOURCE_DROPOFF_MAX_EPOCH SEED_EPOCH SHIFT_SECONDS; do
+        eval "number=\${$value:-}"
+        case "$number" in
+            ''|*[!0-9-]*) echo "invalid $value in $SEED_METADATA"; exit 1 ;;
+        esac
+    done
+    TARGET_PICKUP_MIN_EPOCH=$((SOURCE_PICKUP_MIN_EPOCH + SHIFT_SECONDS))
+    TARGET_PICKUP_MAX_EPOCH=$((SOURCE_PICKUP_MAX_EPOCH + SHIFT_SECONDS))
+    TARGET_DROPOFF_MIN_EPOCH=$((SOURCE_DROPOFF_MIN_EPOCH + SHIFT_SECONDS))
+    TARGET_DROPOFF_MAX_EPOCH=$((SOURCE_DROPOFF_MAX_EPOCH + SHIFT_SECONDS))
+}
+
+wait_for_clickhouse() {
+    attempts=30
+    until clickhouse-client --host "${CH_SERVER_ADDR:-clickhouse}" --port 9000 \
+        --user default --query "SELECT 1" >/dev/null 2>&1; do
+        attempts=$((attempts - 1))
+        if [ "$attempts" -eq 0 ]; then
+            echo "ClickHouse did not become ready" >&2
+            return 1
+        fi
+        echo "waiting for ClickHouse to become ready..."
+        sleep 2
+    done
 }
 
 create_truncate_table_clickhouse() {
     echo "truncating trips table"
-    clickhouse-client --host "${CH_SERVER_ADDR:-clickhouse}" --port 9000 \
-        --user default < create_truncate_trips_table.sql
+    clickhouse_cmd < create_truncate_trips_table.sql
 }
 
 load_file_transform_to_clickhouse() {
-    echo "loading $1 w/ dates transformed to between ${MONTH_LAST} and ${MONTH_2OUT}"
-    gunzip -c "$1" | sed -e "s/2015-07-/${MONTH_LAST}-/g" | \
-      sed -e "s/2015-08-/${MONTH_CURR}-/g" | \
-      sed -e "s/2015-09-/${MONTH_NEXT}-/g" | \
-      sed -e "s/2015-10-/${MONTH_2OUT}-/g" | \
-      clickhouse-client --host "${CH_SERVER_ADDR:-clickhouse}" \
-        --port 9000 --user default \
-        --query="INSERT INTO trips FORMAT TabSeparatedWithNames"
+    echo "loading raw source $1"
+    gunzip -c "$1" | clickhouse_cmd \
+        --query="INSERT INTO trips_seed FORMAT TabSeparatedWithNames"
+}
+
+apply_shift() {
+    echo "applying shift_seconds=$SHIFT_SECONDS"
+    clickhouse_cmd --query="INSERT INTO trips
+        SELECT * REPLACE (
+            toDate(pickup_datetime + toIntervalSecond($SHIFT_SECONDS)) AS pickup_date,
+            pickup_datetime + toIntervalSecond($SHIFT_SECONDS) AS pickup_datetime,
+            toDate(dropoff_datetime + toIntervalSecond($SHIFT_SECONDS)) AS dropoff_date,
+            dropoff_datetime + toIntervalSecond($SHIFT_SECONDS) AS dropoff_datetime
+        ) FROM trips_seed"
+}
+
+validate_seed() {
+    echo "validating seeded data"
+    facts=$(clickhouse_cmd --format=TSVRaw --query="SELECT
+        count(), toUnixTimestamp(min(pickup_datetime)), toUnixTimestamp(max(pickup_datetime)),
+        toUnixTimestamp(min(dropoff_datetime)), toUnixTimestamp(max(dropoff_datetime)),
+        countIf(pickup_date != toDate(pickup_datetime)),
+        countIf(dropoff_date != toDate(dropoff_datetime))
+        FROM trips" | tr '\t' ' ')
+    set -- $facts
+    rows=$1
+    min_pickup=$2
+    max_pickup=$3
+    min_dropoff=$4
+    max_dropoff=$5
+    pickup_mismatches=$6
+    dropoff_mismatches=$7
+    if [ "$rows" -ne "$SOURCE_ROWS" ] || [ "$rows" -le 0 ]; then
+        echo "seed validation failed: expected $SOURCE_ROWS non-empty rows, got $rows"
+        exit 1
+    fi
+    if [ "$min_pickup" -ne "$TARGET_PICKUP_MIN_EPOCH" ] || \
+       [ "$max_pickup" -ne "$TARGET_PICKUP_MAX_EPOCH" ] || \
+       [ "$min_dropoff" -ne "$TARGET_DROPOFF_MIN_EPOCH" ] || \
+       [ "$max_dropoff" -ne "$TARGET_DROPOFF_MAX_EPOCH" ]; then
+        echo "seed validation failed: shifted timestamp bounds do not match source bounds"
+        exit 1
+    fi
+    if [ "$min_pickup" -gt "$SEED_EPOCH" ] || [ "$max_pickup" -lt "$SEED_EPOCH" ]; then
+        echo "seed validation failed: pickup window does not straddle seed time"
+        exit 1
+    fi
+    before=$((SEED_EPOCH - min_pickup))
+    after=$((max_pickup - SEED_EPOCH))
+    imbalance=$((before - after))
+    [ "$imbalance" -lt 0 ] && imbalance=$((-imbalance))
+    if [ "$imbalance" -gt 1 ] || [ "$pickup_mismatches" -ne 0 ] || \
+       [ "$dropoff_mismatches" -ne 0 ]; then
+        echo "seed validation failed: centering or date/datetime consistency"
+        exit 1
+    fi
+    keys=$(clickhouse_cmd --format=TSVRaw --query="SELECT count()
+        FROM system.tables WHERE database = currentDatabase() AND name = 'trips'
+          AND partition_key = 'toYYYYMM(pickup_date)'
+          AND sorting_key = 'pickup_datetime'")
+    if [ "$keys" -ne 1 ]; then
+        echo "seed validation failed: expected pickup partition and sorting keys"
+        exit 1
+    fi
+    echo "seed complete: $rows rows, pickup window $min_pickup..$max_pickup, keys=$keys"
 }
 
 mkdir -p data
-download_file_if_uncached "$FILE1" "$URL1"
-download_file_if_uncached "$FILE2" "$URL2"
+load_seed_metadata
 
+wait_for_clickhouse
 create_truncate_table_clickhouse
 
 load_file_transform_to_clickhouse "$FILE1"
 load_file_transform_to_clickhouse "$FILE2"
+apply_shift
+validate_seed
+clickhouse_cmd --query="TRUNCATE TABLE trips_seed"

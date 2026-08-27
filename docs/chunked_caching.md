@@ -52,9 +52,6 @@ Byterange chunking splits the byterange into pieces with the same literal size. 
 This example has one Prometheus backend with a memory cache that has chunking enabled. The memory cache uses 380 as its timeseries chunk factor, and doesn't define a byterange chunk size, so the default of 4096 will be used.
 
 ```yaml
-frontend:
-  listen_port: 8480
-
 caches:
   mem1:
     provider: memory
@@ -74,7 +71,4 @@ backends:
 
 logging:
   log_level: warn
-
-metrics:
-  listen_port: 8481
 ```

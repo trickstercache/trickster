@@ -19,7 +19,6 @@ package tls
 import (
 	"crypto/tls"
 	"errors"
-	"sync/atomic"
 )
 
 // CertSwapper is used by a TLSConfig to dynamically update the running
@@ -33,49 +32,10 @@ type CertSwapper interface {
 // ErrNoCertificates is returned by GetCert() when no certs are configured
 var ErrNoCertificates = errors.New("tls: no certificates configured")
 
-// NewSwapper returns a new CertSwapper based on the provided certList
+// NewSwapper returns a new CertSwapper based on the provided certList.
+// The returned value also implements CertStore.
 func NewSwapper(certList []tls.Certificate) CertSwapper {
-	sw := &certSwapper{}
+	sw := &certStore{}
 	sw.SetCerts(certList)
 	return sw
-}
-
-// certSwapper implements the CertSwapper interface
-type certSwapper struct {
-	Certificates atomic.Value
-	hasCerts     bool
-}
-
-// GetCert returns the best-matching certificate for the provided clientHello
-func (c *certSwapper) GetCert(clientHello *tls.ClientHelloInfo) (*tls.Certificate, error) {
-	if !c.hasCerts {
-		return nil, ErrNoCertificates
-	}
-	certs, ok := c.Certificates.Load().([]tls.Certificate)
-	if !ok || len(certs) == 0 {
-		return nil, ErrNoCertificates
-	}
-
-	if len(certs) == 1 {
-		// There's only one choice, so no point doing any work.
-		return &certs[0], nil
-	}
-
-	for _, cert := range certs {
-		if err := clientHello.SupportsCertificate(&cert); err == nil {
-			return &cert, nil
-		}
-	}
-
-	// If nothing matches, return the first certificate.
-	return &certs[0], nil
-}
-
-// SetCerts safely updates the certs list for the subject *certSwapper
-func (c *certSwapper) SetCerts(certs []tls.Certificate) {
-	if certs == nil {
-		certs = []tls.Certificate{}
-	}
-	c.Certificates.Store(certs)
-	c.hasCerts = len(certs) > 0
 }

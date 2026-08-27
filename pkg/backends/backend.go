@@ -99,7 +99,7 @@ func New(name string, o *bo.Options, registrar Registrar,
 
 	var d time.Duration
 	if o != nil && o.HealthCheck != nil {
-		d = o.HealthCheck.Timeout
+		d = time.Duration(o.HealthCheck.Timeout)
 	}
 	if hcc != nil {
 		hcc.Timeout = ho.CalibrateTimeout(d)

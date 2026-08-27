@@ -15,3 +15,7 @@ Trickster supports integrations with InfluxDB 1.x and 2.0.
 Trickster supports the Flux Query Language for general/basic usage. Trickster does not support advanced union-style queries (e.g., with multiple `from` clauses). In this rare use case, these responses will currently provide invalid data, however, a subsequent beta will proxy unsupported requests.
 
 Trickster currently does not properly handle schema changes within a response CSV body (e.g., multiple CSVs in the same document with their own #annotation and header rows). We will fully support this use case in a future beta.
+
+## Max Query Range Limitation
+
+Trickster supports enforcing a `max_query_range` limit on InfluxDB backends. For details on how to configure and use query range limits, see the [Query Range Limits](./query-range-limits.md) documentation.

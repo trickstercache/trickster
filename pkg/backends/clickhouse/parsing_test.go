@@ -17,732 +17,379 @@
 package clickhouse
 
 import (
-	"context"
 	"errors"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
-	"github.com/trickstercache/trickster/v2/pkg/parsing"
-	"github.com/trickstercache/trickster/v2/pkg/parsing/lex/sql"
-	"github.com/trickstercache/trickster/v2/pkg/parsing/token"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
-	"github.com/trickstercache/trickster/v2/pkg/timeseries/sqlparser"
+
+	chast "github.com/AfterShip/clickhouse-sql-parser/parser"
 )
 
 const tq00 = `/* this tests a multi-line comment at the front, where the query continues after` +
 	`, and on the same line as, the comment closing delimiter
   also, here we test: trickster-backfill-tolerance:30 */ WITH  'igor * 31 + \' dks( k )'  as  igor, 3600 as x ` +
-	` SELECT (  intDiv(toUInt32(datetime), x) * x) * 1000 as t,` +
+	` SELECT (  intDiv(toUInt32(datetime), x) * x) * 1000 as t, apple,` +
 	` count() as cnt FROM test_db.test_table PREWHERE some_column = 'myvalue' WHERE datetime >= 1589904000 AND datetime < 1589997600` +
 	` GROUP BY t, apple ORDER BY  t DESC FORMAT TabSeparatedWithNamesAndTypes // test comment
 	// test 2 comment`
 
-const tq01 = `SELECT toStartOfFiveMinute(datetime) AS t,` +
-	` count() as cnt FROM test_db.test_table WHERE datetime > 1589904000` +
-	` GROUP BY t ORDER BY  t DESC FORMAT TabSeparatedWithNamesAndTypes // test comment
-	// test 2 comment`
+const tq01 = `SELECT toStartOfFiveMinute(datetime) AS t, count() AS cnt ` +
+	`FROM test_db.test_table WHERE datetime >= 1589904000 ` +
+	`GROUP BY t ORDER BY t DESC FORMAT TabSeparatedWithNamesAndTypes`
 
-const tq02 = `SELECT toStartOfInterval(datetime, INTERVAL 60 second) AS t,` +
-	` count() as cnt FROM test_db.test_table WHERE datetime BETWEEN 1589904000 AND 1589997600` +
-	` GROUP BY t, x ORDER BY  t DESC FORMAT TabSeparatedWithNamesAndTypes // test comment
-	// test 2 comment`
+const tq02 = `SELECT toStartOfInterval(datetime, INTERVAL 60 second) AS t, x, count() AS cnt ` +
+	`FROM test_db.test_table WHERE datetime >= 1589904000 AND datetime < 1589997600 ` +
+	`GROUP BY t, x ORDER BY t DESC FORMAT TabSeparatedWithNamesAndTypes`
 
 const tq03 = `SELECT (intDiv(toUInt32(time_column), 60) * 60) * 1000 AS t, countMerge(some_count) AS cnt, field1, field2 ` +
-	`FROM testdb.test_table WHERE time_column BETWEEN toDateTime(1516665600) AND toDateTime(1516687200) ` +
+	`FROM testdb.test_table WHERE time_column >= toDateTime(1516665600) AND time_column < toDateTime(1516687200) ` +
 	`AND date_column >= toDate(1516665600) AND date_column <= toDate(1516687200) ` +
 	`AND field1 > 0 AND field2 = 'some_value' GROUP BY t, field1, field2 ORDER BY t, field1 FORMAT JSON`
 
-const tq04 = `SELECT toStartOfFiveMinute(datetime) AS t,` +
-	` count() as cnt, testfield1, testfield2 FROM (SELECT * FROM test_db.test_table WHERE x = 1) WHERE datetime > 1589904000` +
-	` GROUP BY t, testfield1, testfield2 ORDER BY  t DESC FORMAT TabSeparatedWithNamesAndTypes // test comment
-	// test 2 comment`
+const tq04 = `SELECT toStartOfFiveMinute(datetime) AS t, count() AS cnt, testfield1, testfield2 ` +
+	`FROM (SELECT * FROM test_db.test_table WHERE x = 1) WHERE datetime >= 1589904000 ` +
+	`GROUP BY t, testfield1, testfield2 ORDER BY t DESC FORMAT TabSeparatedWithNamesAndTypes`
 
-const tq05 = `SELECT toStartOfFiveMinute(datetime) AS t, count() as cnt FROM test_db.test_table WHERE datetime > ` +
-	`'2020-01-01 00:00:00' AND datetime < now() - 300 GROUP BY t ORDER BY t FORMAT JSON`
+const tq05 = `SELECT toStartOfFiveMinute(datetime) AS t, count() AS cnt FROM test_db.test_table ` +
+	`WHERE t > '2020-01-01 00:00:00' AND t < now() - 300 ` +
+	`GROUP BY t ORDER BY t FORMAT JSON`
 
-const tq06 = `SELECT toStartOfFiveMinute(datetime) AS t, count() as cnt FROM test_db.test_table WHERE datetime > ` +
-	`'2020-01-01 00:00:00' AND datetime < now() - 300 GROUP BY t ORDER BY t FORMAT JSON`
+const tq07 = `SELECT (intDiv(toUInt32(datetime), 300) * 300) * 1000 AS t, count() AS cnt ` +
+	`FROM test_db.test_table WHERE datetime >= 1589904000 AND datetime < 1589997600 ` +
+	`GROUP BY t ORDER BY t DESC FORMAT JSON`
 
-const tq07 = `SELECT (  intDiv(toUInt32(datetime), 300) * 300) * 1000 AS t,` +
-	` count() as cnt FROM test_db.test_table WHERE datetime between 1589904000 AND 1589997600` +
-	` GROUP BY t ORDER BY  t DESC FORMAT JSON`
+const tq08 = `SELECT (intDiv(toUInt32(datetime), 300) * 300) * 1000 AS t, count() AS cnt ` +
+	`FROM test_db.test_table WHERE datetime >= 1699999200 ` +
+	`GROUP BY t ORDER BY t DESC FORMAT JSON`
 
-const tq08 = `SELECT (  intDiv(toUInt32(datetime), 300) * 300) * 1000 AS t,` +
-	` count() as cnt FROM test_db.test_table WHERE datetime >= now() - 900` +
-	` GROUP BY t ORDER BY  t DESC FORMAT JSON`
-
-const bq00 = `SELECT toStartOfFiveMinute(datetime) AS t, l FROM table WHERE datetime BETWEEN 1 AND 5 LIMIT 10`
-
-func TestParseRawQuery(t *testing.T) {
-	tests := []struct {
-		query string
-		err   error
-	}{
-		{tq00, nil},
-		{tq01, nil},
-		{tq02, nil},
-		{tq03, nil},
-		{tq04, nil},
-		{tq05, nil},
-		{tq06, nil},
-		{tq07, nil},
-		{tq08, nil},
-		{bq00, ErrLimitUnsupported},
-	}
-	for i, test := range tests {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			_, _, _, err := parse(test.query)
-			if err != test.err {
-				t.Errorf("got '%v' expected '%v'", err, test.err)
-			}
-		})
-	}
-}
-
-func TestGoodQueries(t *testing.T) {
-	trq, _, _, err := parse(tq07)
-	if err != nil {
-		t.Error(err)
-	}
-	if trq.Step != 300*time.Second {
-		t.Errorf("Step of %d did not match 300 seconds", trq.Step)
-	}
-
-	if trq.Extent.Start != time.Unix(int64(1589904000), 0) {
-		t.Errorf("Expected start time of 1589904000, got %d", trq.Extent.Start.Unix())
-	}
-	query := `SELECT toStartOfFiveMinute(datetime) AS t, count() as cnt FROM test_db.test_table WHERE t > ` +
-		`'2020-05-30 11:00:00' AND t < now() - 300 GROUP BY t, cnt FORMAT JSON`
-	trq, _, _, err = parse(query)
-	if err != nil {
-		t.Error(err)
-		return // otherwise, nil trq will panic below
-	}
-	if trq.Step != 300*time.Second {
-		t.Errorf("Step of %d did not match 300 seconds", trq.Step)
-	}
-
-	query = `WITH dictGetString('test_cache', server, xxHash64(server)) as server_name ` +
-		`SELECT toStartOfFiveMinute(datetime) AS t, count() as cnt FROM test_db.test_table WHERE t > ` +
-		`'2020-05-30 11:00:00' AND t < now() - 300  GROUP BY t, cnt FORMAT JSON`
-	trq, _, _, err = parse(query)
-	if err != nil {
-		t.Error(err)
-	}
-	if trq.Step != 300*time.Second {
-		t.Errorf("Step of %d did not match 300 seconds", trq.Step)
-	}
-	expected := `WITH dictGetString('test_cache', server, xxHash64(server)) as server_name ` +
-		`SELECT toStartOfFiveMinute(datetime) AS t, count() as cnt ` +
-		`FROM test_db.test_table WHERE <$RANGE$>   GROUP BY t, cnt FORMAT <$FORMAT$>`
-	if trq.Statement != expected {
-		t.Errorf("Tokenized statement did not match query:\n%s\n%s", trq.Statement, expected)
-	}
-
-	query = `SELECT toInt32(toStartOfFiveMinute(datetime)) AS t, count() as cnt FROM test_db.test_table WHERE datetime > ` +
-		`'2020-05-30 11:00:00' AND datetime < now() - 300 GROUP BY t, cnt FORMAT JSON`
-	trq, _, _, err = parse(query)
-	if err != nil {
-		t.Error(err)
-	}
-	if trq.Step != 300*time.Second {
-		t.Errorf("Step of %d did not match 300 seconds", trq.Step)
-	}
-}
-
-func TestParseErrors(t *testing.T) {
-	_, _, _, err := parse("")
-	if err != sqlparser.ErrNotTimeRangeQuery {
-		t.Error("expecrted ErrNotTimeRangeQuery")
-	}
-}
-
-func TestAtWith(t *testing.T) {
-	tk := token.Tokens{&token.Token{Typ: token.Space, Val: " "}}
-	rs := parsing.NewRunState(context.Background(), tk)
-	rs.Next()
-	f := atWith(nil, nil, rs)
-	if f != nil {
-		t.Error("expected nil StateFn")
-	}
-
-	tk = token.Tokens{&token.Token{Typ: sql.TokenWith, Val: "with"}}
-	rs = parsing.NewRunState(context.Background(), tk)
-	rs.Next()
-	atWith(nil, nil, rs)
-	if rs.Error() != parsing.ErrUnsupportedParser {
-		t.Error("expected ErrUnsupportedParser")
-	}
-
-	tk = token.Tokens{
-		&token.Token{Typ: sql.TokenWith, Val: "with"},
-		&token.Token{Typ: sql.TokenSelect, Val: "select"},
-	}
-
-	rs = parsing.NewRunState(context.Background(), tk)
-	rs.Next()
-	f = atWith(parser, parser, rs)
-	if f == nil {
-		t.Error("expected non-nil StateFn")
-	}
-
-	tk = token.Tokens{
-		&token.Token{Typ: sql.TokenWith, Val: "with"},
-		&token.Token{Typ: token.EOF},
-	}
-	rs = parsing.NewRunState(context.Background(), tk)
-	rs.Next()
-	f = atWith(parser, parser, rs)
-	if f != nil {
-		t.Error("expected nil StateFn")
-	}
-
-	tk = token.Tokens{
-		&token.Token{Typ: sql.TokenWith, Val: "with"},
-		&token.Token{Typ: token.Identifier, Val: "x"},
-		&token.Token{Typ: sql.TokenSelect, Val: "select"},
-	}
-	rs = parsing.NewRunState(context.Background(), tk)
-	rs.Next()
-	f = atWith(parser, parser, rs)
-	if f != nil {
-		t.Error("expected nil StateFn")
-	}
-	if rs.Error() != ErrInvalidWithClause {
-		t.Error("expected ErrInvalidWithClause")
-	}
-}
-
-func TestAtPreWhere(t *testing.T) {
-	rs := parsing.NewRunState(context.Background(), nil)
-	f := atPreWhere(nil, nil, rs)
-	if f != nil {
-		t.Error("expected nil StateFn")
-	}
-	if rs.Error() != parsing.ErrUnsupportedParser {
-		t.Error("expected ErrUnsupportedParser")
-	}
-}
-
-func TestAtFormat(t *testing.T) {
-	tk := token.Tokens{
-		&token.Token{Typ: sql.TokenComment},
-		&token.Token{Typ: token.EOF},
-	}
-	rs := parsing.NewRunState(context.Background(), tk)
-	f := atFormat(nil, nil, rs)
-	if f != nil {
-		t.Error("expected nil StateFn")
-	}
-
-	tk = token.Tokens{
-		&token.Token{Typ: token.Identifier, Val: "UnsupportedFormat"},
-		&token.Token{Typ: token.EOF},
-	}
-	rs = parsing.NewRunState(context.Background(), tk)
-	f = atFormat(nil, nil, rs)
-	if f != nil {
-		t.Error("expected nil StateFn")
-	}
-	if rs.Error() != ErrUnsupportedOutputFormat {
-		t.Error("expected ErrUnsupportedOutputFormat")
-	}
-}
-
-func TestParseSelectTokens(t *testing.T) {
-	_, err := parseSelectTokens(nil, nil, nil)
-	if err != sqlparser.ErrMissingTimeseries {
-		t.Error("expected ErrMissingTimeseries")
-	}
-
-	_, err = parseSelectTokens(map[string]any{}, nil, nil)
-	if err != sqlparser.ErrMissingTimeseries {
-		t.Error("expected ErrMissingTimeseries")
-	}
-
-	_, err = parseSelectTokens(map[string]any{"selectTokens": false}, nil, nil)
-	if err != sqlparser.ErrMissingTimeseries {
-		t.Error("expected ErrMissingTimeseries")
-	}
-
-	_, err = parseSelectTokens(map[string]any{
-		"selectTokens": []token.Tokens{},
-	}, nil, nil)
-	if err != sqlparser.ErrMissingTimeseries {
-		t.Error("expected ErrMissingTimeseries")
-	}
-
-	_, err = parseSelectTokens(map[string]any{
-		"selectTokens": []token.Tokens{{}},
-	}, nil, nil)
-	if err != sqlparser.ErrMissingTimeseries {
-		t.Error("expected ErrMissingTimeseries")
-	}
-
-	_, err = parseSelectTokens(map[string]any{
-		"selectTokens": []token.Tokens{
-			{
-				&token.Token{Typ: tokenToStartOfInterval},
-				&token.Token{Typ: tokenInterval},
-				&token.Token{Typ: token.Number, Val: "not-a-number"},
-			},
-		},
-	}, nil, &timeseries.RequestOptions{})
-	if err == nil {
-		t.Error("expected invalid syntax error", err)
-	}
-
-	_, err = parseSelectTokens(map[string]any{
-		"selectTokens": []token.Tokens{
-			{
-				&token.Token{Typ: tokenToStartOfInterval},
-				&token.Token{Typ: tokenInterval},
-				&token.Token{Typ: token.Number, Val: "97"},
-				&token.Token{Typ: token.Identifier, Val: "year"},
-			},
-		},
-	}, nil, &timeseries.RequestOptions{})
-	if err != sqlparser.ErrStepParse {
-		t.Error("expected step parser error", err)
-	}
-
-	_, err = parseSelectTokens(map[string]any{
-		"selectTokens": []token.Tokens{
-			{
-				&token.Token{Typ: tokenIntDiv, Val: "intdiv"},
-				&token.Token{Typ: tokenToInt32, Val: "touint32"},
-				&token.Token{Typ: token.Identifier, Val: "x"},
-				&token.Token{Typ: token.Comma, Val: ","},
-				&token.Token{Typ: token.Number, Val: "60"},
-				&token.Token{Typ: token.Multiply, Val: "*"},
-				&token.Token{Typ: token.Number, Val: "60"},
-				&token.Token{Typ: token.Multiply, Val: "*"},
-				&token.Token{Typ: token.Number, Val: "1000"},
-				&token.Token{Typ: sql.TokenAs, Val: "as"},
-				&token.Token{Typ: token.Identifier, Val: "y"},
-			},
-		},
-	}, &timeseries.TimeRangeQuery{}, &timeseries.RequestOptions{})
-	if err != nil {
-		t.Error(err)
-	}
-
-	_, err = parseSelectTokens(map[string]any{
-		"selectTokens": []token.Tokens{
-			{
-				&token.Token{Typ: tokenIntDiv, Val: "intdiv"},
-				&token.Token{Typ: tokenToInt32, Val: "touint32"},
-				&token.Token{Typ: token.Identifier, Val: "x"},
-				&token.Token{Typ: token.Comma, Val: ","},
-				&token.Token{Typ: token.Number, Val: "60"},
-				&token.Token{Typ: token.Multiply, Val: "*"},
-				&token.Token{Typ: token.Number, Val: "not-a-number"},
-				&token.Token{Typ: token.Multiply, Val: "*"},
-				&token.Token{Typ: token.Number, Val: "1000"},
-				&token.Token{Typ: sql.TokenAs, Val: "as"},
-				&token.Token{Typ: token.Identifier, Val: "y"},
-			},
-		},
-	}, &timeseries.TimeRangeQuery{}, &timeseries.RequestOptions{})
-	if err == nil {
-		t.Error("expected invalid syntax error", err)
-	}
-
-	_, err = parseSelectTokens(map[string]any{
-		"selectTokens": []token.Tokens{
-			{
-				&token.Token{Typ: tokenIntDiv, Val: "intdiv"},
-				&token.Token{Typ: tokenToInt32, Val: "touint32"},
-				&token.Token{Typ: token.Identifier, Val: "x"},
-				&token.Token{Typ: token.Comma, Val: ","},
-				&token.Token{Typ: token.Number, Val: "60"},
-				&token.Token{Typ: token.Multiply, Val: "*"},
-				&token.Token{Typ: token.Number, Val: "60"},
-				&token.Token{Typ: token.Multiply, Val: "*"},
-				&token.Token{Typ: token.Number, Val: "not-a-number"},
-				&token.Token{Typ: sql.TokenAs, Val: "as"},
-				&token.Token{Typ: token.Identifier, Val: "y"},
-			},
-		},
-	}, &timeseries.TimeRangeQuery{}, &timeseries.RequestOptions{})
-	if err == nil {
-		t.Error("expected invalid syntax error", err)
-	}
-
-	_, err = parseSelectTokens(map[string]any{
-		"selectTokens": []token.Tokens{
-			{
-				&token.Token{Typ: tokenIntDiv, Val: "intdiv"},
-				&token.Token{Typ: tokenToInt32, Val: "touint32"},
-				&token.Token{Typ: token.Identifier, Val: "x"},
-				&token.Token{Typ: token.Comma, Val: ","},
-				&token.Token{Typ: token.Number, Val: "60"},
-				&token.Token{Typ: token.Multiply, Val: "*"},
-				&token.Token{Typ: token.Number, Val: "60"},
-				&token.Token{Typ: token.Multiply, Val: "*"},
-				&token.Token{Typ: token.Number, Val: "360"},
-				&token.Token{Typ: sql.TokenAs, Val: "as"},
-				&token.Token{Typ: token.Identifier, Val: "y"},
-			},
-		},
-	}, &timeseries.TimeRangeQuery{}, &timeseries.RequestOptions{})
-	if err != ErrUnsupportedOutputFormat {
-		t.Error("expected ErrUnsupportedOutputFormat")
-	}
-
-	_, err = parseSelectTokens(map[string]any{
-		"selectTokens": []token.Tokens{
-			{
-				&token.Token{Typ: tokenIntDiv, Val: "intdiv"},
-				&token.Token{Typ: tokenToInt32, Val: "touint32"},
-				&token.Token{Typ: token.Identifier, Val: "x"},
-				&token.Token{Typ: token.Comma, Val: ","},
-				&token.Token{Typ: token.Number, Val: "not-a-number"},
-				&token.Token{Typ: token.Multiply, Val: "*"},
-				&token.Token{Typ: token.Number, Val: "60"},
-				&token.Token{Typ: token.Multiply, Val: "*"},
-				&token.Token{Typ: token.Number, Val: "60"},
-				&token.Token{Typ: sql.TokenAs, Val: "as"},
-				&token.Token{Typ: token.Identifier, Val: "y"},
-			},
-		},
-	}, &timeseries.TimeRangeQuery{}, &timeseries.RequestOptions{})
-	if err == nil {
-		t.Error("expected invalid syntax error", err)
-	}
-
-	_, err = parseSelectTokens(map[string]any{
-		"selectTokens": []token.Tokens{
-			{
-				&token.Token{Typ: tokenIntDiv, Val: "intdiv"},
-				&token.Token{Typ: tokenToInt32, Val: "touint32"},
-				&token.Token{Typ: token.Identifier, Val: "x"},
-				&token.Token{Typ: token.Comma, Val: ","},
-				&token.Token{Typ: token.Number, Val: "120"},
-				&token.Token{Typ: token.Multiply, Val: "*"},
-				&token.Token{Typ: token.Number, Val: "60"},
-				&token.Token{Typ: token.Multiply, Val: "*"},
-				&token.Token{Typ: token.Number, Val: "60"},
-				&token.Token{Typ: sql.TokenAs, Val: "as"},
-				&token.Token{Typ: token.Identifier, Val: "y"},
-			},
-		},
-	}, &timeseries.TimeRangeQuery{}, &timeseries.RequestOptions{})
-	if err != sqlparser.ErrStepParse {
-		t.Error("expected ErrStepParse")
-	}
-
-	_, err = parseSelectTokens(map[string]any{
-		"selectTokens": []token.Tokens{
-			{
-				&token.Token{Typ: tokenToStartOf, Val: "invalid"},
-			},
-		},
-	}, &timeseries.TimeRangeQuery{}, &timeseries.RequestOptions{})
-	if err != ErrUnsupportedToStartOfFunc {
-		t.Error("expected ErrUnsupportedToStartOfFunc")
-	}
-
-	_, err = parseSelectTokens(map[string]any{
-		"selectTokens": []token.Tokens{
-			{
-				&token.Token{Typ: tokenToStartOf, Val: "tostartoffiveminute"},
-				&token.Token{Typ: token.Identifier, Val: "x"},
-			},
-		},
-	}, &timeseries.TimeRangeQuery{Statement: "                                        "},
-		&timeseries.RequestOptions{})
-	if err != nil {
-		t.Error(err)
-	}
-}
-
-func TestParseGroupByTokens(t *testing.T) {
-	_, err := parseGroupByTokens(map[string]any{"groupByTokens": nil}, nil)
-	if err != sql.ErrInvalidGroupByClause {
-		t.Error("expected ErrInvalidGroupByClause")
-	}
-}
-
-func TestGetInt(t *testing.T) {
-	_, err := getInt(&token.Token{Typ: token.Number, Val: "not-a-number"})
-	if err == nil {
-		t.Error("expected parsing error")
-	}
-	_, err = getInt(&token.Token{Typ: token.Space, Val: "not-a-number"})
-	if err != token.ErrParsingInt {
-		t.Error("expected ErrParsingInt")
-	}
-}
-
-func TestParseWhereTokens(t *testing.T) {
-	rlo := &timeseries.RequestOptions{}
-	tests := []struct {
-		wt, pwt []token.Tokens
-		wv      token.Lookup
-		trq     *timeseries.TimeRangeQuery
-		rlo     *timeseries.RequestOptions
-		err     error
-	}{
-		{nil, nil, nil, nil, nil, nil},                                         // 0
-		{nil, nil, nil, nil, rlo, sqlparser.ErrNotTimeRangeQuery},              // 1
-		{[]token.Tokens{}, nil, nil, nil, rlo, sqlparser.ErrNotTimeRangeQuery}, // 2
-		{[]token.Tokens{{&token.Token{Typ: token.EOF}}}, nil, nil, // 3
-			nil, rlo, sqlparser.ErrNoLowerBound},
-		{
-			[]token.Tokens{{&token.Token{Typ: token.Identifier, Val: "x"}}},
-			nil, // 4
-			token.Lookup{"x": &token.Token{Typ: token.Number, Val: "8480"}},
-			&timeseries.TimeRangeQuery{}, rlo, sqlparser.ErrNoLowerBound,
-		},
-		{
-			[]token.Tokens{ // 5
-				{
-					&token.Token{Typ: token.Identifier, Val: "x"},
-					&token.Token{Typ: token.GreaterThan, Val: ">"},
-					&token.Token{Typ: token.String, Val: "not-a-time"},
-				},
-			},
-			nil, nil, nil, &timeseries.RequestOptions{BaseTimestampFieldName: "x"},
-			sql.ErrInvalidInputLength,
-		},
-		{
-			[]token.Tokens{ // 6
-				{
-					&token.Token{Typ: token.Identifier, Val: "x"},
-					&token.Token{Typ: token.GreaterThan, Val: "between"},
-					&token.Token{Typ: token.Number, Val: "0"},
-					&token.Token{Typ: token.LogicalAnd, Val: "and"},
-					&token.Token{Typ: token.String, Val: "not-a-time"},
-				},
-			},
-			nil, nil, &timeseries.TimeRangeQuery{Step: time.Minute},
-			&timeseries.RequestOptions{BaseTimestampFieldName: "x"},
-			sql.ErrInvalidInputLength,
-		},
-	}
-	for i, test := range tests {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			var m map[string]any
-			if test.wt != nil || test.pwt != nil || test.wv != nil {
-				m = make(map[string]any)
-				if len(test.wt) > 0 {
-					m["whereTokens"] = test.wt
-				}
-				if len(test.pwt) > 0 {
-					m["preWhereTokens"] = test.pwt
-				}
-				if len(test.wv) > 0 {
-					m["withVars"] = test.wv
-				}
-			}
-			_, err := parseWhereTokens(m, test.trq, test.rlo)
-			if err != test.err {
-				t.Errorf("got '%v' expected '%v'", err, test.err)
-			}
-		})
-	}
-
-	// cases the loop could not account for
-	_, err := parseWhereTokens(map[string]any{
-		"whereTokens": false,
-	},
-		nil, &timeseries.RequestOptions{})
-	if err != sqlparser.ErrNotTimeRangeQuery {
-		t.Error("expected ErrNotTimeRangeQuery got", err)
-	}
-	_, err = parseWhereTokens(map[string]any{
-		"whereTokens": []token.Tokens{},
-	},
-		nil, &timeseries.RequestOptions{})
-	if err != sqlparser.ErrTimerangeParse {
-		t.Error("expected ErrTimerangeParse got", err)
-	}
-}
-
-func TestSolveMathExpression(t *testing.T) {
-	tests := []struct {
-		input    token.Tokens
-		withVars token.Lookup
-		i1       int64
-		i2       int
-		err      error
-	}{
-		{
-			token.Tokens{
-				&token.Token{Typ: token.Identifier, Val: "x"},
-				&token.Token{Typ: token.Plus, Val: "+"},
-				&token.Token{Typ: token.Number, Val: "10"},
-			},
-			token.Lookup{
-				"x": &token.Token{Typ: token.Number, Val: "5"},
-			},
-			15, 2, nil,
-		},
-		{
-			token.Tokens{
-				&token.Token{Typ: token.Number, Val: "not-a-number"},
-				&token.Token{Typ: token.Plus, Val: "+"},
-				&token.Token{Typ: token.Number, Val: "10"},
-			},
-			nil, -1, 0, strconv.ErrSyntax,
-		},
-		{
-			token.Tokens{
-				&token.Token{Typ: token.Number, Val: "5"},
-				&token.Token{Typ: token.Multiply, Val: "*"}, // only add or subtract is supported
-				&token.Token{Typ: token.Number, Val: "10"},
-			},
-			nil, -1, 1, parsing.ErrUnexpectedToken,
-		},
-	}
-	for i, test := range tests {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			i1, i2, err := SolveMathExpression(test.input, 0, test.withVars)
-			if i1 != test.i1 {
-				t.Errorf("expected %d got %d", test.i1, i1)
-			}
-			if i2 != test.i2 {
-				t.Errorf("expected %d got %d", test.i2, i2)
-			}
-			if test.err != nil && err == nil {
-				t.Error("expected", test.err)
-			} else if test.err == nil && err != nil {
-				t.Error("expected no err, got", err)
-			} else if !errors.Is(err, test.err) {
-				t.Errorf("expected %s got %s", test.err, err)
-			}
-		})
-	}
-}
-
-func TestNewTimeBucketingFunctions(t *testing.T) {
+func TestAnalyzeSupportedCorpus(t *testing.T) {
 	tests := []struct {
 		name  string
 		query string
 		step  time.Duration
+		phase time.Duration
 	}{
-		{"toStartOfMonth", `SELECT toStartOfMonth(datetime) AS t, count() AS cnt FROM tbl WHERE datetime BETWEEN 1589904000 AND 1589997600 GROUP BY t FORMAT JSON`, 24 * time.Hour * 30},
-		{"toStartOfQuarter", `SELECT toStartOfQuarter(datetime) AS t, count() AS cnt FROM tbl WHERE datetime BETWEEN 1589904000 AND 1589997600 GROUP BY t FORMAT JSON`, 24 * time.Hour * 90},
-		{"toStartOfYear", `SELECT toStartOfYear(datetime) AS t, count() AS cnt FROM tbl WHERE datetime BETWEEN 1589904000 AND 1589997600 GROUP BY t FORMAT JSON`, 24 * time.Hour * 365},
-		{"toStartOfSecond", `SELECT toStartOfSecond(datetime) AS t, count() AS cnt FROM tbl WHERE datetime BETWEEN 1589904000 AND 1589997600 GROUP BY t FORMAT JSON`, time.Second},
-		{"toStartOfMillisecond", `SELECT toStartOfMillisecond(datetime) AS t, count() AS cnt FROM tbl WHERE datetime BETWEEN 1589904000 AND 1589997600 GROUP BY t FORMAT JSON`, time.Millisecond},
-		{"toStartOfMicrosecond", `SELECT toStartOfMicrosecond(datetime) AS t, count() AS cnt FROM tbl WHERE datetime BETWEEN 1589904000 AND 1589997600 GROUP BY t FORMAT JSON`, time.Microsecond},
-		{"toStartOfNanosecond", `SELECT toStartOfNanosecond(datetime) AS t, count() AS cnt FROM tbl WHERE datetime BETWEEN 1589904000 AND 1589997600 GROUP BY t FORMAT JSON`, time.Nanosecond},
-		{"date_trunc_hour", `SELECT date_trunc('hour', datetime) AS t, count() AS cnt FROM tbl WHERE datetime BETWEEN 1589904000 AND 1589997600 GROUP BY t FORMAT JSON`, time.Hour},
-		{"date_trunc_month", `SELECT date_trunc('month', datetime) AS t, count() AS cnt FROM tbl WHERE datetime BETWEEN 1589904000 AND 1589997600 GROUP BY t FORMAT JSON`, 24 * time.Hour * 30},
-		{"date_trunc_quarter", `SELECT date_trunc('quarter', datetime) AS t, count() AS cnt FROM tbl WHERE datetime BETWEEN 1589904000 AND 1589997600 GROUP BY t FORMAT JSON`, 24 * time.Hour * 90},
-		{"date_trunc_second", `SELECT date_trunc('second', datetime) AS t, count() AS cnt FROM tbl WHERE datetime BETWEEN 1589904000 AND 1589997600 GROUP BY t FORMAT JSON`, time.Second},
-		{"toStartOfInterval_month", `SELECT toStartOfInterval(datetime, INTERVAL 1 month) AS t, count() AS cnt FROM tbl WHERE datetime BETWEEN 1589904000 AND 1589997600 GROUP BY t FORMAT JSON`, 24 * time.Hour * 30},
+		{"with constant", tq00, time.Hour, 0},
+		{"fixed bucket", tq01, 5 * time.Minute, 0},
+		{"interval bucket", tq02, time.Minute, 0},
+		{"intDiv and secondary range", tq03, time.Minute, 0},
+		{"subquery", tq04, 5 * time.Minute, 0},
+		{"relative upper", tq05, 5 * time.Minute, 0},
+		{"intDiv multiplier", tq07, 5 * time.Minute, 0},
+		{"relative lower and open upper", tq08, 5 * time.Minute, 0},
+		{
+			"bucket output alias in range",
+			`SELECT toStartOfFiveMinute(datetime) AS t, count() AS cnt FROM test_db.test_table ` +
+				`WHERE t > '2020-05-30 11:00:00' AND t < now() - 300 GROUP BY t FORMAT JSON`,
+			5 * time.Minute,
+			0,
+		},
+		{
+			"nonconstant WITH expression",
+			`WITH dictGetString('test_cache', server, xxHash64(server)) AS server_name ` +
+				`SELECT toStartOfFiveMinute(datetime) AS t, count() AS cnt FROM test_db.test_table ` +
+				`WHERE t > '2020-05-30 11:00:00' AND t < now() - 300 GROUP BY t FORMAT JSON`,
+			5 * time.Minute,
+			0,
+		},
+		{
+			"cast around bucket",
+			`SELECT toInt32(toStartOfFiveMinute(datetime)) AS t, count() AS cnt FROM test_db.test_table ` +
+				`WHERE t > '2020-05-30 11:00:00' AND t < now() - 300 GROUP BY t FORMAT JSON`,
+			5 * time.Minute,
+			0,
+		},
+		{
+			"monday phase",
+			`SELECT toMonday(datetime) AS t, count() FROM events ` +
+				`WHERE datetime >= 1589760000 AND datetime < 1590364800 GROUP BY t`,
+			week,
+			4 * day,
+		},
 	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			trq, _, _, err := parse(tc.query)
-			if err != nil {
-				t.Fatalf("parse error: %v", err)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			analysis := dialectAnalyzer.Analyze(test.query, time.Unix(1_700_000_000, 0))
+			if analysis.Err != nil {
+				t.Fatalf("Analyze() error = %v", analysis.Err)
 			}
-			if trq.Step != tc.step {
-				t.Errorf("expected step %v, got %v", tc.step, trq.Step)
+			if analysis.Mode != sqlanalyzer.CacheModeDelta {
+				t.Fatalf("mode = %v, want delta", analysis.Mode)
+			}
+			if analysis.Plan.Step != test.step {
+				t.Errorf("step = %s, want %s", analysis.Plan.Step, test.step)
+			}
+			if analysis.Plan.Phase != test.phase {
+				t.Errorf("phase = %s, want %s", analysis.Plan.Phase, test.phase)
+			}
+			if !strings.Contains(analysis.Plan.CanonicalSQL, "<$TS1$>") ||
+				!strings.Contains(analysis.Plan.CanonicalSQL, "<$TS2$>") {
+				t.Errorf("canonical SQL does not contain both placeholders: %s", analysis.Plan.CanonicalSQL)
 			}
 		})
 	}
 }
 
-func TestToDateTime64InWhere(t *testing.T) {
-	// Simulates the official Grafana ClickHouse plugin v4+ $__timeFilter expansion.
-	// Tests both integer and float epoch values inside toDateTime64().
-	q := `SELECT toStartOfFiveMinute(datetime) AS t, count() AS cnt FROM tbl ` +
-		`WHERE datetime >= toDateTime64(1589904000, 3) AND datetime <= toDateTime64(1589997600, 3) ` +
-		`GROUP BY t FORMAT JSON`
-	trq, _, _, err := parse(q)
-	if err != nil {
-		t.Fatalf("parse error: %v", err)
-	}
-	if trq.Step != 5*time.Minute {
-		t.Errorf("expected step 5m, got %v", trq.Step)
-	}
-	if trq.Extent.Start.Unix() != 1589904000 {
-		t.Errorf("expected start 1589904000, got %d", trq.Extent.Start.Unix())
-	}
-	if trq.Extent.End.Unix() != 1589997600 {
-		t.Errorf("expected end 1589997600, got %d", trq.Extent.End.Unix())
-	}
-}
-
-func TestToDateTime64FloatEpoch(t *testing.T) {
-	q := `SELECT toStartOfFiveMinute(datetime) AS t, count() AS cnt FROM tbl ` +
-		`WHERE datetime >= toDateTime64(1589904000.123, 3) AND datetime <= toDateTime64(1589997600.456, 3) ` +
-		`GROUP BY t FORMAT JSON`
-	trq, _, _, err := parse(q)
-	if err != nil {
-		t.Fatalf("parse error: %v", err)
-	}
-	if trq.Extent.Start.Unix() != 1589904000 {
-		t.Errorf("expected start 1589904000, got %d", trq.Extent.Start.Unix())
-	}
-	if trq.Extent.End.Unix() != 1589997600 {
-		t.Errorf("expected end 1589997600, got %d", trq.Extent.End.Unix())
-	}
-}
-
-func TestBadQueries(t *testing.T) {
-	tests := []struct {
-		query string
-		err   error
-	}{
-		{"SELECT too short", parsing.ParsingError},
-		{`SELECT toStartOfInterval(datetime, INTERVAL a second) AS t,` +
-			` count() as cnt FROM test_db.test_table WHERE datetime BETWEEN 1589904000 AND 1589997600` +
-			` GROUP BY t, x ORDER BY  t DESC FORMAT TabSeparatedWithNamesAndTypes`, parsing.ParsingError},
-		{`SELECT toStartOfInterval(datetime, INTERVAL 60 second) AS t,` +
-			` count() as cnt FROM test_db.test_table WHERE datetime BETWEEN 1589904000 AND 1589997600` +
-			` ORDER BY  t DESC FORMAT TabSeparatedWithNamesAndTypes`, sql.ErrInvalidGroupByClause},
-		{`SELECT toStartOfMinute(datetime) as x, cnt FROM test_table` +
-			` WHERE datetime between 0 and 10 GROUP BY x FORMAT invalid`, ErrUnsupportedOutputFormat},
-		{`SELECT toStartOfMinute(datetime) as x, cnt FROM test_table` +
-			` WHERE datetime between 10 GROUP BY x FORMAT json`, sqlparser.ErrNoUpperBound},
-	}
-	for i, test := range tests {
+func TestSupportedCorpusFormatIsStable(t *testing.T) {
+	for i, query := range []string{tq00, tq01, tq02, tq03, tq04, tq05, tq07, tq08} {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			_, _, _, err := parse(test.query)
-			if test.err != nil && err == nil {
-				t.Error("expected", test.err)
-			} else if test.err == nil && err != nil {
-				t.Error("expected no err, got", err)
-			} else if !errors.Is(err, test.err) {
-				t.Errorf("expected %s got %s", test.err, err)
+			first, _, err := parseSelect(query)
+			if err != nil {
+				t.Fatal(err)
+			}
+			formatted := chast.Format(first)
+			second, _, err := parseSelect(formatted)
+			if err != nil {
+				t.Fatalf("formatted SQL did not parse: %v\n%s", err, formatted)
+			}
+			if reformatted := chast.Format(second); reformatted != formatted {
+				t.Errorf("format was not stable:\n%s\n%s", formatted, reformatted)
 			}
 		})
 	}
 }
 
-// func TestBackfillTolerance(t *testing.T) {
-// 	var query string
+func TestBucketOutputUnits(t *testing.T) {
+	tests := []struct {
+		name  string
+		query string
+		want  timeseries.FieldDataType
+	}{
+		{"fixed DateTime bucket", tq01, timeseries.DateTimeSQL},
+		{"interval DateTime bucket", tq02, timeseries.DateTimeSQL},
+		{
+			"Date bucket",
+			`SELECT toMonday(datetime) AS t, count() FROM events ` +
+				`WHERE datetime >= 1589760000 AND datetime < 1590364800 GROUP BY t`,
+			timeseries.DateSQL,
+		},
+		{
+			"integer cast",
+			`SELECT toInt32(toStartOfFiveMinute(datetime)) AS t, count() FROM events ` +
+				`WHERE datetime >= 1589904000 AND datetime < 1589997600 GROUP BY t`,
+			timeseries.DateTimeUnixSecs,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			analysis := dialectAnalyzer.Analyze(test.query, time.Unix(1_700_000_000, 0))
+			if analysis.Err != nil {
+				t.Fatal(analysis.Err)
+			}
+			if analysis.Plan.OutputUnit != test.want {
+				t.Errorf("output unit = %v, want %v", analysis.Plan.OutputUnit, test.want)
+			}
+		})
+	}
+}
 
-// 	test := func(run string, bf int, query string, exp int) {
-// 		t.Run(run, func(t *testing.T) {
-// 			_, _, err := parse(query)
-// 			if err != nil {
-// 				t.Error(err)
-// 			}
-// 			actual := int(trq.BackfillTolerance.Seconds())
-// 			if actual != exp {
-// 				t.Errorf("Expected backfill tolerance of %d, got %d", exp, actual)
-// 			}
-// 		})
-// 	}
+func TestParseBuildsTricksterArtifacts(t *testing.T) {
+	trq, options, canObjectCache, err := parse(tq03, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !canObjectCache {
+		t.Fatal("expected object-cache eligibility")
+	}
+	if trq.Step != time.Minute || trq.StepNS != time.Minute.Nanoseconds() {
+		t.Errorf("unexpected step: %s / %d", trq.Step, trq.StepNS)
+	}
+	if trq.TimestampDefinition.Name != "t" || trq.TimestampDefinition.DataType != timeseries.DateTimeUnixMilli {
+		t.Errorf("unexpected timestamp definition: %+v", trq.TimestampDefinition)
+	}
+	if got := timeseries.FieldDataType(trq.TimestampDefinition.ProviderData1); got != timeseries.DateTimeUnixSecs {
+		t.Errorf("timestamp input type = %v, want UnixSecs", got)
+	}
+	if options.BaseTimestampFieldName != "time_column" {
+		t.Errorf("base timestamp = %q", options.BaseTimestampFieldName)
+	}
+	if got := trq.CacheKeyElements["query"]; got != trq.Statement {
+		t.Errorf("cache key differs from canonical statement\nkey: %s\nstmt: %s", got, trq.Statement)
+	}
+	if strings.Contains(trq.Statement, "1516665600") || strings.Contains(trq.Statement, "1516687200") {
+		t.Errorf("cache identity retains extent: %s", trq.Statement)
+	}
+	if len(trq.TagFieldDefintions) != 2 {
+		t.Errorf("group fields = %d, want 2", len(trq.TagFieldDefintions))
+	}
+}
 
-// 	query = `select intDiv(toInt32(datetime), 20) * 20 * 1000 as t, sum(cnt) FROM test_table WHERE datetime >= '2020-06-01 11:00:00'` +
-// 		" FORMAT JSON"
-// 	test("Backfill from now should be at least configured value", 180, query, 180)
-// 	query = `select intDiv(toInt32(datetime), 300) * 300 as t, sum(cnt) FROM testTable WHERE datetime >= '2020-06-01 11:00:00' ` +
-// 		` and datetime <= '2020-06-01 12:02:00' FORMAT JSON`
-// 	test("Backfill from now bucket should be at least to prior bucket value", 60, query, 120)
-// 	query = `select intDiv(toInt32(datetime), 20) * 20 as t, sum(cnt) FROM testTable WHERE datetime >= '2020-06-01 11:00:00' ` +
-// 		` and datetime <= '2020-06-01 12:01:00' FORMAT JSON`
-// 	test("Backfill should be at least now - configured value value", 180, query, 120)
-// 	query = `select intDiv(toInt32(datetime), 20) * 20 as t, sum(cnt) FROM testTable WHERE datetime >= '2020-06-01 11:00:00' ` +
-// 		` and datetime <= '2020-06-01 11:50:00' FORMAT JSON`
-// 	test("Backfill should be negative/ignored if too far back", 180, query, -540)
-// }
+func TestCanonicalCacheIdentityIgnoresExtent(t *testing.T) {
+	query := func(lower, upper int) string {
+		return `SELECT toStartOfMinute(ts) AS t, count() FROM events WHERE ts >= ` +
+			strconv.Itoa(lower) + ` AND ts < ` + strconv.Itoa(upper) + ` GROUP BY t FORMAT JSON`
+	}
+	first, _, _, err := parse(query(120, 240), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, _, _, err := parse(query(300, 420), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Statement != second.Statement {
+		t.Errorf("different ranges produced different identities:\n%s\n%s", first.Statement, second.Statement)
+	}
+	if first.CacheKeyElements["query"] != second.CacheKeyElements["query"] ||
+		first.CacheKeyElements["query"] != first.Statement {
+		t.Errorf("different ranges produced different cache-key query elements:\n%s\n%s",
+			first.CacheKeyElements["query"], second.CacheKeyElements["query"])
+	}
+	third, _, _, err := parse(strings.Replace(query(120, 240), "WHERE ts", "WHERE tenant = 'other' AND ts", 1), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.CacheKeyElements["query"] == third.CacheKeyElements["query"] {
+		t.Error("a non-time predicate did not change the canonical cache-key element")
+	}
+}
+
+func TestOutputAliasRangeUsesBucketUnit(t *testing.T) {
+	query := `SELECT (intDiv(toUInt32(ts), 300) * 300) * 1000 AS t, count() FROM events ` +
+		`WHERE t >= 1516665600000 AND t < 1516687200000 GROUP BY t FORMAT JSON`
+	analysis := dialectAnalyzer.Analyze(query, time.Unix(1_700_000_000, 0))
+	if analysis.Err != nil {
+		t.Fatal(analysis.Err)
+	}
+	if got := analysis.Plan.LowerBound.Value.Unix(); got != 1516665600 {
+		t.Errorf("lower bound = %d, want 1516665600", got)
+	}
+	if analysis.Plan.InputUnit != timeseries.DateTimeUnixMilli {
+		t.Errorf("input unit = %v, want milliseconds", analysis.Plan.InputUnit)
+	}
+	rendered, err := analysis.Plan.RenderExtent(timeseries.Extent{
+		Start: time.Unix(1516669200, 0), End: time.Unix(1516672800, 0),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(rendered, "t >= 1516669200000") ||
+		!strings.Contains(rendered, "t < 1516673100000") {
+		t.Errorf("millisecond bounds were not preserved: %s", rendered)
+	}
+}
+
+func TestRenderExtentPreservesPredicateTopology(t *testing.T) {
+	query := `SELECT toStartOfMinute(ts) AS t, count() FROM events ` +
+		`WHERE tenant_start = 100 AND ts >= 120 AND ts < 240 GROUP BY t FORMAT JSON`
+	analysis := dialectAnalyzer.Analyze(query, time.Unix(500, 0))
+	if analysis.Err != nil {
+		t.Fatal(analysis.Err)
+	}
+	rendered, err := analysis.Plan.RenderExtent(timeseries.Extent{
+		Start: time.Unix(120, 0), End: time.Unix(180, 0),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(rendered, "tenant_start = 100") {
+		t.Errorf("unrelated literal was modified: %s", rendered)
+	}
+	if !strings.Contains(rendered, "ts >= 120") || !strings.Contains(rendered, "ts < 240") {
+		t.Errorf("comparators were not preserved: %s", rendered)
+	}
+	if strings.Contains(strings.ToUpper(rendered), " BETWEEN ") {
+		t.Errorf("separate comparisons were synthesized into BETWEEN: %s", rendered)
+	}
+	if !strings.Contains(rendered, "FORMAT TSVWithNamesAndTypes") {
+		t.Errorf("origin format was not forced: %s", rendered)
+	}
+}
+
+func TestOpenEndedRangeAddsSafeUpperConjunct(t *testing.T) {
+	analysis := dialectAnalyzer.Analyze(tq01, time.Unix(1_700_000_000, 0))
+	if analysis.Err != nil {
+		t.Fatal(analysis.Err)
+	}
+	rendered, err := analysis.Plan.RenderExtent(timeseries.Extent{
+		Start: time.Unix(1589904300, 0), End: time.Unix(1589904600, 0),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(rendered, "datetime >= 1589904300") ||
+		!strings.Contains(rendered, "datetime < 1589904900") {
+		t.Errorf("open range was not safely bounded: %s", rendered)
+	}
+}
+
+func TestExclusiveUpperBoundUsesInclusiveInternalExtent(t *testing.T) {
+	query := `SELECT toStartOfMinute(ts) AS t, count() FROM events ` +
+		`WHERE ts >= 120 AND ts < 240 GROUP BY t`
+	trq, _, _, err := parse(query, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := trq.Extent.End.Unix(); got != 180 {
+		t.Errorf("internal upper extent = %d, want final included bucket 180", got)
+	}
+}
+
+func TestUnsafeAndUnsupportedQueriesUseObjectCache(t *testing.T) {
+	tests := []struct {
+		name   string
+		query  string
+		reason sqlanalyzer.AnalysisReason
+	}{
+		{"or predicate", `SELECT toStartOfMinute(ts) AS t, count() FROM events WHERE ts >= 100 OR ts < 200 GROUP BY t`, sqlanalyzer.ReasonUnsafePredicate},
+		{"not predicate", `SELECT toStartOfMinute(ts) AS t, count() FROM events WHERE NOT (ts >= 100) GROUP BY t`, sqlanalyzer.ReasonUnsafePredicate},
+		{"not time series", `SELECT count() FROM events WHERE ts >= 100 GROUP BY service`, sqlanalyzer.ReasonUnsupportedBucket},
+		{"limit", `SELECT toStartOfMinute(ts) AS t, count() FROM events WHERE ts >= 100 GROUP BY t LIMIT 10`, sqlanalyzer.ReasonUnsupportedLimit},
+		{"unsupported interval", `SELECT toStartOfInterval(ts, INTERVAL 1 year) AS t, count() FROM events WHERE ts >= 100 AND ts < 200 GROUP BY t FORMAT JSON`, sqlanalyzer.ReasonUnsupportedBucket},
+		{"unsupported week mode", `SELECT toStartOfWeek(ts, 1) AS t, count() FROM events WHERE ts >= 100 AND ts < 200 GROUP BY t`, sqlanalyzer.ReasonUnsupportedBucket},
+		{"missing group by", `SELECT toStartOfMinute(ts) AS t, count() FROM events WHERE ts >= 100 AND ts < 200 FORMAT JSON`, sqlanalyzer.ReasonUnsupportedGrouping},
+		{"unsupported format", `SELECT toStartOfMinute(ts) AS t, count() FROM events WHERE ts >= 120 AND ts < 240 GROUP BY t FORMAT Parquet`, sqlanalyzer.ReasonUnsupportedFormat},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			analysis := dialectAnalyzer.Analyze(test.query, time.Unix(500, 0))
+			if analysis.Mode != sqlanalyzer.CacheModeObject || analysis.Reason != test.reason {
+				t.Errorf("unexpected analysis: %+v", analysis)
+			}
+			_, _, canObjectCache, err := parse(test.query, nil)
+			if !canObjectCache || err == nil {
+				t.Errorf("parse classification = (OPC %t, err %v)", canObjectCache, err)
+			}
+		})
+	}
+}
+
+func TestStatementClassification(t *testing.T) {
+	nonSelect := dialectAnalyzer.Analyze(`INSERT INTO events VALUES (1)`, time.Now())
+	if nonSelect.Mode != sqlanalyzer.CacheModeNone || nonSelect.Reason != sqlanalyzer.ReasonUnsupportedStatement {
+		t.Errorf("unexpected non-select classification: %+v", nonSelect)
+	}
+	insertSelect := dialectAnalyzer.Analyze(`INSERT INTO archive SELECT * FROM events`, time.Now())
+	if insertSelect.Mode != sqlanalyzer.CacheModeNone || insertSelect.Reason != sqlanalyzer.ReasonUnsupportedStatement {
+		t.Errorf("unexpected INSERT SELECT classification: %+v", insertSelect)
+	}
+	invalid := dialectAnalyzer.Analyze(`SELECT !!!`, time.Now())
+	if invalid.Mode != sqlanalyzer.CacheModeObject || invalid.Reason != sqlanalyzer.ReasonInvalidSQL ||
+		!errors.Is(invalid.Err, ErrInvalidSQL) {
+		t.Errorf("unexpected invalid SELECT classification: %+v", invalid)
+	}
+	union := dialectAnalyzer.Analyze(`SELECT 1 UNION ALL SELECT 2`, time.Now())
+	if union.Mode != sqlanalyzer.CacheModeObject || union.Reason != sqlanalyzer.ReasonUnsupportedStatement {
+		t.Errorf("unexpected UNION classification: %+v", union)
+	}
+	multiple := dialectAnalyzer.Analyze(`SELECT 1; SELECT 2`, time.Now())
+	if multiple.Mode != sqlanalyzer.CacheModeObject || multiple.Reason != sqlanalyzer.ReasonInvalidSQL {
+		t.Errorf("unexpected multi-statement classification: %+v", multiple)
+	}
+}
+
+func TestDirectivesAreExtractedBeforeCanonicalization(t *testing.T) {
+	query := `/* trickster-backfill-tolerance:30 trickster-fast-forward:off */ ` + tq02
+	trq, options, _, err := parse(query, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if trq.BackfillTolerance != 30*time.Second || !options.FastForwardDisable {
+		t.Errorf("directives not extracted: tolerance=%s fast-forward=%t",
+			trq.BackfillTolerance, options.FastForwardDisable)
+	}
+}

@@ -42,15 +42,15 @@ func TestLoadConfiguration(t *testing.T) {
 		t.Errorf("expected 1024, got %d", conf.Backends["default"].TimeseriesRetention)
 	}
 
-	if conf.Backends["default"].FastForwardTTL != time.Duration(15)*time.Second {
-		t.Errorf("expected 15, got %s", conf.Backends["default"].FastForwardTTL)
+	if time.Duration(conf.Backends["default"].FastForwardTTL) != time.Duration(15)*time.Second {
+		t.Errorf("expected 15, got %s", time.Duration(conf.Backends["default"].FastForwardTTL))
 	}
 
 	// Memory cache no longer uses IndexedClient, so Index may be nil
 	defaultCache := conf.Caches["default"]
 	if defaultCache.Provider != "memory" && defaultCache.Index != nil {
-		if defaultCache.Index.ReapInterval != time.Duration(3)*time.Second {
-			t.Errorf("expected 3, got %s", defaultCache.Index.ReapInterval)
+		if time.Duration(defaultCache.Index.ReapInterval) != time.Duration(3)*time.Second {
+			t.Errorf("expected 3, got %s", time.Duration(defaultCache.Index.ReapInterval))
 		}
 	}
 }
@@ -196,11 +196,11 @@ func TestFullLoadConfiguration(t *testing.T) {
 		t.Errorf("expected fast_forward_disable true, got %t", o.FastForwardDisable)
 	}
 
-	if o.BackfillTolerance != 301000*time.Millisecond {
+	if time.Duration(o.BackfillTolerance) != 301000*time.Millisecond {
 		t.Errorf("expected 301000, got %d", o.BackfillTolerance)
 	}
 
-	if o.Timeout != 37000*time.Millisecond {
+	if time.Duration(o.Timeout) != 37000*time.Millisecond {
 		t.Errorf("expected 37000, got %d", o.Timeout)
 	}
 
@@ -212,7 +212,7 @@ func TestFullLoadConfiguration(t *testing.T) {
 		t.Errorf("expected %d got %d", 23, o.MaxIdleConns)
 	}
 
-	if o.KeepAliveTimeout != 7000*time.Millisecond {
+	if time.Duration(o.KeepAliveTimeout) != 7000*time.Millisecond {
 		t.Errorf("expected %d got %d", 7, o.KeepAliveTimeout)
 	}
 
@@ -314,24 +314,24 @@ func TestFullLoadConfiguration(t *testing.T) {
 		t.Errorf("expected 6, got %d", c.Redis.MaxRetries)
 	}
 
-	if c.Redis.MinRetryBackoff != 9 {
-		t.Errorf("expected 9, got %d", c.Redis.MinRetryBackoff)
+	if time.Duration(c.Redis.MinRetryBackoff).Milliseconds() != 9 {
+		t.Errorf("expected 9, got %d", time.Duration(c.Redis.MinRetryBackoff).Milliseconds())
 	}
 
-	if c.Redis.MaxRetryBackoff != 513 {
-		t.Errorf("expected 513, got %d", c.Redis.MaxRetryBackoff)
+	if time.Duration(c.Redis.MaxRetryBackoff).Milliseconds() != 513 {
+		t.Errorf("expected 513, got %d", time.Duration(c.Redis.MaxRetryBackoff).Milliseconds())
 	}
 
-	if c.Redis.DialTimeout != 5001 {
-		t.Errorf("expected 5001, got %d", c.Redis.DialTimeout)
+	if time.Duration(c.Redis.DialTimeout).Milliseconds() != 5001 {
+		t.Errorf("expected 5001, got %d", time.Duration(c.Redis.DialTimeout).Milliseconds())
 	}
 
-	if c.Redis.ReadTimeout != 3001 {
-		t.Errorf("expected 3001, got %d", c.Redis.ReadTimeout)
+	if time.Duration(c.Redis.ReadTimeout).Milliseconds() != 3001 {
+		t.Errorf("expected 3001, got %d", time.Duration(c.Redis.ReadTimeout).Milliseconds())
 	}
 
-	if c.Redis.WriteTimeout != 3002 {
-		t.Errorf("expected 3002, got %d", c.Redis.WriteTimeout)
+	if time.Duration(c.Redis.WriteTimeout).Milliseconds() != 3002 {
+		t.Errorf("expected 3002, got %d", time.Duration(c.Redis.WriteTimeout).Milliseconds())
 	}
 
 	if c.Redis.PoolSize != 21 {
@@ -342,16 +342,16 @@ func TestFullLoadConfiguration(t *testing.T) {
 		t.Errorf("expected 5, got %d", c.Redis.PoolSize)
 	}
 
-	if c.Redis.ConnMaxLifetime != 2000 {
-		t.Errorf("expected 2000, got %d", c.Redis.ConnMaxLifetime)
+	if time.Duration(c.Redis.ConnMaxLifetime).Milliseconds() != 2000 {
+		t.Errorf("expected 2000, got %d", time.Duration(c.Redis.ConnMaxLifetime).Milliseconds())
 	}
 
-	if c.Redis.PoolTimeout != 4001 {
-		t.Errorf("expected 4001, got %d", c.Redis.PoolTimeout)
+	if time.Duration(c.Redis.PoolTimeout).Milliseconds() != 4001 {
+		t.Errorf("expected 4001, got %d", time.Duration(c.Redis.PoolTimeout).Milliseconds())
 	}
 
-	if c.Redis.ConnMaxIdleTime != 300001 {
-		t.Errorf("expected 300001, got %d", c.Redis.ConnMaxIdleTime)
+	if time.Duration(c.Redis.ConnMaxIdleTime).Milliseconds() != 300001 {
+		t.Errorf("expected 300001, got %d", time.Duration(c.Redis.ConnMaxIdleTime).Milliseconds())
 	}
 
 	if c.Provider == "redis" {
@@ -442,7 +442,7 @@ func TestEmptyLoadConfiguration(t *testing.T) {
 	if cacheproviders.UsesIndex(c.Provider) {
 		if c.Index == nil {
 			t.Errorf("expected index for provider %s, got nil", c.Provider)
-		} else if c.Index.ReapInterval != 3000*time.Millisecond {
+		} else if time.Duration(c.Index.ReapInterval) != 3000*time.Millisecond {
 			t.Errorf("expected 3000, got %d", c.Index.ReapInterval)
 		}
 	} else {

@@ -7,15 +7,14 @@
 # Before #940 this path panicked because tls options validation tried to
 # ReadFile an empty cert path.
 
-frontend:
-  listen_port: 8533
-  tls_listen_port: 0
-
-metrics:
-  listen_port: 8534
-
-mgmt:
-  listen_port: 8535
+listeners:
+  default:
+    port: 8533
+    tls_port: 0
+  metrics:
+    port: 8534
+  mgmt:
+    port: 8535
 
 logging:
   log_level: info

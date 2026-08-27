@@ -25,3 +25,12 @@ See the [InfluxDB Support Document](./influxdb.md) for more information.
 Trickster supports accelerating ClickHouse time series over both HTTP and the ClickHouse native binary protocol (port 9000), and is tested against the Vertamedia and official Grafana ClickHouse (v4+) datasource plugins. Specify `'clickhouse'` as the Provider when configuring Trickster.
 
 See the [ClickHouse Support Document](./clickhouse.md) for more information.
+
+### MySQL
+
+Trickster supports protocol-aware acceleration for supported Oracle MySQL
+servers and Grafana's built-in MySQL data source. Specify `mysql` as the direct
+terminal provider and expose it through a listener with `protocol: mysql`.
+
+See the [MySQL Provider Guide](./mysql.md) for the supported server, client,
+SQL, authentication, TLS, caching, routing, and operations contract.

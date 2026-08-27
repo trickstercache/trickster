@@ -40,6 +40,8 @@ const (
 	InfluxDBID
 	// ClickHouse represents the ClickHouse backend provider
 	ClickHouseID
+	// MySQL represents the MySQL backend provider
+	MySQLID
 
 	Backends = "backends"
 
@@ -55,6 +57,7 @@ const (
 	Prometheus = "prometheus"
 	ClickHouse = "clickhouse"
 	InfluxDB   = "influxdb"
+	MySQL      = "mysql"
 )
 
 // Names is a map of Providers keyed by string name
@@ -66,6 +69,7 @@ var Names = map[string]Provider{
 	Prometheus:             PrometheusID,
 	InfluxDB:               InfluxDBID,
 	ClickHouse:             ClickHouseID,
+	MySQL:                  MySQLID,
 	Proxy:                  RPID,
 	ReverseProxy:           RPID,
 	ReverseProxyShort:      RPID,
@@ -100,7 +104,8 @@ var supportedTimeSeriesMerge = map[string]Provider{
 	Prometheus: PrometheusID,
 }
 
-// IsSupportedTimeSeriesProvider returns true if the provided time series is supported by Trickster
+// IsSupportedTimeSeriesMergeProvider returns true if the provided time series is
+// supported by the Time Series Merge ALB mechanism
 func IsSupportedTimeSeriesMergeProvider(name string) bool {
 	_, ok := supportedTimeSeriesMerge[name]
 	return ok

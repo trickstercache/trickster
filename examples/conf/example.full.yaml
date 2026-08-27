@@ -23,40 +23,82 @@
 #   # server_name defaults to os.Hostname() when left blank
 #   server_name: ''
 
-# Configuration options for the Trickster Frontend
-frontend:
+#   # config_include_directory overrides the default conf.d directory next to this file.
+#   # Relative paths are resolved from the directory containing the primary config file.
+#   # This option is valid only in the primary file, not in included files or directory mode.
+#   config_include_directory: ''
 
-  # listen_port defines the port on which Tricksters Front-end HTTP Proxy server listens.
-  listen_port: 8480
-
-#   # listen_address defines the ip on which Tricksters Front-end HTTP Proxy server listens.
-#   # empty by default, listening on all interfaces
-#   listen_address: ''
-
-#   # tls_listen_address defines the ip on which Tricksters Front-end TLS Proxy server listens.
-#   # empty by default, listening on all interfaces
-#   tls_listen_address: ''
-
-#   # tls_listen_port defines the port on which Tricksters Front-end TLS Proxy server listens.
-#   # The default is 0, which means TLS is not used, even if certificates are configured below.
-#   tls_listen_port: 0
-
-#   # connections_limit defines the maximum number of concurrent connections
-#   # Tricksters Proxy server may handle at any time.
-#   # 0 by default, unlimited.
-#   connections_limit: 0
-
-#  # reader_header_timeout defines the amount of time allowed to read request headers by the frontend http proxy server
-#  # read_header_timeout: 10s
-
-#  # max_request_body_size_bytes indicates the maximum allowed size of the request body. If the body is too large,
-#  # Trickster responds with 413 Payload Too Large. Use 0 for no body allowed, and < 0 for no maximum. Default: 10MB
-#  # max_request_body_size_bytes: 10485760
-
-#  # truncate_request_body_too_large, when true, will truncate the request body to
-#  # max_request_body_size_bytes when larger, without returning a 413 Payload Too Large
-#  # Default: false
-#  # truncate_request_body_too_large: false
+# Configuration options for inbound listeners.
+# The legacy frontend section and listener ports under metrics and mgmt remain
+# supported for compatibility, but are deprecated. A matching listeners entry
+# takes precedence over those legacy values.
+#   # The default, metrics, and mgmt entries are built-in and can be customized here.
+# listeners:
+#   # default is built-in and the default frontend for all defined backends
+#   default:
+#     # protocol defines the protocol used by the listener, and defaults to http
+#     protocol: http
+#     # port is the port the listener uses. default uses 8480 by default
+#     port: 8480
+#     # address is empty by default, meaning listen on all interfaces.
+#     address: ''
+#     # tls_port value of 0 means disabled. A value > 0 starts only when a
+#     # mapped backend provides a certificate and key. default uses 8483 by default
+#     tls_port: 8483
+#     # tls_address is empty by default, meaning listen on all interfaces.
+#     tls_address: ''
+#     # tls_watch_interval is the backstop poll for out-of-band cert/key
+#     # rotation (e.g. certbot). FS events accelerate detection where supported.
+#     # Changes are hot-swapped without restart. default 30s; 0 disables
+#     tls_watch_interval: 30s
+#     # connections_limit defines the maximum number of concurrent connections
+#     # the listener may handle at any time. 0 means unlimited
+#     connections_limit: 0
+#
+#     # read_header_timeout defines the amount of time allowed to read request headers.
+#     read_header_timeout: 10s
+#
+#     # max_request_body_size_bytes indicates the maximum allowed request body size.
+#     # Use 0 for no body allowed, and < 0 for no maximum. Default: 10MB.
+#     max_request_body_size_bytes: 10485760
+#
+#     # truncate_request_body_too_large truncates oversized bodies instead of returning 413.
+#     # Default: false.
+#     truncate_request_body_too_large: false
+#
+#   # metrics:
+#   # 8481 is the default port for metrics
+#     # port: 8481
+#     # address: ''
+#   # mgmt:
+#   # 8484 is the default management port
+#     # port: 8484
+#     # address: ''
+#
+#   # A listener with protocol mysql accepts MySQL wire-protocol connections
+#   # and requires exactly one backend with provider mysql mapped to it via
+#   # the backend's listener_name. TLS ports are not supported on mysql
+#   # listeners (MySQL negotiates TLS in-band on the same port).
+#   mysql1:
+#     protocol: mysql
+#     port: 8486
+#     # address: ''
+#     # connections_limit: 0
+#     # mysql:
+#       # The complete authentication exchange must finish within this timeout.
+#       handshake_timeout: 10s
+#       # read_timeout bounds an in-progress command read.
+#       read_timeout: 30s
+#       write_timeout: 30s
+#       # idle_timeout independently bounds waiting for the next command.
+#       idle_timeout: 5m
+#       # MySQL packet framing is currently fixed at the protocol ceiling.
+#       max_packet_size_bytes: 16777215
+#       max_query_size_bytes: 1048576
+#     # MySQL-specific options have no direct TRK_* environment mapping and a
+#     # structured origin_url does not expand ${VARIABLE}. Authenticator users
+#     # do support environment expansion. Relevant reloads restart and drain
+#     # this listener rather than moving established sessions.
 
 #  # protocol_listeners configures raw TCP listeners for non-HTTP wire protocols
 #  # (e.g. the ClickHouse native binary protocol on port 9000). Each listener routes
@@ -127,13 +169,13 @@ frontend:
 #       # default is [redis:6379]
 #       endpoints:
 #       - redis:6379
-      
+
 #       ## Supported by Redis Sentinel #######################################
 #       ## These configurations are ignored by Redis (standard) and Redis Cluster
 #       ##
 #       # sentinel_master should be set when using Redis Sentinel to indicate the Master Node
 #       sentinel_master: ''
-      
+
 #       ## Supported by all Redis Client Types ###############################
 #       ## See the go-redis documentation at https://github.com/redis/go-redis/blob/master/options.go
 #       ## for more information on tuning these settings
@@ -160,13 +202,13 @@ frontend:
 #       # write_timeout is the timeout for socket writes. If reached, commands will fail with a timeout instead of blocking.
 #       write_timeout: 3s
 #       # pool_size is the maximum number of socket connections.
-#       pool_size: 20ms
+#       pool_size: 20
 #       # min_idle_conns is the minimum number of idle connections which is useful when establishing new connection is slow.
 #       min_idle_conns: 0
 #       # max_conn_age is the connection age at which client retires (closes) the connection.
 #       max_conn_age: 0ms
 #       # pool_timeout is the amount of time client waits for connection if all connections are busy before returning an error.
-#       pool_timeout: 4s
+#       pool_timeout: 4000ms
 #       # idle_timeout is the amount of time after which client closes idle connections.
 #       idle_timeout: 5m
 #       # use_tls indicates if the Redis server uses TLS encryption. default is false
@@ -208,7 +250,7 @@ frontend:
 #     byterange_chunk_size: 4096
 
 #   # Example of a second cache, sans comments, that backend configs below could use with: cache_name: bbolt_example
-  
+
 #   bolt_example:
 #     provider: bbolt
 #     bbolt:
@@ -247,14 +289,71 @@ frontend:
 # Configuration options for mapping Origin(s)
 backends:
 
+  # # example mysql backend, exposed by a listener with protocol mysql (see the
+  # # listeners section). MySQL client connections to the listener are proxied
+  # # to the origin. Exactly one mysql backend may map to a mysql listener.
+  # mysql1:
+  #   provider: mysql
+  #   # origin_url uses the mysql scheme; the port defaults to 3306 if omitted
+  #   origin_url: 'mysql://readonly:REDACTED@mysql-origin.example.com:3306/database'
+  #   # Embedded passwords are redacted by sanitized configuration output and
+  #   # YAML stringification. Protect the source file, which has the real value.
+  #   # listener_name must reference a listener whose protocol is mysql
+  #   listener_name: mysql1
+  #   # MySQL listeners require a named authenticator. The authenticator's
+  #   # users are used for downstream MySQL native-password authentication.
+  #   authenticator_name: example_auth_1
+  #   cache_name: default
+  #   # timeout bounds both origin connect and query execution. Origin connection
+  #   # admission remains one connection per downstream session.
+  #   timeout: 1m
+  #   max_concurrent_conns: 20
+  #   max_object_size_bytes: 524288
+  #   mysql:
+  #     max_result_rows: 100000
+  #     max_result_size_bytes: 67108864
+  #   # Native health checks connect with the origin credentials and TLS
+  #   # settings above, then execute COM_PING. HTTP matching options do not apply.
+  #   healthcheck:
+  #     interval: 5s
+  #     timeout: 3s
+  #   # Plaintext is accepted by default. When a full_chain_cert_path and
+  #   # private_key_path are configured below, clients may upgrade in-band to
+  #   # TLS. Set require_tls to reject plaintext downstream clients.
+  #   require_tls: true
+  #   tls:
+  #     # Downstream server pair; MySQL upgrades in-band on the listener port.
+  #     full_chain_cert_path: /etc/trickster/tls/server.crt
+  #     private_key_path: /etc/trickster/tls/server.key
+  #     # Upstream verified TLS; add both client fields for mutual TLS.
+  #     certificate_authority_paths:
+  #       - /etc/trickster/tls/origin-ca.crt
+  #     client_cert_path: /etc/trickster/tls/origin-client.crt
+  #     client_key_path: /etc/trickster/tls/origin-client.key
+  #   # Deterministic SELECTs use OPC; supported cadence-aligned time-series
+  #   # SELECTs use DPC. The common cache_name, timeseries_ttl,
+  #   # timeseries_retention_factor, backfill_tolerance, and
+  #   # max_object_size_bytes backend settings apply.
+
   # example backend named default. default is always created with these settings unless a different backend is defined here.
   # access this backend via http[s]://trickster-fqdn/default/ unless path_routing_disabled is true
   default:
 
+    # listener_name maps this backend to an inbound listener. The default is default.
+    # mgmt and metrics are reserved and cannot be selected by a backend.
+    listener_name: default
+
     # provider identifies the backend provider.
-    # Valid options are: prometheus, influxdb, clickhouse, reverseproxycache (or just rpc)
-    # provider is a required configuration value
+    # Valid options are: prometheus, influxdb, clickhouse, mysql, rule, alb,
+    # reverseproxycache (or just rpc), or reverseproxy (or just rp)
     provider: prometheus
+
+    # replica_group identifies the logical shard represented by this backend in
+    # Time Series Merge pools. Backends with the same value are HA replicas.
+    # When omitted, it defaults to this backend's name, making it a unique shard.
+    # Replica Groups can only be set on TSM-compatible backends (currently
+    # Prometheus) or nested ALBs used directly as members of a TSM pool.
+    # replica_group: shard-a
 
     # for prometheus backends, you can configure label injection as follows:
     # prometheus:
@@ -276,6 +375,11 @@ backends:
     # it is false, by default; but if you only have a single backend configured, is_default will be true unless explicitly set to false
     is_default: true
 
+#     # max_query_range specifies the maximum allowed query range duration for this backend (e.g. 1h, 1d, 14d).
+#     # Setting this value restricts clients from making oversized queries.
+#     # default is empty (disabled)
+#     max_query_range: 14d
+
 #     # hosts indicates which FQDNs requested by the client should route to this Origin (in addition to path-based routing)
 #     # if you are using TLS, all FQDNs should be included in the certfiicate common names to avoid insecure warnings to clients
 #     # default setting is empty list. List format is: hosts: [ 1.example.com, 2.example.com ]
@@ -290,6 +394,14 @@ backends:
 #     # Options are standard, x, both, or none; default is standard
 #     forwarded_headers: standard
 
+#     # cors controls Access-Control-* response headers for this backend. When omitted, Trickster retains
+#     # its legacy Access-Control-Allow-Origin: '*' behavior. Modes are preserve, merge, replace, and disable.
+#     # See /docs/cors.md for mode behavior, path overrides, and cache-key handling.
+#     cors:
+#       mode: replace
+#       headers:
+#         Access-Control-Allow-Origin: https://dashboard.example.com
+
 #     # cache_key_prefix defines the prefix this backend appends to cache keys. When using a shared cache like Redis,
 #     # this can help partition multiple trickster instances that may have the same same hostname or ip address (the default prefix)
 #     cache_key_prefix: example
@@ -301,6 +413,36 @@ backends:
 #     # the backend to have hosts configured (see below) or be the target of a rule backend, or it will be unreachable.
 #     # default is false
 #     path_routing_disabled: false
+
+#     # access_log configures per-backend HTTP access and error logging. Both logs are off by default and
+#     # are each enabled by setting their filename. See docs/access-logs.md for all options and format tokens
+#     access_log:
+#       # filename enables the access log (one line per request served by this backend)
+#       filename: /var/log/trickster/example.access.log
+#       # format is a named preset (common, combined, extended, json) or a custom Apache-style
+#       # %-token format string. default is combined
+#       format: combined
+#       # rotation controls when the log is rotated; a rotation occurs when either threshold is reached
+#       rotation:
+#         # size rotates the log when the live file would exceed this size. default is 256MB
+#         size: 256MB
+#         # interval rotates the log when the live file is older than this. default is 0 (off)
+#         interval: 1d
+#       # retention controls how many rotated archives (example.access.log.1.gz, .2.gz, ...) are kept
+#       retention:
+#         # count is the maximum archives kept; 0 is unlimited. default is 80
+#         count: 3
+#         # age prunes archives older than this. default is 7d
+#         age: 7d
+#       # compress gzips rotated archives. default is true
+#       compress: true
+#       # error_filename enables the error log, receiving requests whose response status is >= error_threshold
+#       error_filename: /var/log/trickster/example.error.log
+#       # error_threshold is the minimum response status code written to the error log. default is 400
+#       error_threshold: 400
+#       # error_format, error_rotation, error_retention and error_compress override the error log's
+#       # behaviors; each inherits from the corresponding access log option above when unset
+#       error_format: ''
 
 #     # rule_name provides the name of the rule config to be used by this backend.
 #     # This is only effective if the provider is rule
@@ -355,6 +497,11 @@ backends:
 #     # max_object_size_bytes defines the largest byte size an object may be before it is uncacheable due to size. default is 524288 (512k)
 #     max_object_size_bytes: 524288
 
+#     # max_capture_bytes caps the per-response in-memory capture buffer used by ALB fanout and Prometheus
+#     # transform/label handlers. A member whose body exceeds the cap is treated as a partial failure
+#     # (X-Trickster-Result: phit) rather than truncating the merged response silently. default is 268435456 (256 MiB)
+#     max_capture_bytes: 268435456
+
 #     # These next 7 settings only apply to Time Series backends
 
 #     # dpc_fallback_warning, when true (default), logs a warning when a query cannot be parsed
@@ -368,7 +515,7 @@ backends:
 #     # default is 0ms
 #     backfill_tolerance: 0ms
 
-#     # backfill_tolerance_points works like the  version, except the methodology is based on # of intervaled timestamps (points) in the series
+#     # backfill_tolerance_points works like the duration version, except the methodology is based on # of intervaled timestamps (points) in the series
 #     # instead of a relative time. You can set both values and the one impacting the most number of elements in the time series takes precedence
 #     backfill_tolerance_points: 0
 
@@ -415,7 +562,11 @@ backends:
 #     #
 #     # Each backend provider implements their own defaults for health checking
 #     # which can be overridden per backend configuration. See /docs/health.md for more information
-#     healthcheck: 
+#     healthcheck:
+
+#       # interval, timeout, failure_threshold, and recovery_threshold apply to
+#       # HTTP and native-protocol probes. The remaining options in this section
+#       # apply only to HTTP health checks.
 
 #       ## Crafting a Heatlh Check
 
@@ -487,6 +638,8 @@ backends:
 #         response_headers:
 #           Cache-Control: no-cache                  # attach these headers to the response down to the client
 #           Content-Type: text/plain
+#         cors:                                      # overrides the backend CORS policy for this path
+#           mode: disable                            # remove all Access-Control-* response headers
 #       - path: /example/
 #         methods: [ GET, POST ]
 #         collapsed_forwarding: progressive    # see /docs/collapsed_forwarding.md
@@ -503,6 +656,13 @@ backends:
 #                                                               # while the - will remove the header
 #         request_params:
 #           +authToken: SomeTokenHere                 # manipulate request query parameters in the same way
+#       # regex path: a path starting with ^/ is auto-detected as a regular expression
+#       # (RE2 syntax); or set match_type: regex explicitly. Regex paths are evaluated
+#       # only after exact and prefix matching both miss, longest pattern first.
+#       # See the Regex Paths section of /docs/paths.md, including the catch-all caveat.
+#       - path: '^/api/[0-9]+/results'
+#         methods: [ GET ]
+#         handler: proxycache
 
 #         # the tls section configures the frontend and backend TLS operation for the backend
 #     tls:
@@ -581,6 +741,11 @@ backends:
 #       # -1 includes all backends, regardless of reporting state
 #       # default is 0
 #       healthy_floor: 0
+
+#       # max_capture_bytes overrides the backend-level max_capture_bytes for this ALB's fanout members.
+#       # Set this when the ALB's expected response shape differs from the backend default. When 0 (the
+#       # default), the parent Backend's max_capture_bytes is used, falling back to 268435456 (256 MiB).
+#       max_capture_bytes: 16777216 # 16 MiB
 #       fgr: # First Good Response mechanism options, only applicable when mechanism is set to fgr
 #         # status_codes is a list of status codes considered 'good' when using the fgr mechanism
 #         # when this is not set, any response code < 400 is considered good. Use this setting to
@@ -641,13 +806,19 @@ backends:
 #     # options are: otlp, stdout or none.  none is the default
 #     provider: none
 
+#     # protocol selects the OTLP transport. options are: http or grpc. http is the default
+#     # protocol only applies when provider is otlp.
+#     protocol: http
+
 #     # service_name specifies the service name under which the traces are registered by this tracer
 #     # default is trickster
 #     service_name: trickster
 
 #     # endpoint is the URL, URI or Path to the tracing backend
-#     # required for OTLP, unused for stdout
-#     endpoint: http://jaeger:14268/api/traces
+#     # required for OTLP, unused for stdout. For Jaeger OTLP/HTTP, use
+#     # http://jaeger:4318/v1/traces. For Jaeger OTLP/gRPC, set protocol: grpc
+#     # and use http://jaeger:4317 for a plaintext local collector.
+#     endpoint: http://jaeger:4318/v1/traces
 
 #     # timeout is the amount of time in arbitrary time units (ns, ms, s, h, d) for the tracing post
 #     # to wait for a response before timing out
@@ -664,7 +835,8 @@ backends:
 #     # default is false
 #     disable_compression: false
 
-#     # sample_rate sets the probability that a span will be recorded.
+#     # sample_rate sets the probability that a root trace started by Trickster will be recorded.
+#     # when a request already has remote trace context, Trickster follows the parent's sampling decision.
 #     # A floating point value of 0.0 to 1.0 (inclusive) is permitted
 #     # default is 1.0 (meaning 100% of requests are recorded)
 #     sample_rate: 1.0
@@ -675,7 +847,6 @@ backends:
     
 #       # tags will append these tags/attributes to each trace that is recorded
 #       # only string key/value tags are supported. numeric values, etc are not.
-#       # For Jaeger, these key/values are added to the "Process" section
 #       # default tags list is empty
 #     tags:
 #       key1: "value1"
@@ -687,10 +858,18 @@ backends:
 #       # default is false
 #       pretty_print: false
 
-#     # another example tracing config named example using otlp agent backend and a 50% sample rate
+#     # another example tracing config named example using OTLP/HTTP and a 50% sample rate
 #   example:
 #     provider: otlp
-#     endpoint: jaeger:6831
+#     protocol: http
+#     endpoint: http://jaeger:4318/v1/traces
+#     sample_rate: 0.5
+
+#     # another example tracing config named example-grpc using OTLP/gRPC
+#   example-grpc:
+#     provider: otlp
+#     protocol: grpc
+#     endpoint: http://jaeger:4317
 #     sample_rate: 0.5
 
 # # Configuration Options for Authentication
@@ -719,24 +898,13 @@ backends:
 #       # to the authenticator name (e.g., example_auth_1)
 #       realm: custom-realm-name
 
-# # Configuration Options for Metrics Instrumentation
-# metrics:
-#   # listen_port defines the port that Tricksters metrics server listens on at /metrics
-#   # 8481 is the default
-#   listen_port: 8481
-#   # listen_address defines the ip that Tricksters metrics server listens on at /metrics
-#   # empty by default, listening on all interfaces
-#   listen_address: ''
+# # A complete native MySQL User Router example, including its listener,
+# # authenticator, two direct terminal origins, isolated caches, and default
+# # routing policy, is provided in examples/conf/mysql-user-router.yaml.
+# # Native MySQL routing does not support to_user or to_credential remapping.
 
-# # Configuration Options for Trickster Management
+# # Trickster Management Options
 # mgmt:
-#   # listen_port defines the port where Trickster's management server listens
-#   # 8484 is the default 
-#   listen_port: 8484
-#   # listen_address defines the ip where Trickster's management server listens
-#   # empty by default, listening on all interfaces
-#   listen_address: ''
-
 #   # reload_handler_path defines the HTTP path where the Reload interface is available.
 #   # by default, this is /trickster/config/reload
 #   reload_handler_path: /trickster/config/reload
@@ -747,13 +915,25 @@ backends:
 #   reload_drain_timeout: 30s
 #   # reload_rate_limit specifies the rate limit timeout duration to apply to the HTTP reload interface.
 #   # The reload interface is disabled for this duration of time whenever a config reload request is
-#   # made that fails because the underlying config file is unmodified. default is 3
+#   # made that fails because the effective configuration sources are unchanged. default is 3s
 #   reload_rate_limit: 3s
+#   # auto_reload_interval controls how often Trickster checks the effective configuration sources for changes.
+#   # A zero value disables automatic reloads. default is 0s
+#   auto_reload_interval: 10s
 
 #   # config_handler_path provides the HTTP path to view a read-only printout of the running configuration
 #   # which can be reached at http://your-trickster-endpoint:port/$config_handler_path
 #   # default is /trickster/config
 #   config_handler_path: /trickster/config
+
+#   # config_handler_listener provides the HTTP listener that hosts the config endpoints
+#   # Options are: "metrics", "mgmt", "both", or "off"; default is mgmt
+#   config_handler_listener: mgmt
+
+#   # certificates_handler_path provides the HTTP path to view a read-only JSON inventory
+#   # of the TLS certificates served by each listener (metadata only; never key material)
+#   # default is /trickster/certificates
+#   certificates_handler_path: /trickster/certificates
 
 #   # ping_handler_path provides the HTTP path you will use to perform an uptime health check against Trickster
 #   # which can be reached at http://your-trickster-endpoint:port/$ping_handler_path
@@ -765,9 +945,9 @@ backends:
 #   # default is /trickster/health. Set to empty string to fully disable upstream health checking
 #   health_handler_path: /trickster/health
 
-#   # pprof_server provides the name of the http listener that will host the pprof debugging routes
+#   # pprof_listener provides the name of the http listener that will host the pprof debugging routes
 #   # Options are: "metrics", "mgmt", "both", or "off"; default is both
-#   pprof_server: both
+#   pprof_listener: both
 
 # # Configuration Options for Logging Instrumentation
 # logging:
@@ -778,3 +958,21 @@ backends:
 #   # log_file defines the file location to store logs. These will be auto-rolled and maintained for you.
 #   # not specifying a log_file (this is the default behavior) will print logs to STDOUT
 #   log_file: /some/path/to/trickster.log
+
+#   # rotation controls when the log file is rotated; a rotation occurs when either threshold is reached.
+#   # rotated archives are kept alongside the live file as trickster.log.1.gz, .2.gz, etc.
+#   rotation:
+#     # size rotates the log when the live file would exceed this size. default is 256MB
+#     size: 256MB
+#     # interval rotates the log when the live file is older than this. default is 0 (off)
+#     interval: 1d
+
+#   # retention controls how many rotated archives are kept
+#   retention:
+#     # count is the maximum archives kept; 0 is unlimited. default is 80
+#     count: 80
+#     # age prunes archives older than this. default is 7d
+#     age: 7d
+
+#   # compress gzips rotated archives. default is true
+#   compress: true

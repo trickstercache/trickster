@@ -31,6 +31,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
@@ -93,12 +94,54 @@ func setupTestHarnessDPC() (*httptest.Server, *httptest.ResponseRecorder, *http.
 	return ts, w, r, rsc, nil
 }
 
+// closeTestHarness releases resources held by the test harness fixtures
+// (cache client, upstream http server, transport idle conns). Use via
+// t.Cleanup or defer to keep tests from leaking ristretto background
+// goroutines and idle client connections across test runs.
+//
+// CloseClientConnections is needed alongside Close because Server.Close
+// only blocks for in-flight server handlers; it does not free the
+// client-side persistConn pool the proxy holds.
+func closeTestHarness(ts *httptest.Server, r *http.Request) {
+	if r != nil {
+		if rsc := request.GetResources(r); rsc != nil {
+			if rsc.BackendOptions != nil && rsc.BackendOptions.HTTPClient != nil {
+				rsc.BackendOptions.HTTPClient.CloseIdleConnections()
+				closeIdleTransport(rsc.BackendOptions.HTTPClient.Transport)
+			}
+			if rsc.CacheClient != nil {
+				_ = rsc.CacheClient.Close()
+			}
+		}
+	}
+	if ts != nil {
+		ts.CloseClientConnections()
+		ts.Close()
+	}
+}
+
+// closeIdleTransport walks RoundTripper wrappers (e.g. gatedTransport) to
+// find an underlying *http.Transport and close its idle connections.
+func closeIdleTransport(rt http.RoundTripper) {
+	for rt != nil {
+		switch t := rt.(type) {
+		case *http.Transport:
+			t.CloseIdleConnections()
+			return
+		case *gatedTransport:
+			rt = t.inner
+		default:
+			return
+		}
+	}
+}
+
 func TestDeltaProxyCacheRequestMissThenHit(t *testing.T) {
 	ts, w, r, rsc, err := setupTestHarnessDPC()
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -172,12 +215,50 @@ func TestDeltaProxyCacheRequestMissThenHit(t *testing.T) {
 	}
 }
 
+func TestDeltaProxyCacheRequestExtentRewriteFailureStopsOriginRequest(t *testing.T) {
+	tests := []struct {
+		name      string
+		failAfter int64
+		wantCalls int64
+	}{
+		{name: "initial rewrite", failAfter: 0, wantCalls: 1},
+		{name: "cache-miss rewrite", failAfter: 1},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ts, w, r, rsc, err := setupTestHarnessDPC()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer closeTestHarness(ts, r)
+
+			client := rsc.BackendClient.(*TestClient)
+			client.setExtentErr = fmt.Errorf("intentional extent rewrite failure")
+			client.setExtentErrorAfter = test.failAfter
+			rsc.BackendOptions.FastForwardDisable = true
+			step := 5 * time.Minute
+			end := time.Now().Add(-12 * time.Hour).Truncate(step)
+			r.URL.Path = "/prometheus/api/v1/query_range"
+			r.URL.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
+				int(step.Seconds()), end.Add(-time.Hour).Unix(), end.Unix(), queryReturnsOKNoLatency)
+
+			client.QueryRangeHandler(w, r)
+			if got := w.Result().StatusCode; got != http.StatusInternalServerError {
+				t.Errorf("status = %d, want %d", got, http.StatusInternalServerError)
+			}
+			if test.wantCalls > 0 && client.setExtentCalls.Load() != test.wantCalls {
+				t.Errorf("SetExtent calls = %d, want %d", client.setExtentCalls.Load(), test.wantCalls)
+			}
+		})
+	}
+}
+
 func TestDeltaProxyCacheRequestRemoveStale(t *testing.T) {
 	ts, w, r, rsc, err := setupTestHarnessDPC()
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -255,7 +336,7 @@ func TestDeltaProxyCacheRequestRemoveStale(t *testing.T) {
 // 	if err != nil {
 // 		t.Error(err)
 // 	}
-// 	defer ts.Close()
+// 	defer closeTestHarness(ts, r)
 
 // 	client := rsc.BackendClient.(*TestClient)
 // 	o := rsc.BackendOptions
@@ -330,7 +411,7 @@ func TestDeltaProxyCacheRequestMarshalFailure(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -378,7 +459,7 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -524,7 +605,7 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 	extr.End = extr.End.Add(time.Duration(1) * time.Hour) // Extend the top by 1 hour to generate partial hit
 	extn.End = normalizeTime(extr.End, step)
 
-	expectedFetched = "[" + timeseries.ExtentList{timeseries.Extent{Start: extn.Start, End: phitEnd}}.String() + "," +
+	expectedFetched = "[" + timeseries.ExtentList{timeseries.Extent{Start: extn.Start, End: phitEnd}}.String() + ";" +
 		timeseries.ExtentList{timeseries.Extent{Start: phitStart, End: extn.End}}.String() + "]"
 
 	expected, _, _ = mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
@@ -565,12 +646,117 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 	}
 }
 
+// TestDeltaProxyCacheRequestPartialHitWithFailedExtents verifies that when
+// a partial hit occurs and the upstream request for the missing fragment fails,
+// the failed extents are properly tracked and reported in the response header.
+func TestDeltaProxyCacheRequestPartialHitWithFailedExtents(t *testing.T) {
+	ts, w, r, rsc, err := setupTestHarnessDPC()
+	if err != nil {
+		t.Error(err)
+	}
+	defer closeTestHarness(ts, r)
+
+	client := rsc.BackendClient.(*TestClient)
+	o := rsc.BackendOptions
+	rsc.CacheConfig.Provider = "test"
+
+	client.RangeCacheKey = "test-range-key-phit-failed"
+	client.InstantCacheKey = "test-instant-key-phit-failed"
+
+	o.FastForwardDisable = true
+
+	step := time.Duration(300) * time.Second
+	now := time.Now()
+	end := now.Add(-time.Duration(12) * time.Hour)
+
+	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
+	extn := timeseries.Extent{Start: normalizeTime(extr.Start, step), End: normalizeTime(extr.End, step)}
+
+	// First request: populate cache with successful data
+	expected, _, _ := mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+
+	u := r.URL
+	u.Path = "/prometheus/api/v1/query_range"
+	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s&rk=%s&ik=%s", int(step.Seconds()),
+		extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency, client.RangeCacheKey, client.InstantCacheKey)
+
+	client.QueryRangeHandler(w, r)
+	resp := w.Result()
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStringMatch(string(bodyBytes), expected)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
+	if err != nil {
+		t.Error(err)
+	}
+
+	// Give time for the object to be written to cache
+	time.Sleep(time.Millisecond * 10)
+
+	// Second request: partial hit - extend the upper range
+	// This should cause a partial hit where we need to fetch the new upper fragment.
+	// But we'll use a query that fails (queryReturnsBadGateway) for this fragment.
+	phitStart := normalizeTime(extr.End.Add(step), step)
+	extr.End = extr.End.Add(time.Duration(1) * time.Hour)
+	extn.End = normalizeTime(extr.End, step)
+
+	// The extent that we should fetch for the partial hit
+	extentToFetch := timeseries.Extent{Start: phitStart, End: extn.End}
+	expectedFailed := "[" + timeseries.ExtentList{extentToFetch}.String() + "]"
+
+	// Use queryReturnsBadGateway which will return 502 for the upper fragment
+	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s&rk=%s&ik=%s", int(step.Seconds()),
+		extr.Start.Unix(), extr.End.Unix(), queryReturnsBadGateway, client.RangeCacheKey, client.InstantCacheKey)
+
+	r.URL = u
+	time.Sleep(time.Millisecond * 10)
+
+	w = httptest.NewRecorder()
+	client.QueryRangeHandler(w, r)
+	resp = w.Result()
+
+	// The response should be 502 because the partial fetch failed
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusBadGateway)
+	if err != nil {
+		t.Error(err)
+	}
+
+	// Check that we have a proxy-error status
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "proxy-error"})
+	if err != nil {
+		t.Error(err)
+	}
+
+	// Verify that failed extents are present in the header
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{"failed": expectedFailed})
+	if err != nil {
+		t.Error(err)
+	}
+
+	// Log the header for debugging purposes
+	resultHdr := resp.Header.Get(headers.NameTricksterResult)
+	t.Logf("Result Header: %s", resultHdr)
+}
+
 func TestDeltayProxyCacheRequestDeltaFetchError(t *testing.T) {
 	ts, w, r, rsc, err := setupTestHarnessDPC()
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -651,7 +837,7 @@ func TestDeltaProxyCacheRequestRangeMiss(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -795,7 +981,7 @@ func TestDeltaProxyCacheRequestFastForward(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 	rsc.CacheConfig.Provider = "test"
 
 	client := rsc.BackendClient.(*TestClient)
@@ -809,7 +995,7 @@ func TestDeltaProxyCacheRequestFastForward(t *testing.T) {
 	step := time.Duration(300) * time.Second
 
 	now := time.Now()
-	client.fftime = now.Truncate(o.FastForwardTTL)
+	client.fftime = now.Truncate(time.Duration(o.FastForwardTTL))
 
 	extr := timeseries.Extent{Start: now.Add(-time.Duration(12) * time.Hour), End: now}
 	extn := timeseries.Extent{Start: extr.Start.Truncate(step), End: extr.End.Truncate(step)}
@@ -917,7 +1103,7 @@ func TestDeltaProxyCacheRequestFastForwardUrlError(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -975,7 +1161,7 @@ func TestDeltaProxyCacheRequestWithRefresh(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -1029,7 +1215,7 @@ func TestDeltaProxyCacheRequestWithRefreshError(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -1065,7 +1251,7 @@ func TestDeltaProxyCacheRequestWithUnmarshalAndUpstreamErrors(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -1113,7 +1299,7 @@ func TestDeltaProxyCacheRequestWithUnmarshalAndUpstreamErrors(t *testing.T) {
 	// Give time for the object to be written to cache in a separate goroutine from response
 	time.Sleep(time.Millisecond * 10)
 
-	key := o.Host + ".dpc.61a603af5b94ea305dc3fa35af4eed98"
+	key := o.Name + "." + o.CacheKeyPrefix + ".dpc.61a603af5b94ea305dc3fa35af4eed98"
 
 	cc := client.Cache()
 
@@ -1166,7 +1352,7 @@ func TestDeltaProxyCacheRequest_BadParams(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -1205,7 +1391,7 @@ func TestDeltaProxyCacheRequestCacheMissUnmarshalFailed(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -1250,7 +1436,7 @@ func TestDeltaProxyCacheRequestCacheMissUnmarshalFailed(t *testing.T) {
 		t.Error(err)
 	}
 
-	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
+	err = testStatusCodeMatch(resp.StatusCode, http.StatusInternalServerError)
 	if err != nil {
 		t.Error(err)
 	}
@@ -1267,7 +1453,7 @@ func TestDeltaProxyCacheRequestOutOfWindow(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -1341,7 +1527,7 @@ func TestDeltaProxyCacheRequestBadGateway(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -1377,12 +1563,12 @@ func TestDeltaProxyCacheRequest_BackfillTolerance(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
 
-	o.BackfillTolerance = time.Duration(300) * time.Second
+	o.BackfillTolerance = timeconv.Duration(time.Duration(300) * time.Second)
 	o.FastForwardDisable = true
 
 	query := "some_query_here{}"
@@ -1457,7 +1643,7 @@ func TestDeltaProxyCacheRequestFFTTLBiggerThanStep(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -1465,7 +1651,7 @@ func TestDeltaProxyCacheRequestFFTTLBiggerThanStep(t *testing.T) {
 	o.FastForwardDisable = false
 
 	step := time.Duration(300) * time.Second
-	o.FastForwardTTL = step + 1
+	o.FastForwardTTL = timeconv.Duration(step + 1)
 
 	now := time.Now()
 	end := now.Add(-time.Duration(12) * time.Hour)
@@ -1514,7 +1700,7 @@ func TestDeltaProxyCacheRequestShardByPoints(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -1524,7 +1710,7 @@ func TestDeltaProxyCacheRequestShardByPoints(t *testing.T) {
 	client.InstantCacheKey = "test-instant-key-phit"
 
 	o.FastForwardDisable = true
-	o.ShardStep = 3 * time.Hour
+	o.ShardStep = timeconv.Duration(3 * time.Hour)
 	o.DoesShard = true
 
 	step := time.Duration(300) * time.Second
@@ -1618,7 +1804,7 @@ func TestDPCSingleflightDedup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -1709,7 +1895,7 @@ func TestDPCSingleflightDifferentTimeRangesNotDeduped(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -1788,7 +1974,7 @@ func TestDPCSingleflightErrorPropagation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -1854,7 +2040,7 @@ func TestDPCProxyOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	rsc.BackendOptions.ProxyOnly = true
@@ -1882,6 +2068,12 @@ func TestDPCProxyOnly(t *testing.T) {
 	if !strings.Contains(hdr, "engine=HTTPProxy") {
 		t.Errorf("expected HTTPProxy engine in result header, got %q", hdr)
 	}
+	if rsc.TimeRangeQuery == nil {
+		t.Fatal("expected proxy-only DPC metadata to include TimeRangeQuery")
+	}
+	if rsc.TSUnmarshaler == nil {
+		t.Fatal("expected proxy-only DPC metadata to include TSUnmarshaler")
+	}
 }
 
 // TestDPCNoCacheBypass verifies that requests with Cache-Control: no-cache
@@ -1891,7 +2083,7 @@ func TestDPCNoCacheBypass(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -1933,7 +2125,7 @@ func TestDPCSingleflightBadPayload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -1983,12 +2175,14 @@ func TestDPCSingleflightBadPayload(t *testing.T) {
 		t.Errorf("expected 1 origin request, got %d", hits)
 	}
 
-	// all callers should get a proxy-error cache status (the unmarshaling failure
-	// triggers buildErrorResult inside the singleflight closure).
-	// the HTTP status is 200 because that's what the origin returned, but the
-	// Trickster-Result header indicates the error.
+	// all callers should get a proxy-error cache status and an Internal Server Error
+	// response (the unmarshaling failure triggers buildErrorResult inside the
+	// singleflight closure).
 	for i, rec := range recorders {
 		resp := rec.Result()
+		if resp.StatusCode != http.StatusInternalServerError {
+			t.Errorf("request %d: expected status 500, got %d", i, resp.StatusCode)
+		}
 		hdr := resp.Header.Get(headers.NameTricksterResult)
 		if !strings.Contains(hdr, "status=proxy-error") {
 			t.Errorf("request %d: expected proxy-error in result header, got %q", i, hdr)
@@ -2026,7 +2220,7 @@ func TestFetchExtentsConcurrencyLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions

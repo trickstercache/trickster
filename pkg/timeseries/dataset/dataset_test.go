@@ -25,6 +25,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
 )
 
 func testDataSet() *DataSet {
@@ -302,7 +303,7 @@ func TestMergeWithStrategy(t *testing.T) {
 	t.Run("sum across two datasets", func(t *testing.T) {
 		ds1 := makeDS(0, "up", Tags{}, ep{100, "1"}, ep{200, "2"})
 		ds2 := makeDS(0, "up", Tags{}, ep{100, "3"}, ep{200, "4"})
-		ds1.MergeWithStrategy(true, int(MergeStrategySum), ds2)
+		ds1.MergeWithStrategy(true, int(merge.StrategySum), ds2)
 		if ds1.SeriesCount() != 1 {
 			t.Fatalf("expected 1 series, got %d", ds1.SeriesCount())
 		}
@@ -321,7 +322,7 @@ func TestMergeWithStrategy(t *testing.T) {
 	t.Run("dedup delegates to Merge", func(t *testing.T) {
 		ds1 := makeDS(0, "up", Tags{}, ep{100, "1"})
 		ds2 := makeDS(0, "up", Tags{}, ep{100, "9"})
-		ds1.MergeWithStrategy(true, int(MergeStrategyDedup), ds2)
+		ds1.MergeWithStrategy(true, int(merge.StrategyDedup), ds2)
 		if ds1.SeriesCount() != 1 {
 			t.Fatalf("expected 1 series, got %d", ds1.SeriesCount())
 		}
@@ -334,7 +335,7 @@ func TestMergeWithStrategy(t *testing.T) {
 	t.Run("disjoint statement IDs append", func(t *testing.T) {
 		ds1 := makeDS(0, "up", Tags{}, ep{100, "1"})
 		ds2 := makeDS(1, "down", Tags{}, ep{100, "2"})
-		ds1.MergeWithStrategy(true, int(MergeStrategySum), ds2)
+		ds1.MergeWithStrategy(true, int(merge.StrategySum), ds2)
 		if len(ds1.Results) != 2 {
 			t.Errorf("expected 2 results, got %d", len(ds1.Results))
 		}
@@ -342,7 +343,7 @@ func TestMergeWithStrategy(t *testing.T) {
 
 	t.Run("nil collection skipped", func(t *testing.T) {
 		ds1 := makeDS(0, "up", Tags{}, ep{100, "1"})
-		ds1.MergeWithStrategy(true, int(MergeStrategySum), nil)
+		ds1.MergeWithStrategy(true, int(merge.StrategySum), nil)
 		if ds1.SeriesCount() != 1 {
 			t.Errorf("expected 1 series, got %d", ds1.SeriesCount())
 		}
@@ -357,7 +358,7 @@ func TestMergeWithStrategy(t *testing.T) {
 		ds2 := makeDS(0, "latency", Tags{}, ep{100, "20"})
 		ds3 := makeDS(0, "latency", Tags{}, ep{100, "30"})
 		// Use sum for pairwise accumulation (as the merge func does for avg)
-		ds1.MergeWithStrategy(true, int(MergeStrategySum), ds2, ds3)
+		ds1.MergeWithStrategy(true, int(merge.StrategySum), ds2, ds3)
 		ds1.FinalizeAvg(3) // 3 datasets total
 		pts := ds1.Results[0].SeriesList[0].Points
 		if pts[0].Values[0] != "20" {
@@ -420,16 +421,20 @@ func TestFinalizeWeightedAvg(t *testing.T) {
 		}
 	})
 
-	t.Run("missing epoch in countDS leaves sum value unchanged", func(t *testing.T) {
+	t.Run("missing epoch in countDS drops the unpaired sum point", func(t *testing.T) {
 		sumDS := makeDS(0, "m", Tags{}, ep{100, "50"}, ep{200, "80"})
 		countDS := makeDS(0, "m", Tags{}, ep{100, "5"}) // no epoch 200
 		sumDS.FinalizeWeightedAvg(countDS, "")
 		pts := sumDS.Results[0].SeriesList[0].Points
-		if pts[0].Values[0] != "10" { // 50/5
-			t.Errorf("epoch 100: got %v, want 10", pts[0].Values[0])
+		if len(pts) != 1 {
+			t.Fatalf("expected 1 paired point, got %d", len(pts))
 		}
-		if pts[1].Values[0] != "80" { // unchanged
-			t.Errorf("epoch 200: got %v, want 80 (unchanged)", pts[1].Values[0])
+		if pts[0].Epoch != 100 || pts[0].Values[0] != "10" {
+			t.Errorf("paired point: got epoch=%d value=%v, want epoch=100 value=10",
+				pts[0].Epoch, pts[0].Values[0])
+		}
+		if len(sumDS.Warnings) == 0 {
+			t.Error("expected a warning naming the affected series; got none")
 		}
 	})
 
@@ -846,14 +851,11 @@ func TestStepNilTimeRangeQuery(t *testing.T) {
 }
 
 func BenchmarkMerge(b *testing.B) {
-	dss := make([]*DataSet, b.N*2)
-	for i := 0; i < b.N; i++ {
-		dss[i] = genBenchmarkDataset(10)
-		dss[i+1] = genBenchmarkDataset(10)
-	}
-	b.ResetTimer()
-	for i := 0; i < b.N; i += 2 {
-		dss[i].Merge(true, dss[i+1])
+	left := genBenchmarkDataset(10)
+	right := genBenchmarkDataset(10)
+
+	for b.Loop() {
+		left.Merge(true, right)
 	}
 }
 
@@ -1008,16 +1010,17 @@ func TestDefaultSizeCropper(t *testing.T) {
 }
 
 func BenchmarkCropToRange(b *testing.B) {
-	dss := make([]*DataSet, b.N)
-	for i := 0; i < b.N; i++ {
-		dss[i] = genBenchmarkDataset(10)
-	}
+	ds := genBenchmarkDataset(10)
+	seriesList := ds.Results[0].SeriesList
 	bmExt := timeseries.Extent{
 		Start: time.Now().Add(time.Second * -750),
 		End:   time.Now().Add(time.Second * -250),
 	}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		dss[i].CropToRange(bmExt)
+
+	for b.Loop() {
+		b.StopTimer()
+		ds.Results[0].SeriesList = seriesList
+		b.StartTimer()
+		ds.CropToRange(bmExt)
 	}
 }

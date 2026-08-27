@@ -27,10 +27,10 @@ func TestNormalizeExtent(t *testing.T) {
 	expected := (time.Now().Unix() / 10) * 10
 
 	tests := []struct {
-		name                 string
-		start, end, stepSecs int64
-		isOffset             bool
-		rangeStart, rangeEnd int64
+		name                            string
+		start, end, stepSecs, phaseSecs int64
+		isOffset                        bool
+		rangeStart, rangeEnd            int64
 	}{
 		{
 			name:  "basic no change",
@@ -57,6 +57,11 @@ func TestNormalizeExtent(t *testing.T) {
 			start: 1, end: 103, stepSecs: 0,
 			rangeStart: 1, rangeEnd: 103,
 		},
+		{
+			name: "aligns to phase", start: 4*24*60*60 + 1, end: 11*24*60*60 + 1,
+			stepSecs: 7 * 24 * 60 * 60, phaseSecs: 4 * 24 * 60 * 60,
+			rangeStart: 4 * 24 * 60 * 60, rangeEnd: 11 * 24 * 60 * 60,
+		},
 	}
 
 	for _, test := range tests {
@@ -68,6 +73,7 @@ func TestNormalizeExtent(t *testing.T) {
 					End:   time.Unix(test.end, 0),
 				},
 				Step:     time.Duration(test.stepSecs) * time.Second,
+				Phase:    time.Duration(test.phaseSecs) * time.Second,
 				IsOffset: test.isOffset,
 			}
 
@@ -90,10 +96,11 @@ func TestClone(t *testing.T) {
 			Statement:   "1234",
 			Extent:      Extent{Start: time.Unix(5, 0), End: time.Unix(10, 0)},
 			Step:        time.Duration(5) * time.Second,
+			Phase:       time.Second,
 			TemplateURL: u,
 		}
 		c := trq.Clone()
-		if c.Statement != trq.Statement || c.Step != trq.Step {
+		if c.Statement != trq.Statement || c.Step != trq.Step || c.Phase != trq.Phase {
 			t.Error("basic fields mismatch")
 		}
 		if c.TemplateURL == trq.TemplateURL {
@@ -109,6 +116,15 @@ func TestClone(t *testing.T) {
 		c := trq.Clone()
 		if c.TemplateURL != nil {
 			t.Error("expected nil TemplateURL")
+		}
+	})
+
+	t.Run("ParsedQuery retained", func(t *testing.T) {
+		parsed := &struct{ value string }{value: "plan"}
+		trq := &TimeRangeQuery{Statement: "test", ParsedQuery: parsed}
+		c := trq.Clone()
+		if c.ParsedQuery != parsed {
+			t.Error("expected ParsedQuery to be retained")
 		}
 	})
 
@@ -156,8 +172,8 @@ func TestSizeTRQ(t *testing.T) {
 		End:   time.Unix(10, 0),
 	}, Step: time.Duration(5) * time.Second, TemplateURL: u}
 	size := trq.Size()
-	if size != 119 {
-		t.Errorf("expected %d got %d", 119, size)
+	if size != 127 {
+		t.Errorf("expected %d got %d", 127, size)
 	}
 }
 

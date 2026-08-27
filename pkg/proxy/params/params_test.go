@@ -25,6 +25,7 @@ import (
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 )
 
 func TestUpdateParams(t *testing.T) {
@@ -172,6 +173,79 @@ func TestGetRequestValues_POSTFormBodyOverridesURL(t *testing.T) {
 	}
 	if len(v["step"]) != 1 {
 		t.Errorf("expected single merged value, got %v", v["step"])
+	}
+}
+
+// TestSetRequestValues_SyncsRequestBodyCache verifies that SetRequestValues
+// updates rsc.RequestBody so that CloneWithoutResources picks up the rewritten
+// body rather than the stale pre-rewrite bytes. This is the guard against the
+// TSM weighted-avg POST bug where sum/count sub-requests silently received the
+// original avg query and produced a flat line of 1.
+func TestSetRequestValues_SyncsRequestBodyCache(t *testing.T) {
+	const origBody = "query=avg%28up%29&start=1000&end=2000&step=15"
+	r, _ := http.NewRequest(http.MethodPost, "http://example.com/api/v1/query_range",
+		io.NopCloser(bytes.NewBufferString(origBody)))
+	r.Header.Set(headers.NameContentType, headers.ValueXFormURLEncoded)
+
+	// Attach resources with the original body already cached, simulating the
+	// state after the outer ServeHTTP has parsed the request.
+	rsc := &request.Resources{RequestBody: []byte(origBody)}
+	r = request.SetResources(r, rsc)
+
+	// Rewrite query param (mirrors what RewriteForWeightedAvg does).
+	v, _, _ := GetRequestValues(r)
+	v.Set("query", "sum(up)")
+	SetRequestValues(r, v)
+
+	// rsc.RequestBody must reflect the rewritten params.
+	got := request.GetResources(r)
+	if got == nil {
+		t.Fatal("expected non-nil resources after SetRequestValues")
+	}
+	gotVals, err := url.ParseQuery(string(got.RequestBody))
+	if err != nil {
+		t.Fatalf("RequestBody is not valid query-encoded: %v", err)
+	}
+	if q := gotVals.Get("query"); q != "sum(up)" {
+		t.Errorf("RequestBody query param: got %q, want %q", q, "sum(up)")
+	}
+	if s := gotVals.Get("start"); s != "1000" {
+		t.Errorf("RequestBody start param: got %q, want %q", s, "1000")
+	}
+
+	// A later GetRequestValues call must not reuse the stale PostForm parsed
+	// before SetRequestValues rewrote the body.
+	gotParsed, _, _ := GetRequestValues(r)
+	if q := gotParsed.Get("query"); q != "sum(up)" {
+		t.Errorf("reparsed query param: got %q, want %q", q, "sum(up)")
+	}
+}
+
+func TestSetRequestValues_ClearsParsedFormCache(t *testing.T) {
+	const origBody = "query=avg%28up%29&start=1000&end=2000&step=15"
+	r, _ := http.NewRequest(http.MethodPost, "http://example.com/api/v1/query_range",
+		io.NopCloser(bytes.NewBufferString(origBody)))
+	r.Header.Set(headers.NameContentType, headers.ValueXFormURLEncoded)
+	r = request.SetResources(r, &request.Resources{RequestBody: []byte(origBody)})
+
+	v, _, _ := GetRequestValues(r)
+	if q := v.Get("query"); q != "avg(up)" {
+		t.Fatalf("initial query param: got %q, want %q", q, "avg(up)")
+	}
+	if r.PostForm == nil {
+		t.Fatal("expected form cache to be populated")
+	}
+
+	v.Set("query", "count(up)")
+	SetRequestValues(r, v)
+	if r.Form != nil || r.PostForm != nil || r.MultipartForm != nil {
+		t.Fatalf("expected parsed form caches cleared, got Form=%v PostForm=%v MultipartForm=%v",
+			r.Form, r.PostForm, r.MultipartForm)
+	}
+
+	got, _, _ := GetRequestValues(r)
+	if q := got.Get("query"); q != "count(up)" {
+		t.Errorf("reparsed query param: got %q, want %q", q, "count(up)")
 	}
 }
 

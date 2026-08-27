@@ -27,16 +27,24 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	authtypes "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/types"
 	tc "github.com/trickstercache/trickster/v2/pkg/proxy/context"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 )
 
 func TestNewAndCloneResources(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	r := NewResources(nil, nil, nil, nil, nil, nil)
 	r.AlternateCacheTTL = time.Duration(1) * time.Second
+	r.BatchMergeFunc = func(*merge.Accumulator, []merge.BatchItem) (bool, error) {
+		return true, nil
+	}
 	r2 := r.Clone()
 	if r2.AlternateCacheTTL != r.AlternateCacheTTL {
 		t.Errorf("expected %s got %s", r.AlternateCacheTTL.String(), r2.AlternateCacheTTL.String())
+	}
+	if r2.BatchMergeFunc == nil {
+		t.Error("expected clone to preserve BatchMergeFunc")
 	}
 }
 
@@ -94,6 +102,43 @@ func TestClone(t *testing.T) {
 		}
 		if GetResources(out) != nil {
 			t.Error("expected nil resources on clone of request without resources")
+		}
+	})
+
+	t.Run("preserves context values deadline and cancellation", func(t *testing.T) {
+		type contextKey struct{}
+		deadline := time.Now().Add(time.Hour)
+		ctx := context.WithValue(context.Background(), contextKey{}, "preserved")
+		ctx, deadlineCancel := context.WithDeadline(ctx, deadline)
+		defer deadlineCancel()
+		ctx, cancel := context.WithCancel(ctx)
+
+		r, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://127.0.0.1/", nil)
+		rsc := NewResources(nil, nil, nil, nil, nil, nil)
+		r = SetResources(r, rsc)
+		out, err := Clone(r)
+		if err != nil {
+			t.Fatal("unexpected error:", err)
+		}
+		if got := out.Context().Value(contextKey{}); got != "preserved" {
+			t.Fatalf("context value = %v, want preserved", got)
+		}
+		gotDeadline, ok := out.Context().Deadline()
+		if !ok || !gotDeadline.Equal(deadline) {
+			t.Fatalf("deadline = %v, %t; want %v, true", gotDeadline, ok, deadline)
+		}
+		if GetResources(out) == rsc {
+			t.Fatal("Clone should still use independent Resources while preserving context")
+		}
+
+		cancel()
+		select {
+		case <-out.Context().Done():
+			if err := out.Context().Err(); err != context.Canceled {
+				t.Fatalf("context error = %v, want %v", err, context.Canceled)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("clone did not observe source context cancellation")
 		}
 	})
 
@@ -189,13 +234,28 @@ func TestMergeResources(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	r1 := NewResources(nil, nil, nil, nil, nil, nil)
 	r1.AlternateCacheTTL = time.Minute
+	r1.AuthResult = &authtypes.AuthResult{Status: authtypes.AuthSuccess, Username: "outer"}
 	r1.Merge(nil)
 	if r1.AlternateCacheTTL != time.Minute {
 		t.Errorf("nil merge shouldn't set anything in subject resources")
 	}
 	r2 := NewResources(nil, nil, nil, nil, nil, nil)
+	r2.BatchMergeFunc = func(*merge.Accumulator, []merge.BatchItem) (bool, error) {
+		return true, nil
+	}
 	r1.Merge(r2)
 	if r1.AlternateCacheTTL != 0 {
 		t.Errorf("merge should override subject resources")
+	}
+	if r1.BatchMergeFunc == nil {
+		t.Error("merge should propagate BatchMergeFunc")
+	}
+	if r1.AuthResult == nil || r1.AuthResult.Username != "outer" {
+		t.Error("nil inner auth result replaced the outer authentication")
+	}
+	r2.AuthResult = &authtypes.AuthResult{Status: authtypes.AuthSuccess, Username: "inner"}
+	r1.Merge(r2)
+	if r1.AuthResult.Username != "inner" {
+		t.Error("non-nil inner auth result did not replace the outer authentication")
 	}
 }

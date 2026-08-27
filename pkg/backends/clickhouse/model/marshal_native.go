@@ -25,7 +25,7 @@ import (
 	"strings"
 	"time"
 
-	lsql "github.com/trickstercache/trickster/v2/pkg/parsing/lex/sql"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
@@ -224,7 +224,7 @@ func writeNativeValue(w io.Writer, typ, val string) error {
 		_, err := w.Write(b[:])
 		return err
 	case TypeDateTime:
-		t, err := time.Parse(lsql.SQLDateTimeLayout, val)
+		t, err := time.Parse(timeconv.SQLDateTimeLayout, val)
 		if err != nil {
 			// Try as epoch seconds
 			v, _ := strconv.ParseInt(val, 10, 64)
@@ -272,7 +272,7 @@ func formatEpochForType(ep epoch.Epoch, tfd timeseries.FieldDefinition) string {
 	t := time.Unix(nanos/1e9, nanos%1e9).UTC()
 	switch tfd.SDataType {
 	case TypeDateTime:
-		return t.Format(lsql.SQLDateTimeLayout)
+		return t.Format(timeconv.SQLDateTimeLayout)
 	case TypeDate:
 		return t.Format("2006-01-02")
 	default:

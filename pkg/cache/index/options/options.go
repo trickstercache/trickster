@@ -17,17 +17,19 @@
 package options
 
 import (
-	"time"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+
+	"go.yaml.in/yaml/v3"
 )
 
 // Options defines the operation of the Cache Indexer
 type Options struct {
 	// ReapInterval defines how long the Cache Index reaper sleeps between reap cycles
-	ReapInterval time.Duration `yaml:"reap_interval,omitempty"`
+	ReapInterval timeconv.Duration `yaml:"reap_interval,omitempty"`
 	// FlushInterval sets how often the Cache Index saves its metadata to the cache from application memory
-	FlushInterval time.Duration `yaml:"flush_interval,omitempty"`
+	FlushInterval timeconv.Duration `yaml:"flush_interval,omitempty"`
 	// IndexExpiry defines the interval at which to consider a flushed index as expired
-	IndexExpiry time.Duration `yaml:"index_expiry,omitempty"`
+	IndexExpiry timeconv.Duration `yaml:"index_expiry,omitempty"`
 	// MaxSizeBytes indicates how large the cache can grow in bytes before the Index evicts
 	// least-recently-accessed items.
 	MaxSizeBytes int64 `yaml:"max_size_bytes,omitempty"`
@@ -45,9 +47,9 @@ type Options struct {
 // New returns a new Cache Index Options Reference with default values set
 func New() *Options {
 	return &Options{
-		ReapInterval:          DefaultCacheIndexReap,
-		FlushInterval:         DefaultCacheIndexFlush,
-		IndexExpiry:           DefaultIndexExpiry,
+		ReapInterval:          timeconv.Duration(DefaultCacheIndexReap),
+		FlushInterval:         timeconv.Duration(DefaultCacheIndexFlush),
+		IndexExpiry:           timeconv.Duration(DefaultIndexExpiry),
 		MaxSizeBytes:          DefaultCacheMaxSizeBytes,
 		MaxSizeBackoffBytes:   DefaultMaxSizeBackoffBytes,
 		MaxSizeObjects:        DefaultMaxSizeObjects,
@@ -70,10 +72,10 @@ func (o *Options) Equal(o2 *Options) bool {
 		o.MaxSizeBackoffObjects == o2.MaxSizeBackoffObjects
 }
 
-func (o *Options) UnmarshalYAML(unmarshal func(any) error) error {
+func (o *Options) UnmarshalYAML(value *yaml.Node) error {
 	type loadOptions Options
 	lo := loadOptions(*(New()))
-	if err := unmarshal(&lo); err != nil {
+	if err := value.Decode(&lo); err != nil {
 		return err
 	}
 	*o = Options(lo)

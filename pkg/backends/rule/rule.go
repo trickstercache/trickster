@@ -18,6 +18,8 @@ package rule
 
 import (
 	"net/http"
+	"regexp"
+	"strconv"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
@@ -57,8 +59,10 @@ type rule struct {
 
 	cases caseList
 
-	extractionArg string
-	operationArg  string
+	extractionArg    string
+	operationArg     string
+	regex            *regexp.Regexp
+	hasCaptureTokens bool
 
 	defaultRedirectURL  string
 	defaultRedirectCode int
@@ -85,6 +89,7 @@ type evaluatorFunc func(*http.Request) (http.Handler, *http.Request, error)
 var badRequestHandler = http.HandlerFunc(failures.HandleBadRequestResponse)
 
 func (r *rule) EvaluateOpArg(hr *http.Request) (http.Handler, *http.Request, error) {
+	hr = rewriter.WithoutTokens(hr)
 	currentHops, maxHops := context.Hops(hr.Context())
 	if r.maxRuleExecutions < maxHops {
 		maxHops = r.maxRuleExecutions
@@ -100,13 +105,27 @@ func (r *rule) EvaluateOpArg(hr *http.Request) (http.Handler, *http.Request, err
 	}
 
 	h := r.defaultRouter
-	res := r.operationFunc(r.extractionFunc(hr, r.extractionArg),
-		r.operationArg, r.negateOpResult)
+	input := r.extractionFunc(hr, r.extractionArg)
+	var captureTokens map[string]string
+	var res string
+	if r.regex != nil && r.hasCaptureTokens {
+		matches := r.regex.FindStringSubmatch(input)
+		res = falseValue
+		if len(matches) > 0 {
+			res = trueValue
+		}
+		captureTokens = regexCaptureTokens(r.regex, matches)
+	} else {
+		res = r.operationFunc(input, r.operationArg, r.negateOpResult)
+	}
 	var nonDefault bool
 
 	for _, c := range r.cases {
 		if c.matchValue == res {
 			nonDefault = true
+			if len(captureTokens) > 0 {
+				hr = rewriter.WithTokens(hr, captureTokens)
+			}
 			h, hr = handleMatchedCase(c, hr)
 		}
 	}
@@ -125,9 +144,28 @@ func (r *rule) EvaluateOpArg(hr *http.Request) (http.Handler, *http.Request, err
 			r.defaultRedirectCode, r.defaultRedirectURL))
 	}
 
+	hr = rewriter.WithoutTokens(hr)
 	hr = hr.WithContext(context.WithHops(hr.Context(), currentHops+1, maxHops))
 
 	return h, hr, nil
+}
+
+func regexCaptureTokens(re *regexp.Regexp, matches []string) map[string]string {
+	if len(matches) == 0 {
+		return nil
+	}
+	tokens := make(map[string]string, len(matches)*2)
+	names := re.SubexpNames()
+	for i, match := range matches {
+		tokens[strconv.Itoa(i)] = match
+		if i >= len(names) || names[i] == "" {
+			continue
+		}
+		if _, ok := tokens[names[i]]; !ok {
+			tokens[names[i]] = match
+		}
+	}
+	return tokens
 }
 
 func (r *rule) EvaluateCaseArg(hr *http.Request) (http.Handler, *http.Request, error) {

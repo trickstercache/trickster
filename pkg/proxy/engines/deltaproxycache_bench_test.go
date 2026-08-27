@@ -30,7 +30,7 @@ func BenchmarkDeltaProxyCache(b *testing.B) {
 	if err != nil {
 		b.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -49,7 +49,7 @@ func BenchmarkDeltaProxyCache(b *testing.B) {
 		int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
 
 	w := httptest.NewRecorder()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		client.QueryRangeHandler(w, r)
 	}
 }
@@ -60,7 +60,7 @@ func BenchmarkDeltaProxyCacheChunks(b *testing.B) {
 		b.Error(err)
 	}
 	rsc.CacheConfig.UseCacheChunking = true
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
@@ -79,7 +79,7 @@ func BenchmarkDeltaProxyCacheChunks(b *testing.B) {
 		int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
 
 	w := httptest.NewRecorder()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		client.QueryRangeHandler(w, r)
 	}
 }

@@ -17,14 +17,15 @@
 package dataset
 
 import (
-	"sort"
+	"slices"
 	"strconv"
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
+
+	"github.com/stretchr/testify/require"
 )
 
 func testPoints() Points {
@@ -108,7 +109,7 @@ func TestPointEqual(t *testing.T) {
 func BenchmarkPointsAreEqual(b *testing.B) {
 	p1 := testPoints()[0]
 	p2 := testPoints()[1]
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		PointsAreEqual(p1, p2)
 	}
 }
@@ -131,7 +132,7 @@ func BenchmarkPointClone(b *testing.B) {
 		Size:   27,
 		Values: []any{1},
 	}
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		p.Clone()
 	}
 }
@@ -195,10 +196,8 @@ func TestPointsSize(t *testing.T) {
 }
 
 func BenchmarkPointsSize(b *testing.B) {
-	for i := range b.N {
-		b.StopTimer()
-		pts := genTestPoints(i, 1000)
-		b.StartTimer()
+	pts := genTestPoints(0, 1000)
+	for b.Loop() {
 		pts.Size()
 	}
 }
@@ -206,7 +205,7 @@ func BenchmarkPointsSize(b *testing.B) {
 func TestPointsSort(t *testing.T) {
 	pts := testPoints()
 	pts[0].Epoch = 100 * timeseries.Second
-	sort.Sort(pts)
+	slices.SortFunc(pts, pointCmp)
 	p := pts[0]
 	if p.Epoch != 10*timeseries.Second {
 		t.Error("sort mismatch")
@@ -300,7 +299,7 @@ func BenchmarkFindRange(b *testing.B) {
 	pts := genTestPoints(0, 10000) // Create a large dataset for meaningful benchmarks
 	startEpoch := epoch.Epoch(2500 * time.Second)
 	endEpoch := epoch.Epoch(7500 * time.Second)
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = pts.findRange(startEpoch, endEpoch, 0, len(pts)-1)
 	}
 }

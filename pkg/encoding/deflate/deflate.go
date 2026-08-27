@@ -21,8 +21,9 @@ import (
 	"io"
 	"sync"
 
-	"github.com/klauspost/compress/flate"
 	"github.com/trickstercache/trickster/v2/pkg/encoding/reader"
+
+	"github.com/klauspost/compress/flate"
 )
 
 var writerPool sync.Pool

@@ -26,9 +26,8 @@ import (
 )
 
 func TestInfluxDB(t *testing.T) {
-	cfg := writeTestConfig(t, 8572, 8573, 8583)
-	influxAddr := "127.0.0.1:8572"
-	h := tricksterHarness{ConfigPath: cfg, BaseAddr: influxAddr, MetricsAddr: "127.0.0.1:8573"}
+	h := configHarness(t)
+	influxAddr := h.BaseAddr
 	h.start(t)
 	waitForInfluxDBData(t, "127.0.0.1:8086")
 

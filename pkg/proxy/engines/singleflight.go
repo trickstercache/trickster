@@ -23,6 +23,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+
 	"golang.org/x/sync/singleflight"
 )
 
@@ -80,4 +81,5 @@ type dpcResult struct {
 	uncachedValueCount int64
 	cacheStatus        status.LookupStatus
 	missRanges         timeseries.ExtentList
+	failedExtents      timeseries.ExtentList // populated only is case of failed extents
 }
