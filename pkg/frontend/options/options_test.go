@@ -66,12 +66,12 @@ func TestClone(t *testing.T) {
 	require.Equal(t, o.TruncateRequestBodyTooLarge, c.TruncateRequestBodyTooLarge)
 	require.NotSame(t, o.MaxRequestBodySizeBytes, c.MaxRequestBodySizeBytes)
 	require.Equal(t, *o.MaxRequestBodySizeBytes, *c.MaxRequestBodySizeBytes)
-	// Equal compares pointer identity for MaxRequestBodySizeBytes.
-	require.False(t, o.Equal(c))
+	require.True(t, o.Equal(c))
 
 	*c.MaxRequestBodySizeBytes = 99
 	require.Equal(t, int64(42), *o.MaxRequestBodySizeBytes)
 	require.Equal(t, int64(99), *c.MaxRequestBodySizeBytes)
+	require.False(t, o.Equal(c))
 
 	o.MaxRequestBodySizeBytes = nil
 	c = o.Clone()
