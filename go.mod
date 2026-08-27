@@ -37,7 +37,6 @@ require (
 	golang.org/x/sync v0.22.0
 	google.golang.org/grpc v1.83.0
 	google.golang.org/protobuf v1.36.12
-	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	pgregory.net/rapid v1.3.0
 	vitess.io/vitess v0.24.2
 )

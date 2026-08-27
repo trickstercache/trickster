@@ -39,6 +39,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	yamlencoding "github.com/trickstercache/trickster/v2/pkg/encoding/yaml"
+	alo "github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog/options"
 	tro "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
@@ -183,6 +184,8 @@ type Options struct {
 	ForwardedHeaders string `yaml:"forwarded_headers,omitempty"`
 	// CORS configures downstream CORS response headers for this backend
 	CORS *corso.Options `yaml:"cors,omitempty"`
+	// AccessLog configures access and error logging for this backend
+	AccessLog *alo.Options `yaml:"access_log,omitempty"`
 
 	// IsDefault indicates if this is the d.Default backend for any request not matching a configured route
 	IsDefault bool `yaml:"is_default,omitempty"`
@@ -350,6 +353,10 @@ func (o *Options) Clone() *Options {
 		out.AuthOptions = o.AuthOptions.Clone()
 	}
 
+	if o.AccessLog != nil {
+		out.AccessLog = o.AccessLog.Clone()
+	}
+
 	return out
 }
 
@@ -391,6 +398,11 @@ func (o *Options) Validate() (bool, error) {
 	if o.HealthCheck != nil {
 		_, err := o.HealthCheck.Validate()
 		if err != nil {
+			return false, err
+		}
+	}
+	if o.AccessLog != nil {
+		if _, err := o.AccessLog.Validate(); err != nil {
 			return false, err
 		}
 	}

@@ -146,6 +146,32 @@ backends:
 	}
 }
 
+func TestAccessLogOptionsYAML(t *testing.T) {
+	o, err := fromTestYAML()
+	if err != nil {
+		t.Fatal(err)
+	}
+	al := o.AccessLog
+	if al == nil {
+		t.Fatal("expected access_log options")
+	}
+	if al.Filename != "/tmp/test.access.log" || al.Format != "combined" ||
+		al.Rotation == nil || *al.Rotation.Size != 64*1024*1024 ||
+		al.Retention == nil || *al.Retention.Count != 3 ||
+		al.ErrorFilename != "/tmp/test.error.log" || al.ErrorThreshold != 500 {
+		t.Fatalf("unexpected access_log options: %+v", al)
+	}
+	clone := o.Clone()
+	*clone.AccessLog.Retention.Count = 9
+	if *o.AccessLog.Retention.Count != 3 {
+		t.Fatal("clone mutated access_log retention")
+	}
+	o.AccessLog.Format = "%Z"
+	if _, err := o.Validate(); err == nil {
+		t.Fatal("expected validation error for invalid access log format")
+	}
+}
+
 func TestClone(t *testing.T) {
 	p := po.New()
 	o := New()

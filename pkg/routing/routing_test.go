@@ -19,6 +19,7 @@ package routing
 import (
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
@@ -38,6 +39,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	alo "github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog/options"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
@@ -58,6 +60,18 @@ func newPromClient() backends.Backend {
 }
 
 var promClient = newPromClient()
+
+func TestShouldCaptureAuthForVirtualBackend(t *testing.T) {
+	path := po.New()
+	backend := &bo.Options{Provider: providers.Rule}
+	if !shouldCaptureAuth(path, backend) {
+		t.Error("rule backend must capture downstream authentication")
+	}
+	backend.Provider = providers.ReverseProxyShort
+	if shouldCaptureAuth(path, backend) {
+		t.Error("ordinary unauthenticated backend should not seed resources")
+	}
+}
 
 func TestRegisterHealthHandler(t *testing.T) {
 	router := lm.NewRouter()
@@ -521,5 +535,28 @@ func TestRegisterDefaultBackendRoutesForListeners(t *testing.T) {
 	defaultRouter.ServeHTTP(defaultResponse, request)
 	if defaultResponse.Code == http.StatusOK {
 		t.Errorf("backend route was also registered on default")
+	}
+}
+
+func TestNewAccessLogger(t *testing.T) {
+	if newAccessLogger(nil, nil) != nil {
+		t.Error("expected nil logger for nil options")
+	}
+	o := bo.New()
+	o.Name = "test"
+	if newAccessLogger(nil, o) != nil {
+		t.Error("expected nil logger when access logging is unconfigured")
+	}
+	o.AccessLog = &alo.Options{Filename: filepath.Join(t.TempDir(), "a.log")}
+	al := newAccessLogger(nil, o)
+	if al == nil {
+		t.Fatal("expected an access logger")
+	}
+	al.Close()
+	// formats are validated at config load; an invalid one here exercises
+	// the construction failure branch
+	o.AccessLog.Format = "%Z"
+	if newAccessLogger(nil, o) != nil {
+		t.Error("expected nil logger on construction error")
 	}
 }

@@ -34,6 +34,7 @@ import (
 	encoding "github.com/trickstercache/trickster/v2/pkg/encoding/handler"
 	fopt "github.com/trickstercache/trickster/v2/pkg/frontend/options"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/handler"
@@ -51,15 +52,26 @@ import (
 
 var noCacheBackends = providers.NonCacheBackends()
 
-// attachAuthenticator attaches authentication middleware to the handler based on path and backend options
 func attachAuthenticator(h http.Handler, pathOptions *po.Options, backendOptions *bo.Options) http.Handler {
 	if pathOptions.AuthOptions != nil && pathOptions.AuthOptions.Authenticator != nil {
-		h = handler.Middleware(pathOptions.AuthOptions.Authenticator, h)
+		h = handler.NamedMiddleware(pathOptions.AuthOptions.Name,
+			pathOptions.AuthOptions.Authenticator, h)
 	} else if pathOptions.AuthenticatorName != "none" && backendOptions.AuthOptions != nil &&
 		backendOptions.AuthOptions.Authenticator != nil {
-		h = handler.Middleware(backendOptions.AuthOptions.Authenticator, h)
+		h = handler.NamedMiddleware(backendOptions.AuthOptions.Name,
+			backendOptions.AuthOptions.Authenticator, h)
 	}
 	return h
+}
+
+func hasAuthenticator(pathOptions *po.Options, backendOptions *bo.Options) bool {
+	return pathOptions.AuthOptions != nil && pathOptions.AuthOptions.Authenticator != nil ||
+		pathOptions.AuthenticatorName != "none" && backendOptions.AuthOptions != nil &&
+			backendOptions.AuthOptions.Authenticator != nil
+}
+
+func shouldCaptureAuth(pathOptions *po.Options, backendOptions *bo.Options) bool {
+	return hasAuthenticator(pathOptions, backendOptions) || backends.IsVirtual(backendOptions.Provider)
 }
 
 // RegisterProxyRoutes iterates the Trickster Configuration and
@@ -267,6 +279,8 @@ func RegisterPathRoutes(r router.Router, conf *config.Config, handlers handlers.
 		}
 	}
 
+	al := newAccessLogger(conf, o)
+
 	applyMiddleware := func(po1 *po.Options) http.Handler {
 		// default base route is the path handler
 		maxBodySizeBytes, truncateOnly := getSizeLimits(frontendOptions(conf, o))
@@ -277,6 +291,7 @@ func RegisterPathRoutes(r router.Router, conf *config.Config, handlers handlers.
 			h = middleware.Trace(tr, h)
 		}
 		// attach authenticator
+		captureAuth := shouldCaptureAuth(po1, o)
 		h = attachAuthenticator(h, po1, o)
 		// attach compression handler
 		h = encoding.HandleCompression(h, o.CompressibleTypes)
@@ -293,6 +308,8 @@ func RegisterPathRoutes(r router.Router, conf *config.Config, handlers handlers.
 		if !po1.NoMetrics {
 			h = middleware.Decorate(o.Name, o.Provider, po1.Path, h)
 		}
+		// attach access logging outermost so it observes the full request
+		h = accesslog.Middleware(al, po1.Path, captureAuth, h)
 		return h
 	}
 
@@ -360,7 +377,7 @@ func registerDefaultBackendRoutes(routerFor func(*bo.Options) router.Router, con
 	bknds backends.Backends, tracers tracing.Tracers,
 ) {
 	applyMiddleware := func(o *bo.Options, po *po.Options, tr *tracing.Tracer,
-		c cache.Cache, client backends.Backend,
+		c cache.Cache, client backends.Backend, al *accesslog.Logger,
 	) http.Handler {
 		// default base route is the path handler
 		maxBodySizeBytes, truncateOnly := getSizeLimits(frontendOptions(conf, o))
@@ -371,6 +388,7 @@ func registerDefaultBackendRoutes(routerFor func(*bo.Options) router.Router, con
 			h = middleware.Trace(tr, h)
 		}
 		// attach authenticator
+		captureAuth := shouldCaptureAuth(po, o)
 		h = attachAuthenticator(h, po, o)
 		// add Backend, Cache, and Path Configs to the HTTP Request's context (must wrap outer than LimitQueryRange)
 		h = middleware.WithResourcesContext(client, o, c, po, tr, h)
@@ -385,6 +403,8 @@ func registerDefaultBackendRoutes(routerFor func(*bo.Options) router.Router, con
 		if !po.NoMetrics {
 			h = middleware.Decorate(o.Name, o.Provider, po.Path, h)
 		}
+		// attach access logging outermost so it observes the full request
+		h = accesslog.Middleware(al, po.Path, captureAuth, h)
 		return h
 	}
 
@@ -402,6 +422,8 @@ func registerDefaultBackendRoutes(routerFor func(*bo.Options) router.Router, con
 			logger.Info("registering default backend handler paths",
 				logging.Pairs{"backendName": o.Name})
 
+			al := newAccessLogger(conf, o)
+
 			for _, p := range o.Paths {
 				if p.Handler != nil && len(p.Methods) > 0 {
 					logger.Debug(
@@ -414,14 +436,31 @@ func registerDefaultBackendRoutes(routerFor func(*bo.Options) router.Router, con
 
 					if p.MatchType == matching.PathMatchTypePrefix {
 						r.RegisterRoute(p.Path, nil, p.Methods,
-							true, applyMiddleware(o, p, tr, b.Cache(), b))
+							true, applyMiddleware(o, p, tr, b.Cache(), b, al))
 					}
 					r.RegisterRoute(p.Path, nil, p.Methods,
-						false, applyMiddleware(o, p, tr, b.Cache(), b))
+						false, applyMiddleware(o, p, tr, b.Cache(), b, al))
 				}
 			}
 		}
 	}
+}
+
+func newAccessLogger(conf *config.Config, o *bo.Options) *accesslog.Logger {
+	if o == nil || !o.AccessLog.IsEnabled() {
+		return nil
+	}
+	var instanceID int
+	if conf != nil && conf.Main != nil {
+		instanceID = conf.Main.InstanceID
+	}
+	al, err := accesslog.NewLogger(o.AccessLog, instanceID, o.Name, o.Provider)
+	if err != nil {
+		logger.Error("access logger creation failed; access logging disabled",
+			logging.Pairs{"backendName": o.Name, "error": err.Error()})
+		return nil
+	}
+	return al
 }
 
 func frontendOptions(conf *config.Config, o *bo.Options) *fopt.Options {

@@ -17,6 +17,8 @@
 package setup
 
 import (
+	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	goruntime "runtime"
@@ -41,8 +43,10 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/daemon/instance"
 	te "github.com/trickstercache/trickster/v2/pkg/errors"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	logmanager "github.com/trickstercache/trickster/v2/pkg/observability/logging/manager"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	tr "github.com/trickstercache/trickster/v2/pkg/observability/tracing/registry"
 	ar "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/registry"
@@ -138,7 +142,7 @@ func LoadAndValidate(args ...string) (*config.Config, error) {
 func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	clients backends.Backends, hupFunc dr.Reloader, errorFunc func(),
 	lg *listener.Group,
-) error {
+) (retErr error) {
 	if si == nil || newConf == nil {
 		return nil
 	}
@@ -151,12 +155,29 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	if newConf.MgmtConfig == nil {
 		newConf.MgmtConfig = mgmt.New()
 	}
+	firstStartup := si.Config == nil
+	if firstStartup {
+		applyLoggingConfig(newConf, nil)
+	}
 
 	if err := buildAuthenticators(newConf); err != nil {
 		return err
 	}
 
-	applyLoggingConfig(newConf, si.Config)
+	if err := reconfigureLogWriters(newConf); err != nil {
+		handleStartupIssue("log writer reconfiguration failed",
+			logging.Pairs{logKeyDetail: err.Error()}, errorFunc)
+		return err
+	}
+	rollbackLogWriters := !firstStartup
+	defer func() {
+		if rollbackLogWriters {
+			if err := reconfigureLogWriters(si.Config); err != nil {
+				retErr = errors.Join(retErr,
+					fmt.Errorf("restore previous log writer options: %w", err))
+			}
+		}
+	}()
 
 	// Register Tracing Configurations
 	tracers, err := tr.RegisterAll(newConf, false)
@@ -187,8 +208,11 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 
 	caches := applyCachingConfig(si, newConf)
 	rh := reload.HandlerFunc(hupFunc)
+	// retire the old config's access loggers once the new routes are live
+	accesslog.BeginGeneration()
 	err = routing.RegisterProxyRoutesForListeners(newConf, clients, listenerRouters, mr, caches, tracers, false)
 	if err != nil {
+		accesslog.AbortGeneration()
 		handleStartupIssue("route registration failed",
 			logging.Pairs{logKeyDetail: err.Error()}, errorFunc)
 		return err
@@ -215,21 +239,37 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	}
 	si.HealthChecker, err = clients.StartHealthChecks(oldStatuses)
 	if err != nil {
+		accesslog.AbortGeneration()
 		// logs the error (no status code or target name)
 		healthcheck.LogHealthCheckError("", err, 0)
 		return err
+	}
+	rollbackLogWriters = false
+	if !firstStartup {
+		applyLoggingConfig(newConf, si.Config)
 	}
 	alb.StartALBPools(clients, si.HealthChecker.Statuses())
 	routing.RegisterDefaultBackendRoutesForListeners(listenerRouters, newConf, clients, tracers)
 	routing.RegisterHealthHandler(mr, newConf.MgmtConfig.HealthHandlerPath, si.HealthChecker, clients)
 	applyListenerConfigs(newConf, si.Config, listenerRouters, rh, mr, tracers, clients, errorFunc, lg)
 
+	accesslog.CommitGeneration(
+		time.Duration(newConf.MgmtConfig.ReloadDrainTimeout) + time.Second)
 	metrics.LastReloadSuccessfulTimestamp.Set(float64(time.Now().Unix()))
 	metrics.LastReloadSuccessful.Set(1)
 	si.Config = newConf
 	si.Caches = caches
 	si.Backends = clients
 	si.Listeners = lg
+	return nil
+}
+
+func reconfigureLogWriters(c *config.Config) error {
+	for _, o := range c.LogManagerOptions() {
+		if err := logmanager.Reconfigure(o); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -257,12 +297,6 @@ func applyLoggingConfig(c, o *config.Config) {
 		c.MgmtConfig = mgmt.New()
 	}
 	if isReload {
-		if c.Logging.LogFile == o.Logging.LogFile &&
-			c.Logging.LogLevel == o.Logging.LogLevel {
-			// no changes in logging config,
-			// so we keep the old logger intact
-			return
-		}
 		if c.Logging.LogFile != o.Logging.LogFile {
 			if o.Logging.LogFile != "" {
 				// if we're changing from file1 -> console or file1 -> file2, close file1 handle
@@ -273,10 +307,9 @@ func applyLoggingConfig(c, o *config.Config) {
 			return
 		}
 		if c.Logging.LogLevel != o.Logging.LogLevel {
-			// the only change is the log level, so update it and return the original logger
 			oldLogger.SetLogLevel(level.Level(c.Logging.LogLevel))
-			return
 		}
+		return
 	}
 	initLogger(c)
 }
@@ -401,7 +434,8 @@ func handleStartupIssue(event string, detail logging.Pairs, errorFunc func()) {
 	metrics.LastReloadSuccessful.Set(0)
 	if event != "" {
 		if errorFunc != nil {
-			logger.Error(event, detail)
+			logger.ErrorSynchronous(event, detail)
+			_ = logger.Flush()
 			errorFunc()
 		}
 		logger.Warn(event, detail)
