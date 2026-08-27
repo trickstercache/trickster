@@ -61,9 +61,7 @@ type Options struct {
 	// When 0, falls back to the parent Backend's max_fanout_capture_bytes,
 	// which itself defaults to 0 (no aggregate cap).
 	MaxFanoutCaptureBytes int `yaml:"max_fanout_capture_bytes,omitempty"`
-	// OutputFormat accompanies the tsmerge Mechanism to indicate the provider output format
-	// options include any valid time seres backend like prometheus, influxdb or clickhouse
-	OutputFormat string `yaml:"output_format,omitempty"`
+
 	// Deprecated: use fgr.status_codes instead of this top-level option
 	// FGRStatusCodes provides an explicit list of status codes considered "good" when using
 	// the First Good Response (fgr) methodology. By default, any code < 400 is good.
@@ -96,6 +94,10 @@ type TimeSeriesMergeOptions struct {
 	// survivor (first-seen-after-sort wins). Nil or 0 preserves the legacy
 	// exact-epoch dedup behavior.
 	DedupToleranceMs *int `yaml:"dedup_tolerance_ms,omitempty"`
+
+	// OutputFormat accompanies the tsmerge Mechanism to indicate the provider output format
+	// options include any valid time seres backend like prometheus, influxdb or clickhouse
+	OutputFormat string `yaml:"output_format,omitempty"`
 }
 
 type NewestLastModifiedOptions struct {
@@ -142,22 +144,6 @@ var (
 	ErrInvalidOutputFormat    = errors.New("value for 'output_format' is invalid")
 	ErrOutputFormatOnlyForTSM = errors.New("'output_format' option is only valid for provider 'alb' and mechanism 'tsmerge'")
 )
-
-type TSMConfigs struct {
-	TimeSeriesMergeOptions
-	MaxCaptureBytes       int
-	MaxFanoutCaptureBytes int
-	OutputFormat          string
-}
-
-func NewTSMConfigs(o *Options) *TSMConfigs {
-	return &TSMConfigs{
-		TimeSeriesMergeOptions: o.TSMOptions,
-		MaxCaptureBytes:        o.MaxCaptureBytes,
-		MaxFanoutCaptureBytes:  o.MaxFanoutCaptureBytes,
-		OutputFormat:           o.OutputFormat,
-	}
-}
 
 // NewErrInvalidALBOptions returns an invalid ALB Options error
 func NewErrInvalidALBOptions(backendName string) error {
@@ -212,8 +198,8 @@ func (o *Options) Initialize(_ string) error {
 			o.FgrCodesLookup.SetAll(o.FGROptions.StatusCodes)
 		}
 	case names.MechanismTSM:
-		if o.OutputFormat == "" {
-			o.OutputFormat = defaultTSOutputFormat
+		if o.TSMOptions.OutputFormat == "" {
+			o.TSMOptions.OutputFormat = defaultTSOutputFormat
 		}
 	}
 
@@ -227,11 +213,11 @@ func (o *Options) Validate() (bool, error) {
 			return false, ErrUserRouterRequired
 		}
 	case names.MechanismTSM:
-		if o.OutputFormat != "" && !providers.IsSupportedTimeSeriesMergeProvider(o.OutputFormat) {
+		if o.TSMOptions.OutputFormat != "" && !providers.IsSupportedTimeSeriesMergeProvider(o.TSMOptions.OutputFormat) {
 			return false, ErrInvalidOutputFormat
 		}
 	default:
-		if o.OutputFormat != "" {
+		if o.TSMOptions.OutputFormat != "" {
 			return false, ErrOutputFormatOnlyForTSM
 		}
 	}

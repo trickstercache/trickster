@@ -77,8 +77,8 @@ func (s *nestedTSMProviderStub) FinalizeTSMMerge(string, timeseries.Timeseries) 
 func TestHandlers(t *testing.T) {
 	a := &ao.Options{
 		MechanismName: names.MechanismFR,
-		OutputFormat:  providers.Prometheus,
 	}
+	a.TSMOptions.OutputFormat = providers.Prometheus
 	o := bo.New()
 	o.ALBOptions = a
 
@@ -344,7 +344,7 @@ func TestValidateClientsAllowsReplicaGroupOnNestedTSMMember(t *testing.T) {
 	outerOptions.Provider = providers.ALB
 	outerOptions.ALBOptions = ao.New()
 	outerOptions.ALBOptions.MechanismName = names.MechanismTSM
-	outerOptions.ALBOptions.OutputFormat = providers.Prometheus
+	outerOptions.ALBOptions.TSMOptions.OutputFormat = providers.Prometheus
 	outerOptions.ALBOptions.Pool = []string{"inner"}
 	outerBackend, err := NewClient("outer", outerOptions, nil, nil, nil,
 		types.Lookup{providers.Prometheus: prometheus.NewClient})

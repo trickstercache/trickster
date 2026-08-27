@@ -40,39 +40,21 @@ var registry = []types.RegistryEntry{
 
 var registryByName = compileSupportedByName(registry)
 
-type funcs struct {
-	tsmMechanismFunc types.NewTSMMechanismFunc
-	mechanismFunc    types.NewMechanismFunc
-}
-
 // compileSupportedByName indexes registry entries by both Name and ShortName.
 // Panics on duplicate registration: silently last-write-wins would mask a
 // configuration error that only surfaces at request time.
-func compileSupportedByName(entries []types.RegistryEntry) map[types.Name]*funcs {
-	out := make(map[types.Name]*funcs, len(entries)*2)
-	add := func(name types.Name, fns *funcs) {
+func compileSupportedByName(entries []types.RegistryEntry) map[types.Name]types.NewMechanismFunc {
+	out := make(map[types.Name]types.NewMechanismFunc, len(entries)*2)
+	add := func(name types.Name, fn types.NewMechanismFunc) {
 		if _, exists := out[name]; exists {
 			panic("alb/mech/registry: duplicate mechanism name " + name)
 		}
-		out[name] = fns
+		out[name] = fn
 	}
 
 	for _, entry := range entries {
-		var fns *funcs
-		switch {
-		case entry.New != nil && entry.NewTSM != nil:
-			panic("alb/mech/registry: mechanism " + entry.Name +
-				" sets both New and NewTSM; exactly one is required")
-		case entry.NewTSM != nil:
-			fns = &funcs{tsmMechanismFunc: entry.NewTSM}
-		case entry.New != nil:
-			fns = &funcs{mechanismFunc: entry.New}
-		default:
-			panic("alb/mech/registry: mechanism " + entry.Name +
-				" sets neither New nor NewTSM")
-		}
-		add(entry.ShortName, fns)
-		add(entry.Name, fns)
+		add(entry.ShortName, entry.New)
+		add(entry.Name, entry.New)
 	}
 	return out
 }
@@ -80,16 +62,8 @@ func compileSupportedByName(entries []types.RegistryEntry) map[types.Name]*funcs
 func New(name types.Name, opts *options.Options,
 	factories rt.Lookup,
 ) (types.Mechanism, error) {
-	f, ok := registryByName[name]
-	if !ok {
-		return nil, errors.ErrUnsupportedMechanism
-	}
-	if f.tsmMechanismFunc != nil {
-		tsmConfigs := options.NewTSMConfigs(opts)
-		return f.tsmMechanismFunc(tsmConfigs, factories)
-	}
-	if f.mechanismFunc != nil {
-		return f.mechanismFunc(opts, factories)
+	if f, ok := registryByName[name]; ok && f != nil {
+		return f(opts, factories)
 	}
 	return nil, errors.ErrUnsupportedMechanism
 }
