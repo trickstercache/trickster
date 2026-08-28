@@ -18,7 +18,6 @@ package cockroach
 
 import (
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -52,7 +51,17 @@ func main() {
 }
 */
 
+// newDataFusionAnalyzer mirrors the InfluxDB 3 production configuration.
 func newDataFusionAnalyzer() *Analyzer {
+	return NewAnalyzer(Options{
+		BucketMatchers:               DataFusionBucketMatchers(),
+		RenderNumericBoundsAsRFC3339: true,
+		RoundUnalignedTimeBounds:     true,
+	})
+}
+
+// newStrictAnalyzer keeps the fail-closed defaults for generic dialects.
+func newStrictAnalyzer() *Analyzer {
 	return NewAnalyzer(Options{BucketMatchers: DataFusionBucketMatchers()})
 }
 
@@ -150,8 +159,9 @@ func TestAnalyzeDateBinOriginPhase(t *testing.T) {
 	if got.Plan.Phase != 30*time.Minute {
 		t.Fatalf("phase = %s, want 30m", got.Plan.Phase)
 	}
-	// The same bounds are not phase-aligned without the origin shift.
-	unshifted := a.Analyze(strings.Replace(query,
+	// The same bounds are not phase-aligned without the origin shift; a strict
+	// dialect fails them closed.
+	unshifted := newStrictAnalyzer().Analyze(strings.Replace(query,
 		", TIMESTAMP '2024-01-01 00:30:00'", "", 1), time.Time{})
 	if unshifted.Mode == sqlanalyzer.CacheModeDelta {
 		t.Fatalf("unaligned bounds were delta-cacheable: %+v", unshifted.Plan)
@@ -177,10 +187,11 @@ func TestAnalyzeCanonicalizesRangeAndRendersExtent(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Extents are inclusive bucket starts; the exclusive upper comparator is
-	// re-rendered one step past the final included bucket.
+	// re-rendered one step past the final included bucket. DataFusion rejects
+	// integer time comparisons, so epoch-integer bounds render as RFC3339.
 	if strings.Contains(rendered, "TRICKSTER") ||
-		!strings.Contains(rendered, ">= 1704070800") ||
-		!strings.Contains(rendered, "< 1704081600") {
+		!strings.Contains(rendered, ">= '2024-01-01T01:00:00Z'") ||
+		!strings.Contains(rendered, "< '2024-01-01T04:00:00Z'") {
 		t.Fatalf("unexpected rendered SQL: %s", rendered)
 	}
 }
@@ -203,9 +214,9 @@ func TestRenderExtentPreservesBoundStyles(t *testing.T) {
 		{"timestamp literal",
 			`SELECT date_bin(INTERVAL '1 hour', time) AS time, avg(v) FROM m WHERE time >= TIMESTAMP '2024-01-01 00:00:00' AND time < TIMESTAMP '2024-01-02 00:00:00' GROUP BY 1`,
 			`TIMESTAMP '2024-01-01 01:00:00'`, `TIMESTAMP '2024-01-01 03:00:00'`},
-		{"epoch nanoseconds",
+		{"epoch nanoseconds coerced to rfc3339",
 			`SELECT date_bin(INTERVAL '1 hour', time) AS time, avg(v) FROM m WHERE time >= 1704067200000000000 AND time < 1704153600000000000 GROUP BY 1`,
-			`1704070800000000000`, `1704078000000000000`},
+			`'2024-01-01T01:00:00Z'`, `'2024-01-01T03:00:00Z'`},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -223,6 +234,25 @@ func TestRenderExtentPreservesBoundStyles(t *testing.T) {
 					tc.wantLower, tc.wantUpper, rendered)
 			}
 		})
+	}
+
+	// Without the DataFusion coercion option, numeric epoch bounds round-trip
+	// in their original integer style for dialects that accept them.
+	generic := NewAnalyzer(Options{BucketMatchers: DataFusionBucketMatchers()})
+	plan := generic.Analyze(
+		`SELECT date_bin(INTERVAL '1 hour', time) AS time, avg(v) FROM m `+
+			`WHERE time >= 1704067200000000000 AND time < 1704153600000000000 GROUP BY 1`,
+		time.Time{}).Plan
+	if plan == nil {
+		t.Fatal("expected a delta plan")
+	}
+	rendered, err := plan.RenderExtent(extent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(rendered, "1704070800000000000") ||
+		!strings.Contains(rendered, "1704078000000000000") {
+		t.Fatalf("numeric bounds did not round-trip without coercion: %s", rendered)
 	}
 }
 
@@ -244,8 +274,8 @@ func TestAnalyzeOpenUpperBoundAddsSyntheticPredicate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(rendered, ">= 1704070800") ||
-		!strings.Contains(rendered, "< 1704078000") {
+	if !strings.Contains(rendered, ">= '2024-01-01T01:00:00Z'") ||
+		!strings.Contains(rendered, "< '2024-01-01T03:00:00Z'") {
 		t.Fatalf("synthetic upper bound missing: %s", rendered)
 	}
 }
@@ -300,7 +330,9 @@ func TestAnalyzeClassifiesUnsupportedQueries(t *testing.T) {
 }
 
 func TestAnalyzePredicateSafety(t *testing.T) {
-	a := newDataFusionAnalyzer()
+	// The strict configuration exercises the contract's fail-closed defaults,
+	// including unaligned raw-column bounds.
+	a := newStrictAnalyzer()
 	base := `SELECT date_bin(INTERVAL '1 hour', ts) AS bucket, count(*) AS value FROM events WHERE %s GROUP BY 1`
 	tests := []struct {
 		name, predicate string
@@ -330,6 +362,43 @@ func TestAnalyzePredicateSafety(t *testing.T) {
 	}
 }
 
+// TestRoundUnalignedTimeBounds covers the contract's unaligned-bound
+// provision: live dashboard ranges snap inward to complete buckets instead of
+// failing closed, and a range with no complete bucket still fails closed.
+func TestRoundUnalignedTimeBounds(t *testing.T) {
+	a := newDataFusionAnalyzer()
+	query := `SELECT date_bin(INTERVAL '10 seconds', time) AS time, avg(usage_idle) AS usage_idle ` +
+		`FROM cpu WHERE cpu = 'cpu-total' AND time >= 1704067207 AND time < 1704153607 GROUP BY 1 ORDER BY 1`
+	got := a.Analyze(query, time.Time{})
+	if got.Mode != sqlanalyzer.CacheModeDelta || got.Plan == nil {
+		t.Fatalf("Analyze() = %s/%s (%v)", got.Mode, got.Reason, got.Err)
+	}
+	// 1704067207 rounds up to :10; the exclusive 1704153607 rounds down to :00.
+	if !got.Plan.LowerBound.Value.Equal(time.Unix(1704067210, 0)) || !got.Plan.LowerBound.Inclusive {
+		t.Fatalf("rounded lower bound = %+v", got.Plan.LowerBound)
+	}
+	if !got.Plan.UpperBound.Value.Equal(time.Unix(1704153600, 0)) || got.Plan.UpperBound.Inclusive {
+		t.Fatalf("rounded upper bound = %+v", got.Plan.UpperBound)
+	}
+	rendered, err := got.Plan.RenderExtent(timeseries.Extent{
+		Start: time.Unix(1704067210, 0).UTC(), End: time.Unix(1704153590, 0).UTC(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(rendered, ">= '2024-01-01T00:00:10Z'") ||
+		!strings.Contains(rendered, "< '2024-01-02T00:00:00Z'") {
+		t.Fatalf("rounded bounds rendered incorrectly: %s", rendered)
+	}
+
+	// Both bounds inside one bucket leave no complete bucket to cache.
+	empty := a.Analyze(`SELECT date_bin(INTERVAL '10 seconds', time) AS time, avg(v) FROM cpu `+
+		`WHERE time >= 1704067201 AND time < 1704067209 GROUP BY 1`, time.Time{})
+	if empty.Mode == sqlanalyzer.CacheModeDelta || empty.Reason != sqlanalyzer.ReasonUnsafePredicate {
+		t.Fatalf("empty rounded window = %s/%s (%v)", empty.Mode, empty.Reason, empty.Err)
+	}
+}
+
 func TestRenderExtentIsConcurrent(t *testing.T) {
 	plan := newDataFusionAnalyzer().Analyze(hourlyEpochQuery, time.Time{}).Plan
 	if plan == nil {
@@ -354,15 +423,15 @@ func TestRenderExtentIsConcurrent(t *testing.T) {
 			t.Fatalf("render %d: %v", i, errs[i])
 		}
 		start := base.Add(time.Duration(i) * plan.Step)
-		if !strings.Contains(output, ">= "+itoa(start.Unix())) ||
-			!strings.Contains(output, "< "+itoa(start.Add(2*plan.Step).Unix())) {
+		if !strings.Contains(output, ">= "+rfc3339Literal(start)) ||
+			!strings.Contains(output, "< "+rfc3339Literal(start.Add(2*plan.Step))) {
 			t.Fatalf("render %d used another extent: %s", i, output)
 		}
 	}
 }
 
-func itoa(v int64) string {
-	return strconv.FormatInt(v, 10)
+func rfc3339Literal(v time.Time) string {
+	return "'" + v.UTC().Format(time.RFC3339Nano) + "'"
 }
 
 func TestParseIntervalDuration(t *testing.T) {

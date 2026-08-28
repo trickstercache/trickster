@@ -83,6 +83,19 @@ type BucketMatcher func(name string, args []tree.Expr) (BucketMatch, bool)
 type Options struct {
 	// BucketMatchers describe the dialect's time-bucketing functions.
 	BucketMatchers []BucketMatcher
+	// RenderNumericBoundsAsRFC3339 renders time bounds that were written as
+	// bare epoch integers back as quoted RFC3339 literals. Engines with strict
+	// type coercion, such as Apache DataFusion (InfluxDB 3), reject
+	// Timestamp-to-Int64 comparisons but coerce string literals to timestamps.
+	// Bounds written as string or TIMESTAMP literals are unaffected.
+	RenderNumericBoundsAsRFC3339 bool
+	// RoundUnalignedTimeBounds accepts raw-time-column predicates that are not
+	// aligned to the bucket cadence by rounding the lower bound up and the
+	// exclusive upper bound down to the cadence, per the sqlanalyzer contract's
+	// unaligned-bound provision. Partial edge buckets are dropped rather than
+	// cached. Dashboard clients such as Grafana emit live, unaligned ranges;
+	// without this option those queries fail closed to the object cache.
+	RoundUnalignedTimeBounds bool
 }
 
 // Analyzer converts CockroachDB-parsed SQL into Trickster's dialect-independent
@@ -308,7 +321,7 @@ func (a *Analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis
 	if err != nil {
 		return objectAnalysis(sqlanalyzer.ReasonUnsupportedGrouping, err)
 	}
-	ranges, err := analyzeRanges(clause, bucket, now)
+	ranges, err := analyzeRanges(clause, bucket, now, a.opts.RoundUnalignedTimeBounds)
 	if err != nil {
 		reason := sqlanalyzer.ReasonNotTimeRange
 		if errors.Is(err, ErrUnsafePredicate) {
@@ -319,7 +332,8 @@ func (a *Analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis
 		return objectAnalysis(reason, err)
 	}
 
-	canonical, renderer := buildQueryArtifacts(selectStmt, clause, ranges, bucket)
+	canonical, renderer := buildQueryArtifacts(selectStmt, clause, ranges, bucket,
+		a.opts.RenderNumericBoundsAsRFC3339)
 	plan := &sqlanalyzer.QueryPlan{
 		CanonicalSQL: canonical,
 		TimeColumn:   bucket.timeColumn,
@@ -618,6 +632,7 @@ func analyzeRanges(
 	clause *tree.SelectClause,
 	bucket bucketSpec,
 	now time.Time,
+	roundUnaligned bool,
 ) (rangeAnalysis, error) {
 	result := rangeAnalysis{timeColumn: bucket.timeColumn}
 	if clause.Where == nil {
@@ -674,7 +689,7 @@ func analyzeRanges(
 			where.Expr = &tree.AndExpr{Left: where.Expr, Right: expr}
 		}
 	}
-	if err := normalizePrimaryBounds(&result, bucket); err != nil {
+	if err := normalizePrimaryBounds(&result, bucket, roundUnaligned); err != nil {
 		return result, err
 	}
 	return result, nil
@@ -683,9 +698,13 @@ func analyzeRanges(
 // normalizePrimaryBounds converts SQL predicates into Trickster's inclusive
 // bucket extent convention. Raw timestamp predicates must describe complete
 // buckets; otherwise a partial aggregate could be cached as a complete bucket.
-// Predicates on the bucket output are discrete and can safely move by one
-// cadence for strict comparisons.
-func normalizePrimaryBounds(result *rangeAnalysis, bucket bucketSpec) error {
+// When roundUnaligned is set, unaligned raw-column bounds are instead rounded
+// inward to the cadence (lower up, exclusive upper down), dropping partial
+// edge buckets per the contract's unaligned-bound provision. Predicates on
+// the bucket output are discrete and can safely move by one cadence for
+// strict comparisons.
+func normalizePrimaryBounds(result *rangeAnalysis, bucket bucketSpec, roundUnaligned bool) error {
+	rounded := false
 	lowerOnOutput := result.lower.target != nil &&
 		strings.EqualFold(result.lower.target.field, bucket.outputColumn) &&
 		!strings.EqualFold(bucket.outputColumn, bucket.timeColumn)
@@ -696,8 +715,17 @@ func normalizePrimaryBounds(result *rangeAnalysis, bucket bucketSpec) error {
 			result.lower.value = floorBucket(result.lower.value, bucket)
 			result.lower.target.offset = -bucket.step
 		}
-	} else if !result.lower.inclusive || !alignedToBucket(result.lower.value, bucket) {
-		return ErrUnsafePredicate
+	} else {
+		if !result.lower.inclusive {
+			return ErrUnsafePredicate
+		}
+		if !alignedToBucket(result.lower.value, bucket) {
+			if !roundUnaligned {
+				return ErrUnsafePredicate
+			}
+			result.lower.value = ceilBucket(result.lower.value, bucket)
+			rounded = true
+		}
 	}
 
 	if result.upper == nil {
@@ -715,10 +743,22 @@ func normalizePrimaryBounds(result *rangeAnalysis, bucket bucketSpec) error {
 		}
 		return nil
 	}
-	if result.upper.inclusive || !alignedToBucket(result.upper.value, bucket) {
+	if result.upper.inclusive {
 		return ErrUnsafePredicate
 	}
+	if !alignedToBucket(result.upper.value, bucket) {
+		if !roundUnaligned {
+			return ErrUnsafePredicate
+		}
+		result.upper.value = floorBucket(result.upper.value, bucket)
+		rounded = true
+	}
 	result.upper.target.offset = bucket.step
+	// Rounding inward can leave no complete bucket; fail closed rather than
+	// requesting an inverted or empty window.
+	if rounded && !result.upper.value.After(result.lower.value) {
+		return ErrUnsafePredicate
+	}
 	return nil
 }
 
@@ -1010,6 +1050,9 @@ func (p *placeholderExpr) TypeCheck(
 type cockroachRenderer struct {
 	template string
 	bounds   []rendererBound
+	// numericAsRFC3339 renders numeric epoch bound styles as RFC3339 literals
+	// for dialects that reject Timestamp-to-integer comparisons.
+	numericAsRFC3339 bool
 }
 
 type rendererBound struct {
@@ -1028,7 +1071,14 @@ func (r *cockroachRenderer) RenderExtent(extent timeseries.Extent) (string, erro
 			value = extent.End
 		}
 		value = value.Add(bound.offset)
-		statement = strings.ReplaceAll(statement, bound.token, boundLiteral(bound.style, value))
+		style := bound.style
+		if r.numericAsRFC3339 {
+			switch style {
+			case boundUnixSeconds, boundUnixMilli, boundUnixMicro, boundUnixNano:
+				style = boundRFC3339
+			}
+		}
+		statement = strings.ReplaceAll(statement, bound.token, boundLiteral(style, value))
 	}
 	return statement, nil
 }
@@ -1044,7 +1094,9 @@ func boundLiteral(style boundStyle, value time.Time) string {
 	case boundSQLDateTime, boundSQLDate:
 		return "'" + value.UTC().Format("2006-01-02 15:04:05") + "'"
 	case boundRFC3339:
-		return "'" + value.UTC().Format("2006-01-02T15:04:05Z") + "'"
+		// RFC3339Nano renders whole seconds without a fractional component and
+		// preserves sub-second bound values when a dialect allows them.
+		return "'" + value.UTC().Format(time.RFC3339Nano) + "'"
 	case boundTimestampLiteral:
 		return "TIMESTAMP '" + value.UTC().Format("2006-01-02 15:04:05") + "'"
 	default:
@@ -1057,6 +1109,7 @@ func buildQueryArtifacts(
 	clause *tree.SelectClause,
 	ranges rangeAnalysis,
 	bucket bucketSpec,
+	numericAsRFC3339 bool,
 ) (string, *cockroachRenderer) {
 	occupied := tree.AsString(statement)
 	bounds := make([]rendererBound, 0, len(ranges.targets)+1)
@@ -1087,7 +1140,10 @@ func buildQueryArtifacts(
 		canonical = strings.ReplaceAll(canonical, bound.token, placeholderFor(bound.endpoint))
 	}
 	_ = clause
-	return canonical, &cockroachRenderer{template: tree.AsString(statement), bounds: bounds}
+	return canonical, &cockroachRenderer{
+		template: tree.AsString(statement), bounds: bounds,
+		numericAsRFC3339: numericAsRFC3339,
+	}
 }
 
 func placeholderFor(target endpoint) string {

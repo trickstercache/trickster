@@ -64,6 +64,12 @@ const DefaultTimestampField = "time"
 // adapter. It is stateless and safe for concurrent use.
 var dialectAnalyzer sqlanalyzer.DialectAnalyzer = cockroach.NewAnalyzer(cockroach.Options{
 	BucketMatchers: cockroach.DataFusionBucketMatchers(),
+	// DataFusion rejects Timestamp-to-Int64 comparisons, so epoch-integer
+	// bounds must be rendered back to the origin as RFC3339 literals.
+	RenderNumericBoundsAsRFC3339: true,
+	// v3 dashboard clients emit live, unaligned time ranges; round them
+	// inward to complete buckets rather than failing closed.
+	RoundUnalignedTimeBounds: true,
 })
 
 // ExtractQuery returns the SQL query text from a v3 request, decoding the
