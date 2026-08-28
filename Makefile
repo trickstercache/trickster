@@ -171,6 +171,11 @@ benchmark-mysql:
 	@go test ./pkg/backends/mysql -run '^$$' -bench '^BenchmarkMySQL' -benchmem -count=5
 	@go test ./pkg/backends/alb/mech/ur -run '^$$' -bench '^BenchmarkResolveRouteProtocolNeutral$$' -benchmem -count=5
 
+.PHONY: benchmark-graphite
+benchmark-graphite:
+	@go test ./pkg/backends/graphite/resolution -run '^$$' -bench '^BenchmarkResolver' \
+		-benchmem -count=5
+
 .PHONY: benchmark-mysql-acceptance
 benchmark-mysql-acceptance:
 	@go test ./pkg/backends/mysql -run '^$$' -bench '^BenchmarkMySQLCompatibilityCorpus$$' \
@@ -391,6 +396,8 @@ developer-start:
 	fi
 	@echo "Waiting for Prometheus to be ready..."
 	@timeout 120 sh -c 'until curl -sf http://127.0.0.1:9090/-/ready >/dev/null 2>&1; do sleep 2; done'
+	@echo "Waiting for Graphite to be ready..."
+	@timeout 120 sh -c 'until curl -sf "http://127.0.0.1:8081/metrics/find?query=carbon" >/dev/null 2>&1; do sleep 2; done'
 	
 .PHONY: developer-stop
 developer-stop:
@@ -471,6 +478,9 @@ developer-seed-data:
 	docker compose run --rm --no-deps clickhouse_seed & pid1=$$!; \
 	( cd docs/developer/environment && docker compose run --rm --no-deps mysql_seed ) & pid2=$$!; \
 	rc=0; wait $$pid1 || rc=1; wait $$pid2 || rc=1; exit $$rc
+	@cd docs/developer/environment && docker compose stop graphite_generator && \
+		docker compose run --rm -e GRAPHITE_SEED_FORCE=1 graphite_seed && \
+		docker compose up -d graphite_generator
 
 RUN_FLAGS ?=
 .PHONY: serve-dev

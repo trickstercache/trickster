@@ -106,6 +106,7 @@ func (c *Config) SanitizedClone() *Config {
 			sanitizePathAuthenticatorReferences(opts, authNameMap)
 			sanitizeBackendReferences(opts, backendNameMap)
 			sanitizePathHeaderValues(opts)
+			sanitizeGraphiteOriginCredentials(opts)
 		}
 		renamedBackends[newName] = opts
 	}
@@ -397,6 +398,18 @@ func sanitizePathHeaderValues(opts *bo.Options) {
 				path.ResponseHeaders[k] = sanitizedSecret
 			}
 		}
+	}
+}
+
+func sanitizeGraphiteOriginCredentials(opts *bo.Options) {
+	if opts.Graphite == nil {
+		return
+	}
+	if opts.Graphite.OriginPassword != "" {
+		opts.Graphite.OriginPassword = sanitizedSecret
+	}
+	if opts.Graphite.OriginAuthorization != "" {
+		opts.Graphite.OriginAuthorization = sanitizedSecret
 	}
 }
 

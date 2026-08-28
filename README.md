@@ -51,6 +51,8 @@ Trickster works with virtually any Dashboard application that makes queries to a
 
 <img src="./docs/images/external/mysql_logo_60.png" width=24 /> [MySQL](docs/mysql.md)
 
+<img src="./docs/images/external/graphite-logo.svg" width=24 /> [Graphite](docs/graphite.md)
+
 See the [Supported TSDB Providers](./docs/supported-backend-providers.md) document for full details
 
 ### How Trickster Accelerates Time Series

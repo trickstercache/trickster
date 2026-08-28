@@ -17,6 +17,9 @@
 package options
 
 import (
+	"crypto/sha256"
+	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"maps"
 	"net/http"
@@ -98,6 +101,10 @@ type Options struct {
 	ReqRewriter rewriter.RewriteInstructions `yaml:"-"`
 	// AuthOptions is the authenticator as indicated by AuthenticatorName
 	AuthOptions *autho.Options `yaml:"-"`
+
+	// identityKeyPart is the request_headers/request_params digest,
+	// precomputed by Initialize; see IdentityKeyPart
+	identityKeyPart string
 }
 
 // List is a slice of *Options
@@ -209,7 +216,82 @@ func (o *Options) Initialize(_ string) error {
 		}
 	}
 
+	o.identityKeyPart = o.computeIdentityKeyPart()
+
 	return nil
+}
+
+// ReplacesHeader reports whether request_headers replaces ("Name") or removes
+// ("-Name") the named header upstream; "+Name" appends. name must be canonical.
+func (o *Options) ReplacesHeader(name string) bool {
+	if o == nil || len(o.RequestHeaders) == 0 {
+		return false
+	}
+	for k := range o.RequestHeaders {
+		if strings.HasPrefix(k, "+") {
+			continue
+		}
+		k = strings.TrimPrefix(k, "-")
+		if http.CanonicalHeaderKey(k) == name {
+			return true
+		}
+	}
+	return false
+}
+
+// ReplacesParam reports whether request_params replaces ("name") or removes
+// ("-name") the named query/form parameter upstream; "+name" appends.
+func (o *Options) ReplacesParam(name string) bool {
+	if o == nil || len(o.RequestParams) == 0 {
+		return false
+	}
+	if _, ok := o.RequestParams[name]; ok {
+		return true
+	}
+	_, ok := o.RequestParams["-"+name]
+	return ok
+}
+
+// IdentityKeyPart returns a collision-free digest of the configured
+// request_headers/request_params for inclusion in derived cache keys.
+func (o *Options) IdentityKeyPart() string {
+	if o == nil {
+		return ""
+	}
+	if o.identityKeyPart != "" ||
+		(len(o.RequestHeaders) == 0 && len(o.RequestParams) == 0) {
+		return o.identityKeyPart
+	}
+	return o.computeIdentityKeyPart()
+}
+
+// RefreshIdentityKeyPart recomputes the precomputed identity digest after a
+// programmatic change to RequestHeaders or RequestParams
+func (o *Options) RefreshIdentityKeyPart() {
+	o.identityKeyPart = o.computeIdentityKeyPart()
+}
+
+func (o *Options) computeIdentityKeyPart() string {
+	if len(o.RequestHeaders) == 0 && len(o.RequestParams) == 0 {
+		return ""
+	}
+	h := sha256.New()
+	var sizes [binary.MaxVarintLen64]byte
+	writeStr := func(s string) {
+		n := binary.PutUvarint(sizes[:], uint64(len(s)))
+		h.Write(sizes[:n])
+		h.Write([]byte(s))
+	}
+	writeMap := func(class byte, m map[string]string) {
+		for _, k := range slices.Sorted(maps.Keys(m)) {
+			h.Write([]byte{class})
+			writeStr(k)
+			writeStr(m[k])
+		}
+	}
+	writeMap('h', o.RequestHeaders)
+	writeMap('p', o.RequestParams)
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // Initialize initializes all path options in the lookup

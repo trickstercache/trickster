@@ -1,0 +1,74 @@
+# Storage schemas for the in-cluster Graphite demonstration deployed by
+# graphite-deployment-patch.yaml.
+#
+# These are the same ladders the developer environment uses
+# (docs/developer/environment/docker-compose-data/graphite-config/), so a
+# cluster demo and a laptop behave alike: several distinct ladders, each with
+# multiple rungs, so that archive transitions are actually exercised.
+#
+#   kubectl create -f deploy/kube/graphite-configmap.yaml
+#
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: graphite-conf
+  labels:
+    name: graphite-conf
+
+data:
+  storage-schemas.conf: |-
+    # Entries are scanned in order; first match wins.
+    #
+    # Namespace     Ladder                     Notes
+    # dev.fast.*    10s:6h, 60s:7d, 10m:5y     three rungs, fine resolution
+    # dev.medium.*  60s:2d, 5m:30d, 1h:2y      three rungs, coarser
+    # dev.coarse.*  5m:90d                     one rung, short maxRetention
+    #
+    # Remember that a Whisper file keeps whatever ladder it was created with:
+    # editing this file affects only newly created files. Trickster learns the
+    # ladder from the files themselves, so it stays correct either way.
+
+    [carbon]
+    pattern = ^carbon\.
+    retentions = 10s:6h,1m:90d
+
+    [dev_fast]
+    pattern = ^dev\.fast\.
+    retentions = 10s:6h,60s:7d,10m:5y
+
+    [dev_medium]
+    pattern = ^dev\.medium\.
+    retentions = 60s:2d,5m:30d,1h:2y
+
+    [dev_coarse]
+    pattern = ^dev\.coarse\.
+    retentions = 5m:90d
+
+    [default_1min_for_1day]
+    pattern = .*
+    retentions = 60s:1d
+
+  storage-aggregation.conf: |-
+    # More than one aggregation method and more than one non-default
+    # xFilesFactor, so that rollup behavior differs between rungs. Whisper's
+    # default xFilesFactor is 0.5; every value below is deliberately not that.
+
+    [min]
+    pattern = \.(min|lower)$
+    xFilesFactor = 0.1
+    aggregationMethod = min
+
+    [max]
+    pattern = \.(max|upper|p99)$
+    xFilesFactor = 0.1
+    aggregationMethod = max
+
+    [sum]
+    pattern = \.(sum|count|dollars)$
+    xFilesFactor = 0
+    aggregationMethod = sum
+
+    [default_average]
+    pattern = .*
+    xFilesFactor = 0.3
+    aggregationMethod = average

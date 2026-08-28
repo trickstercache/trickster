@@ -59,9 +59,9 @@ func NewObserverFromProviderName(backendProvider string, data map[string]any) (t
 	var a types.Authenticator
 	var err error
 	switch backendProvider {
-	case providers.Prometheus, providers.ReverseProxy, providers.Proxy,
-		providers.ReverseProxyCache, providers.ReverseProxyCacheShort,
-		providers.ReverseProxyShort:
+	case providers.Prometheus, providers.Graphite, providers.ReverseProxy,
+		providers.Proxy, providers.ReverseProxyCache,
+		providers.ReverseProxyCacheShort, providers.ReverseProxyShort:
 		a, err = basic.New(data)
 	case providers.ClickHouse:
 		a, err = clickhouse.New(data)
