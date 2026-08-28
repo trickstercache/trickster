@@ -17,13 +17,16 @@
 package influxdb
 
 import (
+	"errors"
+	"fmt"
 	"net/http"
 
-	"github.com/influxdata/influxql"
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/flux"
 	ti "github.com/trickstercache/trickster/v2/pkg/backends/influxdb/influxql"
 	isql "github.com/trickstercache/trickster/v2/pkg/backends/influxdb/sql"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+
+	"github.com/influxdata/influxql"
 )
 
 // Upstream Endpoints
@@ -37,11 +40,17 @@ const (
 // SetExtent will change the upstream request query to use the provided Extent
 func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
 	extent *timeseries.Extent,
-) {
+) error {
+	if r == nil || trq == nil || extent == nil {
+		return errors.New("invalid InfluxDB extent rewrite input")
+	}
 	if trq.ParsedQuery == nil {
 		t2, _, _, err := c.ParseTimeRangeQuery(r)
-		if err != nil || t2 == nil {
-			return
+		if err != nil {
+			return fmt.Errorf("parse InfluxDB query for extent rewrite: %w", err)
+		}
+		if t2 == nil {
+			return errors.New("parse InfluxDB query for extent rewrite returned no query")
 		}
 		trq.ParsedQuery = t2.ParsedQuery
 	}
@@ -56,5 +65,8 @@ func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
 		ti.SetExtent(r, trq, extent, q)
 	case *flux.Query:
 		flux.SetExtent(r, trq, extent, q)
+	default:
+		return fmt.Errorf("unsupported InfluxDB parsed query type %T", trq.ParsedQuery)
 	}
+	return nil
 }

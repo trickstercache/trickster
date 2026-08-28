@@ -22,12 +22,15 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/tls/monitor"
 )
 
 type ServerInstance struct {
-	Config        *config.Config
-	Caches        cache.Lookup
-	HealthChecker healthcheck.HealthChecker
-	Backends      backends.Backends
-	Listeners     *listener.Group
+	Config           *config.Config
+	Caches           cache.Lookup
+	HealthChecker    healthcheck.HealthChecker
+	Backends         backends.Backends
+	Listeners        *listener.Group
+	OnConfigReloaded func(*config.Config)
+	CertMonitor      *monitor.Monitor
 }

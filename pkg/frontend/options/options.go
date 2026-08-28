@@ -19,8 +19,8 @@ package options
 import (
 	"crypto/tls"
 	"errors"
-	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 )
 
@@ -45,7 +45,7 @@ type Options struct {
 	// MaxRequestBodySizeBytes when larger, without returning a 413 Payload Too Large
 	TruncateRequestBodyTooLarge bool `yaml:"truncate_request_body_too_large"`
 	// ReadHeaderTimeout is the amount of time allowed to read request headers.
-	ReadHeaderTimeout time.Duration `yaml:"read_header_timeout,omitempty"`
+	ReadHeaderTimeout timeconv.Duration `yaml:"read_header_timeout,omitempty"`
 	// ServeTLS indicates whether to listen and serve on the TLS port, meaning
 	// at least one backend options has a valid certificate and key file configured.
 	ServeTLS bool `yaml:"-"`
@@ -60,7 +60,7 @@ func New() *Options {
 		ListenAddress:           DefaultProxyListenAddress,
 		TLSListenPort:           DefaultTLSProxyListenPort,
 		TLSListenAddress:        DefaultTLSProxyListenAddress,
-		ReadHeaderTimeout:       DefaultReadHeaderTimeout,
+		ReadHeaderTimeout:       timeconv.Duration(DefaultReadHeaderTimeout),
 		MaxRequestBodySizeBytes: new(DefaultMaxRequestBodySizeBytes),
 	}
 }

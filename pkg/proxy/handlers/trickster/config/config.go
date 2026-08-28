@@ -18,6 +18,7 @@ package config
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
@@ -30,5 +31,21 @@ func HandlerFunc(conf *config.Config) func(http.ResponseWriter, *http.Request) {
 		w.Header().Set(headers.NameCacheControl, headers.ValueNoCache)
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(conf.String()))
+	}
+}
+
+// SanitizedHandlerPath returns the config handler path for sanitized config output.
+func SanitizedHandlerPath(configHandlerPath string) string {
+	return strings.TrimRight(configHandlerPath, "/") + "/sanitized"
+}
+
+// SanitizedHandlerFunc responds to the HTTP request with a sanitized copy of the
+// running configuration.
+func SanitizedHandlerFunc(conf *config.Config) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
+		w.Header().Set(headers.NameCacheControl, headers.ValueNoCache)
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(conf.SanitizedString()))
 	}
 }

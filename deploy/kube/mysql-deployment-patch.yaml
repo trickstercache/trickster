@@ -1,0 +1,29 @@
+# Apply as a strategic merge patch after creating trickster-mysql-conf:
+# kubectl patch deployment trickster --type strategic --patch-file \
+#   deploy/kube/mysql-deployment-patch.yaml
+#
+# This replaces the public ConfigMap-backed configuration volume with the
+# credential-bearing Secret. The base Service and Deployment already expose
+# TCP port 8486.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trickster
+spec:
+  template:
+    spec:
+      containers:
+        - name: trickster
+          readinessProbe:
+            tcpSocket:
+              port: mysql
+            initialDelaySeconds: 2
+            periodSeconds: 5
+      volumes:
+        - name: cfg-volume
+          configMap: null
+          secret:
+            secretName: trickster-mysql-conf
+            items:
+              - key: trickster.yaml
+                path: trickster.yaml

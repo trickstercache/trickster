@@ -29,20 +29,21 @@ import (
 )
 
 func TestClickHouse(t *testing.T) {
-	cfg := writeTestConfig(t, 8570, 8571, 8582)
-	clickAddr := "127.0.0.1:8570"
-	h := tricksterHarness{ConfigPath: cfg, BaseAddr: clickAddr, MetricsAddr: "127.0.0.1:8571"}
+	h := configHarness(t)
+	clickAddr := h.BaseAddr
 	h.start(t)
 	waitForClickHouseData(t, "127.0.0.1:8123")
+	fiveMinuteEnd := time.Now().Truncate(5 * time.Minute).Unix()
 
 	t.Run("time series query", func(t *testing.T) {
-		// Seed data timestamps are from ~2015, so query the full span from epoch to now.
+		// Seed data timestamps are from ~2015, so query from epoch through the
+		// most recent complete five-minute boundary.
 		q := fmt.Sprintf(
 			"SELECT toStartOfFiveMinute(pickup_datetime) AS t, count() AS cnt "+
 				"FROM trips "+
-				"WHERE pickup_datetime BETWEEN toDateTime(%d) AND toDateTime(%d) "+
+				"WHERE pickup_datetime >= toDateTime(%d) AND pickup_datetime < toDateTime(%d) "+
 				"GROUP BY t ORDER BY t FORMAT JSON",
-			0, time.Now().Unix(),
+			0, fiveMinuteEnd,
 		)
 		params := url.Values{"query": {q}}
 		u := "http://" + clickAddr + "/click1/?" + params.Encode()
@@ -82,8 +83,8 @@ func TestClickHouse(t *testing.T) {
 
 	t.Run("multi-line SQL", func(t *testing.T) {
 		q := fmt.Sprintf(
-			"SELECT\n    toStartOfFiveMinute(pickup_datetime) AS t,\n    count() AS cnt\nFROM trips\nWHERE pickup_datetime BETWEEN toDateTime(%d) AND toDateTime(%d)\nGROUP BY t\nORDER BY t\nFORMAT JSON",
-			0, time.Now().Unix(),
+			"SELECT\n    toStartOfFiveMinute(pickup_datetime) AS t,\n    count() AS cnt\nFROM trips\nWHERE pickup_datetime >= toDateTime(%d) AND pickup_datetime < toDateTime(%d)\nGROUP BY t\nORDER BY t\nFORMAT JSON",
+			0, fiveMinuteEnd,
 		)
 		params := url.Values{"query": {q}}
 		u := "http://" + clickAddr + "/click1/?" + params.Encode()
@@ -101,18 +102,19 @@ func TestClickHouse(t *testing.T) {
 	aggCases := []struct {
 		name  string
 		group string
+		step  time.Duration
 	}{
-		{"five_minute", "toStartOfFiveMinute(pickup_datetime)"},
-		{"fifteen_minute", "toStartOfInterval(pickup_datetime, INTERVAL 15 MINUTE)"},
-		{"one_hour", "toStartOfHour(pickup_datetime)"},
+		{"five_minute", "toStartOfFiveMinute(pickup_datetime)", 5 * time.Minute},
+		{"fifteen_minute", "toStartOfInterval(pickup_datetime, INTERVAL 15 MINUTE)", 15 * time.Minute},
+		{"one_hour", "toStartOfHour(pickup_datetime)", time.Hour},
 	}
 	for _, tc := range aggCases {
 		t.Run("aggregation_"+tc.name, func(t *testing.T) {
 			q := fmt.Sprintf(
 				"SELECT %s AS t, count() AS cnt FROM trips "+
-					"WHERE pickup_datetime BETWEEN toDateTime(%d) AND toDateTime(%d) "+
+					"WHERE pickup_datetime >= toDateTime(%d) AND pickup_datetime < toDateTime(%d) "+
 					"GROUP BY t ORDER BY t FORMAT JSON",
-				tc.group, 0, time.Now().Unix(),
+				tc.group, 0, time.Now().Truncate(tc.step).Unix(),
 			)
 			params := url.Values{"query": {q}}
 			u := "http://" + clickAddr + "/click1/?" + params.Encode()

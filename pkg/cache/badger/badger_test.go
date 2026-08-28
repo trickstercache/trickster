@@ -220,3 +220,41 @@ func TestBadgerCache_Close(t *testing.T) {
 		t.Error(err)
 	}
 }
+
+func TestBadgerCache_ClosedClientErrors(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
+	testDbPath := t.TempDir() + "/test.db"
+	bc := New(t.Name(), newCacheConfig(testDbPath))
+	if err := bc.Connect(); err != nil {
+		t.Fatal(err)
+	}
+	if err := bc.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := bc.Remove(cacheKey); err == nil {
+		t.Error("expected error removing from closed client")
+	}
+
+	_, ls, err := bc.Retrieve(cacheKey)
+	if err == nil {
+		t.Error("expected error retrieving from closed client")
+	}
+	if ls != status.LookupStatusError {
+		t.Errorf("expected %s got %s", status.LookupStatusError, ls)
+	}
+}
+
+func TestBadgerCache_RemoveEmptyKey(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
+	testDbPath := t.TempDir() + "/test.db"
+	bc := New(t.Name(), newCacheConfig(testDbPath))
+	if err := bc.Connect(); err != nil {
+		t.Fatal(err)
+	}
+	defer bc.Close()
+
+	if err := bc.Remove(""); err == nil {
+		t.Error("expected error removing empty key")
+	}
+}

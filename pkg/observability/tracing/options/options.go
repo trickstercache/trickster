@@ -17,22 +17,26 @@
 package options
 
 import (
+	"fmt"
 	"maps"
 	"slices"
-	"time"
 
 	stdoutopts "github.com/trickstercache/trickster/v2/pkg/observability/tracing/exporters/stdout/options"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
+
+	"go.yaml.in/yaml/v3"
 )
 
 // Options is a Tracing Options collection
 type Options struct {
 	Name               string            `yaml:"-"`
 	Provider           string            `yaml:"provider,omitempty"`
+	Protocol           string            `yaml:"protocol,omitempty"`
 	ServiceName        string            `yaml:"service_name,omitempty"`
 	Endpoint           string            `yaml:"endpoint,omitempty"`
-	Timeout            time.Duration     `yaml:"timeout,omitempty"`
+	Timeout            timeconv.Duration `yaml:"timeout,omitempty"`
 	Headers            map[string]string `yaml:"headers,omitempty"`
 	DisableCompression bool              `yaml:"disable_compression,omitempty"`
 	SampleRate         *float64          `yaml:"sample_rate,omitempty"`
@@ -85,6 +89,9 @@ func ProcessTracingOptions(mo Lookup) {
 		if v.Provider == "" {
 			v.Provider = DefaultTracerProvider
 		}
+		if v.Provider == ProviderOTLP && v.Protocol == "" {
+			v.Protocol = DefaultOTLPProtocol
+		}
 		v.generateOmitTags()
 	}
 }
@@ -103,7 +110,12 @@ func (o *Options) generateOmitTags() {
 }
 
 func (o *Options) Valdiate() error {
-	// placeholder for future validations (currently there are none for tracing)
+	switch o.Protocol {
+	case "", OTLPProtocolHTTP, OTLPProtocolGRPC:
+	default:
+		return fmt.Errorf("invalid tracing protocol [%s] for tracing config [%s]",
+			o.Protocol, o.Name)
+	}
 	return nil
 }
 
@@ -117,10 +129,10 @@ func (l Lookup) Validate() error {
 	return nil
 }
 
-func (o *Options) UnmarshalYAML(unmarshal func(any) error) error {
+func (o *Options) UnmarshalYAML(value *yaml.Node) error {
 	type loadOptions Options
 	lo := loadOptions(*(New()))
-	if err := unmarshal(&lo); err != nil {
+	if err := value.Decode(&lo); err != nil {
 		return err
 	}
 	*o = Options(lo)

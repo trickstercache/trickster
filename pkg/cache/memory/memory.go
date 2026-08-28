@@ -21,11 +21,12 @@ package memory
 import (
 	"time"
 
-	"github.com/dgraph-io/ristretto/v2"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	memoryopts "github.com/trickstercache/trickster/v2/pkg/cache/memory/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
+
+	"github.com/dgraph-io/ristretto/v2"
 )
 
 var (
@@ -115,8 +116,14 @@ func (c *Cache) StoreReference(cacheKey string, data cache.ReferenceObject, ttl 
 	return c.store(cacheKey, nil, data, ttl)
 }
 
-// Store places an object in the cache using the specified key and ttl
+// Store places an object in the cache using the specified key and ttl. The
+// data slice is copied defensively so callers can reuse the input buffer (for
+// example a sync.Pool buffer) without mutating the cached entry. Use
+// StoreReference if the caller wants the cache to hold the original reference.
 func (c *Cache) Store(cacheKey string, data []byte, ttl time.Duration) error {
+	if data != nil {
+		data = append([]byte(nil), data...)
+	}
 	return c.store(cacheKey, data, nil, ttl)
 }
 

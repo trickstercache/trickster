@@ -28,6 +28,8 @@ type Target struct {
 	hcStatus *healthcheck.Status
 	handler  http.Handler
 	backend  backends.Backend
+	name     string
+	group    string
 }
 
 type Targets []*Target
@@ -44,8 +46,12 @@ func New(targets Targets, healthyFloor int) Pool {
 	p.scheduleRefresh()
 
 	for _, t := range targets {
+		if t == nil || t.hcStatus == nil {
+			continue
+		}
 		t.hcStatus.RegisterSubscriber(p.statusCh)
 	}
+	p.workers.Add(2)
 	go p.listenStatusUpdates()
 	go p.checkHealth()
 	return p
@@ -55,11 +61,29 @@ func New(targets Targets, healthyFloor int) Pool {
 func NewTarget(handler http.Handler, hcStatus *healthcheck.Status,
 	backend backends.Backend,
 ) *Target {
-	return &Target{
+	t := &Target{
 		hcStatus: hcStatus,
 		handler:  handler,
 		backend:  backend,
 	}
+	if backend != nil {
+		t.name, t.group = backendIdentity(backend)
+	}
+	if t.group == "" {
+		t.group = t.name
+	}
+	return t
+}
+
+func backendIdentity(backend backends.Backend) (name, group string) {
+	if cfg := backend.Configuration(); cfg != nil {
+		name = cfg.Name
+		group = cfg.ReplicaGroup
+		if group == "" {
+			group = cfg.Name
+		}
+	}
+	return
 }
 
 func (t *Target) HealthStatus() *healthcheck.Status {
@@ -72,4 +96,15 @@ func (t *Target) Handler() http.Handler {
 
 func (t *Target) Backend() backends.Backend {
 	return t.backend
+}
+
+// Name returns the configured backend name captured when the target was built.
+func (t *Target) Name() string {
+	return t.name
+}
+
+// ReplicaGroup returns the immutable effective replica-group identity captured
+// when the target was built.
+func (t *Target) ReplicaGroup() string {
+	return t.group
 }

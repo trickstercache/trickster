@@ -31,6 +31,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	tsmerge "github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
 )
 
 // vectorInstantMarshalWriter is a MarshalWriterFunc that forces vector
@@ -62,13 +63,18 @@ func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 			if rsc.IsMergeMember {
 				m := c.Modeler()
 				if m != nil {
-					if rsc.TSMergeStrategy != 0 {
-						rsc.MergeFunc = merge.TimeseriesMergeFuncWithStrategy(m.WireUnmarshaler, rsc.TSMergeStrategy)
+					if rsc.TSMergeStrategy != 0 &&
+						rsc.TSMergeStrategy != int(tsmerge.StrategyScalar) {
+						rsc.MergeFunc = merge.TimeseriesMergeFuncWithStrategyTolerant(
+							m.WireUnmarshaler, rsc.TSMergeStrategy, rsc.TSDedupToleranceNanos)
+						rsc.BatchMergeFunc = merge.TimeseriesBatchMergeFuncWithStrategyTolerant(
+							rsc.TSMergeStrategy, rsc.TSDedupToleranceNanos)
 						// Instant queries marshal as vector, not matrix
 						// (WireMarshalWriter always emits matrix shape).
 						rsc.MergeRespondFunc = merge.TimeseriesRespondFuncWithStrategy(vectorInstantMarshalWriter, nil, rsc.TSMergeStrategy)
 					} else {
 						rsc.MergeFunc = model.MergeAndWriteVectorMergeFunc(m.WireUnmarshaler)
+						rsc.BatchMergeFunc = model.MergeAndWriteVectorBatchMergeFunc()
 						rsc.MergeRespondFunc = model.MergeAndWriteVectorRespondFunc(m.WireMarshalWriter)
 					}
 				}
@@ -94,7 +100,7 @@ func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 	// we need to capture and unmarshal the response
 	if c.hasTransformations || (rsc != nil && rsc.IsMergeMember) {
 		// use a streaming response writer to capture the response body for transformation
-		sw := capture.NewCaptureResponseWriter()
+		sw := capture.NewCaptureResponseWriterWithLimit(captureLimit(c))
 		engines.ObjectProxyCacheRequest(sw, r)
 		// Propagate captured upstream headers (Content-Type, X-Trickster-Result,
 		// etc.) to the outer ResponseWriter. Without this, ALB mechanisms see a

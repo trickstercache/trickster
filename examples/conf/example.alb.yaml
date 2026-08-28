@@ -10,9 +10,6 @@
 # Copyright 2018 The Trickster Authors
 #
 
-frontend:
-  listen_port: 8480
-
 backends:
 
   # a Prometheus time series merge alb

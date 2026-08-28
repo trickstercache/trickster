@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -30,15 +30,28 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
+	proxyurls "github.com/trickstercache/trickster/v2/pkg/proxy/urls"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
+
+// ComposeCacheKey assembles a per-backend cache key. The name prefix isolates
+// keys when cache_name is shared across backends. engine is "" for plain HTTP
+// proxy, "opc" for object cache, "dpc" for delta proxy cache.
+func ComposeCacheKey(name, prefix, engine, suffix string) string {
+	if engine == "" {
+		return name + "." + prefix + "." + suffix
+	}
+	return name + "." + prefix + "." + engine + "." + suffix
+}
 
 // DeriveCacheKey calculates a query-specific keyname based on the user request
 func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 	pc := pr.rsc.PathConfig
+	upstreamKeyPart := pr.upstreamURLRewriteCacheKey()
 
 	if pc == nil {
-		return md5.Checksum(pr.URL.Path + extra)
+		return md5.Checksum(pr.URL.Path + upstreamKeyPart +
+			pr.corsCacheKeyPart(pr.Request) + extra)
 	}
 
 	var qp url.Values
@@ -69,7 +82,12 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 	}
 
 	if pc.KeyHasher != nil {
-		return pc.KeyHasher(r.URL.Path, qp, r.Header, b, trq, extra)
+		key := pc.KeyHasher(r.URL.Path, qp, r.Header, b, trq, extra)
+		keyPart := upstreamKeyPart + pr.corsCacheKeyPart(r)
+		if keyPart != "" {
+			return md5.Checksum(key + keyPart)
+		}
+		return key
 	}
 
 	var k int
@@ -128,7 +146,9 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 	if methods.HasBody(r.Method) && pc.CacheKeyFormFields != nil && len(pc.CacheKeyFormFields) > 0 {
 		ct := strings.ToLower(r.Header.Get(headers.NameContentType))
 		if strings.HasPrefix(ct, headers.ValueMultipartFormData) {
-			if err := pr.ParseMultipartForm(1024 * 1024); err == nil {
+			const maxMultipartFormBytes = 1024 * 1024
+			pr.Body = http.MaxBytesReader(nil, pr.Body, maxMultipartFormBytes)
+			if err := pr.ParseMultipartForm(maxMultipartFormBytes); err == nil { // #nosec G120 -- body bounded by MaxBytesReader above; gosec taint does not track Body field
 				bodyWasProcessed = true
 			}
 		} else if strings.HasPrefix(ct, headers.ValueApplicationJSON) {
@@ -173,8 +193,27 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 		}
 	}
 	vals = vals[:k]
-	sort.Strings(vals)
-	return md5.Checksum(pr.URL.Path + "." + strings.Join(vals, "") + extra)
+	slices.Sort(vals)
+	return md5.Checksum(pr.URL.Path + "." + strings.Join(vals, "") +
+		upstreamKeyPart +
+		pr.corsCacheKeyPart(r) + extra)
+}
+
+func (pr *proxyRequest) upstreamURLRewriteCacheKey() string {
+	if pr == nil || pr.rsc == nil || pr.rsc.BackendOptions == nil {
+		return ""
+	}
+	o := pr.rsc.BackendOptions
+	base := proxyurls.FromParts(o.Scheme, o.Host, "", "", "")
+	return proxyurls.UpstreamURLRewriteCacheKey(pr.Request, base)
+}
+
+func (pr *proxyRequest) corsCacheKeyPart(r *http.Request) string {
+	if pr == nil || pr.rsc == nil || pr.rsc.FrontendCORS == nil ||
+		!pr.rsc.FrontendCORS.PreservesOrigin() || r == nil {
+		return ""
+	}
+	return ".origin." + r.Header.Get(headers.NameOrigin)
 }
 
 func deepSearch(document map[string]any, key string) (string, error) {

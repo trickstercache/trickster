@@ -18,6 +18,7 @@ package engines
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -58,7 +59,9 @@ func TestDoProxy(t *testing.T) {
 		ResponseBodyBytes: []byte(testResponseBody),
 	}
 
-	o.HTTPClient = http.DefaultClient
+	tr := &http.Transport{}
+	o.HTTPClient = &http.Client{Transport: tr}
+	t.Cleanup(tr.CloseIdleConnections)
 	br := bytes.NewBuffer([]byte(testResponseBody))
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", es.URL, br)
@@ -109,7 +112,9 @@ func TestProxyRequestBadGateway(t *testing.T) {
 		ResponseHeaders: map[string]string{},
 	}
 
-	o.HTTPClient = http.DefaultClient
+	tr := &http.Transport{}
+	o.HTTPClient = &http.Client{Transport: tr}
+	t.Cleanup(tr.CloseIdleConnections)
 	br := bytes.NewBuffer([]byte(testResponseBody))
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", badUpstream, br)
@@ -136,6 +141,7 @@ func TestClockOffsetWarning(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}
 	s := httptest.NewServer(http.HandlerFunc(handler))
+	defer s.Close()
 
 	conf, err := config.Load([]string{
 		"-origin-url",
@@ -152,7 +158,9 @@ func TestClockOffsetWarning(t *testing.T) {
 	}
 
 	o.Name = "default"
-	o.HTTPClient = http.DefaultClient
+	tr := &http.Transport{}
+	o.HTTPClient = &http.Client{Transport: tr}
+	t.Cleanup(tr.CloseIdleConnections)
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", s.URL, nil)
 	r = r.WithContext(tc.WithResources(r.Context(),
@@ -196,7 +204,9 @@ func TestDoProxyWithPCF(t *testing.T) {
 		CollapsedForwardingType: forwarding.CFTypeProgressive,
 	}
 
-	o.HTTPClient = http.DefaultClient
+	tr := &http.Transport{}
+	o.HTTPClient = &http.Client{Transport: tr}
+	t.Cleanup(tr.CloseIdleConnections)
 	br := bytes.NewBuffer([]byte(testResponseBody))
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", es.URL, br)
@@ -252,7 +262,9 @@ func TestProxyRequestWithPCFMultipleClients(t *testing.T) {
 		CollapsedForwardingType: forwarding.CFTypeProgressive,
 	}
 
-	o.HTTPClient = http.DefaultClient
+	tr := &http.Transport{}
+	o.HTTPClient = &http.Client{Transport: tr}
+	t.Cleanup(tr.CloseIdleConnections)
 	br := bytes.NewBuffer([]byte(testResponseBody))
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", es.URL, br)
@@ -361,6 +373,77 @@ func TestPrepareResponseWriterPlainWriter(t *testing.T) {
 	}
 }
 
+// TestPrepareResponseWriterStripsHopByHop pins the response-side hop-by-hop
+// strip. An upstream that emits `Connection: X-Internal-Auth` plus
+// `X-Internal-Auth: <secret>` must not leak X-Internal-Auth to the client,
+// per RFC 7230 6.1. The static HopHeaders set (Connection, Keep-Alive,
+// Proxy-Authenticate, Proxy-Authorization, Te, Trailer, Transfer-Encoding,
+// Upgrade) must also be stripped.
+func TestPrepareResponseWriterStripsHopByHop(t *testing.T) {
+	tests := []struct {
+		name     string
+		upstream http.Header
+		mustGo   []string // headers that must NOT appear downstream
+		mustKeep []string // headers that MUST appear downstream
+	}{
+		{
+			name: "named in Connection: custom token stripped",
+			upstream: http.Header{
+				"Connection":      {"X-Internal-Auth"},
+				"X-Internal-Auth": {"leaked-token"},
+				"X-Safe":          {"keep"},
+			},
+			mustGo:   []string{"X-Internal-Auth", "Connection"},
+			mustKeep: []string{"X-Safe"},
+		},
+		{
+			name: "empty token then Authorization (CVE-2021-33197 shape)",
+			upstream: http.Header{
+				"Connection":    {", Authorization"},
+				"Authorization": {"Bearer leaked"},
+				"Content-Type":  {"text/plain"},
+			},
+			mustGo:   []string{"Authorization", "Connection"},
+			mustKeep: []string{"Content-Type"},
+		},
+		{
+			name: "static hop-by-hop list always stripped",
+			upstream: http.Header{
+				"Keep-Alive":          {"timeout=5"},
+				"Proxy-Authenticate":  {"Basic realm=upstream"},
+				"Proxy-Authorization": {"Basic abc"},
+				"Te":                  {"trailers"},
+				"Trailer":             {"Expires"},
+				"Transfer-Encoding":   {"chunked"},
+				"Upgrade":             {"websocket"},
+				"Content-Type":        {"application/json"},
+			},
+			mustGo: []string{
+				"Keep-Alive", "Proxy-Authenticate", "Proxy-Authorization",
+				"Te", "Trailer", "Transfer-Encoding", "Upgrade",
+			},
+			mustKeep: []string{"Content-Type"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			PrepareResponseWriter(w, http.StatusOK, tc.upstream)
+			got := w.Header()
+			for _, h := range tc.mustGo {
+				if vals := got.Values(h); len(vals) > 0 {
+					t.Errorf("header %q must not be forwarded to client, got %v", h, vals)
+				}
+			}
+			for _, h := range tc.mustKeep {
+				if got.Get(h) == "" {
+					t.Errorf("header %q must be forwarded to client, missing", h)
+				}
+			}
+		})
+	}
+}
+
 func TestSetStatusHeader(t *testing.T) {
 	tests := []struct {
 		httpStatus     int
@@ -399,7 +482,9 @@ func TestPrepareFetchReaderErr(t *testing.T) {
 	}
 
 	o := conf.Backends["default"]
-	o.HTTPClient = http.DefaultClient
+	tr := &http.Transport{}
+	o.HTTPClient = &http.Client{Transport: tr}
+	t.Cleanup(tr.CloseIdleConnections)
 
 	r := httptest.NewRequest("GET", "http://example.com/", nil)
 	r = r.WithContext(tc.WithResources(r.Context(),
@@ -408,5 +493,186 @@ func TestPrepareFetchReaderErr(t *testing.T) {
 	_, _, i := PrepareFetchReader(r)
 	if i != 0 {
 		t.Errorf("expected 0 got %d", i)
+	}
+}
+
+type mockRoundTripper struct {
+	resp *http.Response
+	err  error
+	reqs []*http.Request
+}
+
+func (m *mockRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	m.reqs = append(m.reqs, req)
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.resp, nil
+}
+
+type mockRetryRoundTripper struct {
+	attempts int
+}
+
+func (m *mockRetryRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	m.attempts++
+	if m.attempts == 1 {
+		if req.Body != nil && req.GetBody == nil {
+			return nil, errors.New("http2: Transport: cannot retry err after Request.Body was written; define Request.GetBody to avoid this error")
+		}
+		if req.Body != nil {
+			_, _ = io.ReadAll(req.Body)
+			req.Body.Close()
+		}
+		newBody, err := req.GetBody()
+		if err != nil {
+			return nil, err
+		}
+		req.Body = newBody
+		return m.RoundTrip(req)
+	}
+
+	if req.Body == nil {
+		return nil, errors.New("retry attempt had nil Body")
+	}
+	bodyBytes, err := io.ReadAll(req.Body)
+	if err != nil {
+		return nil, err
+	}
+	if string(bodyBytes) != "test-body" {
+		return nil, errors.New("body mismatch on retry")
+	}
+
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(bytes.NewReader([]byte("retry-success"))),
+	}, nil
+}
+
+func TestPrepareFetchReader_GetBody(t *testing.T) {
+	logger.SetLogger(testLogger)
+	conf, err := config.Load([]string{
+		"-origin-url", "http://example.com/",
+		"-provider", "test", "-log-level", "debug",
+	})
+	if err != nil {
+		t.Fatalf("Could not load configuration: %s", err.Error())
+	}
+
+	o := conf.Backends["default"]
+	o.HTTPClient = &http.Client{
+		Transport: &mockRoundTripper{
+			resp: &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(bytes.NewReader([]byte("ok"))),
+			},
+		},
+	}
+
+	reqBody := []byte("hello-request-body")
+	r := httptest.NewRequest("POST", "http://example.com/", bytes.NewReader(reqBody))
+	r.GetBody = nil // Ensure it is nil initially under all Go versions
+	r = r.WithContext(tc.WithResources(r.Context(),
+		request.NewResources(o, nil, nil, nil, nil, tu.NewTestTracer())))
+
+	_, resp, _ := PrepareFetchReader(r)
+	if resp == nil || resp.StatusCode != http.StatusOK {
+		t.Errorf("expected 200 OK, got: %+v", resp)
+	}
+
+	mockRT := o.HTTPClient.Transport.(*mockRoundTripper)
+	if len(mockRT.reqs) == 0 {
+		t.Fatal("expected at least one request to be captured by mockRoundTripper")
+	}
+	sentReq := mockRT.reqs[0]
+
+	if sentReq.GetBody == nil {
+		t.Fatal("expected sentReq.GetBody to be populated by PrepareFetchReader")
+	}
+
+	for i := range 3 {
+		rc, err := sentReq.GetBody()
+		if err != nil {
+			t.Fatalf("iteration %d: GetBody returned error: %v", i, err)
+		}
+		data, err := io.ReadAll(rc)
+		rc.Close()
+		if err != nil {
+			t.Fatalf("iteration %d: read failed: %v", i, err)
+		}
+		if !bytes.Equal(data, reqBody) {
+			t.Errorf("iteration %d: expected body %q, got %q", i, reqBody, data)
+		}
+	}
+}
+
+func TestHTTP2GOAWAYRetry(t *testing.T) {
+	logger.SetLogger(testLogger)
+	conf, err := config.Load([]string{
+		"-origin-url", "http://example.com/",
+		"-provider", "test", "-log-level", "debug",
+	})
+	if err != nil {
+		t.Fatalf("Could not load configuration: %s", err.Error())
+	}
+
+	o := conf.Backends["default"]
+	o.HTTPClient = &http.Client{
+		Transport: &mockRetryRoundTripper{},
+	}
+
+	r := httptest.NewRequest("POST", "http://example.com/", bytes.NewReader([]byte("test-body")))
+	r = r.WithContext(tc.WithResources(r.Context(),
+		request.NewResources(o, nil, nil, nil, nil, tu.NewTestTracer())))
+
+	_, resp, _ := PrepareFetchReader(r)
+	if resp == nil || resp.StatusCode != http.StatusOK {
+		t.Errorf("expected 200 OK, got: %+v", resp)
+	}
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(bodyBytes) != "retry-success" {
+		t.Errorf("expected retry-success, got %q", string(bodyBytes))
+	}
+}
+
+func TestPrepareFetchReader_GetBodyTooLarge(t *testing.T) {
+	logger.SetLogger(testLogger)
+	conf, err := config.Load([]string{
+		"-origin-url", "http://example.com/",
+		"-provider", "test", "-log-level", "debug",
+	})
+	if err != nil {
+		t.Fatalf("Could not load configuration: %s", err.Error())
+	}
+
+	o := conf.Backends["default"]
+	o.MaxObjectSizeBytes = 4
+	mockRT := &mockRoundTripper{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(bytes.NewReader([]byte("ok"))),
+		},
+	}
+	o.HTTPClient = &http.Client{Transport: mockRT}
+
+	r := httptest.NewRequest("POST", "http://example.com/",
+		bytes.NewReader([]byte("hello-request-body")))
+	r.GetBody = nil
+	r = r.WithContext(tc.WithResources(r.Context(),
+		request.NewResources(o, nil, nil, nil, nil, tu.NewTestTracer())))
+
+	_, resp, _ := PrepareFetchReader(r)
+	if resp == nil || resp.StatusCode != http.StatusRequestEntityTooLarge {
+		t.Errorf("expected 413 Request Entity Too Large, got: %+v", resp)
+	}
+	if len(mockRT.reqs) != 0 {
+		t.Errorf("upstream must not be called when the body exceeds MaxObjectSizeBytes; got %d requests", len(mockRT.reqs))
 	}
 }

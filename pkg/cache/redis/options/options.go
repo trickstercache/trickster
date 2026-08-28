@@ -17,9 +17,10 @@
 package options
 
 import (
-	"time"
-
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+
+	"go.yaml.in/yaml/v3"
 )
 
 // Options is a collection of Configurations for Connecting to Redis
@@ -43,29 +44,29 @@ type Options struct {
 	// MaxRetries is the maximum number of retries before giving up on the command
 	MaxRetries int `yaml:"max_retries,omitempty"`
 	// MinRetryBackoff is the minimum backoff between each retry.
-	MinRetryBackoff time.Duration `yaml:"min_retry_backoff,omitempty"`
+	MinRetryBackoff timeconv.Duration `yaml:"min_retry_backoff,omitempty"`
 	// MaxRetryBackoff is the Maximum backoff between each retry.
-	MaxRetryBackoff time.Duration `yaml:"max_retry_backoff,omitempty"`
+	MaxRetryBackoff timeconv.Duration `yaml:"max_retry_backoff,omitempty"`
 	// DialTimeout is the timeout for establishing new connections.
-	DialTimeout time.Duration `yaml:"dial_timeout,omitempty"`
+	DialTimeout timeconv.Duration `yaml:"dial_timeout,omitempty"`
 	// ReadTimeout is the timeout for socket reads.
 	// If reached, commands will fail with a timeout instead of blocking.
-	ReadTimeout time.Duration `yaml:"read_timeout,omitempty"`
+	ReadTimeout timeconv.Duration `yaml:"read_timeout,omitempty"`
 	// WriteTimeout is the timeout for socket writes.
 	// If reached, commands will fail with a timeout instead of blocking.
-	WriteTimeout time.Duration `yaml:"write_timeout,omitempty"`
+	WriteTimeout timeconv.Duration `yaml:"write_timeout,omitempty"`
 	// PoolSize is the maximum number of socket connections.
 	PoolSize int `yaml:"pool_size,omitempty"`
 	// MinIdleConns is the minimum number of idle connections
 	// which is useful when establishing new connection is slow.
 	MinIdleConns int `yaml:"min_idle_conns,omitempty"`
 	// ConnMaxLifetime is the connection age at which client retires (closes) the connection.
-	ConnMaxLifetime time.Duration `yaml:"max_conn_age,omitempty"`
+	ConnMaxLifetime timeconv.Duration `yaml:"max_conn_age,omitempty"`
 	// PoolTimeout is the amount of time client waits for connection if all
 	// connections are busy before returning an error.
-	PoolTimeout time.Duration `yaml:"pool_timeout,omitempty"`
+	PoolTimeout timeconv.Duration `yaml:"pool_timeout,omitempty"`
 	// ConnMaxIdleTime is the amount of time after which client closes idle connections.
-	ConnMaxIdleTime time.Duration `yaml:"idle_timeout,omitempty"`
+	ConnMaxIdleTime timeconv.Duration `yaml:"idle_timeout,omitempty"`
 	// UseTLS indicates whether the server connection is TLS
 	UseTLS bool `yaml:"use_tls,omitempty"`
 }
@@ -80,10 +81,10 @@ func New() *Options {
 	}
 }
 
-func (o *Options) UnmarshalYAML(unmarshal func(any) error) error {
+func (o *Options) UnmarshalYAML(value *yaml.Node) error {
 	type loadOptions Options
 	lo := loadOptions(*(New()))
-	if err := unmarshal(&lo); err != nil {
+	if err := value.Decode(&lo); err != nil {
 		return err
 	}
 	*o = Options(lo)

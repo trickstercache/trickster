@@ -34,6 +34,8 @@ BIN_DIR        := $(PACKAGE_DIR)/bin
 CONF_DIR       := $(PACKAGE_DIR)/conf
 CGO_ENABLED    ?= 0
 BUMPER_FILE    := ./testdata/license_header_template.txt
+THIRD_PARTY_LICENSES_DIR  := $(BUILD_SUBDIR)/third-party-licenses
+GOLANG_CI_LINT_VERSION ?= v2.13.1
 
 .PHONY: go-mod-vendor
 go-mod-vendor:
@@ -47,15 +49,37 @@ go-mod-tidy:
 test-go-mod:
 	@git diff --quiet --exit-code go.mod go.sum || echo "There are changes to go.mod and go.sum which needs to be committed"
 
+# go-jmespath ships an abbreviated Apache-2.0 license notice that go-licenses
+# cannot classify. The target excludes it from automatic classification only,
+# then copies its original license notice into the generated distribution.
+.PHONY: third-party-licenses
+third-party-licenses:
+	$(GO) tool go-licenses save ./cmd/trickster \
+		--force \
+		--save_path=$(THIRD_PARTY_LICENSES_DIR) \
+		--ignore=github.com/trickstercache/trickster/v2 \
+		--ignore=github.com/jmespath/go-jmespath
+	@jmespath_dir="$$($(GO) list -mod=mod -m -f '{{.Dir}}' github.com/jmespath/go-jmespath)"; \
+		mkdir -p "$(THIRD_PARTY_LICENSES_DIR)/github.com/jmespath/go-jmespath"; \
+		cp "$$jmespath_dir/LICENSE" \
+			"$(THIRD_PARTY_LICENSES_DIR)/github.com/jmespath/go-jmespath/LICENSE"
+	@test -s "$(THIRD_PARTY_LICENSES_DIR)/vitess.io/vitess/go/LICENSE"
+
+.PHONY: check-third-party-licenses
+check-third-party-licenses: third-party-licenses
+	@echo "verified release notices for Vitess and the complete linked dependency graph"
+
 BUILD_FLAGS ?= -a -v
 .PHONY: build
 build: go-mod-tidy go-mod-vendor
 	CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) $(BUILD_FLAGS) -o ./$(BUILD_SUBDIR)/trickster  $(TRICKSTER_MAIN)/*.go
 
-rpm: build
+rpm: build third-party-licenses
 	mkdir -p ./$(BUILD_SUBDIR)/SOURCES
 	cp -p ./$(BUILD_SUBDIR)/trickster ./$(BUILD_SUBDIR)/SOURCES/
 	cp deploy/systemd/trickster.service ./$(BUILD_SUBDIR)/SOURCES/
+	cp -p LICENSE NOTICE ./$(BUILD_SUBDIR)/SOURCES/
+	cp -R ./$(THIRD_PARTY_LICENSES_DIR) ./$(BUILD_SUBDIR)/SOURCES/
 	sed -e 's%^# log_file:.*$$%log_file: /var/log/trickster/trickster.log%' \
 		-e 's%prometheus:9090%localhost:9090%' \
 		< examples/conf/example.full.yaml > ./$(BUILD_SUBDIR)/SOURCES/trickster.yaml
@@ -114,15 +138,44 @@ docker-release:
 style:
 	! gofmt -d $$(find . -path ./vendor -prune -o -name '*.go' -print) | grep '^'
 
-LINT_FLAGS ?= 
-.PHONY: lint
-lint: spelling vulncheck
+.PHONY: check-imports
+check-imports:
+	@go run hack/check-imports/main.go
+
+.PHONY: gofix-apply
+gofix-apply:
+	@go fix ./...
+
+.PHONY: gofix-diff
+gofix-diff:
 	@go fix -diff ./...
+
+LINT_FLAGS ?= 
+.PHONY: golangci-lint
+golangci-lint:
 	@go tool golangci-lint run $(LINT_FLAGS) -c .golangci.yml
+
+.PHONY: lint
+lint: check-imports spelling vulncheck gofix-diff golangci-lint
 
 .PHONY: vulncheck
 vulncheck:
 	@go tool govulncheck ./...
+
+.PHONY: benchmark-mysql-smoke
+benchmark-mysql-smoke:
+	@go test ./pkg/backends/mysql -run '^$$' -bench '^BenchmarkMySQLSmoke$$' -benchtime=1x -benchmem
+
+.PHONY: benchmark-mysql
+benchmark-mysql:
+	@go test ./pkg/backends/mysql -run '^$$' -bench '^BenchmarkMySQL' -benchmem -count=5
+	@go test ./pkg/backends/alb/mech/ur -run '^$$' -bench '^BenchmarkResolveRouteProtocolNeutral$$' -benchmem -count=5
+
+.PHONY: benchmark-mysql-acceptance
+benchmark-mysql-acceptance:
+	@go test ./pkg/backends/mysql -run '^$$' -bench '^BenchmarkMySQLCompatibilityCorpus$$' \
+		-benchmem -benchtime=200ms | tee /tmp/trickster-mysql-benchmarks.txt
+	@awk -f hack/check-mysql-benchmarks.awk /tmp/trickster-mysql-benchmarks.txt
 
 .PHONY: lint-fix
 lint-fix:
@@ -138,6 +191,9 @@ GO_TEST_PATH ?= $(shell $(GO) list ./... | grep -v v2/integration | tr '\n' ' ')
 .PHONY: gotest
 gotest:
 	$(GO) test -timeout=5m -v ${GO_TEST_FLAGS} $(GO_TEST_PATH)
+	@./hack/filter-coverprofile.sh .coverprofile
+	@echo
+	@./hack/coverprofile-summary.sh
 	@echo "All tests passed successfully."
 
 .PHONY: data-race-test
@@ -313,7 +369,6 @@ serve-info:
 serve-cli:
 	@cd cmd/trickster && go run . -origin-url http://127.0.0.1:9090/ -provider prometheus
 
-GOLANG_CI_LINT_VERSION ?= v2.11.4
 .PHONY: get-tools
 get-tools: get-msgpack
 	@echo "Installing tools..."
@@ -327,7 +382,14 @@ get-msgpack:
 developer-start:
 	@cd docs/developer/environment && docker compose up -d
 	@echo "Waiting for Redis to be ready..."
-	@timeout 30 sh -c 'until printf "PING\r\n" | nc 127.0.0.1 6379 2>/dev/null | grep -q PONG; do sleep 1; done'
+	@cd docs/developer/environment && if ! timeout 30 sh -c \
+		'until response=$$(docker compose exec -T redis redis-cli ping 2>&1); do \
+			echo "PING -> $${response:-no response}"; \
+			sleep 1; \
+		done; \
+		echo "PING -> $$response"'; then \
+		echo "WARNING: timed out waiting for Redis readiness; continuing anyway"; \
+	fi
 	@echo "Waiting for Prometheus to be ready..."
 	@timeout 120 sh -c 'until curl -sf http://127.0.0.1:9090/-/ready >/dev/null 2>&1; do sleep 2; done'
 	
@@ -345,7 +407,12 @@ developer-recreate: developer-delete
 
 .PHONY: developer-seed-data
 developer-seed-data:
-	@cd docs/developer/environment && docker compose run --rm clickhouse_seed
+	@cd docs/developer/environment && docker compose up -d --wait clickhouse mysql
+	@cd docs/developer/environment && docker compose run --rm seed_data_fetch
+	@cd docs/developer/environment && \
+	docker compose run --rm --no-deps clickhouse_seed & pid1=$$!; \
+	( cd docs/developer/environment && docker compose run --rm --no-deps mysql_seed ) & pid2=$$!; \
+	rc=0; wait $$pid1 || rc=1; wait $$pid2 || rc=1; exit $$rc
 
 RUN_FLAGS ?=
 .PHONY: serve-dev

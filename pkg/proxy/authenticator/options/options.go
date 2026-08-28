@@ -17,7 +17,9 @@
 package options
 
 import (
+	"fmt"
 	"maps"
+	"slices"
 
 	ct "github.com/trickstercache/trickster/v2/pkg/config/types"
 	ae "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/errors"
@@ -25,6 +27,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/util/files"
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
+
+	"go.yaml.in/yaml/v3"
 )
 
 var restrictedNames = sets.New([]string{"", "none"})
@@ -53,6 +57,21 @@ func (o *Options) Clone() *Options {
 	out := pointers.Clone(o)
 	out.Users = maps.Clone(o.Users)
 	out.ProviderData = maps.Clone(o.ProviderData)
+	return out
+}
+
+// CloneYAMLSafe returns a clone with user names and credentials redacted.
+func (o *Options) CloneYAMLSafe() *Options {
+	out := o.Clone()
+	userNames := make([]string, 0, len(out.Users))
+	for userName := range out.Users {
+		userNames = append(userNames, userName)
+	}
+	slices.Sort(userNames)
+	out.Users = make(ct.EnvStringMap, len(userNames))
+	for i := range userNames {
+		out.Users[fmt.Sprintf("user%d", i+1)] = "*****"
+	}
 	return out
 }
 
@@ -85,10 +104,10 @@ func (l Lookup) Validate(f types.IsRegisteredFunc) error {
 	return nil
 }
 
-func (o *Options) UnmarshalYAML(unmarshal func(any) error) error {
+func (o *Options) UnmarshalYAML(value *yaml.Node) error {
 	type loadOptions Options
 	lo := loadOptions(*(New()))
-	if err := unmarshal(&lo); err != nil {
+	if err := value.Decode(&lo); err != nil {
 		return err
 	}
 	*o = Options(lo)

@@ -29,6 +29,17 @@ import (
 // conforming to Mergeable[T]), and index, and returns an error
 type MergeFunc func(*Accumulator, any, int) error
 
+// BatchItem is one slot-ordered contribution to a batch merge.
+type BatchItem struct {
+	Data   any
+	Member int
+}
+
+// BatchMergeFunc attempts to merge several contributions in one operation.
+// When handled is false, the accumulator must remain unchanged so callers can
+// safely fall back to the corresponding MergeFunc for each item.
+type BatchMergeFunc func(*Accumulator, []BatchItem) (handled bool, err error)
+
 // RespondFunc is a function type that writes the merged result to the response writer
 // It takes the response writer, request, accumulator, and status code
 type RespondFunc func(http.ResponseWriter, *http.Request, *Accumulator, int)
@@ -78,6 +89,14 @@ func (a *Accumulator) SetTSData(data timeseries.Timeseries) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.tsdata = data
+}
+
+// UpdateTSData atomically replaces the accumulated timeseries with the value
+// returned by update.
+func (a *Accumulator) UpdateTSData(update func(timeseries.Timeseries) timeseries.Timeseries) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.tsdata = update(a.tsdata)
 }
 
 // GetGeneric returns the accumulated generic data (thread-safe)

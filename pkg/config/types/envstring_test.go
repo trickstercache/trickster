@@ -39,6 +39,13 @@ func TestEnvString(t *testing.T) {
 	err = example.Unmarshal([]byte("${FOO}${BAR}"))
 	require.NoError(t, err)
 	require.Equal(t, "barbaz", string(example))
+	// empty value should remain empty without expansion
+	err = example.Unmarshal([]byte(`""`))
+	require.NoError(t, err)
+	require.Equal(t, "", string(example))
+	// invalid YAML should error
+	err = example.Unmarshal([]byte("{"))
+	require.Error(t, err)
 }
 
 func TestEnvStringMap(t *testing.T) {
@@ -58,4 +65,7 @@ func TestEnvStringMap(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "buzz", example["abc"])
 	require.Equal(t, "quux", example["def"])
+	// invalid YAML should error
+	err = example.Unmarshal([]byte("["))
+	require.Error(t, err)
 }

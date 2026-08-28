@@ -22,8 +22,9 @@ import (
 	"io"
 	"sync"
 
-	"github.com/klauspost/compress/gzip"
 	"github.com/trickstercache/trickster/v2/pkg/encoding/reader"
+
+	"github.com/klauspost/compress/gzip"
 )
 
 var writerPool sync.Pool

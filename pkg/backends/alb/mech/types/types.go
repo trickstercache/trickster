@@ -24,9 +24,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 )
 
-// ID defines the load balancing mechanism identifier type
-type ID byte
-
 // Name is a type alias for the load balancing mechanism common name
 type Name = string
 
@@ -34,19 +31,26 @@ type Name = string
 // provided Options
 type NewMechanismFunc func(*options.Options, types.Lookup) (Mechanism, error)
 
-// Mechanism represents a specific ALB Implementation (e.g., a Round Robiner)
+// Mechanism represents a specific ALB Implementation (e.g., a Round Robiner).
+// Pool-aware mechanisms additionally implement PoolMechanism; callers that
+// need to drive a pool must type-assert before invoking pool methods.
 type Mechanism interface {
 	http.Handler
+	Name() Name
+}
+
+// PoolMechanism is the subset of Mechanism that owns a backend pool. Mechs
+// such as round_robin, first_response, newest_last_modified, and
+// time_series_merge implement it; user_router does not.
+type PoolMechanism interface {
+	Mechanism
 	SetPool(pool.Pool)
 	StopPool()
 	Pool() pool.Pool
-	ID() ID
-	Name() Name
 }
 
 // RegistryEntry defines an entry in the ALB Registry
 type RegistryEntry struct {
-	ID        ID
 	Name      Name
 	ShortName Name
 	New       NewMechanismFunc

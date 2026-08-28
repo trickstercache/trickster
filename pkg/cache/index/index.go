@@ -19,7 +19,7 @@ package index
 
 import (
 	"bytes"
-	"sort"
+	"slices"
 
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/index/options"
@@ -101,7 +101,7 @@ func reap(cacheSize int64, objectCount int64, remainders objectsAtime, opts opti
 
 	removals = make([]string, 0)
 
-	sort.Sort(remainders)
+	slices.SortFunc(remainders, objectAtimeCmp)
 
 	var i int
 	j := len(remainders)

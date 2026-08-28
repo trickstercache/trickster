@@ -19,6 +19,7 @@ package config
 import (
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
 	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
 )
@@ -165,5 +166,88 @@ func TestTLSCertConfig_MixedBackendsOnlyValidContribute(t *testing.T) {
 	if len(got.Certificates) != 1 {
 		t.Errorf("expected exactly 1 certificate (only the valid backend contributes), got %d",
 			len(got.Certificates))
+	}
+}
+
+func TestTLSCertConfigForListenerFiltersMappedBackends(t *testing.T) {
+	config := NewConfig()
+	config.Listeners["custom"] = listener.New("custom")
+	config.Listeners["custom"].ServeTLS = true
+	config.Listeners[listener.DefaultFrontendName].ServeTLS = true
+
+	defaultTLS, closeDefault, err := tlsConfig("")
+	if closeDefault != nil {
+		defer closeDefault()
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	customTLS, closeCustom, err := tlsConfig("")
+	if closeCustom != nil {
+		defer closeCustom()
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.Backends["default"].TLS = defaultTLS
+	customBackend := config.Backends["default"].Clone()
+	customBackend.ListenerName = "custom"
+	customBackend.TLS = customTLS
+	config.Backends["custom"] = customBackend
+
+	for _, listenerName := range []string{listener.DefaultFrontendName, "custom"} {
+		got, err := config.TLSCertConfigForListener(listenerName)
+		if err != nil {
+			t.Fatalf("server %q: %v", listenerName, err)
+		}
+		if got == nil {
+			t.Fatalf("server %q got no TLS configuration", listenerName)
+		}
+		if len(got.Certificates) != 1 {
+			t.Fatalf("server %q got %d certificates, want exactly one",
+				listenerName, len(got.Certificates))
+		}
+	}
+}
+
+func TestTLSCertConfigForListenerEdgeCases(t *testing.T) {
+	c := NewConfig()
+	if _, err := c.TLSCertConfigForListener("missing"); err == nil {
+		t.Fatal("missing listener should error")
+	}
+
+	c.Listeners[listener.DefaultFrontendName].ServeTLS = false
+	got, err := c.TLSCertConfigForListener(listener.DefaultFrontendName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != nil {
+		t.Fatal("ServeTLS=false should return nil tls config")
+	}
+}
+
+func TestTLSCertConfigForMySQLInBandTLS(t *testing.T) {
+	c := NewConfig()
+	c.Listeners["mysql1"] = listener.New("mysql1")
+	c.Listeners["mysql1"].Protocol = listener.ProtocolMySQL
+	tlsOptions, closeTLS, err := tlsConfig("")
+	if closeTLS != nil {
+		defer closeTLS()
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend := c.Backends["default"].Clone()
+	backend.ListenerName = "mysql1"
+	backend.TLS = tlsOptions
+	delete(c.Backends, "default")
+	c.Backends["mysql1"] = backend
+
+	got, err := c.TLSCertConfigForListener("mysql1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || len(got.Certificates) != 1 {
+		t.Fatalf("MySQL in-band TLS config = %#v", got)
 	}
 }

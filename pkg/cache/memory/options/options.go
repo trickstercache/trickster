@@ -16,6 +16,10 @@
 
 package options
 
+import (
+	"go.yaml.in/yaml/v3"
+)
+
 const (
 	// DefaultMaxSizeBytes is the default maximum byte cost memory provider will admit to the cache (512 MB)
 	DefaultMaxSizeBytes = int64(512 * 1024 * 1024)
@@ -51,10 +55,10 @@ func (o *Options) Equal(o2 *Options) bool {
 }
 
 // UnmarshalYAML applies defaults before overlaying YAML-parsed values.
-func (o *Options) UnmarshalYAML(unmarshal func(any) error) error {
+func (o *Options) UnmarshalYAML(value *yaml.Node) error {
 	type loadOptions Options
 	lo := loadOptions(*(New()))
-	if err := unmarshal(&lo); err != nil {
+	if err := value.Decode(&lo); err != nil {
 		return err
 	}
 	*o = Options(lo)

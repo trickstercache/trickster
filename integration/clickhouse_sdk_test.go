@@ -29,9 +29,8 @@ import (
 )
 
 func TestClickHouseHTTP(t *testing.T) {
-	cfg := writeTestConfig(t, 8574, 8575, 8584)
-	clickAddr := "127.0.0.1:8574"
-	h := tricksterHarness{ConfigPath: cfg, BaseAddr: clickAddr, MetricsAddr: "127.0.0.1:8575"}
+	h := configHarness(t)
+	clickAddr := h.BaseAddr
 	h.start(t)
 	waitForClickHouseData(t, "127.0.0.1:8123")
 
@@ -75,16 +74,21 @@ func TestClickHouseHTTP(t *testing.T) {
 	})
 
 	t.Run("cache_hit", func(t *testing.T) {
+		// Query the completed previous month so this test exercises a stable
+		// cache hit rather than the current, still-changing five-minute bucket.
+		now := time.Now().UTC()
+		end := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+		start := end.AddDate(0, -1, 0)
 		q := fmt.Sprintf(
 			"SELECT toStartOfFiveMinute(pickup_datetime) AS t, count() AS cnt "+
 				"FROM trips "+
-				"WHERE pickup_datetime BETWEEN toDateTime(%d) AND toDateTime(%d) "+
+				"WHERE pickup_datetime >= toDateTime(%d) AND pickup_datetime < toDateTime(%d) "+
 				"GROUP BY t ORDER BY t",
-			0, time.Now().Unix(),
+			start.Unix(), end.Unix(),
 		)
 		data1 := chQueryJSON(t, q)
 		require.Greater(t, len(data1), 0)
 		data2 := chQueryJSON(t, q)
-		require.Equal(t, len(data1), len(data2))
+		require.Equal(t, data1, data2)
 	})
 }

@@ -3,14 +3,14 @@
 #
 # Config for TestPurge_ByKey
 
-frontend:
-  listen_port: 8539
 
-metrics:
-  listen_port: 8540
-
-mgmt:
-  listen_port: 8541
+listeners:
+  default:
+    port: 8539
+  metrics:
+    port: 8540
+  mgmt:
+    port: 8541
 
 logging:
   log_level: info

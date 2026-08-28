@@ -17,72 +17,57 @@
 package fr
 
 import (
-	"context"
 	"net/http"
-	"sync"
-	"sync/atomic"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/fanout"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
-	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/capture"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
-	"golang.org/x/sync/errgroup"
 )
 
 const (
-	FRID   types.ID   = 1
-	FRName types.Name = "first_response"
-
-	FGRID   types.ID   = 2
+	FRName  types.Name = "first_response"
 	FGRName types.Name = "first_good_response"
 )
 
 type handler struct {
-	pool     pool.Pool
-	fgr      bool
-	fgrCodes sets.Set[int]
-	options  options.FirstGoodResponseOptions
+	mech.PoolHolder
+	fgr             bool
+	fgrCodes        sets.Set[int]
+	options         options.FirstGoodResponseOptions
+	maxCaptureBytes int
 }
 
 func RegistryEntry() types.RegistryEntry {
-	return types.RegistryEntry{ID: FRID, Name: FRName, ShortName: names.MechanismFR, New: New}
+	return types.RegistryEntry{Name: FRName, ShortName: names.MechanismFR, New: New}
 }
 
 func RegistryEntryFGR() types.RegistryEntry {
-	return types.RegistryEntry{ID: FGRID, Name: FGRName, ShortName: names.MechanismFGR, New: NewFGR}
+	return types.RegistryEntry{Name: FGRName, ShortName: names.MechanismFGR, New: NewFGR}
 }
 
 func NewFGR(o *options.Options, _ rt.Lookup) (types.Mechanism, error) {
 	return &handler{
-		fgr:      true,
-		fgrCodes: o.FgrCodesLookup,
-		options:  o.FGROptions,
+		fgr:             true,
+		fgrCodes:        o.FgrCodesLookup,
+		options:         o.FGROptions,
+		maxCaptureBytes: o.MaxCaptureBytes,
 	}, nil
 }
 
-func New(_ *options.Options, _ rt.Lookup) (types.Mechanism, error) {
-	return &handler{}, nil
-}
-
-func (h *handler) SetPool(p pool.Pool) {
-	h.pool = p
-}
-
-func (h *handler) Pool() pool.Pool {
-	return h.pool
-}
-
-func (h *handler) ID() types.ID {
-	if h.fgr {
-		return FGRID
+func New(o *options.Options, _ rt.Lookup) (types.Mechanism, error) {
+	h := &handler{}
+	if o != nil {
+		h.maxCaptureBytes = o.MaxCaptureBytes
 	}
-	return FRID
+	return h, nil
 }
 
 func (h *handler) Name() types.Name {
@@ -93,112 +78,80 @@ func (h *handler) Name() types.Name {
 }
 
 func (h *handler) StopPool() {
-	if h.pool != nil {
-		h.pool.Stop()
+	if p := h.Pool(); p != nil {
+		p.Stop()
 	}
 }
 
+// qualifies returns the winner predicate for fanout.WaitForFirst. FR (non-
+// FGR) takes any captured response; FGR with no custom codes accepts any
+// status < 400; FGR with custom codes accepts only configured codes.
+// Truncated captures are filtered out by WaitForFirst before predicate is
+// called.
+func (h *handler) qualifies(r *fanout.Result) bool {
+	if !h.fgr {
+		return true
+	}
+	code := r.Capture.StatusCode()
+	if len(h.fgrCodes) > 0 {
+		return h.fgrCodes.Contains(code)
+	}
+	return code < 400
+}
+
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if h.pool == nil {
+	p := h.Pool()
+	if p == nil {
 		failures.HandleBadGateway(w, r)
 		return
 	}
-	hl := h.pool.Healthy() // should return a fanout list
+	hl := p.Targets()
 	l := len(hl)
 	if l == 0 {
 		failures.HandleBadGateway(w, r)
 		return
 	}
-	// just proxy 1:1 if no folds in the fan
 	if l == 1 {
-		hl[0].ServeHTTP(w, r)
+		hl[0].Handler().ServeHTTP(w, r)
 		return
 	}
-	// otherwise iterate the fanout
-	var claimed int64 = -1
-	captures := make([]*capture.CaptureResponseWriter, l)
-	var eg errgroup.Group
-	if limit := h.options.ConcurrencyOptions.GetQueryConcurrencyLimit(); limit > 0 {
-		eg.SetLimit(limit)
-	}
-	responseWritten := make(chan struct{}, 1)
-
-	// wmu serializes response writes with the return path to prevent
-	// writing to w after ServeHTTP returns (e.g. on context cancellation).
-	var wmu sync.Mutex
-	var returned bool
-
-	serve := func(crw *capture.CaptureResponseWriter) {
-		wmu.Lock()
-		defer wmu.Unlock()
-		if returned {
-			return
-		}
-		headers.Merge(w.Header(), crw.Header())
-		w.WriteHeader(crw.StatusCode())
-		w.Write(crw.Body())
-		// this signals the response is written
-		responseWritten <- struct{}{}
+	r, err := fanout.PrimeBody(r)
+	if err != nil {
+		failures.HandleBadGateway(w, r)
+		return
 	}
 
-	// fanout to all healthy targets
-	ctx, cancel := context.WithCancel(r.Context())
-	defer cancel()
-	for i := range l {
-		if hl[i] == nil {
+	cfg := fanout.Config{
+		Mechanism:        "fr",
+		ConcurrencyLimit: h.options.ConcurrencyOptions.GetQueryConcurrencyLimit(),
+		MaxCaptureBytes:  h.maxCaptureBytes,
+		Resources:        func(int) *request.Resources { return &request.Resources{Cancelable: true} },
+	}
+
+	winner, results, _ := fanout.WaitForFirst(r.Context(), r, hl, cfg, h.qualifies)
+	if r.Context().Err() != nil {
+		return
+	}
+	if winner >= 0 {
+		writeCapture(w, results[winner].Capture)
+		return
+	}
+	if h.fgr {
+		failures.HandleBadGateway(w, r)
+		return
+	}
+	for _, res := range results {
+		if res.Failed || res.Capture == nil {
 			continue
 		}
-		eg.Go(func() error {
-			r2, err := request.CloneWithoutResources(r)
-			if err != nil {
-				return err
-			}
-			r2 = r2.WithContext(ctx)
-			r2 = request.SetResources(r2, &request.Resources{Cancelable: true})
-			crw := capture.NewCaptureResponseWriter()
-			captures[i] = crw
-			hl[i].ServeHTTP(crw, r2)
-			statusCode := crw.StatusCode()
-			custom := h.fgr && len(h.fgrCodes) > 0
-			isGood := custom && h.fgrCodes.Contains(statusCode)
-
-			if (!h.fgr || (!custom && statusCode < 400) || isGood) && // this checks if the response qualifies as a client response
-				atomic.CompareAndSwapInt64(&claimed, -1, int64(i)) { // this checks that the qualifying response is the first response
-				serve(crw)
-				cancel()
-			}
-			return nil
-		})
-	}
-
-	// this is a fallback case for when no qualifying upstream response arrives,
-	// the first response is used, regardless of qualification
-	go func() {
-		eg.Wait()
-		// if claimed is still -1, the fallback case must be used
-		if atomic.CompareAndSwapInt64(&claimed, -1, -2) && r.Context().Err() == nil {
-			// this iterates the captures and serves the first non-nil response
-			for _, crw := range captures {
-				if crw != nil {
-					serve(crw)
-					break
-				}
-			}
-		}
-	}()
-
-	// this prevents ServeHTTP from returning until the response is fully
-	// written or the request context is canceled
-	select {
-	case <-responseWritten:
-		return
-	case <-r.Context().Done():
-		// Acquire wmu to ensure no in-progress serve() write is active.
-		// If serve() holds the lock, this blocks until the write completes.
-		// If serve() hasn't started, setting returned prevents future writes.
-		wmu.Lock()
-		returned = true
-		wmu.Unlock()
+		writeCapture(w, res.Capture)
 		return
 	}
+	failures.HandleBadGateway(w, r)
+}
+
+func writeCapture(w http.ResponseWriter, crw *capture.CaptureResponseWriter) {
+	headers.Merge(w.Header(), crw.Header())
+	w.WriteHeader(crw.StatusCode())
+	_, _ = w.Write(crw.Body())
 }

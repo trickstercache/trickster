@@ -33,6 +33,34 @@ In a Rule's `case` configurations, provide `req_rewriter_name`. If there is a Ru
 
 In a Request Rewriter instruction using the `chain` instruction type. Provide the Rewriter Name as the third argument in the instruction  as follows: `[ 'chain', 'exec', '$rewriter_name']`. See more information [below](#chain).
 
+## Regex Capture Tokens
+
+An `rmatch` rule can expose its regular expression matches to request rewriters. Numeric tokens use `${0}` for the complete match and `${1}`, `${2}`, etc. for capture groups. A named capture such as `(?P<tenant>[a-z0-9]{3})` is also available as `${tenant}`.
+
+Captures are available only to the matched case rewriter and the current rule's egress rewriter. The ingress rewriter runs before matching and cannot use captures from its own rule, and captures are cleared before the request enters the next route. If the regular expression does not match, no capture tokens are available to the no-match or egress rewriter. Undefined tokens are left unchanged, while an optional capture group that did not participate in a successful match expands to an empty string.
+
+Token expansion is supported in setter and appender values for headers and
+parameters, and in configured values for path, method, host, hostname, port and
+scheme instructions. Header and parameter replace/delete instructions also
+expand their key, search and replacement fields. Chained rewriters receive the
+same captures. For example:
+
+```yaml
+request_rewriters:
+  tenant-host:
+    instructions:
+      - [ 'hostname', 'set', '${tenant}.writer.example.com' ]
+      - [ 'header', 'set', 'X-Tenant', '${1}' ]
+```
+
+Captured values are inserted without additional validation or escaping. Use
+restrictive regular expressions for values written to a hostname, path, header
+or query parameter. In particular, a client-controlled authority token can
+route a request, including configured upstream credentials, to an unintended
+host if the expression is too broad.
+
+When Trickster constructs the final upstream URL, only host components explicitly changed by a request rewriter override the configured backend `origin_url`. A `hostname` rewrite preserves the `origin_url` port, while `host` replaces both hostname and port. The inbound request's host never overrides `origin_url` by itself.
+
 ## Instruction Construction Guide
 
 ### header

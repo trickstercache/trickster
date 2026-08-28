@@ -1,0 +1,4 @@
+go test fuzz v1
+[]byte("Sun, 06 Nov 1994 08:49:37 GMT")
+[]byte("Sun, 06 Nov 1995 08:49:37 GMT")
+[]byte("")

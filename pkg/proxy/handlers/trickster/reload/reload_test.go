@@ -62,3 +62,22 @@ func TestReloadHandleFunc(t *testing.T) {
 	time.Sleep(time.Millisecond * 500)
 	f(w, r)
 }
+
+func TestReloadHandleFuncNotReloaded(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Info))
+
+	var noReload reload.Reloader = func(string) (bool, error) {
+		return false, nil
+	}
+
+	w := httptest.NewRecorder()
+	r, _ := http.NewRequest("GET", "/", nil)
+	HandlerFunc(noReload)(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	if body := w.Body.String(); body != reload.ConfigNotReloadedText {
+		t.Fatalf("body = %q, want %q", body, reload.ConfigNotReloadedText)
+	}
+}

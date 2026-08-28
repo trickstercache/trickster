@@ -24,6 +24,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
+
+	"go.yaml.in/yaml/v3"
 )
 
 // import ct "github.com/trickstercache/trickster/v2/pkg/config/types"
@@ -42,8 +44,6 @@ type Options struct {
 	NoRouteStatusCode int `yaml:"no_route_status_code,omitempty"`
 	// Users is a map of usernames to user-specific mapping options
 	Users UserMappingOptionsByUser `yaml:"users,omitempty"`
-	// DefaultHandler is the the HTTP Handler for DefaultBackend
-	DefaultHandler http.Handler `yaml:"-"`
 	// TargetProvider is the Provider name (e.g., 'rpc' or 'clickhouse') that
 	// the user router is handling. While a User Router can point to multiple
 	// ALBs, Rules and Backends, all non-virtual Backends (non-rule, non-ALB)
@@ -61,8 +61,6 @@ type UserMappingOptions struct {
 	ToUser string `yaml:"to_user"`
 	// ToCredential is the Credential that will be substituted in the upstream request
 	ToCredential types.EnvString `yaml:"to_credential"`
-	// ToHandler is the the HTTP Handler for the Backend in ToBackend
-	ToHandler http.Handler `yaml:"-"`
 }
 
 type UserMappingOptionsByUser map[string]*UserMappingOptions
@@ -83,6 +81,9 @@ func NewErrInvalidUserRouterOptions(backendName string) error {
 func (o *Options) Clone() *Options {
 	out := pointers.Clone(o)
 	out.Users = maps.Clone(o.Users)
+	for k, v := range out.Users {
+		out.Users[k] = pointers.Clone(v)
+	}
 	return out
 }
 
@@ -130,10 +131,10 @@ func (o *Options) Validate(backendTypes map[string]string) error {
 	return nil
 }
 
-func (o *Options) UnmarshalYAML(unmarshal func(any) error) error {
+func (o *Options) UnmarshalYAML(value *yaml.Node) error {
 	type loadOptions Options
 	lo := loadOptions(*(New()))
-	if err := unmarshal(&lo); err != nil {
+	if err := value.Decode(&lo); err != nil {
 		return err
 	}
 	*o = Options(lo)

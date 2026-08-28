@@ -33,13 +33,16 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	tc "github.com/trickstercache/trickster/v2/pkg/proxy/context"
+	corso "github.com/trickstercache/trickster/v2/pkg/proxy/cors/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/forwarding"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
+	"github.com/trickstercache/trickster/v2/pkg/util/middleware"
 )
 
 func setupTestHarnessOPC(file, body string, code int,
@@ -131,12 +134,12 @@ func TestObjectProxyCacheRequest(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	r.Header.Add(headers.NameRange, "bytes=0-3")
 
 	o := rsc.BackendOptions
-	o.MaxTTL = time.Duration(15000) * time.Millisecond
+	o.MaxTTL = timeconv.Duration(time.Duration(15000) * time.Millisecond)
 
 	_, e := testFetchOPC(r, http.StatusPartialContent, "test", map[string]string{"status": "kmiss"})
 	for _, err = range e {
@@ -150,12 +153,94 @@ func TestObjectProxyCacheRequest(t *testing.T) {
 	}
 }
 
+func TestObjectProxyCacheCORSOnMissAndHit(t *testing.T) {
+	hdrs := map[string]string{
+		headers.NameCacheControl:           "max-age=60",
+		headers.NameAllowOrigin:            "https://origin.example.com",
+		"Access-Control-Allow-Credentials": "true",
+	}
+	ts, _, r, rsc, err := setupTestHarnessOPC("", "test", http.StatusOK, hdrs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeTestHarness(ts, r)
+
+	rsc.BackendOptions.CORS = &corso.Options{
+		Mode: corso.ModeReplace,
+		Headers: map[string]string{
+			headers.NameAllowOrigin: "https://trickster.example.com",
+		},
+	}
+	h := middleware.WithResourcesContext(rsc.BackendClient, rsc.BackendOptions,
+		rsc.CacheClient, rsc.PathConfig, rsc.Tracer, http.HandlerFunc(ObjectProxyCacheRequest))
+	base := request.ClearResources(r)
+
+	for i, wantStatus := range []string{"kmiss", "hit"} {
+		recorder := httptest.NewRecorder()
+		req := base.Clone(base.Context())
+		h.ServeHTTP(recorder, req)
+		resp := recorder.Result()
+		if got := resp.Header.Get(headers.NameAllowOrigin); got != "https://trickster.example.com" {
+			t.Errorf("request %d allow origin = %q", i+1, got)
+		}
+		if got := resp.Header.Get("Access-Control-Allow-Credentials"); got != "" {
+			t.Errorf("request %d retained origin credentials header: %q", i+1, got)
+		}
+		if err := testResultHeaderPartMatch(resp.Header, map[string]string{"status": wantStatus}); err != nil {
+			t.Errorf("request %d: %v", i+1, err)
+		}
+		resp.Body.Close()
+	}
+}
+
+func TestObjectProxyCachePreservedCORSVariesByOrigin(t *testing.T) {
+	hdrs := map[string]string{
+		headers.NameCacheControl: "max-age=60",
+		headers.NameAllowOrigin:  "https://origin.example.com",
+	}
+	ts, _, r, rsc, err := setupTestHarnessOPC("", "test", http.StatusOK, hdrs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeTestHarness(ts, r)
+
+	rsc.BackendOptions.CORS = &corso.Options{Mode: corso.ModePreserve}
+	h := middleware.WithResourcesContext(rsc.BackendClient, rsc.BackendOptions,
+		rsc.CacheClient, rsc.PathConfig, rsc.Tracer, http.HandlerFunc(ObjectProxyCacheRequest))
+	base := request.ClearResources(r)
+
+	requests := []struct {
+		origin string
+		status string
+	}{
+		{origin: "https://first.example.com", status: "kmiss"},
+		{origin: "https://second.example.com", status: "kmiss"},
+		{origin: "https://first.example.com", status: "hit"},
+	}
+
+	for i, tc := range requests {
+		recorder := httptest.NewRecorder()
+		req := base.Clone(base.Context())
+		req.Header = base.Header.Clone()
+		req.Header.Set(headers.NameOrigin, tc.origin)
+		h.ServeHTTP(recorder, req)
+		resp := recorder.Result()
+		if got := resp.Header.Get(headers.NameAllowOrigin); got != "https://origin.example.com" {
+			t.Errorf("request %d allow origin = %q", i+1, got)
+		}
+		if err := testResultHeaderPartMatch(resp.Header, map[string]string{"status": tc.status}); err != nil {
+			t.Errorf("request %d: %v", i+1, err)
+		}
+		resp.Body.Close()
+	}
+}
+
 func TestObjectProxyCachePartialHit(t *testing.T) {
 	ts, _, r, rsc, err := setupTestHarnessOPCRange(nil)
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	// Cache miss on range
 	r.Header.Set(headers.NameRange, "bytes=0-10")
@@ -230,7 +315,7 @@ func TestFullArticuation(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	// Test Articulated Upstream
 	rsc.BackendOptions.DearticulateUpstreamRanges = true
@@ -377,7 +462,7 @@ func TestObjectProxyCachePartialHitNotFresh(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 	ctx := context.Background()
 	ctx = tc.WithResources(ctx, &request.Resources{BackendOptions: rsc.BackendOptions})
 
@@ -411,7 +496,7 @@ func TestObjectProxyCachePartialHitFullResponse(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 	ctx := context.Background()
 	ctx = tc.WithResources(ctx, &request.Resources{BackendOptions: rsc.BackendOptions})
 
@@ -434,7 +519,7 @@ func TestObjectProxyCacheRangeMiss(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	r.Header.Set(headers.NameRange, "bytes=0-10")
 	expectedBody, err := getExpectedRangeBody(r, "")
@@ -462,7 +547,7 @@ func TestObjectProxyCacheRevalidation(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	rsc.BackendOptions.RevalidationFactor = 2
 
@@ -547,10 +632,10 @@ func TestObjectProxyCacheRequestWithPCF(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	o := rsc.BackendOptions
-	o.MaxTTL = time.Duration(15000) * time.Millisecond
+	o.MaxTTL = timeconv.Duration(time.Duration(15000) * time.Millisecond)
 
 	r.Header.Set("testHeaderName", "testHeaderValue")
 
@@ -573,7 +658,7 @@ func TestObjectProxyCacheRequestClientNoCache(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	r.Header.Set(headers.NameCacheControl, headers.ValueNoCache)
 
@@ -588,7 +673,7 @@ func TestFetchViaObjectProxyCacheRequestClientNoCache(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	r.Header.Set(headers.NameCacheControl, headers.ValueNoCache)
 
@@ -609,7 +694,7 @@ func TestObjectProxyCacheRequestOriginNoCache(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	_, e := testFetchOPC(r, http.StatusOK, "test", map[string]string{"status": "kmiss"})
 	for _, err = range e {
@@ -622,7 +707,7 @@ func TestObjectProxyCacheRequestOriginNoCacheHeaders(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	// First request: cache miss, origin has no caching headers so nothing is stored
 	_, e := testFetchOPC(r, http.StatusOK, "test", map[string]string{"status": "kmiss"})
@@ -643,7 +728,7 @@ func TestObjectProxyCacheIMS(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	rsc.BackendOptions.RevalidationFactor = 2
 
@@ -675,7 +760,7 @@ func TestObjectProxyCacheINM(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	_, e := testFetchOPC(r, http.StatusOK, "test", map[string]string{"status": "kmiss"})
 	for _, err = range e {
@@ -701,7 +786,7 @@ func TestObjectProxyCacheNoRevalidate(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	p := rsc.PathConfig
 	p.ResponseHeaders = headers
@@ -728,7 +813,7 @@ func TestObjectProxyCacheCanRevalidate(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	p := rsc.PathConfig
 	p.ResponseHeaders = headers
@@ -758,7 +843,7 @@ func TestObjectProxyCacheRevalidated(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	rsc.PathConfig.ResponseHeaders = hdr
 
@@ -779,7 +864,7 @@ func TestObjectProxyCacheRequestNegativeCache(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	pc := po.New()
 	cfg := rsc.BackendOptions
@@ -815,7 +900,7 @@ func TestHandleCacheRevalidation(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	pr := newProxyRequest(r, nil)
 	pr.cacheStatus = status.LookupStatusRangeMiss
@@ -828,12 +913,15 @@ func TestHandleCacheRevalidation(t *testing.T) {
 }
 
 func getExpectedRangeBody(r *http.Request, boundary string) (string, error) {
-	client := &http.Client{}
+	transport := &http.Transport{}
+	defer transport.CloseIdleConnections()
+	client := &http.Client{Transport: transport}
 	resp, err := client.Do(r)
 	if err != nil {
 		return "", err
 	}
 	b, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
 	expectedBody := string(b)
 
 	if boundary != "" {
@@ -848,7 +936,7 @@ func TestRangesExhaustive(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	rsc.BackendOptions.RevalidationFactor = 2
 	rsc.BackendOptions.DearticulateUpstreamRanges = true
@@ -1142,7 +1230,7 @@ func TestFetchViaObjectProxyCacheRequestErroringCache(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	tc := &testCache{configuration: rsc.CacheConfig}
 	rsc.CacheClient = tc
@@ -1208,7 +1296,7 @@ func TestOPCSingleflightDedup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 	rsc.BackendOptions.HTTPClient = origin.Client()
 	originURL, _ := url.Parse(origin.URL + "/opc")
 
@@ -1258,7 +1346,7 @@ func TestOPCSingleflightErrorPropagation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 	rsc.BackendOptions.HTTPClient = origin.Client()
 	originURL, _ := url.Parse(origin.URL + "/opc")
 
@@ -1286,7 +1374,7 @@ func TestOPCSingleflightRanges(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer ts.Close()
+		defer closeTestHarness(ts, r)
 
 		var hits atomic.Int64
 		gate := make(chan struct{})
@@ -1351,7 +1439,7 @@ func TestOPCSingleflightRanges(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer ts.Close()
+		defer closeTestHarness(ts, r)
 
 		var hits atomic.Int64
 		gate := make(chan struct{})
@@ -1428,7 +1516,7 @@ func TestOPCSingleflightHandlerError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 	rsc.CacheClient = &failStoreCache{Cache: rsc.CacheClient}
 	rsc.BackendOptions.HTTPClient = origin.Client()
 	originURL, _ := url.Parse(origin.URL + "/opc")
@@ -1456,7 +1544,7 @@ func TestServeOPCResult(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	w := httptest.NewRecorder()
 	pr := newProxyRequest(r, w)
@@ -1495,7 +1583,7 @@ func TestServeOPCResultError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	w := httptest.NewRecorder()
 	pr := newProxyRequest(r, w)
@@ -1535,7 +1623,7 @@ func TestOPCProxyOnlyFallback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	rsc.BackendOptions.ProxyOnly = true
 	w := httptest.NewRecorder()
@@ -1561,7 +1649,7 @@ func TestOPCClientNoCache(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	r.Header.Set("Cache-Control", "no-cache")
 	w := httptest.NewRecorder()

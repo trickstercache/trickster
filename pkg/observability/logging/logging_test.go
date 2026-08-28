@@ -19,13 +19,17 @@ package logging
 import (
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/manager"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/options"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/sizeconv"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestConsoleLogger(t *testing.T) {
@@ -51,10 +55,32 @@ func TestNew(t *testing.T) {
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 0}
 	conf.Logging = &options.Options{LogLevel: "info"}
-	logger := New(conf)
-	if logger.Level() != level.Info {
-		t.Errorf("expected %s got %s", "info", logger.Level())
+	log := New(conf)
+	if log.Level() != level.Info {
+		t.Errorf("expected %s got %s", "info", log.Level())
 	}
+	if log.(*logger).closer != nil {
+		t.Error("console logger must not own stdout")
+	}
+}
+
+func TestNewConflictFallbackDoesNotOwnStdout(t *testing.T) {
+	conf := config.NewConfig()
+	conf.Logging.LogFile = t.TempDir() + "/shared.log"
+	first := New(conf)
+	defer first.Close()
+
+	conflict := conf.Clone()
+	count := manager.DefaultRetentionCount - 1
+	conflict.Logging.Retention = &manager.RetentionOptions{Count: &count}
+	second := New(conflict).(*logger)
+	if second.writer != os.Stdout {
+		t.Fatal("expected conflicting writer to fall back to stdout")
+	}
+	if second.closer != nil {
+		t.Error("stdout fallback must not be owned by the logger")
+	}
+	second.Close()
 }
 
 func TestNewLogger_LogFile(t *testing.T) {
@@ -84,6 +110,31 @@ func TestNewLogger_LogFile(t *testing.T) {
 	b, err := os.ReadFile(instanceFileName)
 	require.NoError(t, err)
 	require.Equal(t, `time=0001-01-01T00:00:00Z app=trickster level=info event=testEntry testKey="test Val" testKey2=testValue2 testKey3=testValue3`+"\n", string(b))
+}
+
+func TestNewLogger_RotationOptions(t *testing.T) {
+	fileName := t.TempDir() + "/out.log"
+	size := sizeconv.Size(16)
+	count := 2
+	compress := false
+	conf := config.NewConfig()
+	conf.Main = &config.MainConfig{InstanceID: 0}
+	conf.Logging = &options.Options{
+		LogFile:   fileName,
+		LogLevel:  "info",
+		Rotation:  &manager.RotationOptions{Size: &size},
+		Retention: &manager.RetentionOptions{Count: &count},
+		Compress:  &compress,
+	}
+	log := New(conf)
+	log.SetLogAsynchronous(false)
+	// each line exceeds 16 bytes, so the second write must rotate the file
+	log.Info("first entry", nil)
+	log.Info("second entry", nil)
+	log.Close()
+	if _, err := os.Stat(fileName + ".1"); err != nil {
+		t.Errorf("expected a rotated archive per configured rotation: %v", err)
+	}
 }
 
 func TestNewLoggerDebug_LogFile(t *testing.T) {
@@ -242,10 +293,17 @@ func TestNewLoggerFatal_LogFile(t *testing.T) {
 	conf.Main = &config.MainConfig{InstanceID: 0}
 	conf.Logging = &options.Options{LogFile: fileName, LogLevel: "debug"}
 	logger := New(conf)
-	logger.SetLogAsynchronous(false)
+	logger.Info("before fatal", nil)
 	logger.Fatal(-1, "test entry", Pairs{"testKey": "testVal"})
-	if _, err := os.Stat(fileName); err != nil {
-		t.Error(err)
+	b, err := os.ReadFile(fileName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "test entry") {
+		t.Errorf("fatal line was not flushed: %q", string(b))
+	}
+	if !strings.Contains(string(b), "before fatal") {
+		t.Errorf("preceding asynchronous line was not flushed: %q", string(b))
 	}
 	logger.Close()
 }

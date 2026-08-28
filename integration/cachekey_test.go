@@ -30,9 +30,8 @@ import (
 )
 
 func TestCacheKey(t *testing.T) {
-	cfg := writeTestConfig(t, 8576, 8577, 8585)
-	ckAddr := "127.0.0.1:8576"
-	h := tricksterHarness{ConfigPath: cfg, BaseAddr: ckAddr, MetricsAddr: "127.0.0.1:8577"}
+	h := configHarness(t)
+	ckAddr := h.BaseAddr
 	h.start(t)
 	waitForPrometheusData(t, "127.0.0.1:9090")
 

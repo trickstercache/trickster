@@ -24,6 +24,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -35,6 +36,7 @@ import (
 	trerr "github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/switcher"
 	sw "github.com/trickstercache/trickster/v2/pkg/proxy/tls"
+
 	"golang.org/x/net/netutil"
 )
 
@@ -52,28 +54,45 @@ const (
 	StateStopping
 )
 
+const (
+	logKeyDetail       = "detail"
+	logKeyAddress      = "address"
+	logKeyListenerName = "listenerName"
+	logKeyPort         = "port"
+)
+
+// server is the common surface of http.Server and tcpProxyServer needed for
+// graceful shutdown of a Listener.
+type server interface {
+	Shutdown(context.Context) error
+}
+
 // Listener is the Trickster net.Listener implmementation
 type Listener struct {
 	net.Listener
 	tlsConfig    *tls.Config
 	tlsSwapper   sw.CertSwapper
 	routeSwapper *switcher.SwitchHandler
-	server       *http.Server
-	exitOnError  bool
-	state        int32
+	server       server
+	exitOnError  atomic.Bool
+	state        atomic.Int32
 	readyCh      chan struct{}
 	readyOnce    sync.Once
 }
 
 type observedConnection struct {
-	*net.TCPConn
+	net.Conn
 }
 
 func (o *observedConnection) Close() error {
-	err := o.TCPConn.Close()
+	if err := o.Conn.Close(); err != nil {
+		return err
+	}
+	// Only the first successful Close adjusts the gauge; a subsequent Close
+	// returns an error (net/http may close the same conn more than once).
 	metrics.ProxyActiveConnections.Dec()
 	metrics.ProxyConnectionClosed.Inc()
-	return err
+	return nil
 }
 
 // Accept implements Listener.Accept
@@ -88,12 +107,15 @@ func (l *Listener) Accept() (net.Conn, error) {
 
 	metrics.ProxyActiveConnections.Inc()
 	metrics.ProxyConnectionAccepted.Inc()
-	// this is necessary for HTTP/2 to work
-	if t, ok := c.(*net.TCPConn); ok {
-		return &observedConnection{t}, nil
+	// *tls.Conn is left unwrapped so http.Server can type-assert it for
+	// HTTP/2 (ALPN); every other conn -- including *net.TCPConn and the
+	// netutil.LimitListener wrapper -- is wrapped so Close decrements
+	// ProxyActiveConnections.
+	if _, ok := c.(*tls.Conn); ok {
+		return c, nil
 	}
 
-	return c, nil
+	return &observedConnection{Conn: c}, nil
 }
 
 // CertSwapper returns the CertSwapper reference from the Listener
@@ -123,12 +145,12 @@ func NewGroup() *Group {
 
 // State returns the current state of the listener
 func (l *Listener) State() ListenerState {
-	return ListenerState(atomic.LoadInt32(&l.state))
+	return ListenerState(l.state.Load())
 }
 
 // setState atomically sets the listener state
 func (l *Listener) setState(state ListenerState) {
-	atomic.StoreInt32(&l.state, int32(state))
+	l.state.Store(int32(state))
 }
 
 // markReady signals that the listener is ready to accept connections
@@ -200,11 +222,35 @@ func NewListener(listenAddress string, listenPort, connectionsLimit int,
 	logger.Debug("starting proxy listener", logging.Pairs{
 		"connectionsLimit": connectionsLimit,
 		"scheme":           listenerType,
-		"address":          listenAddress,
-		"port":             listenPort,
+		logKeyAddress:      listenAddress,
+		logKeyPort:         listenPort,
 	})
 
 	return listener, nil
+}
+
+// GroupKey returns the Group membership key for a listener endpoint
+func GroupKey(listenerName, protocol string, isTLS bool) string {
+	scheme := protocol
+	if scheme == "" {
+		scheme = "http"
+	}
+	if isTLS {
+		scheme = "https"
+	}
+	return fmt.Sprintf("listener.%s.%s", listenerName, scheme)
+}
+
+// Keys returns the keys of all current group members
+func (lg *Group) Keys() []string {
+	lg.listenersLock.Lock()
+	out := make([]string, 0, len(lg.members))
+	for name := range lg.members {
+		out = append(out, name)
+	}
+	lg.listenersLock.Unlock()
+	slices.Sort(out)
+	return out
 }
 
 // Get returns the listener if it exists
@@ -225,9 +271,9 @@ func (lg *Group) StartListener(listenerName, address string, port int, connectio
 ) error {
 	l := &Listener{
 		routeSwapper: switcher.NewSwitchHandler(router),
-		exitOnError:  f != nil,
 		readyCh:      make(chan struct{}),
 	}
+	l.exitOnError.Store(f != nil)
 	l.setState(StateStarting)
 
 	if tlsConfig != nil && len(tlsConfig.Certificates) > 0 {
@@ -243,7 +289,7 @@ func (lg *Group) StartListener(listenerName, address string, port int, connectio
 	l.Listener, err = NewListener(address, port, connectionsLimit, tlsConfig, drainTimeout)
 	if err != nil {
 		logger.ErrorSynchronous(
-			"http listener startup failed", logging.Pairs{"listenerName": listenerName, "detail": err})
+			"http listener startup failed", logging.Pairs{logKeyListenerName: listenerName, logKeyDetail: err})
 		l.setState(StateStopped)
 		if f != nil {
 			f()
@@ -251,7 +297,16 @@ func (lg *Group) StartListener(listenerName, address string, port int, connectio
 		return err
 	}
 	logger.Info("http listener starting",
-		logging.Pairs{"listenerName": listenerName, "port": port, "address": address})
+		logging.Pairs{logKeyListenerName: listenerName, logKeyPort: port, logKeyAddress: address})
+
+	// the server is assigned before the listener is published to the group, so
+	// a DrainAndClose racing this startup always observes a server to shut down
+	svr := &http.Server{
+		Handler:           l.routeSwapper,
+		TLSConfig:         tlsConfig,
+		ReadHeaderTimeout: readHeaderTimeout,
+	}
+	l.server = svr
 
 	lg.listenersLock.Lock()
 	lg.members[listenerName] = l
@@ -264,40 +319,21 @@ func (lg *Group) StartListener(listenerName, address string, port int, connectio
 	// defer the tracer flush here where the listener connection ends
 	defer handleTracerShutdowns(tracers)
 
-	if tlsConfig != nil {
-		svr := &http.Server{
-			Handler:           l.routeSwapper,
-			TLSConfig:         tlsConfig,
-			ReadHeaderTimeout: readHeaderTimeout,
-		}
-		l.server = svr
-		err = svr.Serve(l)
-		if err != nil {
-			logger.ErrorSynchronous(
-				"https listener stopping", logging.Pairs{"listenerName": listenerName, "detail": err})
-			if l.exitOnError {
-				defer func() {
-					os.Exit(1) // exit via defer to allow prior defers to run
-				}()
-				return nil
-			}
-		}
-		return err
-	}
-
-	svr := &http.Server{
-		Handler:           l.routeSwapper,
-		ReadHeaderTimeout: readHeaderTimeout,
-	}
-	l.server = svr
 	err = svr.Serve(l)
 	if err != nil {
-		logger.ErrorSynchronous("http listener stopping",
-			logging.Pairs{"listenerName": listenerName, "detail": err})
-		if l.exitOnError {
+		event := "http listener stopping"
+		if tlsConfig != nil {
+			event = "https listener stopping"
+		}
+		logger.ErrorSynchronous(event,
+			logging.Pairs{logKeyListenerName: listenerName, logKeyDetail: err})
+		if l.exitOnError.Load() {
 			defer func() {
 				os.Exit(1) // exit via defer to allow prior defers to run
 			}()
+			if tlsConfig != nil {
+				return nil
+			}
 		}
 	}
 	return err
@@ -311,7 +347,7 @@ func handleTracerShutdowns(tracers tracing.Tracers) {
 		err := v.ShutdownFunc(context.Background())
 		if err != nil {
 			logger.Error("tracer shutdown failed",
-				logging.Pairs{"detail": err.Error()})
+				logging.Pairs{logKeyDetail: err.Error()})
 		}
 	}
 }
@@ -335,7 +371,7 @@ func (lg *Group) DrainAndClose(listenerName string, drainWait time.Duration) err
 		lg.listenersLock.Unlock()
 		return trerr.ErrNoSuchListener
 	}
-	l.exitOnError = false
+	l.exitOnError.Store(false)
 	l.setState(StateStopping)
 	delete(lg.members, listenerName)
 	lg.listenersLock.Unlock()
@@ -441,7 +477,7 @@ func (lg *Group) UpdateFrontendRouters(mainRouter http.Handler, adminRouter http
 // UpdateRouter will swap out the router for the Group with the provided name
 func (lg *Group) UpdateRouter(routerName string, router http.Handler) {
 	lg.listenersLock.Lock()
-	if r, ok := lg.members[routerName]; ok {
+	if r, ok := lg.members[routerName]; ok && r.routeSwapper != nil {
 		r.routeSwapper.Update(router)
 	}
 	defer lg.listenersLock.Unlock()

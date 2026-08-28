@@ -24,7 +24,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
@@ -32,6 +31,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
+
+	"github.com/stretchr/testify/require"
 )
 
 var _ healthcheck.HealthChecker = (*mockHealthChecker)(nil)
@@ -71,6 +72,12 @@ func (m *mockHealthChecker) Register(name string, description string, options *h
 	}
 	m.targets[name] = target
 	return &healthcheck.Status{}, nil
+}
+
+func (m *mockHealthChecker) RegisterVirtual(name, description string) *healthcheck.Status {
+	s := healthcheck.NewStatus(name, description, "", healthcheck.StatusPassing, time.Time{}, nil)
+	m.targets[name] = mockTarget{description: description, status: s}
+	return s
 }
 
 func (m *mockHealthChecker) Unregister(name string) {

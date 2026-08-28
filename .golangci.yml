@@ -26,12 +26,12 @@ linters:
     - exptostd
     - errorlint
     - gocheckcompilerdirectives
-    - goconst
     - mirror
     - importas
     - perfsprint
   disable:
     - errcheck
+    - goconst # re-enable after sudden influx of findings are addressed
   settings:
     dupl:
       threshold: 150 # default is 100; have brought current codebase down to 75, but leaving default at 150 for now
@@ -148,6 +148,8 @@ linters:
           disabled: true # disable 'switch must have a default case clause (revive)' checks
         - name: var-naming
           disabled: true # disable 'meaningless package names' (e.g., types, util, etc.) checks
+        - name: package-naming
+          disabled: true # disable 'bad package name' (e.g., types, util, etc.) checks
   exclusions:
     generated: lax
     presets:
@@ -170,3 +172,10 @@ formatters:
       - third_party$
       - builtin$
       - examples$
+  settings:
+    gci:
+      custom-order: true
+      sections:
+        - standard
+        - prefix(github.com/trickstercache) 
+        - default

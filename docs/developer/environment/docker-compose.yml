@@ -3,12 +3,12 @@ services:
   # caches
 
   redis:
-    image: redis:7-alpine
+    image: redis:8-alpine
     restart: always
     ports:
      - 6379:6379
     volumes:
-     - ./docker-compose-data/redis-data:/data
+     - redis-data:/data
     command: redis-server --appendonly yes --stop-writes-on-bgsave-error no
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -19,8 +19,10 @@ services:
   # ui's
 
   grafana:
-    image: grafana/grafana:11.6.0
+    image: grafana/grafana:13.1.3
     user: nobody
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       - GF_INSTALL_PLUGINS=vertamedia-clickhouse-datasource,grafana-clickhouse-datasource
     volumes:
@@ -33,14 +35,20 @@ services:
     ports:
      - 3000:3000
     depends_on:
-      - influxdb2
-      - prometheus
+      influxdb2:
+        condition: service_started
+      prometheus:
+        condition: service_started
+      mysql:
+        condition: service_healthy
 
   # TSDBs
 
   prometheus:
-    image: prom/prometheus:v3.2.1
+    image: prom/prometheus:v3.13.2
     user: nobody
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./docker-compose-data/prometheus-config:/etc/prometheus
       - prometheus-data:/prometheus
@@ -49,7 +57,6 @@ services:
       - '--storage.tsdb.path=/prometheus'
       - '--web.console.libraries=/usr/share/prometheus/console_libraries'
       - '--web.console.templates=/usr/share/prometheus/consoles'
-      - '--enable-feature=native-histograms'
     build:
       context: .
       network: host
@@ -59,11 +66,11 @@ services:
 
   # influxdb 2.x
   influxdb2:
-    image: influxdb:2.7
+    image: influxdb:2.9
     volumes:
       # Mount for influxdb data directory and configuration
       - ./docker-compose-data/influxdb2-config/config.yml:/etc/influxdb2/config.yml
-      - influxdbv2:/.influxdbv2
+      - influxdbv2:/var/lib/influxdb2
     build:
       context: .
       network: host
@@ -77,7 +84,7 @@ services:
   influxdb2_seed:
     links:
       - influxdb2
-    image: influxdb:2.7
+    image: influxdb:2.9
     volumes:
       - ./docker-compose-data/influxdb2-config/setup-influxdb2.sh:/bin/setup-influxdb2.sh
   # Use these same configurations parameters in your telegraf configuration, mytelegraf.conf.
@@ -111,7 +118,7 @@ services:
 
   # clickhouse
   clickhouse:
-    image: clickhouse/clickhouse-server:25.3
+    image: clickhouse/clickhouse-server:26.7
     ports:
      - 9000:9000
      - 8123:8123
@@ -120,13 +127,30 @@ services:
       network: host
     volumes:
       - ./docker-compose-data/clickhouse-config/users/default-user.xml:/etc/clickhouse-server/users.d/default-user.xml
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+      start_period: 5s
     restart: always
+
+  # downloads the shared NYC taxi seed data cache used by both the clickhouse
+  # and mysql seeders, so they can run in any order or in parallel
+  seed_data_fetch:
+    image: clickhouse/clickhouse-server:25.3
+    volumes:
+      - ./docker-compose-data/clickhouse-config/seeding:/seeding
+    entrypoint: /seeding/download.sh
+    build:
+      context: .
+      network: host
 
   # clickouse-client, for seeding clickhouse on startup
   clickhouse_seed:
     links:
       - clickhouse
-    image: clickhouse/clickhouse-server:25.3
+    image: clickhouse/clickhouse-server:26.7
     volumes:
       - ./docker-compose-data/clickhouse-config/seeding:/seeding
     entrypoint: /seeding/seed.sh
@@ -134,7 +158,59 @@ services:
       context: .
       network: host
     depends_on:
-      - clickhouse
+      clickhouse:
+        condition: service_started
+      seed_data_fetch:
+        condition: service_completed_successfully
+
+  # mysql
+  mysql:
+    image: mysql:8.4
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command:
+      - '--local-infile=1'
+      - '--default-time-zone=+00:00'
+    environment:
+      MYSQL_ROOT_PASSWORD: trickster-dev-root
+      MYSQL_DATABASE: trickster
+    ports:
+     - 3306:3306
+    build:
+      context: .
+      network: host
+    volumes:
+      - ./docker-compose-data/mysql-config/init:/docker-entrypoint-initdb.d
+      - mysql-data:/var/lib/mysql
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 30s
+
+  # mysql client, for seeding mysql on startup; shares the NYC taxi download
+  # cache with the clickhouse seeder
+  mysql_seed:
+    image: mysql:8.4
+    environment:
+      MYSQL_SERVER_ADDR: mysql
+      MYSQL_DATABASE: trickster
+      MYSQL_SEED_USER: seeder
+      MYSQL_SEED_PASSWORD: trickster-dev-seed
+    volumes:
+      - ./docker-compose-data/mysql-config/seeding:/seeding
+      - ./docker-compose-data/clickhouse-config/seeding/data:/seeding/data
+    entrypoint: /seeding/seed.sh
+    build:
+      context: .
+      network: host
+    depends_on:
+      mysql:
+        condition: service_healthy
+      seed_data_fetch:
+        condition: service_completed_successfully
 
   # Mocks
 
@@ -150,14 +226,14 @@ services:
   # Tracing
 
   jaeger:
-    image: jaegertracing/all-in-one:1.67.0
+    image: jaegertracing/jaeger:2.20.0
     ports:
-     - 5775:5775/udp
      - 6831:6831/udp
      - 6832:6832/udp
      - 5778:5778
      - 16686:16686
-     - 14268:14268
+     - 4317:4317
+     - 4318:4318
      - 14250:14250
     build:
       context: .
@@ -167,7 +243,7 @@ services:
   # polling
 
   telegraf:
-    image: telegraf:1.34-alpine
+    image: telegraf:1.39-alpine
     restart: always
     volumes:
       - ./docker-compose-data/telegraf-config/telegraf.conf:/etc/telegraf/telegraf.conf
@@ -179,3 +255,5 @@ volumes:
   influxdbv2:
   influxdb3-data:
   prometheus-data:
+  mysql-data:
+  redis-data:

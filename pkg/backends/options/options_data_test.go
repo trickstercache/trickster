@@ -39,7 +39,7 @@ backends:
     origin_url: 'scheme://test_host/test_path_prefix'
     api_path: test_api_path
     max_idle_conns: 23
-    keep_alive_timeout: 7000
+    keep_alive_timeout: 7000ms
     ignore_caching_headers: true
     timeseries_retention_factor: 666
     timeseries_eviction_method: lru
@@ -55,6 +55,15 @@ backends:
     cache_key_prefix: test-prefix
     path_routing_disabled: false
     forwarded_headers: x
+    access_log:
+      filename: /tmp/test.access.log
+      format: combined
+      rotation:
+        size: 64MB
+      retention:
+        count: 3
+      error_filename: /tmp/test.error.log
+      error_threshold: 500
     negative_cache_name: test
     rule_name: ''
     shard_max_size_time: 0ms
@@ -110,11 +119,12 @@ func fromTestYAMLWithReqRewriter() (*Options, error) {
 }
 
 func fromTestYAMLWithALB() (*Options, error) {
-	conf := strings.ReplaceAll(strings.ReplaceAll(testYAML, "    rule_name: ''", `
-    rule_name: ''
-    alb:
+	conf := strings.ReplaceAll(testYAML, "    provider: test_type", "    provider: 'alb'")
+	conf = strings.ReplaceAll(conf, `    alb:
+      methodology: rr
+      pool: [ 'test_pool_member' ]`, `    alb:
       output_format: prometheus
       mechanism: tsmerge
-        `), "    provider: test_type", "    provider: 'alb'")
+      pool: [ 'test_pool_member' ]`)
 	return fromYAML(conf, "test")
 }

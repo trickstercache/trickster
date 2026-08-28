@@ -27,10 +27,9 @@ import (
 )
 
 func TestRequestRewriter(t *testing.T) {
-	rewriterHarness().start(t)
+	h := rewriterHarness(t)
+	h.start(t)
 	waitForPrometheusData(t, "127.0.0.1:9090")
-
-	const rewriterAddr = "127.0.0.1:8493"
 
 	t.Run("range to instant rewrite", func(t *testing.T) {
 		now := time.Now()
@@ -40,7 +39,7 @@ func TestRequestRewriter(t *testing.T) {
 			"end":   {fmt.Sprintf("%d", now.Unix())},
 			"step":  {"15"},
 		}
-		pr, hdr := queryTricksterProm(t, rewriterAddr, "prom1", "/api/v1/query_range", params)
+		pr, hdr := queryTricksterProm(t, h.BaseAddr, "prom1", "/api/v1/query_range", params)
 		require.Equal(t, "success", pr.Status)
 
 		var qd promQueryData

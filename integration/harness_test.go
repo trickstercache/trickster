@@ -20,6 +20,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -27,46 +28,45 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/stretchr/testify/require"
+	"github.com/trickstercache/trickster/v2/integration/internal/portutil"
 	tkconfig "github.com/trickstercache/trickster/v2/pkg/config"
+	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
-	"gopkg.in/yaml.v2"
+
+	"github.com/stretchr/testify/require"
+	"go.yaml.in/yaml/v3"
 )
 
 type tricksterHarness struct {
-	ConfigPath  string // path to YAML config passed to the daemon
-	BaseAddr    string // host:port of the data listener (e.g. "127.0.0.1:8480")
-	MetricsAddr string // host:port of the metrics/health listener
+	ConfigPath   string // path to YAML config passed to the daemon
+	BaseAddr     string // host:port of the data listener (e.g. "127.0.0.1:8480")
+	MetricsAddr  string // host:port of the metrics/health listener
+	MySQLAddr    string // host:port of the MySQL protocol listener, when configured
+	releasePorts func() // releases ports reserved while the config is prepared
 }
 
-func developerHarness() tricksterHarness {
-	return tricksterHarness{
-		ConfigPath:  "../docs/developer/environment/trickster-config/trickster.yaml",
-		BaseAddr:    "127.0.0.1:8480",
-		MetricsAddr: "127.0.0.1:8481",
-	}
+func developerHarness(t *testing.T) tricksterHarness {
+	t.Helper()
+	return configHarness(t)
 }
 
-func albHarness() tricksterHarness {
-	return tricksterHarness{
-		ConfigPath:  "testdata/alb.yaml",
-		BaseAddr:    "127.0.0.1:8490",
-		MetricsAddr: "127.0.0.1:8491",
-	}
+func albHarness(t *testing.T) tricksterHarness {
+	t.Helper()
+	return staticConfigHarness(t, "testdata/alb.yaml")
 }
 
-func rewriterHarness() tricksterHarness {
-	return tricksterHarness{
-		ConfigPath:  "testdata/rewriter.yaml",
-		BaseAddr:    "127.0.0.1:8493",
-		MetricsAddr: "127.0.0.1:8494",
-	}
+func rewriterHarness(t *testing.T) tricksterHarness {
+	t.Helper()
+	return staticConfigHarness(t, "testdata/rewriter.yaml")
 }
 
 func (h tricksterHarness) start(t *testing.T) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
+	if h.releasePorts != nil {
+		h.releasePorts()
+	}
 	go startTrickster(t, ctx, expectedStartError{}, "-config", h.ConfigPath)
 	waitForTrickster(t, h.MetricsAddr)
 }
@@ -164,26 +164,92 @@ type cacheProviderCase struct {
 	Backend string // backend id, e.g. "prom1"
 }
 
-func writeTestConfig(t *testing.T, frontPort, metricsPort, mgmtPort int) string {
+func configHarness(t *testing.T) tricksterHarness {
 	t.Helper()
-	return writeTestConfigWithFlight(t, frontPort, metricsPort, mgmtPort, 0)
+	ports, release := portutil.Reserve(t, 4)
+	frontPort, metricsPort, mgmtPort, mysqlPort := ports[0], ports[1], ports[2], ports[3]
+	return tricksterHarness{
+		ConfigPath: writeTestConfig(t,
+			"../docs/developer/environment/trickster-config/trickster.yaml",
+			frontPort, metricsPort, mgmtPort, mysqlPort, 0),
+		BaseAddr:     fmt.Sprintf("127.0.0.1:%d", frontPort),
+		MetricsAddr:  fmt.Sprintf("127.0.0.1:%d", metricsPort),
+		MySQLAddr:    fmt.Sprintf("127.0.0.1:%d", mysqlPort),
+		releasePorts: release,
+	}
 }
 
-// writeTestConfigWithFlight writes a per-test trickster config and overrides
-// the influx3 backend's flight_port. Pass 0 to disable the Flight SQL listener
-// for this test; pass a unique port to avoid collisions across parallel tests.
-func writeTestConfigWithFlight(t *testing.T, frontPort, metricsPort, mgmtPort, flightPort int) string {
+// flightConfigHarness is configHarness with the influx3 backend's Flight SQL
+// (gRPC) listener enabled on a reserved port, returned alongside the harness.
+func flightConfigHarness(t *testing.T) (tricksterHarness, int) {
 	t.Helper()
-	b, err := os.ReadFile("../docs/developer/environment/trickster-config/trickster.yaml")
+	ports, release := portutil.Reserve(t, 5)
+	frontPort, metricsPort, mgmtPort, mysqlPort, flightPort :=
+		ports[0], ports[1], ports[2], ports[3], ports[4]
+	return tricksterHarness{
+		ConfigPath: writeTestConfig(t,
+			"../docs/developer/environment/trickster-config/trickster.yaml",
+			frontPort, metricsPort, mgmtPort, mysqlPort, flightPort),
+		BaseAddr:     fmt.Sprintf("127.0.0.1:%d", frontPort),
+		MetricsAddr:  fmt.Sprintf("127.0.0.1:%d", metricsPort),
+		MySQLAddr:    fmt.Sprintf("127.0.0.1:%d", mysqlPort),
+		releasePorts: release,
+	}, flightPort
+}
+
+func staticConfigHarness(t *testing.T, configPath string) tricksterHarness {
+	t.Helper()
+	ports, release := portutil.Reserve(t, 3)
+	frontPort, metricsPort, mgmtPort := ports[0], ports[1], ports[2]
+	return tricksterHarness{
+		ConfigPath:   writeTestConfig(t, configPath, frontPort, metricsPort, mgmtPort, 0, 0),
+		BaseAddr:     fmt.Sprintf("127.0.0.1:%d", frontPort),
+		MetricsAddr:  fmt.Sprintf("127.0.0.1:%d", metricsPort),
+		releasePorts: release,
+	}
+}
+
+// writeTestConfig writes a per-test trickster config. flightPort overrides the
+// influx3 backend's flight_port; pass 0 to disable the Flight SQL listener.
+func writeTestConfig(t *testing.T, configPath string,
+	frontPort, metricsPort, mgmtPort, mysqlPort, flightPort int,
+) string {
+	t.Helper()
+	b, err := os.ReadFile(configPath)
 	require.NoError(t, err)
 	var c tkconfig.Config
 	require.NoError(t, yaml.Unmarshal(b, &c))
-	c.Frontend.ListenPort = frontPort
-	c.Metrics.ListenPort = metricsPort
+	if c.Listeners == nil {
+		c.Listeners = make(listener.Lookup)
+	}
+	if _, ok := c.Listeners["default"]; !ok {
+		c.Listeners["default"] = &listener.Options{
+			ListenPort: 8480,
+		}
+	}
+	if _, ok := c.Listeners["metrics"]; !ok {
+		c.Listeners["metrics"] = &listener.Options{
+			ListenPort: 8481,
+		}
+	}
+	if _, ok := c.Listeners["mgmt"]; !ok {
+		c.Listeners["mgmt"] = &listener.Options{
+			ListenPort: 8484,
+		}
+	}
+	c.Listeners["default"].ListenPort = frontPort
+	c.Listeners["default"].ListenAddress = "127.0.0.1"
+	c.Listeners["metrics"].ListenPort = metricsPort
+	c.Listeners["metrics"].ListenAddress = "127.0.0.1"
+	c.Listeners["mgmt"].ListenPort = mgmtPort
+	c.Listeners["mgmt"].ListenAddress = "127.0.0.1"
+	if mysqlListener := c.Listeners["mysql1"]; mysqlListener != nil {
+		mysqlListener.ListenAddress = "0.0.0.0"
+		mysqlListener.ListenPort = mysqlPort
+	}
 	if c.MgmtConfig == nil {
 		c.MgmtConfig = mgmt.New()
 	}
-	c.MgmtConfig.ListenPort = mgmtPort
 	if bo, ok := c.Backends["influx3"]; ok && bo != nil {
 		bo.FlightPort = flightPort
 	}

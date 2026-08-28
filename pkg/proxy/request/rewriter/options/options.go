@@ -22,6 +22,8 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
+
+	"go.yaml.in/yaml/v3"
 )
 
 const MaxRewriterChainExecutions int32 = 32
@@ -99,10 +101,10 @@ func (rl RewriteList) Clone() RewriteList {
 	return rl2
 }
 
-func (o *Options) UnmarshalYAML(unmarshal func(any) error) error {
+func (o *Options) UnmarshalYAML(value *yaml.Node) error {
 	type loadOptions Options
 	lo := loadOptions(*(New()))
-	if err := unmarshal(&lo); err != nil {
+	if err := value.Decode(&lo); err != nil {
 		return err
 	}
 	*o = Options(lo)

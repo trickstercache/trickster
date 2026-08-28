@@ -16,6 +16,10 @@
 
 package options
 
+import (
+	"go.yaml.in/yaml/v3"
+)
+
 // Options is a collection of Configurations for storing cached data on the Filesystem
 type Options struct {
 	// Filename represents the filename (including path) of the BotlDB database
@@ -29,10 +33,10 @@ func New() *Options {
 	return &Options{Filename: DefaultBBoltFile, Bucket: DefaultBBoltBucket}
 }
 
-func (o *Options) UnmarshalYAML(unmarshal func(any) error) error {
+func (o *Options) UnmarshalYAML(value *yaml.Node) error {
 	type loadOptions Options
 	lo := loadOptions(*(New()))
-	if err := unmarshal(&lo); err != nil {
+	if err := value.Decode(&lo); err != nil {
 		return err
 	}
 	*o = Options(lo)

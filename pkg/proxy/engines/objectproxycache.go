@@ -34,6 +34,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
+
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -155,6 +156,7 @@ func handleCacheRevalidation(pr *proxyRequest) error {
 			span.End()
 		}()
 	}
+	setResourceSpanAttributes(pr.rsc, span)
 
 	pr.revalidation = RevalStatusInProgress
 
@@ -307,6 +309,7 @@ func handlePCF(pr *proxyRequest) error {
 		span.SetAttributes(attribute.Bool("isPCF", true))
 		defer span.End()
 	}
+	setResourceSpanAttributes(pr.rsc, span)
 	pr.upstreamRequest = pr.upstreamRequest.WithContext(ctx)
 
 	reader, resp, contentLength := PrepareFetchReader(pr.upstreamRequest)
@@ -334,16 +337,24 @@ func handlePCF(pr *proxyRequest) error {
 			pr.rsc.BackendOptions.NegativeCache, pr.upstreamResponse.Header))
 		pr.determineCacheability()
 
-		go func() {
+		goWithRecover("opc.pcf.copy", func() {
+			defer func() {
+				if reader != nil {
+					reader.Close()
+				}
+			}()
+			defer reqs.Delete(pr.key)
+			defer pcf.Close()
 			var dest io.Writer = pcf
 			if pr.writeToCache {
 				pr.cacheBuffer = &bytes.Buffer{}
 				dest = io.MultiWriter(pcf, pr.cacheBuffer)
 			}
-			io.Copy(dest, reader)
-			pcf.Close()
-			reqs.Delete(pr.key)
-		}()
+			if _, err := io.Copy(dest, reader); err != nil {
+				logger.Error("pcf upstream copy failed",
+					logging.Pairs{"key": pr.key, "detail": err.Error()})
+			}
+		})
 
 		if err := pcf.AddClient(pr.responseWriter); err != nil {
 			return err
@@ -415,12 +426,13 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 		pr.upstreamRequest = pr.upstreamRequest.WithContext(trace.ContextWithSpan(pr.upstreamRequest.Context(), span))
 		defer span.End()
 	}
+	setResourceSpanAttributes(rsc, span)
 
 	pr.parseRequestRanges()
 
 	pr.cachingPolicy = GetRequestCachingPolicy(pr.Header)
 
-	pr.key = o.CacheKeyPrefix + ".opc." + pr.DeriveCacheKey("")
+	pr.key = ComposeCacheKey(o.Name, o.CacheKeyPrefix, "opc", pr.DeriveCacheKey(""))
 
 	// if a PCF entry exists, or the client requested no-cache for this object, proxy out to it
 	pcfResult, pcfExists := reqs.Load(pr.key)
@@ -429,6 +441,7 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 	if pr.isPCF || pr.cachingPolicy.NoCache {
 		if pr.cachingPolicy.NoCache {
 			cc.Remove(pr.key)
+			tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", status.LookupStatusProxyOnly.String()))
 			return nil, status.LookupStatusProxyOnly
 		}
 		pcf := pcfResult.(ProgressiveCollapseForwarder)
@@ -437,8 +450,11 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 		writer := PrepareResponseWriter(w, pr.upstreamResponse.StatusCode, pr.upstreamResponse.Header)
 		pr.mapLock.Unlock()
 		if err := pcf.AddClient(writer); err != nil {
+			tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", status.LookupStatusError.String()))
 			return nil, status.LookupStatusError
 		}
+		tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", status.LookupStatusProxyHit.String()))
+		setHTTPStatusSpanAttributes(rsc.Tracer, pr.upstreamResponse.StatusCode, span)
 		return pr.upstreamResponse, status.LookupStatusProxyHit
 	}
 
@@ -523,16 +539,19 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 	})
 
 	if sfErr != nil {
+		tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", status.LookupStatusError.String()))
 		return nil, status.LookupStatusError
 	}
 	result := val.(*opcResult)
 	if result.cacheStatus == status.LookupStatusProxyOnly {
+		tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", status.LookupStatusProxyOnly.String()))
 		return nil, status.LookupStatusProxyOnly
 	}
 
 	// only serve the shared result for waiters; the executor already wrote its response
 	if !isExecutor {
 		if err := serveOPCResult(pr, result); err != nil {
+			tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", status.LookupStatusError.String()))
 			return nil, status.LookupStatusError
 		}
 	}
@@ -549,6 +568,8 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 	}
 
 	recordOPCResult(pr, pr.cacheStatus, pr.upstreamResponse.StatusCode, r.URL.Path, result.elapsed, pr.upstreamResponse.Header)
+	tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", pr.cacheStatus.String()))
+	setHTTPStatusSpanAttributes(rsc.Tracer, pr.upstreamResponse.StatusCode, span)
 
 	return pr.upstreamResponse, pr.cacheStatus
 }
@@ -587,6 +608,6 @@ func recordOPCResult(pr *proxyRequest, cacheStatus status.LookupStatus, httpStat
 	path string, elapsed float64, header http.Header,
 ) {
 	pr.mapLock.Lock()
-	recordResults(pr.Request, "ObjectProxyCache", cacheStatus, httpStatus, path, "", elapsed, nil, header)
+	recordResults(pr.Request, "ObjectProxyCache", cacheStatus, httpStatus, path, "", elapsed, nil, nil, header)
 	pr.mapLock.Unlock()
 }

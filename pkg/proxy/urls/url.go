@@ -53,6 +53,7 @@ func FromParts(scheme, host, path, query, fragment string) *url.URL {
 // to construct the full upstream URL
 func BuildUpstreamURL(r *http.Request, u *url.URL) *url.URL {
 	u2 := Clone(u)
+	applyUpstreamURLRewrites(r, u2)
 	u2.Path += r.URL.Path
 	u2.RawQuery = r.URL.RawQuery
 	u2.Fragment = r.URL.Fragment

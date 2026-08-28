@@ -54,6 +54,24 @@ func ProcessConfigs(rwl options.Lookup) (InstructionsLookup, error) {
 		}
 	}
 
+	// Propagate token use through chains without recursively walking cycles.
+	for range len(crw) {
+		var changed bool
+		for _, ri := range crw {
+			for _, instr := range ri {
+				ce, ok := instr.(*rwiChainExecutor)
+				if !ok || ce.hasTokens || !ce.rewriter.HasTokens() {
+					continue
+				}
+				ce.hasTokens = true
+				changed = true
+			}
+		}
+		if !changed {
+			break
+		}
+	}
+
 	return crw, nil
 }
 

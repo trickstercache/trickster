@@ -23,20 +23,24 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
+	mo "github.com/trickstercache/trickster/v2/pkg/backends/mysql/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	ro "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/negative"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	tro "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
+	corso "github.com/trickstercache/trickster/v2/pkg/proxy/cors/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
-	"gopkg.in/yaml.v2"
+
+	"github.com/stretchr/testify/require"
+	"go.yaml.in/yaml/v3"
 )
 
 type testOptions struct {
@@ -72,6 +76,102 @@ func TestNew(t *testing.T) {
 	}
 }
 
+func TestMySQLLimitsYAMLDefaultsCloneAndValidation(t *testing.T) {
+	o, err := fromYAML(`
+backends:
+  mysql1:
+    provider: mysql
+    origin_url: mysql://user:password@example.com/database
+    mysql:
+      max_result_rows: 42
+`, "mysql1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := o.Initialize("mysql1"); err != nil {
+		t.Fatal(err)
+	}
+	if o.MySQL == nil || o.MySQL.MaxResultRows != 42 ||
+		o.MySQL.MaxResultSizeBytes != mo.DefaultMaxResultSizeBytes {
+		t.Fatalf("unexpected MySQL options: %#v", o.MySQL)
+	}
+	clone := o.Clone()
+	clone.MySQL.MaxResultRows++
+	if o.MySQL.MaxResultRows != 42 {
+		t.Fatal("clone mutated original MySQL options")
+	}
+}
+
+func TestCORSOptionsYAML(t *testing.T) {
+	o, err := fromYAML(`
+backends:
+  test:
+    provider: reverseproxycache
+    origin_url: http://example.com
+    cors:
+      mode: merge
+      headers:
+        Access-Control-Allow-Origin: https://trickster.example.com
+    paths:
+      - path: /private
+        cors:
+          mode: disable
+`, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := o.Initialize("test"); err != nil {
+		t.Fatal(err)
+	}
+	if o.CORS == nil || o.CORS.Mode != corso.ModeMerge {
+		t.Fatalf("backend CORS mode = %v, want %q", o.CORS, corso.ModeMerge)
+	}
+	if got := o.CORS.Headers[headers.NameAllowOrigin]; got != "https://trickster.example.com" {
+		t.Fatalf("backend allow origin = %q", got)
+	}
+	if len(o.Paths) != 1 || o.Paths[0].CORS == nil || o.Paths[0].CORS.Mode != corso.ModeDisable {
+		t.Fatalf("path CORS = %v, want disable policy", o.Paths)
+	}
+	if o.Paths[0].CORS.Headers != nil {
+		t.Fatalf("disabled path CORS headers = %v, want nil", o.Paths[0].CORS.Headers)
+	}
+	if ok, err := o.Validate(); !ok || err != nil {
+		t.Fatalf("Validate() = %v, %v", ok, err)
+	}
+
+	clone := o.Clone()
+	clone.CORS.Headers[headers.NameAllowOrigin] = "https://other.example.com"
+	if o.CORS.Headers[headers.NameAllowOrigin] != "https://trickster.example.com" {
+		t.Fatal("clone mutated backend CORS headers")
+	}
+}
+
+func TestAccessLogOptionsYAML(t *testing.T) {
+	o, err := fromTestYAML()
+	if err != nil {
+		t.Fatal(err)
+	}
+	al := o.AccessLog
+	if al == nil {
+		t.Fatal("expected access_log options")
+	}
+	if al.Filename != "/tmp/test.access.log" || al.Format != "combined" ||
+		al.Rotation == nil || *al.Rotation.Size != 64*1024*1024 ||
+		al.Retention == nil || *al.Retention.Count != 3 ||
+		al.ErrorFilename != "/tmp/test.error.log" || al.ErrorThreshold != 500 {
+		t.Fatalf("unexpected access_log options: %+v", al)
+	}
+	clone := o.Clone()
+	*clone.AccessLog.Retention.Count = 9
+	if *o.AccessLog.Retention.Count != 3 {
+		t.Fatal("clone mutated access_log retention")
+	}
+	o.AccessLog.Format = "%Z"
+	if _, err := o.Validate(); err == nil {
+		t.Fatal("expected validation error for invalid access log format")
+	}
+}
+
 func TestClone(t *testing.T) {
 	p := po.New()
 	o := New()
@@ -83,9 +183,63 @@ func TestClone(t *testing.T) {
 	o.HealthCheck = &ho.Options{}
 	o.FastForwardPath = p
 	o.RuleOptions = &ro.Options{}
+	o.ReplicaGroup = "replicas-a"
 	o2 := o.Clone()
 	if o2.CacheName != "test" {
 		t.Error("clone failed")
+	}
+	if o2.ReplicaGroup != o.ReplicaGroup {
+		t.Errorf("clone replica group = %q, want %q", o2.ReplicaGroup, o.ReplicaGroup)
+	}
+}
+
+func TestReplicaGroupYAMLCloneAndInitialization(t *testing.T) {
+	o, err := fromYAML(`
+backends:
+  prom-a:
+    provider: prometheus
+    origin_url: http://example.com
+    replica_group: "  shard-a  "
+`, "prom-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := o.Initialize("prom-a"); err != nil {
+		t.Fatal(err)
+	}
+	if o.ReplicaGroup != "shard-a" {
+		t.Fatalf("replica group = %q, want shard-a", o.ReplicaGroup)
+	}
+	if clone := o.CloneYAMLSafe(); clone.ReplicaGroup != "shard-a" {
+		t.Fatalf("YAML-safe clone replica group = %q", clone.ReplicaGroup)
+	}
+	if out := o.ToYAML(); !strings.Contains(out, "replica_group: shard-a") {
+		t.Fatalf("round-trip YAML missing replica_group:\n%s", out)
+	}
+
+	unset := New()
+	if err := unset.Initialize("prom-b"); err != nil {
+		t.Fatal(err)
+	}
+	if unset.ReplicaGroup != "prom-b" {
+		t.Fatalf("default replica group = %q, want prom-b", unset.ReplicaGroup)
+	}
+	if out := unset.ToYAML(); strings.Contains(out, "replica_group:") {
+		t.Fatalf("implicit replica group should not be exported:\n%s", out)
+	}
+
+	nested := New()
+	nested.Provider = providers.ALB
+	nested.ReplicaGroup = "shard-a"
+	if err := nested.Initialize("nested-a"); err != nil {
+		t.Fatalf("nested ALB replica group rejected: %v", err)
+	}
+
+	unsupported := New()
+	unsupported.Provider = providers.ReverseProxyShort
+	unsupported.ReplicaGroup = "shard-a"
+	if err := unsupported.Initialize("proxy-a"); err == nil {
+		t.Fatal("expected replica group on reverse proxy backend to be rejected")
 	}
 }
 
@@ -153,6 +307,8 @@ func TestValidateConfigMappings(t *testing.T) {
 	o.NegativeCacheName = ""
 	tpm := o.Clone()
 	tpm.Name = "test_pool_member"
+	tpm.Provider = "rp"
+	tpm.ALBOptions = nil
 	ol["test_pool_member"] = tpm
 
 	err = ol.ValidateConfigMappings(co.Lookup{"test": nil}, negative.Lookups{},
@@ -173,9 +329,9 @@ func testStringValueValidationError(to *testOptions, location *string, testValue
 }
 
 type durationSwapper struct {
-	location   *time.Duration
-	restoreVal time.Duration
-	testValue  time.Duration
+	location   *timeconv.Duration
+	restoreVal timeconv.Duration
+	testValue  timeconv.Duration
 }
 
 func testDurationValueValidationError(to *testOptions, sws []durationSwapper) error {
@@ -287,7 +443,7 @@ func TestValidate(t *testing.T) {
 			sw: []durationSwapper{
 				{
 					location:  &o.ShardStep,
-					testValue: 1,
+					testValue: timeconv.Duration(1),
 				},
 			},
 			expected: nil,
@@ -297,11 +453,11 @@ func TestValidate(t *testing.T) {
 			sw: []durationSwapper{
 				{
 					location:  &o.MaxShardSizeTime,
-					testValue: 10,
+					testValue: timeconv.Duration(10),
 				},
 				{
 					location:  &o.ShardStep,
-					testValue: 32,
+					testValue: timeconv.Duration(32),
 				},
 			},
 			expected: ErrInvalidMaxShardSizeTime,
@@ -331,7 +487,7 @@ func TestValidate(t *testing.T) {
 
 	t.Run("maxShard edge cases", func(t *testing.T) {
 		opts := *o
-		opts.MaxShardSizeTime = 1 * time.Millisecond
+		opts.MaxShardSizeTime = timeconv.Duration(1 * time.Millisecond)
 		opts.MaxShardSizePoints = 1
 		to := &testOptions{Backends: Lookup{o.Name: &opts}}
 		require.ErrorIs(t, Lookup(to.Backends).Validate(), ErrInvalidMaxShardSize)
@@ -347,6 +503,12 @@ func TestInitialize(t *testing.T) {
 	err = o.Initialize("test")
 	if err != nil {
 		t.Error(err)
+	}
+
+	oInvalid := *o
+	oInvalid.MaxQueryRange = timeconv.Duration(-1 * time.Hour)
+	if err := oInvalid.Initialize("test_invalid"); err == nil {
+		t.Error("expected error for negative max_query_range, got nil")
 	}
 
 	o2, err := fromTestYAMLWithDefault()
@@ -461,6 +623,18 @@ func TestCloneYAMLSafe(t *testing.T) {
 	}
 
 	p2.RequestHeaders = map[string]string{headers.NameAuthorization: "trickster"}
+}
+
+func TestCloneYAMLSafeMasksOriginCredentials(t *testing.T) {
+	o := New()
+	o.OriginURL = "mysql://origin:origin-secret@example.com/database"
+	got := o.CloneYAMLSafe()
+	if strings.Contains(got.OriginURL, "origin-secret") {
+		t.Fatalf("CloneYAMLSafe exposed MySQL credentials: %+v", got)
+	}
+	if !strings.Contains(o.OriginURL, "origin-secret") {
+		t.Fatal("CloneYAMLSafe mutated the source options")
+	}
 }
 
 func TestToYAML(t *testing.T) {

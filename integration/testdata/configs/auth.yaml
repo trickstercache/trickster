@@ -3,14 +3,13 @@
 #
 # Config for TestAuth_HtpasswdBasic
 
-frontend:
-  listen_port: 8536
-
-metrics:
-  listen_port: 8537
-
-mgmt:
-  listen_port: 8538
+listeners:
+  default:
+    port: 8536
+  metrics:
+    port: 8537
+  mgmt:
+    port: 8538
 
 logging:
   log_level: info
