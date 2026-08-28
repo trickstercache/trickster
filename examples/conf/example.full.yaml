@@ -77,7 +77,7 @@
 #
 #   # A listener with protocol mysql accepts MySQL wire-protocol connections
 #   # and requires exactly one backend with provider mysql mapped to it via
-#   # the backend's listener_name. TLS ports are not supported on mysql
+#   # the backend's listener_names. TLS ports are not supported on mysql
 #   # listeners (MySQL negotiates TLS in-band on the same port).
 #   mysql1:
 #     protocol: mysql
@@ -99,6 +99,14 @@
 #     # structured origin_url does not expand ${VARIABLE}. Authenticator users
 #     # do support environment expansion. Relevant reloads restart and drain
 #     # this listener rather than moving established sessions.
+#
+#   # A ClickHouse listener accepts the Native binary protocol and maps to one
+#   # ClickHouse backend through that backend's listener_names option.
+#   clickhouse-native:
+#     protocol: clickhouse
+#     port: 8487
+#     # address: ''
+#     # connections_limit: 0
 
 # caches:
 #   default:
@@ -286,8 +294,8 @@ backends:
   #   origin_url: 'mysql://readonly:REDACTED@mysql-origin.example.com:3306/database'
   #   # Embedded passwords are redacted by sanitized configuration output and
   #   # YAML stringification. Protect the source file, which has the real value.
-  #   # listener_name must reference a listener whose protocol is mysql
-  #   listener_name: mysql1
+  #   # listener_names must reference a listener whose protocol is mysql
+  #   listener_names: [mysql1]
   #   # MySQL listeners require a named authenticator. The authenticator's
   #   # users are used for downstream MySQL native-password authentication.
   #   authenticator_name: example_auth_1
@@ -420,9 +428,9 @@ backends:
   # access this backend via http[s]://trickster-fqdn/default/ unless path_routing_disabled is true
   default:
 
-    # listener_name maps this backend to an inbound listener. The default is default.
-    # mgmt and metrics are reserved and cannot be selected by a backend.
-    listener_name: default
+    # listener_names maps this backend to compatible inbound listeners.
+    # Unbound ordinary backends use default; mgmt and metrics are reserved.
+    listener_names: [default]
 
     # provider identifies the backend provider.
     # Valid options are: prometheus, influxdb, clickhouse, graphite, mysql, rule, alb,
@@ -445,6 +453,12 @@ backends:
     # it can be as simple as http://example.com or as complex as https://example.com:8443/path/prefix
     # origin_url is a required configuration value
     origin_url: http://prometheus:9090
+
+#     # protocol selects the upstream wire protocol used to communicate with the origin.
+#     # When empty (default), HTTP is used. Supported values are provider-specific:
+#     #   clickhouse: 'native' — speak the native binary protocol to an upstream on port 9000
+#     # This is independent of listeners, which select the inbound protocol.
+#     protocol: ''
 
     # is_default describes whether this backend is the default backend considered when routing http requests
     # it is false, by default; but if you only have a single backend configured, is_default will be true unless explicitly set to false
@@ -578,6 +592,12 @@ backends:
 #     max_capture_bytes: 268435456
 
 #     # These next 7 settings only apply to Time Series backends
+
+#     # dpc_fallback_warning, when true (default), logs a warning when a query cannot be parsed
+#     # as a time range query and falls back from DPC (Delta Proxy Cache) to OPC (Object Proxy Cache).
+#     # Set to false to suppress these warnings (they will still appear at debug level).
+#     # Applies to SQL-based TSDB backends like ClickHouse that may receive non-time-series queries.
+#     dpc_fallback_warning: true
 
 #     # backfill_tolerance prevents new datapoints that fall within the tolerance window (relative to time.Now) from being permanently
 #     # cached. Think of it as "the newest N milliseconds of real-time data are preliminary and subject to updates, so refresh them periodically"

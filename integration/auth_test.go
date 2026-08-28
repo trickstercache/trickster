@@ -17,11 +17,11 @@
 package integration
 
 import (
-	"context"
 	"encoding/base64"
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -33,21 +33,14 @@ func TestAuth_HtpasswdBasic(t *testing.T) {
 		user = "test"
 		pass = "password"
 	)
-	htpwPath := "testdata/configs/htpasswd"
+	h := staticConfigHarness(t, "testdata/configs/auth.yaml")
+	htpwPath := filepath.Join(t.TempDir(), "htpasswd")
 	writeHtpasswd(t, htpwPath, user, pass)
-	t.Cleanup(func() { _ = os.Remove(htpwPath) })
+	rewriteGeneratedConfig(t, h.ConfigPath, "testdata/configs/htpasswd", htpwPath)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	go startTrickster(t, ctx, expectedStartError{}, "-config", "testdata/configs/auth.yaml")
+	h.start(t)
 
-	const (
-		frontAddr   = "127.0.0.1:8536"
-		metricsAddr = "127.0.0.1:8537"
-	)
-	waitForTrickster(t, metricsAddr)
-
-	promURL := "http://" + frontAddr + "/prom1/api/v1/query?" +
+	promURL := "http://" + h.BaseAddr + "/prom1/api/v1/query?" +
 		url.Values{"query": {"up"}}.Encode()
 
 	client := &http.Client{}

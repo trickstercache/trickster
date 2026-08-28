@@ -24,7 +24,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
-      - GF_INSTALL_PLUGINS=vertamedia-clickhouse-datasource
+      - GF_INSTALL_PLUGINS=vertamedia-clickhouse-datasource,grafana-clickhouse-datasource
     volumes:
       - ./docker-compose-data/grafana-config:/etc/grafana
       - ./docker-compose-data/dashboards:/var/lib/grafana/dashboards

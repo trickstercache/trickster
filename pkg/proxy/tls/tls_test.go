@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/config"
+	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
 	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
 )
@@ -167,6 +168,7 @@ func TestProcessTLSConfigs(t *testing.T) {
 
 func TestTLSCertConfig(t *testing.T) {
 	config := config.NewConfig()
+	config.Backends["default"].ListenerNames = []string{listener.DefaultFrontendName}
 
 	// test empty config condition #1 (ServeTLS is false, early bail)
 	n, err := config.TLSCertConfig()

@@ -84,6 +84,8 @@ The top-level `listeners` map configures inbound listeners. Trickster always aut
 Native MySQL listeners have additional protocol, authentication, TLS, and
 session-lifecycle requirements. See the [MySQL Provider Guide](mysql.md) before
 configuring `protocol: mysql`.
+ClickHouse Native listeners use `protocol: clickhouse`; see the
+[ClickHouse Support Guide](clickhouse.md) for ingress, origin, and TLS options.
 
 ```yaml
 listeners:
@@ -101,16 +103,18 @@ listeners:
 
 backends:
   default:
-    listener_name: default
+    listener_names: [default, private_api]
     provider: prometheus
     origin_url: http://prometheus:9090
   private:
-    listener_name: private_api
+    listener_names: [private_api]
     provider: reverseproxy
     origin_url: http://private-origin
 ```
 
-Backends use `default` when `listener_name` is omitted. A backend cannot select the reserved `mgmt` or `metrics` listeners, and validation fails when a backend names an undefined listener.
+`listener_names` binds a backend to one or more compatible listeners. An ordinary unbound backend uses `default`; internal routing targets remain unexposed. A backend cannot select the reserved `mgmt` or `metrics` listeners, and validation fails for undefined or provider-incompatible listeners.
+
+Each native listener maps to exactly one backend. Multiple HTTP listeners can share a backend, and ClickHouse can bind the same backend to HTTP and ClickHouse Native listeners.
 
 A user-defined listener with no mapped backend is not started and produces a warning. A configured TLS port is enabled only when at least one backend mapped to that listener provides a valid frontend certificate and key in its `tls` section; otherwise Trickster disables that TLS port and logs a warning.
 

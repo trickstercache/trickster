@@ -232,6 +232,45 @@ datasources:
     password: ""
     usePOST: true
 
+# ClickHouse (Official Grafana Plugin)
+- name: clickhouse-grafana-direct
+  type: grafana-clickhouse-datasource
+  access: proxy
+  editable: true
+  isDefault: false
+  jsonData:
+    host: clickhouse
+    port: 8123
+    protocol: http
+    defaultDatabase: default
+    username: default
+
+- name: clickhouse-grafana-trickster
+  type: grafana-clickhouse-datasource
+  access: proxy
+  editable: true
+  isDefault: false
+  jsonData:
+    host: host.docker.internal
+    port: 8480
+    path: /click1/
+    protocol: http
+    defaultDatabase: default
+    username: default
+
+- name: clickhouse-grafana-trickster-native
+  type: grafana-clickhouse-datasource
+  access: proxy
+  editable: true
+  isDefault: false
+  jsonData:
+    host: host.docker.internal
+    port: 8487
+    protocol: native
+    secure: false
+    defaultDatabase: default
+    username: default
+
 # Graphite
 # The uid is fixed on purpose: the trickster-graphite dashboard's datasource
 # variable defaults to it, and later stages add a graphite-trickster peer.

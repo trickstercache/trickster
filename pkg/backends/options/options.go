@@ -38,7 +38,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/evictionmethods"
 	"github.com/trickstercache/trickster/v2/pkg/cache/negative"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
-	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	do "github.com/trickstercache/trickster/v2/pkg/discovery/options"
 	yamlencoding "github.com/trickstercache/trickster/v2/pkg/encoding/yaml"
@@ -77,11 +76,18 @@ type Options struct {
 	// when it participates in a Time Series Merge pool.
 	// An empty value is initialized to the backend name.
 	ReplicaGroup string `yaml:"replica_group,omitempty"`
-	// ListenerName identifies the inbound listener that exposes this backend.
+	// ListenerName is appended to ListenerNames during configuration validation.
+	// Deprecated but remains for compatibility. Use ListenerNames directly.
 	ListenerName string `yaml:"listener_name,omitempty"`
+	// ListenerNames identifies every inbound listener exposing this backend.
+	ListenerNames []string `yaml:"listener_names,omitempty"`
 	// OriginURL provides the base upstream URL for all proxied requests to this Backend.
 	// it can be as simple as http://example.com or as complex as https://example.com:8443/path/prefix
 	OriginURL string `yaml:"origin_url,omitempty"`
+	// Protocol selects the upstream wire protocol used to communicate with the origin.
+	// When empty, HTTP is used. Supported values are provider-specific (e.g., "native"
+	// for ClickHouse to use the binary protocol on port 9000).
+	Protocol string `yaml:"protocol,omitempty"`
 	// Timeout defines how long the HTTP request will wait for a response before timing out
 	Timeout timeconv.Duration `yaml:"timeout,omitempty"`
 	// KeepAliveTimeout defines how long an open keep-alive HTTP connection remains idle before closing
@@ -191,6 +197,11 @@ type Options struct {
 	CORS *corso.Options `yaml:"cors,omitempty"`
 	// AccessLog configures access and error logging for this backend
 	AccessLog *alo.Options `yaml:"access_log,omitempty"`
+
+	// DPCFallbackWarning, when true (default), logs a warning when a query cannot
+	// be parsed as a time range query and falls back from DPC to OPC. Set to false
+	// to suppress these warnings (they will still appear at debug level).
+	DPCFallbackWarning *bool `yaml:"dpc_fallback_warning,omitempty"`
 
 	// IsDefault indicates if this is the d.Default backend for any request not matching a configured route
 	IsDefault bool `yaml:"is_default,omitempty"`
@@ -304,7 +315,6 @@ func New() *Options {
 		NegativeCacheName:            DefaultBackendNegativeCacheName,
 		Paths:                        make(po.List, 0, 10),
 		RevalidationFactor:           DefaultRevalidationFactor,
-		ListenerName:                 listener.DefaultFrontendName,
 		MaxShardSizePoints:           DefaultTimeseriesShardSize,
 		MaxShardSizeTime:             timeconv.Duration(DefaultTimeseriesShardSize),
 		ShardStep:                    timeconv.Duration(DefaultTimeseriesShardStep),
@@ -326,6 +336,7 @@ func (o *Options) Clone() *Options {
 		out.HealthCheck = o.HealthCheck.Clone()
 	}
 	out.Hosts = slices.Clone(o.Hosts)
+	out.ListenerNames = slices.Clone(o.ListenerNames)
 	out.CompressibleTypeList = slices.Clone(o.CompressibleTypeList)
 	if o.CompressibleTypes != nil {
 		out.CompressibleTypes = maps.Clone(o.CompressibleTypes)
@@ -695,6 +706,7 @@ func (l Lookup) Initialize() error {
 // any values that were set during YAML unmarshaling
 func (o *Options) Initialize(name string) error {
 	o.Name = name
+	o.NormalizeListenerNames()
 	o.ReplicaGroup = strings.TrimSpace(o.ReplicaGroup)
 	if !providers.IsSupportedTimeSeriesMergeProvider(o.Provider) &&
 		o.Provider != providers.ALB &&
@@ -703,9 +715,6 @@ func (o *Options) Initialize(name string) error {
 	}
 	if o.ReplicaGroup == "" {
 		o.ReplicaGroup = name
-	}
-	if o.ListenerName == "" {
-		o.ListenerName = listener.DefaultFrontendName
 	}
 	if o.MaxQueryRange < 0 {
 		return errors.New("invalid max_query_range: value must be greater than or equal to 0")
@@ -827,6 +836,21 @@ func (o *Options) UnmarshalYAML(value *yaml.Node) error {
 	o.retentionExplicit = yamlHasKey(value, "timeseries_retention_factor")
 	o.ApplyProviderSizingDefaults()
 	return nil
+}
+
+// NormalizeListenerNames merges the legacy binding and removes duplicate names.
+func (o *Options) NormalizeListenerNames() {
+	o.ListenerNames = slices.Clone(o.ListenerNames)
+	if o.ListenerName != "" {
+		o.ListenerNames = append(o.ListenerNames, o.ListenerName)
+	}
+	slices.Sort(o.ListenerNames)
+	o.ListenerNames = slices.Compact(o.ListenerNames)
+}
+
+// UsesListener reports whether this backend is exposed on the named listener.
+func (o *Options) UsesListener(name string) bool {
+	return o != nil && slices.Contains(o.ListenerNames, name)
 }
 
 func yamlHasKey(node *yaml.Node, key string) bool {

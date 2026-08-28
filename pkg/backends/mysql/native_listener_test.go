@@ -337,7 +337,7 @@ func directNativeTestConfig() *config.Config {
 	backend := validBackendOptions()
 	backend.Name = "mysql-direct"
 	backend.Provider = providers.MySQL
-	backend.ListenerName = "mysql-direct"
+	backend.ListenerNames = []string{"mysql-direct"}
 	c.Backends = bo.Lookup{"mysql-direct": backend}
 	return c
 }
@@ -419,7 +419,7 @@ func routedRestartTestConfig() *config.Config {
 	router := bo.New()
 	router.Name = "mysql-users"
 	router.Provider = providers.ALB
-	router.ListenerName = "mysql-users"
+	router.ListenerNames = []string{"mysql-users"}
 	router.ALBOptions = ao.New()
 	router.ALBOptions.MechanismName = names.MechanismUR
 	router.ALBOptions.UserRouter = &uropt.Options{
@@ -451,4 +451,28 @@ func routedRestartTestConfig() *config.Config {
 		"mysql-b":     newTarget("mysql-b"),
 	}
 	return c
+}
+
+func TestNativeListenerBindingsDoNotChangeRestartIdentity(t *testing.T) {
+	c := directNativeTestConfig()
+	a := nativeListenerAdapter{}
+	first, err := a.Describe(c, "mysql-direct")
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := c.Backends["mysql-direct"]
+	o.ListenerNames = append(o.ListenerNames, "mysql-other")
+	c.Listeners["mysql-other"] = c.Listeners["mysql-direct"].Clone()
+	for _, name := range o.ListenerNames {
+		got, err := a.Describe(c, name)
+		if err != nil || got.RestartKey != first.RestartKey {
+			t.Fatalf("binding %s changed identity: %v", name, err)
+		}
+	}
+	delete(c.Backends, "mysql-direct")
+	c.Backends["replacement"] = o
+	got, err := a.Describe(c, "mysql-direct")
+	if err != nil || got.RestartKey == first.RestartKey {
+		t.Fatal("backend replacement did not change listener identity")
+	}
 }

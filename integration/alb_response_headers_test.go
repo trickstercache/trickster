@@ -31,6 +31,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/integration/internal/portutil"
 	"github.com/trickstercache/trickster/v2/integration/promstub"
 
 	"github.com/stretchr/testify/assert"
@@ -86,9 +87,8 @@ func TestALBResponseHeadersTSMSetCookie(t *testing.T) {
 	t.Cleanup(upA.Close)
 	t.Cleanup(upB.Close)
 
-	frontPort := 19110
-	metricsPort := 19111
-	mgmtPort := 19112
+	ports, release := portutil.Reserve(t, 3)
+	frontPort, metricsPort, mgmtPort := ports[0], ports[1], ports[2]
 
 	yaml := fmt.Sprintf(albTestdata(t, "alb_response_headers/cookies.yaml.tmpl"),
 		frontPort, metricsPort, mgmtPort, upA.URL, upB.URL)
@@ -98,6 +98,7 @@ func TestALBResponseHeadersTSMSetCookie(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
+	release()
 	go startTrickster(t, ctx, expectedStartError{}, "-config", cfgPath)
 	waitForTrickster(t, fmt.Sprintf("127.0.0.1:%d", metricsPort))
 
@@ -205,9 +206,8 @@ func TestALBResponseHeadersTSMContentEncoding(t *testing.T) {
 	t.Cleanup(upA.Close)
 	t.Cleanup(upB.Close)
 
-	frontPort := 19120
-	metricsPort := 19121
-	mgmtPort := 19122
+	ports, release := portutil.Reserve(t, 3)
+	frontPort, metricsPort, mgmtPort := ports[0], ports[1], ports[2]
 
 	yaml := fmt.Sprintf(albTestdata(t, "alb_response_headers/encoding.yaml.tmpl"),
 		frontPort, metricsPort, mgmtPort, upA.URL, upB.URL)
@@ -217,6 +217,7 @@ func TestALBResponseHeadersTSMContentEncoding(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
+	release()
 	go startTrickster(t, ctx, expectedStartError{}, "-config", cfgPath)
 	waitForTrickster(t, fmt.Sprintf("127.0.0.1:%d", metricsPort))
 

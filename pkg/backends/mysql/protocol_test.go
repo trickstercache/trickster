@@ -1755,8 +1755,8 @@ func (h *deltaOriginHandler) ComQuery(_ *vtmysql.Conn, query string,
 	if analysis.Mode != sqlanalyzer.CacheModeDelta || analysis.Plan == nil {
 		return fmt.Errorf("unexpected delta origin query: %s", query)
 	}
-	start := floorTime(analysis.Plan.LowerBound.Value, analysis.Plan.Step)
-	end := floorTime(analysis.Plan.UpperBound.Value.Add(-time.Nanosecond), analysis.Plan.Step)
+	start := sqlanalyzer.FloorBucket(analysis.Plan.LowerBound.Value, analysis.Plan.Step, 0)
+	end := sqlanalyzer.FloorBucket(analysis.Plan.UpperBound.Value.Add(-time.Nanosecond), analysis.Plan.Step, 0)
 	rows := make([][]sqltypes.Value, 0, int(end.Sub(start)/analysis.Plan.Step)+1)
 	for current := start; !current.After(end); current = current.Add(analysis.Plan.Step) {
 		rows = append(rows, []sqltypes.Value{

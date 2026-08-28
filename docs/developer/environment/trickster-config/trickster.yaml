@@ -4,6 +4,10 @@ listeners:
   mysql1:
     protocol: mysql
     port: 8486
+  # clickhouse-native exposes click1 through the ClickHouse binary protocol.
+  clickhouse-native:
+    protocol: clickhouse
+    port: 8487
 authenticators:
   mysql-grafana:
     provider: basic
@@ -104,7 +108,7 @@ backends:
   mysql1:
     provider: mysql
     origin_url: 'mysql://trickster:trickster-dev-upstream@127.0.0.1:3306/trickster'
-    listener_name: mysql1
+    listener_names: [mysql1]
     authenticator_name: mysql-grafana
     cache_name: mem1
     healthcheck:
@@ -113,6 +117,7 @@ backends:
   click1:
     provider: clickhouse
     origin_url: 'http://127.0.0.1:8123'
+    listener_names: [default, clickhouse-native]
     cache_name: mem1
     backfill_tolerance: 60s
     timeseries_retention_factor: 2048

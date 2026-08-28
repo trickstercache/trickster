@@ -826,7 +826,11 @@ func fetchExtents(
 			}
 
 			if resp.StatusCode == http.StatusOK && len(body) > 0 {
-				nts, ferr := wur(getDecoderReader(resp), rsc.TimeRangeQuery)
+				dr := getDecoderReader(resp)
+				if format := resp.Header.Get("X-ClickHouse-Format"); format != "" {
+					dr = timeseries.NewFormatHintReader(dr, format)
+				}
+				nts, ferr := wur(dr, rsc.TimeRangeQuery)
 				if ferr != nil {
 					logger.Error("proxy object unmarshaling failed",
 						logging.Pairs{"detail": ferr.Error()})

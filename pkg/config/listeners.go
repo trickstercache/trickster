@@ -17,6 +17,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 
@@ -51,6 +52,15 @@ func (c *Config) detectListenerSections(yml string) error {
 			return fmt.Errorf("marshal listener %q override: %w", name, err)
 		}
 		c.listenerOverrides[name] = data
+	}
+	if raw.Frontend.Kind != 0 {
+		fields := make(map[string]yaml.Node)
+		if err := raw.Frontend.Decode(&fields); err != nil {
+			return err
+		}
+		if _, ok := fields["protocol_listeners"]; ok {
+			return errors.New("frontend.protocol_listeners is unsupported; use named listeners with protocol: clickhouse and backend listener_names")
+		}
 	}
 	c.legacyFrontendUsed = raw.Frontend.Kind != 0
 	c.legacyMetricsUsed = raw.Metrics.Kind != 0

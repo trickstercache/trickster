@@ -53,10 +53,7 @@ func (c *Config) tlsCertConfig(listenerName string) (*tls.Config, error) {
 		// A CA-only TLS block (certificate_authority_paths with no
 		// FullChainCertPath/PrivateKeyPath) is for outbound verification
 		// and must not feed LoadX509KeyPair. See #940.
-		if o.ListenerName == "" {
-			o.ListenerName = listener.DefaultFrontendName
-		}
-		if o.ListenerName == listenerName && o.TLS != nil && o.TLS.ServeTLS &&
+		if o.UsesListener(listenerName) && o.TLS != nil && o.TLS.ServeTLS &&
 			o.TLS.FullChainCertPath != "" && o.TLS.PrivateKeyPath != "" {
 			to = append(to, o)
 		}

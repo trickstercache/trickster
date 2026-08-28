@@ -25,11 +25,7 @@ import (
 )
 
 func TestRule(t *testing.T) {
-	h := tricksterHarness{
-		ConfigPath:  "testdata/configs/rule.yaml",
-		BaseAddr:    "127.0.0.1:8550",
-		MetricsAddr: "127.0.0.1:8551",
-	}
+	h := staticConfigHarness(t, "testdata/configs/rule.yaml")
 	h.start(t)
 	waitForPrometheusData(t, "127.0.0.1:9090")
 

@@ -34,6 +34,15 @@ func (c *Client) observeAnalysis(analysis sqlanalyzer.Analysis) {
 	}
 	mode := analysis.Mode.String()
 	metrics.SQLQueryAnalysis.WithLabelValues(backendName, clickHouseDialect, mode, reason).Inc()
+	if c != nil && c.TimeseriesBackend != nil && analysis.Mode == sqlanalyzer.CacheModeObject &&
+		analysis.Reason != sqlanalyzer.ReasonUnsupportedBucket && analysis.Reason != sqlanalyzer.ReasonNotTimeRange {
+		options := c.Configuration()
+		if options != nil && (options.DPCFallbackWarning == nil || *options.DPCFallbackWarning) {
+			logger.Warn("query fell back from DPC to OPC", logging.Pairs{
+				"backend_name": backendName, "dialect": clickHouseDialect, "reason": reason,
+			})
+		}
+	}
 	if logger.Level() == level.Debug {
 		logger.Debug("sql query cache eligibility analyzed", logging.Pairs{
 			"backend_name": backendName,

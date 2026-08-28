@@ -680,7 +680,7 @@ func TestRegisterDefaultBackendRoutes(t *testing.T) {
 func TestRegisterDefaultBackendRoutesForListeners(t *testing.T) {
 	conf := config.NewConfig()
 	o := conf.Backends["default"]
-	o.ListenerName = "custom"
+	o.ListenerNames = []string{"custom"}
 	o.IsDefault = true
 	p := po.New()
 	p.Path = "/"
@@ -733,5 +733,58 @@ func TestNewAccessLogger(t *testing.T) {
 	o.AccessLog.Format = "%Z"
 	if newAccessLogger(nil, o) != nil {
 		t.Error("expected nil logger on construction error")
+	}
+}
+
+func TestBackendRoutesOnMultipleHTTPListeners(t *testing.T) {
+	conf := config.NewConfig()
+	o := bo.New()
+	o.Name = "shared"
+	o.Provider = providers.ReverseProxyShort
+	o.ListenerNames = []string{"small", "large"}
+	o.IsDefault = true
+	o.Hosts = []string{"origin.example"}
+	conf.Backends = bo.Lookup{o.Name: o}
+	routers := map[string]router.Router{}
+	for _, name := range []string{"small", "large", "unused"} {
+		lo := listener.New(name)
+		limit := int64(64)
+		if name == "small" {
+			limit = 2
+		}
+		lo.MaxRequestBodySizeBytes = &limit
+		conf.Listeners[name] = lo
+		routers[name] = lm.NewRouter()
+	}
+	path := po.New()
+	path.Path = "/echo"
+	path.Methods = []string{http.MethodPost}
+	path.MatchType = matching.PathMatchTypeExact
+	path.Handler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusAccepted) })
+	o.Paths = po.List{path}
+	client, err := reverseproxy.NewClient(o.Name, o, lm.NewRouter(), nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clients := backends.Backends{o.Name: client}
+	if err := RegisterProxyRoutesForListeners(conf, clients, routers, lm.NewRouter(), nil, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	RegisterDefaultBackendRoutesForListeners(routers, conf, clients, nil)
+	for _, name := range []string{"small", "large", "unused"} {
+		for _, target := range []string{"/shared/echo", "/echo", "http://origin.example/echo"} {
+			for _, body := range []string{"a", "abcd"} {
+				req := httptest.NewRequest(http.MethodPost, target, strings.NewReader(body))
+				rec := httptest.NewRecorder()
+				routers[name].ServeHTTP(rec, req)
+				accepted := name != "unused" && (name != "small" || len(body) <= 2)
+				if (rec.Code == http.StatusAccepted) != accepted {
+					t.Fatalf("%s %s body=%q: status %d", name, target, body, rec.Code)
+				}
+			}
+		}
+	}
+	if clients[o.Name] != client || len(clients) != 2 {
+		t.Fatal("duplicated backend clients for listener bindings")
 	}
 }

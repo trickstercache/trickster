@@ -110,11 +110,7 @@ func (m *Monitor) Apply(conf *config.Config, lg *listener.Group) {
 		}
 		for _, backendName := range backendNames {
 			b := conf.Backends[backendName]
-			backendListener := b.ListenerName
-			if backendListener == "" {
-				backendListener = listenerconfig.DefaultFrontendName
-			}
-			if backendListener != name || b.TLS == nil || !b.TLS.ServeTLS ||
+			if !b.UsesListener(name) || b.TLS == nil || !b.TLS.ServeTLS ||
 				b.TLS.FullChainCertPath == "" || b.TLS.PrivateKeyPath == "" {
 				continue
 			}

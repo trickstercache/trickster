@@ -46,6 +46,8 @@ func NativeListenerAdapter() native.Adapter {
 	return nativeListenerAdapter{}
 }
 
+func (nativeListenerAdapter) SupportsHTTP() bool { return false }
+
 func (nativeListenerAdapter) Protocol() string { return listenerconfig.ProtocolMySQL }
 
 func (nativeListenerAdapter) Configured(o *listenerconfig.Options) bool {
@@ -170,7 +172,7 @@ func nativeProtocolConfig(c *config.Config, listenerName string) (*ProtocolConfi
 		return nil, false, nil
 	}
 	for backendName, o := range c.Backends {
-		if o == nil || o.ListenerName != listenerName {
+		if !o.UsesListener(listenerName) {
 			continue
 		}
 		if isNativeUserRouter(o) {
@@ -185,13 +187,14 @@ func nativeProtocolConfig(c *config.Config, listenerName string) (*ProtocolConfi
 			if listenerOptions := c.Listeners[listenerName]; listenerOptions != nil {
 				protocolConfig.ApplyListenerOptions(listenerOptions.MySQL)
 			}
-			protocolConfig.RestartKey = routedRestartKey(c, o, users)
+			protocolConfig.RestartKey = backendName + ":" + routedRestartKey(c, o, users)
 			return &protocolConfig, true, nil
 		}
 		protocolConfig, err := ProtocolConfigFromOptions(o)
 		if listenerOptions := c.Listeners[listenerName]; listenerOptions != nil {
 			protocolConfig.ApplyListenerOptions(listenerOptions.MySQL)
 		}
+		protocolConfig.RestartKey = backendName + ":" + protocolConfig.RestartKey
 		return &protocolConfig, false, err
 	}
 	return nil, false, nil
@@ -249,7 +252,7 @@ func backendForListener(c *config.Config, listenerName string) string {
 		return ""
 	}
 	for name, o := range c.Backends {
-		if o != nil && o.ListenerName == listenerName {
+		if o.UsesListener(listenerName) {
 			return name
 		}
 	}

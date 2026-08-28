@@ -40,22 +40,6 @@ func BenchmarkClickHouseParseAndTokenize(b *testing.B) {
 	}
 }
 
-// BenchmarkClickHouseAnalyze measures AfterShip parsing and semantic analysis
-// without adapting the result to TimeRangeQuery.
-func BenchmarkClickHouseAnalyze(b *testing.B) {
-	analyzer := analyzer{}
-	now := time.Unix(1_700_000_000, 0)
-	b.ReportAllocs()
-	for b.Loop() {
-		analysis := analyzer.Analyze(tq03, now)
-		if analysis.Err != nil {
-			b.Fatal(analysis.Err)
-		}
-	}
-}
-
-// BenchmarkClickHouseRenderExtent measures immutable cache-miss template
-// rendering independently from initial parsing and analysis.
 func BenchmarkClickHouseRenderExtent(b *testing.B) {
 	trq, _, _, err := parse(tq03, nil)
 	if err != nil {

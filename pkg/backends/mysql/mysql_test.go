@@ -482,7 +482,7 @@ func TestDeltaWindowValidationAndFlooring(t *testing.T) {
 		t.Fatalf("short unaligned window = %+v, %v", window, err)
 	}
 	negative := time.Unix(-61, 500)
-	if got := floorTime(negative, time.Minute); got.After(negative) || negative.Sub(got) >= time.Minute {
+	if got := sqlanalyzer.FloorBucket(negative, time.Minute, 0); got.After(negative) || negative.Sub(got) >= time.Minute {
 		t.Fatalf("negative floor = %v for %v", got, negative)
 	}
 }

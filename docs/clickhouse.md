@@ -4,9 +4,96 @@ Trickster will accelerate ClickHouse queries that return time series data normal
 
 ## Scope of Support
 
-Trickster is tested with the [ClickHouse DataSource Plugin for Grafana](https://grafana.com/grafana/plugins/vertamedia-clickhouse-datasource) v1.9.3 by Vertamedia, and supports acceleration of queries constructed by this plugin using the plugin's built-in `$timeSeries` macro.  Trickster also supports several other query formats that return "time series like" data.
 
-Trickster also supports the ClickHouse Go SDK (`clickhouse-go/v2`). Queries made through the SDK's HTTP protocol — including those using `clickhouse.OpenDB` — are proxied and cached through Trickster. The SDK's Native binary protocol is supported via transparent proxying (OPC).
+Trickster is tested with the 
+
+Trickster is tested with the official [ClickHouse DataSource Plugin for Grafana](https://grafana.com/grafana/plugins/grafana-clickhouse-datasource/) v4.21.1 and supports acceleration of queries constructed by this plugin using its built-in time macros like `$__fromTime` and `$__toTime`. Delta caching with this an other plugins (e.g., Altinity/Vertamedia) depends on the supported query shapes below. Trickster also supports several other query formats that return "time series like" data.
+
+Trickster also supports the ClickHouse Go SDK (`clickhouse-go/v2`) over its HTTP and Native protocols, including `clickhouse.OpenDB`.
+
+### Native Binary Protocol Support
+
+Inbound and upstream protocols are configured independently:
+
+- A named listener with `protocol: clickhouse` accepts Native client connections.
+- A ClickHouse backend with `protocol: native` uses the Native protocol for its origin. An empty protocol or `protocol: http` uses HTTP.
+
+```yaml
+listeners:
+  default:
+    protocol: http
+    port: 8480
+  clickhouse-native:
+    protocol: clickhouse
+    port: 8487
+
+backends:
+  click1:
+    provider: clickhouse
+    origin_url: http://clickhouse:8123
+    listener_names: [default, clickhouse-native]
+    cache_name: default
+```
+
+This exposes one HTTP route at `/click1/` and one Native listener on port 8487, backed by the same cache and HTTP ClickHouse origin. A Native listener must map to exactly one backend; ALB and user-router multiplexing are not supported.
+
+To use a Native origin instead, set the backend protocol and point `origin_url` at ClickHouse's Native port:
+
+```yaml
+backends:
+  click1:
+    provider: clickhouse
+    origin_url: http://clickhouse:9000
+    protocol: native
+```
+
+All four HTTP/Native ingress and HTTP/Native origin combinations are supported. Native credentials, database, query settings, parameters, and query IDs are forwarded to the origin. Native identity pools are bounded to 64 credential/database combinations per backend.
+
+#### TLS
+
+Native listener TLS uses the backend's server certificate. Set `require_tls: true` and provide both certificate paths:
+
+```yaml
+listeners:
+  clickhouse-native-tls:
+    protocol: clickhouse
+    port: 9441
+    tls_watch_interval: 30s
+
+backends:
+  click1-tls:
+    provider: clickhouse
+    origin_url: http://clickhouse:8123
+    listener_names: [clickhouse-native-tls]
+    require_tls: true
+    tls:
+      full_chain_cert_path: /etc/trickster/tls/server.crt
+      private_key_path: /etc/trickster/tls/server.key
+```
+
+Certificate changes are hot-swapped. Since `require_tls` applies to every binding of a backend, use a separate backend entry when plaintext and TLS listeners must coexist.
+
+For a TLS Native origin, use an `https` origin URL with the Native protocol. The common backend TLS options configure origin verification and optional mutual TLS:
+
+```yaml
+backends:
+  click1:
+    provider: clickhouse
+    origin_url: https://clickhouse:9440
+    protocol: native
+    tls:
+      certificate_authority_paths: [/etc/trickster/tls/origin-ca.crt]
+      client_cert_path: /etc/trickster/tls/client.crt
+      client_key_path: /etc/trickster/tls/client.key
+```
+
+#### Native Limitations
+
+The Native listener supports SELECT queries, ping/pong, revision 54460 framing, structured errors, and LZ4 compression. `INSERT`, external tables, and session-changing `USE` or `SET` statements are rejected; select a database and settings per request. `ClientCancel` is accepted as a no-op and does not asynchronously cancel an active upstream request.
+
+Supported native protocol data types: all integer types (8–256 bit), Float32/64, String, FixedString(N), DateTime, DateTime64, Date, Date32, UUID, IPv4, IPv6, Enum8/16, Bool, Nullable(T), Array(T), Map(K,V), Tuple(T1,T2,...), LowCardinality(T), and Decimal.
+
+Native wire clients receive Native blocks. HTTP clients using a Native origin may request JSON, Native, CSV, or TSV-family output; compound columns in CSV/TSV and unsupported formats return an error. The modeler recognizes Native origin responses through the `X-ClickHouse-Format` response header, and HTTP Native framing honors `client_protocol_version`.
 
 Trickster parses incoming ClickHouse statements into a full abstract syntax tree using the [AfterShip ClickHouse SQL parser](https://github.com/AfterShip/clickhouse-sql-parser), then applies its own semantic analysis to determine whether a query is eligible for time series delta caching and, if so, its timestamp column, bucket cadence, time range, grouping tags, and cache identity. The cache key is derived from a canonical form of the query in which the requested time range is replaced with placeholders, so requests for different time ranges of the same logical series share one delta cache entry.
 
@@ -36,19 +123,27 @@ This is the approach used by the Grafana plugin. The argument to the ClickHouse 
 SELECT toStartOfInterval(time_col, INTERVAL n unit) [AS alias]
 ```
 
-with a positive constant `n` and a unit of `second`, `minute`, `hour`, `day`, or `week`; or one of the fixed-period functions:
+with a positive constant `n` and a unit of `millisecond`, `second`, `minute`, `hour`, `day`, or `week`; or one of the fixed-period functions:
 
 ```text
+toStartOfNanosecond
+toStartOfMicrosecond
+toStartOfMillisecond
+toStartOfSecond
 toStartOfMinute
 toStartOfFiveMinute
 toStartOfTenMinutes
 toStartOfFifteenMinutes
+timeSlot
 toStartOfHour
 toStartOfDay
+toStartOfWeek
 toMonday
 ```
 
-The time column may be a plain, qualified (`table.col`), or quoted identifier, optionally wrapped in `toDateTime`, `toInt32`, or `toUInt32`. Integer constants defined in a scalar `WITH` clause may be used for the step value. Timezone-parameter variants of these functions (for example `toStartOfHour(time_col, 'America/Denver')`) are not eligible for delta caching and are served through the OPC.
+`date_trunc('unit', time_col)` and `dateTrunc` support the same fixed units. `toStartOfWeek` uses ClickHouse's Sunday phase while `toMonday` and weekly `date_trunc` use Monday. Calendar-length month, quarter, and year buckets are served through the OPC.
+
+The time column may be a plain, qualified (`table.col`), or quoted identifier, optionally wrapped in `toDateTime`, `toInt32`, or `toUInt32`. Integer constants defined in a scalar `WITH` clause may be used for the step value. Timezone-parameter variants of these functions (for example `toStartOfHour(time_col, 'America/Denver')`) are not eligible for delta caching and are served through the OPC. The current SQL parser does not accept `INTERVAL MICROSECOND` or `INTERVAL NANOSECOND`; use the corresponding fixed `toStartOf...` function.
 
 ### Determining the Requested Time Range
 
@@ -59,7 +154,7 @@ Two predicate targets are supported, with different rules:
 - **The raw time column** (the column inside the bucket function): the lower bound must be inclusive (`>=`) and the upper bound exclusive (`<`), and both values must fall exactly on bucket boundaries. Other comparators — including `BETWEEN` — describe partial buckets whose aggregates cannot be safely cached, so those queries are served through the OPC.
 - **The bucket alias** (the output of the bucket expression): `>`, `>=`, `<`, `<=`, and `BETWEEN` are all supported, because bucket outputs are discrete; Trickster normalizes each comparator to the first and last included bucket.
 
-Bound values may be expressed as epoch integers, ClickHouse string dates in the form `2006-01-02 15:04:05` (or date-only, or RFC3339), `toDateTime(n)` or `toDate(n)` wrappers, `WITH`-clause constants, or `now()` with optional addition or subtraction of seconds. All string times are assumed to be UTC; timezone-qualified conversions such as `toDateTime(n, 'America/Denver')` are not eligible.
+Bound values may be expressed as epoch integers, ClickHouse string dates in the form `2006-01-02 15:04:05` (or date-only, or RFC3339), `toDateTime(n)`, `toDateTime64(n, precision)`, or `toDate(n)` wrappers, `WITH`-clause constants, or `now()`/`now64()` with optional addition or subtraction of seconds. DateTime64 precision is retained. Floating epoch bounds and timezone-qualified conversions such as `toDateTime(n, 'America/Denver')` are not eligible.
 
 If no upper bound is present, Trickster caches results up to the current time and inserts a safe upper bound into origin requests automatically.
 

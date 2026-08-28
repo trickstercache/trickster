@@ -4,6 +4,8 @@ backends:
   default:
     provider: graphite
     listener_name: graphite_port
+    listener_names:
+    - graphite_port
     origin_url: http://graphite:80
     timeout: 1m0s
     keep_alive_timeout: 2m0s
