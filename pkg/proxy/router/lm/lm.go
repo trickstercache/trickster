@@ -86,7 +86,7 @@ func (rt *lmRouter) RegisterRoute(path string, hosts, methods []string,
 	case matching.PathMatchTypeRegex:
 		var err error
 		if re, err = regexp.Compile(path); err != nil {
-			return fmt.Errorf("%w: %s", errors.ErrInvalidPath, err)
+			return fmt.Errorf("%w: %w", errors.ErrInvalidPath, err)
 		}
 	default:
 		return errors.ErrInvalidMatchType
