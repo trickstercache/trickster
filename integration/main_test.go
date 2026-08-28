@@ -174,6 +174,46 @@ func waitForClickHouseData(t *testing.T, clickhouseAddr string) {
 	}, 5*time.Minute, 2*time.Second, "ClickHouse trips data never became available")
 }
 
+// waitForGraphiteData waits for the developer environment's generator to be
+// streaming current data. Unlike the other origins, Graphite answers a query
+// for an unknown metric with an empty list rather than an error, so the wait
+// is on datapoints appearing rather than on the request succeeding.
+func waitForGraphiteData(t *testing.T, graphiteAddr string) {
+	t.Helper()
+	require.EventuallyWithT(t, func(collect *assert.CollectT) {
+		q := url.Values{"target": {"dev.fast.cpu.host01.percent"},
+			"from": {"-10min"}, "until": {"-1min"}, "format": {"json"}}
+		resp, err := http.Get("http://" + graphiteAddr + "/render?" + q.Encode())
+		if !assert.NoError(collect, err) {
+			return
+		}
+		defer resp.Body.Close()
+		b, err := io.ReadAll(resp.Body)
+		if !assert.NoError(collect, err) {
+			return
+		}
+		if !assert.Equal(collect, 200, resp.StatusCode, "graphite not ready: %s", string(b)) {
+			return
+		}
+		var series []struct {
+			Datapoints [][2]*float64 `json:"datapoints"`
+		}
+		if !assert.NoError(collect, json.Unmarshal(b, &series)) {
+			return
+		}
+		if !assert.NotEmpty(collect, series, "waiting for Graphite seed data") {
+			return
+		}
+		var values int
+		for _, p := range series[0].Datapoints {
+			if p[0] != nil {
+				values++
+			}
+		}
+		assert.Greater(collect, values, 0, "waiting for the generator to write current data")
+	}, 2*time.Minute, 2*time.Second, "Graphite data never became available")
+}
+
 func waitForInfluxDBData(t *testing.T, influxAddr string) {
 	t.Helper()
 	require.EventuallyWithT(t, func(collect *assert.CollectT) {

@@ -31,6 +31,7 @@ import (
 	cache "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
+	disco "github.com/trickstercache/trickster/v2/pkg/discovery/options"
 	yamlencoding "github.com/trickstercache/trickster/v2/pkg/encoding/yaml"
 	fropt "github.com/trickstercache/trickster/v2/pkg/frontend/options"
 	lo "github.com/trickstercache/trickster/v2/pkg/observability/logging/options"
@@ -53,6 +54,9 @@ type Config struct {
 	Backends bo.Lookup `yaml:"backends,omitempty"`
 	// Caches is a map of CacheConfigs
 	Caches cache.Lookup `yaml:"caches,omitempty"`
+	// Discovery is a map of named discoverer configurations for ALB pool
+	// autodiscovery
+	Discovery disco.Lookup `yaml:"discovery,omitempty"`
 	// Frontend provides configurations about the Proxy Front End
 	// Frontend is deprecated and will be phased out in a future release
 	Frontend *fropt.Options `yaml:"frontend,omitempty"`
@@ -322,6 +326,10 @@ func (c *Config) Clone() *Config {
 
 	for k, v := range c.Caches {
 		nc.Caches[k] = v.Clone()
+	}
+
+	if len(c.Discovery) > 0 {
+		nc.Discovery = c.Discovery.Clone()
 	}
 
 	for k, v := range c.NegativeCacheConfigs {

@@ -106,6 +106,7 @@ func (c *Config) SanitizedClone() *Config {
 			sanitizePathAuthenticatorReferences(opts, authNameMap)
 			sanitizeBackendReferences(opts, backendNameMap)
 			sanitizePathHeaderValues(opts)
+			sanitizeGraphiteOriginCredentials(opts)
 		}
 		renamedBackends[newName] = opts
 	}
@@ -302,9 +303,9 @@ func sanitizeBackendReferences(opts *bo.Options, backendNameMap map[string]strin
 	if opts.ALBOptions == nil {
 		return
 	}
-	for i, name := range opts.ALBOptions.Pool {
-		if newName, ok := backendNameMap[name]; ok {
-			opts.ALBOptions.Pool[i] = newName
+	for i, member := range opts.ALBOptions.Pool {
+		if newName, ok := backendNameMap[member.Name]; ok {
+			opts.ALBOptions.Pool[i].Name = newName
 		}
 	}
 	if opts.ALBOptions.UserRouter == nil {
@@ -397,6 +398,18 @@ func sanitizePathHeaderValues(opts *bo.Options) {
 				path.ResponseHeaders[k] = sanitizedSecret
 			}
 		}
+	}
+}
+
+func sanitizeGraphiteOriginCredentials(opts *bo.Options) {
+	if opts.Graphite == nil {
+		return
+	}
+	if opts.Graphite.OriginPassword != "" {
+		opts.Graphite.OriginPassword = sanitizedSecret
+	}
+	if opts.Graphite.OriginAuthorization != "" {
+		opts.Graphite.OriginAuthorization = sanitizedSecret
 	}
 }
 

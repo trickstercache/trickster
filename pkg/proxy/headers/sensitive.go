@@ -27,9 +27,14 @@ var sensitiveCredentials = sets.New([]string{NameAuthorization})
 // HideAuthorizationCredentials replaces any sensitive HTTP header values with 5
 // asterisks sensitive headers are defined in the sensitiveCredentials map
 func HideAuthorizationCredentials[m ~map[K]V, K ~string, V ~string](headers m) {
-	// strip Authorization Headers
-	for k := range headers {
-		if _, ok := sensitiveCredentials[string(k)]; ok {
+	// keys match canonically behind any '+'/'-' update operator; an empty
+	// value carries no credential (it can declare an opt-out) and is preserved
+	for k, v := range headers {
+		name := string(k)
+		if len(name) > 0 && (name[0] == '+' || name[0] == '-') {
+			name = name[1:]
+		}
+		if _, ok := sensitiveCredentials[http.CanonicalHeaderKey(name)]; ok && v != "" {
 			headers[k] = "*****"
 		}
 	}

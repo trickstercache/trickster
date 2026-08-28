@@ -22,6 +22,8 @@ caches:
     provider: memory
   fs1:
     provider: filesystem
+  graphite_fs:
+    provider: filesystem
   redis:
     provider: redis
     redis:
@@ -114,6 +116,20 @@ backends:
     cache_name: mem1
     backfill_tolerance: 60s
     timeseries_retention_factor: 2048
+  graphite1:
+    provider: graphite
+    origin_url: 'http://127.0.0.1:8081'
+    # dedicated cache so graphite's cache metrics stay separable from the
+    # other backends on the Graphite dashboard; filesystem, because the
+    # memory provider exports no usage/eviction gauges for the storage panels
+    cache_name: graphite_fs
+    # max_object_size_bytes and timeseries_retention_factor are deliberately
+    # not set: the graphite provider defaults them to 64MB and 524288 points
+    # (pkg/backends/graphite/options/defaults.go), which the dashboard's
+    # widest panel needs and this environment therefore exercises. The
+    # generic backend defaults of 512KB and 1024 points would reject the
+    # 120d storage panel (~1.6MB of JSON) on every refresh and crop
+    # everything past ~3.5 days at a 5m step.
   rp1:
     provider: proxy
     origin_url: 'http://127.0.0.1:9090'

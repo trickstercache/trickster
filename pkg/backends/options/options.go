@@ -26,7 +26,9 @@ import (
 	"strings"
 	"time"
 
+	albnames "github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
+	gro "github.com/trickstercache/trickster/v2/pkg/backends/graphite/options"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	mo "github.com/trickstercache/trickster/v2/pkg/backends/mysql/options"
 	prop "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/options"
@@ -38,6 +40,7 @@ import (
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
+	do "github.com/trickstercache/trickster/v2/pkg/discovery/options"
 	yamlencoding "github.com/trickstercache/trickster/v2/pkg/encoding/yaml"
 	alo "github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog/options"
 	tro "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
@@ -183,6 +186,8 @@ type Options struct {
 	Prometheus *prop.Options `yaml:"prometheus,omitempty"`
 	// MySQL holds limits specific to MySQL origin result processing.
 	MySQL *mo.Options `yaml:"mysql,omitempty"`
+	// Graphite holds options specific to graphite backends
+	Graphite *gro.Options `yaml:"graphite,omitempty"`
 
 	// TLS is the TLS Configuration for the Frontend and Backend
 	TLS *to.Options `yaml:"tls,omitempty"`
@@ -196,6 +201,12 @@ type Options struct {
 
 	// IsDefault indicates if this is the d.Default backend for any request not matching a configured route
 	IsDefault bool `yaml:"is_default,omitempty"`
+	// IsTemplate indicates this backend is held as a template for ALB
+	// autodiscovery: it is cloned per discovered pool member, and is itself
+	// never routed, never eligible for is_default, never a static ALB pool
+	// member, and exempt from validations that apply only to live backends
+	// (e.g., a required origin_url)
+	IsTemplate bool `yaml:"is_template,omitempty"`
 	// FastForwardDisable indicates whether the FastForward feature should be disabled for this backend
 	FastForwardDisable bool `yaml:"fast_forward_disable,omitempty"`
 	// PathRoutingDisabled, when true, will bypass /backendName/path route registrations
@@ -268,6 +279,9 @@ type Options struct {
 	// DoesShard is true when sharding will be used with this origin, based on how the
 	// sharding options have been configured
 	DoesShard bool `yaml:"-"`
+
+	sizeExplicit      bool
+	retentionExplicit bool
 }
 
 var _ types.ConfigOptions[Options] = &Options{}
@@ -352,6 +366,10 @@ func (o *Options) Clone() *Options {
 		out.Prometheus = o.Prometheus.Clone()
 	}
 
+	if o.Graphite != nil {
+		out.Graphite = o.Graphite.Clone()
+	}
+
 	if o.MySQL != nil {
 		out.MySQL = o.MySQL.Clone()
 	}
@@ -375,7 +393,16 @@ func (o *Options) Validate() (bool, error) {
 	if o.Provider == "" {
 		return false, NewErrMissingProvider(o.Name)
 	}
-	if !providers.NonOriginBackends().Contains(o.Provider) && o.OriginURL == "" {
+	if o.IsTemplate {
+		if o.IsDefault {
+			return false, NewErrTemplateIsDefault(o.Name)
+		}
+		if providers.NonOriginBackends().Contains(o.Provider) {
+			return false, NewErrInvalidTemplateProvider(o.Provider, o.Name)
+		}
+	}
+	if !providers.NonOriginBackends().Contains(o.Provider) && !o.IsTemplate &&
+		o.OriginURL == "" {
 		return false, NewErrMissingOriginURL(o.Name)
 	}
 	if o.OriginURL != "" {
@@ -394,6 +421,11 @@ func (o *Options) Validate() (bool, error) {
 	if len(o.Paths) > 0 {
 		if err := o.Paths.Validate(o.Name); err != nil {
 			return false, err
+		}
+	}
+	if o.Graphite != nil {
+		if err := o.Graphite.ValidateWithPaths(o.Paths); err != nil {
+			return false, fmt.Errorf("backend %s: %w", o.Name, err)
 		}
 	}
 	if o.CORS != nil {
@@ -435,7 +467,7 @@ func (l Lookup) Validate() error {
 		}
 		if o.ALBOptions != nil {
 			if len(o.ALBOptions.Pool) > 0 {
-				entry.Pool = o.ALBOptions.Pool
+				entry.Pool = o.ALBOptions.Pool.Names()
 			} else if o.ALBOptions.UserRouter != nil {
 				used := sets.NewStringSet()
 				if o.ALBOptions.UserRouter.DefaultBackend != "" {
@@ -548,6 +580,11 @@ func (l Lookup) ValidateConfigMappings(c co.Lookup, ncl negative.Lookups,
 			if err := o.ALBOptions.ValidatePool(o.Name, l.Keys()); err != nil {
 				return err
 			}
+			for _, m := range o.ALBOptions.Pool {
+				if t, ok := l[m.Name]; ok && t != nil && t.IsTemplate {
+					return NewErrTemplatePoolMember(m.Name, o.Name)
+				}
+			}
 		default:
 			// No specific validation needed for other provider types
 		}
@@ -567,6 +604,47 @@ func (l Lookup) ValidateConfigMappings(c co.Lookup, ncl negative.Lookups,
 	if len(albs) > 0 {
 		if err := ao.ValidateNoCycles(albs); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+// ValidateDiscovery validates each discovery-backed ALB in the Lookup
+// against the named discoverers and template backends it references:
+// 'discoverer_name' must resolve to a defined discoverer, the query must be
+// valid for that discoverer's provider, and 'template_backend' must name a
+// defined backend configured with is_template: true.
+func (l Lookup) ValidateDiscovery(dl do.Lookup) error {
+	for _, o := range l {
+		if o == nil || o.Provider != providers.ALB || o.ALBOptions == nil ||
+			o.ALBOptions.Discovery == nil {
+			continue
+		}
+		d := o.ALBOptions.Discovery
+		if _, err := d.Validate(); err != nil {
+			return fmt.Errorf("invalid discovery options for alb %q: %w",
+				o.Name, err)
+		}
+		disc, ok := dl[d.DiscovererName]
+		if !ok || disc == nil {
+			return NewErrInvalidDiscovererName(d.DiscovererName, o.Name)
+		}
+		if err := d.Query.Validate(o.Name, disc.Provider); err != nil {
+			return err
+		}
+		t, ok := l[d.TemplateBackend]
+		if !ok || t == nil || !t.IsTemplate {
+			return NewErrInvalidTemplateBackendName(d.TemplateBackend, o.Name)
+		}
+		// TSM-merged pools require members whose provider can be merged,
+		// and per-member replica groups (replica_group_label) are only
+		// meaningful -- and only accepted by backend initialization -- on
+		// TSM-mergeable providers
+		if (o.ALBOptions.MechanismName == albnames.MechanismTSM ||
+			d.Query.ReplicaGroupLabel != "") &&
+			!providers.IsSupportedTimeSeriesMergeProvider(t.Provider) {
+			return NewErrInvalidTemplateTSMProvider(t.Provider,
+				d.TemplateBackend, o.Name)
 		}
 	}
 	return nil
@@ -723,6 +801,14 @@ func (o *Options) CloneYAMLSafe() *Options {
 		headers.HideAuthorizationCredentials(w.RequestHeaders)
 		headers.HideAuthorizationCredentials(w.ResponseHeaders)
 	}
+	if co.Graphite != nil {
+		if co.Graphite.OriginPassword != "" {
+			co.Graphite.OriginPassword = "*****"
+		}
+		if co.Graphite.OriginAuthorization != "" {
+			co.Graphite.OriginAuthorization = "*****"
+		}
+	}
 	if co.HealthCheck != nil {
 		// also strip out potentially sensitive headers
 		headers.HideAuthorizationCredentials(co.HealthCheck.Headers)
@@ -744,5 +830,79 @@ func (o *Options) UnmarshalYAML(value *yaml.Node) error {
 		return err
 	}
 	*o = Options(lo)
+	o.sizeExplicit = yamlHasKey(value, "max_object_size_bytes")
+	o.retentionExplicit = yamlHasKey(value, "timeseries_retention_factor")
+	o.ApplyProviderSizingDefaults()
 	return nil
+}
+
+func yamlHasKey(node *yaml.Node, key string) bool {
+	return yamlNodeHasKey(node, key, make(map[*yaml.Node]bool))
+}
+
+func yamlNodeHasKey(node *yaml.Node, key string, visited map[*yaml.Node]bool) bool {
+	if node == nil || visited[node] {
+		return false
+	}
+	visited[node] = true
+	switch node.Kind {
+	case yaml.DocumentNode:
+		if len(node.Content) > 0 {
+			return yamlNodeHasKey(node.Content[0], key, visited)
+		}
+		return false
+	case yaml.AliasNode:
+		return yamlNodeHasKey(node.Alias, key, visited)
+	case yaml.MappingNode:
+	default:
+		return false
+	}
+	// local keys first; then any `<<` merge values, each of which may be a
+	// mapping, an alias to one, or a sequence of either
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		if node.Content[i] != nil && node.Content[i].Value == key {
+			return true
+		}
+	}
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		k, v := node.Content[i], node.Content[i+1]
+		// only a real merge directive counts: go-yaml merges `<<` only
+		// when the key carries the merge tag, while a quoted "<<" is an
+		// ordinary string key the decoder does not merge
+		if k == nil || v == nil || k.Value != "<<" || k.Tag != "!!merge" {
+			continue
+		}
+		if v.Kind == yaml.SequenceNode {
+			for _, item := range v.Content {
+				if yamlNodeHasKey(item, key, visited) {
+					return true
+				}
+			}
+			continue
+		}
+		if yamlNodeHasKey(v, key, visited) {
+			return true
+		}
+	}
+	return false
+}
+
+// ApplyProviderSizingDefaults sets max_object_size_bytes and
+// timeseries_retention_factor to the provider's defaults
+// (GetProviderDefaults) wherever the YAML did not name them itself. It is
+// part of configuration loading: UnmarshalYAML calls it once the file's
+// provider is known, and the config loader calls it again for a backend
+// whose provider arrives later from the -provider flag. It is deliberately
+// not part of Initialize, so an Options constructed in code — where these
+// flags are false but the builder's assignments are intentional — is never
+// re-defaulted.
+func (o *Options) ApplyProviderSizingDefaults() {
+	mos, trf := GetProviderDefaults(o.Provider)
+	if !o.sizeExplicit {
+		o.MaxObjectSizeBytes = mos
+	}
+	if !o.retentionExplicit {
+		o.TimeseriesRetentionFactor = trf
+	}
+	o.TimeseriesRetention = timeconv.Duration(o.TimeseriesRetentionFactor)
 }

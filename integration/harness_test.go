@@ -164,14 +164,14 @@ type cacheProviderCase struct {
 	Backend string // backend id, e.g. "prom1"
 }
 
-func configHarness(t *testing.T) tricksterHarness {
+func configHarness(t *testing.T, mods ...func(*tkconfig.Config)) tricksterHarness {
 	t.Helper()
 	ports, release := portutil.Reserve(t, 4)
 	frontPort, metricsPort, mgmtPort, mysqlPort := ports[0], ports[1], ports[2], ports[3]
 	return tricksterHarness{
 		ConfigPath: writeTestConfig(t,
 			"../docs/developer/environment/trickster-config/trickster.yaml",
-			frontPort, metricsPort, mgmtPort, mysqlPort, 0),
+			frontPort, metricsPort, mgmtPort, mysqlPort, 0, mods...),
 		BaseAddr:     fmt.Sprintf("127.0.0.1:%d", frontPort),
 		MetricsAddr:  fmt.Sprintf("127.0.0.1:%d", metricsPort),
 		MySQLAddr:    fmt.Sprintf("127.0.0.1:%d", mysqlPort),
@@ -209,10 +209,13 @@ func staticConfigHarness(t *testing.T, configPath string) tricksterHarness {
 	}
 }
 
-// writeTestConfig writes a per-test trickster config. flightPort overrides the
-// influx3 backend's flight_port; pass 0 to disable the Flight SQL listener.
+// writeTestConfig renders configPath onto reserved ports and writes it to a
+// temp file. flightPort overrides the influx3 backend's flight_port; pass 0
+// to disable the Flight SQL listener. mods run after the ports are set and
+// before the file is written.
 func writeTestConfig(t *testing.T, configPath string,
 	frontPort, metricsPort, mgmtPort, mysqlPort, flightPort int,
+	mods ...func(*tkconfig.Config),
 ) string {
 	t.Helper()
 	b, err := os.ReadFile(configPath)
@@ -252,6 +255,9 @@ func writeTestConfig(t *testing.T, configPath string,
 	}
 	if bo, ok := c.Backends["influx3"]; ok && bo != nil {
 		bo.FlightPort = flightPort
+	}
+	for _, mod := range mods {
+		mod(&c)
 	}
 	out, err := yaml.Marshal(&c)
 	require.NoError(t, err)

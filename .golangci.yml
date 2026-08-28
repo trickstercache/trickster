@@ -73,6 +73,8 @@ linters:
           - encoding/pem.Encode
           - strings.Builder.WriteByte
           - strings.Builder.Write
+          - bytes.Buffer.WriteString
+          - bytes.Buffer.WriteByte
           - text/tabwriter.Writer.Write
           - text/tabwriter.Writer.Flush
           - io.Writer.Write

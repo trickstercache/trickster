@@ -1,0 +1,33 @@
+#
+# Trickster 2.0 Example Configuration File - Example Graphite Accelerator
+#
+# To use this, run: trickster -config /path/to/simple.graphite.yaml
+#
+# This file demonstrates a basic configuration to accelerate
+# Graphite queries using Trickster. More documentation is
+# available at https://github.com/trickstercache/trickster/docs/
+#
+# Copyright 2018 The Trickster Authors
+#
+
+listeners:
+  graphite_port:
+    protocol: http
+    address: ""
+    port: 8080
+
+backends:
+  default:
+    # update FQDN and Port to work in your environment
+    origin_url: 'http://graphite:80'
+    provider: 'graphite'
+    listener_name: graphite_port
+
+    # Nothing else is required. Graphite is fetched at its native resolution,
+    # so its responses are larger and cover more points than most providers';
+    # max_object_size_bytes and timeseries_retention_factor therefore default
+    # to 64MB and 524288 points for this provider rather than to the generic
+    # 512KB and 1024. Set either one here to override it. See /docs/graphite.md.
+
+logging:
+  log_level: 'info'

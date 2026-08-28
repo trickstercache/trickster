@@ -118,19 +118,21 @@ jobs:
     runs-on: ubuntu-latest
     env:
       TRICKSTER_MYSQL_CLI_TEST: "1"
+      TRICKSTER_DNS_TEST: "1"
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-      - name: Start developer environment
-        run: make developer-start
+      - name: Start developer environment (with integration containers)
+        run: make integration-start
       - name: Show container status
         if: always()
         run: |
           cd docs/developer/environment
           docker compose ps
-          docker compose logs --tail=30 redis prometheus mysql grafana 
+          docker compose logs --tail=30 redis prometheus mysql grafana coredns
+          docker compose logs --tail=60 graphite graphite_seed graphite_generator
       - name: Run integration tests (with coverage)
         run: make integration-cover
       - name: Run integration tests (with race detection enabled)
@@ -143,6 +145,40 @@ jobs:
           path-to-profile: integration/.integration.coverprofile
           flag-name: integration
           parallel: true
+
+  integration-kind:
+    # Kubernetes autodiscovery scenario (plan step 34): in-cluster
+    # Trickster over EndpointSlices discovery in a kind cluster
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          config: integration/kind/kind-config.yaml
+          cluster_name: trickster-it
+      - name: Build and load trickster image
+        run: |
+          docker build -t trickster:integration .
+          kind load docker-image trickster:integration --name trickster-it
+      - name: Deploy scenario manifests
+        run: |
+          kubectl --context kind-trickster-it apply -f integration/kind/manifests.yaml
+          kubectl --context kind-trickster-it -n trickster-it rollout status             deployment/webecho deployment/trickster --timeout=180s
+      - name: Run kubernetes autodiscovery scenario
+        working-directory: integration
+        env:
+          TRICKSTER_KIND_TEST: "1"
+        run: go test -v -timeout 15m -run TestALBDiscoveryKind .
+      - name: Show cluster state on failure
+        if: failure()
+        run: |
+          kubectl --context kind-trickster-it -n trickster-it get pods -o wide || true
+          kubectl --context kind-trickster-it -n trickster-it describe deployment trickster webecho || true
+          kubectl --context kind-trickster-it -n trickster-it logs deployment/trickster --tail=100 || true
   finish:
     needs:
       - build

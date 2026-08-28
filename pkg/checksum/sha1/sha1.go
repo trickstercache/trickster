@@ -19,7 +19,7 @@ import (
 	"fmt"
 )
 
-// Checksum returns the calculated hex string version of the md5 checksum for the input string
+// Checksum returns the calculated hex string version of the sha1 checksum for the input string
 func Checksum(input string) string {
 	return fmt.Sprintf("%x", sha1.Sum([]byte(input)))
 }

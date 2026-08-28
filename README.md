@@ -21,7 +21,7 @@ Trickster is a fully-featured HTTP Reverse Proxy Cache for HTTP applications lik
 
 ### Proxy Feature Highlights
 
-* A unique and powerful [Application Load Balancer](./docs/alb.md) for Time Series and generic HTTP endpoints
+* A unique and powerful [Application Load Balancer](./docs/alb.md) for Time Series and generic HTTP endpoints, with [pool autodiscovery](./docs/alb-autodiscovery.md) from Kubernetes, DNS or a member file
 * [Supports TLS](./docs/tls.md) and HTTP/2 for frontend termination and backend origination
 * Offers several options for a [caching layer](./docs/caches.md), including in-memory, filesystem, Redis and bbolt
 * [Highly customizable](./docs/configuring.md), using simple yaml configuration settings, [down to the HTTP Path](./docs/paths.md)
@@ -50,6 +50,8 @@ Trickster works with virtually any Dashboard application that makes queries to a
 <img src="./docs/images/external/influx_logo_60.png" width=24 /> [InfluxDB](docs/influxdb.md)
 
 <img src="./docs/images/external/mysql_logo_60.png" width=24 /> [MySQL](docs/mysql.md)
+
+<img src="./docs/images/external/graphite-logo.svg" width=24 /> [Graphite](docs/graphite.md)
 
 See the [Supported TSDB Providers](./docs/supported-backend-providers.md) document for full details
 
