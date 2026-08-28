@@ -77,7 +77,7 @@
 #
 #   # A listener with protocol mysql accepts MySQL wire-protocol connections
 #   # and requires exactly one backend with provider mysql mapped to it via
-#   # the backend's listener_name. TLS ports are not supported on mysql
+#   # the backend's listener_names. TLS ports are not supported on mysql
 #   # listeners (MySQL negotiates TLS in-band on the same port).
 #   mysql1:
 #     protocol: mysql
@@ -99,18 +99,14 @@
 #     # structured origin_url does not expand ${VARIABLE}. Authenticator users
 #     # do support environment expansion. Relevant reloads restart and drain
 #     # this listener rather than moving established sessions.
-
-#  # protocol_listeners configures raw TCP listeners for non-HTTP wire protocols
-#  # (e.g. the ClickHouse native binary protocol on port 9000). Each listener routes
-#  # all accepted connections to a single named backend. Supported protocols today:
-#  # clickhouse-native. See /docs/clickhouse.md for the ClickHouse flow.
-#  # protocol_listeners:
-#  #   - name: clickhouse-native       # human-readable identifier
-#  #     protocol: clickhouse-native   # wire protocol handler
-#  #     listen_address: ''            # bind all interfaces by default
-#  #     listen_port: 9000             # TCP port
-#  #     backend: click1               # name of a configured backend (below)
-#  #     connections_limit: 0          # 0 = unlimited
+#
+#   # A ClickHouse listener accepts the Native binary protocol and maps to one
+#   # ClickHouse backend through that backend's listener_names option.
+#   clickhouse-native:
+#     protocol: clickhouse
+#     port: 8487
+#     # address: ''
+#     # connections_limit: 0
 
 # caches:
 #   default:
@@ -298,8 +294,8 @@ backends:
   #   origin_url: 'mysql://readonly:REDACTED@mysql-origin.example.com:3306/database'
   #   # Embedded passwords are redacted by sanitized configuration output and
   #   # YAML stringification. Protect the source file, which has the real value.
-  #   # listener_name must reference a listener whose protocol is mysql
-  #   listener_name: mysql1
+  #   # listener_names must reference a listener whose protocol is mysql
+  #   listener_names: [mysql1]
   #   # MySQL listeners require a named authenticator. The authenticator's
   #   # users are used for downstream MySQL native-password authentication.
   #   authenticator_name: example_auth_1
@@ -339,9 +335,9 @@ backends:
   # access this backend via http[s]://trickster-fqdn/default/ unless path_routing_disabled is true
   default:
 
-    # listener_name maps this backend to an inbound listener. The default is default.
-    # mgmt and metrics are reserved and cannot be selected by a backend.
-    listener_name: default
+    # listener_names maps this backend to compatible inbound listeners.
+    # Unbound ordinary backends use default; mgmt and metrics are reserved.
+    listener_names: [default]
 
     # provider identifies the backend provider.
     # Valid options are: prometheus, influxdb, clickhouse, mysql, rule, alb,
@@ -368,7 +364,7 @@ backends:
 #     # protocol selects the upstream wire protocol used to communicate with the origin.
 #     # When empty (default), HTTP is used. Supported values are provider-specific:
 #     #   clickhouse: 'native' — speak the native binary protocol to an upstream on port 9000
-#     # (this is independent of frontend protocol_listeners, which accept non-HTTP clients.)
+#     # This is independent of listeners, which select the inbound protocol.
 #     protocol: ''
 
     # is_default describes whether this backend is the default backend considered when routing http requests

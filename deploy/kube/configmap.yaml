@@ -77,7 +77,7 @@ data:
     #
     #   # A listener with protocol mysql accepts MySQL wire-protocol connections
     #   # and requires exactly one backend with provider mysql mapped to it via
-    #   # the backend's listener_name. TLS ports are not supported on mysql
+    #   # the backend's listener_names. TLS ports are not supported on mysql
     #   # listeners (MySQL negotiates TLS in-band on the same port).
     #   mysql1:
     #     protocol: mysql
@@ -98,6 +98,14 @@ data:
     #     # Keep MySQL origin and downstream credentials in a Secret, not in
     #     # this ConfigMap. See mysql-user-router-secret.yaml and
     #     # mysql-deployment-patch.yaml for a focused routed deployment.
+    #
+    #   # A ClickHouse listener accepts the Native binary protocol and maps to
+    #   # one ClickHouse backend through that backend's listener_names option.
+    #   clickhouse-native:
+    #     protocol: clickhouse
+    #     port: 8487
+    #     # address: ''
+    #     # connections_limit: 0
 
     # caches:
     #   default:
@@ -283,8 +291,8 @@ data:
       #   provider: mysql
       #   # origin_url uses the mysql scheme; the port defaults to 3306 if omitted
       #   origin_url: 'mysql://readonly:REDACTED@mysql-origin.example.com:3306/database'
-      #   # listener_name must reference a listener whose protocol is mysql
-      #   listener_name: mysql1
+      #   # listener_names must reference a listener whose protocol is mysql
+      #   listener_names: [mysql1]
       #   # MySQL listeners require a named authenticator. The authenticator's
       #   # users are used for downstream MySQL native-password authentication.
       #   authenticator_name: example_auth_1
@@ -321,9 +329,9 @@ data:
       # access this backend via http[s]://trickster-fqdn/default/ unless path_routing_disabled is true
       default:
 
-        # listener_name maps this backend to an inbound listener. The default is default.
-        # mgmt and metrics are reserved and cannot be selected by a backend.
-        listener_name: default
+        # listener_names maps this backend to compatible inbound listeners.
+        # Unbound ordinary backends use default; mgmt and metrics are reserved.
+        listener_names: [default]
 
         # provider identifies the backend provider.
         # Valid options are: prometheus, influxdb, clickhouse, mysql, rule, alb,

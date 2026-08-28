@@ -37,7 +37,6 @@ backends:
     latency_max: 0s
   mysql-by-tenant:
     provider: alb
-    listener_name: mysql-routed
     listener_names:
     - mysql-routed
     timeout: 1m0s

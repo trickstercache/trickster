@@ -32,6 +32,34 @@ You can stop the developer environment by running `make developer-stop`. To
 delete the developer environment, run `make developer-delete` which will destroy
 all data, including the MySQL data volume and any other named volumes.
 
+## ClickHouse
+
+The environment runs ClickHouse on direct HTTP port `8123` and Native port
+`9000`. Trickster's single `click1` backend uses the HTTP origin and is bound to
+both its HTTP listener (`8480`, route `/click1/`) and ClickHouse Native listener
+(`8487`). This demonstrates two ingress protocols sharing one backend and cache.
+
+The ClickHouse users are `default` with an empty password and `testauth` with
+password `trickster`. For a direct Native smoke test through Trickster:
+
+```sh
+clickhouse client --host 127.0.0.1 --port 8487 \
+  --query "SELECT count() FROM trips"
+```
+
+Grafana provisions `clickhouse-grafana-trickster` for HTTP and
+`clickhouse-grafana-trickster-native` for Native connections through Trickster.
+Both appear in the Data Source selector on the official-plugin dashboard at
+<http://127.0.0.1:3000/d/clickhouse-grafana-plugin/clickhouse-grafana-plugin>.
+The Vertamedia-plugin dashboard is at
+<http://127.0.0.1:3000/d/aekapw5xl2epsc/clickhouse>.
+
+The backend can instead use ClickHouse's Native origin by changing
+`origin_url` to `http://127.0.0.1:9000` and setting `protocol: native`. HTTP and
+Native clients can use either origin transport. See the
+[ClickHouse Support Guide](../../clickhouse.md) for TLS configuration,
+delta-cacheable SQL, supported formats and types, and Native limitations.
+
 ## MySQL
 
 The developer environment includes a pinned MySQL 8.4 (LTS) container seeded
@@ -77,9 +105,6 @@ the `mysql1` backend and `fs1` cache, keeping their metrics separate from other
 backends and caches. The dashboard also shows SQL classifications and rewrite
 failures, OPC/DPC outcomes, request latency and returned elements, and cache
 operations, storage, and evictions.
-The provisioned ClickHouse dashboard mirrors the same five taxi-data panels so
-the database demonstrations can be compared directly.
-
 The listener's `connections_limit` controls accepted downstream connections.
 The initial protocol implementation maintains one upstream connection per
 downstream connection so transaction, database, and session state cannot leak

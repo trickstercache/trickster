@@ -258,6 +258,19 @@ datasources:
     defaultDatabase: default
     username: default
 
+- name: clickhouse-grafana-trickster-native
+  type: grafana-clickhouse-datasource
+  access: proxy
+  editable: true
+  isDefault: false
+  jsonData:
+    host: host.docker.internal
+    port: 8487
+    protocol: native
+    secure: false
+    defaultDatabase: default
+    username: default
+
 # MySQL (Grafana built-in mysql data source)
 - name: mysql-direct
   type: mysql

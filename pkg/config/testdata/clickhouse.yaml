@@ -1,17 +1,53 @@
 main:
   server_name: trickster-test
 backends:
-  default:
-    provider: prometheus
+  click1:
+    provider: clickhouse
     listener_names:
+    - clickhouse-native
     - default
-    origin_url: http://prometheus:9090
+    origin_url: http://clickhouse:8123
     timeout: 1m0s
     keep_alive_timeout: 2m0s
     max_concurrent_conns: 20
     max_idle_conns: 20
     cache_name: default
-    cache_key_prefix: prometheus:9090
+    cache_key_prefix: clickhouse:8123
+    chunk_read_concurrency_limit: 16
+    fetch_concurrency_limit: 16
+    chunk_write_concurrency_limit: 16
+    healthcheck: {}
+    timeseries_retention_factor: 2048
+    timeseries_eviction_method: oldest
+    backfill_tolerance: 1m0s
+    negative_cache_name: default
+    timeseries_ttl: 6h0m0s
+    fastforward_ttl: 15s
+    max_ttl: 25h0m0s
+    revalidation_factor: 2
+    max_object_size_bytes: 524288
+    max_capture_bytes: 268435456
+    compressible_types:
+    - text/html
+    - text/javascript
+    - text/css
+    - text/plain
+    - text/xml
+    - text/json
+    - application/json
+    - application/javascript
+    - application/xml
+    tracing_name: default
+    tls: {}
+    forwarded_headers: standard
+    latency_min: 0s
+    latency_max: 0s
+  default:
+    timeout: 1m0s
+    keep_alive_timeout: 2m0s
+    max_concurrent_conns: 20
+    max_idle_conns: 20
+    cache_name: default
     chunk_read_concurrency_limit: 16
     fetch_concurrency_limit: 16
     chunk_write_concurrency_limit: 16
@@ -38,7 +74,6 @@ backends:
     tracing_name: default
     tls: {}
     forwarded_headers: standard
-    is_default: true
     latency_min: 0s
     latency_max: 0s
 caches:
@@ -77,6 +112,14 @@ frontend:
   truncate_request_body_too_large: false
   read_header_timeout: 10s
 listeners:
+  clickhouse-native:
+    port: 8487
+    connections_limit: 128
+    max_request_body_size_bytes: 10485760
+    truncate_request_body_too_large: false
+    read_header_timeout: 10s
+    protocol: clickhouse
+    tls_watch_interval: 30s
   default:
     port: 8480
     tls_port: 8483

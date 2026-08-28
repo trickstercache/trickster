@@ -238,10 +238,10 @@ func writeTestConfig(t *testing.T, configPath string,
 		mysqlListener.ListenPort = mysqlPort
 	}
 	if clickHouseHTTPOriginPort > 0 && c.Backends["click1"] != nil {
-		c.Listeners["clickhouse-http-origin-native"] = &listener.Options{
+		c.Listeners["clickhouse-native"] = &listener.Options{
 			Protocol: listener.ProtocolClickHouse, ListenAddress: "127.0.0.1", ListenPort: clickHouseHTTPOriginPort,
 		}
-		c.Backends["click1"].ListenerNames = []string{listener.DefaultFrontendName, "clickhouse-http-origin-native"}
+		c.Backends["click1"].ListenerNames = []string{listener.DefaultFrontendName, "clickhouse-native"}
 	}
 	if clickHouseNativeOriginPort > 0 && c.Backends["click1"] != nil {
 		c.Listeners["clickhouse-native-origin-native"] = &listener.Options{
