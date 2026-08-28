@@ -17,73 +17,30 @@
 package sql
 
 import (
-	"fmt"
 	"net/http"
-	"strconv"
-	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
-// SetExtent interpolates the tokenized SQL query with concrete time bounds
+// SetExtent renders the parsed query for the provided cache-miss extent and
+// applies it to the upstream request.
 func SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
 	extent *timeseries.Extent, q *Query,
 ) {
-	if extent == nil || r == nil || trq == nil || q == nil {
+	if extent == nil || r == nil || trq == nil || q == nil || q.Plan == nil {
 		return
 	}
-	stmt := interpolateTimeQuery(q, trq.TimestampDefinition, extent)
-	isBody := methods.HasBody(r.Method)
-	if isBody {
+	stmt, err := q.Plan.RenderExtent(*extent)
+	if err != nil {
+		return
+	}
+	if methods.HasBody(r.Method) {
 		request.SetBody(r, EncodeBody(r, stmt))
-	} else {
-		qi := r.URL.Query()
-		qi.Set(ParamQuery, stmt)
-		r.URL.RawQuery = qi.Encode()
+		return
 	}
-}
-
-func interpolateTimeQuery(q *Query, tfd timeseries.FieldDefinition,
-	extent *timeseries.Extent,
-) string {
-	start, end := formatTimestampValues(tfd, extent)
-	tStart, tEnd := formatTimestampValues(
-		timeseries.FieldDefinition{ProviderData1: tfd.ProviderData1}, extent)
-	tsName := q.BaseTimestampFieldName
-	if tsName == "" {
-		tsName = tfd.Name
-	}
-	if tsName == "" {
-		tsName = DefaultTimestampField
-	}
-	trange := fmt.Sprintf("%s >= %s AND %s < %s", tsName, start, tsName, end)
-	out := strings.NewReplacer(
-		tkRange, trange,
-		tkTS1, tStart,
-		tkTS2, tEnd,
-	).Replace(q.TokenizedStatement)
-	return out
-}
-
-func formatTimestampValues(tfd timeseries.FieldDefinition,
-	extent *timeseries.Extent,
-) (string, string) {
-	dt := timeseries.FieldDataType(tfd.ProviderData1)
-	switch dt {
-	case timeseries.DateTimeUnixMilli:
-		return strconv.FormatInt(extent.Start.UnixMilli(), 10),
-			strconv.FormatInt(extent.End.UnixMilli(), 10)
-	case timeseries.DateTimeUnixNano:
-		return strconv.FormatInt(extent.Start.UnixNano(), 10),
-			strconv.FormatInt(extent.End.UnixNano(), 10)
-	case timeseries.DateTimeSQL:
-		return "'" + extent.Start.UTC().Format("2006-01-02 15:04:05") + "'",
-			"'" + extent.End.UTC().Format("2006-01-02 15:04:05") + "'"
-	default:
-		// RFC3339 — the default for InfluxDB v3
-		return "'" + extent.Start.UTC().Format("2006-01-02T15:04:05Z") + "'",
-			"'" + extent.End.UTC().Format("2006-01-02T15:04:05Z") + "'"
-	}
+	qi := r.URL.Query()
+	qi.Set(ParamQuery, stmt)
+	r.URL.RawQuery = qi.Encode()
 }

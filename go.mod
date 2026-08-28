@@ -8,7 +8,7 @@ require (
 	github.com/andybalholm/brotli v1.2.2
 	github.com/apache/arrow-go/v18 v18.5.2
 	github.com/cespare/xxhash/v2 v2.3.0
-	github.com/cockroachdb/cockroachdb-parser v0.25.2
+	github.com/cockroachdb/cockroachdb-parser v0.25.3-0.20250917200107-7bd0408a9e14
 	github.com/dgraph-io/badger/v4 v4.9.6
 	github.com/dgraph-io/ristretto/v2 v2.4.2
 	github.com/fsnotify/fsnotify v1.9.0
@@ -114,7 +114,6 @@ require (
 	github.com/denis-tingaikin/go-header v0.5.0 // indirect
 	github.com/dlclark/regexp2/v2 v2.2.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/elastic/gosigar v0.14.3 // indirect
 	github.com/ettle/strcase v0.2.0 // indirect
 	github.com/fatih/color v1.19.0 // indirect
 	github.com/fatih/structtag v1.2.0 // indirect

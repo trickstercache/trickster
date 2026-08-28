@@ -35,10 +35,7 @@ import (
 // clients probe on connect.
 func TestInfluxDB3FlightSQL(t *testing.T) {
 	// Unique flight port per test to avoid collisions across parallel runs.
-	flightPort := 18585
-	cfg := writeTestConfigWithFlight(t, 8593, 8594, 8595, flightPort)
-	influxAddr := "127.0.0.1:8593"
-	h := tricksterHarness{ConfigPath: cfg, BaseAddr: influxAddr, MetricsAddr: "127.0.0.1:8594"}
+	h, flightPort := flightConfigHarness(t)
 	h.start(t)
 	waitForInfluxDB3Data(t, "127.0.0.1:8181")
 

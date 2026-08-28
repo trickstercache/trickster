@@ -32,13 +32,11 @@ import (
 // `/api/v3/query_influxql`) through Trickster's influx3 backend. Verifies that
 // time-range queries are cached and non-cacheable queries pass through.
 func TestInfluxDB3HTTP(t *testing.T) {
-	cfg := writeTestConfigWithFlight(t, 8590, 8591, 8592, 0) // flight disabled for http tests
-	influxAddr := "127.0.0.1:8590"
-	h := tricksterHarness{ConfigPath: cfg, BaseAddr: influxAddr, MetricsAddr: "127.0.0.1:8591"}
+	h := configHarness(t) // flight disabled for http tests
 	h.start(t)
 	waitForInfluxDB3Data(t, "127.0.0.1:8181")
 
-	baseURL := "http://" + influxAddr + "/influx3"
+	baseURL := "http://" + h.BaseAddr + "/influx3"
 	now := time.Now().Unix()
 	fiveMinAgo := now - 300
 
