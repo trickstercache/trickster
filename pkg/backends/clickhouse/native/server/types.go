@@ -18,13 +18,13 @@ package server
 
 import "time"
 
-func temporalValue(v any) (time.Time, bool) {
+func temporalValue(v any, location *time.Location) (time.Time, bool) {
 	if t, ok := v.(time.Time); ok {
 		return t, true
 	}
 	if text, ok := v.(string); ok {
 		for _, layout := range []string{"2006-01-02 15:04:05", "2006-01-02", time.RFC3339Nano} {
-			if t, err := time.ParseInLocation(layout, text, time.UTC); err == nil {
+			if t, err := time.ParseInLocation(layout, text, location); err == nil {
 				return t, true
 			}
 		}

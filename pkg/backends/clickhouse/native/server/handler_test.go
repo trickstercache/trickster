@@ -19,6 +19,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"io"
@@ -27,6 +28,10 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
+
+	chdriver "github.com/ClickHouse/clickhouse-go/v2"
 )
 
 // echoJSONHandler returns a ClickHouse-shaped JSON response with the SQL
@@ -96,6 +101,9 @@ func TestHandlerPingPong(t *testing.T) {
 
 	// Send addendum (quota key, required for revision >= 54458)
 	cw.putStr("")
+
+	// ClientCancel is intentionally a no-op when no query is active.
+	cw.putByte(ClientCancel)
 
 	// Send Ping
 	cw.putByte(ClientPing)
@@ -233,7 +241,7 @@ func TestWriteJSONAsNativeBlocks(t *testing.T) {
 
 	var buf bytes.Buffer
 	w := newProtoWriter(&buf)
-	if err := writeJSONAsNativeBlocks(w, body, false); err != nil {
+	if err := writeJSONAsNativeBlocks(w, body, false, ServerRevision); err != nil {
 		t.Fatal(err)
 	}
 
@@ -241,6 +249,29 @@ func TestWriteJSONAsNativeBlocks(t *testing.T) {
 	pkt, _ := r.ReadByte()
 	if pkt != ServerData {
 		t.Fatalf("expected ServerData, got %d", pkt)
+	}
+}
+
+func TestWriteJSONAsNativeBlocksCompositeTypes(t *testing.T) {
+	body := []byte(`{
+		"meta": [
+			{"name":"wide","type":"UInt128"},
+			{"name":"amount","type":"Decimal(38, 9)"},
+			{"name":"nested","type":"Array(Tuple(String, Nullable(UInt64)))"}
+		],
+		"data": [{
+			"wide":"340282366920938463463374607431768211455",
+			"amount":"12345678901234567890123456789.123456789",
+			"nested":[["a","18446744073709551615"],["b",null]]
+		}],
+		"rows": 1
+	}`)
+	var out bytes.Buffer
+	if err := writeJSONAsNativeBlocks(newProtoWriter(&out), body, false, ServerRevision); err != nil {
+		t.Fatal(err)
+	}
+	if out.Len() == 0 || out.Bytes()[0] != ServerData {
+		t.Fatalf("invalid native packet: %x", out.Bytes())
 	}
 }
 
@@ -339,4 +370,114 @@ func TestServerLifecycleAndHandlerUpdate(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("server did not stop")
 	}
+}
+
+func TestHandlerCompressedQuery(t *testing.T) {
+	s := New(echoJSONHandler(), nil, false, "compressed")
+	address := startTestProtocolServer(t, s)
+	db := chdriver.OpenDB(&chdriver.Options{
+		Addr: []string{address},
+		Compression: &chdriver.Compression{
+			Method: chdriver.CompressionLZ4,
+		},
+	})
+	defer db.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var got string
+	if err := db.QueryRowContext(ctx, "SELECT 1").Scan(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got != "SELECT 1 FORMAT JSON" {
+		t.Fatalf("result = %q", got)
+	}
+}
+
+func TestServerTLSRotation(t *testing.T) {
+	first := testTLSConfig(t)
+	s := New(echoJSONHandler(), first, true, "tls")
+	address := startTestProtocolServer(t, s)
+	serial := func() string {
+		t.Helper()
+		conn, err := tls.Dial("tcp", address, &tls.Config{InsecureSkipVerify: true}) //nolint:gosec // test certificate
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer conn.Close()
+		return conn.ConnectionState().PeerCertificates[0].SerialNumber.String()
+	}
+	before := serial()
+	s.UpdateTLSConfig(testTLSConfig(t))
+	if after := serial(); after == before {
+		t.Fatal("new connections retained the old TLS certificate")
+	}
+}
+
+func TestServerShutdownCancelsActiveQuery(t *testing.T) {
+	started := make(chan struct{})
+	cancelled := make(chan struct{})
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		<-r.Context().Done()
+		close(cancelled)
+	})
+	s := New(h, nil, false, "cancel")
+	address := startTestProtocolServer(t, s)
+	db := chdriver.OpenDB(&chdriver.Options{Addr: []string{address}})
+	defer db.Close()
+	queryDone := make(chan error, 1)
+	go func() {
+		var value string
+		queryDone <- db.QueryRow("SELECT 1").Scan(&value)
+	}()
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("query did not start")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	if err := s.Shutdown(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("shutdown error = %v", err)
+	}
+	select {
+	case <-cancelled:
+	case <-time.After(time.Second):
+		t.Fatal("active query context was not cancelled")
+	}
+	select {
+	case <-queryDone:
+	case <-time.After(time.Second):
+		t.Fatal("cancelled client query did not return")
+	}
+}
+
+func startTestProtocolServer(t *testing.T, s *Server) string {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- s.Serve(listener) }()
+	t.Cleanup(func() {
+		_ = s.Shutdown(context.Background())
+		if err := <-done; err != nil {
+			t.Error(err)
+		}
+	})
+	return listener.Addr().String()
+}
+
+func testTLSConfig(t *testing.T) *tls.Config {
+	t.Helper()
+	key, cert, err := tlstest.GetTestKeyAndCert(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pair, err := tls.X509KeyPair(cert, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &tls.Config{MinVersion: tls.VersionTLS12, Certificates: []tls.Certificate{pair}, NextProtos: []string{"h2"}}
 }

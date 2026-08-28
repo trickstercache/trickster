@@ -174,7 +174,7 @@ func TestWriteEmptyBlock(t *testing.T) {
 	var buf bytes.Buffer
 	w := newProtoWriter(&buf)
 
-	if err := writeEmptyBlock(w); err != nil {
+	if err := writeEmptyBlockRevision(w, ServerRevision); err != nil {
 		t.Fatal(err)
 	}
 
@@ -198,7 +198,7 @@ func TestWriteDataBlock(t *testing.T) {
 		{"alice", "bob"},
 	}
 
-	if err := writeDataBlock(w, columns, values, 2); err != nil {
+	if err := writeDataBlockRevision(w, columns, values, 2, ServerRevision); err != nil {
 		t.Fatal(err)
 	}
 
@@ -298,7 +298,7 @@ func TestWriteColumnDataNullable(t *testing.T) {
 	var buf bytes.Buffer
 	w := newProtoWriter(&buf)
 	values := []any{"hello", nil, "world"}
-	if err := encodeColumn(w, "Nullable(String)", values); err != nil {
+	if err := encodeColumnRevision(w, "Nullable(String)", values, ServerRevision); err != nil {
 		t.Fatal(err)
 	}
 	r := newProtoReader(&buf)
@@ -325,7 +325,7 @@ func TestWriteColumnDataArray(t *testing.T) {
 		[]any{float64(1), float64(2)},
 		[]any{float64(3)},
 	}
-	if err := encodeColumn(w, "Array(UInt32)", values); err != nil {
+	if err := encodeColumnRevision(w, "Array(UInt32)", values, ServerRevision); err != nil {
 		t.Fatal(err)
 	}
 	r := newProtoReader(&buf)
@@ -359,7 +359,7 @@ func TestWriteColumnDataFixedString(t *testing.T) {
 	var buf bytes.Buffer
 	w := newProtoWriter(&buf)
 	values := []any{"ab", "abcd", "x"}
-	if err := encodeColumn(w, "FixedString(4)", values); err != nil {
+	if err := encodeColumnRevision(w, "FixedString(4)", values, ServerRevision); err != nil {
 		t.Fatal(err)
 	}
 	data := buf.Bytes()
@@ -384,7 +384,7 @@ func TestWriteColumnDataTuple(t *testing.T) {
 		[]any{"hello", float64(1)},
 		[]any{"world", float64(2)},
 	}
-	if err := encodeColumn(w, "Tuple(String, UInt32)", values); err != nil {
+	if err := encodeColumnRevision(w, "Tuple(String, UInt32)", values, ServerRevision); err != nil {
 		t.Fatal(err)
 	}
 	r := newProtoReader(&buf)
@@ -411,7 +411,7 @@ func TestWriteCompressedDataBlock(t *testing.T) {
 	w := newProtoWriter(&buf)
 	columns := []Column{{Name: "x", Type: "UInt32"}}
 	values := [][]any{{uint32(42)}}
-	if err := writeCompressedDataBlock(w, columns, values, 1); err != nil {
+	if err := writeCompressedDataBlockRevision(w, columns, values, 1, ServerRevision); err != nil {
 		t.Fatal(err)
 	}
 	if buf.Len() == 0 {

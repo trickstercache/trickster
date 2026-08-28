@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+
+	"github.com/ClickHouse/ch-go/compress"
 )
 
 // ClientQueryMsg contains the relevant fields from a ClientQuery packet.
@@ -213,39 +215,47 @@ func readSettings(r *protoReader, revision uint64) (map[string]string, error) {
 // skipClientData reads and discards a ClientData block (the empty data block
 // that clients send after a query). The leading packet type byte must already
 // have been consumed.
-func skipClientData(r *protoReader, revision uint64) error {
+func skipClientData(r *protoReader, revision uint64, compressed bool) error {
 	// block name (external table name, typically empty)
-	if _, err := r.str(); err != nil {
+	name, err := r.str()
+	if err != nil {
 		return err
+	}
+	if name != "" {
+		return errors.New("inline INSERT data and external tables are not supported")
+	}
+	blockReader := r
+	if compressed {
+		blockReader = newProtoReader(compress.NewReader(r))
 	}
 	// block info
 	if revision > 0 {
 		// is_overflows (uvarint), bucket_num (bool)
-		if _, err := r.uvarint(); err != nil {
+		if _, err := blockReader.uvarint(); err != nil {
 			return err
 		}
-		if _, err := r.boolean(); err != nil {
+		if _, err := blockReader.boolean(); err != nil {
 			return err
 		}
 		// bucket_size (uvarint)
-		if _, err := r.uvarint(); err != nil {
+		if _, err := blockReader.uvarint(); err != nil {
 			return err
 		}
 		// reserved int32
-		if _, err := r.int32(); err != nil {
+		if _, err := blockReader.int32(); err != nil {
 			return err
 		}
 		// reserved uvarint
-		if _, err := r.uvarint(); err != nil {
+		if _, err := blockReader.uvarint(); err != nil {
 			return err
 		}
 	}
 	// num columns, num rows
-	numCols, err := r.uvarint()
+	numCols, err := blockReader.uvarint()
 	if err != nil {
 		return err
 	}
-	numRows, err := r.uvarint()
+	numRows, err := blockReader.uvarint()
 	if err != nil {
 		return err
 	}

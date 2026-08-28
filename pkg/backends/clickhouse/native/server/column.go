@@ -17,24 +17,35 @@
 package server
 
 import (
+	"encoding"
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/big"
 	"reflect"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ClickHouse/ch-go/proto"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/column"
 )
 
-func encodeColumn(w io.Writer, typ string, values []any) error {
-	col, err := column.Type(typ).Column("", &column.ServerContext{Revision: ServerRevision, Timezone: time.UTC})
+func encodeColumnRevision(w io.Writer, typ string, values []any, revision uint64) error {
+	col, err := column.Type(typ).Column("", &column.ServerContext{Revision: revision, Timezone: time.UTC})
+	if err != nil {
+		return err
+	}
+	location, err := columnTimezone(typ)
 	if err != nil {
 		return err
 	}
 	for _, value := range values {
-		value, err = columnValue(value, col.ScanType())
+		value, err = normalizeColumnValue(value, typ)
+		if err != nil {
+			return err
+		}
+		value, err = columnValue(value, col.ScanType(), location)
 		if err != nil {
 			return err
 		}
@@ -53,21 +64,27 @@ func encodeColumn(w io.Writer, typ string, values []any) error {
 	return err
 }
 
-func columnValue(value any, target reflect.Type) (any, error) {
+func columnValue(value any, target reflect.Type, location *time.Location) (any, error) {
 	if value == nil {
 		return nil, nil
 	}
-	if reflect.TypeOf(value).AssignableTo(target) {
+	assignable := reflect.TypeOf(value).AssignableTo(target)
+	genericElements := (target.Kind() == reflect.Slice || target.Kind() == reflect.Map) &&
+		target.Elem().Kind() == reflect.Interface
+	if assignable && target.Kind() != reflect.Interface && !genericElements {
 		return value, nil
 	}
 	if target == reflect.TypeFor[time.Time]() {
-		if t, ok := temporalValue(value); ok {
+		if t, ok := temporalValue(value, location); ok {
 			return t, nil
 		}
 		return nil, fmt.Errorf("invalid ClickHouse timestamp %q", value)
 	}
+	if target.Kind() == reflect.Interface {
+		return genericColumnValue(value), nil
+	}
 	if target.Kind() == reflect.Pointer {
-		inner, err := columnValue(value, target.Elem())
+		inner, err := columnValue(value, target.Elem(), location)
 		if err != nil {
 			return nil, err
 		}
@@ -112,7 +129,7 @@ func columnValue(value any, target reflect.Type) (any, error) {
 		}
 		out = reflect.MakeSlice(target, src.Len(), src.Len())
 		for i := range src.Len() {
-			v, err := columnValue(src.Index(i).Interface(), target.Elem())
+			v, err := columnValue(src.Index(i).Interface(), target.Elem(), location)
 			if err != nil {
 				return nil, err
 			}
@@ -132,11 +149,11 @@ func columnValue(value any, target reflect.Type) (any, error) {
 		out = reflect.MakeMapWithSize(target, src.Len())
 		iter := src.MapRange()
 		for iter.Next() {
-			key, err := columnValue(iter.Key().Interface(), target.Key())
+			key, err := columnValue(iter.Key().Interface(), target.Key(), location)
 			if err != nil {
 				return nil, err
 			}
-			v, err := columnValue(iter.Value().Interface(), target.Elem())
+			v, err := columnValue(iter.Value().Interface(), target.Elem(), location)
 			if err != nil {
 				return nil, err
 			}
@@ -150,10 +167,163 @@ func columnValue(value any, target reflect.Type) (any, error) {
 			out.SetMapIndex(rk, rv)
 		}
 	default:
-		if n, ok := value.(json.Number); ok {
-			return string(n), nil
+		converted := reflect.New(target)
+		if unmarshaler, ok := reflect.TypeAssert[encoding.TextUnmarshaler](converted); ok {
+			if err := unmarshaler.UnmarshalText([]byte(text)); err != nil {
+				return nil, err
+			}
+			return converted.Elem().Interface(), nil
 		}
 		return value, nil
 	}
 	return out.Interface(), nil
+}
+
+func normalizeColumnValue(value any, typ string) (any, error) {
+	typ = strings.TrimSpace(typ)
+	for _, wrapper := range []string{"Nullable(", "LowCardinality("} {
+		if strings.HasPrefix(typ, wrapper) && strings.HasSuffix(typ, ")") {
+			return normalizeColumnValue(value, typ[len(wrapper):len(typ)-1])
+		}
+	}
+	if value == nil {
+		return nil, nil
+	}
+	if strings.HasPrefix(typ, "Array(") && strings.HasSuffix(typ, ")") {
+		items, ok := value.([]any)
+		if !ok {
+			return value, nil
+		}
+		inner := typ[len("Array(") : len(typ)-1]
+		out := make([]any, len(items))
+		for i, item := range items {
+			normalized, err := normalizeColumnValue(item, inner)
+			if err != nil {
+				return nil, err
+			}
+			out[i] = normalized
+		}
+		return out, nil
+	}
+	if strings.HasPrefix(typ, "Tuple(") && strings.HasSuffix(typ, ")") {
+		items, ok := value.([]any)
+		if !ok {
+			return value, nil
+		}
+		types := splitColumnTypes(typ[len("Tuple(") : len(typ)-1])
+		if len(items) != len(types) {
+			return value, nil
+		}
+		out := make([]any, len(items))
+		for i, item := range items {
+			normalized, err := normalizeColumnValue(item, types[i])
+			if err != nil {
+				return nil, err
+			}
+			out[i] = normalized
+		}
+		return out, nil
+	}
+	text := fmt.Sprint(value)
+	switch typ {
+	case "Int8", "Int16", "Int32", "Int64":
+		bits, _ := strconv.Atoi(strings.TrimPrefix(typ, "Int"))
+		return strconv.ParseInt(text, 10, bits)
+	case "UInt8", "UInt16", "UInt32", "UInt64":
+		bits, _ := strconv.Atoi(strings.TrimPrefix(typ, "UInt"))
+		return strconv.ParseUint(text, 10, bits)
+	case "Int128", "Int256", "UInt128", "UInt256":
+		if n, ok := new(big.Int).SetString(text, 10); ok {
+			return n, nil
+		}
+		return nil, fmt.Errorf("invalid %s value %q", typ, text)
+	case "Float32":
+		return strconv.ParseFloat(text, 32)
+	case "Float64":
+		return strconv.ParseFloat(text, 64)
+	default:
+		return value, nil
+	}
+}
+
+func splitColumnTypes(input string) []string {
+	var (
+		types  []string
+		start  int
+		depth  int
+		quoted bool
+	)
+	for i, r := range input {
+		switch r {
+		case '\'':
+			quoted = !quoted
+		case '(':
+			if !quoted {
+				depth++
+			}
+		case ')':
+			if !quoted {
+				depth--
+			}
+		case ',':
+			if !quoted && depth == 0 {
+				types = append(types, strings.TrimSpace(input[start:i]))
+				start = i + 1
+			}
+		}
+	}
+	return append(types, strings.TrimSpace(input[start:]))
+}
+
+func genericColumnValue(value any) any {
+	switch value := value.(type) {
+	case json.Number:
+		text := string(value)
+		if strings.ContainsAny(text, ".eE") {
+			if n, err := value.Float64(); err == nil {
+				return n
+			}
+			return text
+		}
+		if strings.HasPrefix(text, "-") {
+			if n, err := value.Int64(); err == nil {
+				return n
+			}
+		} else if n, err := strconv.ParseUint(text, 10, 64); err == nil {
+			return n
+		}
+		if n, ok := new(big.Int).SetString(text, 10); ok {
+			return n
+		}
+		return text
+	case []any:
+		out := make([]any, len(value))
+		for i := range value {
+			out[i] = genericColumnValue(value[i])
+		}
+		return out
+	case map[string]any:
+		out := make(map[string]any, len(value))
+		for key, item := range value {
+			out[key] = genericColumnValue(item)
+		}
+		return out
+	default:
+		return value
+	}
+}
+
+func columnTimezone(typ string) (*time.Location, error) {
+	if !strings.Contains(typ, "DateTime") {
+		return time.UTC, nil
+	}
+	end := strings.LastIndexByte(typ, '\'')
+	if end < 0 {
+		return time.UTC, nil
+	}
+	start := strings.LastIndexByte(typ[:end], '\'')
+	if start < 0 {
+		return time.UTC, nil
+	}
+	return time.LoadLocation(typ[start+1 : end])
 }

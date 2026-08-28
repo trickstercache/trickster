@@ -31,6 +31,7 @@ import (
 	"net/http"
 	"net/url"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -271,7 +272,9 @@ func (nc *NativeClient) Fetch(r *http.Request) (*http.Response, error) {
 	var body []byte
 	contentType := "text/plain; charset=utf-8"
 	if selectQuery || len(columns) > 0 {
-		body, contentType, err = encodeResult(columns, values, count, format, r.URL.Query().Get("client_protocol_version"))
+		body, contentType, err = encodeResultWithSettings(
+			columns, values, count, format, r.URL.Query().Get("client_protocol_version"), r.URL.Query(),
+		)
 	}
 	if err != nil {
 		return syntheticErrorResponse(http.StatusBadGateway, err), nil
@@ -292,7 +295,13 @@ func supportedFormat(format string) bool {
 	return false
 }
 
-func encodeResult(columns []server.Column, values [][]any, count int, format, protocolVersion string) ([]byte, string, error) {
+func encodeResultWithSettings(
+	columns []server.Column,
+	values [][]any,
+	count int,
+	format, protocolVersion string,
+	settings url.Values,
+) ([]byte, string, error) {
 	var out bytes.Buffer
 	lower := strings.ToLower(format)
 	if lower == "native" {
@@ -325,38 +334,108 @@ func encodeResult(columns []server.Column, values [][]any, count int, format, pr
 		}
 	}
 	csvFormat := strings.HasPrefix(lower, "csv")
-	writer := csv.NewWriter(&out)
-	writer.Comma = '\t'
-	if csvFormat {
-		writer.Comma = ','
+	withNames := strings.Contains(lower, "withnames")
+	withTypes := strings.HasSuffix(lower, "andtypes")
+	if !csvFormat {
+		writeTSVRows(
+			&out, columns, values, count, withNames, withTypes,
+			settings.Get("format_tsv_null_representation"),
+			settingEnabled(settings.Get("output_format_tsv_crlf_end_of_line")),
+		)
+		return out.Bytes(), "text/plain; charset=utf-8", nil
 	}
 	row := make([]string, len(columns))
-	if strings.Contains(lower, "withnames") {
+	rows := make([][]string, 0, count+2)
+	if withNames {
 		for i, c := range columns {
 			row[i] = c.Name
 		}
-		if err := writer.Write(row); err != nil {
-			return nil, "", err
-		}
+		rows = append(rows, slices.Clone(row))
 	}
-	if strings.HasSuffix(lower, "andtypes") {
+	if withTypes {
 		for i, c := range columns {
 			row[i] = c.Type
 		}
-		if err := writer.Write(row); err != nil {
-			return nil, "", err
-		}
+		rows = append(rows, slices.Clone(row))
 	}
 	for i := range count {
 		for j, c := range columns {
 			row[j] = textValue(values[j][i], c.Type)
 		}
+		rows = append(rows, slices.Clone(row))
+	}
+	writer := csv.NewWriter(&out)
+	if delimiter := settings.Get("format_csv_delimiter"); delimiter != "" {
+		runes := []rune(delimiter)
+		if len(runes) != 1 {
+			return nil, "", errors.New("format_csv_delimiter must contain exactly one character")
+		}
+		writer.Comma = runes[0]
+	}
+	writer.UseCRLF = settingEnabled(settings.Get("output_format_csv_crlf_end_of_line"))
+	for _, row := range rows {
 		if err := writer.Write(row); err != nil {
 			return nil, "", err
 		}
 	}
 	writer.Flush()
 	return out.Bytes(), "text/plain; charset=utf-8", writer.Error()
+}
+
+func writeTSVRows(
+	out *bytes.Buffer,
+	columns []server.Column,
+	values [][]any,
+	count int,
+	withNames, withTypes bool,
+	nullRepresentation string,
+	useCRLF bool,
+) {
+	if nullRepresentation == "" {
+		nullRepresentation = "\\N"
+	}
+	replacer := strings.NewReplacer("\\", "\\\\", "\t", "\\t", "\n", "\\n", "\r", "\\r", "\x00", "\\0")
+	writeRow := func(row []string, nulls []bool) {
+		for i, field := range row {
+			if i > 0 {
+				_ = out.WriteByte('\t')
+			}
+			if nulls != nil && nulls[i] {
+				_, _ = out.WriteString(nullRepresentation)
+			} else {
+				_, _ = out.WriteString(replacer.Replace(field))
+			}
+		}
+		if useCRLF {
+			_ = out.WriteByte('\r')
+		}
+		_ = out.WriteByte('\n')
+	}
+	row := make([]string, len(columns))
+	if withNames {
+		for i, col := range columns {
+			row[i] = col.Name
+		}
+		writeRow(row, nil)
+	}
+	if withTypes {
+		for i, col := range columns {
+			row[i] = col.Type
+		}
+		writeRow(row, nil)
+	}
+	nulls := make([]bool, len(columns))
+	for i := range count {
+		for j, col := range columns {
+			nulls[j] = indirectValue(values[j][i]) == nil
+			row[j] = textValue(values[j][i], col.Type)
+		}
+		writeRow(row, nulls)
+	}
+}
+
+func settingEnabled(value string) bool {
+	return value == "1" || strings.EqualFold(value, "true")
 }
 
 func jsonValue(value any, typ string) any {

@@ -60,11 +60,9 @@ type Column struct {
 	Type string
 }
 
-// writeDataBlock writes a ServerData packet containing a result block.
-// values is a column-major 2D slice: values[col][row].
-func writeDataBlock(w *protoWriter, columns []Column, values [][]any, numRows uint64) error {
+func writeDataBlockRevision(w *protoWriter, columns []Column, values [][]any, numRows, revision uint64) error {
 	var buf bytes.Buffer
-	if err := writeBlockContent(newProtoWriter(&buf), columns, values, numRows); err != nil {
+	if err := writeFormatBlock(newProtoWriter(&buf), columns, values, numRows, revision); err != nil {
 		return err
 	}
 	return writeDataPacket(w, buf.Bytes())
@@ -81,17 +79,16 @@ func writeDataPacket(w *protoWriter, data []byte) error {
 	return err
 }
 
-// writeEmptyBlock sends an empty ServerData block (0 columns, 0 rows).
-func writeEmptyBlock(w *protoWriter) error {
-	return writeDataBlock(w, nil, nil, 0)
+func writeEmptyBlockRevision(w *protoWriter, revision uint64) error {
+	return writeDataBlockRevision(w, nil, nil, 0, revision)
 }
 
 // writeCompressedDataBlock writes a ServerData packet with LZ4-compressed
 // block content.
-func writeCompressedDataBlock(w *protoWriter, columns []Column, values [][]any, numRows uint64) error {
+func writeCompressedDataBlockRevision(w *protoWriter, columns []Column, values [][]any, numRows, revision uint64) error {
 	var buf bytes.Buffer
 	bw := newProtoWriter(&buf)
-	if err := writeBlockContent(bw, columns, values, numRows); err != nil {
+	if err := writeFormatBlock(bw, columns, values, numRows, revision); err != nil {
 		return err
 	}
 
@@ -147,7 +144,7 @@ func writeFormatBlock(w *protoWriter, columns []Column, values [][]any, numRows 
 			}
 		}
 		if numRows > 0 {
-			if err := encodeColumn(w, col.Type, values[i]); err != nil {
+			if err := encodeColumnRevision(w, col.Type, values[i], revision); err != nil {
 				return fmt.Errorf("write column %q data: %w", col.Name, err)
 			}
 		}

@@ -214,6 +214,36 @@ func TestWriteNativeValue_DateTime64(t *testing.T) {
 	}
 }
 
+func TestReadValueAsString_DateTime64Precision(t *testing.T) {
+	for _, test := range []struct {
+		typ   string
+		ticks int64
+		want  string
+	}{
+		{"DateTime64(0)", 1577836800, "2020-01-01 00:00:00"},
+		{"DateTime64(3)", 1577836800123, "2020-01-01 00:00:00.123"},
+		{"DateTime64(6)", 1577836800123456, "2020-01-01 00:00:00.123456"},
+		{"DateTime64(9, 'UTC')", 1577836800123456789, "2020-01-01 00:00:00.123456789"},
+		{"DateTime64(6)", -1, "1969-12-31 23:59:59.999999"},
+	} {
+		t.Run(test.typ+"_"+strconv.FormatInt(test.ticks, 10), func(t *testing.T) {
+			var data [8]byte
+			binary.LittleEndian.PutUint64(data[:], uint64(test.ticks))
+			got, err := readValueAsString(bufio.NewReader(bytes.NewReader(data[:])), test.typ)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != test.want {
+				t.Fatalf("got %q, want %q", got, test.want)
+			}
+		})
+	}
+	var data [8]byte
+	if _, err := readValueAsString(bufio.NewReader(bytes.NewReader(data[:])), "DateTime64(10)"); err == nil {
+		t.Fatal("accepted invalid DateTime64 precision")
+	}
+}
+
 func TestWriteNativeValue_UnknownTypeAsString(t *testing.T) {
 	b := new(bytes.Buffer)
 	if err := writeNativeValue(b, "SomeUnknownType", "payload"); err != nil {

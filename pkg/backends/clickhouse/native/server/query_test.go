@@ -20,6 +20,8 @@ import (
 	"bytes"
 	"io"
 	"testing"
+
+	"github.com/ClickHouse/ch-go/compress"
 )
 
 // oneByteReader returns at most one byte per Read, forcing the embedded
@@ -121,4 +123,86 @@ func TestSkipClientInfo_ShortReadOpenTelemetry(t *testing.T) {
 	if sentinel != 0x5A {
 		t.Fatalf("stream desync: want sentinel %#x, got %#x", 0x5A, sentinel)
 	}
+}
+
+func TestReadSettingsAcrossRevisions(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		revision uint64
+		value    string
+	}{
+		{"legacy numeric", 54429, "7"},
+		{"string setting", 54430, "value"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var data bytes.Buffer
+			w := newProtoWriter(&data)
+			w.putStr("setting")
+			if test.revision <= 54429 {
+				w.putUvarint(7)
+			} else {
+				w.putUvarint(0)
+				w.putStr(test.value)
+			}
+			w.putStr("")
+			settings, err := readSettings(newProtoReader(&data), test.revision)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if settings["setting"] != test.value {
+				t.Fatalf("setting = %q, want %q", settings["setting"], test.value)
+			}
+		})
+	}
+}
+
+func TestSkipClientDataLimitationsAndCompression(t *testing.T) {
+	var external bytes.Buffer
+	newProtoWriter(&external).putStr("external")
+	if err := skipClientData(newProtoReader(&external), ServerRevision, false); err == nil {
+		t.Fatal("accepted external table block")
+	}
+
+	var inline bytes.Buffer
+	w := newProtoWriter(&inline)
+	w.putStr("")
+	writeEmptyClientBlockContent(w, ServerRevision, 1, 1)
+	if err := skipClientData(newProtoReader(&inline), ServerRevision, false); err == nil {
+		t.Fatal("accepted inline data block")
+	}
+
+	var block bytes.Buffer
+	writeEmptyClientBlockContent(newProtoWriter(&block), ServerRevision, 0, 0)
+	cw := compress.NewWriter(compress.LevelZero, compress.LZ4)
+	if err := cw.Compress(block.Bytes()); err != nil {
+		t.Fatal(err)
+	}
+	var packet bytes.Buffer
+	w = newProtoWriter(&packet)
+	w.putStr("")
+	packet.Write(cw.Data)
+	if err := skipClientData(newProtoReader(&packet), ServerRevision, true); err != nil {
+		t.Fatalf("compressed empty data block: %v", err)
+	}
+
+	var legacy bytes.Buffer
+	w = newProtoWriter(&legacy)
+	w.putStr("")
+	w.putUvarint(0)
+	w.putUvarint(0)
+	if err := skipClientData(newProtoReader(&legacy), 0, false); err != nil {
+		t.Fatalf("legacy empty data block: %v", err)
+	}
+}
+
+func writeEmptyClientBlockContent(w *protoWriter, revision, columns, rows uint64) {
+	if revision > 0 {
+		w.putUvarint(0)
+		w.putBool(false)
+		w.putUvarint(2)
+		w.putInt32(-1)
+		w.putUvarint(0)
+	}
+	w.putUvarint(columns)
+	w.putUvarint(rows)
 }

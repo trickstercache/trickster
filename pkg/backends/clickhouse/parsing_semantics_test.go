@@ -279,6 +279,15 @@ func TestTimezoneExpressionsFailClosed(t *testing.T) {
 	}
 }
 
+func TestFloatingEpochBoundsFailClosed(t *testing.T) {
+	query := "SELECT toStartOfMinute(ts) AS t, count() FROM events " +
+		"WHERE ts >= 120.5 AND ts < 240.5 GROUP BY t"
+	analysis := dialectAnalyzer.Analyze(query, time.Now())
+	if analysis.Mode != sqlanalyzer.CacheModeObject {
+		t.Fatalf("floating epoch bounds produced a delta-cache plan: %+v", analysis)
+	}
+}
+
 func TestRendererPrivatePlaceholdersAreCollisionSafe(t *testing.T) {
 	query := "SELECT toStartOfMinute(ts) AS t, count() FROM events WHERE note = '<$TRICKSTER_TS1_0$>' " +
 		"AND marker = '<$TS1$>' AND ts >= 120 AND ts < 240 GROUP BY t"

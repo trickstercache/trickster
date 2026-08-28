@@ -81,11 +81,11 @@ func FuzzReadClientQuery(f *testing.F) {
 	w.putUvarint(1)       // major
 	w.putUvarint(0)       // minor
 	w.putUvarint(ServerRevision)
-	w.putStr("")     // quota key
-	w.putUvarint(0)  // distributed depth
-	w.putUvarint(0)  // version patch
-	w.putByte(0)     // no otel span
-	w.putUvarint(0)  // parallel replicas fields
+	w.putStr("")    // quota key
+	w.putUvarint(0) // distributed depth
+	w.putUvarint(0) // version patch
+	w.putByte(0)    // no otel span
+	w.putUvarint(0) // parallel replicas fields
 	w.putUvarint(0)
 	w.putUvarint(0)
 	w.putStr("")     // end settings
@@ -128,7 +128,7 @@ func FuzzWriteJSONAsNativeBlocks(f *testing.F) {
 	f.Fuzz(func(t *testing.T, data []byte) {
 		var buf bytes.Buffer
 		w := newProtoWriter(&buf)
-		writeJSONAsNativeBlocks(w, data, false) // must not panic
+		writeJSONAsNativeBlocks(w, data, false, ServerRevision) // must not panic
 	})
 }
 
@@ -156,7 +156,7 @@ func FuzzSkipClientData(f *testing.F) {
 			revision = 100000
 		}
 		r := newProtoReader(bytes.NewReader(data))
-		skipClientData(r, revision) // must not panic
+		skipClientData(r, revision, false) // must not panic
 	})
 }
 

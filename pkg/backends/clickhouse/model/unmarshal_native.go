@@ -287,8 +287,21 @@ func readValueAsString(r *bufio.Reader, typ string) (string, error) {
 			if err != nil {
 				return "", err
 			}
+			precisionText := strings.TrimSpace(strings.Split(
+				strings.TrimSuffix(strings.TrimPrefix(typ, "DateTime64("), ")"), ",",
+			)[0])
+			precision, err := strconv.Atoi(precisionText)
+			if err != nil || precision < 0 || precision > 9 {
+				return "", fmt.Errorf("invalid DateTime64 precision %q", precisionText)
+			}
 			v := int64(binary.LittleEndian.Uint64(b))
-			return time.Unix(v/1000, (v%1000)*1000000).UTC().Format("2006-01-02 15:04:05.000"), nil
+			scale := int64(math.Pow10(precision))
+			t := time.Unix(v/scale, (v%scale)*int64(math.Pow10(9-precision))).UTC()
+			layout := "2006-01-02 15:04:05"
+			if precision > 0 {
+				layout += "." + strings.Repeat("0", precision)
+			}
+			return t.Format(layout), nil
 		}
 		if strings.HasPrefix(typ, "DateTime(") {
 			b, err := readFixed(r, 4)

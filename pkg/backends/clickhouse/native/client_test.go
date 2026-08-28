@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -32,6 +33,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/clickhouse/native/server"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 )
 
 func TestNewNativeClient(t *testing.T) {
@@ -457,7 +459,154 @@ func TestNativeTextValues(t *testing.T) {
 			t.Fatalf("%s: got %q want %q", test.typ, got, test.want)
 		}
 	}
-	if _, _, err := encodeResult([]server.Column{{Name: "a", Type: "Array(UInt32)"}}, [][]any{{[]uint32{1, 2}}}, 1, "TSV", ""); err == nil {
+	if _, _, err := encodeResultWithSettings(
+		[]server.Column{{Name: "a", Type: "Array(UInt32)"}}, [][]any{{[]uint32{1, 2}}}, 1, "TSV", "", nil,
+	); err == nil {
 		t.Fatal("accepted unsupported compound text format")
+	}
+}
+
+func TestNativeClientConfiguration(t *testing.T) {
+	if _, err := NewNativeClient(nil); err == nil {
+		t.Fatal("accepted nil options")
+	}
+	if _, err := NewNativeClient(&bo.Options{OriginURL: "http://%"}); err == nil {
+		t.Fatal("accepted invalid origin URL")
+	}
+	c, err := NewNativeClient(&bo.Options{
+		OriginURL:          "https://alice:secret@localhost:9440/?database=analytics&max_threads=4",
+		MaxConcurrentConns: 7,
+		MaxIdleConns:       3,
+		KeepAliveTimeout:   timeconv.Duration(2 * time.Second),
+		Timeout:            timeconv.Duration(5 * time.Second),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	if c.defaults != (sessionKey{database: "analytics", username: "alice", password: "secret"}) {
+		t.Fatalf("defaults = %#v", c.defaults)
+	}
+	if c.settings["max_threads"] != "4" || c.options.TLS == nil {
+		t.Fatalf("settings or TLS missing: %#v %#v", c.settings, c.options.TLS)
+	}
+	if c.db.Stats().MaxOpenConnections != 7 {
+		t.Fatalf("max connections = %d", c.db.Stats().MaxOpenConnections)
+	}
+}
+
+func TestNativeClientCredentialIsolation(t *testing.T) {
+	c, err := NewNativeClient(&bo.Options{Host: "127.0.0.1:19000"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	request := buildQueryRequest(t, "SELECT 1")
+	request.URL.RawQuery = "database=one&user=query-user&password=query-password"
+	queryPool, err := c.pool(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request = buildQueryRequest(t, "SELECT 1")
+	request.Header.Set("X-ClickHouse-User", "header-user")
+	request.Header.Set("X-ClickHouse-Key", "header-password")
+	headerPool, err := c.pool(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.SetBasicAuth("basic-user", "basic-password")
+	basicPool, err := c.pool(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if queryPool == headerPool || headerPool == basicPool || queryPool == basicPool {
+		t.Fatal("credentials shared a native session pool")
+	}
+	if again, err := c.pool(request); err != nil || again != basicPool {
+		t.Fatalf("identity pool was not reused: %p %v", again, err)
+	}
+	for i := len(c.pools); i < 64; i++ {
+		r := buildQueryRequest(t, "SELECT 1")
+		r.SetBasicAuth(fmt.Sprintf("user-%d", i), "password")
+		if _, err := c.pool(r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	request = buildQueryRequest(t, "SELECT 1")
+	request.SetBasicAuth("one-too-many", "password")
+	if _, err := c.pool(request); err == nil {
+		t.Fatal("accepted more than 64 identity pools")
+	}
+}
+
+func TestNativeResultTextEscaping(t *testing.T) {
+	columns := []server.Column{
+		{Name: "special\tname", Type: "String"},
+		{Name: "nullable", Type: "Nullable(String)"},
+	}
+	values := [][]any{{"a\tb\nc\\d", "\\N"}, {nil, "value"}}
+	got, _, err := encodeResultWithSettings(columns, values, 2, "TSVWithNamesAndTypes", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "special\\tname\tnullable\nString\tNullable(String)\na\\tb\\nc\\\\d\t\\N\n\\\\N\tvalue\n"
+	if string(got) != want {
+		t.Fatalf("TSV = %q, want %q", got, want)
+	}
+	got, _, err = encodeResultWithSettings(columns[:1], values[:1], 2, "CSVWithNames", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "special\tname\n\"a\tb\nc\\d\"\n\\N\n" {
+		t.Fatalf("CSV = %q", got)
+	}
+	if _, _, err := encodeResultWithSettings(columns, values, 2, "Native", "invalid", nil); err == nil {
+		t.Fatal("accepted invalid client protocol revision")
+	}
+	got, _, err = encodeResultWithSettings(columns, values, 2, "TSV", "", url.Values{
+		"format_tsv_null_representation":     {"NULL"},
+		"output_format_tsv_crlf_end_of_line": {"1"},
+	})
+	if err != nil || string(got) != "a\\tb\\nc\\\\d\tNULL\r\n\\\\N\tvalue\r\n" {
+		t.Fatalf("configured TSV = %q, %v", got, err)
+	}
+	got, _, err = encodeResultWithSettings(columns[:1], values[:1], 2, "CSV", "", url.Values{
+		"format_csv_delimiter":               {";"},
+		"output_format_csv_crlf_end_of_line": {"true"},
+	})
+	if err != nil || string(got) != "\"a\tb\r\nc\\d\"\r\n\\N\r\n" {
+		t.Fatalf("configured CSV = %q, %v", got, err)
+	}
+	if _, _, err := encodeResultWithSettings(columns, values, 2, "CSV", "", url.Values{
+		"format_csv_delimiter": {"too long"},
+	}); err == nil {
+		t.Fatal("accepted an invalid CSV delimiter")
+	}
+}
+
+func TestNativeRoundTripAndFormats(t *testing.T) {
+	c, err := NewNativeClient(&bo.Options{Host: "127.0.0.1:19000"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	resp, err := c.RoundTrip(httptest.NewRequest(http.MethodGet, "/", nil))
+	if err != nil || resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("RoundTrip = %#v, %v", resp, err)
+	}
+	for _, format := range []string{
+		"JSON", "Native", "CSV", "CSVWithNames", "TabSeparated", "TSV",
+		"TabSeparatedWithNames", "TSVWithNames", "TabSeparatedWithNamesAndTypes", "TSVWithNamesAndTypes",
+	} {
+		if !supportedFormat(format) {
+			t.Errorf("format %q is unsupported", format)
+		}
+	}
+	if supportedFormat("Parquet") {
+		t.Fatal("accepted unsupported format")
+	}
+	resp, err = c.Fetch(buildQueryRequest(t, "SELECT 1 FORMAT Parquet"))
+	if err != nil || resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("unsupported format response = %#v, %v", resp, err)
 	}
 }

@@ -380,9 +380,10 @@ func matchBucket(expression chast.Expr, constants map[string]int64) (bucketSpec,
 				unit = timeseries.DateTimeUnixSecs
 			}
 			phase := time.Duration(0)
-			if name == "tomonday" {
+			switch name {
+			case "tomonday":
 				phase = 4 * day
-			} else if name == "tostartofweek" {
+			case "tostartofweek":
 				phase = 3 * day
 			}
 			return bucketSpec{

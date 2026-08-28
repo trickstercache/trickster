@@ -116,13 +116,13 @@ func (h *Handler) HandleConnection(ctx context.Context, conn net.Conn) error {
 			if dataPkt != ClientData {
 				return fmt.Errorf("expected post-query data packet, got %d", dataPkt)
 			}
-			if err := skipClientData(r, clientRevision); err != nil {
+			if err := skipClientData(r, clientRevision, q.Compression); err != nil {
 				_ = writeQueryError(w, bw, err)
 				return err
 			}
 
 			q.Username, q.Password = hello.Username, hello.Password
-			if err := h.handleQuery(ctx, w, bw, q, hello.Database, q.Compression); err != nil {
+			if err := h.handleQuery(ctx, w, bw, q, hello.Database, q.Compression, clientRevision); err != nil {
 				return err
 			}
 
@@ -132,7 +132,7 @@ func (h *Handler) HandleConnection(ctx context.Context, conn net.Conn) error {
 
 		case ClientData:
 			// unexpected data outside query context, skip it
-			if err := skipClientData(r, clientRevision); err != nil {
+			if err := skipClientData(r, clientRevision, false); err != nil {
 				return fmt.Errorf("skip unexpected data: %w", err)
 			}
 
@@ -142,7 +142,15 @@ func (h *Handler) HandleConnection(ctx context.Context, conn net.Conn) error {
 	}
 }
 
-func (h *Handler) handleQuery(ctx context.Context, w *protoWriter, bw *bufio.Writer, q *ClientQueryMsg, database string, compressed bool) error {
+func (h *Handler) handleQuery(
+	ctx context.Context,
+	w *protoWriter,
+	bw *bufio.Writer,
+	q *ClientQueryMsg,
+	database string,
+	compressed bool,
+	revision uint64,
+) error {
 	sql, _, isSelect, err := sqlformat.Split(q.SQL, "JSON")
 	if err != nil {
 		return writeQueryError(w, bw, err)
@@ -203,7 +211,7 @@ func (h *Handler) handleQuery(ctx context.Context, w *protoWriter, bw *bufio.Wri
 		return writeQueryError(w, bw, err)
 	}
 
-	if err := writeJSONAsNativeBlocks(w, body, compressed); err != nil {
+	if err := writeJSONAsNativeBlocks(w, body, compressed, revision); err != nil {
 		return writeQueryError(w, bw, err)
 	}
 
@@ -232,10 +240,10 @@ type wfDocument struct {
 
 // writeJSONAsNativeBlocks parses a ClickHouse JSON response and writes it as
 // native protocol data blocks.
-func writeJSONAsNativeBlocks(w *protoWriter, body []byte, compressed bool) error {
+func writeJSONAsNativeBlocks(w *protoWriter, body []byte, compressed bool, revision uint64) error {
 	var doc wfDocument
 	if len(bytes.TrimSpace(body)) == 0 {
-		return writeEmptyBlock(w)
+		return writeEmptyBlockRevision(w, revision)
 	}
 	decoder := json.NewDecoder(bytes.NewReader(body))
 	decoder.UseNumber()
@@ -244,7 +252,7 @@ func writeJSONAsNativeBlocks(w *protoWriter, body []byte, compressed bool) error
 	}
 
 	if len(doc.Meta) == 0 {
-		return writeEmptyBlock(w)
+		return writeEmptyBlockRevision(w, revision)
 	}
 
 	columns := make([]Column, len(doc.Meta))
@@ -265,7 +273,7 @@ func writeJSONAsNativeBlocks(w *protoWriter, body []byte, compressed bool) error
 	}
 
 	if compressed {
-		return writeCompressedDataBlock(w, columns, colValues, numRows)
+		return writeCompressedDataBlockRevision(w, columns, colValues, numRows, revision)
 	}
-	return writeDataBlock(w, columns, colValues, numRows)
+	return writeDataBlockRevision(w, columns, colValues, numRows, revision)
 }

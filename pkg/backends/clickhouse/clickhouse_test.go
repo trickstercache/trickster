@@ -31,6 +31,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	listenerconfig "github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/native"
+
+	"github.com/prometheus/common/sigv4"
 )
 
 func TestClickhouseClientInterfacing(t *testing.T) {
@@ -149,6 +151,12 @@ func TestNativeListenerAdapterLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	o.ListenerNames = []string{"native", "default", "other"}
+	rebound, err := a.Describe(c, "native")
+	if err != nil || rebound.RestartKey != before.RestartKey {
+		t.Fatalf("listener bindings changed restart identity: %v", err)
+	}
+	o.ListenerNames = []string{"default", "native"}
 	o.OriginURL = "http://localhost:9000"
 	after, err := a.Describe(c, "native")
 	if err != nil || before.RestartKey == after.RestartKey {
@@ -184,5 +192,67 @@ func TestNativeListenerAdapterLifecycle(t *testing.T) {
 	c.Backends["other"] = o.Clone()
 	if _, err := a.Describe(c, "native"); err == nil {
 		t.Fatal("accepted multiple backend mappings")
+	}
+}
+
+func TestNativeListenerAdapterValidation(t *testing.T) {
+	a := nativeListenerAdapter{}
+	if NativeListenerAdapter().Protocol() != listenerconfig.ProtocolClickHouse {
+		t.Fatal("exported adapter has wrong protocol")
+	}
+	if a.Protocol() != listenerconfig.ProtocolClickHouse || !a.SupportsHTTP() || a.Configured(nil) {
+		t.Fatal("unexpected ClickHouse adapter capabilities")
+	}
+	if err := a.ValidateListener(nil); err == nil {
+		t.Fatal("accepted nil listener options")
+	}
+	if err := a.ValidateListener(listenerconfig.New("native")); err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name string
+		o    *bo.Options
+	}{
+		{"nil", nil},
+		{"unsupported protocol", &bo.Options{Protocol: "tcp"}},
+		{"native SigV4", &bo.Options{Protocol: "native", SigV4: &sigv4.SigV4Config{}}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if err := a.ValidateBackend(test.o); err == nil {
+				t.Fatal("expected validation error")
+			}
+		})
+	}
+	if err := a.ValidateBackend(&bo.Options{Protocol: "HTTP"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.ValidateUserRouter(nil, "", nil); err == nil {
+		t.Fatal("accepted native user routing")
+	}
+	if resolver := a.RouteResolver(native.BuildRequest{}); resolver != nil {
+		t.Fatal("unexpected native route resolver")
+	}
+	if _, err := a.Build(native.BuildRequest{}); err == nil {
+		t.Fatal("accepted empty build request")
+	}
+
+	if _, _, err := nativeBackend(nil, "native"); err == nil {
+		t.Fatal("accepted nil config")
+	}
+	conf := &config.Config{Backends: bo.Lookup{}}
+	if _, err := a.Describe(conf, "native"); err == nil {
+		t.Fatal("accepted listener without backend")
+	}
+	conf.Backends["prom"] = &bo.Options{
+		Provider: providers.Prometheus, ListenerNames: []string{"native"},
+	}
+	if _, err := a.Describe(conf, "native"); err == nil {
+		t.Fatal("accepted non-ClickHouse native backend")
+	}
+	conf.Backends["prom"].Provider = providers.ClickHouse
+	if _, err := a.Handler(native.BuildRequest{
+		Config: conf, ListenerName: "native", BackendClients: backends.Backends{},
+	}); err == nil {
+		t.Fatal("accepted missing backend router")
 	}
 }
