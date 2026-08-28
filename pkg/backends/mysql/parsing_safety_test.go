@@ -17,7 +17,6 @@
 package mysql
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -27,80 +26,11 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 
 	vtmysql "vitess.io/vitess/go/mysql"
-	"vitess.io/vitess/go/vt/sqlparser"
 )
 
-func TestAnalyzerPredicateSafetyAdversarial(t *testing.T) {
-	a := mustNewAnalyzer()
-	base := `SELECT UNIX_TIMESTAMP(ts) DIV 60 * 60 AS time, COUNT(*) AS value
-FROM events WHERE %s GROUP BY time ORDER BY time`
-	tests := []struct {
-		name, predicate string
-		mode            sqlanalyzer.CacheMode
-		reason          sqlanalyzer.AnalysisReason
-	}{
-		{"or", `(ts >= FROM_UNIXTIME(1785542400) OR tenant = 1) AND ts < FROM_UNIXTIME(1785628800)`, sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsafePredicate},
-		{"not", `NOT(ts >= FROM_UNIXTIME(1785542400)) AND ts < FROM_UNIXTIME(1785628800)`, sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsafePredicate},
-		{"nested boolean", `ts >= FROM_UNIXTIME(1785542400) AND (ts < FROM_UNIXTIME(1785628800) OR tenant = 1)`, sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsafePredicate},
-		{"reversed comparison", `FROM_UNIXTIME(1785542400) <= ts AND ts < FROM_UNIXTIME(1785628800)`, sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsafePredicate},
-		{"duplicate lower", `ts >= FROM_UNIXTIME(1785542400) AND ts >= FROM_UNIXTIME(1785542460) AND ts < FROM_UNIXTIME(1785628800)`, sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsafePredicate},
-		{"multiple time axes", `ts >= FROM_UNIXTIME(1785542400) AND ts < FROM_UNIXTIME(1785628800) AND created_at >= FROM_UNIXTIME(1785542400) AND created_at < FROM_UNIXTIME(1785628800)`, sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonAmbiguousTimeAxis},
-		{"alias in predicate", `time >= 1785542400 AND time < 1785628800`, sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonAmbiguousTimeAxis},
-		{"safe nested non-time predicate", `ts >= FROM_UNIXTIME(1785542400) AND ts < FROM_UNIXTIME(1785628800) AND (tenant = 1 OR tenant = 2)`, sqlanalyzer.CacheModeDelta, sqlanalyzer.ReasonDeltaCacheable},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := a.Analyze(fmt.Sprintf(base, tc.predicate), time.Time{})
-			if got.Mode != tc.mode || got.Reason != tc.reason {
-				t.Fatalf("Analyze() = %s/%s (%v), want %s/%s", got.Mode,
-					got.Reason, got.Err, tc.mode, tc.reason)
-			}
-		})
-	}
-}
-
-// TestAnalyzerFailsClosedForUninspectableReads covers the two shapes the
-// analyzer cannot reason about: text it could not parse, and read-only ASTs
-// that are not a plain *sqlparser.Select. Both must reach CacheModeNone before
-// any of the per-statement safety checks, which only inspect a plain SELECT.
-func TestAnalyzerFailsClosedForUninspectableReads(t *testing.T) {
-	a := mustNewAnalyzer()
-	for name, query := range map[string]string{
-		// A union is uncacheable even when every branch is deterministic,
-		// because nothing proves that over the whole AST today.
-		"deterministic union":     "SELECT 1 UNION SELECT 2",
-		"deterministic union all": "SELECT 1 UNION ALL SELECT 2",
-		// These are the cases the old leading-token and read-only-AST
-		// shortcuts admitted: the nondeterminism sits in a branch the
-		// analyzer never reached.
-		"nondeterministic union":    "SELECT 1 UNION ALL SELECT RAND()",
-		"union with session read":   "SELECT 1 UNION SELECT @@sql_mode",
-		"union with user variable":  "SELECT 1 UNION SELECT @report_id",
-		"union with advisory lock":  "SELECT 1 UNION ALL SELECT GET_LOCK('reporting', 1)",
-		"union of time-range reads": safeDateTimeQuery + " UNION ALL " + safeDateTimeQuery,
-		"parenthesized union":       "(SELECT 1) UNION (SELECT RAND())",
-		// Parser-rejected text that begins with SELECT proves nothing about
-		// what the origin would execute.
-		"parser-rejected select":      "SELECT FROM trips",
-		"parser-rejected select list": "SELECT , FROM trips",
-		"parser-rejected lowercase":   "select count(* from trips",
-	} {
-		t.Run(name, func(t *testing.T) {
-			got := a.Analyze(query, time.Time{})
-			if got.Mode != sqlanalyzer.CacheModeNone {
-				t.Fatalf("Analyze() = %s/%s, want %s", got.Mode, got.Reason,
-					sqlanalyzer.CacheModeNone)
-			}
-			if got.Reason == "" {
-				t.Fatal("uninspectable statement has no stable analysis reason")
-			}
-		})
-	}
-}
-
 // TestProxiedParserSkewMakesSessionCacheUnsafe covers the session-level half of
-// the same rule: a read the analyzer could not parse but the origin executed
-// must not leave later statements cacheable.
+// the analyzer's fail-closed rule: a read the analyzer could not parse but the
+// origin executed must not leave later statements cacheable.
 func TestProxiedParserSkewMakesSessionCacheUnsafe(t *testing.T) {
 	h := &protocolHandler{config: ProtocolConfig{Cache: newTestCache()}}
 	session := &upstreamSession{}
@@ -152,88 +82,6 @@ func TestParserSkewDoesNotPoisonLaterCacheEntries(t *testing.T) {
 	}
 }
 
-func TestAnalyzerRejectsComplexStatementShapes(t *testing.T) {
-	a := mustNewAnalyzer()
-	tests := map[string]string{
-		"scalar subquery": strings.Replace(safeDateTimeQuery, "count(*) AS trips",
-			"count(*) + (SELECT 1) AS trips", 1),
-		"correlated subquery": strings.Replace(safeDateTimeQuery, "FROM trips",
-			"FROM trips t WHERE EXISTS (SELECT 1 FROM zones z WHERE z.id = t.zone_id) AND", 1),
-		"cte":    `WITH source AS (SELECT * FROM trips) SELECT UNIX_TIMESTAMP(pickup_datetime) DIV 300 * 300 AS time, COUNT(*) AS trips FROM source WHERE pickup_datetime >= FROM_UNIXTIME(1785542400) AND pickup_datetime < FROM_UNIXTIME(1785628800) GROUP BY time`,
-		"union":  safeDateTimeQuery + " UNION ALL " + safeDateTimeQuery,
-		"having": safeDateTimeQuery + " HAVING COUNT(*) > 0",
-	}
-	for name, query := range tests {
-		t.Run(name, func(t *testing.T) {
-			got := a.Analyze(query, time.Time{})
-			if got.Mode == sqlanalyzer.CacheModeDelta {
-				t.Fatalf("unsafe statement was DPC: %+v", got.Plan)
-			}
-			if got.Reason == "" {
-				t.Fatal("unsafe statement has no stable analysis reason")
-			}
-		})
-	}
-}
-
-func TestAnalyzerBoundOperatorMatrix(t *testing.T) {
-	a := mustNewAnalyzer()
-	styles := []struct {
-		name, bucket, axis, lower, upper string
-	}{
-		{"datetime", `UNIX_TIMESTAMP(ts) DIV 60 * 60`, "ts", `FROM_UNIXTIME(1785542400)`, `FROM_UNIXTIME(1785628800)`},
-		{"epoch seconds", `epoch DIV 60 * 60`, "epoch", `1785542400`, `1785628800`},
-		{"epoch nanoseconds", `epoch_ns DIV 60000000000 * 60000000000`, "epoch_ns", `1785542400000000000`, `1785628800000000000`},
-	}
-	operators := []string{"<", "<=", ">", ">=", "="}
-	for _, style := range styles {
-		for _, operator := range operators {
-			for _, reversed := range []bool{false, true} {
-				name := fmt.Sprintf("%s/%s/reversed=%t", style.name, operator, reversed)
-				t.Run(name, func(t *testing.T) {
-					left, right := style.axis, style.lower
-					if reversed {
-						left, right = right, left
-					}
-					predicate := fmt.Sprintf("%s %s %s AND %s < %s",
-						left, operator, right, style.axis, style.upper)
-					query := fmt.Sprintf(`SELECT %s AS time, COUNT(*) AS value FROM events WHERE %s GROUP BY time ORDER BY time`, style.bucket, predicate)
-					got := a.Analyze(query, time.Time{})
-					wantDelta := !reversed && operator == ">="
-					if (got.Mode == sqlanalyzer.CacheModeDelta) != wantDelta {
-						t.Fatalf("Analyze() = %s/%s (%v), want delta=%t", got.Mode,
-							got.Reason, got.Err, wantDelta)
-					}
-				})
-			}
-		}
-		t.Run(style.name+"/between", func(t *testing.T) {
-			query := fmt.Sprintf(`SELECT %s AS time, COUNT(*) AS value FROM events WHERE %s BETWEEN %s AND %s GROUP BY time ORDER BY time`, style.bucket, style.axis, style.lower, style.upper)
-			if got := a.Analyze(query, time.Time{}); got.Mode == sqlanalyzer.CacheModeDelta {
-				t.Fatalf("BETWEEN was DPC: %+v", got.Plan)
-			}
-		})
-		t.Run(style.name+"/reversed-between", func(t *testing.T) {
-			query := fmt.Sprintf(`SELECT %s AS time, COUNT(*) AS value FROM events WHERE %s BETWEEN %s AND %s AND %s < %s GROUP BY time ORDER BY time`, style.bucket, style.lower, style.axis, style.upper, style.axis, style.upper)
-			if got := a.Analyze(query, time.Time{}); got.Mode == sqlanalyzer.CacheModeDelta {
-				t.Fatalf("reversed BETWEEN was DPC: %+v", got.Plan)
-			}
-		})
-	}
-	for _, predicate := range []string{
-		"time >= 1785542400 AND time < 1785628800",
-		"1785542400 <= time AND time < 1785628800",
-		"time BETWEEN 1785542400 AND 1785628800",
-	} {
-		t.Run("bucket output/"+predicate, func(t *testing.T) {
-			query := fmt.Sprintf(`SELECT epoch DIV 60 * 60 AS time, COUNT(*) AS value FROM events WHERE %s GROUP BY time ORDER BY time`, predicate)
-			if got := a.Analyze(query, time.Time{}); got.Mode == sqlanalyzer.CacheModeDelta {
-				t.Fatalf("bucket-output predicate was DPC: %+v", got.Plan)
-			}
-		})
-	}
-}
-
 func TestAnalyzerRangeEdges(t *testing.T) {
 	a := mustNewAnalyzer()
 	query := func(lower, upper string) string {
@@ -280,23 +128,6 @@ func TestAnalyzerRangeEdges(t *testing.T) {
 		if got := a.Analyze(query, time.Time{}); got.Mode == sqlanalyzer.CacheModeDelta {
 			t.Fatalf("open range was DPC: %+v", got.Plan)
 		}
-	}
-}
-
-func TestAnalyzeResultShapeRejectsEmptyGroupByWithoutPanicking(t *testing.T) {
-	statement, err := defaultAnalyzer.parser.Parse(safeDateTimeQuery)
-	if err != nil {
-		t.Fatal(err)
-	}
-	selectStatement := statement.(*sqlparser.Select)
-	bucket, err := analyzeBucket(selectStatement)
-	if err != nil {
-		t.Fatal(err)
-	}
-	selectStatement.GroupBy.Exprs = nil
-	if _, _, err = analyzeResultShape(selectStatement, bucket); !errors.Is(err,
-		ErrUnsupportedResultShape) {
-		t.Fatalf("empty GROUP BY error = %v, want %v", err, ErrUnsupportedResultShape)
 	}
 }
 

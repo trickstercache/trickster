@@ -1118,7 +1118,7 @@ func (h *protocolHandler) ComQuery(c *vtmysql.Conn, query string,
 	if parsed.statementType != vtparser.StmtSelect {
 		return h.proxyQuery(session, query, parsed, callback)
 	}
-	analysis := defaultAnalyzer.analyzeParsed(query, parsed.statement, parsed.err)
+	analysis := defaultAnalyzer.AnalyzeParsed(query, parsed.statement, parsed.err)
 	h.observeAnalysis(parsed.statementType, analysis)
 	if h.cacheEligible(session) && analysis.Mode != sqlanalyzer.CacheModeNone {
 		cacheStarted := time.Now()
@@ -1163,7 +1163,7 @@ func hasMultipleStatements(query string) (multiple bool, err error) {
 			err = fmt.Errorf("%w: statement boundary parsing failed", ErrInvalidSQL)
 		}
 	}()
-	pieces, err := defaultAnalyzer.parser.SplitStatementToPieces(query)
+	pieces, err := defaultAnalyzer.Parser().SplitStatementToPieces(query)
 	return len(pieces) > 1, err
 }
 
@@ -1188,7 +1188,7 @@ func parseQuery(query string) parsedQuery {
 	parsed := parsedQuery{statementType: vtparser.Preview(query)}
 	switch parsed.statementType {
 	case vtparser.StmtSelect, vtparser.StmtUse, vtparser.StmtSet, vtparser.StmtUnknown:
-		parsed.statement, parsed.err = defaultAnalyzer.parser.Parse(query)
+		parsed.statement, parsed.err = defaultAnalyzer.Parser().Parse(query)
 		if parsed.err == nil && parsed.statementType == vtparser.StmtUnknown {
 			// Preview classifies statements by their leading keyword, so WITH and
 			// VALUES statements need the full AST to determine their behavior.
@@ -1212,7 +1212,7 @@ type queryTokenSummary struct {
 }
 
 func summarizeQueryTokens(query string) queryTokenSummary {
-	tokenizer := defaultAnalyzer.parser.NewStringTokenizer(query)
+	tokenizer := defaultAnalyzer.Parser().NewStringTokenizer(query)
 	var summary queryTokenSummary
 	maintenance := false
 	explainBody := false
@@ -1361,7 +1361,7 @@ func hasExecutableComment(query string, noBackslashEscapes bool) bool {
 		// quote boundaries without changing the query sent to the origin.
 		query = strings.ReplaceAll(query, `\`, `\\`)
 	}
-	tokenizer := defaultAnalyzer.parser.NewStringTokenizer(query)
+	tokenizer := defaultAnalyzer.Parser().NewStringTokenizer(query)
 	tokenizer.SkipSpecialComments = true
 	for {
 		tokenType, value := tokenizer.Scan()

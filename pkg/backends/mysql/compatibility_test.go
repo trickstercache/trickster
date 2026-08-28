@@ -109,12 +109,12 @@ func BenchmarkMySQLCompatibilityCorpus(b *testing.B) {
 			b.Run(tc.Name, func(b *testing.B) {
 				b.ReportAllocs()
 				for b.Loop() {
-					first, err := analyzer.parser.Parse(tc.ExpandedSQL)
+					first, err := analyzer.Parser().Parse(tc.ExpandedSQL)
 					if err != nil {
 						b.Fatal(err)
 					}
 					formatted := sqlparser.String(first)
-					if _, err := analyzer.parser.Parse(formatted); err != nil {
+					if _, err := analyzer.Parser().Parse(formatted); err != nil {
 						b.Fatal(err)
 					}
 				}
@@ -269,12 +269,12 @@ func TestCompatibilityCorpusParseFormatParseAndRenderStability(t *testing.T) {
 	analyzer := mustNewAnalyzer()
 	for _, tc := range corpus.Cases {
 		t.Run(tc.Name, func(t *testing.T) {
-			first, err := analyzer.parser.Parse(tc.ExpandedSQL)
+			first, err := analyzer.Parser().Parse(tc.ExpandedSQL)
 			if err != nil {
 				t.Fatalf("initial parse: %v", err)
 			}
 			formatted := sqlparser.String(first)
-			second, err := analyzer.parser.Parse(formatted)
+			second, err := analyzer.Parser().Parse(formatted)
 			if err != nil {
 				t.Fatalf("formatted parse: %v\n%s", err, formatted)
 			}

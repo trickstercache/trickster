@@ -178,7 +178,7 @@ type deltaRequestWindow struct {
 }
 
 type normalizedTimeRangeRenderer interface {
-	renderTimeRange(lower, upper time.Time) (string, error)
+	RenderTimeRange(lower, upper time.Time) (string, error)
 }
 
 func (h *protocolHandler) cacheEligible(session *upstreamSession) bool {
@@ -381,7 +381,7 @@ func (h *protocolHandler) executeEmptyDelta(c *vtmysql.Conn, session *upstreamSe
 		result, err := h.executeOrigin(session, originalQuery)
 		return result, cachestatus.LookupStatusProxyOnly, err
 	}
-	query, err := renderer.renderTimeRange(window.lower, window.upper)
+	query, err := renderer.RenderTimeRange(window.lower, window.upper)
 	if err != nil {
 		h.observeRewriteFailure("render_empty_extent")
 		result, fetchErr := h.executeOrigin(session, originalQuery)
