@@ -255,9 +255,9 @@ func TestBoundRenderingAndParsingHelpers(t *testing.T) {
 		{"2020-01-02T03:04:05Z", 1_577_934_245, true},
 		{"not-a-time", -62_135_596_800, false},
 	} {
-		got, ok := parseSQLTime(test.value)
+		got, ok := sqlanalyzer.ParseSQLTime(test.value)
 		if got.Unix() != test.want || ok != test.ok {
-			t.Errorf("parseSQLTime(%q) = (%s, %t), want Unix %d, %t", test.value, got, ok, test.want, test.ok)
+			t.Errorf("ParseSQLTime(%q) = (%s, %t), want Unix %d, %t", test.value, got, ok, test.want, test.ok)
 		}
 	}
 }

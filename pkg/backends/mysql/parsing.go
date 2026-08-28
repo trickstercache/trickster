@@ -146,15 +146,15 @@ func (a *Analyzer) analyzeParsed(statement string, stmt sqlparser.Statement,
 		}
 	}
 	if selectStmt.Limit != nil {
-		return objectAnalysis(sqlanalyzer.ReasonUnsupportedLimit, ErrUnsupportedStatement)
+		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedLimit, ErrUnsupportedStatement)
 	}
 	if selectStmt.Distinct || selectStmt.With != nil || selectStmt.Having != nil ||
 		len(selectStmt.Windows) > 0 || containsSubquery(selectStmt) {
-		return objectAnalysis(sqlanalyzer.ReasonUnsupportedFormat, ErrUnsupportedResultShape)
+		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedFormat, ErrUnsupportedResultShape)
 	}
 	bucket, err := analyzeBucket(selectStmt)
 	if err != nil {
-		return objectAnalysis(sqlanalyzer.ReasonUnsupportedBucket, err)
+		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedBucket, err)
 	}
 	rng, err := analyzeRange(selectStmt.Where, bucket)
 	if err != nil {
@@ -164,7 +164,7 @@ func (a *Analyzer) analyzeParsed(statement string, stmt sqlparser.Statement,
 		} else if errors.Is(err, ErrAmbiguousTimeAxis) {
 			reason = sqlanalyzer.ReasonAmbiguousTimeAxis
 		}
-		return objectAnalysis(reason, err)
+		return sqlanalyzer.ObjectAnalysis(reason, err)
 	}
 	groups, values, err := analyzeResultShape(selectStmt, bucket)
 	if err != nil {
@@ -172,12 +172,12 @@ func (a *Analyzer) analyzeParsed(statement string, stmt sqlparser.Statement,
 		if errors.Is(err, ErrUnsupportedGrouping) {
 			reason = sqlanalyzer.ReasonUnsupportedGrouping
 		}
-		return objectAnalysis(reason, err)
+		return sqlanalyzer.ObjectAnalysis(reason, err)
 	}
 
 	canonical, renderer, err := buildArtifacts(selectStmt, rng, bucket.step)
 	if err != nil {
-		return objectAnalysis(sqlanalyzer.ReasonUnsafePredicate, err)
+		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsafePredicate, err)
 	}
 	backfillTolerance := extractBackfillTolerance(statement, selectStmt)
 	identitySuffix := ""
@@ -243,10 +243,6 @@ func isNondeterministic(stmt sqlparser.SQLNode) bool {
 	return unsafe
 }
 
-func objectAnalysis(reason sqlanalyzer.AnalysisReason, err error) sqlanalyzer.Analysis {
-	return sqlanalyzer.Analysis{Mode: sqlanalyzer.CacheModeObject, Reason: reason, Err: err}
-}
-
 // Parse converts a MySQL statement into the same TimeRangeQuery contract used
 // by the HTTP SQL backend. The protocol handler can use the returned cacheability
 // flag to select DPC, OPC, or pass-through behavior without exposing Vitess ASTs.
@@ -255,36 +251,20 @@ func Parse(statement string, now time.Time) (*timeseries.TimeRangeQuery, bool, e
 	if analysis.Mode == sqlanalyzer.CacheModeNone {
 		return nil, false, analysis.Err
 	}
-	query := &timeseries.TimeRangeQuery{
-		Statement: statement, CacheKeyElements: map[string]string{"query": statement},
-	}
+	query := sqlanalyzer.NewTimeRangeQuery(statement)
 	if analysis.Mode != sqlanalyzer.CacheModeDelta || analysis.Plan == nil {
 		return query, true, analysis.Err
 	}
 	plan := analysis.Plan
-	query.Statement = plan.CanonicalSQL
-	query.CacheKeyElements["query"] = plan.CanonicalSQL
+	plan.ApplyToQuery(query)
 	if plan.IdentitySuffix != "" {
 		query.CacheKeyElements["mysql_directives"] = plan.IdentitySuffix
 	}
-	query.Step = plan.Step
-	query.StepNS = plan.Step.Nanoseconds()
-	query.Phase = plan.Phase
 	window, windowErr := buildDeltaRequestWindow(plan)
 	if windowErr != nil {
 		return query, true, windowErr
 	}
 	query.Extent = window.output
-	query.TimestampDefinition = timeseries.FieldDefinition{
-		Name: plan.OutputColumn, DataType: plan.OutputUnit,
-		Role: timeseries.RoleTimestamp, ProviderData1: byte(plan.InputUnit),
-	}
-	query.TagFieldDefintions = make(timeseries.FieldDefinitions, len(plan.GroupColumns))
-	for i, name := range plan.GroupColumns {
-		query.TagFieldDefintions[i] = timeseries.FieldDefinition{Name: name, Role: timeseries.RoleTag}
-	}
-	query.ParsedQuery = plan
-	query.BackfillTolerance = plan.BackfillTolerance
 	return query, true, nil
 }
 
@@ -488,7 +468,7 @@ func analyzeRange(where *sqlparser.Where, bucket bucketInfo) (rangeInfo, error) 
 		// that bucket cannot be reused as a complete DPC bucket.
 		return rangeInfo{}, ErrUnsafePredicate
 	}
-	parts := flattenAnd(where.Expr, nil)
+	parts := sqlanalyzer.FlattenConjunction(where.Expr, nil, splitAnd, nil)
 	for _, part := range parts {
 		cmp, ok := part.(*sqlparser.ComparisonExpr)
 		if !ok || !sameTimeAxis(cmp.Left, bucket) {
@@ -586,12 +566,11 @@ func plausibleTimeBound(expr sqlparser.Expr) bool {
 	return ok && (value >= 100_000_000 || value <= -100_000_000)
 }
 
-func flattenAnd(expr sqlparser.Expr, dst []sqlparser.Expr) []sqlparser.Expr {
+func splitAnd(expr sqlparser.Expr) (sqlparser.Expr, sqlparser.Expr, bool) {
 	if and, ok := expr.(*sqlparser.AndExpr); ok {
-		dst = flattenAnd(and.Left, dst)
-		return flattenAnd(and.Right, dst)
+		return and.Left, and.Right, true
 	}
-	return append(dst, expr)
+	return nil, nil, false
 }
 
 func sameTimeAxis(expr sqlparser.Expr, bucket bucketInfo) bool {
@@ -611,7 +590,7 @@ func parseBound(expr sqlparser.Expr, inclusive bool) (*mysqlBound, error) {
 		if !ok {
 			return nil, ErrUnsafePredicate
 		}
-		if !safeUnixSeconds(seconds) {
+		if !sqlanalyzer.SafeUnixSeconds(seconds) {
 			return nil, ErrUnsafePredicate
 		}
 		return &mysqlBound{
@@ -629,22 +608,13 @@ func parseBound(expr sqlparser.Expr, inclusive bool) (*mysqlBound, error) {
 			unit: timeseries.DateTimeUnixNano, node: expr, style: boundEpochNanos,
 		}, nil
 	}
-	if !safeUnixSeconds(value) {
+	if !sqlanalyzer.SafeUnixSeconds(value) {
 		return nil, ErrUnsafePredicate
 	}
 	return &mysqlBound{
 		value: time.Unix(value, 0).UTC(), inclusive: inclusive,
 		unit: timeseries.DateTimeUnixSecs, node: expr, style: boundEpochSeconds,
 	}, nil
-}
-
-func safeUnixSeconds(value int64) bool {
-	// Every downstream extent operation uses Unix nanoseconds. Keeping seconds
-	// within that representable interval avoids silent wraparound in alignment,
-	// extent serialization, and result cropping.
-	const maxUnixNanoSeconds = int64(1<<63-1) / int64(time.Second)
-	const minUnixNanoSeconds = -maxUnixNanoSeconds
-	return value >= minUnixNanoSeconds && value <= maxUnixNanoSeconds
 }
 
 type selectOutput struct {

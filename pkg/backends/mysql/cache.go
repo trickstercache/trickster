@@ -406,11 +406,8 @@ func buildDeltaRequestWindow(plan *sqlanalyzer.QueryPlan) (deltaRequestWindow, e
 		return deltaRequestWindow{}, errors.New("unsupported MySQL delta request bounds")
 	}
 	rawLower, rawUpper := plan.LowerBound.Value, plan.UpperBound.Value
-	lower := floorTime(rawLower, plan.Step)
-	if !lower.Equal(rawLower) {
-		lower = lower.Add(plan.Step)
-	}
-	upper := floorTime(plan.UpperBound.Value, plan.Step)
+	lower := sqlanalyzer.CeilBucket(rawLower, plan.Step, plan.Phase)
+	upper := sqlanalyzer.FloorBucket(rawUpper, plan.Step, plan.Phase)
 	if rawUpper.Sub(rawLower) < plan.Step || lower.After(upper) {
 		upper = lower
 	}
@@ -424,14 +421,6 @@ func buildDeltaRequestWindow(plan *sqlanalyzer.QueryPlan) (deltaRequestWindow, e
 	window.output = requested
 	window.cacheable = timeseries.ExtentList{requested}
 	return window, nil
-}
-
-func floorTime(value time.Time, step time.Duration) time.Time {
-	remainder := value.UnixNano() % step.Nanoseconds()
-	if remainder < 0 {
-		remainder += step.Nanoseconds()
-	}
-	return value.Add(-time.Duration(remainder))
 }
 
 func (h *protocolHandler) executeOrigin(session *upstreamSession,

@@ -115,20 +115,20 @@ func (analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis {
 		return sqlanalyzer.Analysis{Mode: mode, Reason: reason, Err: err}
 	}
 	if hasSetOperation(selectQuery) {
-		return objectAnalysis(sqlanalyzer.ReasonUnsupportedStatement, ErrUnsupportedStatement)
+		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedStatement, ErrUnsupportedStatement)
 	}
 	if selectQuery.Limit != nil || selectQuery.LimitBy != nil {
-		return objectAnalysis(sqlanalyzer.ReasonUnsupportedLimit, ErrLimitUnsupported)
+		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedLimit, ErrLimitUnsupported)
 	}
 
 	constants := collectConstants(selectQuery.With)
 	bucket, err := analyzeSelectList(selectQuery.SelectItems, constants)
 	if err != nil {
-		return objectAnalysis(sqlanalyzer.ReasonUnsupportedBucket, err)
+		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedBucket, err)
 	}
 	groups, err := analyzeGroupBy(selectQuery.GroupBy, selectQuery.SelectItems, bucket)
 	if err != nil {
-		return objectAnalysis(sqlanalyzer.ReasonUnsupportedGrouping, err)
+		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedGrouping, err)
 	}
 	ranges, err := analyzeRanges(selectQuery, bucket, constants, now)
 	if err != nil {
@@ -138,11 +138,11 @@ func (analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis {
 		} else if errors.Is(err, ErrAmbiguousTimeAxis) {
 			reason = sqlanalyzer.ReasonAmbiguousTimeAxis
 		}
-		return objectAnalysis(reason, err)
+		return sqlanalyzer.ObjectAnalysis(reason, err)
 	}
 	outputFormat, err := analyzeFormat(selectQuery.Format)
 	if err != nil {
-		return objectAnalysis(sqlanalyzer.ReasonUnsupportedFormat, err)
+		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedFormat, err)
 	}
 
 	canonical, renderer := buildQueryArtifacts(selectQuery, ranges, bucket.step)
@@ -171,10 +171,6 @@ func (analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis {
 	}
 }
 
-func objectAnalysis(reason sqlanalyzer.AnalysisReason, err error) sqlanalyzer.Analysis {
-	return sqlanalyzer.Analysis{Mode: sqlanalyzer.CacheModeObject, Reason: reason, Err: err}
-}
-
 func hasSetOperation(query *chast.SelectQuery) bool {
 	return query.UnionAll != nil || query.UnionDistinct != nil || query.Except != nil || query.Intersect != nil
 }
@@ -199,10 +195,7 @@ func parseAnalysis(
 	analysis sqlanalyzer.Analysis,
 ) (*timeseries.TimeRangeQuery, *timeseries.RequestOptions, bool, error) {
 	canObjectCache := analysis.Mode >= sqlanalyzer.CacheModeObject
-	trq := &timeseries.TimeRangeQuery{
-		Statement:        statement,
-		CacheKeyElements: map[string]string{"query": statement},
-	}
+	trq := sqlanalyzer.NewTimeRangeQuery(statement)
 	if analysis.Mode != sqlanalyzer.CacheModeDelta || analysis.Plan == nil {
 		if !canObjectCache {
 			return nil, nil, false, analysis.Err
@@ -211,34 +204,8 @@ func parseAnalysis(
 	}
 
 	plan := analysis.Plan
-	trq.Statement = plan.CanonicalSQL
-	trq.CacheKeyElements["query"] = plan.CanonicalSQL
-	trq.Step = plan.Step
-	trq.StepNS = plan.Step.Nanoseconds()
-	trq.Phase = plan.Phase
-	trq.Extent.Start = plan.LowerBound.Value
-	if !plan.LowerBound.Inclusive {
-		trq.Extent.Start = trq.Extent.Start.Add(plan.Step)
-	}
-	if plan.UpperBound == nil {
-		trq.Extent.End = now
-	} else {
-		trq.Extent.End = plan.UpperBound.Value
-		if !plan.UpperBound.Inclusive {
-			trq.Extent.End = trq.Extent.End.Add(-plan.Step)
-		}
-	}
-	trq.TimestampDefinition = timeseries.FieldDefinition{
-		Name:          plan.OutputColumn,
-		DataType:      plan.OutputUnit,
-		Role:          timeseries.RoleTimestamp,
-		ProviderData1: byte(plan.InputUnit),
-	}
-	trq.TagFieldDefintions = make(timeseries.FieldDefinitions, len(plan.GroupColumns))
-	for i, name := range plan.GroupColumns {
-		trq.TagFieldDefintions[i] = timeseries.FieldDefinition{Name: name, Role: timeseries.RoleTag}
-	}
-	trq.ParsedQuery = plan
+	plan.ApplyToQuery(trq)
+	trq.Extent = plan.RequestExtent(now)
 	trq.ExtractBackfillTolerance(statement)
 
 	options := &timeseries.RequestOptions{
@@ -827,7 +794,7 @@ func analyzeRanges(
 		return result, ErrNotTimeRangeQuery
 	}
 	for _, clause := range clauses {
-		conditions, err := flattenConjunction(clause, nil)
+		conditions, err := flattenConjunction(clause)
 		if err != nil {
 			return result, err
 		}
@@ -922,12 +889,13 @@ func normalizePrimaryBounds(result *rangeAnalysis, bucket bucketSpec) error {
 	lowerOnOutput := result.lower.target != nil && result.lower.target.field == bucket.outputColumn
 	if lowerOnOutput {
 		if result.lower.inclusive {
-			result.lower.value = ceilBucket(result.lower.value, bucket)
+			result.lower.value = sqlanalyzer.CeilBucket(result.lower.value, bucket.step, bucket.phase)
 		} else {
-			result.lower.value = floorBucket(result.lower.value, bucket)
+			result.lower.value = sqlanalyzer.FloorBucket(result.lower.value, bucket.step, bucket.phase)
 			result.lower.target.offset = -bucket.step
 		}
-	} else if !result.lower.inclusive || !alignedToBucket(result.lower.value, bucket) {
+	} else if !result.lower.inclusive ||
+		!sqlanalyzer.AlignedToBucket(result.lower.value, bucket.step, bucket.phase) {
 		return ErrUnsafePredicate
 	}
 
@@ -937,65 +905,35 @@ func normalizePrimaryBounds(result *rangeAnalysis, bucket bucketSpec) error {
 	upperOnOutput := result.upper.target != nil && result.upper.target.field == bucket.outputColumn
 	if upperOnOutput {
 		if result.upper.inclusive {
-			result.upper.value = floorBucket(result.upper.value, bucket)
+			result.upper.value = sqlanalyzer.FloorBucket(result.upper.value, bucket.step, bucket.phase)
 		} else {
-			result.upper.value = ceilBucket(result.upper.value, bucket)
+			result.upper.value = sqlanalyzer.CeilBucket(result.upper.value, bucket.step, bucket.phase)
 			result.upper.target.offset = bucket.step
 		}
 		return nil
 	}
-	if result.upper.inclusive || !alignedToBucket(result.upper.value, bucket) {
+	if result.upper.inclusive ||
+		!sqlanalyzer.AlignedToBucket(result.upper.value, bucket.step, bucket.phase) {
 		return ErrUnsafePredicate
 	}
 	result.upper.target.offset = bucket.step
 	return nil
 }
 
-func alignedToBucket(value time.Time, bucket bucketSpec) bool {
-	if bucket.step <= 0 {
-		return false
-	}
-	return (value.UnixNano()-bucket.phase.Nanoseconds())%bucket.step.Nanoseconds() == 0
-}
-
-func floorBucket(value time.Time, bucket bucketSpec) time.Time {
-	step := bucket.step.Nanoseconds()
-	phase := bucket.phase.Nanoseconds()
-	epochNs := value.UnixNano()
-	remainder := (epochNs - phase) % step
-	if remainder < 0 {
-		remainder += step
-	}
-	return time.Unix(0, epochNs-remainder)
-}
-
-func ceilBucket(value time.Time, bucket bucketSpec) time.Time {
-	floor := floorBucket(value, bucket)
-	if floor.Equal(value) {
-		return floor
-	}
-	return floor.Add(bucket.step)
-}
-
-func flattenConjunction(expression chast.Expr, out []chast.Expr) ([]chast.Expr, error) {
-	expression = unwrapColumnExpr(expression)
-	if binary, ok := expression.(*chast.BinaryOperation); ok {
-		switch strings.ToUpper(string(binary.Operation)) {
-		case chast.KeywordAnd:
-			var err error
-			out, err = flattenConjunction(binary.LeftExpr, out)
-			if err != nil {
-				return nil, err
-			}
-			return flattenConjunction(binary.RightExpr, out)
-		case chast.KeywordOr:
-			return nil, ErrUnsafePredicate
-		}
-	}
-	if containsUnsafeBoolean(expression) {
+func flattenConjunction(expression chast.Expr) ([]chast.Expr, error) {
+	conditions := sqlanalyzer.FlattenConjunction(expression, unwrapColumnExpr, splitConjunction, nil)
+	if slices.ContainsFunc(conditions, containsUnsafeBoolean) {
 		return nil, ErrUnsafePredicate
 	}
-	return append(out, expression), nil
+	return conditions, nil
+}
+
+func splitConjunction(expression chast.Expr) (chast.Expr, chast.Expr, bool) {
+	binary, ok := expression.(*chast.BinaryOperation)
+	if !ok || !strings.EqualFold(string(binary.Operation), chast.KeywordAnd) {
+		return nil, nil, false
+	}
+	return binary.LeftExpr, binary.RightExpr, true
 }
 
 func containsUnsafeBoolean(expression chast.Expr) bool {
@@ -1155,16 +1093,7 @@ func numericBoundStyle(field string, bucket bucketSpec) boundStyle {
 }
 
 func timeFromInteger(value int64, style boundStyle) time.Time {
-	switch style {
-	case boundUnixMilli:
-		return time.Unix(value/1_000, (value%1_000)*int64(time.Millisecond))
-	case boundUnixMicro:
-		return time.Unix(value/1_000_000, (value%1_000_000)*int64(time.Microsecond))
-	case boundUnixNano:
-		return time.Unix(0, value)
-	default:
-		return time.Unix(value, 0)
-	}
+	return sqlanalyzer.UnixTime(value, inputTypeForBound(style))
 }
 
 func evaluateBound(
@@ -1182,7 +1111,7 @@ func evaluateBound(
 			value: timeFromInteger(integer, numericStyle), inclusive: inclusive, style: numericStyle,
 		}, err == nil
 	case *chast.StringLiteral:
-		parsed, ok := parseSQLTime(value.Literal)
+		parsed, ok := sqlanalyzer.ParseSQLTime(value.Literal)
 		return analyzedBound{value: parsed, inclusive: inclusive, style: boundSQLDateTime}, ok
 	case *chast.FunctionExpr:
 		if value.Name == nil {
@@ -1269,17 +1198,6 @@ func evaluateBound(
 		return left, true
 	}
 	return analyzedBound{}, false
-}
-
-func parseSQLTime(value string) (time.Time, bool) {
-	value = strings.ReplaceAll(value, "''", "'")
-	for _, layout := range []string{"2006-01-02 15:04:05", "2006-01-02", time.RFC3339} {
-		parsed, err := time.ParseInLocation(layout, value, time.UTC)
-		if err == nil {
-			return parsed, true
-		}
-	}
-	return time.Time{}, false
 }
 
 func analyzeFormat(format *chast.FormatClause) (byte, error) {
