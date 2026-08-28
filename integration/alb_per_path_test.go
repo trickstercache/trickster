@@ -28,6 +28,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/integration/internal/portutil"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -73,9 +75,8 @@ func TestALBPerPathHeadersTSM(t *testing.T) {
 	t.Cleanup(upA.Close)
 	t.Cleanup(upB.Close)
 
-	frontPort := 19000
-	metricsPort := 19001
-	mgmtPort := 19002
+	ports, release := portutil.Reserve(t, 3)
+	frontPort, metricsPort, mgmtPort := ports[0], ports[1], ports[2]
 
 	yaml := fmt.Sprintf(albTestdata(t, "alb_per_path/perpath.yaml.tmpl"),
 		frontPort, metricsPort, mgmtPort, upA.URL, upB.URL)
@@ -85,6 +86,7 @@ func TestALBPerPathHeadersTSM(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
+	release()
 	go startTrickster(t, ctx, expectedStartError{}, "-config", cfgPath)
 	waitForTrickster(t, fmt.Sprintf("127.0.0.1:%d", metricsPort))
 

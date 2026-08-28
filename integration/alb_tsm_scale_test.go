@@ -34,15 +34,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/integration/internal/portutil"
+
 	"github.com/stretchr/testify/require"
 )
 
 func TestALB_TSM_Scale(t *testing.T) {
 	const (
-		listenPort         = 8590
-		metricsPort        = 8591
-		mgmtPort           = 8592
-		listenAddr         = "127.0.0.1:8590"
 		backendName        = "alb-tsm-scale"
 		labeledBackendName = "alb-tsm-scale-labeled"
 		fgrBackendName     = "alb-fgr-scale"
@@ -51,6 +49,10 @@ func TestALB_TSM_Scale(t *testing.T) {
 		numBackends        = 50
 		numLabeledBackends = 10
 	)
+
+	ports, releasePorts := portutil.Reserve(t, 3)
+	listenPort, metricsPort, mgmtPort := ports[0], ports[1], ports[2]
+	listenAddr := fmt.Sprintf("127.0.0.1:%d", listenPort)
 
 	fakes := make([]*fakeProm, numBackends)
 	for i := range fakes {
@@ -63,6 +65,7 @@ func TestALB_TSM_Scale(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
+	releasePorts()
 	go startTrickster(t, ctx, expectedStartError{}, "-config", cfgPath)
 	waitForTrickster(t, fmt.Sprintf("127.0.0.1:%d", metricsPort))
 
@@ -485,20 +488,21 @@ func TestALB_TSM_Scale(t *testing.T) {
 
 func TestALB_TSM_RealProm_Scale(t *testing.T) {
 	const (
-		listenPort  = 8690
-		metricsPort = 8691
-		mgmtPort    = 8692
-		listenAddr  = "127.0.0.1:8690"
 		promAddr    = "127.0.0.1:9090"
 		backendName = "alb-tsm-real-scale"
 		numShards   = 50
 	)
+
+	ports, releasePorts := portutil.Reserve(t, 3)
+	listenPort, metricsPort, mgmtPort := ports[0], ports[1], ports[2]
+	listenAddr := fmt.Sprintf("127.0.0.1:%d", listenPort)
 
 	cfgPath := writeRealPromScaleConfig(t, listenPort, metricsPort, mgmtPort,
 		promAddr, backendName, numShards)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
+	releasePorts()
 	go startTrickster(t, ctx, expectedStartError{}, "-config", cfgPath)
 	waitForTrickster(t, fmt.Sprintf("127.0.0.1:%d", metricsPort))
 	waitForPrometheusData(t, promAddr)

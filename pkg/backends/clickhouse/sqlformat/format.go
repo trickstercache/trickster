@@ -35,6 +35,8 @@ func Split(statement, fallback string) (string, string, bool, error) {
 	switch statements[0].(type) {
 	case *chast.UseStmt, *chast.SetStmt:
 		return "", "", false, errors.New("session-changing SQL is not supported; use database and per-query settings")
+	case *chast.InsertStmt:
+		return "", "", false, errors.New("INSERT queries are not supported by the native proxy path")
 	}
 	query, ok := statements[0].(*chast.SelectQuery)
 	if !ok {

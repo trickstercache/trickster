@@ -31,6 +31,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/integration/internal/portutil"
 	"github.com/trickstercache/trickster/v2/integration/promstub"
 
 	"github.com/stretchr/testify/assert"
@@ -59,9 +60,8 @@ func TestALBCache(t *testing.T) {
 		upstreamB := mk("b", "2", &bHits)
 		t.Cleanup(upstreamB.Close)
 
-		frontPort := 18900
-		metricsPort := 18901
-		mgmtPort := 18902
+		ports, release := portutil.Reserve(t, 3)
+		frontPort, metricsPort, mgmtPort := ports[0], ports[1], ports[2]
 
 		yaml := fmt.Sprintf(albTestdata(t, "alb_cache/c1.yaml.tmpl"),
 			frontPort, metricsPort, mgmtPort, upstreamA.URL, upstreamB.URL)
@@ -71,6 +71,7 @@ func TestALBCache(t *testing.T) {
 
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Cleanup(cancel)
+		release()
 		go startTrickster(t, ctx, expectedStartError{}, "-config", cfgPath)
 		waitForTrickster(t, fmt.Sprintf("127.0.0.1:%d", metricsPort))
 
@@ -193,9 +194,8 @@ func TestALBCache(t *testing.T) {
 		m2 := makeBadEncoding(&m2QueryHits)
 		t.Cleanup(m2.Close)
 
-		frontPort := 18910
-		metricsPort := 18911
-		mgmtPort := 18912
+		ports, release := portutil.Reserve(t, 3)
+		frontPort, metricsPort, mgmtPort := ports[0], ports[1], ports[2]
 
 		yaml := fmt.Sprintf(albTestdata(t, "alb_cache/c2.yaml.tmpl"),
 			frontPort, metricsPort, mgmtPort, m0.URL, m1.URL, m2.URL)
@@ -205,6 +205,7 @@ func TestALBCache(t *testing.T) {
 
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Cleanup(cancel)
+		release()
 		go startTrickster(t, ctx, expectedStartError{}, "-config", cfgPath)
 		waitForTrickster(t, fmt.Sprintf("127.0.0.1:%d", metricsPort))
 
@@ -310,9 +311,8 @@ func TestALBCache(t *testing.T) {
 		up2 := mk(&m2Hits)
 		t.Cleanup(up2.Close)
 
-		frontPort := 18920
-		metricsPort := 18921
-		mgmtPort := 18922
+		ports, release := portutil.Reserve(t, 3)
+		frontPort, metricsPort, mgmtPort := ports[0], ports[1], ports[2]
 
 		yaml := fmt.Sprintf(albTestdata(t, "alb_cache/v3.yaml.tmpl"),
 			frontPort, metricsPort, mgmtPort, up1.URL, up2.URL)
@@ -322,6 +322,7 @@ func TestALBCache(t *testing.T) {
 
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Cleanup(cancel)
+		release()
 		go startTrickster(t, ctx, expectedStartError{}, "-config", cfgPath)
 		waitForTrickster(t, fmt.Sprintf("127.0.0.1:%d", metricsPort))
 
@@ -414,9 +415,8 @@ func TestALBCache(t *testing.T) {
 		up2 := mk("proxy-only-b", &m2Hits)
 		t.Cleanup(up2.Close)
 
-		frontPort := 18930
-		metricsPort := 18931
-		mgmtPort := 18932
+		ports, release := portutil.Reserve(t, 3)
+		frontPort, metricsPort, mgmtPort := ports[0], ports[1], ports[2]
 
 		yaml := fmt.Sprintf(albTestdata(t, "alb_cache/v4.yaml.tmpl"),
 			frontPort, metricsPort, mgmtPort, up1.URL, up2.URL)
@@ -426,6 +426,7 @@ func TestALBCache(t *testing.T) {
 
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Cleanup(cancel)
+		release()
 		go startTrickster(t, ctx, expectedStartError{}, "-config", cfgPath)
 		waitForTrickster(t, fmt.Sprintf("127.0.0.1:%d", metricsPort))
 
@@ -521,9 +522,8 @@ func TestALBCache(t *testing.T) {
 		up2 := mk("old-range-b", &m2Hits)
 		t.Cleanup(up2.Close)
 
-		frontPort := 18940
-		metricsPort := 18941
-		mgmtPort := 18942
+		ports, release := portutil.Reserve(t, 3)
+		frontPort, metricsPort, mgmtPort := ports[0], ports[1], ports[2]
 
 		yaml := fmt.Sprintf(albTestdata(t, "alb_cache/v5.yaml.tmpl"),
 			frontPort, metricsPort, mgmtPort, up1.URL, up2.URL)
@@ -533,6 +533,7 @@ func TestALBCache(t *testing.T) {
 
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Cleanup(cancel)
+		release()
 		go startTrickster(t, ctx, expectedStartError{}, "-config", cfgPath)
 		waitForTrickster(t, fmt.Sprintf("127.0.0.1:%d", metricsPort))
 

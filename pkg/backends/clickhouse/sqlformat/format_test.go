@@ -33,7 +33,9 @@ func TestSplit(t *testing.T) {
 			t.Fatalf("%s: %q %q %v %v", test.sql, sql, format, sel, err)
 		}
 	}
-	for _, sql := range []string{"SELECT 1; SELECT 2", "USE other", "SET max_threads=2", ""} {
+	for _, sql := range []string{
+		"SELECT 1; SELECT 2", "USE other", "SET max_threads=2", "INSERT INTO t VALUES (1)", "",
+	} {
 		if _, _, _, err := Split(sql, "JSON"); err == nil {
 			t.Fatalf("accepted %q", sql)
 		}
