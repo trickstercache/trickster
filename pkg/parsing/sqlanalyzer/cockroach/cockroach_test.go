@@ -48,8 +48,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Printf("AST type: %T\n", stmt.AST)
-	fmt.Printf("Formatted SQL: %s\n", stmt.AST)
+	stdout.Debug(fmt.Sprintf("Formatted SQL: %s\n", stmt.AST))
 }
 */
 
