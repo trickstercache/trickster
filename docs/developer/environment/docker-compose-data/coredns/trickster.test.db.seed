@@ -1,0 +1,5 @@
+$ORIGIN trickster.test.
+$TTL 1
+@	IN	SOA	ns.trickster.test. admin.trickster.test. 1 60 60 604800 1
+@	IN	NS	ns.trickster.test.
+ns	IN	A	127.0.0.1

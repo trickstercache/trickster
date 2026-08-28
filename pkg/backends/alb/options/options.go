@@ -38,8 +38,13 @@ import (
 type Options struct {
 	// MechanismName indicates the name of the load balancing mechanism
 	MechanismName string `yaml:"mechanism,omitempty"`
-	// Pool provides the list of backend names to be used by the load balancer
-	Pool []string `yaml:"pool,omitempty"`
+	// Pool provides the list of pool members (backend name + optional
+	// weight) to be used by the load balancer
+	Pool PoolMemberList `yaml:"pool,omitempty"`
+	// Discovery, when set, binds this ALB's pool to a named discoverer from
+	// the top-level 'discovery' config section; discovered members are
+	// additive to static Pool entries
+	Discovery *DiscoveryOptions `yaml:"discovery,omitempty"`
 	// HealthyFloor is the minimum health check status value admitted to the pool.
 	// Values below 0 admit members the probe has confirmed Failing; only set
 	// this below 0 if you intend to route to known-broken upstreams.
@@ -174,6 +179,9 @@ func (o *Options) Clone() *Options {
 	if o.UserRouter != nil {
 		c.UserRouter = o.UserRouter.Clone()
 	}
+	if o.Discovery != nil {
+		c.Discovery = o.Discovery.Clone()
+	}
 	c.Pool = slices.Clone(o.Pool)
 	c.FGRStatusCodes = fsc
 	c.FgrCodesLookup = fscm
@@ -201,6 +209,12 @@ func (o *Options) Initialize(_ string) error {
 		}
 	}
 
+	if o.Discovery != nil {
+		if err := o.Discovery.Initialize(""); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -219,13 +233,21 @@ func (o *Options) Validate() (bool, error) {
 			return false, ErrOutputFormatOnlyForTSM
 		}
 	}
+	if o.Discovery != nil {
+		if _, err := o.Discovery.Validate(); err != nil {
+			return false, err
+		}
+	}
 	return true, nil
 }
 
 func (o *Options) ValidatePool(backendName string, allBackends sets.Set[string]) error {
-	for _, bn := range o.Pool {
-		if _, ok := allBackends[bn]; !ok {
-			return te.NewErrInvalidPoolMemberName(backendName, bn)
+	if err := o.Pool.Validate(backendName); err != nil {
+		return err
+	}
+	for _, m := range o.Pool {
+		if _, ok := allBackends[m.Name]; !ok {
+			return te.NewErrInvalidPoolMemberName(backendName, m.Name)
 		}
 	}
 	return nil
@@ -294,7 +316,7 @@ func ValidateNoCycles(albs map[string]*Options) error {
 // includes UserRouter.DefaultBackend and every Users[*].ToBackend.
 func albEdges(o *Options) []string {
 	edges := make([]string, 0, len(o.Pool))
-	edges = append(edges, o.Pool...)
+	edges = append(edges, o.Pool.Names()...)
 	if o.UserRouter != nil {
 		if o.UserRouter.DefaultBackend != "" {
 			edges = append(edges, o.UserRouter.DefaultBackend)

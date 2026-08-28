@@ -70,3 +70,7 @@ notes.txt
 # Local AI Agent Files & Directories
 AGENTS.md
 .claude
+
+# mutable CoreDNS zone data for the autodiscovery integration tests
+# (seeded from docker-compose-data/coredns/*.seed by `make integration-start`)
+docs/developer/environment/docker-compose-data/coredns-zones/

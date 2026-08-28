@@ -146,3 +146,94 @@ func NewErrInvalidRewriterName(rewriterName, backendName string) error {
 			rewriterName, backendName),
 	}
 }
+
+// ErrTemplateIsDefault is an error type for a template backend marked default
+type ErrTemplateIsDefault struct {
+	error
+}
+
+// NewErrTemplateIsDefault returns a new template-is-default error
+func NewErrTemplateIsDefault(backendName string) error {
+	return &ErrTemplateIsDefault{
+		error: fmt.Errorf(
+			`backend "%s" cannot set both is_template and is_default`,
+			backendName),
+	}
+}
+
+// ErrInvalidTemplateProvider is an error type for a template backend using a
+// provider that cannot serve as a template
+type ErrInvalidTemplateProvider struct {
+	error
+}
+
+// NewErrInvalidTemplateProvider returns a new invalid template provider error
+func NewErrInvalidTemplateProvider(provider, backendName string) error {
+	return &ErrInvalidTemplateProvider{
+		error: fmt.Errorf(
+			`backend "%s" with provider "%s" cannot be a template; templates must be origin-serving backends`,
+			backendName, provider),
+	}
+}
+
+// ErrTemplatePoolMember is an error type for a template backend referenced in
+// a static ALB pool
+type ErrTemplatePoolMember struct {
+	error
+}
+
+// NewErrTemplatePoolMember returns a new template pool member error
+func NewErrTemplatePoolMember(poolMemberName, backendName string) error {
+	return &ErrTemplatePoolMember{
+		error: fmt.Errorf(
+			`template backend "%s" cannot be a static pool member of alb "%s"`,
+			poolMemberName, backendName),
+	}
+}
+
+// ErrInvalidDiscovererName is an error type for an alb discovery block
+// referencing an undefined discoverer
+type ErrInvalidDiscovererName struct {
+	error
+}
+
+// NewErrInvalidDiscovererName returns a new invalid discoverer name error
+func NewErrInvalidDiscovererName(discovererName, backendName string) error {
+	return &ErrInvalidDiscovererName{
+		error: fmt.Errorf(
+			`invalid discoverer name "%s" provided in alb "%s"; it must be defined in the top-level discovery section`,
+			discovererName, backendName),
+	}
+}
+
+// ErrInvalidTemplateBackendName is an error type for an alb discovery block
+// referencing a template backend that is undefined or not a template
+type ErrInvalidTemplateBackendName struct {
+	error
+}
+
+// NewErrInvalidTemplateBackendName returns a new invalid template backend
+// name error
+func NewErrInvalidTemplateBackendName(templateBackendName, backendName string) error {
+	return &ErrInvalidTemplateBackendName{
+		error: fmt.Errorf(
+			`invalid template_backend "%s" provided in alb "%s"; it must name a backend with is_template: true`,
+			templateBackendName, backendName),
+	}
+}
+
+// ErrInvalidTemplateTSMProvider is an error type for a discovery template
+// whose provider cannot participate in time-series merging
+type ErrInvalidTemplateTSMProvider struct {
+	error
+}
+
+// NewErrInvalidTemplateTSMProvider returns a new invalid TSM template
+// provider error
+func NewErrInvalidTemplateTSMProvider(provider, templateName, backendName string) error {
+	return &ErrInvalidTemplateTSMProvider{
+		error: fmt.Errorf(
+			`template_backend "%s" with provider "%s" in alb "%s" must use a time-series-merge-capable provider for tsmerge mechanisms or replica_group_label`,
+			templateName, provider, backendName),
+	}
+}

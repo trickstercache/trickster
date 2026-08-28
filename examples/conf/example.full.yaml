@@ -803,6 +803,13 @@ backends:
 #       # pool defines the pool of backends to which the alb routes
 #       # use the two example backends above
 #       pool: [ foo-01.example.com, foo-02.example.com ]
+#
+#       # pool entries optionally carry an integer weight for the round robin
+#       # mechanism (default 1); apportionment is exact. e.g.:
+#       # pool:
+#       #   - foo-01.example.com
+#       #   - name: foo-02.example.com
+#       #     weight: 3 # receives 3 of every 4 requests
 
 #       # healthy_floor is the minimum health status for a Backend to be considered healthy in the pool
 #       #  1 indicates only backends positively reporting as healthy are included
@@ -820,6 +827,59 @@ backends:
 #         # when this is not set, any response code < 400 is considered good. Use this setting to
 #         # provide an explicit list.
 #         status_codes: [ 200 ] # this would consider only 200 OK's good, and not 204, 302, etc.
+
+# # ALB Pool Autodiscovery - see /docs/alb-autodiscovery.md for more information
+# #
+# # An ALB's pool membership can be discovered and kept current at runtime from
+# # Kubernetes, DNS SRV or A/AAAA records, or a watched member-list file.
+# # Discovered members are cloned from a designated template backend. Three
+# # config parts work together: a named discoverer in the top-level discovery
+# # section (connection settings), a template backend (is_template: true), and
+# # the ALB's alb.discovery block (what to select + guardrails).
+#
+# discovery: # top-level section of named discoverers; multiple ALBs can share one
+#   in-cluster:
+#     provider: kubernetes # kubernetes, dns_srv, dns_a, or file
+#     kubernetes:
+#       in_cluster: true # use the pod's service account (default)
+#       # kubeconfig: /path/to/kubeconfig # or run against a remote cluster
+#   corp-dns:
+#     provider: dns_srv
+#     dns:
+#       resolver: 10.0.0.53:53 # optional; default: the system resolver
+#       interval: 30s          # poll cadence; record TTLs act as a floor
+#   external-sd:
+#     provider: file
+#     file:
+#       poll_interval: 30s # stat-poll fallback cadence (notification is primary)
+#
+# backends:
+#   prom-template:
+#     provider: prometheus
+#     is_template: true # never routed; cloned per discovered member, which
+#                       # inherits its cache, TLS, healthcheck, paths, etc.
+#     cache_name: default
+#     healthcheck:
+#       interval: 5s
+#
+#   prom-alb:
+#     provider: alb
+#     alb:
+#       mechanism: tsmerge
+#       # pool: [ static-member ] # optional; discovered members are additive
+#       discovery:
+#         discoverer_name: in-cluster    # a name from the discovery section
+#         template_backend: prom-template
+#         query: # provider-specific selection; kubernetes shown
+#           kind: endpointslices # endpointslices (default), service, or pods
+#           namespace: monitoring
+#           service: prometheus
+#           port: web # port name or number; optional when the target has one port
+#           # replica_group_label: prometheus/shard # per-member TSM replica groups
+#         min_members: 1        # reject snapshots that would shrink below this
+#         debounce_window: 5s   # damp flapping sources
+#         startup_policy: retry # retry (default) or fail when the discoverer is unavailable
+#         health_mode: probe    # probe (default) or provider (use discoverer readiness)
 
 # # Configuration Options for Request Routing Rules - see /docs/rule.md for more information
 

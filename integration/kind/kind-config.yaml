@@ -1,0 +1,19 @@
+# kind cluster for the ALB autodiscovery Kubernetes integration scenario
+# (TestALBDiscoveryKind). A separate worker node is essential: the test
+# severs the API-server connection by pausing the control-plane node's
+# container, and the workloads must live on a node that keeps running
+# (kind retains the control-plane NoSchedule taint when workers exist, so
+# pods land on the worker). extraPortMappings therefore expose the
+# in-cluster Trickster's NodePort front and metrics listeners on the host
+# via the worker node.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: trickster-it
+nodes:
+  - role: control-plane
+  - role: worker
+    extraPortMappings:
+      - containerPort: 30080
+        hostPort: 30080
+      - containerPort: 30081
+        hostPort: 30081
