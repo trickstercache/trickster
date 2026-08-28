@@ -396,6 +396,65 @@ developer-start:
 developer-stop:
 	@cd docs/developer/environment && docker compose stop
 
+
+# --- Integration-only container toggling -------------------------------------
+# The compose file carries integration-only services (e.g. coredns for the
+# autodiscovery DNS tests) commented out between the
+# "-- INTEGRATION CONTAINERS BELOW --" / "-- ABOVE --" markers, so developer
+# workstations never run them. integration-start uncomments that section,
+# seeds the mutable CoreDNS zone directory, and brings the environment up;
+# integration-stop stops the environment and comments the section back out.
+
+COMPOSE_ENV_DIR := docs/developer/environment
+COMPOSE_YML     := $(COMPOSE_ENV_DIR)/docker-compose.yml
+COREDNS_ZONES   := $(COMPOSE_ENV_DIR)/docker-compose-data/coredns-zones
+# services defined only in the integration section of the compose file
+INTEGRATION_SERVICES := coredns
+
+.PHONY: integration-env-enable
+integration-env-enable:
+	@awk 'BEGIN{p=0} \
+		/-- INTEGRATION CONTAINERS BELOW --/{p=1;print;next} \
+		/-- INTEGRATION CONTAINERS ABOVE --/{p=0;print;next} \
+		p==1 && /^#/{sub(/^#/,"");print;next} \
+		{print}' $(COMPOSE_YML) > $(COMPOSE_YML).tmp \
+		&& mv $(COMPOSE_YML).tmp $(COMPOSE_YML)
+	@mkdir -p $(COREDNS_ZONES)
+	@cp -f $(COMPOSE_ENV_DIR)/docker-compose-data/coredns/trickster.test.db.seed \
+		$(COREDNS_ZONES)/trickster.test.db
+	@echo "integration containers enabled in $(COMPOSE_YML)"
+
+.PHONY: integration-env-disable
+integration-env-disable:
+	@awk 'BEGIN{p=0} \
+		/-- INTEGRATION CONTAINERS BELOW --/{p=1;print;next} \
+		/-- INTEGRATION CONTAINERS ABOVE --/{p=0;print;next} \
+		p==1 && !/^[[:space:]]*#/ && !/^[[:space:]]*$$/{print "#" $$0;next} \
+		{print}' $(COMPOSE_YML) > $(COMPOSE_YML).tmp \
+		&& mv $(COMPOSE_YML).tmp $(COMPOSE_YML)
+	@echo "integration containers disabled in $(COMPOSE_YML)"
+
+.PHONY: integration-start
+integration-start: integration-env-enable developer-start
+
+.PHONY: integration-stop
+integration-stop:
+	@$(MAKE) integration-env-enable >/dev/null
+	@# stop-and-remove the integration-only containers so a restart policy
+	@# cannot resurrect them on developer machines
+	@cd $(COMPOSE_ENV_DIR) && docker compose rm -sf $(INTEGRATION_SERVICES)
+	@$(MAKE) developer-stop
+	@$(MAKE) integration-env-disable
+
+.PHONY: integration-delete
+integration-delete:
+	@$(MAKE) integration-env-enable >/dev/null
+	@$(MAKE) developer-delete
+	@$(MAKE) integration-env-disable
+
+# --- End Integration-only container toggling ---------------------------------
+
+
 .PHONY: developer-delete
 developer-delete:
 	@cd docs/developer/environment && docker compose down -v --remove-orphans
@@ -420,3 +479,21 @@ serve-dev:
 
 serve-dev-data-race:
 	RUN_FLAGS=-race $(MAKE) serve-dev 2>&1 | tee race-output.log
+
+# --- Kubernetes autodiscovery integration scenario ---------------------------
+# Creates the kind cluster for integration/kind (TestALBDiscoveryKind),
+# builds the trickster image, loads it, and deploys the manifests.
+KIND_CLUSTER := trickster-it
+
+.PHONY: kind-integration-start
+kind-integration-start:
+	kind create cluster --config integration/kind/kind-config.yaml
+	docker build -t trickster:integration .
+	kind load docker-image trickster:integration --name $(KIND_CLUSTER)
+	kubectl --context kind-$(KIND_CLUSTER) apply -f integration/kind/manifests.yaml
+	kubectl --context kind-$(KIND_CLUSTER) -n trickster-it rollout status \
+		deployment/webecho deployment/trickster --timeout=180s
+
+.PHONY: kind-integration-stop
+kind-integration-stop:
+	kind delete cluster --name $(KIND_CLUSTER)

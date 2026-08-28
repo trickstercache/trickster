@@ -21,6 +21,8 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
@@ -57,6 +59,23 @@ import (
 type Client struct {
 	backends.Backend
 	handler types.Mechanism // this is the actual handler for all request to this backend
+
+	// poolMtx serializes pool swaps (startup, discovery updates) against
+	// StopPool; the request path never takes it -- mechanisms read the pool
+	// via an atomic pointer
+	poolMtx sync.Mutex
+	// staticTargets is the configured (non-discovered) member set, built
+	// once at ValidateAndStartPool
+	staticTargets pool.Targets
+	// poolStopped suppresses swaps after StopPool so a late discovery
+	// update cannot resurrect goroutines during shutdown/reload
+	poolStopped bool
+	// floorWasReset dedupes the healthy_floor-reset warning across
+	// repeated swaps of a churning discovered membership
+	floorWasReset bool
+	// dynamicNames is the current discovered member-name list, for
+	// health/mgmt display
+	dynamicNames atomic.Pointer[[]string]
 }
 
 // Handlers returns a map of the HTTP Handlers the client has registered.
@@ -139,7 +158,7 @@ func ValidateClients(clients backends.Backends) error {
 		if cfg.Provider == providers.ALB && cfg.ALBOptions != nil &&
 			cfg.ALBOptions.MechanismName == names.MechanismTSM {
 			for _, member := range cfg.ALBOptions.Pool {
-				nestedTSMMembers.Set(member)
+				nestedTSMMembers.Set(member.Name)
 			}
 		}
 	}
@@ -200,49 +219,28 @@ func (c *Client) ValidateAndStartPool(clients backends.Backends, hcs healthcheck
 		return c.validateAndStartUserRouter(clients, hcs)
 	}
 	targets := make(pool.Targets, 0, len(o.Pool))
-	var unprobed []string
-	for _, n := range o.Pool {
-		tc, ok := clients[n]
+	for _, m := range o.Pool {
+		tc, ok := clients[m.Name]
 		if !ok {
-			return alberr.NewErrInvalidPoolMemberName(c.Name(), n)
+			return alberr.NewErrInvalidPoolMemberName(c.Name(), m.Name)
 		}
 		if o.MechanismName == names.MechanismTSM {
-			if err := validateTSMPoolMemberProvider(n, clients, sets.NewStringSet()); err != nil {
+			if err := validateTSMPoolMemberProvider(m.Name, clients, sets.NewStringSet()); err != nil {
 				return err
 			}
 		}
-		hc, ok := hcs[n]
+		hc, ok := hcs[m.Name]
 		if !ok {
 			// virtual backends (rule, alb) have no health checks; treat as passing
-			hc = healthcheck.NewStatus(n, "virtual", "", healthcheck.StatusPassing, time.Time{}, nil)
+			hc = healthcheck.NewStatus(m.Name, "virtual", "", healthcheck.StatusPassing, time.Time{}, nil)
 		}
-		if mo := tc.Configuration(); !backends.IsVirtual(mo.Provider) &&
-			(mo.HealthCheck == nil || mo.HealthCheck.Interval <= 0) {
-			unprobed = append(unprobed, n)
-		}
-		targets = append(targets, pool.NewTarget(tc.Router(), hc, tc))
+		targets = append(targets,
+			pool.NewWeightedTarget(tc.Router(), hc, tc, m.EffectiveWeight()))
 	}
-	effectiveFloor := o.HealthyFloor
-	if o.HealthyFloor >= int(healthcheck.StatusPassing) && len(unprobed) > 0 {
-		// floor requires Passing, but these members have no probe interval and
-		// can never leave Unchecked, so they would be permanently excluded --
-		// which can empty the pool entirely and 502 every request. Reset to 0
-		// so unchecked members are admitted, and surface it loudly.
-		effectiveFloor = int(healthcheck.StatusUnchecked)
-		metrics.ALBPoolFloorReset.WithLabelValues(c.Name()).Set(1)
-		logger.Warn("alb healthy_floor reset to 0: pool members have no health check",
-			logging.Pairs{
-				"backend_name":  c.Name(),
-				"healthy_floor": o.HealthyFloor,
-				"members":       strings.Join(unprobed, ","),
-				"hint":          "configure healthcheck.interval on these members, or set healthy_floor: 0",
-			})
-	} else {
-		metrics.ALBPoolFloorReset.WithLabelValues(c.Name()).Set(0)
-	}
-	if pm, ok := c.handler.(types.PoolMechanism); ok {
-		pm.SetPool(pool.New(targets, effectiveFloor))
-	}
+	c.poolMtx.Lock()
+	c.staticTargets = targets
+	c.swapPool(targets)
+	c.poolMtx.Unlock()
 	if o.HealthyFloor <= int(healthcheck.StatusFailing) {
 		// floor admits members whose probe has confirmed them down; operators
 		// who lowered the floor to keep traffic flowing during the startup
@@ -256,6 +254,94 @@ func (c *Client) ValidateAndStartPool(clients backends.Backends, hcs healthcheck
 			})
 	} else {
 		metrics.ALBPoolAdmitsFailing.WithLabelValues(c.Name()).Set(0)
+	}
+	return nil
+}
+
+// swapPool builds a new Pool from the provided full target set and installs
+// it on the mechanism via its atomic holder, then stops the superseded pool.
+// The request hot path is untouched: dispatchers load the pool through an
+// atomic pointer, and in-flight requests holding the old pool's targets
+// complete normally (target handlers and statuses outlive the pool object).
+// Callers must hold c.poolMtx.
+func (c *Client) swapPool(targets pool.Targets) {
+	if c.poolStopped {
+		return
+	}
+	pm, ok := c.handler.(types.PoolMechanism)
+	if !ok {
+		return
+	}
+	oldPool := pm.Pool()
+	pm.SetPool(pool.New(targets, c.effectiveFloor(targets)))
+	if oldPool != nil {
+		oldPool.Stop()
+	}
+}
+
+// effectiveFloor returns the healthy floor to enforce for the provided
+// membership. When the configured floor requires Passing but the set
+// includes unprobed members (no health check interval, and no external
+// health source), those members could never be admitted -- potentially
+// emptying the pool and 502ing every request -- so the floor is reset to 0
+// and the condition is surfaced loudly.
+func (c *Client) effectiveFloor(targets pool.Targets) int {
+	o := c.Configuration().ALBOptions
+	var unprobed []string
+	for _, t := range targets {
+		if t != nil && !t.Probed() {
+			unprobed = append(unprobed, t.Name())
+		}
+	}
+	if o.HealthyFloor >= int(healthcheck.StatusPassing) && len(unprobed) > 0 {
+		metrics.ALBPoolFloorReset.WithLabelValues(c.Name()).Set(1)
+		if !c.floorWasReset {
+			c.floorWasReset = true
+			logger.Warn("alb healthy_floor reset to 0: pool members have no health check",
+				logging.Pairs{
+					"backend_name":  c.Name(),
+					"healthy_floor": o.HealthyFloor,
+					"members":       strings.Join(unprobed, ","),
+					"hint":          "configure healthcheck.interval on these members, or set healthy_floor: 0",
+				})
+		}
+		return int(healthcheck.StatusUnchecked)
+	}
+	c.floorWasReset = false
+	metrics.ALBPoolFloorReset.WithLabelValues(c.Name()).Set(0)
+	return o.HealthyFloor
+}
+
+// SetDynamicTargets atomically replaces the ALB's discovered member set at
+// runtime. The new pool is the configured static members plus the provided
+// dynamic targets; no listener restart, cache teardown, or config reload is
+// involved. It returns false if the pool has been stopped (shutdown/reload
+// in progress), in which case the update was discarded.
+func (c *Client) SetDynamicTargets(dynamic pool.Targets) bool {
+	c.poolMtx.Lock()
+	defer c.poolMtx.Unlock()
+	if c.poolStopped {
+		return false
+	}
+	combined := make(pool.Targets, 0, len(c.staticTargets)+len(dynamic))
+	combined = append(combined, c.staticTargets...)
+	combined = append(combined, dynamic...)
+	c.swapPool(combined)
+	names := make([]string, len(dynamic))
+	for i, t := range dynamic {
+		if t != nil {
+			names[i] = t.Name()
+		}
+	}
+	c.dynamicNames.Store(&names)
+	return true
+}
+
+// DynamicPoolNames returns the names of the ALB's currently-discovered pool
+// members, for health and management display
+func (c *Client) DynamicPoolNames() []string {
+	if n := c.dynamicNames.Load(); n != nil {
+		return slices.Clone(*n)
 	}
 	return nil
 }
@@ -287,7 +373,7 @@ func validateTSMPoolMemberProvider(name string, clients backends.Backends,
 	nextVisited := visited.Clone()
 	nextVisited.Set(name)
 	for _, child := range cfg.ALBOptions.Pool {
-		if err := validateTSMPoolMemberProvider(child, clients, nextVisited); err != nil {
+		if err := validateTSMPoolMemberProvider(child.Name, clients, nextVisited); err != nil {
 			return err
 		}
 	}
@@ -498,9 +584,13 @@ func (c *Client) RouteResolver() backends.RouteResolver {
 	return nil
 }
 
-// StopPool stops this Client's pool. No-op for handlers that don't own a
-// pool (e.g. user_router).
+// StopPool stops this Client's pool and permanently rejects further swaps
+// on this Client (a new Client is built on reload). No-op for handlers that
+// don't own a pool (e.g. user_router).
 func (c *Client) StopPool() {
+	c.poolMtx.Lock()
+	c.poolStopped = true
+	c.poolMtx.Unlock()
 	if pm, ok := c.handler.(types.PoolMechanism); ok {
 		pm.StopPool()
 	}

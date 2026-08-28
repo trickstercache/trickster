@@ -147,7 +147,7 @@ func TestUpdateStatusTextBackendsAndALB(t *testing.T) {
 	albOpts.Provider = providers.ALB
 	albOpts.ALBOptions = ao.New()
 	albOpts.ALBOptions.MechanismName = names.MechanismRR
-	albOpts.ALBOptions.Pool = []string{"member-up", "member-down", "member-nc", "member-init"}
+	albOpts.ALBOptions.Pool = ao.Members("member-up", "member-down", "member-nc", "member-init")
 
 	albClient, err := alb.NewClient("edge", albOpts, nil, nil, nil, nil)
 	if err != nil {
@@ -382,7 +382,7 @@ func TestUpdateStatusTextEdgeCases(t *testing.T) {
 	albOpts.Provider = providers.ALB
 	albOpts.ALBOptions = ao.New()
 	albOpts.ALBOptions.MechanismName = names.MechanismRR
-	albOpts.ALBOptions.Pool = []string{"down-only", "down-only"}
+	albOpts.ALBOptions.Pool = ao.Members("down-only", "down-only")
 
 	downOnly := healthcheck.NewStatus("down-only", providers.Prometheus, "", healthcheck.StatusFailing, now().Add(-time.Minute), nil)
 
@@ -396,7 +396,7 @@ func TestUpdateStatusTextEdgeCases(t *testing.T) {
 	albMissingOpts.Provider = providers.ALB
 	albMissingOpts.ALBOptions = ao.New()
 	albMissingOpts.ALBOptions.MechanismName = names.MechanismRR
-	albMissingOpts.ALBOptions.Pool = []string{"missing-member"}
+	albMissingOpts.ALBOptions.Pool = ao.Members("missing-member")
 	albMissingClient, err := alb.NewClient("missing-edge", albMissingOpts, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("NewClient missing-edge: %v", err)

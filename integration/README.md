@@ -14,8 +14,25 @@ All Trickster capabilities should be covered by at least one integration test, b
 ## Prerequisites
 
 ```sh
-make developer-start developer-seed-data  # from repo root — starts Docker Compose env
+make integration-start developer-seed-data  # from repo root — starts Docker Compose env
 ```
+
+`integration-start` is `developer-start` plus the integration-only
+containers (currently CoreDNS for the ALB autodiscovery DNS tests), which
+live commented out below the `-- INTEGRATION CONTAINERS BELOW --` marker in
+the compose file so developer workstations never run them. The target
+uncomments them and seeds the mutable CoreDNS zone directory before
+compose-up; `make integration-stop` stops the environment and comments them
+back out. `make developer-start` alone still works: the autodiscovery DNS
+tests probe for CoreDNS and skip when it isn't running (CI sets
+`TRICKSTER_DNS_TEST=1` to turn that skip into a failure).
+
+The Kubernetes autodiscovery scenario (`TestALBDiscoveryKind`) is separate
+from compose entirely: it needs a kind cluster prepared via
+`make kind-integration-start` (see `kind/README.md`) and only runs when
+`TRICKSTER_KIND_TEST=1` is set. The autodiscovery soak
+(`TestALBDiscoverySoak`) runs only when `TRICKSTER_SOAK_TEST=1` is set and
+is exercised by the nightly workflow.
 
 ## Running
 

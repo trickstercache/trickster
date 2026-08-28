@@ -116,6 +116,34 @@ The following metrics are available for polling with any Trickster configuration
   * labels:
     * `backend_name` - the name of the configured ALB backend
 
+The following metrics are available when [ALB Autodiscovery](./alb-autodiscovery.md) is configured:
+
+* `trickster_alb_discovery_members` (Gauge) - Current number of discovered ALB pool members
+  * labels:
+    * `alb_name` - the name of the discovery-backed ALB backend
+    * `discoverer` - the name of the discoverer serving the ALB
+
+* `trickster_alb_discovery_member_changes_total` (Counter) - Count of discovered pool member additions and removals
+  * labels:
+    * `alb_name` - the name of the discovery-backed ALB backend
+    * `discoverer` - the name of the discoverer serving the ALB
+    * `event` - `add` or `remove`
+
+* `trickster_alb_discovery_snapshots_total` (Counter) - Count of membership snapshots processed, by result
+  * labels:
+    * `alb_name` - the name of the discovery-backed ALB backend
+    * `discoverer` - the name of the discoverer serving the ALB
+    * `result` - `applied` (membership updated), `unchanged` (no-op), `rejected` (guardrail-refused, e.g. `min_members`), or `partial` (applied with member instantiation failures)
+
+* `trickster_alb_discovery_last_refresh_success_time_seconds` (Gauge) - Epoch timestamp of the last successfully processed snapshot, for staleness alerting
+  * labels:
+    * `alb_name` - the name of the discovery-backed ALB backend
+    * `discoverer` - the name of the discoverer serving the ALB
+
+* `trickster_discovery_refresh_errors_total` (Counter) - Count of provider-side refresh/watch errors (DNS resolution failures, Kubernetes list/sync failures, member-file read/parse failures)
+  * labels:
+    * `discoverer` - the name of the discoverer experiencing the error
+    * `provider` - the discoverer's provider type
 * `trickster_tls_certificate_expiration_time_seconds` (Gauge) - NotAfter time of a serving TLS certificate, as unix seconds. See [tls.md](./tls.md).
   * labels:
     * `listener` - the name of the listener serving the certificate

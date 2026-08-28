@@ -302,9 +302,9 @@ func sanitizeBackendReferences(opts *bo.Options, backendNameMap map[string]strin
 	if opts.ALBOptions == nil {
 		return
 	}
-	for i, name := range opts.ALBOptions.Pool {
-		if newName, ok := backendNameMap[name]; ok {
-			opts.ALBOptions.Pool[i] = newName
+	for i, member := range opts.ALBOptions.Pool {
+		if newName, ok := backendNameMap[member.Name]; ok {
+			opts.ALBOptions.Pool[i].Name = newName
 		}
 	}
 	if opts.ALBOptions.UserRouter == nil {

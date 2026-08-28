@@ -13,13 +13,13 @@ The roadmap for Trickster in 2026 focuses on delivering Trickster versions 2.0 a
 ### Q3 2026
 
 - [ ] Trickster v2.1 Release
-  - [x] Support for MySQL as Time Series
   - [x] Auto-reload config + `conf.d` directory support
+  - [x] Support for [ALB Pool Autodiscovery](./alb-autodiscovery.md)
+  - [x] Support for MySQL as Time Series
   - [ ] Support for Graphite
   - [ ] Support for Druid
   - [ ] Support for InfluxDB 3.0
-  - [ ] Support for ALB Pool Autodiscovery (e.g., Kubernetes Pod Annotations)
-  - [ ] Kube Gateway API support
+  - [ ] Kube Ingress/Gateway API support
   - [ ] More easily-importable Trickster packages by other projects
 
 ## Get Involved

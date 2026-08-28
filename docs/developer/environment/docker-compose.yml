@@ -232,6 +232,29 @@ services:
     depends_on:
       - influxdb2
 
+  # -- INTEGRATION CONTAINERS BELOW --
+  # Integration-test-only services. These stay commented out so developer
+  # workstations never run them; `make integration-start` (repo root)
+  # uncomments everything between the BELOW/ABOVE markers before bringing
+  # the environment up, and `make integration-stop` comments them back out
+  # after stopping it. Lines in this section are toggled by prefixing '#'
+  # at column 0 -- do not hand-edit the commenting style.
+  #
+  # coredns serves the mutable trickster.test zone for the ALB
+  # autodiscovery dns_srv/dns_a integration tests; the zone file lives in
+  # the gitignored docker-compose-data/coredns-zones/ directory, seeded by
+  # make integration-start and rewritten by the tests mid-run.
+#  coredns:
+#    image: coredns/coredns:1.12.0
+#    command: -conf /etc/coredns/Corefile
+#    ports:
+#      - 5399:53/udp
+#      - 5399:53/tcp
+#    volumes:
+#      - ./docker-compose-data/coredns/Corefile:/etc/coredns/Corefile:ro
+#      - ./docker-compose-data/coredns-zones:/zones
+  # -- INTEGRATION CONTAINERS ABOVE --
+
 volumes:
   influxdbv2:
   prometheus-data:
