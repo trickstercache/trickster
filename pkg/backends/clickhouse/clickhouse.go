@@ -31,6 +31,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/aftership"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
@@ -107,15 +108,11 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	}
 	if ro != nil && r.URL != nil {
 		plan, _ := trq.ParsedQuery.(*sqlanalyzer.QueryPlan)
-		renderer, _ := plan.Renderer.(*clickHouseRenderer)
-		format := strings.ToLower(r.URL.Query().Get("default_format"))
-		if format != "" && renderer != nil && !renderer.explicitFormat {
-			output, ok := supportedFormats[format]
-			if !ok {
-				return trq, ro, true, ErrUnsupportedOutputFormat
-			}
-			ro.OutputFormat = output
+		output, err := aftership.ResolveOutputFormat(plan, r.URL.Query().Get("default_format"))
+		if err != nil {
+			return trq, ro, true, err
 		}
+		ro.OutputFormat = output
 	}
 	if ro != nil && ro.OutputFormat == modelch.OutputFormatNative {
 		raw := r.URL.Query().Get("client_protocol_version")

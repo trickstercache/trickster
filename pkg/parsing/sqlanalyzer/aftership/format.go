@@ -14,17 +14,36 @@
  * limitations under the License.
  */
 
-// Package sqlformat handles top-level ClickHouse result format clauses.
-package sqlformat
+package aftership
 
 import (
 	"errors"
+	"strings"
+
+	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
 
 	chast "github.com/AfterShip/clickhouse-sql-parser/parser"
 )
 
-// Split renders a SELECT without its top-level FORMAT clause.
-func Split(statement, fallback string) (string, string, bool, error) {
+// ResolveOutputFormat applies a request's default format only when the analyzed
+// ClickHouse query has no explicit FORMAT clause.
+func ResolveOutputFormat(plan *sqlanalyzer.QueryPlan, fallback string) (byte, error) {
+	if plan == nil {
+		return 0, ErrNotTimeRangeQuery
+	}
+	renderer, ok := plan.Renderer.(*clickHouseRenderer)
+	if fallback == "" || !ok || renderer.explicitFormat {
+		return plan.OutputFormat, nil
+	}
+	output, ok := supportedFormats[strings.ToLower(fallback)]
+	if !ok {
+		return 0, ErrUnsupportedOutputFormat
+	}
+	return output, nil
+}
+
+// SplitFormat renders a SELECT without its top-level FORMAT clause.
+func SplitFormat(statement, fallback string) (string, string, bool, error) {
 	statements, err := chast.NewParser(statement).ParseStmts()
 	if err != nil {
 		return "", "", false, err

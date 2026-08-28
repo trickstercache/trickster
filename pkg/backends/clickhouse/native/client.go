@@ -38,8 +38,8 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/clickhouse/native/server"
-	"github.com/trickstercache/trickster/v2/pkg/backends/clickhouse/sqlformat"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/aftership"
 	"github.com/trickstercache/trickster/v2/pkg/proxy"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 
@@ -208,7 +208,7 @@ func (nc *NativeClient) Fetch(r *http.Request) (*http.Response, error) {
 	if fallback == "" {
 		fallback = "TabSeparated"
 	}
-	statement, format, selectQuery, err := sqlformat.Split(statement, fallback)
+	statement, format, selectQuery, err := aftership.SplitFormat(statement, fallback)
 	if err != nil {
 		return syntheticErrorResponse(http.StatusBadRequest, err), nil
 	}

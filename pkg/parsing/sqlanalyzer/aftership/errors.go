@@ -14,32 +14,32 @@
  * limitations under the License.
  */
 
-package clickhouse
+package aftership
 
-import "github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/aftership"
+import "errors"
 
 var (
 	// ErrInvalidSQL indicates that the ClickHouse parser rejected the statement.
-	ErrInvalidSQL = aftership.ErrInvalidSQL
+	ErrInvalidSQL = errors.New("invalid ClickHouse SQL")
 	// ErrNotTimeRangeQuery indicates that the statement cannot use delta caching.
-	ErrNotTimeRangeQuery = aftership.ErrNotTimeRangeQuery
+	ErrNotTimeRangeQuery = errors.New("query could not be identified as a time range query")
 	// ErrMissingTimeseries indicates that no supported bucket expression was found.
-	ErrMissingTimeseries = aftership.ErrMissingTimeseries
+	ErrMissingTimeseries = errors.New("no supported timeseries expression found")
 	// ErrNoLowerBound indicates that the query has no usable lower time bound.
-	ErrNoLowerBound = aftership.ErrNoLowerBound
+	ErrNoLowerBound = errors.New("no lower bound found in time range query")
 	// ErrNoUpperBound indicates that the query has no usable upper time bound.
-	ErrNoUpperBound = aftership.ErrNoUpperBound
+	ErrNoUpperBound = errors.New("no upper bound found in time range query")
 	// ErrInvalidGroupByClause indicates that GROUP BY is unsafe for delta caching.
-	ErrInvalidGroupByClause = aftership.ErrInvalidGroupByClause
+	ErrInvalidGroupByClause = errors.New("invalid or unsupported GROUP BY clause")
 	// ErrUnsafePredicate indicates that a time predicate cannot be safely rewritten.
-	ErrUnsafePredicate = aftership.ErrUnsafePredicate
+	ErrUnsafePredicate = errors.New("time predicate cannot be safely rewritten")
 	// ErrAmbiguousTimeAxis indicates that more than one primary time range was found.
-	ErrAmbiguousTimeAxis = aftership.ErrAmbiguousTimeAxis
+	ErrAmbiguousTimeAxis = errors.New("query has multiple or ambiguous time axes")
 	// ErrUnsupportedStatement indicates a SELECT shape outside the analyzer subset.
-	ErrUnsupportedStatement = aftership.ErrUnsupportedStatement
+	ErrUnsupportedStatement = errors.New("unsupported ClickHouse SELECT statement")
 	// ErrLimitUnsupported indicates the input a LIMIT keyword, which is currently unsupported
 	// in the caching layer
-	ErrLimitUnsupported = aftership.ErrLimitUnsupported
+	ErrLimitUnsupported = errors.New("limit queries are not supported")
 	// ErrUnsupportedOutputFormat indicates the FORMAT value for the query is not supported
-	ErrUnsupportedOutputFormat = aftership.ErrUnsupportedOutputFormat
+	ErrUnsupportedOutputFormat = errors.New("unsupported output format requested")
 )

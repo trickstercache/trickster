@@ -30,7 +30,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/trickstercache/trickster/v2/pkg/backends/clickhouse/sqlformat"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/aftership"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
@@ -151,7 +151,7 @@ func (h *Handler) handleQuery(
 	compressed bool,
 	revision uint64,
 ) error {
-	sql, _, isSelect, err := sqlformat.Split(q.SQL, "JSON")
+	sql, _, isSelect, err := aftership.SplitFormat(q.SQL, "JSON")
 	if err != nil {
 		return writeQueryError(w, bw, err)
 	}
