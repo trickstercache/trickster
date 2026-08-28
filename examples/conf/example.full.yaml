@@ -331,6 +331,99 @@ backends:
   #   # timeseries_retention_factor, backfill_tolerance, and
   #   # max_object_size_bytes backend settings apply.
 
+  # # example graphite backend. Graphite is an ordinary HTTP backend; the
+  # # settings below are the Graphite-specific ones. See /docs/graphite.md.
+  # graphite1:
+  #   provider: graphite
+  #   origin_url: 'http://graphite.example.com:80'
+  #   cache_name: default
+  #   # Graphite is fetched at its native resolution so one cached series can
+  #   # serve every panel width, which makes its responses larger and longer
+  #   # than most providers'. These two therefore default to 64MB and 524288
+  #   # points for graphite backends, rather than to the generic 512KB and
+  #   # 1024, and only need setting here to override that. A response larger
+  #   # than max_object_size_bytes cannot be delta-cached and is served
+  #   # unaccelerated instead; a series longer than
+  #   # timeseries_retention_factor is cropped and refetched.
+  #   # max_object_size_bytes: 67108864
+  #   # timeseries_retention_factor: 524288
+  #   graphite:
+  #     # time_zone interprets date-anchored from/until values (midnight,
+  #     # today, MM/DD/YY) when a request carries no tz parameter. Set it to
+  #     # the origin's graphite-web TIME_ZONE. default is UTC
+  #     time_zone: UTC
+  #
+  #     # origin_username/origin_password supply a static HTTP Basic
+  #     # credential sent as the Authorization header of every upstream
+  #     # request (proxied, synthetic and health check alike). For non-Basic
+  #     # schemes, set origin_authorization to the verbatim header value
+  #     # (e.g., 'Bearer <token>') instead. unset by default
+  #     # origin_username: 'metrics'
+  #     # origin_password: '<the origin password>'
+  #     # origin_authorization: 'Bearer <token>'
+  #
+  #     # passthrough_max_data_points forwards the client's maxDataPoints to
+  #     # the origin instead of fetching at native resolution and
+  #     # consolidating in Trickster. Requests carrying maxDataPoints are then
+  #     # served unaccelerated, so the origin's consolidation is byte-identical.
+  #     # Leave false unless you need that guarantee: true largely disables
+  #     # acceleration for Grafana, which sends maxDataPoints on every panel.
+  #     # default is false
+  #     passthrough_max_data_points: false
+  #
+  #     # find_cache_ttl is how long a wildcard target's expansion to concrete
+  #     # metric paths is reused before being refreshed from /metrics/expand.
+  #     # Lower it if metrics appear and disappear frequently. default is 1m
+  #     find_cache_ttl: 1m
+  #
+  #     # requests over either shape limit are served through the object
+  #     # cache untouched rather than accelerated: max_targets_per_request
+  #     # bounds the target count (default 128) and max_target_length one
+  #     # target expression's bytes (default 16384)
+  #     max_targets_per_request: 128
+  #     max_target_length: 16384
+  #
+  #     # a wildcard expansion matching more leaves than max_expanded_leaves,
+  #     # or more aggregate leaf-name bytes than max_expansion_bytes, is
+  #     # likewise served through the object cache untouched
+  #     max_expanded_leaves: 4096
+  #     max_expansion_bytes: 2097152
+  #
+  #     # the resolution registry remembers each metric's archive ladder, so
+  #     # that a query's step can be predicted without asking the origin
+  #     resolution_registry:
+  #       # ttl is how long a learned ladder is trusted. Whisper ladders only
+  #       # change when an operator runs whisper-resize.py, so this is long.
+  #       # default is 24h
+  #       ttl: 24h
+  #       # negative_ttl is the initial backoff after a failed resolution; it
+  #       # doubles per consecutive failure, up to 10m. default is 30s
+  #       negative_ttl: 30s
+  #       # max_entries bounds each registry layer. default is 100000
+  #       max_entries: 100000
+  #       # persist writes learned ladders through to this backend's cache, so
+  #       # a restart does not relearn them. default is true
+  #       persist: true
+  #       # probe_concurrency caps simultaneous ladder-learning runs.
+  #       # default is 2
+  #       probe_concurrency: 2
+  #       # probe_budget caps the probes a single learning run may issue.
+  #       # default is 96
+  #       probe_budget: 96
+  #
+  #     # static_retentions seeds the registry with retentions matching your 
+  #     # storage-schemas.conf. Entries are ordered and first-match-wins, exactly
+  #     # as carbon applies them. This is a seed and an override, never the sole
+  #     # source of truth: a match yields Configured confidence and is confirmed
+  #     # by probe, and the probe wins when they disagree. That matters because
+  #     # a Whisper file keeps whatever ladder it was created with, so
+  #     # storage-schemas.conf and the files on disk routinely differ.
+  #     static_retentions:
+  #       - pattern: '^collectd\.'
+  #         retentions: '10s:6h,1m:7d,10m:5y'
+  #       - pattern: '.*'
+  #         retentions: '1m:2d,5m:30d,1h:2y'
+
   # example backend named default. default is always created with these settings unless a different backend is defined here.
   # access this backend via http[s]://trickster-fqdn/default/ unless path_routing_disabled is true
   default:
@@ -340,7 +433,7 @@ backends:
     listener_names: [default]
 
     # provider identifies the backend provider.
-    # Valid options are: prometheus, influxdb, clickhouse, mysql, rule, alb,
+    # Valid options are: prometheus, influxdb, clickhouse, graphite, mysql, rule, alb,
     # reverseproxycache (or just rpc), or reverseproxy (or just rp)
     provider: prometheus
 
@@ -730,6 +823,13 @@ backends:
 #       # pool defines the pool of backends to which the alb routes
 #       # use the two example backends above
 #       pool: [ foo-01.example.com, foo-02.example.com ]
+#
+#       # pool entries optionally carry an integer weight for the round robin
+#       # mechanism (default 1); apportionment is exact. e.g.:
+#       # pool:
+#       #   - foo-01.example.com
+#       #   - name: foo-02.example.com
+#       #     weight: 3 # receives 3 of every 4 requests
 
 #       # healthy_floor is the minimum health status for a Backend to be considered healthy in the pool
 #       #  1 indicates only backends positively reporting as healthy are included
@@ -747,6 +847,59 @@ backends:
 #         # when this is not set, any response code < 400 is considered good. Use this setting to
 #         # provide an explicit list.
 #         status_codes: [ 200 ] # this would consider only 200 OK's good, and not 204, 302, etc.
+
+# # ALB Pool Autodiscovery - see /docs/alb-autodiscovery.md for more information
+# #
+# # An ALB's pool membership can be discovered and kept current at runtime from
+# # Kubernetes, DNS SRV or A/AAAA records, or a watched member-list file.
+# # Discovered members are cloned from a designated template backend. Three
+# # config parts work together: a named discoverer in the top-level discovery
+# # section (connection settings), a template backend (is_template: true), and
+# # the ALB's alb.discovery block (what to select + guardrails).
+#
+# discovery: # top-level section of named discoverers; multiple ALBs can share one
+#   in-cluster:
+#     provider: kubernetes # kubernetes, dns_srv, dns_a, or file
+#     kubernetes:
+#       in_cluster: true # use the pod's service account (default)
+#       # kubeconfig: /path/to/kubeconfig # or run against a remote cluster
+#   corp-dns:
+#     provider: dns_srv
+#     dns:
+#       resolver: 10.0.0.53:53 # optional; default: the system resolver
+#       interval: 30s          # poll cadence; record TTLs act as a floor
+#   external-sd:
+#     provider: file
+#     file:
+#       poll_interval: 30s # stat-poll fallback cadence (notification is primary)
+#
+# backends:
+#   prom-template:
+#     provider: prometheus
+#     is_template: true # never routed; cloned per discovered member, which
+#                       # inherits its cache, TLS, healthcheck, paths, etc.
+#     cache_name: default
+#     healthcheck:
+#       interval: 5s
+#
+#   prom-alb:
+#     provider: alb
+#     alb:
+#       mechanism: tsmerge
+#       # pool: [ static-member ] # optional; discovered members are additive
+#       discovery:
+#         discoverer_name: in-cluster    # a name from the discovery section
+#         template_backend: prom-template
+#         query: # provider-specific selection; kubernetes shown
+#           kind: endpointslices # endpointslices (default), service, or pods
+#           namespace: monitoring
+#           service: prometheus
+#           port: web # port name or number; optional when the target has one port
+#           # replica_group_label: prometheus/shard # per-member TSM replica groups
+#         min_members: 1        # reject snapshots that would shrink below this
+#         debounce_window: 5s   # damp flapping sources
+#         startup_policy: retry # retry (default) or fail when the discoverer is unavailable
+#         health_mode: probe    # probe (default) or provider (use discoverer readiness)
 
 # # Configuration Options for Request Routing Rules - see /docs/rule.md for more information
 

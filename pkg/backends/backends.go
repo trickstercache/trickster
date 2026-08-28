@@ -22,12 +22,19 @@ import (
 	"net/http"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
+	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 )
 
 type protocolHealthProber interface {
 	HealthCheckProbe() healthcheck.Probe
+}
+
+// healthCheckFinalizer returns the effective options a probe registers with,
+// possibly a clone that leaves the input's declarative state untouched.
+type healthCheckFinalizer interface {
+	FinalizeHealthCheckOptions(*ho.Options) *ho.Options
 }
 
 // Backends represents a map of Backends keyed by Name
@@ -65,12 +72,16 @@ func (b Backends) StartHealthChecks(knownStatuses healthcheck.StatusLookup) (hea
 		} else {
 			bo.HealthCheck.Overlay(hco)
 		}
+		probeOpts := bo.HealthCheck
+		if f, ok := c.(healthCheckFinalizer); ok && probeOpts != nil {
+			probeOpts = f.FinalizeHealthCheckOptions(probeOpts)
+		}
 		var st *healthcheck.Status
 		var err error
 		if prober, ok := c.(protocolHealthProber); ok {
-			st, err = registrar.RegisterProbe(k, bo.Provider, bo.HealthCheck, prober.HealthCheckProbe())
+			st, err = registrar.RegisterProbe(k, bo.Provider, probeOpts, prober.HealthCheckProbe())
 		} else {
-			st, err = hc.Register(k, bo.Provider, bo.HealthCheck, c.HealthCheckHTTPClient())
+			st, err = hc.Register(k, bo.Provider, probeOpts, c.HealthCheckHTTPClient())
 		}
 		if err != nil {
 			return nil, err

@@ -29,6 +29,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/clickhouse"
+	"github.com/trickstercache/trickster/v2/pkg/backends/graphite"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
@@ -249,6 +250,66 @@ func TestRegisterProxyRoutesClickHouse(t *testing.T) {
 
 	if len(proxyClients) == 0 {
 		t.Errorf("expected %d got %d", 1, 0)
+	}
+}
+
+func TestRegisterProxyRoutesGraphite(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
+	const body = `[{"target": "dev.fast.cpu.host01.percent", "datapoints": [[35.0, 1787343600]]}]`
+	origin := testutil.NewTestServer(http.StatusOK, body,
+		map[string]string{"Content-Type": "application/json"})
+	defer origin.Close()
+
+	conf, err := config.Load([]string{"-log-level", "debug", "-origin-url", origin.URL,
+		"-provider", providers.Graphite})
+	if err != nil {
+		t.Fatalf("Could not load configuration: %s", err.Error())
+	}
+	caches := registry.LoadCachesFromConfig(conf)
+	defer registry.CloseCaches(caches)
+	logger.SetLogger(logging.ConsoleLogger(level.Info))
+
+	o := conf.Backends["default"]
+	o.IsDefault = false // mount at /default/ only, not at /
+	r := lm.NewRouter()
+	graphiteClient, err := graphite.NewClient("default", o, r, caches["default"], nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	o.HTTPClient = graphiteClient.HTTPClient()
+	proxyClients := backends.Backends{"default": graphiteClient}
+	err = RegisterProxyRoutes(conf, proxyClients, r, lm.NewRouter(), caches, nil, false)
+	if err != nil {
+		t.Error(err)
+	}
+
+	// /render goes to the render handler; the catch-all "/" proxies
+	if len(o.Paths) < 2 {
+		t.Fatalf("expected the full graphite path list, got %d", len(o.Paths))
+	}
+	if o.Paths[0].Path != "/render" || o.Paths[0].HandlerName != "render" {
+		t.Errorf("expected /render -> render first, got %s -> %s", o.Paths[0].Path, o.Paths[0].HandlerName)
+	}
+	if last := o.Paths[len(o.Paths)-1]; last.Path != "/" || last.HandlerName != providers.Proxy {
+		t.Errorf("expected path / to use the %s handler, got %s -> %s", providers.Proxy, last.Path, last.HandlerName)
+	}
+
+	// every graphite endpoint reaches the origin, including an unaccelerable
+	// /render (the static origin body is not a learnable response)
+	for _, path := range []string{
+		"/default/render?target=dev.fast.cpu.host01.percent&from=-1h&format=json",
+		"/default/metrics/find?query=dev.*",
+		"/default/version",
+	} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Errorf("%s: expected %d got %d", path, http.StatusOK, w.Code)
+		}
+		if w.Body.String() != body {
+			t.Errorf("%s: expected origin body, got %q", path, w.Body.String())
+		}
 	}
 }
 

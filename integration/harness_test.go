@@ -167,7 +167,7 @@ type cacheProviderCase struct {
 	Backend string // backend id, e.g. "prom1"
 }
 
-func configHarness(t *testing.T) tricksterHarness {
+func configHarness(t *testing.T, mods ...func(*tkconfig.Config)) tricksterHarness {
 	t.Helper()
 	ports, release := portutil.Reserve(t, 6)
 	frontPort, metricsPort, mgmtPort, mysqlPort := ports[0], ports[1], ports[2], ports[3]
@@ -175,7 +175,7 @@ func configHarness(t *testing.T) tricksterHarness {
 	return tricksterHarness{
 		ConfigPath: writeTestConfig(t,
 			"../docs/developer/environment/trickster-config/trickster.yaml",
-			frontPort, metricsPort, mgmtPort, mysqlPort, clickHouseHTTPOriginPort, clickHouseNativeOriginPort),
+			frontPort, metricsPort, mgmtPort, mysqlPort, clickHouseHTTPOriginPort, clickHouseNativeOriginPort, mods...),
 		BaseAddr:                   fmt.Sprintf("127.0.0.1:%d", frontPort),
 		MetricsAddr:                fmt.Sprintf("127.0.0.1:%d", metricsPort),
 		MgmtAddr:                   fmt.Sprintf("127.0.0.1:%d", mgmtPort),
@@ -201,6 +201,7 @@ func staticConfigHarness(t *testing.T, configPath string) tricksterHarness {
 
 func writeTestConfig(t *testing.T, configPath string,
 	frontPort, metricsPort, mgmtPort, mysqlPort, clickHouseHTTPOriginPort, clickHouseNativeOriginPort int,
+	mods ...func(*tkconfig.Config),
 ) string {
 	t.Helper()
 	b, err := os.ReadFile(configPath)
@@ -262,6 +263,9 @@ func writeTestConfig(t *testing.T, configPath string,
 	c.Metrics = nil
 	c.MgmtConfig.ListenAddress = ""
 	c.MgmtConfig.ListenPort = 0
+	for _, mod := range mods {
+		mod(&c)
+	}
 	out, err := yaml.Marshal(&c)
 	require.NoError(t, err)
 	path := filepath.Join(t.TempDir(), "trickster.yaml")

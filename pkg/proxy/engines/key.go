@@ -17,6 +17,9 @@
 package engines
 
 import (
+	"crypto/sha256"
+	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -25,13 +28,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/trickstercache/trickster/v2/pkg/checksum/md5"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
 	proxyurls "github.com/trickstercache/trickster/v2/pkg/proxy/urls"
-	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
 // ComposeCacheKey assembles a per-backend cache key. The name prefix isolates
@@ -44,14 +45,93 @@ func ComposeCacheKey(name, prefix, engine, suffix string) string {
 	return name + "." + prefix + "." + engine + "." + suffix
 }
 
-// DeriveCacheKey calculates a query-specific keyname based on the user request
+// DerivePathCacheKey derives the cache key of a request for path with no
+// keyed parameters, headers, body fields, or overrides (purge-by-path).
+// identity is the matched path config's IdentityKeyPart, or empty.
+func DerivePathCacheKey(path, method, identity string) string {
+	var kb keyBuilder
+	return kb.sum(path, method, "", "", identity, "")
+}
+
+// cache-key component classes: each keyed element is hashed with the class of
+// its source, so elements of different kinds sharing a name cannot collide
+const (
+	compAuth     byte = 'a' // the effective client Authorization credential
+	compForm     byte = 'f' // a body field named in cache_key_form_fields
+	compHeader   byte = 'h' // a header named in cache_key_headers
+	compOverride byte = 'o' // a provider-supplied cache key element
+	compParam    byte = 'p' // a query parameter named in cache_key_params
+)
+
+type keyComponent struct {
+	class byte
+	name  string
+	value string
+}
+
+// keyBuilder accumulates typed cache-key components and streams them, sorted
+// and length-prefixed, into one sha256 fingerprint
+type keyBuilder struct {
+	comps []keyComponent
+}
+
+func (b *keyBuilder) add(class byte, name, value string) {
+	b.comps = append(b.comps, keyComponent{class: class, name: name, value: value})
+}
+
+// each value is length-prefixed so ["a.b"] and ["a", "b"] cannot collide
+func (b *keyBuilder) addValues(class byte, name string, values []string) {
+	var sb strings.Builder
+	var sizes [binary.MaxVarintLen64]byte
+	for _, v := range values {
+		n := binary.PutUvarint(sizes[:], uint64(len(v)))
+		sb.Write(sizes[:n])
+		sb.WriteString(v)
+	}
+	b.add(class, name, sb.String())
+}
+
+// preamble segments hash in order, then the sorted components; every name and
+// value is length-prefixed, so no delimiter in the data can shift a boundary
+func (b *keyBuilder) sum(preamble ...string) string {
+	slices.SortFunc(b.comps, func(x, y keyComponent) int {
+		if x.class != y.class {
+			return int(x.class) - int(y.class)
+		}
+		if v := strings.Compare(x.name, y.name); v != 0 {
+			return v
+		}
+		return strings.Compare(x.value, y.value)
+	})
+	h := sha256.New()
+	var buf []byte
+	writeStr := func(s string) {
+		buf = binary.AppendUvarint(buf[:0], uint64(len(s)))
+		buf = append(buf, s...)
+		h.Write(buf)
+	}
+	for _, s := range preamble {
+		writeStr(s)
+	}
+	for _, c := range b.comps {
+		buf = append(buf[:0], c.class)
+		h.Write(buf)
+		writeStr(c.name)
+		writeStr(c.value)
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// DeriveCacheKey calculates a query-specific keyname based on the user
+// request, keying each element on its effective (post-override) upstream value
 func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 	pc := pr.rsc.PathConfig
 	upstreamKeyPart := pr.upstreamURLRewriteCacheKey()
 
 	if pc == nil {
-		return md5.Checksum(pr.URL.Path + upstreamKeyPart +
-			pr.corsCacheKeyPart(pr.Request) + extra)
+		var kb keyBuilder
+		return kb.sum(pr.URL.Path, upstreamKeyPart,
+			pr.corsCacheKeyPart(pr.Request), extra)
 	}
 
 	var qp url.Values
@@ -83,62 +163,58 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 
 	if pc.KeyHasher != nil {
 		key := pc.KeyHasher(r.URL.Path, qp, r.Header, b, trq, extra)
-		keyPart := upstreamKeyPart + pr.corsCacheKeyPart(r)
-		if keyPart != "" {
-			return md5.Checksum(key + keyPart)
+		if cors := pr.corsCacheKeyPart(r); upstreamKeyPart != "" || cors != "" {
+			var kb keyBuilder
+			return kb.sum(key, upstreamKeyPart, cors)
 		}
 		return key
 	}
 
-	var k int
-	vals := make([]string, 2+len(qp)+len(r.Header)+len(pc.CacheKeyFormFields)+ckeCnt)
+	kb := keyBuilder{comps: make([]keyComponent, 0, 2+len(qp)+
+		len(pc.CacheKeyHeaders)+len(pc.CacheKeyFormFields)+ckeCnt)}
 	// overrides contains query data modified by the backend provider when
 	// parsing the time range (e.g., a tokenized version of the query statement)
 	var overrides map[string]string
-	used := sets.NewStringSet()
-	if trq != nil && len(trq.CacheKeyElements) > 0 {
+	if trq != nil {
 		overrides = trq.CacheKeyElements
-	} else {
-		overrides = make(map[string]string)
 	}
 
-	if v := r.Header.Get(headers.NameAuthorization); v != "" {
-		vals[k] = fmt.Sprintf("%s.%s.", headers.NameAuthorization, v)
-		k++
+	if v := r.Header.Get(headers.NameAuthorization); v != "" &&
+		!pc.ReplacesHeader(headers.NameAuthorization) {
+		kb.add(compAuth, headers.NameAuthorization, v)
 	}
-	// Append the http method to the slice for creating the derived cache key
-	vals[k] = fmt.Sprintf("%s.%s.", "method", r.Method)
-	k++
 
 	if len(pc.CacheKeyParams) == 1 && pc.CacheKeyParams[0] == "*" {
 		for p := range qp {
-			if v, ok := overrides[p]; ok {
-				vals[k] = fmt.Sprintf("%s.%s.", p, v)
-				used.Set(p)
-			} else {
-				vals[k] = fmt.Sprintf("%s.%s.", p, strings.Join(qp[p], ","))
+			if _, ok := overrides[p]; ok {
+				continue
 			}
-			k++
+			if pc.ReplacesParam(p) {
+				continue
+			}
+			kb.addValues(compParam, p, qp[p])
 		}
 	} else {
 		for _, p := range pc.CacheKeyParams {
-			if v, ok := overrides[p]; ok {
-				vals[k] = fmt.Sprintf("%s.%s.", p, v)
-				used.Set(p)
-				k++
+			if _, ok := overrides[p]; ok {
+				continue
+			}
+			if pc.ReplacesParam(p) {
 				continue
 			}
 			if vv := qp[p]; len(vv) > 0 {
-				vals[k] = fmt.Sprintf("%s.%s.", p, strings.Join(vv, ","))
-				k++
+				kb.addValues(compParam, p, vv)
 			}
 		}
 	}
 
 	for _, p := range pc.CacheKeyHeaders {
+		cn := http.CanonicalHeaderKey(p)
+		if pc.ReplacesHeader(cn) {
+			continue
+		}
 		if v := r.Header.Get(p); v != "" {
-			vals[k] = fmt.Sprintf("%s.%s.", p, v)
-			k++
+			kb.add(compHeader, cn, v)
 		}
 	}
 
@@ -167,36 +243,29 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 		}
 		if bodyWasProcessed {
 			for _, f := range pc.CacheKeyFormFields {
-				if v, ok := overrides[f]; ok {
-					used.Set(f)
-					vals[k] = fmt.Sprintf("%s.%s.", f, v)
-					k++
+				if _, ok := overrides[f]; ok {
+					continue
+				}
+				if pc.ReplacesParam(f) {
 					continue
 				}
 				if _, ok := pr.Form[f]; ok {
 					if v := pr.FormValue(f); v != "" {
-						vals[k] = fmt.Sprintf("%s.%s.", f, v)
-						k++
+						kb.add(compForm, f, v)
 					}
 				}
 			}
 		}
 	}
 
-	if trq != nil {
-		for key, val := range overrides {
-			if _, ok := used[key]; ok {
-				continue
-			}
-			vals[k] = fmt.Sprintf("%s.%s.", key, val)
-			k++
-		}
+	for key, val := range overrides {
+		kb.add(compOverride, key, val)
 	}
-	vals = vals[:k]
-	slices.Sort(vals)
-	return md5.Checksum(pr.URL.Path + "." + strings.Join(vals, "") +
-		upstreamKeyPart +
-		pr.corsCacheKeyPart(r) + extra)
+
+	// the identity part is the precomputed digest of the configured
+	// request_headers/request_params, so rotating either rotates the key
+	return kb.sum(pr.URL.Path, r.Method, upstreamKeyPart,
+		pr.corsCacheKeyPart(r), pc.IdentityKeyPart(), extra)
 }
 
 func (pr *proxyRequest) upstreamURLRewriteCacheKey() string {

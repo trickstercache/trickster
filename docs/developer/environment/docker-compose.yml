@@ -194,6 +194,73 @@ services:
       seed_data_fetch:
         condition: service_completed_successfully
 
+  # graphite (carbon-cache + graphite-web, whisper storage)
+  graphite:
+    image: graphiteapp/graphite-statsd:1.1.10-5
+    ports:
+     - 8081:80     # graphite-web (render / metrics APIs)
+     - 2003:2003   # carbon plaintext ingest
+    environment:
+      - GRAPHITE_DEFAULT_CACHE_DURATION=0
+      - STATSD_DISABLED=1
+    volumes:
+      - ./docker-compose-data/graphite-config/storage-schemas.conf:/opt/graphite/conf/storage-schemas.conf
+      - ./docker-compose-data/graphite-config/storage-aggregation.conf:/opt/graphite/conf/storage-aggregation.conf
+      - graphite-data:/opt/graphite/storage
+    build:
+      context: .
+      network: host
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-T", "2", "-O", "/dev/null", "http://127.0.0.1/metrics/find?query=carbon"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+    restart: always
+
+  # graphite seeder: backfills deterministic data straight into whisper files,
+  # validates it through graphite-web, then exits. Also run by
+  # `make developer-seed-data` (with GRAPHITE_SEED_FORCE=1 to recreate files).
+  graphite_seed:
+    image: graphiteapp/graphite-statsd:1.1.10-5
+    entrypoint: ["/opt/graphite/bin/python3", "/generator/generator.py", "seed"]
+    environment:
+      - GRAPHITE_WEB_URL=http://graphite
+      - GRAPHITE_SEED_WINDOW=6w
+    volumes:
+      - ./docker-compose-data/graphite-config:/generator:ro
+      - ./docker-compose-data/graphite-config/storage-schemas.conf:/opt/graphite/conf/storage-schemas.conf:ro
+      - ./docker-compose-data/graphite-config/storage-aggregation.conf:/opt/graphite/conf/storage-aggregation.conf:ro
+      - graphite-data:/opt/graphite/storage
+    build:
+      context: .
+      network: host
+    depends_on:
+      graphite:
+        condition: service_healthy
+
+  # graphite generator sidecar: catches up any gap since it last ran, then
+  # streams the same deterministic function of time into carbon (port 2003)
+  # at every step boundary, forever. See graphite-config/generator.py.
+  graphite_generator:
+    image: graphiteapp/graphite-statsd:1.1.10-5
+    entrypoint: ["/opt/graphite/bin/python3", "/generator/generator.py", "stream"]
+    environment:
+      - CARBON_HOST=graphite
+      - CARBON_PORT=2003
+    volumes:
+      - ./docker-compose-data/graphite-config:/generator:ro
+      - ./docker-compose-data/graphite-config/storage-schemas.conf:/opt/graphite/conf/storage-schemas.conf:ro
+      - ./docker-compose-data/graphite-config/storage-aggregation.conf:/opt/graphite/conf/storage-aggregation.conf:ro
+      - graphite-data:/opt/graphite/storage
+    build:
+      context: .
+      network: host
+    restart: always
+    depends_on:
+      graphite_seed:
+        condition: service_completed_successfully
+
   # Mocks
 
   mockster:
@@ -232,7 +299,31 @@ services:
     depends_on:
       - influxdb2
 
+  # -- INTEGRATION CONTAINERS BELOW --
+  # Integration-test-only services. These stay commented out so developer
+  # workstations never run them; `make integration-start` (repo root)
+  # uncomments everything between the BELOW/ABOVE markers before bringing
+  # the environment up, and `make integration-stop` comments them back out
+  # after stopping it. Lines in this section are toggled by prefixing '#'
+  # at column 0 -- do not hand-edit the commenting style.
+  #
+  # coredns serves the mutable trickster.test zone for the ALB
+  # autodiscovery dns_srv/dns_a integration tests; the zone file lives in
+  # the gitignored docker-compose-data/coredns-zones/ directory, seeded by
+  # make integration-start and rewritten by the tests mid-run.
+#  coredns:
+#    image: coredns/coredns:1.12.0
+#    command: -conf /etc/coredns/Corefile
+#    ports:
+#      - 5399:53/udp
+#      - 5399:53/tcp
+#    volumes:
+#      - ./docker-compose-data/coredns/Corefile:/etc/coredns/Corefile:ro
+#      - ./docker-compose-data/coredns-zones:/zones
+  # -- INTEGRATION CONTAINERS ABOVE --
+
 volumes:
+  graphite-data:
   influxdbv2:
   prometheus-data:
   mysql-data:

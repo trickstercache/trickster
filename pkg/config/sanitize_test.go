@@ -88,6 +88,7 @@ backends:
         authenticator_name: auth-a
         request_headers:
           X-Org-ID: private-org
+          '+authorization': Bearer prom-append-secret
           cache-control: no-cache
           EXPIRES: Thu, 01 Jan 1970 00:00:00 GMT
         response_headers:
@@ -103,6 +104,20 @@ backends:
     origin_url: http://prom-b.private.example:9090/private/path
     cache_name: cache-b
     tracing_name: traces-a
+  graphite-main:
+    provider: graphite
+    origin_url: http://graphite.private.example:8080
+    cache_name: cache-a
+    graphite:
+      origin_username: graphite-user
+      origin_password: graphite-secret
+    healthcheck:
+      headers:
+        authorization: Bearer graphite-probe-secret
+    paths:
+      - path: /render
+        request_headers:
+          authorization: Bearer graphite-path-secret
   rule-main:
     provider: rule
     rule_name: route-rule
@@ -178,6 +193,7 @@ request_rewriters:
 		"next_route: prom-2",
 		"X-Org-ID: '*****'",
 		"X-Environment: '*****'",
+		"origin_password: '*****'",
 		"cache-control: no-cache",
 		"EXPIRES: Thu, 01 Jan 1970 00:00:00 GMT",
 		"Cache-Control: max-age=60",
@@ -226,6 +242,12 @@ request_rewriters:
 		"private-org",
 		"private-env",
 		"private-ha-shard",
+		"graphite-main",
+		"graphite.private.example",
+		"graphite-secret",
+		"graphite-probe-secret",
+		"graphite-path-secret",
+		"prom-append-secret",
 	} {
 		if strings.Contains(out, privateValue) {
 			t.Errorf("expected sanitized config not to contain %q; got:\n%s", privateValue, out)
@@ -249,6 +271,9 @@ request_rewriters:
 	}
 	if conf.Authenticators["auth-a"].Users["alice"] != "secret-a" {
 		t.Errorf("expected original authenticator users to remain unchanged")
+	}
+	if conf.Backends["graphite-main"].Graphite.OriginPassword != "graphite-secret" {
+		t.Errorf("expected original graphite origin credential to remain unchanged")
 	}
 	if conf.Backends["prom-a"].TracingConfigName != "traces-b" {
 		t.Errorf("expected original backend tracing reference to remain unchanged")

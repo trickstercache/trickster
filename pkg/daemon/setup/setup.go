@@ -250,6 +250,12 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 		applyLoggingConfig(newConf, si.Config)
 	}
 	alb.StartALBPools(clients, si.HealthChecker.Statuses())
+	if err = applyDiscoveryConfig(si, newConf, clients, caches, tracers,
+		oldStatuses); err != nil {
+		handleStartupIssue("autodiscovery setup failed",
+			logging.Pairs{logKeyDetail: err.Error()}, errorFunc)
+		return err
+	}
 	routing.RegisterDefaultBackendRoutesForListeners(listenerRouters, newConf, clients, tracers)
 	routing.RegisterHealthHandler(mr, newConf.MgmtConfig.HealthHandlerPath, si.HealthChecker, clients)
 	applyListenerConfigs(newConf, si.Config, listenerRouters, rh, mr, tracers, clients, errorFunc, lg)

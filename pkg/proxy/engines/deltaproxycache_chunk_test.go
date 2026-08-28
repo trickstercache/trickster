@@ -1208,7 +1208,7 @@ func TestDeltaProxyCacheRequestWithUnmarshalAndUpstreamErrorsChunks(t *testing.T
 	// Give time for the object to be written to cache in a separate goroutine from response
 	time.Sleep(time.Millisecond * 10)
 
-	key := o.Name + "." + o.CacheKeyPrefix + ".dpc.61a603af5b94ea305dc3fa35af4eed98"
+	key := o.Name + "." + o.CacheKeyPrefix + ".dpc.b261d5b3db6309e3f560c51f2e294772cd605444b789a0ce6d232bed56b853fc"
 
 	cc := client.Cache()
 
