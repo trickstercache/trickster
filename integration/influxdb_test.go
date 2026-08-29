@@ -23,6 +23,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+
 	"github.com/stretchr/testify/require"
 )
 
@@ -51,7 +53,7 @@ func TestInfluxDB(t *testing.T) {
 		resp, body := post(t, `{"query": "from(bucket: \"trickster\") |> range(start: -1h, stop: now()) |> aggregateWindow(every: 1m, fn: mean) |> limit(n: 5)", "type": "flux"}`, "trickster-dev-token")
 		require.Equal(t, http.StatusOK, resp.StatusCode, "unexpected status: %s", string(body))
 		require.NotEmpty(t, body)
-		hdr := parseTricksterResult(resp.Header.Get("X-Trickster-Result"))
+		hdr := parseTricksterResult(resp.Header.Get(headers.NameTricksterResult))
 		require.NotEmpty(t, hdr["engine"], "expected engine in X-Trickster-Result")
 	})
 
@@ -90,7 +92,7 @@ func TestInfluxDB(t *testing.T) {
 		b, err := io.ReadAll(resp.Body)
 		require.NoError(t, err)
 		require.Equal(t, http.StatusOK, resp.StatusCode, "unexpected status: %s", string(b))
-		hdr := parseTricksterResult(resp.Header.Get("X-Trickster-Result"))
+		hdr := parseTricksterResult(resp.Header.Get(headers.NameTricksterResult))
 		require.NotEmpty(t, hdr["engine"], "expected engine header on v1 InfluxQL response")
 	})
 

@@ -24,6 +24,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/cache/status"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+
 	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
 	"github.com/stretchr/testify/require"
 )
@@ -95,17 +98,16 @@ func TestInfluxDBSDK(t *testing.T) {
 		}
 		r1 := do()
 		require.Equal(t, http.StatusOK, r1.StatusCode)
-		hdr1 := parseTricksterResult(r1.Header.Get("X-Trickster-Result"))
+		hdr1 := parseTricksterResult(r1.Header.Get(headers.NameTricksterResult))
 		require.Equal(t, "DeltaProxyCache", hdr1["engine"],
 			"expected DeltaProxyCache engine (got %q) — now() range bound may not be parsed",
-			r1.Header.Get("X-Trickster-Result"))
+			r1.Header.Get(headers.NameTricksterResult))
 
 		r2 := do()
 		require.Equal(t, http.StatusOK, r2.StatusCode)
-		hdr2 := parseTricksterResult(r2.Header.Get("X-Trickster-Result"))
-		// "hit" = full cache hit, "phit" = partial (next step boundary advanced).
-		require.Contains(t, []string{"hit", "phit"}, hdr2["status"],
+		hdr2 := parseTricksterResult(r2.Header.Get(headers.NameTricksterResult))
+		require.Contains(t, []string{status.StatusHit, status.StatusPartialHit}, hdr2["status"],
 			"expected cache hit on second call, got %q (header: %q)",
-			hdr2["status"], r2.Header.Get("X-Trickster-Result"))
+			hdr2["status"], r2.Header.Get(headers.NameTricksterResult))
 	})
 }

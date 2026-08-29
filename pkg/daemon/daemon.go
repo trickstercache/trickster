@@ -34,6 +34,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/daemon/setup"
 	"github.com/trickstercache/trickster/v2/pkg/daemon/signaling"
 	"github.com/trickstercache/trickster/v2/pkg/errors"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
@@ -115,7 +116,7 @@ func Start(ctx context.Context, args ...string) error {
 		}
 		if err := si.Listeners.WaitForReady(readinessTimeout); err != nil {
 			logger.Warn("startup completed but some listeners not ready",
-				logging.Pairs{"error": err.Error()})
+				logging.Pairs{keys.Error: err.Error()})
 		} else {
 			logger.Info("all listeners ready", nil)
 		}
@@ -143,7 +144,7 @@ func Hup(si *instance.ServerInstance, source string, args ...string) (bool, erro
 
 	if si.Config == nil {
 		logger.Warn(reload.ConfigNotReloadedText,
-			logging.Pairs{"source": source, "reason": "no existing config to reload"})
+			logging.Pairs{keys.Source: source, keys.Reason: "no existing config to reload"})
 		metrics.ReloadFailuresTotal.Inc()
 		metrics.LastReloadSuccessful.Set(0)
 		return false, nil
@@ -151,17 +152,17 @@ func Hup(si *instance.ServerInstance, source string, args ...string) (bool, erro
 
 	if !si.Config.CheckAndMarkReloadInProgress() {
 		logger.Debug("configuration not stale, skipping reload",
-			logging.Pairs{"source": source})
+			logging.Pairs{keys.Source: source})
 		return false, nil
 	}
 
 	logger.Warn("configuration reload starting now",
-		logging.Pairs{"source": source})
+		logging.Pairs{keys.Source: source})
 
 	// handleReloadFailure handles common reload failure logging and metrics
 	handleReloadFailure := func(message string, err error) (bool, error) {
 		logger.Error(message,
-			logging.Pairs{"error": err.Error(), "source": source})
+			logging.Pairs{keys.Error: err.Error(), keys.Source: source})
 		metrics.ReloadFailuresTotal.Inc()
 		metrics.LastReloadSuccessful.Set(0)
 		metrics.ReloadDurationSeconds.Observe(time.Since(startTime).Seconds())
@@ -187,7 +188,7 @@ func Hup(si *instance.ServerInstance, source string, args ...string) (bool, erro
 	err = setup.ApplyConfig(si, newConf, newClients, hupFunc, nil, si.Listeners)
 	if err != nil {
 		logger.Error("reload failed, rolling back to previous configuration",
-			logging.Pairs{"error": err.Error(), "source": source})
+			logging.Pairs{keys.Error: err.Error(), keys.Source: source})
 		si.Config = oldConfig
 		si.Backends = oldClients
 		si.Caches = oldCaches
@@ -205,7 +206,7 @@ func Hup(si *instance.ServerInstance, source string, args ...string) (bool, erro
 		}
 		if err := si.Listeners.WaitForReady(readinessTimeout); err != nil {
 			logger.Warn("reload completed but some listeners not ready",
-				logging.Pairs{"error": err.Error(), "source": source})
+				logging.Pairs{keys.Error: err.Error(), keys.Source: source})
 		}
 	}
 
@@ -235,7 +236,7 @@ func Hup(si *instance.ServerInstance, source string, args ...string) (bool, erro
 	metrics.LastReloadSuccessfulTimestamp.Set(float64(time.Now().Unix()))
 	metrics.ReloadDurationSeconds.Observe(time.Since(startTime).Seconds())
 
-	logger.Info(reload.ConfigReloadedText, logging.Pairs{"source": source})
+	logger.Info(reload.ConfigReloadedText, logging.Pairs{keys.Source: source})
 	notifyAutoReloader(si)
 	return true, nil
 }
@@ -243,10 +244,10 @@ func Hup(si *instance.ServerInstance, source string, args ...string) (bool, erro
 func reloadGoroutinePanic(site, source string) safego.PanicHandler {
 	return func(r any, stack []byte) {
 		logger.Error("reload background goroutine panic", logging.Pairs{
-			"site":   site,
-			"source": source,
-			"panic":  r,
-			"stack":  string(stack),
+			keys.Site:   site,
+			keys.Source: source,
+			keys.Panic:  r,
+			keys.Stack:  string(stack),
 		})
 	}
 }

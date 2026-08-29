@@ -33,6 +33,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	encoding "github.com/trickstercache/trickster/v2/pkg/encoding/handler"
 	fopt "github.com/trickstercache/trickster/v2/pkg/frontend/options"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
@@ -157,7 +158,7 @@ func registerProxyRoutes(conf *config.Config, clients backends.Backends,
 					defaultBackend, k)
 			}
 			if !dryRun {
-				logger.Debug("default backend identified", logging.Pairs{"name": k})
+				logger.Debug("default backend identified", logging.Pairs{keys.Name: k})
 			}
 			defaultBackend = k
 			cdo = o
@@ -246,8 +247,9 @@ func registerBackendRoutes(r []listenerRoute, metricsRouter router.Router,
 			client.SetCache(c)
 		}
 		logger.Info("registering route paths", logging.Pairs{
-			"backendName":     k,
-			"backendProvider": o.Provider, "upstreamHost": o.Host,
+			keys.BackendName:     k,
+			keys.BackendProvider: o.Provider,
+			"upstreamHost":       o.Host,
 		})
 
 		o.Paths = client.DefaultPathConfigs(o).Overlay(o.Paths)
@@ -262,9 +264,10 @@ func registerBackendRoutes(r []listenerRoute, metricsRouter router.Router,
 			hp := strings.ReplaceAll(conf.MgmtConfig.HealthHandlerPath+"/"+o.Name, "//", "/")
 			logger.Debug("registering health handler path",
 				logging.Pairs{
-					"path": hp, "backendName": o.Name,
-					"upstreamPath": o.HealthCheck.Path,
-					"upstreamVerb": o.HealthCheck.Verb,
+					keys.BackendName: o.Name,
+					keys.Path:        hp,
+					"upstreamPath":   o.HealthCheck.Path,
+					"upstreamVerb":   o.HealthCheck.Verb,
 				})
 			metricsRouter.RegisterRoute(hp, nil, nil, matching.PathMatchTypeExact,
 				middleware.WithResourcesContext(client, o, nil,
@@ -339,7 +342,7 @@ func registerPathRoutes(routes []listenerRoute, conf *config.Config, handlers ha
 	if o.Paths.RegexShadowedByCatchAll() {
 		logger.Warn("regex paths are unreachable behind a catch-all prefix path;"+
 			" convert the catch-all to a regex (e.g., ^/.*) to make them reachable",
-			logging.Pairs{"backendName": o.Name})
+			logging.Pairs{keys.BackendName: o.Name})
 	}
 
 	for _, p := range o.Paths {
@@ -364,11 +367,14 @@ func registerPathRoutes(routes []listenerRoute, conf *config.Config, handlers ha
 
 		logger.Debug("registering backend handler path",
 			logging.Pairs{
-				"backendName": o.Name, "path": p.Path,
-				"methods": p.Methods, "handlerName": p.HandlerName,
-				"backendHost": o.Host, "handledPath": handledPath,
-				"matchType":     p.MatchType,
-				"frontendHosts": strings.Join(o.Hosts, ","),
+				keys.BackendName: o.Name,
+				keys.Path:        p.Path,
+				keys.Methods:     p.Methods,
+				keys.HandlerName: p.HandlerName,
+				"backendHost":    o.Host,
+				"handledPath":    handledPath,
+				keys.MatchType:   p.MatchType,
+				"frontendHosts":  strings.Join(o.Hosts, ","),
 			})
 		if p.Handler != nil && len(p.Methods) > 0 {
 			if p.Methods[0] == "*" {
@@ -468,7 +474,7 @@ func registerDefaultBackendRoutes(routerFor func(*bo.Options) []listenerRoute, c
 				tr = t
 			}
 			logger.Info("registering default backend handler paths",
-				logging.Pairs{"backendName": o.Name})
+				logging.Pairs{keys.BackendName: o.Name})
 
 			al := newAccessLogger(conf, o)
 
@@ -478,9 +484,10 @@ func registerDefaultBackendRoutes(routerFor func(*bo.Options) []listenerRoute, c
 						logger.Debug(
 							"registering default backend handler path",
 							logging.Pairs{
-								"backendName": o.Name, "path": p.Path,
-								"handlerName": p.HandlerName,
-								"matchType":   p.MatchType,
+								keys.BackendName: o.Name,
+								keys.Path:        p.Path,
+								keys.HandlerName: p.HandlerName,
+								keys.MatchType:   p.MatchType,
 							})
 
 						// a prefix path is also registered for exact matching so
@@ -512,7 +519,7 @@ func newAccessLogger(conf *config.Config, o *bo.Options) *accesslog.Logger {
 	al, err := accesslog.NewLogger(o.AccessLog, instanceID, o.Name, o.Provider)
 	if err != nil {
 		logger.Error("access logger creation failed; access logging disabled",
-			logging.Pairs{"backendName": o.Name, "error": err.Error()})
+			logging.Pairs{keys.BackendName: o.Name, keys.Error: err.Error()})
 		return nil
 	}
 	return al

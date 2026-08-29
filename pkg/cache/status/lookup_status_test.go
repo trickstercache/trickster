@@ -27,8 +27,8 @@ func TestLookupStatusString(t *testing.T) {
 		lookup LookupStatus
 		want   string
 	}{
-		{LookupStatusHit, "hit"},
-		{LookupStatusKeyMiss, "kmiss"},
+		{LookupStatusHit, StatusHit},
+		{LookupStatusKeyMiss, StatusKeyMiss},
 		{LookupStatus(99), "99"},
 	}
 	for _, c := range cases {

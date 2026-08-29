@@ -51,10 +51,10 @@ func TestApply(t *testing.T) {
 			options: &corso.Options{Mode: corso.ModeMerge, Headers: types.EnvStringMap{
 				headers.NameAllowOrigin:             "https://trickster.example.com",
 				"-Access-Control-Allow-Credentials": "",
-				"Access-Control-Expose-Headers":     "X-Trickster-Result",
+				"Access-Control-Expose-Headers":     headers.NameTricksterResult,
 			}},
 			wantOrigin: "https://trickster.example.com",
-			wantExpose: "X-Trickster-Result",
+			wantExpose: headers.NameTricksterResult,
 		},
 		{
 			name: "replace",
@@ -109,7 +109,7 @@ func TestApplyAppendHeader(t *testing.T) {
 		"access-control-expose-headers": {"X-Origin-Expose"},
 	}
 	Apply(h, &corso.Options{Mode: corso.ModeMerge, Headers: types.EnvStringMap{
-		"+Access-Control-Expose-Headers": "X-Trickster-Result",
+		"+Access-Control-Expose-Headers": headers.NameTricksterResult,
 	}})
 	got := strings.Join(h.Values("Access-Control-Expose-Headers"), ",")
 	if got != "X-Origin-Expose,X-Trickster-Result" {

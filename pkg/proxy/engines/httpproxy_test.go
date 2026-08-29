@@ -25,6 +25,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
@@ -449,11 +450,11 @@ func TestSetStatusHeader(t *testing.T) {
 		httpStatus     int
 		expectedStatus string
 	}{
-		{http.StatusOK, "proxy-only"},
-		{http.StatusNoContent, "proxy-only"},
-		{http.StatusBadRequest, "proxy-error"},
-		{http.StatusInternalServerError, "proxy-error"},
-		{http.StatusBadGateway, "proxy-error"},
+		{http.StatusOK, status.StatusProxyOnly},
+		{http.StatusNoContent, status.StatusProxyOnly},
+		{http.StatusBadRequest, status.StatusProxyError},
+		{http.StatusInternalServerError, status.StatusProxyError},
+		{http.StatusBadGateway, status.StatusProxyError},
 	}
 
 	for _, tt := range tests {

@@ -33,6 +33,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+
 	"github.com/stretchr/testify/require"
 )
 
@@ -59,7 +61,7 @@ func TestALB(t *testing.T) {
 		require.NoError(t, json.Unmarshal(pr.Data, &qd))
 		require.Equal(t, "matrix", qd.ResultType)
 		require.NotEmpty(t, qd.Result, "fr range query should return a non-empty matrix")
-		t.Logf("fr range: %s", hdr.Get("X-Trickster-Result"))
+		t.Logf("fr range: %s", hdr.Get(headers.NameTricksterResult))
 	})
 
 	t.Run("FR instant query", func(t *testing.T) {
@@ -70,7 +72,7 @@ func TestALB(t *testing.T) {
 		require.NoError(t, json.Unmarshal(pr.Data, &qd))
 		require.Equal(t, "vector", qd.ResultType)
 		require.NotEmpty(t, qd.Result, "fr instant query should return a non-empty vector")
-		t.Logf("fr instant: %s", hdr.Get("X-Trickster-Result"))
+		t.Logf("fr instant: %s", hdr.Get(headers.NameTricksterResult))
 	})
 
 	basic := func(user, pass string) string {
@@ -131,7 +133,7 @@ func TestALB(t *testing.T) {
 			"alice should be routed to prom1-labeled (region=us-east); got %v", regions)
 		require.False(t, regions["us-west"],
 			"alice must not see prom2-labeled's us-west label; got %v", regions)
-		t.Logf("ur alice instant: %s", hdr.Get("X-Trickster-Result"))
+		t.Logf("ur alice instant: %s", hdr.Get(headers.NameTricksterResult))
 	})
 
 	t.Run("UR bob instant routes to us-west", func(t *testing.T) {
@@ -141,7 +143,7 @@ func TestALB(t *testing.T) {
 			"bob should be routed to prom2-labeled (region=us-west); got %v", regions)
 		require.False(t, regions["us-east"],
 			"bob must not see prom1-labeled's us-east label; got %v", regions)
-		t.Logf("ur bob instant: %s", hdr.Get("X-Trickster-Result"))
+		t.Logf("ur bob instant: %s", hdr.Get(headers.NameTricksterResult))
 	})
 
 	t.Run("UR alice range routes to us-east", func(t *testing.T) {
@@ -152,7 +154,7 @@ func TestALB(t *testing.T) {
 			"alice range query should route to prom1-labeled; got %v", regions)
 		require.False(t, regions["us-west"],
 			"alice range query must not see us-west; got %v", regions)
-		t.Logf("ur alice range: %s", hdr.Get("X-Trickster-Result"))
+		t.Logf("ur alice range: %s", hdr.Get(headers.NameTricksterResult))
 	})
 
 	t.Run("UR bob range routes to us-west", func(t *testing.T) {
@@ -163,7 +165,7 @@ func TestALB(t *testing.T) {
 			"bob range query should route to prom2-labeled; got %v", regions)
 		require.False(t, regions["us-east"],
 			"bob range query must not see us-east; got %v", regions)
-		t.Logf("ur bob range: %s", hdr.Get("X-Trickster-Result"))
+		t.Logf("ur bob range: %s", hdr.Get(headers.NameTricksterResult))
 	})
 
 	t.Run("FGR header propagation", func(t *testing.T) {
@@ -232,7 +234,7 @@ func TestALB(t *testing.T) {
 		require.NoError(t, json.Unmarshal(pr.Data, &qd))
 		require.Equal(t, "matrix", qd.ResultType)
 		assertAggregationCollapses(t, qd)
-		t.Logf("tsm aggregation merge (range): %s", hdr.Get("X-Trickster-Result"))
+		t.Logf("tsm aggregation merge (range): %s", hdr.Get(headers.NameTricksterResult))
 	})
 
 	t.Run("TSM aggregation merge instant", func(t *testing.T) {
@@ -245,7 +247,7 @@ func TestALB(t *testing.T) {
 		require.Equal(t, "vector", qd.ResultType,
 			"instant aggregation through TSM must emit vector envelope, not matrix")
 		assertAggregationCollapses(t, qd)
-		t.Logf("tsm aggregation merge (instant): %s", hdr.Get("X-Trickster-Result"))
+		t.Logf("tsm aggregation merge (instant): %s", hdr.Get(headers.NameTricksterResult))
 	})
 
 	t.Run("TSM aggregation merge instant POST", func(t *testing.T) {
@@ -269,7 +271,7 @@ func TestALB(t *testing.T) {
 		require.Equal(t, "vector", qd.ResultType,
 			"POST instant aggregation through TSM must still emit vector envelope")
 		assertAggregationCollapses(t, qd)
-		t.Logf("tsm aggregation merge (instant POST): %s", resp.Header.Get("X-Trickster-Result"))
+		t.Logf("tsm aggregation merge (instant POST): %s", resp.Header.Get(headers.NameTricksterResult))
 	})
 
 	t.Run("TSM deflate origin", func(t *testing.T) {
@@ -316,7 +318,7 @@ func TestALB(t *testing.T) {
 		require.Equal(t, "vector", qd.ResultType)
 		require.NotEmpty(t, qd.Result,
 			"tsm merge must decode deflate-encoded upstream and return a non-empty merged vector (issue #938)")
-		t.Logf("tsm deflate origin: %s", hdr.Get("X-Trickster-Result"))
+		t.Logf("tsm deflate origin: %s", hdr.Get(headers.NameTricksterResult))
 	})
 
 	t.Run("FR cancel race", func(t *testing.T) {
@@ -348,12 +350,12 @@ func TestALB(t *testing.T) {
 		var qd promQueryData
 		require.NoError(t, json.Unmarshal(pr.Data, &qd))
 		require.Equal(t, "matrix", qd.ResultType)
-		result := parseTricksterResult(hdr.Get("X-Trickster-Result"))
-		t.Logf("fgr range: %s", hdr.Get("X-Trickster-Result"))
+		result := parseTricksterResult(hdr.Get(headers.NameTricksterResult))
+		t.Logf("fgr range: %s", hdr.Get(headers.NameTricksterResult))
 		require.NotEmpty(t, result["engine"])
 
 		_, hdr2 := queryTricksterProm(t, albAddr, "alb-fgr", "/api/v1/query_range", rangeParams())
-		t.Logf("fgr range (repeat): %s", hdr2.Get("X-Trickster-Result"))
+		t.Logf("fgr range (repeat): %s", hdr2.Get(headers.NameTricksterResult))
 	})
 
 	t.Run("fgr instant query", func(t *testing.T) {
@@ -362,7 +364,7 @@ func TestALB(t *testing.T) {
 		var qd promQueryData
 		require.NoError(t, json.Unmarshal(pr.Data, &qd))
 		require.Equal(t, "vector", qd.ResultType)
-		t.Logf("fgr instant: %s", hdr.Get("X-Trickster-Result"))
+		t.Logf("fgr instant: %s", hdr.Get(headers.NameTricksterResult))
 	})
 
 	for _, mech := range []string{"fgr", "nlm", "tsm"} {
@@ -374,7 +376,7 @@ func TestALB(t *testing.T) {
 			var qd promQueryData
 			require.NoError(t, json.Unmarshal(pr.Data, &qd))
 			require.Equal(t, "vector", qd.ResultType)
-			t.Logf("%s: %d bytes, %s", mech, len(pr.Data), hdr.Get("X-Trickster-Result"))
+			t.Logf("%s: %d bytes, %s", mech, len(pr.Data), hdr.Get(headers.NameTricksterResult))
 		})
 	}
 
@@ -382,8 +384,8 @@ func TestALB(t *testing.T) {
 		for i := range 3 {
 			pr, hdr := queryTricksterProm(t, albAddr, "alb-rr", "/api/v1/query_range", rangeParams())
 			require.Equal(t, "success", pr.Status)
-			require.NotEmpty(t, hdr.Get("X-Trickster-Result"))
-			t.Logf("rr range request %d: %s", i, hdr.Get("X-Trickster-Result"))
+			require.NotEmpty(t, hdr.Get(headers.NameTricksterResult))
+			t.Logf("rr range request %d: %s", i, hdr.Get(headers.NameTricksterResult))
 		}
 	})
 
@@ -395,7 +397,7 @@ func TestALB(t *testing.T) {
 			var qd promQueryData
 			require.NoError(t, json.Unmarshal(pr.Data, &qd))
 			require.Equal(t, "vector", qd.ResultType)
-			t.Logf("rr instant request %d: %s", i, hdr.Get("X-Trickster-Result"))
+			t.Logf("rr instant request %d: %s", i, hdr.Get(headers.NameTricksterResult))
 		}
 	})
 
@@ -405,8 +407,8 @@ func TestALB(t *testing.T) {
 		var qd promQueryData
 		require.NoError(t, json.Unmarshal(pr.Data, &qd))
 		require.Equal(t, "matrix", qd.ResultType)
-		result := parseTricksterResult(hdr.Get("X-Trickster-Result"))
-		t.Logf("tsm range: %s", hdr.Get("X-Trickster-Result"))
+		result := parseTricksterResult(hdr.Get(headers.NameTricksterResult))
+		t.Logf("tsm range: %s", hdr.Get(headers.NameTricksterResult))
 		require.NotEmpty(t, result["engine"])
 	})
 
@@ -417,7 +419,7 @@ func TestALB(t *testing.T) {
 		require.NoError(t, json.Unmarshal(pr.Data, &qd))
 		require.Equal(t, "vector", qd.ResultType)
 		require.NotEmpty(t, qd.Result, "instant query through TSM should return non-empty result")
-		t.Logf("tsm instant: %s", hdr.Get("X-Trickster-Result"))
+		t.Logf("tsm instant: %s", hdr.Get(headers.NameTricksterResult))
 	})
 
 	t.Run("tsm labels merge", func(t *testing.T) {
@@ -427,7 +429,7 @@ func TestALB(t *testing.T) {
 		require.NoError(t, json.Unmarshal(pr.Data, &labels), "labels through TSM should return valid JSON array")
 		require.Contains(t, labels, "job")
 		require.Contains(t, labels, "__name__")
-		t.Logf("tsm labels: %s", hdr.Get("X-Trickster-Result"))
+		t.Logf("tsm labels: %s", hdr.Get(headers.NameTricksterResult))
 	})
 
 	t.Run("tsm label values merge", func(t *testing.T) {
@@ -436,7 +438,7 @@ func TestALB(t *testing.T) {
 		var values []string
 		require.NoError(t, json.Unmarshal(pr.Data, &values), "label values through TSM should return valid JSON array")
 		require.Contains(t, values, "prometheus")
-		t.Logf("tsm label values: %s", hdr.Get("X-Trickster-Result"))
+		t.Logf("tsm label values: %s", hdr.Get(headers.NameTricksterResult))
 	})
 
 	t.Run("nlm range query", func(t *testing.T) {
@@ -445,7 +447,7 @@ func TestALB(t *testing.T) {
 		var qd promQueryData
 		require.NoError(t, json.Unmarshal(pr.Data, &qd))
 		require.Equal(t, "matrix", qd.ResultType)
-		t.Logf("nlm range: %s", hdr.Get("X-Trickster-Result"))
+		t.Logf("nlm range: %s", hdr.Get(headers.NameTricksterResult))
 	})
 
 	t.Run("nlm instant query", func(t *testing.T) {
@@ -456,7 +458,7 @@ func TestALB(t *testing.T) {
 		require.NoError(t, json.Unmarshal(pr.Data, &qd))
 		require.Equal(t, "vector", qd.ResultType)
 		require.NotEmpty(t, qd.Result, "nlm instant query should return non-empty result")
-		t.Logf("nlm instant: %s", hdr.Get("X-Trickster-Result"))
+		t.Logf("nlm instant: %s", hdr.Get(headers.NameTricksterResult))
 	})
 
 	for _, mech := range []string{"fgr", "nlm", "tsm"} {
@@ -467,7 +469,7 @@ func TestALB(t *testing.T) {
 			require.Equal(t, "success", pr.Status)
 			require.Contains(t, hdr.Get("Content-Type"), "json",
 				"%s instant query must advertise a JSON content type (issue #937)", backend)
-			require.NotEmpty(t, hdr.Get("X-Trickster-Result"),
+			require.NotEmpty(t, hdr.Get(headers.NameTricksterResult),
 				"%s instant query must propagate X-Trickster-Result from the inner backend (issue #937)", backend)
 			require.Empty(t, hdr.Get("Content-Encoding"),
 				"%s instant query must not advertise stale upstream Content-Encoding (issue #937)", backend)
@@ -485,7 +487,7 @@ func TestALB(t *testing.T) {
 				require.NotEmpty(t, s.Metric["region"],
 					"%s: each merged series should carry the injected region label", backend)
 			}
-			t.Logf("%s instant: %s", backend, hdr.Get("X-Trickster-Result"))
+			t.Logf("%s instant: %s", backend, hdr.Get(headers.NameTricksterResult))
 		})
 	}
 }

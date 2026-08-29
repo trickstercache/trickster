@@ -26,6 +26,7 @@ import (
 
 	"github.com/trickstercache/mockster/pkg/mocks/byterange"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	tc "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
@@ -50,13 +51,13 @@ func TestObjectProxyCacheRequestChunks(t *testing.T) {
 	o := rsc.BackendOptions
 	o.MaxTTL = timeconv.Duration(time.Duration(15000) * time.Millisecond)
 
-	_, e := testFetchOPC(r, http.StatusPartialContent, "test", map[string]string{"status": "kmiss"})
+	_, e := testFetchOPC(r, http.StatusPartialContent, "test", map[string]string{keys.Status: status.StatusKeyMiss})
 	for _, err = range e {
 		t.Error(err)
 	}
 
 	// get cache hit coverage too by repeating:
-	_, e = testFetchOPC(r, http.StatusPartialContent, "test", map[string]string{"status": "hit"})
+	_, e = testFetchOPC(r, http.StatusPartialContent, "test", map[string]string{keys.Status: status.StatusHit})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -77,7 +78,7 @@ func TestObjectProxyCachePartialHitChunks(t *testing.T) {
 		t.Error(err)
 	}
 
-	_, e := testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "kmiss"})
+	_, e := testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{keys.Status: status.StatusKeyMiss})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -89,7 +90,7 @@ func TestObjectProxyCachePartialHitChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "phit"})
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{keys.Status: status.StatusPartialHit})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -101,7 +102,7 @@ func TestObjectProxyCachePartialHitChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "rmiss"})
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{keys.Status: status.StatusRangeMiss})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -112,14 +113,14 @@ func TestObjectProxyCachePartialHitChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "phit"})
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{keys.Status: status.StatusPartialHit})
 	for _, err = range e {
 		t.Error(err)
 	}
 
 	// Fulfill the cache with the remaining parts
 	r.Header.Del(headers.NameRange)
-	_, e = testFetchOPC(r, http.StatusOK, byterange.Body, map[string]string{"status": "phit"})
+	_, e = testFetchOPC(r, http.StatusOK, byterange.Body, map[string]string{keys.Status: status.StatusPartialHit})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -132,7 +133,7 @@ func TestObjectProxyCachePartialHitChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "kmiss"})
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{keys.Status: status.StatusKeyMiss})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -154,12 +155,12 @@ func TestFullArticuationChunks(t *testing.T) {
 	expectedBody, err := getExpectedRangeBody(r, "d5a5acd7eb4d3f622c62947a9904b89b")
 	require.NoError(t, err)
 
-	_, e := testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "kmiss"})
+	_, e := testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{keys.Status: status.StatusKeyMiss})
 	require.NoError(t, stderrors.Join(e...))
 
 	r.URL.RawQuery = "max-age=1&status=200"
 	r.URL.Path = "/byterange/new/test/path/2"
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "kmiss"})
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{keys.Status: status.StatusKeyMiss})
 	require.NoError(t, stderrors.Join(e...))
 
 	r.URL.RawQuery = "max-age=1&ims=200"
@@ -168,7 +169,7 @@ func TestFullArticuationChunks(t *testing.T) {
 	expectedBody, err = getExpectedRangeBody(r, "d5a5acd7eb4d3f622c62947a9904b89b")
 	require.NoError(t, err)
 
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "kmiss"})
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{keys.Status: status.StatusKeyMiss})
 	require.NoError(t, stderrors.Join(e...))
 
 	r.Header.Set(headers.NameRange, "bytes=10-20, 25-30, 45-60")
@@ -176,14 +177,14 @@ func TestFullArticuationChunks(t *testing.T) {
 	require.NoError(t, err)
 
 	r.URL.RawQuery = "max-age=1&ims=206"
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "phit"})
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{keys.Status: status.StatusPartialHit})
 	require.NoError(t, stderrors.Join(e...))
 
 	r.Header.Set(headers.NameRange, "bytes=9-20, 25-31, 42-65, 70-80")
 	expectedBody, err = getExpectedRangeBody(r, "34b73ea5c4c1ab5b9e34c9888119c58f")
 	require.NoError(t, err)
 
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "phit"})
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{keys.Status: status.StatusPartialHit})
 	require.NoError(t, stderrors.Join(e...))
 
 	time.Sleep(time.Millisecond * 3000)
@@ -193,7 +194,7 @@ func TestFullArticuationChunks(t *testing.T) {
 	require.NoError(t, err)
 
 	r.URL.RawQuery = "max-age=1&ims=206"
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "phit"})
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{keys.Status: status.StatusPartialHit})
 	require.NoError(t, stderrors.Join(e...))
 
 	r.Header.Set(headers.NameRange, "bytes=9-20, 90-95, 100-105")
@@ -201,7 +202,7 @@ func TestFullArticuationChunks(t *testing.T) {
 	require.NoError(t, err)
 	r.URL.Path = "/byterange/new/test/path/20"
 	r.URL.RawQuery = "max-age=1"
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "kmiss"})
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{keys.Status: status.StatusKeyMiss})
 	require.NoError(t, stderrors.Join(e...))
 
 	r.Header.Set(headers.NameRange, "bytes=9-20, 25-32, 41-65")
@@ -209,14 +210,14 @@ func TestFullArticuationChunks(t *testing.T) {
 	require.NoError(t, err)
 
 	r.URL.RawQuery = "max-age=1&ims=206&non-ims=206"
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "phit"})
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{keys.Status: status.StatusPartialHit})
 	require.NoError(t, stderrors.Join(e...))
 
 	time.Sleep(time.Millisecond * 1050)
 
 	r.Header.Del(headers.NameRange)
 	r.URL.RawQuery = "max-age=1"
-	_, e = testFetchOPC(r, http.StatusOK, byterange.Body, map[string]string{"status": "phit"})
+	_, e = testFetchOPC(r, http.StatusOK, byterange.Body, map[string]string{keys.Status: status.StatusPartialHit})
 	require.NoError(t, stderrors.Join(e...))
 
 	r.Header.Set(headers.NameRange, "bytes=9-20, 21-22")
@@ -224,7 +225,7 @@ func TestFullArticuationChunks(t *testing.T) {
 	expectedBody, err = getExpectedRangeBody(r, "368b9fbcef800068a48e70fa6e040289")
 	require.NoError(t, err)
 
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "kmiss"})
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{keys.Status: status.StatusKeyMiss})
 	require.NoError(t, stderrors.Join(e...))
 
 	r.Header.Set(headers.NameRange, "bytes=0-1223")
@@ -233,18 +234,18 @@ func TestFullArticuationChunks(t *testing.T) {
 	expectedBody, err = getExpectedRangeBody(r, "722af19813169c99d8bda37a2f244f39")
 	require.NoError(t, err)
 
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "kmiss"})
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{keys.Status: status.StatusKeyMiss})
 	require.NoError(t, stderrors.Join(e...))
 
 	r.Header.Set(headers.NameRange, "bytes=0-1220,1221-1223")
 	expectedBody, err = getExpectedRangeBody(r, "f8813b96e6b06ea1d826bb921690f87b")
 	require.NoError(t, err)
 
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "hit"})
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{keys.Status: status.StatusHit})
 	require.NoError(t, stderrors.Join(e...))
 
 	r.Header.Del(headers.NameRange)
-	_, e = testFetchOPC(r, http.StatusOK, byterange.Body, map[string]string{"status": "hit"})
+	_, e = testFetchOPC(r, http.StatusOK, byterange.Body, map[string]string{keys.Status: status.StatusHit})
 	require.NoError(t, stderrors.Join(e...))
 }
 
@@ -320,7 +321,7 @@ func TestObjectProxyCacheRangeMissChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	_, e := testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "kmiss"})
+	_, e := testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{keys.Status: status.StatusKeyMiss})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -330,7 +331,7 @@ func TestObjectProxyCacheRangeMissChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "rmiss"})
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{keys.Status: status.StatusRangeMiss})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -360,7 +361,7 @@ func TestObjectProxyCacheRevalidationChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	_, e := testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "kmiss"})
+	_, e := testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{keys.Status: status.StatusKeyMiss})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -372,7 +373,7 @@ func TestObjectProxyCacheRevalidationChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "rhit"})
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{keys.Status: status.StatusRevalidated})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -383,7 +384,7 @@ func TestObjectProxyCacheRevalidationChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "phit"})
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{keys.Status: status.StatusPartialHit})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -396,7 +397,7 @@ func TestObjectProxyCacheRevalidationChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	_, e = testFetchOPC(r, http.StatusOK, expectedBody, map[string]string{"status": "proxy-only"})
+	_, e = testFetchOPC(r, http.StatusOK, expectedBody, map[string]string{keys.Status: status.StatusProxyOnly})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -415,7 +416,7 @@ func TestObjectProxyCacheRevalidationChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	_, e = testFetchOPC(r, http.StatusOK, expectedBody, map[string]string{"status": "kmiss"})
+	_, e = testFetchOPC(r, http.StatusOK, expectedBody, map[string]string{keys.Status: status.StatusKeyMiss})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -435,7 +436,7 @@ func TestObjectProxyCacheRequestWithPCFChunks(t *testing.T) {
 
 	r.Header.Set("testHeaderName", "testHeaderValue")
 
-	_, e := testFetchOPC(r, http.StatusOK, "test", map[string]string{"status": "kmiss"})
+	_, e := testFetchOPC(r, http.StatusOK, "test", map[string]string{keys.Status: status.StatusKeyMiss})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -459,7 +460,7 @@ func TestObjectProxyCacheRequestClientNoCacheChunks(t *testing.T) {
 
 	r.Header.Set(headers.NameCacheControl, headers.ValueNoCache)
 
-	_, e := testFetchOPC(r, http.StatusOK, "test", map[string]string{"status": "proxy-only"})
+	_, e := testFetchOPC(r, http.StatusOK, "test", map[string]string{keys.Status: status.StatusProxyOnly})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -475,7 +476,7 @@ func TestFetchViaObjectProxyCacheRequestClientNoCacheChunks(t *testing.T) {
 
 	r.Header.Set(headers.NameCacheControl, headers.ValueNoCache)
 
-	_, e := testFetchOPC(r, http.StatusOK, "test", map[string]string{"status": "proxy-only"})
+	_, e := testFetchOPC(r, http.StatusOK, "test", map[string]string{keys.Status: status.StatusProxyOnly})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -495,7 +496,7 @@ func TestObjectProxyCacheRequestOriginNoCacheChunks(t *testing.T) {
 	}
 	defer closeTestHarness(ts, r)
 
-	_, e := testFetchOPC(r, http.StatusOK, "test", map[string]string{"status": "kmiss"})
+	_, e := testFetchOPC(r, http.StatusOK, "test", map[string]string{keys.Status: status.StatusKeyMiss})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -512,14 +513,14 @@ func TestObjectProxyCacheIMSChunks(t *testing.T) {
 
 	rsc.BackendOptions.RevalidationFactor = 2
 
-	_, e := testFetchOPC(r, http.StatusOK, byterange.Body, map[string]string{"status": "kmiss"})
+	_, e := testFetchOPC(r, http.StatusOK, byterange.Body, map[string]string{keys.Status: status.StatusKeyMiss})
 	for _, err = range e {
 		t.Error(err)
 	}
 
 	r.Header.Set(headers.NameIfModifiedSince, "Wed, 01 Jan 2020 00:00:00 UTC")
 
-	_, e = testFetchOPC(r, http.StatusNotModified, "", map[string]string{"status": "hit"})
+	_, e = testFetchOPC(r, http.StatusNotModified, "", map[string]string{keys.Status: status.StatusHit})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -528,7 +529,7 @@ func TestObjectProxyCacheIMSChunks(t *testing.T) {
 
 	r.URL.RawQuery = "status=200"
 
-	_, e = testFetchOPC(r, http.StatusNotModified, "", map[string]string{"status": "kmiss"})
+	_, e = testFetchOPC(r, http.StatusNotModified, "", map[string]string{keys.Status: status.StatusKeyMiss})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -543,19 +544,19 @@ func TestObjectProxyCacheINMChunks(t *testing.T) {
 	}
 	defer closeTestHarness(ts, r)
 
-	_, e := testFetchOPC(r, http.StatusOK, "test", map[string]string{"status": "kmiss"})
+	_, e := testFetchOPC(r, http.StatusOK, "test", map[string]string{keys.Status: status.StatusKeyMiss})
 	for _, err = range e {
 		t.Error(err)
 	}
 
 	r.Header.Set(headers.NameIfNoneMatch, `"test"`)
-	_, e = testFetchOPC(r, http.StatusNotModified, "", map[string]string{"status": "hit"})
+	_, e = testFetchOPC(r, http.StatusNotModified, "", map[string]string{keys.Status: status.StatusHit})
 	for _, err = range e {
 		t.Error(err)
 	}
 
 	r.Header.Set(headers.NameIfNoneMatch, `W/"test2"`)
-	_, e = testFetchOPC(r, http.StatusOK, "test", map[string]string{"status": "hit"})
+	_, e = testFetchOPC(r, http.StatusOK, "test", map[string]string{keys.Status: status.StatusHit})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -573,14 +574,14 @@ func TestObjectProxyCacheNoRevalidateChunks(t *testing.T) {
 	p := rsc.PathConfig
 	p.ResponseHeaders = headers
 
-	_, e := testFetchOPC(r, http.StatusOK, "test", map[string]string{"status": "kmiss"})
+	_, e := testFetchOPC(r, http.StatusOK, "test", map[string]string{keys.Status: status.StatusKeyMiss})
 	for _, err = range e {
 		t.Error(err)
 	}
 
 	time.Sleep(1010 * time.Millisecond)
 
-	_, e = testFetchOPC(r, http.StatusOK, "test", map[string]string{"status": "kmiss"})
+	_, e = testFetchOPC(r, http.StatusOK, "test", map[string]string{keys.Status: status.StatusKeyMiss})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -602,14 +603,14 @@ func TestObjectProxyCacheCanRevalidateChunks(t *testing.T) {
 	p.ResponseHeaders = headers
 	rsc.BackendOptions.RevalidationFactor = 2
 
-	_, e := testFetchOPC(r, http.StatusOK, byterange.Body, map[string]string{"status": "kmiss"})
+	_, e := testFetchOPC(r, http.StatusOK, byterange.Body, map[string]string{keys.Status: status.StatusKeyMiss})
 	for _, err = range e {
 		t.Error(err)
 	}
 
 	time.Sleep(1010 * time.Millisecond)
 
-	_, e = testFetchOPC(r, http.StatusOK, byterange.Body, map[string]string{"status": "rhit"})
+	_, e = testFetchOPC(r, http.StatusOK, byterange.Body, map[string]string{keys.Status: status.StatusRevalidated})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -631,13 +632,13 @@ func TestObjectProxyCacheRevalidatedChunks(t *testing.T) {
 
 	rsc.PathConfig.ResponseHeaders = hdr
 
-	_, e := testFetchOPC(r, http.StatusOK, "test", map[string]string{"status": "kmiss"})
+	_, e := testFetchOPC(r, http.StatusOK, "test", map[string]string{keys.Status: status.StatusKeyMiss})
 	for _, err = range e {
 		t.Error(err)
 	}
 
 	r.Header.Set(headers.NameIfModifiedSince, dt)
-	_, e = testFetchOPC(r, http.StatusNotModified, "", map[string]string{"status": "hit"})
+	_, e = testFetchOPC(r, http.StatusNotModified, "", map[string]string{keys.Status: status.StatusHit})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -660,7 +661,7 @@ func TestObjectProxyCacheRequestNegativeCacheChunks(t *testing.T) {
 	// Remove negative cache for first request
 	delete(cfg.NegativeCache, 404)
 
-	_, e := testFetchOPC(r, http.StatusNotFound, "test", map[string]string{"status": "kmiss"})
+	_, e := testFetchOPC(r, http.StatusNotFound, "test", map[string]string{keys.Status: status.StatusKeyMiss})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -668,13 +669,13 @@ func TestObjectProxyCacheRequestNegativeCacheChunks(t *testing.T) {
 	// request again, should still cache miss, but this time, Negative Cache 404's for 30s
 	cfg.NegativeCache[404] = time.Second * 30
 
-	_, e = testFetchOPC(r, http.StatusNotFound, "test", map[string]string{"status": "kmiss"})
+	_, e = testFetchOPC(r, http.StatusNotFound, "test", map[string]string{keys.Status: status.StatusKeyMiss})
 	for _, err = range e {
 		t.Error(err)
 	}
 
 	// request again, this time it should be a cache hit.
-	_, e = testFetchOPC(r, http.StatusNotFound, "test", map[string]string{"status": "nchit"})
+	_, e = testFetchOPC(r, http.StatusNotFound, "test", map[string]string{keys.Status: status.StatusNegativeCacheHit})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -716,7 +717,7 @@ func TestRangesExhaustiveChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	_, e := testFetchOPC(r, http.StatusPartialContent, expectedBodyA, map[string]string{"status": "kmiss"})
+	_, e := testFetchOPC(r, http.StatusPartialContent, expectedBodyA, map[string]string{keys.Status: status.StatusKeyMiss})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -727,7 +728,7 @@ func TestRangesExhaustiveChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "phit"})
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{keys.Status: status.StatusPartialHit})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -739,7 +740,7 @@ func TestRangesExhaustiveChunks(t *testing.T) {
 		t.Error(err)
 	}
 
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "hit"})
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{keys.Status: status.StatusHit})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -750,7 +751,7 @@ func TestRangesExhaustiveChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "hit"})
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{keys.Status: status.StatusHit})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -761,7 +762,7 @@ func TestRangesExhaustiveChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "hit"})
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{keys.Status: status.StatusHit})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -772,7 +773,7 @@ func TestRangesExhaustiveChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "phit"})
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{keys.Status: status.StatusPartialHit})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -783,7 +784,7 @@ func TestRangesExhaustiveChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	_, e = testFetchOPC(r, http.StatusOK, expectedBody, map[string]string{"status": "phit"})
+	_, e = testFetchOPC(r, http.StatusOK, expectedBody, map[string]string{keys.Status: status.StatusPartialHit})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -794,7 +795,7 @@ func TestRangesExhaustiveChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "hit"})
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{keys.Status: status.StatusHit})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -806,7 +807,7 @@ func TestRangesExhaustiveChunks(t *testing.T) {
 		t.Error(err)
 	}
 
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{"status": "hit"})
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody, map[string]string{keys.Status: status.StatusHit})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -822,7 +823,7 @@ func TestRangesExhaustiveChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody1, map[string]string{"status": "kmiss"})
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody1, map[string]string{keys.Status: status.StatusKeyMiss})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -834,7 +835,7 @@ func TestRangesExhaustiveChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody2, map[string]string{"status": "kmiss"})
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody2, map[string]string{keys.Status: status.StatusKeyMiss})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -846,7 +847,7 @@ func TestRangesExhaustiveChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody3, map[string]string{"status": "kmiss"})
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody3, map[string]string{keys.Status: status.StatusKeyMiss})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -858,7 +859,7 @@ func TestRangesExhaustiveChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody4, map[string]string{"status": "kmiss"})
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody4, map[string]string{keys.Status: status.StatusKeyMiss})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -870,7 +871,7 @@ func TestRangesExhaustiveChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody5, map[string]string{"status": "kmiss"})
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody5, map[string]string{keys.Status: status.StatusKeyMiss})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -882,7 +883,7 @@ func TestRangesExhaustiveChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody6, map[string]string{"status": "kmiss"})
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody6, map[string]string{keys.Status: status.StatusKeyMiss})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -894,7 +895,7 @@ func TestRangesExhaustiveChunks(t *testing.T) {
 
 	r.URL.Path = "/byterange/test/2"
 	r.Header.Set(headers.NameRange, "bytes=0-6")
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody1, map[string]string{"status": "rhit"})
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody1, map[string]string{keys.Status: status.StatusRevalidated})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -902,7 +903,7 @@ func TestRangesExhaustiveChunks(t *testing.T) {
 	r.URL.Path = "/byterange/test/3"
 	r.Header.Set(headers.NameRange, "bytes=0-6, 8-10")
 	expectedBody2 = strings.ReplaceAll(expectedBody2, "TestRangeServerBoundary", "1b4e59d25d723e317359c5e542d80f5c")
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody2, map[string]string{"status": "rhit"})
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody2, map[string]string{keys.Status: status.StatusRevalidated})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -914,7 +915,7 @@ func TestRangesExhaustiveChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody3, map[string]string{"status": "phit"})
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody3, map[string]string{keys.Status: status.StatusPartialHit})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -926,7 +927,7 @@ func TestRangesExhaustiveChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody4, map[string]string{"status": "rmiss"})
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody4, map[string]string{keys.Status: status.StatusRangeMiss})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -938,7 +939,7 @@ func TestRangesExhaustiveChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody5, map[string]string{"status": "rmiss"})
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody5, map[string]string{keys.Status: status.StatusRangeMiss})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -950,7 +951,7 @@ func TestRangesExhaustiveChunks(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody6, map[string]string{"status": "rmiss"})
+	_, e = testFetchOPC(r, http.StatusPartialContent, expectedBody6, map[string]string{keys.Status: status.StatusRangeMiss})
 	for _, err = range e {
 		t.Error(err)
 	}

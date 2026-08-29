@@ -37,6 +37,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/graphite/parsing"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	cr "github.com/trickstercache/trickster/v2/pkg/cache/registry"
+	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
@@ -366,8 +367,8 @@ func TestRenderLearnOnFirstResponse(t *testing.T) {
 	// the same age is now accelerated without a background learn
 	h.same("warm", q)
 	h.expectFetches("warm", 1)
-	h.same("hit", q)
-	h.expectFetches("hit", 0)
+	h.same(status.StatusHit, q)
+	h.expectFetches(status.StatusHit, 0)
 	// an age the partial ladder cannot answer is still unaccelerated
 	h.same("other age", h.query(url.Values{"target": {"dev.medium.orders.us-east.count"}, "from": {"-10d"}}))
 	// a consolidated response must never teach a step: its timestamps are

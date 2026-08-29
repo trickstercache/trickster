@@ -26,6 +26,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/encoding/profile"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	tspan "github.com/trickstercache/trickster/v2/pkg/observability/tracing/span"
@@ -352,7 +353,7 @@ func handlePCF(pr *proxyRequest) error {
 			}
 			if _, err := io.Copy(dest, reader); err != nil {
 				logger.Error("pcf upstream copy failed",
-					logging.Pairs{"key": pr.key, "detail": err.Error()})
+					logging.Pairs{keys.Key: pr.key, keys.Detail: err.Error()})
 			}
 		})
 
@@ -510,7 +511,7 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 			}
 		} else {
 			logger.Error("cache lookup error",
-				logging.Pairs{"detail": err.Error()})
+				logging.Pairs{keys.Detail: err.Error()})
 			pr.cacheDocument = nil
 			pr.cacheStatus = status.LookupStatusKeyMiss
 			if fErr := handleCacheKeyMiss(pr); fErr != nil {

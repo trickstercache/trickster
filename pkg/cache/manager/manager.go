@@ -26,6 +26,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 
@@ -117,7 +118,7 @@ func (cm *Manager) StoreReference(cacheKey string, data cache.ReferenceObject, t
 	}
 	defer cm.release()
 	metrics.ObserveCacheOperation(cm.config.Name, cm.config.Provider, "setDirect", "none", float64(data.Size()))
-	logger.Debug("cache store", logging.Pairs{"key": cacheKey, "provider": cm.config.Provider})
+	logger.Debug("cache store", logging.Pairs{keys.Key: cacheKey, keys.Provider: cm.config.Provider})
 	return cm.Client.(cache.MemoryCache).StoreReference(cacheKey, data, ttl)
 }
 
@@ -127,21 +128,21 @@ func (cm *Manager) Store(cacheKey string, byteData []byte, ttl time.Duration) er
 	}
 	defer cm.release()
 	metrics.ObserveCacheOperation(cm.config.Name, cm.config.Provider, "set", "none", float64(len(byteData)))
-	logger.Debug("cache store", logging.Pairs{"key": cacheKey, "provider": cm.config.Provider})
+	logger.Debug("cache store", logging.Pairs{keys.Key: cacheKey, keys.Provider: cm.config.Provider})
 	return cm.Client.Store(cacheKey, byteData, ttl)
 }
 
 func (cm *Manager) observeRetrieval(cacheKey string, size int, s status.LookupStatus, err error) {
 	switch {
 	case errors.Is(err, cache.ErrKNF) || s == status.LookupStatusKeyMiss:
-		logger.Debug("cache miss", logging.Pairs{"key": cacheKey, "provider": cm.config.Provider})
+		logger.Debug("cache miss", logging.Pairs{keys.Key: cacheKey, keys.Provider: cm.config.Provider})
 		metrics.ObserveCacheMiss(cm.config.Name, cm.config.Provider)
 	case err != nil:
-		logger.Debug("cache retrieve failed", logging.Pairs{"key": cacheKey, "provider": cm.config.Provider})
-		metrics.ObserveCacheEvent(cm.config.Name, cm.config.Provider, "error", "failed to retrieve cache entry")
+		logger.Debug("cache retrieve failed", logging.Pairs{keys.Key: cacheKey, keys.Provider: cm.config.Provider})
+		metrics.ObserveCacheEvent(cm.config.Name, cm.config.Provider, keys.Error, "failed to retrieve cache entry")
 	case s == status.LookupStatusHit:
-		logger.Debug("cache retrieve", logging.Pairs{"key": cacheKey, "provider": cm.config.Provider})
-		metrics.ObserveCacheOperation(cm.config.Name, cm.config.Provider, "get", "hit", float64(size))
+		logger.Debug("cache retrieve", logging.Pairs{keys.Key: cacheKey, keys.Provider: cm.config.Provider})
+		metrics.ObserveCacheOperation(cm.config.Name, cm.config.Provider, "get", status.StatusHit, float64(size))
 	}
 }
 
@@ -196,7 +197,7 @@ func (cm *Manager) Remove(cacheKeys ...string) error {
 	}
 	defer cm.release()
 	metrics.ObserveCacheDel(cm.config.Name, cm.config.Provider, float64(len(cacheKeys)))
-	logger.Debug("cache remove", logging.Pairs{"keys": cacheKeys, "provider": cm.config.Provider})
+	logger.Debug("cache remove", logging.Pairs{keys.Keys: cacheKeys, keys.Provider: cm.config.Provider})
 	return cm.Client.Remove(cacheKeys...)
 }
 

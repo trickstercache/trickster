@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/iofmt"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
@@ -218,7 +219,7 @@ func SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
 	// transformed query, marshals it back to a []byte and sets r.Body to it.
 	b, err := request.GetBody(r)
 	if err != nil || len(b) == 0 {
-		logger.Error(setExtentErrorLogEvent, logging.Pairs{"error": err})
+		logger.Error(setExtentErrorLogEvent, logging.Pairs{keys.Error: err})
 		return
 	}
 	var rb *JSONRequestBody
@@ -229,7 +230,7 @@ func SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
 	case headers.ProvidesContentType(r, headers.ValueApplicationJSON):
 		err = json.Unmarshal(b, &rb)
 		if err != nil || rb == nil {
-			logger.Error(setExtentErrorLogEvent, logging.Pairs{"error": err})
+			logger.Error(setExtentErrorLogEvent, logging.Pairs{keys.Error: err})
 			return
 		}
 	default:
@@ -242,7 +243,7 @@ func SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
 	}
 	b, err = json.Marshal(rb)
 	if err != nil {
-		logger.Error(setExtentErrorLogEvent, logging.Pairs{"error": err})
+		logger.Error(setExtentErrorLogEvent, logging.Pairs{keys.Error: err})
 		return
 	}
 	request.SetBody(r, b)

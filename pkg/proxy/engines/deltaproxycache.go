@@ -35,6 +35,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/encoding/profile"
 	"github.com/trickstercache/trickster/v2/pkg/encoding/providers"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
@@ -54,7 +55,6 @@ import (
 const (
 	statusOff  = "off"
 	statusErr  = "err"
-	statusHit  = "hit"
 	statusMiss = "miss"
 
 	// errorBodyCap bounds the amount of upstream error body copied into
@@ -120,7 +120,7 @@ func fetchFastForward(
 	x := ffts.Extents()
 	ffStatus := statusMiss
 	if isHit {
-		ffStatus = statusHit
+		ffStatus = status.StatusHit
 	}
 	// Merge Fast Forward data if present. This must be done after the Downstream Crop since
 	// the cropped extent was normalized to step boundaries and would remove fast forward data.
@@ -226,7 +226,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 		}
 		if canOPC {
 			logger.Debug("could not parse time range query, using object proxy cache",
-				logging.Pairs{"error": err.Error()})
+				logging.Pairs{keys.Error: err.Error()})
 			rsc.AlternateCacheTTL = time.Minute
 			ObjectProxyCacheRequest(w, r)
 			return
@@ -280,7 +280,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 
 	if err := client.SetExtent(pr.upstreamRequest, trq, &trq.Extent); err != nil {
 		logger.Error("could not rewrite time range query",
-			logging.Pairs{"error": err.Error(), "backend": client.Name()})
+			logging.Pairs{keys.Error: err.Error(), keys.BackendName: client.Name()})
 		failures.HandleInternalServerError(w, r)
 		return
 	}
@@ -347,7 +347,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 				}
 				if err != nil {
 					logger.Error("cache object unmarshaling failed",
-						logging.Pairs{"key": key, "backendName": client.Name(), "detail": err.Error()})
+						logging.Pairs{keys.Key: key, keys.BackendName: client.Name(), keys.Detail: err.Error()})
 					goWithRecover("dpc.cache.Remove.unmarshal", func() { cache.Remove(key) })
 					cts, doc, elapsed, failedExts, severeFault = fetchTimeseries(pr, trq, client, modeler)
 					if len(failedExts) > 0 && severeFault {
@@ -494,10 +494,10 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 						o.CompressibleTypes, modeler.CacheMarshaler); werr != nil {
 						logger.Error("error writing object to cache",
 							logging.Pairs{
-								"backendName": o.Name,
-								"cacheName":   cache.Configuration().Name,
-								"cacheKey":    key,
-								"detail":      werr.Error(),
+								keys.BackendName: o.Name,
+								keys.CacheName:   cache.Configuration().Name,
+								"cacheKey":       key,
+								keys.Detail:      werr.Error(),
 							},
 						)
 					}
@@ -790,7 +790,7 @@ func fetchExtents(
 				dpcEncodingProfile.Clone()))
 			if err := client.SetExtent(rq.upstreamRequest, rsc.TimeRangeQuery, e); err != nil {
 				logger.Error("could not rewrite cache-miss time range query",
-					logging.Pairs{"error": err.Error(), "backend": client.Name()})
+					logging.Pairs{keys.Error: err.Error(), keys.BackendName: client.Name()})
 				errTs[i] = el[i]
 				respLock.Lock()
 				if mresp.StatusCode < http.StatusInternalServerError {
@@ -835,7 +835,7 @@ func fetchExtents(
 				nts, ferr := wur(dr, rsc.TimeRangeQuery)
 				if ferr != nil {
 					logger.Error("proxy object unmarshaling failed",
-						logging.Pairs{"detail": ferr.Error()})
+						logging.Pairs{keys.Detail: ferr.Error()})
 					errTs[i] = el[i]
 					return nil
 				}
@@ -855,7 +855,7 @@ func fetchExtents(
 					b, readErr = io.ReadAll(io.LimitReader(resp.Body, errorBodyCap))
 					if readErr != nil {
 						logger.Warn("failed to read upstream error response body",
-							logging.Pairs{"detail": readErr.Error()})
+							logging.Pairs{keys.Detail: readErr.Error()})
 					}
 					s = string(b)
 					respLock.Lock()
@@ -867,7 +867,7 @@ func fetchExtents(
 				}
 				logger.Error("unexpected upstream response",
 					logging.Pairs{
-						"statusCode":              resp.StatusCode,
+						keys.StatusCode:           resp.StatusCode,
 						"clientRequestURL":        pr.Request.URL.String(),
 						"clientRequestMethod":     pr.Request.Method,
 						"clientRequestHeaders":    headers.SanitizeForLogging(pr.Request.Header),

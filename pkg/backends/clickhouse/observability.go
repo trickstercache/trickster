@@ -17,6 +17,7 @@
 package clickhouse
 
 import (
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
@@ -39,16 +40,16 @@ func (c *Client) observeAnalysis(analysis sqlanalyzer.Analysis) {
 		options := c.Configuration()
 		if options != nil && (options.DPCFallbackWarning == nil || *options.DPCFallbackWarning) {
 			logger.Warn("query fell back from DPC to OPC", logging.Pairs{
-				"backend_name": backendName, "dialect": clickHouseDialect, "reason": reason,
+				keys.BackendName: backendName, keys.Dialect: clickHouseDialect, keys.Reason: reason,
 			})
 		}
 	}
 	if logger.Level() == level.Debug {
 		logger.Debug("sql query cache eligibility analyzed", logging.Pairs{
-			"backend_name": backendName,
-			"dialect":      clickHouseDialect,
-			"cache_mode":   mode,
-			"reason":       reason,
+			keys.BackendName: backendName,
+			keys.Dialect:     clickHouseDialect,
+			keys.CacheMode:   mode,
+			keys.Reason:      reason,
 		})
 	}
 }
@@ -57,9 +58,9 @@ func (c *Client) observeRewriteFailure(reason string) {
 	backendName := c.observabilityBackendName()
 	metrics.SQLQueryRewriteFailures.WithLabelValues(backendName, clickHouseDialect, reason).Inc()
 	logger.Error("sql query extent rewrite failed", logging.Pairs{
-		"backend_name": backendName,
-		"dialect":      clickHouseDialect,
-		"reason":       reason,
+		keys.BackendName: backendName,
+		keys.Dialect:     clickHouseDialect,
+		keys.Reason:      reason,
 	})
 }
 

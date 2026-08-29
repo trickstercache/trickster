@@ -24,6 +24,7 @@ import (
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
@@ -124,9 +125,9 @@ func coalesceReplicaContributions(
 			(len(group.configured) > 0 && live[selectedLiveIndex] != group.configured[0]) {
 			metrics.ALBTSMReplicaEvents.WithLabelValues("fallback", variant).Inc()
 			logger.Warn("tsm selected fallback replica", logging.Pairs{
-				"backend_name":  live[selectedLiveIndex].Name(),
-				"replica_group": group.id,
-				"variant":       variant,
+				keys.BackendName:  live[selectedLiveIndex].Name(),
+				keys.ReplicaGroup: group.id,
+				keys.Variant:      variant,
 			})
 		}
 		if len(usable) > 1 {
@@ -138,10 +139,10 @@ func coalesceReplicaContributions(
 			metrics.ALBTSMReplicaEvents.WithLabelValues("conflict", variant).
 				Add(float64(conflicts))
 			logger.Warn("tsm replica contributions differ", logging.Pairs{
-				"backend_name":  live[selectedLiveIndex].Name(),
-				"replica_group": group.id,
-				"variant":       variant,
-				"conflicts":     conflicts,
+				keys.BackendName:  live[selectedLiveIndex].Name(),
+				keys.ReplicaGroup: group.id,
+				keys.Variant:      variant,
+				keys.Conflicts:    conflicts,
 			})
 		}
 		logical = append(logical, coalesceReplicaGroup(usable, toleranceNanos))

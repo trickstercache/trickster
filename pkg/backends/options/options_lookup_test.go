@@ -27,6 +27,7 @@ import (
 	ro "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/negative"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	tro "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
@@ -37,7 +38,7 @@ func TestLookupValidateAndInitialize(t *testing.T) {
 	t.Parallel()
 
 	member := New()
-	member.Name = "member"
+	member.Name = keys.Member
 	member.Provider = providers.ReverseProxyShort
 	member.OriginURL = "http://example.com"
 	member.TracingConfigName = ""
@@ -48,10 +49,10 @@ func TestLookupValidateAndInitialize(t *testing.T) {
 	alb.ALBOptions = ao.New()
 	alb.ALBOptions.MechanismName = "rr"
 	alb.ALBOptions.UserRouter = &uropt.Options{
-		DefaultBackend: "member",
+		DefaultBackend: keys.Member,
 	}
 
-	l := Lookup{"member": member, "edge": alb}
+	l := Lookup{keys.Member: member, "edge": alb}
 	if err := l.Validate(); err != nil {
 		t.Fatalf("Lookup.Validate: %v", err)
 	}
@@ -63,7 +64,7 @@ func TestLookupValidateAndInitialize(t *testing.T) {
 	if err := l.Initialize(); err != nil {
 		t.Fatalf("Lookup.Initialize: %v", err)
 	}
-	if member.Name != "member" {
+	if member.Name != keys.Member {
 		t.Fatalf("member.Name = %q", member.Name)
 	}
 }
@@ -125,7 +126,7 @@ func TestValidateConfigMappingsALBAndCycles(t *testing.T) {
 	t.Parallel()
 
 	member := New()
-	member.Name = "member"
+	member.Name = keys.Member
 	member.Provider = providers.ReverseProxyShort
 	member.OriginURL = "http://example.com"
 	member.TracingConfigName = ""
@@ -138,9 +139,9 @@ func TestValidateConfigMappingsALBAndCycles(t *testing.T) {
 	edge.NegativeCacheName = ""
 	edge.ALBOptions = ao.New()
 	edge.ALBOptions.MechanismName = "rr"
-	edge.ALBOptions.Pool = ao.Members("member")
+	edge.ALBOptions.Pool = ao.Members(keys.Member)
 
-	l := Lookup{"member": member, "edge": edge}
+	l := Lookup{keys.Member: member, "edge": edge}
 	err := l.ValidateConfigMappings(co.Lookup{"default": nil}, negative.Lookups{},
 		ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{})
 	if err != nil {

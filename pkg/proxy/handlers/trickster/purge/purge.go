@@ -24,6 +24,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	proxyengines "github.com/trickstercache/trickster/v2/pkg/proxy/engines"
@@ -124,7 +125,7 @@ func PathHandler(pathPrefix string,
 			return
 		}
 		logger.Debug("purging cache item",
-			logging.Pairs{"backend": backendName, "path": purgePath})
+			logging.Pairs{"backend": backendName, keys.Path: purgePath})
 		backend := from.Get(backendName)
 		if !validateBackend(w, backend, backendName) {
 			return

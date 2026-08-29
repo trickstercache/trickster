@@ -34,6 +34,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/integration/internal/metricsutil"
 	"github.com/trickstercache/trickster/v2/integration/internal/portutil"
+	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	tkconfig "github.com/trickstercache/trickster/v2/pkg/config"
 	listenerconfig "github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
@@ -121,22 +122,22 @@ func TestClickHouseNativeListenerCacheMatrix(t *testing.T) {
 			before := metricsutil.ScrapeURL(t, "http://"+h.MetricsAddr+"/metrics", nil)
 			runClickHouseNativeCountQuery(t, conn)
 			after := metricsutil.ScrapeURL(t, "http://"+h.MetricsAddr+"/metrics", nil)
-			requireClickHouseNativeCacheDelta(t, before, after, flow.backend, "kmiss")
+			requireClickHouseNativeCacheDelta(t, before, after, flow.backend, status.StatusKeyMiss)
 
 			before = after
 			runClickHouseNativeCountQuery(t, conn)
 			after = metricsutil.ScrapeURL(t, "http://"+h.MetricsAddr+"/metrics", nil)
-			requireClickHouseNativeCacheDelta(t, before, after, flow.backend, "hit")
+			requireClickHouseNativeCacheDelta(t, before, after, flow.backend, status.StatusHit)
 
 			before = after
 			runClickHouseNativeDPCQuery(t, conn, query(mid))
 			after = metricsutil.ScrapeURL(t, "http://"+h.MetricsAddr+"/metrics", nil)
-			requireClickHouseNativeCacheDelta(t, before, after, flow.backend, "kmiss")
+			requireClickHouseNativeCacheDelta(t, before, after, flow.backend, status.StatusKeyMiss)
 
 			before = after
 			runClickHouseNativeDPCQuery(t, conn, query(end))
 			after = metricsutil.ScrapeURL(t, "http://"+h.MetricsAddr+"/metrics", nil)
-			requireClickHouseNativeCacheDelta(t, before, after, flow.backend, "phit")
+			requireClickHouseNativeCacheDelta(t, before, after, flow.backend, status.StatusPartialHit)
 		})
 	}
 }

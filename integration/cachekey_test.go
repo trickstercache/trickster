@@ -26,6 +26,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/cache/status"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+
 	"github.com/stretchr/testify/require"
 )
 
@@ -51,17 +54,17 @@ func TestCacheKey(t *testing.T) {
 			var pr promResponse
 			require.NoError(t, json.Unmarshal(body, &pr))
 			require.Equal(t, "success", pr.Status)
-			return parseTricksterResult(resp.Header.Get("X-Trickster-Result"))
+			return parseTricksterResult(resp.Header.Get(headers.NameTricksterResult))
 		}
 
 		r1 := fetch(t, "up")
 		t.Logf("match[]=up: %v", r1)
-		require.NotEqual(t, "hit", r1["status"],
+		require.NotEqual(t, status.StatusHit, r1["status"],
 			"first request must not be a hit, got %v", r1)
 
 		r2 := fetch(t, "process_cpu_seconds_total")
 		t.Logf("match[]=process_cpu_seconds_total: %v", r2)
-		require.NotEqual(t, "hit", r2["status"],
+		require.NotEqual(t, status.StatusHit, r2["status"],
 			"second request with a different match[] must not collide with the first (issue #965), got %v", r2)
 	})
 
@@ -93,7 +96,7 @@ func TestCacheKey(t *testing.T) {
 			require.NoError(t, json.Unmarshal(pr.Data, &qd))
 			require.Equal(t, "matrix", qd.ResultType,
 				"split-params POST must reach the range handler (step in URL must survive)")
-			return parseTricksterResult(resp.Header.Get("X-Trickster-Result"))
+			return parseTricksterResult(resp.Header.Get(headers.NameTricksterResult))
 		}
 
 		r1 := post(t, "15")
@@ -103,12 +106,12 @@ func TestCacheKey(t *testing.T) {
 
 		r2 := post(t, "15")
 		t.Logf("step=15 repeat: %v", r2)
-		require.Equal(t, "hit", r2["status"],
+		require.Equal(t, status.StatusHit, r2["status"],
 			"repeat of identical split-params POST must hit the cache")
 
 		r3 := post(t, "30")
 		t.Logf("step=30 split POST: %v", r3)
-		require.NotEqual(t, "hit", r3["status"],
+		require.NotEqual(t, status.StatusHit, r3["status"],
 			"changing step in URL must produce a distinct cache key (proves URL params are preserved in GetRequestValues)")
 	})
 }

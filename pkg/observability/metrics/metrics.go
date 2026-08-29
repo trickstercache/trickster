@@ -21,6 +21,7 @@ import (
 	"net/http"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -128,7 +129,7 @@ var (
 			Name:      "requests_total",
 			Help:      "Count of front end requests handled by Trickster",
 		},
-		[]string{"backend_name", "provider", "method", "path", "http_status"},
+		[]string{keys.Backend_Name, keys.Provider, keys.Method, keys.Path, keys.HTTP_Status},
 	)
 
 	// FrontendRequestDuration is a histogram that tracks the time it takes to process a request
@@ -140,7 +141,7 @@ var (
 			Help:      "Histogram of front end request durations handled by Trickster",
 			Buckets:   defaultBuckets,
 		},
-		[]string{"backend_name", "provider", "method", "path", "http_status"},
+		[]string{keys.Backend_Name, keys.Provider, keys.Method, keys.Path, keys.HTTP_Status},
 	)
 
 	// FrontendRequestWrittenBytes is a Counter of bytes written for front end requests
@@ -151,7 +152,7 @@ var (
 			Name:      "written_bytes_total",
 			Help:      "Count of bytes written in front end requests handled by Trickster",
 		},
-		[]string{"backend_name", "provider", "method", "path", "http_status"},
+		[]string{keys.Backend_Name, keys.Provider, keys.Method, keys.Path, keys.HTTP_Status},
 	)
 
 	// ProxyRequestStatus is a Counter of downstream client requests handled by Trickster
@@ -162,7 +163,7 @@ var (
 			Name:      "requests_total",
 			Help:      "Count of downstream client requests handled by Trickster",
 		},
-		[]string{"backend_name", "provider", "method", "cache_status", "http_status", "path"},
+		[]string{keys.Backend_Name, keys.Provider, keys.Method, keys.Cache_Status, keys.HTTP_Status, keys.Path},
 	)
 
 	// ProxyRequestElements is a Counter of data points in the timeseries returned to the requesting client
@@ -173,7 +174,7 @@ var (
 			Name:      "points_total",
 			Help:      "Count of data points in the timeseries returned to the requesting client.",
 		},
-		[]string{"backend_name", "provider", "cache_status", "path"},
+		[]string{keys.Backend_Name, keys.Provider, keys.Cache_Status, keys.Path},
 	)
 
 	// ProxyRequestDuration is a Histogram of time required in seconds to proxy a given Prometheus query
@@ -185,7 +186,7 @@ var (
 			Help:      "Time required in seconds to proxy a given Prometheus query.",
 			Buckets:   defaultBuckets,
 		},
-		[]string{"backend_name", "provider", "method", "status", "http_status", "path"},
+		[]string{keys.Backend_Name, keys.Provider, keys.Method, keys.Status, keys.HTTP_Status, keys.Path},
 	)
 
 	// CacheObjectOperations is a Counter of operations (in # of objects) performed on a Trickster cache
@@ -196,7 +197,7 @@ var (
 			Name:      "operation_objects_total",
 			Help:      "Count (in # of objects) of operations performed on a Trickster cache.",
 		},
-		[]string{"cache_name", "provider", "operation", "status"},
+		[]string{keys.Cache_Name, keys.Provider, keys.Operation, keys.Status},
 	)
 
 	// CacheByteOperations is a Counter of operations (in # of bytes) performed on a Trickster cache
@@ -207,7 +208,7 @@ var (
 			Name:      "operation_bytes_total",
 			Help:      "Count (in bytes) of operations performed on a Trickster cache.",
 		},
-		[]string{"cache_name", "provider", "operation", "status"},
+		[]string{keys.Cache_Name, keys.Provider, keys.Operation, keys.Status},
 	)
 
 	// CacheEvents is a Counter of events performed on a Trickster cache
@@ -218,7 +219,7 @@ var (
 			Name:      "events_total",
 			Help:      "Count of events performed on a Trickster cache.",
 		},
-		[]string{"cache_name", "provider", "event", "reason"},
+		[]string{keys.Cache_Name, keys.Provider, keys.Event, keys.Reason},
 	)
 
 	// CacheObjects is a Gauge representing the number of objects in a Trickster cache
@@ -229,7 +230,7 @@ var (
 			Name:      "usage_objects",
 			Help:      "Number of objects in a Trickster cache.",
 		},
-		[]string{"cache_name", "provider"},
+		[]string{keys.Cache_Name, keys.Provider},
 	)
 
 	// CacheBytes is a Gauge representing the number of bytes in a Trickster cache
@@ -240,7 +241,7 @@ var (
 			Name:      "usage_bytes",
 			Help:      "Number of bytes in a Trickster cache.",
 		},
-		[]string{"cache_name", "provider"},
+		[]string{keys.Cache_Name, keys.Provider},
 	)
 
 	// CacheMaxObjects is a Gauge for the Trickster cache's Max Object Threshold for triggering an eviction exercise
@@ -251,7 +252,7 @@ var (
 			Name:      "max_usage_objects",
 			Help:      "Trickster cache's Max Object Threshold for triggering an eviction exercise.",
 		},
-		[]string{"cache_name", "provider"},
+		[]string{keys.Cache_Name, keys.Provider},
 	)
 
 	// CacheMaxBytes is a Gauge for the Trickster cache's Max Object Threshold for triggering an eviction exercise
@@ -262,7 +263,7 @@ var (
 			Name:      "max_usage_bytes",
 			Help:      "Trickster cache's Max Byte Threshold for triggering an eviction exercise.",
 		},
-		[]string{"cache_name", "provider"},
+		[]string{keys.Cache_Name, keys.Provider},
 	)
 
 	// ProxyMaxConnections is a Gauge representing the max number of active concurrent connections in the server
@@ -333,7 +334,7 @@ var (
 			Name:      "query_range_rejections_total",
 			Help:      "Trickster total number of queries rejected due to exceeding the max_query_range limit.",
 		},
-		[]string{"backend_name"},
+		[]string{keys.Backend_Name},
 	)
 
 	// SQLQueryAnalysis counts SQL analyzer classifications using bounded mode,
@@ -346,7 +347,7 @@ var (
 			Name:      "query_analysis_total",
 			Help:      "Count of SQL query cache-eligibility classifications.",
 		},
-		[]string{"backend_name", "dialect", "cache_mode", "reason"},
+		[]string{keys.Backend_Name, keys.Dialect, keys.Cache_Mode, keys.Reason},
 	)
 
 	// SQLQueryRewriteFailures counts failures to render a SQL origin request for
@@ -359,7 +360,7 @@ var (
 			Name:      "query_rewrite_failures_total",
 			Help:      "Count of SQL cache-miss extent rewrite failures.",
 		},
-		[]string{"backend_name", "dialect", "reason"},
+		[]string{keys.Backend_Name, keys.Dialect, keys.Reason},
 	)
 
 	// SQLQueryCache counts native SQL protocol cache outcomes. Unlike the HTTP
@@ -371,7 +372,7 @@ var (
 			Name:      "query_cache_total",
 			Help:      "Count of SQL query cache outcomes.",
 		},
-		[]string{"backend_name", "dialect", "cache_mode", "cache_status"},
+		[]string{keys.Backend_Name, keys.Dialect, keys.Cache_Mode, keys.Cache_Status},
 	)
 
 	// MySQLConnections tracks bounded connection lifecycle outcomes.
@@ -382,7 +383,7 @@ var (
 			Name:      "connections_total",
 			Help:      "Count of MySQL connection lifecycle events.",
 		},
-		[]string{"backend_name", "event"},
+		[]string{keys.Backend_Name, keys.Event},
 	)
 
 	// MySQLActiveConnections is the current authenticated-or-handshaking count.
@@ -393,7 +394,7 @@ var (
 			Name:      "active_connections",
 			Help:      "Current MySQL downstream connections.",
 		},
-		[]string{"backend_name"},
+		[]string{keys.Backend_Name},
 	)
 
 	// MySQLConnectionErrors tracks handshake, authentication, protocol, and
@@ -405,7 +406,7 @@ var (
 			Name:      "errors_total",
 			Help:      "Count of MySQL protocol and origin failures.",
 		},
-		[]string{"backend_name", "class"},
+		[]string{keys.Backend_Name, keys.Class},
 	)
 
 	// GraphiteResolutionLookups counts step-resolution outcomes. confidence
@@ -419,7 +420,7 @@ var (
 			Name:      "resolution_lookups_total",
 			Help:      "Count of Graphite step-resolution lookups by confidence and source.",
 		},
-		[]string{"backend_name", "confidence", "source"},
+		[]string{keys.Backend_Name, keys.Confidence, keys.Source},
 	)
 
 	// GraphiteProbes counts synthetic requests issued to learn an archive
@@ -431,7 +432,7 @@ var (
 			Name:      "probes_total",
 			Help:      "Count of Graphite resolution probes by kind and result.",
 		},
-		[]string{"backend_name", "kind", "result"},
+		[]string{keys.Backend_Name, keys.Kind, keys.Result},
 	)
 
 	// GraphiteLadders is the number of distinct complete archive ladders the
@@ -444,7 +445,7 @@ var (
 			Name:      "ladders",
 			Help:      "Number of distinct Graphite archive ladders known to the resolution registry.",
 		},
-		[]string{"backend_name"},
+		[]string{keys.Backend_Name},
 	)
 
 	// GraphiteRegistryEntries is the size of each resolution registry layer:
@@ -456,7 +457,7 @@ var (
 			Name:      "registry_entries",
 			Help:      "Number of entries in each layer of the Graphite resolution registry.",
 		},
-		[]string{"backend_name", "layer"},
+		[]string{keys.Backend_Name, keys.Layer},
 	)
 
 	// GraphiteStepMispredictions counts responses whose step contradicted the
@@ -470,7 +471,7 @@ var (
 			Name:      "step_mispredictions_total",
 			Help:      "Count of Graphite responses whose step differed from the predicted step.",
 		},
-		[]string{"backend_name"},
+		[]string{keys.Backend_Name},
 	)
 
 	// GraphiteFallbacks counts render requests routed to the unaccelerated
@@ -483,7 +484,7 @@ var (
 			Name:      "fallbacks_total",
 			Help:      "Count of Graphite render requests served without delta caching, by reason.",
 		},
-		[]string{"backend_name", "reason"},
+		[]string{keys.Backend_Name, keys.Reason},
 	)
 
 	// MySQLRouteSelections tracks bounded native User Router outcomes. Backend
@@ -495,7 +496,7 @@ var (
 			Name:      "route_selections_total",
 			Help:      "Count of native MySQL route-selection outcomes.",
 		},
-		[]string{"router_name", "backend_name", "outcome"},
+		[]string{keys.Router_Name, keys.Backend_Name, keys.Outcome},
 	)
 
 	// MySQLCommandLatency measures a fixed set of protocol operations.
@@ -507,7 +508,7 @@ var (
 			Help:      "Duration of bounded MySQL protocol operations.",
 			Buckets:   defaultBuckets,
 		},
-		[]string{"backend_name", "operation"},
+		[]string{keys.Backend_Name, keys.Operation},
 	)
 
 	// ALBFanoutFailures counts per-shard failures during ALB fanout. The
@@ -525,7 +526,7 @@ var (
 			Name:      "fanout_failures_total",
 			Help:      "Count of per-shard failures during ALB fanout, by mechanism, variant, and reason.",
 		},
-		[]string{"mechanism", "variant", "reason"},
+		[]string{keys.Mechanism, keys.Variant, keys.Reason},
 	)
 
 	// ALBFanoutAttempts counts ALB fanout calls (one increment per All/Race
@@ -541,7 +542,7 @@ var (
 			Name:      "fanout_attempts_total",
 			Help:      "Count of ALB fanout invocations, by mechanism and variant.",
 		},
-		[]string{"mechanism", "variant"},
+		[]string{keys.Mechanism, keys.Variant},
 	)
 
 	// ALBTSMReplicaEvents counts logical replica-group activity without using
@@ -555,7 +556,7 @@ var (
 			Name:      "tsm_replica_events_total",
 			Help:      "Count of TSM logical replica-group selection events, by event and variant.",
 		},
-		[]string{"event", "variant"},
+		[]string{keys.Event, keys.Variant},
 	)
 
 	// ALBFanoutLoserDrain observes how long each losing slot in a
@@ -572,7 +573,7 @@ var (
 			Help:      "Time between winner-claim and each losing slot's goroutine exit, by mechanism and variant.",
 			Buckets:   []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30},
 		},
-		[]string{"mechanism", "variant"},
+		[]string{keys.Mechanism, keys.Variant},
 	)
 
 	// ALBPoolRefreshPanicRecovered counts recovered panics in ALB pool refresh
@@ -586,7 +587,7 @@ var (
 			Name:      "pool_refresh_panic_recovered_total",
 			Help:      "Count of recovered panics in ALB pool refresh worker goroutines, by worker.",
 		},
-		[]string{"worker"},
+		[]string{keys.Worker},
 	)
 
 	// HealthcheckProbePanicRecovered counts recovered panics in the per-target
@@ -600,7 +601,7 @@ var (
 			Name:      "probe_panic_recovered_total",
 			Help:      "Count of recovered panics in the per-target health-probe ticker, by backend.",
 		},
-		[]string{"backend_name"},
+		[]string{keys.Backend_Name},
 	)
 
 	// HealthcheckProbeLatency records wall-clock duration of each per-target
@@ -615,7 +616,7 @@ var (
 			Help:      "Latency of per-target health-check probes, in seconds, by backend.",
 			Buckets:   []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10},
 		},
-		[]string{"backend_name"},
+		[]string{keys.Backend_Name},
 	)
 
 	// ProxyEnginesPanicRecovered counts recovered panics in fire-and-forget
@@ -630,7 +631,7 @@ var (
 			Name:      "engines_panic_recovered_total",
 			Help:      "Count of recovered panics in proxy/engines fire-and-forget goroutines, by call site.",
 		},
-		[]string{"site"},
+		[]string{keys.Site},
 	)
 
 	// CacheIndexPanicRecovered counts recovered panics in the cache index
@@ -645,7 +646,7 @@ var (
 			Name:      "index_panic_recovered_total",
 			Help:      "Count of recovered panics in cache index worker goroutines, by worker.",
 		},
-		[]string{"worker"},
+		[]string{keys.Worker},
 	)
 
 	// HealthHandlerPanicRecovered counts recovered panics in the status-page
@@ -672,7 +673,7 @@ var (
 			Name:      "status_notify_panic_recovered_total",
 			Help:      "Count of recovered panics while notifying a healthcheck Status subscriber, by backend.",
 		},
-		[]string{"backend_name"},
+		[]string{keys.Backend_Name},
 	)
 
 	// ALBPoolAdmitsFailing flags ALB pools whose healthy_floor admits a Failing
@@ -687,7 +688,7 @@ var (
 			Name:      "pool_admits_failing",
 			Help:      "1 when an ALB pool's healthy_floor admits members in Failing state; 0 otherwise.",
 		},
-		[]string{"backend_name"},
+		[]string{keys.Backend_Name},
 	)
 
 	// TLSCertificateNotAfter is a Gauge of each serving certificate's
@@ -699,7 +700,7 @@ var (
 			Name:      "certificate_expiration_time_seconds",
 			Help:      "NotAfter time of a serving TLS certificate, as unix seconds.",
 		},
-		[]string{"listener", "entry"},
+		[]string{keys.Listener, keys.Entry},
 	)
 
 	// TLSCertificateLastLoad is a Gauge of the time each serving certificate
@@ -711,7 +712,7 @@ var (
 			Name:      "certificate_last_load_time_seconds",
 			Help:      "Time a serving TLS certificate was last loaded from its source, as unix seconds.",
 		},
-		[]string{"listener", "entry"},
+		[]string{keys.Listener, keys.Entry},
 	)
 
 	// TLSCertificateSwapsTotal counts hot swaps of a rotated certificate into
@@ -723,7 +724,7 @@ var (
 			Name:      "certificate_swaps_total",
 			Help:      "Count of TLS certificates hot-swapped into a live listener.",
 		},
-		[]string{"listener", "entry"},
+		[]string{keys.Listener, keys.Entry},
 	)
 
 	// TLSCertificateValidationFailures counts detected certificate source
@@ -736,7 +737,7 @@ var (
 			Name:      "certificate_validation_failures_total",
 			Help:      "Count of TLS certificate source changes that failed validation.",
 		},
-		[]string{"entry"},
+		[]string{keys.Entry},
 	)
 
 	// TLSWatcherErrors counts errors reading watched TLS certificate source
@@ -748,7 +749,7 @@ var (
 			Name:      "watcher_errors_total",
 			Help:      "Count of errors reading watched TLS certificate source files.",
 		},
-		[]string{"entry"},
+		[]string{keys.Entry},
 	)
 
 	// TLSCertificateStoreSize is a Gauge of the number of certificates in
@@ -760,7 +761,7 @@ var (
 			Name:      "certificate_store_size",
 			Help:      "Number of certificates in a listener's TLS certificate store.",
 		},
-		[]string{"listener"},
+		[]string{keys.Listener},
 	)
 
 	// ALBPoolFloorReset flags ALB pools whose healthy_floor was reset to 0 at
@@ -774,7 +775,7 @@ var (
 			Name:      "pool_floor_reset",
 			Help:      "1 when an ALB pool's healthy_floor was reset to 0 because members lack health checks; 0 otherwise.",
 		},
-		[]string{"backend_name"},
+		[]string{keys.Backend_Name},
 	)
 )
 
@@ -885,7 +886,7 @@ func DeleteBackendSeries(backendName string) {
 	if backendName == "" {
 		return
 	}
-	labels := prometheus.Labels{"backend_name": backendName}
+	labels := prometheus.Labels{keys.Backend_Name: backendName}
 	for _, v := range backendSeriesVecs {
 		v.DeletePartialMatch(labels)
 	}
@@ -902,7 +903,7 @@ var (
 			Name:      "discovery_members",
 			Help:      "Current number of discovered ALB pool members.",
 		},
-		[]string{"alb_name", "discoverer"},
+		[]string{keys.ALB_Name, keys.Discoverer},
 	)
 
 	// ALBDiscoveryMemberChanges counts discovered-member lifecycle events;
@@ -914,7 +915,7 @@ var (
 			Name:      "discovery_member_changes_total",
 			Help:      "Count of discovered ALB pool member additions and removals.",
 		},
-		[]string{"alb_name", "discoverer", "event"},
+		[]string{keys.ALB_Name, keys.Discoverer, keys.Event},
 	)
 
 	// ALBDiscoverySnapshots counts membership snapshots processed per ALB.
@@ -928,7 +929,7 @@ var (
 			Name:      "discovery_snapshots_total",
 			Help:      "Count of ALB autodiscovery membership snapshots processed, by result.",
 		},
-		[]string{"alb_name", "discoverer", "result"},
+		[]string{keys.ALB_Name, keys.Discoverer, keys.Result},
 	)
 
 	// ALBDiscoveryLastRefresh is the unix timestamp of the last successfully
@@ -941,7 +942,7 @@ var (
 			Name:      "discovery_last_refresh_success_time_seconds",
 			Help:      "Epoch timestamp of the last successfully processed autodiscovery snapshot.",
 		},
-		[]string{"alb_name", "discoverer"},
+		[]string{keys.ALB_Name, keys.Discoverer},
 	)
 
 	// DiscoveryRefreshErrors counts provider-side refresh and watch
@@ -954,7 +955,7 @@ var (
 			Name:      "refresh_errors_total",
 			Help:      "Count of autodiscovery provider refresh/watch errors.",
 		},
-		[]string{"discoverer", "provider"},
+		[]string{keys.Discoverer, keys.Provider},
 	)
 )
 
@@ -982,7 +983,7 @@ func DeleteALBDiscoverySeries(albName string) {
 	if albName == "" {
 		return
 	}
-	labels := prometheus.Labels{"alb_name": albName}
+	labels := prometheus.Labels{keys.ALB_Name: albName}
 	for _, v := range albDiscoveryVecs {
 		v.DeletePartialMatch(labels)
 	}

@@ -19,6 +19,7 @@ package metrics
 import (
 	"fmt"
 
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 )
 
@@ -34,7 +35,7 @@ func ObserveCacheDel(cache, cacheProvider string, count float64) {
 
 // CacheError returns an empty cache object and the formatted error
 func CacheError(cacheKey, cacheName, cacheProvider string, msg string) ([]byte, error) {
-	ObserveCacheEvent(cacheName, cacheProvider, "error", msg)
+	ObserveCacheEvent(cacheName, cacheProvider, keys.Error, msg)
 	return nil, fmt.Errorf(msg, cacheKey)
 }
 

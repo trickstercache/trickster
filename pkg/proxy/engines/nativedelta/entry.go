@@ -25,6 +25,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	cacheproviders "github.com/trickstercache/trickster/v2/pkg/cache/providers"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
@@ -37,10 +38,6 @@ const (
 
 	failureDecode    = "decode_failure"
 	failureOversized = "oversized_cached_object"
-
-	logKeyProtocol = "protocol"
-	logKeyBackend  = "backend_name"
-	logKeyDetail   = "detail"
 )
 
 // envelopeMagic identifies a native-delta cache envelope: magic(4) version(1)
@@ -137,8 +134,9 @@ func (e *Engine[R]) Store(key string, entry *Entry[R]) {
 			if logger.Level() == level.Debug {
 				logger.Debug("native delta cache entry exceeds max object size",
 					logging.Pairs{
-						logKeyProtocol: e.cfg.Protocol,
-						logKeyBackend:  e.cfg.BackendName, "size": entry.size,
+						keys.Protocol:    e.cfg.Protocol,
+						keys.BackendName: e.cfg.BackendName,
+						keys.Size:        entry.size,
 					})
 			}
 			return
@@ -160,8 +158,9 @@ func (e *Engine[R]) Store(key string, entry *Entry[R]) {
 		if logger.Level() == level.Debug {
 			logger.Debug("native delta cache entry exceeds max object size",
 				logging.Pairs{
-					logKeyProtocol: e.cfg.Protocol,
-					logKeyBackend:  e.cfg.BackendName, "size": len(data),
+					keys.Protocol:    e.cfg.Protocol,
+					keys.BackendName: e.cfg.BackendName,
+					keys.Size:        len(data),
 				})
 		}
 		return
@@ -182,9 +181,10 @@ func (e *Engine[R]) remove(key, reason string) {
 		e.observeCacheFailure("remove_failure")
 		logger.Error("native delta cache removal failed",
 			logging.Pairs{
-				logKeyProtocol: e.cfg.Protocol,
-				logKeyBackend:  e.cfg.BackendName, "reason": reason,
-				logKeyDetail: err.Error(),
+				keys.Protocol:    e.cfg.Protocol,
+				keys.BackendName: e.cfg.BackendName,
+				keys.Reason:      reason,
+				keys.Detail:      err.Error(),
 			})
 	}
 }
@@ -297,7 +297,8 @@ func memoryCacheClient(cacheClient cache.Cache) (cache.MemoryCache, bool) {
 
 func (e *Engine[R]) logCacheError(event, detail string) {
 	logger.Error(event, logging.Pairs{
-		logKeyProtocol: e.cfg.Protocol,
-		logKeyBackend:  e.cfg.BackendName, logKeyDetail: detail,
+		keys.Protocol:    e.cfg.Protocol,
+		keys.BackendName: e.cfg.BackendName,
+		keys.Detail:      detail,
 	})
 }

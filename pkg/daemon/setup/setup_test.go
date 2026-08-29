@@ -31,6 +31,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/registry"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/daemon/instance"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
@@ -761,12 +762,12 @@ func TestHandleStartupIssue(t *testing.T) {
 		t.Errorf("calls = %d, want 1", calls)
 	}
 
-	handleStartupIssue("some event", logging.Pairs{"detail": "x"}, errorFunc)
+	handleStartupIssue("some event", logging.Pairs{keys.Detail: "x"}, errorFunc)
 	if calls != 2 {
 		t.Errorf("calls = %d, want 2", calls)
 	}
 
-	handleStartupIssue("some event", logging.Pairs{"detail": "x"}, nil)
+	handleStartupIssue("some event", logging.Pairs{keys.Detail: "x"}, nil)
 	if calls != 2 {
 		t.Errorf("calls = %d, want 2", calls)
 	}

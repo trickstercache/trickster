@@ -34,10 +34,10 @@ import (
 
 func TestConsoleLogger(t *testing.T) {
 	testCases := []string{
-		"debug",
-		"info",
-		"warn",
-		"error",
+		level.Debug,
+		level.Info,
+		level.Warn,
+		level.Error,
 	}
 	// it should create a logger for each level
 	for _, tc := range testCases {
@@ -211,7 +211,7 @@ func TestNewLoggerError_LogFile(t *testing.T) {
 	// it should create a logger that outputs to a log file ("out.test.log")
 	conf := config.NewConfig()
 	conf.Main = &config.MainConfig{InstanceID: 0}
-	conf.Logging = &options.Options{LogFile: fileName, LogLevel: "error"}
+	conf.Logging = &options.Options{LogFile: fileName, LogLevel: level.Error}
 	logger := New(conf)
 	logger.SetLogAsynchronous(false)
 	logger.Error("test entry", Pairs{"testKey": "testVal"})

@@ -22,6 +22,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
@@ -213,7 +214,7 @@ func (p *parser) addRowToSeries(state *csvState, row []string, s *dataset.Series
 	pt.Epoch, err = p.timestampParser(row[s.Header.TimestampField.OutputPosition],
 		s.Header.TimestampField)
 	if err != nil {
-		logger.Error("failed to parse timestamp", logging.Pairs{"error": err})
+		logger.Error("failed to parse timestamp", logging.Pairs{keys.Error: err})
 		return
 	}
 	pt.Values = make([]any, len(s.Header.ValueFieldsList))

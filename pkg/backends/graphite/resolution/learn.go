@@ -25,6 +25,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	tspan "github.com/trickstercache/trickster/v2/pkg/observability/tracing/span"
@@ -123,7 +124,7 @@ func (l *Learner) Schedule(leaf string, hint *Ladder) bool {
 	l.wg.Add(1)
 	safego.Go(func(r any, stack []byte) {
 		logger.Error("graphite ladder learning panicked", logging.Pairs{
-			"backendName": l.Name, "leaf": leaf, "panic": fmt.Sprint(r), "stack": string(stack),
+			keys.BackendName: l.Name, keys.Leaf: leaf, keys.Panic: fmt.Sprint(r), keys.Stack: string(stack),
 		})
 	}, func() {
 		defer l.wg.Done()
@@ -157,7 +158,7 @@ func (l *Learner) Learn(ctx context.Context, leaf string, hint *Ladder) (*Ladder
 			err = cerr
 		} else {
 			logger.Info("graphite static ladder contradicted by origin; learning",
-				logging.Pairs{"backendName": l.Name, "leaf": leaf, "static": hint.String()})
+				logging.Pairs{keys.BackendName: l.Name, keys.Leaf: leaf, keys.Static: hint.String()})
 		}
 	}
 	// a deployment has a handful of ladders: before discovering from
@@ -190,9 +191,12 @@ func (l *Learner) Learn(ctx context.Context, leaf string, hint *Ladder) (*Ladder
 		}
 		backoff := l.Registry.SetNegative(leaf)
 		logger.Warn("graphite ladder learning failed; negative-cached", logging.Pairs{
-			"backendName": l.Name,
-			"leaf":        leaf, "probes": run.probes, "error": err.Error(), "negativeCacheBackoff": backoff.String(),
-			"partial": run.partial.String(),
+			keys.BackendName:          l.Name,
+			keys.Leaf:                 leaf,
+			keys.Probes:               run.probes,
+			keys.Error:                err.Error(),
+			keys.NegativeCacheBackoff: backoff.String(),
+			keys.Partial:              run.partial.String(),
 		})
 		return run.partial, err
 	}
@@ -208,9 +212,12 @@ func (l *Learner) Learn(ctx context.Context, leaf string, hint *Ladder) (*Ladder
 		l.Observer.Ladders(l.Registry.Stats().CompleteLadders)
 	}
 	logger.Debug("graphite ladder learned", logging.Pairs{
-		"backendName": l.Name, "leaf": leaf,
-		"ladder": ladder.String(), "fingerprint": key, "probes": run.probes,
-		"duration": l.now().Sub(start).String(),
+		keys.BackendName: l.Name,
+		keys.Leaf:        leaf,
+		keys.Ladder:      ladder.String(),
+		keys.Fingerprint: key,
+		keys.Probes:      run.probes,
+		keys.Duration:    l.now().Sub(start).String(),
 	})
 	tspan.SetAttributes(l.Tracers.Get(), span,
 		attribute.String("graphite.ladder", ladder.String()),

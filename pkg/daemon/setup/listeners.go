@@ -27,6 +27,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	listenerconfig "github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
@@ -40,12 +41,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
-)
-
-const (
-	logKeyError        = "error"
-	logKeyDetail       = "detail"
-	logKeyListenerName = "listenerName"
 )
 
 type desiredListener struct {
@@ -122,7 +117,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 				if adapter, ok := desired.native.(native.HTTPHandlerAdapter); ok {
 					h, err := adapter.Handler(request)
 					if err != nil {
-						logger.Error("unable to update native handler", logging.Pairs{logKeyListenerName: desired.listenerName, logKeyError: err.Error()})
+						logger.Error("unable to update native handler", logging.Pairs{keys.ListenerName: desired.listenerName, keys.Error: err.Error()})
 					} else {
 						lg.UpdateProtocolHandler(key, h)
 					}
@@ -135,7 +130,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 					lg.UpdateProtocolTLSConfig(key, tlsConfig)
 				} else {
 					logger.Error("unable to rotate native listener TLS", logging.Pairs{
-						logKeyListenerName: desired.listenerName, logKeyError: err.Error(),
+						keys.ListenerName: desired.listenerName, keys.Error: err.Error(),
 					})
 				}
 			}
@@ -149,8 +144,8 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 			svr, err := desired.native.Build(nativeBuildRequest(conf, desired, tracers, clients))
 			if err != nil {
 				logger.Error("unable to configure native protocol server", logging.Pairs{
-					logKeyListenerName: desired.listenerName, "protocol": desired.options.Protocol,
-					logKeyError: err.Error(),
+					keys.ListenerName: desired.listenerName, "protocol": desired.options.Protocol,
+					keys.Error: err.Error(),
 				})
 				continue
 			}
@@ -165,7 +160,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 			config, err := conf.TLSCertConfigForListener(desired.listenerName)
 			if err != nil {
 				logger.Error("unable to start TLS listener", logging.Pairs{
-					logKeyListenerName: desired.listenerName, logKeyError: err.Error(),
+					keys.ListenerName: desired.listenerName, keys.Error: err.Error(),
 				})
 				continue
 			}
@@ -200,8 +195,8 @@ func desiredListeners(conf *config.Config, listenerRouters map[string]router.Rou
 			if err != nil {
 				logger.Error("native listener has no usable backend configuration",
 					logging.Pairs{
-						logKeyListenerName: name, "protocol": options.Protocol,
-						logKeyDetail: err.Error(),
+						keys.ListenerName: name, "protocol": options.Protocol,
+						keys.Detail: err.Error(),
 					})
 				continue
 			}
@@ -291,7 +286,7 @@ func updateListenerCertificates(conf *config.Config, desired desiredListener, lg
 	tlsConfig, err := conf.TLSCertConfigForListener(desired.listenerName)
 	if err != nil {
 		logger.Error("unable to update TLS listener certificates", logging.Pairs{
-			logKeyListenerName: desired.listenerName, logKeyError: err.Error(),
+			keys.ListenerName: desired.listenerName, keys.Error: err.Error(),
 		})
 		return
 	}

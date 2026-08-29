@@ -37,6 +37,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 	"github.com/trickstercache/trickster/v2/pkg/encoding"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
@@ -308,14 +309,14 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				}
 				logger.Warn("query rejected due to max_query_range limit",
 					logging.Pairs{
-						"backendName": rsc.BackendOptions.Name,
-						"clientIP":    clientIP,
-						"path":        r.URL.Path,
-						"statement":   trq.Statement,
-						"start":       trq.Extent.Start.String(),
-						"end":         trq.Extent.End.String(),
-						"duration":    duration.String(),
-						"limit":       limit.String(),
+						keys.BackendName: rsc.BackendOptions.Name,
+						"clientIP":       clientIP,
+						keys.Path:        r.URL.Path,
+						"statement":      trq.Statement,
+						"start":          trq.Extent.Start.String(),
+						"end":            trq.Extent.End.String(),
+						"duration":       duration.String(),
+						"limit":          limit.String(),
 					})
 				http.Error(w, "query time range exceeds the allowed limit of "+limit.String(), http.StatusBadRequest)
 				return
@@ -368,7 +369,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				var err error
 				plan, err = planner.PlanTSMMerge(r, query)
 				if err != nil {
-					logger.Warn("tsm merge plan construction failure", logging.Pairs{"error": err})
+					logger.Warn("tsm merge plan construction failure", logging.Pairs{keys.Error: err})
 					failures.HandleBadGateway(w, r)
 					return
 				}
@@ -379,7 +380,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err := plan.Validate(); err != nil {
-		logger.Warn("invalid tsm merge plan", logging.Pairs{"error": err})
+		logger.Warn("invalid tsm merge plan", logging.Pairs{keys.Error: err})
 		failures.HandleBadGateway(w, r)
 		return
 	}
@@ -423,7 +424,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			logger.Warn("alb tsm pool has unavailable replica groups",
 				logging.Pairs{
-					"backend_name":      bn,
+					keys.BackendName:    bn,
 					"configured_groups": configuredGroups,
 					"live_groups":       liveGroups,
 				})
@@ -548,7 +549,7 @@ func prepareGatherContribution(ctx context.Context, rsc *request.Resources, body
 		ts, err = rsc.TSUnmarshaler(body, rsc.TimeRangeQuery)
 		if err != nil {
 			logger.Warn("tsm gather timeseries decode failure", logging.Pairs{
-				"member": member, "error": err,
+				keys.Member: member, keys.Error: err,
 			})
 			return nil
 		}
@@ -611,7 +612,7 @@ func mergeGatherContributions(ctx context.Context, accumulator *merge.Accumulato
 		handled, err := mergeContributionBatch(accumulator, batchMergeFunc, items)
 		if err != nil {
 			logger.Warn("tsm gather batch merge failure", logging.Pairs{
-				"members": len(items), "error": err,
+				"members": len(items), keys.Error: err,
 			})
 			failed := make([]int, len(items))
 			for i, item := range items {
@@ -634,7 +635,7 @@ func mergeGatherContributions(ctx context.Context, accumulator *merge.Accumulato
 		}
 		if err := mergeContribution(accumulator, contribution); err != nil {
 			logger.Warn("tsm gather merge failure", logging.Pairs{
-				"member": contribution.member, "error": err,
+				keys.Member: contribution.member, keys.Error: err,
 			})
 			failed = append(failed, contribution.member)
 		}
@@ -731,7 +732,7 @@ func (h *handler) serveStandard(
 					)
 					if derr != nil {
 						logger.Warn("tsm gather decode failure", logging.Pairs{
-							"member": i, "error": derr,
+							keys.Member: i, keys.Error: derr,
 						})
 						results[i].failed = true
 						return

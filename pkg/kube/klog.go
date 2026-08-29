@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 
@@ -55,7 +56,7 @@ func (s *klogSink) Info(_ int, msg string, kv ...any) {
 func (s *klogSink) Error(err error, msg string, kv ...any) {
 	p := s.pairs(kv)
 	if err != nil {
-		p["error"] = err.Error()
+		p[keys.Error] = err.Error()
 	}
 	logger.Error(msg, p)
 }

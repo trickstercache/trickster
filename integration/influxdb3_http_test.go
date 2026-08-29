@@ -27,6 +27,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+
 	"github.com/stretchr/testify/require"
 )
 
@@ -64,13 +66,13 @@ func TestInfluxDB3HTTP(t *testing.T) {
 		resp1, body1 := doGet(t, "/api/v3/query_sql", params)
 		require.Equal(t, http.StatusOK, resp1.StatusCode, "body: %s", string(body1))
 		require.NotEmpty(t, body1)
-		hdr1 := parseTricksterResult(resp1.Header.Get("X-Trickster-Result"))
+		hdr1 := parseTricksterResult(resp1.Header.Get(headers.NameTricksterResult))
 		require.NotEmpty(t, hdr1["engine"], "expected engine on first call")
 
 		// second call — should be a cache hit
 		resp2, body2 := doGet(t, "/api/v3/query_sql", params)
 		require.Equal(t, http.StatusOK, resp2.StatusCode, "body: %s", string(body2))
-		hdr2 := parseTricksterResult(resp2.Header.Get("X-Trickster-Result"))
+		hdr2 := parseTricksterResult(resp2.Header.Get(headers.NameTricksterResult))
 		require.Contains(t, hdr2, "status", "expected status in X-Trickster-Result on second call")
 	})
 
@@ -158,7 +160,7 @@ func TestInfluxDB3HTTP(t *testing.T) {
 		resp, body := doGet(t, "/api/v3/query_influxql", params)
 		require.Equal(t, http.StatusOK, resp.StatusCode, "body: %s", string(body))
 		require.NotEmpty(t, body)
-		hdr := parseTricksterResult(resp.Header.Get("X-Trickster-Result"))
+		hdr := parseTricksterResult(resp.Header.Get(headers.NameTricksterResult))
 		require.NotEmpty(t, hdr["engine"], "expected engine on v3 InfluxQL response")
 	})
 
@@ -200,7 +202,7 @@ func TestInfluxDB3HTTP(t *testing.T) {
 		rows1, tags1 := countTagRows(body1)
 		require.Greater(t, len(tags1), 1,
 			"expected multiple cpu tags in grouped result; got %v", tags1)
-		hdr1 := parseTricksterResult(resp1.Header.Get("X-Trickster-Result"))
+		hdr1 := parseTricksterResult(resp1.Header.Get(headers.NameTricksterResult))
 		require.NotEmpty(t, hdr1["engine"], "expected engine on JSON-POST v3 InfluxQL")
 
 		resp2, body2 := post()

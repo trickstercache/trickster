@@ -17,7 +17,7 @@
 package level
 
 type (
-	Level string
+	Level = string
 	ID    int
 )
 

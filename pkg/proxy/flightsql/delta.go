@@ -26,6 +26,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	cachestatus "github.com/trickstercache/trickster/v2/pkg/cache/status"
 	checksum "github.com/trickstercache/trickster/v2/pkg/checksum/md5"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/engines/nativedelta"
@@ -170,7 +171,7 @@ func observeCacheFailure(cacheClient func() cache.Cache, reason string) {
 	}
 	configuration := resolved.Configuration()
 	metrics.CacheEvents.WithLabelValues(configuration.Name, configuration.Provider,
-		"error", flightsqlDialect+"_"+reason).Inc()
+		keys.Error, flightsqlDialect+"_"+reason).Inc()
 }
 
 // serve executes one statement query through the three-tier cache, recording

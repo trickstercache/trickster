@@ -27,6 +27,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	txe "github.com/trickstercache/trickster/v2/pkg/proxy/errors"
@@ -278,7 +279,7 @@ func (d *HTTPDocument) ParsePartialContentBody(resp *http.Response,
 			d.Ranges = d.RangeParts.Ranges()
 		} else {
 			logger.Error("unable to parse multipart range response body",
-				logging.Pairs{"detail": err.Error})
+				logging.Pairs{keys.Detail: err.Error})
 		}
 	} else {
 		if !strings.HasPrefix(ct, headers.ValueMultipartByteRanges) {

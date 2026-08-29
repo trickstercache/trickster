@@ -38,6 +38,7 @@ import (
 	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/errors"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
@@ -248,9 +249,9 @@ func (c *Client) ValidateAndStartPool(clients backends.Backends, hcs healthcheck
 		metrics.ALBPoolAdmitsFailing.WithLabelValues(c.Name()).Set(1)
 		logger.Warn("alb healthy_floor admits members in Failing state",
 			logging.Pairs{
-				"backend_name":  c.Name(),
-				"healthy_floor": o.HealthyFloor,
-				"hint":          "set healthy_floor: 0 to exclude probed-failing members",
+				keys.BackendName: c.Name(),
+				"healthy_floor":  o.HealthyFloor,
+				"hint":           "set healthy_floor: 0 to exclude probed-failing members",
 			})
 	} else {
 		metrics.ALBPoolAdmitsFailing.WithLabelValues(c.Name()).Set(0)
@@ -299,10 +300,10 @@ func (c *Client) effectiveFloor(targets pool.Targets) int {
 			c.floorWasReset = true
 			logger.Warn("alb healthy_floor reset to 0: pool members have no health check",
 				logging.Pairs{
-					"backend_name":  c.Name(),
-					"healthy_floor": o.HealthyFloor,
-					"members":       strings.Join(unprobed, ","),
-					"hint":          "configure healthcheck.interval on these members, or set healthy_floor: 0",
+					keys.BackendName: c.Name(),
+					"healthy_floor":  o.HealthyFloor,
+					"members":        strings.Join(unprobed, ","),
+					"hint":           "configure healthcheck.interval on these members, or set healthy_floor: 0",
 				})
 		}
 		return int(healthcheck.StatusUnchecked)

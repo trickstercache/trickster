@@ -33,6 +33,8 @@ import (
 
 	"github.com/trickstercache/trickster/v2/integration/internal/portutil"
 	"github.com/trickstercache/trickster/v2/integration/promstub"
+	"github.com/trickstercache/trickster/v2/pkg/cache/status"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -227,11 +229,11 @@ func TestALBTSMCorrectness(t *testing.T) {
 
 		nonOK := resp.StatusCode >= 400
 		hasWarn := strings.Contains(string(body), `"warnings"`)
-		result := parseTricksterResult(resp.Header.Get("X-Trickster-Result"))
-		hasPhit := strings.Contains(result["status"], "phit")
+		result := parseTricksterResult(resp.Header.Get(headers.NameTricksterResult))
+		hasPhit := strings.Contains(result["status"], status.StatusPartialHit)
 		assert.Truef(t, nonOK || hasWarn || hasPhit,
 			"avg fanout silently returned 200 with raw sum: status=%d X-Trickster-Result=%q body=%s",
-			resp.StatusCode, resp.Header.Get("X-Trickster-Result"), string(body))
+			resp.StatusCode, resp.Header.Get(headers.NameTricksterResult), string(body))
 	})
 
 	t.Run("R1 topk and bottomk trim globally across shards", func(t *testing.T) {
@@ -442,8 +444,8 @@ func TestALBTSMCorrectness(t *testing.T) {
 			}
 			b, _ := io.ReadAll(r.Body)
 			r.Body.Close()
-			rh := r.Header.Get("X-Trickster-Result")
-			if !assert.Contains(c, rh, "phit", "X-Trickster-Result=%q body=%s", rh, string(b)) {
+			rh := r.Header.Get(headers.NameTricksterResult)
+			if !assert.Contains(c, rh, status.StatusPartialHit, "X-Trickster-Result=%q body=%s", rh, string(b)) {
 				return
 			}
 			resp, body, raw = r, b, rh
@@ -456,7 +458,7 @@ func TestALBTSMCorrectness(t *testing.T) {
 		require.Equal(t, http.StatusOK, resp.StatusCode,
 			"current behavior is 200 (lowest non-zero status wins); body=%s", string(body))
 
-		require.Contains(t, raw, "phit",
+		require.Contains(t, raw, status.StatusPartialHit,
 			"3 of 4 fanout members 500'd; expected partial-hit marker in X-Trickster-Result, got %q", raw)
 	})
 }

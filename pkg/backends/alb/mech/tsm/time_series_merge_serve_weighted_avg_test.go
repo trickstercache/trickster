@@ -38,6 +38,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	prop "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/options"
+	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
@@ -901,8 +902,8 @@ func TestServeWeightedAvg(t *testing.T) {
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, newWeightedAvgRequest(t, "avg(requests)"))
 
-		if status := w.Header().Get(headers.NameTricksterResult); !strings.Contains(status, "phit") {
-			t.Fatalf("%s: want phit marker, got %q", headers.NameTricksterResult, status)
+		if st := w.Header().Get(headers.NameTricksterResult); !strings.Contains(st, status.StatusPartialHit) {
+			t.Fatalf("%s: want phit marker, got %q", headers.NameTricksterResult, st)
 		}
 	})
 

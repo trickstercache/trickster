@@ -24,6 +24,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus/model"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	tgzip "github.com/trickstercache/trickster/v2/pkg/encoding/gzip"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
@@ -71,7 +72,7 @@ func (c *Client) processVectorTransformations(w http.ResponseWriter,
 			detail = err.Error()
 		}
 		logger.Error("vector unmarshaling error",
-			logging.Pairs{"provider": providers.Prometheus, "detail": detail, "body": string(body)})
+			logging.Pairs{keys.Provider: providers.Prometheus, keys.Detail: detail, keys.Body: string(body)})
 		defaultWrite(statusCode, w, body)
 		return
 	}

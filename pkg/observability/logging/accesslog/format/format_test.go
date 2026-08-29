@@ -24,6 +24,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 )
 
 func testFields() *Fields {
@@ -53,7 +55,7 @@ func testFields() *Fields {
 		Backend:     "example1",
 		Provider:    "rp",
 		PathConfig:  "/api",
-		CacheStatus: "phit",
+		CacheStatus: status.StatusPartialHit,
 		Engine:      "DeltaProxyCache",
 	}
 }
@@ -110,7 +112,7 @@ func TestTokens(t *testing.T) {
 		{"%%", "%"},
 		{"%{backend}x", "example1"},
 		{"%{provider}x", "rp"},
-		{"%{cache-status}x", "phit"},
+		{"%{cache-status}x", status.StatusPartialHit},
 		{"%{engine}x", "DeltaProxyCache"},
 		{"%{path-config}x", "/api"},
 		{"literal only", "literal only"},
@@ -205,7 +207,7 @@ func TestJSONPreset(t *testing.T) {
 		"host":         "example.com",
 		"user_agent":   "test-agent/1.0",
 		"backend":      "example1",
-		"cache_status": "phit",
+		"cache_status": status.StatusPartialHit,
 		"engine":       "DeltaProxyCache",
 	}
 	for k, v := range expected {

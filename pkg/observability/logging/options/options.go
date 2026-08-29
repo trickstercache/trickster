@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/manager"
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 )
@@ -85,7 +86,7 @@ func (o *Options) Initialize(_ string) error {
 
 func (o *Options) Validate() (bool, error) {
 	switch strings.ToLower(o.LogLevel) {
-	case "error", "warn", "fatal", "info", "debug":
+	case level.Error, level.Warn, level.Fatal, level.Info, level.Debug:
 		return true, nil
 	}
 	return false, ErrInvalidLogLevel

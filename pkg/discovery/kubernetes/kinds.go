@@ -22,6 +22,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/discovery"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/providers"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 
@@ -334,7 +335,7 @@ func (s *subscription) warnPort(kind, objName string, declared int) {
 	}
 	discovery.LogWarn("kubernetes discovery could not resolve a member port; objects skipped",
 		logging.Pairs{
-			"discoverer": s.p.name, "kind": kind, "object": objName,
+			keys.Discoverer: s.p.name, "kind": kind, "object": objName,
 			"queryPort": s.q.Port, "declaredPorts": declared,
 			"hint": "set query.port to a port name or number",
 		})
@@ -350,6 +351,6 @@ func (s *subscription) warnBuild(event string, err error) {
 	metrics.DiscoveryRefreshErrors.WithLabelValues(
 		s.p.name, providers.Kubernetes).Inc()
 	discovery.LogWarn(event, logging.Pairs{
-		"discoverer": s.p.name, "error": err.Error(),
+		keys.Discoverer: s.p.name, keys.Error: err.Error(),
 	})
 }

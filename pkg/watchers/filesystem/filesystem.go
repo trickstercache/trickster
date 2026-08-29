@@ -28,6 +28,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/util/safego"
@@ -163,14 +164,14 @@ func (w *Watcher) startEventWatches() {
 	ew, err := fsnotify.NewWatcher()
 	if err != nil {
 		logger.Debug("fsnotify unavailable; filesystem watcher is poll-only",
-			logging.Pairs{"name": w.opts.Name, "detail": err.Error()})
+			logging.Pairs{keys.Name: w.opts.Name, keys.Detail: err.Error()})
 		return
 	}
 	added := 0
 	for _, dir := range w.eventDirs {
 		if err := ew.Add(dir); err != nil {
 			logger.Debug("unable to event-watch directory",
-				logging.Pairs{"name": w.opts.Name, "dir": dir, "detail": err.Error()})
+				logging.Pairs{keys.Name: w.opts.Name, "dir": dir, keys.Detail: err.Error()})
 			continue
 		}
 		added++

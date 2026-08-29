@@ -22,6 +22,11 @@ import (
 	"sync/atomic"
 )
 
+const (
+	AppName       = "trickster"
+	AppNameProper = "Trickster"
+)
+
 // Name is the name of the Application
 var Name string
 
