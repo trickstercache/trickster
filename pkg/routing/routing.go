@@ -116,7 +116,7 @@ func RegisterProxyRoutesForListeners(conf *config.Config, clients backends.Backe
 			}
 			routes = append(routes, listenerRoute{r, frontendOptions(conf, name)})
 		}
-		if len(o.ListenerNames) == 0 && registry.NativeListeners().Get(strings.ToLower(o.Provider)) == nil {
+		if len(o.ListenerNames) == 0 && registry.NativeListeners().GetByProvider(strings.ToLower(o.Provider)) == nil {
 			return nil
 		}
 		return routes

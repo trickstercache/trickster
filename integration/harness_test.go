@@ -295,7 +295,7 @@ func writeTestConfig(t *testing.T, configPath string,
 		bo.ListenerNames = []string{listener.DefaultFrontendName}
 		if flightPort > 0 {
 			c.Listeners["influx3-flight"] = &listener.Options{
-				Protocol: listener.ProtocolInfluxDB, ListenAddress: "127.0.0.1", ListenPort: flightPort,
+				Protocol: listener.ProtocolFlightSQL, ListenAddress: "127.0.0.1", ListenPort: flightPort,
 			}
 			bo.ListenerNames = []string{listener.DefaultFrontendName, "influx3-flight"}
 		}

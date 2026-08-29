@@ -34,7 +34,7 @@ import (
 func flightTestConfig() *config.Config {
 	c := config.NewConfig()
 	c.Listeners["flight"] = listenerconfig.New("flight")
-	c.Listeners["flight"].Protocol = listenerconfig.ProtocolInfluxDB
+	c.Listeners["flight"].Protocol = listenerconfig.ProtocolFlightSQL
 	backend := bo.New()
 	backend.Name = "influx"
 	backend.Provider = providers.InfluxDB
@@ -55,7 +55,7 @@ func flightTestBuildRequest(c *config.Config,
 
 func TestFlightNativeListenerAdapterContract(t *testing.T) {
 	adapter := NativeListenerAdapter()
-	if adapter.Protocol() != listenerconfig.ProtocolInfluxDB {
+	if adapter.Protocol() != listenerconfig.ProtocolFlightSQL {
 		t.Fatalf("Protocol() = %q", adapter.Protocol())
 	}
 	if !adapter.SupportsHTTP() {

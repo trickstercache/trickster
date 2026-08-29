@@ -108,11 +108,11 @@
 #     # address: ''
 #     # connections_limit: 0
 #
-#   # An InfluxDB listener accepts Apache Arrow Flight SQL (gRPC) connections
+#   # A flight-sql listener accepts Apache Arrow Flight SQL (gRPC) connections
 #   # and maps to one InfluxDB backend through that backend's listener_names
 #   # option. See /docs/influxdb.md for full details. InfluxDB 3.x only.
 #   influx3-flight:
-#     protocol: influxdb
+#     protocol: flight-sql
 #     port: 8485
 #     # address: ''
 #     # connections_limit: 0
@@ -820,7 +820,7 @@ backends:
 #     provider: influxdb
 #     origin_url: 'http://influxdb3:8181/'
 #
-#     # Mapping an influxdb-protocol listener (see the listeners section)
+#     # Mapping a flight-sql-protocol listener (see the listeners section)
 #     # exposes this backend over Apache Arrow Flight SQL (gRPC): Trickster
 #     # proxies Flight SQL queries, metadata RPCs (GetTables/Schemas/etc.) and
 #     # the full prepared-statement lifecycle, caching the Arrow IPC byte

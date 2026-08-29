@@ -50,6 +50,8 @@ func (nativeListenerAdapter) SupportsHTTP() bool { return false }
 
 func (nativeListenerAdapter) Protocol() string { return listenerconfig.ProtocolMySQL }
 
+func (nativeListenerAdapter) BackendProvider() string { return providers.MySQL }
+
 func (nativeListenerAdapter) Configured(o *listenerconfig.Options) bool {
 	return o != nil && o.MySQL != nil
 }

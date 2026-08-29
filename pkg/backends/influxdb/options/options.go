@@ -27,7 +27,7 @@ import (
 // Options stores options specific to InfluxDB backends.
 type Options struct {
 	// FlightUpstreamAddress overrides the upstream Apache Arrow Flight SQL
-	// address used by an influxdb-protocol native listener mapped to this
+	// address used by a flight-sql-protocol native listener mapped to this
 	// backend. Defaults to the host:port from the backend's origin_url.
 	FlightUpstreamAddress string `yaml:"flight_upstream_address,omitempty"`
 	// FlightUpstreamTLS dials the upstream Flight SQL endpoint with TLS.

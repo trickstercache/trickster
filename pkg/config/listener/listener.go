@@ -39,9 +39,10 @@ const (
 	ProtocolMySQL = "mysql"
 	// ProtocolClickHouse is the ClickHouse native wire protocol.
 	ProtocolClickHouse = "clickhouse"
-	// ProtocolInfluxDB is InfluxDB's native wire protocol, Apache Arrow
-	// Flight SQL over gRPC.
-	ProtocolInfluxDB = "influxdb"
+	// ProtocolFlightSQL is Apache Arrow Flight SQL over gRPC, a
+	// vendor-neutral query protocol currently served by the InfluxDB
+	// provider.
+	ProtocolFlightSQL = "flight-sql"
 	// DefaultTLSWatchInterval is the default poll interval for detecting
 	// out-of-band TLS certificate rotation.
 	DefaultTLSWatchInterval = timeconv.Duration(30 * time.Second)

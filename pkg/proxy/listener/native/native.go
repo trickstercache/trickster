@@ -49,6 +49,11 @@ type BuildRequest struct {
 // protocol server, and expose a reloadable route resolver when applicable.
 type Adapter interface {
 	Protocol() string
+	// BackendProvider returns the backend provider name this adapter's
+	// protocol serves. Protocol and provider names need not match: a
+	// vendor-neutral protocol (e.g. flight-sql) can be served by a
+	// vendor-specific provider (e.g. influxdb).
+	BackendProvider() string
 	SupportsHTTP() bool
 	Configured(*listenerconfig.Options) bool
 	ValidateListener(*listenerconfig.Options) error
@@ -65,6 +70,17 @@ type Registry map[string]Adapter
 // Get returns the adapter registered for protocol.
 func (r Registry) Get(protocol string) Adapter {
 	return r[protocol]
+}
+
+// GetByProvider returns the adapter whose protocol serves the given backend
+// provider, or nil when no native protocol serves it.
+func (r Registry) GetByProvider(provider string) Adapter {
+	for _, adapter := range r {
+		if adapter.BackendProvider() == provider {
+			return adapter
+		}
+	}
+	return nil
 }
 
 // ConfiguredProtocol returns the first, lexically ordered protocol whose

@@ -10,7 +10,7 @@ listeners:
     port: 8487
   # influx3-flight exposes influx3 over Apache Arrow Flight SQL (gRPC).
   influx3-flight:
-    protocol: influxdb
+    protocol: flight-sql
     port: 8485
 authenticators:
   mysql-grafana:
