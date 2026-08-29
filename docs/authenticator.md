@@ -1,6 +1,6 @@
 # Authenticator
 
-Trickster 2.0 provides a new Authenticator capability that allows you to protect Backends with an Authentication layer.
+Trickster 2.x provides an Authenticator capability that allows you to protect Backends with an Authentication layer.
 
 Authenticator resources are defined globally by name, and then mapped into any Backend and/or Path configuration as needed. Authenticator users can be loaded from `htpasswd` or `csv` files, or directly in the Trickster config file. You can provide credentials in plaintext, bcrypt, apache md5-script, as well as legacy formats rsa-256 and rsa-512.
 

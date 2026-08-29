@@ -8,7 +8,7 @@ metadata:
 data:
   trickster-conf: |-
     #
-    # Trickster 2.0 Example Configuration File - Exhaustive
+    # Trickster 2.x Example Configuration File - Exhaustive
     #
     # This file contains descriptions and examples for all
     # Trickster configuration options. More documentation is

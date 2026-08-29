@@ -1,6 +1,6 @@
 # Application Load Balancer
 
-Trickster 2.0 provides an all-new Application Load Balancer that is easy to configure and provides unique features to aid with Scaling, High Availability and other applications. The ALB supports several balancing Mechanisms:
+Trickster 2.x provides an Application Load Balancer that is easy to configure and provides unique features to aid with Scaling, High Availability and other applications. The ALB supports several balancing Mechanisms:
 
 | Mechanism | Config | Provides | Description |
 |-----|-----|-----|----|
@@ -74,7 +74,7 @@ backends:
     request_headers: # this backend might use basic auth headers
       Authoriziation: "basic jdoe:${NODE_02_AUTH_TOKEN}"
 
-  # Trickster 2.0 ALB backend configuration, using above backends as pool members
+  # Trickster 2.x ALB backend configuration, using above backends as pool members
 
   node-alb:
     provider: alb
@@ -546,7 +546,7 @@ backends:
 
 ## All-Backends Health Status Page
 
-Trickster 2.0 provides a new global health status page available at `http://trickster:metrics-port/trickster/health` or (the configured `health_handler_path`).
+Trickster 2.x provides a global health status page available at `http://trickster:metrics-port/trickster/health` or (the configured `health_handler_path`).
 
 The global status page will display the health state about all backends configured for automated health checking. Here is an example configuration and a possible corresponding status page output:
 
