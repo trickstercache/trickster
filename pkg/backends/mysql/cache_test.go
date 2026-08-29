@@ -31,6 +31,7 @@ import (
 	cachestatus "github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/vitess"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -44,6 +45,10 @@ import (
 // dpcTestHandler supplies the collation environment DPC result ordering needs:
 // group columns are compared with MySQL's own rules, which requires one.
 var dpcTestHandler = &protocolHandler{env: vtenv.NewTestEnv()}
+
+func mustNewAnalyzer() *Analyzer {
+	return vitess.MustNewAnalyzer()
+}
 
 func TestCachedQueryResultRoundTrip(t *testing.T) {
 	original := &cachedQueryResult{

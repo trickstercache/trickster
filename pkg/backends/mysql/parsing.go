@@ -51,10 +51,6 @@ func NewAnalyzer() (*Analyzer, error) {
 
 var defaultAnalyzer = vitess.MustNewAnalyzer()
 
-func mustNewAnalyzer() *Analyzer {
-	return vitess.MustNewAnalyzer()
-}
-
 // Parse converts a MySQL statement into the same TimeRangeQuery contract used
 // by the HTTP SQL backend. The protocol handler can use the returned cacheability
 // flag to select DPC, OPC, or pass-through behavior without exposing Vitess ASTs.
