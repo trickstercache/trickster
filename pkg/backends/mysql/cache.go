@@ -31,7 +31,6 @@ import (
 	"unsafe"
 
 	"github.com/trickstercache/trickster/v2/pkg/cache"
-	cacheproviders "github.com/trickstercache/trickster/v2/pkg/cache/providers"
 	cachestatus "github.com/trickstercache/trickster/v2/pkg/cache/status"
 	checksum "github.com/trickstercache/trickster/v2/pkg/checksum/md5"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
@@ -39,6 +38,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/engines/nativedelta"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -52,7 +52,6 @@ import (
 )
 
 const (
-	cacheEnvelopeVersion          byte = 1
 	cacheIdentityVersion          byte = 1
 	mysqlDialect                       = "mysql"
 	cacheModeOPC                       = "opc"
@@ -68,8 +67,6 @@ const (
 	metricHTTPStatusOK                 = "200"
 	metricHTTPStatusInternalError      = "500"
 )
-
-var cacheEnvelopeMagic = [4]byte{'T', 'M', 'Y', 'Q'}
 
 type analysisMetricKey struct {
 	mode   sqlanalyzer.CacheMode
@@ -109,33 +106,50 @@ type protocolMetricHandles struct {
 	cache          map[cacheMetricKey]cacheMetricHandles
 }
 
-type cachedQueryResult struct {
-	result  *sqltypes.Result
-	extents timeseries.ExtentList
-	size    int
-}
+// resultCodec is the nativedelta payload codec for MySQL wire results: the
+// two StatusFlags bytes followed by the vitess proto encoding.
+type resultCodec struct{}
 
-func (c *cachedQueryResult) Size() int {
-	if c == nil {
-		return 0
-	}
-	return c.size
-}
-
-// estimateCachedQueryResultSize approximates the heap retained by a typed
-// memory-cache entry. Slice capacities are intentional: the cache retains the
-// backing arrays, not just their populated elements.
-func estimateCachedQueryResultSize(cached *cachedQueryResult) int {
-	if cached == nil {
-		return 0
-	}
-	size := uint64(unsafe.Sizeof(*cached))
-	size += uint64(cap(cached.extents)) * uint64(unsafe.Sizeof(timeseries.Extent{}))
-	result := cached.result
+func (resultCodec) Marshal(result *sqltypes.Result) ([]byte, error) {
 	if result == nil {
-		return saturatedSize(size)
+		return nil, errors.New("nil MySQL cache result")
 	}
-	size += uint64(unsafe.Sizeof(*result))
+	protoResult := sqltypes.ResultToProto3(result)
+	resultBytes, err := protoResult.MarshalVT()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]byte, 2+len(resultBytes))
+	binary.BigEndian.PutUint16(out[:2], result.StatusFlags)
+	copy(out[2:], resultBytes)
+	return out, nil
+}
+
+func (resultCodec) Unmarshal(data []byte) (*sqltypes.Result, error) {
+	if len(data) < 2 {
+		return nil, errors.New("truncated MySQL cache payload")
+	}
+	protoResult := &querypb.QueryResult{}
+	if err := protoResult.UnmarshalVT(data[2:]); err != nil {
+		return nil, err
+	}
+	result := sqltypes.Proto3ToResult(protoResult)
+	result.StatusFlags = binary.BigEndian.Uint16(data[:2])
+	return result, nil
+}
+
+func (resultCodec) Size(result *sqltypes.Result) int {
+	return estimateResultSize(result)
+}
+
+// estimateResultSize approximates the heap retained by a typed memory-cache
+// result. Slice capacities are intentional: the cache retains the backing
+// arrays, not just their populated elements.
+func estimateResultSize(result *sqltypes.Result) int {
+	if result == nil {
+		return 0
+	}
+	size := uint64(unsafe.Sizeof(*result))
 	size += uint64(cap(result.Fields)) * uint64(unsafe.Sizeof((*querypb.Field)(nil)))
 	for _, field := range result.Fields {
 		if field == nil {
@@ -162,19 +176,6 @@ func saturatedSize(size uint64) int {
 		return math.MaxInt
 	}
 	return int(size)
-}
-
-type cacheExecution struct {
-	result *sqltypes.Result
-	status cachestatus.LookupStatus
-}
-
-type deltaRequestWindow struct {
-	output    timeseries.Extent
-	cacheable timeseries.ExtentList
-	lower     time.Time
-	upper     time.Time
-	empty     bool
 }
 
 type normalizedTimeRangeRenderer interface {
@@ -216,133 +217,63 @@ func (h *protocolHandler) executeObject(c *vtmysql.Conn, session *upstreamSessio
 	query string,
 ) (*sqltypes.Result, cachestatus.LookupStatus, error) {
 	key := h.queryCacheKey(c, session, cacheModeOPC, strings.TrimSpace(query))
-	value, err, _ := h.opcGroup.Do(key, func() (any, error) {
-		if cached, ok := h.retrieveCached(key); ok {
-			return cacheExecution{
-				result: cached.result, status: cachestatus.LookupStatusHit,
-			}, nil
-		}
-		result, fetchErr := h.executeOrigin(session, query)
-		if fetchErr != nil {
-			return cacheExecution{}, fetchErr
-		}
-		h.storeCached(key, &cachedQueryResult{result: result})
-		return cacheExecution{
-			result: result, status: cachestatus.LookupStatusKeyMiss,
-		}, nil
+	return h.deltaEngine().ExecuteObject(key, func() (*sqltypes.Result, error) {
+		return h.executeOrigin(session, query)
 	})
-	if err != nil {
-		return nil, cachestatus.LookupStatusProxyError, err
-	}
-	execution := value.(cacheExecution)
-	return execution.result, execution.status, nil
 }
 
 func (h *protocolHandler) executeDelta(c *vtmysql.Conn, session *upstreamSession,
 	query string, plan *sqlanalyzer.QueryPlan,
 ) (*sqltypes.Result, cachestatus.LookupStatus, error) {
-	key := h.queryCacheKey(c, session, cacheModeDPC, plan.CanonicalSQL, plan.IdentitySuffix)
-	lock := h.lockDPC(key)
-	defer h.unlockDPC(key, lock)
-
-	// A previous execution of this plan may have proven that its results cannot
-	// be delta-merged — an unorderable group column, for instance. The marker is
-	// keyed on the plan rather than on the literal statement, because the
-	// statement's time bounds move with every request.
-	fallbackKey := h.queryCacheKey(c, session, cacheModeDPCFallback,
-		plan.CanonicalSQL, plan.IdentitySuffix)
-	if _, blocked := h.retrieveCached(fallbackKey); blocked {
-		return h.executeObject(c, session, query)
+	ops := nativedelta.DeltaOps[*sqltypes.Result]{
+		Fetch: func(statement string) (*sqltypes.Result, error) {
+			return h.executeOrigin(session, statement)
+		},
+		FetchOriginal: func() (*sqltypes.Result, error) {
+			return h.executeOrigin(session, query)
+		},
+		Merge: func(parts []*sqltypes.Result) (*sqltypes.Result, error) {
+			return h.mergeResults(parts, plan)
+		},
+		CropResponse: func(payload *sqltypes.Result,
+			requested timeseries.Extent,
+		) (*sqltypes.Result, error) {
+			return h.cropAndSortResult(payload, plan, requested)
+		},
+		Finalize: func(merged *sqltypes.Result, allExtents timeseries.ExtentList,
+			requested timeseries.Extent, now time.Time,
+		) (*sqltypes.Result, *sqltypes.Result, timeseries.ExtentList, error) {
+			return h.finalizeDeltaResult(merged, allExtents, plan, requested, now)
+		},
+		ObjectFallback: func() (*sqltypes.Result, cachestatus.LookupStatus, error) {
+			return h.executeObject(c, session, query)
+		},
 	}
-
-	window, windowErr := buildDeltaRequestWindow(plan)
-	if windowErr != nil {
-		result, fetchErr := h.executeOrigin(session, query)
-		return result, cachestatus.LookupStatusProxyOnly, fetchErr
-	}
-	if window.empty {
-		return h.executeEmptyDelta(c, session, query, plan, window)
-	}
-	requested := window.output
-
-	cached, found := h.retrieveCached(key)
-	cacheStatus := cachestatus.LookupStatusKeyMiss
-	var covered timeseries.ExtentList
-	if found {
-		covered = cached.extents
-		cacheStatus = cachestatus.LookupStatusPartialHit
-	}
-	var missing timeseries.ExtentList
-	if len(window.cacheable) > 0 {
-		missing = covered.CalculateDeltas(window.cacheable, plan.Step)
-	}
-	if len(missing) == 0 && found {
-		cropped, cropErr := h.cropAndSortResult(cached.result, plan, requested)
-		if cropErr == nil {
-			return cropped, cachestatus.LookupStatusHit, nil
-		}
-		h.removeCached(key, "invalid_cached_time_axis")
-		cached, found, covered = nil, false, nil
-		cacheStatus = cachestatus.LookupStatusKeyMiss
-		missing = window.cacheable
-	}
-	if found && (len(window.cacheable) == 0 ||
-		(len(missing) == 1 && missing[0].Start.Equal(window.cacheable[0].Start) &&
-			missing[0].End.Equal(window.cacheable[0].End))) {
-		cacheStatus = cachestatus.LookupStatusRangeMiss
-	}
-
-	fetchExtents := missing
 	if h.config.DoesShard {
-		fetchExtents = make(timeseries.ExtentList, 0, len(missing))
-		for _, extent := range missing {
-			fetchExtents = append(fetchExtents, timeseries.ExtentList{extent}.Splice(plan.Step,
-				h.config.ShardMaxRange, h.config.ShardStep, h.config.ShardMaxPoints)...)
+		ops.Shard = func(missing timeseries.ExtentList) timeseries.ExtentList {
+			fetchExtents := make(timeseries.ExtentList, 0, len(missing))
+			for _, extent := range missing {
+				fetchExtents = append(fetchExtents, timeseries.ExtentList{extent}.Splice(plan.Step,
+					h.config.ShardMaxRange, h.config.ShardStep, h.config.ShardMaxPoints)...)
+			}
+			return fetchExtents
 		}
 	}
-	parts := make([]*sqltypes.Result, 0, len(fetchExtents)+1)
-	if found && cached.result != nil {
-		parts = append(parts, cached.result)
+	if renderer, ok := plan.Renderer.(normalizedTimeRangeRenderer); ok {
+		ops.RenderEmpty = renderer.RenderTimeRange
 	}
-	for _, extent := range fetchExtents {
-		originQuery, renderErr := plan.RenderExtent(extent)
-		if renderErr != nil {
-			h.observeRewriteFailure("render_extent")
-			result, fetchErr := h.executeOrigin(session, query)
-			return result, cachestatus.LookupStatusProxyOnly, fetchErr
-		}
-		result, fetchErr := h.executeOrigin(session, originQuery)
-		if fetchErr != nil {
-			return nil, cachestatus.LookupStatusProxyError, fetchErr
-		}
-		parts = append(parts, result)
-	}
-	merged, mergeErr := h.mergeResults(parts, plan)
-	if mergeErr != nil {
-		logger.Warn("mysql delta result could not be modeled; using object cache", logging.Pairs{
-			logKeyBackendName: h.config.BackendName, logKeyDetail: mergeErr.Error(),
-		})
-		// Drop the delta entry: a stale part is one of the things that can make
-		// a merge fail, and the retry after the marker expires should start
-		// from a clean slate.
-		if found {
-			h.removeCached(key, "unmergeable_delta_result")
-		}
-		// Record the failure against the plan so later requests skip the delta
-		// fetch entirely instead of repeating it and discarding the result.
-		h.storeCached(fallbackKey, &cachedQueryResult{result: &sqltypes.Result{}})
-		return h.executeObject(c, session, query)
-	}
-	allExtents := covered.Merge(missing, plan.Step)
-	response, retained, cacheExtents, finalizeErr := h.finalizeDeltaResult(
-		merged, allExtents, plan, requested, time.Now())
-	if finalizeErr != nil {
-		return nil, cachestatus.LookupStatusProxyError, finalizeErr
-	}
-	h.storeCached(key, &cachedQueryResult{
-		result: retained, extents: cacheExtents,
+	return h.deltaEngine().ExecuteDelta(nativedelta.DeltaRequest[*sqltypes.Result]{
+		Key: h.queryCacheKey(c, session, cacheModeDPC, plan.CanonicalSQL, plan.IdentitySuffix),
+		FallbackKey: h.queryCacheKey(c, session, cacheModeDPCFallback,
+			plan.CanonicalSQL, plan.IdentitySuffix),
+		EmptyKey: h.queryCacheKey(c, session, cacheModeDPCEmpty,
+			plan.CanonicalSQL, plan.IdentitySuffix),
+		Plan: plan, Now: time.Now(),
+		// vitess delta plans always carry closed bounds; open-ended plans
+		// proxy rather than run to the present
+		RequireUpperBound: true,
+		Ops:               ops,
 	})
-	return response, cacheStatus, nil
 }
 
 // finalizeDeltaResult keeps response shaping independent from cache retention.
@@ -370,57 +301,6 @@ func (h *protocolHandler) finalizeDeltaResult(merged *sqltypes.Result,
 	}
 	cacheExtents := h.stableExtents(retainedExtents, plan, now)
 	return response, retained, cacheExtents, nil
-}
-
-func (h *protocolHandler) executeEmptyDelta(c *vtmysql.Conn, session *upstreamSession,
-	originalQuery string, plan *sqlanalyzer.QueryPlan, window deltaRequestWindow,
-) (*sqltypes.Result, cachestatus.LookupStatus, error) {
-	renderer, ok := plan.Renderer.(normalizedTimeRangeRenderer)
-	if !ok {
-		h.observeRewriteFailure("render_empty_extent")
-		result, err := h.executeOrigin(session, originalQuery)
-		return result, cachestatus.LookupStatusProxyOnly, err
-	}
-	query, err := renderer.RenderTimeRange(window.lower, window.upper)
-	if err != nil {
-		h.observeRewriteFailure("render_empty_extent")
-		result, fetchErr := h.executeOrigin(session, originalQuery)
-		return result, cachestatus.LookupStatusProxyOnly, fetchErr
-	}
-	key := h.queryCacheKey(c, session, cacheModeDPCEmpty, plan.CanonicalSQL, plan.IdentitySuffix)
-	if cached, found := h.retrieveCached(key); found {
-		return cached.result, cachestatus.LookupStatusHit, nil
-	}
-	result, err := h.executeOrigin(session, query)
-	if err != nil {
-		return nil, cachestatus.LookupStatusProxyError, err
-	}
-	h.storeCached(key, &cachedQueryResult{result: result})
-	return result, cachestatus.LookupStatusKeyMiss, nil
-}
-
-func buildDeltaRequestWindow(plan *sqlanalyzer.QueryPlan) (deltaRequestWindow, error) {
-	if plan == nil || plan.LowerBound == nil || plan.UpperBound == nil || plan.Step <= 0 ||
-		!plan.LowerBound.Inclusive || plan.UpperBound.Inclusive ||
-		plan.UpperBound.Value.Before(plan.LowerBound.Value) {
-		return deltaRequestWindow{}, errors.New("unsupported MySQL delta request bounds")
-	}
-	rawLower, rawUpper := plan.LowerBound.Value, plan.UpperBound.Value
-	lower := sqlanalyzer.CeilBucket(rawLower, plan.Step, plan.Phase)
-	upper := sqlanalyzer.FloorBucket(rawUpper, plan.Step, plan.Phase)
-	if rawUpper.Sub(rawLower) < plan.Step || lower.After(upper) {
-		upper = lower
-	}
-	window := deltaRequestWindow{lower: lower, upper: upper}
-	if lower.Equal(upper) {
-		window.output = timeseries.Extent{Start: lower, End: lower}
-		window.empty = true
-		return window, nil
-	}
-	requested := timeseries.Extent{Start: lower, End: upper.Add(-plan.Step)}
-	window.output = requested
-	window.cacheable = timeseries.ExtentList{requested}
-	return window, nil
 }
 
 func (h *protocolHandler) executeOrigin(session *upstreamSession,
@@ -501,142 +381,6 @@ func (h *protocolHandler) collectStreamedResult(session *upstreamSession,
 	}
 }
 
-func (h *protocolHandler) retrieveCached(key string) (*cachedQueryResult, bool) {
-	cacheClient := h.cacheClient()
-	if cacheClient == nil {
-		return nil, false
-	}
-	if memoryCache, ok := memoryCacheClient(cacheClient); ok {
-		value, _, err := memoryCache.RetrieveReference(key)
-		if err != nil {
-			if !errors.Is(err, cache.ErrKNF) {
-				h.observeCacheFailure("retrieve_failure")
-				logger.Error("mysql cache retrieval failed", logging.Pairs{
-					logKeyBackendName: h.config.BackendName, logKeyDetail: err.Error(),
-				})
-			}
-			return nil, false
-		}
-		result, valid := value.(*cachedQueryResult)
-		if !valid || result == nil || result.result == nil {
-			h.observeCacheFailure(cacheFailureDecode)
-			h.removeCached(key, cacheFailureDecode)
-			return nil, false
-		}
-		if h.config.MaxObjectSize > 0 && int64(result.Size()) > h.config.MaxObjectSize {
-			h.observeCacheFailure(cacheFailureOversized)
-			h.removeCached(key, cacheFailureOversized)
-			return nil, false
-		}
-		return result, true
-	}
-	data, _, err := cacheClient.Retrieve(key)
-	if err != nil {
-		if !errors.Is(err, cache.ErrKNF) {
-			h.observeCacheFailure("retrieve_failure")
-			logger.Error("mysql cache retrieval failed", logging.Pairs{
-				logKeyBackendName: h.config.BackendName, logKeyDetail: err.Error(),
-			})
-		}
-		return nil, false
-	}
-	if h.config.MaxObjectSize > 0 && int64(len(data)) > h.config.MaxObjectSize {
-		h.observeCacheFailure(cacheFailureOversized)
-		h.removeCached(key, cacheFailureOversized)
-		return nil, false
-	}
-	result, err := unmarshalCachedQueryResult(data)
-	if err != nil {
-		h.observeCacheFailure(cacheFailureDecode)
-		h.removeCached(key, cacheFailureDecode)
-		return nil, false
-	}
-	return result, true
-}
-
-func (h *protocolHandler) storeCached(key string, result *cachedQueryResult) {
-	if result == nil || result.result == nil {
-		h.observeCacheFailure("encode_failure")
-		logger.Error("mysql cache result encoding failed", logging.Pairs{
-			logKeyBackendName: h.config.BackendName, logKeyDetail: "nil MySQL cache result",
-		})
-		return
-	}
-	cacheClient := h.cacheClient()
-	if cacheClient == nil {
-		return
-	}
-	if memoryCache, ok := memoryCacheClient(cacheClient); ok {
-		result.size = estimateCachedQueryResultSize(result)
-		if h.config.MaxObjectSize > 0 && int64(result.size) > h.config.MaxObjectSize {
-			h.observeCacheFailure("max_object_size")
-			if logger.Level() == level.Debug {
-				logger.Debug("mysql cache result exceeds max object size", logging.Pairs{
-					logKeyBackendName: h.config.BackendName, "size": result.size,
-				})
-			}
-			return
-		}
-		if err := memoryCache.StoreReference(key, result, h.config.CacheTTL); err != nil {
-			h.observeCacheFailure("store_failure")
-			logger.Error("mysql cache storage failed", logging.Pairs{
-				logKeyBackendName: h.config.BackendName, logKeyDetail: err.Error(),
-			})
-		}
-		return
-	}
-	data, err := marshalCachedQueryResult(result)
-	if err != nil {
-		h.observeCacheFailure("encode_failure")
-		logger.Error("mysql cache result encoding failed", logging.Pairs{
-			logKeyBackendName: h.config.BackendName, logKeyDetail: err.Error(),
-		})
-		return
-	}
-	if h.config.MaxObjectSize > 0 && int64(len(data)) > h.config.MaxObjectSize {
-		h.observeCacheFailure("max_object_size")
-		if logger.Level() == level.Debug {
-			logger.Debug("mysql cache result exceeds max object size", logging.Pairs{
-				logKeyBackendName: h.config.BackendName, "size": len(data),
-			})
-		}
-		return
-	}
-	result.size = len(data)
-	if err := cacheClient.Store(key, data, h.config.CacheTTL); err != nil {
-		h.observeCacheFailure("store_failure")
-		logger.Error("mysql cache storage failed", logging.Pairs{
-			logKeyBackendName: h.config.BackendName, logKeyDetail: err.Error(),
-		})
-	}
-}
-
-func memoryCacheClient(cacheClient cache.Cache) (cache.MemoryCache, bool) {
-	if cacheClient == nil || cacheClient.Configuration() == nil ||
-		cacheClient.Configuration().Provider != cacheproviders.Memory {
-		return nil, false
-	}
-	if capability, ok := cacheClient.(interface{ SupportsReferences() bool }); ok &&
-		!capability.SupportsReferences() {
-		return nil, false
-	}
-	memoryCache, ok := cacheClient.(cache.MemoryCache)
-	return memoryCache, ok
-}
-
-func (h *protocolHandler) removeCached(key, reason string) {
-	cacheClient := h.cacheClient()
-	if cacheClient == nil {
-		return
-	}
-	if err := cacheClient.Remove(key); err != nil {
-		h.observeCacheFailure("remove_failure")
-		logger.Error("mysql cache removal failed", logging.Pairs{
-			logKeyBackendName: h.config.BackendName, "reason": reason, logKeyDetail: err.Error(),
-		})
-	}
-}
-
 func (h *protocolHandler) observeCacheFailure(reason string) {
 	cacheClient := h.cacheClient()
 	if cacheClient == nil || cacheClient.Configuration() == nil {
@@ -689,107 +433,6 @@ func appendCacheIdentityUint(identity *strings.Builder, value uint64) {
 	var encoded [binary.MaxVarintLen64]byte
 	n := binary.PutUvarint(encoded[:], value)
 	_, _ = identity.Write(encoded[:n])
-}
-
-func (h *protocolHandler) lockDPC(key string) *dpcLock {
-	h.dpcLockMtx.Lock()
-	if h.dpcLocks == nil {
-		h.dpcLocks = make(map[string]*dpcLock)
-	}
-	lock := h.dpcLocks[key]
-	if lock == nil {
-		lock = &dpcLock{}
-		h.dpcLocks[key] = lock
-	}
-	lock.references++
-	h.dpcLockMtx.Unlock()
-	lock.Lock()
-	return lock
-}
-
-func (h *protocolHandler) unlockDPC(key string, lock *dpcLock) {
-	lock.Unlock()
-	h.dpcLockMtx.Lock()
-	lock.references--
-	if lock.references == 0 && h.dpcLocks[key] == lock {
-		delete(h.dpcLocks, key)
-	}
-	h.dpcLockMtx.Unlock()
-}
-
-func marshalCachedQueryResult(cached *cachedQueryResult) ([]byte, error) {
-	if cached == nil || cached.result == nil {
-		return nil, errors.New("nil MySQL cache result")
-	}
-	protoResult := sqltypes.ResultToProto3(cached.result)
-	resultBytes, err := protoResult.MarshalVT()
-	if err != nil {
-		return nil, err
-	}
-	if len(cached.extents) > math.MaxUint32 || len(resultBytes) > math.MaxUint32 {
-		return nil, errors.New("MySQL cache result is too large to encode")
-	}
-	headerSize := 4 + 1 + 2 + 2 + 4 + len(cached.extents)*16 + 4
-	out := make([]byte, headerSize+len(resultBytes))
-	copy(out, cacheEnvelopeMagic[:])
-	out[4] = cacheEnvelopeVersion
-	// Bytes 5:7 are reserved and zeroed. Vitess does not currently expose a
-	// streamed result's warning count; a future version can place it there
-	// without moving any other field.
-	binary.BigEndian.PutUint16(out[7:9], cached.result.StatusFlags)
-	// #nosec G115 -- both lengths were bounded by math.MaxUint32 above.
-	binary.BigEndian.PutUint32(out[9:13], uint32(len(cached.extents)))
-	position := 13
-	for _, extent := range cached.extents {
-		// #nosec G115 -- binary cache encoding deliberately preserves the signed
-		// Unix nanosecond value's two's-complement bit pattern.
-		binary.BigEndian.PutUint64(out[position:position+8], uint64(extent.Start.UnixNano()))
-		// #nosec G115 -- see the corresponding signed decode below.
-		binary.BigEndian.PutUint64(out[position+8:position+16], uint64(extent.End.UnixNano()))
-		position += 16
-	}
-	// #nosec G115 -- both lengths were bounded by math.MaxUint32 above.
-	binary.BigEndian.PutUint32(out[position:position+4], uint32(len(resultBytes)))
-	copy(out[position+4:], resultBytes)
-	return out, nil
-}
-
-func unmarshalCachedQueryResult(data []byte) (*cachedQueryResult, error) {
-	if len(data) < 17 || !slices.Equal(data[:4], cacheEnvelopeMagic[:]) ||
-		data[4] != cacheEnvelopeVersion {
-		return nil, errors.New("invalid MySQL cache envelope")
-	}
-	statusFlags := binary.BigEndian.Uint16(data[7:9])
-	extentCount := int(binary.BigEndian.Uint32(data[9:13]))
-	if extentCount > (len(data)-17)/16 {
-		return nil, errors.New("invalid MySQL cache extent count")
-	}
-	position := 13
-	extents := make(timeseries.ExtentList, extentCount)
-	for i := range extentCount {
-		// #nosec G115 -- this reverses the intentional bit-preserving conversion
-		// performed by marshalCachedQueryResult.
-		start := int64(binary.BigEndian.Uint64(data[position : position+8]))
-		// #nosec G115 -- see the corresponding signed encode above.
-		end := int64(binary.BigEndian.Uint64(data[position+8 : position+16]))
-		extents[i] = timeseries.Extent{Start: time.Unix(0, start), End: time.Unix(0, end)}
-		position += 16
-	}
-	if len(data)-position < 4 {
-		return nil, errors.New("truncated MySQL cache envelope")
-	}
-	resultSize := int(binary.BigEndian.Uint32(data[position : position+4]))
-	position += 4
-	if resultSize < 0 || resultSize != len(data)-position {
-		return nil, errors.New("invalid MySQL cache result size")
-	}
-	protoResult := &querypb.QueryResult{}
-	if err := protoResult.UnmarshalVT(data[position:]); err != nil {
-		return nil, err
-	}
-	result := sqltypes.Proto3ToResult(protoResult)
-	result.StatusFlags = statusFlags
-	return &cachedQueryResult{result: result, extents: extents}, nil
 }
 
 func (h *protocolHandler) mergeResults(parts []*sqltypes.Result,
@@ -1330,18 +973,7 @@ func (h *protocolHandler) stableExtents(extents timeseries.ExtentList,
 ) timeseries.ExtentList {
 	window := max(h.config.BackfillWindow, time.Duration(h.config.BackfillPoints)*plan.Step,
 		plan.BackfillTolerance)
-	if window <= 0 || len(extents) == 0 {
-		return extents
-	}
-	cutoff := now.Add(-window).Truncate(plan.Step)
-	if cutoff.After(extents[len(extents)-1].End) {
-		return extents
-	}
-	if !cutoff.After(extents[0].Start) {
-		return timeseries.ExtentList{}
-	}
-	volatile := timeseries.ExtentList{{Start: cutoff, End: extents[len(extents)-1].End}}
-	return extents.Remove(volatile, plan.Step)
+	return nativedelta.StableExtents(extents, plan.Step, window, now)
 }
 
 func (h *protocolHandler) updateSessionStateParsed(session *upstreamSession, parsed parsedQuery) {

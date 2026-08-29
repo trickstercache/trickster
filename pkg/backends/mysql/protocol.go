@@ -44,10 +44,10 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/loaders"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/engines/nativedelta"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
-	"golang.org/x/sync/singleflight"
 	vtmysql "vitess.io/vitess/go/mysql"
 	"vitess.io/vitess/go/mysql/collations"
 	"vitess.io/vitess/go/mysql/replication"
@@ -432,7 +432,7 @@ func NewRoutedProtocolServer(config ProtocolConfig, resolver backends.RouteResol
 func newProtocolHandler(config ProtocolConfig, env *vtenv.Environment) *protocolHandler {
 	return &protocolHandler{
 		config: config, env: env, sessions: make(map[*vtmysql.Conn]*upstreamSession),
-		controls: make(map[uint32]*phaseConn), dpcLocks: make(map[string]*dpcLock),
+		controls:      make(map[uint32]*phaseConn),
 		metricHandles: newProtocolMetricHandles(config.BackendName),
 	}
 }
@@ -837,15 +837,26 @@ type protocolHandler struct {
 	wg              sync.WaitGroup
 	closed          atomic.Bool
 	activeUpstreams atomic.Int64
-	opcGroup        singleflight.Group
-	dpcLockMtx      sync.Mutex
-	dpcLocks        map[string]*dpcLock
+	delta           *nativedelta.Engine[*sqltypes.Result]
+	deltaOnce       sync.Once
 	metricHandles   *protocolMetricHandles
 }
 
-type dpcLock struct {
-	sync.Mutex
-	references int
+// deltaEngine lazily builds the handler's nativedelta engine from its
+// configuration; lazy construction keeps zero-value handlers usable in tests.
+func (h *protocolHandler) deltaEngine() *nativedelta.Engine[*sqltypes.Result] {
+	h.deltaOnce.Do(func() {
+		h.delta = nativedelta.New(nativedelta.Config{
+			Protocol:              mysqlDialect,
+			BackendName:           h.config.BackendName,
+			CacheClient:           h.cacheClient,
+			CacheTTL:              h.config.CacheTTL,
+			MaxObjectSize:         h.config.MaxObjectSize,
+			ObserveCacheFailure:   h.observeCacheFailure,
+			ObserveRewriteFailure: h.observeRewriteFailure,
+		}, resultCodec{})
+	})
+	return h.delta
 }
 
 func (h *protocolHandler) Env() *vtenv.Environment { return h.env }

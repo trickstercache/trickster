@@ -21,6 +21,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/vitess"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/engines/nativedelta"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
@@ -71,10 +72,10 @@ func Parse(statement string, now time.Time) (*timeseries.TimeRangeQuery, bool, e
 	if plan.IdentitySuffix != "" {
 		query.CacheKeyElements["mysql_directives"] = plan.IdentitySuffix
 	}
-	window, windowErr := buildDeltaRequestWindow(plan)
+	window, windowErr := nativedelta.BuildWindow(plan, now, true)
 	if windowErr != nil {
 		return query, true, windowErr
 	}
-	query.Extent = window.output
+	query.Extent = window.Output
 	return query, true, nil
 }

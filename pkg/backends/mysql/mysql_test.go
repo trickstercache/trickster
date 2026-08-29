@@ -664,12 +664,16 @@ func TestCacheOriginFallbackBranches(t *testing.T) {
 	if _, _, err := h.executeDelta(c, session, "SELECT 1", invalidPlan); err == nil {
 		t.Fatal("invalid delta fallback without a session succeeded")
 	}
-	window := deltaRequestWindow{empty: true, lower: time.Unix(0, 0), upper: time.Unix(60, 0)}
 	for _, renderer := range []sqlanalyzer.ExtentRenderer{
 		extentOnlyRenderer{}, emptyRangeRenderer{err: errors.New("render failure")}, emptyRangeRenderer{},
 	} {
-		plan := &sqlanalyzer.QueryPlan{Renderer: renderer}
-		if _, _, err := h.executeEmptyDelta(c, session, "SELECT 1", plan, window); err == nil {
+		plan := &sqlanalyzer.QueryPlan{
+			Step:       time.Minute,
+			LowerBound: &sqlanalyzer.Bound{Value: time.Unix(0, 0), Inclusive: true},
+			UpperBound: &sqlanalyzer.Bound{Value: time.Unix(1, 0), Inclusive: false},
+			Renderer:   renderer,
+		}
+		if _, _, err := h.executeDelta(c, session, "SELECT 1", plan); err == nil {
 			t.Fatal("empty delta fallback without a session succeeded")
 		}
 	}
