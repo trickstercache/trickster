@@ -81,35 +81,11 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	case f.IsV3SQL():
 		return isql.ParseTimeRangeQuery(r, f)
 	case f.IsV3InfluxQL():
-		return parseV3InfluxQL(r, f)
+		return isql.ParseV3InfluxQL(r, f)
 	case f.IsInfluxQL():
 		return influxql.ParseTimeRangeQuery(r, f)
 	case f.IsFlux():
 		return flux.ParseTimeRangeQuery(r, f)
 	}
 	return nil, nil, false, errors.ErrBadRequest
-}
-
-// parseV3InfluxQL reuses the v1 InfluxQL parser but sets v3 output format
-func parseV3InfluxQL(r *http.Request, f iofmt.Format,
-) (*timeseries.TimeRangeQuery, *timeseries.RequestOptions, bool, error) {
-	// v3 InfluxQL uses the same query language as v1, but the query arrives
-	// in the "q" param (GET or POST body) and the response format is determined
-	// by the "format" param. We reuse the v1 parser by temporarily swapping
-	// the format to InfluxQL, then override the OutputFormat for v3 response.
-	v1f := iofmt.InfluxqlGet
-	if r.Method == http.MethodPost {
-		v1f = iofmt.InfluxqlPost
-	}
-	trq, rlo, canOPC, err := influxql.ParseTimeRangeQuery(r, v1f)
-	if err != nil {
-		return trq, rlo, canOPC, err
-	}
-	if rlo != nil {
-		rlo.OutputFormat = iofmt.V3OutputFormat(r)
-	}
-	if trq != nil && trq.ParsedQuery != nil {
-		trq.ParsedQuery = &isql.V3InfluxQLQuery{Inner: trq.ParsedQuery}
-	}
-	return trq, rlo, canOPC, nil
 }

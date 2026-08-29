@@ -294,6 +294,11 @@ func (a *Analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis
 	}
 	clause, ok := selectStmt.Select.(*tree.SelectClause)
 	if !ok || len(selectStmt.Locking) > 0 {
+		if _, compound := selectStmt.Select.(*tree.UnionClause); compound &&
+			len(selectStmt.Locking) == 0 {
+			return sqlanalyzer.ObjectAnalysis(
+				sqlanalyzer.ReasonUnsupportedFormat, ErrUnsupportedStatement)
+		}
 		return sqlanalyzer.Analysis{
 			Mode:   sqlanalyzer.CacheModeNone,
 			Reason: sqlanalyzer.ReasonUnsupportedStatement, Err: ErrUnsupportedStatement,

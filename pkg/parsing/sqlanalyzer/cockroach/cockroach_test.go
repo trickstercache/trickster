@@ -321,6 +321,9 @@ func TestAnalyzeClassifiesUnsupportedQueries(t *testing.T) {
 		{"join", strings.Replace(hourlyEpochQuery, "FROM weather", "FROM weather JOIN stations ON weather.station = stations.id", 1), sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsupportedFormat},
 		{"comma join", strings.Replace(hourlyEpochQuery, "FROM weather", "FROM weather, stations", 1), sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsupportedFormat},
 		{"parenthesized join", strings.Replace(hourlyEpochQuery, "FROM weather", "FROM (weather JOIN stations ON weather.station = stations.id)", 1), sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsupportedFormat},
+		{"union", hourlyEpochQuery + " UNION ALL " + hourlyEpochQuery, sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsupportedFormat},
+		{"intersect", hourlyEpochQuery + " INTERSECT " + hourlyEpochQuery, sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsupportedFormat},
+		{"values", "VALUES (1, 2)", sqlanalyzer.CacheModeNone, sqlanalyzer.ReasonUnsupportedStatement},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

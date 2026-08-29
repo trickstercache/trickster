@@ -62,6 +62,7 @@ type fakeUpstream struct {
 	setParamsCalls       int
 	executePreparedCalls int
 	closePreparedCalls   int
+	closeCalls           int
 }
 
 func (f *fakeUpstream) Execute(_ context.Context, query string) ([]byte, error) {
@@ -167,7 +168,12 @@ func (f *fakeUpstream) ClosePrepared(_ context.Context, _ []byte) error {
 	return nil
 }
 
-func (f *fakeUpstream) Close() error { return nil }
+func (f *fakeUpstream) Close() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.closeCalls++
+	return nil
+}
 
 // memCache is a simple in-memory implementation of Cache for tests.
 type memCache struct {

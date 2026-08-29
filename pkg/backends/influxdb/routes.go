@@ -82,7 +82,7 @@ func (c *Client) DefaultPathConfigs(_ *bo.Options) po.List {
 		{
 			Path:          "/",
 			HandlerName:   providers.Proxy,
-			Methods:       methods.GetAndPost(),
+			Methods:       methods.AllHTTPMethods(),
 			MatchType:     matching.PathMatchTypePrefix,
 			MatchTypeName: matching.PathMatchNamePrefix,
 		},

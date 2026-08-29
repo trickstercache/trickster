@@ -116,7 +116,7 @@ func V3OutputFormatByName(name string) (byte, bool) {
 
 func Detect(r *http.Request) Format {
 	if r.URL != nil {
-		p := r.URL.Path
+		p := strings.ToLower(strings.TrimRight(r.URL.Path, "/"))
 		switch {
 		case strings.HasSuffix(p, "/api/v3/query_sql"):
 			return V3SQL

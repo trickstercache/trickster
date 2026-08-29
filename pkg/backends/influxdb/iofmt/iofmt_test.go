@@ -167,6 +167,10 @@ func TestDetectV3(t *testing.T) {
 		{"v3 SQL POST", "/api/v3/query_sql", http.MethodPost, V3SQL},
 		{"v3 InfluxQL GET", "/api/v3/query_influxql", http.MethodGet, V3InfluxQL},
 		{"v3 InfluxQL POST", "/api/v3/query_influxql", http.MethodPost, V3InfluxQL},
+		{"v3 SQL trailing slash", "/api/v3/query_sql/", http.MethodGet, V3SQL},
+		{"v3 SQL mixed case", "/API/v3/Query_SQL", http.MethodGet, V3SQL},
+		{"v3 SQL path prefix", "/tenant/api/v3/query_sql", http.MethodGet, V3SQL},
+		{"v3 InfluxQL trailing slash", "/api/v3/query_influxql/", http.MethodGet, V3InfluxQL},
 		{"v1 query GET", "/query", http.MethodGet, InfluxqlGet},
 	}
 	for _, tt := range tests {

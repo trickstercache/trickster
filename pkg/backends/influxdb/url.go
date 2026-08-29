@@ -59,7 +59,7 @@ func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
 		isql.SetExtent(r, trq, extent, q)
 	case *isql.V3InfluxQLQuery:
 		if inner, ok := q.Inner.(*influxql.Query); ok {
-			ti.SetExtent(r, trq, extent, inner)
+			isql.SetExtentV3InfluxQL(r, trq, extent, inner)
 		}
 	case *influxql.Query:
 		ti.SetExtent(r, trq, extent, q)

@@ -84,17 +84,31 @@ type Server struct {
 	// named cache never alias each other's entries.
 	keyPrefix string
 
-	// paramHashes tracks the most recent bound parameter hash per prepared
-	// statement handle. Used as part of the DoGetPreparedStatement cache key
-	// so two clients executing the same prepared statement with different
-	// parameter values don't alias each other's cache entries.
-	paramMu     sync.Mutex
-	paramHashes map[string]string
+	// prepared tracks server-side state per prepared-statement handle: the
+	// most recent bound parameter hash (part of the DoGetPreparedStatement
+	// cache key, so two clients executing the same prepared statement with
+	// different parameter values don't alias each other's cache entries) and
+	// the last-access time used to reap statements abandoned by disconnected
+	// clients.
+	paramMu  sync.Mutex
+	prepared map[string]*preparedMeta
+}
+
+// preparedMeta is the server-side bookkeeping for one prepared statement.
+type preparedMeta struct {
+	paramHash  string
+	lastAccess time.Time
 }
 
 // DefaultCacheTTL is the cache lifetime applied when the backend does not
 // configure flight_cache_ttl.
 const DefaultCacheTTL = 60 * time.Second
+
+// DefaultPreparedIdleTTL is how long a prepared statement may go unused before
+// the reaper closes it upstream. Flight SQL has no session teardown signal for
+// abandoned handles, so idle expiry bounds the growth of the handle registries
+// when clients disconnect without calling ClosePreparedStatement.
+const DefaultPreparedIdleTTL = 15 * time.Minute
 
 // ServerOption customizes a Server.
 type ServerOption func(*Server)
@@ -141,11 +155,11 @@ type Cache interface {
 // NewServer constructs a Flight SQL server with the given upstream and cache.
 func NewServer(upstream UpstreamClient, cache Cache, opts ...ServerOption) *Server {
 	s := &Server{
-		upstream:    upstream,
-		cache:       cache,
-		alloc:       memory.DefaultAllocator,
-		cacheTTL:    DefaultCacheTTL,
-		paramHashes: make(map[string]string),
+		upstream: upstream,
+		cache:    cache,
+		alloc:    memory.DefaultAllocator,
+		cacheTTL: DefaultCacheTTL,
+		prepared: make(map[string]*preparedMeta),
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -186,7 +200,7 @@ func (s *Server) DoGetStatement(ctx context.Context,
 		if err != nil {
 			return nil, nil, fmt.Errorf("upstream execute: %w", err)
 		}
-		return streamIPCBytes(b)
+		return streamIPCBytes(ctx, b)
 	}
 	key := s.tenantKey(ctx) + ":stmt:" + query
 
@@ -200,7 +214,7 @@ func (s *Server) DoGetStatement(ctx context.Context,
 		s.cacheSet(key, ipcBytes)
 	}
 
-	return streamIPCBytes(ipcBytes)
+	return streamIPCBytes(ctx, ipcBytes)
 }
 
 // flightInfoForCommand constructs a FlightInfo for metadata RPCs. The ticket
@@ -234,7 +248,7 @@ func (s *Server) fetchMetadata(ctx context.Context, kind, key string,
 		ipcBytes = b
 		s.cacheSet(key, ipcBytes)
 	}
-	return streamIPCBytes(ipcBytes)
+	return streamIPCBytes(ctx, ipcBytes)
 }
 
 // GetFlightInfoCatalogs returns a FlightInfo describing the catalog list.
@@ -371,6 +385,7 @@ func (s *Server) CreatePreparedStatement(ctx context.Context,
 		return flightsql.ActionCreatePreparedStatementResult{},
 			fmt.Errorf("upstream prepare: %w", err)
 	}
+	s.touchPrepared(handle)
 	return flightsql.ActionCreatePreparedStatementResult{Handle: handle}, nil
 }
 
@@ -426,6 +441,7 @@ func (s *Server) DoGetPreparedStatement(ctx context.Context,
 	cmd flightsql.PreparedStatementQuery,
 ) (*arrow.Schema, <-chan flight.StreamChunk, error) {
 	handle := cmd.GetPreparedStatementHandle()
+	s.touchPrepared(handle)
 	key := s.tenantKey(ctx) + ":prep:" + string(handle) + ":" + s.paramHash(handle)
 	return s.fetchMetadata(ctx, "prepared statement", key, func(ctx context.Context) ([]byte, error) {
 		return s.upstream.ExecutePrepared(ctx, handle)
@@ -438,25 +454,73 @@ func (s *Server) ClosePreparedStatement(ctx context.Context,
 ) error {
 	handle := req.GetPreparedStatementHandle()
 	s.paramMu.Lock()
-	delete(s.paramHashes, string(handle))
+	delete(s.prepared, string(handle))
 	s.paramMu.Unlock()
 	return s.upstream.ClosePrepared(ctx, handle)
+}
+
+// touchPrepared registers the handle (if new) and records its access time.
+func (s *Server) touchPrepared(handle []byte) {
+	s.paramMu.Lock()
+	defer s.paramMu.Unlock()
+	meta, ok := s.prepared[string(handle)]
+	if !ok {
+		meta = &preparedMeta{}
+		s.prepared[string(handle)] = meta
+	}
+	meta.lastAccess = time.Now()
 }
 
 func (s *Server) setParamHash(handle []byte, hash string) {
 	s.paramMu.Lock()
 	defer s.paramMu.Unlock()
-	if hash == "" {
-		delete(s.paramHashes, string(handle))
-		return
+	meta, ok := s.prepared[string(handle)]
+	if !ok {
+		meta = &preparedMeta{}
+		s.prepared[string(handle)] = meta
 	}
-	s.paramHashes[string(handle)] = hash
+	meta.paramHash = hash
+	meta.lastAccess = time.Now()
 }
 
 func (s *Server) paramHash(handle []byte) string {
 	s.paramMu.Lock()
 	defer s.paramMu.Unlock()
-	return s.paramHashes[string(handle)]
+	if meta, ok := s.prepared[string(handle)]; ok {
+		return meta.paramHash
+	}
+	return ""
+}
+
+// ReapIdlePrepared closes prepared statements not accessed within maxIdle,
+// releasing their upstream resources, and returns how many were reaped. It is
+// called periodically by the protocol listener; clients that disconnect
+// without closing their statements would otherwise leak handles on both this
+// process and the upstream indefinitely.
+func (s *Server) ReapIdlePrepared(ctx context.Context, maxIdle time.Duration) int {
+	cutoff := time.Now().Add(-maxIdle)
+	s.paramMu.Lock()
+	var idle [][]byte
+	for handle, meta := range s.prepared {
+		if meta.lastAccess.Before(cutoff) {
+			idle = append(idle, []byte(handle))
+			delete(s.prepared, handle)
+		}
+	}
+	s.paramMu.Unlock()
+	for _, handle := range idle {
+		_ = s.upstream.ClosePrepared(ctx, handle)
+	}
+	return len(idle)
+}
+
+// Close releases the upstream client connection. The server must not be used
+// after Close.
+func (s *Server) Close() error {
+	if s.upstream != nil {
+		return s.upstream.Close()
+	}
+	return nil
 }
 
 // hashRecordBatch returns a stable hex-encoded hash of an Arrow RecordBatch
@@ -476,7 +540,11 @@ func hashRecordBatch(rec arrow.RecordBatch) (string, error) {
 
 // streamIPCBytes parses serialized Arrow IPC bytes and returns the schema
 // plus a channel of stream chunks the Flight server framework will write out.
-func streamIPCBytes(b []byte) (*arrow.Schema, <-chan flight.StreamChunk, error) {
+// The goroutine feeding the channel exits when ctx is canceled (e.g., the
+// client disconnects mid-stream) so it never blocks forever holding record
+// batches.
+func streamIPCBytes(ctx context.Context, b []byte,
+) (*arrow.Schema, <-chan flight.StreamChunk, error) {
 	r, err := ipc.NewReader(bytes.NewReader(b))
 	if err != nil {
 		return nil, nil, fmt.Errorf("ipc reader: %w", err)
@@ -489,7 +557,12 @@ func streamIPCBytes(b []byte) (*arrow.Schema, <-chan flight.StreamChunk, error) 
 		for r.Next() {
 			rec := r.RecordBatch()
 			rec.Retain()
-			ch <- flight.StreamChunk{Data: rec}
+			select {
+			case ch <- flight.StreamChunk{Data: rec}:
+			case <-ctx.Done():
+				rec.Release()
+				return
+			}
 		}
 	}()
 	return schema, ch, nil

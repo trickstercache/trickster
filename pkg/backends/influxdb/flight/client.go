@@ -61,7 +61,15 @@ type FlightSQLClient struct {
 	// prepared statements are tracked by their handle bytes so we can look up
 	// the client-side object when Execute / Close is later called.
 	preparedMu sync.Mutex
-	prepared   map[string]*flightsql.PreparedStatement
+	prepared   map[string]*preparedStatement
+}
+
+// preparedStatement pairs an upstream prepared-statement object with a mutex
+// serializing bind, execute, and close: *flightsql.PreparedStatement carries
+// mutable parameter state and is not safe for concurrent use.
+type preparedStatement struct {
+	mu sync.Mutex
+	ps *flightsql.PreparedStatement
 }
 
 // NewFlightSQLClient dials the upstream Flight SQL endpoint.
@@ -81,7 +89,7 @@ func NewFlightSQLClient(cfg UpstreamConfig) (*FlightSQLClient, error) {
 		cfg:      cfg,
 		client:   c,
 		alloc:    memory.DefaultAllocator,
-		prepared: make(map[string]*flightsql.PreparedStatement),
+		prepared: make(map[string]*preparedStatement),
 	}, nil
 }
 
@@ -98,7 +106,7 @@ func (c *FlightSQLClient) PrepareStatement(ctx context.Context,
 	}
 	handle := ps.Handle()
 	c.preparedMu.Lock()
-	c.prepared[string(handle)] = ps
+	c.prepared[string(handle)] = &preparedStatement{ps: ps}
 	c.preparedMu.Unlock()
 	return handle, nil
 }
@@ -111,13 +119,15 @@ func (c *FlightSQLClient) ExecutePrepared(ctx context.Context,
 ) ([]byte, error) {
 	ctx = c.withAuth(ctx)
 	c.preparedMu.Lock()
-	ps, ok := c.prepared[string(handle)]
+	entry, ok := c.prepared[string(handle)]
 	c.preparedMu.Unlock()
 	if !ok {
 		return nil, errors.New("unknown prepared statement handle")
 	}
+	entry.mu.Lock()
+	defer entry.mu.Unlock()
 	return c.fetchAsIPC(ctx, func(ctx context.Context) (*flight.FlightInfo, error) {
-		return ps.Execute(ctx)
+		return entry.ps.Execute(ctx)
 	})
 }
 
@@ -127,12 +137,14 @@ func (c *FlightSQLClient) SetPreparedStatementParams(_ context.Context,
 	handle []byte, params arrow.RecordBatch,
 ) error {
 	c.preparedMu.Lock()
-	ps, ok := c.prepared[string(handle)]
+	entry, ok := c.prepared[string(handle)]
 	c.preparedMu.Unlock()
 	if !ok {
 		return errors.New("unknown prepared statement handle")
 	}
-	ps.SetParameters(params)
+	entry.mu.Lock()
+	entry.ps.SetParameters(params)
+	entry.mu.Unlock()
 	return nil
 }
 
@@ -140,7 +152,7 @@ func (c *FlightSQLClient) SetPreparedStatementParams(_ context.Context,
 func (c *FlightSQLClient) ClosePrepared(ctx context.Context, handle []byte) error {
 	ctx = c.withAuth(ctx)
 	c.preparedMu.Lock()
-	ps, ok := c.prepared[string(handle)]
+	entry, ok := c.prepared[string(handle)]
 	if ok {
 		delete(c.prepared, string(handle))
 	}
@@ -148,7 +160,9 @@ func (c *FlightSQLClient) ClosePrepared(ctx context.Context, handle []byte) erro
 	if !ok {
 		return nil
 	}
-	return ps.Close(ctx)
+	entry.mu.Lock()
+	defer entry.mu.Unlock()
+	return entry.ps.Close(ctx)
 }
 
 // Execute runs a SQL query against the upstream and returns the IPC-encoded

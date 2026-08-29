@@ -17,8 +17,16 @@ Trickster supports InfluxDB 3.x via both the native v3 API endpoints and the v1/
 ### Supported v3 Endpoints
 
 - `GET/POST /api/v3/query_sql` — SQL queries with delta-proxy caching
-- `GET/POST /api/v3/query_influxql` — InfluxQL queries via the native v3 API
+- `GET/POST /api/v3/query_influxql` — InfluxQL queries with delta-proxy caching
 - `POST /api/v3/write_lp` — line protocol writes (proxied, not cached)
+
+All other v3 API paths (including the `/api/v3/configure/*` management endpoints, with any HTTP method) are proxied through untouched.
+
+Query requests on both query endpoints may arrive as URL parameters (GET), an `application/json` document (`{"q": ..., "db": ..., "format": ..., "params": ...}`), a form-encoded body, or a raw statement body — all four shapes are parsed and cached equivalently, and the `db` and `params` values participate in the cache identity.
+
+### InfluxQL over v3
+
+`/api/v3/query_influxql` requests use the same delta-proxy caching as the v1 `/query` endpoint (queries with a `GROUP BY time(...)` interval and a time-bounded `WHERE` clause), but speak the v3 request/response shapes: the v3 request document above and the v3 tabular response formats, including the `iox::measurement` column, which Trickster treats as a series tag alongside any `GROUP BY` tags.
 
 ### SQL Query Caching
 
@@ -33,11 +41,13 @@ WHERE time >= '2024-01-01 00:00:00' AND time < '2024-01-02 00:00:00'
 GROUP BY 1
 ```
 
-SELECT queries that cannot be delta-cached (no fixed-cadence time bucket, joins, subqueries, window functions, `LIMIT`, variable-length buckets like `'1 month'`, or unsafe time predicates) fall back to the object proxy cache, which caches the whole response briefly and passes results through unchanged. Non-SELECT statements and parameterized queries (a `params` field in the request) are proxied to the origin without delta caching.
+SELECT queries that cannot be delta-cached (no fixed-cadence time bucket, joins, subqueries, window functions, compound selects such as `UNION`, `LIMIT`, variable-length buckets like `'1 month'`, or unsafe time predicates) fall back to the object proxy cache, which caches the whole response briefly and passes results through unchanged. Non-SELECT statements and parameterized queries (a `params` field in the request) are proxied to the origin without delta caching.
+
+Queries without an upper time bound run to the present; for these, Trickster's backfill tolerance is floored at one bucket so the still-filling final bucket is always refreshed from the origin rather than cached as complete.
 
 ### Response Formats
 
-Trickster supports the following v3 response formats, controlled by the `format` query parameter:
+Trickster supports the following v3 response formats, controlled by the `format` query parameter (in the URL or the request document) or, when no `format` is given, the `Accept` header (`application/json`, `application/jsonl`, `text/csv`, ...):
 
 - `json` (default) — JSON array of objects
 - `jsonl` — JSON Lines (one JSON object per line)
@@ -93,7 +103,7 @@ ADBC clients (Grafana's SQL datasource, the Python `adbc_driver_flightsql`, etc.
 
 #### Prepared Statements
 
-Trickster proxies the full prepared statement lifecycle: `CreatePreparedStatement`, `DoPutPreparedStatementQuery` (parameter binding), `DoGetPreparedStatement`, `ClosePreparedStatement`. Cache keys incorporate the bound parameter hash so two clients running the same statement with different values don't alias.
+Trickster proxies the full prepared statement lifecycle: `CreatePreparedStatement`, `DoPutPreparedStatementQuery` (parameter binding), `DoGetPreparedStatement`, `ClosePreparedStatement`. Cache keys incorporate the bound parameter hash so two clients running the same statement with different values don't alias. Prepared statements abandoned by disconnected clients are closed upstream after 15 minutes of inactivity.
 
 Note: InfluxDB 3 Core 3.10 reports a parameter schema at prepare time but does not resolve bound values during query planning (upstream limitation). Parameterless prepared statements work end-to-end; parameterized ones require a newer Core or Enterprise build.
 

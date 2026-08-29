@@ -20,7 +20,9 @@ import (
 	"context"
 	"crypto/tls"
 	"net"
+	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/flight/flightsql"
@@ -28,13 +30,20 @@ import (
 	"google.golang.org/grpc/credentials"
 )
 
+// preparedReapInterval is how often the listener sweeps for idle prepared
+// statements abandoned by disconnected clients.
+const preparedReapInterval = time.Minute
+
 // ProtocolServer adapts the Flight SQL gRPC server to Trickster's native
 // listener lifecycle (listener.ProtocolServer). Socket binding, connection
 // limits, drain, and config-reload restarts are owned by the listener group.
 type ProtocolServer struct {
 	grpc       *grpc.Server
+	srv        *Server
 	restartKey string
 	tlsConfig  atomic.Pointer[tls.Config]
+	stopReaper chan struct{}
+	closeOnce  sync.Once
 }
 
 // NewProtocolServer returns a ProtocolServer exposing srv over Flight SQL.
@@ -43,7 +52,10 @@ type ProtocolServer struct {
 // a certificate, the listener serves TLS and supports in-place certificate
 // rotation via UpdateTLSConfig; otherwise it serves plaintext gRPC.
 func NewProtocolServer(srv *Server, restartKey string, tlsConfig *tls.Config) *ProtocolServer {
-	s := &ProtocolServer{restartKey: restartKey}
+	s := &ProtocolServer{
+		srv: srv, restartKey: restartKey,
+		stopReaper: make(chan struct{}),
+	}
 	var options []grpc.ServerOption
 	if tlsConfig != nil && len(tlsConfig.Certificates) > 0 {
 		s.UpdateTLSConfig(tlsConfig)
@@ -56,7 +68,25 @@ func NewProtocolServer(srv *Server, restartKey string, tlsConfig *tls.Config) *P
 	g := grpc.NewServer(options...)
 	flight.RegisterFlightServiceServer(g, flightsql.NewFlightServer(srv))
 	s.grpc = g
+	go s.reapLoop()
 	return s
+}
+
+// reapLoop periodically closes prepared statements abandoned by disconnected
+// clients. It exits when the server shuts down.
+func (s *ProtocolServer) reapLoop() {
+	ticker := time.NewTicker(preparedReapInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			s.srv.ReapIdlePrepared(ctx, DefaultPreparedIdleTTL)
+			cancel()
+		case <-s.stopReaper:
+			return
+		}
+	}
 }
 
 // UpdateTLSConfig rotates certificates for subsequently accepted connections.
@@ -77,8 +107,16 @@ func (s *ProtocolServer) Serve(l net.Listener) error {
 	return s.grpc.Serve(l)
 }
 
-// Shutdown drains active streams until ctx expires, then forces closure.
+// Shutdown drains active streams until ctx expires, then forces closure. It
+// also stops the prepared-statement reaper and closes the upstream client so
+// config-reload restarts don't leak the previous gRPC connection.
 func (s *ProtocolServer) Shutdown(ctx context.Context) error {
+	defer s.closeOnce.Do(func() {
+		close(s.stopReaper)
+		if s.srv != nil {
+			_ = s.srv.Close()
+		}
+	})
 	done := make(chan struct{})
 	go func() {
 		s.grpc.GracefulStop()

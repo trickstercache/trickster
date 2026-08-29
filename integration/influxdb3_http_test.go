@@ -17,6 +17,7 @@
 package integration
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -159,5 +160,55 @@ func TestInfluxDB3HTTP(t *testing.T) {
 		require.NotEmpty(t, body)
 		hdr := parseTricksterResult(resp.Header.Get("X-Trickster-Result"))
 		require.NotEmpty(t, hdr["engine"], "expected engine on v3 InfluxQL response")
+	})
+
+	// influxql_v3_json_post guards the JSON-bodied v3 InfluxQL path: the query
+	// document arrives in the POST body, is delta-cached, and grouped tag
+	// series survive the cached round trip.
+	t.Run("influxql_v3_json_post", func(t *testing.T) {
+		q := `SELECT mean("usage_idle") FROM "cpu" WHERE time > now() - 5m GROUP BY time(10s), "cpu"`
+		document, err := json.Marshal(map[string]string{
+			"db": "trickster", "q": q, "format": "json",
+		})
+		require.NoError(t, err)
+
+		post := func() (*http.Response, []byte) {
+			t.Helper()
+			resp, err := http.Post(baseURL+"/api/v3/query_influxql",
+				"application/json", bytes.NewReader(document))
+			require.NoError(t, err)
+			defer resp.Body.Close()
+			b, err := io.ReadAll(resp.Body)
+			require.NoError(t, err)
+			return resp, b
+		}
+		countTagRows := func(body []byte) (rows int, tags map[string]bool) {
+			t.Helper()
+			var decoded []map[string]any
+			require.NoError(t, json.Unmarshal(body, &decoded))
+			tags = make(map[string]bool)
+			for _, row := range decoded {
+				if v, ok := row["cpu"].(string); ok {
+					tags[v] = true
+				}
+			}
+			return len(decoded), tags
+		}
+
+		resp1, body1 := post()
+		require.Equal(t, http.StatusOK, resp1.StatusCode, "body: %s", string(body1))
+		rows1, tags1 := countTagRows(body1)
+		require.Greater(t, len(tags1), 1,
+			"expected multiple cpu tags in grouped result; got %v", tags1)
+		hdr1 := parseTricksterResult(resp1.Header.Get("X-Trickster-Result"))
+		require.NotEmpty(t, hdr1["engine"], "expected engine on JSON-POST v3 InfluxQL")
+
+		resp2, body2 := post()
+		require.Equal(t, http.StatusOK, resp2.StatusCode, "body: %s", string(body2))
+		rows2, tags2 := countTagRows(body2)
+		require.Equal(t, len(tags1), len(tags2),
+			"cached grouped result lost tag series: first %v, second %v", tags1, tags2)
+		require.InDelta(t, rows1, rows2, float64(2*len(tags1)),
+			"cached grouped result dropped rows: %d then %d", rows1, rows2)
 	})
 }

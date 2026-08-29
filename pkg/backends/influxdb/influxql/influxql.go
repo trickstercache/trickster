@@ -54,51 +54,23 @@ const (
 	ParamChunked = "chunked"
 )
 
-func ParseTimeRangeQuery(r *http.Request,
-	f iofmt.Format) (*timeseries.TimeRangeQuery, *timeseries.RequestOptions,
-	bool, error,
-) {
-	if r == nil || !f.IsInfluxQL() {
-		return nil, nil, false, iofmt.ErrSupportedQueryLanguage
-	}
-
-	uv := r.URL.Query()
-	bv := make(url.Values)
-	if r.Method == http.MethodPost {
-		bv, _, _ = params.GetRequestValues(r)
-	} else if r.Method != http.MethodGet {
-		logger.Error("unuspported method in influxql.ParseTimeRangeQuery",
-			logging.Pairs{"method": r.Method})
-		return nil, nil, false, te.ErrInvalidMethod
-	}
-	cv := maps.Clone(uv)
-	maps.Copy(cv, bv)
-
-	trq := &timeseries.TimeRangeQuery{}
-	rlo := &timeseries.RequestOptions{OutputFormat: 0}
-
-	statement := cv.Get(ParamQuery)
-	if statement == "" {
-		return nil, nil, false, pe.MissingURLParam(ParamQuery)
-	}
-	trq.Statement = statement
-
-	valuer := &influxql.NowValuer{Now: time.Now()}
-
-	if x, ok := epochToFlag[cv.Get(ParamEpoch)]; ok {
-		rlo.TimeFormat = x
-	}
-
-	if cv.Get(ParamPretty) == "true" {
-		rlo.OutputFormat = 1
-	}
+// ParseStatement parses one or more InfluxQL statements and returns a
+// TimeRangeQuery carrying the time-range-tokenized statement, cadence, extent,
+// GROUP BY tag fields, and parse tree. The second return reports whether the
+// statement remains eligible for the object proxy cache; a non-nil error means
+// the statement cannot be delta-cached (the TimeRangeQuery is still returned
+// when the statement at least parsed).
+func ParseStatement(statement string, now time.Time,
+) (*timeseries.TimeRangeQuery, bool, error) {
+	trq := &timeseries.TimeRangeQuery{Statement: statement}
+	valuer := &influxql.NowValuer{Now: now}
 
 	var cacheError error
 
 	p := influxql.NewParser(strings.NewReader(trq.Statement))
 	q, err := p.ParseQuery()
 	if err != nil {
-		return nil, nil, false, err
+		return nil, false, err
 	}
 
 	trq.Step = -1
@@ -107,7 +79,14 @@ func ParseTimeRangeQuery(r *http.Request,
 	var canObjectCache bool
 	for _, v := range q.Statements {
 		sel, ok := v.(*influxql.SelectStatement)
-		if !ok || sel.Condition == nil {
+		if !ok {
+			// non-SELECT statements (SHOW ..., etc.) cannot be delta-cached;
+			// they ride along verbatim in the tokenized statement
+			cacheError = pe.ErrNotTimeRangeQuery
+			statements = append(statements, v.String())
+			continue
+		}
+		if sel.Condition == nil {
 			cacheError = pe.ErrNotTimeRangeQuery
 		} else {
 			canObjectCache = true
@@ -135,7 +114,7 @@ func ParseTimeRangeQuery(r *http.Request,
 			ex.Start = time.Unix(0, 0)
 		}
 		if ex.End.IsZero() {
-			ex.End = time.Now()
+			ex.End = now
 		}
 		if trq.Extent.Start.IsZero() {
 			trq.Extent = ex
@@ -143,6 +122,10 @@ func ParseTimeRangeQuery(r *http.Request,
 			// this condition means multiple queries were present, and had
 			// different time ranges
 			cacheError = pe.ErrNotTimeRangeQuery
+		}
+
+		if len(trq.TagFieldDefintions) == 0 {
+			trq.TagFieldDefintions = dimensionTagFields(sel)
 		}
 
 		// this sets a zero time range for normalizing the query for cache key hashing
@@ -159,10 +142,66 @@ func ParseTimeRangeQuery(r *http.Request,
 	// this field is used as part of the data that calculates the cache key
 	trq.Statement = strings.Join(statements, " ; ")
 	trq.ParsedQuery = q
-	trq.TemplateURL = urls.Clone(r.URL)
 	trq.CacheKeyElements = map[string]string{
 		ParamQuery: trq.Statement,
 	}
+	return trq, canObjectCache, cacheError
+}
+
+// dimensionTagFields extracts the plain tag names from a statement's GROUP BY
+// dimensions (time buckets and wildcards are skipped).
+func dimensionTagFields(sel *influxql.SelectStatement) timeseries.FieldDefinitions {
+	var fields timeseries.FieldDefinitions
+	for _, dimension := range sel.Dimensions {
+		if ref, ok := dimension.Expr.(*influxql.VarRef); ok {
+			fields = append(fields, timeseries.FieldDefinition{
+				Name: ref.Val, Role: timeseries.RoleTag,
+			})
+		}
+	}
+	return fields
+}
+
+func ParseTimeRangeQuery(r *http.Request,
+	f iofmt.Format) (*timeseries.TimeRangeQuery, *timeseries.RequestOptions,
+	bool, error,
+) {
+	if r == nil || !f.IsInfluxQL() {
+		return nil, nil, false, iofmt.ErrSupportedQueryLanguage
+	}
+
+	uv := r.URL.Query()
+	bv := make(url.Values)
+	if r.Method == http.MethodPost {
+		bv, _, _ = params.GetRequestValues(r)
+	} else if r.Method != http.MethodGet {
+		logger.Error("unuspported method in influxql.ParseTimeRangeQuery",
+			logging.Pairs{"method": r.Method})
+		return nil, nil, false, te.ErrInvalidMethod
+	}
+	cv := maps.Clone(uv)
+	maps.Copy(cv, bv)
+
+	rlo := &timeseries.RequestOptions{OutputFormat: 0}
+
+	statement := cv.Get(ParamQuery)
+	if statement == "" {
+		return nil, nil, false, pe.MissingURLParam(ParamQuery)
+	}
+
+	if x, ok := epochToFlag[cv.Get(ParamEpoch)]; ok {
+		rlo.TimeFormat = x
+	}
+
+	if cv.Get(ParamPretty) == "true" {
+		rlo.OutputFormat = 1
+	}
+
+	trq, canObjectCache, cacheError := ParseStatement(statement, time.Now())
+	if trq == nil {
+		return nil, nil, false, cacheError
+	}
+	trq.TemplateURL = urls.Clone(r.URL)
 
 	if f.IsPost() {
 		b, err := request.GetBody(r)

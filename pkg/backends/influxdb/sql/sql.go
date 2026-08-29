@@ -35,6 +35,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/cockroach"
 	pe "github.com/trickstercache/trickster/v2/pkg/proxy/errors"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
@@ -96,13 +97,20 @@ type v3Request struct {
 
 // extractV3Request decodes a v3 request's query document. Supports GET URL
 // params, POST application/json, POST application/x-www-form-urlencoded, and
-// falls back to treating a raw POST body as SQL.
+// falls back to treating a raw POST body as SQL. When neither the URL nor the
+// body names a format, the Accept header is consulted, mirroring the origin's
+// content negotiation.
 func extractV3Request(r *http.Request) (*v3Request, error) {
 	out := &v3Request{}
 	query := r.URL.Query()
 	out.Query = query.Get(ParamQuery)
 	out.DB = query.Get(ParamDB)
 	out.Format = query.Get(ParamFormat)
+	defer func() {
+		if out.Format == "" {
+			out.Format = formatFromAccept(r.Header.Get(headers.NameAccept))
+		}
+	}()
 	if !methods.HasBody(r.Method) {
 		return out, nil
 	}
@@ -157,6 +165,31 @@ func extractV3Request(r *http.Request) (*v3Request, error) {
 		out.Query = string(b)
 	}
 	return out, nil
+}
+
+// formatFromAccept maps the first recognized media type in an Accept header
+// to its v3 format-parameter equivalent. Unrecognized or wildcard types yield
+// an empty string, leaving the origin's default (json) in effect.
+func formatFromAccept(accept string) string {
+	for part := range strings.SplitSeq(accept, ",") {
+		mediaType := strings.TrimSpace(part)
+		if i := strings.IndexByte(mediaType, ';'); i >= 0 {
+			mediaType = strings.TrimSpace(mediaType[:i])
+		}
+		switch strings.ToLower(mediaType) {
+		case "application/json":
+			return "json"
+		case "application/jsonl", "application/x-ndjson":
+			return "jsonl"
+		case "text/csv":
+			return "csv"
+		case "application/vnd.apache.parquet":
+			return "parquet"
+		case "text/plain":
+			return "pretty"
+		}
+	}
+	return ""
 }
 
 // ExtractQuery returns the SQL query text from a v3 request.
@@ -320,11 +353,19 @@ func ParseTimeRangeQuery(r *http.Request, f iofmt.Format,
 		ro = &timeseries.RequestOptions{}
 	}
 	ro.OutputFormat = outputFormat
+	// a backfill-tolerance directive embedded in the statement wins; otherwise
+	// apply the backend default and floor it at one bucket for open-ended
+	// queries, whose request extent runs to now: without the floor the final,
+	// still-filling bucket would be cached as complete.
 	if trq.BackfillTolerance == 0 {
 		bf := time.Minute
 		res := request.GetResources(r)
 		if res != nil {
 			bf = time.Duration(res.BackendOptions.BackfillTolerance)
+		}
+		if q, ok := trq.ParsedQuery.(*Query); ok && q.Plan != nil &&
+			q.Plan.UpperBound == nil && bf < trq.Step {
+			bf = trq.Step
 		}
 		trq.BackfillTolerance = bf
 	}
