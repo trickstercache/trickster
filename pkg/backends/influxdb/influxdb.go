@@ -22,10 +22,10 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
-	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/flight"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/flightsql"
 )
 
 var _ backends.TimeseriesBackend = (*Client)(nil)
@@ -51,13 +51,13 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 	return client, err
 }
 
-// flightCacheAdapter adapts a Trickster cache.Cache to the flight.Cache
+// flightCacheAdapter adapts a Trickster cache.Cache to the flightsql.Cache
 // interface (Get/Set vs Retrieve/Store). Without this, Flight SQL requests
 // pass through to upstream unconditionally and the caching path advertised
 // in docs/influxdb.md never engages.
 type flightCacheAdapter struct{ c cache.Cache }
 
-func newFlightCache(c cache.Cache) flight.Cache {
+func newFlightCache(c cache.Cache) flightsql.Cache {
 	if c == nil {
 		return nil
 	}

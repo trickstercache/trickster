@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package flight
+package flightsql
 
 import (
 	"bytes"
@@ -40,10 +40,15 @@ import (
 type UpstreamConfig struct {
 	// Address is the upstream Flight SQL endpoint (host:port).
 	Address string
-	// Database is the v3 database name, sent via the `database` metadata header.
-	Database string
-	// BearerToken is the optional auth token.
-	BearerToken string
+	// ForwardMetadataKeys names the inbound gRPC metadata keys forwarded to
+	// the upstream on every call (for example authorization and a database or
+	// bucket header). The server's cache KeyScoper must cover every key
+	// listed here that affects upstream results.
+	ForwardMetadataKeys []string
+	// DefaultMetadata supplies outgoing metadata values applied when the
+	// inbound request did not carry the key (e.g. a statically configured
+	// authorization or database).
+	DefaultMetadata map[string]string
 	// UseTLS dials the upstream with TLS transport credentials.
 	UseTLS bool
 	// InsecureSkipVerify disables upstream certificate verification when
@@ -51,9 +56,9 @@ type UpstreamConfig struct {
 	InsecureSkipVerify bool
 }
 
-// FlightSQLClient is the default UpstreamClient implementation that talks to a
+// Client is the default UpstreamClient implementation that talks to a
 // Flight SQL server over gRPC and returns IPC-encoded bytes.
-type FlightSQLClient struct {
+type Client struct {
 	cfg    UpstreamConfig
 	client *flightsql.Client
 	alloc  memory.Allocator
@@ -72,8 +77,8 @@ type preparedStatement struct {
 	ps *flightsql.PreparedStatement
 }
 
-// NewFlightSQLClient dials the upstream Flight SQL endpoint.
-func NewFlightSQLClient(cfg UpstreamConfig) (*FlightSQLClient, error) {
+// NewClient dials the upstream Flight SQL endpoint.
+func NewClient(cfg UpstreamConfig) (*Client, error) {
 	credential := insecure.NewCredentials()
 	if cfg.UseTLS {
 		credential = credentials.NewTLS(&tls.Config{
@@ -85,7 +90,7 @@ func NewFlightSQLClient(cfg UpstreamConfig) (*FlightSQLClient, error) {
 	if err != nil {
 		return nil, fmt.Errorf("flightsql client: %w", err)
 	}
-	return &FlightSQLClient{
+	return &Client{
 		cfg:      cfg,
 		client:   c,
 		alloc:    memory.DefaultAllocator,
@@ -96,7 +101,7 @@ func NewFlightSQLClient(cfg UpstreamConfig) (*FlightSQLClient, error) {
 // PrepareStatement creates a prepared statement upstream and returns its handle.
 // The handle is opaque bytes minted by the upstream; clients use it as the
 // round-trip identifier for Execute / Close.
-func (c *FlightSQLClient) PrepareStatement(ctx context.Context,
+func (c *Client) PrepareStatement(ctx context.Context,
 	query string,
 ) ([]byte, error) {
 	ctx = c.withAuth(ctx)
@@ -114,7 +119,7 @@ func (c *FlightSQLClient) PrepareStatement(ctx context.Context,
 // ExecutePrepared runs a previously-prepared statement upstream and returns
 // the IPC-encoded response bytes. Parameters bound via
 // SetPreparedStatementParams are applied by the upstream on execution.
-func (c *FlightSQLClient) ExecutePrepared(ctx context.Context,
+func (c *Client) ExecutePrepared(ctx context.Context,
 	handle []byte,
 ) ([]byte, error) {
 	ctx = c.withAuth(ctx)
@@ -133,7 +138,7 @@ func (c *FlightSQLClient) ExecutePrepared(ctx context.Context,
 
 // SetPreparedStatementParams binds parameter values on the upstream prepared
 // statement. The next ExecutePrepared call against this handle will use them.
-func (c *FlightSQLClient) SetPreparedStatementParams(_ context.Context,
+func (c *Client) SetPreparedStatementParams(_ context.Context,
 	handle []byte, params arrow.RecordBatch,
 ) error {
 	c.preparedMu.Lock()
@@ -149,7 +154,7 @@ func (c *FlightSQLClient) SetPreparedStatementParams(_ context.Context,
 }
 
 // ClosePrepared releases the upstream prepared statement.
-func (c *FlightSQLClient) ClosePrepared(ctx context.Context, handle []byte) error {
+func (c *Client) ClosePrepared(ctx context.Context, handle []byte) error {
 	ctx = c.withAuth(ctx)
 	c.preparedMu.Lock()
 	entry, ok := c.prepared[string(handle)]
@@ -168,7 +173,7 @@ func (c *FlightSQLClient) ClosePrepared(ctx context.Context, handle []byte) erro
 // Execute runs a SQL query against the upstream and returns the IPC-encoded
 // bytes (schema + record batches) of the entire response. Results are buffered
 // to enable caching.
-func (c *FlightSQLClient) Execute(ctx context.Context, query string) ([]byte, error) {
+func (c *Client) Execute(ctx context.Context, query string) ([]byte, error) {
 	ctx = c.withAuth(ctx)
 	return c.fetchAsIPC(ctx, func(ctx context.Context) (*flight.FlightInfo, error) {
 		return c.client.Execute(ctx, query)
@@ -176,7 +181,7 @@ func (c *FlightSQLClient) Execute(ctx context.Context, query string) ([]byte, er
 }
 
 // GetCatalogs returns IPC bytes for the upstream's catalog list.
-func (c *FlightSQLClient) GetCatalogs(ctx context.Context) ([]byte, error) {
+func (c *Client) GetCatalogs(ctx context.Context) ([]byte, error) {
 	ctx = c.withAuth(ctx)
 	return c.fetchAsIPC(ctx, func(ctx context.Context) (*flight.FlightInfo, error) {
 		return c.client.GetCatalogs(ctx)
@@ -184,7 +189,7 @@ func (c *FlightSQLClient) GetCatalogs(ctx context.Context) ([]byte, error) {
 }
 
 // GetDBSchemas returns IPC bytes for the upstream's DB schema list.
-func (c *FlightSQLClient) GetDBSchemas(ctx context.Context,
+func (c *Client) GetDBSchemas(ctx context.Context,
 	opts *flightsql.GetDBSchemasOpts,
 ) ([]byte, error) {
 	ctx = c.withAuth(ctx)
@@ -194,7 +199,7 @@ func (c *FlightSQLClient) GetDBSchemas(ctx context.Context,
 }
 
 // GetTables returns IPC bytes for the upstream's table list.
-func (c *FlightSQLClient) GetTables(ctx context.Context,
+func (c *Client) GetTables(ctx context.Context,
 	opts *flightsql.GetTablesOpts,
 ) ([]byte, error) {
 	ctx = c.withAuth(ctx)
@@ -204,7 +209,7 @@ func (c *FlightSQLClient) GetTables(ctx context.Context,
 }
 
 // GetTableTypes returns IPC bytes for the upstream's supported table types.
-func (c *FlightSQLClient) GetTableTypes(ctx context.Context) ([]byte, error) {
+func (c *Client) GetTableTypes(ctx context.Context) ([]byte, error) {
 	ctx = c.withAuth(ctx)
 	return c.fetchAsIPC(ctx, func(ctx context.Context) (*flight.FlightInfo, error) {
 		return c.client.GetTableTypes(ctx)
@@ -212,7 +217,7 @@ func (c *FlightSQLClient) GetTableTypes(ctx context.Context) ([]byte, error) {
 }
 
 // GetSqlInfo returns IPC bytes for the upstream's SQL info records.
-func (c *FlightSQLClient) GetSqlInfo(ctx context.Context,
+func (c *Client) GetSqlInfo(ctx context.Context,
 	info []flightsql.SqlInfo,
 ) ([]byte, error) {
 	ctx = c.withAuth(ctx)
@@ -223,7 +228,7 @@ func (c *FlightSQLClient) GetSqlInfo(ctx context.Context,
 
 // fetchAsIPC calls a FlightInfo-returning function, resolves the first endpoint
 // ticket via DoGet, and buffers the resulting record batches into IPC bytes.
-func (c *FlightSQLClient) fetchAsIPC(ctx context.Context,
+func (c *Client) fetchAsIPC(ctx context.Context,
 	getInfo func(context.Context) (*flight.FlightInfo, error),
 ) ([]byte, error) {
 	info, err := getInfo(ctx)
@@ -256,24 +261,25 @@ func (c *FlightSQLClient) fetchAsIPC(ctx context.Context,
 	return buf.Bytes(), nil
 }
 
-// withAuth adds the bearer token and database headers to the outgoing context.
-// Inbound metadata (from a client calling our server) is forwarded through —
-// this lets the end client's `database` and `authorization` headers flow to
-// the upstream without reconfiguration.
-func (c *FlightSQLClient) withAuth(ctx context.Context) context.Context {
+// withAuth builds the outgoing metadata for an upstream call. Inbound
+// metadata keys named in ForwardMetadataKeys (from a client calling our
+// server) are forwarded through — this lets the end client's scoping headers
+// (authorization, database, ...) flow to the upstream without
+// reconfiguration. DefaultMetadata fills in keys the inbound request did not
+// carry.
+func (c *Client) withAuth(ctx context.Context) context.Context {
 	out := metadata.MD{}
 	if in, ok := metadata.FromIncomingContext(ctx); ok {
-		for _, h := range []string{"authorization", "database", "bucket-name"} {
+		for _, h := range c.cfg.ForwardMetadataKeys {
 			if v := in.Get(h); len(v) > 0 {
 				out.Set(h, v...)
 			}
 		}
 	}
-	if c.cfg.BearerToken != "" && len(out.Get("authorization")) == 0 {
-		out.Set("authorization", "Bearer "+c.cfg.BearerToken)
-	}
-	if c.cfg.Database != "" && len(out.Get("database")) == 0 {
-		out.Set("database", c.cfg.Database)
+	for key, value := range c.cfg.DefaultMetadata {
+		if value != "" && len(out.Get(key)) == 0 {
+			out.Set(key, value)
+		}
 	}
 	if len(out) == 0 {
 		return ctx
@@ -282,7 +288,7 @@ func (c *FlightSQLClient) withAuth(ctx context.Context) context.Context {
 }
 
 // Close releases the gRPC connection.
-func (c *FlightSQLClient) Close() error {
+func (c *Client) Close() error {
 	if c.client != nil {
 		return c.client.Close()
 	}
@@ -290,4 +296,4 @@ func (c *FlightSQLClient) Close() error {
 }
 
 // Compile-time check
-var _ UpstreamClient = (*FlightSQLClient)(nil)
+var _ UpstreamClient = (*Client)(nil)

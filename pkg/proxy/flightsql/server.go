@@ -14,10 +14,14 @@
  * limitations under the License.
  */
 
-// Package flight provides an Apache Arrow Flight SQL server that proxies
-// queries to an upstream InfluxDB 3.x Flight SQL endpoint, caching IPC byte
-// streams keyed by the tokenized SQL statement.
-package flight
+// Package flightsql provides a vendor-neutral Apache Arrow Flight SQL caching
+// proxy: a gRPC protocol server that forwards queries, metadata RPCs, and the
+// prepared-statement lifecycle to an upstream Flight SQL endpoint, caching the
+// Arrow IPC byte streams in tenant-scoped cache namespaces. Backend providers
+// (e.g. InfluxDB 3) wire it up by supplying the upstream address, the metadata
+// keys their upstream scopes results by, and a cache; nothing in this package
+// is specific to any one Flight SQL implementation.
+package flightsql
 
 import (
 	"bytes"
@@ -40,22 +44,45 @@ import (
 	"google.golang.org/grpc/metadata"
 )
 
-// tenantKey derives a stable per-tenant cache namespace from the incoming
-// gRPC metadata. client.withAuth forwards `authorization`, `database`, and
-// `bucket-name` to the upstream for per-request scoping, so cache keys must
-// mirror that scope to avoid returning one tenant's data to another.
-// Authorization is hashed so bearer tokens don't leak into cache keys.
-func (s *Server) tenantKey(ctx context.Context) string {
-	md, _ := metadata.FromIncomingContext(ctx)
-	db := mdFirst(md, "database")
-	bucket := mdFirst(md, "bucket-name")
-	auth := mdFirst(md, "authorization")
-	authPart := ""
-	if auth != "" {
-		sum := sha256.Sum256([]byte(auth))
-		authPart = hex.EncodeToString(sum[:8])
+// KeyScoper derives a tenant cache-namespace suffix from the incoming gRPC
+// request context. The client forwards scoping metadata to the upstream for
+// per-request result scoping, so cache keys must mirror that scope to avoid
+// returning one tenant's data to another.
+type KeyScoper func(ctx context.Context) string
+
+// MetadataKeyScoper returns a KeyScoper that joins the first value of each
+// named incoming-metadata key with '|', plainKeys first, in the given order.
+// Values of hashedKeys are SHA-256-hashed (credentials must never appear in
+// cache keys); an absent hashed key contributes an empty component rather
+// than a hash of the empty string.
+func MetadataKeyScoper(plainKeys, hashedKeys []string) KeyScoper {
+	return func(ctx context.Context) string {
+		md, _ := metadata.FromIncomingContext(ctx)
+		parts := make([]string, 0, len(plainKeys)+len(hashedKeys))
+		for _, key := range plainKeys {
+			parts = append(parts, mdFirst(md, key))
+		}
+		for _, key := range hashedKeys {
+			value := mdFirst(md, key)
+			if value != "" {
+				sum := sha256.Sum256([]byte(value))
+				value = hex.EncodeToString(sum[:8])
+			}
+			parts = append(parts, value)
+		}
+		return strings.Join(parts, "|")
 	}
-	return s.keyPrefix + "|" + db + "|" + bucket + "|" + authPart
+}
+
+// defaultKeyScoper scopes cache entries by the hashed authorization metadata
+// only. Deployments whose upstream scopes results by additional request
+// metadata (a database or bucket header, for instance) must supply a
+// KeyScoper covering that metadata via WithKeyScoper.
+var defaultKeyScoper = MetadataKeyScoper(nil, []string{"authorization"})
+
+// tenantKey prefixes the configured key scope with the server's namespace.
+func (s *Server) tenantKey(ctx context.Context) string {
+	return s.keyPrefix + "|" + s.keyScoper(ctx)
 }
 
 func mdFirst(md metadata.MD, key string) string {
@@ -83,6 +110,8 @@ type Server struct {
 	// keyPrefix namespaces cache keys per backend so two backends sharing a
 	// named cache never alias each other's entries.
 	keyPrefix string
+	// keyScoper derives the per-tenant cache-namespace suffix.
+	keyScoper KeyScoper
 
 	// prepared tracks server-side state per prepared-statement handle: the
 	// most recent bound parameter hash (part of the DoGetPreparedStatement
@@ -100,8 +129,8 @@ type preparedMeta struct {
 	lastAccess time.Time
 }
 
-// DefaultCacheTTL is the cache lifetime applied when the backend does not
-// configure flight_cache_ttl.
+// DefaultCacheTTL is the cache lifetime applied when no WithCacheTTL option
+// is provided.
 const DefaultCacheTTL = 60 * time.Second
 
 // DefaultPreparedIdleTTL is how long a prepared statement may go unused before
@@ -126,6 +155,17 @@ func WithCacheTTL(ttl time.Duration) ServerOption {
 // name.
 func WithCacheKeyPrefix(prefix string) ServerOption {
 	return func(s *Server) { s.keyPrefix = prefix }
+}
+
+// WithKeyScoper sets the tenant cache-namespace derivation. It must cover
+// every request-metadata key the upstream scopes results by; the default
+// scopes by hashed authorization only.
+func WithKeyScoper(scoper KeyScoper) ServerOption {
+	return func(s *Server) {
+		if scoper != nil {
+			s.keyScoper = scoper
+		}
+	}
 }
 
 // UpstreamClient is the minimum surface the server needs from a Flight SQL
@@ -155,11 +195,12 @@ type Cache interface {
 // NewServer constructs a Flight SQL server with the given upstream and cache.
 func NewServer(upstream UpstreamClient, cache Cache, opts ...ServerOption) *Server {
 	s := &Server{
-		upstream: upstream,
-		cache:    cache,
-		alloc:    memory.DefaultAllocator,
-		cacheTTL: DefaultCacheTTL,
-		prepared: make(map[string]*preparedMeta),
+		upstream:  upstream,
+		cache:     cache,
+		alloc:     memory.DefaultAllocator,
+		cacheTTL:  DefaultCacheTTL,
+		keyScoper: defaultKeyScoper,
+		prepared:  make(map[string]*preparedMeta),
 	}
 	for _, opt := range opts {
 		opt(s)

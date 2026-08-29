@@ -22,12 +22,12 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
-	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/flight"
 	io "github.com/trickstercache/trickster/v2/pkg/backends/influxdb/options"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	listenerconfig "github.com/trickstercache/trickster/v2/pkg/config/listener"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/flightsql"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/native"
 )
 
@@ -192,7 +192,7 @@ func TestFlightNativeListenerBuild(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Build() = %v", err)
 	}
-	fs, ok := server.(*flight.ProtocolServer)
+	fs, ok := server.(*flightsql.ProtocolServer)
 	if !ok || fs.ProtocolRestartKey() == "" {
 		t.Fatalf("built server = %T with restart key %q", server, "")
 	}

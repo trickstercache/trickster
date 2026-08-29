@@ -25,14 +25,24 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
-	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/flight"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	listenerconfig "github.com/trickstercache/trickster/v2/pkg/config/listener"
 	yamlencoding "github.com/trickstercache/trickster/v2/pkg/encoding/yaml"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/flightsql"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/native"
+)
+
+// InfluxDB 3 scopes Flight SQL results by these inbound gRPC metadata keys:
+// they are forwarded to the upstream on every call, and the same keys form
+// the tenant cache scope (authorization hashed) so cache entries mirror the
+// access the upstream would grant.
+var (
+	influxFlightForwardMetadata = []string{"authorization", "database", "bucket-name"}
+	influxFlightKeyScoper       = flightsql.MetadataKeyScoper(
+		[]string{"database", "bucket-name"}, []string{"authorization"})
 )
 
 type nativeListenerAdapter struct{}
@@ -144,14 +154,17 @@ func (a nativeListenerAdapter) Build(r native.BuildRequest) (listener.ProtocolSe
 	if err != nil {
 		return nil, err
 	}
-	upstreamConfig := flight.UpstreamConfig{Address: upstream}
+	upstreamConfig := flightsql.UpstreamConfig{
+		Address:             upstream,
+		ForwardMetadataKeys: influxFlightForwardMetadata,
+	}
 	if o.InfluxDB != nil {
 		upstreamConfig.UseTLS = o.InfluxDB.FlightUpstreamTLS
 	}
 	if upstreamConfig.UseTLS && o.TLS != nil {
 		upstreamConfig.InsecureSkipVerify = o.TLS.InsecureSkipVerify
 	}
-	client, err := flight.NewFlightSQLClient(upstreamConfig)
+	client, err := flightsql.NewClient(upstreamConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -159,17 +172,20 @@ func (a nativeListenerAdapter) Build(r native.BuildRequest) (listener.ProtocolSe
 	if backend == nil {
 		return nil, errors.New("missing InfluxDB backend client")
 	}
-	serverOptions := []flight.ServerOption{flight.WithCacheKeyPrefix(backendName)}
+	serverOptions := []flightsql.ServerOption{
+		flightsql.WithCacheKeyPrefix(backendName),
+		flightsql.WithKeyScoper(influxFlightKeyScoper),
+	}
 	if o.InfluxDB != nil && o.InfluxDB.FlightCacheTTL > 0 {
 		serverOptions = append(serverOptions,
-			flight.WithCacheTTL(time.Duration(o.InfluxDB.FlightCacheTTL)))
+			flightsql.WithCacheTTL(time.Duration(o.InfluxDB.FlightCacheTTL)))
 	}
-	srv := flight.NewServer(client, newFlightCache(backend.Cache()), serverOptions...)
+	srv := flightsql.NewServer(client, newFlightCache(backend.Cache()), serverOptions...)
 	// the mapped backend's tls block supplies the listener certificate; with
 	// none configured the listener serves plaintext gRPC
 	tlsConfig, err := r.Config.TLSCertConfigForListener(r.ListenerName)
 	if err != nil {
 		return nil, err
 	}
-	return flight.NewProtocolServer(srv, descriptor.RestartKey, tlsConfig), nil
+	return flightsql.NewProtocolServer(srv, descriptor.RestartKey, tlsConfig), nil
 }

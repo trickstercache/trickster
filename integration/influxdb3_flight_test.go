@@ -157,7 +157,7 @@ func TestInfluxDB3FlightSQL(t *testing.T) {
 	})
 
 	// prepared_statement_with_params is covered by unit tests
-	// (TestPreparedStatement_Parameterized in pkg/backends/influxdb/flight/)
+	// (TestPreparedStatement_Parameterized in pkg/proxy/flightsql/)
 	// using a fake upstream. An integration test against a real InfluxDB 3
 	// Core instance is not included: Core 3.10 recognizes Flight SQL placeholders
 	// at Prepare time (returns a parameter schema) but does not resolve the

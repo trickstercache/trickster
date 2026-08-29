@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package flight
+package flightsql
 
 import (
 	"context"
