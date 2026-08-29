@@ -19,6 +19,9 @@ package integration
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -30,6 +33,96 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 )
+
+// directFlightClient dials the InfluxDB 3 Flight SQL endpoint directly
+// (unproxied), for fidelity comparisons against Trickster-served responses.
+func directFlightClient(t *testing.T) *flightsql.Client {
+	t.Helper()
+	direct, err := flightsql.NewClientCtx(context.Background(), "127.0.0.1:8181", nil, nil,
+		grpc.WithTransportCredentials(insecure.NewCredentials()))
+	require.NoError(t, err)
+	t.Cleanup(func() { direct.Close() })
+	return direct
+}
+
+// seedFlightDeltaData writes deterministic minute-aligned points covering the
+// last 15 minutes to a dedicated measurement, then waits until they are
+// queryable. Values derive from each point's timestamp, so reruns against a
+// long-lived environment are idempotent. This keeps the delta-tier subtests
+// independent of how much history the environment's telegraf feed has
+// accumulated (a freshly started CI environment has only seconds of it).
+func seedFlightDeltaData(t *testing.T, influxAddr string, now time.Time) {
+	t.Helper()
+	var lines strings.Builder
+	for at := now.Add(-15 * time.Minute); at.Before(now); at = at.Add(time.Minute) {
+		for _, host := range []string{"a", "b"} {
+			fmt.Fprintf(&lines, "flight_delta_test,host=%s v=%d %d\n",
+				host, at.Unix()%1000, at.UnixNano())
+		}
+	}
+	resp, err := http.Post(
+		"http://"+influxAddr+"/api/v3/write_lp?db=trickster&precision=nanosecond",
+		"text/plain", strings.NewReader(lines.String()))
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	require.Less(t, resp.StatusCode, 300, "seed write failed: %s", string(body))
+
+	direct := directFlightClient(t)
+	probe := fmt.Sprintf("SELECT time, host, v FROM flight_delta_test "+
+		"WHERE time >= '%s' AND time < '%s'",
+		now.Add(-15*time.Minute).Format(time.RFC3339), now.Format(time.RFC3339))
+	require.Eventually(t, func() bool {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		ctx = metadata.AppendToOutgoingContext(ctx, "database", "trickster")
+		info, err := direct.Execute(ctx, probe)
+		if err != nil {
+			return false
+		}
+		reader, err := direct.DoGet(ctx, info.Endpoint[0].Ticket)
+		if err != nil {
+			return false
+		}
+		defer reader.Release()
+		var rows int64
+		for reader.Next() {
+			rows += reader.RecordBatch().NumRows()
+		}
+		return reader.Err() == nil && rows >= 30
+	}, 15*time.Second, 500*time.Millisecond, "seeded data never became queryable")
+}
+
+// collectFlightRows executes a query and returns its rows as a multiset of
+// rendered lines, for order-insensitive equality comparisons.
+func collectFlightRows(t *testing.T, ctx context.Context, c *flightsql.Client,
+	q string,
+) map[string]int {
+	t.Helper()
+	info, err := c.Execute(ctx, q)
+	require.NoError(t, err, "query: %s", q)
+	reader, err := c.DoGet(ctx, info.Endpoint[0].Ticket)
+	require.NoError(t, err)
+	defer reader.Release()
+	return readFlightRows(t, reader)
+}
+
+func readFlightRows(t *testing.T, reader *flight.Reader) map[string]int {
+	t.Helper()
+	rows := make(map[string]int)
+	for reader.Next() {
+		record := reader.RecordBatch()
+		for row := range int(record.NumRows()) {
+			var line string
+			for i := range int(record.NumCols()) {
+				line += record.Column(i).ValueStr(row) + "|"
+			}
+			rows[line]++
+		}
+	}
+	require.NoError(t, reader.Err())
+	return rows
+}
 
 // TestInfluxDB3FlightSQL exercises the Flight SQL gRPC proxy end-to-end using
 // the same ADBC-shaped wire format that Grafana's SQL datasource speaks.
@@ -100,52 +193,30 @@ func TestInfluxDB3FlightSQL(t *testing.T) {
 	// proxy and checks the served data is identical to a direct-to-InfluxDB
 	// Flight response (the fidelity gate), including on the cached rerun and
 	// after widening the window (which triggers a sub-range delta fetch).
+	// The subtest seeds its own backfilled measurement so it never depends on
+	// how long the environment's telegraf feed has been running.
 	t.Run("delta_tier", func(t *testing.T) {
-		direct, err := flightsql.NewClientCtx(context.Background(), "127.0.0.1:8181", nil, nil,
-			grpc.WithTransportCredentials(insecure.NewCredentials()))
-		require.NoError(t, err)
-		t.Cleanup(func() { direct.Close() })
-
-		collect := func(c *flightsql.Client, q string) map[string]int {
-			t.Helper()
-			info, err := c.Execute(ctx, q)
-			require.NoError(t, err, "query: %s", q)
-			reader, err := c.DoGet(ctx, info.Endpoint[0].Ticket)
-			require.NoError(t, err)
-			defer reader.Release()
-			rows := make(map[string]int)
-			for reader.Next() {
-				record := reader.RecordBatch()
-				for row := range int(record.NumRows()) {
-					var line string
-					for i := range int(record.NumCols()) {
-						line += record.Column(i).ValueStr(row) + "|"
-					}
-					rows[line]++
-				}
-			}
-			require.NoError(t, reader.Err())
-			return rows
-		}
-
+		direct := directFlightClient(t)
 		now := time.Now().UTC().Truncate(time.Minute)
-		lower, upper := now.Add(-8*time.Minute), now.Add(-2*time.Minute)
+		seedFlightDeltaData(t, "127.0.0.1:8181", now)
+
+		lower, upper := now.Add(-10*time.Minute), now.Add(-4*time.Minute)
 		query := func(from, to time.Time) string {
-			return fmt.Sprintf("SELECT date_bin(INTERVAL '1 minute', time) AS time, cpu, "+
-				"avg(usage_idle) AS usage_idle FROM cpu WHERE time >= '%s' AND time < '%s' "+
-				"GROUP BY 1, cpu", from.Format(time.RFC3339), to.Format(time.RFC3339))
+			return fmt.Sprintf("SELECT date_bin(INTERVAL '1 minute', time) AS time, host, "+
+				"avg(v) AS v FROM flight_delta_test WHERE time >= '%s' AND time < '%s' "+
+				"GROUP BY 1, host", from.Format(time.RFC3339), to.Format(time.RFC3339))
 		}
 
-		want := collect(direct, query(lower, upper))
-		require.NotEmpty(t, want, "expected rows from the direct query")
-		got := collect(client, query(lower, upper))
+		want := collectFlightRows(t, ctx, direct, query(lower, upper))
+		require.Len(t, want, 12, "expected 6 seeded buckets x 2 hosts from the direct query")
+		got := collectFlightRows(t, ctx, client, query(lower, upper))
 		require.Equal(t, want, got, "first delta response differs from direct")
-		cached := collect(client, query(lower, upper))
+		cached := collectFlightRows(t, ctx, client, query(lower, upper))
 		require.Equal(t, want, cached, "cached delta response differs from direct")
 
 		widened := query(lower.Add(-2*time.Minute), upper)
-		widenedWant := collect(direct, widened)
-		widenedGot := collect(client, widened)
+		widenedWant := collectFlightRows(t, ctx, direct, widened)
+		widenedGot := collectFlightRows(t, ctx, client, widened)
 		require.Equal(t, widenedWant, widenedGot,
 			"widened delta response differs from direct")
 		require.Greater(t, len(widenedGot), len(got),
@@ -238,44 +309,21 @@ func TestInfluxDB3FlightSQL(t *testing.T) {
 
 	// prepared_delta verifies a parameterless prepared date_bin query is
 	// served through the delta tier with data identical to a direct
-	// (unproxied) execution of the same statement.
+	// (unproxied) execution of the same statement, using the same seeded
+	// measurement as delta_tier.
 	t.Run("prepared_delta", func(t *testing.T) {
-		direct, err := flightsql.NewClientCtx(context.Background(), "127.0.0.1:8181", nil, nil,
-			grpc.WithTransportCredentials(insecure.NewCredentials()))
-		require.NoError(t, err)
-		t.Cleanup(func() { direct.Close() })
-
+		direct := directFlightClient(t)
 		now := time.Now().UTC().Truncate(time.Minute)
-		q := fmt.Sprintf("SELECT date_bin(INTERVAL '1 minute', time) AS time, cpu, "+
-			"avg(usage_idle) AS usage_idle FROM cpu WHERE time >= '%s' AND time < '%s' "+
-			"GROUP BY 1, cpu",
+		seedFlightDeltaData(t, "127.0.0.1:8181", now)
+
+		q := fmt.Sprintf("SELECT date_bin(INTERVAL '1 minute', time) AS time, host, "+
+			"avg(v) AS v FROM flight_delta_test WHERE time >= '%s' AND time < '%s' "+
+			"GROUP BY 1, host",
 			now.Add(-9*time.Minute).Format(time.RFC3339),
 			now.Add(-3*time.Minute).Format(time.RFC3339))
 
-		collectRows := func(info *flight.FlightInfo, c *flightsql.Client) map[string]int {
-			t.Helper()
-			reader, err := c.DoGet(ctx, info.Endpoint[0].Ticket)
-			require.NoError(t, err)
-			defer reader.Release()
-			rows := make(map[string]int)
-			for reader.Next() {
-				record := reader.RecordBatch()
-				for row := range int(record.NumRows()) {
-					var line string
-					for i := range int(record.NumCols()) {
-						line += record.Column(i).ValueStr(row) + "|"
-					}
-					rows[line]++
-				}
-			}
-			require.NoError(t, reader.Err())
-			return rows
-		}
-
-		wantInfo, err := direct.Execute(ctx, q)
-		require.NoError(t, err)
-		want := collectRows(wantInfo, direct)
-		require.NotEmpty(t, want)
+		want := collectFlightRows(t, ctx, direct, q)
+		require.Len(t, want, 12, "expected 6 seeded buckets x 2 hosts from the direct query")
 
 		ps, err := client.Prepare(ctx, q)
 		require.NoError(t, err)
@@ -283,7 +331,10 @@ func TestInfluxDB3FlightSQL(t *testing.T) {
 		for range 2 { // second execution is a delta-tier cache hit
 			info, err := ps.Execute(ctx)
 			require.NoError(t, err)
-			got := collectRows(info, client)
+			reader, err := client.DoGet(ctx, info.Endpoint[0].Ticket)
+			require.NoError(t, err)
+			got := readFlightRows(t, reader)
+			reader.Release()
 			require.Equal(t, want, got, "prepared delta response differs from direct")
 		}
 	})
