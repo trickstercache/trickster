@@ -27,6 +27,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/cache/status"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+
 	"github.com/stretchr/testify/require"
 )
 
@@ -59,18 +62,18 @@ func TestClickHouseCacheMatrix(t *testing.T) {
 			}
 
 			firstHeader, firstBody := query(mid)
-			require.Equal(t, "kmiss", parseTricksterResult(
-				firstHeader.Get("X-Trickster-Result"),
+			require.Equal(t, status.StatusKeyMiss, parseTricksterResult(
+				firstHeader.Get(headers.NameTricksterResult),
 			)["status"])
 			secondHeader, secondBody := query(mid)
 			require.Equal(t, firstBody, secondBody)
-			require.Contains(t, []string{"hit", "phit"}, parseTricksterResult(
-				secondHeader.Get("X-Trickster-Result"),
+			require.Contains(t, []string{status.StatusHit, status.StatusPartialHit}, parseTricksterResult(
+				secondHeader.Get(headers.NameTricksterResult),
 			)["status"])
 			wideHeader, wideBody := query(end)
 			require.Greater(t, len(wideBody), len(firstBody))
-			require.Equal(t, "phit", parseTricksterResult(
-				wideHeader.Get("X-Trickster-Result"),
+			require.Equal(t, status.StatusPartialHit, parseTricksterResult(
+				wideHeader.Get(headers.NameTricksterResult),
 			)["status"])
 		})
 	}
@@ -131,8 +134,8 @@ func TestClickHouse(t *testing.T) {
 		require.NotEmpty(t, result.Data, "expected rows from ClickHouse trips table")
 		t.Logf("clickhouse: %d rows returned", result.Rows)
 
-		hdr := parseTricksterResult(resp.Header.Get("X-Trickster-Result"))
-		t.Logf("clickhouse: %s", resp.Header.Get("X-Trickster-Result"))
+		hdr := parseTricksterResult(resp.Header.Get(headers.NameTricksterResult))
+		t.Logf("clickhouse: %s", resp.Header.Get(headers.NameTricksterResult))
 		require.Equal(t, "DeltaProxyCache", hdr["engine"])
 	})
 
@@ -162,7 +165,7 @@ func TestClickHouse(t *testing.T) {
 		body, err := io.ReadAll(resp.Body)
 		require.NoError(t, err)
 		require.Equal(t, http.StatusOK, resp.StatusCode, "unexpected status: %s", string(body))
-		hdr := parseTricksterResult(resp.Header.Get("X-Trickster-Result"))
+		hdr := parseTricksterResult(resp.Header.Get(headers.NameTricksterResult))
 		require.Equal(t, "DeltaProxyCache", hdr["engine"],
 			"multi-line SQL must reach DeltaProxyCache (issue #967)")
 	})
@@ -197,7 +200,7 @@ func TestClickHouse(t *testing.T) {
 		require.Equal(t, http.StatusOK, resp.StatusCode, "unexpected status: %s", string(body))
 		require.Greater(t, len(body), 10, "expected Native binary response with data")
 
-		hdr := parseTricksterResult(resp.Header.Get("X-Trickster-Result"))
+		hdr := parseTricksterResult(resp.Header.Get(headers.NameTricksterResult))
 		require.Equal(t, "DeltaProxyCache", hdr["engine"])
 
 		// Verify the response is Native binary — first byte is numCols (uvarint),
@@ -214,8 +217,8 @@ func TestClickHouse(t *testing.T) {
 		require.Equal(t, http.StatusOK, resp2.StatusCode)
 		require.Greater(t, len(body2), 10, "expected cached Native response with data")
 
-		hdr2 := parseTricksterResult(resp2.Header.Get("X-Trickster-Result"))
-		require.Contains(t, []string{"hit", "phit"}, hdr2["status"],
+		hdr2 := parseTricksterResult(resp2.Header.Get(headers.NameTricksterResult))
+		require.Contains(t, []string{status.StatusHit, status.StatusPartialHit}, hdr2["status"],
 			"second request should hit the cache, got %s", hdr2["status"])
 	})
 
@@ -244,15 +247,15 @@ func TestClickHouse(t *testing.T) {
 			require.NoError(t, err)
 			resp.Body.Close()
 			require.Equal(t, http.StatusOK, resp.StatusCode)
-			hdr := parseTricksterResult(resp.Header.Get("X-Trickster-Result"))
+			hdr := parseTricksterResult(resp.Header.Get(headers.NameTricksterResult))
 			require.Equal(t, "DeltaProxyCache", hdr["engine"])
 
 			resp2, err := http.Get(u)
 			require.NoError(t, err)
 			resp2.Body.Close()
 			require.Equal(t, http.StatusOK, resp2.StatusCode)
-			hdr2 := parseTricksterResult(resp2.Header.Get("X-Trickster-Result"))
-			require.Contains(t, []string{"hit", "phit"}, hdr2["status"],
+			hdr2 := parseTricksterResult(resp2.Header.Get(headers.NameTricksterResult))
+			require.Contains(t, []string{status.StatusHit, status.StatusPartialHit}, hdr2["status"],
 				"%s repeat query should hit the cache, got %s", tc.name, hdr2["status"])
 		})
 	}

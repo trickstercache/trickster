@@ -33,6 +33,7 @@ import (
 	"github.com/trickstercache/trickster/v2/integration/internal/metricsutil"
 	"github.com/trickstercache/trickster/v2/integration/internal/portutil"
 	"github.com/trickstercache/trickster/v2/integration/promstub"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -359,7 +360,7 @@ func runMatrixCell(t *testing.T, c matrixCell) {
 	if !skipMetric {
 		var totalDelta float64
 		for _, variant := range mechVariants {
-			labels := map[string]string{"mechanism": c.mech, "variant": variant}
+			labels := map[string]string{keys.Mechanism: c.mech, keys.Variant: variant}
 			k := metricsutil.Key("trickster_alb_fanout_attempts_total", labels)
 			totalDelta += after[k] - before[k]
 		}
@@ -374,7 +375,7 @@ func runMatrixCell(t *testing.T, c matrixCell) {
 	if down > 0 {
 		for _, variant := range mechVariants {
 			for _, reason := range []string{"shard-status", "shard-error", "panic", "capture-truncated", "routing-flap"} {
-				labels := map[string]string{"mechanism": c.mech, "variant": variant, "reason": reason}
+				labels := map[string]string{keys.Mechanism: c.mech, keys.Variant: variant, keys.Reason: reason}
 				k := metricsutil.Key("trickster_alb_fanout_failures_total", labels)
 				if after[k]-before[k] > 0 {
 					t.Logf("%s: observed failure reason=%s variant=%s delta=%v",

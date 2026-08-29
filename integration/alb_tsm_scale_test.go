@@ -35,6 +35,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/integration/internal/portutil"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 
 	"github.com/stretchr/testify/require"
 )
@@ -100,10 +101,10 @@ func TestALB_TSM_Scale(t *testing.T) {
 		var series []json.RawMessage
 		require.NoError(t, json.Unmarshal(qd.Result, &series))
 		require.GreaterOrEqual(t, len(series), numBackends)
-		t.Logf("%d series, %s", len(series), hdr.Get("X-Trickster-Result"))
+		t.Logf("%d series, %s", len(series), hdr.Get(headers.NameTricksterResult))
 
 		_, hdr2 := queryTricksterProm(t, listenAddr, backendName, "/api/v1/query_range", params)
-		t.Logf("repeat: %s", hdr2.Get("X-Trickster-Result"))
+		t.Logf("repeat: %s", hdr2.Get(headers.NameTricksterResult))
 	})
 
 	t.Run("sharded_range_query_high_shard_count", func(t *testing.T) {
@@ -148,7 +149,7 @@ func TestALB_TSM_Scale(t *testing.T) {
 		hits := fakes[0].hits.Load()
 		require.GreaterOrEqual(t, hits, int64(7))
 		t.Logf("%d points from %d sharded upstream fetches, %s",
-			expectedPoints, hits, hdr.Get("X-Trickster-Result"))
+			expectedPoints, hits, hdr.Get(headers.NameTricksterResult))
 	})
 
 	t.Run("50_backends_instant_query", func(t *testing.T) {
@@ -159,7 +160,7 @@ func TestALB_TSM_Scale(t *testing.T) {
 		require.NoError(t, json.Unmarshal(pr.Data, &qd))
 		require.Equal(t, "vector", qd.ResultType)
 		require.NotEmpty(t, qd.Result)
-		t.Logf("%s", hdr.Get("X-Trickster-Result"))
+		t.Logf("%s", hdr.Get(headers.NameTricksterResult))
 	})
 
 	t.Run("oversized_responses_not_truncated", func(t *testing.T) {
@@ -177,7 +178,7 @@ func TestALB_TSM_Scale(t *testing.T) {
 		var pr promResponse
 		require.NoError(t, json.Unmarshal(body, &pr))
 		require.Equal(t, "success", pr.Status)
-		t.Logf("%d bytes, %s", len(body), hdr.Get("X-Trickster-Result"))
+		t.Logf("%d bytes, %s", len(body), hdr.Get(headers.NameTricksterResult))
 	})
 
 	t.Run("backend_5xx_partial_success", func(t *testing.T) {
@@ -190,14 +191,14 @@ func TestALB_TSM_Scale(t *testing.T) {
 		var series []json.RawMessage
 		require.NoError(t, json.Unmarshal(qd.Result, &series))
 		require.NotEmpty(t, series)
-		t.Logf("%d series, %s", len(series), hdr.Get("X-Trickster-Result"))
+		t.Logf("%d series, %s", len(series), hdr.Get(headers.NameTricksterResult))
 	})
 
 	t.Run("mismatched_vector_shape", func(t *testing.T) {
 		resetAll()
 		fakes[0].setBehavior(behaviorBadShape())
 		body, hdr := rawQueryAllowError(t, listenAddr, backendName, "/api/v1/query", instantParams())
-		t.Logf("%d bytes, %s", len(body), hdr.Get("X-Trickster-Result"))
+		t.Logf("%d bytes, %s", len(body), hdr.Get(headers.NameTricksterResult))
 	})
 
 	t.Run("bad_encoding_advertised_as_gzip", func(t *testing.T) {
@@ -213,7 +214,7 @@ func TestALB_TSM_Scale(t *testing.T) {
 		var series []json.RawMessage
 		require.NoError(t, json.Unmarshal(qd.Result, &series))
 		require.NotEmpty(t, series)
-		t.Logf("%d series, %s", len(series), hdr.Get("X-Trickster-Result"))
+		t.Logf("%d series, %s", len(series), hdr.Get(headers.NameTricksterResult))
 	})
 
 	t.Run("truncating_upstream_does_not_poison_cache", func(t *testing.T) {
@@ -224,7 +225,7 @@ func TestALB_TSM_Scale(t *testing.T) {
 		require.NotContains(t, string(firstBody), "runtime error")
 		require.NotContains(t, string(firstBody), "goroutine ")
 		t.Logf("first (truncating): status=%d, %d bytes, %s",
-			firstSC, len(firstBody), firstHdr.Get("X-Trickster-Result"))
+			firstSC, len(firstBody), firstHdr.Get(headers.NameTricksterResult))
 
 		resetAll()
 		body, hdr := rawQuery(t, listenAddr, backendName, "/api/v1/query_range", params)
@@ -236,7 +237,7 @@ func TestALB_TSM_Scale(t *testing.T) {
 		var series []json.RawMessage
 		require.NoError(t, json.Unmarshal(qd.Result, &series))
 		require.NotEmpty(t, series)
-		t.Logf("%d series, %s", len(series), hdr.Get("X-Trickster-Result"))
+		t.Logf("%d series, %s", len(series), hdr.Get(headers.NameTricksterResult))
 	})
 
 	t.Run("concurrent_clients_collapse", func(t *testing.T) {
@@ -281,7 +282,7 @@ func TestALB_TSM_Scale(t *testing.T) {
 		var series []json.RawMessage
 		require.NoError(t, json.Unmarshal(qd.Result, &series))
 		require.GreaterOrEqual(t, len(series), numBackends-1)
-		t.Logf("%d series in %s, %s", len(series), elapsed, hdr.Get("X-Trickster-Result"))
+		t.Logf("%d series in %s, %s", len(series), elapsed, hdr.Get(headers.NameTricksterResult))
 	})
 
 	t.Run("client_cancel_during_merge", func(t *testing.T) {
@@ -310,7 +311,7 @@ func TestALB_TSM_Scale(t *testing.T) {
 		}
 		body, hdr, sc := doRaw(t, listenAddr, backendName, "/api/v1/query_range", rangeParams())
 		require.GreaterOrEqual(t, sc, 500, "expected 5xx, got %d: %s", sc, body)
-		t.Logf("status=%d, %s", sc, hdr.Get("X-Trickster-Result"))
+		t.Logf("status=%d, %s", sc, hdr.Get(headers.NameTricksterResult))
 	})
 
 	t.Run("labeled_backends_merge", func(t *testing.T) {
@@ -331,7 +332,7 @@ func TestALB_TSM_Scale(t *testing.T) {
 			regions[r] = struct{}{}
 		}
 		require.GreaterOrEqual(t, len(regions), numLabeledBackends)
-		t.Logf("%d series across %d regions, %s", len(series), len(regions), hdr.Get("X-Trickster-Result"))
+		t.Logf("%d series across %d regions, %s", len(series), len(regions), hdr.Get(headers.NameTricksterResult))
 	})
 
 	for _, alb := range []string{fgrBackendName, nlmBackendName} {
@@ -339,7 +340,7 @@ func TestALB_TSM_Scale(t *testing.T) {
 			resetAll()
 			pr, hdr := queryTricksterProm(t, listenAddr, alb, "/api/v1/query_range", rangeParams())
 			require.Equal(t, "success", pr.Status)
-			t.Logf("%s: %s", alb, hdr.Get("X-Trickster-Result"))
+			t.Logf("%s: %s", alb, hdr.Get(headers.NameTricksterResult))
 		})
 	}
 
@@ -351,7 +352,7 @@ func TestALB_TSM_Scale(t *testing.T) {
 		var labels []string
 		require.NoError(t, json.Unmarshal(pr.Data, &labels))
 		require.NotEmpty(t, labels)
-		t.Logf("%d labels, %s", len(labels), hdr.Get("X-Trickster-Result"))
+		t.Logf("%d labels, %s", len(labels), hdr.Get(headers.NameTricksterResult))
 	})
 
 	t.Run("label_values_50_fanout_oversized", func(t *testing.T) {
@@ -368,7 +369,7 @@ func TestALB_TSM_Scale(t *testing.T) {
 		var values []string
 		require.NoError(t, json.Unmarshal(pr.Data, &values))
 		require.NotEmpty(t, values)
-		t.Logf("%d values, %d bytes, %s", len(values), len(body), hdr.Get("X-Trickster-Result"))
+		t.Logf("%d values, %d bytes, %s", len(values), len(body), hdr.Get(headers.NameTricksterResult))
 	})
 
 	t.Run("series_50_fanout", func(t *testing.T) {
@@ -384,7 +385,7 @@ func TestALB_TSM_Scale(t *testing.T) {
 		var series []map[string]string
 		require.NoError(t, json.Unmarshal(pr.Data, &series))
 		require.NotEmpty(t, series)
-		t.Logf("%d series, %s", len(series), hdr.Get("X-Trickster-Result"))
+		t.Logf("%d series, %s", len(series), hdr.Get(headers.NameTricksterResult))
 	})
 
 	t.Run("post_query_range", func(t *testing.T) {
@@ -405,7 +406,7 @@ func TestALB_TSM_Scale(t *testing.T) {
 		var series []json.RawMessage
 		require.NoError(t, json.Unmarshal(qd.Result, &series))
 		require.GreaterOrEqual(t, len(series), numBackends)
-		t.Logf("POST: %d series, %s", len(series), resp.Header.Get("X-Trickster-Result"))
+		t.Logf("POST: %d series, %s", len(series), resp.Header.Get(headers.NameTricksterResult))
 	})
 
 	t.Run("variable_refresh_burst", func(t *testing.T) {
@@ -482,7 +483,7 @@ func TestALB_TSM_Scale(t *testing.T) {
 		require.NoError(t, json.Unmarshal(body, &pr),
 			"merged error body must still be parseable Prometheus error JSON")
 		require.Equal(t, "error", pr.Status)
-		t.Logf("status=%d, %s", sc, hdr.Get("X-Trickster-Result"))
+		t.Logf("status=%d, %s", sc, hdr.Get(headers.NameTricksterResult))
 	})
 }
 
@@ -536,7 +537,7 @@ func TestALB_TSM_RealProm_Scale(t *testing.T) {
 		}
 		require.GreaterOrEqual(t, len(shards), numShards,
 			"merged matrix must carry %d distinct shard labels, got %d", numShards, len(shards))
-		t.Logf("%d series across %d shards, %s", len(series), len(shards), hdr.Get("X-Trickster-Result"))
+		t.Logf("%d series across %d shards, %s", len(series), len(shards), hdr.Get(headers.NameTricksterResult))
 	})
 
 	t.Run("instant_query", func(t *testing.T) {
@@ -547,7 +548,7 @@ func TestALB_TSM_RealProm_Scale(t *testing.T) {
 		require.NoError(t, json.Unmarshal(pr.Data, &qd))
 		require.Equal(t, "vector", qd.ResultType)
 		require.NotEmpty(t, qd.Result)
-		t.Logf("%s", hdr.Get("X-Trickster-Result"))
+		t.Logf("%s", hdr.Get(headers.NameTricksterResult))
 	})
 
 	t.Run("labels", func(t *testing.T) {
@@ -556,7 +557,7 @@ func TestALB_TSM_RealProm_Scale(t *testing.T) {
 		var labels []string
 		require.NoError(t, json.Unmarshal(pr.Data, &labels))
 		require.Contains(t, labels, "shard")
-		t.Logf("%d labels, %s", len(labels), hdr.Get("X-Trickster-Result"))
+		t.Logf("%d labels, %s", len(labels), hdr.Get(headers.NameTricksterResult))
 	})
 
 	t.Run("label_values_shard", func(t *testing.T) {
@@ -567,7 +568,7 @@ func TestALB_TSM_RealProm_Scale(t *testing.T) {
 		require.Equal(t, "success", pr.Status)
 		var values []string
 		require.NoError(t, json.Unmarshal(pr.Data, &values))
-		t.Logf("%d values, %s", len(values), hdr.Get("X-Trickster-Result"))
+		t.Logf("%d values, %s", len(values), hdr.Get(headers.NameTricksterResult))
 	})
 
 	t.Run("series", func(t *testing.T) {
@@ -582,7 +583,7 @@ func TestALB_TSM_RealProm_Scale(t *testing.T) {
 		var series []map[string]string
 		require.NoError(t, json.Unmarshal(pr.Data, &series))
 		require.NotEmpty(t, series)
-		t.Logf("%d series, %s", len(series), hdr.Get("X-Trickster-Result"))
+		t.Logf("%d series, %s", len(series), hdr.Get(headers.NameTricksterResult))
 	})
 
 	t.Run("post_query_range", func(t *testing.T) {
@@ -602,7 +603,7 @@ func TestALB_TSM_RealProm_Scale(t *testing.T) {
 		var series []json.RawMessage
 		require.NoError(t, json.Unmarshal(qd.Result, &series))
 		require.NotEmpty(t, series)
-		t.Logf("POST: %d series, %s", len(series), resp.Header.Get("X-Trickster-Result"))
+		t.Logf("POST: %d series, %s", len(series), resp.Header.Get(headers.NameTricksterResult))
 	})
 }
 

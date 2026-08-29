@@ -32,6 +32,7 @@ import (
 	"time"
 
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
@@ -245,8 +246,8 @@ func (t *target) probeLoop(ctx context.Context) {
 		defer func() {
 			if r := recover(); r != nil {
 				logger.Error("healthcheck probe panic", logging.Pairs{
-					"target": t.Name(),
-					"panic":  fmt.Sprintf("%v", r),
+					keys.Target: t.Name(),
+					keys.Panic:  fmt.Sprintf("%v", r),
 				})
 				metrics.HealthcheckProbePanicRecovered.WithLabelValues(t.Name()).Inc()
 			}
@@ -352,18 +353,18 @@ func (t *target) recordProbeResult(passed bool, detail string, err error, status
 }
 
 func (t *target) notifyStatus(st int32, detail string) {
-	pairs := logging.Pairs{"targetName": t.name}
+	pairs := logging.Pairs{keys.TargetName: t.name}
 	switch st {
 	case StatusFailing:
 		t.status.SetFailingSince(time.Now())
 		t.status.SetDetail(detail)
-		pairs["status"] = "unavailable"
-		pairs["detail"] = detail
-		pairs["threshold"] = t.failureThreshold
+		pairs[keys.Status] = "unavailable"
+		pairs[keys.Detail] = detail
+		pairs[keys.Threshold] = t.failureThreshold
 	case StatusPassing:
 		t.status.SetFailingSince(time.Time{})
-		pairs["status"] = "available"
-		pairs["threshold"] = t.recoveryThreshold
+		pairs[keys.Status] = "available"
+		pairs[keys.Threshold] = t.recoveryThreshold
 		t.status.SetDetail("")
 	}
 	t.status.Set(st)
@@ -442,15 +443,15 @@ func LogHealthCheckError(targetName string, err error, status int) {
 	pairs := logging.Pairs{}
 
 	if targetName != "" {
-		pairs["targetName"] = targetName
+		pairs[keys.TargetName] = targetName
 	}
 
 	if err != nil {
-		pairs["error"] = err
+		pairs[keys.Error] = err
 	}
 
 	if status > 0 {
-		pairs["httpStatus"] = status
+		pairs[keys.HTTPStatus] = status
 	}
 
 	logger.Error(standardLogLine, pairs)

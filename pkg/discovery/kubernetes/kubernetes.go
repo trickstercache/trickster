@@ -38,6 +38,7 @@ import (
 	do "github.com/trickstercache/trickster/v2/pkg/discovery/options"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/providers"
 	"github.com/trickstercache/trickster/v2/pkg/kube"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 
@@ -238,7 +239,7 @@ func (s *subscription) Launch(ctx context.Context) {
 				metrics.DiscoveryRefreshErrors.WithLabelValues(
 					s.p.name, providers.Kubernetes).Inc()
 				discovery.LogWarn("kubernetes discovery cache did not sync",
-					logging.Pairs{"discoverer": s.p.name, "type": typ.String()})
+					logging.Pairs{keys.Discoverer: s.p.name, keys.Type: typ.String()})
 				return
 			}
 		}

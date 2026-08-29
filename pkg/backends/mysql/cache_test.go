@@ -28,7 +28,9 @@ import (
 	cachememory "github.com/trickstercache/trickster/v2/pkg/cache/memory"
 	cacheoptions "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	cacheproviders "github.com/trickstercache/trickster/v2/pkg/cache/providers"
+	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	cachestatus "github.com/trickstercache/trickster/v2/pkg/cache/status"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/vitess"
@@ -389,7 +391,7 @@ func TestDeltaCoveragePlansExpectedOriginSQLAndMergedResult(t *testing.T) {
 		want    timeseries.ExtentList
 	}{
 		{"full miss", nil, need},
-		{"hit", need, nil},
+		{status.StatusHit, need, nil},
 		{"partial hit", timeseries.ExtentList{
 			{Start: time.Unix(0, 0), End: time.Unix(60, 0)},
 			{Start: time.Unix(180, 0), End: time.Unix(300, 0)},
@@ -656,7 +658,7 @@ func TestCacheFailureMetricsAndMaximumObjectRejection(t *testing.T) {
 			cache.configuration = configuration
 			h := &protocolHandler{config: ProtocolConfig{Cache: cache}}
 			event := metrics.CacheEvents.WithLabelValues(configuration.Name,
-				configuration.Provider, "error", tc.reason)
+				configuration.Provider, keys.Error, tc.reason)
 			before := testutil.ToFloat64(event)
 			tc.configure(cache, h)
 			tc.run(cache, h)

@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	cachestatus "github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
@@ -105,7 +106,7 @@ func TestParseResultHeaderVals(t *testing.T) {
 func TestParseResultEngineStatus(t *testing.T) {
 	engine, status := ParseResultEngineStatus(
 		"engine=DeltaProxyCache; status=phit; fetched=[1000-2000]; ffstatus=hit")
-	if engine != "DeltaProxyCache" || status != "phit" {
+	if engine != "DeltaProxyCache" || status != cachestatus.StatusPartialHit {
 		t.Errorf("engine/status = %q/%q", engine, status)
 	}
 }

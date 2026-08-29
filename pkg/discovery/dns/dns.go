@@ -43,6 +43,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/discovery"
 	do "github.com/trickstercache/trickster/v2/pkg/discovery/options"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/providers"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 
@@ -256,9 +257,9 @@ func (s *subscription) warnResolve(err error) {
 	}
 	discovery.LogWarn("dns discovery resolution failed; keeping last-good members",
 		logging.Pairs{
-			"discoverer": s.p.name,
-			"query":      s.queryName(),
-			"error":      err.Error(),
+			keys.Discoverer: s.p.name,
+			keys.Query:      s.queryName(),
+			keys.Error:      err.Error(),
 		})
 }
 
@@ -268,7 +269,7 @@ func (s *subscription) clearWarn() {
 		s.failing = false
 		s.mtx.Unlock()
 		discovery.LogInfo("dns discovery resolution recovered",
-			logging.Pairs{"discoverer": s.p.name, "query": s.queryName()})
+			logging.Pairs{keys.Discoverer: s.p.name, keys.Query: s.queryName()})
 		return
 	}
 	s.mtx.Unlock()

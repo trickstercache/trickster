@@ -31,8 +31,10 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/graphite/model"
 	"github.com/trickstercache/trickster/v2/pkg/backends/graphite/parsing"
 	"github.com/trickstercache/trickster/v2/pkg/backends/graphite/resolution"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
@@ -273,26 +275,26 @@ func (c *Client) logDecision(rq *RenderQuery, d RouteDecision) {
 		target = rq.Params.Targets[0]
 	}
 	pairs := logging.Pairs{
-		"backendName": c.Name(),
-		"target":      target,
-		"targets":     len(rq.Params.Targets),
-		"ageBucket":   ageBucket(rq.Age),
-		"lane":        d.Lane.String(),
-		"confidence":  d.Confidence.String(),
-		"source":      d.Source,
+		keys.BackendName: c.Name(),
+		keys.Target:      target,
+		keys.Targets:     len(rq.Params.Targets),
+		keys.AgeBucket:   ageBucket(rq.Age),
+		keys.Lane:        d.Lane.String(),
+		keys.Confidence:  d.Confidence.String(),
+		keys.Source:      d.Source,
 	}
 	if d.Lane == LaneDelta {
-		pairs["step"] = d.Step.String()
+		pairs[keys.Step] = d.Step.String()
 		if d.MaxRetention > 0 {
-			pairs["maxRetention"] = d.MaxRetention.String()
+			pairs[keys.MaxRetention] = d.MaxRetention.String()
 		}
 		logger.Debug("graphite resolution", pairs)
 		return
 	}
-	pairs["reason"] = d.Reason
-	pairs["detail"] = d.Detail
+	pairs[keys.Reason] = d.Reason
+	pairs[keys.Detail] = d.Detail
 	if d.Err != nil {
-		pairs["error"] = d.Err.Error()
+		pairs[keys.Error] = d.Err.Error()
 	}
 	logger.Debug("graphite resolution declined", pairs)
 }
@@ -339,7 +341,7 @@ func (c *Client) requestDependentIdentity(r *http.Request, qp url.Values) (strin
 	if pc != nil && len(pc.ReqRewriter) > 0 {
 		return "request_rewriter", true
 	}
-	identityHeaders := []string{"Authorization"}
+	identityHeaders := []string{headers.NameAuthorization}
 	if pc != nil {
 		for _, h := range pc.CacheKeyHeaders {
 			identityHeaders = append(identityHeaders, http.CanonicalHeaderKey(h))

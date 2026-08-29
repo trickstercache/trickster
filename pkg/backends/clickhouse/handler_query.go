@@ -19,6 +19,7 @@ package clickhouse
 import (
 	"net/http"
 
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/aftership"
@@ -44,8 +45,8 @@ func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if !aftership.IsSelectQuery(sqlQuery) {
 		logger.Debug("request is not a SELECT query, proxying", logging.Pairs{
-			"backend_name": c.observabilityBackendName(),
-			"dialect":      clickHouseDialect,
+			keys.BackendName: c.observabilityBackendName(),
+			keys.Dialect:     clickHouseDialect,
 		})
 		c.ProxyHandler(w, r)
 		return

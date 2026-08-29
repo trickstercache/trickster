@@ -29,6 +29,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/graphite/model"
 	"github.com/trickstercache/trickster/v2/pkg/backends/graphite/parsing"
 	"github.com/trickstercache/trickster/v2/pkg/backends/graphite/resolution"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/engines"
@@ -112,7 +113,7 @@ func (c *Client) renderOne(w http.ResponseWriter, r *http.Request) {
 		}
 		if name, ambiguous := rq.AmbiguousStep(); ambiguous && rq.Fallback == "" {
 			logger.Debug("graphite response could not verify its step; invalidating and serving unaccelerated",
-				logging.Pairs{"backendName": c.Name(), "series": name})
+				logging.Pairs{keys.BackendName: c.Name(), "series": name})
 			c.resolver.Ambiguous(rq.Leaves())
 			if c.observer != nil {
 				c.observer.Fallback(parsing.ReasonUnknownStep)
@@ -128,8 +129,8 @@ func (c *Client) renderOne(w http.ResponseWriter, r *http.Request) {
 			// response (often too large to buffer); degrade rather than 500
 			logger.Warn("graphite response could not be modeled; serving unaccelerated",
 				logging.Pairs{
-					"backendName": c.Name(), "statusCode": cw.StatusCode(),
-					"detail": "if this repeats, raise max_object_size_bytes for this backend",
+					keys.BackendName: c.Name(), keys.StatusCode: cw.StatusCode(),
+					keys.Detail: "if this repeats, raise max_object_size_bytes for this backend",
 				})
 			c.fallback(w, r, rsc)
 			return
@@ -138,8 +139,8 @@ func (c *Client) renderOne(w http.ResponseWriter, r *http.Request) {
 	if cw.Truncated() {
 		logger.Warn("graphite response exceeded the capture limit; re-serving unaccelerated",
 			logging.Pairs{
-				"backendName": c.Name(), "captureLimit": c.captureLimit(),
-				"detail": "raise max_capture_bytes for this backend if this repeats",
+				keys.BackendName: c.Name(), "captureLimit": c.captureLimit(),
+				keys.Detail: "raise max_capture_bytes for this backend if this repeats",
 			})
 		c.fallback(w, r, rsc)
 		return
@@ -266,7 +267,7 @@ func (c *Client) renderSplit(w http.ResponseWriter, r *http.Request, qp url.Valu
 		rlo = &timeseries.RequestOptions{ProviderRequest: ro}
 	}
 	if err := c.Modeler().WireMarshalWriter(merged, rlo, http.StatusOK, w); err != nil {
-		logger.Error("graphite render marshal failed", logging.Pairs{"backendName": c.Name(), "error": err.Error()})
+		logger.Error("graphite render marshal failed", logging.Pairs{keys.BackendName: c.Name(), keys.Error: err.Error()})
 	}
 }
 
@@ -289,8 +290,8 @@ func (c *Client) renderQueryOf(rsc *request.Resources) *RenderQuery {
 // discarded, so the response is never cached under the predicted key
 func (c *Client) retract(rq *RenderQuery, target string, predicted, observed time.Duration) {
 	logger.Warn("graphite step misprediction", logging.Pairs{
-		"backendName": c.Name(),
-		"target":      target, "predicted": predicted.String(), "observed": observed.String(),
+		keys.BackendName: c.Name(),
+		"target":         target, "predicted": predicted.String(), "observed": observed.String(),
 	})
 	c.resolver.Mispredict(rq.Leaves(), predicted, observed)
 }

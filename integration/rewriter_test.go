@@ -23,6 +23,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+
 	"github.com/stretchr/testify/require"
 )
 
@@ -46,6 +48,6 @@ func TestRequestRewriter(t *testing.T) {
 		require.NoError(t, json.Unmarshal(pr.Data, &qd))
 		require.Equal(t, "vector", qd.ResultType,
 			"rewriter should have converted range query to instant query (vector result)")
-		t.Logf("rewriter result: %s", hdr.Get("X-Trickster-Result"))
+		t.Logf("rewriter result: %s", hdr.Get(headers.NameTricksterResult))
 	})
 }

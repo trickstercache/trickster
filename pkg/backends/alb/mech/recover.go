@@ -19,6 +19,7 @@ package mech
 import (
 	"runtime/debug"
 
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
@@ -37,11 +38,11 @@ func RecoverFanoutPanic(mech, variant string, member int, onPanic func()) {
 		return
 	}
 	logger.Error("alb fanout member panic", logging.Pairs{
-		"mech":    mech,
-		"variant": variant,
-		"member":  member,
-		"panic":   rec,
-		"stack":   string(debug.Stack()),
+		keys.Mechanism: mech,
+		keys.Variant:   variant,
+		keys.Member:    member,
+		keys.Panic:     rec,
+		keys.Stack:     string(debug.Stack()),
 	})
 	metrics.ALBFanoutFailures.WithLabelValues(mech, variant, "panic").Inc()
 	if onPanic != nil {

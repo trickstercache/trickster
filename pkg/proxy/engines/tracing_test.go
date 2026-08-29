@@ -28,7 +28,9 @@ import (
 	"time"
 
 	cr "github.com/trickstercache/trickster/v2/pkg/cache/registry"
+	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/config"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	otracing "github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	tspan "github.com/trickstercache/trickster/v2/pkg/observability/tracing/span"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
@@ -83,7 +85,7 @@ func TestCacheSpansIncludeResourceAttributesAndStatus(t *testing.T) {
 	tu.RequireSpanAttributes(t, sr, "WriteCache", resourceAttributeStrings(rsc))
 
 	wantQuery := resourceAttributeStrings(rsc)
-	wantQuery["cache.status"] = "hit"
+	wantQuery["cache.status"] = status.StatusHit
 	tu.RequireSpanAttributes(t, sr, "QueryCache", wantQuery)
 }
 
@@ -103,7 +105,7 @@ func TestDoProxySpanIncludesResourceStatusAttributes(t *testing.T) {
 	}
 
 	want := resourceAttributeStrings(rsc)
-	want["cache.status"] = "proxy-only"
+	want["cache.status"] = status.StatusProxyOnly
 	want["http.status_code"] = "202"
 	tu.RequireSpanAttributes(t, sr, "ProxyRequest", want)
 }
@@ -243,13 +245,13 @@ func TestObjectProxyCacheRequestSpanIncludesResourceStatusAttributes(t *testing.
 	r.Header.Add(headers.NameRange, "bytes=0-3")
 	r = request.SetResources(r, rsc)
 
-	_, errs := testFetchOPC(r, http.StatusPartialContent, "test", map[string]string{"status": "kmiss"})
+	_, errs := testFetchOPC(r, http.StatusPartialContent, "test", map[string]string{keys.Status: status.StatusKeyMiss})
 	for _, err := range errs {
 		t.Error(err)
 	}
 
 	want := resourceAttributeStrings(rsc)
-	want["cache.status"] = "kmiss"
+	want["cache.status"] = status.StatusKeyMiss
 	want["http.status_code"] = "206"
 	tu.RequireSpanAttributes(t, sr, "ObjectProxyCacheRequest", want)
 }

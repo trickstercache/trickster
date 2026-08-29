@@ -25,6 +25,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/iofmt"
 	te "github.com/trickstercache/trickster/v2/pkg/errors"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	pe "github.com/trickstercache/trickster/v2/pkg/proxy/errors"
@@ -176,7 +177,7 @@ func ParseTimeRangeQuery(r *http.Request,
 		bv, _, _ = params.GetRequestValues(r)
 	} else if r.Method != http.MethodGet {
 		logger.Error("unuspported method in influxql.ParseTimeRangeQuery",
-			logging.Pairs{"method": r.Method})
+			logging.Pairs{keys.Method: r.Method})
 		return nil, nil, false, te.ErrInvalidMethod
 	}
 	cv := maps.Clone(uv)
@@ -244,7 +245,7 @@ func SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
 		v = r.URL.Query()
 	default:
 		logger.Error("unuspported method in influxql.SetExtent",
-			logging.Pairs{"method": r.Method})
+			logging.Pairs{keys.Method: r.Method})
 		return
 	}
 

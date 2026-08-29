@@ -18,9 +18,11 @@ package options
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/manager"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sizeconv"
 
@@ -41,16 +43,16 @@ func TestClone(t *testing.T) {
 
 	o := New()
 	o.LogFile = "/tmp/trickster.log"
-	o.LogLevel = "debug"
+	o.LogLevel = level.Debug
 
 	c := o.Clone()
 	require.NotSame(t, o, c)
 	require.Equal(t, o.LogFile, c.LogFile)
 	require.Equal(t, o.LogLevel, c.LogLevel)
 
-	c.LogLevel = "error"
-	require.Equal(t, "debug", o.LogLevel)
-	require.Equal(t, "error", c.LogLevel)
+	c.LogLevel = level.Error
+	require.Equal(t, level.Debug, o.LogLevel)
+	require.Equal(t, level.Error, c.LogLevel)
 }
 
 func TestInitialize(t *testing.T) {
@@ -60,17 +62,19 @@ func TestInitialize(t *testing.T) {
 	require.NoError(t, o.Initialize(""))
 	require.Equal(t, DefaultLogLevel, o.LogLevel)
 
-	o = &Options{LogLevel: "warn", LogFile: "/var/log/trickster.log"}
+	o = &Options{LogLevel: level.Warn, LogFile: "/var/log/trickster.log"}
 	require.NoError(t, o.Initialize(""))
-	require.Equal(t, "warn", o.LogLevel)
+	require.Equal(t, level.Warn, o.LogLevel)
 	require.Equal(t, "/var/log/trickster.log", o.LogFile)
 }
 
 func TestValidate(t *testing.T) {
 	t.Parallel()
 
-	validLevels := []string{"error", "warn", "fatal", "info", "debug",
-		"ERROR", "Warn", "FATAL", "Info", "DEBUG"}
+	validLevels := []string{level.Error, level.Warn, level.Fatal, level.Info,
+		level.Debug, strings.ToUpper(level.Error), "Warn",
+		strings.ToUpper(level.Fatal), "Info",
+		strings.ToUpper(level.Debug)}
 	for _, lvl := range validLevels {
 		t.Run(lvl, func(t *testing.T) {
 			t.Parallel()
@@ -163,7 +167,7 @@ func TestRotationEqual(t *testing.T) {
 	a, b := New(), New()
 	// different filenames and levels do not affect rotation equality
 	a.LogFile, b.LogFile = "/tmp/a.log", "/tmp/b.log"
-	a.LogLevel, b.LogLevel = "info", "debug"
+	a.LogLevel, b.LogLevel = level.Info, level.Debug
 	require.True(t, a.RotationEqual(b))
 
 	// explicit values equal to the defaults still compare equal

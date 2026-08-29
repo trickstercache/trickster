@@ -553,7 +553,7 @@ func TestRegisterPathRoutesRegex(t *testing.T) {
 	}
 
 	// the backend-local router also receives the unmodified pattern
-	if code := serve(oo.Router.(router.Router), "/results/42", ""); code != http.StatusOK {
+	if code := serve(oo.Router, "/results/42", ""); code != http.StatusOK {
 		t.Fatalf("expected 200 for backend-local regex, got %d", code)
 	}
 

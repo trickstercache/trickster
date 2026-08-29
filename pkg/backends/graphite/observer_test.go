@@ -25,6 +25,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/graphite/parsing"
 	"github.com/trickstercache/trickster/v2/pkg/backends/graphite/resolution"
+	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -150,7 +151,7 @@ func TestGraphiteOutcomesReachProxyMetrics(t *testing.T) {
 	h.learn("dev.fast.cpu.host01.percent")
 	q := h.query(url.Values{"target": {"dev.fast.cpu.host01.percent"}, "from": {"-1h"}})
 	h.same("miss", q)
-	h.same("hit", q)
+	h.same(status.StatusHit, q)
 
 	ch := make(chan prometheus.Metric, 512)
 	go func() {
@@ -171,7 +172,7 @@ func TestGraphiteOutcomesReachProxyMetrics(t *testing.T) {
 			statuses[labels["cache_status"]] = true
 		}
 	}
-	if !statuses["kmiss"] || !statuses["hit"] {
+	if !statuses[status.StatusKeyMiss] || !statuses[status.StatusHit] {
 		t.Errorf("expected graphite kmiss and hit in trickster_proxy_requests_total, got %v", statuses)
 	}
 	for s := range statuses {

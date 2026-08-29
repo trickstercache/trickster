@@ -87,7 +87,8 @@ func writeZone(t *testing.T, records ...string) {
 		serial)
 	b.WriteString("@\tIN\tNS\tns.trickster.test.\nns\tIN\tA\t127.0.0.1\n")
 	for _, r := range records {
-		b.WriteString(r + "\n")
+		b.WriteString(r)
+		b.WriteString("\n")
 	}
 	tmp := coreDNSZone + ".tmp"
 	require.NoError(t, os.WriteFile(tmp, []byte(b.String()), 0o644))

@@ -35,8 +35,10 @@ import (
 	gro "github.com/trickstercache/trickster/v2/pkg/backends/graphite/options"
 	fso "github.com/trickstercache/trickster/v2/pkg/cache/filesystem/options"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
+	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	tkconfig "github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -124,7 +126,7 @@ func renderThroughTrickster(t *testing.T, h tricksterHarness,
 	require.Equal(t, http.StatusOK, resp.StatusCode, "unexpected status: %s", string(body))
 	var out []graphiteSeriesJSON
 	require.NoError(t, json.Unmarshal(body, &out), "body: %.240s", string(body))
-	return out, parseTricksterResult(resp.Header.Get("X-Trickster-Result"))
+	return out, parseTricksterResult(resp.Header.Get(headers.NameTricksterResult))
 }
 
 // reads the step the origin actually answered at: the spacing of the
@@ -148,9 +150,9 @@ func waitForDelta(t *testing.T, h tricksterHarness, params url.Values) {
 		if !assert.Equal(collect, http.StatusOK, resp.StatusCode, "body: %.120s", string(body)) {
 			return
 		}
-		got := parseTricksterResult(resp.Header.Get("X-Trickster-Result"))
+		got := parseTricksterResult(resp.Header.Get(headers.NameTricksterResult))
 		assert.Equal(collect, "DeltaProxyCache", got["engine"],
-			"still unaccelerated: %s", resp.Header.Get("X-Trickster-Result"))
+			"still unaccelerated: %s", resp.Header.Get(headers.NameTricksterResult))
 	}, 90*time.Second, time.Second, "the ladder was never learned")
 }
 
@@ -264,7 +266,7 @@ func TestGraphite(t *testing.T) {
 
 		_, hit := renderThroughTrickster(t, h, params)
 		require.Equal(t, "DeltaProxyCache", hit["engine"])
-		require.Equal(t, "hit", hit["status"])
+		require.Equal(t, status.StatusHit, hit["status"])
 	})
 
 	t.Run("delta fetch across a partial range", func(t *testing.T) {
@@ -278,12 +280,12 @@ func TestGraphite(t *testing.T) {
 		wide := renderParams(fastHost01.target, "-90min", "-5min")
 		series, got := renderThroughTrickster(t, h, wide)
 		require.Equal(t, "DeltaProxyCache", got["engine"])
-		require.Equal(t, "phit", got["status"], "expected a partial hit, got %v", got)
+		require.Equal(t, status.StatusPartialHit, got["status"], "expected a partial hit, got %v", got)
 		require.NotEmpty(t, series)
 		require.Equal(t, fastHost01.step, observedStep(t, series))
 
 		_, again := renderThroughTrickster(t, h, wide)
-		require.Equal(t, "hit", again["status"])
+		require.Equal(t, status.StatusHit, again["status"])
 	})
 
 	t.Run("archive boundary crossing", func(t *testing.T) {
@@ -306,7 +308,7 @@ func TestGraphite(t *testing.T) {
 			"a query past the rung boundary must be answered at the next rung's step")
 		// a different step is a different cache key, so this cannot have
 		// been served from the finer window's entry
-		require.NotEqual(t, "hit", got2["status"])
+		require.NotEqual(t, status.StatusHit, got2["status"])
 
 		require.Zero(t, graphiteMetric(t, h.MetricsAddr, "step_mispredictions_total", ""),
 			"the step was mispredicted at a rung boundary")

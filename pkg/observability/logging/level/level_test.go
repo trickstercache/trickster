@@ -16,7 +16,10 @@
 
 package level
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestGetID(t *testing.T) {
 	t.Parallel()
@@ -26,14 +29,14 @@ func TestGetID(t *testing.T) {
 		level Level
 		want  ID
 	}{
-		{name: "debug", level: Debug, want: DebugID},
-		{name: "info", level: Info, want: InfoID},
-		{name: "warn", level: Warn, want: WarnID},
-		{name: "error", level: Error, want: ErrorID},
-		{name: "fatal", level: Fatal, want: TraceID},
+		{name: Debug, level: Debug, want: DebugID},
+		{name: Info, level: Info, want: InfoID},
+		{name: Warn, level: Warn, want: WarnID},
+		{name: Error, level: Error, want: ErrorID},
+		{name: Fatal, level: Fatal, want: TraceID},
 		{name: "invalid", level: "invalid", want: 0},
 		{name: "empty", level: "", want: 0},
-		{name: "uppercase", level: "INFO", want: 0},
+		{name: "uppercase", level: strings.ToUpper(Info), want: 0},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

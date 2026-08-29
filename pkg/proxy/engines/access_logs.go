@@ -17,6 +17,7 @@
 package engines
 
 import (
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 )
@@ -26,14 +27,14 @@ func logUpstreamRequest(backendName, backendProvider, handlerName, method,
 ) {
 	logger.Debug("upstream request",
 		logging.Pairs{
-			"backendName":     backendName,
-			"backendProvider": backendProvider,
-			"handlerName":     handlerName,
-			"method":          method,
-			"uri":             path,
-			"userAgent":       userAgent,
-			"code":            responseCode,
-			"size":            size,
-			"durationMS":      int(requestDuration * 1000),
+			keys.BackendName:     backendName,
+			keys.BackendProvider: backendProvider,
+			keys.HandlerName:     handlerName,
+			keys.Method:          method,
+			"uri":                path,
+			"userAgent":          userAgent,
+			"code":               responseCode,
+			keys.Size:            size,
+			"durationMS":         int(requestDuration * 1000),
 		})
 }

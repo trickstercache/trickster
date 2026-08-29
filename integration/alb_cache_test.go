@@ -33,6 +33,8 @@ import (
 
 	"github.com/trickstercache/trickster/v2/integration/internal/portutil"
 	"github.com/trickstercache/trickster/v2/integration/promstub"
+	"github.com/trickstercache/trickster/v2/pkg/cache/status"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -241,7 +243,7 @@ func TestALBCache(t *testing.T) {
 		}, 5*time.Second, 100*time.Millisecond, "alb pool never queried the bad-encoding member")
 
 		t.Logf("status=%d X-Trickster-Result=%q body=%s",
-			resp.StatusCode, resp.Header.Get("X-Trickster-Result"), string(body))
+			resp.StatusCode, resp.Header.Get(headers.NameTricksterResult), string(body))
 
 		require.GreaterOrEqual(t, resp.StatusCode, 200,
 			"expected a response, got status=%d body=%s", resp.StatusCode, string(body))
@@ -265,8 +267,8 @@ func TestALBCache(t *testing.T) {
 		require.NotEmpty(t, series,
 			"expected merged series from members 0+1; body=%s", string(body))
 
-		raw := resp.Header.Get("X-Trickster-Result")
-		hasPhit := strings.Contains(raw, "phit")
+		raw := resp.Header.Get(headers.NameTricksterResult)
+		hasPhit := strings.Contains(raw, status.StatusPartialHit)
 		hasWarn := strings.Contains(string(body), `"warnings"`) ||
 			strings.Contains(string(body), "encoding") ||
 			strings.Contains(string(body), "unsupported")
@@ -368,13 +370,13 @@ func TestALBCache(t *testing.T) {
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
 
-		raw := resp.Header.Get("X-Trickster-Result")
+		raw := resp.Header.Get(headers.NameTricksterResult)
 		t.Logf("status=%d X-Trickster-Result=%q m1Hits=%d m2Hits=%d body=%s",
 			resp.StatusCode, raw, m1Hits.Load(), m2Hits.Load(), string(body))
 
 		require.Equal(t, http.StatusOK, resp.StatusCode)
 
-		assert.Containsf(t, raw, "phit",
+		assert.Containsf(t, raw, status.StatusPartialHit,
 			"mixed cache hit/miss across pool members did not surface phit in X-Trickster-Result=%q",
 			raw)
 	})
@@ -463,7 +465,7 @@ func TestALBCache(t *testing.T) {
 		}, 10*time.Second, 250*time.Millisecond, "proxy-only TSM pool never merged both members")
 
 		t.Logf("status=%d X-Trickster-Result=%q m1Hits=%d m2Hits=%d body=%s",
-			resp.StatusCode, resp.Header.Get("X-Trickster-Result"), m1Hits.Load(), m2Hits.Load(), string(body))
+			resp.StatusCode, resp.Header.Get(headers.NameTricksterResult), m1Hits.Load(), m2Hits.Load(), string(body))
 
 		var pr promResponse
 		require.NoError(t, json.Unmarshal(body, &pr),

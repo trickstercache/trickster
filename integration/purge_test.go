@@ -23,6 +23,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/cache/status"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+
 	"github.com/stretchr/testify/require"
 )
 
@@ -35,15 +38,15 @@ func TestPurge_ByKey(t *testing.T) {
 	const apiPath = "/api/v1/rules"
 
 	_, hdr1 := queryTricksterProm(t, h.BaseAddr, "prom1", apiPath, nil)
-	res1 := parseTricksterResult(hdr1.Get("X-Trickster-Result"))
-	t.Logf("first request: %s", hdr1.Get("X-Trickster-Result"))
+	res1 := parseTricksterResult(hdr1.Get(headers.NameTricksterResult))
+	t.Logf("first request: %s", hdr1.Get(headers.NameTricksterResult))
 	require.Equal(t, "ObjectProxyCache", res1["engine"])
-	require.Equal(t, "kmiss", res1["status"])
+	require.Equal(t, status.StatusKeyMiss, res1["status"])
 
 	_, hdr2 := queryTricksterProm(t, h.BaseAddr, "prom1", apiPath, nil)
-	res2 := parseTricksterResult(hdr2.Get("X-Trickster-Result"))
-	t.Logf("second request: %s", hdr2.Get("X-Trickster-Result"))
-	require.Equal(t, "hit", res2["status"])
+	res2 := parseTricksterResult(hdr2.Get(headers.NameTricksterResult))
+	t.Logf("second request: %s", hdr2.Get(headers.NameTricksterResult))
+	require.Equal(t, status.StatusHit, res2["status"])
 
 	purgeURL := fmt.Sprintf("http://%s/trickster/purge/path/prom1%s", h.MgmtAddr, apiPath)
 	req, err := http.NewRequest(http.MethodGet, purgeURL, nil)
@@ -57,8 +60,8 @@ func TestPurge_ByKey(t *testing.T) {
 	t.Logf("purge response: %s", strings.TrimSpace(string(body)))
 
 	_, hdr3 := queryTricksterProm(t, h.BaseAddr, "prom1", apiPath, nil)
-	res3 := parseTricksterResult(hdr3.Get("X-Trickster-Result"))
-	t.Logf("after-purge request: %s", hdr3.Get("X-Trickster-Result"))
-	require.NotEqual(t, "hit", res3["status"],
+	res3 := parseTricksterResult(hdr3.Get(headers.NameTricksterResult))
+	t.Logf("after-purge request: %s", hdr3.Get(headers.NameTricksterResult))
+	require.NotEqual(t, status.StatusHit, res3["status"],
 		"expected cache entry to be evicted after purge; got %s", res3["status"])
 }

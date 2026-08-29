@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
@@ -182,7 +183,7 @@ func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration, error) {
 			if err == nil && int64(len(body)) >= limit {
 				err = tpe.ErrUnexpectedUpstreamResponse
 				logger.Error("upstream response exceeded MaxObjectSizeBytes",
-					logging.Pairs{"url": pr.URL.String(), "max": o.MaxObjectSizeBytes})
+					logging.Pairs{keys.URL: pr.URL.String(), "max": o.MaxObjectSizeBytes})
 			}
 		} else {
 			body, err = io.ReadAll(reader)
@@ -192,7 +193,7 @@ func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration, error) {
 	}
 	if err != nil {
 		logger.Error("error reading body from http response",
-			logging.Pairs{"url": pr.URL.String(), "detail": err.Error()})
+			logging.Pairs{keys.URL: pr.URL.String(), keys.Detail: err.Error()})
 		return body, resp, 0, err
 	}
 
@@ -340,8 +341,8 @@ func (pr *proxyRequest) makeUpstreamRequests() error {
 			if pr.revalidationReader == nil {
 				logger.Error("revalidation upstream returned no reader",
 					logging.Pairs{
-						"url":           pr.revalidationRequest.URL.String(),
-						"contentLength": contentLength,
+						keys.URL:           pr.revalidationRequest.URL.String(),
+						keys.ContentLength: contentLength,
 					})
 			}
 		})
@@ -366,8 +367,8 @@ func (pr *proxyRequest) makeUpstreamRequests() error {
 				if pr.originReaders[i] == nil {
 					logger.Error("origin upstream returned no reader",
 						logging.Pairs{
-							"url":           req.URL.String(),
-							"contentLength": contentLength,
+							keys.URL:           req.URL.String(),
+							keys.ContentLength: contentLength,
 						})
 				}
 			})
@@ -455,7 +456,7 @@ func (pr *proxyRequest) writeResponseBody() {
 	}
 	n, err := io.Copy(pr.responseWriter, pr.upstreamReader)
 	if err != nil {
-		logger.Error("error copying upstream response body", logging.Pairs{"error": err})
+		logger.Error("error copying upstream response body", logging.Pairs{keys.Error: err})
 	}
 	// Chunked / transparent-gzip transports can return err==nil with n<CL;
 	// trigger short-read regardless of err.
@@ -598,7 +599,7 @@ func (pr *proxyRequest) prepareResponse() {
 					// The current client still gets what we received, but
 					// writeToCache is cleared so pr.store() is skipped.
 					logger.Error("upstream read error during range extraction; skipping cache write",
-						logging.Pairs{"error": err})
+						logging.Pairs{keys.Error: err})
 					pr.writeToCache = false
 				}
 			}
@@ -731,7 +732,7 @@ func (pr *proxyRequest) reconstituteResponses() {
 					b, err := io.ReadAll(resp.Body)
 					if err != nil {
 						logger.Error("error reading revalidation response body",
-							logging.Pairs{"detail": err.Error()})
+							logging.Pairs{keys.Detail: err.Error()})
 						return
 					}
 					appendLock.Lock()
@@ -758,7 +759,7 @@ func (pr *proxyRequest) reconstituteResponses() {
 					b, err := io.ReadAll(resp.Body)
 					if err != nil {
 						logger.Error("error reading origin response body",
-							logging.Pairs{"detail": err.Error()})
+							logging.Pairs{keys.Detail: err.Error()})
 						return
 					}
 					appendLock.Lock()

@@ -33,6 +33,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	cachestatus "github.com/trickstercache/trickster/v2/pkg/cache/status"
 	checksum "github.com/trickstercache/trickster/v2/pkg/checksum/md5"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
@@ -58,10 +59,6 @@ const (
 	cacheModeDPC                       = "dpc"
 	cacheModeDPCEmpty                  = "dpc-empty"
 	cacheModeDPCFallback               = "dpc-fallback"
-	cacheFailureDecode                 = "decode_failure"
-	cacheFailureOversized              = "oversized_cached_object"
-	logKeyBackendName                  = "backend_name"
-	logKeyDetail                       = "detail"
 	metricMethodQuery                  = "QUERY"
 	metricPathQuery                    = "query"
 	metricHTTPStatusOK                 = "200"
@@ -388,7 +385,7 @@ func (h *protocolHandler) observeCacheFailure(reason string) {
 	}
 	configuration := cacheClient.Configuration()
 	metrics.CacheEvents.WithLabelValues(configuration.Name, configuration.Provider,
-		"error", "mysql_"+reason).Inc()
+		keys.Error, "mysql_"+reason).Inc()
 }
 
 func (h *protocolHandler) queryCacheKey(c *vtmysql.Conn, session *upstreamSession,
@@ -1140,7 +1137,7 @@ func (h *protocolHandler) observeAnalysis(statementType sqlparser.StatementType,
 	}
 	if logger.Level() == level.Debug {
 		logger.Debug("mysql query analyzed", logging.Pairs{
-			logKeyBackendName: h.config.BackendName, "cache_mode": analysis.Mode.String(),
+			keys.BackendName: h.config.BackendName, "cache_mode": analysis.Mode.String(),
 			"analysis_reason": reason, "statement_type": statementType.String(),
 		})
 	}
@@ -1149,7 +1146,7 @@ func (h *protocolHandler) observeAnalysis(statementType sqlparser.StatementType,
 func (h *protocolHandler) observeRewriteFailure(reason string) {
 	metrics.SQLQueryRewriteFailures.WithLabelValues(h.config.BackendName, mysqlDialect, reason).Inc()
 	logger.Error("mysql query extent rewrite failed", logging.Pairs{
-		logKeyBackendName: h.config.BackendName, "reason": reason,
+		keys.BackendName: h.config.BackendName, keys.Reason: reason,
 	})
 }
 
@@ -1169,7 +1166,7 @@ func (h *protocolHandler) observeCache(mode sqlanalyzer.CacheMode,
 	handles.duration.Observe(elapsed.Seconds())
 	if logger.Level() == level.Debug {
 		logger.Debug("mysql query cache completed", logging.Pairs{
-			logKeyBackendName: h.config.BackendName, "cache_mode": mode.String(),
+			keys.BackendName: h.config.BackendName, "cache_mode": mode.String(),
 			"cache_status": status.String(),
 		})
 	}

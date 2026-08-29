@@ -23,6 +23,159 @@ import (
 )
 
 // DecodeMsg implements msgp.Decodable
+func (z *OrderTerm) DecodeMsg(dc *msgp.Reader) (err error) {
+	var field []byte
+	_ = field
+	var zb0001 uint32
+	zb0001, err = dc.ReadMapHeader()
+	if err != nil {
+		err = msgp.WrapError(err)
+		return
+	}
+	for zb0001 > 0 {
+		zb0001--
+		field, err = dc.ReadMapKeyPtr()
+		if err != nil {
+			err = msgp.WrapError(err)
+			return
+		}
+		switch msgp.UnsafeString(field) {
+		case "Column":
+			z.Column, err = dc.ReadString()
+			if err != nil {
+				err = msgp.WrapError(err, "Column")
+				return
+			}
+		case "Descending":
+			z.Descending, err = dc.ReadBool()
+			if err != nil {
+				err = msgp.WrapError(err, "Descending")
+				return
+			}
+		case "NullsFirst":
+			z.NullsFirst, err = dc.ReadBool()
+			if err != nil {
+				err = msgp.WrapError(err, "NullsFirst")
+				return
+			}
+		default:
+			err = dc.Skip()
+			if err != nil {
+				err = msgp.WrapError(err)
+				return
+			}
+		}
+	}
+	return
+}
+
+// EncodeMsg implements msgp.Encodable
+func (z OrderTerm) EncodeMsg(en *msgp.Writer) (err error) {
+	// map header, size 3
+	// write "Column"
+	err = en.Append(0x83, 0xa6, 0x43, 0x6f, 0x6c, 0x75, 0x6d, 0x6e)
+	if err != nil {
+		return
+	}
+	err = en.WriteString(z.Column)
+	if err != nil {
+		err = msgp.WrapError(err, "Column")
+		return
+	}
+	// write "Descending"
+	err = en.Append(0xaa, 0x44, 0x65, 0x73, 0x63, 0x65, 0x6e, 0x64, 0x69, 0x6e, 0x67)
+	if err != nil {
+		return
+	}
+	err = en.WriteBool(z.Descending)
+	if err != nil {
+		err = msgp.WrapError(err, "Descending")
+		return
+	}
+	// write "NullsFirst"
+	err = en.Append(0xaa, 0x4e, 0x75, 0x6c, 0x6c, 0x73, 0x46, 0x69, 0x72, 0x73, 0x74)
+	if err != nil {
+		return
+	}
+	err = en.WriteBool(z.NullsFirst)
+	if err != nil {
+		err = msgp.WrapError(err, "NullsFirst")
+		return
+	}
+	return
+}
+
+// MarshalMsg implements msgp.Marshaler
+func (z OrderTerm) MarshalMsg(b []byte) (o []byte, err error) {
+	o = msgp.Require(b, z.Msgsize())
+	// map header, size 3
+	// string "Column"
+	o = append(o, 0x83, 0xa6, 0x43, 0x6f, 0x6c, 0x75, 0x6d, 0x6e)
+	o = msgp.AppendString(o, z.Column)
+	// string "Descending"
+	o = append(o, 0xaa, 0x44, 0x65, 0x73, 0x63, 0x65, 0x6e, 0x64, 0x69, 0x6e, 0x67)
+	o = msgp.AppendBool(o, z.Descending)
+	// string "NullsFirst"
+	o = append(o, 0xaa, 0x4e, 0x75, 0x6c, 0x6c, 0x73, 0x46, 0x69, 0x72, 0x73, 0x74)
+	o = msgp.AppendBool(o, z.NullsFirst)
+	return
+}
+
+// UnmarshalMsg implements msgp.Unmarshaler
+func (z *OrderTerm) UnmarshalMsg(bts []byte) (o []byte, err error) {
+	var field []byte
+	_ = field
+	var zb0001 uint32
+	zb0001, bts, err = msgp.ReadMapHeaderBytes(bts)
+	if err != nil {
+		err = msgp.WrapError(err)
+		return
+	}
+	for zb0001 > 0 {
+		zb0001--
+		field, bts, err = msgp.ReadMapKeyZC(bts)
+		if err != nil {
+			err = msgp.WrapError(err)
+			return
+		}
+		switch msgp.UnsafeString(field) {
+		case "Column":
+			z.Column, bts, err = msgp.ReadStringBytes(bts)
+			if err != nil {
+				err = msgp.WrapError(err, "Column")
+				return
+			}
+		case "Descending":
+			z.Descending, bts, err = msgp.ReadBoolBytes(bts)
+			if err != nil {
+				err = msgp.WrapError(err, "Descending")
+				return
+			}
+		case "NullsFirst":
+			z.NullsFirst, bts, err = msgp.ReadBoolBytes(bts)
+			if err != nil {
+				err = msgp.WrapError(err, "NullsFirst")
+				return
+			}
+		default:
+			bts, err = msgp.Skip(bts)
+			if err != nil {
+				err = msgp.WrapError(err)
+				return
+			}
+		}
+	}
+	o = bts
+	return
+}
+
+// Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
+func (z OrderTerm) Msgsize() (s int) {
+	s = 1 + 7 + msgp.StringPrefixSize + len(z.Column) + 11 + msgp.BoolSize + 11 + msgp.BoolSize
+	return
+}
+
+// DecodeMsg implements msgp.Decodable
 func (z *TimeRangeQuery) DecodeMsg(dc *msgp.Reader) (err error) {
 	var field []byte
 	_ = field

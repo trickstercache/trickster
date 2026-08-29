@@ -42,6 +42,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config/validate"
 	"github.com/trickstercache/trickster/v2/pkg/daemon/instance"
 	te "github.com/trickstercache/trickster/v2/pkg/errors"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
@@ -104,7 +105,7 @@ func LoadAndValidate(args ...string) (*config.Config, error) {
 	// Load Config
 	cfg, err := config.Load(args)
 	if err != nil {
-		logger.Error("Could not load configuration:", logging.Pairs{logKeyError: err.Error()})
+		logger.Error("Could not load configuration:", logging.Pairs{keys.Error: err.Error()})
 		if cfg != nil && cfg.Flags != nil && cfg.Flags.ValidateConfig {
 			usage.PrintUsage()
 		}
@@ -167,7 +168,7 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 
 	if err := reconfigureLogWriters(newConf); err != nil {
 		handleStartupIssue("log writer reconfiguration failed",
-			logging.Pairs{logKeyDetail: err.Error()}, errorFunc)
+			logging.Pairs{keys.Detail: err.Error()}, errorFunc)
 		return err
 	}
 	rollbackLogWriters := !firstStartup
@@ -184,7 +185,7 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	tracers, err := tr.RegisterAll(newConf, false)
 	if err != nil {
 		handleStartupIssue("tracing registration failed",
-			logging.Pairs{logKeyDetail: err.Error()},
+			logging.Pairs{keys.Detail: err.Error()},
 			errorFunc)
 		return err
 	}
@@ -215,7 +216,7 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	if err != nil {
 		accesslog.AbortGeneration()
 		handleStartupIssue("route registration failed",
-			logging.Pairs{logKeyDetail: err.Error()}, errorFunc)
+			logging.Pairs{keys.Detail: err.Error()}, errorFunc)
 		return err
 	}
 
@@ -253,7 +254,7 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	if err = applyDiscoveryConfig(si, newConf, clients, caches, tracers,
 		oldStatuses); err != nil {
 		handleStartupIssue("autodiscovery setup failed",
-			logging.Pairs{logKeyDetail: err.Error()}, errorFunc)
+			logging.Pairs{keys.Detail: err.Error()}, errorFunc)
 		return err
 	}
 	routing.RegisterDefaultBackendRoutesForListeners(listenerRouters, newConf, clients, tracers)
@@ -394,15 +395,15 @@ func closeOldCache(name string, w cache.Cache, drainTimeout time.Duration) {
 	}
 	safego.Go(func(r any, stack []byte) {
 		logger.Error("reload background goroutine panic", logging.Pairs{
-			"site":  "closeOldCache",
-			"cache": name,
-			"panic": r,
-			"stack": string(stack),
+			keys.Site:      "closeOldCache",
+			keys.CacheName: name,
+			keys.Panic:     r,
+			keys.Stack:     string(stack),
 		})
 	}, func() {
 		if err := w.Close(); err != nil {
 			logger.Warn("error closing old cache during reload",
-				logging.Pairs{"cache": name, logKeyError: err.Error()})
+				logging.Pairs{keys.CacheName: name, keys.Error: err.Error()})
 		}
 	})
 }

@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 )
 
 // Store is the subset of cache.Cache the registry persists through.
@@ -258,7 +259,7 @@ func (r *Registry) Leaf(path string) (string, Confidence, bool) {
 		return "", Unknown, false
 	}
 	// read-through
-	b, st, err := store.Retrieve(r.key("leaf", path))
+	b, st, err := store.Retrieve(r.key(keys.Leaf, path))
 	if err != nil || st != status.LookupStatusHit {
 		return "", Unknown, false
 	}
@@ -300,7 +301,7 @@ func (r *Registry) SetLeaf(path, ladderKey string, c Confidence) error {
 	r.publish(p2)
 	if store := r.getStore(); store != nil {
 		if b, err := json.Marshal(e); err == nil {
-			_ = store.Store(r.key("leaf", path), b, r.o.TTL)
+			_ = store.Store(r.key(keys.Leaf, path), b, r.o.TTL)
 		}
 	}
 	return nil
@@ -320,7 +321,7 @@ func (r *Registry) InvalidateLeaf(path string) {
 			Gen: r.gen.Load(),
 		}
 		if b, err := json.Marshal(e); err == nil {
-			_ = store.Store(r.key("leaf", path), b, time.Minute)
+			_ = store.Store(r.key(keys.Leaf, path), b, time.Minute)
 		}
 	}
 }

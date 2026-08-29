@@ -29,6 +29,8 @@ import (
 
 	mockprom "github.com/trickstercache/mockster/pkg/mocks/prometheus"
 	"github.com/trickstercache/trickster/v2/pkg/backends"
+	"github.com/trickstercache/trickster/v2/pkg/cache/status"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
@@ -180,7 +182,7 @@ func TestDeltaProxyCacheRequestMissThenHit(t *testing.T) {
 		t.Error(err)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.Status: status.StatusKeyMiss})
 	if err != nil {
 		t.Error(err)
 	}
@@ -209,7 +211,7 @@ func TestDeltaProxyCacheRequestMissThenHit(t *testing.T) {
 		t.Error(err)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "hit"})
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.Status: status.StatusHit})
 	if err != nil {
 		t.Error(err)
 	}
@@ -298,7 +300,7 @@ func TestDeltaProxyCacheRequestRemoveStale(t *testing.T) {
 		t.Error(err)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.Status: status.StatusKeyMiss})
 	if err != nil {
 		t.Error(err)
 	}
@@ -376,7 +378,7 @@ func TestDeltaProxyCacheRequestRemoveStale(t *testing.T) {
 // 		t.Error(err)
 // 	}
 
-// 	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
+// 	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.Status: status.StatusKeyMiss})
 // 	if err != nil {
 // 		t.Error(err)
 // 	}
@@ -443,7 +445,7 @@ func TestDeltaProxyCacheRequestMarshalFailure(t *testing.T) {
 		t.Error(err)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.Status: status.StatusKeyMiss})
 	if err != nil {
 		t.Error(err)
 	}
@@ -503,7 +505,7 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 		t.Error(err)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.Status: status.StatusKeyMiss})
 	if err != nil {
 		t.Error(err)
 	}
@@ -542,12 +544,12 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 		t.Error(err)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "phit"})
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.Status: status.StatusPartialHit})
 	if err != nil {
 		t.Error(err)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"fetched": expectedFetched})
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.Fetched: expectedFetched})
 	if err != nil {
 		t.Error(err)
 	}
@@ -586,12 +588,12 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 		t.Error(err)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "phit"})
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.Status: status.StatusPartialHit})
 	if err != nil {
 		t.Error(err)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"fetched": expectedFetched})
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.Fetched: expectedFetched})
 	if err != nil {
 		t.Error(err)
 	}
@@ -635,12 +637,12 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 		t.Error(err)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "phit"})
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.Status: status.StatusPartialHit})
 	if err != nil {
 		t.Error(err)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"fetched": expectedFetched})
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.Fetched: expectedFetched})
 	if err != nil {
 		t.Error(err)
 	}
@@ -698,7 +700,7 @@ func TestDeltaProxyCacheRequestPartialHitWithFailedExtents(t *testing.T) {
 		t.Error(err)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.Status: status.StatusKeyMiss})
 	if err != nil {
 		t.Error(err)
 	}
@@ -735,7 +737,7 @@ func TestDeltaProxyCacheRequestPartialHitWithFailedExtents(t *testing.T) {
 	}
 
 	// Check that we have a proxy-error status
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "proxy-error"})
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.Status: status.StatusProxyError})
 	if err != nil {
 		t.Error(err)
 	}
@@ -800,7 +802,7 @@ func TestDeltayProxyCacheRequestDeltaFetchError(t *testing.T) {
 		t.Error(err)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.Status: status.StatusKeyMiss})
 	if err != nil {
 		t.Error(err)
 	}
@@ -826,7 +828,7 @@ func TestDeltayProxyCacheRequestDeltaFetchError(t *testing.T) {
 		t.Error(err)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "proxy-error"})
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.Status: status.StatusProxyError})
 	if err != nil {
 		t.Error(err)
 	}
@@ -878,7 +880,7 @@ func TestDeltaProxyCacheRequestRangeMiss(t *testing.T) {
 		t.Error(err)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.Status: status.StatusKeyMiss})
 	if err != nil {
 		t.Error(err)
 	}
@@ -913,7 +915,7 @@ func TestDeltaProxyCacheRequestRangeMiss(t *testing.T) {
 		t.Error(err)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"fetched": expectedFetched})
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.Fetched: expectedFetched})
 	if err != nil {
 		t.Error(err)
 	}
@@ -923,12 +925,12 @@ func TestDeltaProxyCacheRequestRangeMiss(t *testing.T) {
 		t.Error(err)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "rmiss"})
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.Status: status.StatusRangeMiss})
 	if err != nil {
 		t.Error(err)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"fetched": expectedFetched})
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.Fetched: expectedFetched})
 	if err != nil {
 		t.Error(err)
 	}
@@ -965,12 +967,12 @@ func TestDeltaProxyCacheRequestRangeMiss(t *testing.T) {
 		t.Error(err)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "rmiss"})
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.Status: status.StatusRangeMiss})
 	if err != nil {
 		t.Error(err)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"fetched": expectedFetched})
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.Fetched: expectedFetched})
 	if err != nil {
 		t.Error(err)
 	}
@@ -1053,12 +1055,12 @@ func TestDeltaProxyCacheRequestFastForward(t *testing.T) {
 		t.Error(err)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.Status: status.StatusKeyMiss})
 	if err != nil {
 		t.Error(err)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"ffstatus": "miss"})
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.FFStatus: "miss"})
 	if err != nil {
 		t.Error(err)
 	}
@@ -1087,12 +1089,12 @@ func TestDeltaProxyCacheRequestFastForward(t *testing.T) {
 		t.Error(err)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "hit"})
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.Status: status.StatusHit})
 	if err != nil {
 		t.Error(err)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"ffstatus": "hit"})
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.FFStatus: status.StatusHit})
 	if err != nil {
 		t.Error(err)
 	}
@@ -1145,12 +1147,12 @@ func TestDeltaProxyCacheRequestFastForwardUrlError(t *testing.T) {
 		t.Error(err)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.Status: status.StatusKeyMiss})
 	if err != nil {
 		t.Error(err)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"ffstatus": "err"})
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.FFStatus: "err"})
 	if err != nil {
 		t.Error(err)
 	}
@@ -1204,7 +1206,7 @@ func TestDeltaProxyCacheRequestWithRefresh(t *testing.T) {
 		t.Error(err)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "purge"})
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.Status: status.StatusPurge})
 	if err != nil {
 		t.Error(err)
 	}
@@ -1604,7 +1606,7 @@ func TestDeltaProxyCacheRequest_BackfillTolerance(t *testing.T) {
 		t.Error(err)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.Status: status.StatusKeyMiss})
 	if err != nil {
 		t.Error(err)
 	}
@@ -1632,7 +1634,7 @@ func TestDeltaProxyCacheRequest_BackfillTolerance(t *testing.T) {
 		t.Error(err)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "hit"})
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.Status: status.StatusHit})
 	if err != nil {
 		t.Error(err)
 	}
@@ -1684,12 +1686,12 @@ func TestDeltaProxyCacheRequestFFTTLBiggerThanStep(t *testing.T) {
 		t.Error(err)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.Status: status.StatusKeyMiss})
 	if err != nil {
 		t.Error(err)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"ffstatus": "off"})
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.FFStatus: "off"})
 	if err != nil {
 		t.Error(err)
 	}
@@ -1745,7 +1747,7 @@ func TestDeltaProxyCacheRequestShardByPoints(t *testing.T) {
 		t.Error(err)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "kmiss"})
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.Status: status.StatusKeyMiss})
 	if err != nil {
 		t.Error(err)
 	}
@@ -1784,12 +1786,12 @@ func TestDeltaProxyCacheRequestShardByPoints(t *testing.T) {
 		t.Error(err)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "phit"})
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.Status: status.StatusPartialHit})
 	if err != nil {
 		t.Error(err)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"fetched": expectedFetched})
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.Fetched: expectedFetched})
 	if err != nil {
 		t.Error(err)
 	}
@@ -2109,7 +2111,7 @@ func TestDPCNoCacheBypass(t *testing.T) {
 		t.Errorf("expected status 200, got %d", resp.StatusCode)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{"status": "purge"})
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.Status: status.StatusPurge})
 	if err != nil {
 		t.Error(err)
 	}

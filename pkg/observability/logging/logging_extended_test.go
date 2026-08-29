@@ -28,6 +28,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 )
 
@@ -53,7 +54,7 @@ func TestLoggerWriteAndFiltering(t *testing.T) {
 	l.SetLogAsynchronous(false)
 
 	l.Info("hidden", nil)
-	l.Warn("visible", Pairs{"key": "value"})
+	l.Warn("visible", Pairs{keys.Key: "value"})
 	if !strings.Contains(buf.String(), "visible") {
 		t.Fatalf("output = %q", buf.String())
 	}

@@ -50,6 +50,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/discovery"
 	do "github.com/trickstercache/trickster/v2/pkg/discovery/options"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/providers"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/watchers/filesystem"
@@ -147,7 +148,9 @@ func (s *subscription) Launch(ctx context.Context) {
 		s.mtx.Unlock()
 		discovery.LogError("file discovery watcher construction failed",
 			logging.Pairs{
-				"discoverer": s.p.name, "path": s.path, "error": err.Error(),
+				keys.Discoverer: s.p.name,
+				keys.Path:       s.path,
+				keys.Error:      err.Error(),
 			})
 		return
 	}
@@ -253,7 +256,9 @@ func (s *subscription) warnRead(err error) {
 	}
 	discovery.LogWarn("file discovery read failed; keeping last-good members",
 		logging.Pairs{
-			"discoverer": s.p.name, "path": s.path, "error": err.Error(),
+			keys.Discoverer: s.p.name,
+			keys.Path:       s.path,
+			keys.Error:      err.Error(),
 		})
 }
 
@@ -263,7 +268,7 @@ func (s *subscription) clearWarn() {
 		s.failing = false
 		s.mtx.Unlock()
 		discovery.LogInfo("file discovery read recovered",
-			logging.Pairs{"discoverer": s.p.name, "path": s.path})
+			logging.Pairs{keys.Discoverer: s.p.name, keys.Path: s.path})
 		return
 	}
 	s.mtx.Unlock()

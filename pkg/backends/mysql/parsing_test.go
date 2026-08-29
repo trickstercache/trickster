@@ -26,17 +26,6 @@ import (
 	querypb "vitess.io/vitess/go/vt/proto/query"
 )
 
-// The analyzer itself is exercised in pkg/parsing/sqlanalyzer/vitess; the
-// tests here cover this backend's use of its analyses.
-
-const grafanaDateTimeQuery = `SELECT
-  UNIX_TIMESTAMP(pickup_datetime) DIV 300 * 300 AS time,
-  count(*) AS trips
-FROM trips
-WHERE pickup_datetime BETWEEN FROM_UNIXTIME(1785542400) AND FROM_UNIXTIME(1785628800)
-GROUP BY time
-ORDER BY time`
-
 const safeDateTimeQuery = `SELECT
   cast(cast(UNIX_TIMESTAMP(pickup_datetime)/(300) as signed)*300 as signed) AS time,
   count(*) AS trips

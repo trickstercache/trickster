@@ -30,6 +30,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/encoding/profile"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
@@ -85,7 +86,7 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 		if writer != nil && reader != nil {
 			if _, err := io.Copy(writer, reader); err != nil {
 				logger.Error("proxy response copy failed",
-					logging.Pairs{"error": err.Error()})
+					logging.Pairs{keys.Error: err.Error()})
 			}
 		}
 	} else {
@@ -116,7 +117,7 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 					defer pcf.Close()
 					if _, err := io.Copy(pcf, reader); err != nil {
 						logger.Error("pcf upstream copy failed",
-							logging.Pairs{"error": err.Error()})
+							logging.Pairs{keys.Error: err.Error()})
 					}
 				})
 				if err := pcf.AddClient(writer); err != nil {
@@ -244,7 +245,7 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 				status = http.StatusRequestEntityTooLarge
 			}
 			logger.Error("error buffering request body for retry",
-				logging.Pairs{"url": r.URL.String(), "detail": err.Error()})
+				logging.Pairs{keys.URL: r.URL.String(), keys.Detail: err.Error()})
 			setHTTPStatusSpanAttributes(rsc.Tracer, status, span, doSpan)
 			return nil, &http.Response{
 				StatusCode: status,
@@ -266,7 +267,7 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 	if err != nil {
 		if rsc == nil || !rsc.Cancelable || !errors.Is(err, context.Canceled) {
 			logger.Error("error downloading url",
-				logging.Pairs{"url": r.URL.String(), "detail": err.Error()})
+				logging.Pairs{keys.URL: r.URL.String(), keys.Detail: err.Error()})
 		}
 		// if there is an err and the response is nil, the server could not be reached
 		// so make a 502 for the downstream response
@@ -278,11 +279,11 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 
 			logger.Error("error reaching upstream origin",
 				logging.Pairs{
-					"origin":          r.Host,
-					"url":             r.URL.String(),
-					"backendName":     o.Name,
-					"backendProvider": o.Provider,
-					"detail":          "nil response from upstream origin",
+					keys.Origin:          r.Host,
+					keys.URL:             r.URL.String(),
+					keys.BackendName:     o.Name,
+					keys.BackendProvider: o.Provider,
+					keys.Detail:          "nil response from upstream origin",
 				})
 		}
 
@@ -295,8 +296,8 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 			doSpan.AddEvent(
 				"Failure",
 				trace.EventOption(trace.WithAttributes(
-					attribute.String("error", err.Error()),
-					attribute.Int("httpStatus", resp.StatusCode),
+					attribute.String(keys.Error, err.Error()),
+					attribute.Int(keys.HTTPStatus, resp.StatusCode),
 				)),
 			)
 			doSpan.SetStatus(tracing.HTTPToCode(resp.StatusCode), "")
@@ -307,10 +308,10 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 	if resp.StatusCode == http.StatusBadGateway {
 		logger.Error("received 502 from upstream",
 			logging.Pairs{
-				"url":             r.URL.String(),
-				"backendProvider": o.Provider,
-				"backendName":     o.Name,
-				"httpStatus":      resp.StatusCode,
+				keys.URL:             r.URL.String(),
+				keys.BackendProvider: o.Provider,
+				keys.BackendName:     o.Name,
+				keys.HTTPStatus:      resp.StatusCode,
 			})
 	}
 
@@ -335,10 +336,10 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 				logger.WarnOnce("clockoffset."+o.Name,
 					ClockOffsetWarning,
 					logging.Pairs{
-						"backendName":   o.Name,
-						"tricksterTime": strconv.FormatInt(d.Add(offset).Unix(), 10),
-						"originTime":    strconv.FormatInt(d.Unix(), 10),
-						"offset":        strconv.FormatInt(int64(offset.Seconds()), 10) + "s",
+						keys.BackendName: o.Name,
+						"tricksterTime":  strconv.FormatInt(d.Add(offset).Unix(), 10),
+						"originTime":     strconv.FormatInt(d.Unix(), 10),
+						"offset":         strconv.FormatInt(int64(offset.Seconds()), 10) + "s",
 					})
 			}
 		}

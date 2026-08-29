@@ -25,6 +25,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	alo "github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog/options"
 	authtypes "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/types"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
@@ -259,7 +260,7 @@ func TestRecorderUnwrap(t *testing.T) {
 func TestParseResultHeader(t *testing.T) {
 	result := headers.ParseResultHeader(
 		"engine=DeltaProxyCache; status=phit; fetched=[1-2]; ffstatus=hit")
-	if result.Engine != "DeltaProxyCache" || result.Status != "phit" {
+	if result.Engine != "DeltaProxyCache" || result.Status != status.StatusPartialHit {
 		t.Errorf("unexpected parse result: %s, %s", result.Engine, result.Status)
 	}
 	result = headers.ParseResultHeader("")
@@ -267,7 +268,7 @@ func TestParseResultHeader(t *testing.T) {
 		t.Errorf("expected empty results, got %s, %s", result.Engine, result.Status)
 	}
 	result = headers.ParseResultHeader("junk; status=hit")
-	if result.Engine != "" || result.Status != "hit" {
+	if result.Engine != "" || result.Status != status.StatusHit {
 		t.Errorf("unexpected parse result: %s, %s", result.Engine, result.Status)
 	}
 }

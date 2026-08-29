@@ -37,6 +37,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 	pkgerrors "github.com/trickstercache/trickster/v2/pkg/errors"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	tsmerge "github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
@@ -221,7 +222,7 @@ func TestValidateAndStartTSMPoolRejectsIncompatibleProvider(t *testing.T) {
 	memberOptions := bo.New()
 	memberOptions.Provider = providers.ReverseProxyShort
 	memberOptions.OriginURL = "http://example.com"
-	member, err := backends.New("member", memberOptions, nil, http.NotFoundHandler(), nil)
+	member, err := backends.New(keys.Member, memberOptions, nil, http.NotFoundHandler(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,7 +231,7 @@ func TestValidateAndStartTSMPoolRejectsIncompatibleProvider(t *testing.T) {
 	albOptions.Provider = providers.ALB
 	albOptions.ALBOptions = ao.New()
 	albOptions.ALBOptions.MechanismName = names.MechanismTSM
-	albOptions.ALBOptions.Pool = ao.Members("member")
+	albOptions.ALBOptions.Pool = ao.Members(keys.Member)
 	base, err := backends.New("edge", albOptions, nil, http.NotFoundHandler(), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -238,8 +239,8 @@ func TestValidateAndStartTSMPoolRejectsIncompatibleProvider(t *testing.T) {
 	client := &Client{Backend: base}
 
 	err = client.ValidateAndStartPool(backends.Backends{
-		"edge": client, "member": member,
-	}, healthcheck.StatusLookup{"member": &healthcheck.Status{}})
+		"edge": client, keys.Member: member,
+	}, healthcheck.StatusLookup{keys.Member: &healthcheck.Status{}})
 	if !goerrors.Is(err, errors.ErrInvalidTimeSeriesMergeProvider) {
 		t.Fatalf("error = %v, want ErrInvalidTimeSeriesMergeProvider", err)
 	}
@@ -249,7 +250,7 @@ func TestValidateTSMPoolMemberProviderResolvesNestedALB(t *testing.T) {
 	leafOptions := bo.New()
 	leafOptions.Provider = providers.Prometheus
 	leafOptions.OriginURL = "http://example.com"
-	leaf, err := backends.New("leaf", leafOptions, nil, http.NotFoundHandler(), nil)
+	leaf, err := backends.New(keys.Leaf, leafOptions, nil, http.NotFoundHandler(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -259,13 +260,13 @@ func TestValidateTSMPoolMemberProviderResolvesNestedALB(t *testing.T) {
 	innerOptions.Provider = providers.ALB
 	innerOptions.ALBOptions = ao.New()
 	innerOptions.ALBOptions.MechanismName = names.MechanismRR
-	innerOptions.ALBOptions.Pool = ao.Members("leaf")
+	innerOptions.ALBOptions.Pool = ao.Members(keys.Leaf)
 	inner, err := backends.New("inner", innerOptions, nil, http.NotFoundHandler(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	clients := backends.Backends{"inner": inner, "leaf": leaf}
+	clients := backends.Backends{"inner": inner, keys.Leaf: leaf}
 	if err := validateTSMPoolMemberProvider("inner", clients, sets.NewStringSet()); err != nil {
 		t.Fatalf("nested Prometheus ALB rejected: %v", err)
 	}
@@ -277,7 +278,7 @@ func TestNestedALBDelegatesTSMProvider(t *testing.T) {
 	leafOptions.Prometheus = &prop.Options{Labels: map[string]string{
 		"route": "a",
 	}}
-	leafBackend, err := backends.New("leaf", leafOptions, nil,
+	leafBackend, err := backends.New(keys.Leaf, leafOptions, nil,
 		http.NotFoundHandler(), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -288,15 +289,15 @@ func TestNestedALBDelegatesTSMProvider(t *testing.T) {
 	innerOptions.Provider = providers.ALB
 	innerOptions.ALBOptions = ao.New()
 	innerOptions.ALBOptions.MechanismName = names.MechanismRR
-	innerOptions.ALBOptions.Pool = ao.Members("leaf")
+	innerOptions.ALBOptions.Pool = ao.Members(keys.Leaf)
 	innerBackend, err := NewClient("inner", innerOptions, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	inner := innerBackend.(*Client)
 	if err := inner.ValidateAndStartPool(backends.Backends{
-		"inner": inner,
-		"leaf":  leaf,
+		"inner":   inner,
+		keys.Leaf: leaf,
 	}, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -322,7 +323,7 @@ func TestNestedALBDelegatesTSMProvider(t *testing.T) {
 func TestValidateClientsAllowsReplicaGroupOnNestedTSMMember(t *testing.T) {
 	leafOptions := bo.New()
 	leafOptions.Provider = providers.Prometheus
-	leaf, err := backends.New("leaf", leafOptions, nil, http.NotFoundHandler(), nil)
+	leaf, err := backends.New(keys.Leaf, leafOptions, nil, http.NotFoundHandler(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -333,7 +334,7 @@ func TestValidateClientsAllowsReplicaGroupOnNestedTSMMember(t *testing.T) {
 	innerOptions.ReplicaGroup = "shard-a"
 	innerOptions.ALBOptions = ao.New()
 	innerOptions.ALBOptions.MechanismName = names.MechanismRR
-	innerOptions.ALBOptions.Pool = ao.Members("leaf")
+	innerOptions.ALBOptions.Pool = ao.Members(keys.Leaf)
 	innerBackend, err := NewClient("inner", innerOptions, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -353,15 +354,15 @@ func TestValidateClientsAllowsReplicaGroupOnNestedTSMMember(t *testing.T) {
 	}
 
 	clients := backends.Backends{
-		"leaf":  leaf,
-		"inner": innerBackend,
-		"outer": outerBackend,
+		keys.Leaf: leaf,
+		"inner":   innerBackend,
+		"outer":   outerBackend,
 	}
 	if err := ValidateClients(clients); err != nil {
 		t.Fatalf("nested TSM replica group rejected: %v", err)
 	}
 
-	outerOptions.ALBOptions.Pool = ao.Members("leaf")
+	outerOptions.ALBOptions.Pool = ao.Members(keys.Leaf)
 	if err := ValidateClients(clients); err == nil {
 		t.Fatal("expected custom replica group on non-TSM-member ALB to be rejected")
 	}
@@ -429,7 +430,7 @@ func TestValidateAndStartPoolUnprobedMembersResetFloor(t *testing.T) {
 	memberOpts.OriginURL = "http://example.com"
 	memberOpts.HealthCheck.Interval = 0
 
-	member, err := backends.New("member", memberOpts, nil, http.NotFoundHandler(), nil)
+	member, err := backends.New(keys.Member, memberOpts, nil, http.NotFoundHandler(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -438,7 +439,7 @@ func TestValidateAndStartPoolUnprobedMembersResetFloor(t *testing.T) {
 	albOpts.ALBOptions = ao.New()
 	albOpts.ALBOptions.MechanismName = names.MechanismRR
 	albOpts.ALBOptions.HealthyFloor = int(healthcheck.StatusPassing)
-	albOpts.ALBOptions.Pool = ao.Members("member")
+	albOpts.ALBOptions.Pool = ao.Members(keys.Member)
 
 	albClient, err := NewClient("edge", albOpts, nil, nil, nil, nil)
 	if err != nil {
@@ -447,9 +448,9 @@ func TestValidateAndStartPoolUnprobedMembersResetFloor(t *testing.T) {
 	cl := albClient.(*Client)
 
 	err = cl.ValidateAndStartPool(backends.Backends{
-		"edge":   cl,
-		"member": member,
-	}, healthcheck.StatusLookup{"member": &healthcheck.Status{}})
+		"edge":      cl,
+		keys.Member: member,
+	}, healthcheck.StatusLookup{keys.Member: &healthcheck.Status{}})
 	if err != nil {
 		t.Fatalf("ValidateAndStartPool: %v", err)
 	}
@@ -460,7 +461,7 @@ func TestValidateAndStartPoolAdmitsFailingFloor(t *testing.T) {
 	memberOpts := bo.New()
 	memberOpts.Provider = providers.ReverseProxyShort
 	memberOpts.OriginURL = "http://example.com"
-	member, err := backends.New("member", memberOpts, nil, http.NotFoundHandler(), nil)
+	member, err := backends.New(keys.Member, memberOpts, nil, http.NotFoundHandler(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -469,7 +470,7 @@ func TestValidateAndStartPoolAdmitsFailingFloor(t *testing.T) {
 	albOpts.ALBOptions = ao.New()
 	albOpts.ALBOptions.MechanismName = names.MechanismRR
 	albOpts.ALBOptions.HealthyFloor = int(healthcheck.StatusFailing)
-	albOpts.ALBOptions.Pool = ao.Members("member")
+	albOpts.ALBOptions.Pool = ao.Members(keys.Member)
 
 	albClient, err := NewClient("edge", albOpts, nil, nil, nil, nil)
 	if err != nil {
@@ -478,9 +479,9 @@ func TestValidateAndStartPoolAdmitsFailingFloor(t *testing.T) {
 	cl := albClient.(*Client)
 
 	err = cl.ValidateAndStartPool(backends.Backends{
-		"edge":   cl,
-		"member": member,
-	}, healthcheck.StatusLookup{"member": &healthcheck.Status{}})
+		"edge":      cl,
+		keys.Member: member,
+	}, healthcheck.StatusLookup{keys.Member: &healthcheck.Status{}})
 	if err != nil {
 		t.Fatalf("ValidateAndStartPool: %v", err)
 	}

@@ -32,6 +32,7 @@ import (
 	tkconfig "github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v3"
@@ -84,24 +85,12 @@ type requestOptions struct {
 
 type requestOption func(*requestOptions)
 
-func withMethod(m string) requestOption { return func(o *requestOptions) { o.method = m } }
-
 func withHeader(k, v string) requestOption {
 	return func(o *requestOptions) {
 		if o.headers == nil {
 			o.headers = http.Header{}
 		}
 		o.headers.Add(k, v)
-	}
-}
-
-func withBody(contentType string, r io.Reader) requestOption {
-	return func(o *requestOptions) {
-		o.contentType = contentType
-		o.body = r
-		if o.method == "" {
-			o.method = "POST"
-		}
 	}
 }
 
@@ -155,7 +144,7 @@ func (h tricksterHarness) queryProm(t *testing.T, backend, apiPath string, opts 
 
 func requireTricksterResult(t *testing.T, hdr http.Header, want map[string]string) {
 	t.Helper()
-	raw := hdr.Get("X-Trickster-Result")
+	raw := hdr.Get(headers.NameTricksterResult)
 	got := parseTricksterResult(raw)
 	for k, v := range want {
 		require.Equal(t, v, got[k], "X-Trickster-Result[%q] mismatch in %q", k, raw)

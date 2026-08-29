@@ -46,6 +46,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/discovery"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/template"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
@@ -210,7 +211,7 @@ func (m *Manager) applyLocked(canonical discovery.Snapshot) {
 		result = resultRejected
 		discovery.LogWarn("alb discovery snapshot rejected by min_members floor; keeping last-good pool",
 			logging.Pairs{
-				"albName":     m.albName,
+				keys.ALBName:  m.albName,
 				"snapshot":    len(canonical),
 				"min_members": mm,
 				"current":     len(m.members),
@@ -249,9 +250,10 @@ func (m *Manager) applyLocked(canonical discovery.Snapshot) {
 		if err != nil {
 			discovery.LogError("alb discovery member instantiation failed",
 				logging.Pairs{
-					"albName": m.albName, "member": name,
-					"origin": discovery.SanitizeURL(member.URL()),
-					"error":  err.Error(),
+					keys.ALBName: m.albName,
+					keys.Member:  name,
+					keys.Origin:  discovery.SanitizeURL(member.URL()),
+					keys.Error:   err.Error(),
 				})
 			incomplete = true
 			continue
@@ -261,8 +263,9 @@ func (m *Manager) applyLocked(canonical discovery.Snapshot) {
 		metrics.ALBDiscoveryMemberChanges.WithLabelValues(
 			m.albName, m.discoverer, "add").Inc()
 		discovery.LogInfo("alb discovery member added", logging.Pairs{
-			"albName": m.albName, "member": name,
-			"origin": discovery.SanitizeURL(member.URL()),
+			keys.ALBName: m.albName,
+			keys.Member:  name,
+			keys.Origin:  discovery.SanitizeURL(member.URL()),
 		})
 	}
 
@@ -283,8 +286,9 @@ func (m *Manager) applyLocked(canonical discovery.Snapshot) {
 		metrics.ALBDiscoveryMemberChanges.WithLabelValues(
 			m.albName, m.discoverer, "remove").Inc()
 		discovery.LogInfo("alb discovery member removed", logging.Pairs{
-			"albName": m.albName, "member": name,
-			"origin": discovery.SanitizeURL(e.member.URL()),
+			keys.ALBName: m.albName,
+			keys.Member:  name,
+			keys.Origin:  discovery.SanitizeURL(e.member.URL()),
 		})
 	}
 
@@ -311,9 +315,9 @@ func (m *Manager) debugLogMembership() {
 	}
 	slices.Sort(names)
 	discovery.LogDebug("alb discovery membership", logging.Pairs{
-		"albName":    m.albName,
-		"discoverer": m.discoverer,
-		"members":    strings.Join(names, " "),
+		keys.ALBName:    m.albName,
+		keys.Discoverer: m.discoverer,
+		keys.Members:    strings.Join(names, " "),
 	})
 }
 
@@ -370,7 +374,7 @@ func (m *Manager) swapPoolLocked() {
 	}
 	if !m.cfg.ALB.SetDynamicTargets(targets) {
 		discovery.LogDebug("alb pool is stopped; discovery update discarded",
-			logging.Pairs{"albName": m.albName})
+			logging.Pairs{keys.ALBName: m.albName})
 	}
 }
 
@@ -506,8 +510,10 @@ func (m *Manager) releaseMemberConns(name string, e *memberEntry) {
 	drain := m.cfg.DrainTimeout
 	safego.Go(func(r any, stack []byte) {
 		discovery.LogError("alb discovery member teardown panic", logging.Pairs{
-			"albName": m.albName, "member": name,
-			"panic": r, "stack": string(stack),
+			keys.ALBName: m.albName,
+			keys.Member:  name,
+			keys.Panic:   r,
+			keys.Stack:   string(stack),
 		})
 	}, func() {
 		if drain > 0 {

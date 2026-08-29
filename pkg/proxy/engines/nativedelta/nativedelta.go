@@ -34,6 +34,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	cachestatus "github.com/trickstercache/trickster/v2/pkg/cache/status"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
@@ -273,8 +274,9 @@ func (e *Engine[R]) ExecuteDelta(req DeltaRequest[R]) (R, cachestatus.LookupStat
 	if mergeErr != nil {
 		logger.Warn("native delta result could not be modeled; using object cache",
 			logging.Pairs{
-				logKeyProtocol: e.cfg.Protocol,
-				logKeyBackend:  e.cfg.BackendName, logKeyDetail: mergeErr.Error(),
+				keys.Protocol:    e.cfg.Protocol,
+				keys.BackendName: e.cfg.BackendName,
+				keys.Detail:      mergeErr.Error(),
 			})
 		// Drop the delta entry: a stale part is one of the things that can
 		// make a merge fail, and the retry after the marker expires should

@@ -33,6 +33,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/config"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
@@ -480,7 +481,7 @@ func TestGroupWaitForReadySkipsNilMembers(t *testing.T) {
 func TestGroupWaitForReadyNoTimeoutBlocksUntilReady(t *testing.T) {
 	lg := NewGroup()
 	l := &Listener{readyCh: make(chan struct{})}
-	lg.members["member"] = l
+	lg.members[keys.Member] = l
 	go func() {
 		time.Sleep(20 * time.Millisecond)
 		l.markReady()

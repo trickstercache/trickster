@@ -22,6 +22,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/cache/status"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
@@ -36,18 +38,25 @@ type ResultHeaderParts struct {
 
 func (p ResultHeaderParts) String() string {
 	var sb strings.Builder
-	sb.WriteString("engine=" + p.Engine)
+	sb.WriteString("engine=")
+	sb.WriteString(p.Engine)
 	if p.Status != "" {
-		sb.WriteString("; status=" + p.Status)
+		sb.WriteString("; status=")
+		sb.WriteString(p.Status)
 	}
 	if len(p.Fetched) > 0 {
-		sb.WriteString("; fetched=[" + p.Fetched.String() + "]")
+		sb.WriteString("; fetched=[")
+		sb.WriteString(p.Fetched.String())
+		sb.WriteString("]")
 	}
 	if p.FastForwardStatus != "" {
-		sb.WriteString("; ffstatus=" + p.FastForwardStatus)
+		sb.WriteString("; ffstatus=")
+		sb.WriteString(p.FastForwardStatus)
 	}
 	if len(p.FailedFetch) > 0 {
-		sb.WriteString("; failed=[" + p.FailedFetch.String() + "]")
+		sb.WriteString("; failed=[")
+		sb.WriteString(p.FailedFetch.String())
+		sb.WriteString("]")
 	}
 	return sb.String()
 }
@@ -83,13 +92,13 @@ func MergeResultHeaderVals(h1, h2 string) string {
 	if r1.Status == "" {
 		r1.Status = r2.Status
 	} else if r1.Status != r2.Status {
-		r1.Status = "phit"
+		r1.Status = status.StatusPartialHit
 	}
 
 	if r1.FastForwardStatus == "" {
 		r1.FastForwardStatus = r2.FastForwardStatus
 	} else if r1.FastForwardStatus != r2.FastForwardStatus {
-		r1.FastForwardStatus = "phit"
+		r1.FastForwardStatus = status.StatusPartialHit
 	}
 
 	if len(r1.Fetched) == 0 {
@@ -122,19 +131,19 @@ func parseResultHeaderVals(h string) ResultHeaderParts {
 			val := part[i+1:]
 
 			switch key {
-			case "engine":
+			case keys.Engine:
 				if val != "" {
 					r.Engine = val
 				}
-			case "status":
+			case keys.Status:
 				if val != "" {
 					r.Status = val
 				}
-			case "ffstatus":
+			case keys.FFStatus:
 				if val != "" {
 					r.FastForwardStatus = val
 				}
-			case "fetched", "failed":
+			case keys.Fetched, keys.Failed:
 				val = strings.NewReplacer("[", "", "]", "").Replace(val)
 				fparts := strings.Split(val, ";")
 				el := make(timeseries.ExtentList, len(fparts))
@@ -157,7 +166,7 @@ func parseResultHeaderVals(h string) ResultHeaderParts {
 					}
 				}
 
-				if key == "fetched" {
+				if key == keys.Fetched {
 					r.Fetched = el[:k]
 				} else {
 					r.FailedFetch = el[:k]
@@ -181,9 +190,9 @@ func ParseResultEngineStatus(h string) (engine, status string) {
 			continue
 		}
 		switch key {
-		case "engine":
+		case keys.Engine:
 			engine = value
-		case "status":
+		case keys.Status:
 			status = value
 		}
 		if engine != "" && status != "" {

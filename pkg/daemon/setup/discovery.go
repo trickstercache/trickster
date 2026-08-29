@@ -33,6 +33,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/daemon/instance"
 	"github.com/trickstercache/trickster/v2/pkg/discovery"
 	dregistry "github.com/trickstercache/trickster/v2/pkg/discovery/registry"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
@@ -71,7 +72,7 @@ func applyDiscoveryConfig(si *instance.ServerInstance, newConf *config.Config,
 		}
 		if err := d.Stop(); err != nil {
 			logger.Warn("error stopping discoverer during reload",
-				logging.Pairs{"discoverer": name, "error": err.Error()})
+				logging.Pairs{keys.Discoverer: name, keys.Error: err.Error()})
 		}
 	}
 	si.Discoverers = nil
@@ -110,7 +111,7 @@ func applyDiscoveryConfig(si *instance.ServerInstance, newConf *config.Config,
 			return fmt.Errorf("discoverer %q unavailable: %w", name, err)
 		}
 		logger.Warn("discoverer unavailable; its albs serve static members only until the next config load",
-			logging.Pairs{"discoverer": name, "error": err.Error()})
+			logging.Pairs{keys.Discoverer: name, keys.Error: err.Error()})
 		return nil
 	}
 

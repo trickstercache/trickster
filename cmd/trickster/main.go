@@ -23,6 +23,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 	"github.com/trickstercache/trickster/v2/pkg/daemon"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 )
@@ -34,16 +35,12 @@ var (
 	applicationVersion     string
 )
 
-const (
-	applicationName = "trickster"
-)
-
 func main() {
-	appinfo.Set(applicationName, applicationVersion,
+	appinfo.Set(appinfo.AppName, applicationVersion,
 		applicationBuildTime, applicationGitCommitID)
 	err := daemon.Start(context.Background(), os.Args[1:]...)
 	if err != nil {
 		logger.Fatal(1, "trickster daemon failed to start",
-			logging.Pairs{"error": err})
+			logging.Pairs{keys.Error: err})
 	}
 }
