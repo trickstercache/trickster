@@ -1,9 +1,6 @@
-name: Nightly Soak
+name: ALB Soak
 
 on:
-  schedule:
-    # 08:10 UTC daily
-    - cron: "10 8 * * *"
   workflow_dispatch: {}
 
 permissions:

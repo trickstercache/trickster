@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"os"
 	"sort"
+	"sync"
 	"testing"
 	"time"
 
@@ -69,6 +70,8 @@ func TestALBDiscoverySoak(t *testing.T) {
 
 	frontURL := fmt.Sprintf("http://127.0.0.1:%d/", frontPort)
 	stop := make(chan struct{})
+	stopAll := sync.OnceFunc(func() { close(stop) })
+	defer stopAll()
 
 	// sustained request load
 	for range 2 {
@@ -88,7 +91,9 @@ func TestALBDiscoverySoak(t *testing.T) {
 		}()
 	}
 	// continuous membership churn: rotating window of 3 members
+	churnDone := make(chan struct{})
 	go func() {
+		defer close(churnDone)
 		i := 0
 		ticker := time.NewTicker(500 * time.Millisecond)
 		defer ticker.Stop()
@@ -105,7 +110,6 @@ func TestALBDiscoverySoak(t *testing.T) {
 			}
 		}
 	}()
-	defer close(stop)
 
 	// sample resource gauges throughout; compare the medians of the first
 	// and last quarters so startup transients and momentary spikes don't
@@ -160,6 +164,8 @@ func TestALBDiscoverySoak(t *testing.T) {
 	}
 
 	// membership is still converging at the end of the soak
+	stopAll()
+	<-churnDone
 	writeMembersFile(t, membersPath, leaves[0])
 	waitDiscoveredMembers(t, metricsAddr, "disco-alb", 1)
 }
