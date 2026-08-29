@@ -107,6 +107,15 @@
 #     port: 8487
 #     # address: ''
 #     # connections_limit: 0
+#
+#   # A flight-sql listener accepts Apache Arrow Flight SQL (gRPC) connections
+#   # and maps to one InfluxDB backend through that backend's listener_names
+#   # option. See /docs/influxdb.md for full details. InfluxDB 3.x only.
+#   influx3-flight:
+#     protocol: flight-sql
+#     port: 8485
+#     # address: ''
+#     # connections_limit: 0
 
 # caches:
 #   default:
@@ -801,6 +810,43 @@ backends:
 #     origin_url: http://foo-origin-02
 #     healthcheck:
 #       interval: 1s
+
+# # InfluxDB 3.x backend example. See /docs/influxdb.md for full details
+# # (v3 HTTP API: /api/v3/query_sql, /api/v3/query_influxql, /api/v3/write_lp;
+# # v1/v2 compatibility endpoints also work against the same backend).
+#
+#   influx3:
+#     is_default: false
+#     provider: influxdb
+#     origin_url: 'http://influxdb3:8181/'
+#
+#     # Mapping a flight-sql-protocol listener (see the listeners section)
+#     # exposes this backend over Apache Arrow Flight SQL (gRPC): Trickster
+#     # proxies Flight SQL queries, metadata RPCs (GetTables/Schemas/etc.) and
+#     # the full prepared-statement lifecycle, caching the Arrow IPC byte
+#     # stream. Omit the flight listener name to serve HTTP only.
+#     listener_names: [ default, influx3-flight ]
+#
+#     # influxdb holds InfluxDB-specific backend options.
+#     influxdb:
+#       # flight_upstream_address overrides the upstream Flight SQL address.
+#       # Defaults to the host:port from origin_url when empty.
+#       flight_upstream_address: 'influxdb3:8181'
+#       # flight_upstream_tls dials the upstream Flight SQL endpoint with TLS,
+#       # honoring the backend tls block's insecure_skip_verify.
+#       flight_upstream_tls: false
+#       # flight_max_response_bytes bounds one buffered upstream response;
+#       # flight_max_buffered_bytes bounds concurrent assembly and streaming.
+#       flight_max_response_bytes: 134217728
+#       flight_max_buffered_bytes: 536870912
+#       # Alternate endpoint authorities must be explicitly trusted because
+#       # client credentials are forwarded to them. Connections are capped.
+#       flight_allowed_location_hosts: [ 'influxdb3-replica:8181' ]
+#       flight_max_location_clients: 16
+#       # flight_cache_ttl bounds the lifetime of Flight SQL object-tier
+#       # entries (whole responses cached verbatim). Delta-cached time-series
+#       # entries use the backend's timeseries_ttl instead.
+#       flight_cache_ttl: 60s
 
 # # Application Load Balancer Backend configuration options, see /docs/alb.md for more information
 #

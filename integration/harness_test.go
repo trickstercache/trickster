@@ -175,7 +175,8 @@ func configHarness(t *testing.T, mods ...func(*tkconfig.Config)) tricksterHarnes
 	return tricksterHarness{
 		ConfigPath: writeTestConfig(t,
 			"../docs/developer/environment/trickster-config/trickster.yaml",
-			frontPort, metricsPort, mgmtPort, mysqlPort, clickHouseHTTPOriginPort, clickHouseNativeOriginPort, mods...),
+			frontPort, metricsPort, mgmtPort, mysqlPort, 0,
+			clickHouseHTTPOriginPort, clickHouseNativeOriginPort, mods...),
 		BaseAddr:                   fmt.Sprintf("127.0.0.1:%d", frontPort),
 		MetricsAddr:                fmt.Sprintf("127.0.0.1:%d", metricsPort),
 		MgmtAddr:                   fmt.Sprintf("127.0.0.1:%d", mgmtPort),
@@ -186,12 +187,30 @@ func configHarness(t *testing.T, mods ...func(*tkconfig.Config)) tricksterHarnes
 	}
 }
 
+// flightConfigHarness is configHarness with the influx3 backend's Flight SQL
+// (gRPC) listener enabled on a reserved port, returned alongside the harness.
+func flightConfigHarness(t *testing.T) (tricksterHarness, int) {
+	t.Helper()
+	ports, release := portutil.Reserve(t, 5)
+	frontPort, metricsPort, mgmtPort, mysqlPort, flightPort :=
+		ports[0], ports[1], ports[2], ports[3], ports[4]
+	return tricksterHarness{
+		ConfigPath: writeTestConfig(t,
+			"../docs/developer/environment/trickster-config/trickster.yaml",
+			frontPort, metricsPort, mgmtPort, mysqlPort, flightPort, 0, 0),
+		BaseAddr:     fmt.Sprintf("127.0.0.1:%d", frontPort),
+		MetricsAddr:  fmt.Sprintf("127.0.0.1:%d", metricsPort),
+		MySQLAddr:    fmt.Sprintf("127.0.0.1:%d", mysqlPort),
+		releasePorts: release,
+	}, flightPort
+}
+
 func staticConfigHarness(t *testing.T, configPath string) tricksterHarness {
 	t.Helper()
 	ports, release := portutil.Reserve(t, 3)
 	frontPort, metricsPort, mgmtPort := ports[0], ports[1], ports[2]
 	return tricksterHarness{
-		ConfigPath:   writeTestConfig(t, configPath, frontPort, metricsPort, mgmtPort, 0, 0, 0),
+		ConfigPath:   writeTestConfig(t, configPath, frontPort, metricsPort, mgmtPort, 0, 0, 0, 0),
 		BaseAddr:     fmt.Sprintf("127.0.0.1:%d", frontPort),
 		MetricsAddr:  fmt.Sprintf("127.0.0.1:%d", metricsPort),
 		MgmtAddr:     fmt.Sprintf("127.0.0.1:%d", mgmtPort),
@@ -199,8 +218,13 @@ func staticConfigHarness(t *testing.T, configPath string) tricksterHarness {
 	}
 }
 
+// writeTestConfig renders configPath onto reserved ports and writes it to a
+// temp file. flightPort rebinds the influx3 backend's Flight SQL listener;
+// pass 0 to remove the Flight SQL listener. mods run after the ports are set
+// and before the file is written.
 func writeTestConfig(t *testing.T, configPath string,
-	frontPort, metricsPort, mgmtPort, mysqlPort, clickHouseHTTPOriginPort, clickHouseNativeOriginPort int,
+	frontPort, metricsPort, mgmtPort, mysqlPort, flightPort int,
+	clickHouseHTTPOriginPort, clickHouseNativeOriginPort int,
 	mods ...func(*tkconfig.Config),
 ) string {
 	t.Helper()
@@ -238,6 +262,13 @@ func writeTestConfig(t *testing.T, configPath string,
 		mysqlListener.ListenAddress = "0.0.0.0"
 		mysqlListener.ListenPort = mysqlPort
 	}
+	// The dev config binds its native ClickHouse listener to a fixed port; drop
+	// it so tests that don't reserve a port for it can't collide with a locally
+	// running dev instance, then re-add it on the reserved port when requested.
+	delete(c.Listeners, "clickhouse-native")
+	if click := c.Backends["click1"]; click != nil {
+		click.ListenerNames = []string{listener.DefaultFrontendName}
+	}
 	if clickHouseHTTPOriginPort > 0 && c.Backends["click1"] != nil {
 		c.Listeners["clickhouse-native"] = &listener.Options{
 			Protocol: listener.ProtocolClickHouse, ListenAddress: "127.0.0.1", ListenPort: clickHouseHTTPOriginPort,
@@ -258,6 +289,16 @@ func writeTestConfig(t *testing.T, configPath string,
 	}
 	if c.MgmtConfig == nil {
 		c.MgmtConfig = mgmt.New()
+	}
+	delete(c.Listeners, "influx3-flight")
+	if bo, ok := c.Backends["influx3"]; ok && bo != nil {
+		bo.ListenerNames = []string{listener.DefaultFrontendName}
+		if flightPort > 0 {
+			c.Listeners["influx3-flight"] = &listener.Options{
+				Protocol: listener.ProtocolFlightSQL, ListenAddress: "127.0.0.1", ListenPort: flightPort,
+			}
+			bo.ListenerNames = []string{listener.DefaultFrontendName, "influx3-flight"}
+		}
 	}
 	c.Frontend = nil
 	c.Metrics = nil

@@ -147,7 +147,26 @@ expected and is that phase's acceptance criterion — do not "fix" it by editing
 the dashboard.** The metric names and label values those panels query are
 frozen in todo item 3.4 and must be implemented unchanged in Phase 9.
 
-## ClickHouse
+## Included backends
+
+The Compose file brings up Prometheus, InfluxDB 2.x, InfluxDB 3.x and ClickHouse
+alongside Grafana. Trickster's dev config registers a matching backend for each, 
+so Grafana can query the upstream directly or via Trickster for a side-by-side
+comparison.
+
+## InfluxDB Details
+
+For InfluxDB 3.x, Trickster also exposes an Apache Arrow Flight SQL (gRPC)
+proxy on `:8485` (the `influx3-flight` listener with `protocol: flight-sql`,
+mapped from the influx3 backend's `listener_names`). The
+`Trickster InfluxDB 3` Grafana dashboard exercises both the HTTP InfluxQL
+endpoint and Flight SQL via the InfluxDB datasource in SQL mode, with direct
+and Trickster-cached targets on the same panel. An equivalent
+`ClickHouse (Grafana Plugin)` dashboard is included for ClickHouse. The
+`verify-influxdb3.sh` script runs a quick end-to-end check of the v3 HTTP
+and Flight SQL paths through Trickster.
+
+## ClickHouse Details
 
 The environment runs ClickHouse on direct HTTP port `8123` and Native port
 `9000`. Trickster's single `click1` backend uses the HTTP origin and is bound to
@@ -175,7 +194,7 @@ Native clients can use either origin transport. See the
 [ClickHouse Support Guide](../../clickhouse.md) for TLS configuration,
 delta-cacheable SQL, supported formats and types, and Native limitations.
 
-## MySQL
+## MySQL Details
 
 The developer environment includes a pinned MySQL 8.4 (LTS) container seeded
 with the same auto-phased NYC taxi `trips` dataset used by ClickHouse. The

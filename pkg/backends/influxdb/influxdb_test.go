@@ -18,6 +18,7 @@ package influxdb
 
 import (
 	"testing"
+	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
@@ -76,5 +77,35 @@ func TestNewClient(t *testing.T) {
 
 	if c.Configuration().Provider != "TEST_CLIENT" {
 		t.Errorf("expected %s got %s", "TEST_CLIENT", c.Configuration().Provider)
+	}
+}
+
+func TestNewFlightCacheAdapter(t *testing.T) {
+	if newFlightCache(nil) != nil {
+		t.Fatal("newFlightCache(nil) should be nil")
+	}
+
+	conf, err := config.Load([]string{"-provider", providers.InfluxDB, "-origin-url", "http://1"})
+	if err != nil {
+		t.Fatalf("config: %v", err)
+	}
+	caches := cr.LoadCachesFromConfig(conf)
+	defer cr.CloseCaches(caches)
+	c := caches["default"]
+	if c == nil {
+		t.Fatal("missing default cache")
+	}
+
+	fc := newFlightCache(c)
+	if fc == nil {
+		t.Fatal("expected non-nil adapter")
+	}
+	if _, ok := fc.Get("missing-key"); ok {
+		t.Error("expected miss on empty cache")
+	}
+	fc.Set("k1", []byte("hello"), time.Minute)
+	b, ok := fc.Get("k1")
+	if !ok || string(b) != "hello" {
+		t.Errorf("round-trip failed: ok=%v b=%q", ok, b)
 	}
 }

@@ -98,6 +98,24 @@ services:
       # trying to setup an influxdb instance with the influxdb_cli service. 
       - influxdb2
 
+  # influxdb 3.x
+  influxdb3:
+    image: quay.io/influxdb/influxdb3-core:latest
+    ports:
+      - 8181:8181
+    volumes:
+      - influxdb3-data:/var/lib/influxdb3
+    build:
+      context: .
+      network: host
+    restart: always
+    command:
+      - serve
+      - --node-id=dev01
+      - --object-store=file
+      - --data-dir=/var/lib/influxdb3
+      - --without-auth
+
   # clickhouse
   clickhouse:
     image: clickhouse/clickhouse-server:26.7
@@ -298,6 +316,7 @@ services:
       - ./docker-compose-data/telegraf-config/telegraf.conf:/etc/telegraf/telegraf.conf
     depends_on:
       - influxdb2
+      - influxdb3
 
   # -- INTEGRATION CONTAINERS BELOW --
   # Integration-test-only services. These stay commented out so developer
@@ -325,6 +344,7 @@ services:
 volumes:
   graphite-data:
   influxdbv2:
+  influxdb3-data:
   prometheus-data:
   mysql-data:
   redis-data:

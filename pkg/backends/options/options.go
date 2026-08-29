@@ -30,6 +30,7 @@ import (
 	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	gro "github.com/trickstercache/trickster/v2/pkg/backends/graphite/options"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
+	ino "github.com/trickstercache/trickster/v2/pkg/backends/influxdb/options"
 	mo "github.com/trickstercache/trickster/v2/pkg/backends/mysql/options"
 	prop "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
@@ -187,6 +188,8 @@ type Options struct {
 	MySQL *mo.Options `yaml:"mysql,omitempty"`
 	// Graphite holds options specific to graphite backends
 	Graphite *gro.Options `yaml:"graphite,omitempty"`
+	// InfluxDB holds options specific to influxdb backends
+	InfluxDB *ino.Options `yaml:"influxdb,omitempty"`
 
 	// TLS is the TLS Configuration for the Frontend and Backend
 	TLS *to.Options `yaml:"tls,omitempty"`
@@ -372,6 +375,10 @@ func (o *Options) Clone() *Options {
 
 	if o.Graphite != nil {
 		out.Graphite = o.Graphite.Clone()
+	}
+
+	if o.InfluxDB != nil {
+		out.InfluxDB = o.InfluxDB.Clone()
 	}
 
 	if o.MySQL != nil {
@@ -827,7 +834,7 @@ func (o *Options) ToYAML() string {
 
 func (o *Options) UnmarshalYAML(value *yaml.Node) error {
 	type loadOptions Options
-	lo := loadOptions(*(New()))
+	lo := loadOptions(*New())
 	if err := value.Decode(&lo); err != nil {
 		return err
 	}

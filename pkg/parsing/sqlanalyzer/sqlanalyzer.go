@@ -104,6 +104,7 @@ const (
 	ReasonUnsupportedFormat    AnalysisReason = "unsupported_format"
 	ReasonUnsupportedLimit     AnalysisReason = "unsupported_limit"
 	ReasonNondeterministic     AnalysisReason = "nondeterministic"
+	ReasonUnsupportedOrdering  AnalysisReason = "unsupported_ordering"
 )
 
 // Analysis is the semantic result of parsing a dialect SQL statement.
@@ -119,6 +120,9 @@ type Analysis struct {
 type DialectAnalyzer interface {
 	Analyze(statement string, now time.Time) Analysis
 }
+
+// OrderTerm is one ORDER BY term expressed against a result column name.
+type OrderTerm = timeseries.OrderTerm
 
 // Bound records a cadence-normalized time boundary without discarding its
 // comparator semantics.
@@ -156,6 +160,11 @@ type QueryPlan struct {
 	// IdentitySuffix contains normalized result- or cache-policy-affecting
 	// directives that are intentionally kept outside executable SQL.
 	IdentitySuffix string
+	// Ordering carries the statement's ORDER BY terms, resolved to result
+	// column names, so a response rebuilt from merged cache parts is sorted the
+	// way the statement asked. Nil means the statement imposed no ordering and
+	// the engine may emit rows in any order.
+	Ordering []OrderTerm
 	// OutputFormat is a dialect-opaque response-format selector carried from
 	// analysis into timeseries.RequestOptions.OutputFormat, which shares the
 	// same convention: the byte's meaning is defined by the backend that set

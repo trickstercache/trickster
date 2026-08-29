@@ -326,6 +326,9 @@ func parseRange(input string) (timeseries.Extent, error) {
 }
 
 func tryParseTimeField(s string) (time.Time, error) {
+	if s == "now()" {
+		return time.Now(), nil
+	}
 	var t time.Time
 	var erd, eat, eut error
 	if t, erd = tryParseRelativeDuration(s); erd == nil {
@@ -364,10 +367,32 @@ func tryParseUnixTimestamp(s string) (time.Time, error) {
 	return time.Unix(int64(unix), 0).UTC(), nil
 }
 
+// tokenizeRangeLine replaces the body of `|> range(...)` with the placeholder,
+// correctly matching the closing paren at the same nesting depth (so nested
+// function calls like `now()` inside range() don't confuse the match).
 func tokenizeRangeLine(input string, funcStart int) string {
-	i := strings.Index(input[funcStart:], ")")
-	if i < 0 {
+	open := funcStart + len(FuncRange) - 1 // index of the `(` in `|> range(`
+	if open >= len(input) || input[open] != '(' {
 		return input
 	}
-	return input[:funcStart+len(FuncRange)] + TokenPlaceholderTimeRange + input[funcStart+i:]
+	depth := 1
+	close := -1
+	for j := open + 1; j < len(input); j++ {
+		switch input[j] {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				close = j
+			}
+		}
+		if close >= 0 {
+			break
+		}
+	}
+	if close < 0 {
+		return input
+	}
+	return input[:open+1] + TokenPlaceholderTimeRange + input[close:]
 }

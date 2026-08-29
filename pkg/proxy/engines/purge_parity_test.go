@@ -67,8 +67,8 @@ func (m *parityCache) Remove(keys ...string) error {
 	return nil
 }
 
-func (m *parityCache) Close() error                   { return nil }
-func (m *parityCache) Configuration() *co.Options     { return m.cfg }
+func (m *parityCache) Close() error               { return nil }
+func (m *parityCache) Configuration() *co.Options { return m.cfg }
 
 type parityBackend struct {
 	backends.Backend

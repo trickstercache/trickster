@@ -194,7 +194,7 @@ func Listeners(c *config.Config) error {
 			continue
 		}
 		backend.NormalizeListenerNames()
-		if adapter := nativeListeners.Get(strings.ToLower(backend.Provider)); adapter != nil {
+		if adapter := nativeListeners.GetByProvider(strings.ToLower(backend.Provider)); adapter != nil {
 			if err := adapter.ValidateBackend(backend); err != nil {
 				return fmt.Errorf("%s backend %q: %w", adapter.Protocol(), backendName, err)
 			}
@@ -204,8 +204,8 @@ func Listeners(c *config.Config) error {
 		}
 		if backend.Provider == providers.ALB && backend.ALBOptions != nil &&
 			backend.ALBOptions.UserRouter != nil {
-			targetProtocol := strings.ToLower(backend.ALBOptions.UserRouter.TargetProvider)
-			if adapter := nativeListeners.Get(targetProtocol); adapter != nil {
+			targetProvider := strings.ToLower(backend.ALBOptions.UserRouter.TargetProvider)
+			if adapter := nativeListeners.GetByProvider(targetProvider); adapter != nil {
 				if err := adapter.ValidateUserRouter(c, backendName, backend); err != nil {
 					return err
 				}
@@ -274,13 +274,14 @@ func Listeners(c *config.Config) error {
 				backend.ALBOptions.UserRouter != nil {
 				targetProvider = strings.ToLower(backend.ALBOptions.UserRouter.TargetProvider)
 			}
-			if options.Protocol != listener.ProtocolHTTP && targetProvider != options.Protocol {
+			if options.Protocol != listener.ProtocolHTTP && nativeAdapter != nil &&
+				targetProvider != nativeAdapter.BackendProvider() {
 				return fmt.Errorf("listener %q with protocol %q cannot map to backend %q with provider %q",
 					name, options.Protocol, backendName, provider)
 			}
-			if adapter := nativeListeners.Get(targetProvider); options.Protocol == listener.ProtocolHTTP && adapter != nil && !adapter.SupportsHTTP() {
+			if adapter := nativeListeners.GetByProvider(targetProvider); options.Protocol == listener.ProtocolHTTP && adapter != nil && !adapter.SupportsHTTP() {
 				return fmt.Errorf("backend %q with provider %q requires a listener with protocol %q",
-					backendName, provider, targetProvider)
+					backendName, provider, adapter.Protocol())
 			}
 		}
 		if options.ListenPort < 0 || options.TLSListenPort < 0 {
@@ -328,7 +329,7 @@ func nativeUserRouterTargets(c *config.Config, nativeListeners native.Registry) 
 	for _, backend := range c.Backends {
 		if backend == nil || backend.Provider != providers.ALB || backend.ALBOptions == nil ||
 			backend.ALBOptions.UserRouter == nil ||
-			nativeListeners.Get(strings.ToLower(backend.ALBOptions.UserRouter.TargetProvider)) == nil {
+			nativeListeners.GetByProvider(strings.ToLower(backend.ALBOptions.UserRouter.TargetProvider)) == nil {
 			continue
 		}
 		if name := backend.ALBOptions.UserRouter.DefaultBackend; name != "" {

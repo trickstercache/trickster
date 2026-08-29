@@ -51,7 +51,14 @@ func UnmarshalTimeseriesReader(reader io.Reader,
 	if trq == nil {
 		return nil, timeseries.ErrNoTimerangeQuery
 	}
-	rows, err := csv.NewReader(reader).ReadAll()
+	// Flux CSV responses may contain multiple result tables separated by blank
+	// lines, each with its own schema/column count. Allow variable fields per
+	// record so multi-table responses read without error; the downstream
+	// parser handles the single-table case and ignores structural rows it
+	// doesn't recognize.
+	cr := csv.NewReader(reader)
+	cr.FieldsPerRecord = -1
+	rows, err := cr.ReadAll()
 	if err != nil {
 		return nil, err
 	}

@@ -618,71 +618,13 @@ func TestCacheProviderFailureBranches(t *testing.T) {
 	h.observeAnalysis(sqlparser.StmtSelect, sqlanalyzer.Analysis{})
 }
 
-func TestParserExpressionHelperMatrix(t *testing.T) {
-	parser := defaultAnalyzer.parser
-	parse := func(source string) sqlparser.Expr {
-		t.Helper()
-		expr, err := parser.ParseExpr(source)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return expr
-	}
-	for _, tc := range []struct {
-		expression         string
-		safe, hasAggregate bool
-	}{
-		{"42", true, false},
-		{"3.14", true, false},
-		{"COUNT(*)", true, true},
-		{"STDDEV(value)", false, false},
-		{"COUNT(*) + 1", true, true},
-		{"-SUM(value)", true, true},
-		{"ROUND(COALESCE(SUM(value), 0), 2)", true, true},
-		{"COALESCE(SUM(value), name)", false, false},
-		{"ABS(SUM(value))", false, false},
-		{"value", false, false},
-	} {
-		t.Run(tc.expression, func(t *testing.T) {
-			safe, aggregate := numericValueExpression(parse(tc.expression))
-			if safe != tc.safe || aggregate != tc.hasAggregate {
-				t.Fatalf("numericValueExpression() = %t/%t", safe, aggregate)
-			}
-		})
-	}
-	for _, tc := range []struct {
-		expression string
-		want       int64
-		ok         bool
-	}{
-		{"+5", 5, true},
-		{"-5", -5, true},
-		{"'5'", 0, false},
-		{"name", 0, false},
-		{"~5", 0, false},
-		{"9223372036854775808", 1<<63 - 1, false},
-	} {
-		got, ok := intLiteral(parse(tc.expression))
-		if got != tc.want || ok != tc.ok {
-			t.Fatalf("intLiteral(%q) = %d/%t", tc.expression, got, ok)
-		}
-	}
-	outputs := []selectOutput{{alias: "bucket", sourceName: "time", sourceAxis: "events.time"},
-		{sourceName: "value", sourceAxis: "events.value"}}
-	for _, expression := range []string{"0", "3", "unknown", "value + 1"} {
-		if _, ok := resolveOutputReference(parse(expression), outputs); ok {
-			t.Fatalf("invalid output reference %q resolved", expression)
-		}
-	}
-}
-
 func TestParsedQueryAnalysisReusesUnmodifiedAST(t *testing.T) {
 	parsed := parseQuery(safeDateTimeQuery)
 	if parsed.err != nil || parsed.statement == nil {
 		t.Fatalf("parseQuery() = %+v", parsed)
 	}
 	before := sqlparser.String(parsed.statement)
-	analysis := defaultAnalyzer.analyzeParsed(safeDateTimeQuery, parsed.statement, parsed.err)
+	analysis := defaultAnalyzer.AnalyzeParsed(safeDateTimeQuery, parsed.statement, parsed.err)
 	if analysis.Mode != sqlanalyzer.CacheModeDelta || analysis.Plan == nil {
 		t.Fatalf("analyzeParsed() = %+v", analysis)
 	}
@@ -698,30 +640,10 @@ func TestParsedQueryAnalysisReusesUnmodifiedAST(t *testing.T) {
 	}
 }
 
-func TestColumnReferenceUsesStructuralAxis(t *testing.T) {
-	parser := defaultAnalyzer.parser
-	qualified, err := parser.ParseExpr("Analytics.Events.TS")
-	if err != nil {
-		t.Fatal(err)
-	}
-	name, axis, ok := columnReference(qualified)
-	if !ok || name != "TS" || axis != "analytics\x00events\x00ts" {
-		t.Fatalf("qualified column = %q/%q/%t", name, axis, ok)
-	}
-	quoted, err := parser.ParseExpr("`Analytics.Events.TS`")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, quotedAxis, ok := columnReference(quoted)
-	if !ok || quotedAxis == axis {
-		t.Fatalf("structurally distinct column axes collided: %q", quotedAxis)
-	}
-}
-
 type emptyRangeRenderer struct{ err error }
 
 func (r emptyRangeRenderer) RenderExtent(timeseries.Extent) (string, error) { return "", r.err }
-func (r emptyRangeRenderer) renderTimeRange(time.Time, time.Time) (string, error) {
+func (r emptyRangeRenderer) RenderTimeRange(time.Time, time.Time) (string, error) {
 	return "SELECT 1 WHERE 1 = 0", r.err
 }
 
@@ -742,12 +664,16 @@ func TestCacheOriginFallbackBranches(t *testing.T) {
 	if _, _, err := h.executeDelta(c, session, "SELECT 1", invalidPlan); err == nil {
 		t.Fatal("invalid delta fallback without a session succeeded")
 	}
-	window := deltaRequestWindow{empty: true, lower: time.Unix(0, 0), upper: time.Unix(60, 0)}
 	for _, renderer := range []sqlanalyzer.ExtentRenderer{
 		extentOnlyRenderer{}, emptyRangeRenderer{err: errors.New("render failure")}, emptyRangeRenderer{},
 	} {
-		plan := &sqlanalyzer.QueryPlan{Renderer: renderer}
-		if _, _, err := h.executeEmptyDelta(c, session, "SELECT 1", plan, window); err == nil {
+		plan := &sqlanalyzer.QueryPlan{
+			Step:       time.Minute,
+			LowerBound: &sqlanalyzer.Bound{Value: time.Unix(0, 0), Inclusive: true},
+			UpperBound: &sqlanalyzer.Bound{Value: time.Unix(1, 0), Inclusive: false},
+			Renderer:   renderer,
+		}
+		if _, _, err := h.executeDelta(c, session, "SELECT 1", plan); err == nil {
 			t.Fatal("empty delta fallback without a session succeeded")
 		}
 	}

@@ -142,6 +142,7 @@ func (p *QueryPlan) ApplyToQuery(trq *timeseries.TimeRangeQuery) {
 	for i, name := range p.GroupColumns {
 		trq.TagFieldDefintions[i] = timeseries.FieldDefinition{Name: name, Role: timeseries.RoleTag}
 	}
+	trq.Ordering = append(trq.Ordering[:0], p.Ordering...)
 	trq.ParsedQuery = p
 }
 

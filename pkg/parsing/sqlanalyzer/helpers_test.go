@@ -195,6 +195,7 @@ func TestApplyToQuery(t *testing.T) {
 		Step: time.Minute, Phase: 4 * 24 * time.Hour,
 		OutputUnit: timeseries.DateTimeUnixSecs, InputUnit: timeseries.DateTimeUnixMilli,
 		GroupColumns: []string{"host", "region"}, BackfillTolerance: 30 * time.Second,
+		Ordering: []OrderTerm{{Column: "host"}, {Column: "t", Descending: true}},
 	}
 	trq := NewTimeRangeQuery("SELECT raw")
 	plan.ApplyToQuery(trq)
@@ -216,6 +217,9 @@ func TestApplyToQuery(t *testing.T) {
 	}
 	if trq.ParsedQuery != plan {
 		t.Fatal("plan not attached")
+	}
+	if len(trq.Ordering) != 2 || trq.Ordering[1].Column != "t" || !trq.Ordering[1].Descending {
+		t.Fatalf("ordering not applied: %+v", trq.Ordering)
 	}
 
 	bare := &timeseries.TimeRangeQuery{}

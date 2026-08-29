@@ -57,7 +57,8 @@ Defined in `pkg/parsing/sqlanalyzer`:
   `Reason` (a stable, low-cardinality `AnalysisReason`), `Plan`, and `Err`.
 - `QueryPlan` — canonical SQL, time and output columns, step, phase, input
   and output timestamp units, lower and upper `Bound`s (value plus
-  inclusivity), group columns, output format, and the embedded renderer.
+  inclusivity), group columns, ordering, output format, and the embedded
+  renderer.
 - `ExtentRenderer.RenderExtent(extent timeseries.Extent) (string, error)`.
 
 Rendering is an embedded interface value on the plan rather than a method on
@@ -97,6 +98,14 @@ Fail-closed rules that apply to every dialect:
   from any comparator to the first and last included buckets.
 - A query that cannot be delta-cached should remain object-cacheable
   whenever it is a well-formed read query.
+- **`ORDER BY` must be carried or refused.** A response rebuilt from merged
+  cache parts is re-materialized by the engine, so the analyzer must resolve
+  every ordering term to a result column name and record it in
+  `QueryPlan.Ordering` (direction plus the dialect's resolved null placement).
+  Terms that cannot be resolved to a select-list output fail closed to the
+  object cache with `ReasonUnsupportedOrdering`, where responses are returned
+  byte-verbatim. Leaving ordering unanalyzed is a response-semantics defect:
+  the engine would otherwise emit its own default row order on a cache hit.
 
 ## Canonical Identity Requirements
 

@@ -59,6 +59,16 @@ type TimeRangeQuery struct {
 	OriginalBody []byte `msg:"-"`
 	// CacheKeyElements contains parts of the request that are used to derive a Cache Key
 	CacheKeyElements map[string]string `msg:"cke"`
+	// Ordering carries result-column sort terms needed when cached parts are
+	// rebuilt into a response. It is request-scoped and is not cached.
+	Ordering []OrderTerm `msg:"-"`
+}
+
+// OrderTerm describes one result-column ordering term.
+type OrderTerm struct {
+	Column     string
+	Descending bool
+	NullsFirst bool
 }
 
 // Clone returns an exact copy of a TimeRangeQuery
@@ -90,6 +100,10 @@ func (trq *TimeRangeQuery) Clone() *TimeRangeQuery {
 
 	if len(trq.CacheKeyElements) > 0 {
 		t.CacheKeyElements = maps.Clone(trq.CacheKeyElements)
+	}
+
+	if len(trq.Ordering) > 0 {
+		t.Ordering = append([]OrderTerm(nil), trq.Ordering...)
 	}
 
 	return t
@@ -163,8 +177,12 @@ func (trq *TimeRangeQuery) GetBackfillTolerance(def time.Duration, points int) t
 
 // Size returns the memory usage in bytes of the TimeRangeQuery
 func (trq *TimeRangeQuery) Size() int {
-	return len(trq.Statement) + 24 + 16 + trq.TimestampDefinition.Size() + // Extent=24 + Step=8 + Phase=8
+	size := len(trq.Statement) + 24 + 16 + trq.TimestampDefinition.Size() + // Extent=24 + Step=8 + Phase=8
 		urls.Size(trq.TemplateURL) + 11 // FFwDisable=1 IsOffset=1 StepNS=8 CustomData=1
+	for _, term := range trq.Ordering {
+		size += len(term.Column) + 2
+	}
+	return size
 }
 
 // ExtractBackfillTolerance will look for the BackfillToleranceFlag in the provided string
