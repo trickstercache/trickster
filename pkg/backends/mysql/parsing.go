@@ -62,35 +62,19 @@ func Parse(statement string, now time.Time) (*timeseries.TimeRangeQuery, bool, e
 	if analysis.Mode == sqlanalyzer.CacheModeNone {
 		return nil, false, analysis.Err
 	}
-	query := &timeseries.TimeRangeQuery{
-		Statement: statement, CacheKeyElements: map[string]string{"query": statement},
-	}
+	query := sqlanalyzer.NewTimeRangeQuery(statement)
 	if analysis.Mode != sqlanalyzer.CacheModeDelta || analysis.Plan == nil {
 		return query, true, analysis.Err
 	}
 	plan := analysis.Plan
-	query.Statement = plan.CanonicalSQL
-	query.CacheKeyElements["query"] = plan.CanonicalSQL
+	plan.ApplyToQuery(query)
 	if plan.IdentitySuffix != "" {
 		query.CacheKeyElements["mysql_directives"] = plan.IdentitySuffix
 	}
-	query.Step = plan.Step
-	query.StepNS = plan.Step.Nanoseconds()
-	query.Phase = plan.Phase
 	window, windowErr := buildDeltaRequestWindow(plan)
 	if windowErr != nil {
 		return query, true, windowErr
 	}
 	query.Extent = window.output
-	query.TimestampDefinition = timeseries.FieldDefinition{
-		Name: plan.OutputColumn, DataType: plan.OutputUnit,
-		Role: timeseries.RoleTimestamp, ProviderData1: byte(plan.InputUnit),
-	}
-	query.TagFieldDefintions = make(timeseries.FieldDefinitions, len(plan.GroupColumns))
-	for i, name := range plan.GroupColumns {
-		query.TagFieldDefintions[i] = timeseries.FieldDefinition{Name: name, Role: timeseries.RoleTag}
-	}
-	query.ParsedQuery = plan
-	query.BackfillTolerance = plan.BackfillTolerance
 	return query, true, nil
 }

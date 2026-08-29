@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package clickhouse
+package aftership
 
 import (
 	"strconv"
@@ -71,7 +71,7 @@ func TestBoundSemanticsMatrix(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			analysis := dialectAnalyzer.Analyze(prefix+test.predicate+suffix, time.Unix(500, 0))
+			analysis := NewAnalyzer().Analyze(prefix+test.predicate+suffix, time.Unix(500, 0))
 			if analysis.Mode != test.mode {
 				t.Fatalf("mode = %v, want %v (reason=%v, err=%v)",
 					analysis.Mode, test.mode, analysis.Reason, analysis.Err)
@@ -83,12 +83,9 @@ func TestBoundSemanticsMatrix(t *testing.T) {
 				return
 			}
 
-			trq, _, _, err := parse(prefix+test.predicate+suffix, nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if trq.Extent.Start.Unix() != test.start || trq.Extent.End.Unix() != test.end {
-				t.Errorf("extent = [%d,%d], want [%d,%d]", trq.Extent.Start.Unix(), trq.Extent.End.Unix(), test.start, test.end)
+			extent := analysis.Plan.RequestExtent(time.Unix(500, 0))
+			if extent.Start.Unix() != test.start || extent.End.Unix() != test.end {
+				t.Errorf("extent = [%d,%d], want [%d,%d]", extent.Start.Unix(), extent.End.Unix(), test.start, test.end)
 			}
 			rendered, err := analysis.Plan.RenderExtent(timeseries.Extent{
 				Start: time.Unix(300, 0), End: time.Unix(360, 0),
@@ -106,7 +103,7 @@ func TestBoundSemanticsMatrix(t *testing.T) {
 }
 
 func TestHalfOpenRawBoundsRenderFullPartialAndShardedMisses(t *testing.T) {
-	analysis := dialectAnalyzer.Analyze(
+	analysis := NewAnalyzer().Analyze(
 		"SELECT toStartOfMinute(ts) AS t, count() FROM events "+
 			"WHERE ts >= 120 AND ts < 240 GROUP BY t",
 		time.Unix(500, 0),
@@ -211,7 +208,7 @@ func TestGroupByResolvesSelectResultShape(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			analysis := dialectAnalyzer.Analyze(test.body, time.Unix(500, 0))
+			analysis := NewAnalyzer().Analyze(test.body, time.Unix(500, 0))
 			if analysis.Mode != test.mode {
 				t.Fatalf("mode = %v, want %v (reason=%v, err=%v)",
 					analysis.Mode, test.mode, analysis.Reason, analysis.Err)
@@ -264,7 +261,7 @@ func TestTimezoneExpressionsFailClosed(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			analysis := dialectAnalyzer.Analyze(test.body, time.Unix(500, 0))
+			analysis := NewAnalyzer().Analyze(test.body, time.Unix(500, 0))
 			if analysis.Mode != sqlanalyzer.CacheModeObject {
 				t.Fatalf("mode = %v, want object (reason=%v, err=%v)",
 					analysis.Mode, analysis.Reason, analysis.Err)
@@ -279,10 +276,19 @@ func TestTimezoneExpressionsFailClosed(t *testing.T) {
 	}
 }
 
+func TestFloatingEpochBoundsFailClosed(t *testing.T) {
+	query := "SELECT toStartOfMinute(ts) AS t, count() FROM events " +
+		"WHERE ts >= 120.5 AND ts < 240.5 GROUP BY t"
+	analysis := NewAnalyzer().Analyze(query, time.Now())
+	if analysis.Mode != sqlanalyzer.CacheModeObject {
+		t.Fatalf("floating epoch bounds produced a delta-cache plan: %+v", analysis)
+	}
+}
+
 func TestRendererPrivatePlaceholdersAreCollisionSafe(t *testing.T) {
 	query := "SELECT toStartOfMinute(ts) AS t, count() FROM events WHERE note = '<$TRICKSTER_TS1_0$>' " +
 		"AND marker = '<$TS1$>' AND ts >= 120 AND ts < 240 GROUP BY t"
-	analysis := dialectAnalyzer.Analyze(query, time.Unix(500, 0))
+	analysis := NewAnalyzer().Analyze(query, time.Unix(500, 0))
 	if analysis.Err != nil {
 		t.Fatal(analysis.Err)
 	}
@@ -303,7 +309,7 @@ func TestRendererPrivatePlaceholdersAreCollisionSafe(t *testing.T) {
 
 func TestRendererIsConcurrentAndImmutable(t *testing.T) {
 	const workers = 64
-	analysis := dialectAnalyzer.Analyze(
+	analysis := NewAnalyzer().Analyze(
 		"SELECT toStartOfMinute(ts) AS t, count() FROM events WHERE ts >= 120 AND ts < 240 GROUP BY t",
 		time.Unix(500, 0),
 	)

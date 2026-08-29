@@ -126,10 +126,7 @@ func parse(statement string) (*timeseries.TimeRangeQuery, *timeseries.RequestOpt
 	now := time.Now()
 	analysis := dialectAnalyzer.Analyze(statement, now)
 	canObjectCache := analysis.Mode >= sqlanalyzer.CacheModeObject
-	trq := &timeseries.TimeRangeQuery{
-		Statement:        statement,
-		CacheKeyElements: map[string]string{"query": statement},
-	}
+	trq := sqlanalyzer.NewTimeRangeQuery(statement)
 	if analysis.Mode != sqlanalyzer.CacheModeDelta || analysis.Plan == nil {
 		if !canObjectCache {
 			return nil, nil, false, analysis.Err
@@ -138,34 +135,11 @@ func parse(statement string) (*timeseries.TimeRangeQuery, *timeseries.RequestOpt
 	}
 
 	plan := analysis.Plan
-	trq.Statement = plan.CanonicalSQL
-	trq.CacheKeyElements["query"] = plan.CanonicalSQL
-	trq.Step = plan.Step
-	trq.StepNS = plan.Step.Nanoseconds()
-	trq.Phase = plan.Phase
-	trq.Extent.Start = plan.LowerBound.Value
-	if !plan.LowerBound.Inclusive {
-		trq.Extent.Start = trq.Extent.Start.Add(plan.Step)
-	}
-	if plan.UpperBound == nil {
-		trq.Extent.End = now
-	} else {
-		trq.Extent.End = plan.UpperBound.Value
-		if !plan.UpperBound.Inclusive {
-			trq.Extent.End = trq.Extent.End.Add(-plan.Step)
-		}
-	}
-	trq.TimestampDefinition = timeseries.FieldDefinition{
-		Name:          plan.OutputColumn,
-		DataType:      plan.OutputUnit,
-		Role:          timeseries.RoleTimestamp,
-		ProviderData1: byte(plan.InputUnit),
-	}
-	trq.TagFieldDefintions = make(timeseries.FieldDefinitions, len(plan.GroupColumns))
-	for i, name := range plan.GroupColumns {
-		trq.TagFieldDefintions[i] = timeseries.FieldDefinition{Name: name, Role: timeseries.RoleTag}
-	}
+	plan.ApplyToQuery(trq)
+	// This backend routes SetExtent by its own marker type rather than the
+	// bare plan, so the plan is re-wrapped after ApplyToQuery installs it.
 	trq.ParsedQuery = &Query{Plan: plan}
+	trq.Extent = plan.RequestExtent(now)
 	trq.ExtractBackfillTolerance(statement)
 
 	options := &timeseries.RequestOptions{

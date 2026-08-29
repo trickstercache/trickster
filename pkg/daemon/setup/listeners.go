@@ -119,6 +119,15 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 			lg.UpdateRouter(key, desired.router)
 			if desired.native != nil {
 				request := nativeBuildRequest(conf, desired, tracers, clients)
+				if adapter, ok := desired.native.(native.HTTPHandlerAdapter); ok {
+					h, err := adapter.Handler(request)
+					if err != nil {
+						logger.Error("unable to update native handler", logging.Pairs{logKeyListenerName: desired.listenerName, logKeyError: err.Error()})
+					} else {
+						lg.UpdateProtocolHandler(key, h)
+					}
+				}
+
 				if resolver := desired.native.RouteResolver(request); resolver != nil {
 					lg.UpdateProtocolRouteResolver(key, resolver)
 				}

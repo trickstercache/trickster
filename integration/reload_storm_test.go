@@ -32,6 +32,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/integration/internal/portutil"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -82,11 +84,8 @@ func TestReloadStormDoesNotLeak(t *testing.T) {
 	}))
 	t.Cleanup(upstream.Close)
 
-	const (
-		frontPort   = 18910
-		metricsPort = 18911
-		mgmtPort    = 18912
-	)
+	ports, releasePorts := portutil.Reserve(t, 3)
+	frontPort, metricsPort, mgmtPort := ports[0], ports[1], ports[2]
 
 	// Two configs alternate the cache_name. Switching cache_name between
 	// reloads forces applyCachingConfig to hit the close-old-cache path,
@@ -127,6 +126,7 @@ backends:
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
+	releasePorts()
 	go startTrickster(t, ctx, expectedStartError{}, "-config", cfgPath)
 
 	metricsAddr := fmt.Sprintf("127.0.0.1:%d", metricsPort)

@@ -17,7 +17,6 @@
 package integration
 
 import (
-	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -25,6 +24,7 @@ import (
 	"encoding/pem"
 	"math/big"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -32,17 +32,11 @@ import (
 )
 
 func TestTLS_CAOnlyConfig(t *testing.T) {
-	caPath := "testdata/configs/ca.pem"
+	h := staticConfigHarness(t, "testdata/configs/tls.yaml")
+	caPath := filepath.Join(t.TempDir(), "ca.pem")
 	writeSelfSignedCA(t, caPath)
-	t.Cleanup(func() { _ = os.Remove(caPath) })
-
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-
-	go startTrickster(t, ctx, expectedStartError{}, "-config", "testdata/configs/tls.yaml")
-
-	const metricsAddr = "127.0.0.1:8534"
-	waitForTrickster(t, metricsAddr)
+	rewriteGeneratedConfig(t, h.ConfigPath, "testdata/configs/ca.pem", caPath)
+	h.start(t)
 }
 
 func writeSelfSignedCA(t *testing.T, path string) {

@@ -21,7 +21,7 @@ backends:
     # update FQDN and Port to work in your environment
     origin_url: 'http://prometheus:9090'
     provider: 'prometheus'
-    listener_name: prom_port
+    listener_names: [prom_port]
 
 logging:
   log_level: 'info'

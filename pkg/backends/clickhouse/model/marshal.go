@@ -62,6 +62,8 @@ func MarshalTimeseriesWriter(ts timeseries.Timeseries,
 		return marshalTimeseriesXSV(w, ds, rlo, true, false, '\t')
 	case 5:
 		return marshalTimeseriesXSV(w, ds, rlo, true, true, '\t')
+	case OutputFormatNative:
+		return marshalTimeseriesNative(w, ds, rlo)
 	}
 	return timeseries.ErrUnknownFormat
 }

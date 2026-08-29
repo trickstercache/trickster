@@ -161,7 +161,7 @@ origin on a cache miss.
 Maintain a corpus of statements with expected classifications (delta, OPC,
 none) and, for delta-eligible entries, expected plan facts. The ClickHouse
 reference corpus is maintained in
-`pkg/backends/clickhouse/compatibility_corpus_test.go` and runs against the
+`pkg/parsing/sqlanalyzer/aftership/compatibility_corpus_test.go` and runs against the
 AfterShip parser version pinned in `go.mod`.
 
 Include:

@@ -30,6 +30,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/integration/internal/portutil"
 	"github.com/trickstercache/trickster/v2/integration/promstub"
 
 	"github.com/stretchr/testify/assert"
@@ -58,9 +59,8 @@ func TestALBCompose(t *testing.T) {
 	t.Cleanup(leafA.Close)
 	t.Cleanup(leafB.Close)
 
-	frontPort := 18700
-	metricsPort := 18701
-	mgmtPort := 18702
+	ports, release := portutil.Reserve(t, 3)
+	frontPort, metricsPort, mgmtPort := ports[0], ports[1], ports[2]
 
 	yaml := fmt.Sprintf(albTestdata(t, "alb_compose/compose.yaml.tmpl"),
 		frontPort, metricsPort, mgmtPort, leafA.URL, leafB.URL)
@@ -70,6 +70,7 @@ func TestALBCompose(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
+	release()
 	go startTrickster(t, ctx, expectedStartError{}, "-config", cfgPath)
 
 	metricsAddr := fmt.Sprintf("127.0.0.1:%d", metricsPort)

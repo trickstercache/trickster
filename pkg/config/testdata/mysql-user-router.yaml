@@ -2,7 +2,6 @@ main:
   server_name: trickster-test
 backends:
   default:
-    listener_name: default
     timeout: 1m0s
     keep_alive_timeout: 2m0s
     max_concurrent_conns: 20
@@ -38,7 +37,8 @@ backends:
     latency_max: 0s
   mysql-by-tenant:
     provider: alb
-    listener_name: mysql-routed
+    listener_names:
+    - mysql-routed
     timeout: 1m0s
     keep_alive_timeout: 2m0s
     max_concurrent_conns: 20
@@ -89,7 +89,6 @@ backends:
     latency_max: 0s
   tenant-a-mysql:
     provider: mysql
-    listener_name: default
     origin_url: mysql://tenant_a_ro:%2A%2A%2A%2A%2A@mysql-a.example:3306/analytics
     timeout: 30s
     keep_alive_timeout: 2m0s
@@ -133,7 +132,6 @@ backends:
     latency_max: 0s
   tenant-b-mysql:
     provider: mysql
-    listener_name: default
     origin_url: mysql://tenant_b_ro:%2A%2A%2A%2A%2A@mysql-b.example:3306/analytics
     timeout: 30s
     keep_alive_timeout: 2m0s

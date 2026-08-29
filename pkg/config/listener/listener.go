@@ -37,6 +37,8 @@ const (
 	ProtocolHTTP = "http"
 	// ProtocolMySQL is the MySQL wire-protocol listener protocol.
 	ProtocolMySQL = "mysql"
+	// ProtocolClickHouse is the ClickHouse native wire protocol.
+	ProtocolClickHouse = "clickhouse"
 	// DefaultTLSWatchInterval is the default poll interval for detecting
 	// out-of-band TLS certificate rotation.
 	DefaultTLSWatchInterval = timeconv.Duration(30 * time.Second)

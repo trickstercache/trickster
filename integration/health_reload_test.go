@@ -29,6 +29,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/integration/internal/portutil"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -66,11 +68,8 @@ func TestHealthPageAfterReload(t *testing.T) {
 	}))
 	t.Cleanup(upstream.Close)
 
-	const (
-		frontPort   = 18900
-		metricsPort = 18901
-		mgmtPort    = 18902
-	)
+	ports, releasePorts := portutil.Reserve(t, 3)
+	frontPort, metricsPort, mgmtPort := ports[0], ports[1], ports[2]
 
 	yaml := fmt.Sprintf(`
 listeners:
@@ -110,6 +109,7 @@ backends:
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
+	releasePorts()
 	go startTrickster(t, ctx, expectedStartError{}, "-config", cfgPath)
 
 	metricsAddr := fmt.Sprintf("127.0.0.1:%d", metricsPort)

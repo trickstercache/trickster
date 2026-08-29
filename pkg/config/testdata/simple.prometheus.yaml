@@ -3,7 +3,8 @@ main:
 backends:
   default:
     provider: prometheus
-    listener_name: prom_port
+    listener_names:
+    - prom_port
     origin_url: http://prometheus:9090
     timeout: 1m0s
     keep_alive_timeout: 2m0s

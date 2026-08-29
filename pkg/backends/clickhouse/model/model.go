@@ -23,13 +23,14 @@ import (
 
 const formatHeader = "X-Clickhouse-Format"
 
-// NewModeler returns a collection of modeling functions for clickhouse interoperability
+// NewModeler returns a collection of modeling functions for clickhouse interoperability.
+// The wire unmarshaler auto-detects Native vs TSV format.
 func NewModeler() *timeseries.Modeler {
 	return &timeseries.Modeler{
-		WireUnmarshalerReader: UnmarshalTimeseriesReader,
+		WireUnmarshalerReader: UnmarshalTimeseriesAutoReader,
 		WireMarshaler:         MarshalTimeseries,
 		WireMarshalWriter:     MarshalTimeseriesWriter,
-		WireUnmarshaler:       UnmarshalTimeseries,
+		WireUnmarshaler:       UnmarshalTimeseriesAuto,
 		CacheMarshaler:        dataset.MarshalDataSet,
 		CacheUnmarshaler:      dataset.UnmarshalDataSet,
 	}

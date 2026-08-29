@@ -26,6 +26,7 @@ import (
 
 func TestTLSCertConfig(t *testing.T) {
 	config := NewConfig()
+	config.Backends["default"].ListenerNames = []string{listener.DefaultFrontendName}
 
 	// test empty config condition #1 (ServeTLS is false, early bail)
 	n, err := config.TLSCertConfig()
@@ -114,6 +115,7 @@ func tlsConfig(condition string) (*options.Options, func(), error) {
 // a misconfigured backend cannot crash the whole TLS setup func.
 func TestTLSCertConfig_CAOnlyBackendExcluded(t *testing.T) {
 	config := NewConfig()
+	config.Backends["default"].ListenerNames = []string{listener.DefaultFrontendName}
 	config.Frontend.ServeTLS = true
 
 	// CA-only: ServeTLS flipped true but no cert+key paths. Pre-#940 this
@@ -137,6 +139,7 @@ func TestTLSCertConfig_CAOnlyBackendExcluded(t *testing.T) {
 // without error.
 func TestTLSCertConfig_MixedBackendsOnlyValidContribute(t *testing.T) {
 	config := NewConfig()
+	config.Backends["default"].ListenerNames = []string{listener.DefaultFrontendName}
 	config.Frontend.ServeTLS = true
 
 	validTLS, closer, err := tlsConfig("")
@@ -171,6 +174,7 @@ func TestTLSCertConfig_MixedBackendsOnlyValidContribute(t *testing.T) {
 
 func TestTLSCertConfigForListenerFiltersMappedBackends(t *testing.T) {
 	config := NewConfig()
+	config.Backends["default"].ListenerNames = []string{listener.DefaultFrontendName}
 	config.Listeners["custom"] = listener.New("custom")
 	config.Listeners["custom"].ServeTLS = true
 	config.Listeners[listener.DefaultFrontendName].ServeTLS = true
@@ -191,7 +195,7 @@ func TestTLSCertConfigForListenerFiltersMappedBackends(t *testing.T) {
 	}
 	config.Backends["default"].TLS = defaultTLS
 	customBackend := config.Backends["default"].Clone()
-	customBackend.ListenerName = "custom"
+	customBackend.ListenerNames = []string{"custom"}
 	customBackend.TLS = customTLS
 	config.Backends["custom"] = customBackend
 
@@ -238,7 +242,7 @@ func TestTLSCertConfigForMySQLInBandTLS(t *testing.T) {
 		t.Fatal(err)
 	}
 	backend := c.Backends["default"].Clone()
-	backend.ListenerName = "mysql1"
+	backend.ListenerNames = []string{"mysql1"}
 	backend.TLS = tlsOptions
 	delete(c.Backends, "default")
 	c.Backends["mysql1"] = backend

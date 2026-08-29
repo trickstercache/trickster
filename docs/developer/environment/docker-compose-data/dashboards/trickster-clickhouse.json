@@ -23,7 +23,7 @@
   "panels": [
     {
       "datasource": {
-        "type": "vertamedia-clickhouse-datasource",
+        "type": "grafana-clickhouse-datasource",
         "uid": "${datasource}"
       },
       "fieldConfig": {
@@ -103,30 +103,21 @@
       "pluginVersion": "11.6.0",
       "targets": [
         {
-          "adHocFilters": [],
-          "adHocValuesQuery": "",
-          "add_metadata": true,
-          "contextWindowSize": "10",
-          "database": "default",
           "datasource": {
-            "type": "vertamedia-clickhouse-datasource",
+            "type": "grafana-clickhouse-datasource",
             "uid": "${datasource}"
           },
-          "dateColDataType": "pickup_date",
-          "dateTimeColDataType": "pickup_datetime",
-          "dateTimeType": "DATETIME",
-          "editorMode": "sql",
-          "extrapolate": true,
-          "format": "time_series",
-          "formattedQuery": "SELECT toUnixTimestamp(toStartOfInterval(pickup_datetime, INTERVAL 5 MINUTE)) * 1000 AS t, count() AS trips FROM $table WHERE $timeFilter GROUP BY t ORDER BY t",
-          "interval": "",
-          "intervalFactor": 1,
-          "query": "SELECT toUnixTimestamp(toStartOfInterval(pickup_datetime, INTERVAL 5 MINUTE)) * 1000 AS t, count() AS trips FROM $table WHERE $timeFilter GROUP BY t ORDER BY t",
-          "refId": "A",
-          "round": "0s",
-          "skip_comments": true,
-          "table": "trips",
-          "useWindowFuncForMacros": true
+          "editorType": "sql",
+          "format": 1,
+          "meta": {
+            "builderOptions": {
+              "database": "default",
+              "table": "trips"
+            }
+          },
+          "queryType": "sql",
+          "rawSql": "SELECT toStartOfInterval(pickup_datetime, INTERVAL 5 MINUTE) AS t, count() AS trips FROM default.trips WHERE pickup_datetime >= $__fromTime AND pickup_datetime < $__toTime GROUP BY t ORDER BY t",
+          "refId": "A"
         }
       ],
       "title": "# Trips Over Time (5m buckets)",
@@ -135,7 +126,7 @@
     },
     {
       "datasource": {
-        "type": "vertamedia-clickhouse-datasource",
+        "type": "grafana-clickhouse-datasource",
         "uid": "${datasource}"
       },
       "fieldConfig": {
@@ -215,30 +206,21 @@
       "pluginVersion": "11.6.0",
       "targets": [
         {
-          "adHocFilters": [],
-          "adHocValuesQuery": "",
-          "add_metadata": true,
-          "contextWindowSize": "10",
-          "database": "default",
           "datasource": {
-            "type": "vertamedia-clickhouse-datasource",
+            "type": "grafana-clickhouse-datasource",
             "uid": "${datasource}"
           },
-          "dateColDataType": "pickup_date",
-          "dateTimeColDataType": "pickup_datetime",
-          "dateTimeType": "DATETIME",
-          "editorMode": "sql",
-          "extrapolate": true,
-          "format": "time_series",
-          "formattedQuery": "SELECT $timeSeries AS t, count() AS trips FROM $table WHERE $timeFilter GROUP BY t ORDER BY t",
-          "interval": "",
-          "intervalFactor": 1,
-          "query": "SELECT $timeSeries AS t, count() AS trips FROM $table WHERE $timeFilter GROUP BY t ORDER BY t",
-          "refId": "A",
-          "round": "0s",
-          "skip_comments": true,
-          "table": "trips",
-          "useWindowFuncForMacros": true
+          "editorType": "sql",
+          "format": 1,
+          "meta": {
+            "builderOptions": {
+              "database": "default",
+              "table": "trips"
+            }
+          },
+          "queryType": "sql",
+          "rawSql": "SELECT $__timeInterval(pickup_datetime) AS t, count() AS trips FROM default.trips WHERE pickup_datetime >= $__fromTime AND pickup_datetime < $__toTime GROUP BY t ORDER BY t",
+          "refId": "A"
         }
       ],
       "title": "# Trips Over Time ($__interval)",
@@ -247,7 +229,7 @@
     },
     {
       "datasource": {
-        "type": "vertamedia-clickhouse-datasource",
+        "type": "grafana-clickhouse-datasource",
         "uid": "${datasource}"
       },
       "fieldConfig": {
@@ -327,30 +309,21 @@
       "pluginVersion": "11.6.0",
       "targets": [
         {
-          "adHocFilters": [],
-          "adHocValuesQuery": "",
-          "add_metadata": true,
-          "contextWindowSize": "10",
-          "database": "default",
           "datasource": {
-            "type": "vertamedia-clickhouse-datasource",
+            "type": "grafana-clickhouse-datasource",
             "uid": "${datasource}"
           },
-          "dateColDataType": "pickup_date",
-          "dateTimeColDataType": "pickup_datetime",
-          "dateTimeType": "DATETIME",
-          "editorMode": "sql",
-          "extrapolate": true,
-          "format": "time_series",
-          "formattedQuery": "SELECT toUnixTimestamp(toStartOfInterval(pickup_datetime, INTERVAL 15 MINUTE)) * 1000 AS t, avg(fare_amount) AS avg_fare, avg(tip_amount) AS avg_tip, avg(total_amount) AS avg_total FROM $table WHERE $timeFilter GROUP BY t ORDER BY t",
-          "interval": "",
-          "intervalFactor": 1,
-          "query": "SELECT toUnixTimestamp(toStartOfInterval(pickup_datetime, INTERVAL 15 MINUTE)) * 1000 AS t, avg(fare_amount) AS avg_fare, avg(tip_amount) AS avg_tip, avg(total_amount) AS avg_total FROM $table WHERE $timeFilter GROUP BY t ORDER BY t",
-          "refId": "A",
-          "round": "0s",
-          "skip_comments": true,
-          "table": "trips",
-          "useWindowFuncForMacros": true
+          "editorType": "sql",
+          "format": 1,
+          "meta": {
+            "builderOptions": {
+              "database": "default",
+              "table": "trips"
+            }
+          },
+          "queryType": "sql",
+          "rawSql": "SELECT toStartOfInterval(pickup_datetime, INTERVAL 15 MINUTE) AS t, avg(fare_amount) AS avg_fare, avg(tip_amount) AS avg_tip, avg(total_amount) AS avg_total FROM default.trips WHERE pickup_datetime >= $__fromTime AND pickup_datetime < $__toTime GROUP BY t ORDER BY t",
+          "refId": "A"
         }
       ],
       "title": "Fare Metrics (15m buckets)",
@@ -359,7 +332,7 @@
     },
     {
       "datasource": {
-        "type": "vertamedia-clickhouse-datasource",
+        "type": "grafana-clickhouse-datasource",
         "uid": "${datasource}"
       },
       "fieldConfig": {
@@ -439,30 +412,21 @@
       "pluginVersion": "11.6.0",
       "targets": [
         {
-          "adHocFilters": [],
-          "adHocValuesQuery": "",
-          "add_metadata": true,
-          "contextWindowSize": "10",
-          "database": "default",
           "datasource": {
-            "type": "vertamedia-clickhouse-datasource",
+            "type": "grafana-clickhouse-datasource",
             "uid": "${datasource}"
           },
-          "dateColDataType": "pickup_date",
-          "dateTimeColDataType": "pickup_datetime",
-          "dateTimeType": "DATETIME",
-          "editorMode": "sql",
-          "extrapolate": true,
-          "format": "time_series",
-          "formattedQuery": "SELECT toUnixTimestamp(toStartOfInterval(pickup_datetime, INTERVAL 15 MINUTE)) * 1000 AS t, cab_type, count() AS trips FROM $table WHERE $timeFilter GROUP BY t, cab_type ORDER BY t",
-          "interval": "",
-          "intervalFactor": 1,
-          "query": "SELECT toUnixTimestamp(toStartOfInterval(pickup_datetime, INTERVAL 15 MINUTE)) * 1000 AS t, cab_type, count() AS trips FROM $table WHERE $timeFilter GROUP BY t, cab_type ORDER BY t",
-          "refId": "A",
-          "round": "0s",
-          "skip_comments": true,
-          "table": "trips",
-          "useWindowFuncForMacros": true
+          "editorType": "sql",
+          "format": 1,
+          "meta": {
+            "builderOptions": {
+              "database": "default",
+              "table": "trips"
+            }
+          },
+          "queryType": "sql",
+          "rawSql": "SELECT toStartOfInterval(pickup_datetime, INTERVAL 15 MINUTE) AS t, cab_type, count() AS trips FROM default.trips WHERE pickup_datetime >= $__fromTime AND pickup_datetime < $__toTime GROUP BY t, cab_type ORDER BY t",
+          "refId": "A"
         }
       ],
       "title": "Trips by Cab Type (15m buckets)",
@@ -471,7 +435,7 @@
     },
     {
       "datasource": {
-        "type": "vertamedia-clickhouse-datasource",
+        "type": "grafana-clickhouse-datasource",
         "uid": "${datasource}"
       },
       "fieldConfig": {
@@ -551,30 +515,21 @@
       "pluginVersion": "11.6.0",
       "targets": [
         {
-          "adHocFilters": [],
-          "adHocValuesQuery": "",
-          "add_metadata": true,
-          "contextWindowSize": "10",
-          "database": "default",
           "datasource": {
-            "type": "vertamedia-clickhouse-datasource",
+            "type": "grafana-clickhouse-datasource",
             "uid": "${datasource}"
           },
-          "dateColDataType": "pickup_date",
-          "dateTimeColDataType": "pickup_datetime",
-          "dateTimeType": "DATETIME",
-          "editorMode": "sql",
-          "extrapolate": true,
-          "format": "table",
-          "formattedQuery": "SELECT pickup_ntaname AS neighborhood, count() AS trips, round(avg(trip_distance), 2) AS avg_distance_mi, round(avg(total_amount), 2) AS avg_total_usd FROM $table WHERE $timeFilter GROUP BY pickup_ntaname ORDER BY trips DESC LIMIT 10",
-          "interval": "",
-          "intervalFactor": 1,
-          "query": "SELECT pickup_ntaname AS neighborhood, count() AS trips, round(avg(trip_distance), 2) AS avg_distance_mi, round(avg(total_amount), 2) AS avg_total_usd FROM $table WHERE $timeFilter GROUP BY pickup_ntaname ORDER BY trips DESC LIMIT 10",
-          "refId": "A",
-          "round": "0s",
-          "skip_comments": true,
-          "table": "trips",
-          "useWindowFuncForMacros": true
+          "editorType": "sql",
+          "format": 0,
+          "meta": {
+            "builderOptions": {
+              "database": "default",
+              "table": "trips"
+            }
+          },
+          "queryType": "sql",
+          "rawSql": "SELECT pickup_ntaname AS neighborhood, count() AS trips, round(avg(trip_distance), 2) AS avg_distance_mi, round(avg(total_amount), 2) AS avg_total_usd FROM default.trips WHERE pickup_datetime >= $__fromTime AND pickup_datetime < $__toTime GROUP BY pickup_ntaname ORDER BY trips DESC LIMIT 10",
+          "refId": "A"
         }
       ],
       "title": "Top Pickup Neighborhoods",
@@ -591,13 +546,13 @@
       {
         "allowCustomValue": false,
         "current": {
-          "text": "clickhouse-direct",
-          "value": "P788589A3A7614F2B"
+          "text": "clickhouse-grafana-direct",
+          "value": "clickhouse-grafana-direct"
         },
         "description": "",
         "name": "datasource",
         "options": [],
-        "query": "vertamedia-clickhouse-datasource",
+        "query": "grafana-clickhouse-datasource",
         "refresh": 1,
         "regex": "",
         "type": "datasource"
@@ -612,6 +567,6 @@
   "timezone": "browser",
   "title": "ClickHouse",
   "uid": "aekapw5xl2epsc",
-  "version": 3,
+  "version": 4,
   "description": "NYC taxi trips seeded into ClickHouse with the same source-derived time shift used by MySQL."
 }

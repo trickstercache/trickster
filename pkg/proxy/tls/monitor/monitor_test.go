@@ -76,7 +76,7 @@ func testConfig(t *testing.T, interval time.Duration) (*config.Config, string, s
 	lo.TLSWatchInterval = timeconv.Duration(interval)
 	conf.Backends = map[string]*bo.Options{
 		"test": {
-			ListenerName: listenerconfig.DefaultFrontendName,
+			ListenerNames: []string{listenerconfig.DefaultFrontendName},
 			TLS: &to.Options{
 				ServeTLS:          true,
 				FullChainCertPath: certPath,
@@ -359,5 +359,38 @@ func TestMonitorApplyLifecycle(t *testing.T) {
 		return runtime.NumGoroutine() <= before
 	}) {
 		t.Errorf("goroutine leak: before=%d after=%d", before, runtime.NumGoroutine())
+	}
+}
+
+func TestMonitorTracksEveryBackendListenerBinding(t *testing.T) {
+	conf, _, _ := testConfig(t, 0)
+	primary := conf.Listeners[listenerconfig.DefaultFrontendName]
+	primary.Active = true
+	other := primary.Clone()
+	other.Active = true
+	conf.Listeners["second"] = other
+	conf.Backends["test"].ListenerNames = []string{listenerconfig.DefaultFrontendName, "second"}
+	m := New()
+	defer m.Close()
+	group := listener.NewGroup()
+	m.Apply(conf, group)
+	if len(m.listeners) != 2 {
+		t.Fatalf("tracked %d listeners, want 2", len(m.listeners))
+	}
+	for _, ln := range m.listeners {
+		if len(ln.fileSets) != 1 {
+			t.Fatal("binding is missing its certificate")
+		}
+	}
+	next := conf.Clone()
+	next.Backends["test"].ListenerNames = []string{"second"}
+	m.Apply(next, group)
+	if len(m.listeners) != 1 {
+		t.Fatalf("removed binding still monitored: %v", m.listeners)
+	}
+	for _, ln := range m.listeners {
+		if ln.name != "second" {
+			t.Fatal("wrong binding retained")
+		}
 	}
 }

@@ -85,11 +85,8 @@ func TestALBNestedPoolAvailable(t *testing.T) {
 	leafB := mk(&bHits)
 	t.Cleanup(leafB.Close)
 
-	const (
-		frontPort   = 18960
-		metricsPort = 18961
-		mgmtPort    = 18962
-	)
+	ports, release := portutil.Reserve(t, 3)
+	frontPort, metricsPort, mgmtPort := ports[0], ports[1], ports[2]
 
 	yaml := fmt.Sprintf(albTestdata(t, "alb_nested/nested.yaml.tmpl"),
 		frontPort, metricsPort, mgmtPort, leafA.URL, leafB.URL)
@@ -99,6 +96,7 @@ func TestALBNestedPoolAvailable(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
+	release()
 	go startTrickster(t, ctx, expectedStartError{}, "-config", cfgPath)
 
 	metricsAddr := fmt.Sprintf("127.0.0.1:%d", metricsPort)

@@ -70,7 +70,7 @@ backends:
 
   mysql-by-tenant:
     provider: alb
-    listener_name: mysql-routed
+    listener_names: [mysql-routed]
     authenticator_name: mysql-tenants
     alb:
       mechanism: ur

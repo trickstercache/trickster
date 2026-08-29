@@ -28,6 +28,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/integration/internal/portutil"
+
 	"github.com/stretchr/testify/require"
 )
 
@@ -68,11 +70,8 @@ func (u *headerCaptureUpstream) lastHeader(t *testing.T) http.Header {
 }
 
 func TestProxyStripsHopByHopWithEmptyConnectionToken(t *testing.T) {
-	const (
-		frontPort   = 19400
-		metricsPort = 19401
-		mgmtPort    = 19402
-	)
+	ports, releasePorts := portutil.Reserve(t, 3)
+	frontPort, metricsPort, mgmtPort := ports[0], ports[1], ports[2]
 	upstream := newHeaderCaptureUpstream(t)
 
 	var sb strings.Builder
@@ -96,6 +95,7 @@ func TestProxyStripsHopByHopWithEmptyConnectionToken(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
+	releasePorts()
 	go startTrickster(t, ctx, expectedStartError{}, "-config", cfgPath)
 	waitForTrickster(t, fmt.Sprintf("127.0.0.1:%d", metricsPort))
 

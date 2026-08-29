@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package clickhouse
+package aftership
 
 import (
 	"strings"
@@ -42,7 +42,7 @@ func TestAnalyzeAdditionalBucketForms(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			query := "SELECT " + test.expr + " AS t, count() FROM events " +
 				"WHERE ts >= 120 AND ts < 240 GROUP BY t"
-			analysis := dialectAnalyzer.Analyze(query, time.Unix(500, 0))
+			analysis := NewAnalyzer().Analyze(query, time.Unix(500, 0))
 			if analysis.Err != nil {
 				t.Fatal(analysis.Err)
 			}
@@ -56,7 +56,7 @@ func TestAnalyzeAdditionalBucketForms(t *testing.T) {
 func TestAnalyzeReversedPredicates(t *testing.T) {
 	query := "SELECT toStartOfMinute(ts) AS t, count() FROM events " +
 		"WHERE 120 <= ts AND 240 > ts GROUP BY t"
-	analysis := dialectAnalyzer.Analyze(query, time.Unix(500, 0))
+	analysis := NewAnalyzer().Analyze(query, time.Unix(500, 0))
 	if analysis.Err != nil {
 		t.Fatal(analysis.Err)
 	}
@@ -100,7 +100,7 @@ func TestAnalyzeUnsupportedBucketBranches(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			query := "SELECT " + test.expr + " AS t, count() FROM events " +
 				"WHERE ts >= 120 AND ts < 240 GROUP BY t"
-			analysis := dialectAnalyzer.Analyze(query, time.Unix(500, 0))
+			analysis := NewAnalyzer().Analyze(query, time.Unix(500, 0))
 			if analysis.Mode != sqlanalyzer.CacheModeObject ||
 				analysis.Reason != sqlanalyzer.ReasonUnsupportedBucket || analysis.Err == nil {
 				t.Errorf("analysis = %+v, want unsupported-bucket object caching", analysis)
@@ -136,7 +136,7 @@ func TestAnalyzeRangeAndGroupingBranches(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			analysis := dialectAnalyzer.Analyze(test.query, time.Unix(500, 0))
+			analysis := NewAnalyzer().Analyze(test.query, time.Unix(500, 0))
 			if analysis.Mode != sqlanalyzer.CacheModeObject || analysis.Reason != test.reason || analysis.Err == nil {
 				t.Errorf("analysis = %+v, want object mode with reason %v", analysis, test.reason)
 			}
@@ -232,7 +232,7 @@ func TestBoundRenderingAndParsingHelpers(t *testing.T) {
 		{"milliseconds", endpointLower, boundUnixMilli, "1234"},
 		{"microseconds", endpointUpper, boundUnixMicro, "2987654"},
 		{"nanoseconds", endpointUpper, boundUnixNano, "2987654321"},
-		{"SQL datetime", endpointLower, boundSQLDateTime, "'1970-01-01 00:00:01'"},
+		{"SQL datetime", endpointLower, boundSQLDateTime, "'1970-01-01 00:00:01.23456789'"},
 		{"toDateTime", endpointUpper, boundToDateTime, "toDateTime(2)"},
 		{"toDate", endpointUpper, boundToDate, "toDate(2)"},
 	}
@@ -255,9 +255,9 @@ func TestBoundRenderingAndParsingHelpers(t *testing.T) {
 		{"2020-01-02T03:04:05Z", 1_577_934_245, true},
 		{"not-a-time", -62_135_596_800, false},
 	} {
-		got, ok := parseSQLTime(test.value)
+		got, ok := sqlanalyzer.ParseSQLTime(test.value)
 		if got.Unix() != test.want || ok != test.ok {
-			t.Errorf("parseSQLTime(%q) = (%s, %t), want Unix %d, %t", test.value, got, ok, test.want, test.ok)
+			t.Errorf("ParseSQLTime(%q) = (%s, %t), want Unix %d, %t", test.value, got, ok, test.want, test.ok)
 		}
 	}
 }

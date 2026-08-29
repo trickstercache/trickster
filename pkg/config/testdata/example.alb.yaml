@@ -2,7 +2,6 @@ main:
   server_name: trickster-test
 backends:
   default:
-    listener_name: default
     timeout: 1m0s
     keep_alive_timeout: 2m0s
     max_concurrent_conns: 20
@@ -38,7 +37,6 @@ backends:
     latency_max: 0s
   origin1:
     provider: rpc
-    listener_name: default
     origin_url: https://origin1/
     timeout: 1m0s
     keep_alive_timeout: 2m0s
@@ -78,7 +76,6 @@ backends:
     latency_max: 0s
   origin2:
     provider: rp
-    listener_name: default
     origin_url: http://origin2
     timeout: 1m0s
     keep_alive_timeout: 2m0s
@@ -118,7 +115,6 @@ backends:
     latency_max: 0s
   prom1:
     provider: prometheus
-    listener_name: default
     origin_url: http://prom1:9090
     timeout: 1m0s
     keep_alive_timeout: 2m0s
@@ -157,7 +153,6 @@ backends:
     latency_max: 0s
   prom2:
     provider: prometheus
-    listener_name: default
     origin_url: http://prom2:9090
     timeout: 1m0s
     keep_alive_timeout: 2m0s
@@ -196,7 +191,6 @@ backends:
     latency_max: 0s
   promalb:
     provider: alb
-    listener_name: default
     timeout: 1m0s
     keep_alive_timeout: 2m0s
     max_concurrent_conns: 20
@@ -238,7 +232,6 @@ backends:
     latency_max: 0s
   proxycache:
     provider: alb
-    listener_name: default
     timeout: 1m0s
     keep_alive_timeout: 2m0s
     max_concurrent_conns: 20

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package clickhouse
+package aftership
 
 import (
 	"strconv"
@@ -84,7 +84,7 @@ func TestClickHouseCompatibilityCorpus(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
 	for _, test := range clickHouseCompatibilityCorpus {
 		t.Run(test.name, func(t *testing.T) {
-			analysis := dialectAnalyzer.Analyze(test.query, now)
+			analysis := NewAnalyzer().Analyze(test.query, now)
 			if analysis.Mode != test.mode || analysis.Reason != test.reason {
 				t.Fatalf("analysis = (%s, %s, %v), want (%s, %s)",
 					analysis.Mode.String(), analysis.Reason, analysis.Err,
@@ -115,6 +115,12 @@ func TestAllFixedBucketCadences(t *testing.T) {
 		start    int64
 	}{
 		{"toMonday", week, 4 * day, 345600},
+		{"toStartOfWeek", week, 3 * day, 259200},
+		{"timeSlot", 30 * time.Minute, 0, 0},
+		{"toStartOfSecond", time.Second, 0, 0},
+		{"toStartOfMillisecond", time.Millisecond, 0, 0},
+		{"toStartOfMicrosecond", time.Microsecond, 0, 0},
+		{"toStartOfNanosecond", time.Nanosecond, 0, 0},
 		{"toStartOfDay", day, 0, 0},
 		{"toStartOfHour", time.Hour, 0, 0},
 		{"toStartOfMinute", time.Minute, 0, 0},
@@ -128,7 +134,7 @@ func TestAllFixedBucketCadences(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.function, func(t *testing.T) {
-			end := test.start + int64(2*test.step/time.Second)
+			end := test.start + max(1, int64(2*test.step/time.Second))
 			query := "SELECT " + test.function + "(ts) AS t, count() FROM events WHERE ts >= " +
 				formatInt(test.start) + " AND ts < " + formatInt(end) + " GROUP BY t"
 			assertDeltaCadence(t, query, test.step, test.phase)
@@ -144,6 +150,9 @@ func TestAllIntervalBucketUnits(t *testing.T) {
 		start int64
 	}{
 		{"second", time.Second, 0, 0},
+		{"millisecond", time.Millisecond, 0, 0},
+		{"microsecond", time.Microsecond, 0, 0},
+		{"nanosecond", time.Nanosecond, 0, 0},
 		{"minute", time.Minute, 0, 0},
 		{"hour", time.Hour, 0, 0},
 		{"day", day, 0, 0},
@@ -155,9 +164,16 @@ func TestAllIntervalBucketUnits(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.unit, func(t *testing.T) {
-			end := test.start + int64(2*test.step/time.Second)
+			end := test.start + max(1, int64(2*test.step/time.Second))
 			query := "SELECT toStartOfInterval(ts, INTERVAL 1 " + test.unit + ") AS t, count() " +
 				"FROM events WHERE ts >= " + formatInt(test.start) + " AND ts < " + formatInt(end) + " GROUP BY t"
+			if test.unit == "microsecond" || test.unit == "nanosecond" {
+				analysis := NewAnalyzer().Analyze(query, time.Now())
+				if analysis.Mode != sqlanalyzer.CacheModeObject || analysis.Reason != sqlanalyzer.ReasonInvalidSQL {
+					t.Fatalf("unsupported parser interval did not fail closed: %+v", analysis)
+				}
+				return
+			}
 			assertDeltaCadence(t, query, test.step, test.phase)
 		})
 	}
@@ -167,7 +183,7 @@ func TestCrossPredicateBetweenStateDoesNotLeak(t *testing.T) {
 	query := "SELECT toStartOfMinute(ts) AS t, count() FROM events " +
 		"WHERE partition_date BETWEEN toDate(120) AND toDate(240) " +
 		"AND ts >= 120 AND ts < 240 GROUP BY t"
-	analysis := dialectAnalyzer.Analyze(query, time.Unix(500, 0))
+	analysis := NewAnalyzer().Analyze(query, time.Unix(500, 0))
 	if analysis.Mode != sqlanalyzer.CacheModeDelta || analysis.Plan == nil {
 		t.Fatalf("analysis = %+v, want delta", analysis)
 	}
@@ -189,7 +205,7 @@ func TestCrossPredicateBetweenStateDoesNotLeak(t *testing.T) {
 
 func assertDeltaCadence(t *testing.T, query string, step, phase time.Duration) {
 	t.Helper()
-	analysis := dialectAnalyzer.Analyze(query, time.Unix(1_700_000_000, 0))
+	analysis := NewAnalyzer().Analyze(query, time.Unix(1_700_000_000, 0))
 	if analysis.Mode != sqlanalyzer.CacheModeDelta || analysis.Plan == nil || analysis.Err != nil {
 		t.Fatalf("analysis = %+v, want delta", analysis)
 	}

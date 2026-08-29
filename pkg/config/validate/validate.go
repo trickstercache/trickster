@@ -193,11 +193,12 @@ func Listeners(c *config.Config) error {
 			// templates are never routed, so they map to no listener
 			continue
 		}
+		backend.NormalizeListenerNames()
 		if adapter := nativeListeners.Get(strings.ToLower(backend.Provider)); adapter != nil {
 			if err := adapter.ValidateBackend(backend); err != nil {
 				return fmt.Errorf("%s backend %q: %w", adapter.Protocol(), backendName, err)
 			}
-			if nativeTargets[backendName] {
+			if nativeTargets[backendName] && len(backend.ListenerNames) == 0 {
 				continue
 			}
 		}
@@ -210,22 +211,28 @@ func Listeners(c *config.Config) error {
 				}
 			}
 		}
-		if backend.ListenerName == "" {
-			backend.ListenerName = listener.DefaultFrontendName
+		if len(backend.ListenerNames) == 0 {
+			backend.ListenerNames = []string{listener.DefaultFrontendName}
 		}
-		if backend.ListenerName == mgmt.ListenerNameMgmt || backend.ListenerName == mgmt.ListenerNameMetrics {
-			return fmt.Errorf("backend %q cannot use reserved listener %q", backendName, backend.ListenerName)
-		}
-		if _, ok := c.Listeners[backend.ListenerName]; !ok {
-			return fmt.Errorf("backend %q references undefined listener %q", backendName, backend.ListenerName)
-		}
-		mapped[backend.ListenerName]++
-		if mappedProviders[backend.ListenerName] == nil {
-			mappedProviders[backend.ListenerName] = make(map[string]string)
-		}
-		mappedProviders[backend.ListenerName][backendName] = strings.ToLower(backend.Provider)
-		if backend.TLS != nil && backend.TLS.ServeTLS {
-			tlsMapped[backend.ListenerName] = true
+		for _, name := range backend.ListenerNames {
+			if name == "" {
+				return fmt.Errorf("backend %q has an empty listener name", backendName)
+			}
+			if name == mgmt.ListenerNameMgmt || name == mgmt.ListenerNameMetrics {
+				return fmt.Errorf("backend %q cannot use reserved listener %q", backendName, name)
+			}
+			lo := c.Listeners[name]
+			if lo == nil {
+				return fmt.Errorf("backend %q references undefined listener %q", backendName, name)
+			}
+			mapped[name]++
+			if mappedProviders[name] == nil {
+				mappedProviders[name] = make(map[string]string)
+			}
+			mappedProviders[name][backendName] = strings.ToLower(backend.Provider)
+			if backend.TLS != nil && backend.TLS.ServeTLS {
+				tlsMapped[name] = true
+			}
 		}
 	}
 
@@ -271,7 +278,7 @@ func Listeners(c *config.Config) error {
 				return fmt.Errorf("listener %q with protocol %q cannot map to backend %q with provider %q",
 					name, options.Protocol, backendName, provider)
 			}
-			if options.Protocol == listener.ProtocolHTTP && nativeListeners.Get(targetProvider) != nil {
+			if adapter := nativeListeners.Get(targetProvider); options.Protocol == listener.ProtocolHTTP && adapter != nil && !adapter.SupportsHTTP() {
 				return fmt.Errorf("backend %q with provider %q requires a listener with protocol %q",
 					backendName, provider, targetProvider)
 			}

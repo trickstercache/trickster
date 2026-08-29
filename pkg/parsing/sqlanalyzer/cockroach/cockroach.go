@@ -300,11 +300,11 @@ func (a *Analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis
 		}
 	}
 	if selectStmt.Limit != nil {
-		return objectAnalysis(sqlanalyzer.ReasonUnsupportedLimit, ErrUnsupportedLimit)
+		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedLimit, ErrUnsupportedLimit)
 	}
 	if selectStmt.With != nil || clause.Distinct || len(clause.DistinctOn) > 0 ||
 		clause.Having != nil || len(clause.Window) > 0 || containsSubquery(clause) {
-		return objectAnalysis(sqlanalyzer.ReasonUnsupportedFormat, ErrUnsupportedStatement)
+		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedFormat, ErrUnsupportedStatement)
 	}
 	if containsVolatileFunction(clause.Exprs) {
 		return sqlanalyzer.Analysis{
@@ -315,11 +315,11 @@ func (a *Analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis
 
 	bucket, bucketIndex, err := a.analyzeSelectList(clause.Exprs)
 	if err != nil {
-		return objectAnalysis(sqlanalyzer.ReasonUnsupportedBucket, err)
+		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedBucket, err)
 	}
 	groups, err := analyzeGroupBy(clause.GroupBy, clause.Exprs, bucket, bucketIndex)
 	if err != nil {
-		return objectAnalysis(sqlanalyzer.ReasonUnsupportedGrouping, err)
+		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedGrouping, err)
 	}
 	ranges, err := analyzeRanges(clause, bucket, now, a.opts.RoundUnalignedTimeBounds)
 	if err != nil {
@@ -329,7 +329,7 @@ func (a *Analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis
 		} else if errors.Is(err, ErrAmbiguousTimeAxis) {
 			reason = sqlanalyzer.ReasonAmbiguousTimeAxis
 		}
-		return objectAnalysis(reason, err)
+		return sqlanalyzer.ObjectAnalysis(reason, err)
 	}
 
 	canonical, renderer := buildQueryArtifacts(selectStmt, clause, ranges, bucket,
@@ -356,10 +356,6 @@ func (a *Analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis
 	return sqlanalyzer.Analysis{
 		Mode: sqlanalyzer.CacheModeDelta, Reason: sqlanalyzer.ReasonDeltaCacheable, Plan: plan,
 	}
-}
-
-func objectAnalysis(reason sqlanalyzer.AnalysisReason, err error) sqlanalyzer.Analysis {
-	return sqlanalyzer.Analysis{Mode: sqlanalyzer.CacheModeObject, Reason: reason, Err: err}
 }
 
 // leadingKeywordIsSelect reports whether an unparsable statement still begins
@@ -638,12 +634,12 @@ func analyzeRanges(
 	if clause.Where == nil {
 		return result, ErrNotTimeRangeQuery
 	}
-	conditions, err := flattenConjunction(clause.Where.Expr, nil)
-	if err != nil {
-		return result, err
-	}
+	conditions := sqlanalyzer.FlattenConjunction(clause.Where.Expr, unwrapParens, splitAnd, nil)
 	var predicates []predicateBound
 	for _, condition := range conditions {
+		if containsUnsafeBoolean(condition) {
+			return result, ErrUnsafePredicate
+		}
 		predicate, ok, err := analyzePredicate(condition, now)
 		if err != nil {
 			return result, err
@@ -710,20 +706,20 @@ func normalizePrimaryBounds(result *rangeAnalysis, bucket bucketSpec, roundUnali
 		!strings.EqualFold(bucket.outputColumn, bucket.timeColumn)
 	if lowerOnOutput {
 		if result.lower.inclusive {
-			result.lower.value = ceilBucket(result.lower.value, bucket)
+			result.lower.value = sqlanalyzer.CeilBucket(result.lower.value, bucket.step, bucket.phase)
 		} else {
-			result.lower.value = floorBucket(result.lower.value, bucket)
+			result.lower.value = sqlanalyzer.FloorBucket(result.lower.value, bucket.step, bucket.phase)
 			result.lower.target.offset = -bucket.step
 		}
 	} else {
 		if !result.lower.inclusive {
 			return ErrUnsafePredicate
 		}
-		if !alignedToBucket(result.lower.value, bucket) {
+		if !sqlanalyzer.AlignedToBucket(result.lower.value, bucket.step, bucket.phase) {
 			if !roundUnaligned {
 				return ErrUnsafePredicate
 			}
-			result.lower.value = ceilBucket(result.lower.value, bucket)
+			result.lower.value = sqlanalyzer.CeilBucket(result.lower.value, bucket.step, bucket.phase)
 			rounded = true
 		}
 	}
@@ -736,9 +732,9 @@ func normalizePrimaryBounds(result *rangeAnalysis, bucket bucketSpec, roundUnali
 		!strings.EqualFold(bucket.outputColumn, bucket.timeColumn)
 	if upperOnOutput {
 		if result.upper.inclusive {
-			result.upper.value = floorBucket(result.upper.value, bucket)
+			result.upper.value = sqlanalyzer.FloorBucket(result.upper.value, bucket.step, bucket.phase)
 		} else {
-			result.upper.value = ceilBucket(result.upper.value, bucket)
+			result.upper.value = sqlanalyzer.CeilBucket(result.upper.value, bucket.step, bucket.phase)
 			result.upper.target.offset = bucket.step
 		}
 		return nil
@@ -746,11 +742,11 @@ func normalizePrimaryBounds(result *rangeAnalysis, bucket bucketSpec, roundUnali
 	if result.upper.inclusive {
 		return ErrUnsafePredicate
 	}
-	if !alignedToBucket(result.upper.value, bucket) {
+	if !sqlanalyzer.AlignedToBucket(result.upper.value, bucket.step, bucket.phase) {
 		if !roundUnaligned {
 			return ErrUnsafePredicate
 		}
-		result.upper.value = floorBucket(result.upper.value, bucket)
+		result.upper.value = sqlanalyzer.FloorBucket(result.upper.value, bucket.step, bucket.phase)
 		rounded = true
 	}
 	result.upper.target.offset = bucket.step
@@ -762,46 +758,11 @@ func normalizePrimaryBounds(result *rangeAnalysis, bucket bucketSpec, roundUnali
 	return nil
 }
 
-func alignedToBucket(value time.Time, bucket bucketSpec) bool {
-	if bucket.step <= 0 {
-		return false
-	}
-	return (value.UnixNano()-bucket.phase.Nanoseconds())%bucket.step.Nanoseconds() == 0
-}
-
-func floorBucket(value time.Time, bucket bucketSpec) time.Time {
-	step := bucket.step.Nanoseconds()
-	phase := bucket.phase.Nanoseconds()
-	epochNs := value.UnixNano()
-	remainder := (epochNs - phase) % step
-	if remainder < 0 {
-		remainder += step
-	}
-	return time.Unix(0, epochNs-remainder).UTC()
-}
-
-func ceilBucket(value time.Time, bucket bucketSpec) time.Time {
-	floor := floorBucket(value, bucket)
-	if floor.Equal(value) {
-		return floor
-	}
-	return floor.Add(bucket.step)
-}
-
-func flattenConjunction(expr tree.Expr, out []tree.Expr) ([]tree.Expr, error) {
-	expr = unwrapParens(expr)
+func splitAnd(expr tree.Expr) (tree.Expr, tree.Expr, bool) {
 	if and, ok := expr.(*tree.AndExpr); ok {
-		var err error
-		out, err = flattenConjunction(and.Left, out)
-		if err != nil {
-			return nil, err
-		}
-		return flattenConjunction(and.Right, out)
+		return and.Left, and.Right, true
 	}
-	if containsUnsafeBoolean(expr) {
-		return nil, ErrUnsafePredicate
-	}
-	return append(out, expr), nil
+	return nil, nil, false
 }
 
 func unwrapParens(expr tree.Expr) tree.Expr {
