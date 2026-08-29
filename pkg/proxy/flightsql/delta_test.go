@@ -72,7 +72,7 @@ var renderedBounds = regexp.MustCompile(`>= (\d+).* < (\d+)`)
 
 // rangedUpstream serves one row per minute bucket per host for whatever time
 // range the rendered statement names.
-func rangedUpstream(t *testing.T) func(query string) ([]byte, error) {
+func rangedUpstream(t testing.TB) func(query string) ([]byte, error) {
 	t.Helper()
 	return func(query string) ([]byte, error) {
 		match := renderedBounds.FindStringSubmatch(query)

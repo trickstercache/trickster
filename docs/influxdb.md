@@ -61,7 +61,7 @@ InfluxDB 3.x ships with v1 and v2 compatibility endpoints. Trickster's existing 
 
 ### Flight SQL (gRPC)
 
-InfluxDB 3.x exposes SQL via Apache Arrow Flight SQL on gRPC in addition to HTTP. Grafana's InfluxDB datasource in SQL mode, the Python/Rust/Java SDKs, and ADBC all default to Flight SQL, so HTTP-only caching misses a significant fraction of real-world query traffic.
+InfluxDB 3.x exposes SQL via Apache Arrow Flight SQL on gRPC in addition to HTTP. Grafana's InfluxDB datasource in SQL mode, the Python/Rust/Java SDKs, and ADBC all default to Flight SQL, so HTTP-only caching misses a significant fraction of real-world query traffic. The protocol-level (backend-agnostic) listener documentation lives in [Apache Arrow Flight SQL Listeners](./flight-sql.md); this section covers the InfluxDB specifics.
 
 Trickster can expose a Flight SQL server that proxies to an upstream Flight SQL endpoint and caches the Arrow IPC byte stream. Enable it by defining a listener with the `flight-sql` protocol and mapping exactly one InfluxDB backend to it (alongside its usual HTTP listener):
 

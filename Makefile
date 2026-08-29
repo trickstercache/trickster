@@ -171,6 +171,14 @@ benchmark-mysql:
 	@go test ./pkg/backends/mysql -run '^$$' -bench '^BenchmarkMySQL' -benchmem -count=5
 	@go test ./pkg/backends/alb/mech/ur -run '^$$' -bench '^BenchmarkResolveRouteProtocolNeutral$$' -benchmem -count=5
 
+.PHONY: benchmark-flightsql-smoke
+benchmark-flightsql-smoke:
+	@go test ./pkg/proxy/flightsql -run '^$$' -bench '^BenchmarkFlightSQLSmoke$$' -benchtime=1x -benchmem
+
+.PHONY: benchmark-flightsql
+benchmark-flightsql:
+	@go test ./pkg/proxy/flightsql -run '^$$' -bench '^BenchmarkFlightSQL' -benchmem -count=5
+
 .PHONY: benchmark-graphite
 benchmark-graphite:
 	@go test ./pkg/backends/graphite/resolution -run '^$$' -bench '^BenchmarkResolver' \

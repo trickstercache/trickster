@@ -26,6 +26,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	cachestatus "github.com/trickstercache/trickster/v2/pkg/cache/status"
 	checksum "github.com/trickstercache/trickster/v2/pkg/checksum/md5"
+	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/engines/nativedelta"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
@@ -138,11 +139,18 @@ type deltaRunner struct {
 
 func newDeltaRunner(cfg DeltaConfig, keyPrefix string) *deltaRunner {
 	engineCfg := nativedelta.Config{
-		Protocol:      "flightsql",
+		Protocol:      flightsqlDialect,
 		BackendName:   keyPrefix,
 		CacheClient:   cfg.CacheClient,
 		CacheTTL:      cfg.CacheTTL,
 		MaxObjectSize: cfg.MaxObjectSize,
+		ObserveCacheFailure: func(reason string) {
+			observeCacheFailure(cfg.CacheClient, reason)
+		},
+		ObserveRewriteFailure: func(reason string) {
+			metrics.SQLQueryRewriteFailures.WithLabelValues(
+				keyPrefix, flightsqlDialect, reason).Inc()
+		},
 	}
 	if engineCfg.CacheTTL <= 0 {
 		engineCfg.CacheTTL = DefaultCacheTTL
@@ -150,7 +158,24 @@ func newDeltaRunner(cfg DeltaConfig, keyPrefix string) *deltaRunner {
 	return &deltaRunner{cfg: cfg, engine: nativedelta.New(engineCfg, deltaCodec{})}
 }
 
-// serve executes one statement query through the three-tier cache.
+// observeCacheFailure records an engine cache failure against the configured
+// cache's own name and provider, matching the shared cache-event convention.
+func observeCacheFailure(cacheClient func() cache.Cache, reason string) {
+	if cacheClient == nil {
+		return
+	}
+	resolved := cacheClient()
+	if resolved == nil || resolved.Configuration() == nil {
+		return
+	}
+	configuration := resolved.Configuration()
+	metrics.CacheEvents.WithLabelValues(configuration.Name, configuration.Provider,
+		"error", flightsqlDialect+"_"+reason).Inc()
+}
+
+// serve executes one statement query through the three-tier cache, recording
+// the analysis mode and cache outcome to the native SQL cache metrics under
+// the flightsql dialect.
 func (d *deltaRunner) serve(ctx context.Context, s *Server,
 	query string,
 ) (*arrow.Schema, <-chan flight.StreamChunk, error) {
@@ -162,12 +187,18 @@ func (d *deltaRunner) serve(ctx context.Context, s *Server,
 		(analysis.Plan == nil && volatileQuery(query)) {
 		b, err := s.upstream.Execute(ctx, query)
 		if err != nil {
+			d.observeCache(s.keyPrefix, sqlanalyzer.CacheModeNone,
+				cachestatus.LookupStatusProxyError, 0, time.Since(now))
 			return nil, nil, fmt.Errorf("upstream execute: %w", err)
 		}
+		d.observeCache(s.keyPrefix, sqlanalyzer.CacheModeNone,
+			cachestatus.LookupStatusProxyOnly, 0, time.Since(now))
 		return streamIPCBytes(ctx, b)
 	}
 	if analysis.Mode != sqlanalyzer.CacheModeDelta || analysis.Plan == nil {
-		b, _, err := s.objectTier(ctx, query)
+		b, lookupStatus, err := s.objectTier(ctx, query)
+		d.observeCache(s.keyPrefix, sqlanalyzer.CacheModeObject,
+			lookupStatus, 0, time.Since(now))
 		if err != nil {
 			return nil, nil, err
 		}
@@ -178,7 +209,7 @@ func (d *deltaRunner) serve(ctx context.Context, s *Server,
 	trq := planTimeRangeQuery(plan)
 	baseKey := s.tenantKey(ctx) + ":dpc:" +
 		checksum.Checksum(plan.CanonicalSQL+"|"+plan.IdentitySuffix)
-	payload, _, err := d.engine.ExecuteDelta(nativedelta.DeltaRequest[*deltaPayload]{
+	payload, lookupStatus, err := d.engine.ExecuteDelta(nativedelta.DeltaRequest[*deltaPayload]{
 		Key:         baseKey,
 		FallbackKey: baseKey + ":fallback",
 		EmptyKey:    baseKey + ":empty",
@@ -186,10 +217,59 @@ func (d *deltaRunner) serve(ctx context.Context, s *Server,
 		Now:         now,
 		Ops:         d.ops(ctx, s, query, plan, trq),
 	})
+	d.observeCache(s.keyPrefix, sqlanalyzer.CacheModeDelta,
+		lookupStatus, payload.rowCount(), time.Since(now))
 	if err != nil {
 		return nil, nil, err
 	}
 	return d.respond(ctx, payload)
+}
+
+// Metric label constants shared with the other native SQL protocols.
+const (
+	flightsqlDialect  = "flightsql"
+	metricMethodQuery = "QUERY"
+	metricPathQuery   = "query"
+)
+
+// observeCache records one statement execution's cache outcome to the native
+// SQL cache counter and the standard proxy request metrics.
+func (d *deltaRunner) observeCache(backend string, mode sqlanalyzer.CacheMode,
+	lookupStatus cachestatus.LookupStatus, points int, elapsed time.Duration,
+) {
+	httpStatus := "200"
+	if lookupStatus == cachestatus.LookupStatusProxyError {
+		httpStatus = "500"
+	}
+	metrics.SQLQueryCache.WithLabelValues(backend, flightsqlDialect,
+		mode.String(), lookupStatus.String()).Inc()
+	metrics.ProxyRequestStatus.WithLabelValues(backend, flightsqlDialect,
+		metricMethodQuery, lookupStatus.String(), httpStatus, metricPathQuery).Inc()
+	metrics.ProxyRequestElements.WithLabelValues(backend, flightsqlDialect,
+		lookupStatus.String(), metricPathQuery).Add(float64(points))
+	metrics.ProxyRequestDuration.WithLabelValues(backend, flightsqlDialect,
+		metricMethodQuery, lookupStatus.String(), httpStatus, metricPathQuery).
+		Observe(elapsed.Seconds())
+}
+
+// rowCount reports the number of points a dataset payload carries; verbatim
+// payloads report zero, as their row count is unknown without decoding.
+func (p *deltaPayload) rowCount() int {
+	if p == nil || p.DS == nil {
+		return 0
+	}
+	points := 0
+	for _, result := range p.DS.Results {
+		if result == nil {
+			continue
+		}
+		for _, series := range result.SeriesList {
+			if series != nil {
+				points += len(series.Points)
+			}
+		}
+	}
+	return points
 }
 
 // respond streams a delta payload: verbatim bytes when present, otherwise the
