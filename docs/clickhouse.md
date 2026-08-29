@@ -4,9 +4,6 @@ Trickster will accelerate ClickHouse queries that return time series data normal
 
 ## Scope of Support
 
-
-Trickster is tested with the 
-
 Trickster is tested with the official [ClickHouse DataSource Plugin for Grafana](https://grafana.com/grafana/plugins/grafana-clickhouse-datasource/) v4.21.1 and supports acceleration of queries constructed by this plugin using its built-in time macros like `$__fromTime` and `$__toTime`. Delta caching with this an other plugins (e.g., Altinity/Vertamedia) depends on the supported query shapes below. Trickster also supports several other query formats that return "time series like" data.
 
 Trickster also supports the ClickHouse Go SDK (`clickhouse-go/v2`) over its HTTP and Native protocols, including `clickhouse.OpenDB`.
