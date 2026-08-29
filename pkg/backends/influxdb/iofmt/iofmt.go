@@ -95,14 +95,23 @@ func (f Format) IsPost() bool {
 
 // V3OutputFormat returns the v3 output format byte from the request's format param.
 func V3OutputFormat(r *http.Request) byte {
-	switch strings.ToLower(r.URL.Query().Get("format")) {
+	of, _ := V3OutputFormatByName(r.URL.Query().Get("format"))
+	return of
+}
+
+// V3OutputFormatByName maps a v3 format parameter value to its output format
+// byte. ok is false for formats Trickster cannot reserialize (e.g., parquet,
+// pretty); requests for those must be proxied through rather than cached.
+func V3OutputFormatByName(name string) (byte, bool) {
+	switch strings.ToLower(name) {
+	case "", "json":
+		return V3OutputJSON, true
 	case "jsonl":
-		return V3OutputJSONL
+		return V3OutputJSONL, true
 	case "csv":
-		return V3OutputCSV
-	default:
-		return V3OutputJSON
+		return V3OutputCSV, true
 	}
+	return V3OutputJSON, false
 }
 
 func Detect(r *http.Request) Format {

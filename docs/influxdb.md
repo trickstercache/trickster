@@ -22,7 +22,7 @@ Trickster supports InfluxDB 3.x via both the native v3 API endpoints and the v1/
 
 ### SQL Query Caching
 
-SQL queries using `date_bin()` for time binning are parsed for time range extraction and step detection, enabling delta-proxy caching. Trickster extracts time ranges from `WHERE` clauses and intervals from `date_bin(INTERVAL '...', time)` in `SELECT`.
+SQL queries using `date_bin()` or `date_trunc()` for time binning are parsed for time range extraction and step detection, enabling delta-proxy caching. Trickster extracts time ranges from `WHERE` clauses and intervals from `date_bin(INTERVAL '...', time)` or `date_trunc('unit', time)` in `SELECT`. Live, unaligned time ranges (the shape dashboard tools emit) are rounded inward to complete buckets. Grouped queries (`GROUP BY 1, host`) are cached per tag series.
 
 Example query that Trickster will accelerate:
 
@@ -33,7 +33,7 @@ WHERE time >= '2024-01-01 00:00:00' AND time < '2024-01-02 00:00:00'
 GROUP BY 1
 ```
 
-Non-SELECT queries and queries without parseable time ranges are proxied without caching.
+SELECT queries that cannot be delta-cached (no fixed-cadence time bucket, joins, subqueries, window functions, `LIMIT`, variable-length buckets like `'1 month'`, or unsafe time predicates) fall back to the object proxy cache, which caches the whole response briefly and passes results through unchanged. Non-SELECT statements and parameterized queries (a `params` field in the request) are proxied to the origin without delta caching.
 
 ### Response Formats
 
@@ -69,7 +69,15 @@ backends:
       flight_upstream_address: 'influxdb3:8181'   # optional, defaults to origin_url host
 ```
 
-The `authorization` and `database` headers are forwarded from the client through to the upstream. Queries are cached keyed by the full SQL statement; re-running the same query returns the cached Arrow response.
+The `authorization` and `database` headers are forwarded from the client through to the upstream. Query and metadata responses are cached as Arrow IPC byte streams, keyed by the backend name, the `database`/`bucket-name` headers, a hash of the `authorization` header, and the statement — so tenants and databases never share cache entries. Requests that send no `authorization` header share one anonymous cache scope, mirroring the access the upstream would grant them. Statements referencing nondeterministic functions (`now()`, `current_timestamp`, `random()`, ...) are never cached. The cache lifetime defaults to 60s and is configurable per backend via `influxdb.flight_cache_ttl`.
+
+#### Flight SQL TLS
+
+The Flight listener serves TLS when its mapped backend's `tls` block presents a certificate and key (the same mechanism HTTP listeners use); certificate rotation applies on config reload without dropping the listener. Without a certificate the listener serves plaintext gRPC. The upstream dial uses TLS when `influxdb.flight_upstream_tls` is set, honoring the backend `tls` block's `insecure_skip_verify`.
+
+#### Unsupported Flight SQL RPCs
+
+Trickster proxies queries, the metadata RPCs below, and the prepared-statement lifecycle. Other Flight SQL RPCs — `GetSchema`, writes/updates/ingest (`ExecuteUpdate`, `DoPut` ingestion), transactions, savepoints, query cancellation, and session options — return gRPC `Unimplemented`; clients requiring them should connect to InfluxDB directly.
 
 Flight SQL listeners share Trickster's standard listener lifecycle: connection limits (`connections_limit`), graceful drain on SIGTERM (active streams are drained until the configured drain timeout, then closed), and config reload (SIGHUP) — a reload with an unchanged backend configuration keeps serving on the existing socket, while a changed configuration drains the old server and rebinds.
 

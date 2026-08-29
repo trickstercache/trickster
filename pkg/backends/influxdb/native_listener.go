@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/flight"
@@ -141,7 +142,14 @@ func (a nativeListenerAdapter) Build(r native.BuildRequest) (listener.ProtocolSe
 	if err != nil {
 		return nil, err
 	}
-	client, err := flight.NewFlightSQLClient(flight.UpstreamConfig{Address: upstream})
+	upstreamConfig := flight.UpstreamConfig{Address: upstream}
+	if o.InfluxDB != nil {
+		upstreamConfig.UseTLS = o.InfluxDB.FlightUpstreamTLS
+	}
+	if upstreamConfig.UseTLS && o.TLS != nil {
+		upstreamConfig.InsecureSkipVerify = o.TLS.InsecureSkipVerify
+	}
+	client, err := flight.NewFlightSQLClient(upstreamConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -149,6 +157,17 @@ func (a nativeListenerAdapter) Build(r native.BuildRequest) (listener.ProtocolSe
 	if backend == nil {
 		return nil, errors.New("missing InfluxDB backend client")
 	}
-	srv := flight.NewServer(client, newFlightCache(backend.Cache()))
-	return flight.NewProtocolServer(srv, descriptor.RestartKey), nil
+	serverOptions := []flight.ServerOption{flight.WithCacheKeyPrefix(backendName)}
+	if o.InfluxDB != nil && o.InfluxDB.FlightCacheTTL > 0 {
+		serverOptions = append(serverOptions,
+			flight.WithCacheTTL(time.Duration(o.InfluxDB.FlightCacheTTL)))
+	}
+	srv := flight.NewServer(client, newFlightCache(backend.Cache()), serverOptions...)
+	// the mapped backend's tls block supplies the listener certificate; with
+	// none configured the listener serves plaintext gRPC
+	tlsConfig, err := r.Config.TLSCertConfigForListener(r.ListenerName)
+	if err != nil {
+		return nil, err
+	}
+	return flight.NewProtocolServer(srv, descriptor.RestartKey, tlsConfig), nil
 }

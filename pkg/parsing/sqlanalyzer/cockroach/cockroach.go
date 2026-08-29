@@ -306,6 +306,13 @@ func (a *Analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis
 		clause.Having != nil || len(clause.Window) > 0 || containsSubquery(clause) {
 		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedFormat, ErrUnsupportedStatement)
 	}
+	// Joins and multi-table selects can carry time predicates in ON clauses
+	// this analyzer never inspects, and inline window frames span rows across
+	// bucket boundaries; per-extent delta computation would return wrong
+	// values for either, so both fail closed to the object cache.
+	if !singleTableFrom(clause) || containsWindowFunction(clause.Exprs) {
+		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedFormat, ErrUnsupportedStatement)
+	}
 	if containsVolatileFunction(clause.Exprs) {
 		return sqlanalyzer.Analysis{
 			Mode:   sqlanalyzer.CacheModeNone,
@@ -395,6 +402,39 @@ func containsSubquery(clause *tree.SelectClause) bool {
 		}
 	}
 	return found
+}
+
+// singleTableFrom reports whether the select reads from exactly one plain
+// table. Joins (including parenthesized ones) and comma-joined table lists
+// fail the check; FROM-subqueries are separately rejected by containsSubquery.
+func singleTableFrom(clause *tree.SelectClause) bool {
+	if len(clause.From.Tables) != 1 {
+		return false
+	}
+	aliased, ok := clause.From.Tables[0].(*tree.AliasedTableExpr)
+	if !ok {
+		return false
+	}
+	_, ok = aliased.Expr.(*tree.TableName)
+	return ok
+}
+
+// containsWindowFunction reports whether any select expression carries an
+// inline OVER (...) window; the explicit WINDOW clause is checked separately.
+func containsWindowFunction(items tree.SelectExprs) bool {
+	windowed := false
+	for _, item := range items {
+		if item.Expr == nil || windowed {
+			continue
+		}
+		walkExprTree(item.Expr, func(node tree.Expr) bool {
+			if function, ok := node.(*tree.FuncExpr); ok && function.WindowDef != nil {
+				windowed = true
+			}
+			return !windowed
+		})
+	}
+	return windowed
 }
 
 var volatileFunctions = map[string]struct{}{

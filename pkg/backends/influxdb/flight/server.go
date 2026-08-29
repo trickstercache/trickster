@@ -45,7 +45,7 @@ import (
 // `bucket-name` to the upstream for per-request scoping, so cache keys must
 // mirror that scope to avoid returning one tenant's data to another.
 // Authorization is hashed so bearer tokens don't leak into cache keys.
-func tenantKey(ctx context.Context) string {
+func (s *Server) tenantKey(ctx context.Context) string {
 	md, _ := metadata.FromIncomingContext(ctx)
 	db := mdFirst(md, "database")
 	bucket := mdFirst(md, "bucket-name")
@@ -55,7 +55,7 @@ func tenantKey(ctx context.Context) string {
 		sum := sha256.Sum256([]byte(auth))
 		authPart = hex.EncodeToString(sum[:8])
 	}
-	return db + "|" + bucket + "|" + authPart
+	return s.keyPrefix + "|" + db + "|" + bucket + "|" + authPart
 }
 
 func mdFirst(md metadata.MD, key string) string {
@@ -78,12 +78,40 @@ type Server struct {
 	cache    Cache
 	alloc    memory.Allocator
 
+	// cacheTTL bounds the lifetime of cached response bytes.
+	cacheTTL time.Duration
+	// keyPrefix namespaces cache keys per backend so two backends sharing a
+	// named cache never alias each other's entries.
+	keyPrefix string
+
 	// paramHashes tracks the most recent bound parameter hash per prepared
 	// statement handle. Used as part of the DoGetPreparedStatement cache key
 	// so two clients executing the same prepared statement with different
 	// parameter values don't alias each other's cache entries.
 	paramMu     sync.Mutex
 	paramHashes map[string]string
+}
+
+// DefaultCacheTTL is the cache lifetime applied when the backend does not
+// configure flight_cache_ttl.
+const DefaultCacheTTL = 60 * time.Second
+
+// ServerOption customizes a Server.
+type ServerOption func(*Server)
+
+// WithCacheTTL sets the cache lifetime for query and metadata responses.
+func WithCacheTTL(ttl time.Duration) ServerOption {
+	return func(s *Server) {
+		if ttl > 0 {
+			s.cacheTTL = ttl
+		}
+	}
+}
+
+// WithCacheKeyPrefix namespaces the server's cache keys, typically by backend
+// name.
+func WithCacheKeyPrefix(prefix string) ServerOption {
+	return func(s *Server) { s.keyPrefix = prefix }
 }
 
 // UpstreamClient is the minimum surface the server needs from a Flight SQL
@@ -111,13 +139,18 @@ type Cache interface {
 }
 
 // NewServer constructs a Flight SQL server with the given upstream and cache.
-func NewServer(upstream UpstreamClient, cache Cache) *Server {
-	return &Server{
+func NewServer(upstream UpstreamClient, cache Cache, opts ...ServerOption) *Server {
+	s := &Server{
 		upstream:    upstream,
 		cache:       cache,
 		alloc:       memory.DefaultAllocator,
+		cacheTTL:    DefaultCacheTTL,
 		paramHashes: make(map[string]string),
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 // GetFlightInfoStatement handles a SQL query request. It returns a FlightInfo
@@ -146,7 +179,16 @@ func (s *Server) DoGetStatement(ctx context.Context,
 	ticket flightsql.StatementQueryTicket,
 ) (*arrow.Schema, <-chan flight.StreamChunk, error) {
 	query := string(ticket.GetStatementHandle())
-	key := tenantKey(ctx) + ":stmt:" + query
+	// nondeterministic statements are never cached; each execution can
+	// legitimately return a different result
+	if volatileQuery(query) {
+		b, err := s.upstream.Execute(ctx, query)
+		if err != nil {
+			return nil, nil, fmt.Errorf("upstream execute: %w", err)
+		}
+		return streamIPCBytes(b)
+	}
+	key := s.tenantKey(ctx) + ":stmt:" + query
 
 	ipcBytes, cached := s.cacheGet(key)
 	if !cached {
@@ -177,15 +219,17 @@ func (s *Server) flightInfoForCommand(desc *flight.FlightDescriptor,
 }
 
 // fetchMetadata centralizes the cache-then-upstream pattern for metadata RPCs.
-// key should be a stable, collision-resistant identifier for the request.
-func (s *Server) fetchMetadata(ctx context.Context, key string,
+// key should be a stable, collision-resistant identifier for the request; kind
+// is a low-cardinality label safe to surface in error messages, which must not
+// echo the tenant-scoped cache key.
+func (s *Server) fetchMetadata(ctx context.Context, kind, key string,
 	fetch func(context.Context) ([]byte, error),
 ) (*arrow.Schema, <-chan flight.StreamChunk, error) {
 	ipcBytes, cached := s.cacheGet(key)
 	if !cached {
 		b, err := fetch(ctx)
 		if err != nil {
-			return nil, nil, fmt.Errorf("upstream %s: %w", key, err)
+			return nil, nil, fmt.Errorf("upstream %s: %w", kind, err)
 		}
 		ipcBytes = b
 		s.cacheSet(key, ipcBytes)
@@ -203,7 +247,7 @@ func (s *Server) GetFlightInfoCatalogs(_ context.Context,
 // DoGetCatalogs streams the upstream's catalog list (cache-first).
 func (s *Server) DoGetCatalogs(ctx context.Context,
 ) (*arrow.Schema, <-chan flight.StreamChunk, error) {
-	return s.fetchMetadata(ctx, tenantKey(ctx)+":meta:catalogs",
+	return s.fetchMetadata(ctx, "catalogs", s.tenantKey(ctx)+":meta:catalogs",
 		s.upstream.GetCatalogs)
 }
 
@@ -222,11 +266,11 @@ func (s *Server) DoGetDBSchemas(ctx context.Context,
 		Catalog:               cmd.GetCatalog(),
 		DbSchemaFilterPattern: cmd.GetDBSchemaFilterPattern(),
 	}
-	key := tenantKey(ctx) + ":meta:dbschemas:" + strings.Join([]string{
+	key := s.tenantKey(ctx) + ":meta:dbschemas:" + strings.Join([]string{
 		deref(cmd.GetCatalog()),
 		deref(cmd.GetDBSchemaFilterPattern()),
 	}, "|")
-	return s.fetchMetadata(ctx, key, func(ctx context.Context) ([]byte, error) {
+	return s.fetchMetadata(ctx, "dbschemas", key, func(ctx context.Context) ([]byte, error) {
 		return s.upstream.GetDBSchemas(ctx, opts)
 	})
 }
@@ -254,14 +298,14 @@ func (s *Server) DoGetTables(ctx context.Context,
 		TableTypes:             tableTypes,
 		IncludeSchema:          cmd.GetIncludeSchema(),
 	}
-	key := tenantKey(ctx) + ":meta:tables:" + strings.Join([]string{
+	key := s.tenantKey(ctx) + ":meta:tables:" + strings.Join([]string{
 		deref(cmd.GetCatalog()),
 		deref(cmd.GetDBSchemaFilterPattern()),
 		deref(cmd.GetTableNameFilterPattern()),
 		strings.Join(tableTypes, ","),
 		strconv.FormatBool(cmd.GetIncludeSchema()),
 	}, "|")
-	return s.fetchMetadata(ctx, key, func(ctx context.Context) ([]byte, error) {
+	return s.fetchMetadata(ctx, "tables", key, func(ctx context.Context) ([]byte, error) {
 		return s.upstream.GetTables(ctx, opts)
 	})
 }
@@ -276,7 +320,7 @@ func (s *Server) GetFlightInfoTableTypes(_ context.Context,
 // DoGetTableTypes streams the upstream's table types (cache-first).
 func (s *Server) DoGetTableTypes(ctx context.Context,
 ) (*arrow.Schema, <-chan flight.StreamChunk, error) {
-	return s.fetchMetadata(ctx, tenantKey(ctx)+":meta:tabletypes",
+	return s.fetchMetadata(ctx, "tabletypes", s.tenantKey(ctx)+":meta:tabletypes",
 		s.upstream.GetTableTypes)
 }
 
@@ -302,7 +346,7 @@ func (s *Server) DoGetSqlInfo(ctx context.Context,
 	for i, v := range rawInfo {
 		info[i] = flightsql.SqlInfo(v)
 	}
-	return s.fetchMetadata(ctx, fmt.Sprintf("%s:meta:sqlinfo:%v", tenantKey(ctx), rawInfo),
+	return s.fetchMetadata(ctx, "sqlinfo", fmt.Sprintf("%s:meta:sqlinfo:%v", s.tenantKey(ctx), rawInfo),
 		func(ctx context.Context) ([]byte, error) {
 			return s.upstream.GetSqlInfo(ctx, info)
 		})
@@ -382,8 +426,8 @@ func (s *Server) DoGetPreparedStatement(ctx context.Context,
 	cmd flightsql.PreparedStatementQuery,
 ) (*arrow.Schema, <-chan flight.StreamChunk, error) {
 	handle := cmd.GetPreparedStatementHandle()
-	key := tenantKey(ctx) + ":prep:" + string(handle) + ":" + s.paramHash(handle)
-	return s.fetchMetadata(ctx, key, func(ctx context.Context) ([]byte, error) {
+	key := s.tenantKey(ctx) + ":prep:" + string(handle) + ":" + s.paramHash(handle)
+	return s.fetchMetadata(ctx, "prepared statement", key, func(ctx context.Context) ([]byte, error) {
 		return s.upstream.ExecutePrepared(ctx, handle)
 	})
 }
@@ -451,6 +495,21 @@ func streamIPCBytes(b []byte) (*arrow.Schema, <-chan flight.StreamChunk, error) 
 	return schema, ch, nil
 }
 
+// volatileQuery reports whether a statement references nondeterministic
+// functions whose results must never be cached.
+func volatileQuery(query string) bool {
+	lower := strings.ToLower(query)
+	for _, token := range []string{
+		"now(", "current_timestamp", "current_date", "current_time", "random(",
+		"gen_random_uuid",
+	} {
+		if strings.Contains(lower, token) {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Server) cacheGet(query string) ([]byte, bool) {
 	if s.cache == nil {
 		return nil, false
@@ -462,7 +521,7 @@ func (s *Server) cacheSet(query string, data []byte) {
 	if s.cache == nil {
 		return
 	}
-	s.cache.Set(query, data, 60*time.Second)
+	s.cache.Set(query, data, s.cacheTTL)
 }
 
 // EncodeRecords serializes a slice of Arrow records into IPC bytes with their

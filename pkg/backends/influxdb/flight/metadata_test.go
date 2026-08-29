@@ -221,14 +221,14 @@ func (f *fakeMessageReader) Next() bool {
 	f.done = true
 	return true
 }
-func (f *fakeMessageReader) RecordBatch() arrow.RecordBatch     { return f.rec }
-func (f *fakeMessageReader) Record() arrow.RecordBatch          { return f.rec }
-func (f *fakeMessageReader) Schema() *arrow.Schema              { return f.rec.Schema() }
-func (f *fakeMessageReader) Err() error                         { return nil }
-func (f *fakeMessageReader) Release()                           {}
-func (f *fakeMessageReader) Retain()                            {}
-func (f *fakeMessageReader) Read() (arrow.RecordBatch, error)   { return nil, nil }
-func (f *fakeMessageReader) Chunk() flight.StreamChunk          { return flight.StreamChunk{Data: f.rec} }
+func (f *fakeMessageReader) RecordBatch() arrow.RecordBatch   { return f.rec }
+func (f *fakeMessageReader) Record() arrow.RecordBatch        { return f.rec }
+func (f *fakeMessageReader) Schema() *arrow.Schema            { return f.rec.Schema() }
+func (f *fakeMessageReader) Err() error                       { return nil }
+func (f *fakeMessageReader) Release()                         {}
+func (f *fakeMessageReader) Retain()                          {}
+func (f *fakeMessageReader) Read() (arrow.RecordBatch, error) { return nil, nil }
+func (f *fakeMessageReader) Chunk() flight.StreamChunk        { return flight.StreamChunk{Data: f.rec} }
 func (f *fakeMessageReader) LatestFlightDescriptor() *flight.FlightDescriptor {
 	return nil
 }
@@ -315,11 +315,11 @@ func (f fakeClosePrepReq) GetPreparedStatementHandle() []byte { return f.handle 
 
 // fakeGetTables implements flightsql.GetTables for tests.
 type fakeGetTables struct {
-	catalog              *string
-	dbSchemaFilter       *string
-	tableNameFilter      string
-	tableTypes           []string
-	includeSchema        bool
+	catalog         *string
+	dbSchemaFilter  *string
+	tableNameFilter string
+	tableTypes      []string
+	includeSchema   bool
 }
 
 func (f fakeGetTables) GetCatalog() *string                { return f.catalog }

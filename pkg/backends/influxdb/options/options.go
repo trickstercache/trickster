@@ -18,6 +18,7 @@
 package options
 
 import (
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 
 	"go.yaml.in/yaml/v3"
@@ -29,6 +30,13 @@ type Options struct {
 	// address used by an influxdb-protocol native listener mapped to this
 	// backend. Defaults to the host:port from the backend's origin_url.
 	FlightUpstreamAddress string `yaml:"flight_upstream_address,omitempty"`
+	// FlightUpstreamTLS dials the upstream Flight SQL endpoint with TLS.
+	// Certificate verification honors the backend's tls block
+	// (insecure_skip_verify).
+	FlightUpstreamTLS bool `yaml:"flight_upstream_tls,omitempty"`
+	// FlightCacheTTL bounds the lifetime of cached Flight SQL response bytes.
+	// Defaults to 60s when unset.
+	FlightCacheTTL timeconv.Duration `yaml:"flight_cache_ttl,omitempty"`
 }
 
 // New returns a new InfluxDB Options with default values.

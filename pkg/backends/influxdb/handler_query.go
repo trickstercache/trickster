@@ -37,13 +37,10 @@ import (
 func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 	f := iofmt.Detect(r)
 	switch {
-	case f.IsV3SQL():
-		if !isV3SelectQuery(r) {
-			c.ProxyHandler(w, r)
-			return
-		}
-	case f.IsV3InfluxQL():
-		if !isV3SelectQuery(r) {
+	case f.IsV3SQL(), f.IsV3InfluxQL():
+		// formats Trickster cannot reserialize (parquet, pretty, ...) are
+		// proxied through untouched, per docs/influxdb.md
+		if !isV3SelectQuery(r) || !isql.SupportedV3Format(r) {
 			c.ProxyHandler(w, r)
 			return
 		}

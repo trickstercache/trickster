@@ -35,7 +35,7 @@ func startTestServer(t *testing.T, srv *Server) (*ProtocolServer, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ps := NewProtocolServer(srv, "test")
+	ps := NewProtocolServer(srv, "test", nil)
 	go func() { _ = ps.Serve(l) }()
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -173,7 +173,7 @@ func TestProtocolServerShutdown(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ps := NewProtocolServer(srv, "shutdown-test")
+	ps := NewProtocolServer(srv, "shutdown-test", nil)
 	if got := ps.ProtocolRestartKey(); got != "shutdown-test" {
 		t.Fatalf("restart key = %q", got)
 	}

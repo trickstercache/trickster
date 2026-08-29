@@ -18,11 +18,14 @@ package flight
 
 import (
 	"context"
+	"crypto/tls"
 	"net"
+	"sync/atomic"
 
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/flight/flightsql"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 )
 
 // ProtocolServer adapts the Flight SQL gRPC server to Trickster's native
@@ -31,15 +34,41 @@ import (
 type ProtocolServer struct {
 	grpc       *grpc.Server
 	restartKey string
+	tlsConfig  atomic.Pointer[tls.Config]
 }
 
 // NewProtocolServer returns a ProtocolServer exposing srv over Flight SQL.
 // restartKey identifies the backend configuration that produced the server so
-// config reloads can decide between reuse and restart.
-func NewProtocolServer(srv *Server, restartKey string) *ProtocolServer {
-	g := grpc.NewServer()
+// config reloads can decide between reuse and restart. When tlsConfig carries
+// a certificate, the listener serves TLS and supports in-place certificate
+// rotation via UpdateTLSConfig; otherwise it serves plaintext gRPC.
+func NewProtocolServer(srv *Server, restartKey string, tlsConfig *tls.Config) *ProtocolServer {
+	s := &ProtocolServer{restartKey: restartKey}
+	var options []grpc.ServerOption
+	if tlsConfig != nil && len(tlsConfig.Certificates) > 0 {
+		s.UpdateTLSConfig(tlsConfig)
+		options = append(options, grpc.Creds(credentials.NewTLS(&tls.Config{
+			GetConfigForClient: func(*tls.ClientHelloInfo) (*tls.Config, error) {
+				return s.tlsConfig.Load(), nil
+			},
+		})))
+	}
+	g := grpc.NewServer(options...)
 	flight.RegisterFlightServiceServer(g, flightsql.NewFlightServer(srv))
-	return &ProtocolServer{grpc: g, restartKey: restartKey}
+	s.grpc = g
+	return s
+}
+
+// UpdateTLSConfig rotates certificates for subsequently accepted connections.
+// It has no effect on a server started without TLS.
+func (s *ProtocolServer) UpdateTLSConfig(c *tls.Config) {
+	if c == nil || len(c.Certificates) == 0 {
+		return
+	}
+	c = c.Clone()
+	// gRPC requires HTTP/2 via ALPN
+	c.NextProtos = []string{"h2"}
+	s.tlsConfig.Store(c)
 }
 
 // Serve accepts Flight SQL connections until Shutdown. It returns nil after a

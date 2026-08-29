@@ -30,12 +30,12 @@ import (
 
 func TestParseTimeRangeQuery_SQL(t *testing.T) {
 	tests := []struct {
-		name      string
-		query     string
-		method    string
-		path      string
-		wantErr   bool
-		wantStep  time.Duration
+		name     string
+		query    string
+		method   string
+		path     string
+		wantErr  bool
+		wantStep time.Duration
 	}{
 		{
 			name:     "basic date_bin query with epoch",

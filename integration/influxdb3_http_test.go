@@ -17,6 +17,7 @@
 package integration
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -70,6 +71,44 @@ func TestInfluxDB3HTTP(t *testing.T) {
 		require.Equal(t, http.StatusOK, resp2.StatusCode, "body: %s", string(body2))
 		hdr2 := parseTricksterResult(resp2.Header.Get("X-Trickster-Result"))
 		require.Contains(t, hdr2, "status", "expected status in X-Trickster-Result on second call")
+	})
+
+	// sql_grouped_by_tag guards against tag-series collapse: a GROUP BY tag
+	// query must return every tag's rows from cache, not one row per epoch.
+	t.Run("sql_grouped_by_tag", func(t *testing.T) {
+		q := fmt.Sprintf(
+			"SELECT date_bin(INTERVAL '10 seconds', time) AS time, cpu, avg(usage_idle) AS usage_idle "+
+				"FROM cpu WHERE time >= %d AND time < %d GROUP BY 1, cpu ORDER BY 1",
+			fiveMinAgo, now)
+		params := url.Values{"q": {q}, "db": {"trickster"}, "format": {"json"}}
+
+		countTagRows := func(body []byte) (rows int, tags map[string]bool) {
+			t.Helper()
+			var decoded []map[string]any
+			require.NoError(t, json.Unmarshal(body, &decoded))
+			tags = make(map[string]bool)
+			for _, row := range decoded {
+				if v, ok := row["cpu"].(string); ok {
+					tags[v] = true
+				}
+			}
+			return len(decoded), tags
+		}
+
+		resp1, body1 := doGet(t, "/api/v3/query_sql", params)
+		require.Equal(t, http.StatusOK, resp1.StatusCode, "body: %s", string(body1))
+		rows1, tags1 := countTagRows(body1)
+		require.Greater(t, len(tags1), 1,
+			"expected multiple cpu tags in grouped result; got %v", tags1)
+
+		// second call is served from cache and must preserve every tag series
+		resp2, body2 := doGet(t, "/api/v3/query_sql", params)
+		require.Equal(t, http.StatusOK, resp2.StatusCode, "body: %s", string(body2))
+		rows2, tags2 := countTagRows(body2)
+		require.Equal(t, len(tags1), len(tags2),
+			"cached grouped result lost tag series: first %v, second %v", tags1, tags2)
+		require.InDelta(t, rows1, rows2, float64(2*len(tags1)),
+			"cached grouped result dropped rows: %d then %d", rows1, rows2)
 	})
 
 	t.Run("sql_jsonl_format", func(t *testing.T) {

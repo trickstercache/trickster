@@ -19,6 +19,7 @@ package flight
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -30,6 +31,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 )
@@ -42,6 +44,11 @@ type UpstreamConfig struct {
 	Database string
 	// BearerToken is the optional auth token.
 	BearerToken string
+	// UseTLS dials the upstream with TLS transport credentials.
+	UseTLS bool
+	// InsecureSkipVerify disables upstream certificate verification when
+	// UseTLS is set.
+	InsecureSkipVerify bool
 }
 
 // FlightSQLClient is the default UpstreamClient implementation that talks to a
@@ -49,7 +56,6 @@ type UpstreamConfig struct {
 type FlightSQLClient struct {
 	cfg    UpstreamConfig
 	client *flightsql.Client
-	conn   *grpc.ClientConn
 	alloc  memory.Allocator
 
 	// prepared statements are tracked by their handle bytes so we can look up
@@ -60,22 +66,20 @@ type FlightSQLClient struct {
 
 // NewFlightSQLClient dials the upstream Flight SQL endpoint.
 func NewFlightSQLClient(cfg UpstreamConfig) (*FlightSQLClient, error) {
-	conn, err := grpc.NewClient(cfg.Address,
-		grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		return nil, fmt.Errorf("grpc dial: %w", err)
+	credential := insecure.NewCredentials()
+	if cfg.UseTLS {
+		credential = credentials.NewTLS(&tls.Config{
+			InsecureSkipVerify: cfg.InsecureSkipVerify, // #nosec G402 -- this is a user-configurable option, accept risk
+		})
 	}
 	c, err := flightsql.NewClientCtx(context.Background(),
-		cfg.Address, nil, nil,
-		grpc.WithTransportCredentials(insecure.NewCredentials()))
+		cfg.Address, nil, nil, grpc.WithTransportCredentials(credential))
 	if err != nil {
-		_ = conn.Close()
 		return nil, fmt.Errorf("flightsql client: %w", err)
 	}
 	return &FlightSQLClient{
 		cfg:      cfg,
 		client:   c,
-		conn:     conn,
 		alloc:    memory.DefaultAllocator,
 		prepared: make(map[string]*flightsql.PreparedStatement),
 	}, nil
@@ -100,8 +104,8 @@ func (c *FlightSQLClient) PrepareStatement(ctx context.Context,
 }
 
 // ExecutePrepared runs a previously-prepared statement upstream and returns
-// the IPC-encoded response bytes. Parameter binding is not yet supported —
-// clients that rely on bound params will see the same data each call.
+// the IPC-encoded response bytes. Parameters bound via
+// SetPreparedStatementParams are applied by the upstream on execution.
 func (c *FlightSQLClient) ExecutePrepared(ctx context.Context,
 	handle []byte,
 ) ([]byte, error) {
@@ -266,10 +270,7 @@ func (c *FlightSQLClient) withAuth(ctx context.Context) context.Context {
 // Close releases the gRPC connection.
 func (c *FlightSQLClient) Close() error {
 	if c.client != nil {
-		_ = c.client.Close()
-	}
-	if c.conn != nil {
-		return c.conn.Close()
+		return c.client.Close()
 	}
 	return nil
 }

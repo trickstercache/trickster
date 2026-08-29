@@ -317,6 +317,10 @@ func TestAnalyzeClassifiesUnsupportedQueries(t *testing.T) {
 		{"missing group by", strings.Replace(hourlyEpochQuery, " GROUP BY 1", "", 1), sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsupportedGrouping},
 		{"ungrouped tag", `SELECT date_bin(INTERVAL '1 hour', time) AS time, host, avg(v) FROM m WHERE time >= 1704067200 AND time < 1704153600 GROUP BY 1`, sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsupportedGrouping},
 		{"no time range", strings.Replace(hourlyEpochQuery, "WHERE time >= 1704067200 AND time < 1704153600", "WHERE city = 'sf'", 1), sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonNotTimeRange},
+		{"inline window function", strings.Replace(hourlyEpochQuery, "avg(temperature)", "sum(temperature) OVER (ORDER BY time)", 1), sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsupportedFormat},
+		{"join", strings.Replace(hourlyEpochQuery, "FROM weather", "FROM weather JOIN stations ON weather.station = stations.id", 1), sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsupportedFormat},
+		{"comma join", strings.Replace(hourlyEpochQuery, "FROM weather", "FROM weather, stations", 1), sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsupportedFormat},
+		{"parenthesized join", strings.Replace(hourlyEpochQuery, "FROM weather", "FROM (weather JOIN stations ON weather.station = stations.id)", 1), sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsupportedFormat},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

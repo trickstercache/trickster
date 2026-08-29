@@ -832,6 +832,11 @@ backends:
 #       # flight_upstream_address overrides the upstream Flight SQL address.
 #       # Defaults to the host:port from origin_url when empty.
 #       flight_upstream_address: 'influxdb3:8181'
+#       # flight_upstream_tls dials the upstream Flight SQL endpoint with TLS,
+#       # honoring the backend tls block's insecure_skip_verify.
+#       flight_upstream_tls: false
+#       # flight_cache_ttl bounds the lifetime of cached Flight SQL responses.
+#       flight_cache_ttl: 60s
 
 # # Application Load Balancer Backend configuration options, see /docs/alb.md for more information
 #
