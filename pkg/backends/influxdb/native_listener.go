@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
+	isql "github.com/trickstercache/trickster/v2/pkg/backends/influxdb/sql"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/config"
@@ -175,6 +176,13 @@ func (a nativeListenerAdapter) Build(r native.BuildRequest) (listener.ProtocolSe
 	serverOptions := []flightsql.ServerOption{
 		flightsql.WithCacheKeyPrefix(backendName),
 		flightsql.WithKeyScoper(influxFlightKeyScoper),
+		flightsql.WithDeltaCache(flightsql.DeltaConfig{
+			Analyzer:          isql.Analyzer(),
+			CacheClient:       backend.Cache,
+			CacheTTL:          time.Duration(o.TimeseriesTTL),
+			MaxObjectSize:     int64(o.MaxObjectSizeBytes),
+			BackfillTolerance: time.Duration(o.BackfillTolerance),
+		}),
 	}
 	if o.InfluxDB != nil && o.InfluxDB.FlightCacheTTL > 0 {
 		serverOptions = append(serverOptions,

@@ -835,7 +835,9 @@ backends:
 #       # flight_upstream_tls dials the upstream Flight SQL endpoint with TLS,
 #       # honoring the backend tls block's insecure_skip_verify.
 #       flight_upstream_tls: false
-#       # flight_cache_ttl bounds the lifetime of cached Flight SQL responses.
+#       # flight_cache_ttl bounds the lifetime of Flight SQL object-tier
+#       # entries (whole responses cached verbatim). Delta-cached time-series
+#       # entries use the backend's timeseries_ttl instead.
 #       flight_cache_ttl: 60s
 
 # # Application Load Balancer Backend configuration options, see /docs/alb.md for more information

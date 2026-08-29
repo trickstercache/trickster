@@ -72,6 +72,11 @@ var ErrParameterizedQuery = errors.New("parameterized v3 SQL queries bypass delt
 // DefaultTimestampField is the default timestamp field name for v3 queries
 const DefaultTimestampField = "time"
 
+// Analyzer returns the shared DataFusion dialect analyzer, used by both the
+// HTTP v3 SQL path and the Flight SQL delta tier so the two classify
+// statements identically.
+func Analyzer() sqlanalyzer.DialectAnalyzer { return dialectAnalyzer }
+
 // dialectAnalyzer analyzes DataFusion SQL via the shared CockroachDB-parser
 // adapter. It is stateless and safe for concurrent use.
 var dialectAnalyzer sqlanalyzer.DialectAnalyzer = cockroach.NewAnalyzer(cockroach.Options{

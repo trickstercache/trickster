@@ -94,6 +94,62 @@ func TestInfluxDB3FlightSQL(t *testing.T) {
 		// passing test shows correctness of the passthrough + caching path.
 	})
 
+	// delta_tier runs a delta-cacheable date_bin query through the Flight
+	// proxy and checks the served data is identical to a direct-to-InfluxDB
+	// Flight response (the fidelity gate), including on the cached rerun and
+	// after widening the window (which triggers a sub-range delta fetch).
+	t.Run("delta_tier", func(t *testing.T) {
+		direct, err := flightsql.NewClientCtx(context.Background(), "127.0.0.1:8181", nil, nil,
+			grpc.WithTransportCredentials(insecure.NewCredentials()))
+		require.NoError(t, err)
+		t.Cleanup(func() { direct.Close() })
+
+		collect := func(c *flightsql.Client, q string) map[string]int {
+			t.Helper()
+			info, err := c.Execute(ctx, q)
+			require.NoError(t, err, "query: %s", q)
+			reader, err := c.DoGet(ctx, info.Endpoint[0].Ticket)
+			require.NoError(t, err)
+			defer reader.Release()
+			rows := make(map[string]int)
+			for reader.Next() {
+				record := reader.RecordBatch()
+				for row := range int(record.NumRows()) {
+					var line string
+					for i := range int(record.NumCols()) {
+						line += record.Column(i).ValueStr(row) + "|"
+					}
+					rows[line]++
+				}
+			}
+			require.NoError(t, reader.Err())
+			return rows
+		}
+
+		now := time.Now().UTC().Truncate(time.Minute)
+		lower, upper := now.Add(-8*time.Minute), now.Add(-2*time.Minute)
+		query := func(from, to time.Time) string {
+			return fmt.Sprintf("SELECT date_bin(INTERVAL '1 minute', time) AS time, cpu, "+
+				"avg(usage_idle) AS usage_idle FROM cpu WHERE time >= '%s' AND time < '%s' "+
+				"GROUP BY 1, cpu", from.Format(time.RFC3339), to.Format(time.RFC3339))
+		}
+
+		want := collect(direct, query(lower, upper))
+		require.NotEmpty(t, want, "expected rows from the direct query")
+		got := collect(client, query(lower, upper))
+		require.Equal(t, want, got, "first delta response differs from direct")
+		cached := collect(client, query(lower, upper))
+		require.Equal(t, want, cached, "cached delta response differs from direct")
+
+		widened := query(lower.Add(-2*time.Minute), upper)
+		widenedWant := collect(direct, widened)
+		widenedGot := collect(client, widened)
+		require.Equal(t, widenedWant, widenedGot,
+			"widened delta response differs from direct")
+		require.Greater(t, len(widenedGot), len(got),
+			"widened window did not add rows")
+	})
+
 	t.Run("get_tables", func(t *testing.T) {
 		info, err := client.GetTables(ctx, &flightsql.GetTablesOpts{})
 		require.NoError(t, err, "GetTables should succeed (not Unimplemented)")

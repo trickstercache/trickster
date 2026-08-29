@@ -79,7 +79,13 @@ backends:
       flight_upstream_address: 'influxdb3:8181'   # optional, defaults to origin_url host
 ```
 
-The `authorization` and `database` headers are forwarded from the client through to the upstream. Query and metadata responses are cached as Arrow IPC byte streams, keyed by the backend name, the `database`/`bucket-name` headers, a hash of the `authorization` header, and the statement — so tenants and databases never share cache entries. Requests that send no `authorization` header share one anonymous cache scope, mirroring the access the upstream would grant them. Statements referencing nondeterministic functions (`now()`, `current_timestamp`, `random()`, ...) are never cached. The cache lifetime defaults to 60s and is configurable per backend via `influxdb.flight_cache_ttl`.
+The `authorization` and `database` headers are forwarded from the client through to the upstream, and every cache entry is keyed by the backend name, the `database`/`bucket-name` headers, and a hash of the `authorization` header — so tenants and databases never share cache entries. Requests that send no `authorization` header share one anonymous cache scope, mirroring the access the upstream would grant them.
+
+Statement queries are served through a three-tier cache:
+
+1. **Delta proxy cache** — queries the SQL analyzer classifies as delta-cacheable (the same `date_bin()`/`date_trunc()` shapes as the HTTP path) are cached by time extent: repeat and overlapping queries fetch only the missing sub-ranges from the upstream, and responses are rebuilt into Arrow record batches conforming to the response's original schema. Entries use the backend's `timeseries_ttl` and honor `backfill_tolerance`; still-filling buckets are always refetched. Responses whose Arrow schemas the delta model cannot represent (nested types, non-string dictionaries, ...) automatically fall to the next tier.
+2. **Object cache** — everything else cacheable is stored as the verbatim Arrow IPC byte stream, returned byte-identically, with a lifetime of `influxdb.flight_cache_ttl` (default 60s). Metadata RPCs and prepared statements always use this tier.
+3. **Proxy** — statements referencing nondeterministic functions (`now()`, `current_timestamp`, `random()`, ...) and non-SELECT statements are never cached.
 
 #### Flight SQL TLS
 
