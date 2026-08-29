@@ -27,6 +27,24 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+// startTestServer serves a ProtocolServer on an ephemeral port and returns its
+// address. The server is shut down during test cleanup.
+func startTestServer(t *testing.T, srv *Server) (*ProtocolServer, string) {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ps := NewProtocolServer(srv, "test")
+	go func() { _ = ps.Serve(l) }()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = ps.Shutdown(ctx)
+	})
+	return ps, l.Addr().String()
+}
+
 // TestEndToEnd starts a Flight SQL server, connects a client, executes a
 // query, and verifies the results stream back correctly through the full
 // gRPC + Arrow IPC pipeline.
@@ -34,14 +52,8 @@ func TestEndToEnd(t *testing.T) {
 	ipcBytes := buildTestIPC(t)
 	up := &fakeUpstream{ipcBytes: ipcBytes}
 	srv := NewServer(up, newMemCache())
+	_, addr := startTestServer(t, srv)
 
-	lis, err := Start(ListenerConfig{Address: "127.0.0.1", Port: 0}, srv)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer lis.Stop(0)
-
-	addr := lis.Addr().String()
 	client, err := flightsql.NewClientCtx(context.Background(), addr, nil, nil,
 		grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
@@ -88,14 +100,9 @@ func TestEndToEnd_Metadata(t *testing.T) {
 	ipcBytes := buildTestIPC(t)
 	up := &fakeUpstream{ipcBytes: ipcBytes}
 	srv := NewServer(up, newMemCache())
+	_, addr := startTestServer(t, srv)
 
-	lis, err := Start(ListenerConfig{Address: "127.0.0.1", Port: 0}, srv)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer lis.Stop(0)
-
-	client, err := flightsql.NewClientCtx(context.Background(), lis.Addr().String(), nil, nil,
+	client, err := flightsql.NewClientCtx(context.Background(), addr, nil, nil,
 		grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatalf("client dial: %v", err)
@@ -158,61 +165,52 @@ func TestEndToEnd_Metadata(t *testing.T) {
 	})
 }
 
-// TestStart_ReplacesExistingByName simulates a config reload: calling Start
-// twice with the same Name + Port should stop the first listener so the
-// second can bind without EADDRINUSE.
-func TestStart_ReplacesExistingByName(t *testing.T) {
+// TestProtocolServerShutdown verifies Serve returns nil after a clean
+// Shutdown and that RPCs against the stopped server fail.
+func TestProtocolServerShutdown(t *testing.T) {
 	srv := NewServer(&fakeUpstream{ipcBytes: buildTestIPC(t)}, newMemCache())
-	// pick an explicit port so both calls target the same bind address
-	first, err := Start(ListenerConfig{Address: "127.0.0.1", Port: 0, Name: "backend-a"}, srv)
+	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	port := first.Addr().(*net.TCPAddr).Port
-
-	second, err := Start(ListenerConfig{Address: "127.0.0.1", Port: port, Name: "backend-a"}, srv)
-	if err != nil {
-		t.Fatalf("second Start on same name+port should replace, got: %v", err)
+	ps := NewProtocolServer(srv, "shutdown-test")
+	if got := ps.ProtocolRestartKey(); got != "shutdown-test" {
+		t.Fatalf("restart key = %q", got)
 	}
-	defer second.Stop(0)
+	addr := l.Addr().String()
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- ps.Serve(l) }()
 
-	// first listener should be stopped; RPC against it should fail
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := ShutdownAll(ctx); err != nil {
-		t.Errorf("ShutdownAll: %v", err)
-	}
-}
-
-// TestShutdownAll verifies that registered listeners are stopped and
-// accepting connections afterward fails.
-func TestShutdownAll(t *testing.T) {
-	srv := NewServer(&fakeUpstream{ipcBytes: buildTestIPC(t)}, newMemCache())
-	lis, err := Start(ListenerConfig{Address: "127.0.0.1", Port: 0, Name: "test"}, srv)
-	if err != nil {
-		t.Fatal(err)
-	}
-	addr := lis.Addr().String()
-
-	if err := ShutdownAll(context.Background()); err != nil {
-		t.Fatalf("ShutdownAll: %v", err)
-	}
-
-	// After shutdown, a new dial to the same address should fail quickly.
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	_, err = flightsql.NewClientCtx(ctx, addr, nil, nil,
+	client, err := flightsql.NewClientCtx(ctx, addr, nil, nil,
 		grpc.WithTransportCredentials(insecure.NewCredentials()))
-	// dial may succeed (lazy), so also try a real RPC to confirm the server is gone.
+	if err != nil {
+		t.Fatalf("client dial: %v", err)
+	}
+	if _, err := client.Execute(ctx, "SELECT * FROM cpu"); err != nil {
+		t.Fatalf("execute before shutdown: %v", err)
+	}
+	client.Close()
+
+	if err := ps.Shutdown(ctx); err != nil {
+		t.Fatalf("Shutdown: %v", err)
+	}
+	select {
+	case err := <-serveErr:
+		if err != nil {
+			t.Fatalf("Serve returned %v after clean shutdown, want nil", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Serve did not return after Shutdown")
+	}
+
+	late, err := flightsql.NewClientCtx(ctx, addr, nil, nil,
+		grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err == nil {
-		c, _ := flightsql.NewClientCtx(ctx, addr, nil, nil,
-			grpc.WithTransportCredentials(insecure.NewCredentials()))
-		if c != nil {
-			defer c.Close()
-			_, rpcErr := c.Execute(ctx, "SELECT 1")
-			if rpcErr == nil {
-				t.Error("expected RPC to fail after ShutdownAll")
-			}
+		defer late.Close()
+		if _, rpcErr := late.Execute(ctx, "SELECT 1"); rpcErr == nil {
+			t.Error("expected RPC to fail after Shutdown")
 		}
 	}
 }

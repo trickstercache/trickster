@@ -18,167 +18,51 @@ package flight
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"net"
-	"sync"
-	"time"
 
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/flight/flightsql"
 	"google.golang.org/grpc"
 )
 
-// ListenerConfig configures the Flight SQL listener.
-type ListenerConfig struct {
-	Address string // e.g., "0.0.0.0"
-	Port    int
-	Name    string // optional identifier for logs/metrics
+// ProtocolServer adapts the Flight SQL gRPC server to Trickster's native
+// listener lifecycle (listener.ProtocolServer). Socket binding, connection
+// limits, drain, and config-reload restarts are owned by the listener group.
+type ProtocolServer struct {
+	grpc       *grpc.Server
+	restartKey string
 }
 
-// Listener wraps a gRPC server that exposes a Flight SQL service.
-type Listener struct {
-	server *grpc.Server
-	lis    net.Listener
-	name   string
+// NewProtocolServer returns a ProtocolServer exposing srv over Flight SQL.
+// restartKey identifies the backend configuration that produced the server so
+// config reloads can decide between reuse and restart.
+func NewProtocolServer(srv *Server, restartKey string) *ProtocolServer {
+	g := grpc.NewServer()
+	flight.RegisterFlightServiceServer(g, flightsql.NewFlightServer(srv))
+	return &ProtocolServer{grpc: g, restartKey: restartKey}
 }
 
-var (
-	registryMu sync.Mutex
-	registry   = map[string]*Listener{}
-)
+// Serve accepts Flight SQL connections until Shutdown. It returns nil after a
+// clean Shutdown, per the gRPC server contract.
+func (s *ProtocolServer) Serve(l net.Listener) error {
+	return s.grpc.Serve(l)
+}
 
-// replaceExistingTimeout bounds how long a same-named listener gets to drain
-// when Start is called for a backend that's being reloaded.
-const replaceExistingTimeout = 2 * time.Second
-
-// Start begins accepting Flight SQL connections on the configured address
-// and registers the listener for coordinated shutdown via ShutdownAll.
-// If a listener with the same Name is already registered (e.g., during config
-// reload), it is gracefully stopped first so the port can be rebound.
-func Start(cfg ListenerConfig, srv *Server) (*Listener, error) {
-	if srv == nil {
-		return nil, errors.New("server is nil")
-	}
-	if cfg.Name != "" {
-		registryMu.Lock()
-		existing, ok := registry[cfg.Name]
-		if ok {
-			delete(registry, cfg.Name)
-		}
-		registryMu.Unlock()
-		if ok {
-			_ = existing.Stop(replaceExistingTimeout)
-		}
-	}
-	addr := fmt.Sprintf("%s:%d", cfg.Address, cfg.Port)
-	lis, err := listenWithRetry(addr, 500*time.Millisecond)
-	if err != nil {
-		return nil, fmt.Errorf("flight listener: %w", err)
-	}
-	grpcSrv := grpc.NewServer()
-	flight.RegisterFlightServiceServer(grpcSrv, flightsql.NewFlightServer(srv))
+// Shutdown drains active streams until ctx expires, then forces closure.
+func (s *ProtocolServer) Shutdown(ctx context.Context) error {
+	done := make(chan struct{})
 	go func() {
-		_ = grpcSrv.Serve(lis)
+		s.grpc.GracefulStop()
+		close(done)
 	}()
-	l := &Listener{server: grpcSrv, lis: lis, name: cfg.Name}
-	registryMu.Lock()
-	key := cfg.Name
-	if key == "" {
-		key = addr // fall back to address for unnamed listeners
-	}
-	registry[key] = l
-	registryMu.Unlock()
-	return l, nil
-}
-
-// Stop gracefully shuts down the Flight SQL server, draining active streams
-// until drainTimeout elapses, then forcing connection closure. Pass 0 for
-// immediate force-stop. Blocks until the underlying socket is fully closed
-// so callers can rebind the port safely.
-func (l *Listener) Stop(drainTimeout time.Duration) error {
-	if l.server == nil {
+	select {
+	case <-done:
 		return nil
-	}
-	if drainTimeout <= 0 {
-		l.server.Stop()
-	} else {
-		done := make(chan struct{})
-		go func() {
-			l.server.GracefulStop()
-			close(done)
-		}()
-		select {
-		case <-done:
-		case <-time.After(drainTimeout):
-			l.server.Stop()
-		}
-	}
-	// Belt-and-suspenders: ensure the net.Listener is closed. gRPC closes it
-	// during Stop/GracefulStop, but close is idempotent and this makes the
-	// port-release deterministic for immediate rebind.
-	if l.lis != nil {
-		_ = l.lis.Close()
-	}
-	return nil
-}
-
-// Addr returns the listener's bound address, useful for tests.
-func (l *Listener) Addr() net.Addr {
-	if l.lis == nil {
-		return nil
-	}
-	return l.lis.Addr()
-}
-
-// Name returns the listener's name.
-func (l *Listener) Name() string { return l.name }
-
-// listenWithRetry retries net.Listen for up to maxWait to tolerate brief
-// kernel-level socket release lag when rebinding a port during config reload.
-func listenWithRetry(addr string, maxWait time.Duration) (net.Listener, error) {
-	deadline := time.Now().Add(maxWait)
-	backoff := 10 * time.Millisecond
-	var lastErr error
-	for {
-		lis, err := net.Listen("tcp", addr)
-		if err == nil {
-			return lis, nil
-		}
-		lastErr = err
-		if time.Now().After(deadline) {
-			return nil, lastErr
-		}
-		time.Sleep(backoff)
-		if backoff < 100*time.Millisecond {
-			backoff *= 2
-		}
+	case <-ctx.Done():
+		s.grpc.Stop()
+		return ctx.Err()
 	}
 }
 
-// ShutdownAll gracefully stops all Flight SQL listeners registered via Start
-// and clears the registry. Returns the first non-nil error encountered.
-// Pass ctx.Deadline() or derive a timeout to bound the drain.
-func ShutdownAll(ctx context.Context) error {
-	registryMu.Lock()
-	ls := make([]*Listener, 0, len(registry))
-	for _, l := range registry {
-		ls = append(ls, l)
-	}
-	registry = map[string]*Listener{}
-	registryMu.Unlock()
-
-	drain := 5 * time.Second
-	if dl, ok := ctx.Deadline(); ok {
-		if remaining := time.Until(dl); remaining > 0 {
-			drain = remaining
-		}
-	}
-	var firstErr error
-	for _, l := range ls {
-		if err := l.Stop(drain); err != nil && firstErr == nil {
-			firstErr = err
-		}
-	}
-	return firstErr
-}
+// ProtocolRestartKey identifies the backend configuration used by this server.
+func (s *ProtocolServer) ProtocolRestartKey() string { return s.restartKey }

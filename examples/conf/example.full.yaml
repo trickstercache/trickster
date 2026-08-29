@@ -107,6 +107,15 @@
 #     port: 8487
 #     # address: ''
 #     # connections_limit: 0
+#
+#   # An InfluxDB listener accepts Apache Arrow Flight SQL (gRPC) connections
+#   # and maps to one InfluxDB backend through that backend's listener_names
+#   # option. See /docs/influxdb.md for full details. InfluxDB 3.x only.
+#   influx3-flight:
+#     protocol: influxdb
+#     port: 8485
+#     # address: ''
+#     # connections_limit: 0
 
 # caches:
 #   default:
@@ -811,15 +820,18 @@ backends:
 #     provider: influxdb
 #     origin_url: 'http://influxdb3:8181/'
 #
-#     # flight_port enables an Apache Arrow Flight SQL (gRPC) listener on the given port.
-#     # When > 0, Trickster proxies Flight SQL queries, metadata RPCs (GetTables/Schemas/etc.)
-#     # and the full prepared-statement lifecycle, caching the Arrow IPC byte stream.
-#     # Leave unset or 0 to disable Flight SQL for this backend. InfluxDB 3.x only.
-#     flight_port: 8485
+#     # Mapping an influxdb-protocol listener (see the listeners section)
+#     # exposes this backend over Apache Arrow Flight SQL (gRPC): Trickster
+#     # proxies Flight SQL queries, metadata RPCs (GetTables/Schemas/etc.) and
+#     # the full prepared-statement lifecycle, caching the Arrow IPC byte
+#     # stream. Omit the flight listener name to serve HTTP only.
+#     listener_names: [ default, influx3-flight ]
 #
-#     # flight_upstream_address overrides the upstream Flight SQL address.
-#     # Defaults to the host:port from origin_url when empty.
-#     flight_upstream_address: 'influxdb3:8181'
+#     # influxdb holds InfluxDB-specific backend options.
+#     influxdb:
+#       # flight_upstream_address overrides the upstream Flight SQL address.
+#       # Defaults to the host:port from origin_url when empty.
+#       flight_upstream_address: 'influxdb3:8181'
 
 # # Application Load Balancer Backend configuration options, see /docs/alb.md for more information
 #

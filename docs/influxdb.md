@@ -53,20 +53,25 @@ InfluxDB 3.x ships with v1 and v2 compatibility endpoints. Trickster's existing 
 
 InfluxDB 3.x exposes SQL via Apache Arrow Flight SQL on gRPC in addition to HTTP. Grafana's InfluxDB datasource in SQL mode, the Python/Rust/Java SDKs, and ADBC all default to Flight SQL, so HTTP-only caching misses a significant fraction of real-world query traffic.
 
-Trickster can expose a Flight SQL server that proxies to an upstream Flight SQL endpoint and caches the Arrow IPC byte stream. Enable it per-backend:
+Trickster can expose a Flight SQL server that proxies to an upstream Flight SQL endpoint and caches the Arrow IPC byte stream. Enable it by defining a listener with the `influxdb` protocol and mapping exactly one InfluxDB backend to it (alongside its usual HTTP listener):
 
 ```yaml
+listeners:
+  influx3-flight:
+    protocol: influxdb   # Apache Arrow Flight SQL over gRPC
+    port: 8485
 backends:
   influx3:
     provider: influxdb
     origin_url: 'http://influxdb3:8181/'
-    flight_port: 8485                           # listen on gRPC :8485
-    flight_upstream_address: 'influxdb3:8181'   # optional, defaults to origin_url host
+    listener_names: [default, influx3-flight]
+    influxdb:
+      flight_upstream_address: 'influxdb3:8181'   # optional, defaults to origin_url host
 ```
 
 The `authorization` and `database` headers are forwarded from the client through to the upstream. Queries are cached keyed by the full SQL statement; re-running the same query returns the cached Arrow response.
 
-Flight SQL listeners participate in graceful shutdown: on SIGTERM the daemon calls `GracefulStop` on each registered gRPC server with a 5-second drain before forcing closure. Config reload (SIGHUP) replaces the listener in-place — the old server is drained and the new one binds the same port.
+Flight SQL listeners share Trickster's standard listener lifecycle: connection limits (`connections_limit`), graceful drain on SIGTERM (active streams are drained until the configured drain timeout, then closed), and config reload (SIGHUP) — a reload with an unchanged backend configuration keeps serving on the existing socket, while a changed configuration drains the old server and rebinds.
 
 #### Metadata RPCs
 

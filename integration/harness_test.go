@@ -219,9 +219,9 @@ func staticConfigHarness(t *testing.T, configPath string) tricksterHarness {
 }
 
 // writeTestConfig renders configPath onto reserved ports and writes it to a
-// temp file. flightPort overrides the influx3 backend's flight_port; pass 0
-// to disable the Flight SQL listener. mods run after the ports are set and
-// before the file is written.
+// temp file. flightPort rebinds the influx3 backend's Flight SQL listener;
+// pass 0 to remove the Flight SQL listener. mods run after the ports are set
+// and before the file is written.
 func writeTestConfig(t *testing.T, configPath string,
 	frontPort, metricsPort, mgmtPort, mysqlPort, flightPort int,
 	clickHouseHTTPOriginPort, clickHouseNativeOriginPort int,
@@ -262,6 +262,13 @@ func writeTestConfig(t *testing.T, configPath string,
 		mysqlListener.ListenAddress = "0.0.0.0"
 		mysqlListener.ListenPort = mysqlPort
 	}
+	// The dev config binds its native ClickHouse listener to a fixed port; drop
+	// it so tests that don't reserve a port for it can't collide with a locally
+	// running dev instance, then re-add it on the reserved port when requested.
+	delete(c.Listeners, "clickhouse-native")
+	if click := c.Backends["click1"]; click != nil {
+		click.ListenerNames = []string{listener.DefaultFrontendName}
+	}
 	if clickHouseHTTPOriginPort > 0 && c.Backends["click1"] != nil {
 		c.Listeners["clickhouse-native"] = &listener.Options{
 			Protocol: listener.ProtocolClickHouse, ListenAddress: "127.0.0.1", ListenPort: clickHouseHTTPOriginPort,
@@ -283,8 +290,15 @@ func writeTestConfig(t *testing.T, configPath string,
 	if c.MgmtConfig == nil {
 		c.MgmtConfig = mgmt.New()
 	}
+	delete(c.Listeners, "influx3-flight")
 	if bo, ok := c.Backends["influx3"]; ok && bo != nil {
-		bo.FlightPort = flightPort
+		bo.ListenerNames = []string{listener.DefaultFrontendName}
+		if flightPort > 0 {
+			c.Listeners["influx3-flight"] = &listener.Options{
+				Protocol: listener.ProtocolInfluxDB, ListenAddress: "127.0.0.1", ListenPort: flightPort,
+			}
+			bo.ListenerNames = []string{listener.DefaultFrontendName, "influx3-flight"}
+		}
 	}
 	c.Frontend = nil
 	c.Metrics = nil

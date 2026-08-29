@@ -157,7 +157,8 @@ comparison.
 ## InfluxDB Details
 
 For InfluxDB 3.x, Trickster also exposes an Apache Arrow Flight SQL (gRPC)
-proxy on `:8485` (`flight_port` in the backend config). The
+proxy on `:8485` (the `influx3-flight` listener with `protocol: influxdb`,
+mapped from the influx3 backend's `listener_names`). The
 `Trickster InfluxDB 3` Grafana dashboard exercises both the HTTP InfluxQL
 endpoint and Flight SQL via the InfluxDB datasource in SQL mode, with direct
 and Trickster-cached targets on the same panel. An equivalent

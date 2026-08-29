@@ -54,7 +54,12 @@ func SupportedProviders() types.Lookup {
 var nativeListeners = func() native.Registry {
 	mysqlAdapter := mysql.NativeListenerAdapter()
 	clickhouseAdapter := clickhouse.NativeListenerAdapter()
-	return native.Registry{mysqlAdapter.Protocol(): mysqlAdapter, clickhouseAdapter.Protocol(): clickhouseAdapter}
+	influxdbAdapter := influxdb.NativeListenerAdapter()
+	return native.Registry{
+		mysqlAdapter.Protocol():      mysqlAdapter,
+		clickhouseAdapter.Protocol(): clickhouseAdapter,
+		influxdbAdapter.Protocol():   influxdbAdapter,
+	}
 }()
 
 func NativeListeners() native.Registry {

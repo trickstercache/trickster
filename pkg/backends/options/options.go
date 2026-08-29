@@ -30,6 +30,7 @@ import (
 	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	gro "github.com/trickstercache/trickster/v2/pkg/backends/graphite/options"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
+	ino "github.com/trickstercache/trickster/v2/pkg/backends/influxdb/options"
 	mo "github.com/trickstercache/trickster/v2/pkg/backends/mysql/options"
 	prop "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
@@ -70,13 +71,6 @@ type Options struct {
 	//
 	// Hosts identifies the frontend hostnames this backend should handle (virtual hosting)
 	Hosts []string `yaml:"hosts,omitempty"`
-	// FlightPort enables an Apache Arrow Flight SQL listener on the given port
-	// when > 0 (InfluxDB 3.x backends only). The upstream Flight SQL address is
-	// derived from OriginURL (host:port). Leave 0 to disable.
-	FlightPort int `yaml:"flight_port,omitempty"`
-	// FlightUpstreamAddress overrides the upstream Flight SQL address when set.
-	// Defaults to the host:port from OriginURL.
-	FlightUpstreamAddress string `yaml:"flight_upstream_address,omitempty"`
 	// Provider describes the type of backend (e.g., 'prometheus')
 	Provider string `yaml:"provider,omitempty"`
 	// ReplicaGroup identifies the logical data shard represented by this backend
@@ -194,6 +188,8 @@ type Options struct {
 	MySQL *mo.Options `yaml:"mysql,omitempty"`
 	// Graphite holds options specific to graphite backends
 	Graphite *gro.Options `yaml:"graphite,omitempty"`
+	// InfluxDB holds options specific to influxdb backends
+	InfluxDB *ino.Options `yaml:"influxdb,omitempty"`
 
 	// TLS is the TLS Configuration for the Frontend and Backend
 	TLS *to.Options `yaml:"tls,omitempty"`
@@ -379,6 +375,10 @@ func (o *Options) Clone() *Options {
 
 	if o.Graphite != nil {
 		out.Graphite = o.Graphite.Clone()
+	}
+
+	if o.InfluxDB != nil {
+		out.InfluxDB = o.InfluxDB.Clone()
 	}
 
 	if o.MySQL != nil {
@@ -834,7 +834,7 @@ func (o *Options) ToYAML() string {
 
 func (o *Options) UnmarshalYAML(value *yaml.Node) error {
 	type loadOptions Options
-	lo := loadOptions(*(New()))
+	lo := loadOptions(*New())
 	if err := value.Decode(&lo); err != nil {
 		return err
 	}
