@@ -34,6 +34,8 @@ import (
 	"sync"
 	"time"
 
+	cachestatus "github.com/trickstercache/trickster/v2/pkg/cache/status"
+
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
@@ -112,6 +114,10 @@ type Server struct {
 	keyPrefix string
 	// keyScoper derives the per-tenant cache-namespace suffix.
 	keyScoper KeyScoper
+	// deltaConfig and delta enable the delta-proxy-cache tier for statement
+	// queries when configured via WithDeltaCache.
+	deltaConfig *DeltaConfig
+	delta       *deltaRunner
 
 	// prepared tracks server-side state per prepared-statement handle: the
 	// most recent bound parameter hash (part of the DoGetPreparedStatement
@@ -205,6 +211,9 @@ func NewServer(upstream UpstreamClient, cache Cache, opts ...ServerOption) *Serv
 	for _, opt := range opts {
 		opt(s)
 	}
+	if s.deltaConfig != nil {
+		s.delta = newDeltaRunner(*s.deltaConfig, s.keyPrefix)
+	}
 	return s
 }
 
@@ -228,14 +237,18 @@ func (s *Server) GetFlightInfoStatement(_ context.Context,
 	}, nil
 }
 
-// DoGetStatement executes the query (cache-first, upstream on miss) and streams
-// the Arrow IPC record batches back to the client.
+// DoGetStatement executes the query and streams the Arrow IPC record batches
+// back to the client. With a delta tier configured, the analyzer routes each
+// statement across the delta, object, and proxy tiers; otherwise responses
+// are cached whole in the object tier, with nondeterministic statements never
+// cached.
 func (s *Server) DoGetStatement(ctx context.Context,
 	ticket flightsql.StatementQueryTicket,
 ) (*arrow.Schema, <-chan flight.StreamChunk, error) {
 	query := string(ticket.GetStatementHandle())
-	// nondeterministic statements are never cached; each execution can
-	// legitimately return a different result
+	if s.delta != nil {
+		return s.delta.serve(ctx, s, query)
+	}
 	if volatileQuery(query) {
 		b, err := s.upstream.Execute(ctx, query)
 		if err != nil {
@@ -243,19 +256,29 @@ func (s *Server) DoGetStatement(ctx context.Context,
 		}
 		return streamIPCBytes(ctx, b)
 	}
-	key := s.tenantKey(ctx) + ":stmt:" + query
-
-	ipcBytes, cached := s.cacheGet(key)
-	if !cached {
-		b, err := s.upstream.Execute(ctx, query)
-		if err != nil {
-			return nil, nil, fmt.Errorf("upstream execute: %w", err)
-		}
-		ipcBytes = b
-		s.cacheSet(key, ipcBytes)
+	ipcBytes, _, err := s.objectTier(ctx, query)
+	if err != nil {
+		return nil, nil, err
 	}
-
 	return streamIPCBytes(ctx, ipcBytes)
+}
+
+// objectTier serves a statement from the verbatim-IPC object cache: the whole
+// response cached briefly under the tenant-scoped statement key.
+func (s *Server) objectTier(ctx context.Context,
+	query string,
+) ([]byte, cachestatus.LookupStatus, error) {
+	key := s.tenantKey(ctx) + ":stmt:" + query
+	ipcBytes, cached := s.cacheGet(key)
+	if cached {
+		return ipcBytes, cachestatus.LookupStatusHit, nil
+	}
+	b, err := s.upstream.Execute(ctx, query)
+	if err != nil {
+		return nil, cachestatus.LookupStatusProxyError, fmt.Errorf("upstream execute: %w", err)
+	}
+	s.cacheSet(key, b)
+	return b, cachestatus.LookupStatusKeyMiss, nil
 }
 
 // flightInfoForCommand constructs a FlightInfo for metadata RPCs. The ticket

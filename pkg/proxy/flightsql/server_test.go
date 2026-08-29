@@ -41,15 +41,19 @@ func ctxWithTenant(auth, db string) context.Context {
 	return metadata.NewIncomingContext(context.Background(), md)
 }
 
+type executeFn func(query string) ([]byte, error)
+
 // fakeUpstream is a simple UpstreamClient for tests that returns pre-canned IPC bytes.
 // All RPC methods return the same ipcBytes payload — tests only care about call
 // counts and cache behavior, not differentiated metadata content.
 type fakeUpstream struct {
-	mu        sync.Mutex
-	callCount int
-	ipcBytes  []byte
-	lastQuery string
-	returnErr error
+	mu              sync.Mutex
+	callCount       int
+	ipcBytes        []byte
+	lastQuery       string
+	executedQueries []string
+	executeFn       executeFn
+	returnErr       error
 
 	// per-method counters so tests can verify specific RPCs were hit
 	executeCalls         int
@@ -71,8 +75,12 @@ func (f *fakeUpstream) Execute(_ context.Context, query string) ([]byte, error) 
 	f.callCount++
 	f.executeCalls++
 	f.lastQuery = query
+	f.executedQueries = append(f.executedQueries, query)
 	if f.returnErr != nil {
 		return nil, f.returnErr
+	}
+	if f.executeFn != nil {
+		return f.executeFn(query)
 	}
 	return f.ipcBytes, nil
 }
