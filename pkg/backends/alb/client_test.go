@@ -77,8 +77,8 @@ func (s *nestedTSMProviderStub) FinalizeTSMMerge(string, timeseries.Timeseries) 
 func TestHandlers(t *testing.T) {
 	a := &ao.Options{
 		MechanismName: names.MechanismFR,
-		OutputFormat:  providers.Prometheus,
 	}
+	a.OutputFormat = providers.Prometheus
 	o := bo.New()
 	o.ALBOptions = a
 

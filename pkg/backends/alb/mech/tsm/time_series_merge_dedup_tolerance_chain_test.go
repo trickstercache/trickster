@@ -23,7 +23,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/tsm/options"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
@@ -108,7 +108,7 @@ func TestTSMServeStandardDedupToleranceChain(t *testing.T) {
 		defer p.Stop()
 		h := &handler{
 			mergePaths: []string{"/"},
-			tsmOptions: options.TimeSeriesMergeOptions{DedupToleranceMs: &tolMs},
+			tsmOptions: options.Options{DedupToleranceMs: &tolMs},
 		}
 		h.SetPool(p)
 		albpool.WaitHealthy(t, p, 2)

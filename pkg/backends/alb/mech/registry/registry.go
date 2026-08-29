@@ -51,6 +51,7 @@ func compileSupportedByName(entries []types.RegistryEntry) map[types.Name]types.
 		}
 		out[name] = fn
 	}
+
 	for _, entry := range entries {
 		add(entry.ShortName, entry.New)
 		add(entry.Name, entry.New)

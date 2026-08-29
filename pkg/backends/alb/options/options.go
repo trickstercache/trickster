@@ -19,11 +19,12 @@ package options
 import (
 	"errors"
 	"fmt"
-	"runtime"
 	"slices"
 	"strings"
 
 	te "github.com/trickstercache/trickster/v2/pkg/backends/alb/errors"
+	mechoptions "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/options"
+	tsmoptions "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/tsm/options"
 	ur "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/ur/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
@@ -66,8 +67,7 @@ type Options struct {
 	// When 0, falls back to the parent Backend's max_fanout_capture_bytes,
 	// which itself defaults to 0 (no aggregate cap).
 	MaxFanoutCaptureBytes int `yaml:"max_fanout_capture_bytes,omitempty"`
-	// OutputFormat accompanies the tsmerge Mechanism to indicate the provider output format
-	// options include any valid time seres backend like prometheus, influxdb or clickhouse
+	// OutputFormat selects the provider used by the time-series merge mechanism.
 	OutputFormat string `yaml:"output_format,omitempty"`
 	// Deprecated: use fgr.status_codes instead of this top-level option
 	// FGRStatusCodes provides an explicit list of status codes considered "good" when using
@@ -80,7 +80,7 @@ type Options struct {
 	FgrCodesLookup sets.Set[int] `yaml:"-"`
 
 	// mechanism-specific options
-	TSMOptions TimeSeriesMergeOptions    `yaml:"tsm,omitempty"`
+	TSMOptions tsmoptions.Options        `yaml:"tsm,omitempty"`
 	NLMOptions NewestLastModifiedOptions `yaml:"nlm,omitempty"`
 	FGROptions FirstGoodResponseOptions  `yaml:"fgr,omitempty"`
 }
@@ -92,46 +92,15 @@ type FirstGoodResponseOptions struct {
 	ConcurrencyOptions ConcurrencyOptions `yaml:",inline"`
 }
 
-type TimeSeriesMergeOptions struct {
-	ConcurrencyOptions ConcurrencyOptions `yaml:",inline"`
-	// DedupToleranceMs is an opt-in tolerance window (milliseconds) for
-	// clustering near-duplicate samples produced by replicas in the same
-	// replica group. When two replicas sample the same metric at timestamps that
-	// differ by <= this many milliseconds, the cluster collapses to a single
-	// survivor (first-seen-after-sort wins). Nil or 0 preserves the legacy
-	// exact-epoch dedup behavior.
-	DedupToleranceMs *int `yaml:"dedup_tolerance_ms,omitempty"`
-}
+// TimeSeriesMergeOptions preserves the ALB name for TSM-owned options.
+type TimeSeriesMergeOptions = tsmoptions.Options
 
 type NewestLastModifiedOptions struct {
 	ConcurrencyOptions ConcurrencyOptions `yaml:",inline"`
 }
 
-// Common concurrency options to apply to ALB mechanisms
-type ConcurrencyOptions struct {
-	// QueryConcurrencyLimit defines the concurrency limit while querying backends for the given mechanism.
-	// If set to 0, no limit is applied, if set to a positive integer, that number of queries can be performed concurrently.
-	// If the value is not set, it defaults to the number of logical CPUs available to the process (GOMAXPROCS).
-	// Default value is GOMAXPROCS.
-	QueryConcurrencyLimit *int `yaml:"query_concurrency_limit,omitempty"`
-
-	// QueryConcurrencyMultiplier is a multiplier that can be applied to the default concurrency limit.
-	// This multiplier is applied to the query_concurrency_limit value to result in the overall concurrency limit for the given mechanism.
-	// Default and minimum value is 1.
-	QueryConcurrencyMultiplier *int `yaml:"query_concurrency_multiplier,omitempty"`
-}
-
-func (o *ConcurrencyOptions) GetQueryConcurrencyLimit() int {
-	multiplier := 1
-	if o != nil && o.QueryConcurrencyMultiplier != nil && *o.QueryConcurrencyMultiplier > 1 {
-		multiplier = *o.QueryConcurrencyMultiplier
-	}
-	limit := runtime.GOMAXPROCS(0)
-	if o != nil && o.QueryConcurrencyLimit != nil {
-		limit = *o.QueryConcurrencyLimit
-	}
-	return max(limit*multiplier, 0)
-}
+// ConcurrencyOptions preserves the ALB name for shared mechanism options.
+type ConcurrencyOptions = mechoptions.ConcurrencyOptions
 
 // InvalidALBOptionsError is an error type for invalid ALB Options
 type InvalidALBOptionsError struct {

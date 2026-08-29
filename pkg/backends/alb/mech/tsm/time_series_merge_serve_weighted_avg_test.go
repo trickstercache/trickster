@@ -31,8 +31,9 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
+	mechoptions "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/tsm/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
-	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
@@ -673,8 +674,8 @@ func TestServeWeightedAvg(t *testing.T) {
 		limit := 1
 		h := &handler{
 			mergePaths: []string{"/"},
-			tsmOptions: options.TimeSeriesMergeOptions{
-				ConcurrencyOptions: options.ConcurrencyOptions{QueryConcurrencyLimit: &limit},
+			tsmOptions: options.Options{
+				ConcurrencyOptions: mechoptions.ConcurrencyOptions{QueryConcurrencyLimit: &limit},
 			},
 		}
 		h.SetPool(p)
