@@ -25,6 +25,7 @@ import (
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/flight/flightsql"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"google.golang.org/grpc/metadata"
@@ -67,6 +68,50 @@ type fakeUpstream struct {
 	executePreparedCalls int
 	closePreparedCalls   int
 	closeCalls           int
+	executeSchemaCalls   int
+	preparedSchemaCalls  int
+	schemaErr            error
+}
+
+// serializedSchema derives serialized schema bytes from the fake's canned IPC
+// payload.
+func (f *fakeUpstream) serializedSchema() ([]byte, error) {
+	schema, records, err := DecodeRecords(f.ipcBytes)
+	if err != nil {
+		return nil, err
+	}
+	for _, record := range records {
+		record.Release()
+	}
+	return flight.SerializeSchema(schema, memory.DefaultAllocator), nil
+}
+
+func (f *fakeUpstream) GetExecuteSchema(_ context.Context, _ string) ([]byte, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.callCount++
+	f.executeSchemaCalls++
+	if f.schemaErr != nil {
+		return nil, f.schemaErr
+	}
+	if f.returnErr != nil {
+		return nil, f.returnErr
+	}
+	return f.serializedSchema()
+}
+
+func (f *fakeUpstream) GetPreparedSchema(_ context.Context, _ []byte) ([]byte, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.callCount++
+	f.preparedSchemaCalls++
+	if f.schemaErr != nil {
+		return nil, f.schemaErr
+	}
+	if f.returnErr != nil {
+		return nil, f.returnErr
+	}
+	return f.serializedSchema()
 }
 
 func (f *fakeUpstream) Execute(_ context.Context, query string) ([]byte, error) {

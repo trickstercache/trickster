@@ -93,7 +93,7 @@ The Flight listener serves TLS when its mapped backend's `tls` block presents a 
 
 #### Unsupported Flight SQL RPCs
 
-Trickster proxies queries, the metadata RPCs below, and the prepared-statement lifecycle. Other Flight SQL RPCs — `GetSchema`, writes/updates/ingest (`ExecuteUpdate`, `DoPut` ingestion), transactions, savepoints, query cancellation, and session options — return gRPC `Unimplemented`; clients requiring them should connect to InfluxDB directly.
+Trickster proxies queries, result-set schema requests (`GetSchemaStatement`/`GetSchemaPreparedStatement`, which ADBC drivers probe on connect), the metadata RPCs below, and the prepared-statement lifecycle. Other Flight SQL RPCs — writes/updates/ingest (`ExecuteUpdate`, `DoPut` ingestion), transactions, savepoints, query cancellation, and session options — return gRPC `Unimplemented`; clients requiring them should connect to InfluxDB directly.
 
 Flight SQL listeners share Trickster's standard listener lifecycle: connection limits (`connections_limit`), graceful drain on SIGTERM (active streams are drained until the configured drain timeout, then closed), and config reload (SIGHUP) — a reload with an unchanged backend configuration keeps serving on the existing socket, while a changed configuration drains the old server and rebinds.
 
@@ -109,7 +109,7 @@ ADBC clients (Grafana's SQL datasource, the Python `adbc_driver_flightsql`, etc.
 
 #### Prepared Statements
 
-Trickster proxies the full prepared statement lifecycle: `CreatePreparedStatement`, `DoPutPreparedStatementQuery` (parameter binding), `DoGetPreparedStatement`, `ClosePreparedStatement`. Cache keys incorporate the bound parameter hash so two clients running the same statement with different values don't alias. Prepared statements abandoned by disconnected clients are closed upstream after 15 minutes of inactivity.
+Trickster proxies the full prepared statement lifecycle: `CreatePreparedStatement`, `DoPutPreparedStatementQuery` (parameter binding), `DoGetPreparedStatement`, `ClosePreparedStatement`. A parameterless prepared statement is equivalent to executing its statement text, so it is served through the same three cache tiers as plain statement queries — delta caching included — and shares their cache entries. Executions with bound parameters are cached whole, keyed by the bound parameter hash so two clients running the same statement with different values don't alias. Prepared statements abandoned by disconnected clients are closed upstream after 15 minutes of inactivity.
 
 Note: InfluxDB 3 Core 3.10 reports a parameter schema at prepare time but does not resolve bound values during query planning (upstream limitation). Parameterless prepared statements work end-to-end; parameterized ones require a newer Core or Enterprise build.
 

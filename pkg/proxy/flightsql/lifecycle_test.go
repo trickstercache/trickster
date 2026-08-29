@@ -36,7 +36,7 @@ func TestReapIdlePrepared(t *testing.T) {
 	}
 	// the fake upstream mints one fixed handle, so register a second, fresh
 	// handle directly
-	srv.touchPrepared([]byte("fresh-handle"))
+	srv.registerPrepared([]byte("fresh-handle"), "SELECT 2")
 
 	// age the first handle past the idle cutoff
 	srv.paramMu.Lock()

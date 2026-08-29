@@ -170,6 +170,39 @@ func (c *Client) ClosePrepared(ctx context.Context, handle []byte) error {
 	return entry.ps.Close(ctx)
 }
 
+// GetExecuteSchema returns the serialized schema of the result set the query
+// would produce, without executing it.
+func (c *Client) GetExecuteSchema(ctx context.Context, query string) ([]byte, error) {
+	ctx = c.withAuth(ctx)
+	result, err := c.client.GetExecuteSchema(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("flight schema: %w", err)
+	}
+	return result.GetSchema(), nil
+}
+
+// GetPreparedSchema returns the serialized result-set schema of a prepared
+// statement, preferring the dataset schema the upstream returned at prepare
+// time and falling back to the schema RPC.
+func (c *Client) GetPreparedSchema(ctx context.Context, handle []byte) ([]byte, error) {
+	c.preparedMu.Lock()
+	entry, ok := c.prepared[string(handle)]
+	c.preparedMu.Unlock()
+	if !ok {
+		return nil, errors.New("unknown prepared statement handle")
+	}
+	entry.mu.Lock()
+	defer entry.mu.Unlock()
+	if schema := entry.ps.DatasetSchema(); schema != nil {
+		return flight.SerializeSchema(schema, c.alloc), nil
+	}
+	result, err := entry.ps.GetSchema(c.withAuth(ctx))
+	if err != nil {
+		return nil, fmt.Errorf("flight prepared schema: %w", err)
+	}
+	return result.GetSchema(), nil
+}
+
 // Execute runs a SQL query against the upstream and returns the IPC-encoded
 // bytes (schema + record batches) of the entire response. Results are buffered
 // to enable caching.

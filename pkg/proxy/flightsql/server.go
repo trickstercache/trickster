@@ -43,7 +43,9 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/flight/flightsql/schema_ref"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
 
 // KeyScoper derives a tenant cache-namespace suffix from the incoming gRPC
@@ -131,6 +133,9 @@ type Server struct {
 
 // preparedMeta is the server-side bookkeeping for one prepared statement.
 type preparedMeta struct {
+	// query is the statement text the handle was prepared from; it lets
+	// parameterless executions share the statement cache tiers.
+	query      string
 	paramHash  string
 	lastAccess time.Time
 }
@@ -185,6 +190,10 @@ type UpstreamClient interface {
 	GetTables(ctx context.Context, opts *flightsql.GetTablesOpts) ([]byte, error)
 	GetTableTypes(ctx context.Context) ([]byte, error)
 	GetSqlInfo(ctx context.Context, info []flightsql.SqlInfo) ([]byte, error)
+	// GetExecuteSchema and GetPreparedSchema return serialized Arrow schemas
+	// rather than IPC streams.
+	GetExecuteSchema(ctx context.Context, query string) ([]byte, error)
+	GetPreparedSchema(ctx context.Context, handle []byte) ([]byte, error)
 	PrepareStatement(ctx context.Context, query string) ([]byte, error)
 	SetPreparedStatementParams(ctx context.Context, handle []byte, params arrow.RecordBatch) error
 	ExecutePrepared(ctx context.Context, handle []byte) ([]byte, error)
@@ -449,8 +458,79 @@ func (s *Server) CreatePreparedStatement(ctx context.Context,
 		return flightsql.ActionCreatePreparedStatementResult{},
 			fmt.Errorf("upstream prepare: %w", err)
 	}
-	s.touchPrepared(handle)
+	s.registerPrepared(handle, req.GetQuery())
 	return flightsql.ActionCreatePreparedStatementResult{Handle: handle}, nil
+}
+
+// GetSchemaStatement returns the result-set schema a query would produce,
+// cache-first under the tenant-scoped statement key. ADBC drivers call this
+// before execution to type result bindings.
+func (s *Server) GetSchemaStatement(ctx context.Context,
+	cmd flightsql.StatementQuery, _ *flight.FlightDescriptor,
+) (*flight.SchemaResult, error) {
+	query := cmd.GetQuery()
+	key := s.tenantKey(ctx) + ":schema:" + query
+	if schema, cached := s.cacheGet(key); cached {
+		return &flight.SchemaResult{Schema: schema}, nil
+	}
+	schema, err := s.statementSchema(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	s.cacheSet(key, schema)
+	return &flight.SchemaResult{Schema: schema}, nil
+}
+
+// GetSchemaPreparedStatement returns a prepared statement's result-set
+// schema, cache-first under the handle (a handle's schema is stable for its
+// lifetime).
+func (s *Server) GetSchemaPreparedStatement(ctx context.Context,
+	cmd flightsql.PreparedStatementQuery, _ *flight.FlightDescriptor,
+) (*flight.SchemaResult, error) {
+	handle := cmd.GetPreparedStatementHandle()
+	query, _ := s.preparedState(handle)
+	key := s.tenantKey(ctx) + ":prepschema:" + string(handle)
+	if schema, cached := s.cacheGet(key); cached {
+		return &flight.SchemaResult{Schema: schema}, nil
+	}
+	schema, err := s.upstream.GetPreparedSchema(ctx, handle)
+	if err != nil {
+		if status.Code(err) != codes.Unimplemented || query == "" {
+			return nil, fmt.Errorf("upstream prepared schema: %w", err)
+		}
+		schema, err = s.statementSchema(ctx, query)
+		if err != nil {
+			return nil, err
+		}
+	}
+	s.cacheSet(key, schema)
+	return &flight.SchemaResult{Schema: schema}, nil
+}
+
+// statementSchema resolves a statement's serialized result-set schema:
+// upstream schema RPC first, and when the upstream does not implement it
+// (InfluxDB 3 Core among them), by executing the statement through the
+// object tier and reading the response stream's schema. The executed
+// response is cached, so the cost amortizes into the execution the client
+// is typically about to perform anyway.
+func (s *Server) statementSchema(ctx context.Context, query string) ([]byte, error) {
+	schema, err := s.upstream.GetExecuteSchema(ctx, query)
+	if err == nil {
+		return schema, nil
+	}
+	if status.Code(err) != codes.Unimplemented {
+		return nil, fmt.Errorf("upstream schema: %w", err)
+	}
+	ipcBytes, _, err := s.objectTier(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	reader, err := ipc.NewReader(bytes.NewReader(ipcBytes))
+	if err != nil {
+		return nil, fmt.Errorf("schema from execution: %w", err)
+	}
+	defer reader.Release()
+	return flight.SerializeSchema(reader.Schema(), s.alloc), nil
 }
 
 // GetFlightInfoPreparedStatement returns a FlightInfo whose ticket is the
@@ -499,14 +579,21 @@ func (s *Server) DoPutPreparedStatementQuery(ctx context.Context,
 }
 
 // DoGetPreparedStatement executes the upstream prepared statement and streams
-// its Arrow IPC output. Cache key includes the bound parameter hash so two
+// its Arrow IPC output. A parameterless prepared statement is equivalent to
+// executing its statement text, so with a delta tier configured it shares the
+// statement query tiers (delta, object, proxy) — including their cache
+// entries — with plain Execute calls of the same text. Parameterized
+// executions are cached whole, keyed by the bound parameter hash so two
 // clients running the same statement with different params don't collide.
 func (s *Server) DoGetPreparedStatement(ctx context.Context,
 	cmd flightsql.PreparedStatementQuery,
 ) (*arrow.Schema, <-chan flight.StreamChunk, error) {
 	handle := cmd.GetPreparedStatementHandle()
-	s.touchPrepared(handle)
-	key := s.tenantKey(ctx) + ":prep:" + string(handle) + ":" + s.paramHash(handle)
+	query, paramHash := s.preparedState(handle)
+	if s.delta != nil && query != "" && paramHash == "" {
+		return s.delta.serve(ctx, s, query)
+	}
+	key := s.tenantKey(ctx) + ":prep:" + string(handle) + ":" + paramHash
 	return s.fetchMetadata(ctx, "prepared statement", key, func(ctx context.Context) ([]byte, error) {
 		return s.upstream.ExecutePrepared(ctx, handle)
 	})
@@ -523,8 +610,22 @@ func (s *Server) ClosePreparedStatement(ctx context.Context,
 	return s.upstream.ClosePrepared(ctx, handle)
 }
 
-// touchPrepared registers the handle (if new) and records its access time.
-func (s *Server) touchPrepared(handle []byte) {
+// registerPrepared records the statement text a handle was prepared from.
+func (s *Server) registerPrepared(handle []byte, query string) {
+	s.paramMu.Lock()
+	defer s.paramMu.Unlock()
+	meta, ok := s.prepared[string(handle)]
+	if !ok {
+		meta = &preparedMeta{}
+		s.prepared[string(handle)] = meta
+	}
+	meta.query = query
+	meta.lastAccess = time.Now()
+}
+
+// preparedState returns the handle's statement text and current parameter
+// hash, recording the access.
+func (s *Server) preparedState(handle []byte) (string, string) {
 	s.paramMu.Lock()
 	defer s.paramMu.Unlock()
 	meta, ok := s.prepared[string(handle)]
@@ -533,6 +634,7 @@ func (s *Server) touchPrepared(handle []byte) {
 		s.prepared[string(handle)] = meta
 	}
 	meta.lastAccess = time.Now()
+	return meta.query, meta.paramHash
 }
 
 func (s *Server) setParamHash(handle []byte, hash string) {
@@ -545,15 +647,6 @@ func (s *Server) setParamHash(handle []byte, hash string) {
 	}
 	meta.paramHash = hash
 	meta.lastAccess = time.Now()
-}
-
-func (s *Server) paramHash(handle []byte) string {
-	s.paramMu.Lock()
-	defer s.paramMu.Unlock()
-	if meta, ok := s.prepared[string(handle)]; ok {
-		return meta.paramHash
-	}
-	return ""
 }
 
 // ReapIdlePrepared closes prepared statements not accessed within maxIdle,
