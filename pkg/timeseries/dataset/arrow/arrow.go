@@ -59,6 +59,18 @@ var (
 // maxRowsPerBatch bounds the row count of each rebuilt record batch.
 const maxRowsPerBatch = 8192
 
+// SortKey names one result column the rebuilt rows are ordered by, so a
+// response reassembled from merged parts reproduces the ordering its query
+// asked for.
+type SortKey struct {
+	// Column is the schema column name to sort on.
+	Column string
+	// Descending reverses the comparison for this key.
+	Descending bool
+	// NullsFirst places null values ahead of non-null ones.
+	NullsFirst bool
+}
+
 // Representable reports whether a schema survives the dataset round trip:
 // exactly one column named timestampField with an Arrow timestamp type, and
 // every other column a type the dataset value model can express. Anything
@@ -233,12 +245,153 @@ func FromRecords(schema *arrow.Schema, records []arrow.RecordBatch,
 	}, nil
 }
 
+// seriesContext pairs a series with the mapping from schema column index to
+// the position of that field in the series' point Values (-1 for tag columns).
+type seriesContext struct {
+	series     *dataset.Series
+	valueIndex []int
+}
+
+// rowRef locates one output row: its epoch, its series, and its point.
+type rowRef struct {
+	ep          epoch.Epoch
+	seriesIndex int
+	point       *dataset.Point
+}
+
+// defaultRowOrder is the time-major fallback ordering — ascending epoch, then
+// series order — applied when no sort keys are given and to break ties among
+// rows the sort keys compare equal.
+func defaultRowOrder(a, b rowRef) int {
+	if a.ep != b.ep {
+		if a.ep < b.ep {
+			return -1
+		}
+		return 1
+	}
+	return a.seriesIndex - b.seriesIndex
+}
+
+// rowComparators compiles sort keys into per-key row comparators bound to the
+// schema's columns: the timestamp column compares epochs, tag columns compare
+// the series' tag value, and value columns compare the point's value.
+func rowComparators(schema *arrow.Schema, tsIndex int, contexts []seriesContext,
+	keys []SortKey,
+) ([]func(a, b rowRef) int, error) {
+	if len(keys) == 0 {
+		return nil, nil
+	}
+	out := make([]func(a, b rowRef) int, 0, len(keys))
+	for _, key := range keys {
+		indices := schema.FieldIndices(key.Column)
+		if len(indices) != 1 {
+			return nil, fmt.Errorf("%w: sort column %q", ErrSchemaMismatch, key.Column)
+		}
+		column := indices[0]
+		sign := 1
+		if key.Descending {
+			sign = -1
+		}
+		switch column {
+		case tsIndex:
+			out = append(out, func(a, b rowRef) int {
+				if a.ep == b.ep {
+					return 0
+				}
+				if a.ep < b.ep {
+					return -sign
+				}
+				return sign
+			})
+		default:
+			name := schema.Field(column).Name
+			nullsFirst := key.NullsFirst
+			out = append(out, func(a, b rowRef) int {
+				left := cellValue(contexts, a, column, name)
+				right := cellValue(contexts, b, column, name)
+				if left == nil || right == nil {
+					return nullOrder(left, right, nullsFirst)
+				}
+				return sign * compareValues(left, right)
+			})
+		}
+	}
+	return out, nil
+}
+
+// cellValue resolves a row's value for one schema column: the series tag when
+// the column is a tag, otherwise the point's value.
+func cellValue(contexts []seriesContext, row rowRef, column int, name string) any {
+	sc := contexts[row.seriesIndex]
+	if sc.valueIndex[column] < 0 {
+		return sc.series.Header.Tags[name]
+	}
+	position := sc.valueIndex[column]
+	if position >= len(row.point.Values) {
+		return nil
+	}
+	return row.point.Values[position]
+}
+
+// nullOrder places nulls ahead of or behind non-null values independently of
+// the term's sort direction, matching SQL NULLS FIRST / NULLS LAST.
+func nullOrder(a, b any, nullsFirst bool) int {
+	if a == nil && b == nil {
+		return 0
+	}
+	rank := 1
+	if nullsFirst {
+		rank = -1
+	}
+	if a == nil {
+		return rank
+	}
+	return -rank
+}
+
+// compareValues orders two non-null dataset values from the same column,
+// which the value model narrows to bool, string, and the numeric types.
+// Mixed representations fall back to their rendered forms.
+func compareValues(a, b any) int {
+	switch left := a.(type) {
+	case string:
+		if right, ok := b.(string); ok {
+			return strings.Compare(left, right)
+		}
+	case bool:
+		if right, ok := b.(bool); ok {
+			switch {
+			case left == right:
+				return 0
+			case right:
+				return -1
+			}
+			return 1
+		}
+	}
+	left, leftErr := asFloat64(a)
+	right, rightErr := asFloat64(b)
+	if leftErr != nil || rightErr != nil {
+		return strings.Compare(fmt.Sprint(a), fmt.Sprint(b))
+	}
+	switch {
+	case left < right:
+		return -1
+	case left > right:
+		return 1
+	}
+	return 0
+}
+
 // ToRecords rebuilds record batches conforming to schema from a DataSet
-// produced by FromRecords (possibly delta-merged in between). Rows are
-// emitted time-major — ascending epoch, then series order — so ORDER BY time
-// result shapes are preserved; dictionary indices are re-derived, which
-// changes framing but not schema or values.
-func ToRecords(schema *arrow.Schema, ds *dataset.DataSet) ([]arrow.RecordBatch, error) {
+// produced by FromRecords (possibly delta-merged in between). Rows are sorted
+// by the supplied keys, falling back to time-major order — ascending epoch,
+// then series order — when none are given; dictionary indices are re-derived,
+// which changes framing but not schema or values. A key naming a column the
+// schema does not carry is an ErrSchemaMismatch.
+func ToRecords(schema *arrow.Schema, ds *dataset.DataSet,
+	keys ...SortKey,
+) ([]arrow.RecordBatch, error) {
 	if ds == nil || schema == nil {
 		return nil, ErrSchemaMismatch
 	}
@@ -255,12 +408,6 @@ func ToRecords(schema *arrow.Schema, ds *dataset.DataSet) ([]arrow.RecordBatch, 
 	tsIndex := schema.FieldIndices(tsName)[0]
 	tsType := schema.Field(tsIndex).Type.(*arrow.TimestampType)
 
-	type seriesContext struct {
-		series *dataset.Series
-		// valueIndex maps a schema column index to the position of that field
-		// in the series' point Values, or -1 for tag columns
-		valueIndex []int
-	}
 	var contexts []seriesContext
 	if len(ds.Results) > 0 {
 		for _, series := range ds.Results[0].SeriesList {
@@ -288,12 +435,6 @@ func ToRecords(schema *arrow.Schema, ds *dataset.DataSet) ([]arrow.RecordBatch, 
 		}
 	}
 
-	// time-major row ordering: ascending epoch, series order breaking ties
-	type rowRef struct {
-		ep          epoch.Epoch
-		seriesIndex int
-		point       *dataset.Point
-	}
 	var rows []rowRef
 	for seriesIndex, sc := range contexts {
 		for i := range sc.series.Points {
@@ -301,14 +442,17 @@ func ToRecords(schema *arrow.Schema, ds *dataset.DataSet) ([]arrow.RecordBatch, 
 			rows = append(rows, rowRef{ep: point.Epoch, seriesIndex: seriesIndex, point: point})
 		}
 	}
+	comparators, err := rowComparators(schema, tsIndex, contexts, keys)
+	if err != nil {
+		return nil, err
+	}
 	slices.SortStableFunc(rows, func(a, b rowRef) int {
-		if a.ep != b.ep {
-			if a.ep < b.ep {
-				return -1
+		for _, compare := range comparators {
+			if c := compare(a, b); c != 0 {
+				return c
 			}
-			return 1
 		}
-		return a.seriesIndex - b.seriesIndex
+		return defaultRowOrder(a, b)
 	})
 
 	var out []arrow.RecordBatch

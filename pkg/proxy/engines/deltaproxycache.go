@@ -475,6 +475,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 			} else {
 				rts = cts.Clone()
 			}
+			rts.SetTimeRangeQuery(trq)
 
 			// Crop the Cache Object down to the Sample Size or Age Retention Policy and the
 			// Backfill Tolerance before storing to cache
@@ -612,6 +613,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 		return
 	}
 	rts = cts.Clone()
+	rts.SetTimeRangeQuery(trq)
 
 	tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", cacheStatus.String()))
 

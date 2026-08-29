@@ -274,3 +274,60 @@ func TestDeltaTierOpenEndedWindowExcludesVolatileTail(t *testing.T) {
 		t.Fatalf("volatile refetch re-fetched the whole window: %s", tail)
 	}
 }
+
+// TestDeltaTierPreservesOrderBy verifies that a delta hit, whose rows are
+// rebuilt from the cached dataset, returns them in the statement's ORDER BY
+// order rather than the model's time-major default.
+func TestDeltaTierPreservesOrderBy(t *testing.T) {
+	const orderedQuery = deltaQuery + " ORDER BY time DESC, host DESC"
+	up := &fakeUpstream{executeFn: rangedUpstream(t)}
+	srv := newDeltaTestServer(t, up)
+
+	miss := executeRows(t, srv, fmt.Sprintf(orderedQuery, 0, 300))
+	if up.executeCalls != 1 {
+		t.Fatalf("full miss made %d upstream calls", up.executeCalls)
+	}
+	hit := executeRows(t, srv, fmt.Sprintf(orderedQuery, 0, 300))
+	if up.executeCalls != 1 {
+		t.Fatalf("full hit made %d upstream calls", up.executeCalls)
+	}
+	if len(miss) != 10 || len(hit) != 10 {
+		t.Fatalf("rows = %d/%d, want 10 each", len(miss), len(hit))
+	}
+	want := [][]any{
+		{240 * int64(time.Second), "b"}, {240 * int64(time.Second), "a"},
+		{180 * int64(time.Second), "b"}, {180 * int64(time.Second), "a"},
+		{120 * int64(time.Second), "b"}, {120 * int64(time.Second), "a"},
+		{60 * int64(time.Second), "b"}, {60 * int64(time.Second), "a"},
+		{int64(0), "b"}, {int64(0), "a"},
+	}
+	for i, row := range want {
+		if hit[i][0] != row[0] || hit[i][1] != row[1] {
+			t.Fatalf("row %d = %v, want %v", i, hit[i][:2], row)
+		}
+	}
+}
+
+// TestDeltaTierOrderByAscending covers the ascending case, where the requested
+// order matches the reconstruction's default but must still be honored after a
+// partial hit merges two fetched ranges.
+func TestDeltaTierOrderByAscending(t *testing.T) {
+	const orderedQuery = deltaQuery + " ORDER BY time"
+	up := &fakeUpstream{executeFn: rangedUpstream(t)}
+	srv := newDeltaTestServer(t, up)
+
+	executeRows(t, srv, fmt.Sprintf(orderedQuery, 0, 300))
+	widened := executeRows(t, srv, fmt.Sprintf(orderedQuery, 0, 600))
+	if up.executeCalls != 2 {
+		t.Fatalf("partial hit made %d upstream calls, want 2", up.executeCalls)
+	}
+	if len(widened) != 20 {
+		t.Fatalf("widened rows = %d, want 20", len(widened))
+	}
+	for i := 1; i < len(widened); i++ {
+		if widened[i][0].(int64) < widened[i-1][0].(int64) {
+			t.Fatalf("row %d is out of ascending order: %v after %v",
+				i, widened[i], widened[i-1])
+		}
+	}
+}

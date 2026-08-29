@@ -193,7 +193,7 @@ func (d *deltaRunner) serve(ctx context.Context, s *Server,
 		}
 		d.observeCache(s.keyPrefix, sqlanalyzer.CacheModeNone,
 			cachestatus.LookupStatusProxyOnly, 0, time.Since(now))
-		return streamIPCBytes(ctx, b)
+		return s.streamIPCBytes(ctx, b)
 	}
 	if analysis.Mode != sqlanalyzer.CacheModeDelta || analysis.Plan == nil {
 		b, lookupStatus, err := s.objectTier(ctx, query)
@@ -202,7 +202,7 @@ func (d *deltaRunner) serve(ctx context.Context, s *Server,
 		if err != nil {
 			return nil, nil, err
 		}
-		return streamIPCBytes(ctx, b)
+		return s.streamIPCBytes(ctx, b)
 	}
 
 	plan := analysis.Plan
@@ -222,7 +222,7 @@ func (d *deltaRunner) serve(ctx context.Context, s *Server,
 	if err != nil {
 		return nil, nil, err
 	}
-	return d.respond(ctx, payload)
+	return d.respond(ctx, s, payload, sortKeys(plan))
 }
 
 // Metric label constants shared with the other native SQL protocols.
@@ -272,22 +272,41 @@ func (p *deltaPayload) rowCount() int {
 	return points
 }
 
+// sortKeys translates a plan's ORDER BY terms into the reconstruction's sort
+// keys, so rows rebuilt from merged cache parts come back in the order the
+// statement asked for rather than the model's time-major default.
+func sortKeys(plan *sqlanalyzer.QueryPlan) []dsarrow.SortKey {
+	if plan == nil || len(plan.Ordering) == 0 {
+		return nil
+	}
+	keys := make([]dsarrow.SortKey, len(plan.Ordering))
+	for i, term := range plan.Ordering {
+		keys[i] = dsarrow.SortKey{
+			Column:     term.Column,
+			Descending: term.Descending,
+			NullsFirst: term.NullsFirst,
+		}
+	}
+	return keys
+}
+
 // respond streams a delta payload: verbatim bytes when present, otherwise the
-// dataset rebuilt into batches conforming to the preserved schema.
-func (d *deltaRunner) respond(ctx context.Context,
-	payload *deltaPayload,
+// dataset rebuilt into batches conforming to the preserved schema, ordered by
+// the statement's ORDER BY terms.
+func (d *deltaRunner) respond(ctx context.Context, s *Server,
+	payload *deltaPayload, keys []dsarrow.SortKey,
 ) (*arrow.Schema, <-chan flight.StreamChunk, error) {
 	if payload == nil {
 		return nil, nil, errors.New("nil flight delta payload")
 	}
 	if payload.Raw != nil {
-		return streamIPCBytes(ctx, payload.Raw)
+		return s.streamIPCBytes(ctx, payload.Raw)
 	}
 	schema, err := flight.DeserializeSchema(payload.Schema, memory.DefaultAllocator)
 	if err != nil {
 		return nil, nil, fmt.Errorf("flight delta schema: %w", err)
 	}
-	records, err := dsarrow.ToRecords(schema, payload.DS)
+	records, err := dsarrow.ToRecords(schema, payload.DS, keys...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("flight delta rebuild: %w", err)
 	}
@@ -298,7 +317,7 @@ func (d *deltaRunner) respond(ctx context.Context,
 	if err != nil {
 		return nil, nil, err
 	}
-	return streamIPCBytes(ctx, ipcBytes)
+	return s.streamIPCBytes(ctx, ipcBytes)
 }
 
 // ops builds the engine callbacks for one request.

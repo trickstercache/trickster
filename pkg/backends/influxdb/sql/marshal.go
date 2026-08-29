@@ -19,11 +19,14 @@ package sql
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
+	"slices"
 	"strconv"
 	"time"
 
@@ -31,6 +34,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 )
 
 // MarshalTimeseries converts a Timeseries into a v3 response body
@@ -85,6 +89,7 @@ const v3TimestampOutputLayout = "2006-01-02T15:04:05.999999999"
 type v3Row struct {
 	columns []string
 	values  []any
+	epoch   epoch.Epoch
 }
 
 // dataSetRows flattens a DataSet into output rows: the timestamp column,
@@ -120,11 +125,114 @@ func dataSetRows(ds *dataset.DataSet) []v3Row {
 						values = append(values, nil)
 					}
 				}
-				rows = append(rows, v3Row{columns: columns, values: values})
+				rows = append(rows, v3Row{columns: columns, values: values, epoch: pt.Epoch})
 			}
 		}
 	}
+	if ds.TimeRangeQuery != nil {
+		sortV3Rows(rows, ds.TimeRangeQuery.Ordering)
+	}
 	return rows
+}
+
+func sortV3Rows(rows []v3Row, ordering []timeseries.OrderTerm) {
+	if len(rows) < 2 || len(ordering) == 0 {
+		return
+	}
+	slices.SortStableFunc(rows, func(a, b v3Row) int {
+		for _, term := range ordering {
+			comparison := compareV3Row(a, b, term)
+			if comparison == 0 {
+				continue
+			}
+			return comparison
+		}
+		return 0
+	})
+}
+
+func compareV3Row(a, b v3Row, term timeseries.OrderTerm) int {
+	av, aTimestamp, aFound := v3RowValue(a, term.Column)
+	bv, bTimestamp, bFound := v3RowValue(b, term.Column)
+	if !aFound || !bFound {
+		return 0
+	}
+	if av == nil || bv == nil {
+		switch {
+		case av == nil && bv == nil:
+			return 0
+		case av == nil && term.NullsFirst:
+			return -1
+		case av == nil:
+			return 1
+		case term.NullsFirst:
+			return 1
+		default:
+			return -1
+		}
+	}
+	if aTimestamp && bTimestamp {
+		return applyV3Direction(cmp.Compare(a.epoch, b.epoch), term.Descending)
+	}
+	return applyV3Direction(compareV3Value(av, bv), term.Descending)
+}
+
+func applyV3Direction(comparison int, descending bool) int {
+	if descending {
+		return -comparison
+	}
+	return comparison
+}
+
+func v3RowValue(row v3Row, column string) (any, bool, bool) {
+	for i, name := range row.columns {
+		if name == column {
+			return row.values[i], i == 0, true
+		}
+	}
+	return nil, false, false
+}
+
+func compareV3Value(a, b any) int {
+	switch av := a.(type) {
+	case int64:
+		if bv, ok := b.(int64); ok {
+			return cmp.Compare(av, bv)
+		}
+	case uint64:
+		if bv, ok := b.(uint64); ok {
+			return cmp.Compare(av, bv)
+		}
+	case float64:
+		if bv, ok := b.(float64); ok {
+			if math.IsNaN(av) {
+				if math.IsNaN(bv) {
+					return 0
+				}
+				return 1
+			}
+			if math.IsNaN(bv) {
+				return -1
+			}
+			return cmp.Compare(av, bv)
+		}
+	case string:
+		if bv, ok := b.(string); ok {
+			return cmp.Compare(av, bv)
+		}
+	case bool:
+		if bv, ok := b.(bool); ok {
+			switch {
+			case av == bv:
+				return 0
+			case !av:
+				return -1
+			default:
+				return 1
+			}
+		}
+	}
+	return cmp.Compare(fmt.Sprint(a), fmt.Sprint(b))
 }
 
 func marshalJSON(w io.Writer, ds *dataset.DataSet) error {

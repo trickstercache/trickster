@@ -53,8 +53,11 @@ Statement queries are served through three tiers:
    queries fetch only missing sub-ranges from the origin, and responses are
    rebuilt into Arrow record batches conforming to the response's original
    schema (types, column order, nullability, and schema metadata are
-   preserved). Responses whose schemas the delta model cannot represent fall
-   automatically to the next tier.
+   preserved). A statement's `ORDER BY` is carried through reconstruction, so
+   a delta hit returns rows in the order the statement asked for; ordering
+   terms that do not resolve to a select-list output fall to the next tier.
+   Responses whose schemas the delta model cannot represent fall automatically
+   to the next tier as well.
 2. **Object cache** — everything else cacheable is stored as the verbatim
    Arrow IPC byte stream and returned byte-identically, with a short,
    provider-configured lifetime. Metadata RPCs use this tier.
@@ -74,6 +77,10 @@ Serving-cost characteristics of the tiers are recorded in
   next.
 - Catalog metadata (`GetTables`, `GetCatalogs`, `GetDbSchemas`,
   `GetTableTypes`, `GetSqlInfo`), proxied and cached per tenant.
+- Type and key discovery (`GetXdbcTypeInfo`, `GetPrimaryKeys`,
+  `GetImportedKeys`, `GetExportedKeys`, `GetCrossReference`), which JDBC- and
+  ODBC-shaped clients probe during metadata discovery, likewise proxied and
+  cached per tenant and per request shape.
 - The prepared-statement lifecycle (create, bind, execute, close). A
   parameterless prepared statement is served through the same three statement
   tiers — sharing cache entries with ad-hoc executions of the same text —
@@ -81,9 +88,34 @@ Serving-cost characteristics of the tiers are recorded in
   parameter hash. Statements abandoned by disconnected clients are closed
   upstream after 15 minutes of inactivity.
 
-Writes/updates/ingest, transactions, savepoints, query cancellation, and
-session options return gRPC `Unimplemented`; clients requiring them should
-connect to the origin directly.
+A `FlightInfo` whose result the origin partitions across several endpoints is
+consumed in full: every endpoint's ticket is resolved in order, and an
+endpoint that advertises its own location is retrieved from that location
+only when its exact `host:port` authority is explicitly allowlisted by the
+provider. This opt-in is required because request metadata, including
+credentials, is forwarded to the alternate host. A TLS primary is never
+downgraded to a plaintext alternate. Alternate connection caches are bounded
+(16 clients by default). Partitions that disagree on schema are refused rather
+than served partially.
+
+Writes/updates/ingest, transactions, savepoints, Substrait plans, query
+cancellation, endpoint renewal, and session options return gRPC
+`Unimplemented` — they are outside a read-through cache's contract. Clients
+requiring them should connect to the origin directly. Prepared-statement
+bindings are accepted as a single record batch; a client streaming several
+batches for one binding receives `Unimplemented` rather than a silently
+truncated binding.
+
+## Response size bound
+
+Responses are buffered whole so they can be cached, so a single very large
+query would otherwise be able to exhaust the process heap. Each upstream
+response is bounded at 128MiB by default; a response exceeding the bound is
+refused with gRPC `ResourceExhausted` rather than being buffered. Providers
+expose the bound as a backend option (for InfluxDB,
+`influxdb.flight_max_response_bytes`; a negative value removes it). A separate
+aggregate budget bounds response bytes concurrently assembled or streamed
+(512MiB by default; `influxdb.flight_max_buffered_bytes` for InfluxDB).
 
 ## Metrics
 

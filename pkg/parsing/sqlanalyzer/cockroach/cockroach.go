@@ -62,6 +62,9 @@ var (
 	ErrUnsupportedLimit = errors.New("unsupported LIMIT clause")
 	// ErrNoLowerBound indicates a time-range query without a lower time bound.
 	ErrNoLowerBound = errors.New("no lower time bound")
+	// ErrUnsupportedOrdering indicates an ORDER BY the delta tier cannot
+	// reproduce when rebuilding a response from merged cache parts.
+	ErrUnsupportedOrdering = errors.New("unsupported ORDER BY clause")
 )
 
 // BucketMatch describes a recognized time-bucketing expression.
@@ -333,6 +336,10 @@ func (a *Analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis
 	if err != nil {
 		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedGrouping, err)
 	}
+	ordering, err := analyzeOrderBy(selectStmt.OrderBy, clause.Exprs)
+	if err != nil {
+		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedOrdering, err)
+	}
 	ranges, err := analyzeRanges(clause, bucket, now, a.opts.RoundUnalignedTimeBounds)
 	if err != nil {
 		reason := sqlanalyzer.ReasonNotTimeRange
@@ -358,6 +365,7 @@ func (a *Analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis
 			Value: ranges.lower.value, Inclusive: ranges.lower.inclusive,
 		},
 		GroupColumns: groups,
+		Ordering:     ordering,
 		Renderer:     renderer,
 	}
 	if ranges.upper != nil {
@@ -578,6 +586,55 @@ func analyzeGroupBy(
 		}
 	}
 	return groups, nil
+}
+
+// analyzeOrderBy resolves an ORDER BY clause to result-column terms the delta
+// tier can reproduce when rebuilding a response. Every term must reference a
+// select-list output; anything else (expressions absent from the select list,
+// index ordering) fails closed to the object cache, where responses are
+// returned byte-verbatim.
+func analyzeOrderBy(clause tree.OrderBy, items tree.SelectExprs) ([]sqlanalyzer.OrderTerm, error) {
+	if len(clause) == 0 {
+		return nil, nil
+	}
+	terms := make([]sqlanalyzer.OrderTerm, 0, len(clause))
+	seen := make(map[int]struct{}, len(clause))
+	for _, order := range clause {
+		if order == nil || order.OrderType != tree.OrderByColumn {
+			return nil, ErrUnsupportedOrdering
+		}
+		index, ok := resolveOutputReference(order.Expr, items)
+		if !ok {
+			return nil, ErrUnsupportedOrdering
+		}
+		if _, duplicate := seen[index]; duplicate {
+			return nil, ErrUnsupportedOrdering
+		}
+		seen[index] = struct{}{}
+		name, ok := outputName(items[index])
+		if !ok {
+			return nil, ErrUnsupportedOrdering
+		}
+		descending := order.Direction == tree.Descending
+		terms = append(terms, sqlanalyzer.OrderTerm{
+			Column:     name,
+			Descending: descending,
+			NullsFirst: nullsFirst(order.NullsOrder, descending),
+		})
+	}
+	return terms, nil
+}
+
+// nullsFirst resolves a term's null placement, defaulting to the PostgreSQL
+// and DataFusion convention: nulls sort last ascending and first descending.
+func nullsFirst(order tree.NullsOrder, descending bool) bool {
+	switch order {
+	case tree.NullsFirst:
+		return true
+	case tree.NullsLast:
+		return false
+	}
+	return descending
 }
 
 // resolveOutputReference resolves a GROUP BY item to a select-list index via

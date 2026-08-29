@@ -161,6 +161,10 @@ func (a nativeListenerAdapter) Build(r native.BuildRequest) (listener.ProtocolSe
 	}
 	if o.InfluxDB != nil {
 		upstreamConfig.UseTLS = o.InfluxDB.FlightUpstreamTLS
+		upstreamConfig.MaxResponseBytes = o.InfluxDB.FlightMaxResponseBytes
+		upstreamConfig.MaxBufferedBytes = o.InfluxDB.FlightMaxBufferedBytes
+		upstreamConfig.AllowedLocationHosts = o.InfluxDB.FlightAllowedLocationHosts
+		upstreamConfig.MaxLocationClients = o.InfluxDB.FlightMaxLocationClients
 	}
 	if upstreamConfig.UseTLS && o.TLS != nil {
 		upstreamConfig.InsecureSkipVerify = o.TLS.InsecureSkipVerify

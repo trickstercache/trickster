@@ -70,6 +70,11 @@ type fakeUpstream struct {
 	closeCalls           int
 	executeSchemaCalls   int
 	preparedSchemaCalls  int
+	xdbcTypeInfoCalls    int
+	primaryKeysCalls     int
+	exportedKeysCalls    int
+	importedKeysCalls    int
+	crossReferenceCalls  int
 	schemaErr            error
 }
 
@@ -179,6 +184,62 @@ func (f *fakeUpstream) GetSqlInfo(_ context.Context, _ []flightsql.SqlInfo) ([]b
 	defer f.mu.Unlock()
 	f.callCount++
 	f.sqlInfoCalls++
+	if f.returnErr != nil {
+		return nil, f.returnErr
+	}
+	return f.ipcBytes, nil
+}
+
+func (f *fakeUpstream) GetXdbcTypeInfo(_ context.Context, _ *int32) ([]byte, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.callCount++
+	f.xdbcTypeInfoCalls++
+	if f.returnErr != nil {
+		return nil, f.returnErr
+	}
+	return f.ipcBytes, nil
+}
+
+func (f *fakeUpstream) GetPrimaryKeys(_ context.Context, _ flightsql.TableRef) ([]byte, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.callCount++
+	f.primaryKeysCalls++
+	if f.returnErr != nil {
+		return nil, f.returnErr
+	}
+	return f.ipcBytes, nil
+}
+
+func (f *fakeUpstream) GetExportedKeys(_ context.Context, _ flightsql.TableRef) ([]byte, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.callCount++
+	f.exportedKeysCalls++
+	if f.returnErr != nil {
+		return nil, f.returnErr
+	}
+	return f.ipcBytes, nil
+}
+
+func (f *fakeUpstream) GetImportedKeys(_ context.Context, _ flightsql.TableRef) ([]byte, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.callCount++
+	f.importedKeysCalls++
+	if f.returnErr != nil {
+		return nil, f.returnErr
+	}
+	return f.ipcBytes, nil
+}
+
+func (f *fakeUpstream) GetCrossReference(_ context.Context,
+	_ flightsql.CrossTableRef) ([]byte, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.callCount++
+	f.crossReferenceCalls++
 	if f.returnErr != nil {
 		return nil, f.returnErr
 	}

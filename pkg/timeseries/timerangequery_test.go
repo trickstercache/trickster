@@ -163,6 +163,15 @@ func TestClone(t *testing.T) {
 			t.Error("clone mutation affected original TagFieldDefintions")
 		}
 	})
+
+	t.Run("Ordering independent copy", func(t *testing.T) {
+		trq := &TimeRangeQuery{Ordering: []OrderTerm{{Column: "time"}}}
+		c := trq.Clone()
+		c.Ordering[0].Column = "mutated"
+		if trq.Ordering[0].Column == "mutated" {
+			t.Error("clone mutation affected original Ordering")
+		}
+	})
 }
 
 func TestSizeTRQ(t *testing.T) {

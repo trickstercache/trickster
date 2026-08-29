@@ -482,3 +482,75 @@ func TestDialectAnalyzersAreInterchangeable(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestAnalyzeOrderByIsPreserved(t *testing.T) {
+	a := newDataFusionAnalyzer()
+	const prefix = `SELECT date_bin(INTERVAL '1 hour', time) AS time, host, ` +
+		`avg(cpu) AS cpu FROM metrics ` +
+		`WHERE time >= 1704067200 AND time < 1704153600 GROUP BY 1, 2 `
+	tests := []struct {
+		name  string
+		query string
+		want  []sqlanalyzer.OrderTerm
+	}{
+		{"no order by", prefix, nil},
+		{"ascending alias", prefix + `ORDER BY time`,
+			[]sqlanalyzer.OrderTerm{{Column: "time"}}},
+		{"explicit asc", prefix + `ORDER BY time ASC`,
+			[]sqlanalyzer.OrderTerm{{Column: "time"}}},
+		{"descending", prefix + `ORDER BY time DESC`,
+			[]sqlanalyzer.OrderTerm{{Column: "time", Descending: true, NullsFirst: true}}},
+		{"ordinal reference", prefix + `ORDER BY 1 DESC`,
+			[]sqlanalyzer.OrderTerm{{Column: "time", Descending: true, NullsFirst: true}}},
+		{"multiple terms", prefix + `ORDER BY host DESC, time ASC`,
+			[]sqlanalyzer.OrderTerm{
+				{Column: "host", Descending: true, NullsFirst: true},
+				{Column: "time"},
+			}},
+		{"value column", prefix + `ORDER BY cpu DESC`,
+			[]sqlanalyzer.OrderTerm{{Column: "cpu", Descending: true, NullsFirst: true}}},
+		{"nulls first ascending", prefix + `ORDER BY host ASC NULLS FIRST`,
+			[]sqlanalyzer.OrderTerm{{Column: "host", NullsFirst: true}}},
+		{"nulls last descending", prefix + `ORDER BY host DESC NULLS LAST`,
+			[]sqlanalyzer.OrderTerm{{Column: "host", Descending: true}}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := a.Analyze(tc.query, time.Time{})
+			if got.Mode != sqlanalyzer.CacheModeDelta || got.Plan == nil {
+				t.Fatalf("Analyze() = %s/%s (%v)", got.Mode, got.Reason, got.Err)
+			}
+			if !slices.Equal(got.Plan.Ordering, tc.want) {
+				t.Errorf("Ordering = %+v, want %+v", got.Plan.Ordering, tc.want)
+			}
+		})
+	}
+}
+
+func TestAnalyzeUnreproducibleOrderByFallsToObject(t *testing.T) {
+	a := newDataFusionAnalyzer()
+	const prefix = `SELECT date_bin(INTERVAL '1 hour', time) AS time, host, ` +
+		`avg(cpu) AS cpu FROM metrics ` +
+		`WHERE time >= 1704067200 AND time < 1704153600 GROUP BY 1, 2 `
+	tests := []struct {
+		name  string
+		query string
+	}{
+		{"column absent from select list", prefix + `ORDER BY region`},
+		{"expression absent from select list", prefix + `ORDER BY avg(cpu) + 1`},
+		{"out of range ordinal", prefix + `ORDER BY 9`},
+		{"duplicate term", prefix + `ORDER BY time, time DESC`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := a.Analyze(tc.query, time.Time{})
+			if got.Mode != sqlanalyzer.CacheModeObject {
+				t.Fatalf("Analyze() = %s/%s, want object", got.Mode, got.Reason)
+			}
+			if got.Reason != sqlanalyzer.ReasonUnsupportedOrdering {
+				t.Errorf("Reason = %s, want %s", got.Reason,
+					sqlanalyzer.ReasonUnsupportedOrdering)
+			}
+		})
+	}
+}

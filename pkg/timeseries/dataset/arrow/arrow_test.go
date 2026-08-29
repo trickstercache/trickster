@@ -429,3 +429,153 @@ func TestRoundTripRandomized(t *testing.T) {
 		}
 	}
 }
+
+// orderingSchema is a time/tag/value shape covering every sort-key kind.
+func orderingSchema() *arrow.Schema {
+	return arrow.NewSchema([]arrow.Field{
+		{Name: "time", Type: arrow.FixedWidthTypes.Timestamp_ns},
+		{Name: "host", Type: arrow.BinaryTypes.String},
+		{Name: "cpu", Type: arrow.PrimitiveTypes.Float64, Nullable: true},
+	}, nil)
+}
+
+func orderingDataSet(t *testing.T, schema *arrow.Schema, rows [][]any) *dataset.DataSet {
+	t.Helper()
+	rec := makeRecord(t, schema, rows)
+	defer rec.Release()
+	ds, err := FromRecords(schema, []arrow.RecordBatch{rec}, testTRQ("host"))
+	if err != nil {
+		t.Fatalf("FromRecords: %v", err)
+	}
+	return ds
+}
+
+func TestToRecordsSortKeys(t *testing.T) {
+	schema := orderingSchema()
+	rows := [][]any{
+		{int64(1000), "a", 2.0},
+		{int64(1000), "b", 1.0},
+		{int64(2000), "a", 4.0},
+		{int64(2000), "b", 3.0},
+	}
+	tests := []struct {
+		name string
+		keys []SortKey
+		want [][]any
+	}{
+		{"default time-major", nil, rows},
+		{"time descending", []SortKey{{Column: "time", Descending: true}},
+			[][]any{
+				{int64(2000), "a", 4.0},
+				{int64(2000), "b", 3.0},
+				{int64(1000), "a", 2.0},
+				{int64(1000), "b", 1.0},
+			}},
+		{"tag then time", []SortKey{{Column: "host"}, {Column: "time"}},
+			[][]any{
+				{int64(1000), "a", 2.0},
+				{int64(2000), "a", 4.0},
+				{int64(1000), "b", 1.0},
+				{int64(2000), "b", 3.0},
+			}},
+		{"tag descending then time descending",
+			[]SortKey{{Column: "host", Descending: true}, {Column: "time", Descending: true}},
+			[][]any{
+				{int64(2000), "b", 3.0},
+				{int64(1000), "b", 1.0},
+				{int64(2000), "a", 4.0},
+				{int64(1000), "a", 2.0},
+			}},
+		{"value ascending", []SortKey{{Column: "cpu"}},
+			[][]any{
+				{int64(1000), "b", 1.0},
+				{int64(1000), "a", 2.0},
+				{int64(2000), "b", 3.0},
+				{int64(2000), "a", 4.0},
+			}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ds := orderingDataSet(t, schema, rows)
+			recs, err := ToRecords(schema, ds, tc.keys...)
+			if err != nil {
+				t.Fatalf("ToRecords: %v", err)
+			}
+			if got := extractRows(recs); !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("rows = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestToRecordsSortKeyNullPlacement(t *testing.T) {
+	schema := orderingSchema()
+	rows := [][]any{
+		{int64(1000), "a", 2.0},
+		{int64(2000), "b", nil},
+		{int64(3000), "c", 1.0},
+	}
+	tests := []struct {
+		name string
+		key  SortKey
+		want []any
+	}{
+		{"ascending nulls last", SortKey{Column: "cpu"}, []any{1.0, 2.0, nil}},
+		{"ascending nulls first", SortKey{Column: "cpu", NullsFirst: true},
+			[]any{nil, 1.0, 2.0}},
+		{"descending nulls first", SortKey{Column: "cpu", Descending: true, NullsFirst: true},
+			[]any{nil, 2.0, 1.0}},
+		{"descending nulls last", SortKey{Column: "cpu", Descending: true},
+			[]any{2.0, 1.0, nil}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ds := orderingDataSet(t, schema, rows)
+			recs, err := ToRecords(schema, ds, tc.key)
+			if err != nil {
+				t.Fatalf("ToRecords: %v", err)
+			}
+			got := make([]any, 0, len(tc.want))
+			for _, row := range extractRows(recs) {
+				got = append(got, row[2])
+			}
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("cpu order = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestToRecordsSortKeyUnknownColumn(t *testing.T) {
+	schema := orderingSchema()
+	ds := orderingDataSet(t, schema, [][]any{{int64(1000), "a", 2.0}})
+	_, err := ToRecords(schema, ds, SortKey{Column: "nope"})
+	if !errors.Is(err, ErrSchemaMismatch) {
+		t.Errorf("err = %v, want %v", err, ErrSchemaMismatch)
+	}
+}
+
+func TestCompareValues(t *testing.T) {
+	tests := []struct {
+		name string
+		a, b any
+		want int
+	}{
+		{"strings", "a", "b", -1},
+		{"equal strings", "a", "a", 0},
+		{"bools", false, true, -1},
+		{"equal bools", true, true, 0},
+		{"bool reversed", true, false, 1},
+		{"ints", int64(1), int64(2), -1},
+		{"mixed numerics", int64(2), 1.5, 1},
+		{"unsigned", uint64(3), int64(3), 0},
+		{"incomparable falls back to rendering", "1", int64(1), 0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := compareValues(tc.a, tc.b); got != tc.want {
+				t.Errorf("compareValues(%v, %v) = %d, want %d", tc.a, tc.b, got, tc.want)
+			}
+		})
+	}
+}

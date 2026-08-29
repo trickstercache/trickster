@@ -21,6 +21,9 @@ import (
 	"runtime"
 	"testing"
 	"time"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // TestReapIdlePrepared verifies that prepared statements abandoned without a
@@ -69,7 +72,7 @@ func TestStreamIPCBytesContextCancel(t *testing.T) {
 	b := buildTestIPC(t)
 	before := runtime.NumGoroutine()
 	ctx, cancel := context.WithCancel(context.Background())
-	if _, _, err := streamIPCBytes(ctx, b); err != nil {
+	if _, _, err := streamIPCBytesWithRelease(ctx, b, nil); err != nil {
 		t.Fatal(err)
 	}
 	cancel()
@@ -80,6 +83,26 @@ func TestStreamIPCBytesContextCancel(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatal("stream goroutine leaked after context cancellation")
+}
+
+func TestStreamIPCBytesHoldsBudgetUntilCompletion(t *testing.T) {
+	b := buildTestIPC(t)
+	srv := &Server{bufferBudget: newBufferBudget(int64(len(b)))}
+	ctx, cancel := context.WithCancel(context.Background())
+	if _, _, err := srv.streamIPCBytes(ctx, b); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := srv.streamIPCBytes(context.Background(), b); status.Code(err) != codes.ResourceExhausted {
+		t.Fatalf("err = %v (code %s), want ResourceExhausted", err, status.Code(err))
+	}
+	cancel()
+	for range 200 {
+		if srv.bufferBudget.used.Load() == 0 {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("stream did not release its buffering budget")
 }
 
 // TestServerCloseReleasesUpstream verifies Server.Close closes the upstream

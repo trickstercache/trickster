@@ -77,13 +77,17 @@ backends:
     listener_names: [default, influx3-flight]
     influxdb:
       flight_upstream_address: 'influxdb3:8181'   # optional, defaults to origin_url host
+      flight_max_response_bytes: 134217728        # optional, defaults to 128MiB
+      flight_max_buffered_bytes: 536870912         # optional, aggregate in-flight budget; defaults to 512MiB
+      flight_allowed_location_hosts:               # optional exact authorities for alternate endpoints
+        - 'influxdb3-replica:8181'
 ```
 
 The `authorization` and `database` headers are forwarded from the client through to the upstream, and every cache entry is keyed by the backend name, the `database`/`bucket-name` headers, and a hash of the `authorization` header — so tenants and databases never share cache entries. Requests that send no `authorization` header share one anonymous cache scope, mirroring the access the upstream would grant them.
 
 Statement queries are served through a three-tier cache:
 
-1. **Delta proxy cache** — queries the SQL analyzer classifies as delta-cacheable (the same `date_bin()`/`date_trunc()` shapes as the HTTP path) are cached by time extent: repeat and overlapping queries fetch only the missing sub-ranges from the upstream, and responses are rebuilt into Arrow record batches conforming to the response's original schema. Entries use the backend's `timeseries_ttl` and honor `backfill_tolerance`; still-filling buckets are always refetched. Responses whose Arrow schemas the delta model cannot represent (nested types, non-string dictionaries, ...) automatically fall to the next tier.
+1. **Delta proxy cache** — queries the SQL analyzer classifies as delta-cacheable (the same `date_bin()`/`date_trunc()` shapes as the HTTP path) are cached by time extent: repeat and overlapping queries fetch only the missing sub-ranges from the upstream, and responses are rebuilt into Arrow record batches conforming to the response's original schema. A query's `ORDER BY` is carried through that rebuild, so a cache hit returns rows in the requested order; ordering terms that do not resolve to a select-list output fall to the next tier. Entries use the backend's `timeseries_ttl` and honor `backfill_tolerance`; still-filling buckets are always refetched. Responses whose Arrow schemas the delta model cannot represent (nested types, non-string dictionaries, ...) automatically fall to the next tier.
 2. **Object cache** — everything else cacheable is stored as the verbatim Arrow IPC byte stream, returned byte-identically, with a lifetime of `influxdb.flight_cache_ttl` (default 60s). Metadata RPCs and prepared statements always use this tier.
 3. **Proxy** — statements referencing nondeterministic functions (`now()`, `current_timestamp`, `random()`, ...) and non-SELECT statements are never cached.
 
@@ -93,7 +97,7 @@ The Flight listener serves TLS when its mapped backend's `tls` block presents a 
 
 #### Unsupported Flight SQL RPCs
 
-Trickster proxies queries, result-set schema requests (`GetSchemaStatement`/`GetSchemaPreparedStatement`, which ADBC drivers probe on connect), the metadata RPCs below, and the prepared-statement lifecycle. Other Flight SQL RPCs — writes/updates/ingest (`ExecuteUpdate`, `DoPut` ingestion), transactions, savepoints, query cancellation, and session options — return gRPC `Unimplemented`; clients requiring them should connect to InfluxDB directly.
+Trickster proxies queries, result-set schema requests (`GetSchemaStatement`/`GetSchemaPreparedStatement`, which ADBC drivers probe on connect), the metadata RPCs below, and the prepared-statement lifecycle. Other Flight SQL RPCs — writes/updates/ingest (`ExecuteUpdate`, `DoPut` ingestion), transactions, savepoints, Substrait plans, query cancellation, endpoint renewal, and session options — return gRPC `Unimplemented`; clients requiring them should connect to InfluxDB directly. A prepared-statement binding must arrive as a single record batch; a client streaming several batches for one binding receives `Unimplemented` rather than a binding taken from its first batch alone.
 
 Flight SQL listeners share Trickster's standard listener lifecycle: connection limits (`connections_limit`), graceful drain on SIGTERM (active streams are drained until the configured drain timeout, then closed), and config reload (SIGHUP) — a reload with an unchanged backend configuration keeps serving on the existing socket, while a changed configuration drains the old server and rebinds.
 
@@ -106,6 +110,17 @@ ADBC clients (Grafana's SQL datasource, the Python `adbc_driver_flightsql`, etc.
 - `GetFlightInfoSchemas` / `DoGetDBSchemas`
 - `GetFlightInfoTableTypes` / `DoGetTableTypes`
 - `GetFlightInfoSqlInfo` / `DoGetSqlInfo`
+- `GetFlightInfoXdbcTypeInfo` / `DoGetXdbcTypeInfo`
+- `GetFlightInfoPrimaryKeys` / `DoGetPrimaryKeys`
+- `GetFlightInfoImportedKeys` / `DoGetImportedKeys`
+- `GetFlightInfoExportedKeys` / `DoGetExportedKeys`
+- `GetFlightInfoCrossReference` / `DoGetCrossReference`
+
+#### Flight SQL response size
+
+Flight responses are buffered whole so they can be cached. `influxdb.flight_max_response_bytes` bounds one upstream response (128MiB by default), while `influxdb.flight_max_buffered_bytes` bounds response bytes concurrently assembled or streamed (512MiB by default). Exceeding either bound returns gRPC `ResourceExhausted`; a negative value removes that bound.
+
+A `FlightInfo` partitioned across several endpoints is consumed in full. Alternate endpoint locations are followed only when their exact `host:port` authority appears in `influxdb.flight_allowed_location_hosts`, because the request's authorization and database metadata are forwarded to that host. A TLS upstream never follows a plaintext alternate location. `influxdb.flight_max_location_clients` bounds cached alternate connections and defaults to 16.
 
 #### Prepared Statements
 

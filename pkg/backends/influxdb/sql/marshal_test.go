@@ -124,6 +124,45 @@ func TestMarshalCSV(t *testing.T) {
 	}
 }
 
+func TestMarshalOrdersRowsAcrossSeries(t *testing.T) {
+	ds := testDataSet()
+	t1 := ds.TimeRangeQuery.Extent.Start
+	t2 := ds.TimeRangeQuery.Extent.End
+	first := ds.Results[0].SeriesList[0]
+	first.Header.TagFieldsList = timeseries.FieldDefinitions{{Name: "host", Role: timeseries.RoleTag}}
+	first.Header.Tags = map[string]string{"host": "a"}
+	second := &dataset.Series{
+		Header: first.Header,
+		Points: dataset.Points{{Epoch: epoch.Epoch(t1.UnixNano()), Values: []any{float64(80)}}},
+	}
+	second.Header.Tags = map[string]string{"host": "b"}
+	ds.Results[0].SeriesList = append(ds.Results[0].SeriesList, second)
+	ds.TimeRangeQuery.Ordering = []timeseries.OrderTerm{
+		{Column: "time", Descending: true}, {Column: "host"},
+	}
+
+	data, err := MarshalTimeseries(ds,
+		&timeseries.RequestOptions{OutputFormat: iofmt.V3OutputJSON}, 200)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rows []map[string]any
+	if err := json.Unmarshal(data, &rows); err != nil {
+		t.Fatal(err)
+	}
+	wantTimes := []string{
+		t2.Format(v3TimestampOutputLayout),
+		t1.Format(v3TimestampOutputLayout),
+		t1.Format(v3TimestampOutputLayout),
+	}
+	wantHosts := []string{"a", "a", "b"}
+	for i := range wantTimes {
+		if rows[i]["time"] != wantTimes[i] || rows[i]["host"] != wantHosts[i] {
+			t.Fatalf("row %d = %v, want time=%s host=%s", i, rows[i], wantTimes[i], wantHosts[i])
+		}
+	}
+}
+
 func TestMarshalNilTimeseries(t *testing.T) {
 	rlo := &timeseries.RequestOptions{OutputFormat: iofmt.V3OutputJSON}
 	_, err := MarshalTimeseries(nil, rlo, 200)

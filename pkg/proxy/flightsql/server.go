@@ -111,6 +111,9 @@ type Server struct {
 
 	// cacheTTL bounds the lifetime of cached response bytes.
 	cacheTTL time.Duration
+	// bufferBudget is shared with the concrete upstream client and remains held
+	// while buffered IPC bytes are assembled or streamed downstream.
+	bufferBudget *bufferBudget
 	// keyPrefix namespaces cache keys per backend so two backends sharing a
 	// named cache never alias each other's entries.
 	keyPrefix string
@@ -126,13 +129,17 @@ type Server struct {
 	// cache key, so two clients executing the same prepared statement with
 	// different parameter values don't alias each other's cache entries) and
 	// the last-access time used to reap statements abandoned by disconnected
-	// clients.
+	// clients. paramMu guards the map itself; each entry's own mutex makes a
+	// binding atomic with the execution it applies to.
 	paramMu  sync.Mutex
 	prepared map[string]*preparedMeta
 }
 
-// preparedMeta is the server-side bookkeeping for one prepared statement.
+// preparedMeta is the server-side bookkeeping for one prepared statement. Its
+// mutex spans both binding and execution, so a concurrent bind can never run
+// one client's parameters under another's cache key.
 type preparedMeta struct {
+	mu sync.Mutex
 	// query is the statement text the handle was prepared from; it lets
 	// parameterless executions share the statement cache tiers.
 	query      string
@@ -190,6 +197,11 @@ type UpstreamClient interface {
 	GetTables(ctx context.Context, opts *flightsql.GetTablesOpts) ([]byte, error)
 	GetTableTypes(ctx context.Context) ([]byte, error)
 	GetSqlInfo(ctx context.Context, info []flightsql.SqlInfo) ([]byte, error)
+	GetXdbcTypeInfo(ctx context.Context, dataType *int32) ([]byte, error)
+	GetPrimaryKeys(ctx context.Context, ref flightsql.TableRef) ([]byte, error)
+	GetExportedKeys(ctx context.Context, ref flightsql.TableRef) ([]byte, error)
+	GetImportedKeys(ctx context.Context, ref flightsql.TableRef) ([]byte, error)
+	GetCrossReference(ctx context.Context, ref flightsql.CrossTableRef) ([]byte, error)
 	// GetExecuteSchema and GetPreparedSchema return serialized Arrow schemas
 	// rather than IPC streams.
 	GetExecuteSchema(ctx context.Context, query string) ([]byte, error)
@@ -216,6 +228,11 @@ func NewServer(upstream UpstreamClient, cache Cache, opts ...ServerOption) *Serv
 		cacheTTL:  DefaultCacheTTL,
 		keyScoper: defaultKeyScoper,
 		prepared:  make(map[string]*preparedMeta),
+	}
+	if provider, ok := upstream.(interface {
+		responseBufferBudget() *bufferBudget
+	}); ok {
+		s.bufferBudget = provider.responseBufferBudget()
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -263,13 +280,13 @@ func (s *Server) DoGetStatement(ctx context.Context,
 		if err != nil {
 			return nil, nil, fmt.Errorf("upstream execute: %w", err)
 		}
-		return streamIPCBytes(ctx, b)
+		return s.streamIPCBytes(ctx, b)
 	}
 	ipcBytes, _, err := s.objectTier(ctx, query)
 	if err != nil {
 		return nil, nil, err
 	}
-	return streamIPCBytes(ctx, ipcBytes)
+	return s.streamIPCBytes(ctx, ipcBytes)
 }
 
 // objectTier serves a statement from the verbatim-IPC object cache: the whole
@@ -321,7 +338,7 @@ func (s *Server) fetchMetadata(ctx context.Context, kind, key string,
 		ipcBytes = b
 		s.cacheSet(key, ipcBytes)
 	}
-	return streamIPCBytes(ctx, ipcBytes)
+	return s.streamIPCBytes(ctx, ipcBytes)
 }
 
 // GetFlightInfoCatalogs returns a FlightInfo describing the catalog list.
@@ -439,6 +456,122 @@ func (s *Server) DoGetSqlInfo(ctx context.Context,
 		})
 }
 
+// GetFlightInfoXdbcTypeInfo returns a FlightInfo describing XDBC type info.
+func (s *Server) GetFlightInfoXdbcTypeInfo(_ context.Context,
+	_ flightsql.GetXdbcTypeInfo, desc *flight.FlightDescriptor,
+) (*flight.FlightInfo, error) {
+	return s.flightInfoForCommand(desc, schema_ref.XdbcTypeInfo), nil
+}
+
+// DoGetXdbcTypeInfo streams the upstream's XDBC data type info (cache-first).
+func (s *Server) DoGetXdbcTypeInfo(ctx context.Context,
+	cmd flightsql.GetXdbcTypeInfo,
+) (*arrow.Schema, <-chan flight.StreamChunk, error) {
+	dataType := cmd.GetDataType()
+	key := s.tenantKey(ctx) + ":meta:xdbctypeinfo:" + derefInt32(dataType)
+	return s.fetchMetadata(ctx, "xdbctypeinfo", key, func(ctx context.Context) ([]byte, error) {
+		return s.upstream.GetXdbcTypeInfo(ctx, dataType)
+	})
+}
+
+// GetFlightInfoPrimaryKeys returns a FlightInfo describing a table's primary
+// keys.
+func (s *Server) GetFlightInfoPrimaryKeys(_ context.Context,
+	_ flightsql.TableRef, desc *flight.FlightDescriptor,
+) (*flight.FlightInfo, error) {
+	return s.flightInfoForCommand(desc, schema_ref.PrimaryKeys), nil
+}
+
+// DoGetPrimaryKeys streams a table's primary keys (cache-first).
+func (s *Server) DoGetPrimaryKeys(ctx context.Context,
+	ref flightsql.TableRef,
+) (*arrow.Schema, <-chan flight.StreamChunk, error) {
+	key := s.tenantKey(ctx) + ":meta:primarykeys:" + tableRefKey(ref)
+	return s.fetchMetadata(ctx, "primarykeys", key, func(ctx context.Context) ([]byte, error) {
+		return s.upstream.GetPrimaryKeys(ctx, ref)
+	})
+}
+
+// GetFlightInfoExportedKeys returns a FlightInfo describing the foreign keys
+// referencing a table.
+func (s *Server) GetFlightInfoExportedKeys(_ context.Context,
+	_ flightsql.TableRef, desc *flight.FlightDescriptor,
+) (*flight.FlightInfo, error) {
+	return s.flightInfoForCommand(desc, schema_ref.ExportedKeys), nil
+}
+
+// DoGetExportedKeys streams the foreign keys referencing a table (cache-first).
+func (s *Server) DoGetExportedKeys(ctx context.Context,
+	ref flightsql.TableRef,
+) (*arrow.Schema, <-chan flight.StreamChunk, error) {
+	key := s.tenantKey(ctx) + ":meta:exportedkeys:" + tableRefKey(ref)
+	return s.fetchMetadata(ctx, "exportedkeys", key, func(ctx context.Context) ([]byte, error) {
+		return s.upstream.GetExportedKeys(ctx, ref)
+	})
+}
+
+// GetFlightInfoImportedKeys returns a FlightInfo describing the foreign keys a
+// table references.
+func (s *Server) GetFlightInfoImportedKeys(_ context.Context,
+	_ flightsql.TableRef, desc *flight.FlightDescriptor,
+) (*flight.FlightInfo, error) {
+	return s.flightInfoForCommand(desc, schema_ref.ImportedKeys), nil
+}
+
+// DoGetImportedKeys streams the foreign keys a table references (cache-first).
+func (s *Server) DoGetImportedKeys(ctx context.Context,
+	ref flightsql.TableRef,
+) (*arrow.Schema, <-chan flight.StreamChunk, error) {
+	key := s.tenantKey(ctx) + ":meta:importedkeys:" + tableRefKey(ref)
+	return s.fetchMetadata(ctx, "importedkeys", key, func(ctx context.Context) ([]byte, error) {
+		return s.upstream.GetImportedKeys(ctx, ref)
+	})
+}
+
+// GetFlightInfoCrossReference returns a FlightInfo describing the foreign-key
+// relationship between two tables.
+func (s *Server) GetFlightInfoCrossReference(_ context.Context,
+	_ flightsql.CrossTableRef, desc *flight.FlightDescriptor,
+) (*flight.FlightInfo, error) {
+	return s.flightInfoForCommand(desc, schema_ref.CrossReference), nil
+}
+
+// DoGetCrossReference streams the foreign-key relationship between two tables
+// (cache-first).
+func (s *Server) DoGetCrossReference(ctx context.Context,
+	ref flightsql.CrossTableRef,
+) (*arrow.Schema, <-chan flight.StreamChunk, error) {
+	key := s.tenantKey(ctx) + ":meta:crossreference:" +
+		tableRefKey(ref.PKRef) + "|" + tableRefKey(ref.FKRef)
+	return s.fetchMetadata(ctx, "crossreference", key, func(ctx context.Context) ([]byte, error) {
+		return s.upstream.GetCrossReference(ctx, ref)
+	})
+}
+
+// tableRefKey renders a table reference as a stable cache-key component,
+// distinguishing an absent catalog or schema from an empty one.
+func tableRefKey(ref flightsql.TableRef) string {
+	return strings.Join([]string{
+		optional(ref.Catalog), optional(ref.DBSchema), ref.Table,
+	}, "|")
+}
+
+// optional renders a nullable key component, marking nil distinctly from "".
+func optional(p *string) string {
+	if p == nil {
+		return "\x00"
+	}
+	return *p
+}
+
+// derefInt32 renders a nullable data-type filter as a cache-key component.
+func derefInt32(p *int32) string {
+	if p == nil {
+		return ""
+	}
+	return strconv.FormatInt(int64(*p), 10)
+}
+
 // deref returns the dereferenced string or empty when nil.
 func deref(p *string) string {
 	if p == nil {
@@ -488,7 +621,7 @@ func (s *Server) GetSchemaPreparedStatement(ctx context.Context,
 	cmd flightsql.PreparedStatementQuery, _ *flight.FlightDescriptor,
 ) (*flight.SchemaResult, error) {
 	handle := cmd.GetPreparedStatementHandle()
-	query, _ := s.preparedState(handle)
+	query := s.preparedQuery(handle)
 	key := s.tenantKey(ctx) + ":prepschema:" + string(handle)
 	if schema, cached := s.cacheGet(key); cached {
 		return &flight.SchemaResult{Schema: schema}, nil
@@ -551,22 +684,32 @@ func (s *Server) GetFlightInfoPreparedStatement(_ context.Context,
 	}, nil
 }
 
-// DoPutPreparedStatementQuery receives parameter bindings from the client and
-// forwards them to the upstream prepared statement. The parameter hash is
-// recorded against the handle so DoGet cache keys reflect the bound values.
+// DoPutPreparedStatementQuery forwards parameter bindings to the upstream and
+// records their hash, both under the handle's lock so an execution never sees
+// one without the other. Multi-batch bindings are refused, not truncated.
 func (s *Server) DoPutPreparedStatementQuery(ctx context.Context,
 	cmd flightsql.PreparedStatementQuery,
 	reader flight.MessageReader, _ flight.MetadataWriter,
 ) ([]byte, error) {
 	handle := cmd.GetPreparedStatementHandle()
+	meta := s.preparedEntry(handle)
+	meta.mu.Lock()
+	defer meta.mu.Unlock()
 	if !reader.Next() {
 		// no record batches sent — treat as clearing params
-		s.setParamHash(handle, "")
+		if err := s.upstream.SetPreparedStatementParams(ctx, handle, nil); err != nil {
+			return nil, fmt.Errorf("upstream clear params: %w", err)
+		}
+		meta.paramHash = ""
 		return handle, nil
 	}
 	rec := reader.RecordBatch()
 	rec.Retain()
 	defer rec.Release()
+	if reader.Next() {
+		return nil, status.Error(codes.Unimplemented,
+			"multi-batch prepared statement bindings are not supported")
+	}
 	if err := s.upstream.SetPreparedStatementParams(ctx, handle, rec); err != nil {
 		return nil, fmt.Errorf("upstream set params: %w", err)
 	}
@@ -574,7 +717,7 @@ func (s *Server) DoPutPreparedStatementQuery(ctx context.Context,
 	if err != nil {
 		return nil, fmt.Errorf("hash params: %w", err)
 	}
-	s.setParamHash(handle, hash)
+	meta.paramHash = hash
 	return handle, nil
 }
 
@@ -589,7 +732,12 @@ func (s *Server) DoGetPreparedStatement(ctx context.Context,
 	cmd flightsql.PreparedStatementQuery,
 ) (*arrow.Schema, <-chan flight.StreamChunk, error) {
 	handle := cmd.GetPreparedStatementHandle()
-	query, paramHash := s.preparedState(handle)
+	meta := s.preparedEntry(handle)
+	// held across the execution so the parameters upstream applies are the
+	// ones this handle's cache key was derived from
+	meta.mu.Lock()
+	defer meta.mu.Unlock()
+	query, paramHash := meta.query, meta.paramHash
 	if s.delta != nil && query != "" && paramHash == "" {
 		return s.delta.serve(ctx, s, query)
 	}
@@ -612,20 +760,16 @@ func (s *Server) ClosePreparedStatement(ctx context.Context,
 
 // registerPrepared records the statement text a handle was prepared from.
 func (s *Server) registerPrepared(handle []byte, query string) {
-	s.paramMu.Lock()
-	defer s.paramMu.Unlock()
-	meta, ok := s.prepared[string(handle)]
-	if !ok {
-		meta = &preparedMeta{}
-		s.prepared[string(handle)] = meta
-	}
+	meta := s.preparedEntry(handle)
+	meta.mu.Lock()
 	meta.query = query
-	meta.lastAccess = time.Now()
+	meta.mu.Unlock()
 }
 
-// preparedState returns the handle's statement text and current parameter
-// hash, recording the access.
-func (s *Server) preparedState(handle []byte) (string, string) {
+// preparedEntry returns the bookkeeping for a handle, creating it on first
+// use, and records the access. Callers take the entry's own mutex to make a
+// binding atomic with the execution that consumes it.
+func (s *Server) preparedEntry(handle []byte) *preparedMeta {
 	s.paramMu.Lock()
 	defer s.paramMu.Unlock()
 	meta, ok := s.prepared[string(handle)]
@@ -634,19 +778,15 @@ func (s *Server) preparedState(handle []byte) (string, string) {
 		s.prepared[string(handle)] = meta
 	}
 	meta.lastAccess = time.Now()
-	return meta.query, meta.paramHash
+	return meta
 }
 
-func (s *Server) setParamHash(handle []byte, hash string) {
-	s.paramMu.Lock()
-	defer s.paramMu.Unlock()
-	meta, ok := s.prepared[string(handle)]
-	if !ok {
-		meta = &preparedMeta{}
-		s.prepared[string(handle)] = meta
-	}
-	meta.paramHash = hash
-	meta.lastAccess = time.Now()
+// preparedQuery returns the statement text a handle was prepared from.
+func (s *Server) preparedQuery(handle []byte) string {
+	meta := s.preparedEntry(handle)
+	meta.mu.Lock()
+	defer meta.mu.Unlock()
+	return meta.query
 }
 
 // ReapIdlePrepared closes prepared statements not accessed within maxIdle,
@@ -695,22 +835,43 @@ func hashRecordBatch(rec arrow.RecordBatch) (string, error) {
 	return hex.EncodeToString(sum[:]), nil
 }
 
-// streamIPCBytes parses serialized Arrow IPC bytes and returns the schema
-// plus a channel of stream chunks the Flight server framework will write out.
-// The goroutine feeding the channel exits when ctx is canceled (e.g., the
-// client disconnects mid-stream) so it never blocks forever holding record
-// batches.
-func streamIPCBytes(ctx context.Context, b []byte,
+func (s *Server) streamIPCBytes(ctx context.Context, b []byte,
+) (*arrow.Schema, <-chan flight.StreamChunk, error) {
+	if s.bufferBudget == nil {
+		return streamIPCBytesWithRelease(ctx, b, nil)
+	}
+	size := int64(len(b))
+	if !s.bufferBudget.acquire(size) {
+		return nil, nil, status.Error(codes.ResourceExhausted,
+			"Flight response buffering budget exhausted")
+	}
+	return streamIPCBytesWithRelease(ctx, b, func() {
+		s.bufferBudget.release(size)
+	})
+}
+
+func streamIPCBytesWithRelease(ctx context.Context, b []byte, release func(),
 ) (*arrow.Schema, <-chan flight.StreamChunk, error) {
 	r, err := ipc.NewReader(bytes.NewReader(b))
 	if err != nil {
+		if release != nil {
+			release()
+		}
 		return nil, nil, fmt.Errorf("ipc reader: %w", err)
 	}
 	schema := r.Schema()
 	ch := make(chan flight.StreamChunk)
 	go func() {
-		defer close(ch)
-		defer r.Release()
+		defer func() {
+			r.Release()
+			close(ch)
+			if release != nil {
+				if done := ctx.Done(); done != nil {
+					<-done
+				}
+				release()
+			}
+		}()
 		for r.Next() {
 			rec := r.RecordBatch()
 			rec.Retain()
