@@ -82,6 +82,8 @@ type server interface {
 // Listener is the Trickster net.Listener implmementation
 type Listener struct {
 	net.Listener
+	// packetConn is set instead of Listener for datagram (QUIC) endpoints
+	packetConn   net.PacketConn
 	tlsConfig    *tls.Config
 	tlsSwapper   sw.CertSwapper
 	routeSwapper *switcher.SwitchHandler
@@ -389,7 +391,7 @@ func (lg *Group) DrainAndClose(listenerName string, drainWait time.Duration) err
 	delete(lg.members, listenerName)
 	lg.listenersLock.Unlock()
 
-	if l.Listener == nil {
+	if l.Listener == nil && l.packetConn == nil {
 		l.setState(StateStopped)
 		return trerr.ErrNilListener
 	}

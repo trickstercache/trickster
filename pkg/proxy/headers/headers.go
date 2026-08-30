@@ -155,6 +155,8 @@ const (
 	// NameWWWAuthenticate represents the HTTP Header Name of "WWW-Authenticate"
 	NameWWWAuthenticate = "WWW-Authenticate"
 
+	// NameAltSvc represents the HTTP Header Name of "Alt-Svc"
+	NameAltSvc = "Alt-Svc"
 	// NameVary represents the HTTP Header Name of "Vary"
 	NameVary = "Vary"
 	// NameAge represents the HTTP Header Name of "Age"
