@@ -66,6 +66,22 @@
 #     # Default: false.
 #     truncate_request_body_too_large: false
 #
+#     # http3 serves this listener's routes over HTTP/3 (QUIC) in addition to
+#     # HTTP/1.1 and HTTP/2. Requires a working TLS endpoint, since QUIC has no
+#     # cleartext mode. Responses on the TLS/TCP endpoint advertise the HTTP/3
+#     # endpoint via Alt-Svc so clients upgrade on their own. See docs/http3.md
+#     http3:
+#       # enabled turns on the HTTP/3 endpoint. Default: false
+#       enabled: false
+#       # port is the UDP port to bind. Defaults to this listener's tls_port
+#       port: 8483
+#       # address is the IP for the UDP socket. Defaults to tls_address
+#       address: ''
+#       # advertised_port is the port published in Alt-Svc. Defaults to port.
+#       # Set it when a load balancer or NAT presents a different port to
+#       # clients than the one bound here
+#       advertised_port: 0
+#
 #   # metrics:
 #   # 8481 is the default port for metrics
 #     # port: 8481
