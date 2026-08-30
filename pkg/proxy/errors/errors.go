@@ -66,6 +66,10 @@ var ErrDrainTimeout = errors.New("timed out draining")
 // ErrPCFContentLength indicates that a response's content length does not permit PCF
 var ErrPCFContentLength = errors.New("content length does not permit PCF")
 
+// ErrPCFMaxSizeExceeded indicates an unknown-length collapsed response outgrew
+// the configured max object size and the collapse was aborted
+var ErrPCFMaxSizeExceeded = errors.New("collapsed response exceeded max object size")
+
 // ErrUnsupportedEncoding indicates that the client requested an encoding that is not supported by Trickster
 var ErrUnsupportedEncoding = errors.New("unsupported ecoding format requested")
 

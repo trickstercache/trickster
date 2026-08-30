@@ -101,14 +101,21 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 		result, ok := reqs.Load(key)
 		if !ok {
 			var contentLength int64
-			reader, resp, contentLength = PrepareFetchReader(r)
+			// the fetch is detached from this client's cancellation so a leader
+			// disconnect does not tear down the stream for joined followers
+			lr := r.WithContext(context.WithoutCancel(r.Context()))
+			reader, resp, contentLength = PrepareFetchReader(lr)
 			cacheStatusCode = setStatusHeader(resp.StatusCode, resp.Header)
 			pr.mapLock.Lock()
 			writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)
 			pr.mapLock.Unlock()
-			// Check if we know the content length and if it is less than our max object size.
-			if contentLength != 0 && contentLength < int64(o.MaxObjectSizeBytes) {
-				pcf := NewPCF(resp, contentLength)
+			var pcf ProgressiveCollapseForwarder
+			if (contentLength < 0 || (contentLength > 0 &&
+				contentLength < int64(o.MaxObjectSizeBytes))) &&
+				collapseEligible(r, resp.StatusCode, resp.Header, pc) {
+				pcf = NewPCF(resp, contentLength, int64(o.MaxObjectSizeBytes))
+			}
+			if pcf != nil {
 				reqs.Store(key, pcf)
 				// Blocks until server completes
 				grClose := reader != nil && closeResponse
@@ -120,14 +127,34 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 						}
 					}()
 					defer reqs.Delete(key)
-					defer pcf.Close()
-					if _, err := io.Copy(pcf, reader); err != nil {
+					n, err := io.Copy(pcf, reader)
+					switch {
+					case err != nil:
 						logger.Error("pcf upstream copy failed",
 							logging.Pairs{keys.Error: err.Error()})
+						pcf.CloseWithError(err)
+					case r.Method != http.MethodHead && contentLength > 0 && n < contentLength:
+						logger.Error("pcf upstream returned short body",
+							logging.Pairs{keys.Key: key})
+						pcf.CloseWithError(io.ErrUnexpectedEOF)
+					default:
+						pcf.Close()
 					}
 				})
-				if err := pcf.AddClient(writer); err != nil {
+				if err := pcf.AddClient(streamWriter(writer, resp)); err != nil {
+					abortOnCopyError(writer, r, err)
 					return nil
+				}
+			} else if writer != nil && reader != nil {
+				// response is not collapsible; deliver to this client alone
+				if _, err := io.Copy(streamWriter(writer, resp), reader); err != nil {
+					logger.Error("proxy response copy failed",
+						logging.Pairs{keys.Error: err.Error()})
+					if closeResponse {
+						reader.Close()
+						closeResponse = false
+					}
+					abortOnCopyError(writer, r, err)
 				}
 			}
 		} else {
@@ -136,7 +163,8 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 			pr.mapLock.Lock()
 			writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)
 			pr.mapLock.Unlock()
-			if err := pcf.AddClient(writer); err != nil {
+			if err := pcf.AddClient(streamWriter(writer, resp)); err != nil {
+				abortOnCopyError(writer, r, err)
 				return nil
 			}
 		}

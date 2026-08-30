@@ -302,7 +302,11 @@ func handlePCF(pr *proxyRequest) error {
 		pr.responseWriter = PrepareResponseWriter(pr.responseWriter, pr.upstreamResponse.StatusCode,
 			pr.upstreamResponse.Header)
 		pr.mapLock.Unlock()
-		return pcf.AddClient(pr.responseWriter)
+		if err := pcf.AddClient(pr.responseWriter); err != nil {
+			abortOnCopyError(pr.responseWriter, pr.Request, err)
+			return err
+		}
+		return nil
 	}
 
 	ctx, span := tspan.NewChildSpan(pr.upstreamRequest.Context(), pr.rsc.Tracer, "FetchObject")
@@ -318,9 +322,9 @@ func handlePCF(pr *proxyRequest) error {
 
 	pr.writeResponseHeader()
 	pr.responseWriter = PrepareResponseWriter(pr.responseWriter, resp.StatusCode, resp.Header)
-	// Check if we know the content length and if it is less than our max object size.
-	if contentLength > 0 && contentLength < int64(o.MaxObjectSizeBytes) {
-		pcf := NewPCF(resp, contentLength)
+	if (contentLength < 0 || (contentLength > 0 && contentLength < int64(o.MaxObjectSizeBytes))) &&
+		collapseEligible(pr.Request, resp.StatusCode, resp.Header, pr.rsc.PathConfig) {
+		pcf := NewPCF(resp, contentLength, int64(o.MaxObjectSizeBytes))
 		actual, loaded := reqs.LoadOrStore(pr.key, pcf)
 		if loaded {
 			// Another goroutine created a PCF session first; join it instead.
@@ -331,7 +335,11 @@ func handlePCF(pr *proxyRequest) error {
 			pr.responseWriter = PrepareResponseWriter(pr.responseWriter, pr.upstreamResponse.StatusCode,
 				pr.upstreamResponse.Header)
 			pr.mapLock.Unlock()
-			return existingPCF.AddClient(pr.responseWriter)
+			if err := existingPCF.AddClient(pr.responseWriter); err != nil {
+				abortOnCopyError(pr.responseWriter, pr.Request, err)
+				return err
+			}
+			return nil
 		}
 
 		pr.cachingPolicy.Merge(GetResponseCachingPolicy(pr.upstreamResponse.StatusCode,
@@ -345,28 +353,39 @@ func handlePCF(pr *proxyRequest) error {
 				}
 			}()
 			defer reqs.Delete(pr.key)
-			defer pcf.Close()
 			var dest io.Writer = pcf
 			if pr.writeToCache {
 				pr.cacheBuffer = &bytes.Buffer{}
 				dest = io.MultiWriter(pcf, pr.cacheBuffer)
 			}
 			n, err := io.Copy(dest, reader)
-			if err != nil {
+			switch {
+			case err != nil:
 				logger.Error("pcf upstream copy failed",
 					logging.Pairs{keys.Key: pr.key, keys.Detail: err.Error()})
 				pr.bodyTruncated.Store(true)
-			}
-			if n < contentLength {
+				pcf.CloseWithError(err)
+			case pr.Method != http.MethodHead && contentLength > 0 && n < contentLength:
+				logger.Error("pcf upstream returned short body",
+					logging.Pairs{keys.Key: pr.key})
 				pr.bodyTruncated.Store(true)
+				pcf.CloseWithError(io.ErrUnexpectedEOF)
+			default:
+				pcf.Close()
 			}
 		})
 
 		if err := pcf.AddClient(pr.responseWriter); err != nil {
+			abortOnCopyError(pr.responseWriter, pr.Request, err)
 			return err
 		}
 
 		return handleAllWrites(pr)
+	}
+	// not collapsible: close this fetch before the caller falls back to an
+	// independent one, or the response body leaks
+	if reader != nil {
+		reader.Close()
 	}
 	return errors.ErrPCFContentLength
 }
@@ -464,6 +483,7 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 		pr.mapLock.Unlock()
 		if err := pcf.AddClient(writer); err != nil {
 			tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", status.LookupStatusError.String()))
+			abortOnCopyError(writer, r, err)
 			return nil, status.LookupStatusError
 		}
 		tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", status.LookupStatusProxyHit.String()))

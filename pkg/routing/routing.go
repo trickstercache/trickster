@@ -40,6 +40,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/handler"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/engines"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/forwarding"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/health"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
@@ -99,6 +100,9 @@ func applyMiddleware(o *bo.Options, pathOpts *po.Options, tr *tracing.Tracer,
 	var h http.Handler
 	if isPassthrough {
 		h = passthrough
+		if pathOpts.CollapsedForwardingType == forwarding.CFTypeProgressive {
+			h = engines.CollapsedPassthrough(passthrough)
+		}
 	} else {
 		h = middleware.LimitQueryRange(pathOpts.Handler)
 	}
