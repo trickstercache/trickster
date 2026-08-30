@@ -19,73 +19,19 @@ package dns
 import (
 	"context"
 	"net"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/discovery"
 	do "github.com/trickstercache/trickster/v2/pkg/discovery/options"
+	dnsclient "github.com/trickstercache/trickster/v2/pkg/dns/client"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dnsserver"
 
-	"github.com/miekg/dns"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 )
-
-// recordStore is a mutable in-process DNS zone for tests
-type recordStore struct {
-	mtx  sync.Mutex
-	rrs  map[uint16][]dns.RR // by qtype
-	fail bool                // respond SERVFAIL when set
-}
-
-func (r *recordStore) setFail(fail bool) {
-	r.mtx.Lock()
-	r.fail = fail
-	r.mtx.Unlock()
-}
-
-func (r *recordStore) set(qtype uint16, records ...string) {
-	rrs := make([]dns.RR, len(records))
-	for i, s := range records {
-		rr, err := dns.NewRR(s)
-		if err != nil {
-			panic(err)
-		}
-		rrs[i] = rr
-	}
-	r.mtx.Lock()
-	if r.rrs == nil {
-		r.rrs = make(map[uint16][]dns.RR)
-	}
-	r.rrs[qtype] = rrs
-	r.mtx.Unlock()
-}
-
-func (r *recordStore) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
-	m := new(dns.Msg)
-	m.SetReply(req)
-	r.mtx.Lock()
-	if r.fail {
-		m.Rcode = dns.RcodeServerFailure
-	} else if len(req.Question) > 0 {
-		m.Answer = append(m.Answer, r.rrs[req.Question[0].Qtype]...)
-	}
-	r.mtx.Unlock()
-	_ = w.WriteMsg(m)
-}
-
-// startTestDNS runs an in-process DNS server and returns its address
-func startTestDNS(t *testing.T, store *recordStore) string {
-	t.Helper()
-	pc, err := net.ListenPacket("udp", "127.0.0.1:0")
-	require.NoError(t, err)
-	srv := &dns.Server{PacketConn: pc, Handler: store}
-	go func() { _ = srv.ActivateAndServe() }()
-	t.Cleanup(func() { _ = srv.Shutdown() })
-	return pc.LocalAddr().String()
-}
 
 type snapCollector struct {
 	ch chan discovery.Snapshot
@@ -129,16 +75,16 @@ func testOptions(server string, interval time.Duration) *do.Options {
 }
 
 func TestSRVDiscovery(t *testing.T) {
-	store := &recordStore{}
-	store.set(dns.TypeSRV,
-		"_prom._tcp.example.com. 0 IN SRV 10 1 9090 prom-a.example.com.",
-		"_prom._tcp.example.com. 0 IN SRV 10 3 9090 prom-b.example.com.",
+	srv := dnsserver.New(t)
+	const zone = "_prom._tcp.example.com."
+	srv.Set(dnsclient.TypeSRV,
+		dnsserver.SRV(zone, 0, 10, 1, 9090, "prom-a.example.com."),
+		dnsserver.SRV(zone, 0, 10, 3, 9090, "prom-b.example.com."),
 		// lower tier (higher priority value): standby, excluded in v1
-		"_prom._tcp.example.com. 0 IN SRV 20 1 9090 prom-standby.example.com.",
+		dnsserver.SRV(zone, 0, 20, 1, 9090, "prom-standby.example.com."),
 	)
-	addr := startTestDNS(t, store)
 
-	d, err := NewSRV("test-dns", testOptions(addr, 25*time.Millisecond))
+	d, err := NewSRV("test-dns", testOptions(srv.Addr(), 25*time.Millisecond))
 	require.NoError(t, err)
 	require.NoError(t, d.Start(t.Context()))
 	defer d.Stop()
@@ -159,25 +105,24 @@ func TestSRVDiscovery(t *testing.T) {
 	require.Equal(t, "10", snap[0].Labels["priority"])
 
 	// record mutation is picked up on the next poll
-	store.set(dns.TypeSRV,
-		"_prom._tcp.example.com. 0 IN SRV 10 1 9090 prom-b.example.com.")
+	srv.Set(dnsclient.TypeSRV,
+		dnsserver.SRV(zone, 0, 10, 1, 9090, "prom-b.example.com."))
 	snap = col.next(t)
 	require.Len(t, snap, 1)
 	require.Equal(t, "prom-b.example.com", snap[0].Name)
 }
 
 func TestADiscovery(t *testing.T) {
-	store := &recordStore{}
-	store.set(dns.TypeA,
-		"prom.example.com. 0 IN A 10.0.0.1",
-		"prom.example.com. 0 IN A 10.0.0.2",
+	srv := dnsserver.New(t)
+	srv.Set(dnsclient.TypeA,
+		dnsserver.A("prom.example.com.", 0, "10.0.0.1"),
+		dnsserver.A("prom.example.com.", 0, "10.0.0.2"),
 	)
-	store.set(dns.TypeAAAA,
-		"prom.example.com. 0 IN AAAA 2001:db8::1",
+	srv.Set(dnsclient.TypeAAAA,
+		dnsserver.AAAA("prom.example.com.", 0, "2001:db8::1"),
 	)
-	addr := startTestDNS(t, store)
 
-	d, err := NewA("test-dns", testOptions(addr, 25*time.Millisecond))
+	d, err := NewA("test-dns", testOptions(srv.Addr(), 25*time.Millisecond))
 	require.NoError(t, err)
 	require.NoError(t, d.Start(t.Context()))
 	defer d.Stop()
@@ -201,19 +146,41 @@ func TestADiscovery(t *testing.T) {
 	require.Contains(t, addrs, "[2001:db8::1]:9090")
 
 	// rotation: one address replaced
-	store.set(dns.TypeA, "prom.example.com. 0 IN A 10.0.0.3")
-	store.set(dns.TypeAAAA)
+	srv.Set(dnsclient.TypeA, dnsserver.A("prom.example.com.", 0, "10.0.0.3"))
+	srv.Set(dnsclient.TypeAAAA)
 	snap = col.next(t)
 	require.Len(t, snap, 1)
 	require.Equal(t, "10.0.0.3:9090", snap[0].Address)
 }
 
-func TestTTLFloor(t *testing.T) {
-	store := &recordStore{}
-	store.set(dns.TypeA, "prom.example.com. 3600 IN A 10.0.0.1")
-	addr := startTestDNS(t, store)
+// TestTruncatedAnswer proves the UDP-to-TCP retry keeps discovery working
+// when an answer does not fit in a datagram
+func TestTruncatedAnswer(t *testing.T) {
+	srv := dnsserver.New(t)
+	srv.Set(dnsclient.TypeA, dnsserver.A("prom.example.com.", 0, "10.0.0.1"))
+	srv.SetTruncate(true)
 
-	d, err := NewA("test-dns", testOptions(addr, 25*time.Millisecond))
+	d, err := NewA("test-dns", testOptions(srv.Addr(), 25*time.Millisecond))
+	require.NoError(t, err)
+	require.NoError(t, d.Start(t.Context()))
+	defer d.Stop()
+
+	col := newSnapCollector()
+	unsub, err := d.Subscribe(&do.Query{
+		Hostname: "prom.example.com", Port: "80"}, col.handle)
+	require.NoError(t, err)
+	defer unsub()
+
+	snap := col.next(t)
+	require.Len(t, snap, 1)
+	require.Equal(t, "10.0.0.1:80", snap[0].Address)
+}
+
+func TestTTLFloor(t *testing.T) {
+	srv := dnsserver.New(t)
+	srv.Set(dnsclient.TypeA, dnsserver.A("prom.example.com.", 3600, "10.0.0.1"))
+
+	d, err := NewA("test-dns", testOptions(srv.Addr(), 25*time.Millisecond))
 	require.NoError(t, err)
 	require.NoError(t, d.Start(t.Context()))
 	defer d.Stop()
@@ -227,16 +194,15 @@ func TestTTLFloor(t *testing.T) {
 	require.Len(t, col.next(t), 1)
 	// with a 1h TTL, the 25ms interval must NOT re-resolve; a record
 	// mutation therefore goes unseen within the test window
-	store.set(dns.TypeA, "prom.example.com. 3600 IN A 10.0.0.9")
+	srv.Set(dnsclient.TypeA, dnsserver.A("prom.example.com.", 3600, "10.0.0.9"))
 	col.expectNone(t, 400*time.Millisecond)
 }
 
 func TestResolutionFailureKeepsLastGood(t *testing.T) {
-	store := &recordStore{}
-	store.set(dns.TypeA, "prom.example.com. 0 IN A 10.0.0.1")
-	addr := startTestDNS(t, store)
+	srv := dnsserver.New(t)
+	srv.Set(dnsclient.TypeA, dnsserver.A("prom.example.com.", 0, "10.0.0.1"))
 
-	d, err := NewA("test-dns", testOptions(addr, 25*time.Millisecond))
+	d, err := NewA("test-dns", testOptions(srv.Addr(), 25*time.Millisecond))
 	require.NoError(t, err)
 	require.NoError(t, d.Start(t.Context()))
 	defer d.Stop()
@@ -254,22 +220,22 @@ func TestResolutionFailureKeepsLastGood(t *testing.T) {
 	// refresh-errors metric
 	errs0 := testutil.ToFloat64(metrics.DiscoveryRefreshErrors.
 		WithLabelValues("test-dns", "dns_a"))
-	store.setFail(true)
+	srv.SetRCode(dnsclient.RCodeServerFailure)
 	col.expectNone(t, 300*time.Millisecond)
 	require.Greater(t, testutil.ToFloat64(metrics.DiscoveryRefreshErrors.
 		WithLabelValues("test-dns", "dns_a")), errs0)
 
 	// on recovery, the (changed) answer is emitted again
-	store.setFail(false)
-	store.set(dns.TypeA, "prom.example.com. 0 IN A 10.0.0.2")
+	srv.SetRCode(dnsclient.RCodeSuccess)
+	srv.Set(dnsclient.TypeA, dnsserver.A("prom.example.com.", 0, "10.0.0.2"))
 	snap := col.next(t)
 	require.Len(t, snap, 1)
 	require.Equal(t, "10.0.0.2:80", snap[0].Address)
 
 	// an authoritative empty answer is different: it is a valid membership
 	// and empties the pool's discovered set
-	store.set(dns.TypeA)
-	store.set(dns.TypeAAAA)
+	srv.Set(dnsclient.TypeA)
+	srv.Set(dnsclient.TypeAAAA)
 	require.Empty(t, col.next(t))
 }
 
@@ -287,9 +253,8 @@ func TestNewDiscovererErrors(t *testing.T) {
 }
 
 func TestSubscribeLifecycle(t *testing.T) {
-	store := &recordStore{}
-	addr := startTestDNS(t, store)
-	d, err := NewSRV("test-dns", testOptions(addr, 25*time.Millisecond))
+	srv := dnsserver.New(t)
+	d, err := NewSRV("test-dns", testOptions(srv.Addr(), 25*time.Millisecond))
 	require.NoError(t, err)
 
 	// subscribing before Start launches on Start
@@ -311,18 +276,17 @@ func TestSubscribeLifecycle(t *testing.T) {
 // TestStdResolver exercises the stdlib-resolver fallback against the
 // in-process DNS server via a custom Dial
 func TestStdResolver(t *testing.T) {
-	store := &recordStore{}
-	store.set(dns.TypeSRV,
-		"_prom._tcp.example.com. 30 IN SRV 10 2 9090 prom-a.example.com.")
-	store.set(dns.TypeA, "prom.example.com. 30 IN A 10.0.0.1")
-	store.set(dns.TypeAAAA)
-	addr := startTestDNS(t, store)
+	srv := dnsserver.New(t)
+	srv.Set(dnsclient.TypeSRV, dnsserver.SRV("_prom._tcp.example.com.", 30,
+		10, 2, 9090, "prom-a.example.com."))
+	srv.Set(dnsclient.TypeA, dnsserver.A("prom.example.com.", 30, "10.0.0.1"))
+	srv.Set(dnsclient.TypeAAAA)
 
 	r := &stdResolver{r: &net.Resolver{
 		PreferGo: true,
 		Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
 			var d net.Dialer
-			return d.DialContext(ctx, network, addr)
+			return d.DialContext(ctx, network, srv.Addr())
 		},
 	}}
 	srvs, ttl, err := r.lookupSRV(t.Context(), "_prom._tcp.example.com.")
@@ -340,7 +304,7 @@ func TestStdResolver(t *testing.T) {
 	// a NOERROR answer with no records: the stdlib surfaces empty IP
 	// answers as a lookup error, which the poll loop treats as a
 	// resolution failure (keep last-good)
-	store.set(dns.TypeA)
+	srv.Set(dnsclient.TypeA)
 	_, _, err = r.lookupIP(t.Context(), "prom.example.com.")
 	require.Error(t, err)
 }

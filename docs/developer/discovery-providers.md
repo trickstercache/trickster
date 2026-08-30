@@ -106,7 +106,7 @@ Fill `discovery.Member` as completely as your source allows:
    [pkg/discovery/registry](../../pkg/discovery/registry/registry.go)'s
    `SupportedProviders` map.
 6. **Test** without network dependencies: an in-process fake of your
-   source (client-go fake clientset, an in-process miekg/dns server, a
+   source (client-go fake clientset, `pkg/testutil/dnsserver`, a
    temp dir). Cover: initial snapshot, add/remove transitions, the
    failure-keeps-last-good path, emit-on-change suppression, and
    unsubscribe/Stop termination (no goroutine leaks — the shared suite in

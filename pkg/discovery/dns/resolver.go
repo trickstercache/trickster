@@ -22,19 +22,17 @@ import (
 	"net"
 	"time"
 
-	"github.com/miekg/dns"
+	dnsclient "github.com/trickstercache/trickster/v2/pkg/dns/client"
 )
 
 // resolver abstracts record resolution so the provider can use a specific
 // DNS server (with TTL access) or fall back to the system resolver
 type resolver interface {
 	// lookupSRV returns the SRV answer and its shortest TTL
-	lookupSRV(ctx context.Context, fqdn string) ([]*dns.SRV, time.Duration, error)
+	lookupSRV(ctx context.Context, fqdn string) ([]*dnsclient.SRV, time.Duration, error)
 	// lookupIP returns the A+AAAA answer and its shortest TTL
 	lookupIP(ctx context.Context, fqdn string) ([]string, time.Duration, error)
 }
-
-const resolvConfPath = "/etc/resolv.conf"
 
 // newResolver returns a direct resolver against the configured server, or
 // the first system nameserver from resolv.conf; when neither is available
@@ -42,58 +40,56 @@ const resolvConfPath = "/etc/resolv.conf"
 // provides no TTLs, so the poll interval alone paces re-resolution
 func newResolver(server string) (resolver, error) {
 	if server != "" {
-		return &directResolver{server: server}, nil
+		return newDirectResolver(server), nil
 	}
-	if cc, err := dns.ClientConfigFromFile(resolvConfPath); err == nil &&
-		len(cc.Servers) > 0 {
-		return &directResolver{
-			server: net.JoinHostPort(cc.Servers[0], cc.Port),
-		}, nil
+	if rc, err := dnsclient.LoadResolvConf(
+		dnsclient.DefaultResolvConfPath); err == nil {
+		return newDirectResolver(rc.Servers[0]), nil
 	}
 	return &stdResolver{r: net.DefaultResolver}, nil
 }
 
-// directResolver queries one DNS server via miekg/dns, retrying over TCP
-// when a UDP answer is truncated
+// directResolver queries one DNS server directly, which is what makes record
+// TTLs visible; the client retries over TCP when a UDP answer is truncated
 type directResolver struct {
 	server string
+	client *dnsclient.Client
 }
 
-func (d *directResolver) exchange(ctx context.Context, fqdn string,
-	qtype uint16,
-) (*dns.Msg, error) {
-	m := new(dns.Msg)
-	m.SetQuestion(fqdn, qtype)
-	c := &dns.Client{Timeout: 5 * time.Second}
-	r, _, err := c.ExchangeContext(ctx, m, d.server)
-	if err == nil && r != nil && r.Truncated {
-		c.Net = "tcp"
-		r, _, err = c.ExchangeContext(ctx, m, d.server)
+func newDirectResolver(server string) *directResolver {
+	return &directResolver{
+		server: server,
+		client: &dnsclient.Client{Timeout: dnsclient.DefaultTimeout},
 	}
+}
+
+func (d *directResolver) query(ctx context.Context, fqdn string,
+	qtype dnsclient.Type,
+) (*dnsclient.Msg, error) {
+	r, err := d.client.Query(ctx, d.server, fqdn, qtype)
 	if err != nil {
 		return nil, err
 	}
-	if r.Rcode != dns.RcodeSuccess {
-		return nil, fmt.Errorf("dns query for %s returned %s",
-			fqdn, dns.RcodeToString[r.Rcode])
+	if r.RCode != dnsclient.RCodeSuccess {
+		return nil, fmt.Errorf("dns query for %s returned %s", fqdn, r.RCode)
 	}
 	return r, nil
 }
 
-func (d *directResolver) lookupSRV(ctx context.Context, fqdn string) ([]*dns.SRV, time.Duration, error) {
-	r, err := d.exchange(ctx, fqdn, dns.TypeSRV)
+func (d *directResolver) lookupSRV(ctx context.Context, fqdn string) ([]*dnsclient.SRV, time.Duration, error) {
+	r, err := d.query(ctx, fqdn, dnsclient.TypeSRV)
 	if err != nil {
 		return nil, 0, err
 	}
-	out := make([]*dns.SRV, 0, len(r.Answer))
+	out := make([]*dnsclient.SRV, 0, len(r.Answers))
 	ttl := time.Duration(0)
-	for _, rr := range r.Answer {
-		srv, ok := rr.(*dns.SRV)
+	for _, rr := range r.Answers {
+		srv, ok := rr.(*dnsclient.SRV)
 		if !ok {
 			continue
 		}
 		out = append(out, srv)
-		ttl = minTTL(ttl, srv.Hdr.Ttl)
+		ttl = minTTL(ttl, srv.Hdr.TTL)
 	}
 	return out, ttl, nil
 }
@@ -102,20 +98,20 @@ func (d *directResolver) lookupIP(ctx context.Context, fqdn string) ([]string, t
 	var out []string
 	ttl := time.Duration(0)
 	var lastErr error
-	for _, qtype := range []uint16{dns.TypeA, dns.TypeAAAA} {
-		r, err := d.exchange(ctx, fqdn, qtype)
+	for _, qtype := range []dnsclient.Type{dnsclient.TypeA, dnsclient.TypeAAAA} {
+		r, err := d.query(ctx, fqdn, qtype)
 		if err != nil {
 			lastErr = err
 			continue
 		}
-		for _, rr := range r.Answer {
+		for _, rr := range r.Answers {
 			switch a := rr.(type) {
-			case *dns.A:
-				out = append(out, a.A.String())
-				ttl = minTTL(ttl, a.Hdr.Ttl)
-			case *dns.AAAA:
-				out = append(out, a.AAAA.String())
-				ttl = minTTL(ttl, a.Hdr.Ttl)
+			case *dnsclient.A:
+				out = append(out, a.Addr.String())
+				ttl = minTTL(ttl, a.Hdr.TTL)
+			case *dnsclient.AAAA:
+				out = append(out, a.Addr.String())
+				ttl = minTTL(ttl, a.Hdr.TTL)
 			}
 		}
 	}
@@ -140,14 +136,14 @@ type stdResolver struct {
 	r *net.Resolver
 }
 
-func (s *stdResolver) lookupSRV(ctx context.Context, fqdn string) ([]*dns.SRV, time.Duration, error) {
+func (s *stdResolver) lookupSRV(ctx context.Context, fqdn string) ([]*dnsclient.SRV, time.Duration, error) {
 	_, addrs, err := s.r.LookupSRV(ctx, "", "", fqdn)
 	if err != nil {
 		return nil, 0, err
 	}
-	out := make([]*dns.SRV, len(addrs))
+	out := make([]*dnsclient.SRV, len(addrs))
 	for i, a := range addrs {
-		out[i] = &dns.SRV{
+		out[i] = &dnsclient.SRV{
 			Target:   a.Target,
 			Port:     a.Port,
 			Priority: a.Priority,
