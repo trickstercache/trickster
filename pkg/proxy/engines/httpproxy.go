@@ -79,7 +79,8 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 	var reader io.ReadCloser
 
 	if pc == nil || pc.CollapsedForwardingType != forwarding.CFTypeProgressive ||
-		!methods.HasBody(r.Method) {
+		!methods.IsCacheable(r.Method) {
+		// don't use PCF
 		reader, resp, _ = PrepareFetchReader(r)
 		cacheStatusCode = setStatusHeader(resp.StatusCode, resp.Header)
 		writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)

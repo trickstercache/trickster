@@ -244,7 +244,7 @@ func handleCacheKeyMiss(pr *proxyRequest) error {
 	pc := pr.rsc.PathConfig
 
 	// if we're using PCF, handle that separately
-	if !methods.HasBody(pr.Method) && !pr.wantsRanges && pc != nil &&
+	if methods.IsCacheable(pr.Method) && !pr.wantsRanges && pc != nil &&
 		pc.CollapsedForwardingType == forwarding.CFTypeProgressive {
 		if err := handlePCF(pr); !stderrors.Is(err, errors.ErrPCFContentLength) {
 			return err
