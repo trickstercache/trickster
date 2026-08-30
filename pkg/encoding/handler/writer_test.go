@@ -17,6 +17,9 @@
 package handler
 
 import (
+	"bufio"
+	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -28,10 +31,67 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
+type hijackResponseWriter struct {
+	http.ResponseWriter
+	conn net.Conn
+	rw   *bufio.ReadWriter
+}
+
+func (w *hijackResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	return w.conn, w.rw, nil
+}
+
+type unwrapResponseWriter struct {
+	http.ResponseWriter
+}
+
+func (w *unwrapResponseWriter) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
+}
+
 func TestNewEncoder(t *testing.T) {
 	w := NewEncoder(nil, nil)
 	if w.(*responseEncoder).EncodingProfile == nil {
 		t.Error("expected non-nil")
+	}
+}
+
+func TestResponseEncoderHijack(t *testing.T) {
+	serverConn, clientConn := net.Pipe()
+	t.Cleanup(func() {
+		serverConn.Close()
+		clientConn.Close()
+	})
+
+	rw := bufio.NewReadWriter(bufio.NewReader(serverConn), bufio.NewWriter(serverConn))
+	underlying := &hijackResponseWriter{
+		ResponseWriter: httptest.NewRecorder(),
+		conn:           serverConn,
+		rw:             rw,
+	}
+	wrapped := &unwrapResponseWriter{ResponseWriter: underlying}
+	ew := NewEncoder(wrapped, nil).(*responseEncoder)
+
+	conn, gotRW, err := ew.Hijack()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conn != serverConn {
+		t.Error("connection mismatch")
+	}
+	if gotRW != rw {
+		t.Error("buffered read-writer mismatch")
+	}
+	if ew.Unwrap() != wrapped {
+		t.Error("underlying response writer mismatch")
+	}
+}
+
+func TestResponseEncoderHijackUnsupported(t *testing.T) {
+	ew := NewEncoder(httptest.NewRecorder(), nil).(*responseEncoder)
+	_, _, err := ew.Hijack()
+	if !errors.Is(err, http.ErrNotSupported) {
+		t.Errorf("expected http.ErrNotSupported, got %v", err)
 	}
 }
 

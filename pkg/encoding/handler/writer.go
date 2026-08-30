@@ -17,8 +17,10 @@
 package handler
 
 import (
+	"bufio"
 	"bytes"
 	"io"
+	"net"
 	"net/http"
 
 	"github.com/trickstercache/trickster/v2/pkg/encoding/profile"
@@ -60,6 +62,8 @@ type responseEncoder struct {
 	decoderInit         providers.DecoderInitializer
 }
 
+var _ http.Hijacker = (*responseEncoder)(nil)
+
 // Write implements ResponseEncoder.Write
 func (ew *responseEncoder) Write(b []byte) (int, error) {
 	if !ew.prepared {
@@ -79,6 +83,16 @@ func (ew *responseEncoder) WriteHeader(c int) {
 // Header implements ResponseEncoder.Header
 func (ew *responseEncoder) Header() http.Header {
 	return ew.ResponseWriter.Header()
+}
+
+// Unwrap exposes the underlying writer to http.ResponseController.
+func (ew *responseEncoder) Unwrap() http.ResponseWriter {
+	return ew.ResponseWriter
+}
+
+// Hijack delegates connection ownership to the underlying response writer.
+func (ew *responseEncoder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	return http.NewResponseController(ew.ResponseWriter).Hijack()
 }
 
 func (ew *responseEncoder) prepareWriter() {
