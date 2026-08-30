@@ -22,6 +22,7 @@ import (
 	"io"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
@@ -102,6 +103,10 @@ type proxyRequest struct {
 	started         time.Time
 	contentLength   int64
 	trueContentType string
+	// set when the upstream body ended early or failed mid-copy; an incomplete
+	// object must never be written to cache. Atomic because the PCF copy runs
+	// on its own goroutine while the caller waits to store.
+	bodyTruncated atomic.Bool
 }
 
 func cloneRequestWithSpan(r *http.Request) *http.Request {
@@ -457,11 +462,13 @@ func (pr *proxyRequest) writeResponseBody() {
 	n, err := io.Copy(pr.responseWriter, pr.upstreamReader)
 	if err != nil {
 		logger.Error("error copying upstream response body", logging.Pairs{keys.Error: err})
+		pr.bodyTruncated.Store(true)
 	}
 	// Chunked / transparent-gzip transports can return err==nil with n<CL;
 	// trigger short-read regardless of err.
 	if pr.upstreamResponse != nil && pr.upstreamResponse.ContentLength > 0 &&
 		n < pr.upstreamResponse.ContentLength {
+		pr.bodyTruncated.Store(true)
 		if c := request.GetUpstreamShortReadCapture(pr.upstreamRequest.Context()); c != nil {
 			c.Mark()
 		}

@@ -40,6 +40,18 @@ import (
 	"golang.org/x/net/netutil"
 )
 
+// serverProtocols enables cleartext HTTP/2 alongside HTTP/1.1 and TLS HTTP/2.
+// h2c is prior-knowledge only (the client sends the HTTP/2 preface), which is
+// what gRPC and other cleartext HTTP/2 clients require; Go does not implement
+// the Upgrade-based h2c handshake, so no request can be smuggled through one.
+func serverProtocols() *http.Protocols {
+	var p http.Protocols
+	p.SetHTTP1(true)
+	p.SetHTTP2(true)
+	p.SetUnencryptedHTTP2(true)
+	return &p
+}
+
 // ListenerState represents the state of a listener
 type ListenerState int32
 
@@ -305,6 +317,7 @@ func (lg *Group) StartListener(listenerName, address string, port int, connectio
 		Handler:           l.routeSwapper,
 		TLSConfig:         tlsConfig,
 		ReadHeaderTimeout: readHeaderTimeout,
+		Protocols:         serverProtocols(),
 	}
 	l.server = svr
 

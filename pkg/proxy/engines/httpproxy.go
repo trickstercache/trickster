@@ -85,9 +85,14 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 		cacheStatusCode = setStatusHeader(resp.StatusCode, resp.Header)
 		writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)
 		if writer != nil && reader != nil {
-			if _, err := io.Copy(writer, reader); err != nil {
+			if _, err := io.Copy(streamWriter(writer, resp), reader); err != nil {
 				logger.Error("proxy response copy failed",
 					logging.Pairs{keys.Error: err.Error()})
+				if closeResponse {
+					reader.Close()
+					closeResponse = false // abort below skips the deferred close
+				}
+				abortOnCopyError(writer, r, err)
 			}
 		}
 	} else {

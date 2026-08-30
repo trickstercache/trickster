@@ -351,9 +351,14 @@ func handlePCF(pr *proxyRequest) error {
 				pr.cacheBuffer = &bytes.Buffer{}
 				dest = io.MultiWriter(pcf, pr.cacheBuffer)
 			}
-			if _, err := io.Copy(dest, reader); err != nil {
+			n, err := io.Copy(dest, reader)
+			if err != nil {
 				logger.Error("pcf upstream copy failed",
 					logging.Pairs{keys.Key: pr.key, keys.Detail: err.Error()})
+				pr.bodyTruncated.Store(true)
+			}
+			if n < contentLength {
+				pr.bodyTruncated.Store(true)
 			}
 		})
 
@@ -371,6 +376,13 @@ func handleAllWrites(pr *proxyRequest) error {
 		return err
 	}
 	if pr.writeToCache {
+		// an object that ended early is not the object the origin advertised;
+		// storing it would serve a truncated body to every later requester
+		if pr.bodyTruncated.Load() {
+			logger.Warn("skipping cache write for truncated upstream response",
+				logging.Pairs{keys.Key: pr.key, keys.URL: pr.URL.String()})
+			return nil
+		}
 		if pr.cacheDocument == nil || !pr.cacheDocument.isLoaded {
 			d := DocumentFromHTTPResponse(pr.upstreamResponse, nil, pr.cachingPolicy)
 			pr.cacheDocument = d

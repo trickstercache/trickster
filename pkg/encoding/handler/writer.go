@@ -60,12 +60,16 @@ type responseEncoder struct {
 	buff                *bytes.Buffer
 	writeFunc           writeFunc
 	decoderInit         providers.DecoderInitializer
+	hijacked            bool
 }
 
 var _ http.Hijacker = (*responseEncoder)(nil)
 
 // Write implements ResponseEncoder.Write
 func (ew *responseEncoder) Write(b []byte) (int, error) {
+	if ew.hijacked {
+		return 0, http.ErrHijacked
+	}
 	if !ew.prepared {
 		ew.prepareWriter()
 	}
@@ -92,7 +96,11 @@ func (ew *responseEncoder) Unwrap() http.ResponseWriter {
 
 // Hijack delegates connection ownership to the underlying response writer.
 func (ew *responseEncoder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
-	return http.NewResponseController(ew.ResponseWriter).Hijack()
+	c, rw, err := http.NewResponseController(ew.ResponseWriter).Hijack()
+	if err == nil {
+		ew.hijacked = true
+	}
+	return c, rw, err
 }
 
 func (ew *responseEncoder) prepareWriter() {
@@ -187,6 +195,9 @@ func (ew *responseEncoder) writeTranscoded(b []byte) (int, error) {
 }
 
 func (ew *responseEncoder) Close() error {
+	if ew.hijacked {
+		return nil
+	}
 	var err1, err2 error
 	if ew.encoder != nil {
 		err1 = ew.encoder.Close()

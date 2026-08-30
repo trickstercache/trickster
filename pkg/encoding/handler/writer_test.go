@@ -263,3 +263,40 @@ func TestPrepareWriter(t *testing.T) {
 		t.Error("expected non-nil encoder")
 	}
 }
+
+func TestResponseEncoderHijackedGuard(t *testing.T) {
+	serverConn, clientConn := net.Pipe()
+	t.Cleanup(func() {
+		serverConn.Close()
+		clientConn.Close()
+	})
+	underlying := &hijackResponseWriter{
+		ResponseWriter: httptest.NewRecorder(),
+		conn:           serverConn,
+		rw:             bufio.NewReadWriter(bufio.NewReader(serverConn), bufio.NewWriter(serverConn)),
+	}
+	ew := NewEncoder(underlying, nil).(*responseEncoder)
+
+	if _, _, err := ew.Hijack(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ew.Write([]byte("late")); !errors.Is(err, http.ErrHijacked) {
+		t.Errorf("expected http.ErrHijacked, got %v", err)
+	}
+	if err := ew.Close(); err != nil {
+		t.Errorf("close after hijack should be a no-op, got %v", err)
+	}
+}
+
+func TestResponseEncoderNotHijackedOnError(t *testing.T) {
+	ew := NewEncoder(httptest.NewRecorder(), nil).(*responseEncoder)
+	if _, _, err := ew.Hijack(); err == nil {
+		t.Fatal("expected hijack to fail on a non-hijackable writer")
+	}
+	if ew.hijacked {
+		t.Error("failed hijack must not mark the writer as hijacked")
+	}
+	if _, err := ew.Write([]byte("ok")); err != nil {
+		t.Errorf("writes must still work after a failed hijack, got %v", err)
+	}
+}

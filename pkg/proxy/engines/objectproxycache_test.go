@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1665,5 +1666,58 @@ func TestOPCClientNoCache(t *testing.T) {
 	hdr := resp.Header.Get(headers.NameTricksterResult)
 	if !strings.Contains(hdr, "engine=HTTPProxy") {
 		t.Errorf("expected proxy-only path for no-cache, got %q", hdr)
+	}
+}
+
+// truncatingTransport returns a response advertising more bytes than its body
+// yields, which is how a mid-transfer origin failure presents to the client.
+type truncatingTransport struct {
+	advertised int64
+	sent       string
+}
+
+func (t *truncatingTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	h := http.Header{}
+	h.Set(headers.NameContentLength, strconv.FormatInt(t.advertised, 10))
+	h.Set(headers.NameCacheControl, "max-age=60")
+	h.Set(headers.NameContentType, "text/plain")
+	return &http.Response{
+		StatusCode:    http.StatusOK,
+		Header:        h,
+		ContentLength: t.advertised,
+		Body: io.NopCloser(io.MultiReader(
+			strings.NewReader(t.sent),
+			&erroringReader{err: io.ErrUnexpectedEOF},
+		)),
+		Request: r,
+	}, nil
+}
+
+type erroringReader struct{ err error }
+
+func (e *erroringReader) Read([]byte) (int, error) { return 0, e.err }
+
+func TestObjectProxyCacheTruncatedResponseNotCached(t *testing.T) {
+	hdrs := map[string]string{headers.NameCacheControl: "max-age=60"}
+	ts, _, r, rsc, err := setupTestHarnessOPC("", "test", http.StatusOK, hdrs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeTestHarness(ts, r)
+
+	rsc.BackendOptions.HTTPClient = &http.Client{
+		Transport: &truncatingTransport{advertised: 4096, sent: "partial"},
+	}
+
+	// both fetches must miss: a truncated body may not be promoted to cache,
+	// so the second request cannot be served as a hit
+	for i := range 2 {
+		w := httptest.NewRecorder()
+		ObjectProxyCacheRequest(w, r)
+		resp := w.Result()
+		got := resp.Header.Get(headers.NameTricksterResult)
+		if strings.Contains(got, status.StatusHit) {
+			t.Errorf("fetch %d: truncated response was cached (%s)", i+1, got)
+		}
 	}
 }

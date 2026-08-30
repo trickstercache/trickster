@@ -39,6 +39,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/handler"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/engines"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/health"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
@@ -75,13 +76,38 @@ func shouldCaptureAuth(pathOptions *po.Options, backendOptions *bo.Options) bool
 	return hasAuthenticator(pathOptions, backendOptions) || backends.IsVirtual(backendOptions.Provider)
 }
 
+// isPassthroughPath reports whether a path proxies without caching, which is
+// what routes it to the ReverseProxy-backed lane. Derived from existing config
+// rather than a dedicated setting: the `proxy` handler is by definition the
+// non-caching one, and it is what the reverseproxy provider registers. A
+// handler assigned directly rather than resolved from the registry is left
+// alone, because the name no longer describes what it does.
+func isPassthroughPath(pathOpts *po.Options) bool {
+	return pathOpts != nil && pathOpts.HandlerFromRegistry &&
+		pathOpts.HandlerName == providers.Proxy
+}
+
 func applyMiddleware(o *bo.Options, pathOpts *po.Options, tr *tracing.Tracer,
 	c cache.Cache, client backends.Backend, al *accesslog.Logger, frontend *fopt.Options,
 ) http.Handler {
-	h := middleware.LimitQueryRange(pathOpts.Handler)
+	var passthrough http.Handler
+	if client != nil {
+		passthrough = engines.NewPassthroughHandler(client)
+	}
+	isPassthrough := passthrough != nil && isPassthroughPath(pathOpts)
+
+	var h http.Handler
+	if isPassthrough {
+		h = passthrough
+	} else {
+		h = middleware.LimitQueryRange(pathOpts.Handler)
+	}
 	if frontend != nil {
 		maxBodySizeBytes, truncateOnly := getSizeLimits(frontend)
 		h = bodyfilter.Handler(maxBodySizeBytes, truncateOnly, h)
+	}
+	if !isPassthrough {
+		h = middleware.UpgradeSwitch(passthrough, h)
 	}
 	if tr != nil {
 		h = middleware.Trace(tr, h)
@@ -343,6 +369,7 @@ func registerPathRoutes(routes []listenerRoute, conf *config.Config, handlers ha
 		if p.Handler == nil && p.HandlerName != "" {
 			if h, ok := handlers[p.HandlerName]; ok && h != nil {
 				p.Handler = h
+				p.HandlerFromRegistry = true
 			}
 		}
 

@@ -211,7 +211,7 @@ func Merge(dst, src http.Header) {
 		if len(sv) == 0 {
 			continue
 		}
-		dst[k] = []string{sv[0]}
+		dst[k] = slices.Clone(sv)
 	}
 }
 
