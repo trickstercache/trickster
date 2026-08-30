@@ -303,7 +303,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			limit := time.Duration(rsc.BackendOptions.MaxQueryRange)
 			if duration > limit {
 				metrics.ProxyQueryRangeRejections.WithLabelValues(rsc.BackendOptions.Name).Inc()
-				clientIP := r.Header.Get("X-Forwarded-For")
+				clientIP := r.Header.Get(headers.NameXForwardedFor)
 				if clientIP == "" {
 					clientIP = r.RemoteAddr
 				}

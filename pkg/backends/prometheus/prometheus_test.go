@@ -33,6 +33,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	pe "github.com/trickstercache/trickster/v2/pkg/proxy/errors"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
@@ -263,7 +264,7 @@ func TestParseTimeRangeQuery(t *testing.T) {
 	b := bytes.NewBufferString(qp.Encode())
 	u.RawQuery = ""
 	req, _ = http.NewRequest(http.MethodPost, u.String(), b)
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set(headers.NameContentType, "application/x-www-form-urlencoded")
 	_, _, _, err = client.ParseTimeRangeQuery(req)
 	if err != nil {
 		t.Error(err)

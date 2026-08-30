@@ -179,7 +179,7 @@ func TestStripMergeHeaders(t *testing.T) {
 		NameContentLength: []string{"42"},
 		NameLocation:      []string{"https://trickstercache.org/"},
 		NameCacheControl:  []string{"max-age=300"},
-		NameVary:          []string{"Accept-Encoding"},
+		NameVary:          []string{NameAcceptEncoding},
 		NameAge:           []string{"7"},
 		NameETag:          []string{"abc123"},
 		NameExpires:       []string{"Thu, 01 Jan 2099 00:00:00 GMT"},

@@ -25,6 +25,7 @@ import (
 	"testing"
 
 	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
 )
@@ -34,15 +35,15 @@ const testURLRaw = "https://example.com:8480/path1/path2?param1=value&param2=val
 var testURL, _ = url.Parse(testURLRaw)
 
 var testRL0 = options.RewriteList{
-	[]string{"header", "set", "Cache-Control", "max-age=60"},
-	[]string{"header", "append", "Cache-Control", "max-age=300"},
-	[]string{"header", "append", "Cache-Control", "private"},
-	[]string{"header", "append", "Cache-Control", "private"},
+	[]string{"header", "set", headers.NameCacheControl, "max-age=60"},
+	[]string{"header", "append", headers.NameCacheControl, "max-age=300"},
+	[]string{"header", "append", headers.NameCacheControl, "private"},
+	[]string{"header", "append", headers.NameCacheControl, "private"},
 	[]string{"header", "set", "Test-Header", "Trickster"},
-	[]string{"header", "replace", "Cache-Control", "300", "60"},
+	[]string{"header", "replace", headers.NameCacheControl, "300", "60"},
 	[]string{"header", "delete", "Test-Header"},
-	[]string{"header", "delete", "Cache-Control", "private"},
-	[]string{"header", "append", "Cache-Control", "smax-age=30"},
+	[]string{"header", "delete", headers.NameCacheControl, "private"},
+	[]string{"header", "append", headers.NameCacheControl, "smax-age=30"},
 	[]string{"param", "set", "param1", "foo"},
 	[]string{"param", "append", "param1", "value2"},
 	[]string{"param", "set", "param2", "${trickster}"},
@@ -57,15 +58,15 @@ var testRL0 = options.RewriteList{
 }
 
 var testRLW1 = options.RewriteList{
-	[]string{"header", "set", "Cache-Control", "max-age=60"},
-	[]string{"header", "append", "Cache-Control", "max-age=300"},
-	[]string{"header", "append", "Cache-Control", "private"},
-	[]string{"header", "append", "Cache-Control", "private"},
+	[]string{"header", "set", headers.NameCacheControl, "max-age=60"},
+	[]string{"header", "append", headers.NameCacheControl, "max-age=300"},
+	[]string{"header", "append", headers.NameCacheControl, "private"},
+	[]string{"header", "append", headers.NameCacheControl, "private"},
 	[]string{"header", "set", "Test-Header", "Trickster"},
-	[]string{"header", "replace", "Cache-Control", "300", "60"},
+	[]string{"header", "replace", headers.NameCacheControl, "300", "60"},
 	[]string{"header", "delete", "Test-Header"},
-	[]string{"header", "delete", "Cache-Control", "private"},
-	[]string{"header", "append", "Cache-Control", "smax-age=30"},
+	[]string{"header", "delete", headers.NameCacheControl, "private"},
+	[]string{"header", "append", headers.NameCacheControl, "smax-age=30"},
 	[]string{"param", "set", "param1", "foo"},
 	[]string{"param", "append", "param1", "value2"},
 	[]string{"param", "set", "param2", "${trickster}"},
@@ -112,15 +113,15 @@ func (ri *testRewriteInstruction) HasTokens() bool       { return false }
 var testRWI = RewriteInstructions{&testRewriteInstruction{}}
 
 var testRI0 = RewriteInstructions{
-	&rwiKeyBasedSetter{key: "Cache-Control", value: "max-age=60"},
-	&rwiKeyBasedAppender{key: "Cache-Control", value: "max-age=300"},
-	&rwiKeyBasedAppender{key: "Cache-Control", value: "private"},
-	&rwiKeyBasedAppender{key: "Cache-Control", value: "private"},
+	&rwiKeyBasedSetter{key: headers.NameCacheControl, value: "max-age=60"},
+	&rwiKeyBasedAppender{key: headers.NameCacheControl, value: "max-age=300"},
+	&rwiKeyBasedAppender{key: headers.NameCacheControl, value: "private"},
+	&rwiKeyBasedAppender{key: headers.NameCacheControl, value: "private"},
 	&rwiKeyBasedSetter{key: "Test-Header", value: "Trickster"},
-	&rwiKeyBasedReplacer{key: "Cache-Control", search: "300", replacement: "60"},
+	&rwiKeyBasedReplacer{key: headers.NameCacheControl, search: "300", replacement: "60"},
 	&rwiKeyBasedDeleter{key: "Test-Header"},
-	&rwiKeyBasedDeleter{key: "Cache-Control", value: "private"},
-	&rwiKeyBasedAppender{key: "Cache-Control", value: "smax-age=30"},
+	&rwiKeyBasedDeleter{key: headers.NameCacheControl, value: "private"},
+	&rwiKeyBasedAppender{key: headers.NameCacheControl, value: "smax-age=30"},
 	&rwiKeyBasedSetter{key: "param1", value: "foo"},
 	&rwiKeyBasedAppender{key: "param1", value: "value2"},
 	&rwiKeyBasedSetter{key: "param2", value: "${trickster}", hasTokens: true},
@@ -307,7 +308,7 @@ func TestDictFuncsNilRequest(t *testing.T) {
 }
 
 func TestExecuteRewriteInstructions(t *testing.T) {
-	exh0 := http.Header{"Cache-Control": []string{"max-age=60, smax-age=30"}}
+	exh0 := http.Header{headers.NameCacheControl: []string{"max-age=60, smax-age=30"}}
 	eu0, _ := url.Parse("https://example.com:8480/path1/path2?param1=bar&param1=too&param3=trickster")
 	ri0, _ := ParseRewriteList(testRL0)
 

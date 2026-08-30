@@ -16,18 +16,21 @@
 
 package headers
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestHideAuthorizationCredentials(t *testing.T) {
 	// matching is canonical and covers signed '+'/'-' update operators
 	hdrs := map[string]string{
-		NameAuthorization: "Basic SomeHash",
-		"authorization":   "Bearer lower-secret",
-		"aUtHoRiZaTiOn":   "Bearer mixed-secret",
-		"+Authorization":  "Bearer append-secret",
-		"+authorization":  "Bearer append-lower-secret",
-		"-Authorization":  "Bearer remove-secret",
-		"X-Other":         "kept",
+		NameAuthorization:                        "Basic SomeHash",
+		strings.ToLower(NameAuthorization):       "Bearer lower-secret",
+		"aUtHoRiZaTiOn":                          "Bearer mixed-secret",
+		"+" + NameAuthorization:                  "Bearer append-secret",
+		"+" + strings.ToLower(NameAuthorization): "Bearer append-lower-secret",
+		"-" + NameAuthorization:                  "Bearer remove-secret",
+		"X-Other":                                "kept",
 	}
 	HideAuthorizationCredentials(hdrs)
 	for k, v := range hdrs {
@@ -42,7 +45,7 @@ func TestHideAuthorizationCredentials(t *testing.T) {
 		}
 	}
 	// an empty value is a credential opt-out, not a credential; it is preserved
-	hdrs = map[string]string{NameAuthorization: "", "authorization": ""}
+	hdrs = map[string]string{NameAuthorization: "", strings.ToLower(NameAuthorization): ""}
 	HideAuthorizationCredentials(hdrs)
 	for k, v := range hdrs {
 		if v != "" {

@@ -24,21 +24,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 )
 
-const (
-	// NameVia represents the HTTP Header Name of "Via"
-	NameVia = "Via"
-	// NameForwarded reqresents the HTTP Header Name of "Forwarded"
-	NameForwarded = "Forwarded"
-	// NameXForwardedFor represents the HTTP Header Name of "X-Forwarded-For"
-	NameXForwardedFor = "X-Forwarded-For"
-	// NameXForwardedServer represents the HTTP Header Name of "X-Forwarded-Server"
-	NameXForwardedServer = "X-Forwarded-Server"
-	// NameXForwardedHost represents the HTTP Header Name of "X-Forwarded-Host"
-	NameXForwardedHost = "X-Forwarded-Host"
-	// NameXForwardedProto represents the HTTP Header Name of "X-Forwarded-Proto"
-	NameXForwardedProto = "X-Forwarded-Proto"
-)
-
 // Hop describes a collection of data about the forwarded request
 // to be used in Via, Forwarded and X-Forwarded-* headers
 type Hop struct {

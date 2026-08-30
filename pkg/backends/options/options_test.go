@@ -549,7 +549,7 @@ func TestValidateGraphiteOriginAuth(t *testing.T) {
 		{"credential with +Authorization path", newBackend(
 			&gro.Options{OriginUsername: "u", OriginPassword: "p"},
 			po.List{{Path: "/render",
-				RequestHeaders: map[string]string{"+authorization": "x"}}}),
+				RequestHeaders: map[string]string{"+" + strings.ToLower(headers.NameAuthorization): "x"}}}),
 			gro.ErrOriginAuthAppend},
 	}
 	for _, tc := range tests {
@@ -950,13 +950,13 @@ func TestCloneYAMLSafeMasksAllAuthorizationForms(t *testing.T) {
 	o.Provider = providers.Graphite
 	o.OriginURL = "http://example.com"
 	o.Paths = po.List{{Path: "/render", RequestHeaders: map[string]string{
-		"authorization":  "Bearer path-secret",
-		"+Authorization": "Bearer append-secret",
-		"-authorization": "x",
+		strings.ToLower(headers.NameAuthorization):       "Bearer path-secret",
+		"+" + headers.NameAuthorization:                  "Bearer append-secret",
+		"-" + strings.ToLower(headers.NameAuthorization): "x",
 	}}}
 	o.HealthCheck = &ho.Options{Headers: map[string]string{
-		"authorization": "Bearer probe-secret",
-		"X-Probe":       "trickster",
+		strings.ToLower(headers.NameAuthorization): "Bearer probe-secret",
+		"X-Probe": "trickster",
 	}}
 
 	got := o.CloneYAMLSafe()
@@ -965,7 +965,7 @@ func TestCloneYAMLSafeMasksAllAuthorizationForms(t *testing.T) {
 			t.Errorf("path header %q not masked: %q", k, v)
 		}
 	}
-	if v := got.HealthCheck.Headers["authorization"]; v != "*****" {
+	if v := got.HealthCheck.Headers[strings.ToLower(headers.NameAuthorization)]; v != "*****" {
 		t.Errorf("health header not masked: %q", v)
 	}
 	if v := got.HealthCheck.Headers["X-Probe"]; v != "trickster" {
@@ -980,8 +980,8 @@ func TestCloneYAMLSafeMasksAllAuthorizationForms(t *testing.T) {
 	}
 
 	// the empty Authorization opt-out is not a credential and survives export
-	o.HealthCheck.Headers = map[string]string{"authorization": ""}
-	if v, ok := o.CloneYAMLSafe().HealthCheck.Headers["authorization"]; !ok || v != "" {
+	o.HealthCheck.Headers = map[string]string{strings.ToLower(headers.NameAuthorization): ""}
+	if v, ok := o.CloneYAMLSafe().HealthCheck.Headers[strings.ToLower(headers.NameAuthorization)]; !ok || v != "" {
 		t.Errorf("empty opt-out must be preserved, got %q ok=%t", v, ok)
 	}
 }

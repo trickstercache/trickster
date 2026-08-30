@@ -41,6 +41,7 @@ import (
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/aftership"
 	"github.com/trickstercache/trickster/v2/pkg/proxy"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
@@ -281,7 +282,7 @@ func (nc *NativeClient) Fetch(r *http.Request) (*http.Response, error) {
 	}
 	return &http.Response{
 		StatusCode: http.StatusOK, Status: "200 OK", Header: http.Header{
-			"Content-Type": {contentType}, "X-Clickhouse-Format": {format},
+			headers.NameContentType: {contentType}, "X-Clickhouse-Format": {format},
 		},
 		Body: io.NopCloser(bytes.NewReader(body)), ContentLength: int64(len(body)), Request: r,
 	}, nil
@@ -494,7 +495,7 @@ func syntheticErrorResponse(code int, err error) *http.Response {
 	return &http.Response{
 		StatusCode:    code,
 		Status:        fmt.Sprintf("%d %s", code, http.StatusText(code)),
-		Header:        http.Header{"Content-Type": {"text/plain"}},
+		Header:        http.Header{headers.NameContentType: {"text/plain"}},
 		Body:          io.NopCloser(bytes.NewReader(body)),
 		ContentLength: int64(len(body)),
 	}

@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/iofmt"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 
@@ -42,7 +43,7 @@ func influxqlJSONPost(t *testing.T, body string) *http.Request {
 	return &http.Request{
 		Method:        http.MethodPost,
 		URL:           &url.URL{Path: "/api/v3/query_influxql"},
-		Header:        http.Header{"Content-Type": {"application/json"}},
+		Header:        http.Header{headers.NameContentType: {"application/json"}},
 		Body:          io.NopCloser(bytes.NewReader(b)),
 		ContentLength: int64(len(b)),
 	}
@@ -190,7 +191,7 @@ func TestFormatFromAccept(t *testing.T) {
 // types mark the request for proxy-through.
 func TestAcceptHeaderDrivesFormat(t *testing.T) {
 	r := jsonPost(t, `{"q":"`+identityQuery+`"}`)
-	r.Header.Set("Accept", "text/csv")
+	r.Header.Set(headers.NameAccept, "text/csv")
 	_, rlo, _, err := ParseTimeRangeQuery(r, iofmt.Detect(r))
 	if err != nil {
 		t.Fatal(err)
@@ -200,14 +201,14 @@ func TestAcceptHeaderDrivesFormat(t *testing.T) {
 	}
 
 	r = jsonPost(t, `{"q":"`+identityQuery+`"}`)
-	r.Header.Set("Accept", "application/vnd.apache.parquet")
+	r.Header.Set(headers.NameAccept, "application/vnd.apache.parquet")
 	if SupportedV3Format(r) {
 		t.Error("parquet Accept header not marked for proxy-through")
 	}
 
 	// an explicit format parameter wins over the Accept header
 	r = jsonPost(t, `{"q":"`+identityQuery+`","format":"jsonl"}`)
-	r.Header.Set("Accept", "text/csv")
+	r.Header.Set(headers.NameAccept, "text/csv")
 	_, rlo, _, err = ParseTimeRangeQuery(r, iofmt.Detect(r))
 	if err != nil {
 		t.Fatal(err)

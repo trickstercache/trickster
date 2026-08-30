@@ -28,6 +28,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/config"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
@@ -192,7 +193,7 @@ func TestFastForwardRequestPromotesEndToTime(t *testing.T) {
 				t.Fatal(err)
 			}
 			if test.contentType != "" {
-				r.Header.Set("Content-Type", test.contentType)
+				r.Header.Set(headers.NameContentType, test.contentType)
 			}
 			r = request.SetResources(r, &request.Resources{})
 

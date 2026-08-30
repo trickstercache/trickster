@@ -30,6 +30,7 @@ import (
 
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
 
 	"github.com/prometheus/common/sigv4"
@@ -163,7 +164,7 @@ func TestNewHTTPClient_ContextCancelMidStream(t *testing.T) {
 	defer close(releaseHandler)
 
 	srv := newH2OfferingServer(t, func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Header().Set(headers.NameContentType, "application/octet-stream")
 		w.WriteHeader(http.StatusOK)
 		fl, _ := w.(http.Flusher)
 		if fl != nil {

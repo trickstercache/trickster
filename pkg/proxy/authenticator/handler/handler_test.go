@@ -23,6 +23,7 @@ import (
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/types"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 )
 
@@ -77,7 +78,7 @@ func TestMiddleware(t *testing.T) {
 		{name: "nil result", authenticator: &testAuthenticator{},
 			wantStatus: http.StatusUnauthorized, wantAuthCalls: 1},
 		{name: "failed result copies challenge", authenticator: &testAuthenticator{result: &types.AuthResult{
-			Status: types.AuthFailed, ResponseHeaders: map[string]string{"WWW-Authenticate": "Basic"},
+			Status: types.AuthFailed, ResponseHeaders: map[string]string{headers.NameWWWAuthenticate: "Basic"},
 		}}, wantStatus: http.StatusUnauthorized, wantAuthCalls: 1, wantResponseHead: "Basic"},
 		{name: "observed result", authenticator: &testAuthenticator{result: &types.AuthResult{
 			Status: types.AuthObserved,
@@ -117,7 +118,7 @@ func TestMiddleware(t *testing.T) {
 			if (rsc.AuthResult != nil) != tc.wantAuthResult && tc.cached == nil {
 				t.Errorf("cached auth result presence = %t, want %t", rsc.AuthResult != nil, tc.wantAuthResult)
 			}
-			if got := recorder.Header().Get("WWW-Authenticate"); got != tc.wantResponseHead {
+			if got := recorder.Header().Get(headers.NameWWWAuthenticate); got != tc.wantResponseHead {
 				t.Errorf("WWW-Authenticate = %q, want %q", got, tc.wantResponseHead)
 			}
 		})

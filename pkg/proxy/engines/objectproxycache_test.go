@@ -130,7 +130,7 @@ func setupTestHarnessOPCWithPCF(file, body string, code int, headers map[string]
 }
 
 func TestObjectProxyCacheRequest(t *testing.T) {
-	hdrs := map[string]string{"Cache-Control": "max-age=60"}
+	hdrs := map[string]string{headers.NameCacheControl: "max-age=60"}
 	ts, _, r, rsc, err := setupTestHarnessOPC("", "test", http.StatusPartialContent, hdrs)
 	if err != nil {
 		t.Error(err)
@@ -156,9 +156,9 @@ func TestObjectProxyCacheRequest(t *testing.T) {
 
 func TestObjectProxyCacheCORSOnMissAndHit(t *testing.T) {
 	hdrs := map[string]string{
-		headers.NameCacheControl:           "max-age=60",
-		headers.NameAllowOrigin:            "https://origin.example.com",
-		"Access-Control-Allow-Credentials": "true",
+		headers.NameCacheControl:     "max-age=60",
+		headers.NameAllowOrigin:      "https://origin.example.com",
+		headers.NameAllowCredentials: "true",
 	}
 	ts, _, r, rsc, err := setupTestHarnessOPC("", "test", http.StatusOK, hdrs)
 	if err != nil {
@@ -184,7 +184,7 @@ func TestObjectProxyCacheCORSOnMissAndHit(t *testing.T) {
 		if got := resp.Header.Get(headers.NameAllowOrigin); got != "https://trickster.example.com" {
 			t.Errorf("request %d allow origin = %q", i+1, got)
 		}
-		if got := resp.Header.Get("Access-Control-Allow-Credentials"); got != "" {
+		if got := resp.Header.Get(headers.NameAllowCredentials); got != "" {
 			t.Errorf("request %d retained origin credentials header: %q", i+1, got)
 		}
 		if err := testResultHeaderPartMatch(resp.Header, map[string]string{keys.Status: wantStatus}); err != nil {
@@ -628,7 +628,7 @@ func TestObjectProxyCacheRevalidation(t *testing.T) {
 }
 
 func TestObjectProxyCacheRequestWithPCF(t *testing.T) {
-	headers := map[string]string{"Cache-Control": "max-age=60"}
+	headers := map[string]string{headers.NameCacheControl: "max-age=60"}
 	ts, _, r, rsc, err := setupTestHarnessOPCWithPCF("", "test", http.StatusOK, headers)
 	if err != nil {
 		t.Error(err)
@@ -690,7 +690,7 @@ func TestFetchViaObjectProxyCacheRequestClientNoCache(t *testing.T) {
 }
 
 func TestObjectProxyCacheRequestOriginNoCache(t *testing.T) {
-	headers := map[string]string{"Cache-Control": "no-cache"}
+	headers := map[string]string{headers.NameCacheControl: "no-cache"}
 	ts, _, r, _, err := setupTestHarnessOPC("", "test", http.StatusOK, headers)
 	if err != nil {
 		t.Error(err)
@@ -724,7 +724,7 @@ func TestObjectProxyCacheRequestOriginNoCacheHeaders(t *testing.T) {
 }
 
 func TestObjectProxyCacheIMS(t *testing.T) {
-	hdrs := map[string]string{"Cache-Control": "max-age=1"}
+	hdrs := map[string]string{headers.NameCacheControl: "max-age=1"}
 	ts, _, r, rsc, err := setupTestHarnessOPCRange(hdrs)
 	if err != nil {
 		t.Error(err)
@@ -1286,14 +1286,14 @@ func TestOPCSingleflightDedup(t *testing.T) {
 	var hits atomic.Int64
 	gate := make(chan struct{})
 	origin := gatedOrigin(gate, &hits, func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Cache-Control", "max-age=60")
+		w.Header().Set(headers.NameCacheControl, "max-age=60")
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprint(w, body)
 	})
 	defer origin.Close()
 
 	ts, _, r, rsc, err := setupTestHarnessOPC("", body, http.StatusOK,
-		map[string]string{"Cache-Control": "max-age=60"})
+		map[string]string{headers.NameCacheControl: "max-age=60"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1336,14 +1336,14 @@ func TestOPCSingleflightErrorPropagation(t *testing.T) {
 	var hits atomic.Int64
 	gate := make(chan struct{})
 	origin := gatedOrigin(gate, &hits, func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set(headers.NameContentType, "application/json")
 		w.WriteHeader(http.StatusBadGateway)
 		fmt.Fprint(w, errBody)
 	})
 	defer origin.Close()
 
 	ts, _, r, rsc, err := setupTestHarnessOPC("", errBody, http.StatusBadGateway,
-		map[string]string{"Content-Type": "application/json"})
+		map[string]string{headers.NameContentType: "application/json"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1371,7 +1371,7 @@ func TestOPCSingleflightErrorPropagation(t *testing.T) {
 func TestOPCSingleflightRanges(t *testing.T) {
 	t.Run("identical ranges deduped", func(t *testing.T) {
 		ts, _, r, rsc, err := setupTestHarnessOPCRange(
-			map[string]string{"Cache-Control": "max-age=60"})
+			map[string]string{headers.NameCacheControl: "max-age=60"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1380,7 +1380,7 @@ func TestOPCSingleflightRanges(t *testing.T) {
 		var hits atomic.Int64
 		gate := make(chan struct{})
 		origin := gatedOrigin(gate, &hits, func(w http.ResponseWriter, _ *http.Request) {
-			w.Header().Set("Cache-Control", "max-age=60")
+			w.Header().Set(headers.NameCacheControl, "max-age=60")
 			w.WriteHeader(http.StatusOK)
 			fmt.Fprint(w, byterange.Body)
 		})
@@ -1398,7 +1398,7 @@ func TestOPCSingleflightRanges(t *testing.T) {
 			clone.RequestURI = ""
 			u, _ := url.Parse(origin.URL + "/byterange/opc")
 			clone.URL = u
-			clone.Header.Set("Range", "bytes=0-10")
+			clone.Header.Set(headers.NameRange, "bytes=0-10")
 			go func() {
 				defer wg.Done()
 				w := httptest.NewRecorder()
@@ -1436,7 +1436,7 @@ func TestOPCSingleflightRanges(t *testing.T) {
 
 	t.Run("different ranges not deduped", func(t *testing.T) {
 		ts, _, r, rsc, err := setupTestHarnessOPCRange(
-			map[string]string{"Cache-Control": "max-age=60"})
+			map[string]string{headers.NameCacheControl: "max-age=60"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1445,7 +1445,7 @@ func TestOPCSingleflightRanges(t *testing.T) {
 		var hits atomic.Int64
 		gate := make(chan struct{})
 		origin := gatedOrigin(gate, &hits, func(w http.ResponseWriter, _ *http.Request) {
-			w.Header().Set("Cache-Control", "max-age=60")
+			w.Header().Set(headers.NameCacheControl, "max-age=60")
 			w.WriteHeader(http.StatusOK)
 			fmt.Fprint(w, byterange.Body)
 		})
@@ -1462,7 +1462,7 @@ func TestOPCSingleflightRanges(t *testing.T) {
 			clone.RequestURI = ""
 			u, _ := url.Parse(origin.URL + "/byterange/opc")
 			clone.URL = u
-			clone.Header.Set("Range", rng)
+			clone.Header.Set(headers.NameRange, rng)
 			go func() {
 				defer wg.Done()
 				w := httptest.NewRecorder()
@@ -1505,15 +1505,15 @@ func TestOPCSingleflightHandlerError(t *testing.T) {
 	var hits atomic.Int64
 	gate := make(chan struct{})
 	origin := gatedOrigin(gate, &hits, func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Cache-Control", "max-age=60")
-		w.Header().Set("Content-Type", "text/plain")
+		w.Header().Set(headers.NameCacheControl, "max-age=60")
+		w.Header().Set(headers.NameContentType, "text/plain")
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprint(w, body)
 	})
 	defer origin.Close()
 
 	ts, _, r, rsc, err := setupTestHarnessOPC("", body, http.StatusOK,
-		map[string]string{"Cache-Control": "max-age=60", "Content-Type": "text/plain"})
+		map[string]string{headers.NameCacheControl: "max-age=60", headers.NameContentType: "text/plain"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1541,7 +1541,7 @@ func TestOPCSingleflightHandlerError(t *testing.T) {
 
 func TestServeOPCResult(t *testing.T) {
 	ts, _, r, _, err := setupTestHarnessOPC("", "test", http.StatusOK,
-		map[string]string{"Cache-Control": "max-age=60"})
+		map[string]string{headers.NameCacheControl: "max-age=60"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1620,7 +1620,7 @@ func TestServeOPCResultError(t *testing.T) {
 func TestOPCProxyOnlyFallback(t *testing.T) {
 	// when BackendOptions.ProxyOnly is true, OPC should fall through to DoProxy
 	ts, _, r, rsc, err := setupTestHarnessOPC("", "test", http.StatusOK,
-		map[string]string{"Cache-Control": "max-age=60"})
+		map[string]string{headers.NameCacheControl: "max-age=60"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1646,13 +1646,13 @@ func TestOPCProxyOnlyFallback(t *testing.T) {
 func TestOPCClientNoCache(t *testing.T) {
 	// when client sends Cache-Control: no-cache, OPC should remove the cache entry and proxy
 	ts, _, r, _, err := setupTestHarnessOPC("", "test", http.StatusOK,
-		map[string]string{"Cache-Control": "max-age=60"})
+		map[string]string{headers.NameCacheControl: "max-age=60"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer closeTestHarness(ts, r)
 
-	r.Header.Set("Cache-Control", "no-cache")
+	r.Header.Set(headers.NameCacheControl, "no-cache")
 	w := httptest.NewRecorder()
 
 	ObjectProxyCacheRequest(w, r)
