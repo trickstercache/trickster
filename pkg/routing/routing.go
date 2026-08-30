@@ -444,6 +444,8 @@ func registerDefaultBackendRoutes(routerFor func(*bo.Options) []listenerRoute, c
 		// attach authenticator
 		captureAuth := shouldCaptureAuth(po, o)
 		h = attachAuthenticator(h, po, o)
+		// attach compression handler
+		h = encoding.HandleCompression(h, o.CompressibleTypes)
 		// add Backend, Cache, and Path Configs to the HTTP Request's context (must wrap outer than LimitQueryRange)
 		h = middleware.WithResourcesContext(client, o, c, po, tr, h)
 		// attach any request rewriters
