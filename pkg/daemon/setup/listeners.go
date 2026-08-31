@@ -170,9 +170,9 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 			readHeaderTimeout := time.Duration(desired.options.ReadHeaderTimeout)
 			advertised := desired.advertisedPort
 			go lg.StartPacketListener(desired.key, listenerconfig.ProtocolHTTP3,
-				desired.address, desired.port, desired.router,
-				func(h http.Handler) listener.PacketServer {
-					return listenerhttp3.NewServer(h, tlsConfig, advertised, readHeaderTimeout)
+				desired.address, desired.port, tlsConfig, desired.router,
+				func(h http.Handler, tc *tls.Config) listener.PacketServer {
+					return listenerhttp3.NewServer(h, tc, advertised, readHeaderTimeout)
 				}, errorFunc)
 			continue
 		}

@@ -89,6 +89,23 @@ func (ew *responseEncoder) Header() http.Header {
 	return ew.ResponseWriter.Header()
 }
 
+// FlushError flushes the active transform before the underlying writer, so a
+// streaming response is not left buffered inside the compressor. Without it,
+// http.ResponseController.Flush would follow Unwrap straight to the network.
+func (ew *responseEncoder) FlushError() error {
+	if ew.hijacked {
+		return http.ErrHijacked
+	}
+	if ew.encoder != nil {
+		if f, ok := ew.encoder.(interface{ Flush() error }); ok {
+			if err := f.Flush(); err != nil {
+				return err
+			}
+		}
+	}
+	return http.NewResponseController(ew.ResponseWriter).Flush()
+}
+
 // Unwrap exposes the underlying writer to http.ResponseController.
 func (ew *responseEncoder) Unwrap() http.ResponseWriter {
 	return ew.ResponseWriter

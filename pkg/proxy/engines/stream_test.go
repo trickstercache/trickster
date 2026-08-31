@@ -27,6 +27,7 @@ import (
 	"testing"
 	"time"
 
+	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	tpe "github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
@@ -149,6 +150,9 @@ func TestAbortOnCopyError(t *testing.T) {
 	underServer = underServer.WithContext(
 		context.WithValue(underServer.Context(), http.ServerContextKey, &http.Server{}))
 	bare := httptest.NewRequest(http.MethodGet, "http://trickstercache.org/", nil)
+	// HTTP/3 carries quic-go's own server key, so the served marker stands in
+	h3 := httptest.NewRequest(http.MethodGet, "http://trickstercache.org/", nil)
+	h3 = h3.WithContext(tctx.WithServed(h3.Context()))
 	copyErr := errors.New("unexpected EOF")
 
 	tests := []struct {
@@ -163,6 +167,7 @@ func TestAbortOnCopyError(t *testing.T) {
 		{"not a ResponseWriter", &bytes.Buffer{}, underServer, copyErr, false},
 		{"no server in context", httptest.NewRecorder(), bare, copyErr, false},
 		{"aborts under server", httptest.NewRecorder(), underServer, copyErr, true},
+		{"aborts for http/3", httptest.NewRecorder(), h3, copyErr, true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

@@ -18,6 +18,7 @@ package engines
 
 import (
 	"context"
+	stderrors "errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -1719,5 +1720,97 @@ func TestObjectProxyCacheTruncatedResponseNotCached(t *testing.T) {
 		if strings.Contains(got, status.StatusHit) {
 			t.Errorf("fetch %d: truncated response was cached (%s)", i+1, got)
 		}
+	}
+}
+
+func TestHandlePCFRejectsUnboundedBeforeFetch(t *testing.T) {
+	// with no object cap, PCF can never apply; it must decline before issuing
+	// a fetch, or the caller's fallback fetch is the origin's second request
+	var fetches atomic.Int32
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fetches.Add(1)
+		w.Header().Set(headers.NameCacheControl, "max-age=60")
+		w.WriteHeader(http.StatusOK)
+		w.(http.Flusher).Flush()
+		io.WriteString(w, "chunked")
+	}))
+	defer origin.Close()
+
+	ts, w, r, rsc, err := setupTestHarnessOPCWithPCF("", "test", http.StatusOK, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeTestHarness(ts, r)
+
+	rsc.BackendOptions.MaxObjectSizeBytes = 0
+
+	pr := newProxyRequest(r, w)
+	pr.key = "unbounded-pcf-test"
+	pr.cachingPolicy = &CachingPolicy{}
+	u, err := url.Parse(origin.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pr.upstreamRequest.URL = u
+	pr.upstreamRequest.Host = u.Host
+
+	if err := handlePCF(pr); !stderrors.Is(err, errors.ErrPCFContentLength) {
+		t.Errorf("expected ErrPCFContentLength, got %v", err)
+	}
+	if n := fetches.Load(); n != 0 {
+		t.Errorf("PCF fetched the origin before declining: %d request(s)", n)
+	}
+	if pr.isPCF {
+		t.Error("isPCF must stay false so the fallback writes its own headers")
+	}
+	if _, ok := reqs.Load(pr.key); ok {
+		t.Error("a forwarder was published to the registry")
+	}
+}
+
+func TestHandlePCFServesIneligibleFromFirstFetch(t *testing.T) {
+	// a response that cannot be collapsed must be served from the fetch in
+	// hand, not re-requested under headers this path already committed
+	var fetches atomic.Int32
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		n := fetches.Add(1)
+		// Set-Cookie makes the response ineligible for collapsing
+		w.Header().Set(headers.NameSetCookie, "session=abc")
+		w.Header().Set(headers.NameCacheControl, "max-age=60")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintf(w, "fetch-%d", n)
+	}))
+	defer origin.Close()
+
+	ts, w, r, rsc, err := setupTestHarnessOPCWithPCF("", "test", http.StatusOK, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeTestHarness(ts, r)
+
+	rsc.BackendOptions.MaxObjectSizeBytes = 1024
+
+	pr := newProxyRequest(r, w)
+	pr.key = "ineligible-pcf-test"
+	pr.cachingPolicy = &CachingPolicy{}
+	pr.cacheStatus = status.LookupStatusKeyMiss
+	u, err := url.Parse(origin.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pr.upstreamRequest.URL = u
+	pr.upstreamRequest.Host = u.Host
+
+	if err := handlePCF(pr); err != nil {
+		t.Fatalf("expected the response to be served, got %v", err)
+	}
+	if n := fetches.Load(); n != 1 {
+		t.Errorf("expected exactly 1 origin request, got %d", n)
+	}
+	if got := w.Body.String(); got != "fetch-1" {
+		t.Errorf("expected the first fetch's body, got %q", got)
+	}
+	if got := w.Result().StatusCode; got != http.StatusOK {
+		t.Errorf("expected 200, got %d", got)
 	}
 }

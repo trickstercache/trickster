@@ -292,6 +292,10 @@ func handleUpstreamTransactions(pr *proxyRequest) error {
 func handlePCF(pr *proxyRequest) error {
 	o := pr.rsc.BackendOptions
 
+	if o.MaxObjectSizeBytes <= 0 {
+		return errors.ErrPCFContentLength
+	}
+
 	pr.isPCF = true
 	pcfResult, pcfExists := reqs.Load(pr.key)
 	// a PCF session is in progress for this URL, join this client to it.
@@ -320,11 +324,20 @@ func handlePCF(pr *proxyRequest) error {
 	reader, resp, contentLength := PrepareFetchReader(pr.upstreamRequest)
 	pr.upstreamResponse = resp
 
-	pr.writeResponseHeader()
-	pr.responseWriter = PrepareResponseWriter(pr.responseWriter, resp.StatusCode, resp.Header)
+	// decide before committing anything downstream, so a response that cannot be
+	// collapsed is served from this fetch rather than re-requested
+	var pcf ProgressiveCollapseForwarder
 	if (contentLength < 0 || (contentLength > 0 && contentLength < int64(o.MaxObjectSizeBytes))) &&
 		collapseEligible(pr.Request, resp.StatusCode, resp.Header, pr.rsc.PathConfig) {
-		pcf := NewPCF(resp, contentLength, int64(o.MaxObjectSizeBytes))
+		pcf = NewPCF(resp, contentLength, int64(o.MaxObjectSizeBytes))
+	}
+	if pcf == nil {
+		return serveUncollapsed(pr, resp, reader)
+	}
+
+	pr.writeResponseHeader()
+	pr.responseWriter = PrepareResponseWriter(pr.responseWriter, resp.StatusCode, resp.Header)
+	{
 		actual, loaded := reqs.LoadOrStore(pr.key, pcf)
 		if loaded {
 			// Another goroutine created a PCF session first; join it instead.
@@ -382,12 +395,23 @@ func handlePCF(pr *proxyRequest) error {
 
 		return handleAllWrites(pr)
 	}
-	// not collapsible: close this fetch before the caller falls back to an
-	// independent one, or the response body leaks
+}
+
+// serveUncollapsed serves a response that reached the collapse path but cannot
+// be shared, reusing the fetch already in hand. Falling back to an independent
+// fetch would double the origin request and write the second body under this
+// response's already-committed status.
+func serveUncollapsed(pr *proxyRequest, resp *http.Response, reader io.ReadCloser) error {
+	pr.isPCF = false
+	pr.upstreamResponse = resp
+	pr.upstreamReader = reader
 	if reader != nil {
-		reader.Close()
+		defer reader.Close()
 	}
-	return errors.ErrPCFContentLength
+	pr.cachingPolicy.Merge(GetResponseCachingPolicy(resp.StatusCode,
+		pr.rsc.BackendOptions.NegativeCache, resp.Header))
+	pr.determineCacheability()
+	return handleAllWrites(pr)
 }
 
 func handleAllWrites(pr *proxyRequest) error {

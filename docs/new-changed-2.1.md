@@ -22,5 +22,7 @@ Trickster 2.1 includes a number of new features to give it even more uses in a n
 
 * Streaming - Responses with an unknown length and Server-Sent Events streams are now flushed to the client as bytes arrive rather than buffered, and HTTP trailers are passed through.
 
+* Cleartext HTTP/2 to Origins - Backends can now speak h2c to origins that serve it, using the new `h2c_prior_knowledge` backend option. It is cleartext HTTP/2 only with no HTTP/1 fallback, so it requires an `http://` origin that actually serves h2c, and cannot be combined with a non-HTTP upstream protocol such as ClickHouse's `native`.
+
 ## Breaking Changes
 

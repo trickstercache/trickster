@@ -611,3 +611,19 @@ func TestNativeRoundTripAndFormats(t *testing.T) {
 		t.Fatalf("unsupported format response = %#v, %v", resp, err)
 	}
 }
+
+func TestValidateOptionsH2CPriorKnowledge(t *testing.T) {
+	o := bo.New()
+	o.Protocol = "native"
+	o.H2CPriorKnowledge = true
+	if err := ValidateOptions(o); err == nil {
+		t.Error("expected native + h2c_prior_knowledge to be rejected")
+	}
+
+	// over HTTP the native client never replaces the transport, so the
+	// setting is honored rather than ignored
+	o.Protocol = "http"
+	if err := ValidateOptions(o); err != nil {
+		t.Errorf("unexpected error for http protocol: %v", err)
+	}
+}

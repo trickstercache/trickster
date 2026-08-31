@@ -49,7 +49,9 @@ func NewServer(handler http.Handler, tlsConfig *tls.Config,
 		tc.NextProtos = []string{qh3.NextProtoH3}
 	}
 	return &qh3.Server{
-		Handler:   requestDeadline(handler, readHeaderTimeout),
+		// quic-go sets its own server context key rather than net/http's, so
+		// the served marker is what lets the proxy recognize an H3 client
+		Handler:   middleware.MarkServed(requestDeadline(handler, readHeaderTimeout)),
 		TLSConfig: tc,
 		Port:      advertisedPort,
 		QUICConfig: &quic.Config{

@@ -18,7 +18,9 @@ package monitor
 
 import (
 	"bufio"
+	"context"
 	"crypto/tls"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -393,4 +395,66 @@ func TestMonitorTracksEveryBackendListenerBinding(t *testing.T) {
 			t.Fatal("wrong binding retained")
 		}
 	}
+}
+
+type stubPacketServer struct{ done chan struct{} }
+
+func (s *stubPacketServer) Serve(net.PacketConn) error {
+	<-s.done
+	return nil
+}
+
+func (s *stubPacketServer) Shutdown(context.Context) error {
+	close(s.done)
+	return nil
+}
+
+func TestMonitorRotatesHTTP3Endpoint(t *testing.T) {
+	conf, certPath, keyPath := testConfig(t, testWatchInterval)
+	lo := conf.Listeners[listenerconfig.DefaultFrontendName]
+	lo.TLSListenPort = 8483
+	lo.HTTP3 = &listenerconfig.HTTP3Options{Enabled: true}
+
+	lg, tlsKey, _ := startTLSListener(t, certPath, keyPath)
+
+	tlsCfg, err := tlsServerConfig(certPath, keyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h3Key := listener.GroupKey(listenerconfig.DefaultFrontendName,
+		listenerconfig.ProtocolHTTP3, false)
+	stub := &stubPacketServer{done: make(chan struct{})}
+	go lg.StartPacketListener(h3Key, listenerconfig.ProtocolHTTP3, "127.0.0.1", 0,
+		tlsCfg, http.NotFoundHandler(),
+		func(http.Handler, *tls.Config) listener.PacketServer { return stub }, nil)
+	if !waitFor(t, 5*time.Second, func() bool { return lg.Get(h3Key) != nil }) {
+		t.Fatal("HTTP/3 listener not found in group")
+	}
+
+	m := New()
+	defer m.Close()
+	m.Apply(conf, lg)
+
+	h3Store := storeFor(t, lg, h3Key)
+	tlsStore := storeFor(t, lg, tlsKey)
+
+	// rotating on disk must reach the HTTP/3 store, not only the TCP one
+	writePair(t, certPath, keyPath, "rotated.example.com")
+	if !waitFor(t, 5*time.Second, func() bool {
+		return certStoreHasName(h3Store, "rotated.example.com")
+	}) {
+		t.Error("HTTP/3 endpoint kept serving the pre-rotation certificate")
+	}
+	if !certStoreHasName(tlsStore, "rotated.example.com") {
+		t.Error("TLS endpoint did not receive the rotated certificate")
+	}
+}
+
+func certStoreHasName(store tr.CertStore, name string) bool {
+	for _, e := range store.Entries() {
+		if slices.Contains(e.DNSNames, name) {
+			return true
+		}
+	}
+	return false
 }

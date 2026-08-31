@@ -1008,3 +1008,38 @@ func TestToYAML(t *testing.T) {
 		t.Error("ToYAML mismatch", s)
 	}
 }
+
+func TestInitializeH2CPriorKnowledge(t *testing.T) {
+	tests := []struct {
+		name      string
+		originURL string
+		expectErr bool
+	}{
+		{"http origin", "http://example.com:8123", false},
+		{"https origin", "https://example.com", true},
+		{"no origin url", "", true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			o := New()
+			o.Provider = "rp"
+			o.OriginURL = tc.originURL
+			o.H2CPriorKnowledge = true
+			err := o.Initialize("test")
+			if tc.expectErr && err == nil {
+				t.Error("expected an error")
+			}
+			if !tc.expectErr && err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+
+	// the default must remain unaffected by the new validation
+	o := New()
+	o.Provider = "rp"
+	o.OriginURL = "https://example.com"
+	if err := o.Initialize("test"); err != nil {
+		t.Errorf("unexpected error without the option set: %v", err)
+	}
+}

@@ -300,3 +300,35 @@ func TestResponseEncoderNotHijackedOnError(t *testing.T) {
 		t.Errorf("writes must still work after a failed hijack, got %v", err)
 	}
 }
+
+func TestResponseEncoderFlushError(t *testing.T) {
+	// a gzip encoder buffers, so without a transform-aware flush the recorder
+	// would still be empty after the controller flush
+	w := httptest.NewRecorder()
+	ew := &responseEncoder{ResponseWriter: w}
+	ew.encoder = gzip.NewEncoder(w, -1)
+	ew.selectWriter()
+	if _, err := ew.Write([]byte("trickster")); err != nil {
+		t.Fatal(err)
+	}
+	// only the gzip header has reached the recorder; the payload is buffered
+	buffered := w.Body.Len()
+	if err := http.NewResponseController(ew).Flush(); err != nil {
+		t.Fatal(err)
+	}
+	if w.Body.Len() <= buffered {
+		t.Errorf("flush did not reach the encoder: %d bytes before and after", buffered)
+	}
+}
+
+func TestResponseEncoderFlushNoEncoder(t *testing.T) {
+	w := httptest.NewRecorder()
+	ew := &responseEncoder{ResponseWriter: w}
+	if err := ew.FlushError(); err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	ew.hijacked = true
+	if err := ew.FlushError(); !errors.Is(err, http.ErrHijacked) {
+		t.Errorf("expected ErrHijacked, got %v", err)
+	}
+}

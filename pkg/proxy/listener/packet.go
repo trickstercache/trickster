@@ -17,6 +17,7 @@
 package listener
 
 import (
+	"crypto/tls"
 	"fmt"
 	"net"
 	"net/http"
@@ -25,6 +26,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/switcher"
+	sw "github.com/trickstercache/trickster/v2/pkg/proxy/tls"
 )
 
 // PacketServer is the lifecycle surface implemented by datagram-based servers
@@ -53,18 +55,29 @@ func NewPacketListener(listenAddress string, listenPort int) (net.PacketConn, er
 // StartPacketListener starts a datagram server on a Trickster-managed UDP
 // socket, joining the same group membership and drain lifecycle as the TCP
 // listeners so reloads and shutdown treat every endpoint uniformly.
-// build receives the listener's route swapper so a config reload can replace
-// the served routes without rebinding the socket.
+// build receives the listener's route swapper and its prepared TLS config, so
+// a config reload can replace the served routes, and a certificate rotation the
+// served certificates, without rebinding the socket.
 func (lg *Group) StartPacketListener(listenerName, protocol, address string,
-	port int, router http.Handler, build func(http.Handler) PacketServer, f func(),
+	port int, tlsConfig *tls.Config, router http.Handler,
+	build func(http.Handler, *tls.Config) PacketServer, f func(),
 ) error {
 	swapper := switcher.NewSwitchHandler(router)
-	svr := build(swapper)
 	l := &Listener{
 		readyCh:      make(chan struct{}),
-		server:       svr,
 		routeSwapper: swapper,
 	}
+	if tlsConfig != nil && len(tlsConfig.Certificates) > 0 {
+		// the swapper owns certificate selection from here on, so a rotation
+		// reaches this endpoint the same way it reaches a TLS/TCP one
+		tlsConfig = tlsConfig.Clone()
+		l.tlsConfig = tlsConfig
+		l.tlsSwapper = sw.NewSwapper(tlsConfig.Certificates)
+		tlsConfig.GetCertificate = l.tlsSwapper.GetCert
+		tlsConfig.Certificates = nil
+	}
+	svr := build(swapper, tlsConfig)
+	l.server = svr
 	l.exitOnError.Store(f != nil)
 	l.setState(StateStarting)
 

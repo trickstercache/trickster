@@ -485,6 +485,14 @@ backends:
 #     # This is independent of listeners, which select the inbound protocol.
 #     protocol: ''
 
+#     # h2c_prior_knowledge speaks cleartext HTTP/2 to the origin by prior
+#     # knowledge, for origins that serve h2c only. Origins that speak HTTP/1.1
+#     # will fail every request rather than degrade. Requires an http:// origin_url;
+#     # an https origin already negotiates HTTP/2 via ALPN, and it cannot be combined
+#     # with a non-HTTP upstream protocol such as clickhouse's 'native'.
+#     # Default: false
+#     h2c_prior_knowledge: false
+
     # is_default describes whether this backend is the default backend considered when routing http requests
     # it is false, by default; but if you only have a single backend configured, is_default will be true unless explicitly set to false
     is_default: true

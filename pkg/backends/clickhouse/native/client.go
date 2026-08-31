@@ -75,6 +75,9 @@ func ValidateOptions(o *bo.Options) error {
 	if strings.EqualFold(o.Protocol, "native") && o.SigV4 != nil {
 		return errors.New("SigV4 is not supported for a native ClickHouse origin")
 	}
+	if strings.EqualFold(o.Protocol, "native") && o.H2CPriorKnowledge {
+		return errors.New("h2c_prior_knowledge is not supported for a native ClickHouse origin")
+	}
 	return nil
 }
 

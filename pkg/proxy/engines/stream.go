@@ -23,6 +23,7 @@ import (
 	"sync"
 	"time"
 
+	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
@@ -72,7 +73,7 @@ func streamWriter(w io.Writer, resp *http.Response) io.Writer {
 
 // A copy that ends early otherwise terminates the response normally, so the
 // client sees a truncated body as a complete one; panicking breaks the
-// connection instead. Only applies when serving a client under an http.Server.
+// connection instead. Applies to any served request, HTTP/3 included.
 func abortOnCopyError(w io.Writer, r *http.Request, err error) {
 	if err == nil || r == nil {
 		return
@@ -80,7 +81,7 @@ func abortOnCopyError(w io.Writer, r *http.Request, err error) {
 	if _, ok := w.(http.ResponseWriter); !ok {
 		return
 	}
-	if r.Context().Value(http.ServerContextKey) == nil {
+	if !tctx.IsServed(r.Context()) {
 		return
 	}
 	panic(http.ErrAbortHandler)
