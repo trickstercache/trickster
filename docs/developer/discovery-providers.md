@@ -138,20 +138,23 @@ Two packages exist so that providers do not each re-derive them:
   failures operators care about. See how `httpsd`'s subscription wraps the
   source's `Poll`.
 
-  **Blocking-query providers** return `poller.PollNow` so the next request
-  is issued immediately, since the waiting happens on the server. Two
-  things they must get right, both of which `consul` demonstrates: a
-  minimum gap between requests, or a service changing faster than the loop
-  becomes a spin against the server at its busiest; and a poll timeout that
-  outlasts the server-side wait, since `poller/http` deliberately holds no
-  second deadline underneath the iteration context.
+- **`pkg/discovery/blockingquery`** — the cursor half of HashiCorp's
+  blocking query protocol, shared by `consul` and `nomad`. It handles the
+  three traps a provider would otherwise rediscover: an index that goes
+  backwards means the server's state was reset and the client must start
+  over rather than park forever; an index below 1 is reserved; and a
+  resource changing faster than the loop needs a floor between requests, or
+  "the server does the waiting" becomes a spin against that server at its
+  busiest. A provider using it still owns a poll timeout that outlasts the
+  server-side wait, since `poller/http` deliberately holds no second
+  deadline underneath the iteration context.
 
   **Testing a blocking-query provider** requires a fake that honors the
-  wait parameter, not one that answers immediately. The timeout path is the
-  common case for a stable service, and it is also how a client recovers
-  when the server's cursor goes backwards -- a fake that parks forever
-  makes correct recovery look broken. See `pkg/discovery/consul`'s
-  `fakeConsul`.
+  wait parameter, not one that answers immediately — the timeout path is
+  the common case for a stable service, and it is also the only way a
+  client learns its cursor went backwards, since it cannot learn that while
+  parked. `pkg/testutil/blockingquery` provides one; point it at whichever
+  cursor header the API uses.
 
 - **`pkg/discovery/memberlist`** — decoders for the two member-list
   documents (native and Prometheus `file_sd`/`http_sd`), shared by the
@@ -160,8 +163,8 @@ Two packages exist so that providers do not each re-derive them:
 ## Roadmap providers
 
 Candidates from the issue #609 thread, in likely priority order: `aws`
-(`service: ec2`, then `ecs`), `gce`, `nomad`, `docker`, `azure`. Until each
-lands, its users are served by:
+(`service: ec2`, then `ecs`), `gce`, `docker`, `azure`. Until each lands,
+its users are served by:
 
 - the `http_sd` provider — any external SD can serve the member list over
   HTTP, in Trickster's native format or Prometheus's; or

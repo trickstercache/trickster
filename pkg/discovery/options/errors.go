@@ -131,3 +131,12 @@ func NewErrInvalidConsulOptions(name, detail string) error {
 			name, detail),
 	}
 }
+
+// NewErrInvalidNomadOptions returns an error for invalid nomad provider
+// options
+func NewErrInvalidNomadOptions(name, detail string) error {
+	return &InvalidDiscoveryOptionsError{
+		error: fmt.Errorf(`invalid nomad options for discoverer %q: %s`,
+			name, detail),
+	}
+}

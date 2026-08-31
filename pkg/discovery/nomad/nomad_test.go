@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package consul
+package nomad
 
 import (
 	"net/http"
@@ -54,46 +54,40 @@ func (c *snapCollector) next(t *testing.T) discovery.Snapshot {
 	}
 }
 
-// newFakeConsul returns a blocking-query server reporting the Consul cursor
-// header and serving the given catalog.
-func newFakeConsul(t *testing.T, entries ...serviceEntry) *bqtest.Server {
-	t.Helper()
-	if entries == nil {
-		entries = []serviceEntry{}
+// reg builds a service registration for tests.
+func reg(id, addr string, port int, tags ...string) serviceRegistration {
+	return serviceRegistration{
+		ID: id, ServiceName: "web", Address: addr, Port: port, Tags: tags,
+		Namespace: "default", Datacenter: "dc1",
+		JobID: "web-job", AllocID: "alloc-1", NodeID: "node-1",
 	}
-	return bqtest.New(t, indexHeader, entries)
 }
 
-// entry builds a catalog entry for tests.
-func entry(id, addr string, port int, status string) serviceEntry {
-	return serviceEntry{
-		Node: node{Node: "node-1", Address: "10.9.9.9", Datacenter: "dc1"},
-		Service: service{
-			ID: id, Service: "web", Address: addr, Port: port,
-		},
-		Checks: []check{{CheckID: "c1", Status: status}},
+func newFakeNomad(t *testing.T, regs ...serviceRegistration) *bqtest.Server {
+	t.Helper()
+	if regs == nil {
+		regs = []serviceRegistration{}
 	}
+	return bqtest.New(t, indexHeader, regs)
 }
 
 func testOptions(endpoint string) *do.Options {
 	o := &do.Options{
-		Name:     "test-consul",
-		Provider: "consul",
+		Name:     "test-nomad",
+		Provider: "nomad",
 		HTTP: &do.HTTPOptions{
 			Endpoint: endpoint,
 			Interval: timeconv.Duration(50 * time.Millisecond),
 		},
-		Consul: &do.ConsulOptions{
-			Wait: timeconv.Duration(2 * time.Second),
-		},
+		Nomad: &do.NomadOptions{Wait: timeconv.Duration(2 * time.Second)},
 	}
-	o.HTTP.Timeout = timeconv.Duration(do.ConsulPollTimeout(o.Consul.GetWait()))
+	o.HTTP.Timeout = timeconv.Duration(do.ConsulPollTimeout(o.Nomad.GetWait()))
 	return o
 }
 
 func startDiscoverer(t *testing.T, o *do.Options) discovery.Discoverer {
 	t.Helper()
-	d, err := New("test-consul", o)
+	d, err := New("test-nomad", o)
 	require.NoError(t, err)
 	require.NoError(t, d.Start(t.Context()))
 	t.Cleanup(func() { d.Stop() })
@@ -112,12 +106,12 @@ func subscribe(t *testing.T, d discovery.Discoverer, q *do.Query) *snapCollector
 func TestNewRequiresHTTPOptions(t *testing.T) {
 	_, err := New("test", nil)
 	require.ErrorIs(t, err, ErrNoHTTPOptions)
-	_, err = New("test", &do.Options{Provider: "consul"})
+	_, err = New("test", &do.Options{Provider: "nomad"})
 	require.ErrorIs(t, err, ErrNoHTTPOptions)
 }
 
 func TestSubscribeRequiresService(t *testing.T) {
-	f := newFakeConsul(t)
+	f := newFakeNomad(t)
 	d := startDiscoverer(t, testOptions(f.URL))
 	_, err := d.Subscribe(&do.Query{}, func(discovery.Snapshot) {})
 	require.Error(t, err)
@@ -125,9 +119,9 @@ func TestSubscribeRequiresService(t *testing.T) {
 }
 
 func TestServiceDiscovery(t *testing.T) {
-	f := newFakeConsul(t,
-		entry("web-1", "10.0.0.1", 8080, statusPassing),
-		entry("web-2", "10.0.0.2", 8080, statusPassing),
+	f := newFakeNomad(t,
+		reg("web-1", "10.0.0.1", 8080),
+		reg("web-2", "10.0.0.2", 8080),
 	)
 	d := startDiscoverer(t, testOptions(f.URL))
 	col := subscribe(t, d, &do.Query{Service: "web"})
@@ -136,48 +130,49 @@ func TestServiceDiscovery(t *testing.T) {
 	require.Len(t, snap, 2)
 	require.Equal(t, "10.0.0.1:8080", snap[0].Address)
 	require.Equal(t, "web-1", snap[0].Name)
-	require.Equal(t, discovery.Ready, snap[0].Ready)
-	require.Equal(t, "web", snap[0].Labels["service"])
-	require.Equal(t, "dc1", snap[0].Labels["datacenter"])
-	require.Equal(t, "node-1", snap[0].Labels["node"])
+	require.Equal(t, "web-job", snap[0].Labels["job_id"])
+	require.Equal(t, "alloc-1", snap[0].Labels["alloc_id"])
 
-	// the first request must not block, or the pool never fills
 	req := f.NextRequest(t)
-	require.Equal(t, "/v1/health/service/web", req.Path)
+	require.Equal(t, "/v1/service/web", req.Path)
 	require.Empty(t, req.Query["index"], "the first read must return immediately")
 }
 
-// The point of the provider: a change is observed within a round trip,
-// because the server was already holding the request when it happened.
+// Nomad's native registry carries no per-instance check state, so readiness
+// is genuinely unknown rather than assumed good. Claiming Ready here would
+// make health_mode: provider silently trust an unverified member.
+func TestReadinessIsUnknown(t *testing.T) {
+	f := newFakeNomad(t, reg("web-1", "10.0.0.1", 8080))
+	d := startDiscoverer(t, testOptions(f.URL))
+	col := subscribe(t, d, &do.Query{Service: "web"})
+	require.Equal(t, discovery.ReadyUnknown, col.next(t)[0].Ready)
+}
+
 func TestBlockingQueryObservesChange(t *testing.T) {
-	f := newFakeConsul(t, entry("web-1", "10.0.0.1", 8080, statusPassing))
+	f := newFakeNomad(t, reg("web-1", "10.0.0.1", 8080))
 	d := startDiscoverer(t, testOptions(f.URL))
 	col := subscribe(t, d, &do.Query{Service: "web"})
 	require.Len(t, col.next(t), 1)
 
-	// the second request carries the cursor and blocks
 	f.NextRequest(t) // the initial read
 	req := f.NextRequest(t)
 	require.NotEmpty(t, req.Query["index"], "a subsequent read must block on the cursor")
 	require.Equal(t, "2s", req.Query["wait"][0])
 
 	start := time.Now()
-	f.Update(t, []serviceEntry{
-		entry("web-1", "10.0.0.1", 8080, statusPassing),
-		entry("web-3", "10.0.0.3", 8080, statusPassing),
+	f.Update(t, []serviceRegistration{
+		reg("web-1", "10.0.0.1", 8080),
+		reg("web-3", "10.0.0.3", 8080),
 	})
-	snap := col.next(t)
-	require.Len(t, snap, 2)
+	require.Len(t, col.next(t), 2)
 	require.Less(t, time.Since(start), 2*time.Second,
 		"the change should arrive on the parked request, not on the next interval")
 }
 
-// A blocking query that times out unchanged must be a no-op, and must not
-// re-emit or re-parse.
 func TestUnchangedBlockingQueryIsANoOp(t *testing.T) {
-	f := newFakeConsul(t, entry("web-1", "10.0.0.1", 8080, statusPassing))
+	f := newFakeNomad(t, reg("web-1", "10.0.0.1", 8080))
 	o := testOptions(f.URL)
-	o.Consul.Wait = timeconv.Duration(time.Second)
+	o.Nomad.Wait = timeconv.Duration(time.Second)
 	o.HTTP.Timeout = timeconv.Duration(do.ConsulPollTimeout(time.Second))
 	d := startDiscoverer(t, o)
 	col := subscribe(t, d, &do.Query{Service: "web"})
@@ -190,131 +185,83 @@ func TestUnchangedBlockingQueryIsANoOp(t *testing.T) {
 	}
 }
 
-// An index change that does not change the catalog still re-reads, and the
-// Emitter suppresses the no-op rather than churning the pool.
-func TestIndexBumpWithoutCatalogChangeDoesNotReEmit(t *testing.T) {
-	f := newFakeConsul(t, entry("web-1", "10.0.0.1", 8080, statusPassing))
-	d := startDiscoverer(t, testOptions(f.URL))
-	col := subscribe(t, d, &do.Query{Service: "web"})
-	require.Len(t, col.next(t), 1)
-
-	f.BumpIndex()
-	select {
-	case s := <-col.ch:
-		t.Fatalf("membership was re-emitted unchanged: %v", s)
-	case <-time.After(500 * time.Millisecond):
-	}
-}
-
-// Consul's index can go backwards when a server is replaced or a service is
-// recreated. A client that keeps blocking on the old cursor would park
-// forever against an index the server will never reach again.
 func TestIndexGoingBackwardsRecovers(t *testing.T) {
-	f := newFakeConsul(t, entry("web-1", "10.0.0.1", 8080, statusPassing))
+	f := newFakeNomad(t, reg("web-1", "10.0.0.1", 8080))
 	d := startDiscoverer(t, testOptions(f.URL))
 	col := subscribe(t, d, &do.Query{Service: "web"})
 	require.Len(t, col.next(t), 1)
 
-	// the server resets to a much lower index and serves a new catalog
-	f.SetBody(t, []serviceEntry{entry("web-9", "10.0.0.9", 8080, statusPassing)})
+	f.SetBody(t, []serviceRegistration{reg("web-9", "10.0.0.9", 8080)})
 	f.RewindIndex(5)
 
 	snap := col.next(t)
-	require.Len(t, snap, 1)
 	require.Equal(t, "10.0.0.9:8080", snap[0].Address,
 		"the provider did not recover from a rewound index")
 }
 
-// Without a usable cursor there is nothing to block on, so the provider must
-// fall back to plain reads rather than stalling.
-func TestMissingIndexHeaderFallsBackToPlainReads(t *testing.T) {
-	f := newFakeConsul(t, entry("web-1", "10.0.0.1", 8080, statusPassing))
-	f.SetOmitIndexHeader(true)
-	d := startDiscoverer(t, testOptions(f.URL))
-	col := subscribe(t, d, &do.Query{Service: "web"})
-	require.Len(t, col.next(t), 1)
-
-	f.SetBody(t, []serviceEntry{entry("web-4", "10.0.0.4", 8080, statusPassing)})
-
-	snap := col.next(t)
-	require.Equal(t, "10.0.0.4:8080", snap[0].Address)
-	req := f.NextRequest(t)
-	require.Empty(t, req.Query["index"],
-		"without a cursor from the server, requests must not claim one")
-}
-
 func TestFailureKeepsLastGoodAndRecovers(t *testing.T) {
 	before := testutil.ToFloat64(
-		metrics.DiscoveryRefreshErrors.WithLabelValues("test-consul", "consul"))
-	f := newFakeConsul(t, entry("web-1", "10.0.0.1", 8080, statusPassing))
+		metrics.DiscoveryRefreshErrors.WithLabelValues("test-nomad", "nomad"))
+	f := newFakeNomad(t, reg("web-1", "10.0.0.1", 8080))
 	d := startDiscoverer(t, testOptions(f.URL))
 	col := subscribe(t, d, &do.Query{Service: "web"})
 	require.Len(t, col.next(t), 1)
 
-	f.SetStatus(http.StatusInternalServerError)
+	f.SetStatus(http.StatusForbidden)
 	require.Eventually(t, func() bool {
 		return testutil.ToFloat64(
-			metrics.DiscoveryRefreshErrors.WithLabelValues("test-consul", "consul")) > before
+			metrics.DiscoveryRefreshErrors.WithLabelValues("test-nomad", "nomad")) > before
 	}, 10*time.Second, 10*time.Millisecond)
-	require.Empty(t, col.ch, "a failing catalog must not replace the membership")
+	require.Empty(t, col.ch, "a failing registry must not replace the membership")
 
-	f.SetBody(t, []serviceEntry{entry("web-5", "10.0.0.5", 8080, statusPassing)})
+	f.SetBody(t, []serviceRegistration{reg("web-5", "10.0.0.5", 8080)})
 	f.SetStatus(http.StatusOK)
 	require.Equal(t, "10.0.0.5:8080", col.next(t)[0].Address)
 }
 
-// A service that genuinely has no instances is a valid membership; a pool
-// scaled to zero must be reportable.
 func TestAuthoritativeEmptyIsEmitted(t *testing.T) {
-	f := newFakeConsul(t, entry("web-1", "10.0.0.1", 8080, statusPassing))
+	f := newFakeNomad(t, reg("web-1", "10.0.0.1", 8080))
 	d := startDiscoverer(t, testOptions(f.URL))
 	col := subscribe(t, d, &do.Query{Service: "web"})
 	require.Len(t, col.next(t), 1)
-	f.Update(t, []serviceEntry{})
+	f.Update(t, []serviceRegistration{})
 	require.Empty(t, col.next(t))
 }
 
 func TestQueryParametersArePassedThrough(t *testing.T) {
-	f := newFakeConsul(t, entry("web-1", "10.0.0.1", 8080, statusPassing))
+	f := newFakeNomad(t, reg("web-1", "10.0.0.1", 8080))
 	o := testOptions(f.URL)
-	o.Consul.Datacenter = "dc2"
-	o.Consul.Namespace = "team-a"
-	o.Consul.Partition = "p1"
-	o.Consul.AllowStale = true
-	o.Consul.OnlyPassing = true
+	o.Nomad.Namespace = "team-a"
+	o.Nomad.Region = "eu-1"
+	o.Nomad.AllowStale = true
 	d := startDiscoverer(t, o)
-	subscribe(t, d, &do.Query{
-		Service: "web",
-		Tags:    []string{"prod", "v2"},
-		Filter:  `Service.Meta.version == "2"`,
-	})
+	subscribe(t, d, &do.Query{Service: "web", Filter: `JobID == "web-job"`})
 
 	req := f.NextRequest(t)
-	require.Equal(t, "dc2", req.Query["dc"][0])
-	require.Equal(t, "team-a", req.Query["ns"][0])
-	require.Equal(t, "p1", req.Query["partition"][0])
-	require.Equal(t, "true", req.Query["passing"][0])
+	require.Equal(t, "team-a", req.Query["namespace"][0])
+	require.Equal(t, "eu-1", req.Query["region"][0])
 	require.Contains(t, req.Query, "stale")
-	require.Equal(t, []string{"prod", "v2"}, req.Query["tag"])
-	require.Equal(t, `Service.Meta.version == "2"`, req.Query["filter"][0])
+	require.Equal(t, `JobID == "web-job"`, req.Query["filter"][0])
+	require.NotContains(t, req.Query, "tag",
+		"nomad's service endpoint has no tag parameter; tags filter client-side")
 }
 
 func TestACLTokenIsSent(t *testing.T) {
-	f := newFakeConsul(t, entry("web-1", "10.0.0.1", 8080, statusPassing))
+	f := newFakeNomad(t, reg("web-1", "10.0.0.1", 8080))
 	o := testOptions(f.URL)
-	o.HTTP.Headers = map[string]string{"X-Consul-Token": "static-token"}
+	o.HTTP.Headers = map[string]string{"X-Nomad-Token": "static-token"}
 	d := startDiscoverer(t, o)
 	subscribe(t, d, &do.Query{Service: "web"})
-	require.Equal(t, "static-token", f.NextRequest(t).Header.Get("X-Consul-Token"))
+	require.Equal(t, "static-token", f.NextRequest(t).Header.Get("X-Nomad-Token"))
 }
 
-// Consul accepts the Authorization Bearer scheme as an equivalent to its own
+// Nomad accepts the Authorization Bearer scheme as an equivalent to its own
 // header, which is what makes bearer_token_file usable for a rotated ACL
-// token without a consul-specific option.
+// token without a nomad-specific option.
 func TestRotatedTokenFileIsReread(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "token")
 	require.NoError(t, os.WriteFile(path, []byte("first\n"), 0o600))
-	f := newFakeConsul(t, entry("web-1", "10.0.0.1", 8080, statusPassing))
+	f := newFakeNomad(t, reg("web-1", "10.0.0.1", 8080))
 	o := testOptions(f.URL)
 	o.HTTP.BearerTokenFile = path
 	d := startDiscoverer(t, o)
@@ -330,8 +277,8 @@ func TestRotatedTokenFileIsReread(t *testing.T) {
 }
 
 func TestSubscribeLifecycle(t *testing.T) {
-	f := newFakeConsul(t, entry("web-1", "10.0.0.1", 8080, statusPassing))
-	d, err := New("test-consul", testOptions(f.URL))
+	f := newFakeNomad(t, reg("web-1", "10.0.0.1", 8080))
+	d, err := New("test-nomad", testOptions(f.URL))
 	require.NoError(t, err)
 	require.NoError(t, d.Start(t.Context()))
 	col := newSnapCollector()
@@ -344,14 +291,13 @@ func TestSubscribeLifecycle(t *testing.T) {
 	require.ErrorIs(t, err, ErrStopped)
 }
 
-// Stop must not wait out a parked blocking query. With DetachIterations
-// false, cancelling the iteration context tears down the in-flight request.
+// Stop must not wait out a parked blocking query.
 func TestStopIsPromptDuringABlockingQuery(t *testing.T) {
-	f := newFakeConsul(t, entry("web-1", "10.0.0.1", 8080, statusPassing))
+	f := newFakeNomad(t, reg("web-1", "10.0.0.1", 8080))
 	o := testOptions(f.URL)
-	o.Consul.Wait = timeconv.Duration(9 * time.Second)
+	o.Nomad.Wait = timeconv.Duration(9 * time.Second)
 	o.HTTP.Timeout = timeconv.Duration(do.ConsulPollTimeout(9 * time.Second))
-	d, err := New("test-consul", o)
+	d, err := New("test-nomad", o)
 	require.NoError(t, err)
 	require.NoError(t, d.Start(t.Context()))
 	col := newSnapCollector()

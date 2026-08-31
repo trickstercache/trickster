@@ -257,3 +257,26 @@ func TestQueryCloneCopiesTags(t *testing.T) {
 	c.Tags[0] = "staging"
 	require.Equal(t, "prod", q.Tags[0])
 }
+
+func TestQueryValidateNomad(t *testing.T) {
+	o := &Options{Provider: providers.Nomad}
+	require.NoError(t, (&Query{Service: "web"}).Validate("alb", o))
+	require.NoError(t, (&Query{
+		Service: "web", Tags: []string{"prod"}, Filter: `JobID == "web"`,
+		Scheme: SchemeHTTPS,
+	}).Validate("alb", o))
+
+	err := (&Query{}).Validate("alb", o)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "'service' is required")
+
+	err = (&Query{Service: "web", Tags: []string{""}}).Validate("alb", o)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "cannot be empty")
+
+	// nomad's native registry carries no health, so there is no replica
+	// group metadata to read either
+	err = (&Query{Service: "web", ReplicaGroupLabel: "shard"}).Validate("alb", o)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "replica_group_label")
+}

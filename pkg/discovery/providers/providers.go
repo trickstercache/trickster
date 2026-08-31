@@ -35,9 +35,13 @@ const (
 	HTTPSD = "http_sd"
 	// Consul discovers members from the Consul service catalog
 	Consul = "consul"
+	// Nomad discovers members from Nomad's native service registry
+	Nomad = "nomad"
 )
 
-var supported = sets.New([]string{Kubernetes, DNSSRV, DNSA, File, HTTPSD, Consul})
+var supported = sets.New([]string{
+	Kubernetes, DNSSRV, DNSA, File, HTTPSD, Consul, Nomad,
+})
 
 // httpProviders are the providers that discover members by polling an HTTP
 // endpoint, and so accept the shared 'http' options block. It is empty
@@ -45,7 +49,7 @@ var supported = sets.New([]string{Kubernetes, DNSSRV, DNSA, File, HTTPSD, Consul
 // provider's name is added here alongside its entry in supported. A
 // provider that polls HTTP but forgets to register here will have its
 // 'http' config block rejected at startup.
-var httpProviders = sets.New([]string{HTTPSD, Consul})
+var httpProviders = sets.New([]string{HTTPSD, Consul, Nomad})
 
 // IsHTTPProvider returns true if the named provider polls an HTTP endpoint
 // and therefore accepts the shared 'http' discoverer options block

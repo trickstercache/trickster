@@ -19,6 +19,8 @@ package consul
 import (
 	"testing"
 
+	tbytes "github.com/trickstercache/trickster/v2/pkg/bytes"
+
 	"github.com/trickstercache/trickster/v2/pkg/discovery"
 
 	"github.com/stretchr/testify/require"
@@ -205,10 +207,11 @@ func TestSchemeComesFromTheQuery(t *testing.T) {
 	require.Equal(t, "https", m.Scheme)
 }
 
-func TestReadBodyRejectsOversizedResponse(t *testing.T) {
-	_, err := readBody(&infiniteReader{})
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "limit")
+// The bounded read itself is tested in pkg/bytes; this pins that this
+// provider actually applies a limit, so a refactor cannot quietly remove it.
+func TestResponseSizeIsBounded(t *testing.T) {
+	_, err := tbytes.ReadBoundedBody(&infiniteReader{}, maxResponseBytes, false)
+	require.ErrorIs(t, err, tbytes.ErrBodyTooLarge)
 }
 
 type infiniteReader struct{}

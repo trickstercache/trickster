@@ -45,6 +45,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/discovery"
+	"github.com/trickstercache/trickster/v2/pkg/discovery/blockingquery"
 	do "github.com/trickstercache/trickster/v2/pkg/discovery/options"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/poller"
 	pollerhttp "github.com/trickstercache/trickster/v2/pkg/discovery/poller/http"
@@ -67,11 +68,8 @@ const (
 	healthServicePath = "/v1/health/service/"
 	// indexHeader carries the blocking-query cursor
 	indexHeader = "X-Consul-Index"
-	// minPollGap is the shortest time between successive blocking queries.
-	// A blocking query normally parks for its full wait, but a rapidly
-	// changing service returns immediately every time; without a floor,
-	// that becomes a spin against the Consul server at exactly the moment
-	// it is busiest.
+	// minPollGap is the shortest time between successive blocking queries;
+	// see blockingquery.Cursor for why a floor is required
 	minPollGap = 100 * time.Millisecond
 	// maxResponseBytes bounds a catalog response. Large services are in the
 	// low megabytes; this is high enough never to bind in practice and low
@@ -149,6 +147,7 @@ func (p *provider) newSubscription(q *do.Query,
 			replicaGroupLabel: q.ReplicaGroupLabel,
 			warningIsReady:    p.consul.GetWarningIsReady(),
 		},
+		cursor:  blockingquery.NewCursor(minPollGap),
 		emitter: discovery.NewEmitter(handler),
 	}
 	src, err := pollerhttp.NewSource(&pollerhttp.Options{
@@ -231,15 +230,12 @@ type subscription struct {
 	poller  *poller.Poller
 	src     poller.Source
 
+	// cursor owns the blocking-query index and the floor between requests
+	cursor *blockingquery.Cursor
+
 	mtx     sync.Mutex
 	stopped bool
 	failing bool
-	// index is the blocking-query cursor: the X-Consul-Index of the last
-	// response. Zero means the next request is a plain read rather than a
-	// blocking one.
-	index uint64
-	// startedAt bounds how fast successive blocking queries may be issued
-	startedAt time.Time
 }
 
 // Launch starts the query's blocking-query loop
@@ -271,9 +267,7 @@ func (s *subscription) Stop() {
 // response handler runs, so accounting done there would miss exactly the
 // failures an operator most needs to see.
 func (s *subscription) Poll(ctx context.Context) (time.Duration, error) {
-	s.mtx.Lock()
-	s.startedAt = time.Now()
-	s.mtx.Unlock()
+	s.cursor.Begin()
 	next, err := s.src.Poll(ctx)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -284,7 +278,7 @@ func (s *subscription) Poll(ctx context.Context) (time.Duration, error) {
 		// recreated); dropping it makes the retry a plain read that always
 		// yields a usable answer, rather than a blocking query that may
 		// park forever against a stale index
-		s.resetIndex()
+		s.cursor.Reset()
 		s.warn(err)
 		// fall back to the configured interval as the retry cadence
 		return 0, err
@@ -309,14 +303,11 @@ func (s *subscription) decorate(_ context.Context, r *http.Request) error {
 	}
 	v := make(url.Values, len(s.base)+2)
 	maps.Copy(v, s.base)
-	s.mtx.Lock()
-	index := s.index
-	s.mtx.Unlock()
-	if index > 0 {
+	if index := s.cursor.Index(); index > 0 {
 		// only a request carrying a cursor blocks; the first read of a
 		// subscription must return immediately so the pool fills
 		v.Set("index", strconv.FormatUint(index, 10))
-		v.Set("wait", consulDuration(s.p.consul.GetWait()))
+		v.Set("wait", blockingquery.Duration(s.p.consul.GetWait()))
 	}
 	r.URL.RawQuery = v.Encode()
 	return nil
@@ -328,12 +319,12 @@ func (s *subscription) handle(_ context.Context, resp *http.Response) (time.Dura
 	if err := pollerhttp.CheckStatus(resp); err != nil {
 		return 0, err
 	}
-	prev, changed := s.advanceIndex(resp.Header.Get(indexHeader))
-	if prev && !changed {
+	had, changed := s.cursor.Advance(resp.Header.Get(indexHeader))
+	if had && !changed {
 		// the blocking query timed out with the service unchanged: the body
 		// is identical to the one already applied, so skip decoding it
 		// entirely. This is the saving that makes a long wait cheap.
-		return s.nextWait(), nil
+		return s.cursor.NextWait(), nil
 	}
 	body, err := readBody(resp.Body)
 	if err != nil {
@@ -344,70 +335,7 @@ func (s *subscription) handle(_ context.Context, resp *http.Response) (time.Dura
 		return 0, fmt.Errorf("catalog did not parse: %w", err)
 	}
 	s.emitter.Emit(snap)
-	return s.nextWait(), nil
-}
-
-// advanceIndex records the response's cursor, reporting whether a cursor was
-// already held and whether it changed.
-//
-// Consul's contract has two traps, both handled here. An index that goes
-// backwards means the server's state was reset -- a restart, a service
-// recreated -- and the client must start over rather than block forever on
-// a cursor the server will never reach again. And an index below 1 is
-// reserved, so it is clamped rather than used.
-func (s *subscription) advanceIndex(header string) (had, changed bool) {
-	next, err := strconv.ParseUint(header, 10, 64)
-	if err != nil || next == 0 {
-		// no usable cursor: fall back to plain reads rather than blocking
-		// against a value the server did not give us
-		s.resetIndex()
-		return false, true
-	}
-	if next < 1 {
-		next = 1
-	}
-	s.mtx.Lock()
-	defer s.mtx.Unlock()
-	prev := s.index
-	if next < prev {
-		s.index = 0
-		return prev > 0, true
-	}
-	s.index = next
-	return prev > 0, next != prev
-}
-
-func (s *subscription) resetIndex() {
-	s.mtx.Lock()
-	s.index = 0
-	s.mtx.Unlock()
-}
-
-// nextWait returns how long to pause before the next blocking query. Once a
-// cursor is held the answer is normally "immediately", because the wait
-// happens on the server; the floor exists so that a service changing faster
-// than minPollGap cannot turn this loop into a spin.
-func (s *subscription) nextWait() time.Duration {
-	s.mtx.Lock()
-	index, startedAt := s.index, s.startedAt
-	s.mtx.Unlock()
-	if index == 0 {
-		// no cursor to block on; fall back to the configured interval
-		return 0
-	}
-	if elapsed := time.Since(startedAt); elapsed < minPollGap {
-		return minPollGap - elapsed
-	}
-	return poller.PollNow
-}
-
-// consulDuration renders a wait in the form Consul's API accepts, which
-// permits only whole seconds or minutes.
-func consulDuration(d time.Duration) string {
-	if d%time.Minute == 0 {
-		return strconv.FormatInt(int64(d/time.Minute), 10) + "m"
-	}
-	return strconv.FormatInt(int64(d/time.Second), 10) + "s"
+	return s.cursor.NextWait(), nil
 }
 
 // warn counts a refresh failure and logs it once per failure streak

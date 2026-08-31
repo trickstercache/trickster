@@ -93,6 +93,7 @@ that provider's connection-level block:
 | `file` | `file` | `poll_interval` (stat-poll fallback cadence, default 30s, min 1s) |
 | `http_sd` | `http` + `http_sd` | connection settings in the shared `http` block (below); `http_sd.format` selects the member-list document: `trickster` (default) or `prometheus` |
 | `consul` | `http` + `consul` | connection settings in the shared `http` block; `consul.datacenter`, `namespace`, `partition`, `wait`, `allow_stale`, `only_passing`, `warning_is_ready` |
+| `nomad` | `http` + `nomad` | connection settings in the shared `http` block; `nomad.namespace`, `region`, `wait`, `allow_stale` |
 
 A block is only valid on its own provider's entries; anything else fails
 startup.
@@ -676,3 +677,62 @@ rather than shared with the other HTTP providers (Consul adds up to
 sets it too low is rejected at startup rather than producing a stream of
 timeouts. `http.interval` is not the poll cadence here — with blocking
 queries there is no cadence — it is the retry delay after a failure.
+
+### The `nomad` Provider
+
+`nomad` reads service instances from Nomad's **native** service registry
+(Nomad 1.3+). Like `consul` it is event-driven, using the same HashiCorp
+blocking-query protocol, so a membership change is observed within a round
+trip rather than within a poll interval.
+
+```yaml
+discovery:
+  nomad-eu:
+    provider: nomad
+    http:
+      endpoint: http://127.0.0.1:4646
+      # a rotated ACL token; Nomad accepts the Authorization Bearer scheme
+      # as an equivalent to its own X-Nomad-Token header
+      bearer_token_file: /var/run/secrets/nomad-token
+    nomad:
+      namespace: default
+      region: eu-1
+      wait: 5m
+      allow_stale: true
+
+backends:
+  prom-alb:
+    provider: alb
+    alb:
+      discovery:
+        discoverer_name: nomad-eu
+        template_backend: prom-template
+        query:
+          service: prometheus
+          tags: [production]
+          # filter: 'JobID == "monitoring"'
+```
+
+**Native registry, not Consul.** This reads the registry a job selects with
+`provider = "nomad"` in its `service` block. Jobs that register into Consul
+instead are discovered with the **`consul`** provider, and that is the more
+capable choice where it applies: Nomad's service endpoint carries no
+per-instance check state, so members are reported `ReadyUnknown` and
+`health_mode: provider` falls back to Trickster's own probes. A deployment
+that wants discovery-conveyed readiness should register its services into
+Consul.
+
+**Tags filter client-side.** Unlike Consul's catalog endpoint, Nomad's
+service endpoint has no `tag` parameter, so `query.tags` is applied by
+Trickster after the response arrives. It is a conjunction — every listed tag
+must be present. `query.filter` is passed through to Nomad and evaluated
+server-side.
+
+**Labels.** Members carry `service`, `service_id`, `job_id`, `alloc_id`,
+`node_id`, `namespace`, `datacenter`, and `tags` (comma-bracketed). The
+allocation and job identifiers are what an operator needs to trace a member
+back to the workload that registered it.
+
+**Timeouts** work exactly as for `consul`: `http.timeout` must outlast
+`nomad.wait`, its default is derived from the wait, and `http.interval` is
+the retry delay after a failure rather than a poll cadence.

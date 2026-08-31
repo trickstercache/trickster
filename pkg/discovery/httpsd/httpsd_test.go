@@ -27,6 +27,7 @@ import (
 	"testing"
 	"time"
 
+	tbytes "github.com/trickstercache/trickster/v2/pkg/bytes"
 	"github.com/trickstercache/trickster/v2/pkg/discovery"
 	do "github.com/trickstercache/trickster/v2/pkg/discovery/options"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
@@ -427,14 +428,13 @@ func TestUnreadableTokenFileFailsThePoll(t *testing.T) {
 	require.Empty(t, col.ch)
 }
 
-func TestReadBodyRejectsOversizedDocument(t *testing.T) {
-	_, err := readBody(strings.NewReader(strings.Repeat("x", maxResponseBytes+1)))
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "limit")
-
-	b, err := readBody(strings.NewReader("ok"))
-	require.NoError(t, err)
-	require.Equal(t, "ok", string(b))
+// The bounded read itself is tested in pkg/bytes; this pins that this
+// provider actually applies a limit, so a refactor cannot quietly remove it.
+func TestResponseSizeIsBounded(t *testing.T) {
+	_, err := tbytes.ReadBoundedBody(
+		strings.NewReader(strings.Repeat("x", maxResponseBytes+1)),
+		maxResponseBytes, false)
+	require.ErrorIs(t, err, tbytes.ErrBodyTooLarge)
 }
 
 func TestReadTokenFile(t *testing.T) {

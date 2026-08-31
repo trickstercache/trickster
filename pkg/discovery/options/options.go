@@ -57,6 +57,8 @@ type Options struct {
 	HTTPSD *HTTPSDOptions `yaml:"http_sd,omitempty"`
 	// Consul provides catalog settings when Provider is 'consul'
 	Consul *ConsulOptions `yaml:"consul,omitempty"`
+	// Nomad provides registry settings when Provider is 'nomad'
+	Nomad *NomadOptions `yaml:"nomad,omitempty"`
 	//
 	// HTTP provides the outbound client settings shared by every provider
 	// that discovers members by polling an HTTP endpoint
@@ -243,6 +245,49 @@ func (o *ConsulOptions) GetWarningIsReady() bool {
 	return *o.WarningIsReady
 }
 
+// NomadOptions defines the registry settings for a discoverer with the
+// 'nomad' provider. Connection settings live in the shared 'http' block,
+// where 'endpoint' is the agent address (commonly http://127.0.0.1:4646)
+// and the ACL token is supplied either as an X-Nomad-Token header or, for a
+// rotated credential, via bearer_token_file -- Nomad accepts the
+// Authorization Bearer scheme as an equivalent to its own header.
+//
+// This reads Nomad's *native* service registry. Jobs that register into
+// Consul instead (provider = "consul" in the job's service block) are
+// discovered with the consul provider, which additionally conveys health.
+type NomadOptions struct {
+	// Namespace scopes the query; Nomad defaults it to "default"
+	Namespace string `yaml:"namespace,omitempty"`
+	// Region queries a region other than the agent's own
+	Region string `yaml:"region,omitempty"`
+	// Wait is the maximum time a blocking query parks on the server before
+	// returning unchanged, making the provider event-driven rather than
+	// polled
+	Wait timeconv.Duration `yaml:"wait,omitempty"`
+	// AllowStale permits any Nomad server to answer rather than only the
+	// leader, trading a small staleness window for lower leader load
+	AllowStale bool `yaml:"allow_stale,omitempty"`
+}
+
+const (
+	// DefaultNomadWait is the default blocking-query wait, matching Nomad's
+	// own default
+	DefaultNomadWait = 5 * time.Minute
+	// MinimumNomadWait is the lowest permitted blocking-query wait
+	MinimumNomadWait = time.Second
+	// MaximumNomadWait is the highest wait Nomad honors; larger values are
+	// silently clamped by the server, so reject them instead
+	MaximumNomadWait = 10 * time.Minute
+)
+
+// GetWait returns the configured blocking-query wait, or the default.
+func (o *NomadOptions) GetWait() time.Duration {
+	if o == nil || o.Wait <= 0 {
+		return DefaultNomadWait
+	}
+	return time.Duration(o.Wait)
+}
+
 const (
 	// DefaultHTTPInterval is the default poll cadence for HTTP-based
 	// discovery providers
@@ -296,6 +341,9 @@ func (o *Options) Clone() *Options {
 			out.Consul.WarningIsReady = pointers.Clone(o.Consul.WarningIsReady)
 		}
 	}
+	if o.Nomad != nil {
+		out.Nomad = pointers.Clone(o.Nomad)
+	}
 	if o.HTTP != nil {
 		out.HTTP = pointers.Clone(o.HTTP)
 		if o.HTTP.TLS != nil {
@@ -346,6 +394,9 @@ func (o *Options) Initialize(name string) error {
 	if o.Provider == providers.Consul && o.Consul == nil {
 		o.Consul = &ConsulOptions{}
 	}
+	if o.Provider == providers.Nomad && o.Nomad == nil {
+		o.Nomad = &NomadOptions{}
+	}
 	if o.HTTP != nil {
 		if o.HTTP.Interval == 0 {
 			o.HTTP.Interval = timeconv.Duration(DefaultHTTPInterval)
@@ -354,10 +405,14 @@ func (o *Options) Initialize(name string) error {
 			// consul's timeout must outlast its blocking-query wait, so its
 			// default is derived rather than shared; a 10s default would
 			// abort every long poll
-			if o.Provider == providers.Consul {
+			switch o.Provider {
+			case providers.Consul:
 				o.HTTP.Timeout = timeconv.Duration(
 					ConsulPollTimeout(o.Consul.GetWait()))
-			} else {
+			case providers.Nomad:
+				o.HTTP.Timeout = timeconv.Duration(
+					ConsulPollTimeout(o.Nomad.GetWait()))
+			default:
 				o.HTTP.Timeout = timeconv.Duration(DefaultHTTPTimeout)
 			}
 		}
@@ -391,8 +446,16 @@ func (o *Options) Validate() (bool, error) {
 	if o.Consul != nil && o.Provider != providers.Consul {
 		return false, NewErrInvalidDiscoveryBlock("consul", o.Provider, o.Name)
 	}
+	if o.Nomad != nil && o.Provider != providers.Nomad {
+		return false, NewErrInvalidDiscoveryBlock("nomad", o.Provider, o.Name)
+	}
 	if o.Provider == providers.Consul {
 		if err := o.validateConsul(); err != nil {
+			return false, err
+		}
+	}
+	if o.Provider == providers.Nomad {
+		if err := o.validateNomad(); err != nil {
 			return false, err
 		}
 	}
@@ -465,6 +528,30 @@ func (o *Options) validateConsul() error {
 	if t := time.Duration(o.HTTP.Timeout); t > 0 && t <= wait {
 		return NewErrInvalidConsulOptions(o.Name,
 			"'http.timeout' must be greater than 'consul.wait' (recommended: "+
+				ConsulPollTimeout(wait).String()+")")
+	}
+	return nil
+}
+
+// validateNomad validates the nomad registry options and their interaction
+// with the shared HTTP block. Nomad and Consul share HashiCorp's
+// blocking-query protocol, so the wait/timeout relationship is the same.
+func (o *Options) validateNomad() error {
+	if o.HTTP == nil {
+		return NewErrInvalidHTTPOptions(o.Name,
+			"the 'http' block is required for the nomad provider")
+	}
+	wait := o.Nomad.GetWait()
+	if wait < MinimumNomadWait {
+		return NewErrInvalidNomadOptions(o.Name, "'wait' must be at least 1s")
+	}
+	if wait > MaximumNomadWait {
+		return NewErrInvalidNomadOptions(o.Name,
+			"'wait' must be at most 10m, which is the longest Nomad honors")
+	}
+	if t := time.Duration(o.HTTP.Timeout); t > 0 && t <= wait {
+		return NewErrInvalidNomadOptions(o.Name,
+			"'http.timeout' must be greater than 'nomad.wait' (recommended: "+
 				ConsulPollTimeout(wait).String()+")")
 	}
 	return nil

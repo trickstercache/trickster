@@ -506,3 +506,77 @@ func TestConsulOptions(t *testing.T) {
 		require.NotNil(t, o.Consul)
 	})
 }
+
+func TestNomadOptions(t *testing.T) {
+	base := func() *Options {
+		return &Options{
+			Name:     "test",
+			Provider: providers.Nomad,
+			HTTP:     &HTTPOptions{Endpoint: "http://127.0.0.1:4646"},
+			Nomad:    &NomadOptions{},
+		}
+	}
+	// Nomad shares HashiCorp's blocking-query protocol with Consul, so its
+	// timeout default is derived from the wait for the same reason.
+	t.Run("timeout default is derived from the wait", func(t *testing.T) {
+		o := base()
+		require.NoError(t, o.Initialize("test"))
+		require.Equal(t, DefaultNomadWait, o.Nomad.GetWait())
+		require.Greater(t, time.Duration(o.HTTP.Timeout), DefaultNomadWait)
+		ok, err := o.Validate()
+		require.NoError(t, err)
+		require.True(t, ok)
+	})
+	t.Run("explicit short timeout is rejected", func(t *testing.T) {
+		o := base()
+		o.Nomad.Wait = timeconv.Duration(time.Minute)
+		o.HTTP.Timeout = timeconv.Duration(30 * time.Second)
+		_, err := o.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "must be greater than 'nomad.wait'")
+	})
+	t.Run("wait bounds", func(t *testing.T) {
+		o := base()
+		o.Nomad.Wait = timeconv.Duration(time.Millisecond)
+		_, err := o.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "at least 1s")
+
+		o = base()
+		o.Nomad.Wait = timeconv.Duration(11 * time.Minute)
+		_, err = o.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "at most 10m")
+	})
+	t.Run("http block required", func(t *testing.T) {
+		o := base()
+		o.HTTP = nil
+		_, err := o.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "'http' block is required")
+	})
+	t.Run("block rejected on other providers", func(t *testing.T) {
+		for _, p := range []string{providers.Consul, providers.File, providers.HTTPSD} {
+			o := &Options{Name: "test", Provider: p, Nomad: &NomadOptions{}}
+			_, err := o.Validate()
+			require.Error(t, err, "nomad block should be rejected on %s", p)
+		}
+	})
+	t.Run("clone is deep", func(t *testing.T) {
+		o := base()
+		o.Nomad.Namespace = "team-a"
+		c := o.Clone()
+		require.NotSame(t, o.Nomad, c.Nomad)
+		c.Nomad.Namespace = "team-b"
+		require.Equal(t, "team-a", o.Nomad.Namespace)
+	})
+	t.Run("initialize defaults the block itself", func(t *testing.T) {
+		o := &Options{
+			Name:     "test",
+			Provider: providers.Nomad,
+			HTTP:     &HTTPOptions{Endpoint: "http://127.0.0.1:4646"},
+		}
+		require.NoError(t, o.Initialize("test"))
+		require.NotNil(t, o.Nomad)
+	})
+}

@@ -171,6 +171,12 @@ var providerQueryFields = map[string]sets.Set[string]{
 		fieldService, fieldTags, fieldFilter, fieldScheme,
 		fieldReplicaGroupLabel,
 	}),
+	// nomad's native registry conveys no per-instance health, so there is
+	// no readiness to filter on; tags narrow client-side, filter narrows
+	// server-side
+	providers.Nomad: sets.New([]string{
+		fieldService, fieldTags, fieldFilter, fieldScheme,
+	}),
 }
 
 // Validate validates the Query against the discoverer it will be submitted
@@ -210,6 +216,8 @@ func (q *Query) Validate(albName string, o *Options) error {
 		return q.validateHTTPSD(albName)
 	case providers.Consul:
 		return q.validateConsul(albName)
+	case providers.Nomad:
+		return q.validateNomad(albName)
 	}
 	return NewErrInvalidQuery(albName, "unknown discovery provider "+o.Provider)
 }
@@ -298,6 +306,21 @@ func (q *Query) validateConsul(albName string) error {
 	if slices.Contains(q.Tags, "") {
 		return NewErrInvalidQuery(albName,
 			"'tags' entries cannot be empty")
+	}
+	return nil
+}
+
+// validateNomad checks the nomad query, whose only required field is the
+// registered service name.
+func (q *Query) validateNomad(albName string) error {
+	if q.Service == "" {
+		return NewErrInvalidQuery(albName,
+			"'service' is required for the nomad provider")
+	}
+	for _, tag := range q.Tags {
+		if tag == "" {
+			return NewErrInvalidQuery(albName, "'tags' entries cannot be empty")
+		}
 	}
 	return nil
 }
