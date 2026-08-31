@@ -21,6 +21,7 @@ package options
 import (
 	"errors"
 
+	derrors "github.com/trickstercache/trickster/v2/pkg/discovery/errors"
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 )
 
@@ -82,4 +83,12 @@ func (o *Options) Validate() error {
 		return ErrInvalidFormat
 	}
 	return nil
+}
+
+// NewErrInvalidOptions returns an error for an invalid `http_sd` options block.
+// It lives here rather than in pkg/discovery/options so that the base
+// options package carries no per-provider constructors: a new provider
+// brings its own error with it.
+func NewErrInvalidOptions(name, detail string) error {
+	return derrors.NewInvalidOptions("http_sd", name, detail)
 }

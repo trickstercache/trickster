@@ -31,6 +31,7 @@ import (
 	consulopts "github.com/trickstercache/trickster/v2/pkg/discovery/consul/options"
 	dnsopts "github.com/trickstercache/trickster/v2/pkg/discovery/dns/options"
 	fileopts "github.com/trickstercache/trickster/v2/pkg/discovery/file/options"
+	gcpopts "github.com/trickstercache/trickster/v2/pkg/discovery/gcp/options"
 	httpsdopts "github.com/trickstercache/trickster/v2/pkg/discovery/httpsd/options"
 	kubeopts "github.com/trickstercache/trickster/v2/pkg/discovery/kubernetes/options"
 	nomadopts "github.com/trickstercache/trickster/v2/pkg/discovery/nomad/options"
@@ -67,6 +68,8 @@ type Options struct {
 	Nomad *nomadopts.Options `yaml:"nomad,omitempty"`
 	// AWS provides API and credential settings when Provider is 'aws'
 	AWS *awsopts.Options `yaml:"aws,omitempty"`
+	// GCP provides API and credential settings when Provider is 'gcp'
+	GCP *gcpopts.Options `yaml:"gcp,omitempty"`
 	//
 	// HTTP provides the outbound client settings shared by every provider
 	// that discovers members by polling an HTTP endpoint
@@ -151,6 +154,7 @@ func (o *Options) Clone() *Options {
 	out.Consul = o.Consul.Clone()
 	out.Nomad = o.Nomad.Clone()
 	out.AWS = o.AWS.Clone()
+	out.GCP = o.GCP.Clone()
 	if o.HTTP != nil {
 		out.HTTP = pointers.Clone(o.HTTP)
 		if o.HTTP.TLS != nil {
@@ -197,6 +201,15 @@ func (o *Options) Initialize(name string) error {
 	case providers.Nomad:
 		if o.Nomad == nil {
 			o.Nomad = nomadopts.New()
+		}
+	case providers.GCP:
+		if o.GCP == nil {
+			o.GCP = gcpopts.New()
+		}
+		// gcp derives its endpoint, so an http block is optional; create
+		// one so the shared interval and timeout defaults apply
+		if o.HTTP == nil {
+			o.HTTP = &HTTPOptions{}
 		}
 	case providers.AWS:
 		if o.AWS == nil {
@@ -265,6 +278,9 @@ func (o *Options) Validate() (bool, error) {
 	if o.AWS != nil && o.Provider != providers.AWS {
 		return false, NewErrInvalidDiscoveryBlock("aws", o.Provider, o.Name)
 	}
+	if o.GCP != nil && o.Provider != providers.GCP {
+		return false, NewErrInvalidDiscoveryBlock("gcp", o.Provider, o.Name)
+	}
 	if err := o.validateProviderBlock(); err != nil {
 		return false, err
 	}
@@ -284,15 +300,15 @@ func (o *Options) validateProviderBlock() error {
 	switch o.Provider {
 	case providers.Kubernetes:
 		if err := o.Kubernetes.Validate(); err != nil {
-			return NewErrInvalidKubernetesOptions(o.Name, err.Error())
+			return kubeopts.NewErrInvalidOptions(o.Name, err.Error())
 		}
 	case providers.DNSSRV, providers.DNSA:
 		if err := o.DNS.Validate(); err != nil {
-			return NewErrInvalidDNSOptions(o.Name, err.Error())
+			return dnsopts.NewErrInvalidOptions(o.Name, err.Error())
 		}
 	case providers.File:
 		if err := o.File.Validate(); err != nil {
-			return NewErrInvalidFileOptions(o.Name, err.Error())
+			return fileopts.NewErrInvalidOptions(o.Name, err.Error())
 		}
 	case providers.HTTPSD:
 		if o.HTTP == nil {
@@ -300,7 +316,7 @@ func (o *Options) validateProviderBlock() error {
 				"the 'http' block is required for the http_sd provider")
 		}
 		if err := o.HTTPSD.Validate(); err != nil {
-			return NewErrInvalidHTTPSDOptions(o.Name, err.Error())
+			return httpsdopts.NewErrInvalidOptions(o.Name, err.Error())
 		}
 	case providers.Consul:
 		if o.HTTP == nil {
@@ -308,7 +324,7 @@ func (o *Options) validateProviderBlock() error {
 				"the 'http' block is required for the consul provider")
 		}
 		if err := o.Consul.Validate(time.Duration(o.HTTP.Timeout)); err != nil {
-			return NewErrInvalidConsulOptions(o.Name, err.Error())
+			return consulopts.NewErrInvalidOptions(o.Name, err.Error())
 		}
 	case providers.Nomad:
 		if o.HTTP == nil {
@@ -316,11 +332,15 @@ func (o *Options) validateProviderBlock() error {
 				"the 'http' block is required for the nomad provider")
 		}
 		if err := o.Nomad.Validate(time.Duration(o.HTTP.Timeout)); err != nil {
-			return NewErrInvalidNomadOptions(o.Name, err.Error())
+			return nomadopts.NewErrInvalidOptions(o.Name, err.Error())
 		}
 	case providers.AWS:
 		if err := o.AWS.Validate(); err != nil {
-			return NewErrInvalidAWSOptions(o.Name, err.Error())
+			return awsopts.NewErrInvalidOptions(o.Name, err.Error())
+		}
+	case providers.GCP:
+		if err := o.GCP.Validate(); err != nil {
+			return gcpopts.NewErrInvalidOptions(o.Name, err.Error())
 		}
 	}
 	return nil

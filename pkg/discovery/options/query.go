@@ -215,6 +215,13 @@ var providerQueryFields = map[string]sets.Set[string]{
 	providers.DNSA:   sets.New([]string{fieldHostname, fieldPort, fieldScheme}),
 	providers.File:   sets.New([]string{fieldPath}),
 	providers.HTTPSD: sets.New([]string{fieldPath, fieldScheme}),
+	// gcp selects with a server-side filter expression and network tags,
+	// and like ec2 needs a port and an address choice, since a compute
+	// instance is a host rather than an endpoint
+	providers.GCP: sets.New([]string{
+		fieldFilter, fieldTags, fieldPort, fieldPortLabel,
+		fieldAddressType, fieldScheme, fieldReplicaGroupLabel,
+	}),
 	providers.Consul: sets.New([]string{
 		fieldService, fieldTags, fieldFilter, fieldScheme,
 		fieldReplicaGroupLabel,
@@ -276,6 +283,8 @@ func (q *Query) Validate(albName string, o *Options) error {
 		return q.validateNomad(albName)
 	case providers.AWS:
 		return q.validateAWS(albName, o)
+	case providers.GCP:
+		return q.validateGCP(albName)
 	}
 	return NewErrInvalidQuery(albName, "unknown discovery provider "+o.Provider)
 }
@@ -436,6 +445,28 @@ func (q *Query) validateAWS(albName string, o *Options) error {
 			return NewErrInvalidQuery(albName,
 				"'filters' entry "+name+" has no values")
 		}
+	}
+	if slices.Contains(q.Tags, "") {
+		return NewErrInvalidQuery(albName, "'tags' entries cannot be empty")
+	}
+	return nil
+}
+
+// validateGCP checks the gcp query. Like ec2, a compute instance is a host
+// rather than an endpoint, so a port must come from somewhere.
+func (q *Query) validateGCP(albName string) error {
+	if q.AddressType != "" && !addressTypes.Contains(q.AddressType) {
+		return NewErrInvalidQuery(albName,
+			"'address_type' must be private, public or ipv6")
+	}
+	if q.Port == "" && q.PortLabel == "" {
+		return NewErrInvalidQuery(albName,
+			"one of 'port' or 'port_label' is required for the gcp provider, "+
+				"because instances have addresses but no port")
+	}
+	if q.Port != "" && !validPortNumber(q.Port) {
+		return NewErrInvalidQuery(albName,
+			"'port' must be a port number between 1 and 65535")
 	}
 	if slices.Contains(q.Tags, "") {
 		return NewErrInvalidQuery(albName, "'tags' entries cannot be empty")

@@ -18,60 +18,44 @@ package options
 
 import (
 	"fmt"
+
+	derrors "github.com/trickstercache/trickster/v2/pkg/discovery/errors"
 )
 
-// InvalidDiscoveryOptionsError is an error type for invalid discoverer Options
-type InvalidDiscoveryOptionsError struct {
-	error
-}
+// The errors below are the ones this package owns: the discoverer-level
+// checks, and the shared 'http' block. An error for a provider's own
+// options block belongs to that provider's options package -- see, for
+// example, gcpopts.NewErrInvalidOptions -- so that adding a provider does
+// not mean editing this file.
 
 // NewErrInvalidDiscovererName returns an error for an unusable discoverer name
 func NewErrInvalidDiscovererName(name string) error {
-	return &InvalidDiscoveryOptionsError{
-		error: fmt.Errorf(`invalid discoverer name %q`, name),
-	}
+	return derrors.Newf(`invalid discoverer name %q`, name)
 }
 
 // NewErrMissingDiscoveryProvider returns an error for a discoverer with no provider
 func NewErrMissingDiscoveryProvider(name string) error {
-	return &InvalidDiscoveryOptionsError{
-		error: fmt.Errorf(`missing provider for discoverer %q`, name),
-	}
+	return derrors.Newf(`missing provider for discoverer %q`, name)
 }
 
 // NewErrInvalidDiscoveryProvider returns an error for an unsupported provider name
 func NewErrInvalidDiscoveryProvider(provider, name string) error {
-	return &InvalidDiscoveryOptionsError{
-		error: fmt.Errorf(`invalid provider %q for discoverer %q`,
-			provider, name),
-	}
+	return derrors.Newf(`invalid provider %q for discoverer %q`, provider, name)
 }
 
 // NewErrInvalidDiscoveryBlock returns an error for a provider-specific options
 // block that does not match the discoverer's provider
 func NewErrInvalidDiscoveryBlock(block, provider, name string) error {
-	return &InvalidDiscoveryOptionsError{
-		error: fmt.Errorf(
-			`the %q options block is not valid for provider %q in discoverer %q`,
-			block, provider, name),
-	}
+	return derrors.Newf(
+		`the %q options block is not valid for provider %q in discoverer %q`,
+		block, provider, name)
 }
 
-// NewErrInvalidKubernetesOptions returns an error for invalid kubernetes
-// connection options
-func NewErrInvalidKubernetesOptions(name, detail string) error {
-	return &InvalidDiscoveryOptionsError{
-		error: fmt.Errorf(`invalid kubernetes options for discoverer %q: %s`,
-			name, detail),
-	}
-}
-
-// NewErrInvalidDNSOptions returns an error for invalid dns resolver options
-func NewErrInvalidDNSOptions(name, detail string) error {
-	return &InvalidDiscoveryOptionsError{
-		error: fmt.Errorf(`invalid dns options for discoverer %q: %s`,
-			name, detail),
-	}
+// NewErrInvalidHTTPOptions returns an error for invalid shared HTTP client
+// options. The 'http' block is defined in this package and shared by every
+// polling provider, so unlike the per-provider blocks it belongs here.
+func NewErrInvalidHTTPOptions(name, detail string) error {
+	return derrors.NewInvalidOptions("http", name, detail)
 }
 
 // InvalidQueryError is an error type for an invalid alb.discovery query
@@ -94,57 +78,5 @@ func NewErrInvalidQueryField(albName, fieldName, provider string) error {
 		error: fmt.Errorf(
 			`invalid discovery query for alb %q: %q is not valid for the %s provider`,
 			albName, fieldName, provider),
-	}
-}
-
-// NewErrInvalidFileOptions returns an error for invalid file provider options
-func NewErrInvalidFileOptions(name, detail string) error {
-	return &InvalidDiscoveryOptionsError{
-		error: fmt.Errorf(`invalid file options for discoverer %q: %s`,
-			name, detail),
-	}
-}
-
-// NewErrInvalidHTTPOptions returns an error for invalid shared HTTP client
-// options
-func NewErrInvalidHTTPOptions(name, detail string) error {
-	return &InvalidDiscoveryOptionsError{
-		error: fmt.Errorf(`invalid http options for discoverer %q: %s`,
-			name, detail),
-	}
-}
-
-// NewErrInvalidHTTPSDOptions returns an error for invalid http_sd provider
-// options
-func NewErrInvalidHTTPSDOptions(name, detail string) error {
-	return &InvalidDiscoveryOptionsError{
-		error: fmt.Errorf(`invalid http_sd options for discoverer %q: %s`,
-			name, detail),
-	}
-}
-
-// NewErrInvalidConsulOptions returns an error for invalid consul provider
-// options
-func NewErrInvalidConsulOptions(name, detail string) error {
-	return &InvalidDiscoveryOptionsError{
-		error: fmt.Errorf(`invalid consul options for discoverer %q: %s`,
-			name, detail),
-	}
-}
-
-// NewErrInvalidNomadOptions returns an error for invalid nomad provider
-// options
-func NewErrInvalidNomadOptions(name, detail string) error {
-	return &InvalidDiscoveryOptionsError{
-		error: fmt.Errorf(`invalid nomad options for discoverer %q: %s`,
-			name, detail),
-	}
-}
-
-// NewErrInvalidAWSOptions returns an error for invalid aws provider options
-func NewErrInvalidAWSOptions(name, detail string) error {
-	return &InvalidDiscoveryOptionsError{
-		error: fmt.Errorf(`invalid aws options for discoverer %q: %s`,
-			name, detail),
 	}
 }

@@ -87,11 +87,21 @@ Fill `discovery.Member` as completely as your source allows:
 
 1. **Name it** in [pkg/discovery/providers](../../pkg/discovery/providers/providers.go):
    add the constant and include it in `supported`.
-2. **Connection options**, if any, go in
+2. **Connection options**, if any, go in their own
+   `pkg/discovery/<provider>/options` package, and are referenced from
    [pkg/discovery/options](../../pkg/discovery/options/options.go) as a new
    optional block on `Options` (like `kubernetes:` / `dns:`), with
    `Initialize` defaults and `Validate` rules (reject the block on other
    providers' entries, and other providers' blocks on yours).
+
+   Your options package also owns its `NewErrInvalidOptions(name, detail)`,
+   defined in its `options.go` and built from
+   [pkg/discovery/errors](../../pkg/discovery/errors/errors.go), so the base
+   options package holds no per-provider constructors. That shared leaf
+   package exists to break a cycle — `pkg/discovery/options` imports every
+   provider's options package, so a provider's options package cannot import
+   it back — which is why the error *type* lives outside both. Keep
+   `pkg/discovery/errors` free of Trickster imports.
 3. **Query fields**: extend `options.Query` only if an existing field
    cannot express your selection, then add a `validate<Provider>` method
    dispatched from `Query.Validate`, enforcing per-provider field usage so
@@ -167,13 +177,5 @@ Two packages exist so that providers do not each re-derive them:
 
 ## Roadmap providers
 
-Candidates from the issue #609 thread, in likely priority order: `aws`
-(`service: ec2`, then `ecs`), `gce`, `docker`, `azure`. Until each lands,
-its users are served by:
-
-- the `http_sd` provider — any external SD can serve the member list over
-  HTTP, in Trickster's native format or Prometheus's; or
-- the `file` provider — the same documents on disk, via cron, sidecar, or
-  consul-template; or
-- `dns_srv` / `dns_a` — Consul's DNS interface, cloud private DNS zones,
-  and Docker's embedded DNS all work today with no new code.
+Candidates from the issue #609 thread, in likely priority order: `docker`
+and `azure`. 

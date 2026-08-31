@@ -16,7 +16,7 @@ There are several discovery providers supported by Trickster
 * DNS A/AAAA records (`dns_a`)
 * Watched member-list file (`file`)
 
-Support for additional providers (consul, ec2, gce, etcd, docker) is
+Support for additional providers (consul, ec2, gcp, etcd, docker) is
 planned; until each lands, its users are generally served by the `file`
 provider (any external service-discovery tool can emit the member list) or
 by the DNS providers (e.g., Consul's DNS interface, cloud private DNS
@@ -95,6 +95,7 @@ that provider's connection-level block:
 | `consul` | `http` + `consul` | connection settings in the shared `http` block; `consul.datacenter`, `namespace`, `partition`, `wait`, `allow_stale`, `only_passing`, `warning_is_ready` |
 | `nomad` | `http` + `nomad` | connection settings in the shared `http` block; `nomad.namespace`, `region`, `wait`, `allow_stale` |
 | `aws` | `aws` (+ optional `http`) | `aws.service` (**required**: `ec2` or `ecs`), `region`, and the credential fields; the endpoint is derived, so `http.endpoint` is an optional override |
+| `gcp` | `gcp` (+ optional `http`) | `gcp.service` (required; `gce`), `gcp.project` (from the metadata server when unset) and `credentials_file`; the endpoint is the Compute API, so `http.endpoint` is an optional override |
 
 A block is only valid on its own provider's entries; anything else fails
 startup.
@@ -894,3 +895,101 @@ tag becomes the member name, falling back to the task id.
 **Churn.** A task that disappears between `ListTasks` and `DescribeTasks` is
 ordinary churn; it is reported as an exclusion rather than silently
 shrinking the pool.
+
+### The `gcp` Provider
+
+`gcp` reads a Google Cloud API named by **`gcp.service`**. The provider is
+named for the cloud rather than for Compute Engine, matching `aws` — Google
+Cloud APIs outside Compute Engine belong here too, and would sit oddly under
+a provider called `gce`.
+
+`service` is **required** even though `gce` is the only value today. A
+default added now could never be removed, and every service added later
+would then be reached by opting out of a value the operator never chose.
+
+A value names the **product** an operator would recognize, not the API that
+serves it — the same convention as `aws.service`. That matters here: Cloud
+Load Balancing is served by the Compute API alongside instances, so naming
+these for the API would collide where naming them for the product does not.
+
+#### `service: gce`
+
+Discovers Google Compute Engine instances through the Compute API's
+`instances.aggregatedList`, which covers **every zone in the project** in
+one paged call — so no zone list has to be configured or kept current.
+
+```yaml
+discovery:
+  fleet:
+    provider: gcp
+    gcp:
+      service: gce               # required
+      project: my-project        # from the metadata server when unset
+      # credentials_file: /etc/trickster/sa.json   # ADC when unset
+    http:
+      interval: 60s              # instance inventories change slowly
+
+backends:
+  prom-alb:
+    provider: alb
+    alb:
+      discovery:
+        discoverer_name: fleet
+        template_backend: prom-template
+        query:
+          filter: 'labels.role = "prometheus" AND status = "RUNNING"'
+          tags: [http-server]     # network tags, matched on presence
+          port_label: port        # instance label, or metadata key
+          address_type: private   # private (default), public, or ipv6
+          # port: 9090            # or a static port for every member
+          # replica_group_label: shard
+```
+
+**Credentials.** Leaving `credentials_file` empty selects **Application
+Default Credentials**: `GOOGLE_APPLICATION_CREDENTIALS`, gcloud user
+credentials, **Workload Identity on GKE**, or the instance metadata server
+on GCE. Prefer those over a key file wherever the platform offers one.
+Credentials resolve lazily and only successes are cached, so Trickster
+starts even when the metadata server is briefly unreachable and a momentary
+failure does not permanently disable discovery.
+
+`credentials_file` must be a **service account** key. The credential type is
+required rather than taken from the file: an `external_account` or
+`impersonated_service_account` configuration can name an arbitrary token URL
+or local executable, so accepting whichever type a file happens to declare
+would hand credential resolution somewhere unintended. For user credentials,
+use ADC instead of this field.
+
+The IAM principal needs **`compute.instances.list`** on the project — the
+`roles/compute.viewer` role includes it. The OAuth scope requested is
+`compute.readonly`; Trickster never mutates a project.
+
+**Project.** Taken from `gcp.project`, then from the credentials, then from
+the metadata server when Trickster runs on GCE. It is deliberately not
+required in config, because reading it from the metadata server is the
+idiomatic deployment.
+
+**Hosts, not endpoints**, exactly as for `aws` `service: ec2`:
+`address_type` chooses the address and `port`/`port_label` supplies the
+port, with the label winning per instance and the static port as fallback.
+**`port_label` reads an instance label first, then instance metadata** —
+both are key/value namespaces on a GCE instance, and a deployment already
+carrying the value in metadata does not have to move it.
+
+**Instance status.** `RUNNING` is `Ready`; `PROVISIONING`, `STAGING` and
+`REPAIRING` are `NotReady`; `STOPPING`, `SUSPENDING`, `SUSPENDED` and
+`TERMINATED` are **omitted entirely**, so instances drain from pools before
+they stop answering. A status a future Compute Engine release introduces is
+treated as not-ready rather than assumed healthy.
+
+**Selection.** `filter` is a GCE filter expression, evaluated server-side.
+`tags` matches GCE **network tags**, which are names without values, so it
+filters on presence. Requests set `returnPartialSuccess`, so one unreachable
+zone contributes no instances rather than failing the whole refresh.
+
+**Labels.** Members carry `instance_id`, `instance_name`, `status`, `zone`,
+`machine_type`, `network`, `subnetwork`, `private_ip`, `public_ip`, and
+`tags` (comma-bracketed). Instance labels are carried as `label_<key>`,
+prefixed so a user-defined label cannot shadow a Trickster-assigned one.
+Resource URLs are shortened to their last segment, since a member label full
+of `https://www.googleapis.com/compute/v1/...` is unreadable.

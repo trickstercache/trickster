@@ -27,6 +27,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/discovery/consul"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/dns"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/file"
+	"github.com/trickstercache/trickster/v2/pkg/discovery/gcp"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/httpsd"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/kubernetes"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/nomad"
@@ -47,6 +48,7 @@ func SupportedProviders() discovery.Lookup {
 		providers.Consul:     consul.New,
 		providers.Nomad:      nomad.New,
 		providers.AWS:        awssd.New,
+		providers.GCP:        gcp.New,
 	}
 }
 

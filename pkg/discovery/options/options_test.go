@@ -25,6 +25,7 @@ import (
 	consulopts "github.com/trickstercache/trickster/v2/pkg/discovery/consul/options"
 	dnsopts "github.com/trickstercache/trickster/v2/pkg/discovery/dns/options"
 	fileopts "github.com/trickstercache/trickster/v2/pkg/discovery/file/options"
+	gcpopts "github.com/trickstercache/trickster/v2/pkg/discovery/gcp/options"
 	httpsdopts "github.com/trickstercache/trickster/v2/pkg/discovery/httpsd/options"
 	kubeopts "github.com/trickstercache/trickster/v2/pkg/discovery/kubernetes/options"
 	nomadopts "github.com/trickstercache/trickster/v2/pkg/discovery/nomad/options"
@@ -681,5 +682,79 @@ func TestAWSOptions(t *testing.T) {
 		b, err := yaml.Marshal(o)
 		require.NoError(t, err)
 		require.NotContains(t, string(b), "super-secret")
+	})
+}
+
+func TestGCPOptions(t *testing.T) {
+	base := func() *Options {
+		return &Options{
+			Name:     "test",
+			Provider: providers.GCP,
+			GCP: &gcpopts.Options{
+				Service: gcpopts.ServiceGCE,
+				Project: "my-project",
+			},
+		}
+	}
+	// service is required even though only one value exists today: a default
+	// added now could never be removed, and every later service would be
+	// reached by opting out of a value the operator never chose
+	t.Run("service is required", func(t *testing.T) {
+		o := base()
+		o.GCP.Service = ""
+		require.NoError(t, o.Initialize("test"))
+		require.Empty(t, o.GCP.Service, "there is no default service")
+		_, err := o.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "'service' is required")
+
+		o = base()
+		o.GCP.Service = "instances"
+		require.NoError(t, o.Initialize("test"))
+		_, err = o.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "'service' must be one of")
+	})
+	// gcp derives its endpoint, so the shared http block is optional here
+	// as it is for aws
+	t.Run("http endpoint is optional", func(t *testing.T) {
+		o := base()
+		require.NoError(t, o.Initialize("test"))
+		require.NotNil(t, o.HTTP)
+		require.Empty(t, o.HTTP.Endpoint)
+		ok, err := o.Validate()
+		require.NoError(t, err)
+		require.True(t, ok)
+		require.True(t, providers.DerivesEndpoint(providers.GCP))
+	})
+	// project is not required in config: on a GCE instance it comes from
+	// the metadata server, which is the idiomatic deployment
+	t.Run("project is optional in config", func(t *testing.T) {
+		o := base()
+		o.GCP.Project = ""
+		require.NoError(t, o.Initialize("test"))
+		ok, err := o.Validate()
+		require.NoError(t, err)
+		require.True(t, ok)
+	})
+	t.Run("block rejected on other providers", func(t *testing.T) {
+		for _, p := range []string{providers.AWS, providers.File, providers.Consul} {
+			o := &Options{Name: "test", Provider: p,
+				GCP: &gcpopts.Options{Service: gcpopts.ServiceGCE}}
+			_, err := o.Validate()
+			require.Error(t, err, "gcp block should be rejected on %s", p)
+		}
+	})
+	t.Run("initialize defaults the block itself", func(t *testing.T) {
+		o := &Options{Name: "test", Provider: providers.GCP}
+		require.NoError(t, o.Initialize("test"))
+		require.NotNil(t, o.GCP)
+	})
+	t.Run("clone is deep", func(t *testing.T) {
+		o := base()
+		c := o.Clone()
+		require.NotSame(t, o.GCP, c.GCP)
+		c.GCP.Project = "other"
+		require.Equal(t, "my-project", o.GCP.Project)
 	})
 }

@@ -364,3 +364,35 @@ func TestQueryValidateAWSPerService(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "'port' or 'port_label'")
 }
+
+func TestQueryValidateGCP(t *testing.T) {
+	o := &Options{Provider: providers.GCP}
+	require.NoError(t, (&Query{Port: "9090"}).Validate("alb", o))
+	require.NoError(t, (&Query{PortLabel: "port"}).Validate("alb", o))
+	require.NoError(t, (&Query{
+		Port: "9090", AddressType: AddressPublic, Scheme: SchemeHTTPS,
+		Filter: `labels.env = "prod"`, Tags: []string{"http-server"},
+		ReplicaGroupLabel: "shard",
+	}).Validate("alb", o))
+
+	// like ec2, an instance is a host rather than an endpoint
+	err := (&Query{}).Validate("alb", o)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "'port' or 'port_label'")
+
+	err = (&Query{Port: "9090", AddressType: "elastic"}).Validate("alb", o)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "private, public or ipv6")
+
+	err = (&Query{Port: "70000"}).Validate("alb", o)
+	require.Error(t, err)
+
+	err = (&Query{Port: "9090", Tags: []string{""}}).Validate("alb", o)
+	require.Error(t, err)
+
+	// gcp takes an expression filter, not the name/values form ec2 uses
+	err = (&Query{Port: "9090",
+		Filters: map[string][]string{"tag:env": {"prod"}}}).Validate("alb", o)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "filters")
+}

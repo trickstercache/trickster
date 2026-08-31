@@ -906,7 +906,7 @@ backends:
 # discovery: # top-level section of named discoverers; multiple ALBs can share one
 #   in-cluster:
 #     provider: kubernetes # kubernetes, dns_srv, dns_a, file, http_sd, consul,
-#                          # nomad, or aws
+#                          # nomad, aws, or gcp
 #     kubernetes:
 #       in_cluster: true # use the pod's service account (default)
 #       # kubeconfig: /path/to/kubeconfig # or run against a remote cluster
@@ -968,6 +968,16 @@ backends:
 #       # role_arn: arn:aws:iam::123456789012:role/TricksterDiscovery
 #     http:
 #       interval: 60s     # instance inventories change slowly
+#   gcp-fleet:
+#     provider: gcp
+#     gcp:
+#       service: gce # REQUIRED: the google cloud product to read
+#       project: my-project # read from the metadata server when unset
+#       # credentials_file: /etc/trickster/sa.json # must be a service
+#       #   account key; omit to use application default credentials
+#       #   (workload identity on gke, the instance service account on gce)
+#     http:
+#       interval: 60s
 #
 # backends:
 #   prom-template:
