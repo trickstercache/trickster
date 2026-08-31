@@ -22,12 +22,15 @@
 package options
 
 import (
+	"maps"
 	"net"
+	"net/url"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/providers"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+	to "github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 
 	"go.yaml.in/yaml/v3"
@@ -50,6 +53,9 @@ type Options struct {
 	DNS *DNSOptions `yaml:"dns,omitempty"`
 	// File provides change-detection settings when Provider is 'file'
 	File *FileOptions `yaml:"file,omitempty"`
+	// HTTP provides the outbound client settings shared by every provider
+	// that discovers members by polling an HTTP endpoint
+	HTTP *HTTPOptions `yaml:"http,omitempty"`
 	//
 	// synthetic values
 	// Name is the name of the discoverer, taken from the key in the Lookup map
@@ -91,6 +97,63 @@ type FileOptions struct {
 	PollInterval timeconv.Duration `yaml:"poll_interval,omitempty"`
 }
 
+// HTTPOptions defines the outbound HTTP client settings for a discoverer
+// whose provider polls an HTTP endpoint. It is deliberately shared rather
+// than per-provider: every HTTP-based provider needs the same endpoint,
+// cadence, TLS and credential vocabulary, and an operator configuring two
+// of them should not have to learn it twice.
+//
+// Deadlines have one owner. Timeout bounds a single poll by way of the
+// poller's iteration context; there is no separate client timeout that
+// could truncate a provider's long-poll from underneath it.
+type HTTPOptions struct {
+	// Endpoint is the base URL of the service to poll (scheme://host[:port])
+	Endpoint string `yaml:"endpoint,omitempty"`
+	// Interval is the poll cadence
+	Interval timeconv.Duration `yaml:"interval,omitempty"`
+	// Timeout bounds a single poll. Providers using blocking queries, whose
+	// server-side wait is part of a normal poll, need this comfortably
+	// above that wait.
+	Timeout timeconv.Duration `yaml:"timeout,omitempty"`
+	// TLS configures outbound client TLS: mutual-auth client certificate,
+	// additional Certificate Authorities, and the verification escape hatch
+	TLS *to.Options `yaml:"tls,omitempty"`
+	// Headers are set on every request. Registries whose credential is a
+	// bespoke header (Consul's X-Consul-Token, Nomad's X-Nomad-Token) use
+	// this rather than a per-provider field.
+	Headers types.EnvStringMap `yaml:"headers,omitempty"`
+	// Username and Password form a static HTTP Basic credential; mutually
+	// exclusive with the bearer-token fields
+	Username string `yaml:"username,omitempty"`
+	Password string `yaml:"password,omitempty"`
+	// BearerToken is sent as 'Authorization: Bearer <token>'; mutually
+	// exclusive with username/password and with BearerTokenFile
+	BearerToken string `yaml:"bearer_token,omitempty"`
+	// BearerTokenFile is a path read for the bearer token before each poll,
+	// so that a rotated credential (a Vault-issued Consul token, a
+	// projected kubernetes service-account token) is picked up without a
+	// restart. Preferred over BearerToken for anything that expires.
+	BearerTokenFile string `yaml:"bearer_token_file,omitempty"`
+	// FollowRedirects allows the client to follow redirects. It defaults
+	// false: a discoverer wants the answer from the endpoint it was
+	// pointed at, and a redirect elsewhere is a fact to surface rather than
+	// to chase.
+	FollowRedirects bool `yaml:"follow_redirects,omitempty"`
+}
+
+const (
+	// DefaultHTTPInterval is the default poll cadence for HTTP-based
+	// discovery providers
+	DefaultHTTPInterval = 30 * time.Second
+	// MinimumHTTPInterval is the lowest permitted HTTP poll cadence
+	MinimumHTTPInterval = time.Second
+	// DefaultHTTPTimeout is the default single-poll timeout for HTTP-based
+	// discovery providers
+	DefaultHTTPTimeout = 10 * time.Second
+	// MinimumHTTPTimeout is the lowest permitted single-poll timeout
+	MinimumHTTPTimeout = time.Millisecond * 100
+)
+
 const (
 	// DefaultDNSInterval is the default DNS poll cadence
 	DefaultDNSInterval = 30 * time.Second
@@ -122,6 +185,15 @@ func (o *Options) Clone() *Options {
 	if o.File != nil {
 		out.File = pointers.Clone(o.File)
 	}
+	if o.HTTP != nil {
+		out.HTTP = pointers.Clone(o.HTTP)
+		if o.HTTP.TLS != nil {
+			out.HTTP.TLS = o.HTTP.TLS.Clone()
+		}
+		if o.HTTP.Headers != nil {
+			out.HTTP.Headers = maps.Clone(o.HTTP.Headers)
+		}
+	}
 	return out
 }
 
@@ -152,6 +224,14 @@ func (o *Options) Initialize(name string) error {
 			o.File.PollInterval = timeconv.Duration(DefaultFilePollInterval)
 		}
 	}
+	if o.HTTP != nil {
+		if o.HTTP.Interval == 0 {
+			o.HTTP.Interval = timeconv.Duration(DefaultHTTPInterval)
+		}
+		if o.HTTP.Timeout == 0 {
+			o.HTTP.Timeout = timeconv.Duration(DefaultHTTPTimeout)
+		}
+	}
 	return nil
 }
 
@@ -171,6 +251,12 @@ func (o *Options) Validate() (bool, error) {
 	}
 	if o.File != nil && o.Provider != providers.File {
 		return false, NewErrInvalidDiscoveryBlock("file", o.Provider, o.Name)
+	}
+	if o.HTTP != nil && !providers.IsHTTPProvider(o.Provider) {
+		return false, NewErrInvalidDiscoveryBlock("http", o.Provider, o.Name)
+	}
+	if err := o.validateHTTP(); err != nil {
+		return false, err
 	}
 	if o.File != nil && o.File.PollInterval != 0 &&
 		time.Duration(o.File.PollInterval) < MinimumFilePollInterval {
@@ -195,6 +281,51 @@ func (o *Options) Validate() (bool, error) {
 		}
 	}
 	return true, nil
+}
+
+// validateHTTP validates the shared HTTP client options.
+func (o *Options) validateHTTP() error {
+	h := o.HTTP
+	if h == nil {
+		return nil
+	}
+	if h.Endpoint == "" {
+		return NewErrInvalidHTTPOptions(o.Name, "'endpoint' is required")
+	}
+	u, err := url.Parse(h.Endpoint)
+	if err != nil {
+		return NewErrInvalidHTTPOptions(o.Name, "'endpoint' is not a valid url")
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return NewErrInvalidHTTPOptions(o.Name,
+			"'endpoint' must be an http or https url")
+	}
+	if u.Host == "" {
+		return NewErrInvalidHTTPOptions(o.Name, "'endpoint' must include a host")
+	}
+	if h.Interval != 0 && time.Duration(h.Interval) < MinimumHTTPInterval {
+		return NewErrInvalidHTTPOptions(o.Name, "'interval' must be at least 1s")
+	}
+	if h.Timeout != 0 && time.Duration(h.Timeout) < MinimumHTTPTimeout {
+		return NewErrInvalidHTTPOptions(o.Name, "'timeout' must be at least 100ms")
+	}
+	// credentials are mutually exclusive: silently preferring one over the
+	// other is how an operator ends up debugging a 401 against a config
+	// that looks correct
+	hasBasic := h.Username != "" || h.Password != ""
+	hasBearer := h.BearerToken != "" || h.BearerTokenFile != ""
+	if hasBasic && hasBearer {
+		return NewErrInvalidHTTPOptions(o.Name,
+			"'username'/'password' is mutually exclusive with 'bearer_token'/'bearer_token_file'")
+	}
+	if h.BearerToken != "" && h.BearerTokenFile != "" {
+		return NewErrInvalidHTTPOptions(o.Name,
+			"'bearer_token' and 'bearer_token_file' are mutually exclusive")
+	}
+	if h.Password != "" && h.Username == "" {
+		return NewErrInvalidHTTPOptions(o.Name, "'password' requires 'username'")
+	}
+	return nil
 }
 
 // Initialize initializes each discoverer Options in the Lookup, assigning

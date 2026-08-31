@@ -95,6 +95,36 @@ that provider's connection-level block:
 A block is only valid on its own provider's entries; anything else fails
 startup.
 
+#### The shared `http` block
+
+Providers that discover members by polling an HTTP endpoint share one
+connection block rather than each defining its own, so that configuring a
+second such provider does not mean learning a second vocabulary. No
+provider uses it yet — it arrives with the HTTP-based providers — and until
+one does, an `http` block is rejected at startup like any other misplaced
+block.
+
+| option | meaning |
+| ----- | ----- |
+| `endpoint` | base URL of the service to poll (`http`/`https`, host required) |
+| `interval` | poll cadence (default 30s, min 1s) |
+| `timeout` | bound on a single poll (default 10s, min 100ms) |
+| `tls` | outbound client TLS: `client_cert_path`/`client_key_path`, `certificate_authority_paths`, `insecure_skip_verify` |
+| `headers` | headers set on every request; where a registry's credential is a bespoke header (`X-Consul-Token`, `X-Nomad-Token`), it goes here |
+| `username`, `password` | static HTTP Basic credential |
+| `bearer_token` | sent as `Authorization: Bearer <token>` |
+| `bearer_token_file` | path re-read before each poll, so a rotated credential is picked up without a restart — prefer this over `bearer_token` for anything that expires |
+| `follow_redirects` | default false; a redirect away from the configured endpoint is surfaced rather than chased |
+
+`username`/`password` and the bearer-token fields are mutually exclusive,
+as are the two bearer-token forms: a config that sets both fails startup
+instead of silently preferring one, which is how an operator ends up
+debugging a 401 against a config that looks correct.
+
+Providers whose normal poll includes a server-side wait (blocking queries)
+need `timeout` comfortably above that wait. There is no second,
+client-level timeout underneath it that could cut a long poll short.
+
 ### Template Backends
 
 The `template_backend` is an ordinary backend definition marked

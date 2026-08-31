@@ -104,3 +104,12 @@ func NewErrInvalidFileOptions(name, detail string) error {
 			name, detail),
 	}
 }
+
+// NewErrInvalidHTTPOptions returns an error for invalid shared HTTP client
+// options
+func NewErrInvalidHTTPOptions(name, detail string) error {
+	return &InvalidDiscoveryOptionsError{
+		error: fmt.Errorf(`invalid http options for discoverer %q: %s`,
+			name, detail),
+	}
+}

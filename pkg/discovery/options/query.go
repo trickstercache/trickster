@@ -21,6 +21,7 @@ import (
 	"strconv"
 
 	"github.com/trickstercache/trickster/v2/pkg/discovery/providers"
+	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
 // Kubernetes query kinds
@@ -90,14 +91,90 @@ func (q *Query) Clone() *Query {
 	return &out
 }
 
-// Validate validates the Query against the provider of the discoverer it
-// will be submitted to, applying provider defaults (e.g., kubernetes kind)
-// to unset fields. albName is used for error context.
-func (q *Query) Validate(albName, provider string) error {
+// Query field names as they appear in config. They are constants because
+// each is named twice -- once in queryFields, once in every provider's
+// accepted set -- and a typo in the second place would silently make the
+// field unacceptable everywhere.
+const (
+	fieldKind              = "kind"
+	fieldNamespace         = "namespace"
+	fieldService           = "service"
+	fieldSelector          = "selector"
+	fieldPort              = "port"
+	fieldReplicaGroupLabel = "replica_group_label"
+	fieldSRVName           = "srv_name"
+	fieldHostname          = "hostname"
+	fieldPath              = "path"
+	fieldScheme            = "scheme"
+)
+
+// queryField pairs a Query field's config name with a reader, so that
+// validation can ask "is this set" without reflection.
+type queryField struct {
+	name  string
+	isSet func(*Query) bool
+}
+
+// queryFields enumerates every Query field. Validation is expressed as
+// "which fields does this provider accept" rather than, per provider,
+// "which of the other providers' fields must be unset". The latter is
+// O(providers x fields) to maintain, and its failure mode is silent: a
+// field added without touching every other provider's validator becomes
+// quietly legal everywhere. With a roster of providers still to land, the
+// table is the difference between a one-line change and eight.
+var queryFields = []queryField{
+	{fieldKind, func(q *Query) bool { return q.Kind != "" }},
+	{fieldNamespace, func(q *Query) bool { return q.Namespace != "" }},
+	{fieldService, func(q *Query) bool { return q.Service != "" }},
+	{fieldSelector, func(q *Query) bool { return len(q.Selector) > 0 }},
+	{fieldPort, func(q *Query) bool { return q.Port != "" }},
+	{fieldReplicaGroupLabel, func(q *Query) bool { return q.ReplicaGroupLabel != "" }},
+	{fieldSRVName, func(q *Query) bool { return q.SRVName != "" }},
+	{fieldHostname, func(q *Query) bool { return q.Hostname != "" }},
+	{fieldPath, func(q *Query) bool { return q.Path != "" }},
+	{fieldScheme, func(q *Query) bool { return q.Scheme != "" }},
+}
+
+// providerQueryFields names the query fields each provider accepts. A field
+// set but not listed here for the discoverer's provider fails startup
+// rather than being silently ignored. New providers register their
+// accepted fields here; new fields are added to queryFields above and to
+// the accepting providers here.
+var providerQueryFields = map[string]sets.Set[string]{
+	providers.Kubernetes: sets.New([]string{
+		fieldKind, fieldNamespace, fieldService, fieldSelector, fieldPort,
+		fieldReplicaGroupLabel, fieldScheme,
+	}),
+	providers.DNSSRV: sets.New([]string{fieldSRVName, fieldScheme}),
+	providers.DNSA:   sets.New([]string{fieldHostname, fieldPort, fieldScheme}),
+	providers.File:   sets.New([]string{fieldPath}),
+}
+
+// Validate validates the Query against the discoverer it will be submitted
+// to, applying provider defaults (e.g., kubernetes kind) to unset fields.
+// albName is used for error context.
+//
+// It takes the whole discoverer Options rather than just a provider name
+// because which query fields are legal is not always a function of the
+// provider alone: the forthcoming 'aws' provider accepts different fields
+// per aws.service, and that lives on the Options.
+func (q *Query) Validate(albName string, o *Options) error {
+	if o == nil {
+		return NewErrInvalidQuery(albName, "no discoverer options provided")
+	}
 	if q.Scheme != "" && q.Scheme != SchemeHTTP && q.Scheme != SchemeHTTPS {
 		return NewErrInvalidQuery(albName, "'scheme' must be http or https")
 	}
-	switch provider {
+	accepted, ok := providerQueryFields[o.Provider]
+	if !ok {
+		return NewErrInvalidQuery(albName, "unknown discovery provider "+o.Provider)
+	}
+	for _, f := range queryFields {
+		if f.isSet(q) && !accepted.Contains(f.name) {
+			return NewErrInvalidQueryField(albName, f.name, o.Provider)
+		}
+	}
+	switch o.Provider {
 	case providers.Kubernetes:
 		return q.validateKubernetes(albName)
 	case providers.DNSSRV:
@@ -107,15 +184,12 @@ func (q *Query) Validate(albName, provider string) error {
 	case providers.File:
 		return q.validateFile(albName)
 	}
-	return NewErrInvalidQuery(albName, "unknown discovery provider "+provider)
+	return NewErrInvalidQuery(albName, "unknown discovery provider "+o.Provider)
 }
 
+// validateKubernetes applies the rules the accepted-field table cannot
+// express: the kind default, and which fields each kind requires.
 func (q *Query) validateKubernetes(albName string) error {
-	if err := q.requireUnset(albName, providers.Kubernetes,
-		field{"srv_name", q.SRVName}, field{"hostname", q.Hostname},
-		field{"path", q.Path}); err != nil {
-		return err
-	}
 	if q.Kind == "" {
 		q.Kind = KindEndpointSlices
 	}
@@ -146,16 +220,6 @@ func (q *Query) validateKubernetes(albName string) error {
 }
 
 func (q *Query) validateDNSSRV(albName string) error {
-	if err := q.requireUnset(albName, providers.DNSSRV,
-		field{"kind", q.Kind}, field{"namespace", q.Namespace},
-		field{"service", q.Service}, field{"hostname", q.Hostname},
-		field{"path", q.Path}, field{"port", q.Port},
-		field{"replica_group_label", q.ReplicaGroupLabel}); err != nil {
-		return err
-	}
-	if len(q.Selector) > 0 {
-		return NewErrInvalidQueryField(albName, "selector", providers.DNSSRV)
-	}
 	if q.SRVName == "" {
 		return NewErrInvalidQuery(albName,
 			"'srv_name' is required for the dns_srv provider")
@@ -164,16 +228,6 @@ func (q *Query) validateDNSSRV(albName string) error {
 }
 
 func (q *Query) validateDNSA(albName string) error {
-	if err := q.requireUnset(albName, providers.DNSA,
-		field{"kind", q.Kind}, field{"namespace", q.Namespace},
-		field{"service", q.Service}, field{"srv_name", q.SRVName},
-		field{"path", q.Path},
-		field{"replica_group_label", q.ReplicaGroupLabel}); err != nil {
-		return err
-	}
-	if len(q.Selector) > 0 {
-		return NewErrInvalidQueryField(albName, "selector", providers.DNSA)
-	}
 	if q.Hostname == "" {
 		return NewErrInvalidQuery(albName,
 			"'hostname' is required for the dns_a provider")
@@ -190,34 +244,9 @@ func (q *Query) validateDNSA(albName string) error {
 }
 
 func (q *Query) validateFile(albName string) error {
-	if err := q.requireUnset(albName, providers.File,
-		field{"kind", q.Kind}, field{"namespace", q.Namespace},
-		field{"service", q.Service}, field{"srv_name", q.SRVName},
-		field{"hostname", q.Hostname}, field{"port", q.Port},
-		field{"scheme", q.Scheme},
-		field{"replica_group_label", q.ReplicaGroupLabel}); err != nil {
-		return err
-	}
-	if len(q.Selector) > 0 {
-		return NewErrInvalidQueryField(albName, "selector", providers.File)
-	}
 	if q.Path == "" {
 		return NewErrInvalidQuery(albName,
 			"'path' is required for the file provider")
-	}
-	return nil
-}
-
-type field struct {
-	name  string
-	value string
-}
-
-func (q *Query) requireUnset(albName, provider string, fields ...field) error {
-	for _, f := range fields {
-		if f.value != "" {
-			return NewErrInvalidQueryField(albName, f.name, provider)
-		}
 	}
 	return nil
 }

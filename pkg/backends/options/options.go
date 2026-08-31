@@ -640,7 +640,7 @@ func (l Lookup) ValidateDiscovery(dl do.Lookup) error {
 		if !ok || disc == nil {
 			return NewErrInvalidDiscovererName(d.DiscovererName, o.Name)
 		}
-		if err := d.Query.Validate(o.Name, disc.Provider); err != nil {
+		if err := d.Query.Validate(o.Name, disc); err != nil {
 			return err
 		}
 		t, ok := l[d.TemplateBackend]

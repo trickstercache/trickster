@@ -35,6 +35,20 @@ const (
 
 var supported = sets.New([]string{Kubernetes, DNSSRV, DNSA, File})
 
+// httpProviders are the providers that discover members by polling an HTTP
+// endpoint, and so accept the shared 'http' options block. It is empty
+// until the first such provider lands (http_sd), at which point that
+// provider's name is added here alongside its entry in supported. A
+// provider that polls HTTP but forgets to register here will have its
+// 'http' config block rejected at startup.
+var httpProviders = sets.New([]string{})
+
+// IsHTTPProvider returns true if the named provider polls an HTTP endpoint
+// and therefore accepts the shared 'http' discoverer options block
+func IsHTTPProvider(name string) bool {
+	return httpProviders.Contains(name)
+}
+
 // IsValidProvider returns true if the provided Provider name is a supported
 // autodiscovery provider
 func IsValidProvider(name string) bool {

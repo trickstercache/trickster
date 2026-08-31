@@ -20,8 +20,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/providers"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+	to "github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
 
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v3"
@@ -158,4 +160,170 @@ func TestFileOptions(t *testing.T) {
 	c := o.Clone()
 	c.File.PollInterval = 0
 	require.Equal(t, timeconv.Duration(time.Minute), o.File.PollInterval)
+}
+
+// The shared 'http' block is foundation for the HTTP-polling providers.
+// Until the first of them registers in providers.httpProviders, the block
+// is rejected everywhere -- which is the correct behavior for config naming
+// a capability the binary does not have, and is asserted here so that a
+// provider landing without registering itself fails loudly.
+
+func TestHTTPBlockRejectedOnNonHTTPProviders(t *testing.T) {
+	for _, p := range []string{
+		providers.Kubernetes, providers.DNSSRV, providers.DNSA, providers.File,
+	} {
+		t.Run(p, func(t *testing.T) {
+			o := &Options{
+				Name:     "test",
+				Provider: p,
+				HTTP:     &HTTPOptions{Endpoint: "http://example.com"},
+			}
+			_, err := o.Validate()
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "http")
+		})
+	}
+}
+
+// httpTestOptions builds a discoverer carrying the http block. The block's
+// provider-placement rule is covered separately by
+// TestHTTPBlockRejectedOnNonHTTPProviders; these exercise the contents.
+func httpTestOptions(h *HTTPOptions) *Options {
+	return &Options{Name: "test", HTTP: h}
+}
+
+func TestHTTPOptionsValidation(t *testing.T) {
+	tests := map[string]struct {
+		http    *HTTPOptions
+		wantErr string
+	}{
+		"valid minimal": {
+			&HTTPOptions{Endpoint: "http://example.com:8500"}, "",
+		},
+		"valid https with everything": {
+			&HTTPOptions{
+				Endpoint: "https://example.com",
+				Interval: timeconv.Duration(5 * time.Second),
+				Timeout:  timeconv.Duration(time.Second),
+				Headers:  types.EnvStringMap{"X-Consul-Token": "abc"},
+				Username: "u", Password: "p",
+			}, "",
+		},
+		"missing endpoint": {&HTTPOptions{}, "'endpoint' is required"},
+		"unparsable endpoint": {
+			&HTTPOptions{Endpoint: "://nope"}, "not a valid url",
+		},
+		"non-http scheme": {
+			&HTTPOptions{Endpoint: "ftp://example.com"}, "must be an http or https url",
+		},
+		"no host": {
+			&HTTPOptions{Endpoint: "http:///just/a/path"}, "must include a host",
+		},
+		"interval below minimum": {
+			&HTTPOptions{
+				Endpoint: "http://example.com",
+				Interval: timeconv.Duration(time.Millisecond),
+			}, "'interval' must be at least 1s",
+		},
+		"timeout below minimum": {
+			&HTTPOptions{
+				Endpoint: "http://example.com",
+				Timeout:  timeconv.Duration(time.Millisecond),
+			}, "'timeout' must be at least 100ms",
+		},
+		"basic and bearer together": {
+			&HTTPOptions{
+				Endpoint: "http://example.com",
+				Username: "u", BearerToken: "t",
+			}, "mutually exclusive",
+		},
+		"both bearer forms": {
+			&HTTPOptions{
+				Endpoint:    "http://example.com",
+				BearerToken: "t", BearerTokenFile: "/tmp/t",
+			}, "mutually exclusive",
+		},
+		"password without username": {
+			&HTTPOptions{Endpoint: "http://example.com", Password: "p"},
+			"'password' requires 'username'",
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			err := httpTestOptions(test.http).validateHTTP()
+			if test.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.Error(t, err)
+			require.Contains(t, err.Error(), test.wantErr)
+		})
+	}
+}
+
+func TestHTTPOptionsDefaults(t *testing.T) {
+	o := httpTestOptions(&HTTPOptions{Endpoint: "http://example.com"})
+	require.NoError(t, o.Initialize("test"))
+	require.Equal(t, timeconv.Duration(DefaultHTTPInterval), o.HTTP.Interval)
+	require.Equal(t, timeconv.Duration(DefaultHTTPTimeout), o.HTTP.Timeout)
+
+	// explicit values survive Initialize
+	o = httpTestOptions(&HTTPOptions{
+		Endpoint: "http://example.com",
+		Interval: timeconv.Duration(90 * time.Second),
+		Timeout:  timeconv.Duration(45 * time.Second),
+	})
+	require.NoError(t, o.Initialize("test"))
+	require.Equal(t, timeconv.Duration(90*time.Second), o.HTTP.Interval)
+	require.Equal(t, timeconv.Duration(45*time.Second), o.HTTP.Timeout)
+}
+
+// Clone must be deep: a shallow HTTP pointer would let one discoverer's
+// credential rotation or header edit reach another's config.
+func TestHTTPOptionsCloneIsDeep(t *testing.T) {
+	o := &Options{
+		Name:     "test",
+		Provider: providers.File,
+		HTTP: &HTTPOptions{
+			Endpoint: "http://example.com",
+			Headers:  types.EnvStringMap{"X-Token": "original"},
+			TLS:      &to.Options{InsecureSkipVerify: true},
+		},
+	}
+	c := o.Clone()
+	require.NotSame(t, o.HTTP, c.HTTP)
+	require.NotSame(t, o.HTTP.TLS, c.HTTP.TLS)
+
+	c.HTTP.Endpoint = "http://elsewhere.com"
+	c.HTTP.Headers["X-Token"] = "mutated"
+	c.HTTP.TLS.InsecureSkipVerify = false
+	require.Equal(t, "http://example.com", o.HTTP.Endpoint)
+	require.Equal(t, "original", o.HTTP.Headers["X-Token"])
+	require.True(t, o.HTTP.TLS.InsecureSkipVerify)
+}
+
+func TestHTTPOptionsYAMLRoundTrip(t *testing.T) {
+	const src = `
+provider: file
+http:
+  endpoint: https://consul.example.com:8501
+  interval: 15s
+  timeout: 5s
+  follow_redirects: true
+  headers:
+    X-Consul-Token: secret
+  bearer_token_file: /var/run/token
+  tls:
+    insecure_skip_verify: true
+`
+	var o Options
+	require.NoError(t, yaml.Unmarshal([]byte(src), &o))
+	require.Equal(t, "https://consul.example.com:8501", o.HTTP.Endpoint)
+	require.Equal(t, timeconv.Duration(15*time.Second), o.HTTP.Interval)
+	require.Equal(t, timeconv.Duration(5*time.Second), o.HTTP.Timeout)
+	require.True(t, o.HTTP.FollowRedirects)
+	require.Equal(t, "secret", o.HTTP.Headers["X-Consul-Token"])
+	require.Equal(t, "/var/run/token", o.HTTP.BearerTokenFile)
+	require.NotNil(t, o.HTTP.TLS)
+	require.True(t, o.HTTP.TLS.InsecureSkipVerify)
 }

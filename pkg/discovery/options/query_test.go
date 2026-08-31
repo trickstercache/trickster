@@ -88,7 +88,7 @@ func TestQueryValidate(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			err := tc.q.Validate("test-alb", tc.provider)
+			err := tc.q.Validate("test-alb", &Options{Provider: tc.provider})
 			if tc.ok {
 				require.NoError(t, err)
 			} else {
@@ -100,7 +100,7 @@ func TestQueryValidate(t *testing.T) {
 
 func TestQueryValidateDefaultsKind(t *testing.T) {
 	q := &Query{Service: "prom"}
-	require.NoError(t, q.Validate("alb", providers.Kubernetes))
+	require.NoError(t, q.Validate("alb", &Options{Provider: providers.Kubernetes}))
 	require.Equal(t, KindEndpointSlices, q.Kind)
 }
 
@@ -115,16 +115,103 @@ func TestQueryClone(t *testing.T) {
 func TestQueryReplicaGroupLabelValidation(t *testing.T) {
 	// kubernetes accepts it on every kind
 	q := &Query{Service: "prom", ReplicaGroupLabel: "prometheus/replica"}
-	require.NoError(t, q.Validate("alb", providers.Kubernetes))
+	require.NoError(t, q.Validate("alb", &Options{Provider: providers.Kubernetes}))
 	q = &Query{Kind: KindPods, Selector: map[string]string{"a": "b"},
 		ReplicaGroupLabel: "prometheus/replica"}
-	require.NoError(t, q.Validate("alb", providers.Kubernetes))
+	require.NoError(t, q.Validate("alb", &Options{Provider: providers.Kubernetes}))
 
 	// non-kubernetes providers reject it
 	q = &Query{SRVName: "x", ReplicaGroupLabel: "l"}
-	require.Error(t, q.Validate("alb", providers.DNSSRV))
+	require.Error(t, q.Validate("alb", &Options{Provider: providers.DNSSRV}))
 	q = &Query{Hostname: "h", Port: "80", ReplicaGroupLabel: "l"}
-	require.Error(t, q.Validate("alb", providers.DNSA))
+	require.Error(t, q.Validate("alb", &Options{Provider: providers.DNSA}))
 	q = &Query{Path: "/x", ReplicaGroupLabel: "l"}
-	require.Error(t, q.Validate("alb", providers.File))
+	require.Error(t, q.Validate("alb", &Options{Provider: providers.File}))
+}
+
+// Query.Validate takes the whole discoverer Options because field
+// applicability is not always a function of the provider name alone -- the
+// forthcoming 'aws' provider varies by aws.service. These pin the
+// contract's edges.
+
+func TestQueryValidateRequiresOptions(t *testing.T) {
+	q := &Query{Path: "/tmp/members.yaml"}
+	err := q.Validate("alb", nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no discoverer options")
+}
+
+func TestQueryValidateUnknownProvider(t *testing.T) {
+	q := &Query{Path: "/tmp/members.yaml"}
+	err := q.Validate("alb", &Options{Provider: "not_a_provider"})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unknown discovery provider")
+}
+
+// Every provider must declare its accepted query fields. A provider added
+// to the supported set without a table entry would otherwise fail every
+// query with "unknown discovery provider" at startup, which points at the
+// operator's config rather than at the missing registration.
+func TestEveryProviderDeclaresAcceptedQueryFields(t *testing.T) {
+	for p := range providers.SupportedProviders() {
+		if _, ok := providerQueryFields[p]; !ok {
+			t.Errorf("provider %q has no entry in providerQueryFields", p)
+		}
+	}
+}
+
+// Every field named in a provider's accepted set must exist in queryFields,
+// or it can never be read and the acceptance is a no-op.
+func TestAcceptedQueryFieldsAreKnownFields(t *testing.T) {
+	known := make(map[string]bool, len(queryFields))
+	for _, f := range queryFields {
+		known[f.name] = true
+	}
+	for p, accepted := range providerQueryFields {
+		for name := range accepted {
+			if !known[name] {
+				t.Errorf("provider %q accepts unknown query field %q", p, name)
+			}
+		}
+	}
+}
+
+// The table is the rejection mechanism: a field set for a provider that
+// does not accept it must fail startup rather than be silently ignored.
+// This walks every field against every provider, which is the check the
+// previous per-provider requireUnset lists could drift away from.
+func TestEveryUnacceptedFieldIsRejected(t *testing.T) {
+	setters := map[string]func(*Query){
+		"kind":                func(q *Query) { q.Kind = KindPods },
+		"namespace":           func(q *Query) { q.Namespace = "ns" },
+		"service":             func(q *Query) { q.Service = "svc" },
+		"selector":            func(q *Query) { q.Selector = map[string]string{"a": "b"} },
+		"port":                func(q *Query) { q.Port = "9090" },
+		"replica_group_label": func(q *Query) { q.ReplicaGroupLabel = "shard" },
+		"srv_name":            func(q *Query) { q.SRVName = "_x._tcp.example.com" },
+		"hostname":            func(q *Query) { q.Hostname = "example.com" },
+		"path":                func(q *Query) { q.Path = "/tmp/members.yaml" },
+		"scheme":              func(q *Query) { q.Scheme = SchemeHTTPS },
+	}
+	// every field in the table must have a setter here, or the sweep below
+	// silently skips it
+	for _, f := range queryFields {
+		if _, ok := setters[f.name]; !ok {
+			t.Fatalf("query field %q has no setter in this test", f.name)
+		}
+	}
+	for p, accepted := range providerQueryFields {
+		for name, set := range setters {
+			if accepted.Contains(name) {
+				continue
+			}
+			t.Run(p+"/"+name, func(t *testing.T) {
+				q := &Query{}
+				set(q)
+				err := q.Validate("alb", &Options{Provider: p})
+				require.Error(t, err, "%q should not be valid for %s", name, p)
+				require.Contains(t, err.Error(), name)
+			})
+		}
+	}
 }
