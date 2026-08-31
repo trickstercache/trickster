@@ -215,3 +215,17 @@ func TestEveryUnacceptedFieldIsRejected(t *testing.T) {
 		}
 	}
 }
+
+func TestQueryValidateHTTPSD(t *testing.T) {
+	o := &Options{Provider: providers.HTTPSD}
+	// path is optional: the endpoint alone is a complete target
+	require.NoError(t, (&Query{}).Validate("alb", o))
+	require.NoError(t, (&Query{Path: "/pools/a"}).Validate("alb", o))
+	require.NoError(t, (&Query{Scheme: SchemeHTTPS}).Validate("alb", o))
+
+	// a path that is not rooted would silently resolve against the
+	// endpoint's directory rather than its root
+	err := (&Query{Path: "pools/a"}).Validate("alb", o)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "must begin with '/'")
+}

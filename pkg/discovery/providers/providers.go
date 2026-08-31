@@ -31,9 +31,11 @@ const (
 	DNSA = "dns_a"
 	// File discovers members from a watched local member-list file
 	File = "file"
+	// HTTPSD discovers members from a member list served over HTTP
+	HTTPSD = "http_sd"
 )
 
-var supported = sets.New([]string{Kubernetes, DNSSRV, DNSA, File})
+var supported = sets.New([]string{Kubernetes, DNSSRV, DNSA, File, HTTPSD})
 
 // httpProviders are the providers that discover members by polling an HTTP
 // endpoint, and so accept the shared 'http' options block. It is empty
@@ -41,7 +43,7 @@ var supported = sets.New([]string{Kubernetes, DNSSRV, DNSA, File})
 // provider's name is added here alongside its entry in supported. A
 // provider that polls HTTP but forgets to register here will have its
 // 'http' config block rejected at startup.
-var httpProviders = sets.New([]string{})
+var httpProviders = sets.New([]string{HTTPSD})
 
 // IsHTTPProvider returns true if the named provider polls an HTTP endpoint
 // and therefore accepts the shared 'http' discoverer options block

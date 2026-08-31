@@ -91,6 +91,7 @@ that provider's connection-level block:
 | `kubernetes` | `kubernetes` | `in_cluster` (default true) or `kubeconfig` path — mutually exclusive |
 | `dns_srv`, `dns_a` | `dns` | `resolver` (host:port; default: system resolver), `interval` (poll cadence, default 30s, min 1s; record TTLs act as a floor) |
 | `file` | `file` | `poll_interval` (stat-poll fallback cadence, default 30s, min 1s) |
+| `http_sd` | `http` + `http_sd` | connection settings in the shared `http` block (below); `http_sd.format` selects the member-list document: `trickster` (default) or `prometheus` |
 
 A block is only valid on its own provider's entries; anything else fails
 startup.
@@ -99,10 +100,8 @@ startup.
 
 Providers that discover members by polling an HTTP endpoint share one
 connection block rather than each defining its own, so that configuring a
-second such provider does not mean learning a second vocabulary. No
-provider uses it yet — it arrives with the HTTP-based providers — and until
-one does, an `http` block is rejected at startup like any other misplaced
-block.
+second such provider does not mean learning a second vocabulary. It is
+required by `http_sd`, and rejected on providers that do not poll HTTP.
 
 | option | meaning |
 | ----- | ----- |
@@ -124,6 +123,88 @@ debugging a 401 against a config that looks correct.
 Providers whose normal poll includes a server-side wait (blocking queries)
 need `timeout` comfortably above that wait. There is no second,
 client-level timeout underneath it that could cut a long poll short.
+
+### The `http_sd` Provider
+
+`http_sd` fetches a member list from an HTTP endpoint. It is the universal
+adapter: any service-discovery system Trickster has no in-tree provider for
+can feed it through a few lines of glue that serve a member list, with no
+Trickster change and no restart.
+
+```yaml
+discovery:
+  fleet:
+    provider: http_sd
+    http:
+      endpoint: https://sd.example.com
+      interval: 15s
+      bearer_token_file: /var/run/secrets/sd-token
+    http_sd:
+      format: trickster
+
+backends:
+  prom-template:
+    provider: prometheus
+    is_template: true
+  prom-alb:
+    provider: alb
+    alb:
+      mechanism: tsm
+      discovery:
+        discoverer_name: fleet
+        template_backend: prom-template
+        query:
+          path: /pools/prometheus
+```
+
+The query's `path` is optional and is appended to the endpoint, so one
+server can serve a different member list per ALB while they share the
+discoverer's connection settings. The query's `scheme` supplies the scheme
+for `prometheus`-format targets, which are bare `host:port`; native-format
+entries carry their own and override it.
+
+**Formats.** `trickster` is the same document the `file` provider reads and
+is the default:
+
+```yaml
+- name: prom-1
+  scheme: https
+  address: 10.0.0.1:9090
+  path_prefix: /base
+  weight: 2
+  replica_group: shard-0
+```
+
+`prometheus` is the document Prometheus's own `file_sd` and `http_sd`
+consume, so an existing endpoint can be pointed at Trickster unchanged:
+
+```json
+[{"targets": ["10.0.0.1:9090"], "labels": {"env": "prod"}}]
+```
+
+A group's `__scheme__` label overrides the query scheme, letting one
+endpoint serve mixed-scheme members. Note that the Prometheus format cannot
+express **weight** or **replica_group** — deployments that need weighted
+pools or TSM replica groups want the native format.
+
+The format is named explicitly rather than sniffed. The two documents are
+structurally distinguishable, but guessing means a typo in one format can
+parse as a valid, wrong membership in the other, and the cost of guessing
+wrong is a silently drained pool.
+
+**Efficiency.** Requests carry `X-Prometheus-Refresh-Interval-Seconds`, as
+Prometheus's does, so servers that generate member lists on demand can pace
+their own work. `ETag` is honored: an unchanged membership costs one
+conditional request and a `304`, with no re-parse and no snapshot. The
+validator is only stored after a document parses, so a rejected document
+can never be confirmed as current by a later `304`.
+
+**Failure.** A transport error, an unexpected status, an oversized body
+(the limit is 16 MiB), or a document that will not parse all keep the
+last-good membership and are logged once per failure streak and counted on
+`trickster_discovery_refresh_errors_total`. An endpoint that
+*authoritatively* returns no members (`[]`) is a valid membership and is
+applied, so a scaled-to-zero pool can be reported as such.
 
 ### Template Backends
 

@@ -113,3 +113,12 @@ func NewErrInvalidHTTPOptions(name, detail string) error {
 			name, detail),
 	}
 }
+
+// NewErrInvalidHTTPSDOptions returns an error for invalid http_sd provider
+// options
+func NewErrInvalidHTTPSDOptions(name, detail string) error {
+	return &InvalidDiscoveryOptionsError{
+		error: fmt.Errorf(`invalid http_sd options for discoverer %q: %s`,
+			name, detail),
+	}
+}

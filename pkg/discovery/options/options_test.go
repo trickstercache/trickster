@@ -327,3 +327,87 @@ http:
 	require.NotNil(t, o.HTTP.TLS)
 	require.True(t, o.HTTP.TLS.InsecureSkipVerify)
 }
+
+func TestHTTPSDOptions(t *testing.T) {
+	base := func() *Options {
+		return &Options{
+			Name:     "test",
+			Provider: providers.HTTPSD,
+			HTTP:     &HTTPOptions{Endpoint: "http://sd.example.com"},
+			HTTPSD:   &HTTPSDOptions{},
+		}
+	}
+	t.Run("format defaults to trickster", func(t *testing.T) {
+		o := base()
+		require.NoError(t, o.Initialize("test"))
+		require.Equal(t, FormatTrickster, o.HTTPSD.Format)
+		ok, err := o.Validate()
+		require.NoError(t, err)
+		require.True(t, ok)
+	})
+	t.Run("prometheus format accepted", func(t *testing.T) {
+		o := base()
+		o.HTTPSD.Format = FormatPrometheus
+		ok, err := o.Validate()
+		require.NoError(t, err)
+		require.True(t, ok)
+	})
+	t.Run("unknown format rejected", func(t *testing.T) {
+		o := base()
+		o.HTTPSD.Format = "yaml"
+		_, err := o.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "trickster or prometheus")
+	})
+	// the endpoint lives in the shared block, so http_sd without it has
+	// nowhere to poll; that must fail startup rather than at first poll
+	t.Run("http block required", func(t *testing.T) {
+		o := base()
+		o.HTTP = nil
+		_, err := o.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "'http' block is required")
+	})
+	t.Run("block rejected on other providers", func(t *testing.T) {
+		for _, p := range []string{
+			providers.Kubernetes, providers.DNSSRV, providers.DNSA, providers.File,
+		} {
+			o := &Options{Name: "test", Provider: p, HTTPSD: &HTTPSDOptions{}}
+			_, err := o.Validate()
+			require.Error(t, err, "http_sd block should be rejected on %s", p)
+		}
+	})
+	t.Run("initialize defaults the block itself", func(t *testing.T) {
+		o := &Options{
+			Name:     "test",
+			Provider: providers.HTTPSD,
+			HTTP:     &HTTPOptions{Endpoint: "http://sd.example.com"},
+		}
+		require.NoError(t, o.Initialize("test"))
+		require.NotNil(t, o.HTTPSD, "an omitted http_sd block should still get defaults")
+		require.Equal(t, FormatTrickster, o.HTTPSD.Format)
+	})
+	t.Run("GetFormat tolerates a nil receiver", func(t *testing.T) {
+		var o *HTTPSDOptions
+		require.Equal(t, FormatTrickster, o.GetFormat())
+		require.Equal(t, FormatTrickster, (&HTTPSDOptions{}).GetFormat())
+		require.Equal(t, FormatPrometheus,
+			(&HTTPSDOptions{Format: FormatPrometheus}).GetFormat())
+	})
+	t.Run("clone is deep", func(t *testing.T) {
+		o := base()
+		o.HTTPSD.Format = FormatPrometheus
+		c := o.Clone()
+		require.NotSame(t, o.HTTPSD, c.HTTPSD)
+		c.HTTPSD.Format = FormatTrickster
+		require.Equal(t, FormatPrometheus, o.HTTPSD.Format)
+	})
+}
+
+// The http block is live now that http_sd registers as an HTTP provider;
+// this pins that registration, since a provider polling HTTP without it
+// would have its connection config rejected at startup.
+func TestHTTPSDIsRegisteredAsAnHTTPProvider(t *testing.T) {
+	require.True(t, providers.IsHTTPProvider(providers.HTTPSD))
+	require.True(t, providers.IsValidProvider(providers.HTTPSD))
+}

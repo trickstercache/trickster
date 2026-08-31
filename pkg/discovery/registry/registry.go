@@ -25,6 +25,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/discovery"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/dns"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/file"
+	"github.com/trickstercache/trickster/v2/pkg/discovery/httpsd"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/kubernetes"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/options"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/providers"
@@ -39,6 +40,7 @@ func SupportedProviders() discovery.Lookup {
 		providers.DNSSRV:     dns.NewSRV,
 		providers.DNSA:       dns.NewA,
 		providers.File:       file.New,
+		providers.HTTPSD:     httpsd.New,
 	}
 }
 

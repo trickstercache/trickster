@@ -53,6 +53,9 @@ type Options struct {
 	DNS *DNSOptions `yaml:"dns,omitempty"`
 	// File provides change-detection settings when Provider is 'file'
 	File *FileOptions `yaml:"file,omitempty"`
+	// HTTPSD provides payload settings when Provider is 'http_sd'
+	HTTPSD *HTTPSDOptions `yaml:"http_sd,omitempty"`
+	//
 	// HTTP provides the outbound client settings shared by every provider
 	// that discovers members by polling an HTTP endpoint
 	HTTP *HTTPOptions `yaml:"http,omitempty"`
@@ -141,6 +144,29 @@ type HTTPOptions struct {
 	FollowRedirects bool `yaml:"follow_redirects,omitempty"`
 }
 
+// Member-list document formats accepted by the http_sd provider
+const (
+	// FormatTrickster is Trickster's native member list, carrying scheme,
+	// path prefix, weight and replica group per member
+	FormatTrickster = "trickster"
+	// FormatPrometheus is the document Prometheus's own file_sd and http_sd
+	// consume: [{"targets": [...], "labels": {...}}]
+	FormatPrometheus = "prometheus"
+)
+
+// HTTPSDOptions defines the payload settings for a discoverer with the
+// 'http_sd' provider. Connection settings live in the shared 'http' block.
+type HTTPSDOptions struct {
+	// Format names the member-list document the endpoint serves:
+	// 'trickster' (default) or 'prometheus'.
+	//
+	// It is explicit rather than sniffed. The two documents are structurally
+	// distinguishable, but guessing means a typo in one format can parse as
+	// a valid, wrong membership in the other -- and the cost of guessing
+	// wrong is a silently drained pool.
+	Format string `yaml:"format,omitempty"`
+}
+
 const (
 	// DefaultHTTPInterval is the default poll cadence for HTTP-based
 	// discovery providers
@@ -185,6 +211,9 @@ func (o *Options) Clone() *Options {
 	if o.File != nil {
 		out.File = pointers.Clone(o.File)
 	}
+	if o.HTTPSD != nil {
+		out.HTTPSD = pointers.Clone(o.HTTPSD)
+	}
 	if o.HTTP != nil {
 		out.HTTP = pointers.Clone(o.HTTP)
 		if o.HTTP.TLS != nil {
@@ -224,6 +253,14 @@ func (o *Options) Initialize(name string) error {
 			o.File.PollInterval = timeconv.Duration(DefaultFilePollInterval)
 		}
 	}
+	if o.Provider == providers.HTTPSD {
+		if o.HTTPSD == nil {
+			o.HTTPSD = &HTTPSDOptions{}
+		}
+		if o.HTTPSD.Format == "" {
+			o.HTTPSD.Format = FormatTrickster
+		}
+	}
 	if o.HTTP != nil {
 		if o.HTTP.Interval == 0 {
 			o.HTTP.Interval = timeconv.Duration(DefaultHTTPInterval)
@@ -255,6 +292,19 @@ func (o *Options) Validate() (bool, error) {
 	if o.HTTP != nil && !providers.IsHTTPProvider(o.Provider) {
 		return false, NewErrInvalidDiscoveryBlock("http", o.Provider, o.Name)
 	}
+	if o.HTTPSD != nil && o.Provider != providers.HTTPSD {
+		return false, NewErrInvalidDiscoveryBlock("http_sd", o.Provider, o.Name)
+	}
+	if o.Provider == providers.HTTPSD {
+		if o.HTTP == nil {
+			return false, NewErrInvalidHTTPOptions(o.Name,
+				"the 'http' block is required for the http_sd provider")
+		}
+		if f := o.HTTPSD.GetFormat(); f != FormatTrickster && f != FormatPrometheus {
+			return false, NewErrInvalidHTTPSDOptions(o.Name,
+				"'format' must be trickster or prometheus")
+		}
+	}
 	if err := o.validateHTTP(); err != nil {
 		return false, err
 	}
@@ -281,6 +331,16 @@ func (o *Options) Validate() (bool, error) {
 		}
 	}
 	return true, nil
+}
+
+// GetFormat returns the configured member-list format, defaulting to
+// trickster. It tolerates a nil receiver so callers need not distinguish an
+// absent block from an unset field.
+func (o *HTTPSDOptions) GetFormat() string {
+	if o == nil || o.Format == "" {
+		return FormatTrickster
+	}
+	return o.Format
 }
 
 // validateHTTP validates the shared HTTP client options.

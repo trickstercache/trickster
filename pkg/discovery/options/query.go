@@ -19,6 +19,7 @@ package options
 import (
 	"maps"
 	"strconv"
+	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/discovery/providers"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
@@ -148,6 +149,7 @@ var providerQueryFields = map[string]sets.Set[string]{
 	providers.DNSSRV: sets.New([]string{fieldSRVName, fieldScheme}),
 	providers.DNSA:   sets.New([]string{fieldHostname, fieldPort, fieldScheme}),
 	providers.File:   sets.New([]string{fieldPath}),
+	providers.HTTPSD: sets.New([]string{fieldPath, fieldScheme}),
 }
 
 // Validate validates the Query against the discoverer it will be submitted
@@ -183,6 +185,8 @@ func (q *Query) Validate(albName string, o *Options) error {
 		return q.validateDNSA(albName)
 	case providers.File:
 		return q.validateFile(albName)
+	case providers.HTTPSD:
+		return q.validateHTTPSD(albName)
 	}
 	return NewErrInvalidQuery(albName, "unknown discovery provider "+o.Provider)
 }
@@ -247,6 +251,16 @@ func (q *Query) validateFile(albName string) error {
 	if q.Path == "" {
 		return NewErrInvalidQuery(albName,
 			"'path' is required for the file provider")
+	}
+	return nil
+}
+
+// validateHTTPSD checks the optional URL path. Unlike the file provider's
+// required filesystem path, this one defaults to the endpoint itself.
+func (q *Query) validateHTTPSD(albName string) error {
+	if q.Path != "" && !strings.HasPrefix(q.Path, "/") {
+		return NewErrInvalidQuery(albName,
+			"'path' must begin with '/' for the http_sd provider")
 	}
 	return nil
 }

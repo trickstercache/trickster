@@ -120,13 +120,37 @@ Dependencies: keep them lean and justify them in a decision record (see
 `trickster-data/decision-dependencies.md` for the pattern); the repo
 vendors, so a heavy SDK shows up in every clone.
 
+## Shared machinery
+
+Two packages exist so that providers do not each re-derive them:
+
+- **`pkg/discovery/poller`** — the polling loop: jittered start, immediate
+  first iteration, per-iteration cadence chosen by the source (a DNS TTL
+  floor, a blocking query's `PollNow`), cancel-safe Start/Stop, and panic
+  isolation. A poll-based provider supplies a `poller.Source` and gets the
+  rest. `pkg/discovery/poller/http` is the outbound-HTTP source; per-poll
+  request shaping (credentials, signing, blocking-query parameters) goes
+  through its `RequestDecorator` rather than into the package.
+
+  **Do failure accounting outside the response handler.** A transport or
+  credential error returns before any handler runs, so a provider that
+  counts failures inside its handler will silently miss exactly the
+  failures operators care about. See how `httpsd`'s subscription wraps the
+  source's `Poll`.
+
+- **`pkg/discovery/memberlist`** — decoders for the two member-list
+  documents (native and Prometheus `file_sd`/`http_sd`), shared by the
+  `file` and `http_sd` providers.
+
 ## Roadmap providers
 
 Candidates from the issue #609 thread, in likely priority order: `consul`
-(native API), `ec2`, `gce`, `etcd`, `docker`. Until each lands, its users
-are served by:
+(native API), `aws` (`service: ec2`, then `ecs`), `gce`, `nomad`,
+`docker`, `azure`. Until each lands, its users are served by:
 
-- the `file` provider — any external SD can emit the member list
-  (Prometheus `file_sd`-style) via cron, sidecar, or consul-template; or
+- the `http_sd` provider — any external SD can serve the member list over
+  HTTP, in Trickster's native format or Prometheus's; or
+- the `file` provider — the same documents on disk, via cron, sidecar, or
+  consul-template; or
 - `dns_srv` / `dns_a` — Consul's DNS interface, cloud private DNS zones,
   and Docker's embedded DNS all work today with no new code.
