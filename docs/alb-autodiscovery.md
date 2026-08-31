@@ -94,6 +94,7 @@ that provider's connection-level block:
 | `http_sd` | `http` + `http_sd` | connection settings in the shared `http` block (below); `http_sd.format` selects the member-list document: `trickster` (default) or `prometheus` |
 | `consul` | `http` + `consul` | connection settings in the shared `http` block; `consul.datacenter`, `namespace`, `partition`, `wait`, `allow_stale`, `only_passing`, `warning_is_ready` |
 | `nomad` | `http` + `nomad` | connection settings in the shared `http` block; `nomad.namespace`, `region`, `wait`, `allow_stale` |
+| `aws` | `aws` (+ optional `http`) | `aws.service` (default `ec2`), `region`, and the credential fields; the endpoint is derived, so `http.endpoint` is an optional override |
 
 A block is only valid on its own provider's entries; anything else fails
 startup.
@@ -736,3 +737,90 @@ back to the workload that registered it.
 **Timeouts** work exactly as for `consul`: `http.timeout` must outlast
 `nomad.wait`, its default is derived from the wait, and `http.interval` is
 the retry delay after a failure rather than a poll cadence.
+
+### The `aws` Provider
+
+`aws` discovers members from an AWS API, selected by `aws.service`. Today
+that is `ec2`; further AWS sources arrive as new `service` values rather
+than new providers, inheriting this provider's credentials, signing,
+pagination and options.
+
+```yaml
+discovery:
+  fleet:
+    provider: aws
+    aws:
+      service: ec2
+      region: us-east-1
+      # credentials omitted: use the standard chain (IRSA, instance
+      # profile, environment, shared config). See docs/aws.md.
+    http:
+      interval: 60s   # instance inventories change slowly; poll gently
+
+backends:
+  prom-alb:
+    provider: alb
+    alb:
+      discovery:
+        discoverer_name: fleet
+        template_backend: prom-template
+        query:
+          filters:
+            tag:service: [prometheus]
+            instance-state-name: [running]
+          port_label: trickster-port   # read the port from an EC2 tag
+          address_type: private        # private (default), public, or ipv6
+          # port: 9090                 # or a static port for every member
+          # replica_group_label: shard
+```
+
+Credentials, region resolution and IAM are documented once in
+[AWS Integration](./aws.md). The IAM principal needs
+**`ec2:DescribeInstances`**.
+
+**Hosts, not endpoints.** An instance inventory returns hosts with several
+addresses and no port, so two query fields exist that the registry providers
+do not need:
+
+- **`address_type`** — `private` (default), `public`, or `ipv6` — selects
+  which of the instance's addresses becomes the member address.
+- **`port_label`** — names an EC2 tag whose value is the member's port.
+  `port` supplies a static one. At least one is required, and they compose:
+  where both are set, the tag wins per instance and `port` is the fallback,
+  which is what makes `port_label` safe to adopt incrementally across a
+  fleet.
+
+**Selection.** `filters` is passed to EC2 as `Filter.N`, evaluated
+server-side — use `tag:<key>` to filter on a tag value, and any other
+[DescribeInstances filter](https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeInstances.html)
+name. `tags` additionally requires the *presence* of tag keys, applied after
+the response arrives.
+
+**Instance state.** `running` is `Ready` and `pending` is `NotReady`.
+Instances that are `shutting-down`, `stopping`, `stopped` or `terminated`
+are **omitted entirely** rather than reported unready, so they drain from
+pools before they stop answering — the same rule the kubernetes provider
+applies to terminating endpoints. A state a future EC2 release introduces is
+treated as not-ready rather than assumed healthy.
+
+**Instances that cannot become members are excluded, not fatal.** An
+instance with no `port_label` tag and no static `port`, or with no address
+of the requested type, is skipped and logged (once, until the set of
+excluded instances changes) rather than failing the refresh. This differs
+deliberately from the `consul` and `nomad` providers, where a malformed
+entry fails the whole refresh: a service registry contains only instances of
+the service, so a bad entry means the API is broken, while an EC2 inventory
+routinely contains hosts that simply are not tagged yet. Failing there would
+drain a working pool because of one unrelated instance.
+
+**Labels.** Members carry `instance_id`, `instance_type`, `instance_state`,
+`image_id`, `availability_zone`, `vpc_id`, `subnet_id`, `architecture`,
+`private_ip`, `public_ip`, `private_dns` and `public_dns`. Instance tags are
+carried as `tag_<Key>`, prefixed so an operator-defined tag cannot shadow a
+Trickster-assigned label. The `Name` tag becomes the member name, falling
+back to the instance id.
+
+**Endpoint.** Derived from the region and service
+(`https://ec2.<region>.amazonaws.com`). Set `http.endpoint` to override it
+for a VPC endpoint, a FIPS endpoint, or a test double; a region is required
+when it is not overridden, because the endpoint is built from it.

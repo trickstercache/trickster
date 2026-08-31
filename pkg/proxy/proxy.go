@@ -22,9 +22,8 @@ import (
 	"net/http"
 	"time"
 
+	taws "github.com/trickstercache/trickster/v2/pkg/aws"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
-
-	"github.com/prometheus/common/sigv4"
 )
 
 const connectTimeout = time.Second * 10
@@ -68,7 +67,7 @@ func NewHTTPClient(o *bo.Options) (*http.Client, error) {
 
 	if o.SigV4 != nil {
 		inner, _ := client.Transport.(*http.Transport)
-		wrapped, err := sigv4.NewSigV4RoundTripper(o.SigV4, client.Transport)
+		wrapped, err := taws.NewRoundTripper(o.SigV4, client.Transport)
 		if err != nil {
 			return nil, err
 		}

@@ -23,6 +23,7 @@ import (
 	"fmt"
 
 	"github.com/trickstercache/trickster/v2/pkg/discovery"
+	awssd "github.com/trickstercache/trickster/v2/pkg/discovery/aws"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/consul"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/dns"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/file"
@@ -45,6 +46,7 @@ func SupportedProviders() discovery.Lookup {
 		providers.HTTPSD:     httpsd.New,
 		providers.Consul:     consul.New,
 		providers.Nomad:      nomad.New,
+		providers.AWS:        awssd.New,
 	}
 }
 

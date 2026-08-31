@@ -26,6 +26,7 @@ import (
 	"strings"
 	"time"
 
+	taws "github.com/trickstercache/trickster/v2/pkg/aws"
 	albnames "github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	gro "github.com/trickstercache/trickster/v2/pkg/backends/graphite/options"
@@ -56,7 +57,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 
-	"github.com/prometheus/common/sigv4"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -232,8 +232,10 @@ type Options struct {
 	// AuthenticatorName specifies the name of the optional Authenticator to attach to this Backend, and
 	// can be overridden at the Path level.
 	AuthenticatorName string `yaml:"authenticator_name,omitempty"`
-	// AWS SigV4
-	SigV4 *sigv4.SigV4Config `yaml:"sigv4,omitempty"`
+	// SigV4 signs outbound requests to this backend's origin with AWS
+	// SigV4. It defaults to signing for Amazon Managed Service for
+	// Prometheus; set sigv4.service to sign for another AWS service.
+	SigV4 *taws.Options `yaml:"sigv4,omitempty"`
 
 	// Simulated Latency
 	// When LatencyMin > 0 and LatencyMaxMS < LatencyMin (e.g., 0), then LatencyMin of latency
@@ -393,6 +395,10 @@ func (o *Options) Clone() *Options {
 		out.AccessLog = o.AccessLog.Clone()
 	}
 
+	if o.SigV4 != nil {
+		out.SigV4 = o.SigV4.Clone()
+	}
+
 	return out
 }
 
@@ -420,6 +426,12 @@ func (o *Options) Validate() (bool, error) {
 		if _, err := url.Parse(o.OriginURL); err != nil {
 			return false, fmt.Errorf("invalid origin_url for backend %s: %w", o.Name, err)
 		}
+	}
+	// previously the sigv4 block was validated only by its own
+	// UnmarshalYAML, which meant no validation at all on the programmatic
+	// path the ALB template uses
+	if err := o.SigV4.Validate(); err != nil {
+		return false, fmt.Errorf("invalid sigv4 options for backend %s: %w", o.Name, err)
 	}
 	if o.MaxShardSizeTime > 0 && o.MaxShardSizePoints > 0 {
 		return false, ErrInvalidMaxShardSize

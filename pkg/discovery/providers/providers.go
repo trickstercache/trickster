@@ -37,10 +37,12 @@ const (
 	Consul = "consul"
 	// Nomad discovers members from Nomad's native service registry
 	Nomad = "nomad"
+	// AWS discovers members from an AWS API, selected by aws.service
+	AWS = "aws"
 )
 
 var supported = sets.New([]string{
-	Kubernetes, DNSSRV, DNSA, File, HTTPSD, Consul, Nomad,
+	Kubernetes, DNSSRV, DNSA, File, HTTPSD, Consul, Nomad, AWS,
 })
 
 // httpProviders are the providers that discover members by polling an HTTP
@@ -49,7 +51,19 @@ var supported = sets.New([]string{
 // provider's name is added here alongside its entry in supported. A
 // provider that polls HTTP but forgets to register here will have its
 // 'http' config block rejected at startup.
-var httpProviders = sets.New([]string{HTTPSD, Consul, Nomad})
+var httpProviders = sets.New([]string{HTTPSD, Consul, Nomad, AWS})
+
+// endpointDerivingProviders compute their endpoint rather than being told
+// it: AWS builds one from the region and service. For these, the shared
+// http block's 'endpoint' is an optional override (a VPC endpoint, a FIPS
+// endpoint, a test server) rather than a required setting.
+var endpointDerivingProviders = sets.New([]string{AWS})
+
+// DerivesEndpoint returns true if the named provider computes its own
+// endpoint, making the shared http block's 'endpoint' optional
+func DerivesEndpoint(name string) bool {
+	return endpointDerivingProviders.Contains(name)
+}
 
 // IsHTTPProvider returns true if the named provider polls an HTTP endpoint
 // and therefore accepts the shared 'http' discoverer options block

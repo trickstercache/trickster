@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	taws "github.com/trickstercache/trickster/v2/pkg/aws"
 	gro "github.com/trickstercache/trickster/v2/pkg/backends/graphite/options"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	mo "github.com/trickstercache/trickster/v2/pkg/backends/mysql/options"
@@ -1006,5 +1007,55 @@ func TestToYAML(t *testing.T) {
 	s := o.ToYAML()
 	if !(strings.Index(s, `provider: test_type`) > 0) {
 		t.Error("ToYAML mismatch", s)
+	}
+}
+
+// The sigv4 block was the one pointer field Clone did not deep-copy, so a
+// cloned backend shared its credentials with the original. That matters now
+// that ALB templates clone a backend per discovered member.
+func TestCloneDeepCopiesSigV4(t *testing.T) {
+	o := New()
+	o.SigV4 = &taws.Options{
+		Region: "us-east-1", Service: "ec2", AccessKey: "AKIA", SecretKey: "shh",
+	}
+	c := o.Clone()
+	if c.SigV4 == o.SigV4 {
+		t.Fatal("Clone shared the SigV4 pointer with the original")
+	}
+	c.SigV4.Region = "eu-west-1"
+	c.SigV4.Service = "ecs"
+	if o.SigV4.Region != "us-east-1" || o.SigV4.Service != "ec2" {
+		t.Errorf("mutating the clone changed the original: %+v", o.SigV4)
+	}
+}
+
+// A config dump must never carry the secret key.
+func TestToYAMLRedactsSigV4Secret(t *testing.T) {
+	o := New()
+	o.Name = "test"
+	o.Provider = "prometheus"
+	o.OriginURL = "http://example.com"
+	o.SigV4 = &taws.Options{
+		Region: "us-east-1", AccessKey: "AKIA", SecretKey: "super-secret",
+	}
+	y := o.ToYAML()
+	if strings.Contains(y, "super-secret") {
+		t.Errorf("ToYAML exposed the sigv4 secret key:\n%s", y)
+	}
+	if !strings.Contains(y, "access_key: AKIA") {
+		t.Errorf("expected the non-secret sigv4 fields to survive:\n%s", y)
+	}
+}
+
+// Validation now runs on the programmatic path too, where the previous
+// implementation validated only during YAML unmarshaling.
+func TestValidateRejectsIncompleteSigV4(t *testing.T) {
+	o := New()
+	o.Name = "test"
+	o.Provider = "prometheus"
+	o.OriginURL = "http://example.com"
+	o.SigV4 = &taws.Options{AccessKey: "AKIA"} // no secret key
+	if _, err := o.Validate(); err == nil {
+		t.Error("expected an error for a half-configured sigv4 credential")
 	}
 }

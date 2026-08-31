@@ -905,7 +905,8 @@ backends:
 #
 # discovery: # top-level section of named discoverers; multiple ALBs can share one
 #   in-cluster:
-#     provider: kubernetes # kubernetes, dns_srv, dns_a, file, http_sd, consul, nomad
+#     provider: kubernetes # kubernetes, dns_srv, dns_a, file, http_sd, consul,
+#                          # nomad, or aws
 #     kubernetes:
 #       in_cluster: true # use the pod's service account (default)
 #       # kubeconfig: /path/to/kubeconfig # or run against a remote cluster
@@ -955,6 +956,17 @@ backends:
 #       region: eu-1
 #       wait: 5m
 #       allow_stale: true
+#   ec2-fleet:
+#     provider: aws
+#     aws:
+#       service: ec2      # which aws api to read; also the sigv4 service
+#       region: us-east-1 # the api endpoint is derived from this
+#       # credentials omitted: use the standard chain (irsa, instance
+#       # profile, environment, shared config). see docs/aws.md
+#       # profile: production
+#       # role_arn: arn:aws:iam::123456789012:role/TricksterDiscovery
+#     http:
+#       interval: 60s     # instance inventories change slowly
 #
 # backends:
 #   prom-template:
