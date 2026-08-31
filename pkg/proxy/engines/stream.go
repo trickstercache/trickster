@@ -20,7 +20,10 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"sync"
+	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
 
@@ -81,4 +84,65 @@ func abortOnCopyError(w io.Writer, r *http.Request, err error) {
 		return
 	}
 	panic(http.ErrAbortHandler)
+}
+
+// idleTimeoutBody fails a response body that stalls, without capping the total
+// transfer time the way http.Client.Timeout does. A slow-but-progressing
+// origin streams for as long as it needs; one that stops sending is cut off.
+type idleTimeoutBody struct {
+	rc      io.ReadCloser
+	timeout time.Duration
+
+	mu      sync.Mutex
+	timer   *time.Timer
+	expired bool
+}
+
+func newIdleTimeoutBody(rc io.ReadCloser, timeout time.Duration) io.ReadCloser {
+	if rc == nil || timeout <= 0 {
+		return rc
+	}
+	b := &idleTimeoutBody{rc: rc, timeout: timeout}
+	b.timer = time.AfterFunc(timeout, b.expire)
+	return b
+}
+
+func (b *idleTimeoutBody) Read(p []byte) (int, error) {
+	n, err := b.rc.Read(p)
+	if n > 0 {
+		b.mu.Lock()
+		if !b.expired {
+			b.timer.Reset(b.timeout)
+		}
+		b.mu.Unlock()
+	}
+	if err != nil {
+		b.mu.Lock()
+		expired := b.expired
+		b.mu.Unlock()
+		// the close that unblocked this read makes the error look like a
+		// normal EOF; report the stall so truncation is not mistaken for
+		// a complete body
+		if expired {
+			return n, errors.ErrOriginStalled
+		}
+	}
+	return n, err
+}
+
+func (b *idleTimeoutBody) Close() error {
+	b.mu.Lock()
+	if b.timer != nil {
+		b.timer.Stop()
+	}
+	b.mu.Unlock()
+	return b.rc.Close()
+}
+
+// expire unblocks a pending Read by closing the underlying body.
+func (b *idleTimeoutBody) expire() {
+	b.mu.Lock()
+	b.expired = true
+	b.mu.Unlock()
+	b.rc.Close()
 }

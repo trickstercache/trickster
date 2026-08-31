@@ -79,8 +79,13 @@ func NewHTTPClient(o *bo.Options) (*http.Client, error) {
 		}
 	}
 
+	// Deliberately no Client.Timeout: it bounds the entire body read, which
+	// truncates long-lived streams and large objects mid-transfer and presents
+	// the result as a complete response. Time-to-first-byte is bounded by
+	// ResponseHeaderTimeout below, and a stalled transfer is bounded by the
+	// per-read idle deadline the proxy engine applies to the response body.
+	// The health check client sets its own total timeout after construction.
 	client := &http.Client{
-		Timeout: time.Duration(o.Timeout),
 		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
 			return http.ErrUseLastResponse
 		},

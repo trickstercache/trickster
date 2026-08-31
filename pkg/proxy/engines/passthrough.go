@@ -75,6 +75,9 @@ func NewPassthroughHandler(client backends.Backend) http.Handler {
 	if c := client.HTTPClient(); c != nil {
 		rt = c.Transport
 	}
+	if o := client.Configuration(); o != nil && rt != nil {
+		rt = &idleTimeoutTransport{next: rt, timeout: time.Duration(o.Timeout)}
+	}
 	return &httputil.ReverseProxy{
 		Transport:      rt,
 		Rewrite:        passthroughRewrite(client),
@@ -232,4 +235,25 @@ func warnOnClockOffset(backendName string, h http.Header) {
 			"originTime":     strconv.FormatInt(d.Unix(), 10),
 			"offset":         strconv.FormatInt(int64(offset.Seconds()), 10) + "s",
 		})
+}
+
+// idleTimeoutTransport bounds a stalled response body without capping the
+// total transfer, which is what a streaming or large-object lane needs.
+type idleTimeoutTransport struct {
+	next    http.RoundTripper
+	timeout time.Duration
+}
+
+func (t *idleTimeoutTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	resp, err := t.next.RoundTrip(r)
+	if err != nil || resp == nil || resp.Body == nil {
+		return resp, err
+	}
+	// a switched protocol hands the body to the tunnel as a ReadWriteCloser;
+	// wrapping it would both break that assertion and time out an idle tunnel
+	if resp.StatusCode == http.StatusSwitchingProtocols {
+		return resp, nil
+	}
+	resp.Body = newIdleTimeoutBody(resp.Body, t.timeout)
+	return resp, nil
 }

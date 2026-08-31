@@ -392,7 +392,10 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 		resp.Body.Close()
 		rc = io.NopCloser(bytes.NewReader(pc.ResponseBodyBytes))
 	} else {
-		rc = resp.Body
+		// bounds a stalled transfer without capping how long a healthy one may
+		// run; replaces the blanket http.Client.Timeout this path used to carry
+		rc = newIdleTimeoutBody(resp.Body, time.Duration(o.Timeout))
+		resp.Body = rc
 	}
 
 	setHTTPStatusSpanAttributes(rsc.Tracer, resp.StatusCode, span, doSpan)
