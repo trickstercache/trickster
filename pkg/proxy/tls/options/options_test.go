@@ -17,9 +17,12 @@
 package options
 
 import (
+	"crypto/x509"
 	"os"
 	"path/filepath"
 	"testing"
+
+	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -282,5 +285,129 @@ func TestValidate_ClientKeyBadPath(t *testing.T) {
 	_, err := o.Validate()
 	if err == nil {
 		t.Error("expected error for missing client key file")
+	}
+}
+
+// ToClientTLSConfig is the single implementation of outbound client TLS,
+// shared by the proxy, the discovery pollers and the health checker; these
+// cover each branch directly rather than only through pkg/proxy.
+
+func TestToClientTLSConfigNilReceiver(t *testing.T) {
+	var o *Options
+	c, err := o.ToClientTLSConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c != nil {
+		t.Error("a nil Options should yield a nil config so callers can pass an absent TLS block through")
+	}
+}
+
+func TestToClientTLSConfigInsecureSkipVerify(t *testing.T) {
+	c, err := (&Options{InsecureSkipVerify: true}).ToClientTLSConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.InsecureSkipVerify {
+		t.Error("expected InsecureSkipVerify to carry through")
+	}
+	if len(c.Certificates) != 0 || c.RootCAs != nil {
+		t.Error("expected no client cert or CA pool when neither is configured")
+	}
+}
+
+func TestToClientTLSConfigClientCertificate(t *testing.T) {
+	kf, cf, closer, err := tlstest.GetTestKeyAndCertFiles("")
+	if closer != nil {
+		defer closer()
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := (&Options{ClientCertPath: cf, ClientKeyPath: kf}).ToClientTLSConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c.Certificates) != 1 {
+		t.Errorf("expected 1 client certificate, got %d", len(c.Certificates))
+	}
+}
+
+// A cert without its key (or vice versa) is not a partial success: the pair
+// is simply not loaded, matching the behavior pkg/proxy had before this
+// moved here.
+func TestToClientTLSConfigIgnoresHalfAPair(t *testing.T) {
+	kf, cf, closer, err := tlstest.GetTestKeyAndCertFiles("")
+	if closer != nil {
+		defer closer()
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, o := range map[string]*Options{
+		"cert only": {ClientCertPath: cf},
+		"key only":  {ClientKeyPath: kf},
+	} {
+		t.Run(name, func(t *testing.T) {
+			c, err := o.ToClientTLSConfig()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(c.Certificates) != 0 {
+				t.Error("expected no certificate loaded from half a pair")
+			}
+		})
+	}
+}
+
+func TestToClientTLSConfigBadClientCertificate(t *testing.T) {
+	kf, cf, closer, err := tlstest.GetTestKeyAndCertFiles("invalid-cert")
+	if closer != nil {
+		defer closer()
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (&Options{ClientCertPath: cf, ClientKeyPath: kf}).ToClientTLSConfig(); err == nil {
+		t.Error("expected an error loading an invalid client certificate")
+	}
+}
+
+// Configured CAs are additive to the system pool, so a config that names a
+// CA still trusts public roots.
+func TestToClientTLSConfigCertificateAuthoritiesAreAdditive(t *testing.T) {
+	_, cf, closer, err := tlstest.GetTestKeyAndCertFiles("ca")
+	if closer != nil {
+		defer closer()
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := (&Options{CertificateAuthorityPaths: []string{cf}}).ToClientTLSConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.RootCAs == nil {
+		t.Fatal("expected a root CA pool")
+	}
+	system, _ := x509.SystemCertPool()
+	if system != nil && len(c.RootCAs.Subjects()) <= len(system.Subjects()) { //nolint:staticcheck // Subjects is adequate for a count comparison in tests
+		t.Error("expected the configured CA to be added to the system pool, not to replace it")
+	}
+}
+
+func TestToClientTLSConfigMissingCAFile(t *testing.T) {
+	o := &Options{CertificateAuthorityPaths: []string{"/nonexistent/ca.pem"}}
+	if _, err := o.ToClientTLSConfig(); err == nil {
+		t.Error("expected an error for an unreadable CA file")
+	}
+}
+
+func TestToClientTLSConfigUnparsableCAFile(t *testing.T) {
+	dir := t.TempDir()
+	bad := writeTempFile(t, dir, "ca.pem", "not a pem file")
+	o := &Options{CertificateAuthorityPaths: []string{bad}}
+	if _, err := o.ToClientTLSConfig(); err == nil {
+		t.Error("expected an error for a CA file containing no certificates")
 	}
 }

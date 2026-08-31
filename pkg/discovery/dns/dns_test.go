@@ -19,6 +19,7 @@ package dns
 import (
 	"context"
 	"net"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -337,4 +338,68 @@ func TestNewProviderIntervalDefault(t *testing.T) {
 		DNS: &do.DNSOptions{Resolver: "10.0.0.53:53"}}, modeSRV)
 	require.NoError(t, err)
 	require.Equal(t, do.DefaultDNSInterval, p.interval)
+}
+
+// flakyResolver panics until it is healed, then answers normally. It stands
+// in for the class of bug the shared poller exists to contain: a nil deref
+// or index-out-of-range inside a provider's own mapping code.
+type flakyResolver struct {
+	calls  atomic.Int64
+	healed atomic.Bool
+}
+
+func (r *flakyResolver) lookupSRV(context.Context, string) ([]*dnsclient.SRV, time.Duration, error) {
+	r.calls.Add(1)
+	if !r.healed.Load() {
+		panic("resolver exploded")
+	}
+	return []*dnsclient.SRV{{Target: "prom-a.example.com.", Port: 9090, Weight: 1}},
+		time.Minute, nil
+}
+
+func (r *flakyResolver) lookupIP(context.Context, string) ([]string, time.Duration, error) {
+	r.calls.Add(1)
+	if !r.healed.Load() {
+		panic("resolver exploded")
+	}
+	return []string{"10.0.0.1"}, time.Minute, nil
+}
+
+// Before the shared poller, a panic anywhere in resolution killed the
+// subscription goroutine outright: no crash, no log, no metric -- the ALB
+// simply served its last membership forever while the health page stayed
+// green. This asserts the loop now survives the panic and still converges
+// once the underlying fault clears.
+func TestResolutionPanicDoesNotFreezeMembership(t *testing.T) {
+	before := testutil.ToFloat64(
+		metrics.DiscoveryRefreshErrors.WithLabelValues("test-dns", "dns_srv"))
+
+	r := &flakyResolver{}
+	p := &provider{
+		name: "test-dns", mode: modeSRV, res: r, interval: 5 * time.Millisecond,
+	}
+	d := discovery.NewLifecycle("test-dns", p.newSubscription)
+	require.NoError(t, d.Start(t.Context()))
+	defer d.Stop()
+
+	col := newSnapCollector()
+	unsub, err := d.Subscribe(&do.Query{SRVName: "x.example.com"}, col.handle)
+	require.NoError(t, err)
+	defer unsub()
+
+	// the loop must keep calling despite every call panicking
+	require.Eventually(t, func() bool { return r.calls.Load() >= 3 },
+		5*time.Second, 5*time.Millisecond,
+		"the poll loop died on the first panicking resolution")
+
+	// and must still be alive to pick up the recovery
+	r.healed.Store(true)
+	snap := col.next(t)
+	require.Len(t, snap, 1)
+	require.Equal(t, "prom-a.example.com:9090", snap[0].Address)
+
+	require.Greater(t,
+		testutil.ToFloat64(
+			metrics.DiscoveryRefreshErrors.WithLabelValues("test-dns", "dns_srv")),
+		before, "a panicking resolution should surface as a refresh error")
 }
