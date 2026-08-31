@@ -47,6 +47,7 @@ import (
 	tbytes "github.com/trickstercache/trickster/v2/pkg/bytes"
 	"github.com/trickstercache/trickster/v2/pkg/discovery"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/blockingquery"
+	consulopts "github.com/trickstercache/trickster/v2/pkg/discovery/consul/options"
 	do "github.com/trickstercache/trickster/v2/pkg/discovery/options"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/poller"
 	pollerhttp "github.com/trickstercache/trickster/v2/pkg/discovery/poller/http"
@@ -85,7 +86,7 @@ type provider struct {
 	name     string
 	endpoint *url.URL
 	http     *do.HTTPOptions
-	consul   *do.ConsulOptions
+	consul   *consulopts.Options
 }
 
 // New constructs the consul Discoverer; it satisfies
@@ -101,7 +102,7 @@ func New(name string, o *do.Options) (discovery.Discoverer, error) {
 	}
 	c := o.Consul
 	if c == nil {
-		c = &do.ConsulOptions{}
+		c = &consulopts.Options{}
 	}
 	p := &provider{name: name, endpoint: u, http: o.HTTP, consul: c}
 	return discovery.NewLifecycle(name, p.newSubscription), nil
@@ -123,7 +124,7 @@ func (p *provider) timeout() time.Duration {
 	if p.http.Timeout > 0 {
 		return time.Duration(p.http.Timeout)
 	}
-	return do.ConsulPollTimeout(p.consul.GetWait())
+	return consulopts.PollTimeout(p.consul.GetWait())
 }
 
 // newSubscription builds a query's blocking-query loop; it satisfies

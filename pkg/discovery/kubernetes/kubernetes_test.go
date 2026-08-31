@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/discovery"
+	kubeopts "github.com/trickstercache/trickster/v2/pkg/discovery/kubernetes/options"
 	do "github.com/trickstercache/trickster/v2/pkg/discovery/options"
 	"github.com/trickstercache/trickster/v2/pkg/kube"
 
@@ -372,7 +373,7 @@ func TestNewConstructorErrors(t *testing.T) {
 	require.Error(t, err)
 	// in-cluster outside a cluster
 	_, err = New("d", &do.Options{Provider: "kubernetes",
-		Kubernetes: &do.KubernetesOptions{InCluster: true}})
+		Kubernetes: &kubeopts.Options{InCluster: true}})
 	require.Error(t, err)
 }
 

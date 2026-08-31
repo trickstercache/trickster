@@ -194,6 +194,9 @@ func TestEveryUnacceptedFieldIsRejected(t *testing.T) {
 		"scheme":              func(q *Query) { q.Scheme = SchemeHTTPS },
 		"filter":              func(q *Query) { q.Filter = `Service.Meta.v == "2"` },
 		"tags":                func(q *Query) { q.Tags = []string{"prod"} },
+		"filters":             func(q *Query) { q.Filters = map[string][]string{"tag:env": {"prod"}} },
+		"address_type":        func(q *Query) { q.AddressType = AddressPublic },
+		"port_label":          func(q *Query) { q.PortLabel = "trickster-port" },
 	}
 	// every field in the table must have a setter here, or the sweep below
 	// silently skips it
@@ -279,4 +282,47 @@ func TestQueryValidateNomad(t *testing.T) {
 	err = (&Query{Service: "web", ReplicaGroupLabel: "shard"}).Validate("alb", o)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "replica_group_label")
+}
+
+func TestQueryValidateAWS(t *testing.T) {
+	o := &Options{Provider: providers.AWS}
+	require.NoError(t, (&Query{Port: "9090"}).Validate("alb", o))
+	require.NoError(t, (&Query{PortLabel: "trickster-port"}).Validate("alb", o))
+	require.NoError(t, (&Query{
+		Port: "9090", AddressType: AddressPublic, Scheme: SchemeHTTPS,
+		Filters: map[string][]string{"tag:env": {"prod"}},
+		Tags:    []string{"service"}, ReplicaGroupLabel: "shard",
+	}).Validate("alb", o))
+
+	// instances have addresses but no port, so one must be configured
+	err := (&Query{}).Validate("alb", o)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "'port' or 'port_label'")
+
+	err = (&Query{Port: "not-a-port"}).Validate("alb", o)
+	require.Error(t, err)
+
+	err = (&Query{Port: "9090", AddressType: "elastic"}).Validate("alb", o)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "private, public or ipv6")
+
+	err = (&Query{Port: "9090", Filters: map[string][]string{"": {"x"}}}).Validate("alb", o)
+	require.Error(t, err)
+	err = (&Query{Port: "9090", Filters: map[string][]string{"tag:x": nil}}).Validate("alb", o)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no values")
+
+	require.Equal(t, AddressPrivate, (&Query{}).GetAddressType())
+	require.Equal(t, AddressPublic, (&Query{AddressType: AddressPublic}).GetAddressType())
+}
+
+// Filters is the first map-of-slice field on Query; Clone must copy both
+// levels or two ALBs sharing a template would share the backing arrays.
+func TestQueryCloneCopiesFilters(t *testing.T) {
+	q := &Query{Filters: map[string][]string{"tag:env": {"prod"}}}
+	c := q.Clone()
+	c.Filters["tag:env"][0] = "staging"
+	c.Filters["new"] = []string{"x"}
+	require.Equal(t, "prod", q.Filters["tag:env"][0])
+	require.NotContains(t, q.Filters, "new")
 }

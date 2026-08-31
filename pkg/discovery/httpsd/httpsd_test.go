@@ -29,6 +29,7 @@ import (
 
 	tbytes "github.com/trickstercache/trickster/v2/pkg/bytes"
 	"github.com/trickstercache/trickster/v2/pkg/discovery"
+	httpsdopts "github.com/trickstercache/trickster/v2/pkg/discovery/httpsd/options"
 	do "github.com/trickstercache/trickster/v2/pkg/discovery/options"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
@@ -138,7 +139,7 @@ func testOptions(endpoint, format string, interval time.Duration) *do.Options {
 			Interval: timeconv.Duration(interval),
 			Timeout:  timeconv.Duration(2 * time.Second),
 		},
-		HTTPSD: &do.HTTPSDOptions{Format: format},
+		HTTPSD: &httpsdopts.Options{Format: format},
 	}
 }
 
@@ -160,7 +161,7 @@ func TestNewRequiresHTTPOptions(t *testing.T) {
 
 func TestNativeFormatDiscovery(t *testing.T) {
 	srv := newMutableServer(t, nativeBody)
-	d := startDiscoverer(t, testOptions(srv.URL, do.FormatTrickster, 25*time.Millisecond))
+	d := startDiscoverer(t, testOptions(srv.URL, httpsdopts.FormatTrickster, 25*time.Millisecond))
 	col := newSnapCollector()
 	unsub, err := d.Subscribe(&do.Query{}, col.handle)
 	require.NoError(t, err)
@@ -182,7 +183,7 @@ func TestNativeFormatDiscovery(t *testing.T) {
 func TestPrometheusFormatDiscovery(t *testing.T) {
 	srv := newMutableServer(t,
 		`[{"targets": ["10.0.0.1:9090", "10.0.0.2:9090"], "labels": {"env": "prod"}}]`)
-	o := testOptions(srv.URL, do.FormatPrometheus, 25*time.Millisecond)
+	o := testOptions(srv.URL, httpsdopts.FormatPrometheus, 25*time.Millisecond)
 	d := startDiscoverer(t, o)
 	col := newSnapCollector()
 	unsub, err := d.Subscribe(&do.Query{Scheme: "https"}, col.handle)
@@ -201,7 +202,7 @@ func TestPrometheusFormatDiscovery(t *testing.T) {
 // a trickster-format discoverer must fail rather than be coerced.
 func TestFormatIsNotSniffed(t *testing.T) {
 	srv := newMutableServer(t, `[{"targets": ["10.0.0.1:9090"]}]`)
-	d := startDiscoverer(t, testOptions(srv.URL, do.FormatTrickster, 25*time.Millisecond))
+	d := startDiscoverer(t, testOptions(srv.URL, httpsdopts.FormatTrickster, 25*time.Millisecond))
 	col := newSnapCollector()
 	unsub, err := d.Subscribe(&do.Query{}, col.handle)
 	require.NoError(t, err)
@@ -223,7 +224,7 @@ func TestQueryPathSelectsMemberList(t *testing.T) {
 		}
 	}))
 	defer srv.Close()
-	d := startDiscoverer(t, testOptions(srv.URL, do.FormatTrickster, 25*time.Millisecond))
+	d := startDiscoverer(t, testOptions(srv.URL, httpsdopts.FormatTrickster, 25*time.Millisecond))
 
 	colA, colB := newSnapCollector(), newSnapCollector()
 	unsubA, err := d.Subscribe(&do.Query{Path: "/pools/a"}, colA.handle)
@@ -247,7 +248,7 @@ func TestFailuresKeepLastGood(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			srv := newMutableServer(t, nativeBody)
-			d := startDiscoverer(t, testOptions(srv.URL, do.FormatTrickster, 25*time.Millisecond))
+			d := startDiscoverer(t, testOptions(srv.URL, httpsdopts.FormatTrickster, 25*time.Millisecond))
 			col := newSnapCollector()
 			unsub, err := d.Subscribe(&do.Query{}, col.handle)
 			require.NoError(t, err)
@@ -269,7 +270,7 @@ func TestFailuresKeepLastGood(t *testing.T) {
 // able to say so -- otherwise a scaled-to-zero pool can never be reported.
 func TestAuthoritativeEmptyIsEmitted(t *testing.T) {
 	srv := newMutableServer(t, nativeBody)
-	d := startDiscoverer(t, testOptions(srv.URL, do.FormatTrickster, 25*time.Millisecond))
+	d := startDiscoverer(t, testOptions(srv.URL, httpsdopts.FormatTrickster, 25*time.Millisecond))
 	col := newSnapCollector()
 	unsub, err := d.Subscribe(&do.Query{}, col.handle)
 	require.NoError(t, err)
@@ -285,7 +286,7 @@ func TestRefreshFailureIsCounted(t *testing.T) {
 		metrics.DiscoveryRefreshErrors.WithLabelValues("test-httpsd", "http_sd"))
 	srv := newMutableServer(t, "")
 	srv.set("", http.StatusInternalServerError)
-	d := startDiscoverer(t, testOptions(srv.URL, do.FormatTrickster, 25*time.Millisecond))
+	d := startDiscoverer(t, testOptions(srv.URL, httpsdopts.FormatTrickster, 25*time.Millisecond))
 	col := newSnapCollector()
 	unsub, err := d.Subscribe(&do.Query{}, col.handle)
 	require.NoError(t, err)
@@ -301,7 +302,7 @@ func TestRefreshFailureIsCounted(t *testing.T) {
 func TestConditionalRequestNotModifiedIsANoOp(t *testing.T) {
 	srv := newMutableServer(t, nativeBody)
 	srv.setETag(`"v1"`)
-	d := startDiscoverer(t, testOptions(srv.URL, do.FormatTrickster, 25*time.Millisecond))
+	d := startDiscoverer(t, testOptions(srv.URL, httpsdopts.FormatTrickster, 25*time.Millisecond))
 	col := newSnapCollector()
 	unsub, err := d.Subscribe(&do.Query{}, col.handle)
 	require.NoError(t, err)
@@ -326,7 +327,7 @@ func TestConditionalRequestNotModifiedIsANoOp(t *testing.T) {
 func TestETagNotStoredForRejectedDocument(t *testing.T) {
 	srv := newMutableServer(t, "{{{ not a member list")
 	srv.setETag(`"bad"`)
-	d := startDiscoverer(t, testOptions(srv.URL, do.FormatTrickster, 25*time.Millisecond))
+	d := startDiscoverer(t, testOptions(srv.URL, httpsdopts.FormatTrickster, 25*time.Millisecond))
 	col := newSnapCollector()
 	unsub, err := d.Subscribe(&do.Query{}, col.handle)
 	require.NoError(t, err)
@@ -342,7 +343,7 @@ func TestETagNotStoredForRejectedDocument(t *testing.T) {
 
 func TestRefreshIntervalHeaderIsSent(t *testing.T) {
 	srv := newMutableServer(t, nativeBody)
-	d := startDiscoverer(t, testOptions(srv.URL, do.FormatTrickster, 30*time.Second))
+	d := startDiscoverer(t, testOptions(srv.URL, httpsdopts.FormatTrickster, 30*time.Second))
 	col := newSnapCollector()
 	unsub, err := d.Subscribe(&do.Query{}, col.handle)
 	require.NoError(t, err)
@@ -353,7 +354,7 @@ func TestRefreshIntervalHeaderIsSent(t *testing.T) {
 
 func TestStaticHeadersAndBearerToken(t *testing.T) {
 	srv := newMutableServer(t, nativeBody)
-	o := testOptions(srv.URL, do.FormatTrickster, 25*time.Millisecond)
+	o := testOptions(srv.URL, httpsdopts.FormatTrickster, 25*time.Millisecond)
 	o.HTTP.Headers = map[string]string{"X-Consul-Token": "abc"}
 	o.HTTP.BearerToken = "tok"
 	d := startDiscoverer(t, o)
@@ -369,7 +370,7 @@ func TestStaticHeadersAndBearerToken(t *testing.T) {
 
 func TestBasicAuth(t *testing.T) {
 	srv := newMutableServer(t, nativeBody)
-	o := testOptions(srv.URL, do.FormatTrickster, 25*time.Millisecond)
+	o := testOptions(srv.URL, httpsdopts.FormatTrickster, 25*time.Millisecond)
 	o.HTTP.Username, o.HTTP.Password = "u", "p"
 	d := startDiscoverer(t, o)
 	col := newSnapCollector()
@@ -388,7 +389,7 @@ func TestBearerTokenFileIsRereadPerPoll(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, []byte("first\n"), 0o600))
 
 	srv := newMutableServer(t, nativeBody)
-	o := testOptions(srv.URL, do.FormatTrickster, 25*time.Millisecond)
+	o := testOptions(srv.URL, httpsdopts.FormatTrickster, 25*time.Millisecond)
 	o.HTTP.BearerTokenFile = path
 	d := startDiscoverer(t, o)
 	col := newSnapCollector()
@@ -409,7 +410,7 @@ func TestBearerTokenFileIsRereadPerPoll(t *testing.T) {
 // request, and keeps last-good.
 func TestUnreadableTokenFileFailsThePoll(t *testing.T) {
 	srv := newMutableServer(t, nativeBody)
-	o := testOptions(srv.URL, do.FormatTrickster, 25*time.Millisecond)
+	o := testOptions(srv.URL, httpsdopts.FormatTrickster, 25*time.Millisecond)
 	o.HTTP.BearerTokenFile = filepath.Join(t.TempDir(), "absent")
 	before := testutil.ToFloat64(
 		metrics.DiscoveryRefreshErrors.WithLabelValues("test-httpsd", "http_sd"))
@@ -449,7 +450,7 @@ func TestReadTokenFile(t *testing.T) {
 
 func TestSubscribeLifecycle(t *testing.T) {
 	srv := newMutableServer(t, nativeBody)
-	d, err := New("test-httpsd", testOptions(srv.URL, do.FormatTrickster, 25*time.Millisecond))
+	d, err := New("test-httpsd", testOptions(srv.URL, httpsdopts.FormatTrickster, 25*time.Millisecond))
 	require.NoError(t, err)
 	require.NoError(t, d.Start(t.Context()))
 	col := newSnapCollector()
@@ -469,7 +470,7 @@ func TestSubscribeLifecycle(t *testing.T) {
 // will actually hit, so it is pinned separately from the status-code path.
 func TestTransportFailureIsCountedAndKeepsLastGood(t *testing.T) {
 	srv := newMutableServer(t, nativeBody)
-	d := startDiscoverer(t, testOptions(srv.URL, do.FormatTrickster, 25*time.Millisecond))
+	d := startDiscoverer(t, testOptions(srv.URL, httpsdopts.FormatTrickster, 25*time.Millisecond))
 	col := newSnapCollector()
 	unsub, err := d.Subscribe(&do.Query{}, col.handle)
 	require.NoError(t, err)

@@ -91,6 +91,23 @@ type Query struct {
 	// whose catalog has a native tag concept. It is the friendly form of
 	// the common case that Filter can also express.
 	Tags []string `yaml:"tags,omitempty"`
+	// Filters is the name/values form of provider-native selection, for
+	// APIs whose filters are structured rather than an expression. It is a
+	// separate field from Filter because the two are genuinely different
+	// syntaxes, not two spellings of one: EC2 takes Filter.N.Name with
+	// repeated values, where consul takes an expression string.
+	Filters map[string][]string `yaml:"filters,omitempty"`
+	// AddressType selects which of a cloud instance's addresses becomes the
+	// member address: private (default), public, or ipv6. Cloud inventories
+	// return hosts with several addresses and no opinion about which one a
+	// caller should reach.
+	AddressType string `yaml:"address_type,omitempty"`
+	// PortLabel names a key in the provider's own metadata namespace (an
+	// EC2 tag, a GCE label) whose value is the member's port. Cloud
+	// instance APIs return hosts, not endpoints, so a port has to come from
+	// somewhere: either Port, statically, or from the instances themselves
+	// through this.
+	PortLabel string `yaml:"port_label,omitempty"`
 }
 
 // Clone returns a perfect copy of the Query
@@ -101,6 +118,12 @@ func (q *Query) Clone() *Query {
 	}
 	if q.Tags != nil {
 		out.Tags = slices.Clone(q.Tags)
+	}
+	if q.Filters != nil {
+		out.Filters = make(map[string][]string, len(q.Filters))
+		for k, v := range q.Filters {
+			out.Filters[k] = slices.Clone(v)
+		}
 	}
 	return &out
 }
@@ -122,7 +145,23 @@ const (
 	fieldScheme            = "scheme"
 	fieldFilter            = "filter"
 	fieldTags              = "tags"
+	fieldFilters           = "filters"
+	fieldAddressType       = "address_type"
+	fieldPortLabel         = "port_label"
 )
+
+// Address types accepted by Query.AddressType
+const (
+	// AddressPrivate selects an instance's private address (the default)
+	AddressPrivate = "private"
+	// AddressPublic selects an instance's public address
+	AddressPublic = "public"
+	// AddressIPv6 selects an instance's IPv6 address
+	AddressIPv6 = "ipv6"
+)
+
+// addressTypes enumerates the valid AddressType values
+var addressTypes = sets.New([]string{AddressPrivate, AddressPublic, AddressIPv6})
 
 // queryField pairs a Query field's config name with a reader, so that
 // validation can ask "is this set" without reflection.
@@ -151,6 +190,9 @@ var queryFields = []queryField{
 	{fieldScheme, func(q *Query) bool { return q.Scheme != "" }},
 	{fieldFilter, func(q *Query) bool { return q.Filter != "" }},
 	{fieldTags, func(q *Query) bool { return len(q.Tags) > 0 }},
+	{fieldFilters, func(q *Query) bool { return len(q.Filters) > 0 }},
+	{fieldAddressType, func(q *Query) bool { return q.AddressType != "" }},
+	{fieldPortLabel, func(q *Query) bool { return q.PortLabel != "" }},
 }
 
 // providerQueryFields names the query fields each provider accepts. A field
@@ -176,6 +218,10 @@ var providerQueryFields = map[string]sets.Set[string]{
 	// server-side
 	providers.Nomad: sets.New([]string{
 		fieldService, fieldTags, fieldFilter, fieldScheme,
+	}),
+	providers.AWS: sets.New([]string{
+		fieldFilters, fieldTags, fieldPort, fieldPortLabel,
+		fieldAddressType, fieldScheme, fieldReplicaGroupLabel,
 	}),
 }
 
@@ -218,6 +264,8 @@ func (q *Query) Validate(albName string, o *Options) error {
 		return q.validateConsul(albName)
 	case providers.Nomad:
 		return q.validateNomad(albName)
+	case providers.AWS:
+		return q.validateAWS(albName)
 	}
 	return NewErrInvalidQuery(albName, "unknown discovery provider "+o.Provider)
 }
@@ -321,6 +369,46 @@ func (q *Query) validateNomad(albName string) error {
 		return NewErrInvalidQuery(albName, "'tags' entries cannot be empty")
 	}
 	return nil
+}
+
+// validateAWS checks the aws query. A cloud instance inventory returns
+// hosts rather than endpoints, so a port must come from somewhere: either
+// statically, or from each instance's own metadata.
+func (q *Query) validateAWS(albName string) error {
+	if q.AddressType != "" && !addressTypes.Contains(q.AddressType) {
+		return NewErrInvalidQuery(albName,
+			"'address_type' must be private, public or ipv6")
+	}
+	if q.Port == "" && q.PortLabel == "" {
+		return NewErrInvalidQuery(albName,
+			"one of 'port' or 'port_label' is required for the aws provider, "+
+				"because instances have addresses but no port")
+	}
+	if q.Port != "" && !validPortNumber(q.Port) {
+		return NewErrInvalidQuery(albName,
+			"'port' must be a port number between 1 and 65535")
+	}
+	for name, values := range q.Filters {
+		if name == "" {
+			return NewErrInvalidQuery(albName, "'filters' names cannot be empty")
+		}
+		if len(values) == 0 {
+			return NewErrInvalidQuery(albName,
+				"'filters' entry "+name+" has no values")
+		}
+	}
+	if slices.Contains(q.Tags, "") {
+		return NewErrInvalidQuery(albName, "'tags' entries cannot be empty")
+	}
+	return nil
+}
+
+// GetAddressType returns the configured address type, or the default.
+func (q *Query) GetAddressType() string {
+	if q.AddressType == "" {
+		return AddressPrivate
+	}
+	return q.AddressType
 }
 
 func validPortNumber(s string) bool {

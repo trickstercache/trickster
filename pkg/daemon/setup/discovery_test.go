@@ -23,6 +23,7 @@ import (
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/config"
+	kubeopts "github.com/trickstercache/trickster/v2/pkg/discovery/kubernetes/options"
 	do "github.com/trickstercache/trickster/v2/pkg/discovery/options"
 	dp "github.com/trickstercache/trickster/v2/pkg/discovery/providers"
 
@@ -72,7 +73,7 @@ func TestDiscoveryConfigUnchanged(t *testing.T) {
 
 	// discoverer connection settings changed
 	changed = discoveryTestConfig()
-	changed.Discovery["d1"].Kubernetes = &do.KubernetesOptions{Kubeconfig: "/k"}
+	changed.Discovery["d1"].Kubernetes = &kubeopts.Options{Kubeconfig: "/k"}
 	require.False(t, discoveryConfigUnchanged(oldConf, changed, "alb1",
 		changed.Backends["alb1"].ALBOptions.Discovery))
 

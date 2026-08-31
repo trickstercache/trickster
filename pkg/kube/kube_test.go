@@ -22,7 +22,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	do "github.com/trickstercache/trickster/v2/pkg/discovery/options"
+	kubeopts "github.com/trickstercache/trickster/v2/pkg/discovery/kubernetes/options"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -34,7 +34,7 @@ func TestNew(t *testing.T) {
 		t.Error("expected error for nil options")
 	}
 	// a kubeconfig path that does not exist must error, not panic
-	if _, err := New(&do.KubernetesOptions{
+	if _, err := New(&kubeopts.Options{
 		Kubeconfig: "/nonexistent/kubeconfig"}); err == nil {
 		t.Error("expected error for missing kubeconfig")
 	}
@@ -108,7 +108,7 @@ func TestNewFromKubeconfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	// client construction succeeds without contacting the cluster
-	c, err := New(&do.KubernetesOptions{Kubeconfig: path})
+	c, err := New(&kubeopts.Options{Kubeconfig: path})
 	if err != nil {
 		t.Fatalf("New with valid kubeconfig: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestNewFromKubeconfig(t *testing.T) {
 		t.Fatal("expected a clientset")
 	}
 	// in-cluster construction outside a cluster errors cleanly
-	if _, err = New(&do.KubernetesOptions{InCluster: true}); err == nil {
+	if _, err = New(&kubeopts.Options{InCluster: true}); err == nil {
 		t.Error("expected in-cluster construction to fail outside a cluster")
 	}
 }

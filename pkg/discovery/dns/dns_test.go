@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/discovery"
+	dnsopts "github.com/trickstercache/trickster/v2/pkg/discovery/dns/options"
 	do "github.com/trickstercache/trickster/v2/pkg/discovery/options"
 	dnsclient "github.com/trickstercache/trickster/v2/pkg/dns/client"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
@@ -68,7 +69,7 @@ func testOptions(server string, interval time.Duration) *do.Options {
 	return &do.Options{
 		Name:     "test-dns",
 		Provider: "dns_srv",
-		DNS: &do.DNSOptions{
+		DNS: &dnsopts.Options{
 			Resolver: server,
 			Interval: timeconv.Duration(interval),
 		},
@@ -335,9 +336,9 @@ func TestModeAccessors(t *testing.T) {
 
 func TestNewProviderIntervalDefault(t *testing.T) {
 	p, err := newProvider("d", &do.Options{Provider: "dns_srv",
-		DNS: &do.DNSOptions{Resolver: "10.0.0.53:53"}}, modeSRV)
+		DNS: &dnsopts.Options{Resolver: "10.0.0.53:53"}}, modeSRV)
 	require.NoError(t, err)
-	require.Equal(t, do.DefaultDNSInterval, p.interval)
+	require.Equal(t, dnsopts.DefaultInterval, p.interval)
 }
 
 // flakyResolver panics until it is healed, then answers normally. It stands

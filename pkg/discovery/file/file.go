@@ -45,6 +45,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/discovery"
+	fileopts "github.com/trickstercache/trickster/v2/pkg/discovery/file/options"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/memberlist"
 	do "github.com/trickstercache/trickster/v2/pkg/discovery/options"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/providers"
@@ -81,7 +82,7 @@ func pollIntervalFor(o *do.Options) time.Duration {
 	if o != nil && o.File != nil && o.File.PollInterval > 0 {
 		return time.Duration(o.File.PollInterval)
 	}
-	return do.DefaultFilePollInterval
+	return fileopts.DefaultPollInterval
 }
 
 // newSubscription validates the query and builds its runner; it satisfies

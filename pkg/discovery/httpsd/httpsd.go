@@ -47,6 +47,7 @@ import (
 
 	tbytes "github.com/trickstercache/trickster/v2/pkg/bytes"
 	"github.com/trickstercache/trickster/v2/pkg/discovery"
+	httpsdopts "github.com/trickstercache/trickster/v2/pkg/discovery/httpsd/options"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/memberlist"
 	do "github.com/trickstercache/trickster/v2/pkg/discovery/options"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/poller"
@@ -298,7 +299,7 @@ func (s *subscription) handle(_ context.Context, resp *http.Response) (time.Dura
 
 // parse decodes the body in the discoverer's configured format.
 func (s *subscription) parse(body []byte) (discovery.Snapshot, error) {
-	if s.p.format == do.FormatPrometheus {
+	if s.p.format == httpsdopts.FormatPrometheus {
 		return memberlist.ParsePrometheus(body, s.scheme)
 	}
 	return memberlist.Parse(body)

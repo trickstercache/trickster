@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/discovery"
+	fileopts "github.com/trickstercache/trickster/v2/pkg/discovery/file/options"
 	do "github.com/trickstercache/trickster/v2/pkg/discovery/options"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
@@ -173,12 +174,12 @@ func TestSubscribeErrors(t *testing.T) {
 }
 
 func TestPollIntervalOption(t *testing.T) {
-	require.Equal(t, do.DefaultFilePollInterval, pollIntervalFor(nil))
-	require.Equal(t, do.DefaultFilePollInterval,
+	require.Equal(t, fileopts.DefaultPollInterval, pollIntervalFor(nil))
+	require.Equal(t, fileopts.DefaultPollInterval,
 		pollIntervalFor(&do.Options{Provider: "file"}))
 	require.Equal(t, 2*time.Second, pollIntervalFor(&do.Options{
 		Provider: "file",
-		File:     &do.FileOptions{PollInterval: timeconv.Duration(2 * time.Second)},
+		File:     &fileopts.Options{PollInterval: timeconv.Duration(2 * time.Second)},
 	}))
 }
 
@@ -193,7 +194,7 @@ func TestPollDetectsLateCreatedDirectory(t *testing.T) {
 	path := filepath.Join(dir, "members.yaml")
 
 	d, err := New("poll-only", &do.Options{Provider: "file",
-		File: &do.FileOptions{PollInterval: timeconv.Duration(50 * time.Millisecond)}})
+		File: &fileopts.Options{PollInterval: timeconv.Duration(50 * time.Millisecond)}})
 	require.NoError(t, err)
 	require.NoError(t, d.Start(t.Context()))
 	defer d.Stop()

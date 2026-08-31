@@ -48,6 +48,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/discovery"
+	dnsopts "github.com/trickstercache/trickster/v2/pkg/discovery/dns/options"
 	do "github.com/trickstercache/trickster/v2/pkg/discovery/options"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/poller"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/providers"
@@ -102,7 +103,7 @@ func newProvider(name string, o *do.Options, m mode) (*provider, error) {
 	}
 	interval := time.Duration(o.DNS.Interval)
 	if interval <= 0 {
-		interval = do.DefaultDNSInterval
+		interval = dnsopts.DefaultInterval
 	}
 	r, err := newResolver(o.DNS.Resolver)
 	if err != nil {

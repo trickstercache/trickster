@@ -23,11 +23,17 @@ package options
 
 import (
 	"maps"
-	"net"
 	"net/url"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
+	awsopts "github.com/trickstercache/trickster/v2/pkg/discovery/aws/options"
+	consulopts "github.com/trickstercache/trickster/v2/pkg/discovery/consul/options"
+	dnsopts "github.com/trickstercache/trickster/v2/pkg/discovery/dns/options"
+	fileopts "github.com/trickstercache/trickster/v2/pkg/discovery/file/options"
+	httpsdopts "github.com/trickstercache/trickster/v2/pkg/discovery/httpsd/options"
+	kubeopts "github.com/trickstercache/trickster/v2/pkg/discovery/kubernetes/options"
+	nomadopts "github.com/trickstercache/trickster/v2/pkg/discovery/nomad/options"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/providers"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	to "github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
@@ -48,17 +54,19 @@ type Options struct {
 	// (kubernetes, dns_srv, dns_a, file)
 	Provider string `yaml:"provider,omitempty"`
 	// Kubernetes provides client connection settings when Provider is 'kubernetes'
-	Kubernetes *KubernetesOptions `yaml:"kubernetes,omitempty"`
+	Kubernetes *kubeopts.Options `yaml:"kubernetes,omitempty"`
 	// DNS provides resolver settings when Provider is 'dns_srv' or 'dns_a'
-	DNS *DNSOptions `yaml:"dns,omitempty"`
+	DNS *dnsopts.Options `yaml:"dns,omitempty"`
 	// File provides change-detection settings when Provider is 'file'
-	File *FileOptions `yaml:"file,omitempty"`
+	File *fileopts.Options `yaml:"file,omitempty"`
 	// HTTPSD provides payload settings when Provider is 'http_sd'
-	HTTPSD *HTTPSDOptions `yaml:"http_sd,omitempty"`
+	HTTPSD *httpsdopts.Options `yaml:"http_sd,omitempty"`
 	// Consul provides catalog settings when Provider is 'consul'
-	Consul *ConsulOptions `yaml:"consul,omitempty"`
+	Consul *consulopts.Options `yaml:"consul,omitempty"`
 	// Nomad provides registry settings when Provider is 'nomad'
-	Nomad *NomadOptions `yaml:"nomad,omitempty"`
+	Nomad *nomadopts.Options `yaml:"nomad,omitempty"`
+	// AWS provides API and credential settings when Provider is 'aws'
+	AWS *awsopts.Options `yaml:"aws,omitempty"`
 	//
 	// HTTP provides the outbound client settings shared by every provider
 	// that discovers members by polling an HTTP endpoint
@@ -67,41 +75,6 @@ type Options struct {
 	// synthetic values
 	// Name is the name of the discoverer, taken from the key in the Lookup map
 	Name string `yaml:"-"`
-}
-
-// KubernetesOptions defines the Kubernetes API client settings for a
-// discoverer with the 'kubernetes' provider
-type KubernetesOptions struct {
-	// InCluster, when true, uses the pod's service account for API access.
-	// Defaults to true when no kubeconfig is provided.
-	InCluster bool `yaml:"in_cluster,omitempty"`
-	// Kubeconfig is the path to a kubeconfig file, for use when running
-	// outside the target cluster. Mutually exclusive with in_cluster.
-	Kubeconfig string `yaml:"kubeconfig,omitempty"`
-}
-
-// DNSOptions defines the resolver settings for a discoverer with the
-// 'dns_srv' or 'dns_a' provider
-type DNSOptions struct {
-	// Resolver is the host:port of the DNS server to query. When empty, the
-	// system resolver is used.
-	Resolver string `yaml:"resolver,omitempty"`
-	// Interval is the poll cadence for re-resolving records. Record TTLs act
-	// as a floor: a record is never re-resolved before its TTL expires.
-	Interval timeconv.Duration `yaml:"interval,omitempty"`
-}
-
-// FileOptions defines the change-detection settings for a discoverer with
-// the 'file' provider. The provider always watches the member-list file's
-// parent directory for filesystem change notifications AND stat-polls the
-// file as a fallback; poll_interval controls that fallback cadence. On
-// filesystems where change notification is unreliable or unavailable --
-// NFS-backed volumes, some FUSE/CSI mounts -- the poll is the effective
-// update mechanism, so lower it to the freshness the deployment needs.
-type FileOptions struct {
-	// PollInterval is the cadence of the stat-based change poll that
-	// backstops filesystem change notification
-	PollInterval timeconv.Duration `yaml:"poll_interval,omitempty"`
 }
 
 // HTTPOptions defines the outbound HTTP client settings for a discoverer
@@ -148,146 +121,6 @@ type HTTPOptions struct {
 	FollowRedirects bool `yaml:"follow_redirects,omitempty"`
 }
 
-// Member-list document formats accepted by the http_sd provider
-const (
-	// FormatTrickster is Trickster's native member list, carrying scheme,
-	// path prefix, weight and replica group per member
-	FormatTrickster = "trickster"
-	// FormatPrometheus is the document Prometheus's own file_sd and http_sd
-	// consume: [{"targets": [...], "labels": {...}}]
-	FormatPrometheus = "prometheus"
-)
-
-// HTTPSDOptions defines the payload settings for a discoverer with the
-// 'http_sd' provider. Connection settings live in the shared 'http' block.
-type HTTPSDOptions struct {
-	// Format names the member-list document the endpoint serves:
-	// 'trickster' (default) or 'prometheus'.
-	//
-	// It is explicit rather than sniffed. The two documents are structurally
-	// distinguishable, but guessing means a typo in one format can parse as
-	// a valid, wrong membership in the other -- and the cost of guessing
-	// wrong is a silently drained pool.
-	Format string `yaml:"format,omitempty"`
-}
-
-// ConsulOptions defines the catalog settings for a discoverer with the
-// 'consul' provider. Connection settings live in the shared 'http' block,
-// where 'endpoint' is the agent or server address (commonly
-// http://127.0.0.1:8500) and the ACL token is supplied either as an
-// X-Consul-Token header or, for a rotated credential, via
-// bearer_token_file -- Consul accepts the Authorization Bearer scheme as an
-// equivalent to its own header.
-type ConsulOptions struct {
-	// Datacenter queries a datacenter other than the agent's own
-	Datacenter string `yaml:"datacenter,omitempty"`
-	// Namespace and Partition scope the query on Consul Enterprise
-	Namespace string `yaml:"namespace,omitempty"`
-	Partition string `yaml:"partition,omitempty"`
-	// Wait is the maximum time a blocking query parks on the server before
-	// returning unchanged. It is what makes this provider event-driven
-	// rather than polled: membership changes are observed within a round
-	// trip, and an unchanged service costs one parked connection per Wait.
-	Wait timeconv.Duration `yaml:"wait,omitempty"`
-	// AllowStale permits any Consul server to answer rather than only the
-	// leader, trading a small staleness window for lower latency and much
-	// lower load on the leader. Recommended for discovery, which is
-	// already eventually consistent by nature.
-	AllowStale bool `yaml:"allow_stale,omitempty"`
-	// OnlyPassing asks Consul to return only instances whose checks all
-	// pass. The default is false, so that failing instances are reported as
-	// NotReady rather than vanishing -- which lets an ALB using
-	// health_mode: probe decide for itself, and keeps a wholly-unhealthy
-	// service from looking like an empty one.
-	OnlyPassing bool `yaml:"only_passing,omitempty"`
-	// WarningIsReady controls how an instance whose worst check is
-	// 'warning' is reported. Consul treats warning as still-serving for DNS
-	// purposes, so this defaults to true; set it false to drain warning
-	// instances out of pools.
-	WarningIsReady *bool `yaml:"warning_is_ready,omitempty"`
-}
-
-const (
-	// DefaultConsulWait is the default blocking-query wait
-	DefaultConsulWait = 5 * time.Minute
-	// MinimumConsulWait is the lowest permitted blocking-query wait
-	MinimumConsulWait = time.Second
-	// MaximumConsulWait is the highest wait Consul honors; larger values are
-	// silently clamped by the server, so reject them instead
-	MaximumConsulWait = 10 * time.Minute
-	// ConsulWaitTimeoutFloor is the fixed part of the margin between the
-	// blocking-query wait and the poll timeout that must outlast it
-	ConsulWaitTimeoutFloor = 10 * time.Second
-)
-
-// ConsulPollTimeout returns the poll timeout that must bound a blocking
-// query of the given wait. Consul adds up to wait/16 of its own jitter
-// before returning, so a timeout of merely wait would abort perfectly
-// healthy long polls; the margin covers that jitter plus round-trip slack.
-func ConsulPollTimeout(wait time.Duration) time.Duration {
-	return wait + wait/16 + ConsulWaitTimeoutFloor
-}
-
-// GetWait returns the configured blocking-query wait, or the default.
-func (o *ConsulOptions) GetWait() time.Duration {
-	if o == nil || o.Wait <= 0 {
-		return DefaultConsulWait
-	}
-	return time.Duration(o.Wait)
-}
-
-// GetWarningIsReady reports whether a warning instance counts as ready,
-// defaulting to true.
-func (o *ConsulOptions) GetWarningIsReady() bool {
-	if o == nil || o.WarningIsReady == nil {
-		return true
-	}
-	return *o.WarningIsReady
-}
-
-// NomadOptions defines the registry settings for a discoverer with the
-// 'nomad' provider. Connection settings live in the shared 'http' block,
-// where 'endpoint' is the agent address (commonly http://127.0.0.1:4646)
-// and the ACL token is supplied either as an X-Nomad-Token header or, for a
-// rotated credential, via bearer_token_file -- Nomad accepts the
-// Authorization Bearer scheme as an equivalent to its own header.
-//
-// This reads Nomad's *native* service registry. Jobs that register into
-// Consul instead (provider = "consul" in the job's service block) are
-// discovered with the consul provider, which additionally conveys health.
-type NomadOptions struct {
-	// Namespace scopes the query; Nomad defaults it to "default"
-	Namespace string `yaml:"namespace,omitempty"`
-	// Region queries a region other than the agent's own
-	Region string `yaml:"region,omitempty"`
-	// Wait is the maximum time a blocking query parks on the server before
-	// returning unchanged, making the provider event-driven rather than
-	// polled
-	Wait timeconv.Duration `yaml:"wait,omitempty"`
-	// AllowStale permits any Nomad server to answer rather than only the
-	// leader, trading a small staleness window for lower leader load
-	AllowStale bool `yaml:"allow_stale,omitempty"`
-}
-
-const (
-	// DefaultNomadWait is the default blocking-query wait, matching Nomad's
-	// own default
-	DefaultNomadWait = 5 * time.Minute
-	// MinimumNomadWait is the lowest permitted blocking-query wait
-	MinimumNomadWait = time.Second
-	// MaximumNomadWait is the highest wait Nomad honors; larger values are
-	// silently clamped by the server, so reject them instead
-	MaximumNomadWait = 10 * time.Minute
-)
-
-// GetWait returns the configured blocking-query wait, or the default.
-func (o *NomadOptions) GetWait() time.Duration {
-	if o == nil || o.Wait <= 0 {
-		return DefaultNomadWait
-	}
-	return time.Duration(o.Wait)
-}
-
 const (
 	// DefaultHTTPInterval is the default poll cadence for HTTP-based
 	// discovery providers
@@ -301,18 +134,6 @@ const (
 	MinimumHTTPTimeout = time.Millisecond * 100
 )
 
-const (
-	// DefaultDNSInterval is the default DNS poll cadence
-	DefaultDNSInterval = 30 * time.Second
-	// MinimumDNSInterval is the lowest permitted DNS poll cadence
-	MinimumDNSInterval = time.Second
-	// DefaultFilePollInterval is the default member-file stat-poll cadence
-	DefaultFilePollInterval = 30 * time.Second
-	// MinimumFilePollInterval is the lowest permitted member-file
-	// stat-poll cadence
-	MinimumFilePollInterval = time.Second
-)
-
 var _ types.ConfigOptions[Options] = &Options{}
 
 // New returns a new discoverer Options with default values
@@ -323,27 +144,13 @@ func New() *Options {
 // Clone returns a perfect copy of the Options
 func (o *Options) Clone() *Options {
 	out := pointers.Clone(o)
-	if o.Kubernetes != nil {
-		out.Kubernetes = pointers.Clone(o.Kubernetes)
-	}
-	if o.DNS != nil {
-		out.DNS = pointers.Clone(o.DNS)
-	}
-	if o.File != nil {
-		out.File = pointers.Clone(o.File)
-	}
-	if o.HTTPSD != nil {
-		out.HTTPSD = pointers.Clone(o.HTTPSD)
-	}
-	if o.Consul != nil {
-		out.Consul = pointers.Clone(o.Consul)
-		if o.Consul.WarningIsReady != nil {
-			out.Consul.WarningIsReady = pointers.Clone(o.Consul.WarningIsReady)
-		}
-	}
-	if o.Nomad != nil {
-		out.Nomad = pointers.Clone(o.Nomad)
-	}
+	out.Kubernetes = o.Kubernetes.Clone()
+	out.DNS = o.DNS.Clone()
+	out.File = o.File.Clone()
+	out.HTTPSD = o.HTTPSD.Clone()
+	out.Consul = o.Consul.Clone()
+	out.Nomad = o.Nomad.Clone()
+	out.AWS = o.AWS.Clone()
 	if o.HTTP != nil {
 		out.HTTP = pointers.Clone(o.HTTP)
 		if o.HTTP.TLS != nil {
@@ -356,7 +163,8 @@ func (o *Options) Clone() *Options {
 	return out
 }
 
-// Initialize sets defaults on the Options based on the configured provider
+// Initialize sets defaults on the Options based on the configured provider,
+// delegating each provider block's defaults to the package that owns it.
 func (o *Options) Initialize(name string) error {
 	if name != "" {
 		o.Name = name
@@ -364,60 +172,66 @@ func (o *Options) Initialize(name string) error {
 	switch o.Provider {
 	case providers.Kubernetes:
 		if o.Kubernetes == nil {
-			o.Kubernetes = &KubernetesOptions{InCluster: true}
-		} else if !o.Kubernetes.InCluster && o.Kubernetes.Kubeconfig == "" {
-			o.Kubernetes.InCluster = true
+			o.Kubernetes = kubeopts.New()
 		}
+		o.Kubernetes.Initialize()
 	case providers.DNSSRV, providers.DNSA:
 		if o.DNS == nil {
-			o.DNS = &DNSOptions{}
+			o.DNS = dnsopts.New()
 		}
-		if o.DNS.Interval == 0 {
-			o.DNS.Interval = timeconv.Duration(DefaultDNSInterval)
-		}
+		o.DNS.Initialize()
 	case providers.File:
 		if o.File == nil {
-			o.File = &FileOptions{}
+			o.File = fileopts.New()
 		}
-		if o.File.PollInterval == 0 {
-			o.File.PollInterval = timeconv.Duration(DefaultFilePollInterval)
-		}
-	}
-	if o.Provider == providers.HTTPSD {
+		o.File.Initialize()
+	case providers.HTTPSD:
 		if o.HTTPSD == nil {
-			o.HTTPSD = &HTTPSDOptions{}
+			o.HTTPSD = httpsdopts.New()
 		}
-		if o.HTTPSD.Format == "" {
-			o.HTTPSD.Format = FormatTrickster
+		o.HTTPSD.Initialize()
+	case providers.Consul:
+		if o.Consul == nil {
+			o.Consul = consulopts.New()
 		}
-	}
-	if o.Provider == providers.Consul && o.Consul == nil {
-		o.Consul = &ConsulOptions{}
-	}
-	if o.Provider == providers.Nomad && o.Nomad == nil {
-		o.Nomad = &NomadOptions{}
+	case providers.Nomad:
+		if o.Nomad == nil {
+			o.Nomad = nomadopts.New()
+		}
+	case providers.AWS:
+		if o.AWS == nil {
+			o.AWS = awsopts.New()
+		}
+		o.AWS.Initialize()
+		// AWS derives its endpoint, so an http block is optional; create
+		// one so the shared interval and timeout defaults apply
+		if o.HTTP == nil {
+			o.HTTP = &HTTPOptions{}
+		}
 	}
 	if o.HTTP != nil {
 		if o.HTTP.Interval == 0 {
 			o.HTTP.Interval = timeconv.Duration(DefaultHTTPInterval)
 		}
 		if o.HTTP.Timeout == 0 {
-			// consul's timeout must outlast its blocking-query wait, so its
-			// default is derived rather than shared; a 10s default would
-			// abort every long poll
-			switch o.Provider {
-			case providers.Consul:
-				o.HTTP.Timeout = timeconv.Duration(
-					ConsulPollTimeout(o.Consul.GetWait()))
-			case providers.Nomad:
-				o.HTTP.Timeout = timeconv.Duration(
-					ConsulPollTimeout(o.Nomad.GetWait()))
-			default:
-				o.HTTP.Timeout = timeconv.Duration(DefaultHTTPTimeout)
-			}
+			o.HTTP.Timeout = timeconv.Duration(o.defaultHTTPTimeout())
 		}
 	}
 	return nil
+}
+
+// defaultHTTPTimeout returns the poll timeout appropriate to the provider.
+// The blocking-query providers need one that outlasts their server-side
+// wait; a shared 10s default would abort every long poll.
+func (o *Options) defaultHTTPTimeout() time.Duration {
+	switch o.Provider {
+	case providers.Consul:
+		return consulopts.PollTimeout(o.Consul.GetWait())
+	case providers.Nomad:
+		return nomadopts.PollTimeout(o.Nomad.GetWait())
+	default:
+		return DefaultHTTPTimeout
+	}
 }
 
 // Validate validates the Options
@@ -449,110 +263,66 @@ func (o *Options) Validate() (bool, error) {
 	if o.Nomad != nil && o.Provider != providers.Nomad {
 		return false, NewErrInvalidDiscoveryBlock("nomad", o.Provider, o.Name)
 	}
-	if o.Provider == providers.Consul {
-		if err := o.validateConsul(); err != nil {
-			return false, err
-		}
+	if o.AWS != nil && o.Provider != providers.AWS {
+		return false, NewErrInvalidDiscoveryBlock("aws", o.Provider, o.Name)
 	}
-	if o.Provider == providers.Nomad {
-		if err := o.validateNomad(); err != nil {
-			return false, err
-		}
-	}
-	if o.Provider == providers.HTTPSD {
-		if o.HTTP == nil {
-			return false, NewErrInvalidHTTPOptions(o.Name,
-				"the 'http' block is required for the http_sd provider")
-		}
-		if f := o.HTTPSD.GetFormat(); f != FormatTrickster && f != FormatPrometheus {
-			return false, NewErrInvalidHTTPSDOptions(o.Name,
-				"'format' must be trickster or prometheus")
-		}
+	if err := o.validateProviderBlock(); err != nil {
+		return false, err
 	}
 	if err := o.validateHTTP(); err != nil {
 		return false, err
 	}
-	if o.File != nil && o.File.PollInterval != 0 &&
-		time.Duration(o.File.PollInterval) < MinimumFilePollInterval {
-		return false, NewErrInvalidFileOptions(o.Name,
-			"'poll_interval' must be at least 1s")
-	}
-	if o.Kubernetes != nil && o.Kubernetes.InCluster && o.Kubernetes.Kubeconfig != "" {
-		return false, NewErrInvalidKubernetesOptions(o.Name,
-			"'in_cluster' and 'kubeconfig' are mutually exclusive")
-	}
-	if o.DNS != nil {
-		if o.DNS.Resolver != "" {
-			if _, _, err := net.SplitHostPort(o.DNS.Resolver); err != nil {
-				return false, NewErrInvalidDNSOptions(o.Name,
-					"'resolver' must be a host:port")
-			}
-		}
-		if o.DNS.Interval != 0 &&
-			time.Duration(o.DNS.Interval) < MinimumDNSInterval {
-			return false, NewErrInvalidDNSOptions(o.Name,
-				"'interval' must be at least 1s")
-		}
-	}
 	return true, nil
 }
 
-// GetFormat returns the configured member-list format, defaulting to
-// trickster. It tolerates a nil receiver so callers need not distinguish an
-// absent block from an unset field.
-func (o *HTTPSDOptions) GetFormat() string {
-	if o == nil || o.Format == "" {
-		return FormatTrickster
-	}
-	return o.Format
-}
-
-// validateConsul validates the consul catalog options and their
-// interaction with the shared HTTP block.
-func (o *Options) validateConsul() error {
-	if o.HTTP == nil {
-		return NewErrInvalidHTTPOptions(o.Name,
-			"the 'http' block is required for the consul provider")
-	}
-	wait := o.Consul.GetWait()
-	if wait < MinimumConsulWait {
-		return NewErrInvalidConsulOptions(o.Name, "'wait' must be at least 1s")
-	}
-	if wait > MaximumConsulWait {
-		return NewErrInvalidConsulOptions(o.Name,
-			"'wait' must be at most 10m, which is the longest Consul honors")
-	}
-	// a poll timeout that does not outlast the blocking wait aborts every
-	// long poll, turning an event-driven provider into a failing one; catch
-	// it at startup rather than as a stream of timeouts in production
-	if t := time.Duration(o.HTTP.Timeout); t > 0 && t <= wait {
-		return NewErrInvalidConsulOptions(o.Name,
-			"'http.timeout' must be greater than 'consul.wait' (recommended: "+
-				ConsulPollTimeout(wait).String()+")")
-	}
-	return nil
-}
-
-// validateNomad validates the nomad registry options and their interaction
-// with the shared HTTP block. Nomad and Consul share HashiCorp's
-// blocking-query protocol, so the wait/timeout relationship is the same.
-func (o *Options) validateNomad() error {
-	if o.HTTP == nil {
-		return NewErrInvalidHTTPOptions(o.Name,
-			"the 'http' block is required for the nomad provider")
-	}
-	wait := o.Nomad.GetWait()
-	if wait < MinimumNomadWait {
-		return NewErrInvalidNomadOptions(o.Name, "'wait' must be at least 1s")
-	}
-	if wait > MaximumNomadWait {
-		return NewErrInvalidNomadOptions(o.Name,
-			"'wait' must be at most 10m, which is the longest Nomad honors")
-	}
-	if t := time.Duration(o.HTTP.Timeout); t > 0 && t <= wait {
-		return NewErrInvalidNomadOptions(o.Name,
-			"'http.timeout' must be greater than 'nomad.wait' (recommended: "+
-				ConsulPollTimeout(wait).String()+")")
+// validateProviderBlock delegates each provider block's validation to the
+// package that owns it, wrapping the result with the discoverer's name.
+//
+// Blocks own their own rules; this function owns only the cross-block ones,
+// which are the relationships a single block cannot see: whether a shared
+// http block is required, and whether its timeout outlasts a blocking wait.
+func (o *Options) validateProviderBlock() error {
+	switch o.Provider {
+	case providers.Kubernetes:
+		if err := o.Kubernetes.Validate(); err != nil {
+			return NewErrInvalidKubernetesOptions(o.Name, err.Error())
+		}
+	case providers.DNSSRV, providers.DNSA:
+		if err := o.DNS.Validate(); err != nil {
+			return NewErrInvalidDNSOptions(o.Name, err.Error())
+		}
+	case providers.File:
+		if err := o.File.Validate(); err != nil {
+			return NewErrInvalidFileOptions(o.Name, err.Error())
+		}
+	case providers.HTTPSD:
+		if o.HTTP == nil {
+			return NewErrInvalidHTTPOptions(o.Name,
+				"the 'http' block is required for the http_sd provider")
+		}
+		if err := o.HTTPSD.Validate(); err != nil {
+			return NewErrInvalidHTTPSDOptions(o.Name, err.Error())
+		}
+	case providers.Consul:
+		if o.HTTP == nil {
+			return NewErrInvalidHTTPOptions(o.Name,
+				"the 'http' block is required for the consul provider")
+		}
+		if err := o.Consul.Validate(time.Duration(o.HTTP.Timeout)); err != nil {
+			return NewErrInvalidConsulOptions(o.Name, err.Error())
+		}
+	case providers.Nomad:
+		if o.HTTP == nil {
+			return NewErrInvalidHTTPOptions(o.Name,
+				"the 'http' block is required for the nomad provider")
+		}
+		if err := o.Nomad.Validate(time.Duration(o.HTTP.Timeout)); err != nil {
+			return NewErrInvalidNomadOptions(o.Name, err.Error())
+		}
+	case providers.AWS:
+		if err := o.AWS.Validate(); err != nil {
+			return NewErrInvalidAWSOptions(o.Name, err.Error())
+		}
 	}
 	return nil
 }
@@ -564,6 +334,11 @@ func (o *Options) validateHTTP() error {
 		return nil
 	}
 	if h.Endpoint == "" {
+		// providers that compute their own endpoint treat this as an
+		// optional override rather than a required setting
+		if providers.DerivesEndpoint(o.Provider) {
+			return o.validateHTTPTimings()
+		}
 		return NewErrInvalidHTTPOptions(o.Name, "'endpoint' is required")
 	}
 	u, err := url.Parse(h.Endpoint)
@@ -577,11 +352,8 @@ func (o *Options) validateHTTP() error {
 	if u.Host == "" {
 		return NewErrInvalidHTTPOptions(o.Name, "'endpoint' must include a host")
 	}
-	if h.Interval != 0 && time.Duration(h.Interval) < MinimumHTTPInterval {
-		return NewErrInvalidHTTPOptions(o.Name, "'interval' must be at least 1s")
-	}
-	if h.Timeout != 0 && time.Duration(h.Timeout) < MinimumHTTPTimeout {
-		return NewErrInvalidHTTPOptions(o.Name, "'timeout' must be at least 100ms")
+	if err := o.validateHTTPTimings(); err != nil {
+		return err
 	}
 	// credentials are mutually exclusive: silently preferring one over the
 	// other is how an operator ends up debugging a 401 against a config
@@ -598,6 +370,19 @@ func (o *Options) validateHTTP() error {
 	}
 	if h.Password != "" && h.Username == "" {
 		return NewErrInvalidHTTPOptions(o.Name, "'password' requires 'username'")
+	}
+	return nil
+}
+
+// validateHTTPTimings checks the cadence bounds shared by every HTTP-based
+// provider, whether or not it supplies its own endpoint.
+func (o *Options) validateHTTPTimings() error {
+	h := o.HTTP
+	if h.Interval != 0 && time.Duration(h.Interval) < MinimumHTTPInterval {
+		return NewErrInvalidHTTPOptions(o.Name, "'interval' must be at least 1s")
+	}
+	if h.Timeout != 0 && time.Duration(h.Timeout) < MinimumHTTPTimeout {
+		return NewErrInvalidHTTPOptions(o.Name, "'timeout' must be at least 100ms")
 	}
 	return nil
 }

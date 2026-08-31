@@ -191,6 +191,20 @@ func NewSource(o *Options, h Handler) (poller.Source, error) {
 	}, nil
 }
 
+// NewClient builds the *http.Client this package would use for the given
+// options, without the single-request Source around it.
+//
+// It exists for providers whose one poll is several requests -- a paginated
+// cloud API, say -- which cannot use a Source that issues exactly one
+// request per iteration, but should still get the same TLS, redirect and
+// connection-pool behavior as every other HTTP-based provider.
+func NewClient(o *Options) (*http.Client, error) {
+	if o == nil {
+		return nil, ErrNoURL
+	}
+	return clientFor(o)
+}
+
 // clientFor returns the caller's client, or builds one from the options.
 func clientFor(o *Options) (*http.Client, error) {
 	if o.Client != nil {

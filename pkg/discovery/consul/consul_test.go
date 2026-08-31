@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/discovery"
+	consulopts "github.com/trickstercache/trickster/v2/pkg/discovery/consul/options"
 	do "github.com/trickstercache/trickster/v2/pkg/discovery/options"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
@@ -83,11 +84,11 @@ func testOptions(endpoint string) *do.Options {
 			Endpoint: endpoint,
 			Interval: timeconv.Duration(50 * time.Millisecond),
 		},
-		Consul: &do.ConsulOptions{
+		Consul: &consulopts.Options{
 			Wait: timeconv.Duration(2 * time.Second),
 		},
 	}
-	o.HTTP.Timeout = timeconv.Duration(do.ConsulPollTimeout(o.Consul.GetWait()))
+	o.HTTP.Timeout = timeconv.Duration(consulopts.PollTimeout(o.Consul.GetWait()))
 	return o
 }
 
@@ -178,7 +179,7 @@ func TestUnchangedBlockingQueryIsANoOp(t *testing.T) {
 	f := newFakeConsul(t, entry("web-1", "10.0.0.1", 8080, statusPassing))
 	o := testOptions(f.URL)
 	o.Consul.Wait = timeconv.Duration(time.Second)
-	o.HTTP.Timeout = timeconv.Duration(do.ConsulPollTimeout(time.Second))
+	o.HTTP.Timeout = timeconv.Duration(consulopts.PollTimeout(time.Second))
 	d := startDiscoverer(t, o)
 	col := subscribe(t, d, &do.Query{Service: "web"})
 	require.Len(t, col.next(t), 1)
@@ -350,7 +351,7 @@ func TestStopIsPromptDuringABlockingQuery(t *testing.T) {
 	f := newFakeConsul(t, entry("web-1", "10.0.0.1", 8080, statusPassing))
 	o := testOptions(f.URL)
 	o.Consul.Wait = timeconv.Duration(9 * time.Second)
-	o.HTTP.Timeout = timeconv.Duration(do.ConsulPollTimeout(9 * time.Second))
+	o.HTTP.Timeout = timeconv.Duration(consulopts.PollTimeout(9 * time.Second))
 	d, err := New("test-consul", o)
 	require.NoError(t, err)
 	require.NoError(t, d.Start(t.Context()))

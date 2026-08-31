@@ -140,3 +140,11 @@ func NewErrInvalidNomadOptions(name, detail string) error {
 			name, detail),
 	}
 }
+
+// NewErrInvalidAWSOptions returns an error for invalid aws provider options
+func NewErrInvalidAWSOptions(name, detail string) error {
+	return &InvalidDiscoveryOptionsError{
+		error: fmt.Errorf(`invalid aws options for discoverer %q: %s`,
+			name, detail),
+	}
+}

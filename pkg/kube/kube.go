@@ -27,7 +27,7 @@ import (
 	"os"
 	"strings"
 
-	do "github.com/trickstercache/trickster/v2/pkg/discovery/options"
+	kubeopts "github.com/trickstercache/trickster/v2/pkg/discovery/kubernetes/options"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -46,7 +46,7 @@ type Client struct {
 
 // New constructs a Client from the provided connection options: the pod's
 // service account when InCluster, otherwise the referenced kubeconfig file
-func New(o *do.KubernetesOptions) (*Client, error) {
+func New(o *kubeopts.Options) (*Client, error) {
 	if o == nil {
 		return nil, ErrNoConnectionOptions
 	}

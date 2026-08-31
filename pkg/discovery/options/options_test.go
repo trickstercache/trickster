@@ -21,6 +21,13 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
+	awsopts "github.com/trickstercache/trickster/v2/pkg/discovery/aws/options"
+	consulopts "github.com/trickstercache/trickster/v2/pkg/discovery/consul/options"
+	dnsopts "github.com/trickstercache/trickster/v2/pkg/discovery/dns/options"
+	fileopts "github.com/trickstercache/trickster/v2/pkg/discovery/file/options"
+	httpsdopts "github.com/trickstercache/trickster/v2/pkg/discovery/httpsd/options"
+	kubeopts "github.com/trickstercache/trickster/v2/pkg/discovery/kubernetes/options"
+	nomadopts "github.com/trickstercache/trickster/v2/pkg/discovery/nomad/options"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/providers"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	to "github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
@@ -64,10 +71,10 @@ func TestInitializeDefaults(t *testing.T) {
 	o := &Options{Provider: providers.DNSA}
 	require.NoError(t, o.Initialize("d"))
 	require.NotNil(t, o.DNS)
-	require.Equal(t, timeconv.Duration(DefaultDNSInterval), o.DNS.Interval)
+	require.Equal(t, timeconv.Duration(dnsopts.DefaultInterval), o.DNS.Interval)
 
 	o = &Options{Provider: providers.Kubernetes,
-		Kubernetes: &KubernetesOptions{Kubeconfig: "/tmp/kc"}}
+		Kubernetes: &kubeopts.Options{Kubeconfig: "/tmp/kc"}}
 	require.NoError(t, o.Initialize("k"))
 	require.False(t, o.Kubernetes.InCluster,
 		"a provided kubeconfig must not be overridden to in_cluster")
@@ -83,17 +90,17 @@ func TestOptionsValidate(t *testing.T) {
 		{"invalid provider", &Options{Provider: "consul"}, false},
 		{"valid file", &Options{Provider: providers.File}, true},
 		{"kube block on file provider", &Options{Provider: providers.File,
-			Kubernetes: &KubernetesOptions{}}, false},
+			Kubernetes: &kubeopts.Options{}}, false},
 		{"dns block on kube provider", &Options{Provider: providers.Kubernetes,
-			DNS: &DNSOptions{}}, false},
+			DNS: &dnsopts.Options{}}, false},
 		{"in_cluster + kubeconfig", &Options{Provider: providers.Kubernetes,
-			Kubernetes: &KubernetesOptions{InCluster: true, Kubeconfig: "/x"}}, false},
+			Kubernetes: &kubeopts.Options{InCluster: true, Kubeconfig: "/x"}}, false},
 		{"bad resolver", &Options{Provider: providers.DNSSRV,
-			DNS: &DNSOptions{Resolver: "not-host-port"}}, false},
+			DNS: &dnsopts.Options{Resolver: "not-host-port"}}, false},
 		{"interval too low", &Options{Provider: providers.DNSA,
-			DNS: &DNSOptions{Interval: timeconv.Duration(time.Millisecond)}}, false},
+			DNS: &dnsopts.Options{Interval: timeconv.Duration(time.Millisecond)}}, false},
 		{"valid dns", &Options{Provider: providers.DNSSRV,
-			DNS: &DNSOptions{Resolver: "10.0.0.53:53",
+			DNS: &dnsopts.Options{Resolver: "10.0.0.53:53",
 				Interval: timeconv.Duration(time.Minute)}}, true},
 	}
 	for _, tc := range tests {
@@ -115,7 +122,7 @@ func TestLookupValidateNilEntry(t *testing.T) {
 
 func TestClone(t *testing.T) {
 	o := &Options{Provider: providers.DNSSRV, Name: "d",
-		DNS: &DNSOptions{Resolver: "r:53"}}
+		DNS: &dnsopts.Options{Resolver: "r:53"}}
 	c := o.Clone()
 	require.Equal(t, o, c)
 	c.DNS.Resolver = "other:53"
@@ -132,31 +139,31 @@ func TestFileOptions(t *testing.T) {
 	o := &Options{Provider: providers.File}
 	require.NoError(t, o.Initialize("f"))
 	require.NotNil(t, o.File)
-	require.Equal(t, timeconv.Duration(DefaultFilePollInterval),
+	require.Equal(t, timeconv.Duration(fileopts.DefaultPollInterval),
 		o.File.PollInterval)
 	_, err := o.Validate()
 	require.NoError(t, err)
 
 	// explicit interval preserved
 	o = &Options{Provider: providers.File,
-		File: &FileOptions{PollInterval: timeconv.Duration(5 * time.Second)}}
+		File: &fileopts.Options{PollInterval: timeconv.Duration(5 * time.Second)}}
 	require.NoError(t, o.Initialize("f"))
 	require.Equal(t, timeconv.Duration(5*time.Second), o.File.PollInterval)
 
 	// file block on a non-file provider is rejected
-	o = &Options{Provider: providers.Kubernetes, File: &FileOptions{}}
+	o = &Options{Provider: providers.Kubernetes, File: &fileopts.Options{}}
 	_, err = o.Validate()
 	require.Error(t, err)
 
 	// sub-minimum poll interval is rejected
 	o = &Options{Provider: providers.File,
-		File: &FileOptions{PollInterval: timeconv.Duration(time.Millisecond)}}
+		File: &fileopts.Options{PollInterval: timeconv.Duration(time.Millisecond)}}
 	_, err = o.Validate()
 	require.Error(t, err)
 
 	// clone is deep
 	o = &Options{Provider: providers.File,
-		File: &FileOptions{PollInterval: timeconv.Duration(time.Minute)}}
+		File: &fileopts.Options{PollInterval: timeconv.Duration(time.Minute)}}
 	c := o.Clone()
 	c.File.PollInterval = 0
 	require.Equal(t, timeconv.Duration(time.Minute), o.File.PollInterval)
@@ -334,20 +341,20 @@ func TestHTTPSDOptions(t *testing.T) {
 			Name:     "test",
 			Provider: providers.HTTPSD,
 			HTTP:     &HTTPOptions{Endpoint: "http://sd.example.com"},
-			HTTPSD:   &HTTPSDOptions{},
+			HTTPSD:   &httpsdopts.Options{},
 		}
 	}
 	t.Run("format defaults to trickster", func(t *testing.T) {
 		o := base()
 		require.NoError(t, o.Initialize("test"))
-		require.Equal(t, FormatTrickster, o.HTTPSD.Format)
+		require.Equal(t, httpsdopts.FormatTrickster, o.HTTPSD.Format)
 		ok, err := o.Validate()
 		require.NoError(t, err)
 		require.True(t, ok)
 	})
 	t.Run("prometheus format accepted", func(t *testing.T) {
 		o := base()
-		o.HTTPSD.Format = FormatPrometheus
+		o.HTTPSD.Format = httpsdopts.FormatPrometheus
 		ok, err := o.Validate()
 		require.NoError(t, err)
 		require.True(t, ok)
@@ -372,7 +379,7 @@ func TestHTTPSDOptions(t *testing.T) {
 		for _, p := range []string{
 			providers.Kubernetes, providers.DNSSRV, providers.DNSA, providers.File,
 		} {
-			o := &Options{Name: "test", Provider: p, HTTPSD: &HTTPSDOptions{}}
+			o := &Options{Name: "test", Provider: p, HTTPSD: &httpsdopts.Options{}}
 			_, err := o.Validate()
 			require.Error(t, err, "http_sd block should be rejected on %s", p)
 		}
@@ -385,22 +392,22 @@ func TestHTTPSDOptions(t *testing.T) {
 		}
 		require.NoError(t, o.Initialize("test"))
 		require.NotNil(t, o.HTTPSD, "an omitted http_sd block should still get defaults")
-		require.Equal(t, FormatTrickster, o.HTTPSD.Format)
+		require.Equal(t, httpsdopts.FormatTrickster, o.HTTPSD.Format)
 	})
 	t.Run("GetFormat tolerates a nil receiver", func(t *testing.T) {
-		var o *HTTPSDOptions
-		require.Equal(t, FormatTrickster, o.GetFormat())
-		require.Equal(t, FormatTrickster, (&HTTPSDOptions{}).GetFormat())
-		require.Equal(t, FormatPrometheus,
-			(&HTTPSDOptions{Format: FormatPrometheus}).GetFormat())
+		var o *httpsdopts.Options
+		require.Equal(t, httpsdopts.FormatTrickster, o.GetFormat())
+		require.Equal(t, httpsdopts.FormatTrickster, (&httpsdopts.Options{}).GetFormat())
+		require.Equal(t, httpsdopts.FormatPrometheus,
+			(&httpsdopts.Options{Format: httpsdopts.FormatPrometheus}).GetFormat())
 	})
 	t.Run("clone is deep", func(t *testing.T) {
 		o := base()
-		o.HTTPSD.Format = FormatPrometheus
+		o.HTTPSD.Format = httpsdopts.FormatPrometheus
 		c := o.Clone()
 		require.NotSame(t, o.HTTPSD, c.HTTPSD)
-		c.HTTPSD.Format = FormatTrickster
-		require.Equal(t, FormatPrometheus, o.HTTPSD.Format)
+		c.HTTPSD.Format = httpsdopts.FormatTrickster
+		require.Equal(t, httpsdopts.FormatPrometheus, o.HTTPSD.Format)
 	})
 }
 
@@ -418,7 +425,7 @@ func TestConsulOptions(t *testing.T) {
 			Name:     "test",
 			Provider: providers.Consul,
 			HTTP:     &HTTPOptions{Endpoint: "http://127.0.0.1:8500"},
-			Consul:   &ConsulOptions{},
+			Consul:   &consulopts.Options{},
 		}
 	}
 	// The timeout must outlast the blocking wait, so consul cannot share the
@@ -427,10 +434,10 @@ func TestConsulOptions(t *testing.T) {
 	t.Run("timeout default is derived from the wait", func(t *testing.T) {
 		o := base()
 		require.NoError(t, o.Initialize("test"))
-		require.Equal(t, DefaultConsulWait, o.Consul.GetWait())
+		require.Equal(t, consulopts.DefaultWait, o.Consul.GetWait())
 		require.Equal(t,
-			timeconv.Duration(ConsulPollTimeout(DefaultConsulWait)), o.HTTP.Timeout)
-		require.Greater(t, time.Duration(o.HTTP.Timeout), DefaultConsulWait)
+			timeconv.Duration(consulopts.PollTimeout(consulopts.DefaultWait)), o.HTTP.Timeout)
+		require.Greater(t, time.Duration(o.HTTP.Timeout), consulopts.DefaultWait)
 		ok, err := o.Validate()
 		require.NoError(t, err)
 		require.True(t, ok)
@@ -439,7 +446,7 @@ func TestConsulOptions(t *testing.T) {
 		// Consul adds up to wait/16 before returning; a margin smaller than
 		// that would abort healthy long polls
 		wait := 5 * time.Minute
-		require.Greater(t, ConsulPollTimeout(wait), wait+wait/16)
+		require.Greater(t, consulopts.PollTimeout(wait), wait+wait/16)
 	})
 	t.Run("explicit short timeout is rejected", func(t *testing.T) {
 		o := base()
@@ -471,17 +478,17 @@ func TestConsulOptions(t *testing.T) {
 	})
 	t.Run("block rejected on other providers", func(t *testing.T) {
 		for _, p := range []string{providers.Kubernetes, providers.File, providers.HTTPSD} {
-			o := &Options{Name: "test", Provider: p, Consul: &ConsulOptions{}}
+			o := &Options{Name: "test", Provider: p, Consul: &consulopts.Options{}}
 			_, err := o.Validate()
 			require.Error(t, err, "consul block should be rejected on %s", p)
 		}
 	})
 	t.Run("warning_is_ready defaults true", func(t *testing.T) {
-		var nilOpts *ConsulOptions
+		var nilOpts *consulopts.Options
 		require.True(t, nilOpts.GetWarningIsReady())
-		require.True(t, (&ConsulOptions{}).GetWarningIsReady())
+		require.True(t, (&consulopts.Options{}).GetWarningIsReady())
 		f := false
-		require.False(t, (&ConsulOptions{WarningIsReady: &f}).GetWarningIsReady())
+		require.False(t, (&consulopts.Options{WarningIsReady: &f}).GetWarningIsReady())
 	})
 	t.Run("clone is deep", func(t *testing.T) {
 		o := base()
@@ -513,7 +520,7 @@ func TestNomadOptions(t *testing.T) {
 			Name:     "test",
 			Provider: providers.Nomad,
 			HTTP:     &HTTPOptions{Endpoint: "http://127.0.0.1:4646"},
-			Nomad:    &NomadOptions{},
+			Nomad:    &nomadopts.Options{},
 		}
 	}
 	// Nomad shares HashiCorp's blocking-query protocol with Consul, so its
@@ -521,8 +528,8 @@ func TestNomadOptions(t *testing.T) {
 	t.Run("timeout default is derived from the wait", func(t *testing.T) {
 		o := base()
 		require.NoError(t, o.Initialize("test"))
-		require.Equal(t, DefaultNomadWait, o.Nomad.GetWait())
-		require.Greater(t, time.Duration(o.HTTP.Timeout), DefaultNomadWait)
+		require.Equal(t, nomadopts.DefaultWait, o.Nomad.GetWait())
+		require.Greater(t, time.Duration(o.HTTP.Timeout), nomadopts.DefaultWait)
 		ok, err := o.Validate()
 		require.NoError(t, err)
 		require.True(t, ok)
@@ -557,7 +564,7 @@ func TestNomadOptions(t *testing.T) {
 	})
 	t.Run("block rejected on other providers", func(t *testing.T) {
 		for _, p := range []string{providers.Consul, providers.File, providers.HTTPSD} {
-			o := &Options{Name: "test", Provider: p, Nomad: &NomadOptions{}}
+			o := &Options{Name: "test", Provider: p, Nomad: &nomadopts.Options{}}
 			_, err := o.Validate()
 			require.Error(t, err, "nomad block should be rejected on %s", p)
 		}
@@ -578,5 +585,88 @@ func TestNomadOptions(t *testing.T) {
 		}
 		require.NoError(t, o.Initialize("test"))
 		require.NotNil(t, o.Nomad)
+	})
+}
+
+func TestAWSOptions(t *testing.T) {
+	base := func() *Options {
+		return &Options{
+			Name:     "test",
+			Provider: providers.AWS,
+			AWS:      &awsopts.Options{Region: "us-east-1"},
+		}
+	}
+	t.Run("service defaults to ec2", func(t *testing.T) {
+		o := base()
+		require.NoError(t, o.Initialize("test"))
+		require.Equal(t, awsopts.ServiceEC2, o.AWS.Service)
+		ok, err := o.Validate()
+		require.NoError(t, err)
+		require.True(t, ok)
+	})
+	// aws derives its endpoint from region and service, so the shared http
+	// block is optional here where every other http provider requires it
+	t.Run("http endpoint is optional", func(t *testing.T) {
+		o := base()
+		require.NoError(t, o.Initialize("test"))
+		require.NotNil(t, o.HTTP, "an http block is created for the shared defaults")
+		require.Empty(t, o.HTTP.Endpoint)
+		_, err := o.Validate()
+		require.NoError(t, err)
+		require.True(t, providers.DerivesEndpoint(providers.AWS))
+		require.False(t, providers.DerivesEndpoint(providers.HTTPSD))
+	})
+	t.Run("http timings still validated without an endpoint", func(t *testing.T) {
+		o := base()
+		require.NoError(t, o.Initialize("test"))
+		o.HTTP.Interval = timeconv.Duration(time.Millisecond)
+		_, err := o.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "'interval' must be at least 1s")
+	})
+	t.Run("unknown service rejected", func(t *testing.T) {
+		o := base()
+		o.AWS.Service = "lambda"
+		_, err := o.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "must be one of")
+	})
+	t.Run("half a static credential rejected", func(t *testing.T) {
+		o := base()
+		o.AWS.AccessKey = "AKIA"
+		_, err := o.Validate()
+		require.Error(t, err)
+	})
+	// the discovery service doubles as the signing service
+	t.Run("signer options derive the signing service", func(t *testing.T) {
+		o := base()
+		o.AWS.Service = awsopts.ServiceEC2
+		so := o.AWS.SignerOptions()
+		require.Equal(t, "ec2", so.GetService())
+		require.Equal(t, "us-east-1", so.Region)
+		var nilOpts *awsopts.Options
+		require.Nil(t, nilOpts.SignerOptions())
+	})
+	t.Run("block rejected on other providers", func(t *testing.T) {
+		for _, p := range []string{providers.Consul, providers.File, providers.HTTPSD} {
+			o := &Options{Name: "test", Provider: p, AWS: &awsopts.Options{}}
+			_, err := o.Validate()
+			require.Error(t, err, "aws block should be rejected on %s", p)
+		}
+	})
+	t.Run("clone is deep", func(t *testing.T) {
+		o := base()
+		c := o.Clone()
+		require.NotSame(t, o.AWS, c.AWS)
+		c.AWS.Region = "eu-west-1"
+		require.Equal(t, "us-east-1", o.AWS.Region)
+	})
+	t.Run("secret key redacted in dumps", func(t *testing.T) {
+		o := base()
+		o.AWS.AccessKey = "AKIA"
+		o.AWS.SecretKey = "super-secret"
+		b, err := yaml.Marshal(o)
+		require.NoError(t, err)
+		require.NotContains(t, string(b), "super-secret")
 	})
 }

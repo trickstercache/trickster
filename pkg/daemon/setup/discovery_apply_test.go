@@ -31,6 +31,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/daemon/instance"
 	"github.com/trickstercache/trickster/v2/pkg/discovery"
+	kubeopts "github.com/trickstercache/trickster/v2/pkg/discovery/kubernetes/options"
 	do "github.com/trickstercache/trickster/v2/pkg/discovery/options"
 	dp "github.com/trickstercache/trickster/v2/pkg/discovery/providers"
 
@@ -92,7 +93,7 @@ func newDiscoveryFixture(t *testing.T, discoverer *do.Options,
 // canonical "discoverer unavailable at startup" condition
 func unavailableDiscoverer() *do.Options {
 	return &do.Options{Provider: dp.Kubernetes,
-		Kubernetes: &do.KubernetesOptions{InCluster: true}}
+		Kubernetes: &kubeopts.Options{InCluster: true}}
 }
 
 func TestApplyDiscoveryStartupPolicyFail(t *testing.T) {
