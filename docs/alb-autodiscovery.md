@@ -94,7 +94,7 @@ that provider's connection-level block:
 | `http_sd` | `http` + `http_sd` | connection settings in the shared `http` block (below); `http_sd.format` selects the member-list document: `trickster` (default) or `prometheus` |
 | `consul` | `http` + `consul` | connection settings in the shared `http` block; `consul.datacenter`, `namespace`, `partition`, `wait`, `allow_stale`, `only_passing`, `warning_is_ready` |
 | `nomad` | `http` + `nomad` | connection settings in the shared `http` block; `nomad.namespace`, `region`, `wait`, `allow_stale` |
-| `aws` | `aws` (+ optional `http`) | `aws.service` (default `ec2`), `region`, and the credential fields; the endpoint is derived, so `http.endpoint` is an optional override |
+| `aws` | `aws` (+ optional `http`) | `aws.service` (**required**: `ec2` or `ecs`), `region`, and the credential fields; the endpoint is derived, so `http.endpoint` is an optional override |
 
 A block is only valid on its own provider's entries; anything else fails
 startup.
@@ -740,17 +740,19 @@ the retry delay after a failure rather than a poll cadence.
 
 ### The `aws` Provider
 
-`aws` discovers members from an AWS API, selected by `aws.service`. Today
-that is `ec2`; further AWS sources arrive as new `service` values rather
-than new providers, inheriting this provider's credentials, signing,
-pagination and options.
+`aws` discovers members from an AWS API, selected by `aws.service`: `ec2`
+for instances, `ecs` for tasks. It is **required** — with more than one AWS
+API supported, defaulting would be an arbitrary guess at which one you
+meant, so a config that omits it fails at startup. Further AWS sources
+arrive as new `service` values rather than new providers, inheriting this
+provider's credentials, signing, pagination and options.
 
 ```yaml
 discovery:
   fleet:
     provider: aws
     aws:
-      service: ec2
+      service: ec2      # required: ec2 or ecs
       region: us-east-1
       # credentials omitted: use the standard chain (IRSA, instance
       # profile, environment, shared config). See docs/aws.md.
@@ -824,3 +826,71 @@ back to the instance id.
 (`https://ec2.<region>.amazonaws.com`). Set `http.endpoint` to override it
 for a VPC endpoint, a FIPS endpoint, or a test double; a region is required
 when it is not overridden, because the endpoint is built from it.
+
+#### `service: ecs`
+
+Discovers ECS tasks, **including Fargate**, which `service: ec2`
+structurally cannot see — a Fargate task has no EC2 instance behind it.
+
+```yaml
+discovery:
+  tasks:
+    provider: aws
+    aws:
+      service: ecs
+      region: us-east-1
+    http:
+      interval: 30s
+
+backends:
+  prom-alb:
+    provider: alb
+    alb:
+      discovery:
+        discoverer_name: tasks
+        template_backend: prom-template
+        query:
+          cluster: prod           # ECS cluster; the account default when unset
+          service: prometheus     # ECS service name; optional
+          port_label: trickster-port
+          # port: 9090            # or a static port for every task
+```
+
+The IAM principal needs **`ecs:ListTasks`** and **`ecs:DescribeTasks`**.
+
+**awsvpc only.** Each task in `awsvpc` mode has its own elastic network
+interface, so `DescribeTasks` alone yields a routable address. That is the
+only mode Fargate offers and the default for new EC2-launch-type services.
+Under **bridge or host networking the address belongs to the container
+instance rather than the task**, and resolving it would take two further API
+calls, a second signing service and broader IAM — so such tasks are
+**excluded with a reason saying so** rather than silently missing. If you
+need bridge or host mode, say so and it can be added.
+
+**Tags must be propagated.** `port_label` reads an ECS **task** tag, and ECS
+does not copy service tags onto tasks unless the service is created with
+`--propagate-tags SERVICE`. Trickster asks `DescribeTasks` for tags
+explicitly (`include: [TAGS]`); if `port_label` finds nothing, check the
+propagation setting first.
+
+**Task state.** `RUNNING` is `Ready`; `PROVISIONING`, `PENDING` and
+`ACTIVATING` are `NotReady`; `DEACTIVATING`, `STOPPING`, `DEPROVISIONING`
+and `STOPPED` are **omitted entirely**, so tasks drain from pools before they
+stop answering. Container health is only reported when the task definition
+declares a health check — `UNHEALTHY` is `NotReady`, and `UNKNOWN` or absent
+is treated as ready, because the alternative would make every
+un-instrumented task permanently unusable.
+
+**Selection** is by `cluster` and `service`; `filters` and `address_type` are
+rejected for `ecs`, since ECS selects by cluster rather than by instance
+attribute and an awsvpc task has exactly one address. `tags` still filters on
+tag presence after the response arrives.
+
+**Labels.** Members carry `task_arn`, `task_id`, `cluster`,
+`task_definition`, `group`, `launch_type`, `availability_zone`,
+`task_status` and `health_status`, plus task tags as `tag_<Key>`. The `Name`
+tag becomes the member name, falling back to the task id.
+
+**Churn.** A task that disappears between `ListTasks` and `DescribeTasks` is
+ordinary churn; it is reported as an exclusion rather than silently
+shrinking the pool.

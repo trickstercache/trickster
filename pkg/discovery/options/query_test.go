@@ -19,6 +19,7 @@ package options
 import (
 	"testing"
 
+	awsopts "github.com/trickstercache/trickster/v2/pkg/discovery/aws/options"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/providers"
 
 	"github.com/stretchr/testify/require"
@@ -197,6 +198,7 @@ func TestEveryUnacceptedFieldIsRejected(t *testing.T) {
 		"filters":             func(q *Query) { q.Filters = map[string][]string{"tag:env": {"prod"}} },
 		"address_type":        func(q *Query) { q.AddressType = AddressPublic },
 		"port_label":          func(q *Query) { q.PortLabel = "trickster-port" },
+		"cluster":             func(q *Query) { q.Cluster = "prod" },
 	}
 	// every field in the table must have a setter here, or the sweep below
 	// silently skips it
@@ -213,7 +215,7 @@ func TestEveryUnacceptedFieldIsRejected(t *testing.T) {
 			t.Run(p+"/"+name, func(t *testing.T) {
 				q := &Query{}
 				set(q)
-				err := q.Validate("alb", &Options{Provider: p})
+				err := q.Validate("alb", &Options{Provider: p, AWS: &awsopts.Options{}})
 				require.Error(t, err, "%q should not be valid for %s", name, p)
 				require.Contains(t, err.Error(), name)
 			})
@@ -285,7 +287,8 @@ func TestQueryValidateNomad(t *testing.T) {
 }
 
 func TestQueryValidateAWS(t *testing.T) {
-	o := &Options{Provider: providers.AWS}
+	o := &Options{Provider: providers.AWS,
+		AWS: &awsopts.Options{Service: awsopts.ServiceEC2}}
 	require.NoError(t, (&Query{Port: "9090"}).Validate("alb", o))
 	require.NoError(t, (&Query{PortLabel: "trickster-port"}).Validate("alb", o))
 	require.NoError(t, (&Query{
@@ -325,4 +328,39 @@ func TestQueryCloneCopiesFilters(t *testing.T) {
 	c.Filters["new"] = []string{"x"}
 	require.Equal(t, "prod", q.Filters["tag:env"][0])
 	require.NotContains(t, q.Filters, "new")
+}
+
+// Which aws query fields are meaningful depends on aws.service, which is
+// exactly why Query.Validate takes the whole Options.
+func TestQueryValidateAWSPerService(t *testing.T) {
+	ec2 := &Options{Provider: providers.AWS,
+		AWS: &awsopts.Options{Service: awsopts.ServiceEC2}}
+	ecs := &Options{Provider: providers.AWS,
+		AWS: &awsopts.Options{Service: awsopts.ServiceECS}}
+
+	// ec2 selects by instance attributes, not by cluster or service
+	require.NoError(t, (&Query{Port: "9090",
+		Filters: map[string][]string{"tag:env": {"prod"}}}).Validate("alb", ec2))
+	err := (&Query{Port: "9090", Cluster: "prod"}).Validate("alb", ec2)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "cluster")
+	err = (&Query{Port: "9090", Service: "web"}).Validate("alb", ec2)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "service")
+
+	// ecs selects by cluster and service, and has one address per task
+	require.NoError(t, (&Query{Port: "9090",
+		Cluster: "prod", Service: "web"}).Validate("alb", ecs))
+	err = (&Query{Port: "9090", AddressType: AddressPublic}).Validate("alb", ecs)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "address_type")
+	err = (&Query{Port: "9090",
+		Filters: map[string][]string{"tag:env": {"prod"}}}).Validate("alb", ecs)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "filters")
+
+	// the port rule applies to both
+	err = (&Query{Cluster: "prod"}).Validate("alb", ecs)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "'port' or 'port_label'")
 }

@@ -153,6 +153,15 @@ func fakeOptions(endpoint string) *do.Options {
 	}
 }
 
+// ec2 narrows a subscription to its EC2 lister, for tests that drive one
+// API call rather than the whole poll.
+func (s *subscription) ec2(t *testing.T) *ec2Lister {
+	t.Helper()
+	l, ok := s.lister.(*ec2Lister)
+	require.True(t, ok, "subscription is not backed by the ec2 lister")
+	return l
+}
+
 func fakeSubscription(t *testing.T, endpoint string, q *do.Query) *subscription {
 	t.Helper()
 	p, err := newProvider("test-aws", fakeOptions(endpoint))
@@ -172,10 +181,15 @@ func TestNewValidatesService(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "not supported")
 
-	// an unset service defaults to ec2 rather than failing
+	// service is required: with more than one AWS API supported, defaulting
+	// would be an arbitrary guess at what the operator meant
 	o = fakeOptions("http://example.com")
 	o.AWS.Service = ""
-	d, err := New("test", o)
+	_, err = New("test", o)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "requires 'aws.service'")
+
+	d, err := New("test", fakeOptions("http://example.com"))
 	require.NoError(t, err)
 	require.NotNil(t, d)
 }
@@ -212,11 +226,11 @@ func TestDepartingInstancesAreOmitted(t *testing.T) {
 		instanceXML("i-term", "terminated", "10.0.0.6", "", nil),
 	))
 	s := fakeSubscription(t, f.URL, &do.Query{Port: "9090"})
-	instances, err := s.describeInstances(t.Context())
+	instances, err := s.ec2(t).describeInstances(t.Context())
 	require.NoError(t, err)
 	require.Len(t, instances, 6)
 
-	snap, skipped := toMembers(instances, s.mapping)
+	snap, skipped := toMembers(instances, s.ec2(t).mapping)
 	require.Empty(t, skipped)
 	require.Len(t, snap, 2, "only running and pending instances become members")
 
@@ -245,10 +259,10 @@ func TestUntaggedInstancesAreExcludedNotFatal(t *testing.T) {
 		instanceXML("i-noport", "running", "10.0.0.2", "", nil),
 	))
 	s := fakeSubscription(t, f.URL, &do.Query{PortLabel: "port"})
-	instances, err := s.describeInstances(t.Context())
+	instances, err := s.ec2(t).describeInstances(t.Context())
 	require.NoError(t, err)
 
-	snap, skipped := toMembers(instances, s.mapping)
+	snap, skipped := toMembers(instances, s.ec2(t).mapping)
 	require.Len(t, snap, 1, "the tagged instance still becomes a member")
 	require.Equal(t, "10.0.0.1:9090", snap[0].Address)
 	require.Len(t, skipped, 1)
@@ -298,9 +312,9 @@ func TestMissingAddressIsExcluded(t *testing.T) {
 	))
 	s := fakeSubscription(t, f.URL,
 		&do.Query{Port: "9090", AddressType: do.AddressPublic})
-	instances, err := s.describeInstances(t.Context())
+	instances, err := s.ec2(t).describeInstances(t.Context())
 	require.NoError(t, err)
-	snap, skipped := toMembers(instances, s.mapping)
+	snap, skipped := toMembers(instances, s.ec2(t).mapping)
 	require.Empty(t, snap)
 	require.Len(t, skipped, 1)
 	require.Contains(t, skipped[0].reason, "no public address")
@@ -335,7 +349,7 @@ func TestPaginationAccumulates(t *testing.T) {
 		responseXML("", instanceXML("i-3", "running", "10.0.0.3", "", nil)),
 	)
 	s := fakeSubscription(t, f.URL, &do.Query{Port: "9090"})
-	instances, err := s.describeInstances(t.Context())
+	instances, err := s.ec2(t).describeInstances(t.Context())
 	require.NoError(t, err)
 	require.Len(t, instances, 3)
 	require.EqualValues(t, 3, f.hits.Load())
@@ -351,7 +365,7 @@ func TestPaginationIsBounded(t *testing.T) {
 	f.mtx.Unlock()
 
 	s := fakeSubscription(t, f.URL, &do.Query{Port: "9090"})
-	_, err := s.describeInstances(t.Context())
+	_, err := s.ec2(t).describeInstances(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "did not terminate")
 	require.LessOrEqual(t, f.hits.Load(), int64(maxPages))
@@ -368,14 +382,14 @@ func TestAPIErrorMessageIsSurfaced(t *testing.T) {
   <Message>You are not authorized to perform this operation.</Message>
 </Error></Errors><RequestID>req-1</RequestID></Response>`)
 	s := fakeSubscription(t, f.URL, &do.Query{Port: "9090"})
-	_, err := s.describeInstances(t.Context())
+	_, err := s.ec2(t).describeInstances(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "UnauthorizedOperation")
 	require.Contains(t, err.Error(), "not authorized")
 
 	// a non-XML error body still yields the status
 	f.setError(http.StatusBadGateway, "gateway down")
-	_, err = s.describeInstances(t.Context())
+	_, err = s.ec2(t).describeInstances(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "502")
 }
@@ -390,7 +404,7 @@ func TestFilterEncoding(t *testing.T) {
 			"instance-state-name": {"running"},
 		},
 	})
-	_, err := s.describeInstances(t.Context())
+	_, err := s.ec2(t).describeInstances(t.Context())
 	require.NoError(t, err)
 
 	form := f.lastForm(t)

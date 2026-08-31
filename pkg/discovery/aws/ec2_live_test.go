@@ -30,7 +30,7 @@ import (
 )
 
 // These tests run against a real AWS account and are skipped unless
-// TRICKSTER_EC2_TEST=1, following the repo's TRICKSTER_DNS_TEST and
+// TRICKSTER_AWS_TEST=1, following the repo's TRICKSTER_DNS_TEST and
 // TRICKSTER_KIND_TEST convention. They never run in CI.
 //
 // They exist for the three things a fake cannot honestly verify: that AWS
@@ -39,31 +39,32 @@ import (
 // expects. Everything else is covered by the fake, which is what CI runs.
 //
 // Credentials come from the ambient environment through the standard chain;
-// this test never handles a secret. Configure the profile and region with
-// TRICKSTER_EC2_PROFILE (default: the chain's own) and TRICKSTER_EC2_REGION
+// these tests never handle a secret. Configure the profile and region with
+// TRICKSTER_AWS_PROFILE (default: the chain's own) and TRICKSTER_AWS_REGION
 // (default: us-east-1), and run:
 //
-//	TRICKSTER_EC2_TEST=1 TRICKSTER_EC2_PROFILE=myprofile \
+//	TRICKSTER_AWS_TEST=1 TRICKSTER_AWS_PROFILE=myprofile \
 //	  go test ./pkg/discovery/aws/ -run Live -v -count=1
 //
-// The fixture account has six running t4g.nano instances tagged
-// service=prometheus and trickster-port=9090.
-func liveOptions(t *testing.T) *do.Options {
+// The EC2 fixture is six running t4g.nano instances tagged
+// service=prometheus and trickster-port=9090. The ECS fixture is described
+// in ecs_live_test.go and is skipped unless TRICKSTER_ECS_CLUSTER is set.
+func liveAWSOptions(t *testing.T, service string) *do.Options {
 	t.Helper()
-	if os.Getenv("TRICKSTER_EC2_TEST") != "1" {
-		t.Skip("set TRICKSTER_EC2_TEST=1 to run against a real AWS account")
+	if os.Getenv("TRICKSTER_AWS_TEST") != "1" {
+		t.Skip("set TRICKSTER_AWS_TEST=1 to run against a real AWS account")
 	}
-	region := os.Getenv("TRICKSTER_EC2_REGION")
+	region := os.Getenv("TRICKSTER_AWS_REGION")
 	if region == "" {
 		region = "us-east-1"
 	}
 	return &do.Options{
-		Name:     "live-ec2",
+		Name:     "live-" + service,
 		Provider: "aws",
 		AWS: &awsopts.Options{
-			Service: awsopts.ServiceEC2,
+			Service: service,
 			Region:  region,
-			Profile: os.Getenv("TRICKSTER_EC2_PROFILE"),
+			Profile: os.Getenv("TRICKSTER_AWS_PROFILE"),
 		},
 		HTTP: &do.HTTPOptions{
 			Interval: timeconv.Duration(30 * time.Second),
@@ -72,24 +73,30 @@ func liveOptions(t *testing.T) *do.Options {
 	}
 }
 
-// liveSubscription builds one subscription directly, so a test can drive a
-// single poll rather than waiting on the loop. pageSize forces pagination.
-func liveSubscription(t *testing.T, q *do.Query, pageSize int) *subscription {
+func liveOptions(t *testing.T) *do.Options {
+	t.Helper()
+	return liveAWSOptions(t, awsopts.ServiceEC2)
+}
+
+// liveLister builds one subscription's EC2 lister directly, so a test can
+// drive a single API call rather than waiting on the poll loop. pageSize
+// forces real pagination.
+func liveLister(t *testing.T, q *do.Query, pageSize int) *ec2Lister {
 	t.Helper()
 	p, err := newProvider("live-ec2", liveOptions(t))
 	require.NoError(t, err)
 	p.pageSize = pageSize
 	runner, err := p.newSubscription(q, func(discovery.Snapshot) {})
 	require.NoError(t, err)
-	return runner.(*subscription)
+	return runner.(*subscription).lister.(*ec2Lister)
 }
 
 // TestLiveSigningAndResponseShape is the whole point of the live suite: if
 // AWS accepts the signature and the document decodes, the two risks a fake
 // cannot cover are retired.
 func TestLiveSigningAndResponseShape(t *testing.T) {
-	s := liveSubscription(t, &do.Query{PortLabel: "trickster-port"}, 0)
-	instances, err := s.describeInstances(t.Context())
+	l := liveLister(t, &do.Query{PortLabel: "trickster-port"}, 0)
+	instances, err := l.describeInstances(t.Context())
 	require.NoError(t, err, "AWS rejected the request or the response did not decode")
 	require.NotEmpty(t, instances, "no instances returned; is the fixture account populated?")
 
@@ -106,11 +113,11 @@ func TestLiveSigningAndResponseShape(t *testing.T) {
 // failure mode is silent: a malformed filter returns everything rather than
 // erroring, so this asserts the filter actually narrowed the result.
 func TestLiveServerSideFilters(t *testing.T) {
-	all := liveSubscription(t, &do.Query{PortLabel: "trickster-port"}, 0)
+	all := liveLister(t, &do.Query{PortLabel: "trickster-port"}, 0)
 	total, err := all.describeInstances(t.Context())
 	require.NoError(t, err)
 
-	matching := liveSubscription(t, &do.Query{
+	matching := liveLister(t, &do.Query{
 		PortLabel: "trickster-port",
 		Filters:   map[string][]string{"tag:service": {"prometheus"}},
 	}, 0)
@@ -118,7 +125,7 @@ func TestLiveServerSideFilters(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, got, "the tag filter matched nothing; is the fixture tagged?")
 
-	none := liveSubscription(t, &do.Query{
+	none := liveLister(t, &do.Query{
 		PortLabel: "trickster-port",
 		Filters:   map[string][]string{"tag:service": {"definitely-not-a-real-value"}},
 	}, 0)
@@ -133,13 +140,13 @@ func TestLiveServerSideFilters(t *testing.T) {
 // own assumptions. MaxResults has a floor of 5, so six instances is the
 // smallest fixture that produces a second page.
 func TestLivePagination(t *testing.T) {
-	unpaged := liveSubscription(t, &do.Query{PortLabel: "trickster-port"}, 0)
+	unpaged := liveLister(t, &do.Query{PortLabel: "trickster-port"}, 0)
 	all, err := unpaged.describeInstances(t.Context())
 	require.NoError(t, err)
 	require.Greater(t, len(all), 5,
 		"pagination needs more than 5 instances to produce a second page")
 
-	paged := liveSubscription(t, &do.Query{PortLabel: "trickster-port"}, 5)
+	paged := liveLister(t, &do.Query{PortLabel: "trickster-port"}, 5)
 	got, err := paged.describeInstances(t.Context())
 	require.NoError(t, err)
 	require.Len(t, got, len(all),
@@ -148,14 +155,14 @@ func TestLivePagination(t *testing.T) {
 
 // The end-to-end result: what would actually land in an ALB pool.
 func TestLiveMembersAreUsable(t *testing.T) {
-	s := liveSubscription(t, &do.Query{
+	l := liveLister(t, &do.Query{
 		PortLabel:   "trickster-port",
 		AddressType: do.AddressPrivate,
 	}, 0)
-	instances, err := s.describeInstances(t.Context())
+	instances, err := l.describeInstances(t.Context())
 	require.NoError(t, err)
 
-	snap, skipped := toMembers(instances, s.mapping)
+	snap, skipped := toMembers(instances, l.mapping)
 	for _, e := range skipped {
 		t.Logf("excluded %s: %s", e.instanceID, e.reason)
 	}

@@ -112,6 +112,7 @@ The `aws` discovery provider needs read-only permission for whichever
 | `aws.service` | required IAM actions |
 | ----- | ----- |
 | `ec2` | `ec2:DescribeInstances` |
+| `ecs` | `ecs:ListTasks`, `ecs:DescribeTasks` |
 
 A minimal policy for `service: ec2`:
 
@@ -128,4 +129,6 @@ A minimal policy for `service: ec2`:
 
 `ec2:DescribeInstances` does not support resource-level permissions, so the
 resource must be `*`; narrow the scope with a condition key if your
-environment requires it. Trickster only ever reads.
+environment requires it. `ecs:ListTasks` and `ecs:DescribeTasks` can be
+scoped to a cluster with the `ecs:cluster` condition key. Trickster only
+ever reads.

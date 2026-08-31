@@ -22,6 +22,7 @@ import (
 	"strconv"
 	"strings"
 
+	awsopts "github.com/trickstercache/trickster/v2/pkg/discovery/aws/options"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/providers"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
@@ -103,11 +104,14 @@ type Query struct {
 	// caller should reach.
 	AddressType string `yaml:"address_type,omitempty"`
 	// PortLabel names a key in the provider's own metadata namespace (an
-	// EC2 tag, a GCE label) whose value is the member's port. Cloud
-	// instance APIs return hosts, not endpoints, so a port has to come from
-	// somewhere: either Port, statically, or from the instances themselves
-	// through this.
+	// EC2 tag, an ECS task tag, a GCE label) whose value is the member's
+	// port. Cloud APIs return hosts, not endpoints, so a port has to come
+	// from somewhere: either Port, statically, or from the instances
+	// themselves through this.
 	PortLabel string `yaml:"port_label,omitempty"`
+	// Cluster names the cluster to query for providers whose API is scoped
+	// by one, such as ECS. When empty, the provider's own default applies.
+	Cluster string `yaml:"cluster,omitempty"`
 }
 
 // Clone returns a perfect copy of the Query
@@ -148,6 +152,7 @@ const (
 	fieldFilters           = "filters"
 	fieldAddressType       = "address_type"
 	fieldPortLabel         = "port_label"
+	fieldCluster           = "cluster"
 )
 
 // Address types accepted by Query.AddressType
@@ -193,6 +198,7 @@ var queryFields = []queryField{
 	{fieldFilters, func(q *Query) bool { return len(q.Filters) > 0 }},
 	{fieldAddressType, func(q *Query) bool { return q.AddressType != "" }},
 	{fieldPortLabel, func(q *Query) bool { return q.PortLabel != "" }},
+	{fieldCluster, func(q *Query) bool { return q.Cluster != "" }},
 }
 
 // providerQueryFields names the query fields each provider accepts. A field
@@ -219,9 +225,13 @@ var providerQueryFields = map[string]sets.Set[string]{
 	providers.Nomad: sets.New([]string{
 		fieldService, fieldTags, fieldFilter, fieldScheme,
 	}),
+	// the aws provider accepts the union of its services' fields; which are
+	// meaningful for a given aws.service is checked in validateAWS, which
+	// can see the discoverer's options
 	providers.AWS: sets.New([]string{
 		fieldFilters, fieldTags, fieldPort, fieldPortLabel,
 		fieldAddressType, fieldScheme, fieldReplicaGroupLabel,
+		fieldService, fieldCluster,
 	}),
 }
 
@@ -265,7 +275,7 @@ func (q *Query) Validate(albName string, o *Options) error {
 	case providers.Nomad:
 		return q.validateNomad(albName)
 	case providers.AWS:
-		return q.validateAWS(albName)
+		return q.validateAWS(albName, o)
 	}
 	return NewErrInvalidQuery(albName, "unknown discovery provider "+o.Provider)
 }
@@ -374,7 +384,37 @@ func (q *Query) validateNomad(albName string) error {
 // validateAWS checks the aws query. A cloud instance inventory returns
 // hosts rather than endpoints, so a port must come from somewhere: either
 // statically, or from each instance's own metadata.
-func (q *Query) validateAWS(albName string) error {
+func (q *Query) validateAWS(albName string, o *Options) error {
+	// which fields are meaningful depends on the aws.service, which is why
+	// Query.Validate takes the whole Options rather than a provider name. An
+	// unset service applies no per-service rules here; Options.Validate
+	// reports the missing service itself, with a better message than any
+	// field-level complaint would give.
+	switch o.AWS.GetService() {
+	case awsopts.ServiceEC2:
+		if q.Service != "" {
+			return NewErrInvalidQueryField(albName, fieldService,
+				providers.AWS+" service "+awsopts.ServiceEC2)
+		}
+		if q.Cluster != "" {
+			return NewErrInvalidQueryField(albName, fieldCluster,
+				providers.AWS+" service "+awsopts.ServiceEC2)
+		}
+	case awsopts.ServiceECS:
+		// ECS selects by cluster and service, not by instance attributes
+		for _, f := range []struct {
+			name string
+			set  bool
+		}{
+			{fieldFilters, len(q.Filters) > 0},
+			{fieldAddressType, q.AddressType != ""},
+		} {
+			if f.set {
+				return NewErrInvalidQueryField(albName, f.name,
+					providers.AWS+" service "+awsopts.ServiceECS)
+			}
+		}
+	}
 	if q.AddressType != "" && !addressTypes.Contains(q.AddressType) {
 		return NewErrInvalidQuery(albName,
 			"'address_type' must be private, public or ipv6")

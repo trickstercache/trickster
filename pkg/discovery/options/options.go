@@ -202,7 +202,6 @@ func (o *Options) Initialize(name string) error {
 		if o.AWS == nil {
 			o.AWS = awsopts.New()
 		}
-		o.AWS.Initialize()
 		// AWS derives its endpoint, so an http block is optional; create
 		// one so the shared interval and timeout defaults apply
 		if o.HTTP == nil {

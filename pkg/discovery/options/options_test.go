@@ -596,10 +596,19 @@ func TestAWSOptions(t *testing.T) {
 			AWS:      &awsopts.Options{Region: "us-east-1"},
 		}
 	}
-	t.Run("service defaults to ec2", func(t *testing.T) {
+	// service is required: with more than one AWS API supported, defaulting
+	// would be an arbitrary guess at what the operator meant
+	t.Run("service is required", func(t *testing.T) {
 		o := base()
 		require.NoError(t, o.Initialize("test"))
-		require.Equal(t, awsopts.ServiceEC2, o.AWS.Service)
+		require.Empty(t, o.AWS.Service, "there is no default service")
+		_, err := o.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "'service' is required")
+
+		o = base()
+		o.AWS.Service = awsopts.ServiceEC2
+		require.NoError(t, o.Initialize("test"))
 		ok, err := o.Validate()
 		require.NoError(t, err)
 		require.True(t, ok)
@@ -608,6 +617,7 @@ func TestAWSOptions(t *testing.T) {
 	// block is optional here where every other http provider requires it
 	t.Run("http endpoint is optional", func(t *testing.T) {
 		o := base()
+		o.AWS.Service = awsopts.ServiceEC2
 		require.NoError(t, o.Initialize("test"))
 		require.NotNil(t, o.HTTP, "an http block is created for the shared defaults")
 		require.Empty(t, o.HTTP.Endpoint)
@@ -618,6 +628,7 @@ func TestAWSOptions(t *testing.T) {
 	})
 	t.Run("http timings still validated without an endpoint", func(t *testing.T) {
 		o := base()
+		o.AWS.Service = awsopts.ServiceEC2
 		require.NoError(t, o.Initialize("test"))
 		o.HTTP.Interval = timeconv.Duration(time.Millisecond)
 		_, err := o.Validate()
@@ -633,6 +644,7 @@ func TestAWSOptions(t *testing.T) {
 	})
 	t.Run("half a static credential rejected", func(t *testing.T) {
 		o := base()
+		o.AWS.Service = awsopts.ServiceEC2
 		o.AWS.AccessKey = "AKIA"
 		_, err := o.Validate()
 		require.Error(t, err)
@@ -663,6 +675,7 @@ func TestAWSOptions(t *testing.T) {
 	})
 	t.Run("secret key redacted in dumps", func(t *testing.T) {
 		o := base()
+		o.AWS.Service = awsopts.ServiceEC2
 		o.AWS.AccessKey = "AKIA"
 		o.AWS.SecretKey = "super-secret"
 		b, err := yaml.Marshal(o)

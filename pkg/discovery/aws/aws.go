@@ -19,10 +19,12 @@
 //
 // # One provider, several services
 //
-// 'service' selects which API to read (today: ec2) and doubles as the SigV4
-// signing service name. New AWS sources arrive as new service values rather
-// than new providers, so they inherit this provider's credential handling,
-// signing, pagination and options block rather than restating them.
+// 'service' is required and selects which API to read -- ec2 for instances,
+// ecs for tasks (including Fargate, which ec2 structurally cannot see) --
+// and doubles as the SigV4 signing service name. Each is a serviceLister; new AWS sources
+// arrive as new service values rather than new providers, inheriting this
+// provider's credentials, signing, poll loop, options block and failure
+// accounting rather than restating them.
 //
 // # No service clients
 //
@@ -37,12 +39,12 @@
 //
 // # Hosts, not endpoints
 //
-// An instance inventory returns hosts with several addresses and no port.
-// The query's address_type chooses which address, and port or port_label
-// supplies the port. An instance that cannot yield either is excluded and
-// reported, rather than failing the whole refresh: unlike a service
-// registry, where every entry is by definition an instance of the service,
-// an inventory routinely contains hosts that are simply not tagged yet.
+// An AWS inventory returns hosts with addresses but no port. The query's
+// port or port_label supplies one, and for ec2 address_type chooses which
+// address. A resource that cannot yield either is excluded and reported,
+// rather than failing the whole refresh: unlike a service registry, where
+// every entry is by definition an instance of the service, an inventory
+// routinely contains resources that are simply not tagged yet.
 package aws
 
 import (
@@ -52,7 +54,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strconv"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -115,9 +117,11 @@ func newProvider(name string, o *do.Options) (*provider, error) {
 	}
 	service := o.AWS.Service
 	if service == "" {
-		service = awsopts.ServiceEC2
+		return nil, fmt.Errorf(
+			"aws discovery requires 'aws.service'; supported services are %s",
+			strings.Join(awsopts.SupportedServices(), ", "))
 	}
-	if service != awsopts.ServiceEC2 {
+	if !slices.Contains(awsopts.SupportedServices(), service) {
 		return nil, fmt.Errorf(
 			"aws discovery service %q is not supported; supported services are %s",
 			service, strings.Join(awsopts.SupportedServices(), ", "))
@@ -205,18 +209,20 @@ func (p *provider) newSubscription(q *do.Query,
 	if scheme == "" {
 		scheme = "http"
 	}
-	s := &subscription{
-		p:       p,
-		filters: q.Filters,
-		mapping: mapping{
-			scheme:            scheme,
-			addressType:       q.GetAddressType(),
-			port:              q.Port,
-			portLabel:         q.PortLabel,
-			replicaGroupLabel: q.ReplicaGroupLabel,
-			tags:              q.Tags,
-		},
-		emitter: discovery.NewEmitter(handler),
+	s := &subscription{p: p, emitter: discovery.NewEmitter(handler)}
+	m := mapping{
+		scheme:            scheme,
+		addressType:       q.GetAddressType(),
+		port:              q.Port,
+		portLabel:         q.PortLabel,
+		replicaGroupLabel: q.ReplicaGroupLabel,
+		tags:              q.Tags,
+	}
+	switch p.service {
+	case awsopts.ServiceECS:
+		s.lister = &ecsLister{p: p, q: q, mapping: m}
+	default:
+		s.lister = &ec2Lister{p: p, filters: q.Filters, mapping: m}
 	}
 	pl, err := poller.New(poller.Options{
 		Name:     p.name,
@@ -235,8 +241,7 @@ func (p *provider) newSubscription(q *do.Query,
 // discovery.SubscriptionRunner and poller.Source
 type subscription struct {
 	p       *provider
-	filters map[string][]string
-	mapping mapping
+	lister  serviceLister
 	emitter *discovery.Emitter
 	poller  *poller.Poller
 
@@ -273,9 +278,10 @@ func (s *subscription) Stop() {
 	s.poller.Stop()
 }
 
-// Poll implements poller.Source: one poll is every page of DescribeInstances.
+// Poll implements poller.Source: one poll is however many API calls the
+// configured service needs, applied together.
 func (s *subscription) Poll(ctx context.Context) (time.Duration, error) {
-	instances, err := s.describeInstances(ctx)
+	snap, skipped, err := s.lister.Members(ctx)
 	if err != nil {
 		if ctx.Err() != nil {
 			return 0, err
@@ -283,59 +289,40 @@ func (s *subscription) Poll(ctx context.Context) (time.Duration, error) {
 		s.warn(err)
 		return 0, err
 	}
-	snap, skipped := toMembers(instances, s.mapping)
 	s.reportSkipped(skipped)
 	s.clearWarn()
 	s.emitter.Emit(snap)
 	return 0, nil // defer to the configured interval
 }
 
-// describeInstances pages through DescribeInstances, returning every
-// instance the filters selected.
-//
-// Pages are accumulated and applied together: a partial page set is a
-// partial membership, and emitting one would drain the pool of everything
-// the later pages would have contained.
-func (s *subscription) describeInstances(ctx context.Context) ([]ec2Instance, error) {
-	var out []ec2Instance
-	var token string
-	for page := 0; ; page++ {
-		if page >= maxPages {
-			return nil, fmt.Errorf(
-				"DescribeInstances did not terminate after %d pages", maxPages)
-		}
-		resp, err := s.describeInstancesPage(ctx, token)
-		if err != nil {
-			return nil, err
-		}
-		for _, r := range resp.Reservations {
-			out = append(out, r.Instances...)
-		}
-		if resp.NextToken == "" {
-			return out, nil
-		}
-		token = resp.NextToken
-	}
+// serviceLister is one AWS API's discovery implementation. Adding a service
+// means adding a lister, not a provider: credentials, signing, the poll
+// loop, the options block and the failure accounting are all shared.
+type serviceLister interface {
+	// Members performs whatever calls the API needs and returns the
+	// resulting membership, plus any resources that could not become
+	// members and why.
+	Members(ctx context.Context) (discovery.Snapshot, []excluded, error)
 }
 
-// describeInstancesPage performs one signed DescribeInstances request.
-func (s *subscription) describeInstancesPage(ctx context.Context,
-	token string,
-) (*describeInstancesResponse, error) {
-	body := s.describeInstancesForm(token).Encode()
-	r, err := http.NewRequestWithContext(ctx, http.MethodPost, s.p.endpoint,
+// post sends a signed request to the service endpoint and returns the
+// response body, or an error carrying whatever the API said went wrong.
+func (p *provider) post(ctx context.Context, body string,
+	headers map[string]string,
+) ([]byte, error) {
+	r, err := http.NewRequestWithContext(ctx, http.MethodPost, p.endpoint,
 		strings.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
-	// the Query protocol carries its parameters as a form-encoded body,
-	// which SigV4 hashes as the payload
-	r.Header.Set("Content-Type", "application/x-www-form-urlencoded; charset=utf-8")
+	for k, v := range headers {
+		r.Header.Set(k, v)
+	}
 	r.ContentLength = int64(len(body))
-	if err := s.p.signer.SignRequest(ctx, r); err != nil {
+	if err := p.signer.SignRequest(ctx, r); err != nil {
 		return nil, err
 	}
-	resp, err := s.p.client.Do(r)
+	resp, err := p.client.Do(r)
 	if err != nil {
 		return nil, err
 	}
@@ -348,33 +335,18 @@ func (s *subscription) describeInstancesPage(ctx context.Context,
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, apiError(resp.StatusCode, payload)
+		return nil, p.apiError(resp.StatusCode, payload)
 	}
-	return parseDescribeInstances(payload)
+	return payload, nil
 }
 
-// describeInstancesForm builds the Query-protocol parameters.
-func (s *subscription) describeInstancesForm(token string) url.Values {
-	v := url.Values{}
-	v.Set("Action", "DescribeInstances")
-	v.Set("Version", ec2APIVersion)
-	if token != "" {
-		v.Set("NextToken", token)
+// apiError renders whichever error document the service uses, which carries
+// a far more useful message than the status code alone.
+func (p *provider) apiError(status int, payload []byte) error {
+	if p.service == awsopts.ServiceECS {
+		return jsonAPIError(status, payload)
 	}
-	if s.p.pageSize > 0 {
-		v.Set("MaxResults", strconv.Itoa(s.p.pageSize))
-	}
-	// Filter.N.Name / Filter.N.Value.M, one-indexed. Names are sorted so
-	// the request is deterministic, which keeps it comparable in logs and
-	// in tests.
-	for n, name := range sortedKeys(s.filters) {
-		prefix := "Filter." + strconv.Itoa(n+1)
-		v.Set(prefix+".Name", name)
-		for m, value := range s.filters[name] {
-			v.Set(prefix+".Value."+strconv.Itoa(m+1), value)
-		}
-	}
-	return v
+	return apiError(status, payload)
 }
 
 // apiError renders a Query-protocol error document, which carries a far

@@ -31,14 +31,27 @@ import (
 const (
 	// ServiceEC2 discovers EC2 instances via DescribeInstances
 	ServiceEC2 = "ec2"
+	// ServiceECS discovers ECS tasks via ListTasks and DescribeTasks. It
+	// covers Fargate, which ServiceEC2 structurally cannot see.
+	ServiceECS = "ecs"
 )
 
-// ErrInvalidService is returned when aws.service names an unsupported API
-var ErrInvalidService = errors.New(
-	"'service' must be one of " + strings.Join([]string{ServiceEC2}, ", "))
+var (
+	// ErrMissingService is returned when aws.service is not set. There is
+	// deliberately no default: with more than one AWS API supported,
+	// picking one for the operator would be arbitrary, and a config that
+	// omits it is far more likely a mistake than an intent.
+	ErrMissingService = errors.New(
+		"'service' is required and must be one of " +
+			strings.Join([]string{ServiceEC2, ServiceECS}, ", "))
+	// ErrInvalidService is returned when aws.service names an unsupported API
+	ErrInvalidService = errors.New(
+		"'service' must be one of " +
+			strings.Join([]string{ServiceEC2, ServiceECS}, ", "))
+)
 
 // SupportedServices returns the aws.service values this build supports.
-func SupportedServices() []string { return []string{ServiceEC2} }
+func SupportedServices() []string { return []string{ServiceEC2, ServiceECS} }
 
 // Options defines the API and credential settings for a discoverer with the
 // 'aws' provider.
@@ -68,26 +81,18 @@ type Options struct {
 	RoleARN string `yaml:"role_arn,omitempty"`
 }
 
-// New returns an Options with default values
-func New() *Options { return &Options{Service: ServiceEC2} }
+// New returns an Options with default values. Service has no default and
+// must be supplied by the operator.
+func New() *Options { return &Options{} }
 
 // Clone returns a perfect copy of the Options
 func (o *Options) Clone() *Options { return pointers.Clone(o) }
 
-// Initialize applies defaults
-func (o *Options) Initialize() {
-	if o == nil {
-		return
-	}
-	if o.Service == "" {
-		o.Service = ServiceEC2
-	}
-}
-
-// GetService returns the configured AWS API, or the default.
+// GetService returns the configured AWS API. It is empty when unset, which
+// Validate rejects; there is no default.
 func (o *Options) GetService() string {
-	if o == nil || o.Service == "" {
-		return ServiceEC2
+	if o == nil {
+		return ""
 	}
 	return o.Service
 }
@@ -113,7 +118,10 @@ func (o *Options) Validate() error {
 	if o == nil {
 		return errors.New("the 'aws' block is required")
 	}
-	if o.Service != "" && !slices.Contains(SupportedServices(), o.Service) {
+	if o.Service == "" {
+		return ErrMissingService
+	}
+	if !slices.Contains(SupportedServices(), o.Service) {
 		return ErrInvalidService
 	}
 	return o.SignerOptions().Validate()

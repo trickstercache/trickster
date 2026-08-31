@@ -959,7 +959,8 @@ backends:
 #   ec2-fleet:
 #     provider: aws
 #     aws:
-#       service: ec2      # which aws api to read; also the sigv4 service
+#       service: ec2      # REQUIRED: ec2 (instances) or ecs (tasks, incl.
+#                         # fargate); also the sigv4 signing service
 #       region: us-east-1 # the api endpoint is derived from this
 #       # credentials omitted: use the standard chain (irsa, instance
 #       # profile, environment, shared config). see docs/aws.md
