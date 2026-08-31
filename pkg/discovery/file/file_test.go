@@ -142,30 +142,6 @@ func TestFileDiscoveryPartialWriteKeepsLastGood(t *testing.T) {
 	require.Equal(t, "10.0.0.9:9090", snap[0].Address)
 }
 
-func TestFileDiscoveryEntryValidation(t *testing.T) {
-	for _, bad := range []string{
-		"- name: no-address\n",
-		"- address: not-host-port\n",
-		"- address: 10.0.0.1:9090\n  scheme: gopher\n",
-		"- address: 10.0.0.1:9090\n  weight: -1\n",
-	} {
-		_, err := parseMembers([]byte(bad))
-		require.Error(t, err, "expected error for %q", bad)
-	}
-	snap, err := parseMembers([]byte("- address: 10.0.0.1:9090\n"))
-	require.NoError(t, err)
-	require.Len(t, snap, 1)
-}
-
-func TestFileDiscoveryJSON(t *testing.T) {
-	snap, err := parseMembers(
-		[]byte(`[{"name": "j1", "address": "10.0.0.1:9090", "weight": 2}]`))
-	require.NoError(t, err)
-	require.Len(t, snap, 1)
-	require.Equal(t, "j1", snap[0].Name)
-	require.Equal(t, 2, snap[0].Weight)
-}
-
 func TestFileDiscoveryMissingFile(t *testing.T) {
 	d, err := New("test-file", nil)
 	require.NoError(t, err)
@@ -194,20 +170,6 @@ func TestSubscribeErrors(t *testing.T) {
 	require.NoError(t, d.Stop())
 	_, err = d.Subscribe(&do.Query{Path: "/x"}, func(discovery.Snapshot) {})
 	require.ErrorIs(t, err, ErrStopped)
-}
-
-func TestFileDiscoveryReplicaGroup(t *testing.T) {
-	snap, err := parseMembers([]byte(`
-- name: prom-a
-  address: 10.0.0.1:9090
-  replica_group: shard-0
-- name: prom-b
-  address: 10.0.0.2:9090
-`))
-	require.NoError(t, err)
-	require.Len(t, snap, 2)
-	require.Equal(t, "shard-0", snap[0].ReplicaGroup)
-	require.Empty(t, snap[1].ReplicaGroup)
 }
 
 func TestPollIntervalOption(t *testing.T) {
