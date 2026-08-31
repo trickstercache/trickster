@@ -92,6 +92,7 @@ that provider's connection-level block:
 | `dns_srv`, `dns_a` | `dns` | `resolver` (host:port; default: system resolver), `interval` (poll cadence, default 30s, min 1s; record TTLs act as a floor) |
 | `file` | `file` | `poll_interval` (stat-poll fallback cadence, default 30s, min 1s) |
 | `http_sd` | `http` + `http_sd` | connection settings in the shared `http` block (below); `http_sd.format` selects the member-list document: `trickster` (default) or `prometheus` |
+| `consul` | `http` + `consul` | connection settings in the shared `http` block; `consul.datacenter`, `namespace`, `partition`, `wait`, `allow_stale`, `only_passing`, `warning_is_ready` |
 
 A block is only valid on its own provider's entries; anything else fails
 startup.
@@ -594,3 +595,84 @@ per-discoverer refresh-error counters — are documented in
 each membership reconcile cycle is traced as an `alb.discovery.reconcile`
 span via the standard [tracing](./tracing.md) subsystem; the request hot
 path is never traced by discovery.
+
+### The `consul` Provider
+
+`consul` reads service instances from Consul's health endpoint. It is
+**event-driven rather than polled**: each request is a Consul blocking
+query, so the server parks it until the service changes or `wait` elapses.
+A membership change is observed within a round trip instead of within a
+poll interval, and a stable service costs one parked connection rather
+than a request per interval.
+
+```yaml
+discovery:
+  consul-dc1:
+    provider: consul
+    http:
+      endpoint: http://127.0.0.1:8500
+      # a rotated ACL token; Consul accepts the Authorization Bearer scheme
+      # as an equivalent to its own X-Consul-Token header
+      bearer_token_file: /var/run/secrets/consul-token
+    consul:
+      datacenter: dc1
+      wait: 5m          # how long a blocking query parks; 1s–10m
+      allow_stale: true # answer from any server, not only the leader
+
+backends:
+  prom-template:
+    provider: prometheus
+    is_template: true
+  prom-alb:
+    provider: alb
+    alb:
+      mechanism: tsm
+      health_mode: provider   # Consul's own checks decide readiness
+      discovery:
+        discoverer_name: consul-dc1
+        template_backend: prom-template
+        query:
+          service: prometheus
+          tags: [production]
+          # filter: 'Service.Meta.version == "2"'
+          # replica_group_label: shard   # read from the service's Meta
+```
+
+**Readiness.** Consul reports per-instance check status, so this is the
+first provider outside kubernetes that can honestly answer "is this member
+ready", which makes `health_mode: provider` meaningful for VM and container
+fleets. An instance's readiness is its **worst** check: all passing is
+ready, `critical` and `maintenance` are not ready, and `warning` is ready by
+default (matching how Consul treats warning for DNS) — set
+`warning_is_ready: false` to drain warning instances instead. A status a
+future Consul release introduces is treated as not-ready rather than
+ignored.
+
+Failing instances are reported as `NotReady` rather than omitted, so that an
+ALB using the default `health_mode: probe` can decide for itself and a
+wholly-unhealthy service does not look like an empty one. Set
+`only_passing: true` to have Consul filter them out server-side instead.
+
+**Weights.** Consul's own `Weights.Passing` / `Weights.Warning` map onto
+member weights, including the passing/warning distinction — an operator who
+has already told Consul the relative capacity of each instance does not have
+to tell Trickster again.
+
+**Addresses.** A service that registers its own address overrides its node's,
+which is how sidecars and containers with their own routable address are
+represented. An instance with no usable address or port fails the whole
+refresh rather than being silently dropped, so a pool never quietly shrinks
+because of a catalog change nobody noticed.
+
+**Labels.** Members carry `service`, `service_id`, `node`, `datacenter`,
+`status`, and `tags` (comma-bracketed, as `,a,b,`). Service metadata is
+carried as `meta_<key>` so that an operator-defined key cannot shadow a
+Trickster-assigned label.
+
+**Timeouts.** `http.timeout` must outlast `consul.wait`, because a blocking
+query legitimately takes that long. Its default is derived from the wait
+rather than shared with the other HTTP providers (Consul adds up to
+`wait/16` of its own jitter, which the margin covers), and a config that
+sets it too low is rejected at startup rather than producing a stream of
+timeouts. `http.interval` is not the poll cadence here — with blocking
+queries there is no cadence — it is the retry delay after a failure.

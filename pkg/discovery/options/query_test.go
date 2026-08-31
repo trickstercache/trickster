@@ -192,6 +192,8 @@ func TestEveryUnacceptedFieldIsRejected(t *testing.T) {
 		"hostname":            func(q *Query) { q.Hostname = "example.com" },
 		"path":                func(q *Query) { q.Path = "/tmp/members.yaml" },
 		"scheme":              func(q *Query) { q.Scheme = SchemeHTTPS },
+		"filter":              func(q *Query) { q.Filter = `Service.Meta.v == "2"` },
+		"tags":                func(q *Query) { q.Tags = []string{"prod"} },
 	}
 	// every field in the table must have a setter here, or the sweep below
 	// silently skips it
@@ -228,4 +230,30 @@ func TestQueryValidateHTTPSD(t *testing.T) {
 	err := (&Query{Path: "pools/a"}).Validate("alb", o)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "must begin with '/'")
+}
+
+func TestQueryValidateConsul(t *testing.T) {
+	o := &Options{Provider: providers.Consul}
+	require.NoError(t, (&Query{Service: "web"}).Validate("alb", o))
+	require.NoError(t, (&Query{
+		Service: "web", Tags: []string{"prod"}, Filter: `Service.Meta.v == "2"`,
+		Scheme: SchemeHTTPS, ReplicaGroupLabel: "shard",
+	}).Validate("alb", o))
+
+	err := (&Query{}).Validate("alb", o)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "'service' is required")
+
+	err = (&Query{Service: "web", Tags: []string{"prod", ""}}).Validate("alb", o)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "cannot be empty")
+}
+
+// Tags is the first slice field on Query; Clone must copy it or two ALBs
+// sharing a template would share the backing array.
+func TestQueryCloneCopiesTags(t *testing.T) {
+	q := &Query{Service: "web", Tags: []string{"prod"}}
+	c := q.Clone()
+	c.Tags[0] = "staging"
+	require.Equal(t, "prod", q.Tags[0])
 }

@@ -122,3 +122,12 @@ func NewErrInvalidHTTPSDOptions(name, detail string) error {
 			name, detail),
 	}
 }
+
+// NewErrInvalidConsulOptions returns an error for invalid consul provider
+// options
+func NewErrInvalidConsulOptions(name, detail string) error {
+	return &InvalidDiscoveryOptionsError{
+		error: fmt.Errorf(`invalid consul options for discoverer %q: %s`,
+			name, detail),
+	}
+}

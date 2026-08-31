@@ -18,6 +18,7 @@ package options
 
 import (
 	"maps"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -81,6 +82,15 @@ type Query struct {
 	// providers that do not convey one (default http). Ignored by the file
 	// provider, whose entries carry their own scheme.
 	Scheme string `yaml:"scheme,omitempty"`
+	// Filter is a provider-native, server-side selection expression. It is
+	// passed through rather than interpreted, so its syntax is the
+	// provider's own -- for consul, a filter expression such as
+	// 'Service.Meta.version == "2"'.
+	Filter string `yaml:"filter,omitempty"`
+	// Tags selects only members carrying every listed tag, for providers
+	// whose catalog has a native tag concept. It is the friendly form of
+	// the common case that Filter can also express.
+	Tags []string `yaml:"tags,omitempty"`
 }
 
 // Clone returns a perfect copy of the Query
@@ -88,6 +98,9 @@ func (q *Query) Clone() *Query {
 	out := *q
 	if q.Selector != nil {
 		out.Selector = maps.Clone(q.Selector)
+	}
+	if q.Tags != nil {
+		out.Tags = slices.Clone(q.Tags)
 	}
 	return &out
 }
@@ -107,6 +120,8 @@ const (
 	fieldHostname          = "hostname"
 	fieldPath              = "path"
 	fieldScheme            = "scheme"
+	fieldFilter            = "filter"
+	fieldTags              = "tags"
 )
 
 // queryField pairs a Query field's config name with a reader, so that
@@ -134,6 +149,8 @@ var queryFields = []queryField{
 	{fieldHostname, func(q *Query) bool { return q.Hostname != "" }},
 	{fieldPath, func(q *Query) bool { return q.Path != "" }},
 	{fieldScheme, func(q *Query) bool { return q.Scheme != "" }},
+	{fieldFilter, func(q *Query) bool { return q.Filter != "" }},
+	{fieldTags, func(q *Query) bool { return len(q.Tags) > 0 }},
 }
 
 // providerQueryFields names the query fields each provider accepts. A field
@@ -150,6 +167,10 @@ var providerQueryFields = map[string]sets.Set[string]{
 	providers.DNSA:   sets.New([]string{fieldHostname, fieldPort, fieldScheme}),
 	providers.File:   sets.New([]string{fieldPath}),
 	providers.HTTPSD: sets.New([]string{fieldPath, fieldScheme}),
+	providers.Consul: sets.New([]string{
+		fieldService, fieldTags, fieldFilter, fieldScheme,
+		fieldReplicaGroupLabel,
+	}),
 }
 
 // Validate validates the Query against the discoverer it will be submitted
@@ -187,6 +208,8 @@ func (q *Query) Validate(albName string, o *Options) error {
 		return q.validateFile(albName)
 	case providers.HTTPSD:
 		return q.validateHTTPSD(albName)
+	case providers.Consul:
+		return q.validateConsul(albName)
 	}
 	return NewErrInvalidQuery(albName, "unknown discovery provider "+o.Provider)
 }
@@ -261,6 +284,20 @@ func (q *Query) validateHTTPSD(albName string) error {
 	if q.Path != "" && !strings.HasPrefix(q.Path, "/") {
 		return NewErrInvalidQuery(albName,
 			"'path' must begin with '/' for the http_sd provider")
+	}
+	return nil
+}
+
+// validateConsul checks the consul query. The service name is the only
+// required field; tags and filter narrow it server-side.
+func (q *Query) validateConsul(albName string) error {
+	if q.Service == "" {
+		return NewErrInvalidQuery(albName,
+			"'service' is required for the consul provider")
+	}
+	if slices.Contains(q.Tags, "") {
+		return NewErrInvalidQuery(albName,
+			"'tags' entries cannot be empty")
 	}
 	return nil
 }

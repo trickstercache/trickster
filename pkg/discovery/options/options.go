@@ -55,6 +55,8 @@ type Options struct {
 	File *FileOptions `yaml:"file,omitempty"`
 	// HTTPSD provides payload settings when Provider is 'http_sd'
 	HTTPSD *HTTPSDOptions `yaml:"http_sd,omitempty"`
+	// Consul provides catalog settings when Provider is 'consul'
+	Consul *ConsulOptions `yaml:"consul,omitempty"`
 	//
 	// HTTP provides the outbound client settings shared by every provider
 	// that discovers members by polling an HTTP endpoint
@@ -167,6 +169,80 @@ type HTTPSDOptions struct {
 	Format string `yaml:"format,omitempty"`
 }
 
+// ConsulOptions defines the catalog settings for a discoverer with the
+// 'consul' provider. Connection settings live in the shared 'http' block,
+// where 'endpoint' is the agent or server address (commonly
+// http://127.0.0.1:8500) and the ACL token is supplied either as an
+// X-Consul-Token header or, for a rotated credential, via
+// bearer_token_file -- Consul accepts the Authorization Bearer scheme as an
+// equivalent to its own header.
+type ConsulOptions struct {
+	// Datacenter queries a datacenter other than the agent's own
+	Datacenter string `yaml:"datacenter,omitempty"`
+	// Namespace and Partition scope the query on Consul Enterprise
+	Namespace string `yaml:"namespace,omitempty"`
+	Partition string `yaml:"partition,omitempty"`
+	// Wait is the maximum time a blocking query parks on the server before
+	// returning unchanged. It is what makes this provider event-driven
+	// rather than polled: membership changes are observed within a round
+	// trip, and an unchanged service costs one parked connection per Wait.
+	Wait timeconv.Duration `yaml:"wait,omitempty"`
+	// AllowStale permits any Consul server to answer rather than only the
+	// leader, trading a small staleness window for lower latency and much
+	// lower load on the leader. Recommended for discovery, which is
+	// already eventually consistent by nature.
+	AllowStale bool `yaml:"allow_stale,omitempty"`
+	// OnlyPassing asks Consul to return only instances whose checks all
+	// pass. The default is false, so that failing instances are reported as
+	// NotReady rather than vanishing -- which lets an ALB using
+	// health_mode: probe decide for itself, and keeps a wholly-unhealthy
+	// service from looking like an empty one.
+	OnlyPassing bool `yaml:"only_passing,omitempty"`
+	// WarningIsReady controls how an instance whose worst check is
+	// 'warning' is reported. Consul treats warning as still-serving for DNS
+	// purposes, so this defaults to true; set it false to drain warning
+	// instances out of pools.
+	WarningIsReady *bool `yaml:"warning_is_ready,omitempty"`
+}
+
+const (
+	// DefaultConsulWait is the default blocking-query wait
+	DefaultConsulWait = 5 * time.Minute
+	// MinimumConsulWait is the lowest permitted blocking-query wait
+	MinimumConsulWait = time.Second
+	// MaximumConsulWait is the highest wait Consul honors; larger values are
+	// silently clamped by the server, so reject them instead
+	MaximumConsulWait = 10 * time.Minute
+	// ConsulWaitTimeoutFloor is the fixed part of the margin between the
+	// blocking-query wait and the poll timeout that must outlast it
+	ConsulWaitTimeoutFloor = 10 * time.Second
+)
+
+// ConsulPollTimeout returns the poll timeout that must bound a blocking
+// query of the given wait. Consul adds up to wait/16 of its own jitter
+// before returning, so a timeout of merely wait would abort perfectly
+// healthy long polls; the margin covers that jitter plus round-trip slack.
+func ConsulPollTimeout(wait time.Duration) time.Duration {
+	return wait + wait/16 + ConsulWaitTimeoutFloor
+}
+
+// GetWait returns the configured blocking-query wait, or the default.
+func (o *ConsulOptions) GetWait() time.Duration {
+	if o == nil || o.Wait <= 0 {
+		return DefaultConsulWait
+	}
+	return time.Duration(o.Wait)
+}
+
+// GetWarningIsReady reports whether a warning instance counts as ready,
+// defaulting to true.
+func (o *ConsulOptions) GetWarningIsReady() bool {
+	if o == nil || o.WarningIsReady == nil {
+		return true
+	}
+	return *o.WarningIsReady
+}
+
 const (
 	// DefaultHTTPInterval is the default poll cadence for HTTP-based
 	// discovery providers
@@ -213,6 +289,12 @@ func (o *Options) Clone() *Options {
 	}
 	if o.HTTPSD != nil {
 		out.HTTPSD = pointers.Clone(o.HTTPSD)
+	}
+	if o.Consul != nil {
+		out.Consul = pointers.Clone(o.Consul)
+		if o.Consul.WarningIsReady != nil {
+			out.Consul.WarningIsReady = pointers.Clone(o.Consul.WarningIsReady)
+		}
 	}
 	if o.HTTP != nil {
 		out.HTTP = pointers.Clone(o.HTTP)
@@ -261,12 +343,23 @@ func (o *Options) Initialize(name string) error {
 			o.HTTPSD.Format = FormatTrickster
 		}
 	}
+	if o.Provider == providers.Consul && o.Consul == nil {
+		o.Consul = &ConsulOptions{}
+	}
 	if o.HTTP != nil {
 		if o.HTTP.Interval == 0 {
 			o.HTTP.Interval = timeconv.Duration(DefaultHTTPInterval)
 		}
 		if o.HTTP.Timeout == 0 {
-			o.HTTP.Timeout = timeconv.Duration(DefaultHTTPTimeout)
+			// consul's timeout must outlast its blocking-query wait, so its
+			// default is derived rather than shared; a 10s default would
+			// abort every long poll
+			if o.Provider == providers.Consul {
+				o.HTTP.Timeout = timeconv.Duration(
+					ConsulPollTimeout(o.Consul.GetWait()))
+			} else {
+				o.HTTP.Timeout = timeconv.Duration(DefaultHTTPTimeout)
+			}
 		}
 	}
 	return nil
@@ -294,6 +387,14 @@ func (o *Options) Validate() (bool, error) {
 	}
 	if o.HTTPSD != nil && o.Provider != providers.HTTPSD {
 		return false, NewErrInvalidDiscoveryBlock("http_sd", o.Provider, o.Name)
+	}
+	if o.Consul != nil && o.Provider != providers.Consul {
+		return false, NewErrInvalidDiscoveryBlock("consul", o.Provider, o.Name)
+	}
+	if o.Provider == providers.Consul {
+		if err := o.validateConsul(); err != nil {
+			return false, err
+		}
 	}
 	if o.Provider == providers.HTTPSD {
 		if o.HTTP == nil {
@@ -341,6 +442,32 @@ func (o *HTTPSDOptions) GetFormat() string {
 		return FormatTrickster
 	}
 	return o.Format
+}
+
+// validateConsul validates the consul catalog options and their
+// interaction with the shared HTTP block.
+func (o *Options) validateConsul() error {
+	if o.HTTP == nil {
+		return NewErrInvalidHTTPOptions(o.Name,
+			"the 'http' block is required for the consul provider")
+	}
+	wait := o.Consul.GetWait()
+	if wait < MinimumConsulWait {
+		return NewErrInvalidConsulOptions(o.Name, "'wait' must be at least 1s")
+	}
+	if wait > MaximumConsulWait {
+		return NewErrInvalidConsulOptions(o.Name,
+			"'wait' must be at most 10m, which is the longest Consul honors")
+	}
+	// a poll timeout that does not outlast the blocking wait aborts every
+	// long poll, turning an event-driven provider into a failing one; catch
+	// it at startup rather than as a stream of timeouts in production
+	if t := time.Duration(o.HTTP.Timeout); t > 0 && t <= wait {
+		return NewErrInvalidConsulOptions(o.Name,
+			"'http.timeout' must be greater than 'consul.wait' (recommended: "+
+				ConsulPollTimeout(wait).String()+")")
+	}
+	return nil
 }
 
 // validateHTTP validates the shared HTTP client options.

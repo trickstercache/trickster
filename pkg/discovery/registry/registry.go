@@ -23,6 +23,7 @@ import (
 	"fmt"
 
 	"github.com/trickstercache/trickster/v2/pkg/discovery"
+	"github.com/trickstercache/trickster/v2/pkg/discovery/consul"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/dns"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/file"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/httpsd"
@@ -41,6 +42,7 @@ func SupportedProviders() discovery.Lookup {
 		providers.DNSA:       dns.NewA,
 		providers.File:       file.New,
 		providers.HTTPSD:     httpsd.New,
+		providers.Consul:     consul.New,
 	}
 }
 

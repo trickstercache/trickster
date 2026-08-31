@@ -138,15 +138,30 @@ Two packages exist so that providers do not each re-derive them:
   failures operators care about. See how `httpsd`'s subscription wraps the
   source's `Poll`.
 
+  **Blocking-query providers** return `poller.PollNow` so the next request
+  is issued immediately, since the waiting happens on the server. Two
+  things they must get right, both of which `consul` demonstrates: a
+  minimum gap between requests, or a service changing faster than the loop
+  becomes a spin against the server at its busiest; and a poll timeout that
+  outlasts the server-side wait, since `poller/http` deliberately holds no
+  second deadline underneath the iteration context.
+
+  **Testing a blocking-query provider** requires a fake that honors the
+  wait parameter, not one that answers immediately. The timeout path is the
+  common case for a stable service, and it is also how a client recovers
+  when the server's cursor goes backwards -- a fake that parks forever
+  makes correct recovery look broken. See `pkg/discovery/consul`'s
+  `fakeConsul`.
+
 - **`pkg/discovery/memberlist`** — decoders for the two member-list
   documents (native and Prometheus `file_sd`/`http_sd`), shared by the
   `file` and `http_sd` providers.
 
 ## Roadmap providers
 
-Candidates from the issue #609 thread, in likely priority order: `consul`
-(native API), `aws` (`service: ec2`, then `ecs`), `gce`, `nomad`,
-`docker`, `azure`. Until each lands, its users are served by:
+Candidates from the issue #609 thread, in likely priority order: `aws`
+(`service: ec2`, then `ecs`), `gce`, `nomad`, `docker`, `azure`. Until each
+lands, its users are served by:
 
 - the `http_sd` provider — any external SD can serve the member list over
   HTTP, in Trickster's native format or Prometheus's; or
