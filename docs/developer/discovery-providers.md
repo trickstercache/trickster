@@ -160,6 +160,11 @@ Two packages exist so that providers do not each re-derive them:
   documents (native and Prometheus `file_sd`/`http_sd`), shared by the
   `file` and `http_sd` providers.
 
+- **`pkg/bytes.ReadBoundedBody`** — bound every response read. Pass
+  `truncate: false` for a document that is only meaningful whole: it fails
+  past the limit rather than handing back a fragment, which would parse
+  into a plausible but wrong membership.
+
 ## Roadmap providers
 
 Candidates from the issue #609 thread, in likely priority order: `aws`

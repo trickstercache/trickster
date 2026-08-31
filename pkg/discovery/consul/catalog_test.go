@@ -20,7 +20,6 @@ import (
 	"testing"
 
 	tbytes "github.com/trickstercache/trickster/v2/pkg/bytes"
-
 	"github.com/trickstercache/trickster/v2/pkg/discovery"
 
 	"github.com/stretchr/testify/require"

@@ -14,24 +14,25 @@
  * limitations under the License.
  */
 
-// Package consul implements the consul autodiscovery provider, reading
-// service instances from Consul's health endpoint.
+// Package nomad implements the nomad autodiscovery provider, reading
+// service instances from Nomad's native service registry (Nomad 1.3+).
 //
-// It is event-driven rather than polled. Each request is a Consul blocking
-// query: the server parks it until the service's index changes or the
-// configured wait elapses, so a membership change is observed within a
-// round trip instead of within a poll interval, and a stable service costs
-// one parked connection rather than a request per interval. This is why the
-// provider is a thin client rather than a wrapper around Consul's Go
-// library -- the blocking-query loop is twenty lines and maps directly onto
-// the shared poller, and the library would add a dependency to reach the
-// same place.
+// Like the consul provider it is event-driven: each request is a blocking
+// query that the server parks until the service changes or the configured
+// wait elapses, so a membership change is observed within a round trip.
+// Both share HashiCorp's cursor protocol, implemented once in
+// pkg/discovery/blockingquery.
 //
-// Because Consul reports per-instance check status, this is the first
-// provider outside kubernetes that can honestly answer 'is this member
-// ready', making health_mode: provider meaningful for VM and container
-// fleets registered in Consul.
-package consul
+// # Native registry, not Consul
+//
+// This reads Nomad's own registry, which a job selects with
+// provider = "nomad" in its service block. Jobs registering into Consul
+// instead are discovered with the consul provider. The distinction matters
+// for readiness: Nomad's service endpoint carries no per-instance check
+// state, so members are reported ReadyUnknown and pools fall back to their
+// own health probes. A deployment that needs discovery-conveyed readiness
+// should register its services into Consul.
+package nomad
 
 import (
 	"context"
@@ -60,22 +61,20 @@ import (
 var ErrStopped = discovery.ErrStopped
 
 // ErrNoHTTPOptions is returned when a discoverer is constructed without the
-// shared http options block, which carries the Consul address
-var ErrNoHTTPOptions = errors.New("consul discovery requires an 'http' options block")
+// shared http options block, which carries the Nomad address
+var ErrNoHTTPOptions = errors.New("nomad discovery requires an 'http' options block")
 
 const (
-	// healthServicePath is the catalog endpoint, to which the service name
-	// is appended
-	healthServicePath = "/v1/health/service/"
+	// servicePath is the registry endpoint, to which the service name is
+	// appended
+	servicePath = "/v1/service/"
 	// indexHeader carries the blocking-query cursor
-	indexHeader = "X-Consul-Index"
+	indexHeader = "X-Nomad-Index"
 	// minPollGap is the shortest time between successive blocking queries;
 	// see blockingquery.Cursor for why a floor is required
 	minPollGap = 100 * time.Millisecond
-	// maxResponseBytes bounds a catalog response. Large services are in the
-	// low megabytes; this is high enough never to bind in practice and low
-	// enough that an endpoint pointed at something else fails the poll
-	// rather than exhausting memory.
+	// maxResponseBytes bounds a registry response, so an endpoint pointed at
+	// something else fails the poll rather than exhausting memory
 	maxResponseBytes = 32 << 20
 )
 
@@ -85,10 +84,10 @@ type provider struct {
 	name     string
 	endpoint *url.URL
 	http     *do.HTTPOptions
-	consul   *do.ConsulOptions
+	nomad    *do.NomadOptions
 }
 
-// New constructs the consul Discoverer; it satisfies
+// New constructs the nomad Discoverer; it satisfies
 // discovery.NewDiscovererFunc.
 func New(name string, o *do.Options) (discovery.Discoverer, error) {
 	if o == nil || o.HTTP == nil {
@@ -96,20 +95,20 @@ func New(name string, o *do.Options) (discovery.Discoverer, error) {
 	}
 	u, err := url.Parse(o.HTTP.Endpoint)
 	if err != nil {
-		return nil, fmt.Errorf("consul endpoint %q is not a valid url: %w",
+		return nil, fmt.Errorf("nomad endpoint %q is not a valid url: %w",
 			o.HTTP.Endpoint, err)
 	}
-	c := o.Consul
-	if c == nil {
-		c = &do.ConsulOptions{}
+	n := o.Nomad
+	if n == nil {
+		n = &do.NomadOptions{}
 	}
-	p := &provider{name: name, endpoint: u, http: o.HTTP, consul: c}
+	p := &provider{name: name, endpoint: u, http: o.HTTP, nomad: n}
 	return discovery.NewLifecycle(name, p.newSubscription), nil
 }
 
 // interval returns the cadence used when a blocking query is not in effect:
-// the retry delay after a failure, and the pause after a non-blocking
-// first read that did not yield a usable index.
+// the retry delay after a failure, and the pause after a read that did not
+// yield a usable cursor.
 func (p *provider) interval() time.Duration {
 	if p.http.Interval > 0 {
 		return time.Duration(p.http.Interval)
@@ -118,12 +117,12 @@ func (p *provider) interval() time.Duration {
 }
 
 // timeout returns the bound on one poll, which must outlast the blocking
-// wait plus Consul's own jitter.
+// wait.
 func (p *provider) timeout() time.Duration {
 	if p.http.Timeout > 0 {
 		return time.Duration(p.http.Timeout)
 	}
-	return do.ConsulPollTimeout(p.consul.GetWait())
+	return do.ConsulPollTimeout(p.nomad.GetWait())
 }
 
 // newSubscription builds a query's blocking-query loop; it satisfies
@@ -132,7 +131,7 @@ func (p *provider) newSubscription(q *do.Query,
 	handler discovery.SnapshotHandler,
 ) (discovery.SubscriptionRunner, error) {
 	if q.Service == "" {
-		return nil, errors.New("consul discovery query requires a service")
+		return nil, errors.New("nomad discovery query requires a service")
 	}
 	scheme := q.Scheme
 	if scheme == "" {
@@ -141,13 +140,9 @@ func (p *provider) newSubscription(q *do.Query,
 	s := &subscription{
 		p:       p,
 		service: q.Service,
-		url:     p.endpoint.JoinPath(healthServicePath, q.Service).String(),
+		url:     p.endpoint.JoinPath(servicePath, q.Service).String(),
 		base:    p.baseParams(q),
-		mapping: mapping{
-			scheme:            scheme,
-			replicaGroupLabel: q.ReplicaGroupLabel,
-			warningIsReady:    p.consul.GetWarningIsReady(),
-		},
+		mapping: mapping{scheme: scheme, tags: q.Tags},
 		cursor:  blockingquery.NewCursor(minPollGap),
 		emitter: discovery.NewEmitter(handler),
 	}
@@ -182,34 +177,25 @@ func (p *provider) newSubscription(q *do.Query,
 // baseParams builds the query parameters that never change between polls.
 func (p *provider) baseParams(q *do.Query) url.Values {
 	v := url.Values{}
-	if p.consul.Datacenter != "" {
-		v.Set("dc", p.consul.Datacenter)
+	if p.nomad.Namespace != "" {
+		v.Set("namespace", p.nomad.Namespace)
 	}
-	if p.consul.Namespace != "" {
-		v.Set("ns", p.consul.Namespace)
+	if p.nomad.Region != "" {
+		v.Set("region", p.nomad.Region)
 	}
-	if p.consul.Partition != "" {
-		v.Set("partition", p.consul.Partition)
-	}
-	if p.consul.AllowStale {
-		// a valueless parameter, per Consul's convention
+	if p.nomad.AllowStale {
+		// a valueless parameter, per the HashiCorp convention
 		v.Set("stale", "")
-	}
-	if p.consul.OnlyPassing {
-		v.Set("passing", "true")
 	}
 	if q.Filter != "" {
 		v.Set("filter", q.Filter)
 	}
-	for _, tag := range q.Tags {
-		v.Add("tag", tag)
-	}
 	return v
 }
 
-// staticHeaders returns the headers sent on every poll. Consul accepts the
-// Authorization Bearer scheme as an equivalent to X-Consul-Token, so a
-// token configured either way reaches it.
+// staticHeaders returns the headers sent on every poll. Nomad accepts the
+// Authorization Bearer scheme as an equivalent to X-Nomad-Token, so a token
+// configured either way reaches it.
 func (p *provider) staticHeaders() map[string]string {
 	out := make(map[string]string, len(p.http.Headers)+1)
 	maps.Copy(out, p.http.Headers)
@@ -227,12 +213,10 @@ type subscription struct {
 	url     string
 	base    url.Values
 	mapping mapping
+	cursor  *blockingquery.Cursor
 	emitter *discovery.Emitter
 	poller  *poller.Poller
 	src     poller.Source
-
-	// cursor owns the blocking-query index and the floor between requests
-	cursor *blockingquery.Cursor
 
 	mtx     sync.Mutex
 	stopped bool
@@ -274,14 +258,11 @@ func (s *subscription) Poll(ctx context.Context) (time.Duration, error) {
 		if ctx.Err() != nil {
 			return 0, err
 		}
-		// a failed blocking query may have failed because the cursor is no
-		// longer meaningful (the server was replaced, the service was
-		// recreated); dropping it makes the retry a plain read that always
-		// yields a usable answer, rather than a blocking query that may
-		// park forever against a stale index
+		// the cursor may itself be why the request failed (the server was
+		// replaced, the service recreated); dropping it makes the retry a
+		// plain read that always yields a usable answer
 		s.cursor.Reset()
 		s.warn(err)
-		// fall back to the configured interval as the retry cadence
 		return 0, err
 	}
 	s.clearWarn()
@@ -308,7 +289,7 @@ func (s *subscription) decorate(_ context.Context, r *http.Request) error {
 		// only a request carrying a cursor blocks; the first read of a
 		// subscription must return immediately so the pool fills
 		v.Set("index", strconv.FormatUint(index, 10))
-		v.Set("wait", blockingquery.Duration(s.p.consul.GetWait()))
+		v.Set("wait", blockingquery.Duration(s.p.nomad.GetWait()))
 	}
 	r.URL.RawQuery = v.Encode()
 	return nil
@@ -324,16 +305,15 @@ func (s *subscription) handle(_ context.Context, resp *http.Response) (time.Dura
 	if had && !changed {
 		// the blocking query timed out with the service unchanged: the body
 		// is identical to the one already applied, so skip decoding it
-		// entirely. This is the saving that makes a long wait cheap.
 		return s.cursor.NextWait(), nil
 	}
 	body, err := tbytes.ReadBoundedBody(resp.Body, maxResponseBytes, false)
 	if err != nil {
 		return 0, err
 	}
-	snap, err := parseCatalog(body, s.mapping)
+	snap, err := parseRegistry(body, s.mapping)
 	if err != nil {
-		return 0, fmt.Errorf("catalog did not parse: %w", err)
+		return 0, fmt.Errorf("service registry did not parse: %w", err)
 	}
 	s.emitter.Emit(snap)
 	return s.cursor.NextWait(), nil
@@ -342,7 +322,7 @@ func (s *subscription) handle(_ context.Context, resp *http.Response) (time.Dura
 // warn counts a refresh failure and logs it once per failure streak
 func (s *subscription) warn(err error) {
 	metrics.DiscoveryRefreshErrors.WithLabelValues(
-		s.p.name, providers.Consul).Inc()
+		s.p.name, providers.Nomad).Inc()
 	s.mtx.Lock()
 	failing := s.failing
 	s.failing = true
@@ -350,7 +330,7 @@ func (s *subscription) warn(err error) {
 	if failing {
 		return
 	}
-	discovery.LogWarn("consul discovery refresh failed; keeping last-good members",
+	discovery.LogWarn("nomad discovery refresh failed; keeping last-good members",
 		logging.Pairs{
 			keys.Discoverer: s.p.name,
 			keys.Service:    s.service,
@@ -368,7 +348,7 @@ func (s *subscription) clearWarn() {
 	}
 	s.failing = false
 	s.mtx.Unlock()
-	discovery.LogInfo("consul discovery refresh recovered",
+	discovery.LogInfo("nomad discovery refresh recovered",
 		logging.Pairs{
 			keys.Discoverer: s.p.name,
 			keys.Service:    s.service,
@@ -380,8 +360,8 @@ func (s *subscription) clearWarn() {
 // than silently freezing the membership.
 func (s *subscription) onPanic(r any, stack []byte) {
 	metrics.DiscoveryRefreshErrors.WithLabelValues(
-		s.p.name, providers.Consul).Inc()
-	discovery.LogError("panic during consul discovery refresh; keeping last-good members",
+		s.p.name, providers.Nomad).Inc()
+	discovery.LogError("panic during nomad discovery refresh; keeping last-good members",
 		logging.Pairs{
 			keys.Discoverer: s.p.name,
 			keys.Service:    s.service,

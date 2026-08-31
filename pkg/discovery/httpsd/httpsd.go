@@ -38,7 +38,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"maps"
 	"net/http"
 	"net/url"
@@ -46,6 +45,7 @@ import (
 	"sync"
 	"time"
 
+	tbytes "github.com/trickstercache/trickster/v2/pkg/bytes"
 	"github.com/trickstercache/trickster/v2/pkg/discovery"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/memberlist"
 	do "github.com/trickstercache/trickster/v2/pkg/discovery/options"
@@ -281,7 +281,7 @@ func (s *subscription) handle(_ context.Context, resp *http.Response) (time.Dura
 	if err := pollerhttp.CheckStatus(resp); err != nil {
 		return 0, err
 	}
-	body, err := readBody(resp.Body)
+	body, err := tbytes.ReadBoundedBody(resp.Body, maxResponseBytes, false)
 	if err != nil {
 		return 0, err
 	}
@@ -302,20 +302,6 @@ func (s *subscription) parse(body []byte) (discovery.Snapshot, error) {
 		return memberlist.ParsePrometheus(body, s.scheme)
 	}
 	return memberlist.Parse(body)
-}
-
-// readBody reads a bounded response body, failing rather than truncating so
-// that an oversized document is never applied as a partial membership.
-func readBody(r io.Reader) ([]byte, error) {
-	b, err := io.ReadAll(io.LimitReader(r, maxResponseBytes+1))
-	if err != nil {
-		return nil, err
-	}
-	if len(b) > maxResponseBytes {
-		return nil, fmt.Errorf("member list exceeds the %d byte limit",
-			maxResponseBytes)
-	}
-	return b, nil
 }
 
 // warn counts a refresh failure and logs it once per failure streak

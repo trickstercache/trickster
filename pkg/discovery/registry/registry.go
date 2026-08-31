@@ -28,6 +28,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/discovery/file"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/httpsd"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/kubernetes"
+	"github.com/trickstercache/trickster/v2/pkg/discovery/nomad"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/options"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/providers"
 )
@@ -43,6 +44,7 @@ func SupportedProviders() discovery.Lookup {
 		providers.File:       file.New,
 		providers.HTTPSD:     httpsd.New,
 		providers.Consul:     consul.New,
+		providers.Nomad:      nomad.New,
 	}
 }
 

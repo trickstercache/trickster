@@ -47,8 +47,8 @@ func TestPollerDoesNotDependOnItsConsumers(t *testing.T) {
 			if err != nil {
 				t.Skipf("go list unavailable: %v", err)
 			}
-			deps := strings.Split(strings.TrimSpace(string(out)), "\n")
-			for _, dep := range deps {
+			deps := strings.SplitSeq(strings.TrimSpace(string(out)), "\n")
+			for dep := range deps {
 				for _, bad := range forbidden {
 					if dep == bad {
 						t.Errorf("%s depends on %s; the poller must stay below its consumers", pkg, bad)

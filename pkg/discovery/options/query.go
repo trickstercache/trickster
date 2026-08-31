@@ -317,10 +317,8 @@ func (q *Query) validateNomad(albName string) error {
 		return NewErrInvalidQuery(albName,
 			"'service' is required for the nomad provider")
 	}
-	for _, tag := range q.Tags {
-		if tag == "" {
-			return NewErrInvalidQuery(albName, "'tags' entries cannot be empty")
-		}
+	if slices.Contains(q.Tags, "") {
+		return NewErrInvalidQuery(albName, "'tags' entries cannot be empty")
 	}
 	return nil
 }

@@ -275,7 +275,7 @@ func (p *Poller) run(ctx context.Context) {
 		case <-timer.C:
 		case <-p.trigger:
 			// the timer is still armed for the iteration this trigger is
-			// pre-empting; stop and drain it so the Reset below is clean
+			// preempting; stop and drain it so the Reset below is clean
 			if !timer.Stop() {
 				select {
 				case <-timer.C:
