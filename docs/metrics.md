@@ -118,6 +118,17 @@ The following metrics are available for polling with any Trickster configuration
     * `dialect` - the SQL dialect of the rendering backend
     * `reason` - the fixed internal failure category
 
+* `trickster_druid_query_analysis_total` (Counter) - Count of native Druid query cache-eligibility classifications. Labels never include query text or datasource names.
+  * labels:
+    * `backend_name` - the configured Druid backend
+    * `cache_mode` - `delta`, `object`, or `proxy`
+    * `reason` - the stable classification reason code
+
+* `trickster_druid_query_rewrite_failures_total` (Counter) - Count of Druid cache-miss extent rewrite failures.
+  * labels:
+    * `backend_name` - the configured Druid backend
+    * `reason` - the fixed internal failure category
+
 * `trickster_cache_operation_objects_total` (Counter) - The total number of objects upon which the Trickster cache has operated.
   * labels:
     * `cache_name` - the name of the configured cache performing the operation$

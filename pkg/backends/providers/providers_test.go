@@ -50,6 +50,7 @@ func TestIsValidProvider(t *testing.T) {
 		{"invalid", false},
 		{InfluxDB, true},
 		{Graphite, true},
+		{Druid, true},
 	}
 
 	for i, test := range tests {
@@ -85,6 +86,12 @@ func TestIsSupportedTimeSeriesProvider(t *testing.T) {
 	}
 	if GraphiteID.String() != Graphite {
 		t.Errorf("expected %s got %s", Graphite, GraphiteID.String())
+	}
+	if !IsSupportedTimeSeriesProvider(Druid) {
+		t.Error("expected Druid to be a supported time series provider")
+	}
+	if DruidID.String() != Druid {
+		t.Errorf("expected %s got %s", Druid, DruidID.String())
 	}
 }
 
