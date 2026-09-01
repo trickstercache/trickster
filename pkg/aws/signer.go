@@ -29,7 +29,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
+	sigv4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
@@ -54,7 +54,7 @@ const resolveTimeout = 15 * time.Second
 type Signer struct {
 	opts    *Options
 	service string
-	signer  *v4.Signer
+	signer  *sigv4.Signer
 	// now is overridable in tests
 	now func() time.Time
 
@@ -75,7 +75,7 @@ func NewSigner(o *Options) (*Signer, error) {
 	return &Signer{
 		opts:    o.Clone(),
 		service: o.GetService(),
-		signer:  v4.NewSigner(),
+		signer:  sigv4.NewSigner(),
 		now:     time.Now,
 	}, nil
 }
