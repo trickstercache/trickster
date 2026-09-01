@@ -119,8 +119,9 @@ Fill `discovery.Member` as completely as your source allows:
    source (client-go fake clientset, `pkg/testutil/dnsserver`, a
    temp dir). Cover: initial snapshot, add/remove transitions, the
    failure-keeps-last-good path, emit-on-change suppression, and
-   unsubscribe/Stop termination (no goroutine leaks — the shared suite in
-   Section F's soak will catch stragglers).
+   unsubscribe/Stop termination (no goroutine leaks — `goleak` covers this
+   per-package, and `integration/alb_discovery_soak_test.go` catches
+   stragglers over hours when run by hand before a release).
 7. **Document** the provider in
    [docs/alb-autodiscovery.md](../alb-autodiscovery.md) (config reference
    + worked example) and note any required upstream permissions (as its
@@ -175,7 +176,77 @@ Two packages exist so that providers do not each re-derive them:
   past the limit rather than handing back a fragment, which would parse
   into a plausible but wrong membership.
 
-## Roadmap providers
+  `truncate: true` is the *fixed-length prefix* read, not "read a small
+  body and don't worry if it's big". It allocates the whole bound and fails
+  a short read, so using it for an error document discards the upstream's
+  message — which is the one thing that document exists to carry. Use
+  `false` with a small limit there.
 
-Candidates from the issue #609 thread, in likely priority order: `docker`
-and `azure`. 
+- **`pkg/secret.Secret`** — any credential string a provider's options
+  carry. It redacts itself from YAML, JSON and `String()`, so a config dump
+  or the management API cannot emit it.
+
+- **`pkg/aws`** — the AWS credential chain and SigV4 signing, kept outside
+  `pkg/discovery` so both the proxy path and the `aws` provider use one
+  implementation. It imports nothing from Trickster, which is what keeps
+  `pkg/discovery/aws` from cycling through `pkg/backends/options`.
+
+## Which provider to read first
+
+All eleven providers implement the same contract, but they are not equally
+good to learn from. Pick by the shape you are building:
+
+| if your source is | read | why |
+| --- | --- | --- |
+| an HTTP endpoint you poll | [`httpsd`](../../pkg/discovery/httpsd) | the smallest complete poll-based provider; one request, one document |
+| event-driven / watch-based | [`file`](../../pkg/discovery/file) | the reference for the notify-plus-poll shape, with no network in the way |
+| a blocking-query registry | [`nomad`](../../pkg/discovery/nomad) | smaller than `consul` and uses the same shared cursor |
+| a paginated cloud inventory | [`gcp`](../../pkg/discovery/gcp) | one call, one auth mode, no join |
+| several calls joined together | [`azure`](../../pkg/discovery/azure) | the hardest shape here: two or three lists joined in memory |
+| one provider, several APIs | [`aws`](../../pkg/discovery/aws) | the `serviceLister` split behind an `aws.service` selector |
+
+Start with `httpsd` regardless — every poll-based provider above is that
+one plus its own complications.
+
+### The cloud `service` selector
+
+`aws`, `gcp` and `azure` each take a **required** `service` field naming
+which API to read (`ec2`/`ecs`, `gce`, `vm`). A new API from a cloud
+Trickster already supports is a new `service` value and a new lister, not a
+new provider: it inherits the credentials, the poll loop, the options block
+and the failure accounting rather than restating them.
+
+The field is required even where only one value exists today. A default
+added later can never be removed, so every subsequent service would be
+reached by an operator opting out of a value they never chose. Values name
+the **product** an operator would recognize rather than the API serving it
+— which is why Cloud Load Balancing would arrive as `gcp` `service: gclb`
+even though the Compute API serves it alongside `gce`.
+
+## What upstreams actually do
+
+Four behaviors that unit tests against hand-built documents will not teach
+you, each found by running against the real thing:
+
+- **An empty list is not always an empty inventory.** Azure answers a list
+  against an unregistered resource provider with `HTTP 200` and
+  `{"value":[]}`. Nothing distinguishes it from a genuinely empty
+  subscription at the list level, so the provider detects the case once and
+  logs what to run.
+- **A documented parameter may be silently ignored at the wrong scope.**
+  Azure's `statusOnly=true` works on the subscription-wide VM list and is
+  accepted-then-ignored on the resource-group-scoped one — the same 200,
+  minus the data. Assume a parameter you rely on is load-bearing, and
+  assert on its effect rather than on the request succeeding.
+- **Fields the documentation implies are absent in practice.** Docker's
+  `/containers/json` carries no `Health` object at all; GCE omits
+  `metadata.items` entirely rather than sending an empty list.
+- **Never let a missing signal empty the pool.** If the data a provider
+  needs to judge readiness is absent, fail the refresh and keep the
+  last-good membership. Treating "unknown" as "not running" drains every
+  member with no error to explain it, which is the worst failure a
+  discovery provider can have.
+
+Capture a real response as a testdata fixture once you have one, and write
+the raw bytes the API sent — not a re-encoding of your own decoded structs,
+which only proves those structs are self-consistent. 
