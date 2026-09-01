@@ -17,28 +17,6 @@
 // Package aws provides AWS credential resolution and SigV4 request signing,
 // shared by the proxy's outbound requests and by the autodiscovery
 // providers that read AWS APIs.
-//
-// # Why this exists
-//
-// Trickster previously signed requests with github.com/prometheus/common/sigv4,
-// which hardcodes the signing service as "aps" -- so the backend `sigv4`
-// option worked for exactly one thing, Amazon Managed Service for Prometheus
-// as an origin, despite its name promising general SigV4. That module was
-// also the only path by which aws-sdk-go v1 entered the dependency graph,
-// and v1 reached end of support on 2025-07-31.
-//
-// This package replaces it with aws-sdk-go-v2, adds a configurable signing
-// service (still defaulting to aps, so existing configs are unchanged), and
-// gives the discovery providers and the proxy one credential story instead
-// of two.
-//
-// # Layering
-//
-// This package deliberately imports nothing from Trickster. pkg/backends/options
-// depends on it for the backend `sigv4` block, and pkg/backends/options is
-// itself reachable from pkg/observability/logging via pkg/config -- so any
-// Trickster import here risks closing an import cycle. Errors are returned
-// rather than logged for the same reason.
 package aws
 
 import (

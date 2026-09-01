@@ -397,3 +397,95 @@ func TestQueryValidateGCP(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "filters")
 }
+
+// docker is the first provider where a port is optional: the Engine API
+// returns endpoints rather than bare hosts, so the daemon's own port is
+// used when a container exposes exactly one. Ambiguity is refused at
+// refresh time, not at startup, because whether it exists depends on what
+// is running.
+func TestQueryValidateDocker(t *testing.T) {
+	o := &Options{Provider: providers.Docker}
+
+	require.NoError(t, (&Query{}).Validate("alb", o),
+		"no port is legal for docker, unlike the cloud providers")
+	require.NoError(t, (&Query{Port: "9090"}).Validate("alb", o))
+	require.NoError(t, (&Query{PortLabel: "com.example.port"}).Validate("alb", o))
+	require.NoError(t, (&Query{
+		Port: "9090", AddressType: AddressPublic, Scheme: SchemeHTTPS,
+		Network: "backend", ReplicaGroupLabel: "shard",
+		Filters: map[string][]string{"label": {"discover=yes"}},
+	}).Validate("alb", o))
+
+	err := (&Query{AddressType: "bridge"}).Validate("alb", o)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "private, public or ipv6")
+
+	err = (&Query{Port: "70000"}).Validate("alb", o)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "between 1 and 65535")
+
+	err = (&Query{Filters: map[string][]string{"": {"x"}}}).Validate("alb", o)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "names cannot be empty")
+
+	err = (&Query{Filters: map[string][]string{"label": {}}}).Validate("alb", o)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "has no values")
+
+	// docker selects with the Engine API's filter document, not the
+	// expression form consul and gcp take
+	err = (&Query{Filter: `labels.env = "prod"`}).Validate("alb", o)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "filter")
+}
+
+// azure is a host-not-endpoint provider like ec2 and gce, so a port is
+// required; and it narrows by vm tag rather than by a filter document.
+func TestQueryValidateAzure(t *testing.T) {
+	o := &Options{Provider: providers.Azure}
+
+	require.NoError(t, (&Query{Port: "9090"}).Validate("alb", o))
+	require.NoError(t, (&Query{PortLabel: "port"}).Validate("alb", o))
+	require.NoError(t, (&Query{
+		Port: "9090", AddressType: AddressPublic, Scheme: SchemeHTTPS,
+		Tags: []string{"prometheus"}, ReplicaGroupLabel: "shard",
+	}).Validate("alb", o))
+
+	err := (&Query{}).Validate("alb", o)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "'port' or 'port_label'")
+	require.Contains(t, err.Error(), "virtual machines have addresses but no port")
+
+	err = (&Query{Port: "9090", AddressType: "public-ip"}).Validate("alb", o)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "private, public or ipv6")
+
+	err = (&Query{Port: "0"}).Validate("alb", o)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "between 1 and 65535")
+
+	err = (&Query{Port: "9090", Tags: []string{"ok", ""}}).Validate("alb", o)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "'tags' entries cannot be empty")
+
+	// azure takes neither form of server-side filter
+	require.Error(t, (&Query{Port: "9090",
+		Filter: `name eq 'x'`}).Validate("alb", o))
+	require.Error(t, (&Query{Port: "9090",
+		Filters: map[string][]string{"tag:env": {"prod"}}}).Validate("alb", o))
+	require.Error(t, (&Query{Port: "9090",
+		Network: "vnet"}).Validate("alb", o),
+		"'network' is docker's, not azure's")
+}
+
+// The discoverer-level errors are the ones this package owns.
+func TestDiscovererLevelErrors(t *testing.T) {
+	require.EqualError(t, NewErrInvalidDiscovererName("bad name"),
+		`invalid discoverer name "bad name"`)
+	require.EqualError(t, NewErrMissingDiscoveryProvider("fleet"),
+		`missing provider for discoverer "fleet"`)
+	require.EqualError(t, NewErrInvalidDiscoveryProvider("ec2", "fleet"),
+		`invalid provider "ec2" for discoverer "fleet"`)
+	require.EqualError(t, NewErrInvalidDiscoveryBlock("aws", "gcp", "fleet"),
+		`the "aws" options block is not valid for provider "gcp" in discoverer "fleet"`)
+}

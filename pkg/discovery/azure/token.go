@@ -72,6 +72,7 @@ type tokenSource struct {
 	opts     *azureopts.Options
 	client   *http.Client
 	loginURL string
+	imdsURL  string
 	// scope and resource are the same audience in the two spellings the
 	// v2.0 endpoint and IMDS respectively expect
 	scope    string
@@ -89,6 +90,7 @@ func newTokenSource(o *azureopts.Options, client *http.Client) *tokenSource {
 		opts:     o,
 		client:   client,
 		loginURL: o.LoginEndpoint(),
+		imdsURL:  imdsEndpoint,
 		scope:    mgmt + "/.default",
 		resource: mgmt + "/",
 	}
@@ -180,7 +182,7 @@ func (t *tokenSource) managedIdentity(ctx context.Context) (string, time.Duratio
 		v.Set("client_id", t.opts.ClientID)
 	}
 	r, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		imdsEndpoint+"?"+v.Encode(), nil)
+		t.imdsURL+"?"+v.Encode(), nil)
 	if err != nil {
 		return "", 0, err
 	}
