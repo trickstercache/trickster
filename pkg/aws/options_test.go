@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/secret"
+
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v3"
 )
@@ -73,7 +75,7 @@ func TestSecretRedaction(t *testing.T) {
 	y, err := yaml.Marshal(o)
 	require.NoError(t, err)
 	require.NotContains(t, string(y), "super-secret")
-	require.Contains(t, string(y), secretToken)
+	require.Contains(t, string(y), secret.Token)
 
 	j, err := json.Marshal(o)
 	require.NoError(t, err)

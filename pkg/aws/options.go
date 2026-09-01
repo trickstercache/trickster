@@ -44,6 +44,8 @@ package aws
 import (
 	"errors"
 	"strings"
+
+	"github.com/trickstercache/trickster/v2/pkg/secret"
 )
 
 // DefaultService is the signing service applied when none is configured.
@@ -70,37 +72,10 @@ var (
 	ErrNilOptions = errors.New("aws: nil options")
 )
 
-// Secret is a credential string that redacts itself when marshaled, so that
-// a config dump or the management API never emits it.
-type Secret string
-
-// secretToken is what a Secret marshals to in place of its value.
-const secretToken = "<secret>"
-
-// MarshalYAML implements yaml.Marshaler.
-func (s Secret) MarshalYAML() (any, error) {
-	if s == "" {
-		return nil, nil
-	}
-	return secretToken, nil
-}
-
-// MarshalJSON implements json.Marshaler.
-func (s Secret) MarshalJSON() ([]byte, error) {
-	if s == "" {
-		return []byte("null"), nil
-	}
-	return []byte(`"` + secretToken + `"`), nil
-}
-
-// String redacts the secret, so that accidental interpolation into a log or
-// error message cannot leak it.
-func (s Secret) String() string {
-	if s == "" {
-		return ""
-	}
-	return secretToken
-}
+// Secret aliases the shared credential type, so that existing
+// aws.Secret references keep working and the redaction behavior is the
+// same one every provider gets.
+type Secret = secret.Secret
 
 // Options configures credential resolution and SigV4 signing.
 //
