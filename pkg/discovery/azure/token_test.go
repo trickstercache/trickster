@@ -18,6 +18,7 @@ package azure
 
 import (
 	"encoding/json"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -47,9 +48,7 @@ func newFakeLogin(t *testing.T, body string) *fakeLogin {
 			_ = r.ParseForm()
 			form := r.Form
 			// IMDS carries its parameters in the query string
-			for k, v := range r.URL.Query() {
-				form[k] = v
-			}
+			maps.Copy(form, r.URL.Query())
 			f.calls++
 			select {
 			case f.forms <- form:
