@@ -316,7 +316,7 @@ func (l *logger) HasErroredOnce(key string) bool {
 }
 
 func (l *logger) HasLoggedOnce(logLevel level.Level, key string) bool {
-	key = string(logLevel) + "." + key
+	key = logLevel + "." + key
 	_, ok := l.onceRanEntries.Load(key)
 	return ok
 }
@@ -390,7 +390,7 @@ func (l *logger) logWithCaller(logLevel level.Level, event string, detail Pairs,
 	logLine := []byte(
 		"time=" + ts.UTC().Format(time.RFC3339Nano) + space +
 			"app=trickster" + space +
-			"level=" + string(logLevel) + space +
+			"level=" + logLevel + space +
 			"event=" + quoteAsNeeded(event),
 	)
 

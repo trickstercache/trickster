@@ -178,6 +178,10 @@ golangci-lint:
 .PHONY: lint
 lint: check-imports spelling vulncheck gofix-diff golangci-lint
 
+.PHONY: lint-all
+lint-all:
+	@LINT_FLAGS="--new-from-rev= --fix=false" $(MAKE) lint
+
 .PHONY: vulncheck
 vulncheck:
 	@go tool govulncheck ./...
@@ -383,7 +387,7 @@ spelling:
 	if [ "$$?" != "0" ]; then \
 		echo "codespell is not installed" ; \
 	else \
-		codespell --skip='vendor,*.git,*.png,*.pdf,*.tiff,*.plist,*.pem,rangesim*.go,*.gz,go.sum,go.mod' --ignore-words='./testdata/ignore_words.txt' ; \
+		codespell --skip='vendor,bin,*.git,*.png,*.pdf,*.tiff,*.plist,*.pem,rangesim*.go,*.gz,go.sum,go.mod' --ignore-words='./testdata/ignore_words.txt' ; \
 	fi
 
 .PHONY: serve

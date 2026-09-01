@@ -505,7 +505,7 @@ func (c *Client) validateAndStartUserRouter(clients backends.Backends, hcs healt
 	if conf.AuthOptions != nil && conf.AuthOptions.Authenticator != nil {
 		// credential replacement is only allowed if users will be positively
 		// authenticated and not just observed.
-		canReplaceCreds = !(conf.AuthOptions.Authenticator.IsObserveOnly())
+		canReplaceCreds = !conf.AuthOptions.Authenticator.IsObserveOnly()
 		authenticator = conf.AuthOptions.Authenticator
 	} else {
 		a, err := authreg.NewObserverFromProviderName(o.TargetProvider,

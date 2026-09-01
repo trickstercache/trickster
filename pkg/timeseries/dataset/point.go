@@ -124,7 +124,7 @@ func (p Points) Len() int {
 
 // Less returns true if i comes before j
 func (p Points) Less(i, j int) bool {
-	return p[i].Epoch < (p[j].Epoch)
+	return p[i].Epoch < p[j].Epoch
 }
 
 // Swap modifies a slice of time series data points by swapping the values in indexes i and j
