@@ -47,22 +47,42 @@ go-mod-tidy:
 
 .PHONY: test-go-mod
 test-go-mod:
-	@git diff --quiet --exit-code go.mod go.sum || echo "There are changes to go.mod and go.sum which needs to be committed"
+	@git diff --quiet --exit-code go.mod go.sum || echo "There are changes to go.mod and go.sum that need to be committed"
 
-# go-jmespath ships an abbreviated Apache-2.0 license notice that go-licenses
-# cannot classify. The target excludes it from automatic classification only,
-# then copies its original license notice into the generated distribution.
+# Modules whose LICENSE file go-licenses cannot classify. Each is excluded
+# from automatic classification only -- its license notice is still copied
+# verbatim into the generated distribution below, and its own dependencies
+# are still classified -- so this narrows what the classifier is asked to
+# recognize without narrowing what ships. Every entry needs a reason:
+#
+#   github.com/segmentio/asm  MIT-0 (MIT No Attribution), an OSI-approved
+#                             license the bundled classifier has no template
+#                             for; it is unrecognized at any confidence, and
+#                             `save` takes no threshold flag anyway
+#
+# Remove an entry as soon as the module leaves the dependency graph -- the
+# loop below fails on a stale one rather than skipping it, because a stale
+# exception silently keeps a classifier waiver alive for a module that could
+# come back under a different license.
+UNCLASSIFIED_LICENSE_MODULES := \
+	github.com/segmentio/asm
+
 .PHONY: third-party-licenses
 third-party-licenses:
 	$(GO) tool go-licenses save ./cmd/trickster \
 		--force \
 		--save_path=$(THIRD_PARTY_LICENSES_DIR) \
 		--ignore=github.com/trickstercache/trickster/v2 \
-		--ignore=github.com/jmespath/go-jmespath
-	@jmespath_dir="$$($(GO) list -mod=mod -m -f '{{.Dir}}' github.com/jmespath/go-jmespath)"; \
-		mkdir -p "$(THIRD_PARTY_LICENSES_DIR)/github.com/jmespath/go-jmespath"; \
-		cp "$$jmespath_dir/LICENSE" \
-			"$(THIRD_PARTY_LICENSES_DIR)/github.com/jmespath/go-jmespath/LICENSE"
+		$(foreach m,$(UNCLASSIFIED_LICENSE_MODULES),--ignore=$(m))
+	@set -e; for m in $(UNCLASSIFIED_LICENSE_MODULES); do \
+		dir="$$($(GO) list -mod=mod -m -f '{{.Dir}}' $$m 2>/dev/null)" || { \
+			echo "$$m is listed in UNCLASSIFIED_LICENSE_MODULES but is no longer a dependency; remove it" >&2; \
+			exit 1; }; \
+		mkdir -p "$(THIRD_PARTY_LICENSES_DIR)/$$m"; \
+		cp "$$dir/LICENSE" "$(THIRD_PARTY_LICENSES_DIR)/$$m/LICENSE"; \
+		test -s "$(THIRD_PARTY_LICENSES_DIR)/$$m/LICENSE"; \
+		echo "copied license notice for $$m"; \
+	done
 	@test -s "$(THIRD_PARTY_LICENSES_DIR)/vitess.io/vitess/go/LICENSE"
 
 .PHONY: check-third-party-licenses
@@ -71,7 +91,7 @@ check-third-party-licenses: third-party-licenses
 
 BUILD_FLAGS ?= -a -v
 .PHONY: build
-build: go-mod-tidy go-mod-vendor
+build: go-mod-tidy
 	CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) $(BUILD_FLAGS) -o ./$(BUILD_SUBDIR)/trickster  $(TRICKSTER_MAIN)/*.go
 
 rpm: build third-party-licenses
