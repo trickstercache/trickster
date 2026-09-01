@@ -906,7 +906,7 @@ backends:
 # discovery: # top-level section of named discoverers; multiple ALBs can share one
 #   in-cluster:
 #     provider: kubernetes # kubernetes, dns_srv, dns_a, file, http_sd, consul,
-#                          # nomad, aws, or gcp
+#                          # nomad, aws, gcp, or docker
 #     kubernetes:
 #       in_cluster: true # use the pod's service account (default)
 #       # kubeconfig: /path/to/kubeconfig # or run against a remote cluster
@@ -978,6 +978,27 @@ backends:
 #       #   (workload identity on gke, the instance service account on gce)
 #     http:
 #       interval: 60s
+#   azure-fleet:
+#     provider: azure
+#     azure:
+#       service: vm # REQUIRED: the azure api to read
+#       subscription_id: 00000000-0000-0000-0000-000000000000 # REQUIRED
+#       # resource_group: prod-rg # narrows every list; recommended on a
+#       #   large subscription
+#       # credentials omitted: use the managed identity of the azure vm or
+#       #   aks pod. for aks workload identity set federated_token_file; for
+#       #   a service principal set tenant_id + client_id + client_secret
+#       # cloud: public # public (default), usgovernment, or china
+#       # power_state: false # one extra list call; makes readiness real
+#     http:
+#       interval: 60s
+#   containers:
+#     provider: docker
+#     docker: {} # api_version: v1.41 by default
+#     http:
+#       # endpoint: unix:///var/run/docker.sock # the default; tcp:// for a
+#       #   remote daemon, whose tls goes in the shared tls block below
+#       interval: 30s
 #
 # backends:
 #   prom-template:

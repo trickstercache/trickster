@@ -112,6 +112,11 @@ type Query struct {
 	// Cluster names the cluster to query for providers whose API is scoped
 	// by one, such as ECS. When empty, the provider's own default applies.
 	Cluster string `yaml:"cluster,omitempty"`
+	// Network names the container network whose address to use, for
+	// providers where a member can be attached to several. When empty, a
+	// container on exactly one network resolves unambiguously and one on
+	// several is excluded rather than guessed at.
+	Network string `yaml:"network,omitempty"`
 }
 
 // Clone returns a perfect copy of the Query
@@ -153,6 +158,7 @@ const (
 	fieldAddressType       = "address_type"
 	fieldPortLabel         = "port_label"
 	fieldCluster           = "cluster"
+	fieldNetwork           = "network"
 )
 
 // Address types accepted by Query.AddressType
@@ -199,6 +205,7 @@ var queryFields = []queryField{
 	{fieldAddressType, func(q *Query) bool { return q.AddressType != "" }},
 	{fieldPortLabel, func(q *Query) bool { return q.PortLabel != "" }},
 	{fieldCluster, func(q *Query) bool { return q.Cluster != "" }},
+	{fieldNetwork, func(q *Query) bool { return q.Network != "" }},
 }
 
 // providerQueryFields names the query fields each provider accepts. A field
@@ -220,6 +227,20 @@ var providerQueryFields = map[string]sets.Set[string]{
 	// instance is a host rather than an endpoint
 	providers.GCP: sets.New([]string{
 		fieldFilter, fieldTags, fieldPort, fieldPortLabel,
+		fieldAddressType, fieldScheme, fieldReplicaGroupLabel,
+	}),
+	// azure narrows by vm tag and, like ec2 and gce, needs a port and an
+	// address choice since a vm is a host rather than an endpoint
+	providers.Azure: sets.New([]string{
+		fieldTags, fieldPort, fieldPortLabel,
+		fieldAddressType, fieldScheme, fieldReplicaGroupLabel,
+	}),
+	// docker selects with the Engine API's own filter document, and needs
+	// a network choice only when a container is on several. Unlike the
+	// cloud providers it does not require a port: the Engine API reports
+	// one
+	providers.Docker: sets.New([]string{
+		fieldFilters, fieldNetwork, fieldPort, fieldPortLabel,
 		fieldAddressType, fieldScheme, fieldReplicaGroupLabel,
 	}),
 	providers.Consul: sets.New([]string{
@@ -285,6 +306,10 @@ func (q *Query) Validate(albName string, o *Options) error {
 		return q.validateAWS(albName, o)
 	case providers.GCP:
 		return q.validateGCP(albName)
+	case providers.Docker:
+		return q.validateDocker(albName)
+	case providers.Azure:
+		return q.validateAzure(albName)
 	}
 	return NewErrInvalidQuery(albName, "unknown discovery provider "+o.Provider)
 }
@@ -463,6 +488,56 @@ func (q *Query) validateGCP(albName string) error {
 		return NewErrInvalidQuery(albName,
 			"one of 'port' or 'port_label' is required for the gcp provider, "+
 				"because instances have addresses but no port")
+	}
+	if q.Port != "" && !validPortNumber(q.Port) {
+		return NewErrInvalidQuery(albName,
+			"'port' must be a port number between 1 and 65535")
+	}
+	if slices.Contains(q.Tags, "") {
+		return NewErrInvalidQuery(albName, "'tags' entries cannot be empty")
+	}
+	return nil
+}
+
+// validateDocker checks the docker query.
+//
+// Unlike the cloud providers, a port is not required: the Engine API
+// reports the container's own ports, and a container with exactly one TCP
+// port needs no restatement of it in config. A container with several is
+// excluded with a reason at refresh time rather than rejected at startup,
+// since whether the ambiguity exists depends on what is running.
+func (q *Query) validateDocker(albName string) error {
+	if q.AddressType != "" && !addressTypes.Contains(q.AddressType) {
+		return NewErrInvalidQuery(albName,
+			"'address_type' must be private, public or ipv6")
+	}
+	if q.Port != "" && !validPortNumber(q.Port) {
+		return NewErrInvalidQuery(albName,
+			"'port' must be a port number between 1 and 65535")
+	}
+	for name, values := range q.Filters {
+		if name == "" {
+			return NewErrInvalidQuery(albName, "'filters' names cannot be empty")
+		}
+		if len(values) == 0 {
+			return NewErrInvalidQuery(albName,
+				"'filters' entry "+name+" has no values")
+		}
+	}
+	return nil
+}
+
+// validateAzure checks the azure query. Like ec2 and gce, a vm is a host
+// rather than an endpoint, so a port must come from somewhere.
+func (q *Query) validateAzure(albName string) error {
+	if q.AddressType != "" && !addressTypes.Contains(q.AddressType) {
+		return NewErrInvalidQuery(albName,
+			"'address_type' must be private, public or ipv6")
+	}
+	if q.Port == "" && q.PortLabel == "" {
+		return NewErrInvalidQuery(albName,
+			"one of 'port' or 'port_label' is required for the azure provider, "+
+				"because virtual machines have addresses but no port")
 	}
 	if q.Port != "" && !validPortNumber(q.Port) {
 		return NewErrInvalidQuery(albName,

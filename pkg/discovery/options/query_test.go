@@ -199,6 +199,7 @@ func TestEveryUnacceptedFieldIsRejected(t *testing.T) {
 		"address_type":        func(q *Query) { q.AddressType = AddressPublic },
 		"port_label":          func(q *Query) { q.PortLabel = "trickster-port" },
 		"cluster":             func(q *Query) { q.Cluster = "prod" },
+		"network":             func(q *Query) { q.Network = "bridge" },
 	}
 	// every field in the table must have a setter here, or the sweep below
 	// silently skips it
