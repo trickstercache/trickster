@@ -113,7 +113,7 @@ func TestAnalyzeSupportedCorpus(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			analysis := NewAnalyzer().Analyze(test.query, time.Unix(1_700_000_000, 0))
+			analysis := NewAnalyzer(Options{}).Analyze(test.query, time.Unix(1_700_000_000, 0))
 			if analysis.Err != nil {
 				t.Fatalf("Analyze() error = %v", analysis.Err)
 			}
@@ -176,7 +176,7 @@ func TestBucketOutputUnits(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			analysis := NewAnalyzer().Analyze(test.query, time.Unix(1_700_000_000, 0))
+			analysis := NewAnalyzer(Options{}).Analyze(test.query, time.Unix(1_700_000_000, 0))
 			if analysis.Err != nil {
 				t.Fatal(analysis.Err)
 			}
@@ -190,7 +190,7 @@ func TestBucketOutputUnits(t *testing.T) {
 func TestOutputAliasRangeUsesBucketUnit(t *testing.T) {
 	query := `SELECT (intDiv(toUInt32(ts), 300) * 300) * 1000 AS t, count() FROM events ` +
 		`WHERE t >= 1516665600000 AND t < 1516687200000 GROUP BY t FORMAT JSON`
-	analysis := NewAnalyzer().Analyze(query, time.Unix(1_700_000_000, 0))
+	analysis := NewAnalyzer(Options{}).Analyze(query, time.Unix(1_700_000_000, 0))
 	if analysis.Err != nil {
 		t.Fatal(analysis.Err)
 	}
@@ -215,7 +215,7 @@ func TestOutputAliasRangeUsesBucketUnit(t *testing.T) {
 func TestRenderExtentPreservesPredicateTopology(t *testing.T) {
 	query := `SELECT toStartOfMinute(ts) AS t, count() FROM events ` +
 		`WHERE tenant_start = 100 AND ts >= 120 AND ts < 240 GROUP BY t FORMAT JSON`
-	analysis := NewAnalyzer().Analyze(query, time.Unix(500, 0))
+	analysis := NewAnalyzer(Options{}).Analyze(query, time.Unix(500, 0))
 	if analysis.Err != nil {
 		t.Fatal(analysis.Err)
 	}
@@ -240,7 +240,7 @@ func TestRenderExtentPreservesPredicateTopology(t *testing.T) {
 }
 
 func TestOpenEndedRangeAddsSafeUpperConjunct(t *testing.T) {
-	analysis := NewAnalyzer().Analyze(tq01, time.Unix(1_700_000_000, 0))
+	analysis := NewAnalyzer(Options{}).Analyze(tq01, time.Unix(1_700_000_000, 0))
 	if analysis.Err != nil {
 		t.Fatal(analysis.Err)
 	}
@@ -257,24 +257,24 @@ func TestOpenEndedRangeAddsSafeUpperConjunct(t *testing.T) {
 }
 
 func TestStatementClassification(t *testing.T) {
-	nonSelect := NewAnalyzer().Analyze(`INSERT INTO events VALUES (1)`, time.Now())
+	nonSelect := NewAnalyzer(Options{}).Analyze(`INSERT INTO events VALUES (1)`, time.Now())
 	if nonSelect.Mode != sqlanalyzer.CacheModeNone || nonSelect.Reason != sqlanalyzer.ReasonUnsupportedStatement {
 		t.Errorf("unexpected non-select classification: %+v", nonSelect)
 	}
-	insertSelect := NewAnalyzer().Analyze(`INSERT INTO archive SELECT * FROM events`, time.Now())
+	insertSelect := NewAnalyzer(Options{}).Analyze(`INSERT INTO archive SELECT * FROM events`, time.Now())
 	if insertSelect.Mode != sqlanalyzer.CacheModeNone || insertSelect.Reason != sqlanalyzer.ReasonUnsupportedStatement {
 		t.Errorf("unexpected INSERT SELECT classification: %+v", insertSelect)
 	}
-	invalid := NewAnalyzer().Analyze(`SELECT !!!`, time.Now())
+	invalid := NewAnalyzer(Options{}).Analyze(`SELECT !!!`, time.Now())
 	if invalid.Mode != sqlanalyzer.CacheModeObject || invalid.Reason != sqlanalyzer.ReasonInvalidSQL ||
 		!errors.Is(invalid.Err, ErrInvalidSQL) {
 		t.Errorf("unexpected invalid SELECT classification: %+v", invalid)
 	}
-	union := NewAnalyzer().Analyze(`SELECT 1 UNION ALL SELECT 2`, time.Now())
+	union := NewAnalyzer(Options{}).Analyze(`SELECT 1 UNION ALL SELECT 2`, time.Now())
 	if union.Mode != sqlanalyzer.CacheModeObject || union.Reason != sqlanalyzer.ReasonUnsupportedStatement {
 		t.Errorf("unexpected UNION classification: %+v", union)
 	}
-	multiple := NewAnalyzer().Analyze(`SELECT 1; SELECT 2`, time.Now())
+	multiple := NewAnalyzer(Options{}).Analyze(`SELECT 1; SELECT 2`, time.Now())
 	if multiple.Mode != sqlanalyzer.CacheModeObject || multiple.Reason != sqlanalyzer.ReasonInvalidSQL {
 		t.Errorf("unexpected multi-statement classification: %+v", multiple)
 	}
@@ -288,7 +288,7 @@ func TestNativeQueryCompatibility(t *testing.T) {
 		"SELECT timeSlot(ts) AS t, count() FROM events WHERE ts >= 0 AND ts < now64() GROUP BY t",
 		"SELECT toStartOfMillisecond(ts) AS t, count() FROM events WHERE ts >= 120 AND ts < 121 GROUP BY t",
 	} {
-		analysis := NewAnalyzer().Analyze(query, now)
+		analysis := NewAnalyzer(Options{}).Analyze(query, now)
 		if analysis.Err != nil {
 			t.Fatalf("%s: %v", query, analysis.Err)
 		}
@@ -306,7 +306,7 @@ func TestNativeQueryCompatibility(t *testing.T) {
 		"SELECT toStartOfMinute(ts) AS t, count() FROM events WHERE ts >= toDateTime64(120, 10) AND ts < 240 GROUP BY t",
 		"SELECT toStartOfInterval(ts, INTERVAL 9223372036854775807 SECOND) AS t, count() FROM events WHERE ts >= 0 AND ts < 240 GROUP BY t",
 	} {
-		if got := NewAnalyzer().Analyze(query, now); got.Mode == sqlanalyzer.CacheModeDelta {
+		if got := NewAnalyzer(Options{}).Analyze(query, now); got.Mode == sqlanalyzer.CacheModeDelta {
 			t.Fatalf("unsafe query accepted: %s", query)
 		}
 	}
@@ -339,7 +339,7 @@ func TestIsSelectQuery(t *testing.T) {
 }
 
 func BenchmarkClickHouseAnalyze(b *testing.B) {
-	analyzer := NewAnalyzer()
+	analyzer := NewAnalyzer(Options{})
 	now := time.Unix(1_700_000_000, 0)
 	b.ReportAllocs()
 	for b.Loop() {
