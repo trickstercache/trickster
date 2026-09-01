@@ -15,9 +15,15 @@ There are several discovery providers supported by Trickster
 * DNS SRV records (`dns_srv`)
 * DNS A/AAAA records (`dns_a`)
 * Watched member-list file (`file`)
+* Watched member-list http endpoint (`http_sd`)
+* Consul (`consul`)
+* Nomad (`nomad`)
+* Amazon Web Services (`aws`)
+* Google Cloud (`gcp`)
+* Microsoft Azure (`azure`)
+* Docker (`docker`)
 
-Support for additional providers (consul, ec2, gcp, etcd, docker) is
-planned; until each lands, its users are generally served by the `file`
+For other services, users are generally served by the `file`
 provider (any external service-discovery tool can emit the member list) or
 by the DNS providers (e.g., Consul's DNS interface, cloud private DNS
 zones, Docker's embedded DNS). Developers can add providers against a
@@ -96,6 +102,8 @@ that provider's connection-level block:
 | `nomad` | `http` + `nomad` | connection settings in the shared `http` block; `nomad.namespace`, `region`, `wait`, `allow_stale` |
 | `aws` | `aws` (+ optional `http`) | `aws.service` (**required**: `ec2` or `ecs`), `region`, and the credential fields; the endpoint is derived, so `http.endpoint` is an optional override |
 | `gcp` | `gcp` (+ optional `http`) | `gcp.service` (required; `gce`), `gcp.project` (from the metadata server when unset) and `credentials_file`; the endpoint is the Compute API, so `http.endpoint` is an optional override |
+| `docker` | `docker` (+ optional `http`) | `docker.api_version`; the endpoint defaults to the well-known socket, so `http.endpoint` is an optional override (`unix://` or `tcp://`) |
+| `azure` | `azure` (+ optional `http`) | `azure.service` (required; `vm`), `azure.subscription_id` (required), credentials and `cloud`; the endpoint comes from the cloud, so `http.endpoint` is an optional override |
 
 A block is only valid on its own provider's entries; anything else fails
 startup.
@@ -993,3 +1001,225 @@ zone contributes no instances rather than failing the whole refresh.
 prefixed so a user-defined label cannot shadow a Trickster-assigned one.
 Resource URLs are shortened to their last segment, since a member label full
 of `https://www.googleapis.com/compute/v1/...` is unreadable.
+
+### The `docker` Provider
+
+`docker` discovers containers through the Docker Engine API's
+`GET /containers/json`, polled on `http.interval`.
+
+```yaml
+discovery:
+  containers:
+    provider: docker
+    docker: {}                 # api_version: v1.41 by default
+    http:
+      # endpoint: unix:///var/run/docker.sock   # the default
+      # endpoint: tcp://dockerhost:2376         # remote daemon; add a tls block
+      interval: 30s
+
+backends:
+  prom-alb:
+    provider: alb
+    alb:
+      discovery:
+        discoverer_name: containers
+        template_backend: prom-template
+        query:
+          filters:
+            label: [com.example.discover=yes]
+          # network: backend      # required only when a container is on several
+          # port: 9090            # or port_label, when the container exposes several
+          # address_type: private # private (default), public, or ipv6
+          # replica_group_label: com.example.shard
+```
+
+**Endpoint.** Taken from `http.endpoint`, defaulting to
+`unix:///var/run/docker.sock`. Both the `unix://` and `tcp://` forms
+`DOCKER_HOST` uses are accepted, so one can be pasted into the other. A
+`tcp://` endpoint takes its client TLS from the shared `http.tls` block —
+that is how a remote daemon's mutual TLS is configured — and becomes
+`https` on the wire when one is present. TLS on a `unix://` endpoint is
+rejected rather than ignored.
+
+**Access.** Trickster needs read access to the Docker socket, which on most
+hosts means membership of the `docker` group. That access is equivalent to
+root on the host, so prefer a read-only socket proxy in production over
+mounting the socket directly. Trickster only ever issues `GET
+/containers/json`.
+
+**API version.** Pinned to `v1.41` (Docker 20.10 and later) rather than
+left off. An unversioned request binds to whatever the daemon's newest
+version happens to be, so the response shape would change under Trickster
+when the host upgrades Docker. Override with `docker.api_version` to use a
+newer one.
+
+**Endpoints, not hosts.** Unlike the cloud providers, the Engine API
+reports ports, so **`port` is not required**. A container exposing exactly
+one TCP port resolves automatically; one exposing several is excluded with
+a reason naming the candidates, rather than having a guess made for it. UDP
+ports are never candidates, which is what makes the single-port case common
+in practice — a container exposing one TCP port beside two UDP ports is
+unambiguous. `port_label` reads the port from a container label and wins
+over a static `port` per container.
+
+**Addresses.** `address_type: private` (the default) uses the container's IP
+on its network, with the container-internal port. `public` uses the host
+binding instead — the address and port are taken from the *same* binding, so
+a container publishing one port on `127.0.0.1` and another on `0.0.0.0` does
+not produce a mismatched pair. A wildcard binding (`0.0.0.0` or `::`) is not
+dialable, so it resolves to `127.0.0.1`. `ipv6` uses the container's global
+IPv6 address.
+
+**Networks.** A container on exactly one network needs no `network`. One on
+several must name which, rather than having a map iteration pick — that
+would differ between polls and churn the pool. A container attached to no
+network is excluded.
+
+**Readiness.** `State: running` is required; every other state leaves
+membership entirely, so containers drain from pools as they stop. Health
+comes from the container's `HEALTHCHECK`: `healthy` is `Ready`, `unhealthy`
+and `starting` are `NotReady`, and a container **with no healthcheck
+declared is `ReadyUnknown`, not `Ready`** — the daemon knows the process
+started, not that it is serving, and Trickster's own health checks cover
+that. Note that `GET /containers/json` reports health only inside its
+human-readable `Status` string; the per-container inspect that carries a
+structured `Health` object would cost one request per container per poll.
+
+**Selection.** `filters` is passed to the Engine API as its own filter
+document and evaluated server-side, so the daemon does the narrowing:
+`label`, `name`, `status`, `health`, `network`, `ancestor` and the rest. A
+filter name the daemon does not recognize is a `400` and fails the refresh
+loudly, rather than being ignored into a silently empty pool. When the query
+sets no `status` filter, `status: [running]` is added, so a host with a long
+history of exited containers is not listed in full every poll.
+
+**Labels.** Members carry `container_id` (short form), `container_name`,
+`image`, `state`, `network` and `private_ip`. Container labels are carried
+as `label_<key>`, prefixed so a user-defined label cannot shadow a
+Trickster-assigned one — Compose's own labels arrive as
+`label_com.docker.compose.service` and the like.
+
+### The `azure` Provider
+
+`azure` reads an Azure Resource Manager API named by **`azure.service`**.
+`service` is **required** even though `vm` is the only value today, for the
+same reason as `aws.service` and `gcp.service`: a default added now could
+never be removed.
+
+#### `service: vm`
+
+Discovers Virtual Machines, joining them to their network interfaces to
+resolve addresses.
+
+```yaml
+discovery:
+  fleet:
+    provider: azure
+    azure:
+      service: vm                # required
+      subscription_id: 00000000-0000-0000-0000-000000000000  # required
+      # resource_group: prod-rg  # narrows every list; recommended
+      # credentials omitted: use the managed identity of the VM or AKS pod
+      # tenant_id: ...           # with a service principal:
+      # client_id: ...
+      # client_secret: ...
+      # federated_token_file: /var/run/secrets/azure/tokens/azure-identity-token
+      # cloud: public            # public (default), usgovernment, china
+      # power_state: false       # one extra list call; see Readiness
+    http:
+      interval: 60s              # vm inventories change slowly
+
+backends:
+  prom-alb:
+    provider: alb
+    alb:
+      discovery:
+        discoverer_name: fleet
+        template_backend: prom-template
+        query:
+          tags: [prometheus]     # vm tag names, matched on presence
+          port_label: port       # a vm tag holding the port
+          # port: 9090           # or a static port for every member
+          # address_type: private # private (default), public, or ipv6
+          # replica_group_label: shard
+```
+
+**Credentials.** Leaving the credential fields empty selects the **managed
+identity** of the Azure VM or AKS pod Trickster runs on, via the instance
+metadata service; set `client_id` alone to select a *user-assigned*
+identity. On AKS with **workload identity**, set `federated_token_file` to
+the projected token path — the platform writes and rotates that file, so
+Trickster holds no secret, and the file is re-read on every token
+acquisition. A `client_secret` service principal is the fallback where
+neither is available; it is redacted from config dumps and the management
+API.
+
+There is deliberately **no credential chaining**. A configured credential
+that fails is an error, not a reason to quietly fall back to the instance
+metadata service and authenticate as a different principal.
+
+**Permissions.** The principal needs only **Reader** on the subscription, or
+on the resource group named by `resource_group`. The specific actions are
+`Microsoft.Compute/virtualMachines/read` and
+`Microsoft.Network/networkInterfaces/read`, plus
+`Microsoft.Network/publicIPAddresses/read` when `address_type: public`.
+`power_state: true` additionally requires read at **subscription scope**,
+even with `resource_group` set — see Readiness.
+
+**If discovery finds nothing, check resource provider registration first.**
+A subscription where `Microsoft.Compute` is not registered answers the VM
+list with **HTTP 200 and an empty result, not an error**, so the pool is
+silently empty. New subscriptions start unregistered. Trickster detects this
+case and logs it, but the fix is outside Trickster:
+
+```bash
+az provider register -n Microsoft.Compute && az provider register -n Microsoft.Network
+```
+
+**Clouds.** `cloud` selects both the ARM endpoint and the Entra ID login
+endpoint together, since keeping two URLs consistent by hand is exactly the
+kind of thing that silently half-works. `http.endpoint` overrides the ARM
+endpoint alone, for a private ARM proxy or a test server.
+
+**The join.** An Azure VM carries **no address**. Addresses live on network
+interfaces, which the VM references by resource id, and a public address is
+a further reference from the interface to a `publicIPAddresses` resource. A
+refresh is therefore two list calls — three with `address_type: public` —
+joined in memory. Resource ids are matched **case-insensitively**, because
+Azure treats them that way and the casing genuinely differs between APIs; a
+VM's interface reference commonly spells the resource group differently from
+the interface list. A VM whose references resolve to nothing is excluded
+with a message saying so specifically, since that is the symptom a broken
+join produces.
+
+`resource_group` is worth setting on a large subscription: it narrows every
+list rather than enumerating thousands of machines to find a handful.
+
+**Hosts, not endpoints**, exactly as for `aws` `service: ec2` and `gcp`
+`service: gce`: `address_type` chooses the address and `port`/`port_label`
+supplies the port, with the tag winning per VM and the static port as
+fallback. VM **tags** are matched case-insensitively, as Azure treats them,
+so a machine tagged `Role` is found by a query for `role`.
+
+**Readiness.** Off by default, `ReadyUnknown` for every member. The VM list
+carries *provisioning* state, not *power* state, and a provisioned VM may be
+stopped — reporting `Ready` on that basis would assert something Azure never
+said. Setting **`power_state: true`** requests the instance view, which makes
+running VMs `Ready` and removes stopped ones from membership entirely so
+they drain from pools. The cost is **one extra list call per refresh, not one
+call per VM**: the whole-subscription list accepts `statusOnly=true` and
+returns every machine's instance view at once. Trickster's own active health
+checks are the alternative, and cover the case either way.
+
+`statusOnly` is a parameter of the **subscription-wide** list only. The
+resource-group-scoped list accepts it, returns `200`, and silently ignores
+it, so Trickster always issues this one call at subscription scope — which
+is why `power_state: true` needs subscription-scope read even when
+`resource_group` is set. If the status list ever comes back with no instance
+view for any machine, the refresh **fails** and keeps the last-good
+membership rather than reading every VM as stopped and emptying the pool.
+
+**Labels.** Members carry `vm_name`, `vm_id`, `location`, `vm_size`,
+`resource_group`, `private_ip`, `public_ip`, and `power_state` when
+requested. VM tags are carried as `tag_<key>`, prefixed so a user-defined
+tag cannot shadow a Trickster-assigned label.

@@ -28,6 +28,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	awsopts "github.com/trickstercache/trickster/v2/pkg/discovery/aws/options"
+	azureopts "github.com/trickstercache/trickster/v2/pkg/discovery/azure/options"
 	consulopts "github.com/trickstercache/trickster/v2/pkg/discovery/consul/options"
 	dnsopts "github.com/trickstercache/trickster/v2/pkg/discovery/dns/options"
 	dockeropts "github.com/trickstercache/trickster/v2/pkg/discovery/docker/options"
@@ -73,6 +74,8 @@ type Options struct {
 	GCP *gcpopts.Options `yaml:"gcp,omitempty"`
 	// Docker provides connection settings when Provider is 'docker'
 	Docker *dockeropts.Options `yaml:"docker,omitempty"`
+	// Azure provides API and credential settings when Provider is 'azure'
+	Azure *azureopts.Options `yaml:"azure,omitempty"`
 	//
 	// HTTP provides the outbound client settings shared by every provider
 	// that discovers members by polling an HTTP endpoint
@@ -159,6 +162,7 @@ func (o *Options) Clone() *Options {
 	out.AWS = o.AWS.Clone()
 	out.GCP = o.GCP.Clone()
 	out.Docker = o.Docker.Clone()
+	out.Azure = o.Azure.Clone()
 	if o.HTTP != nil {
 		out.HTTP = pointers.Clone(o.HTTP)
 		if o.HTTP.TLS != nil {
@@ -205,6 +209,16 @@ func (o *Options) Initialize(name string) error {
 	case providers.Nomad:
 		if o.Nomad == nil {
 			o.Nomad = nomadopts.New()
+		}
+	case providers.Azure:
+		if o.Azure == nil {
+			o.Azure = azureopts.New()
+		}
+		// azure derives its endpoint from the configured cloud, so an
+		// http block is optional; create one so the shared interval and
+		// timeout defaults apply
+		if o.HTTP == nil {
+			o.HTTP = &HTTPOptions{}
 		}
 	case providers.Docker:
 		if o.Docker == nil {
@@ -298,6 +312,9 @@ func (o *Options) Validate() (bool, error) {
 	if o.Docker != nil && o.Provider != providers.Docker {
 		return false, NewErrInvalidDiscoveryBlock("docker", o.Provider, o.Name)
 	}
+	if o.Azure != nil && o.Provider != providers.Azure {
+		return false, NewErrInvalidDiscoveryBlock("azure", o.Provider, o.Name)
+	}
 	if err := o.validateProviderBlock(); err != nil {
 		return false, err
 	}
@@ -362,6 +379,10 @@ func (o *Options) validateProviderBlock() error {
 	case providers.Docker:
 		if err := o.Docker.Validate(); err != nil {
 			return dockeropts.NewErrInvalidOptions(o.Name, err.Error())
+		}
+	case providers.Azure:
+		if err := o.Azure.Validate(); err != nil {
+			return azureopts.NewErrInvalidOptions(o.Name, err.Error())
 		}
 	}
 	return nil

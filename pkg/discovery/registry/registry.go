@@ -24,6 +24,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/discovery"
 	awssd "github.com/trickstercache/trickster/v2/pkg/discovery/aws"
+	"github.com/trickstercache/trickster/v2/pkg/discovery/azure"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/consul"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/dns"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/docker"
@@ -51,6 +52,7 @@ func SupportedProviders() discovery.Lookup {
 		providers.AWS:        awssd.New,
 		providers.GCP:        gcp.New,
 		providers.Docker:     docker.New,
+		providers.Azure:      azure.New,
 	}
 }
 

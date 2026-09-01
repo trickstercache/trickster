@@ -905,8 +905,9 @@ backends:
 #
 # discovery: # top-level section of named discoverers; multiple ALBs can share one
 #   in-cluster:
-#     provider: kubernetes # kubernetes, dns_srv, dns_a, file, http_sd, consul,
-#                          # nomad, aws, gcp, or docker
+#     # valid providers: kubernetes, dns_srv, dns_a, file, http_sd, consul, nomad, 
+      # aws, gcp, azure, docker -- see docs or below for configuring specific providers
+#     provider: kubernetes 
 #     kubernetes:
 #       in_cluster: true # use the pod's service account (default)
 #       # kubeconfig: /path/to/kubeconfig # or run against a remote cluster
