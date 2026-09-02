@@ -383,13 +383,9 @@ func parseDruidSQLTimestamp(value any) (epoch.Epoch, error) {
 	case int64:
 		return druidSQLMillisEpoch(v)
 	case uint64:
-		if v <= math.MaxInt64 {
-			return druidSQLMillisEpoch(int64(v))
-		}
-	case float64:
-		if !math.IsNaN(v) && !math.IsInf(v, 0) && v == math.Trunc(v) &&
-			v >= math.MinInt64 && v <= math.MaxInt64 {
-			return druidSQLMillisEpoch(int64(v))
+		millis, err := strconv.ParseInt(strconv.FormatUint(v, 10), 10, 64)
+		if err == nil {
+			return druidSQLMillisEpoch(millis)
 		}
 	}
 	return 0, timeseries.ErrInvalidTimeFormat

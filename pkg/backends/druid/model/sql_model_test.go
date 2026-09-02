@@ -278,6 +278,8 @@ func TestSQLModelRejectsMalformedRows(t *testing.T) {
 	trq := testSQLTRQ(plan)
 	for _, body := range []string{
 		`[{"bucket":"bad","host":"a","value":1}]`,
+		`[{"bucket":1704067200000.5,"host":"a","value":1}]`,
+		`[{"bucket":9223372036854775808,"host":"a","value":1}]`,
 		`[{"bucket":"2024-01-01T00:00:00Z","host":"a"}]`,
 		`[{"bucket":"2024-01-01T00:00:00Z","host":"a"},{"bucket":"2024-01-01T01:00:00Z","host":"a","value":1}]`,
 		`[{"bucket":"2024-01-01T00:00:00Z","host":"a","value":1}] {}`,
