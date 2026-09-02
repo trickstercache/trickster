@@ -43,11 +43,10 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/discovery"
 	do "github.com/trickstercache/trickster/v2/pkg/discovery/options"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/providers"
+	dnsclient "github.com/trickstercache/trickster/v2/pkg/dns/client"
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
-
-	"github.com/miekg/dns"
 )
 
 // ErrStopped aliases discovery.ErrStopped for callers of this package
@@ -194,7 +193,7 @@ func (s *subscription) resolve(ctx context.Context) (discovery.Snapshot, time.Du
 
 // resolveSRV maps the highest-priority tier of the SRV answer onto members
 func (s *subscription) resolveSRV(ctx context.Context) (discovery.Snapshot, time.Duration, error) {
-	answers, ttl, err := s.p.res.lookupSRV(ctx, dns.Fqdn(s.q.SRVName))
+	answers, ttl, err := s.p.res.lookupSRV(ctx, dnsclient.Fqdn(s.q.SRVName))
 	if err != nil {
 		return nil, 0, err
 	}
@@ -227,7 +226,7 @@ func (s *subscription) resolveSRV(ctx context.Context) (discovery.Snapshot, time
 // resolveA maps each A/AAAA answer onto a member with the query's fixed
 // port and scheme
 func (s *subscription) resolveA(ctx context.Context) (discovery.Snapshot, time.Duration, error) {
-	ips, ttl, err := s.p.res.lookupIP(ctx, dns.Fqdn(s.q.Hostname))
+	ips, ttl, err := s.p.res.lookupIP(ctx, dnsclient.Fqdn(s.q.Hostname))
 	if err != nil {
 		return nil, 0, err
 	}
