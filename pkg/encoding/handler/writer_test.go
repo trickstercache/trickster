@@ -17,6 +17,9 @@
 package handler
 
 import (
+	"bufio"
+	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -28,10 +31,67 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
+type hijackResponseWriter struct {
+	http.ResponseWriter
+	conn net.Conn
+	rw   *bufio.ReadWriter
+}
+
+func (w *hijackResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	return w.conn, w.rw, nil
+}
+
+type unwrapResponseWriter struct {
+	http.ResponseWriter
+}
+
+func (w *unwrapResponseWriter) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
+}
+
 func TestNewEncoder(t *testing.T) {
 	w := NewEncoder(nil, nil)
 	if w.(*responseEncoder).EncodingProfile == nil {
 		t.Error("expected non-nil")
+	}
+}
+
+func TestResponseEncoderHijack(t *testing.T) {
+	serverConn, clientConn := net.Pipe()
+	t.Cleanup(func() {
+		serverConn.Close()
+		clientConn.Close()
+	})
+
+	rw := bufio.NewReadWriter(bufio.NewReader(serverConn), bufio.NewWriter(serverConn))
+	underlying := &hijackResponseWriter{
+		ResponseWriter: httptest.NewRecorder(),
+		conn:           serverConn,
+		rw:             rw,
+	}
+	wrapped := &unwrapResponseWriter{ResponseWriter: underlying}
+	ew := NewEncoder(wrapped, nil).(*responseEncoder)
+
+	conn, gotRW, err := ew.Hijack()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conn != serverConn {
+		t.Error("connection mismatch")
+	}
+	if gotRW != rw {
+		t.Error("buffered read-writer mismatch")
+	}
+	if ew.Unwrap() != wrapped {
+		t.Error("underlying response writer mismatch")
+	}
+}
+
+func TestResponseEncoderHijackUnsupported(t *testing.T) {
+	ew := NewEncoder(httptest.NewRecorder(), nil).(*responseEncoder)
+	_, _, err := ew.Hijack()
+	if !errors.Is(err, http.ErrNotSupported) {
+		t.Errorf("expected http.ErrNotSupported, got %v", err)
 	}
 }
 
@@ -201,5 +261,74 @@ func TestPrepareWriter(t *testing.T) {
 	ew.prepareWriter()
 	if ew.encoder == nil {
 		t.Error("expected non-nil encoder")
+	}
+}
+
+func TestResponseEncoderHijackedGuard(t *testing.T) {
+	serverConn, clientConn := net.Pipe()
+	t.Cleanup(func() {
+		serverConn.Close()
+		clientConn.Close()
+	})
+	underlying := &hijackResponseWriter{
+		ResponseWriter: httptest.NewRecorder(),
+		conn:           serverConn,
+		rw:             bufio.NewReadWriter(bufio.NewReader(serverConn), bufio.NewWriter(serverConn)),
+	}
+	ew := NewEncoder(underlying, nil).(*responseEncoder)
+
+	if _, _, err := ew.Hijack(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ew.Write([]byte("late")); !errors.Is(err, http.ErrHijacked) {
+		t.Errorf("expected http.ErrHijacked, got %v", err)
+	}
+	if err := ew.Close(); err != nil {
+		t.Errorf("close after hijack should be a no-op, got %v", err)
+	}
+}
+
+func TestResponseEncoderNotHijackedOnError(t *testing.T) {
+	ew := NewEncoder(httptest.NewRecorder(), nil).(*responseEncoder)
+	if _, _, err := ew.Hijack(); err == nil {
+		t.Fatal("expected hijack to fail on a non-hijackable writer")
+	}
+	if ew.hijacked {
+		t.Error("failed hijack must not mark the writer as hijacked")
+	}
+	if _, err := ew.Write([]byte("ok")); err != nil {
+		t.Errorf("writes must still work after a failed hijack, got %v", err)
+	}
+}
+
+func TestResponseEncoderFlushError(t *testing.T) {
+	// a gzip encoder buffers, so without a transform-aware flush the recorder
+	// would still be empty after the controller flush
+	w := httptest.NewRecorder()
+	ew := &responseEncoder{ResponseWriter: w}
+	ew.encoder = gzip.NewEncoder(w, -1)
+	ew.selectWriter()
+	if _, err := ew.Write([]byte("trickster")); err != nil {
+		t.Fatal(err)
+	}
+	// only the gzip header has reached the recorder; the payload is buffered
+	buffered := w.Body.Len()
+	if err := http.NewResponseController(ew).Flush(); err != nil {
+		t.Fatal(err)
+	}
+	if w.Body.Len() <= buffered {
+		t.Errorf("flush did not reach the encoder: %d bytes before and after", buffered)
+	}
+}
+
+func TestResponseEncoderFlushNoEncoder(t *testing.T) {
+	w := httptest.NewRecorder()
+	ew := &responseEncoder{ResponseWriter: w}
+	if err := ew.FlushError(); err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	ew.hijacked = true
+	if err := ew.FlushError(); !errors.Is(err, http.ErrHijacked) {
+		t.Errorf("expected ErrHijacked, got %v", err)
 	}
 }

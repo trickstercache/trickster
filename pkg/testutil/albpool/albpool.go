@@ -35,6 +35,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -177,7 +178,7 @@ func SizedBodyHandler(code, size int) http.Handler {
 		for i := range body {
 			body[i] = 'a'
 		}
-		w.Header().Set("Content-Length", strconv.Itoa(size))
+		w.Header().Set(headers.NameContentLength, strconv.Itoa(size))
 		w.WriteHeader(code)
 		_, _ = w.Write(body)
 	})
@@ -250,7 +251,7 @@ func RunPostBodyFanoutRace(
 				t.Errorf("NewRequest: %v", err)
 				return
 			}
-			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			r.Header.Set(headers.NameContentType, "application/x-www-form-urlencoded")
 			w := httptest.NewRecorder()
 			h.ServeHTTP(w, r)
 			if w.Code != http.StatusOK {

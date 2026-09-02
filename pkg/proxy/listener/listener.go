@@ -40,6 +40,18 @@ import (
 	"golang.org/x/net/netutil"
 )
 
+// serverProtocols enables cleartext HTTP/2 alongside HTTP/1.1 and TLS HTTP/2.
+// h2c is prior-knowledge only (the client sends the HTTP/2 preface), which is
+// what gRPC and other cleartext HTTP/2 clients require; Go does not implement
+// the Upgrade-based h2c handshake, so no request can be smuggled through one.
+func serverProtocols() *http.Protocols {
+	var p http.Protocols
+	p.SetHTTP1(true)
+	p.SetHTTP2(true)
+	p.SetUnencryptedHTTP2(true)
+	return &p
+}
+
 // ListenerState represents the state of a listener
 type ListenerState int32
 
@@ -70,6 +82,8 @@ type server interface {
 // Listener is the Trickster net.Listener implmementation
 type Listener struct {
 	net.Listener
+	// packetConn is set instead of Listener for datagram (QUIC) endpoints
+	packetConn   net.PacketConn
 	tlsConfig    *tls.Config
 	tlsSwapper   sw.CertSwapper
 	routeSwapper *switcher.SwitchHandler
@@ -305,6 +319,7 @@ func (lg *Group) StartListener(listenerName, address string, port int, connectio
 		Handler:           l.routeSwapper,
 		TLSConfig:         tlsConfig,
 		ReadHeaderTimeout: readHeaderTimeout,
+		Protocols:         serverProtocols(),
 	}
 	l.server = svr
 
@@ -376,7 +391,7 @@ func (lg *Group) DrainAndClose(listenerName string, drainWait time.Duration) err
 	delete(lg.members, listenerName)
 	lg.listenersLock.Unlock()
 
-	if l.Listener == nil {
+	if l.Listener == nil && l.packetConn == nil {
 		l.setState(StateStopped)
 		return trerr.ErrNilListener
 	}

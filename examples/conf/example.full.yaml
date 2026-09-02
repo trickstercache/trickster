@@ -66,6 +66,22 @@
 #     # Default: false.
 #     truncate_request_body_too_large: false
 #
+#     # http3 serves this listener's routes over HTTP/3 (QUIC) in addition to
+#     # HTTP/1.1 and HTTP/2. Requires a working TLS endpoint, since QUIC has no
+#     # cleartext mode. Responses on the TLS/TCP endpoint advertise the HTTP/3
+#     # endpoint via Alt-Svc so clients upgrade on their own. See docs/http3.md
+#     http3:
+#       # enabled turns on the HTTP/3 endpoint. Default: false
+#       enabled: false
+#       # port is the UDP port to bind. Defaults to this listener's tls_port
+#       port: 8483
+#       # address is the IP for the UDP socket. Defaults to tls_address
+#       address: ''
+#       # advertised_port is the port published in Alt-Svc. Defaults to port.
+#       # Set it when a load balancer or NAT presents a different port to
+#       # clients than the one bound here
+#       advertised_port: 0
+#
 #   # metrics:
 #   # 8481 is the default port for metrics
 #     # port: 8481
@@ -468,6 +484,14 @@ backends:
 #     #   clickhouse: 'native' — speak the native binary protocol to an upstream on port 9000
 #     # This is independent of listeners, which select the inbound protocol.
 #     protocol: ''
+
+#     # h2c_prior_knowledge speaks cleartext HTTP/2 to the origin by prior
+#     # knowledge, for origins that serve h2c only. Origins that speak HTTP/1.1
+#     # will fail every request rather than degrade. Requires an http:// origin_url;
+#     # an https origin already negotiates HTTP/2 via ALPN, and it cannot be combined
+#     # with a non-HTTP upstream protocol such as clickhouse's 'native'.
+#     # Default: false
+#     h2c_prior_knowledge: false
 
     # is_default describes whether this backend is the default backend considered when routing http requests
     # it is false, by default; but if you only have a single backend configured, is_default will be true unless explicitly set to false

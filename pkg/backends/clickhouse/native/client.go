@@ -41,6 +41,7 @@ import (
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/aftership"
 	"github.com/trickstercache/trickster/v2/pkg/proxy"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
@@ -73,6 +74,9 @@ func ValidateOptions(o *bo.Options) error {
 	}
 	if strings.EqualFold(o.Protocol, "native") && o.SigV4 != nil {
 		return errors.New("SigV4 is not supported for a native ClickHouse origin")
+	}
+	if strings.EqualFold(o.Protocol, "native") && o.H2CPriorKnowledge {
+		return errors.New("h2c_prior_knowledge is not supported for a native ClickHouse origin")
 	}
 	return nil
 }
@@ -281,7 +285,7 @@ func (nc *NativeClient) Fetch(r *http.Request) (*http.Response, error) {
 	}
 	return &http.Response{
 		StatusCode: http.StatusOK, Status: "200 OK", Header: http.Header{
-			"Content-Type": {contentType}, "X-Clickhouse-Format": {format},
+			headers.NameContentType: {contentType}, "X-Clickhouse-Format": {format},
 		},
 		Body: io.NopCloser(bytes.NewReader(body)), ContentLength: int64(len(body)), Request: r,
 	}, nil
@@ -494,7 +498,7 @@ func syntheticErrorResponse(code int, err error) *http.Response {
 	return &http.Response{
 		StatusCode:    code,
 		Status:        fmt.Sprintf("%d %s", code, http.StatusText(code)),
-		Header:        http.Header{"Content-Type": {"text/plain"}},
+		Header:        http.Header{headers.NameContentType: {"text/plain"}},
 		Body:          io.NopCloser(bytes.NewReader(body)),
 		ContentLength: int64(len(body)),
 	}

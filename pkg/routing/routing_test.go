@@ -49,6 +49,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/exporters/stdout"
 	to "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
@@ -257,7 +258,7 @@ func TestRegisterProxyRoutesGraphite(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	const body = `[{"target": "dev.fast.cpu.host01.percent", "datapoints": [[35.0, 1787343600]]}]`
 	origin := testutil.NewTestServer(http.StatusOK, body,
-		map[string]string{"Content-Type": "application/json"})
+		map[string]string{headers.NameContentType: "application/json"})
 	defer origin.Close()
 
 	conf, err := config.Load([]string{"-log-level", "debug", "-origin-url", origin.URL,
@@ -788,5 +789,40 @@ func TestBackendRoutesOnMultipleHTTPListeners(t *testing.T) {
 	}
 	if clients[o.Name] != client || len(clients) != 2 {
 		t.Fatal("duplicated backend clients for listener bindings")
+	}
+}
+func TestPassthroughLaneSelection(t *testing.T) {
+	conf := config.NewConfig()
+	o := conf.Backends["default"]
+	o.Provider = providers.ReverseProxy
+	o.OriginURL = "http://example.com"
+
+	client, err := reverseproxy.NewClient("default", o, lm.NewRouter(), nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	o.Paths = client.DefaultPathConfigs(o).Overlay(o.Paths)
+	RegisterPathRoutes(lm.NewRouter(), conf, client.Handlers(), client, o, nil, nil)
+
+	if len(o.Paths) != 1 {
+		t.Fatalf("expected one default path, got %d", len(o.Paths))
+	}
+	p := o.Paths[0]
+	if !p.HandlerFromRegistry {
+		t.Error("a handler resolved from the registry must be marked as such")
+	}
+	if !isPassthroughPath(p) {
+		t.Errorf("reverseproxy %q path should route to the passthrough lane", p.HandlerName)
+	}
+
+	// a handler assigned directly is left alone: the name no longer describes it
+	direct := po.New()
+	direct.HandlerName = providers.Proxy
+	direct.Handler = http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
+	if isPassthroughPath(direct) {
+		t.Error("a directly-assigned handler must not be replaced by the passthrough lane")
+	}
+	if isPassthroughPath(nil) {
+		t.Error("nil path options must not select the passthrough lane")
 	}
 }

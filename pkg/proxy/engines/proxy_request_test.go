@@ -18,9 +18,12 @@ package engines
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -158,6 +161,86 @@ func TestWriteResponseBody(t *testing.T) {
 	if pr.responseWriter != nil {
 		t.Error("expected nil writer")
 	}
+}
+
+// newServedRequest returns a request that abortOnCopyError will act on.
+func newServedRequest() *http.Request {
+	r := httptest.NewRequest(http.MethodGet, "http://trickstercache.org/", nil)
+	return r.WithContext(context.WithValue(r.Context(), http.ServerContextKey, &http.Server{}))
+}
+
+func TestWriteResponseBodyAbortsTruncated(t *testing.T) {
+	tests := []struct {
+		name        string
+		reader      io.Reader
+		clientFresh bool
+		expectPanic bool
+	}{
+		{"short body", strings.NewReader("short"), false, true},
+		{"complete body", strings.NewReader("0123456789"), false, false},
+		{"short body not sent to client", strings.NewReader("short"), true, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			pr := &proxyRequest{
+				Request:          newServedRequest(),
+				upstreamRequest:  newServedRequest(),
+				upstreamReader:   tc.reader,
+				upstreamResponse: &http.Response{StatusCode: http.StatusOK, ContentLength: 10},
+				responseWriter:   w,
+				clientWriter:     w,
+				mapLock:          &sync.Mutex{},
+			}
+			if tc.clientFresh {
+				pr.clientWriter = nil
+			}
+			defer func() {
+				r := recover()
+				if tc.expectPanic && r != http.ErrAbortHandler {
+					t.Errorf("expected ErrAbortHandler, got %v", r)
+				}
+				if !tc.expectPanic && r != nil {
+					t.Errorf("unexpected panic: %v", r)
+				}
+				if !pr.bodyTruncated.Load() && tc.name != "complete body" {
+					t.Error("expected bodyTruncated to be set")
+				}
+			}()
+			pr.writeResponseBody()
+		})
+	}
+}
+
+func TestPrepareResponseAbortsTruncatedRange(t *testing.T) {
+	w := httptest.NewRecorder()
+	pr := &proxyRequest{
+		Request:         newServedRequest(),
+		upstreamRequest: newServedRequest(),
+		upstreamReader: io.MultiReader(strings.NewReader("partial"),
+			&errReader{err: io.ErrUnexpectedEOF}),
+		upstreamResponse: &http.Response{StatusCode: http.StatusOK, Header: http.Header{}},
+		responseWriter:   w,
+		clientWriter:     w,
+		cachingPolicy:    &CachingPolicy{},
+		cacheStatus:      status.LookupStatusKeyMiss,
+		wantsRanges:      true,
+		wantedRanges:     byterange.Ranges{{Start: 0, End: 3}},
+		writeToCache:     true,
+		mapLock:          &sync.Mutex{},
+	}
+	defer func() {
+		if r := recover(); r != http.ErrAbortHandler {
+			t.Errorf("expected ErrAbortHandler, got %v", r)
+		}
+		if pr.writeToCache {
+			t.Error("expected writeToCache to be cleared")
+		}
+		if !pr.bodyTruncated.Load() {
+			t.Error("expected bodyTruncated to be set")
+		}
+	}()
+	pr.prepareResponse()
 }
 
 func TestDetermineCacheability(t *testing.T) {

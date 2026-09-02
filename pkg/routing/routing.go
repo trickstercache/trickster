@@ -39,6 +39,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/handler"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/engines"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/forwarding"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/health"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
@@ -73,6 +75,62 @@ func hasAuthenticator(pathOptions *po.Options, backendOptions *bo.Options) bool 
 
 func shouldCaptureAuth(pathOptions *po.Options, backendOptions *bo.Options) bool {
 	return hasAuthenticator(pathOptions, backendOptions) || backends.IsVirtual(backendOptions.Provider)
+}
+
+// isPassthroughPath reports whether a path proxies without caching, which is
+// what routes it to the ReverseProxy-backed lane. Derived from existing config
+// rather than a dedicated setting: the `proxy` handler is by definition the
+// non-caching one, and it is what the reverseproxy provider registers. A
+// handler assigned directly rather than resolved from the registry is left
+// alone, because the name no longer describes what it does.
+func isPassthroughPath(pathOpts *po.Options) bool {
+	return pathOpts != nil && pathOpts.HandlerFromRegistry &&
+		pathOpts.HandlerName == providers.Proxy
+}
+
+func applyMiddleware(o *bo.Options, pathOpts *po.Options, tr *tracing.Tracer,
+	c cache.Cache, client backends.Backend, al *accesslog.Logger, frontend *fopt.Options,
+) http.Handler {
+	var passthrough http.Handler
+	if client != nil {
+		passthrough = engines.NewPassthroughHandler(client)
+	}
+	isPassthrough := passthrough != nil && isPassthroughPath(pathOpts)
+
+	var h http.Handler
+	if isPassthrough {
+		h = passthrough
+		if pathOpts.CollapsedForwardingType == forwarding.CFTypeProgressive {
+			h = engines.CollapsedPassthrough(passthrough)
+		}
+	} else {
+		h = middleware.LimitQueryRange(pathOpts.Handler)
+	}
+	if frontend != nil {
+		maxBodySizeBytes, truncateOnly := getSizeLimits(frontend)
+		h = bodyfilter.Handler(maxBodySizeBytes, truncateOnly, h)
+	}
+	if !isPassthrough {
+		h = middleware.UpgradeSwitch(passthrough, h)
+	}
+	if tr != nil {
+		h = middleware.Trace(tr, h)
+	}
+	captureAuth := shouldCaptureAuth(pathOpts, o)
+	h = attachAuthenticator(h, pathOpts, o)
+	h = encoding.HandleCompression(h, o.CompressibleTypes)
+	// WithResourcesContext must wrap outer than LimitQueryRange
+	h = middleware.WithResourcesContext(client, o, c, pathOpts, tr, h)
+	if len(o.ReqRewriter) > 0 {
+		h = rewriter.Rewrite(o.ReqRewriter, h)
+	}
+	if len(pathOpts.ReqRewriter) > 0 {
+		h = rewriter.Rewrite(pathOpts.ReqRewriter, h)
+	}
+	if !pathOpts.NoMetrics {
+		h = middleware.Decorate(o.Name, o.Provider, pathOpts.Path, h)
+	}
+	return accesslog.Middleware(al, pathOpts.Path, captureAuth, h)
 }
 
 type listenerRoute struct {
@@ -303,40 +361,6 @@ func registerPathRoutes(routes []listenerRoute, conf *config.Config, handlers ha
 
 	al := newAccessLogger(conf, o)
 
-	applyMiddleware := func(po1 *po.Options, frontend *fopt.Options) http.Handler {
-		// default base route is the path handler
-		h := middleware.LimitQueryRange(po1.Handler)
-		if frontend != nil {
-			maxBodySizeBytes, truncateOnly := getSizeLimits(frontend)
-			h = bodyfilter.Handler(maxBodySizeBytes, truncateOnly, h)
-		}
-		// attach distributed tracer
-		if tr != nil {
-			h = middleware.Trace(tr, h)
-		}
-		// attach authenticator
-		captureAuth := shouldCaptureAuth(po1, o)
-		h = attachAuthenticator(h, po1, o)
-		// attach compression handler
-		h = encoding.HandleCompression(h, o.CompressibleTypes)
-		// add Backend, Cache, and Path Configs to the HTTP Request's context (must wrap outer than LimitQueryRange)
-		h = middleware.WithResourcesContext(client, o, c, po1, tr, h)
-		// attach any request rewriters
-		if len(o.ReqRewriter) > 0 {
-			h = rewriter.Rewrite(o.ReqRewriter, h)
-		}
-		if len(po1.ReqRewriter) > 0 {
-			h = rewriter.Rewrite(po1.ReqRewriter, h)
-		}
-		// decorate frontend prometheus metrics
-		if !po1.NoMetrics {
-			h = middleware.Decorate(o.Name, o.Provider, po1.Path, h)
-		}
-		// attach access logging outermost so it observes the full request
-		h = accesslog.Middleware(al, po1.Path, captureAuth, h)
-		return h
-	}
-
 	or := client.Router().(router.Router)
 
 	if o.Paths.RegexShadowedByCatchAll() {
@@ -349,6 +373,7 @@ func registerPathRoutes(routes []listenerRoute, conf *config.Config, handlers ha
 		if p.Handler == nil && p.HandlerName != "" {
 			if h, ok := handlers[p.HandlerName]; ok && h != nil {
 				p.Handler = h
+				p.HandlerFromRegistry = true
 			}
 		}
 
@@ -383,16 +408,16 @@ func registerPathRoutes(routes []listenerRoute, conf *config.Config, handlers ha
 			for _, route := range routes {
 				if len(o.Hosts) > 0 {
 					route.router.RegisterRoute(p.Path, o.Hosts, p.Methods,
-						p.MatchType, applyMiddleware(p, route.frontend))
+						p.MatchType, applyMiddleware(o, p, tr, c, client, al, route.frontend))
 				}
 				if !o.PathRoutingDisabled {
 					route.router.RegisterRoute(handledPath, nil, p.Methods,
 						p.MatchType,
-						middleware.StripPathPrefix(pathPrefix, applyMiddleware(p, route.frontend)))
+						middleware.StripPathPrefix(pathPrefix, applyMiddleware(o, p, tr, c, client, al, route.frontend)))
 				}
 			}
 			or.RegisterRoute(p.Path, nil, p.Methods,
-				p.MatchType, applyMiddleware(p, nil))
+				p.MatchType, applyMiddleware(o, p, tr, c, client, al, nil))
 		}
 	}
 
@@ -430,38 +455,6 @@ func RegisterDefaultBackendRoutesForListeners(listenerRouters map[string]router.
 func registerDefaultBackendRoutes(routerFor func(*bo.Options) []listenerRoute, conf *config.Config,
 	bknds backends.Backends, tracers tracing.Tracers,
 ) {
-	applyMiddleware := func(o *bo.Options, po *po.Options, tr *tracing.Tracer,
-		c cache.Cache, client backends.Backend, al *accesslog.Logger, frontend *fopt.Options,
-	) http.Handler {
-		// default base route is the path handler
-		maxBodySizeBytes, truncateOnly := getSizeLimits(frontend)
-		h := middleware.LimitQueryRange(po.Handler)
-		h = bodyfilter.Handler(maxBodySizeBytes, truncateOnly, h)
-		// attach distributed tracer
-		if tr != nil {
-			h = middleware.Trace(tr, h)
-		}
-		// attach authenticator
-		captureAuth := shouldCaptureAuth(po, o)
-		h = attachAuthenticator(h, po, o)
-		// add Backend, Cache, and Path Configs to the HTTP Request's context (must wrap outer than LimitQueryRange)
-		h = middleware.WithResourcesContext(client, o, c, po, tr, h)
-		// attach any request rewriters
-		if len(o.ReqRewriter) > 0 {
-			h = rewriter.Rewrite(o.ReqRewriter, h)
-		}
-		if len(po.ReqRewriter) > 0 {
-			h = rewriter.Rewrite(po.ReqRewriter, h)
-		}
-		// decorate frontend prometheus metrics
-		if !po.NoMetrics {
-			h = middleware.Decorate(o.Name, o.Provider, po.Path, h)
-		}
-		// attach access logging outermost so it observes the full request
-		h = accesslog.Middleware(al, po.Path, captureAuth, h)
-		return h
-	}
-
 	for _, b := range bknds {
 		o := b.Configuration()
 		if o.IsDefault {

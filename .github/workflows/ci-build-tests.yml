@@ -119,6 +119,8 @@ jobs:
     env:
       TRICKSTER_MYSQL_CLI_TEST: "1"
       TRICKSTER_DNS_TEST: "1"
+      # CI containers cannot raise the UDP receive buffer; the warning is noise
+      QUIC_GO_DISABLE_RECEIVE_BUFFER_WARNING: "1"
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6

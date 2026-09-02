@@ -22,6 +22,7 @@ import (
 	"io"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
@@ -61,6 +62,7 @@ type proxyRequest struct {
 	rsc            *request.Resources
 	responseWriter io.Writer
 	responseBody   []byte
+	clientWriter   io.Writer
 
 	// upstream
 	upstreamRequest  *http.Request
@@ -102,6 +104,10 @@ type proxyRequest struct {
 	started         time.Time
 	contentLength   int64
 	trueContentType string
+	// set when the upstream body ended early or failed mid-copy; an incomplete
+	// object must never be written to cache. Atomic because the PCF copy runs
+	// on its own goroutine while the caller waits to store.
+	bodyTruncated atomic.Bool
 }
 
 func cloneRequestWithSpan(r *http.Request) *http.Request {
@@ -130,6 +136,7 @@ func newProxyRequest(r *http.Request, w io.Writer) *proxyRequest {
 		upstreamRequest: cloneRequestWithSpan(r),
 		contentLength:   -1,
 		responseWriter:  w,
+		clientWriter:    w,
 		started:         time.Now(),
 		mapLock:         &sync.Mutex{},
 	}
@@ -434,6 +441,7 @@ func (pr *proxyRequest) setBodyWriter() {
 		if pr.cachingPolicy.IsClientFresh {
 			// don't write response body to the client on a 304 Not Modified
 			pr.responseWriter = pr.cacheBuffer
+			pr.clientWriter = nil
 			if pr.upstreamResponse.StatusCode == http.StatusNotModified {
 				pr.upstreamResponse.StatusCode = http.StatusOK
 			}
@@ -457,15 +465,25 @@ func (pr *proxyRequest) writeResponseBody() {
 	n, err := io.Copy(pr.responseWriter, pr.upstreamReader)
 	if err != nil {
 		logger.Error("error copying upstream response body", logging.Pairs{keys.Error: err})
+		pr.bodyTruncated.Store(true)
 	}
 	// Chunked / transparent-gzip transports can return err==nil with n<CL;
 	// trigger short-read regardless of err.
 	if pr.upstreamResponse != nil && pr.upstreamResponse.ContentLength > 0 &&
 		n < pr.upstreamResponse.ContentLength {
+		pr.bodyTruncated.Store(true)
+		if err == nil {
+			err = io.ErrUnexpectedEOF
+		}
 		if c := request.GetUpstreamShortReadCapture(pr.upstreamRequest.Context()); c != nil {
 			c.Mark()
 		}
 	}
+	// the upstream Content-Length was dropped, so a normal return would end the
+	// chunked response cleanly and the client would accept a partial body as
+	// whole; break the connection instead. err is local to this copy, so a
+	// truncation flagged by the PCF goroutine does not abort this client.
+	abortOnCopyError(pr.clientWriter, pr.Request, err)
 }
 
 func (pr *proxyRequest) determineCacheability() {
@@ -594,13 +612,13 @@ func (pr *proxyRequest) prepareResponse() {
 				b, err = io.ReadAll(pr.upstreamReader)
 				if err != nil {
 					// Upstream cut off mid-stream — b holds only a truncated
-					// prefix. Never cache a truncated body as if it were
-					// complete; a later request would see it as a valid hit.
-					// The current client still gets what we received, but
-					// writeToCache is cleared so pr.store() is skipped.
-					logger.Error("upstream read error during range extraction; skipping cache write",
+					// prefix. Neither cache it nor present ranges carved from
+					// it as a successful response; fail the client instead.
+					logger.Error("upstream read error during range extraction",
 						logging.Pairs{keys.Error: err})
 					pr.writeToCache = false
+					pr.bodyTruncated.Store(true)
+					abortOnCopyError(pr.clientWriter, pr.Request, err)
 				}
 			}
 			d = DocumentFromHTTPResponse(pr.upstreamResponse, b, pr.cachingPolicy)

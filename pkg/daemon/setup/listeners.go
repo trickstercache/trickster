@@ -37,6 +37,7 @@ import (
 	ch "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/config"
 	ph "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/purge"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
+	listenerhttp3 "github.com/trickstercache/trickster/v2/pkg/proxy/listener/http3"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/native"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
@@ -50,10 +51,13 @@ type desiredListener struct {
 	port         int
 	tls          bool
 	options      *listenerconfig.Options
-	router       router.Router
+	router       http.Handler
 	// origin identifies native protocol configuration for restart detection.
 	origin string
 	native native.Adapter
+	// http3 marks a QUIC/UDP endpoint that mirrors this listener's TLS routes.
+	http3          bool
+	advertisedPort int
 }
 
 func applyListenerConfigs(conf, oldConf *config.Config,
@@ -155,6 +159,24 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 			continue
 		}
 
+		if desired.http3 {
+			tlsConfig, err := conf.TLSCertConfigForListener(desired.listenerName)
+			if err != nil {
+				logger.Error("unable to start HTTP/3 listener", logging.Pairs{
+					keys.ListenerName: desired.listenerName, keys.Error: err.Error(),
+				})
+				continue
+			}
+			readHeaderTimeout := time.Duration(desired.options.ReadHeaderTimeout)
+			advertised := desired.advertisedPort
+			go lg.StartPacketListener(desired.key, listenerconfig.ProtocolHTTP3,
+				desired.address, desired.port, tlsConfig, desired.router,
+				func(h http.Handler, tc *tls.Config) listener.PacketServer {
+					return listenerhttp3.NewServer(h, tc, advertised, readHeaderTimeout)
+				}, errorFunc)
+			continue
+		}
+
 		var tlsConfig *tls.Config
 		if desired.tls {
 			config, err := conf.TLSCertConfigForListener(desired.listenerName)
@@ -229,10 +251,22 @@ func desiredListeners(conf *config.Config, listenerRouters map[string]router.Rou
 		}
 		if options.ServeTLS && options.TLSListenPort > 0 {
 			key := listenerKey(name, options.Protocol, true)
+			var tlsRouter http.Handler = r
+			if h3Address, h3Port, advertised := options.HTTP3Endpoint(); h3Port > 0 {
+				// the TLS endpoint advertises the alternative service, which is
+				// how clients discover they may switch to HTTP/3
+				tlsRouter = listenerhttp3.AltSvcAdvertiser(r, advertised)
+				h3Key := listenerKey(name, listenerconfig.ProtocolHTTP3, false)
+				out[h3Key] = desiredListener{
+					key: h3Key, listenerName: name,
+					address: h3Address, port: h3Port, advertisedPort: advertised,
+					tls: true, http3: true, options: options, router: r,
+				}
+			}
 			out[key] = desiredListener{
 				key: key, listenerName: name,
 				address: options.TLSListenAddress, port: options.TLSListenPort,
-				tls: true, options: options, router: r,
+				tls: true, options: options, router: tlsRouter,
 			}
 		}
 	}
@@ -254,7 +288,7 @@ func listenerKey(listenerName, protocol string, tls bool) string {
 
 func listenerNeedsRestart(old, current desiredListener) bool {
 	return old.address != current.address || old.port != current.port || old.tls != current.tls ||
-		old.origin != current.origin ||
+		old.origin != current.origin || old.advertisedPort != current.advertisedPort ||
 		old.options.ConnectionsLimit != current.options.ConnectionsLimit ||
 		old.options.ReadHeaderTimeout != current.options.ReadHeaderTimeout
 }

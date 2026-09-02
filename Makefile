@@ -479,6 +479,14 @@ developer-delete:
 developer-recreate: developer-delete
 	@cd docs/developer/environment && docker compose up -d
 
+.PHONY: dev-certs
+dev-certs:
+	@hack/dev-certs.sh
+
+.PHONY: h3-client
+h3-client:
+	@$(GO) run ./hack/h3-client $(ARGS)
+
 .PHONY: developer-seed-data
 developer-seed-data:
 	@cd docs/developer/environment && docker compose up -d --wait clickhouse mysql

@@ -20,6 +20,8 @@ import (
 	"net/http"
 	"strconv"
 	"testing"
+
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
 
 func TestExtractions(t *testing.T) {
@@ -33,7 +35,7 @@ func TestExtractions(t *testing.T) {
 	const testURLNoParams = scheme + "://" + host + path
 	const testURL = testURLNoParams + "?" + params
 
-	const testHeaderName = "Authorization"
+	const testHeaderName = headers.NameAuthorization
 	const testHeaderVal = "Basic xyz123base64"
 
 	r, _ := http.NewRequest("GET", testURL, nil)
@@ -55,7 +57,7 @@ func TestExtractions(t *testing.T) {
 		{"path", "", path, r},
 		{"params", "", params, r},
 		{"param", "param1", "value", r},
-		{"header", "Authorization", testHeaderVal, r},
+		{"header", headers.NameAuthorization, testHeaderVal, r},
 		{"method", "", "", nil},
 		{"url", "", "", nil},
 		{"url_no_params", "", "", nil},
@@ -66,7 +68,7 @@ func TestExtractions(t *testing.T) {
 		{"path", "", "", nil},
 		{"params", "", "", nil},
 		{"param", "param1", "", nil},
-		{"header", "Authorization", "", nil},
+		{"header", headers.NameAuthorization, "", nil},
 	}
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {

@@ -55,3 +55,35 @@ func Reserve(t testing.TB, n int) (ports []int, release func()) {
 	t.Cleanup(release)
 	return ports, release
 }
+
+// ReserveUDP holds n UDP ports open so a test can hand them to Trickster
+// without another test claiming them first. UDP and TCP have separate port
+// namespaces, so datagram listeners need their own reservations.
+func ReserveUDP(t testing.TB, n int) (ports []int, release func()) {
+	t.Helper()
+	cs := make([]*net.UDPConn, n)
+	ports = make([]int, n)
+	for i := range n {
+		c, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+		if err != nil {
+			for _, x := range cs[:i] {
+				x.Close()
+			}
+			t.Fatalf("listen udp :0: %v", err)
+		}
+		cs[i] = c
+		ports[i] = c.LocalAddr().(*net.UDPAddr).Port
+	}
+	closed := false
+	release = func() {
+		if closed {
+			return
+		}
+		closed = true
+		for _, c := range cs {
+			c.Close()
+		}
+	}
+	t.Cleanup(release)
+	return ports, release
+}
