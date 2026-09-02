@@ -156,11 +156,13 @@ func TestDetectsChange(t *testing.T) {
 	if err := os.Rename(next, a); err != nil {
 		t.Fatal(err)
 	}
-	if !waitFor(t, 3*time.Second, func() bool { return rec.count() >= 2 }) {
-		t.Fatal("change not detected")
-	}
-	if string(rec.last()[0]) != "two" {
-		t.Errorf("unexpected content delivered: %q", rec.last()[0])
+	var delivered [][]byte
+	if !waitFor(t, 3*time.Second, func() bool {
+		delivered = rec.last()
+		return len(delivered) == 2 && string(delivered[0]) == "two" &&
+			string(delivered[1]) == "two"
+	}) {
+		t.Fatalf("settled change not detected; last delivery: %q", delivered)
 	}
 }
 
