@@ -18,7 +18,6 @@ require (
 	github.com/influxdata/influxdb v1.13.0
 	github.com/influxdata/influxql v1.4.1
 	github.com/klauspost/compress v1.19.2
-	github.com/miekg/dns v1.1.73
 	github.com/prometheus/client_golang v1.24.1
 	github.com/prometheus/client_model v0.6.2
 	github.com/prometheus/common v0.70.1
