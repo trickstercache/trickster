@@ -30,6 +30,7 @@ import (
 const (
 	handlerHealth     = "health"
 	handlerQuery      = "query"
+	handlerSQLQuery   = "sqlquery"
 	handlerProxyCache = "proxycache"
 )
 
@@ -38,6 +39,7 @@ func (c *Client) RegisterHandlers(handlers.Lookup) {
 	c.TimeseriesBackend.RegisterHandlers(handlers.Lookup{
 		handlerHealth:     http.HandlerFunc(c.HealthHandler),
 		handlerQuery:      http.HandlerFunc(c.QueryHandler),
+		handlerSQLQuery:   http.HandlerFunc(c.SQLQueryHandler),
 		handlerProxyCache: http.HandlerFunc(c.ObjectProxyCacheHandler),
 		providers.Proxy:   http.HandlerFunc(c.ProxyHandler),
 	})
@@ -62,7 +64,7 @@ func (c *Client) DefaultPathConfigs(_ *bo.Options) po.List {
 		},
 		{
 			Path:            "/druid/v2/sql",
-			HandlerName:     handlerProxyCache,
+			HandlerName:     handlerSQLQuery,
 			Methods:         []string{http.MethodPost},
 			MatchType:       matching.PathMatchTypePrefix,
 			MatchTypeName:   matching.PathMatchNamePrefix,

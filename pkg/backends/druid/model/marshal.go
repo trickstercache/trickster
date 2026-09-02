@@ -58,6 +58,9 @@ func MarshalTimeseriesWriter(ts timeseries.Timeseries, options *timeseries.Reque
 	if !ok || ds == nil {
 		return timeseries.ErrUnknownFormat
 	}
+	if plan := sqlPlanForMarshal(ds, options); plan != nil {
+		return marshalSQLTimeseriesWriter(ds, plan, writer)
+	}
 	plan := planForMarshal(ds, options)
 	if plan == nil {
 		return timeseries.ErrUnknownFormat
@@ -75,6 +78,22 @@ func MarshalTimeseriesWriter(ts timeseries.Timeseries, options *timeseries.Reque
 		return timeseries.ErrUnknownFormat
 	}
 	return json.NewEncoder(writer).Encode(output)
+}
+
+func sqlPlanForMarshal(ds *dataset.DataSet, options *timeseries.RequestOptions) *SQLQueryPlan {
+	if options != nil {
+		if plan, ok := options.ProviderRequest.(*SQLQueryPlan); ok &&
+			plan != nil && plan.Plan != nil {
+			return plan
+		}
+	}
+	if ds != nil && ds.TimeRangeQuery != nil {
+		if plan, ok := ds.TimeRangeQuery.ParsedQuery.(*SQLQueryPlan); ok &&
+			plan != nil && plan.Plan != nil {
+			return plan
+		}
+	}
+	return nil
 }
 
 func planForMarshal(ds *dataset.DataSet, options *timeseries.RequestOptions) *QueryPlan {

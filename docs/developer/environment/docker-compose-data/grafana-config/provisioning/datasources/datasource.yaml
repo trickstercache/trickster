@@ -339,6 +339,32 @@ datasources:
     defaultDatabase: default
     username: default
 
+# Apache Druid (Grafana plugin)
+# The plugin reads the flat `connection.url` jsonData setting. Keeping both
+# data sources provisioned makes origin-vs-Trickster comparisons one selector
+# change in the dashboard.
+- name: druid-direct
+  type: grafadruid-druid-datasource
+  access: proxy
+  orgId: 1
+  uid: ds_druid_direct
+  url: http://druid:8888
+  editable: true
+  isDefault: false
+  jsonData:
+    connection.url: http://druid:8888
+
+- name: druid-trickster
+  type: grafadruid-druid-datasource
+  access: proxy
+  orgId: 1
+  uid: ds_druid_trickster
+  url: http://host.docker.internal:8480/druid1
+  editable: true
+  isDefault: false
+  jsonData:
+    connection.url: http://host.docker.internal:8480/druid1
+
 # Graphite
 # The uid is fixed on purpose: the trickster-graphite dashboard's datasource
 # variable defaults to it, and later stages add a graphite-trickster peer.

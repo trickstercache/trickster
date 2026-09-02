@@ -31,7 +31,7 @@ func TestRegisterHandlers(t *testing.T) {
 		t.Fatal(err)
 	}
 	h := c.Handlers()
-	for _, name := range []string{handlerHealth, handlerQuery, handlerProxyCache, providers.Proxy} {
+	for _, name := range []string{handlerHealth, handlerQuery, handlerSQLQuery, handlerProxyCache, providers.Proxy} {
 		if h[name] == nil {
 			t.Errorf("handler %q is not registered", name)
 		}
@@ -57,7 +57,7 @@ func TestDefaultPathConfigs(t *testing.T) {
 		body                  bool
 	}{
 		{http.MethodPost, "/druid/v2", handlerQuery, false},
-		{http.MethodPost, "/druid/v2/sql", handlerProxyCache, true},
+		{http.MethodPost, "/druid/v2/sql", handlerSQLQuery, true},
 		{http.MethodPost, "/druid/v2/sql/task", providers.Proxy, false},
 		{http.MethodPost, "/druid/v2/sql/task/abc", providers.Proxy, false},
 		{http.MethodGet, "/druid/v2/datasources/wiki", handlerProxyCache, false},

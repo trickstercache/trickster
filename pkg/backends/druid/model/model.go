@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-// Package model converts Apache Druid native responses to and from DataSet.
+// Package model converts Apache Druid native and SQL responses to and from DataSet.
 package model
 
 import (
@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"slices"
 
+	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 )
@@ -35,6 +36,79 @@ type QueryPlan struct {
 	descending  bool
 	renderStart []byte
 	renderEnd   []byte
+}
+
+// SQLQueryPlan marks a Druid SQL request and carries the shared immutable SQL
+// extent plan. The marker keeps Druid's tabular wire model and native model
+// separate while allowing both to use one timeseries.Modeler.
+type SQLQueryPlan struct {
+	Plan          *sqlanalyzer.QueryPlan
+	cacheKeyBody  []byte
+	outputColumns []string
+	format        byte
+	header        bool
+}
+
+const (
+	dataSetStatusSuccess = "success"
+	sqlResultName        = "sql"
+
+	// SQLResponseObject is Druid's object result format. It is the default
+	// format used by the public constructor and by requests without a format.
+	SQLResponseObject byte = iota
+	// SQLResponseArray is Druid's array result format. It is useful for the
+	// Grafana Druid plugin, which requests an explicit column-name header.
+	SQLResponseArray
+)
+
+// NewSQLQueryPlan wraps a shared SQL plan for Druid's object result format.
+// cacheKeyBody is the canonical request envelope, before an extent rewrite.
+func NewSQLQueryPlan(plan *sqlanalyzer.QueryPlan, cacheKeyBody []byte) *SQLQueryPlan {
+	return &SQLQueryPlan{Plan: plan, cacheKeyBody: bytes.Clone(cacheKeyBody)}
+}
+
+// NewSQLQueryPlanWithResponseShape wraps a shared SQL plan and remembers the
+// Druid response envelope requested by the client. Only object responses and
+// array responses with a column-name header are modeled by the provider.
+func NewSQLQueryPlanWithResponseShape(plan *sqlanalyzer.QueryPlan, cacheKeyBody []byte,
+	format byte, header bool, outputColumns ...string,
+) *SQLQueryPlan {
+	return &SQLQueryPlan{
+		Plan: plan, cacheKeyBody: bytes.Clone(cacheKeyBody),
+		outputColumns: slices.Clone(outputColumns), format: format, header: header,
+	}
+}
+
+// ResponseFormat reports the Druid SQL result format carried by the plan.
+func (p *SQLQueryPlan) ResponseFormat() byte {
+	if p == nil {
+		return SQLResponseObject
+	}
+	return p.format
+}
+
+// Header reports whether the array response includes a column-name header.
+func (p *SQLQueryPlan) Header() bool {
+	return p != nil && p.header
+}
+
+// OutputColumns returns the SQL select-list names in wire order. Druid's
+// array response uses this order for its column-name header.
+func (p *SQLQueryPlan) OutputColumns() []string {
+	if p == nil {
+		return nil
+	}
+	return slices.Clone(p.outputColumns)
+}
+
+// CacheKeyBody returns the stable body identity for this provider-owned
+// request. DPC rewrites a separate upstream body for each extent; exposing the
+// pre-rewrite envelope keeps those transport details out of the cache key.
+func (p *SQLQueryPlan) CacheKeyBody() []byte {
+	if p == nil {
+		return nil
+	}
+	return bytes.Clone(p.cacheKeyBody)
 }
 
 // NewQueryPlan constructs an immutable Druid query plan.

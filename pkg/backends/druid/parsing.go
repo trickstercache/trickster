@@ -69,6 +69,9 @@ var nonFixedSimpleGranularities = map[string]struct{}{
 func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery,
 	*timeseries.RequestOptions, bool, error,
 ) {
+	if isDruidSQLRequest(r) {
+		return c.parseSQLTimeRangeQuery(r)
+	}
 	if r == nil || r.Method != http.MethodPost {
 		return c.reject(nil, nil, false, modeProxy, reasonUnsupportedMethod, errInvalidRequest)
 	}

@@ -66,6 +66,9 @@ func UnmarshalTimeseriesReader(reader io.Reader,
 	if trq == nil {
 		return nil, timeseries.ErrInvalidBody
 	}
+	if sqlPlan, ok := trq.ParsedQuery.(*SQLQueryPlan); ok {
+		return unmarshalSQLTimeseriesReader(reader, trq, sqlPlan)
+	}
 	plan, ok := trq.ParsedQuery.(*QueryPlan)
 	if !ok || plan == nil {
 		return nil, timeseries.ErrInvalidBody
@@ -118,7 +121,7 @@ func UnmarshalTimeseriesReader(reader io.Reader,
 		return stringsCompare(a.Header.Tags.JSON(), b.Header.Tags.JSON())
 	})
 	ds := &dataset.DataSet{
-		Status:         "success",
+		Status:         dataSetStatusSuccess,
 		Results:        dataset.Results{result},
 		TimeRangeQuery: trq,
 	}

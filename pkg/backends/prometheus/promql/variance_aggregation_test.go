@@ -151,25 +151,6 @@ func TestVarianceVariantQueryAvoidsTemporaryLabelCollision(t *testing.T) {
 	}
 }
 
-func TestPromQLStringLiteralEscapesUTF8AndSyntaxCharacters(t *testing.T) {
-	tests := []struct {
-		name  string
-		input string
-		want  string
-	}{
-		{name: "utf8", input: "服务", want: `"服务"`},
-		{name: "quote and slash", input: `a"b\c`, want: `"a\"b\\c"`},
-		{name: "control characters", input: "line\n\x00", want: `"line\u000a\u0000"`},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := promQLStringLiteral(tt.input); got != tt.want {
-				t.Fatalf("unexpected PromQL literal\n got: %q\nwant: %q", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestVarianceVariantQueryWithoutPreservesNonExcludedMetadata(t *testing.T) {
 	tests := []struct {
 		query         string

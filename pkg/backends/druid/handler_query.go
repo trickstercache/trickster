@@ -28,3 +28,11 @@ func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 	r.URL = urls.BuildUpstreamURL(r, c.BaseUpstreamURL())
 	engines.DeltaProxyCacheRequest(w, r, c.Modeler())
 }
+
+// SQLQueryHandler accelerates eligible Druid SQL object and header-array
+// queries. The parser fails closed to the route's object cache for unsupported
+// SQL shapes.
+func (c *Client) SQLQueryHandler(w http.ResponseWriter, r *http.Request) {
+	r.URL = urls.BuildUpstreamURL(r, c.BaseUpstreamURL())
+	engines.DeltaProxyCacheRequest(w, r, c.Modeler())
+}

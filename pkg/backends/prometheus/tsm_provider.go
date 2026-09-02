@@ -198,8 +198,8 @@ func globalInnerMergeStrategy(operator, innerQuery string) (int, string, bool) {
 				"cross-shard matching; results may be inaccurate", false
 		}
 		if globalFunction, found := promql.NonShardLocalFunction(aggregationInput); found {
-			return strategy, warningPrefix + "contains function " + globalFunction +
-				" that may require globally complete input; results may be inaccurate", false
+			return strategy, warningPrefix + `contains function "` + globalFunction +
+				`" that may require globally complete input; results may be inaccurate`, false
 		}
 
 		switch innerAggregation {
@@ -228,8 +228,8 @@ func globalInnerMergeStrategy(operator, innerQuery string) (int, string, bool) {
 			"cross-shard matching; results may be inaccurate", false
 	}
 	if globalFunction, found := promql.NonShardLocalFunction(innerQuery); found {
-		return strategy, warningPrefix + "contains function " + globalFunction +
-			" that may require globally complete input; results may be inaccurate", false
+		return strategy, warningPrefix + `contains function "` + globalFunction +
+			`" that may require globally complete input; results may be inaccurate`, false
 	}
 	return strategy, "", false
 }
@@ -381,8 +381,8 @@ func (c *Client) planLimitRatio(r *http.Request, query string,
 				unsupportedWarning = "trickster: limit_ratio contains a binary expression that " +
 					"may require cross-shard matching; results may be inaccurate"
 			case hasGlobalFunction:
-				unsupportedWarning = "trickster: limit_ratio contains function " + globalFunction +
-					" that may require globally complete input; results may be inaccurate"
+				unsupportedWarning = `trickster: limit_ratio contains function "` + globalFunction +
+					`" that may require globally complete input; results may be inaccurate`
 			case weightedAverage:
 				return weightedAveragePlan(r, query, spec.InnerQuery,
 					merge.TSMFinalizerSpec{Enabled: true, Query: query}, true)
@@ -400,8 +400,8 @@ func (c *Client) planLimitRatio(r *http.Request, query string,
 		unsupportedWarning = "trickster: limit_ratio contains a binary expression that " +
 			"may require cross-shard matching; results may be inaccurate"
 	} else if globalFunction, found := promql.NonShardLocalFunction(spec.InnerQuery); found {
-		unsupportedWarning = "trickster: limit_ratio contains function " + globalFunction +
-			" that may require globally complete input; results may be inaccurate"
+		unsupportedWarning = `trickster: limit_ratio contains function "` + globalFunction +
+			`" that may require globally complete input; results may be inaccurate`
 	}
 	if spec.SortSet {
 		// Global ordering already requires a finalizer. Always merge the

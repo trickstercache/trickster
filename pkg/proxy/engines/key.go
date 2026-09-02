@@ -164,6 +164,16 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 	if pc.CacheKeyBody && b == nil && methods.HasBody(r.Method) {
 		_, b, _ = params.GetRequestValues(r)
 	}
+	// A provider may expose a stable pre-rewrite body identity. This is
+	// needed for POST time-series requests whose upstream body is rendered
+	// separately for each cache-miss extent.
+	if pc.CacheKeyBody && trq != nil {
+		if provider, ok := trq.ParsedQuery.(interface{ CacheKeyBody() []byte }); ok {
+			if providerBody := provider.CacheKeyBody(); len(providerBody) > 0 {
+				b = providerBody
+			}
+		}
+	}
 
 	if pc.KeyHasher != nil {
 		key := pc.KeyHasher(r.URL.Path, qp, r.Header, b, trq, extra)

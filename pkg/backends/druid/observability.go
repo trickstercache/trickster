@@ -46,6 +46,10 @@ const (
 	reasonNonFixedGranularity    analysisReason = "non_fixed_granularity"
 	reasonUnsupportedShape       analysisReason = "unsupported_response_shape"
 	reasonUnsupportedDimension   analysisReason = "unsupported_dimension"
+	reasonSQLEligible            analysisReason = "sql_eligible"
+	reasonSQLUnsupported         analysisReason = "sql_unsupported"
+	reasonSQLUnsupportedFormat   analysisReason = "sql_unsupported_format"
+	reasonSQLInvalidQuery        analysisReason = "sql_invalid_query"
 )
 
 func (c *Client) observeAnalysis(mode analysisMode, reason analysisReason) {
