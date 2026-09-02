@@ -1,6 +1,6 @@
 module github.com/trickstercache/trickster/v2
 
-go 1.26.7
+go 1.26.8
 
 require (
 	github.com/AfterShip/clickhouse-sql-parser v0.5.6
