@@ -57,6 +57,14 @@ func testSQLTRQ(plan *SQLQueryPlan) *timeseries.TimeRangeQuery {
 	}
 }
 
+func TestSQLQueryPlanDefaultResponseFormat(t *testing.T) {
+	plan := NewSQLQueryPlan(&sqlanalyzer.QueryPlan{}, nil)
+	if got := plan.ResponseFormat(); got != SQLResponseObject {
+		t.Fatalf("default response format = %d, want object (%d)",
+			got, SQLResponseObject)
+	}
+}
+
 func TestSQLModelRoundTripObjectRows(t *testing.T) {
 	plan := testSQLPlan()
 	trq := testSQLTRQ(plan)

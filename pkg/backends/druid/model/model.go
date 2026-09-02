@@ -52,7 +52,9 @@ type SQLQueryPlan struct {
 const (
 	dataSetStatusSuccess = "success"
 	sqlResultName        = "sql"
+)
 
+const (
 	// SQLResponseObject is Druid's object result format. It is the default
 	// format used by the public constructor and by requests without a format.
 	SQLResponseObject byte = iota
