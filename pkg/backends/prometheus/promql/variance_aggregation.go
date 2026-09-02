@@ -224,8 +224,8 @@ func promQLStringLiteral(value string) string {
 			escaped.WriteString(`\\`)
 		case r < 0x20:
 			escaped.WriteString(`\u00`)
-			escaped.WriteByte(hex[byte(r)>>4])
-			escaped.WriteByte(hex[byte(r)&0x0f])
+			escaped.WriteByte(hex[int(r)>>4])
+			escaped.WriteByte(hex[int(r)&0x0f])
 		default:
 			escaped.WriteRune(r)
 		}
