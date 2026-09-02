@@ -14,23 +14,19 @@
  * limitations under the License.
  */
 
-package bytes
+package poller
 
-// maxMergeLen caps merged slice size (overridable in tests).
-var maxMergeLen = int(^uint(0) >> 1)
+import (
+	"testing"
 
-func MergeSlices(a, b []byte) []byte {
-	lenA := len(a)
-	lenB := len(b)
-	if lenA > maxMergeLen {
-		return a[:maxMergeLen]
-	}
-	remaining := maxMergeLen - lenA
-	if lenB > remaining {
-		b = b[:remaining]
-	}
-	out := make([]byte, lenA+len(b))
-	copy(out, a)
-	copy(out[lenA:], b)
-	return out
+	"go.uber.org/goleak"
+)
+
+// goleak guards the poller's central promise: every loop goroutine exits on
+// Stop or context cancellation. A regression here would not fail any
+// assertion -- it would just leak a goroutine per poller until process exit,
+// which is exactly the failure mode the poller exists to prevent in its
+// callers. -race will not catch it; only this will.
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
 }

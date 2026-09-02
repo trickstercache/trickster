@@ -17,6 +17,9 @@
 package options
 
 import (
+	"crypto/tls"
+	"crypto/x509"
+	"fmt"
 	"os"
 	"slices"
 
@@ -121,9 +124,53 @@ func (o *Options) Validate() (bool, error) {
 	return true, nil
 }
 
+// ToClientTLSConfig renders the client-side portion of the Options into a
+// *tls.Config for outbound connections: the mutual-auth client certificate
+// pair, any additional Certificate Authorities to trust alongside the
+// system pool, and the InsecureSkipVerify escape hatch. The server-side
+// fields (FullChainCertPath, PrivateKeyPath, ServeTLS) are not consulted.
+//
+// A nil receiver yields a nil config, which net/http reads as "default TLS",
+// so callers may pass an absent TLS block straight through.
+func (o *Options) ToClientTLSConfig() (*tls.Config, error) {
+	if o == nil {
+		return nil, nil
+	}
+	// #nosec G402 -- InsecureSkipVerify is a documented, operator-set option
+	out := &tls.Config{InsecureSkipVerify: o.InsecureSkipVerify}
+	if o.ClientCertPath != "" && o.ClientKeyPath != "" {
+		cert, err := tls.LoadX509KeyPair(o.ClientCertPath, o.ClientKeyPath)
+		if err != nil {
+			return nil, err
+		}
+		out.Certificates = []tls.Certificate{cert}
+	}
+	if len(o.CertificateAuthorityPaths) == 0 {
+		return out, nil
+	}
+	// start from the system pool so configured CAs are additive rather than
+	// replacing public trust; an unavailable system pool degrades to an
+	// empty one, which trusts exactly the configured CAs
+	rootCAs, _ := x509.SystemCertPool()
+	if rootCAs == nil {
+		rootCAs = x509.NewCertPool()
+	}
+	for _, path := range o.CertificateAuthorityPaths {
+		certs, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+		if ok := rootCAs.AppendCertsFromPEM(certs); !ok {
+			return nil, fmt.Errorf("unable to append to CA Certs from file %s", path)
+		}
+	}
+	out.RootCAs = rootCAs
+	return out, nil
+}
+
 func (o *Options) UnmarshalYAML(value *yaml.Node) error {
 	type loadOptions Options
-	lo := loadOptions(*(New()))
+	lo := loadOptions(*New())
 	if err := value.Decode(&lo); err != nil {
 		return err
 	}

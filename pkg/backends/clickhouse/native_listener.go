@@ -43,9 +43,12 @@ func NativeListenerAdapter() native.Adapter { return nativeListenerAdapter{} }
 
 func (nativeListenerAdapter) SupportsHTTP() bool { return true }
 
-func (nativeListenerAdapter) Protocol() string                        { return listenerconfig.ProtocolClickHouse }
-func (nativeListenerAdapter) BackendProvider() string                 { return providers.ClickHouse }
+func (nativeListenerAdapter) Protocol() string { return listenerconfig.ProtocolClickHouse }
+
+func (nativeListenerAdapter) BackendProvider() string { return providers.ClickHouse }
+
 func (nativeListenerAdapter) Configured(*listenerconfig.Options) bool { return false }
+
 func (nativeListenerAdapter) ValidateListener(o *listenerconfig.Options) error {
 	if o == nil {
 		return errors.New("nil ClickHouse listener options")

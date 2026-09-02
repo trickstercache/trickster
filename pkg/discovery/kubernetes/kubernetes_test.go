@@ -18,10 +18,12 @@ package kubernetes
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/discovery"
+	kubeopts "github.com/trickstercache/trickster/v2/pkg/discovery/kubernetes/options"
 	do "github.com/trickstercache/trickster/v2/pkg/discovery/options"
 	"github.com/trickstercache/trickster/v2/pkg/kube"
 
@@ -29,7 +31,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 )
 
 const testNS = "monitoring"
@@ -56,6 +60,46 @@ func (c *snapCollector) next(t *testing.T) discovery.Snapshot {
 	case <-time.After(5 * time.Second):
 		t.Fatal("timed out waiting for snapshot")
 		return nil
+	}
+}
+
+// watchEstablished returns a channel closed once an informer has actually
+// registered its watch for the named resource with the fake clientset.
+//
+// A test that mutates objects after subscribing must wait on this first.
+// WaitForCacheSync -- and therefore the first emitted snapshot -- only
+// guarantees the reflector's initial LIST has been processed; the WATCH is
+// established separately and may not be registered yet. The fake clientset's
+// tracker ignores resourceVersion, so it cannot replay what happened before a
+// watcher appeared: a mutation landing in that window is delivered to nobody
+// and the next snapshot never comes. Against a real API server the reflector
+// resumes the watch from the list's resourceVersion, so nothing is lost --
+// this is a limitation of the fake, not a defect in the provider.
+func watchEstablished(cs *fake.Clientset, resource string) <-chan struct{} {
+	established := make(chan struct{})
+	var once sync.Once
+	cs.PrependWatchReactor(resource,
+		func(action k8stesting.Action) (bool, watch.Interface, error) {
+			w, err := cs.Tracker().Watch(action.GetResource(), action.GetNamespace())
+			if err != nil {
+				return false, nil, err
+			}
+			// signal only after Watch has registered the watcher, so a
+			// mutation issued once this closes cannot be missed
+			once.Do(func() { close(established) })
+			return true, w, nil
+		})
+	return established
+}
+
+// awaitWatch blocks until the informer's watch is registered, failing the
+// test rather than hanging if it never is.
+func awaitWatch(t *testing.T, established <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-established:
+	case <-time.After(5 * time.Second):
+		t.Fatal("informer never established its watch")
 	}
 }
 
@@ -113,6 +157,7 @@ func TestEndpointSlicesDiscovery(t *testing.T) {
 				endpoint("10.9.9.9", "prom-x", true, false)},
 		},
 	)
+	watching := watchEstablished(cs, "endpointslices")
 	d := NewWithClient("test", kube.NewFromClientset(cs))
 	require.NoError(t, d.Start(t.Context()))
 	defer d.Stop()
@@ -135,6 +180,7 @@ func TestEndpointSlicesDiscovery(t *testing.T) {
 	require.Equal(t, "prom", snap[0].Labels["service"])
 
 	// a rolling restart: prom-1 becomes ready, prom-0 starts terminating
+	awaitWatch(t, watching)
 	updated := newSlice("prom-abc", "prom", 9090,
 		endpoint("10.0.0.1", "prom-0", true, true),
 		endpoint("10.0.0.2", "prom-1", true, false),
@@ -223,6 +269,7 @@ func TestPodsDiscovery(t *testing.T) {
 		pod("prom-1", "10.0.0.2", false),
 		pending,
 	)
+	watching := watchEstablished(cs, "pods")
 	d := NewWithClient("test", kube.NewFromClientset(cs))
 	require.NoError(t, d.Start(t.Context()))
 	defer d.Stop()
@@ -242,6 +289,7 @@ func TestPodsDiscovery(t *testing.T) {
 	require.Equal(t, discovery.NotReady, snap[1].Ready)
 
 	// deleting a pod removes its member
+	awaitWatch(t, watching)
 	require.NoError(t, cs.CoreV1().Pods(testNS).
 		Delete(context.Background(), "prom-0", metav1.DeleteOptions{}))
 	snap = col.next(t)
@@ -372,7 +420,7 @@ func TestNewConstructorErrors(t *testing.T) {
 	require.Error(t, err)
 	// in-cluster outside a cluster
 	_, err = New("d", &do.Options{Provider: "kubernetes",
-		Kubernetes: &do.KubernetesOptions{InCluster: true}})
+		Kubernetes: &kubeopts.Options{InCluster: true}})
 	require.Error(t, err)
 }
 

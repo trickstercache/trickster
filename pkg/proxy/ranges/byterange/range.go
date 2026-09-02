@@ -247,7 +247,7 @@ func (rs Ranges) Len() int {
 
 // Less returns true if element i in the Ranges comes before j
 func (rs Ranges) Less(i, j int) bool {
-	return rs[i].Start < (rs[j].Start)
+	return rs[i].Start < rs[j].Start
 }
 
 // Swap modifies an Ranges by swapping the values in indexes i and j

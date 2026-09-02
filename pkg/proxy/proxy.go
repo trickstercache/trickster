@@ -18,17 +18,12 @@
 package proxy
 
 import (
-	"crypto/tls"
-	"crypto/x509"
-	"fmt"
 	"net"
 	"net/http"
-	"os"
 	"time"
 
+	taws "github.com/trickstercache/trickster/v2/pkg/aws"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
-
-	"github.com/prometheus/common/sigv4"
 )
 
 const connectTimeout = time.Second * 10
@@ -40,43 +35,11 @@ func NewHTTPClient(o *bo.Options) (*http.Client, error) {
 		return nil, nil
 	}
 
-	var TLSConfig *tls.Config
-
-	if o.TLS != nil {
-		TLSConfig = &tls.Config{InsecureSkipVerify: o.TLS.InsecureSkipVerify} // #nosec G402 -- this is a user-configurable option, accept risk
-
-		if o.TLS.ClientCertPath != "" && o.TLS.ClientKeyPath != "" {
-			// load client cert
-			cert, err := tls.LoadX509KeyPair(o.TLS.ClientCertPath, o.TLS.ClientKeyPath)
-			if err != nil {
-				return nil, err
-			}
-			TLSConfig.Certificates = []tls.Certificate{cert}
-		}
-
-		if len(o.TLS.CertificateAuthorityPaths) > 0 {
-			// credit snippet to https://forfuncsake.github.io/post/2017/08/trust-extra-ca-cert-in-go-app/
-			// Get the SystemCertPool, continue with an empty pool on error
-			rootCAs, _ := x509.SystemCertPool()
-			if rootCAs == nil {
-				rootCAs = x509.NewCertPool()
-			}
-
-			for _, path := range o.TLS.CertificateAuthorityPaths {
-				// Read in the cert file
-				certs, err := os.ReadFile(path)
-				if err != nil {
-					return nil, err
-				}
-				// Append our cert to the system pool
-				if ok := rootCAs.AppendCertsFromPEM(certs); !ok {
-					return nil, fmt.Errorf("unable to append to CA Certs from file %s", path)
-				}
-			}
-
-			// Trust the augmented cert pool in our client
-			TLSConfig.RootCAs = rootCAs
-		}
+	// client TLS construction is shared with the discovery pollers and the
+	// health checker; see (*to.Options).ToClientTLSConfig
+	TLSConfig, err := o.TLS.ToClientTLSConfig()
+	if err != nil {
+		return nil, err
 	}
 
 	// Deliberately no Client.Timeout: it bounds the entire body read, which
@@ -120,7 +83,7 @@ func NewHTTPClient(o *bo.Options) (*http.Client, error) {
 
 	if o.SigV4 != nil {
 		inner, _ := client.Transport.(*http.Transport)
-		wrapped, err := sigv4.NewSigV4RoundTripper(o.SigV4, client.Transport)
+		wrapped, err := taws.NewRoundTripper(o.SigV4, client.Transport)
 		if err != nil {
 			return nil, err
 		}

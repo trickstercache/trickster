@@ -29,6 +29,13 @@
 // dns_a resolves A/AAAA records with a fixed port and scheme from the
 // query, covering headless-service-style DNS outside kubernetes, Docker
 // embedded DNS, and Consul DNS interfaces without a bespoke provider.
+//
+// Both providers run on the shared pkg/discovery/poller, which starts each
+// subscription after a short random jitter so that a fleet of queries
+// created at the same instant -- every subscription at startup, or after a
+// config reload -- does not resolve in lockstep against one nameserver.
+// First membership therefore arrives up to poller.DefaultJitter after
+// Start rather than immediately.
 package dns
 
 import (
@@ -41,7 +48,9 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/discovery"
+	dnsopts "github.com/trickstercache/trickster/v2/pkg/discovery/dns/options"
 	do "github.com/trickstercache/trickster/v2/pkg/discovery/options"
+	"github.com/trickstercache/trickster/v2/pkg/discovery/poller"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/providers"
 	dnsclient "github.com/trickstercache/trickster/v2/pkg/dns/client"
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
@@ -94,7 +103,7 @@ func newProvider(name string, o *do.Options, m mode) (*provider, error) {
 	}
 	interval := time.Duration(o.DNS.Interval)
 	if interval <= 0 {
-		interval = do.DefaultDNSInterval
+		interval = dnsopts.DefaultInterval
 	}
 	r, err := newResolver(o.DNS.Resolver)
 	if err != nil {
@@ -106,18 +115,32 @@ func newProvider(name string, o *do.Options, m mode) (*provider, error) {
 // newSubscription builds a query's poll-loop runner; it satisfies
 // discovery.NewSubscriptionFunc
 func (p *provider) newSubscription(q *do.Query, handler discovery.SnapshotHandler) (discovery.SubscriptionRunner, error) {
-	return &subscription{p: p, q: q, emitter: discovery.NewEmitter(handler)}, nil
+	s := &subscription{p: p, q: q, emitter: discovery.NewEmitter(handler)}
+	pl, err := poller.New(poller.Options{
+		Name:     p.name,
+		Interval: p.interval,
+		OnPanic:  s.onPanic,
+	}, poller.Func(s.poll))
+	if err != nil {
+		return nil, err
+	}
+	s.poller = pl
+	return s, nil
 }
 
 // subscription is one query's poll loop; it implements
-// discovery.SubscriptionRunner
+// discovery.SubscriptionRunner. The loop mechanics -- jittered start,
+// immediate first resolution, TTL-driven cadence, panic isolation -- belong
+// to the shared poller; what remains here is the resolution itself and the
+// keep-last-good failure policy that discovery requires and health checks
+// do not.
 type subscription struct {
 	p       *provider
 	q       *do.Query
 	emitter *discovery.Emitter
+	poller  *poller.Poller
 
 	mtx     sync.Mutex
-	cancel  context.CancelFunc
 	stopped bool
 	failing bool
 }
@@ -125,14 +148,12 @@ type subscription struct {
 // Launch starts the query's poll loop
 func (s *subscription) Launch(ctx context.Context) {
 	s.mtx.Lock()
-	if s.stopped {
-		s.mtx.Unlock()
+	stopped := s.stopped
+	s.mtx.Unlock()
+	if stopped {
 		return
 	}
-	subCtx, cancel := context.WithCancel(ctx)
-	s.cancel = cancel
-	s.mtx.Unlock()
-	go s.run(subCtx)
+	s.poller.Start(ctx)
 }
 
 // Stop terminates the poll loop and suppresses further emissions
@@ -143,43 +164,48 @@ func (s *subscription) Stop() {
 		return
 	}
 	s.stopped = true
-	cancel := s.cancel
 	s.mtx.Unlock()
 	s.emitter.Stop()
-	if cancel != nil {
-		cancel()
-	}
+	s.poller.Stop()
 }
 
-// run is the poll loop: resolve, deliver on change, then sleep for the
-// configured interval or the answer's shortest TTL, whichever is longer
-func (s *subscription) run(ctx context.Context) {
-	timer := time.NewTimer(0) // resolve immediately on launch
-	defer timer.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-timer.C:
+// poll is one resolution: deliver on change, then ask for the next wait.
+// It satisfies poller.Func.
+func (s *subscription) poll(ctx context.Context) (time.Duration, error) {
+	snap, ttl, err := s.resolve(ctx)
+	if err != nil {
+		if ctx.Err() != nil {
+			// stopped mid-resolution; not a resolution failure
+			return 0, err
 		}
-		wait := s.p.interval
-		snap, ttl, err := s.resolve(ctx)
-		if err != nil {
-			if ctx.Err() != nil {
-				return
-			}
-			s.warnResolve(err)
-		} else {
-			s.clearWarn()
-			s.emitter.Emit(snap)
-			if ttl > wait {
-				// TTL floor: the answer is authoritative until its shortest
-				// TTL expires; re-resolving sooner is wasted load
-				wait = ttl
-			}
-		}
-		timer.Reset(wait)
+		// keep last-good: say nothing, warn once per failure streak, and
+		// let the previous membership keep serving
+		s.warnResolve(err)
+		return 0, err
 	}
+	s.clearWarn()
+	s.emitter.Emit(snap)
+	if ttl > s.p.interval {
+		// TTL floor: the answer is authoritative until its shortest TTL
+		// expires; re-resolving sooner is wasted load
+		return ttl, nil
+	}
+	return 0, nil // 0 defers to the configured interval
+}
+
+// onPanic reports a panicking resolution as a refresh error, so that a
+// provider bug surfaces on the same metric and log stream as an upstream
+// failure rather than silently freezing the membership.
+func (s *subscription) onPanic(r any, stack []byte) {
+	metrics.DiscoveryRefreshErrors.WithLabelValues(
+		s.p.name, s.p.providerName()).Inc()
+	discovery.LogError("panic during dns discovery resolution; keeping last-good members",
+		logging.Pairs{
+			keys.Discoverer: s.p.name,
+			keys.Query:      s.queryName(),
+			keys.Panic:      fmt.Sprintf("%v", r),
+			keys.Stack:      string(stack),
+		})
 }
 
 func (s *subscription) resolve(ctx context.Context) (discovery.Snapshot, time.Duration, error) {

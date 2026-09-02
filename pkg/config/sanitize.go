@@ -35,8 +35,10 @@ import (
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 )
 
-const sanitizedSecret = "*****"
-const sanitizedEndpoint = "example.com"
+const (
+	sanitizedSecret   = "*****"
+	sanitizedEndpoint = "example.com"
+)
 
 var unsanitizedPathHeaders = map[string]struct{}{
 	strings.ToLower(headers.NameCacheControl): {},

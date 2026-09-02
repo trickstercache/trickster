@@ -163,7 +163,7 @@ func (o *Options) IsLegacy() bool {
 // UnmarshalYAML applies defaults before decoding a CORS configuration block.
 func (o *Options) UnmarshalYAML(value *yaml.Node) error {
 	type loadOptions Options
-	lo := loadOptions(*(New()))
+	lo := loadOptions(*New())
 	if err := value.Decode(&lo); err != nil {
 		return err
 	}

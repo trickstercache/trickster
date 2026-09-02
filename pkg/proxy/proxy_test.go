@@ -28,12 +28,11 @@ import (
 	"testing"
 	"time"
 
+	taws "github.com/trickstercache/trickster/v2/pkg/aws"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
-
-	"github.com/prometheus/common/sigv4"
 )
 
 func TestNewHTTPClient(t *testing.T) {
@@ -251,7 +250,7 @@ func TestNewHTTPClient_SigV4WrapsIdleCloser(t *testing.T) {
 	o := bo.New()
 	// Static creds skip the AWS provider chain so unit-test env without
 	// ~/.aws or env vars doesn't fail signer construction.
-	o.SigV4 = &sigv4.SigV4Config{
+	o.SigV4 = &taws.Options{
 		Region:    "us-east-1",
 		AccessKey: "AKIATEST",
 		SecretKey: "secrettest",

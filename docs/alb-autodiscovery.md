@@ -9,20 +9,27 @@ health check, path, and timeout configuration.
 
 ## Supported Discovery Providers
 
-There are several discovery providers supported by Trickster
+| provider | discovers | change detection |
+| --- | --- | --- |
+| [`kubernetes`](#the-kubernetes-provider) | endpointslices, services or pods via the Kubernetes API | watch (event-driven) |
+| [`dns_srv`](#the-dns_srv-provider) | SRV records | poll |
+| [`dns_a`](#the-dns_a-provider) | A/AAAA records | poll |
+| [`file`](#the-file-provider) | a member-list file | filesystem notify + poll |
+| [`http_sd`](#the-http_sd-provider) | a member-list HTTP endpoint | poll (ETag-aware) |
+| [`consul`](#the-consul-provider) | Consul service instances | blocking query (event-driven) |
+| [`nomad`](#the-nomad-provider) | Nomad's native service registry | blocking query (event-driven) |
+| [`aws`](#the-aws-provider) | EC2 instances or ECS tasks, by `aws.service` | poll |
+| [`gcp`](#the-gcp-provider) | Compute Engine instances, by `gcp.service` | poll |
+| [`azure`](#the-azure-provider) | Virtual Machines, by `azure.service` | poll |
+| [`docker`](#the-docker-provider) | Docker Engine containers | poll |
 
-* Kubernetes (endpointslices, services, or pods, via the Kubernetes API)
-* DNS SRV records (`dns_srv`)
-* DNS A/AAAA records (`dns_a`)
-* Watched member-list file (`file`)
-
-Support for additional providers (consul, ec2, gce, etcd, docker) is
-planned; until each lands, its users are generally served by the `file`
-provider (any external service-discovery tool can emit the member list) or
-by the DNS providers (e.g., Consul's DNS interface, cloud private DNS
-zones, Docker's embedded DNS). Developers can add providers against a
-simple interface; see the
-[provider authoring guide](./developer/discovery-providers.md).
+For other services, users are generally served by the `file` provider (any
+external service-discovery tool can emit the member list), by
+[`http_sd`](#the-http_sd-provider) (the universal adapter — a few lines of
+glue serving a member list, with no Trickster change), or by the DNS
+providers (e.g. Consul's DNS interface, cloud private DNS zones, Docker's
+embedded DNS). Developers can add providers against a simple interface; see
+the [provider authoring guide](./developer/discovery-providers.md).
 
 ## Configuration Overview
 
@@ -91,9 +98,44 @@ that provider's connection-level block:
 | `kubernetes` | `kubernetes` | `in_cluster` (default true) or `kubeconfig` path — mutually exclusive |
 | `dns_srv`, `dns_a` | `dns` | `resolver` (host:port; default: system resolver), `interval` (poll cadence, default 30s, min 1s; record TTLs act as a floor) |
 | `file` | `file` | `poll_interval` (stat-poll fallback cadence, default 30s, min 1s) |
+| `http_sd` | `http` + `http_sd` | connection settings in the shared `http` block (below); `http_sd.format` selects the member-list document: `trickster` (default) or `prometheus` |
+| `consul` | `http` + `consul` | connection settings in the shared `http` block; `consul.datacenter`, `namespace`, `partition`, `wait`, `allow_stale`, `only_passing`, `warning_is_ready` |
+| `nomad` | `http` + `nomad` | connection settings in the shared `http` block; `nomad.namespace`, `region`, `wait`, `allow_stale` |
+| `aws` | `aws` (+ optional `http`) | `aws.service` (**required**: `ec2` or `ecs`), `region`, and the credential fields; the endpoint is derived, so `http.endpoint` is an optional override |
+| `gcp` | `gcp` (+ optional `http`) | `gcp.service` (required; `gce`), `gcp.project` (from the metadata server when unset) and `credentials_file`; the endpoint is the Compute API, so `http.endpoint` is an optional override |
+| `docker` | `docker` (+ optional `http`) | `docker.api_version`; the endpoint defaults to the well-known socket, so `http.endpoint` is an optional override (`unix://` or `tcp://`) |
+| `azure` | `azure` (+ optional `http`) | `azure.service` (required; `vm`), `azure.subscription_id` (required), credentials and `cloud`; the endpoint comes from the cloud, so `http.endpoint` is an optional override |
 
 A block is only valid on its own provider's entries; anything else fails
 startup.
+
+#### The shared `http` block
+
+Providers that discover members by polling an HTTP endpoint share one
+connection block rather than each defining its own, so that configuring a
+second such provider does not mean learning a second vocabulary. It is
+required by `http_sd`, and rejected on providers that do not poll HTTP.
+
+| option | meaning |
+| ----- | ----- |
+| `endpoint` | base URL of the service to poll (`http`/`https`, host required) |
+| `interval` | poll cadence (default 30s, min 1s) |
+| `timeout` | bound on a single poll (default 10s, min 100ms) |
+| `tls` | outbound client TLS: `client_cert_path`/`client_key_path`, `certificate_authority_paths`, `insecure_skip_verify` |
+| `headers` | headers set on every request; where a registry's credential is a bespoke header (`X-Consul-Token`, `X-Nomad-Token`), it goes here |
+| `username`, `password` | static HTTP Basic credential |
+| `bearer_token` | sent as `Authorization: Bearer <token>` |
+| `bearer_token_file` | path re-read before each poll, so a rotated credential is picked up without a restart — prefer this over `bearer_token` for anything that expires |
+| `follow_redirects` | default false; a redirect away from the configured endpoint is surfaced rather than chased |
+
+`username`/`password` and the bearer-token fields are mutually exclusive,
+as are the two bearer-token forms: a config that sets both fails startup
+instead of silently preferring one, which is how an operator ends up
+debugging a 401 against a config that looks correct.
+
+Providers whose normal poll includes a server-side wait (blocking queries)
+need `timeout` comfortably above that wait. There is no second,
+client-level timeout underneath it that could cut a long poll short.
 
 ### Template Backends
 
@@ -198,7 +240,61 @@ whenever the ALB mechanism is `tsmerge` or `replica_group_label` is set.
 The DNS providers convey no grouping metadata; use the template-level
 group (mode 2) or the `file` provider for grouped non-Kubernetes pools.
 
-## Kubernetes
+## Query Vocabulary
+
+Every ALB's `alb.discovery.query` block is drawn from one shared vocabulary.
+A field set for a provider that does not accept it **fails startup** rather
+than being silently ignored, so a query aimed at the wrong provider is a
+config error rather than an empty pool.
+
+| field | `kubernetes` | `dns_srv` | `dns_a` | `file` | `http_sd` | `consul` | `nomad` | `aws` | `gcp` | `azure` | `docker` |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `kind` | ● |  |  |  |  |  |  |  |  |  |  |
+| `namespace` | ● |  |  |  |  |  |  |  |  |  |  |
+| `service` | ● |  |  |  |  | ● | ● | ● |  |  |  |
+| `selector` | ● |  |  |  |  |  |  |  |  |  |  |
+| `srv_name` |  | ● |  |  |  |  |  |  |  |  |  |
+| `hostname` |  |  | ● |  |  |  |  |  |  |  |  |
+| `path` |  |  |  | ● | ● |  |  |  |  |  |  |
+| `filter` |  |  |  |  |  | ● | ● |  | ● |  |  |
+| `filters` |  |  |  |  |  |  |  | ● |  |  | ● |
+| `tags` |  |  |  |  |  | ● | ● | ● | ● | ● |  |
+| `cluster` |  |  |  |  |  |  |  | ● |  |  |  |
+| `network` |  |  |  |  |  |  |  |  |  |  | ● |
+| `address_type` |  |  |  |  |  |  |  | ● | ● | ● | ● |
+| `port` | ● |  | ● |  |  |  |  | ● | ● | ● | ● |
+| `port_label` |  |  |  |  |  |  |  | ● | ● | ● | ● |
+| `scheme` | ● | ● | ● |  | ● | ● | ● | ● | ● | ● | ● |
+| `replica_group_label` | ● |  |  |  |  | ● |  | ● | ● | ● | ● |
+
+Most fields mean the same thing everywhere:
+
+- **`scheme`** — `http` (default) or `https` for the member's origin URL.
+- **`port`** — a static port applied to every member.
+- **`port_label`** — reads the port from **the provider's own metadata
+  namespace**: an EC2 or Azure tag, a GCE label (then instance metadata), a
+  Docker container label. It wins over `port` per member, so a fleet can
+  share one static default with individual machines overriding it.
+- **`address_type`** — `private` (default), `public`, or `ipv6`. Which
+  address to take where a resource has several.
+- **`replica_group_label`** — reads a [TSM replica group](#tsm-replica-groups)
+  from the same namespace as `port_label`.
+- **`tags`** — narrows by tag/label **presence**, and is a conjunction:
+  every listed tag must be present.
+- **`filter`** / **`filters`** — provider-native selection evaluated
+  server-side. `filter` is an expression string (Consul, Nomad, GCE);
+  `filters` is a name→values map (AWS `Filter.N`, Docker's filter
+  document). These are passed through, so an expression the upstream does
+  not understand fails the refresh loudly rather than matching nothing.
+
+**Hosts versus endpoints** is the distinction that decides whether a port is
+required. A cloud inventory API returns *hosts* — `aws` `service: ec2`,
+`gcp`, and `azure` return addresses with no port, so one of `port` or
+`port_label` is **required**. Kubernetes and `docker` return *endpoints*
+that carry their own ports, so a port is optional there and is resolved
+from the object when unambiguous.
+
+## The `kubernetes` Provider
 
 The `kubernetes` provider watches the cluster via the API server (shared
 informers; watch-driven, no polling) and supports three query kinds.
@@ -336,7 +432,7 @@ all objects of that resource in the bound namespace. Out-of-cluster
 (kubeconfig-based) discoverers need the same permissions for their user or
 service account.
 
-## DNS SRV
+## The `dns_srv` Provider
 
 The `dns_srv` provider polls SRV records. SRV target and port map to the
 member address; SRV weight maps to the member's load-balancing weight; and
@@ -370,7 +466,7 @@ re-resolved before its shortest TTL expires, so `interval` is the *most
 frequent* the provider will query. Resolution failures keep the last-good
 membership; an authoritative empty answer empties it.
 
-## DNS A/AAAA
+## The `dns_a` Provider
 
 The `dns_a` provider resolves a hostname's A and AAAA records, with a
 fixed port and scheme from the query. This covers round-robin DNS,
@@ -387,7 +483,7 @@ query:
 The `dns` connection options, poll cadence, TTL floor, and failure
 semantics are the same as `dns_srv`.
 
-## File
+## The `file` Provider
 
 Note: like Prometheus's `file_sd`, the `file` provider is the universal
 integration point — anything that can write a file (cron, sidecar,
@@ -465,6 +561,738 @@ Guidance for Kubernetes-mounted member files:
 The poll compares file content (not timestamps), so any change is
 detected within one `poll_interval` regardless of filesystem timestamp
 granularity.
+
+## The `http_sd` Provider
+
+`http_sd` fetches a member list from an HTTP endpoint. It is the universal
+adapter: any service-discovery system Trickster has no in-tree provider for
+can feed it through a few lines of glue that serve a member list, with no
+Trickster change and no restart.
+
+```yaml
+discovery:
+  fleet:
+    provider: http_sd
+    http:
+      endpoint: https://sd.example.com
+      interval: 15s
+      bearer_token_file: /var/run/secrets/sd-token
+    http_sd:
+      format: trickster
+
+backends:
+  prom-template:
+    provider: prometheus
+    is_template: true
+  prom-alb:
+    provider: alb
+    alb:
+      mechanism: tsm
+      discovery:
+        discoverer_name: fleet
+        template_backend: prom-template
+        query:
+          path: /pools/prometheus
+```
+
+The query's `path` is optional and is appended to the endpoint, so one
+server can serve a different member list per ALB while they share the
+discoverer's connection settings. The query's `scheme` supplies the scheme
+for `prometheus`-format targets, which are bare `host:port`; native-format
+entries carry their own and override it.
+
+**Formats.** `trickster` is the same document the `file` provider reads and
+is the default:
+
+```yaml
+- name: prom-1
+  scheme: https
+  address: 10.0.0.1:9090
+  path_prefix: /base
+  weight: 2
+  replica_group: shard-0
+```
+
+`prometheus` is the document Prometheus's own `file_sd` and `http_sd`
+consume, so an existing endpoint can be pointed at Trickster unchanged:
+
+```json
+[{"targets": ["10.0.0.1:9090"], "labels": {"env": "prod"}}]
+```
+
+A group's `__scheme__` label overrides the query scheme, letting one
+endpoint serve mixed-scheme members. Note that the Prometheus format cannot
+express **weight** or **replica_group** — deployments that need weighted
+pools or TSM replica groups want the native format.
+
+The format is named explicitly rather than sniffed. The two documents are
+structurally distinguishable, but guessing means a typo in one format can
+parse as a valid, wrong membership in the other, and the cost of guessing
+wrong is a silently drained pool.
+
+**Efficiency.** Requests carry `X-Prometheus-Refresh-Interval-Seconds`, as
+Prometheus's does, so servers that generate member lists on demand can pace
+their own work. `ETag` is honored: an unchanged membership costs one
+conditional request and a `304`, with no re-parse and no snapshot. The
+validator is only stored after a document parses, so a rejected document
+can never be confirmed as current by a later `304`.
+
+**Failure.** A transport error, an unexpected status, an oversized body
+(the limit is 16 MiB), or a document that will not parse all keep the
+last-good membership and are logged once per failure streak and counted on
+`trickster_discovery_refresh_errors_total`. An endpoint that
+*authoritatively* returns no members (`[]`) is a valid membership and is
+applied, so a scaled-to-zero pool can be reported as such.
+
+## The `consul` Provider
+
+`consul` reads service instances from Consul's health endpoint. It is
+**event-driven rather than polled**: each request is a Consul blocking
+query, so the server parks it until the service changes or `wait` elapses.
+A membership change is observed within a round trip instead of within a
+poll interval, and a stable service costs one parked connection rather
+than a request per interval.
+
+```yaml
+discovery:
+  consul-dc1:
+    provider: consul
+    http:
+      endpoint: http://127.0.0.1:8500
+      # a rotated ACL token; Consul accepts the Authorization Bearer scheme
+      # as an equivalent to its own X-Consul-Token header
+      bearer_token_file: /var/run/secrets/consul-token
+    consul:
+      datacenter: dc1
+      wait: 5m          # how long a blocking query parks; 1s–10m
+      allow_stale: true # answer from any server, not only the leader
+
+backends:
+  prom-template:
+    provider: prometheus
+    is_template: true
+  prom-alb:
+    provider: alb
+    alb:
+      mechanism: tsm
+      health_mode: provider   # Consul's own checks decide readiness
+      discovery:
+        discoverer_name: consul-dc1
+        template_backend: prom-template
+        query:
+          service: prometheus
+          tags: [production]
+          # filter: 'Service.Meta.version == "2"'
+          # replica_group_label: shard   # read from the service's Meta
+```
+
+**Readiness.** Consul reports per-instance check status, so this is the
+first provider outside kubernetes that can honestly answer "is this member
+ready", which makes `health_mode: provider` meaningful for VM and container
+fleets. An instance's readiness is its **worst** check: all passing is
+ready, `critical` and `maintenance` are not ready, and `warning` is ready by
+default (matching how Consul treats warning for DNS) — set
+`warning_is_ready: false` to drain warning instances instead. A status a
+future Consul release introduces is treated as not-ready rather than
+ignored.
+
+Failing instances are reported as `NotReady` rather than omitted, so that an
+ALB using the default `health_mode: probe` can decide for itself and a
+wholly-unhealthy service does not look like an empty one. Set
+`only_passing: true` to have Consul filter them out server-side instead.
+
+**Weights.** Consul's own `Weights.Passing` / `Weights.Warning` map onto
+member weights, including the passing/warning distinction — an operator who
+has already told Consul the relative capacity of each instance does not have
+to tell Trickster again.
+
+**Addresses.** A service that registers its own address overrides its node's,
+which is how sidecars and containers with their own routable address are
+represented. An instance with no usable address or port fails the whole
+refresh rather than being silently dropped, so a pool never quietly shrinks
+because of a catalog change nobody noticed.
+
+**Labels.** Members carry `service`, `service_id`, `node`, `datacenter`,
+`status`, and `tags` (comma-bracketed, as `,a,b,`). Service metadata is
+carried as `meta_<key>` so that an operator-defined key cannot shadow a
+Trickster-assigned label.
+
+**Timeouts.** `http.timeout` must outlast `consul.wait`, because a blocking
+query legitimately takes that long. Its default is derived from the wait
+rather than shared with the other HTTP providers (Consul adds up to
+`wait/16` of its own jitter, which the margin covers), and a config that
+sets it too low is rejected at startup rather than producing a stream of
+timeouts. `http.interval` is not the poll cadence here — with blocking
+queries there is no cadence — it is the retry delay after a failure.
+
+## The `nomad` Provider
+
+`nomad` reads service instances from Nomad's **native** service registry
+(Nomad 1.3+). Like `consul` it is event-driven, using the same HashiCorp
+blocking-query protocol, so a membership change is observed within a round
+trip rather than within a poll interval.
+
+```yaml
+discovery:
+  nomad-eu:
+    provider: nomad
+    http:
+      endpoint: http://127.0.0.1:4646
+      # a rotated ACL token; Nomad accepts the Authorization Bearer scheme
+      # as an equivalent to its own X-Nomad-Token header
+      bearer_token_file: /var/run/secrets/nomad-token
+    nomad:
+      namespace: default
+      region: eu-1
+      wait: 5m
+      allow_stale: true
+
+backends:
+  prom-alb:
+    provider: alb
+    alb:
+      discovery:
+        discoverer_name: nomad-eu
+        template_backend: prom-template
+        query:
+          service: prometheus
+          tags: [production]
+          # filter: 'JobID == "monitoring"'
+```
+
+**Native registry, not Consul.** This reads the registry a job selects with
+`provider = "nomad"` in its `service` block. Jobs that register into Consul
+instead are discovered with the **`consul`** provider, and that is the more
+capable choice where it applies: Nomad's service endpoint carries no
+per-instance check state, so members are reported `ReadyUnknown` and
+`health_mode: provider` falls back to Trickster's own probes. A deployment
+that wants discovery-conveyed readiness should register its services into
+Consul.
+
+**Tags filter client-side.** Unlike Consul's catalog endpoint, Nomad's
+service endpoint has no `tag` parameter, so `query.tags` is applied by
+Trickster after the response arrives. It is a conjunction — every listed tag
+must be present. `query.filter` is passed through to Nomad and evaluated
+server-side.
+
+**Labels.** Members carry `service`, `service_id`, `job_id`, `alloc_id`,
+`node_id`, `namespace`, `datacenter`, and `tags` (comma-bracketed). The
+allocation and job identifiers are what an operator needs to trace a member
+back to the workload that registered it.
+
+**Timeouts** work exactly as for `consul`: `http.timeout` must outlast
+`nomad.wait`, its default is derived from the wait, and `http.interval` is
+the retry delay after a failure rather than a poll cadence.
+
+## The `aws` Provider
+
+`aws` discovers members from an AWS API, selected by `aws.service`: `ec2`
+for instances, `ecs` for tasks. It is **required** — with more than one AWS
+API supported, defaulting would be an arbitrary guess at which one you
+meant, so a config that omits it fails at startup. Further AWS sources
+arrive as new `service` values rather than new providers, inheriting this
+provider's credentials, signing, pagination and options.
+
+```yaml
+discovery:
+  fleet:
+    provider: aws
+    aws:
+      service: ec2      # required: ec2 or ecs
+      region: us-east-1
+      # credentials omitted: use the standard chain (IRSA, instance
+      # profile, environment, shared config). See docs/aws.md.
+    http:
+      interval: 60s   # instance inventories change slowly; poll gently
+
+backends:
+  prom-alb:
+    provider: alb
+    alb:
+      discovery:
+        discoverer_name: fleet
+        template_backend: prom-template
+        query:
+          filters:
+            tag:service: [prometheus]
+            instance-state-name: [running]
+          port_label: trickster-port   # read the port from an EC2 tag
+          address_type: private        # private (default), public, or ipv6
+          # port: 9090                 # or a static port for every member
+          # replica_group_label: shard
+```
+
+Credentials, region resolution and IAM are documented once in
+[AWS Integration](./aws.md). The IAM principal needs
+**`ec2:DescribeInstances`**.
+
+**Hosts, not endpoints.** An instance inventory returns hosts with several
+addresses and no port, so two query fields exist that the registry providers
+do not need:
+
+- **`address_type`** — `private` (default), `public`, or `ipv6` — selects
+  which of the instance's addresses becomes the member address.
+- **`port_label`** — names an EC2 tag whose value is the member's port.
+  `port` supplies a static one. At least one is required, and they compose:
+  where both are set, the tag wins per instance and `port` is the fallback,
+  which is what makes `port_label` safe to adopt incrementally across a
+  fleet.
+
+**Selection.** `filters` is passed to EC2 as `Filter.N`, evaluated
+server-side — use `tag:<key>` to filter on a tag value, and any other
+[DescribeInstances filter](https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeInstances.html)
+name. `tags` additionally requires the *presence* of tag keys, applied after
+the response arrives.
+
+**Instance state.** `running` is `Ready` and `pending` is `NotReady`.
+Instances that are `shutting-down`, `stopping`, `stopped` or `terminated`
+are **omitted entirely** rather than reported unready, so they drain from
+pools before they stop answering — the same rule the kubernetes provider
+applies to terminating endpoints. A state a future EC2 release introduces is
+treated as not-ready rather than assumed healthy.
+
+**Instances that cannot become members are excluded, not fatal.** An
+instance with no `port_label` tag and no static `port`, or with no address
+of the requested type, is skipped and logged (once, until the set of
+excluded instances changes) rather than failing the refresh. This differs
+deliberately from the `consul` and `nomad` providers, where a malformed
+entry fails the whole refresh: a service registry contains only instances of
+the service, so a bad entry means the API is broken, while an EC2 inventory
+routinely contains hosts that simply are not tagged yet. Failing there would
+drain a working pool because of one unrelated instance.
+
+**Labels.** Members carry `instance_id`, `instance_type`, `instance_state`,
+`image_id`, `availability_zone`, `vpc_id`, `subnet_id`, `architecture`,
+`private_ip`, `public_ip`, `private_dns` and `public_dns`. Instance tags are
+carried as `tag_<Key>`, prefixed so an operator-defined tag cannot shadow a
+Trickster-assigned label. The `Name` tag becomes the member name, falling
+back to the instance id.
+
+**Endpoint.** Derived from the region and service
+(`https://ec2.<region>.amazonaws.com`). Set `http.endpoint` to override it
+for a VPC endpoint, a FIPS endpoint, or a test double; a region is required
+when it is not overridden, because the endpoint is built from it.
+
+### `service: ecs`
+
+Discovers ECS tasks, **including Fargate**, which `service: ec2`
+structurally cannot see — a Fargate task has no EC2 instance behind it.
+
+```yaml
+discovery:
+  tasks:
+    provider: aws
+    aws:
+      service: ecs
+      region: us-east-1
+    http:
+      interval: 30s
+
+backends:
+  prom-alb:
+    provider: alb
+    alb:
+      discovery:
+        discoverer_name: tasks
+        template_backend: prom-template
+        query:
+          cluster: prod           # ECS cluster; the account default when unset
+          service: prometheus     # ECS service name; optional
+          port_label: trickster-port
+          # port: 9090            # or a static port for every task
+```
+
+The IAM principal needs **`ecs:ListTasks`** and **`ecs:DescribeTasks`**.
+
+**awsvpc only.** Each task in `awsvpc` mode has its own elastic network
+interface, so `DescribeTasks` alone yields a routable address. That is the
+only mode Fargate offers and the default for new EC2-launch-type services.
+Under **bridge or host networking the address belongs to the container
+instance rather than the task**, and resolving it would take two further API
+calls, a second signing service and broader IAM — so such tasks are
+**excluded with a reason saying so** rather than silently missing. If you
+need bridge or host mode, say so and it can be added.
+
+**Tags must be propagated.** `port_label` reads an ECS **task** tag, and ECS
+does not copy service tags onto tasks unless the service is created with
+`--propagate-tags SERVICE`. Trickster asks `DescribeTasks` for tags
+explicitly (`include: [TAGS]`); if `port_label` finds nothing, check the
+propagation setting first.
+
+**Task state.** `RUNNING` is `Ready`; `PROVISIONING`, `PENDING` and
+`ACTIVATING` are `NotReady`; `DEACTIVATING`, `STOPPING`, `DEPROVISIONING`
+and `STOPPED` are **omitted entirely**, so tasks drain from pools before they
+stop answering. Container health is only reported when the task definition
+declares a health check — `UNHEALTHY` is `NotReady`, and `UNKNOWN` or absent
+is treated as ready, because the alternative would make every
+un-instrumented task permanently unusable.
+
+**Selection** is by `cluster` and `service`; `filters` and `address_type` are
+rejected for `ecs`, since ECS selects by cluster rather than by instance
+attribute and an awsvpc task has exactly one address. `tags` still filters on
+tag presence after the response arrives.
+
+**Labels.** Members carry `task_arn`, `task_id`, `cluster`,
+`task_definition`, `group`, `launch_type`, `availability_zone`,
+`task_status` and `health_status`, plus task tags as `tag_<Key>`. The `Name`
+tag becomes the member name, falling back to the task id.
+
+**Churn.** A task that disappears between `ListTasks` and `DescribeTasks` is
+ordinary churn; it is reported as an exclusion rather than silently
+shrinking the pool.
+
+## The `gcp` Provider
+
+`gcp` reads a Google Cloud API named by **`gcp.service`**. The provider is
+named for the cloud rather than for Compute Engine, matching `aws` — Google
+Cloud APIs outside Compute Engine belong here too, and would sit oddly under
+a provider called `gce`.
+
+`service` is **required** even though `gce` is the only value today. A
+default added now could never be removed, and every service added later
+would then be reached by opting out of a value the operator never chose.
+
+A value names the **product** an operator would recognize, not the API that
+serves it — the same convention as `aws.service`. That matters here: Cloud
+Load Balancing is served by the Compute API alongside instances, so naming
+these for the API would collide where naming them for the product does not.
+
+### `service: gce`
+
+Discovers Google Compute Engine instances through the Compute API's
+`instances.aggregatedList`, which covers **every zone in the project** in
+one paged call — so no zone list has to be configured or kept current.
+
+```yaml
+discovery:
+  fleet:
+    provider: gcp
+    gcp:
+      service: gce               # required
+      project: my-project        # from the metadata server when unset
+      # credentials_file: /etc/trickster/sa.json   # ADC when unset
+    http:
+      interval: 60s              # instance inventories change slowly
+
+backends:
+  prom-alb:
+    provider: alb
+    alb:
+      discovery:
+        discoverer_name: fleet
+        template_backend: prom-template
+        query:
+          filter: 'labels.role = "prometheus" AND status = "RUNNING"'
+          tags: [http-server]     # network tags, matched on presence
+          port_label: port        # instance label, or metadata key
+          address_type: private   # private (default), public, or ipv6
+          # port: 9090            # or a static port for every member
+          # replica_group_label: shard
+```
+
+**Credentials.** Leaving `credentials_file` empty selects **Application
+Default Credentials**: `GOOGLE_APPLICATION_CREDENTIALS`, gcloud user
+credentials, **Workload Identity on GKE**, or the instance metadata server
+on GCE. Prefer those over a key file wherever the platform offers one.
+Credentials resolve lazily and only successes are cached, so Trickster
+starts even when the metadata server is briefly unreachable and a momentary
+failure does not permanently disable discovery.
+
+`credentials_file` must be a **service account** key. The credential type is
+required rather than taken from the file: an `external_account` or
+`impersonated_service_account` configuration can name an arbitrary token URL
+or local executable, so accepting whichever type a file happens to declare
+would hand credential resolution somewhere unintended. For user credentials,
+use ADC instead of this field.
+
+The IAM principal needs **`compute.instances.list`** on the project — the
+`roles/compute.viewer` role includes it. The OAuth scope requested is
+`compute.readonly`; Trickster never mutates a project.
+
+**Project.** Taken from `gcp.project`, then from the credentials, then from
+the metadata server when Trickster runs on GCE. It is deliberately not
+required in config, because reading it from the metadata server is the
+idiomatic deployment.
+
+**Hosts, not endpoints**, exactly as for `aws` `service: ec2`:
+`address_type` chooses the address and `port`/`port_label` supplies the
+port, with the label winning per instance and the static port as fallback.
+**`port_label` reads an instance label first, then instance metadata** —
+both are key/value namespaces on a GCE instance, and a deployment already
+carrying the value in metadata does not have to move it.
+
+**Instance status.** `RUNNING` is `Ready`; `PROVISIONING`, `STAGING` and
+`REPAIRING` are `NotReady`; `STOPPING`, `SUSPENDING`, `SUSPENDED` and
+`TERMINATED` are **omitted entirely**, so instances drain from pools before
+they stop answering. A status a future Compute Engine release introduces is
+treated as not-ready rather than assumed healthy.
+
+**Selection.** `filter` is a GCE filter expression, evaluated server-side.
+`tags` matches GCE **network tags**, which are names without values, so it
+filters on presence. Requests set `returnPartialSuccess`, so one unreachable
+zone contributes no instances rather than failing the whole refresh.
+
+**Labels.** Members carry `instance_id`, `instance_name`, `status`, `zone`,
+`machine_type`, `network`, `subnetwork`, `private_ip`, `public_ip`, and
+`tags` (comma-bracketed). Instance labels are carried as `label_<key>`,
+prefixed so a user-defined label cannot shadow a Trickster-assigned one.
+Resource URLs are shortened to their last segment, since a member label full
+of `https://www.googleapis.com/compute/v1/...` is unreadable.
+
+## The `azure` Provider
+
+`azure` reads an Azure Resource Manager API named by **`azure.service`**.
+`service` is **required** even though `vm` is the only value today, for the
+same reason as `aws.service` and `gcp.service`: a default added now could
+never be removed.
+
+### `service: vm`
+
+Discovers Virtual Machines, joining them to their network interfaces to
+resolve addresses.
+
+```yaml
+discovery:
+  fleet:
+    provider: azure
+    azure:
+      service: vm                # required
+      subscription_id: 00000000-0000-0000-0000-000000000000  # required
+      # resource_group: prod-rg  # narrows every list; recommended
+      # credentials omitted: use the managed identity of the VM or AKS pod
+      # tenant_id: ...           # with a service principal:
+      # client_id: ...
+      # client_secret: ...
+      # federated_token_file: /var/run/secrets/azure/tokens/azure-identity-token
+      # cloud: public            # public (default), usgovernment, china
+      # power_state: false       # one extra list call; see Readiness
+    http:
+      interval: 60s              # vm inventories change slowly
+
+backends:
+  prom-alb:
+    provider: alb
+    alb:
+      discovery:
+        discoverer_name: fleet
+        template_backend: prom-template
+        query:
+          tags: [prometheus]     # vm tag names, matched on presence
+          port_label: port       # a vm tag holding the port
+          # port: 9090           # or a static port for every member
+          # address_type: private # private (default), public, or ipv6
+          # replica_group_label: shard
+```
+
+**Credentials.** Leaving the credential fields empty selects the **managed
+identity** of the Azure VM or AKS pod Trickster runs on, via the instance
+metadata service; set `client_id` alone to select a *user-assigned*
+identity. On AKS with **workload identity**, set `federated_token_file` to
+the projected token path — the platform writes and rotates that file, so
+Trickster holds no secret, and the file is re-read on every token
+acquisition. A `client_secret` service principal is the fallback where
+neither is available; it is redacted from config dumps and the management
+API.
+
+There is deliberately **no credential chaining**. A configured credential
+that fails is an error, not a reason to quietly fall back to the instance
+metadata service and authenticate as a different principal.
+
+**Permissions.** The principal needs only **Reader** on the subscription, or
+on the resource group named by `resource_group`. The specific actions are
+`Microsoft.Compute/virtualMachines/read` and
+`Microsoft.Network/networkInterfaces/read`, plus
+`Microsoft.Network/publicIPAddresses/read` when `address_type: public`.
+`power_state: true` additionally requires read at **subscription scope**,
+even with `resource_group` set — see Readiness.
+
+**If discovery finds nothing, check resource provider registration first.**
+A subscription where `Microsoft.Compute` is not registered answers the VM
+list with **HTTP 200 and an empty result, not an error**, so the pool is
+silently empty. New subscriptions start unregistered. Trickster detects this
+case and logs it, but the fix is outside Trickster:
+
+```bash
+az provider register -n Microsoft.Compute && az provider register -n Microsoft.Network
+```
+
+**Clouds.** `cloud` selects both the ARM endpoint and the Entra ID login
+endpoint together, since keeping two URLs consistent by hand is exactly the
+kind of thing that silently half-works. `http.endpoint` overrides the ARM
+endpoint alone, for a private ARM proxy or a test server.
+
+**API versions.** ARM requires an explicit `api-version` on every request,
+so both are pinned rather than omitted: `compute_api_version` (default
+`2024-07-01`) for the VM list and `network_api_version` (default
+`2024-05-01`) for interfaces and public addresses. Pinning means the
+response shape cannot change under Trickster when Microsoft ships a new
+version. Override either to move forward deliberately.
+
+**The join.** An Azure VM carries **no address**. Addresses live on network
+interfaces, which the VM references by resource id, and a public address is
+a further reference from the interface to a `publicIPAddresses` resource. A
+refresh is therefore two list calls — three with `address_type: public` —
+joined in memory. Resource ids are matched **case-insensitively**, because
+Azure treats them that way and the casing genuinely differs between APIs; a
+VM's interface reference commonly spells the resource group differently from
+the interface list. A VM whose references resolve to nothing is excluded
+with a message saying so specifically, since that is the symptom a broken
+join produces.
+
+`resource_group` is worth setting on a large subscription: it narrows every
+list rather than enumerating thousands of machines to find a handful.
+
+**Hosts, not endpoints**, exactly as for `aws` `service: ec2` and `gcp`
+`service: gce`: `address_type` chooses the address and `port`/`port_label`
+supplies the port, with the tag winning per VM and the static port as
+fallback. VM **tags** are matched case-insensitively, as Azure treats them,
+so a machine tagged `Role` is found by a query for `role`.
+
+**Readiness.** Off by default, `ReadyUnknown` for every member. The VM list
+carries *provisioning* state, not *power* state, and a provisioned VM may be
+stopped — reporting `Ready` on that basis would assert something Azure never
+said. Setting **`power_state: true`** requests the instance view, which makes
+running VMs `Ready` and removes stopped ones from membership entirely so
+they drain from pools. The cost is **one extra list call per refresh, not one
+call per VM**: the whole-subscription list accepts `statusOnly=true` and
+returns every machine's instance view at once. Trickster's own active health
+checks are the alternative, and cover the case either way.
+
+`statusOnly` is a parameter of the **subscription-wide** list only. The
+resource-group-scoped list accepts it, returns `200`, and silently ignores
+it, so Trickster always issues this one call at subscription scope — which
+is why `power_state: true` needs subscription-scope read even when
+`resource_group` is set. If the status list ever comes back with no instance
+view for any machine, the refresh **fails** and keeps the last-good
+membership rather than reading every VM as stopped and emptying the pool.
+
+**Labels.** Members carry `vm_name`, `vm_id`, `location`, `vm_size`,
+`resource_group`, `private_ip`, `public_ip`, and `power_state` when
+requested. VM tags are carried as `tag_<key>`, prefixed so a user-defined
+tag cannot shadow a Trickster-assigned label.
+
+## The `docker` Provider
+
+`docker` discovers containers through the Docker Engine API's
+`GET /containers/json`, polled on `http.interval`.
+
+```yaml
+discovery:
+  containers:
+    provider: docker
+    docker: {}                 # api_version: v1.41 by default
+    http:
+      # endpoint: unix:///var/run/docker.sock   # the default
+      # endpoint: tcp://dockerhost:2376         # remote daemon; add a tls block
+      interval: 30s
+
+backends:
+  prom-alb:
+    provider: alb
+    alb:
+      discovery:
+        discoverer_name: containers
+        template_backend: prom-template
+        query:
+          filters:
+            label: [com.example.discover=yes]
+          # network: backend      # required only when a container is on several
+          # port: 9090            # or port_label, when the container exposes several
+          # address_type: private # private (default), public, or ipv6
+          # replica_group_label: com.example.shard
+```
+
+**Endpoint.** Taken from `http.endpoint`, defaulting to
+`unix:///var/run/docker.sock`. Both the `unix://` and `tcp://` forms
+`DOCKER_HOST` uses are accepted, so one can be pasted into the other. A
+`tcp://` endpoint takes its client TLS from the shared `http.tls` block —
+that is how a remote daemon's mutual TLS is configured — and becomes
+`https` on the wire when one is present. TLS on a `unix://` endpoint is
+rejected rather than ignored.
+
+**Access.** Trickster needs read access to the Docker socket, which on most
+hosts means membership of the `docker` group. That access is equivalent to
+root on the host, so prefer a read-only socket proxy in production over
+mounting the socket directly. Trickster only ever issues `GET
+/containers/json`.
+
+**API version.** Pinned to `v1.41` (Docker 20.10 and later) rather than
+left off. An unversioned request binds to whatever the daemon's newest
+version happens to be, so the response shape would change under Trickster
+when the host upgrades Docker. Override with `docker.api_version` to use a
+newer one.
+
+**Endpoints, not hosts.** Unlike the cloud providers, the Engine API
+reports ports, so **`port` is not required**. A container exposing exactly
+one TCP port resolves automatically; one exposing several is excluded with
+a reason naming the candidates, rather than having a guess made for it. UDP
+ports are never candidates, which is what makes the single-port case common
+in practice — a container exposing one TCP port beside two UDP ports is
+unambiguous. `port_label` reads the port from a container label and wins
+over a static `port` per container.
+
+**Addresses.** `address_type: private` (the default) uses the container's IP
+on its network, with the container-internal port. `public` uses the host
+binding instead — the address and port are taken from the *same* binding, so
+a container publishing one port on `127.0.0.1` and another on `0.0.0.0` does
+not produce a mismatched pair. A wildcard binding (`0.0.0.0` or `::`) is not
+dialable, so it resolves to `127.0.0.1`. `ipv6` uses the container's global
+IPv6 address.
+
+**Networks.** A container on exactly one network needs no `network`. One on
+several must name which, rather than having a map iteration pick — that
+would differ between polls and churn the pool. A container attached to no
+network is excluded.
+
+**Readiness.** `State: running` is required; every other state leaves
+membership entirely, so containers drain from pools as they stop. Health
+comes from the container's `HEALTHCHECK`: `healthy` is `Ready`, `unhealthy`
+and `starting` are `NotReady`, and a container **with no healthcheck
+declared is `ReadyUnknown`, not `Ready`** — the daemon knows the process
+started, not that it is serving, and Trickster's own health checks cover
+that. Note that `GET /containers/json` reports health only inside its
+human-readable `Status` string; the per-container inspect that carries a
+structured `Health` object would cost one request per container per poll.
+
+**Selection.** `filters` is passed to the Engine API as its own filter
+document and evaluated server-side, so the daemon does the narrowing:
+`label`, `name`, `status`, `health`, `network`, `ancestor` and the rest. A
+filter name the daemon does not recognize is a `400` and fails the refresh
+loudly, rather than being ignored into a silently empty pool. When the query
+sets no `status` filter, `status: [running]` is added, so a host with a long
+history of exited containers is not listed in full every poll.
+
+**Labels.** Members carry `container_id` (short form), `container_name`,
+`image`, `state`, `network` and `private_ip`. Container labels are carried
+as `label_<key>`, prefixed so a user-defined label cannot shadow a
+Trickster-assigned one — Compose's own labels arrive as
+`label_com.docker.compose.service` and the like.
+
+## Upstream Permissions
+
+Every provider is **read-only**; Trickster never mutates a discovery source.
+The least privilege each needs:
+
+| provider | required access |
+| --- | --- |
+| `kubernetes` | `list` + `watch` on the resources your query kinds touch — see [RBAC](#rbac) |
+| `consul` | an ACL token with `service:read` (and `node:read`) for the queried services |
+| `nomad` | an ACL token with `read-job` on the namespace |
+| `aws` (`ec2`) | `ec2:DescribeInstances` |
+| `aws` (`ecs`) | `ecs:ListTasks`, `ecs:DescribeTasks` (add `ec2:DescribeInstances` for EC2-launch-type tasks) |
+| `gcp` | `compute.instances.list` — `roles/compute.viewer` includes it |
+| `azure` | **Reader** on the subscription or resource group; `power_state: true` needs it at subscription scope |
+| `docker` | read access to the Engine socket (the `docker` group, or a read-only socket proxy) |
+| `http_sd` | whatever the endpoint itself requires; see [connection options](#discoverer-connection-options) |
+
+Credentials are never required in config where the platform can supply
+them: `aws` uses the standard credential chain (IRSA, instance profile,
+environment), `gcp` uses Application Default Credentials (Workload Identity
+on GKE, the instance service account on GCE), and `azure` uses the managed
+identity of the VM or AKS pod. Prefer those over stored secrets wherever
+they are available — see each provider's section. Secrets that *are*
+configured (`aws.secret_key`, `azure.client_secret`) redact themselves from
+config dumps and the management API.
 
 ## Observing Discovered Members
 

@@ -1,0 +1,531 @@
+[
+ {
+  "Id": "f5939a2309dc965bc9c5d6a8f11ec57657e8ee946995d53166c27d700849a89f",
+  "Names": [
+   "/tk-disco-starting"
+  ],
+  "Image": "redis:8-alpine",
+  "ImageID": "sha256:5feed991f6ee5346f0639c04ddc6dc3f012563bc541f5a0d9fab7b00cac76099",
+  "Command": "docker-entrypoint.sh redis-server",
+  "Created": 1788209385,
+  "Ports": [
+   {
+    "IP": "",
+    "PrivatePort": 6379,
+    "Type": "tcp"
+   }
+  ],
+  "Labels": {
+   "com.trickster.probe": "yes",
+   "desktop.docker.io/ports.scheme": "v2"
+  },
+  "State": "running",
+  "Status": "Up About a minute (health: starting)",
+  "HostConfig": {
+   "NetworkMode": "bridge"
+  },
+  "NetworkSettings": {
+   "Networks": {
+    "bridge": {
+     "IPAMConfig": null,
+     "Links": null,
+     "Aliases": null,
+     "DriverOpts": null,
+     "GwPriority": 0,
+     "NetworkID": "6ed5a740b4adb929debf15fa849527738e13465e394d372a62f35b555b9c9670",
+     "EndpointID": "d8be058dfe9b90bde016c7e7c137305b9a01fd1fa4237085866450cb57ee4559",
+     "Gateway": "172.17.0.1",
+     "IPAddress": "172.17.0.3",
+     "MacAddress": "02:42:ac:11:00:02",
+     "IPPrefixLen": 16,
+     "IPv6Gateway": "",
+     "GlobalIPv6Address": "",
+     "GlobalIPv6PrefixLen": 0,
+     "DNSNames": null
+    }
+   }
+  }
+ },
+ {
+  "Id": "51165088a653a1845db497dfde30eb6d62b012da24a1d2f4f738dcab121501ba",
+  "Names": [
+   "/tk-disco-unhealthy"
+  ],
+  "Image": "redis:8-alpine",
+  "ImageID": "sha256:5feed991f6ee5346f0639c04ddc6dc3f012563bc541f5a0d9fab7b00cac76099",
+  "Command": "docker-entrypoint.sh redis-server",
+  "Created": 1788209385,
+  "Ports": [
+   {
+    "IP": "",
+    "PrivatePort": 6379,
+    "Type": "tcp"
+   }
+  ],
+  "Labels": {
+   "com.trickster.port": "9090",
+   "com.trickster.probe": "yes",
+   "desktop.docker.io/ports.scheme": "v2"
+  },
+  "State": "running",
+  "Status": "Up About a minute (unhealthy)",
+  "HostConfig": {
+   "NetworkMode": "bridge"
+  },
+  "NetworkSettings": {
+   "Networks": {
+    "bridge": {
+     "IPAMConfig": null,
+     "Links": null,
+     "Aliases": null,
+     "DriverOpts": null,
+     "GwPriority": 0,
+     "NetworkID": "6ed5a740b4adb929debf15fa849527738e13465e394d372a62f35b555b9c9670",
+     "EndpointID": "10c1fdbe0597c233f41c27d7b8c6c6c72e1f4b4a761f8e4e33e44d642ce56746",
+     "Gateway": "172.17.0.1",
+     "IPAddress": "172.17.0.2",
+     "MacAddress": "02:42:ac:11:00:02",
+     "IPPrefixLen": 16,
+     "IPv6Gateway": "",
+     "GlobalIPv6Address": "",
+     "GlobalIPv6PrefixLen": 0,
+     "DNSNames": null
+    }
+   }
+  }
+ },
+ {
+  "Id": "b4b88ebff5e548f32d7ebebd34e1e0e4ecc26d079c784b330650c3d213a89134",
+  "Names": [
+   "/environment-telegraf-1"
+  ],
+  "Image": "telegraf:1.39-alpine",
+  "ImageID": "sha256:97b62eef36ca5c956e6dc57379940ce072233c35d2e3da05c3f6df9bcc3fef17",
+  "Command": "/sbin/tini -- /entrypoint.sh telegraf",
+  "Created": 1787958590,
+  "Ports": [
+   {
+    "IP": "",
+    "PrivatePort": 8092,
+    "Type": "udp"
+   },
+   {
+    "IP": "",
+    "PrivatePort": 8094,
+    "Type": "tcp"
+   },
+   {
+    "IP": "",
+    "PrivatePort": 8125,
+    "Type": "udp"
+   }
+  ],
+  "Labels": {
+   "com.docker.compose.config-hash": "7b8e9969a4444eba95bf7856a91492ff10b0ffa652952f96aebbec9f7c9fdcf9",
+   "com.docker.compose.container-number": "1",
+   "com.docker.compose.depends_on": "influxdb2:service_started:false,influxdb3:service_started:false",
+   "com.docker.compose.image": "sha256:c8f8507c1bdaf2da99559e25dbd808b71b2dca37a096da535ecd411ca0e6c7a0",
+   "com.docker.compose.oneoff": "False",
+   "com.docker.compose.project": "environment",
+   "com.docker.compose.project.config_files": "/Users/jranson/src/go/github.com/trickstercache/features/trickster-influx3/docs/developer/environment/docker-compose.yml",
+   "com.docker.compose.project.working_dir": "/Users/jranson/src/go/github.com/trickstercache/features/trickster-influx3/docs/developer/environment",
+   "com.docker.compose.service": "telegraf",
+   "com.docker.compose.version": "5.1.4",
+   "desktop.docker.io/binds/0/Source": "/Users/jranson/src/go/github.com/trickstercache/features/trickster-influx3/docs/developer/environment/docker-compose-data/telegraf-config/telegraf.conf",
+   "desktop.docker.io/binds/0/SourceKind": "hostFile",
+   "desktop.docker.io/binds/0/Target": "/etc/telegraf/telegraf.conf",
+   "desktop.docker.io/ports.scheme": "v2"
+  },
+  "State": "running",
+  "Status": "Up 2 days",
+  "HostConfig": {
+   "NetworkMode": "environment_default"
+  },
+  "NetworkSettings": {
+   "Networks": {
+    "environment_default": {
+     "IPAMConfig": null,
+     "Links": null,
+     "Aliases": null,
+     "DriverOpts": null,
+     "GwPriority": 0,
+     "NetworkID": "676df37be90d8baf2623d42b5e77fad42645fcadd14cc672e31644d52dc0a5ab",
+     "EndpointID": "90aac0003a862cd3248f498120fa75e4f2ae8f2ccec4d2e9ccdf6bf21f71c4f7",
+     "Gateway": "172.18.0.1",
+     "IPAddress": "172.18.0.13",
+     "MacAddress": "02:42:ac:11:00:02",
+     "IPPrefixLen": 16,
+     "IPv6Gateway": "",
+     "GlobalIPv6Address": "",
+     "GlobalIPv6PrefixLen": 0,
+     "DNSNames": null
+    }
+   }
+  }
+ },
+ {
+  "Id": "13bf859fcae5ee79ac7419ea69011b197af1efd7b802bb0faa8f7044c9d995a8",
+  "Names": [
+   "/environment-graphite-1"
+  ],
+  "Image": "graphiteapp/graphite-statsd:1.1.10-5",
+  "ImageID": "sha256:f4f3e9ca3044221a940ccfbc3c6755ae3291e34dcf034d5b839d5b4a1a7eb70c",
+  "Command": "/entrypoint",
+  "Created": 1787958590,
+  "Ports": [
+   {
+    "IP": "0.0.0.0",
+    "PrivatePort": 2003,
+    "PublicPort": 2003,
+    "Type": "tcp"
+   },
+   {
+    "IP": "::",
+    "PrivatePort": 2003,
+    "PublicPort": 2003,
+    "Type": "tcp"
+   },
+   {
+    "IP": "0.0.0.0",
+    "PrivatePort": 80,
+    "PublicPort": 8081,
+    "Type": "tcp"
+   },
+   {
+    "IP": "::",
+    "PrivatePort": 80,
+    "PublicPort": 8081,
+    "Type": "tcp"
+   }
+  ],
+  "Labels": {
+   "com.docker.compose.config-hash": "3e788ef196e8b9e5a156f8ce39c6036c9322e9ec12a51a8edf7d58c220e26d17",
+   "com.docker.compose.container-number": "1",
+   "com.docker.compose.depends_on": "",
+   "com.docker.compose.image": "sha256:ef50c6f13d8bfd951aa316f6d7954a127f932428b2064c8d2af1b9f8eef1a8a8",
+   "com.docker.compose.oneoff": "False",
+   "com.docker.compose.project": "environment",
+   "com.docker.compose.project.config_files": "/Users/jranson/src/go/github.com/trickstercache/features/trickster-influx3/docs/developer/environment/docker-compose.yml",
+   "com.docker.compose.project.working_dir": "/Users/jranson/src/go/github.com/trickstercache/features/trickster-influx3/docs/developer/environment",
+   "com.docker.compose.service": "graphite",
+   "com.docker.compose.version": "5.1.4",
+   "desktop.docker.io/binds/0/Source": "/Users/jranson/src/go/github.com/trickstercache/features/trickster-influx3/docs/developer/environment/docker-compose-data/graphite-config/storage-schemas.conf",
+   "desktop.docker.io/binds/0/SourceKind": "hostFile",
+   "desktop.docker.io/binds/0/Target": "/opt/graphite/conf/storage-schemas.conf",
+   "desktop.docker.io/binds/1/Source": "/Users/jranson/src/go/github.com/trickstercache/features/trickster-influx3/docs/developer/environment/docker-compose-data/graphite-config/storage-aggregation.conf",
+   "desktop.docker.io/binds/1/SourceKind": "hostFile",
+   "desktop.docker.io/binds/1/Target": "/opt/graphite/conf/storage-aggregation.conf",
+   "desktop.docker.io/ports.scheme": "v2",
+   "desktop.docker.io/ports/2003/tcp": ":2003",
+   "desktop.docker.io/ports/80/tcp": ":8081",
+   "maintainer": "Denys Zhdanov <denis.zhdanov@gmail.com>",
+   "org.opencontainers.image.source": "https://github.com/graphite-project/docker-graphite-statsd"
+  },
+  "State": "running",
+  "Status": "Up 2 days (healthy)",
+  "HostConfig": {
+   "NetworkMode": "environment_default"
+  },
+  "NetworkSettings": {
+   "Networks": {
+    "environment_default": {
+     "IPAMConfig": null,
+     "Links": null,
+     "Aliases": null,
+     "DriverOpts": null,
+     "GwPriority": 0,
+     "NetworkID": "676df37be90d8baf2623d42b5e77fad42645fcadd14cc672e31644d52dc0a5ab",
+     "EndpointID": "bc48ff7922a498377828e792a086377384a860d59d22959c3b7a280104fcbbce",
+     "Gateway": "172.18.0.1",
+     "IPAddress": "172.18.0.9",
+     "MacAddress": "02:42:ac:11:00:02",
+     "IPPrefixLen": 16,
+     "IPv6Gateway": "",
+     "GlobalIPv6Address": "",
+     "GlobalIPv6PrefixLen": 0,
+     "DNSNames": null
+    }
+   }
+  }
+ },
+ {
+  "Id": "3fb4f54e37e4ec22e2a7fcd841cdd695e7e55f581acaf1caefd75bccc757d45a",
+  "Names": [
+   "/environment-prometheus-1"
+  ],
+  "Image": "prom/prometheus:v3.13.2",
+  "ImageID": "sha256:987a690761b1e73e56175c2925bb5b000d543d665c71a883a6999d5a86bef946",
+  "Command": "/bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.console.libraries=/usr/share/prometheus/console_libraries --web.console.templates=/usr/share/prometheus/consoles",
+  "Created": 1787958590,
+  "Ports": [
+   {
+    "IP": "0.0.0.0",
+    "PrivatePort": 9090,
+    "PublicPort": 9090,
+    "Type": "tcp"
+   },
+   {
+    "IP": "::",
+    "PrivatePort": 9090,
+    "PublicPort": 9090,
+    "Type": "tcp"
+   }
+  ],
+  "Labels": {
+   "com.docker.compose.config-hash": "d381491f672ecec7ef2d349d210b7c5c35c144e732441e79d21affa5c8a2aba1",
+   "com.docker.compose.container-number": "1",
+   "com.docker.compose.depends_on": "",
+   "com.docker.compose.image": "sha256:26bf7bb2ea9e4394b01ea4bd704e802ad4544eea9b2bc95a5dad244b342142d5",
+   "com.docker.compose.oneoff": "False",
+   "com.docker.compose.project": "environment",
+   "com.docker.compose.project.config_files": "/Users/jranson/src/go/github.com/trickstercache/features/trickster-influx3/docs/developer/environment/docker-compose.yml",
+   "com.docker.compose.project.working_dir": "/Users/jranson/src/go/github.com/trickstercache/features/trickster-influx3/docs/developer/environment",
+   "com.docker.compose.service": "prometheus",
+   "com.docker.compose.version": "5.1.4",
+   "desktop.docker.io/binds/0/Source": "/Users/jranson/src/go/github.com/trickstercache/features/trickster-influx3/docs/developer/environment/docker-compose-data/prometheus-config",
+   "desktop.docker.io/binds/0/SourceKind": "hostFile",
+   "desktop.docker.io/binds/0/Target": "/etc/prometheus",
+   "desktop.docker.io/ports.scheme": "v2",
+   "desktop.docker.io/ports/9090/tcp": ":9090",
+   "io.prometheus.image.variant": "busybox",
+   "maintainer": "The Prometheus Authors <prometheus-developers@googlegroups.com>",
+   "org.opencontainers.image.authors": "The Prometheus Authors",
+   "org.opencontainers.image.description": "The Prometheus monitoring system and time series database",
+   "org.opencontainers.image.documentation": "https://prometheus.io/docs",
+   "org.opencontainers.image.licenses": "Apache License 2.0",
+   "org.opencontainers.image.source": "https://github.com/prometheus/prometheus",
+   "org.opencontainers.image.title": "Prometheus",
+   "org.opencontainers.image.url": "https://github.com/prometheus/prometheus",
+   "org.opencontainers.image.vendor": "Prometheus"
+  },
+  "State": "running",
+  "Status": "Up 2 days",
+  "HostConfig": {
+   "NetworkMode": "environment_default"
+  },
+  "NetworkSettings": {
+   "Networks": {
+    "environment_default": {
+     "IPAMConfig": null,
+     "Links": null,
+     "Aliases": null,
+     "DriverOpts": null,
+     "GwPriority": 0,
+     "NetworkID": "676df37be90d8baf2623d42b5e77fad42645fcadd14cc672e31644d52dc0a5ab",
+     "EndpointID": "97943ca90acfed14e28883253a92886e9bbcf7bb92510ee19294619c3eb0e9f7",
+     "Gateway": "172.18.0.1",
+     "IPAddress": "172.18.0.5",
+     "MacAddress": "02:42:ac:11:00:02",
+     "IPPrefixLen": 16,
+     "IPv6Gateway": "",
+     "GlobalIPv6Address": "",
+     "GlobalIPv6PrefixLen": 0,
+     "DNSNames": null
+    }
+   }
+  }
+ },
+ {
+  "Id": "e9042ab7b7469eda57a20e3b6c3c673b1e4517f25e028363bc0630c6d54acf0e",
+  "Names": [
+   "/environment-jaeger-1"
+  ],
+  "Image": "jaegertracing/jaeger:2.20.0",
+  "ImageID": "sha256:49712cd63121c97f379501447dbab99c5408b885c55fe0eea54b0ce28a335c14",
+  "Command": "/cmd/jaeger/jaeger-linux",
+  "Created": 1787958590,
+  "Ports": [
+   {
+    "IP": "0.0.0.0",
+    "PrivatePort": 4317,
+    "PublicPort": 4317,
+    "Type": "tcp"
+   },
+   {
+    "IP": "::",
+    "PrivatePort": 4317,
+    "PublicPort": 4317,
+    "Type": "tcp"
+   },
+   {
+    "IP": "0.0.0.0",
+    "PrivatePort": 6831,
+    "PublicPort": 6831,
+    "Type": "udp"
+   },
+   {
+    "IP": "::",
+    "PrivatePort": 6831,
+    "PublicPort": 6831,
+    "Type": "udp"
+   },
+   {
+    "IP": "0.0.0.0",
+    "PrivatePort": 14250,
+    "PublicPort": 14250,
+    "Type": "tcp"
+   },
+   {
+    "IP": "::",
+    "PrivatePort": 14250,
+    "PublicPort": 14250,
+    "Type": "tcp"
+   },
+   {
+    "IP": "0.0.0.0",
+    "PrivatePort": 4318,
+    "PublicPort": 4318,
+    "Type": "tcp"
+   },
+   {
+    "IP": "::",
+    "PrivatePort": 4318,
+    "PublicPort": 4318,
+    "Type": "tcp"
+   },
+   {
+    "IP": "0.0.0.0",
+    "PrivatePort": 16686,
+    "PublicPort": 16686,
+    "Type": "tcp"
+   },
+   {
+    "IP": "::",
+    "PrivatePort": 16686,
+    "PublicPort": 16686,
+    "Type": "tcp"
+   },
+   {
+    "IP": "0.0.0.0",
+    "PrivatePort": 5778,
+    "PublicPort": 5778,
+    "Type": "tcp"
+   },
+   {
+    "IP": "::",
+    "PrivatePort": 5778,
+    "PublicPort": 5778,
+    "Type": "tcp"
+   },
+   {
+    "IP": "0.0.0.0",
+    "PrivatePort": 6832,
+    "PublicPort": 6832,
+    "Type": "udp"
+   },
+   {
+    "IP": "::",
+    "PrivatePort": 6832,
+    "PublicPort": 6832,
+    "Type": "udp"
+   }
+  ],
+  "Labels": {
+   "com.docker.compose.config-hash": "9354e6827684e2f67aa41ab95f7744500ac6dad745d04988ae29912651dc2e4b",
+   "com.docker.compose.container-number": "1",
+   "com.docker.compose.depends_on": "",
+   "com.docker.compose.image": "sha256:7f9e11694bb8d2a2f6b570e66ab8f984413ea041ef3f1ecda9a1584657154d43",
+   "com.docker.compose.oneoff": "False",
+   "com.docker.compose.project": "environment",
+   "com.docker.compose.project.config_files": "/Users/jranson/src/go/github.com/trickstercache/features/trickster-influx3/docs/developer/environment/docker-compose.yml",
+   "com.docker.compose.project.working_dir": "/Users/jranson/src/go/github.com/trickstercache/features/trickster-influx3/docs/developer/environment",
+   "com.docker.compose.service": "jaeger",
+   "com.docker.compose.version": "5.1.4",
+   "desktop.docker.io/ports.scheme": "v2",
+   "desktop.docker.io/ports/14250/tcp": ":14250",
+   "desktop.docker.io/ports/16686/tcp": ":16686",
+   "desktop.docker.io/ports/4317/tcp": ":4317",
+   "desktop.docker.io/ports/4318/tcp": ":4318",
+   "desktop.docker.io/ports/5778/tcp": ":5778",
+   "desktop.docker.io/ports/6831/udp": ":6831",
+   "desktop.docker.io/ports/6832/udp": ":6832"
+  },
+  "State": "running",
+  "Status": "Up 2 days",
+  "HostConfig": {
+   "NetworkMode": "environment_default"
+  },
+  "NetworkSettings": {
+   "Networks": {
+    "environment_default": {
+     "IPAMConfig": null,
+     "Links": null,
+     "Aliases": null,
+     "DriverOpts": null,
+     "GwPriority": 0,
+     "NetworkID": "676df37be90d8baf2623d42b5e77fad42645fcadd14cc672e31644d52dc0a5ab",
+     "EndpointID": "7556cd6de7b849384b8f74fc1779120bd16dbdf2bfaa682d09e390ebfaa3cdab",
+     "Gateway": "172.18.0.1",
+     "IPAddress": "172.18.0.10",
+     "MacAddress": "02:42:ac:11:00:02",
+     "IPPrefixLen": 16,
+     "IPv6Gateway": "",
+     "GlobalIPv6Address": "",
+     "GlobalIPv6PrefixLen": 0,
+     "DNSNames": null
+    }
+   }
+  }
+ },
+ {
+  "Id": "cf31423e9ef93c9f5918cacd2e49c6ac536a29c368bb499ba02f8a72514aa43d",
+  "Names": [
+   "/environment-graphite_seed-1"
+  ],
+  "Image": "graphiteapp/graphite-statsd:1.1.10-5",
+  "ImageID": "sha256:f4f3e9ca3044221a940ccfbc3c6755ae3291e34dcf034d5b839d5b4a1a7eb70c",
+  "Command": "/opt/graphite/bin/python3 /generator/generator.py seed",
+  "Created": 1787958590,
+  "Ports": [],
+  "Labels": {
+   "com.docker.compose.config-hash": "45176bc30b561e4bb74a34d8c3a7c4d047170f0cc6844e1594b6f293649add66",
+   "com.docker.compose.container-number": "1",
+   "com.docker.compose.depends_on": "graphite:service_healthy:false",
+   "com.docker.compose.image": "sha256:ef50c6f13d8bfd951aa316f6d7954a127f932428b2064c8d2af1b9f8eef1a8a8",
+   "com.docker.compose.oneoff": "False",
+   "com.docker.compose.project": "environment",
+   "com.docker.compose.project.config_files": "/Users/jranson/src/go/github.com/trickstercache/features/trickster-influx3/docs/developer/environment/docker-compose.yml",
+   "com.docker.compose.project.working_dir": "/Users/jranson/src/go/github.com/trickstercache/features/trickster-influx3/docs/developer/environment",
+   "com.docker.compose.service": "graphite_seed",
+   "com.docker.compose.version": "5.1.4",
+   "desktop.docker.io/binds/0/Source": "/Users/jranson/src/go/github.com/trickstercache/features/trickster-influx3/docs/developer/environment/docker-compose-data/graphite-config",
+   "desktop.docker.io/binds/0/SourceKind": "hostFile",
+   "desktop.docker.io/binds/0/Target": "/generator",
+   "desktop.docker.io/binds/1/Source": "/Users/jranson/src/go/github.com/trickstercache/features/trickster-influx3/docs/developer/environment/docker-compose-data/graphite-config/storage-schemas.conf",
+   "desktop.docker.io/binds/1/SourceKind": "hostFile",
+   "desktop.docker.io/binds/1/Target": "/opt/graphite/conf/storage-schemas.conf",
+   "desktop.docker.io/binds/2/Source": "/Users/jranson/src/go/github.com/trickstercache/features/trickster-influx3/docs/developer/environment/docker-compose-data/graphite-config/storage-aggregation.conf",
+   "desktop.docker.io/binds/2/SourceKind": "hostFile",
+   "desktop.docker.io/binds/2/Target": "/opt/graphite/conf/storage-aggregation.conf",
+   "desktop.docker.io/ports.scheme": "v2",
+   "maintainer": "Denys Zhdanov <denis.zhdanov@gmail.com>",
+   "org.opencontainers.image.source": "https://github.com/graphite-project/docker-graphite-statsd"
+  },
+  "State": "exited",
+  "Status": "Exited (0) 2 days ago",
+  "HostConfig": {
+   "NetworkMode": "environment_default"
+  },
+  "NetworkSettings": {
+   "Networks": {
+    "environment_default": {
+     "IPAMConfig": null,
+     "Links": null,
+     "Aliases": null,
+     "DriverOpts": null,
+     "GwPriority": 0,
+     "NetworkID": "0857633d3bb1c94432d6214f7691168142f7f49641eb208b5a90c6dce3436581",
+     "EndpointID": "",
+     "Gateway": "",
+     "IPAddress": "",
+     "MacAddress": "",
+     "IPPrefixLen": 0,
+     "IPv6Gateway": "",
+     "GlobalIPv6Address": "",
+     "GlobalIPv6PrefixLen": 0,
+     "DNSNames": null
+    }
+   }
+  }
+ }
+]

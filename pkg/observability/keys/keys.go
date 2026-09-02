@@ -78,6 +78,7 @@ const (
 	ReplicaGroup         = "replicaGroup"
 	Route                = "route"
 	Series               = "series"
+	Service              = "service"
 	Site                 = "site"
 	Size                 = "size"
 	Source               = "source"

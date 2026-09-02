@@ -31,8 +31,14 @@ The Kubernetes autodiscovery scenario (`TestALBDiscoveryKind`) is separate
 from compose entirely: it needs a kind cluster prepared via
 `make kind-integration-start` (see `kind/README.md`) and only runs when
 `TRICKSTER_KIND_TEST=1` is set. The autodiscovery soak
-(`TestALBDiscoverySoak`) runs only when `TRICKSTER_SOAK_TEST=1` is set and
-is exercised by the nightly workflow.
+(`TestALBDiscoverySoak`) runs only when `TRICKSTER_SOAK_TEST=1` is set, and
+is **run by hand rather than by CI**:
+
+```sh
+cd integration
+TRICKSTER_SOAK_TEST=1 TRICKSTER_SOAK_DURATION=60m \
+  go test -v -timeout 80m -run TestALBDiscoverySoak .
+```
 
 ## Running
 

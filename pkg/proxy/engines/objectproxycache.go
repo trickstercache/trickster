@@ -126,7 +126,7 @@ func handleCachePartialHit(pr *proxyRequest) error {
 func confirmTrueCacheHit(pr *proxyRequest) (bool, error) {
 	pr.cachingPolicy.Merge(pr.cacheDocument.CachingPolicy)
 
-	if (!pr.checkCacheFreshness()) && (pr.cachingPolicy.CanRevalidate) {
+	if (!pr.checkCacheFreshness()) && pr.cachingPolicy.CanRevalidate {
 		return false, handleCacheRevalidation(pr)
 	}
 	if !pr.cachingPolicy.IsFresh {

@@ -38,24 +38,21 @@
 package file
 
 import (
-	"bytes"
 	"context"
 	"errors"
-	"fmt"
-	"net"
 	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/discovery"
+	fileopts "github.com/trickstercache/trickster/v2/pkg/discovery/file/options"
+	"github.com/trickstercache/trickster/v2/pkg/discovery/memberlist"
 	do "github.com/trickstercache/trickster/v2/pkg/discovery/options"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/providers"
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/watchers/filesystem"
-
-	"go.yaml.in/yaml/v3"
 )
 
 // ErrStopped aliases discovery.ErrStopped for callers of this package
@@ -85,7 +82,7 @@ func pollIntervalFor(o *do.Options) time.Duration {
 	if o != nil && o.File != nil && o.File.PollInterval > 0 {
 		return time.Duration(o.File.PollInterval)
 	}
-	return do.DefaultFilePollInterval
+	return fileopts.DefaultPollInterval
 }
 
 // newSubscription validates the query and builds its runner; it satisfies
@@ -99,17 +96,6 @@ func (p *provider) newSubscription(q *do.Query, handler discovery.SnapshotHandle
 		path:    filepath.Clean(q.Path),
 		emitter: discovery.NewEmitter(handler),
 	}, nil
-}
-
-// memberEntry is one entry of the member-list file
-type memberEntry struct {
-	Name       string `yaml:"name,omitempty" json:"name,omitempty"`
-	Scheme     string `yaml:"scheme,omitempty" json:"scheme,omitempty"`
-	Address    string `yaml:"address" json:"address"`
-	PathPrefix string `yaml:"path_prefix,omitempty" json:"path_prefix,omitempty"`
-	Weight     int    `yaml:"weight,omitempty" json:"weight,omitempty"`
-	// ReplicaGroup optionally assigns the member to a TSM replica group
-	ReplicaGroup string `yaml:"replica_group,omitempty" json:"replica_group,omitempty"`
 }
 
 // subscription binds one member-list file's filesystem Watcher to the
@@ -186,7 +172,7 @@ func (s *subscription) Stop() {
 // rejects the change (keeping the last-good membership) and the Watcher
 // retries it on subsequent checks
 func (s *subscription) onChange(contents [][]byte) error {
-	snap, err := parseMembers(contents[0])
+	snap, err := memberlist.Parse(contents[0])
 	if err != nil {
 		s.warnRead(err)
 		return err
@@ -197,50 +183,6 @@ func (s *subscription) onChange(contents [][]byte) error {
 	// entries)
 	s.emitter.Emit(snap)
 	return nil
-}
-
-// parseMembers converts member-list file content into a Snapshot
-func parseMembers(b []byte) (discovery.Snapshot, error) {
-	var entries []memberEntry
-	if len(bytes.TrimSpace(b)) > 0 {
-		if err := yaml.Unmarshal(b, &entries); err != nil {
-			return nil, err
-		}
-	}
-	out := make(discovery.Snapshot, 0, len(entries))
-	for i, e := range entries {
-		if e.Address == "" {
-			return nil, fmt.Errorf("entry %d has no address", i)
-		}
-		if _, _, err := net.SplitHostPort(e.Address); err != nil {
-			return nil, fmt.Errorf("entry %d address %q is not host:port",
-				i, e.Address)
-		}
-		scheme := e.Scheme
-		if scheme == "" {
-			scheme = "http"
-		} else if scheme != "http" && scheme != "https" {
-			return nil, fmt.Errorf("entry %d scheme %q is not http or https",
-				i, e.Scheme)
-		}
-		if e.Weight < 0 {
-			return nil, fmt.Errorf("entry %d weight cannot be negative", i)
-		}
-		name := e.Name
-		if name == "" {
-			name = e.Address
-		}
-		out = append(out, discovery.Member{
-			Name:         name,
-			Scheme:       scheme,
-			Address:      e.Address,
-			PathPrefix:   e.PathPrefix,
-			Weight:       e.Weight,
-			ReplicaGroup: e.ReplicaGroup,
-			Ready:        discovery.ReadyUnknown,
-		})
-	}
-	return out, nil
 }
 
 // warnRead counts a read/parse failure and logs it once per failure streak

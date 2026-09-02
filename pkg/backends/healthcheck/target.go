@@ -18,20 +18,18 @@ package healthcheck
 
 import (
 	"context"
-	"crypto/rand"
 	"errors"
 	"fmt"
 	"io"
-	"math/big"
 	"net"
 	"net/http"
 	"slices"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
+	"github.com/trickstercache/trickster/v2/pkg/discovery/poller"
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
@@ -54,10 +52,9 @@ type target struct {
 	recoveryThreshold     int
 	failConsecutiveCnt    atomic.Int32
 	successConsecutiveCnt atomic.Int32
-	// guards cancel and wg across Start/Stop cycles
-	mtx    sync.Mutex
-	cancel context.CancelFunc
-	wg     sync.WaitGroup
+	// poller runs the probe loop; nil when interval <= 0, meaning the
+	// target is registered and reportable but never probed
+	poller *poller.Poller
 	ceb    bool
 	eb     string
 	eh     http.Header
@@ -150,6 +147,15 @@ func newBaseTarget(name, description string, o *ho.Options) *target {
 	t.status = &Status{name: name, detail: isd, description: description}
 	if interval > 0 {
 		t.status.Set(StatusInitializing)
+		p, err := poller.New(poller.Options{
+			Name:             name,
+			Interval:         interval,
+			DetachIterations: true,
+			OnPanic:          t.onProbePanic,
+		}, poller.Func(t.pollProbe))
+		if err == nil {
+			t.poller = p
+		}
 	}
 	return t
 }
@@ -210,74 +216,48 @@ func (t *target) isGoodBody(r io.ReadCloser) bool {
 	return true
 }
 
-// Start begins health checking the target
+// Start begins health checking the target. Starting an already-running
+// target stops its predecessor first, so Register-over-existing does not
+// leave two probe loops against one upstream.
 func (t *target) Start(ctx context.Context) {
-	t.mtx.Lock()
-	defer t.mtx.Unlock()
-	if t.cancel != nil {
-		t.cancel()
-		t.wg.Wait()
-		t.cancel = nil
+	if t.poller == nil {
+		return // interval <= 0: registered but never probed
 	}
-	t.wg = sync.WaitGroup{}
-	ctx, cancel := context.WithCancel(tctx.WithHealthCheckFlag(ctx, true))
-	t.cancel = cancel
-	t.probeLoop(ctx)
+	t.poller.Start(tctx.WithHealthCheckFlag(ctx, true))
 }
 
-// Stop stops healthchecking the target
+// Stop stops healthchecking the target. It waits for an in-flight probe to
+// finish rather than cancelling it; see the DetachIterations note in
+// newBaseTarget.
 func (t *target) Stop() {
-	t.mtx.Lock()
-	defer t.mtx.Unlock()
-	if t.cancel == nil {
+	if t.poller == nil {
 		return
 	}
-	t.cancel()
-	t.wg.Wait()
-	t.cancel = nil
+	t.poller.Stop()
 }
 
-func (t *target) probeLoop(ctx context.Context) {
-	// runProbe isolates each probe invocation so a panic only kills this
-	// iteration; the ticker loop keeps running and the target's Status stays
-	// fresh. Without this, a single bad probe (nil deref, panicking transport,
-	// etc.) silently freezes Status at its last value.
-	runProbe := func() {
-		defer func() {
-			if r := recover(); r != nil {
-				logger.Error("healthcheck probe panic", logging.Pairs{
-					keys.Target: t.Name(),
-					keys.Panic:  fmt.Sprintf("%v", r),
-				})
-				metrics.HealthcheckProbePanicRecovered.WithLabelValues(t.Name()).Inc()
-			}
-		}()
-		t.probe(context.WithoutCancel(ctx))
-	}
-	t.wg.Go(func() {
-		// this prevents all health checks from always probing at the same time
-		jitter := time.NewTimer(randomJitter(10*time.Millisecond, time.Second))
-		select {
-		case <-ctx.Done():
-			jitter.Stop()
-			return
-		case <-jitter.C:
-		}
-		// detach the probe request from the loop ctx so Stop waits for the
-		// in-flight probe to finish instead of cancelling it; this serializes
-		// Register-over-existing at the upstream level.
-		runProbe()
-		ticker := time.NewTicker(t.interval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return // probe complete, stop loop and prevent goroutine leak
-			case <-ticker.C:
-				runProbe()
-			}
-		}
+// pollProbe adapts probe to poller.Func.
+//
+// It always reports success, because a failed probe is not a failed
+// iteration: the poll happened, and what the result means is decided by
+// recordProbeResult's failure and recovery thresholds. Returning an error
+// here would hand that judgment to the poller's backoff and stretch the
+// interval that those thresholds are counted in, quietly changing how long
+// a target takes to be marked down.
+func (t *target) pollProbe(ctx context.Context) (time.Duration, error) {
+	t.probe(ctx)
+	return 0, nil
+}
+
+// onProbePanic keeps a panicking probe from freezing Status at its last
+// value, which would silently mask real upstream failures from operators
+// and from ALB pools.
+func (t *target) onProbePanic(r any, _ []byte) {
+	logger.Error("healthcheck probe panic", logging.Pairs{
+		keys.Target: t.Name(),
+		keys.Panic:  fmt.Sprintf("%v", r),
 	})
+	metrics.HealthcheckProbePanicRecovered.WithLabelValues(t.Name()).Inc()
 }
 
 func (t *target) probe(ctx context.Context) {
@@ -455,17 +435,6 @@ func LogHealthCheckError(targetName string, err error, status int) {
 	}
 
 	logger.Error(standardLogLine, pairs)
-}
-
-func randomJitter(min, max time.Duration) time.Duration {
-	if max <= min {
-		return min
-	}
-	n, err := rand.Int(rand.Reader, big.NewInt(int64(max-min)))
-	if err != nil {
-		return min
-	}
-	return min + time.Duration(n.Int64())
 }
 
 func newHTTPClient(timeout time.Duration) *http.Client {

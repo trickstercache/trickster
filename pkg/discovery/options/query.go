@@ -18,9 +18,13 @@ package options
 
 import (
 	"maps"
+	"slices"
 	"strconv"
+	"strings"
 
+	awsopts "github.com/trickstercache/trickster/v2/pkg/discovery/aws/options"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/providers"
+	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
 // Kubernetes query kinds
@@ -79,6 +83,40 @@ type Query struct {
 	// providers that do not convey one (default http). Ignored by the file
 	// provider, whose entries carry their own scheme.
 	Scheme string `yaml:"scheme,omitempty"`
+	// Filter is a provider-native, server-side selection expression. It is
+	// passed through rather than interpreted, so its syntax is the
+	// provider's own -- for consul, a filter expression such as
+	// 'Service.Meta.version == "2"'.
+	Filter string `yaml:"filter,omitempty"`
+	// Tags selects only members carrying every listed tag, for providers
+	// whose catalog has a native tag concept. It is the friendly form of
+	// the common case that Filter can also express.
+	Tags []string `yaml:"tags,omitempty"`
+	// Filters is the name/values form of provider-native selection, for
+	// APIs whose filters are structured rather than an expression. It is a
+	// separate field from Filter because the two are genuinely different
+	// syntaxes, not two spellings of one: EC2 takes Filter.N.Name with
+	// repeated values, where consul takes an expression string.
+	Filters map[string][]string `yaml:"filters,omitempty"`
+	// AddressType selects which of a cloud instance's addresses becomes the
+	// member address: private (default), public, or ipv6. Cloud inventories
+	// return hosts with several addresses and no opinion about which one a
+	// caller should reach.
+	AddressType string `yaml:"address_type,omitempty"`
+	// PortLabel names a key in the provider's own metadata namespace (an
+	// EC2 tag, an ECS task tag, a GCE label) whose value is the member's
+	// port. Cloud APIs return hosts, not endpoints, so a port has to come
+	// from somewhere: either Port, statically, or from the instances
+	// themselves through this.
+	PortLabel string `yaml:"port_label,omitempty"`
+	// Cluster names the cluster to query for providers whose API is scoped
+	// by one, such as ECS. When empty, the provider's own default applies.
+	Cluster string `yaml:"cluster,omitempty"`
+	// Network names the container network whose address to use, for
+	// providers where a member can be attached to several. When empty, a
+	// container on exactly one network resolves unambiguously and one on
+	// several is excluded rather than guessed at.
+	Network string `yaml:"network,omitempty"`
 }
 
 // Clone returns a perfect copy of the Query
@@ -87,17 +125,169 @@ func (q *Query) Clone() *Query {
 	if q.Selector != nil {
 		out.Selector = maps.Clone(q.Selector)
 	}
+	if q.Tags != nil {
+		out.Tags = slices.Clone(q.Tags)
+	}
+	if q.Filters != nil {
+		out.Filters = make(map[string][]string, len(q.Filters))
+		for k, v := range q.Filters {
+			out.Filters[k] = slices.Clone(v)
+		}
+	}
 	return &out
 }
 
-// Validate validates the Query against the provider of the discoverer it
-// will be submitted to, applying provider defaults (e.g., kubernetes kind)
-// to unset fields. albName is used for error context.
-func (q *Query) Validate(albName, provider string) error {
+// Query field names as they appear in config. They are constants because
+// each is named twice -- once in queryFields, once in every provider's
+// accepted set -- and a typo in the second place would silently make the
+// field unacceptable everywhere.
+const (
+	fieldKind              = "kind"
+	fieldNamespace         = "namespace"
+	fieldService           = "service"
+	fieldSelector          = "selector"
+	fieldPort              = "port"
+	fieldReplicaGroupLabel = "replica_group_label"
+	fieldSRVName           = "srv_name"
+	fieldHostname          = "hostname"
+	fieldPath              = "path"
+	fieldScheme            = "scheme"
+	fieldFilter            = "filter"
+	fieldTags              = "tags"
+	fieldFilters           = "filters"
+	fieldAddressType       = "address_type"
+	fieldPortLabel         = "port_label"
+	fieldCluster           = "cluster"
+	fieldNetwork           = "network"
+)
+
+// Address types accepted by Query.AddressType
+const (
+	// AddressPrivate selects an instance's private address (the default)
+	AddressPrivate = "private"
+	// AddressPublic selects an instance's public address
+	AddressPublic = "public"
+	// AddressIPv6 selects an instance's IPv6 address
+	AddressIPv6 = "ipv6"
+)
+
+// addressTypes enumerates the valid AddressType values
+var addressTypes = sets.New([]string{AddressPrivate, AddressPublic, AddressIPv6})
+
+// queryField pairs a Query field's config name with a reader, so that
+// validation can ask "is this set" without reflection.
+type queryField struct {
+	name  string
+	isSet func(*Query) bool
+}
+
+// queryFields enumerates every Query field. Validation is expressed as
+// "which fields does this provider accept" rather than, per provider,
+// "which of the other providers' fields must be unset". The latter is
+// O(providers x fields) to maintain, and its failure mode is silent: a
+// field added without touching every other provider's validator becomes
+// quietly legal everywhere. With a roster of providers still to land, the
+// table is the difference between a one-line change and eight.
+var queryFields = []queryField{
+	{fieldKind, func(q *Query) bool { return q.Kind != "" }},
+	{fieldNamespace, func(q *Query) bool { return q.Namespace != "" }},
+	{fieldService, func(q *Query) bool { return q.Service != "" }},
+	{fieldSelector, func(q *Query) bool { return len(q.Selector) > 0 }},
+	{fieldPort, func(q *Query) bool { return q.Port != "" }},
+	{fieldReplicaGroupLabel, func(q *Query) bool { return q.ReplicaGroupLabel != "" }},
+	{fieldSRVName, func(q *Query) bool { return q.SRVName != "" }},
+	{fieldHostname, func(q *Query) bool { return q.Hostname != "" }},
+	{fieldPath, func(q *Query) bool { return q.Path != "" }},
+	{fieldScheme, func(q *Query) bool { return q.Scheme != "" }},
+	{fieldFilter, func(q *Query) bool { return q.Filter != "" }},
+	{fieldTags, func(q *Query) bool { return len(q.Tags) > 0 }},
+	{fieldFilters, func(q *Query) bool { return len(q.Filters) > 0 }},
+	{fieldAddressType, func(q *Query) bool { return q.AddressType != "" }},
+	{fieldPortLabel, func(q *Query) bool { return q.PortLabel != "" }},
+	{fieldCluster, func(q *Query) bool { return q.Cluster != "" }},
+	{fieldNetwork, func(q *Query) bool { return q.Network != "" }},
+}
+
+// providerQueryFields names the query fields each provider accepts. A field
+// set but not listed here for the discoverer's provider fails startup
+// rather than being silently ignored. New providers register their
+// accepted fields here; new fields are added to queryFields above and to
+// the accepting providers here.
+var providerQueryFields = map[string]sets.Set[string]{
+	providers.Kubernetes: sets.New([]string{
+		fieldKind, fieldNamespace, fieldService, fieldSelector, fieldPort,
+		fieldReplicaGroupLabel, fieldScheme,
+	}),
+	providers.DNSSRV: sets.New([]string{fieldSRVName, fieldScheme}),
+	providers.DNSA:   sets.New([]string{fieldHostname, fieldPort, fieldScheme}),
+	providers.File:   sets.New([]string{fieldPath}),
+	providers.HTTPSD: sets.New([]string{fieldPath, fieldScheme}),
+	// gcp selects with a server-side filter expression and network tags,
+	// and like ec2 needs a port and an address choice, since a compute
+	// instance is a host rather than an endpoint
+	providers.GCP: sets.New([]string{
+		fieldFilter, fieldTags, fieldPort, fieldPortLabel,
+		fieldAddressType, fieldScheme, fieldReplicaGroupLabel,
+	}),
+	// azure narrows by vm tag and, like ec2 and gce, needs a port and an
+	// address choice since a vm is a host rather than an endpoint
+	providers.Azure: sets.New([]string{
+		fieldTags, fieldPort, fieldPortLabel,
+		fieldAddressType, fieldScheme, fieldReplicaGroupLabel,
+	}),
+	// docker selects with the Engine API's own filter document, and needs
+	// a network choice only when a container is on several. Unlike the
+	// cloud providers it does not require a port: the Engine API reports
+	// one
+	providers.Docker: sets.New([]string{
+		fieldFilters, fieldNetwork, fieldPort, fieldPortLabel,
+		fieldAddressType, fieldScheme, fieldReplicaGroupLabel,
+	}),
+	providers.Consul: sets.New([]string{
+		fieldService, fieldTags, fieldFilter, fieldScheme,
+		fieldReplicaGroupLabel,
+	}),
+	// nomad's native registry conveys no per-instance health, so there is
+	// no readiness to filter on; tags narrow client-side, filter narrows
+	// server-side
+	providers.Nomad: sets.New([]string{
+		fieldService, fieldTags, fieldFilter, fieldScheme,
+	}),
+	// the aws provider accepts the union of its services' fields; which are
+	// meaningful for a given aws.service is checked in validateAWS, which
+	// can see the discoverer's options
+	providers.AWS: sets.New([]string{
+		fieldFilters, fieldTags, fieldPort, fieldPortLabel,
+		fieldAddressType, fieldScheme, fieldReplicaGroupLabel,
+		fieldService, fieldCluster,
+	}),
+}
+
+// Validate validates the Query against the discoverer it will be submitted
+// to, applying provider defaults (e.g., kubernetes kind) to unset fields.
+// albName is used for error context.
+//
+// It takes the whole discoverer Options rather than just a provider name
+// because which query fields are legal is not always a function of the
+// provider alone: the forthcoming 'aws' provider accepts different fields
+// per aws.service, and that lives on the Options.
+func (q *Query) Validate(albName string, o *Options) error {
+	if o == nil {
+		return NewErrInvalidQuery(albName, "no discoverer options provided")
+	}
 	if q.Scheme != "" && q.Scheme != SchemeHTTP && q.Scheme != SchemeHTTPS {
 		return NewErrInvalidQuery(albName, "'scheme' must be http or https")
 	}
-	switch provider {
+	accepted, ok := providerQueryFields[o.Provider]
+	if !ok {
+		return NewErrInvalidQuery(albName, "unknown discovery provider "+o.Provider)
+	}
+	for _, f := range queryFields {
+		if f.isSet(q) && !accepted.Contains(f.name) {
+			return NewErrInvalidQueryField(albName, f.name, o.Provider)
+		}
+	}
+	switch o.Provider {
 	case providers.Kubernetes:
 		return q.validateKubernetes(albName)
 	case providers.DNSSRV:
@@ -106,16 +296,27 @@ func (q *Query) Validate(albName, provider string) error {
 		return q.validateDNSA(albName)
 	case providers.File:
 		return q.validateFile(albName)
+	case providers.HTTPSD:
+		return q.validateHTTPSD(albName)
+	case providers.Consul:
+		return q.validateConsul(albName)
+	case providers.Nomad:
+		return q.validateNomad(albName)
+	case providers.AWS:
+		return q.validateAWS(albName, o)
+	case providers.GCP:
+		return q.validateGCP(albName)
+	case providers.Docker:
+		return q.validateDocker(albName)
+	case providers.Azure:
+		return q.validateAzure(albName)
 	}
-	return NewErrInvalidQuery(albName, "unknown discovery provider "+provider)
+	return NewErrInvalidQuery(albName, "unknown discovery provider "+o.Provider)
 }
 
+// validateKubernetes applies the rules the accepted-field table cannot
+// express: the kind default, and which fields each kind requires.
 func (q *Query) validateKubernetes(albName string) error {
-	if err := q.requireUnset(albName, providers.Kubernetes,
-		field{"srv_name", q.SRVName}, field{"hostname", q.Hostname},
-		field{"path", q.Path}); err != nil {
-		return err
-	}
 	if q.Kind == "" {
 		q.Kind = KindEndpointSlices
 	}
@@ -146,16 +347,6 @@ func (q *Query) validateKubernetes(albName string) error {
 }
 
 func (q *Query) validateDNSSRV(albName string) error {
-	if err := q.requireUnset(albName, providers.DNSSRV,
-		field{"kind", q.Kind}, field{"namespace", q.Namespace},
-		field{"service", q.Service}, field{"hostname", q.Hostname},
-		field{"path", q.Path}, field{"port", q.Port},
-		field{"replica_group_label", q.ReplicaGroupLabel}); err != nil {
-		return err
-	}
-	if len(q.Selector) > 0 {
-		return NewErrInvalidQueryField(albName, "selector", providers.DNSSRV)
-	}
 	if q.SRVName == "" {
 		return NewErrInvalidQuery(albName,
 			"'srv_name' is required for the dns_srv provider")
@@ -164,16 +355,6 @@ func (q *Query) validateDNSSRV(albName string) error {
 }
 
 func (q *Query) validateDNSA(albName string) error {
-	if err := q.requireUnset(albName, providers.DNSA,
-		field{"kind", q.Kind}, field{"namespace", q.Namespace},
-		field{"service", q.Service}, field{"srv_name", q.SRVName},
-		field{"path", q.Path},
-		field{"replica_group_label", q.ReplicaGroupLabel}); err != nil {
-		return err
-	}
-	if len(q.Selector) > 0 {
-		return NewErrInvalidQueryField(albName, "selector", providers.DNSA)
-	}
 	if q.Hostname == "" {
 		return NewErrInvalidQuery(albName,
 			"'hostname' is required for the dns_a provider")
@@ -190,17 +371,6 @@ func (q *Query) validateDNSA(albName string) error {
 }
 
 func (q *Query) validateFile(albName string) error {
-	if err := q.requireUnset(albName, providers.File,
-		field{"kind", q.Kind}, field{"namespace", q.Namespace},
-		field{"service", q.Service}, field{"srv_name", q.SRVName},
-		field{"hostname", q.Hostname}, field{"port", q.Port},
-		field{"scheme", q.Scheme},
-		field{"replica_group_label", q.ReplicaGroupLabel}); err != nil {
-		return err
-	}
-	if len(q.Selector) > 0 {
-		return NewErrInvalidQueryField(albName, "selector", providers.File)
-	}
 	if q.Path == "" {
 		return NewErrInvalidQuery(albName,
 			"'path' is required for the file provider")
@@ -208,18 +378,183 @@ func (q *Query) validateFile(albName string) error {
 	return nil
 }
 
-type field struct {
-	name  string
-	value string
+// validateHTTPSD checks the optional URL path. Unlike the file provider's
+// required filesystem path, this one defaults to the endpoint itself.
+func (q *Query) validateHTTPSD(albName string) error {
+	if q.Path != "" && !strings.HasPrefix(q.Path, "/") {
+		return NewErrInvalidQuery(albName,
+			"'path' must begin with '/' for the http_sd provider")
+	}
+	return nil
 }
 
-func (q *Query) requireUnset(albName, provider string, fields ...field) error {
-	for _, f := range fields {
-		if f.value != "" {
-			return NewErrInvalidQueryField(albName, f.name, provider)
+// validateConsul checks the consul query. The service name is the only
+// required field; tags and filter narrow it server-side.
+func (q *Query) validateConsul(albName string) error {
+	if q.Service == "" {
+		return NewErrInvalidQuery(albName,
+			"'service' is required for the consul provider")
+	}
+	if slices.Contains(q.Tags, "") {
+		return NewErrInvalidQuery(albName,
+			"'tags' entries cannot be empty")
+	}
+	return nil
+}
+
+// validateNomad checks the nomad query, whose only required field is the
+// registered service name.
+func (q *Query) validateNomad(albName string) error {
+	if q.Service == "" {
+		return NewErrInvalidQuery(albName,
+			"'service' is required for the nomad provider")
+	}
+	if slices.Contains(q.Tags, "") {
+		return NewErrInvalidQuery(albName, "'tags' entries cannot be empty")
+	}
+	return nil
+}
+
+// validateAWS checks the aws query. A cloud instance inventory returns
+// hosts rather than endpoints, so a port must come from somewhere: either
+// statically, or from each instance's own metadata.
+func (q *Query) validateAWS(albName string, o *Options) error {
+	// which fields are meaningful depends on the aws.service, which is why
+	// Query.Validate takes the whole Options rather than a provider name. An
+	// unset service applies no per-service rules here; Options.Validate
+	// reports the missing service itself, with a better message than any
+	// field-level complaint would give.
+	switch o.AWS.GetService() {
+	case awsopts.ServiceEC2:
+		if q.Service != "" {
+			return NewErrInvalidQueryField(albName, fieldService,
+				providers.AWS+" service "+awsopts.ServiceEC2)
+		}
+		if q.Cluster != "" {
+			return NewErrInvalidQueryField(albName, fieldCluster,
+				providers.AWS+" service "+awsopts.ServiceEC2)
+		}
+	case awsopts.ServiceECS:
+		// ECS selects by cluster and service, not by instance attributes
+		for _, f := range []struct {
+			name string
+			set  bool
+		}{
+			{fieldFilters, len(q.Filters) > 0},
+			{fieldAddressType, q.AddressType != ""},
+		} {
+			if f.set {
+				return NewErrInvalidQueryField(albName, f.name,
+					providers.AWS+" service "+awsopts.ServiceECS)
+			}
+		}
+	}
+	if q.AddressType != "" && !addressTypes.Contains(q.AddressType) {
+		return NewErrInvalidQuery(albName,
+			"'address_type' must be private, public or ipv6")
+	}
+	if q.Port == "" && q.PortLabel == "" {
+		return NewErrInvalidQuery(albName,
+			"one of 'port' or 'port_label' is required for the aws provider, "+
+				"because instances have addresses but no port")
+	}
+	if q.Port != "" && !validPortNumber(q.Port) {
+		return NewErrInvalidQuery(albName,
+			"'port' must be a port number between 1 and 65535")
+	}
+	for name, values := range q.Filters {
+		if name == "" {
+			return NewErrInvalidQuery(albName, "'filters' names cannot be empty")
+		}
+		if len(values) == 0 {
+			return NewErrInvalidQuery(albName,
+				"'filters' entry "+name+" has no values")
+		}
+	}
+	if slices.Contains(q.Tags, "") {
+		return NewErrInvalidQuery(albName, "'tags' entries cannot be empty")
+	}
+	return nil
+}
+
+// validateGCP checks the gcp query. Like ec2, a compute instance is a host
+// rather than an endpoint, so a port must come from somewhere.
+func (q *Query) validateGCP(albName string) error {
+	if q.AddressType != "" && !addressTypes.Contains(q.AddressType) {
+		return NewErrInvalidQuery(albName,
+			"'address_type' must be private, public or ipv6")
+	}
+	if q.Port == "" && q.PortLabel == "" {
+		return NewErrInvalidQuery(albName,
+			"one of 'port' or 'port_label' is required for the gcp provider, "+
+				"because instances have addresses but no port")
+	}
+	if q.Port != "" && !validPortNumber(q.Port) {
+		return NewErrInvalidQuery(albName,
+			"'port' must be a port number between 1 and 65535")
+	}
+	if slices.Contains(q.Tags, "") {
+		return NewErrInvalidQuery(albName, "'tags' entries cannot be empty")
+	}
+	return nil
+}
+
+// validateDocker checks the docker query.
+//
+// Unlike the cloud providers, a port is not required: the Engine API
+// reports the container's own ports, and a container with exactly one TCP
+// port needs no restatement of it in config. A container with several is
+// excluded with a reason at refresh time rather than rejected at startup,
+// since whether the ambiguity exists depends on what is running.
+func (q *Query) validateDocker(albName string) error {
+	if q.AddressType != "" && !addressTypes.Contains(q.AddressType) {
+		return NewErrInvalidQuery(albName,
+			"'address_type' must be private, public or ipv6")
+	}
+	if q.Port != "" && !validPortNumber(q.Port) {
+		return NewErrInvalidQuery(albName,
+			"'port' must be a port number between 1 and 65535")
+	}
+	for name, values := range q.Filters {
+		if name == "" {
+			return NewErrInvalidQuery(albName, "'filters' names cannot be empty")
+		}
+		if len(values) == 0 {
+			return NewErrInvalidQuery(albName,
+				"'filters' entry "+name+" has no values")
 		}
 	}
 	return nil
+}
+
+// validateAzure checks the azure query. Like ec2 and gce, a vm is a host
+// rather than an endpoint, so a port must come from somewhere.
+func (q *Query) validateAzure(albName string) error {
+	if q.AddressType != "" && !addressTypes.Contains(q.AddressType) {
+		return NewErrInvalidQuery(albName,
+			"'address_type' must be private, public or ipv6")
+	}
+	if q.Port == "" && q.PortLabel == "" {
+		return NewErrInvalidQuery(albName,
+			"one of 'port' or 'port_label' is required for the azure provider, "+
+				"because virtual machines have addresses but no port")
+	}
+	if q.Port != "" && !validPortNumber(q.Port) {
+		return NewErrInvalidQuery(albName,
+			"'port' must be a port number between 1 and 65535")
+	}
+	if slices.Contains(q.Tags, "") {
+		return NewErrInvalidQuery(albName, "'tags' entries cannot be empty")
+	}
+	return nil
+}
+
+// GetAddressType returns the configured address type, or the default.
+func (q *Query) GetAddressType() string {
+	if q.AddressType == "" {
+		return AddressPrivate
+	}
+	return q.AddressType
 }
 
 func validPortNumber(s string) bool {

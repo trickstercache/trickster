@@ -45,7 +45,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog"
-	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	logmanager "github.com/trickstercache/trickster/v2/pkg/observability/logging/manager"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
@@ -114,7 +113,7 @@ func LoadAndValidate(args ...string) (*config.Config, error) {
 	if cfg == nil || len(cfg.Backends) == 0 {
 		return nil, te.ErrInvalidOptions
 	}
-	if cfg.Flags != nil && (cfg.Flags.PrintVersion) {
+	if cfg.Flags != nil && cfg.Flags.PrintVersion {
 		return cfg, nil
 	}
 
@@ -205,7 +204,7 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	for _, r := range listenerRouters {
 		r.RegisterRoute(newConf.MgmtConfig.PingHandlerPath, nil,
 			[]string{http.MethodGet, http.MethodHead}, matching.PathMatchTypeExact,
-			http.HandlerFunc((pnh.HandlerFunc(newConf))))
+			http.HandlerFunc(pnh.HandlerFunc(newConf)))
 	}
 
 	caches := applyCachingConfig(si, newConf)
@@ -315,7 +314,7 @@ func applyLoggingConfig(c, o *config.Config) {
 			return
 		}
 		if c.Logging.LogLevel != o.Logging.LogLevel {
-			oldLogger.SetLogLevel(level.Level(c.Logging.LogLevel))
+			oldLogger.SetLogLevel(c.Logging.LogLevel)
 		}
 		return
 	}

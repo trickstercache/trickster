@@ -19,6 +19,7 @@ package options
 import (
 	"testing"
 
+	awsopts "github.com/trickstercache/trickster/v2/pkg/discovery/aws/options"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/providers"
 
 	"github.com/stretchr/testify/require"
@@ -88,7 +89,7 @@ func TestQueryValidate(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			err := tc.q.Validate("test-alb", tc.provider)
+			err := tc.q.Validate("test-alb", &Options{Provider: tc.provider})
 			if tc.ok {
 				require.NoError(t, err)
 			} else {
@@ -100,7 +101,7 @@ func TestQueryValidate(t *testing.T) {
 
 func TestQueryValidateDefaultsKind(t *testing.T) {
 	q := &Query{Service: "prom"}
-	require.NoError(t, q.Validate("alb", providers.Kubernetes))
+	require.NoError(t, q.Validate("alb", &Options{Provider: providers.Kubernetes}))
 	require.Equal(t, KindEndpointSlices, q.Kind)
 }
 
@@ -115,16 +116,376 @@ func TestQueryClone(t *testing.T) {
 func TestQueryReplicaGroupLabelValidation(t *testing.T) {
 	// kubernetes accepts it on every kind
 	q := &Query{Service: "prom", ReplicaGroupLabel: "prometheus/replica"}
-	require.NoError(t, q.Validate("alb", providers.Kubernetes))
+	require.NoError(t, q.Validate("alb", &Options{Provider: providers.Kubernetes}))
 	q = &Query{Kind: KindPods, Selector: map[string]string{"a": "b"},
 		ReplicaGroupLabel: "prometheus/replica"}
-	require.NoError(t, q.Validate("alb", providers.Kubernetes))
+	require.NoError(t, q.Validate("alb", &Options{Provider: providers.Kubernetes}))
 
 	// non-kubernetes providers reject it
 	q = &Query{SRVName: "x", ReplicaGroupLabel: "l"}
-	require.Error(t, q.Validate("alb", providers.DNSSRV))
+	require.Error(t, q.Validate("alb", &Options{Provider: providers.DNSSRV}))
 	q = &Query{Hostname: "h", Port: "80", ReplicaGroupLabel: "l"}
-	require.Error(t, q.Validate("alb", providers.DNSA))
+	require.Error(t, q.Validate("alb", &Options{Provider: providers.DNSA}))
 	q = &Query{Path: "/x", ReplicaGroupLabel: "l"}
-	require.Error(t, q.Validate("alb", providers.File))
+	require.Error(t, q.Validate("alb", &Options{Provider: providers.File}))
+}
+
+// Query.Validate takes the whole discoverer Options because field
+// applicability is not always a function of the provider name alone -- the
+// forthcoming 'aws' provider varies by aws.service. These pin the
+// contract's edges.
+
+func TestQueryValidateRequiresOptions(t *testing.T) {
+	q := &Query{Path: "/tmp/members.yaml"}
+	err := q.Validate("alb", nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no discoverer options")
+}
+
+func TestQueryValidateUnknownProvider(t *testing.T) {
+	q := &Query{Path: "/tmp/members.yaml"}
+	err := q.Validate("alb", &Options{Provider: "not_a_provider"})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unknown discovery provider")
+}
+
+// Every provider must declare its accepted query fields. A provider added
+// to the supported set without a table entry would otherwise fail every
+// query with "unknown discovery provider" at startup, which points at the
+// operator's config rather than at the missing registration.
+func TestEveryProviderDeclaresAcceptedQueryFields(t *testing.T) {
+	for p := range providers.SupportedProviders() {
+		if _, ok := providerQueryFields[p]; !ok {
+			t.Errorf("provider %q has no entry in providerQueryFields", p)
+		}
+	}
+}
+
+// Every field named in a provider's accepted set must exist in queryFields,
+// or it can never be read and the acceptance is a no-op.
+func TestAcceptedQueryFieldsAreKnownFields(t *testing.T) {
+	known := make(map[string]bool, len(queryFields))
+	for _, f := range queryFields {
+		known[f.name] = true
+	}
+	for p, accepted := range providerQueryFields {
+		for name := range accepted {
+			if !known[name] {
+				t.Errorf("provider %q accepts unknown query field %q", p, name)
+			}
+		}
+	}
+}
+
+// The table is the rejection mechanism: a field set for a provider that
+// does not accept it must fail startup rather than be silently ignored.
+// This walks every field against every provider, which is the check the
+// previous per-provider requireUnset lists could drift away from.
+func TestEveryUnacceptedFieldIsRejected(t *testing.T) {
+	setters := map[string]func(*Query){
+		"kind":                func(q *Query) { q.Kind = KindPods },
+		"namespace":           func(q *Query) { q.Namespace = "ns" },
+		"service":             func(q *Query) { q.Service = "svc" },
+		"selector":            func(q *Query) { q.Selector = map[string]string{"a": "b"} },
+		"port":                func(q *Query) { q.Port = "9090" },
+		"replica_group_label": func(q *Query) { q.ReplicaGroupLabel = "shard" },
+		"srv_name":            func(q *Query) { q.SRVName = "_x._tcp.example.com" },
+		"hostname":            func(q *Query) { q.Hostname = "example.com" },
+		"path":                func(q *Query) { q.Path = "/tmp/members.yaml" },
+		"scheme":              func(q *Query) { q.Scheme = SchemeHTTPS },
+		"filter":              func(q *Query) { q.Filter = `Service.Meta.v == "2"` },
+		"tags":                func(q *Query) { q.Tags = []string{"prod"} },
+		"filters":             func(q *Query) { q.Filters = map[string][]string{"tag:env": {"prod"}} },
+		"address_type":        func(q *Query) { q.AddressType = AddressPublic },
+		"port_label":          func(q *Query) { q.PortLabel = "trickster-port" },
+		"cluster":             func(q *Query) { q.Cluster = "prod" },
+		"network":             func(q *Query) { q.Network = "bridge" },
+	}
+	// every field in the table must have a setter here, or the sweep below
+	// silently skips it
+	for _, f := range queryFields {
+		if _, ok := setters[f.name]; !ok {
+			t.Fatalf("query field %q has no setter in this test", f.name)
+		}
+	}
+	for p, accepted := range providerQueryFields {
+		for name, set := range setters {
+			if accepted.Contains(name) {
+				continue
+			}
+			t.Run(p+"/"+name, func(t *testing.T) {
+				q := &Query{}
+				set(q)
+				err := q.Validate("alb", &Options{Provider: p, AWS: &awsopts.Options{}})
+				require.Error(t, err, "%q should not be valid for %s", name, p)
+				require.Contains(t, err.Error(), name)
+			})
+		}
+	}
+}
+
+func TestQueryValidateHTTPSD(t *testing.T) {
+	o := &Options{Provider: providers.HTTPSD}
+	// path is optional: the endpoint alone is a complete target
+	require.NoError(t, (&Query{}).Validate("alb", o))
+	require.NoError(t, (&Query{Path: "/pools/a"}).Validate("alb", o))
+	require.NoError(t, (&Query{Scheme: SchemeHTTPS}).Validate("alb", o))
+
+	// a path that is not rooted would silently resolve against the
+	// endpoint's directory rather than its root
+	err := (&Query{Path: "pools/a"}).Validate("alb", o)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "must begin with '/'")
+}
+
+func TestQueryValidateConsul(t *testing.T) {
+	o := &Options{Provider: providers.Consul}
+	require.NoError(t, (&Query{Service: "web"}).Validate("alb", o))
+	require.NoError(t, (&Query{
+		Service: "web", Tags: []string{"prod"}, Filter: `Service.Meta.v == "2"`,
+		Scheme: SchemeHTTPS, ReplicaGroupLabel: "shard",
+	}).Validate("alb", o))
+
+	err := (&Query{}).Validate("alb", o)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "'service' is required")
+
+	err = (&Query{Service: "web", Tags: []string{"prod", ""}}).Validate("alb", o)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "cannot be empty")
+}
+
+// Tags is the first slice field on Query; Clone must copy it or two ALBs
+// sharing a template would share the backing array.
+func TestQueryCloneCopiesTags(t *testing.T) {
+	q := &Query{Service: "web", Tags: []string{"prod"}}
+	c := q.Clone()
+	c.Tags[0] = "staging"
+	require.Equal(t, "prod", q.Tags[0])
+}
+
+func TestQueryValidateNomad(t *testing.T) {
+	o := &Options{Provider: providers.Nomad}
+	require.NoError(t, (&Query{Service: "web"}).Validate("alb", o))
+	require.NoError(t, (&Query{
+		Service: "web", Tags: []string{"prod"}, Filter: `JobID == "web"`,
+		Scheme: SchemeHTTPS,
+	}).Validate("alb", o))
+
+	err := (&Query{}).Validate("alb", o)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "'service' is required")
+
+	err = (&Query{Service: "web", Tags: []string{""}}).Validate("alb", o)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "cannot be empty")
+
+	// nomad's native registry carries no health, so there is no replica
+	// group metadata to read either
+	err = (&Query{Service: "web", ReplicaGroupLabel: "shard"}).Validate("alb", o)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "replica_group_label")
+}
+
+func TestQueryValidateAWS(t *testing.T) {
+	o := &Options{Provider: providers.AWS,
+		AWS: &awsopts.Options{Service: awsopts.ServiceEC2}}
+	require.NoError(t, (&Query{Port: "9090"}).Validate("alb", o))
+	require.NoError(t, (&Query{PortLabel: "trickster-port"}).Validate("alb", o))
+	require.NoError(t, (&Query{
+		Port: "9090", AddressType: AddressPublic, Scheme: SchemeHTTPS,
+		Filters: map[string][]string{"tag:env": {"prod"}},
+		Tags:    []string{"service"}, ReplicaGroupLabel: "shard",
+	}).Validate("alb", o))
+
+	// instances have addresses but no port, so one must be configured
+	err := (&Query{}).Validate("alb", o)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "'port' or 'port_label'")
+
+	err = (&Query{Port: "not-a-port"}).Validate("alb", o)
+	require.Error(t, err)
+
+	err = (&Query{Port: "9090", AddressType: "elastic"}).Validate("alb", o)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "private, public or ipv6")
+
+	err = (&Query{Port: "9090", Filters: map[string][]string{"": {"x"}}}).Validate("alb", o)
+	require.Error(t, err)
+	err = (&Query{Port: "9090", Filters: map[string][]string{"tag:x": nil}}).Validate("alb", o)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no values")
+
+	require.Equal(t, AddressPrivate, (&Query{}).GetAddressType())
+	require.Equal(t, AddressPublic, (&Query{AddressType: AddressPublic}).GetAddressType())
+}
+
+// Filters is the first map-of-slice field on Query; Clone must copy both
+// levels or two ALBs sharing a template would share the backing arrays.
+func TestQueryCloneCopiesFilters(t *testing.T) {
+	q := &Query{Filters: map[string][]string{"tag:env": {"prod"}}}
+	c := q.Clone()
+	c.Filters["tag:env"][0] = "staging"
+	c.Filters["new"] = []string{"x"}
+	require.Equal(t, "prod", q.Filters["tag:env"][0])
+	require.NotContains(t, q.Filters, "new")
+}
+
+// Which aws query fields are meaningful depends on aws.service, which is
+// exactly why Query.Validate takes the whole Options.
+func TestQueryValidateAWSPerService(t *testing.T) {
+	ec2 := &Options{Provider: providers.AWS,
+		AWS: &awsopts.Options{Service: awsopts.ServiceEC2}}
+	ecs := &Options{Provider: providers.AWS,
+		AWS: &awsopts.Options{Service: awsopts.ServiceECS}}
+
+	// ec2 selects by instance attributes, not by cluster or service
+	require.NoError(t, (&Query{Port: "9090",
+		Filters: map[string][]string{"tag:env": {"prod"}}}).Validate("alb", ec2))
+	err := (&Query{Port: "9090", Cluster: "prod"}).Validate("alb", ec2)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "cluster")
+	err = (&Query{Port: "9090", Service: "web"}).Validate("alb", ec2)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "service")
+
+	// ecs selects by cluster and service, and has one address per task
+	require.NoError(t, (&Query{Port: "9090",
+		Cluster: "prod", Service: "web"}).Validate("alb", ecs))
+	err = (&Query{Port: "9090", AddressType: AddressPublic}).Validate("alb", ecs)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "address_type")
+	err = (&Query{Port: "9090",
+		Filters: map[string][]string{"tag:env": {"prod"}}}).Validate("alb", ecs)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "filters")
+
+	// the port rule applies to both
+	err = (&Query{Cluster: "prod"}).Validate("alb", ecs)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "'port' or 'port_label'")
+}
+
+func TestQueryValidateGCP(t *testing.T) {
+	o := &Options{Provider: providers.GCP}
+	require.NoError(t, (&Query{Port: "9090"}).Validate("alb", o))
+	require.NoError(t, (&Query{PortLabel: "port"}).Validate("alb", o))
+	require.NoError(t, (&Query{
+		Port: "9090", AddressType: AddressPublic, Scheme: SchemeHTTPS,
+		Filter: `labels.env = "prod"`, Tags: []string{"http-server"},
+		ReplicaGroupLabel: "shard",
+	}).Validate("alb", o))
+
+	// like ec2, an instance is a host rather than an endpoint
+	err := (&Query{}).Validate("alb", o)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "'port' or 'port_label'")
+
+	err = (&Query{Port: "9090", AddressType: "elastic"}).Validate("alb", o)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "private, public or ipv6")
+
+	err = (&Query{Port: "70000"}).Validate("alb", o)
+	require.Error(t, err)
+
+	err = (&Query{Port: "9090", Tags: []string{""}}).Validate("alb", o)
+	require.Error(t, err)
+
+	// gcp takes an expression filter, not the name/values form ec2 uses
+	err = (&Query{Port: "9090",
+		Filters: map[string][]string{"tag:env": {"prod"}}}).Validate("alb", o)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "filters")
+}
+
+// docker is the first provider where a port is optional: the Engine API
+// returns endpoints rather than bare hosts, so the daemon's own port is
+// used when a container exposes exactly one. Ambiguity is refused at
+// refresh time, not at startup, because whether it exists depends on what
+// is running.
+func TestQueryValidateDocker(t *testing.T) {
+	o := &Options{Provider: providers.Docker}
+
+	require.NoError(t, (&Query{}).Validate("alb", o),
+		"no port is legal for docker, unlike the cloud providers")
+	require.NoError(t, (&Query{Port: "9090"}).Validate("alb", o))
+	require.NoError(t, (&Query{PortLabel: "com.example.port"}).Validate("alb", o))
+	require.NoError(t, (&Query{
+		Port: "9090", AddressType: AddressPublic, Scheme: SchemeHTTPS,
+		Network: "backend", ReplicaGroupLabel: "shard",
+		Filters: map[string][]string{"label": {"discover=yes"}},
+	}).Validate("alb", o))
+
+	err := (&Query{AddressType: "bridge"}).Validate("alb", o)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "private, public or ipv6")
+
+	err = (&Query{Port: "70000"}).Validate("alb", o)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "between 1 and 65535")
+
+	err = (&Query{Filters: map[string][]string{"": {"x"}}}).Validate("alb", o)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "names cannot be empty")
+
+	err = (&Query{Filters: map[string][]string{"label": {}}}).Validate("alb", o)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "has no values")
+
+	// docker selects with the Engine API's filter document, not the
+	// expression form consul and gcp take
+	err = (&Query{Filter: `labels.env = "prod"`}).Validate("alb", o)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "filter")
+}
+
+// azure is a host-not-endpoint provider like ec2 and gce, so a port is
+// required; and it narrows by vm tag rather than by a filter document.
+func TestQueryValidateAzure(t *testing.T) {
+	o := &Options{Provider: providers.Azure}
+
+	require.NoError(t, (&Query{Port: "9090"}).Validate("alb", o))
+	require.NoError(t, (&Query{PortLabel: "port"}).Validate("alb", o))
+	require.NoError(t, (&Query{
+		Port: "9090", AddressType: AddressPublic, Scheme: SchemeHTTPS,
+		Tags: []string{"prometheus"}, ReplicaGroupLabel: "shard",
+	}).Validate("alb", o))
+
+	err := (&Query{}).Validate("alb", o)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "'port' or 'port_label'")
+	require.Contains(t, err.Error(), "virtual machines have addresses but no port")
+
+	err = (&Query{Port: "9090", AddressType: "public-ip"}).Validate("alb", o)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "private, public or ipv6")
+
+	err = (&Query{Port: "0"}).Validate("alb", o)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "between 1 and 65535")
+
+	err = (&Query{Port: "9090", Tags: []string{"ok", ""}}).Validate("alb", o)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "'tags' entries cannot be empty")
+
+	// azure takes neither form of server-side filter
+	require.Error(t, (&Query{Port: "9090",
+		Filter: `name eq 'x'`}).Validate("alb", o))
+	require.Error(t, (&Query{Port: "9090",
+		Filters: map[string][]string{"tag:env": {"prod"}}}).Validate("alb", o))
+	require.Error(t, (&Query{Port: "9090",
+		Network: "vnet"}).Validate("alb", o),
+		"'network' is docker's, not azure's")
+}
+
+// The discoverer-level errors are the ones this package owns.
+func TestDiscovererLevelErrors(t *testing.T) {
+	require.EqualError(t, NewErrInvalidDiscovererName("bad name"),
+		`invalid discoverer name "bad name"`)
+	require.EqualError(t, NewErrMissingDiscoveryProvider("fleet"),
+		`missing provider for discoverer "fleet"`)
+	require.EqualError(t, NewErrInvalidDiscoveryProvider("ec2", "fleet"),
+		`invalid provider "ec2" for discoverer "fleet"`)
+	require.EqualError(t, NewErrInvalidDiscoveryBlock("aws", "gcp", "fleet"),
+		`the "aws" options block is not valid for provider "gcp" in discoverer "fleet"`)
 }

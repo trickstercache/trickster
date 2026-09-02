@@ -1,0 +1,350 @@
+{
+  "failures": [],
+  "tasks": [
+    {
+      "attachments": [
+        {
+          "details": [
+            {
+              "name": "subnetId",
+              "value": "subnet-0387434e"
+            },
+            {
+              "name": "networkInterfaceId",
+              "value": "eni-0b6ac6b94fef7056c"
+            },
+            {
+              "name": "macAddress",
+              "value": "0a:ff:d0:87:ac:09"
+            },
+            {
+              "name": "privateDnsName",
+              "value": "ip-172-31-21-71.ec2.internal"
+            },
+            {
+              "name": "privateIPv4Address",
+              "value": "172.31.21.71"
+            }
+          ],
+          "id": "fb4dcb1e-89aa-470b-bcda-613e4644ce3f",
+          "status": "ATTACHED",
+          "type": "ElasticNetworkInterface"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "ecs.cpu-architecture",
+          "value": "x86_64"
+        }
+      ],
+      "availabilityZone": "us-east-1a",
+      "clusterArn": "arn:aws:ecs:us-east-1:123456789012:cluster/trickster-sd",
+      "connectivity": "CONNECTED",
+      "connectivityAt": 1788196108.999,
+      "containers": [
+        {
+          "containerArn": "arn:aws:ecs:us-east-1:123456789012:container/trickster-sd/5b59d47be56542a29a8085d773db8f7a/8ce2f0ed-1365-463e-920a-8184a2e73bda",
+          "cpu": "0",
+          "healthStatus": "UNKNOWN",
+          "image": "public.ecr.aws/docker/library/busybox:latest",
+          "imageDigest": "sha256:dc2d74b28e4cf8984fa52af1f39bc7c3d9c73760b41a74d629f5d11b1ab28616",
+          "lastStatus": "RUNNING",
+          "name": "app",
+          "networkBindings": [],
+          "networkInterfaces": [
+            {
+              "attachmentId": "fb4dcb1e-89aa-470b-bcda-613e4644ce3f",
+              "privateIpv4Address": "172.31.21.71"
+            }
+          ],
+          "runtimeId": "5b59d47be56542a29a8085d773db8f7a-0527074092",
+          "taskArn": "arn:aws:ecs:us-east-1:123456789012:task/trickster-sd/5b59d47be56542a29a8085d773db8f7a"
+        }
+      ],
+      "cpu": "256",
+      "createdAt": 1788196104.794,
+      "desiredStatus": "RUNNING",
+      "enableExecuteCommand": false,
+      "ephemeralStorage": {
+        "sizeInGiB": 20
+      },
+      "fargateEphemeralStorage": {
+        "sizeInGiB": 20
+      },
+      "group": "service:trickster-sd",
+      "healthStatus": "UNKNOWN",
+      "lastStatus": "RUNNING",
+      "launchType": "FARGATE",
+      "memory": "512",
+      "overrides": {
+        "containerOverrides": [
+          {
+            "name": "app"
+          }
+        ],
+        "inferenceAcceleratorOverrides": []
+      },
+      "platformFamily": "Linux",
+      "platformVersion": "1.4.0",
+      "pullStartedAt": 1788196115.988,
+      "pullStoppedAt": 1788196116.671,
+      "startedAt": 1788196116.622,
+      "startedBy": "ecs-svc/3010685065109074374",
+      "tags": [
+        {
+          "key": "aws:ecs:serviceName",
+          "value": "trickster-sd"
+        },
+        {
+          "key": "service",
+          "value": "prometheus"
+        },
+        {
+          "key": "trickster-port",
+          "value": "9090"
+        },
+        {
+          "key": "aws:ecs:clusterName",
+          "value": "trickster-sd"
+        },
+        {
+          "key": "Name",
+          "value": "trickster-sd"
+        }
+      ],
+      "taskArn": "arn:aws:ecs:us-east-1:123456789012:task/trickster-sd/5b59d47be56542a29a8085d773db8f7a",
+      "taskDefinitionArn": "arn:aws:ecs:us-east-1:123456789012:task-definition/trickster-sd:1",
+      "version": 3
+    },
+    {
+      "attachments": [
+        {
+          "details": [
+            {
+              "name": "subnetId",
+              "value": "subnet-0387434e"
+            },
+            {
+              "name": "networkInterfaceId",
+              "value": "eni-0b60e80da8b07f317"
+            },
+            {
+              "name": "macAddress",
+              "value": "0a:ff:c1:b4:76:99"
+            },
+            {
+              "name": "privateDnsName",
+              "value": "ip-172-31-27-13.ec2.internal"
+            },
+            {
+              "name": "privateIPv4Address",
+              "value": "172.31.27.13"
+            }
+          ],
+          "id": "6d0c5377-0631-4744-814f-6d28a6e62860",
+          "status": "ATTACHED",
+          "type": "ElasticNetworkInterface"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "ecs.cpu-architecture",
+          "value": "x86_64"
+        }
+      ],
+      "availabilityZone": "us-east-1a",
+      "clusterArn": "arn:aws:ecs:us-east-1:123456789012:cluster/trickster-sd",
+      "connectivity": "CONNECTED",
+      "connectivityAt": 1788196109.443,
+      "containers": [
+        {
+          "containerArn": "arn:aws:ecs:us-east-1:123456789012:container/trickster-sd/7c1348e70f7f493f97e8678585d8e25f/a8a523c5-96d1-4fec-9466-edf3011009d6",
+          "cpu": "0",
+          "healthStatus": "UNKNOWN",
+          "image": "public.ecr.aws/docker/library/busybox:latest",
+          "imageDigest": "sha256:dc2d74b28e4cf8984fa52af1f39bc7c3d9c73760b41a74d629f5d11b1ab28616",
+          "lastStatus": "RUNNING",
+          "name": "app",
+          "networkBindings": [],
+          "networkInterfaces": [
+            {
+              "attachmentId": "6d0c5377-0631-4744-814f-6d28a6e62860",
+              "privateIpv4Address": "172.31.27.13"
+            }
+          ],
+          "runtimeId": "7c1348e70f7f493f97e8678585d8e25f-0527074092",
+          "taskArn": "arn:aws:ecs:us-east-1:123456789012:task/trickster-sd/7c1348e70f7f493f97e8678585d8e25f"
+        }
+      ],
+      "cpu": "256",
+      "createdAt": 1788196104.794,
+      "desiredStatus": "RUNNING",
+      "enableExecuteCommand": false,
+      "ephemeralStorage": {
+        "sizeInGiB": 20
+      },
+      "fargateEphemeralStorage": {
+        "sizeInGiB": 20
+      },
+      "group": "service:trickster-sd",
+      "healthStatus": "UNKNOWN",
+      "lastStatus": "RUNNING",
+      "launchType": "FARGATE",
+      "memory": "512",
+      "overrides": {
+        "containerOverrides": [
+          {
+            "name": "app"
+          }
+        ],
+        "inferenceAcceleratorOverrides": []
+      },
+      "platformFamily": "Linux",
+      "platformVersion": "1.4.0",
+      "pullStartedAt": 1788196117.102,
+      "pullStoppedAt": 1788196117.831,
+      "startedAt": 1788196117.745,
+      "startedBy": "ecs-svc/3010685065109074374",
+      "tags": [
+        {
+          "key": "aws:ecs:serviceName",
+          "value": "trickster-sd"
+        },
+        {
+          "key": "service",
+          "value": "prometheus"
+        },
+        {
+          "key": "trickster-port",
+          "value": "9090"
+        },
+        {
+          "key": "aws:ecs:clusterName",
+          "value": "trickster-sd"
+        },
+        {
+          "key": "Name",
+          "value": "trickster-sd"
+        }
+      ],
+      "taskArn": "arn:aws:ecs:us-east-1:123456789012:task/trickster-sd/7c1348e70f7f493f97e8678585d8e25f",
+      "taskDefinitionArn": "arn:aws:ecs:us-east-1:123456789012:task-definition/trickster-sd:1",
+      "version": 3
+    },
+    {
+      "attachments": [
+        {
+          "details": [
+            {
+              "name": "subnetId",
+              "value": "subnet-0387434e"
+            },
+            {
+              "name": "networkInterfaceId",
+              "value": "eni-01e660185ca6b6362"
+            },
+            {
+              "name": "macAddress",
+              "value": "0a:ff:e6:67:8f:d9"
+            },
+            {
+              "name": "privateDnsName",
+              "value": "ip-172-31-25-76.ec2.internal"
+            },
+            {
+              "name": "privateIPv4Address",
+              "value": "172.31.25.76"
+            }
+          ],
+          "id": "ba22f47e-2090-41f1-939c-0ae047133674",
+          "status": "ATTACHED",
+          "type": "ElasticNetworkInterface"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "ecs.cpu-architecture",
+          "value": "x86_64"
+        }
+      ],
+      "availabilityZone": "us-east-1a",
+      "clusterArn": "arn:aws:ecs:us-east-1:123456789012:cluster/trickster-sd",
+      "connectivity": "CONNECTED",
+      "connectivityAt": 1788196090.106,
+      "containers": [
+        {
+          "containerArn": "arn:aws:ecs:us-east-1:123456789012:container/trickster-sd/9a9bfb8164134401bfd8b475063acef5/16b24156-6310-4761-9112-512031b7b56b",
+          "cpu": "0",
+          "healthStatus": "UNKNOWN",
+          "image": "public.ecr.aws/docker/library/busybox:latest",
+          "imageDigest": "sha256:dc2d74b28e4cf8984fa52af1f39bc7c3d9c73760b41a74d629f5d11b1ab28616",
+          "lastStatus": "RUNNING",
+          "name": "app",
+          "networkBindings": [],
+          "networkInterfaces": [
+            {
+              "attachmentId": "ba22f47e-2090-41f1-939c-0ae047133674",
+              "privateIpv4Address": "172.31.25.76"
+            }
+          ],
+          "runtimeId": "9a9bfb8164134401bfd8b475063acef5-0527074092",
+          "taskArn": "arn:aws:ecs:us-east-1:123456789012:task/trickster-sd/9a9bfb8164134401bfd8b475063acef5"
+        }
+      ],
+      "cpu": "256",
+      "createdAt": 1788196085.566,
+      "desiredStatus": "RUNNING",
+      "enableExecuteCommand": false,
+      "ephemeralStorage": {
+        "sizeInGiB": 20
+      },
+      "fargateEphemeralStorage": {
+        "sizeInGiB": 20
+      },
+      "group": "service:trickster-sd",
+      "healthStatus": "UNKNOWN",
+      "lastStatus": "RUNNING",
+      "launchType": "FARGATE",
+      "memory": "512",
+      "overrides": {
+        "containerOverrides": [
+          {
+            "name": "app"
+          }
+        ],
+        "inferenceAcceleratorOverrides": []
+      },
+      "platformFamily": "Linux",
+      "platformVersion": "1.4.0",
+      "pullStartedAt": 1788196099.962,
+      "pullStoppedAt": 1788196100.545,
+      "startedAt": 1788196099.508,
+      "startedBy": "ecs-svc/3010685065109074374",
+      "tags": [
+        {
+          "key": "aws:ecs:serviceName",
+          "value": "trickster-sd"
+        },
+        {
+          "key": "service",
+          "value": "prometheus"
+        },
+        {
+          "key": "trickster-port",
+          "value": "9090"
+        },
+        {
+          "key": "aws:ecs:clusterName",
+          "value": "trickster-sd"
+        },
+        {
+          "key": "Name",
+          "value": "trickster-sd"
+        }
+      ],
+      "taskArn": "arn:aws:ecs:us-east-1:123456789012:task/trickster-sd/9a9bfb8164134401bfd8b475063acef5",
+      "taskDefinitionArn": "arn:aws:ecs:us-east-1:123456789012:task-definition/trickster-sd:1",
+      "version": 4
+    }
+  ]
+}

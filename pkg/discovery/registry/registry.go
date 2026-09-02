@@ -23,9 +23,16 @@ import (
 	"fmt"
 
 	"github.com/trickstercache/trickster/v2/pkg/discovery"
+	awssd "github.com/trickstercache/trickster/v2/pkg/discovery/aws"
+	"github.com/trickstercache/trickster/v2/pkg/discovery/azure"
+	"github.com/trickstercache/trickster/v2/pkg/discovery/consul"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/dns"
+	"github.com/trickstercache/trickster/v2/pkg/discovery/docker"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/file"
+	"github.com/trickstercache/trickster/v2/pkg/discovery/gcp"
+	"github.com/trickstercache/trickster/v2/pkg/discovery/httpsd"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/kubernetes"
+	"github.com/trickstercache/trickster/v2/pkg/discovery/nomad"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/options"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/providers"
 )
@@ -39,6 +46,13 @@ func SupportedProviders() discovery.Lookup {
 		providers.DNSSRV:     dns.NewSRV,
 		providers.DNSA:       dns.NewA,
 		providers.File:       file.New,
+		providers.HTTPSD:     httpsd.New,
+		providers.Consul:     consul.New,
+		providers.Nomad:      nomad.New,
+		providers.AWS:        awssd.New,
+		providers.GCP:        gcp.New,
+		providers.Docker:     docker.New,
+		providers.Azure:      azure.New,
 	}
 }
 
