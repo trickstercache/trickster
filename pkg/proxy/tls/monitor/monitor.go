@@ -63,9 +63,13 @@ type watchedSet struct {
 type listenerNotifier struct {
 	name     string
 	groupKey string
-	watch    bool
-	fileSets []tr.FileSet
-	memory   map[string]*tr.Entry
+	// groupKeys lists every listener group member sharing this certificate
+	// set, so an endpoint that binds its own socket -- HTTP/3 alongside the
+	// TLS/TCP endpoint -- rotates with it rather than serving a stale cert.
+	groupKeys []string
+	watch     bool
+	fileSets  []tr.FileSet
+	memory    map[string]*tr.Entry
 }
 
 type watchSpec struct {
@@ -128,6 +132,11 @@ func (m *Monitor) Apply(conf *config.Config, lg *listener.Group) {
 		}
 		if len(ln.fileSets) == 0 {
 			continue
+		}
+		ln.groupKeys = []string{ln.groupKey}
+		if o.HTTP3Enabled() {
+			ln.groupKeys = append(ln.groupKeys,
+				listener.GroupKey(name, listenerconfig.ProtocolHTTP3, false))
 		}
 		newListeners[ln.groupKey] = ln
 	}
@@ -320,19 +329,34 @@ func (m *Monitor) rebuild(groupKey string) {
 	}
 	group := m.group
 	name := ln.name
+	keys := slices.Clone(ln.groupKeys)
+	if len(keys) == 0 {
+		keys = []string{groupKey}
+	}
 	m.mtx.Unlock()
 
-	l := group.Get(groupKey)
-	if l == nil || l.CertSwapper() == nil {
+	var primary tr.CertStore
+	for _, key := range keys {
+		l := group.Get(key)
+		if l == nil || l.CertSwapper() == nil {
+			continue
+		}
+		store, ok := l.CertSwapper().(tr.CertStore)
+		if !ok {
+			continue
+		}
+		store.SetEntries(entries)
+		if primary == nil {
+			primary = store
+		}
+	}
+	if primary == nil {
 		return
 	}
-	store, ok := l.CertSwapper().(tr.CertStore)
-	if !ok {
-		return
-	}
-	store.SetEntries(entries)
 	clearListenerMetrics(name)
-	infos := store.Entries()
+	// every endpoint sharing this notifier now holds the same entries, so one
+	// store is enough to report the listener's inventory
+	infos := primary.Entries()
 	metrics.TLSCertificateStoreSize.WithLabelValues(name).Set(float64(len(infos)))
 	for _, info := range infos {
 		metrics.TLSCertificateNotAfter.WithLabelValues(name, info.Key).

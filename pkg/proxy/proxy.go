@@ -42,8 +42,22 @@ func NewHTTPClient(o *bo.Options) (*http.Client, error) {
 		return nil, err
 	}
 
+	// Deliberately no Client.Timeout: it bounds the entire body read, which
+	// truncates long-lived streams and large objects mid-transfer and presents
+	// the result as a complete response. Time-to-first-byte is bounded by
+	// ResponseHeaderTimeout below, and a stalled transfer is bounded by the
+	// per-read idle deadline the proxy engine applies to the response body.
+	// The health check client sets its own total timeout after construction.
+	// prior-knowledge h2c: cleartext HTTP/2 applies only when HTTP1 is absent
+	// from the set, so the transport must not offer an HTTP/1 fallback
+	var protocols *http.Protocols
+	if o.H2CPriorKnowledge {
+		var p http.Protocols
+		p.SetUnencryptedHTTP2(true)
+		protocols = &p
+	}
+
 	client := &http.Client{
-		Timeout: time.Duration(o.Timeout),
 		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
@@ -62,6 +76,8 @@ func NewHTTPClient(o *bo.Options) (*http.Client, error) {
 			TLSClientConfig:       TLSConfig,
 			// explicit: Go suppresses h2 auto-enable when DialContext or TLSClientConfig is custom.
 			ForceAttemptHTTP2: true,
+			// nil unless h2c is configured, leaving ForceAttemptHTTP2 in charge
+			Protocols: protocols,
 		},
 	}
 

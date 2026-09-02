@@ -21,6 +21,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/albpool"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
@@ -55,7 +56,7 @@ func TestFRDisqualifiesTruncatedWinner(t *testing.T) {
 	if w.Code == http.StatusOK {
 		got := w.Body.Len()
 		t.Fatalf("FR served truncated upstream as 200: body %d bytes vs Content-Length %s (cap %d)",
-			got, w.Header().Get("Content-Length"), maxBytes)
+			got, w.Header().Get(headers.NameContentLength), maxBytes)
 	}
 	if w.Code != http.StatusBadGateway {
 		t.Fatalf("expected 502 (no qualifying member), got %d", w.Code)
@@ -87,7 +88,7 @@ func TestFRTruncatedAllMembersFallback(t *testing.T) {
 
 	if w.Code == http.StatusOK && w.Body.Len() < bodySize {
 		t.Fatalf("FR served truncated 200: body %d bytes vs Content-Length %s (cap %d)",
-			w.Body.Len(), w.Header().Get("Content-Length"), maxBytes)
+			w.Body.Len(), w.Header().Get(headers.NameContentLength), maxBytes)
 	}
 }
 

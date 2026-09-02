@@ -97,9 +97,9 @@ func TestWriteResponseHeaderCopiesHeaders(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	h := http.Header{
-		"X-Custom":      []string{"first", "second"},
-		"X-Empty":       []string{},
-		"Cache-Control": []string{"no-cache"},
+		"X-Custom":               []string{"first", "second"},
+		"X-Empty":                []string{},
+		headers.NameCacheControl: []string{"no-cache"},
 	}
 
 	err := WriteResponseHeader(w, http.StatusAccepted, 2, h)
@@ -107,7 +107,7 @@ func TestWriteResponseHeaderCopiesHeaders(t *testing.T) {
 	require.Equal(t, http.StatusAccepted, w.Code)
 	require.Equal(t, "first", w.Header().Get("X-Custom"))
 	require.Empty(t, w.Header().Values("X-Empty"))
-	require.Equal(t, "no-cache", w.Header().Get("Cache-Control"))
+	require.Equal(t, "no-cache", w.Header().Get(headers.NameCacheControl))
 	require.Equal(t, headers.ValueApplicationCSV+"; charset=UTF-8",
 		w.Header().Get(headers.NameContentType))
 }

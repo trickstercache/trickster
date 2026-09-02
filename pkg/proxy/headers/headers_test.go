@@ -148,6 +148,30 @@ func TestMerge(t *testing.T) {
 	}
 }
 
+func TestMergeMultiValue(t *testing.T) {
+	src := make(http.Header)
+	src.Add(NameSetCookie, "a=1")
+	src.Add(NameSetCookie, "b=2")
+	src.Add("Vary", "Accept-Encoding")
+	src.Add("Vary", "Origin")
+
+	dst := make(http.Header)
+	Merge(dst, src)
+
+	if got := dst.Values(NameSetCookie); len(got) != 2 {
+		t.Errorf("expected 2 Set-Cookie values, got %d (%v)", len(got), got)
+	}
+	if got := dst.Values("Vary"); len(got) != 2 {
+		t.Errorf("expected 2 Vary values, got %d (%v)", len(got), got)
+	}
+
+	// the merged slice must not alias the source
+	src.Set(NameSetCookie, "mutated")
+	if got := dst.Values(NameSetCookie); len(got) != 2 || got[0] != "a=1" {
+		t.Errorf("destination aliases source: %v", got)
+	}
+}
+
 func TestAddResponseHeaders(t *testing.T) {
 	headers := http.Header{}
 	appinfo.Name = "trickster-test"

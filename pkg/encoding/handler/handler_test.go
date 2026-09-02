@@ -45,3 +45,16 @@ func TestHandleCompression(t *testing.T) {
 		t.Error("writer data mismatch")
 	}
 }
+
+func TestHandleCompressionSupportsHijacker(t *testing.T) {
+	var supportsHijacker bool
+	f := HandleCompression(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, supportsHijacker = w.(http.Hijacker)
+	}), nil)
+	r := httptest.NewRequest(http.MethodGet, "http://trickstercache.org/", nil)
+	f.ServeHTTP(httptest.NewRecorder(), r)
+
+	if !supportsHijacker {
+		t.Error("compression response writer does not implement http.Hijacker")
+	}
+}

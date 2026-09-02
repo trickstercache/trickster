@@ -31,6 +31,7 @@ import (
 	taws "github.com/trickstercache/trickster/v2/pkg/aws"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
 )
 
@@ -162,7 +163,7 @@ func TestNewHTTPClient_ContextCancelMidStream(t *testing.T) {
 	defer close(releaseHandler)
 
 	srv := newH2OfferingServer(t, func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Header().Set(headers.NameContentType, "application/octet-stream")
 		w.WriteHeader(http.StatusOK)
 		fl, _ := w.(http.Flusher)
 		if fl != nil {
@@ -264,4 +265,73 @@ func TestNewHTTPClient_SigV4WrapsIdleCloser(t *testing.T) {
 		t.Fatalf("SigV4 client Transport %T does not satisfy idleCloser", c.Transport)
 	}
 	ic.CloseIdleConnections()
+}
+
+// newH2COnlyServer serves cleartext HTTP/2 by prior knowledge and refuses
+// HTTP/1.1, which is what an h2c-only origin looks like on the wire.
+func newH2COnlyServer(t *testing.T, h http.HandlerFunc) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewUnstartedServer(h)
+	var p http.Protocols
+	p.SetUnencryptedHTTP2(true)
+	srv.Config.Protocols = &p
+	srv.Start()
+	return srv
+}
+
+func TestNewHTTPClient_H2CPriorKnowledge(t *testing.T) {
+	srv := newH2COnlyServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Proto", r.Proto)
+		w.WriteHeader(http.StatusOK)
+	})
+	defer srv.Close()
+
+	o := bo.New()
+	o.Timeout = timeconv.Duration(5 * time.Second)
+	o.H2CPriorKnowledge = true
+	c, err := NewHTTPClient(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr, ok := c.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("expected *http.Transport, got %T", c.Transport)
+	}
+	// the stdlib transport must be retained so its timeouts and pool limits
+	// continue to apply to an h2c backend
+	if tr.Protocols == nil || !tr.Protocols.UnencryptedHTTP2() || tr.Protocols.HTTP1() {
+		t.Fatalf("expected UnencryptedHTTP2 without HTTP1, got %v", tr.Protocols)
+	}
+	if tr.ResponseHeaderTimeout != 5*time.Second {
+		t.Errorf("time-to-first-byte bound was lost: %v", tr.ResponseHeaderTimeout)
+	}
+
+	resp, err := c.Get(srv.URL)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	defer resp.Body.Close()
+	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+		t.Fatal(err)
+	}
+	if resp.ProtoMajor != 2 {
+		t.Errorf("expected HTTP/2, got %s (server X-Proto=%s)", resp.Proto, resp.Header.Get("X-Proto"))
+	}
+}
+
+func TestNewHTTPClient_ProtocolsNilByDefault(t *testing.T) {
+	c, err := NewHTTPClient(bo.New())
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr, ok := c.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("expected *http.Transport, got %T", c.Transport)
+	}
+	if tr.Protocols != nil {
+		t.Errorf("Protocols must stay nil so ForceAttemptHTTP2 governs: %v", tr.Protocols)
+	}
+	if !tr.ForceAttemptHTTP2 {
+		t.Error("ForceAttemptHTTP2 should remain enabled")
+	}
 }

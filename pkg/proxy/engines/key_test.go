@@ -513,7 +513,7 @@ func TestDeriveCacheKeyAuthHeader(t *testing.T) {
 		request.NewResources(client.Configuration(), client.Configuration().Paths[0],
 			nil, nil, nil, nil)))
 
-	tr.Header.Add("Authorization", "test")
+	tr.Header.Add(headers.NameAuthorization, "test")
 	tr.Header.Add("X-Test-Header", "test2")
 
 	pr := newProxyRequest(tr, nil)
@@ -639,15 +639,15 @@ func TestDeriveCacheKeyEffectiveIdentity(t *testing.T) {
 
 	// rotating a pinned credential rotates the key, with no inbound auth at
 	// all — the metadata-route and late-fallback shape
-	kA := newPR(path(map[string]string{"Authorization": "Bearer tenant-a"}, nil), "").DeriveCacheKey("")
-	kB := newPR(path(map[string]string{"Authorization": "Bearer tenant-b"}, nil), "").DeriveCacheKey("")
+	kA := newPR(path(map[string]string{headers.NameAuthorization: "Bearer tenant-a"}, nil), "").DeriveCacheKey("")
+	kB := newPR(path(map[string]string{headers.NameAuthorization: "Bearer tenant-b"}, nil), "").DeriveCacheKey("")
 	if kA == kB {
 		t.Error("a rotated pinned credential must change the cache key")
 	}
 
 	// with a static override, the discarded inbound value does not fragment
 	// the key, but the configured replacement is represented in it
-	pcPinned := path(map[string]string{"Authorization": "Bearer tenant-a"}, nil)
+	pcPinned := path(map[string]string{headers.NameAuthorization: "Bearer tenant-a"}, nil)
 	k1 := newPR(pcPinned, "Bearer client-1").DeriveCacheKey("")
 	k2 := newPR(pcPinned, "Bearer client-2").DeriveCacheKey("")
 	if k1 != k2 {

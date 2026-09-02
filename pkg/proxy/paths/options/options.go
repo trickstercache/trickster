@@ -84,6 +84,10 @@ type Options struct {
 
 	// Handler is the HTTP Handler represented by the Path's HandlerName
 	Handler http.Handler `yaml:"-"`
+	// HandlerFromRegistry is true when Handler was resolved from the Backend's
+	// registered handler lookup, rather than assigned directly by a caller.
+	// Only a registry-resolved handler can be swapped for an equivalent one.
+	HandlerFromRegistry bool `yaml:"-"`
 	// ResponseBodyBytes provides a byte slice version of the ResponseBody value
 	ResponseBodyBytes []byte `yaml:"-"`
 	// MatchType is the PathMatchType representation of MatchTypeName

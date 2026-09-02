@@ -29,6 +29,7 @@ import (
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	at "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/types"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 )
 
@@ -282,7 +283,7 @@ func TestServeHTTP(t *testing.T) {
 		const inboundAuthorization = "Basic YWxpY2U6aW5ib3VuZA=="
 		var observedAuthorization string
 		defaultTarget := testRoute(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			observedAuthorization = r.Header.Get("Authorization")
+			observedAuthorization = r.Header.Get(headers.NameAuthorization)
 			w.WriteHeader(http.StatusOK)
 		}))
 		unavailableTarget := testRoute(http.NotFoundHandler())
@@ -301,7 +302,7 @@ func TestServeHTTP(t *testing.T) {
 		}
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
-		r.Header.Set("Authorization", inboundAuthorization)
+		r.Header.Set(headers.NameAuthorization, inboundAuthorization)
 		r = request.SetResources(r, &request.Resources{
 			AuthResult: &at.AuthResult{Username: "alice", Status: at.AuthSuccess},
 		})
@@ -379,12 +380,12 @@ func TestServeHTTP(t *testing.T) {
 	t.Run("inbound Authorization sanitized after remap", func(t *testing.T) {
 		var observedAuthz string
 		target := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			observedAuthz = r.Header.Get("Authorization")
+			observedAuthz = r.Header.Get(headers.NameAuthorization)
 			w.WriteHeader(http.StatusOK)
 		})
 		auth := &mockAuth{
 			sanitizeFn: func(r *http.Request) {
-				r.Header.Del("Authorization")
+				r.Header.Del(headers.NameAuthorization)
 			},
 		}
 		h := &Handler{
@@ -404,7 +405,7 @@ func TestServeHTTP(t *testing.T) {
 		w := httptest.NewRecorder()
 		r, _ := http.NewRequest("GET", "http://example.com/", nil)
 		// inbound: alice's original creds
-		r.Header.Set("Authorization", "Basic YWxpY2U6b2xkcHc=") // alice:oldpw
+		r.Header.Set(headers.NameAuthorization, "Basic YWxpY2U6b2xkcHc=") // alice:oldpw
 		r = request.SetResources(r, &request.Resources{
 			AuthResult: &at.AuthResult{Username: "alice", Status: at.AuthSuccess},
 		})

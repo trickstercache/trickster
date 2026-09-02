@@ -739,3 +739,19 @@ func TestAcceptWrapsLimitListenerConn(t *testing.T) {
 		t.Errorf("Accept did not wrap LimitListener conn: got %T, want *observedConnection", conn)
 	}
 }
+
+func TestServerProtocols(t *testing.T) {
+	p := serverProtocols()
+	if p == nil {
+		t.Fatal("expected protocols to be set")
+	}
+	if !p.HTTP1() {
+		t.Error("HTTP/1.1 must remain enabled")
+	}
+	if !p.HTTP2() {
+		t.Error("HTTP/2 over TLS must remain enabled")
+	}
+	if !p.UnencryptedHTTP2() {
+		t.Error("expected h2c to be enabled")
+	}
+}

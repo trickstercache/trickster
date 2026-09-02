@@ -25,6 +25,7 @@ import (
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 
 	"github.com/stretchr/testify/require"
@@ -111,7 +112,7 @@ func TestHandler(t *testing.T) {
 			require.Equal(t, "1234", string(b), "body not truncated")
 			require.Equal(t, []byte("1234"), request.GetResources(r).RequestBody, "cache not truncated")
 			require.Equal(t, int64(4), r.ContentLength)
-			require.Equal(t, "4", r.Header.Get("Content-Length"))
+			require.Equal(t, "4", r.Header.Get(headers.NameContentLength))
 			w.WriteHeader(http.StatusOK)
 		})
 		Handler(4, true, verify).ServeHTTP(rec, req)

@@ -28,6 +28,40 @@ The feature is further detailed in the following diagram:
 
 <img src="./images/progressive-collapsed-forwarding-proxy.png" width="800">
 
+## When collapsing is refused
+
+Collapsing delivers the same bytes to every client that joins, which is a
+stronger claim than caching makes. Trickster therefore applies the shared-cache
+rules from RFC 9111 before fanning a response out, and refuses when any of the
+following holds. A refused response is still served normally; each client simply
+gets its own fetch.
+
+| Condition | Reason |
+|---|---|
+| Method is not GET or HEAD | Collapsing a non-idempotent request would mean one of them never executed (RFC 9110 9.2.1) |
+| Response status is not 200 | Partial and error responses are not safely shareable |
+| `Cache-Control: private` or `no-store` | Explicitly single-user (RFC 9111 5.2.2.5, 5.2.2.7) |
+| Response carries `Set-Cookie` | Per-client state; sharing it would disclose it across users |
+| Request carried `Authorization` without `public`, `s-maxage` or `must-revalidate` on the response | RFC 9111 3.5 |
+| `Vary: *`, or a `Vary` field not listed in the path's `cache_key_headers` | Two joiners could legitimately deserve different bytes |
+| `Content-Type: text/event-stream` | An event stream is per-subscriber, not a shared object |
+| Response is larger than the backend's `max_object_size_bytes` | The shared buffer is bounded by that limit |
+
+The default is to refuse: a missed collapse costs one extra origin fetch, while
+an incorrect one would serve one user's response to another.
+
+## Object sizes
+
+A response with a known `Content-Length` is buffered exactly. A response of
+unknown length -- a chunked transfer, which is common for live video manifests
+and segments -- is buffered as it arrives, growing up to the backend's
+`max_object_size_bytes`. A collapsed transfer that exceeds that limit is aborted
+for every attached client rather than being silently truncated.
+
+If the origin fails or ends a body early, every client attached to that collapse
+receives a failed response. An incomplete object is never presented as complete
+and is never written to cache.
+
 ## How to enable Progressive Collapsed Forwarding
 
 When configuring path configs as described in [Paths Documentation](./paths.md) add `collapsed_forwarding: progressive` in any path config using the `proxy` or `proxycache` handlers.

@@ -307,6 +307,12 @@ func Listeners(c *config.Config) error {
 			addWarning(c, fmt.Sprintf("listener %q has no enabled ports and will not be started", name))
 		}
 
+		if options.HTTP3 != nil && options.HTTP3.Enabled && !options.HTTP3Enabled() {
+			addWarning(c, fmt.Sprintf(
+				"listener %q HTTP/3 is disabled because it requires an http listener with a TLS port", name))
+			options.HTTP3.Enabled = false
+		}
+
 		if options.Active && options.ListenPort > 0 {
 			if err := reserveListenerPort(ports, name, options.ListenAddress, options.ListenPort); err != nil {
 				return err

@@ -12,6 +12,7 @@ require (
 	github.com/klauspost/compress v1.19.2
 	github.com/prometheus/client_golang v1.24.1
 	github.com/prometheus/common v0.70.1
+	github.com/quic-go/quic-go v0.62.0
 	github.com/stretchr/testify v1.12.1
 	github.com/trickstercache/trickster/v2 v2.0.0-00010101000000-000000000000
 	go.yaml.in/yaml/v3 v3.0.5
@@ -119,6 +120,7 @@ require (
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/procfs v0.22.0 // indirect
+	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/redis/go-redis/v9 v9.22.0 // indirect
 	github.com/rogpeppe/go-internal v1.16.0 // indirect
 	github.com/sasha-s/go-deadlock v0.3.1 // indirect

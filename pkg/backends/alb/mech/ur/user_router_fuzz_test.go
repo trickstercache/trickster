@@ -26,6 +26,7 @@ import (
 	uropt "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/ur/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/providers/basic"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
 
 func FuzzUserRouterCredentials(f *testing.F) {
@@ -90,9 +91,9 @@ func FuzzUserRouterCredentials(f *testing.F) {
 			return
 		}
 		if len(raw)%3 == 0 {
-			r.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(raw)))
+			r.Header.Set(headers.NameAuthorization, "Basic "+base64.StdEncoding.EncodeToString([]byte(raw)))
 		} else {
-			r.Header.Set("Authorization", raw)
+			r.Header.Set(headers.NameAuthorization, raw)
 		}
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, r)

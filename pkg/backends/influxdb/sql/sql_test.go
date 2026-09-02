@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/iofmt"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
 
 func TestParseTimeRangeQuery_SQL(t *testing.T) {
@@ -122,7 +123,7 @@ func TestParseTimeRangeQuery_POST(t *testing.T) {
 	r := &http.Request{
 		Method: http.MethodPost,
 		URL:    u,
-		Header: http.Header{"Content-Type": {"application/x-www-form-urlencoded"}},
+		Header: http.Header{headers.NameContentType: {"application/x-www-form-urlencoded"}},
 	}
 	f := iofmt.Detect(r)
 	if !f.IsV3SQL() {
@@ -136,7 +137,7 @@ func TestParseTimeRangeQuery_POST_JSON(t *testing.T) {
 	r := &http.Request{
 		Method:        http.MethodPost,
 		URL:           &url.URL{Path: "/api/v3/query_sql"},
-		Header:        http.Header{"Content-Type": {"application/json"}},
+		Header:        http.Header{headers.NameContentType: {"application/json"}},
 		Body:          io.NopCloser(bytes.NewReader(body)),
 		ContentLength: int64(len(body)),
 	}
@@ -160,7 +161,7 @@ func TestParseTimeRangeQuery_POST_Form(t *testing.T) {
 	r := &http.Request{
 		Method:        http.MethodPost,
 		URL:           &url.URL{Path: "/api/v3/query_sql"},
-		Header:        http.Header{"Content-Type": {"application/x-www-form-urlencoded"}},
+		Header:        http.Header{headers.NameContentType: {"application/x-www-form-urlencoded"}},
 		Body:          io.NopCloser(bytes.NewReader(body)),
 		ContentLength: int64(len(body)),
 	}

@@ -26,6 +26,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 )
 
@@ -50,7 +51,7 @@ func LimitQueryRange(next http.Handler) http.Handler {
 				duration := trq.Extent.End.Sub(trq.Extent.Start)
 				if duration > limit {
 					metrics.ProxyQueryRangeRejections.WithLabelValues(rsc.BackendOptions.Name).Inc()
-					clientIP := r.Header.Get("X-Forwarded-For")
+					clientIP := r.Header.Get(headers.NameXForwardedFor)
 					if clientIP == "" {
 						clientIP = r.RemoteAddr
 					}

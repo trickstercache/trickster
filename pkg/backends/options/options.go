@@ -85,6 +85,9 @@ type Options struct {
 	// OriginURL provides the base upstream URL for all proxied requests to this Backend.
 	// it can be as simple as http://example.com or as complex as https://example.com:8443/path/prefix
 	OriginURL string `yaml:"origin_url,omitempty"`
+	// H2CPriorKnowledge speaks cleartext HTTP/2 to the origin by prior knowledge.
+	// Cleartext HTTP/2 only; there is no HTTP/1 fallback.
+	H2CPriorKnowledge bool `yaml:"h2c_prior_knowledge,omitempty"`
 	// Protocol selects the upstream wire protocol used to communicate with the origin.
 	// When empty, HTTP is used. Supported values are provider-specific (e.g., "native"
 	// for ClickHouse to use the binary protocol on port 9000).
@@ -748,6 +751,11 @@ func (o *Options) Initialize(name string) error {
 		o.Scheme = parsedURL.Scheme
 		o.Host = parsedURL.Host
 		o.PathPrefix = parsedURL.Path
+	}
+	if o.H2CPriorKnowledge && !strings.EqualFold(o.Scheme, "http") {
+		return fmt.Errorf(
+			"h2c_prior_knowledge requires an http:// origin_url (cleartext HTTP/2 only; no HTTP/1 fallback), got scheme %q",
+			o.Scheme)
 	}
 	if o.CacheKeyPrefix == "" {
 		o.CacheKeyPrefix = o.Host

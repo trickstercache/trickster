@@ -30,9 +30,7 @@ import (
 const clfTimeLayout = "02/Jan/2006:15:04:05 -0700"
 
 const (
-	dash          = "-"
-	headerCookie  = "Cookie"
-	headerReferer = "Referer"
+	dash = "-"
 )
 
 // Named format presets; "combined" is the default
@@ -347,7 +345,7 @@ func appendHeader(b []byte, h http.Header, key string) []byte {
 
 func appendCookie(b []byte, h http.Header, name string) []byte {
 	if h != nil {
-		if cookies, err := http.ParseCookie(h.Get(headerCookie)); err == nil {
+		if cookies, err := http.ParseCookie(h.Get(headers.NameCookie)); err == nil {
 			for _, c := range cookies {
 				if c.Name == name {
 					return appendEscapedOrDash(b, c.Value)
@@ -433,8 +431,8 @@ func jsonEmitters() []emitter {
 		{"host", func(b []byte, f *Fields) []byte {
 			return appendJSONString(b, f.Host)
 		}},
-		{"referer", func(b []byte, f *Fields) []byte {
-			return appendJSONHeader(b, f.ReqHeader, headerReferer)
+		{strings.ToLower(headers.NameReferer), func(b []byte, f *Fields) []byte {
+			return appendJSONHeader(b, f.ReqHeader, headers.NameReferer)
 		}},
 		{"user_agent", func(b []byte, f *Fields) []byte {
 			return appendJSONHeader(b, f.ReqHeader, headers.NameUserAgent)

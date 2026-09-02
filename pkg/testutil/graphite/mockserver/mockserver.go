@@ -35,6 +35,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/graphite/model"
 	"github.com/trickstercache/trickster/v2/pkg/backends/graphite/parsing"
 	"github.com/trickstercache/trickster/v2/pkg/backends/graphite/resolution"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
@@ -312,7 +313,7 @@ func (s *Server) expand(w http.ResponseWriter, r *http.Request) {
 	for _, m := range s.matches(r.URL.Query().Get("query")) {
 		out = append(out, m.Path)
 	}
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set(headers.NameContentType, "application/json")
 	_ = json.NewEncoder(w).Encode(map[string][]string{"results": out})
 }
 
@@ -360,6 +361,6 @@ func (s *Server) find(w http.ResponseWriter, r *http.Request) {
 		out = append(out, n)
 	}
 	slices.SortFunc(out, func(a, b *node) int { return strings.Compare(a.ID, b.ID) })
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set(headers.NameContentType, "application/json")
 	_ = json.NewEncoder(w).Encode(out)
 }

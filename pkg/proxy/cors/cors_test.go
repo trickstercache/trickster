@@ -49,9 +49,9 @@ func TestApply(t *testing.T) {
 		{
 			name: "merge",
 			options: &corso.Options{Mode: corso.ModeMerge, Headers: types.EnvStringMap{
-				headers.NameAllowOrigin:             "https://trickster.example.com",
-				"-Access-Control-Allow-Credentials": "",
-				"Access-Control-Expose-Headers":     headers.NameTricksterResult,
+				headers.NameAllowOrigin:            "https://trickster.example.com",
+				"-" + headers.NameAllowCredentials: "",
+				headers.NameExposeHeaders:          headers.NameTricksterResult,
 			}},
 			wantOrigin: "https://trickster.example.com",
 			wantExpose: headers.NameTricksterResult,
@@ -83,18 +83,18 @@ func TestApply(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			h := http.Header{
-				headers.NameAllowOrigin:            {"https://origin.example.com"},
-				"access-control-allow-credentials": {"true"},
-				"X-Unrelated":                      {"keep"},
+				headers.NameAllowOrigin:                       {"https://origin.example.com"},
+				strings.ToLower(headers.NameAllowCredentials): {"true"},
+				"X-Unrelated":                                 {"keep"},
 			}
 			Apply(h, tc.options)
 			if got := h.Get(headers.NameAllowOrigin); got != tc.wantOrigin {
 				t.Errorf("Access-Control-Allow-Origin = %q, want %q", got, tc.wantOrigin)
 			}
-			if got := headerValue(h, "Access-Control-Allow-Credentials"); got != tc.wantCreds {
+			if got := headerValue(h, headers.NameAllowCredentials); got != tc.wantCreds {
 				t.Errorf("Access-Control-Allow-Credentials = %q, want %q", got, tc.wantCreds)
 			}
-			if got := h.Get("Access-Control-Expose-Headers"); got != tc.wantExpose {
+			if got := h.Get(headers.NameExposeHeaders); got != tc.wantExpose {
 				t.Errorf("Access-Control-Expose-Headers = %q, want %q", got, tc.wantExpose)
 			}
 			if got := h.Get("X-Unrelated"); got != "keep" {
@@ -106,12 +106,12 @@ func TestApply(t *testing.T) {
 
 func TestApplyAppendHeader(t *testing.T) {
 	h := http.Header{
-		"access-control-expose-headers": {"X-Origin-Expose"},
+		strings.ToLower(headers.NameExposeHeaders): {"X-Origin-Expose"},
 	}
 	Apply(h, &corso.Options{Mode: corso.ModeMerge, Headers: types.EnvStringMap{
-		"+Access-Control-Expose-Headers": headers.NameTricksterResult,
+		"+" + headers.NameExposeHeaders: headers.NameTricksterResult,
 	}})
-	got := strings.Join(h.Values("Access-Control-Expose-Headers"), ",")
+	got := strings.Join(h.Values(headers.NameExposeHeaders), ",")
 	if got != "X-Origin-Expose,X-Trickster-Result" {
 		t.Fatalf("Access-Control-Expose-Headers = %q, want X-Origin-Expose,X-Trickster-Result", got)
 	}

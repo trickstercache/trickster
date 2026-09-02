@@ -550,7 +550,7 @@ func TestValidateGraphiteOriginAuth(t *testing.T) {
 		{"credential with +Authorization path", newBackend(
 			&gro.Options{OriginUsername: "u", OriginPassword: "p"},
 			po.List{{Path: "/render",
-				RequestHeaders: map[string]string{"+authorization": "x"}}}),
+				RequestHeaders: map[string]string{"+" + strings.ToLower(headers.NameAuthorization): "x"}}}),
 			gro.ErrOriginAuthAppend},
 	}
 	for _, tc := range tests {
@@ -951,13 +951,13 @@ func TestCloneYAMLSafeMasksAllAuthorizationForms(t *testing.T) {
 	o.Provider = providers.Graphite
 	o.OriginURL = "http://example.com"
 	o.Paths = po.List{{Path: "/render", RequestHeaders: map[string]string{
-		"authorization":  "Bearer path-secret",
-		"+Authorization": "Bearer append-secret",
-		"-authorization": "x",
+		strings.ToLower(headers.NameAuthorization):       "Bearer path-secret",
+		"+" + headers.NameAuthorization:                  "Bearer append-secret",
+		"-" + strings.ToLower(headers.NameAuthorization): "x",
 	}}}
 	o.HealthCheck = &ho.Options{Headers: map[string]string{
-		"authorization": "Bearer probe-secret",
-		"X-Probe":       "trickster",
+		strings.ToLower(headers.NameAuthorization): "Bearer probe-secret",
+		"X-Probe": "trickster",
 	}}
 
 	got := o.CloneYAMLSafe()
@@ -966,7 +966,7 @@ func TestCloneYAMLSafeMasksAllAuthorizationForms(t *testing.T) {
 			t.Errorf("path header %q not masked: %q", k, v)
 		}
 	}
-	if v := got.HealthCheck.Headers["authorization"]; v != "*****" {
+	if v := got.HealthCheck.Headers[strings.ToLower(headers.NameAuthorization)]; v != "*****" {
 		t.Errorf("health header not masked: %q", v)
 	}
 	if v := got.HealthCheck.Headers["X-Probe"]; v != "trickster" {
@@ -981,8 +981,8 @@ func TestCloneYAMLSafeMasksAllAuthorizationForms(t *testing.T) {
 	}
 
 	// the empty Authorization opt-out is not a credential and survives export
-	o.HealthCheck.Headers = map[string]string{"authorization": ""}
-	if v, ok := o.CloneYAMLSafe().HealthCheck.Headers["authorization"]; !ok || v != "" {
+	o.HealthCheck.Headers = map[string]string{strings.ToLower(headers.NameAuthorization): ""}
+	if v, ok := o.CloneYAMLSafe().HealthCheck.Headers[strings.ToLower(headers.NameAuthorization)]; !ok || v != "" {
 		t.Errorf("empty opt-out must be preserved, got %q ok=%t", v, ok)
 	}
 }
@@ -1057,5 +1057,40 @@ func TestValidateRejectsIncompleteSigV4(t *testing.T) {
 	o.SigV4 = &taws.Options{AccessKey: "AKIA"} // no secret key
 	if _, err := o.Validate(); err == nil {
 		t.Error("expected an error for a half-configured sigv4 credential")
+	}
+}
+
+func TestInitializeH2CPriorKnowledge(t *testing.T) {
+	tests := []struct {
+		name      string
+		originURL string
+		expectErr bool
+	}{
+		{"http origin", "http://example.com:8123", false},
+		{"https origin", "https://example.com", true},
+		{"no origin url", "", true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			o := New()
+			o.Provider = "rp"
+			o.OriginURL = tc.originURL
+			o.H2CPriorKnowledge = true
+			err := o.Initialize("test")
+			if tc.expectErr && err == nil {
+				t.Error("expected an error")
+			}
+			if !tc.expectErr && err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+
+	// the default must remain unaffected by the new validation
+	o := New()
+	o.Provider = "rp"
+	o.OriginURL = "https://example.com"
+	if err := o.Initialize("test"); err != nil {
+		t.Errorf("unexpected error without the option set: %v", err)
 	}
 }

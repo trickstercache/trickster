@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/aftership"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
@@ -189,7 +190,7 @@ func (h *Handler) handleQuery(
 	if q.Username != "" {
 		req.SetBasicAuth(q.Username, q.Password)
 	}
-	req.Header.Set("Content-Type", "text/plain")
+	req.Header.Set(headers.NameContentType, "text/plain")
 
 	rec := httptest.NewRecorder()
 	h.QueryHandler.ServeHTTP(rec, req)

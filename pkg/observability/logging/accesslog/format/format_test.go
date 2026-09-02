@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
 
 func testFields() *Fields {
@@ -45,12 +46,12 @@ func testFields() *Fields {
 		Status:       200,
 		BytesWritten: 2326,
 		ReqHeader: http.Header{
-			"Referer":    []string{"http://example.com/start.html"},
-			"User-Agent": []string{"test-agent/1.0"},
-			"Cookie":     []string{"session=abc123; theme=dark"},
+			headers.NameReferer:   []string{"http://example.com/start.html"},
+			headers.NameUserAgent: []string{"test-agent/1.0"},
+			headers.NameCookie:    []string{"session=abc123; theme=dark"},
 		},
 		RespHeader: http.Header{
-			"Content-Type": []string{"application/json"},
+			headers.NameContentType: []string{"application/json"},
 		},
 		Backend:     "example1",
 		Provider:    "rp",
@@ -223,7 +224,7 @@ func TestJSONPreset(t *testing.T) {
 func TestJSONPresetEscapesInvalidInput(t *testing.T) {
 	f := testFields()
 	f.Path = "/\x01\xff\b\f"
-	f.ReqHeader.Set("User-Agent", "agent\x80\v")
+	f.ReqHeader.Set(headers.NameUserAgent, "agent\x80\v")
 	out := render(t, JSON, f)
 	if !json.Valid([]byte(out)) {
 		t.Fatalf("json preset produced invalid JSON: %q", out)
@@ -316,6 +317,6 @@ func FuzzParseFormat(f *testing.F) {
 func testFieldsForFuzz() *Fields {
 	return &Fields{
 		StartTime: time.Unix(1700000000, 0),
-		ReqHeader: http.Header{"Cookie": []string{"a=b"}},
+		ReqHeader: http.Header{headers.NameCookie: []string{"a=b"}},
 	}
 }
