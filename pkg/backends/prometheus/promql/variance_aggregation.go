@@ -180,8 +180,8 @@ func VarianceVariantQuery(spec VarianceAggregation, operator string) string {
 	temporaryLabels := varianceTemporaryLabels(spec.Grouping, metadataLabels)
 	for _, label := range metadataLabels {
 		temporary := temporaryLabels[label]
-		input = `label_replace(` + input + `, "` + temporary + `", "$1", "` +
-			label + `", "(.*)")`
+		input = `label_replace(` + input + `, ` + promQLStringLiteral(temporary) +
+			`, "$1", ` + promQLStringLiteral(label) + `, "(.*)")`
 		if spec.Grouping.Without {
 			finalGrouping.Labels = append(finalGrouping.Labels, temporary)
 		} else {
@@ -196,17 +196,45 @@ func VarianceVariantQuery(spec VarianceAggregation, operator string) string {
 	result := formatAggregation(operator, internalGrouping, input)
 	for _, label := range metadataLabels {
 		temporary := temporaryLabels[label]
-		result = `label_replace(` + result + `, "` + label + `", "$1", "` +
-			temporary + `", "(.*)")`
+		result = `label_replace(` + result + `, ` + promQLStringLiteral(label) +
+			`, "$1", ` + promQLStringLiteral(temporary) + `, "(.*)")`
 	}
 	if !slices.Contains(metadataLabels, promMetricNameLabel) {
 		// Restoring __name__ clears Prometheus' delayed metadata-drop marker.
 		// When only __type__/__unit__ are retained, use a temporary metric name
 		// and let the final aggregation remove it again.
-		result = `label_replace(` + result + `, "` + promMetricNameLabel + `", "` +
-			varianceTemporaryMetric + `", "` + promMetricNameLabel + `", ".*")`
+		result = `label_replace(` + result + `, ` + promQLStringLiteral(promMetricNameLabel) +
+			`, ` + promQLStringLiteral(varianceTemporaryMetric) + `, ` +
+			promQLStringLiteral(promMetricNameLabel) + `, ".*")`
 	}
 	return formatAggregation(aggregation.Sum, finalGrouping, result)
+}
+
+// promQLStringLiteral quotes a value for a PromQL double-quoted string.
+// UTF-8 label validation permits characters outside the traditional identifier
+// alphabet, including quotes, backslashes, and control characters.
+func promQLStringLiteral(value string) string {
+	const hex = "0123456789abcdef"
+
+	var escaped strings.Builder
+	escaped.Grow(len(value) + 2)
+	for _, r := range value {
+		switch {
+		case r == '\\':
+			escaped.WriteString(`\\`)
+		case r < 0x20:
+			escaped.WriteString(`\u00`)
+			escaped.WriteByte(hex[byte(r)>>4])
+			escaped.WriteByte(hex[byte(r)&0x0f])
+		default:
+			escaped.WriteRune(r)
+		}
+	}
+
+	// Keep quote escaping as a ReplaceAll sanitizer as well as a correct
+	// encoding step for CodeQL's string-break analysis.
+	escapedValue := strings.ReplaceAll(escaped.String(), `"`, `\"`)
+	return `"` + escapedValue + `"`
 }
 
 func varianceTemporaryLabels(grouping AggregationGrouping, metadataLabels []string) map[string]string {

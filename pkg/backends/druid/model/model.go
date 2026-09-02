@@ -90,8 +90,10 @@ func (p *QueryPlan) RenderInterval(interval string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := make([]byte, 0, len(p.renderStart)+len(b)+len(p.renderEnd))
-	out = append(out, p.renderStart...)
+	// Build from a cloned prefix instead of summing attacker-controlled slice
+	// lengths for a capacity hint. The append operations grow the buffer with
+	// the runtime's overflow checks while preserving the immutable plan.
+	out := bytes.Clone(p.renderStart)
 	out = append(out, b...)
 	out = append(out, p.renderEnd...)
 	return out, nil
