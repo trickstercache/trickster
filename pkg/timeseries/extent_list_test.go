@@ -799,6 +799,58 @@ func TestTimestampCount(t *testing.T) {
 	}
 }
 
+func TestTrimEmptyExtents(t *testing.T) {
+	tests := []struct {
+		name     string
+		el       ExtentList
+		expected ExtentList
+	}{
+		{
+			name: "interspersed empty extents",
+			el: ExtentList{
+				Extent{},
+				Extent{Start: t100, End: t200},
+				Extent{},
+				Extent{Start: t600, End: t900},
+				Extent{},
+			},
+			expected: ExtentList{
+				Extent{Start: t100, End: t200},
+				Extent{Start: t600, End: t900},
+			},
+		},
+		{
+			name:     "only empty extents",
+			el:       ExtentList{Extent{}, Extent{}},
+			expected: ExtentList{},
+		},
+		{
+			name:     "empty list",
+			el:       ExtentList{},
+			expected: ExtentList{},
+		},
+		{
+			name: "no empty extents",
+			el: ExtentList{
+				Extent{Start: t100, End: t200},
+				Extent{Start: t600, End: t900},
+			},
+			expected: ExtentList{
+				Extent{Start: t100, End: t200},
+				Extent{Start: t600, End: t900},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if result := test.el.TrimEmptyExtents(); !slices.Equal(result, test.expected) {
+				t.Errorf("TrimEmptyExtents() = %v, want %v", result, test.expected)
+			}
+		})
+	}
+}
+
 func TestSplice(t *testing.T) {
 	tests := []struct {
 		name                       string

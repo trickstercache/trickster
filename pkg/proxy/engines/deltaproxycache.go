@@ -885,27 +885,10 @@ func fetchExtents(
 	eg.Wait()
 
 	fullFaults := false
-	trimmedList := trimEmptyExtents(errTs)
+	trimmedList := errTs.TrimEmptyExtents()
 	if trimmedList.Len() == el.Len() {
 		fullFaults = true
 	}
 
 	return mts, uncachedValueCount.Load(), mresp, trimmedList, fullFaults
-}
-
-func trimEmptyExtents(failedExtents timeseries.ExtentList) timeseries.ExtentList {
-	trimmedList := make(timeseries.ExtentList, len(failedExtents))
-	emptyExtent := timeseries.Extent{}
-
-	var cursor int
-	for _, extent := range failedExtents {
-		if extent == emptyExtent {
-			continue
-		}
-
-		trimmedList[cursor] = extent
-		cursor++
-	}
-
-	return trimmedList[:cursor]
 }
