@@ -350,16 +350,14 @@ func (el ExtentList) Clone() ExtentList {
 
 // TrimEmptyExtents returns a copy of the ExtentList with empty Extents removed.
 func (el ExtentList) TrimEmptyExtents() ExtentList {
-	trimmed := make(ExtentList, len(el))
-	var cursor int
+	trimmed := make(ExtentList, 0, len(el))
 	for _, extent := range el {
 		if extent == (Extent{}) {
 			continue
 		}
-		trimmed[cursor] = extent
-		cursor++
+		trimmed = append(trimmed, extent)
 	}
-	return trimmed[:cursor]
+	return trimmed
 }
 
 // CloneRange returns a perfect copy of the ExtentList, cloning only the
