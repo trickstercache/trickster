@@ -26,6 +26,15 @@ Trickster supports accelerating ClickHouse time series over both HTTP and the Cl
 
 See the [ClickHouse Support Document](./clickhouse.md) for more information.
 
+### <img src="./images/external/druid-logo.svg" width=24 /> Apache Druid
+
+Trickster accelerates fixed-width native JSON `timeseries`, `groupBy`, and
+`topN` queries plus eligible `TIME_FLOOR` SQL queries, with safe Object Proxy
+Cache fallback for other read-query shapes. Specify `'druid'` as the Provider
+when configuring Trickster.
+
+See the [Apache Druid Support Document](./druid.md) for more information.
+
 ### <img src="./images/external/graphite-logo.svg" width=24 /> Graphite
 
 Trickster accelerates Graphite's render API, including graphite-web, go-carbon

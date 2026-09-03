@@ -24,7 +24,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
-      - GF_INSTALL_PLUGINS=vertamedia-clickhouse-datasource,grafana-clickhouse-datasource
+      - GF_INSTALL_PLUGINS=vertamedia-clickhouse-datasource,grafana-clickhouse-datasource,grafadruid-druid-datasource
     volumes:
       - ./docker-compose-data/grafana-config:/etc/grafana
       - ./docker-compose-data/dashboards:/var/lib/grafana/dashboards
@@ -40,6 +40,8 @@ services:
       prometheus:
         condition: service_started
       mysql:
+        condition: service_healthy
+      druid:
         condition: service_healthy
 
   # TSDBs
@@ -116,6 +118,29 @@ services:
       - --data-dir=/var/lib/influxdb3
       - --without-auth
 
+  # Apache Druid single-node nano quickstart. The published image is
+  # distroless, so start-nano.sh supplies the same five Druid services plus
+  # ZooKeeper without relying on the upstream Perl supervisor.
+  druid:
+    image: apache/druid:37.0.0
+    environment:
+      DRUID_LOG_DIR: /opt/druid/log
+    ports:
+      - 8888:8888
+    volumes:
+      - druid-data:/opt/druid/var
+      - druid-shared:/opt/shared
+      - ./docker-compose-data/clickhouse-config/seeding/data:/seed-data:ro
+      - ./docker-compose-data/druid-config/start-nano.sh:/start-nano.sh:ro
+    entrypoint: ["/bin/bash", "/start-nano.sh"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8888/status/health | grep -q true"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 45s
+    restart: always
+
   # clickhouse
   clickhouse:
     image: clickhouse/clickhouse-server:26.7
@@ -160,6 +185,25 @@ services:
     depends_on:
       clickhouse:
         condition: service_started
+      seed_data_fetch:
+        condition: service_completed_successfully
+
+  # Druid native-batch seeder. It reads the same compressed TSV files and
+  # seed-window metadata as ClickHouse/MySQL; the batch transform shifts
+  # __time so the dashboard remains centered around the current time.
+  druid_seed:
+    image: python:3.13-alpine
+    environment:
+      DRUID_URL: http://druid:8888
+      DRUID_DATASOURCE: trips
+      DRUID_SEED_DATA: /seed-data
+    volumes:
+      - ./docker-compose-data/druid-config/seeding/seed.py:/seed.py:ro
+      - ./docker-compose-data/clickhouse-config/seeding/data:/seed-data:ro
+    entrypoint: ["python", "/seed.py"]
+    depends_on:
+      druid:
+        condition: service_healthy
       seed_data_fetch:
         condition: service_completed_successfully
 
@@ -345,6 +389,8 @@ volumes:
   graphite-data:
   influxdbv2:
   influxdb3-data:
+  druid-data:
+  druid-shared:
   prometheus-data:
   mysql-data:
   redis-data:

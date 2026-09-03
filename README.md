@@ -48,6 +48,8 @@ Trickster works with virtually any Dashboard application that makes queries to a
 
 <img src="./docs/images/external/clickhouse_logo.png" width=24 /> [ClickHouse](docs/clickhouse.md)
 
+<img src="./docs/images/external/druid-logo.svg" width=24 /> [Apache Druid](docs/druid.md)
+
 <img src="./docs/images/external/influx_logo_60.png" width=24 /> [InfluxDB](docs/influxdb.md)
 
 <img src="./docs/images/external/mysql_logo_60.png" width=24 /> [MySQL](docs/mysql.md)

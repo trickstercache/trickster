@@ -101,6 +101,9 @@ type Options struct {
 	// KeyHasher points to an optional function that hashes the cacheKey with a custom algorithm
 	// NOTE: This can be used by backends, but is not configurable by end users.
 	KeyHasher key.HasherFunc `yaml:"-"`
+	// CacheKeyBody includes the complete request body in the cache identity.
+	// It is provider-owned and intentionally not configurable by end users.
+	CacheKeyBody bool `yaml:"-"`
 	// ReqRewriter is the rewriter handler as indicated by RuleName
 	ReqRewriter rewriter.RewriteInstructions `yaml:"-"`
 	// AuthOptions is the authenticator as indicated by AuthenticatorName

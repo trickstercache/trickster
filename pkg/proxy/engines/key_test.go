@@ -206,6 +206,31 @@ func TestDeriveCacheKey(t *testing.T) {
 	}
 }
 
+func TestDeriveCacheKeyIncludesProviderOwnedBody(t *testing.T) {
+	path := &po.Options{Path: "/druid/v2/sql", CacheKeyBody: true}
+	cfg := &bo.Options{Name: "druid", Paths: po.List{path}}
+	derive := func(body string) string {
+		r := httptest.NewRequest(http.MethodPost, "http://druid/druid/v2/sql",
+			strings.NewReader(body))
+		r.Header.Set(headers.NameContentType, headers.ValueApplicationJSON)
+		r = request.SetResources(r, request.NewResources(cfg, path, nil, nil, nil, nil))
+		return newProxyRequest(r, nil).DeriveCacheKey("")
+	}
+
+	first := derive(`{"query":"SELECT 1"}`)
+	if first != derive(`{"query":"SELECT 1"}`) {
+		t.Fatal("identical POST bodies produced different cache keys")
+	}
+	if first == derive(`{"query":"SELECT 2"}`) {
+		t.Fatal("different POST bodies produced the same cache key")
+	}
+
+	path.CacheKeyBody = false
+	if derive(`{"query":"SELECT 1"}`) != derive(`{"query":"SELECT 2"}`) {
+		t.Fatal("body affected a route that did not opt in")
+	}
+}
+
 func TestDeriveCacheKeySeparatesRewrittenUpstreams(t *testing.T) {
 	path := po.New()
 	path.CacheKeyParams = []string{"query"}

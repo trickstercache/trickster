@@ -57,6 +57,7 @@ func DerivePathCacheKey(path, method, identity string) string {
 // its source, so elements of different kinds sharing a name cannot collide
 const (
 	compAuth     byte = 'a' // the effective client Authorization credential
+	compBody     byte = 'b' // the complete request body for provider-owned routes
 	compForm     byte = 'f' // a body field named in cache_key_form_fields
 	compHeader   byte = 'h' // a header named in cache_key_headers
 	compOverride byte = 'o' // a provider-supplied cache key element
@@ -160,6 +161,19 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 	if qp == nil {
 		qp, b, _ = params.GetRequestValues(r)
 	}
+	if pc.CacheKeyBody && b == nil && methods.HasBody(r.Method) {
+		_, b, _ = params.GetRequestValues(r)
+	}
+	// A provider may expose a stable pre-rewrite body identity. This is
+	// needed for POST time-series requests whose upstream body is rendered
+	// separately for each cache-miss extent.
+	if pc.CacheKeyBody && trq != nil {
+		if provider, ok := trq.ParsedQuery.(interface{ CacheKeyBody() []byte }); ok {
+			if providerBody := provider.CacheKeyBody(); len(providerBody) > 0 {
+				b = providerBody
+			}
+		}
+	}
 
 	if pc.KeyHasher != nil {
 		key := pc.KeyHasher(r.URL.Path, qp, r.Header, b, trq, extra)
@@ -182,6 +196,9 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 	if v := r.Header.Get(headers.NameAuthorization); v != "" &&
 		!pc.ReplacesHeader(headers.NameAuthorization) {
 		kb.add(compAuth, headers.NameAuthorization, v)
+	}
+	if pc.CacheKeyBody {
+		kb.add(compBody, "body", string(b))
 	}
 
 	if len(pc.CacheKeyParams) == 1 && pc.CacheKeyParams[0] == "*" {

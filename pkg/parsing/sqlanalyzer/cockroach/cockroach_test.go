@@ -256,6 +256,14 @@ func TestRenderExtentPreservesBoundStyles(t *testing.T) {
 	}
 }
 
+func TestBoundLiteralPreservesFractionalSQLTimestamp(t *testing.T) {
+	value := time.Date(2024, 1, 1, 0, 0, 0, 123456000, time.UTC)
+	if got, want := boundLiteral(boundTimestampLiteral, value),
+		`TIMESTAMP '2024-01-01 00:00:00.123456'`; got != want {
+		t.Fatalf("boundLiteral() = %q, want %q", got, want)
+	}
+}
+
 func TestAnalyzeOpenUpperBoundAddsSyntheticPredicate(t *testing.T) {
 	a := newDataFusionAnalyzer()
 	now := time.Unix(1704153600, 0).UTC()

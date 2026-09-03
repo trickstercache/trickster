@@ -44,6 +44,8 @@ const (
 	MySQLID
 	// Graphite represents the Graphite backend provider
 	GraphiteID
+	// Druid represents the Apache Druid backend provider
+	DruidID
 
 	Backends = "backends"
 
@@ -61,6 +63,7 @@ const (
 	InfluxDB   = "influxdb"
 	MySQL      = "mysql"
 	Graphite   = "graphite"
+	Druid      = "druid"
 )
 
 // Names is a map of Providers keyed by string name
@@ -74,6 +77,7 @@ var Names = map[string]Provider{
 	ClickHouse:             ClickHouseID,
 	Graphite:               GraphiteID,
 	MySQL:                  MySQLID,
+	Druid:                  DruidID,
 	Proxy:                  RPID,
 	ReverseProxy:           RPID,
 	ReverseProxyShort:      RPID,
@@ -98,6 +102,7 @@ var supportedTimeSeries = map[string]Provider{
 	ClickHouse: ClickHouseID,
 	Graphite:   GraphiteID,
 	MySQL:      MySQLID,
+	Druid:      DruidID,
 }
 
 // IsSupportedTimeSeriesProvider returns true if the provided time series is supported by Trickster

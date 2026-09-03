@@ -1,0 +1,15 @@
+# Copyright 2018 The Trickster Authors
+# Licensed under the Apache License, Version 2.0
+
+listeners:
+  default:
+    protocol: http
+    port: 8480
+
+backends:
+  druid1:
+    provider: druid
+    origin_url: http://druid-router:8888
+    cache_name: default
+    backfill_tolerance: 60s
+    timeseries_retention_factor: 2048
