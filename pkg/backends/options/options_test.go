@@ -24,6 +24,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 	taws "github.com/trickstercache/trickster/v2/pkg/aws"
 	gro "github.com/trickstercache/trickster/v2/pkg/backends/graphite/options"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
@@ -709,7 +710,7 @@ func TestValidate(t *testing.T) {
 		{ // 2 - valid origin URL + strip trailing slash
 			to:       to,
 			loc:      &o.OriginURL,
-			val:      "http://trickstercache.org/test/path/",
+			val:      "http://" + appinfo.Domain + "/test/path/",
 			expected: nil,
 		},
 		{ // 3 - invalid cache key prefix

@@ -21,6 +21,7 @@ import (
 	"net/url"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	cr "github.com/trickstercache/trickster/v2/pkg/cache/registry"
@@ -93,10 +94,10 @@ func TestSetCache(t *testing.T) {
 }
 
 func TestBaseUpstreamURL(t *testing.T) {
-	u, _ := url.Parse("https://trickstercache.org/test")
+	u, _ := url.Parse("https://" + appinfo.Domain + "/test")
 	b := &backend{name: "test", baseUpstreamURL: u}
 	u = b.BaseUpstreamURL()
-	if u.Host != "trickstercache.org" || u.Scheme != "https" || u.Path != "/test" {
+	if u.Host != appinfo.Domain || u.Scheme != "https" || u.Path != "/test" {
 		t.Error("url mismatch")
 	}
 }

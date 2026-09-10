@@ -28,6 +28,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
@@ -35,8 +36,8 @@ import (
 )
 
 func TestCollapseEligible(t *testing.T) {
-	get := httptest.NewRequest(http.MethodGet, "http://trickstercache.org/", nil)
-	authed := httptest.NewRequest(http.MethodGet, "http://trickstercache.org/", nil)
+	get := httptest.NewRequest(http.MethodGet, "http://"+appinfo.Domain+"/", nil)
+	authed := httptest.NewRequest(http.MethodGet, "http://"+appinfo.Domain+"/", nil)
 	authed.Header.Set(headers.NameAuthorization, "Bearer x")
 	keyed := po.New()
 	keyed.CacheKeyHeaders = []string{"Accept-Encoding"}
@@ -86,7 +87,8 @@ func TestCollapseEligible(t *testing.T) {
 
 // collapseHarness routes through CollapsedPassthrough to a real passthrough
 // handler pointed at originURL, with Resources installed per request.
-func collapseHarness(t *testing.T, originURL string) *httptest.Server {
+func collapseHarness(t *testing.T, originURL string, mutate ...func(*bo.Options, *po.Options),
+) *httptest.Server {
 	t.Helper()
 	u, err := url.Parse(originURL)
 	if err != nil {
@@ -98,6 +100,10 @@ func collapseHarness(t *testing.T, originURL string) *httptest.Server {
 	o.Scheme = u.Scheme
 	o.Host = u.Host
 	o.PathPrefix = ""
+	pc := po.New()
+	for _, m := range mutate {
+		m(o, pc)
+	}
 	client, err := NewTestClient("test", o, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -105,7 +111,7 @@ func collapseHarness(t *testing.T, originURL string) *httptest.Server {
 	o.HTTPClient = client.HTTPClient()
 	h := CollapsedPassthrough(NewPassthroughHandler(client))
 	front := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		rsc := request.NewResources(o, po.New(), nil, nil, client, nil)
+		rsc := request.NewResources(o, pc, nil, nil, client, nil)
 		h.ServeHTTP(w, request.SetResources(r, rsc))
 	}))
 	t.Cleanup(front.Close)
@@ -162,6 +168,86 @@ func TestCollapsedPassthroughSharesOneFetch(t *testing.T) {
 			t.Errorf("client %d: body mismatch (len %d, want %d)", i, len(results[i]), len(body))
 		}
 	}
+}
+
+func TestCollapsedPassthroughSeparatesPreservedHosts(t *testing.T) {
+	// a collapse joins requests for one object; where the origin sees the client's Host, requests
+	// differing in it are different objects and lead their own fetches, and otherwise they are one
+	run := func(t *testing.T, preserve bool, wantFetches int32, updates map[string]string) []string {
+		var hits atomic.Int32
+		release := make(chan struct{})
+		origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			hits.Add(1)
+			w.Header().Set(headers.NameContentLength, "8")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("hello, "))
+			http.NewResponseController(w).Flush()
+			<-release
+			w.Write([]byte(r.Host[:1]))
+		}))
+		defer origin.Close()
+		front := collapseHarness(t, origin.URL, func(o *bo.Options, pc *po.Options) {
+			o.PreserveHost = preserve
+			pc.RequestHeaders = updates
+		})
+		hosts := []string{"first.example.com", "second.example.com", "first.example.com"}
+		results := make([]string, len(hosts))
+		var wg sync.WaitGroup
+		for i, host := range hosts {
+			wg.Go(func() {
+				req, err := http.NewRequest(http.MethodGet, front.URL+"/obj", nil)
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				req.Host = host
+				resp, err := http.DefaultClient.Do(req)
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				defer resp.Body.Close()
+				b, _ := io.ReadAll(resp.Body)
+				results[i] = string(b)
+			})
+			time.Sleep(50 * time.Millisecond)
+		}
+		time.Sleep(100 * time.Millisecond)
+		close(release)
+		wg.Wait()
+		if got := hits.Load(); got != wantFetches {
+			t.Errorf("expected %d upstream fetches, got %d", wantFetches, got)
+		}
+		return results
+	}
+	separate := func(t *testing.T, got []string) {
+		t.Helper()
+		want := []string{"hello, f", "hello, s", "hello, f"}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Errorf("client %d: got %q, want %q", i, got[i], want[i])
+			}
+		}
+	}
+	shared := func(t *testing.T, got []string, want string) {
+		t.Helper()
+		for i := range got {
+			if got[i] != want {
+				t.Errorf("client %d: got %q, want the one fetch's body %q", i, got[i], want)
+			}
+		}
+	}
+	t.Run("preserved", func(t *testing.T) { separate(t, run(t, true, 2, nil)) })
+	t.Run("the origin's own host", func(t *testing.T) { shared(t, run(t, false, 1, nil), "hello, 1") })
+	t.Run("preserved but set by the path", func(t *testing.T) {
+		shared(t, run(t, true, 1, map[string]string{headers.NameHost: "x.example.com"}), "hello, x")
+	})
+	t.Run("preserved but deleted by the path", func(t *testing.T) {
+		shared(t, run(t, true, 1, map[string]string{"-" + headers.NameHost: ""}), "hello, 1")
+	})
+	t.Run("preserved, the path's set empty", func(t *testing.T) {
+		separate(t, run(t, true, 2, map[string]string{headers.NameHost: ""}))
+	})
 }
 
 func TestCollapsedPassthroughRefusesPrivate(t *testing.T) {

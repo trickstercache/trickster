@@ -32,6 +32,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
@@ -128,7 +129,7 @@ func NamedHandler(name string) http.Handler {
 // tests. Fatal if request construction fails.
 func NewParentGET(t testing.TB) *http.Request {
 	t.Helper()
-	r, err := http.NewRequest(http.MethodGet, "https://trickstercache.org/", nil)
+	r, err := http.NewRequest(http.MethodGet, "https://"+appinfo.Domain+"/", nil)
 	if err != nil {
 		t.Fatalf("albpool.NewParentGET: %v", err)
 	}
@@ -139,7 +140,7 @@ func NewParentGET(t testing.TB) *http.Request {
 // given body. Fatal if request construction fails.
 func NewParentPOST(t testing.TB, body io.Reader) *http.Request {
 	t.Helper()
-	r, err := http.NewRequest(http.MethodPost, "https://trickstercache.org/", body)
+	r, err := http.NewRequest(http.MethodPost, "https://"+appinfo.Domain+"/", body)
 	if err != nil {
 		t.Fatalf("albpool.NewParentPOST: %v", err)
 	}
@@ -246,7 +247,7 @@ func RunPostBodyFanoutRace(
 	for range callers {
 		wg.Go(func() {
 			r, err := http.NewRequest(http.MethodPost,
-				"https://trickstercache.org/api/v1/query_range", strings.NewReader(body))
+				"https://"+appinfo.Domain+"/api/v1/query_range", strings.NewReader(body))
 			if err != nil {
 				t.Errorf("NewRequest: %v", err)
 				return

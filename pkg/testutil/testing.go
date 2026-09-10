@@ -225,13 +225,13 @@ func NewTestRewriteInstructions() rewriter.RewriteInstructions {
 	trwl := options.RewriteList{
 		[]string{"method", "set", "POST"},
 		[]string{"host", "set", "example.com:9090"},
-		[]string{"host", "replace", "example.com", "trickstercache.org"},
+		[]string{"host", "replace", "example.com", appinfo.Domain},
 		[]string{"port", "delete"},
 		[]string{"port", "set", "8000"},
 		[]string{"port", "replace", "000", "480"},
 		[]string{"scheme", "set", "https"},
 		[]string{"hostname", "set", "example.com"},
-		[]string{"hostname", "replace", "example.com", "trickstercache.org"},
+		[]string{"hostname", "replace", "example.com", appinfo.Domain},
 	}
 
 	ri, _ := rewriter.ParseRewriteList(trwl)

@@ -19,6 +19,8 @@ package headers
 import (
 	"net/http"
 	"testing"
+
+	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 )
 
 func TestIsValidForwardingType(t *testing.T) {
@@ -177,7 +179,7 @@ func TestFormatForwardedAddress(t *testing.T) {
 func TestStripMergeHeaders(t *testing.T) {
 	h := http.Header{
 		NameContentLength: []string{"42"},
-		NameLocation:      []string{"https://trickstercache.org/"},
+		NameLocation:      []string{"https://" + appinfo.Domain + "/"},
 		NameCacheControl:  []string{"max-age=300"},
 		NameVary:          []string{NameAcceptEncoding},
 		NameAge:           []string{"7"},

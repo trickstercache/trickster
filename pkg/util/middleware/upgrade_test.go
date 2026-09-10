@@ -20,6 +20,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 )
 
 func TestIsUpgradeRequest(t *testing.T) {
@@ -38,7 +40,7 @@ func TestIsUpgradeRequest(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			r := httptest.NewRequest(http.MethodGet, "http://trickstercache.org/", nil)
+			r := httptest.NewRequest(http.MethodGet, "http://"+appinfo.Domain+"/", nil)
 			if tc.conn != "" {
 				r.Header.Set("Connection", tc.conn)
 			}
@@ -61,7 +63,7 @@ func TestUpgradeSwitch(t *testing.T) {
 	next := http.HandlerFunc(func(http.ResponseWriter, *http.Request) { tookNext = true })
 	h := UpgradeSwitch(passthrough, next)
 
-	r := httptest.NewRequest(http.MethodGet, "http://trickstercache.org/", nil)
+	r := httptest.NewRequest(http.MethodGet, "http://"+appinfo.Domain+"/", nil)
 	r.Header.Set("Connection", "Upgrade")
 	r.Header.Set("Upgrade", "websocket")
 	h.ServeHTTP(httptest.NewRecorder(), r)
@@ -70,7 +72,7 @@ func TestUpgradeSwitch(t *testing.T) {
 	}
 
 	tookPassthrough, tookNext = false, false
-	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "http://trickstercache.org/", nil))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "http://"+appinfo.Domain+"/", nil))
 	if tookPassthrough || !tookNext {
 		t.Error("plain request should route to next")
 	}

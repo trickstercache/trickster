@@ -24,6 +24,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 
 	qh3 "github.com/quic-go/quic-go/http3"
@@ -57,14 +58,14 @@ func TestAltSvcAdvertiser(t *testing.T) {
 
 	h := AltSvcAdvertiser(next, 8443)
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "http://trickstercache.org/", nil))
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "http://"+appinfo.Domain+"/", nil))
 	got := rec.Header().Get(headers.NameAltSvc)
 	if !strings.Contains(got, `h3=":8443"`) || !strings.Contains(got, "ma=2592000") {
 		t.Errorf("unexpected Alt-Svc value: %q", got)
 	}
 
 	// an upgrade hijacks before headers are written; advertising is pointless
-	up := httptest.NewRequest(http.MethodGet, "http://trickstercache.org/", nil)
+	up := httptest.NewRequest(http.MethodGet, "http://"+appinfo.Domain+"/", nil)
 	up.Header.Set(headers.NameConnection, "Upgrade")
 	up.Header.Set(headers.NameUpgrade, "websocket")
 	rec = httptest.NewRecorder()
@@ -76,7 +77,7 @@ func TestAltSvcAdvertiser(t *testing.T) {
 	// no advertised port means no wrapper at all
 	rec = httptest.NewRecorder()
 	AltSvcAdvertiser(next, 0).ServeHTTP(rec,
-		httptest.NewRequest(http.MethodGet, "http://trickstercache.org/", nil))
+		httptest.NewRequest(http.MethodGet, "http://"+appinfo.Domain+"/", nil))
 	if rec.Header().Get(headers.NameAltSvc) != "" {
 		t.Error("expected no Alt-Svc when no port is advertised")
 	}
@@ -91,7 +92,7 @@ func TestRequestDeadline(t *testing.T) {
 		t.Fatal("expected a handler")
 	}
 	h := requestDeadline(next, time.Second)
-	r := httptest.NewRequest(http.MethodPost, "http://trickstercache.org/",
+	r := httptest.NewRequest(http.MethodPost, "http://"+appinfo.Domain+"/",
 		strings.NewReader("body"))
 	// httptest.ResponseRecorder cannot set a read deadline; the handler must
 	// still serve the request rather than failing on the attempt
