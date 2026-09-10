@@ -1,0 +1,529 @@
+# Kubernetes Gateway API controller scenarios (phase 8). A Trickster deployed
+# as a Gateway API controller in the service routing mode claims the
+# `trickster` GatewayClass cluster-wide, so one instance serves the edge
+# Gateway below, the Ingress annotation scenario (ingress-annotations.yaml) and
+# the Gateway API conformance suite (integration/conformance). Fixture apps:
+# webecho from manifests.yaml, a canary copy of it whose body says so, and
+# go-httpbin for WebSocket echo, large bodies and cacheable responses. Exposed
+# on the host via NodePorts 30085 (HTTP), 30086 (HTTPS), 30087 (metrics) and
+# 30088 (the listener the annotation scenario's Ingress names). The conformance suite
+# reaches the ports its own Gateways declare through the Service's
+# externalIPs, which `make kind-integration-gateway` sets to the worker node.
+#
+#   make kind-integration-start
+#   make kind-integration-ingress
+#   make kind-integration-gateway
+#   cd integration && TRICKSTER_KIND_TEST=1 go test -run TestGatewayKind -v .
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webecho-canary
+  namespace: trickster-it
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: webecho-canary
+  template:
+    metadata:
+      labels:
+        app: webecho-canary
+    spec:
+      terminationGracePeriodSeconds: 10
+      containers:
+        - name: webecho
+          image: traefik/whoami:v1.10.2
+          # the name is echoed as the first line of every response, which is
+          # how the weighted and header-matched scenarios tell it apart
+          args: ["--name=canary"]
+          ports:
+            - name: web
+              containerPort: 80
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: 5
+          readinessProbe:
+            httpGet:
+              path: /
+              port: web
+            periodSeconds: 1
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: webecho-canary
+  namespace: trickster-it
+spec:
+  selector:
+    app: webecho-canary
+  ports:
+    - name: web
+      port: 80
+      targetPort: web
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: httpbin
+  namespace: trickster-it
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: httpbin
+  template:
+    metadata:
+      labels:
+        app: httpbin
+    spec:
+      containers:
+        - name: httpbin
+          image: mccutchen/go-httpbin:2.21.0
+          env:
+            # /bytes/{n} is capped at this size; the large-body scenario reads 10 MiB
+            - name: MAX_BODY_SIZE
+              value: "104857600"
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /get
+              port: http
+            periodSeconds: 1
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: httpbin
+  namespace: trickster-it
+spec:
+  selector:
+    app: httpbin
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: trickster-gateway
+  namespace: trickster-it
+---
+# Cluster-scoped, since this controller watches every namespace: the
+# conformance suite creates its own. The grants follow docs/kubernetes-rbac.md;
+# endpointslices are absent because the service routing mode never reads them.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: trickster-gateway
+rules:
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources: ["gatewayclasses", "gateways", "httproutes", "grpcroutes", "tcproutes", "tlsroutes", "udproutes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources: ["referencegrants", "backendtlspolicies"]
+    verbs: ["list", "watch"]
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources:
+      - gatewayclasses/status
+      - gateways/status
+      - httproutes/status
+      - grpcroutes/status
+      - tcproutes/status
+      - tlsroutes/status
+      - udproutes/status
+    verbs: ["update"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingressclasses"]
+    verbs: ["list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses/status"]
+    verbs: ["update"]
+  - apiGroups: [""]
+    resources: ["services", "secrets", "configmaps", "namespaces"]
+    verbs: ["list", "watch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+  - apiGroups: ["trickstercache.org"]
+    resources: ["trickstercachepolicies"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["trickstercache.org"]
+    resources: ["trickstercachepolicies/status"]
+    verbs: ["update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: trickster-gateway
+subjects:
+  - kind: ServiceAccount
+    name: trickster-gateway
+    namespace: trickster-it
+roleRef:
+  kind: ClusterRole
+  name: trickster-gateway
+  apiGroup: rbac.authorization.k8s.io
+---
+# the election Lease lives in the controller's own namespace
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: trickster-gateway-election
+  namespace: trickster-it
+rules:
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "create", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: trickster-gateway-election
+  namespace: trickster-it
+subjects:
+  - kind: ServiceAccount
+    name: trickster-gateway
+    namespace: trickster-it
+roleRef:
+  kind: Role
+  name: trickster-gateway-election
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: trickster
+spec:
+  controllerName: trickstercache.org/gateway-controller
+---
+# the Ingress annotation scenario's class; the service- and endpoint-mode
+# Ingress controllers in this namespace each keep their own
+apiVersion: networking.k8s.io/v1
+kind: IngressClass
+metadata:
+  name: trickster-gateway
+spec:
+  controller: trickstercache.org/gateway-controller
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trickster-gateway-config
+  namespace: trickster-it
+data:
+  trickster.yaml: |
+    listeners:
+      # the listener the annotation scenario's Ingress is served on; Gateway listeners
+      # are generated from the Gateways themselves
+      web:
+        port: 9090
+      # the placeholder backend has to be bound somewhere; this listener
+      # also serves the readiness probe
+      default:
+        port: 8479
+      metrics:
+        port: 8481
+    logging:
+      log_level: info
+    backends:
+      placeholder:
+        provider: rp
+        origin_url: http://127.0.0.1:1
+        listener_names: [default]
+    kubernetes:
+      connection:
+        in_cluster: true
+      gateway_class_controller_name: trickstercache.org/gateway-controller
+      ingress_class: trickster-gateway
+      # the addresses published into Gateway and Ingress status are this
+      # Service's; the kind scenario gives it the worker node as an external IP
+      published_service:
+        namespace: trickster-it
+        name: trickster-gateway
+      leader_election:
+        namespace: trickster-it
+        name: trickster-gateway
+      ingress:
+        listener_names:
+          - web
+      defaults:
+        routing_mode: service
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trickster-gateway
+  namespace: trickster-it
+spec:
+  replicas: 1
+  # a new pod is ready only once its controller has programmed the routes,
+  # so surging one in before the old one goes makes a rollout invisible
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: trickster-gateway
+  template:
+    metadata:
+      labels:
+        app: trickster-gateway
+    spec:
+      serviceAccountName: trickster-gateway
+      # covers the preStop sleep plus the default 30s shutdown drain
+      terminationGracePeriodSeconds: 45
+      # the conformance suite's Gateways declare ports 80 and 443, which the
+      # container binds as nobody
+      securityContext:
+        sysctls:
+          - name: net.ipv4.ip_unprivileged_port_start
+            value: "0"
+      containers:
+        - name: trickster
+          image: trickster:integration
+          imagePullPolicy: Never
+          args: ["-config", "/etc/trickster/trickster.yaml"]
+          ports:
+            - name: ready
+              containerPort: 8479
+            - name: metrics
+              containerPort: 8481
+          readinessProbe:
+            httpGet:
+              path: /trickster/ready
+              port: ready
+            periodSeconds: 1
+          lifecycle:
+            preStop:
+              # lets the endpoint removal propagate before SIGTERM arrives
+              sleep:
+                seconds: 5
+          volumeMounts:
+            - name: config
+              mountPath: /etc/trickster
+      volumes:
+        - name: config
+          configMap:
+            name: trickster-gateway-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: trickster-gateway
+  namespace: trickster-it
+spec:
+  type: NodePort
+  selector:
+    app: trickster-gateway
+  ports:
+    - name: http
+      port: 9080
+      nodePort: 30085
+    - name: https
+      port: 9443
+      nodePort: 30086
+    - name: metrics
+      port: 8481
+      nodePort: 30087
+    - name: web
+      port: 9090
+      nodePort: 30088
+    # the ports the conformance suite's Gateways declare, reached through the
+    # Service's externalIPs rather than NodePorts
+    - name: conformance-http
+      port: 80
+    - name: conformance-https
+      port: 443
+    - name: conformance-1111
+      port: 1111
+    - name: conformance-6443
+      port: 6443
+    - name: conformance-7443
+      port: 7443
+    - name: conformance-8080
+      port: 8080
+    - name: conformance-8090
+      port: 8090
+    - name: conformance-8443
+      port: 8443
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: edge
+  namespace: trickster-it
+spec:
+  gatewayClassName: trickster
+  listeners:
+    - name: http
+      port: 9080
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: Same
+    - name: https
+      port: 9443
+      protocol: HTTPS
+      hostname: secure.example.com
+      tls:
+        mode: Terminate
+        certificateRefs:
+          # created and rotated by TestGatewayKind
+          - kind: Secret
+            name: edge-tls
+      allowedRoutes:
+        namespaces:
+          from: Same
+---
+# host and path routing, a header match ahead of a plain prefix, a prefix
+# rewrite, a weighted canary and a response header filter
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: shop
+  namespace: trickster-it
+spec:
+  parentRefs:
+    - name: edge
+      sectionName: http
+  hostnames:
+    - shop.example.com
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+          headers:
+            - name: x-canary
+              value: always
+      backendRefs:
+        - name: webecho-canary
+          port: 80
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /
+      backendRefs:
+        - name: webecho
+          port: 80
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /canary
+      backendRefs:
+        - name: webecho
+          port: 80
+          weight: 3
+        - name: webecho-canary
+          port: 80
+          weight: 1
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      filters:
+        - type: ResponseHeaderModifier
+          responseHeaderModifier:
+            add:
+              - name: X-Trickster-Gateway
+                value: shop
+      backendRefs:
+        - name: webecho
+          port: 80
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: old
+  namespace: trickster-it
+spec:
+  parentRefs:
+    - name: edge
+      sectionName: http
+  hostnames:
+    - old.example.com
+  rules:
+    - filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+            statusCode: 301
+---
+# WebSocket echo, large bodies and cacheable responses; the policy below
+# makes the route cache what go-httpbin says may be cached
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: bin
+  namespace: trickster-it
+spec:
+  parentRefs:
+    - name: edge
+      sectionName: http
+  hostnames:
+    - bin.example.com
+  rules:
+    - backendRefs:
+        - name: httpbin
+          port: 8080
+---
+apiVersion: trickstercache.org/v1alpha1
+kind: TricksterCachePolicy
+metadata:
+  name: bin-cache
+  namespace: trickster-it
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: bin
+  handler: proxycache
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: secure
+  namespace: trickster-it
+spec:
+  parentRefs:
+    - name: edge
+      sectionName: https
+  hostnames:
+    - secure.example.com
+  rules:
+    - backendRefs:
+        - name: webecho
+          port: 80
+---
+# the Prometheus deployed by cache-policy.yaml, through the provider its
+# Service's policy selects
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: prom
+  namespace: trickster-it
+spec:
+  parentRefs:
+    - name: edge
+      sectionName: http
+  hostnames:
+    - prom-gw.example.com
+  rules:
+    - backendRefs:
+        - name: prometheus
+          port: 9090

@@ -1,0 +1,217 @@
+# Kubernetes controller scenario in the endpoint routing mode (phase 4). It
+# deploys a third Trickster into the trickster-it namespace as an Ingress
+# controller whose generated backends load balance across the webecho
+# Service's EndpointSlices rather than its cluster IP, so a rolling restart
+# of webecho drains terminating endpoints before their pods stop. Exposed on
+# the host via NodePorts 30083 (front) and 30084 (metrics).
+#
+#   make kind-integration-start
+#   make kind-integration-ingress
+#   cd integration && TRICKSTER_KIND_TEST=1 go test -run TestIngressEndpointModeKind -v .
+#
+# TestIngressEndpointModeKind drives a rolling restart of webecho under
+# sustained load through the Ingress and asserts zero client errors.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: trickster-ingress-endpoint
+  namespace: trickster-it
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: trickster-ingress-endpoint
+rules:
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingressclasses"]
+    verbs: ["list", "watch"]
+  # read in any cluster that serves the Gateway API, whose CRDs
+  # kind-integration-gateway installs, because a listener may admit routes by
+  # the labels of their namespace
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["list", "watch"]
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources: ["gatewayclasses"]
+    verbs: ["list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: trickster-ingress-endpoint
+subjects:
+  - kind: ServiceAccount
+    name: trickster-ingress-endpoint
+    namespace: trickster-it
+roleRef:
+  kind: ClusterRole
+  name: trickster-ingress-endpoint
+  apiGroup: rbac.authorization.k8s.io
+---
+# The endpoint routing mode generates a discoverer over the controller's own
+# connection, so the service account also needs endpointslices, exactly as
+# a hand-configured discoverer would.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: trickster-ingress-endpoint
+  namespace: trickster-it
+rules:
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["list", "watch"]
+  # configmaps and the Gateway API kinds are watched in any cluster that
+  # serves the Gateway API, which the controller probes for at startup; an
+  # Ingress-only controller in such a cluster needs the grants all the same
+  - apiGroups: [""]
+    resources: ["services", "secrets", "configmaps"]
+    verbs: ["list", "watch"]
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources: ["gateways", "httproutes", "grpcroutes", "tcproutes", "tlsroutes", "udproutes", "referencegrants", "backendtlspolicies"]
+    verbs: ["list", "watch"]
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
+    verbs: ["list", "watch"]
+  # the cache policy CRD is installed in this cluster, and a controller that
+  # can see the resource but not list it would never finish syncing
+  - apiGroups: ["trickstercache.org"]
+    resources: ["trickstercachepolicies"]
+    verbs: ["list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: trickster-ingress-endpoint
+  namespace: trickster-it
+subjects:
+  - kind: ServiceAccount
+    name: trickster-ingress-endpoint
+    namespace: trickster-it
+roleRef:
+  kind: Role
+  name: trickster-ingress-endpoint
+  apiGroup: rbac.authorization.k8s.io
+---
+# a second IngressClass so this controller and the service-mode one in
+# ingress.yaml each claim their own Ingress
+apiVersion: networking.k8s.io/v1
+kind: IngressClass
+metadata:
+  name: trickster-endpoint
+spec:
+  controller: trickstercache.org/gateway-controller
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trickster-ingress-endpoint-config
+  namespace: trickster-it
+data:
+  trickster.yaml: |
+    listeners:
+      web:
+        port: 8080
+      default:
+        port: 8479
+      metrics:
+        port: 8481
+    logging:
+      log_level: info
+    backends:
+      placeholder:
+        provider: rp
+        origin_url: http://127.0.0.1:1
+        listener_names: [default]
+    kubernetes:
+      connection:
+        in_cluster: true
+      ingress_class: trickster-endpoint
+      watch_namespaces:
+        - trickster-it
+      read_only: true
+      ingress:
+        listener_names:
+          - web
+      defaults:
+        routing_mode: endpoint
+        # EndpointSlice readiness decides membership: a terminating endpoint
+        # leaves the pool before its pod stops, and a new one joins only
+        # once its readiness probe passes
+        health_mode: provider
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trickster-ingress-endpoint
+  namespace: trickster-it
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: trickster-ingress-endpoint
+  template:
+    metadata:
+      labels:
+        app: trickster-ingress-endpoint
+    spec:
+      serviceAccountName: trickster-ingress-endpoint
+      containers:
+        - name: trickster
+          image: trickster:integration
+          imagePullPolicy: Never
+          args: ["-config", "/etc/trickster/trickster.yaml"]
+          ports:
+            - name: front
+              containerPort: 8080
+            - name: metrics
+              containerPort: 8481
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: metrics
+            periodSeconds: 1
+          volumeMounts:
+            - name: config
+              mountPath: /etc/trickster
+      volumes:
+        - name: config
+          configMap:
+            name: trickster-ingress-endpoint-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: trickster-ingress-endpoint
+  namespace: trickster-it
+spec:
+  type: NodePort
+  selector:
+    app: trickster-ingress-endpoint
+  ports:
+    - name: front
+      port: 8080
+      targetPort: front
+      nodePort: 30083
+    - name: metrics
+      port: 8481
+      targetPort: metrics
+      nodePort: 30084
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: shop-endpoint
+  namespace: trickster-it
+spec:
+  ingressClassName: trickster-endpoint
+  rules:
+    - host: endpoint.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: webecho
+                port:
+                  name: web
