@@ -49,6 +49,7 @@ import (
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	corso "github.com/trickstercache/trickster/v2/pkg/proxy/cors/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/hostnames"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
@@ -88,6 +89,9 @@ type Options struct {
 	// H2CPriorKnowledge speaks cleartext HTTP/2 to the origin by prior knowledge.
 	// Cleartext HTTP/2 only; there is no HTTP/1 fallback.
 	H2CPriorKnowledge bool `yaml:"h2c_prior_knowledge,omitempty"`
+	// PreserveHost sends the client's Host header to the origin instead of the origin's own host;
+	// a Host entry in a path's request_headers still replaces it.
+	PreserveHost bool `yaml:"preserve_host,omitempty"`
 	// Protocol selects the upstream wire protocol used to communicate with the origin.
 	// When empty, HTTP is used. Supported values are provider-specific (e.g., "native"
 	// for ClickHouse to use the binary protocol on port 9000).
@@ -221,6 +225,12 @@ type Options struct {
 	FastForwardDisable bool `yaml:"fast_forward_disable,omitempty"`
 	// PathRoutingDisabled, when true, will bypass /backendName/path route registrations
 	PathRoutingDisabled bool `yaml:"path_routing_disabled,omitempty"`
+	// PathDefaultsDisabled, when true, registers only the configured paths,
+	// suppressing the provider's default path configurations
+	PathDefaultsDisabled bool `yaml:"path_defaults_disabled,omitempty"`
+	// AnyHostRouting, when true, registers the configured paths for every
+	// hostname reaching this backend's listeners; it cannot be used with hosts
+	AnyHostRouting bool `yaml:"any_host_routing,omitempty"`
 	// RequireTLS, when true, indicates this Backend Config's paths must only be registered with the TLS Router
 	RequireTLS bool `yaml:"require_tls,omitempty"`
 	// MultipartRangesDisabled, when true, indicates that if a downstream client requests multiple ranges
@@ -405,6 +415,50 @@ func (o *Options) Clone() *Options {
 	return out
 }
 
+const (
+	hostReasonEmpty         = "must not be empty"
+	hostReasonWhitespace    = "must not contain whitespace"
+	hostReasonWildcard      = "a wildcard may only be a leading *. or **. followed by a domain"
+	hostReasonDuplicate     = "is listed more than once"
+	hostReasonBothWildcards = "lists both wildcard spellings for one domain"
+)
+
+// validateHosts normalizes each hosts entry, since matching is
+// case-insensitive, and rejects duplicates and both wildcard depths on one domain
+func (o *Options) validateHosts() error {
+	seen := make(map[string]struct{}, len(o.Hosts))
+	wild := make(map[string]struct{})
+	for i, host := range o.Hosts {
+		host, err := hostnames.Normalize(host, hostnames.RequireHost)
+		if err != nil {
+			return NewErrInvalidHost(o.Hosts[i], o.Name, hostReason(err))
+		}
+		if _, ok := seen[host]; ok {
+			return NewErrInvalidHost(o.Hosts[i], o.Name, hostReasonDuplicate)
+		}
+		if hostnames.IsWildcard(host) {
+			suffix := hostnames.Suffix(host)
+			if _, ok := wild[suffix]; ok {
+				return NewErrInvalidHost(o.Hosts[i], o.Name, hostReasonBothWildcards)
+			}
+			wild[suffix] = struct{}{}
+		}
+		seen[host] = struct{}{}
+		o.Hosts[i] = host
+	}
+	return nil
+}
+
+func hostReason(err error) string {
+	switch {
+	case errors.Is(err, hostnames.ErrEmpty):
+		return hostReasonEmpty
+	case errors.Is(err, hostnames.ErrWhitespace):
+		return hostReasonWhitespace
+	}
+	return hostReasonWildcard
+}
+
 // Validate validates the Backend Options
 func (o *Options) Validate() (bool, error) {
 	if err := ValidateBackendName(o.Name); err != nil {
@@ -429,6 +483,12 @@ func (o *Options) Validate() (bool, error) {
 		if _, err := url.Parse(o.OriginURL); err != nil {
 			return false, fmt.Errorf("invalid origin_url for backend %s: %w", o.Name, err)
 		}
+	}
+	if err := o.validateHosts(); err != nil {
+		return false, err
+	}
+	if o.AnyHostRouting && len(o.Hosts) > 0 {
+		return false, fmt.Errorf("%w: backend %s", ErrAnyHostRoutingWithHosts, o.Name)
 	}
 	// previously the sigv4 block was validated only by its own
 	// UnmarshalYAML, which meant no validation at all on the programmatic
@@ -532,6 +592,27 @@ func (l Lookup) Validate() error {
 	return backendTree[:k].Validate()
 }
 
+// validateMirrors checks that every backend a path mirrors to is a routable
+// backend, since a template is never served on its own.
+func (l Lookup) validateMirrors(o *Options) error {
+	for _, p := range o.Paths {
+		if p == nil {
+			continue
+		}
+		for _, m := range p.Mirrors {
+			if m == nil {
+				continue
+			}
+			target, ok := l[m.BackendName]
+			if !ok || target == nil || target.IsTemplate {
+				return fmt.Errorf("backend %q path %q mirrors to undefined backend %q",
+					o.Name, p.Path, m.BackendName)
+			}
+		}
+	}
+	return nil
+}
+
 // ValidateBackendName ensures the backend name is permitted against the
 // dictionary of restricted words
 func ValidateBackendName(name string) error {
@@ -548,6 +629,9 @@ func (l Lookup) ValidateConfigMappings(c co.Lookup, ncl negative.Lookups,
 ) error {
 	for _, o := range l {
 		if err := ValidateBackendName(o.Name); err != nil {
+			return err
+		}
+		if err := l.validateMirrors(o); err != nil {
 			return err
 		}
 		var ok bool
@@ -694,6 +778,21 @@ func (l Lookup) ValidateTLSConfigs() (bool, error) {
 		}
 	}
 	return serveTLS, nil
+}
+
+// PoolMembers returns the names of every backend that is a member of an ALB pool; a member
+// carries its pool's listener names without being served on those listeners itself
+func (l Lookup) PoolMembers() sets.Set[string] {
+	out := sets.NewStringSet()
+	for _, o := range l {
+		if o == nil || o.ALBOptions == nil {
+			continue
+		}
+		for _, m := range o.ALBOptions.Pool {
+			out.Set(m.Name)
+		}
+	}
+	return out
 }
 
 func (l Lookup) Keys() sets.Set[string] {
