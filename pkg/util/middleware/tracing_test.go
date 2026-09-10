@@ -60,3 +60,17 @@ func TestTraceAddsResourceAttributesToRequestSpan(t *testing.T) {
 		"router.handler":   "proxycache",
 	})
 }
+
+func TestTraceRecordsSpanContext(t *testing.T) {
+	tr, _ := tu.NewRecordingTracer(t)
+	rsc := request.NewResources(&bo.Options{Name: "origin-a"}, &po.Options{Path: "/"}, nil, nil, nil, tr)
+	handler := Trace(tr, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	r := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	r = r.WithContext(tc.WithResources(r.Context(), rsc))
+	handler.ServeHTTP(httptest.NewRecorder(), r)
+	if !rsc.SpanContext.IsValid() {
+		t.Error("expected the request span context on the resources")
+	}
+}
