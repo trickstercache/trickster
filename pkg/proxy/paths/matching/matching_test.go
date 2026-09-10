@@ -37,6 +37,9 @@ func TestPMTString(t *testing.T) {
 		t.Errorf("expected %s got %s", PathMatchNameRegex, t4.String())
 	}
 
+	if PathMatchTypeSegment.String() != string(PathMatchNameSegment) {
+		t.Errorf("expected %s got %s", PathMatchNameSegment, PathMatchTypeSegment.String())
+	}
 	if t3.String() != "27" {
 		t.Errorf("expected %s got %s", "27", t3.String())
 	}
