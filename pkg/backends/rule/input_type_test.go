@@ -40,6 +40,10 @@ func TestExtractions(t *testing.T) {
 
 	r, _ := http.NewRequest("GET", testURL, nil)
 	r.Header = http.Header{testHeaderName: []string{testHeaderVal}}
+	// a field that is present and empty reads the same as an absent one
+	// through a value lookup, and differently through a presence lookup
+	rEmpty, _ := http.NewRequest("GET", testURLNoParams+"?empty=", nil)
+	rEmpty.Header = http.Header{"X-Empty": []string{""}}
 
 	tests := []struct {
 		source   string
@@ -58,6 +62,14 @@ func TestExtractions(t *testing.T) {
 		{"params", "", params, r},
 		{"param", "param1", "value", r},
 		{"header", headers.NameAuthorization, testHeaderVal, r},
+		{"has_param", "param1", "true", r},
+		{"has_param", "absent", "false", r},
+		{"has_header", headers.NameAuthorization, "true", r},
+		{"has_header", "X-Absent", "false", r},
+		{"has_header", "X-Empty", "true", rEmpty},
+		{"has_param", "empty", "true", rEmpty},
+		{"header", "X-Empty", "", rEmpty},
+		{"param", "empty", "", rEmpty},
 		{"method", "", "", nil},
 		{"url", "", "", nil},
 		{"url_no_params", "", "", nil},
@@ -115,5 +127,20 @@ func TestExtractSourcePart(t *testing.T) {
 	v = extractSourcePart("test", " ", 1)
 	if v != "" {
 		t.Errorf("expected %s got %s", "", v)
+	}
+}
+
+// a configured header key is canonicalized once at parse time, so any
+// spelling of the name reads the header the request carries
+func TestHeaderKeyCanonicalizedAtParse(t *testing.T) {
+	r := benchRule(t, benchOpts("has_header", "x-tenant", "bool", "eq", "true"))
+	hr := benchRequest()
+	hr.Header.Set("X-Tenant", "a")
+	if r.extractionFunc(hr, r.extractionArg) != "true" {
+		t.Error("expected the lowercase key to find the canonical header")
+	}
+	r = benchRule(t, benchOpts("header", "x-tenant", "string", "eq", "a"))
+	if r.extractionFunc(hr, r.extractionArg) != "a" {
+		t.Error("expected the lowercase key to read the canonical header")
 	}
 }

@@ -312,3 +312,22 @@ func TestEvaluateCaseArg(t *testing.T) {
 		t.Error("unexpected handler value")
 	}
 }
+
+// The first rule a request reaches sets the execution budget from its own
+// max_rule_executions, which may exceed the default; every later rule may
+// only lower it
+func TestHopBudget(t *testing.T) {
+	r := &rule{maxRuleExecutions: 40}
+	hr, _ := http.NewRequest(http.MethodGet, "http://example.com/", nil)
+	if _, maxHops := r.hopBudget(hr); maxHops != 40 {
+		t.Errorf("first rule must set the budget: got %d, want 40", maxHops)
+	}
+	hr = hr.WithContext(tc.WithHops(hr.Context(), 2, 20))
+	if current, maxHops := r.hopBudget(hr); current != 2 || maxHops != 20 {
+		t.Errorf("a later rule may not raise the budget: got %d %d", current, maxHops)
+	}
+	r.maxRuleExecutions = 5
+	if _, maxHops := r.hopBudget(hr); maxHops != 5 {
+		t.Errorf("a later rule may lower the budget: got %d, want 5", maxHops)
+	}
+}
