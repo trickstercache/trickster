@@ -775,3 +775,85 @@ func TestReconfigureUpdatesSharedWriter(t *testing.T) {
 	h1.Close()
 	h2.Close()
 }
+
+func TestStreamWriter(t *testing.T) {
+	for _, name := range []string{StreamStdout, StreamStderr} {
+		t.Run(name, func(t *testing.T) {
+			o := NewOptions()
+			o.Filename = name
+			w, err := NewWriter(o)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if w.stream == nil {
+				t.Fatal("stream target did not bind a process stream")
+			}
+			// redirect the stream to a file so its output can be inspected
+			capture, err := os.CreateTemp(t.TempDir(), "stream")
+			if err != nil {
+				t.Fatal(err)
+			}
+			w.stream = capture
+			if _, err := w.Write([]byte("one\n")); err != nil {
+				t.Fatal(err)
+			}
+			if err := w.Rotate(); err != nil {
+				t.Fatalf("rotate on a stream must be a flush-only no-op: %v", err)
+			}
+			if _, err := w.Write([]byte("two\n")); err != nil {
+				t.Fatal(err)
+			}
+			if err := w.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := capture.WriteString("after\n"); err != nil {
+				t.Fatalf("closing the writer must not close the process stream: %v", err)
+			}
+			b, err := os.ReadFile(capture.Name())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(b) != "one\ntwo\nafter\n" {
+				t.Errorf("stream output = %q", b)
+			}
+			if entries, _ := os.ReadDir(t.TempDir()); len(entries) != 0 {
+				t.Error("stream writer must not create files")
+			}
+		})
+	}
+}
+
+func TestStreamOptions(t *testing.T) {
+	if got := InstanceFilename(StreamStdout, 3); got != StreamStdout {
+		t.Errorf("InstanceFilename(stdout) = %q; want unchanged", got)
+	}
+	if !IsStream(StreamStderr) || IsStream("stdout.log") || IsStream("-") {
+		t.Error("IsStream must accept only stdout and stderr")
+	}
+	a := NewOptions()
+	a.Filename = StreamStdout
+	b := NewOptions()
+	b.Filename = StreamStdout
+	b.MaxSizeBytes = 1
+	b.Compress = false
+	if err := ValidateOptions(a, b); err != nil {
+		t.Errorf("differing rotation settings on a stream must not conflict: %v", err)
+	}
+	na, err := normalizeOptions(a)
+	if err != nil || na.Filename != StreamStdout || na.MaxSizeBytes != 0 {
+		t.Errorf("normalized stream options = %+v, %v; want bare stream", na, err)
+	}
+	h1, err := GetWriter(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h2, err := GetWriter(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h1.w != h2.w {
+		t.Error("stream consumers must share one writer")
+	}
+	h1.Close()
+	h2.Close()
+}

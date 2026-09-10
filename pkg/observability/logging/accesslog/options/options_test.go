@@ -204,3 +204,21 @@ error_retention:
 		t.Error("expected marshal/unmarshal round trip to preserve values")
 	}
 }
+
+func TestExtra(t *testing.T) {
+	o := &Options{Filename: "/tmp/a.log", Extra: map[string]string{"route": "ns/name"}}
+	c := o.Clone()
+	c.Extra["route"] = "other"
+	if o.Extra["route"] != "ns/name" {
+		t.Error("clone shares the extra map")
+	}
+	if ok, err := o.Validate(); !ok || err != nil {
+		t.Fatalf("expected valid extra, got %v", err)
+	}
+	for _, bad := range []string{"", "a}b", "a{b", "a%b"} {
+		o.Extra = map[string]string{bad: "v"}
+		if _, err := o.Validate(); !errors.Is(err, ErrInvalidExtraKey) {
+			t.Errorf("key %q: expected ErrInvalidExtraKey, got %v", bad, err)
+		}
+	}
+}

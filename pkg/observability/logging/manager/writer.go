@@ -29,9 +29,11 @@ import (
 )
 
 // Writer is a rotating, retention-managed log file writer. The live file is
-// opened lazily on first Write. Implements io.WriteCloser.
+// opened lazily on first Write. A stream target (stdout, stderr) is written
+// through the same buffer but is never rotated or closed. Implements io.WriteCloser.
 type Writer struct {
 	opts          Options
+	stream        *os.File
 	mtx           sync.Mutex
 	archiveMtx    sync.Mutex
 	f             *os.File
@@ -80,8 +82,15 @@ func NewWriter(o *Options) (*Writer, error) {
 			return f.Write(p)
 		},
 	}
-	if len(listPending(opts.Filename)) > 0 {
-		w.requestMill()
+	switch opts.Filename {
+	case StreamStdout:
+		w.stream = os.Stdout
+	case StreamStderr:
+		w.stream = os.Stderr
+	default:
+		if len(listPending(opts.Filename)) > 0 {
+			w.requestMill()
+		}
 	}
 	return w, nil
 }
@@ -120,15 +129,17 @@ func (w *Writer) Write(p []byte) (int, error) {
 			return 0, err
 		}
 	}
-	if err := w.ensureCurrentFile(); err != nil {
-		return 0, err
-	}
-	if w.shouldRotate(int64(len(p))) {
-		if err := w.flushLocked(); err != nil {
+	if w.stream == nil {
+		if err := w.ensureCurrentFile(); err != nil {
 			return 0, err
 		}
-		if err := w.rotate(); err != nil {
-			return 0, err
+		if w.shouldRotate(int64(len(p))) {
+			if err := w.flushLocked(); err != nil {
+				return 0, err
+			}
+			if err := w.rotate(); err != nil {
+				return 0, err
+			}
 		}
 	}
 	if len(p) > maxWriteBufferSize-len(w.buf) {
@@ -181,6 +192,9 @@ func (w *Writer) Rotate() error {
 	if err := w.flushLocked(); err != nil {
 		return err
 	}
+	if w.stream != nil {
+		return nil
+	}
 	return w.rotate()
 }
 
@@ -196,7 +210,8 @@ func (w *Writer) Close() error {
 	w.stopFlushTimer()
 	err := w.flushLocked()
 	if w.f != nil {
-		if closeErr := w.f.Close(); err == nil {
+		// a stream belongs to the process and stays open
+		if closeErr := w.closeFile(); err == nil {
 			err = closeErr
 		}
 		w.f = nil
@@ -205,6 +220,13 @@ func (w *Writer) Close() error {
 	w.mtx.Unlock()
 	w.wg.Wait()
 	return err
+}
+
+func (w *Writer) closeFile() error {
+	if w.stream != nil {
+		return nil
+	}
+	return w.f.Close()
 }
 
 func (w *Writer) scheduleFlush(delay time.Duration) {
@@ -255,7 +277,7 @@ func (w *Writer) flushLocked() error {
 		}
 	}
 	err := w.writeBufferOnce()
-	if err != nil && len(w.buf) > 0 {
+	if err != nil && len(w.buf) > 0 && w.stream == nil {
 		_ = w.f.Close()
 		w.f = nil
 		w.fileInfo = nil
@@ -297,6 +319,11 @@ func (w *Writer) shouldRotate(incoming int64) bool {
 }
 
 func (w *Writer) open() error {
+	if w.stream != nil {
+		w.f = w.stream
+		w.openedAt = w.now()
+		return nil
+	}
 	return w.openAt(time.Time{})
 }
 
