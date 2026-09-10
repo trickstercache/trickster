@@ -1,0 +1,23 @@
+# The classes the controller claims. A GatewayClass or IngressClass names
+# the controller through the controllerName the ConfigMap configures as
+# `gateway_class_controller_name`; the Ingress side is additionally narrowed
+# to the IngressClass named by `ingress_class`. Requires the Gateway API CRDs;
+# on a cluster without them, apply only the IngressClass.
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: trickster
+spec:
+  controllerName: trickstercache.org/gateway-controller
+  # parametersRef may name a ConfigMap whose keys override kubernetes.defaults
+  # for every Gateway of the class; see docs/kubernetes-gateway.md
+---
+apiVersion: networking.k8s.io/v1
+kind: IngressClass
+metadata:
+  name: trickster
+  # uncomment to serve Ingresses that name no class at all
+  # annotations:
+  #   ingressclass.kubernetes.io/is-default-class: "true"
+spec:
+  controller: trickstercache.org/gateway-controller

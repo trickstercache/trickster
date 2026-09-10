@@ -1,0 +1,106 @@
+# Least-privilege RBAC for the Gateway API / Ingress controller, following
+# docs/kubernetes-rbac.md: every verb here is one the controller uses. The
+# read grants are cluster-scoped because the default configuration watches
+# every namespace; a controller narrowed with `watch_namespaces` may bind the
+# namespaced kinds through a Role in each watched namespace instead and keep
+# only gatewayclasses, ingressclasses and namespaces cluster-wide.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: trickster-gateway
+  namespace: trickster
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: trickster-gateway
+rules:
+  # Gateway API: only needed where the cluster serves the group; the
+  # controller probes for it at startup and the grants are harmless without it
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources: ["gatewayclasses", "gateways", "httproutes", "grpcroutes", "tcproutes", "tlsroutes", "udproutes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources: ["referencegrants", "backendtlspolicies"]
+    verbs: ["list", "watch"]
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources:
+      - gatewayclasses/status
+      - gateways/status
+      - httproutes/status
+      - grpcroutes/status
+      - tcproutes/status
+      - tlsroutes/status
+      - udproutes/status
+    verbs: ["update"]
+  # Ingress v1
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingressclasses"]
+    verbs: ["list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses/status"]
+    verbs: ["update"]
+  # backends, TLS certificates (narrowed server-side to kubernetes.io/tls),
+  # GatewayClass parameters and BackendTLSPolicy CA bundles, and the
+  # Namespace labels a Gateway's allowedRoutes selector reads
+  - apiGroups: [""]
+    resources: ["services", "secrets", "configmaps", "namespaces"]
+    verbs: ["list", "watch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+  # the caching policy custom resource from deploy/kube/crds
+  - apiGroups: ["trickstercache.org"]
+    resources: ["trickstercachepolicies"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["trickstercache.org"]
+    resources: ["trickstercachepolicies/status"]
+    verbs: ["update"]
+  # Only with `defaults.routing_mode: endpoint`, where the controller
+  # discovers each referenced Service's endpoints itself. Not needed, and
+  # not granted, in the `service` routing mode the ConfigMap ships with.
+  # - apiGroups: ["discovery.k8s.io"]
+  #   resources: ["endpointslices"]
+  #   verbs: ["list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: trickster-gateway
+subjects:
+  - kind: ServiceAccount
+    name: trickster-gateway
+    namespace: trickster
+roleRef:
+  kind: ClusterRole
+  name: trickster-gateway
+  apiGroup: rbac.authorization.k8s.io
+---
+# The leader election Lease lives in the controller's own namespace. Not
+# needed with `read_only: true` or `leader_election.enabled: false`.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: trickster-gateway-election
+  namespace: trickster
+rules:
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "create", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: trickster-gateway-election
+  namespace: trickster
+subjects:
+  - kind: ServiceAccount
+    name: trickster-gateway
+    namespace: trickster
+roleRef:
+  kind: Role
+  name: trickster-gateway-election
+  apiGroup: rbac.authorization.k8s.io
