@@ -699,7 +699,7 @@ func TestKubeSupervisorSharesCertificateState(t *testing.T) {
 }
 
 // overlayTestBadCache names a cache the configuration does not define, which
-// is what a mistyped trickstercache.org/cache-name annotation used to compile to
+// is what a mistyped cache-name annotation used to compile to
 const overlayTestBadCache = `
 backends:
   ` + overlayTestBackendName + `:

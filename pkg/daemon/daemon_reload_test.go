@@ -21,18 +21,19 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/config/reload"
 	"github.com/trickstercache/trickster/v2/pkg/daemon/instance"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
 )
 
-// withStubHupDelegate swaps hupDelegate for the duration of the test and
+// withStubReloadDelegate swaps reloadDelegate for the duration of the test and
 // returns the call recorder. The original delegate is restored on cleanup.
-func withStubHupDelegate(t *testing.T) *hupCallRecorder {
+func withStubReloadDelegate(t *testing.T) *hupCallRecorder {
 	t.Helper()
 	rec := &hupCallRecorder{}
-	prev := hupDelegate
-	hupDelegate = rec.record
-	t.Cleanup(func() { hupDelegate = prev })
+	prev := reloadDelegate
+	reloadDelegate = rec.record
+	t.Cleanup(func() { reloadDelegate = prev })
 	return rec
 }
 
@@ -59,13 +60,13 @@ func (r *hupCallRecorder) snapshot() []hupCall {
 	return slices.Clone(r.calls)
 }
 
-func TestNewHupFuncForwardsArgs(t *testing.T) {
-	rec := withStubHupDelegate(t)
+func TestNewReloadFuncForwardsArgs(t *testing.T) {
+	rec := withStubReloadDelegate(t)
 
 	si := &instance.ServerInstance{Listeners: listener.NewGroup()}
 	args := []string{"-config", "/custom/path/trickster.yaml"}
 
-	reloader := newHupFunc(si, args)
+	reloader := newReloadFunc(si, args)
 	if _, err := reloader("test"); err != nil {
 		t.Fatalf("reloader returned error: %v", err)
 	}
@@ -82,26 +83,26 @@ func TestNewHupFuncForwardsArgs(t *testing.T) {
 	}
 }
 
-// TestNewHupFuncPostReloadPreservesArgs simulates the bug scenario: a reload
-// happens, a fresh hupFunc is created (as Hup does after ApplyConfig), and the
-// re-registered hupFunc is invoked. It must still forward the original -config
-// args, not silently fall back to the default config path. This is the
+// TestNewReloadFuncPostReloadPreservesArgs simulates the bug scenario: a reload
+// happens, a fresh hupFunc is created (as Reload does after ApplyConfig), and
+// the re-registered hupFunc is invoked. It must still forward the original
+// -config args, not silently fall back to the default config path. This is the
 // regression test for the POST /trickster/config/reload after-SIGHUP bug.
-func TestNewHupFuncPostReloadPreservesArgs(t *testing.T) {
-	rec := withStubHupDelegate(t)
+func TestNewReloadFuncPostReloadPreservesArgs(t *testing.T) {
+	rec := withStubReloadDelegate(t)
 
 	si := &instance.ServerInstance{Listeners: listener.NewGroup()}
 	args := []string{"-config", "/custom/path/trickster.yaml"}
 
-	initial := newHupFunc(si, args)
-	if _, err := initial("sighup"); err != nil {
+	initial := newReloadFunc(si, args)
+	if _, err := initial(reload.SourceSIGHUP); err != nil {
 		t.Fatalf("initial reloader returned error: %v", err)
 	}
 
-	// Mimic what Hup does after a successful reload: build a new hupFunc to
+	// Mimic what Reload does after a successful reload: build a new hupFunc to
 	// re-register with the new router. Before the fix this closure dropped
 	// args; after the fix it must close over the same args.
-	reregistered := newHupFunc(si, args)
+	reregistered := newReloadFunc(si, args)
 	if _, err := reregistered("mgmt-api"); err != nil {
 		t.Fatalf("re-registered reloader returned error: %v", err)
 	}
@@ -117,11 +118,11 @@ func TestNewHupFuncPostReloadPreservesArgs(t *testing.T) {
 	}
 }
 
-func TestNewHupFuncNilArgs(t *testing.T) {
-	rec := withStubHupDelegate(t)
+func TestNewReloadFuncNilArgs(t *testing.T) {
+	rec := withStubReloadDelegate(t)
 
 	si := &instance.ServerInstance{Listeners: listener.NewGroup()}
-	reloader := newHupFunc(si, nil)
+	reloader := newReloadFunc(si, nil)
 	if _, err := reloader("test"); err != nil {
 		t.Fatalf("reloader returned error: %v", err)
 	}
