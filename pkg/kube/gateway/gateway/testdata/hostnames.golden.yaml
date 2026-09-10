@@ -1,0 +1,144 @@
+listeners:
+    kgw--listener-http-80:
+        port: 80
+    kgw--listener-http-8080:
+        port: 8080
+    kgw--listener-http-8081:
+        port: 8081
+backends:
+    kgw--httproute.shop.web_r0:
+        provider: rp
+        origin_url: http://web-svc.shop.svc:8080
+        hosts:
+            - api.example.com
+        listener_names:
+            - kgw--listener-http-80
+        cache_key_prefix: httproute.shop.web
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        preserve_host: true
+        paths:
+            - path: /
+              match_type: exact
+              handler: proxy
+              methods:
+                - '*'
+    kgw--httproute.shop.web_r1:
+        provider: rp
+        origin_url: http://web-svc.shop.svc:8080
+        hosts:
+            - deep.shop.example.com
+        listener_names:
+            - kgw--listener-http-80
+        cache_key_prefix: httproute.shop.web
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        preserve_host: true
+        paths:
+            - path: /
+              match_type: exact
+              handler: proxy
+              methods:
+                - '*'
+    kgw--httproute.shop.web_r2:
+        provider: rp
+        origin_url: http://web-svc.shop.svc:8080
+        hosts:
+            - shop.example.com
+        listener_names:
+            - kgw--listener-http-80
+        cache_key_prefix: httproute.shop.web
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        preserve_host: true
+        paths:
+            - path: /
+              match_type: exact
+              handler: proxy
+              methods:
+                - '*'
+    kgw--httproute.shop.web_r3:
+        provider: rp
+        origin_url: http://web-svc.shop.svc:8080
+        hosts:
+            - api.example.com
+        listener_names:
+            - kgw--listener-http-8080
+        cache_key_prefix: httproute.shop.web
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        preserve_host: true
+        paths:
+            - path: /
+              match_type: exact
+              handler: proxy
+              methods:
+                - '*'
+    kgw--httproute.shop.web_r4:
+        provider: rp
+        origin_url: http://web-svc.shop.svc:8080
+        hosts:
+            - deep.shop.example.com
+        listener_names:
+            - kgw--listener-http-8080
+        cache_key_prefix: httproute.shop.web
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        preserve_host: true
+        paths:
+            - path: /
+              match_type: exact
+              handler: proxy
+              methods:
+                - '*'
+    kgw--httproute.shop.web_r5:
+        provider: rp
+        origin_url: http://web-svc.shop.svc:8080
+        hosts:
+            - other.net
+        listener_names:
+            - kgw--listener-http-8080
+        cache_key_prefix: httproute.shop.web
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        preserve_host: true
+        paths:
+            - path: /
+              match_type: exact
+              handler: proxy
+              methods:
+                - '*'
+    kgw--httproute.shop.web_r6:
+        provider: rp
+        origin_url: http://web-svc.shop.svc:8080
+        hosts:
+            - shop.example.com
+        listener_names:
+            - kgw--listener-http-8080
+        cache_key_prefix: httproute.shop.web
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        preserve_host: true
+        paths:
+            - path: /
+              match_type: exact
+              handler: proxy
+              methods:
+                - '*'
+    kgw--httproute.shop.wildcard_r0:
+        provider: rp
+        origin_url: http://web-svc.shop.svc:8080
+        hosts:
+            - docs.example.com
+        listener_names:
+            - kgw--listener-http-8081
+        cache_key_prefix: httproute.shop.wildcard
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        preserve_host: true
+        paths:
+            - path: /docs
+              match_type: exact
+              handler: proxy
+              methods:
+                - '*'

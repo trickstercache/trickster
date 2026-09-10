@@ -1,0 +1,37 @@
+listeners:
+    kgw--listener-http-80:
+        port: 80
+backends:
+    kgw--httproute.shop.web_r0:
+        provider: rpc
+        origin_url: http://web-svc.shop.svc:8080
+        hosts:
+            - shop.example.com
+        listener_names:
+            - kgw--listener-http-80
+        cache_name: objects
+        cache_key_prefix: httproute.shop.web
+        timeout: 45s
+        authenticator_name: gateway-auth
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        preserve_host: true
+        paths:
+            - path: /api
+              match_type: segment
+              handler: proxycache
+              methods:
+                - GET
+                - HEAD
+            - path: /api
+              match_type: segment
+              handler: proxy
+              methods:
+                - POST
+                - PUT
+                - DELETE
+                - CONNECT
+                - OPTIONS
+                - TRACE
+                - PATCH
+                - PURGE

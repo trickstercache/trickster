@@ -1,0 +1,131 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: trickster
+spec:
+  controllerName: trickstercache.org/gateway-controller
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: gw
+  namespace: infra
+spec:
+  gatewayClassName: trickster
+  listeners:
+    - name: http
+      port: 80
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: All
+    # a listener admitting only gRPC routes
+    - name: grpc
+      port: 8080
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: All
+        kinds:
+          - kind: GRPCRoute
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grpc-svc
+  namespace: shop
+spec:
+  ports:
+    - name: grpc
+      port: 9000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-svc
+  namespace: shop
+spec:
+  ports:
+    - name: http
+      port: 8080
+---
+# method matches of every shape: a whole service, one method, a method under
+# any service, and a pattern, with a header match on one of them
+apiVersion: gateway.networking.k8s.io/v1
+kind: GRPCRoute
+metadata:
+  name: rpc
+  namespace: shop
+  creationTimestamp: "2026-01-01T00:00:00Z"
+spec:
+  parentRefs:
+    - name: gw
+      namespace: infra
+  hostnames:
+    - rpc.example.com
+  rules:
+    - matches:
+        - method:
+            service: shop.v1.Orders
+        - method:
+            service: shop.v1.Carts
+            method: GetCart
+          headers:
+            - name: x-tenant
+              value: gold
+      filters:
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            set:
+              - name: x-route
+                value: rpc
+      backendRefs:
+        - name: grpc-svc
+          port: 9000
+    - matches:
+        - method:
+            method: Health
+        - method:
+            type: RegularExpression
+            service: "shop\\.v[0-9]+\\.Users"
+            method: "Get.*"
+      backendRefs:
+        - name: grpc-svc
+          port: 9000
+---
+# an HTTPRoute newer than the GRPCRoute on the same listener and hostname is
+# refused, since the two kinds cannot share one
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: clash
+  namespace: shop
+  creationTimestamp: "2026-02-01T00:00:00Z"
+spec:
+  parentRefs:
+    - name: gw
+      namespace: infra
+  hostnames:
+    - rpc.example.com
+  rules:
+    - backendRefs:
+        - name: web-svc
+          port: 8080
+---
+# an HTTPRoute on another hostname is served beside the GRPCRoute
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: web
+  namespace: shop
+  creationTimestamp: "2026-02-01T00:00:00Z"
+spec:
+  parentRefs:
+    - name: gw
+      namespace: infra
+  hostnames:
+    - shop.example.com
+  rules:
+    - backendRefs:
+        - name: web-svc
+          port: 8080

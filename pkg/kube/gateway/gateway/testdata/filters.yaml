@@ -1,0 +1,324 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: trickster
+spec:
+  controllerName: trickstercache.org/gateway-controller
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: gw
+  namespace: infra
+spec:
+  gatewayClassName: trickster
+  listeners:
+    - name: http
+      port: 80
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: All
+    # a second port, so a redirect naming neither scheme nor port has a
+    # listener port other than the well-known one to send clients back to
+    - name: alt
+      port: 8080
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: All
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-svc
+  namespace: shop
+spec:
+  ports:
+    - name: http
+      port: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: canary-svc
+  namespace: shop
+spec:
+  ports:
+    - name: http
+      port: 8080
+---
+# header modifiers on the request and the response, and a URL rewrite of the
+# Host header and the matched prefix, all on one rule
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: headers
+  namespace: shop
+spec:
+  parentRefs:
+    - name: gw
+      namespace: infra
+      sectionName: http
+  hostnames:
+    - shop.example.com
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api
+      filters:
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            set:
+              - name: X-Env
+                value: prod
+            add:
+              - name: X-Trace
+                value: traced
+            remove:
+              - X-Internal
+        - type: ResponseHeaderModifier
+          responseHeaderModifier:
+            set:
+              - name: Cache-Control
+                value: no-store
+            add:
+              - name: Vary
+                value: Accept
+            remove:
+              - Server
+        - type: URLRewrite
+          urlRewrite:
+            hostname: web.internal
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /v2
+      backendRefs:
+        - name: web-svc
+          port: 8080
+---
+# a redirect naming every part of the Location
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: moved
+  namespace: shop
+spec:
+  parentRefs:
+    - name: gw
+      namespace: infra
+      sectionName: http
+  hostnames:
+    - shop.example.com
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /old
+      filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+            hostname: new.example.com
+            port: 8443
+            statusCode: 301
+            path:
+              type: ReplaceFullPath
+              replaceFullPath: /new
+        # response headers apply to the redirection itself
+        - type: ResponseHeaderModifier
+          responseHeaderModifier:
+            set:
+              - name: Cache-Control
+                value: no-store
+---
+# a request header modifier ahead of the redirect modifies the request the
+# redirect answers, so the Host it sets is the Location's hostname
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: tenant
+  namespace: shop
+spec:
+  parentRefs:
+    - name: gw
+      namespace: infra
+      sectionName: http
+  hostnames:
+    - shop.example.com
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /tenant
+      filters:
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            set:
+              - name: hOsT
+                value: tenant.example.com
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+    # the same modifier after the redirect modifies a request that goes
+    # nowhere: it is reported and has no effect on the Location
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /late
+      filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            set:
+              - name: Host
+                value: tenant.example.com
+---
+# a redirect naming neither scheme nor port goes back to the listener's
+# port, whatever port the Host header carried
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: hostname-only
+  namespace: shop
+spec:
+  parentRefs:
+    - name: gw
+      namespace: infra
+      sectionName: alt
+  hostnames:
+    - shop.example.com
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /alt
+      filters:
+        - type: RequestRedirect
+          requestRedirect:
+            hostname: new.example.com
+---
+# the same redirect attached to both ports is served once per port, each
+# sending clients back to its own
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: both-ports
+  namespace: shop
+spec:
+  parentRefs:
+    - name: gw
+      namespace: infra
+  hostnames:
+    - both.example.com
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /both
+      filters:
+        - type: RequestRedirect
+          requestRedirect:
+            hostname: new.example.com
+---
+# the common case: send plaintext requests to the same URL over TLS
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: https
+  namespace: shop
+spec:
+  parentRefs:
+    - name: gw
+      namespace: infra
+      sectionName: http
+  hostnames:
+    - shop.example.com
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /login
+      filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+---
+# backendRef filters apply to the member they are written on
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: split
+  namespace: shop
+spec:
+  parentRefs:
+    - name: gw
+      namespace: infra
+      sectionName: http
+  hostnames:
+    - shop.example.com
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /split
+      backendRefs:
+        - name: web-svc
+          port: 8080
+          weight: 3
+          filters:
+            - type: RequestHeaderModifier
+              requestHeaderModifier:
+                set:
+                  - name: X-Variant
+                    value: stable
+        - name: canary-svc
+          port: 8080
+          weight: 1
+          filters:
+            - type: RequestHeaderModifier
+              requestHeaderModifier:
+                set:
+                  - name: X-Variant
+                    value: canary
+            - type: URLRewrite
+              urlRewrite:
+                path:
+                  type: ReplaceFullPath
+                  replaceFullPath: /canary
+            - type: ResponseHeaderModifier
+              responseHeaderModifier:
+                add:
+                  - name: Vary
+                    value: X-Variant
+---
+# a backendRef prefix replacement is allowed on a rule with one backendRef
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: member-prefix
+  namespace: shop
+spec:
+  parentRefs:
+    - name: gw
+      namespace: infra
+      sectionName: http
+  hostnames:
+    - shop.example.com
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /member
+      backendRefs:
+        - name: web-svc
+          port: 8080
+          filters:
+            - type: URLRewrite
+              urlRewrite:
+                path:
+                  type: ReplacePrefixMatch
+                  replacePrefixMatch: /m

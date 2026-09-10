@@ -1,0 +1,176 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: trickster
+spec:
+  controllerName: trickstercache.org/gateway-controller
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: gw
+  namespace: infra
+spec:
+  gatewayClassName: trickster
+  listeners:
+    - name: http
+      port: 80
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: All
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: secure-svc
+  namespace: shop
+spec:
+  ports:
+    - name: https
+      port: 8443
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: system-svc
+  namespace: shop
+spec:
+  ports:
+    - name: https
+      port: 8443
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: broken-svc
+  namespace: shop
+spec:
+  ports:
+    - name: https
+      port: 8443
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ca-bundle
+  namespace: shop
+data:
+  ca.crt: |
+    -----BEGIN CERTIFICATE-----
+    MIIBkDCCATWgAwIBAgIUBM0wEvGb47MAWCsWiWOuKebif1cwCgYIKoZIzj0EAwIw
+    HDEaMBgGA1UEAwwRVHJpY2tzdGVyIFRlc3QgQ0EwIBcNMjYwOTA5MDYzOTM5WhgP
+    MjEyNjA4MTYwNjM5MzlaMBwxGjAYBgNVBAMMEVRyaWNrc3RlciBUZXN0IENBMFkw
+    EwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEgnLIuREsSh7cJNlA7yXD0ghHSUUUjD53
+    asMk/Q3hkuojnbud/rU2Cg1Au1Obla4uPXBkPG7mh6g4rKEostyXo6NTMFEwHQYD
+    VR0OBBYEFM/W8A40mTEPoW+W8G531tMlVkejMB8GA1UdIwQYMBaAFM/W8A40mTEP
+    oW+W8G531tMlVkejMA8GA1UdEwEB/wQFMAMBAf8wCgYIKoZIzj0EAwIDSQAwRgIh
+    APW0tnI8NA7VaYUgTJnVX1FCtQoSHDeGwiUX8wC391wKAiEAteuPh0f1KzPZZIYQ
+    +1thDxowJBFHpF8Cwl9p2aeltmY=
+    -----END CERTIFICATE-----
+---
+# a private CA from a ConfigMap, selecting one named port of the Service
+apiVersion: gateway.networking.k8s.io/v1
+kind: BackendTLSPolicy
+metadata:
+  name: tls-ca
+  namespace: shop
+  creationTimestamp: "2026-01-01T00:00:00Z"
+spec:
+  targetRefs:
+    - group: ""
+      kind: Service
+      name: secure-svc
+      sectionName: https
+  validation:
+    caCertificateRefs:
+      - group: ""
+        kind: ConfigMap
+        name: ca-bundle
+    hostname: secure.internal
+---
+# a newer policy for the same target loses to the older one
+apiVersion: gateway.networking.k8s.io/v1
+kind: BackendTLSPolicy
+metadata:
+  name: tls-late
+  namespace: shop
+  creationTimestamp: "2026-02-01T00:00:00Z"
+spec:
+  targetRefs:
+    - group: ""
+      kind: Service
+      name: secure-svc
+      sectionName: https
+  validation:
+    wellKnownCACertificates: System
+    hostname: late.internal
+---
+# the system trust store; options are implementation-specific and ignored
+apiVersion: gateway.networking.k8s.io/v1
+kind: BackendTLSPolicy
+metadata:
+  name: tls-system
+  namespace: shop
+spec:
+  targetRefs:
+    - group: ""
+      kind: Service
+      name: system-svc
+  validation:
+    wellKnownCACertificates: System
+    hostname: system.internal
+  options:
+    example.com/min-version: "1.3"
+---
+# a CA reference that cannot be resolved fails the references it governs
+apiVersion: gateway.networking.k8s.io/v1
+kind: BackendTLSPolicy
+metadata:
+  name: tls-broken
+  namespace: shop
+spec:
+  targetRefs:
+    - group: ""
+      kind: Service
+      name: broken-svc
+  validation:
+    caCertificateRefs:
+      - group: ""
+        kind: ConfigMap
+        name: missing-bundle
+    hostname: broken.internal
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: secure
+  namespace: shop
+spec:
+  parentRefs:
+    - name: gw
+      namespace: infra
+  hostnames:
+    - shop.example.com
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /secure
+      backendRefs:
+        - name: secure-svc
+          port: 8443
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /system
+      backendRefs:
+        - name: system-svc
+          port: 8443
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /broken
+      backendRefs:
+        - name: broken-svc
+          port: 8443

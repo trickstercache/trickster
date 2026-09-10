@@ -1,0 +1,213 @@
+listeners:
+    kgw--listener-http-80:
+        port: 80
+backends:
+    kgw--httproute.shop.metrics_r0:
+        provider: prometheus
+        origin_url: http://prom-svc.shop.svc:9090
+        hosts:
+            - metrics.example.com
+        listener_names:
+            - kgw--listener-http-80
+        cache_name: objects
+        cache_key_prefix: httproute.shop.metrics
+        max_ttl: 10m0s
+        timeout: 30s
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        preserve_host: true
+        paths:
+            - path: /
+              match_type: segment
+              handler: proxycache
+              methods:
+                - GET
+                - HEAD
+              cache_key_params:
+                - query
+                - step
+              hide_result_header: true
+            - path: /
+              match_type: segment
+              handler: proxy
+              methods:
+                - POST
+                - PUT
+                - DELETE
+                - CONNECT
+                - OPTIONS
+                - TRACE
+                - PATCH
+                - PURGE
+              cache_key_params:
+                - query
+                - step
+              hide_result_header: true
+            - path: /api/v1/query_range
+              match_type: exact
+              handler: proxycache
+              methods:
+                - HEAD
+              cache_key_params:
+                - query
+                - step
+              hide_result_header: true
+            - path: /api/v1/query_range
+              match_type: exact
+              handler: proxy
+              methods:
+                - CONNECT
+                - DELETE
+                - OPTIONS
+                - PATCH
+                - PURGE
+                - PUT
+                - TRACE
+              cache_key_params:
+                - query
+                - step
+              hide_result_header: true
+            - path: /api/v1/query
+              match_type: exact
+              handler: proxycache
+              methods:
+                - HEAD
+              cache_key_params:
+                - query
+                - step
+              hide_result_header: true
+            - path: /api/v1/query
+              match_type: exact
+              handler: proxy
+              methods:
+                - CONNECT
+                - DELETE
+                - OPTIONS
+                - PATCH
+                - PURGE
+                - PUT
+                - TRACE
+              cache_key_params:
+                - query
+                - step
+              hide_result_header: true
+            - path: /api/v1/series
+              match_type: exact
+              handler: proxycache
+              methods:
+                - HEAD
+              cache_key_params:
+                - query
+                - step
+              hide_result_header: true
+            - path: /api/v1/series
+              match_type: exact
+              handler: proxy
+              methods:
+                - CONNECT
+                - DELETE
+                - OPTIONS
+                - PATCH
+                - PURGE
+                - PUT
+                - TRACE
+              cache_key_params:
+                - query
+                - step
+              hide_result_header: true
+            - path: /api/v1/query_range
+              match_type: exact
+              handler: query_range
+              methods:
+                - GET
+                - POST
+              cache_key_params:
+                - query
+                - step
+                - stats
+              hide_result_header: true
+            - path: /api/v1/query
+              match_type: exact
+              handler: query
+              methods:
+                - GET
+                - POST
+              cache_key_params:
+                - query
+                - time
+                - step
+              hide_result_header: true
+            - path: /api/v1/series
+              match_type: exact
+              handler: series
+              methods:
+                - GET
+                - POST
+              cache_key_params:
+                - match[]
+                - start
+                - end
+                - query
+                - step
+              hide_result_header: true
+    kgw--httproute.shop.metrics_r1:
+        provider: rpc
+        origin_url: http://web-svc.shop.svc:8080
+        hosts:
+            - metrics.example.com
+        listener_names:
+            - kgw--listener-http-80
+        cache_name: objects
+        cache_key_prefix: httproute.shop.metrics
+        timeout: 30s
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        preserve_host: true
+        paths:
+            - path: /static
+              match_type: segment
+              handler: proxycache
+              methods:
+                - GET
+                - HEAD
+              response_headers:
+                +Vary: Accept-Encoding
+              cache_key_headers:
+                - X-Tenant
+              hide_result_header: true
+            - path: /static
+              match_type: segment
+              handler: proxy
+              methods:
+                - POST
+                - PUT
+                - DELETE
+                - CONNECT
+                - OPTIONS
+                - TRACE
+                - PATCH
+                - PURGE
+              response_headers:
+                +Vary: Accept-Encoding
+              cache_key_headers:
+                - X-Tenant
+              hide_result_header: true
+    kgw--httproute.shop.query_r0:
+        provider: rp
+        origin_url: http://prom-svc.shop.svc:9090
+        hosts:
+            - query.example.com
+        listener_names:
+            - kgw--listener-http-80
+        cache_key_prefix: httproute.shop.query
+        timeout: 45s
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        preserve_host: true
+        paths:
+            - path: /api/v1/query_range
+              match_type: exact
+              handler: proxy
+              methods:
+                - '*'
+              hide_result_header: true
