@@ -51,12 +51,27 @@
 #     # rotation (e.g. certbot). FS events accelerate detection where supported.
 #     # Changes are hot-swapped without restart. default 30s; 0 disables
 #     tls_watch_interval: 30s
+#     # tls_runtime_certs serves tls_port even when no mapped backend provides a
+#     # certificate file; certificates are then supplied to the running process
+#     # (e.g. by the Kubernetes controller from Secrets). default false
+#     tls_runtime_certs: false
 #     # connections_limit defines the maximum number of concurrent connections
 #     # the listener may handle at any time. 0 means unlimited
 #     connections_limit: 0
 #
 #     # read_header_timeout defines the amount of time allowed to read request headers.
 #     read_header_timeout: 10s
+#
+#     # trusted_proxies lists the addresses and CIDRs of proxies in front of this
+#     # listener. A connection from one of them is attributed to the client named
+#     # by its Forwarded, X-Forwarded-For or X-Real-IP header; any other connection
+#     # is attributed to its peer, whatever headers it carries. See docs/configuring.md
+#     trusted_proxies: [ 10.0.0.0/8 ]
+#
+#     # proxy_protocol accepts a PROXY protocol v1/v2 header ahead of each connection,
+#     # honored from every peer when trusted_proxies is empty and only from a trusted
+#     # proxy otherwise. Default: false
+#     proxy_protocol: false
 #
 #     # max_request_body_size_bytes indicates the maximum allowed request body size.
 #     # Use 0 for no body allowed, and < 0 for no maximum. Default: 10MB.
@@ -114,7 +129,9 @@
 #     # MySQL-specific options have no direct TRK_* environment mapping and a
 #     # structured origin_url does not expand ${VARIABLE}. Authenticator users
 #     # do support environment expansion. Relevant reloads restart and drain
-#     # this listener rather than moving established sessions.
+#     # this listener rather than moving established sessions. On Kubernetes,
+#     # keep a MySQL listener's origin and client credentials in a Secret
+#     # rather than a shared ConfigMap.
 #
 #   # A ClickHouse listener accepts the Native binary protocol and maps to one
 #   # ClickHouse backend through that backend's listener_names option.
@@ -132,6 +149,43 @@
 #     port: 8485
 #     # address: ''
 #     # connections_limit: 0
+#
+#   # A listener with protocol tcp relays each connection's bytes, unread, to
+#   # its one mapped backend: a reverseproxy (rp) backend whose origin_url
+#   # supplies the host and port to dial, or an alb backend (mechanism rr)
+#   # whose pool members are such backends, each connection committed to one
+#   # member by weighted round robin. See docs/configuring.md#stream-listeners
+#   postgres:
+#     protocol: tcp
+#     port: 5432
+#     # address: ''
+#     # connections_limit bounds the connections relayed at once; for a udp
+#     # listener it bounds the sessions held at once, 1024 when unset
+#     # connections_limit: 0
+#     # stream tunes the relay for the tcp, tls and udp protocols
+#     stream:
+#       # connect_timeout bounds the lookup and dial of the backend and, on a
+#       # tls listener, the wait for the client's ClientHello. Default: 10s
+#       connect_timeout: 10s
+#       # idle_timeout closes a connection over which no byte has moved in
+#       # either direction for this long, or ends a udp session that carried
+#       # no datagram for this long. Default: none for tcp and tls, 60s for udp
+#       idle_timeout: 0s
+#
+#   # A listener with protocol tls relays TLS connections unterminated: the
+#   # server name the client offers selects the mapped backend whose hosts
+#   # name it, or the one mapped backend with no hosts, and the backend
+#   # terminates TLS itself. tls_port and tls_runtime_certs do not apply.
+#   sni:
+#     protocol: tls
+#     port: 8443
+#
+#   # A listener with protocol udp relays each client's datagrams to its one
+#   # mapped backend over a session of its own, ended once idle. A udp listener
+#   # binds its own port space, so it may share a port number with a tcp one.
+#   dns:
+#     protocol: udp
+#     port: 5353
 
 # caches:
 #   default:
@@ -493,6 +547,13 @@ backends:
 #     # Default: false
 #     h2c_prior_knowledge: false
 
+#     # preserve_host sends the Host header exactly as the client sent it to the
+#     # origin, instead of the origin's own host, and the client's Host then joins
+#     # the cache key. A Host entry in a path's request_headers with a value, or a
+#     # -Host entry, still replaces it and leaves the key alone; an empty Host
+#     # entry changes nothing. Default: false
+#     preserve_host: false
+
     # is_default describes whether this backend is the default backend considered when routing http requests
     # it is false, by default; but if you only have a single backend configured, is_default will be true unless explicitly set to false
     is_default: true
@@ -504,7 +565,10 @@ backends:
 
 #     # hosts indicates which FQDNs requested by the client should route to this Origin (in addition to path-based routing)
 #     # if you are using TLS, all FQDNs should be included in the certfiicate common names to avoid insecure warnings to clients
+#     # matching is case-insensitive; a single-label wildcard like *.example.com is also accepted
 #     # default setting is empty list. List format is: hosts: [ 1.example.com, 2.example.com ]
+#     # an entry may be a one-label wildcard (*.example.com matches api.example.com) or an
+#     # any-depth wildcard (**.example.com also matches a.b.example.com); see /docs/paths.md
 #     hosts: []
 
 #     # cache_name identifies the name of the cache (configured above) that you want to use with this backend. default is default
@@ -532,9 +596,17 @@ backends:
 #     negative_cache_name: default
 
 #     # path_routing_disabled will prevent the backend from being accessible via /backend_name/ path to Trickster. Disabling this requires
-#     # the backend to have hosts configured (see below) or be the target of a rule backend, or it will be unreachable.
-#     # default is false
+#     # the backend to have hosts configured (see below), any_host_routing enabled, or be the target of a rule backend,
+#     # or it will be unreachable. default is false
 #     path_routing_disabled: false
+
+#     # any_host_routing registers this backend's paths for every hostname reaching its listeners, rather than for a
+#     # hosts list. It cannot be combined with hosts. default is false
+#     any_host_routing: false
+
+#     # path_defaults_disabled registers only the paths configured below, suppressing the paths the backend's provider
+#     # defines by default (such as the catch-all '/' route, and a time series provider's API paths). default is false
+#     path_defaults_disabled: false
 
 #     # access_log configures per-backend HTTP access and error logging. Both logs are off by default and
 #     # are each enabled by setting their filename. See docs/access-logs.md for all options and format tokens
@@ -562,6 +634,9 @@ backends:
 #       error_filename: /var/log/trickster/example.error.log
 #       # error_threshold is the minimum response status code written to the error log. default is 400
 #       error_threshold: 400
+#       # extra declares static values rendered by %{key}e tokens and the json preset's extra object
+#       extra:
+#         team: payments
 #       # error_format, error_rotation, error_retention and error_compress override the error log's
 #       # behaviors; each inherits from the corresponding access log option above when unset
 #       error_format: ''
@@ -757,11 +832,27 @@ backends:
 #         response_code: 401
 #         response_body: 'No soup for you!'
 #         no_metrics: true                                 # do not record metrics for requests to this path
+#         hide_result_header: true                         # withhold X-Trickster-Result from the client; the access log still records it
 #         response_headers:
 #           Cache-Control: no-cache                  # attach these headers to the response down to the client
 #           Content-Type: text/plain
 #         cors:                                      # overrides the backend CORS policy for this path
 #           mode: disable                            # remove all Access-Control-* response headers
+#       # a path may be conditioned on request headers and query parameters; conditioned
+#       # paths on one path are tried in order, so list an unconditioned one after them
+#       - path: /example/
+#         methods: [ GET ]
+#         match_type: segment                  # prefix matching on a segment boundary: /example and /example/x
+#         handler: proxy
+#         match_headers:                       # every listed condition must be satisfied
+#           - name: X-Tenant
+#             value: gold                      # compared to the whole header value
+#         match_query_params:
+#           - name: version
+#             value: '^v[0-9]+$'
+#             regex: true                      # matched as an unanchored RE2 regular expression
+#         match_order: 1                       # ranks conditioned paths sharing a path and method, lowest first;
+#                                              # needed when the candidates come from different backends
 #       - path: /example/
 #         methods: [ GET, POST ]
 #         collapsed_forwarding: progressive    # see /docs/collapsed_forwarding.md
@@ -778,6 +869,34 @@ backends:
 #                                                               # while the - will remove the header
 #         request_params:
 #           +authToken: SomeTokenHere                 # manipulate request query parameters in the same way
+#       # a dispatch-only path lives on this backend's own router and on no
+#       # listener: it is reachable only when an ALB pool or a rule's
+#       # next_route hands a request to this backend. See /docs/paths.md.
+#       - path: /internal/
+#         match_type: prefix
+#         methods: [ '*' ]
+#         handler: proxy
+#         dispatch_only: true
+#       # a path may bound and retry its upstream exchange, mirror its requests
+#       # to another backend, and relay origin trailers on a caching handler.
+#       # See the Timeouts and Retries, Mirroring Requests and Forwarding
+#       # Trailers sections of /docs/paths.md
+#       - path: /orders/
+#         match_type: prefix
+#         methods: [ GET, POST ]
+#         handler: proxycache
+#         timeout: 5s                          # deadline on the whole upstream exchange, retries included
+#         attempt_timeout: 2s                  # deadline on each upstream attempt; at most timeout
+#         retry:
+#           attempts: 2                        # additional attempts after a failure (1-10)
+#           codes: [ 502, 503 ]                # upstream statuses retried; connection failures always are
+#           backoff: 100ms                     # wait before each retry
+#           budget_percent: 20                 # retries allowed as a share of recent requests. default 20
+#         mirrors:
+#           - backend_name: shadow             # backend receiving a copy of each request; its responses are discarded
+#             percent: 10                      # share of requests copied. default 100
+#             max_in_flight: 64                # copies in progress at once; more are dropped. default 64
+#         forward_trailers: false              # relay origin trailers (gRPC) on a caching handler. default false
 #       # regex path: a path starting with ^/ is auto-detected as a regular expression
 #       # (RE2 syntax); or set match_type: regex explicitly. Regex paths are evaluated
 #       # only after exact and prefix matching both miss, longest pattern first.
@@ -806,6 +925,22 @@ backends:
 #         # certificate_authority_paths provides a list of additional certificate authorities to be used to trust an upstream origin
 #         # in addition to Operating System CAs.  default is an empty list, which insructs the Trickster to use only the OS List
 #         certificate_authority_paths: [ ../../testdata/test.rootca.pem ]
+
+#         # certificate_authority_pem adds certificate authorities the same way, from a PEM bundle written
+#         # inline rather than read from a file. default is empty
+#         # certificate_authority_pem: |
+#         #   -----BEGIN CERTIFICATE-----
+#         #   ...
+#         #   -----END CERTIFICATE-----
+
+#         # server_name is the hostname sent as SNI and verified against the origin's certificate, when it
+#         # differs from the origin_url host. default is empty, which uses the origin_url host
+#         # server_name: origin.internal.example.com
+
+#         # exclude_system_roots makes the configured certificate authorities the only trusted ones for
+#         # this origin rather than additions to the OS roots; requires at least one to be configured.
+#         # default is false
+#         # exclude_system_roots: false
         
 #         # client_cert_path provides the path to a client certificate for Trickster to use when authenticating with an upstream server
 #         # empty string '' by default
@@ -935,6 +1070,11 @@ backends:
 #     kubernetes:
 #       in_cluster: true # use the pod's service account (default)
 #       # kubeconfig: /path/to/kubeconfig # or run against a remote cluster
+#       qps: 20          # client-side sustained API request rate (default 20)
+#       burst: 40        # client-side API request burst allowance (default 40)
+#       timeout: 10s     # bounds one-shot API calls (e.g. the startup_policy:
+#                        # fail preflight); watches are never truncated by it
+#       # user_agent: my-trickster/1 # default: trickster/<version> (<os>/<arch>)
 #   corp-dns:
 #     provider: dns_srv
 #     dns:
@@ -1204,6 +1344,17 @@ backends:
 # # routing policy, is provided in examples/conf/mysql-user-router.yaml.
 # # Native MySQL routing does not support to_user or to_credential remapping.
 
+# # access_log at the top level is the default access and error log for every backend that does not
+# # define its own access_log block, and it also logs requests that no backend route handled (404s and
+# # the built-in ping, readiness, health and management endpoints, attributed to backend '-'). It accepts
+# # every option shown in the per-backend access_log block above. A backend's own access_log block
+# # replaces this default entirely; an empty block disables logging for that backend.
+# access_log:
+#   # filename and error_filename accept a file path or the streams stdout / stderr, which are never
+#   # rotated and ignore rotation, retention, compress and instance_id
+#   filename: stdout
+#   format: json
+
 # # Trickster Management Options
 # mgmt:
 #   # reload_handler_path defines the HTTP path where the Reload interface is available.
@@ -1214,13 +1365,25 @@ backends:
 #   # during a configuration reload
 #   # the default is 30s
 #   reload_drain_timeout: 30s
-#   # reload_rate_limit specifies the rate limit timeout duration to apply to the HTTP reload interface.
-#   # The reload interface is disabled for this duration of time whenever a config reload request is
-#   # made that fails because the effective configuration sources are unchanged. default is 3s
+#   # reload_rate_limit specifies the rate limit timeout duration to apply to operator-requested
+#   # reloads (SIGHUP and the HTTP reload interface). Those are ignored for this duration after any
+#   # reload check. Automatic and in-process reloads are not rate limited. default is 3s
 #   reload_rate_limit: 3s
 #   # auto_reload_interval controls how often Trickster checks the effective configuration sources for changes.
 #   # A zero value disables automatic reloads. default is 0s
 #   auto_reload_interval: 10s
+#   # shutdown_delay keeps listeners accepting connections for this long after SIGTERM/SIGINT while the
+#   # readiness handler already reports 503, so load balancers can stop routing here first. default is 0s
+#   shutdown_delay: 5s
+#   # shutdown_drain_timeout bounds how long in-flight requests may run after the shutdown delay before
+#   # their connections are closed. A second SIGTERM/SIGINT closes them immediately.
+#   # the default is the value of reload_drain_timeout
+#   shutdown_drain_timeout: 30s
+
+#   # ready_handler_path provides the HTTP path of the readiness handler, which returns 200 only while
+#   # every listener is serving and no shutdown is in progress. It is served on every proxy listener and
+#   # on the management listener. default is /trickster/ready
+#   ready_handler_path: /trickster/ready
 
 #   # config_handler_path provides the HTTP path to view a read-only printout of the running configuration
 #   # which can be reached at http://your-trickster-endpoint:port/$config_handler_path
@@ -1277,3 +1440,128 @@ backends:
 
 #   # compress gzips rotated archives. default is true
 #   compress: true
+
+# # Kubernetes Gateway API / Ingress controller - see /docs/configuring.md and
+# # /docs/kubernetes-rbac.md for more information.
+# #
+# # The controller does not exist unless this section is present: a Trickster
+# # that is not a Kubernetes gateway holds no watches and generates no config.
+# kubernetes:
+#   # enabled defaults to true when the section is present; set false to keep
+#   # the configuration in place while shutting the controller off
+#   enabled: true
+#
+#   # connection is the Kubernetes API connection; same options as a
+#   # discovery entry's 'kubernetes' block
+#   connection:
+#     in_cluster: true # use the pod's service account (default)
+#     # kubeconfig: /path/to/kubeconfig # or run against a remote cluster
+#     qps: 20          # client-side sustained API request rate
+#     burst: 40        # client-side API request burst allowance
+#     timeout: 10s     # bounds one-shot API calls; never truncates watches
+#     # user_agent: my-trickster/1 # default: trickster/<version> (<os>/<arch>)
+#
+#   # the controllerName this instance claims GatewayClasses with, and which
+#   # is matched against an IngressClass's spec.controller. Objects naming
+#   # any other controller are ignored and never statused.
+#   gateway_class_controller_name: trickstercache.org/gateway-controller
+#
+#   # ingress_class narrows ownership to the IngressClass of that name, so two
+#   # instances can split one cluster. Empty claims every IngressClass naming
+#   # this controller.
+#   ingress_class: trickster
+#
+#   # watch_namespaces narrows the watches themselves, so a namespace-scoped
+#   # RBAC grant suffices. Empty watches every namespace.
+#   watch_namespaces:
+#     - team-a
+#     - team-b
+#
+#   # namespace_selector watches all namespaces and filters by namespace
+#   # labels; it additionally needs cluster-wide namespace read access.
+#   # Mutually exclusive with watch_namespaces.
+#   # namespace_selector:
+#   #   trickstercache.org/gateway: enabled
+#
+#   # resync_interval is the informer resync period: a backstop for missed
+#   # watch events, not the primary update path
+#   resync_interval: 10m
+#
+#   # debounce_window coalesces a burst of watch events into one translation
+#   # pass, so a rollout touching many objects yields one reload
+#   debounce_window: 1s
+#
+#   # read_only stops this instance writing to the Kubernetes API at all: no
+#   # status on the objects it claims, no Events, and no leader election
+#   # Lease, since the election only decides which replica does the writing.
+#   # It still watches, translates and serves traffic; read-only describes
+#   # the relationship with the cluster, not the data plane. default is false
+#   read_only: false
+#
+#   # leader_election decides which replica writes status and Events. Every
+#   # replica programs its own data plane regardless, so losing an election
+#   # never stops a replica serving.
+#   leader_election:
+#     enabled: true # default true: two replicas writing one object conflict
+#     # namespace: trickster # default: the pod's own namespace
+#     name: trickster-gateway-controller
+#     lease_duration: 15s # at least 1s; the Lease API stores whole seconds
+#     renew_deadline: 10s # must be less than lease_duration
+#     retry_period: 2s    # must be less than renew_deadline / 1.2
+#
+#   # ingress serves claimed Ingress v1 objects. An Ingress cannot describe
+#   # the ports it is served on, so unlike the Gateway API it names the
+#   # listeners it is served on, exactly as a backend does. Their ports,
+#   # bind addresses, body limits and TLS settings are configured in the
+#   # 'listeners' section like any other listener's. Naming none serves
+#   # claimed Ingresses on the default frontend.
+#   #
+#   # A listener that serves TLS needs 'tls_runtime_certs: true', because
+#   # the certificates arrive at runtime from the Secrets the claimed
+#   # Ingresses reference rather than from files.
+#   ingress:
+#     listener_names:
+#       - web
+#       - websecure
+#
+#   # published_service names the Service whose addresses are published into
+#   # Gateway and Ingress status. Without it, no address is published.
+#   published_service:
+#     namespace: trickster
+#     name: trickster-gateway
+#
+#   # defaults shapes the backends the controller generates
+#   defaults:
+#     # routing_mode is REQUIRED and has no default. 'service' sends traffic
+#     # to the Service cluster IP and lets kube-proxy load balance;
+#     # 'endpoint' discovers the Service's endpoints and load balances across
+#     # them in-process. The two have different failure modes, so Trickster
+#     # refuses to guess.
+#     routing_mode: service
+#     cache_name: default # the cache generated caching backends use
+#     # the negative cache generated caching backends use; a route may name
+#     # a different one with trickstercache.org/negative-cache-name
+#     negative_cache_name: default
+#     # the settings below name objects configured elsewhere in this file and
+#     # have no annotation: selecting a tracer is infrastructure, and an
+#     # annotation that can name an authenticator can also omit it
+#     tracing_name: otlp
+#     req_rewriter_name: strip-internal-headers
+#     authenticator_name: gateway-auth
+#     timeout: 180s       # upstream timeout for generated backends
+#     # health_mode of generated discovery-backed ALBs: 'provider' (default)
+#     # or 'probe'. EndpointSlice readiness already answers the question
+#     # active probes would ask.
+#     health_mode: provider
+#     # healthcheck is the active probe the discovered members of a generated
+#     # ALB run when health_mode is 'probe'; same options as a backend's
+#     # healthcheck block. Unset probes the origin root every 5s. It is not
+#     # read in the 'provider' health mode.
+#     # healthcheck:
+#     #   path: /healthz
+#     #   interval: 5s
+#     # access_log generated backends inherit; unset inherits the top-level
+#     # access_log block
+#     # access_log:
+#     #   filename: stdout
+#     #   format: combined
