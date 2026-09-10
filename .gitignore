@@ -27,6 +27,7 @@ seed-window.env
 # Test Coverage Profile Output
 .coverprofile
 .integration.coverprofile
+integration/conformance/reports
 
 # output path
 OPATH
