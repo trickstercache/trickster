@@ -1,0 +1,55 @@
+backends:
+    kgw--ingress.shop.web_r0:
+        provider: rpc
+        origin_url: http://web-svc.shop.svc:8080
+        hosts:
+            - shop.example.com
+        listener_names:
+            - default
+        cache_name: objects
+        cache_key_prefix: ingress.shop.web
+        negative_cache_name: api-errors
+        max_ttl: 10m0s
+        timeout: 15s
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        preserve_host: true
+        paths:
+            - path: /api
+              match_type: segment
+              handler: proxycache
+              methods:
+                - GET
+                - HEAD
+              request_headers:
+                -X-Internal-Token: ""
+                X-Forwarded-Host: shop.example.com
+              response_headers:
+                +Vary: Accept-Encoding
+              cors:
+                mode: merge
+                headers:
+                    Access-Control-Allow-Origin: https://shop.example.com
+              collapsed_forwarding: progressive
+            - path: /api
+              match_type: segment
+              handler: proxy
+              methods:
+                - POST
+                - PUT
+                - DELETE
+                - CONNECT
+                - OPTIONS
+                - TRACE
+                - PATCH
+                - PURGE
+              request_headers:
+                -X-Internal-Token: ""
+                X-Forwarded-Host: shop.example.com
+              response_headers:
+                +Vary: Accept-Encoding
+              cors:
+                mode: merge
+                headers:
+                    Access-Control-Allow-Origin: https://shop.example.com
+              collapsed_forwarding: progressive
