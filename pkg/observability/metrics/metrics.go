@@ -28,18 +28,19 @@ import (
 )
 
 const (
-	metricNamespace   = "trickster"
-	cacheSubsystem    = "cache"
-	proxySubsystem    = providers.Proxy
-	configSubsystem   = "config"
-	buildSubsystem    = "build"
-	frontendSubsystem = "frontend"
-	albSubsystem      = "alb"
-	healthSubsystem   = "healthcheck"
-	sqlSubsystem      = "sql"
-	mysqlSubsystem    = "mysql"
-	graphiteSubsystem = providers.Graphite
-	tlsSubsystem      = "tls"
+	metricNamespace    = "trickster"
+	cacheSubsystem     = "cache"
+	proxySubsystem     = providers.Proxy
+	configSubsystem    = "config"
+	buildSubsystem     = "build"
+	frontendSubsystem  = "frontend"
+	albSubsystem       = "alb"
+	healthSubsystem    = "healthcheck"
+	sqlSubsystem       = "sql"
+	mysqlSubsystem     = "mysql"
+	graphiteSubsystem  = providers.Graphite
+	tlsSubsystem       = "tls"
+	accessLogSubsystem = "accesslog"
 )
 
 // Default histogram buckets used by trickster
@@ -48,6 +49,39 @@ var (
 )
 
 var (
+	// AccessLogDroppedLines counts access and error log lines that could not be written
+	AccessLogDroppedLines = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: accessLogSubsystem,
+			Name:      "dropped_lines_total",
+			Help:      "Count of access log lines dropped because the log could not accept them",
+		},
+		[]string{keys.Backend_Name, keys.LogName},
+	)
+
+	// ProxyUpstreamRetries counts upstream attempts repeated under a path's retry policy
+	ProxyUpstreamRetries = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "upstream_retries_total",
+			Help:      "Count of upstream requests retried under a path's retry policy",
+		},
+		[]string{keys.Backend_Name, keys.Path},
+	)
+
+	// ProxyMirrorRequests counts requests copied to a mirror backend, by result
+	ProxyMirrorRequests = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "mirror_requests_total",
+			Help:      "Count of requests mirrored to another backend, sent or dropped at the in-flight bound",
+		},
+		[]string{keys.Backend_Name, keys.Mirror_Backend, keys.Result},
+	)
+
 	// BuildInfo is a Gauge representing the Trickster binary build information of the running server instance
 	BuildInfo = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
@@ -153,6 +187,50 @@ var (
 			Help:      "Count of bytes written in front end requests handled by Trickster",
 		},
 		[]string{keys.Backend_Name, keys.Provider, keys.Method, keys.Path, keys.HTTP_Status},
+	)
+
+	// ProxyStreamConnections counts connections and UDP sessions a stream listener accepted, by result
+	ProxyStreamConnections = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "stream_connections_total",
+			Help:      "Count of connections and UDP sessions accepted by stream listeners, by result",
+		},
+		[]string{keys.Listener_Name, keys.Protocol, keys.Result},
+	)
+
+	// ProxyStreamActiveConnections gauges the connections and UDP sessions a stream listener is relaying
+	ProxyStreamActiveConnections = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "stream_active_connections",
+			Help:      "Number of connections and UDP sessions stream listeners are relaying",
+		},
+		[]string{keys.Listener_Name, keys.Protocol},
+	)
+
+	// ProxyStreamDroppedDatagrams counts datagrams a udp listener dropped, by reason
+	ProxyStreamDroppedDatagrams = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "stream_dropped_datagrams_total",
+			Help:      "Count of datagrams udp listeners dropped, by reason",
+		},
+		[]string{keys.Listener_Name, keys.Reason},
+	)
+
+	// ProxyStreamBytes counts the bytes stream listeners relayed, in from clients and out to them
+	ProxyStreamBytes = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "stream_bytes_total",
+			Help:      "Bytes relayed by stream listeners, by direction",
+		},
+		[]string{keys.Listener_Name, keys.Protocol, keys.Direction},
 	)
 
 	// ProxyRequestStatus is a Counter of downstream client requests handled by Trickster
@@ -781,6 +859,13 @@ var (
 
 func init() {
 	// Register Metrics
+	prometheus.MustRegister(AccessLogDroppedLines)
+	prometheus.MustRegister(ProxyUpstreamRetries)
+	prometheus.MustRegister(ProxyMirrorRequests)
+	prometheus.MustRegister(ProxyStreamConnections)
+	prometheus.MustRegister(ProxyStreamActiveConnections)
+	prometheus.MustRegister(ProxyStreamBytes)
+	prometheus.MustRegister(ProxyStreamDroppedDatagrams)
 	prometheus.MustRegister(FrontendRequestStatus)
 	prometheus.MustRegister(FrontendRequestDuration)
 	prometheus.MustRegister(FrontendRequestWrittenBytes)
