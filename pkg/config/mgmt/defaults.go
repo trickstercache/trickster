@@ -29,6 +29,8 @@ const (
 	DefaultConfigHandlerListenerName = ListenerNameMgmt
 	// DefaultPingHandlerPath is the default value for the Trickster Config Ping Handler path
 	DefaultPingHandlerPath = "/trickster/ping"
+	// DefaultReadyHandlerPath is the default path for the readiness handler
+	DefaultReadyHandlerPath = "/trickster/ready"
 	// DefaultHealthHandlerPath defines the default path for the Health Handler
 	DefaultHealthHandlerPath = "/trickster/health"
 	// DefaultPurgeByKeyHandlerPath defines the default path for the Cache Purge (by Key) Handler

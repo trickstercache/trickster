@@ -19,6 +19,7 @@ package listener
 
 import (
 	"fmt"
+	"slices"
 	"time"
 
 	mo "github.com/trickstercache/trickster/v2/pkg/backends/mysql/options"
@@ -26,6 +27,7 @@ import (
 	frontend "github.com/trickstercache/trickster/v2/pkg/frontend/options"
 	metrics "github.com/trickstercache/trickster/v2/pkg/observability/metrics/options"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+	l4o "github.com/trickstercache/trickster/v2/pkg/proxy/l4/options"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -47,6 +49,13 @@ const (
 	// vendor-neutral query protocol currently served by the InfluxDB
 	// provider.
 	ProtocolFlightSQL = "flight-sql"
+	// ProtocolTCP relays each connection's bytes, unread, to the listener's one backend.
+	ProtocolTCP = "tcp"
+	// ProtocolTLS relays TLS connections unterminated, selecting the backend whose hosts
+	// name the server name the client offered.
+	ProtocolTLS = "tls"
+	// ProtocolUDP relays datagrams to the listener's one backend, one session per client.
+	ProtocolUDP = "udp"
 	// DefaultTLSWatchInterval is the default poll interval for detecting
 	// out-of-band TLS certificate rotation.
 	DefaultTLSWatchInterval = timeconv.Duration(30 * time.Second)
@@ -75,10 +84,21 @@ type Options struct {
 	// TLSWatchInterval is the backstop poll for out-of-band cert/key rotation
 	// (e.g. certbot). Changes are hot-swapped without restart. 0 disables.
 	TLSWatchInterval timeconv.Duration `yaml:"tls_watch_interval,omitempty"`
+	// TLSRuntimeCerts serves the TLS port even when no mapped backend provides a
+	// certificate file, so certificates can be supplied at runtime (e.g. from Secrets).
+	TLSRuntimeCerts bool `yaml:"tls_runtime_certs,omitempty"`
 	// MySQL contains downstream limits when protocol is mysql.
 	MySQL *mo.ListenerOptions `yaml:"mysql,omitempty"`
 	// HTTP3 optionally serves this listener's routes over HTTP/3 as well.
 	HTTP3 *HTTP3Options `yaml:"http3,omitempty"`
+	// Stream tunes the connect and idle timeouts when protocol is tcp, tls or udp.
+	Stream *l4o.Options `yaml:"stream,omitempty"`
+	// ProxyProtocol accepts a PROXY protocol v1 or v2 header on each connection from a
+	// trusted proxy, so the peer address is the client's rather than the load balancer's.
+	ProxyProtocol bool `yaml:"proxy_protocol,omitempty"`
+	// TrustedProxies lists the addresses or CIDRs of proxies whose PROXY protocol header
+	// and forwarding headers are believed when resolving the client IP; others are ignored.
+	TrustedProxies []string `yaml:"trusted_proxies,omitempty"`
 	// ServeTLS indicates that this listener has at least one usable certificate.
 	ServeTLS bool `yaml:"-"`
 	// Active indicates whether the listener has a configured purpose.
@@ -145,6 +165,16 @@ func (o *Options) HTTP3Endpoint() (address string, port, advertisedPort int) {
 		advertisedPort = o.HTTP3.AdvertisedPort
 	}
 	return address, port, advertisedPort
+}
+
+// IsStream reports whether the protocol relays bytes without reading them: tcp, tls or udp.
+func IsStream(protocol string) bool {
+	return protocol == ProtocolTCP || protocol == ProtocolTLS || protocol == ProtocolUDP
+}
+
+// IsStream reports whether this listener relays bytes without reading them.
+func (o *Options) IsStream() bool {
+	return o != nil && IsStream(o.Protocol)
 }
 
 // Lookup maps listener names to their options.
@@ -244,6 +274,8 @@ func (o *Options) Clone() *Options {
 	out := *o
 	out.MySQL = o.MySQL.Clone()
 	out.HTTP3 = o.HTTP3.Clone()
+	out.Stream = o.Stream.Clone()
+	out.TrustedProxies = slices.Clone(o.TrustedProxies)
 	if o.MaxRequestBodySizeBytes != nil {
 		out.MaxRequestBodySizeBytes = new(*o.MaxRequestBodySizeBytes)
 	}
@@ -261,13 +293,14 @@ func (o *Options) Equal(other *Options) bool {
 		o.ConnectionsLimit != other.ConnectionsLimit ||
 		o.TruncateRequestBodyTooLarge != other.TruncateRequestBodyTooLarge ||
 		o.ReadHeaderTimeout != other.ReadHeaderTimeout || o.ServeTLS != other.ServeTLS ||
-		o.TLSWatchInterval != other.TLSWatchInterval {
+		o.TLSWatchInterval != other.TLSWatchInterval || o.TLSRuntimeCerts != other.TLSRuntimeCerts ||
+		o.ProxyProtocol != other.ProxyProtocol || !slices.Equal(o.TrustedProxies, other.TrustedProxies) {
 		return false
 	}
 	if (o.MySQL == nil) != (other.MySQL == nil) || o.MySQL != nil && *o.MySQL != *other.MySQL {
 		return false
 	}
-	if !o.HTTP3.Equal(other.HTTP3) {
+	if !o.HTTP3.Equal(other.HTTP3) || !o.Stream.Equal(other.Stream) {
 		return false
 	}
 	if o.MaxRequestBodySizeBytes == nil || other.MaxRequestBodySizeBytes == nil {

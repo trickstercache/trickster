@@ -24,6 +24,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
 	frontend "github.com/trickstercache/trickster/v2/pkg/frontend/options"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+	l4o "github.com/trickstercache/trickster/v2/pkg/proxy/l4/options"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -296,5 +297,78 @@ func TestHTTP3OptionsEqualAndClone(t *testing.T) {
 	o1.HTTP3 = &HTTP3Options{Enabled: true}
 	if o1.Equal(o2) {
 		t.Error("listeners differing only in HTTP/3 must not compare equal")
+	}
+}
+
+func TestOptionsEqualRuntimeCerts(t *testing.T) {
+	a := New(DefaultFrontendName)
+	b := a.Clone()
+	if !a.Equal(b) {
+		t.Fatal("clone must be equal")
+	}
+	b.TLSRuntimeCerts = true
+	if a.Equal(b) {
+		t.Error("tls_runtime_certs must participate in equality")
+	}
+	if c := b.Clone(); !c.TLSRuntimeCerts {
+		t.Error("clone dropped tls_runtime_certs")
+	}
+}
+
+func TestOptionsEqualProxyProtocol(t *testing.T) {
+	a := New(DefaultFrontendName)
+	b := a.Clone()
+	b.ProxyProtocol = true
+	if a.Equal(b) {
+		t.Error("proxy_protocol must participate in equality")
+	}
+	a.ProxyProtocol = true
+	b.TrustedProxies = []string{"10.0.0.0/8"}
+	if a.Equal(b) {
+		t.Error("trusted_proxies must participate in equality")
+	}
+	c := b.Clone()
+	if !b.Equal(c) || !c.ProxyProtocol || len(c.TrustedProxies) != 1 {
+		t.Error("clone dropped proxy protocol options")
+	}
+	c.TrustedProxies[0] = "192.0.2.0/24"
+	if b.TrustedProxies[0] != "10.0.0.0/8" {
+		t.Error("clone shares the trusted proxy list")
+	}
+}
+
+func TestStreamOptionsCloneEqualAndIsStream(t *testing.T) {
+	for _, p := range []string{ProtocolTCP, ProtocolTLS, ProtocolUDP} {
+		if !IsStream(p) {
+			t.Errorf("IsStream(%q) = false", p)
+		}
+	}
+	for _, p := range []string{ProtocolHTTP, ProtocolMySQL, ProtocolClickHouse, ""} {
+		if IsStream(p) {
+			t.Errorf("IsStream(%q) = true", p)
+		}
+	}
+	var nilOpts *Options
+	if nilOpts.IsStream() {
+		t.Error("nil options report a stream protocol")
+	}
+	o := New("relay")
+	o.Protocol = ProtocolTLS
+	o.Stream = l4o.New()
+	o.Stream.IdleTimeout = timeconv.Duration(time.Minute)
+	if !o.IsStream() {
+		t.Error("tls listener is not a stream")
+	}
+	c := o.Clone()
+	if !c.Equal(o) || c.Stream == o.Stream {
+		t.Error("clone must equal the original with its own stream options")
+	}
+	c.Stream.IdleTimeout = 0
+	if c.Equal(o) {
+		t.Error("stream option changes must break equality")
+	}
+	c.Stream = nil
+	if c.Equal(o) {
+		t.Error("a missing stream block must break equality")
 	}
 }
