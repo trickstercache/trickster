@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 The Trickster Authors
+ * Copyright 2026 The Trickster Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,15 +16,19 @@
 
 package context
 
-type contextKey int
+import "context"
 
-const (
-	resourcesKey contextKey = iota
-	hopsKey
-	rewriterHopsKey
-	healthCheckKey
-	requestBodyKey
-	servedKey
-	clientIPKey
-	mirroredKey
-)
+// WithMirrored marks ctx as belonging to a mirrored copy of a request, which
+// is never mirrored again.
+func WithMirrored(ctx context.Context) context.Context {
+	return context.WithValue(ctx, mirroredKey, true)
+}
+
+// IsMirrored reports whether ctx belongs to a mirrored copy of a request.
+func IsMirrored(ctx context.Context) bool {
+	if ctx == nil {
+		return false
+	}
+	v, ok := ctx.Value(mirroredKey).(bool)
+	return ok && v
+}
