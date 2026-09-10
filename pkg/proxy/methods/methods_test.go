@@ -151,16 +151,16 @@ func TestHasAll(t *testing.T) {
 			expected: true,
 		},
 		{
-			name:     "duplicate methods in methods1 (XOR cancels duplicates, mask becomes 0)",
+			name:     "duplicate methods in methods1 are one method",
 			methods1: []string{http.MethodGet, http.MethodGet},
 			methods2: []string{http.MethodGet},
 			expected: true,
 		},
 		{
-			name:     "duplicate methods in methods2 (XOR cancels duplicates, mask becomes 0)",
+			name:     "duplicate methods in methods2 are one method",
 			methods1: []string{http.MethodGet},
 			methods2: []string{http.MethodGet, http.MethodGet},
-			expected: false,
+			expected: true,
 		},
 		{
 			name:     "multiple methods with partial overlap",
@@ -260,16 +260,16 @@ func TestHasAny(t *testing.T) {
 			expected: true,
 		},
 		{
-			name:     "duplicate methods in methods1 (XOR cancels duplicates, mask becomes 0)",
+			name:     "duplicate methods in methods1 are one method",
 			methods1: []string{http.MethodGet, http.MethodGet},
 			methods2: []string{http.MethodGet},
-			expected: false,
+			expected: true,
 		},
 		{
-			name:     "duplicate methods in methods2 (XOR cancels duplicates, mask becomes 0)",
+			name:     "duplicate methods in methods2 are one method",
 			methods1: []string{http.MethodGet},
 			methods2: []string{http.MethodGet, http.MethodGet},
-			expected: false,
+			expected: true,
 		},
 		{
 			name:     "case insensitive - any match",
@@ -464,22 +464,22 @@ func TestAreEqual(t *testing.T) {
 			expected: false,
 		},
 		{
-			name:     "duplicate methods in l1 (XOR cancels, but length check fails first)",
+			name:     "duplicate methods in l1 against an empty list",
 			l1:       []string{http.MethodGet, http.MethodGet},
 			l2:       []string{},
 			expected: false,
 		},
 		{
-			name:     "duplicate methods in l2 (XOR cancels, but length check fails first)",
+			name:     "duplicate methods in l2 against an empty list",
 			l1:       []string{},
 			l2:       []string{http.MethodGet, http.MethodGet},
 			expected: false,
 		},
 		{
-			name:     "duplicate methods in both (XOR cancels)",
+			name:     "duplicate methods in both name different methods",
 			l1:       []string{http.MethodGet, http.MethodGet},
 			l2:       []string{http.MethodPost, http.MethodPost},
-			expected: true,
+			expected: false,
 		},
 		{
 			name:     "three methods same order",
