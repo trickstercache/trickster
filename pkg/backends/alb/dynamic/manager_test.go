@@ -17,6 +17,8 @@
 package dynamic
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -24,6 +26,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb"
 	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
+	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	providerregistry "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry"
@@ -228,4 +231,107 @@ func (m *Manager) memberReplicaGroup(name string) string {
 		return ""
 	}
 	return e.client.Configuration().ReplicaGroup
+}
+
+// probedTemplate gives the manager's template an active probe with a long
+// interval and a lenient failure threshold, so members enter Initializing
+// and the immediate first probe against an unroutable address cannot mark
+// them down within the test
+func probedTemplate(m *Manager) {
+	m.cfg.Template.HealthCheck = &ho.Options{
+		Interval:         timeconv.Duration(time.Hour),
+		Timeout:          timeconv.Duration(50 * time.Millisecond),
+		FailureThreshold: 100,
+	}
+}
+
+// In probe mode, a member the provider reports ready is admitted ahead of
+// its first probe result: the orchestrator retired its predecessor on that
+// same signal, so waiting for a probe leaves the pool empty meanwhile
+func TestManagerProbeModeAdmitsProviderReadyMembers(t *testing.T) {
+	m, c, hc := newTestManager(t, &ao.DiscoveryOptions{
+		DiscovererName: "d", TemplateBackend: "rp-template"})
+	probedTemplate(m)
+	// the probe itself cannot admit anyone: it expects a code the upstream
+	// never returns, so only provider readiness can open the pool
+	m.cfg.Template.HealthCheck.ExpectedCodes = []int{http.StatusTeapot}
+
+	upstream := httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("ready")) //nolint:errcheck
+		}))
+	defer upstream.Close()
+
+	ready := member("ready", upstream.Listener.Addr().String())
+	ready.Ready = discovery.Ready
+	notReady := member("notready", "10.0.0.2:8080")
+	notReady.Ready = discovery.NotReady
+	unknown := member("unknown", "10.0.0.3:8080")
+
+	m.ApplySnapshot(discovery.Snapshot{ready, notReady, unknown})
+	statuses := hc.Statuses()
+	require.Equal(t, healthcheck.StatusPassing, statuses["myalb-ready"].Get(),
+		"provider-ready member is admitted pending its first probe")
+	require.Equal(t, healthcheck.StatusInitializing, statuses["myalb-notready"].Get(),
+		"not-ready member waits for its probe")
+	require.Equal(t, healthcheck.StatusInitializing, statuses["myalb-unknown"].Get(),
+		"readiness-unknown member waits for its probe")
+
+	// the pool dispatches to the admitted member alone: every request lands
+	// on the ready upstream rather than a 502 from an empty pool or a dial
+	// against an unroutable Initializing member
+	albHandler := c.Handlers()[providers.ALB]
+	for range 6 {
+		rec := httptest.NewRecorder()
+		albHandler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+		require.Equal(t, http.StatusOK, rec.Code)
+		require.Equal(t, "ready", rec.Body.String())
+	}
+}
+
+// A readiness flip on a live probe-mode member admits it while its probe
+// is still pending, but never overrides a verdict the probe has reached
+func TestManagerProbeModeReadinessFlipAdmitsPendingMembersOnly(t *testing.T) {
+	m, _, hc := newTestManager(t, &ao.DiscoveryOptions{
+		DiscovererName: "d", TemplateBackend: "rp-template"})
+	probedTemplate(m)
+
+	pending := member("pending", "10.0.0.1:8080")
+	pending.Ready = discovery.NotReady
+	failed := member("failed", "10.0.0.2:8080")
+	failed.Ready = discovery.NotReady
+	m.ApplySnapshot(discovery.Snapshot{pending, failed})
+	statuses := hc.Statuses()
+	require.Equal(t, healthcheck.StatusInitializing, statuses["myalb-pending"].Get())
+	// the probe has already judged this one
+	statuses["myalb-failed"].Set(healthcheck.StatusFailing)
+
+	pending.Ready = discovery.Ready
+	failed.Ready = discovery.Ready
+	m.ApplySnapshot(discovery.Snapshot{pending, failed})
+	require.Equal(t, healthcheck.StatusPassing, statuses["myalb-pending"].Get(),
+		"readiness admits a member whose probe has not yet reported")
+	require.Equal(t, healthcheck.StatusFailing, statuses["myalb-failed"].Get(),
+		"readiness must not override a probe verdict")
+
+	// a flip back to not-ready is the probe's business in probe mode
+	pending.Ready = discovery.NotReady
+	m.ApplySnapshot(discovery.Snapshot{pending, failed})
+	require.Equal(t, healthcheck.StatusPassing, statuses["myalb-pending"].Get())
+}
+
+// A template with no probe registers no status at all; readiness must not
+// invent one
+func TestManagerProbeModeReadinessWithoutProbe(t *testing.T) {
+	m, _, hc := newTestManager(t, &ao.DiscoveryOptions{
+		DiscovererName: "d", TemplateBackend: "rp-template"})
+	m.cfg.Template.HealthCheck = nil
+
+	mem := member("m1", "10.0.0.1:8080")
+	mem.Ready = discovery.NotReady
+	m.ApplySnapshot(discovery.Snapshot{mem})
+	mem.Ready = discovery.Ready
+	require.NotPanics(t, func() { m.ApplySnapshot(discovery.Snapshot{mem}) })
+	require.NotContains(t, hc.Statuses(), "myalb-m1")
 }
