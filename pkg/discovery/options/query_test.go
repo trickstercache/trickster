@@ -34,6 +34,12 @@ func TestQueryValidate(t *testing.T) {
 	}{
 		{"bad scheme", &Query{Scheme: "gopher", Path: "/x"},
 			providers.File, false},
+		{"kube tcp scheme ok",
+			&Query{Service: "db", Namespace: "data", Port: "pg", Scheme: SchemeTCP},
+			providers.Kubernetes, true},
+		{"kube udp scheme ok",
+			&Query{Service: "dns", Namespace: "data", Scheme: SchemeUDP},
+			providers.Kubernetes, true},
 		{"unknown provider", &Query{}, "consul", false},
 
 		// kubernetes

@@ -19,11 +19,14 @@ package validate
 import (
 	stderrors "errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/rr"
+	albnames "github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	providerregistry "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry"
 	"github.com/trickstercache/trickster/v2/pkg/backends/rule"
@@ -35,10 +38,13 @@ import (
 	logmanager "github.com/trickstercache/trickster/v2/pkg/observability/logging/manager"
 	tr "github.com/trickstercache/trickster/v2/pkg/observability/tracing/registry"
 	ar "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/registry"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/clientip"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/l4"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/native"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 	"github.com/trickstercache/trickster/v2/pkg/routing"
+	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
 func Validate(c *config.Config) error {
@@ -53,6 +59,11 @@ func Validate(c *config.Config) error {
 	if c.Logging != nil {
 		if _, err := c.Logging.Validate(); err != nil {
 			return err
+		}
+	}
+	if c.AccessLog != nil {
+		if _, err := c.AccessLog.Validate(); err != nil {
+			return fmt.Errorf("access_log: %w", err)
 		}
 	}
 	if c.Metrics != nil {
@@ -80,6 +91,14 @@ func Validate(c *config.Config) error {
 	}
 	if err := Discoverers(c); err != nil {
 		return err
+	}
+	if c.Kubernetes != nil {
+		if err := c.Kubernetes.Validate(); err != nil {
+			return fmt.Errorf("kubernetes: %w", err)
+		}
+		if err := kubernetesReferences(c); err != nil {
+			return err
+		}
 	}
 	if err := Backends(c); err != nil {
 		return err
@@ -124,6 +143,66 @@ func Caches(c *config.Config) error {
 		return nil
 	}
 	return c.Caches.Validate()
+}
+
+// kubernetesReferences checks every object the kubernetes section names
+// against the configuration that defines it, the same way a backend's names
+// are checked.
+//
+// The controller generates backends carrying these names, so an undefined
+// one would otherwise fail every reload the controller asks for rather than
+// this one, and the operator would see it as the controller having stopped
+// working rather than as their own typo. A name a route supplies by
+// annotation is checked in the translator instead, where it can be rejected
+// as that one object's mistake.
+func kubernetesReferences(c *config.Config) error {
+	if !c.Kubernetes.IsEnabled() {
+		return nil
+	}
+	for _, name := range c.Kubernetes.Listeners() {
+		if _, ok := c.Listeners[name]; !ok {
+			return newKubernetesRefError("ingress", "listener", name)
+		}
+	}
+	d := c.Kubernetes.Defaults
+	if d == nil {
+		return nil
+	}
+	if d.CacheName != "" {
+		if _, ok := c.Caches[d.CacheName]; !ok {
+			return newKubernetesRefError("defaults", "cache", d.CacheName)
+		}
+	}
+	if d.NegativeCacheName != "" {
+		if _, ok := c.NegativeCacheConfigs[d.NegativeCacheName]; !ok {
+			return newKubernetesRefError("defaults", "negative cache",
+				d.NegativeCacheName)
+		}
+	}
+	if d.TracingName != "" {
+		if _, ok := c.TracingOptions[d.TracingName]; !ok {
+			return newKubernetesRefError("defaults", "tracing config",
+				d.TracingName)
+		}
+	}
+	if d.ReqRewriterName != "" {
+		if _, ok := c.RequestRewriters[d.ReqRewriterName]; !ok {
+			return newKubernetesRefError("defaults", "request rewriter",
+				d.ReqRewriterName)
+		}
+	}
+	if d.AuthenticatorName != "" {
+		if _, ok := c.Authenticators[d.AuthenticatorName]; !ok {
+			return newKubernetesRefError("defaults", "authenticator",
+				d.AuthenticatorName)
+		}
+	}
+	return nil
+}
+
+func newKubernetesRefError(block, kind, name string) error {
+	return fmt.Errorf("kubernetes '%s' references undefined %s %q",
+		block, kind, name)
 }
 
 // Discoverers validates the top-level discovery section
@@ -248,11 +327,22 @@ func Listeners(c *config.Config) error {
 		if options.Protocol != listener.ProtocolHTTP && options.TLSListenPort > 0 {
 			return fmt.Errorf("listener %q cannot configure a TLS port for protocol %q", name, options.Protocol)
 		}
-		if options.Protocol != listener.ProtocolHTTP && mapped[name] > 1 {
+		if options.Protocol != listener.ProtocolHTTP && options.TLSRuntimeCerts {
+			return fmt.Errorf("listener %q cannot use tls_runtime_certs with protocol %q", name, options.Protocol)
+		}
+		if options.Protocol != listener.ProtocolHTTP && !options.IsStream() && mapped[name] > 1 {
 			return fmt.Errorf("listener %q with protocol %q can map to only one backend", name, options.Protocol)
 		}
+		if options.Stream != nil && !options.IsStream() {
+			return fmt.Errorf("listener %q configures stream options for protocol %q", name, options.Protocol)
+		}
+		if options.IsStream() {
+			if err := streamListener(c, name, options, mappedProviders[name]); err != nil {
+				return err
+			}
+		}
 		nativeAdapter := nativeListeners.Get(options.Protocol)
-		if options.Protocol != listener.ProtocolHTTP && nativeAdapter == nil {
+		if options.Protocol != listener.ProtocolHTTP && nativeAdapter == nil && !options.IsStream() {
 			return fmt.Errorf("listener %q uses unsupported protocol %q", name, options.Protocol)
 		}
 		if nativeAdapter != nil {
@@ -287,6 +377,9 @@ func Listeners(c *config.Config) error {
 		if options.ListenPort < 0 || options.TLSListenPort < 0 {
 			return fmt.Errorf("listener %q has an invalid listen port", name)
 		}
+		if _, err := clientip.ParseTrusted(options.TrustedProxies); err != nil {
+			return fmt.Errorf("listener %q: %w", name, err)
+		}
 
 		builtIn := name == listener.DefaultFrontendName ||
 			name == mgmt.ListenerNameMgmt || name == mgmt.ListenerNameMetrics
@@ -295,13 +388,13 @@ func Listeners(c *config.Config) error {
 			addWarning(c, fmt.Sprintf("listener %q is unused and will not be started", name))
 		}
 
-		if options.TLSListenPort > 0 && !tlsMapped[name] {
+		if options.TLSListenPort > 0 && !tlsMapped[name] && !options.TLSRuntimeCerts {
 			addWarning(c, fmt.Sprintf(
 				"listener %q TLS port is disabled because no mapped backend provides a TLS certificate", name))
 			options.TLSListenPort = 0
 			options.ServeTLS = false
 		} else {
-			options.ServeTLS = options.TLSListenPort > 0 && tlsMapped[name]
+			options.ServeTLS = options.TLSListenPort > 0 && (tlsMapped[name] || options.TLSRuntimeCerts)
 		}
 		if options.Active && options.ListenPort == 0 && options.TLSListenPort == 0 {
 			addWarning(c, fmt.Sprintf("listener %q has no enabled ports and will not be started", name))
@@ -313,14 +406,85 @@ func Listeners(c *config.Config) error {
 			options.HTTP3.Enabled = false
 		}
 
+		// a port is reserved in its transport's space: a udp listener and an HTTP/3 endpoint
+		// bind UDP, everything else TCP, so a tcp and a udp listener may share a port number
 		if options.Active && options.ListenPort > 0 {
-			if err := reserveListenerPort(ports, name, options.ListenAddress, options.ListenPort); err != nil {
+			transport := transportTCP
+			if options.Protocol == listener.ProtocolUDP {
+				transport = transportUDP
+			}
+			if err := reserveListenerPort(ports, name, transport, options.ListenAddress,
+				options.ListenPort); err != nil {
 				return err
 			}
 		}
 		if options.Active && options.TLSListenPort > 0 {
-			if err := reserveListenerPort(ports, name, options.TLSListenAddress, options.TLSListenPort); err != nil {
+			if err := reserveListenerPort(ports, name, transportTCP, options.TLSListenAddress,
+				options.TLSListenPort); err != nil {
 				return err
+			}
+		}
+		if h3Address, h3Port, _ := options.HTTP3Endpoint(); options.Active && h3Port > 0 {
+			if err := reserveListenerPort(ports, name, transportUDP, h3Address, h3Port); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// streamProviders are the providers a stream listener may relay to: one with an origin to dial,
+// or a pool of them
+var streamProviders = sets.New([]string{
+	providers.ReverseProxyShort, providers.ReverseProxy, providers.Proxy, providers.ALB,
+})
+
+func streamListener(c *config.Config, name string, options *listener.Options,
+	mapped map[string]string,
+) error {
+	if err := options.Stream.Validate(); err != nil {
+		return fmt.Errorf("listener %q: %w", name, err)
+	}
+	if len(mapped) == 0 {
+		return nil
+	}
+	// a tls listener demultiplexes by server name, so its backends are told apart by their
+	// hosts; a tcp or udp listener reads nothing and relays everything to its one backend. A
+	// pool member is reached through its pool and is neither.
+	members := c.Backends.PoolMembers()
+	table := l4.NewTable()
+	var served int
+	for _, backendName := range slices.Sorted(maps.Keys(mapped)) {
+		provider := mapped[backendName]
+		backend := c.Backends[backendName]
+		if !streamProviders.Contains(provider) {
+			return fmt.Errorf("listener %q with protocol %q cannot map to backend %q with provider %q",
+				name, options.Protocol, backendName, provider)
+		}
+		if provider == providers.ALB && (backend.ALBOptions == nil ||
+			(backend.ALBOptions.MechanismName != albnames.MechanismRR &&
+				backend.ALBOptions.MechanismName != rr.Name)) {
+			return fmt.Errorf("listener %q with protocol %q requires alb backend %q to use the %s mechanism",
+				name, options.Protocol, backendName, albnames.MechanismRR)
+		}
+		if members.Contains(backendName) {
+			continue
+		}
+		served++
+		if options.Protocol != listener.ProtocolTLS {
+			if served > 1 {
+				return fmt.Errorf("listener %q with protocol %q can map to only one backend",
+					name, options.Protocol)
+			}
+			continue
+		}
+		hosts := backend.Hosts
+		if len(hosts) == 0 {
+			hosts = []string{""}
+		}
+		for _, h := range hosts {
+			if err := table.Add(h, l4.Static(backendName)); err != nil {
+				return fmt.Errorf("listener %q: backend %q: %w", name, backendName, err)
 			}
 		}
 	}
@@ -357,8 +521,16 @@ func addWarning(c *config.Config, warning string) {
 	c.LoaderWarnings = append(c.LoaderWarnings, warning)
 }
 
-func reserveListenerPort(ports map[string]string, listenerName, address string, port int) error {
-	key := fmt.Sprintf("%s:%d", address, port)
+// the port spaces a listener endpoint binds in
+const (
+	transportTCP = "tcp"
+	transportUDP = "udp"
+)
+
+func reserveListenerPort(ports map[string]string, listenerName, transport, address string,
+	port int,
+) error {
+	key := fmt.Sprintf("%s %s:%d", transport, address, port)
 	if existing, ok := ports[key]; ok {
 		return fmt.Errorf("listeners %q and %q both use %s", existing, listenerName, key)
 	}

@@ -21,62 +21,22 @@ import (
 	"testing"
 
 	derrors "github.com/trickstercache/trickster/v2/pkg/discovery/errors"
+	kubeopts "github.com/trickstercache/trickster/v2/pkg/kube/options"
 
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v3"
 )
 
-// In-cluster is the idiomatic deployment, so it is what an otherwise empty
-// block means.
-func TestNewDefaultsToInCluster(t *testing.T) {
-	require.True(t, New().InCluster)
-	require.Empty(t, New().Kubeconfig)
+// The discoverer's 'kubernetes' block is the shared connection options; the
+// alias is what keeps one vocabulary across discovery and the controller.
+func TestOptionsIsTheSharedType(t *testing.T) {
+	require.IsType(t, &kubeopts.Options{}, New())
+	require.Equal(t, kubeopts.New(), New())
+	require.Equal(t, kubeopts.ErrInClusterAndKubeconfig, ErrInClusterAndKubeconfig)
 }
 
-func TestInitializeDefaultsToInClusterOnlyWithoutAKubeconfig(t *testing.T) {
-	o := &Options{}
-	o.Initialize()
-	require.True(t, o.InCluster, "an empty block means the pod's service account")
-
-	// a kubeconfig is an explicit choice to run outside the cluster, so
-	// Initialize must not override it into an invalid pairing
-	ext := &Options{Kubeconfig: "/path/to/kubeconfig"}
-	ext.Initialize()
-	require.False(t, ext.InCluster)
-	require.NoError(t, ext.Validate(),
-		"Initialize must not create the combination Validate rejects")
-
-	require.NotPanics(t, func() { (*Options)(nil).Initialize() })
-}
-
-// Both credential sources set is ambiguous rather than additive: one of the
-// two would silently win.
-func TestValidateRejectsBothCredentialSources(t *testing.T) {
-	require.ErrorIs(t,
-		(&Options{InCluster: true, Kubeconfig: "/path"}).Validate(),
-		ErrInClusterAndKubeconfig)
-
-	require.NoError(t, (&Options{InCluster: true}).Validate())
-	require.NoError(t, (&Options{Kubeconfig: "/path"}).Validate())
-	require.NoError(t, (&Options{}).Validate(),
-		"neither set is valid; Initialize resolves it to in-cluster")
-	require.NoError(t, New().Validate(), "the defaults must validate")
-	require.NoError(t, (*Options)(nil).Validate())
-}
-
-func TestCloneIsIndependent(t *testing.T) {
-	o := &Options{InCluster: false, Kubeconfig: "/a"}
-	c := o.Clone()
-	require.Equal(t, o, c)
-	require.NotSame(t, o, c)
-
-	c.Kubeconfig = "/b"
-	c.InCluster = true
-	require.Equal(t, "/a", o.Kubeconfig)
-	require.False(t, o.InCluster)
-}
-
-func TestYAMLRoundTrip(t *testing.T) {
+// The YAML an operator already has must keep decoding into the alias
+func TestExistingDiscoveryYAMLIsUnchanged(t *testing.T) {
 	var o Options
 	require.NoError(t, yaml.Unmarshal([]byte("kubeconfig: /etc/kube/config\n"), &o))
 	require.Equal(t, "/etc/kube/config", o.Kubeconfig)
@@ -87,6 +47,10 @@ func TestYAMLRoundTrip(t *testing.T) {
 	require.NoError(t, yaml.Unmarshal([]byte("in_cluster: true\n"), &in))
 	require.True(t, in.InCluster)
 	require.NoError(t, in.Validate())
+
+	require.ErrorIs(t,
+		(&Options{InCluster: true, Kubeconfig: "/p"}).Validate(),
+		ErrInClusterAndKubeconfig)
 }
 
 func TestNewErrInvalidOptions(t *testing.T) {

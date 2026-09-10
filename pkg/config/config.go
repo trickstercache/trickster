@@ -20,6 +20,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"sync"
@@ -29,11 +30,13 @@ import (
 	rule "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/negative"
 	cache "github.com/trickstercache/trickster/v2/pkg/cache/options"
+	kubecfg "github.com/trickstercache/trickster/v2/pkg/config/kubernetes"
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
 	disco "github.com/trickstercache/trickster/v2/pkg/discovery/options"
 	yamlencoding "github.com/trickstercache/trickster/v2/pkg/encoding/yaml"
 	fropt "github.com/trickstercache/trickster/v2/pkg/frontend/options"
+	alo "github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog/options"
 	lo "github.com/trickstercache/trickster/v2/pkg/observability/logging/options"
 	mo "github.com/trickstercache/trickster/v2/pkg/observability/metrics/options"
 	tracing "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
@@ -64,6 +67,9 @@ type Config struct {
 	Listeners listener.Lookup `yaml:"listeners,omitempty"`
 	// Logging provides configurations that affect logging behavior
 	Logging *lo.Options `yaml:"logging,omitempty"`
+	// AccessLog is the default access and error log configuration, inherited by
+	// every backend without its own access_log and used for unmatched requests
+	AccessLog *alo.Options `yaml:"access_log,omitempty"`
 	// Metrics provides configurations for collecting Metrics about the application
 	Metrics *mo.Options `yaml:"metrics,omitempty"`
 	// TracingOptions provides the distributed tracing configuration
@@ -79,6 +85,9 @@ type Config struct {
 	MgmtConfig *mgmt.Options `yaml:"mgmt,omitempty"`
 	// Authenticators provides configurations for Authenticating users
 	Authenticators auth.Lookup `yaml:"authenticators,omitempty"`
+	// Kubernetes configures the Kubernetes Gateway/Ingress controller. The
+	// controller does not exist unless this section is present.
+	Kubernetes *kubecfg.Options `yaml:"kubernetes,omitempty"`
 
 	// Flags contains a compiled version of the CLI flags
 	Flags *Flags `yaml:"-"`
@@ -112,6 +121,7 @@ type MainConfig struct {
 	configSourcePlan        configSourcePlan
 	configSourcePaths       []string
 	configSourceFingerprint string
+	configOverlayVersion    string
 	configLastModified      time.Time
 	configRateLimitTime     time.Time
 	stalenessCheckLock      sync.Mutex
@@ -145,26 +155,46 @@ func NewConfig() *Config {
 	}
 }
 
-// loadFile loads application configuration from a YAML-formatted file or directory.
-func (c *Config) loadFile(flags *Flags) error {
+// loadFile loads application configuration from a YAML-formatted file or
+// directory, then applies the overlay, if any, on top of the file sources.
+func (c *Config) loadFile(flags *Flags, overlay *Overlay) error {
 	plan, sources, err := loadConfigSources(flags.ConfigPath)
 	if err != nil {
-		return err
+		// only an absent default path is tolerated; every other source error
+		// propagates so a reload never silently drops file-defined objects
+		if flags.customPath || !defaultPathAbsent(flags.ConfigPath) {
+			return err
+		}
+		if overlay.IsEmpty() {
+			return nil
+		}
+		plan, sources = configSourcePlan{}, nil
 	}
-	configData := sources[0].data
-	if plan.mode == configSourceModeDirectory || len(sources) > 1 {
-		configData, err = mergeConfigSources(plan, sources)
+	var configData []byte
+	if plan.mode == configSourceModeDirectory || len(sources) != 1 || !overlay.IsEmpty() {
+		configData, err = mergeConfigSources(plan, sources, overlay)
 		if err != nil {
 			return err
 		}
-	} else if _, err = parseConfigDocument(configData); err != nil {
-		return fmt.Errorf("parse config source %q: %w", sources[0].path, err)
+	} else {
+		configData = sources[0].data
+		document, err := parseConfigDocument(configData)
+		if err != nil {
+			return fmt.Errorf("parse config source %q: %w", sources[0].path, err)
+		}
+		if err := validateReservedNames(document.Content[0]); err != nil {
+			return fmt.Errorf("config source %q: %w", sources[0].path, err)
+		}
 	}
 	if err := c.loadYAMLConfig(string(configData)); err != nil {
 		return err
 	}
 	if c.Main == nil {
 		c.Main = &MainConfig{}
+	}
+	c.Main.configOverlayVersion = overlay.VersionString()
+	if len(sources) == 0 {
+		return nil
 	}
 	snapshot := snapshotConfigSources(plan, sources, nil)
 	c.Main.configFilePath = flags.ConfigPath
@@ -176,6 +206,13 @@ func (c *Config) loadFile(flags *Flags) error {
 	c.Main.configSourceFingerprint = snapshot.fingerprint
 	c.Main.configLastModified = snapshot.lastModified
 	return nil
+}
+
+// defaultPathAbsent reports whether the config root path itself does not exist,
+// as opposed to existing but failing to load.
+func defaultPathAbsent(path string) bool {
+	_, err := os.Stat(path)
+	return errors.Is(err, os.ErrNotExist)
 }
 
 // loadYAMLConfig loads application configuration from a YAML-formatted byte slice.
@@ -201,6 +238,8 @@ func (c *Config) loadYAMLConfig(yml string) error {
 			return err
 		}
 	}
+
+	c.Kubernetes.Initialize()
 
 	return nil
 }
@@ -305,6 +344,7 @@ func (c *Config) Clone() *Config {
 	nc.Main.configSourcePlan = c.Main.configSourcePlan
 	nc.Main.configSourcePaths = append([]string(nil), c.Main.configSourcePaths...)
 	nc.Main.configSourceFingerprint = c.Main.configSourceFingerprint
+	nc.Main.configOverlayVersion = c.Main.configOverlayVersion
 	nc.Main.configLastModified = c.Main.configLastModified
 	nc.Main.configRateLimitTime = c.Main.configRateLimitTime
 	c.Main.stalenessCheckLock.Unlock()
@@ -318,6 +358,9 @@ func (c *Config) Clone() *Config {
 
 	if c.Logging != nil {
 		nc.Logging = c.Logging.Clone()
+	}
+	if c.AccessLog != nil {
+		nc.AccessLog = c.AccessLog.Clone()
 	}
 
 	for k, v := range c.Backends {
@@ -361,6 +404,8 @@ func (c *Config) Clone() *Config {
 		}
 	}
 
+	nc.Kubernetes = c.Kubernetes.Clone()
+
 	return nc
 }
 
@@ -385,21 +430,36 @@ func (c *Config) IsStale() bool {
 	return c.hasConfigChanged()
 }
 
-// CheckAndMarkReloadInProgress checks if the config is stale and
-// marks it as being reloaded to prevent duplicate reloads.
-func (c *Config) CheckAndMarkReloadInProgress() bool {
-	if c == nil || c.Main == nil || c.Main.configFilePath == "" {
+// CheckAndMarkReloadInProgress reports whether the config sources on disk or
+// the overlay version differ from what was loaded, marking both to prevent
+// duplicate reloads. The reload rate limiter is applied only when rateLimited is true.
+func (c *Config) CheckAndMarkReloadInProgress(overlayVersion string, rateLimited bool) bool {
+	if c == nil || c.Main == nil {
 		return false
 	}
 	c.Main.stalenessCheckLock.Lock()
 	defer c.Main.stalenessCheckLock.Unlock()
-	if time.Now().Before(c.Main.configRateLimitTime) {
+	if rateLimited {
+		if time.Now().Before(c.Main.configRateLimitTime) {
+			return false
+		}
+		if c.MgmtConfig == nil {
+			c.MgmtConfig = mgmt.New()
+		}
+		c.Main.configRateLimitTime = time.Now().Add(time.Duration(c.MgmtConfig.ReloadRateLimit))
+	}
+	sourcesStale := c.checkAndMarkSources()
+	overlayStale := overlayVersion != c.Main.configOverlayVersion
+	if overlayStale {
+		c.Main.configOverlayVersion = overlayVersion
+	}
+	return sourcesStale || overlayStale
+}
+
+func (c *Config) checkAndMarkSources() bool {
+	if c.Main.configFilePath == "" {
 		return false
 	}
-	if c.MgmtConfig == nil {
-		c.MgmtConfig = mgmt.New()
-	}
-	c.Main.configRateLimitTime = time.Now().Add(time.Duration(c.MgmtConfig.ReloadRateLimit))
 	if c.Main.configSourcePlan.mode != 0 &&
 		c.Main.configSourcePlan.rootPath == c.Main.configFilePath {
 		snapshot := inspectConfigSources(c.Main.configSourcePlan)
@@ -419,6 +479,16 @@ func (c *Config) CheckAndMarkReloadInProgress() bool {
 		c.Main.configLastModified = t
 	}
 	return isStale
+}
+
+// OverlayVersion returns the version of the overlay applied to this configuration.
+func (c *Config) OverlayVersion() string {
+	if c == nil || c.Main == nil {
+		return ""
+	}
+	c.Main.stalenessCheckLock.Lock()
+	defer c.Main.stalenessCheckLock.Unlock()
+	return c.Main.configOverlayVersion
 }
 
 func (c *Config) String() string {

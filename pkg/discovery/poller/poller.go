@@ -82,10 +82,13 @@ var (
 // actually blocking will spin: the blocking is the Source's obligation.
 const PollNow = time.Duration(-1)
 
-// DefaultJitter is the startup jitter applied when Options.Jitter is zero.
+// DefaultJitter is the cadence jitter applied when Options.Jitter is zero.
 // Jitter keeps a fleet of pollers constructed at the same instant (every
 // backend at startup, every subscription after a config reload) from
-// aligning their requests on the same upstream.
+// aligning their requests on the same upstream. It never delays the first
+// iteration: it is added once, to the wait that follows it, and is capped
+// at the poll interval so that a short-interval poller is not stalled for
+// many periods by a jitter sized for a long one.
 const DefaultJitter = time.Second
 
 // Source performs one poll iteration.
@@ -123,9 +126,13 @@ type Options struct {
 	// so that a blocking-query source setting Timeout to wait+slack is not
 	// truncated by a shorter client timeout underneath it.
 	Timeout time.Duration
-	// Jitter is the maximum startup delay before the first iteration.
-	// Zero selects DefaultJitter; a negative value disables jitter, which
-	// tests want and production generally does not.
+	// Jitter is the maximum random delay added, once, to the wait after the
+	// first iteration, so a fleet started together spreads out over the
+	// interval without postponing anyone's first answer. It is capped at
+	// Interval: spreading over one period is all that de-phasing needs, and
+	// more would stall a fast poller for several periods. Zero selects
+	// DefaultJitter; a negative value disables jitter, which tests want and
+	// production generally does not.
 	Jitter time.Duration
 	// MaxBackoff caps the exponential backoff applied after consecutive
 	// failed iterations. Zero disables backoff, holding the loop at
@@ -251,23 +258,26 @@ func (p *Poller) Trigger() {
 	}
 }
 
-// run is the loop itself: jitter, then iterate until the context ends.
+// run is the loop itself: iterate until the context ends.
 func (p *Poller) run(ctx context.Context) {
-	if !p.waitJitter(ctx) {
-		return
-	}
-	// discard any trigger raised while stopped or during jitter: the
-	// immediate first iteration below already satisfies it, and letting it
-	// stand would spend a second iteration answering the same request
+	// discard any trigger raised while stopped: the immediate first
+	// iteration below already satisfies it, and letting it stand would
+	// spend a second iteration answering the same request
 	select {
 	case <-p.trigger:
 	default:
 	}
-	// fire the first iteration immediately; jitter has already spread the
-	// fleet out, and a caller that just started a poller wants an answer
+	// fire the first iteration immediately: a caller that just started a
+	// poller wants an answer (a member joining a live pool cannot be
+	// admitted until its first probe lands); the one-time jitter on the
+	// following wait spreads the fleet out afterwards
 	timer := time.NewTimer(0)
 	defer timer.Stop()
 	var failures int
+	// spreading over one interval is what de-phases a fleet; a jitter
+	// larger than the interval would just delay this poller past several
+	// of its own periods
+	jitter := min(p.jitter, p.interval)
 	for {
 		select {
 		case <-ctx.Done():
@@ -304,23 +314,13 @@ func (p *Poller) run(ctx context.Context) {
 				wait = next
 			}
 		}
+		if jitter > 0 && wait > 0 {
+			// applied to the first real wait only, so a blocking-query
+			// source's immediate re-issue is never held back by it
+			wait += randomDuration(jitter)
+			jitter = 0
+		}
 		timer.Reset(wait)
-	}
-}
-
-// waitJitter sleeps out the startup jitter, reporting false if the poller
-// was stopped before it elapsed.
-func (p *Poller) waitJitter(ctx context.Context) bool {
-	if p.jitter <= 0 {
-		return true
-	}
-	t := time.NewTimer(randomDuration(p.jitter))
-	defer t.Stop()
-	select {
-	case <-ctx.Done():
-		return false
-	case <-t.C:
-		return true
 	}
 }
 
@@ -376,8 +376,9 @@ func backoff(base time.Duration, failures int, ceiling time.Duration) time.Durat
 	return min(d, ceiling)
 }
 
-// randomDuration returns a uniform duration in [0, d).
-func randomDuration(d time.Duration) time.Duration {
+// randomDuration returns a uniform duration in [0, d); a var so tests can
+// pin the jitter
+var randomDuration = func(d time.Duration) time.Duration {
 	if d <= 0 {
 		return 0
 	}

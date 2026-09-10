@@ -25,6 +25,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
@@ -49,7 +50,7 @@ const (
 const (
 	// DefaultGatewayClassControllerName is the controllerName Trickster
 	// claims GatewayClasses with
-	DefaultGatewayClassControllerName = "trickstercache.org/gateway-controller"
+	DefaultGatewayClassControllerName = appinfo.Domain + "/gateway-controller"
 	// DefaultResyncInterval is the informer resync period; a backstop for
 	// missed watch events, not the primary update path
 	DefaultResyncInterval = 10 * time.Minute
