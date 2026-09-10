@@ -259,3 +259,21 @@ func TestMergeResources(t *testing.T) {
 		t.Error("non-nil inner auth result did not replace the outer authentication")
 	}
 }
+
+func TestUpstream(t *testing.T) {
+	var nilRsc *Resources
+	nilRsc.SetUpstream("a", 1, time.Second)
+	if addr, status, elapsed := nilRsc.Upstream(); addr != "" || status != 0 || elapsed != 0 {
+		t.Error("nil resources record nothing")
+	}
+	rsc := &Resources{}
+	rsc.SetUpstream("10.1.1.1:9090", 502, 42*time.Millisecond)
+	addr, status, elapsed := rsc.Upstream()
+	if addr != "10.1.1.1:9090" || status != 502 || elapsed != 42*time.Millisecond {
+		t.Errorf("unexpected upstream: %s %d %s", addr, status, elapsed)
+	}
+	c := rsc.Clone()
+	if c.UpstreamAddr != addr || c.UpstreamStatus != status || c.UpstreamDuration != elapsed {
+		t.Error("clone dropped the upstream exchange")
+	}
+}

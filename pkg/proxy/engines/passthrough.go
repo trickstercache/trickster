@@ -124,7 +124,10 @@ func passthroughRewrite(client backends.Backend) func(*httputil.ProxyRequest) {
 			r.Header.Set(headers.NameUpgrade, upgradeType)
 		}
 		// clear the Host header or it is forwarded upstream
-		r.Host = ""
+		// the client's Host is kept only when the backend asks; otherwise the origin's own is sent
+		if o == nil || !o.PreserveHost {
+			r.Host = ""
+		}
 
 		if rsc != nil {
 			if pc := rsc.PathConfig; pc != nil {
@@ -211,6 +214,11 @@ func passthroughErrorHandler(w http.ResponseWriter, r *http.Request, err error) 
 		})
 	h := w.Header()
 	headers.SetResultsHeader(h, "HTTPProxy", status.LookupStatusProxyError.String(), "", nil, nil)
+	// a deadline that ran out is a gateway timeout; an origin that could not be reached is a bad gateway
+	if isTimeout(err) {
+		w.WriteHeader(http.StatusGatewayTimeout)
+		return
+	}
 	w.WriteHeader(http.StatusBadGateway)
 }
 
@@ -245,7 +253,12 @@ type idleTimeoutTransport struct {
 }
 
 func (t *idleTimeoutTransport) RoundTrip(r *http.Request) (*http.Response, error) {
-	resp, err := t.next.RoundTrip(r)
+	start := time.Now()
+	rsc := request.GetResources(r)
+	resp, err := doUpstream(t.next.RoundTrip, r, rsc)
+	if resp != nil {
+		rsc.SetUpstream(r.URL.Host, resp.StatusCode, time.Since(start))
+	}
 	if err != nil || resp == nil || resp.Body == nil {
 		return resp, err
 	}

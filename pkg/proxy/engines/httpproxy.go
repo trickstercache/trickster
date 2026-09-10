@@ -22,6 +22,7 @@ import (
 	"errors"
 	"io"
 	"math"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -46,6 +47,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/net/http/httpguts"
 )
 
 // Reqs is for Progressive Collapsed Forwarding
@@ -84,6 +86,10 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 		reader, resp, _ = PrepareFetchReader(r)
 		cacheStatusCode = setStatusHeader(resp.StatusCode, resp.Header)
 		writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)
+		relayTrailers := pc != nil && pc.ForwardTrailers
+		if relayTrailers {
+			beginTrailerResponse(writer)
+		}
 		if writer != nil && reader != nil {
 			if _, err := io.Copy(streamWriter(writer, resp), reader); err != nil {
 				logger.Error("proxy response copy failed",
@@ -93,6 +99,8 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 					closeResponse = false // abort below skips the deferred close
 				}
 				abortOnCopyError(writer, r, err)
+			} else if relayTrailers {
+				forwardTrailers(writer, resp)
 			}
 		}
 	} else {
@@ -189,6 +197,15 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 	return resp
 }
 
+// isTimeout reports whether an upstream error is a deadline running out rather than a refusal
+func isTimeout(err error) bool {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var ne net.Error
+	return errors.As(err, &ne) && ne.Timeout()
+}
+
 // PrepareResponseWriter prepares a response and returns a destination io.Writer for the payload
 // Used in Respond.
 //
@@ -232,9 +249,19 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 
 	var rc io.ReadCloser
 
+	// the forwarding rewrite strips TE as hop-by-hop; a path relaying
+	// trailers keeps the client's request for them
+	wantsTrailers := pc != nil && pc.ForwardTrailers &&
+		httpguts.HeaderValuesContainsToken(r.Header[headers.NameTe], "trailers")
 	headers.AddForwardingHeaders(r, o.ForwardedHeaders)
-	// clear the Host header before proxying or it will be forwarded upstream
-	r.Host = ""
+	if wantsTrailers {
+		r.Header.Set(headers.NameTe, "trailers")
+	}
+	// the Host header is forwarded as received only when the backend asks; otherwise it is
+	// cleared here so the transport sends the origin's own
+	if !o.PreserveHost {
+		r.Host = ""
+	}
 
 	if pc != nil && len(pc.RequestHeaders) > 0 {
 		headers.UpdateRequestHeaders(r, pc.RequestHeaders)
@@ -297,17 +324,21 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 		}
 	}
 
-	resp, err := o.HTTPClient.Do(r)
+	resp, err := doUpstream(o.HTTPClient.Do, r, rsc)
 	if err != nil {
 		if rsc == nil || !rsc.Cancelable || !errors.Is(err, context.Canceled) {
 			logger.Error("error downloading url",
 				logging.Pairs{keys.URL: r.URL.String(), keys.Detail: err.Error()})
 		}
-		// if there is an err and the response is nil, the server could not be reached
-		// so make a 502 for the downstream response
+		// if there is an err and the response is nil, the server could not be reached, which
+		// is a 502 downstream, or it ran out the path's or attempt's time, which is a 504
 		if resp == nil {
+			status := http.StatusBadGateway
+			if isTimeout(err) {
+				status = http.StatusGatewayTimeout
+			}
 			resp = &http.Response{
-				StatusCode: http.StatusBadGateway,
+				StatusCode: status,
 				Request:    r, Header: make(http.Header),
 			}
 

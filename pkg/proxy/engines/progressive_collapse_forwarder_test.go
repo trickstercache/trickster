@@ -24,7 +24,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
 )
 
 var testString = "Hey, I'm an http response body string."

@@ -205,6 +205,9 @@ func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration, error) {
 	}
 
 	elapsed := time.Since(start) // includes any time required to decompress the document for deserialization
+	if resp != nil {
+		pr.rsc.SetUpstream(pr.upstreamRequest.URL.Host, resp.StatusCode, elapsed)
+	}
 
 	goWithRecover("proxyRequest.Fetch.logUpstreamRequest", func() {
 		logUpstreamRequest(o.Name, o.Provider, handlerName, pr.upstreamRequest.Method,
@@ -428,10 +431,24 @@ func (pr *proxyRequest) writeResponseHeader() {
 	pr.mapLock.Unlock()
 }
 
+func (pr *proxyRequest) relaysTrailers() bool {
+	// whether the path serving the request relays origin trailers
+	return pr.rsc != nil && pr.rsc.PathConfig != nil && pr.rsc.PathConfig.ForwardTrailers
+}
+
 func (pr *proxyRequest) setBodyWriter() {
 	if !pr.isPCF {
 		pr.mapLock.Lock()
+		// trailers travel only on a chunked response, so a path relaying them
+		// leaves the length to the transfer encoding
+		relayTrailers := pr.relaysTrailers()
+		if relayTrailers {
+			pr.upstreamResponse.Header.Del(headers.NameContentLength)
+		}
 		PrepareResponseWriter(pr.responseWriter, pr.upstreamResponse.StatusCode, pr.upstreamResponse.Header)
+		if relayTrailers {
+			beginTrailerResponse(pr.clientWriter)
+		}
 		pr.mapLock.Unlock()
 	}
 
@@ -466,6 +483,8 @@ func (pr *proxyRequest) writeResponseBody() {
 	if err != nil {
 		logger.Error("error copying upstream response body", logging.Pairs{keys.Error: err})
 		pr.bodyTruncated.Store(true)
+	} else if pr.relaysTrailers() && !pr.isPCF {
+		forwardTrailers(pr.clientWriter, pr.upstreamResponse)
 	}
 	// Chunked / transparent-gzip transports can return err==nil with n<CL;
 	// trigger short-read regardless of err.

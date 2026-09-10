@@ -22,6 +22,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -29,12 +30,15 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	tc "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/forwarding"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
+
+	"github.com/stretchr/testify/require"
 )
 
 var testLogger = logging.ConsoleLogger("warn")
@@ -676,4 +680,71 @@ func TestPrepareFetchReader_GetBodyTooLarge(t *testing.T) {
 	if len(mockRT.reqs) != 0 {
 		t.Errorf("upstream must not be called when the body exceeds MaxObjectSizeBytes; got %d requests", len(mockRT.reqs))
 	}
+}
+
+func TestPrepareFetchReaderPreservesHost(t *testing.T) {
+	// the origin sees its own host by default and the client's when the backend asks; a Host
+	// entry in the path's request headers still wins
+	var seen string
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = r.Host
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer s.Close()
+	conf, err := config.Load([]string{"-origin-url", s.URL, "-provider", testResponseBody})
+	require.NoError(t, err)
+	o := conf.Backends["default"]
+	tr := &http.Transport{}
+	o.HTTPClient = &http.Client{Transport: tr}
+	t.Cleanup(tr.CloseIdleConnections)
+	fetch := func(pc *po.Options) {
+		r := httptest.NewRequest(http.MethodGet, s.URL+"/", nil)
+		r.Host = "shop.example.com"
+		r = r.WithContext(tc.WithResources(r.Context(),
+			request.NewResources(o, pc, nil, nil, nil, tu.NewTestTracer())))
+		_, resp, _ := PrepareFetchReader(r)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		resp.Body.Close()
+	}
+	fetch(nil)
+	require.Equal(t, strings.TrimPrefix(s.URL, "http://"), seen, "the origin's own host by default")
+	o.PreserveHost = true
+	fetch(nil)
+	require.Equal(t, "shop.example.com", seen, "the client's Host when preserved")
+	fetch(&po.Options{Path: "/", RequestHeaders: map[string]string{"Host": "api.example.com"}})
+	require.Equal(t, "api.example.com", seen, "a Host in the path's request headers replaces it")
+}
+
+func TestPrepareFetchReaderTimeoutIs504(t *testing.T) {
+	// an origin that does not answer within the path's timeout is a gateway timeout, not a
+	// bad gateway, and one that cannot be reached at all stays a bad gateway
+	release := make(chan struct{})
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		<-release
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer s.Close()
+	defer close(release)
+	conf, err := config.Load([]string{"-origin-url", s.URL, "-provider", testResponseBody})
+	require.NoError(t, err)
+	o := conf.Backends["default"]
+	tr := &http.Transport{}
+	o.HTTPClient = &http.Client{Transport: tr}
+	t.Cleanup(tr.CloseIdleConnections)
+	pc := &po.Options{Path: "/", Timeout: timeconv.Duration(50 * time.Millisecond)}
+	r := httptest.NewRequest(http.MethodGet, s.URL+"/", nil)
+	r = r.WithContext(tc.WithResources(r.Context(),
+		request.NewResources(o, pc, nil, nil, nil, tu.NewTestTracer())))
+	_, resp, _ := PrepareFetchReader(r)
+	require.NotNil(t, resp)
+	require.Equal(t, http.StatusGatewayTimeout, resp.StatusCode)
+
+	o.OriginURL = "http://127.0.0.1:1"
+	r = httptest.NewRequest(http.MethodGet, "http://127.0.0.1:1/", nil)
+	r = r.WithContext(tc.WithResources(r.Context(),
+		request.NewResources(o, pc, nil, nil, nil, tu.NewTestTracer())))
+	_, resp, _ = PrepareFetchReader(r)
+	require.NotNil(t, resp)
+	require.Equal(t, http.StatusBadGateway, resp.StatusCode)
 }
