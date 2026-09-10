@@ -17,6 +17,7 @@
 package providers
 
 import (
+	"slices"
 	"strconv"
 	"testing"
 )
@@ -91,5 +92,23 @@ func TestIsSupportedTimeSeriesProvider(t *testing.T) {
 func TestMySQLUsesCache(t *testing.T) {
 	if NonCacheBackends().Contains(MySQL) {
 		t.Fatal("MySQL must be initialized and validated with a cache")
+	}
+}
+
+func TestHTTPTimeSeriesProviderNames(t *testing.T) {
+	names := HTTPTimeSeriesProviderNames()
+	if len(names) != len(supportedHTTPTimeSeries) {
+		t.Fatalf("names = %v", names)
+	}
+	if !slices.IsSorted(names) {
+		t.Fatalf("names are not sorted: %v", names)
+	}
+	for _, n := range names {
+		if !IsSupportedTimeSeriesProvider(n) || !IsSupportedHTTPTimeSeriesProvider(n) {
+			t.Fatalf("%q is not a supported http time series provider", n)
+		}
+	}
+	if IsSupportedHTTPTimeSeriesProvider(MySQL) || IsSupportedHTTPTimeSeriesProvider(ReverseProxy) {
+		t.Fatal("mysql and the reverse proxy are not http time series providers")
 	}
 }
