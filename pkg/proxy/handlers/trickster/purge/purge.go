@@ -31,7 +31,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
 
-// writeValidationError writes a standardized validation error response
 func writeValidationError(w http.ResponseWriter, errorMsg string) {
 	w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
 	w.Header().Set(headers.NameCacheControl, headers.ValueNoCache)
@@ -47,9 +46,8 @@ func writePurgeResult(w http.ResponseWriter, backendName, target string) {
 		html.EscapeString(backendName), html.EscapeString(target)))
 }
 
-// validateBackend checks if the backend exists and writes an error response if not
-// Returns true if valid, false if invalid (and error response was written)
 func validateBackend(w http.ResponseWriter, backend backends.Backend, backendName string) bool {
+	// a false result means the error response has already been written
 	if backend == nil {
 		writeValidationError(w, "Backend "+html.EscapeString(backendName)+" doesn't exist.")
 		return false
@@ -57,9 +55,8 @@ func validateBackend(w http.ResponseWriter, backend backends.Backend, backendNam
 	return true
 }
 
-// validateCache checks if the backend has a cache and writes an error response if not
-// Returns true if valid, false if invalid (and error response was written)
 func validateCache(w http.ResponseWriter, cache cache.Cache, backendName string) bool {
+	// a false result means the error response has already been written
 	if cache == nil {
 		writeValidationError(w, "Backend "+html.EscapeString(backendName)+" doesn't have a cache.")
 		return false
@@ -139,15 +136,11 @@ func PathHandler(pathPrefix string,
 		keys := make([]string, 0, len(engines)*len(methods)*2)
 		for _, engine := range engines {
 			for _, method := range methods {
-				keys = append(keys, proxyengines.ComposeCacheKey(cfg.Name, cfg.CacheKeyPrefix,
-					engine, proxyengines.DerivePathCacheKey(purgePath, method, "")))
-				// a path config with request_headers/request_params keys its
-				// entries on that configured identity; remove those variants too
-				if pc := cfg.Paths.Match(method, purgePath); pc != nil {
-					if ik := pc.IdentityKeyPart(); ik != "" {
-						keys = append(keys, proxyengines.ComposeCacheKey(cfg.Name, cfg.CacheKeyPrefix,
-							engine, proxyengines.DerivePathCacheKey(purgePath, method, ik)))
-					}
+				// conditions can send one pathname to several paths, each
+				// keying its cache entries on its own configured identity
+				for _, identity := range cfg.Paths.MatchIdentities(method, purgePath) {
+					keys = append(keys, proxyengines.ComposeCacheKey(cfg.Name, cfg.CacheKeyPrefix,
+						engine, proxyengines.DerivePathCacheKey(purgePath, method, identity)))
 				}
 			}
 		}

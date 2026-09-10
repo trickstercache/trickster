@@ -44,7 +44,7 @@ func TestHandlerFunc(t *testing.T) {
 	go lg.StartListener(key, "127.0.0.1", 0, 0,
 		&tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12},
 		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}),
-		nil, nil, time.Second, time.Second)
+		nil, nil, time.Second, nil)
 	t.Cleanup(func() { lg.Shutdown(0) })
 	deadline := time.Now().Add(5 * time.Second)
 	for lg.Get(key) == nil && time.Now().Before(deadline) {
