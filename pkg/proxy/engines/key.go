@@ -32,6 +32,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
+	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	proxyurls "github.com/trickstercache/trickster/v2/pkg/proxy/urls"
 )
 
@@ -126,7 +127,7 @@ func (b *keyBuilder) sum(preamble ...string) string {
 // request, keying each element on its effective (post-override) upstream value
 func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 	pc := pr.rsc.PathConfig
-	upstreamKeyPart := pr.upstreamURLRewriteCacheKey()
+	upstreamKeyPart := pr.upstreamIdentityCacheKey()
 
 	if pc == nil {
 		var kb keyBuilder
@@ -268,13 +269,25 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 		pr.corsCacheKeyPart(r), pc.IdentityKeyPart(), extra)
 }
 
-func (pr *proxyRequest) upstreamURLRewriteCacheKey() string {
+// upstreamIdentityCacheKey names what the request reaches beyond the configured upstream: an
+// authority a rewriter changed, and the client's Host where the origin sees it and may answer by it
+func (pr *proxyRequest) upstreamIdentityCacheKey() string {
 	if pr == nil || pr.rsc == nil || pr.rsc.BackendOptions == nil {
 		return ""
 	}
 	o := pr.rsc.BackendOptions
 	base := proxyurls.FromParts(o.Scheme, o.Host, "", "", "")
-	return proxyurls.UpstreamURLRewriteCacheKey(pr.Request, base)
+	part := proxyurls.UpstreamURLRewriteCacheKey(pr.Request, base)
+	// a path fixing the Host sends one value whatever the client sent, so keying on the client's
+	// would only split one object across many keys; the key follows what the path's update does
+	if o.PreserveHost && pr.Host != "" && !hostFixed(pr.rsc.PathConfig) {
+		part += "\x00host=" + strings.ToLower(pr.Host) + "\x00"
+	}
+	return part
+}
+
+func hostFixed(pc *po.Options) bool {
+	return pc != nil && headers.FixesHost(pc.RequestHeaders)
 }
 
 func (pr *proxyRequest) corsCacheKeyPart(r *http.Request) string {
