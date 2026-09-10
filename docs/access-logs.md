@@ -1,8 +1,9 @@
 # Access and Error Logs
 
-Trickster can write per-backend HTTP access logs and error logs, with
-customizable formats, rotation and retention. Both logs are off by default;
-each is enabled by configuring its filename.
+Trickster can write HTTP access logs and error logs, per backend or for the
+whole process, with customizable formats, rotation and retention. Both logs
+are off by default; each is enabled by configuring its filename, which may be
+a file path or the `stdout` or `stderr` stream.
 
 ## Basic Configuration
 
@@ -26,6 +27,36 @@ backends:
   file and its rotation.
 - When `instance_id` is set in the main config, it is inserted into log
   filenames just as with the application log (e.g., `example1.access.1.log`).
+
+## Default Access Log
+
+A top-level `access_log` section applies to every backend that does not define its own `access_log`, and also captures requests that no backend route handled: router 404s and the built-in ping, readiness, health and management endpoints. Those unmatched lines report `-` for the backend and provider. Requests on the metrics listener are never access-logged.
+
+```yaml
+access_log:
+  filename: stdout
+  format: json
+backends:
+  api:
+    provider: rp
+    origin_url: http://api:8080/
+  quiet:
+    provider: rp
+    origin_url: http://quiet:8080/
+    access_log: {}
+```
+
+A backend's own `access_log` replaces the default entirely rather than merging with it, so the empty block on `quiet` disables access logging for that backend. Lines for a backend carry its name and provider whichever configuration produced them, and a request is logged exactly once even when both the backend and the default write to the same target.
+
+## Logging to Standard Output
+
+`filename` and `error_filename` accept the special values `stdout` and `stderr` in place of a path, for container platforms that collect logs from the process streams. A stream is never rotated or pruned, ignores `rotation`, `retention`, `compress` and `instance_id`, and may be shared by any number of backends and the default access log regardless of their other settings. Lines are still buffered for up to one second before being written.
+
+```yaml
+access_log:
+  filename: stdout
+  error_filename: stderr
+```
 
 ## Log Format
 
@@ -55,7 +86,8 @@ Supported tokens:
 
 | Token | Description |
 | ----- | ----- |
-| `%h`, `%a` | client IP address |
+| `%h`, `%a` | client IP address, resolved through the listener's `trusted_proxies` when configured |
+| `%{c}a` | IP address of the connection peer, which is the proxy when one is trusted |
 | `%l` | remote logname (always `-`) |
 | `%u` | authenticated username (from HTTP Basic Auth), else `-` |
 | `%t` | request start time in CLF format: `[26/Aug/2026:10:30:00 +0000]` |
@@ -89,15 +121,69 @@ Trickster-specific values use the `%{key}x` extension namespace:
 | `%{cache-status}x` | cache result (`hit`, `phit`, `kmiss`, ...); see [Cache Status](./caches.md#cache-status) |
 | `%{engine}x` | proxy engine that handled the request (e.g., `DeltaProxyCache`) |
 | `%{path-config}x` | the matched [path config](./paths.md) path |
+| `%{upstream-addr}x` | host:port of the origin the request was proxied to, or `-` when none was contacted |
+| `%{upstream-status}x` | status code the origin answered with |
+| `%{upstream-duration}x` | duration of the origin exchange in milliseconds |
+| `%{trace-id}x`, `%{span-id}x` | the request's trace and span identifiers when [tracing](./tracing.md) is enabled |
+| `%{request-id}x` | the request's `X-Request-ID`; see below |
+| `%{key}e` | a static value declared under `extra`; see below |
 
 Missing values render as `-`. Values derived from the request (like headers
 and usernames) are backslash-escaped so they cannot corrupt the log line
 structure. Unknown tokens fail validation at startup.
 
-The `json` preset emits these fields per line: `time`, `client_ip`, `user`,
-`method`, `path`, `query`, `proto`, `status`, `bytes`, `duration_ms`,
-`host`, `referer`, `user_agent`, `backend`, `provider`, `path_config`,
-`cache_status`, `engine`.
+The `json` preset emits these fields per line: `time`, `client_ip`,
+`remote_ip`, `user`, `method`, `path`, `query`, `proto`, `status`, `bytes`,
+`duration_ms`, `host`, `referer`, `user_agent`, `backend`, `provider`,
+`path_config`, `cache_status`, `engine`, `upstream_addr`, `upstream_status`,
+`upstream_duration_ms`, `trace_id`, `span_id`, `request_id`, and an `extra`
+object holding the declared extra values when there are any.
+
+### Client Address
+
+`%h` and `%a` are the client's address as Trickster resolved it. Without
+`trusted_proxies` on the listener that is the address of the connection
+peer. With it, a connection from a trusted proxy is attributed to the
+nearest address in `Forwarded` or `X-Forwarded-For` that is not itself a
+trusted proxy, or to `X-Real-IP` when neither is present, so a log line
+names the client behind a load balancer rather than the balancer. `%{c}a`
+is always the connection peer. See [Trusted Proxies](./configuring.md#trusted-proxies)
+for the listener settings.
+
+### Request ID
+
+A format that logs `%{request-id}x` gives every request an identifier: the
+`X-Request-ID` header the client sent, or a random 128-bit hexadecimal
+value assigned on arrival. The identifier is set on the request, so the
+origin receives it in `X-Request-ID`, and echoed on the response, so a
+client can quote it. A format that does not log it assigns none.
+
+### Extra Values
+
+`extra` declares static values for a backend's log lines, rendered by
+`%{key}e` and emitted as the `json` preset's `extra` object:
+
+```yaml
+backends:
+  example:
+    access_log:
+      filename: /var/log/trickster/example.access.log
+      format: '%h %t "%r" %>s %b %{team}e'
+      extra:
+        team: payments
+```
+
+A key may not contain `%`, `{` or `}`. A token naming an undeclared key
+renders `-`. The Kubernetes controller declares `route_kind`,
+`route_namespace` and `route_name` on every backend it generates, so a line
+names the Ingress, HTTPRoute or GRPCRoute it served.
+
+### Dropped Lines
+
+A log line the writer cannot accept, because its bounded buffer is full or
+the file cannot be opened, is dropped rather than blocking the request, and
+counted in the `trickster_accesslog_dropped_lines_total` metric by backend
+and log (`access` or `error`).
 
 ## Rotation and Retention
 

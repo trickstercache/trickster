@@ -107,7 +107,7 @@ See the 'deploy' Directory for more information about using or creating Trickste
 
 ### Kubernetes
 
-See the 'deploy' Directory for Kube and deployment files and examples.
+The `deploy/kube` directory carries raw-YAML deployments of Trickster as a caching proxy and as a Kubernetes Gateway API / Ingress controller; see [kubernetes-deploy.md](./docs/kubernetes-deploy.md), [kubernetes-gateway.md](./docs/kubernetes-gateway.md) and [kubernetes-ingress.md](./docs/kubernetes-ingress.md).
 
 ### Helm
 
