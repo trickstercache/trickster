@@ -19,6 +19,13 @@ package metrics
 import (
 	"testing"
 	"time"
+
+	"github.com/trickstercache/trickster/v2/pkg/cache/status"
+	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
+	dto "github.com/prometheus/client_model/go"
 )
 
 var testCacheKey, testCacheName, testCacheProvider string
@@ -29,13 +36,58 @@ func init() {
 	testCacheProvider = "test"
 }
 
-func TestObserveCacheMiss(t *testing.T) {
-	ObserveCacheMiss(testCacheName, testCacheProvider, time.Millisecond)
+func sampleCount(t *testing.T, o prometheus.Observer) uint64 {
+	t.Helper()
+	var m dto.Metric
+	if err := o.(prometheus.Metric).Write(&m); err != nil {
+		t.Fatal(err)
+	}
+	return m.GetHistogram().GetSampleCount()
 }
 
-// ObserveCacheDel records a cache deletion event
+func assertObserved(t *testing.T, operation, opStatus string, wantBytes float64, fn func()) {
+	t.Helper()
+	count := metrics.CacheObjectOperations.WithLabelValues(testCacheName, testCacheProvider, operation, opStatus)
+	duration := metrics.CacheObjectOperationDuration.WithLabelValues(testCacheName, testCacheProvider, operation, opStatus)
+	bytes := metrics.CacheByteOperations.WithLabelValues(testCacheName, testCacheProvider, operation, opStatus)
+	countBefore, samplesBefore, bytesBefore := testutil.ToFloat64(count), sampleCount(t, duration), testutil.ToFloat64(bytes)
+	fn()
+	if got := testutil.ToFloat64(count) - countBefore; got != 1 {
+		t.Errorf("expected 1 %s/%s operation, got %v", operation, opStatus, got)
+	}
+	if got := sampleCount(t, duration) - samplesBefore; got != 1 {
+		t.Errorf("expected 1 %s/%s duration sample, got %v", operation, opStatus, got)
+	}
+	if got := testutil.ToFloat64(bytes) - bytesBefore; got != wantBytes {
+		t.Errorf("expected %v %s/%s bytes, got %v", wantBytes, operation, opStatus, got)
+	}
+}
+
+func TestObserveCacheMiss(t *testing.T) {
+	assertObserved(t, KeyGet, status.StatusKeyMiss, 0, func() {
+		ObserveCacheMiss(testCacheName, testCacheProvider, time.Millisecond)
+	})
+}
+
 func TestObserveCacheDel(t *testing.T) {
-	ObserveCacheDel(testCacheName, testCacheProvider, 0, time.Millisecond)
+	assertObserved(t, KeyDel, KeyNone, 5, func() {
+		ObserveCacheDel(testCacheName, testCacheProvider, 5, time.Millisecond)
+	})
+}
+
+func TestObserveCacheDelBytes(t *testing.T) {
+	count := metrics.CacheObjectOperations.WithLabelValues(testCacheName, testCacheProvider, KeyDel, KeyNone)
+	duration := metrics.CacheObjectOperationDuration.WithLabelValues(testCacheName, testCacheProvider, KeyDel, KeyNone)
+	bytes := metrics.CacheByteOperations.WithLabelValues(testCacheName, testCacheProvider, KeyDel, KeyNone)
+	countBefore, samplesBefore, bytesBefore := testutil.ToFloat64(count), sampleCount(t, duration), testutil.ToFloat64(bytes)
+	ObserveCacheDelBytes(testCacheName, testCacheProvider, 0)
+	ObserveCacheDelBytes(testCacheName, testCacheProvider, 5)
+	if got := testutil.ToFloat64(bytes) - bytesBefore; got != 5 {
+		t.Errorf("expected 5 del bytes, got %v", got)
+	}
+	if testutil.ToFloat64(count) != countBefore || sampleCount(t, duration) != samplesBefore {
+		t.Error("expected no operation count or duration sample for a bytes-only observation")
+	}
 }
 
 func TestCacheError(t *testing.T) {
@@ -46,8 +98,12 @@ func TestCacheError(t *testing.T) {
 }
 
 func TestObserveCacheOperation(t *testing.T) {
-	ObserveCacheOperation(testCacheName, testCacheProvider, "set", "ok", 0, time.Millisecond)
-	ObserveCacheOperation(testCacheName, testCacheProvider, "set", "ok", 1, time.Millisecond)
+	assertObserved(t, KeySet, "ok", 0, func() {
+		ObserveCacheOperation(testCacheName, testCacheProvider, KeySet, "ok", 0, time.Millisecond)
+	})
+	assertObserved(t, KeySet, "ok", 1, func() {
+		ObserveCacheOperation(testCacheName, testCacheProvider, KeySet, "ok", 1, time.Millisecond)
+	})
 }
 
 func TestObserveCacheEvent(t *testing.T) {

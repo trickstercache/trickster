@@ -29,6 +29,7 @@ import (
 	fso "github.com/trickstercache/trickster/v2/pkg/cache/filesystem/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/index/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/memory"
+	cm "github.com/trickstercache/trickster/v2/pkg/cache/metrics"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
@@ -38,6 +39,28 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 )
+
+func TestIndexedClientRemove(t *testing.T) {
+	const name, provider = "removeTest", "memory"
+	cacheConfig := co.Options{Provider: provider}
+	ic := NewIndexedClient(name, provider, &options.Options{}, memory.New(name, &cacheConfig))
+	t.Cleanup(func() { require.NoError(t, ic.Close()) })
+	// usage gauges are reported under the configured cache name
+	usage := metrics.CacheObjects.WithLabelValues(name, provider)
+	require.NoError(t, ic.Store("foo", []byte("bar"), 0))
+	require.Equal(t, 1.0, testutil.ToFloat64(usage))
+	// requested removals record freed bytes, but the delete operation is left to the cache manager
+	dels := metrics.CacheObjectOperations.WithLabelValues(name, provider, cm.KeyDel, cm.KeyNone)
+	delBytes := metrics.CacheByteOperations.WithLabelValues(name, provider, cm.KeyDel, cm.KeyNone)
+	delsBefore, delBytesBefore := testutil.ToFloat64(dels), testutil.ToFloat64(delBytes)
+	require.NoError(t, ic.Remove("foo"))
+	require.Equal(t, delsBefore, testutil.ToFloat64(dels))
+	require.Equal(t, delBytesBefore+3, testutil.ToFloat64(delBytes))
+	require.Equal(t, 0.0, testutil.ToFloat64(usage))
+	require.Equal(t, int64(0), atomic.LoadInt64(&ic.ObjectCount))
+	_, s, _ := ic.Retrieve("foo")
+	require.Equal(t, status.LookupStatusKeyMiss, s)
+}
 
 func TestIndexedClient(t *testing.T) {
 	t.Run("basic", func(t *testing.T) {
@@ -304,24 +327,33 @@ func TestIndexedClient(t *testing.T) {
 			require.Len(t, state.Objects, 5)
 
 			// write more objects, then force reap to trigger (count based) eviction
+			// direct index stores are not recorded as operations; the cache manager records those
+			sets := metrics.CacheObjectOperations.WithLabelValues("reapTest", provider, cm.KeySet, cm.KeyNone)
+			setsBefore := testutil.ToFloat64(sets)
 			for i := range 5 {
 				index := fmt.Sprintf("%d", i)
 				key := "another.key." + index
 				require.NoError(t, ic2.Store(key, []byte("value1."+index), ttl))
 			}
+			require.Equal(t, setsBefore, testutil.ToFloat64(sets))
 			state = getIndexedClientState(ic2)
 			require.Equal(t, int64(10), state.ObjectCount)
 			require.Equal(t, len(state.Objects), 10)
 			// force reap, expect some evictions (back to the MaxSizeObjects count)
 			evictions := metrics.CacheEvents.WithLabelValues("reapTest", provider,
 				"eviction", "size_objects")
+			dels := metrics.CacheObjectOperations.WithLabelValues("reapTest", provider, cm.KeyDel, cm.KeyNone)
+			delBytes := metrics.CacheByteOperations.WithLabelValues("reapTest", provider, cm.KeyDel, cm.KeyNone)
 			evictionsBefore := testutil.ToFloat64(evictions)
+			delsBefore, delBytesBefore := testutil.ToFloat64(dels), testutil.ToFloat64(delBytes)
 			ic2.forceReap <- true
 			<-ic2.hasReaped
 			state = getIndexedClientState(ic2)
 			require.Equal(t, int64(5), state.ObjectCount)
 			require.Equal(t, len(state.Objects), 5)
 			require.Equal(t, evictionsBefore+1, testutil.ToFloat64(evictions))
+			require.Equal(t, delsBefore+1, testutil.ToFloat64(dels))
+			require.Greater(t, testutil.ToFloat64(delBytes), delBytesBefore)
 		})
 	})
 

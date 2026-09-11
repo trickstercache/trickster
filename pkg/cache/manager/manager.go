@@ -120,7 +120,7 @@ func (cm *Manager) StoreReference(cacheKey string, data cache.ReferenceObject, t
 	logger.Debug("cache store", logging.Pairs{keys.Key: cacheKey, keys.Provider: cm.config.Provider})
 	start := time.Now()
 	err := cm.Client.(cache.MemoryCache).StoreReference(cacheKey, data, ttl)
-	metrics.ObserveCacheOperation(cm.config.Name, cm.config.Provider, "setDirect", "none", float64(data.Size()), time.Since(start))
+	metrics.ObserveCacheOperation(cm.config.Name, cm.config.Provider, metrics.KeySetDirect, metrics.KeyNone, float64(data.Size()), time.Since(start))
 	return err
 }
 
@@ -132,7 +132,7 @@ func (cm *Manager) Store(cacheKey string, byteData []byte, ttl time.Duration) er
 	logger.Debug("cache store", logging.Pairs{keys.Key: cacheKey, keys.Provider: cm.config.Provider})
 	start := time.Now()
 	err := cm.Client.Store(cacheKey, byteData, ttl)
-	metrics.ObserveCacheOperation(cm.config.Name, cm.config.Provider, "set", "none", float64(len(byteData)), time.Since(start))
+	metrics.ObserveCacheOperation(cm.config.Name, cm.config.Provider, metrics.KeySet, metrics.KeyNone, float64(len(byteData)), time.Since(start))
 	return err
 }
 
@@ -143,7 +143,7 @@ func (cm *Manager) observeRetrieval(cacheKey string, size int, s status.LookupSt
 		metrics.ObserveCacheMiss(cm.config.Name, cm.config.Provider, elapsed)
 	case status.IsSuccessful(s):
 		logger.Debug("cache retrieve", logging.Pairs{keys.Key: cacheKey, keys.Provider: cm.config.Provider})
-		metrics.ObserveCacheOperation(cm.config.Name, cm.config.Provider, "get", status.StatusHit, float64(size), elapsed)
+		metrics.ObserveCacheOperation(cm.config.Name, cm.config.Provider, metrics.KeyGet, status.StatusHit, float64(size), elapsed)
 	default:
 		logger.Debug("cache retrieve failed", logging.Pairs{keys.Key: cacheKey, keys.Provider: cm.config.Provider})
 		metrics.ObserveCacheEvent(cm.config.Name, cm.config.Provider, keys.Error, "failed to retrieve cache entry")
@@ -158,9 +158,11 @@ func (cm *Manager) RetrieveReference(cacheKey string) (any, status.LookupStatus,
 	start := time.Now()
 	v, s, err := cm.Client.(cache.MemoryCache).RetrieveReference(cacheKey)
 	elapsed := time.Since(start)
+	var size int
 	if ro, ok := v.(cache.ReferenceObject); ok {
-		cm.observeRetrieval(cacheKey, ro.Size(), s, err, elapsed)
+		size = ro.Size()
 	}
+	cm.observeRetrieval(cacheKey, size, s, err, elapsed)
 	return v, s, err
 }
 
@@ -206,8 +208,8 @@ func (cm *Manager) Remove(cacheKeys ...string) error {
 	logger.Debug("cache remove", logging.Pairs{keys.Keys: cacheKeys, keys.Provider: cm.config.Provider})
 	start := time.Now()
 	err := cm.Client.Remove(cacheKeys...)
-	// key count, not bytes: the manager doesn't track object sizes; the index layer reports byte counts
-	metrics.ObserveCacheDel(cm.config.Name, cm.config.Provider, float64(len(cacheKeys)), time.Since(start))
+	// no byte count: the manager doesn't track object sizes; an index, when present, records freed bytes
+	metrics.ObserveCacheDel(cm.config.Name, cm.config.Provider, 0, time.Since(start))
 	return err
 }
 

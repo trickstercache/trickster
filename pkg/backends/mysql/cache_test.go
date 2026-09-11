@@ -26,6 +26,7 @@ import (
 	tcache "github.com/trickstercache/trickster/v2/pkg/cache"
 	cachemanager "github.com/trickstercache/trickster/v2/pkg/cache/manager"
 	cachememory "github.com/trickstercache/trickster/v2/pkg/cache/memory"
+	cachemetrics "github.com/trickstercache/trickster/v2/pkg/cache/metrics"
 	cacheoptions "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	cacheproviders "github.com/trickstercache/trickster/v2/pkg/cache/providers"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
@@ -36,7 +37,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/vitess"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
 	vtmysql "vitess.io/vitess/go/mysql"
@@ -684,16 +684,9 @@ func TestSharedCacheOperationsUseCacheNameNotBackendName(t *testing.T) {
 	configuration.Name = "mysql-shared-cache"
 	configuration.Provider = "memory"
 	shared := cachemanager.NewCache(newTestCache(), cachemanager.CacheOptions{}, configuration)
-	set := metrics.CacheObjectOperationDuration.WithLabelValues(configuration.Name,
-		configuration.Provider, "set", "none").(prometheus.Metric)
-	setCount := func() uint64 {
-		var m dto.Metric
-		if err := set.Write(&m); err != nil {
-			t.Fatal(err)
-		}
-		return m.GetHistogram().GetSampleCount()
-	}
-	before := setCount()
+	set := metrics.CacheObjectOperations.WithLabelValues(configuration.Name,
+		configuration.Provider, cachemetrics.KeySet, cachemetrics.KeyNone)
+	before := testutil.ToFloat64(set)
 	result := &cachedQueryResult{result: &sqltypes.Result{
 		Fields: []*querypb.Field{{Name: "answer", Type: querypb.Type_INT64}},
 		Rows:   [][]sqltypes.Value{{sqltypes.NewInt64(42)}},
@@ -702,7 +695,7 @@ func TestSharedCacheOperationsUseCacheNameNotBackendName(t *testing.T) {
 		h := &protocolHandler{config: ProtocolConfig{BackendName: backend, Cache: shared}}
 		h.storeCached(backend, result)
 	}
-	if got := setCount(); got != before+2 {
+	if got := testutil.ToFloat64(set); got != before+2 {
 		t.Fatalf("shared-cache stores = %v, want %v", got, before+2)
 	}
 }
