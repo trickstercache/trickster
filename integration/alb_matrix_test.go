@@ -222,7 +222,7 @@ func runMatrixCell(t *testing.T, c matrixCell) {
 	if c.releasePorts != nil {
 		c.releasePorts()
 	}
-	go startTrickster(t, ctx, expectedStartError{}, "-config", cfgPath)
+	runTrickster(t, ctx, "-config", cfgPath)
 	waitForTrickster(t, fmt.Sprintf("127.0.0.1:%d", c.metricsPort))
 	healthURL := fmt.Sprintf("http://127.0.0.1:%d/trickster/health", c.metricsPort)
 	for i := range stubs {

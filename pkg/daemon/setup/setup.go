@@ -140,6 +140,21 @@ func LoadAndValidate(args ...string) (*config.Config, error) {
 	return cfg, nil
 }
 
+// Shutdown stops the instance's background workers that reach upstreams
+// (autodiscovery, ALB pools and health check probes) and waits for them to exit.
+func Shutdown(si *instance.ServerInstance) {
+	if si == nil {
+		return
+	}
+	stopDiscovery(si)
+	if si.Backends != nil {
+		alb.StopPools(si.Backends)
+	}
+	if si.HealthChecker != nil {
+		si.HealthChecker.Shutdown()
+	}
+}
+
 func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	clients backends.Backends, hupFunc dr.Reloader, errorFunc func(),
 	lg *listener.Group,

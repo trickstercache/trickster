@@ -132,6 +132,10 @@ func Start(ctx context.Context, args ...string) error {
 	if si.Listeners != nil {
 		si.Listeners.Shutdown(0)
 	}
+	// take the reload lock so an in-flight Hup can't swap workers mid-teardown
+	mtx.Lock()
+	setup.Shutdown(si)
+	mtx.Unlock()
 	return nil
 }
 

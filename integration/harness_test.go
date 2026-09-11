@@ -66,12 +66,10 @@ func rewriterHarness(t *testing.T) tricksterHarness {
 
 func (h tricksterHarness) start(t *testing.T) {
 	t.Helper()
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
 	if h.releasePorts != nil {
 		h.releasePorts()
 	}
-	go startTrickster(t, ctx, expectedStartError{}, "-config", h.ConfigPath)
+	runTrickster(t, context.Background(), "-config", h.ConfigPath)
 	waitForTrickster(t, h.MetricsAddr)
 }
 

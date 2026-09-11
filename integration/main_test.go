@@ -27,6 +27,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -38,20 +39,36 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	// goleak is intentionally NOT enabled here: daemon.Start doesn't
-	// propagate ctx-cancel to all its background workers (healthcheck
-	// targets, ALB pools, health-page builder, ristretto, healthcheck
-	// HTTP transport keepalives). Each test boots a fresh trickster
-	// instance and dozens of net/http transport goroutines linger.
-	// Enable goleak once daemon.Stop is plumbed; until then it would
-	// either flake or require an ignore list broad enough to mask any
-	// real HTTP-client leak.
+	// goleak is intentionally NOT enabled: a stopped daemon still leaves cache
+	// workers (e.g. ristretto) and HTTP transport keepalives behind.
 	os.Exit(m.Run())
 }
 
 type expectedStartError struct {
 	ErrorContains *string
 	Error         *error
+}
+
+// runTrickster boots the daemon in the background and returns a func that stops
+// it and waits for exit, so its probes can't reach origins of later tests.
+func runTrickster(t *testing.T, ctx context.Context, args ...string) func() {
+	t.Helper()
+	ctx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		startTrickster(t, ctx, expectedStartError{}, args...)
+	}()
+	stop := sync.OnceFunc(func() {
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(30 * time.Second):
+			t.Error("trickster did not exit after its context was cancelled")
+		}
+	})
+	t.Cleanup(stop)
+	return stop
 }
 
 func startTrickster(t *testing.T, ctx context.Context, expected expectedStartError, args ...string) {

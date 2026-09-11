@@ -82,7 +82,7 @@ func runChaosCell(t *testing.T, mech, behavior string, chaosData http.HandlerFun
 	if releasePorts != nil {
 		releasePorts()
 	}
-	go startTrickster(t, ctx, expectedStartError{}, "-config", cfgPath)
+	runTrickster(t, ctx, "-config", cfgPath)
 	waitForTrickster(t, fmt.Sprintf("127.0.0.1:%d", metricsPort))
 	healthURL := fmt.Sprintf("http://127.0.0.1:%d/trickster/health", metricsPort)
 	requireHealthState(t, healthURL, "prom0", "available", 10*time.Second)

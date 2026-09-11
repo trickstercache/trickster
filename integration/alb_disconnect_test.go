@@ -170,7 +170,7 @@ func runDisconnectMidFanout(t *testing.T, mech string) {
 	ctx, cancelTrickster := context.WithCancel(context.Background())
 	t.Cleanup(cancelTrickster)
 	releasePorts()
-	go startTrickster(t, ctx, expectedStartError{}, "-config", cfgPath)
+	runTrickster(t, ctx, "-config", cfgPath)
 	waitForTrickster(t, fmt.Sprintf("127.0.0.1:%d", metricsPort))
 
 	// Settle goroutine count after Trickster startup (HTTP servers, listeners,

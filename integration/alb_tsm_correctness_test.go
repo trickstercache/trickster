@@ -66,7 +66,7 @@ func TestALBTSMCorrectness(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Cleanup(cancel)
 		release()
-		go startTrickster(t, ctx, expectedStartError{}, "-config", cfgPath)
+		runTrickster(t, ctx, "-config", cfgPath)
 		waitForTrickster(t, fmt.Sprintf("127.0.0.1:%d", metricsPort))
 
 		q := fmt.Sprintf("sum by (job) (up + 0*%d)", time.Now().UnixNano())
@@ -174,7 +174,7 @@ func TestALBTSMCorrectness(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Cleanup(cancel)
 		release()
-		go startTrickster(t, ctx, expectedStartError{}, "-config", cfgPath)
+		runTrickster(t, ctx, "-config", cfgPath)
 		waitForTrickster(t, fmt.Sprintf("127.0.0.1:%d", metricsPort))
 
 		now := time.Now()
@@ -312,7 +312,7 @@ func TestALBTSMCorrectness(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Cleanup(cancel)
 		release()
-		go startTrickster(t, ctx, expectedStartError{}, "-config", cfgPath)
+		runTrickster(t, ctx, "-config", cfgPath)
 		waitForTrickster(t, fmt.Sprintf("127.0.0.1:%d", metricsPort))
 
 		queryRank := func(operator string) []vectorSeries {
@@ -425,7 +425,7 @@ func TestALBTSMCorrectness(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Cleanup(cancel)
 		release()
-		go startTrickster(t, ctx, expectedStartError{}, "-config", cfgPath)
+		runTrickster(t, ctx, "-config", cfgPath)
 		waitForTrickster(t, fmt.Sprintf("127.0.0.1:%d", metricsPort))
 
 		// Poll until mixed 2xx+5xx fanout occurs; healthcheck registration is async.
