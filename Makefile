@@ -584,7 +584,7 @@ kind-integration-ingress:
 GATEWAY_API_CRDS = $(shell $(GO) list -m -f '{{.Dir}}' sigs.k8s.io/gateway-api)/config/crd/experimental
 .PHONY: kind-integration-gateway
 kind-integration-gateway:
-	kubectl --context kind-$(KIND_CLUSTER) apply --server-side -f $(GATEWAY_API_CRDS)
+	kubectl --context kind-$(KIND_CLUSTER) apply --server-side -k $(GATEWAY_API_CRDS)
 	kubectl --context kind-$(KIND_CLUSTER) wait --for=condition=Established crd --all --timeout=60s
 	kubectl --context kind-$(KIND_CLUSTER) apply -f integration/kind/gateway.yaml
 	kubectl --context kind-$(KIND_CLUSTER) apply -f integration/kind/ingress-annotations.yaml

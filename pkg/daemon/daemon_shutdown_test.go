@@ -30,6 +30,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
 	"github.com/trickstercache/trickster/v2/pkg/daemon/instance"
 	trerr "github.com/trickstercache/trickster/v2/pkg/proxy/errors"
@@ -224,6 +225,33 @@ func TestShutdownWithoutListeners(t *testing.T) {
 	close(quiesced)
 	si = &instance.ServerInstance{Listeners: listener.NewGroup()}
 	shutdown(si, quiesced)
+}
+
+func TestShutdownStopsHealthChecks(t *testing.T) {
+	hc := healthcheck.New()
+	stopped := make(chan bool, 1)
+	hc.Subscribe(stopped)
+	shutdown(&instance.ServerInstance{Readiness: &ready.State{}, HealthChecker: hc}, nil)
+	select {
+	case <-stopped:
+	default:
+		t.Error("shutdown left the health checker running")
+	}
+}
+
+func TestStopHealthChecksYieldsToRunningReload(t *testing.T) {
+	hc := healthcheck.New()
+	stopped := make(chan bool, 1)
+	hc.Subscribe(stopped)
+	mtx.Lock()
+	stopHealthChecks(&instance.ServerInstance{HealthChecker: hc})
+	mtx.Unlock()
+	select {
+	case <-stopped:
+		t.Error("a reload holding the lock owns the checker; shutdown must not stop it")
+	default:
+	}
+	stopHealthChecks(&instance.ServerInstance{})
 }
 
 // blockReloads stubs the reload delegate so the first reload blocks until
