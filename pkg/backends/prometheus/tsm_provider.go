@@ -67,7 +67,7 @@ func (c *Client) PlanTSMMerge(r *http.Request, query string) (*merge.TSMMergePla
 	}
 	completeness := merge.TSMCompletenessResponseAuthority
 
-	agg, found := promql.OuterAggregator(fanoutQuery)
+	agg, found := promql.CompleteOuterAggregator(fanoutQuery)
 	if promql.IsScalarExpression(fanoutQuery) {
 		strategy = int(merge.StrategyScalar)
 	} else if found {
@@ -86,6 +86,14 @@ func (c *Client) PlanTSMMerge(r *http.Request, query string) (*merge.TSMMergePla
 			unsupportedWarning = `trickster: outer aggregator "` + agg + `" cannot be correctly ` +
 				`merged across fanout backends; results may be inaccurate`
 		}
+	} else if agg, found := promql.OuterAggregator(fanoutQuery); found {
+		unsupportedWarning = `trickster: outer aggregator "` + agg + `" does not consume the complete ` +
+			`query and cannot be correctly merged across fanout backends; results may be inaccurate`
+	}
+	if !found && strategy == int(merge.StrategyDedup) &&
+		promql.ContainsAggregator(fanoutQuery) && promql.ContainsBinaryExpression(fanoutQuery) {
+		unsupportedWarning = "trickster: query contains an aggregation and binary expression that " +
+			"may require global evaluation; results may be inaccurate"
 	}
 
 	variantRequest := r
@@ -493,7 +501,7 @@ func tsmInnerQuery(query string) (string, bool) {
 		return spec.InnerQuery, true
 	}
 	if spec, ok := promql.ParseSortWrapper(query); ok {
-		if _, found := promql.OuterAggregator(spec.InnerQuery); found {
+		if _, found := promql.CompleteOuterAggregator(spec.InnerQuery); found {
 			return spec.InnerQuery, true
 		}
 	}

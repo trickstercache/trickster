@@ -81,10 +81,13 @@ func TestCompleteOuterAggregator(t *testing.T) {
 		want  aggregation.Operator
 	}{
 		{"sum(up)", aggregation.Sum},
+		{"((sum(up)))", aggregation.Sum},
 		{"sum by (service) (rate(requests[5m]))", aggregation.Sum},
 		{"avg(requests) without (instance)", aggregation.Average},
 		{`count_values("code", requests)`, aggregation.CountValues},
 		{"sum(up) + vector(1)", ""},
+		{"(sum(up)) + vector(1)", ""},
+		{"((sum(up) + vector(1)))", ""},
 		{"sum by service (up)", ""},
 		{"sum()", ""},
 		{"rate(sum(up)[5m:])", ""},
@@ -153,6 +156,7 @@ func TestReplaceOuterAggregator(t *testing.T) {
 		{"avg(requests)", aggregation.Average, aggregation.Count, "count(requests)"},
 		{"avg by (region) (requests)", aggregation.Average, aggregation.Sum, "sum by (region) (requests)"},
 		{"avg without (region) (requests)", aggregation.Average, aggregation.Count, "count without (region) (requests)"},
+		{"((avg(requests)))", aggregation.Average, aggregation.Sum, "sum(requests)"},
 		{"  avg(requests)", aggregation.Average, aggregation.Sum, "sum(requests)"},
 		// non-matching aggregator is returned unchanged
 		{"sum(requests)", aggregation.Average, aggregation.Sum, "sum(requests)"},

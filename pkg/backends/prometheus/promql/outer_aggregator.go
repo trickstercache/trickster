@@ -85,7 +85,7 @@ func CompleteOuterAggregator(query string) (string, bool) {
 // CompleteOuterAggregation returns the outer aggregation and its vector input
 // only when the aggregation consumes the complete query.
 func CompleteOuterAggregation(query string) (string, string, bool) {
-	q := strings.TrimSpace(query)
+	q := trimOuterGroupings(query)
 	agg, found := OuterAggregator(q)
 	if !found {
 		return "", "", false
@@ -195,11 +195,22 @@ func ContainsAggregator(query string) bool {
 //
 //	ReplaceOuterAggregator("avg by (r) (errors)", "avg", "sum") → "sum by (r) (errors)"
 func ReplaceOuterAggregator(query, aggregator, replacement string) string {
-	q := strings.TrimSpace(query)
+	q := trimOuterGroupings(query)
 	ql := strings.ToLower(q)
 	if strings.HasPrefix(ql, aggregator) {
 		// Preserve original casing for the remainder of the query
 		return replacement + q[len(aggregator):]
 	}
 	return query
+}
+
+func trimOuterGroupings(query string) string {
+	q := strings.TrimSpace(query)
+	for {
+		inner, ok := unwrapGrouping(q)
+		if !ok {
+			return q
+		}
+		q = strings.TrimSpace(inner)
+	}
 }

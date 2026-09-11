@@ -61,9 +61,14 @@ func TestPlanTSMMergeStrategies(t *testing.T) {
 		{"sum by (job) (up)", int(merge.StrategySum), standard, ""},
 		{"count(up)", int(merge.StrategySum), standard, ""},
 		{"count_values(\"code\", http_requests_total)", int(merge.StrategySum), standard, ""},
+		{"((count(up)))", int(merge.StrategySum), standard, ""},
+		{"count(up) or vector(0)", int(merge.StrategyDedup), standard, "binary expression"},
+		{"(count(up)) or vector(0)", int(merge.StrategyDedup), standard, "binary expression"},
+		{"((count(up) or vector(0)))", int(merge.StrategyDedup), standard, "binary expression"},
 		// Average uses paired sum and count variants.
 		{"avg(up)", int(merge.StrategySum), weighted, ""},
 		{"avg by (region) (up)", int(merge.StrategySum), weighted, ""},
+		{"((avg(up)))", int(merge.StrategySum), weighted, ""},
 		{"min(up)", int(merge.StrategyMin), standard, ""},
 		{"max(up)", int(merge.StrategyMax), standard, ""},
 		// Rank aggregations are rewritten and finalized after merge.
@@ -88,6 +93,7 @@ func TestPlanTSMMergeStrategies(t *testing.T) {
 		{"sort(sum(up))", int(merge.StrategySum), standard, ""},
 		{"sort_desc(count by (service) (up))", int(merge.StrategySum), standard, ""},
 		{"sort(avg by (service) (up))", int(merge.StrategySum), weighted, ""},
+		{"sort((avg(up)))", int(merge.StrategySum), weighted, ""},
 		{"sort(min(up))", int(merge.StrategyMin), standard, ""},
 		{"sort_desc(max(up))", int(merge.StrategyMax), standard, ""},
 		{"sort(up)", int(merge.StrategyDedup), standard, ""},
